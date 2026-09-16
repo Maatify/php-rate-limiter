@@ -31,12 +31,13 @@
         }
     },
     "require": {
+        "php": "^8.4",
         "ext-filter": "*",
         "ext-hash": "*",
         "ext-json": "*",
         "ext-pcre": "*",
-        "maatify/shared-common": "^1.0",
-        "php": "^8.4"
+        "maatify/exceptions": "^1.0",
+        "maatify/shared-common": "^1.0"
     },
     "require-dev": {
         "phpstan/phpstan": "^2.0",
@@ -53,7 +54,8 @@
         "platform": {
             "php": "8.4.0"
         },
-        "allow-plugins": false
+        "allow-plugins": false,
+        "platform-check": true
     },
     "minimum-stability": "stable",
     "prefer-stable": true
