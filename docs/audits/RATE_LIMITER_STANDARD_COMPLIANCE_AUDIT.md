@@ -243,22 +243,17 @@ This Work Unit must not alter runtime behavior.
 
 ## 7. Documentation contains proven Host coupling — HOST DECOUPLING
 
-`RATE_LIMITER_PACKAGE_REFERENCE.md` still contains proven Host-coupling evidence, describing the code location as `Location: Modules/RateLimiter` and documenting monorepo-style autoloading: `Composer autoload is expected to map: Maatify\RateLimiter\ -> Modules/RateLimiter`.
+**Status:** RESOLVED / CLOSED
 
-That is not correct for the standalone package.
+**Reason:** PROVEN HOST DECOUPLING
 
-The technical content should be retained where still valid. Host decoupling remains open and must not be implemented in this task.
-
-Required cleanup is limited to:
-
-- remove Host/monorepo ownership language;
-- remove stale location references (`Modules/RateLimiter`);
-- remove stale monorepo autoloading references;
-- retain valid security guarantees;
-- retain valid policy/default behavior;
-- make no new backend or integration claims.
-
-This is package presentation work, not runtime redesign.
+The Package Reference was updated to reflect the standalone package reality:
+- `Modules/RateLimiter` ownership and location wording was removed.
+- Monorepo autoload documentation was removed and Composer mapping reflects `src/`.
+- Stale extraction-state wording was removed.
+- Unsupported package-owned Infrastructure/driver claims were corrected.
+- No runtime behavior changed.
+- No backend or integration scope was added.
 
 ---
 

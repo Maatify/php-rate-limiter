@@ -1,13 +1,13 @@
 # RateLimiter — Architecture (Official)
 
-**Module:** RateLimiter
+**Package:** RateLimiter
 **Namespace:** `Maatify\RateLimiter`
 **Status:** LOCKED — Architecture Contract
 **Spec Version:** `1.0.0`
 **Change Class:** Adversarial Hardening Alignment
-**Location:** `Modules/RateLimiter` (library-first)
+**Location:** `src/`
 
-This document explains **why** the RateLimiter module is designed the way it is.
+This document explains **why** the RateLimiter package is designed the way it is.
 It is an architectural contract intended to prevent accidental weakening, incorrect refactors, or scope creep.
 
 Behavioral rules are specified in:
@@ -41,7 +41,7 @@ Behavioral rules are specified in:
 
 ### 1.3 Engineering Goals
 - Storage-agnostic core
-- Library-first structure: safe extraction into a standalone package
+- Standalone package structure
 - DTO-first public API: no arrays in public contracts
 - Clear boundaries between Engine, Policy, Penalty, and Store (testability and replaceability)
 - Explicit failure behavior that cannot be weaponized as a kill-switch
@@ -62,7 +62,7 @@ Behavioral rules are specified in:
 
 ### 3.1 Multi-Signal Decisions (No Single-Signal Security)
 Decisions MUST never rely on a single signal (e.g., IP-only).
-The module combines:
+The package combines:
 - IP scope
 - User-Agent
 - Device Fingerprint (confidence-aware)
@@ -91,7 +91,7 @@ Additionally, the design MUST include:
 Ladder, decay modifiers, budgets, and gates are locked in `docs/DECISION_MATRIX.md`.
 
 ### 3.4 Determinism (Without Deterministic Bypass)
-Given the same inputs and same stored state, the module MUST produce the same decision.
+Given the same inputs and same stored state, the package MUST produce the same decision.
 
 Determinism MUST NOT create an “attacker roadmap”. Therefore:
 - Budgets use fixed epochs (no rolling extension)
@@ -99,7 +99,7 @@ Determinism MUST NOT create an “attacker roadmap”. Therefore:
 - Same-device failures are budget-eligible after micro-caps
 
 ### 3.5 Bounded State (Key Explosion Resistance)
-The module MUST NOT allow adversarial traffic to create unbounded keys.
+The package MUST NOT allow adversarial traffic to create unbounded keys.
 Device-related key creation MUST be capped and aggregated as defined in:
 - `docs/KEY_STRATEGY.md`
 - `docs/DEVICE_FINGERPRINT.md`
@@ -120,7 +120,7 @@ Failure semantics are locked in `docs/FAILURE_SEMANTICS.md`.
 
 ---
 
-## 4. Module Layers and Responsibilities
+## 4. Package Layers and Responsibilities
 
 ### 4.1 Contracts (Public Boundary)
 **Location:** `Contract/`
@@ -194,24 +194,22 @@ Device identity is resolved into a single `DeviceIdentityDTO` with:
 - churn/evasion awareness
 - bounded creation rules integration (no key explosion)
 
-The module MUST NOT store raw fingerprint components.
+The package MUST NOT store raw fingerprint components.
 
 ### 4.7 Infrastructure (Drivers)
-**Location:** `Infrastructure/`
 
-Drivers implement store contracts for the required persistence layer.
+The package owns storage contracts for the required persistence layer. Consumers must provide implementations of these contracts. The package itself does not ship with concrete driver implementations.
 
-**Infrastructure rules:**
+**Infrastructure rules for consumers:**
 - Drivers MUST provide deterministic, bounded behavior
 - Drivers MUST NOT swallow exceptions
-- Drivers MUST expose backend capability flags explicitly
 - If a backend cannot satisfy required atomicity for an operation, the driver MUST fail explicitly and defer to Engine failure semantics
 - Drivers must be interchangeable without changing Engine logic
 
 ---
 
 ## 5. Key Strategy (Why These Keys Exist)
-The module relies on a small, explicit set of evaluation keys:
+The package relies on a small, explicit set of evaluation keys:
 - `K1 = IP_PREFIX`
 - `K2 = IP_PREFIX + UA`
 - `K3 = IP_PREFIX + DeviceFP`
@@ -242,7 +240,7 @@ Rules are defined in `docs/FAILURE_SEMANTICS.md`.
 ---
 
 ## 7. Privacy-by-Design Commitments
-The module is designed to support security without tracking:
+The package is designed to support security without tracking:
 - No raw headers persisted
 - No raw fingerprint components stored
 - Only hashed, keyed identifiers persisted
@@ -254,7 +252,7 @@ See `docs/DEVICE_FINGERPRINT.md` for full rules.
 ---
 
 ## 8. Testing Strategy (What Must Be Proven)
-The module is only acceptable if tests prove:
+The package is only acceptable if tests prove:
 - Deterministic outcomes for known states
 - Correct ladder escalation, persistence, decay modifiers, and anti-equilibrium gates
 - Correct budget epoch behavior (no extension) and owner-safety enforcement
@@ -262,23 +260,18 @@ The module is only acceptable if tests prove:
 - Correct correlation detection triggers with watch flags + confidence constraints
 - Key explosion resistance (caps + ephemeral behavior + “no bypass” invariants)
 - Failure semantics correctness (including circuit breaker constants and re-entry guard)
-- Driver conformance: same behavior across drivers within declared capabilities
-
-Backends must demonstrate:
-- atomic correctness where required OR explicit failure with documented semantics
-- bounded operations (no unbounded scans)
 
 ---
 
-## 9. Extraction Readiness
-This module is structured for extraction without redesign:
+## 9. Architectural Boundaries
+This package maintains strict architectural boundaries:
 - No coupling to HTTP frameworks
 - No reliance on globals (`$_SERVER`, `$_COOKIE`)
 - DTO + Contract boundaries
-- Drivers isolated under `Infrastructure/`
+- Consumers implement infrastructure drivers
 
-Composer autoload is expected to map:
-- `Maatify\RateLimiter\` → `Modules/RateLimiter`
+Composer autoload maps:
+- `Maatify\RateLimiter\` → `src/`
 
 ---
 
@@ -293,4 +286,4 @@ Composer autoload is expected to map:
 ---
 
 **This document is authoritative.
-Do not “simplify” this module by removing multi-signal logic, device awareness, bounded state rules, progressive blocking, caps, gates, and determinism.**
+Do not “simplify” this package by removing multi-signal logic, device awareness, bounded state rules, progressive blocking, caps, gates, and determinism.**
