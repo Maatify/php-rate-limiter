@@ -7,7 +7,7 @@
 **Change Class:** Adversarial Hardening Alignment
 **Location:** `Modules/RateLimiter` (library-first)
 
-This document explains **why** the RateLimiter module is designed the way it is.  
+This document explains **why** the RateLimiter module is designed the way it is.
 It is an architectural contract intended to prevent accidental weakening, incorrect refactors, or scope creep.
 
 Behavioral rules are specified in:
@@ -61,7 +61,7 @@ Behavioral rules are specified in:
 ## 3. Architectural Principles (Non-Negotiable)
 
 ### 3.1 Multi-Signal Decisions (No Single-Signal Security)
-Decisions MUST never rely on a single signal (e.g., IP-only).  
+Decisions MUST never rely on a single signal (e.g., IP-only).
 The module combines:
 - IP scope
 - User-Agent
@@ -292,5 +292,5 @@ Composer autoload is expected to map:
 
 ---
 
-**This document is authoritative.  
+**This document is authoritative.
 Do not “simplify” this module by removing multi-signal logic, device awareness, bounded state rules, progressive blocking, caps, gates, and determinism.**
