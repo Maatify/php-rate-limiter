@@ -10,6 +10,6 @@ class PackageStructureTest extends TestCase
 {
     public function testTestingInfrastructureIsOperational(): void
     {
-        $this->assertTrue(true, 'The testing infrastructure is working.');
+        $this->expectNotToPerformAssertions();
     }
 }
