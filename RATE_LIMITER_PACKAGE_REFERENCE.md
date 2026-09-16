@@ -203,7 +203,6 @@ The package owns storage contracts for the required persistence layer. Consumers
 **Infrastructure rules for consumers:**
 - Drivers MUST provide deterministic, bounded behavior
 - Drivers MUST NOT swallow exceptions
-- Drivers MUST expose backend capability flags explicitly
 - If a backend cannot satisfy required atomicity for an operation, the driver MUST fail explicitly and defer to Engine failure semantics
 - Drivers must be interchangeable without changing Engine logic
 
@@ -246,7 +245,7 @@ The package is designed to support security without tracking:
 - No raw fingerprint components stored
 - Only hashed, keyed identifiers persisted
 - Fingerprints are probabilistic and versioned
-- No cross-context tracking
+- No cross-context or cross-module tracking
 
 See `docs/DEVICE_FINGERPRINT.md` for full rules.
 
