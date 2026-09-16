@@ -5,7 +5,7 @@
 **Status:** LOCKED — Behavioral & Privacy Contract
 **Spec Version:** `1.0.0`
 
-This document defines the **Device Fingerprint system** used by the Rate Limiter.  
+This document defines the **Device Fingerprint system** used by the Rate Limiter.
 It specifies how device identity is derived, normalized, hashed, bounded, and evaluated.
 
 The Device Fingerprint is designed to be:
@@ -55,12 +55,12 @@ It is **not** intended for:
 
 ## 3. Fingerprint Levels
 
-The system defines **three fingerprint levels**.  
+The system defines **three fingerprint levels**.
 Levels increase confidence but NEVER replace account-level protection.
 
 ### 3.1 Level 1 — Passive Fingerprint (Mandatory)
 
-**Source:** Backend-only  
+**Source:** Backend-only
 **Availability:** Always available
 
 #### Inputs (Normalized)
@@ -87,7 +87,7 @@ Levels increase confidence but NEVER replace account-level protection.
 
 ### 3.2 Level 2 — Client-Assisted Fingerprint (Optional)
 
-**Source:** Minimal client-provided hints  
+**Source:** Minimal client-provided hints
 **Availability:** Optional
 
 #### Client Inputs
@@ -121,7 +121,7 @@ Levels increase confidence but NEVER replace account-level protection.
 
 ### 3.3 Level 3 — Session-Bound Device Identifier (Optional)
 
-**Source:** Server-generated  
+**Source:** Server-generated
 **Availability:** Post-authentication only
 
 #### Behavior
@@ -167,7 +167,7 @@ All fingerprint levels are combined into a single resolved identity.
 | Passive + Client           | MEDIUM     |
 | Passive + Client + Session | HIGH       |
 
-**Rule:**  
+**Rule:**
 Confidence affects **scoring weight** and certain correlation enforcement constraints; never authorization.
 
 ---
@@ -321,5 +321,5 @@ Frequency analysis MUST NOT be used for identity inference.
 
 ---
 
-**This document is authoritative.  
+**This document is authoritative.
 Any deviation requires explicit versioning and security approval.**

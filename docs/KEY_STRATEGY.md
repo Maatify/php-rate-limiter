@@ -5,10 +5,10 @@
 **Status:** LOCKED — Design & Security Contract
 **Spec Version:** `1.0.0`
 
-This document defines the **key construction strategy** used by the RateLimiter.  
+This document defines the **key construction strategy** used by the RateLimiter.
 Keys determine how limits, scores, correlation, and blocks are applied.
 
-Incorrect key design weakens security, increases false positives, or enables evasion.  
+Incorrect key design weakens security, increases false positives, or enables evasion.
 This strategy is mandatory for all implementations.
 
 ---
@@ -357,5 +357,5 @@ Rules:
 
 ---
 
-**This document is authoritative.  
+**This document is authoritative.
 Key strategy MUST NOT be altered without explicit versioning and security review.**

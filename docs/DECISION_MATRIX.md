@@ -6,7 +6,7 @@
 **Scope:** Login, OTP, API Heavy Endpoints
 **Spec Version:** `1.0.0`
 
-This document defines the **deterministic decision rules** used by the Rate Limiter.  
+This document defines the **deterministic decision rules** used by the Rate Limiter.
 It is a **behavioral contract**, not explanatory documentation.
 
 Any implementation, policy, or test MUST comply with this matrix exactly.
@@ -296,7 +296,7 @@ This is deterministic and testable (no randomness), and blocks “hover forever 
 | ------------------------- | ------------------------------------------- | --------------- |
 | IP attempts many accounts | `distinct(AccountID) ≥ 5 within 10 minutes` | HARD_BLOCK (IP) |
 
-**Advisory Constraint:**  
+**Advisory Constraint:**
 IP-only blocks are advisory and MUST NOT affect **trusted session devices**.
 
 ---
@@ -367,7 +367,7 @@ New DeviceFP creation MUST be capped to prevent storage exhaustion.
 | L5          | 6 hours    |
 | L6          | 24 hours   |
 
-Each escalation increases the level.  
+Each escalation increases the level.
 Levels decay **slower** as severity increases.
 
 ---
@@ -431,5 +431,5 @@ Account safety always overrides IP convenience.
 
 ---
 
-**This document is authoritative.  
+**This document is authoritative.
 Any deviation requires a version bump and changelog entry.**

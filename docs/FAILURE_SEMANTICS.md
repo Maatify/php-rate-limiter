@@ -5,7 +5,7 @@
 **Status:** LOCKED — Security Contract
 **Spec Version:** `1.0.0`
 
-This document defines how the RateLimiter behaves when **internal failures occur**.  
+This document defines how the RateLimiter behaves when **internal failures occur**.
 It specifies when the system must fail closed, fail open, or enter a strictly bounded degraded mode.
 
 Failure semantics are **security-critical** and MUST NOT be altered implicitly.
@@ -104,7 +104,7 @@ FAIL_OPEN MUST still be **bounded**:
 
 ### 3.3 DEGRADED_MODE (Bounded Safety Mode)
 
-**Definition:**  
+**Definition:**
 A temporary, explicit, and strictly bounded mode entered when the primary backend is unhealthy.
 
 DEGRADED_MODE is **not FAIL_OPEN** and **not FAIL_CLOSED**.
@@ -328,5 +328,5 @@ The RateLimiter does NOT guarantee:
 
 ---
 
-**This document is authoritative.  
+**This document is authoritative.
 Failure semantics MUST NOT be altered without explicit versioning and security approval.**
