@@ -222,24 +222,17 @@ This Work Unit must not alter runtime behavior.
 
 ## 7. Documentation contains proven Host coupling — HOST DECOUPLING
 
-`src/README.md` still describes the code as part of the Admin Control Panel / monorepo and documents monorepo-style autoloading.
+`RATE_LIMITER_PACKAGE_REFERENCE.md` still contains proven Host-coupling evidence, describing the code location as `Location: Modules/RateLimiter` and documenting monorepo-style autoloading: `Composer autoload is expected to map: Maatify\RateLimiter\ -> Modules/RateLimiter`.
 
 That is not correct for the standalone package.
 
-The technical content should be retained where still valid, while package presentation is moved to the standalone repository structure.
-
-Required direction:
-
-```text
-src/README.md -> root README.md content
-src/docs/*    -> docs/*
-```
+The technical content should be retained where still valid. Host decoupling remains open and must not be implemented in this task.
 
 Required cleanup is limited to:
 
 - remove Host/monorepo ownership language;
-- remove monorepo installation instructions;
-- document the actual Composer installation after `composer.json` exists;
+- remove stale location references (`Modules/RateLimiter`);
+- remove stale monorepo autoloading references;
 - retain valid security guarantees;
 - retain valid policy/default behavior;
 - make no new backend or integration claims.
