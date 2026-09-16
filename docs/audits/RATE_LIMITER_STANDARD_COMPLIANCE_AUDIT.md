@@ -63,10 +63,30 @@ Commit:     6caf3634d5b00d8c3eff285ec36e554c2a9a4a8d
 The locally adopted Applicable Standards Set remains authoritative, especially:
 
 - `PACKAGE_BUILDING_STANDARD.md` v1.4.0
-- `COMPOSER_PACKAGE_STANDARD.md` v1.2.0
+- `COMPOSER_PACKAGE_STANDARD.md` v2.0.0
 - `TESTING_STANDARD.md` v1.1.0
 - `CI_WORKFLOW_STANDARD.md` v1.1.0
 - `LIBRARY_PRESENTATION_STANDARD.md` v1.0.1
+
+### Owner Decision — Package License
+
+Owner decision recorded on 2026-09-16:
+
+```text
+maatify/php-rate-limiter -> PROPRIETARY SOFTWARE
+```
+
+This establishes the initial proprietary licensing baseline before first release. It is an Owner-level legal/distribution decision and does **not** reopen Finding 1.
+
+The package-facing licensing contract must remain synchronized:
+
+```text
+composer.json license -> proprietary
+LICENSE               -> proprietary notice
+README.md              -> Proprietary
+```
+
+Repository visibility does not grant open-source rights or permission to use, modify, or redistribute the software. Any such rights require separate written authorization or a written license agreement from Maatify.
 
 ---
 
@@ -210,6 +230,7 @@ Repository: php-rate-limiter
 Composer:   maatify/php-rate-limiter
 Namespace:  Maatify\RateLimiter\
 PHP:        ^8.4
+License:    proprietary
 ```
 
 `composer.lock` must remain uncommitted for this reusable Composer library.
@@ -527,7 +548,7 @@ No runtime behavior change was made.
 The following infrastructure corrections have been established according to the adopted Standards:
 
 - `composer.json` corrected for canonical package metadata, support URLs, `^8.4`, runtime extensions, stable dependency policy, scripts, and Composer configuration.
-- `LICENSE` added for the declared MIT license.
+- `LICENSE` was established during package bootstrap as the initial proprietary licensing baseline without reopening Finding 1.
 - `README.md` corrected to show the pre-release repository-access state, Maatify presentation identity, and the actual public constructors/API.
 - `CHANGELOG.md` kept factual with no synthetic release comparison.
 - `RATE_LIMITER_PACKAGE_REFERENCE.md` moved to the repository root as the single canonical Package Reference.
@@ -603,6 +624,7 @@ Storage contracts                        -> PRESERVE
 Concrete backend/adapters                -> OUT OF CURRENT SCOPE
 ClockInterface integration               -> PRESERVE
 Failure semantics                        -> PRESERVE
+Package license                          -> PROPRIETARY (OWNER DECISION)
 Host/monorepo documentation              -> REMOVE / REWRITE TO PACKAGE CONTEXT
 Package root/bootstrap                    -> BUILD TO STANDARD
 Package exception hierarchy              -> FIX TO STANDARD

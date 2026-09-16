@@ -10,3 +10,6 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Added
 - Standalone Composer package foundation for `maatify/php-rate-limiter`
 - Initial package metadata and CI quality gate
+
+### Changed
+- Package licensing established as proprietary by Owner Decision before first release

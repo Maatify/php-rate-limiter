@@ -8,11 +8,11 @@
     ],
     "homepage": "https://github.com/Maatify/php-rate-limiter",
     "type": "library",
-    "license": "MIT",
+    "license": "proprietary",
     "authors": [
         {
             "name": "Maatify",
-            "email": "support@maatify.com",
+            "email": "support@maatify.dev",
             "homepage": "https://maatify.dev"
         }
     ],

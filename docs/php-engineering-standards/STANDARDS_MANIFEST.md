@@ -8,7 +8,7 @@
 
 ## Adoption Commit
 
-`d1946d800ba508d30b8906daae3db54afca7924a`
+`44c8827095ab4007c355aa21c56b853f3b49d795`
 
 ## Adoption Metadata
 
@@ -51,7 +51,7 @@ docs/php-engineering-standards/standards/profiles/REPOSITORY_GOVERNANCE_PROFILE.
 
 ```text
 docs/php-engineering-standards/standards/packages/PACKAGE_BUILDING_STANDARD.md        version 1.4.0
-docs/php-engineering-standards/standards/packages/COMPOSER_PACKAGE_STANDARD.md       version 1.2.0
+docs/php-engineering-standards/standards/packages/COMPOSER_PACKAGE_STANDARD.md       version 2.0.0
 docs/php-engineering-standards/standards/packages/CI_WORKFLOW_STANDARD.md            version 1.1.0
 docs/php-engineering-standards/standards/packages/LIBRARY_PRESENTATION_STANDARD.md   version 1.0.1
 docs/php-engineering-standards/standards/testing/TESTING_STANDARD.md                 version 1.1.0
@@ -59,7 +59,7 @@ docs/php-engineering-standards/standards/ai/AI_COLLABORATION_WORKFLOW_AR.md     
 docs/php-engineering-standards/standards/GITHUB_PHASE_STACK_WORKFLOW_AR.md           version 2.2.0
 ```
 
-- Standards الناتجة عن `composer-package`: `PACKAGE_BUILDING_STANDARD.md` (1.4.0)، `COMPOSER_PACKAGE_STANDARD.md` (1.2.0)، `CI_WORKFLOW_STANDARD.md` (1.1.0)، `LIBRARY_PRESENTATION_STANDARD.md` (1.0.1)، `TESTING_STANDARD.md` (1.1.0).
+- Standards الناتجة عن `composer-package`: `PACKAGE_BUILDING_STANDARD.md` (1.4.0)، `COMPOSER_PACKAGE_STANDARD.md` (2.0.0)، `CI_WORKFLOW_STANDARD.md` (1.1.0)، `LIBRARY_PRESENTATION_STANDARD.md` (1.0.1)، `TESTING_STANDARD.md` (1.1.0).
 - Standards الناتجة عن `repository-governance`: `AI_COLLABORATION_WORKFLOW_AR.md` (6.0.0)، `GITHUB_PHASE_STACK_WORKFLOW_AR.md` (2.2.0).
 
 لا تُسجَّل أي Candidate Standard مستبعدة canonical ضمن هذه المجموعة النهائية.
