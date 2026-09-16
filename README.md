@@ -19,7 +19,7 @@ PHP library for deterministic, multi-signal rate-limit decisions.
 
 ## Package Status
 
-This package is in pre-release development. It is proprietary software, has no published stable release, and is not currently distributed through Packagist. Repository access does not grant permission to use, modify, or redistribute the software; use requires separate written authorization or a written license agreement from Maatify.
+This package is in pre-release development. It is proprietary software, has no published stable release, and is not currently distributed through Packagist. Repository visibility does not grant open-source or general usage rights; authorized use requires written authorization or an applicable written license agreement from Maatify.
 
 ## Key Features
 

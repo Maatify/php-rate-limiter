@@ -12,4 +12,4 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Initial package metadata and CI quality gate
 
 ### Changed
-- Package licensing set to proprietary by Owner Decision; the previous MIT metadata no longer applies
+- Package licensing established as proprietary by Owner Decision before first release
