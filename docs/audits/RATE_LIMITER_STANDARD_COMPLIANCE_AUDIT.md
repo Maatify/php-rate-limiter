@@ -185,9 +185,9 @@ No `maatify/persistence` dependency is justified by the imported runtime.
 
 ---
 
-## 6. Package bootstrap remediation — STANDARD COMPLIANCE
+## 6. Package bootstrap is complete — STANDARD COMPLIANCE
 
-The raw import was intentionally an implementation baseline. The Finding 1 remediation now establishes the package foundation required by the adopted Standards, pending final verification of the pushed branch and its CI run.
+The raw import was intentionally an implementation baseline. The Finding 1 remediation establishes the package foundation required by the adopted Standards.
 
 The completed package-foundation scope is:
 
@@ -525,7 +525,7 @@ Without new evidence and a separate explicit decision, do not:
 
 ### Work Unit 1 — Package Bootstrap
 
-**Status:** IN VERIFICATION
+**Status:** RESOLVED / CLOSED
 
 **Reason:** STANDARD COMPLIANCE.
 
@@ -544,11 +544,12 @@ The following infrastructure corrections have been established according to the 
 - Repository-owned local parity scripts and `CONTRIBUTING.md` document the same applicable checks.
 - Existing documentation trailing whitespace was removed mechanically so the required whitespace gate can verify the repository.
 
-**Local verification before final push:**
+**Verification:**
 - Latest dependency resolution, strict Composer validation, strict PSR autoload, platform checks, PHPStan max, PHPUnit, and Composer audit passed on PHP 8.5.9.
 - Lowest-supported dependency resolution passed with PHPStan max, PHPUnit, strict PSR autoload, and platform checks.
 - PHP syntax, README example syntax, workflow lint, and whitespace verification passed.
 - PHP 8.4 is covered by the CI matrix; no PHP 8.4 binary is installed in the local environment.
+- GitHub Actions run `35127586714` passed all required jobs, including PHP 8.4 and PHP 8.5 tests and the stable Final Gate, for commit `682ea37b90b4b0b1dde4b8a02198c4427af73d98`.
 
 Dependencies are limited to actual requirements:
 
