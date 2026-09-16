@@ -8,44 +8,56 @@ This audit is intentionally limited to:
 
 1. the code currently imported into `Maatify/php-rate-limiter`;
 2. the locally adopted Applicable Standards Set;
-3. the Production-Validated Reference Module only where needed to establish original behavior or prove Host coupling.
+3. the Production-Validated Reference Module only where needed to establish original behavior, integration reality, or proven Host coupling.
 
-It does **not** choose, invent, or require persistence backends, cache layers, Redis libraries, SQL implementations, or other infrastructure that the current package does not itself own.
+It does **not** choose, invent, or require persistence backends, cache layers, Redis libraries, SQL implementations, framework integrations, new extension models, or other infrastructure that the current package does not itself own.
 
-The governing rule for all work that follows is:
+---
+
+## 1. Non-negotiable extraction rule
 
 ```text
 PRESERVE BY DEFAULT
+```
 
-A runtime change is allowed only for:
+A runtime change is authorized only when at least one of the following is proven:
 
+```text
 1. STANDARD COMPLIANCE
 2. PROVEN HOST DECOUPLING
 3. PROVEN DEFECT / CONTRACT BYPASS
 ```
 
-No implementation should be redesigned merely because a different abstraction appears cleaner.
+Everything else is preserved.
+
+A different design, cleaner abstraction, possible future backend, old package feature, Host implementation, or hypothetical consumer need is **not** sufficient justification for a runtime change.
+
+### Scope Gate
+
+Any proposed task that does not map directly to one of the three authorized reasons above is outside this extraction plan.
+
+It must not be added to a Work Unit, dependency list, package contract, roadmap requirement, or release gate unless it is separately evidenced and explicitly approved.
+
+This rule applies even when the proposed work appears technically useful.
 
 ---
 
-## 1. Audit baseline
-
-Rate Limiter package baseline:
+## 2. Audit baseline
 
 ```text
-Repository: Maatify/php-rate-limiter
+Repository:         Maatify/php-rate-limiter
 Integration branch: draft/first-release
-Baseline commit: 8ef00c7fb2baf0a9bd88b277e69d1aa984150919
-Audit draft: draft/extraction-blueprint
+Baseline commit:    8ef00c7fb2baf0a9bd88b277e69d1aa984150919
+Audit draft:        draft/extraction-blueprint
 ```
 
 The baseline contains the raw import of the Production-Validated Reference Module.
 
-Production reference inspected where comparison was necessary:
+Production reference inspected only where comparison was necessary:
 
 ```text
 Repository: Maatify/athar-platform
-Commit: 6caf3634d5b00d8c3eff285ec36e554c2a9a4a8d
+Commit:     6caf3634d5b00d8c3eff285ec36e554c2a9a4a8d
 ```
 
 The locally adopted Applicable Standards Set remains authoritative, especially:
@@ -58,11 +70,11 @@ The locally adopted Applicable Standards Set remains authoritative, especially:
 
 ---
 
-## 2. Architectural conclusion
+## 3. Architectural conclusion
 
 The imported Production-Validated Reference Module is the implementation baseline.
 
-The extraction must preserve its proven Rate Limiter behavior and convert it into a compliant standalone Composer package.
+The extraction is not a redesign project.
 
 Correct direction:
 
@@ -72,29 +84,25 @@ Production Module
     -> remove proven Host coupling
     -> satisfy adopted package standards
     -> repair only proven defects / contract bypasses
-    -> verify behavior
+    -> verify preserved behavior
     -> prepare release
 ```
 
-Incorrect direction:
+Incorrect directions include:
 
 ```text
-Production Module
-    -> redesign from scratch
-```
-
-or:
-
-```text
-Production Module
-    -> invent new infrastructure dependencies not required by its code
+Production Module -> redesign from scratch
+Production Module -> genericize proven domain behavior
+Production Module -> invent infrastructure dependencies
+Production Module -> import Host implementation because it exists
+Production Module -> restore features from the old standalone package without separate evidence
 ```
 
 ---
 
-## 3. Package-owned behavior to preserve
+## 4. Package-owned behavior and contracts to preserve
 
-The following imported behavior is treated as package-owned behavior and must remain unless a later test proves a defect or an adopted Standard directly requires a structural correction:
+The following imported behavior is package-owned and must remain unless an adopted Standard directly requires a structural correction or a concrete defect is proven:
 
 - K1-K5 signal model;
 - IPv4/IPv6 key strategy;
@@ -108,7 +116,7 @@ The following imported behavior is treated as package-owned behavior and must re
 - fixed budgets;
 - circuit-breaker behavior;
 - explicit failure modes;
-- local fallback behavior;
+- local fallback behavior, except for individually proven defects;
 - secret rotation;
 - default policies:
   - `LoginProtectionPolicy`
@@ -123,7 +131,7 @@ The following imported behavior is treated as package-owned behavior and must re
 
 The package defaults are not removed merely because a Host may override them.
 
-The Production-Validated Reference demonstrates that policies can already be replaced or extended by the Host without deleting the package defaults.
+The Production-Validated Reference demonstrates that package policies can already be replaced or extended without deleting the package defaults.
 
 Therefore:
 
@@ -145,9 +153,9 @@ are part of the imported package policy model and are not, by themselves, eviden
 
 ---
 
-## 4. Current persistence/backend boundary
+## 5. Current storage/backend boundary
 
-The imported package runtime currently exposes storage contracts, including:
+The imported package runtime currently exposes storage contracts:
 
 ```text
 RateLimitStoreInterface
@@ -155,38 +163,33 @@ CorrelationStoreInterface
 CircuitBreakerStoreInterface
 ```
 
-These contracts define the semantics required by the Rate Limiter core.
+These contracts define Rate Limiter semantics.
 
 The current standalone package does **not** contain a concrete Redis adapter, SQL repository, Mongo adapter, or generic Cache implementation.
 
-Therefore this audit makes **no backend selection**.
-
-No backend-specific package, adapter, schema, extension, or Composer dependency is authorized by this audit merely because the former Host used one.
-
-The rule is:
+Therefore:
 
 ```text
-Rate Limiter storage contracts
-        -> remain package-owned
-
-Concrete backend support
-        -> separate implementation decision
-        -> only when explicitly selected
-        -> must satisfy the existing contracts
-        -> must be documented, implemented, and verified before support is claimed
+Rate Limiter storage contracts -> KEEP
+Concrete backend selection      -> OUT OF CURRENT EXTRACTION SCOPE
+Backend-specific dependency     -> NONE INFERRED
 ```
 
-The Package Building Standard makes persistence rules conditional. SQL/PDO/schema requirements are not applicable unless this package actually owns SQL persistence or SQL database behavior.
+No backend-specific package, adapter, schema, extension, or Composer dependency is authorized merely because a former Host used it or because a future consumer might need it.
 
-No `maatify/persistence` dependency is currently justified by the imported Rate Limiter runtime.
+If concrete backend support is considered later, that is a separate evidenced decision and is not a Work Unit in this audit.
+
+The Package Building Standard makes persistence rules conditional. SQL/PDO/schema requirements do not apply unless this package actually owns SQL persistence or SQL database behavior.
+
+No `maatify/persistence` dependency is justified by the imported runtime.
 
 ---
 
-## 5. Package bootstrap is incomplete
+## 6. Package bootstrap is incomplete — STANDARD COMPLIANCE
 
-The raw import was intentionally only an implementation baseline, not a completed Composer package.
+The raw import was intentionally an implementation baseline, not a completed Composer package.
 
-The current repository root still lacks required package infrastructure, including:
+The repository still needs package infrastructure required by the adopted Standards, including:
 
 ```text
 README.md
@@ -209,44 +212,43 @@ PHP:        >= 8.4
 
 `composer.lock` must remain uncommitted for this reusable Composer library.
 
-Dependencies must be declared only when they are required by actual package code or by a mandatory Standard compliance change.
+Dependencies must be declared only when required by actual package code or a mandatory Standard compliance change.
+
+This Work Unit must not alter runtime behavior.
 
 ---
 
-## 6. Proven documentation Host coupling
+## 7. Documentation contains proven Host coupling — HOST DECOUPLING
 
 `src/README.md` still describes the code as part of the Admin Control Panel / monorepo and documents monorepo-style autoloading.
 
-That is no longer correct for the standalone package.
+That is not correct for the standalone package.
 
-The technical content should be preserved where still valid, but package documentation must be reorganized into the standalone repository structure.
+The technical content should be retained where still valid, while package presentation is moved to the standalone repository structure.
 
-Expected direction:
+Required direction:
 
 ```text
-src/README.md
-        -> root README.md content
-
-src/docs/*
-        -> docs/*
+src/README.md -> root README.md content
+src/docs/*    -> docs/*
 ```
 
-Required cleanup:
+Required cleanup is limited to:
 
-- remove Admin Control Panel ownership language;
+- remove Host/monorepo ownership language;
 - remove monorepo installation instructions;
-- document the actual Composer package installation once `composer.json` exists;
+- document the actual Composer installation after `composer.json` exists;
 - retain valid security guarantees;
 - retain valid policy/default behavior;
-- do not introduce new backend claims.
+- make no new backend or integration claims.
 
-This is proven Host decoupling / package presentation work only.
+This is package presentation work, not runtime redesign.
 
 ---
 
-## 7. Exception architecture requires Standards compliance
+## 8. Exception architecture requires Standards compliance
 
-The current package-owned exception is based directly on `RuntimeException`.
+The current package-owned exception extends `RuntimeException` directly.
 
 The adopted Package Building Standard requires package-defined exceptions to use the appropriate stable hierarchy from `maatify/exceptions` and requires a package-owned marker interface extending `Throwable`.
 
@@ -262,13 +264,18 @@ RateLimiter package exceptions
 
 Existing semantic failure behavior must be preserved.
 
-This does not authorize blind catch-all wrapping of infrastructure errors.
+This does not authorize:
 
-This compliance change creates a justified direct dependency on the minimum stable `maatify/exceptions` version that exposes the hierarchy actually used.
+- inventing new failure classifications without evidence;
+- blind catch-all wrapping;
+- swallowing external infrastructure failures;
+- changing failure-mode behavior.
+
+The direct `maatify/exceptions` dependency is justified only because the adopted Standard requires it for package-owned exceptions.
 
 ---
 
-## 8. DTO layer requires Standards compliance
+## 9. DTO form requires Standards compliance
 
 The adopted Package Building Standard requires true DTOs to be:
 
@@ -278,27 +285,30 @@ implements JsonSerializable
 explicit jsonSerialize()
 ```
 
-Current imported DTOs such as `RateLimitContextDTO` are ordinary classes with readonly promoted properties and do not yet satisfy that required DTO form.
+Current imported DTOs do not yet satisfy that required class form.
 
-For every true data snapshot/result DTO:
+For each object currently named `*DTO`, responsibility must first be classified from its actual behavior.
+
+For true data snapshots/results only:
 
 ```text
 existing fields          -> KEEP
 existing meaning         -> KEEP
+existing value semantics -> KEEP
 final readonly           -> APPLY
 JsonSerializable         -> APPLY
 explicit jsonSerialize() -> APPLY
 ```
 
-This correction must not change Rate Limiter behavior or replace typed DTOs with untyped arrays.
+No field, meaning, policy rule, calculation, or orchestration behavior may be changed merely while normalizing DTO form.
 
-Every object under the current DTO namespace must be classified by responsibility before mechanical conversion; only true data snapshots/results remain DTOs.
+Before finalizing a type, implementation must inspect its actual package/production usage so a Standard-driven structural change does not accidentally erase a relied-on behavior.
 
 ---
 
-## 9. `RateLimitRequestDTO` is execution intent and must be reclassified
+## 10. `RateLimitRequestDTO` is execution intent — STANDARD COMPLIANCE
 
-The current `RateLimitRequestDTO` carries execution intent through:
+The current object carries execution intent through:
 
 ```text
 isPreCheck
@@ -306,7 +316,7 @@ isFailure
 isSuccess
 ```
 
-and exposes intent constructors:
+and exposes supported intent factories:
 
 ```text
 checkOnly()
@@ -314,87 +324,96 @@ recordFailure()
 recordSuccess()
 ```
 
-The adopted Standard states that an object representing execution/action intent must not be named a DTO and that Commands are self-validating value objects.
+The adopted Standard states that execution/action intent must not be represented as a DTO and that Command-style execution objects must validate their input contract.
 
-The current public constructor also permits contradictory combinations of the three flags.
+The public constructor also permits contradictory flag combinations.
 
-Required correction:
+Required correction is intentionally minimal:
 
-- preserve the three supported operations;
-- represent the operation as an execution-intent contract, following the adopted naming/type rules;
-- make contradictory intent states impossible;
-- keep business behavior equivalent.
+- preserve the three supported operations and their meaning;
+- preserve cost and policy semantics;
+- classify the object according to its actual responsibility under the adopted Standard;
+- make invalid contradictory execution states impossible;
+- update internal/public call sites consistently;
+- do not split the workflow, invent additional operations, or redesign the Engine as part of this compliance change.
 
-A likely resulting type is a `...Command`, but the implementation phase must apply the adopted naming rule against the actual final responsibility rather than renaming mechanically.
-
-This is Standards compliance, not policy redesign.
+The exact replacement type/name must be selected from the adopted naming rules after inspecting actual usage; this audit does not invent an additional command model beyond what compliance requires.
 
 ---
 
-## 10. Shared Clock integration is already compliant
+## 11. Shared Clock integration is already compliant — PRESERVE
 
-The imported runtime already consumes:
+The imported runtime consumes:
 
 ```text
 Maatify\SharedCommon\Contracts\ClockInterface
 ```
 
-This must be preserved.
+This must remain.
 
-The standalone package therefore has a real direct dependency on the minimum stable `maatify/shared-common` version exposing the used Clock API.
+The standalone package therefore has a real direct dependency on the minimum stable `maatify/shared-common` version exposing the Clock API actually used.
 
-Do not create a package-local Clock abstraction.
+Do not create a package-local Clock abstraction and do not change time behavior during extraction.
 
 ---
 
-## 11. Proven defect: fallback UA double-normalization
+## 12. Fallback UA double-normalization — PROVEN DEFECT
 
-The current Engine normalizes the User-Agent before invoking the local fallback limiter.
-
-The local fallback limiter then normalizes the received value again using a routine that expects raw browser/OS patterns.
-
-This can collapse already-normalized UA information and weaken the intended K2 differentiation during fallback behavior.
-
-Classification:
+The Engine first calls:
 
 ```text
-PROVEN DEFECT / CONTRACT BYPASS
+DeviceIdentityResolver::normalizeUserAgent(raw UA)
 ```
+
+That normalizer returns a reduced lowercase browser representation such as `chrome/123` when it recognizes the browser.
+
+The Engine then passes that already-normalized value into `LocalFallbackLimiter::check()`.
+
+`LocalFallbackLimiter` normalizes the value again using a different routine that expects raw browser/OS patterns such as `Chrome/123`, `Windows`, `Mac OS`, `Linux`, and similar markers.
+
+The second pass therefore can discard browser/platform differentiation and collapse the fallback K2 input.
+
+This is a code-path mismatch inside the imported package itself, not a hypothetical backend concern.
 
 Required correction:
 
-- remove the double-normalization path;
-- preserve the intended UA normalization semantics;
-- add a regression test proving meaningful K2 differentiation;
-- do not redesign `LocalFallbackLimiter` as part of this defect fix.
+- eliminate the double-normalization mismatch using the smallest behavior-preserving fix;
+- preserve the intended K2 fallback distinction;
+- add a regression test for the exact defect;
+- do not redesign `DeviceIdentityResolver` or `LocalFallbackLimiter` beyond what the defect requires.
 
 ---
 
-## 12. Local fallback counter cleanup requires proof before change
+## 13. Local fallback global GC — PROVEN CONTRACT MISMATCH
 
-`LocalFallbackLimiter` periodically clears its static counter collection globally.
+The locked `FAILURE_SEMANTICS.md` states that, while in `DEGRADED_MODE`, local in-memory counters must persist for the entire degraded epoch and must not reset within that epoch as a renewable clean slate.
 
-That deserves verification against the documented degraded-epoch/window guarantees, but it is not automatically classified as a defect.
-
-Current classification:
+`LocalFallbackLimiter` currently performs a global counter reset when its hourly GC threshold is crossed:
 
 ```text
-VERIFY WITH TEST — NO CHANGE AUTHORIZED YET
+self::$counters = []
 ```
 
-Required order:
+That reset is independent of the active degraded epoch.
 
-1. characterize the current timing behavior;
-2. compare it with the locked failure semantics;
-3. modify it only if an observable contract violation is proven.
+Therefore an active degraded epoch can cross the GC boundary and lose counters before the epoch ends.
 
-No speculative cleanup algorithm is authorized by this audit.
+This directly conflicts with the locked anti-reset guarantee.
+
+Required correction:
+
+- preserve the existing degraded caps and windows;
+- remove only the contract-breaking reset behavior or replace it with the minimum cleanup mechanism that cannot clear still-valid degraded state;
+- add regression coverage proving active degraded state is not reset by cleanup;
+- do not redesign the fallback model.
+
+The implementation shape is not dictated by this audit; the locked behavior is.
 
 ---
 
-## 13. Failure semantics are locked behavior
+## 14. Failure semantics are locked — PRESERVE
 
-The imported `FAILURE_SEMANTICS.md` explicitly defines storage failures, atomicity failures, and internal logic failures, and defines package behavior for:
+The imported `FAILURE_SEMANTICS.md` explicitly defines storage failures, atomicity failures, internal logic failures, and the package behavior for:
 
 ```text
 FAIL_CLOSED
@@ -402,13 +421,13 @@ FAIL_OPEN
 DEGRADED_MODE
 ```
 
-It also explicitly states that failure semantics are security-critical and must not be changed implicitly.
+It states that these semantics are security-critical and must not be altered implicitly.
 
-Therefore broad failure handling inside the current Engine must not be narrowed, rewritten, or "cleaned up" merely for stylistic reasons.
+Therefore broad failure handling inside the current Engine must not be narrowed, rewritten, or cleaned up merely for style.
 
-Any change to failure-mode behavior requires independent evidence, tests, and explicit security/versioning treatment.
+Any additional change to failure-mode behavior requires separate concrete evidence and explicit security/versioning treatment.
 
-Decision for the current extraction pass:
+Current extraction decision:
 
 ```text
 PRESERVE
@@ -416,31 +435,34 @@ PRESERVE
 
 ---
 
-## 14. Host-specific code is evidence, not package scope
+## 15. Host-specific code is evidence, not package scope
 
-Host-specific implementations may be inspected only to answer questions such as:
+Host-specific code may be inspected only to establish facts such as:
 
-- does the current package contract support replacement?
-- is a behavior actually Host-specific?
-- is there a real integration constraint that the package must preserve?
+- whether the package already supports replacement;
+- whether a behavior is genuinely Host-specific;
+- whether extraction would break a real production integration;
+- whether a claimed production behavior is actually exercised.
 
-They are not automatically candidates for import.
+Host-specific classes are not candidates for import merely because they exist.
 
-In particular, this audit does not import or prescribe Host infrastructure simply because it was used by the Production-Validated Reference application.
+No Host adapter, policy override, pipeline override, cache implementation, backend implementation, or application infrastructure enters package scope without a separate package-owned requirement.
 
-The package scope is determined by its own Rate Limiter responsibilities and adopted Standards.
+This audit creates no future extension-refactor Work Unit from Host code.
 
 ---
 
-## 15. Characterization tests must precede behavior-affecting refactoring
+## 16. Characterization before behavior-affecting changes
 
-Before changing runtime behavior, the package needs characterization coverage for the imported security model.
+Before changing runtime code under Standard compliance or proven defect repair, characterization/regression coverage must protect the existing supported behavior that surrounds the change.
 
-Coverage should be derived from actual package behavior and include, where applicable:
+Coverage must be based on actual imported behavior, not an imagined feature matrix.
+
+Relevant existing capabilities include, where exercised by the package:
 
 ```text
 policy/default values
-K1-K5 key behavior
+K1-K5 behavior
 IPv6 hierarchy
 decay
 budgets
@@ -455,48 +477,57 @@ local fallback limits
 retry-after
 ```
 
-The goal for all behavior not classified as a proven defect is:
+The governing assertion for every non-defective behavior is:
 
 ```text
 same logical input sequence
-        -> same observable Rate Limiter behavior
+    -> same observable Rate Limiter behavior
 ```
 
-Production Host tests may be used as behavioral evidence, but HTTP/Auth/application-specific assertions should not be copied blindly into this standalone package.
+Production Host tests may be used only as evidence of existing behavior. Host HTTP/Auth/application orchestration must not be imported into package tests unless it is itself part of the package contract, which is not currently established.
 
-The adopted Testing Standard's Consumer Verification Harness requirement remains applicable at package-readiness time.
+The Consumer Verification Harness required by the adopted Testing Standard remains a package-readiness requirement.
 
 ---
 
-## 16. Forbidden extraction shortcuts
+## 17. Forbidden extraction expansion
 
-Without new evidence and explicit justification, do not:
+Without new evidence and a separate explicit decision, do not:
 
 ```text
-- remove production presets;
-- convert all thresholds into Host configuration;
+- remove or weaken production presets;
+- convert package defaults into Host configuration merely for flexibility;
 - remove login/otp/api-heavy policy identities;
-- invent interfaces for every concrete class;
+- invent interfaces for concrete classes without a real runtime replaceability need;
 - reduce the Engine to a generic counter utility;
 - change failure semantics;
 - remove local fallback behavior;
 - change the K1-K5 model;
-- change penalty/decay/budget rules merely for architectural aesthetics;
+- change penalty/decay/budget rules for architectural aesthetics;
 - replace this core with the old maatify/rate-limiter implementation;
+- port features from the old standalone package during this extraction audit;
 - import Host-specific App* classes as package defaults;
-- claim support for Redis, SQL, MongoDB, Cache, or any other backend without an explicit implementation decision and verification;
-- add an infrastructure dependency simply because the Production Host used it.
+- import Host infrastructure because the Host uses it;
+- choose Redis, SQL, MongoDB, Cache, or another backend;
+- add persistence/backend/cache dependencies;
+- add backend adapters;
+- create a Redis or Cache package as part of this project;
+- create a new extension architecture from hypothetical consumer needs;
+- add a Work Unit for a capability that is not required by current code or an adopted Standard;
+- convert a possible future improvement into a release blocker.
 ```
 
 ---
 
-## 17. Work units
+## 18. Authorized Work Units only
 
 ### Work Unit 1 — Package Bootstrap
 
+**Reason:** STANDARD COMPLIANCE.
+
 No runtime behavior change.
 
-Create/complete only package-level infrastructure required by the adopted Standards:
+Create/complete only the package infrastructure required by the adopted Standards:
 
 ```text
 composer.json
@@ -509,53 +540,40 @@ CI workflow
 docs relocation
 ```
 
-Composer dependencies must be based on actual code:
+Dependencies are limited to actual requirements:
 
-- `maatify/shared-common` because the imported runtime consumes `ClockInterface`;
-- `maatify/exceptions` when the exception-compliance change is implemented;
-- no persistence/cache/backend dependency without separate evidence and decision.
+- `maatify/shared-common` because runtime code already consumes `ClockInterface`;
+- `maatify/exceptions` as required for the package-owned exception compliance change;
+- nothing else unless separately proven and approved.
 
-### Work Unit 2 — Characterization Tests
+### Work Unit 2 — Characterization / Regression Protection
 
-Freeze current non-defective Rate Limiter behavior before runtime compliance changes.
+**Reason:** stability protection for the imported production behavior.
 
-### Work Unit 3 — Runtime Standards Compliance
+Protect the actual existing behavior needed before Work Unit 3 changes runtime structure or fixes proven defects.
 
-Under characterization coverage:
+Do not use this Work Unit to invent new features or backend support.
+
+### Work Unit 3 — Runtime Compliance + Proven Defects
+
+**Reasons:** STANDARD COMPLIANCE and PROVEN DEFECTS only.
+
+Authorized items:
 
 ```text
-DTO classification/compliance
-RateLimitRequest execution-intent correction
+true DTO classification/form compliance
+RateLimitRequest execution-intent compliance
 maatify/exceptions integration
 PHP 8.4 / PHPStan max compliance
-proven fallback UA double-normalization fix
+fallback UA double-normalization defect
+fallback degraded-state GC contract mismatch
 ```
 
-No policy redesign.
+No other runtime redesign is authorized by this audit.
 
-### Work Unit 4 — Storage Adapter Decision, only if needed
+### Work Unit 4 — Consumer Verification / Release Readiness
 
-This is **not pre-decided** by this audit.
-
-If the package needs one or more concrete storage adapters, each adapter/backend must be separately selected from an actual package requirement.
-
-For every selected backend:
-
-- implement the existing Rate Limiter storage contracts;
-- preserve their atomicity/TTL/state semantics;
-- declare only the dependencies actually needed;
-- provide backend-appropriate real verification;
-- document only support that actually exists.
-
-If no concrete adapter is selected for a given release phase, no backend is invented merely to complete the architecture diagram.
-
-### Work Unit 5 — Extension Review, only after characterization
-
-Inspect existing extension seams only where a real consumer requirement demonstrates a limitation.
-
-No new abstraction should be introduced without proven runtime replaceability need.
-
-### Work Unit 6 — Consumer Verification / Release Readiness
+**Reason:** adopted Testing / Composer / CI / Presentation Standards.
 
 Before the first externally published RC:
 
@@ -569,32 +587,35 @@ PHPStan max
 release-facing docs
 ```
 
-Any persistence/backend verification in this stage applies only to backends actually claimed by the package.
+No persistence/backend verification applies unless backend support has been separately added through a later explicitly approved scope decision.
 
 ---
 
-## 18. Current decision summary
+## 19. Decision summary
 
 ```text
 Production behavior/defaults             -> PRESERVE
 Existing Rate Limiter contracts          -> PRESERVE
+Storage contracts                        -> PRESERVE
+Concrete backend/adapters                -> OUT OF CURRENT SCOPE
 ClockInterface integration               -> PRESERVE
 Failure semantics                        -> PRESERVE
-Host/monorepo documentation              -> REMOVE / REWRITE
+Host/monorepo documentation              -> REMOVE / REWRITE TO PACKAGE CONTEXT
 Package root/bootstrap                    -> BUILD TO STANDARD
 Package exception hierarchy              -> FIX TO STANDARD
 True DTO class form                       -> FIX TO STANDARD
-RateLimitRequestDTO responsibility/name  -> FIX TO STANDARD
-Fallback UA double-normalization          -> FIX AS PROVEN DEFECT
-Fallback GC behavior                      -> TEST BEFORE ANY CHANGE
-Concrete persistence/backend choice       -> NOT DECIDED BY THIS AUDIT
+RateLimitRequestDTO responsibility/type  -> MINIMUM STANDARD FIX
+Fallback UA double-normalization          -> FIX PROVEN DEFECT
+Fallback global GC reset                  -> FIX PROVEN CONTRACT MISMATCH
+New extension architecture               -> OUT OF CURRENT SCOPE
+Old standalone package feature import     -> OUT OF CURRENT SCOPE
 Redis/Cache/SQL/Mongo dependency          -> NONE INFERRED
 ```
 
-The extraction principle remains:
+The extraction principle is final for this audit:
 
 ```text
 Preserve what the Rate Limiter already owns.
-Change only what the Standards, proven Host decoupling, or a proven defect require.
-Do not create dependencies or architecture from scenarios that do not exist in the package.
+Change only what the adopted Standards, proven Host decoupling, or a proven defect require.
+Do not create dependencies, backends, abstractions, Work Units, or release blockers from scenarios that do not exist in the package.
 ```
