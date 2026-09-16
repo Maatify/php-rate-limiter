@@ -4,8 +4,8 @@ declare(strict_types=1);
 
 namespace Maatify\RateLimiter\Exception;
 
-use RuntimeException;
+use Maatify\Exceptions\Exception\Validation\InvalidArgumentMaatifyException;
 
-class RateLimiterException extends RuntimeException
+class RateLimiterException extends InvalidArgumentMaatifyException implements RateLimiterExceptionInterface
 {
 }
