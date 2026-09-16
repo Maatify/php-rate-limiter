@@ -1,6 +1,14 @@
-# Maatify RateLimiter Module
+<div align="center">
 
-A standalone, contract-compliant Rate Limiting library for the Admin Control Panel.
+# Maatify Rate Limiter
+
+[![Latest Stable Version](https://poser.pugx.org/maatify/php-rate-limiter/v)](https://packagist.org/packages/maatify/php-rate-limiter)
+[![Total Downloads](https://poser.pugx.org/maatify/php-rate-limiter/downloads)](https://packagist.org/packages/maatify/php-rate-limiter)
+[![License](https://poser.pugx.org/maatify/php-rate-limiter/license)](https://packagist.org/packages/maatify/php-rate-limiter)
+
+A standalone, contract-compliant Rate Limiting library.
+
+</div>
 
 ## Features
 
@@ -12,14 +20,10 @@ A standalone, contract-compliant Rate Limiting library for the Admin Control Pan
 
 ## Installation
 
-This module is part of the `Maatify` monorepo. Ensure it is autoloaded via `composer.json`.
+Install via Composer:
 
-```json
-"autoload": {
-    "psr-4": {
-        "Maatify\\RateLimiter\\": "Modules/RateLimiter/"
-    }
-}
+```bash
+composer require maatify/php-rate-limiter
 ```
 
 ## Usage
@@ -88,8 +92,26 @@ if ($result->decision !== RateLimitResultDTO::DECISION_ALLOW) {
 - `CircuitBreakerStoreInterface`: Persistence for circuit breaker state.
 - `BlockPolicyInterface`: Definition of rules (Thresholds, Budgets).
 
+## Documentation
+
+Full architectural decisions, infrastructure specifications, and policy rules can be found in the `docs/` directory.
+
 ## Security Notes
 
 1.  **Do NOT weaken policies**: Default thresholds are security constants.
 2.  **Deterministic Inputs**: Ensure IP and UA inputs are raw; normalization is handled internally.
 3.  **Failure Signals**: Monitor the `FailureSignalEmitterInterface` for critical alerts (e.g., Re-entry Violations).
+
+## 👤 Author
+
+Engineered by **Mohamed Abdulalim** ([@megyptm](https://github.com/megyptm))<br>
+Backend Lead & Technical Architect<br>
+[https://www.maatify.dev](https://www.maatify.dev)
+
+---
+
+<div align="center">
+
+[Built with ❤️ by Maatify.dev — Unified Ecosystem for Modern PHP Libraries](https://www.maatify.dev)
+
+</div>

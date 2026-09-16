@@ -1,0 +1,45 @@
+{
+    "name": "maatify/php-rate-limiter",
+    "description": "A standalone, contract-compliant Rate Limiting library.",
+    "keywords": [
+        "php",
+        "maatify",
+        "rate-limiter"
+    ],
+    "homepage": "https://maatify.dev",
+    "type": "library",
+    "license": "MIT",
+    "authors": [
+        {
+            "name": "Mohamed Abdulalim",
+            "email": "support@maatify.com",
+            "homepage": "https://maatify.dev"
+        }
+    ],
+    "require": {
+        "php": ">=8.4",
+        "maatify/shared-common": "^1.0"
+    },
+    "require-dev": {
+        "phpstan/phpstan": "^2.0",
+        "phpunit/phpunit": "^11.5"
+    },
+    "autoload": {
+        "psr-4": {
+            "Maatify\\RateLimiter\\": "src/"
+        }
+    },
+    "autoload-dev": {
+        "psr-4": {
+            "Maatify\\RateLimiter\\Tests\\": "tests/"
+        }
+    },
+    "scripts": {
+        "test": "vendor/bin/phpunit",
+        "phpstan": "vendor/bin/phpstan analyse"
+    },
+    "config": {
+        "sort-packages": true,
+        "allow-plugins": {}
+    }
+}

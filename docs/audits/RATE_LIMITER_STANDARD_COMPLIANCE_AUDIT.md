@@ -523,27 +523,32 @@ Without new evidence and a separate explicit decision, do not:
 
 ### Work Unit 1 — Package Bootstrap
 
+**Status:** RESOLVED / CLOSED
+
 **Reason:** STANDARD COMPLIANCE.
 
-No runtime behavior change.
+No runtime behavior change was made.
 
-Create/complete only the package infrastructure required by the adopted Standards:
+The following infrastructure has been established according to the adopted Standards:
 
-```text
-composer.json
-README.md
-CHANGELOG.md
-RATE_LIMITER_PACKAGE_REFERENCE.md
-phpstan.neon
-test/bootstrap infrastructure
-CI workflow
-docs relocation
-```
+- `composer.json` created (Package: `maatify/php-rate-limiter`, PHP `>=8.4`, `maatify/shared-common` dependency). `maatify/exceptions` was noted but intentionally left for WU3 where it is actually used.
+- `README.md` relocated to root, visually updated and unowned backend claims removed.
+- `CHANGELOG.md` created with Unreleased template.
+- `docs/RATE_LIMITER_PACKAGE_REFERENCE.md` renamed from `ARCHITECTURE.md` and unowned backend claims removed.
+- `phpstan.neon` configured to max (level 9) with zero suppressions.
+- `phpunit.xml` and `tests/Unit/PackageStructureTest.php` created for initial test infrastructure.
+- `CI workflow` (`.github/workflows/ci.yml`) implemented covering Composer, PHPStan, PHPUnit, and syntax validation with stable final gate.
+- `docs/` relocation successfully completed without loss of valid domain documentation.
+
+**Verification run:**
+- `composer validate --strict` (Passed)
+- `vendor/bin/phpstan analyse` (4 errors detected; intentional runtime compliance debt exposed and deferred to Work Unit 3)
+- `vendor/bin/phpunit` (Passed)
 
 Dependencies are limited to actual requirements:
 
 - `maatify/shared-common` because runtime code already consumes `ClockInterface`;
-- `maatify/exceptions` as required for the package-owned exception compliance change;
+- `maatify/exceptions` as required for the package-owned exception compliance change (Noted for WU3);
 - nothing else unless separately proven and approved.
 
 ### Work Unit 2 — Characterization / Regression Protection

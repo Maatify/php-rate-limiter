@@ -40,7 +40,7 @@ Behavioral rules are specified in:
 - Minimal integration burden for host applications
 
 ### 1.3 Engineering Goals
-- Storage-agnostic core: works with PDO, Redis, MongoDB
+- Storage-agnostic core
 - Library-first structure: safe extraction into a standalone package
 - DTO-first public API: no arrays in public contracts
 - Clear boundaries between Engine, Policy, Penalty, and Store (testability and replaceability)
@@ -199,10 +199,7 @@ The module MUST NOT store raw fingerprint components.
 ### 4.7 Infrastructure (Drivers)
 **Location:** `Infrastructure/`
 
-Drivers implement store contracts for:
-- Redis
-- MongoDB
-- PDO
+Drivers implement store contracts for the required persistence layer.
 
 **Infrastructure rules:**
 - Drivers MUST provide deterministic, bounded behavior
