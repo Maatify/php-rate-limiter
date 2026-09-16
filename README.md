@@ -6,7 +6,7 @@
 
 [![Package Status](https://img.shields.io/badge/status-pre--release%20development-orange.svg)](#package-status)
 [![PHP 8.4+](https://img.shields.io/badge/PHP-8.4%2B-777BB4.svg)](composer.json)
-[![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](LICENSE)
+[![License: Proprietary](https://img.shields.io/badge/License-Proprietary-red.svg)](LICENSE)
 [![Maatify Ecosystem](https://img.shields.io/badge/Maatify-Ecosystem-blueviolet)](https://github.com/Maatify)
 [![Changelog](https://img.shields.io/badge/Changelog-View-blue.svg)](CHANGELOG.md)
 [![Package Reference](https://img.shields.io/badge/Reference-Read-blue.svg)](RATE_LIMITER_PACKAGE_REFERENCE.md)
@@ -19,7 +19,7 @@ PHP library for deterministic, multi-signal rate-limit decisions.
 
 ## Package Status
 
-This package is in pre-release development. It has no published stable release and is not currently distributed through Packagist. Until an approved distribution is published, access is through this repository.
+This package is in pre-release development. It is proprietary software, has no published stable release, and is not currently distributed through Packagist. Repository access does not grant permission to use, modify, or redistribute the software; use requires separate written authorization or a written license agreement from Maatify.
 
 ## Key Features
 
@@ -36,7 +36,7 @@ This package is in pre-release development. It has no published stable release a
 
 ## Installation
 
-The package is not yet available through a published Composer registry. For development, use this repository as the Composer package source according to your consumer project's repository policy. Published installation instructions will be added when distribution is approved.
+The package is not yet available through a published Composer registry. Authorized development consumers may use this repository as the Composer package source according to their project repository policy and the applicable written authorization or license agreement. Published installation instructions will be added when distribution is approved.
 
 ## Usage
 
@@ -131,7 +131,7 @@ The repository quality gate covers strict Composer validation, dependency compat
 
 ## License
 
-MIT. See [LICENSE](LICENSE).
+Proprietary. All rights reserved. See [LICENSE](LICENSE).
 
 ## 👤 Author
 
