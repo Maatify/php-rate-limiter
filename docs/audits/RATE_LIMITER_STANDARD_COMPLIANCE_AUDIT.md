@@ -63,7 +63,7 @@ Commit:     6caf3634d5b00d8c3eff285ec36e554c2a9a4a8d
 The locally adopted Applicable Standards Set remains authoritative, especially:
 
 - `PACKAGE_BUILDING_STANDARD.md` v1.4.0
-- `COMPOSER_PACKAGE_STANDARD.md` v1.2.0
+- `COMPOSER_PACKAGE_STANDARD.md` v2.0.0
 - `TESTING_STANDARD.md` v1.1.0
 - `CI_WORKFLOW_STANDARD.md` v1.1.0
 - `LIBRARY_PRESENTATION_STANDARD.md` v1.0.1

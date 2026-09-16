@@ -5,7 +5,7 @@
 ## Standard Metadata
 
 - **Standard ID:** `std-composer-package`
-- **Standard Version:** `1.2.0`
+- **Standard Version:** `2.0.0`
 - **Standard Version Format:** `MAJOR.MINOR.PATCH`
 
 This document defines the canonical `composer.json` contract for standalone, reusable PHP libraries in the Maatify ecosystem.
@@ -401,7 +401,7 @@ The canonical organization author entry is:
 "authors": [
   {
     "name": "Maatify",
-    "email": "support@maatify.com",
+    "email": "support@maatify.dev",
     "homepage": "https://maatify.dev"
   }
 ]
@@ -1055,7 +1055,7 @@ This template contains no empty fields:
   "authors": [
     {
       "name": "Maatify",
-      "email": "support@maatify.com",
+      "email": "support@maatify.dev",
       "homepage": "https://maatify.dev"
     }
   ],
