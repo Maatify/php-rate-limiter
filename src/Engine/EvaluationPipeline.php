@@ -85,7 +85,10 @@ class EvaluationPipeline
         $ephemeralState = $device->fingerprintHash
             ? $this->ephemeralBucket->check($context, $device->fingerprintHash)
             : null;
-        $isEphemeral = $ephemeralState?->isEphemeral ?? false;
+        $isEphemeral = false;
+        if ($ephemeralState !== null) {
+            $isEphemeral = $ephemeralState->isEphemeral;
+        }
 
         if ($isEphemeral) {
             unset($effectiveKeysV2['k3'], $effectiveKeysV2['k5']);
@@ -418,7 +421,7 @@ class EvaluationPipeline
                 }
             }
 
-            if ($shouldCount && $keys['k4'] !== null) {
+            if ($shouldCount) {
                 $this->budgetTracker->increment($keys['k4']);
                 if ($this->budgetTracker->isExceeded($keys['k4'], $config->threshold)) {
                     $newMaxLevel = max($newMaxLevel, $config->block_level);
@@ -449,11 +452,13 @@ class EvaluationPipeline
                 if (isset($keys['k2'])) {
                     $this->store->block($keys['k2'], $newMaxLevel, $duration);
                 }
-                if (isset($keys['k3']) && $device->confidence !== 'LOW') {
-                    $this->store->block($keys['k3'], $newMaxLevel, $duration);
-                } elseif (isset($keys['k3']) && $device->confidence === 'LOW') {
-                    if (isset($keys['k2'])) {
-                        $this->store->block($keys['k2'], $newMaxLevel, $duration);
+                if (isset($keys['k3'])) {
+                    if ($device->confidence !== 'LOW') {
+                        $this->store->block($keys['k3'], $newMaxLevel, $duration);
+                    } else {
+                        if (isset($keys['k2'])) {
+                            $this->store->block($keys['k2'], $newMaxLevel, $duration);
+                        }
                     }
                 }
             }

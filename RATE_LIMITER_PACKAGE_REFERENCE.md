@@ -7,7 +7,7 @@
 **Change Class:** Adversarial Hardening Alignment
 **Location:** `Modules/RateLimiter` (library-first)
 
-This document explains **why** the RateLimiter module is designed the way it is.  
+This document explains **why** the RateLimiter module is designed the way it is.
 It is an architectural contract intended to prevent accidental weakening, incorrect refactors, or scope creep.
 
 Behavioral rules are specified in:
@@ -40,7 +40,7 @@ Behavioral rules are specified in:
 - Minimal integration burden for host applications
 
 ### 1.3 Engineering Goals
-- Storage-agnostic core: works with PDO, Redis, MongoDB
+- Storage-agnostic core
 - Library-first structure: safe extraction into a standalone package
 - DTO-first public API: no arrays in public contracts
 - Clear boundaries between Engine, Policy, Penalty, and Store (testability and replaceability)
@@ -61,7 +61,7 @@ Behavioral rules are specified in:
 ## 3. Architectural Principles (Non-Negotiable)
 
 ### 3.1 Multi-Signal Decisions (No Single-Signal Security)
-Decisions MUST never rely on a single signal (e.g., IP-only).  
+Decisions MUST never rely on a single signal (e.g., IP-only).
 The module combines:
 - IP scope
 - User-Agent
@@ -199,10 +199,7 @@ The module MUST NOT store raw fingerprint components.
 ### 4.7 Infrastructure (Drivers)
 **Location:** `Infrastructure/`
 
-Drivers implement store contracts for:
-- Redis
-- MongoDB
-- PDO
+Drivers implement store contracts for the required persistence layer.
 
 **Infrastructure rules:**
 - Drivers MUST provide deterministic, bounded behavior
@@ -295,5 +292,5 @@ Composer autoload is expected to map:
 
 ---
 
-**This document is authoritative.  
+**This document is authoritative.
 Do not “simplify” this module by removing multi-signal logic, device awareness, bounded state rules, progressive blocking, caps, gates, and determinism.**

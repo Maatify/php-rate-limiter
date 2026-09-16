@@ -206,7 +206,7 @@ IP-only signals are advisory only.
 
 ### Decay Rules
 
-OTP follows `DECISION_MATRIX.md` decay rules (no custom OTP-only decay in policies).  
+OTP follows `DECISION_MATRIX.md` decay rules (no custom OTP-only decay in policies).
 (OTP strictness is driven by higher score deltas + budget + thresholds.)
 
 ---
@@ -314,5 +314,5 @@ Policy identifiers MUST remain stable.
 
 ---
 
-**This document is authoritative.  
+**This document is authoritative.
 Any deviation requires explicit approval and versioning.**

@@ -185,20 +185,22 @@ No `maatify/persistence` dependency is justified by the imported runtime.
 
 ---
 
-## 6. Package bootstrap is incomplete — STANDARD COMPLIANCE
+## 6. Package bootstrap is complete — STANDARD COMPLIANCE
 
-The raw import was intentionally an implementation baseline, not a completed Composer package.
+The raw import was intentionally an implementation baseline. The Finding 1 remediation establishes the package foundation required by the adopted Standards.
 
-The repository still needs package infrastructure required by the adopted Standards, including:
+The completed package-foundation scope is:
 
 ```text
 README.md
 CHANGELOG.md
 RATE_LIMITER_PACKAGE_REFERENCE.md
 composer.json
+LICENSE
 phpstan.neon
 tests/
 CI workflow
+local parity scripts and documentation
 ```
 
 The selected package identity remains:
@@ -207,7 +209,7 @@ The selected package identity remains:
 Repository: php-rate-limiter
 Composer:   maatify/php-rate-limiter
 Namespace:  Maatify\RateLimiter\
-PHP:        >= 8.4
+PHP:        ^8.4
 ```
 
 `composer.lock` must remain uncommitted for this reusable Composer library.
@@ -220,24 +222,17 @@ This Work Unit must not alter runtime behavior.
 
 ## 7. Documentation contains proven Host coupling — HOST DECOUPLING
 
-`src/README.md` still describes the code as part of the Admin Control Panel / monorepo and documents monorepo-style autoloading.
+`RATE_LIMITER_PACKAGE_REFERENCE.md` still contains proven Host-coupling evidence, describing the code location as `Location: Modules/RateLimiter` and documenting monorepo-style autoloading: `Composer autoload is expected to map: Maatify\RateLimiter\ -> Modules/RateLimiter`.
 
 That is not correct for the standalone package.
 
-The technical content should be retained where still valid, while package presentation is moved to the standalone repository structure.
-
-Required direction:
-
-```text
-src/README.md -> root README.md content
-src/docs/*    -> docs/*
-```
+The technical content should be retained where still valid. Host decoupling remains open and must not be implemented in this task.
 
 Required cleanup is limited to:
 
 - remove Host/monorepo ownership language;
-- remove monorepo installation instructions;
-- document the actual Composer installation after `composer.json` exists;
+- remove stale location references (`Modules/RateLimiter`);
+- remove stale monorepo autoloading references;
 - retain valid security guarantees;
 - retain valid policy/default behavior;
 - make no new backend or integration claims.
@@ -523,27 +518,35 @@ Without new evidence and a separate explicit decision, do not:
 
 ### Work Unit 1 — Package Bootstrap
 
+**Status:** RESOLVED / CLOSED
+
 **Reason:** STANDARD COMPLIANCE.
 
-No runtime behavior change.
+No runtime behavior change was made.
 
-Create/complete only the package infrastructure required by the adopted Standards:
+The following infrastructure corrections have been established according to the adopted Standards:
 
-```text
-composer.json
-README.md
-CHANGELOG.md
-RATE_LIMITER_PACKAGE_REFERENCE.md
-phpstan.neon
-test/bootstrap infrastructure
-CI workflow
-docs relocation
-```
+- `composer.json` corrected for canonical package metadata, support URLs, `^8.4`, runtime extensions, stable dependency policy, scripts, and Composer configuration.
+- `LICENSE` added for the declared MIT license.
+- `README.md` corrected to show the pre-release repository-access state, Maatify presentation identity, and the actual public constructors/API.
+- `CHANGELOG.md` kept factual with no synthetic release comparison.
+- `RATE_LIMITER_PACKAGE_REFERENCE.md` moved to the repository root as the single canonical Package Reference.
+- `phpstan.neon` configured at `level: max` with zero suppressions.
+- `phpunit.xml` and `tests/Unit/PackageStructureTest.php` created for initial test infrastructure.
+- `CI workflow` (`.github/workflows/ci.yml`) corrected for immutable actions, timeouts, concurrency, latest and lowest dependency modes, PHP 8.4/8.5 tests, platform checks, PHPStan max, audit, workflow lint, syntax, examples, whitespace, and a stable final gate.
+- Repository-owned local parity scripts and `CONTRIBUTING.md` document the same applicable checks.
+- Existing documentation trailing whitespace was removed mechanically so the required whitespace gate can verify the repository.
+
+**Verification:**
+- Latest dependency resolution, strict Composer validation, strict PSR autoload, platform checks, PHPStan max, PHPUnit, and Composer audit passed on PHP 8.5.9.
+- Lowest-supported dependency resolution passed with PHPStan max, PHPUnit, strict PSR autoload, and platform checks.
+- PHP syntax, README example syntax, workflow lint, and whitespace verification passed.
+- PHP 8.4 is covered by the CI matrix; no PHP 8.4 binary is installed in the local environment.
+- GitHub Actions run `35127586714` passed all required jobs, including PHP 8.4 and PHP 8.5 tests and the stable Final Gate, for commit `682ea37b90b4b0b1dde4b8a02198c4427af73d98`.
 
 Dependencies are limited to actual requirements:
 
 - `maatify/shared-common` because runtime code already consumes `ClockInterface`;
-- `maatify/exceptions` as required for the package-owned exception compliance change;
 - nothing else unless separately proven and approved.
 
 ### Work Unit 2 — Characterization / Regression Protection
