@@ -279,7 +279,7 @@ Reason: STANDARD COMPLIANCE
 * all implement `JsonSerializable`;
 * all have explicit `jsonSerialize()`;
 * fields, defaults, constants, methods and value semantics were preserved;
-* `RateLimitRequestDTO` was deliberately excluded and remains open under Finding 10.
+* `RateLimitRequestDTO` was deliberately excluded and remains open under Finding 5.
 ---
 
 ## 10. `RateLimitRequestDTO` is execution intent — STANDARD COMPLIANCE

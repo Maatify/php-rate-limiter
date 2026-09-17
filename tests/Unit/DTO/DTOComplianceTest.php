@@ -87,40 +87,134 @@ class DTOComplianceTest extends TestCase
         $this->assertTrue($blockResult->isBlocked());
     }
 
-    public function testSerializationContract(): void
+    /**
+     * @dataProvider dtoSerializationProvider
+     * @param array<int, string> $expectedKeys
+     * @param array<string, mixed> $expectedValues
+     */
+    public function testCompleteDTOSerialization(\JsonSerializable $dto, array $expectedKeys, array $expectedValues): void
     {
-        $thresholds = new ScoreThresholdsDTO(10, 20, 30);
-        $policyThresholds = new PolicyThresholdsDTO($thresholds);
-
-        $json = json_encode($policyThresholds, JSON_THROW_ON_ERROR);
+        $json = json_encode($dto, JSON_THROW_ON_ERROR);
         $decoded = json_decode($json, true, 512, JSON_THROW_ON_ERROR);
 
         $this->assertIsArray($decoded);
-        $this->assertArrayHasKey('k1', $decoded);
-        $this->assertIsArray($decoded['k1']);
-        $this->assertArrayHasKey('l1', $decoded['k1']);
-        $this->assertArrayHasKey('l2', $decoded['k1']);
-        $this->assertArrayHasKey('l3', $decoded['k1']);
-        $this->assertSame(10, $decoded['k1']['l1']);
-        $this->assertSame(20, $decoded['k1']['l2']);
-        $this->assertSame(30, $decoded['k1']['l3']);
 
+        // Assert exactly the existing public data-field keys
+        $this->assertEqualsCanonicalizing($expectedKeys, array_keys($decoded), 'Serialized keys must exactly match public properties');
+
+        // Assert no key is missing and no extra key is introduced
+        $this->assertSame(count($expectedKeys), count($decoded));
+
+        // Assert values survive unchanged, including nulls and nested arrays
+        foreach ($expectedValues as $key => $expectedValue) {
+            if (is_array($expectedValue) && isset($decoded[$key])) {
+                $this->assertEquals($expectedValue, $decoded[$key], "Array/nested value for $key should match");
+            } else {
+                $this->assertSame($expectedValue, $decoded[$key], "Value for $key should match exactly");
+            }
+        }
+    }
+
+    /**
+     * @return array<string, array{0: \JsonSerializable, 1: array<int, string>, 2: array<string, mixed>}>
+     */
+    public static function dtoSerializationProvider(): array
+    {
         $contextMetadata = new RateLimitContextMetadataDTO('test_reason', 'test_scope');
-        $metadata = new RateLimitMetadataDTO('test_signal', 'test_cause', $contextMetadata);
+        $metadata = new RateLimitMetadataDTO('test_signal', 'test_cause', clone $contextMetadata);
+        $scoreThresholds = new ScoreThresholdsDTO(10, 20, 30);
 
-        $json = json_encode($metadata, JSON_THROW_ON_ERROR);
-        $decoded = json_decode($json, true, 512, JSON_THROW_ON_ERROR);
-
-        $this->assertIsArray($decoded);
-        $this->assertArrayHasKey('signal', $decoded);
-        $this->assertArrayHasKey('cause', $decoded);
-        $this->assertArrayHasKey('context', $decoded);
-        $this->assertSame('test_signal', $decoded['signal']);
-        $this->assertSame('test_cause', $decoded['cause']);
-        $this->assertIsArray($decoded['context']);
-        $this->assertArrayHasKey('reason', $decoded['context']);
-        $this->assertArrayHasKey('scope', $decoded['context']);
-        $this->assertSame('test_reason', $decoded['context']['reason']);
-        $this->assertSame('test_scope', $decoded['context']['scope']);
+        return [
+            BudgetConfigDTO::class => [
+                new BudgetConfigDTO(100, 2),
+                ['threshold', 'block_level'],
+                ['threshold' => 100, 'block_level' => 2]
+            ],
+            BudgetStatusDTO::class => [
+                new BudgetStatusDTO(50, 10),
+                ['count', 'epochStart'],
+                ['count' => 50, 'epochStart' => 10]
+            ],
+            DeviceIdentityDTO::class => [
+                new DeviceIdentityDTO('hash-123', 'HIGH', true, false, 'ua-456'),
+                ['fingerprintHash', 'confidence', 'isTrustedSession', 'churnDetected', 'normalizedUa'],
+                ['fingerprintHash' => 'hash-123', 'confidence' => 'HIGH', 'isTrustedSession' => true, 'churnDetected' => false, 'normalizedUa' => 'ua-456']
+            ],
+            EphemeralStateDTO::class => [
+                new EphemeralStateDTO(true, 5, 10),
+                ['isEphemeral', 'accountDeviceCount', 'ipDeviceCount'],
+                ['isEphemeral' => true, 'accountDeviceCount' => 5, 'ipDeviceCount' => 10]
+            ],
+            FailureSignalDTO::class => [
+                new FailureSignalDTO('CRITICAL', 'test_policy', clone $metadata),
+                ['type', 'policyName', 'metadata'],
+                ['type' => 'CRITICAL', 'policyName' => 'test_policy', 'metadata' => ['signal' => 'test_signal', 'cause' => 'test_cause', 'context' => ['reason' => 'test_reason', 'scope' => 'test_scope']]]
+            ],
+            FailureStateDTO::class => [
+                new FailureStateDTO('OPEN', 3, 1234567, true),
+                ['state', 'failureCount', 'lastFailureTimestamp', 'isDegraded'],
+                ['state' => 'OPEN', 'failureCount' => 3, 'lastFailureTimestamp' => 1234567, 'isDegraded' => true]
+            ],
+            PolicyThresholdsDTO::class => [
+                new PolicyThresholdsDTO($scoreThresholds, null, null, null, null, clone $scoreThresholds),
+                ['k1', 'k2', 'k3', 'k4', 'k5', 'default'],
+                ['k1' => ['l1' => 10, 'l2' => 20, 'l3' => 30], 'k2' => null, 'k3' => null, 'k4' => null, 'k5' => null, 'default' => ['l1' => 10, 'l2' => 20, 'l3' => 30]]
+            ],
+            RateLimitContextDTO::class => [
+                new RateLimitContextDTO('127.0.0.1', 'Mozilla', 'acc_123', ['canvas' => 'abcd'], 'dev_456', true, ['Host' => 'localhost']),
+                ['ip', 'ua', 'accountId', 'clientFingerprint', 'sessionDeviceId', 'isSessionTrusted', 'headers'],
+                ['ip' => '127.0.0.1', 'ua' => 'Mozilla', 'accountId' => 'acc_123', 'clientFingerprint' => ['canvas' => 'abcd'], 'sessionDeviceId' => 'dev_456', 'isSessionTrusted' => true, 'headers' => ['Host' => 'localhost']]
+            ],
+            RateLimitContextMetadataDTO::class => [
+                new RateLimitContextMetadataDTO('test_reason', 'test_scope'),
+                ['reason', 'scope'],
+                ['reason' => 'test_reason', 'scope' => 'test_scope']
+            ],
+            RateLimitMetadataDTO::class => [
+                new RateLimitMetadataDTO('test_signal', 'test_cause', clone $contextMetadata),
+                ['signal', 'cause', 'context'],
+                ['signal' => 'test_signal', 'cause' => 'test_cause', 'context' => ['reason' => 'test_reason', 'scope' => 'test_scope']]
+            ],
+            RateLimitResultDTO::class => [
+                new RateLimitResultDTO(RateLimitResultDTO::DECISION_HARD_BLOCK, 3, 60, 'NORMAL', clone $metadata),
+                ['decision', 'blockLevel', 'retryAfter', 'failureMode', 'metadata'],
+                ['decision' => RateLimitResultDTO::DECISION_HARD_BLOCK, 'blockLevel' => 3, 'retryAfter' => 60, 'failureMode' => 'NORMAL', 'metadata' => ['signal' => 'test_signal', 'cause' => 'test_cause', 'context' => ['reason' => 'test_reason', 'scope' => 'test_scope']]]
+            ],
+            ScoreDeltasDTO::class => [
+                new ScoreDeltasDTO(1, 2, 3, 4, 5, 6),
+                ['access', 'k1_spray', 'k2_missing_fp', 'k4_failure', 'k4_repeated_missing_fp', 'k5_failure'],
+                ['access' => 1, 'k1_spray' => 2, 'k2_missing_fp' => 3, 'k4_failure' => 4, 'k4_repeated_missing_fp' => 5, 'k5_failure' => 6]
+            ],
+            ScoreThresholdsDTO::class => [
+                new ScoreThresholdsDTO(10, 20, 30),
+                ['l1', 'l2', 'l3'],
+                ['l1' => 10, 'l2' => 20, 'l3' => 30]
+            ],
+            PipelineScoreDTO::class => [
+                new PipelineScoreDTO(100, 1600000000, true),
+                ['value', 'updatedAt', 'isFromV1'],
+                ['value' => 100, 'updatedAt' => 1600000000, 'isFromV1' => true]
+            ],
+            BlockStateDTO::class => [
+                new BlockStateDTO(2, 3600),
+                ['level', 'expiresAt'],
+                ['level' => 2, 'expiresAt' => 3600]
+            ],
+            BudgetStateDTO::class => [
+                new BudgetStateDTO(5, 1000),
+                ['count', 'epochStart'],
+                ['count' => 5, 'epochStart' => 1000]
+            ],
+            CircuitBreakerStateDTO::class => [
+                new CircuitBreakerStateDTO('OPEN', [1, 2], 123, 456, 789, [3, 4], 999),
+                ['status', 'failures', 'lastFailure', 'openSince', 'lastSuccess', 'reEntries', 'failClosedUntil'],
+                ['status' => 'OPEN', 'failures' => [1, 2], 'lastFailure' => 123, 'openSince' => 456, 'lastSuccess' => 789, 'reEntries' => [3, 4], 'failClosedUntil' => 999]
+            ],
+            RateLimitStateDTO::class => [
+                new RateLimitStateDTO(150, 2000),
+                ['value', 'updatedAt'],
+                ['value' => 150, 'updatedAt' => 2000]
+            ],
+        ];
     }
 }
