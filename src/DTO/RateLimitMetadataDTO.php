@@ -6,11 +6,20 @@ namespace Maatify\RateLimiter\DTO;
 
 use Maatify\RateLimiter\DTO\RateLimitContextMetadataDTO;
 
-class RateLimitMetadataDTO
+final readonly class RateLimitMetadataDTO implements \JsonSerializable
 {
     public function __construct(
-        public readonly ?string $signal = null,
-        public readonly ?string $cause = null,
-        public readonly ?RateLimitContextMetadataDTO $context = null
+        public ?string $signal = null,
+        public ?string $cause = null,
+        public ?RateLimitContextMetadataDTO $context = null
     ) {}
+
+    public function jsonSerialize(): mixed
+    {
+        return [
+            'signal' => $this->signal,
+            'cause' => $this->cause,
+            'context' => $this->context,
+        ];
+    }
 }

@@ -4,10 +4,18 @@ declare(strict_types=1);
 
 namespace Maatify\RateLimiter\DTO\Store;
 
-class BlockStateDTO
+final readonly class BlockStateDTO implements \JsonSerializable
 {
     public function __construct(
-        public readonly int $level,
-        public readonly int $expiresAt
+        public int $level,
+        public int $expiresAt
     ) {}
+
+    public function jsonSerialize(): mixed
+    {
+        return [
+            'level' => $this->level,
+            'expiresAt' => $this->expiresAt,
+        ];
+    }
 }

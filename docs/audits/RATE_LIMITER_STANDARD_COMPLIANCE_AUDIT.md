@@ -259,62 +259,27 @@ The Package Reference was updated to reflect the standalone package reality:
 
 ## 8. Exception architecture requires Standards compliance
 
-The current package-owned exception extends `RuntimeException` directly.
+Status: RESOLVED / CLOSED
+Reason: STANDARD COMPLIANCE
 
-The adopted Package Building Standard requires package-defined exceptions to use the appropriate stable hierarchy from `maatify/exceptions` and requires a package-owned marker interface extending `Throwable`.
-
-Required direction:
-
-```text
-RateLimiterExceptionInterface extends Throwable
-
-RateLimiter package exceptions
-    -> appropriate stable maatify/exceptions hierarchy
-    -> implement RateLimiterExceptionInterface directly or indirectly
-```
-
-Existing semantic failure behavior must be preserved.
-
-This does not authorize:
-
-- inventing new failure classifications without evidence;
-- blind catch-all wrapping;
-- swallowing external infrastructure failures;
-- changing failure-mode behavior.
-
-The direct `maatify/exceptions` dependency is justified only because the adopted Standard requires it for package-owned exceptions.
-
+* `RateLimiterExceptionInterface extends Throwable`;
+* `RateLimiterException` implements the package marker;
+* `RateLimiterException` extends the stable `InvalidArgumentMaatifyException` hierarchy;
+* `maatify/exceptions:^1.0` is a direct dependency;
+* existing throw sites/messages and engine failure behavior were preserved;
+* no infrastructure catch-all wrapping was introduced.
 ---
 
 ## 9. DTO form requires Standards compliance
 
-The adopted Package Building Standard requires true DTOs to be:
+Status: RESOLVED / CLOSED
+Reason: STANDARD COMPLIANCE
 
-```text
-final readonly
-implements JsonSerializable
-explicit jsonSerialize()
-```
-
-Current imported DTOs do not yet satisfy that required class form.
-
-For each object currently named `*DTO`, responsibility must first be classified from its actual behavior.
-
-For true data snapshots/results only:
-
-```text
-existing fields          -> KEEP
-existing meaning         -> KEEP
-existing value semantics -> KEEP
-final readonly           -> APPLY
-JsonSerializable         -> APPLY
-explicit jsonSerialize() -> APPLY
-```
-
-No field, meaning, policy rule, calculation, or orchestration behavior may be changed merely while normalizing DTO form.
-
-Before finalizing a type, implementation must inspect its actual package/production usage so a Standard-driven structural change does not accidentally erase a relied-on behavior.
-
+* all 18 classified true DTOs are `final readonly`;
+* all implement `JsonSerializable`;
+* all have explicit `jsonSerialize()`;
+* fields, defaults, constants, methods and value semantics were preserved;
+* `RateLimitRequestDTO` was deliberately excluded and remains open under Finding 5.
 ---
 
 ## 10. `RateLimitRequestDTO` is execution intent — STANDARD COMPLIANCE

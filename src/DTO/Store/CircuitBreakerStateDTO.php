@@ -4,7 +4,7 @@ declare(strict_types=1);
 
 namespace Maatify\RateLimiter\DTO\Store;
 
-class CircuitBreakerStateDTO
+final readonly class CircuitBreakerStateDTO implements \JsonSerializable
 {
     /**
      * @param string $status
@@ -16,12 +16,25 @@ class CircuitBreakerStateDTO
      * @param int $failClosedUntil
      */
     public function __construct(
-        public readonly string $status,
-        public readonly array $failures,
-        public readonly int $lastFailure,
-        public readonly int $openSince,
-        public readonly int $lastSuccess,
-        public readonly array $reEntries,
-        public readonly int $failClosedUntil = 0
+        public string $status,
+        public array $failures,
+        public int $lastFailure,
+        public int $openSince,
+        public int $lastSuccess,
+        public array $reEntries,
+        public int $failClosedUntil = 0
     ) {}
+
+    public function jsonSerialize(): mixed
+    {
+        return [
+            'status' => $this->status,
+            'failures' => $this->failures,
+            'lastFailure' => $this->lastFailure,
+            'openSince' => $this->openSince,
+            'lastSuccess' => $this->lastSuccess,
+            'reEntries' => $this->reEntries,
+            'failClosedUntil' => $this->failClosedUntil,
+        ];
+    }
 }

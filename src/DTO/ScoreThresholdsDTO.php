@@ -4,7 +4,7 @@ declare(strict_types=1);
 
 namespace Maatify\RateLimiter\DTO;
 
-class ScoreThresholdsDTO
+final readonly class ScoreThresholdsDTO implements \JsonSerializable
 {
     /**
      * @param int $l1 Soft Block Threshold
@@ -12,8 +12,17 @@ class ScoreThresholdsDTO
      * @param int $l3 Hard Block Extended Threshold
      */
     public function __construct(
-        public readonly int $l1,
-        public readonly int $l2,
-        public readonly int $l3
+        public int $l1,
+        public int $l2,
+        public int $l3
     ) {}
+
+    public function jsonSerialize(): mixed
+    {
+        return [
+            'l1' => $this->l1,
+            'l2' => $this->l2,
+            'l3' => $this->l3,
+        ];
+    }
 }
