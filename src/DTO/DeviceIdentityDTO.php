@@ -4,13 +4,24 @@ declare(strict_types=1);
 
 namespace Maatify\RateLimiter\DTO;
 
-class DeviceIdentityDTO
+final readonly class DeviceIdentityDTO implements \JsonSerializable
 {
     public function __construct(
-        public readonly ?string $fingerprintHash,
-        public readonly string $confidence, // LOW, MEDIUM, HIGH
-        public readonly bool $isTrustedSession,
-        public readonly bool $churnDetected = false,
-        public readonly string $normalizedUa = ''
+        public ?string $fingerprintHash,
+        public string $confidence, // LOW, MEDIUM, HIGH
+        public bool $isTrustedSession,
+        public bool $churnDetected = false,
+        public string $normalizedUa = ''
     ) {}
+
+    public function jsonSerialize(): mixed
+    {
+        return [
+            'fingerprintHash' => $this->fingerprintHash,
+            'confidence' => $this->confidence,
+            'isTrustedSession' => $this->isTrustedSession,
+            'churnDetected' => $this->churnDetected,
+            'normalizedUa' => $this->normalizedUa,
+        ];
+    }
 }

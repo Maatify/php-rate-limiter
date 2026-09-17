@@ -4,10 +4,18 @@ declare(strict_types=1);
 
 namespace Maatify\RateLimiter\DTO;
 
-class RateLimitContextMetadataDTO
+final readonly class RateLimitContextMetadataDTO implements \JsonSerializable
 {
     public function __construct(
-        public readonly ?string $reason = null,
-        public readonly ?string $scope = null
+        public ?string $reason = null,
+        public ?string $scope = null
     ) {}
+
+    public function jsonSerialize(): mixed
+    {
+        return [
+            'reason' => $this->reason,
+            'scope' => $this->scope,
+        ];
+    }
 }

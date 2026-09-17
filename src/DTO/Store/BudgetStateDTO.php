@@ -4,10 +4,18 @@ declare(strict_types=1);
 
 namespace Maatify\RateLimiter\DTO\Store;
 
-class BudgetStateDTO
+final readonly class BudgetStateDTO implements \JsonSerializable
 {
     public function __construct(
-        public readonly int $count,
-        public readonly int $epochStart
+        public int $count,
+        public int $epochStart
     ) {}
+
+    public function jsonSerialize(): mixed
+    {
+        return [
+            'count' => $this->count,
+            'epochStart' => $this->epochStart,
+        ];
+    }
 }
