@@ -9,9 +9,9 @@ use Maatify\RateLimiter\Contract\CorrelationStoreInterface;
 use Maatify\RateLimiter\Contract\RateLimitStoreInterface;
 use Maatify\RateLimiter\Device\EphemeralBucket;
 use Maatify\RateLimiter\DTO\DeviceIdentityDTO;
+use Maatify\RateLimiter\Command\RateLimitCommand;
 use Maatify\RateLimiter\DTO\Internal\PipelineScoreDTO;
 use Maatify\RateLimiter\DTO\RateLimitContextDTO;
-use Maatify\RateLimiter\DTO\RateLimitRequestDTO;
 use Maatify\RateLimiter\DTO\RateLimitResultDTO;
 use Maatify\RateLimiter\DTO\ScoreThresholdsDTO;
 use Maatify\RateLimiter\Penalty\AntiEquilibriumGate;
@@ -45,7 +45,7 @@ class EvaluationPipeline
     public function process(
         BlockPolicyInterface $policy,
         RateLimitContextDTO $context,
-        RateLimitRequestDTO $request,
+        RateLimitCommand $request,
         DeviceIdentityDTO $device
     ): RateLimitResultDTO
     {
@@ -307,7 +307,7 @@ class EvaluationPipeline
     private function processUpdates(
         BlockPolicyInterface $policy,
         RateLimitContextDTO $context,
-        RateLimitRequestDTO $request,
+        RateLimitCommand $request,
         DeviceIdentityDTO $device,
         array $keys,
         array $rawScores
@@ -560,7 +560,7 @@ class EvaluationPipeline
     /**
      * @return array{k1: int, k2: int, k3: int, k4: int, k5: int}
      */
-    private function calculateDeltas(BlockPolicyInterface $policy, RateLimitContextDTO $context, DeviceIdentityDTO $device, RateLimitRequestDTO $request): array
+    private function calculateDeltas(BlockPolicyInterface $policy, RateLimitContextDTO $context, DeviceIdentityDTO $device, RateLimitCommand $request): array
     {
         $deltasDto = $policy->getScoreDeltas();
         // Fix Error 3: Initialize with stable shape

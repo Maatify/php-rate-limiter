@@ -54,8 +54,8 @@ use Maatify\RateLimiter\Engine\CircuitBreaker;
 use Maatify\RateLimiter\Engine\EvaluationPipeline;
 use Maatify\RateLimiter\Engine\FailureModeResolver;
 use Maatify\RateLimiter\Engine\RateLimiterEngine;
+use Maatify\RateLimiter\Command\RateLimitCommand;
 use Maatify\RateLimiter\DTO\RateLimitContextDTO;
-use Maatify\RateLimiter\DTO\RateLimitRequestDTO;
 use Maatify\RateLimiter\Penalty\AntiEquilibriumGate;
 use Maatify\RateLimiter\Penalty\BudgetTracker;
 use Maatify\RateLimiter\Penalty\DecayCalculator;
@@ -99,7 +99,7 @@ $context = new RateLimitContextDTO(
     ua: 'Mozilla/5.0',
     accountId: 'user_123'
 );
-$result = $engine->limit($context, RateLimitRequestDTO::checkOnly('login_protection'));
+$result = $engine->limit($context, RateLimitCommand::checkOnly('login_protection'));
 
 if (!$result->isAllowed()) {
     http_response_code(429);

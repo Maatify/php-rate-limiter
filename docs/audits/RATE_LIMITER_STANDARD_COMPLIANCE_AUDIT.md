@@ -304,16 +304,17 @@ The adopted Standard states that execution/action intent must not be represented
 
 The public constructor also permits contradictory flag combinations.
 
-Required correction is intentionally minimal:
+Status: RESOLVED / CLOSED
+Reason: STANDARD COMPLIANCE
 
-- preserve the three supported operations and their meaning;
-- preserve cost and policy semantics;
-- classify the object according to its actual responsibility under the adopted Standard;
-- make invalid contradictory execution states impossible;
-- update internal/public call sites consistently;
-- do not split the workflow, invent additional operations, or redesign the Engine as part of this compliance change.
-
-The exact replacement type/name must be selected from the adopted naming rules after inspecting actual usage; this audit does not invent an additional command model beyond what compliance requires.
+* `RateLimitRequestDTO` was removed;
+* `RateLimitCommand` is the canonical execution-intent type;
+* the Command is `final readonly`;
+* the existing normal/access all-false state is preserved;
+* `checkOnly()`, `recordFailure()`, and `recordSuccess()` are preserved;
+* mutually contradictory mode flags are rejected by construction;
+* `policyName` and `cost` semantics are preserved;
+* Engine/Pipeline decision behavior was not redesigned.
 
 ---
 
