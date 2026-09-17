@@ -100,7 +100,7 @@ class DTOComplianceTest extends TestCase
         $this->assertIsArray($decoded);
 
         // Assert exactly the existing public data-field keys
-        $this->assertEqualsCanonicalizing($expectedKeys, array_keys($decoded), 'Serialized keys must exactly match public properties');
+        $this->assertSame($expectedKeys, array_keys($decoded), 'Serialized keys must exactly match public properties in constructor/property order');
 
         // Assert no key is missing and no extra key is introduced
         $this->assertSame(count($expectedKeys), count($decoded));
