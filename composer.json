@@ -54,8 +54,7 @@
         "platform": {
             "php": "8.4.0"
         },
-        "allow-plugins": false,
-        "platform-check": false
+        "allow-plugins": false
     },
     "minimum-stability": "stable",
     "prefer-stable": true
