@@ -10,9 +10,9 @@ use Maatify\RateLimiter\Contract\FailureSignalEmitterInterface;
 use Maatify\RateLimiter\Contract\RateLimiterInterface;
 use Maatify\RateLimiter\DTO\FailureSignalDTO;
 use Maatify\RateLimiter\DTO\RateLimitContextDTO;
+use Maatify\RateLimiter\Command\RateLimitCommand;
 use Maatify\RateLimiter\DTO\RateLimitContextMetadataDTO;
 use Maatify\RateLimiter\DTO\RateLimitMetadataDTO;
-use Maatify\RateLimiter\DTO\RateLimitRequestDTO;
 use Maatify\RateLimiter\DTO\RateLimitResultDTO;
 use Maatify\RateLimiter\Exception\RateLimiterException;
 use Maatify\RateLimiter\Device\DeviceIdentityResolver;
@@ -67,7 +67,7 @@ class RateLimiterEngine implements RateLimiterInterface
         $this->policies[$policy->getName()] = $policy;
     }
 
-    public function limit(RateLimitContextDTO $context, RateLimitRequestDTO $request): RateLimitResultDTO
+    public function limit(RateLimitContextDTO $context, RateLimitCommand $request): RateLimitResultDTO
     {
         $policy = $this->policies[$request->policyName] ?? null;
         if (!$policy) {

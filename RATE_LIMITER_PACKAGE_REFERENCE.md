@@ -42,7 +42,7 @@ Behavioral rules are specified in:
 ### 1.3 Engineering Goals
 - Storage-agnostic core
 - Standalone package structure
-- DTO-first public API: no arrays in public contracts
+- Contract-based public API: no arrays in public contracts, distinguishing Commands (execution intent) and DTOs (data shapes)
 - Clear boundaries between Engine, Policy, Penalty, and Store (testability and replaceability)
 - Explicit failure behavior that cannot be weaponized as a kill-switch
 - Bounded operations (no scans, no unbounded key creation)
@@ -134,18 +134,18 @@ Contracts define stable APIs:
 
 Contracts are pure and storage-agnostic.
 
-### 4.2 DTOs (Public Data Shapes)
-**Location:** `DTO/`
+### 4.2 Commands and DTOs (Public Data Shapes)
+**Location:** `Command/` and `DTO/`
 
-All data crossing boundaries MUST be DTO-based:
-- Context DTOs (signals)
-- Request DTOs (policy + action + cost)
+All data crossing boundaries MUST be strictly typed:
+- Command (`RateLimitCommand`): execution/action intent (policy + action + cost)
+- Context DTOs (signals): context/data/state/result snapshots
 - Result DTOs (decision + retry-after + block level + failure mode)
 - Internal state DTOs (score/level/windows)
 
 No public arrays are allowed.
 
-DTO naming MUST end with `DTO`.
+DTO naming MUST end with `DTO`. Commands must clearly represent execution intent.
 
 ### 4.3 Engine (Decision Orchestration)
 **Location:** `Engine/`
@@ -267,7 +267,7 @@ The package is only acceptable if tests prove:
 This package maintains strict architectural boundaries:
 - No coupling to HTTP frameworks
 - No reliance on globals (`$_SERVER`, `$_COOKIE`)
-- DTO + Contract boundaries
+- Contract, Command, and DTO boundaries
 - Consumers implement infrastructure drivers
 
 Composer autoload maps:
