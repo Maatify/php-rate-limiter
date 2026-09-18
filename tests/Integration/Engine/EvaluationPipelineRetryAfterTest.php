@@ -14,7 +14,7 @@ use Maatify\RateLimiter\Penalty\BudgetTracker;
 use Maatify\RateLimiter\Penalty\DecayCalculator;
 use Maatify\RateLimiter\Policy\OtpProtectionPolicy;
 use Maatify\RateLimiter\Tests\Support\Clock\FixedClock;
-use Maatify\RateLimiter\Tests\Support\Correlation\StatefulInMemoryCorrelationStore;
+use Maatify\RateLimiter\Tests\Support\Correlation\NullCorrelationStore;
 use Maatify\RateLimiter\Tests\Support\RateLimiter\InMemoryRateLimitStore;
 use PHPUnit\Framework\TestCase;
 
@@ -22,7 +22,7 @@ class EvaluationPipelineRetryAfterTest extends TestCase
 {
     private FixedClock $clock;
     private InMemoryRateLimitStore $store;
-    private StatefulInMemoryCorrelationStore $correlationStore;
+    private NullCorrelationStore $correlationStore;
     private EvaluationPipeline $pipeline;
     private OtpProtectionPolicy $policy;
 
@@ -32,7 +32,7 @@ class EvaluationPipelineRetryAfterTest extends TestCase
 
         $this->clock = new FixedClock('2025-01-01 12:00:00');
         $this->store = new InMemoryRateLimitStore($this->clock);
-        $this->correlationStore = new StatefulInMemoryCorrelationStore($this->clock);
+        $this->correlationStore = new NullCorrelationStore();
 
         $decayCalculator = new DecayCalculator($this->clock);
         $budgetTracker = new BudgetTracker($this->store, $this->clock);
