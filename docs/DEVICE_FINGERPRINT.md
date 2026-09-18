@@ -292,6 +292,17 @@ fingerprintHash         = currentHasher(rawIdentity)
 previousFingerprintHash = previousHasher(rawIdentity)   // only when configured
 ```
 
+The default resolver constructor is additive:
+
+```
+new DeviceIdentityResolver(
+    FingerprintHasher $currentHasher,
+    ?FingerprintHasher $previousHasher = null
+)
+```
+
+The old single-hasher constructor remains valid.
+
 Rules:
 
 * There MUST be no normalization difference between the two hashes; normalization is
