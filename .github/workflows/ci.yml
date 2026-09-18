@@ -160,6 +160,21 @@ jobs:
           composer check-platform-reqs
           composer audit --no-interaction --abandoned=fail
 
+  consumer-verification:
+    name: Consumer Verification Harness
+    timeout-minutes: 15
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout Code
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+      - name: Setup PHP
+        uses: shivammathur/setup-php@f3e473d116dcccaddc5834248c87452386958240 # v2
+        with:
+          php-version: '8.4'
+          coverage: none
+      - name: Run Consumer Verification Harness
+        run: bash scripts/ci/run-consumer-verification.sh
+
   workflow-lint:
     name: Workflow Lint
     timeout-minutes: 10
@@ -195,6 +210,7 @@ jobs:
       - tests
       - lowest-dependencies
       - composer-audit
+      - consumer-verification
       - workflow-lint
       - whitespace
     runs-on: ubuntu-latest
@@ -213,6 +229,7 @@ jobs:
           fi
           if [ "${{ needs.lowest-dependencies.result }}" != "success" ] || \
              [ "${{ needs.composer-audit.result }}" != "success" ] || \
+             [ "${{ needs.consumer-verification.result }}" != "success" ] || \
              [ "${{ needs.workflow-lint.result }}" != "success" ] || \
              [ "${{ needs.whitespace.result }}" != "success" ]; then
             echo "One or more dependency or repository-quality jobs failed or were cancelled."

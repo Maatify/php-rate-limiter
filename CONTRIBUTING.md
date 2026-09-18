@@ -14,6 +14,7 @@ composer check-platform-reqs
 composer analyse
 composer test
 composer audit --no-interaction --abandoned=fail
+bash scripts/ci/run-consumer-verification.sh
 bash scripts/ci/check-php-syntax.sh
 bash scripts/ci/check-readme-examples.sh
 bash scripts/ci/check-whitespace.sh
