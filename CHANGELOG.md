@@ -17,7 +17,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   - Enforcement-owned budget cooldown (Login 3600s / OTP 7200s); budget `retryAfter` = remaining cooldown
   - Key-rotation survival for all budget state (K4 epoch/count, K5 micro-cap, cooldown marker) — no `max(v1,v2)` merge
   - Recovery Collision Guard keyed off the atomic returned budget count (one-shot L2, concurrency-safe)
-- Declared public storage-contract extension `RateLimitStoreInterface::incrementBudgetWithSeed()` for atomic budget-epoch hand-off across key rotation (documented contract; not yet implemented)
+- Declared additive capability interface `BudgetSeedStoreInterface::incrementBudgetWithSeed()` (extends `RateLimitStoreInterface`) for atomic budget-epoch hand-off across key rotation; the capability interface is additive and does not change `RateLimitStoreInterface` (documented contract; not yet implemented)
 - Declared host-provided signal `isDevicePreviouslyVerifiedForAccount` (default `false`) for known-device-for-account semantics without a trusted session
 
 ### Fixed
