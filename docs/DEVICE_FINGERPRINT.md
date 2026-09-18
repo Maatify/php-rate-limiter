@@ -256,6 +256,13 @@ deviceFp_previous = HMAC(rawIdentity, previousFingerprintSecret)
 and therefore `deviceFp_current != deviceFp_previous` in general. This section fixes the
 **identity-layer contract** that keeps historical enforcement readable across that rotation.
 
+`fingerprintHash` is the **current-generation** fingerprint component;
+`previousFingerprintHash` is the **previous-generation** fingerprint component. The outer key
+secret and the fingerprint secret are independently rotatable components, but runtime
+continuity is represented as **one coordinated current generation and at most one previous
+generation** — never as independent Cartesian combinations of outer-secret and fingerprint
+versions. The rotation-generation invariant is locked in §5.1.6.
+
 #### 5.1.1 Public Identity Contract (Target)
 
 The pipeline MUST NOT rebuild the raw fingerprint or re-hash device material itself. The
@@ -264,17 +271,21 @@ normalized raw identity remains owned by `DeviceIdentityResolver` only.
 Target public identity contract:
 
 ```
-fingerprintHash          // current
-previousFingerprintHash  // previous, nullable
+fingerprintHash          // current-generation fingerprint component
+previousFingerprintHash  // previous-generation fingerprint component, nullable
 ```
 
-`previousFingerprintHash` is an **additive optional field at the end of `DeviceIdentityDTO`**:
+`previousFingerprintHash` is an **additive optional field at the end of `DeviceIdentityDTO`**
+representing the **previous-generation fingerprint component**:
 
 ```
 public ?string $previousFingerprintHash = null
 ```
 
-It MUST NOT change the meaning of the existing `fingerprintHash`.
+It MUST NOT change the meaning of the existing `fingerprintHash`. It does not stand alone: it
+is consumed as one member of the previous generation (`docs/KEY_STRATEGY.md` §4.3.3), paired
+with the previous-generation outer secret (`previousKeySecret ?? currentKeySecret`) — never
+recombined across generations.
 
 #### 5.1.2 Resolver Responsibility
 
@@ -320,7 +331,9 @@ the rotation window. The library does not guess whether the host rotated the fin
 secret or not.
 
 If the host does not rotate the fingerprint secret, `previousFingerprintHash = null` is the
-expected value.
+expected value, and the previous generation reuses the current fingerprint component as a
+compatibility behavior (`docs/KEY_STRATEGY.md` §4.3.3). `previousFingerprintHash` exists only
+to represent the fingerprint component of a genuinely previous generation.
 
 #### 5.1.4 Trust & Confidence Independence
 
@@ -354,6 +367,24 @@ is NOT yet claimed by this decision.
 
 This section does not resolve correlation/ephemeral state. That remains a known
 architecture boundary within this documentation only.
+
+#### 5.1.6 Rotation-Generation Invariant (No Overlapping Generations)
+
+The architecture supports only a **current generation plus at most one previous generation**.
+The following invariant is locked:
+
+```
+A second secret rotation affecting either component MUST NOT begin
+while an earlier previous generation still needs enforcement continuity.
+```
+
+* A new rotation (outer key secret, fingerprint secret, or both) MUST NOT begin until the
+  previous-generation enforcement window has ended or the required state has been migrated or
+  expired according to its contract.
+* This prevents more than one historical cumulative state — in particular for the K5
+  micro-cap, whose cumulative budget state cannot be merged safely across multiple
+  generations (never `max(v1, v2)`; `docs/KEY_STRATEGY.md` §4.3.1 / §4.5.2).
+* Overlapping or multi-generation rotation is outside the supported model.
 
 ---
 
