@@ -214,20 +214,24 @@ independent counters. The `max()` merge acceptable for decaying **scores** is NO
 for **cumulative budget counts** — a budget counter must never appear to jump backward or
 “reseed” under rotation.
 
-#### 4.3.2 Atomic Budget Seeding Across Rotation (Storage Contract Extension)
+#### 4.3.2 Atomic Budget Seeding Across Rotation (Capability Interface)
 
 The current `RateLimitStoreInterface` cannot carry a budget epoch from V1 into V2 while
 preserving `count`, `epochStart`, the fixed epoch end, and atomic concurrency. The
-architecture therefore adopts a **public storage contract extension** (to be implemented
-later; not part of this decision):
+architecture therefore adopts an **additive capability interface** (to be implemented
+later; not part of this decision). `RateLimitStoreInterface` itself stays unchanged, so
+existing store implementations remain source-compatible:
 
 ```php
-incrementBudgetWithSeed(
-    string $key,
-    int $epochDurationSeconds,
-    BudgetStateDTO $seed,
-    int $amount = 1
-): BudgetStateDTO
+interface BudgetSeedStoreInterface extends RateLimitStoreInterface
+{
+    public function incrementBudgetWithSeed(
+        string $key,
+        int $epochDurationSeconds,
+        BudgetStateDTO $seed,
+        int $amount = 1
+    ): BudgetStateDTO;
+}
 ```
 
 Locked semantics:
@@ -243,6 +247,20 @@ Locked semantics:
 
 The contract is used for **both** `K4` account budget and `K5` same-device micro-cap. Key
 rotation therefore never acts as a reset and never extends the 24h epoch.
+
+**Runtime integration contract (for the upcoming implementation):**
+
+* `EvaluationPipeline` continues to accept `RateLimitStoreInterface`.
+* Paths that do not require a V1→V2 budget migration proceed without any additional
+  capability.
+* When a previous-secret budget state is valid and must be moved to V2:
+  * the store MUST also be a `BudgetSeedStoreInterface`;
+  * if the capability is not available, silent reset or loss of enforcement is forbidden;
+  * the path MUST fail explicitly and pass through the existing failure semantics
+    (`docs/FAILURE_SEMANTICS.md`).
+
+This preserves source compatibility for existing store implementations while keeping the
+rotation-survival contract intact.
 
 ---
 

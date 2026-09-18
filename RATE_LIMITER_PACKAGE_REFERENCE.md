@@ -150,6 +150,8 @@ Normative Behavior: `docs/DECISION_MATRIX.md` §2.4 / §2.5 / §3.3. Preset valu
 Contracts define stable APIs:
 - `RateLimiterInterface` — single entrypoint for consumption/guarding
 - `RateLimitStoreInterface` — storage abstraction
+- `BudgetSeedStoreInterface` — additive capability over `RateLimitStoreInterface`
+  (budget-epoch hand-off across key rotation; does not modify the base contract)
 - `DeviceIdentityResolverInterface` — device identity resolution abstraction
 - `BlockPolicyInterface` — penalty computation (ladder + decay + caps)
 - `CorrelationStoreInterface` (if separated) — bounded distinct counting support
@@ -250,11 +252,16 @@ Budget owner-safety relies on **existing and declared** storage primitives:
   cumulative counters. `docs/KEY_STRATEGY.md` §4.3.1.
 - **Atomic budget seeding across rotation:** the current store contract cannot move a budget
   epoch from V1 to V2 while preserving `count`, `epochStart`, the fixed epoch end, and
-  atomicity. A **declared public storage-extension** on `RateLimitStoreInterface` —
+  atomicity. The architecture adopts an **additive capability interface** —
+  `BudgetSeedStoreInterface extends RateLimitStoreInterface` with
   `incrementBudgetWithSeed(string $key, int $epochDurationSeconds, BudgetStateDTO $seed,
-  int $amount = 1): BudgetStateDTO` — is adopted by the architecture for later
-  implementation (`docs/KEY_STRATEGY.md` §4.3.2). It serves both K4 account budget and K5
-  same-device micro-cap; rotation therefore never resets and never extends the 24h epoch.
+  int $amount = 1): BudgetStateDTO` — for later implementation
+  (`docs/KEY_STRATEGY.md` §4.3.2). `RateLimitStoreInterface` itself is unchanged, so
+  existing store implementations stay source-compatible. It serves both K4 account budget
+  and K5 same-device micro-cap; rotation therefore never resets and never extends the 24h
+  epoch. When a valid previous-secret budget must move to V2 and the store is not a
+  `BudgetSeedStoreInterface`, the path MUST fail explicitly through the existing failure
+  semantics (`docs/FAILURE_SEMANTICS.md`) — never a silent reset or loss of enforcement.
 
 ### 4.9 Host-Provided Known-Device Signal (Public Boundary)
 
