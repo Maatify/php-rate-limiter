@@ -8,7 +8,7 @@ use Maatify\SharedCommon\Contracts\ClockInterface;
 
 class LocalFallbackLimiter
 {
-    /** @var array<string, int> */
+    /** @var array<string, array{count: int, expiresAt: int}> */
     private static array $counters = [];
     private static int $lastGc = 0;
 
@@ -121,10 +121,13 @@ class LocalFallbackLimiter
         $bucketKey = "{$key}:{$bucket}";
 
         if (!isset(self::$counters[$bucketKey])) {
-            self::$counters[$bucketKey] = 0;
+            self::$counters[$bucketKey] = [
+                'count' => 0,
+                'expiresAt' => ($bucket + 1) * $window,
+            ];
         }
-        self::$counters[$bucketKey]++;
-        return self::$counters[$bucketKey] <= $limit;
+        self::$counters[$bucketKey]['count']++;
+        return self::$counters[$bucketKey]['count'] <= $limit;
     }
 
     private static function gc(ClockInterface $clock): void
@@ -132,7 +135,11 @@ class LocalFallbackLimiter
         // Simple GC to prevent infinite array growth
         $now = $clock->now()->getTimestamp();
         if ($now - self::$lastGc > 3600) { // Every hour
-            self::$counters = [];
+            foreach (self::$counters as $bucketKey => $counter) {
+                if ($counter['expiresAt'] <= $now) {
+                    unset(self::$counters[$bucketKey]);
+                }
+            }
             self::$lastGc = $now;
         }
     }

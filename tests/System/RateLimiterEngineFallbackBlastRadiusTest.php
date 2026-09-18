@@ -159,7 +159,7 @@ class RateLimiterEngineFallbackBlastRadiusTest extends TestCase
         // Locked fallback cap: 2 requests per account in 15 minutes.
     }
 
-    public function testHourlyGcCurrentlyClearsActiveOtpFallbackBucketThroughEngine(): void
+    public function testHourlyGcPreservesActiveOtpFallbackBucketThroughEngine(): void
     {
         $engine = $this->createEngineWithStore(new ThrowingRateLimitStore(), new OtpProtectionPolicy());
         $ip = '198.51.100.26';
@@ -186,9 +186,7 @@ class RateLimiterEngineFallbackBlastRadiusTest extends TestCase
         $this->clock->setNow(new \DateTimeImmutable('2025-01-01 13:04:31'));
         $third = $this->limit($engine, 'otp_protection', $ip, self::CHROME_UA, 'otp-gc-target-account');
 
-        // Current baseline behavior: global GC clears the active bucket, so the third attempt is allowed.
-        $this->assertSame(RateLimitResultDTO::DECISION_ALLOW, $third->decision);
-        $this->assertSame('DEGRADED_MODE', $third->failureMode);
+        $this->assertFallbackLimitExceeded($third);
     }
 
     public function testOtpFallbackNaturallyResetsOnlyWhenFixedWindowRollsOver(): void
