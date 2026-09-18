@@ -413,6 +413,14 @@ else atomic increment(V2, cooldownTTL)
   later concurrent issuers return `> 1` and MUST NOT re-issue.
 * The marker is part of Budget enforcement, never part of the 24h epoch, and never a
   level-1 `BlockState`.
+* The marker represents an actually issued budget `SOFT_BLOCK`, not merely an active
+  `BudgetActive` state. Do not acquire it when a normal `HARD_BLOCK` wins, even if a
+  Recovery Guard candidate is also present, or when command eligibility prevents the
+  budget candidate from participating.
+  If the candidate is eligible and no higher-priority condition prevents a budget soft,
+  acquisition is the issuance gate: returned `1` permits the budget `SOFT_BLOCK`; a
+  returned value `> 1` loses the race, so no budget soft is issued and the normal
+  candidate remains unchanged.
 * Rotation survival (§4.3.1) applies: writes → V2; reads → V2 then V1.
 
 #### 4.5.2 K5 Micro-Cap Counter (Known-Device Budget Eligibility)
