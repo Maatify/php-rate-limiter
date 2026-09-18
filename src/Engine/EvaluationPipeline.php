@@ -100,7 +100,7 @@ class EvaluationPipeline
         $decayedScores = $this->applyDecay($rawScores, $effectiveKeysV2);
 
         // 6. Check Thresholds (Soft Blocks)
-        if ($blocked = $this->checkThresholds($policy, $decayedScores, $effectiveKeysV2, $device)) {
+        if ($blocked = $this->checkThresholds($policy, $decayedScores, $effectiveKeysV2, $device, $request)) {
             return $blocked;
         }
 
@@ -206,7 +206,13 @@ class EvaluationPipeline
      * @param   array<string, int>          $scores
      * @param   array<string, string|null>  $keys
      */
-    private function checkThresholds(BlockPolicyInterface $policy, array $scores, array $keys, DeviceIdentityDTO $device): ?RateLimitResultDTO
+    private function checkThresholds(
+        BlockPolicyInterface $policy,
+        array $scores,
+        array $keys,
+        DeviceIdentityDTO $device,
+        RateLimitCommand $request
+    ): ?RateLimitResultDTO
     {
         $highestLevel = 0;
         foreach ($scores as $keyType => $score) {
@@ -222,6 +228,10 @@ class EvaluationPipeline
             }
         }
         if ($highestLevel > 0) {
+            if ($highestLevel === 1 && ! $request->isPreCheck) {
+                return null;
+            }
+
             $decision = ($highestLevel >= 2) ? RateLimitResultDTO::DECISION_HARD_BLOCK : RateLimitResultDTO::DECISION_SOFT_BLOCK;
 
             return $this->createBlockedResult($highestLevel, PenaltyLadder::getDuration($highestLevel), $decision);
@@ -385,8 +395,11 @@ class EvaluationPipeline
             }
         }
 
-        if (isset($keys['k4']) && $policy->getBudgetConfig()) {
-            $config = $policy->getBudgetConfig();
+        $budgetOnly = false;
+
+        $budgetConfig = $policy->getBudgetConfig();
+        if (isset($keys['k4']) && $budgetConfig !== null) {
+            $config = $budgetConfig;
             $shouldCount = false;
             // Case 1: Increments K4 directly (New Device, Repeated Missing FP)
             if ($deltas['k4'] > 0) {
@@ -421,16 +434,23 @@ class EvaluationPipeline
                 }
             }
 
+            $scoreMaxLevel = $newMaxLevel;
+
             if ($shouldCount) {
                 $this->budgetTracker->increment($keys['k4']);
                 if ($this->budgetTracker->isExceeded($keys['k4'], $config->threshold)) {
                     $newMaxLevel = max($newMaxLevel, $config->block_level);
+                    if ($scoreMaxLevel < 2) {
+                        $budgetOnly = true;
+                    }
                 }
             }
         }
 
         if ($newMaxLevel > 0) {
-            $decision = ($newMaxLevel >= 2) ? RateLimitResultDTO::DECISION_HARD_BLOCK : RateLimitResultDTO::DECISION_SOFT_BLOCK;
+            $decision = $budgetOnly
+                ? RateLimitResultDTO::DECISION_SOFT_BLOCK
+                : (($newMaxLevel >= 2) ? RateLimitResultDTO::DECISION_HARD_BLOCK : RateLimitResultDTO::DECISION_SOFT_BLOCK);
 
             if ($decision === RateLimitResultDTO::DECISION_SOFT_BLOCK && isset($keys['k4']) && $context->accountId) {
                 $this->antiEquilibriumGate->recordSoftBlock($context->accountId);
@@ -443,7 +463,8 @@ class EvaluationPipeline
             $duration = PenaltyLadder::getDuration($newMaxLevel);
 
             if ($context->accountId && isset($keys['k4'])) {
-                $this->store->block($keys['k4'], $newMaxLevel, $duration);
+                $blockLevel = $budgetOnly ? 1 : $newMaxLevel;
+                $this->store->block($keys['k4'], $blockLevel, $duration);
             }
             if ($policy->getName() === 'api_heavy_protection') {
                 if (isset($keys['k1'])) {
