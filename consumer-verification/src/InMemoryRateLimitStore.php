@@ -4,13 +4,13 @@ declare(strict_types=1);
 
 namespace ConsumerVerification;
 
-use Maatify\RateLimiter\Contract\RateLimitStoreInterface;
+use Maatify\RateLimiter\Contract\BudgetSeedStoreInterface;
 use Maatify\RateLimiter\DTO\Store\BlockStateDTO;
 use Maatify\RateLimiter\DTO\Store\BudgetStateDTO;
 use Maatify\RateLimiter\DTO\Store\RateLimitStateDTO;
 use Maatify\SharedCommon\Contracts\ClockInterface;
 
-final class InMemoryRateLimitStore implements RateLimitStoreInterface
+final class InMemoryRateLimitStore implements BudgetSeedStoreInterface
 {
     /** @var array<string, array{value: int, updatedAt: int, expiresAt: int}> */
     private array $counters = [];
@@ -134,6 +134,40 @@ final class InMemoryRateLimitStore implements RateLimitStoreInterface
             ];
         } else {
             $this->budgets[$key]['count'] += $amount;
+        }
+
+        return new BudgetStateDTO(
+            $this->budgets[$key]['count'],
+            $this->budgets[$key]['epochStart']
+        );
+    }
+
+    public function incrementBudgetWithSeed(
+        string $key,
+        int $epochDurationSeconds,
+        BudgetStateDTO $seed,
+        int $amount = 1
+    ): BudgetStateDTO
+    {
+        $this->operations++;
+        $this->writes++;
+        $now = $this->clock->now()->getTimestamp();
+        $budget = $this->budgets[$key] ?? null;
+
+        if ($budget !== null && $now < $budget['epochStart'] + $budget['epochDuration']) {
+            $this->budgets[$key]['count'] += $amount;
+        } elseif ($now < $seed->epochStart + $epochDurationSeconds) {
+            $this->budgets[$key] = [
+                'count' => $seed->count + $amount,
+                'epochStart' => $seed->epochStart,
+                'epochDuration' => $epochDurationSeconds,
+            ];
+        } else {
+            $this->budgets[$key] = [
+                'count' => $amount,
+                'epochStart' => $now,
+                'epochDuration' => $epochDurationSeconds,
+            ];
         }
 
         return new BudgetStateDTO(

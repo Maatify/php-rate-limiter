@@ -218,9 +218,9 @@ for **cumulative budget counts** — a budget counter must never appear to jump 
 
 The current `RateLimitStoreInterface` cannot carry a budget epoch from V1 into V2 while
 preserving `count`, `epochStart`, the fixed epoch end, and atomic concurrency. The
-architecture therefore adopts an **additive capability interface** (to be implemented
-later; not part of this decision). `RateLimitStoreInterface` itself stays unchanged, so
-existing store implementations remain source-compatible:
+architecture therefore adopts an **additive capability interface**, implemented by stores
+that must hand a V1 budget epoch forward into V2. `RateLimitStoreInterface` itself stays
+unchanged, so existing store implementations remain source-compatible:
 
 ```php
 interface BudgetSeedStoreInterface extends RateLimitStoreInterface

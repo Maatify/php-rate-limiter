@@ -4,13 +4,13 @@ declare(strict_types=1);
 
 namespace Maatify\RateLimiter\Tests\Support\RateLimiter;
 
-use Maatify\RateLimiter\Contract\RateLimitStoreInterface;
+use Maatify\RateLimiter\Contract\BudgetSeedStoreInterface;
 use Maatify\RateLimiter\DTO\Store\BlockStateDTO;
 use Maatify\RateLimiter\DTO\Store\BudgetStateDTO;
 use Maatify\RateLimiter\DTO\Store\RateLimitStateDTO;
 use Maatify\SharedCommon\Contracts\ClockInterface;
 
-class InMemoryRateLimitStore implements RateLimitStoreInterface
+class InMemoryRateLimitStore implements BudgetSeedStoreInterface
 {
     /** @var array<string, array{value: int, updatedAt: int, expiresAt: int}> */
     private array $data = [];
@@ -125,6 +125,40 @@ class InMemoryRateLimitStore implements RateLimitStoreInterface
         return new BudgetStateDTO(
             $this->budgets[$key]['count'],
             $this->budgets[$key]['epochStart']
+        );
+    }
+
+    public function incrementBudgetWithSeed(
+        string $key,
+        int $epochDurationSeconds,
+        BudgetStateDTO $seed,
+        int $amount = 1
+    ): BudgetStateDTO
+    {
+        $now = $this->clock->now()->getTimestamp();
+        $current = $this->budgets[$key] ?? null;
+
+        if ($current !== null && $now < $current['epochStart'] + $current['epochDuration']) {
+            $current['count'] += $amount;
+        } elseif ($now < $seed->epochStart + $epochDurationSeconds) {
+            $current = [
+                'count' => $seed->count + $amount,
+                'epochStart' => $seed->epochStart,
+                'epochDuration' => $epochDurationSeconds,
+            ];
+        } else {
+            $current = [
+                'count' => $amount,
+                'epochStart' => $now,
+                'epochDuration' => $epochDurationSeconds,
+            ];
+        }
+
+        $this->budgets[$key] = $current;
+
+        return new BudgetStateDTO(
+            $current['count'],
+            $current['epochStart']
         );
     }
 

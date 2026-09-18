@@ -255,8 +255,8 @@ Budget owner-safety relies on **existing and declared** storage primitives:
   atomicity. The architecture adopts an **additive capability interface** —
   `BudgetSeedStoreInterface extends RateLimitStoreInterface` with
   `incrementBudgetWithSeed(string $key, int $epochDurationSeconds, BudgetStateDTO $seed,
-  int $amount = 1): BudgetStateDTO` — for later implementation
-  (`docs/KEY_STRATEGY.md` §4.3.2). `RateLimitStoreInterface` itself is unchanged, so
+  int $amount = 1): BudgetStateDTO` — now implemented; locked semantics in
+  `docs/KEY_STRATEGY.md` §4.3.2. `RateLimitStoreInterface` itself is unchanged, so
   existing store implementations stay source-compatible. It serves both K4 account budget
   and K5 same-device micro-cap; rotation therefore never resets and never extends the 24h
   epoch. When a valid previous-secret budget must move to V2 and the store is not a
