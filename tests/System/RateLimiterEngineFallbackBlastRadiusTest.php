@@ -159,6 +159,68 @@ class RateLimiterEngineFallbackBlastRadiusTest extends TestCase
         // Locked fallback cap: 2 requests per account in 15 minutes.
     }
 
+    public function testHourlyGcCurrentlyClearsActiveOtpFallbackBucketThroughEngine(): void
+    {
+        $engine = $this->createEngineWithStore(new ThrowingRateLimitStore(), new OtpProtectionPolicy());
+        $ip = '198.51.100.26';
+
+        $this->clock->setNow(new \DateTimeImmutable('2025-01-01 12:04:30'));
+        $this->enterDegradedMode($engine, 'otp_protection', $ip, 'otp-gc-warmup-account');
+
+        // The first fallback execution establishes lastGc at an unaligned time inside the 15-minute bucket.
+        $warmup = $this->limit($engine, 'otp_protection', $ip, self::CHROME_UA, 'otp-gc-warmup-account');
+        $this->assertSame(RateLimitResultDTO::DECISION_ALLOW, $warmup->decision);
+        $this->assertSame('DEGRADED_MODE', $warmup->failureMode);
+
+        // 13:04:29 is still before the hourly GC threshold and remains in the 13:00-13:14:59 OTP bucket.
+        $this->clock->setNow(new \DateTimeImmutable('2025-01-01 13:04:29'));
+        $first = $this->limit($engine, 'otp_protection', $ip, self::CHROME_UA, 'otp-gc-target-account');
+        $second = $this->limit($engine, 'otp_protection', $ip, self::CHROME_UA, 'otp-gc-target-account');
+
+        $this->assertSame(RateLimitResultDTO::DECISION_ALLOW, $first->decision);
+        $this->assertSame(RateLimitResultDTO::DECISION_ALLOW, $second->decision);
+        $this->assertSame('DEGRADED_MODE', $first->failureMode);
+        $this->assertSame('DEGRADED_MODE', $second->failureMode);
+
+        // 13:04:31 is still in the same OTP bucket, but crosses the one-hour GC threshold.
+        $this->clock->setNow(new \DateTimeImmutable('2025-01-01 13:04:31'));
+        $third = $this->limit($engine, 'otp_protection', $ip, self::CHROME_UA, 'otp-gc-target-account');
+
+        // Current baseline behavior: global GC clears the active bucket, so the third attempt is allowed.
+        $this->assertSame(RateLimitResultDTO::DECISION_ALLOW, $third->decision);
+        $this->assertSame('DEGRADED_MODE', $third->failureMode);
+    }
+
+    public function testOtpFallbackNaturallyResetsOnlyWhenFixedWindowRollsOver(): void
+    {
+        $engine = $this->createEngineWithStore(new ThrowingRateLimitStore(), new OtpProtectionPolicy());
+        $ip = '198.51.100.27';
+        $accountId = 'otp-window-account';
+
+        $this->clock->setNow(new \DateTimeImmutable('2025-01-01 12:04:30'));
+        $this->enterDegradedMode($engine, 'otp_protection', $ip, 'otp-window-warmup-account');
+
+        // Establish degraded mode and consume only the separate warm-up account.
+        $warmup = $this->limit($engine, 'otp_protection', $ip, self::CHROME_UA, 'otp-window-warmup-account');
+        $this->assertSame(RateLimitResultDTO::DECISION_ALLOW, $warmup->decision);
+        $this->assertSame('DEGRADED_MODE', $warmup->failureMode);
+
+        $first = $this->limit($engine, 'otp_protection', $ip, self::CHROME_UA, $accountId);
+        $second = $this->limit($engine, 'otp_protection', $ip, self::CHROME_UA, $accountId);
+        $third = $this->limit($engine, 'otp_protection', $ip, self::CHROME_UA, $accountId);
+
+        $this->assertSame(RateLimitResultDTO::DECISION_ALLOW, $first->decision);
+        $this->assertSame(RateLimitResultDTO::DECISION_ALLOW, $second->decision);
+        $this->assertFallbackLimitExceeded($third);
+
+        // The next fixed 15-minute bucket starts at 12:15:00; GC has not been crossed.
+        $this->clock->setNow(new \DateTimeImmutable('2025-01-01 12:15:00'));
+        $afterRollover = $this->limit($engine, 'otp_protection', $ip, self::CHROME_UA, $accountId);
+
+        $this->assertSame(RateLimitResultDTO::DECISION_ALLOW, $afterRollover->decision);
+        $this->assertSame('DEGRADED_MODE', $afterRollover->failureMode);
+    }
+
     public function testOtpFallbackIpCapIsIndependentOfUa(): void
     {
         $engine = $this->createEngineWithStore(new ThrowingRateLimitStore(), new OtpProtectionPolicy());
