@@ -17,11 +17,9 @@ class LocalFallbackLimiterGcTest extends TestCase
         $reflection = new \ReflectionClass(LocalFallbackLimiter::class);
 
         $countersProperty = $reflection->getProperty('counters');
-        $countersProperty->setAccessible(true);
         $countersProperty->setValue(null, []);
 
         $lastGcProperty = $reflection->getProperty('lastGc');
-        $lastGcProperty->setAccessible(true);
         $lastGcProperty->setValue(null, 0);
     }
 
@@ -50,7 +48,6 @@ class LocalFallbackLimiterGcTest extends TestCase
 
         $reflection = new \ReflectionClass(LocalFallbackLimiter::class);
         $countersProperty = $reflection->getProperty('counters');
-        $countersProperty->setAccessible(true);
         /** @var array<string, mixed> $counters */
         $counters = $countersProperty->getValue();
         $bucketKeys = array_keys($counters);
