@@ -32,6 +32,11 @@ All policies MUST comply with the following rules:
 * Failure semantics are explicitly defined
 * **No policy may introduce account-wide hard blocks based solely on attempt counts**
 * Budgets MAY increase friction but MUST NOT enable renewable or scheduled denial-of-owner
+* Budgets are **decision candidates**, never fail-fast gates: they MUST NOT mask a stronger
+  score/correlation `HARD_BLOCK` (`DECISION_MATRIX.md` §2.4.0)
+* Budget behavior is expressed through the policy-owned `BudgetConfigDTO`; the Engine MUST
+  NOT branch on policy identity (e.g. `if ($policy->getName() === ...)`) to implement budget
+  owner-safety
 
 ---
 
@@ -101,11 +106,32 @@ Account-level keys (K4) are authoritative.
 **Budget Rules (mandatory):**
 
 * Budget applies at **K4 (AccountID)**.
-* Budget uses a **fixed 24h epoch** (no extension).
-* Budget MUST NOT directly produce `HARD_BLOCK(Account)`.
-* Budget enforcement applies on **failures / attempts**, never on successful login.
-* Requests from **trusted session devices** downgrade the applied level by **one step**, never below L2.
-* Same-device failures become budget-eligible after `failed_login_count(K5) ≥ 8` within the epoch.
+* Budget uses a **fixed 24h epoch** (no extension; never restarted by cooldown).
+* Budget is a **decision candidate**, never a fail-fast gate (`DECISION_MATRIX.md` §2.4.0).
+* Budget MUST NOT directly produce `HARD_BLOCK(Account)`; its `SOFT_BLOCK` is never
+  persisted via `RateLimitStoreInterface::block()` and is never a level-1 `BlockState`.
+* Budget candidate applies on **`recordFailure(login_protection)`** and pre-flight
+  **`checkOnly(login_protection)`** only, never on `recordSuccess(login_protection)`
+  (`DECISION_MATRIX.md` §2.4.3).
+* Requests from **trusted session devices** downgrade the applied level by **one step**,
+  never below the trusted floor **L2**.
+* **Known-device** failures become budget-eligible only after
+  `failed_login_count(K5) ≥ 8` within the epoch; **new/unverified-device** failures are
+  budget-eligible immediately (`DECISION_MATRIX.md` §2.4.1).
+* Cooldown: **60 minutes**; budget `retryAfter` = remaining budget cooldown, not the epoch
+  remainder (`DECISION_MATRIX.md` §2.4.4).
+
+### Login BudgetConfig (Locked Preset)
+
+| Field                          | Value    |
+| ------------------------------ | -------- |
+| `threshold`                    | 20       |
+| `block_level`                  | L3       |
+| `cooldown_seconds`             | 3600     |
+| `trusted_session_floor_level`  | L2       |
+| `precheck_enforcement`         | true     |
+| `known_device_micro_cap`       | 8        |
+| `recovery_collision_guard_enabled` | false |
 
 ---
 
@@ -197,10 +223,29 @@ IP-only signals are advisory only.
 
 **Rules:**
 
-* Budget is account-scoped and uses a fixed epoch (no extension).
-* Applies only on failures, never on successful OTP.
-* Trusted session devices downgrade one level, never below L3.
-* Includes the **Recovery Collision Guard** from `DECISION_MATRIX.md` 3.3.5.
+* Budget is account-scoped and uses a fixed epoch (no extension; never restarted by cooldown).
+* **Every OTP failure is budget-eligible** at K4; there is **no Login-style K5 micro-cap**.
+* Budget candidate applies on **`recordFailure(otp_protection)`** only — **never** on
+  `checkOnly(otp_protection)` or `recordSuccess(otp_protection)`
+  (`DECISION_MATRIX.md` §3.3.2).
+* Trusted session devices downgrade one level, never below the trusted floor **L3**.
+* Cooldown: **120 minutes**; budget `retryAfter` = remaining budget cooldown, not the epoch
+  remainder (`DECISION_MATRIX.md` §3.3.3).
+* Includes the **Recovery Collision Guard** from `DECISION_MATRIX.md` §3.3.5 (atomic
+  returned-count trigger at `count == 10`; one-shot `SOFT_BLOCK (L2)` using PenaltyLadder
+  L2 duration).
+
+### OTP BudgetConfig (Locked Preset)
+
+| Field                          | Value    |
+| ------------------------------ | -------- |
+| `threshold`                    | 10       |
+| `block_level`                  | L4       |
+| `cooldown_seconds`             | 7200     |
+| `trusted_session_floor_level`  | L3       |
+| `precheck_enforcement`         | false    |
+| `known_device_micro_cap`       | null     |
+| `recovery_collision_guard_enabled` | true  |
 
 ---
 
