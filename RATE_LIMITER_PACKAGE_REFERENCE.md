@@ -259,7 +259,10 @@ Budget owner-safety relies on **existing and declared** storage primitives:
   `docs/KEY_STRATEGY.md` §4.3.2. `RateLimitStoreInterface` itself is unchanged, so
   existing store implementations stay source-compatible. It serves both K4 account budget
   and K5 same-device micro-cap; rotation therefore never resets and never extends the 24h
-  epoch. When a valid previous-secret budget must move to V2 and the store is not a
+  epoch. `EvaluationPipeline` implements the runtime integration: budget reads resolve V2
+  first and fall back to V1 only when no valid V2 state exists (never a `max(v1,v2)` merge),
+  and budget writes migrate a valid V1 state into V2 atomically via the capability. When a
+  valid previous-secret budget must move to V2 and the store is not a
   `BudgetSeedStoreInterface`, the path MUST fail explicitly through the existing failure
   semantics (`docs/FAILURE_SEMANTICS.md`) — never a silent reset or loss of enforcement.
 

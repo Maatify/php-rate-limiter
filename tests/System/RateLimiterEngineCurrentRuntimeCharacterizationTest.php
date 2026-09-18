@@ -162,7 +162,7 @@ final class RateLimiterEngineCurrentRuntimeCharacterizationTest extends TestCase
         $this->assertSame(2, $result->blockLevel);
     }
 
-    public function testCurrentCharacterizationLoginBudgetRotationDoesNotReadPreviousSecretBudget(): void
+    public function testLoginBudgetRotationReadsPreviousSecretBudgetAsV2Fallback(): void
     {
         $engine = $this->createEngineWithSecrets('new_secret', 'old_secret', new LoginProtectionPolicy());
         $accountId = 'login-budget-rotation';
@@ -173,13 +173,17 @@ final class RateLimiterEngineCurrentRuntimeCharacterizationTest extends TestCase
         );
         $oldK4Key = $this->key('login_protection', 'k4', $accountId, 'old_secret');
         $newK4Key = $this->key('login_protection', 'k4', $accountId, 'new_secret');
-        $this->store->incrementBudget($oldK4Key, 86400, 20);
+        $oldBudget = $this->store->incrementBudget($oldK4Key, 86400, 20);
 
         $result = $engine->limit($context, RateLimitCommand::checkOnly('login_protection'));
 
-        $this->assertSame(RateLimitResultDTO::DECISION_ALLOW, $result->decision);
-        $this->assertSame(0, $result->blockLevel);
-        $this->assertSame(20, $this->store->getBudget($oldK4Key)?->count);
+        $this->assertSame(RateLimitResultDTO::DECISION_SOFT_BLOCK, $result->decision);
+        $this->assertSame(3, $result->blockLevel);
+
+        $storedOldBudget = $this->store->getBudget($oldK4Key);
+        $this->assertNotNull($storedOldBudget);
+        $this->assertSame(20, $storedOldBudget->count);
+        $this->assertSame($oldBudget->epochStart, $storedOldBudget->epochStart);
         $this->assertNull($this->store->getBudget($newK4Key));
     }
 

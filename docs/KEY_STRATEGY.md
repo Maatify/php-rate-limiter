@@ -248,7 +248,7 @@ Locked semantics:
 The contract is used for **both** `K4` account budget and `K5` same-device micro-cap. Key
 rotation therefore never acts as a reset and never extends the 24h epoch.
 
-**Runtime integration contract (for the upcoming implementation):**
+**Runtime integration contract (implemented):**
 
 * `EvaluationPipeline` continues to accept `RateLimitStoreInterface`.
 * Paths that do not require a V1→V2 budget migration proceed without any additional
@@ -258,6 +258,9 @@ rotation therefore never acts as a reset and never extends the 24h epoch.
   * if the capability is not available, silent reset or loss of enforcement is forbidden;
   * the path MUST fail explicitly and pass through the existing failure semantics
     (`docs/FAILURE_SEMANTICS.md`).
+* `EvaluationPipeline` implements the §4.3.1 read rule directly: budget reads resolve V2 first and
+  fall back to V1 only when no valid V2 state exists (never a `max`), and budget writes use
+  `incrementBudgetWithSeed()` when a valid V1 epoch must be carried into V2.
 
 This preserves source compatibility for existing store implementations while keeping the
 rotation-survival contract intact.
