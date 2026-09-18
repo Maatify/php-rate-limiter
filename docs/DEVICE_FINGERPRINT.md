@@ -231,6 +231,163 @@ All fingerprints MUST be hashed using a keyed hash (HMAC).
 
 ---
 
+### 5.1 Fingerprint-Secret Rotation — Dual-Fingerprint Rotation Contract
+
+The current runtime resolves exactly **one** fingerprint hash:
+
+```
+fingerprintHash = HMAC(normalized raw device identity, fingerprint secret)
+```
+
+The architecture here is, as it exists today:
+
+* `FingerprintHasher` owns a single secret per instance.
+* `DeviceIdentityResolver` holds a single `FingerprintHasher`.
+* `DeviceIdentityDTO` carries only `fingerprintHash`.
+
+When the Fingerprint HMAC secret is rotated, the same normalized raw identity produces two
+distinct hashes:
+
+```
+deviceFp_current  = HMAC(rawIdentity, currentFingerprintSecret)
+deviceFp_previous = HMAC(rawIdentity, previousFingerprintSecret)
+```
+
+and therefore `deviceFp_current != deviceFp_previous` in general. This section fixes the
+**identity-layer contract** that keeps historical enforcement readable across that rotation.
+
+`fingerprintHash` is the **current-generation** fingerprint component;
+`previousFingerprintHash` is the **previous-generation** fingerprint component. The outer key
+secret and the fingerprint secret are independently rotatable components, but runtime
+continuity is represented as **one coordinated current generation and at most one previous
+generation** — never as independent Cartesian combinations of outer-secret and fingerprint
+versions. The rotation-generation invariant is locked in §5.1.6.
+
+#### 5.1.1 Public Identity Contract (Target)
+
+The pipeline MUST NOT rebuild the raw fingerprint or re-hash device material itself. The
+normalized raw identity remains owned by `DeviceIdentityResolver` only.
+
+Target public identity contract:
+
+```
+fingerprintHash          // current-generation fingerprint component
+previousFingerprintHash  // previous-generation fingerprint component, nullable
+```
+
+`previousFingerprintHash` is an **additive optional field at the end of `DeviceIdentityDTO`**
+representing the **previous-generation fingerprint component**:
+
+```
+public ?string $previousFingerprintHash = null
+```
+
+It MUST NOT change the meaning of the existing `fingerprintHash`. It does not stand alone: it
+is consumed as one member of the previous generation (`docs/KEY_STRATEGY.md` §4.3.3), paired
+with the previous-generation outer secret (`previousKeySecret ?? currentKeySecret`) — never
+recombined across generations.
+
+#### 5.1.2 Resolver Responsibility
+
+`DeviceIdentityResolverInterface::resolve(RateLimitContextDTO $context): DeviceIdentityDTO`
+remains unchanged. The default resolver builds the normalized raw identity **exactly once**:
+
+```
+v1|normalizedUa|normalizedClientFp|sessionDeviceId
+```
+
+then hashes the **same identity twice**:
+
+```
+fingerprintHash         = currentHasher(rawIdentity)
+previousFingerprintHash = previousHasher(rawIdentity)   // only when configured
+```
+
+The default resolver constructor is additive:
+
+```
+new DeviceIdentityResolver(
+    FingerprintHasher $currentHasher,
+    ?FingerprintHasher $previousHasher = null
+)
+```
+
+The old single-hasher constructor remains valid.
+
+Rules:
+
+* There MUST be no normalization difference between the two hashes; normalization is
+  identical for the current and the previous version.
+* `FingerprintHasher` stays single-secret: each instance is responsible for exactly one
+  secret. The resolver applies both hashers to the same normalized raw identity.
+* Raw fingerprint material MUST NOT leave the resolver, MUST NOT be stored, MUST NOT be
+  logged, and MUST NOT appear in `DeviceIdentityDTO`.
+
+#### 5.1.3 Host Responsibility During Fingerprint-Secret Rotation
+
+If the host rotates the Fingerprint HMAC secret itself, the host/default resolver MUST
+provide the previous fingerprint hasher — and therefore `previousFingerprintHash` — during
+the rotation window. The library does not guess whether the host rotated the fingerprint
+secret or not.
+
+If the host does not rotate the fingerprint secret, `previousFingerprintHash = null` is the
+expected value, and the previous generation reuses the current fingerprint component as a
+compatibility behavior (`docs/KEY_STRATEGY.md` §4.3.3). `previousFingerprintHash` exists only
+to represent the fingerprint component of a genuinely previous generation.
+
+#### 5.1.4 Trust & Confidence Independence
+
+Adding `previousFingerprintHash` MUST NOT change any of:
+
+```
+confidence
+isTrustedSession
+isDevicePreviouslyVerifiedForAccount
+isKnownForAccount
+```
+
+`previousFingerprintHash` MUST NOT be interpreted as a trusted device or a known device. It
+is only a **rotation-compatibility alias** for the same resolved device material.
+
+#### 5.1.5 Correlation / Ephemeral Boundary
+
+`fingerprintHash` is also used directly in `EphemeralBucket`, churn distinct sets, dilution
+keys, and new-device/flood correlation state. These are NOT the same problem class as the
+K3/K5 persistent-key migration, and they do not currently have an atomic alias/migration
+contract.
+
+Locked boundary statement:
+
+```
+Dual fingerprint contract enables historical K3/K5 and K5 micro-cap continuity.
+
+Full fingerprint-secret rotation continuity for correlation/ephemeral state
+is NOT yet claimed by this decision.
+```
+
+This section does not resolve correlation/ephemeral state. That remains a known
+architecture boundary within this documentation only.
+
+#### 5.1.6 Rotation-Generation Invariant (No Overlapping Generations)
+
+The architecture supports only a **current generation plus at most one previous generation**.
+The following invariant is locked:
+
+```
+A second secret rotation affecting either component MUST NOT begin
+while an earlier previous generation still needs enforcement continuity.
+```
+
+* A new rotation (outer key secret, fingerprint secret, or both) MUST NOT begin until the
+  previous-generation enforcement window has ended or the required state has been migrated or
+  expired according to its contract.
+* This prevents more than one historical cumulative state — in particular for the K5
+  micro-cap, whose cumulative budget state cannot be merged safely across multiple
+  generations (never `max(v1, v2)`; `docs/KEY_STRATEGY.md` §4.3.1 / §4.5.2).
+* Overlapping or multi-generation rotation is outside the supported model.
+
+---
+
 ## 6. Normalization Rules
 
 To ensure stability and collision resistance:
