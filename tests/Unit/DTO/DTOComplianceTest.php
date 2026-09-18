@@ -112,6 +112,7 @@ class DTOComplianceTest extends TestCase
         $device = new DeviceIdentityDTO('hash', 'LOW', false);
 
         $this->assertFalse($device->isDevicePreviouslyVerifiedForAccount);
+        $this->assertNull($device->previousFingerprintHash);
     }
 
     /**
@@ -164,8 +165,8 @@ class DTOComplianceTest extends TestCase
             ],
             DeviceIdentityDTO::class => [
                 new DeviceIdentityDTO('hash-123', 'HIGH', true, false, 'ua-456'),
-                ['fingerprintHash', 'confidence', 'isTrustedSession', 'churnDetected', 'normalizedUa', 'isDevicePreviouslyVerifiedForAccount'],
-                ['fingerprintHash' => 'hash-123', 'confidence' => 'HIGH', 'isTrustedSession' => true, 'churnDetected' => false, 'normalizedUa' => 'ua-456', 'isDevicePreviouslyVerifiedForAccount' => false]
+                ['fingerprintHash', 'confidence', 'isTrustedSession', 'churnDetected', 'normalizedUa', 'isDevicePreviouslyVerifiedForAccount', 'previousFingerprintHash'],
+                ['fingerprintHash' => 'hash-123', 'confidence' => 'HIGH', 'isTrustedSession' => true, 'churnDetected' => false, 'normalizedUa' => 'ua-456', 'isDevicePreviouslyVerifiedForAccount' => false, 'previousFingerprintHash' => null]
             ],
             EphemeralStateDTO::class => [
                 new EphemeralStateDTO(true, 5, 10),

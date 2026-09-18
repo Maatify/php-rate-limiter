@@ -230,7 +230,7 @@ fingerprint versions; the pipeline never rebuilds or re-hashes raw fingerprint m
 The outer key secret and the fingerprint secret are independently rotatable components, but
 runtime continuity is represented as **one coordinated current generation and at most one
 previous generation** (`docs/DEVICE_FINGERPRINT.md` §5.1.6), never as Cartesian combinations
-of versions. Target public contract:
+of versions. Public contract (implemented):
 
 - `fingerprintHash` — current-generation fingerprint component (unchanged semantics)
 - `previousFingerprintHash` — previous-generation fingerprint component, nullable, additive
@@ -248,7 +248,7 @@ are independent of `previousFingerprintHash`.
 | Concern                                          | Status                                     |
 | ------------------------------------------------ | ------------------------------------------ |
 | K4 budget rotation runtime                       | implemented                                |
-| Dual-fingerprint public contract                 | architecture locked, runtime pending       |
+| Dual-fingerprint public contract (identity layer)| implemented                               |
 | K3/K5 true fingerprint-secret rotation           | pending                                    |
 | K5 micro-cap true fingerprint-secret rotation    | pending                                    |
 | Correlation/ephemeral fingerprint-secret rotation| pending — separate design                 |
@@ -297,9 +297,10 @@ Budget owner-safety relies on **existing and declared** storage primitives:
     via the capability.
   - **K5 micro-cap rotation — pending.** The micro-cap key embeds a device fingerprint that
     is itself keyed by the current secret, so the historical K5 identity requires the
-    previous-generation fingerprint component; the dual-fingerprint generation contract is
-    architecture-locked (`docs/DEVICE_FINGERPRINT.md` §5.1; `docs/KEY_STRATEGY.md` §4.3.3 /
-    §4.5.2) but is not wired into the runtime yet.
+    previous-generation fingerprint component. The identity layer now provides
+    `previousFingerprintHash` (implemented, `docs/DEVICE_FINGERPRINT.md` §5.1), but the K5
+    micro-cap runtime integration (pipeline generation lookup + current-authoritative atomic
+    seeding, `docs/KEY_STRATEGY.md` §4.3.3 / §4.5.2) is not wired into the runtime yet.
   When a valid previous-secret budget must move to V2 and the store is not a
   `BudgetSeedStoreInterface`, the path MUST fail explicitly through the existing failure
   semantics (`docs/FAILURE_SEMANTICS.md`) — never a silent reset or loss of enforcement.

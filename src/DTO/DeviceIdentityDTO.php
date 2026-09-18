@@ -12,7 +12,8 @@ final readonly class DeviceIdentityDTO implements \JsonSerializable
         public bool $isTrustedSession,
         public bool $churnDetected = false,
         public string $normalizedUa = '',
-        public bool $isDevicePreviouslyVerifiedForAccount = false
+        public bool $isDevicePreviouslyVerifiedForAccount = false,
+        public ?string $previousFingerprintHash = null
     ) {}
 
     public function jsonSerialize(): mixed
@@ -24,6 +25,7 @@ final readonly class DeviceIdentityDTO implements \JsonSerializable
             'churnDetected' => $this->churnDetected,
             'normalizedUa' => $this->normalizedUa,
             'isDevicePreviouslyVerifiedForAccount' => $this->isDevicePreviouslyVerifiedForAccount,
+            'previousFingerprintHash' => $this->previousFingerprintHash,
         ];
     }
 }

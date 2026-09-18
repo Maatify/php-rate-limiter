@@ -233,17 +233,20 @@ All fingerprints MUST be hashed using a keyed hash (HMAC).
 
 ### 5.1 Fingerprint-Secret Rotation — Dual-Fingerprint Rotation Contract
 
-The current runtime resolves exactly **one** fingerprint hash:
+The implemented identity layer resolves the fingerprint component of the **current** and of at
+most one **previous** generation:
 
 ```
-fingerprintHash = HMAC(normalized raw device identity, fingerprint secret)
+fingerprintHash         = HMAC(normalized raw device identity, current fingerprint secret)
+previousFingerprintHash = HMAC(normalized raw device identity, previous fingerprint secret)  // when configured
 ```
 
-The architecture here is, as it exists today:
+Current identity-layer shape:
 
 * `FingerprintHasher` owns a single secret per instance.
-* `DeviceIdentityResolver` holds a single `FingerprintHasher`.
-* `DeviceIdentityDTO` carries only `fingerprintHash`.
+* `DeviceIdentityResolver` holds a current hasher plus an optional previous hasher.
+* `DeviceIdentityDTO` carries `fingerprintHash` and the nullable `previousFingerprintHash`
+  (additive last field; `null` when no previous hasher is configured).
 
 When the Fingerprint HMAC secret is rotated, the same normalized raw identity produces two
 distinct hashes:
@@ -263,12 +266,23 @@ continuity is represented as **one coordinated current generation and at most on
 generation** — never as independent Cartesian combinations of outer-secret and fingerprint
 versions. The rotation-generation invariant is locked in §5.1.6.
 
-#### 5.1.1 Public Identity Contract (Target)
+Implementation status:
+
+```
+Dual-fingerprint architecture                          = locked
+DeviceIdentityDTO.previousFingerprintHash              = implemented
+Default resolver optional previous hasher              = implemented
+K3/K5 pipeline generation integration                  = pending
+K5 micro-cap generation integration                    = pending
+Correlation/ephemeral rotation                         = pending separate design
+```
+
+#### 5.1.1 Public Identity Contract
 
 The pipeline MUST NOT rebuild the raw fingerprint or re-hash device material itself. The
 normalized raw identity remains owned by `DeviceIdentityResolver` only.
 
-Target public identity contract:
+Locked public identity contract:
 
 ```
 fingerprintHash          // current-generation fingerprint component
