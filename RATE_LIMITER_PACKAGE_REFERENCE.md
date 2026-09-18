@@ -3,7 +3,7 @@
 **Package:** RateLimiter
 **Namespace:** `Maatify\RateLimiter`
 **Status:** LOCKED — Architecture Contract
-**Spec Version:** `1.0.0`
+**Spec Version:** `1.1.0`
 **Change Class:** Adversarial Hardening Alignment
 **Location:** `src/`
 

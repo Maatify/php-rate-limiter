@@ -10,6 +10,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Added
 - Standalone Composer package foundation for `maatify/php-rate-limiter`
 - Initial package metadata and CI quality gate
+- Locked Budget Owner-Safety architecture and public-contract decisions (Spec Version `1.0.0` → `1.1.0`):
+  - Budget is a decision candidate, never a fail-fast gate; aggregation stays `HARD_BLOCK > SOFT_BLOCK > ALLOW`
+  - Budget-issued `SOFT_BLOCK` is decoupled from `RateLimitStoreInterface::block()` (not `BlockState`)
+  - Explicit command eligibility: Login `recordFailure`/`checkOnly` only; OTP `recordFailure` only
+  - Enforcement-owned budget cooldown (Login 3600s / OTP 7200s); budget `retryAfter` = remaining cooldown
+  - Key-rotation survival for all budget state (K4 epoch/count, K5 micro-cap, cooldown marker) — no `max(v1,v2)` merge
+  - Recovery Collision Guard keyed off the atomic returned budget count (one-shot L2, concurrency-safe)
+- Declared public storage-contract extension `RateLimitStoreInterface::incrementBudgetWithSeed()` for atomic budget-epoch hand-off across key rotation (documented contract; not yet implemented)
+- Declared host-provided signal `isDevicePreviouslyVerifiedForAccount` (default `false`) for known-device-for-account semantics without a trusted session
 
 ### Fixed
 - Fixed fallback UA double-normalization so local fallback receives raw UA and applies normalization once.
@@ -17,3 +26,4 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 - Package licensing established as proprietary by Owner Decision before first release
+- `BudgetConfigDTO` defined as a policy-owned complete contract (threshold, block level, cooldown seconds, trusted-session floor, pre-check enforcement, known-device micro-cap, Recovery Collision Guard toggle); normative behavior lives in `docs/DECISION_MATRIX.md`, preset values in `docs/POLICIES.md`
