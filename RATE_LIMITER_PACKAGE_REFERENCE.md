@@ -243,14 +243,14 @@ normalized raw identity (`docs/DEVICE_FINGERPRINT.md` §5.1). The identity seman
 (`confidence`, `isTrustedSession`, `isDevicePreviouslyVerifiedForAccount`, `isKnownForAccount`)
 are independent of `previousFingerprintHash`.
 
-**Fingerprint-secret rotation implementation status (locked/pending):**
+**Fingerprint-secret rotation implementation status:**
 
 | Concern                                          | Status                                     |
 | ------------------------------------------------ | ------------------------------------------ |
 | K4 budget rotation runtime                       | implemented                                |
 | Dual-fingerprint public contract (identity layer)| implemented                               |
-| K3/K5 true fingerprint-secret rotation           | pending                                    |
-| K5 micro-cap true fingerprint-secret rotation    | pending                                    |
+| K3/K5 persistent two-generation rotation         | implemented                                |
+| K5 micro-cap two-generation migration            | implemented                                |
 | Correlation/ephemeral fingerprint-secret rotation| pending — separate design                 |
 
 Generation resolution and the K5 micro-cap current/previous rule are owned by
@@ -295,12 +295,10 @@ Budget owner-safety relies on **existing and declared** storage primitives:
     resolve V2 first and fall back to V1 only when no valid V2 state exists (never a
     `max(v1,v2)` merge), and K4 budget writes migrate a valid V1 state into V2 atomically
     via the capability.
-  - **K5 micro-cap rotation — pending.** The micro-cap key embeds a device fingerprint that
-    is itself keyed by the current secret, so the historical K5 identity requires the
-    previous-generation fingerprint component. The identity layer now provides
-    `previousFingerprintHash` (implemented, `docs/DEVICE_FINGERPRINT.md` §5.1), but the K5
-    micro-cap runtime integration (pipeline generation lookup + current-authoritative atomic
-    seeding, `docs/KEY_STRATEGY.md` §4.3.3 / §4.5.2) is not wired into the runtime yet.
+  - **K5 micro-cap rotation — integrated.** The pipeline resolves the current and
+    previous-generation micro-cap keys, treats Current as authoritative, and atomically seeds
+    a valid Previous state into Current through the capability. The Previous state remains
+    unchanged; `max(v1, v2)` merging is not used.
   When a valid previous-secret budget must move to V2 and the store is not a
   `BudgetSeedStoreInterface`, the path MUST fail explicitly through the existing failure
   semantics (`docs/FAILURE_SEMANTICS.md`) — never a silent reset or loss of enforcement.

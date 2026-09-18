@@ -54,10 +54,17 @@ class EvaluationPipeline
         DeviceIdentityDTO $device
     ): RateLimitResultDTO
     {
-        // 1. Build Keys for Active Block Check (Original Hash)
+        // 1. Build keys for the current generation, then the one previous
+        // generation when either generation component is present.
         $realKeysV2 = $this->buildKeys($context, $device->normalizedUa, $device->fingerprintHash, $policy->getName(), $this->secret);
-        $realKeysV1 = $this->previousSecret
-            ? $this->buildKeys($context, $device->normalizedUa, $device->fingerprintHash, $policy->getName(), $this->previousSecret)
+        $realKeysV1 = $this->hasPreviousGeneration($device)
+            ? $this->buildKeys(
+                $context,
+                $device->normalizedUa,
+                $this->previousFingerprintHash($device),
+                $policy->getName(),
+                $this->previousSecret ?? $this->secret
+            )
             : [];
 
         // 2. Check Active Blocks (Fail-Fast) on Real Keys
@@ -80,8 +87,14 @@ class EvaluationPipeline
             $effectiveHash = $this->ephemeralBucket->resolveKey($context, $device->fingerprintHash);
         }
         $effectiveKeysV2 = $this->buildKeys($context, $device->normalizedUa, $effectiveHash, $policy->getName(), $this->secret);
-        $effectiveKeysV1 = $this->previousSecret
-            ? $this->buildKeys($context, $device->normalizedUa, $effectiveHash, $policy->getName(), $this->previousSecret)
+        $effectiveKeysV1 = $this->hasPreviousGeneration($device)
+            ? $this->buildKeys(
+                $context,
+                $device->normalizedUa,
+                $this->previousFingerprintHash($device),
+                $policy->getName(),
+                $this->previousSecret ?? $this->secret
+            )
             : [];
 
         // Check state just for knowing if it IS ephemeral (for key filtering)
@@ -415,27 +428,22 @@ class EvaluationPipeline
             if (empty($device->fingerprintHash) && $request->isFailure) {
                 $shouldCount = true;
             }
-            // Case 3: Same Known Device (K5) > Micro-cap
-            // Must use fixed 24h epoch counter, not decayed score.
+            // Case 3: Same Known Device (K5) > Micro-cap.
+            // The fixed 24h counter is one logical state across generations:
+            // current state is authoritative; a valid previous state is
+            // atomically seeded into current when current is absent.
             if ($deltas['k5'] > 0 && $context->accountId && $device->fingerprintHash) {
-                $microRaw = "{$policy->getName()}:rate_limiter:microcap:k5:v1:{$context->accountId}:{$device->fingerprintHash}";
+                $microRawV2 = "{$policy->getName()}:rate_limiter:microcap:k5:v1:{$context->accountId}:{$device->fingerprintHash}";
+                $microKeyV2 = $this->hashKey($microRawV2, $this->secret);
+                $microKeyV1 = null;
 
-                // Write to V2 (Active Key)
-                $microKeyV2 = $this->hashKey($microRaw, $this->secret);
-                $this->budgetTracker->increment($microKeyV2);
-
-                // Read from V2
-                $statusV2 = $this->budgetTracker->getStatus($microKeyV2);
-                $maxCount = $statusV2->count;
-
-                // Read from V1 (Rotation Fallback) - Read Only
-                if ($this->previousSecret) {
-                    $microKeyV1 = $this->hashKey($microRaw, $this->previousSecret);
-                    $statusV1 = $this->budgetTracker->getStatus($microKeyV1);
-                    $maxCount = max($maxCount, $statusV1->count);
+                if ($this->hasPreviousGeneration($device)) {
+                    $microRawV1 = "{$policy->getName()}:rate_limiter:microcap:k5:v1:{$context->accountId}:{$this->previousFingerprintHash($device)}";
+                    $microKeyV1 = $this->hashKey($microRawV1, $this->previousSecret ?? $this->secret);
                 }
 
-                if ($maxCount >= 8) {
+                $microState = $this->incrementBudgetAcrossRotation($microKeyV2, $microKeyV1);
+                if ($microState->count >= 8) {
                     $shouldCount = true;
                 }
             }
@@ -519,10 +527,8 @@ class EvaluationPipeline
 
     /**
      * Increment a budget counter across key rotation, migrating V1 epoch
-     * state into V2 atomically when required. Consumed only by the K4 account
-     * budget write path; the K5 micro-cap path does not use it, because the
-     * micro-cap key embeds a device fingerprint that itself changes across
-     * fingerprint-secret rotation.
+     * state into V2 atomically when required. This is used by both the K4
+     * account budget and the K5 micro-cap budget.
      *
      * - Active V2 → normal V2 increment (V1 ignored).
      * - No V2 + valid V1 → atomic seed + increment into V2 via
@@ -554,6 +560,16 @@ class EvaluationPipeline
         }
 
         return $this->store->incrementBudget($keyV2, self::BUDGET_EPOCH_SECONDS, $amount);
+    }
+
+    private function hasPreviousGeneration(DeviceIdentityDTO $device): bool
+    {
+        return $this->previousSecret !== null || $device->previousFingerprintHash !== null;
+    }
+
+    private function previousFingerprintHash(DeviceIdentityDTO $device): ?string
+    {
+        return $device->previousFingerprintHash ?? $device->fingerprintHash;
     }
 
     private function isBudgetExceeded(BudgetStateDTO $state, int $limit): bool
