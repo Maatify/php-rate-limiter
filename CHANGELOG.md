@@ -8,6 +8,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Added
+- Implemented the locked two-generation runtime integration for persistent K3/K5 active-block
+  lookup and score fallback, and for K5 micro-cap current-authoritative atomic migration across
+  outer-only, fingerprint-only, and both-rotated generations. `BudgetSeedStoreInterface` is
+  required only when a valid Previous micro-cap must be migrated; missing capability continues
+  through the existing failure semantics. Correlation/ephemeral fingerprint-secret rotation
+  remains pending as a separate design. Budget Owner-Safety remains pending for command
+  eligibility, cooldown, known-device eligibility, Recovery Collision Guard, and decision
+  aggregation/fail-fast removal.
 - Standalone Composer package foundation for `maatify/php-rate-limiter`
 - Initial package metadata and CI quality gate
 - Locked Budget Owner-Safety architecture and public-contract decisions (Spec Version `1.0.0` → `1.1.0`):

@@ -272,8 +272,8 @@ Implementation status:
 Dual-fingerprint architecture                          = locked
 DeviceIdentityDTO.previousFingerprintHash              = implemented
 Default resolver optional previous hasher              = implemented
-K3/K5 pipeline generation integration                  = pending
-K5 micro-cap generation integration                    = pending
+K3/K5 persistent two-generation pipeline integration  = implemented
+K5 micro-cap two-generation migration                  = implemented
 Correlation/ephemeral rotation                         = pending separate design
 ```
 

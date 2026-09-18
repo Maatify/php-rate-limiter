@@ -263,12 +263,11 @@ rotation therefore never acts as a reset and never extends the 24h epoch.
     rule directly: budget reads resolve V2 first and fall back to V1 only when no valid V2
     state exists (never a `max`), and budget writes use `incrementBudgetWithSeed()` when a
     valid V1 epoch must be carried into V2.
-  * **K5 micro-cap — pending.** The K5 micro-cap key embeds `fingerprintHash`, and the
-    identity layer now also provides the optional previous-generation fingerprint component
-    (`previousFingerprintHash`, two-generation model §4.3.3 and
-    `docs/DEVICE_FINGERPRINT.md` §5.1). The K5 runtime path does not consume that component
-    yet, so surviving a fingerprint-secret rotation remains pending. The §4.3.1/§4.3.2
-    survival requirement above remains locked and required; it is simply not yet implemented.
+  * **K5 micro-cap — implemented.** The K5 micro-cap key uses the two-generation resolution
+    (`previousFingerprintHash`, §4.3.3 and `docs/DEVICE_FINGERPRINT.md` §5.1). The runtime
+    treats Current as authoritative and uses `incrementBudgetWithSeed()` to carry a valid
+    Previous epoch into Current when required; a store without the capability fails through
+    the existing failure semantics.
 
 This preserves source compatibility for existing store implementations while keeping the
 rotation-survival contract intact.
@@ -281,19 +280,15 @@ represented as **one coordinated current generation and at most one previous gen
 it is NOT a set of independent Cartesian combinations of outer-secret and fingerprint
 versions.
 
-**Current pipeline gap (documented as-is):** the identity layer resolves both
-`fingerprintHash` and the optional `previousFingerprintHash`, but the runtime pipeline still
-builds the previous-secret device-derived keys using the previous outer key secret plus the
-**current** `fingerprintHash`. That covers the outer-only rotation case (previous generation
-= previous outer + current fingerprint) but the pipeline does not yet consume a genuinely
-previous fingerprint component, so fingerprint-only rotation (current outer + previous
-fingerprint) and both-rotated rotation (previous outer + previous fingerprint) history cannot
-be read. This affects at least:
+**Runtime integration status:** the identity layer and runtime pipeline resolve both
+`fingerprintHash` and the optional `previousFingerprintHash` as one coordinated current and
+previous generation. The pipeline now consumes the previous-generation fingerprint component
+with the previous-generation outer secret for historical lookup. This covers:
 
 * K3 active block lookup
 * K5 active block lookup
 * K3/K5 score fallback
-* K5 micro-cap
+* K5 micro-cap migration
 
 K4 is unaffected because it does not embed `DeviceFP`.
 
@@ -357,16 +352,15 @@ previous generation still needs enforcement continuity
 (`docs/DEVICE_FINGERPRINT.md` §5.1.6). This guarantees that at most one historical cumulative
 state exists at any time.
 
-**K3 / K5 active block lookup:** after implementation, check the Current generation key first,
-then the Previous generation key when present, so an active historical block does not
-disappear during rotation.
+**K3 / K5 active block lookup:** the pipeline checks the Current generation key first, then the
+Previous generation key when present, so an active historical block does not disappear during
+rotation.
 
 **K3 / K5 score state:** score fallback uses the historical Previous generation key. Existing
 score merge/decay semantics are unchanged by this decision; this is an architecture gate, not
 a score-semantics redesign.
 
-**Implementation verification targets (future runtime WU):** the next implementation work
-unit must prove each scenario:
+**Implementation verification targets:** the runtime System coverage proves each scenario:
 
 * outer-only rotation continuity
 * fingerprint-only rotation continuity
@@ -456,10 +450,11 @@ Logical namespace (before HMAC):
   as `max(current, previous)` (see §4.3.1). No `max()`, no Cartesian merge, and at most **one**
   previous-generation state (non-overlapping generations, §4.3.3 and
   `docs/DEVICE_FINGERPRINT.md` §5.1.6). The fixed epoch/count do not change because of rotation.
-* Implementation status: **pending.** The identity layer provides the previous-generation
-  fingerprint component (`previousFingerprintHash`) (`docs/DEVICE_FINGERPRINT.md` §5.1), but
-  K5 micro-cap generation lookup and current-authoritative atomic seeding are not yet wired
-  into the runtime.
+* Implementation status: **implemented.** The runtime resolves the current and previous
+  micro-cap keys using the two-generation model, increments the Current state authoritatively,
+  and atomically seeds a valid Previous state into Current through
+  `BudgetSeedStoreInterface::incrementBudgetWithSeed()` when Current is absent. A store that
+  lacks the capability fails through the existing failure semantics when migration is required.
 
 ---
 
