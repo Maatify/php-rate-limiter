@@ -120,7 +120,7 @@ class EvaluationPipelineRetryAfterTest extends TestCase
         $this->assertEquals(60, $result->retryAfter); // L2 duration = 60
     }
 
-    public function testBudgetBehavior(): void
+    public function testCurrentCharacterizationOtpBudgetActiveCheckOnlyReturnsSoftBlock(): void
     {
         $context = new RateLimitContextDTO('127.0.0.1', 'Mozilla', 'acct_123');
         $device = new DeviceIdentityDTO('hash_123', 'HIGH', false, false, 'Mozilla');
@@ -136,6 +136,7 @@ class EvaluationPipelineRetryAfterTest extends TestCase
         $this->assertEquals(RateLimitResultDTO::DECISION_SOFT_BLOCK, $result->decision);
         $this->assertEquals(4, $result->blockLevel);
         $this->assertEquals(86400, $result->retryAfter);
+        $this->assertSame(10, $this->store->getBudget($k4Key)?->count);
     }
 
     public function testFailureScoring(): void
