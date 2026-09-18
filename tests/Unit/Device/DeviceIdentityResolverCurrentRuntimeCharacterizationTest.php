@@ -67,4 +67,51 @@ final class DeviceIdentityResolverCurrentRuntimeCharacterizationTest extends Tes
         $this->assertSame('LOW', $device->confidence);
         $this->assertNotNull($device->fingerprintHash);
     }
+
+    public function testPreviouslyVerifiedSignalDefaultsToFalseInResolvedIdentity(): void
+    {
+        $device = $this->resolver->resolve(new RateLimitContextDTO(
+            '198.51.100.21',
+            'Mozilla/5.0 Chrome/123.0.0.0',
+            'no-signal-account'
+        ));
+
+        $this->assertFalse($device->isDevicePreviouslyVerifiedForAccount);
+        $this->assertFalse($device->isTrustedSession);
+    }
+
+    public function testPreviouslyVerifiedSignalPropagatesWithoutTrustedSession(): void
+    {
+        $device = $this->resolver->resolve(new RateLimitContextDTO(
+            '198.51.100.22',
+            'Mozilla/5.0 Chrome/123.0.0.0',
+            'verified-account',
+            null,
+            null,
+            false,
+            [],
+            true
+        ));
+
+        $this->assertTrue($device->isDevicePreviouslyVerifiedForAccount);
+        $this->assertFalse($device->isTrustedSession);
+        $this->assertSame('LOW', $device->confidence);
+    }
+
+    public function testPreviouslyVerifiedSignalDoesNotReplaceTrustedSessionPrerequisite(): void
+    {
+        $device = $this->resolver->resolve(new RateLimitContextDTO(
+            '198.51.100.23',
+            'Mozilla/5.0 Chrome/123.0.0.0',
+            'verified-account',
+            null,
+            null,
+            true,
+            [],
+            true
+        ));
+
+        $this->assertFalse($device->isTrustedSession);
+        $this->assertTrue($device->isDevicePreviouslyVerifiedForAccount);
+    }
 }

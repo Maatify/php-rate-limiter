@@ -265,18 +265,21 @@ Budget owner-safety relies on **existing and declared** storage primitives:
 
 ### 4.9 Host-Provided Known-Device Signal (Public Boundary)
 
-The public context/device-identity contracts cannot currently express:
+The public context/device-identity contracts express:
 
 ```
 device previously verified for this AccountID (known K5), without a trusted session
 ```
 
-A host-provided signal is adopted by the architecture for later addition to the public
-context/device-identity contract:
+as a host-provided signal carried on `RateLimitContextDTO` and `DeviceIdentityDTO` and
+propagated through `DeviceIdentityResolver`:
 
 ```
 isDevicePreviouslyVerifiedForAccount   // default: false
 ```
+
+The host is the sole authority for this value; the RateLimiter MUST NOT infer it from
+`K5` presence, from `DeviceConfidence = HIGH`, or by querying external storage.
 
 Resolved semantic:
 
@@ -284,9 +287,9 @@ Resolved semantic:
 isKnownForAccount = isTrustedSession OR isDevicePreviouslyVerifiedForAccount
 ```
 
-The host is responsible for proving the previous verified association. `K5` store presence
-alone does not prove a verified device. Device semantics are owned by
-`docs/DEVICE_FINGERPRINT.md` §4.3.
+`isTrustedSession` and `isDevicePreviouslyVerifiedForAccount` remain independent
+contracts: a previously-verified signal alone does not raise confidence or create a
+trusted session. Device semantics are owned by `docs/DEVICE_FINGERPRINT.md` §4.3.
 
 ---
 

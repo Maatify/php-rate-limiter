@@ -14,6 +14,7 @@ final readonly class RateLimitContextDTO implements \JsonSerializable
      * @param ?string $sessionDeviceId
      * @param bool $isSessionTrusted
      * @param array<string, string|string[]> $headers
+     * @param bool $isDevicePreviouslyVerifiedForAccount
      */
     public function __construct(
         public string $ip,
@@ -22,7 +23,8 @@ final readonly class RateLimitContextDTO implements \JsonSerializable
         public ?array $clientFingerprint = null,
         public ?string $sessionDeviceId = null,
         public bool $isSessionTrusted = false,
-        public array $headers = []
+        public array $headers = [],
+        public bool $isDevicePreviouslyVerifiedForAccount = false
     ) {}
 
     public function jsonSerialize(): mixed
@@ -35,6 +37,7 @@ final readonly class RateLimitContextDTO implements \JsonSerializable
             'sessionDeviceId' => $this->sessionDeviceId,
             'isSessionTrusted' => $this->isSessionTrusted,
             'headers' => $this->headers,
+            'isDevicePreviouslyVerifiedForAccount' => $this->isDevicePreviouslyVerifiedForAccount,
         ];
     }
 }

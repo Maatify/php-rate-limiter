@@ -11,7 +11,8 @@ final readonly class DeviceIdentityDTO implements \JsonSerializable
         public string $confidence, // LOW, MEDIUM, HIGH
         public bool $isTrustedSession,
         public bool $churnDetected = false,
-        public string $normalizedUa = ''
+        public string $normalizedUa = '',
+        public bool $isDevicePreviouslyVerifiedForAccount = false
     ) {}
 
     public function jsonSerialize(): mixed
@@ -22,6 +23,7 @@ final readonly class DeviceIdentityDTO implements \JsonSerializable
             'isTrustedSession' => $this->isTrustedSession,
             'churnDetected' => $this->churnDetected,
             'normalizedUa' => $this->normalizedUa,
+            'isDevicePreviouslyVerifiedForAccount' => $this->isDevicePreviouslyVerifiedForAccount,
         ];
     }
 }

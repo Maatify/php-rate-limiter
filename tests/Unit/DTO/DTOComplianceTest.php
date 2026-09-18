@@ -87,6 +87,33 @@ class DTOComplianceTest extends TestCase
         $this->assertTrue($blockResult->isBlocked());
     }
 
+    public function testBudgetConfigDTOLegacyConstructorPreservesRuntimeSemantics(): void
+    {
+        $config = new BudgetConfigDTO(100, 2);
+
+        $this->assertSame(100, $config->threshold);
+        $this->assertSame(2, $config->block_level);
+        $this->assertSame(0, $config->cooldown_seconds);
+        $this->assertSame(2, $config->trusted_session_floor_level);
+        $this->assertTrue($config->precheck_enforcement);
+        $this->assertSame(8, $config->known_device_micro_cap);
+        $this->assertFalse($config->recovery_collision_guard_enabled);
+    }
+
+    public function testRateLimitContextDTOLegacyConstructorDefaultsDeviceSignalToFalse(): void
+    {
+        $context = new RateLimitContextDTO('127.0.0.1', 'Mozilla', 'acc_123');
+
+        $this->assertFalse($context->isDevicePreviouslyVerifiedForAccount);
+    }
+
+    public function testDeviceIdentityDTOLegacyConstructorDefaultsDeviceSignalToFalse(): void
+    {
+        $device = new DeviceIdentityDTO('hash', 'LOW', false);
+
+        $this->assertFalse($device->isDevicePreviouslyVerifiedForAccount);
+    }
+
     /**
      * @dataProvider dtoSerializationProvider
      * @param array<int, string> $expectedKeys
@@ -127,8 +154,8 @@ class DTOComplianceTest extends TestCase
         return [
             BudgetConfigDTO::class => [
                 new BudgetConfigDTO(100, 2),
-                ['threshold', 'block_level'],
-                ['threshold' => 100, 'block_level' => 2]
+                ['threshold', 'block_level', 'cooldown_seconds', 'trusted_session_floor_level', 'precheck_enforcement', 'known_device_micro_cap', 'recovery_collision_guard_enabled'],
+                ['threshold' => 100, 'block_level' => 2, 'cooldown_seconds' => 0, 'trusted_session_floor_level' => 2, 'precheck_enforcement' => true, 'known_device_micro_cap' => 8, 'recovery_collision_guard_enabled' => false]
             ],
             BudgetStatusDTO::class => [
                 new BudgetStatusDTO(50, 10),
@@ -137,8 +164,8 @@ class DTOComplianceTest extends TestCase
             ],
             DeviceIdentityDTO::class => [
                 new DeviceIdentityDTO('hash-123', 'HIGH', true, false, 'ua-456'),
-                ['fingerprintHash', 'confidence', 'isTrustedSession', 'churnDetected', 'normalizedUa'],
-                ['fingerprintHash' => 'hash-123', 'confidence' => 'HIGH', 'isTrustedSession' => true, 'churnDetected' => false, 'normalizedUa' => 'ua-456']
+                ['fingerprintHash', 'confidence', 'isTrustedSession', 'churnDetected', 'normalizedUa', 'isDevicePreviouslyVerifiedForAccount'],
+                ['fingerprintHash' => 'hash-123', 'confidence' => 'HIGH', 'isTrustedSession' => true, 'churnDetected' => false, 'normalizedUa' => 'ua-456', 'isDevicePreviouslyVerifiedForAccount' => false]
             ],
             EphemeralStateDTO::class => [
                 new EphemeralStateDTO(true, 5, 10),
@@ -162,8 +189,8 @@ class DTOComplianceTest extends TestCase
             ],
             RateLimitContextDTO::class => [
                 new RateLimitContextDTO('127.0.0.1', 'Mozilla', 'acc_123', ['canvas' => 'abcd'], 'dev_456', true, ['Host' => 'localhost']),
-                ['ip', 'ua', 'accountId', 'clientFingerprint', 'sessionDeviceId', 'isSessionTrusted', 'headers'],
-                ['ip' => '127.0.0.1', 'ua' => 'Mozilla', 'accountId' => 'acc_123', 'clientFingerprint' => ['canvas' => 'abcd'], 'sessionDeviceId' => 'dev_456', 'isSessionTrusted' => true, 'headers' => ['Host' => 'localhost']]
+                ['ip', 'ua', 'accountId', 'clientFingerprint', 'sessionDeviceId', 'isSessionTrusted', 'headers', 'isDevicePreviouslyVerifiedForAccount'],
+                ['ip' => '127.0.0.1', 'ua' => 'Mozilla', 'accountId' => 'acc_123', 'clientFingerprint' => ['canvas' => 'abcd'], 'sessionDeviceId' => 'dev_456', 'isSessionTrusted' => true, 'headers' => ['Host' => 'localhost'], 'isDevicePreviouslyVerifiedForAccount' => false]
             ],
             RateLimitContextMetadataDTO::class => [
                 new RateLimitContextMetadataDTO('test_reason', 'test_scope'),

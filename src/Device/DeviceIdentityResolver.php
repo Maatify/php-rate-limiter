@@ -37,7 +37,8 @@ class DeviceIdentityResolver implements DeviceIdentityResolverInterface
             $confidence,
             $isTrustedSession,
             false,
-            $ua
+            $ua,
+            $context->isDevicePreviouslyVerifiedForAccount
         );
     }
 

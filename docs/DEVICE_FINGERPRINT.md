@@ -186,9 +186,9 @@ fingerprint-presence facts.
   active trusted session (e.g. verified via out-of-band token, a prior successful
   authenticated session, or account settings).
 
-The **public context/device-identity contracts cannot currently represent** the second
-case. The architecture therefore adopts a **host-provided signal** (to be added to the
-public context/device-identity contract):
+The **public context/device-identity contracts represent** the second case via a
+**host-provided signal** carried on `RateLimitContextDTO` and `DeviceIdentityDTO` and
+propagated through `DeviceIdentityResolver`:
 
 ```
 isDevicePreviouslyVerifiedForAccount   // default: false
@@ -203,7 +203,11 @@ isKnownForAccount = isTrustedSession OR isDevicePreviouslyVerifiedForAccount
 Rules:
 
 * The **host** is the only authority for proving a previous verified association; the
-  RateLimiter performs no independent verification.
+  RateLimiter performs no independent verification and no inference from `K5` presence,
+  `DeviceConfidence = HIGH`, or external storage.
+* A previously-verified signal does **not** create a trusted session and does **not**
+  raise confidence on its own; `isTrustedSession` and
+  `isDevicePreviouslyVerifiedForAccount` are independent contracts.
 * The existence of a `K5` counter in RateLimiter storage **does not, by itself**, mean the
   device was previously verified. `K5` presence is a risk-history signal (`§9`), not proof
   of device ownership.

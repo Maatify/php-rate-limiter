@@ -43,6 +43,14 @@ class LoginProtectionPolicy implements BlockPolicyInterface
 
     public function getBudgetConfig(): ?BudgetConfigDTO
     {
-        return new BudgetConfigDTO(20, 3);
+        return new BudgetConfigDTO(
+            threshold: 20,
+            block_level: 3,
+            cooldown_seconds: 3600,
+            trusted_session_floor_level: 2,
+            precheck_enforcement: true,
+            known_device_micro_cap: 8,
+            recovery_collision_guard_enabled: false
+        );
     }
 }
