@@ -26,4 +26,4 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 - Package licensing established as proprietary by Owner Decision before first release
-- `BudgetConfigDTO` defined as a policy-owned complete contract (threshold, block level, cooldown seconds, trusted-session floor, pre-check enforcement, known-device micro-cap, Recovery Collision Guard toggle); normative behavior lives in `docs/DECISION_MATRIX.md`, preset values in `docs/POLICIES.md`
+- Documented the target `BudgetConfigDTO` policy-owned contract (threshold, block level, cooldown seconds, trusted-session floor, pre-check enforcement, known-device micro-cap, Recovery Collision Guard toggle); Runtime DTO expansion is not yet implemented. Normative behavior lives in `docs/DECISION_MATRIX.md`, with preset values in `docs/POLICIES.md`.
