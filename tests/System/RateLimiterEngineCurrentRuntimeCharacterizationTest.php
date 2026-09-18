@@ -162,6 +162,130 @@ final class RateLimiterEngineCurrentRuntimeCharacterizationTest extends TestCase
         $this->assertSame(2, $result->blockLevel);
     }
 
+    public function testCurrentCharacterizationLoginBudgetRotationDoesNotReadPreviousSecretBudget(): void
+    {
+        $engine = $this->createEngineWithSecrets('new_secret', 'old_secret', new LoginProtectionPolicy());
+        $accountId = 'login-budget-rotation';
+        $context = new RateLimitContextDTO(
+            '198.51.100.23',
+            'Mozilla/5.0 Chrome/123.0.0.0',
+            $accountId
+        );
+        $oldK4Key = $this->key('login_protection', 'k4', $accountId, 'old_secret');
+        $newK4Key = $this->key('login_protection', 'k4', $accountId, 'new_secret');
+        $this->store->incrementBudget($oldK4Key, 86400, 20);
+
+        $result = $engine->limit($context, RateLimitCommand::checkOnly('login_protection'));
+
+        $this->assertSame(RateLimitResultDTO::DECISION_ALLOW, $result->decision);
+        $this->assertSame(0, $result->blockLevel);
+        $this->assertSame(20, $this->store->getBudget($oldK4Key)?->count);
+        $this->assertNull($this->store->getBudget($newK4Key));
+    }
+
+    public function testCurrentCharacterizationLoginActiveBudgetMasksStrongerK4ScoreThreshold(): void
+    {
+        $engine = $this->createEngine(new LoginProtectionPolicy());
+        $accountId = 'login-budget-before-score-threshold';
+        $context = new RateLimitContextDTO(
+            '198.51.100.24',
+            'Mozilla/5.0 Chrome/123.0.0.0',
+            $accountId
+        );
+        $k4Key = $this->key('login_protection', 'k4', $accountId);
+        $this->store->set($k4Key, 8, 86400);
+        $this->store->incrementBudget($k4Key, 86400, 20);
+
+        $this->assertNull($this->store->checkBlock($k4Key));
+
+        $result = $engine->limit($context, RateLimitCommand::checkOnly('login_protection'));
+
+        $this->assertSame(RateLimitResultDTO::DECISION_SOFT_BLOCK, $result->decision);
+        $this->assertSame(3, $result->blockLevel);
+        $this->assertSame(8, $this->store->get($k4Key)?->value);
+    }
+
+    public function testCurrentCharacterizationLoginActiveBudgetShortCircuitsFailureUpdates(): void
+    {
+        $engine = $this->createEngine(new LoginProtectionPolicy());
+        $accountId = 'login-budget-short-circuit';
+        $context = new RateLimitContextDTO(
+            '198.51.100.25',
+            'Mozilla/5.0 Chrome/123.0.0.0',
+            $accountId,
+            ['device' => 'stable']
+        );
+        $k4Key = $this->key('login_protection', 'k4', $accountId);
+        $this->store->set($k4Key, 0, 86400);
+        $this->store->incrementBudget($k4Key, 86400, 20);
+
+        $result = $engine->limit($context, RateLimitCommand::recordFailure('login_protection'));
+
+        $this->assertSame(RateLimitResultDTO::DECISION_SOFT_BLOCK, $result->decision);
+        $this->assertSame(3, $result->blockLevel);
+        $this->assertSame(0, $this->store->get($k4Key)?->value);
+        $this->assertSame(20, $this->store->getBudget($k4Key)?->count);
+    }
+
+    public function testCurrentCharacterizationKnownTrustedLoginDeviceCountsBudgetBeforeK5MicroCap(): void
+    {
+        $engine = $this->createEngine(new LoginProtectionPolicy());
+        $accountId = 'login-known-trusted-before-microcap';
+        $context = new RateLimitContextDTO(
+            '198.51.100.26',
+            'Mozilla/5.0 Chrome/123.0.0.0',
+            $accountId,
+            null,
+            'session-device-5',
+            true
+        );
+        $device = (new DeviceIdentityResolver(new FingerprintHasher('test_secret')))->resolve($context);
+        $this->assertNotNull($device->fingerprintHash);
+        $k4Key = $this->key('login_protection', 'k4', $accountId);
+        $k5Key = $this->key('login_protection', 'k5', "{$accountId}:{$device->fingerprintHash}");
+        $microCapKey = hash_hmac(
+            'sha256',
+            "login_protection:rate_limiter:microcap:k5:v1:{$accountId}:{$device->fingerprintHash}",
+            'test_secret'
+        );
+
+        $result = $engine->limit($context, RateLimitCommand::recordFailure('login_protection'));
+
+        $this->assertSame(RateLimitResultDTO::DECISION_ALLOW, $result->decision);
+        $this->assertSame(2, $this->store->get($k5Key)?->value);
+        $this->assertSame(1, $this->store->getBudget($microCapKey)?->count);
+        $this->assertSame(1, $this->store->getBudget($k4Key)?->count);
+    }
+
+    public function testCurrentCharacterizationLoginBudgetKeepsFixedEpochStartWithinTwentyFourHours(): void
+    {
+        $engine = $this->createEngine(new LoginProtectionPolicy());
+        $accountId = 'login-budget-fixed-epoch';
+        $context = new RateLimitContextDTO(
+            '198.51.100.27',
+            'Mozilla/5.0 Chrome/123.0.0.0',
+            $accountId,
+            ['device' => 'stable']
+        );
+        $k4Key = $this->key('login_protection', 'k4', $accountId);
+
+        $first = $engine->limit($context, RateLimitCommand::recordFailure('login_protection'));
+        $firstBudget = $this->store->getBudget($k4Key);
+        $this->assertNotNull($firstBudget);
+        $this->assertSame(1, $firstBudget->count);
+        $epochStart = $firstBudget->epochStart;
+
+        $this->clock->setNow(new \DateTimeImmutable('2025-01-01 12:00:30'));
+        $second = $engine->limit($context, RateLimitCommand::recordFailure('login_protection'));
+        $secondBudget = $this->store->getBudget($k4Key);
+
+        $this->assertSame(RateLimitResultDTO::DECISION_ALLOW, $first->decision);
+        $this->assertSame(RateLimitResultDTO::DECISION_SOFT_BLOCK, $second->decision);
+        $this->assertNotNull($secondBudget);
+        $this->assertSame(2, $secondBudget->count);
+        $this->assertSame($epochStart, $secondBudget->epochStart);
+    }
+
     public function testCurrentCharacterizationLoginActiveBudgetHasNoCooldownBetweenEligibleRequests(): void
     {
         $engine = $this->createEngine(new LoginProtectionPolicy());
@@ -333,6 +457,15 @@ final class RateLimiterEngineCurrentRuntimeCharacterizationTest extends TestCase
 
     private function createEngine(BlockPolicyInterface ...$policies): RateLimiterEngine
     {
+        return $this->createEngineWithSecrets('test_secret', null, ...$policies);
+    }
+
+    private function createEngineWithSecrets(
+        string $currentSecret,
+        ?string $previousSecret,
+        BlockPolicyInterface ...$policies
+    ): RateLimiterEngine
+    {
         $emitter = new RecordingFailureSignalEmitter();
         $pipeline = new EvaluationPipeline(
             $this->store,
@@ -341,13 +474,14 @@ final class RateLimiterEngineCurrentRuntimeCharacterizationTest extends TestCase
             new AntiEquilibriumGate($this->correlationStore),
             new DecayCalculator($this->clock),
             new EphemeralBucket($this->correlationStore),
-            'test_secret',
+            $currentSecret,
             'prod',
-            $this->clock
+            $this->clock,
+            $previousSecret
         );
 
         return new RateLimiterEngine(
-            new DeviceIdentityResolver(new FingerprintHasher('test_secret')),
+            new DeviceIdentityResolver(new FingerprintHasher($currentSecret)),
             $pipeline,
             new CircuitBreaker(new InMemoryCircuitBreakerStore(), $emitter, $this->clock),
             new FailureModeResolver(),
@@ -366,12 +500,12 @@ final class RateLimiterEngineCurrentRuntimeCharacterizationTest extends TestCase
         ]);
     }
 
-    private function key(string $policy, string $type, string $scope): string
+    private function key(string $policy, string $type, string $scope, string $secret = 'test_secret'): string
     {
         return hash_hmac(
             'sha256',
             "{$policy}:rate_limiter:{$type}:v2:prod:{$scope}",
-            'test_secret'
+            $secret
         );
     }
 }
