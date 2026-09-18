@@ -15,7 +15,6 @@ use Maatify\RateLimiter\DTO\RateLimitContextMetadataDTO;
 use Maatify\RateLimiter\DTO\RateLimitMetadataDTO;
 use Maatify\RateLimiter\DTO\RateLimitResultDTO;
 use Maatify\RateLimiter\Exception\RateLimiterException;
-use Maatify\RateLimiter\Device\DeviceIdentityResolver;
 use Maatify\SharedCommon\Contracts\ClockInterface;
 
 class RateLimiterEngine implements RateLimiterInterface
@@ -99,9 +98,7 @@ class RateLimiterEngine implements RateLimiterInterface
 
             // Local Fallback Check
             if ($mode !== 'FAIL_CLOSED') {
-                $normUa = DeviceIdentityResolver::normalizeUserAgent($context->ua);
-
-                if (!LocalFallbackLimiter::check($this->clock, $policy->getName(), $mode, $context->ip, $context->accountId, $normUa)) {
+                if (!LocalFallbackLimiter::check($this->clock, $policy->getName(), $mode, $context->ip, $context->accountId, $context->ua)) {
                     $contextMeta = new RateLimitContextMetadataDTO('fallback_limit_exceeded');
                     $meta = new RateLimitMetadataDTO($signal, 'fallback_limit_exceeded', $contextMeta);
                     return new RateLimitResultDTO(RateLimitResultDTO::DECISION_HARD_BLOCK, 2, 60, $mode, $meta);

@@ -184,7 +184,7 @@ class RateLimiterEngineFallbackBlastRadiusTest extends TestCase
         // Locked fallback cap: 10 requests per IP in 15 minutes.
     }
 
-    public function testApiCrossUaFallbackDefectIsCharacterizedThroughEngine(): void
+    public function testApiCrossUaFallbackUsesDistinctK2BucketsThroughEngine(): void
     {
         $engine = $this->createEngineWithStore(new ThrowingRateLimitStore(), new ApiHeavyProtectionPolicy());
         $ip = '198.51.100.24';
@@ -197,8 +197,8 @@ class RateLimiterEngineFallbackBlastRadiusTest extends TestCase
 
         $firefoxResult = $this->limit($engine, 'api_heavy_protection', $ip, self::FIREFOX_UA, null);
 
-        $this->assertFallbackLimitExceeded($firefoxResult);
-        // Baseline characterization: Engine pre-normalizes both UAs before the fallback normalizes them again.
+        $this->assertSame(RateLimitResultDTO::DECISION_ALLOW, $firefoxResult->decision);
+        $this->assertSame('DEGRADED_MODE', $firefoxResult->failureMode);
     }
 
     public function testApiFallbackK1AggregateCapIsIndependentOfK2AcrossRawUas(): void
