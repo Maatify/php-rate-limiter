@@ -32,6 +32,7 @@ This package is in pre-release development. It is proprietary software, has no p
 
 - PHP `^8.4`.
 - PHP extensions `filter`, `hash`, `json`, and `pcre`.
+- `maatify/exceptions` `^1.0`.
 - `maatify/shared-common` `^1.0`.
 
 ## Installation
