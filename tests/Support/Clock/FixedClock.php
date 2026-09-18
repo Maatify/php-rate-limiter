@@ -2,7 +2,7 @@
 
 declare(strict_types=1);
 
-namespace Maatify\RateLimiter\Tests\Unit\Engine;
+namespace Maatify\RateLimiter\Tests\Support\Clock;
 
 use Maatify\SharedCommon\Contracts\ClockInterface;
 
@@ -13,6 +13,11 @@ class FixedClock implements ClockInterface
     public function __construct(string $time = '2025-01-01 12:00:00')
     {
         $this->now = new \DateTimeImmutable($time);
+    }
+
+    public function setNow(\DateTimeImmutable $now): void
+    {
+        $this->now = $now;
     }
 
     public function now(): \DateTimeImmutable
