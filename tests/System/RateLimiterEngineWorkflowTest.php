@@ -277,12 +277,12 @@ class RateLimiterEngineWorkflowTest extends TestCase
         $this->assertSame('DEGRADED_MODE', $afterTrip->failureMode);
     }
 
-    public function testFinding6UADoubleNormalizationRemainsUnchanged(): void
+    public function testApiHeavyFallbackK2CapThroughEngine(): void
     {
         $context = new RateLimitContextDTO('127.0.0.1', 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/123.0.0.0 Safari/537.36', 'acct_123');
         $command = RateLimitCommand::checkOnly('api_heavy_protection'); // API Heavy is FAIL_OPEN
 
-        // Seed an exception trigger: use a throwing store with real pipeline
+        // Force the real Engine through its local fallback path with a failing store.
         $throwingStore = new ThrowingRateLimitStore();
 
         $pipelineWithThrowingStore = new EvaluationPipeline(
@@ -314,17 +314,13 @@ class RateLimiterEngineWorkflowTest extends TestCase
             [new ApiHeavyProtectionPolicy()]
         );
 
-        // Consume K2 local fallback bucket
+        // The Engine's local fallback K2 bucket allows the first 60 requests.
         for ($i = 0; $i < 60; $i++) {
             $result = $engineWithThrowingStore->limit($context, $command);
             $this->assertEquals(RateLimitResultDTO::DECISION_ALLOW, $result->decision);
-
-            // Expected mode is DEGRADED_MODE because the circuit breaker opens after 3 errors,
-            // and the first 2 are FAIL_OPEN. Then it transitions to DEGRADED_MODE.
-            // Actually, we just need to test the LocalFallbackLimiter, so we'll assert the decision.
         }
 
-        // 61st request should be rejected by fallback limiter (K2 cap is 60)
+        // The 61st request is rejected by the Engine's fallback K2 cap.
         $result = $engineWithThrowingStore->limit($context, $command);
         $this->assertEquals(RateLimitResultDTO::DECISION_HARD_BLOCK, $result->decision);
 
@@ -366,20 +362,23 @@ class RateLimiterEngineWorkflowTest extends TestCase
         $context = new RateLimitContextDTO('127.0.0.1', 'Mozilla/5.0', 'acct_123');
         $command = new RateLimitCommand('api_heavy_protection', 1, false, false, false);
 
-        $deviceResolver = new DeviceIdentityResolver(new FingerprintHasher('new_secret'));
-        $device = $deviceResolver->resolve($context);
-        $normalizedUa = $device->normalizedUa;
-
-        // Block using OLD secret
+        // Seed a readable score under the previous secret. The active key is absent.
         $oldK1 = hash_hmac('sha256', "api_heavy_protection:rate_limiter:k1:v2:prod:127.0.0.1", 'old_secret');
-        $this->store->block($oldK1, 3, 3600);
+        $this->store->set($oldK1, 7, 3600);
 
-        // Check using new Engine
+        // The real pipeline must read the old score and write the update under the active secret.
         $result = $engine->limit($context, $command);
 
-        // Should read block from old secret
-        $this->assertEquals(RateLimitResultDTO::DECISION_HARD_BLOCK, $result->decision);
-        $this->assertEquals(3, $result->blockLevel);
+        $this->assertSame(RateLimitResultDTO::DECISION_ALLOW, $result->decision);
+
+        $newK1 = hash_hmac('sha256', "api_heavy_protection:rate_limiter:k1:v2:prod:127.0.0.1", 'new_secret');
+        $oldState = $this->store->get($oldK1);
+        $newState = $this->store->get($newK1);
+
+        $this->assertNotNull($oldState);
+        $this->assertNotNull($newState);
+        $this->assertSame(7, $oldState->value);
+        $this->assertSame(8, $newState->value);
     }
 
     public function testIPv6KeyHierarchy(): void
