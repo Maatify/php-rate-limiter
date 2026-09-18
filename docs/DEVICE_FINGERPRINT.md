@@ -231,6 +231,121 @@ All fingerprints MUST be hashed using a keyed hash (HMAC).
 
 ---
 
+### 5.1 Fingerprint-Secret Rotation — Dual-Fingerprint Rotation Contract
+
+The current runtime resolves exactly **one** fingerprint hash:
+
+```
+fingerprintHash = HMAC(normalized raw device identity, fingerprint secret)
+```
+
+The architecture here is, as it exists today:
+
+* `FingerprintHasher` owns a single secret per instance.
+* `DeviceIdentityResolver` holds a single `FingerprintHasher`.
+* `DeviceIdentityDTO` carries only `fingerprintHash`.
+
+When the Fingerprint HMAC secret is rotated, the same normalized raw identity produces two
+distinct hashes:
+
+```
+deviceFp_current  = HMAC(rawIdentity, currentFingerprintSecret)
+deviceFp_previous = HMAC(rawIdentity, previousFingerprintSecret)
+```
+
+and therefore `deviceFp_current != deviceFp_previous` in general. This section fixes the
+**identity-layer contract** that keeps historical enforcement readable across that rotation.
+
+#### 5.1.1 Public Identity Contract (Target)
+
+The pipeline MUST NOT rebuild the raw fingerprint or re-hash device material itself. The
+normalized raw identity remains owned by `DeviceIdentityResolver` only.
+
+Target public identity contract:
+
+```
+fingerprintHash          // current
+previousFingerprintHash  // previous, nullable
+```
+
+`previousFingerprintHash` is an **additive optional field at the end of `DeviceIdentityDTO`**:
+
+```
+public ?string $previousFingerprintHash = null
+```
+
+It MUST NOT change the meaning of the existing `fingerprintHash`.
+
+#### 5.1.2 Resolver Responsibility
+
+`DeviceIdentityResolverInterface::resolve(RateLimitContextDTO $context): DeviceIdentityDTO`
+remains unchanged. The default resolver builds the normalized raw identity **exactly once**:
+
+```
+v1|normalizedUa|normalizedClientFp|sessionDeviceId
+```
+
+then hashes the **same identity twice**:
+
+```
+fingerprintHash         = currentHasher(rawIdentity)
+previousFingerprintHash = previousHasher(rawIdentity)   // only when configured
+```
+
+Rules:
+
+* There MUST be no normalization difference between the two hashes; normalization is
+  identical for the current and the previous version.
+* `FingerprintHasher` stays single-secret: each instance is responsible for exactly one
+  secret. The resolver applies both hashers to the same normalized raw identity.
+* Raw fingerprint material MUST NOT leave the resolver, MUST NOT be stored, MUST NOT be
+  logged, and MUST NOT appear in `DeviceIdentityDTO`.
+
+#### 5.1.3 Host Responsibility During Fingerprint-Secret Rotation
+
+If the host rotates the Fingerprint HMAC secret itself, the host/default resolver MUST
+provide the previous fingerprint hasher — and therefore `previousFingerprintHash` — during
+the rotation window. The library does not guess whether the host rotated the fingerprint
+secret or not.
+
+If the host does not rotate the fingerprint secret, `previousFingerprintHash = null` is the
+expected value.
+
+#### 5.1.4 Trust & Confidence Independence
+
+Adding `previousFingerprintHash` MUST NOT change any of:
+
+```
+confidence
+isTrustedSession
+isDevicePreviouslyVerifiedForAccount
+isKnownForAccount
+```
+
+`previousFingerprintHash` MUST NOT be interpreted as a trusted device or a known device. It
+is only a **rotation-compatibility alias** for the same resolved device material.
+
+#### 5.1.5 Correlation / Ephemeral Boundary
+
+`fingerprintHash` is also used directly in `EphemeralBucket`, churn distinct sets, dilution
+keys, and new-device/flood correlation state. These are NOT the same problem class as the
+K3/K5 persistent-key migration, and they do not currently have an atomic alias/migration
+contract.
+
+Locked boundary statement:
+
+```
+Dual fingerprint contract enables historical K3/K5 and K5 micro-cap continuity.
+
+Full fingerprint-secret rotation continuity for correlation/ephemeral state
+is NOT yet claimed by this decision.
+```
+
+This section does not resolve correlation/ephemeral state. That remains a known
+architecture boundary within this documentation only.
+
+---
+
 ## 6. Normalization Rules
 
 To ensure stability and collision resistance:

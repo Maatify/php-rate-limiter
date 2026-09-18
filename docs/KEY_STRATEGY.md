@@ -267,12 +267,75 @@ rotation therefore never acts as a reset and never extends the 24h epoch.
     `DeviceIdentityResolver` derives `fingerprintHash` from the current secret
     (`deviceFp_v2 = HMAC(rawFingerprint, new_secret)`), so the historical micro-cap key is
     keyed by `deviceFp_v1`. Surviving a fingerprint-secret rotation therefore requires the
-    previous fingerprint hash (dual-fingerprint rotation support), which is not wired into
-    the runtime yet. The §4.3.1/§4.3.2 survival requirement above remains locked and
-    required; it is simply not yet implemented.
+    previous fingerprint hash (dual-fingerprint rotation support, §4.3.3 and
+    `docs/DEVICE_FINGERPRINT.md` §5.1), which is not wired into the runtime yet. The
+    §4.3.1/§4.3.2 survival requirement above remains locked and required; it is simply not
+    yet implemented.
 
 This preserves source compatibility for existing store implementations while keeping the
 rotation-survival contract intact.
+
+#### 4.3.3 Device-Derived Key Pairing Under Fingerprint-Secret Rotation
+
+§4.3.1/§4.3.2 handle outer-storage-key rotation for budget state. Fingerprint-secret
+rotation is a separate axis: when the Fingerprint HMAC secret changes, the device
+fingerprint itself changes. Device-derived keys must therefore pair the **matching**
+fingerprint version with the matching outer secret.
+
+**Current gap (documented as-is):** `EvaluationPipeline` builds the previous-secret
+device-derived keys today using the previous outer key secret plus the **current**
+`fingerprintHash`. That does not represent the historical K3/K5 key when the fingerprint
+secret itself changed. This affects at least:
+
+* K3 active block lookup
+* K5 active block lookup
+* K3/K5 score fallback
+* K5 micro-cap
+
+K4 is unaffected because it does not embed `DeviceFP`.
+
+**Pipeline boundary:** the pipeline MUST NOT rebuild the raw fingerprint or re-hash device
+material; it consumes the already-resolved `fingerprintHash` / `previousFingerprintHash`
+from the identity layer (`docs/DEVICE_FINGERPRINT.md` §5.1).
+
+**Exact pairing (locked):**
+
+| Version     | Construction                                             |
+| ----------- | ------------------------------------------------------- |
+| V2 / current  | `current outer key secret + current fingerprintHash`      |
+| V1 / previous | `previous outer key secret + previousFingerprintHash` (when non-null) |
+
+If the fingerprint secret did not change, the previous identity may be logically equal to
+the current one.
+
+**Forbidden cross-pairing:**
+
+* `previous outer secret + current fingerprint` — when `previousFingerprintHash` is
+  available
+* `current outer secret + previous fingerprint`
+
+**Outer-key-only rotation compatibility:** a configured `previousKeySecret` does not imply
+that the fingerprint secret changed. When `previousFingerprintHash === null`, the
+device-derived V1 lookup MAY use the current `fingerprintHash` as a compatibility behavior
+for the scenario where only the outer storage key rotated while the fingerprint identity
+secret stayed stable. This is documented explicitly:
+
+> If the Fingerprint HMAC secret itself was rotated, the host/default resolver MUST provide
+> the previous fingerprint hasher during the rotation window.
+
+The library does not guess whether the host rotated the fingerprint secret or not.
+
+**Write-current / read-previous rule:** every new runtime write uses only the current pair
+(`current outer key secret + current fingerprintHash`). The previous fingerprint is
+**read/migration-compatibility state only**; writing to historical V1 device keys is
+forbidden.
+
+**K3 / K5 active block lookup:** after implementation, check the V2/current pair first, then
+the V1/previous pair, so an active historical block does not disappear during rotation.
+
+**K3 / K5 score state:** score fallback uses the historical V1 key built from the previous
+fingerprint. Existing score merge/decay semantics are unchanged by this decision; this is an
+architecture gate, not a score-semantics redesign.
 
 ---
 
@@ -332,6 +395,27 @@ Logical namespace (before HMAC):
 * A fixed-epoch (24h) counter per known device used to decide when same-device failures
   become budget-eligible (`DECISION_MATRIX.md` §2.4.1).
 * Subject to rotation survival (§4.3.1): never `max(v1, v2)`, atomic seeding per §4.3.2.
+* Under fingerprint-secret rotation the device fingerprint component is versioned
+  (`FingerprintHasher` remains single-secret; the identity layer resolves both versions of
+  the same normalized identity):
+
+  ```
+  V2 micro-cap = current fingerprintHash
+  V1 micro-cap = previousFingerprintHash (when available)
+  ```
+* Locked micro-cap rotation rule:
+
+  ```
+  V2 exists           → V2 authoritative (normal V2 increment)
+  V2 absent + valid V1 → atomic seed V1 → V2 via
+                         BudgetSeedStoreInterface::incrementBudgetWithSeed()
+  no V1                → normal V2 start
+  ```
+* Because the micro-cap is a **cumulative budget state**, the two versions MUST NOT be read
+  as `max(v1, v2)` (see §4.3.1). The fixed epoch/count do not change because of rotation.
+* Implementation status: **pending.** It requires `previousFingerprintHash` from the
+  identity layer (`docs/DEVICE_FINGERPRINT.md` §5.1), which is architecture-locked but not
+  yet wired into the runtime.
 
 ---
 

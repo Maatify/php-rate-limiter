@@ -225,6 +225,33 @@ Device identity is resolved into a single `DeviceIdentityDTO` with:
 
 The package MUST NOT store raw fingerprint components.
 
+**Dual-fingerprint rotation contract:** the identity layer owns the current and previous
+fingerprint versions; the pipeline never rebuilds or re-hashes raw fingerprint material.
+Target public contract:
+
+- `fingerprintHash` — current (unchanged semantics)
+- `previousFingerprintHash` — previous, nullable, additive optional field at the end of
+  `DeviceIdentityDTO` (`public ?string $previousFingerprintHash = null`)
+
+`DeviceIdentityResolverInterface::resolve()` stays unchanged; the default resolver applies a
+current and (optionally) a previous single-secret `FingerprintHasher` to the **same**
+normalized raw identity (`docs/DEVICE_FINGERPRINT.md` §5.1). The identity semantics
+(`confidence`, `isTrustedSession`, `isDevicePreviouslyVerifiedForAccount`, `isKnownForAccount`)
+are independent of `previousFingerprintHash`.
+
+**Fingerprint-secret rotation implementation status (locked/pending):**
+
+| Concern                                          | Status                                     |
+| ------------------------------------------------ | ------------------------------------------ |
+| K4 budget rotation runtime                       | implemented                                |
+| Dual-fingerprint public contract                 | architecture locked, runtime pending       |
+| K3/K5 true fingerprint-secret rotation           | pending                                    |
+| K5 micro-cap true fingerprint-secret rotation    | pending                                    |
+| Correlation/ephemeral fingerprint-secret rotation| pending — separate design                 |
+
+Key pairing and the K5 micro-cap V1/V2 rule are owned by `docs/KEY_STRATEGY.md` §4.3.3 /
+§4.5.2.
+
 ### 4.7 Infrastructure (Drivers)
 
 The package owns storage contracts for the required persistence layer. Consumers must provide implementations of these contracts. The package itself does not ship with concrete driver implementations.
@@ -266,7 +293,9 @@ Budget owner-safety relies on **existing and declared** storage primitives:
     via the capability.
   - **K5 micro-cap rotation — pending.** The micro-cap key embeds a device fingerprint that
     is itself keyed by the current secret, so historical K5 identity requires the previous
-    fingerprint hash; that is not wired into the runtime yet.
+    fingerprint hash; the dual-fingerprint contract is architecture-locked
+    (`docs/DEVICE_FINGERPRINT.md` §5.1; `docs/KEY_STRATEGY.md` §4.3.3 / §4.5.2) but is not
+    wired into the runtime yet.
   When a valid previous-secret budget must move to V2 and the store is not a
   `BudgetSeedStoreInterface`, the path MUST fail explicitly through the existing failure
   semantics (`docs/FAILURE_SEMANTICS.md`) — never a silent reset or loss of enforcement.
