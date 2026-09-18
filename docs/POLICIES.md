@@ -110,10 +110,15 @@ Account-level keys (K4) are authoritative.
 * Budget is a **decision candidate**, never a fail-fast gate (`DECISION_MATRIX.md` §2.4.0).
 * Budget MUST NOT directly produce `HARD_BLOCK(Account)`; its `SOFT_BLOCK` is never
   persisted via `RateLimitStoreInterface::block()` and is never a level-1 `BlockState`.
-* Budget candidate applies on **`recordFailure(login_protection)`** after normal updates,
-  and on pre-flight **`checkOnly(login_protection)`** only when the normal result would
-  be `ALLOW`; it never applies on `recordSuccess(login_protection)` or when a normal
-  `SOFT_BLOCK`/`HARD_BLOCK` already makes it ineligible (`DECISION_MATRIX.md` §2.4.3).
+* On pre-flight **`checkOnly(login_protection)`**, the budget candidate is eligible only
+  when the normal result would be `ALLOW`. A normal `SOFT_BLOCK` or `HARD_BLOCK` makes
+  the candidate ineligible, and the budget cooldown MUST NOT be acquired.
+* On **`recordFailure(login_protection)`**, after all normal updates, the budget
+  candidate may participate when the normal result is `ALLOW` or `SOFT_BLOCK`. With a
+  normal `SOFT_BLOCK`, it joins the `SOFT_BLOCK` class aggregation. If a normal or
+  recovery `HARD_BLOCK` exists, the budget candidate is ineligible and its cooldown
+  MUST NOT be acquired. The budget never applies on `recordSuccess(login_protection)`
+  (`DECISION_MATRIX.md` §2.4.3).
 * Decision class wins before level or duration. A budget `SOFT_BLOCK` cannot upgrade or
   contribute properties to a winning `HARD_BLOCK`; multiple `SOFT_BLOCK` candidates
   resolve by highest level and longest duration within the `SOFT_BLOCK` class only.
