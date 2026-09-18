@@ -126,7 +126,13 @@ It is an **aggregation candidate only**:
 - An active budget MUST NOT short-circuit the pipeline before the stronger decision is evaluated.
 - The locked aggregation rule stays `HARD_BLOCK > SOFT_BLOCK > ALLOW`.
 - An active budget MUST NOT hide a `K4`/`K5`/Correlation `HARD_BLOCK`.
+- Decision class wins before level or duration; level, duration, `retryAfter`, and
+  persistence are resolved only among candidates in the winning class.
+- A budget `SOFT_BLOCK` MUST NOT upgrade or contribute properties to a winning
+  `HARD_BLOCK`, directly or indirectly.
 - `checkOnly()` MUST evaluate normal score/correlation state before choosing the final result.
+- Login `checkOnly` may attempt budget enforcement only when the normal result would be
+  `ALLOW`; normal `SOFT_BLOCK` and `HARD_BLOCK` make the budget candidate ineligible.
 - `recordFailure()` MUST continue normal failure scoring, correlation, and budget counting
   even while `BudgetActive`.
 - The budget MUST NOT stop `processUpdates()`.
@@ -135,7 +141,9 @@ It is an **aggregation candidate only**:
 budget enforcement is decoupled from `RateLimitStoreInterface::block()`. It does not create
 a K4 hard block, does not use level-1 `BlockState` as a cooldown marker, and does not alter
 active hard-block semantics; its repetition is controlled by an **independent budget
-cooldown** state. Normal score/anti-equilibrium `HARD_BLOCK` keeps using `BlockState`.
+cooldown** state. The cooldown marker is acquired only for an actually issuable budget
+`SOFT_BLOCK`; it is not consumed merely because `BudgetActive` exists. Normal
+score/anti-equilibrium `HARD_BLOCK` keeps using `BlockState`.
 
 Normative Behavior: `docs/DECISION_MATRIX.md` §2.4 / §2.5 / §3.3. Preset values:
 `docs/POLICIES.md`. Keys & rotation: `docs/KEY_STRATEGY.md`.
@@ -181,7 +189,8 @@ The Engine is the “brain”:
 - Applies caps and persistence rules (fixed epochs; anti-equilibrium gates)
 - Treats the **budget as a decision candidate** in final aggregation: it never
   short-circuits scoring/correlation/update processing
-- Aggregates decisions deterministically (`HARD_BLOCK > SOFT_BLOCK > ALLOW`)
+- Aggregates decisions deterministically by class first (`HARD_BLOCK > SOFT_BLOCK > ALLOW`),
+  then resolves level and duration within the winning class only
 - Enforces failure semantics explicitly
 
 The Engine MUST NOT depend on specific storage implementations.

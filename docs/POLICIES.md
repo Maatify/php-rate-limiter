@@ -110,16 +110,22 @@ Account-level keys (K4) are authoritative.
 * Budget is a **decision candidate**, never a fail-fast gate (`DECISION_MATRIX.md` §2.4.0).
 * Budget MUST NOT directly produce `HARD_BLOCK(Account)`; its `SOFT_BLOCK` is never
   persisted via `RateLimitStoreInterface::block()` and is never a level-1 `BlockState`.
-* Budget candidate applies on **`recordFailure(login_protection)`** and pre-flight
-  **`checkOnly(login_protection)`** only, never on `recordSuccess(login_protection)`
-  (`DECISION_MATRIX.md` §2.4.3).
+* Budget candidate applies on **`recordFailure(login_protection)`** after normal updates,
+  and on pre-flight **`checkOnly(login_protection)`** only when the normal result would
+  be `ALLOW`; it never applies on `recordSuccess(login_protection)` or when a normal
+  `SOFT_BLOCK`/`HARD_BLOCK` already makes it ineligible (`DECISION_MATRIX.md` §2.4.3).
+* Decision class wins before level or duration. A budget `SOFT_BLOCK` cannot upgrade or
+  contribute properties to a winning `HARD_BLOCK`; multiple `SOFT_BLOCK` candidates
+  resolve by highest level and longest duration within the `SOFT_BLOCK` class only.
 * Requests from **trusted session devices** downgrade the applied level by **one step**,
   never below the trusted floor **L2**.
 * **Known-device** failures become budget-eligible only after
   `failed_login_count(K5) ≥ 8` within the epoch; **new/unverified-device** failures are
   budget-eligible immediately (`DECISION_MATRIX.md` §2.4.1).
 * Cooldown: **60 minutes**; budget `retryAfter` = remaining budget cooldown, not the epoch
-  remainder (`DECISION_MATRIX.md` §2.4.4).
+  remainder. The cooldown is acquired only when a budget `SOFT_BLOCK` can actually be
+  issued; an existing `BudgetActive` state alone does not consume it
+  (`DECISION_MATRIX.md` §2.4.4).
 
 ### Login BudgetConfig (Locked Preset)
 
@@ -137,9 +143,14 @@ Account-level keys (K4) are authoritative.
 
 ### Anti-Equilibrium Gate
 
-If `SOFT_BLOCK` is reached **≥ 3 times within 6 hours** for the same account:
+Record exactly one Anti-Equilibrium event only when the **final issued decision** is
+`SOFT_BLOCK`. If **≥ 3 actually-issued `SOFT_BLOCK` events within 6 hours** exist for
+the same account:
 
 * Next failure MUST apply `HARD_BLOCK(Account)` at minimum **L2**.
+
+The third soft event remains a `SOFT_BLOCK`; recording it MUST NOT turn that same request
+into `HARD_BLOCK`. `ALLOW` and `HARD_BLOCK` final decisions record no soft event.
 
 ---
 
@@ -230,10 +241,11 @@ IP-only signals are advisory only.
   (`DECISION_MATRIX.md` §3.3.2).
 * Trusted session devices downgrade one level, never below the trusted floor **L3**.
 * Cooldown: **120 minutes**; budget `retryAfter` = remaining budget cooldown, not the epoch
-  remainder (`DECISION_MATRIX.md` §3.3.3).
+  remainder; it is acquired only for an actually issued budget `SOFT_BLOCK`, not merely
+  because `BudgetActive` exists (`DECISION_MATRIX.md` §3.3.3).
 * Includes the **Recovery Collision Guard** from `DECISION_MATRIX.md` §3.3.5 (atomic
   returned-count trigger at `count == 10`; one-shot `SOFT_BLOCK (L2)` using PenaltyLadder
-  L2 duration).
+  L2 duration; the guard does not acquire the budget cooldown).
 
 ### OTP BudgetConfig (Locked Preset)
 

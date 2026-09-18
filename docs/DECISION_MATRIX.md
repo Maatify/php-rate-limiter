@@ -81,18 +81,22 @@ Evaluation order is **strict and non-negotiable**:
    An active `HARD_BLOCK` fails fast and terminates evaluation.
 3. Load effective `V2`/`V1` budget state (count + epoch start). Loading is **non-enforcing**.
 4. Evaluate normal scores / thresholds / correlation (`K4`, `K5`, `K3`, `K1`/`K2`).
-5. On failure: process **all** score + correlation + eligible budget updates
+5. On failure, process **all** score, correlation, and eligible budget updates
    (`recordFailure` MUST continue even while `BudgetActive`).
 6. Apply the OTP **Recovery Collision Guard** if the exact transition qualifies.
-7. Build a budget `SOFT_BLOCK` candidate if `BudgetActive` + command eligible + cooldown acquired.
-8. Aggregate all candidates:
+7. Resolve the normal/recovery candidate class before attempting budget enforcement.
+8. If `BudgetActive` and the command is eligible, and no higher-priority condition
+   makes budget enforcement ineligible, atomically acquire the budget cooldown. If
+   acquired, add the budget `SOFT_BLOCK` candidate.
+9. Aggregate by decision class first:
 
    ```
    HARD_BLOCK > SOFT_BLOCK > ALLOW
    ```
 
-   A normal score/correlation `HARD_BLOCK` MUST be able to win over the budget candidate.
-9. Record Anti-Equilibrium only when a `SOFT_BLOCK` is actually issued.
+   Then resolve the highest level and longest duration **only among candidates in the
+   winning class**. Record Anti-Equilibrium only when the final issued decision is
+   `SOFT_BLOCK`.
 
 **The budget is a decision candidate, not a fail-fast gate.** An active budget MUST NOT
 short-circuit stages 4–6. Normative budget behavior is defined in §2.4, §2.5, §3.3.
@@ -157,6 +161,10 @@ A budget exists to stop low-and-slow abuse **without enabling remote permanent l
 * An active login budget is a **candidate** in the final aggregation (§1, §8) only.
 * It MUST NOT hide a stronger decision: K4/K5 score thresholds and correlation
   `HARD_BLOCK` still apply and win over the budget `SOFT_BLOCK`.
+* Decision class wins before level or duration. A budget `SOFT_BLOCK` MUST NOT
+  contribute its level, duration, `retryAfter`, or persistence to a winning
+  `HARD_BLOCK` candidate; it can never upgrade hard-block semantics directly or
+  indirectly.
 * `checkOnly()` MUST evaluate normal score/correlation state before selecting the final result.
 * `recordFailure()` MUST continue normal failure scoring, correlation, and budget counting
   even while `BudgetActive`.
@@ -220,6 +228,14 @@ While **BudgetActive**, the budget `SOFT_BLOCK` candidate is permitted **only** 
 * `checkOnly(login_protection)` — an unauthenticated attempt/preflight that would have
   become `ALLOW` were it not for the active budget.
 
+For `checkOnly(login_protection)`, the budget candidate is eligible only when the
+normal result is `ALLOW`. If the normal result is `SOFT_BLOCK` or `HARD_BLOCK`, the
+budget candidate MUST NOT be attempted and its cooldown MUST NOT be acquired.
+For `recordFailure(login_protection)`, the budget candidate may participate after all
+normal updates: it may join a normal `SOFT_BLOCK` in the `SOFT_BLOCK` class, may be
+issued when the normal result is `ALLOW`, and MUST NOT be attempted when a normal or
+recovery `HARD_BLOCK` exists.
+
 The budget MUST NOT affect:
 
 * `recordSuccess(login_protection)` — a successful login MUST return `ALLOW` and MUST NOT
@@ -236,8 +252,14 @@ A budget-issued `SOFT_BLOCK(Account)` has an enforcement cooldown:
 Cooldown semantics:
 
 * Cooldown belongs to **Budget enforcement**, not to the budget epoch.
+* The cooldown marker represents an actually issued budget `SOFT_BLOCK`, not merely
+  the presence of `BudgetActive`. It may be acquired only after the normal/recovery
+  candidate is resolved and the budget candidate can participate in the winning
+  `SOFT_BLOCK` result.
 * While `BudgetActive`, the first eligible budget issuance outside cooldown MAY produce
   the budget `SOFT_BLOCK`; during cooldown, the budget alone MUST NOT re-issue it.
+* If cooldown acquisition fails or loses the atomic race, the budget `SOFT_BLOCK` is
+  not issued and the normal/recovery candidate is not altered.
 * During (and after) cooldown, the request still completes normal score/correlation/failure
   processing; any normal `HARD_BLOCK` still wins (§8).
 * Cooldown MUST NOT **extend** the budget epoch and MUST NOT **restart** it.
@@ -262,11 +284,17 @@ To prevent mathematically planned “low-and-slow” equilibrium:
 
 If, for the same `AccountID`:
 
-* The account enters `SOFT_BLOCK` (any reason) **≥ 3 times within 6 hours**,
+* the final issued decision is `SOFT_BLOCK`, record exactly one Anti-Equilibrium event;
+  and
+* there are **≥ 3 actually-issued `SOFT_BLOCK` events within 6 hours**,
 
 THEN:
 
 * Apply `HARD_BLOCK (Account)` at **minimum level L2** on the next failure.
+
+The third `SOFT_BLOCK` is recorded as a `SOFT_BLOCK` event; it MUST NOT be changed to
+`HARD_BLOCK` by the act of recording that event. A request whose final decision is
+`ALLOW` or `HARD_BLOCK` records no Anti-Equilibrium `SOFT_BLOCK` event.
 
 This is deterministic, testable, and breaks stable decay arithmetic.
 
@@ -316,6 +344,8 @@ Applies if:
 * The same non-short-circuit rules as §2.4.0 apply to the OTP budget.
 * The OTP budget MUST NOT prevent `recordFailure(otp_protection)` from continuing normal
   OTP failure scoring, correlation, and budget counting.
+* Decision class wins before level or duration; the OTP budget `SOFT_BLOCK` cannot
+  contribute properties to a winning `HARD_BLOCK` candidate.
 * The OTP budget-issued `SOFT_BLOCK` is **not stored as hard-block persistence** and is
   not a level-1 `BlockState` cooldown marker.
 
@@ -384,6 +414,10 @@ Duration:
 
 * The Recovery Guard `SOFT_BLOCK (L2)` uses the **PenaltyLadder L2 duration** (60 s), NOT
   the OTP budget cooldown (BudgetActive has not started yet).
+* The Recovery Guard is a normal `SOFT_BLOCK` candidate and MUST NOT acquire the budget
+  cooldown. If a normal `HARD_BLOCK` is also present, `HARD_BLOCK` wins without budget
+  cooldown acquisition; otherwise it aggregates with other `SOFT_BLOCK` candidates by
+  the class-local rule in §8.
 
 ---
 
@@ -522,15 +556,85 @@ HARD_BLOCK > SOFT_BLOCK > ALLOW
 
 * The **budget candidate** participates in final aggregation only; it MUST NOT
   short-circuit earlier evaluation stages (§1, §2.4.0, §3.3.0).
-* A `HARD_BLOCK` from normal scoring, anti-equilibrium, or correlation always wins over a
-  budget `SOFT_BLOCK`.
+* First select the winning decision class. A `HARD_BLOCK` from normal scoring,
+  anti-equilibrium, recovery, or correlation always wins over a budget `SOFT_BLOCK`.
+* Lower-ranked candidates MUST NOT contribute `blockLevel`, duration, `retryAfter`,
+  persistence, or any other decision property to the winning class.
 
 If multiple blocks apply:
 
-* Select the **highest block level**
-* Select the **longest duration**
+* Among candidates in the winning class only, select the **highest block level**.
+* Among candidates in the winning class only, select the **longest duration** or
+  `retryAfter` applicable to that class.
+
+Therefore, a budget `SOFT_BLOCK` can never upgrade a `HARD_BLOCK` level or duration,
+and a lower-ranked `SOFT_BLOCK` cannot affect a winning `HARD_BLOCK`'s persistence.
 
 Account safety always overrides IP convenience.
+
+### 8.1 Normative Examples
+
+#### Example A — Hard class wins over budget soft
+
+```text
+Normal HARD L2 / 60s
+Budget SOFT L3 / 3600s
+
+Final:
+HARD L2 / 60s
+No budget cooldown acquired
+```
+
+#### Example B — Budget soft joins a normal soft
+
+```text
+Normal SOFT L1 / 15s
+recordFailure
+BudgetActive
+Cooldown acquired
+
+Final:
+SOFT L3 / 3600s
+```
+
+#### Example C — Login checkOnly normal soft is not budget-eligible
+
+```text
+Normal SOFT L1
+checkOnly(login)
+BudgetActive
+
+Final:
+SOFT L1
+Budget not attempted
+No budget cooldown acquired
+```
+
+#### Example D — Login checkOnly normal allow can issue budget soft
+
+```text
+Normal ALLOW
+checkOnly(login)
+BudgetActive
+Cooldown acquired
+
+Final:
+Budget SOFT L3 / 3600s
+```
+
+#### Example E — Recovery Collision Guard is a normal soft
+
+```text
+Normal ALLOW
+recordFailure(otp)
+Recovery transition count 9 → 10
+qualifying recovery device
+
+Final:
+SOFT L2 / 60s
+No budget cooldown
+BudgetActive suppressed for this request
+```
 
 ---
 
