@@ -3,7 +3,7 @@
 **Package:** RateLimiter
 **Namespace:** `Maatify\RateLimiter`
 **Status:** LOCKED — Architecture Contract
-**Spec Version:** `1.0.0`
+**Spec Version:** `1.1.0`
 **Change Class:** Adversarial Hardening Alignment
 **Location:** `src/`
 
@@ -118,6 +118,28 @@ Therefore:
 
 Failure semantics are locked in `docs/FAILURE_SEMANTICS.md`.
 
+### 3.7 Budget Is a Decision Candidate, Not a Fail-Fast Gate (Non-Negotiable)
+
+The Account Budget supports owner-safety without becoming a bypass or a kill-switch.
+It is an **aggregation candidate only**:
+
+- An active budget MUST NOT short-circuit the pipeline before the stronger decision is evaluated.
+- The locked aggregation rule stays `HARD_BLOCK > SOFT_BLOCK > ALLOW`.
+- An active budget MUST NOT hide a `K4`/`K5`/Correlation `HARD_BLOCK`.
+- `checkOnly()` MUST evaluate normal score/correlation state before choosing the final result.
+- `recordFailure()` MUST continue normal failure scoring, correlation, and budget counting
+  even while `BudgetActive`.
+- The budget MUST NOT stop `processUpdates()`.
+
+**Budget-issued `SOFT_BLOCK` is not `BlockState`:**
+budget enforcement is decoupled from `RateLimitStoreInterface::block()`. It does not create
+a K4 hard block, does not use level-1 `BlockState` as a cooldown marker, and does not alter
+active hard-block semantics; its repetition is controlled by an **independent budget
+cooldown** state. Normal score/anti-equilibrium `HARD_BLOCK` keeps using `BlockState`.
+
+Normative Behavior: `docs/DECISION_MATRIX.md` §2.4 / §2.5 / §3.3. Preset values:
+`docs/POLICIES.md`. Keys & rotation: `docs/KEY_STRATEGY.md`.
+
 ---
 
 ## 4. Package Layers and Responsibilities
@@ -151,14 +173,17 @@ DTO naming MUST end with `DTO`. Commands must clearly represent execution intent
 **Location:** `Engine/`
 
 The Engine is the “brain”:
-- Evaluates keys in strict order (fail-fast)
+- Evaluates active hard blocks in strict order (fail-fast)
 - Applies scoring rules
 - Applies correlation rules (bounded windows + watch flags)
 - Applies caps and persistence rules (fixed epochs; anti-equilibrium gates)
-- Aggregates decisions deterministically
+- Treats the **budget as a decision candidate** in final aggregation: it never
+  short-circuits scoring/correlation/update processing
+- Aggregates decisions deterministically (`HARD_BLOCK > SOFT_BLOCK > ALLOW`)
 - Enforces failure semantics explicitly
 
 The Engine MUST NOT depend on specific storage implementations.
+Budget owner-safety orchestration is described in `docs/DECISION_MATRIX.md` §1.
 
 ### 4.4 Policies (Presets)
 **Location:** `Policy/`
@@ -184,6 +209,8 @@ Penalty logic is separated to:
 - keep escalation rules testable and deterministic
 - centralize caps, gates, and epoch rules
 - avoid hidden behavioral changes inside Store drivers
+- own budget epochs/counts, the **budget cooldown** (enforcement-owned, never level-1
+  `BlockState`), and the OTP **Recovery Collision Guard** transition
 
 ### 4.6 Device Identity (Fingerprinting)
 **Location:** `Device/`
@@ -205,6 +232,54 @@ The package owns storage contracts for the required persistence layer. Consumers
 - Drivers MUST NOT swallow exceptions
 - If a backend cannot satisfy required atomicity for an operation, the driver MUST fail explicitly and defer to Engine failure semantics
 - Drivers must be interchangeable without changing Engine logic
+- Drivers provide the atomic, no-extension primitives required by budget owner-safety (§4.8)
+
+### 4.8 Budget Owner-Safety — Storage Boundaries
+
+Budget owner-safety relies on **existing and declared** storage primitives:
+
+- **No new enforcement primitive for the budget `SOFT_BLOCK`:** budget enforcement is never
+  expressed through `RateLimitStoreInterface::block()`, never creates a K4 hard block, and
+  never uses level-1 `BlockState` as a cooldown marker.
+- **Budget cooldown marker:** uses the existing atomic fixed-TTL `increment(key, cooldownTTL)`
+  on a dedicated HMAC-namespaced auxiliary key (first creation sets TTL; later increments do
+  not extend it). `get()+set()` acquisition is forbidden. Key layout:
+  `docs/KEY_STRATEGY.md` §4.5.
+- **Rotation survival applies to all budget state** (K4 budget epoch/count, K5 micro-cap,
+  budget cooldown marker): writes → V2, reads → V2 then V1, never a `max(v1,v2)` merge for
+  cumulative counters. `docs/KEY_STRATEGY.md` §4.3.1.
+- **Atomic budget seeding across rotation:** the current store contract cannot move a budget
+  epoch from V1 to V2 while preserving `count`, `epochStart`, the fixed epoch end, and
+  atomicity. A **declared public storage-extension** on `RateLimitStoreInterface` —
+  `incrementBudgetWithSeed(string $key, int $epochDurationSeconds, BudgetStateDTO $seed,
+  int $amount = 1): BudgetStateDTO` — is adopted by the architecture for later
+  implementation (`docs/KEY_STRATEGY.md` §4.3.2). It serves both K4 account budget and K5
+  same-device micro-cap; rotation therefore never resets and never extends the 24h epoch.
+
+### 4.9 Host-Provided Known-Device Signal (Public Boundary)
+
+The public context/device-identity contracts cannot currently express:
+
+```
+device previously verified for this AccountID (known K5), without a trusted session
+```
+
+A host-provided signal is adopted by the architecture for later addition to the public
+context/device-identity contract:
+
+```
+isDevicePreviouslyVerifiedForAccount   // default: false
+```
+
+Resolved semantic:
+
+```
+isKnownForAccount = isTrustedSession OR isDevicePreviouslyVerifiedForAccount
+```
+
+The host is responsible for proving the previous verified association. `K5` store presence
+alone does not prove a verified device. Device semantics are owned by
+`docs/DEVICE_FINGERPRINT.md` §4.3.
 
 ---
 
@@ -256,6 +331,8 @@ The package is only acceptable if tests prove:
 - Deterministic outcomes for known states
 - Correct ladder escalation, persistence, decay modifiers, and anti-equilibrium gates
 - Correct budget epoch behavior (no extension) and owner-safety enforcement
+- Correct **budget candidate aggregation** (no fail-fast masking of score/correlation
+  `HARD_BLOCK`), atomic **cooldown** acquisition, and the OTP **Recovery Collision Guard** transition
 - Correct retry-after calculations
 - Correct correlation detection triggers with watch flags + confidence constraints
 - Key explosion resistance (caps + ephemeral behavior + “no bypass” invariants)

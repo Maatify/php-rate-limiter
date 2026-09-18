@@ -4,7 +4,7 @@
 **Namespace:** `Maatify\RateLimiter`
 **Status:** LOCKED — Behavioral Contract
 **Scope:** Login, OTP, API Heavy Endpoints
-**Spec Version:** `1.0.0`
+**Spec Version:** `1.1.0`
 
 This document defines the **deterministic decision rules** used by the Rate Limiter.
 It is a **behavioral contract**, not explanatory documentation.
@@ -23,6 +23,7 @@ Any implementation, policy, or test MUST comply with this matrix exactly.
 * `DeviceConfidence` — `{LOW, MEDIUM, HIGH}` derived per `DEVICE_FINGERPRINT.md`
 * `AccountID` — Account identifier (blind index or internal ID)
 * `Action` — Logical action (e.g. `auth.login`, `auth.otp`, `api.heavy`)
+* `PreviouslyVerifiedForAccount` — host-provided boolean proving a prior verified device ↔ `AccountID` association (default `false`; see `DEVICE_FINGERPRINT.md` §4.3)
 
 ### Decisions (Outputs)
 
@@ -46,23 +47,55 @@ A request is considered from a **trusted session device** only if:
 * It is bound to the same `AccountID`, **and**
 * It matches the server’s stored association for that account.
 
-No other “trust” signal is allowed.
+No other “trust” signal is allowed *for the trusted-session definition*.
+
+### Known Device for Account (Definition)
+
+A device is **known for an account** (`isKnownForAccount`) if either:
+
+* It is a **trusted session device** for that account (definition above), **or**
+* It is a **previously verified device for this account** — the host proves a prior
+  verified association between the device and the `AccountID`
+  (`PreviouslyVerifiedForAccount = true`, host-provided).
+
+```
+isKnownForAccount = isTrustedSession OR isDevicePreviouslyVerifiedForAccount
+```
+
+Rules:
+
+* The **host** is the only authority for proving a previous verified association.
+* The existence of a `K5` counter in RateLimiter storage is NOT, by itself, proof that the
+  device was previously verified.
+* `DeviceConfidence = HIGH` alone is NOT a substitute for “previously verified”.
+* Full device semantics are owned by `DEVICE_FINGERPRINT.md` §4.3.
 
 ---
 
-## 1. Evaluation Order (Fail-Fast)
+## 1. Decision Evaluation (Orchestration)
 
-Evaluation order is **strict and non-negotiable**.
+Evaluation order is **strict and non-negotiable**:
 
-1. Active Hard Block check (all relevant keys)
-2. Account-wide cumulative protection (K4)
-3. Account + Device protection (K5)
-4. Device-based protection (K3)
-5. IP-based protection (K1 / K2)
-6. Correlation rules
-7. Final decision aggregation
+1. Resolve device/account signals (trusted session, previously-verified device, confidence).
+2. Resolve **active HARD_BLOCK state** on all relevant keys (`K4`/`K5`/`K3`/`K1`/`K2`).
+   An active `HARD_BLOCK` fails fast and terminates evaluation.
+3. Load effective `V2`/`V1` budget state (count + epoch start). Loading is **non-enforcing**.
+4. Evaluate normal scores / thresholds / correlation (`K4`, `K5`, `K3`, `K1`/`K2`).
+5. On failure: process **all** score + correlation + eligible budget updates
+   (`recordFailure` MUST continue even while `BudgetActive`).
+6. Apply the OTP **Recovery Collision Guard** if the exact transition qualifies.
+7. Build a budget `SOFT_BLOCK` candidate if `BudgetActive` + command eligible + cooldown acquired.
+8. Aggregate all candidates:
 
-Any `HARD_BLOCK` immediately terminates evaluation.
+   ```
+   HARD_BLOCK > SOFT_BLOCK > ALLOW
+   ```
+
+   A normal score/correlation `HARD_BLOCK` MUST be able to win over the budget candidate.
+9. Record Anti-Equilibrium only when a `SOFT_BLOCK` is actually issued.
+
+**The budget is a decision candidate, not a fail-fast gate.** An active budget MUST NOT
+short-circuit stages 4–6. Normative budget behavior is defined in §2.4, §2.5, §3.3.
 
 ---
 
@@ -86,7 +119,7 @@ Any `HARD_BLOCK` immediately terminates evaluation.
 | Scenario                                    | Key | Score Delta | Notes                  |
 | ------------------------------------------- | --- | ----------- | ---------------------- |
 | Failure from same known device              | K5  | +2          | Lower risk, not safe   |
-| Failure from new device                     | K4  | +3          | Suspicious             |
+| Failure from new / unverified device        | K4  | +3          | Suspicious             |
 | Missing device fingerprint                  | K2  | +4          | Evasion indicator      |
 | Repeated missing fingerprint (same account) | K4  | +6          | Accelerated escalation |
 | IP attempts multiple accounts               | K1  | +5          | Credential spray       |
@@ -119,15 +152,50 @@ A budget exists to stop low-and-slow abuse **without enabling remote permanent l
 | ------------------------------------------ | -------------------------------------------------------- |
 | ≥ 20 failed login attempts within 24 hours | **SOFT_BLOCK (Account)** with **minimum block level L3** |
 
+#### 2.4.0 Budget Is a Decision Candidate (Not Fail-Fast)
+
+* An active login budget is a **candidate** in the final aggregation (§1, §8) only.
+* It MUST NOT hide a stronger decision: K4/K5 score thresholds and correlation
+  `HARD_BLOCK` still apply and win over the budget `SOFT_BLOCK`.
+* `checkOnly()` MUST evaluate normal score/correlation state before selecting the final result.
+* `recordFailure()` MUST continue normal failure scoring, correlation, and budget counting
+  even while `BudgetActive`.
+* The budget MUST NOT stop `processUpdates()`.
+
+**Budget-issued `SOFT_BLOCK` is not `BlockState`:**
+
+* The budget `SOFT_BLOCK` is not stored through `RateLimitStoreInterface::block()`.
+* It does not create a K4 hard block and is not a level-1 `BlockState` cooldown marker.
+* It does not change the semantics of an active hard block.
+* Its repetition is governed by the **independent budget cooldown** state (§2.4.4).
+* Normal score / anti-equilibrium `HARD_BLOCK` keeps using `BlockState` as usual.
+
 #### 2.4.1 Budget Eligibility (Deterministic)
+
+##### 2.4.1.1 Known-Device vs New-Device Classification
+
+Login failures are **classified**, not all scored with K4 + K5 together:
+
+| Classification              | Scoring                                      | Budget eligibility                                        |
+| --------------------------- | -------------------------------------------- | --------------------------------------------------------- |
+| **Known device failure**    | K5 score delta applies (**+2**); K4 “new device” delta does **NOT** apply | Budget-eligible **only after** `failed_login_count(K5) ≥ 8` within the fixed epoch (known-device micro-cap) |
+| **New / unverified device failure** | K4 new-device delta applies (**+3**) | Budget-eligible immediately |
+
+* “Known device” means `isKnownForAccount` (§0; `DEVICE_FINGERPRINT.md` §4.3).
+* Missing-fingerprint rules (§2.2) remain an independent contract and are neither removed
+  nor weakened by this classification.
+
+##### 2.4.1.2 Budget Counter Composition
 
 Budget counters are counted at **K4 (AccountID)** and include:
 
-* Any failed login that increments **K4** (e.g., “new device”, “repeated missing fingerprint”), and
+* Any failed login that increments **K4** (new/unverified device, repeated missing
+  fingerprint), and
 * Any failed login **without DeviceFP** (K2 missing fingerprint), and
-* Any failed login from **same known device (K5)** **after** a per-device micro-cap:
+* Any failed login from a **known device (K5)** **after** a per-device micro-cap:
 
-    * If `failed_login_count(K5) ≥ 8 within 24h`, subsequent failures from that same `K5` become budget-eligible.
+    * If `failed_login_count(K5) ≥ 8 within 24h`, subsequent failures from that same `K5`
+      become budget-eligible.
 
 This prevents “same-device equilibrium” from bypassing the budget indefinitely.
 
@@ -138,36 +206,53 @@ To prevent “rolling-window prisoning”, the budget uses a fixed **Budget Epoc
 * The epoch starts at the timestamp of the **first budget-eligible failure** that contributes to the threshold crossing.
 * Once the threshold is crossed, the epoch becomes **BudgetActive** and ends exactly **24h** after epoch start.
 * **Additional failures MUST NOT extend the epoch end time.**
+* **No cooldown, key rotation, or Recovery Collision Guard MAY move `epochStart` or extend
+  the epoch end.**
 * The budget counter MAY continue counting for analytics, but **must not** extend enforcement.
 
 > This is a behavioral guarantee: “44 attempts cannot stretch a 24h prison into an infinite prison.”
 
-#### 2.4.3 Enforcement Rule (No Hourly Re-Issuance)
+#### 2.4.3 Command Eligibility (Explicit)
 
-While **BudgetActive**:
+While **BudgetActive**, the budget `SOFT_BLOCK` candidate is permitted **only** on:
 
-* The budget decision applies **only** on:
-    * a failed login attempt, OR
-    * an unauthenticated login attempt that would otherwise be ALLOW.
-* The budget decision MUST NOT re-issue on a timer.
-* A successful login MUST return `ALLOW` and MUST NOT be blocked by an account budget.
+* `recordFailure(login_protection)` — a failed login attempt, and
+* `checkOnly(login_protection)` — an unauthenticated attempt/preflight that would have
+  become `ALLOW` were it not for the active budget.
 
-This prevents “scheduled denial-of-owner” loops where the victim is periodically blocked even when correct.
+The budget MUST NOT affect:
+
+* `recordSuccess(login_protection)` — a successful login MUST return `ALLOW` and MUST NOT
+  be blocked by an account budget.
+
+The budget MUST NOT re-issue on a timer.
 
 #### 2.4.4 Cooldown (Anti-Spam Guard)
 
 A budget-issued `SOFT_BLOCK(Account)` has an enforcement cooldown:
 
-* Login budget cooldown: **60 minutes**
-* Cooldown prevents repeating the same `SOFT_BLOCK(Account)` decision on every request.
-* Cooldown does **not** prevent normal scoring thresholds from producing `HARD_BLOCK` decisions.
+* Login budget cooldown: **60 minutes** (`BudgetConfigDTO.cooldown_seconds = 3600`).
+
+Cooldown semantics:
+
+* Cooldown belongs to **Budget enforcement**, not to the budget epoch.
+* While `BudgetActive`, the first eligible budget issuance outside cooldown MAY produce
+  the budget `SOFT_BLOCK`; during cooldown, the budget alone MUST NOT re-issue it.
+* During (and after) cooldown, the request still completes normal score/correlation/failure
+  processing; any normal `HARD_BLOCK` still wins (§8).
+* Cooldown MUST NOT **extend** the budget epoch and MUST NOT **restart** it.
+* Cooldown acquisition is atomic (see `KEY_STRATEGY.md` §4.5).
+
+**Budget-issued `retryAfter` = remaining/current budget cooldown** — not the remaining 24h
+epoch. The 24h epoch is the **lifetime** of the budget state; it is not a client
+retry-prevention window.
 
 #### 2.4.5 Trusted Session Downgrade
 
 If a request is from a **trusted session device**:
 
 * The budget decision MUST be downgraded by one level (e.g., L3 → L2),
-* but never below L2 while BudgetActive.
+* but never below the **trusted-session floor level L2** while BudgetActive.
 
 ---
 
@@ -226,40 +311,79 @@ Applies if:
 | --------------------------------- | -------------------------------------------------------- |
 | ≥ 10 OTP failures within 24 hours | **SOFT_BLOCK (Account)** with **minimum block level L4** |
 
-#### 3.3.1 Budget Epoch & No-Extension
+#### 3.3.0 Budget Is a Decision Candidate (Not Fail-Fast)
 
-OTP budget uses the same **fixed Budget Epoch** rules as 2.4.2.
+* The same non-short-circuit rules as §2.4.0 apply to the OTP budget.
+* The OTP budget MUST NOT prevent `recordFailure(otp_protection)` from continuing normal
+  OTP failure scoring, correlation, and budget counting.
+* The OTP budget-issued `SOFT_BLOCK` is **not stored as hard-block persistence** and is
+  not a level-1 `BlockState` cooldown marker.
 
-#### 3.3.2 Enforcement Rule (Owner Safety)
+#### 3.3.1 Budget Eligibility & Epoch
 
-While OTP BudgetActive:
+* **Every OTP failure is budget-eligible** at K4; there is **no Login-style K5 micro-cap**
+  for OTP.
+* OTP budget uses the same **fixed Budget Epoch** rules as §2.4.2
+  (`epochStart` fixed inside the 24h epoch; failures never extend the epoch end).
 
-* Budget `SOFT_BLOCK(Account)` applies only on **OTP failures** (not on successful OTP).
-* A successful OTP MUST return `ALLOW` and MUST NOT be blocked by an account budget.
+#### 3.3.2 Command Eligibility (Owner Safety)
+
+While OTP BudgetActive, the budget `SOFT_BLOCK` candidate is permitted **only** on:
+
+* `recordFailure(otp_protection)`.
+
+Budget enforcement is **forbidden** on:
+
+* `checkOnly(otp_protection)`, and
+* `recordSuccess(otp_protection)` — a successful OTP MUST return `ALLOW` and MUST NOT be
+  blocked by an account budget.
+
+> **Known deviation (current runtime characterization):**
+> `OTP BudgetActive + checkOnly()` currently produces `SOFT_BLOCK`. This contradicts the
+> target eligibility (`precheck_enforcement = false` for OTP) and is a **defect to be fixed**
+> in a later implementation. This document states the target contract.
 
 #### 3.3.3 Cooldown
 
-OTP budget cooldown: **120 minutes**
+* OTP budget cooldown: **120 minutes** (`BudgetConfigDTO.cooldown_seconds = 7200`).
+* Cooldown semantics are identical to §2.4.4 (enforcement-owned; no epoch extension or
+  restart; budget `retryAfter` = remaining budget cooldown, not the epoch remainder).
 
 #### 3.3.4 Trusted Session Downgrade
 
-Trusted session devices downgrade by one level, never below **L3** while BudgetActive.
+Trusted session devices downgrade by one level, never below the **trusted-session floor
+level L3** while BudgetActive.
 
 #### 3.3.5 Recovery Collision Guard (Deterministic)
 
 To mitigate “preload 9 then wait for victim” attacks:
 
-If `otp_budget_count(K4) = 9 within epoch` and the next OTP attempt is from:
+If the **effective OTP budget count before failure = 9** within the epoch, and the failing
+request is from:
 
 * a device with `DeviceConfidence = HIGH` (session-bound device), OR
-* a device previously verified for this account (known K5),
+* a device **previously verified for this `AccountID`** (`isKnownForAccount`, §0),
 
-THEN:
+THEN the atomic budget increment returns `count = 10`, but:
 
-* The 10th failure MUST NOT immediately activate the budget.
-* Instead, apply `SOFT_BLOCK (L2)` once and require **one additional failure** to activate the budget.
+* **BudgetActive MUST NOT start on this request.**
+* Instead, apply `SOFT_BLOCK (L2)` **once**; the count stays `10` inside the same epoch.
+* The **next** failure (`count = 11`) activates `BudgetActive` normally.
 
-This adds a deterministic safety margin for legitimate recovery attempts from known devices.
+Decision rule — no persistent Recovery-Guard flag is needed because the trigger keys off
+the **atomic returned budget count**:
+
+```
+returned count == threshold (10) AND qualifying recovery device
+```
+
+Because it keys off the atomic increment result, exactly **one** request is guarded even
+under concurrency (concurrent initializations cannot duplicate the guard).
+
+Duration:
+
+* The Recovery Guard `SOFT_BLOCK (L2)` uses the **PenaltyLadder L2 duration** (60 s), NOT
+  the OTP budget cooldown (BudgetActive has not started yet).
 
 ---
 
@@ -396,6 +520,11 @@ When multiple rules produce decisions:
 HARD_BLOCK > SOFT_BLOCK > ALLOW
 ```
 
+* The **budget candidate** participates in final aggregation only; it MUST NOT
+  short-circuit earlier evaluation stages (§1, §2.4.0, §3.3.0).
+* A `HARD_BLOCK` from normal scoring, anti-equilibrium, or correlation always wins over a
+  budget `SOFT_BLOCK`.
+
 If multiple blocks apply:
 
 * Select the **highest block level**
@@ -421,8 +550,13 @@ Account safety always overrides IP convenience.
 * No decision is based on a single signal
 * Remote permanent account lockout via budget-only rules is impossible
 * Budget epochs cannot be extended (“no renewable 24h prisons”)
+* An active budget never hides a stronger score/correlation `HARD_BLOCK`
+* Budget `SOFT_BLOCK` never uses hard-block persistence (`RateLimitStoreInterface::block()`)
+* Budget cooldown never extends or restarts the fixed budget epoch
 * Same-device equilibrium cannot bypass budgets indefinitely
 * Device rotation does not reset account memory
+* K4 budget / K5 micro-cap counters are never merged with `max(v1.count, v2.count)` across
+  key rotation (`KEY_STRATEGY.md` §4.3.1)
 * IP-only blocking is never final
 * Device awareness is mandatory
 * Progressive escalation with persistence

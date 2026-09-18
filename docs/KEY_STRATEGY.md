@@ -3,7 +3,7 @@
 **Module:** RateLimiter
 **Namespace:** `Maatify\RateLimiter`
 **Status:** LOCKED — Design & Security Contract
-**Spec Version:** `1.0.0`
+**Spec Version:** `1.1.0`
 
 This document defines the **key construction strategy** used by the RateLimiter.
 Keys determine how limits, scores, correlation, and blocks are applied.
@@ -152,7 +152,9 @@ K5 = AccountID + DeviceFP
 
 * K5 MUST NOT be the only persistence mechanism
 * Account-wide protection via K4 is mandatory
-* K5 failures are subject to per-device micro-caps for budget eligibility (see `DECISION_MATRIX.md` 2.4.1)
+* K5 failures are subject to per-device micro-caps for budget eligibility (see `DECISION_MATRIX.md` 2.4.1 and §4.5.2)
+* K5 presence alone does NOT prove a device was previously verified for the account
+  (see `DEVICE_FINGERPRINT.md` §4.3)
 
 ---
 
@@ -195,6 +197,53 @@ Required behavior:
 * Window duration MUST be ≥ max block duration or key TTL
 * After window expiry, old keys MAY be dropped
 
+#### 4.3.1 Budget & Micro-Cap Rotation Survival (Owner-Safety)
+
+§4.3 survival applies to **all budget state**:
+
+* K4 budget epoch/count
+* K5 micro-cap budget
+* Budget cooldown marker
+
+Rule: `writes → V2`, `reads → V2 then V1`.
+
+**Forbidden merge:** K4 budget counters and K5 micro-cap counters MUST NOT be read as
+`max(v1.count, v2.count)`. Taking the maximum across versions silently discards cumulative
+history: during rotation each counter is a **single logical budget state**, not two
+independent counters. The `max()` merge acceptable for decaying **scores** is NOT acceptable
+for **cumulative budget counts** — a budget counter must never appear to jump backward or
+“reseed” under rotation.
+
+#### 4.3.2 Atomic Budget Seeding Across Rotation (Storage Contract Extension)
+
+The current `RateLimitStoreInterface` cannot carry a budget epoch from V1 into V2 while
+preserving `count`, `epochStart`, the fixed epoch end, and atomic concurrency. The
+architecture therefore adopts a **public storage contract extension** (to be implemented
+later; not part of this decision):
+
+```php
+incrementBudgetWithSeed(
+    string $key,
+    int $epochDurationSeconds,
+    BudgetStateDTO $seed,
+    int $amount = 1
+): BudgetStateDTO
+```
+
+Locked semantics:
+
+* The operation is atomic on the current/V2 key.
+* If a valid V2 budget already exists: the seed is **ignored** and the existing V2 state is
+  incremented.
+* If no V2 budget exists and the seed is still inside its epoch:
+  initialize V2 with `seed.count + amount`, same `seed.epochStart`; expiry stays derived
+  from the original epoch start (fixed epoch end preserved).
+* If the seed is expired: start a normal new epoch.
+* Concurrent initialization MUST NOT duplicate the seed or lose increments.
+
+The contract is used for **both** `K4` account budget and `K5` same-device micro-cap. Key
+rotation therefore never acts as a reset and never extends the 24h epoch.
+
 ---
 
 ### 4.4 Namespacing & Scoping
@@ -207,6 +256,52 @@ All keys MUST include:
 * Module scope (`rate_limiter`)
 
 This prevents cross-action and cross-module leakage.
+
+### 4.5 Auxiliary Budget Keys (Locked)
+
+Budget owner-safety uses **dedicated auxiliary keys** — never the K4 score key and never the
+K4 budget epoch/count key.
+
+#### 4.5.1 Budget Cooldown Marker
+
+Logical namespace (before HMAC):
+
+```
+{policy}:rate_limiter:budget_cooldown:v1:{env}:{accountId}
+```
+
+* The stored key is HMAC-ed with the same keyed-hash strategy as all other keys (§4.2).
+* The marker uses the **existing atomic fixed-TTL primitive** `RateLimitStoreInterface::increment(key, cooldownTTL)`:
+  first creation sets the TTL, subsequent increments do **not** extend it — a no-extension
+  cooldown by construction (no new Store primitive required).
+
+Atomic acquisition (locked):
+
+```
+if active V2 marker exists      → cooldown active
+else if active V1 marker exists → cooldown active
+else atomic increment(V2, cooldownTTL)
+     issuance allowed only when returned value == 1
+```
+
+* `get()` + `set()` acquisition is **forbidden** (not atomic under concurrency).
+* Only the first increment inside a cooldown returns `1`; the issuer acquires the cooldown,
+  later concurrent issuers return `> 1` and MUST NOT re-issue.
+* The marker is part of Budget enforcement, never part of the 24h epoch, and never a
+  level-1 `BlockState`.
+* Rotation survival (§4.3.1) applies: writes → V2; reads → V2 then V1.
+
+#### 4.5.2 K5 Micro-Cap Counter (Known-Device Budget Eligibility)
+
+Logical namespace (before HMAC):
+
+```
+{policy}:rate_limiter:microcap:k5:{ver}:{env}:{accountId}:{deviceFp}
+```
+
+* A fixed-epoch (24h) counter per known device used to decide when same-device failures
+  become budget-eligible (`DECISION_MATRIX.md` §2.4.1).
+* Subject to rotation survival (§4.3.1): never `max(v1, v2)`, atomic seeding per §4.3.2.
 
 ---
 
@@ -227,6 +322,8 @@ Rules:
 
 * IP-only keys MUST NOT cause final account blocks
 * Missing fingerprint accelerates K4 escalation only
+* Budget cooldown markers and K5 micro-cap counters are auxiliary keys (§4.5); they are
+  budget-enforcement state, never score keys and never `BlockState`
 
 ---
 

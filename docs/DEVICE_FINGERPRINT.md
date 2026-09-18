@@ -3,7 +3,7 @@
 **Module:** RateLimiter
 **Namespace:** `Maatify\RateLimiter`
 **Status:** LOCKED — Behavioral & Privacy Contract
-**Spec Version:** `1.0.0`
+**Spec Version:** `1.1.0`
 
 This document defines the **Device Fingerprint system** used by the Rate Limiter.
 It specifies how device identity is derived, normalized, hashed, bounded, and evaluated.
@@ -50,6 +50,8 @@ It is **not** intended for:
 * Fingerprints MUST NOT be treated as trusted identifiers
 * Account-level signals always override device-level signals
 * Passive-only fingerprints MUST NOT be used to trigger global DeviceFP blocks
+* “Previously verified for this account” is a **host-proven fact**, never a
+  fingerprint-derived inference; fingerprint presence does not equal verified provenance
 
 ---
 
@@ -151,7 +153,7 @@ Levels increase confidence but NEVER replace account-level protection.
 
 All fingerprint levels are combined into a single resolved identity.
 
-### DeviceIdentity Components
+### 4.1 DeviceIdentity Components
 
 * Passive fingerprint (mandatory)
 * Client fingerprint (optional)
@@ -159,7 +161,7 @@ All fingerprint levels are combined into a single resolved identity.
 * Confidence level (derived)
 * Stability flag (derived)
 
-### Confidence Levels
+### 4.2 Confidence Levels
 
 | Signals Present            | Confidence |
 | -------------------------- | ---------- |
@@ -169,6 +171,44 @@ All fingerprint levels are combined into a single resolved identity.
 
 **Rule:**
 Confidence affects **scoring weight** and certain correlation enforcement constraints; never authorization.
+
+---
+
+### 4.3 Previously Verified for Account (Known Device)
+
+“Known device” and “previously verified device” are **account-scoped** facts, not
+fingerprint-presence facts.
+
+* A **trusted session device** is known/verified because it already requires a proven
+  association with the `AccountID` (§3.3; `DECISION_MATRIX.md` §0).
+* A **previously verified device for this account** (known K5) is a device for which the
+  host proves a prior verified association with that `AccountID`, independently of any
+  active trusted session (e.g. verified via out-of-band token, a prior successful
+  authenticated session, or account settings).
+
+The **public context/device-identity contracts cannot currently represent** the second
+case. The architecture therefore adopts a **host-provided signal** (to be added to the
+public context/device-identity contract):
+
+```
+isDevicePreviouslyVerifiedForAccount   // default: false
+```
+
+Resolved known-device semantic (owned here, consumed by `DECISION_MATRIX.md` §0):
+
+```
+isKnownForAccount = isTrustedSession OR isDevicePreviouslyVerifiedForAccount
+```
+
+Rules:
+
+* The **host** is the only authority for proving a previous verified association; the
+  RateLimiter performs no independent verification.
+* The existence of a `K5` counter in RateLimiter storage **does not, by itself**, mean the
+  device was previously verified. `K5` presence is a risk-history signal (`§9`), not proof
+  of device ownership.
+* `DeviceConfidence = HIGH` alone is **not** a substitute for “previously verified”: HIGH
+  confidence describes signal strength, not a verified account association.
 
 ---
 
@@ -291,6 +331,8 @@ Rules:
 * Device-only enforcement MUST NOT override account protection
 * Device trust MUST decay naturally
 * Absence is less severe than inconsistency
+* `K5` presence alone does NOT mean the device was previously verified for the account
+  (§4.3); only the host can prove a verified association
 * Passive-only fingerprints cannot trigger `HARD_BLOCK(DeviceFP)` (see `DECISION_MATRIX.md` 5.3)
 
 ---
