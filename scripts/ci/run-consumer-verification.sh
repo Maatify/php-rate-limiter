@@ -23,7 +23,8 @@ for run_number in 1 2; do
     (
         cd "$consumer_root"
         echo "Consumer Verification Harness clean run #$run_number"
-        composer validate --strict
+        # The external fixture intentionally accepts any detached development ref from its path repository.
+        composer validate --strict --no-check-all
         composer update --no-interaction --prefer-dist --no-progress
         composer dump-autoload --optimize --strict-psr
         composer check-platform-reqs

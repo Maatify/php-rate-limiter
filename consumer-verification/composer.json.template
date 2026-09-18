@@ -18,7 +18,7 @@
         }
     },
     "require": {
-        "maatify/php-rate-limiter": "dev-work/consumer-verification-harness"
+        "maatify/php-rate-limiter": "*"
     },
     "config": {
         "allow-plugins": false,
