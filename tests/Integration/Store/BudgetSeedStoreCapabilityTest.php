@@ -53,9 +53,15 @@ final class BudgetSeedStoreCapabilityTest extends TestCase
 
     public function testThrowingStoreRemainsBaseContractOnly(): void
     {
-        $store = new ThrowingRateLimitStore();
+        $reflection = new ReflectionClass(ThrowingRateLimitStore::class);
 
-        $this->assertInstanceOf(RateLimitStoreInterface::class, $store);
-        $this->assertNotInstanceOf(BudgetSeedStoreInterface::class, $store);
+        $this->assertTrue(
+            $reflection->implementsInterface(RateLimitStoreInterface::class),
+            'ThrowingRateLimitStore must remain a valid RateLimitStoreInterface.'
+        );
+        $this->assertFalse(
+            $reflection->implementsInterface(BudgetSeedStoreInterface::class),
+            'ThrowingRateLimitStore must NOT implement the budget-seeding capability.'
+        );
     }
 }
