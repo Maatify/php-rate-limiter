@@ -250,6 +250,9 @@ final class RateLimiterEngineCurrentRuntimeCharacterizationTest extends TestCase
             ['ua' => 'Mozilla/5.0 Safari/17.0', 'device' => 'device-3'],
             ['ua' => 'Mozilla/5.0 Edge/120.0', 'device' => 'device-4'],
         ];
+        $resolver = new DeviceIdentityResolver(new FingerprintHasher('test_secret'));
+        /** @var list<string> $resolvedFingerprintHashes */
+        $resolvedFingerprintHashes = [];
 
         foreach ($requests as $request) {
             $context = new RateLimitContextDTO(
@@ -259,6 +262,10 @@ final class RateLimiterEngineCurrentRuntimeCharacterizationTest extends TestCase
                 ['device' => $request['device']]
             );
 
+            $device = $resolver->resolve($context);
+            $this->assertNotNull($device->fingerprintHash);
+            $resolvedFingerprintHashes[] = $device->fingerprintHash;
+
             $result = $engine->limit($context, RateLimitCommand::checkOnly('login_protection'));
 
             $this->assertSame(RateLimitResultDTO::DECISION_ALLOW, $result->decision);
@@ -267,6 +274,11 @@ final class RateLimiterEngineCurrentRuntimeCharacterizationTest extends TestCase
         $k4Key = $this->key('login_protection', 'k4', $accountId);
         $this->assertNull($this->store->get($k4Key));
         $this->assertNull($this->store->checkBlock($k4Key));
+
+        foreach ($resolvedFingerprintHashes as $fingerprintHash) {
+            $k5Key = $this->key('login_protection', 'k5', "{$accountId}:{$fingerprintHash}");
+            $this->assertNull($this->store->checkBlock($k5Key));
+        }
     }
 
     private function createEngine(BlockPolicyInterface ...$policies): RateLimiterEngine
