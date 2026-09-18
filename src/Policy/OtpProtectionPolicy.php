@@ -41,6 +41,14 @@ class OtpProtectionPolicy implements BlockPolicyInterface
 
     public function getBudgetConfig(): ?BudgetConfigDTO
     {
-        return new BudgetConfigDTO(10, 4);
+        return new BudgetConfigDTO(
+            threshold: 10,
+            block_level: 4,
+            cooldown_seconds: 7200,
+            trusted_session_floor_level: 3,
+            precheck_enforcement: false,
+            known_device_micro_cap: null,
+            recovery_collision_guard_enabled: true
+        );
     }
 }
