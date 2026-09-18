@@ -51,7 +51,7 @@ Baseline commit:    8ef00c7fb2baf0a9bd88b277e69d1aa984150919
 Audit draft:        draft/extraction-blueprint
 ```
 
-### Current Integration State
+### Documentation Reconciliation Base
 
 ```text
 Branch: draft/extraction-blueprint
@@ -560,7 +560,7 @@ The authorized items have been completed:
 - Required CI exists.
 - PHPStan max passes.
 - Package-facing README/reference exist.
-- Documentation reconciliation completed in this PR.
+- Documentation reconciliation completed.
 
 Final Review against latest main remains pending. No persistence/backend verification applies unless backend support has been separately added through a later explicitly approved scope decision.
 
