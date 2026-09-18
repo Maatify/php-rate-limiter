@@ -9,6 +9,7 @@ use ConsumerVerification\InMemoryCorrelationStore;
 use ConsumerVerification\InMemoryRateLimitStore;
 use ConsumerVerification\RecordingFailureSignalEmitter;
 use Maatify\RateLimiter\Command\RateLimitCommand;
+use Maatify\RateLimiter\Contract\BudgetSeedStoreInterface;
 use Maatify\RateLimiter\Device\DeviceIdentityResolver;
 use Maatify\RateLimiter\Device\EphemeralBucket;
 use Maatify\RateLimiter\Device\FingerprintHasher;
@@ -53,6 +54,11 @@ $rateLimitStore = new InMemoryRateLimitStore($clock);
 $correlationStore = new InMemoryCorrelationStore($clock);
 $circuitBreakerStore = new InMemoryCircuitBreakerStore();
 $failureSignalEmitter = new RecordingFailureSignalEmitter();
+
+requireCondition(
+    $rateLimitStore instanceof BudgetSeedStoreInterface,
+    'The consumer store does not implement the BudgetSeedStoreInterface capability.'
+);
 
 $deviceResolver = new DeviceIdentityResolver(new FingerprintHasher('active-key'));
 $budgetTracker = new BudgetTracker($rateLimitStore, $clock);
