@@ -143,14 +143,18 @@ Account-level keys (K4) are authoritative.
 
 ### Anti-Equilibrium Gate
 
-Record exactly one Anti-Equilibrium event only when the **final issued decision** is
-`SOFT_BLOCK`. If **≥ 3 actually-issued `SOFT_BLOCK` events within 6 hours** exist for
-the same account:
+On the current `recordFailure`, read only **prior** actually-issued `SOFT_BLOCK` events
+for the same account **before budget cooldown acquisition**. If **≥ 3 such events
+within 6 hours** exist:
 
-* Next failure MUST apply `HARD_BLOCK(Account)` at minimum **L2**.
+* The current failure MUST add `HARD_BLOCK(Account)` at minimum **L2** as an
+  Anti-Equilibrium candidate.
+* The budget `SOFT_BLOCK` is ineligible and its cooldown MUST NOT be acquired.
 
-The third soft event remains a `SOFT_BLOCK`; recording it MUST NOT turn that same request
-into `HARD_BLOCK`. `ALLOW` and `HARD_BLOCK` final decisions record no soft event.
+After final aggregation, record exactly one Anti-Equilibrium event only when the final
+issued decision is `SOFT_BLOCK`; the event affects future requests only. The third soft
+event remains a `SOFT_BLOCK`, and recording it MUST NOT turn that same request into
+`HARD_BLOCK`. `ALLOW` and `HARD_BLOCK` final decisions record no soft event.
 
 ---
 

@@ -84,19 +84,27 @@ Evaluation order is **strict and non-negotiable**:
 5. On failure, process **all** score, correlation, and eligible budget updates
    (`recordFailure` MUST continue even while `BudgetActive`).
 6. Apply the OTP **Recovery Collision Guard** if the exact transition qualifies.
-7. Resolve the normal/recovery candidate class before attempting budget enforcement.
-8. If `BudgetActive` and the command is eligible, and no higher-priority condition
-   makes budget enforcement ineligible, atomically acquire the budget cooldown. If
-   acquired, add the budget `SOFT_BLOCK` candidate.
-9. Aggregate by decision class first:
+7. On `recordFailure`, evaluate Anti-Equilibrium escalation using **only** soft-block
+   events recorded by prior requests. If at least 3 prior actually-issued
+   `SOFT_BLOCK` events exist within 6 hours, add an Anti-Equilibrium
+   `HARD_BLOCK(Account)` candidate at minimum L2. The current request MUST NOT count
+   toward this prerequisite.
+8. Resolve the normal, Recovery Guard, and Anti-Equilibrium candidate class.
+   If any `HARD_BLOCK` candidate exists, the budget `SOFT_BLOCK` is ineligible and
+   budget cooldown MUST NOT be acquired.
+9. Otherwise, if `BudgetActive` and the command is eligible, atomically acquire the
+   budget cooldown. If acquired, add the budget `SOFT_BLOCK` candidate.
+10. Aggregate by decision class first:
 
    ```
    HARD_BLOCK > SOFT_BLOCK > ALLOW
    ```
 
    Then resolve the highest level and longest duration **only among candidates in the
-   winning class**. Record Anti-Equilibrium only when the final issued decision is
-   `SOFT_BLOCK`.
+   winning class**.
+11. After final aggregation, if and only if the final issued decision is `SOFT_BLOCK`,
+    record exactly one Anti-Equilibrium soft event for future requests. A current
+    request MUST NOT record a soft event and then read that same event to become hard.
 
 **The budget is a decision candidate, not a fail-fast gate.** An active budget MUST NOT
 short-circuit stages 4–6. Normative budget behavior is defined in §2.4, §2.5, §3.3.
@@ -282,19 +290,41 @@ If a request is from a **trusted session device**:
 
 To prevent mathematically planned “low-and-slow” equilibrium:
 
-If, for the same `AccountID`:
+#### 2.5.1 Read / Escalation
 
-* the final issued decision is `SOFT_BLOCK`, record exactly one Anti-Equilibrium event;
-  and
-* there are **≥ 3 actually-issued `SOFT_BLOCK` events within 6 hours**,
+On the current `recordFailure`, and **before budget cooldown acquisition**, read only
+Anti-Equilibrium soft events from **prior requests** for the same `AccountID`.
 
-THEN:
+If **≥ 3 actually-issued `SOFT_BLOCK` events within 6 hours** exist in that prior
+history:
 
-* Apply `HARD_BLOCK (Account)` at **minimum level L2** on the next failure.
+* Add `HARD_BLOCK (Account)` at **minimum level L2** as an Anti-Equilibrium candidate.
+* The current request MUST NOT count toward the three-event prerequisite.
+* This `HARD_BLOCK` candidate makes the budget `SOFT_BLOCK` ineligible; budget cooldown
+  MUST NOT be acquired.
 
-The third `SOFT_BLOCK` is recorded as a `SOFT_BLOCK` event; it MUST NOT be changed to
-`HARD_BLOCK` by the act of recording that event. A request whose final decision is
-`ALLOW` or `HARD_BLOCK` records no Anti-Equilibrium `SOFT_BLOCK` event.
+The Anti-Equilibrium read/escalation operation is separate from recording the current
+request. It occurs before budget cooldown acquisition so an eligible prior history
+cannot be bypassed by a budget soft.
+
+#### 2.5.2 Write / Record
+
+After final aggregation, if and only if the final issued decision is `SOFT_BLOCK`,
+record exactly one Anti-Equilibrium event. This event affects future requests only.
+
+The third `SOFT_BLOCK` remains a `SOFT_BLOCK`; recording it MUST NOT turn that same
+request into `HARD_BLOCK`. A request whose final decision is `ALLOW` or `HARD_BLOCK`
+records no Anti-Equilibrium soft event.
+
+Therefore, Anti-Equilibrium has two distinct operations:
+
+```text
+READ / ESCALATION:
+  current failure → read prior soft-event history → may add HARD_BLOCK L2
+
+WRITE / RECORD:
+  final result is SOFT_BLOCK → record exactly one event for future requests
+```
 
 This is deterministic, testable, and breaks stable decay arithmetic.
 
@@ -415,9 +445,9 @@ Duration:
 * The Recovery Guard `SOFT_BLOCK (L2)` uses the **PenaltyLadder L2 duration** (60 s), NOT
   the OTP budget cooldown (BudgetActive has not started yet).
 * The Recovery Guard is a normal `SOFT_BLOCK` candidate and MUST NOT acquire the budget
-  cooldown. If a normal `HARD_BLOCK` is also present, `HARD_BLOCK` wins without budget
-  cooldown acquisition; otherwise it aggregates with other `SOFT_BLOCK` candidates by
-  the class-local rule in §8.
+  cooldown. If a normal or Anti-Equilibrium `HARD_BLOCK` is also present, `HARD_BLOCK`
+  wins without budget cooldown acquisition; otherwise it aggregates with other
+  `SOFT_BLOCK` candidates by the class-local rule in §8.
 
 ---
 
@@ -634,6 +664,38 @@ Final:
 SOFT L2 / 60s
 No budget cooldown
 BudgetActive suppressed for this request
+```
+
+#### Example F — Prior Anti-Equilibrium history blocks budget issuance
+
+```text
+Three prior actually-issued SOFT_BLOCK events exist within 6h.
+
+Next recordFailure:
+Normal = ALLOW
+BudgetActive = true
+
+Anti-Equilibrium candidate:
+HARD L2
+
+Final:
+HARD L2
+Budget not attempted
+No budget cooldown acquired
+No new Anti-Equilibrium soft event recorded
+```
+
+#### Example G — Anti-Equilibrium wins over Recovery Guard
+
+```text
+Three prior actually-issued SOFT_BLOCK events exist within 6h.
+Recovery Guard = SOFT L2
+Anti-Equilibrium = HARD minimum L2
+
+Final:
+HARD L2
+No budget cooldown acquired
+No new Anti-Equilibrium soft event recorded
 ```
 
 ---

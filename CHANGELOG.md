@@ -42,6 +42,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   decision class wins before level/duration, a budget `SOFT_BLOCK` cannot upgrade hard
   properties, budget cooldown is tied to actual budget-soft issuance, Login `checkOnly`
   requires a would-be `ALLOW`, Recovery Collision Guard does not consume budget cooldown,
-  and Anti-Equilibrium records only the final issued `SOFT_BLOCK`.
+  and Anti-Equilibrium reads prior soft history before cooldown, then records only the
+  final issued `SOFT_BLOCK` for future requests.
 - Package licensing established as proprietary by Owner Decision before first release
 - Expanded `BudgetConfigDTO` to the full policy-owned contract (threshold, block level, cooldown seconds, trusted-session floor, pre-check enforcement, known-device micro-cap, Recovery Collision Guard toggle) with defaults preserving current runtime semantics (`cooldown_seconds = 0`, `trusted_session_floor_level = 2`, `precheck_enforcement = true`, `known_device_micro_cap = 8`, `recovery_collision_guard_enabled = false`); locked Login/OTP preset values live in the policy objects, with the full contract in `docs/POLICIES.md`. Remaining Budget Owner-Safety orchestration is not yet implemented: cooldown enforcement, policy-owned command eligibility, known-device eligibility, Recovery Collision Guard, decision aggregation. Normative behavior lives in `docs/DECISION_MATRIX.md`.

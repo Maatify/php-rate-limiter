@@ -130,6 +130,9 @@ It is an **aggregation candidate only**:
   persistence are resolved only among candidates in the winning class.
 - A budget `SOFT_BLOCK` MUST NOT upgrade or contribute properties to a winning
   `HARD_BLOCK`, directly or indirectly.
+- On `recordFailure`, Anti-Equilibrium reads only soft events from prior requests before
+  budget cooldown acquisition; an eligible history adds a `HARD_BLOCK` candidate and
+  makes the budget candidate and cooldown ineligible.
 - `checkOnly()` MUST evaluate normal score/correlation state before choosing the final result.
 - Login `checkOnly` may attempt budget enforcement only when the normal result would be
   `ALLOW`; normal `SOFT_BLOCK` and `HARD_BLOCK` make the budget candidate ineligible.
@@ -189,6 +192,8 @@ The Engine is the “brain”:
 - Applies caps and persistence rules (fixed epochs; anti-equilibrium gates)
 - Treats the **budget as a decision candidate** in final aggregation: it never
   short-circuits scoring/correlation/update processing
+- Evaluates prior Anti-Equilibrium soft-event history before budget enforcement and
+  records a new soft event only after final aggregation for future requests
 - Aggregates decisions deterministically by class first (`HARD_BLOCK > SOFT_BLOCK > ALLOW`),
   then resolves level and duration within the winning class only
 - Enforces failure semantics explicitly
