@@ -5,8 +5,11 @@ declare(strict_types=1);
 namespace Maatify\RateLimiter\Engine;
 
 use Maatify\RateLimiter\Contract\BlockPolicyInterface;
+use Maatify\RateLimiter\Contract\BudgetSeedStoreInterface;
 use Maatify\RateLimiter\Contract\CorrelationStoreInterface;
 use Maatify\RateLimiter\Contract\RateLimitStoreInterface;
+use Maatify\RateLimiter\DTO\Store\BudgetStateDTO;
+use Maatify\RateLimiter\Exception\RateLimiterException;
 use Maatify\RateLimiter\Device\EphemeralBucket;
 use Maatify\RateLimiter\DTO\DeviceIdentityDTO;
 use Maatify\RateLimiter\Command\RateLimitCommand;
@@ -22,6 +25,8 @@ use Maatify\SharedCommon\Contracts\ClockInterface;
 
 class EvaluationPipeline
 {
+    private const BUDGET_EPOCH_SECONDS = 86400; // 24h
+
     private string $secret;
     private ?string $previousSecret;
 
@@ -63,7 +68,7 @@ class EvaluationPipeline
         // 3. Check Account Budget (Fail-Fast)
         // Skip check if request is a Success record (Post-Action)
         if (! $request->isSuccess) {
-            if ($blocked = $this->checkBudget($policy, $realKeysV2, $device)) {
+            if ($blocked = $this->checkBudget($policy, $realKeysV2, $realKeysV1, $device)) {
                 return $blocked;
             }
         }
@@ -142,8 +147,8 @@ class EvaluationPipeline
 
         // 10. Process Updates (Failure / Access)
         if ($request->isFailure || $policy->getScoreDeltas()->access > 0) {
-            // We write only to V2 (Active Key)
-            return $this->processUpdates($policy, $context, $request, $device, $effectiveKeysV2, $rawScores);
+            // We write only to V2 (Active Key); V1 stays read-only
+            return $this->processUpdates($policy, $context, $request, $device, $effectiveKeysV2, $effectiveKeysV1, $rawScores);
         }
 
         return $this->createAllowResult();
@@ -171,25 +176,24 @@ class EvaluationPipeline
     }
 
     /**
-     * @param   array<string, string|null>  $keys
+     * @param   array<string, string|null>  $keysV2
+     * @param   array<string, string|null>  $keysV1
      */
-    /**
-     * @param   array<string, string|null>  $keys
-     */
-    private function checkBudget(BlockPolicyInterface $policy, array $keys, DeviceIdentityDTO $device): ?RateLimitResultDTO
+    private function checkBudget(BlockPolicyInterface $policy, array $keysV2, array $keysV1, DeviceIdentityDTO $device): ?RateLimitResultDTO
     {
         $config = $policy->getBudgetConfig();
         // Fix Error 2: isset check on known offset is redundant, just check for null value
-        if ($config && $keys['k4'] !== null) {
-            if ($this->budgetTracker->isExceeded($keys['k4'], $config->threshold)) {
+        if ($config && $keysV2['k4'] !== null) {
+            $activeKey = $this->resolveActiveBudgetKeyV2ThenV1($keysV2['k4'], $keysV1['k4'] ?? null);
+            if ($activeKey !== null && $this->budgetTracker->isExceeded($activeKey, $config->threshold)) {
                 $level = $config->block_level;
                 if ($device->isTrustedSession) {
                     $level = max(2, $level - 1);
                 }
 
                 // Calculate Retry-After
-                $status = $this->budgetTracker->getStatus($keys['k4']);
-                $retryAfter = max(0, ($status->epochStart + 86400) - $this->clock->now()->getTimestamp());
+                $status = $this->budgetTracker->getStatus($activeKey);
+                $retryAfter = max(0, ($status->epochStart + self::BUDGET_EPOCH_SECONDS) - $this->clock->now()->getTimestamp());
 
                 return $this->createBlockedResult($level, $retryAfter, RateLimitResultDTO::DECISION_SOFT_BLOCK);
             }
@@ -312,6 +316,7 @@ class EvaluationPipeline
 
     /**
      * @param   array<string, string|null>        $keys
+     * @param   array<string, string|null>        $keysV1
      * @param   array<string, ?PipelineScoreDTO>  $rawScores
      */
     private function processUpdates(
@@ -320,6 +325,7 @@ class EvaluationPipeline
         RateLimitCommand $request,
         DeviceIdentityDTO $device,
         array $keys,
+        array $keysV1,
         array $rawScores
     ): RateLimitResultDTO
     {
@@ -437,8 +443,8 @@ class EvaluationPipeline
             $scoreMaxLevel = $newMaxLevel;
 
             if ($shouldCount) {
-                $this->budgetTracker->increment($keys['k4']);
-                if ($this->budgetTracker->isExceeded($keys['k4'], $config->threshold)) {
+                $budgetState = $this->incrementBudgetAcrossRotation($keys['k4'], $keysV1['k4'] ?? null);
+                if ($this->isBudgetExceeded($budgetState, $config->threshold)) {
                     $newMaxLevel = max($newMaxLevel, $config->block_level);
                     if ($scoreMaxLevel < 2) {
                         $budgetOnly = true;
@@ -488,6 +494,78 @@ class EvaluationPipeline
         }
 
         return $this->createAllowResult();
+    }
+
+    // --- Budget Key-Rotation Helpers ---
+    /**
+     * Resolve the single logical budget key across key rotation: V2 wins,
+     * V1 is the fallback, never a merge. Returns null when neither version
+     * holds a valid (non-expired) budget.
+     *
+     * @see docs/KEY_STRATEGY.md §4.3.1
+     */
+    private function resolveActiveBudgetKeyV2ThenV1(string $keyV2, ?string $keyV1): ?string
+    {
+        if ($this->store->getBudget($keyV2) !== null) {
+            return $keyV2;
+        }
+
+        if ($keyV1 !== null && $this->store->getBudget($keyV1) !== null) {
+            return $keyV1;
+        }
+
+        return null;
+    }
+
+    /**
+     * Increment a budget counter across key rotation, migrating V1 epoch
+     * state into V2 atomically when required. Consumed only by the K4 account
+     * budget write path; the K5 micro-cap path does not use it, because the
+     * micro-cap key embeds a device fingerprint that itself changes across
+     * fingerprint-secret rotation.
+     *
+     * - Active V2 → normal V2 increment (V1 ignored).
+     * - No V2 + valid V1 → atomic seed + increment into V2 via
+     *   BudgetSeedStoreInterface; explicit failure when the capability is
+     *   missing (silent reset is forbidden).
+     * - Neither valid → normal V2 increment.
+     *
+     * @see docs/KEY_STRATEGY.md §4.3.2
+     */
+    private function incrementBudgetAcrossRotation(string $keyV2, ?string $keyV1, int $amount = 1): BudgetStateDTO
+    {
+        $v2State = $this->store->getBudget($keyV2);
+        if ($v2State !== null) {
+            return $this->store->incrementBudget($keyV2, self::BUDGET_EPOCH_SECONDS, $amount);
+        }
+
+        if ($keyV1 !== null) {
+            $v1State = $this->store->getBudget($keyV1);
+            if ($v1State !== null) {
+                if (! $this->store instanceof BudgetSeedStoreInterface) {
+                    throw new RateLimiterException(
+                        'Budget rotation migration requires the BudgetSeedStoreInterface capability; '
+                        . 'the configured store cannot carry the previous-secret budget state into V2 without a silent reset.'
+                    );
+                }
+
+                return $this->store->incrementBudgetWithSeed($keyV2, self::BUDGET_EPOCH_SECONDS, $v1State, $amount);
+            }
+        }
+
+        return $this->store->incrementBudget($keyV2, self::BUDGET_EPOCH_SECONDS, $amount);
+    }
+
+    private function isBudgetExceeded(BudgetStateDTO $state, int $limit): bool
+    {
+        if ($state->count >= $limit) {
+            $now = $this->clock->now()->getTimestamp();
+            if ($state->epochStart + self::BUDGET_EPOCH_SECONDS > $now) {
+                return true;
+            }
+        }
+
+        return false;
     }
 
     // --- Helpers (Same as before) ---

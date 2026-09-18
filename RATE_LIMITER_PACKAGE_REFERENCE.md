@@ -257,9 +257,17 @@ Budget owner-safety relies on **existing and declared** storage primitives:
   `incrementBudgetWithSeed(string $key, int $epochDurationSeconds, BudgetStateDTO $seed,
   int $amount = 1): BudgetStateDTO` — now implemented; locked semantics in
   `docs/KEY_STRATEGY.md` §4.3.2. `RateLimitStoreInterface` itself is unchanged, so
-  existing store implementations stay source-compatible. It serves both K4 account budget
-  and K5 same-device micro-cap; rotation therefore never resets and never extends the 24h
-  epoch. When a valid previous-secret budget must move to V2 and the store is not a
+  existing store implementations stay source-compatible. The capability is designed to
+  serve both K4 account budget and K5 same-device micro-cap without rotation reset or epoch
+  extension. Runtime integration status:
+  - **K4 account-budget rotation — integrated** in `EvaluationPipeline`: budget reads
+    resolve V2 first and fall back to V1 only when no valid V2 state exists (never a
+    `max(v1,v2)` merge), and K4 budget writes migrate a valid V1 state into V2 atomically
+    via the capability.
+  - **K5 micro-cap rotation — pending.** The micro-cap key embeds a device fingerprint that
+    is itself keyed by the current secret, so historical K5 identity requires the previous
+    fingerprint hash; that is not wired into the runtime yet.
+  When a valid previous-secret budget must move to V2 and the store is not a
   `BudgetSeedStoreInterface`, the path MUST fail explicitly through the existing failure
   semantics (`docs/FAILURE_SEMANTICS.md`) — never a silent reset or loss of enforcement.
 

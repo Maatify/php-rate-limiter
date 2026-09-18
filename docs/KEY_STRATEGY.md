@@ -248,7 +248,7 @@ Locked semantics:
 The contract is used for **both** `K4` account budget and `K5` same-device micro-cap. Key
 rotation therefore never acts as a reset and never extends the 24h epoch.
 
-**Runtime integration contract (for the upcoming implementation):**
+**Runtime integration contract (implemented):**
 
 * `EvaluationPipeline` continues to accept `RateLimitStoreInterface`.
 * Paths that do not require a V1→V2 budget migration proceed without any additional
@@ -258,6 +258,18 @@ rotation therefore never acts as a reset and never extends the 24h epoch.
   * if the capability is not available, silent reset or loss of enforcement is forbidden;
   * the path MUST fail explicitly and pass through the existing failure semantics
     (`docs/FAILURE_SEMANTICS.md`).
+* Runtime integration status:
+  * **K4 account budget — implemented.** `EvaluationPipeline` implements the §4.3.1 read
+    rule directly: budget reads resolve V2 first and fall back to V1 only when no valid V2
+    state exists (never a `max`), and budget writes use `incrementBudgetWithSeed()` when a
+    valid V1 epoch must be carried into V2.
+  * **K5 micro-cap — pending.** The K5 micro-cap key embeds `fingerprintHash`, and
+    `DeviceIdentityResolver` derives `fingerprintHash` from the current secret
+    (`deviceFp_v2 = HMAC(rawFingerprint, new_secret)`), so the historical micro-cap key is
+    keyed by `deviceFp_v1`. Surviving a fingerprint-secret rotation therefore requires the
+    previous fingerprint hash (dual-fingerprint rotation support), which is not wired into
+    the runtime yet. The §4.3.1/§4.3.2 survival requirement above remains locked and
+    required; it is simply not yet implemented.
 
 This preserves source compatibility for existing store implementations while keeping the
 rotation-survival contract intact.
