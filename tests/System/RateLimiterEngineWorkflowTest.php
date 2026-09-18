@@ -5,6 +5,8 @@ declare(strict_types=1);
 namespace Maatify\RateLimiter\Tests\System;
 
 use Maatify\RateLimiter\Command\RateLimitCommand;
+use Maatify\RateLimiter\Contract\BlockPolicyInterface;
+use Maatify\RateLimiter\Contract\RateLimitStoreInterface;
 use Maatify\RateLimiter\DTO\RateLimitContextDTO;
 use Maatify\RateLimiter\DTO\RateLimitResultDTO;
 use Maatify\RateLimiter\Engine\CircuitBreaker;
@@ -22,17 +24,18 @@ use Maatify\RateLimiter\Policy\LoginProtectionPolicy;
 use Maatify\RateLimiter\Policy\OtpProtectionPolicy;
 use Maatify\RateLimiter\Tests\Support\CircuitBreaker\InMemoryCircuitBreakerStore;
 use Maatify\RateLimiter\Tests\Support\Clock\FixedClock;
-use Maatify\RateLimiter\Tests\Support\Correlation\StatefulInMemoryCorrelationStore;
+use Maatify\RateLimiter\Tests\Support\Correlation\NullCorrelationStore;
 use Maatify\RateLimiter\Tests\Support\FailureSignal\RecordingFailureSignalEmitter;
 use Maatify\RateLimiter\Tests\Support\RateLimiter\InMemoryRateLimitStore;
 use Maatify\RateLimiter\Tests\Support\RateLimiter\ThrowingRateLimitStore;
+use PHPUnit\Framework\Attributes\DataProvider;
 use PHPUnit\Framework\TestCase;
 
 class RateLimiterEngineWorkflowTest extends TestCase
 {
     private FixedClock $clock;
     private InMemoryRateLimitStore $store;
-    private StatefulInMemoryCorrelationStore $correlationStore;
+    private NullCorrelationStore $correlationStore;
     private InMemoryCircuitBreakerStore $circuitBreakerStore;
     private RecordingFailureSignalEmitter $failureSignalEmitter;
     private RateLimiterEngine $engine;
@@ -43,7 +46,7 @@ class RateLimiterEngineWorkflowTest extends TestCase
 
         $this->clock = new FixedClock('2025-01-01 12:00:00');
         $this->store = new InMemoryRateLimitStore($this->clock);
-        $this->correlationStore = new StatefulInMemoryCorrelationStore($this->clock);
+        $this->correlationStore = new NullCorrelationStore();
         $this->circuitBreakerStore = new InMemoryCircuitBreakerStore();
         $this->failureSignalEmitter = new RecordingFailureSignalEmitter();
 
@@ -133,18 +136,28 @@ class RateLimiterEngineWorkflowTest extends TestCase
         $this->assertEquals(1, $k3State->value);
     }
 
-    public function testOtpLoginPreCheckBehavior(): void
+    #[DataProvider('preCheckPolicies')]
+    public function testOtpLoginPreCheckBehavior(string $policyName): void
     {
         $context = new RateLimitContextDTO('127.0.0.1', 'Mozilla/5.0', 'acct_123', ['fp_data' => 1]);
-        $command = RateLimitCommand::checkOnly('otp_protection');
+        $command = RateLimitCommand::checkOnly($policyName);
 
         $result = $this->engine->limit($context, $command);
 
         $this->assertEquals(RateLimitResultDTO::DECISION_ALLOW, $result->decision);
         $this->assertEquals(0, $result->blockLevel);
 
-        $k4Key = hash_hmac('sha256', "otp_protection:rate_limiter:k4:v2:prod:acct_123", 'test_secret');
+        $k4Key = hash_hmac('sha256', "{$policyName}:rate_limiter:k4:v2:prod:acct_123", 'test_secret');
         $this->assertNull($this->store->get($k4Key));
+    }
+
+    /**
+     * @return iterable<string, array{string}>
+     */
+    public static function preCheckPolicies(): iterable
+    {
+        yield 'otp protection' => ['otp_protection'];
+        yield 'login protection' => ['login_protection'];
     }
 
     public function testApiHeavyNormalAccessBehavior(): void
@@ -229,6 +242,41 @@ class RateLimiterEngineWorkflowTest extends TestCase
         $this->engine->limit($context, $command);
     }
 
+    public function testOtpAndLoginStoreFailuresFailClosed(): void
+    {
+        foreach ([new OtpProtectionPolicy(), new LoginProtectionPolicy()] as $policy) {
+            $engine = $this->createEngineWithStore(new ThrowingRateLimitStore(), $policy);
+            $result = $engine->limit(
+                new RateLimitContextDTO('198.51.100.10', 'Mozilla/5.0', $policy->getName()),
+                RateLimitCommand::checkOnly($policy->getName())
+            );
+
+            $this->assertSame(RateLimitResultDTO::DECISION_HARD_BLOCK, $result->decision);
+            $this->assertSame(2, $result->blockLevel);
+            $this->assertSame(600, $result->retryAfter);
+            $this->assertSame('FAIL_CLOSED', $result->failureMode);
+        }
+    }
+
+    public function testApiHeavyStoreFailureMovesFromFailOpenToDegradedModeAfterCircuitTrip(): void
+    {
+        $engine = $this->createEngineWithStore(new ThrowingRateLimitStore(), new ApiHeavyProtectionPolicy());
+        $context = new RateLimitContextDTO('198.51.100.11', 'Mozilla/5.0', 'api-account');
+        $command = RateLimitCommand::checkOnly('api_heavy_protection');
+
+        $beforeTrip = $engine->limit($context, $command);
+        $this->assertSame(RateLimitResultDTO::DECISION_ALLOW, $beforeTrip->decision);
+        $this->assertSame('FAIL_OPEN', $beforeTrip->failureMode);
+
+        $secondBeforeTrip = $engine->limit($context, $command);
+        $this->assertSame(RateLimitResultDTO::DECISION_ALLOW, $secondBeforeTrip->decision);
+        $this->assertSame('FAIL_OPEN', $secondBeforeTrip->failureMode);
+
+        $afterTrip = $engine->limit($context, $command);
+        $this->assertSame(RateLimitResultDTO::DECISION_ALLOW, $afterTrip->decision);
+        $this->assertSame('DEGRADED_MODE', $afterTrip->failureMode);
+    }
+
     public function testFinding6UADoubleNormalizationRemainsUnchanged(): void
     {
         $context = new RateLimitContextDTO('127.0.0.1', 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/123.0.0.0 Safari/537.36', 'acct_123');
@@ -287,12 +335,6 @@ class RateLimiterEngineWorkflowTest extends TestCase
         $this->assertNotNull($contextMeta);
 
         $this->assertEquals('fallback_limit_exceeded', $contextMeta->reason);
-    }
-
-    public function testLocalFallbackGlobalGCFindingRemainsUnchanged(): void
-    {
-        // This is part of the local fallback test above, demonstrating it works up to K2 cap.
-        $this->markTestIncomplete('Placeholder for the global GC finding which is a known architectural issue.');
     }
 
     public function testDualSecretRotationBehavior(): void
@@ -387,5 +429,34 @@ class RateLimiterEngineWorkflowTest extends TestCase
         $k1_32State = $this->store->get($k1_32);
         $this->assertNotNull($k1_32State);
         $this->assertEquals(1, $k1_32State->value);
+    }
+
+    private function createEngineWithStore(RateLimitStoreInterface $store, BlockPolicyInterface ...$policies): RateLimiterEngine
+    {
+        $correlationStore = new NullCorrelationStore();
+        $emitter = new RecordingFailureSignalEmitter();
+        $clock = $this->clock;
+
+        $pipeline = new EvaluationPipeline(
+            $store,
+            $correlationStore,
+            new BudgetTracker($store, $clock),
+            new AntiEquilibriumGate($correlationStore),
+            new DecayCalculator($clock),
+            new EphemeralBucket($correlationStore),
+            'test_secret',
+            'prod',
+            $clock
+        );
+
+        return new RateLimiterEngine(
+            new DeviceIdentityResolver(new FingerprintHasher('test_secret')),
+            $pipeline,
+            new CircuitBreaker(new InMemoryCircuitBreakerStore(), $emitter, $clock),
+            new FailureModeResolver(),
+            $emitter,
+            $clock,
+            $policies
+        );
     }
 }
