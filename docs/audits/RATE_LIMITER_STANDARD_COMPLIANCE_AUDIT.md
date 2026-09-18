@@ -2,7 +2,7 @@
 
 ## Status
 
-**Verdict:** `NEEDS CHANGES`
+**Verdict:** `READY FOR FINAL REVIEW` (implementation + verification + documentation reconciliation complete, final review against latest main still pending)
 
 This audit is intentionally limited to:
 
@@ -49,6 +49,13 @@ Repository:         Maatify/php-rate-limiter
 Integration branch: draft/first-release
 Baseline commit:    8ef00c7fb2baf0a9bd88b277e69d1aa984150919
 Audit draft:        draft/extraction-blueprint
+```
+
+### Documentation Reconciliation Base
+
+```text
+Branch: draft/extraction-blueprint
+Commit: e34cf272bc5c13d8429fde8759bbdca2cb719ee7
 ```
 
 The baseline contains the raw import of the Production-Validated Reference Module.
@@ -279,7 +286,7 @@ Reason: STANDARD COMPLIANCE
 * all implement `JsonSerializable`;
 * all have explicit `jsonSerialize()`;
 * fields, defaults, constants, methods and value semantics were preserved;
-* `RateLimitRequestDTO` was deliberately excluded and remains open under Finding 5.
+* `RateLimitRequestDTO` was excluded from true DTO conversion because it represented execution intent; that responsibility was subsequently resolved under Finding 5 through `RateLimitCommand`.
 ---
 
 ## 10. `RateLimitRequestDTO` is execution intent — STANDARD COMPLIANCE
@@ -336,55 +343,38 @@ Do not create a package-local Clock abstraction and do not change time behavior 
 
 ## 12. Fallback UA double-normalization — PROVEN DEFECT
 
-The Engine first calls:
+**Status:** RESOLVED / CLOSED
+**Reason:** PROVEN DEFECT
 
-```text
-DeviceIdentityResolver::normalizeUserAgent(raw UA)
-```
-
-That normalizer returns a reduced lowercase browser representation such as `chrome/123` when it recognizes the browser.
-
-The Engine then passes that already-normalized value into `LocalFallbackLimiter::check()`.
-
-`LocalFallbackLimiter` normalizes the value again using a different routine that expects raw browser/OS patterns such as `Chrome/123`, `Windows`, `Mac OS`, `Linux`, and similar markers.
-
-The second pass therefore can discard browser/platform differentiation and collapse the fallback K2 input.
-
-This is a code-path mismatch inside the imported package itself, not a hypothetical backend concern.
-
-Required correction:
-
-- eliminate the double-normalization mismatch using the smallest behavior-preserving fix;
-- preserve the intended K2 fallback distinction;
-- add a regression test for the exact defect;
-- do not redesign `DeviceIdentityResolver` or `LocalFallbackLimiter` beyond what the defect requires.
+- Blast-radius characterization completed before Runtime fix.
+- `RateLimiterEngine` no longer pre-normalizes UA before local fallback.
+- Raw UA is passed to `LocalFallbackLimiter`.
+- Fallback normalizes once.
+- API-heavy cross-UA K2 distinction is preserved.
+- Same-UA K2 cap is preserved.
+- K1 aggregate cap is preserved.
+- Login/OTP fallback behavior remains unchanged.
+- Regression coverage exists.
+- Consumer/CI verification passed after merge.
 
 ---
 
 ## 13. Local fallback global GC — PROVEN CONTRACT MISMATCH
 
-The locked `FAILURE_SEMANTICS.md` states that, while in `DEGRADED_MODE`, local in-memory counters must persist for the entire degraded epoch and must not reset within that epoch as a renewable clean slate.
+**Status:** RESOLVED / CLOSED
+**Reason:** PROVEN CONTRACT MISMATCH
 
-`LocalFallbackLimiter` currently performs a global counter reset when its hourly GC threshold is crossed:
-
-```text
-self::$counters = []
-```
-
-That reset is independent of the active degraded epoch.
-
-Therefore an active degraded epoch can cross the GC boundary and lose counters before the epoch ends.
-
-This directly conflicts with the locked anti-reset guarantee.
-
-Required correction:
-
-- preserve the existing degraded caps and windows;
-- remove only the contract-breaking reset behavior or replace it with the minimum cleanup mechanism that cannot clear still-valid degraded state;
-- add regression coverage proving active degraded state is not reset by cleanup;
-- do not redesign the fallback model.
-
-The implementation shape is not dictated by this audit; the locked behavior is.
+- Hourly GC remains.
+- Fixed-window calculation remains.
+- Bucket keys remain.
+- Each local bucket tracks expiry.
+- GC removes expired buckets only.
+- Active valid buckets survive cleanup.
+- Natural fixed-window rollover remains unchanged.
+- Engine-level regression coverage exists for the active OTP bucket.
+- Implementation-level regression coverage exists proving that expired bucket is deleted and current valid bucket is kept.
+- Caps and windows are unchanged.
+- Finding 6 behavior is unchanged.
 
 ---
 
@@ -533,46 +523,46 @@ Dependencies are limited to actual requirements:
 
 ### Work Unit 2 — Characterization / Regression Protection
 
+**Status:** RESOLVED / CLOSED
+
 **Reason:** stability protection for the imported production behavior.
 
-Protect the actual existing behavior needed before Work Unit 3 changes runtime structure or fixes proven defects.
-
-Do not use this Work Unit to invent new features or backend support.
+The required coverage was established:
+- Unit
+- Integration
+- System
+- Fallback characterization/regressions
+- Deterministic test support
 
 ### Work Unit 3 — Runtime Compliance + Proven Defects
 
+**Status:** RESOLVED / CLOSED
+
 **Reasons:** STANDARD COMPLIANCE and PROVEN DEFECTS only.
 
-Authorized items:
-
-```text
-true DTO classification/form compliance
-RateLimitRequest execution-intent compliance
-maatify/exceptions integration
-PHP 8.4 / PHPStan max compliance
-fallback UA double-normalization defect
-fallback degraded-state GC contract mismatch
-```
-
-No other runtime redesign is authorized by this audit.
+The authorized items have been completed:
+- true DTO compliance
+- execution-intent Command correction
+- maatify/exceptions integration
+- PHP 8.4 / PHPStan max compliance
+- Finding 6
+- Finding 13
 
 ### Work Unit 4 — Consumer Verification / Release Readiness
 
+**Status:** RESOLVED / CLOSED
+
 **Reason:** adopted Testing / Composer / CI / Presentation Standards.
 
-Before the first externally published RC:
+- Consumer Verification Harness exists.
+- Clean Composer consumer verification works twice.
+- Production PSR-4/public contracts used.
+- Required CI exists.
+- PHPStan max passes.
+- Package-facing README/reference exist.
+- Documentation reconciliation completed.
 
-```text
-Consumer Verification Harness
-clean Composer installation
-production PSR-4 autoloading
-public documented workflow
-required CI checks
-PHPStan max
-release-facing docs
-```
-
-No persistence/backend verification applies unless backend support has been separately added through a later explicitly approved scope decision.
+Final Review against latest main remains pending. No persistence/backend verification applies unless backend support has been separately added through a later explicitly approved scope decision.
 
 ---
 
@@ -591,8 +581,8 @@ Package root/bootstrap                    -> BUILD TO STANDARD
 Package exception hierarchy              -> FIX TO STANDARD
 True DTO class form                       -> FIX TO STANDARD
 RateLimitRequestDTO responsibility/type  -> MINIMUM STANDARD FIX
-Fallback UA double-normalization          -> FIX PROVEN DEFECT
-Fallback global GC reset                  -> FIX PROVEN CONTRACT MISMATCH
+Fallback UA double-normalization          -> RESOLVED / CLOSED
+Fallback global GC reset                  -> RESOLVED / CLOSED
 New extension architecture               -> OUT OF CURRENT SCOPE
 Old standalone package feature import     -> OUT OF CURRENT SCOPE
 Redis/Cache/SQL/Mongo dependency          -> NONE INFERRED
