@@ -19,6 +19,7 @@ class DeviceIdentityResolver implements DeviceIdentityResolverInterface
         $ua = $this->normalizeUserAgent($context->ua);
         $clientFp = $context->clientFingerprint ? $this->normalizeClientFp($context->clientFingerprint) : '';
         $sessionFp = $context->sessionDeviceId ?? '';
+        $isTrustedSession = $sessionFp !== '' && $context->isSessionTrusted;
 
         $confidence = 'LOW';
         if (!empty($clientFp)) {
@@ -34,7 +35,7 @@ class DeviceIdentityResolver implements DeviceIdentityResolverInterface
         return new DeviceIdentityDTO(
             $hash,
             $confidence,
-            $context->isSessionTrusted,
+            $isTrustedSession,
             false,
             $ua
         );

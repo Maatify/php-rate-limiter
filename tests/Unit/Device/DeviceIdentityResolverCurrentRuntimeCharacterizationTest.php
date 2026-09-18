@@ -20,7 +20,7 @@ final class DeviceIdentityResolverCurrentRuntimeCharacterizationTest extends Tes
         $this->resolver = new DeviceIdentityResolver(new FingerprintHasher('test_secret'));
     }
 
-    public function testCurrentCharacterizationTrustedSessionFlagSurvivesMissingSessionIdentifier(): void
+    public function testMissingSessionIdentifierDoesNotResolveTrustedSession(): void
     {
         $device = $this->resolver->resolve(new RateLimitContextDTO(
             '198.51.100.18',
@@ -31,7 +31,7 @@ final class DeviceIdentityResolverCurrentRuntimeCharacterizationTest extends Tes
             true
         ));
 
-        $this->assertTrue($device->isTrustedSession);
+        $this->assertFalse($device->isTrustedSession);
         $this->assertSame('LOW', $device->confidence);
         $this->assertNotNull($device->fingerprintHash);
     }
@@ -49,6 +49,22 @@ final class DeviceIdentityResolverCurrentRuntimeCharacterizationTest extends Tes
 
         $this->assertTrue($device->isTrustedSession);
         $this->assertSame('HIGH', $device->confidence);
+        $this->assertNotNull($device->fingerprintHash);
+    }
+
+    public function testSessionIdentifierDoesNotResolveTrustedSessionWhenContextIsUntrusted(): void
+    {
+        $device = $this->resolver->resolve(new RateLimitContextDTO(
+            '198.51.100.20',
+            'Mozilla/5.0 Chrome/123.0.0.0',
+            'untrusted-with-session-id',
+            null,
+            'session-device-3',
+            false
+        ));
+
+        $this->assertFalse($device->isTrustedSession);
+        $this->assertSame('LOW', $device->confidence);
         $this->assertNotNull($device->fingerprintHash);
     }
 }

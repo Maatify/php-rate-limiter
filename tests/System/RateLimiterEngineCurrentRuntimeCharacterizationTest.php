@@ -120,6 +120,48 @@ final class RateLimiterEngineCurrentRuntimeCharacterizationTest extends TestCase
         $this->assertSame(1, $this->store->checkBlock($k4Key)?->level);
     }
 
+    public function testLoginBudgetWithMissingSessionIdentifierDoesNotReceiveTrustedDowngrade(): void
+    {
+        $engine = $this->createEngine(new LoginProtectionPolicy());
+        $accountId = 'login-trusted-without-session-id';
+        $context = new RateLimitContextDTO(
+            '198.51.100.21',
+            'Mozilla/5.0 Chrome/123.0.0.0',
+            $accountId,
+            null,
+            null,
+            true
+        );
+        $k4Key = $this->key('login_protection', 'k4', $accountId);
+        $this->store->incrementBudget($k4Key, 86400, 20);
+
+        $result = $engine->limit($context, RateLimitCommand::recordFailure('login_protection'));
+
+        $this->assertSame(RateLimitResultDTO::DECISION_SOFT_BLOCK, $result->decision);
+        $this->assertSame(3, $result->blockLevel);
+    }
+
+    public function testLoginBudgetWithValidTrustedSessionKeepsTrustedDowngrade(): void
+    {
+        $engine = $this->createEngine(new LoginProtectionPolicy());
+        $accountId = 'login-trusted-with-session-id';
+        $context = new RateLimitContextDTO(
+            '198.51.100.22',
+            'Mozilla/5.0 Chrome/123.0.0.0',
+            $accountId,
+            null,
+            'session-device-4',
+            true
+        );
+        $k4Key = $this->key('login_protection', 'k4', $accountId);
+        $this->store->incrementBudget($k4Key, 86400, 20);
+
+        $result = $engine->limit($context, RateLimitCommand::recordFailure('login_protection'));
+
+        $this->assertSame(RateLimitResultDTO::DECISION_SOFT_BLOCK, $result->decision);
+        $this->assertSame(2, $result->blockLevel);
+    }
+
     public function testCurrentCharacterizationLoginActiveBudgetHasNoCooldownBetweenEligibleRequests(): void
     {
         $engine = $this->createEngine(new LoginProtectionPolicy());
