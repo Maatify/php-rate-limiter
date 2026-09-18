@@ -11,7 +11,8 @@ use Maatify\RateLimiter\DTO\RateLimitContextDTO;
 class DeviceIdentityResolver implements DeviceIdentityResolverInterface
 {
     public function __construct(
-        private readonly FingerprintHasher $hasher
+        private readonly FingerprintHasher $currentHasher,
+        private readonly ?FingerprintHasher $previousHasher = null
     ) {}
 
     public function resolve(RateLimitContextDTO $context): DeviceIdentityDTO
@@ -30,7 +31,8 @@ class DeviceIdentityResolver implements DeviceIdentityResolverInterface
         }
 
         $rawString = "v1|{$ua}|{$clientFp}|{$sessionFp}";
-        $hash = $this->hasher->hash($rawString);
+        $hash = $this->currentHasher->hash($rawString);
+        $previousHash = $this->previousHasher?->hash($rawString);
 
         return new DeviceIdentityDTO(
             $hash,
@@ -38,7 +40,8 @@ class DeviceIdentityResolver implements DeviceIdentityResolverInterface
             $isTrustedSession,
             false,
             $ua,
-            $context->isDevicePreviouslyVerifiedForAccount
+            $context->isDevicePreviouslyVerifiedForAccount,
+            $previousHash
         );
     }
 
