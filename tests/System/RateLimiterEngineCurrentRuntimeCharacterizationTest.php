@@ -43,7 +43,7 @@ final class RateLimiterEngineCurrentRuntimeCharacterizationTest extends TestCase
         $this->correlationStore = new StatefulInMemoryCorrelationStore($this->clock);
     }
 
-    public function testCurrentCharacterizationLoginL1StallsLaterFailuresBeforeUpdates(): void
+    public function testLoginL1DoesNotStallLaterFailureUpdates(): void
     {
         $engine = $this->createEngine(new LoginProtectionPolicy());
         $context = new RateLimitContextDTO(
@@ -70,17 +70,20 @@ final class RateLimiterEngineCurrentRuntimeCharacterizationTest extends TestCase
         $this->assertSame(6, $secondScore->value);
         $this->assertSame(2, $this->store->getBudget($k4Key)?->count);
 
-        // Current behavior: checkThresholds() returns before processUpdates(), so the score and budget stall.
+        $preCheck = $engine->limit($context, RateLimitCommand::checkOnly('login_protection'));
+        $this->assertSame(RateLimitResultDTO::DECISION_SOFT_BLOCK, $preCheck->decision);
+        $this->assertSame(1, $preCheck->blockLevel);
+
         $third = $engine->limit($context, $command);
-        $this->assertSame(RateLimitResultDTO::DECISION_SOFT_BLOCK, $third->decision);
-        $this->assertSame(1, $third->blockLevel);
+        $this->assertSame(RateLimitResultDTO::DECISION_HARD_BLOCK, $third->decision);
+        $this->assertSame(2, $third->blockLevel);
         $thirdScore = $this->store->get($k4Key);
         $this->assertNotNull($thirdScore);
-        $this->assertSame(6, $thirdScore->value);
-        $this->assertSame(2, $this->store->getBudget($k4Key)?->count);
+        $this->assertSame(9, $thirdScore->value);
+        $this->assertSame(3, $this->store->getBudget($k4Key)?->count);
     }
 
-    public function testCurrentCharacterizationLoginBudgetCrossingReturnsHardBlockAtTwenty(): void
+    public function testLoginBudgetOnlyCrossingRemainsSoftAndStoresNonHardBlock(): void
     {
         $engine = $this->createEngine(new LoginProtectionPolicy());
         $context = new RateLimitContextDTO(
@@ -100,7 +103,7 @@ final class RateLimiterEngineCurrentRuntimeCharacterizationTest extends TestCase
 
         $result = $engine->limit($context, RateLimitCommand::recordFailure('login_protection'));
 
-        $this->assertSame(RateLimitResultDTO::DECISION_HARD_BLOCK, $result->decision);
+        $this->assertSame(RateLimitResultDTO::DECISION_SOFT_BLOCK, $result->decision);
         $this->assertSame(3, $result->blockLevel);
         $this->assertSame(20, $this->store->getBudget($k4Key)?->count);
         $afterScore = $this->store->get($k4Key);
@@ -109,7 +112,12 @@ final class RateLimiterEngineCurrentRuntimeCharacterizationTest extends TestCase
         $this->assertLessThan(8, $afterScore->value);
         $block = $this->store->checkBlock($k4Key);
         $this->assertNotNull($block);
-        $this->assertSame(3, $block->level);
+        $this->assertSame(1, $block->level);
+
+        $subsequent = $engine->limit($context, RateLimitCommand::recordFailure('login_protection'));
+        $this->assertSame(RateLimitResultDTO::DECISION_SOFT_BLOCK, $subsequent->decision);
+        $this->assertSame(3, $subsequent->blockLevel);
+        $this->assertSame(1, $this->store->checkBlock($k4Key)?->level);
     }
 
     public function testCurrentCharacterizationLoginActiveBudgetHasNoCooldownBetweenEligibleRequests(): void
@@ -153,7 +161,7 @@ final class RateLimiterEngineCurrentRuntimeCharacterizationTest extends TestCase
 
         $result = $engine->limit($context, RateLimitCommand::recordFailure('otp_protection'));
 
-        $this->assertSame(RateLimitResultDTO::DECISION_HARD_BLOCK, $result->decision);
+        $this->assertSame(RateLimitResultDTO::DECISION_SOFT_BLOCK, $result->decision);
         $this->assertSame(4, $result->blockLevel);
         $this->assertSame(10, $this->store->getBudget($k4Key)?->count);
         $score = $this->store->get($k4Key);
@@ -161,7 +169,7 @@ final class RateLimiterEngineCurrentRuntimeCharacterizationTest extends TestCase
         $this->assertSame(5, $score->value);
         $block = $this->store->checkBlock($k4Key);
         $this->assertNotNull($block);
-        $this->assertSame(4, $block->level);
+        $this->assertSame(1, $block->level);
     }
 
     public function testCurrentCharacterizationApiK2CrossingMapsEqualThresholdsToHardBlock(): void
