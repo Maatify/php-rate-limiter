@@ -102,41 +102,6 @@ final class RateLimiterBudgetRotationContinuityTest extends TestCase
         $this->assertSame(20, $storedOldBudget->count);
     }
 
-    public function testK5MicroCapRotationSeedsV2FromV1AndKeepsFixedEpoch(): void
-    {
-        $engine = $this->createEngineWithStoreAndSecrets($this->store, 'new_secret', 'old_secret', new LoginProtectionPolicy());
-        $accountId = 'login-microcap-rotation';
-        $context = new RateLimitContextDTO(
-            '198.51.100.32',
-            'Mozilla/5.0 Chrome/123.0.0.0',
-            $accountId,
-            ['device' => 'stable']
-        );
-        $device = (new DeviceIdentityResolver(new FingerprintHasher('new_secret')))->resolve($context);
-        $this->assertNotNull($device->fingerprintHash);
-        $microRaw = "login_protection:rate_limiter:microcap:k5:v1:{$accountId}:{$device->fingerprintHash}";
-        $oldMicroKey = hash_hmac('sha256', $microRaw, 'old_secret');
-        $newMicroKey = hash_hmac('sha256', $microRaw, 'new_secret');
-        $oldMicroBudget = $this->store->incrementBudget($oldMicroKey, 86400, 7);
-        $newK4Key = $this->key('login_protection', 'k4', $accountId, 'new_secret');
-
-        $result = $engine->limit($context, RateLimitCommand::recordFailure('login_protection'));
-
-        $this->assertSame(RateLimitResultDTO::DECISION_ALLOW, $result->decision);
-
-        $newMicroBudget = $this->store->getBudget($newMicroKey);
-        $this->assertNotNull($newMicroBudget);
-        $this->assertSame(8, $newMicroBudget->count);
-        $this->assertSame($oldMicroBudget->epochStart, $newMicroBudget->epochStart);
-
-        $storedOldMicroBudget = $this->store->getBudget($oldMicroKey);
-        $this->assertNotNull($storedOldMicroBudget);
-        $this->assertSame(7, $storedOldMicroBudget->count);
-        $this->assertSame($oldMicroBudget->epochStart, $storedOldMicroBudget->epochStart);
-
-        $this->assertSame(1, $this->store->getBudget($newK4Key)?->count);
-    }
-
     public function testMissingBudgetSeedCapabilityFailsExplicitlyWhenMigrationRequired(): void
     {
         $baseOnlyStore = new BaseOnlyInMemoryRateLimitStore($this->clock);

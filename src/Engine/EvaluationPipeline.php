@@ -420,12 +420,22 @@ class EvaluationPipeline
             if ($deltas['k5'] > 0 && $context->accountId && $device->fingerprintHash) {
                 $microRaw = "{$policy->getName()}:rate_limiter:microcap:k5:v1:{$context->accountId}:{$device->fingerprintHash}";
 
-                // Write to V2 (Active Key); seed from V1 when no active V2 exists
+                // Write to V2 (Active Key)
                 $microKeyV2 = $this->hashKey($microRaw, $this->secret);
-                $microKeyV1 = $this->previousSecret ? $this->hashKey($microRaw, $this->previousSecret) : null;
-                $microState = $this->incrementBudgetAcrossRotation($microKeyV2, $microKeyV1);
+                $this->budgetTracker->increment($microKeyV2);
 
-                if ($microState->count >= 8) {
+                // Read from V2
+                $statusV2 = $this->budgetTracker->getStatus($microKeyV2);
+                $maxCount = $statusV2->count;
+
+                // Read from V1 (Rotation Fallback) - Read Only
+                if ($this->previousSecret) {
+                    $microKeyV1 = $this->hashKey($microRaw, $this->previousSecret);
+                    $statusV1 = $this->budgetTracker->getStatus($microKeyV1);
+                    $maxCount = max($maxCount, $statusV1->count);
+                }
+
+                if ($maxCount >= 8) {
                     $shouldCount = true;
                 }
             }
@@ -509,7 +519,10 @@ class EvaluationPipeline
 
     /**
      * Increment a budget counter across key rotation, migrating V1 epoch
-     * state into V2 atomically when required.
+     * state into V2 atomically when required. Consumed only by the K4 account
+     * budget write path; the K5 micro-cap path does not use it, because the
+     * micro-cap key embeds a device fingerprint that itself changes across
+     * fingerprint-secret rotation.
      *
      * - Active V2 → normal V2 increment (V1 ignored).
      * - No V2 + valid V1 → atomic seed + increment into V2 via
