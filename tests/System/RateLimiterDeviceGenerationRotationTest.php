@@ -402,7 +402,11 @@ final class RateLimiterDeviceGenerationRotationTest extends TestCase
             '198.51.100.40',
             'Mozilla/5.0 Chrome/123.0.0.0',
             $accountId,
-            $fingerprint
+            $fingerprint,
+            null,
+            false,
+            [],
+            true
         );
     }
 

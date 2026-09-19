@@ -13,9 +13,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   outer-only, fingerprint-only, and both-rotated generations. `BudgetSeedStoreInterface` is
   required only when a valid Previous micro-cap must be migrated; missing capability continues
   through the existing failure semantics. Correlation/ephemeral fingerprint-secret rotation
-  remains pending as a separate design. Budget Owner-Safety remains pending for command
-  eligibility, cooldown, known-device eligibility, Recovery Collision Guard, and decision
-  aggregation/fail-fast removal.
+  remains pending as a separate design. Budget Owner-Safety orchestration is implemented for
+  command eligibility, cooldown, known-device eligibility, Recovery Collision Guard, decision
+  aggregation, and fail-fast removal.
 - Standalone Composer package foundation for `maatify/php-rate-limiter`
 - Initial package metadata and CI quality gate
 - Locked Budget Owner-Safety architecture and public-contract decisions (Spec Version `1.0.0` → `1.1.0`):
@@ -45,4 +45,4 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   and Anti-Equilibrium reads prior soft history before cooldown, then records only the
   final issued `SOFT_BLOCK` for future requests.
 - Package licensing established as proprietary by Owner Decision before first release
-- Expanded `BudgetConfigDTO` to the full policy-owned contract (threshold, block level, cooldown seconds, trusted-session floor, pre-check enforcement, known-device micro-cap, Recovery Collision Guard toggle) with defaults preserving current runtime semantics (`cooldown_seconds = 0`, `trusted_session_floor_level = 2`, `precheck_enforcement = true`, `known_device_micro_cap = 8`, `recovery_collision_guard_enabled = false`); locked Login/OTP preset values live in the policy objects, with the full contract in `docs/POLICIES.md`. Remaining Budget Owner-Safety orchestration is not yet implemented: cooldown enforcement, policy-owned command eligibility, known-device eligibility, Recovery Collision Guard, decision aggregation. Normative behavior lives in `docs/DECISION_MATRIX.md`.
+- Expanded `BudgetConfigDTO` to the full policy-owned contract (threshold, block level, cooldown seconds, trusted-session floor, pre-check enforcement, known-device micro-cap, Recovery Collision Guard toggle) with defaults preserving current runtime semantics (`cooldown_seconds = 0`, `trusted_session_floor_level = 2`, `precheck_enforcement = true`, `known_device_micro_cap = 8`, `recovery_collision_guard_enabled = false`); locked Login/OTP preset values live in the policy objects, with the full contract in `docs/POLICIES.md`. Normative Budget Owner-Safety behavior is implemented in the runtime and covered by regression tests. Normative behavior lives in `docs/DECISION_MATRIX.md`.

@@ -72,13 +72,8 @@ class EvaluationPipeline
             return $blocked;
         }
 
-        // 3. Check Account Budget (Fail-Fast)
-        // Skip check if request is a Success record (Post-Action)
-        if (! $request->isSuccess) {
-            if ($blocked = $this->checkBudget($policy, $realKeysV2, $realKeysV1, $device)) {
-                return $blocked;
-            }
-        }
+        // 3. Load budget state for later candidate evaluation. Budget loading is
+        // deliberately non-enforcing; normal evaluation must always run first.
 
         // 4. Resolve Effective Keys (Ephemeral Logic) for Scoring/Updates
         $effectiveHash = $device->fingerprintHash;
@@ -117,14 +112,16 @@ class EvaluationPipeline
         $rawScores = $this->fetchScores($effectiveKeysV2, $effectiveKeysV1);
         $decayedScores = $this->applyDecay($rawScores, $effectiveKeysV2);
 
-        // 6. Check Thresholds (Soft Blocks)
-        if ($blocked = $this->checkThresholds($policy, $decayedScores, $effectiveKeysV2, $device, $request)) {
-            return $blocked;
+        // 6. Evaluate normal candidates. None of these candidates may be
+        // hidden by an active account budget.
+        $candidates = [];
+        if ($candidate = $this->checkThresholds($policy, $decayedScores, $effectiveKeysV2, $device)) {
+            $candidates[] = $candidate;
         }
 
         // 7. Check Correlation Rules
-        if ($blocked = $this->checkCorrelationRules($context, $device, $policy->getName(), $isEphemeral)) {
-            return $blocked;
+        if ($candidate = $this->checkCorrelationRules($context, $device, $policy->getName(), $isEphemeral)) {
+            $candidates[] = $candidate;
         }
 
         // 8. New Device Flood (5.4)
@@ -135,36 +132,76 @@ class EvaluationPipeline
 
                 if ($isFloodStage) {
                     $duration = PenaltyLadder::getDuration(2);
+                    $persistence = [];
                     if ($realKeysV2['k5'] !== null) {
-                        $this->store->block($realKeysV2['k5'], 2, $duration);
+                        $persistence[] = ['key' => $realKeysV2['k5'], 'level' => 2, 'duration' => $duration];
                     }
 
-                    return $this->createBlockedResult(2, $duration, RateLimitResultDTO::DECISION_HARD_BLOCK);
+                    $candidates[] = $this->candidate(RateLimitResultDTO::DECISION_HARD_BLOCK, 2, $duration, 'flood', $persistence);
                 }
-
-                $duration = PenaltyLadder::getDuration(1);
-                $k4Key = $realKeysV2['k4'];
-                if ($k4Key !== null) {
-                    $this->store->block($k4Key, 1, $duration);
+                else {
+                    $duration = PenaltyLadder::getDuration(1);
+                    $k4Key = $realKeysV2['k4'];
+                    $persistence = $k4Key !== null
+                        ? [['key' => $k4Key, 'level' => 1, 'duration' => $duration]]
+                        : [];
+                    $this->correlationStore->incrementWatchFlag($floodKey, 900);
+                    $candidates[] = $this->candidate(RateLimitResultDTO::DECISION_SOFT_BLOCK, 1, $duration, 'flood', $persistence);
                 }
-                $this->correlationStore->incrementWatchFlag($floodKey, 900);
-
-                return $this->createBlockedResult(1, $duration, RateLimitResultDTO::DECISION_SOFT_BLOCK);
             }
         }
 
-        // 9. Pre-Check Only
-        if ($request->isPreCheck) {
-            return $this->createAllowResult();
-        }
-
-        // 10. Process Updates (Failure / Access)
-        if ($request->isFailure || $policy->getScoreDeltas()->access > 0) {
+        // 9. Process Updates (Failure / Access). Budget counting is part of
+        // this step and must continue even while BudgetActive.
+        $budgetState = $this->resolveActiveBudgetState($realKeysV2['k4'] ?? null, $realKeysV1['k4'] ?? null);
+        $budgetRequestEligible = false;
+        $budgetSuppressed = false;
+        if (! $request->isPreCheck && ($request->isFailure || $policy->getScoreDeltas()->access > 0)) {
             // We write only to V2 (Active Key); V1 stays read-only
-            return $this->processUpdates($policy, $context, $request, $device, $effectiveKeysV2, $effectiveKeysV1, $rawScores);
+            $updates = $this->processUpdates($policy, $context, $request, $device, $effectiveKeysV2, $effectiveKeysV1, $rawScores);
+            $candidates = array_merge($candidates, $updates['candidates']);
+            $budgetState = $updates['budgetState'];
+            $budgetRequestEligible = $updates['budgetRequestEligible'];
+            $budgetSuppressed = $updates['budgetSuppressed'];
         }
 
-        return $this->createAllowResult();
+        // Anti-Equilibrium reads prior history before budget cooldown
+        // acquisition. Recording happens only after final aggregation.
+        if ($request->isFailure && $context->accountId !== null && $policy->getBudgetConfig() !== null
+            && $this->antiEquilibriumGate->shouldEscalate($context->accountId)) {
+            $persistence = ($realKeysV2['k4'] ?? null) !== null
+                ? [['key' => $realKeysV2['k4'], 'level' => 2, 'duration' => PenaltyLadder::getDuration(2)]]
+                : [];
+            $candidates[] = $this->candidate(
+                RateLimitResultDTO::DECISION_HARD_BLOCK,
+                2,
+                PenaltyLadder::getDuration(2),
+                'anti_equilibrium',
+                $persistence
+            );
+        }
+
+        $final = $this->finalizeDecision(
+            $policy,
+            $context,
+            $request,
+            $device,
+            $realKeysV2,
+            $realKeysV1,
+            $candidates,
+            $budgetState,
+            $budgetRequestEligible,
+            $budgetSuppressed
+        );
+
+        if ($final->decision === RateLimitResultDTO::DECISION_SOFT_BLOCK
+            && ! $request->isSuccess
+            && $context->accountId !== null
+            && $policy->getBudgetConfig() !== null) {
+            $this->antiEquilibriumGate->recordSoftBlock($context->accountId);
+        }
+
+        return $final;
     }
 
     /**
@@ -189,47 +226,16 @@ class EvaluationPipeline
     }
 
     /**
-     * @param   array<string, string|null>  $keysV2
-     * @param   array<string, string|null>  $keysV1
-     */
-    private function checkBudget(BlockPolicyInterface $policy, array $keysV2, array $keysV1, DeviceIdentityDTO $device): ?RateLimitResultDTO
-    {
-        $config = $policy->getBudgetConfig();
-        // Fix Error 2: isset check on known offset is redundant, just check for null value
-        if ($config && $keysV2['k4'] !== null) {
-            $activeKey = $this->resolveActiveBudgetKeyV2ThenV1($keysV2['k4'], $keysV1['k4'] ?? null);
-            if ($activeKey !== null && $this->budgetTracker->isExceeded($activeKey, $config->threshold)) {
-                $level = $config->block_level;
-                if ($device->isTrustedSession) {
-                    $level = max(2, $level - 1);
-                }
-
-                // Calculate Retry-After
-                $status = $this->budgetTracker->getStatus($activeKey);
-                $retryAfter = max(0, ($status->epochStart + self::BUDGET_EPOCH_SECONDS) - $this->clock->now()->getTimestamp());
-
-                return $this->createBlockedResult($level, $retryAfter, RateLimitResultDTO::DECISION_SOFT_BLOCK);
-            }
-        }
-
-        return null;
-    }
-
-    /**
-     * @param   array<string, int>          $scores
-     * @param   array<string, string|null>  $keys
-     */
-    /**
-     * @param   array<string, int>          $scores
-     * @param   array<string, string|null>  $keys
+     * @param array<string, int> $scores
+     * @param array<string, string|null> $keys
+     * @return array{decision: string, level: int, retryAfter: int, source: string, persistence: list<array{key: string, level: int, duration: int}>}|null
      */
     private function checkThresholds(
         BlockPolicyInterface $policy,
         array $scores,
         array $keys,
-        DeviceIdentityDTO $device,
-        RateLimitCommand $request
-    ): ?RateLimitResultDTO
+        DeviceIdentityDTO $device
+    ): ?array
     {
         $highestLevel = 0;
         foreach ($scores as $keyType => $score) {
@@ -245,19 +251,18 @@ class EvaluationPipeline
             }
         }
         if ($highestLevel > 0) {
-            if ($highestLevel === 1 && ! $request->isPreCheck) {
-                return null;
-            }
-
             $decision = ($highestLevel >= 2) ? RateLimitResultDTO::DECISION_HARD_BLOCK : RateLimitResultDTO::DECISION_SOFT_BLOCK;
 
-            return $this->createBlockedResult($highestLevel, PenaltyLadder::getDuration($highestLevel), $decision);
+            return $this->candidate($decision, $highestLevel, PenaltyLadder::getDuration($highestLevel), 'score');
         }
 
         return null;
     }
 
-    private function checkCorrelationRules(RateLimitContextDTO $context, DeviceIdentityDTO $device, string $policyName, bool $isEphemeral): ?RateLimitResultDTO
+    /**
+     * @return array{decision: string, level: int, retryAfter: int, source: string, persistence: list<array{key: string, level: int, duration: int}>}|null
+     */
+    private function checkCorrelationRules(RateLimitContextDTO $context, DeviceIdentityDTO $device, string $policyName, bool $isEphemeral): ?array
     {
         $base = "{$policyName}:rate_limiter";
         $ver = "v2";
@@ -268,9 +273,13 @@ class EvaluationPipeline
         if ($device->fingerprintHash) {
             $count = $this->correlationStore->addDistinct("churn:{$k2}", $device->fingerprintHash, 600);
             if ($count >= 3) {
-                $this->store->block($k2, 2, 60);
-
-                return $this->createBlockedResult(2, 60, RateLimitResultDTO::DECISION_HARD_BLOCK);
+                return $this->candidate(
+                    RateLimitResultDTO::DECISION_HARD_BLOCK,
+                    2,
+                    60,
+                    'correlation',
+                    [['key' => $k2, 'level' => 2, 'duration' => 60]]
+                );
             }
         }
         if ($device->fingerprintHash) {
@@ -317,9 +326,14 @@ class EvaluationPipeline
                     if ($isEphemeral && strpos($targetKey, ':k3:') !== false) {
                         $targetKey = $k2;
                     }
-                    $this->store->block($targetKey, 2, 60);
 
-                    return $this->createBlockedResult(2, 60, RateLimitResultDTO::DECISION_HARD_BLOCK);
+                    return $this->candidate(
+                        RateLimitResultDTO::DECISION_HARD_BLOCK,
+                        2,
+                        60,
+                        'correlation',
+                        [['key' => $targetKey, 'level' => 2, 'duration' => 60]]
+                    );
                 }
             }
         }
@@ -328,9 +342,15 @@ class EvaluationPipeline
     }
 
     /**
-     * @param   array<string, string|null>        $keys
-     * @param   array<string, string|null>        $keysV1
-     * @param   array<string, ?PipelineScoreDTO>  $rawScores
+     * @param array<string, string|null> $keys
+     * @param array<string, string|null> $keysV1
+     * @param array<string, ?PipelineScoreDTO> $rawScores
+     * @return array{
+     *     candidates: list<array{decision: string, level: int, retryAfter: int, source: string, persistence: list<array{key: string, level: int, duration: int}>}>,
+     *     budgetState: ?BudgetStateDTO,
+     *     budgetRequestEligible: bool,
+     *     budgetSuppressed: bool
+     * }
      */
     private function processUpdates(
         BlockPolicyInterface $policy,
@@ -340,7 +360,7 @@ class EvaluationPipeline
         array $keys,
         array $keysV1,
         array $rawScores
-    ): RateLimitResultDTO
+    ): array
     {
         $deltas = $this->calculateDeltas($policy, $context, $device, $request);
 
@@ -357,7 +377,6 @@ class EvaluationPipeline
         }
 
         $newMaxLevel = 0;
-        $triggeredKey = null;
 
         foreach ($keys as $keyType => $key) {
             if (! $key) {
@@ -407,101 +426,341 @@ class EvaluationPipeline
                     }
                 }
 
-                if ($level > $newMaxLevel) {
-                    $newMaxLevel = $level;
-                    $triggeredKey = $key;
-                }
+                $newMaxLevel = max($newMaxLevel, $level);
             }
         }
 
-        $budgetOnly = false;
-
         $budgetConfig = $policy->getBudgetConfig();
-        if (isset($keys['k4']) && $budgetConfig !== null) {
+        $budgetState = $budgetConfig !== null
+            ? $this->resolveActiveBudgetState($keys['k4'] ?? null, $keysV1['k4'] ?? null)
+            : null;
+        $budgetRequestEligible = false;
+        $budgetSuppressed = false;
+
+        if (($keys['k4'] ?? null) !== null && $budgetConfig !== null && $request->isFailure) {
             $config = $budgetConfig;
             $shouldCount = false;
-            // Case 1: Increments K4 directly (New Device, Repeated Missing FP)
-            if ($deltas['k4'] > 0) {
+
+            // New/unverified-device and repeated-missing-fingerprint failures
+            // contribute directly to the account budget.
+            if ($deltas['k4'] > 0 || empty($device->fingerprintHash)) {
                 $shouldCount = true;
             }
-            // Case 2: Missing FP
-            if (empty($device->fingerprintHash) && $request->isFailure) {
-                $shouldCount = true;
-            }
-            // Case 3: Same Known Device (K5) > Micro-cap.
-            // The fixed 24h counter is one logical state across generations:
-            // current state is authoritative; a valid previous state is
-            // atomically seeded into current when current is absent.
-            if ($deltas['k5'] > 0 && $context->accountId && $device->fingerprintHash) {
-                $microRawV2 = "{$policy->getName()}:rate_limiter:microcap:k5:v1:{$context->accountId}:{$device->fingerprintHash}";
-                $microKeyV2 = $this->hashKey($microRawV2, $this->secret);
-                $microKeyV1 = null;
 
-                if ($this->hasPreviousGeneration($device)) {
-                    $microRawV1 = "{$policy->getName()}:rate_limiter:microcap:k5:v1:{$context->accountId}:{$this->previousFingerprintHash($device)}";
-                    $microKeyV1 = $this->hashKey($microRawV1, $this->previousSecret ?? $this->secret);
-                }
-
-                $microState = $this->incrementBudgetAcrossRotation($microKeyV2, $microKeyV1);
-                if ($microState->count >= 8) {
+            // A policy-owned micro-cap gates known-device failures when
+            // configured. A null cap means known-device failures are directly
+            // budget-eligible; the engine does not identify policy presets.
+            if ($deltas['k5'] > 0 && $context->accountId && $device->fingerprintHash
+                && $this->isKnownForAccount($device)) {
+                if ($config->known_device_micro_cap === null) {
                     $shouldCount = true;
-                }
-            }
+                } else {
+                    $microRawV2 = "{$policy->getName()}:rate_limiter:microcap:k5:v1:{$context->accountId}:{$device->fingerprintHash}";
+                    $microKeyV2 = $this->hashKey($microRawV2, $this->secret);
+                    $microKeyV1 = null;
 
-            $scoreMaxLevel = $newMaxLevel;
+                    if ($this->hasPreviousGeneration($device)) {
+                        $microRawV1 = "{$policy->getName()}:rate_limiter:microcap:k5:v1:{$context->accountId}:{$this->previousFingerprintHash($device)}";
+                        $microKeyV1 = $this->hashKey($microRawV1, $this->previousSecret ?? $this->secret);
+                    }
 
-            if ($shouldCount) {
-                $budgetState = $this->incrementBudgetAcrossRotation($keys['k4'], $keysV1['k4'] ?? null);
-                if ($this->isBudgetExceeded($budgetState, $config->threshold)) {
-                    $newMaxLevel = max($newMaxLevel, $config->block_level);
-                    if ($scoreMaxLevel < 2) {
-                        $budgetOnly = true;
+                    $microState = $this->incrementBudgetAcrossRotation($microKeyV2, $microKeyV1);
+                    if ($microState->count > $config->known_device_micro_cap) {
+                        $shouldCount = true;
                     }
                 }
             }
+
+            $budgetRequestEligible = $shouldCount;
+
+            if ($shouldCount) {
+                $previousBudgetState = $budgetState;
+                $budgetState = $this->incrementBudgetAcrossRotation($keys['k4'], $keysV1['k4'] ?? null);
+                if ($config->recovery_collision_guard_enabled
+                    && $previousBudgetState !== null
+                    && $previousBudgetState->count === $config->threshold - 1
+                    && $budgetState->count === $config->threshold
+                    && ($device->confidence === 'HIGH' || $this->isKnownForAccount($device))) {
+                    $budgetSuppressed = true;
+                    $budgetRequestEligible = false;
+                    // Recovery Guard is a one-shot normal soft candidate. It
+                    // deliberately does not acquire budget cooldown.
+                    $recoveryCandidate = $this->candidate(
+                        RateLimitResultDTO::DECISION_SOFT_BLOCK,
+                        2,
+                        PenaltyLadder::getDuration(2),
+                        'recovery_guard'
+                    );
+                } else {
+                    $recoveryCandidate = null;
+                }
+            } else {
+                $recoveryCandidate = null;
+            }
+        } else {
+            $recoveryCandidate = null;
         }
 
+        $candidates = [];
         if ($newMaxLevel > 0) {
-            $decision = $budgetOnly
-                ? RateLimitResultDTO::DECISION_SOFT_BLOCK
-                : (($newMaxLevel >= 2) ? RateLimitResultDTO::DECISION_HARD_BLOCK : RateLimitResultDTO::DECISION_SOFT_BLOCK);
-
-            if ($decision === RateLimitResultDTO::DECISION_SOFT_BLOCK && isset($keys['k4']) && $context->accountId) {
-                $this->antiEquilibriumGate->recordSoftBlock($context->accountId);
-                if ($this->antiEquilibriumGate->shouldEscalate($context->accountId)) {
-                    $newMaxLevel = max($newMaxLevel, 2);
-                    $decision = RateLimitResultDTO::DECISION_HARD_BLOCK;
-                }
-            }
-
+            $decision = ($newMaxLevel >= 2) ? RateLimitResultDTO::DECISION_HARD_BLOCK : RateLimitResultDTO::DECISION_SOFT_BLOCK;
             $duration = PenaltyLadder::getDuration($newMaxLevel);
+            $persistence = [];
 
-            if ($context->accountId && isset($keys['k4'])) {
-                $blockLevel = $budgetOnly ? 1 : $newMaxLevel;
-                $this->store->block($keys['k4'], $blockLevel, $duration);
+            if ($context->accountId && ($keys['k4'] ?? null) !== null) {
+                $persistence[] = ['key' => $keys['k4'], 'level' => $newMaxLevel, 'duration' => $duration];
             }
             if ($policy->getName() === 'api_heavy_protection') {
-                if (isset($keys['k1'])) {
-                    $this->store->block($keys['k1'], $newMaxLevel, $duration);
+                if (($keys['k1'] ?? null) !== null) {
+                    $persistence[] = ['key' => $keys['k1'], 'level' => $newMaxLevel, 'duration' => $duration];
                 }
-                if (isset($keys['k2'])) {
-                    $this->store->block($keys['k2'], $newMaxLevel, $duration);
+                if (($keys['k2'] ?? null) !== null) {
+                    $persistence[] = ['key' => $keys['k2'], 'level' => $newMaxLevel, 'duration' => $duration];
                 }
-                if (isset($keys['k3'])) {
+                if (($keys['k3'] ?? null) !== null) {
                     if ($device->confidence !== 'LOW') {
-                        $this->store->block($keys['k3'], $newMaxLevel, $duration);
+                        $persistence[] = ['key' => $keys['k3'], 'level' => $newMaxLevel, 'duration' => $duration];
                     } else {
-                        if (isset($keys['k2'])) {
-                            $this->store->block($keys['k2'], $newMaxLevel, $duration);
+                        if (($keys['k2'] ?? null) !== null) {
+                            $persistence[] = ['key' => $keys['k2'], 'level' => $newMaxLevel, 'duration' => $duration];
                         }
                     }
                 }
             }
 
-            return $this->createBlockedResult($newMaxLevel, $duration, $decision);
+            $candidates[] = $this->candidate($decision, $newMaxLevel, $duration, 'score_update', $persistence);
         }
 
-        return $this->createAllowResult();
+        if ($recoveryCandidate !== null) {
+            $candidates[] = $recoveryCandidate;
+        }
+
+        return [
+            'candidates' => $candidates,
+            'budgetState' => $budgetState,
+            'budgetRequestEligible' => $budgetRequestEligible,
+            'budgetSuppressed' => $budgetSuppressed,
+        ];
+    }
+
+    /**
+     * @param list<array{key: string, level: int, duration: int}> $persistence
+     * @return array{decision: string, level: int, retryAfter: int, source: string, persistence: list<array{key: string, level: int, duration: int}>}
+     */
+    private function candidate(string $decision, int $level, int $retryAfter, string $source, array $persistence = []): array
+    {
+        return [
+            'decision' => $decision,
+            'level' => $level,
+            'retryAfter' => max(0, $retryAfter),
+            'source' => $source,
+            'persistence' => $persistence,
+        ];
+    }
+
+    /**
+     * @param list<array{decision: string, level: int, retryAfter: int, source: string, persistence: list<array{key: string, level: int, duration: int}>}> $candidates
+     * @return array{decision: string, level: int, retryAfter: int, source: string, persistence: list<array{key: string, level: int, duration: int}>}|null
+     */
+    private function aggregateCandidates(array $candidates): ?array
+    {
+        if ($candidates === []) {
+            return null;
+        }
+
+        $winningClass = RateLimitResultDTO::DECISION_ALLOW;
+        foreach ($candidates as $candidate) {
+            if ($candidate['decision'] === RateLimitResultDTO::DECISION_HARD_BLOCK) {
+                $winningClass = RateLimitResultDTO::DECISION_HARD_BLOCK;
+                break;
+            }
+            if ($candidate['decision'] === RateLimitResultDTO::DECISION_SOFT_BLOCK) {
+                $winningClass = RateLimitResultDTO::DECISION_SOFT_BLOCK;
+            }
+        }
+
+        if ($winningClass === RateLimitResultDTO::DECISION_ALLOW) {
+            return null;
+        }
+
+        $classCandidates = array_values(array_filter(
+            $candidates,
+            static fn (array $candidate): bool => $candidate['decision'] === $winningClass
+        ));
+
+        $highestLevel = 0;
+        $longestRetryAfter = 0;
+        foreach ($classCandidates as $candidate) {
+            $highestLevel = max($highestLevel, $candidate['level']);
+            $longestRetryAfter = max($longestRetryAfter, $candidate['retryAfter']);
+        }
+
+        return $this->candidate($winningClass, $highestLevel, $longestRetryAfter, 'aggregate');
+    }
+
+    /**
+     * @param list<array{decision: string, level: int, retryAfter: int, source: string, persistence: list<array{key: string, level: int, duration: int}>}> $candidates
+     */
+    private function persistWinningCandidates(array $candidates, string $winningClass): void
+    {
+        /** @var array<string, array{level: int, duration: int}> $blocks */
+        $blocks = [];
+        foreach ($candidates as $candidate) {
+            if ($candidate['decision'] !== $winningClass) {
+                continue;
+            }
+
+            foreach ($candidate['persistence'] as $block) {
+                $current = $blocks[$block['key']] ?? ['level' => 0, 'duration' => 0];
+                $blocks[$block['key']] = [
+                    'level' => max($current['level'], $block['level']),
+                    'duration' => max($current['duration'], $block['duration']),
+                ];
+            }
+        }
+
+        foreach ($blocks as $key => $block) {
+            $this->store->block($key, $block['level'], $block['duration']);
+        }
+    }
+
+    /**
+     * @param array<string, string|null> $keysV2
+     * @param array<string, string|null> $keysV1
+     * @param list<array{decision: string, level: int, retryAfter: int, source: string, persistence: list<array{key: string, level: int, duration: int}>}> $candidates
+     */
+    private function finalizeDecision(
+        BlockPolicyInterface $policy,
+        RateLimitContextDTO $context,
+        RateLimitCommand $request,
+        DeviceIdentityDTO $device,
+        array $keysV2,
+        array $keysV1,
+        array $candidates,
+        ?BudgetStateDTO $budgetState,
+        bool $budgetRequestEligible,
+        bool $budgetSuppressed
+    ): RateLimitResultDTO {
+        $normalCandidate = $this->aggregateCandidates($candidates);
+        $config = $policy->getBudgetConfig();
+        $budgetKey = $this->resolveActiveBudgetKeyV2ThenV1($keysV2['k4'] ?? null, $keysV1['k4'] ?? null);
+        $budgetActive = $config !== null
+            && $budgetState !== null
+            && $budgetKey !== null
+            && $this->budgetTracker->isExceeded($budgetKey, $config->threshold);
+
+        if ($budgetActive
+            && ! $budgetSuppressed
+            && $this->isBudgetCommandEligible($config, $request, $budgetRequestEligible)
+            && ($normalCandidate === null || $normalCandidate['decision'] !== RateLimitResultDTO::DECISION_HARD_BLOCK)
+            && ($request->isFailure || $normalCandidate === null || $normalCandidate['decision'] === RateLimitResultDTO::DECISION_ALLOW)) {
+            $cooldown = $this->acquireBudgetCooldown(
+                $policy,
+                $context->accountId,
+                $device,
+                $config->cooldown_seconds
+            );
+
+            if ($cooldown['issued']) {
+                $level = $config->block_level;
+                if ($device->isTrustedSession) {
+                    $level = max($config->trusted_session_floor_level, $level - 1);
+                }
+                $candidates[] = $this->candidate(
+                    RateLimitResultDTO::DECISION_SOFT_BLOCK,
+                    $level,
+                    $cooldown['retryAfter'],
+                    'budget'
+                );
+            }
+        }
+
+        $final = $this->aggregateCandidates($candidates);
+        if ($final === null) {
+            return $this->createAllowResult();
+        }
+
+        $this->persistWinningCandidates($candidates, $final['decision']);
+
+        return $this->createBlockedResult($final['level'], $final['retryAfter'], $final['decision']);
+    }
+
+    private function isBudgetCommandEligible(
+        \Maatify\RateLimiter\DTO\BudgetConfigDTO $config,
+        RateLimitCommand $request,
+        bool $failureEligible
+    ): bool {
+        if ($request->isSuccess) {
+            return false;
+        }
+
+        if ($request->isPreCheck) {
+            return $config->precheck_enforcement;
+        }
+
+        return $request->isFailure && $failureEligible;
+    }
+
+    /**
+     * @return array{issued: bool, retryAfter: int}
+     */
+    private function acquireBudgetCooldown(
+        BlockPolicyInterface $policy,
+        ?string $accountId,
+        DeviceIdentityDTO $device,
+        int $cooldownSeconds
+    ): array {
+        if ($accountId === null) {
+            return ['issued' => false, 'retryAfter' => 0];
+        }
+
+        $currentKey = $this->budgetCooldownKey($policy->getName(), $accountId, $this->secret);
+        $currentMarker = $this->store->get($currentKey);
+        if ($currentMarker !== null) {
+            return [
+                'issued' => false,
+                'retryAfter' => max(0, $currentMarker->updatedAt + $cooldownSeconds - $this->clock->now()->getTimestamp()),
+            ];
+        }
+
+        if ($this->hasPreviousGeneration($device)) {
+            $previousKey = $this->budgetCooldownKey(
+                $policy->getName(),
+                $accountId,
+                $this->previousSecret ?? $this->secret
+            );
+            if ($previousKey !== $currentKey) {
+                $previousMarker = $this->store->get($previousKey);
+                if ($previousMarker !== null) {
+                    return [
+                        'issued' => false,
+                        'retryAfter' => max(0, $previousMarker->updatedAt + $cooldownSeconds - $this->clock->now()->getTimestamp()),
+                    ];
+                }
+            }
+        }
+
+        // This is the issuance gate. It must stay atomic and must not be
+        // replaced with get()+set().
+        $value = $this->store->increment($currentKey, $cooldownSeconds);
+        if ($value !== 1) {
+            return ['issued' => false, 'retryAfter' => 0];
+        }
+
+        return ['issued' => true, 'retryAfter' => max(0, $cooldownSeconds)];
+    }
+
+    private function budgetCooldownKey(string $policyName, string $accountId, string $secret): string
+    {
+        return $this->hashKey(
+            "{$policyName}:rate_limiter:budget_cooldown:v1:{$this->envScope}:{$accountId}",
+            $secret
+        );
+    }
+
+    private function isKnownForAccount(DeviceIdentityDTO $device): bool
+    {
+        return $device->isTrustedSession || $device->isDevicePreviouslyVerifiedForAccount;
     }
 
     // --- Budget Key-Rotation Helpers ---
@@ -512,9 +771,25 @@ class EvaluationPipeline
      *
      * @see docs/KEY_STRATEGY.md §4.3.1
      */
-    private function resolveActiveBudgetKeyV2ThenV1(string $keyV2, ?string $keyV1): ?string
+    private function resolveActiveBudgetState(?string $keyV2, ?string $keyV1): ?BudgetStateDTO
     {
-        if ($this->store->getBudget($keyV2) !== null) {
+        if ($keyV2 !== null) {
+            $current = $this->store->getBudget($keyV2);
+            if ($current !== null) {
+                return $current;
+            }
+        }
+
+        if ($keyV1 !== null) {
+            return $this->store->getBudget($keyV1);
+        }
+
+        return null;
+    }
+
+    private function resolveActiveBudgetKeyV2ThenV1(?string $keyV2, ?string $keyV1): ?string
+    {
+        if ($keyV2 !== null && $this->store->getBudget($keyV2) !== null) {
             return $keyV2;
         }
 
@@ -570,18 +845,6 @@ class EvaluationPipeline
     private function previousFingerprintHash(DeviceIdentityDTO $device): ?string
     {
         return $device->previousFingerprintHash ?? $device->fingerprintHash;
-    }
-
-    private function isBudgetExceeded(BudgetStateDTO $state, int $limit): bool
-    {
-        if ($state->count >= $limit) {
-            $now = $this->clock->now()->getTimestamp();
-            if ($state->epochStart + self::BUDGET_EPOCH_SECONDS > $now) {
-                return true;
-            }
-        }
-
-        return false;
     }
 
     // --- Helpers (Same as before) ---
@@ -688,14 +951,28 @@ class EvaluationPipeline
             $result['k3'] += $cost;
         }
         if ($request->isFailure) {
-            if ($deltasDto->k5_failure > 0) {
-                $result['k5'] = $deltasDto->k5_failure;
-            }
-            if ($deltasDto->k4_failure > 0) {
-                $result['k4'] = $deltasDto->k4_failure;
-            }
-            if ($deltasDto->k2_missing_fp > 0 && empty($device->fingerprintHash)) {
-                $result['k2'] = $deltasDto->k2_missing_fp;
+            if (empty($device->fingerprintHash)) {
+                // Missing-fingerprint scoring is independent from the
+                // Login/OTP new-device classification: one failure updates
+                // both K4 and K2 when their deltas are configured.
+                if ($deltasDto->k4_failure > 0) {
+                    $result['k4'] = $deltasDto->k4_failure;
+                }
+                if ($deltasDto->k2_missing_fp > 0) {
+                    $result['k2'] = $deltasDto->k2_missing_fp;
+                }
+            } elseif ($deltasDto->k4_failure > 0 || $deltasDto->k5_failure > 0) {
+                // Authentication-style policies express known/new-device
+                // classification through their K4/K5 failure deltas. API
+                // Heavy keeps its existing access/spray behavior because it
+                // has no authentication failure deltas.
+                if ($this->isKnownForAccount($device)) {
+                    if ($deltasDto->k5_failure > 0) {
+                        $result['k5'] = $deltasDto->k5_failure;
+                    }
+                } elseif ($deltasDto->k4_failure > 0) {
+                    $result['k4'] = $deltasDto->k4_failure;
+                }
             }
             if ($deltasDto->k1_spray > 0) {
                 $result['k1'] = $deltasDto->k1_spray;
