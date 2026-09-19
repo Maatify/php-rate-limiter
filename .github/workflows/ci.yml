@@ -1,0 +1,238 @@
+name: CI Quality Gate
+
+on:
+  push:
+    branches:
+      - main
+      - draft/extraction-blueprint
+  pull_request:
+    branches:
+      - main
+      - draft/extraction-blueprint
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
+defaults:
+  run:
+    shell: bash
+
+jobs:
+  composer-validate:
+    name: Composer Validate
+    timeout-minutes: 10
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout Code
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+      - name: Setup PHP
+        uses: shivammathur/setup-php@f3e473d116dcccaddc5834248c87452386958240 # v2
+        with:
+          php-version: '8.4'
+          coverage: none
+      - name: Composer Validate
+        run: composer validate --strict
+
+  php-syntax:
+    name: PHP Syntax Check
+    timeout-minutes: 10
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout Code
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+      - name: Setup PHP
+        uses: shivammathur/setup-php@f3e473d116dcccaddc5834248c87452386958240 # v2
+        with:
+          php-version: '8.4'
+          coverage: none
+      - name: Check Syntax
+        run: bash scripts/ci/check-php-syntax.sh
+
+  example-syntax:
+    name: README Example Syntax
+    timeout-minutes: 10
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout Code
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+      - name: Setup PHP
+        uses: shivammathur/setup-php@f3e473d116dcccaddc5834248c87452386958240 # v2
+        with:
+          php-version: '8.4'
+          coverage: none
+      - name: Check README Examples
+        run: bash scripts/ci/check-readme-examples.sh
+
+  static-analysis:
+    name: Static Analysis (PHPStan)
+    timeout-minutes: 10
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout Code
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+      - name: Setup PHP
+        uses: shivammathur/setup-php@f3e473d116dcccaddc5834248c87452386958240 # v2
+        with:
+          php-version: '8.4'
+          coverage: none
+      - name: Install Dependencies
+        run: composer update --no-interaction --prefer-dist --no-progress
+      - name: Verify Autoload and Platform
+        run: |
+          set -euo pipefail
+          composer dump-autoload --optimize --strict-psr
+          composer check-platform-reqs
+      - name: Run PHPStan
+        run: composer analyse
+
+  tests:
+    name: Test Suite (PHP ${{ matrix.php }})
+    timeout-minutes: 10
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        php: ['8.4', '8.5']
+    steps:
+      - name: Checkout Code
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+      - name: Setup PHP
+        uses: shivammathur/setup-php@f3e473d116dcccaddc5834248c87452386958240 # v2
+        with:
+          php-version: ${{ matrix.php }}
+          coverage: none
+      - name: Install Dependencies
+        run: composer update --no-interaction --prefer-dist --no-progress
+      - name: Verify Autoload and Platform
+        run: |
+          set -euo pipefail
+          composer dump-autoload --optimize --strict-psr
+          composer check-platform-reqs
+      - name: Run PHPUnit
+        run: composer test
+
+  lowest-dependencies:
+    name: Lowest Supported Dependencies
+    timeout-minutes: 15
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout Code
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+      - name: Setup PHP
+        uses: shivammathur/setup-php@f3e473d116dcccaddc5834248c87452386958240 # v2
+        with:
+          php-version: '8.4'
+          coverage: none
+      - name: Install Lowest Dependencies
+        run: composer update --prefer-lowest --prefer-stable --no-interaction --prefer-dist --no-progress
+      - name: Verify Autoload and Platform
+        run: |
+          set -euo pipefail
+          composer dump-autoload --optimize --strict-psr
+          composer check-platform-reqs
+      - name: Run PHPStan and PHPUnit
+        run: |
+          set -euo pipefail
+          composer analyse
+          composer test
+
+  composer-audit:
+    name: Composer Security Audit
+    timeout-minutes: 10
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout Code
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+      - name: Setup PHP
+        uses: shivammathur/setup-php@f3e473d116dcccaddc5834248c87452386958240 # v2
+        with:
+          php-version: '8.4'
+          coverage: none
+      - name: Install Dependencies
+        run: composer update --no-interaction --prefer-dist --no-progress
+      - name: Verify Platform and Audit
+        run: |
+          set -euo pipefail
+          composer check-platform-reqs
+          composer audit --no-interaction --abandoned=fail
+
+  consumer-verification:
+    name: Consumer Verification Harness
+    timeout-minutes: 15
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout Code
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+      - name: Setup PHP
+        uses: shivammathur/setup-php@f3e473d116dcccaddc5834248c87452386958240 # v2
+        with:
+          php-version: '8.4'
+          coverage: none
+      - name: Run Consumer Verification Harness
+        run: bash scripts/ci/run-consumer-verification.sh
+
+  workflow-lint:
+    name: Workflow Lint
+    timeout-minutes: 10
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout Code
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+      - name: Install actionlint
+        run: bash scripts/ci/install-actionlint.sh "${RUNNER_TEMP}/actionlint"
+      - name: Lint Workflows
+        env:
+          ACTIONLINT_BIN: ${{ runner.temp }}/actionlint/actionlint
+        run: bash scripts/ci/lint-workflows.sh
+
+  whitespace:
+    name: Whitespace Verification
+    timeout-minutes: 10
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout Code
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+      - name: Verify Whitespace
+        run: bash scripts/ci/check-whitespace.sh
+
+  gate:
+    name: Final Gate
+    if: always()
+    needs:
+      - composer-validate
+      - php-syntax
+      - example-syntax
+      - static-analysis
+      - tests
+      - lowest-dependencies
+      - composer-audit
+      - consumer-verification
+      - workflow-lint
+      - whitespace
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: Verify Upstream Jobs
+        run: |
+          set -euo pipefail
+          if [ "${{ needs.composer-validate.result }}" != "success" ] || \
+             [ "${{ needs.php-syntax.result }}" != "success" ] || \
+             [ "${{ needs.example-syntax.result }}" != "success" ] || \
+             [ "${{ needs.static-analysis.result }}" != "success" ] || \
+             [ "${{ needs.tests.result }}" != "success" ]; then
+            echo "One or more upstream jobs failed or were cancelled."
+            exit 1
+          fi
+          if [ "${{ needs.lowest-dependencies.result }}" != "success" ] || \
+             [ "${{ needs.composer-audit.result }}" != "success" ] || \
+             [ "${{ needs.consumer-verification.result }}" != "success" ] || \
+             [ "${{ needs.workflow-lint.result }}" != "success" ] || \
+             [ "${{ needs.whitespace.result }}" != "success" ]; then
+            echo "One or more dependency or repository-quality jobs failed or were cancelled."
+            exit 1
+          fi
+          echo "All required jobs passed."

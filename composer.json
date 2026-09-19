@@ -1,0 +1,61 @@
+{
+    "name": "maatify/php-rate-limiter",
+    "description": "PHP library for deterministic, multi-signal rate-limit decisions.",
+    "keywords": [
+        "rate-limiter",
+        "php",
+        "maatify"
+    ],
+    "homepage": "https://github.com/Maatify/php-rate-limiter",
+    "type": "library",
+    "license": "proprietary",
+    "authors": [
+        {
+            "name": "Maatify",
+            "email": "support@maatify.dev",
+            "homepage": "https://maatify.dev"
+        }
+    ],
+    "support": {
+        "issues": "https://github.com/Maatify/php-rate-limiter/issues",
+        "source": "https://github.com/Maatify/php-rate-limiter"
+    },
+    "autoload": {
+        "psr-4": {
+            "Maatify\\RateLimiter\\": "src/"
+        }
+    },
+    "autoload-dev": {
+        "psr-4": {
+            "Maatify\\RateLimiter\\Tests\\": "tests/"
+        }
+    },
+    "require": {
+        "ext-filter": "*",
+        "ext-hash": "*",
+        "ext-json": "*",
+        "ext-pcre": "*",
+        "maatify/exceptions": "^1.0",
+        "maatify/shared-common": "^1.0",
+        "php": "^8.4"
+    },
+    "require-dev": {
+        "phpstan/phpstan": "^2.0",
+        "phpunit/phpunit": "^11.5"
+    },
+    "scripts": {
+        "analyse": "phpstan analyse src tests --level=max",
+        "test": "phpunit",
+        "test:unit": "phpunit --testsuite Unit"
+    },
+    "config": {
+        "optimize-autoloader": true,
+        "sort-packages": true,
+        "platform": {
+            "php": "8.4.0"
+        },
+        "allow-plugins": false
+    },
+    "minimum-stability": "stable",
+    "prefer-stable": true
+}
