@@ -5,7 +5,7 @@
 ## Standard Metadata
 
 - **Standard ID:** `std-testing`
-- **Standard Version:** `1.1.0`
+- **Standard Version:** `1.1.1`
 - **Standard Version Format:** `MAJOR.MINOR.PATCH`
 
 This document establishes the canonical, repository-wide Testing Standard for the Maatify ecosystem. Its primary purpose is to protect implemented behavior from regressions and unintended damage during future development.
@@ -128,8 +128,3 @@ A task, part, or phase MUST NOT be considered technically complete merely becaus
 Where the feature depends on a real workflow or integration chain, appropriate system-level verification MUST also pass.
 
 For artifacts covered by Section 3.4, completion and readiness also require the Consumer Verification Harness evidence defined there.
-
----
-
-## 6. Adoption Status
-يصبح معتمدًا عند دمجه في الفرع الافتراضي للمشروع.

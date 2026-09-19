@@ -3,10 +3,9 @@
 ## بيانات المعيار
 
 - **Standard ID:** `std-standards-adoption`
-- **Standard Version:** `3.0.0`
+- **Standard Version:** `3.1.0`
 - **Standard Version Format:** `MAJOR.MINOR.PATCH`
 - **اللغة المعتمدة:** العربية.
-- **حالة الاعتماد:** يصبح معتمدًا عند دمجه في الفرع الافتراضي للمشروع.
 - **النطاق:** آلية اختيار المعايير وتثبيتها وتوزيعها وتفعيلها داخل المشاريع التابعة لمنظومة Maatify.
 - **الهدف:** استبدال نسخ المستودع الكامل باعتماد انتقائي مثبت وقابل للتتبع، مع الحفاظ على المصدر المركزي وسلامة الروابط والترقية القابلة للمراجعة.
 
@@ -179,7 +178,7 @@ OWNER DECISION REQUIRED — VERSION BASELINE STATUS
 
 ولا يجوز حسمها بالتخمين أو بمجرد وجود Version في Profile manifest أو Git history.
 
-يملك هذا القسم Profile Versioning حصريًا. أما `Standard ID` و`Standard Version` و`Standard Version Format` وانتقالات إصدارات Standards فتخضع للسياسة المركزية [STANDARD_VERSIONING_POLICY_AR.md](governance/STANDARD_VERSIONING_POLICY_AR.md). لا تدخل هذه السياسة في `Pinned Adoption Control Set` أو `Resolved Applicable Standards Set`، ولا يحتاج Consumer إلى نسخها لمجرد Adoption.
+يملك هذا القسم Profile Versioning حصريًا. أما `Standard ID` و`Standard Version` و`Standard Version Format` وانتقالات إصدارات Standards فتخضع للسياسة المركزية `STANDARD_VERSIONING_POLICY_AR.md`. لا تدخل هذه السياسة في `Pinned Adoption Control Set` أو `Resolved Applicable Standards Set`، ولا يحتاج Consumer إلى نسخها لمجرد Adoption.
 
 ### 5.2 No-Cascade Profile Version Rule
 
@@ -305,11 +304,11 @@ docs/php-engineering-standards/
 ```text
 unused profiles
 unused engineering standards
-docs/audits/
+historical Audit / Verification evidence
 docs/decisions/
 ```
 
-لا يشترط الاعتماد نسخ Folders فارغة، ولا تدخل الملفات التاريخية في Adoption Set. تظل `docs/audits/` و`docs/decisions/` في المستودع المركزي للتاريخ والحوكمة فقط.
+لا يشترط الاعتماد نسخ Folders فارغة، ولا تدخل الوثائق التاريخية في Adoption Set. لا يقرر هذا المعيار Retention للوثائق التاريخية في المستودع المركزي؛ يخضع ذلك لـ[Documentation Lifecycle Standard](governance/DOCUMENTATION_LIFECYCLE_STANDARD_AR.md).
 
 ## 9. عقد `STANDARDS_MANIFEST.md`
 
@@ -441,7 +440,7 @@ Underlying standards remain source of truth: YES
 - [ ] عدم حاجة المهمة الهندسية العادية إلى upstream network.
 - [ ] الحفاظ على relative links والبنية اللازمة لها.
 - [ ] تسجيل Additional Standards والاستثناءات صراحةً.
-- [ ] عدم إدخال `docs/audits/` أو `docs/decisions/` في Adoption Set.
+- [ ] عدم إدخال historical Audit/Verification artifacts أو Decision records ضمن Adoption Set لمجرد وجودها في المستودع المركزي.
 - [ ] قراءة الوكيل للـ Standards المنطبقة فقط على Scope المهمة.
 - [ ] سلامة البنية قبل تقييم Exceptions، وعدم تحويل Structural Invalidity إلى حالة قابلة للـwaive.
 - [ ] تسجيل Resolution Status لكل Profile Activation/Scope بصورة مستقلة، دون إخفاء نتيجة غير صحيحة بنتيجة أخرى.

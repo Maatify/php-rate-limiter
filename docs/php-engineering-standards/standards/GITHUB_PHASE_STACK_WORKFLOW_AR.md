@@ -3,10 +3,9 @@
 ## بيانات المعيار
 
 - **Standard ID:** `std-github-phase-stack-workflow`
-- **Standard Version:** `3.0.0`
+- **Standard Version:** `3.0.1`
 - **Standard Version Format:** `MAJOR.MINOR.PATCH`
 - **اللغة المعتمدة:** العربية.
-- **حالة الاعتماد:** يصبح معتمدًا عند دمجه في الفرع الافتراضي للمشروع.
 - **الهدف:** تقليل زمن التسليم الكلي عبر Phase Draft أو Execution Batch وDependency-Aware Execution Train، مع الحفاظ على traceability والمراجعة والاختبارات وجودة `main` دون فرض Branch/PR أو تسلسل إداري لا تدعمه dependencies فعلية.
 
 ---
@@ -83,7 +82,7 @@ main
 
 ## 2.1 اختيار حد التكامل للـPhase أو الـExecution Batch
 
-1. تُفحص أحدث حالة فعلية لـ`main` دائمًا بوصفها مرجع freshness وdivergence. يبدأ Standalone Work من أحدث `main` مصرح بها، ويبدأ Stacked Work من الـauthorized parent أو Integration Boundary الخاصة بالـstack. تحرك `main` لا يغيّر execution parent تلقائيًا؛ ويحتاج Material Divergence إلى Owner-authorized reconciliation. لا يوجد fallback تلقائي إلى `main` ولا Automatic Merge أو Rebase أو Force-push.
+1. تُفحص أحدث حالة فعلية لـ`main` دائمًا بوصفها مرجع freshness وdivergence. يبدأ Standalone Work من أحدث `main` مصرح بها، ويبدأ Stacked Work من الـauthorized parent أو Integration Boundary الخاصة بالـstack. تحرك `main` لا يغيّر execution parent تلقائيًا؛ ويحتاج Material Divergence إلى Owner-authorized reconciliation. لا يوجد fallback تلقائي إلى `main` أو Automatic Merge. وتحدد Phase Stack الحاجة إلى reconciliation وحدودها، بينما تُحكم طريقة Git الدقيقة وفق صلاحيات AI Collaboration.
 2. قبل إنشاء Branch جديدة، يحدد المساعد القائد هل توجد حاجة فعلية إلى Work Branch مستقلة أو Phase Draft منفصلة. استمرار عدة Phases مترابطة على Work Branch واحدة هو الخيار المفضل عندما تكون dependencies والملفات والسياق مشتركة ولا يضيف الفصل عزلًا أو مراجعة أو rollback وضوحًا.
 3. إذا احتاجت الـBatch إلى حد تجميع ومراجعة مستقل، تُعيّن Work Branch واحدة كـPhase Draft أو Batch Integration Branch. لا تنشأ Phase Draft إضافية إذا كانت Work Branch الحالية تؤدي هذا الدور بأمان.
 4. يمكن أن تستهدف Work Branches المنفصلة Phase Draft عند وجود توازٍ حقيقي أو ownership مستقل. أما عند عدم الحاجة إلى تجميع منفصل، فتكون Work Branch/Batch PR الواحدة هي حد المراجعة النهائي قبل `main`.
@@ -118,8 +117,8 @@ main
 2. عندما يوجد Component مستقل فعليًا، يجب اعتماده واجتياز Component Gate قبل دمجه.
 3. عندما تُختار Phase Draft كحد تجميع، تتم عمليات الدمج إليها واحدة تلو الأخرى حتى تظل حالة Draft معروفة بعد كل دمج.
 4. قبل دمج Component مبنية على Draft أقدم، يتحقق المساعد القائد من توافقها مع أحدث Draft HEAD، ومن عدم تغير assumptions أو الملفات المشتركة.
-5. إذا كانت المزامنة مطلوبة، يحدد التوجيه طريقة غير معيدة لكتابة التاريخ، مثل تنفيذ local `git merge` مصرح به لأحدث Draft في Branch الـComponent بCommit جديدة أو إنشاء Branch/PR بديلة من أحدث Draft عند الحاجة. يعاد تشغيل checks والمراجعة المتأثرة بعد المزامنة.
-6. يمنع استخدام `git commit --amend` أو force-push لإخفاء تاريخ التصحيحات أو حل تعارض الـBaseline.
+5. إذا كانت المزامنة مطلوبة، يحدد Phase Stack الحاجة والـtarget وأثرها على حد التكامل؛ وتُنفذ طريقة Git الدقيقة فقط وفق صلاحيات AI Collaboration، ثم تعاد checks والمراجعة المتأثرة بعد المزامنة.
+6. تخضع عمليات Git وقيودها التفصيلية لقواعد AI Collaboration؛ ولا ينشئ هذا المعيار صلاحية عملية محلية من تلقاء نفسه.
 
 عند اكتمال واعتماد Component مستقلة ذات PR، يجوز دمجها إلى Phase Draft إذا كانت Draft جزءًا من topology المختارة وبعد اجتياز Component Gate وOwner authorization الصريحة لذلك الـGitHub Merge. أما الوحدات المتتابعة داخل Work Branch واحدة فتراجع ضمن تلك الـBranch وفق الـGates نفسها، دون إنشاء Component PR لكل وحدة. لا يجوز دمج Component غير مكتملة أو تمرير تعارض لمجرد أن تنفيذها بدأ في Wave سابقة.
 
@@ -349,6 +348,7 @@ BLOCKED BY DECISION
 1. يمنع إدخال أي Work Unit أو Documentation أو Fix غير مكتملة أو غير مراجعة مباشرة إلى `main`.
 2. بعد اكتمال حد التكامل المعيّن للـExecution Batch وكل Gates وReviews المنطبقة، يكون الحد نفسه جاهزًا للدمج.
 3. يظل كل GitHub Merge، بما في ذلك Component PR إلى Phase Draft وPhase Draft أو Batch Integration Boundary إلى `main`، مشروطًا بـOwner authorization صريحة. لا توجد Standing Merge Authority للـLead.
+لا يشكل دمج حد التكامل إلى `default branch` بحد ذاته `Standards Adoption` أو `Standards Upgrade`. وتظل `Standards Adoption` و`Standards Upgrade` محكومتين حصريًا بـ`STANDARDS_ADOPTION_STANDARD_AR.md`.
 4. إذا ضمت Work Branch/PR واحدة عدة Phases، يجوز أن تنتج Squash Commit واحدة إلى `main`، بشرط أن تكون Commits الـBranch وتوثيق الـPR قد حافظا على phase-level traceability لكل Phase وlogical milestone قبل الدمج.
 
 عندما لا توجد Phase Draft منفصلة، يظل أي GitHub Merge من Work Branch/Batch Integration Boundary مشروطًا بـOwner authorization صريحة؛ لا ينشئ ذلك دورة PR مستقلة لكل Phase.
@@ -379,6 +379,11 @@ Execution Batch 2 — Phase C — complete
 ---
 
 # 10. سجل تغييرات المعيار
+
+## `3.0.1`
+
+- توضيح أن Merge إلى default branch لا يعني Standards Adoption؛ تظل آلية Adoption مملوكة حصريًا لـ`STANDARDS_ADOPTION_STANDARD_AR.md`.
+- توضيح أن Phase Stack يملك Phase topology وlifecycle وIntegration Boundary، بينما تظل detailed Git-operation permissions مملوكة لـ`AI_COLLABORATION_WORKFLOW_AR.md`.
 
 ## `3.0.0`
 

@@ -3,7 +3,7 @@
 ## Profile Metadata
 
 - **Profile ID:** `repository-governance`
-- **Profile Version:** `2.0.0`
+- **Profile Version:** `2.0.1`
 - **Purpose / Applicability:** إدارة التعاون، دورة Phase، والحوكمة التشغيلية في Repository تتبع Maatify engineering workflow.
 - **Extends:** `None`
 
@@ -19,13 +19,11 @@
 
 ## Conditional Applicability
 
-ينتج تفعيل هذا Profile مراجع `Required Standards` كـ`Candidate Standard References` ضمن Scope المحدد. بعد اكتمال Stage 1، تُقيّم كل Candidate وفق canonical applicability المملوكة للـStandard لتكوين `Final Resolved Applicable Standards Set`؛ لا يجعل تفعيل Profile أي Standard منطبقة مباشرةً ولا يوسع أو يضيق applicability الخاصة بها. تفاصيل الأدوار والـ Phase lifecycle تظل مملوكة للملفين المشار إليهما.
+لا يقدم هذا Profile أي override مستقل لقابلية انطباق المعايير الهندسية. يحتفظ كل Standard مطلوب بقواعده canonical applicability الخاصة به. لا يوسع Profile تلك القواعد ولا يضيقها. وتظل تفاصيل الأدوار ودورة Phase مملوكة للملفين المشار إليهما.
 
 ## Resolved Dependency Behavior
 
-لا يرث هذا Profile Profile آخر. تنتج Required Standards الثلاث `Candidate Standard References` عند تفعيله، ثم تُقيّم كل Candidate وفق canonical applicability لتكوين `Final Resolved Applicable Standards Set`. تضاف Additional Standards المصرح بها صراحةً في Manifest المشروع إلى المرشحين وتخضع للمرحلتين نفسيهما.
-
-عند تفعيل هذا Profile، يجب تثبيت ملفه محليًا ضمن `Pinned Adoption Control Set`؛ وتثبت كذلك ملفات Profiles الموروثة اللازمة للحل، بينما لا تُنسخ Profiles غير المفعلة.
+لا يرث هذا Profile Profile آخر، ومعاييره المباشرة هي المعايير الثلاثة المدرجة أعلاه دون غيرها. لا توجد composition موروثة هنا. تظل آلية Adoption والحل مملوكة لـ [STANDARDS_ADOPTION_STANDARD_AR.md](../STANDARDS_ADOPTION_STANDARD_AR.md).
 
 ## Scope Notes
 

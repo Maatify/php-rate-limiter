@@ -3,7 +3,7 @@
 ## بيانات المعيار
 
 - **Standard ID:** `std-documentation-lifecycle`
-- **Standard Version:** `1.0.0`
+- **Standard Version:** `2.0.0`
 - **Standard Version Format:** `MAJOR.MINOR.PATCH`
 - **اللغة المعتمدة:** العربية.
 - **النطاق:** ملكية الوثائق المعيارية، وحدود السلطة بينها، ودلالات الحالة الحالية والتاريخية، ودورة حياتها بعد إغلاق العمل، ومراجعة حداثتها، والاحتفاظ بها.
@@ -43,6 +43,16 @@
 
 هذا المعيار لا يملك Layout الخاص بـREADME، أو Composer metadata، أو ميكانيكا CI، أو معمارية runtime، أو دورة Phase، أو ميكانيكا الاختبار، أو عرض CHANGELOG وRelease Notes. لا ينقل حدود الملكية هذه إلى وثيقة أخرى ولا ينشئ contract تقنيًا بديلًا.
 
+## 2.1 لغة Durable Repository Documentation
+
+هذا المعيار هو المالك canonical لقاعدة لغة **Durable Repository Documentation**. تكون الوثائق التقنية الدائمة الموجهة إلى developers أو package consumers أو maintainers أو system/operators **بالإنجليزية افتراضيًا**، لأن اللغة هنا تتحدد بدور الوثيقة وجمهورها المستهدف، لا بلغة المعيار الذي يحكمها أو باسم الملف وحده.
+
+ينطبق ذلك، عند انطباق دور الوثيقة، على README وPackage Reference وDeveloper/System References وUsage/Integration Guides وArchitecture وOperational/System technical guides وCHANGELOG وSECURITY وCONTRIBUTING وغيرها من الوثائق التقنية الدائمة. لا تنشئ هذه الأمثلة schema أو قائمة مغلقة؛ يبقى الدور الفعلي للوثيقة هو معيار التصنيف.
+
+يُستثنى من ذلك artifact المعلن صراحةً كعربي في اسمه أو Metadata أو canonical ownership، بما في ذلك ملفات `*_AR.md`، أو الذي يفرضه Owner-approved project requirement صريح. وجود Standard مكتوبة بالعربية لا يجعل artifacts التي تحكمها عربية تلقائيًا. وتظل technical identifiers بصيغتها التقنية الأصلية.
+
+هذه القاعدة تخص Repository Documentation الدائمة، ولا تغيّر قاعدة العربية الافتراضية للتواصل والتنفيذ وPrompts والتقارير ونتائج المراجعة ووصف وملخص Pull Request المملوكة لـ`AI_COLLABORATION_WORKFLOW_AR.md`. كما لا تمنح تفويضًا لترجمة ملفات موجودة أو historical documentation تلقائيًا؛ يظل أي تحديث أو ترحيل لاحق خاضعًا لنطاقه واعتماده المستقل.
+
 ## 3. أدوار الوثائق
 
 - **Package Reference:** العقد العام الحالي والمستقر للمستهلك. يُحدّث in-place ولا يتحول إلى يوميات تاريخية.
@@ -81,7 +91,7 @@ Release Delta → CHANGELOG/Release Notes
 
 لا تُعاد كتابة السجلات التاريخية لتبدو current. عند تغير الواقع الحالي، تُحدّث وثيقة الحالة الحالية أو يُضاف سجل قرار يوضح الانتقال، مع إبقاء الحقيقة التاريخية كما كانت.
 
-تظل تفاصيل required coverage وproject-level self-sufficiency الخاصة بـProject Developer/System References مملوكة لـ[PROJECT_DOCUMENTATION_STANDARD_AR.md](../projects/PROJECT_DOCUMENTATION_STANDARD_AR.md). يملك هذا المعيار semantics الخاصة بالحالي والتاريخي وfreshness وretention وdocument lifecycle، ولا يعيد نسخ Contract التغطية المملوك لمعيار Project Documentation.
+تظل تفاصيل required coverage وproject-level self-sufficiency الخاصة بـProject Developer/System References مملوكة لـ`PROJECT_DOCUMENTATION_STANDARD_AR.md`. يملك هذا المعيار semantics الخاصة بالحالي والتاريخي وfreshness وretention وdocument lifecycle، ولا يعيد نسخ Contract التغطية المملوك لمعيار Project Documentation.
 
 ## 5. دورة الحياة بعد الإغلاق والحداثة
 

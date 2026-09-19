@@ -5,10 +5,10 @@
 ## Standard Metadata
 
 - **Standard ID:** `std-composer-package`
-- **Standard Version:** `3.0.0`
+- **Standard Version:** `3.0.1`
 - **Standard Version Format:** `MAJOR.MINOR.PATCH`
 
-This document defines the canonical `composer.json` contract for standalone, reusable PHP libraries in the Maatify ecosystem.
+This document defines the canonical Composer manifest contract represented by `composer.json` for standalone, reusable PHP libraries in the Maatify ecosystem.
 
 It MUST be read together with:
 
@@ -55,6 +55,10 @@ It owns rules for:
 It does **not** govern:
 
 - Runtime architecture.
+- Public PHP Runtime API inventory.
+- Domain behavior and package behavioral guarantees.
+- Exception semantics beyond Composer-facing declaration consistency.
+- Package architectural boundaries and non-goals.
 - DTO, repository, command, or service design.
 - Database schema or SQL behavior.
 - Exception hierarchy.
@@ -68,9 +72,11 @@ It does **not** govern:
 ### 2.1 Relationship to Other Standards
 
 - `PACKAGE_BUILDING_STANDARD.md` governs package boundaries, namespaces, source structure, runtime design, schema, exceptions, DTOs, repositories, and tests.
-- `COMPOSER_PACKAGE_STANDARD.md` governs `composer.json` as the package metadata, dependency, autoload, scripts, configuration, and distribution contract.
+- `COMPOSER_PACKAGE_STANDARD.md` governs `composer.json` as the canonical Composer manifest contract for package metadata, dependencies, autoloading, scripts, configuration, and distribution.
 - `CI_WORKFLOW_STANDARD.md` governs how Composer contracts are verified through strict validation, dependency resolution, platform checks, audit, and quality gates.
 - `LIBRARY_PRESENTATION_STANDARD.md` governs public presentation and consistency between Composer metadata, README, Packagist, and GitHub.
+
+The public Runtime API inventory, domain behavior, package behavioral guarantees, exception semantics, and package architectural boundaries remain owned by `PACKAGE_BUILDING_STANDARD.md` and the canonical root Package Reference. `composer.json` does not become their source of truth.
 
 The definition and evidence for a package/version being Published are owned by [`LIBRARY_PRESENTATION_STANDARD.md` Section 14](LIBRARY_PRESENTATION_STANDARD.md#14-first-stable-release-lifecycle-and-security-presentation-states). This Standard consumes that publication state when applying package identity rules and MUST NOT establish a conflicting publication source or definition.
 
@@ -110,7 +116,7 @@ Rules for those fields govern the library repository while it is being developed
 
 *Note: Composer technically allows other forms for many of these configurations, but Maatify adopts a stricter Profile to ensure consistency and reliability across the ecosystem.*
 
-1. `composer.json` is a public package contract, not an internal installation note.
+1. `composer.json` is part of the package's public Composer manifest contract, not an internal installation note.
 2. Every directly used runtime dependency MUST be declared directly.
 3. A package MUST NOT rely on a transitive dependency as though it were direct.
 4. Development tools MUST NOT be placed in `require`.
@@ -304,7 +310,7 @@ The canonical minimum set is:
 - `php` MUST be present.
 - `maatify` MUST be present.
 - `{PRIMARY_DOMAIN_KEYWORD}` MUST be present.
-- A database keyword MUST appear only when that database is part of the documented package contract or verified behavior.
+- A database keyword MUST appear only when that database is part of the documented package runtime/domain contract or verified behavior.
 - An implementation behavior MAY be a keyword only when it is a stable, meaningful package characteristic.
 - Useful search synonyms MAY be included when they remain accurate.
 - Keywords with Composer-special discovery meaning, such as `dev`, `testing`, or `static analysis`, MUST be added only when that classification is genuinely intended.
@@ -1048,7 +1054,7 @@ The following contracts MUST remain synchronized:
 - The package reference does not claim undeclared runtime dependencies.
 - `authors` remains consistent with approved organization metadata.
 
-`composer.json` is the source of truth for the Composer package contract, but every claim inside it MUST be supported by runtime code, documentation, and verification.
+`composer.json` is the source of truth for the Composer manifest contract: package identity, metadata, requirements, dependencies, autoloading, scripts, configuration, stability, and distribution declarations where applicable. Every claim inside it MUST be supported by runtime code, documentation, and verification.
 
 ---
 

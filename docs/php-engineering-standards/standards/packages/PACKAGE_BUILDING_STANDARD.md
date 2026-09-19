@@ -5,7 +5,7 @@
 ## Standard Metadata
 
 - **Standard ID:** `std-package-building`
-- **Standard Version:** `2.0.0`
+- **Standard Version:** `3.0.0`
 - **Standard Version Format:** `MAJOR.MINOR.PATCH`
 
 This document is the law for building any new standalone Composer package in the Maatify ecosystem.
@@ -48,7 +48,7 @@ PDO driver availability alone does not establish database support.
 
 - This file owns runtime architecture, package structure, and package-specific testing applicability.
 - [`TESTING_STANDARD.md`](../testing/TESTING_STANDARD.md) owns the general testing strategy, observable-behavior evidence, regression-protection model, and Consumer Verification Harness contract; this Standard defines Package-readiness applicability and MUST NOT duplicate the Harness's detailed requirements.
-- [`COMPOSER_PACKAGE_STANDARD.md`](COMPOSER_PACKAGE_STANDARD.md) owns `composer.json`, dependency declarations, and version constraints.
+- [`COMPOSER_PACKAGE_STANDARD.md`](COMPOSER_PACKAGE_STANDARD.md) owns the canonical Composer manifest contract represented by `composer.json`, including dependency declarations and version constraints.
 - [`CI_WORKFLOW_STANDARD.md`](CI_WORKFLOW_STANDARD.md) owns workflow and check execution.
 - [`LIBRARY_PRESENTATION_STANDARD.md`](LIBRARY_PRESENTATION_STANDARD.md) owns README structure, badges, release-facing files, and the consumer-facing Usage Guide/examples artifact requirements.
 - [`DOCUMENTATION_LIFECYCLE_STANDARD_AR.md`](../governance/DOCUMENTATION_LIFECYCLE_STANDARD_AR.md) owns document roles, current-versus-historical semantics, freshness, retention, and documentation-reference hygiene.
@@ -93,12 +93,12 @@ Repository presentation, governance-document identity, release-facing metadata, 
 Composer package metadata, dependency declarations, autoloading, scripts, configuration, stability, and lock-file policy MUST follow [COMPOSER_PACKAGE_STANDARD.md](COMPOSER_PACKAGE_STANDARD.md).
 
 
-Every package must contain these files at its package root (the repository root for a standalone package; for an in-project Base Module, the Artifact Root defined in [`MODULE_BUILDING_STANDARD.md`](../modules/MODULE_BUILDING_STANDARD.md)):
+Every package must contain these files at its package root (the repository root for a standalone package; for an in-project Base Module, the Artifact Root defined in `MODULE_BUILDING_STANDARD.md`):
 
 ```
 ├── README.md                          ← installation, quick examples, what it does / does not
 ├── CHANGELOG.md                       ← Keep a Changelog; release history begins at [1.0.0]
-├── {PACKAGE_NAME}_PACKAGE_REFERENCE.md ← canonical stable package contract (e.g. EXAMPLE_PACKAGE_REFERENCE.md)
+├── {PACKAGE_NAME}_PACKAGE_REFERENCE.md ← canonical stable public/runtime package contract (e.g. EXAMPLE_PACKAGE_REFERENCE.md)
 ├── composer.json                      ← governed by COMPOSER_PACKAGE_STANDARD.md
 ├── phpstan.neon                       ← governed by Section 21
 ├── src/                               ← all PHP source code
@@ -117,21 +117,24 @@ The canonical path is:
 /{PACKAGE_NAME}_PACKAGE_REFERENCE.md
 ```
 
-The root Package Reference owns:
+The root Package Reference owns the stable public/runtime/behavioral package contract:
 
-- the complete stable package contract
 - the public Runtime API inventory
 - stable behavior and exception guarantees
 - package boundaries and non-goals
 - links to detailed supporting documentation
 
+Composer-facing identity, metadata, requirements, dependencies, autoloading, scripts, configuration, stability, and distribution declarations are not canonical Package Reference declarations. They are owned by `composer.json` under [COMPOSER_PACKAGE_STANDARD.md](COMPOSER_PACKAGE_STANDARD.md).
+
+The Package Reference MAY explain runtime implications, reference dependency expectations, and document supported integration behavior, but it MUST NOT override or compete with `composer.json` for Composer manifest declarations.
+
 Detailed architecture decisions, proposed implementation contracts, integration guides, roadmaps, deferred scope, and audits belong under `docs/`.
 
-Supporting documents under `docs/` MAY provide deeper detail, but they MUST NOT become a second competing Package Reference. They SHOULD link back to the root Package Reference when they define or explain part of the stable package contract.
+Supporting documents under `docs/` MAY provide deeper detail, but they MUST NOT become a second competing Package Reference. They SHOULD link back to the root Package Reference when they define or explain part of the stable public/runtime/behavioral package contract.
 
 The root Package Reference SHOULD index the relevant detailed documents under `docs/`.
 
-A multi-domain package still has one canonical root Package Reference unless a domain is extracted into a separate Composer package with its own repository and package contract.
+A multi-domain package still has one canonical root Package Reference unless a domain is extracted into a separate Composer package with its own repository and public/runtime/behavioral package contract.
 
 ---
 
@@ -339,7 +342,68 @@ Do not create root `Admin/` or `Customer/` taxonomies merely for actor labels. I
 
 ### Compatibility and Legacy Placement
 
-The canonical structure is mandatory for new Packages, unpublished APIs, new responsibilities, and new code when the move does not cross a documented compatibility boundary. Existing published namespaces MUST NOT be moved solely for visual conformity when the move would break their public or autoload contract. A narrow compatibility exception does not authorize extending a legacy taxonomy to new responsibilities.
+The canonical structure remains mandatory. Standards Adoption or a Standards Upgrade MUST NOT, by itself, force a compatibility-breaking release solely to normalize source topology. A topology change is governed by the following deterministic decision model.
+
+#### New or Pre-Stable Packages
+
+A new or unpublished Package, and a Package that has not yet reached its first Stable release, MUST remediate a non-compliant `src/` topology before that first Stable release. A Package MUST NOT enter its first Stable release with a knowingly non-compliant source topology when no previously published compatibility contract requires that layout. No legacy compatibility exception may be created from a structure that has not yet been published.
+
+#### Published Packages: Non-Breaking Remediation
+
+Publication alone is not a reason to defer remediation. When the canonical topology can be applied without breaking any existing compatibility boundary, the Package MUST apply it in the current work or the nearest appropriate approved scope. The review MUST consider, as applicable:
+
+- public namespaces and published FQCNs;
+- the Composer autoload contract;
+- the public Runtime API;
+- documented extension, integration, construction, or import paths;
+- consumer-visible class and interface names; and
+- any other documented compatibility boundary.
+
+If the move does not cross a proven compatibility boundary, Compatibility MUST NOT be used to postpone the canonical placement.
+
+#### Published Packages: Breaking Remediation
+
+If an actual review proves that applying the canonical topology would break an existing compatibility boundary, the current release line MAY retain the existing placement. The required topology migration then becomes a **Deferred Structural Obligation**. The Package MUST NOT create a Breaking Release solely to normalize source topology, and this deferral MUST NOT be treated as cancellation of the canonical requirement.
+
+A Deferred Structural Obligation becomes mandatory at the next Owner-approved release boundary that independently permits the compatibility break required by the migration. The trigger is the approved boundary that actually permits the required contract break, not a major-number increase by itself. When that boundary occurs, every applicable deferred topology obligation MUST be re-evaluated and closed when migration is safe. It MUST NOT be carried automatically to a later Breaking or Major line without a documented reason or an explicit Standards-Adopting Repository exception under this section.
+
+#### Existing Legacy Structure and New Code
+
+The following limits apply while a Deferred Structural Obligation exists:
+
+1. Existing published paths may remain only within the explicitly identified deferred structural scope needed to preserve Compatibility.
+2. New responsibilities and new code MUST follow the canonical `Domain → Capability → Responsibility` topology whenever this can be done without breaking an existing contract, creating duplicate competing ownership, or creating an unsound hybrid topology because of the deferred boundary.
+3. If placing new code directly in the canonical path would create competing or hybrid ownership because the same deferred namespace boundary has not yet migrated, that code MAY remain temporarily inside the same explicitly bounded and documented legacy structural envelope until the migration trigger.
+4. This allowance MUST NOT create new legacy roots or taxonomies for convenience. The legacy envelope MUST be the existing one identified by the proven compatibility boundary.
+5. The allowance MUST NOT extend to Domains, Capabilities, Responsibilities, paths, or namespaces that are not affected by the proven compatibility boundary. An independent new capability MUST use the canonical topology.
+
+Compatibility preservation, supported by specific contract or architecture evidence, MUST be the actual reason for retaining legacy placement. Labels such as `legacy project`, `existing structure`, `too much work`, `not worth changing`, or `keep current src` are not sufficient by themselves.
+
+#### Standards-Adopting Repository Exception
+
+The Consumer Repository adopting this Standard MAY request continued deviation after the migration trigger only through the existing `Explicit Exceptions/Overrides` mechanism in `STANDARDS_ADOPTION_STANDARD_AR.md`. This section does not create a second exception system. The exception MUST be Owner-approved, explicit, adopting-repository-specific, scope-bounded, documented, and auditable, and the Consumer Repository MUST record it in:
+
+```text
+docs/php-engineering-standards/STANDARDS_MANIFEST.md
+→ Explicit Exceptions/Overrides
+```
+
+The Consumer Repository MUST also retain durable repository-owned rationale in the appropriate existing document, such as its Package Reference or an ADR, without creating a new document when an existing canonical owner is sufficient. The exception record MUST identify, at minimum:
+
+- the Standard ID and Section;
+- affected paths and namespaces;
+- the affected release line;
+- the exact deviation allowed;
+- the compatibility or architectural evidence and reason;
+- the scope boundary;
+- the Owner approval; and
+- the migration or review trigger.
+
+An unscoped entry such as `legacy structure — exempt` is invalid. A generic legacy label, project age, implementation effort, or organizational preference is not sufficient evidence.
+
+An approved exception MAY permit the specified deviation to continue after its migration trigger, but only within the exact recorded scope. It is not a permanent global waiver, does not renew automatically, does not extend to new paths or namespaces, does not transfer to another Package or release line, and does not exempt unrelated independent responsibilities from canonical placement. It does not make the Package compliant outside the recorded scope and cannot cure Structural Invalidity in Standards Adoption. The exception MUST be re-evaluated at its recorded review or migration trigger; continued deviation after that trigger requires the same still-valid exception or a new or updated Owner decision. There is no automatic renewal or inheritance.
+
+A **Deferred Structural Obligation** is the automatic result of a proven compatibility-breaking migration. An approved adopting-repository exception is a separate, explicit Owner decision that permits a recorded deviation. Neither term may be used as a synonym for the other, and a non-breaking topology remediation MUST NOT be deferred under the exception mechanism.
 
 ---
 

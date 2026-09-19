@@ -3,7 +3,7 @@
 ## Standard Metadata
 
 - **Standard ID:** `std-library-presentation`
-- **Standard Version:** `2.0.0`
+- **Standard Version:** `2.0.1`
 - **Standard Version Format:** `MAJOR.MINOR.PATCH`
 
 ## 1. Normative Language
@@ -38,10 +38,12 @@ It explicitly does **not** govern:
 * Dependency constraints.
 
 ### Relationship to other standards:
-* `PACKAGE_BUILDING_STANDARD.md`: Governs library building, code architecture, and the package contract.
+* `PACKAGE_BUILDING_STANDARD.md`: Governs library building, runtime architecture, and the stable public/runtime/behavioral package contract.
 * `COMPOSER_PACKAGE_STANDARD.md`: Governs Composer metadata, dependencies and Composer stability constraints, autoloading, scripts, configuration, and lock-file policy.
 * `CI_WORKFLOW_STANDARD.md`: Governs CI, quality gates, and automated testing.
 * `DOCUMENTATION_LIFECYCLE_STANDARD_AR.md`: Governs document roles, authority boundaries, current-versus-historical semantics, freshness, retention, and documentation-reference hygiene.
+
+For the language of durable technical documentation, including README, Package Reference, Usage/Integration Guides, and release-facing documentation, this Standard follows the canonical default in `DOCUMENTATION_LIFECYCLE_STANDARD_AR.md`; it does not define a second language contract.
 
 This Standard owns consumer-facing presentation, release-facing consumption, and first Stable readiness. `CI_WORKFLOW_STANDARD.md` owns exact release-SHA qualification and evidence. Composer stability constraints govern dependency resolution; they do not define release eligibility or publication state.
 
@@ -111,13 +113,13 @@ The examples in this Standard use canonical placeholders. When applying these te
 Any Maatify PHP library ready for release MUST contain the following files (where applicable):
 
 * `README.md`: Quickly introduces the library.
-* `{PACKAGE_REFERENCE_FILE}`: The detailed source of truth for contracts.
+* `{PACKAGE_REFERENCE_FILE}`: The canonical detailed reference for the stable public/runtime/behavioral package contract and Public Runtime API.
 * `CHANGELOG.md`: Documents releases.
 * `SECURITY.md`: Defines support, reporting, and scope.
 * `CONTRIBUTING.md`: Explains contribution and local verification.
 * `CODE_OF_CONDUCT.md`: Establishes community rules.
 * `LICENSE`: The package license.
-* `composer.json`: The package definition.
+* `composer.json`: The Composer manifest; its canonical manifest contract is governed by `COMPOSER_PACKAGE_STANDARD.md`.
 
 Every reusable standalone Package and every applicable Base Module Artifact Root MUST also provide:
 
@@ -335,7 +337,7 @@ The existence, design, and technical contract of that Public Runtime API remain 
 
 The README MUST include a clearly labeled `Public Runtime API` section for the applicable artifact. The section MUST provide a useful consumer-facing overview that is proportionate to the library's nature, size, and actual capabilities. This requirement does not impose a fixed template or a fixed number of interfaces, classes, services, or other entries.
 
-The overview MUST accurately represent the actual Public Runtime API, MUST link to the canonical Package Reference for the complete inventory and contract, and MUST NOT duplicate the full Package Reference.
+The overview MUST accurately represent the actual Public Runtime API, MUST link to the canonical Package Reference for the complete Public Runtime API inventory and stable public/runtime/behavioral contract, and MUST NOT duplicate the full Package Reference.
 
 ### 10.2 Usage Guide and Examples Contract
 
@@ -691,7 +693,7 @@ An explicit search for reference repository names MUST be conducted before submi
 * [ ] `docs/guides/USAGE_GUIDE.md`, root `examples/`, Package Reference, and Quick Usage links are present for every applicable reusable Package/Base Artifact.
 * [ ] Usage Guide fit/requirements/non-goals, capability map, walkthrough boundaries, and Public Contract links are accurate; no fixed example count is assumed.
 * [ ] Every applicable reusable Package/Base Artifact README contains a clearly labeled `Public Runtime API` overview proportionate to the artifact's actual capabilities; it is not treated as a conditional section.
-* [ ] The `Public Runtime API` overview is accurate, consumer-facing, and linked to the canonical Package Reference for the complete inventory and contract without duplicating the full reference.
+* [ ] The `Public Runtime API` overview is accurate, consumer-facing, and linked to the canonical Package Reference for the complete Public Runtime API inventory and stable public/runtime/behavioral contract without duplicating the full reference.
 * [ ] Required badges exist and point to the current package.
 * [ ] Badge selection matches the actual publication-state matrix, uses repository-local PHP/License truth, contains no semantic duplicates, and does not use `for-the-badge` as the README default.
 * [ ] Packagist or other registry badges appear only when the artifact is actually published and resolvable through that channel.

@@ -3,10 +3,9 @@
 ## بيانات المعيار
 
 - **Standard ID:** `std-ai-collaboration-workflow`
-- **Standard Version:** `7.0.0`
+- **Standard Version:** `7.0.1`
 - **Standard Version Format:** `MAJOR.MINOR.PATCH`
 - **اللغة المعتمدة:** العربية.
-- **حالة الاعتماد:** يصبح معتمدًا عند دمجه في الفرع الافتراضي للمشروع.
 - **مالك المعيار:** مالك المشروع.
 - **سلطة التعديل:** لا يُعدّل هذا المعيار إلا بموافقة صريحة من مالك المشروع ومن خلال تغيير قابل للمراجعة.
 - **النطاق:** إدارة العمل بين مالك المشروع، والمساعد القائد، والمنفذ المحلي (Local Executor)، وJules.
@@ -67,6 +66,8 @@
 ## 2.1 اللغة الأساسية
 
 التعامل بين مالك المشروع، والمساعد القائد، والمنفذ المحلي (Local Executor)، وJules يكون **بالعربية** افتراضيًا.
+
+تخص هذه القاعدة لغة **Communication / Execution / Collaboration artifacts** بين هذه الأدوار، ولا تمنح هذا المعيار ملكية لغة **Durable Repository Documentation**. تحدد [DOCUMENTATION_LIFECYCLE_STANDARD_AR.md](../governance/DOCUMENTATION_LIFECYCLE_STANDARD_AR.md) لغة التوثيق التقني الدائم الموجه للمطورين أو المستهلكين أو الصيانة أو التشغيل، وتبقى المعايير التابعة ملتزمة بذلك العقد دون نسخه.
 
 يشمل ذلك:
 
@@ -143,10 +144,9 @@
 - إعادة بناء الحالة الفعلية من المستودع والمراجع authoritative المعتمدة ذات الصلة بالمهمة قبل التخطيط أو التفويض.
 - حسم كل Material Decision يمكن إثباته قبل delegation، وعدم نقل Architecture أو Policy أو Ownership أو Versioning أو Merge decisions إلى Executor أو Reviewer.
 - اكتشاف الـ gaps والتعارضات والافتراضات غير المثبتة قبل بدء التنفيذ.
-- تصميم الحل وتقسيم العمل داخل النطاق والعقود المعتمدة.
+- تصميم الحل وتقسيم العمل وإدارته داخل النطاق والعقود المعتمدة، وفق dependency/topology contract المملوك لـPhase Stack.
 - اختيار المهمة التالية حسب الأولوية والتبعيات، لا حسب الرقم فقط.
 - كشف التعارضات والملفات المشتركة قبل بدء التنفيذ.
-- تقسيم العمل إلى Roadmap Phases وExecution Batches وWork Units غير متداخلة، مع عدم تحويل كل Phase أو Work Unit إلى Branch أو PR مستقلة دون سبب هندسي.
 - اختيار المنفذ المناسب.
 - كتابة توجيه تنفيذي مغلق الحدود وبالحد الأدنى الكافي من المعلومات، مع اختبار ضرورة كل سطر قبل إرساله.
 - مراجعة الكود أو التوثيق، والـ diff أو الـ staged patch، والـ checks، والـ PR بنفسه قبل قبول أي ناتج عندما تكون هذه العناصر متاحة.
@@ -167,12 +167,12 @@
 
 تشمل هذه السلطة:
 
-- تقسيم Work Units عند الحاجة وفهم dependencies المؤثرة. يكون formal dependency graph وExecution Waves مشروطين بتعدد الوحدات أو الترتيب أو التوازي الذي يجعل توثيقهما مفيدًا.
-- اختيار المنفذين وتشغيل Work Units المستقلة بالتوازي عندما تثبت شروط الاستقلال ويكون صافي الزمن أقل، أو إعادة استخدام نفس السياق والمنفذ عندما يكون ذلك أسرع.
-- فتح وإدارة Branches وPRs اللازمة فقط بحسب حدود العزل والمراجعة والـrollback والتكامل.
-- إعادة Verification واعتماد Component مستقل فعليًا عند وجوده.
+- إدارة Work Units وdependencies ضمن الـtopology التي يحددها Phase Stack.
+- اختيار المنفذين وتنسيق العمل المعتمد داخل النطاق.
+- إدارة حدود Branch وPR التي أنشأها Phase Stack عندما تكون الصلاحية ممنوحة.
+- تنفيذ Verification وReview responsibilities المملوكة لـAI Collaboration.
 
-أما **أي GitHub Merge**، بما في ذلك Component PR إلى Phase Draft أو Phase Draft/Batch Integration Boundary إلى `main` أو إلى parent آخر، فيحتاج Owner authorization صريحة منفصلة. ولا تكفي صلاحية Commit أو Push أو فتح PR أو local `git merge` لمنح صلاحية GitHub Merge.
+أما **أي GitHub Merge** فيحتاج Owner authorization صريحة منفصلة. ولا تكفي صلاحية Commit أو Push أو فتح PR أو local `git merge` لمنح صلاحية GitHub Merge؛ وتحدد Phase Stack دورة الـMerge وحدود التكامل وتسلسله.
 
 ولا تشمل صلاحية إدارة التنفيذ:
 
@@ -258,7 +258,7 @@ Jules لا يقرر سياسة أو معمارية من نفسه، ولا يحو
 - الـ PRs النشطة ذات الصلة.
 - الملفات المرجعية الحالية.
 
-تُستخدم أحدث حالة فعلية لـ`main` دائمًا كمرجع freshness وdivergence. يبدأ Standalone Work من أحدث `main` مصرح بها، بينما يبدأ Stacked Work من الـauthorized parent أو Integration Boundary الخاصة بالـstack. تحرك `main` لا يغيّر execution parent تلقائيًا؛ ويحتاج Material Divergence إلى Owner-authorized reconciliation. لا يوجد fallback تلقائي إلى `main` ولا Automatic Merge أو Rebase أو Force-push. لا تُستخدم SHA أو تقارير سابقة دون إعادة تحقق إذا تحرك المستودع.
+يتحقق المساعد القائد قبل التخطيط أو التنفيذ من branch الحالي وHEAD وworking tree وstaged state وbase أو parent ذي الصلة والـPRs والمراجع الحالية. تُتبع قواعد freshness وdivergence وexecution parent وreconciliation المملوكة لـPhase Stack؛ ولا تُستخدم SHA أو تقارير سابقة دون إعادة تحقق إذا تحرك المستودع.
 
 ## 5.2 الأدلة قبل الادعاء
 
@@ -276,9 +276,10 @@ Jules لا يقرر سياسة أو معمارية من نفسه، ولا يحو
 
 ### 5.2.1 لا تخمين ولا افتراض في القرارات الهندسية
 
+- ينطبق هذا العقد صراحةً على Lead وExecutor وdelegated Reviewer عند إصدار claim أو قرار أو Review result.
 - لا تُبنى القرارات الهندسية على التخمين أو الافتراض غير المثبت.
-- أي معلومة يمكن إثباتها من الكود أو المستندات أو العقود أو Git يجب فحصها فعليًا بدل افتراضها.
-- إذا لم يوجد دليل كافٍ، تُصنف النقطة كغير محسومة، ولا يملؤها المنفذ أو المساعد القائد من عنده.
+- أي معلومة materially verifiable من الكود أو documentation أو contracts أو Git أو PR state أو authoritative sources يجب فحصها فعليًا بدل افتراضها.
+- إذا لم يوجد دليل كافٍ، تُصنف النقطة `UNRESOLVED`، ولا يملؤها Lead أو Executor أو delegated Reviewer من عنده.
 - يجوز للمساعد القائد حسم القرار التقني الطبيعي داخل Scope والعقود المعتمدة فقط بعد فحص الأدلة اللازمة؛ أما نقص الدليل فيبقى حالة توقف أو نقطة تُرفع للمالك بحسب نوع القرار.
 
 ## 5.3 الأولوية بالتبعيات لا بالأرقام
@@ -331,40 +332,7 @@ Jules لا يقرر سياسة أو معمارية من نفسه، ولا يحو
 
 ## 5.7 الحد الأدنى الكافي للـ Prompt
 
-الـ Prompt ليست الأطول ولا الأقصر؛ هي **أقصر contract مكتملة تمنع material guessing**. عند انطباقها، تتكون نواتها من:
-
-1. Exact baseline أو comparison boundary.
-2. Authoritative references.
-3. Exact objective.
-4. Owned scope.
-5. Relevant out-of-scope.
-6. Locked decisions أو invariants.
-7. Acceptance وevidence المطلوبة.
-8. Permissions.
-9. Stop conditions.
-10. Delivery shape.
-
-لا تكرر Standard كاملة إذا كان exact reference يكفي فعلًا، ولا تضف وحدة لا تغيّر التنفيذ أو النطاق أو التحقق أو صلاحيات Git أو التقرير.
-
-قواعد الاختصار:
-
-- لا تكرر قاعدة موجودة في هذا المعيار أو `AGENTS.md`؛ أشِر إلى المرجع فقط.
-- لا تنسخ audit أو roadmap أو ADR داخل الـ Prompt؛ اذكر المسار والقرار أو القسم المطلوب قراءته.
-- لا تشرح تاريخ المشكلة إلا إذا كان يغيّر الحل المطلوب.
-- لا تدرج حالات أو أوامر لا تخص المهمة الحالية.
-- احذف أي قسم اختياري لا تستخدمه بدل ترك placeholders أو نص عام.
-- استخدم قائمة ملفات ومسارات وأوامر دقيقة بدل فقرات تفسيرية طويلة.
-- لا تكرر المعلومة نفسها في الهدف والنطاق وخارج النطاق والتقرير.
-- المهمة الصغيرة يجب أن تحصل على Prompt صغير.
-- المهمة المعقدة قد تحتاج Prompt أطول، لكن كل قسم فيها يجب أن يغير قرارًا تنفيذيًا أو بوابة تحقق.
-
-### اختبار الضرورة قبل إرسال الـ Prompt
-
-يسأل المساعد القائد عن كل سطر:
-
-> هل حذف هذا السطر يمكن أن يغيّر التنفيذ أو النطاق أو التحقق أو صلاحيات Git أو التقرير؟
-
-إذا كانت الإجابة «لا»، يُحذف السطر.
+الـ Prompt ليست الأطول ولا الأقصر؛ هي **Minimum Complete / Closed Prompt**: أقصر contract مكتملة تمنع material guessing. يملك Section 8 عقد بناء الـPrompt المعيارية بالكامل، بما في ذلك النواة الإلزامية والوحدات الاختيارية وما لا يوضع داخل الـPrompt وحماية القرارات المقفلة والتناسب وعقد Review Prompt. لا يضيف هذا القسم عناصر أو قواعد بناء منافسة.
 
 ## 5.8 التوقف الصريح
 
@@ -384,10 +352,10 @@ Jules لا يقرر سياسة أو معمارية من نفسه، ولا يحو
 ## 5.9 التوثيق والتحقق والمراجعة حسب الحاجة
 
 - تُحفظ durable documentation المرتبطة بالـAcceptance عندما تحتاجها النتيجة أو العقد، ولا تُفصل Documentation Work Unit لمجرد إكمال ceremony.
-- تكون Verification مستمرة أثناء التنفيذ، مع Focused/Affected Checks أثناء العمل. لا تنشأ Verification Phase أو PR مستقلة تلقائيًا.
-- يكون Full Applicable Gate عند Meaningful Integration Boundary المختارة، ويمكن لPhase داخل Batch الاستفادة من accumulated gate بشرط بقاء phase-level Acceptance traceability واضحة.
+- تكون Verification مستمرة أثناء التنفيذ، مع Focused/Affected Checks أثناء العمل، ويراجع Lead الأدلة والنتيجة وفق scope والـrisk والعقد المنطبق.
+- يملك Phase Stack وapplicable CI contract موضع وتوقيت Full Applicable Gates وجاهزية حدود التكامل؛ لا ينشئ هذا المعيار قاعدة topology بديلة.
 - تكون Direct Lead Acceptance Review مسؤولية القبول الأساسية عند حد التكامل المختار. Independent أو Separate Final Review مشروطة بالـrisk، وليست مطلوبة لكل conceptual Phase.
-- لا يدخل أي حد تكامل إلى `main` قبل اكتمال Acceptance الخاصة بالعمل داخله، والـchecks والـreview المنطبقة، وDocumentation المطلوبة فعلًا.
+- تخضع جاهزية حدود التكامل وقواعد إدخال العمل إلى `main` لـPhase Stack وapplicable CI contract.
 
 ---
 
@@ -443,11 +411,7 @@ Review Staging مسموح افتراضيًا ما لم يمنعه التوجيه
 - فتح PR لا يعني Merge.
 - **كل GitHub Merge يحتاج Owner authorization صريحة منفصلة**، سواء كان إلى Phase Draft أو Batch Integration Boundary أو `main` أو parent آخر.
 
-ولرفع الالتباس الاصطلاحي، يقصد بـ`Merge` في هذا السياق ثلاث عمليات مختلفة:
-
-- **Component Merge:** GitHub Merge لـComponent PR إلى Phase Draft عند وجود Draft منفصلة، وهو مشروط بوجود Component مستقل واجتياز Component Gate وOwner authorization صريحة. لا يلزم هذا الحد عندما تنفذ Work Units المترابطة على Work Branch واحدة.
-- **Local `git merge`:** عملية Git محلية لتغيير تاريخ Branch أو مزامنتها، وتظل خاضعة للقسم §6.4 ولا تمنحها صلاحية إدارة التنفيذ تلقائيًا.
-- **Phase-to-main / Batch-to-main Merge:** GitHub Merge للـPhase Draft أو Batch Integration Boundary إلى `main`، ويحتاج Owner authorization صريحة منفصلة.
+ولرفع الالتباس الاصطلاحي، يفرق هذا المعيار بين صلاحيات عمليات Git المحلية وبين GitHub Merge. تملك Phase Stack دورة الـMerge وحدود التكامل وتسلسله، بينما يحدد هذا المعيار صلاحيات الأدوار والعمليات المحلية؛ وتظل كل GitHub Merge مشروطة بـOwner authorization صريحة.
 
 ### التنفيذ حتى النهاية (Delivery Completion)
 - تحديد العملية بأنها `YES` أو التصريح بها صراحة هو **تصريح تنفيذي كامل** لهذه العملية.
@@ -492,7 +456,7 @@ git push --force
 git push --force-with-lease
 ```
 
-حظر `git merge` المحلي أعلاه لا يمنع GitHub Merge عندما يكون هناك Component مستقل أو حد تكامل مختار، واجتازت الحالة بوابات القبول، وصدرت Owner authorization صريحة للـGitHub Merge المقصود. أما الوحدات المترابطة داخل Work Branch واحدة فلا تحتاج Component PR مستقلة. ولا تمنح صلاحية إدارة التنفيذ تصريحًا عامًا لأي عملية Git محلية واردة في القائمة، مثل `git rebase` أو `git cherry-pick` أو `git reset` أو `git restore`؛ تظل كل واحدة منها محتاجة إلى الصلاحية المناسبة. وبالعكس، فإن التصريح بعملية Git محلية أو باستخدام `git merge` في تكليف محدد لا يمنح صلاحية GitHub Merge.
+تظل كل عملية Git محلية واردة في القائمة محتاجة إلى التصريح المناسب، ولا تمنح صلاحية إدارة التنفيذ أو التصريح بعملية محلية صلاحية GitHub Merge. وتحدد Phase Stack topology وحدود التكامل التي قد تستلزم هذه العمليات.
 
 الأمر `git switch -c` أو `git checkout -b` مسموح فقط عندما ينص التوجيه على إنشاء branch بعد نجاح baseline verification.
 
@@ -610,13 +574,12 @@ git diff --stat
 
 ### استعادة baseline بعد تعثر session
 
-**عند تعثر استمرار نفس الـ branch/session (فقدان السياق أو كسر القواعد) أثناء العمل على مكوّن (Component) غير مكتمل:**
+**عند تعثر استمرار نفس الـ branch/session أو فقدان السياق أو كسر القواعد:**
 
-- **لا يُدمج** الجزء السليم من الـ Component غير المكتمل إلى الـ Phase Draft بأي شكل.
-- **لا يُنشأ** Component جديد لاستكمال بقية الـ acceptance؛ يظل الـ Component الحالي يعتبر فاشلًا وغير مكتمل.
-- تُغلق أو تُستبدل الـ PR أو الـ branch الفاشلة حسب القواعد.
-- تبدأ محاولة بديلة وجديدة لنفس الـ Component بأكمله انطلاقًا من أحدث authorized parent أو Integration Boundary معتمدة في نفس الـstack، لا من `main` تلقائيًا.
-- لا يدخل إلى حد التكامل إلا Component مكتمل بالكامل وفق الـGates المنطبقة، ويستخدم formal dependency graph فقط إذا كان مفيدًا لتعدد الوحدات أو ترتيبها أو توازيها.
+- تطبق قواعد Jules/session/source-context الخاصة بهذا المعيار، ولا يستمر الوكيل من checkout أو مصدر غير متحقق منه.
+- تتبع معالجة Work Units أو Components غير المكتملة وحدود التكامل عقد Phase Stack؛ ولا ينشئ هذا القسم قانونًا مستقلًا لقبولها أو إدخالها.
+- لا يختار هذا المعيار parent بديلًا أو fallback من عنده؛ وأي Git operation تظل خاضعة لقواعد صلاحيات AI Collaboration.
+- تُغلق أو تُستبدل الـPR أو الـbranch الفاشلة حسب القواعد، وتبدأ محاولة جديدة فقط بعد تحديد المصدر المصرح به والتحقق منه.
 
 ## 6.8 تسمية Work Branch
 
@@ -694,7 +657,7 @@ git diff --stat
 
 ## المرحلة 11 — follow-up
 
-تُعالج الملاحظات داخل Work Unit أو Work Branch المفتوحة إن كانت تخص Acceptance الخاصة بها، أو تُجمع في Consolidated Required-Fix Component/Batch عند الحاجة إلى تغيير مستقل. تُراجع وتدخل إلى Phase Draft أو Batch Integration Boundary فقط عندما تكون هذه الحدود جزءًا من topology المختارة، ووفق الـGates المنطبقة؛ لا يجوز استخدامها لتمرير حد التكامل إلى `main` قبل اكتمال جميع متطلبات الـPhases الداخلة فيه. يُفهم dependency المؤثر، ويستخدم formal dependency graph فقط عندما يضيف وضوحًا للعمل المتعدد أو المرتب أو المتوازي.
+تُعالج الملاحظات داخل Work Unit أو Work Branch المفتوحة إن كانت تخص Acceptance الخاصة بها، أو تُجمع في Consolidated Required-Fix Component/Batch عند الحاجة إلى تغيير مستقل. يحدد Phase Stack طريقة إدخالها إلى حدود التكامل والـGates المنطبقة؛ ولا تستخدم Follow-up لتجاوز Acceptance أو إخفاء فشل أو تعارض مثبت.
 
 ---
 
@@ -732,10 +695,15 @@ git diff --stat
 ## 8.3 ما لا يوضع داخل الـ Prompt
 
 - شرح كامل للنظام موجود أصلًا في مستند مرجعي.
-- تكرار قواعد هذا المعيار.
+- نسخ Standard كاملة إذا كان exact reference أو exact section يكفي.
+- تكرار قاعدة موجودة أصلًا في AI Collaboration أو `AGENTS.md`؛ يستخدم المرجع بدل إعادة الصياغة.
+- نسخ Audit أو Roadmap أو ADR داخل الـPrompt؛ يذكر المسار والقرار أو القسم المطلوب فقط.
 - نتائج قديمة لا تستخدم كـ baseline.
+- historical/problem background إلا إذا كان يغير التنفيذ أو القرار المطلوب.
 - قائمة طويلة من ملفات ممنوعة لا يمكن أن تتأثر أصلًا.
-- حالات اختبار غير مرتبطة بالسلوك المتغير.
+- حالات أو أوامر أو تفاصيل لا تخص المهمة الحالية، بما فيها حالات الاختبار غير المرتبطة بالسلوك المتغير.
+- استبدال قائمة دقيقة من files أو paths أو commands بفقرات تفسيرية طويلة عندما تكون القائمة أدق وأقل ambiguity.
+- تكرار المعلومة نفسها بين objective وscope وout-of-scope وdelivery/report.
 - تعليمات تقرير تكرر acceptance criteria حرفيًا.
 
 ## 8.3.1 حماية القرارات المقفلة
@@ -750,7 +718,17 @@ git diff --stat
 
 لا يوجد حد كلمات ثابت؛ المعيار هو **نسبة المعلومات المؤثرة إلى الحجم**.
 
+### اختبار الضرورة قبل إرسال الـPrompt
+
+قبل إرسال الـPrompt، يقيّم المساعد القائد كل سطر مؤثر:
+
+> هل يؤدي حذف هذا السطر إلى تغيير التنفيذ أو النطاق أو التحقق أو صلاحيات Git أو decision boundary أو متطلب التسليم/التقرير؟
+
+إذا كانت الإجابة «لا»، يُحذف السطر.
+
 ## 8.5 عقد Review Prompt
+
+يخضع delegated Reviewer صراحةً للعقد نفسه في §5.2 و§5.2.1؛ يتحقق من evidence المتاحة داخل Review Scope، ولا تعد تقارير Executor أو Lead أو previous review conclusion Proof بديلة. وإذا لم تكفِ الأدلة، تبقى النتيجة `UNRESOLVED`، ولا ينشئ هذا القسم نموذج حقيقة منفصلًا للمراجع.
 
 كل Review Prompt مفوضة يجب أن تحدد، بالقدر اللازم فقط:
 
@@ -960,7 +938,7 @@ Jules يكتب فقط على branch **خاصة بمهمته الحالية (Jule
 لا يُسمح بتفعيلها إلا بقرار صريح من مالك المشروع، ويجب ألا تتجاوز في عملها:
 - النطاق المحدد للمهمة (task scope).
 - قواعد ملكية الـ Branch.
-- dependencies وExecution topology لنظام Phase Stack، مع formal dependency graph وExecution Waves فقط عندما تكون مفيدة للعمل المتعدد أو المرتب أو المتوازي.
+- dependencies وExecution topology التي يحددها Phase Stack.
 - سلطة الدمج (merge authority) الخاصة بالمالك.
 
 ## 11.5 سياق وذاكرة Jules (Jules Memory)
@@ -1042,13 +1020,13 @@ Jules يكتب فقط على branch **خاصة بمهمته الحالية (Jule
 
 ### 13.1.1 Fresh Full Acceptance Review بعد remediation
 
-بعد أي remediation تغيّر حالة سبق رفضها أو طلب تعديلها، وقبل دمجها إلى أي Integration Boundary، يجب على المساعد القائد تنفيذ `Fresh Full Acceptance Review` للحالة النهائية المتراكمة. يجوز التحقق أولًا من أن blocker أو finding المحددة أُصلحت، لكن:
+عندما يحدد Phase Stack أن الحالة التي خضعت لـremediation تحتاج `Fresh Full Acceptance Review` قبل Integration Boundary، يجب على المساعد القائد تنفيذ عقد المراجعة المحدد هنا للحالة النهائية المتراكمة. يجوز التحقق أولًا من أن blocker أو finding المحددة أُصلحت، لكن:
 
 ```text
 Fix verification != final acceptance review
 ```
 
-تراجع المراجعة مقابل أحدث base وHEAD، وتشمل accumulated diff كاملًا، والـarchitecture والـcontracts والـscope، وclaims التوثيق، والاختبارات والأدلة، والـCI/checks، وحالة release عند انطباقها، وكل remediation سابقة وأي تعارضات جديدة. لا تقتصر على آخر Commit أو patch أو ملف أو finding. إذا تحركت Integration Draft أو `main` أثناء العمل، يعاد تقييم أثر التغييرات على الفرع والمراجعة؛ تتم المزامنة عند وجود أثر مادي، أو يثبت reviewer عدم التأثر وفق Phase Stack.
+تراجع المراجعة مقابل أحدث base وHEAD، وتشمل accumulated diff كاملًا، والـarchitecture والـcontracts والـscope، وclaims التوثيق، والاختبارات والأدلة، والـCI/checks، وحالة release عند انطباقها، وكل remediation سابقة وأي تعارضات جديدة. لا تقتصر على آخر Commit أو patch أو ملف أو finding. تُراجع آثار تحرك base أو Integration Draft وفق topology وreconciliation rules في Phase Stack؛ ولا تنشئ هذه الفقرة مسارًا بديلًا لها.
 
 يجب أن يوضح evidence الحكم النهائي على الأقل: base ref وSHA، وHEAD ref وSHA، وأن الحالة المتراكمة كاملة روجعت، والـremediations التي أُخذت في الحسبان، والـchecks المتأثرة التي أُعيد تشغيلها، وحالة Full Applicable Integration Gate عند boundary المناسبة، والحكم النهائي. لا يفرض ذلك نموذج تقرير واحدًا أو ملفًا دائمًا جديدًا. بعد micro-fix يعاد تشغيل الـchecks المتأثرة حسب المخاطر؛ أما Full Applicable Integration Gate فتكون عند boundary ذات معنى وفق `GITHUB_PHASE_STACK_WORKFLOW_AR.md` و`CI_WORKFLOW_STANDARD.md`، ولا تعني المراجعة الكاملة إعادة مصفوفة CI المكلفة بعد كل تعديل صغير.
 
@@ -1098,14 +1076,14 @@ Fix verification != final acceptance review
 
 ## 14.1 Follow-up مناسبة
 
-إذا ظهرت ملاحظات أثناء مراجعة Phase أو Execution Batch تقتضي Follow-up، تُعالج داخل Work Unit أو Work Branch المفتوحة أو تُجمع في Consolidated Required-Fix Component/Batch عند الحاجة إلى تغيير مستقل، وتدخل إلى حد التكامل المختار وفق dependencies وGates المنطبقة؛ ويستخدم formal dependency graph فقط عندما يضيف وضوحًا للعمل المتعدد أو المرتب أو المتوازي، عندما تكون:
+إذا ظهرت ملاحظات أثناء المراجعة وتقتضي Follow-up، تُعالج داخل Work Unit أو Work Branch المفتوحة أو تُجمع في Consolidated Required-Fix Component/Batch عند الحاجة إلى تغيير مستقل. يحدد Phase Stack حدود التكامل وdependencies وGates المنطبقة، وتكون Follow-up:
 
 - صغيرة.
-- غير مانعة لصحة الـ Draft.
-- خارج الـ acceptance criteria الأساسية للـ Components السابقة (لا تُستخدم كعذر لتمرير Component غير مكتمل).
+- غير مانعة لصحة الحالة الحالية.
+- خارج الـ acceptance criteria الأساسية للعمل السابق.
 - لا تسبب تداخلًا مؤثرًا مع Work Unit أخرى أو Gate لاحقة.
 
-يجب أن يكتمل التغيير، يُراجع، وتجتاز Work Unit أو Consolidated Required-Fix Component/Batch الـGates المطلوبة قبل دمجه إلى حد التكامل. لا تستخدم Follow-up لتجاوز شرط اكتمال الـPhase أو الـBatch قبل الدمج إلى `main`، ولا لإخفاء test failure أو Runtime bug أو contract مكسور.
+يجب أن يكتمل التغيير ويُراجع ويجتاز الـGates المنطبقة وفق Phase Stack قبل تسليمه. لا تستخدم Follow-up لإخفاء test failure أو Runtime bug أو contract مكسور.
 
 ## 14.2 أنماط مرفوضة
 
@@ -1114,7 +1092,7 @@ Fix verification != final acceptance review
 - تكرار القاعدة نفسها في عدة أقسام.
 - إضافة أقسام لا تخص المهمة.
 - دمج gaps غير مترابطة.
-- فرض Strict Sequential Stack عالميًا رغم غياب dependency أو overlap مؤثر.
+- فرض ترتيب تنفيذي أو topology لا يحددها Phase Stack.
 - الوثوق في التقرير دون patch.
 - قبول ناتج لم يراجعه المساعد القائد مباشرة لمجرد وجود تقرير نجاح أو Final/Independent Review.
 - ملء معلومة غير مثبتة بالتخمين بدل تصنيفها كغير محسومة.
@@ -1155,7 +1133,7 @@ Fix verification != final acceptance review
 
 ## 16.1 Standard Versioning
 
-تخضع هوية هذا المعيار وStandard Version وتصنيف أثر تغييره حصريًا لـ[STANDARD_VERSIONING_POLICY_AR.md](../governance/STANDARD_VERSIONING_POLICY_AR.md). يطبق أي تعديل تصنيف `Change Nature` و`Compatibility Impact` وقاعدة الانتقال المحددة في السياسة المركزية.
+تخضع هوية هذا المعيار وStandard Version وتصنيف أثر تغييره حصريًا لـ`STANDARD_VERSIONING_POLICY_AR.md`. يطبق أي تعديل تصنيف `Change Nature` و`Compatibility Impact` وقاعدة الانتقال المحددة في السياسة المركزية.
 
 ## 16.2 متطلبات تعديل المعيار
 
@@ -1164,12 +1142,19 @@ Fix verification != final acceptance review
 - يحصل على موافقة صريحة من مالك المشروع.
 - يمر عبر branch وPR قابلين للمراجعة ما لم يقرر المالك غير ذلك.
 - يوضح سبب التغيير وأثره.
-- يثبت أو يحدّث Standard Version وفق تصنيف الأثر ومسار Version Finalization المحددين في [STANDARD_VERSIONING_POLICY_AR.md](../governance/STANDARD_VERSIONING_POLICY_AR.md).
+- يثبت أو يحدّث Standard Version وفق تصنيف الأثر ومسار Version Finalization المحددين في `STANDARD_VERSIONING_POLICY_AR.md`.
 - يراجع `AGENTS.md` للتأكد من عدم وجود تكرار أو تعارض.
 
 ---
 
 # 17. سجل تغييرات المعيار
+
+## `7.0.1`
+
+- توضيح أن قاعدة العربية الافتراضية تخص Communication / Execution / Collaboration artifacts، ولا تملك لغة Durable Repository Documentation.
+- توحيد canonical Prompt construction تحت Section 8.
+- توضيح انطباق evidence/no-guessing على delegated Reviewer.
+- توضيح ownership split مع Phase Stack دون تغيير effective contract.
 
 ## `7.0.0`
 
@@ -1280,9 +1265,8 @@ Fix verification != final acceptance review
 
 - **مالك المشروع:** يقرر الهدف والأولوية والنطاق والسياسات والدمج.
 - **المساعد القائد:** يعيد بناء الحالة الفعلية، يكتشف الـ gaps والتعارضات، يصمم الحل داخل العقود، يكتب Minimum Complete / Closed Prompt، ويراجع الكود أو التوثيق والـ diff والـ PR بنفسه قبل قبول أي ناتج.
-- **Phase ≠ Branch ≠ PR:** الـRoadmap Phase حد قبول منطقي، والـExecution Batch حد تسليم، والـWork Branch/PR حدود Git لا تنشأ إلا عندما تضيف عزلًا أو مراجعة أو rollback أو تكاملًا آمنًا؛ يجوز أن تضم Batch واحدة عدة Phases مترابطة.
-- **Phase Execution:** تُفهم dependencies المؤثرة، ويكون formal dependency graph وExecution Waves مشروطين بتعدد الوحدات أو الترتيب أو التوازي الذي يجعل توثيقهما مفيدًا؛ يفضل إعادة استخدام السياق، ولا يستخدم التوازي إلا عندما يكون صافي الزمن أقل بعد احتساب كلفته، ولا يدخل `main` إلا حد تكامل يغطي الـPhases الداخلة في الـBatch بعد اجتياز Full Applicable Gate وReviews المنطبقة.
-- **Execution Authority:** بعد اعتماد Scope الـPhase أو الـBatch، يدير المساعد القائد الوحدات والـGates وBranch/PR boundaries اللازمة فقط، مع بقاء **كل GitHub Merge** مشروطًا بـOwner authorization صريحة.
+- **Phase topology وdependencies وexecution parents وIntegration Boundaries وgate placement:** تحكمها `GITHUB_PHASE_STACK_WORKFLOW_AR.md`؛ لا يعيد هذا الملف خوارزميتها.
+- **Execution Authority:** بعد اعتماد Scope، يدير المساعد القائد التنفيذ داخل topology والحدود التي يحددها Phase Stack، مع بقاء **كل GitHub Merge** مشروطًا بـOwner authorization صريحة.
 - **المنفذ المكلّف:** ينفذ النطاق المحدد ويعرض الأدلة، ولا يقرر السياسة أو المعمارية من نفسه؛ يحدد المشروع أو المرحلة أو المهمة أو مالك المشروع من ينفذ كل نوع من العمل.
 - **Jules عند تكليفه:** يبدأ من Repository وStarting branch محددتين قبل الـ Prompt، وينفذ على branch خاصة بمهمته الحالية (Jules task branch).
 - **نشر Jules:** Publish Branch للـ base غير `main`؛ Publish PR فقط عند استهداف `main`.
@@ -1292,9 +1276,9 @@ Fix verification != final acceptance review
 - **جولات التصحيح:** تستمر داخل نفس PR ما دامت واضحة وداخل النطاق؛ session وbranch متتابعة تستخدم فقط عند ظهور تكدس فعلي وبتصاريح Git صريحة.
 - **التحقق البعيد:** ancestry وmerge-base وPR base تُثبت من GitHub الفعلي، لا من تقرير محلي فقط.
 - **تصحيح base:** إذا كانت ancestry صحيحة يمكن إصلاح أو استبدال الـ PR من نفس head branch؛ إذا كانت ancestry خاطئة تلزم branch جديدة من المصدر الصحيح.
-- **تعثر session:** يُمنع دمج أي جزء سليم من مكوّن غير مكتمل، بل تُلغى محاولة المكوّن وتبدأ محاولة جديدة له من أحدث authorized parent أو Integration Boundary في نفس الـstack، لا من `main` تلقائيًا.
+- **تعثر session:** تُعالج حالة Work Unit/Component غير المكتملة وحدود التكامل وفق Phase Stack؛ ويظل هذا المعيار مسؤولًا عن session/source-context behavior، ولا يختار parent أو fallback من نفسه.
 - **العربية:** لغة التواصل والتوجيه والتقارير ووصف الـ PR افتراضيًا.
-- **Minimum Complete / Closed Prompt:** احذف الحشو، لا تحذف القرار؛ هي أقصر contract مكتملة تمنع material guessing، وليست أقصر نص ممكن، وتحدد baseline والمراجع والهدف والنطاق والقرارات المقفلة والـAcceptance والصلاحيات وشروط التوقف وشكل التسليم عند انطباقها.
+- **Minimum Complete / Closed Prompt:** هي أقصر contract مكتملة تمنع material guessing؛ تفاصيل بنائها المعيارية مملوكة حصريًا لـSection 8.
 - **الأدلة:** مطلوبة قبل قبول أي ادعاء، ولا تخمين في القرارات؛ ما لا يملك دليلًا كافيًا يبقى غير محسوم.
 - **المراجعة:** Direct Lead Review هي canonical acceptance responsibility؛ تقرير Executor ليس acceptance، وIndependent أو Separate Final Review مشروطة بالـrisk ولا تلغي المراجعة المباشرة.
 - **التبعيات وعدم التداخل:** يسبقان الترتيب الرقمي.

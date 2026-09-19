@@ -3,7 +3,7 @@
 ## Profile Metadata
 
 - **Profile ID:** `composer-package`
-- **Profile Version:** `2.0.0`
+- **Profile Version:** `2.0.1`
 - **Purpose / Applicability:** مكتبات PHP/Composer المستقلة القابلة لإعادة الاستخدام والتوزيع ضمن منظومة Maatify.
 - **Extends:** `None`
 
@@ -26,9 +26,7 @@
 
 ## Resolved Dependency Behavior
 
-لا يرث هذا Profile Profile آخر. تنتج Required Standards الستة `Candidate Standard References` عند تفعيله، ثم تُقيّم كل Candidate وفق canonical applicability لتكوين `Final Resolved Applicable Standards Set`. تضاف Additional Standards المصرح بها في Manifest إلى المرشحين وتخضع للمرحلتين نفسيهما.
-
-عند تفعيل هذا Profile، يجب تثبيت ملفه محليًا ضمن `Pinned Adoption Control Set`؛ وتثبت كذلك ملفات Profiles الموروثة اللازمة للحل، بينما لا تُنسخ Profiles غير المفعلة.
+لا يرث هذا Profile Profile آخر. وتبقى المعايير المباشرة له هي المعايير الستة المدرجة أعلاه دون غيرها. لا يعيد هذا الملف تعريف آلية resolver؛ فتظل تفاصيل Adoption والحل مملوكة لـ [STANDARDS_ADOPTION_STANDARD_AR.md](../STANDARDS_ADOPTION_STANDARD_AR.md).
 
 ## Scope Notes
 
