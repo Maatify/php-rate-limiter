@@ -1,4 +1,4 @@
-# RateLimiter — Architecture (Official)
+# Maatify Rate Limiter Package Reference
 
 **Package:** RateLimiter
 **Namespace:** `Maatify\RateLimiter`
@@ -16,6 +16,122 @@ Behavioral rules are specified in:
 - `docs/DEVICE_FINGERPRINT.md`
 - `docs/KEY_STRATEGY.md`
 - `docs/FAILURE_SEMANTICS.md`
+
+The [Usage Guide](docs/guides/USAGE_GUIDE.md) is the consumer-facing walkthrough, and [`examples/basic-rate-limit.php`](examples/basic-rate-limit.php) is the runnable consumer assembly. This root document remains the canonical package contract and complete public runtime inventory.
+
+## Package Fit and Boundaries
+
+`maatify/php-rate-limiter` is a standalone, framework-agnostic Composer package for deterministic, multi-signal rate-limit decisions. It protects host-selected operations such as login, OTP/step-up, and API-heavy access. The package owns enforcement evaluation and its bounded state semantics; the Host owns account/session truth, transport behavior, storage implementations, authorization, logging destinations, and cross-domain reporting.
+
+The package is currently proprietary and in pre-release development. It is not a published stable Packagist distribution.
+
+## Source Topology
+
+The current physical runtime topology is:
+
+    src/
+    ├── Command/
+    ├── Contract/
+    ├── DTO/
+    │   ├── Internal/
+    │   └── Store/
+    ├── Device/
+    ├── Engine/
+    ├── Exception/
+    ├── Penalty/
+    └── Policy/
+
+This is an explicit description of the existing source tree, not a claim that the current layout is canonical under the `Domain → Capability → Responsibility` organizing law. Runtime files remain in these locations and their namespaces remain unchanged for this remediation.
+
+The current `src/Contract/` interface placement is an open finding, deferred by the owner's scope decision. It is **Open / Deferred by Owner Scope Decision** and is not fixed by this PR. No interface relocation, duplicate namespace, compatibility shim, or source-tree reorganization is part of this package reference update.
+
+## Operational Read / Reporting Classification
+
+**Classification: Out of Scope.**
+
+The package's storage abstractions are enforcement infrastructure. They persist counters, temporary blocks, budget epochs and cooldown markers, bounded correlation flags, and circuit-breaker state. These values support the rate-limit decision lifecycle; they are not package-owned business records or persisted operational domain semantics such as orders, balances, subscriptions, jobs, statuses, or assignments.
+
+The package owns:
+
+- enforcement decisions and their `ALLOW`, `SOFT_BLOCK`, and `HARD_BLOCK` results;
+- bounded scoring, decay, budget, correlation, and circuit-breaker semantics;
+- keyed runtime state required to evaluate those decisions; and
+- failure signals emitted at the circuit-breaker boundary.
+
+The Host owns:
+
+- account, session, authentication, and business-domain identity;
+- concrete storage drivers and their operational infrastructure;
+- transport responses, permissions, logging destinations, and incident handling; and
+- reporting, dashboards, exports, and cross-domain aggregation.
+
+No Operational Read / Reporting API is required or exposed by the current package contract. No reporting surface is added for compliance.
+
+## Public Runtime API Inventory
+
+The following inventory describes the current public runtime types. Test and support classes are excluded.
+
+### Public Interfaces
+
+| Type | Responsibility |
+| --- | --- |
+| `Maatify\RateLimiter\Contract\RateLimiterInterface` | Consumer entrypoint contract: `limit(RateLimitContextDTO, RateLimitCommand): RateLimitResultDTO`. |
+| `Maatify\RateLimiter\Contract\RateLimitStoreInterface` | Atomic counters, blocks, budgets, and backend health boundary. |
+| `Maatify\RateLimiter\Contract\BudgetSeedStoreInterface` | Additive capability for atomic budget-epoch seeding across key rotation. |
+| `Maatify\RateLimiter\Contract\CorrelationStoreInterface` | Bounded distinct-count and watch-flag boundary. |
+| `Maatify\RateLimiter\Contract\CircuitBreakerStoreInterface` | Circuit-breaker state persistence boundary. |
+| `Maatify\RateLimiter\Contract\FailureSignalEmitterInterface` | Failure and circuit-breaker signal delivery boundary. |
+| `Maatify\RateLimiter\Contract\DeviceIdentityResolverInterface` | Device identity resolution boundary. |
+| `Maatify\RateLimiter\Contract\BlockPolicyInterface` | Policy name, thresholds, score deltas, failure mode, and budget configuration. |
+| `Maatify\RateLimiter\Exception\RateLimiterExceptionInterface` | Package exception marker contract. |
+
+### Public Command
+
+| Type | Contract |
+| --- | --- |
+| `Maatify\RateLimiter\Command\RateLimitCommand` | Immutable execution intent with `checkOnly()`, `recordFailure()`, and `recordSuccess()` factories. |
+
+### Public DTOs
+
+| Group | Types |
+| --- | --- |
+| Context and result | `RateLimitContextDTO`, `RateLimitResultDTO`, `RateLimitMetadataDTO`, `RateLimitContextMetadataDTO` |
+| Identity and policy | `DeviceIdentityDTO`, `PolicyThresholdsDTO`, `ScoreThresholdsDTO`, `ScoreDeltasDTO`, `BudgetConfigDTO` |
+| Runtime state | `BudgetStatusDTO`, `EphemeralStateDTO`, `FailureSignalDTO`, `FailureStateDTO` |
+| Store boundary state | `Store\RateLimitStateDTO`, `Store\BlockStateDTO`, `Store\BudgetStateDTO`, `Store\CircuitBreakerStateDTO` |
+
+`DTO\Internal\PipelineScoreDTO` is an internal composition DTO and is not part of the consumer Public Runtime API.
+
+### Public Concrete Entrypoints, Services, and Policies
+
+| Group | Types | Consumer role |
+| --- | --- | --- |
+| Primary entrypoint | `Engine\RateLimiterEngine` | Production implementation of `RateLimiterInterface`; composes device resolution, evaluation, circuit-breaker, failure, and policy behavior. |
+| Composition services | `Engine\EvaluationPipeline`, `Engine\CircuitBreaker`, `Engine\FailureModeResolver`, `Engine\LocalFallbackLimiter` | Public runtime composition services used to assemble or extend the engine without coupling it to a storage implementation. |
+| Device services | `Device\DeviceIdentityResolver`, `Device\FingerprintHasher`, `Device\EphemeralBucket` | Default identity hashing, normalization, bounded device handling, and ephemeral-key selection. |
+| Penalty services | `Penalty\AntiEquilibriumGate`, `Penalty\BudgetTracker`, `Penalty\DecayCalculator`, `Penalty\PenaltyLadder` | Publicly typed runtime services for bounded penalty and budget orchestration. |
+| Policy presets | `Policy\LoginProtectionPolicy`, `Policy\OtpProtectionPolicy`, `Policy\ApiHeavyProtectionPolicy` | Production policy implementations selected by the command policy name. |
+| Exception | `Exception\RateLimiterException` | Package-defined invalid-input and configuration exception implementing the package marker interface. |
+
+The primary consumer call is `RateLimiterInterface::limit()` on `RateLimiterEngine`. The other public concrete services are composition and extension points; their current signatures are stable only as reflected in the source and the contracts above.
+
+## Runtime Workflow
+
+The realistic consumer path is:
+
+    Host Input → Public API → Domain Service → Integration Boundary → Observable Result
+
+Concretely:
+
+    RateLimitContextDTO + RateLimitCommand
+        → RateLimiterInterface::limit()
+        → RateLimiterEngine::limit()
+        → DeviceIdentityResolver → EvaluationPipeline
+        → RateLimitStoreInterface + CorrelationStoreInterface
+          + CircuitBreakerStoreInterface + FailureSignalEmitterInterface
+        → RateLimitResultDTO and, when applicable, FailureSignalDTO
+
+`RateLimiterEngine` selects the policy by the command's policy name. `EvaluationPipeline` resolves active blocks, identity-derived keys, scoring, correlation, budgets, decay, and final aggregation. The integration boundaries provide the stateful primitives; the result is returned to the Host, which decides how to enforce it at its own transport or application boundary.
 
 ---
 
