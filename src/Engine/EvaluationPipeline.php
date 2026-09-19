@@ -132,20 +132,21 @@ class EvaluationPipeline
 
                 if ($isFloodStage) {
                     $duration = PenaltyLadder::getDuration(2);
+                    $persistence = [];
                     if ($realKeysV2['k5'] !== null) {
-                        $this->store->block($realKeysV2['k5'], 2, $duration);
+                        $persistence[] = ['key' => $realKeysV2['k5'], 'level' => 2, 'duration' => $duration];
                     }
 
-                    $candidates[] = $this->candidate(RateLimitResultDTO::DECISION_HARD_BLOCK, 2, $duration, 'flood');
+                    $candidates[] = $this->candidate(RateLimitResultDTO::DECISION_HARD_BLOCK, 2, $duration, 'flood', $persistence);
                 }
                 else {
                     $duration = PenaltyLadder::getDuration(1);
                     $k4Key = $realKeysV2['k4'];
-                    if ($k4Key !== null) {
-                        $this->store->block($k4Key, 1, $duration);
-                    }
+                    $persistence = $k4Key !== null
+                        ? [['key' => $k4Key, 'level' => 1, 'duration' => $duration]]
+                        : [];
                     $this->correlationStore->incrementWatchFlag($floodKey, 900);
-                    $candidates[] = $this->candidate(RateLimitResultDTO::DECISION_SOFT_BLOCK, 1, $duration, 'flood');
+                    $candidates[] = $this->candidate(RateLimitResultDTO::DECISION_SOFT_BLOCK, 1, $duration, 'flood', $persistence);
                 }
             }
         }
@@ -168,8 +169,16 @@ class EvaluationPipeline
         // acquisition. Recording happens only after final aggregation.
         if ($request->isFailure && $context->accountId !== null && $policy->getBudgetConfig() !== null
             && $this->antiEquilibriumGate->shouldEscalate($context->accountId)) {
-            $candidates[] = $this->candidate(RateLimitResultDTO::DECISION_HARD_BLOCK, 2, PenaltyLadder::getDuration(2), 'anti_equilibrium');
-            $this->ensureAccountHardBlock($realKeysV2['k4'] ?? null, 2, PenaltyLadder::getDuration(2));
+            $persistence = ($realKeysV2['k4'] ?? null) !== null
+                ? [['key' => $realKeysV2['k4'], 'level' => 2, 'duration' => PenaltyLadder::getDuration(2)]]
+                : [];
+            $candidates[] = $this->candidate(
+                RateLimitResultDTO::DECISION_HARD_BLOCK,
+                2,
+                PenaltyLadder::getDuration(2),
+                'anti_equilibrium',
+                $persistence
+            );
         }
 
         $final = $this->finalizeDecision(
@@ -219,7 +228,7 @@ class EvaluationPipeline
     /**
      * @param array<string, int> $scores
      * @param array<string, string|null> $keys
-     * @return array{decision: string, level: int, retryAfter: int, source: string}|null
+     * @return array{decision: string, level: int, retryAfter: int, source: string, persistence: list<array{key: string, level: int, duration: int}>}|null
      */
     private function checkThresholds(
         BlockPolicyInterface $policy,
@@ -251,7 +260,7 @@ class EvaluationPipeline
     }
 
     /**
-     * @return array{decision: string, level: int, retryAfter: int, source: string}|null
+     * @return array{decision: string, level: int, retryAfter: int, source: string, persistence: list<array{key: string, level: int, duration: int}>}|null
      */
     private function checkCorrelationRules(RateLimitContextDTO $context, DeviceIdentityDTO $device, string $policyName, bool $isEphemeral): ?array
     {
@@ -264,9 +273,13 @@ class EvaluationPipeline
         if ($device->fingerprintHash) {
             $count = $this->correlationStore->addDistinct("churn:{$k2}", $device->fingerprintHash, 600);
             if ($count >= 3) {
-                $this->store->block($k2, 2, 60);
-
-                return $this->candidate(RateLimitResultDTO::DECISION_HARD_BLOCK, 2, 60, 'correlation');
+                return $this->candidate(
+                    RateLimitResultDTO::DECISION_HARD_BLOCK,
+                    2,
+                    60,
+                    'correlation',
+                    [['key' => $k2, 'level' => 2, 'duration' => 60]]
+                );
             }
         }
         if ($device->fingerprintHash) {
@@ -313,9 +326,14 @@ class EvaluationPipeline
                     if ($isEphemeral && strpos($targetKey, ':k3:') !== false) {
                         $targetKey = $k2;
                     }
-                    $this->store->block($targetKey, 2, 60);
 
-                    return $this->candidate(RateLimitResultDTO::DECISION_HARD_BLOCK, 2, 60, 'correlation');
+                    return $this->candidate(
+                        RateLimitResultDTO::DECISION_HARD_BLOCK,
+                        2,
+                        60,
+                        'correlation',
+                        [['key' => $targetKey, 'level' => 2, 'duration' => 60]]
+                    );
                 }
             }
         }
@@ -328,7 +346,7 @@ class EvaluationPipeline
      * @param array<string, string|null> $keysV1
      * @param array<string, ?PipelineScoreDTO> $rawScores
      * @return array{
-     *     candidates: list<array{decision: string, level: int, retryAfter: int, source: string}>,
+     *     candidates: list<array{decision: string, level: int, retryAfter: int, source: string, persistence: list<array{key: string, level: int, duration: int}>}>,
      *     budgetState: ?BudgetStateDTO,
      *     budgetRequestEligible: bool,
      *     budgetSuppressed: bool
@@ -491,29 +509,30 @@ class EvaluationPipeline
         if ($newMaxLevel > 0) {
             $decision = ($newMaxLevel >= 2) ? RateLimitResultDTO::DECISION_HARD_BLOCK : RateLimitResultDTO::DECISION_SOFT_BLOCK;
             $duration = PenaltyLadder::getDuration($newMaxLevel);
+            $persistence = [];
 
             if ($context->accountId && ($keys['k4'] ?? null) !== null) {
-                $this->store->block($keys['k4'], $newMaxLevel, $duration);
+                $persistence[] = ['key' => $keys['k4'], 'level' => $newMaxLevel, 'duration' => $duration];
             }
             if ($policy->getName() === 'api_heavy_protection') {
-                if (isset($keys['k1'])) {
-                    $this->store->block($keys['k1'], $newMaxLevel, $duration);
+                if (($keys['k1'] ?? null) !== null) {
+                    $persistence[] = ['key' => $keys['k1'], 'level' => $newMaxLevel, 'duration' => $duration];
                 }
-                if (isset($keys['k2'])) {
-                    $this->store->block($keys['k2'], $newMaxLevel, $duration);
+                if (($keys['k2'] ?? null) !== null) {
+                    $persistence[] = ['key' => $keys['k2'], 'level' => $newMaxLevel, 'duration' => $duration];
                 }
-                if (isset($keys['k3'])) {
+                if (($keys['k3'] ?? null) !== null) {
                     if ($device->confidence !== 'LOW') {
-                        $this->store->block($keys['k3'], $newMaxLevel, $duration);
+                        $persistence[] = ['key' => $keys['k3'], 'level' => $newMaxLevel, 'duration' => $duration];
                     } else {
-                        if (isset($keys['k2'])) {
-                            $this->store->block($keys['k2'], $newMaxLevel, $duration);
+                        if (($keys['k2'] ?? null) !== null) {
+                            $persistence[] = ['key' => $keys['k2'], 'level' => $newMaxLevel, 'duration' => $duration];
                         }
                     }
                 }
             }
 
-            $candidates[] = $this->candidate($decision, $newMaxLevel, $duration, 'score_update');
+            $candidates[] = $this->candidate($decision, $newMaxLevel, $duration, 'score_update', $persistence);
         }
 
         if ($recoveryCandidate !== null) {
@@ -529,21 +548,23 @@ class EvaluationPipeline
     }
 
     /**
-     * @return array{decision: string, level: int, retryAfter: int, source: string}
+     * @param list<array{key: string, level: int, duration: int}> $persistence
+     * @return array{decision: string, level: int, retryAfter: int, source: string, persistence: list<array{key: string, level: int, duration: int}>}
      */
-    private function candidate(string $decision, int $level, int $retryAfter, string $source): array
+    private function candidate(string $decision, int $level, int $retryAfter, string $source, array $persistence = []): array
     {
         return [
             'decision' => $decision,
             'level' => $level,
             'retryAfter' => max(0, $retryAfter),
             'source' => $source,
+            'persistence' => $persistence,
         ];
     }
 
     /**
-     * @param list<array{decision: string, level: int, retryAfter: int, source: string}> $candidates
-     * @return array{decision: string, level: int, retryAfter: int, source: string}|null
+     * @param list<array{decision: string, level: int, retryAfter: int, source: string, persistence: list<array{key: string, level: int, duration: int}>}> $candidates
+     * @return array{decision: string, level: int, retryAfter: int, source: string, persistence: list<array{key: string, level: int, duration: int}>}|null
      */
     private function aggregateCandidates(array $candidates): ?array
     {
@@ -582,9 +603,35 @@ class EvaluationPipeline
     }
 
     /**
+     * @param list<array{decision: string, level: int, retryAfter: int, source: string, persistence: list<array{key: string, level: int, duration: int}>}> $candidates
+     */
+    private function persistWinningCandidates(array $candidates, string $winningClass): void
+    {
+        /** @var array<string, array{level: int, duration: int}> $blocks */
+        $blocks = [];
+        foreach ($candidates as $candidate) {
+            if ($candidate['decision'] !== $winningClass) {
+                continue;
+            }
+
+            foreach ($candidate['persistence'] as $block) {
+                $current = $blocks[$block['key']] ?? ['level' => 0, 'duration' => 0];
+                $blocks[$block['key']] = [
+                    'level' => max($current['level'], $block['level']),
+                    'duration' => max($current['duration'], $block['duration']),
+                ];
+            }
+        }
+
+        foreach ($blocks as $key => $block) {
+            $this->store->block($key, $block['level'], $block['duration']);
+        }
+    }
+
+    /**
      * @param array<string, string|null> $keysV2
      * @param array<string, string|null> $keysV1
-     * @param list<array{decision: string, level: int, retryAfter: int, source: string}> $candidates
+     * @param list<array{decision: string, level: int, retryAfter: int, source: string, persistence: list<array{key: string, level: int, duration: int}>}> $candidates
      */
     private function finalizeDecision(
         BlockPolicyInterface $policy,
@@ -636,6 +683,8 @@ class EvaluationPipeline
         if ($final === null) {
             return $this->createAllowResult();
         }
+
+        $this->persistWinningCandidates($candidates, $final['decision']);
 
         return $this->createBlockedResult($final['level'], $final['retryAfter'], $final['decision']);
     }
@@ -716,18 +765,6 @@ class EvaluationPipeline
     private function isKnownForAccount(DeviceIdentityDTO $device): bool
     {
         return $device->isTrustedSession || $device->isDevicePreviouslyVerifiedForAccount;
-    }
-
-    private function ensureAccountHardBlock(?string $key, int $level, int $duration): void
-    {
-        if ($key === null) {
-            return;
-        }
-
-        $existing = $this->store->checkBlock($key);
-        if ($existing === null || $existing->level < $level) {
-            $this->store->block($key, $level, $duration);
-        }
     }
 
     // --- Budget Key-Rotation Helpers ---
@@ -919,6 +956,12 @@ class EvaluationPipeline
         }
         if ($request->isFailure) {
             if (empty($device->fingerprintHash)) {
+                // Missing-fingerprint scoring is independent from the
+                // Login/OTP new-device classification: one failure updates
+                // both K4 and K2 when their deltas are configured.
+                if ($deltasDto->k4_failure > 0) {
+                    $result['k4'] = $deltasDto->k4_failure;
+                }
                 if ($deltasDto->k2_missing_fp > 0) {
                     $result['k2'] = $deltasDto->k2_missing_fp;
                 }

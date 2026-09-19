@@ -127,6 +127,42 @@ final class RateLimiterBudgetOwnerSafetyTest extends TestCase
         $this->assertSame(1, $this->store->getBudget($this->key('login_protection', 'k4', $newAccount))?->count);
     }
 
+    public function testLoginMissingFingerprintScoresNewDeviceAndMissingFingerprintIndependently(): void
+    {
+        $account = 'missing-fingerprint-login';
+        $pipeline = $this->pipeline();
+        $policy = new LoginProtectionPolicy();
+        $device = $this->device('');
+
+        $first = $pipeline->process($policy, $this->context($account), RateLimitCommand::recordFailure('login_protection'), $device);
+        $this->assertSame(RateLimitResultDTO::DECISION_ALLOW, $first->decision);
+        $this->assertSame(4, $this->store->get($this->correlationK2Key('login_protection'))?->value);
+        $this->assertSame(3, $this->store->get($this->key('login_protection', 'k4', $account))?->value);
+
+        $repeated = $pipeline->process($policy, $this->context($account), RateLimitCommand::recordFailure('login_protection'), $device);
+        $this->assertSame(RateLimitResultDTO::DECISION_HARD_BLOCK, $repeated->decision);
+        $this->assertSame(8, $this->store->get($this->correlationK2Key('login_protection'))?->value);
+        $this->assertSame(12, $this->store->get($this->key('login_protection', 'k4', $account))?->value);
+    }
+
+    public function testOtpMissingFingerprintScoresNewDeviceAndMissingFingerprintIndependently(): void
+    {
+        $account = 'missing-fingerprint-otp';
+        $pipeline = $this->pipeline();
+        $policy = new OtpProtectionPolicy();
+        $device = $this->device('');
+
+        $first = $pipeline->process($policy, $this->context($account), RateLimitCommand::recordFailure('otp_protection'), $device);
+        $this->assertSame(RateLimitResultDTO::DECISION_SOFT_BLOCK, $first->decision);
+        $this->assertSame(6, $this->store->get($this->correlationK2Key('otp_protection'))?->value);
+        $this->assertSame(5, $this->store->get($this->key('otp_protection', 'k4', $account))?->value);
+
+        $repeated = $pipeline->process($policy, $this->context($account), RateLimitCommand::recordFailure('otp_protection'), $device);
+        $this->assertSame(RateLimitResultDTO::DECISION_HARD_BLOCK, $repeated->decision);
+        $this->assertSame(12, $this->store->get($this->correlationK2Key('otp_protection'))?->value);
+        $this->assertSame(18, $this->store->get($this->key('otp_protection', 'k4', $account))?->value);
+    }
+
     public function testKnownDeviceFirstEightFailuresBuildMicroCapAndNinthEntersAccountBudget(): void
     {
         $policy = new LoginProtectionPolicy();
@@ -196,6 +232,28 @@ final class RateLimiterBudgetOwnerSafetyTest extends TestCase
         $this->assertSame(3, $result->blockLevel);
         $this->assertSame(3600, $result->retryAfter);
         $this->assertSame(1, $this->store->checkBlock($k4Key)?->level);
+    }
+
+    public function testLosingNormalSoftDoesNotPersistWhenCorrelationHardWins(): void
+    {
+        $account = 'hard-wins-over-soft';
+        $k4Key = $this->key('login_protection', 'k4', $account);
+        $k2Key = $this->correlationK2Key('login_protection');
+        $this->store->set($k4Key, 5, 86400);
+        $this->correlationStore->addDistinct("churn:{$k2Key}", 'first-fingerprint', 600);
+        $this->correlationStore->addDistinct("churn:{$k2Key}", 'second-fingerprint', 600);
+
+        $result = $this->pipeline()->process(
+            new LoginProtectionPolicy(),
+            $this->context($account),
+            RateLimitCommand::checkOnly('login_protection'),
+            $this->device('winning-hard-fingerprint')
+        );
+
+        $this->assertSame(RateLimitResultDTO::DECISION_HARD_BLOCK, $result->decision);
+        $this->assertSame(2, $result->blockLevel);
+        $this->assertNull($this->store->checkBlock($k4Key));
+        $this->assertSame(2, $this->store->checkBlock($k2Key)?->level);
     }
 
     public function testRecoveryGuardHandlesNineToTenThenBudgetHandlesEleven(): void
@@ -316,5 +374,10 @@ final class RateLimiterBudgetOwnerSafetyTest extends TestCase
     private function cooldownKey(string $policy, string $account, string $secret = 'test_secret'): string
     {
         return hash_hmac('sha256', "{$policy}:rate_limiter:budget_cooldown:v1:prod:{$account}", $secret);
+    }
+
+    private function correlationK2Key(string $policy, string $ip = '198.51.100.40', string $secret = 'test_secret'): string
+    {
+        return hash_hmac('sha256', "{$policy}:rate_limiter:k2:v2:prod:{$ip}:chrome/123", $secret);
     }
 }
