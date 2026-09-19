@@ -398,11 +398,6 @@ Budget enforcement is **forbidden** on:
 * `recordSuccess(otp_protection)` — a successful OTP MUST return `ALLOW` and MUST NOT be
   blocked by an account budget.
 
-> **Known deviation (current runtime characterization):**
-> `OTP BudgetActive + checkOnly()` currently produces `SOFT_BLOCK`. This contradicts the
-> target eligibility (`precheck_enforcement = false` for OTP) and is a **defect to be fixed**
-> in a later implementation. This document states the target contract.
-
 #### 3.3.3 Cooldown
 
 * OTP budget cooldown: **120 minutes** (`BudgetConfigDTO.cooldown_seconds = 7200`).

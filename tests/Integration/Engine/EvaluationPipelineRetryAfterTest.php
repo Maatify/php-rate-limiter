@@ -120,7 +120,7 @@ class EvaluationPipelineRetryAfterTest extends TestCase
         $this->assertEquals(60, $result->retryAfter); // L2 duration = 60
     }
 
-    public function testCurrentCharacterizationOtpBudgetActiveCheckOnlyReturnsSoftBlock(): void
+    public function testOtpBudgetActiveCheckOnlyDoesNotEnforceBudget(): void
     {
         $context = new RateLimitContextDTO('127.0.0.1', 'Mozilla', 'acct_123');
         $device = new DeviceIdentityDTO('hash_123', 'HIGH', false, false, 'Mozilla');
@@ -133,9 +133,9 @@ class EvaluationPipelineRetryAfterTest extends TestCase
         $command = RateLimitCommand::checkOnly('otp_protection');
         $result = $this->pipeline->process($this->policy, $context, $command, $device);
 
-        $this->assertEquals(RateLimitResultDTO::DECISION_SOFT_BLOCK, $result->decision);
-        $this->assertEquals(4, $result->blockLevel);
-        $this->assertEquals(86400, $result->retryAfter);
+        $this->assertEquals(RateLimitResultDTO::DECISION_ALLOW, $result->decision);
+        $this->assertEquals(0, $result->blockLevel);
+        $this->assertEquals(0, $result->retryAfter);
         $this->assertSame(10, $this->store->getBudget($k4Key)?->count);
     }
 
@@ -156,7 +156,7 @@ class EvaluationPipelineRetryAfterTest extends TestCase
         $k5Key = hash_hmac('sha256', 'otp_protection:rate_limiter:k5:v2:prod:acct_123:known-fingerprint', 'test_secret');
 
         $this->assertEquals(5, $this->store->get($k4Key)?->value);
-        $this->assertEquals(4, $this->store->get($k5Key)?->value);
+        $this->assertNull($this->store->get($k5Key));
         $this->assertEquals(1, $this->store->getBudget($k4Key)?->count);
     }
 
