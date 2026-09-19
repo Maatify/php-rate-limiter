@@ -13,13 +13,17 @@ composer dump-autoload --optimize --strict-psr
 composer check-platform-reqs
 composer analyse
 composer test
+composer test:integration
 composer audit --no-interaction --abandoned=fail
 bash scripts/ci/run-consumer-verification.sh
 bash scripts/ci/check-php-syntax.sh
 bash scripts/ci/check-readme-examples.sh
+bash scripts/ci/run-examples.sh
 bash scripts/ci/check-whitespace.sh
 ACTIONLINT_BIN=/path/to/actionlint bash scripts/ci/lint-workflows.sh
 ```
+
+`composer test` runs the full maintained Unit, Integration, and System suites. `composer test:integration` is the focused canonical entrypoint for the maintained Integration suite.
 
 To verify the lowest supported dependency bounds on PHP 8.4, run:
 
@@ -29,6 +33,7 @@ composer dump-autoload --optimize --strict-psr
 composer check-platform-reqs
 composer analyse
 composer test
+composer test:integration
 ```
 
 The CI workflow runs the same checks on PHP 8.4 and 8.5. Workflow linting uses actionlint v1.7.12 with a verified checksum; install that version locally or provide its path through `ACTIONLINT_BIN`.

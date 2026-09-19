@@ -53,7 +53,7 @@ jobs:
         run: bash scripts/ci/check-php-syntax.sh
 
   example-syntax:
-    name: README Example Syntax
+    name: PHP Examples
     timeout-minutes: 10
     runs-on: ubuntu-latest
     steps:
@@ -64,8 +64,14 @@ jobs:
         with:
           php-version: '8.4'
           coverage: none
+      - name: Install Dependencies
+        run: composer update --no-interaction --prefer-dist --no-progress
+      - name: Verify Autoload
+        run: composer dump-autoload --optimize --strict-psr
       - name: Check README Examples
         run: bash scripts/ci/check-readme-examples.sh
+      - name: Smoke Run Standalone Examples
+        run: bash scripts/ci/run-examples.sh
 
   static-analysis:
     name: Static Analysis (PHPStan)
@@ -114,6 +120,28 @@ jobs:
           composer check-platform-reqs
       - name: Run PHPUnit
         run: composer test
+
+  integration-tests:
+    name: Integration Test Suite
+    timeout-minutes: 10
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout Code
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+      - name: Setup PHP
+        uses: shivammathur/setup-php@f3e473d116dcccaddc5834248c87452386958240 # v2
+        with:
+          php-version: '8.4'
+          coverage: none
+      - name: Install Dependencies
+        run: composer update --no-interaction --prefer-dist --no-progress
+      - name: Verify Autoload and Platform
+        run: |
+          set -euo pipefail
+          composer dump-autoload --optimize --strict-psr
+          composer check-platform-reqs
+      - name: Run Integration Tests
+        run: composer test:integration
 
   lowest-dependencies:
     name: Lowest Supported Dependencies
@@ -208,6 +236,7 @@ jobs:
       - example-syntax
       - static-analysis
       - tests
+      - integration-tests
       - lowest-dependencies
       - composer-audit
       - consumer-verification
@@ -223,7 +252,8 @@ jobs:
              [ "${{ needs.php-syntax.result }}" != "success" ] || \
              [ "${{ needs.example-syntax.result }}" != "success" ] || \
              [ "${{ needs.static-analysis.result }}" != "success" ] || \
-             [ "${{ needs.tests.result }}" != "success" ]; then
+             [ "${{ needs.tests.result }}" != "success" ] || \
+             [ "${{ needs.integration-tests.result }}" != "success" ]; then
             echo "One or more upstream jobs failed or were cancelled."
             exit 1
           fi

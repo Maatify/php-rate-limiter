@@ -41,84 +41,40 @@ The package is not yet available through a published Composer registry. Authoriz
 
 ## Usage
 
-The package provides storage and signal contracts; the consumer supplies implementations for those boundaries.
+The package provides storage and signal contracts; the consumer supplies implementations for those boundaries. See the [Usage Guide](docs/guides/USAGE_GUIDE.md) for the integration contract and [basic runnable example](examples/basic-rate-limit.php) for a complete in-memory assembly.
 
 ```php
-use Maatify\RateLimiter\Contract\CircuitBreakerStoreInterface;
-use Maatify\RateLimiter\Contract\CorrelationStoreInterface;
-use Maatify\RateLimiter\Contract\FailureSignalEmitterInterface;
-use Maatify\RateLimiter\Contract\RateLimitStoreInterface;
-use Maatify\RateLimiter\Device\DeviceIdentityResolver;
-use Maatify\RateLimiter\Device\EphemeralBucket;
-use Maatify\RateLimiter\Device\FingerprintHasher;
-use Maatify\RateLimiter\Engine\CircuitBreaker;
-use Maatify\RateLimiter\Engine\EvaluationPipeline;
-use Maatify\RateLimiter\Engine\FailureModeResolver;
-use Maatify\RateLimiter\Engine\RateLimiterEngine;
 use Maatify\RateLimiter\Command\RateLimitCommand;
+use Maatify\RateLimiter\Contract\RateLimiterInterface;
 use Maatify\RateLimiter\DTO\RateLimitContextDTO;
-use Maatify\RateLimiter\Penalty\AntiEquilibriumGate;
-use Maatify\RateLimiter\Penalty\BudgetTracker;
-use Maatify\RateLimiter\Penalty\DecayCalculator;
-use Maatify\RateLimiter\Policy\LoginProtectionPolicy;
-use Maatify\RateLimiter\Policy\OtpProtectionPolicy;
-use Maatify\SharedCommon\Contracts\ClockInterface;
 
-/** @var RateLimitStoreInterface $rateLimitStore */
-/** @var CorrelationStoreInterface $correlationStore */
-/** @var CircuitBreakerStoreInterface $circuitBreakerStore */
-/** @var FailureSignalEmitterInterface $emitter */
-/** @var ClockInterface $clock */
-
-$deviceResolver = new DeviceIdentityResolver(new FingerprintHasher('active-key'));
-$budgetTracker = new BudgetTracker($rateLimitStore, $clock);
-$pipeline = new EvaluationPipeline(
-    $rateLimitStore,
-    $correlationStore,
-    $budgetTracker,
-    new AntiEquilibriumGate($correlationStore),
-    new DecayCalculator($clock),
-    new EphemeralBucket($correlationStore),
-    'active-key',
-    'prod',
-    $clock,
-    'previous-key'
-);
-$circuitBreaker = new CircuitBreaker($circuitBreakerStore, $emitter, $clock);
-$engine = new RateLimiterEngine(
-    $deviceResolver,
-    $pipeline,
-    $circuitBreaker,
-    new FailureModeResolver(),
-    $emitter,
-    $clock,
-    [new LoginProtectionPolicy(), new OtpProtectionPolicy()]
-);
+/** @var RateLimiterInterface $limiter */
 
 $context = new RateLimitContextDTO(
-    ip: '203.0.113.1',
-    ua: 'Mozilla/5.0',
-    accountId: 'user_123'
+    ip: '203.0.113.10',
+    ua: 'Mozilla/5.0 Chrome/123',
+    accountId: 'account-123'
 );
-$result = $engine->limit($context, RateLimitCommand::checkOnly('login_protection'));
+$result = $limiter->limit($context, RateLimitCommand::checkOnly('login_protection'));
 
-if (!$result->isAllowed()) {
+if ($result->isBlocked()) {
     http_response_code(429);
-    header('Retry-After: ' . $result->retryAfter);
-    exit;
+    header('Retry-After: ' . (string) $result->retryAfter);
 }
 ```
 
-## Contracts
+## Public Runtime API
 
-- `RateLimitStoreInterface`: storage for counters, blocks, and budgets.
-- `CorrelationStoreInterface`: storage for distinct counts and watch flags.
-- `CircuitBreakerStoreInterface`: persistence for circuit-breaker state.
-- `FailureSignalEmitterInterface`: delivery boundary for failure signals.
-- `BlockPolicyInterface`: policy thresholds, deltas, failure mode, and budgets.
+`RateLimiterInterface::limit()` is the framework-agnostic consumer entrypoint. Hosts provide a `RateLimitContextDTO` and a `RateLimitCommand`, then handle the returned `RateLimitResultDTO` at their transport boundary.
+
+The public runtime surface also includes the `login_protection`, `otp_protection`, and `api_heavy_protection` policy presets; typed context, command, result, identity, state, and metadata DTOs; and extension contracts for rate-limit storage, correlation storage, circuit-breaker state, failure signals, device identity resolution, and custom policies.
+
+The [Package Reference](RATE_LIMITER_PACKAGE_REFERENCE.md) contains the complete public interface, command, DTO, concrete service, policy, and extension-boundary inventory. Runtime behavior is defined by the current source and the linked decision, policy, device, key, and failure documents.
 
 ## Documentation
 
+- [Usage Guide](docs/guides/USAGE_GUIDE.md)
+- [Runnable Examples](examples/)
 - [Package Reference](RATE_LIMITER_PACKAGE_REFERENCE.md)
 - [Decision Matrix](docs/DECISION_MATRIX.md)
 - [Device Fingerprint](docs/DEVICE_FINGERPRINT.md)
@@ -128,7 +84,7 @@ if (!$result->isAllowed()) {
 
 ## Quality Status
 
-The repository quality gate covers strict Composer validation, dependency compatibility, platform requirements, PHP syntax, PHPStan at level `max`, PHPUnit, Composer security auditing, workflow linting, and whitespace verification. The package remains pre-release and has no published stable support line.
+The repository quality gate covers strict Composer validation, dependency compatibility, platform requirements, PHP syntax, PHPStan at level `max`, the full PHPUnit suite, the focused `composer test:integration` suite, standalone example smoke execution, Composer security auditing, workflow linting, and whitespace verification. The package remains pre-release and has no published stable support line.
 
 ## License
 
