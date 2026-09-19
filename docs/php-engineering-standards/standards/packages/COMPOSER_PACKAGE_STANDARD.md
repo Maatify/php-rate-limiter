@@ -5,7 +5,7 @@
 ## Standard Metadata
 
 - **Standard ID:** `std-composer-package`
-- **Standard Version:** `2.0.0`
+- **Standard Version:** `3.0.0`
 - **Standard Version Format:** `MAJOR.MINOR.PATCH`
 
 This document defines the canonical `composer.json` contract for standalone, reusable PHP libraries in the Maatify ecosystem.
@@ -808,7 +808,23 @@ Canonical script names, when the corresponding capability exists, are:
 - `test` runs the complete test suite.
 - `test:unit` runs the Unit suite.
 - `test:regression` runs the Regression suite.
-- `test:integration` runs the Integration suite.
+- When an Integration suite exists, `test:integration` is the focused canonical developer entry point for that suite.
+- When that Integration suite needs real infrastructure, `test:integration` MUST delegate to the repository-owned Integration orchestration defined by [CI_WORKFLOW_STANDARD.md](CI_WORKFLOW_STANDARD.md) §11; this Standard defines the public script name and meaning only.
+- `test` remains the complete-suite entry. If the complete suite includes Integration coverage, it MUST use the same canonical Integration orchestration used by `test:integration`; it MUST NOT define a second lifecycle or parallel orchestration. Lifecycle and infrastructure details remain owned by [CI_WORKFLOW_STANDARD.md](CI_WORKFLOW_STANDARD.md) §11. Unit and Regression portions that do not need real infrastructure remain runnable without Docker.
+- Packages whose Integration suite does not need real infrastructure MAY invoke their maintained raw runner directly. The existence of `test:integration` does not, by itself, impose infrastructure on a suite that does not need it.
+
+For an infrastructure-requiring Integration suite, the public script meanings are:
+
+```text
+composer test:integration
+→ focused Integration suite entry
+
+composer test
+→ complete test suite
+→ the same canonical Integration orchestration when Integration is included
+```
+
+Repository-specific orchestration details are governed by [CI_WORKFLOW_STANDARD.md](CI_WORKFLOW_STANDARD.md) §11. Credentials MUST NOT be embedded in Composer scripts.
 
 Example for a repository whose actual test runner is PHPUnit; other maintained runner commands MUST be represented by the repository's actual scripts and configuration:
 
@@ -822,6 +838,8 @@ Example for a repository whose actual test runner is PHPUnit; other maintained r
   "test:integration": "phpunit --testsuite integration"
 }
 ```
+
+The direct PHPUnit values above are illustrative only for a repository whose Integration suite does not require real infrastructure. When it does require a Database or service, the script values MUST instead point to the repository's canonical orchestration while retaining the canonical script names; this Standard does not prescribe an internal command or path.
 
 Rules:
 
@@ -1085,7 +1103,7 @@ This template contains no empty fields:
 
 ### 28.2 Test-Enabled Extension
 
-The following is an optional example for a repository that selects PHPUnit as its actual test runner and installs it through Composer. PHPUnit is not a universal requirement; when a repository uses different tooling, its direct dependencies and script commands MUST reflect that actual tooling.
+The following is an optional example for a repository that selects PHPUnit as its actual test runner and installs it through Composer. PHPUnit is not a universal requirement; when a repository uses different tooling, its direct dependencies and script commands MUST reflect that actual tooling. The direct `test:integration` value is suitable only when the Integration suite does not require real infrastructure; otherwise it MUST be replaced by the repository's canonical Integration orchestration as required by §21.
 
 ```json
 {
@@ -1228,6 +1246,7 @@ Automated verification of latest dependencies, lowest dependencies, platform req
 - [ ] Composer scripts map to real declared commands.
 - [ ] Suite scripts exist only for real suites.
 - [ ] `test` runs the full test suite.
+- [ ] `test:integration` is the focused canonical Integration entry when an Integration suite exists.
 - [ ] Scripts propagate failures.
 - [ ] Scripts contain no credentials.
 - [ ] No unsafe lifecycle hooks exist.

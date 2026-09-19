@@ -5,7 +5,7 @@
 ## Standard Metadata
 
 - **Standard ID:** `std-package-building`
-- **Standard Version:** `1.4.0`
+- **Standard Version:** `2.0.0`
 - **Standard Version Format:** `MAJOR.MINOR.PATCH`
 
 This document is the law for building any new standalone Composer package in the Maatify ecosystem.
@@ -50,7 +50,8 @@ PDO driver availability alone does not establish database support.
 - [`TESTING_STANDARD.md`](../testing/TESTING_STANDARD.md) owns the general testing strategy, observable-behavior evidence, regression-protection model, and Consumer Verification Harness contract; this Standard defines Package-readiness applicability and MUST NOT duplicate the Harness's detailed requirements.
 - [`COMPOSER_PACKAGE_STANDARD.md`](COMPOSER_PACKAGE_STANDARD.md) owns `composer.json`, dependency declarations, and version constraints.
 - [`CI_WORKFLOW_STANDARD.md`](CI_WORKFLOW_STANDARD.md) owns workflow and check execution.
-- [`LIBRARY_PRESENTATION_STANDARD.md`](LIBRARY_PRESENTATION_STANDARD.md) owns README structure, badges, and release-facing files.
+- [`LIBRARY_PRESENTATION_STANDARD.md`](LIBRARY_PRESENTATION_STANDARD.md) owns README structure, badges, release-facing files, and the consumer-facing Usage Guide/examples artifact requirements.
+- [`DOCUMENTATION_LIFECYCLE_STANDARD_AR.md`](../governance/DOCUMENTATION_LIFECYCLE_STANDARD_AR.md) owns document roles, current-versus-historical semantics, freshness, retention, and documentation-reference hygiene.
 
 These standards MUST use cross-references and MUST NOT duplicate each other's detailed rules.
 
@@ -69,7 +70,7 @@ To maintain standalone Composer package boundaries and a framework-agnostic arch
 - **Clock/Date-Time:** A package that requires a clock abstraction MUST depend on `maatify/shared-common` and consume `ClockInterface`, available from `v1.0.0`. `SystemClock` is a production implementation available from `v1.0.0`, but it is not mandatory for every consumer. No shared Frozen/Test Clock is claimed by this Standard.
   Repository: https://github.com/Maatify/SharedCommon
 
-- **Persistence Utilities:** Packages that require reusable PDO row-position/display-order management (available from `v1.0.0`) or pagination capabilities (available from `v1.1.0`) must depend on `maatify/persistence`.
+- **Persistence Utilities:** Packages that require reusable PDO row-position/display-order management or pagination capabilities must depend on `maatify/persistence`.
   Repository: https://github.com/Maatify/persistence
 
 **Rule:** Packages MUST NOT define package-local duplicates of a capability that is available through a stable public API in a Maatify shared package. This prohibition includes exception hierarchies, clock abstractions, PDO row-position/display-order mechanics, and PDO pagination mechanics.
@@ -170,17 +171,175 @@ New packages and unpublished APIs MUST NOT introduce alternative names that omit
 
 ## 5. Directory Structure Inside `src/`
 
-The default organizing principle is:
+The canonical organizing law is:
 
 ```text
-Domain → Capability → Layer
+Domain → Capability → Responsibility
 ```
 
-Organize first around meaningful domain boundaries, then around capabilities within each domain, and introduce layers inside a capability when its size or responsibilities need them. This is a design direction, not a required directory template: small packages MUST NOT add empty or ceremonial folders just to match a diagram.
+`Responsibility` is a semantic placement owner, not a generic architectural layer. The Package Reference MUST declare exactly one source topology, and that declaration governs placement:
 
-`Common/` is appropriate only for genuinely shared, framework-neutral primitives. The Host owns application bootstrap, container bindings, and framework-specific providers; conditional construction entry points are governed by Section 18.
+```text
+Source Topology: Single Capability
+```
 
-Packages MUST NOT impose `Admin/Customer` directories where those are not real domain boundaries. Package runtime exclusions are defined in Section 15.
+```text
+Source Topology: Multi Capability
+
+Capabilities:
+- ...
+```
+
+```text
+Source Topology: Multi Domain
+
+Domains:
+- ...
+```
+
+The only canonical source topologies are:
+
+### A. Single Capability
+
+```text
+src/
+└── {Responsibility}/
+```
+
+### B. Multiple Capabilities
+
+```text
+src/
+└── {Capability}/
+    └── {Responsibility}/
+```
+
+### C. Multiple Real Domains
+
+```text
+src/
+└── {Domain}/
+    └── {Capability}/
+        └── {Responsibility}/
+```
+
+Do not introduce a redundant Domain or Capability directory when the Package itself already represents that boundary. A Responsibility or Capability directory MUST appear only when the artifact owns a real responsibility or capability; empty and ceremonial folders are forbidden.
+
+### Canonical Responsibility Vocabulary
+
+The following names are canonical placement directories when the corresponding responsibility exists. They are not fifteen equal layers and MUST NOT be materialized as a flat tree by default:
+
+```text
+Command/
+Criteria/
+DTO/
+Service/
+Repository/
+Contract/
+Adapter/
+Exception/
+Enum/
+ValueObject/
+Config/
+Factory/
+Builder/
+Mapper/
+Facade/
+```
+
+Their meanings are:
+
+- `Command/` — mutation or action intent.
+- `Criteria/` — query, search, or filter input.
+- `DTO/` — result or data snapshots.
+- `Service/` — business or application orchestration.
+- `Repository/` — persistence/query boundaries and their implementations.
+- `Contract/` — general runtime or boundary contracts only when no more specific responsibility owns the contract.
+- `Adapter/` — external, provider, or backend adaptation other than repository persistence.
+- `Exception/` — Package- or capability-owned exceptions.
+- `Enum/` — Package- or capability-owned enums.
+- `ValueObject/` — immutable domain values that are not Commands, Criteria, or DTOs.
+- `Config/` — explicit configuration contracts.
+- `Factory/` — construction.
+- `Builder/` — progressive or domain construction.
+- `Mapper/` — explicit transformation or mapping.
+- `Facade/` — a thin public discovery or access surface when needed.
+
+### Interface Placement
+
+An interface MUST be placed with the responsibility it describes when that responsibility has a more specific owner. Do not place every interface in `Contract/`.
+
+```text
+Repository/
+├── RedirectRepositoryInterface.php
+└── Pdo/
+    └── PdoRedirectRepository.php
+```
+
+```text
+Builder/
+├── JsonLdBuilderInterface.php
+├── ProductJsonLdBuilder.php
+└── OfferJsonLdBuilder.php
+```
+
+Use `Contract/` only for a general boundary that is not more clearly owned by another responsibility, such as a broad Host, provider, or transport abstraction.
+
+### Technology Placement
+
+Technology is not an architecture root for new code. The canonical order is:
+
+```text
+Capability → Responsibility → Technology
+```
+
+For example:
+
+```text
+Repository/Pdo/
+Adapter/Redis/
+Adapter/Mongo/
+Adapter/Smtp/
+```
+
+New code MUST NOT introduce technology-rooted alternatives such as `src/Pdo/`, `src/Redis/`, `src/MySQL/`, or `src/Mongo/` merely because an implementation uses that technology. If a technology is intrinsic to the identity of an entire Package, it MUST NOT be repeated as a directory without a placement responsibility.
+
+### Common and Package-Wide Responsibilities
+
+`Common/` is permitted only for genuinely shared, framework-neutral primitives or contracts used by more than one Capability or Domain and not owned more clearly by one of them. It is not a dumping ground. `Shared/`, `Helpers/`, `Utils/`, and `Internal/` are not canonical architecture directories for new responsibilities.
+
+A responsibility that genuinely spans multiple Capabilities MAY be placed directly under `src/`, for example:
+
+```text
+src/
+└── Exception/
+    └── {PackageName}ExceptionInterface.php
+```
+
+A capability-specific exception belongs under `{Capability}/Exception/`. The same rule applies to package-wide `Factory/`, `Facade/`, and other responsibilities: root placement is allowed only when the ownership is genuinely package-wide.
+
+### Management and Consumer Use Cases
+
+When this Standard requires distinct Management and Consumer use cases, the split MUST remain inside the Capability:
+
+```text
+{Capability}/
+├── Management/
+│   ├── Command/
+│   ├── Criteria/
+│   ├── DTO/
+│   └── Service/
+└── Consumer/
+    ├── Criteria/
+    ├── DTO/
+    └── Service/
+```
+
+Do not create root `Admin/` or `Customer/` taxonomies merely for actor labels. Infrastructure Packages MUST use their real domain and capability boundaries.
+
+### Compatibility and Legacy Placement
+
+The canonical structure is mandatory for new Packages, unpublished APIs, new responsibilities, and new code when the move does not cross a documented compatibility boundary. Existing published namespaces MUST NOT be moved solely for visual conformity when the move would break their public or autoload contract. A narrow compatibility exception does not authorize extending a legacy taxonomy to new responsibilities.
 
 ---
 
@@ -191,8 +350,10 @@ These rules, including `schema/`, database structure, database tests, and migrat
 - Table prefix: `maa_{package_short_name}_` (e.g. `maa_library_example_`)
 - Every table needs: `PRIMARY KEY (id)`, proper indexes, meaningful COMMENTs on columns.
 - All policies (soft delete, display order, FK behavior, uniqueness) documented in the SQL header.
-- Domain-local schema files are allowed (e.g. `src/{Domain}/Database/`).
-- Package-level `schema/README.md` may index domain-local SQL files.
+- The canonical location for SQL, schema, migration, and install assets is the Package-root `/schema/` directory, outside `src/`.
+- `schema/README.md` MAY index the SQL and install assets stored under `/schema/`.
+- PHP persistence and query runtime code remains under the applicable source topology, normally under `Repository/` or another responsibility that owns it.
+- `src/{Domain}/Database/` is not an alternate canonical location for SQL or schema assets.
 - **No generic shared `logs` or `event_logs` tables**; use strict domain-isolated tables.
 - No FK constraints or JOINs to host app tables — use `COMMENT 'Host-provided ID. No FK.'`.
 
@@ -689,19 +850,29 @@ However, infrastructure packages such as `{PACKAGE_SLUG}` should use their actua
 
 ---
 
-## 15. Read / Admin Query API Rules
+## 15. Operational Read / Reporting and Admin Query API Rules
 
-Packages that have persisted data intended to be viewed, searched, audited, monitored, or reported by host applications should expose framework-agnostic PHP read/query contracts where applicable.
+Operational Read / Reporting applicability is determined by package ownership, not by the mere use of SQL or a database. A Package that owns persisted domain or operational state — such as orders, balances, subscriptions, jobs, statuses, events, assignments, or equivalent package-owned records — is automatically **In Scope** for Operational Read / Reporting. Once a Package is In Scope, it MUST NOT classify this capability as Not Applicable. A Package that uses persistence only as an infrastructure mechanism and owns no persisted domain or operational semantics of its own is **Out of Scope** and is not required to invent metrics or a reporting API. The Package Reference or Architecture MUST document the classification and its reason.
+
+Every In-Scope Package MUST expose stable, meaningful, framework-agnostic PHP Operational Read / Reporting contracts that let the Host understand, manage, or monitor the state owned by the Package without direct coupling to the Package's tables. The capability is domain-specific and may provide listing, search, status summaries, counts, aggregates, grouped results, time-window summaries, audit reads, or monitoring reads when those semantics are meaningful and stable for that domain. A generic `dashboard()` method, `ReportService`, `Dashboard/` namespace, or generic metrics DTO MUST NOT be added merely for compliance.
+
+Operational Read / Reporting queries MUST be read-only: they MUST NOT change Package state or become an alternate mutation path. Query filters and result snapshots MUST use the canonical `Criteria/`, `DTO/`, `Service/`, `Repository/`, and `Contract/` responsibilities from this Standard only when those responsibilities genuinely apply. This requirement does not create a separate Reporting source taxonomy, shared Reporting Standard, reusable cross-package reporting abstraction, or universal metric/result shape.
 
 When management and consumption are distinct domain use cases, the Package MUST expose a Management API and a Consumer API with separate contracts. Management APIs may support administrative search, filters, statuses, deleted-state visibility, and pagination. Consumer APIs expose only records valid under the Package's domain visibility invariants; the Host MUST NOT be left to reproduce those invariants through generic filters. If the two uses are not meaningfully distinct, a Package MUST NOT create duplicate APIs merely to satisfy this pattern.
 
+Operational or management reporting that is not consumer-facing belongs on the management/operational read side. Existing Management or Consumer read/query contracts MUST be reused when they can clearly carry the capability; a third duplicate API layer MUST NOT be created merely because the capability is called reporting.
+
 **Important:** This refers strictly to **PHP-level APIs** (e.g., PHP interfaces and DTOs), not HTTP APIs.
 
-These contracts may cover (where applicable and appropriate for the package's domain):
+These contracts may cover, when meaningful and appropriate for the package's domain:
 - Admin listing
 - Search
-- Dashboard summaries
-- Reporting summaries
+- Status summaries, counts, aggregates, or grouped results
+- Time-window, audit, or monitoring reads
+
+The public read/reporting surface MUST be sufficient to prevent the Host from querying Package tables directly to reconstruct Package-owned semantics, reimplement Package invariants, or interpret Package-owned status/lifecycle from internal storage. This is not a blanket prohibition on persistence ownership outside this context.
+
+Operational Read / Reporting inside a reusable Package is limited to data and meanings owned by that Package. It MUST NOT join Host tables, use Host foreign-key coupling, resolve Host actors or names, interpret Host-owned lifecycle/status, read another Package's internal storage instead of its public API, or duplicate reporting semantics owned by another Package. Cross-Package and Host-specific aggregation belongs to Project-Aware or Host scope.
 
 **Explicitly forbidden inside the package:**
 - HTTP controllers
@@ -713,7 +884,11 @@ These contracts may cover (where applicable and appropriate for the package's do
 - Host-specific actor/name resolution
 - JOINs/FKs on host tables
 
-Remember to uphold the core principles: maintain a standalone, framework-agnostic, and host-agnostic architecture, prioritize domain boundaries over mandatory Admin/Customer folder structures, and ensure all public query capabilities have matching PHP contracts/interfaces.
+Transport, presentation, permissions, and export concerns remain at the Host/Slim/Project-Aware layer. `Dashboard` describes a consumer use case; it is not a canonical Package architecture name.
+
+For an In-Scope Package, the Package Reference or Architecture MUST document, as applicable: persisted domain/operational ownership and the applicability reason; persisted concepts with operational/reporting value; stable public read/reporting contracts; meaningful aggregate, filter, or time-window semantics; ownership boundaries and non-goals; and intentionally unsupported reporting dimensions that matter to consumers. This requirement does not redefine the Documentation Lifecycle or create a second documentation owner.
+
+When a reporting result depends on persisted state, the aggregate, count, filter, and time-window semantics that actually exist MUST have Integration evidence on the actual supported persistence engine. Unit mocks alone are insufficient to prove persisted result semantics. System/E2E applicability remains owned by `TESTING_STANDARD.md`, and provisioning and service lifecycle remain governed by `CI_WORKFLOW_STANDARD.md` §11.
 
 ---
 
@@ -732,19 +907,6 @@ The package-level integration contract is:
 - a consumer MUST NOT reproduce or fork the Ordering engine locally
 
 Exact class names, method signatures, transaction behavior, and Runtime semantics are owned by the stable `maatify/persistence` public API and [PERSISTENCE_PACKAGE_REFERENCE.md](https://github.com/Maatify/persistence/blob/main/PERSISTENCE_PACKAGE_REFERENCE.md).
-
-### Deferred Hard-Delete Ordering Compaction
-
-The stable `maatify/persistence` Ordering API currently does not expose a hard-delete compaction operation.
-
-The package-specific decision to preserve scoped ordering compaction as a future candidate is recorded in [ADR 0002 — Ordering Hard-Delete Compaction](https://github.com/Maatify/persistence/blob/main/docs/adr/0002-ordering-hard-delete-compaction.md). Its status is `Accepted — Deferred`. Compaction is not implemented, has no stable API or release target, and is not part of Pagination `v1.1.0`.
-
-Until a stable Runtime API is separately approved, implemented, released, and recorded in [PERSISTENCE_PACKAGE_REFERENCE.md](https://github.com/Maatify/persistence/blob/main/PERSISTENCE_PACKAGE_REFERENCE.md):
-
-- consuming projects retain ownership of entity deletion and project-specific hard-delete orchestration
-- consumers MUST NOT claim or depend on an unreleased Persistence compaction API
-- this Standard does not prescribe a method signature, locking strategy, transaction-participation contract, or release target for the deferred capability
-- the deferred decision MUST NOT be treated as an expansion of the `v1.1.0` Pagination scope
 
 ---
 
@@ -925,12 +1087,16 @@ Compliance requires the repository's CI to pass the current Compliance Checklist
 
 ## 23. The Package Is NOT Done Until
 
+- [ ] Package-owned persisted domain/operational state and the resulting Operational Read / Reporting classification are documented; Out-of-Scope is used only when no such state is owned.
+- [ ] Every In-Scope Package exposes a stable, meaningful, framework-agnostic PHP Operational Read / Reporting surface, and the Host does not need direct Package-table coupling to reconstruct Package-owned semantics.
+- [ ] Persisted aggregate, count, filter, or time-window result semantics that exist have Integration evidence on the actual supported persistence engine, under the ownership of the Testing and CI standards.
 - [ ] CI workflows exist, pass, and satisfy the current Compliance Checklist in `CI_WORKFLOW_STANDARD.md`
 - [ ] Package-owned runtime and test architecture is represented in CI where applicable
 - [ ] `README.md`, `CHANGELOG.md`, and other release-facing files comply with `LIBRARY_PRESENTATION_STANDARD.md`.
+- [ ] Where the artifact is a reusable Package or applicable Base Artifact, `docs/guides/USAGE_GUIDE.md`, root `examples/`, and the required consumer-facing links are present and accurate under `LIBRARY_PRESENTATION_STANDARD.md`.
 - [ ] `{PACKAGE}_PACKAGE_REFERENCE.md` complete — full API, design rules, extension guide
 - [ ] `composer.json` complies with [COMPOSER_PACKAGE_STANDARD.md](COMPOSER_PACKAGE_STANDARD.md).
-- [ ] The consumer workflow and examples meet the requirements in Section 25.
+- [ ] The technical consumer workflow and examples meet the requirements in Section 25; their required presentation, navigation, and discoverability follow `LIBRARY_PRESENTATION_STANDARD.md`.
 - [ ] The standalone Package has the reproducible Consumer Verification Harness required by [TESTING_STANDARD.md](../testing/TESTING_STANDARD.md).
 - [ ] Every public service/repository capability intended for infrastructure substitution has a matching contract (interface)
 - [ ] Domain-specific failure semantics are documented
@@ -960,13 +1126,13 @@ For each entity or assignment, the Package Reference MUST distinguish stable ide
 
 ## 25. Runtime Workflow, Transactions, Concurrency, and Clock
 
-Each reusable Package MUST document a realistic consumer workflow in its Package Reference, Architecture, or practical Usage Guide. The documented workflow MUST show the consumer path:
+Each reusable Package MUST define a realistic technical consumer workflow in its Package Reference or another canonical technical contract document. A Usage Guide MAY present that contract for consumers, but it MUST NOT create a competing technical contract. The documented workflow MUST show the consumer path:
 
 ```text
 Host Input → Public API → Domain Service → Integration Boundary → Observable Result
 ```
 
-Examples MUST demonstrate supported construction/wiring, a basic workflow, public API use, and the applicable integration boundaries. They illustrate the contract; the Package Reference and this Standard remain the sources of normative rules.
+Examples MUST demonstrate supported construction/wiring, a basic workflow, public API use, and the applicable integration boundaries. They illustrate the technical contract; the Package Reference and this Standard remain the sources of normative rules. `LIBRARY_PRESENTATION_STANDARD.md` owns whether the Usage Guide and examples artifacts exist, their navigation/discoverability, and their consumer-facing presentation; it does not replace this technical workflow contract.
 
 When a domain invariant spans multiple operations, the Package MUST identify the transaction owner and the required transaction, locking, and concurrency boundaries. It MUST state whether an outer transaction is supported when that affects callers. Race-prone invariants—such as ordering, hierarchy, unique defaults, or lifecycle transitions—require concurrency verification when concurrent access is realistic for the domain. The Testing Standard owns the general testing evidence model.
 

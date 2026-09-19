@@ -3,7 +3,7 @@
 ## Profile Metadata
 
 - **Profile ID:** `composer-package`
-- **Profile Version:** `1.0.0`
+- **Profile Version:** `2.0.0`
 - **Purpose / Applicability:** مكتبات PHP/Composer المستقلة القابلة لإعادة الاستخدام والتوزيع ضمن منظومة Maatify.
 - **Extends:** `None`
 
@@ -16,6 +16,7 @@
 - [CI Workflow Standard](../packages/CI_WORKFLOW_STANDARD.md)
 - [Library Presentation Standard](../packages/LIBRARY_PRESENTATION_STANDARD.md)
 - [Testing Standard](../testing/TESTING_STANDARD.md)
+- [Documentation Lifecycle Standard](../governance/DOCUMENTATION_LIFECYCLE_STANDARD_AR.md)
 
 لا ينقل هذا Profile محتوى أي Standard إلى ملف Profile.
 
@@ -25,7 +26,7 @@
 
 ## Resolved Dependency Behavior
 
-لا يرث هذا Profile Profile آخر. يدخل Required Standards الخمسة في Resolved Set عند تفعيله، ثم تضاف Additional Standards المصرح بها في Manifest فقط.
+لا يرث هذا Profile Profile آخر. تنتج Required Standards الستة `Candidate Standard References` عند تفعيله، ثم تُقيّم كل Candidate وفق canonical applicability لتكوين `Final Resolved Applicable Standards Set`. تضاف Additional Standards المصرح بها في Manifest إلى المرشحين وتخضع للمرحلتين نفسيهما.
 
 عند تفعيل هذا Profile، يجب تثبيت ملفه محليًا ضمن `Pinned Adoption Control Set`؛ وتثبت كذلك ملفات Profiles الموروثة اللازمة للحل، بينما لا تُنسخ Profiles غير المفعلة.
 
