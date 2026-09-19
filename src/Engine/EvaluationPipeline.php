@@ -440,8 +440,6 @@ class EvaluationPipeline
         if (($keys['k4'] ?? null) !== null && $budgetConfig !== null && $request->isFailure) {
             $config = $budgetConfig;
             $shouldCount = false;
-            $isLogin = $policy->getName() === 'login_protection';
-            $isOtp = $policy->getName() === 'otp_protection';
 
             // New/unverified-device and repeated-missing-fingerprint failures
             // contribute directly to the account budget.
@@ -449,33 +447,31 @@ class EvaluationPipeline
                 $shouldCount = true;
             }
 
-            // OTP has no Login-style K5 micro-cap: every failure is eligible.
-            if ($isOtp) {
-                $shouldCount = true;
-            }
-
-            // Known Login-device failures build the fixed micro-cap first. The
-            // ninth and later failures are the budget contribution; the first
-            // eight only build the micro-cap.
-            if ($isLogin && $deltas['k5'] > 0 && $context->accountId && $device->fingerprintHash
+            // A policy-owned micro-cap gates known-device failures when
+            // configured. A null cap means known-device failures are directly
+            // budget-eligible; the engine does not identify policy presets.
+            if ($deltas['k5'] > 0 && $context->accountId && $device->fingerprintHash
                 && $this->isKnownForAccount($device)) {
-                $microRawV2 = "{$policy->getName()}:rate_limiter:microcap:k5:v1:{$context->accountId}:{$device->fingerprintHash}";
-                $microKeyV2 = $this->hashKey($microRawV2, $this->secret);
-                $microKeyV1 = null;
-
-                if ($this->hasPreviousGeneration($device)) {
-                    $microRawV1 = "{$policy->getName()}:rate_limiter:microcap:k5:v1:{$context->accountId}:{$this->previousFingerprintHash($device)}";
-                    $microKeyV1 = $this->hashKey($microRawV1, $this->previousSecret ?? $this->secret);
-                }
-
-                $microState = $this->incrementBudgetAcrossRotation($microKeyV2, $microKeyV1);
-                if ($config->known_device_micro_cap !== null
-                    && $microState->count > $config->known_device_micro_cap) {
+                if ($config->known_device_micro_cap === null) {
                     $shouldCount = true;
+                } else {
+                    $microRawV2 = "{$policy->getName()}:rate_limiter:microcap:k5:v1:{$context->accountId}:{$device->fingerprintHash}";
+                    $microKeyV2 = $this->hashKey($microRawV2, $this->secret);
+                    $microKeyV1 = null;
+
+                    if ($this->hasPreviousGeneration($device)) {
+                        $microRawV1 = "{$policy->getName()}:rate_limiter:microcap:k5:v1:{$context->accountId}:{$this->previousFingerprintHash($device)}";
+                        $microKeyV1 = $this->hashKey($microRawV1, $this->previousSecret ?? $this->secret);
+                    }
+
+                    $microState = $this->incrementBudgetAcrossRotation($microKeyV2, $microKeyV1);
+                    if ($microState->count > $config->known_device_micro_cap) {
+                        $shouldCount = true;
+                    }
                 }
             }
 
-            $budgetRequestEligible = ($isLogin || $isOtp) && $shouldCount;
+            $budgetRequestEligible = $shouldCount;
 
             if ($shouldCount) {
                 $previousBudgetState = $budgetState;
@@ -965,22 +961,16 @@ class EvaluationPipeline
                 if ($deltasDto->k2_missing_fp > 0) {
                     $result['k2'] = $deltasDto->k2_missing_fp;
                 }
-            } elseif (in_array($policy->getName(), ['login_protection', 'otp_protection'], true)) {
-                // Login and OTP classify the failure: a known device updates
-                // K5, while a new/unverified device updates K4. They are not
-                // scored in both account scopes for one failure.
+            } elseif ($deltasDto->k4_failure > 0 || $deltasDto->k5_failure > 0) {
+                // Authentication-style policies express known/new-device
+                // classification through their K4/K5 failure deltas. API
+                // Heavy keeps its existing access/spray behavior because it
+                // has no authentication failure deltas.
                 if ($this->isKnownForAccount($device)) {
                     if ($deltasDto->k5_failure > 0) {
                         $result['k5'] = $deltasDto->k5_failure;
                     }
                 } elseif ($deltasDto->k4_failure > 0) {
-                    $result['k4'] = $deltasDto->k4_failure;
-                }
-            } else {
-                if ($deltasDto->k5_failure > 0) {
-                    $result['k5'] = $deltasDto->k5_failure;
-                }
-                if ($deltasDto->k4_failure > 0) {
                     $result['k4'] = $deltasDto->k4_failure;
                 }
             }

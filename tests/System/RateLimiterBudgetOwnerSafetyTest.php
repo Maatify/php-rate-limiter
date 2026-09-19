@@ -5,10 +5,15 @@ declare(strict_types=1);
 namespace Maatify\RateLimiter\Tests\System;
 
 use Maatify\RateLimiter\Command\RateLimitCommand;
+use Maatify\RateLimiter\Contract\BlockPolicyInterface;
 use Maatify\RateLimiter\Device\EphemeralBucket;
+use Maatify\RateLimiter\DTO\BudgetConfigDTO;
 use Maatify\RateLimiter\DTO\DeviceIdentityDTO;
+use Maatify\RateLimiter\DTO\PolicyThresholdsDTO;
 use Maatify\RateLimiter\DTO\RateLimitContextDTO;
 use Maatify\RateLimiter\DTO\RateLimitResultDTO;
+use Maatify\RateLimiter\DTO\ScoreDeltasDTO;
+use Maatify\RateLimiter\DTO\ScoreThresholdsDTO;
 use Maatify\RateLimiter\Engine\EvaluationPipeline;
 use Maatify\RateLimiter\Penalty\AntiEquilibriumGate;
 use Maatify\RateLimiter\Penalty\BudgetTracker;
@@ -161,6 +166,54 @@ final class RateLimiterBudgetOwnerSafetyTest extends TestCase
         $this->assertSame(RateLimitResultDTO::DECISION_HARD_BLOCK, $repeated->decision);
         $this->assertSame(12, $this->store->get($this->correlationK2Key('otp_protection'))?->value);
         $this->assertSame(18, $this->store->get($this->key('otp_protection', 'k4', $account))?->value);
+    }
+
+    public function testBudgetOwnerSafetyUsesPolicyContractsForAnUnknownPolicyName(): void
+    {
+        $policy = $this->customBudgetPolicy(2);
+        $account = 'custom-budget-micro-cap';
+        $device = $this->device('custom-known-fp', 'MEDIUM', false, true);
+        $pipeline = $this->pipeline();
+
+        for ($attempt = 1; $attempt <= 2; $attempt++) {
+            $result = $pipeline->process(
+                $policy,
+                $this->context($account),
+                RateLimitCommand::recordFailure($policy->getName()),
+                $device
+            );
+
+            $this->assertSame(RateLimitResultDTO::DECISION_ALLOW, $result->decision);
+            $this->assertSame($attempt * 2, $this->store->get($this->key($policy->getName(), 'k5', "{$account}:custom-known-fp"))?->value);
+            $this->assertNull($this->store->getBudget($this->key($policy->getName(), 'k4', $account)));
+        }
+
+        $third = $pipeline->process(
+            $policy,
+            $this->context($account),
+            RateLimitCommand::recordFailure($policy->getName()),
+            $device
+        );
+
+        $this->assertSame(RateLimitResultDTO::DECISION_ALLOW, $third->decision);
+        $this->assertSame(6, $this->store->get($this->key($policy->getName(), 'k5', "{$account}:custom-known-fp"))?->value);
+        $this->assertSame(1, $this->store->getBudget($this->key($policy->getName(), 'k4', $account))?->count);
+
+        $directBudgetPolicy = $this->customBudgetPolicy(null);
+        $directAccount = 'custom-budget-no-micro-cap';
+        $directK4 = $this->key($directBudgetPolicy->getName(), 'k4', $directAccount);
+        $this->store->incrementBudget($directK4, 86400, 2);
+
+        $direct = $pipeline->process(
+            $directBudgetPolicy,
+            $this->context($directAccount),
+            RateLimitCommand::recordFailure($directBudgetPolicy->getName()),
+            $this->device('custom-direct-budget-fp', 'MEDIUM', false, true)
+        );
+
+        $this->assertSame(RateLimitResultDTO::DECISION_SOFT_BLOCK, $direct->decision);
+        $this->assertSame(4, $direct->blockLevel);
+        $this->assertSame(3, $this->store->getBudget($directK4)?->count);
     }
 
     public function testKnownDeviceFirstEightFailuresBuildMicroCapAndNinthEntersAccountBudget(): void
@@ -349,6 +402,51 @@ final class RateLimiterBudgetOwnerSafetyTest extends TestCase
             $this->clock,
             $previousSecret
         );
+    }
+
+    private function customBudgetPolicy(?int $knownDeviceMicroCap): BlockPolicyInterface
+    {
+        return new class($knownDeviceMicroCap) implements BlockPolicyInterface {
+            public function __construct(private readonly ?int $knownDeviceMicroCap) {}
+
+            public function getName(): string
+            {
+                return 'custom_authentication_flow';
+            }
+
+            public function getScoreThresholds(): PolicyThresholdsDTO
+            {
+                return new PolicyThresholdsDTO(k4: new ScoreThresholdsDTO(100, 200, 300));
+            }
+
+            public function getScoreDeltas(): ScoreDeltasDTO
+            {
+                return new ScoreDeltasDTO(
+                    k2_missing_fp: 4,
+                    k4_failure: 3,
+                    k4_repeated_missing_fp: 6,
+                    k5_failure: 2
+                );
+            }
+
+            public function getFailureMode(): string
+            {
+                return 'FAIL_CLOSED';
+            }
+
+            public function getBudgetConfig(): BudgetConfigDTO
+            {
+                return new BudgetConfigDTO(
+                    threshold: 3,
+                    block_level: 4,
+                    cooldown_seconds: 3600,
+                    trusted_session_floor_level: 2,
+                    precheck_enforcement: false,
+                    known_device_micro_cap: $this->knownDeviceMicroCap,
+                    recovery_collision_guard_enabled: false
+                );
+            }
+        };
     }
 
     private function context(string $account, string $ip = '198.51.100.40'): RateLimitContextDTO
