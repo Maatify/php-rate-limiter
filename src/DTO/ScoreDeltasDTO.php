@@ -12,7 +12,7 @@ final readonly class ScoreDeltasDTO implements \JsonSerializable
         public int $k2_missing_fp = 0,
         public int $k4_failure = 0,
         public int $k4_repeated_missing_fp = 0,
-        public int $k5_failure = 0
+        public int $k5_failure = 0,
     ) {}
 
     public function jsonSerialize(): mixed

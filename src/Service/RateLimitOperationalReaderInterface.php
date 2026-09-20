@@ -12,6 +12,6 @@ interface RateLimitOperationalReaderInterface
 {
     public function read(
         RateLimitContextDTO $context,
-        BlockPolicyInterface $policy
+        BlockPolicyInterface $policy,
     ): RateLimitOperationalSnapshotDTO;
 }

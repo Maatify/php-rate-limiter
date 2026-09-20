@@ -15,9 +15,7 @@ class StatefulInMemoryCorrelationStore implements CorrelationStoreInterface
     /** @var array<string, array{count: int, expiresAt: int}> */
     private array $flags = [];
 
-    public function __construct(private readonly ClockInterface $clock)
-    {
-    }
+    public function __construct(private readonly ClockInterface $clock) {}
 
     public function addDistinct(string $key, string $item, int $ttlSeconds): int
     {
@@ -26,7 +24,7 @@ class StatefulInMemoryCorrelationStore implements CorrelationStoreInterface
         if (!isset($this->sets[$key]) || $this->sets[$key]['expiresAt'] < $now) {
             $this->sets[$key] = [
                 'items' => [],
-                'expiresAt' => $now + $ttlSeconds
+                'expiresAt' => $now + $ttlSeconds,
             ];
         }
 
@@ -42,7 +40,7 @@ class StatefulInMemoryCorrelationStore implements CorrelationStoreInterface
         if (!isset($this->flags[$key]) || $this->flags[$key]['expiresAt'] < $now) {
             $this->flags[$key] = [
                 'count' => 0,
-                'expiresAt' => $now + $ttlSeconds
+                'expiresAt' => $now + $ttlSeconds,
             ];
         }
 

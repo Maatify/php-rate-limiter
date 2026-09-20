@@ -13,7 +13,7 @@ final readonly class FailureSignalDTO implements \JsonSerializable
     public function __construct(
         public string $type,
         public string $policyName,
-        public ?RateLimitMetadataDTO $metadata = null
+        public ?RateLimitMetadataDTO $metadata = null,
     ) {}
 
     public function jsonSerialize(): mixed

@@ -11,7 +11,7 @@ final readonly class RateLimitOperationalKeyStateDTO implements \JsonSerializabl
         public int $effectiveScore,
         public bool $scoreFromPreviousGeneration,
         public ?BlockStateDTO $activeHardBlock,
-        public bool $blockFromPreviousGeneration
+        public bool $blockFromPreviousGeneration,
     ) {}
 
     public function jsonSerialize(): mixed

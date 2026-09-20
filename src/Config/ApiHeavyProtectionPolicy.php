@@ -38,7 +38,7 @@ class ApiHeavyProtectionPolicy implements BlockPolicyInterface
         return new PolicyThresholdsDTO(
             k1: new ScoreThresholdsDTO($this->limits['k1'], $this->limits['k1'], $this->limits['k1']),
             k2: new ScoreThresholdsDTO($this->limits['k2'], $this->limits['k2'], $this->limits['k2']),
-            k3: new ScoreThresholdsDTO($this->limits['k3'], $this->limits['k3'], $this->limits['k3'])
+            k3: new ScoreThresholdsDTO($this->limits['k3'], $this->limits['k3'], $this->limits['k3']),
         );
     }
 

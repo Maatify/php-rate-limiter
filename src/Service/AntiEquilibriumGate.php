@@ -12,7 +12,7 @@ class AntiEquilibriumGate
     private const THRESHOLD = 3;
 
     public function __construct(
-        private readonly CorrelationStoreInterface $store
+        private readonly CorrelationStoreInterface $store,
     ) {}
 
     public function recordSoftBlock(string $accountId): void

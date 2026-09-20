@@ -29,21 +29,21 @@ class LocalFallbackLimiterGcTest extends TestCase
         $ip = '198.51.100.40';
 
         $this->assertTrue(
-            LocalFallbackLimiter::check($clock, 'otp_protection', 'DEGRADED_MODE', $ip)
+            LocalFallbackLimiter::check($clock, 'otp_protection', 'DEGRADED_MODE', $ip),
         );
         $staleBucketKey = 'deg:otp:ip:' . $ip . ':' . intdiv($clock->now()->getTimestamp(), 900);
 
         // At the exact hourly boundary the current OTP bucket is created without running GC.
         $clock->setNow(new \DateTimeImmutable('2025-01-01 13:00:00'));
         $this->assertTrue(
-            LocalFallbackLimiter::check($clock, 'otp_protection', 'DEGRADED_MODE', $ip)
+            LocalFallbackLimiter::check($clock, 'otp_protection', 'DEGRADED_MODE', $ip),
         );
         $currentBucketKey = 'deg:otp:ip:' . $ip . ':' . intdiv($clock->now()->getTimestamp(), 900);
 
         // Crossing the threshold triggers selective cleanup while the current bucket remains valid.
         $clock->setNow(new \DateTimeImmutable('2025-01-01 13:00:01'));
         $this->assertTrue(
-            LocalFallbackLimiter::check($clock, 'otp_protection', 'DEGRADED_MODE', $ip)
+            LocalFallbackLimiter::check($clock, 'otp_protection', 'DEGRADED_MODE', $ip),
         );
 
         $reflection = new \ReflectionClass(LocalFallbackLimiter::class);

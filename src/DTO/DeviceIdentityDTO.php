@@ -13,7 +13,7 @@ final readonly class DeviceIdentityDTO implements \JsonSerializable
         public bool $churnDetected = false,
         public string $normalizedUa = '',
         public bool $isDevicePreviouslyVerifiedForAccount = false,
-        public ?string $previousFingerprintHash = null
+        public ?string $previousFingerprintHash = null,
     ) {}
 
     public function jsonSerialize(): mixed

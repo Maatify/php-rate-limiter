@@ -14,7 +14,7 @@ final readonly class RateLimitOperationalScopesDTO implements \JsonSerializable
         public ?RateLimitOperationalKeyStateDTO $k5,
         public ?RateLimitOperationalKeyStateDTO $k1_48 = null,
         public ?RateLimitOperationalKeyStateDTO $k1_40 = null,
-        public ?RateLimitOperationalKeyStateDTO $k1_32 = null
+        public ?RateLimitOperationalKeyStateDTO $k1_32 = null,
     ) {}
 
     public function jsonSerialize(): mixed

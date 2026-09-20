@@ -9,7 +9,7 @@ final readonly class PipelineScoreDTO implements \JsonSerializable
     public function __construct(
         public int $value,
         public int $updatedAt,
-        public bool $isFromV1
+        public bool $isFromV1,
     ) {}
 
     public function jsonSerialize(): mixed

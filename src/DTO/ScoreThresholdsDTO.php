@@ -14,7 +14,7 @@ final readonly class ScoreThresholdsDTO implements \JsonSerializable
     public function __construct(
         public int $l1,
         public int $l2,
-        public int $l3
+        public int $l3,
     ) {}
 
     public function jsonSerialize(): mixed

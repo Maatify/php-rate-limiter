@@ -66,14 +66,14 @@ class LocalFallbackLimiter
                 }
             }
         } elseif ($mode === 'FAIL_OPEN' && $policyName === 'api_heavy_protection') {
-             $window = self::WINDOW_API;
-             if (!self::incrementAndCheck($clock, "fail:api:ip:{$normalizedIp}", self::API_IP, $window)) {
-                 $allowed = false;
-             }
-             $k2 = md5("{$normalizedIp}:{$normalizedUa}");
-             if (!self::incrementAndCheck($clock, "fail:api:k2:{$k2}", self::API_IP_UA, $window)) {
-                 $allowed = false;
-             }
+            $window = self::WINDOW_API;
+            if (!self::incrementAndCheck($clock, "fail:api:ip:{$normalizedIp}", self::API_IP, $window)) {
+                $allowed = false;
+            }
+            $k2 = md5("{$normalizedIp}:{$normalizedUa}");
+            if (!self::incrementAndCheck($clock, "fail:api:k2:{$k2}", self::API_IP_UA, $window)) {
+                $allowed = false;
+            }
         }
 
         return $allowed;
@@ -84,8 +84,8 @@ class LocalFallbackLimiter
         if (filter_var($ip, FILTER_VALIDATE_IP, FILTER_FLAG_IPV6)) {
             $packed = inet_pton($ip);
             if ($packed !== false) {
-                 $hex = bin2hex($packed);
-                 return substr($hex, 0, 16); // /64
+                $hex = bin2hex($packed);
+                return substr($hex, 0, 16); // /64
             }
         }
         return $ip;
@@ -105,11 +105,17 @@ class LocalFallbackLimiter
             $major = $matches[2];
         }
 
-        if (str_contains($ua, 'Windows')) $os = 'Windows';
-        elseif (str_contains($ua, 'Mac OS')) $os = 'MacOS';
-        elseif (str_contains($ua, 'Linux')) $os = 'Linux';
-        elseif (str_contains($ua, 'Android')) $os = 'Android';
-        elseif (str_contains($ua, 'iOS') || str_contains($ua, 'iPhone')) $os = 'iOS';
+        if (str_contains($ua, 'Windows')) {
+            $os = 'Windows';
+        } elseif (str_contains($ua, 'Mac OS')) {
+            $os = 'MacOS';
+        } elseif (str_contains($ua, 'Linux')) {
+            $os = 'Linux';
+        } elseif (str_contains($ua, 'Android')) {
+            $os = 'Android';
+        } elseif (str_contains($ua, 'iOS') || str_contains($ua, 'iPhone')) {
+            $os = 'iOS';
+        }
 
         return "{$browser}/{$major} ({$os})";
     }

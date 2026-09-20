@@ -8,7 +8,7 @@ final readonly class RateLimitStateDTO implements \JsonSerializable
 {
     public function __construct(
         public int $value,
-        public int $updatedAt
+        public int $updatedAt,
     ) {}
 
     public function jsonSerialize(): mixed

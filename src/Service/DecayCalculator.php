@@ -20,7 +20,7 @@ class DecayCalculator
         int $currentScore,
         int $lastUpdateTimestamp,
         int $currentBlockLevel,
-        string $scope // 'account', 'device', 'ip'
+        string $scope, // 'account', 'device', 'ip'
     ): int {
         if ($currentScore <= 0) {
             return 0;

@@ -13,7 +13,7 @@ final readonly class BudgetConfigDTO implements \JsonSerializable
         public int $trusted_session_floor_level = 2,
         public bool $precheck_enforcement = true,
         public ?int $known_device_micro_cap = 8,
-        public bool $recovery_collision_guard_enabled = false
+        public bool $recovery_collision_guard_enabled = false,
     ) {}
 
     public function jsonSerialize(): mixed

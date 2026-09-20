@@ -13,7 +13,7 @@ final readonly class RateLimitCommand
         public int $cost = 1,
         public bool $isPreCheck = false,
         public bool $isFailure = false,
-        public bool $isSuccess = false
+        public bool $isSuccess = false,
     ) {
         $trueCount = ($this->isPreCheck ? 1 : 0) + ($this->isFailure ? 1 : 0) + ($this->isSuccess ? 1 : 0);
         if ($trueCount > 1) {

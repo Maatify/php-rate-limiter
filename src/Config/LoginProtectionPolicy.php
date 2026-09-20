@@ -21,7 +21,7 @@ class LoginProtectionPolicy implements BlockPolicyInterface
     {
         // Login uses K4 as primary signal
         return new PolicyThresholdsDTO(
-            k4: new ScoreThresholdsDTO(5, 8, 12)
+            k4: new ScoreThresholdsDTO(5, 8, 12),
         );
     }
 
@@ -32,7 +32,7 @@ class LoginProtectionPolicy implements BlockPolicyInterface
             k2_missing_fp: 4,
             k4_failure: 3,
             k4_repeated_missing_fp: 6,
-            k5_failure: 2
+            k5_failure: 2,
         );
     }
 
@@ -50,7 +50,7 @@ class LoginProtectionPolicy implements BlockPolicyInterface
             trusted_session_floor_level: 2,
             precheck_enforcement: true,
             known_device_micro_cap: 8,
-            recovery_collision_guard_enabled: false
+            recovery_collision_guard_enabled: false,
         );
     }
 }

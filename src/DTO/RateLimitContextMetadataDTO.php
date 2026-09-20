@@ -8,7 +8,7 @@ final readonly class RateLimitContextMetadataDTO implements \JsonSerializable
 {
     public function __construct(
         public ?string $reason = null,
-        public ?string $scope = null
+        public ?string $scope = null,
     ) {}
 
     public function jsonSerialize(): mixed

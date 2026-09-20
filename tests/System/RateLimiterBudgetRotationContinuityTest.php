@@ -51,7 +51,7 @@ final class RateLimiterBudgetRotationContinuityTest extends TestCase
             '198.51.100.30',
             'Mozilla/5.0 Chrome/123.0.0.0',
             $accountId,
-            ['device' => 'stable']
+            ['device' => 'stable'],
         );
         $oldK4Key = $this->key('login_protection', 'k4', $accountId, 'old_secret');
         $newK4Key = $this->key('login_protection', 'k4', $accountId, 'new_secret');
@@ -80,7 +80,7 @@ final class RateLimiterBudgetRotationContinuityTest extends TestCase
         $context = new RateLimitContextDTO(
             '198.51.100.31',
             'Mozilla/5.0 Chrome/123.0.0.0',
-            $accountId
+            $accountId,
         );
         $oldK4Key = $this->key('login_protection', 'k4', $accountId, 'old_secret');
         $newK4Key = $this->key('login_protection', 'k4', $accountId, 'new_secret');
@@ -111,7 +111,7 @@ final class RateLimiterBudgetRotationContinuityTest extends TestCase
             '198.51.100.33',
             'Mozilla/5.0 Chrome/123.0.0.0',
             $accountId,
-            ['device' => 'stable']
+            ['device' => 'stable'],
         );
         $oldK4Key = $this->key('login_protection', 'k4', $accountId, 'old_secret');
         $newK4Key = $this->key('login_protection', 'k4', $accountId, 'new_secret');
@@ -139,7 +139,7 @@ final class RateLimiterBudgetRotationContinuityTest extends TestCase
             '198.51.100.34',
             'Mozilla/5.0 Chrome/123.0.0.0',
             $accountId,
-            ['device' => 'stable']
+            ['device' => 'stable'],
         );
         $oldK4Key = $this->key('login_protection', 'k4', $accountId, 'old_secret');
         $newK4Key = $this->key('login_protection', 'k4', $accountId, 'new_secret');
@@ -156,9 +156,8 @@ final class RateLimiterBudgetRotationContinuityTest extends TestCase
         RateLimitStoreInterface $store,
         string $currentSecret,
         ?string $previousSecret,
-        BlockPolicyInterface ...$policies
-    ): RateLimiterEngine
-    {
+        BlockPolicyInterface ...$policies,
+    ): RateLimiterEngine {
         $emitter = new RecordingFailureSignalEmitter();
         $pipeline = new EvaluationPipeline(
             $store,
@@ -170,7 +169,7 @@ final class RateLimiterBudgetRotationContinuityTest extends TestCase
             $currentSecret,
             'prod',
             $this->clock,
-            $previousSecret
+            $previousSecret,
         );
 
         return new RateLimiterEngine(
@@ -180,7 +179,7 @@ final class RateLimiterBudgetRotationContinuityTest extends TestCase
             new FailureModeResolver(),
             $emitter,
             $this->clock,
-            $policies
+            $policies,
         );
     }
 
@@ -189,7 +188,7 @@ final class RateLimiterBudgetRotationContinuityTest extends TestCase
         return hash_hmac(
             'sha256',
             "{$policy}:rate_limiter:{$type}:v2:prod:{$scope}",
-            $secret
+            $secret,
         );
     }
 }

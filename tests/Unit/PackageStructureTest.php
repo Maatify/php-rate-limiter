@@ -18,13 +18,13 @@ final class PackageStructureTest extends TestCase
 
         $actualRoots = array_values(array_filter(
             $entries,
-            static fn (string $entry): bool => $entry !== '.' && $entry !== '..' && is_dir($sourceRoot . '/' . $entry)
+            static fn(string $entry): bool => $entry !== '.' && $entry !== '..' && is_dir($sourceRoot . '/' . $entry),
         ));
         sort($actualRoots);
 
         self::assertSame(
             ['Command', 'Config', 'Contract', 'DTO', 'Exception', 'Repository', 'Service'],
-            $actualRoots
+            $actualRoots,
         );
 
         foreach (['Engine', 'Device', 'Penalty', 'Policy'] as $forbiddenRoot) {

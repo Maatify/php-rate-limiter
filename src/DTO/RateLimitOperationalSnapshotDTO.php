@@ -12,7 +12,7 @@ final readonly class RateLimitOperationalSnapshotDTO implements \JsonSerializabl
         public bool $backendHealthy,
         public RateLimitOperationalScopesDTO $scopes,
         public ?RateLimitOperationalBudgetDTO $budget,
-        public ?CircuitBreakerStateDTO $circuitBreaker
+        public ?CircuitBreakerStateDTO $circuitBreaker,
     ) {}
 
     public function jsonSerialize(): mixed

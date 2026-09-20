@@ -17,7 +17,7 @@ final readonly class RateLimitResultDTO implements \JsonSerializable
         public ?int $blockLevel,
         public ?int $retryAfter, // in seconds
         public string $failureMode, // NORMAL, DEGRADED, FAIL_OPEN
-        public ?RateLimitMetadataDTO $metadata = null
+        public ?RateLimitMetadataDTO $metadata = null,
     ) {}
 
     public function isAllowed(): bool

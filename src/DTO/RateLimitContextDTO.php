@@ -24,7 +24,7 @@ final readonly class RateLimitContextDTO implements \JsonSerializable
         public ?string $sessionDeviceId = null,
         public bool $isSessionTrusted = false,
         public array $headers = [],
-        public bool $isDevicePreviouslyVerifiedForAccount = false
+        public bool $isDevicePreviouslyVerifiedForAccount = false,
     ) {}
 
     public function jsonSerialize(): mixed

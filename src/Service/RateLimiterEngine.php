@@ -32,7 +32,7 @@ class RateLimiterEngine implements RateLimiterInterface
         private readonly FailureModeResolver $failureResolver,
         private readonly FailureSignalEmitterInterface $emitter,
         private readonly ClockInterface $clock,
-        array $policies
+        array $policies,
     ) {
         foreach ($policies as $policy) {
             $this->registerPolicy($policy);
@@ -57,10 +57,10 @@ class RateLimiterEngine implements RateLimiterInterface
         }
 
         if ($policy->getName() === 'api_heavy_protection') {
-             $thresholds = $policy->getScoreThresholds();
-             if ($thresholds->k1 === null || $thresholds->k2 === null) {
-                 throw new RateLimiterException("Policy {$policy->getName()} invalid: Must enforce K1 and K2.");
-             }
+            $thresholds = $policy->getScoreThresholds();
+            if ($thresholds->k1 === null || $thresholds->k2 === null) {
+                throw new RateLimiterException("Policy {$policy->getName()} invalid: Must enforce K1 and K2.");
+            }
         }
 
         $this->policies[$policy->getName()] = $policy;
@@ -90,10 +90,10 @@ class RateLimiterEngine implements RateLimiterInterface
             $contextMeta = null;
 
             if ($mode === 'FAIL_CLOSED' && $this->circuitBreaker->isReEntryGuardViolated($policy->getName())) {
-                 $signal = 'CRITICAL_RE_ENTRY_VIOLATION';
-                 $contextMeta = new RateLimitContextMetadataDTO('re_entry_violation');
-                 $meta = new RateLimitMetadataDTO($signal, 're_entry_violation', $contextMeta);
-                 $this->emitter->emit(new FailureSignalDTO(FailureSignalDTO::TYPE_CB_RE_ENTRY_VIOLATION, $policy->getName(), $meta));
+                $signal = 'CRITICAL_RE_ENTRY_VIOLATION';
+                $contextMeta = new RateLimitContextMetadataDTO('re_entry_violation');
+                $meta = new RateLimitMetadataDTO($signal, 're_entry_violation', $contextMeta);
+                $this->emitter->emit(new FailureSignalDTO(FailureSignalDTO::TYPE_CB_RE_ENTRY_VIOLATION, $policy->getName(), $meta));
             }
 
             // Local Fallback Check
@@ -112,7 +112,7 @@ class RateLimiterEngine implements RateLimiterInterface
             }
 
             if ($mode === 'DEGRADED_MODE') {
-                 return new RateLimitResultDTO(RateLimitResultDTO::DECISION_ALLOW, 0, 0, $mode, $meta);
+                return new RateLimitResultDTO(RateLimitResultDTO::DECISION_ALLOW, 0, 0, $mode, $meta);
             }
 
             // FAIL_CLOSED

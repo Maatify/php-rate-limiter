@@ -15,7 +15,7 @@ class EphemeralBucket
     private const CAP_WINDOW = 900; // 15 mins (Flood Window)
 
     public function __construct(
-        private readonly CorrelationStoreInterface $store
+        private readonly CorrelationStoreInterface $store,
     ) {}
 
     public function resolveKey(RateLimitContextDTO $context, string $realFingerprintHash): string
@@ -86,8 +86,8 @@ class EphemeralBucket
         if (filter_var($ip, FILTER_VALIDATE_IP, FILTER_FLAG_IPV6)) {
             $packed = inet_pton($ip);
             if ($packed !== false) {
-                 $hex = bin2hex($packed);
-                 return substr($hex, 0, 16); // /64
+                $hex = bin2hex($packed);
+                return substr($hex, 0, 16); // /64
             }
         }
         return $ip;

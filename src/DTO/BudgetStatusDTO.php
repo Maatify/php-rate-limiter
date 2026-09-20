@@ -8,7 +8,7 @@ final readonly class BudgetStatusDTO implements \JsonSerializable
 {
     public function __construct(
         public int $count,
-        public int $epochStart
+        public int $epochStart,
     ) {}
 
     public function jsonSerialize(): mixed

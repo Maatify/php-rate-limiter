@@ -14,7 +14,7 @@ final readonly class PolicyThresholdsDTO implements \JsonSerializable
         public ?ScoreThresholdsDTO $k3 = null,
         public ?ScoreThresholdsDTO $k4 = null,
         public ?ScoreThresholdsDTO $k5 = null,
-        public ?ScoreThresholdsDTO $default = null
+        public ?ScoreThresholdsDTO $default = null,
     ) {}
 
     public function jsonSerialize(): mixed

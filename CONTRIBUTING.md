@@ -49,6 +49,8 @@ composer validate --strict
 composer update --no-interaction --prefer-dist --no-progress
 composer dump-autoload --optimize --strict-psr
 composer check-platform-reqs
+composer format:check
+composer format
 composer analyse
 composer test
 composer test:unit
@@ -61,6 +63,12 @@ bash scripts/ci/run-examples.sh
 bash scripts/ci/check-whitespace.sh
 ACTIONLINT_BIN=/path/to/actionlint bash scripts/ci/lint-workflows.sh
 ```
+
+`composer format:check` is the complete non-mutating PER Coding Style 3.1
+verification command: it checks the PHP-CS-Fixer PER-CS 3.0 baseline and the
+repository-owned PER 3.1 delta verifier. `composer format` applies baseline
+formatting and then runs the same non-mutating delta verification; any remaining
+PER 3.1 delta violation requires a manual mechanical fix.
 
 `composer test` runs the full maintained Unit, Integration, and System suites.
 `composer test:unit` runs the Unit suite, and `composer test:integration` is the

@@ -69,7 +69,7 @@ class CircuitBreaker
             $openSince,
             $state->lastSuccess,
             array_values($reEntries),
-            $failClosedUntil
+            $failClosedUntil,
         ));
     }
 
@@ -101,7 +101,7 @@ class CircuitBreaker
             $state->openSince,
             $now,
             $state->reEntries,
-            $state->failClosedUntil
+            $state->failClosedUntil,
         ));
     }
 
@@ -112,7 +112,7 @@ class CircuitBreaker
             $data->status,
             count($data->failures),
             $data->lastFailure,
-            $data->status === FailureStateDTO::STATE_OPEN
+            $data->status === FailureStateDTO::STATE_OPEN,
         );
     }
 
@@ -132,7 +132,7 @@ class CircuitBreaker
             0,
             0,
             [],
-            0
+            0,
         );
     }
 

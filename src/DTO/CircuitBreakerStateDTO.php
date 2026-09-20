@@ -22,7 +22,7 @@ final readonly class CircuitBreakerStateDTO implements \JsonSerializable
         public int $openSince,
         public int $lastSuccess,
         public array $reEntries,
-        public int $failClosedUntil = 0
+        public int $failClosedUntil = 0,
     ) {}
 
     public function jsonSerialize(): mixed

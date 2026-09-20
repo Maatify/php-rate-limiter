@@ -46,9 +46,7 @@ final class ExampleRateLimitStore implements RateLimitStoreInterface
     /** @var array<string, array{count: int, epochStart: int, epochDuration: int}> */
     private array $budgets = [];
 
-    public function __construct(private readonly ClockInterface $clock)
-    {
-    }
+    public function __construct(private readonly ClockInterface $clock) {}
 
     public function increment(string $key, int $ttlSeconds, int $amount = 1): int
     {
@@ -160,9 +158,7 @@ final class ExampleCorrelationStore implements CorrelationStoreInterface
     /** @var array<string, array{count: int, expiresAt: int}> */
     private array $flags = [];
 
-    public function __construct(private readonly ClockInterface $clock)
-    {
-    }
+    public function __construct(private readonly ClockInterface $clock) {}
 
     public function addDistinct(string $key, string $item, int $ttlSeconds): int
     {
@@ -245,7 +241,7 @@ $pipeline = new EvaluationPipeline(
     new Maatify\RateLimiter\Service\EphemeralBucket($correlationStore),
     'example-key-secret',
     'example',
-    $clock
+    $clock,
 );
 
 $limiter = new RateLimiterEngine(
@@ -254,12 +250,11 @@ $limiter = new RateLimiterEngine(
     new CircuitBreaker(new ExampleCircuitBreakerStore(), $signalEmitter, $clock),
     new FailureModeResolver(),
     $signalEmitter,
-    $clock,
-    [
+    $clock, [
         new LoginProtectionPolicy(),
         new OtpProtectionPolicy(),
         new ApiHeavyProtectionPolicy(),
-    ]
+    ],
 );
 
 $context = new RateLimitContextDTO(
@@ -267,7 +262,7 @@ $context = new RateLimitContextDTO(
     ua: 'Mozilla/5.0 Chrome/123',
     accountId: 'account-123',
     clientFingerprint: ['platform' => 'web'],
-    headers: ['Accept' => 'application/json']
+    headers: ['Accept' => 'application/json'],
 );
 
 $results = [

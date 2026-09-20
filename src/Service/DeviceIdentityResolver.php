@@ -12,7 +12,7 @@ class DeviceIdentityResolver implements DeviceIdentityResolverInterface
 {
     public function __construct(
         private readonly FingerprintHasher $currentHasher,
-        private readonly ?FingerprintHasher $previousHasher = null
+        private readonly ?FingerprintHasher $previousHasher = null,
     ) {}
 
     public function resolve(RateLimitContextDTO $context): DeviceIdentityDTO
@@ -41,7 +41,7 @@ class DeviceIdentityResolver implements DeviceIdentityResolverInterface
             false,
             $ua,
             $context->isDevicePreviouslyVerifiedForAccount,
-            $previousHash
+            $previousHash,
         );
     }
 

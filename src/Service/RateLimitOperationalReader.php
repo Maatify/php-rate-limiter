@@ -30,12 +30,12 @@ final class RateLimitOperationalReader implements RateLimitOperationalReaderInte
         private readonly ClockInterface $clock,
         private readonly string $keySecret,
         private readonly string $envScope,
-        private readonly ?string $previousKeySecret = null
+        private readonly ?string $previousKeySecret = null,
     ) {}
 
     public function read(
         RateLimitContextDTO $context,
-        BlockPolicyInterface $policy
+        BlockPolicyInterface $policy,
     ): RateLimitOperationalSnapshotDTO {
         $device = $this->deviceResolver->resolve($context);
         $currentKeys = $this->buildKeys(
@@ -43,7 +43,7 @@ final class RateLimitOperationalReader implements RateLimitOperationalReaderInte
             $device->normalizedUa,
             $device->fingerprintHash,
             $policy->getName(),
-            $this->keySecret
+            $this->keySecret,
         );
         $previousKeys = $this->hasPreviousGeneration($device)
             ? $this->buildKeys(
@@ -51,7 +51,7 @@ final class RateLimitOperationalReader implements RateLimitOperationalReaderInte
                 $device->normalizedUa,
                 $this->previousFingerprintHash($device),
                 $policy->getName(),
-                $this->previousKeySecret ?? $this->keySecret
+                $this->previousKeySecret ?? $this->keySecret,
             )
             : [];
 
@@ -66,7 +66,7 @@ final class RateLimitOperationalReader implements RateLimitOperationalReaderInte
             $backendHealthy,
             $scopes,
             $budget,
-            $circuitBreaker
+            $circuitBreaker,
         );
     }
 
@@ -84,14 +84,14 @@ final class RateLimitOperationalReader implements RateLimitOperationalReaderInte
             $this->readOptionalKeyState('k5', $currentKeys['k5'], $previousKeys['k5'] ?? null),
             $this->readOptionalKeyState('k1_48', $currentKeys['k1_48'] ?? null, $previousKeys['k1_48'] ?? null),
             $this->readOptionalKeyState('k1_40', $currentKeys['k1_40'] ?? null, $previousKeys['k1_40'] ?? null),
-            $this->readOptionalKeyState('k1_32', $currentKeys['k1_32'] ?? null, $previousKeys['k1_32'] ?? null)
+            $this->readOptionalKeyState('k1_32', $currentKeys['k1_32'] ?? null, $previousKeys['k1_32'] ?? null),
         );
     }
 
     private function readOptionalKeyState(
         string $keyType,
         ?string $currentKey,
-        ?string $previousKey
+        ?string $previousKey,
     ): ?RateLimitOperationalKeyStateDTO {
         if ($currentKey === null) {
             return null;
@@ -137,7 +137,7 @@ final class RateLimitOperationalReader implements RateLimitOperationalReaderInte
                 $score->value,
                 $score->updatedAt,
                 $decayLevel,
-                $decayScope
+                $decayScope,
             );
             $effectiveScore = max(0, $score->value - $decayAmount);
         }
@@ -147,7 +147,7 @@ final class RateLimitOperationalReader implements RateLimitOperationalReaderInte
             $effectiveScore,
             $scoreFromPreviousGeneration,
             $activeHardBlock,
-            $blockFromPreviousGeneration
+            $blockFromPreviousGeneration,
         );
     }
 
@@ -165,7 +165,7 @@ final class RateLimitOperationalReader implements RateLimitOperationalReaderInte
         DeviceIdentityDTO $device,
         BlockPolicyInterface $policy,
         array $currentKeys,
-        array $previousKeys
+        array $previousKeys,
     ): ?RateLimitOperationalBudgetDTO {
         $config = $policy->getBudgetConfig();
         if ($config === null || $context->accountId === null) {
@@ -174,7 +174,7 @@ final class RateLimitOperationalReader implements RateLimitOperationalReaderInte
 
         [$accountBudget, $accountBudgetFromPreviousGeneration] = $this->resolveBudgetState(
             $currentKeys['k4'] ?? null,
-            $previousKeys['k4'] ?? null
+            $previousKeys['k4'] ?? null,
         );
         $accountBudgetActive = $accountBudget !== null
             && $accountBudget->count >= $config->threshold
@@ -191,9 +191,9 @@ final class RateLimitOperationalReader implements RateLimitOperationalReaderInte
                         $policy->getName(),
                         $context->accountId,
                         $this->previousFingerprintHash($device),
-                        $this->previousKeySecret ?? $this->keySecret
+                        $this->previousKeySecret ?? $this->keySecret,
                     )
-                    : null
+                    : null,
             );
             $microCapExceeded = $microCap !== null && $microCap->count > $config->known_device_micro_cap;
         }
@@ -201,7 +201,7 @@ final class RateLimitOperationalReader implements RateLimitOperationalReaderInte
         [$cooldown, $cooldownFromPreviousGeneration] = $this->resolveCooldown(
             $policy->getName(),
             $context->accountId,
-            $device
+            $device,
         );
         $cooldownRemainingSeconds = $cooldown === null
             ? 0
@@ -216,7 +216,7 @@ final class RateLimitOperationalReader implements RateLimitOperationalReaderInte
             $microCapExceeded,
             $cooldown,
             $cooldownFromPreviousGeneration,
-            $cooldownRemainingSeconds
+            $cooldownRemainingSeconds,
         );
     }
 
@@ -257,7 +257,7 @@ final class RateLimitOperationalReader implements RateLimitOperationalReaderInte
             $previousKey = $this->budgetCooldownKey(
                 $policyName,
                 $accountId,
-                $this->previousKeySecret ?? $this->keySecret
+                $this->previousKeySecret ?? $this->keySecret,
             );
             if ($previousKey !== $currentKey) {
                 $previous = $this->store->get($previousKey);
@@ -283,7 +283,7 @@ final class RateLimitOperationalReader implements RateLimitOperationalReaderInte
 
         return $this->hashKey(
             "{$policyName}:rate_limiter:microcap:k5:v1:{$accountId}:{$fingerprintHash}",
-            $secret
+            $secret,
         );
     }
 
@@ -291,7 +291,7 @@ final class RateLimitOperationalReader implements RateLimitOperationalReaderInte
     {
         return $this->hashKey(
             "{$policyName}:rate_limiter:budget_cooldown:v1:{$this->envScope}:{$accountId}",
-            $secret
+            $secret,
         );
     }
 
@@ -313,7 +313,7 @@ final class RateLimitOperationalReader implements RateLimitOperationalReaderInte
         string $ua,
         ?string $fingerprintHash,
         string $policyName,
-        string $secret
+        string $secret,
     ): array {
         $base = "{$policyName}:rate_limiter";
         $version = 'v2';
@@ -336,15 +336,15 @@ final class RateLimitOperationalReader implements RateLimitOperationalReaderInte
         if (filter_var($context->ip, FILTER_VALIDATE_IP, FILTER_FLAG_IPV6)) {
             $keys['k1_48'] = $this->hashKey(
                 "{$base}:k1:{$version}:{$environment}:{$this->getIpPrefix($context->ip, 48)}",
-                $secret
+                $secret,
             );
             $keys['k1_40'] = $this->hashKey(
                 "{$base}:k1:{$version}:{$environment}:{$this->getIpPrefix($context->ip, 40)}",
-                $secret
+                $secret,
             );
             $keys['k1_32'] = $this->hashKey(
                 "{$base}:k1:{$version}:{$environment}:{$this->getIpPrefix($context->ip, 32)}",
-                $secret
+                $secret,
             );
         }
 

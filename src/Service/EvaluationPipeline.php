@@ -40,9 +40,8 @@ class EvaluationPipeline
         string $keySecret,
         private readonly string $envScope, // e.g. 'prod', 'staging'
         private readonly ClockInterface $clock,
-        ?string $previousKeySecret = null
-    )
-    {
+        ?string $previousKeySecret = null,
+    ) {
         $this->secret = $keySecret;
         $this->previousSecret = $previousKeySecret;
     }
@@ -51,9 +50,8 @@ class EvaluationPipeline
         BlockPolicyInterface $policy,
         RateLimitContextDTO $context,
         RateLimitCommand $request,
-        DeviceIdentityDTO $device
-    ): RateLimitResultDTO
-    {
+        DeviceIdentityDTO $device,
+    ): RateLimitResultDTO {
         // 1. Build keys for the current generation, then the one previous
         // generation when either generation component is present.
         $realKeysV2 = $this->buildKeys($context, $device->normalizedUa, $device->fingerprintHash, $policy->getName(), $this->secret);
@@ -63,7 +61,7 @@ class EvaluationPipeline
                 $device->normalizedUa,
                 $this->previousFingerprintHash($device),
                 $policy->getName(),
-                $this->previousSecret ?? $this->secret
+                $this->previousSecret ?? $this->secret,
             )
             : [];
 
@@ -88,7 +86,7 @@ class EvaluationPipeline
                 $device->normalizedUa,
                 $this->previousFingerprintHash($device),
                 $policy->getName(),
-                $this->previousSecret ?? $this->secret
+                $this->previousSecret ?? $this->secret,
             )
             : [];
 
@@ -138,8 +136,7 @@ class EvaluationPipeline
                     }
 
                     $candidates[] = $this->candidate(RateLimitResultDTO::DECISION_HARD_BLOCK, 2, $duration, 'flood', $persistence);
-                }
-                else {
+                } else {
                     $duration = PenaltyLadder::getDuration(1);
                     $k4Key = $realKeysV2['k4'];
                     $persistence = $k4Key !== null
@@ -177,7 +174,7 @@ class EvaluationPipeline
                 2,
                 PenaltyLadder::getDuration(2),
                 'anti_equilibrium',
-                $persistence
+                $persistence,
             );
         }
 
@@ -191,7 +188,7 @@ class EvaluationPipeline
             $candidates,
             $budgetState,
             $budgetRequestEligible,
-            $budgetSuppressed
+            $budgetSuppressed,
         );
 
         if ($final->decision === RateLimitResultDTO::DECISION_SOFT_BLOCK
@@ -234,9 +231,8 @@ class EvaluationPipeline
         BlockPolicyInterface $policy,
         array $scores,
         array $keys,
-        DeviceIdentityDTO $device
-    ): ?array
-    {
+        DeviceIdentityDTO $device,
+    ): ?array {
         $highestLevel = 0;
         foreach ($scores as $keyType => $score) {
             $level = $this->determineLevel($score, $keyType, $policy);
@@ -278,7 +274,7 @@ class EvaluationPipeline
                     2,
                     60,
                     'correlation',
-                    [['key' => $k2, 'level' => 2, 'duration' => 60]]
+                    [['key' => $k2, 'level' => 2, 'duration' => 60]],
                 );
             }
         }
@@ -307,7 +303,7 @@ class EvaluationPipeline
                 } else {
                     // Medium+ Confidence requires 2-window confirmation (consecutive 10-minute windows)
                     // We use a window-based key to track presence
-                    $windowId = (int)floor($this->clock->now()->getTimestamp() / 600);
+                    $windowId = (int) floor($this->clock->now()->getTimestamp() / 600);
                     $prevWindowId = $windowId - 1;
 
                     $wKey = "dilution_warn:{$device->fingerprintHash}:{$windowId}";
@@ -332,7 +328,7 @@ class EvaluationPipeline
                         2,
                         60,
                         'correlation',
-                        [['key' => $targetKey, 'level' => 2, 'duration' => 60]]
+                        [['key' => $targetKey, 'level' => 2, 'duration' => 60]],
                     );
                 }
             }
@@ -359,9 +355,8 @@ class EvaluationPipeline
         DeviceIdentityDTO $device,
         array $keys,
         array $keysV1,
-        array $rawScores
-    ): array
-    {
+        array $rawScores,
+    ): array {
         $deltas = $this->calculateDeltas($policy, $context, $device, $request);
 
         if ($request->isFailure && empty($device->fingerprintHash) && $context->accountId) {
@@ -398,7 +393,7 @@ class EvaluationPipeline
                 $baseValue = ($scoreDto && ! $scoreDto->isFromV1) ? $rawVal : 0;
                 $netChange = ($decayed + $delta) - $baseValue;
 
-                $newScore = $this->store->increment($key, 86400, (int)$netChange);
+                $newScore = $this->store->increment($key, 86400, (int) $netChange);
                 $level = $this->determineLevel($newScore, $keyType, $policy);
 
                 $thresholdsDto = $this->getScopedThresholds($keyType, $policy);
@@ -489,7 +484,7 @@ class EvaluationPipeline
                         RateLimitResultDTO::DECISION_SOFT_BLOCK,
                         2,
                         PenaltyLadder::getDuration(2),
-                        'recovery_guard'
+                        'recovery_guard',
                     );
                 } else {
                     $recoveryCandidate = null;
@@ -585,7 +580,7 @@ class EvaluationPipeline
 
         $classCandidates = array_values(array_filter(
             $candidates,
-            static fn (array $candidate): bool => $candidate['decision'] === $winningClass
+            static fn(array $candidate): bool => $candidate['decision'] === $winningClass,
         ));
 
         $highestLevel = 0;
@@ -639,7 +634,7 @@ class EvaluationPipeline
         array $candidates,
         ?BudgetStateDTO $budgetState,
         bool $budgetRequestEligible,
-        bool $budgetSuppressed
+        bool $budgetSuppressed,
     ): RateLimitResultDTO {
         $normalCandidate = $this->aggregateCandidates($candidates);
         $config = $policy->getBudgetConfig();
@@ -658,7 +653,7 @@ class EvaluationPipeline
                 $policy,
                 $context->accountId,
                 $device,
-                $config->cooldown_seconds
+                $config->cooldown_seconds,
             );
 
             if ($cooldown['issued']) {
@@ -670,7 +665,7 @@ class EvaluationPipeline
                     RateLimitResultDTO::DECISION_SOFT_BLOCK,
                     $level,
                     $cooldown['retryAfter'],
-                    'budget'
+                    'budget',
                 );
             }
         }
@@ -688,7 +683,7 @@ class EvaluationPipeline
     private function isBudgetCommandEligible(
         \Maatify\RateLimiter\DTO\BudgetConfigDTO $config,
         RateLimitCommand $request,
-        bool $failureEligible
+        bool $failureEligible,
     ): bool {
         if ($request->isSuccess) {
             return false;
@@ -708,7 +703,7 @@ class EvaluationPipeline
         BlockPolicyInterface $policy,
         ?string $accountId,
         DeviceIdentityDTO $device,
-        int $cooldownSeconds
+        int $cooldownSeconds,
     ): array {
         if ($accountId === null) {
             return ['issued' => false, 'retryAfter' => 0];
@@ -727,7 +722,7 @@ class EvaluationPipeline
             $previousKey = $this->budgetCooldownKey(
                 $policy->getName(),
                 $accountId,
-                $this->previousSecret ?? $this->secret
+                $this->previousSecret ?? $this->secret,
             );
             if ($previousKey !== $currentKey) {
                 $previousMarker = $this->store->get($previousKey);
@@ -754,7 +749,7 @@ class EvaluationPipeline
     {
         return $this->hashKey(
             "{$policyName}:rate_limiter:budget_cooldown:v1:{$this->envScope}:{$accountId}",
-            $secret
+            $secret,
         );
     }
 
@@ -826,7 +821,7 @@ class EvaluationPipeline
                 if (! $this->store instanceof BudgetSeedStoreInterface) {
                     throw new RateLimiterException(
                         'Budget rotation migration requires the BudgetSeedStoreInterface capability; '
-                        . 'the configured store cannot carry the previous-secret budget state into V2 without a silent reset.'
+                        . 'the configured store cannot carry the previous-secret budget state into V2 without a silent reset.',
                     );
                 }
 
@@ -853,7 +848,7 @@ class EvaluationPipeline
         $scope = match ($keyType) {
             'k4' => 'account',
             'k3', 'k5' => 'device',
-            default => 'ip'
+            default => 'ip',
         };
         $block = $this->store->checkBlock($key);
         $level = $block ? $block->level : 0;
@@ -996,7 +991,7 @@ class EvaluationPipeline
             'k3' => $thresholds->k3,
             'k4' => $thresholds->k4,
             'k5' => $thresholds->k5,
-            default => $thresholds->default
+            default => $thresholds->default,
         };
     }
 
@@ -1031,7 +1026,7 @@ class EvaluationPipeline
             $packed = inet_pton($ip);
             if ($packed !== false) {
                 $hex = bin2hex($packed);
-                $length = (int)ceil($cidr / 4);
+                $length = (int) ceil($cidr / 4);
 
                 return substr($hex, 0, $length);
             }

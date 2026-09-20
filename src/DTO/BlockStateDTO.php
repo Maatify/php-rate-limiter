@@ -8,7 +8,7 @@ final readonly class BlockStateDTO implements \JsonSerializable
 {
     public function __construct(
         public int $level,
-        public int $expiresAt
+        public int $expiresAt,
     ) {}
 
     public function jsonSerialize(): mixed

@@ -40,11 +40,20 @@
         "php": "^8.4"
     },
     "require-dev": {
+        "php-cs-fixer/shim": "^3.95",
         "phpstan/phpstan": "^2.0",
         "phpunit/phpunit": "^11.5"
     },
     "scripts": {
         "analyse": "phpstan analyse src tests examples --level=max",
+        "format": [
+            "php-cs-fixer fix --config=.php-cs-fixer.dist.php",
+            "@php scripts/ci/check-per-cs-31-delta.php"
+        ],
+        "format:check": [
+            "php-cs-fixer check --config=.php-cs-fixer.dist.php",
+            "@php scripts/ci/check-per-cs-31-delta.php"
+        ],
         "test": "phpunit",
         "test:unit": "phpunit --testsuite Unit",
         "test:integration": "phpunit --testsuite Integration"

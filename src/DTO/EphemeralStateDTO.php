@@ -9,7 +9,7 @@ final readonly class EphemeralStateDTO implements \JsonSerializable
     public function __construct(
         public bool $isEphemeral,
         public int $accountDeviceCount,
-        public int $ipDeviceCount
+        public int $ipDeviceCount,
     ) {}
 
     public function jsonSerialize(): mixed

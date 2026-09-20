@@ -132,9 +132,18 @@ final class OperationalExampleRateLimitStore implements RateLimitStoreInterface
 
 final class OperationalExampleCorrelationStore implements CorrelationStoreInterface
 {
-    public function addDistinct(string $key, string $item, int $ttlSeconds): int { return 0; }
-    public function incrementWatchFlag(string $key, int $ttlSeconds): int { return 0; }
-    public function getWatchFlag(string $key): int { return 0; }
+    public function addDistinct(string $key, string $item, int $ttlSeconds): int
+    {
+        return 0;
+    }
+    public function incrementWatchFlag(string $key, int $ttlSeconds): int
+    {
+        return 0;
+    }
+    public function getWatchFlag(string $key): int
+    {
+        return 0;
+    }
 }
 
 final class OperationalExampleCircuitBreakerStore implements CircuitBreakerStoreInterface
@@ -142,8 +151,14 @@ final class OperationalExampleCircuitBreakerStore implements CircuitBreakerStore
     /** @var array<string, CircuitBreakerStateDTO> */
     private array $states = [];
 
-    public function load(string $policyName): ?CircuitBreakerStateDTO { return $this->states[$policyName] ?? null; }
-    public function save(string $policyName, CircuitBreakerStateDTO $state): void { $this->states[$policyName] = $state; }
+    public function load(string $policyName): ?CircuitBreakerStateDTO
+    {
+        return $this->states[$policyName] ?? null;
+    }
+    public function save(string $policyName, CircuitBreakerStateDTO $state): void
+    {
+        $this->states[$policyName] = $state;
+    }
 }
 
 final class OperationalExampleSignalEmitter implements FailureSignalEmitterInterface
@@ -165,7 +180,7 @@ $pipeline = new EvaluationPipeline(
     new EphemeralBucket($correlationStore),
     'example-outer-secret',
     'example',
-    $clock
+    $clock,
 );
 $limiter = new RateLimiterEngine(
     new DeviceIdentityResolver(new FingerprintHasher('example-fingerprint-secret')),
@@ -174,14 +189,14 @@ $limiter = new RateLimiterEngine(
     new FailureModeResolver(),
     $emitter,
     $clock,
-    [new OtpProtectionPolicy()]
+    [new OtpProtectionPolicy()],
 );
 
 $context = new RateLimitContextDTO(
     ip: '203.0.113.20',
     ua: 'Mozilla/5.0 Chrome/123',
     accountId: 'account-123',
-    clientFingerprint: ['platform' => 'web']
+    clientFingerprint: ['platform' => 'web'],
 );
 $limiter->limit($context, RateLimitCommand::recordFailure('otp_protection'));
 
@@ -192,7 +207,7 @@ $reader = new RateLimitOperationalReader(
     new DecayCalculator($clock),
     $clock,
     'example-outer-secret',
-    'example'
+    'example',
 );
 $writesBeforeRead = $store->writeCount();
 $snapshot = $reader->read($context, new OtpProtectionPolicy());

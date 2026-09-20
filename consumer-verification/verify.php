@@ -44,11 +44,11 @@ if ($installPath === null) {
 requireCondition(!is_link($installPath), 'The package was installed as a symlink.');
 requireCondition(
     class_exists(RateLimiterEngine::class),
-    'The production PSR-4 autoload did not expose RateLimiterEngine.'
+    'The production PSR-4 autoload did not expose RateLimiterEngine.',
 );
 requireCondition(
     !class_exists('Maatify\\RateLimiter\\Tests\\Support\\Clock\\FixedClock'),
-    'The package test namespace leaked into the external consumer.'
+    'The package test namespace leaked into the external consumer.',
 );
 
 $clock = new FixedClock(new DateTimeImmutable('2025-01-01 12:00:00', new DateTimeZone('UTC')));
@@ -59,7 +59,7 @@ $failureSignalEmitter = new RecordingFailureSignalEmitter();
 
 requireCondition(
     $rateLimitStore instanceof BudgetSeedStoreInterface,
-    'The consumer store does not implement the BudgetSeedStoreInterface capability.'
+    'The consumer store does not implement the BudgetSeedStoreInterface capability.',
 );
 
 $deviceResolver = new DeviceIdentityResolver(new FingerprintHasher('active-key'));
@@ -74,7 +74,7 @@ $pipeline = new EvaluationPipeline(
     'active-key',
     'prod',
     $clock,
-    'previous-key'
+    'previous-key',
 );
 $circuitBreaker = new CircuitBreaker($circuitBreakerStore, $failureSignalEmitter, $clock);
 $engine = new RateLimiterEngine(
@@ -84,32 +84,32 @@ $engine = new RateLimiterEngine(
     new FailureModeResolver(),
     $failureSignalEmitter,
     $clock,
-    [new LoginProtectionPolicy(), new OtpProtectionPolicy()]
+    [new LoginProtectionPolicy(), new OtpProtectionPolicy()],
 );
 
 $context = new RateLimitContextDTO(
     ip: '203.0.113.1',
     ua: 'Mozilla/5.0',
     accountId: 'consumer-user-123',
-    clientFingerprint: ['device' => 'consumer-device']
+    clientFingerprint: ['device' => 'consumer-device'],
 );
 
 $preflight = $engine->limit($context, RateLimitCommand::checkOnly('login_protection'));
 requireCondition(
     $preflight->decision === RateLimitResultDTO::DECISION_ALLOW,
-    'The documented login pre-check did not allow a clean request.'
+    'The documented login pre-check did not allow a clean request.',
 );
 
 $failure = $engine->limit($context, RateLimitCommand::recordFailure('otp_protection'));
 requireCondition(
     $failure->decision === RateLimitResultDTO::DECISION_SOFT_BLOCK,
-    'The OTP failure workflow did not return the documented soft-block result.'
+    'The OTP failure workflow did not return the documented soft-block result.',
 );
 requireCondition($failure->blockLevel === 1, 'The OTP failure workflow returned an unexpected block level.');
 requireCondition($rateLimitStore->writeCount() > 0, 'The consumer rate-limit storage boundary was not written.');
 requireCondition(
     $correlationStore->operationCount() > 0,
-    'The consumer correlation storage boundary was not used.'
+    'The consumer correlation storage boundary was not used.',
 );
 
 $writesBeforeOperationalRead = $rateLimitStore->writeCount();
@@ -121,7 +121,7 @@ $operationalReader = new RateLimitOperationalReader(
     $clock,
     'active-key',
     'prod',
-    'previous-key'
+    'previous-key',
 );
 $snapshot = $operationalReader->read($context, new OtpProtectionPolicy());
 requireCondition($snapshot instanceof RateLimitOperationalSnapshotDTO, 'The operational reader did not return its typed snapshot.');

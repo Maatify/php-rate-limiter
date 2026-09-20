@@ -14,7 +14,7 @@ final readonly class FailureStateDTO implements \JsonSerializable
         public string $state,
         public int $failureCount,
         public int $lastFailureTimestamp,
-        public bool $isDegraded
+        public bool $isDegraded,
     ) {}
 
     public function jsonSerialize(): mixed

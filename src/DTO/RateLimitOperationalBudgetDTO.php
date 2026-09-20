@@ -15,7 +15,7 @@ final readonly class RateLimitOperationalBudgetDTO implements \JsonSerializable
         public bool $knownDeviceMicroCapExceeded,
         public ?RateLimitStateDTO $cooldown,
         public bool $cooldownFromPreviousGeneration,
-        public int $cooldownRemainingSeconds
+        public int $cooldownRemainingSeconds,
     ) {}
 
     public function jsonSerialize(): mixed
