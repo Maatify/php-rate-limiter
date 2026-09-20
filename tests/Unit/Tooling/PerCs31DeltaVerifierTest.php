@@ -71,8 +71,26 @@ final class PerCs31DeltaVerifierTest extends TestCase
             $pipes,
             $root,
         );
-        self::assertIsResource($process);
+        if (!is_resource($process)) {
+            self::fail('Unable to start the PER-CS 3.1 delta verifier process.');
+        }
 
+        if (!is_array($pipes)) {
+            proc_terminate($process);
+            proc_close($process);
+            self::fail('The PER-CS 3.1 delta verifier did not expose pipes.');
+        }
+
+        if (!isset($pipes[0], $pipes[1], $pipes[2])
+            || !is_resource($pipes[0])
+            || !is_resource($pipes[1])
+            || !is_resource($pipes[2])) {
+            proc_terminate($process);
+            proc_close($process);
+            self::fail('The PER-CS 3.1 delta verifier did not expose the expected pipes.');
+        }
+
+        /** @var array{0: resource, 1: resource, 2: resource} $pipes */
         fclose($pipes[0]);
         $output = stream_get_contents($pipes[1]) . stream_get_contents($pipes[2]);
         fclose($pipes[1]);
