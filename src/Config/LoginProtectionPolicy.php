@@ -10,13 +10,22 @@ use Maatify\RateLimiter\DTO\PolicyThresholdsDTO;
 use Maatify\RateLimiter\DTO\ScoreDeltasDTO;
 use Maatify\RateLimiter\DTO\ScoreThresholdsDTO;
 
+/**
+ * Policy for login failures with account-scoped thresholds and a budget.
+ */
 class LoginProtectionPolicy implements BlockPolicyInterface
 {
+    /**
+     * Return the policy identifier consumed by the engine.
+     */
     public function getName(): string
     {
         return 'login_protection';
     }
 
+    /**
+     * Return the K4 thresholds for soft and hard login blocking.
+     */
     public function getScoreThresholds(): PolicyThresholdsDTO
     {
         // Login uses K4 as primary signal
@@ -25,6 +34,9 @@ class LoginProtectionPolicy implements BlockPolicyInterface
         );
     }
 
+    /**
+     * Return the score increments for login risk signals.
+     */
     public function getScoreDeltas(): ScoreDeltasDTO
     {
         return new ScoreDeltasDTO(
@@ -36,11 +48,17 @@ class LoginProtectionPolicy implements BlockPolicyInterface
         );
     }
 
+    /**
+     * Return the fail-closed policy used when the backing store is unavailable.
+     */
     public function getFailureMode(): string
     {
         return 'FAIL_CLOSED';
     }
 
+    /**
+     * Return the account budget and trusted-session enforcement rules.
+     */
     public function getBudgetConfig(): ?BudgetConfigDTO
     {
         return new BudgetConfigDTO(

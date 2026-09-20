@@ -4,12 +4,15 @@ declare(strict_types=1);
 
 namespace Maatify\RateLimiter\DTO;
 
+/**
+ * Defines the L1, L2, and L3 score thresholds for one limiter scope.
+ */
 final readonly class ScoreThresholdsDTO implements \JsonSerializable
 {
     /**
-     * @param int $l1 Soft Block Threshold
-     * @param int $l2 Hard Block Threshold
-     * @param int $l3 Hard Block Extended Threshold
+     * @param int $l1 Soft block threshold.
+     * @param int $l2 Hard block threshold.
+     * @param int $l3 Extended hard block threshold.
      */
     public function __construct(
         public int $l1,
@@ -17,6 +20,9 @@ final readonly class ScoreThresholdsDTO implements \JsonSerializable
         public int $l3,
     ) {}
 
+    /**
+     * Return the three level thresholds in serialized form.
+     */
     public function jsonSerialize(): mixed
     {
         return [

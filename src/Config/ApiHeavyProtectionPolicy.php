@@ -10,6 +10,9 @@ use Maatify\RateLimiter\DTO\PolicyThresholdsDTO;
 use Maatify\RateLimiter\DTO\ScoreDeltasDTO;
 use Maatify\RateLimiter\DTO\ScoreThresholdsDTO;
 
+/**
+ * Policy for high-volume API traffic using IP and IP/user-agent scopes.
+ */
 class ApiHeavyProtectionPolicy implements BlockPolicyInterface
 {
     /** @var array<string, int> */
@@ -27,11 +30,17 @@ class ApiHeavyProtectionPolicy implements BlockPolicyInterface
         ], $limits);
     }
 
+    /**
+     * Return the policy identifier consumed by the engine.
+     */
     public function getName(): string
     {
         return 'api_heavy_protection';
     }
 
+    /**
+     * Return the configured K1, K2, and K3 score thresholds.
+     */
     public function getScoreThresholds(): PolicyThresholdsDTO
     {
         // Simple hard blocks for API
@@ -42,16 +51,25 @@ class ApiHeavyProtectionPolicy implements BlockPolicyInterface
         );
     }
 
+    /**
+     * Return the per-access score increment for API traffic.
+     */
     public function getScoreDeltas(): ScoreDeltasDTO
     {
         return new ScoreDeltasDTO(access: 1);
     }
 
+    /**
+     * Return the fail-open policy used when the backing store is unavailable.
+     */
     public function getFailureMode(): string
     {
         return 'FAIL_OPEN';
     }
 
+    /**
+     * API protection does not use an account budget.
+     */
     public function getBudgetConfig(): ?BudgetConfigDTO
     {
         return null;

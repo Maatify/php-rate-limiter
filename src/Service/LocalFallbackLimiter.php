@@ -6,6 +6,12 @@ namespace Maatify\RateLimiter\Service;
 
 use Maatify\SharedCommon\Contracts\ClockInterface;
 
+/**
+ * Applies bounded in-process limits while the distributed backend is degraded.
+ *
+ * Counters are process-local and therefore provide a safety fallback, not a
+ * replacement for the configured persistent store.
+ */
 class LocalFallbackLimiter
 {
     /** @var array<string, array{count: int, expiresAt: int}> */
@@ -25,6 +31,12 @@ class LocalFallbackLimiter
     private const API_IP = 120;
     private const API_IP_UA = 60;
 
+    /**
+     * Return whether the fallback window still permits the request.
+     *
+     * Login and OTP use account/IP caps in degraded mode. API protection also
+     * applies IP/user-agent caps in degraded and fail-open modes.
+     */
     public static function check(ClockInterface $clock, string $policyName, string $mode, string $ip, ?string $accountId = null, string $ua = ''): bool
     {
         self::gc($clock);

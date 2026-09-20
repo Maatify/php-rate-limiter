@@ -6,8 +6,21 @@ namespace Maatify\RateLimiter\DTO;
 
 use Maatify\RateLimiter\DTO\ScoreThresholdsDTO;
 
+/**
+ * Maps limiter scopes to their soft and hard score thresholds.
+ *
+ * A null scope has no dedicated thresholds and may use the default mapping.
+ */
 final readonly class PolicyThresholdsDTO implements \JsonSerializable
 {
+    /**
+     * @param ?ScoreThresholdsDTO $k1 IP scope thresholds.
+     * @param ?ScoreThresholdsDTO $k2 IP/user-agent scope thresholds.
+     * @param ?ScoreThresholdsDTO $k3 Device/IP scope thresholds.
+     * @param ?ScoreThresholdsDTO $k4 Account scope thresholds.
+     * @param ?ScoreThresholdsDTO $k5 Account/device scope thresholds.
+     * @param ?ScoreThresholdsDTO $default Fallback thresholds for an unmapped scope.
+     */
     public function __construct(
         public ?ScoreThresholdsDTO $k1 = null,
         public ?ScoreThresholdsDTO $k2 = null,
@@ -17,6 +30,9 @@ final readonly class PolicyThresholdsDTO implements \JsonSerializable
         public ?ScoreThresholdsDTO $default = null,
     ) {}
 
+    /**
+     * Return the scope-to-threshold mapping in serialized form.
+     */
     public function jsonSerialize(): mixed
     {
         return [

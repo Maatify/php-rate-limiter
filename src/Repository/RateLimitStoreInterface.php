@@ -8,6 +8,9 @@ use Maatify\RateLimiter\DTO\BlockStateDTO;
 use Maatify\RateLimiter\DTO\BudgetStateDTO;
 use Maatify\RateLimiter\DTO\RateLimitStateDTO;
 
+/**
+ * Persistence contract for scores, blocks, budgets, and backend health.
+ */
 interface RateLimitStoreInterface
 {
     /**

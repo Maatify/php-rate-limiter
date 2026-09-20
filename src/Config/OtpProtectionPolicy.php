@@ -10,13 +10,22 @@ use Maatify\RateLimiter\DTO\PolicyThresholdsDTO;
 use Maatify\RateLimiter\DTO\ScoreDeltasDTO;
 use Maatify\RateLimiter\DTO\ScoreThresholdsDTO;
 
+/**
+ * Policy for OTP failures with account-scoped thresholds and recovery guard.
+ */
 class OtpProtectionPolicy implements BlockPolicyInterface
 {
+    /**
+     * Return the policy identifier consumed by the engine.
+     */
     public function getName(): string
     {
         return 'otp_protection';
     }
 
+    /**
+     * Return the K4 thresholds for soft and hard OTP blocking.
+     */
     public function getScoreThresholds(): PolicyThresholdsDTO
     {
         return new PolicyThresholdsDTO(
@@ -24,6 +33,9 @@ class OtpProtectionPolicy implements BlockPolicyInterface
         );
     }
 
+    /**
+     * Return the score increments for OTP risk signals.
+     */
     public function getScoreDeltas(): ScoreDeltasDTO
     {
         return new ScoreDeltasDTO(
@@ -34,11 +46,17 @@ class OtpProtectionPolicy implements BlockPolicyInterface
         );
     }
 
+    /**
+     * Return the fail-closed policy used when the backing store is unavailable.
+     */
     public function getFailureMode(): string
     {
         return 'FAIL_CLOSED';
     }
 
+    /**
+     * Return the account budget and recovery-collision rules.
+     */
     public function getBudgetConfig(): ?BudgetConfigDTO
     {
         return new BudgetConfigDTO(

@@ -8,16 +8,25 @@ use Maatify\RateLimiter\Repository\CorrelationStoreInterface;
 use Maatify\RateLimiter\DTO\EphemeralStateDTO;
 use Maatify\RateLimiter\DTO\RateLimitContextDTO;
 
+/**
+ * Collapses excessive distinct-device identities into bounded ephemeral keys.
+ */
 class EphemeralBucket
 {
     private const MAX_DEVICES_PER_ACCOUNT = 10;
     private const MAX_DEVICES_PER_IP = 50;
     private const CAP_WINDOW = 900; // 15 mins (Flood Window)
 
+    /**
+     * @param CorrelationStoreInterface $store Distinct-device correlation store.
+     */
     public function __construct(
         private readonly CorrelationStoreInterface $store,
     ) {}
 
+    /**
+     * Return the real fingerprint key or a shared cap key when capacity is exceeded.
+     */
     public function resolveKey(RateLimitContextDTO $context, string $realFingerprintHash): string
     {
         // Check state but return key string
@@ -38,6 +47,9 @@ class EphemeralBucket
         return $realFingerprintHash;
     }
 
+    /**
+     * Count distinct devices and report whether either account or IP cap is exceeded.
+     */
     public function check(RateLimitContextDTO $context, string $realFingerprintHash): EphemeralStateDTO
     {
         // Scope Key Calculation (IPv6 Prefix)

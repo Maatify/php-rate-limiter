@@ -17,13 +17,22 @@ use Maatify\RateLimiter\DTO\RateLimitResultDTO;
 use Maatify\RateLimiter\Exception\RateLimiterException;
 use Maatify\SharedCommon\Contracts\ClockInterface;
 
+/**
+ * Coordinates policy registration, evaluation, circuit breaking, and fallback.
+ */
 class RateLimiterEngine implements RateLimiterInterface
 {
     /** @var array<string, BlockPolicyInterface> */
     private array $policies = [];
 
     /**
-     * @param BlockPolicyInterface[] $policies
+     * @param DeviceIdentityResolverInterface $deviceResolver Request identity resolver.
+     * @param EvaluationPipeline $pipeline Normal evaluation pipeline.
+     * @param CircuitBreaker $circuitBreaker Backend failure state machine.
+     * @param FailureModeResolver $failureResolver Failure-mode selector.
+     * @param FailureSignalEmitterInterface $emitter Failure transition sink.
+     * @param ClockInterface $clock Source of fallback timestamps.
+     * @param BlockPolicyInterface[] $policies Policies available by name.
      */
     public function __construct(
         private readonly DeviceIdentityResolverInterface $deviceResolver,
@@ -66,6 +75,12 @@ class RateLimiterEngine implements RateLimiterInterface
         $this->policies[$policy->getName()] = $policy;
     }
 
+    /**
+     * Evaluate a request using the policy named by its command.
+     *
+     * Backend failures are converted to the policy's configured failure mode
+     * and may use the bounded local fallback limiter.
+     */
     public function limit(RateLimitContextDTO $context, RateLimitCommand $request): RateLimitResultDTO
     {
         $policy = $this->policies[$request->policyName] ?? null;

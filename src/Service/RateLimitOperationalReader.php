@@ -18,10 +18,26 @@ use Maatify\RateLimiter\Repository\CircuitBreakerStoreInterface;
 use Maatify\RateLimiter\Repository\RateLimitStoreInterface;
 use Maatify\SharedCommon\Contracts\ClockInterface;
 
+/**
+ * Reads current and previous-generation state for operational inspection.
+ *
+ * This reader is intentionally read-only: it derives keys and fetches state
+ * without incrementing counters, issuing cooldowns, or persisting blocks.
+ */
 final class RateLimitOperationalReader implements RateLimitOperationalReaderInterface
 {
     private const BUDGET_EPOCH_SECONDS = 86400;
 
+    /**
+     * @param DeviceIdentityResolverInterface $deviceResolver Device identity resolver.
+     * @param RateLimitStoreInterface $store Score, block, budget, and health store.
+     * @param CircuitBreakerStoreInterface $circuitBreakerStore Circuit state store.
+     * @param DecayCalculator $decayCalculator Score decay service.
+     * @param ClockInterface $clock Source of observation timestamps.
+     * @param string $keySecret Active key-generation secret.
+     * @param string $envScope Environment namespace included in keys.
+     * @param ?string $previousKeySecret Optional previous-generation secret.
+     */
     public function __construct(
         private readonly DeviceIdentityResolverInterface $deviceResolver,
         private readonly RateLimitStoreInterface $store,
@@ -33,6 +49,9 @@ final class RateLimitOperationalReader implements RateLimitOperationalReaderInte
         private readonly ?string $previousKeySecret = null,
     ) {}
 
+    /**
+     * Read one policy's scores, blocks, budgets, circuit state, and health.
+     */
     public function read(
         RateLimitContextDTO $context,
         BlockPolicyInterface $policy,

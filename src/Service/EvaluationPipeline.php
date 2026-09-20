@@ -23,6 +23,12 @@ use Maatify\RateLimiter\Service\DecayCalculator;
 use Maatify\RateLimiter\Service\PenaltyLadder;
 use Maatify\SharedCommon\Contracts\ClockInterface;
 
+/**
+ * Executes key derivation, score evaluation, budget handling, and aggregation.
+ *
+ * The pipeline reads both the active and previous key generation when rotation
+ * is configured, while writing only to the active generation.
+ */
 class EvaluationPipeline
 {
     private const BUDGET_EPOCH_SECONDS = 86400; // 24h
@@ -30,6 +36,18 @@ class EvaluationPipeline
     private string $secret;
     private ?string $previousSecret;
 
+    /**
+     * @param RateLimitStoreInterface $store Score and block persistence boundary.
+     * @param CorrelationStoreInterface $correlationStore Correlation persistence boundary.
+     * @param BudgetTracker $budgetTracker Account-budget service.
+     * @param AntiEquilibriumGate $antiEquilibriumGate Repeated-soft-block guard.
+     * @param DecayCalculator $decayCalculator Score decay service.
+     * @param EphemeralBucket $ephemeralBucket Device-cap key resolver.
+     * @param string $keySecret Active key-generation secret.
+     * @param string $envScope Environment namespace included in derived keys.
+     * @param ClockInterface $clock Source of current timestamps.
+     * @param ?string $previousKeySecret Optional previous-generation secret.
+     */
     public function __construct(
         private readonly RateLimitStoreInterface $store,
         private readonly CorrelationStoreInterface $correlationStore,
@@ -46,6 +64,12 @@ class EvaluationPipeline
         $this->previousSecret = $previousKeySecret;
     }
 
+    /**
+     * Evaluate a command and return the winning allow or block decision.
+     *
+     * Normal candidates are aggregated before budget enforcement, and only
+     * winning candidates are persisted as blocks.
+     */
     public function process(
         BlockPolicyInterface $policy,
         RateLimitContextDTO $context,
