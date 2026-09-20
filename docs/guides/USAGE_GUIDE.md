@@ -68,6 +68,7 @@ The package owns enforcement decisions, key construction, scoring, decay, bounde
 | Record a successful operation | <code>RateLimitCommand::recordSuccess()</code> | [Success recording](#walkthrough-success-recording) | [basic-rate-limit.php](../../examples/basic-rate-limit.php) |
 | Use a policy preset | <code>LoginProtectionPolicy</code>, <code>OtpProtectionPolicy</code>, or <code>ApiHeavyProtectionPolicy</code> | [Policy selection](#walkthrough-policy-selection) | [basic-rate-limit.php](../../examples/basic-rate-limit.php) |
 | Observe infrastructure failures | <code>FailureSignalEmitterInterface</code> + <code>RateLimitResultDTO::failureMode</code> | [Failure boundary](#walkthrough-failure-boundary) | [infrastructure-failure.php](../../examples/infrastructure-failure.php) |
+| Inspect current operational rate-limit state | <code>RateLimitOperationalReaderInterface::read()</code> | [Operational read](#walkthrough-operational-read) | [operational-read.php](../../examples/operational-read.php) |
 
 ## Walkthrough: Pre-Check
 
@@ -128,9 +129,21 @@ runtime implementation.
 
 ## Operational Read / Reporting Boundary
 
-This package is **Out of Scope** for Operational Read / Reporting. Its store contracts support enforcement infrastructure: counters, temporary blocks, budget epochs and cooldowns, bounded correlation flags, and circuit-breaker state. The package does not own persisted domain records or lifecycle semantics such as orders, balances, subscriptions, jobs, or assignments.
+This package is **In Scope** for Operational Read / Reporting because it owns the persisted operational semantics of score state, temporary blocks, account budgets, known-device micro-caps, budget cooldowns, and circuit-breaker state. The Host supplies the concrete persistence backend, account/session source of truth, HTTP/transport, permissions, dashboards/UI, cross-package aggregation, and exports.
 
-The package owns enforcement decisions and failure signals. The host owns domain reporting, cross-domain aggregation, actor presentation, permissions, exports, and any operational dashboard. No reporting API is part of the current package runtime contract.
+The stable, framework-agnostic read contract is <code>RateLimitOperationalReaderInterface::read()</code>, implemented by <code>RateLimitOperationalReader</code>. It accepts a <code>RateLimitContextDTO</code> and <code>BlockPolicyInterface</code>, returns a typed <code>RateLimitOperationalSnapshotDTO</code>, and performs a point-in-time read without changing enforcement state. It is separate from <code>RateLimiterInterface::limit()</code>, which remains the consumer enforcement API.
+
+Correlation distinct-set members, watch-flag internals, churn sets, and dilution sets are intentionally unsupported because they are internal bounded enforcement structures without a stable operational reporting semantic. The read surface has no mutation/reset/unblock, global listing, arbitrary key lookup, raw-key exposure, historical audit store, Host joins, cross-package reporting, or correlation-set inspection.
+
+## Walkthrough: Operational Read
+
+    Host context + policy
+        → RateLimitOperationalReaderInterface::read()
+        → Package-owned read-only state resolution
+        → RateLimitOperationalSnapshotDTO
+        → Host monitoring or operations boundary
+
+The operational reader reads current real enforcement keys and applies the documented single previous-generation fallback where configured. It does not call <code>EvaluationPipeline::process()</code>, <code>RateLimiterEngine::limit()</code>, <code>EphemeralBucket</code>, correlation mutation methods, or circuit-breaker mutation methods, and it never exposes raw storage keys, secrets, fingerprints, or Host data.
 
 ## Further Reading
 

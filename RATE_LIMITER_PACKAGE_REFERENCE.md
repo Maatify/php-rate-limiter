@@ -45,25 +45,38 @@ under the responsibility that owns them. There are no `Domain`, capability-wrapp
 
 ## Operational Read / Reporting Classification
 
-**Classification: Out of Scope.**
+**Classification: In Scope.**
 
-The package's storage abstractions are enforcement infrastructure. They persist counters, temporary blocks, budget epochs and cooldown markers, bounded correlation flags, and circuit-breaker state. These values support the rate-limit decision lifecycle; they are not package-owned business records or persisted operational domain semantics such as orders, balances, subscriptions, jobs, statuses, or assignments.
+The package owns persisted operational semantics for the rate limiter even though the Host supplies the concrete storage drivers. A point-in-time operational read is therefore a package capability, not a generic dashboard or cross-domain reporting layer.
 
-The package owns:
+Package-owned operational concepts are:
 
-- enforcement decisions and their `ALLOW`, `SOFT_BLOCK`, and `HARD_BLOCK` results;
-- bounded scoring, decay, budget, correlation, and circuit-breaker semantics;
-- keyed runtime state required to evaluate those decisions; and
-- failure signals emitted at the circuit-breaker boundary.
+- score state;
+- temporary block state;
+- account budget;
+- known-device micro-cap;
+- budget cooldown; and
+- circuit-breaker state.
 
 The Host owns:
 
-- account, session, authentication, and business-domain identity;
-- concrete storage drivers and their operational infrastructure;
-- transport responses, permissions, logging destinations, and incident handling; and
-- reporting, dashboards, exports, and cross-domain aggregation.
+- the concrete persistence backend;
+- account and session source of truth;
+- HTTP and transport behavior;
+- permissions;
+- dashboards and UI;
+- cross-package aggregation; and
+- exports.
 
-No Operational Read / Reporting API is required or exposed by the current package contract. No reporting surface is added for compliance.
+The public operational contract is `Maatify\RateLimiter\Service\RateLimitOperationalReaderInterface` and its production implementation `Maatify\RateLimiter\Service\RateLimitOperationalReader`, together with the operational DTOs listed below. The query is:
+
+    RateLimitContextDTO + BlockPolicyInterface
+        → RateLimitOperationalReaderInterface::read()
+        → RateLimitOperationalSnapshotDTO
+
+This is a read-only, point-in-time operational observation and is not an alternate enforcement API. `RateLimiterInterface::limit()` remains the consumer enforcement API.
+
+Correlation distinct-set members, watch-flag internals, churn sets, and dilution sets are intentionally unsupported reporting dimensions. They are internal bounded enforcement structures without a stable operational reporting semantic. The operational read surface has no mutation/reset/unblock API, global listing, arbitrary key lookup, raw-key exposure, historical audit store, Host joins, cross-package reporting, or correlation-set inspection.
 
 ## Public Runtime API Inventory
 
@@ -80,6 +93,7 @@ The following inventory describes the current public runtime types. Test and sup
 | `Maatify\RateLimiter\Repository\CircuitBreakerStoreInterface` | Circuit-breaker state persistence boundary. |
 | `Maatify\RateLimiter\Contract\FailureSignalEmitterInterface` | Failure and circuit-breaker signal delivery boundary. |
 | `Maatify\RateLimiter\Service\DeviceIdentityResolverInterface` | Device identity resolution boundary. |
+| `Maatify\RateLimiter\Service\RateLimitOperationalReaderInterface` | Read-only point-in-time operational state query boundary. |
 | `Maatify\RateLimiter\Config\BlockPolicyInterface` | Policy name, thresholds, score deltas, failure mode, and budget configuration. |
 | `Maatify\RateLimiter\Exception\RateLimiterExceptionInterface` | Package exception marker contract. |
 
@@ -97,6 +111,7 @@ The following inventory describes the current public runtime types. Test and sup
 | Identity and policy | `Maatify\RateLimiter\DTO\DeviceIdentityDTO`, `Maatify\RateLimiter\DTO\PolicyThresholdsDTO`, `Maatify\RateLimiter\DTO\ScoreThresholdsDTO`, `Maatify\RateLimiter\DTO\ScoreDeltasDTO`, `Maatify\RateLimiter\DTO\BudgetConfigDTO` |
 | Runtime state | `Maatify\RateLimiter\DTO\BudgetStatusDTO`, `Maatify\RateLimiter\DTO\EphemeralStateDTO`, `Maatify\RateLimiter\DTO\FailureSignalDTO`, `Maatify\RateLimiter\DTO\FailureStateDTO` |
 | Store boundary state | `Maatify\RateLimiter\DTO\RateLimitStateDTO`, `Maatify\RateLimiter\DTO\BlockStateDTO`, `Maatify\RateLimiter\DTO\BudgetStateDTO`, `Maatify\RateLimiter\DTO\CircuitBreakerStateDTO` |
+| Operational read | `Maatify\RateLimiter\DTO\RateLimitOperationalKeyStateDTO`, `Maatify\RateLimiter\DTO\RateLimitOperationalScopesDTO`, `Maatify\RateLimiter\DTO\RateLimitOperationalBudgetDTO`, `Maatify\RateLimiter\DTO\RateLimitOperationalSnapshotDTO` |
 
 `Maatify\RateLimiter\DTO\PipelineScoreDTO` is an internal composition DTO and is not part of the consumer Public Runtime API.
 
@@ -107,6 +122,7 @@ The following inventory describes the current public runtime types. Test and sup
 | Primary entrypoint | `Maatify\RateLimiter\Service\RateLimiterEngine` | Production implementation of `Maatify\RateLimiter\Service\RateLimiterInterface`; composes identity resolution, evaluation, circuit-breaker, failure, and policy behavior. |
 | Composition services | `Maatify\RateLimiter\Service\EvaluationPipeline`, `Maatify\RateLimiter\Service\CircuitBreaker`, `Maatify\RateLimiter\Service\FailureModeResolver`, `Maatify\RateLimiter\Service\LocalFallbackLimiter` | Public runtime services used to assemble or extend the engine without coupling it to a storage implementation. |
 | Identity services | `Maatify\RateLimiter\Service\DeviceIdentityResolver`, `Maatify\RateLimiter\Service\FingerprintHasher`, `Maatify\RateLimiter\Service\EphemeralBucket` | Default identity hashing, normalization, bounded device handling, and ephemeral-key selection. |
+| Operational read | `Maatify\RateLimiter\Service\RateLimitOperationalReader` | Resolves a read-only point-in-time snapshot from a typed context and policy without invoking enforcement or mutation primitives. |
 | Decision services | `Maatify\RateLimiter\Service\AntiEquilibriumGate`, `Maatify\RateLimiter\Service\BudgetTracker`, `Maatify\RateLimiter\Service\DecayCalculator`, `Maatify\RateLimiter\Service\PenaltyLadder` | Publicly typed services for bounded penalty, budget, decay, and escalation orchestration. |
 | Configuration presets | `Maatify\RateLimiter\Config\LoginProtectionPolicy`, `Maatify\RateLimiter\Config\OtpProtectionPolicy`, `Maatify\RateLimiter\Config\ApiHeavyProtectionPolicy` | Production policy definitions selected by the command policy name. |
 | Exception | `Maatify\RateLimiter\Exception\RateLimiterException` | Package-defined invalid-input and configuration exception implementing the package marker interface. |
@@ -130,6 +146,16 @@ Concretely:
         → RateLimitResultDTO and, when applicable, FailureSignalDTO
 
 `RateLimiterEngine` selects the policy by the command's policy name. `EvaluationPipeline` resolves active blocks, identity-derived keys, scoring, correlation, budgets, decay, and final aggregation. The integration boundaries provide the stateful primitives; the result is returned to the Host, which decides how to enforce it at its own transport or application boundary.
+
+The independent operational path is:
+
+    RateLimitContextDTO + BlockPolicyInterface
+        → RateLimitOperationalReaderInterface::read()
+        → package-owned score/block/budget/cooldown/circuit-breaker reads
+        → RateLimitOperationalSnapshotDTO
+        → Host monitoring or operations boundary
+
+The operational reader derives only the real enforcement keys for the supplied context, observes current generation state with the documented previous-generation fallback, and never changes score counters, budgets, cooldowns, blocks, circuit-breaker state, or correlation state.
 
 ---
 

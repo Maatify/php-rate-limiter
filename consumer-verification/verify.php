@@ -15,10 +15,12 @@ use Maatify\RateLimiter\Service\EphemeralBucket;
 use Maatify\RateLimiter\Service\FingerprintHasher;
 use Maatify\RateLimiter\DTO\RateLimitContextDTO;
 use Maatify\RateLimiter\DTO\RateLimitResultDTO;
+use Maatify\RateLimiter\DTO\RateLimitOperationalSnapshotDTO;
 use Maatify\RateLimiter\Service\CircuitBreaker;
 use Maatify\RateLimiter\Service\EvaluationPipeline;
 use Maatify\RateLimiter\Service\FailureModeResolver;
 use Maatify\RateLimiter\Service\RateLimiterEngine;
+use Maatify\RateLimiter\Service\RateLimitOperationalReader;
 use Maatify\RateLimiter\Service\AntiEquilibriumGate;
 use Maatify\RateLimiter\Service\BudgetTracker;
 use Maatify\RateLimiter\Service\DecayCalculator;
@@ -110,12 +112,31 @@ requireCondition(
     'The consumer correlation storage boundary was not used.'
 );
 
+$writesBeforeOperationalRead = $rateLimitStore->writeCount();
+$operationalReader = new RateLimitOperationalReader(
+    $deviceResolver,
+    $rateLimitStore,
+    $circuitBreakerStore,
+    new DecayCalculator($clock),
+    $clock,
+    'active-key',
+    'prod',
+    'previous-key'
+);
+$snapshot = $operationalReader->read($context, new OtpProtectionPolicy());
+requireCondition($snapshot instanceof RateLimitOperationalSnapshotDTO, 'The operational reader did not return its typed snapshot.');
+requireCondition($snapshot->policyName === 'otp_protection', 'The operational snapshot policy name is incorrect.');
+requireCondition($snapshot->scopes->k4?->score?->value === 5, 'The operational snapshot did not expose the runtime K4 state.');
+requireCondition($writesBeforeOperationalRead === $rateLimitStore->writeCount(), 'Operational read mutated the consumer store.');
+
 echo json_encode([
     'status' => 'PASS',
     'packageInstallPath' => $installPath,
     'preflightDecision' => $preflight->decision,
     'failureDecision' => $failure->decision,
     'failureBlockLevel' => $failure->blockLevel,
+    'operationalK4Score' => $snapshot->scopes->k4?->score?->value,
+    'operationalBackendHealthy' => $snapshot->backendHealthy,
     'rateLimitStoreWrites' => $rateLimitStore->writeCount(),
     'correlationStoreOperations' => $correlationStore->operationCount(),
     'failureSignals' => count($failureSignalEmitter->signals()),
