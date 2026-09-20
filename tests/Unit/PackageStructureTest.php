@@ -11,8 +11,13 @@ final class PackageStructureTest extends TestCase
     public function testCanonicalSourceRootsAreTheOnlyDirectRuntimeResponsibilities(): void
     {
         $sourceRoot = dirname(__DIR__, 2) . '/src';
+        $entries = scandir($sourceRoot);
+        if ($entries === false) {
+            self::fail('Unable to inspect the package source root.');
+        }
+
         $actualRoots = array_values(array_filter(
-            scandir($sourceRoot),
+            $entries,
             static fn (string $entry): bool => $entry !== '.' && $entry !== '..' && is_dir($sourceRoot . '/' . $entry)
         ));
         sort($actualRoots);
