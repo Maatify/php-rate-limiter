@@ -3,12 +3,12 @@
 ## بيانات المعيار
 
 - **Standard ID:** `std-documentation-lifecycle`
-- **Standard Version:** `2.0.0`
+- **Standard Version:** `3.0.0`
 - **Standard Version Format:** `MAJOR.MINOR.PATCH`
 - **اللغة المعتمدة:** العربية.
 - **النطاق:** ملكية الوثائق المعيارية، وحدود السلطة بينها، ودلالات الحالة الحالية والتاريخية، ودورة حياتها بعد إغلاق العمل، ومراجعة حداثتها، والاحتفاظ بها.
 
-هذا معيار هندسي canonical جديد. إصداره `1.0.0` هو **OWNER-APPROVED BOOTSTRAP VERSION** لهوية canonical جديدة بلا lineage سابق.
+كانت `1.0.0` **OWNER-APPROVED BOOTSTRAP VERSION** لهذه الهوية canonical الجديدة آنذاك، ولم تكن لها lineage سابقة.
 
 ## 1. Applicability
 
@@ -52,6 +52,33 @@
 يُستثنى من ذلك artifact المعلن صراحةً كعربي في اسمه أو Metadata أو canonical ownership، بما في ذلك ملفات `*_AR.md`، أو الذي يفرضه Owner-approved project requirement صريح. وجود Standard مكتوبة بالعربية لا يجعل artifacts التي تحكمها عربية تلقائيًا. وتظل technical identifiers بصيغتها التقنية الأصلية.
 
 هذه القاعدة تخص Repository Documentation الدائمة، ولا تغيّر قاعدة العربية الافتراضية للتواصل والتنفيذ وPrompts والتقارير ونتائج المراجعة ووصف وملخص Pull Request المملوكة لـ`AI_COLLABORATION_WORKFLOW_AR.md`. كما لا تمنح تفويضًا لترجمة ملفات موجودة أو historical documentation تلقائيًا؛ يظل أي تحديث أو ترحيل لاحق خاضعًا لنطاقه واعتماده المستقل.
+
+## 2.2 لغة PHP Source-Code Documentation
+
+هذا المعيار هو المالك canonical للغة **PHP Source-Code Documentation** داخل ملفات PHP التي يملكها المستودع وتقع ضمن نطاق انطباق هذا المعيار. تكون هذه التوثيقات **بالإنجليزية افتراضيًا**، ولا تحددها لغة الـPrompt أو الـStandard أو تقرير التنفيذ أو المحادثة أو أي Artifact من Artifacts التواصل والتنفيذ والتعاون.
+
+يشمل هذا العقد، عندما يكون النص توثيقًا موجّهًا إلى المطورين أو الصيانة، ما يلي:
+
+- PHPDoc وDocBlocks الخاصة بالـclass والـinterface والـtrait والـenum والـmethod والـfunction والـproperty؛
+- inline comments وblock comments داخل ملفات PHP؛
+- تعليقات `TODO` و`FIXME` الموجهة إلى المطورين؛ و
+- التعليقات داخل اختبارات PHP متى كانت Source-Code Documentation.
+
+لا يفرض هذا العقد تعريب أو ترجمة أسماء الـclass أو الـinterface أو الـtrait أو الـenum أو الـmethod أو الـfunction أو الـproperty أو أي technical identifier آخر. كما لا ينشئ عقدًا عامًا للغات برمجة غير PHP.
+
+### الفصل عن Runtime / User-Facing Content
+
+لا تعني قاعدة الإنجليزية الخاصة بـPHP Source-Code Documentation أن **Runtime / User-Facing Content** يجب أن يكون بالإنجليزية. تبقى اللغة العربية أو أي لغة أخرى مسموحة عندما يفرضها العقد الوظيفي للمحتوى، بما في ذلك UI text وlocalized strings ورسائل التحقق أو الخطأ الموجهة للمستخدم والبريد الإلكتروني وSMS والإشعارات وموارد الترجمة وbusiness content/data ونصوص استجابات runtime الموجهة للمستخدم.
+
+مثلًا، لا يكون النص التالي مخالفًا لمجرد أنه عربي إذا كان رسالة موجهة للمستخدم ومقصودة بهذه اللغة:
+
+```php
+throw new ValidationException('رقم الهاتف غير صحيح');
+```
+
+وعليه، فإن لغة **Durable Repository Documentation** ولغة **PHP Source-Code Documentation** ولغة **Runtime / User-Facing Content** مجالات منفصلة؛ ولا تنقل إحداها قاعدتها إلى الأخرى. لا يشمل هذا العقد `vendor/` أو third-party source أو generated code غير المملوك للمشروع، ما لم يعامله المشروع صراحةً كـsource maintained يدويًا.
+
+يثبت هذا القسم العقد canonical فقط؛ ولا ينشئ Adoption Upgrade تلقائيًا أو remediation تلقائية في Consumer Repositories، ولا يفرض بهذه المهمة تحويل التعليقات التاريخية في المستهلكين.
 
 ## 3. أدوار الوثائق
 

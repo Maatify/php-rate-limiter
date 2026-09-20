@@ -5,7 +5,7 @@
 ## Standard Metadata
 
 - **Standard ID:** `std-package-building`
-- **Standard Version:** `3.0.0`
+- **Standard Version:** `3.0.1`
 - **Standard Version Format:** `MAJOR.MINOR.PATCH`
 
 This document is the law for building any new standalone Composer package in the Maatify ecosystem.
@@ -970,7 +970,7 @@ The package-level integration contract is:
 - shifting, clamping, scope locking, transaction ownership, identifier validation, and persistence exception behavior MUST remain delegated to `maatify/persistence`
 - a consumer MUST NOT reproduce or fork the Ordering engine locally
 
-Exact class names, method signatures, transaction behavior, and Runtime semantics are owned by the stable `maatify/persistence` public API and [PERSISTENCE_PACKAGE_REFERENCE.md](https://github.com/Maatify/persistence/blob/main/PERSISTENCE_PACKAGE_REFERENCE.md).
+Exact class names, method signatures, transaction behavior, and Runtime semantics are owned by the stable `maatify/persistence` public API and [PERSISTENCE_PACKAGE_REFERENCE.md](https://github.com/Maatify/persistence/blob/fc1459b49fe5af5ead17814eeb3ada7a3fa81791/PERSISTENCE_PACKAGE_REFERENCE.md).
 
 ---
 

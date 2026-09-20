@@ -3,7 +3,7 @@
 ## بيانات المعيار
 
 - **Standard ID:** `std-ai-collaboration-workflow`
-- **Standard Version:** `7.0.1`
+- **Standard Version:** `7.1.0`
 - **Standard Version Format:** `MAJOR.MINOR.PATCH`
 - **اللغة المعتمدة:** العربية.
 - **مالك المعيار:** مالك المشروع.
@@ -518,6 +518,8 @@ git diff --stat
 * يتم طلب التصحيح عبر top-level PR conversation comment أو Reply عادي داخل نفس PR بمنشن صريح `@jules`.
 * كل تصحيح بعد Commit يتم في Commit جديدة، بدون amend أو force-push.
 
+تخص قاعدة `@jules` أعلاه جولات التصحيح اليدوي الناتجة عن ملاحظات Lead أو PR. أما task-scoped automatic CI remediation وفق §11.4، إذا كانت continuation لنفس المهمة، فلا تحتاج top-level `@jules` comment منفصلًا لكل repair cycle؛ وتظل على نفس Jules task branch وداخل نفس task boundary، ولا تعيد تعريف المهمة أو acceptance criteria.
+
 **تبدأ Jules Session جديدة عندما:**
 * تكون المهمة الجديدة نطاقًا مستقلًا عن المهمة الحالية.
 * تتغير المهمة أو acceptance criteria إلى عمل مستقل.
@@ -647,7 +649,7 @@ git diff --stat
 
 تشمل scope وdiff وbase freshness والـ checks والـ threads. بعد مهمة Jules الناجحة، يتولى المساعد القائد تثبيت العنوان والوصف النهائيين للـ PR من الحالة الفعلية.
 
-تستمر التصحيحات الطبيعية داخل نفس PR. في مهام Jules تُرسل الملاحظات على نفس المهمة عبر top-level PR conversation comment أو Reply عادي داخل نفس PR بمنشن صريح `@jules` وفق القسم `11.1`. عند التكدس أو فقدان الاستيعاب يُطبق مسار الاستعادة في القسم `6.7`.
+تستمر التصحيحات اليدوية الطبيعية داخل نفس PR. في مهام Jules تُرسل ملاحظات Lead أو PR على نفس المهمة عبر top-level PR conversation comment أو Reply عادي داخل نفس PR بمنشن صريح `@jules` وفق القسم `11.1`. أما task-scoped automatic CI remediation التابعة للمهمة نفسها فتتبع lifecycle §11.4 ولا تحتاج comment يدويًا منفصلًا لكل دورة. عند التكدس أو فقدان الاستيعاب يُطبق مسار الاستعادة في القسم `6.7`.
 
 بعد إنشاء أي PR تُراجع `base` و`head` و`merge-base` و`changed files`. يُصلح خطأ الـ base من نفس head branch فقط عندما تكون ancestry صحيحة؛ أما branch المبنية من مصدر خاطئ فتُستبدل بbranch جديدة من المصدر الصحيح.
 
@@ -914,6 +916,8 @@ Jules يكتب فقط على branch **خاصة بمهمته الحالية (Jule
 - **PR feedback does not expand task scope:** أي تعليق أو استخدام لـ `@jules` يسمح فقط بتصحيح أو استكمال نفس المهمة (acceptance criteria الحالية)، ولا يمنح نطاقًا أو قرارًا معماريًا جديدًا.
 - عند تغير النطاق، أو بدء Session جديدة، أو فقدان الاستيعاب، يُستخدم المسار المتتابع في القسم `6.7`.
 
+هذه القواعد الخاصة بـ`@jules` تخص manual Lead/PR feedback correction. أما task-scoped automatic CI remediation الناتجة عن implementation أو publication للمهمة نفسها فليست manual PR feedback، ولا تحتاج comment منفصلًا لبدء كل repair cycle؛ وتظل على نفس Jules task branch وداخل نفس task boundary ووفق topology وصلاحيات Git القائمة.
+
 هذه الآلية خاصة بمهام Jules، ولا تغيّر مسار المنفذ المحلي أو صلاحيات المساعد القائد.
 
 ## 11.2 Commits والنشر
@@ -934,12 +938,46 @@ Jules يكتب فقط على branch **خاصة بمهمته الحالية (Jule
 
 ## 11.4 التعديلات التلقائية للمستودع (Autonomous Repository Mutations)
 
-أي أتمتة لـ Jules يمكنها إنشاء أو تعديل Branch أو Commit أو PR تلقائيًا خارج التوجيه المباشر (مثل CI auto-fixing أو scheduled tasks) تكون **غير مستخدمة افتراضيًا** في المشاريع الخاضعة لهذا المعيار.
-لا يُسمح بتفعيلها إلا بقرار صريح من مالك المشروع، ويجب ألا تتجاوز في عملها:
-- النطاق المحدد للمهمة (task scope).
-- قواعد ملكية الـ Branch.
-- dependencies وExecution topology التي يحددها Phase Stack.
-- سلطة الدمج (merge authority) الخاصة بالمالك.
+يجب التمييز بين نوعين من التعديلات التلقائية لـJules يمكنها إنشاء أو تعديل Branch أو Commit أو PR خارج التوجيه اليدوي المباشر:
+
+### Task-scoped automatic remediation
+
+عندما تكون CI auto-remediation ناتجة عن implementation أو publication للمهمة الحالية نفسها، فهي continuation لنفس Jules task lifecycle، ولا تحتاج Owner authorization مستقلة لكل repair cycle. والمسار هو:
+
+```text
+Assigned Jules Task
+→ Implementation
+→ Publish
+→ CI failure
+→ Jules automatic repair commit(s)
+→ CI rerun/resubmission
+→ Final accumulated state
+→ Lead Fresh Full Acceptance Review
+```
+
+وتظل هذه continuation محكومة كلها بـ:
+
+- نفس task scope وacceptance criteria والقرارات المقفلة.
+- نفس Jules task branch ونفس branch ancestry وPR topology القائمة.
+- صلاحيات Git القائمة للمهمة وقيود Phase Stack.
+- مراجعة Lead كاملة للحالة النهائية المتراكمة، بما في ذلك implementation الأصلي وكل automatic repair commits.
+- عدم أي توسع مادي في Architecture أو Policy أو Ownership أو Public Contract أو Versioning أو task scope أو branch ancestry أو GitHub Merge authority.
+
+لا تتمتع automatic repair commits بثقة خاصة، ولا تعني `CI green` القبول:
+
+```text
+CI green ≠ Lead Acceptance
+```
+
+ويجوز للـLead بعد Fresh Full Acceptance Review أن يقبل الناتج، أو يطلب من Jules تصحيحه داخل نفس المهمة، أو يرفض repair approach، أو يكلّف منفذًا آخر بإصلاح الناتج وفق العقود العادية. لا تنشئ هذه القاعدة topology خاصة بالـhandoff، ولا تغير Phase Stack أو صلاحيات Git أو قواعد Publish Branch/Publish PR أو Owner-only GitHub Merge.
+
+### Independent autonomous repository mutation
+
+أما scheduled tasks أو أي autonomous repository mutation لا تكون continuation للمهمة الحالية، فتظل **غير مستخدمة افتراضيًا** ولا تُفعّل إلا وفق Owner authorization والسياسة القائمة الخاصة بذلك التغيير. ولا يمنحها هذا القسم أي صلاحية في:
+
+- Architecture أو Policy أو Ownership أو Public Contract أو Versioning.
+- task scope أو branch ancestry أو Execution topology.
+- GitHub Merge أو أي سلطة مملوكة للمالك.
 
 ## 11.5 سياق وذاكرة Jules (Jules Memory)
 
@@ -1066,7 +1104,7 @@ Fix verification != final acceptance review
 4. checks والـ review threads وتاريخ commits مفهومة.
 5. وصف PR النهائي مبني على remote state.
 6. في مهام Jules، إعداد Starting branch وطريقة النشر مطابقان للقسم `6.7`.
-7. أي استخدام لـ `@jules` يخص نفس المهمة ونفس PR والـ branch وفق القسم `11.1`.
+7. أي manual PR feedback correction باستخدام `@jules` يخص نفس المهمة ونفس PR والـ branch وفق القسم `11.1`؛ أما task-scoped automatic CI remediation فتتبع §11.4 ولا تحتاج comment يدويًا منفصلًا لكل cycle.
 8. عند خطأ base، فُصل بين خطأ metadata وخطأ ancestry، ولم تُحذف branch قبل التحقق من البديل.
 9. القرار النهائي معروض على مالك المشروع.
 
@@ -1148,6 +1186,11 @@ Fix verification != final acceptance review
 ---
 
 # 17. سجل تغييرات المعيار
+
+## `7.1.0`
+
+- تطبيق `DEC-015`: اعتبار task-scoped automatic CI remediation الناتجة عن implementation أو publication للمهمة نفسها continuation لنفس Jules task lifecycle دون Owner authorization مستقلة لكل repair cycle، مع إبقاء نفس task scope وbranch وtopology وصلاحيات Git، وإلزام Lead Fresh Full Acceptance Review للحالة النهائية المتراكمة.
+- إبقاء manual Lead/PR feedback correction عبر `@jules`، وفصل scheduled/unrelated autonomous repository mutation كمسار مستقل Owner-controlled، مع تثبيت أن `CI green` لا يساوي Lead Acceptance وعدم تغيير Architecture أو Policy أو Ownership أو Public Contract أو Versioning أو Merge authority أو Publish PR topology.
 
 ## `7.0.1`
 
@@ -1270,7 +1313,8 @@ Fix verification != final acceptance review
 - **المنفذ المكلّف:** ينفذ النطاق المحدد ويعرض الأدلة، ولا يقرر السياسة أو المعمارية من نفسه؛ يحدد المشروع أو المرحلة أو المهمة أو مالك المشروع من ينفذ كل نوع من العمل.
 - **Jules عند تكليفه:** يبدأ من Repository وStarting branch محددتين قبل الـ Prompt، وينفذ على branch خاصة بمهمته الحالية (Jules task branch).
 - **نشر Jules:** Publish Branch للـ base غير `main`؛ Publish PR فقط عند استهداف `main`.
-- **تصحيح Jules:** عبر top-level PR conversation comment أو Reply عادي داخل نفس PR بمنشن صريح `@jules` لنفس المهمة ونفس PR والـ branch فقط.
+- **تصحيح Jules اليدوي:** عبر top-level PR conversation comment أو Reply عادي داخل نفس PR بمنشن صريح `@jules` لنفس المهمة ونفس PR والـ branch فقط؛ أما task-scoped automatic CI remediation فتتبع §11.4 ولا تحتاج comment منفصلًا لكل repair cycle.
+- **Task-scoped automatic CI remediation:** continuation لنفس المهمة عند صدورها عن implementation أو publication للمهمة نفسها، مع مراجعة Lead Fresh Full Acceptance Review للحالة النهائية المتراكمة؛ ولا تعني `CI green` القبول.
 - **Review Staging:** مسموح افتراضيًا للمسارات الصريحة، مع بقاء التغييرات local وstaged وuncommitted.
 - **Amend:** ممنوع؛ كل تصحيح Commit جديد.
 - **جولات التصحيح:** تستمر داخل نفس PR ما دامت واضحة وداخل النطاق؛ session وbranch متتابعة تستخدم فقط عند ظهور تكدس فعلي وبتصاريح Git صريحة.

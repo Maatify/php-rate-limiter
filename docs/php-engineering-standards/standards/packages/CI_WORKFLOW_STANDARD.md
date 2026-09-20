@@ -3,7 +3,7 @@
 ## Standard Metadata
 
 - **Standard ID:** `std-ci-workflow`
-- **Standard Version:** `2.0.0`
+- **Standard Version:** `3.0.0`
 - **Standard Version Format:** `MAJOR.MINOR.PATCH`
 
 This document outlines the standard CI workflow architecture for reusable Composer artifacts in the Maatify ecosystem. It applies to standalone Composer packages and to an extractable Base Module Artifact Root when the check or service verifies that artifact as a reusable Package. It ensures a consistent, high-quality testing and static analysis baseline without coupling repository-specific values to this Standard.
@@ -151,6 +151,23 @@ composer check-platform-reqs
 ```
 The flags `--ignore-platform-reqs` or `--ignore-platform-req` MUST NOT be used in required baseline CI.
 
+### 5.1 Composer Capability for Required Dependency-Policy Gates
+
+The required authoritative dependency-policy security gate MUST run with a supported Composer release containing the Composer 2.10 dependency-policy model, including:
+
+* `config.policy`
+* the advisories policy
+* the malware policy
+* the abandoned policy
+* custom dependency policies
+* the current applicable policy-enforcement controls
+
+This is a CI/tooling capability requirement only. It MUST NOT become a consumer runtime minimum, a Composer package dependency, a `composer-runtime-api` requirement, or a package-install requirement imposed on consumers.
+
+The Composer executable used by the authoritative gate MUST be selected and provisioned deterministically under the repository's existing CI tooling contract. This Standard does not prescribe a new installation architecture or an exact Composer patch version.
+
+A repository MAY run a separate compatibility job with an older Composer release when that compatibility is an actual repository requirement. That job MUST NOT be the sole dependency-policy security gate and MUST NOT replace the authoritative gate using the current policy model.
+
 ## 6. Dependency Compatibility
 
 Reusable libraries MUST validate both ends of their declared dependency constraints.
@@ -212,19 +229,29 @@ The standard MUST require, where applicable:
 
 ## 9. Composer Security Audit
 
-CI MUST perform a non-interactive security audit after successful dependency resolution. Note that bare `composer audit` does not guarantee failure for abandoned packages because it is influenced by the configuration (e.g., `ignore`, `report`, or `fail`) and `report` does not enforce a non-zero exit. However, as a **Maatify Internal Policy**, ignoring vulnerabilities and abandoned packages is forbidden, and CI MUST remain fail-closed. Therefore, CI MUST use an explicit enforcement command such as:
+CI MUST perform a non-interactive dependency-policy audit after successful dependency resolution. The authoritative gate MUST satisfy §5.1. `composer audit` checks dependency policies, including advisories, malware, abandoned packages, and configured custom policies. Required verification MUST fail on security advisories, malware findings, abandoned packages under the Maatify release/audit policy unless an applicable approved migration decision permits a scoped ignore, and findings from a configured custom dependency policy when that policy is part of required enforcement.
+
+CI MUST NOT rely on the mere presence of `composer audit` when the effective policy has been weakened. The audit and the surrounding Composer invocation MUST preserve the fail-closed contract in [`COMPOSER_PACKAGE_STANDARD.md`](COMPOSER_PACKAGE_STANDARD.md) §23.5. Therefore, CI MAY use an explicit enforcement command such as:
 ```bash
 composer audit --no-interaction --abandoned=fail
 ```
-or an equivalent explicit Composer configuration.
+but the command succeeds as required only when the effective advisories, malware, abandoned, and configured custom-policy audit configuration is not reduced to a permissive state. An equivalent explicit enforcement configuration MUST provide the same semantics.
 
-The repository MUST define an explicit policy for:
-* security advisories
-* abandoned packages
-* known vulnerable direct dependencies
-* known vulnerable transitive dependencies
+Required dependency/security gates MUST remain non-interactive and MUST NOT use or permit an override that weakens the required policy, including when applicable:
 
-Security audit failures MUST NOT be made non-blocking through `continue-on-error` or shell fallbacks.
+* `COMPOSER_POLICY=0`
+* `COMPOSER_NO_BLOCKING=1`
+* `--no-blocking`
+* deprecated `--no-security-blocking`
+* `COMPOSER_POLICY_ADVISORIES_BLOCK=0`
+* `COMPOSER_POLICY_MALWARE_BLOCK=0`
+* `COMPOSER_NO_AUDIT=1` as a way to cancel required verification
+* `COMPOSER_AUDIT_ABANDONED` or `--abandoned` values that reduce abandoned auditing to `ignore` or `report`
+* `--ignore-severity` to bypass required advisory verification
+
+`COMPOSER_POLICY_ABANDONED_BLOCK=0` MUST NOT be prohibited solely because its value is `0`: this Standard does not introduce abandoned resolution blocking as a new requirement. Abandoned audit MUST still fail by default, and an abandoned override MUST NOT change the required audit result to `ignore` or `report`.
+
+Security and dependency-policy failures MUST NOT be made non-blocking through `continue-on-error` or shell fallbacks.
 
 ## 10. Workflow Syntax Validation
 
@@ -388,7 +415,8 @@ Any applicable reusable Composer artifact in the Maatify ecosystem MUST verify t
 * [ ] current compatible dependencies pass
 * [ ] lowest supported dependencies pass
 * [ ] platform requirements pass
-* [ ] Composer audit passes
+* [ ] Required dependency-policy security gate uses a supported Composer release containing the Composer 2.10 dependency-policy model; any older compatibility job does not replace it
+* [ ] Required dependency-policy audit passes under the effective fail-closed configuration
 * [ ] PHP syntax passes
 * [ ] PHPStan max passes with zero suppressions
 * [ ] code-style dry-run passes when configured

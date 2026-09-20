@@ -5,7 +5,7 @@
 ## Standard Metadata
 
 - **Standard ID:** `std-composer-package`
-- **Standard Version:** `3.0.1`
+- **Standard Version:** `4.0.0`
 - **Standard Version Format:** `MAJOR.MINOR.PATCH`
 
 This document defines the canonical Composer manifest contract represented by `composer.json` for standalone, reusable PHP libraries in the Maatify ecosystem.
@@ -26,7 +26,7 @@ The key words **MUST**, **MUST NOT**, **REQUIRED**, **SHOULD**, **SHOULD NOT**, 
 - **SHOULD / SHOULD NOT**: The default expected behavior. A deviation requires a documented technical reason.
 - **MAY / OPTIONAL**: A permitted choice that depends on the library's actual requirements.
 
-A rule in this Standard does not become optional merely because Composer itself permits another shape. This document defines the stricter Maatify library profile.
+A rule in this Standard does not become optional merely because Composer itself permits another shape. This document defines the stricter Maatify reusable-library baseline.
 
 ---
 
@@ -45,6 +45,7 @@ It owns rules for:
 - Production and development autoloading.
 - Composer scripts.
 - Composer configuration.
+- Dependency policy and security-sensitive configuration.
 - Stability policy.
 - Optional package-link fields.
 - Custom repository restrictions.
@@ -100,7 +101,7 @@ It does not automatically apply to:
 - PHP extensions written in C.
 - JavaScript, Rust, or other language ecosystems.
 
-Those package types require a separate profile or Standard.
+Those package types require a separate approved Standard or a formal Profile manifest.
 
 For an extractable Base Module, this Standard applies to the Module's Artifact Root even while it is located inside a Host repository. The Artifact Root MUST contain its own `composer.json`; a Host root `composer.json` MAY provide in-project autoloading but MUST NOT replace the Artifact Root's Composer contract.
 
@@ -114,7 +115,7 @@ Rules for those fields govern the library repository while it is being developed
 
 ## 4. Core Composer Contract Principles
 
-*Note: Composer technically allows other forms for many of these configurations, but Maatify adopts a stricter Profile to ensure consistency and reliability across the ecosystem.*
+*Note: Composer technically allows other forms for many of these configurations, but Maatify adopts a stricter reusable-package contract to ensure consistency and reliability across the ecosystem.*
 
 1. `composer.json` is part of the package's public Composer manifest contract, not an internal installation note.
 2. Every directly used runtime dependency MUST be declared directly.
@@ -351,7 +352,7 @@ Rules:
 - The URL MUST point to the current package repository.
 - It MUST NOT point to another library.
 - It MUST NOT be a temporary branch or task URL.
-- The Maatify corporate website belongs in author metadata, not in place of the package repository homepage under the standard profile.
+- The Maatify corporate website belongs in author metadata, not in place of the package repository homepage under this package contract.
 
 ### 10.2 README
 
@@ -376,8 +377,8 @@ For libraries governed by this Standard:
 Rules:
 
 - The explicit `library` type MUST be used for Maatify consistency.
-- `project`, `composer-plugin`, `metapackage`, and custom installer types are outside this profile.
-- A different type requires a separate approved package profile.
+- `project`, `composer-plugin`, `metapackage`, and custom installer types are outside this package contract.
+- A different type requires a separate approved Standard or formal Profile manifest.
 
 ### 10.4 License
 
@@ -624,7 +625,7 @@ Rules:
 - An unused tool or a tool with no maintained configuration MUST be removed.
 - A repository with testable behavior or maintained tests MUST maintain a reproducible test-execution strategy; its declared dependencies and maintained configuration MUST match the runner and tooling actually used.
 - PHPUnit MAY be selected as the repository's test runner. When selected and installed through Composer, it MUST be declared directly in `require-dev` with a constraint compatible with the repository's declared PHP contract. PHPUnit is not universally required.
-- PHPStan is REQUIRED by the Maatify package quality profile and MUST use the latest stable version compatible with the repository's declared PHP contract.
+- PHPStan is REQUIRED by the reusable package quality baseline/contract and MUST use the latest stable version compatible with the repository's declared PHP contract. Its execution in CI is governed by `CI_WORKFLOW_STANDARD.md` when that Standard applies.
 - `dg/bypass-finals` MAY be used as a development-only test tool when a repository has a legitimate documented need to test/mock concrete final classes and that choice is consistent with its test architecture. When used, it belongs in `require-dev`.
 - A code-style tool is REQUIRED when formatting is an enforced repository check.
 - Tool constraints MUST NOT hardcode patch releases as permanent policy.
@@ -772,7 +773,7 @@ Long-lived decisions belong in documentation. A comment MAY be used only for a n
 
 ## 20. Custom Repositories
 
-The `repositories` field MUST NOT appear in a published reusable library under the normal Maatify profile.
+The `repositories` field MUST NOT appear in a published reusable library under the normal Maatify package policy.
 
 Forbidden entries include:
 
@@ -929,7 +930,7 @@ It keeps package maps consistently ordered when Composer modifies them.
 "optimize-autoloader": true
 ```
 
-This setting SHOULD be enabled for the canonical Maatify library profile.
+This setting SHOULD be enabled for the canonical Maatify reusable-library contract.
 
 It is a root repository autoload-generation preference. It is not a substitute for consumer deployment optimization and does not change the package's PSR-4 contract.
 
@@ -971,7 +972,58 @@ Example:
 
 The placeholder MUST refer to an actual approved Composer plugin, not an ordinary package.
 
-### 23.5 Security-Sensitive Configuration
+### 23.5 Security-Sensitive Configuration and Dependency Policy
+
+This section owns the Composer manifest and configuration contract for dependency-policy behavior. Required execution and CI override protection are owned by [`CI_WORKFLOW_STANDARD.md`](CI_WORKFLOW_STANDARD.md) §9.
+
+#### 23.5.1 Current dependency-policy model
+
+For Composer 2.10, `config.policy` is the canonical unified dependency-policy configuration. Its built-in policies are:
+
+- `advisories`.
+- `malware`.
+- `abandoned`.
+
+`config.policy` MUST NOT be `false`. Dependency-policy enforcement MUST remain enabled; disabling it MUST NOT be used to make a package compliant or release-ready.
+
+#### 23.5.2 Security advisories
+
+- The normal Maatify policy MUST retain `policy.advisories.block=true` and `policy.advisories.audit=fail`.
+- Advisory blocking MUST remain enabled.
+- Advisory audit behavior MUST remain fail-closed.
+- `block=false` and `audit=ignore` or `audit=report` MUST NOT be used to bypass compliance.
+- Advisory, package, and severity ignore mechanisms MUST NOT hide a finding from required verification unless an applicable, approved exception or decision already exists and explicitly covers that finding. This section does not create a new exception.
+
+#### 23.5.3 Malware
+
+- The normal Maatify policy MUST retain `policy.malware.block=true`, `policy.malware.block-scope=all`, and `policy.malware.audit=fail`.
+- Malware blocking MUST remain enabled.
+- `policy.malware.block-scope` MUST remain `all` for the normal Maatify security policy and MUST cover the operations represented by the current policy.
+- Malware audit behavior MUST remain fail-closed.
+- Malware ignores and ignored sources MUST NOT be used to bypass required security verification without an existing approved exception or decision that explicitly covers them.
+
+#### 23.5.4 Abandoned dependencies
+
+An abandoned dependency blocks release readiness unless an approved migration decision exists.
+
+- The normal Maatify policy MUST retain `policy.abandoned.audit=fail`; `policy.abandoned.block=false` is permitted and is not, by itself, a violation.
+- Abandoned audit MUST fail by default.
+- `policy.abandoned.block=true` is not required by this Standard. `block=false` alone is not a violation because abandoned resolution blocking is not a new Maatify requirement.
+- An abandoned-dependency ignore is permitted only when it is consistent with an existing approved migration decision, is limited to the decision's scope, and states the reason. It MUST NOT hide an abandoned dependency without that decision.
+
+#### 23.5.5 Custom dependency policies
+
+Custom dependency policies are OPTIONAL. A repository MUST NOT add one solely to satisfy this Standard. When a repository uses a custom dependency policy as security or compliance enforcement:
+
+- It MUST NOT weaken a built-in policy.
+- Its enforcement MUST be fail-closed for the operations it protects.
+- `block` and `audit` settings MUST NOT turn a finding into silent success.
+- Any policy source MUST be approved, use HTTPS, and contain no credentials.
+- When enforcement depends on a remote policy source, `ignore-unreachable` MUST NOT be configured in a way that silently bypasses the protected operation when that source is unavailable.
+
+#### 23.5.6 Legacy audit configuration
+
+`config.audit` is a deprecated compatibility fallback, not the preferred current model and not the canonical Maatify policy. New or modified configuration MUST use `config.policy` when it is supported. `policy.*` and legacy `audit.*` MUST NOT be mixed incorrectly for the same built-in policy.
 
 - `secure-http` MUST NOT be disabled.
 - `allow-missing-requirements` MUST NOT be enabled.
@@ -1258,8 +1310,11 @@ Automated verification of latest dependencies, lowest dependencies, platform req
 - [ ] No unsafe lifecycle hooks exist.
 - [ ] `sort-packages` is enabled.
 - [ ] `platform.php` matches the minimum supported baseline.
-- [ ] `optimize-autoloader` follows the approved profile.
+- [ ] `optimize-autoloader` follows the approved package configuration policy.
 - [ ] Composer plugins are explicitly allowlisted when present.
+- [ ] `config.policy` is used when supported and is not `false`.
+- [ ] Built-in dependency policies and any configured custom policy satisfy the security and exception contract in §23.5.
+- [ ] `config.audit` is treated only as a deprecated fallback and is not incorrectly mixed with `policy.*` for the same built-in policy.
 - [ ] `secure-http` is not disabled.
 - [ ] `allow-missing-requirements` is not enabled.
 - [ ] Default vendor and binary directories are preserved unless justified.
@@ -1278,7 +1333,7 @@ Automated verification of latest dependencies, lowest dependencies, platform req
 - [ ] Latest-compatible dependency verification succeeds in CI.
 - [ ] Lowest-supported dependency verification succeeds in CI.
 - [ ] Platform-requirement verification succeeds in CI.
-- [ ] Composer audit and abandoned-package policy succeed in CI.
+- [ ] Composer dependency-policy audit and abandoned-package policy succeed in CI under the effective, fail-closed configuration.
 
 ---
 

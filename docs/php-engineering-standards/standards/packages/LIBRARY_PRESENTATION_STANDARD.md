@@ -3,7 +3,7 @@
 ## Standard Metadata
 
 - **Standard ID:** `std-library-presentation`
-- **Standard Version:** `2.0.1`
+- **Standard Version:** `3.0.0`
 - **Standard Version Format:** `MAJOR.MINOR.PATCH`
 
 ## 1. Normative Language
@@ -20,6 +20,7 @@ This Standard is responsible for governing:
 * Standalone Package presentation and artifact-owned presentation for an extractable Base Module.
 * README visual and information architecture.
 * Usage Guide and root `examples/` presence, navigation, and discoverability.
+* AI consumer discovery and navigation through the artifact-local `llms.txt` entry point.
 * Deterministic badge architecture by actual publication state.
 * Governance document identity.
 * Release-facing documentation state.
@@ -47,6 +48,8 @@ For the language of durable technical documentation, including README, Package R
 
 This Standard owns consumer-facing presentation, release-facing consumption, and first Stable readiness. `CI_WORKFLOW_STANDARD.md` owns exact release-SHA qualification and evidence. Composer stability constraints govern dependency resolution; they do not define release eligibility or publication state.
 
+The `llms.txt` contract defined by this Standard is an AI consumer discovery and navigation layer. It does not replace the README, Package Reference, Usage Guide, examples, `AGENTS.md`, or contributor instructions, and it does not create a second public or runtime contract.
+
 Each Standard has clear boundaries and must not duplicate the content of another.
 
 ## 3. Applicability
@@ -68,6 +71,16 @@ Every other language or ecosystem MUST have a separate Standard when needed.
 | Host repository root | Host-owned presentation only; it does not represent an embedded Base Module contract | Host-owned Description, Topics, Releases, Deployments, Packages, and other repository surfaces |
 
 Artifact-owned rules apply only where the artifact owns the relevant file or contract. Host metadata MUST NOT present the Host as the embedded Base Package.
+
+### AI consumer discovery applicability
+
+Every reusable consumer-facing artifact to which this Standard already applies MUST provide an artifact-local `llms.txt` at its actual Artifact Root. This follows the existing applicability of this Standard and does not create a separate applicability rule.
+
+* A standalone reusable PHP Composer Package repository MUST provide `/llms.txt`.
+* An applicable extractable Base Module Artifact Root MUST provide `llms.txt` inside the Artifact Root that owns its README, Package Reference, Usage Guide, examples, and consumer-facing public contract.
+* A Host repository root MUST NOT receive `llms.txt` through this requirement merely because it contains a Base Module.
+* A Project-Aware host-specific artifact that is not independently extractable does not receive `llms.txt` merely through Profile inheritance.
+* A Slim artifact is covered only when its actual artifact facts make this Standard applicable; the Profile name `slim-module` alone does not create coverage.
 
 The canonical README footer is defined exclusively in [Section 18](#18-canonical-maatify-footer).
 Do not replace `PHP Libraries` with `Software Libraries` or any other generic term.
@@ -125,6 +138,7 @@ Every reusable standalone Package and every applicable Base Module Artifact Root
 
 * `docs/guides/USAGE_GUIDE.md`: Consumer-facing usage and integration guidance.
 * `examples/`: Root consumer-facing examples.
+* `llms.txt`: AI consumer discovery and navigation for the artifact.
 * The canonical Package Reference and Quick Usage links to the Guide and examples.
 
 The number of examples is determined by the actual public capabilities; this Standard does not impose a fixed count. A Host repository does not inherit these artifact requirements merely because it contains a Base Module.
@@ -352,6 +366,99 @@ For every reusable standalone Package and every applicable Base Module Artifact 
 * A Host-dependent example MAY be excluded from smoke execution only when its non-standalone boundary and prerequisites are explicit; it still requires syntax/static validation.
 
 The CI Workflow Standard owns execution and enforcement of syntax, static, and smoke validation. The Package Building Standard owns the technical workflow contract; this Standard owns artifact presence, presentation, navigation, and discoverability.
+
+### 10.3 AI Consumer Discovery / Navigation Contract
+
+For every reusable standalone Package and every applicable extractable Base Module Artifact Root, `llms.txt` MUST be a plain Markdown AI Consumer Discovery / Navigation Layer at the actual Artifact Root. It is written for an Agent acting as a consumer of the artifact, not for an Agent contributing to or modifying the repository.
+
+`llms.txt` MUST NOT be treated as any of the following:
+
+* the canonical Public Contract;
+* a replacement for the Package Reference, Usage Guide, README, or examples;
+* `AGENTS.md` or contributor instructions; or
+* a source of new Runtime Contract.
+
+The following consumer documentation/navigation hierarchy is limited to the artifact's consumer-facing documentation and navigation sources. It is not a universal source-of-truth hierarchy and does not change, replace, or claim ownership of canonical contracts or artifacts outside this scope.
+
+The consumer documentation/navigation hierarchy is:
+
+| Source | Consumer role and authority |
+|---|---|
+| Package Reference | Canonical stable public/runtime/behavioral package contract and complete Public Runtime API inventory within its existing scope. |
+| Usage Guide | Consumer integration and workflow guidance. |
+| `examples/` | Maintained consumer examples using the Public API; not an independent normative contract. |
+| README | Package overview, installation, Quick Usage, and Public Runtime API overview. |
+| `CHANGELOG` | Release history and deltas. |
+| `SECURITY` | Supported versions and security policy. |
+| `llms.txt` | Navigation and interpretation only. |
+
+Exact Composer manifest facts remain owned by `composer.json` under `COMPOSER_PACKAGE_STANDARD.md`, including package identity, PHP and extension requirements, dependencies, constraints, production autoloading, Composer configuration, and distribution facts. This consumer documentation/navigation hierarchy does not redefine that ownership. The Package Reference retains ownership of the stable public/runtime/behavioral package contract and Public Runtime API within its existing scope.
+
+The `llms.txt` consumer-context guidance MUST make the consumer/contributor boundary explicit. An AI consumer MUST NOT treat the following as a Supported Consumer Contract merely because they are visible in the repository:
+
+* `src/` internals;
+* private or internal classes;
+* undocumented public classes or methods;
+* tests or fixtures;
+* implementation details;
+* contributor-only files;
+* `AGENTS.md`; or
+* internal Engineering Standards.
+
+The governing rule is:
+
+```text
+Visible in repository != supported consumer contract
+```
+
+If canonical consumer documentation does not support a claim, the Agent MUST NOT invent that contract from implementation internals. This boundary does not prevent technical debugging or inspection; it prevents treating those materials as the artifact's supported Public Contract.
+
+#### Required `llms.txt` structure
+
+The file MUST follow this order and shape:
+
+1. Exactly one H1 naming the artifact or package.
+2. A short, accurate blockquote summary.
+3. Brief consumer-context guidance, with no additional headings before the link sections.
+4. H2 sections containing Markdown file or directory link lists.
+
+Every link-list item MUST be a Markdown link with a concise, useful description. The primary consumer navigation MUST include, when applicable and present for the artifact:
+
+* `README.md` for package overview, installation, Quick Usage, and Public Runtime API overview;
+* the actual `{PACKAGE_REFERENCE_FILE}` for the canonical stable public/runtime/behavioral contract and complete Public Runtime API inventory;
+* `docs/guides/USAGE_GUIDE.md` for integration workflows and boundaries; and
+* `examples/` for maintained examples that consume the documented Public API.
+
+`CHANGELOG.md` and `SECURITY.md` MAY be included under a release/support section when they exist and are applicable. `CONTRIBUTING.md` or another secondary source MAY be included under `## Optional` only when it gives a consumer a clear secondary value. `AGENTS.md`, standards snapshots, tests, and source directories MUST NOT be primary consumer documentation links.
+
+Each link MUST resolve from the location of `llms.txt`, point to the current artifact, and avoid stale paths or foreign-package links. Repository-relative Markdown links are preferred for repository-local sources. A public documentation URL MAY be used only when it exists and is the canonical current source.
+
+When the same canonical source is available in multiple representations, `llms.txt` SHOULD prefer Markdown or another LLM-friendly representation suitable for direct consumption, provided that the selected representation remains current and canonical. This preference MUST NOT require creating a website, a separate Markdown mirror, a per-page Markdown mirror, or any duplicate documentation representation solely to satisfy `llms.txt` compliance.
+
+`llms.txt` MUST remain concise enough to work as entry context. It is a map, not the territory: it MUST NOT copy the Package Reference, Public API inventory, Usage Guide, examples, architecture explanations, or release history. The artifact's canonical documentation remains behind the links.
+
+The navigation MUST be refreshed when the artifact identity, summary, canonical Package Reference path, Usage Guide path, examples path, release/support links, or consumer source hierarchy becomes stale. A Runtime behavior change does not by itself require an `llms.txt` change when its navigation and summary remain accurate; `llms.txt` MUST NOT become a changelog.
+
+For interoperability, the structural shape MAY follow `llms.txt proposal v2 — 2026-08-10`. That external proposal is not the Maatify canonical contract owner; this Standard remains the canonical owner inside Maatify.
+
+This Standard does not adopt or require `llms-full.txt`, any generated full-context file, or a README badge or README link to `llms.txt`.
+
+### 10.4 `llms.txt` Verification Checklist
+
+At Applicability, Library Presentation compliance MUST NOT be accepted until the following checks pass for the actual artifact root:
+
+* [ ] `llms.txt` exists at the correct Artifact Root.
+* [ ] It has exactly one correct H1 and an accurate concise summary.
+* [ ] Its consumer/contributor boundary is explicit.
+* [ ] The Package Reference is identified as the canonical stable public/runtime/behavioral contract and complete Public Runtime API inventory.
+* [ ] The README, Usage Guide, and examples are linked and described with their correct ownership roles.
+* [ ] Every included link resolves from `llms.txt` and points to the current artifact.
+* [ ] No foreign-package link or stale path is present.
+* [ ] No undocumented internal API claim is presented as supported consumer behavior.
+* [ ] The file does not duplicate full documentation and remains concise.
+* [ ] No `llms-full.txt` or README-link requirement has been introduced by inference.
+
+This checklist is a documentation and review check. It does not require new executable tooling, a generator, or a CI gate.
 
 ## 11. Heading and Emoji Rules
 
@@ -691,6 +798,7 @@ An explicit search for reference repository names MUST be conducted before submi
 * [ ] The two-Host gate is not imposed on already-Stable packages or later patch, minor, or Stable releases.
 * [ ] README header and Maatify identity are present.
 * [ ] `docs/guides/USAGE_GUIDE.md`, root `examples/`, Package Reference, and Quick Usage links are present for every applicable reusable Package/Base Artifact.
+* [ ] The `llms.txt` verification checklist in Section 10.4 passes for every applicable reusable Package/Base Artifact.
 * [ ] Usage Guide fit/requirements/non-goals, capability map, walkthrough boundaries, and Public Contract links are accurate; no fixed example count is assumed.
 * [ ] Every applicable reusable Package/Base Artifact README contains a clearly labeled `Public Runtime API` overview proportionate to the artifact's actual capabilities; it is not treated as a conditional section.
 * [ ] The `Public Runtime API` overview is accurate, consumer-facing, and linked to the canonical Package Reference for the complete Public Runtime API inventory and stable public/runtime/behavioral contract without duplicating the full reference.
@@ -730,3 +838,4 @@ This Standard explicitly does NOT force:
 * Empty sections.
 * Verbatim README copying from another library.
 * Runtime changes during presentation work.
+* `llms-full.txt`, generated full-context files, or a README badge/link requirement for `llms.txt`.
