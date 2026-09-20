@@ -38,6 +38,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Fixed local fallback GC so cleanup removes only expired fixed-window buckets and preserves active buckets until natural rollover.
 
 ### Changed
+- Normalized the pre-stable public namespaces and source topology to the canonical
+  Single Capability layout (`Command`, `Config`, `Contract`, `DTO`, `Exception`,
+  `Repository`, and `Service`) without changing runtime behavior or adding
+  compatibility shims.
 - Clarified the locked Budget Owner-Safety architecture (Spec Version remains `1.1.0`):
   decision class wins before level/duration, a budget `SOFT_BLOCK` cannot upgrade hard
   properties, budget cooldown is tied to actual budget-soft issuance, Login `checkOnly`

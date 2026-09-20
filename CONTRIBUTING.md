@@ -1,6 +1,44 @@
 # Contributing to Maatify Rate Limiter
 
-`maatify/php-rate-limiter` is a standalone, framework-agnostic Composer package. Runtime code belongs under `src/`; tests belong under `tests/`; package behavior and boundaries are documented in [RATE_LIMITER_PACKAGE_REFERENCE.md](RATE_LIMITER_PACKAGE_REFERENCE.md) and the supporting files under `docs/`.
+`maatify/php-rate-limiter` is the standalone, framework-agnostic Composer package
+with Composer identity `maatify/php-rate-limiter`. It is proprietary and remains
+in pre-release development. Runtime code belongs under `src/`; tests belong under
+`tests/`; package behavior and boundaries are documented in
+[RATE_LIMITER_PACKAGE_REFERENCE.md](RATE_LIMITER_PACKAGE_REFERENCE.md) and the
+supporting files under `docs/`.
+
+## Package boundaries
+
+The package owns deterministic rate-limit evaluation, bounded scoring, budgets,
+correlation, circuit-breaker behavior, failure modes, and the public DTO/service
+contracts. The host owns account and session truth, concrete storage and locking,
+transport responses, authorization, logging destinations, and cross-domain
+reporting. Keep the runtime framework-agnostic and storage-agnostic.
+
+The canonical source topology is a single capability:
+
+```text
+src/{Command,Config,Contract,DTO,Exception,Repository,Service}/
+```
+
+Do not introduce capability wrappers, duplicate namespaces, compatibility shims,
+or alternate source roots.
+
+## Ways to contribute
+
+- Improve tests, documentation, examples, or verification scripts while keeping
+  the current public and behavioral contract intact.
+- Propose a focused correction with evidence from the current runtime and tests.
+- Discuss security, storage, concurrency, or architecture concerns before coding
+  when the change affects a package boundary.
+
+## Architecture discussion
+
+Any change to the public API, behavioral contract, architecture, source topology,
+persistence boundary, or security semantics must be discussed and approved before
+implementation when it goes beyond a localized, proven fix. A GitHub Issue is not
+required for every change; use the appropriate repository discussion or maintainer
+approval route for the scope and sensitivity of the proposal.
 
 ## Local verification
 
@@ -13,6 +51,7 @@ composer dump-autoload --optimize --strict-psr
 composer check-platform-reqs
 composer analyse
 composer test
+composer test:unit
 composer test:integration
 composer audit --no-interaction --abandoned=fail
 bash scripts/ci/run-consumer-verification.sh
@@ -23,7 +62,20 @@ bash scripts/ci/check-whitespace.sh
 ACTIONLINT_BIN=/path/to/actionlint bash scripts/ci/lint-workflows.sh
 ```
 
-`composer test` runs the full maintained Unit, Integration, and System suites. `composer test:integration` is the focused canonical entrypoint for the maintained Integration suite.
+`composer test` runs the full maintained Unit, Integration, and System suites.
+`composer test:unit` runs the Unit suite, and `composer test:integration` is the
+focused canonical entrypoint for the Integration suite. System tests are included
+in the full `composer test` run and protect end-to-end engine workflows and
+behavioral contracts.
+
+Run the consumer verification harness twice from clean consumer directories:
+
+```bash
+bash scripts/ci/run-consumer-verification.sh
+```
+
+The harness validates the package as an external Composer consumer, including
+autoloading and the public runtime surface.
 
 To verify the lowest supported dependency bounds on PHP 8.4, run:
 
@@ -38,6 +90,25 @@ composer test:integration
 
 The CI workflow runs the same checks on PHP 8.4 and 8.5. Workflow linting uses actionlint v1.7.12 with a verified checksum; install that version locally or provide its path through `ACTIONLINT_BIN`.
 
-## Pull requests
+## Pull requests and review expectations
 
-Keep changes within the requested scope, preserve runtime behavior unless a separately authorized correction is required, and include the exact verification results in the pull request description. Do not commit `composer.lock`, generated dependencies, or local credentials.
+Keep changes within the requested scope, preserve runtime behavior unless a
+separately authorized correction is required, and include the exact verification
+results in the pull request description. Explain public, architectural, security,
+concurrency, or persistence effects explicitly. Do not change pinned standards or
+silently expand the package boundary. Do not commit generated dependencies or
+local credentials.
+
+## Security reporting
+
+Report sensitive security vulnerabilities to `support@maatify.dev`. Do not publish
+exploit details, credentials, or other sensitive vulnerability information in a
+public GitHub issue. Use public issues only for non-sensitive defects and general
+discussion.
+
+## Composer lock policy
+
+This standalone library intentionally does not commit `composer.lock`. Contributors
+must validate both the declared dependency constraints and the supported lowest
+dependency bounds locally. CI resolves dependencies from `composer.json`; temporary
+lock files created by Composer remain local and must not be added to the repository.

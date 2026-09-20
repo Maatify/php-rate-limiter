@@ -5,23 +5,23 @@ declare(strict_types=1);
 namespace Maatify\RateLimiter\Tests\System;
 
 use Maatify\RateLimiter\Command\RateLimitCommand;
-use Maatify\RateLimiter\Contract\BlockPolicyInterface;
-use Maatify\RateLimiter\Contract\RateLimitStoreInterface;
+use Maatify\RateLimiter\Config\BlockPolicyInterface;
+use Maatify\RateLimiter\Repository\RateLimitStoreInterface;
 use Maatify\RateLimiter\DTO\RateLimitContextDTO;
 use Maatify\RateLimiter\DTO\RateLimitResultDTO;
-use Maatify\RateLimiter\Engine\CircuitBreaker;
-use Maatify\RateLimiter\Engine\EvaluationPipeline;
-use Maatify\RateLimiter\Engine\FailureModeResolver;
-use Maatify\RateLimiter\Engine\RateLimiterEngine;
-use Maatify\RateLimiter\Device\DeviceIdentityResolver;
-use Maatify\RateLimiter\Device\EphemeralBucket;
-use Maatify\RateLimiter\Device\FingerprintHasher;
-use Maatify\RateLimiter\Penalty\AntiEquilibriumGate;
-use Maatify\RateLimiter\Penalty\BudgetTracker;
-use Maatify\RateLimiter\Penalty\DecayCalculator;
-use Maatify\RateLimiter\Policy\ApiHeavyProtectionPolicy;
-use Maatify\RateLimiter\Policy\LoginProtectionPolicy;
-use Maatify\RateLimiter\Policy\OtpProtectionPolicy;
+use Maatify\RateLimiter\Service\CircuitBreaker;
+use Maatify\RateLimiter\Service\EvaluationPipeline;
+use Maatify\RateLimiter\Service\FailureModeResolver;
+use Maatify\RateLimiter\Service\RateLimiterEngine;
+use Maatify\RateLimiter\Service\DeviceIdentityResolver;
+use Maatify\RateLimiter\Service\EphemeralBucket;
+use Maatify\RateLimiter\Service\FingerprintHasher;
+use Maatify\RateLimiter\Service\AntiEquilibriumGate;
+use Maatify\RateLimiter\Service\BudgetTracker;
+use Maatify\RateLimiter\Service\DecayCalculator;
+use Maatify\RateLimiter\Config\ApiHeavyProtectionPolicy;
+use Maatify\RateLimiter\Config\LoginProtectionPolicy;
+use Maatify\RateLimiter\Config\OtpProtectionPolicy;
 use Maatify\RateLimiter\Tests\Support\CircuitBreaker\InMemoryCircuitBreakerStore;
 use Maatify\RateLimiter\Tests\Support\Clock\FixedClock;
 use Maatify\RateLimiter\Tests\Support\Correlation\NullCorrelationStore;
@@ -96,7 +96,7 @@ class RateLimiterEngineWorkflowTest extends TestCase
         );
 
         // Clear local fallback state
-        $reflection = new \ReflectionClass(\Maatify\RateLimiter\Engine\LocalFallbackLimiter::class);
+        $reflection = new \ReflectionClass(\Maatify\RateLimiter\Service\LocalFallbackLimiter::class);
         $countersProperty = $reflection->getProperty('counters');
         $countersProperty->setAccessible(true);
         $countersProperty->setValue(null, []);

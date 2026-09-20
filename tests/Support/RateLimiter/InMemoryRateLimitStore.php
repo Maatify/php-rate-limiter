@@ -4,10 +4,10 @@ declare(strict_types=1);
 
 namespace Maatify\RateLimiter\Tests\Support\RateLimiter;
 
-use Maatify\RateLimiter\Contract\BudgetSeedStoreInterface;
-use Maatify\RateLimiter\DTO\Store\BlockStateDTO;
-use Maatify\RateLimiter\DTO\Store\BudgetStateDTO;
-use Maatify\RateLimiter\DTO\Store\RateLimitStateDTO;
+use Maatify\RateLimiter\Repository\BudgetSeedStoreInterface;
+use Maatify\RateLimiter\DTO\BlockStateDTO;
+use Maatify\RateLimiter\DTO\BudgetStateDTO;
+use Maatify\RateLimiter\DTO\RateLimitStateDTO;
 use Maatify\SharedCommon\Contracts\ClockInterface;
 
 class InMemoryRateLimitStore implements BudgetSeedStoreInterface

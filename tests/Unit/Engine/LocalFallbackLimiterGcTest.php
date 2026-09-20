@@ -4,7 +4,7 @@ declare(strict_types=1);
 
 namespace Maatify\RateLimiter\Tests\Unit\Engine;
 
-use Maatify\RateLimiter\Engine\LocalFallbackLimiter;
+use Maatify\RateLimiter\Service\LocalFallbackLimiter;
 use Maatify\RateLimiter\Tests\Support\Clock\FixedClock;
 use PHPUnit\Framework\TestCase;
 

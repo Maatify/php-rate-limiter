@@ -4,7 +4,7 @@ declare(strict_types=1);
 
 namespace ConsumerVerification;
 
-use Maatify\RateLimiter\Contract\CorrelationStoreInterface;
+use Maatify\RateLimiter\Repository\CorrelationStoreInterface;
 use Maatify\SharedCommon\Contracts\ClockInterface;
 
 final class InMemoryCorrelationStore implements CorrelationStoreInterface

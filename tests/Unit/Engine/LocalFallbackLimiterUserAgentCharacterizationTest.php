@@ -4,7 +4,7 @@ declare(strict_types=1);
 
 namespace Maatify\RateLimiter\Tests\Unit\Engine;
 
-use Maatify\RateLimiter\Engine\LocalFallbackLimiter;
+use Maatify\RateLimiter\Service\LocalFallbackLimiter;
 use Maatify\RateLimiter\Tests\Support\Clock\FixedClock;
 use PHPUnit\Framework\TestCase;
 
@@ -89,8 +89,8 @@ class LocalFallbackLimiterUserAgentCharacterizationTest extends TestCase
         $rawChromeUa = 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/123.0.0.0 Safari/537.36';
         $rawFirefoxUa = 'Mozilla/5.0 (Windows NT 10.0; Win64; x64; rv:124.0) Gecko/20100101 Firefox/124.0';
 
-        $normalizedChrome = \Maatify\RateLimiter\Device\DeviceIdentityResolver::normalizeUserAgent($rawChromeUa);
-        $normalizedFirefox = \Maatify\RateLimiter\Device\DeviceIdentityResolver::normalizeUserAgent($rawFirefoxUa);
+        $normalizedChrome = \Maatify\RateLimiter\Service\DeviceIdentityResolver::normalizeUserAgent($rawChromeUa);
+        $normalizedFirefox = \Maatify\RateLimiter\Service\DeviceIdentityResolver::normalizeUserAgent($rawFirefoxUa);
 
         $this->assertEquals('chrome/123', $normalizedChrome);
         $this->assertEquals('firefox/124', $normalizedFirefox);
@@ -103,8 +103,8 @@ class LocalFallbackLimiterUserAgentCharacterizationTest extends TestCase
         $rawChromeUa = 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/123.0.0.0 Safari/537.36';
         $rawFirefoxUa = 'Mozilla/5.0 (Windows NT 10.0; Win64; x64; rv:124.0) Gecko/20100101 Firefox/124.0';
 
-        $preNormalizedChrome = \Maatify\RateLimiter\Device\DeviceIdentityResolver::normalizeUserAgent($rawChromeUa);
-        $preNormalizedFirefox = \Maatify\RateLimiter\Device\DeviceIdentityResolver::normalizeUserAgent($rawFirefoxUa);
+        $preNormalizedChrome = \Maatify\RateLimiter\Service\DeviceIdentityResolver::normalizeUserAgent($rawChromeUa);
+        $preNormalizedFirefox = \Maatify\RateLimiter\Service\DeviceIdentityResolver::normalizeUserAgent($rawFirefoxUa);
 
         // 60 requests using pre-normalized Chrome UA should be allowed
         for ($i = 0; $i < 60; $i++) {

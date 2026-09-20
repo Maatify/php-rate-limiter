@@ -67,7 +67,7 @@ The package owns enforcement decisions, key construction, scoring, decay, bounde
 | Record a failed login or OTP attempt | <code>RateLimitCommand::recordFailure()</code> | [Failure recording](#walkthrough-failure-recording) | [basic-rate-limit.php](../../examples/basic-rate-limit.php) |
 | Record a successful operation | <code>RateLimitCommand::recordSuccess()</code> | [Success recording](#walkthrough-success-recording) | [basic-rate-limit.php](../../examples/basic-rate-limit.php) |
 | Use a policy preset | <code>LoginProtectionPolicy</code>, <code>OtpProtectionPolicy</code>, or <code>ApiHeavyProtectionPolicy</code> | [Policy selection](#walkthrough-policy-selection) | [basic-rate-limit.php](../../examples/basic-rate-limit.php) |
-| Observe infrastructure failures | <code>FailureSignalEmitterInterface</code> + <code>RateLimitResultDTO::failureMode</code> | [Failure boundary](#walkthrough-failure-boundary) | Host integration |
+| Observe infrastructure failures | <code>FailureSignalEmitterInterface</code> + <code>RateLimitResultDTO::failureMode</code> | [Failure boundary](#walkthrough-failure-boundary) | [infrastructure-failure.php](../../examples/infrastructure-failure.php) |
 
 ## Walkthrough: Pre-Check
 
@@ -120,6 +120,11 @@ Run the complete in-memory assembly from the repository root after installing de
     php examples/basic-rate-limit.php
 
 [basic-rate-limit.php](../../examples/basic-rate-limit.php) uses the production autoloader, production runtime classes, and only public contracts. Its in-memory adapters are example scaffolding; replace them with the host's real atomic persistence and observability implementations.
+
+[infrastructure-failure.php](../../examples/infrastructure-failure.php) deterministically
+throws from a host-side storage adapter and prints the resulting failure mode and
+emitted signal. It demonstrates the current failure boundary without changing the
+runtime implementation.
 
 ## Operational Read / Reporting Boundary
 

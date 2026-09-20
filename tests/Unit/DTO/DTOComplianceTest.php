@@ -18,11 +18,11 @@ use Maatify\RateLimiter\DTO\RateLimitMetadataDTO;
 use Maatify\RateLimiter\DTO\RateLimitResultDTO;
 use Maatify\RateLimiter\DTO\ScoreDeltasDTO;
 use Maatify\RateLimiter\DTO\ScoreThresholdsDTO;
-use Maatify\RateLimiter\DTO\Internal\PipelineScoreDTO;
-use Maatify\RateLimiter\DTO\Store\BlockStateDTO;
-use Maatify\RateLimiter\DTO\Store\BudgetStateDTO;
-use Maatify\RateLimiter\DTO\Store\CircuitBreakerStateDTO;
-use Maatify\RateLimiter\DTO\Store\RateLimitStateDTO;
+use Maatify\RateLimiter\DTO\PipelineScoreDTO;
+use Maatify\RateLimiter\DTO\BlockStateDTO;
+use Maatify\RateLimiter\DTO\BudgetStateDTO;
+use Maatify\RateLimiter\DTO\CircuitBreakerStateDTO;
+use Maatify\RateLimiter\DTO\RateLimitStateDTO;
 use ReflectionClass;
 use JsonSerializable;
 

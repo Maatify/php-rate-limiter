@@ -4,8 +4,8 @@ declare(strict_types=1);
 
 namespace Maatify\RateLimiter\Tests\Integration\Store;
 
-use Maatify\RateLimiter\Contract\BudgetSeedStoreInterface;
-use Maatify\RateLimiter\Contract\RateLimitStoreInterface;
+use Maatify\RateLimiter\Repository\BudgetSeedStoreInterface;
+use Maatify\RateLimiter\Repository\RateLimitStoreInterface;
 use Maatify\RateLimiter\Tests\Support\Clock\FixedClock;
 use Maatify\RateLimiter\Tests\Support\RateLimiter\InMemoryRateLimitStore;
 use Maatify\RateLimiter\Tests\Support\RateLimiter\ThrowingRateLimitStore;

@@ -5,8 +5,8 @@ declare(strict_types=1);
 namespace Maatify\RateLimiter\Tests\Unit\Policy;
 
 use Maatify\RateLimiter\DTO\BudgetConfigDTO;
-use Maatify\RateLimiter\Policy\LoginProtectionPolicy;
-use Maatify\RateLimiter\Policy\OtpProtectionPolicy;
+use Maatify\RateLimiter\Config\LoginProtectionPolicy;
+use Maatify\RateLimiter\Config\OtpProtectionPolicy;
 use PHPUnit\Framework\TestCase;
 
 final class BudgetPolicyConfigTest extends TestCase

@@ -7,9 +7,15 @@
 [![Package Status](https://img.shields.io/badge/status-pre--release%20development-orange.svg)](#package-status)
 [![PHP 8.4+](https://img.shields.io/badge/PHP-8.4%2B-777BB4.svg)](composer.json)
 [![License: Proprietary](https://img.shields.io/badge/License-Proprietary-red.svg)](LICENSE)
+[![PHPStan Level Max](https://img.shields.io/badge/PHPStan-Level%20Max-4F5B93.svg)](phpstan.neon)
+
 [![Maatify Ecosystem](https://img.shields.io/badge/Maatify-Ecosystem-blueviolet)](https://github.com/Maatify)
-[![Changelog](https://img.shields.io/badge/Changelog-View-blue.svg)](CHANGELOG.md)
-[![Package Reference](https://img.shields.io/badge/Reference-Read-blue.svg)](RATE_LIMITER_PACKAGE_REFERENCE.md)
+
+[![Usage Guide](https://img.shields.io/badge/Docs-Usage%20Guide-blue.svg)](docs/guides/USAGE_GUIDE.md)
+[![Examples](https://img.shields.io/badge/Docs-Examples-blue.svg)](examples/)
+[![Package Reference](https://img.shields.io/badge/Docs-Package%20Reference-blue.svg)](RATE_LIMITER_PACKAGE_REFERENCE.md)
+[![Changelog](https://img.shields.io/badge/Docs-Changelog-blue.svg)](CHANGELOG.md)
+[![Contributing Guide](https://img.shields.io/badge/Docs-Contributing-blue.svg)](CONTRIBUTING.md)
 
 PHP library for deterministic, multi-signal rate-limit decisions.
 
@@ -45,7 +51,7 @@ The package provides storage and signal contracts; the consumer supplies impleme
 
 ```php
 use Maatify\RateLimiter\Command\RateLimitCommand;
-use Maatify\RateLimiter\Contract\RateLimiterInterface;
+use Maatify\RateLimiter\Service\RateLimiterInterface;
 use Maatify\RateLimiter\DTO\RateLimitContextDTO;
 
 /** @var RateLimiterInterface $limiter */

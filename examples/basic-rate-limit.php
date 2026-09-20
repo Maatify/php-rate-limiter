@@ -3,28 +3,28 @@
 declare(strict_types=1);
 
 use Maatify\RateLimiter\Command\RateLimitCommand;
-use Maatify\RateLimiter\Contract\CircuitBreakerStoreInterface;
-use Maatify\RateLimiter\Contract\CorrelationStoreInterface;
+use Maatify\RateLimiter\Repository\CircuitBreakerStoreInterface;
+use Maatify\RateLimiter\Repository\CorrelationStoreInterface;
 use Maatify\RateLimiter\Contract\FailureSignalEmitterInterface;
-use Maatify\RateLimiter\Contract\RateLimitStoreInterface;
+use Maatify\RateLimiter\Repository\RateLimitStoreInterface;
 use Maatify\RateLimiter\DTO\FailureSignalDTO;
-use Maatify\RateLimiter\DTO\Store\BlockStateDTO;
-use Maatify\RateLimiter\DTO\Store\BudgetStateDTO;
-use Maatify\RateLimiter\DTO\Store\CircuitBreakerStateDTO;
-use Maatify\RateLimiter\DTO\Store\RateLimitStateDTO;
+use Maatify\RateLimiter\DTO\BlockStateDTO;
+use Maatify\RateLimiter\DTO\BudgetStateDTO;
+use Maatify\RateLimiter\DTO\CircuitBreakerStateDTO;
+use Maatify\RateLimiter\DTO\RateLimitStateDTO;
 use Maatify\RateLimiter\DTO\RateLimitContextDTO;
-use Maatify\RateLimiter\Device\DeviceIdentityResolver;
-use Maatify\RateLimiter\Device\FingerprintHasher;
-use Maatify\RateLimiter\Engine\CircuitBreaker;
-use Maatify\RateLimiter\Engine\EvaluationPipeline;
-use Maatify\RateLimiter\Engine\FailureModeResolver;
-use Maatify\RateLimiter\Engine\RateLimiterEngine;
-use Maatify\RateLimiter\Penalty\AntiEquilibriumGate;
-use Maatify\RateLimiter\Penalty\BudgetTracker;
-use Maatify\RateLimiter\Penalty\DecayCalculator;
-use Maatify\RateLimiter\Policy\ApiHeavyProtectionPolicy;
-use Maatify\RateLimiter\Policy\LoginProtectionPolicy;
-use Maatify\RateLimiter\Policy\OtpProtectionPolicy;
+use Maatify\RateLimiter\Service\DeviceIdentityResolver;
+use Maatify\RateLimiter\Service\FingerprintHasher;
+use Maatify\RateLimiter\Service\CircuitBreaker;
+use Maatify\RateLimiter\Service\EvaluationPipeline;
+use Maatify\RateLimiter\Service\FailureModeResolver;
+use Maatify\RateLimiter\Service\RateLimiterEngine;
+use Maatify\RateLimiter\Service\AntiEquilibriumGate;
+use Maatify\RateLimiter\Service\BudgetTracker;
+use Maatify\RateLimiter\Service\DecayCalculator;
+use Maatify\RateLimiter\Config\ApiHeavyProtectionPolicy;
+use Maatify\RateLimiter\Config\LoginProtectionPolicy;
+use Maatify\RateLimiter\Config\OtpProtectionPolicy;
 use Maatify\SharedCommon\Contracts\ClockInterface;
 use Maatify\SharedCommon\Infrastructure\SystemClock;
 
@@ -242,7 +242,7 @@ $pipeline = new EvaluationPipeline(
     new BudgetTracker($rateLimitStore, $clock),
     new AntiEquilibriumGate($correlationStore),
     new DecayCalculator($clock),
-    new Maatify\RateLimiter\Device\EphemeralBucket($correlationStore),
+    new Maatify\RateLimiter\Service\EphemeralBucket($correlationStore),
     'example-key-secret',
     'example',
     $clock

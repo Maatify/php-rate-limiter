@@ -4,7 +4,7 @@ declare(strict_types=1);
 
 namespace Maatify\RateLimiter\Tests\Support\Correlation;
 
-use Maatify\RateLimiter\Contract\CorrelationStoreInterface;
+use Maatify\RateLimiter\Repository\CorrelationStoreInterface;
 use Maatify\SharedCommon\Contracts\ClockInterface;
 
 class StatefulInMemoryCorrelationStore implements CorrelationStoreInterface

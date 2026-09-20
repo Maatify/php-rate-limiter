@@ -4,8 +4,8 @@ declare(strict_types=1);
 
 namespace Maatify\RateLimiter\Tests\Unit\Device;
 
-use Maatify\RateLimiter\Device\DeviceIdentityResolver;
-use Maatify\RateLimiter\Device\FingerprintHasher;
+use Maatify\RateLimiter\Service\DeviceIdentityResolver;
+use Maatify\RateLimiter\Service\FingerprintHasher;
 use Maatify\RateLimiter\DTO\RateLimitContextDTO;
 use PHPUnit\Framework\TestCase;
 
