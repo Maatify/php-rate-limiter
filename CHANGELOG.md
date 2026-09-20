@@ -8,6 +8,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Added
+- Standards-compliant read-only operational state API with point-in-time inspection that does not couple consumers to raw storage keys.
 - Implemented the locked two-generation runtime integration for persistent K3/K5 active-block
   lookup and score fallback, and for K5 micro-cap current-authoritative atomic migration across
   outer-only, fingerprint-only, and both-rotated generations. `BudgetSeedStoreInterface` is
