@@ -3,10 +3,9 @@
 ## بيانات المعيار
 
 - **Standard ID:** `std-standards-adoption`
-- **Standard Version:** `2.0.0`
+- **Standard Version:** `3.1.0`
 - **Standard Version Format:** `MAJOR.MINOR.PATCH`
 - **اللغة المعتمدة:** العربية.
-- **حالة الاعتماد:** يصبح معتمدًا عند دمجه في الفرع الافتراضي للمشروع.
 - **النطاق:** آلية اختيار المعايير وتثبيتها وتوزيعها وتفعيلها داخل المشاريع التابعة لمنظومة Maatify.
 - **الهدف:** استبدال نسخ المستودع الكامل باعتماد انتقائي مثبت وقابل للتتبع، مع الحفاظ على المصدر المركزي وسلامة الروابط والترقية القابلة للمراجعة.
 
@@ -79,7 +78,7 @@ REPOSITORY_GOVERNANCE_PROFILE.md
 
 ### B. Pinned Applicable Standards Set
 
-هو المجموعة النهائية من الـ canonical Engineering Standards التي تنطبق على Activation/Scope وفق applicability المملوكة لكل Standard. لا تساوي هذه المجموعة مجرد union للـ Required Standards المشار إليها في Profiles. ينتجها الحل على مرحلتين إلزاميتين موضحتين في §7:
+هو المجموعة النهائية من الـ canonical Engineering Standards التي تنطبق على Activation/Scope وفق applicability المملوكة لكل Standard. يجوز أن تتضمن هذه المجموعة Standard هندسية applicable من `standards/governance/`، مثل Documentation Lifecycle Standard، عندما تنطبق على الـartifact والـScope. لا تساوي هذه المجموعة مجرد union للـ Required Standards المشار إليها في Profiles. ينتجها الحل على مرحلتين إلزاميتين موضحتين في §7:
 
 ```text
 Structural / Transitive Resolution
@@ -89,6 +88,8 @@ Structural / Transitive Resolution
 ```
 
 تشمل مجموعة المرشحين المراجع المباشرة والموروثة من Profiles وأي `Explicit Additional Standards` صالحة بنيويًا. ولا تصبح أي Standard جزءًا من هذه المجموعة النهائية إلا بعد تقييم Activation Scope وحقائق الـartifact مقابل canonical Applicability وConditional Applicability المملوكة لتلك Standard. هذه المجموعة النهائية وحدها تحدد القواعد الهندسية المطلوب قراءتها وتطبيقها على Scope المهمة.
+
+أما `STANDARD_VERSIONING_POLICY_AR.md` فهي Central Governance Policy version-managed وليست Required Engineering Standard لمجرد وجودها في `governance/`؛ لا تدخل Adoption Set لمجرد Adoption. لا تدخل أي Governance artifact أخرى إلا إذا كانت canonical applicability الخاصة بها ومرجعها المعلن يثبتان انطباقها.
 
 ### C. Local Resolver Record
 
@@ -153,7 +154,37 @@ Profiles لا تنقل القواعد الهندسية إلى ملفاتها و�
 
 ملف Profile المفعّل، وكل ملف Profile موروث لازم لحل inheritance، جزء إلزامي من `Pinned Adoption Control Set` ويجب تثبيته محليًا. Profiles غير المفعلة وغير الموروثة لا تُنسخ. لا يعني ذلك إضافة Adoption Standard إلى `Required Standards`؛ فـ Required Standards تظل خاصة بالـ engineering applicability.
 
-يملك هذا القسم Profile Versioning حصريًا. أما `Standard ID` و`Standard Version` و`Standard Version Format` وانتقالات إصدارات Standards فتخضع للسياسة المركزية [STANDARD_VERSIONING_POLICY_AR.md](governance/STANDARD_VERSIONING_POLICY_AR.md). لا تدخل هذه السياسة في `Pinned Adoption Control Set` أو `Resolved Applicable Standards Set`، ولا يحتاج Consumer إلى نسخها لمجرد Adoption.
+### 5.1.1 Frozen Profile Version Baseline وMutable Profile Candidate
+
+بالنسبة إلى Profile قابلة للـconsumer pinning، لا تصبح Profile Version:
+
+```text
+Frozen Version Baseline
+```
+
+إلا عند وجود `Completed VALID Adoption` أو `Completed VALID Upgrade` يثبت Profile manifest/content نفسها على `exact Adoption Commit` محدد. ترتبط Profile Version المجمدة من تلك اللحظة بالـProfile manifest/content التي ثُبتت عند أول Adoption أو Upgrade مكتملة وصالحة. لا يكفي تعديل manifest أو إنشاء Commit أو Merge إلى `main` أو وجود Profile Version metadata وحده لتجميدها. يظل الـexact Adoption Commit هوية الـsnapshot الدقيقة للـProfile manifest والـcomposition المثبتة بها.
+
+يجوز لـAdoption أو Upgrade لاحقة استخدام `Adoption Commit` مختلفة لنفس Profile Version المجمدة فقط إذا كانت Profile artifact نفسها، أي manifest/content، مطابقة تمامًا للـFrozen Profile snapshot. اختلاف repository commit وحده لا يثبت اختلاف Profile snapshot؛ تكون المقارنة مع Profile artifact نفسها، دون بقية محتوى المستودع. إذا كان هناك known frozen-version/content mismatch، فلا يجوز أن تكتمل Adoption أو Upgrade بحالة `VALID`.
+
+تظل Profile Version الحالية غير المثبتة `Mutable Candidate Version`. بعد وجود Frozen Profile Version Baseline، تجمع Version Finalization كل التغييرات ذات الصلة منذ آخر Baseline مجمدة، ولا تستخدم Candidate سابقة كأساس لحساب Candidate لاحقة. لذلك لا تحدث chained bumps على Profile Version غير المثبتة. وأي تغيير في Profile manifest/content بعد الـFreeze يدخل Candidate Version جديدة محسوبة من الـFrozen Profile Baseline قبل أن يصبح صالحًا لـAdoption جديدة؛ لا يجوز تقديم المحتوى المختلف تحت Profile Version المجمدة نفسها.
+
+إذا لم توجد Frozen Profile Version Baseline سابقة، وكانت Profile Version الحالية Initial أو Bootstrap أو Candidate، يجوز تطوير نفس Version قبل أول Freeze دون Bump تلقائي لمجرد تعدد التغييرات. لا تعني Version Finalization وحدها التجميد؛ يحدث الـFreeze فقط عند `Completed VALID Adoption` أو `Completed VALID Upgrade` الذي يثبت الـmanifest على exact Adoption Commit.
+
+إذا تعذر إثبات حالة Frozen Profile Version Baseline أو عدمها، تكون النتيجة:
+
+```text
+OWNER DECISION REQUIRED — VERSION BASELINE STATUS
+```
+
+ولا يجوز حسمها بالتخمين أو بمجرد وجود Version في Profile manifest أو Git history.
+
+يملك هذا القسم Profile Versioning حصريًا. أما `Standard ID` و`Standard Version` و`Standard Version Format` وانتقالات إصدارات Standards فتخضع للسياسة المركزية `STANDARD_VERSIONING_POLICY_AR.md`. لا تدخل هذه السياسة في `Pinned Adoption Control Set` أو `Resolved Applicable Standards Set`، ولا يحتاج Consumer إلى نسخها لمجرد Adoption.
+
+### 5.2 No-Cascade Profile Version Rule
+
+تغيير `Required Standards` المباشرة في Profile هو **Major Profile transition** لذلك الـProfile فقط. لا تُطبّق Version bump تلقائية على Profiles الأبناء أو الموروثة لمجرد تغير parent Profile؛ فـ`Profile Version` تمثل manifest الخاصة بذلك Profile، لا snapshot للمحتوى الموروث. يعمل Profile descendant انتقالًا فقط إذا تغيرت manifest أو `Extends` أو `Required Standards` أو `Conditional Applicability` أو contract الخاصة به مباشرةً. تبقى composition traceable عبر exact Adoption Commit ونسخ Profiles الموروثة وFinal Resolved Applicable Standards Set.
+
+هذه القاعدة canonical هنا وحده، ولا تُعاد كتابتها داخل child Profiles.
 
 ## 6. Scope-Aware Profile Activation
 
@@ -167,6 +198,24 @@ Modules/SpecificFeature
 ```
 
 أو قائمة paths محددة. Scope هو نطاق التطبيق، وليس نوعًا حصريًا للمستودع.
+
+### 6.1 عقد تفعيل Project Host
+
+إذا كان `root artifact` في Repository يمثل `deployable Host/Application Project`، يجب تفعيل:
+
+```text
+project-host
+```
+
+على Scope:
+
+```text
+/
+```
+
+لا ينطبق هذا الإلزام على `package-only repositories` أو `module-only artifact scopes`. كما أن وجود `project-aware-slim-module` لا يغني عن `project-host` للـHost root، ولا يجعل ذلك الـModule نفسه Host Project.
+
+عند وجود Packages أو Modules داخل Host Repository، يظل `project-host` مفعّلًا على `/`، وتظل Profiles الخاصة بالـPackages أو Modules مفعّلة على Scopesها المستقلة عند انطباقها. لا يغير هذا العقد Manifest schema، ولا يضيف Project Host applicability إلى أي Package أو Module Profile.
 
 يجوز للمشروع تفعيل عدة Profiles في Repository واحدة، كما يجوز أن تنطبق عدة Activations على الملف نفسه. لا يعني Scope الأكثر تحديدًا إلغاء Scope أوسع تلقائيًا؛ بل تُجمع Profiles المنطبقة، ما لم يوجد استثناء مشروع موثق بسلطة مناسبة.
 
@@ -238,6 +287,8 @@ docs/php-engineering-standards/
     │   └── <inherited profiles>
     ├── ai/
     │   └── <if applicable>
+    ├── governance/
+    │   └── <resolved applicable governance standards>
     ├── modules/
     │   └── <resolved applicable standards>
     ├── packages/
@@ -253,11 +304,11 @@ docs/php-engineering-standards/
 ```text
 unused profiles
 unused engineering standards
-docs/audits/
+historical Audit / Verification evidence
 docs/decisions/
 ```
 
-لا يشترط الاعتماد نسخ Folders فارغة، ولا تدخل الملفات التاريخية في Adoption Set. تظل `docs/audits/` و`docs/decisions/` في المستودع المركزي للتاريخ والحوكمة فقط.
+لا يشترط الاعتماد نسخ Folders فارغة، ولا تدخل الوثائق التاريخية في Adoption Set. لا يقرر هذا المعيار Retention للوثائق التاريخية في المستودع المركزي؛ يخضع ذلك لـ[Documentation Lifecycle Standard](governance/DOCUMENTATION_LIFECYCLE_STANDARD_AR.md).
 
 ## 9. عقد `STANDARDS_MANIFEST.md`
 
@@ -389,7 +440,7 @@ Underlying standards remain source of truth: YES
 - [ ] عدم حاجة المهمة الهندسية العادية إلى upstream network.
 - [ ] الحفاظ على relative links والبنية اللازمة لها.
 - [ ] تسجيل Additional Standards والاستثناءات صراحةً.
-- [ ] عدم إدخال `docs/audits/` أو `docs/decisions/` في Adoption Set.
+- [ ] عدم إدخال historical Audit/Verification artifacts أو Decision records ضمن Adoption Set لمجرد وجودها في المستودع المركزي.
 - [ ] قراءة الوكيل للـ Standards المنطبقة فقط على Scope المهمة.
 - [ ] سلامة البنية قبل تقييم Exceptions، وعدم تحويل Structural Invalidity إلى حالة قابلة للـwaive.
 - [ ] تسجيل Resolution Status لكل Profile Activation/Scope بصورة مستقلة، دون إخفاء نتيجة غير صحيحة بنتيجة أخرى.
@@ -458,9 +509,12 @@ inheritance cycle
 broken required reference
 missing mandatory structural metadata
 structural Manifest mismatch
+known frozen-version/content mismatch
 ```
 
-يشمل `structural Manifest mismatch` عدم مطابقة ما يسجله Manifest فعليًا للـresolved Control Set أو Final Resolved Applicable Standards Set الناتجة من المرحلتين أو Profile Activations أو الـpinned structure المطلوبة. لا يعد عدم تسجيل Candidate Standard مستبعدة canonical ضمن Final Applicable Set mismatch؛ لكن يجب أن تظل كل مراجع Profile وRequired Standards قابلة للتحقق بنيويًا قبل تقييم applicability. يراعي فحص التطابق فقط deviations التي يسمح هذا العقد باستثنائها صراحةً؛ فلا يصبح deviation موثق ومسموح Structural Invalidity لمجرد أنه exception. لكن لا يجوز لأي exception أن يتجاوز أي بند من قائمة Structural Invalidity أعلاه؛ ويظل missing required Standard أو Profile أو inheritance أو reference أو metadata المطلوبة Structural Invalidity غير قابلة للـwaive.
+يشمل `structural Manifest mismatch` عدم مطابقة ما يسجله Manifest فعليًا للـresolved Control Set أو Final Resolved Applicable Standards Set الناتجة من المرحلتين أو Profile Activations أو الـpinned structure المطلوبة. ويشمل `known frozen-version/content mismatch` ثبوت أن Version مجمدة نفسها تشير إلى artifact أو Profile manifest/content مختلفة عن الـFrozen snapshot التي ثبتت عند أول `Completed VALID Adoption` أو `Completed VALID Upgrade`. لا يعد اختلاف repository commit وحده mismatch؛ يجب مقارنة الـartifact نفسها. لا يعد عدم تسجيل Candidate Standard مستبعدة canonical ضمن Final Applicable Set mismatch؛ لكن يجب أن تظل كل مراجع Profile وRequired Standards قابلة للتحقق بنيويًا قبل تقييم applicability. يراعي فحص التطابق فقط deviations التي يسمح هذا العقد باستثنائها صراحةً؛ فلا يصبح deviation موثق ومسموح Structural Invalidity لمجرد أنه exception. لكن لا يجوز لأي exception أن يتجاوز أي بند من قائمة Structural Invalidity أعلاه؛ ويظل missing required Standard أو Profile أو inheritance أو reference أو metadata المطلوبة Structural Invalidity غير قابلة للـwaive.
+
+إذا تعذر إثبات الـFrozen artifact snapshot أو حالة الـBaseline، فلا يُفترض التطابق ولا الاختلاف، وتكون النتيجة `OWNER DECISION REQUIRED — VERSION BASELINE STATUS` بدل التخمين. أما known mismatch المثبت فينتج `Resolution Status = INVALID` ولا يمكن أن تكتمل معه Adoption أو Upgrade بحالة `VALID`.
 
 عدم توفر exact upstream Adoption Commit المطلوب لمراجعة أو تنفيذ Structural / Transitive Resolution أو Canonical Standard Applicability يُصنف كفشل تحقق fail-closed، وتكون نتيجته حتمًا `Resolution Status = INVALID`. لا تنشأ عن هذه الحالة Exception؛ وتكون `Exception State = NONE` ما لم توجد deviation مستقلة أخرى تنطبق عليها دورة §16.4. هذا لا يعني أن Standard نفسها مفقودة أو أن محتوى الـCommit broken؛ يعني فقط أن required pinned verification input غير متاح، فلا يمكن إثبات resolution المطلوبة. هذه الحالة ليست Owner Decision أو deviation أو Exception قابلة للموافقة، ولا يملك المالك تحويلها إلى `VALID`. لا تستخدم لها floating ref أو fallback source أو تعريفات مخمّنة. مسار الاستعادة الوحيد هو إتاحة exact Commit ثم إعادة تنفيذ Resolution / Validation وإعادة تقييم الحالة.
 
@@ -520,9 +574,10 @@ APPROVED_AND_DOCUMENTED
 1. تنفيذ Structural / Transitive Resolution فعليًا من ملفات Profiles المحلية المثبتة، مع جمع والتحقق من كل Required Standard references وExplicit Additional Standard references لإنتاج Candidate Standard References.
 2. التحقق من Structural Integrity لكل المرشحين والبنية قبل أي تصفية بسبب applicability أو تقييم للاستثناءات؛ يظل المرجع المكسور Structural Invalidity حتى إذا كان متوقعًا استبعاده في المرحلة التالية.
 3. تنفيذ Canonical Standard Applicability لكل Candidate Standard مقابل كل Activation/Scope وحقائق الـartifact، وتكوين Final Resolved Applicable Standards Set؛ لا يطبق Profile أو Additional Standard override على scope المعيار الأصلي.
-4. تشخيص كل Activation/Scope على حدة، بما في ذلك نتيجة applicability؛ والاستبعاد deterministic لا ينتج حالة Invalid أو Exception.
-5. تقييم الاستثناءات المسموح بها وحالتها، دون تطبيق أي Requested Exception.
-6. حساب Overall Resolution Status بقواعد §16.2.
-7. عدم اعتبار Adoption مكتملة إلا إذا كانت `Overall Resolution Status = VALID`.
+4. التحقق من Frozen Version Baseline وartifact snapshot لكل Version مجمدة منطبقة؛ known frozen-version/content mismatch ينتج `Resolution Status = INVALID`، وتعذر إثبات الـsnapshot أو الـBaseline ينتج `OWNER DECISION REQUIRED — VERSION BASELINE STATUS`. لا يعتبر اختلاف repository commit وحده mismatch.
+5. تشخيص كل Activation/Scope على حدة، بما في ذلك نتيجة applicability؛ والاستبعاد deterministic لا ينتج حالة Invalid أو Exception.
+6. تقييم الاستثناءات المسموح بها وحالتها، دون تطبيق أي Requested Exception.
+7. حساب Overall Resolution Status بقواعد §16.2.
+8. عدم اعتبار Adoption مكتملة إلا إذا كانت `Overall Resolution Status = VALID`.
 
 `OWNER DECISION REQUIRED` ليست نجاحًا، و`REQUESTED` ليست موافقة، و`APPROVED_AND_DOCUMENTED` لا تصلح Structural Invalidity.

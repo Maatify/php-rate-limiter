@@ -3,7 +3,7 @@
 ## Standard Metadata
 
 - **Standard ID:** `std-library-presentation`
-- **Standard Version:** `1.0.1`
+- **Standard Version:** `2.0.1`
 - **Standard Version Format:** `MAJOR.MINOR.PATCH`
 
 ## 1. Normative Language
@@ -17,13 +17,15 @@ The key words "MUST", "MUST NOT", "REQUIRED", "SHOULD", "SHOULD NOT", "MAY", and
 ## 2. Scope and Relationship to Other Standards
 
 This Standard is responsible for governing:
-* Repository presentation.
+* Standalone Package presentation and artifact-owned presentation for an extractable Base Module.
 * README visual and information architecture.
-* Badges.
+* Usage Guide and root `examples/` presence, navigation, and discoverability.
+* Deterministic badge architecture by actual publication state.
 * Governance document identity.
 * Release-facing documentation state.
 * Author and ecosystem identity.
 * GitHub description, topics and PR metadata.
+* Tag and Release consumption of a release-qualified SHA.
 * SemVer Release Candidate presentation and first Stable release readiness.
 
 It explicitly does **not** govern:
@@ -36,21 +38,36 @@ It explicitly does **not** govern:
 * Dependency constraints.
 
 ### Relationship to other standards:
-* `PACKAGE_BUILDING_STANDARD.md`: Governs library building, code architecture, and the package contract.
+* `PACKAGE_BUILDING_STANDARD.md`: Governs library building, runtime architecture, and the stable public/runtime/behavioral package contract.
 * `COMPOSER_PACKAGE_STANDARD.md`: Governs Composer metadata, dependencies and Composer stability constraints, autoloading, scripts, configuration, and lock-file policy.
 * `CI_WORKFLOW_STANDARD.md`: Governs CI, quality gates, and automated testing.
+* `DOCUMENTATION_LIFECYCLE_STANDARD_AR.md`: Governs document roles, authority boundaries, current-versus-historical semantics, freshness, retention, and documentation-reference hygiene.
 
-This Standard owns the release-facing lifecycle and first Stable readiness. Composer stability constraints govern dependency resolution; they do not define release eligibility or publication state.
+For the language of durable technical documentation, including README, Package Reference, Usage/Integration Guides, and release-facing documentation, this Standard follows the canonical default in `DOCUMENTATION_LIFECYCLE_STANDARD_AR.md`; it does not define a second language contract.
+
+This Standard owns consumer-facing presentation, release-facing consumption, and first Stable readiness. `CI_WORKFLOW_STANDARD.md` owns exact release-SHA qualification and evidence. Composer stability constraints govern dependency resolution; they do not define release eligibility or publication state.
 
 Each Standard has clear boundaries and must not duplicate the content of another.
 
 ## 3. Applicability
 
-The current version of this Standard applies exclusively to:
-`Maatify standalone PHP Composer libraries`
+The current version of this Standard applies to:
 
-It MUST NOT be generalized to JavaScript, Rust, or any other language.
+* `Maatify` standalone PHP Composer libraries; and
+* an extractable Base Module Artifact Root when that root owns the files and public contracts being presented.
+
+It MUST NOT be generalized to JavaScript, Rust, or any other language. Host repositories and their root GitHub surfaces remain Host-owned unless they actually represent the artifact being presented.
 Every other language or ecosystem MUST have a separate Standard when needed.
+
+### Applicability matrix
+
+| Scope | Consumer documentation and artifact presentation | GitHub/repository surfaces |
+|---|---|---|
+| Standalone reusable Package repository | Full Usage Guide, root `examples/`, Package Reference, README, badges, and release-facing presentation when applicable | The actual Package repository only |
+| Extractable Base Module Artifact Root | Usage Guide, root `examples/`, Package Reference, Quick Usage, and artifact-local README rules | The actual Host/repository remains Host-owned; artifact distribution badges are conditional |
+| Host repository root | Host-owned presentation only; it does not represent an embedded Base Module contract | Host-owned Description, Topics, Releases, Deployments, Packages, and other repository surfaces |
+
+Artifact-owned rules apply only where the artifact owns the relevant file or contract. Host metadata MUST NOT present the Host as the embedded Base Package.
 
 The canonical README footer is defined exclusively in [Section 18](#18-canonical-maatify-footer).
 Do not replace `PHP Libraries` with `Software Libraries` or any other generic term.
@@ -86,7 +103,7 @@ The examples in this Standard use canonical placeholders. When applying these te
    * How to install or access it.
 3. The presentation MUST NOT claim features, support, or a quality status that is not proven.
 4. The shared identity MUST NOT erase the functional differences between libraries.
-5. A SemVer Release Candidate MUST be presented against its actual pre-release version before its tag and distribution are published.
+5. A published SemVer Release Candidate MUST be presented against its exact externally resolvable pre-release version; preparation alone MUST NOT claim that it is published.
 6. Copying the README or governance files from another library without replacing all names and links is strictly forbidden.
 7. The GitHub-rendered appearance is the ultimate reference, not just the raw Markdown source.
 8. Presentation changes MUST NOT alter runtime contracts.
@@ -96,13 +113,21 @@ The examples in this Standard use canonical placeholders. When applying these te
 Any Maatify PHP library ready for release MUST contain the following files (where applicable):
 
 * `README.md`: Quickly introduces the library.
-* `{PACKAGE_REFERENCE_FILE}`: The detailed source of truth for contracts.
+* `{PACKAGE_REFERENCE_FILE}`: The canonical detailed reference for the stable public/runtime/behavioral package contract and Public Runtime API.
 * `CHANGELOG.md`: Documents releases.
 * `SECURITY.md`: Defines support, reporting, and scope.
 * `CONTRIBUTING.md`: Explains contribution and local verification.
 * `CODE_OF_CONDUCT.md`: Establishes community rules.
 * `LICENSE`: The package license.
-* `composer.json`: The package definition.
+* `composer.json`: The Composer manifest; its canonical manifest contract is governed by `COMPOSER_PACKAGE_STANDARD.md`.
+
+Every reusable standalone Package and every applicable Base Module Artifact Root MUST also provide:
+
+* `docs/guides/USAGE_GUIDE.md`: Consumer-facing usage and integration guidance.
+* `examples/`: Root consumer-facing examples.
+* The canonical Package Reference and Quick Usage links to the Guide and examples.
+
+The number of examples is determined by the actual public capabilities; this Standard does not impose a fixed count. A Host repository does not inherit these artifact requirements merely because it contains a Base Module.
 
 The `README.md` MUST NOT be overloaded with all the details present in the Package Reference.
 
@@ -139,86 +164,120 @@ By default, the README header MUST contain:
 
 ## 8. README Badge Architecture
 
-Badges MUST be divided into logical groups.
+Badges MUST be divided into logical groups and selected from the actual publication state of the artifact. A badge MUST have a canonical role and a valid source of truth; it MUST NOT appear merely because a reference repository uses it.
 
-### 8.1 Package Status
-For a Composer library published or intended for Packagist that is preparing publication of a SemVer pre-release, preparing its first Stable release, or has at least one published Stable version, the following badge markup MUST be prepared:
-* Latest Version.
-* PHP Version.
-* License.
-* PHPStan Level Max (as long as it is actually proven in the project).
+The default README badge style is Shields' default/small style. `style=for-the-badge` MUST NOT be used as the README default. The intentional governance-document exceptions in Section 13 remain unchanged.
 
-During first Stable Release Preparation, badge markup is prepared internally. A live `Latest Version` badge MUST NOT be displayed until a Stable version has actually been published. A published pre-release MAY be shown only as an explicitly labeled pre-release according to Section 8.4.
+### 8.1 Publication-State Matrix
 
-### 8.2 Documentation
-Clear badges or links MUST be prepared for:
-* Changelog.
-* Package Reference.
-* Security Policy.
-* Contributing Guide.
+#### A. Development / Unpublished
 
-### 8.3 Ecosystem and Adoption
-Where applicable, the following MUST be prepared:
-* Monthly Downloads.
-* Total Downloads.
+When no version is externally published and resolvable through an approved distribution channel, show:
+
+* `Status = Development`;
+* PHP from the declared Composer constraint;
+* License from repository-local truth;
+* PHPStan Level Max only when proven; and
 * Maatify Ecosystem.
-* Install.
 
-### 8.4 SemVer Pre-release Badge Rule
-When Packagist is the selected package registry, badge markup for an intended SemVer pre-release or Stable release MAY be prepared before its tag is created when publication is planned immediately after owner approval. Preparing markup does not create a release or establish that a Release Candidate exists. Live Packagist badges MUST NOT be exposed before the package is actually published and the version name is valid.
+Do not show registry version, downloads, distribution, install, or Stable badges. Do not show dynamic Packagist PHP/License badges for an unpublished package.
 
-This rule applies only when Packagist is the library's selected package registry or when immediate Packagist publication is part of the approved release plan.
+#### B. Published pre-release without a Published Stable release
 
-However, before the package actually exists on Packagist, Packagist Version, PHP, License, and Downloads badges MUST NOT be displayed live, because Shields will render them as `not found` (even though the endpoint returns HTTP 200).
-Before the first Stable Tag, a version badge MUST NOT be labeled `Latest Version` if no Stable release exists. The default Packagist version badge cannot be relied upon to display pre-releases without configuration. Using the `include_prereleases` parameter is optional and only permitted when there is an explicit decision to display a pre-release clearly labeled as such, not as Stable.
+When an exact pre-release is externally published and resolvable but no Stable release exists:
 
-### 8.5 Badge Style
-This standard does not force `style=for-the-badge` on the README.
-* Small badges MAY be used.
-* `for-the-badge` MAY be used.
-* The standard is visual consistency.
-* Badge groups MUST NOT mix sizes and styles randomly.
-* The final selection MUST be reviewed against GitHub rendering.
-* The exact number of lines is not strictly required to be identical across libraries.
+* use `Status = Release Candidate` only for an exact `-rc.*` identifier, otherwise `Status = Pre-Release`;
+* show the exact published pre-release version, never as `Latest Version`;
+* show PHP and License from repository-local truth;
+* show PHPStan only when proven;
+* show the actual Registry/Distribution link and available monthly/total download metrics;
+* show Maatify Ecosystem; and
+* use an exact published pre-release install command or badge.
 
-### 8.6 Badge Accuracy
-Every Badge MUST:
-* Refer to the current library.
-* Use the correct Composer package name.
-* Use the correct Repository slug.
-* Link to the correct local file or external page.
-* Not point to a different reference library.
-* Not claim a quality gate that does not exist.
-* Not claim a License different from the actual one.
+Do not present a prepared Stable target as published or use a generic install command that can resolve a different version.
 
-## 9. Canonical Composer / Packagist Badge Templates
+#### C. Stable Release Preparation
 
-*Note: The following live templates MUST ONLY be exposed when the conditions described in Section 8.4 are met.*
+Before the Stable tag and distribution publication, the public default-branch README MUST continue to represent the latest actually published state. A target Stable version MUST NOT appear as Latest, Published, or supported merely because release preparation is complete.
 
-### Package Status
-```markdown
-[![Latest Version](https://img.shields.io/packagist/v/{COMPOSER_PACKAGE_NAME}.svg)](https://packagist.org/packages/{COMPOSER_PACKAGE_NAME})
-[![PHP Version](https://img.shields.io/packagist/php-v/{COMPOSER_PACKAGE_NAME}.svg)](https://packagist.org/packages/{COMPOSER_PACKAGE_NAME})
-[![License](https://img.shields.io/packagist/l/{COMPOSER_PACKAGE_NAME}.svg)](LICENSE)
+#### D. Published Stable
+
+After a Stable version is externally published and resolvable, show:
+
+* `Status = Stable`;
+* Latest Version from the actual distribution source;
+* PHP from current `composer.json`;
+* License from current repository/Composer contract;
+* PHPStan only when proven;
+* Maatify Ecosystem;
+* Registry/Distribution, download metrics, and Install only when the actual registry provides them; and
+* the applicable documentation links.
+
+If the package does not use Packagist, do not use Packagist badges; use an equivalent authoritative distribution surface only when it exists.
+
+#### E. Existing Stable with a future pre-release
+
+When a Stable release already exists and a future pre-release is published, the default-branch README MUST retain Stable status, the latest published Stable version, Stable download semantics, and the generic Stable install command. The future pre-release belongs in release-specific documentation and MUST NOT replace the default Stable presentation.
+
+### 8.2 Source of Truth
+
+| Badge | Canonical truth |
+|---|---|
+| Status | Actual publication/lifecycle state |
+| Version | Actual externally published and resolvable version |
+| PHP | Current `composer.json` constraint |
+| License | Current repository/Composer license contract |
+| PHPStan | Actual configured and proven quality gate |
+| Downloads | Actual distribution registry |
+| Install | Actual externally resolvable package identity/version |
+| Documentation | Actual current repository or Artifact Root path |
+
+PHP and License badges MUST use repository-local truth, not Packagist dynamic endpoints. Dynamic badges MUST NOT expose `not found` or a value that does not represent the actual artifact state. Semantic duplicates of the same fact from competing sources are prohibited.
+
+### 8.3 Canonical Badge Rows
+
+When a README uses a badge area, keep this order whenever a group has applicable items:
+
+```text
+Row 1 — Status / Version / PHP / License / PHPStan
+Row 2 — Registry / Monthly Downloads / Total Downloads / Maatify Ecosystem / Install
+Row 3 — Documentation links for the artifact scope
 ```
-*(Plus PHPStan where proven)*
 
-### Ecosystem and Usage
+State-based omission removes an inapplicable item; it does not justify replacing it with an optional duplicate.
+
+### 8.4 Documentation Links and Artifact Scope
+
+For a standalone reusable Package, the documentation row MUST cover Usage Guide, Examples, Package Reference, Changelog, Security Policy, and Contributing Guide when those files apply.
+
+For an embedded Base Artifact Root, the artifact-local row MUST cover Usage Guide, Examples, Package Reference, and Changelog. Host-level Security, Contributing, and other governance files MUST NOT be copied into every Base Artifact merely through inheritance.
+
+### 8.5 Badge Accuracy and Style
+
+Every badge MUST refer to the current artifact, use the correct Composer identity and repository slug, link to the correct local file or actual external page, avoid other libraries, and claim only a proven quality or publication state. README badge groups MUST use the default/small Shields style unless an intentional non-default exception is documented; governance-specific `for-the-badge` exceptions remain limited to Section 13.
+
+## 9. Canonical Badge Templates
+
+Templates are state-specific, not one universal badge set. The following examples show the required source boundaries and deliberately omit `style=for-the-badge`:
+
+### Unpublished Package
 ```markdown
-[![Monthly Downloads](https://img.shields.io/packagist/dm/{COMPOSER_PACKAGE_NAME})](https://packagist.org/packages/{COMPOSER_PACKAGE_NAME})
-[![Total Downloads](https://img.shields.io/packagist/dt/{COMPOSER_PACKAGE_NAME})](https://packagist.org/packages/{COMPOSER_PACKAGE_NAME})
+[![Status](https://img.shields.io/badge/Status-Development-blue)](README.md)
+[![PHP](https://img.shields.io/badge/PHP-{MINIMUM_PHP_VERSION}-8892BF)](composer.json)
+[![License](https://img.shields.io/badge/License-{LICENSE}-green)](LICENSE)
 [![Maatify Ecosystem](https://img.shields.io/badge/Maatify-Ecosystem-blueviolet)](https://github.com/Maatify)
-[![Install](https://img.shields.io/badge/Install-composer%20require%20{ENCODED_COMPOSER_PACKAGE_NAME}-blue)](https://packagist.org/packages/{COMPOSER_PACKAGE_NAME})
 ```
-*Note: Ensure proper URL encoding for the install badge (e.g., `%2F` for `/`).*
 
-### Documentation
+### Published Distribution
 ```markdown
-[![Changelog](https://img.shields.io/badge/Changelog-View-blue.svg)](CHANGELOG.md)
-[![Package Reference](https://img.shields.io/badge/Reference-Read-blue.svg)]({PACKAGE_REFERENCE_FILE})
-[![Security Policy](https://img.shields.io/badge/Security-Policy-blue.svg)](SECURITY.md)
-[![Contributing Guide](https://img.shields.io/badge/Contributing-Guide-blue.svg)](CONTRIBUTING.md)
+[![Status](https://img.shields.io/badge/Status-{PUBLICATION_STATUS}-blue)](CHANGELOG.md)
+[![Version](https://img.shields.io/badge/Version-{PUBLISHED_VERSION}-blue)]({DISTRIBUTION_URL})
+[![PHP](https://img.shields.io/badge/PHP-{MINIMUM_PHP_VERSION}-8892BF)](composer.json)
+[![License](https://img.shields.io/badge/License-{LICENSE}-green)](LICENSE)
+[![Maatify Ecosystem](https://img.shields.io/badge/Maatify-Ecosystem-blueviolet)](https://github.com/Maatify)
 ```
+
+Registry, download, and Install badges are appended only when the selected registry actually supports them and the publication-state matrix permits them. The exact package identity and version MUST be used in any install command.
 
 ## 10. README Section Architecture
 
@@ -249,6 +308,7 @@ Any release-ready library MUST include:
 * Requirements.
 * Installation.
 * Usage or Quick Usage.
+* Public Runtime API overview.
 * Documentation.
 * Quality Status.
 * License.
@@ -257,7 +317,6 @@ Any release-ready library MUST include:
 
 ### Conditional Sections
 These sections are added only when they apply:
-* Public Runtime API.
 * Critical Runtime Behavior.
 * Architecture Guarantees.
 * Exception and Error Propagation.
@@ -269,6 +328,30 @@ These sections are added only when they apply:
 * Upgrade Notes.
 
 Do not create empty sections merely to satisfy a template.
+
+### 10.1 Public Runtime API README Contract
+
+For every reusable standalone Package and every applicable Base Module Artifact Root, the README MUST present the artifact's Public Runtime API.
+
+The existence, design, and technical contract of that Public Runtime API remain governed by `PACKAGE_BUILDING_STANDARD.md`; this Standard governs only its consumer-facing README presentation.
+
+The README MUST include a clearly labeled `Public Runtime API` section for the applicable artifact. The section MUST provide a useful consumer-facing overview that is proportionate to the library's nature, size, and actual capabilities. This requirement does not impose a fixed template or a fixed number of interfaces, classes, services, or other entries.
+
+The overview MUST accurately represent the actual Public Runtime API, MUST link to the canonical Package Reference for the complete Public Runtime API inventory and stable public/runtime/behavioral contract, and MUST NOT duplicate the full Package Reference.
+
+### 10.2 Usage Guide and Examples Contract
+
+For every reusable standalone Package and every applicable Base Module Artifact Root:
+
+* `docs/guides/USAGE_GUIDE.md` and root `examples/` are consumer-facing artifacts; no fixed number of examples is required.
+* The Guide MUST explain fit, requirements, non-goals, primary calls, inputs, outputs, and boundaries before long walkthroughs.
+* A capability map MUST connect each advertised consumer capability to a walkthrough and an example. It MUST cover material capabilities without copying the full Package Reference.
+* Each walkthrough MUST make the path clear as `Input → Public Call → Result → Boundary` and MUST consume the Public Contract rather than inventing a technical contract.
+* Examples MUST use the Public API and production autoload. Consumers MUST NOT be directed to tests or source code as the primary way to learn usage.
+* Standalone runnable examples MUST be smoke-executable. Standalone database/service examples MUST use the repository-owned Integration infrastructure when available.
+* A Host-dependent example MAY be excluded from smoke execution only when its non-standalone boundary and prerequisites are explicit; it still requires syntax/static validation.
+
+The CI Workflow Standard owns execution and enforcement of syntax, static, and smoke validation. The Package Building Standard owns the technical workflow contract; this Standard owns artifact presence, presentation, navigation, and discoverability.
 
 ## 11. Heading and Emoji Rules
 
@@ -518,14 +601,17 @@ This section governs only presentation-facing consistency between Composer, READ
 Dependency declarations, constraints, autoloading, scripts, configuration, stability, and lock-file policy are governed exclusively by [COMPOSER_PACKAGE_STANDARD.md](COMPOSER_PACKAGE_STANDARD.md).
 
 ### GitHub Metadata
-The following MUST be reviewed:
+The following MUST be reviewed when they belong to the actual artifact/repository being presented:
 * Repository description.
 * Website.
 * Topics.
 * Releases visibility.
 * Packages visibility (when applicable).
+* Deployments visibility (only when a real deployment lifecycle exists).
 
-Topics or descriptions MUST NOT claim features that do not exist.
+Releases MUST be shown only when GitHub Releases are an actual consumer-facing and managed channel. Packages MUST be shown only when GitHub Packages is actually used; Packagist publication does not imply GitHub Packages. Deployments MUST be shown only when a real deployment lifecycle exists. Empty or misleading GitHub home-page sections MUST NOT be enabled merely because GitHub supports them. Topics or descriptions MUST NOT claim features that do not exist.
+
+For an embedded Base Artifact, GitHub Description, Topics, Releases, Deployments, and Packages remain Host/repository surfaces unless that artifact itself is the represented repository. The Host MUST NOT claim the Base Artifact's distribution state.
 
 ## 20. Pull Request Presentation Metadata
 
@@ -540,6 +626,25 @@ Any PR preparing publication of a SemVer RC or Stable Release Preparation MUST c
 PR metadata MUST NOT describe a prepared target version as already published. If a Stable Release Preparation is pending its Stable tag, the body MUST say that the Stable release is not yet published, identify the actual published RC, and state that Stable publication awaits owner approval. Version and date wording MUST match what is known; an unknown date MUST NOT be represented as a committed release date.
 
 If the PR scope changes, the Title and Body MUST be updated to remain an accurate historical record.
+
+### 20.1 Release Integrity and Curated Release Notes
+
+Tag and Release presentation MUST consume the exact release-qualified SHA produced by the [CI Workflow Standard](CI_WORKFLOW_STANDARD.md). The required release path is:
+
+```text
+approved integration
+→ Owner merge to main
+→ actual main SHA
+→ Full Applicable CI on the same SHA
+→ release-qualified SHA
+→ Tag and Release targeting that exact SHA
+```
+
+Presentation MUST NOT make a tag or Release appear qualified by CI that ran on an older SHA. A later commit intended for the same release requires new qualification. The tag/release surface is a consumer-facing projection of the qualified commit; it does not own CI evidence or create release authorization.
+
+Curated GitHub Release Notes are an independent consumer-facing artifact. When applicable they MUST contain the exact version, a concise theme when material, a curated Overview, only the relevant Added/Changed/Fixed/Removed/Deprecated material, important runtime guarantees or links, compatibility impact, and upgrade/migration notes when needed. Empty mandatory headings are not required.
+
+Generated GitHub Release Notes are optional supplementary material and MUST NOT replace curated notes by default. CHANGELOG and PR bodies remain separate artifacts, and Phase/Work Unit/branch/executor history MUST NOT become the primary consumer-facing Release Notes content.
 
 ## 21. Visual Review Rules
 
@@ -585,8 +690,14 @@ An explicit search for reference repository names MUST be conducted before submi
 * [ ] Before the Stable tag and release exist, README, CHANGELOG, SECURITY, badges, and PR metadata do not claim a published or supported Stable version.
 * [ ] The two-Host gate is not imposed on already-Stable packages or later patch, minor, or Stable releases.
 * [ ] README header and Maatify identity are present.
+* [ ] `docs/guides/USAGE_GUIDE.md`, root `examples/`, Package Reference, and Quick Usage links are present for every applicable reusable Package/Base Artifact.
+* [ ] Usage Guide fit/requirements/non-goals, capability map, walkthrough boundaries, and Public Contract links are accurate; no fixed example count is assumed.
+* [ ] Every applicable reusable Package/Base Artifact README contains a clearly labeled `Public Runtime API` overview proportionate to the artifact's actual capabilities; it is not treated as a conditional section.
+* [ ] The `Public Runtime API` overview is accurate, consumer-facing, and linked to the canonical Package Reference for the complete Public Runtime API inventory and stable public/runtime/behavioral contract without duplicating the full reference.
 * [ ] Required badges exist and point to the current package.
-* [ ] Packagist badges are complete when the library uses or is being prepared for immediate publication on Packagist.
+* [ ] Badge selection matches the actual publication-state matrix, uses repository-local PHP/License truth, contains no semantic duplicates, and does not use `for-the-badge` as the README default.
+* [ ] Packagist or other registry badges appear only when the artifact is actually published and resolvable through that channel.
+* [ ] Host repositories do not present themselves as embedded Base Artifacts.
 * [ ] README sections match the package's actual behavior.
 * [ ] Critical runtime contracts remain documented.
 * [ ] CODE_OF_CONDUCT identity badges are correct.
@@ -595,6 +706,7 @@ An explicit search for reference repository names MUST be conducted before submi
 * [ ] CHANGELOG contains `[Unreleased]`.
 * [ ] CHANGELOG contains the target version and date.
 * [ ] Release links target the current repository.
+* [ ] Tag and Release target the exact CI release-qualified SHA, and curated Release Notes are distinct from CHANGELOG and PR metadata.
 * [ ] CONTRIBUTING reflects actual local verification.
 * [ ] Author block uses visible `<br>` line breaks.
 * [ ] The canonical PHP-library footer is the final README element.
@@ -612,7 +724,7 @@ This Standard explicitly does NOT force:
 * The exact same number of examples.
 * The exact same number of Documentation links.
 * The exact literal Emoji set.
-* `for-the-badge` inside the README.
+* `for-the-badge` as the default README badge style (the intentional governance-document exceptions remain governed by Section 13).
 * Packagist badges on a library not utilizing Packagist.
 * Database or framework claims.
 * Empty sections.

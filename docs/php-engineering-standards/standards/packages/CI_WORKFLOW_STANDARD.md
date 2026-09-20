@@ -3,10 +3,10 @@
 ## Standard Metadata
 
 - **Standard ID:** `std-ci-workflow`
-- **Standard Version:** `1.1.0`
+- **Standard Version:** `2.0.0`
 - **Standard Version Format:** `MAJOR.MINOR.PATCH`
 
-This document outlines the standard CI workflow architecture for any standalone Composer package in the Maatify ecosystem. It ensures a consistent, high-quality testing and static analysis baseline across all packages without coupling to any specific project.
+This document outlines the standard CI workflow architecture for reusable Composer artifacts in the Maatify ecosystem. It applies to standalone Composer packages and to an extractable Base Module Artifact Root when the check or service verifies that artifact as a reusable Package. It ensures a consistent, high-quality testing and static analysis baseline without coupling repository-specific values to this Standard.
 
 ## 1. Normative Language
 
@@ -21,19 +21,23 @@ The key words "MUST", "MUST NOT", "REQUIRED", "SHALL", "SHALL NOT", "SHOULD", "S
 This standard governs CI execution and enforcement. The testing architecture and regression protection requirements are exclusively governed by the [Testing Standard](../testing/TESTING_STANDARD.md).
 Repositories with required system/E2E suites MUST execute them as CI gates appropriate to that repository. CI MUST make it impossible to treat a required failing E2E/system suite as successful verification.
 
+CI Workflow applicability is resolved from the canonical package and module contracts. A Host repository root is not automatically a Base Module Artifact Root, and a Host-specific Project-Aware scope does not acquire Composer-package CI obligations merely through profile inheritance. The CI checks and services that verify an extractable Base Module MUST target its Artifact Root as the reusable Package boundary; Host-only checks remain governed by their applicable Host/project contract.
+
 ### 2.1 Local Quality-Gate Parity
 
 For every applicable required quality gate in this Standard, the repository MUST document a local command or command sequence that runs the same verification contract. This includes Composer validation and dependency resolution, platform requirements, PHP syntax, PHPStan, code style, whitespace, applicable test suites, schema verification, Composer audit, workflow lint, and the Consumer Verification Harness.
 
-Every CI gate MUST invoke a repository-owned command or script, or a documented command sequence, that a developer can run locally to prove the same verification contract. Runner-specific service provisioning, environment setup, dependency matrices, and job orchestration MAY differ, but MUST NOT change what the gate verifies. Workflow YAML MAY coordinate those concerns; it MUST NOT be the only place where a maintainer can discover or understand the verification logic. A repository MUST document the prerequisites and service setup needed to run each applicable gate locally.
+Every CI gate MUST invoke a repository-owned command or script, or a documented command sequence, that a developer can run locally to prove the same verification contract. Runner-specific environment setup, dependency matrices, and job orchestration MAY differ, but MUST NOT change what the gate verifies. For an Integration boundary that needs a Database or other containerizable infrastructure, local and CI execution MUST consume the same repository-owned infrastructure contract whenever the CI environment can use Docker Compose reasonably; CI-native provisioning is allowed only under the equivalence rule in §11. Workflow YAML MAY coordinate those concerns; it MUST NOT be the only place where a maintainer can discover or understand the verification logic. A repository MUST document the prerequisites and service setup needed to run each applicable gate locally.
 
-Local parity means that the gate is runnable locally with equivalent verification semantics; it does not require a developer workstation to reproduce the GitHub runner. This Standard does not require one universal command or Composer script name. The repository MUST use its actual maintained commands and document the mapping from local invocation to CI invocation. GitHub CI remains the final evidence for the integrated runner environment.
+Local parity means that the gate is runnable locally with equivalent verification semantics; it does not require a developer workstation to reproduce the GitHub runner. This Standard does not require one universal command, Composer script name, or CI job name for every gate. However, when an Integration suite exists, `composer test:integration` is the canonical focused Composer entry defined by [COMPOSER_PACKAGE_STANDARD.md](COMPOSER_PACKAGE_STANDARD.md) §21; the internal orchestration command and CI mapping remain repository-specific. The repository MUST use its actual maintained commands and document the mapping from local invocation to CI invocation. GitHub CI remains the final evidence for the integrated runner environment.
 
 ### 2.2 Consumer Verification Harness Gate
 
 The [Testing Standard](../testing/TESTING_STANDARD.md) owns Consumer Verification Harness applicability and evidence semantics. This Standard owns only its CI execution and enforcement.
 
 When the Harness is required for an artifact, CI MUST execute the Harness defined by the Testing Standard as a required applicable gate using the repository-owned local invocation documented under §2.1. CI orchestration MUST preserve the clean-state and repeatability requirements in the Testing Standard, and the executed Harness MUST prove production autoload. For a Base Module, the Harness MUST consume the Module Artifact Root's Composer contract as the dependency; the Host root MUST NOT substitute for the Artifact Root, as defined by the [Composer Package Standard](COMPOSER_PACKAGE_STANDARD.md).
+
+When a Consumer Verification Harness needs the same Database or service as Integration tests, it MUST reuse the same repository-owned Compose definition and lifecycle orchestration. The Harness MAY use a separate Compose project identity, credentials, schema, or disposable state for isolation, but MUST NOT introduce a competing service definition or lifecycle.
 
 The Harness gate MUST fail closed. Missing or incomplete setup, unavailable required dependencies or services, and an unexpected skip MUST fail verification when the Harness is relevant. The gate MUST NOT be hidden behind `continue-on-error`, `|| true`, or a silent skip. Applicable real-service requirements continue to follow Section 11, and baseline CI MUST NOT require production secrets.
 
@@ -53,6 +57,22 @@ However, workflows MUST have:
 * no duplicate conflicting sources of truth
 
 The standard does not mandate one exact number of workflow files.
+
+### 2.4 Release-Qualified SHA
+
+Release qualification MUST be tied to one exact commit SHA. The required sequence is:
+
+```text
+approved integration state
+→ Owner merge to main
+→ actual main commit SHA
+→ Full Applicable CI on that same SHA
+→ release-qualified commit
+```
+
+CI MUST record evidence for the actual `main` SHA it verifies and MUST NOT treat a successful run on an older SHA as qualification for a newer SHA. Any content commit intended to enter the same release candidate creates a new candidate SHA that requires the full applicable verification set. A later `main` commit outside that release does not invalidate an earlier qualified SHA automatically, but a later commit included in the same release cannot be ignored.
+
+This Standard owns qualification and CI evidence only. Tag and Release consumption of the qualified SHA is owned by `LIBRARY_PRESENTATION_STANDARD.md`; CI MUST NOT create a second release-presentation contract.
 
 ## 3. Required-Check-Safe Path Scoping
 
@@ -183,7 +203,10 @@ The standard MUST require, where applicable:
 * **Code style**: When a supported formatter configuration (e.g., `.php-cs-fixer.php`) exists, CI MUST run a non-mutating check (e.g., `vendor/bin/php-cs-fixer fix --dry-run --diff`). CI MUST NEVER rewrite and commit formatting automatically during a required verification job.
 * **Whitespace verification**: CI MUST detect and fail on applicable whitespace defects such as trailing whitespace, malformed whitespace introduced in tracked text/source files, or equivalent repository-specific whitespace integrity failures. A canonical Git-aware verification such as `git diff --check` MAY be documented as an accepted/basic mechanism where appropriate, provided it works correctly for the actual comparison context. This must be treated as a real required quality check, separate from generic code-style formatting.
 * **Complete maintained applicable test suite**: CI MUST run the complete maintained test suite using the repository's actual test runner and tooling. Where separate Unit, Regression, and Integration suites exist, each MUST run explicitly. A runner failure MUST fail CI deterministically; a missing required runner, configuration, dependency, or setup MUST fail closed.
-* **Example syntax validation**
+* **PHP example syntax and static validation**: Every PHP example MUST pass syntax validation and the applicable static validation.
+* **Standalone example smoke execution**: Every standalone runnable example MUST execute successfully using the repository's production autoload and maintained runtime path.
+* **Database/service examples**: A standalone example that depends on a database or service MUST use the repository-owned Integration infrastructure when one exists. CI MUST NOT create a new Docker Compose contract merely to validate an example.
+* **Host-dependent examples**: An example MAY be exempted from smoke execution only when it is demonstrably non-standalone, has explicit prerequisites and boundaries, and still passes syntax/static validation.
 * **Composer security audit**
 * **Workflow syntax/lint validation**
 
@@ -215,6 +238,34 @@ Once a repository contains GitHub Actions workflows, CI MUST validate workflow s
 ## 11. Integration-Test Rules
 
 Packages that own persistence or external-service behavior MUST use the real supported service in Integration CI.
+
+For an Integration suite that needs a Database or other containerizable infrastructure, Docker Compose MUST be the canonical repository-owned local provisioning mechanism. Compose provisions the real service; it MUST NOT require the PHP test runner itself to run inside Docker. The PHP runner remains on the repository or CI PHP runtime by default so PHP compatibility matrices remain truthful; containerizing the runner requires an independently documented reason. Docker/Compose provisioning and Integration orchestration are verification-time dependencies only; they MUST NOT become consumer runtime dependencies of the Package or Base Module.
+
+Integration environment variables MUST be clearly Integration-scoped and non-production. Their names remain repository-specific and MUST be discoverable from the canonical orchestration and its documentation; they MUST NOT reuse production credentials or Host application database/service configuration.
+
+The canonical Integration orchestration MUST own or invoke a deterministic lifecycle equivalent to:
+
+```text
+validate prerequisites
+→ start required services
+→ wait for health/readiness
+→ prepare fresh schema/state
+→ run the Integration suite
+→ cleanup and repeatability verification
+→ teardown disposable infrastructure
+```
+
+Teardown MUST run on both success and failure. Diagnostic logs MAY be captured before teardown. A running container is not proof that its service is ready: readiness MUST use a health check or another deterministic service-level probe, and arbitrary `sleep` MUST NOT be used as the readiness proof. Missing prerequisites, service startup, readiness, schema/setup, or required runner configuration MUST fail clearly and MUST NOT become a silent skip.
+
+The Compose contract MUST be collision-safe and isolated. It MUST NOT use a fixed global `container_name`; the orchestration MUST use a Compose project identity for each repository/run. When a host PHP runner needs a published port, it MUST bind to loopback and SHOULD use a dynamic host port where practical, then discover the effective endpoint. A port MUST NOT be published merely for a runner on the same Compose network. Integration infrastructure MUST NOT use production, Host application, developer-owned persistent, or unrelated-project databases, volumes, credentials, or containers.
+
+Every independent run MUST start from fresh disposable state. Schema and installation assets MUST be applied to that fresh state, and teardown MUST remove disposable volumes/state (for example, `docker compose down -v` or an equivalent). Resetting state inside a run does not replace clean-run proof. Credentials MUST be temporary, non-production, and scoped to the run.
+
+Local Integration, CI Integration, and any Consumer Verification Harness using the same service MUST consume the same repository-owned Compose definition and lifecycle contract. A CI-native service definition is an exception only when Docker Compose is not reasonably usable in the actual CI environment; the repository MUST then document and prove equivalence for engine/version, readiness, credentials/isolation, schema initialization, observable Integration behavior, and cleanup/repeatability. CI-native provisioning MUST NOT be used merely for convenience.
+
+The internal orchestration command or path, raw test runner, Compose project identity, service image, and Integration environment-variable names are repository-specific implementation details, not additional public Composer entry points. The canonical Composer entry remains the discoverable Integration boundary.
+
+When an artifact supports multiple service or Database versions, it MUST use one Compose definition with an explicit image/version parameter. Local execution MUST have a pinned default, and a CI matrix MAY vary that parameter across supported versions. Copied Compose files for each version are not permitted. Unit and Regression suites that do not need real infrastructure MUST remain runnable without Docker.
 
 * The central standard does not enforce a unified Database engine or Database version across all projects.
 * Each package or project defines its actual database contract from its authoritative sources and current schema.
@@ -324,13 +375,13 @@ Scheduled dependency-drift verification MAY be added for reusable libraries.
 This standard distinguishes between universal rules and repository-specific values.
 
 * **Universal rules**: PHPStan max, real Integration services, minimum/latest PHP coverage, stable required gates, Composer validation, no hidden failures, least privilege.
-* **Repository-specific values**: exact PHP versions, exact service versions, actual test-runner configuration files, actual suite names, schema paths, environment variable names, service ports, package-owned trigger/table names, whether `composer.lock` is tracked.
+* **Repository-specific values**: exact PHP versions, exact service versions, actual test-runner configuration files, actual suite names, schema paths, environment variable names, service ports, package-owned trigger/table names, the canonical Compose definition and orchestration, local Compose project/endpoint behavior, whether `composer.lock` is tracked, and any CI-native equivalence evidence.
 
-Repository-specific values MUST be documented by each package, but MUST NOT be hardcoded into the universal standard.
+Repository-specific values MUST be documented by each applicable artifact, but MUST NOT be hardcoded into the universal standard. The repository documentation MUST make the canonical Integration entry and the Local/CI/Harness infrastructure contract discoverable without requiring a separate manual service-start procedure.
 
 ## 19. Compliance Checklist
 
-Any standalone Composer package in the Maatify ecosystem MUST verify the following before being considered compliant:
+Any applicable reusable Composer artifact in the Maatify ecosystem MUST verify the following before being considered compliant. For an extractable Base Module, the checklist applies at the Module Artifact Root when the check evaluates that artifact as a reusable Package; it does not automatically apply to the Host root or a Host-only Project-Aware scope:
 
 * [ ] Composer validation is strict
 * [ ] dependency resolution strategy matches lock-file policy
@@ -345,8 +396,22 @@ Any standalone Composer package in the Maatify ecosystem MUST verify the followi
 * [ ] Unit suite passes where applicable
 * [ ] Regression suite passes where applicable
 * [ ] Integration suite uses real services where applicable
+* [ ] `composer test:integration` is the focused canonical Integration entry where an Integration suite exists
+* [ ] Database/containerizable Integration infrastructure uses one repository-owned Docker Compose definition and deterministic lifecycle
+* [ ] the PHP test runner is not forced into Docker by the Integration infrastructure
+* [ ] Docker/Compose and Integration orchestration are not consumer runtime dependencies
+* [ ] readiness is service-level and deterministic, not an arbitrary `sleep`
+* [ ] teardown runs on success and failure, and independent runs use fresh disposable state
+* [ ] no production, Host, developer-persistent, or unrelated-project service state is used
+* [ ] Integration environment variables are clearly Integration-scoped and non-production, with repository-specific names
+* [ ] no fixed global `container_name` is used and any published endpoint is collision-safe
+* [ ] Local, CI, and applicable Consumer Verification Harness execution reuse the same infrastructure contract, or a documented CI-native equivalent exception proves parity
+* [ ] service-version matrices parameterize one Compose definition rather than copying definitions
+* [ ] Unit and Regression suites that do not need real infrastructure remain runnable without Docker
 * [ ] complete maintained applicable test suite passes using the repository's actual test runner and tooling
-* [ ] example PHP files pass syntax validation where examples exist
+* [ ] every PHP example passes syntax/static validation where examples exist
+* [ ] every standalone runnable example passes smoke execution, and standalone database/service examples use the repository-owned Integration infrastructure where available
+* [ ] any Host-dependent example excluded from smoke execution has explicit prerequisites and remains syntax/static validated
 * [ ] minimum supported PHP is tested
 * [ ] latest supported PHP is tested
 * [ ] every currently released PHP minor covered by the declared constraint is tested or has an explicit documented architectural exception

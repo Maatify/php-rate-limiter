@@ -4,8 +4,8 @@ declare(strict_types=1);
 
 namespace Maatify\RateLimiter\Tests\Support\CircuitBreaker;
 
-use Maatify\RateLimiter\Contract\CircuitBreakerStoreInterface;
-use Maatify\RateLimiter\DTO\Store\CircuitBreakerStateDTO;
+use Maatify\RateLimiter\Repository\CircuitBreakerStoreInterface;
+use Maatify\RateLimiter\DTO\CircuitBreakerStateDTO;
 
 class InMemoryCircuitBreakerStore implements CircuitBreakerStoreInterface
 {

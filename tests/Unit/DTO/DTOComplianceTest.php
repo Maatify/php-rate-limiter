@@ -18,11 +18,15 @@ use Maatify\RateLimiter\DTO\RateLimitMetadataDTO;
 use Maatify\RateLimiter\DTO\RateLimitResultDTO;
 use Maatify\RateLimiter\DTO\ScoreDeltasDTO;
 use Maatify\RateLimiter\DTO\ScoreThresholdsDTO;
-use Maatify\RateLimiter\DTO\Internal\PipelineScoreDTO;
-use Maatify\RateLimiter\DTO\Store\BlockStateDTO;
-use Maatify\RateLimiter\DTO\Store\BudgetStateDTO;
-use Maatify\RateLimiter\DTO\Store\CircuitBreakerStateDTO;
-use Maatify\RateLimiter\DTO\Store\RateLimitStateDTO;
+use Maatify\RateLimiter\DTO\PipelineScoreDTO;
+use Maatify\RateLimiter\DTO\BlockStateDTO;
+use Maatify\RateLimiter\DTO\BudgetStateDTO;
+use Maatify\RateLimiter\DTO\CircuitBreakerStateDTO;
+use Maatify\RateLimiter\DTO\RateLimitStateDTO;
+use Maatify\RateLimiter\DTO\RateLimitOperationalKeyStateDTO;
+use Maatify\RateLimiter\DTO\RateLimitOperationalScopesDTO;
+use Maatify\RateLimiter\DTO\RateLimitOperationalBudgetDTO;
+use Maatify\RateLimiter\DTO\RateLimitOperationalSnapshotDTO;
 use ReflectionClass;
 use JsonSerializable;
 
@@ -48,6 +52,10 @@ class DTOComplianceTest extends TestCase
         BudgetStateDTO::class,
         CircuitBreakerStateDTO::class,
         RateLimitStateDTO::class,
+        RateLimitOperationalKeyStateDTO::class,
+        RateLimitOperationalScopesDTO::class,
+        RateLimitOperationalBudgetDTO::class,
+        RateLimitOperationalSnapshotDTO::class,
     ];
 
     public function testDTOsAreFinalReadonlyAndImplementJsonSerializable(): void
@@ -242,6 +250,102 @@ class DTOComplianceTest extends TestCase
                 new RateLimitStateDTO(150, 2000),
                 ['value', 'updatedAt'],
                 ['value' => 150, 'updatedAt' => 2000]
+            ],
+            RateLimitOperationalKeyStateDTO::class => [
+                new RateLimitOperationalKeyStateDTO(
+                    new RateLimitStateDTO(10, 2000),
+                    8,
+                    true,
+                    new BlockStateDTO(2, 2100),
+                    false
+                ),
+                ['score', 'effectiveScore', 'scoreFromPreviousGeneration', 'activeHardBlock', 'blockFromPreviousGeneration'],
+                [
+                    'score' => ['value' => 10, 'updatedAt' => 2000],
+                    'effectiveScore' => 8,
+                    'scoreFromPreviousGeneration' => true,
+                    'activeHardBlock' => ['level' => 2, 'expiresAt' => 2100],
+                    'blockFromPreviousGeneration' => false,
+                ]
+            ],
+            RateLimitOperationalScopesDTO::class => [
+                new RateLimitOperationalScopesDTO(
+                    new RateLimitOperationalKeyStateDTO(null, 0, false, null, false),
+                    new RateLimitOperationalKeyStateDTO(null, 0, false, null, false),
+                    null,
+                    null,
+                    null
+                ),
+                ['k1', 'k2', 'k3', 'k4', 'k5', 'k1_48', 'k1_40', 'k1_32'],
+                [
+                    'k1' => ['score' => null, 'effectiveScore' => 0, 'scoreFromPreviousGeneration' => false, 'activeHardBlock' => null, 'blockFromPreviousGeneration' => false],
+                    'k2' => ['score' => null, 'effectiveScore' => 0, 'scoreFromPreviousGeneration' => false, 'activeHardBlock' => null, 'blockFromPreviousGeneration' => false],
+                    'k3' => null,
+                    'k4' => null,
+                    'k5' => null,
+                    'k1_48' => null,
+                    'k1_40' => null,
+                    'k1_32' => null,
+                ]
+            ],
+            RateLimitOperationalBudgetDTO::class => [
+                new RateLimitOperationalBudgetDTO(null, false, false, null, false, false, null, false, 0),
+                [
+                    'accountBudget',
+                    'accountBudgetFromPreviousGeneration',
+                    'accountBudgetActive',
+                    'knownDeviceMicroCap',
+                    'knownDeviceMicroCapFromPreviousGeneration',
+                    'knownDeviceMicroCapExceeded',
+                    'cooldown',
+                    'cooldownFromPreviousGeneration',
+                    'cooldownRemainingSeconds',
+                ],
+                [
+                    'accountBudget' => null,
+                    'accountBudgetFromPreviousGeneration' => false,
+                    'accountBudgetActive' => false,
+                    'knownDeviceMicroCap' => null,
+                    'knownDeviceMicroCapFromPreviousGeneration' => false,
+                    'knownDeviceMicroCapExceeded' => false,
+                    'cooldown' => null,
+                    'cooldownFromPreviousGeneration' => false,
+                    'cooldownRemainingSeconds' => 0,
+                ]
+            ],
+            RateLimitOperationalSnapshotDTO::class => [
+                new RateLimitOperationalSnapshotDTO(
+                    'login_protection',
+                    2000,
+                    true,
+                    new RateLimitOperationalScopesDTO(
+                        new RateLimitOperationalKeyStateDTO(null, 0, false, null, false),
+                        new RateLimitOperationalKeyStateDTO(null, 0, false, null, false),
+                        null,
+                        null,
+                        null
+                    ),
+                    null,
+                    null
+                ),
+                ['policyName', 'observedAt', 'backendHealthy', 'scopes', 'budget', 'circuitBreaker'],
+                [
+                    'policyName' => 'login_protection',
+                    'observedAt' => 2000,
+                    'backendHealthy' => true,
+                    'scopes' => [
+                        'k1' => ['score' => null, 'effectiveScore' => 0, 'scoreFromPreviousGeneration' => false, 'activeHardBlock' => null, 'blockFromPreviousGeneration' => false],
+                        'k2' => ['score' => null, 'effectiveScore' => 0, 'scoreFromPreviousGeneration' => false, 'activeHardBlock' => null, 'blockFromPreviousGeneration' => false],
+                        'k3' => null,
+                        'k4' => null,
+                        'k5' => null,
+                        'k1_48' => null,
+                        'k1_40' => null,
+                        'k1_32' => null,
+                    ],
+                    'budget' => null,
+                    'circuitBreaker' => null,
+                ]
             ],
         ];
     }

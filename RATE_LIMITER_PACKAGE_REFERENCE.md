@@ -1,10 +1,9 @@
-# RateLimiter — Architecture (Official)
+# Maatify Rate Limiter Package Reference
 
 **Package:** RateLimiter
 **Namespace:** `Maatify\RateLimiter`
 **Status:** LOCKED — Architecture Contract
 **Spec Version:** `1.1.0`
-**Change Class:** Adversarial Hardening Alignment
 **Location:** `src/`
 
 This document explains **why** the RateLimiter package is designed the way it is.
@@ -16,6 +15,147 @@ Behavioral rules are specified in:
 - `docs/DEVICE_FINGERPRINT.md`
 - `docs/KEY_STRATEGY.md`
 - `docs/FAILURE_SEMANTICS.md`
+
+The [Usage Guide](docs/guides/USAGE_GUIDE.md) is the consumer-facing walkthrough, [`examples/basic-rate-limit.php`](examples/basic-rate-limit.php) is the runnable consumer assembly, and [`examples/infrastructure-failure.php`](examples/infrastructure-failure.php) demonstrates the failure boundary. This root document remains the canonical package contract and complete public runtime inventory.
+
+## Package Fit and Boundaries
+
+`maatify/php-rate-limiter` is a standalone, framework-agnostic Composer package for deterministic, multi-signal rate-limit decisions. It protects host-selected operations such as login, OTP/step-up, and API-heavy access. The package owns enforcement evaluation and its bounded state semantics; the Host owns account/session truth, transport behavior, storage implementations, authorization, logging destinations, and cross-domain reporting.
+
+The package is currently proprietary and in pre-release development. It is not a published stable Packagist distribution.
+
+## Source Topology
+
+**Source Topology: Single Capability**
+
+The package exposes one rate-limiting capability. Its canonical runtime roots are:
+
+    src/
+    ├── Command/
+    ├── Config/
+    ├── Contract/
+    ├── DTO/
+    ├── Exception/
+    ├── Repository/
+    └── Service/
+
+All public runtime classes and interfaces use the `Maatify\RateLimiter` namespace
+under the responsibility that owns them. There are no `Domain`, capability-wrapper,
+`Engine`, `Device`, `Penalty`, `Policy`, `DTO/Internal`, or `DTO/Store` runtime roots.
+
+## Operational Read / Reporting Classification
+
+**Classification: In Scope.**
+
+The package owns persisted operational semantics for the rate limiter even though the Host supplies the concrete storage drivers. A point-in-time operational read is therefore a package capability, not a generic dashboard or cross-domain reporting layer.
+
+Package-owned operational concepts are:
+
+- score state;
+- temporary block state;
+- account budget;
+- known-device micro-cap;
+- budget cooldown; and
+- circuit-breaker state.
+
+The Host owns:
+
+- the concrete persistence backend;
+- account and session source of truth;
+- HTTP and transport behavior;
+- permissions;
+- dashboards and UI;
+- cross-package aggregation; and
+- exports.
+
+The public operational contract is `Maatify\RateLimiter\Service\RateLimitOperationalReaderInterface` and its production implementation `Maatify\RateLimiter\Service\RateLimitOperationalReader`, together with the operational DTOs listed below. The query is:
+
+    RateLimitContextDTO + BlockPolicyInterface
+        → RateLimitOperationalReaderInterface::read()
+        → RateLimitOperationalSnapshotDTO
+
+This is a read-only, point-in-time operational observation and is not an alternate enforcement API. `RateLimiterInterface::limit()` remains the consumer enforcement API.
+
+Correlation distinct-set members, watch-flag internals, churn sets, and dilution sets are intentionally unsupported reporting dimensions. They are internal bounded enforcement structures without a stable operational reporting semantic. The operational read surface has no mutation/reset/unblock API, global listing, arbitrary key lookup, raw-key exposure, historical audit store, Host joins, cross-package reporting, or correlation-set inspection.
+
+## Public Runtime API Inventory
+
+The following inventory describes the current public runtime types. Test and support classes are excluded.
+
+### Public Interfaces
+
+| Type | Responsibility |
+| --- | --- |
+| `Maatify\RateLimiter\Service\RateLimiterInterface` | Consumer entrypoint contract: `limit(Maatify\RateLimiter\DTO\RateLimitContextDTO, Maatify\RateLimiter\Command\RateLimitCommand): Maatify\RateLimiter\DTO\RateLimitResultDTO`. |
+| `Maatify\RateLimiter\Repository\RateLimitStoreInterface` | Atomic counters, blocks, budgets, and backend health boundary. |
+| `Maatify\RateLimiter\Repository\BudgetSeedStoreInterface` | Additive capability for atomic budget-epoch seeding across key rotation. |
+| `Maatify\RateLimiter\Repository\CorrelationStoreInterface` | Bounded distinct-count and watch-flag boundary. |
+| `Maatify\RateLimiter\Repository\CircuitBreakerStoreInterface` | Circuit-breaker state persistence boundary. |
+| `Maatify\RateLimiter\Contract\FailureSignalEmitterInterface` | Failure and circuit-breaker signal delivery boundary. |
+| `Maatify\RateLimiter\Service\DeviceIdentityResolverInterface` | Device identity resolution boundary. |
+| `Maatify\RateLimiter\Service\RateLimitOperationalReaderInterface` | Read-only point-in-time operational state query boundary. |
+| `Maatify\RateLimiter\Config\BlockPolicyInterface` | Policy name, thresholds, score deltas, failure mode, and budget configuration. |
+| `Maatify\RateLimiter\Exception\RateLimiterExceptionInterface` | Package exception marker contract. |
+
+### Public Command
+
+| Type | Contract |
+| --- | --- |
+| `Maatify\RateLimiter\Command\RateLimitCommand` | Immutable execution intent with `checkOnly()`, `recordFailure()`, and `recordSuccess()` factories. |
+
+### Public DTOs
+
+| Group | Types |
+| --- | --- |
+| Context and result | `Maatify\RateLimiter\DTO\RateLimitContextDTO`, `Maatify\RateLimiter\DTO\RateLimitResultDTO`, `Maatify\RateLimiter\DTO\RateLimitMetadataDTO`, `Maatify\RateLimiter\DTO\RateLimitContextMetadataDTO` |
+| Identity and policy | `Maatify\RateLimiter\DTO\DeviceIdentityDTO`, `Maatify\RateLimiter\DTO\PolicyThresholdsDTO`, `Maatify\RateLimiter\DTO\ScoreThresholdsDTO`, `Maatify\RateLimiter\DTO\ScoreDeltasDTO`, `Maatify\RateLimiter\DTO\BudgetConfigDTO` |
+| Runtime state | `Maatify\RateLimiter\DTO\BudgetStatusDTO`, `Maatify\RateLimiter\DTO\EphemeralStateDTO`, `Maatify\RateLimiter\DTO\FailureSignalDTO`, `Maatify\RateLimiter\DTO\FailureStateDTO` |
+| Store boundary state | `Maatify\RateLimiter\DTO\RateLimitStateDTO`, `Maatify\RateLimiter\DTO\BlockStateDTO`, `Maatify\RateLimiter\DTO\BudgetStateDTO`, `Maatify\RateLimiter\DTO\CircuitBreakerStateDTO` |
+| Operational read | `Maatify\RateLimiter\DTO\RateLimitOperationalKeyStateDTO`, `Maatify\RateLimiter\DTO\RateLimitOperationalScopesDTO`, `Maatify\RateLimiter\DTO\RateLimitOperationalBudgetDTO`, `Maatify\RateLimiter\DTO\RateLimitOperationalSnapshotDTO` |
+
+`Maatify\RateLimiter\DTO\PipelineScoreDTO` is an internal composition DTO and is not part of the consumer Public Runtime API.
+
+### Public Concrete Entrypoints, Services, and Policies
+
+| Group | Types | Consumer role |
+| --- | --- | --- |
+| Primary entrypoint | `Maatify\RateLimiter\Service\RateLimiterEngine` | Production implementation of `Maatify\RateLimiter\Service\RateLimiterInterface`; composes identity resolution, evaluation, circuit-breaker, failure, and policy behavior. |
+| Composition services | `Maatify\RateLimiter\Service\EvaluationPipeline`, `Maatify\RateLimiter\Service\CircuitBreaker`, `Maatify\RateLimiter\Service\FailureModeResolver`, `Maatify\RateLimiter\Service\LocalFallbackLimiter` | Public runtime services used to assemble or extend the engine without coupling it to a storage implementation. |
+| Identity services | `Maatify\RateLimiter\Service\DeviceIdentityResolver`, `Maatify\RateLimiter\Service\FingerprintHasher`, `Maatify\RateLimiter\Service\EphemeralBucket` | Default identity hashing, normalization, bounded device handling, and ephemeral-key selection. |
+| Operational read | `Maatify\RateLimiter\Service\RateLimitOperationalReader` | Resolves a read-only point-in-time snapshot from a typed context and policy without invoking enforcement or mutation primitives. |
+| Decision services | `Maatify\RateLimiter\Service\AntiEquilibriumGate`, `Maatify\RateLimiter\Service\BudgetTracker`, `Maatify\RateLimiter\Service\DecayCalculator`, `Maatify\RateLimiter\Service\PenaltyLadder` | Publicly typed services for bounded penalty, budget, decay, and escalation orchestration. |
+| Configuration presets | `Maatify\RateLimiter\Config\LoginProtectionPolicy`, `Maatify\RateLimiter\Config\OtpProtectionPolicy`, `Maatify\RateLimiter\Config\ApiHeavyProtectionPolicy` | Production policy definitions selected by the command policy name. |
+| Exception | `Maatify\RateLimiter\Exception\RateLimiterException` | Package-defined invalid-input and configuration exception implementing the package marker interface. |
+
+The primary consumer call is `Maatify\RateLimiter\Service\RateLimiterInterface::limit()` on `Maatify\RateLimiter\Service\RateLimiterEngine`. The other public concrete services are composition and extension points; their current signatures are stable only as reflected in the source and the contracts above.
+
+## Runtime Workflow
+
+The realistic consumer path is:
+
+    Host Input → Public API → Domain Service → Integration Boundary → Observable Result
+
+Concretely:
+
+    RateLimitContextDTO + RateLimitCommand
+        → RateLimiterInterface::limit()
+        → RateLimiterEngine::limit()
+        → DeviceIdentityResolver → EvaluationPipeline
+        → RateLimitStoreInterface + CorrelationStoreInterface
+          + CircuitBreakerStoreInterface + FailureSignalEmitterInterface
+        → RateLimitResultDTO and, when applicable, FailureSignalDTO
+
+`RateLimiterEngine` selects the policy by the command's policy name. `EvaluationPipeline` resolves active blocks, identity-derived keys, scoring, correlation, budgets, decay, and final aggregation. The integration boundaries provide the stateful primitives; the result is returned to the Host, which decides how to enforce it at its own transport or application boundary.
+
+The independent operational path is:
+
+    RateLimitContextDTO + BlockPolicyInterface
+        → RateLimitOperationalReaderInterface::read()
+        → package-owned score/block/budget/cooldown/circuit-breaker reads
+        → RateLimitOperationalSnapshotDTO
+        → Host monitoring or operations boundary
+
+The operational reader derives only the real enforcement keys for the supplied context, observes current generation state with the documented previous-generation fallback, and never changes score counters, budgets, cooldowns, blocks, circuit-breaker state, or correlation state.
 
 ---
 
@@ -155,19 +295,18 @@ Normative Behavior: `docs/DECISION_MATRIX.md` §2.4 / §2.5 / §3.3. Preset valu
 
 ## 4. Package Layers and Responsibilities
 
-### 4.1 Contracts (Public Boundary)
-**Location:** `Contract/`
+### 4.1 Contracts and configuration boundaries
 
-Contracts define stable APIs:
-- `RateLimiterInterface` — single entrypoint for consumption/guarding
-- `RateLimitStoreInterface` — storage abstraction
-- `BudgetSeedStoreInterface` — additive capability over `RateLimitStoreInterface`
-  (budget-epoch hand-off across key rotation; does not modify the base contract)
-- `DeviceIdentityResolverInterface` — device identity resolution abstraction
-- `BlockPolicyInterface` — penalty computation (ladder + decay + caps)
-- `CorrelationStoreInterface` (if separated) — bounded distinct counting support
+The public boundaries are placed under their owning responsibility:
 
-Contracts are pure and storage-agnostic.
+- `Config/` owns `BlockPolicyInterface` and the three policy presets.
+- `Repository/` owns `RateLimitStoreInterface`, `BudgetSeedStoreInterface`,
+  `CorrelationStoreInterface`, and `CircuitBreakerStoreInterface`.
+- `Service/` owns `RateLimiterInterface` and `DeviceIdentityResolverInterface`.
+- `Contract/` retains the general host/outbound `FailureSignalEmitterInterface`.
+
+These interfaces are pure and storage-agnostic; concrete persistence and signal
+implementations remain host-owned.
 
 ### 4.2 Commands and DTOs (Public Data Shapes)
 **Location:** `Command/` and `DTO/`
@@ -182,10 +321,10 @@ No public arrays are allowed.
 
 DTO naming MUST end with `DTO`. Commands must clearly represent execution intent.
 
-### 4.3 Engine (Decision Orchestration)
-**Location:** `Engine/`
+### 4.3 Services (Decision Orchestration)
+**Location:** `Service/`
 
-The Engine is the “brain”:
+The services coordinate the package decision:
 - Evaluates active hard blocks in strict order (fail-fast)
 - Applies scoring rules
 - Applies correlation rules (bounded windows + watch flags)
@@ -201,8 +340,8 @@ The Engine is the “brain”:
 The Engine MUST NOT depend on specific storage implementations.
 Budget owner-safety orchestration is described in `docs/DECISION_MATRIX.md` §1.
 
-### 4.4 Policies (Presets)
-**Location:** `Policy/`
+### 4.4 Configuration (Policy Presets)
+**Location:** `Config/`
 
 Policies are pre-configured rule sets built on the Decision Matrix:
 - `login_protection`
@@ -217,8 +356,8 @@ Policies define:
 
 Policies MUST remain compliant with `docs/POLICIES.md`.
 
-### 4.5 Penalty (Escalation + Decay + Caps)
-**Location:** `Penalty/`
+### 4.5 Decision services (Escalation + Decay + Caps)
+**Location:** `Service/`
 
 Penalty logic is separated to:
 - prevent mixing “decision” with “punishment”
@@ -228,8 +367,8 @@ Penalty logic is separated to:
 - own budget epochs/counts, the **budget cooldown** (enforcement-owned, never level-1
   `BlockState`), and the OTP **Recovery Collision Guard** transition
 
-### 4.6 Device Identity (Fingerprinting)
-**Location:** `Device/`
+### 4.6 Identity services (Fingerprinting)
+**Location:** `Service/`
 
 Device identity is resolved into a single `DeviceIdentityDTO` with:
 - hashed fingerprints only
@@ -313,9 +452,46 @@ Budget owner-safety relies on **existing and declared** storage primitives:
     previous-generation micro-cap keys, treats Current as authoritative, and atomically seeds
     a valid Previous state into Current through the capability. The Previous state remains
     unchanged; `max(v1, v2)` merging is not used.
-  When a valid previous-secret budget must move to V2 and the store is not a
-  `BudgetSeedStoreInterface`, the path MUST fail explicitly through the existing failure
-  semantics (`docs/FAILURE_SEMANTICS.md`) — never a silent reset or loss of enforcement.
+When a valid previous-secret budget must move to V2 and the store is not a
+`BudgetSeedStoreInterface`, the path MUST fail explicitly through the existing failure
+semantics (`docs/FAILURE_SEMANTICS.md`) — never a silent reset or loss of enforcement.
+
+### 4.8.1 Transaction, Locking, and Concurrency Contract
+
+**Transaction owner.** The package does not open or manage a general database
+transaction around `RateLimiterInterface::limit()`. Transaction and backend
+atomicity ownership belongs to the concrete Host repository/store implementation
+when its backend requires one.
+
+**Atomicity boundary.** Every operation declared atomic by
+`RateLimitStoreInterface`, `BudgetSeedStoreInterface`, or
+`CorrelationStoreInterface` MUST be atomic inside that concrete implementation.
+This includes counter increments, fixed-TTL behavior, budget initialization and
+increment, budget seeding across rotation, cooldown acquisition, distinct
+correlation updates, and watch-flag increments. Circuit-breaker state persistence
+must likewise preserve the state primitive promised by its store implementation.
+
+There is no package-level distributed transaction spanning the rate-limit store,
+correlation store, circuit-breaker store, and failure emitter.
+
+**Locking boundary.** The package services do not own backend locks and expose no
+lock lifecycle to consumers. A concrete store may use whatever lock or native
+atomic primitive its backend requires, provided it preserves the public contract
+and does not change the service-visible failure semantics.
+
+**Outer transaction.** `RateLimiterInterface::limit()` does not require a
+caller-owned outer transaction and does not promise an atomic commit shared with
+the Host's business transaction. A Host adapter may run its own store operations
+inside an existing backend transaction only as an implementation detail. It must
+not weaken atomic primitives, change failure behavior, make rate-limit correctness
+depend on an undeclared transaction, or assume shared atomicity across separate
+integration boundaries.
+
+**Concurrency.** Correctness under concurrency depends on the atomic store
+primitives above, especially counter increments, fixed-TTL preservation, budget
+initialization/increment, budget seeding across rotation, cooldown acquisition,
+distinct correlation updates, and watch-flag increments. This contract does not
+add a transaction manager or a locking API.
 
 ### 4.9 Host-Provided Known-Device Signal (Public Boundary)
 

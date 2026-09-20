@@ -9,21 +9,23 @@ use ConsumerVerification\InMemoryCorrelationStore;
 use ConsumerVerification\InMemoryRateLimitStore;
 use ConsumerVerification\RecordingFailureSignalEmitter;
 use Maatify\RateLimiter\Command\RateLimitCommand;
-use Maatify\RateLimiter\Contract\BudgetSeedStoreInterface;
-use Maatify\RateLimiter\Device\DeviceIdentityResolver;
-use Maatify\RateLimiter\Device\EphemeralBucket;
-use Maatify\RateLimiter\Device\FingerprintHasher;
+use Maatify\RateLimiter\Repository\BudgetSeedStoreInterface;
+use Maatify\RateLimiter\Service\DeviceIdentityResolver;
+use Maatify\RateLimiter\Service\EphemeralBucket;
+use Maatify\RateLimiter\Service\FingerprintHasher;
 use Maatify\RateLimiter\DTO\RateLimitContextDTO;
 use Maatify\RateLimiter\DTO\RateLimitResultDTO;
-use Maatify\RateLimiter\Engine\CircuitBreaker;
-use Maatify\RateLimiter\Engine\EvaluationPipeline;
-use Maatify\RateLimiter\Engine\FailureModeResolver;
-use Maatify\RateLimiter\Engine\RateLimiterEngine;
-use Maatify\RateLimiter\Penalty\AntiEquilibriumGate;
-use Maatify\RateLimiter\Penalty\BudgetTracker;
-use Maatify\RateLimiter\Penalty\DecayCalculator;
-use Maatify\RateLimiter\Policy\LoginProtectionPolicy;
-use Maatify\RateLimiter\Policy\OtpProtectionPolicy;
+use Maatify\RateLimiter\DTO\RateLimitOperationalSnapshotDTO;
+use Maatify\RateLimiter\Service\CircuitBreaker;
+use Maatify\RateLimiter\Service\EvaluationPipeline;
+use Maatify\RateLimiter\Service\FailureModeResolver;
+use Maatify\RateLimiter\Service\RateLimiterEngine;
+use Maatify\RateLimiter\Service\RateLimitOperationalReader;
+use Maatify\RateLimiter\Service\AntiEquilibriumGate;
+use Maatify\RateLimiter\Service\BudgetTracker;
+use Maatify\RateLimiter\Service\DecayCalculator;
+use Maatify\RateLimiter\Config\LoginProtectionPolicy;
+use Maatify\RateLimiter\Config\OtpProtectionPolicy;
 
 require __DIR__ . '/vendor/autoload.php';
 
@@ -110,12 +112,31 @@ requireCondition(
     'The consumer correlation storage boundary was not used.'
 );
 
+$writesBeforeOperationalRead = $rateLimitStore->writeCount();
+$operationalReader = new RateLimitOperationalReader(
+    $deviceResolver,
+    $rateLimitStore,
+    $circuitBreakerStore,
+    new DecayCalculator($clock),
+    $clock,
+    'active-key',
+    'prod',
+    'previous-key'
+);
+$snapshot = $operationalReader->read($context, new OtpProtectionPolicy());
+requireCondition($snapshot instanceof RateLimitOperationalSnapshotDTO, 'The operational reader did not return its typed snapshot.');
+requireCondition($snapshot->policyName === 'otp_protection', 'The operational snapshot policy name is incorrect.');
+requireCondition($snapshot->scopes->k4?->score?->value === 5, 'The operational snapshot did not expose the runtime K4 state.');
+requireCondition($writesBeforeOperationalRead === $rateLimitStore->writeCount(), 'Operational read mutated the consumer store.');
+
 echo json_encode([
     'status' => 'PASS',
     'packageInstallPath' => $installPath,
     'preflightDecision' => $preflight->decision,
     'failureDecision' => $failure->decision,
     'failureBlockLevel' => $failure->blockLevel,
+    'operationalK4Score' => $snapshot->scopes->k4?->score?->value,
+    'operationalBackendHealthy' => $snapshot->backendHealthy,
     'rateLimitStoreWrites' => $rateLimitStore->writeCount(),
     'correlationStoreOperations' => $correlationStore->operationCount(),
     'failureSignals' => count($failureSignalEmitter->signals()),

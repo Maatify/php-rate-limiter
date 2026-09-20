@@ -4,12 +4,18 @@
 
 ![Maatify.dev](https://www.maatify.dev/assets/img/img/maatify_logo_white.svg)
 
-[![Package Status](https://img.shields.io/badge/status-pre--release%20development-orange.svg)](#package-status)
+[![Status](https://img.shields.io/badge/Status-Development-blue)](README.md)
 [![PHP 8.4+](https://img.shields.io/badge/PHP-8.4%2B-777BB4.svg)](composer.json)
 [![License: Proprietary](https://img.shields.io/badge/License-Proprietary-red.svg)](LICENSE)
+[![PHPStan Level Max](https://img.shields.io/badge/PHPStan-Level%20Max-4F5B93.svg)](phpstan.neon)
+
 [![Maatify Ecosystem](https://img.shields.io/badge/Maatify-Ecosystem-blueviolet)](https://github.com/Maatify)
-[![Changelog](https://img.shields.io/badge/Changelog-View-blue.svg)](CHANGELOG.md)
-[![Package Reference](https://img.shields.io/badge/Reference-Read-blue.svg)](RATE_LIMITER_PACKAGE_REFERENCE.md)
+
+[![Usage Guide](https://img.shields.io/badge/Docs-Usage%20Guide-blue.svg)](docs/guides/USAGE_GUIDE.md)
+[![Examples](https://img.shields.io/badge/Docs-Examples-blue.svg)](examples/)
+[![Package Reference](https://img.shields.io/badge/Docs-Package%20Reference-blue.svg)](RATE_LIMITER_PACKAGE_REFERENCE.md)
+[![Changelog](https://img.shields.io/badge/Docs-Changelog-blue.svg)](CHANGELOG.md)
+[![Contributing Guide](https://img.shields.io/badge/Docs-Contributing-blue.svg)](CONTRIBUTING.md)
 
 PHP library for deterministic, multi-signal rate-limit decisions.
 
@@ -41,84 +47,62 @@ The package is not yet available through a published Composer registry. Authoriz
 
 ## Usage
 
-The package provides storage and signal contracts; the consumer supplies implementations for those boundaries.
+The package provides storage and signal contracts; the consumer supplies implementations for those boundaries. See the [Usage Guide](docs/guides/USAGE_GUIDE.md) for the integration contract and [basic runnable example](examples/basic-rate-limit.php) for a complete in-memory assembly.
 
 ```php
-use Maatify\RateLimiter\Contract\CircuitBreakerStoreInterface;
-use Maatify\RateLimiter\Contract\CorrelationStoreInterface;
-use Maatify\RateLimiter\Contract\FailureSignalEmitterInterface;
-use Maatify\RateLimiter\Contract\RateLimitStoreInterface;
-use Maatify\RateLimiter\Device\DeviceIdentityResolver;
-use Maatify\RateLimiter\Device\EphemeralBucket;
-use Maatify\RateLimiter\Device\FingerprintHasher;
-use Maatify\RateLimiter\Engine\CircuitBreaker;
-use Maatify\RateLimiter\Engine\EvaluationPipeline;
-use Maatify\RateLimiter\Engine\FailureModeResolver;
-use Maatify\RateLimiter\Engine\RateLimiterEngine;
 use Maatify\RateLimiter\Command\RateLimitCommand;
+use Maatify\RateLimiter\Service\RateLimiterInterface;
 use Maatify\RateLimiter\DTO\RateLimitContextDTO;
-use Maatify\RateLimiter\Penalty\AntiEquilibriumGate;
-use Maatify\RateLimiter\Penalty\BudgetTracker;
-use Maatify\RateLimiter\Penalty\DecayCalculator;
-use Maatify\RateLimiter\Policy\LoginProtectionPolicy;
-use Maatify\RateLimiter\Policy\OtpProtectionPolicy;
-use Maatify\SharedCommon\Contracts\ClockInterface;
 
-/** @var RateLimitStoreInterface $rateLimitStore */
-/** @var CorrelationStoreInterface $correlationStore */
-/** @var CircuitBreakerStoreInterface $circuitBreakerStore */
-/** @var FailureSignalEmitterInterface $emitter */
-/** @var ClockInterface $clock */
-
-$deviceResolver = new DeviceIdentityResolver(new FingerprintHasher('active-key'));
-$budgetTracker = new BudgetTracker($rateLimitStore, $clock);
-$pipeline = new EvaluationPipeline(
-    $rateLimitStore,
-    $correlationStore,
-    $budgetTracker,
-    new AntiEquilibriumGate($correlationStore),
-    new DecayCalculator($clock),
-    new EphemeralBucket($correlationStore),
-    'active-key',
-    'prod',
-    $clock,
-    'previous-key'
-);
-$circuitBreaker = new CircuitBreaker($circuitBreakerStore, $emitter, $clock);
-$engine = new RateLimiterEngine(
-    $deviceResolver,
-    $pipeline,
-    $circuitBreaker,
-    new FailureModeResolver(),
-    $emitter,
-    $clock,
-    [new LoginProtectionPolicy(), new OtpProtectionPolicy()]
-);
+/** @var RateLimiterInterface $limiter */
 
 $context = new RateLimitContextDTO(
-    ip: '203.0.113.1',
-    ua: 'Mozilla/5.0',
-    accountId: 'user_123'
+    ip: '203.0.113.10',
+    ua: 'Mozilla/5.0 Chrome/123',
+    accountId: 'account-123'
 );
-$result = $engine->limit($context, RateLimitCommand::checkOnly('login_protection'));
+$result = $limiter->limit($context, RateLimitCommand::checkOnly('login_protection'));
 
-if (!$result->isAllowed()) {
+if ($result->isBlocked()) {
     http_response_code(429);
-    header('Retry-After: ' . $result->retryAfter);
-    exit;
+    header('Retry-After: ' . (string) $result->retryAfter);
 }
 ```
 
-## Contracts
+## Public Runtime API
 
-- `RateLimitStoreInterface`: storage for counters, blocks, and budgets.
-- `CorrelationStoreInterface`: storage for distinct counts and watch flags.
-- `CircuitBreakerStoreInterface`: persistence for circuit-breaker state.
-- `FailureSignalEmitterInterface`: delivery boundary for failure signals.
-- `BlockPolicyInterface`: policy thresholds, deltas, failure mode, and budgets.
+`RateLimiterInterface::limit()` is the framework-agnostic consumer entrypoint. Hosts provide a `RateLimitContextDTO` and a `RateLimitCommand`, then handle the returned `RateLimitResultDTO` at their transport boundary.
+
+The public runtime surface also includes the `login_protection`, `otp_protection`, and `api_heavy_protection` policy presets; typed context, command, result, identity, state, operational snapshot, and metadata DTOs; `RateLimitOperationalReaderInterface::read()` for read-only point-in-time operational inspection; and extension contracts for rate-limit storage, correlation storage, circuit-breaker state, failure signals, device identity resolution, and custom policies.
+
+The [Package Reference](RATE_LIMITER_PACKAGE_REFERENCE.md) contains the complete public interface, command, DTO, concrete service, policy, and extension-boundary inventory. Runtime behavior is defined by the current source and the linked decision, policy, device, key, and failure documents.
+
+## Exception and Error Propagation
+
+Storage and atomicity failures are handled through the package's policy-specific failure semantics; host storage adapters must not swallow integration failures or silently weaken required atomic guarantees. The enforcement path owns the resulting rate-limit failure decision, while the read-only operational reader does not convert integration failures into an enforcement result.
+
+See [Failure Semantics](docs/FAILURE_SEMANTICS.md) and the [Package Reference](RATE_LIMITER_PACKAGE_REFERENCE.md) for the detailed failure contract.
+
+## Transaction and Concurrency Boundary
+
+The package does not open a general database transaction or own backend locks around `RateLimiterInterface::limit()`. Concrete host store implementations own the transaction, locking, and native atomic primitives required by their backend, and every operation declared atomic by the package contracts must remain atomic.
+
+There is no package-level distributed transaction across the rate-limit, correlation, circuit-breaker, and failure-signal boundaries, and the package does not promise a shared atomic commit with the host application's business transaction.
+
+See the [Package Reference](RATE_LIMITER_PACKAGE_REFERENCE.md) for the full transaction, locking, and concurrency contract.
+
+## Security and Trust Boundaries
+
+The host remains the authority for account, session, authentication, authorization, and previously verified device truth. Device fingerprinting is a bounded risk signal used for rate-limit decisions; it is not authentication, proof of device ownership, or a cross-context tracking identity.
+
+The package keeps transport behavior and host business identity outside its boundary, and its operational read API does not expose raw storage keys, raw fingerprint material, or host-owned records.
+
+See [Device Fingerprint](docs/DEVICE_FINGERPRINT.md), [Failure Semantics](docs/FAILURE_SEMANTICS.md), and the [Package Reference](RATE_LIMITER_PACKAGE_REFERENCE.md) for the detailed contracts.
 
 ## Documentation
 
+- [Usage Guide](docs/guides/USAGE_GUIDE.md)
+- [Runnable Examples](examples/)
 - [Package Reference](RATE_LIMITER_PACKAGE_REFERENCE.md)
 - [Decision Matrix](docs/DECISION_MATRIX.md)
 - [Device Fingerprint](docs/DEVICE_FINGERPRINT.md)
@@ -128,7 +112,7 @@ if (!$result->isAllowed()) {
 
 ## Quality Status
 
-The repository quality gate covers strict Composer validation, dependency compatibility, platform requirements, PHP syntax, PHPStan at level `max`, PHPUnit, Composer security auditing, workflow linting, and whitespace verification. The package remains pre-release and has no published stable support line.
+The repository quality gate covers strict Composer validation, dependency compatibility, platform requirements, PHP syntax, PHPStan at level `max`, the full PHPUnit suite, the focused `composer test:integration` suite, standalone example smoke execution, Composer security auditing, workflow linting, and whitespace verification. The package remains pre-release and has no published stable support line.
 
 ## License
 

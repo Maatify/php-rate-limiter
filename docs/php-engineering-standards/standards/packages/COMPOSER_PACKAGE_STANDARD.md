@@ -5,10 +5,10 @@
 ## Standard Metadata
 
 - **Standard ID:** `std-composer-package`
-- **Standard Version:** `2.0.0`
+- **Standard Version:** `3.0.1`
 - **Standard Version Format:** `MAJOR.MINOR.PATCH`
 
-This document defines the canonical `composer.json` contract for standalone, reusable PHP libraries in the Maatify ecosystem.
+This document defines the canonical Composer manifest contract represented by `composer.json` for standalone, reusable PHP libraries in the Maatify ecosystem.
 
 It MUST be read together with:
 
@@ -55,6 +55,10 @@ It owns rules for:
 It does **not** govern:
 
 - Runtime architecture.
+- Public PHP Runtime API inventory.
+- Domain behavior and package behavioral guarantees.
+- Exception semantics beyond Composer-facing declaration consistency.
+- Package architectural boundaries and non-goals.
 - DTO, repository, command, or service design.
 - Database schema or SQL behavior.
 - Exception hierarchy.
@@ -68,9 +72,11 @@ It does **not** govern:
 ### 2.1 Relationship to Other Standards
 
 - `PACKAGE_BUILDING_STANDARD.md` governs package boundaries, namespaces, source structure, runtime design, schema, exceptions, DTOs, repositories, and tests.
-- `COMPOSER_PACKAGE_STANDARD.md` governs `composer.json` as the package metadata, dependency, autoload, scripts, configuration, and distribution contract.
+- `COMPOSER_PACKAGE_STANDARD.md` governs `composer.json` as the canonical Composer manifest contract for package metadata, dependencies, autoloading, scripts, configuration, and distribution.
 - `CI_WORKFLOW_STANDARD.md` governs how Composer contracts are verified through strict validation, dependency resolution, platform checks, audit, and quality gates.
 - `LIBRARY_PRESENTATION_STANDARD.md` governs public presentation and consistency between Composer metadata, README, Packagist, and GitHub.
+
+The public Runtime API inventory, domain behavior, package behavioral guarantees, exception semantics, and package architectural boundaries remain owned by `PACKAGE_BUILDING_STANDARD.md` and the canonical root Package Reference. `composer.json` does not become their source of truth.
 
 The definition and evidence for a package/version being Published are owned by [`LIBRARY_PRESENTATION_STANDARD.md` Section 14](LIBRARY_PRESENTATION_STANDARD.md#14-first-stable-release-lifecycle-and-security-presentation-states). This Standard consumes that publication state when applying package identity rules and MUST NOT establish a conflicting publication source or definition.
 
@@ -110,7 +116,7 @@ Rules for those fields govern the library repository while it is being developed
 
 *Note: Composer technically allows other forms for many of these configurations, but Maatify adopts a stricter Profile to ensure consistency and reliability across the ecosystem.*
 
-1. `composer.json` is a public package contract, not an internal installation note.
+1. `composer.json` is part of the package's public Composer manifest contract, not an internal installation note.
 2. Every directly used runtime dependency MUST be declared directly.
 3. A package MUST NOT rely on a transitive dependency as though it were direct.
 4. Development tools MUST NOT be placed in `require`.
@@ -304,7 +310,7 @@ The canonical minimum set is:
 - `php` MUST be present.
 - `maatify` MUST be present.
 - `{PRIMARY_DOMAIN_KEYWORD}` MUST be present.
-- A database keyword MUST appear only when that database is part of the documented package contract or verified behavior.
+- A database keyword MUST appear only when that database is part of the documented package runtime/domain contract or verified behavior.
 - An implementation behavior MAY be a keyword only when it is a stable, meaningful package characteristic.
 - Useful search synonyms MAY be included when they remain accurate.
 - Keywords with Composer-special discovery meaning, such as `dev`, `testing`, or `static analysis`, MUST be added only when that classification is genuinely intended.
@@ -808,7 +814,23 @@ Canonical script names, when the corresponding capability exists, are:
 - `test` runs the complete test suite.
 - `test:unit` runs the Unit suite.
 - `test:regression` runs the Regression suite.
-- `test:integration` runs the Integration suite.
+- When an Integration suite exists, `test:integration` is the focused canonical developer entry point for that suite.
+- When that Integration suite needs real infrastructure, `test:integration` MUST delegate to the repository-owned Integration orchestration defined by [CI_WORKFLOW_STANDARD.md](CI_WORKFLOW_STANDARD.md) §11; this Standard defines the public script name and meaning only.
+- `test` remains the complete-suite entry. If the complete suite includes Integration coverage, it MUST use the same canonical Integration orchestration used by `test:integration`; it MUST NOT define a second lifecycle or parallel orchestration. Lifecycle and infrastructure details remain owned by [CI_WORKFLOW_STANDARD.md](CI_WORKFLOW_STANDARD.md) §11. Unit and Regression portions that do not need real infrastructure remain runnable without Docker.
+- Packages whose Integration suite does not need real infrastructure MAY invoke their maintained raw runner directly. The existence of `test:integration` does not, by itself, impose infrastructure on a suite that does not need it.
+
+For an infrastructure-requiring Integration suite, the public script meanings are:
+
+```text
+composer test:integration
+→ focused Integration suite entry
+
+composer test
+→ complete test suite
+→ the same canonical Integration orchestration when Integration is included
+```
+
+Repository-specific orchestration details are governed by [CI_WORKFLOW_STANDARD.md](CI_WORKFLOW_STANDARD.md) §11. Credentials MUST NOT be embedded in Composer scripts.
 
 Example for a repository whose actual test runner is PHPUnit; other maintained runner commands MUST be represented by the repository's actual scripts and configuration:
 
@@ -822,6 +844,8 @@ Example for a repository whose actual test runner is PHPUnit; other maintained r
   "test:integration": "phpunit --testsuite integration"
 }
 ```
+
+The direct PHPUnit values above are illustrative only for a repository whose Integration suite does not require real infrastructure. When it does require a Database or service, the script values MUST instead point to the repository's canonical orchestration while retaining the canonical script names; this Standard does not prescribe an internal command or path.
 
 Rules:
 
@@ -1030,7 +1054,7 @@ The following contracts MUST remain synchronized:
 - The package reference does not claim undeclared runtime dependencies.
 - `authors` remains consistent with approved organization metadata.
 
-`composer.json` is the source of truth for the Composer package contract, but every claim inside it MUST be supported by runtime code, documentation, and verification.
+`composer.json` is the source of truth for the Composer manifest contract: package identity, metadata, requirements, dependencies, autoloading, scripts, configuration, stability, and distribution declarations where applicable. Every claim inside it MUST be supported by runtime code, documentation, and verification.
 
 ---
 
@@ -1085,7 +1109,7 @@ This template contains no empty fields:
 
 ### 28.2 Test-Enabled Extension
 
-The following is an optional example for a repository that selects PHPUnit as its actual test runner and installs it through Composer. PHPUnit is not a universal requirement; when a repository uses different tooling, its direct dependencies and script commands MUST reflect that actual tooling.
+The following is an optional example for a repository that selects PHPUnit as its actual test runner and installs it through Composer. PHPUnit is not a universal requirement; when a repository uses different tooling, its direct dependencies and script commands MUST reflect that actual tooling. The direct `test:integration` value is suitable only when the Integration suite does not require real infrastructure; otherwise it MUST be replaced by the repository's canonical Integration orchestration as required by §21.
 
 ```json
 {
@@ -1228,6 +1252,7 @@ Automated verification of latest dependencies, lowest dependencies, platform req
 - [ ] Composer scripts map to real declared commands.
 - [ ] Suite scripts exist only for real suites.
 - [ ] `test` runs the full test suite.
+- [ ] `test:integration` is the focused canonical Integration entry when an Integration suite exists.
 - [ ] Scripts propagate failures.
 - [ ] Scripts contain no credentials.
 - [ ] No unsafe lifecycle hooks exist.

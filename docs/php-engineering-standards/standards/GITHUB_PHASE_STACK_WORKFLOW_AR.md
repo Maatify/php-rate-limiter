@@ -3,10 +3,9 @@
 ## بيانات المعيار
 
 - **Standard ID:** `std-github-phase-stack-workflow`
-- **Standard Version:** `2.2.0`
+- **Standard Version:** `3.0.1`
 - **Standard Version Format:** `MAJOR.MINOR.PATCH`
 - **اللغة المعتمدة:** العربية.
-- **حالة الاعتماد:** يصبح معتمدًا عند دمجه في الفرع الافتراضي للمشروع.
 - **الهدف:** تقليل زمن التسليم الكلي عبر Phase Draft أو Execution Batch وDependency-Aware Execution Train، مع الحفاظ على traceability والمراجعة والاختبارات وجودة `main` دون فرض Branch/PR أو تسلسل إداري لا تدعمه dependencies فعلية.
 
 ---
@@ -75,7 +74,7 @@ main
         └── integration gates
 ```
 
-الـPhase Draft في هذا الرسم حد تكامل ومراجعة، وليست وعدًا بBranch لكل Phase. يمكن أن تمثل Draft واحدة عدة Phases داخل Batch واحدة، ويمكن أن تكون Work Branch نفسها عندما لا توجد حاجة لBranch تجميع أخرى. الـWave تخطيط تشغيلي وليست ملفًا دائمًا إلزاميًا. ولا تصبح الـVerification أو Final Review أو Gate Component لمجرد وجودها في هذا الهيكل؛ لا تنشأ لها Branch أو PR إلا إذا نتج عنها تغيير مستودع مستقل ذي معنى.
+الـPhase Draft في هذا الرسم حد تكامل ومراجعة اختياري حسب Execution Topology، وليست وعدًا بBranch لكل Phase. يمكن أن تمثل Draft واحدة عدة Phases داخل Batch واحدة، ويمكن أن تكون Work Branch نفسها عندما لا توجد حاجة لBranch تجميع أخرى. الـWave تخطيط تشغيلي اختياري وليست ملفًا دائمًا إلزاميًا. ولا تصبح الـVerification أو Final Review أو Gate Component لمجرد وجودها في هذا الهيكل؛ لا تنشأ لها Branch أو PR إلا إذا نتج عنها تغيير مستودع مستقل ذي معنى.
 
 ---
 
@@ -83,11 +82,11 @@ main
 
 ## 2.1 اختيار حد التكامل للـPhase أو الـExecution Batch
 
-1. تبدأ أول Phase أو Execution Batch من أحدث حالة فعلية ومعتمدة لـ`main`، أو من أحدث Work Branch/Phase Draft معتمد داخل نفس الـBatch.
+1. تُفحص أحدث حالة فعلية لـ`main` دائمًا بوصفها مرجع freshness وdivergence. يبدأ Standalone Work من أحدث `main` مصرح بها، ويبدأ Stacked Work من الـauthorized parent أو Integration Boundary الخاصة بالـstack. تحرك `main` لا يغيّر execution parent تلقائيًا؛ ويحتاج Material Divergence إلى Owner-authorized reconciliation. لا يوجد fallback تلقائي إلى `main` أو Automatic Merge. وتحدد Phase Stack الحاجة إلى reconciliation وحدودها، بينما تُحكم طريقة Git الدقيقة وفق صلاحيات AI Collaboration.
 2. قبل إنشاء Branch جديدة، يحدد المساعد القائد هل توجد حاجة فعلية إلى Work Branch مستقلة أو Phase Draft منفصلة. استمرار عدة Phases مترابطة على Work Branch واحدة هو الخيار المفضل عندما تكون dependencies والملفات والسياق مشتركة ولا يضيف الفصل عزلًا أو مراجعة أو rollback وضوحًا.
 3. إذا احتاجت الـBatch إلى حد تجميع ومراجعة مستقل، تُعيّن Work Branch واحدة كـPhase Draft أو Batch Integration Branch. لا تنشأ Phase Draft إضافية إذا كانت Work Branch الحالية تؤدي هذا الدور بأمان.
 4. يمكن أن تستهدف Work Branches المنفصلة Phase Draft عند وجود توازٍ حقيقي أو ownership مستقل. أما عند عدم الحاجة إلى تجميع منفصل، فتكون Work Branch/Batch PR الواحدة هي حد المراجعة النهائي قبل `main`.
-5. لا يدخل `main` إلا حد التكامل المعيّن بعد اكتمال جميع Phases وWork Units وGates المطلوبة. وإذا كان هذا الحد هو Phase Draft، يظل **Phase Draft → `main` owner-only** وفق §8.2.
+5. لا يدخل `main` إلا حد التكامل المعيّن بعد اكتمال جميع Phases وWork Units وGates المطلوبة. وكل GitHub Merge، سواء كان إلى Phase Draft أو Batch Integration Boundary أو `main`، يحتاج Owner authorization صريحة وفق §8.2.
 
 إذا أثبت Baseline Reconciliation أن الـPhase `No-op` بالكامل، فلا تنفذ هذه الخطوات؛ يطبق مسار الإثبات والإغلاق التشغيلي في §5 بدل إنشاء Draft أو Branch أو PR.
 
@@ -96,7 +95,7 @@ main
 1. كل Work Unit أو Component ينتج تغييرًا في المستودع يجب أن يملك حدًا واضحًا للملكية والقبول، لكنه لا يحتاج تلقائيًا إلى Branch أو PR مستقلة. يقرر ذلك على مستوى Execution Batch بناءً على dependency isolation وreviewability وrollback clarity وsafe integration وصافي زمن التسليم.
 2. عندما تكون الوحدات مترابطة أو متتابعة أو تشترك في الملفات أو architecture أو verification setup، يجوز تنفيذها على Work Branch واحدة مع Commits واضحة لكل Phase أو logical milestone.
 3. عندما تكون الوحدات مستقلة فعليًا ويكون التوازي أسرع بعد احتساب setup وإعادة الفهم والمراجعة وCI والتكامل والتعارضات، يجوز إنشاء Work Branchs وPRs منفصلة لها وتوجيهها إلى Phase Draft إن وجدت.
-4. إذا كانت Phase Draft Branch منفصلة عن Work Branch، تظل نقطة تجميع محمية ولا تضاف إليها Commits عشوائية. وإذا كانت Work Branch الواحدة هي Batch/Phase Draft المعتمدة، يجوز أن تحتوي على Commits التنفيذ المحددة، مع بقاء review وGates وowner-only final merge كاملة.
+4. إذا كانت Phase Draft Branch منفصلة عن Work Branch، تظل نقطة تجميع محمية ولا تضاف إليها Commits عشوائية. وإذا كانت Work Branch الواحدة هي Batch/Phase Draft المعتمدة، يجوز أن تحتوي على Commits التنفيذ المحددة، مع بقاء review وGates واشتراط Owner authorization لكل GitHub Merge.
 5. لا يدخل إلى حد التكامل جزء سليم من Work Unit غير مكتملة. إذا تعثرت Work Unit، تطبق قواعد الاستعادة دون تقسيم acceptance الخاصة بها إلى Branch أو Component بديلة لمجرد مواصلة ceremony.
 6. لا يحتاج تغيير صغير مثل ملف واحد أو جدول SQL واحد أو Test صغير أو جزء طبيعي من Phase أكبر إلى Branch أو PR مستقلة إذا أمكن ضمه بأمان داخل Batch مترابطة وقابلة للمراجعة.
 
@@ -115,29 +114,23 @@ main
 عند اختيار التوازي، يظل دمج الوحدات إلى حد التكامل منظمًا:
 
 1. لا تدمج عدة Components إلى Draft بصورة عمياء.
-2. يجب اعتماد كل Component واجتياز Component Gate قبل دمجها.
-3. تتم عمليات الدمج إلى Draft واحدة تلو الأخرى حتى تظل حالة Draft معروفة بعد كل دمج.
+2. عندما يوجد Component مستقل فعليًا، يجب اعتماده واجتياز Component Gate قبل دمجه.
+3. عندما تُختار Phase Draft كحد تجميع، تتم عمليات الدمج إليها واحدة تلو الأخرى حتى تظل حالة Draft معروفة بعد كل دمج.
 4. قبل دمج Component مبنية على Draft أقدم، يتحقق المساعد القائد من توافقها مع أحدث Draft HEAD، ومن عدم تغير assumptions أو الملفات المشتركة.
-5. إذا كانت المزامنة مطلوبة، يحدد التوجيه طريقة غير معيدة لكتابة التاريخ، مثل تنفيذ local `git merge` مصرح به لأحدث Draft في Branch الـComponent بCommit جديدة أو إنشاء Branch/PR بديلة من أحدث Draft عند الحاجة. يعاد تشغيل checks والمراجعة المتأثرة بعد المزامنة.
-6. يمنع استخدام `git commit --amend` أو force-push لإخفاء تاريخ التصحيحات أو حل تعارض الـBaseline.
+5. إذا كانت المزامنة مطلوبة، يحدد Phase Stack الحاجة والـtarget وأثرها على حد التكامل؛ وتُنفذ طريقة Git الدقيقة فقط وفق صلاحيات AI Collaboration، ثم تعاد checks والمراجعة المتأثرة بعد المزامنة.
+6. تخضع عمليات Git وقيودها التفصيلية لقواعد AI Collaboration؛ ولا ينشئ هذا المعيار صلاحية عملية محلية من تلقاء نفسه.
 
-عند اكتمال واعتماد Component مستقلة ذات PR، يتم **GitHub Squash Merge عبر Component PR إلى الـPhase Draft** وفق صلاحيات Git المعتمدة. أما الوحدات المتتابعة داخل Work Branch واحدة فتراجع وتدمج ضمن تلك الـBranch وفق الـGates نفسها، دون إنشاء Component PR لكل وحدة. لا يجوز دمج Component غير مكتملة أو تمرير تعارض لمجرد أن تنفيذها بدأ في Wave سابقة.
+عند اكتمال واعتماد Component مستقلة ذات PR، يجوز دمجها إلى Phase Draft إذا كانت Draft جزءًا من topology المختارة وبعد اجتياز Component Gate وOwner authorization الصريحة لذلك الـGitHub Merge. أما الوحدات المتتابعة داخل Work Branch واحدة فتراجع ضمن تلك الـBranch وفق الـGates نفسها، دون إنشاء Component PR لكل وحدة. لا يجوز دمج Component غير مكتملة أو تمرير تعارض لمجرد أن تنفيذها بدأ في Wave سابقة.
 
 ---
 
 # 3. Dependency-Aware Execution
 
-## 3.1 dependency graph وExecution Waves
+## 3.1 Dependency Planning وExecution Waves
 
-قبل التفويض، يعيد المساعد القائد بناء dependency graph ويثبت، لكل Work Unit أو Execution Batch:
+قبل التفويض، يفهم المساعد القائد dependencies المؤثرة، والملفات والـownership، والـPublic Contracts أو assumptions المشتركة، وAcceptance Criteria، والـGates اللازمة قبل العمل المعتمد على ناتج آخر. يكون formal dependency graph وWave numbering مشروطين بتعدد الوحدات أو وجود ترتيب أو توازٍ يجعل هذا artifact مفيدًا؛ أما Single Bounded Task أو Coherent Batch فلا تحتاج graph artifact أو Waves.
 
-- dependencies التنفيذية.
-- الملفات والـownership.
-- Public Contract أو assumptions المشتركة.
-- Acceptance Criteria المستقلة.
-- Gate المطلوبة قبل الانتقال إلى Work Unit تعتمد عليها.
-
-تتكون الـPhase أو Execution Batch من Execution Waves. يمكن تنفيذ Work Units داخل نفس الـWave بالتوازي إذا أثبت المساعد القائد قبل التفويض:
+عندما يُختار التوازي أو يكون ترتيب الوحدات مؤثرًا، يمكن تنفيذ Work Units داخل نفس الـWave بالتوازي إذا أثبت المساعد القائد:
 
 - عدم وجود dependency تنفيذية مباشرة تتطلب الترتيب.
 - عدم وجود تعارض متوقع في Public Contract.
@@ -145,7 +138,7 @@ main
 - عدم اعتماد Work Unit على ناتج غير مدمج من أخرى.
 - استقلال Acceptance Criteria وحدود الملفات والمسؤولية.
 
-إذا وجدت dependency أو overlap مؤثر، تنفذ الوحدات المعنية sequential على نفس Work Branch أو على Branchs متتابعة عند الحاجة. التوازي ليس إلزاميًا، لكنه ممنوع أن يكون محظورًا عالميًا، ولا ينتقل التنفيذ إلى Wave تالية إلا بعد اجتياز dependencies الفعلية وGates المطلوبة لها، وبعد إثبات أن كلفته الصافية أقل.
+إذا وجدت dependency أو overlap مؤثر، تنفذ الوحدات المعنية sequential على نفس Work Branch أو على Branchs متتابعة عند الحاجة. التوازي ليس إلزاميًا، وتطبق شروط safe parallelism فقط عندما يُختار التوازي. لا تنتقل الوحدة إلى عمل يعتمد على أخرى قبل اجتياز dependencies الفعلية وGates المطلوبة لها، وبعد إثبات أن كلفة التوازي الصافية أقل.
 
 ---
 
@@ -188,9 +181,9 @@ Verification نشاط أو Gate، وليست Component افتراضية.
 
 لا تنشأ PR فقط لتسجيل أن الاختبارات نجحت.
 
-## 4.3 Final Review كـGate
+## 4.3 Final Review كـGate عند انطباقها
 
-Final Review نشاط قبول ومراجعة، وليست Component افتراضية.
+Final Review، إذا اختيرت بسبب risk أو Integration Boundary أو remediation، نشاط قبول ومراجعة وليست Component افتراضية. لا تنشأ Separate Final Review لكل conceptual Phase تلقائيًا.
 
 إذا تضمنت المراجعة remediation غيّرت حالة سبق رفضها أو طلب تعديلها، فيجب قبل الدمج إلى **أي Integration Boundary** تنفيذ `Fresh Full Acceptance Review` للحالة النهائية المتراكمة. فحص إصلاح finding وحدها لا يكفي؛ مسؤولية المساعد القائد ومتطلبات هذه المراجعة يملكها [`AI_COLLABORATION_WORKFLOW_AR.md`](ai/AI_COLLABORATION_WORKFLOW_AR.md)، وهذا القسم يحدد موضعها كبوابة تكامل.
 
@@ -273,7 +266,7 @@ NOT IMPLEMENTED
 BLOCKED BY DECISION
 ```
 
-هدفها عدم إعادة بناء الموجود، وكشف الـGaps مبكرًا، وإغلاق الـPhases المثبتة كـNo-op بالأدلة دون إنشاء دورة تنفيذ شكلية، وبناء dependency graph واقعية للعمل المتبقي. Baseline Reconciliation Activity تحليلية وليست PR أو طبقة Approval إلزامية بحد ذاتها.
+هدفها عدم إعادة بناء الموجود، وكشف الـGaps مبكرًا، وإغلاق الـPhases المثبتة كـNo-op بالأدلة دون إنشاء دورة تنفيذ شكلية، وفهم dependencies الواقعية للعمل المتبقي. Baseline Reconciliation Activity تحليلية وليست PR أو طبقة Approval إلزامية بحد ذاتها.
 
 يجوز أن تنفذ Roadmap طويلة عمدًا في عدد قليل من Execution Batches، مع الاحتفاظ بحدود كل Phase وAcceptance Criteria وphase-level traceability عبر Commits واضحة وEvidence/Documentation مرتبطة بها.
 
@@ -304,9 +297,9 @@ BLOCKED BY DECISION
 
 لا تضطر Documentation-only Work Unit صغيرة إلى تكرار Expensive Integration Matrix بلا سبب، إلا إذا أثبت معيار آخر أن هذا Check إلزامي لهذا النوع من التغيير. لا يجوز في المقابل تخطي Check مرتبطة مباشرة بالسلوك أو العقد المتغير.
 
-## 6.2 Phase Integration Gate
+## 6.2 Full Applicable Gate عند Meaningful Integration Boundary
 
-بعد اكتمال Work Batch مهمة أو Phase Draft أو حد التكامل النهائي، تشغل Full Required Verification لكل الـPhases وWork Units الداخلة في ذلك الحد بحسب Profile المشروع ومعايير CI وTesting، وتشمل عند انطباقها:
+عند Meaningful Integration Boundary المختارة، مثل Work Batch مهمة أو Phase Draft أو Final Integration، تشغل Full Applicable Verification لكل الـPhases وWork Units الداخلة في ذلك الحد بحسب Profile المشروع ومعايير CI وTesting، وتشمل عند انطباقها:
 
 - Full Test Suite.
 - PHPStan أو Static Analysis.
@@ -316,20 +309,11 @@ BLOCKED BY DECISION
 - Composer/Package Checks.
 - Workflow Checks.
 
-تظل CI بواباتها مستقرة وFail-Closed وفق `CI_WORKFLOW_STANDARD.md`، ويظل Testing Standard هو المرجع لتغطية السلوك وSystem/E2E. تركز Full CI عند نقاط integration ذات معنى مثل Work Batch مهمة أو Phase Draft أو Final Integration، ولا تكرر Full Gate بعد كل تعديل صغير إلا إذا بررته مخاطرة أو dependency أو تغيير في integration surface. لا تعتبر Phase أو Execution Batch جاهزة لـ`main` قبل نجاح Phase Integration Gate وجميع Gates الأخرى المطلوبة.
+تظل CI بواباتها مستقرة وFail-Closed وفق `CI_WORKFLOW_STANDARD.md`، ويظل Testing Standard هو المرجع لتغطية السلوك وSystem/E2E. لا تكرر Full Gate بعد كل تعديل صغير إلا إذا بررته مخاطرة أو dependency أو تغيير في integration surface. لا يعتبر حد التكامل جاهزًا لـ`main` قبل نجاح Full Applicable Gate وجميع Gates وReviews الأخرى المنطبقة.
 
 ## 6.3 Quality Invariant
 
-هذا التغيير لا يلغي:
-
-- Phase Draft.
-- Review.
-- Testing.
-- Quality Gates.
-- Regression Protection.
-- شرط أن `main` لا يستقبل Phase ناقصة أو غير مثبتة.
-
-إنه يزيل Serial Bureaucracy فقط، ولا يزيل الأدلة أو المراجعة أو التحقق.
+هذا التغيير لا يلغي Review أو Testing أو Quality Gates أو Regression Protection أو شرط أن `main` لا يستقبل عملًا ناقصًا أو غير مثبت. ولا يفرض في المقابل Phase Draft أو Component أو PR أو Verification أو Final Review منفصلة عندما لا تبررها Execution Topology أو المخاطر أو حد تكامل ذي معنى. تبقى الأدلة والمراجعة والتحقق مطلوبة بقدر العقد والـrisk الفعليين.
 
 ---
 
@@ -351,22 +335,23 @@ BLOCKED BY DECISION
 لا تعتبر Phase مكتملة إلا بعد:
 
 1. اكتمال Acceptance Criteria لكل Phase داخلة في الـBatch، وكل Work Unit مطلوبة، أو إثبات No-op لها.
-2. اجتياز Component Gates والتصحيحات اللازمة.
-3. اكتمال Documentation المرتبطة مباشرة أو إثبات عدم الحاجة إليها.
-4. اجتياز Phase Integration Gate وRegression Protection المطلوبة.
-5. مراجعة حد التكامل المعيّن (Phase Draft إن وجد) وFinal Review كـGate، سواء أنتجت المراجعة تغييرًا أم سجلت evidence فقط.
+2. اجتياز checks وGates المتأثرة والتصحيحات اللازمة ضمن الـWork Unit أو حد التكامل المختار.
+3. اكتمال Documentation durable المرتبطة مباشرة بالـAcceptance عند الحاجة أو إثبات عدم الحاجة إليها.
+4. اجتياز Full Applicable Gate وRegression Protection عند Meaningful Integration Boundary المختارة، مع حفظ phase-level traceability داخل الـBatch.
+5. تنفيذ Direct Lead Acceptance Review لحد التكامل المعيّن. تكون Independent أو Separate Final Review مشروطة بالـrisk ولا تُنشأ لكل conceptual Phase تلقائيًا.
 6. عدم وجود Public Contract أو Architecture أو Scope غير معتمد.
 
-تنطبق هذه البوابات على كل Phase ذات عمل فعلي وعلى Execution Batch التي تجمعها. أما الـPhase المثبتة بالكامل كـ`Execution No-op`، فتغلق فقط وفق Evidence شروط §5، ولا تنشئ Draft أو Phase Integration Gate أو PR أو Merge.
+تنطبق هذه الشروط على كل Phase ذات عمل فعلي وعلى Execution Batch التي تجمعها. أما الـPhase المثبتة بالكامل كـ`Execution No-op`، فتغلق فقط وفق Evidence شروط §5، ولا تنشئ Draft أو Full Applicable Gate أو PR أو Merge.
 
 ## 8.2 الدمج النهائي
 
-1. يمنع إدخال أي Work Unit أو Verification أو Documentation أو Fix غير مكتملة أو غير مراجعة مباشرة إلى `main`.
-2. بعد اكتمال Phase Draft أو حد التكامل المعيّن للـExecution Batch وكل Gates، يكون حد التكامل نفسه جاهزًا للدمج.
-3. يظل مالك المشروع صاحب القرار النهائي في **GitHub Squash Merge للـPhase Draft أو Batch Integration Boundary إلى `main`**. وإذا كانت الـBoundary هي Phase Draft، يبقى ذلك صراحةً **Phase Draft → `main` owner-only**.
+1. يمنع إدخال أي Work Unit أو Documentation أو Fix غير مكتملة أو غير مراجعة مباشرة إلى `main`.
+2. بعد اكتمال حد التكامل المعيّن للـExecution Batch وكل Gates وReviews المنطبقة، يكون الحد نفسه جاهزًا للدمج.
+3. يظل كل GitHub Merge، بما في ذلك Component PR إلى Phase Draft وPhase Draft أو Batch Integration Boundary إلى `main`، مشروطًا بـOwner authorization صريحة. لا توجد Standing Merge Authority للـLead.
+لا يشكل دمج حد التكامل إلى `default branch` بحد ذاته `Standards Adoption` أو `Standards Upgrade`. وتظل `Standards Adoption` و`Standards Upgrade` محكومتين حصريًا بـ`STANDARDS_ADOPTION_STANDARD_AR.md`.
 4. إذا ضمت Work Branch/PR واحدة عدة Phases، يجوز أن تنتج Squash Commit واحدة إلى `main`، بشرط أن تكون Commits الـBranch وتوثيق الـPR قد حافظا على phase-level traceability لكل Phase وlogical milestone قبل الدمج.
 
-عندما لا توجد Phase Draft منفصلة، تطبق قاعدة owner-only نفسها على Work Branch/Batch Integration Boundary المعتمدة التي تمثلها؛ لا ينشئ ذلك دورة PR مستقلة لكل Phase.
+عندما لا توجد Phase Draft منفصلة، يظل أي GitHub Merge من Work Branch/Batch Integration Boundary مشروطًا بـOwner authorization صريحة؛ لا ينشئ ذلك دورة PR مستقلة لكل Phase.
 
 لا يوجد Phase-to-main Merge أو owner merge ceremony للـPhase المثبتة كـ`Execution No-op`، لأنها لا تنشئ Draft أو Commit أو PR أصلًا.
 
@@ -386,14 +371,26 @@ Execution Batch 2 — Phase C — complete
 # 9. الصلاحيات والتوافق
 
 - يظل مالك المشروع صاحب القرار النهائي في الهدف، والأولوية، والـArchitecture الجوهرية، وقرارات Public Contract الجوهرية، وتوسيع Scope المؤثر، واعتماد Execution Compaction عندما يغير Phase Boundaries، ودمج Phase Draft إلى `main`، وTag، وRelease، وPublishing.
-- بعد اعتماد Scope الـPhase أو Execution Batch من المالك، يملك المساعد القائد **Standing Execution Authority داخل الـPhase أو الـBatch**، عندما تكون الأدوات والصلاحيات متاحة، لإدارة دورة التنفيذ دون الرجوع للمالك عند كل Micro-step، بما يشمل تقسيم Work Units، وتحديد Dependency Waves، واختيار المنفذين، وتشغيل الوحدات المستقلة بالتوازي عندما يثبت أن صافي الزمن أقل، وإعادة استخدام السياق عندما يكون أسرع، وفتح وإدارة Branches/PRs اللازمة فقط، ومراجعتها، وطلب Fixes، وإعادة Verification، واعتماد Component، و**GitHub Squash Merge للـComponent PR إلى Phase Draft عند وجود Draft منفصلة**.
-- لا تسمح Standing Execution Authority للمساعد القائد بتغيير Architecture أو Policy أو Public Contract جوهري، أو توسيع Scope مؤثر، أو الدمج إلى `main`، أو Tag/Release/Publish من نفسه.
+- بعد اعتماد Scope الـPhase أو Execution Batch من المالك، يجوز للمساعد القائد إدارة دورة التنفيذ داخل النطاق، عندما تكون الأدوات والصلاحيات متاحة، دون الرجوع للمالك عند كل Micro-step، بما يشمل تقسيم Work Units عند الحاجة، وفهم dependencies، واختيار المنفذين، وتشغيل الوحدات المستقلة بالتوازي عندما يثبت أن صافي الزمن أقل، وإعادة استخدام السياق، وفتح وإدارة Branches/PRs اللازمة فقط، ومراجعتها، وطلب Fixes، وإعادة Verification، واعتماد Component مستقل إن وجد.
+- لا تمنح هذه الصلاحية للمساعد القائد أو أي Lead Standing Merge Authority؛ **كل GitHub Merge يحتاج Owner authorization صريحة**. ولا يجوز تغيير Architecture أو Policy أو Public Contract جوهري أو توسيع Scope مؤثر أو Tag/Release/Publish من نفسه.
 - لا يحصل المنفذ تلقائيًا على Merge Authority لمجرد أن المساعد القائد يملك إدارة الـPhase. يظل Merge إلى `main` للمالك، ويظل تنفيذ المنفذ محصورًا في التكليف المحدد.
 - تطبق صلاحيات Git التفصيلية وقواعد Amend وForce Push وStaging من `AI_COLLABORATION_WORKFLOW_AR.md` دون تعارض مع هذا المعيار.
 
 ---
 
 # 10. سجل تغييرات المعيار
+
+## `3.0.1`
+
+- توضيح أن Merge إلى default branch لا يعني Standards Adoption؛ تظل آلية Adoption مملوكة حصريًا لـ`STANDARDS_ADOPTION_STANDARD_AR.md`.
+- توضيح أن Phase Stack يملك Phase topology وlifecycle وIntegration Boundary، بينما تظل detailed Git-operation permissions مملوكة لـ`AI_COLLABORATION_WORKFLOW_AR.md`.
+
+## `3.0.0`
+
+- تثبيت أحدث حالة فعلية لـ`main` كمرجع freshness وdivergence فقط، مع إبقاء التنفيذ على الـauthorized stack parent أو Integration Boundary وعدم تحويل تحرك `main` إلى execution parent تلقائي.
+- اعتماد topology متناسبة مع المخاطر والتبعيات بدل الفروع وPRs الاحتفالية الإلزامية، مع دعم dependency graphs وExecution Waves وFinal Review عند الحاجة الفعلية.
+- إلزام Full Applicable Gate عند Meaningful Integration Boundary، واشتراط Owner authorization صريحة لكل GitHub Merge، مع نفي Standing Merge Authority عن الـLead.
+- إلزام `Fresh Full Acceptance Review` بعد remediation وقبل أي Integration Boundary ذات معنى.
 
 ## `2.2.0`
 

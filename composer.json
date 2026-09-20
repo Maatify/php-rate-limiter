@@ -44,9 +44,10 @@
         "phpunit/phpunit": "^11.5"
     },
     "scripts": {
-        "analyse": "phpstan analyse src tests --level=max",
+        "analyse": "phpstan analyse src tests examples --level=max",
         "test": "phpunit",
-        "test:unit": "phpunit --testsuite Unit"
+        "test:unit": "phpunit --testsuite Unit",
+        "test:integration": "phpunit --testsuite Integration"
     },
     "config": {
         "optimize-autoloader": true,

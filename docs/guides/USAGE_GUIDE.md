@@ -1,0 +1,155 @@
+# Maatify Rate Limiter Usage Guide
+
+This guide describes the current consumer contract of <code>maatify/php-rate-limiter</code>. It is a practical entrypoint; the [Package Reference](../../RATE_LIMITER_PACKAGE_REFERENCE.md) remains the canonical inventory and stable contract.
+
+## Package Fit
+
+Use this package when a host application needs deterministic, multi-signal enforcement for login, OTP/step-up, or API-heavy operations. The package evaluates a typed request context, applies a selected policy, and returns a typed decision that the host can enforce at its transport or application boundary.
+
+The package is framework-agnostic and storage-agnostic. It does not require a specific HTTP framework, database, cache, queue, or dependency-injection container.
+
+## Requirements
+
+- PHP <code>^8.4</code>.
+- PHP extensions <code>filter</code>, <code>hash</code>, <code>json</code>, and <code>pcre</code>.
+- <code>maatify/exceptions</code> <code>^1.0</code>.
+- <code>maatify/shared-common</code> <code>^1.0</code>.
+- Host implementations of the storage and signal contracts listed in [Integration Boundaries](#integration-boundaries).
+
+The package is proprietary and is currently in pre-release development. Follow the applicable authorization or written license agreement before integrating it.
+
+## Non-Goals
+
+The package does not provide permanent bans, WAF/CDN behavior, advanced browser fingerprinting, user tracking across contexts, HTTP controllers, routes, middleware, permissions, UI dashboards, or export formats. It also does not own host account identity, authentication, or business lifecycle state.
+
+## Primary Public Calls
+
+The normal consumer path uses these public types:
+
+1. Build a <code>RateLimitContextDTO</code> from host-owned request and identity signals.
+2. Select a <code>RateLimitCommand</code> with <code>checkOnly()</code>, <code>recordFailure()</code>, or <code>recordSuccess()</code>.
+3. Call <code>RateLimiterInterface::limit()</code> on the configured <code>RateLimiterEngine</code>.
+4. Handle the returned <code>RateLimitResultDTO</code> and its <code>decision</code>, <code>blockLevel</code>, <code>retryAfter</code>, <code>failureMode</code>, and optional <code>metadata</code>.
+
+The available policy preset names are <code>login_protection</code>, <code>otp_protection</code>, and <code>api_heavy_protection</code>. The package reference documents the full DTO and extension inventory.
+
+## Inputs and Outputs
+
+<code>RateLimitContextDTO</code> accepts the request IP, user agent, optional account identifier, optional client fingerprint data, optional session device identifier, trust flags, headers, and the host-owned previously-verified-device signal.
+
+<code>RateLimitCommand</code> expresses intent rather than transport semantics:
+
+- <code>checkOnly()</code> evaluates without recording a success or failure event.
+- <code>recordFailure()</code> evaluates and records the applicable failure signals.
+- <code>recordSuccess()</code> records a successful operation and returns the current <code>RateLimitResultDTO</code>; it does not bypass an already active block.
+
+<code>RateLimitResultDTO</code> returns <code>ALLOW</code>, <code>SOFT_BLOCK</code>, or <code>HARD_BLOCK</code>. The host owns the final response, retry handling, logging, and user-facing presentation.
+
+## Integration Boundaries
+
+The host supplies implementations for:
+
+- <code>RateLimitStoreInterface</code>: counters, blocks, and budget state with the atomicity and TTL behavior required by the package.
+- <code>CorrelationStoreInterface</code>: bounded distinct sets and watch flags.
+- <code>CircuitBreakerStoreInterface</code>: circuit-breaker state persistence.
+- <code>FailureSignalEmitterInterface</code>: delivery of circuit-breaker and failure signals.
+- <code>ClockInterface</code> from <code>maatify/shared-common</code>: current time and timezone.
+
+The host may also provide a custom <code>DeviceIdentityResolverInterface</code> or a custom <code>BlockPolicyInterface</code>. <code>BudgetSeedStoreInterface</code> is an additive storage capability used when a host store supports atomic budget-epoch seeding during key rotation.
+
+The package owns enforcement decisions, key construction, scoring, decay, bounded correlation logic, budget eligibility, circuit-breaker behavior, and result semantics. The host owns storage implementation, account and session truth, transport response behavior, authorization, logging destinations, and cross-domain reporting.
+
+## Capability Map
+
+| Consumer capability | Public contract | Walkthrough | Example |
+| --- | --- | --- | --- |
+| Check a request before an operation | <code>RateLimiterInterface::limit()</code> + <code>RateLimitCommand::checkOnly()</code> | [Pre-check](#walkthrough-pre-check) | [basic-rate-limit.php](../../examples/basic-rate-limit.php) |
+| Record a failed login or OTP attempt | <code>RateLimitCommand::recordFailure()</code> | [Failure recording](#walkthrough-failure-recording) | [basic-rate-limit.php](../../examples/basic-rate-limit.php) |
+| Record a successful operation | <code>RateLimitCommand::recordSuccess()</code> | [Success recording](#walkthrough-success-recording) | [basic-rate-limit.php](../../examples/basic-rate-limit.php) |
+| Use a policy preset | <code>LoginProtectionPolicy</code>, <code>OtpProtectionPolicy</code>, or <code>ApiHeavyProtectionPolicy</code> | [Policy selection](#walkthrough-policy-selection) | [basic-rate-limit.php](../../examples/basic-rate-limit.php) |
+| Observe infrastructure failures | <code>FailureSignalEmitterInterface</code> + <code>RateLimitResultDTO::failureMode</code> | [Failure boundary](#walkthrough-failure-boundary) | [infrastructure-failure.php](../../examples/infrastructure-failure.php) |
+| Inspect current operational rate-limit state | <code>RateLimitOperationalReaderInterface::read()</code> | [Operational read](#walkthrough-operational-read) | [operational-read.php](../../examples/operational-read.php) |
+
+## Walkthrough: Pre-Check
+
+    Input → RateLimitContextDTO + RateLimitCommand::checkOnly('login_protection')
+          → Public Call → RateLimiterInterface::limit()
+          → Result → RateLimitResultDTO with ALLOW, SOFT_BLOCK, or HARD_BLOCK
+          → Boundary → Host permits the operation or returns its own retry response
+
+The pre-check is appropriate immediately before a protected host operation. A blocked result is an observable decision; the package does not send an HTTP response or throw a transport-specific exception for an ordinary block.
+
+## Walkthrough: Failure Recording
+
+    Input → Host records that the authentication or step-up attempt failed
+          → Public Call → RateLimiterInterface::limit($context, RateLimitCommand::recordFailure($policy))
+          → Result → RateLimitResultDTO plus updated state through the host store adapters
+          → Boundary → Host persists through its adapters and applies the returned decision
+
+Use the policy that matches the protected operation. The package keeps the decision and persistence semantics inside its engine; the host does not reproduce scoring or key rules.
+
+## Walkthrough: Success Recording
+
+    Input → Host confirms a successful protected operation
+          → Public Call → RateLimiterInterface::limit($context, RateLimitCommand::recordSuccess($policy))
+          → Result → RateLimitResultDTO reflecting the current enforcement state
+          → Boundary → Host continues its success flow only when the returned decision permits it
+
+## Walkthrough: Policy Selection
+
+    Input → Protected operation category: login, OTP/step-up, or API-heavy
+          → Public Call → Construct the matching policy preset and register it in RateLimiterEngine
+          → Result → The command's policy name selects the configured policy at evaluation time
+          → Boundary → Host maps the result to the operation's own response contract
+
+The policy presets are production runtime classes. Do not invent policy names or infer policy behavior from test fixtures.
+
+## Walkthrough: Failure Boundary
+
+    Input → A configured storage or runtime integration throws
+          → Public Call → RateLimiterEngine::limit() applies the selected failure semantics
+          → Result → RateLimitResultDTO with the resolved failureMode; signals go to FailureSignalEmitterInterface
+          → Boundary → Host observes, logs, and applies its own transport or incident handling
+
+Login and OTP policies are security-oriented and use fail-closed semantics with bounded degraded behavior. API-heavy protection may use fail-open semantics with local guardrails. See [Failure Semantics](../FAILURE_SEMANTICS.md) for the detailed contract.
+
+## Runnable Example
+
+Run the complete in-memory assembly from the repository root after installing dependencies:
+
+    composer install --no-interaction --prefer-dist --no-progress
+    php examples/basic-rate-limit.php
+
+[basic-rate-limit.php](../../examples/basic-rate-limit.php) uses the production autoloader, production runtime classes, and only public contracts. Its in-memory adapters are example scaffolding; replace them with the host's real atomic persistence and observability implementations.
+
+[infrastructure-failure.php](../../examples/infrastructure-failure.php) deterministically
+throws from a host-side storage adapter and prints the resulting failure mode and
+emitted signal. It demonstrates the current failure boundary without changing the
+runtime implementation.
+
+## Operational Read / Reporting Boundary
+
+This package is **In Scope** for Operational Read / Reporting because it owns the persisted operational semantics of score state, temporary blocks, account budgets, known-device micro-caps, budget cooldowns, and circuit-breaker state. The Host supplies the concrete persistence backend, account/session source of truth, HTTP/transport, permissions, dashboards/UI, cross-package aggregation, and exports.
+
+The stable, framework-agnostic read contract is <code>RateLimitOperationalReaderInterface::read()</code>, implemented by <code>RateLimitOperationalReader</code>. It accepts a <code>RateLimitContextDTO</code> and <code>BlockPolicyInterface</code>, returns a typed <code>RateLimitOperationalSnapshotDTO</code>, and performs a point-in-time read without changing enforcement state. It is separate from <code>RateLimiterInterface::limit()</code>, which remains the consumer enforcement API.
+
+Correlation distinct-set members, watch-flag internals, churn sets, and dilution sets are intentionally unsupported because they are internal bounded enforcement structures without a stable operational reporting semantic. The read surface has no mutation/reset/unblock, global listing, arbitrary key lookup, raw-key exposure, historical audit store, Host joins, cross-package reporting, or correlation-set inspection.
+
+## Walkthrough: Operational Read
+
+    Host context + policy
+        → RateLimitOperationalReaderInterface::read()
+        → Package-owned read-only state resolution
+        → RateLimitOperationalSnapshotDTO
+        → Host monitoring or operations boundary
+
+The operational reader reads current real enforcement keys and applies the documented single previous-generation fallback where configured. It does not call <code>EvaluationPipeline::process()</code>, <code>RateLimiterEngine::limit()</code>, <code>EphemeralBucket</code>, correlation mutation methods, or circuit-breaker mutation methods, and it never exposes raw storage keys, secrets, fingerprints, or Host data.
+
+## Further Reading
+
+- [Package Reference](../../RATE_LIMITER_PACKAGE_REFERENCE.md)
+- [Decision Matrix](../DECISION_MATRIX.md)
+- [Policy Presets](../POLICIES.md)
+- [Device Fingerprint](../DEVICE_FINGERPRINT.md)
+- [Key Strategy](../KEY_STRATEGY.md)
+- [Failure Semantics](../FAILURE_SEMANTICS.md)

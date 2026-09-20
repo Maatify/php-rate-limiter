@@ -4,10 +4,10 @@ declare(strict_types=1);
 
 namespace Maatify\RateLimiter\Tests\Support\RateLimiter;
 
-use Maatify\RateLimiter\Contract\BudgetSeedStoreInterface;
-use Maatify\RateLimiter\DTO\Store\BlockStateDTO;
-use Maatify\RateLimiter\DTO\Store\BudgetStateDTO;
-use Maatify\RateLimiter\DTO\Store\RateLimitStateDTO;
+use Maatify\RateLimiter\Repository\BudgetSeedStoreInterface;
+use Maatify\RateLimiter\DTO\BlockStateDTO;
+use Maatify\RateLimiter\DTO\BudgetStateDTO;
+use Maatify\RateLimiter\DTO\RateLimitStateDTO;
 use Maatify\SharedCommon\Contracts\ClockInterface;
 
 class InMemoryRateLimitStore implements BudgetSeedStoreInterface
@@ -21,12 +21,15 @@ class InMemoryRateLimitStore implements BudgetSeedStoreInterface
     /** @var array<string, array{count: int, epochStart: int, epochDuration: int}> */
     private array $budgets = [];
 
+    private int $writes = 0;
+
     public function __construct(private readonly ClockInterface $clock)
     {
     }
 
     public function increment(string $key, int $ttlSeconds, int $amount = 1): int
     {
+        $this->writes++;
         $now = $this->clock->now()->getTimestamp();
 
         if (!isset($this->data[$key]) || $this->data[$key]['expiresAt'] < $now) {
@@ -58,6 +61,7 @@ class InMemoryRateLimitStore implements BudgetSeedStoreInterface
 
     public function set(string $key, int $value, int $ttlSeconds): void
     {
+        $this->writes++;
         $now = $this->clock->now()->getTimestamp();
         $this->data[$key] = [
             'value' => $value,
@@ -68,6 +72,7 @@ class InMemoryRateLimitStore implements BudgetSeedStoreInterface
 
     public function block(string $key, int $level, int $durationSeconds): void
     {
+        $this->writes++;
         $now = $this->clock->now()->getTimestamp();
         $this->blocks[$key] = [
             'level' => $level,
@@ -110,6 +115,7 @@ class InMemoryRateLimitStore implements BudgetSeedStoreInterface
 
     public function incrementBudget(string $key, int $epochDurationSeconds, int $amount = 1): BudgetStateDTO
     {
+        $this->writes++;
         $now = $this->clock->now()->getTimestamp();
 
         if (!isset($this->budgets[$key]) || $now >= $this->budgets[$key]['epochStart'] + $this->budgets[$key]['epochDuration']) {
@@ -135,6 +141,7 @@ class InMemoryRateLimitStore implements BudgetSeedStoreInterface
         int $amount = 1
     ): BudgetStateDTO
     {
+        $this->writes++;
         $now = $this->clock->now()->getTimestamp();
         $current = $this->budgets[$key] ?? null;
 
@@ -165,5 +172,10 @@ class InMemoryRateLimitStore implements BudgetSeedStoreInterface
     public function isHealthy(): bool
     {
         return true;
+    }
+
+    public function writeCount(): int
+    {
+        return $this->writes;
     }
 }

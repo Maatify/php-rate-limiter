@@ -8,11 +8,11 @@ use Maatify\RateLimiter\Command\RateLimitCommand;
 use Maatify\RateLimiter\DTO\DeviceIdentityDTO;
 use Maatify\RateLimiter\DTO\RateLimitContextDTO;
 use Maatify\RateLimiter\DTO\RateLimitResultDTO;
-use Maatify\RateLimiter\Engine\EvaluationPipeline;
-use Maatify\RateLimiter\Penalty\AntiEquilibriumGate;
-use Maatify\RateLimiter\Penalty\BudgetTracker;
-use Maatify\RateLimiter\Penalty\DecayCalculator;
-use Maatify\RateLimiter\Policy\OtpProtectionPolicy;
+use Maatify\RateLimiter\Service\EvaluationPipeline;
+use Maatify\RateLimiter\Service\AntiEquilibriumGate;
+use Maatify\RateLimiter\Service\BudgetTracker;
+use Maatify\RateLimiter\Service\DecayCalculator;
+use Maatify\RateLimiter\Config\OtpProtectionPolicy;
 use Maatify\RateLimiter\Tests\Support\Clock\FixedClock;
 use Maatify\RateLimiter\Tests\Support\Correlation\NullCorrelationStore;
 use Maatify\RateLimiter\Tests\Support\RateLimiter\InMemoryRateLimitStore;
@@ -40,7 +40,7 @@ class EvaluationPipelineRetryAfterTest extends TestCase
 
         $this->policy = new OtpProtectionPolicy();
 
-        $ephemeralBucket = new \Maatify\RateLimiter\Device\EphemeralBucket($this->correlationStore);
+        $ephemeralBucket = new \Maatify\RateLimiter\Service\EphemeralBucket($this->correlationStore);
 
         $this->pipeline = new EvaluationPipeline(
             $this->store,
@@ -166,7 +166,7 @@ class EvaluationPipelineRetryAfterTest extends TestCase
         $device = new DeviceIdentityDTO('known-fingerprint', 'HIGH', false, false, 'chrome/123');
         $command = new RateLimitCommand('api_heavy_protection', 1, false, false, false);
 
-        $apiHeavyPolicy = new \Maatify\RateLimiter\Policy\ApiHeavyProtectionPolicy();
+        $apiHeavyPolicy = new \Maatify\RateLimiter\Config\ApiHeavyProtectionPolicy();
 
         $result = $this->pipeline->process($apiHeavyPolicy, $context, $command, $device);
         $this->assertEquals(RateLimitResultDTO::DECISION_ALLOW, $result->decision);
