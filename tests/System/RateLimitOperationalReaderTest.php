@@ -172,6 +172,36 @@ final class RateLimitOperationalReaderTest extends TestCase
         self::assertInstanceOf(RateLimitOperationalKeyStateDTO::class, $ipv6->scopes->k1_32);
     }
 
+    public function testBudgetOwningPolicyWithoutAccountOmitsAccountScopesAndBudgetWithoutMutation(): void
+    {
+        $clock = new FixedClock();
+        $store = new InMemoryRateLimitStore($clock);
+        $correlationStore = new TrackingCorrelationStore();
+        $circuitBreakerStore = new TrackingCircuitBreakerStore();
+        $reader = new RateLimitOperationalReader(
+            new DeviceIdentityResolver(new FingerprintHasher('test-secret')),
+            $store,
+            $circuitBreakerStore,
+            new DecayCalculator($clock),
+            $clock,
+            'test-secret',
+            'prod'
+        );
+        $context = new RateLimitContextDTO('203.0.113.10', 'Mozilla/5.0');
+        $writesBefore = $store->writeCount();
+        $circuitSavesBefore = $circuitBreakerStore->saveCalls;
+        $correlationOperationsBefore = $correlationStore->operations;
+
+        $snapshot = $reader->read($context, new LoginProtectionPolicy());
+
+        self::assertNull($snapshot->scopes->k4);
+        self::assertNull($snapshot->scopes->k5);
+        self::assertNull($snapshot->budget);
+        self::assertSame($writesBefore, $store->writeCount());
+        self::assertSame($circuitSavesBefore, $circuitBreakerStore->saveCalls);
+        self::assertSame($correlationOperationsBefore, $correlationStore->operations);
+    }
+
     public function testRotationUsesCurrentStateBeforePreviousFallbackWithoutMerging(): void
     {
         $clock = new FixedClock();
