@@ -4,7 +4,7 @@
 
 ![Maatify.dev](https://www.maatify.dev/assets/img/img/maatify_logo_white.svg)
 
-[![Package Status](https://img.shields.io/badge/status-pre--release%20development-orange.svg)](#package-status)
+[![Status](https://img.shields.io/badge/Status-Development-blue)](README.md)
 [![PHP 8.4+](https://img.shields.io/badge/PHP-8.4%2B-777BB4.svg)](composer.json)
 [![License: Proprietary](https://img.shields.io/badge/License-Proprietary-red.svg)](LICENSE)
 [![PHPStan Level Max](https://img.shields.io/badge/PHPStan-Level%20Max-4F5B93.svg)](phpstan.neon)
@@ -76,6 +76,28 @@ if ($result->isBlocked()) {
 The public runtime surface also includes the `login_protection`, `otp_protection`, and `api_heavy_protection` policy presets; typed context, command, result, identity, state, operational snapshot, and metadata DTOs; `RateLimitOperationalReaderInterface::read()` for read-only point-in-time operational inspection; and extension contracts for rate-limit storage, correlation storage, circuit-breaker state, failure signals, device identity resolution, and custom policies.
 
 The [Package Reference](RATE_LIMITER_PACKAGE_REFERENCE.md) contains the complete public interface, command, DTO, concrete service, policy, and extension-boundary inventory. Runtime behavior is defined by the current source and the linked decision, policy, device, key, and failure documents.
+
+## Exception and Error Propagation
+
+Storage and atomicity failures are handled through the package's policy-specific failure semantics; host storage adapters must not swallow integration failures or silently weaken required atomic guarantees. The enforcement path owns the resulting rate-limit failure decision, while the read-only operational reader does not convert integration failures into an enforcement result.
+
+See [Failure Semantics](docs/FAILURE_SEMANTICS.md) and the [Package Reference](RATE_LIMITER_PACKAGE_REFERENCE.md) for the detailed failure contract.
+
+## Transaction and Concurrency Boundary
+
+The package does not open a general database transaction or own backend locks around `RateLimiterInterface::limit()`. Concrete host store implementations own the transaction, locking, and native atomic primitives required by their backend, and every operation declared atomic by the package contracts must remain atomic.
+
+There is no package-level distributed transaction across the rate-limit, correlation, circuit-breaker, and failure-signal boundaries, and the package does not promise a shared atomic commit with the host application's business transaction.
+
+See the [Package Reference](RATE_LIMITER_PACKAGE_REFERENCE.md) for the full transaction, locking, and concurrency contract.
+
+## Security and Trust Boundaries
+
+The host remains the authority for account, session, authentication, authorization, and previously verified device truth. Device fingerprinting is a bounded risk signal used for rate-limit decisions; it is not authentication, proof of device ownership, or a cross-context tracking identity.
+
+The package keeps transport behavior and host business identity outside its boundary, and its operational read API does not expose raw storage keys, raw fingerprint material, or host-owned records.
+
+See [Device Fingerprint](docs/DEVICE_FINGERPRINT.md), [Failure Semantics](docs/FAILURE_SEMANTICS.md), and the [Package Reference](RATE_LIMITER_PACKAGE_REFERENCE.md) for the detailed contracts.
 
 ## Documentation
 
