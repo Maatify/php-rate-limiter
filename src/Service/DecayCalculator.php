@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace Maatify\RateLimiter\Service;
 
+use Maatify\RateLimiter\Exception\RateLimiterException;
 use Maatify\SharedCommon\Contracts\ClockInterface;
 
 /**
@@ -46,38 +47,58 @@ class DecayCalculator
             return 0;
         }
 
-        // Determine base rate
-        $baseRate = match ($scope) {
+        $decayAmount = (int) floor($elapsed / $this->effectiveInterval($scope, $currentBlockLevel));
+
+        return $decayAmount;
+    }
+
+    /**
+     * Calculate the time from now until the score is strictly below a threshold.
+     *
+     * The stored score and timestamp are used together so completed decay
+     * intervals and the partial current interval are both reflected. A
+     * non-positive threshold is invalid because score values are clamped at
+     * zero and cannot produce a meaningful "below threshold" wait.
+     *
+     * @throws RateLimiterException When the threshold is not positive.
+     */
+    public function secondsUntilBelowThreshold(
+        int $currentScore,
+        int $lastUpdateTimestamp,
+        int $currentBlockLevel,
+        string $scope,
+        int $threshold,
+    ): int {
+        if ($threshold <= 0) {
+            throw new RateLimiterException('Decay threshold must be greater than zero.');
+        }
+
+        if ($currentScore < $threshold) {
+            return 0;
+        }
+
+        $interval = $this->effectiveInterval($scope, $currentBlockLevel);
+        $elapsed = max(0, $this->clock->now()->getTimestamp() - $lastUpdateTimestamp);
+        $completedIntervals = intdiv($elapsed, $interval);
+        $pointsToLose = $currentScore - $threshold + 1;
+        $remainingPoints = $pointsToLose - $completedIntervals;
+
+        if ($remainingPoints <= 0) {
+            return 0;
+        }
+
+        return ($remainingPoints * $interval) - ($elapsed % $interval);
+    }
+
+    private function effectiveInterval(string $scope, int $currentBlockLevel): int
+    {
+        $baseInterval = match ($scope) {
             'account' => self::RATE_ACCOUNT,
             'device' => self::RATE_DEVICE,
             'ip' => self::RATE_IP,
             default => self::RATE_ACCOUNT,
         };
 
-        // Apply L2+ halving modifier
-        // "After reaching L2 or higher, decay rate is halved" (i.e., takes twice as long)
-        if ($currentBlockLevel >= 2) {
-            $baseRate *= 2;
-        }
-
-        // Apply "Pause 10m" modifier?
-        // "After multiple block cycles, decay pauses for a fixed 10 minutes".
-        // This implies we need to know if we are in a "multiple block cycle" state.
-        // This is complex state.
-        // If I ignore it, I violate "Strict Executor".
-        // But how to track "multiple block cycles"?
-        // Maybe checking history in store?
-        // For now, I will omit the "Pause" logic if I can't support it with current inputs,
-        // OR I assume the Caller handles the "Pause" by adjusting `lastUpdateTimestamp`?
-        // If the caller knows we are in a pause window, it pretends `lastUpdate` was 10m later?
-        // Or `DecayCalculator` assumes normal decay unless passed a `isPaused` flag?
-        // Let's add `isPaused` flag to method signature if needed, but Engine needs to know.
-        // For now, I'll stick to the explicit L2 modifier and basic rates.
-        // Implementing "Pause" requires tracking block history which is not in the DTOs/Store yet explicitly.
-
-        // Calculate decay
-        $decayAmount = (int) floor($elapsed / $baseRate);
-
-        return $decayAmount;
+        return $currentBlockLevel >= 2 ? $baseInterval * 2 : $baseInterval;
     }
 }

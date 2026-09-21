@@ -137,7 +137,7 @@ class EvaluationPipeline
 
         // 6. Evaluate normal candidates. None of these candidates may be
         // hidden by an active account budget.
-        $candidates = $this->checkThresholds($policy, $decayedScores, $effectiveKeysV2, $device);
+        $candidates = $this->checkThresholds($policy, $rawScores, $decayedScores, $effectiveKeysV2, $device);
 
         // 7. Check Correlation Rules
         if ($candidate = $this->checkCorrelationRules($context, $device, $policy->getName(), $isEphemeral)) {
@@ -267,12 +267,14 @@ class EvaluationPipeline
     }
 
     /**
+     * @param array<string, ?PipelineScoreDTO> $rawScores
      * @param array<string, int> $scores
      * @param array<string, string|null> $keys
      * @return list<array{decision: string, level: int, retryAfter: int, source: string, persistence: list<array{key: string, level: int, duration: int}>}>
      */
     private function checkThresholds(
         BlockPolicyInterface $policy,
+        array $rawScores,
         array $scores,
         array $keys,
         DeviceIdentityDTO $device,
@@ -291,7 +293,21 @@ class EvaluationPipeline
                 $source = $this->isTrustedAuthenticationPolicy($policy->getName(), $device) && $this->isK1Key($keyType)
                     ? 'trusted_advisory:score'
                     : 'score';
-                $candidates[] = $this->candidate($decision, $level, PenaltyLadder::getDuration($level), $source);
+                $thresholds = $this->getScopedThresholds($keyType, $policy);
+                $scoreState = $rawScores[$keyType] ?? null;
+                $key = $keys[$keyType] ?? null;
+                $retryAfter = PenaltyLadder::getDuration($level);
+                if ($thresholds !== null && $scoreState !== null && $key !== null) {
+                    $exitThreshold = $level >= 2 ? $thresholds->l2 : $thresholds->l1;
+                    $retryAfter = $this->scoreDecayRetryAfter(
+                        $scoreState,
+                        $key,
+                        $keyType,
+                        $exitThreshold,
+                    );
+                }
+
+                $candidates[] = $this->candidate($decision, $level, $retryAfter, $source);
             }
         }
 
@@ -521,6 +537,8 @@ class EvaluationPipeline
         $newMaxLevel = 0;
         /** @var array<string, int> $levelsByKeyType */
         $levelsByKeyType = [];
+        /** @var array<string, int> $retryAfterByKeyType */
+        $retryAfterByKeyType = [];
 
         foreach ($keys as $keyType => $key) {
             if (! $key) {
@@ -543,7 +561,14 @@ class EvaluationPipeline
                 $netChange = ($decayed + $delta) - $baseValue;
 
                 $newScore = $this->store->increment($key, 86400, (int) $netChange);
-                $level = $this->determineLevel($newScore, $keyType, $policy);
+                $actualScoreLevel = $this->determineLevel($newScore, $keyType, $policy);
+                $level = $actualScoreLevel;
+
+                if ($keyType === 'k3' && $device->confidence === 'LOW' && $level >= 2) {
+                    $level = 1;
+                }
+
+                $watchEscalated = false;
 
                 $thresholdsDto = $this->getScopedThresholds($keyType, $policy);
                 if ($thresholdsDto) {
@@ -564,14 +589,32 @@ class EvaluationPipeline
                                     $impliedLevel = 1;
                                 }
 
-                                $level = max($level, $impliedLevel);
+                                if ($impliedLevel > $level) {
+                                    $watchEscalated = true;
+                                    $level = $impliedLevel;
+                                }
                             }
                         }
                     }
                 }
 
                 $newMaxLevel = max($newMaxLevel, $level);
+                if ($level <= 0) {
+                    continue;
+                }
+
                 $levelsByKeyType[$keyType] = $level;
+                $retryAfterByKeyType[$keyType] = PenaltyLadder::getDuration($level);
+                if (! $watchEscalated && $actualScoreLevel > 0 && $thresholdsDto !== null) {
+                    $exitThreshold = $level >= 2 ? $thresholdsDto->l2 : $thresholdsDto->l1;
+                    $retryAfterByKeyType[$keyType] = $this->decayCalculator->secondsUntilBelowThreshold(
+                        $newScore,
+                        $this->clock->now()->getTimestamp(),
+                        $this->currentBlockLevel($key),
+                        $this->scopeForKeyType($keyType),
+                        $exitThreshold,
+                    );
+                }
             }
         }
 
@@ -655,6 +698,7 @@ class EvaluationPipeline
                     }
                     $decision = ($level >= 2) ? RateLimitResultDTO::DECISION_HARD_BLOCK : RateLimitResultDTO::DECISION_SOFT_BLOCK;
                     $duration = PenaltyLadder::getDuration($level);
+                    $retryAfter = $retryAfterByKeyType[$keyType] ?? $duration;
                     $isAdvisory = $this->isK1Key($keyType);
                     $persistence = [];
                     if (! $isAdvisory && $context->accountId && ($keys['k4'] ?? null) !== null) {
@@ -663,7 +707,7 @@ class EvaluationPipeline
                     $candidates[] = $this->candidate(
                         $decision,
                         $level,
-                        $duration,
+                        $retryAfter,
                         $isAdvisory ? 'trusted_advisory:score_update' : 'score_update',
                         $persistence,
                     );
@@ -671,6 +715,18 @@ class EvaluationPipeline
             } else {
                 $decision = ($newMaxLevel >= 2) ? RateLimitResultDTO::DECISION_HARD_BLOCK : RateLimitResultDTO::DECISION_SOFT_BLOCK;
                 $duration = PenaltyLadder::getDuration($newMaxLevel);
+                $retryAfter = 0;
+                foreach ($levelsByKeyType as $keyType => $level) {
+                    $keyDecision = $level >= 2
+                        ? RateLimitResultDTO::DECISION_HARD_BLOCK
+                        : RateLimitResultDTO::DECISION_SOFT_BLOCK;
+                    if ($keyDecision === $decision) {
+                        $retryAfter = max($retryAfter, $retryAfterByKeyType[$keyType] ?? $duration);
+                    }
+                }
+                if ($retryAfter === 0) {
+                    $retryAfter = $duration;
+                }
                 $persistence = [];
 
                 if ($context->accountId && ($keys['k4'] ?? null) !== null) {
@@ -694,7 +750,7 @@ class EvaluationPipeline
                     }
                 }
 
-                $candidates[] = $this->candidate($decision, $newMaxLevel, $duration, 'score_update', $persistence);
+                $candidates[] = $this->candidate($decision, $newMaxLevel, $retryAfter, 'score_update', $persistence);
             }
         }
 
@@ -1044,16 +1100,45 @@ class EvaluationPipeline
     // --- Helpers (Same as before) ---
     private function calculateDecayedScore(int $value, int $updatedAt, string $keyType, string $key): int
     {
-        $scope = match ($keyType) {
+        $decayAmount = $this->decayCalculator->calculateDecay(
+            $value,
+            $updatedAt,
+            $this->currentBlockLevel($key),
+            $this->scopeForKeyType($keyType),
+        );
+
+        return max(0, $value - $decayAmount);
+    }
+
+    private function scoreDecayRetryAfter(
+        PipelineScoreDTO $score,
+        string $key,
+        string $keyType,
+        int $exitThreshold,
+    ): int {
+        return $this->decayCalculator->secondsUntilBelowThreshold(
+            $score->value,
+            $score->updatedAt,
+            $this->currentBlockLevel($key),
+            $this->scopeForKeyType($keyType),
+            $exitThreshold,
+        );
+    }
+
+    private function currentBlockLevel(string $key): int
+    {
+        $block = $this->store->checkBlock($key);
+
+        return $block === null ? 0 : $block->level;
+    }
+
+    private function scopeForKeyType(string $keyType): string
+    {
+        return match ($keyType) {
             'k4' => 'account',
             'k3', 'k5' => 'device',
             default => 'ip',
         };
-        $block = $this->store->checkBlock($key);
-        $level = $block ? $block->level : 0;
-        $decayAmount = $this->decayCalculator->calculateDecay($value, $updatedAt, $level, $scope);
-
-        return max(0, $value - $decayAmount);
     }
     // ... other helpers identical to previous turn ...
 

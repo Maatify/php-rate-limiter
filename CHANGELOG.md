@@ -41,6 +41,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Fixed local fallback GC so cleanup removes only expired fixed-window buckets and preserves active buckets until natural rollover.
 
 ### Changed
+- Score-threshold decisions now derive `retryAfter` from the package-owned `DecayCalculator` (Spec Version `1.3.0` → `1.4.0`; Policy Preset contract `1.1.0` → `1.2.0`): active persisted block TTL remains authoritative, L3 hard decisions exit below L2, and `PenaltyLadder` persistence durations remain unchanged. The multiple-block-cycle pause remains deferred to Stage 3.
 - Normalized the pre-stable public namespaces and source topology to the canonical
   Single Capability layout (`Command`, `Config`, `Contract`, `DTO`, `Exception`,
   `Repository`, and `Service`) without changing runtime behavior or adding

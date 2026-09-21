@@ -3,7 +3,7 @@
 **Package:** RateLimiter
 **Namespace:** `Maatify\RateLimiter`
 **Status:** LOCKED — Architecture Contract
-**Spec Version:** `1.3.0`
+**Spec Version:** `1.4.0`
 **Location:** `src/`
 
 This document explains **why** the RateLimiter package is designed the way it is.
@@ -233,6 +233,19 @@ Additionally, the design MUST include:
 - Deterministic **near-threshold watch** to prevent N-1 correlation gaming
 
 Ladder, decay modifiers, budgets, and gates are locked in `docs/DECISION_MATRIX.md`.
+
+Score-threshold `retryAfter` is the package-owned time until the current score
+decays below the threshold that ends the current decision class. `SOFT_BLOCK`
+uses L1, while every score-derived `HARD_BLOCK` level uses L2; an L3 score does
+not end its hard-block class merely by decaying below L3. The calculation uses
+the stored score, its update timestamp, the effective decay interval, and the
+elapsed part of the current interval through `DecayCalculator`.
+
+An active persisted block remains authoritative and returns its remaining block
+TTL. Persistence still uses `PenaltyLadder` durations, so a score-derived
+response `retryAfter` and the persisted block duration are separate values.
+Budget cooldowns, correlation, flood, credential-spray, and other non-score
+candidates retain their existing retry semantics.
 
 ### 3.4 Determinism (Without Deterministic Bypass)
 Given the same inputs and same stored state, the package MUST produce the same decision.

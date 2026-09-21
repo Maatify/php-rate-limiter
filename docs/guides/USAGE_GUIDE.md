@@ -45,6 +45,16 @@ The available policy preset names are <code>login_protection</code>, <code>otp_p
 
 <code>RateLimitResultDTO</code> returns <code>ALLOW</code>, <code>SOFT_BLOCK</code>, or <code>HARD_BLOCK</code>. The host owns the final response, retry handling, logging, and user-facing presentation.
 
+### Retry-After Semantics
+
+The returned <code>retryAfter</code> has three distinct contracts:
+
+- An active persisted block returns the remaining persisted block TTL. It is authoritative and is not combined with score decay.
+- A score-derived <code>SOFT_BLOCK</code> returns the time until the score is below L1. A score-derived <code>HARD_BLOCK</code>, including L3, returns the time until the score is below L2. <code>DecayCalculator</code> uses the package-owned account, device, and IP intervals together with the stored score timestamp and elapsed partial interval.
+- A budget result returns the remaining budget cooldown. Correlation, flood, credential-spray, and other non-score decisions retain their own existing retry rules.
+
+The response retry time is independent from persistence: score-derived results may use a decay wait while the persisted block continues to use the configured <code>PenaltyLadder</code> duration.
+
 ## Integration Boundaries
 
 The host supplies implementations for:
