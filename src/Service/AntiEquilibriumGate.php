@@ -22,20 +22,29 @@ class AntiEquilibriumGate
     ) {}
 
     /**
-     * Record one soft block for an account in the anti-equilibrium window.
+     * Record one soft block for the current package-derived state key.
+     *
+     * The caller owns policy, environment, version, and subject derivation.
+     * This service only records the opaque key supplied by the pipeline.
      */
-    public function recordSoftBlock(string $accountId): void
+    public function recordSoftBlock(string $currentStateKey): void
     {
-        $key = "gate:soft:{$accountId}";
-        $this->store->incrementWatchFlag($key, self::WINDOW);
+        $this->store->incrementWatchFlag($currentStateKey, self::WINDOW);
     }
 
     /**
-     * Return whether the account has reached the escalation threshold.
+     * Return whether current and active previous state reach the threshold.
+     *
+     * The previous state is read-only and is not read twice when it is absent
+     * or resolves to the same opaque key as the current generation.
      */
-    public function shouldEscalate(string $accountId): bool
+    public function shouldEscalate(string $currentStateKey, ?string $previousStateKey = null): bool
     {
-        $key = "gate:soft:{$accountId}";
-        return $this->store->getWatchFlag($key) >= self::THRESHOLD;
+        $count = $this->store->getWatchFlag($currentStateKey);
+        if ($previousStateKey !== null && $previousStateKey !== $currentStateKey) {
+            $count += $this->store->getWatchFlag($previousStateKey);
+        }
+
+        return $count >= self::THRESHOLD;
     }
 }

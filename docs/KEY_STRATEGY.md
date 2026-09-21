@@ -3,7 +3,7 @@
 **Module:** RateLimiter
 **Namespace:** `Maatify\RateLimiter`
 **Status:** LOCKED — Design & Security Contract
-**Spec Version:** `1.4.0`
+**Spec Version:** `1.5.0`
 
 This document defines the **key construction strategy** used by the RateLimiter.
 Keys determine how limits, scores, correlation, and blocks are applied.
@@ -532,6 +532,50 @@ Logical namespace (before HMAC):
   and atomically seeds a valid Previous state into Current through
   `BudgetSeedStoreInterface::incrementBudgetWithSeed()` when Current is absent. A store that
   lacks the capability fails through the existing failure semantics when migration is required.
+
+### 4.6 Account/Policy Auxiliary State Keys (Locked)
+
+Account-derived auxiliary state uses one package-owned, versioned keyed-HMAC contract. The
+logical preimage is:
+
+```
+{policy}:rate_limiter:aux:{purpose}:v1:{env}:{accountId}
+```
+
+The stored key is:
+
+```
+HMAC-SHA256(preimage, active-or-generation-key-secret)
+```
+
+The locked purposes are `last_missing_fp`, `anti_equilibrium`, and `flood_stage`.
+The raw `AccountID` exists only inside this preimage and MUST NOT cross either the
+`RateLimitStoreInterface` or `CorrelationStoreInterface` boundary. Policy, environment,
+module, purpose, and algorithm namespace version are all part of the derivation, so Login,
+OTP, API Heavy, and different environments cannot share auxiliary state accidentally.
+
+The current outer-key generation is writable. When `previousKeySecret !== null`, the
+previous-generation auxiliary key is read-only and may be used as one historical fallback;
+no previous auxiliary key is created merely because `previousFingerprintHash` exists. A
+fingerprint-secret rotation therefore does not invent an account-only auxiliary generation.
+
+For `last_missing_fp`, state is eligible only for a failure with a missing fingerprint, an
+account, and a positive policy `k4_repeated_missing_fp` delta. The current marker is
+authoritative; the previous marker is read only when the current marker is absent. A marker
+whose timestamp is no more than 1800 seconds old adds the policy's repeated-missing delta.
+The current marker is written with the existing 3600-second TTL only; the previous marker is
+never written or refreshed. API Heavy has no repeated-missing-fingerprint contract and MUST
+not create or read this marker.
+
+Anti-Equilibrium uses policy-scoped opaque state keys. Its threshold remains three soft events
+within the six-hour window. The effective count is the current count plus the active previous
+count, except that a null or identical previous key is not read twice. Recording a final
+`SOFT_BLOCK` increments only the current key.
+
+New Device Flood stage is also policy-scoped. An active stage is the logical OR of the
+current flag and an active distinct previous flag. The first qualifying stage writes only the
+current flag with the existing 900-second TTL; the previous flag remains read-only. Flood
+thresholds, Ephemeral counting, decision levels, and persistence semantics are unchanged.
 
 ---
 

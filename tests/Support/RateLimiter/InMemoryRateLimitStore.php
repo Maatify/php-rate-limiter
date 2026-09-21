@@ -57,6 +57,11 @@ class InMemoryRateLimitStore implements BudgetSeedStoreInterface
         );
     }
 
+    public function expiresAt(string $key): ?int
+    {
+        return $this->data[$key]['expiresAt'] ?? null;
+    }
+
     public function set(string $key, int $value, int $ttlSeconds): void
     {
         $this->writes++;

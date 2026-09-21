@@ -104,13 +104,13 @@ final class CorrelationBehaviorTest extends TestCase
     {
         $gate = new AntiEquilibriumGate($this->correlationStore);
 
-        $gate->recordSoftBlock('account-123');
-        $gate->recordSoftBlock('account-123');
-        $this->assertFalse($gate->shouldEscalate('account-123'));
+        $gate->recordSoftBlock('login-state-key');
+        $gate->recordSoftBlock('login-state-key');
+        $this->assertFalse($gate->shouldEscalate('login-state-key'));
 
-        $gate->recordSoftBlock('account-123');
+        $gate->recordSoftBlock('login-state-key');
 
-        $this->assertTrue($gate->shouldEscalate('account-123'));
-        $this->assertSame(3, $this->correlationStore->getWatchFlag('gate:soft:account-123'));
+        $this->assertTrue($gate->shouldEscalate('login-state-key'));
+        $this->assertSame(3, $this->correlationStore->getWatchFlag('login-state-key'));
     }
 }

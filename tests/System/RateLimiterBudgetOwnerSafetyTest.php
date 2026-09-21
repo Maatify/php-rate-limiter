@@ -345,19 +345,19 @@ final class RateLimiterBudgetOwnerSafetyTest extends TestCase
             $this->assertSame(RateLimitResultDTO::DECISION_SOFT_BLOCK, $soft->decision);
             $this->assertSame(1, $soft->blockLevel);
         }
-        $this->assertSame(3, $this->correlationStore->getWatchFlag("gate:soft:{$account}"));
+        $this->assertSame(3, $this->correlationStore->getWatchFlag($this->auxiliaryKey('login_protection', 'anti_equilibrium', $account)));
 
         $this->store->set($k4Key, 0, 86400);
         $allow = $pipeline->process($policy, $this->context($account), RateLimitCommand::checkOnly('login_protection'), $this->device('anti-fp'));
         $this->assertSame(RateLimitResultDTO::DECISION_ALLOW, $allow->decision);
-        $this->assertSame(3, $this->correlationStore->getWatchFlag("gate:soft:{$account}"));
+        $this->assertSame(3, $this->correlationStore->getWatchFlag($this->auxiliaryKey('login_protection', 'anti_equilibrium', $account)));
 
         $this->store->incrementBudget($k4Key, 86400, 20);
         $failure = $pipeline->process($policy, $this->context($account), RateLimitCommand::recordFailure('login_protection'), $this->device('anti-fp'));
         $this->assertSame(RateLimitResultDTO::DECISION_HARD_BLOCK, $failure->decision);
         $this->assertSame(2, $failure->blockLevel);
         $this->assertNull($this->store->get($this->cooldownKey('login_protection', $account)));
-        $this->assertSame(3, $this->correlationStore->getWatchFlag("gate:soft:{$account}"));
+        $this->assertSame(3, $this->correlationStore->getWatchFlag($this->auxiliaryKey('login_protection', 'anti_equilibrium', $account)));
     }
 
     public function testCooldownRotationReadsPreviousWritesCurrentAndDoesNotExtend(): void
@@ -472,6 +472,19 @@ final class RateLimiterBudgetOwnerSafetyTest extends TestCase
     private function cooldownKey(string $policy, string $account, string $secret = 'test_secret'): string
     {
         return hash_hmac('sha256', "{$policy}:rate_limiter:budget_cooldown:v1:prod:{$account}", $secret);
+    }
+
+    private function auxiliaryKey(
+        string $policy,
+        string $purpose,
+        string $account,
+        string $secret = 'test_secret',
+    ): string {
+        return hash_hmac(
+            'sha256',
+            "{$policy}:rate_limiter:aux:{$purpose}:v1:prod:{$account}",
+            $secret,
+        );
     }
 
     private function correlationK2Key(string $policy, string $ip = '198.51.100.40', string $secret = 'test_secret'): string
