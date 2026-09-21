@@ -147,8 +147,17 @@ derivation.
 
   * Bound to authenticated AccountID
   * Stored in an HttpOnly, Secure cookie
-* Rotation MUST NOT reset account-level penalties
-* Loss MUST NOT imply trust reset
+* **Current-session trust** requires both a non-empty `sessionDeviceId` and the
+  host-provided `isSessionTrusted = true`. A request without a valid session
+  device identifier is **not** a trusted session device, even when penalties or
+  other enforcement history exist from earlier requests.
+* **Persistent enforcement history** survives session-identifier rotation or
+  loss. Rotation or loss MUST NOT reset account-level penalties, counters,
+  scores, blocks, or other rate-limit history.
+* **Previously verified for account** remains a separate host-provided fact. It
+  is not inferred from a session identifier, is not automatically cleared by
+  loss of that identifier, and does not make the current request
+  `isTrustedSession = true`.
 
 #### Output
 
