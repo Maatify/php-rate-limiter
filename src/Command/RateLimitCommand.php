@@ -34,7 +34,9 @@ final readonly class RateLimitCommand
     }
 
     /**
-     * Create a read-only pre-check command.
+     * Create a pre-check command that does not record scoring success/failure.
+     *
+     * Bounded correlation state may be observed or updated during this pre-check.
      */
     public static function checkOnly(string $policyName, int $cost = 1): self
     {

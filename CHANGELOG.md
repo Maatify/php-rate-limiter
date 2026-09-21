@@ -8,6 +8,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Added
+- Credential-spray correlation for Login and OTP pre-checks using the optional opaque `correlationId` with `accountId` fallback, domain-separated HMAC members, a fixed K1 window, mandatory N-1 WATCH escalation, and trusted-session advisory K1 semantics (Spec Version `1.1.0` → `1.2.0`).
 - Standards-compliant read-only operational state API with point-in-time inspection that does not couple consumers to raw storage keys.
 - Implemented the locked two-generation runtime integration for persistent K3/K5 active-block
   lookup and score fallback, and for K5 micro-cap current-authoritative atomic migration across

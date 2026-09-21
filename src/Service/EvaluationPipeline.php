@@ -90,7 +90,7 @@ class EvaluationPipeline
             : [];
 
         // 2. Check Active Blocks (Fail-Fast) on Real Keys
-        if ($blocked = $this->checkActiveBlocks($realKeysV2, $realKeysV1)) {
+        if ($blocked = $this->checkActiveBlocks($realKeysV2, $realKeysV1, $policy->getName(), $device)) {
             return $blocked;
         }
 
@@ -136,14 +136,20 @@ class EvaluationPipeline
 
         // 6. Evaluate normal candidates. None of these candidates may be
         // hidden by an active account budget.
-        $candidates = [];
-        if ($candidate = $this->checkThresholds($policy, $decayedScores, $effectiveKeysV2, $device)) {
-            $candidates[] = $candidate;
-        }
+        $candidates = $this->checkThresholds($policy, $decayedScores, $effectiveKeysV2, $device);
 
         // 7. Check Correlation Rules
         if ($candidate = $this->checkCorrelationRules($context, $device, $policy->getName(), $isEphemeral)) {
             $candidates[] = $candidate;
+        }
+
+        // Credential-spray observation is deliberately precheck-only. The
+        // later failure/success command in the same host lifecycle must not
+        // observe the same spray attempt a second time.
+        if ($request->isPreCheck && $this->isCredentialSprayPolicy($policy->getName())) {
+            if ($candidate = $this->checkCredentialSpray($context, $device, $policy->getName(), $realKeysV2['k1'] ?? null)) {
+                $candidates[] = $candidate;
+            }
         }
 
         // 8. New Device Flood (5.4)
@@ -229,11 +235,18 @@ class EvaluationPipeline
      * @param   array<string, string|null>  $keysV2
      * @param   array<string, string|null>  $keysV1
      */
-    private function checkActiveBlocks(array $keysV2, array $keysV1): ?RateLimitResultDTO
-    {
+    private function checkActiveBlocks(
+        array $keysV2,
+        array $keysV1,
+        string $policyName,
+        DeviceIdentityDTO $device,
+    ): ?RateLimitResultDTO {
         foreach ([$keysV2, $keysV1] as $keys) {
             foreach ($keys as $keyType => $key) {
                 if (! $key) {
+                    continue;
+                }
+                if ($this->isTrustedAuthenticationPolicy($policyName, $device) && $this->isK1Key($keyType)) {
                     continue;
                 }
                 $block = $this->store->checkBlock($key);
@@ -249,15 +262,15 @@ class EvaluationPipeline
     /**
      * @param array<string, int> $scores
      * @param array<string, string|null> $keys
-     * @return array{decision: string, level: int, retryAfter: int, source: string, persistence: list<array{key: string, level: int, duration: int}>}|null
+     * @return list<array{decision: string, level: int, retryAfter: int, source: string, persistence: list<array{key: string, level: int, duration: int}>}>
      */
     private function checkThresholds(
         BlockPolicyInterface $policy,
         array $scores,
         array $keys,
         DeviceIdentityDTO $device,
-    ): ?array {
-        $highestLevel = 0;
+    ): array {
+        $candidates = [];
         foreach ($scores as $keyType => $score) {
             $level = $this->determineLevel($score, $keyType, $policy);
 
@@ -266,17 +279,16 @@ class EvaluationPipeline
                 $level = 1;
             }
 
-            if ($level > $highestLevel) {
-                $highestLevel = $level;
+            if ($level > 0) {
+                $decision = ($level >= 2) ? RateLimitResultDTO::DECISION_HARD_BLOCK : RateLimitResultDTO::DECISION_SOFT_BLOCK;
+                $source = $this->isTrustedAuthenticationPolicy($policy->getName(), $device) && $this->isK1Key($keyType)
+                    ? 'trusted_advisory:score'
+                    : 'score';
+                $candidates[] = $this->candidate($decision, $level, PenaltyLadder::getDuration($level), $source);
             }
         }
-        if ($highestLevel > 0) {
-            $decision = ($highestLevel >= 2) ? RateLimitResultDTO::DECISION_HARD_BLOCK : RateLimitResultDTO::DECISION_SOFT_BLOCK;
 
-            return $this->candidate($decision, $highestLevel, PenaltyLadder::getDuration($highestLevel), 'score');
-        }
-
-        return null;
+        return $candidates;
     }
 
     /**
@@ -362,6 +374,52 @@ class EvaluationPipeline
     }
 
     /**
+     * Observe credential spray subjects for authentication pre-checks only.
+     *
+     * The subject member is always a domain-separated HMAC. Raw account or
+     * correlation identities never cross the correlation-store boundary.
+     *
+     * @return array{decision: string, level: int, retryAfter: int, source: string, persistence: list<array{key: string, level: int, duration: int}>}|null
+     */
+    private function checkCredentialSpray(
+        RateLimitContextDTO $context,
+        DeviceIdentityDTO $device,
+        string $policyName,
+        ?string $k1Key,
+    ): ?array {
+        $subject = $context->correlationId ?? $context->accountId;
+        if ($subject === null || $k1Key === null) {
+            return null;
+        }
+
+        $member = $this->hashKey('credential_spray:subject:v1:' . $subject, $this->secret);
+        $scopeKey = 'credential_spray:' . $k1Key;
+        $count = $this->correlationStore->addDistinct($scopeKey, $member, 600);
+
+        $thresholdMet = $count >= 5;
+        if ($count === 4) {
+            $watchCount = $this->correlationStore->incrementWatchFlag($scopeKey . ':watch', 1800);
+            $thresholdMet = $watchCount >= 2;
+        }
+
+        if (! $thresholdMet) {
+            return null;
+        }
+
+        $source = $this->isTrustedAuthenticationPolicy($policyName, $device)
+            ? 'trusted_advisory:credential_spray'
+            : 'credential_spray';
+
+        return $this->candidate(
+            RateLimitResultDTO::DECISION_HARD_BLOCK,
+            2,
+            PenaltyLadder::getDuration(2),
+            $source,
+            [['key' => $k1Key, 'level' => 2, 'duration' => PenaltyLadder::getDuration(2)]],
+        );
+    }
+
+    /**
      * @param array<string, string|null> $keys
      * @param array<string, string|null> $keysV1
      * @param array<string, ?PipelineScoreDTO> $rawScores
@@ -396,6 +454,8 @@ class EvaluationPipeline
         }
 
         $newMaxLevel = 0;
+        /** @var array<string, int> $levelsByKeyType */
+        $levelsByKeyType = [];
 
         foreach ($keys as $keyType => $key) {
             if (! $key) {
@@ -446,6 +506,7 @@ class EvaluationPipeline
                 }
 
                 $newMaxLevel = max($newMaxLevel, $level);
+                $levelsByKeyType[$keyType] = $level;
             }
         }
 
@@ -522,32 +583,54 @@ class EvaluationPipeline
 
         $candidates = [];
         if ($newMaxLevel > 0) {
-            $decision = ($newMaxLevel >= 2) ? RateLimitResultDTO::DECISION_HARD_BLOCK : RateLimitResultDTO::DECISION_SOFT_BLOCK;
-            $duration = PenaltyLadder::getDuration($newMaxLevel);
-            $persistence = [];
+            if ($this->isTrustedAuthenticationPolicy($policy->getName(), $device)) {
+                foreach ($levelsByKeyType as $keyType => $level) {
+                    if ($level <= 0) {
+                        continue;
+                    }
+                    $decision = ($level >= 2) ? RateLimitResultDTO::DECISION_HARD_BLOCK : RateLimitResultDTO::DECISION_SOFT_BLOCK;
+                    $duration = PenaltyLadder::getDuration($level);
+                    $isAdvisory = $this->isK1Key($keyType);
+                    $persistence = [];
+                    if (! $isAdvisory && $context->accountId && ($keys['k4'] ?? null) !== null) {
+                        $persistence[] = ['key' => $keys['k4'], 'level' => $level, 'duration' => $duration];
+                    }
+                    $candidates[] = $this->candidate(
+                        $decision,
+                        $level,
+                        $duration,
+                        $isAdvisory ? 'trusted_advisory:score_update' : 'score_update',
+                        $persistence,
+                    );
+                }
+            } else {
+                $decision = ($newMaxLevel >= 2) ? RateLimitResultDTO::DECISION_HARD_BLOCK : RateLimitResultDTO::DECISION_SOFT_BLOCK;
+                $duration = PenaltyLadder::getDuration($newMaxLevel);
+                $persistence = [];
 
-            if ($context->accountId && ($keys['k4'] ?? null) !== null) {
-                $persistence[] = ['key' => $keys['k4'], 'level' => $newMaxLevel, 'duration' => $duration];
-            }
-            if ($policy->getName() === 'api_heavy_protection') {
-                if (($keys['k1'] ?? null) !== null) {
-                    $persistence[] = ['key' => $keys['k1'], 'level' => $newMaxLevel, 'duration' => $duration];
+                if ($context->accountId && ($keys['k4'] ?? null) !== null) {
+                    $persistence[] = ['key' => $keys['k4'], 'level' => $newMaxLevel, 'duration' => $duration];
                 }
-                if (($keys['k2'] ?? null) !== null) {
-                    $persistence[] = ['key' => $keys['k2'], 'level' => $newMaxLevel, 'duration' => $duration];
-                }
-                if (($keys['k3'] ?? null) !== null) {
-                    if ($device->confidence !== 'LOW') {
-                        $persistence[] = ['key' => $keys['k3'], 'level' => $newMaxLevel, 'duration' => $duration];
-                    } else {
-                        if (($keys['k2'] ?? null) !== null) {
-                            $persistence[] = ['key' => $keys['k2'], 'level' => $newMaxLevel, 'duration' => $duration];
+                if ($policy->getName() === 'api_heavy_protection') {
+                    if (($keys['k1'] ?? null) !== null) {
+                        $persistence[] = ['key' => $keys['k1'], 'level' => $newMaxLevel, 'duration' => $duration];
+                    }
+                    if (($keys['k2'] ?? null) !== null) {
+                        $persistence[] = ['key' => $keys['k2'], 'level' => $newMaxLevel, 'duration' => $duration];
+                    }
+                    if (($keys['k3'] ?? null) !== null) {
+                        if ($device->confidence !== 'LOW') {
+                            $persistence[] = ['key' => $keys['k3'], 'level' => $newMaxLevel, 'duration' => $duration];
+                        } else {
+                            if (($keys['k2'] ?? null) !== null) {
+                                $persistence[] = ['key' => $keys['k2'], 'level' => $newMaxLevel, 'duration' => $duration];
+                            }
                         }
                     }
                 }
-            }
 
-            $candidates[] = $this->candidate($decision, $newMaxLevel, $duration, 'score_update', $persistence);
+                $candidates[] = $this->candidate($decision, $newMaxLevel, $duration, 'score_update', $persistence);
+            }
         }
 
         if ($recoveryCandidate !== null) {
@@ -620,12 +703,12 @@ class EvaluationPipeline
     /**
      * @param list<array{decision: string, level: int, retryAfter: int, source: string, persistence: list<array{key: string, level: int, duration: int}>}> $candidates
      */
-    private function persistWinningCandidates(array $candidates, string $winningClass): void
+    private function persistWinningCandidates(array $candidates, ?string $winningClass): void
     {
         /** @var array<string, array{level: int, duration: int}> $blocks */
         $blocks = [];
         foreach ($candidates as $candidate) {
-            if ($candidate['decision'] !== $winningClass) {
+            if ($winningClass !== null && $candidate['decision'] !== $winningClass) {
                 continue;
             }
 
@@ -660,6 +743,15 @@ class EvaluationPipeline
         bool $budgetRequestEligible,
         bool $budgetSuppressed,
     ): RateLimitResultDTO {
+        $advisoryCandidates = array_values(array_filter(
+            $candidates,
+            fn(array $candidate): bool => str_starts_with($candidate['source'], 'trusted_advisory:'),
+        ));
+        $candidates = array_values(array_filter(
+            $candidates,
+            fn(array $candidate): bool => ! str_starts_with($candidate['source'], 'trusted_advisory:'),
+        ));
+
         $normalCandidate = $this->aggregateCandidates($candidates);
         $config = $policy->getBudgetConfig();
         $budgetKey = $this->resolveActiveBudgetKeyV2ThenV1($keysV2['k4'] ?? null, $keysV1['k4'] ?? null);
@@ -696,10 +788,13 @@ class EvaluationPipeline
 
         $final = $this->aggregateCandidates($candidates);
         if ($final === null) {
+            $this->persistWinningCandidates($advisoryCandidates, null);
+
             return $this->createAllowResult();
         }
 
         $this->persistWinningCandidates($candidates, $final['decision']);
+        $this->persistWinningCandidates($advisoryCandidates, null);
 
         return $this->createBlockedResult($final['level'], $final['retryAfter'], $final['decision']);
     }
@@ -780,6 +875,21 @@ class EvaluationPipeline
     private function isKnownForAccount(DeviceIdentityDTO $device): bool
     {
         return $device->isTrustedSession || $device->isDevicePreviouslyVerifiedForAccount;
+    }
+
+    private function isCredentialSprayPolicy(string $policyName): bool
+    {
+        return in_array($policyName, ['login_protection', 'otp_protection'], true);
+    }
+
+    private function isTrustedAuthenticationPolicy(string $policyName, DeviceIdentityDTO $device): bool
+    {
+        return $device->isTrustedSession && $this->isCredentialSprayPolicy($policyName);
+    }
+
+    private function isK1Key(string $keyType): bool
+    {
+        return $keyType === 'k1' || str_starts_with($keyType, 'k1_');
     }
 
     // --- Budget Key-Rotation Helpers ---

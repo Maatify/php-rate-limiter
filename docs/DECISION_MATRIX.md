@@ -4,7 +4,7 @@
 **Namespace:** `Maatify\RateLimiter`
 **Status:** LOCKED — Behavioral Contract
 **Scope:** Login, OTP, API Heavy Endpoints
-**Spec Version:** `1.1.0`
+**Spec Version:** `1.2.0`
 
 This document defines the **deterministic decision rules** used by the Rate Limiter.
 It is a **behavioral contract**, not explanatory documentation.
@@ -22,6 +22,7 @@ Any implementation, policy, or test MUST comply with this matrix exactly.
 * `DeviceFP` — Device Fingerprint (passive / client / session)
 * `DeviceConfidence` — `{LOW, MEDIUM, HIGH}` derived per `DEVICE_FINGERPRINT.md`
 * `AccountID` — Account identifier (blind index or internal ID)
+* `CorrelationID` — Optional stable opaque Host-provided subject identity for correlation
 * `Action` — Logical action (e.g. `auth.login`, `auth.otp`, `api.heavy`)
 * `PreviouslyVerifiedForAccount` — host-provided boolean proving a prior verified device ↔ `AccountID` association (default `false`; see `DEVICE_FINGERPRINT.md` §4.3)
 
@@ -38,6 +39,16 @@ Any implementation, policy, or test MUST comply with this matrix exactly.
 * `K3 = IP_PREFIX + DeviceFP`
 * `K4 = AccountID`
 * `K5 = AccountID + DeviceFP`
+
+### Correlation Subject
+
+For credential-spray correlation only:
+
+```text
+correlationSubject = CorrelationID ?? AccountID
+```
+
+The Host owns the stable opaque `CorrelationID`. When both values are null, the package does not create a spray observation. The package derives a domain-separated keyed-HMAC member from the subject before calling `CorrelationStoreInterface`; raw account, username, email, or correlation values are never stored as members. `AccountID` remains the enforcement identity for K4/K5.
 
 ### Trusted Session Device (Definition)
 
@@ -469,6 +480,8 @@ Many rules use thresholds. To prevent stable `N-1` bypass:
 * If the same WATCH flag is observed **twice** within its TTL,
     * upgrade the decision to the same action as if the threshold were met.
 
+Credential-spray observation is performed by `checkOnly()` for authentication policies only. `recordFailure()` and `recordSuccess()` do not repeat that observation for the same command lifecycle; `checkOnly()` therefore is not globally read-only because bounded correlation state may be updated during the pre-check.
+
 This is deterministic and testable (no randomness), and blocks “hover forever at N-1”.
 
 ---
@@ -477,10 +490,10 @@ This is deterministic and testable (no randomness), and blocks “hover forever 
 
 | Rule                      | Condition                                   | Decision        |
 | ------------------------- | ------------------------------------------- | --------------- |
-| IP attempts many accounts | `distinct(AccountID) ≥ 5 within 10 minutes` | HARD_BLOCK (IP) |
+| IP attempts many correlation subjects | `distinct(correlationSubject) ≥ 5 within 10 minutes` | HARD_BLOCK (IP) |
 
 **Advisory Constraint:**
-IP-only blocks are advisory and MUST NOT affect **trusted session devices**.
+IP-only blocks, including K1 hierarchy blocks and K1 score-derived candidates, are advisory for **trusted session devices** under Login and OTP. The K1 state remains stored and active for untrusted traffic; K2/K3/K4/K5 remain authoritative.
 
 ---
 

@@ -198,8 +198,8 @@ class DTOComplianceTest extends TestCase
             ],
             RateLimitContextDTO::class => [
                 new RateLimitContextDTO('127.0.0.1', 'Mozilla', 'acc_123', ['canvas' => 'abcd'], 'dev_456', true, ['Host' => 'localhost']),
-                ['ip', 'ua', 'accountId', 'clientFingerprint', 'sessionDeviceId', 'isSessionTrusted', 'headers', 'isDevicePreviouslyVerifiedForAccount'],
-                ['ip' => '127.0.0.1', 'ua' => 'Mozilla', 'accountId' => 'acc_123', 'clientFingerprint' => ['canvas' => 'abcd'], 'sessionDeviceId' => 'dev_456', 'isSessionTrusted' => true, 'headers' => ['Host' => 'localhost'], 'isDevicePreviouslyVerifiedForAccount' => false],
+                ['ip', 'ua', 'accountId', 'clientFingerprint', 'sessionDeviceId', 'isSessionTrusted', 'headers', 'isDevicePreviouslyVerifiedForAccount', 'correlationId'],
+                ['ip' => '127.0.0.1', 'ua' => 'Mozilla', 'accountId' => 'acc_123', 'clientFingerprint' => ['canvas' => 'abcd'], 'sessionDeviceId' => 'dev_456', 'isSessionTrusted' => true, 'headers' => ['Host' => 'localhost'], 'isDevicePreviouslyVerifiedForAccount' => false, 'correlationId' => null],
             ],
             RateLimitContextMetadataDTO::class => [
                 new RateLimitContextMetadataDTO('test_reason', 'test_scope'),

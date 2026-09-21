@@ -3,7 +3,7 @@
 **Module:** RateLimiter
 **Namespace:** `Maatify\RateLimiter`
 **Status:** LOCKED — Design & Security Contract
-**Spec Version:** `1.1.0`
+**Spec Version:** `1.2.0`
 
 This document defines the **key construction strategy** used by the RateLimiter.
 Keys determine how limits, scores, correlation, and blocks are applied.
@@ -181,6 +181,8 @@ Normalization MUST be deterministic and versioned.
 * HMAC secrets MUST be server-side only
 * Key rotation MUST be supported
 * Hash output MUST NOT be reversible
+
+Correlation members MUST also use a domain-separated keyed HMAC derived from the package key secret. Raw correlation subjects, account identifiers, usernames, and email addresses MUST NOT cross the `CorrelationStoreInterface` member boundary.
 
 ---
 
@@ -527,10 +529,12 @@ Correlation relies on **relationships between keys**, not single counters.
 
 ### 6.1 Canonical Correlations
 
-* Many K4 under one K1 → credential spray
+* Many correlation subjects under one K1 → credential spray
 * Many K3 under one K4 → distributed account attack
 * Rapid churn of K3 under one K2 → device evasion
 * Same DeviceFP across many K1 prefixes → fingerprint dilution
+
+Credential spray uses `correlationSubject = correlationId ?? accountId`, a fixed 600-second K1 window, and is observed during authentication `checkOnly()` only. A null subject is not observed. The threshold is five distinct subjects; at four subjects the same K1 scope uses the mandatory 1800-second WATCH flag, and a second qualifying observation escalates as if the threshold were met.
 
 ---
 

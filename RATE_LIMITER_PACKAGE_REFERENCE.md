@@ -3,7 +3,7 @@
 **Package:** RateLimiter
 **Namespace:** `Maatify\RateLimiter`
 **Status:** LOCKED — Architecture Contract
-**Spec Version:** `1.1.0`
+**Spec Version:** `1.2.0`
 **Location:** `src/`
 
 This document explains **why** the RateLimiter package is designed the way it is.
@@ -21,6 +21,8 @@ The [Usage Guide](docs/guides/USAGE_GUIDE.md) is the consumer-facing walkthrough
 ## Package Fit and Boundaries
 
 `maatify/php-rate-limiter` is a standalone, framework-agnostic Composer package for deterministic, multi-signal rate-limit decisions. It protects host-selected operations such as login, OTP/step-up, and API-heavy access. The package owns enforcement evaluation and its bounded state semantics; the Host owns account/session truth, transport behavior, storage implementations, authorization, logging destinations, and cross-domain reporting.
+
+For authentication correlation, the package uses the opaque `correlationId` supplied by the Host when present and otherwise falls back to `accountId`. The package does not derive subjects from raw usernames or email addresses, and it stores only domain-separated keyed-HMAC correlation members.
 
 The package is currently proprietary and in pre-release development. It is not a published stable Packagist distribution.
 
@@ -101,7 +103,7 @@ The following inventory describes the current public runtime types. Test and sup
 
 | Type | Contract |
 | --- | --- |
-| `Maatify\RateLimiter\Command\RateLimitCommand` | Immutable execution intent with `checkOnly()`, `recordFailure()`, and `recordSuccess()` factories. |
+| `Maatify\RateLimiter\Command\RateLimitCommand` | Immutable execution intent with `checkOnly()`, `recordFailure()`, and `recordSuccess()` factories; `checkOnly()` does not record scoring success/failure but may update bounded pre-check correlation state. |
 
 ### Public DTOs
 
@@ -145,7 +147,7 @@ Concretely:
           + CircuitBreakerStoreInterface + FailureSignalEmitterInterface
         → RateLimitResultDTO and, when applicable, FailureSignalDTO
 
-`RateLimiterEngine` selects the policy by the command's policy name. `EvaluationPipeline` resolves active blocks, identity-derived keys, scoring, correlation, budgets, decay, and final aggregation. The integration boundaries provide the stateful primitives; the result is returned to the Host, which decides how to enforce it at its own transport or application boundary.
+`RateLimiterEngine` selects the policy by the command's policy name. `EvaluationPipeline` resolves active blocks, identity-derived keys, scoring, correlation, budgets, decay, and final aggregation. Credential-spray correlation is observed during authentication pre-checks only; the later failure/success command does not observe the same lifecycle a second time. The integration boundaries provide the stateful primitives; the result is returned to the Host, which decides how to enforce it at its own transport or application boundary.
 
 The independent operational path is:
 

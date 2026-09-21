@@ -39,7 +39,7 @@ The available policy preset names are <code>login_protection</code>, <code>otp_p
 
 <code>RateLimitCommand</code> expresses intent rather than transport semantics:
 
-- <code>checkOnly()</code> evaluates without recording a success or failure event.
+- <code>checkOnly()</code> evaluates without recording a success or failure event. Authentication pre-checks may update bounded credential-correlation state, so this command is not globally read-only.
 - <code>recordFailure()</code> evaluates and records the applicable failure signals.
 - <code>recordSuccess()</code> records a successful operation and returns the current <code>RateLimitResultDTO</code>; it does not bypass an already active block.
 
