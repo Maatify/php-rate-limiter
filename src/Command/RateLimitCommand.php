@@ -9,10 +9,10 @@ use Maatify\RateLimiter\Exception\RateLimiterException;
 final readonly class RateLimitCommand
 {
     /**
-     * Describe one rate-limiter operation for a named policy.
+     * Immutable command representing one rate-limiter operation for a named policy.
      *
-     * Exactly one execution-intent flag may be enabled. A command with no
-     * intent flags represents a normal evaluation and access update.
+     * Execution-intent modes are mutually exclusive. A command with no intent
+     * flags represents the normal evaluation and access-update path.
      *
      * @throws RateLimiterException When more than one intent flag is enabled.
      */
