@@ -3,7 +3,7 @@
 **Module:** RateLimiter
 **Namespace:** `Maatify\RateLimiter`
 **Status:** LOCKED — Design & Security Contract
-**Spec Version:** `1.3.0`
+**Spec Version:** `1.4.0`
 
 This document defines the **key construction strategy** used by the RateLimiter.
 Keys determine how limits, scores, correlation, and blocks are applied.
@@ -169,6 +169,22 @@ All key components MUST be normalized before hashing:
 * UA normalized (major version only)
 * Device fingerprints normalized per `DEVICE_FINGERPRINT.md`
 * Account identifiers pre-hashed or blind-indexed
+
+For K2, the canonical UA component is browser family plus major version only.
+The supported canonical values are:
+
+```text
+chrome/<major>
+firefox/<major>
+edge/<major>
+opera/<major>
+safari/<major>
+other/0
+```
+
+The operating system is not part of the canonical K2 UA component. Raw or
+unknown UA text MUST NOT enter the key. The normal path and `LocalFallback`
+use the same canonical UA semantics.
 
 Normalization MUST be deterministic and versioned.
 

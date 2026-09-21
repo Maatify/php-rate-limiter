@@ -37,7 +37,7 @@ For <code>api_heavy_protection</code>, K2 minor overuse returns at most <code>SO
 
 ## Inputs and Outputs
 
-<code>RateLimitContextDTO</code> accepts the request IP, user agent, optional account identifier, optional client fingerprint data, optional session device identifier, trust flags, headers, and the host-owned previously-verified-device signal.
+<code>RateLimitContextDTO</code> accepts the request IP, user agent, optional account identifier, optional host-provided client fingerprint data that is already normalized, bucketed, and low-entropy, optional session device identifier, trust flags, headers, and the host-owned previously-verified-device signal. The default resolver does not automatically collect or inspect request headers.
 
 <code>RateLimitCommand</code> expresses intent rather than transport semantics:
 

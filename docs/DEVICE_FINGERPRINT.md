@@ -3,7 +3,7 @@
 **Module:** RateLimiter
 **Namespace:** `Maatify\RateLimiter`
 **Status:** LOCKED — Behavioral & Privacy Contract
-**Spec Version:** `1.1.0`
+**Spec Version:** `1.2.0`
 
 This document defines the **Device Fingerprint system** used by the Rate Limiter.
 It specifies how device identity is derived, normalized, hashed, bounded, and evaluated.
@@ -72,6 +72,14 @@ Levels increase confidence but NEVER replace account-level protection.
 * Platform / OS hints
 * HTTP/TLS-level hints (if available)
 
+These are permitted low-entropy passive signal categories, not mandatory inputs
+to the default resolver. The default `DeviceIdentityResolver` is intentionally
+minimal and deterministic: it consumes the explicit user agent supplied in the
+context and does not inspect `RateLimitContextDTO::$headers` or harvest
+Accept-Language, platform, HTTP, or TLS material automatically. A custom
+`DeviceIdentityResolverInterface` may use allowed low-entropy passive inputs
+explicitly supplied by its host, while remaining within this privacy contract.
+
 #### Output
 
 * `passive_fingerprint` (hashed)
@@ -108,6 +116,12 @@ Levels increase confidence but NEVER replace account-level protection.
 * Client ID MUST NOT be treated as stable identity
 * Absence MUST NOT block alone
 
+`clientFingerprint` is a Host-provided, already-normalized/bucketed collection
+of low-entropy hints. The package does not collect browser data or invent a
+timezone, screen, platform, JavaScript, canvas, audio, WebGL, or font schema.
+The default resolver owns only deterministic canonical serialization and HMAC
+derivation.
+
 #### Output
 
 * `client_fingerprint` (hashed)
@@ -133,8 +147,17 @@ Levels increase confidence but NEVER replace account-level protection.
 
   * Bound to authenticated AccountID
   * Stored in an HttpOnly, Secure cookie
-* Rotation MUST NOT reset account-level penalties
-* Loss MUST NOT imply trust reset
+* **Current-session trust** requires both a non-empty `sessionDeviceId` and the
+  host-provided `isSessionTrusted = true`. A request without a valid session
+  device identifier is **not** a trusted session device, even when penalties or
+  other enforcement history exist from earlier requests.
+* **Persistent enforcement history** survives session-identifier rotation or
+  loss. Rotation or loss MUST NOT reset account-level penalties, counters,
+  scores, blocks, or other rate-limit history.
+* **Previously verified for account** remains a separate host-provided fact. It
+  is not inferred from a session identifier, is not automatically cleared by
+  loss of that identifier, and does not make the current request
+  `isTrustedSession = true`.
 
 #### Output
 
@@ -161,13 +184,24 @@ All fingerprint levels are combined into a single resolved identity.
 * Confidence level (derived)
 * Stability flag (derived)
 
+The default resolver is stateless. It does not infer cross-request churn from
+headers or local history; churn state remains the responsibility of runtime
+correlation paths or an explicitly stateful custom resolver.
+
 ### 4.2 Confidence Levels
 
 | Signals Present            | Confidence |
 | -------------------------- | ---------- |
 | Passive only               | LOW        |
 | Passive + Client           | MEDIUM     |
-| Passive + Client + Session | HIGH       |
+| Passive + trusted Session  | HIGH       |
+| Passive + Client + trusted Session | HIGH       |
+
+The trusted session identifier is sufficient for `HIGH`; client-assisted hints
+are optional. `isSessionTrusted = true` without a non-empty
+`sessionDeviceId` does not create a trusted session. The host remains
+responsible for proving that a supplied session identifier is server-issued and
+bound to the correct account.
 
 **Rule:**
 Confidence affects **scoring weight** and certain correlation enforcement constraints; never authorization.
@@ -307,7 +341,7 @@ recombined across generations.
 remains unchanged. The default resolver builds the normalized raw identity **exactly once**:
 
 ```
-v1|normalizedUa|normalizedClientFp|sessionDeviceId
+v2|normalizedUa|normalizedClientFp|sessionDeviceId
 ```
 
 then hashes the **same identity twice**:
@@ -332,6 +366,12 @@ Rules:
 
 * There MUST be no normalization difference between the two hashes; normalization is
   identical for the current and the previous version.
+* `normalizedClientFp` uses deterministic JSON serialization: associative-map keys are
+  sorted lexicographically at every depth and encoded as JSON objects, list order is
+  preserved, and scalar/null types are preserved. This preserves map/list structural
+  identity. A null or empty client payload is omitted from the identity.
+* A non-serializable client payload MUST raise a package-owned exception. It MUST NOT
+  become an empty string or silently downgrade `MEDIUM` confidence to `LOW`.
 * `FingerprintHasher` stays single-secret: each instance is responsible for exactly one
   secret. The resolver applies both hashers to the same normalized raw identity.
 * Raw fingerprint material MUST NOT leave the resolver, MUST NOT be stored, MUST NOT be
@@ -412,6 +452,21 @@ To ensure stability and collision resistance:
 * Platform identifiers canonicalized
 * Missing values normalized explicitly (never omitted)
 * Normalization rules MUST be versioned
+
+The default resolver's canonical user-agent output is one of:
+
+```text
+chrome/<major>
+firefox/<major>
+edge/<major>
+opera/<major>
+safari/<major>
+other/0
+```
+
+Opera and Edge tokens are matched before Chrome; Safari uses the browser
+`Version/<major>` token and never its `Safari/<build>` token. Unknown user agents
+use `other/0` and never retain a raw substring.
 
 ---
 
@@ -534,7 +589,12 @@ Frequency analysis MUST NOT be used for identity inference.
   * Version bump
   * Migration strategy
   * Changelog entry
-* Old versions MUST remain readable during transition
+* Published old versions MUST remain readable during transition
+
+For this pre-release WU, the `v1` normalized identity has no published or
+deployed consumer evidence and therefore receives no compatibility shim. If
+such evidence appears, implementation MUST stop for Lead review before any
+state reset or migration strategy is chosen.
 
 ---
 

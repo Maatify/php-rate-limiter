@@ -8,7 +8,7 @@ use Maatify\RateLimiter\Service\LocalFallbackLimiter;
 use Maatify\RateLimiter\Tests\Support\Clock\FixedClock;
 use PHPUnit\Framework\TestCase;
 
-class LocalFallbackLimiterUserAgentCharacterizationTest extends TestCase
+class LocalFallbackLimiterUserAgentContractTest extends TestCase
 {
     protected function setUp(): void
     {
@@ -84,7 +84,7 @@ class LocalFallbackLimiterUserAgentCharacterizationTest extends TestCase
         $this->assertTrue($allowed, 'Firefox call should be allowed');
     }
 
-    public function testCharacterizeFirstNormalizer(): void
+    public function testFallbackUsesTheCanonicalBrowserMajorNormalizer(): void
     {
         $rawChromeUa = 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/123.0.0.0 Safari/537.36';
         $rawFirefoxUa = 'Mozilla/5.0 (Windows NT 10.0; Win64; x64; rv:124.0) Gecko/20100101 Firefox/124.0';
@@ -96,17 +96,14 @@ class LocalFallbackLimiterUserAgentCharacterizationTest extends TestCase
         $this->assertEquals('firefox/124', $normalizedFirefox);
     }
 
-    public function testDoubleNormalizationCollapseMechanism(): void
+    public function testFallbackDoesNotIncludeOperatingSystemInK2UaComponent(): void
     {
         $clock = new FixedClock();
         $ip = '192.168.1.1';
-        $rawChromeUa = 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/123.0.0.0 Safari/537.36';
-        $rawFirefoxUa = 'Mozilla/5.0 (Windows NT 10.0; Win64; x64; rv:124.0) Gecko/20100101 Firefox/124.0';
+        $windowsChromeUa = 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/123.0.0.0 Safari/537.36';
+        $macChromeUa = 'Mozilla/5.0 (Macintosh; Intel Mac OS X 13_6) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/123.0.0.0 Safari/537.36';
 
-        $preNormalizedChrome = \Maatify\RateLimiter\Service\DeviceIdentityResolver::normalizeUserAgent($rawChromeUa);
-        $preNormalizedFirefox = \Maatify\RateLimiter\Service\DeviceIdentityResolver::normalizeUserAgent($rawFirefoxUa);
-
-        // 60 requests using pre-normalized Chrome UA should be allowed
+        // The same browser major consumes the same K2 fallback bucket across operating systems.
         for ($i = 0; $i < 60; $i++) {
             $allowed = LocalFallbackLimiter::check(
                 $clock,
@@ -114,22 +111,19 @@ class LocalFallbackLimiterUserAgentCharacterizationTest extends TestCase
                 'FAIL_OPEN',
                 $ip,
                 null,
-                $preNormalizedChrome,
+                $windowsChromeUa,
             );
-            $this->assertTrue($allowed, "Pre-normalized Chrome call $i should be allowed");
+            $this->assertTrue($allowed, "Windows Chrome call $i should be allowed");
         }
 
-        // 1 request using pre-normalized Firefox UA should be FALSE because the fallback limiter's
-        // second normalization turns both "chrome/123" and "firefox/124" into the exact same value
-        // "Other/0 (Unknown)", collapsing them into the same K2 bucket which is now exhausted.
         $allowed = LocalFallbackLimiter::check(
             $clock,
             'api_heavy_protection',
             'FAIL_OPEN',
             $ip,
             null,
-            $preNormalizedFirefox,
+            $macChromeUa,
         );
-        $this->assertFalse($allowed, 'Firefox call should be rejected due to defect mechanism (double-normalization collapse)');
+        $this->assertFalse($allowed, 'Mac Chrome call should share the exhausted Chrome/123 K2 bucket');
     }
 }
