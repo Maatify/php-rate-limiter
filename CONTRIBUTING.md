@@ -96,7 +96,15 @@ composer test
 composer test:integration
 ```
 
-The CI workflow runs the same checks on PHP 8.4 and 8.5. Workflow linting uses actionlint v1.7.12 with a verified checksum; install that version locally or provide its path through `ACTIONLINT_BIN`.
+The CI verification mapping is intentionally split across its gates:
+
+- The complete `composer test` matrix runs on PHP 8.4 and 8.5, representing the full Unit, Integration, and System suite on both versions.
+- The focused `composer test:integration` job runs independently on PHP 8.4.
+- PHP syntax, PHPStan, Composer audit, Consumer Verification, and lowest-supported dependency verification run on PHP 8.4.
+- The PHP coding-style gate runs on PHP 8.5.
+- Workflow lint and whitespace are repository-level gates, not PHP compatibility-matrix jobs.
+
+Workflow linting uses actionlint v1.7.12 with a verified checksum; install that version locally or provide its path through `ACTIONLINT_BIN`.
 
 ## Pull requests and review expectations
 
