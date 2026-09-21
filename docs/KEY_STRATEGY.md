@@ -3,7 +3,7 @@
 **Module:** RateLimiter
 **Namespace:** `Maatify\RateLimiter`
 **Status:** LOCKED — Design & Security Contract
-**Spec Version:** `1.2.0`
+**Spec Version:** `1.3.0`
 
 This document defines the **key construction strategy** used by the RateLimiter.
 Keys determine how limits, scores, correlation, and blocks are applied.
@@ -372,6 +372,57 @@ a score-semantics redesign.
 
 ---
 
+#### 4.3.4 Credential-Spray Correlation Rotation
+
+Credential-spray correlation has an additive capability boundary so existing
+`CorrelationStoreInterface` consumers remain source-compatible:
+
+```php
+interface CorrelationRotationStoreInterface extends CorrelationStoreInterface
+{
+    public function addDistinctAcrossRotation(
+        string $currentKey,
+        string $bridgeKey,
+        string $previousKey,
+        string $currentMember,
+        string $previousMember,
+        int $ttlSeconds,
+    ): int;
+
+    public function incrementWatchFlagAcrossRotation(
+        string $currentKey,
+        string $previousKey,
+        int $ttlSeconds,
+    ): int;
+}
+```
+
+The base path, when `previousKeySecret` is absent, uses only the existing
+`CorrelationStoreInterface` methods. Their concrete implementation owns atomic
+initialization and fixed TTL behavior; later mutations must not refresh a window.
+
+When `previousKeySecret` is configured for a Login or OTP pre-check, the store
+MUST implement `CorrelationRotationStoreInterface`. A missing capability is an
+explicit failure through the normal engine failure semantics; current-only fallback
+and silent reset are forbidden.
+
+The rotation operation writes only the current generation. It reads the previous
+set or WATCH state without changing its members or TTL. For distinct spray state,
+the effective count is:
+
+```text
+previous cardinality + current bridge cardinality
+```
+
+The bridge key is `credential_spray:bridge:{currentK1}` and contains only
+current-secret HMAC members. A logical subject already present in the previous set
+is not added to the bridge. The bridge receives a fixed TTL capped by the remaining
+previous-generation TTL, and later writes do not extend it. A previous key without
+a valid TTL is corruption and fails before any partial current/bridge mutation.
+The WATCH operation increments only the current flag and returns current plus active
+previous count; the previous flag remains read-only. No concrete Redis, Lua, PDO, or
+other backend adapter is part of the core package.
+
 ### 4.4 Namespacing & Scoping
 
 All keys MUST include:
@@ -534,7 +585,7 @@ Correlation relies on **relationships between keys**, not single counters.
 * Rapid churn of K3 under one K2 → device evasion
 * Same DeviceFP across many K1 prefixes → fingerprint dilution
 
-Credential spray uses `correlationSubject = correlationId ?? accountId`, a fixed 600-second K1 window, and is observed during authentication `checkOnly()` only. A null subject is not observed. The threshold is five distinct subjects; at four subjects the same K1 scope uses the mandatory 1800-second WATCH flag, and a second qualifying observation escalates as if the threshold were met.
+Credential spray uses `correlationSubject = correlationId ?? accountId`, a fixed 600-second K1 window, and is observed during authentication `checkOnly()` only. A null subject is not observed. The threshold is five distinct subjects; at four subjects the same K1 scope uses the mandatory 1800-second WATCH flag, and a second qualifying observation escalates as if the threshold were met. During outer-secret rotation, the additive rotation capability preserves the previous spray window through current-only bridge members without merging differently-keyed HMAC members directly.
 
 ---
 

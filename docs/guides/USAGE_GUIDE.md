@@ -50,7 +50,8 @@ The available policy preset names are <code>login_protection</code>, <code>otp_p
 The host supplies implementations for:
 
 - <code>RateLimitStoreInterface</code>: counters, blocks, and budget state with the atomicity and TTL behavior required by the package.
-- <code>CorrelationStoreInterface</code>: bounded distinct sets and watch flags.
+- <code>CorrelationStoreInterface</code>: bounded distinct sets and watch flags for the no-rotation base path.
+- <code>CorrelationRotationStoreInterface</code>: optional additive capability required for Login/OTP credential-spray continuity when <code>previousKeySecret</code> is configured.
 - <code>CircuitBreakerStoreInterface</code>: circuit-breaker state persistence.
 - <code>FailureSignalEmitterInterface</code>: delivery of circuit-breaker and failure signals.
 - <code>ClockInterface</code> from <code>maatify/shared-common</code>: current time and timezone.
@@ -58,6 +59,16 @@ The host supplies implementations for:
 The host may also provide a custom <code>DeviceIdentityResolverInterface</code> or a custom <code>BlockPolicyInterface</code>. <code>BudgetSeedStoreInterface</code> is an additive storage capability used when a host store supports atomic budget-epoch seeding during key rotation.
 
 The package owns enforcement decisions, key construction, scoring, decay, bounded correlation logic, budget eligibility, circuit-breaker behavior, and result semantics. The host owns storage implementation, account and session truth, transport response behavior, authorization, logging destinations, and cross-domain reporting.
+
+The base correlation contract keeps its existing signatures and remains sufficient
+without a previous key secret. Its concrete implementation must establish the first
+window TTL atomically and must not refresh that TTL on later writes. During key-secret
+rotation, the host store must implement <code>CorrelationRotationStoreInterface</code>:
+the current generation is writable, the previous generation is read-only, and a
+current-secret bridge deduplicates subjects while its TTL is capped by the previous
+remaining TTL. A missing capability or corrupt previous state fails explicitly rather
+than silently resetting spray enforcement. The core package does not include a Redis
+or other concrete correlation adapter.
 
 ## Capability Map
 

@@ -4,7 +4,7 @@
 **Namespace:** `Maatify\RateLimiter`
 **Status:** LOCKED — Behavioral Contract
 **Scope:** Login, OTP, API Heavy Endpoints
-**Spec Version:** `1.2.0`
+**Spec Version:** `1.3.0`
 
 This document defines the **deterministic decision rules** used by the Rate Limiter.
 It is a **behavioral contract**, not explanatory documentation.
@@ -482,6 +482,13 @@ Many rules use thresholds. To prevent stable `N-1` bypass:
 
 Credential-spray observation is performed by `checkOnly()` for authentication policies only. `recordFailure()` and `recordSuccess()` do not repeat that observation for the same command lifecycle; `checkOnly()` therefore is not globally read-only because bounded correlation state may be updated during the pre-check.
 
+When `previousKeySecret` is configured, spray observation requires the additive
+`CorrelationRotationStoreInterface` capability. The existing `CorrelationStoreInterface`
+remains the source-compatible base contract for the no-rotation path. Missing rotation
+capability, corrupt previous state, or a previous state without a valid TTL is an explicit
+failure through the normal engine failure semantics; it must not become a current-only
+reset.
+
 This is deterministic and testable (no randomness), and blocks “hover forever at N-1”.
 
 ---
@@ -494,6 +501,15 @@ This is deterministic and testable (no randomness), and blocks “hover forever 
 
 **Advisory Constraint:**
 IP-only blocks, including K1 hierarchy blocks and K1 score-derived candidates, are advisory for **trusted session devices** under Login and OTP. The K1 state remains stored and active for untrusted traffic; K2/K3/K4/K5 remain authoritative.
+
+During key-secret rotation, the previous K1 spray set is read-only. The current K1
+uses current-secret HMAC members, and a current bridge namespace
+`credential_spray:bridge:{currentK1}` carries only subjects absent from the previous
+set. While the previous window is active, the distinct count is previous cardinality
+plus bridge cardinality; the differently-keyed current and previous sets are never
+unioned or added directly. The current and bridge windows have fixed TTLs, with the
+bridge capped by the previous remaining TTL, and the previous set and WATCH flag are
+never written or extended.
 
 ---
 
