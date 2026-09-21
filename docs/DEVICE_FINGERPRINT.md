@@ -358,8 +358,9 @@ Rules:
 * There MUST be no normalization difference between the two hashes; normalization is
   identical for the current and the previous version.
 * `normalizedClientFp` uses deterministic JSON serialization: associative-map keys are
-  sorted lexicographically at every depth, list order is preserved, and scalar/null
-  types are preserved. A null or empty client payload is omitted from the identity.
+  sorted lexicographically at every depth and encoded as JSON objects, list order is
+  preserved, and scalar/null types are preserved. This preserves map/list structural
+  identity. A null or empty client payload is omitted from the identity.
 * A non-serializable client payload MUST raise a package-owned exception. It MUST NOT
   become an empty string or silently downgrade `MEDIUM` confidence to `LOW`.
 * `FingerprintHasher` stays single-secret: each instance is responsible for exactly one

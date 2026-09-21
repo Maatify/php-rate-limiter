@@ -258,6 +258,75 @@ final class DeviceIdentityResolverContractTest extends TestCase
         );
     }
 
+    public function testNestedNumericKeyMapPreservesStructureAndOrderInvariance(): void
+    {
+        $mapA = [
+            'signals' => [
+                2 => 'b',
+                0 => 'a',
+            ],
+        ];
+        $mapB = [
+            'signals' => [
+                0 => 'a',
+                2 => 'b',
+            ],
+        ];
+        $list = [
+            'signals' => ['a', 'b'],
+        ];
+
+        $mapAHash = $this->resolver->resolve(new RateLimitContextDTO(
+            '198.51.100.39',
+            'Mozilla/5.0 Chrome/122.0.0.0',
+            'numeric-map',
+            $mapA,
+        ))->fingerprintHash;
+        $mapBHash = $this->resolver->resolve(new RateLimitContextDTO(
+            '198.51.100.39',
+            'Mozilla/5.0 Chrome/122.0.0.0',
+            'numeric-map',
+            $mapB,
+        ))->fingerprintHash;
+        $listHash = $this->resolver->resolve(new RateLimitContextDTO(
+            '198.51.100.39',
+            'Mozilla/5.0 Chrome/122.0.0.0',
+            'numeric-map',
+            $list,
+        ))->fingerprintHash;
+
+        $this->assertSame($mapAHash, $mapBHash);
+        $this->assertNotSame($mapAHash, $listHash);
+    }
+
+    public function testDescendingZeroBasedNumericMapDoesNotCollapseIntoList(): void
+    {
+        $map = [
+            'signals' => [
+                1 => 'b',
+                0 => 'a',
+            ],
+        ];
+        $list = [
+            'signals' => ['a', 'b'],
+        ];
+
+        $mapHash = $this->resolver->resolve(new RateLimitContextDTO(
+            '198.51.100.40',
+            'Mozilla/5.0 Chrome/122.0.0.0',
+            'numeric-map-collision',
+            $map,
+        ))->fingerprintHash;
+        $listHash = $this->resolver->resolve(new RateLimitContextDTO(
+            '198.51.100.40',
+            'Mozilla/5.0 Chrome/122.0.0.0',
+            'numeric-map-collision',
+            $list,
+        ))->fingerprintHash;
+
+        $this->assertNotSame($mapHash, $listHash);
+    }
+
     public function testListOrderRemainsMeaningful(): void
     {
         $first = new RateLimitContextDTO(

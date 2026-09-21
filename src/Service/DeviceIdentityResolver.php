@@ -102,9 +102,9 @@ class DeviceIdentityResolver implements DeviceIdentityResolverInterface
 
     /**
      * @param array<array-key, mixed> $value
-     * @return array<array-key, mixed>
+     * @return array<array-key, mixed>|\stdClass
      */
-    private function canonicalizeClientFingerprint(array $value): array
+    private function canonicalizeClientFingerprint(array $value): array|\stdClass
     {
         if (array_is_list($value)) {
             $normalized = [];
@@ -121,16 +121,16 @@ class DeviceIdentityResolver implements DeviceIdentityResolverInterface
             static fn(int|string $left, int|string $right): int => strcmp((string) $left, (string) $right),
         );
 
-        $normalized = [];
+        $normalized = new \stdClass();
         foreach ($keys as $key) {
-            $normalized[(string) $key] = $this->canonicalizeClientFingerprintValue($value[$key]);
+            $normalized->{(string) $key} = $this->canonicalizeClientFingerprintValue($value[$key]);
         }
 
         return $normalized;
     }
 
     /**
-     * @return array<array-key, mixed>|bool|float|int|string|null
+     * @return array<array-key, mixed>|bool|float|int|string|\stdClass|null
      */
     private function canonicalizeClientFingerprintValue(mixed $value): mixed
     {
