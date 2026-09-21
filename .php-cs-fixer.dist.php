@@ -13,6 +13,7 @@ $finder = Finder::create()
         __DIR__ . '/consumer-verification',
         __DIR__ . '/scripts/ci',
     ])
+    ->append([__DIR__ . '/.php-cs-fixer.dist.php'])
     ->exclude(['vendor']);
 
 return (new Config())

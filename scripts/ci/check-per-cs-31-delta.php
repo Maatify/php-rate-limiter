@@ -1006,7 +1006,7 @@ final class PerCs31DeltaVerifier
 
 $paths = array_slice($argv, 1);
 if ($paths === []) {
-    $paths = ['src', 'tests', 'examples', 'consumer-verification', 'scripts/ci'];
+    $paths = ['.php-cs-fixer.dist.php', 'src', 'tests', 'examples', 'consumer-verification', 'scripts/ci'];
 }
 
 exit(PerCs31DeltaVerifier::run($paths));
