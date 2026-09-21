@@ -6,13 +6,17 @@ namespace Maatify\RateLimiter\Command;
 
 use Maatify\RateLimiter\Exception\RateLimiterException;
 
+/**
+ * Immutable command representing one rate-limiter operation for a named policy.
+ *
+ * Explicit execution-intent modes are mutually exclusive. When none of the
+ * intent flags is enabled, the command represents the normal evaluation and
+ * access-update path.
+ */
 final readonly class RateLimitCommand
 {
     /**
-     * Immutable command representing one rate-limiter operation for a named policy.
-     *
-     * Execution-intent modes are mutually exclusive. A command with no intent
-     * flags represents the normal evaluation and access-update path.
+     * Create a rate-limit command and validate its execution intent.
      *
      * @throws RateLimiterException When more than one intent flag is enabled.
      */
