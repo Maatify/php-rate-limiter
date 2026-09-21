@@ -6,21 +6,34 @@ namespace Maatify\RateLimiter\Service;
 
 use Maatify\SharedCommon\Contracts\ClockInterface;
 
+/**
+ * Calculates elapsed score decay using scope-specific rates and block level.
+ */
 class DecayCalculator
 {
     private const RATE_ACCOUNT = 600; // 10m
     private const RATE_DEVICE = 300;  // 5m
     private const RATE_IP = 180;      // 3m
 
+    /**
+     * @param ClockInterface $clock Source of the current timestamp.
+     */
     public function __construct(
         private readonly ClockInterface $clock,
     ) {}
 
+    /**
+     * Calculate whole score points to remove since the last update.
+     *
+     * Account, device, and IP scopes use different base rates. L2 and higher
+     * blocks halve the effective decay rate; unsupported scope names use the
+     * account rate for backward-compatible behavior.
+     */
     public function calculateDecay(
         int $currentScore,
         int $lastUpdateTimestamp,
         int $currentBlockLevel,
-        string $scope // 'account', 'device', 'ip'
+        string $scope, // 'account', 'device', 'ip'
     ): int {
         if ($currentScore <= 0) {
             return 0;

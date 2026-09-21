@@ -35,7 +35,7 @@ class LocalFallbackLimiterUserAgentCharacterizationTest extends TestCase
                 'FAIL_OPEN',
                 $ip,
                 null,
-                $rawChromeUa
+                $rawChromeUa,
             );
             $this->assertTrue($allowed, "Call $i should be allowed");
         }
@@ -47,7 +47,7 @@ class LocalFallbackLimiterUserAgentCharacterizationTest extends TestCase
             'FAIL_OPEN',
             $ip,
             null,
-            $rawChromeUa
+            $rawChromeUa,
         );
         $this->assertFalse($allowed, 'Call 61 should be rejected due to K2 cap');
     }
@@ -67,7 +67,7 @@ class LocalFallbackLimiterUserAgentCharacterizationTest extends TestCase
                 'FAIL_OPEN',
                 $ip,
                 null,
-                $rawChromeUa
+                $rawChromeUa,
             );
             $this->assertTrue($allowed, "Chrome call $i should be allowed");
         }
@@ -79,7 +79,7 @@ class LocalFallbackLimiterUserAgentCharacterizationTest extends TestCase
             'FAIL_OPEN',
             $ip,
             null,
-            $rawFirefoxUa
+            $rawFirefoxUa,
         );
         $this->assertTrue($allowed, 'Firefox call should be allowed');
     }
@@ -114,7 +114,7 @@ class LocalFallbackLimiterUserAgentCharacterizationTest extends TestCase
                 'FAIL_OPEN',
                 $ip,
                 null,
-                $preNormalizedChrome
+                $preNormalizedChrome,
             );
             $this->assertTrue($allowed, "Pre-normalized Chrome call $i should be allowed");
         }
@@ -128,7 +128,7 @@ class LocalFallbackLimiterUserAgentCharacterizationTest extends TestCase
             'FAIL_OPEN',
             $ip,
             null,
-            $preNormalizedFirefox
+            $preNormalizedFirefox,
         );
         $this->assertFalse($allowed, 'Firefox call should be rejected due to defect mechanism (double-normalization collapse)');
     }

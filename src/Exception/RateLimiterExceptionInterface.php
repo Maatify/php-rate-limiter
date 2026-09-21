@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace Maatify\RateLimiter\Exception;
 
-interface RateLimiterExceptionInterface extends \Throwable
-{
-}
+/**
+ * Marker contract for exceptions raised by the rate-limiter package.
+ */
+interface RateLimiterExceptionInterface extends \Throwable {}

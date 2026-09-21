@@ -23,9 +23,7 @@ class InMemoryRateLimitStore implements BudgetSeedStoreInterface
 
     private int $writes = 0;
 
-    public function __construct(private readonly ClockInterface $clock)
-    {
-    }
+    public function __construct(private readonly ClockInterface $clock) {}
 
     public function increment(string $key, int $ttlSeconds, int $amount = 1): int
     {
@@ -36,7 +34,7 @@ class InMemoryRateLimitStore implements BudgetSeedStoreInterface
             $this->data[$key] = [
                 'value' => $amount,
                 'updatedAt' => $now,
-                'expiresAt' => $now + $ttlSeconds
+                'expiresAt' => $now + $ttlSeconds,
             ];
             return $amount;
         }
@@ -55,7 +53,7 @@ class InMemoryRateLimitStore implements BudgetSeedStoreInterface
 
         return new RateLimitStateDTO(
             $this->data[$key]['value'],
-            $this->data[$key]['updatedAt']
+            $this->data[$key]['updatedAt'],
         );
     }
 
@@ -66,7 +64,7 @@ class InMemoryRateLimitStore implements BudgetSeedStoreInterface
         $this->data[$key] = [
             'value' => $value,
             'updatedAt' => $now,
-            'expiresAt' => $now + $ttlSeconds
+            'expiresAt' => $now + $ttlSeconds,
         ];
     }
 
@@ -76,7 +74,7 @@ class InMemoryRateLimitStore implements BudgetSeedStoreInterface
         $now = $this->clock->now()->getTimestamp();
         $this->blocks[$key] = [
             'level' => $level,
-            'expiresAt' => $now + $durationSeconds
+            'expiresAt' => $now + $durationSeconds,
         ];
     }
 
@@ -89,7 +87,7 @@ class InMemoryRateLimitStore implements BudgetSeedStoreInterface
 
         return new BlockStateDTO(
             $this->blocks[$key]['level'],
-            $this->blocks[$key]['expiresAt']
+            $this->blocks[$key]['expiresAt'],
         );
     }
 
@@ -109,7 +107,7 @@ class InMemoryRateLimitStore implements BudgetSeedStoreInterface
 
         return new BudgetStateDTO(
             $this->budgets[$key]['count'],
-            $this->budgets[$key]['epochStart']
+            $this->budgets[$key]['epochStart'],
         );
     }
 
@@ -122,7 +120,7 @@ class InMemoryRateLimitStore implements BudgetSeedStoreInterface
             $this->budgets[$key] = [
                 'count' => $amount,
                 'epochStart' => $now,
-                'epochDuration' => $epochDurationSeconds
+                'epochDuration' => $epochDurationSeconds,
             ];
         } else {
             $this->budgets[$key]['count'] += $amount;
@@ -130,7 +128,7 @@ class InMemoryRateLimitStore implements BudgetSeedStoreInterface
 
         return new BudgetStateDTO(
             $this->budgets[$key]['count'],
-            $this->budgets[$key]['epochStart']
+            $this->budgets[$key]['epochStart'],
         );
     }
 
@@ -138,9 +136,8 @@ class InMemoryRateLimitStore implements BudgetSeedStoreInterface
         string $key,
         int $epochDurationSeconds,
         BudgetStateDTO $seed,
-        int $amount = 1
-    ): BudgetStateDTO
-    {
+        int $amount = 1,
+    ): BudgetStateDTO {
         $this->writes++;
         $now = $this->clock->now()->getTimestamp();
         $current = $this->budgets[$key] ?? null;
@@ -165,7 +162,7 @@ class InMemoryRateLimitStore implements BudgetSeedStoreInterface
 
         return new BudgetStateDTO(
             $current['count'],
-            $current['epochStart']
+            $current['epochStart'],
         );
     }
 

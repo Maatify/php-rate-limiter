@@ -4,6 +4,9 @@ declare(strict_types=1);
 
 namespace Maatify\RateLimiter\Repository;
 
+/**
+ * Persistence boundary for distinct-device and watch-flag correlations.
+ */
 interface CorrelationStoreInterface
 {
     /**

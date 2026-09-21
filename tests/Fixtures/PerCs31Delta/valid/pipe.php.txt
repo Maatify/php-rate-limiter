@@ -1,0 +1,6 @@
+<?php
+
+$result = $input |> trim(...) |> strtoupper(...);
+$result = $input
+    |> trim(...)
+    |> strtoupper(...);

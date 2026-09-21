@@ -58,7 +58,7 @@ final class RateLimiterDeviceGenerationRotationTest extends TestCase
             $resolver,
             'new-outer',
             'old-outer',
-            new LoginProtectionPolicy()
+            new LoginProtectionPolicy(),
         );
 
         $oldKey = $this->deviceKey('login_protection', 'k5', $context, $device->fingerprintHash, 'old-outer');
@@ -82,7 +82,7 @@ final class RateLimiterDeviceGenerationRotationTest extends TestCase
             $resolver,
             'stable-outer',
             null,
-            new ApiHeavyProtectionPolicy()
+            new ApiHeavyProtectionPolicy(),
         );
 
         $oldKey = $this->deviceKey('api_heavy_protection', 'k3', $context, $device->previousFingerprintHash, 'stable-outer');
@@ -106,7 +106,7 @@ final class RateLimiterDeviceGenerationRotationTest extends TestCase
             $resolver,
             'new-outer',
             'old-outer',
-            new LoginProtectionPolicy()
+            new LoginProtectionPolicy(),
         );
 
         $oldKey = $this->deviceKey('login_protection', 'k5', $context, $device->previousFingerprintHash, 'old-outer');
@@ -129,7 +129,7 @@ final class RateLimiterDeviceGenerationRotationTest extends TestCase
             $resolver,
             'stable-outer',
             null,
-            new LoginProtectionPolicy()
+            new LoginProtectionPolicy(),
         );
         $device = $resolver->resolve($context);
 
@@ -138,7 +138,7 @@ final class RateLimiterDeviceGenerationRotationTest extends TestCase
         $this->assertSame(RateLimitResultDTO::DECISION_ALLOW, $result->decision);
         $this->assertSame(
             2,
-            $store->get($this->deviceKey('login_protection', 'k5', $context, $device->fingerprintHash, 'stable-outer'))?->value
+            $store->get($this->deviceKey('login_protection', 'k5', $context, $device->fingerprintHash, 'stable-outer'))?->value,
         );
     }
 
@@ -154,7 +154,7 @@ final class RateLimiterDeviceGenerationRotationTest extends TestCase
             $resolver,
             'stable-outer',
             null,
-            new ApiHeavyProtectionPolicy(['k3' => 2])
+            new ApiHeavyProtectionPolicy(['k3' => 2]),
         );
         $oldKey = $this->deviceKey('api_heavy_protection', 'k3', $context, $device->previousFingerprintHash, 'stable-outer');
         $store->set($oldKey, 2, 86400);
@@ -178,7 +178,7 @@ final class RateLimiterDeviceGenerationRotationTest extends TestCase
             $resolver,
             'new-outer',
             'old-outer',
-            new LoginProtectionPolicy()
+            new LoginProtectionPolicy(),
         );
         $oldKey = $this->deviceKey('login_protection', 'k5', $context, $device->previousFingerprintHash, 'old-outer');
         $currentKey = $this->deviceKey('login_protection', 'k5', $context, $device->fingerprintHash, 'new-outer');
@@ -200,7 +200,7 @@ final class RateLimiterDeviceGenerationRotationTest extends TestCase
         string $currentOuter,
         ?string $previousOuter,
         string $currentFingerprint,
-        ?string $previousFingerprint
+        ?string $previousFingerprint,
     ): void {
         $clock = new FixedClock();
         $store = new InMemoryRateLimitStore($clock);
@@ -212,21 +212,21 @@ final class RateLimiterDeviceGenerationRotationTest extends TestCase
             $resolver,
             $currentOuter,
             $previousOuter,
-            new LoginProtectionPolicy()
+            new LoginProtectionPolicy(),
         );
 
         $previousMicroKey = $this->microKey(
             'login_protection',
             $context->accountId,
             $device->previousFingerprintHash ?? $device->fingerprintHash,
-            $previousOuter ?? $currentOuter
+            $previousOuter ?? $currentOuter,
         );
         $previousState = $store->incrementBudget($previousMicroKey, 86400, 7);
         $currentMicroKey = $this->microKey(
             'login_protection',
             $context->accountId,
             $device->fingerprintHash,
-            $currentOuter
+            $currentOuter,
         );
 
         $result = $engine->limit($context, RateLimitCommand::recordFailure('login_protection'));
@@ -261,7 +261,7 @@ final class RateLimiterDeviceGenerationRotationTest extends TestCase
             $resolver,
             'new-outer',
             'old-outer',
-            new LoginProtectionPolicy()
+            new LoginProtectionPolicy(),
         );
         $currentMicroKey = $this->microKey('login_protection', $context->accountId, $device->fingerprintHash, 'new-outer');
         $previousMicroKey = $this->microKey('login_protection', $context->accountId, $device->fingerprintHash, 'old-outer');
@@ -286,7 +286,7 @@ final class RateLimiterDeviceGenerationRotationTest extends TestCase
             $resolver,
             'new-outer',
             'old-outer',
-            new LoginProtectionPolicy()
+            new LoginProtectionPolicy(),
         );
         $previousMicroKey = $this->microKey('login_protection', $context->accountId, $device->fingerprintHash, 'old-outer');
         $currentMicroKey = $this->microKey('login_protection', $context->accountId, $device->fingerprintHash, 'new-outer');
@@ -330,7 +330,7 @@ final class RateLimiterDeviceGenerationRotationTest extends TestCase
             'stable-outer',
             null,
             new ApiHeavyProtectionPolicy(),
-            $correlation
+            $correlation,
         );
         $decisions = [];
         $previousHashes = [];
@@ -340,7 +340,7 @@ final class RateLimiterDeviceGenerationRotationTest extends TestCase
                 '203.0.113.50',
                 "Mozilla/5.0 Chrome/{$i}.0.0.0",
                 null,
-                ['device' => $i]
+                ['device' => $i],
             );
             $device = $resolver->resolve($context);
             $previousHashes[] = $device->previousFingerprintHash;
@@ -356,7 +356,7 @@ final class RateLimiterDeviceGenerationRotationTest extends TestCase
         string $currentOuter,
         ?string $previousOuter,
         BlockPolicyInterface $policy,
-        ?CorrelationStoreInterface $correlationStore = null
+        ?CorrelationStoreInterface $correlationStore = null,
     ): RateLimiterEngine {
         $clock = new FixedClock();
         $correlationStore ??= new StatefulInMemoryCorrelationStore($clock);
@@ -371,7 +371,7 @@ final class RateLimiterDeviceGenerationRotationTest extends TestCase
             $currentOuter,
             'prod',
             $clock,
-            $previousOuter
+            $previousOuter,
         );
 
         return new RateLimiterEngine(
@@ -381,7 +381,7 @@ final class RateLimiterDeviceGenerationRotationTest extends TestCase
             new FailureModeResolver(),
             $emitter,
             $clock,
-            [$policy]
+            [$policy],
         );
     }
 
@@ -389,7 +389,7 @@ final class RateLimiterDeviceGenerationRotationTest extends TestCase
     {
         return new DeviceIdentityResolver(
             new FingerprintHasher($currentFingerprint),
-            $previousFingerprint !== null ? new FingerprintHasher($previousFingerprint) : null
+            $previousFingerprint !== null ? new FingerprintHasher($previousFingerprint) : null,
         );
     }
 
@@ -406,7 +406,7 @@ final class RateLimiterDeviceGenerationRotationTest extends TestCase
             null,
             false,
             [],
-            true
+            true,
         );
     }
 
@@ -415,7 +415,7 @@ final class RateLimiterDeviceGenerationRotationTest extends TestCase
         string $type,
         RateLimitContextDTO $context,
         ?string $fingerprint,
-        string $outer
+        string $outer,
     ): string {
         $base = "{$policy}:rate_limiter:{$type}:v2:prod:";
         $normalizedUa = DeviceIdentityResolver::normalizeUserAgent($context->ua);
@@ -435,7 +435,7 @@ final class RateLimiterDeviceGenerationRotationTest extends TestCase
         return hash_hmac(
             'sha256',
             "{$policy}:rate_limiter:microcap:k5:v1:{$accountId}:{$fingerprint}",
-            $outer
+            $outer,
         );
     }
 }

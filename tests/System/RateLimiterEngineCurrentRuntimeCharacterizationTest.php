@@ -50,7 +50,7 @@ final class RateLimiterEngineCurrentRuntimeCharacterizationTest extends TestCase
             '198.51.100.10',
             'Mozilla/5.0 Chrome/123.0.0.0',
             'login-stall-account',
-            ['device' => 'stable']
+            ['device' => 'stable'],
         );
         $command = RateLimitCommand::recordFailure('login_protection');
         $k4Key = $this->key('login_protection', 'k4', 'login-stall-account');
@@ -90,7 +90,7 @@ final class RateLimiterEngineCurrentRuntimeCharacterizationTest extends TestCase
             '198.51.100.11',
             'Mozilla/5.0 Chrome/123.0.0.0',
             'login-budget-crossing',
-            ['device' => 'stable']
+            ['device' => 'stable'],
         );
         $k4Key = $this->key('login_protection', 'k4', 'login-budget-crossing');
         $this->store->set($k4Key, 0, 86400);
@@ -128,7 +128,7 @@ final class RateLimiterEngineCurrentRuntimeCharacterizationTest extends TestCase
             $accountId,
             null,
             null,
-            true
+            true,
         );
         $k4Key = $this->key('login_protection', 'k4', $accountId);
         $this->store->incrementBudget($k4Key, 86400, 20);
@@ -149,7 +149,7 @@ final class RateLimiterEngineCurrentRuntimeCharacterizationTest extends TestCase
             $accountId,
             null,
             'session-device-4',
-            true
+            true,
         );
         $k4Key = $this->key('login_protection', 'k4', $accountId);
         $this->store->incrementBudget($k4Key, 86400, 20);
@@ -167,7 +167,7 @@ final class RateLimiterEngineCurrentRuntimeCharacterizationTest extends TestCase
         $context = new RateLimitContextDTO(
             '198.51.100.23',
             'Mozilla/5.0 Chrome/123.0.0.0',
-            $accountId
+            $accountId,
         );
         $oldK4Key = $this->key('login_protection', 'k4', $accountId, 'old_secret');
         $newK4Key = $this->key('login_protection', 'k4', $accountId, 'new_secret');
@@ -192,7 +192,7 @@ final class RateLimiterEngineCurrentRuntimeCharacterizationTest extends TestCase
         $context = new RateLimitContextDTO(
             '198.51.100.24',
             'Mozilla/5.0 Chrome/123.0.0.0',
-            $accountId
+            $accountId,
         );
         $k4Key = $this->key('login_protection', 'k4', $accountId);
         $this->store->set($k4Key, 8, 86400);
@@ -208,7 +208,7 @@ final class RateLimiterEngineCurrentRuntimeCharacterizationTest extends TestCase
         $cooldownKey = hash_hmac(
             'sha256',
             'login_protection:rate_limiter:budget_cooldown:v1:prod:' . $accountId,
-            'test_secret'
+            'test_secret',
         );
         $this->assertNull($this->store->get($cooldownKey));
     }
@@ -221,7 +221,7 @@ final class RateLimiterEngineCurrentRuntimeCharacterizationTest extends TestCase
             '198.51.100.25',
             'Mozilla/5.0 Chrome/123.0.0.0',
             $accountId,
-            ['device' => 'stable']
+            ['device' => 'stable'],
         );
         $k4Key = $this->key('login_protection', 'k4', $accountId);
         $this->store->set($k4Key, 0, 86400);
@@ -245,7 +245,7 @@ final class RateLimiterEngineCurrentRuntimeCharacterizationTest extends TestCase
             $accountId,
             null,
             'session-device-5',
-            true
+            true,
         );
         $device = (new DeviceIdentityResolver(new FingerprintHasher('test_secret')))->resolve($context);
         $this->assertNotNull($device->fingerprintHash);
@@ -254,7 +254,7 @@ final class RateLimiterEngineCurrentRuntimeCharacterizationTest extends TestCase
         $microCapKey = hash_hmac(
             'sha256',
             "login_protection:rate_limiter:microcap:k5:v1:{$accountId}:{$device->fingerprintHash}",
-            'test_secret'
+            'test_secret',
         );
 
         $result = $engine->limit($context, RateLimitCommand::recordFailure('login_protection'));
@@ -273,7 +273,7 @@ final class RateLimiterEngineCurrentRuntimeCharacterizationTest extends TestCase
             '198.51.100.27',
             'Mozilla/5.0 Chrome/123.0.0.0',
             $accountId,
-            ['device' => 'stable']
+            ['device' => 'stable'],
         );
         $k4Key = $this->key('login_protection', 'k4', $accountId);
 
@@ -301,7 +301,7 @@ final class RateLimiterEngineCurrentRuntimeCharacterizationTest extends TestCase
             '198.51.100.12',
             'Mozilla/5.0 Chrome/123.0.0.0',
             'login-cooldown-absence',
-            ['device' => 'stable']
+            ['device' => 'stable'],
         );
         $k4Key = $this->key('login_protection', 'k4', 'login-cooldown-absence');
         $this->store->incrementBudget($k4Key, 86400, 20);
@@ -320,7 +320,7 @@ final class RateLimiterEngineCurrentRuntimeCharacterizationTest extends TestCase
         $cooldownKey = hash_hmac(
             'sha256',
             'login_protection:rate_limiter:budget_cooldown:v1:prod:login-cooldown-absence',
-            'test_secret'
+            'test_secret',
         );
         $this->assertSame(1, $this->store->get($cooldownKey)?->value);
     }
@@ -334,7 +334,7 @@ final class RateLimiterEngineCurrentRuntimeCharacterizationTest extends TestCase
             'otp-recovery-collision',
             ['device' => 'trusted'],
             'session-device-1',
-            true
+            true,
         );
         $k4Key = $this->key('otp_protection', 'k4', 'otp-recovery-collision');
         $this->store->incrementBudget($k4Key, 86400, 9);
@@ -352,7 +352,7 @@ final class RateLimiterEngineCurrentRuntimeCharacterizationTest extends TestCase
         $cooldownKey = hash_hmac(
             'sha256',
             'otp_protection:rate_limiter:budget_cooldown:v1:prod:otp-recovery-collision',
-            'test_secret'
+            'test_secret',
         );
         $this->assertNull($this->store->get($cooldownKey));
     }
@@ -365,7 +365,7 @@ final class RateLimiterEngineCurrentRuntimeCharacterizationTest extends TestCase
             '198.51.100.14',
             'Mozilla/5.0 Chrome/123.0.0.0',
             'api-k2-mapping',
-            ['device' => 'stable']
+            ['device' => 'stable'],
         );
         $command = new RateLimitCommand('api_heavy_protection');
 
@@ -376,7 +376,7 @@ final class RateLimiterEngineCurrentRuntimeCharacterizationTest extends TestCase
         $k2Key = $this->key(
             'api_heavy_protection',
             'k2',
-            '198.51.100.14:' . DeviceIdentityResolver::normalizeUserAgent($context->ua)
+            '198.51.100.14:' . DeviceIdentityResolver::normalizeUserAgent($context->ua),
         );
         $block = $this->store->checkBlock($k2Key);
         $this->assertNotNull($block);
@@ -391,7 +391,7 @@ final class RateLimiterEngineCurrentRuntimeCharacterizationTest extends TestCase
             '198.51.100.15',
             'Mozilla/5.0 Chrome/123.0.0.0',
             'api-k4-mapping',
-            ['device' => 'stable']
+            ['device' => 'stable'],
         );
         $command = new RateLimitCommand('api_heavy_protection');
 
@@ -419,7 +419,7 @@ final class RateLimiterEngineCurrentRuntimeCharacterizationTest extends TestCase
                 $ip,
                 $ua,
                 "spray-account-{$index}",
-                ['device' => 'stable']
+                ['device' => 'stable'],
             );
 
             $result = $engine->limit($context, RateLimitCommand::recordFailure('login_protection'));
@@ -452,7 +452,7 @@ final class RateLimiterEngineCurrentRuntimeCharacterizationTest extends TestCase
                 $ip,
                 $request['ua'],
                 $accountId,
-                ['device' => $request['device']]
+                ['device' => $request['device']],
             );
 
             $device = $resolver->resolve($context);
@@ -482,9 +482,8 @@ final class RateLimiterEngineCurrentRuntimeCharacterizationTest extends TestCase
     private function createEngineWithSecrets(
         string $currentSecret,
         ?string $previousSecret,
-        BlockPolicyInterface ...$policies
-    ): RateLimiterEngine
-    {
+        BlockPolicyInterface ...$policies,
+    ): RateLimiterEngine {
         $emitter = new RecordingFailureSignalEmitter();
         $pipeline = new EvaluationPipeline(
             $this->store,
@@ -496,7 +495,7 @@ final class RateLimiterEngineCurrentRuntimeCharacterizationTest extends TestCase
             $currentSecret,
             'prod',
             $this->clock,
-            $previousSecret
+            $previousSecret,
         );
 
         return new RateLimiterEngine(
@@ -506,7 +505,7 @@ final class RateLimiterEngineCurrentRuntimeCharacterizationTest extends TestCase
             new FailureModeResolver(),
             $emitter,
             $this->clock,
-            $policies
+            $policies,
         );
     }
 
@@ -524,7 +523,7 @@ final class RateLimiterEngineCurrentRuntimeCharacterizationTest extends TestCase
         return hash_hmac(
             'sha256',
             "{$policy}:rate_limiter:{$type}:v2:prod:{$scope}",
-            $secret
+            $secret,
         );
     }
 }

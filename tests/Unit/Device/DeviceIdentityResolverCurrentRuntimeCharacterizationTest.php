@@ -28,7 +28,7 @@ final class DeviceIdentityResolverCurrentRuntimeCharacterizationTest extends Tes
             'trusted-without-session-id',
             null,
             null,
-            true
+            true,
         ));
 
         $this->assertFalse($device->isTrustedSession);
@@ -44,7 +44,7 @@ final class DeviceIdentityResolverCurrentRuntimeCharacterizationTest extends Tes
             'trusted-with-session-id',
             null,
             'session-device-2',
-            true
+            true,
         ));
 
         $this->assertTrue($device->isTrustedSession);
@@ -60,7 +60,7 @@ final class DeviceIdentityResolverCurrentRuntimeCharacterizationTest extends Tes
             'untrusted-with-session-id',
             null,
             'session-device-3',
-            false
+            false,
         ));
 
         $this->assertFalse($device->isTrustedSession);
@@ -73,7 +73,7 @@ final class DeviceIdentityResolverCurrentRuntimeCharacterizationTest extends Tes
         $device = $this->resolver->resolve(new RateLimitContextDTO(
             '198.51.100.21',
             'Mozilla/5.0 Chrome/123.0.0.0',
-            'no-signal-account'
+            'no-signal-account',
         ));
 
         $this->assertFalse($device->isDevicePreviouslyVerifiedForAccount);
@@ -90,7 +90,7 @@ final class DeviceIdentityResolverCurrentRuntimeCharacterizationTest extends Tes
             null,
             false,
             [],
-            true
+            true,
         ));
 
         $this->assertTrue($device->isDevicePreviouslyVerifiedForAccount);
@@ -108,7 +108,7 @@ final class DeviceIdentityResolverCurrentRuntimeCharacterizationTest extends Tes
             null,
             true,
             [],
-            true
+            true,
         ));
 
         $this->assertFalse($device->isTrustedSession);
@@ -119,7 +119,7 @@ final class DeviceIdentityResolverCurrentRuntimeCharacterizationTest extends Tes
     {
         $resolver = new DeviceIdentityResolver(
             new FingerprintHasher('new-secret'),
-            new FingerprintHasher('old-secret')
+            new FingerprintHasher('old-secret'),
         );
 
         $context = new RateLimitContextDTO(
@@ -128,7 +128,7 @@ final class DeviceIdentityResolverCurrentRuntimeCharacterizationTest extends Tes
             'acc-dual-hasher',
             ['zebra' => 'z1', 'alpha' => 'a1', 'mango' => 'm1'],
             'sess-dev-7',
-            true
+            true,
         );
 
         $normalizedRawIdentity = "v1|chrome/118|{\"alpha\":\"a1\",\"mango\":\"m1\",\"zebra\":\"z1\"}|sess-dev-7";
@@ -145,7 +145,7 @@ final class DeviceIdentityResolverCurrentRuntimeCharacterizationTest extends Tes
         $device = $this->resolver->resolve(new RateLimitContextDTO(
             '198.51.100.31',
             'Mozilla/5.0 Chrome/123.0.0.0',
-            'single-hasher'
+            'single-hasher',
         ));
 
         $this->assertNull($device->previousFingerprintHash);
@@ -162,13 +162,13 @@ final class DeviceIdentityResolverCurrentRuntimeCharacterizationTest extends Tes
             'sess-dev-8',
             true,
             [],
-            true
+            true,
         );
 
         $single = (new DeviceIdentityResolver(new FingerprintHasher('new-secret')))->resolve($context);
         $dual = (new DeviceIdentityResolver(
             new FingerprintHasher('new-secret'),
-            new FingerprintHasher('old-secret')
+            new FingerprintHasher('old-secret'),
         ))->resolve($context);
 
         $this->assertSame($single->normalizedUa, $dual->normalizedUa);
@@ -188,13 +188,13 @@ final class DeviceIdentityResolverCurrentRuntimeCharacterizationTest extends Tes
     {
         $resolver = new DeviceIdentityResolver(
             new FingerprintHasher('new-secret'),
-            new FingerprintHasher('old-secret')
+            new FingerprintHasher('old-secret'),
         );
 
         $device = $resolver->resolve(new RateLimitContextDTO(
             '198.51.100.33',
             'Mozilla/5.0 Chrome/120.0.0.0',
-            'acc-prev-only'
+            'acc-prev-only',
         ));
 
         $this->assertNotNull($device->previousFingerprintHash);

@@ -51,7 +51,7 @@ class EvaluationPipelineRetryAfterTest extends TestCase
             $ephemeralBucket,
             'test_secret',
             'prod',
-            $this->clock
+            $this->clock,
         );
     }
 

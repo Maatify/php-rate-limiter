@@ -1,6 +1,7 @@
 name: CI Quality Gate
 
 on:
+  workflow_dispatch:
   push:
     branches:
       - main
@@ -36,6 +37,25 @@ jobs:
           coverage: none
       - name: Composer Validate
         run: composer validate --strict
+
+  coding-style:
+    name: PHP Coding Style (PER 3.1)
+    timeout-minutes: 10
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout Code
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+      - name: Setup PHP
+        uses: shivammathur/setup-php@f3e473d116dcccaddc5834248c87452386958240 # v2
+        with:
+          php-version: '8.5'
+          coverage: none
+      - name: Install Dependencies
+        run: composer update --no-interaction --prefer-dist --no-progress
+      - name: Verify Platform
+        run: composer check-platform-reqs
+      - name: Check PHP Coding Style
+        run: composer format:check
 
   php-syntax:
     name: PHP Syntax Check
@@ -180,6 +200,7 @@ jobs:
         with:
           php-version: '8.4'
           coverage: none
+          tools: composer:2.10.3
       - name: Install Dependencies
         run: composer update --no-interaction --prefer-dist --no-progress
       - name: Verify Platform and Audit
@@ -232,6 +253,7 @@ jobs:
     if: always()
     needs:
       - composer-validate
+      - coding-style
       - php-syntax
       - example-syntax
       - static-analysis
@@ -249,6 +271,7 @@ jobs:
         run: |
           set -euo pipefail
           if [ "${{ needs.composer-validate.result }}" != "success" ] || \
+             [ "${{ needs.coding-style.result }}" != "success" ] || \
              [ "${{ needs.php-syntax.result }}" != "success" ] || \
              [ "${{ needs.example-syntax.result }}" != "success" ] || \
              [ "${{ needs.static-analysis.result }}" != "success" ] || \
