@@ -8,6 +8,9 @@ use Maatify\RateLimiter\Command\RateLimitCommand;
 use Maatify\RateLimiter\DTO\RateLimitContextDTO;
 use Maatify\RateLimiter\DTO\RateLimitResultDTO;
 
+/**
+ * Public entry point for evaluating a request against a registered policy.
+ */
 interface RateLimiterInterface
 {
     /**

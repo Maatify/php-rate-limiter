@@ -10,9 +10,7 @@ use Maatify\SharedCommon\Contracts\ClockInterface;
 
 final class FixedClock implements ClockInterface
 {
-    public function __construct(private readonly DateTimeImmutable $currentTime)
-    {
-    }
+    public function __construct(private readonly DateTimeImmutable $currentTime) {}
 
     public function now(): DateTimeImmutable
     {

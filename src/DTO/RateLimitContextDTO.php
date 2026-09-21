@@ -4,17 +4,20 @@ declare(strict_types=1);
 
 namespace Maatify\RateLimiter\DTO;
 
+/**
+ * Contains request identity and trust inputs used to derive limiter keys.
+ */
 final readonly class RateLimitContextDTO implements \JsonSerializable
 {
     /**
-     * @param string $ip
-     * @param string $ua
-     * @param ?string $accountId
-     * @param ?array<string, mixed> $clientFingerprint
-     * @param ?string $sessionDeviceId
-     * @param bool $isSessionTrusted
-     * @param array<string, string|string[]> $headers
-     * @param bool $isDevicePreviouslyVerifiedForAccount
+     * @param string $ip Client IP address used for IP scopes.
+     * @param string $ua Raw user-agent string used for normalization.
+     * @param ?string $accountId Optional account identifier for account scopes.
+     * @param ?array<string, mixed> $clientFingerprint Optional client fingerprint fields.
+     * @param ?string $sessionDeviceId Optional trusted-session device identifier.
+     * @param bool $isSessionTrusted Whether the session device identifier is trusted.
+     * @param array<string, string|string[]> $headers Request headers retained as context.
+     * @param bool $isDevicePreviouslyVerifiedForAccount Whether the device is known to the account.
      */
     public function __construct(
         public string $ip,
@@ -24,9 +27,12 @@ final readonly class RateLimitContextDTO implements \JsonSerializable
         public ?string $sessionDeviceId = null,
         public bool $isSessionTrusted = false,
         public array $headers = [],
-        public bool $isDevicePreviouslyVerifiedForAccount = false
+        public bool $isDevicePreviouslyVerifiedForAccount = false,
     ) {}
 
+    /**
+     * Return the request context in the public serialized shape.
+     */
     public function jsonSerialize(): mixed
     {
         return [

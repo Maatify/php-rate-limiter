@@ -45,7 +45,7 @@ final class CorrelationBehaviorTest extends TestCase
             new EphemeralBucket($this->correlationStore),
             'test_secret',
             'prod',
-            $this->clock
+            $this->clock,
         );
     }
 
@@ -59,7 +59,7 @@ final class CorrelationBehaviorTest extends TestCase
                 $this->policy,
                 $context,
                 RateLimitCommand::checkOnly('otp_protection'),
-                new DeviceIdentityDTO($fingerprint, 'LOW', false, false, 'mozilla/5.0')
+                new DeviceIdentityDTO($fingerprint, 'LOW', false, false, 'mozilla/5.0'),
             );
         }
 
@@ -80,7 +80,7 @@ final class CorrelationBehaviorTest extends TestCase
                 $this->policy,
                 new RateLimitContextDTO("198.51.100.{$octet}", 'Mozilla/5.0'),
                 $command,
-                new DeviceIdentityDTO($fingerprint, 'LOW', false, false, 'mozilla/5.0')
+                new DeviceIdentityDTO($fingerprint, 'LOW', false, false, 'mozilla/5.0'),
             );
 
             $this->assertSame(RateLimitResultDTO::DECISION_ALLOW, $result->decision);
@@ -92,7 +92,7 @@ final class CorrelationBehaviorTest extends TestCase
             $this->policy,
             new RateLimitContextDTO('198.51.100.6', 'Mozilla/5.0'),
             $command,
-            new DeviceIdentityDTO($fingerprint, 'LOW', false, false, 'mozilla/5.0')
+            new DeviceIdentityDTO($fingerprint, 'LOW', false, false, 'mozilla/5.0'),
         );
 
         $this->assertSame(RateLimitResultDTO::DECISION_HARD_BLOCK, $result->decision);

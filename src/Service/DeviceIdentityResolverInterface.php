@@ -7,6 +7,9 @@ namespace Maatify\RateLimiter\Service;
 use Maatify\RateLimiter\DTO\DeviceIdentityDTO;
 use Maatify\RateLimiter\DTO\RateLimitContextDTO;
 
+/**
+ * Resolves request identity inputs into the device signals used by policies.
+ */
 interface DeviceIdentityResolverInterface
 {
     /**

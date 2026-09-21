@@ -64,7 +64,7 @@ final class RateLimiterBudgetOwnerSafetyTest extends TestCase
                 $policy,
                 $this->context($account),
                 RateLimitCommand::checkOnly('login_protection'),
-                $device
+                $device,
             );
 
             $this->assertSame($decision, $result->decision);
@@ -102,7 +102,7 @@ final class RateLimiterBudgetOwnerSafetyTest extends TestCase
             $policy,
             $this->context($trustedAccount),
             RateLimitCommand::recordFailure('login_protection'),
-            $this->device('trusted-fp', 'HIGH', true)
+            $this->device('trusted-fp', 'HIGH', true),
         );
         $this->assertSame(RateLimitResultDTO::DECISION_ALLOW, $trusted->decision);
         $this->assertSame(2, $this->store->get($this->key('login_protection', 'k5', "{$trustedAccount}:trusted-fp"))?->value);
@@ -114,7 +114,7 @@ final class RateLimiterBudgetOwnerSafetyTest extends TestCase
             $policy,
             $this->context($verifiedAccount, '198.51.100.41'),
             RateLimitCommand::recordFailure('login_protection'),
-            $this->device('verified-fp', 'MEDIUM', false, true)
+            $this->device('verified-fp', 'MEDIUM', false, true),
         );
         $this->assertSame(RateLimitResultDTO::DECISION_ALLOW, $verified->decision);
         $this->assertSame(2, $this->store->get($this->key('login_protection', 'k5', "{$verifiedAccount}:verified-fp"))?->value);
@@ -125,7 +125,7 @@ final class RateLimiterBudgetOwnerSafetyTest extends TestCase
             $policy,
             $this->context($newAccount, '198.51.100.42'),
             RateLimitCommand::recordFailure('login_protection'),
-            $this->device('new-fp')
+            $this->device('new-fp'),
         );
         $this->assertSame(RateLimitResultDTO::DECISION_ALLOW, $new->decision);
         $this->assertSame(3, $this->store->get($this->key('login_protection', 'k4', $newAccount))?->value);
@@ -180,7 +180,7 @@ final class RateLimiterBudgetOwnerSafetyTest extends TestCase
                 $policy,
                 $this->context($account),
                 RateLimitCommand::recordFailure($policy->getName()),
-                $device
+                $device,
             );
 
             $this->assertSame(RateLimitResultDTO::DECISION_ALLOW, $result->decision);
@@ -192,7 +192,7 @@ final class RateLimiterBudgetOwnerSafetyTest extends TestCase
             $policy,
             $this->context($account),
             RateLimitCommand::recordFailure($policy->getName()),
-            $device
+            $device,
         );
 
         $this->assertSame(RateLimitResultDTO::DECISION_ALLOW, $third->decision);
@@ -208,7 +208,7 @@ final class RateLimiterBudgetOwnerSafetyTest extends TestCase
             $directBudgetPolicy,
             $this->context($directAccount),
             RateLimitCommand::recordFailure($directBudgetPolicy->getName()),
-            $this->device('custom-direct-budget-fp', 'MEDIUM', false, true)
+            $this->device('custom-direct-budget-fp', 'MEDIUM', false, true),
         );
 
         $this->assertSame(RateLimitResultDTO::DECISION_SOFT_BLOCK, $direct->decision);
@@ -248,7 +248,7 @@ final class RateLimiterBudgetOwnerSafetyTest extends TestCase
             new LoginProtectionPolicy(),
             $this->context($loginAccount),
             RateLimitCommand::checkOnly('login_protection'),
-            $this->device('login-trusted', 'HIGH', true)
+            $this->device('login-trusted', 'HIGH', true),
         );
 
         $otpAccount = 'trusted-otp-floor';
@@ -258,7 +258,7 @@ final class RateLimiterBudgetOwnerSafetyTest extends TestCase
             new OtpProtectionPolicy(),
             $this->context($otpAccount),
             RateLimitCommand::recordFailure('otp_protection'),
-            $this->device('otp-trusted', 'HIGH', true)
+            $this->device('otp-trusted', 'HIGH', true),
         );
 
         $this->assertSame(RateLimitResultDTO::DECISION_SOFT_BLOCK, $login->decision);
@@ -278,7 +278,7 @@ final class RateLimiterBudgetOwnerSafetyTest extends TestCase
             new LoginProtectionPolicy(),
             $this->context($account),
             RateLimitCommand::recordFailure('login_protection'),
-            $this->device('new-fp')
+            $this->device('new-fp'),
         );
 
         $this->assertSame(RateLimitResultDTO::DECISION_SOFT_BLOCK, $result->decision);
@@ -300,7 +300,7 @@ final class RateLimiterBudgetOwnerSafetyTest extends TestCase
             new LoginProtectionPolicy(),
             $this->context($account),
             RateLimitCommand::checkOnly('login_protection'),
-            $this->device('winning-hard-fingerprint')
+            $this->device('winning-hard-fingerprint'),
         );
 
         $this->assertSame(RateLimitResultDTO::DECISION_HARD_BLOCK, $result->decision);
@@ -400,13 +400,13 @@ final class RateLimiterBudgetOwnerSafetyTest extends TestCase
             $currentSecret,
             'prod',
             $this->clock,
-            $previousSecret
+            $previousSecret,
         );
     }
 
     private function customBudgetPolicy(?int $knownDeviceMicroCap): BlockPolicyInterface
     {
-        return new class($knownDeviceMicroCap) implements BlockPolicyInterface {
+        return new class ($knownDeviceMicroCap) implements BlockPolicyInterface {
             public function __construct(private readonly ?int $knownDeviceMicroCap) {}
 
             public function getName(): string
@@ -425,7 +425,7 @@ final class RateLimiterBudgetOwnerSafetyTest extends TestCase
                     k2_missing_fp: 4,
                     k4_failure: 3,
                     k4_repeated_missing_fp: 6,
-                    k5_failure: 2
+                    k5_failure: 2,
                 );
             }
 
@@ -443,7 +443,7 @@ final class RateLimiterBudgetOwnerSafetyTest extends TestCase
                     trusted_session_floor_level: 2,
                     precheck_enforcement: false,
                     known_device_micro_cap: $this->knownDeviceMicroCap,
-                    recovery_collision_guard_enabled: false
+                    recovery_collision_guard_enabled: false,
                 );
             }
         };

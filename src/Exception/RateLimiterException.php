@@ -6,6 +6,7 @@ namespace Maatify\RateLimiter\Exception;
 
 use Maatify\Exceptions\Exception\Validation\InvalidArgumentMaatifyException;
 
-class RateLimiterException extends InvalidArgumentMaatifyException implements RateLimiterExceptionInterface
-{
-}
+/**
+ * Signals invalid rate-limiter commands, policies, or configuration inputs.
+ */
+class RateLimiterException extends InvalidArgumentMaatifyException implements RateLimiterExceptionInterface {}

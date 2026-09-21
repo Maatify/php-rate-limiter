@@ -7,8 +7,14 @@ namespace Maatify\RateLimiter\Service;
 use Maatify\RateLimiter\Config\BlockPolicyInterface;
 use Maatify\RateLimiter\DTO\FailureStateDTO;
 
+/**
+ * Maps circuit-breaker state and policy configuration to an execution mode.
+ */
 class FailureModeResolver
 {
+    /**
+     * Return FAIL_CLOSED, DEGRADED_MODE, or the policy's configured mode.
+     */
     public function resolve(BlockPolicyInterface $policy, CircuitBreaker $cb): string
     {
         $state = $cb->getState($policy->getName());

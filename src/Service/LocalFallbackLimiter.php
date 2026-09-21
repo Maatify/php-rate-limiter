@@ -6,6 +6,12 @@ namespace Maatify\RateLimiter\Service;
 
 use Maatify\SharedCommon\Contracts\ClockInterface;
 
+/**
+ * Applies bounded in-process limits while the distributed backend is degraded.
+ *
+ * Counters are process-local and therefore provide a safety fallback, not a
+ * replacement for the configured persistent store.
+ */
 class LocalFallbackLimiter
 {
     /** @var array<string, array{count: int, expiresAt: int}> */
@@ -25,6 +31,12 @@ class LocalFallbackLimiter
     private const API_IP = 120;
     private const API_IP_UA = 60;
 
+    /**
+     * Return whether the fallback window still permits the request.
+     *
+     * Login and OTP use account/IP caps in degraded mode. API protection also
+     * applies IP/user-agent caps in degraded and fail-open modes.
+     */
     public static function check(ClockInterface $clock, string $policyName, string $mode, string $ip, ?string $accountId = null, string $ua = ''): bool
     {
         self::gc($clock);
@@ -66,14 +78,14 @@ class LocalFallbackLimiter
                 }
             }
         } elseif ($mode === 'FAIL_OPEN' && $policyName === 'api_heavy_protection') {
-             $window = self::WINDOW_API;
-             if (!self::incrementAndCheck($clock, "fail:api:ip:{$normalizedIp}", self::API_IP, $window)) {
-                 $allowed = false;
-             }
-             $k2 = md5("{$normalizedIp}:{$normalizedUa}");
-             if (!self::incrementAndCheck($clock, "fail:api:k2:{$k2}", self::API_IP_UA, $window)) {
-                 $allowed = false;
-             }
+            $window = self::WINDOW_API;
+            if (!self::incrementAndCheck($clock, "fail:api:ip:{$normalizedIp}", self::API_IP, $window)) {
+                $allowed = false;
+            }
+            $k2 = md5("{$normalizedIp}:{$normalizedUa}");
+            if (!self::incrementAndCheck($clock, "fail:api:k2:{$k2}", self::API_IP_UA, $window)) {
+                $allowed = false;
+            }
         }
 
         return $allowed;
@@ -84,8 +96,8 @@ class LocalFallbackLimiter
         if (filter_var($ip, FILTER_VALIDATE_IP, FILTER_FLAG_IPV6)) {
             $packed = inet_pton($ip);
             if ($packed !== false) {
-                 $hex = bin2hex($packed);
-                 return substr($hex, 0, 16); // /64
+                $hex = bin2hex($packed);
+                return substr($hex, 0, 16); // /64
             }
         }
         return $ip;
@@ -105,11 +117,17 @@ class LocalFallbackLimiter
             $major = $matches[2];
         }
 
-        if (str_contains($ua, 'Windows')) $os = 'Windows';
-        elseif (str_contains($ua, 'Mac OS')) $os = 'MacOS';
-        elseif (str_contains($ua, 'Linux')) $os = 'Linux';
-        elseif (str_contains($ua, 'Android')) $os = 'Android';
-        elseif (str_contains($ua, 'iOS') || str_contains($ua, 'iPhone')) $os = 'iOS';
+        if (str_contains($ua, 'Windows')) {
+            $os = 'Windows';
+        } elseif (str_contains($ua, 'Mac OS')) {
+            $os = 'MacOS';
+        } elseif (str_contains($ua, 'Linux')) {
+            $os = 'Linux';
+        } elseif (str_contains($ua, 'Android')) {
+            $os = 'Android';
+        } elseif (str_contains($ua, 'iOS') || str_contains($ua, 'iPhone')) {
+            $os = 'iOS';
+        }
 
         return "{$browser}/{$major} ({$os})";
     }

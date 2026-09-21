@@ -17,9 +17,7 @@ final class InMemoryCorrelationStore implements CorrelationStoreInterface
 
     private int $operations = 0;
 
-    public function __construct(private readonly ClockInterface $clock)
-    {
-    }
+    public function __construct(private readonly ClockInterface $clock) {}
 
     public function addDistinct(string $key, string $item, int $ttlSeconds): int
     {

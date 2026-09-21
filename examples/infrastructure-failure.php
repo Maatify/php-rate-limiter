@@ -137,7 +137,7 @@ $pipeline = new EvaluationPipeline(
     new Maatify\RateLimiter\Service\EphemeralBucket($correlationStore),
     'example-key-secret',
     'example',
-    $clock
+    $clock,
 );
 $limiter = new RateLimiterEngine(
     new DeviceIdentityResolver(new FingerprintHasher('example-fingerprint-secret')),
@@ -146,13 +146,13 @@ $limiter = new RateLimiterEngine(
     new FailureModeResolver(),
     $signalEmitter,
     $clock,
-    [new LoginProtectionPolicy()]
+    [new LoginProtectionPolicy()],
 );
 
 $context = new RateLimitContextDTO(
     ip: '203.0.113.20',
     ua: 'Mozilla/5.0 Chrome/123',
-    accountId: 'account-123'
+    accountId: 'account-123',
 );
 
 for ($attempt = 1; $attempt <= 3; $attempt++) {
@@ -164,6 +164,6 @@ for ($attempt = 1; $attempt <= 3; $attempt++) {
 }
 
 echo 'emittedSignals=' . implode(',', array_map(
-    static fn (FailureSignalDTO $signal): string => $signal->type,
-    $signalEmitter->signals
+    static fn(FailureSignalDTO $signal): string => $signal->type,
+    $signalEmitter->signals,
 )) . PHP_EOL;

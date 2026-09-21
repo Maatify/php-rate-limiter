@@ -11,6 +11,9 @@ use Maatify\RateLimiter\DTO\FailureStateDTO;
 use Maatify\RateLimiter\DTO\CircuitBreakerStateDTO;
 use Maatify\SharedCommon\Contracts\ClockInterface;
 
+/**
+ * Maintains per-policy backend failure state and emits transition signals.
+ */
 class CircuitBreaker
 {
     private const TRIP_THRESHOLD = 3;
@@ -21,12 +24,20 @@ class CircuitBreaker
     private const RE_ENTRY_WINDOW = 1800; // 30 min
     private const FAIL_CLOSED_DURATION = 600; // 10 min
 
+    /**
+     * @param CircuitBreakerStoreInterface $store State persistence boundary.
+     * @param FailureSignalEmitterInterface $emitter Transition notification sink.
+     * @param ClockInterface $clock Source of timestamps used by the state machine.
+     */
     public function __construct(
         private readonly CircuitBreakerStoreInterface $store,
         private readonly FailureSignalEmitterInterface $emitter,
         private readonly ClockInterface $clock,
     ) {}
 
+    /**
+     * Record a backend failure and trip the circuit when the short window fills.
+     */
     public function reportFailure(string $policyName): void
     {
         $state = $this->loadState($policyName);
@@ -69,10 +80,13 @@ class CircuitBreaker
             $openSince,
             $state->lastSuccess,
             array_values($reEntries),
-            $failClosedUntil
+            $failClosedUntil,
         ));
     }
 
+    /**
+     * Record a successful operation and close a recovered circuit when eligible.
+     */
     public function reportSuccess(string $policyName): void
     {
         $state = $this->loadState($policyName);
@@ -101,10 +115,13 @@ class CircuitBreaker
             $state->openSince,
             $now,
             $state->reEntries,
-            $state->failClosedUntil
+            $state->failClosedUntil,
         ));
     }
 
+    /**
+     * Return the summarized state consumed by failure-mode resolution.
+     */
     public function getState(string $policyName): FailureStateDTO
     {
         $data = $this->loadState($policyName);
@@ -112,10 +129,13 @@ class CircuitBreaker
             $data->status,
             count($data->failures),
             $data->lastFailure,
-            $data->status === FailureStateDTO::STATE_OPEN
+            $data->status === FailureStateDTO::STATE_OPEN,
         );
     }
 
+    /**
+     * Return whether the policy is inside the fail-closed re-entry guard.
+     */
     public function isReEntryGuardViolated(string $policyName): bool
     {
         $data = $this->loadState($policyName);
@@ -132,7 +152,7 @@ class CircuitBreaker
             0,
             0,
             [],
-            0
+            0,
         );
     }
 

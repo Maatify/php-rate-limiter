@@ -1,17 +1,24 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
+repository_root=$(git rev-parse --show-toplevel)
+cd "$repository_root"
+
+discovery_file=$(mktemp "${TMPDIR:-/tmp}/maatify-php-syntax.XXXXXX")
+trap 'rm -f -- "$discovery_file"' EXIT
+
+if ! git ls-files -z -- '*.php' >"$discovery_file"; then
+    echo 'Unable to discover tracked PHP files.' >&2
+    exit 1
+fi
+
 php_files=()
-for directory in src tests examples; do
-    if [[ -d "$directory" ]]; then
-        while IFS= read -r -d '' file; do
-            php_files+=("$file")
-        done < <(find "$directory" -type f -name '*.php' -print0)
-    fi
-done
+while IFS= read -r -d '' file; do
+    php_files+=("$file")
+done <"$discovery_file"
 
 if [[ "${#php_files[@]}" -eq 0 ]]; then
-    echo 'No package-owned PHP files found.' >&2
+    echo 'No tracked PHP files found.' >&2
     exit 1
 fi
 

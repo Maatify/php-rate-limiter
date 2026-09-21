@@ -39,7 +39,7 @@ final class BudgetSeedStoreCapabilityTest extends TestCase
 
         $this->assertTrue(
             $reflection->isSubclassOf($parentInterface),
-            'BudgetSeedStoreInterface must extend RateLimitStoreInterface.'
+            'BudgetSeedStoreInterface must extend RateLimitStoreInterface.',
         );
     }
 
@@ -57,11 +57,11 @@ final class BudgetSeedStoreCapabilityTest extends TestCase
 
         $this->assertTrue(
             $reflection->implementsInterface(RateLimitStoreInterface::class),
-            'ThrowingRateLimitStore must remain a valid RateLimitStoreInterface.'
+            'ThrowingRateLimitStore must remain a valid RateLimitStoreInterface.',
         );
         $this->assertFalse(
             $reflection->implementsInterface(BudgetSeedStoreInterface::class),
-            'ThrowingRateLimitStore must NOT implement the budget-seeding capability.'
+            'ThrowingRateLimitStore must NOT implement the budget-seeding capability.',
         );
     }
 }

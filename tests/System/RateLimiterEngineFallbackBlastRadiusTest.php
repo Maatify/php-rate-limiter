@@ -54,11 +54,11 @@ class RateLimiterEngineFallbackBlastRadiusTest extends TestCase
 
         $chromeResult = $engine->limit(
             new RateLimitContextDTO('203.0.113.10', self::CHROME_UA, 'normal-account'),
-            new RateLimitCommand('api_heavy_protection')
+            new RateLimitCommand('api_heavy_protection'),
         );
         $firefoxResult = $engine->limit(
             new RateLimitContextDTO('203.0.113.10', self::FIREFOX_UA, 'normal-account'),
-            new RateLimitCommand('api_heavy_protection')
+            new RateLimitCommand('api_heavy_protection'),
         );
 
         $this->assertSame(RateLimitResultDTO::DECISION_ALLOW, $chromeResult->decision);
@@ -71,12 +71,12 @@ class RateLimiterEngineFallbackBlastRadiusTest extends TestCase
         $chromeKey = hash_hmac(
             'sha256',
             'api_heavy_protection:rate_limiter:k2:v2:prod:203.0.113.10:' . DeviceIdentityResolver::normalizeUserAgent(self::CHROME_UA),
-            'test_secret'
+            'test_secret',
         );
         $firefoxKey = hash_hmac(
             'sha256',
             'api_heavy_protection:rate_limiter:k2:v2:prod:203.0.113.10:' . DeviceIdentityResolver::normalizeUserAgent(self::FIREFOX_UA),
-            'test_secret'
+            'test_secret',
         );
 
         $this->assertSame(1, $store->get($chromeKey)?->value);
@@ -126,7 +126,7 @@ class RateLimiterEngineFallbackBlastRadiusTest extends TestCase
                 'login_protection',
                 $ip,
                 $i % 2 === 0 ? self::CHROME_UA : self::FIREFOX_UA,
-                'login-ip-account-' . $i
+                'login-ip-account-' . $i,
             );
 
             $this->assertSame(RateLimitResultDTO::DECISION_ALLOW, $result->decision);
@@ -232,7 +232,7 @@ class RateLimiterEngineFallbackBlastRadiusTest extends TestCase
                 'otp_protection',
                 $ip,
                 $i % 2 === 0 ? self::CHROME_UA : self::FIREFOX_UA,
-                'otp-ip-account-' . $i
+                'otp-ip-account-' . $i,
             );
 
             $this->assertSame(RateLimitResultDTO::DECISION_ALLOW, $result->decision);
@@ -269,14 +269,14 @@ class RateLimiterEngineFallbackBlastRadiusTest extends TestCase
         foreach ([self::CHROME_UA, self::FIREFOX_UA] as $ua) {
             for ($i = 0; $i < 60; $i++) {
                 $this->assertTrue(
-                    LocalFallbackLimiter::check($clock, 'api_heavy_protection', 'FAIL_OPEN', $ip, null, $ua)
+                    LocalFallbackLimiter::check($clock, 'api_heavy_protection', 'FAIL_OPEN', $ip, null, $ua),
                 );
             }
         }
 
         // The third K2 bucket is fresh, so request 121 isolates the K1 IP aggregate cap.
         $this->assertFalse(
-            LocalFallbackLimiter::check($clock, 'api_heavy_protection', 'FAIL_OPEN', $ip, null, self::SAFARI_UA)
+            LocalFallbackLimiter::check($clock, 'api_heavy_protection', 'FAIL_OPEN', $ip, null, self::SAFARI_UA),
         );
     }
 
@@ -293,7 +293,7 @@ class RateLimiterEngineFallbackBlastRadiusTest extends TestCase
             new EphemeralBucket($correlationStore),
             'test_secret',
             'prod',
-            $this->clock
+            $this->clock,
         );
 
         return new RateLimiterEngine(
@@ -303,7 +303,7 @@ class RateLimiterEngineFallbackBlastRadiusTest extends TestCase
             new FailureModeResolver(),
             $emitter,
             $this->clock,
-            $policies
+            $policies,
         );
     }
 
@@ -321,7 +321,7 @@ class RateLimiterEngineFallbackBlastRadiusTest extends TestCase
     {
         return $engine->limit(
             new RateLimitContextDTO($ip, $ua, $accountId),
-            RateLimitCommand::checkOnly($policyName)
+            RateLimitCommand::checkOnly($policyName),
         );
     }
 

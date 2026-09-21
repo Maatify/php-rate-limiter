@@ -8,27 +8,34 @@ use Maatify\RateLimiter\DTO\BudgetConfigDTO;
 use Maatify\RateLimiter\DTO\PolicyThresholdsDTO;
 use Maatify\RateLimiter\DTO\ScoreDeltasDTO;
 
+/**
+ * Supplies the policy-specific thresholds, score deltas, and failure rules
+ * used by the evaluation pipeline.
+ */
 interface BlockPolicyInterface
 {
+    /**
+     * Return the stable identifier used to select this policy at runtime.
+     */
     public function getName(): string;
 
     /**
-     * Get score thresholds mapping score to block level.
+     * Return thresholds mapping each configured scope score to block levels.
      */
     public function getScoreThresholds(): PolicyThresholdsDTO;
 
     /**
-     * Get score deltas for scenarios.
+     * Return score increments for access and failure scenarios.
      */
     public function getScoreDeltas(): ScoreDeltasDTO;
 
     /**
-     * Get failure mode (FAIL_CLOSED, FAIL_OPEN).
+     * Return the backend-failure mode, normally `FAIL_CLOSED` or `FAIL_OPEN`.
      */
     public function getFailureMode(): string;
 
     /**
-     * Get budget configuration.
+     * Return account-budget rules, or `null` when this policy has no budget.
      */
     public function getBudgetConfig(): ?BudgetConfigDTO;
 }

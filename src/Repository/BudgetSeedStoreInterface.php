@@ -44,6 +44,6 @@ interface BudgetSeedStoreInterface extends RateLimitStoreInterface
         string $key,
         int $epochDurationSeconds,
         BudgetStateDTO $seed,
-        int $amount = 1
+        int $amount = 1,
     ): BudgetStateDTO;
 }

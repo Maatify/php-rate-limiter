@@ -1,0 +1,6 @@
+<?php
+
+$literal = '|>';
+$separated = '| >';
+// |> in a comment is not an operator.
+/* | > in a comment is not an operator. */

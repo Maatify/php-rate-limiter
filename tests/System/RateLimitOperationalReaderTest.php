@@ -96,7 +96,7 @@ final class RateLimitOperationalReaderTest extends TestCase
             '203.0.113.10',
             'Mozilla/5.0 Chrome/123',
             'account-123',
-            ['platform' => 'web']
+            ['platform' => 'web'],
         );
 
         $engine->limit($context, RateLimitCommand::recordSuccess('api_heavy_protection'));
@@ -108,7 +108,7 @@ final class RateLimitOperationalReaderTest extends TestCase
             new DecayCalculator($clock),
             $clock,
             'test-secret',
-            'prod'
+            'prod',
         );
 
         $writesBefore = $store->writeCount();
@@ -147,7 +147,7 @@ final class RateLimitOperationalReaderTest extends TestCase
             new DecayCalculator($clock),
             $clock,
             'test-secret',
-            'prod'
+            'prod',
         );
 
         $ipv4 = $reader->read(new RateLimitContextDTO('203.0.113.10', 'Mozilla/5.0'), new ApiHeavyProtectionPolicy());
@@ -162,7 +162,7 @@ final class RateLimitOperationalReaderTest extends TestCase
 
         $ipv6 = $reader->read(
             new RateLimitContextDTO('2001:db8:1234:5678::10', 'Mozilla/5.0', 'account-123', ['platform' => 'web']),
-            new ApiHeavyProtectionPolicy()
+            new ApiHeavyProtectionPolicy(),
         );
         self::assertInstanceOf(RateLimitOperationalKeyStateDTO::class, $ipv6->scopes->k3);
         self::assertInstanceOf(RateLimitOperationalKeyStateDTO::class, $ipv6->scopes->k4);
@@ -185,7 +185,7 @@ final class RateLimitOperationalReaderTest extends TestCase
             new DecayCalculator($clock),
             $clock,
             'test-secret',
-            'prod'
+            'prod',
         );
         $context = new RateLimitContextDTO('203.0.113.10', 'Mozilla/5.0');
         $writesBefore = $store->writeCount();
@@ -208,7 +208,7 @@ final class RateLimitOperationalReaderTest extends TestCase
         $context = new RateLimitContextDTO('203.0.113.10', 'Mozilla/5.0', 'account-123', ['platform' => 'web']);
         $resolver = new DeviceIdentityResolver(
             new FingerprintHasher('current-fingerprint'),
-            new FingerprintHasher('previous-fingerprint')
+            new FingerprintHasher('previous-fingerprint'),
         );
         $device = $resolver->resolve($context);
         $store = new InMemoryRateLimitStore($clock);
@@ -243,7 +243,7 @@ final class RateLimitOperationalReaderTest extends TestCase
             $resolver,
             new TrackingCircuitBreakerStore(),
             'current-outer',
-            'previous-outer'
+            'previous-outer',
         );
         $fallback = $fallbackReader->read($context, new LoginProtectionPolicy());
 
@@ -285,7 +285,7 @@ final class RateLimitOperationalReaderTest extends TestCase
             $resolver,
             $circuitBreakerStore,
             'current-outer',
-            'previous-outer'
+            'previous-outer',
         );
 
         $before = $circuitBreakerStore->load('login_protection');
@@ -314,14 +314,14 @@ final class RateLimitOperationalReaderTest extends TestCase
             new DecayCalculator($clock),
             $clock,
             'outer-key-secret',
-            'prod'
+            'prod',
         );
         $context = new RateLimitContextDTO(
             '203.0.113.10',
             'Mozilla/5.0 Chrome/123',
             'account-123',
             ['platform' => 'web'],
-            'session-device-123'
+            'session-device-123',
         );
         $snapshot = $reader->read($context, new LoginProtectionPolicy());
         $json = json_encode($snapshot, JSON_THROW_ON_ERROR);
@@ -333,7 +333,7 @@ final class RateLimitOperationalReaderTest extends TestCase
         self::assertStringNotContainsString('session-device-123', $json);
         self::assertStringNotContainsString(
             $this->key('login_protection', 'k4', 'prod', 'account-123', 'outer-key-secret'),
-            $json
+            $json,
         );
     }
 
@@ -342,7 +342,7 @@ final class RateLimitOperationalReaderTest extends TestCase
         InMemoryRateLimitStore $store,
         TrackingCorrelationStore $correlationStore,
         TrackingCircuitBreakerStore $circuitBreakerStore,
-        RecordingFailureSignalEmitter $emitter
+        RecordingFailureSignalEmitter $emitter,
     ): RateLimiterEngine {
         $pipeline = new EvaluationPipeline(
             $store,
@@ -353,7 +353,7 @@ final class RateLimitOperationalReaderTest extends TestCase
             new EphemeralBucket($correlationStore),
             'test-secret',
             'prod',
-            $clock
+            $clock,
         );
 
         return new RateLimiterEngine(
@@ -363,7 +363,7 @@ final class RateLimitOperationalReaderTest extends TestCase
             new FailureModeResolver(),
             $emitter,
             $clock,
-            [new ApiHeavyProtectionPolicy(), new LoginProtectionPolicy()]
+            [new ApiHeavyProtectionPolicy(), new LoginProtectionPolicy()],
         );
     }
 
@@ -373,7 +373,7 @@ final class RateLimitOperationalReaderTest extends TestCase
         DeviceIdentityResolver $resolver,
         TrackingCircuitBreakerStore $circuitBreakerStore,
         string $currentSecret,
-        ?string $previousSecret
+        ?string $previousSecret,
     ): RateLimitOperationalReader {
         return new RateLimitOperationalReader(
             $resolver,
@@ -383,7 +383,7 @@ final class RateLimitOperationalReaderTest extends TestCase
             $clock,
             $currentSecret,
             'prod',
-            $previousSecret
+            $previousSecret,
         );
     }
 
@@ -399,7 +399,7 @@ final class RateLimitOperationalReaderTest extends TestCase
         return hash_hmac(
             'sha256',
             "{$policy}:rate_limiter:microcap:k5:v1:{$accountId}:{$fingerprint}",
-            $secret
+            $secret,
         );
     }
 
@@ -408,7 +408,7 @@ final class RateLimitOperationalReaderTest extends TestCase
         return hash_hmac(
             'sha256',
             "{$policy}:rate_limiter:budget_cooldown:v1:{$environment}:{$accountId}",
-            $secret
+            $secret,
         );
     }
 }

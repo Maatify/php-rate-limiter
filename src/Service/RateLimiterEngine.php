@@ -17,13 +17,22 @@ use Maatify\RateLimiter\DTO\RateLimitResultDTO;
 use Maatify\RateLimiter\Exception\RateLimiterException;
 use Maatify\SharedCommon\Contracts\ClockInterface;
 
+/**
+ * Coordinates policy registration, evaluation, circuit breaking, and fallback.
+ */
 class RateLimiterEngine implements RateLimiterInterface
 {
     /** @var array<string, BlockPolicyInterface> */
     private array $policies = [];
 
     /**
-     * @param BlockPolicyInterface[] $policies
+     * @param DeviceIdentityResolverInterface $deviceResolver Request identity resolver.
+     * @param EvaluationPipeline $pipeline Normal evaluation pipeline.
+     * @param CircuitBreaker $circuitBreaker Backend failure state machine.
+     * @param FailureModeResolver $failureResolver Failure-mode selector.
+     * @param FailureSignalEmitterInterface $emitter Failure transition sink.
+     * @param ClockInterface $clock Source of fallback timestamps.
+     * @param BlockPolicyInterface[] $policies Policies available by name.
      */
     public function __construct(
         private readonly DeviceIdentityResolverInterface $deviceResolver,
@@ -32,7 +41,7 @@ class RateLimiterEngine implements RateLimiterInterface
         private readonly FailureModeResolver $failureResolver,
         private readonly FailureSignalEmitterInterface $emitter,
         private readonly ClockInterface $clock,
-        array $policies
+        array $policies,
     ) {
         foreach ($policies as $policy) {
             $this->registerPolicy($policy);
@@ -57,15 +66,21 @@ class RateLimiterEngine implements RateLimiterInterface
         }
 
         if ($policy->getName() === 'api_heavy_protection') {
-             $thresholds = $policy->getScoreThresholds();
-             if ($thresholds->k1 === null || $thresholds->k2 === null) {
-                 throw new RateLimiterException("Policy {$policy->getName()} invalid: Must enforce K1 and K2.");
-             }
+            $thresholds = $policy->getScoreThresholds();
+            if ($thresholds->k1 === null || $thresholds->k2 === null) {
+                throw new RateLimiterException("Policy {$policy->getName()} invalid: Must enforce K1 and K2.");
+            }
         }
 
         $this->policies[$policy->getName()] = $policy;
     }
 
+    /**
+     * Evaluate a request using the policy named by its command.
+     *
+     * Backend failures are converted to the policy's configured failure mode
+     * and may use the bounded local fallback limiter.
+     */
     public function limit(RateLimitContextDTO $context, RateLimitCommand $request): RateLimitResultDTO
     {
         $policy = $this->policies[$request->policyName] ?? null;
@@ -90,10 +105,10 @@ class RateLimiterEngine implements RateLimiterInterface
             $contextMeta = null;
 
             if ($mode === 'FAIL_CLOSED' && $this->circuitBreaker->isReEntryGuardViolated($policy->getName())) {
-                 $signal = 'CRITICAL_RE_ENTRY_VIOLATION';
-                 $contextMeta = new RateLimitContextMetadataDTO('re_entry_violation');
-                 $meta = new RateLimitMetadataDTO($signal, 're_entry_violation', $contextMeta);
-                 $this->emitter->emit(new FailureSignalDTO(FailureSignalDTO::TYPE_CB_RE_ENTRY_VIOLATION, $policy->getName(), $meta));
+                $signal = 'CRITICAL_RE_ENTRY_VIOLATION';
+                $contextMeta = new RateLimitContextMetadataDTO('re_entry_violation');
+                $meta = new RateLimitMetadataDTO($signal, 're_entry_violation', $contextMeta);
+                $this->emitter->emit(new FailureSignalDTO(FailureSignalDTO::TYPE_CB_RE_ENTRY_VIOLATION, $policy->getName(), $meta));
             }
 
             // Local Fallback Check
@@ -112,7 +127,7 @@ class RateLimiterEngine implements RateLimiterInterface
             }
 
             if ($mode === 'DEGRADED_MODE') {
-                 return new RateLimitResultDTO(RateLimitResultDTO::DECISION_ALLOW, 0, 0, $mode, $meta);
+                return new RateLimitResultDTO(RateLimitResultDTO::DECISION_ALLOW, 0, 0, $mode, $meta);
             }
 
             // FAIL_CLOSED

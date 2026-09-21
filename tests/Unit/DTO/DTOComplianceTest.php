@@ -79,7 +79,7 @@ class DTOComplianceTest extends TestCase
             null,
             null,
             'NORMAL',
-            null
+            null,
         );
         $this->assertTrue($allowResult->isAllowed());
         $this->assertFalse($allowResult->isBlocked());
@@ -89,7 +89,7 @@ class DTOComplianceTest extends TestCase
             3,
             60,
             'NORMAL',
-            null
+            null,
         );
         $this->assertFalse($blockResult->isAllowed());
         $this->assertTrue($blockResult->isBlocked());
@@ -164,92 +164,92 @@ class DTOComplianceTest extends TestCase
             BudgetConfigDTO::class => [
                 new BudgetConfigDTO(100, 2),
                 ['threshold', 'block_level', 'cooldown_seconds', 'trusted_session_floor_level', 'precheck_enforcement', 'known_device_micro_cap', 'recovery_collision_guard_enabled'],
-                ['threshold' => 100, 'block_level' => 2, 'cooldown_seconds' => 0, 'trusted_session_floor_level' => 2, 'precheck_enforcement' => true, 'known_device_micro_cap' => 8, 'recovery_collision_guard_enabled' => false]
+                ['threshold' => 100, 'block_level' => 2, 'cooldown_seconds' => 0, 'trusted_session_floor_level' => 2, 'precheck_enforcement' => true, 'known_device_micro_cap' => 8, 'recovery_collision_guard_enabled' => false],
             ],
             BudgetStatusDTO::class => [
                 new BudgetStatusDTO(50, 10),
                 ['count', 'epochStart'],
-                ['count' => 50, 'epochStart' => 10]
+                ['count' => 50, 'epochStart' => 10],
             ],
             DeviceIdentityDTO::class => [
                 new DeviceIdentityDTO('hash-123', 'HIGH', true, false, 'ua-456'),
                 ['fingerprintHash', 'confidence', 'isTrustedSession', 'churnDetected', 'normalizedUa', 'isDevicePreviouslyVerifiedForAccount', 'previousFingerprintHash'],
-                ['fingerprintHash' => 'hash-123', 'confidence' => 'HIGH', 'isTrustedSession' => true, 'churnDetected' => false, 'normalizedUa' => 'ua-456', 'isDevicePreviouslyVerifiedForAccount' => false, 'previousFingerprintHash' => null]
+                ['fingerprintHash' => 'hash-123', 'confidence' => 'HIGH', 'isTrustedSession' => true, 'churnDetected' => false, 'normalizedUa' => 'ua-456', 'isDevicePreviouslyVerifiedForAccount' => false, 'previousFingerprintHash' => null],
             ],
             EphemeralStateDTO::class => [
                 new EphemeralStateDTO(true, 5, 10),
                 ['isEphemeral', 'accountDeviceCount', 'ipDeviceCount'],
-                ['isEphemeral' => true, 'accountDeviceCount' => 5, 'ipDeviceCount' => 10]
+                ['isEphemeral' => true, 'accountDeviceCount' => 5, 'ipDeviceCount' => 10],
             ],
             FailureSignalDTO::class => [
                 new FailureSignalDTO('CRITICAL', 'test_policy', clone $metadata),
                 ['type', 'policyName', 'metadata'],
-                ['type' => 'CRITICAL', 'policyName' => 'test_policy', 'metadata' => ['signal' => 'test_signal', 'cause' => 'test_cause', 'context' => ['reason' => 'test_reason', 'scope' => 'test_scope']]]
+                ['type' => 'CRITICAL', 'policyName' => 'test_policy', 'metadata' => ['signal' => 'test_signal', 'cause' => 'test_cause', 'context' => ['reason' => 'test_reason', 'scope' => 'test_scope']]],
             ],
             FailureStateDTO::class => [
                 new FailureStateDTO('OPEN', 3, 1234567, true),
                 ['state', 'failureCount', 'lastFailureTimestamp', 'isDegraded'],
-                ['state' => 'OPEN', 'failureCount' => 3, 'lastFailureTimestamp' => 1234567, 'isDegraded' => true]
+                ['state' => 'OPEN', 'failureCount' => 3, 'lastFailureTimestamp' => 1234567, 'isDegraded' => true],
             ],
             PolicyThresholdsDTO::class => [
                 new PolicyThresholdsDTO($scoreThresholds, null, null, null, null, clone $scoreThresholds),
                 ['k1', 'k2', 'k3', 'k4', 'k5', 'default'],
-                ['k1' => ['l1' => 10, 'l2' => 20, 'l3' => 30], 'k2' => null, 'k3' => null, 'k4' => null, 'k5' => null, 'default' => ['l1' => 10, 'l2' => 20, 'l3' => 30]]
+                ['k1' => ['l1' => 10, 'l2' => 20, 'l3' => 30], 'k2' => null, 'k3' => null, 'k4' => null, 'k5' => null, 'default' => ['l1' => 10, 'l2' => 20, 'l3' => 30]],
             ],
             RateLimitContextDTO::class => [
                 new RateLimitContextDTO('127.0.0.1', 'Mozilla', 'acc_123', ['canvas' => 'abcd'], 'dev_456', true, ['Host' => 'localhost']),
                 ['ip', 'ua', 'accountId', 'clientFingerprint', 'sessionDeviceId', 'isSessionTrusted', 'headers', 'isDevicePreviouslyVerifiedForAccount'],
-                ['ip' => '127.0.0.1', 'ua' => 'Mozilla', 'accountId' => 'acc_123', 'clientFingerprint' => ['canvas' => 'abcd'], 'sessionDeviceId' => 'dev_456', 'isSessionTrusted' => true, 'headers' => ['Host' => 'localhost'], 'isDevicePreviouslyVerifiedForAccount' => false]
+                ['ip' => '127.0.0.1', 'ua' => 'Mozilla', 'accountId' => 'acc_123', 'clientFingerprint' => ['canvas' => 'abcd'], 'sessionDeviceId' => 'dev_456', 'isSessionTrusted' => true, 'headers' => ['Host' => 'localhost'], 'isDevicePreviouslyVerifiedForAccount' => false],
             ],
             RateLimitContextMetadataDTO::class => [
                 new RateLimitContextMetadataDTO('test_reason', 'test_scope'),
                 ['reason', 'scope'],
-                ['reason' => 'test_reason', 'scope' => 'test_scope']
+                ['reason' => 'test_reason', 'scope' => 'test_scope'],
             ],
             RateLimitMetadataDTO::class => [
                 new RateLimitMetadataDTO('test_signal', 'test_cause', clone $contextMetadata),
                 ['signal', 'cause', 'context'],
-                ['signal' => 'test_signal', 'cause' => 'test_cause', 'context' => ['reason' => 'test_reason', 'scope' => 'test_scope']]
+                ['signal' => 'test_signal', 'cause' => 'test_cause', 'context' => ['reason' => 'test_reason', 'scope' => 'test_scope']],
             ],
             RateLimitResultDTO::class => [
                 new RateLimitResultDTO(RateLimitResultDTO::DECISION_HARD_BLOCK, 3, 60, 'NORMAL', clone $metadata),
                 ['decision', 'blockLevel', 'retryAfter', 'failureMode', 'metadata'],
-                ['decision' => RateLimitResultDTO::DECISION_HARD_BLOCK, 'blockLevel' => 3, 'retryAfter' => 60, 'failureMode' => 'NORMAL', 'metadata' => ['signal' => 'test_signal', 'cause' => 'test_cause', 'context' => ['reason' => 'test_reason', 'scope' => 'test_scope']]]
+                ['decision' => RateLimitResultDTO::DECISION_HARD_BLOCK, 'blockLevel' => 3, 'retryAfter' => 60, 'failureMode' => 'NORMAL', 'metadata' => ['signal' => 'test_signal', 'cause' => 'test_cause', 'context' => ['reason' => 'test_reason', 'scope' => 'test_scope']]],
             ],
             ScoreDeltasDTO::class => [
                 new ScoreDeltasDTO(1, 2, 3, 4, 5, 6),
                 ['access', 'k1_spray', 'k2_missing_fp', 'k4_failure', 'k4_repeated_missing_fp', 'k5_failure'],
-                ['access' => 1, 'k1_spray' => 2, 'k2_missing_fp' => 3, 'k4_failure' => 4, 'k4_repeated_missing_fp' => 5, 'k5_failure' => 6]
+                ['access' => 1, 'k1_spray' => 2, 'k2_missing_fp' => 3, 'k4_failure' => 4, 'k4_repeated_missing_fp' => 5, 'k5_failure' => 6],
             ],
             ScoreThresholdsDTO::class => [
                 new ScoreThresholdsDTO(10, 20, 30),
                 ['l1', 'l2', 'l3'],
-                ['l1' => 10, 'l2' => 20, 'l3' => 30]
+                ['l1' => 10, 'l2' => 20, 'l3' => 30],
             ],
             PipelineScoreDTO::class => [
                 new PipelineScoreDTO(100, 1600000000, true),
                 ['value', 'updatedAt', 'isFromV1'],
-                ['value' => 100, 'updatedAt' => 1600000000, 'isFromV1' => true]
+                ['value' => 100, 'updatedAt' => 1600000000, 'isFromV1' => true],
             ],
             BlockStateDTO::class => [
                 new BlockStateDTO(2, 3600),
                 ['level', 'expiresAt'],
-                ['level' => 2, 'expiresAt' => 3600]
+                ['level' => 2, 'expiresAt' => 3600],
             ],
             BudgetStateDTO::class => [
                 new BudgetStateDTO(5, 1000),
                 ['count', 'epochStart'],
-                ['count' => 5, 'epochStart' => 1000]
+                ['count' => 5, 'epochStart' => 1000],
             ],
             CircuitBreakerStateDTO::class => [
                 new CircuitBreakerStateDTO('OPEN', [1, 2], 123, 456, 789, [3, 4], 999),
                 ['status', 'failures', 'lastFailure', 'openSince', 'lastSuccess', 'reEntries', 'failClosedUntil'],
-                ['status' => 'OPEN', 'failures' => [1, 2], 'lastFailure' => 123, 'openSince' => 456, 'lastSuccess' => 789, 'reEntries' => [3, 4], 'failClosedUntil' => 999]
+                ['status' => 'OPEN', 'failures' => [1, 2], 'lastFailure' => 123, 'openSince' => 456, 'lastSuccess' => 789, 'reEntries' => [3, 4], 'failClosedUntil' => 999],
             ],
             RateLimitStateDTO::class => [
                 new RateLimitStateDTO(150, 2000),
                 ['value', 'updatedAt'],
-                ['value' => 150, 'updatedAt' => 2000]
+                ['value' => 150, 'updatedAt' => 2000],
             ],
             RateLimitOperationalKeyStateDTO::class => [
                 new RateLimitOperationalKeyStateDTO(
@@ -257,16 +257,14 @@ class DTOComplianceTest extends TestCase
                     8,
                     true,
                     new BlockStateDTO(2, 2100),
-                    false
-                ),
-                ['score', 'effectiveScore', 'scoreFromPreviousGeneration', 'activeHardBlock', 'blockFromPreviousGeneration'],
-                [
+                    false,
+                ), ['score', 'effectiveScore', 'scoreFromPreviousGeneration', 'activeHardBlock', 'blockFromPreviousGeneration'], [
                     'score' => ['value' => 10, 'updatedAt' => 2000],
                     'effectiveScore' => 8,
                     'scoreFromPreviousGeneration' => true,
                     'activeHardBlock' => ['level' => 2, 'expiresAt' => 2100],
                     'blockFromPreviousGeneration' => false,
-                ]
+                ],
             ],
             RateLimitOperationalScopesDTO::class => [
                 new RateLimitOperationalScopesDTO(
@@ -274,10 +272,9 @@ class DTOComplianceTest extends TestCase
                     new RateLimitOperationalKeyStateDTO(null, 0, false, null, false),
                     null,
                     null,
-                    null
+                    null,
                 ),
-                ['k1', 'k2', 'k3', 'k4', 'k5', 'k1_48', 'k1_40', 'k1_32'],
-                [
+                ['k1', 'k2', 'k3', 'k4', 'k5', 'k1_48', 'k1_40', 'k1_32'], [
                     'k1' => ['score' => null, 'effectiveScore' => 0, 'scoreFromPreviousGeneration' => false, 'activeHardBlock' => null, 'blockFromPreviousGeneration' => false],
                     'k2' => ['score' => null, 'effectiveScore' => 0, 'scoreFromPreviousGeneration' => false, 'activeHardBlock' => null, 'blockFromPreviousGeneration' => false],
                     'k3' => null,
@@ -286,11 +283,10 @@ class DTOComplianceTest extends TestCase
                     'k1_48' => null,
                     'k1_40' => null,
                     'k1_32' => null,
-                ]
+                ],
             ],
             RateLimitOperationalBudgetDTO::class => [
-                new RateLimitOperationalBudgetDTO(null, false, false, null, false, false, null, false, 0),
-                [
+                new RateLimitOperationalBudgetDTO(null, false, false, null, false, false, null, false, 0), [
                     'accountBudget',
                     'accountBudgetFromPreviousGeneration',
                     'accountBudgetActive',
@@ -300,8 +296,7 @@ class DTOComplianceTest extends TestCase
                     'cooldown',
                     'cooldownFromPreviousGeneration',
                     'cooldownRemainingSeconds',
-                ],
-                [
+                ], [
                     'accountBudget' => null,
                     'accountBudgetFromPreviousGeneration' => false,
                     'accountBudgetActive' => false,
@@ -311,7 +306,7 @@ class DTOComplianceTest extends TestCase
                     'cooldown' => null,
                     'cooldownFromPreviousGeneration' => false,
                     'cooldownRemainingSeconds' => 0,
-                ]
+                ],
             ],
             RateLimitOperationalSnapshotDTO::class => [
                 new RateLimitOperationalSnapshotDTO(
@@ -323,13 +318,12 @@ class DTOComplianceTest extends TestCase
                         new RateLimitOperationalKeyStateDTO(null, 0, false, null, false),
                         null,
                         null,
-                        null
+                        null,
                     ),
                     null,
-                    null
+                    null,
                 ),
-                ['policyName', 'observedAt', 'backendHealthy', 'scopes', 'budget', 'circuitBreaker'],
-                [
+                ['policyName', 'observedAt', 'backendHealthy', 'scopes', 'budget', 'circuitBreaker'], [
                     'policyName' => 'login_protection',
                     'observedAt' => 2000,
                     'backendHealthy' => true,
@@ -345,7 +339,7 @@ class DTOComplianceTest extends TestCase
                     ],
                     'budget' => null,
                     'circuitBreaker' => null,
-                ]
+                ],
             ],
         ];
     }

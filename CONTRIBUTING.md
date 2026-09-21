@@ -49,6 +49,8 @@ composer validate --strict
 composer update --no-interaction --prefer-dist --no-progress
 composer dump-autoload --optimize --strict-psr
 composer check-platform-reqs
+composer format:check
+composer format
 composer analyse
 composer test
 composer test:unit
@@ -61,6 +63,12 @@ bash scripts/ci/run-examples.sh
 bash scripts/ci/check-whitespace.sh
 ACTIONLINT_BIN=/path/to/actionlint bash scripts/ci/lint-workflows.sh
 ```
+
+`composer format:check` is the complete non-mutating PER Coding Style 3.1
+verification command: it checks the PHP-CS-Fixer PER-CS 3.0 baseline and the
+repository-owned PER 3.1 delta verifier. `composer format` applies baseline
+formatting and then runs the same non-mutating delta verification; any remaining
+PER 3.1 delta violation requires a manual mechanical fix.
 
 `composer test` runs the full maintained Unit, Integration, and System suites.
 `composer test:unit` runs the Unit suite, and `composer test:integration` is the
@@ -88,7 +96,15 @@ composer test
 composer test:integration
 ```
 
-The CI workflow runs the same checks on PHP 8.4 and 8.5. Workflow linting uses actionlint v1.7.12 with a verified checksum; install that version locally or provide its path through `ACTIONLINT_BIN`.
+The CI verification mapping is intentionally split across its gates:
+
+- The complete `composer test` matrix runs on PHP 8.4 and 8.5, representing the full Unit, Integration, and System suite on both versions.
+- The focused `composer test:integration` job runs independently on PHP 8.4.
+- PHP syntax, PHPStan, Composer audit, Consumer Verification, and lowest-supported dependency verification run on PHP 8.4.
+- The PHP coding-style gate runs on PHP 8.5.
+- Workflow lint and whitespace are repository-level gates, not PHP compatibility-matrix jobs.
+
+Workflow linting uses actionlint v1.7.12 with a verified checksum; install that version locally or provide its path through `ACTIONLINT_BIN`.
 
 ## Pull requests and review expectations
 

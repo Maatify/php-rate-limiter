@@ -64,17 +64,17 @@ class RateLimiterEngineWorkflowTest extends TestCase
             $ephemeralBucket,
             'test_secret',
             'prod',
-            $this->clock
+            $this->clock,
         );
 
         $circuitBreaker = new CircuitBreaker(
             $this->circuitBreakerStore,
             $this->failureSignalEmitter,
-            $this->clock
+            $this->clock,
         );
 
         $deviceIdentityResolver = new DeviceIdentityResolver(
-            new FingerprintHasher('test_secret')
+            new FingerprintHasher('test_secret'),
         );
 
         $failureModeResolver = new FailureModeResolver();
@@ -82,7 +82,7 @@ class RateLimiterEngineWorkflowTest extends TestCase
         $policies = [
             'otp_protection' => new OtpProtectionPolicy(),
             'login_protection' => new LoginProtectionPolicy(),
-            'api_heavy_protection' => new ApiHeavyProtectionPolicy()
+            'api_heavy_protection' => new ApiHeavyProtectionPolicy(),
         ];
 
         $this->engine = new RateLimiterEngine(
@@ -92,7 +92,7 @@ class RateLimiterEngineWorkflowTest extends TestCase
             $failureModeResolver,
             $this->failureSignalEmitter,
             $this->clock,
-            $policies
+            $policies,
         );
 
         // Clear local fallback state
@@ -248,7 +248,7 @@ class RateLimiterEngineWorkflowTest extends TestCase
             $engine = $this->createEngineWithStore(new ThrowingRateLimitStore(), $policy);
             $result = $engine->limit(
                 new RateLimitContextDTO('198.51.100.10', 'Mozilla/5.0', $policy->getName()),
-                RateLimitCommand::checkOnly($policy->getName())
+                RateLimitCommand::checkOnly($policy->getName()),
             );
 
             $this->assertSame(RateLimitResultDTO::DECISION_HARD_BLOCK, $result->decision);
@@ -294,7 +294,7 @@ class RateLimiterEngineWorkflowTest extends TestCase
             new EphemeralBucket($this->correlationStore),
             'test_secret',
             'prod',
-            $this->clock
+            $this->clock,
         );
 
         $deviceIdentityResolver = new DeviceIdentityResolver(new FingerprintHasher('test_secret'));
@@ -306,12 +306,12 @@ class RateLimiterEngineWorkflowTest extends TestCase
             new CircuitBreaker(
                 $this->circuitBreakerStore,
                 $this->failureSignalEmitter,
-                $this->clock
+                $this->clock,
             ),
             $failureModeResolver,
             $this->failureSignalEmitter,
             $this->clock,
-            [new ApiHeavyProtectionPolicy()]
+            [new ApiHeavyProtectionPolicy()],
         );
 
         // The Engine's local fallback K2 bucket allows the first 60 requests.
@@ -346,7 +346,7 @@ class RateLimiterEngineWorkflowTest extends TestCase
             'new_secret',
             'prod',
             $this->clock,
-            'old_secret'
+            'old_secret',
         );
 
         $engine = new RateLimiterEngine(
@@ -356,7 +356,7 @@ class RateLimiterEngineWorkflowTest extends TestCase
             new FailureModeResolver(),
             $this->failureSignalEmitter,
             $this->clock,
-            [new ApiHeavyProtectionPolicy()]
+            [new ApiHeavyProtectionPolicy()],
         );
 
         $context = new RateLimitContextDTO('127.0.0.1', 'Mozilla/5.0', 'acct_123');
@@ -445,7 +445,7 @@ class RateLimiterEngineWorkflowTest extends TestCase
             new EphemeralBucket($correlationStore),
             'test_secret',
             'prod',
-            $clock
+            $clock,
         );
 
         return new RateLimiterEngine(
@@ -455,7 +455,7 @@ class RateLimiterEngineWorkflowTest extends TestCase
             new FailureModeResolver(),
             $emitter,
             $clock,
-            $policies
+            $policies,
         );
     }
 }

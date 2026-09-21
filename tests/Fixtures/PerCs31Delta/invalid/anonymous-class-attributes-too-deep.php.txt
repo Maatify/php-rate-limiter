@@ -1,0 +1,10 @@
+<?php
+
+function createObject(): object
+{
+    $object = new
+            #[SomeAttribute]
+            class {};
+
+    return $object;
+}

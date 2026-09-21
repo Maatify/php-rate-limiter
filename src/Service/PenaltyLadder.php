@@ -4,6 +4,9 @@ declare(strict_types=1);
 
 namespace Maatify\RateLimiter\Service;
 
+/**
+ * Provides the fixed retry duration associated with each block level.
+ */
 class PenaltyLadder
 {
     public const L1_DURATION = 15;
@@ -13,6 +16,11 @@ class PenaltyLadder
     public const L5_DURATION = 21600;
     public const L6_DURATION = 86400;
 
+    /**
+     * Return the duration in seconds for a block level.
+     *
+     * Values outside L1-L6 use the maximum duration as the fail-closed default.
+     */
     public static function getDuration(int $level): int
     {
         return match ($level) {
