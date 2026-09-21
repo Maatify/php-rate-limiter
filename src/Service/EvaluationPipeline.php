@@ -318,7 +318,8 @@ class EvaluationPipeline
                 }
 
                 $persistence = [];
-                if ($this->isApiHeavyPolicy($policy->getName())) {
+                if ($this->isApiHeavyPolicy($policy->getName())
+                    && $this->isCanonicalApiHeavyEnforcementKeyType($candidateKeyType)) {
                     $persistenceKey = $keys[$candidateKeyType] ?? null;
                     if ($persistenceKey !== null) {
                         $persistence[] = [
@@ -717,7 +718,9 @@ class EvaluationPipeline
                         ? RateLimitResultDTO::DECISION_HARD_BLOCK
                         : RateLimitResultDTO::DECISION_SOFT_BLOCK;
                     $duration = PenaltyLadder::getDuration($candidateLevel);
-                    $persistenceKey = $keys[$candidateKeyType] ?? null;
+                    $persistenceKey = $this->isCanonicalApiHeavyEnforcementKeyType($candidateKeyType)
+                        ? $keys[$candidateKeyType] ?? null
+                        : null;
                     $persistence = $persistenceKey === null
                         ? []
                         : [['key' => $persistenceKey, 'level' => $candidateLevel, 'duration' => $duration]];
@@ -1049,6 +1052,11 @@ class EvaluationPipeline
     private function isApiHeavyKeyType(string $keyType): bool
     {
         return $this->isK1Key($keyType) || in_array($keyType, ['k2', 'k3'], true);
+    }
+
+    private function isCanonicalApiHeavyEnforcementKeyType(string $keyType): bool
+    {
+        return in_array($keyType, ['k1', 'k2', 'k3'], true);
     }
 
     // --- Budget Key-Rotation Helpers ---
