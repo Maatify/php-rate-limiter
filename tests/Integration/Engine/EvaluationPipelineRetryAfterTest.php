@@ -221,7 +221,7 @@ class EvaluationPipelineRetryAfterTest extends TestCase
         self::assertSame(180, $result->retryAfter);
     }
 
-    public function testLowConfidenceK3UsesEffectiveL1ExitThreshold(): void
+    public function testLowConfidenceK3RemainsHardL2AndPersistsAgainstK2(): void
     {
         $policy = new ApiHeavyProtectionPolicy(['k1' => 1000, 'k2' => 1000, 'k3' => 300]);
         $context = new RateLimitContextDTO('127.0.0.1', 'Mozilla', 'acct_123');
@@ -231,9 +231,64 @@ class EvaluationPipelineRetryAfterTest extends TestCase
 
         $result = $this->pipeline->process($policy, $context, RateLimitCommand::checkOnly('api_heavy_protection'), $device);
 
-        self::assertSame(RateLimitResultDTO::DECISION_SOFT_BLOCK, $result->decision);
-        self::assertSame(1, $result->blockLevel);
+        self::assertSame(RateLimitResultDTO::DECISION_HARD_BLOCK, $result->decision);
+        self::assertSame(2, $result->blockLevel);
         self::assertSame(300, $result->retryAfter);
+        self::assertSame(2, $this->store->checkBlock(hash_hmac(
+            'sha256',
+            'api_heavy_protection:rate_limiter:k2:v2:prod:127.0.0.1:Mozilla',
+            'test_secret',
+        ))?->level);
+        self::assertNull($this->store->checkBlock($k3Key));
+    }
+
+    public function testLowConfidenceK3UpdateRemainsHardL2AndTargetsK2Persistence(): void
+    {
+        $policy = new ApiHeavyProtectionPolicy(['k1' => 1000, 'k2' => 1000, 'k3' => 300]);
+        $context = new RateLimitContextDTO('127.0.0.1', 'Mozilla', 'acct_123');
+        $device = new DeviceIdentityDTO('hash_123', 'LOW', false, false, 'Mozilla');
+        $k2Key = hash_hmac('sha256', 'api_heavy_protection:rate_limiter:k2:v2:prod:127.0.0.1:Mozilla', 'test_secret');
+        $k3Key = hash_hmac('sha256', 'api_heavy_protection:rate_limiter:k3:v2:prod:127.0.0.1:hash_123', 'test_secret');
+        $this->store->set($k3Key, 299, 3600);
+
+        $result = $this->pipeline->process($policy, $context, new RateLimitCommand('api_heavy_protection'), $device);
+
+        self::assertSame(RateLimitResultDTO::DECISION_HARD_BLOCK, $result->decision);
+        self::assertSame(2, $result->blockLevel);
+        self::assertSame(2, $this->store->checkBlock($k2Key)?->level);
+        self::assertNull($this->store->checkBlock($k3Key));
+    }
+
+    public function testApiHeavyIgnoresCurrentAndPreviousK4AndK5Blocks(): void
+    {
+        $context = new RateLimitContextDTO('127.0.0.1', 'Mozilla', 'acct_123');
+        $device = new DeviceIdentityDTO('hash_123', 'HIGH', false, false, 'Mozilla');
+        $currentK4 = hash_hmac('sha256', 'api_heavy_protection:rate_limiter:k4:v2:prod:acct_123', 'test_secret');
+        $currentK5 = hash_hmac('sha256', 'api_heavy_protection:rate_limiter:k5:v2:prod:acct_123:hash_123', 'test_secret');
+        $this->store->block($currentK4, 3, 600);
+        $this->store->block($currentK5, 3, 600);
+
+        $currentResult = $this->pipeline->process(
+            new ApiHeavyProtectionPolicy(),
+            $context,
+            RateLimitCommand::checkOnly('api_heavy_protection'),
+            $device,
+        );
+        self::assertSame(RateLimitResultDTO::DECISION_ALLOW, $currentResult->decision);
+
+        $rotatedPipeline = $this->createPipeline('previous_secret');
+        $previousK4 = hash_hmac('sha256', 'api_heavy_protection:rate_limiter:k4:v2:prod:acct_123', 'previous_secret');
+        $previousK5 = hash_hmac('sha256', 'api_heavy_protection:rate_limiter:k5:v2:prod:acct_123:hash_123', 'previous_secret');
+        $this->store->block($previousK4, 3, 600);
+        $this->store->block($previousK5, 3, 600);
+
+        $previousResult = $rotatedPipeline->process(
+            new ApiHeavyProtectionPolicy(),
+            $context,
+            RateLimitCommand::checkOnly('api_heavy_protection'),
+            $device,
+        );
+        self::assertSame(RateLimitResultDTO::DECISION_ALLOW, $previousResult->decision);
     }
 
     public function testNMinusOneWatchEscalationKeepsPenaltyLadderRetryAfter(): void
@@ -278,6 +333,60 @@ class EvaluationPipelineRetryAfterTest extends TestCase
 
         self::assertSame(RateLimitResultDTO::DECISION_HARD_BLOCK, $result->decision);
         self::assertSame(300, $result->retryAfter);
+    }
+
+    public function testEqualApiThresholdsIncrementNMinusOneWatchOnlyOnce(): void
+    {
+        $policy = new ApiHeavyProtectionPolicy(['k1' => 3, 'k2' => 1000, 'k3' => 1000]);
+        $correlationStore = new \Maatify\RateLimiter\Tests\Support\Correlation\StatefulInMemoryCorrelationStore($this->clock);
+        $pipeline = new EvaluationPipeline(
+            $this->store,
+            $correlationStore,
+            new BudgetTracker($this->store, $this->clock),
+            new AntiEquilibriumGate($correlationStore),
+            new DecayCalculator($this->clock),
+            new \Maatify\RateLimiter\Service\EphemeralBucket($correlationStore),
+            'test_secret',
+            'prod',
+            $this->clock,
+        );
+        $context = new RateLimitContextDTO('127.0.0.1', 'Mozilla', 'acct_123');
+        $device = new DeviceIdentityDTO('hash_123', 'HIGH', false, false, 'Mozilla');
+        $k1Key = hash_hmac('sha256', 'api_heavy_protection:rate_limiter:k1:v2:prod:127.0.0.1', 'test_secret');
+        $this->store->set($k1Key, 1, 3600);
+
+        $result = $pipeline->process($policy, $context, new RateLimitCommand('api_heavy_protection'), $device);
+
+        self::assertSame(RateLimitResultDTO::DECISION_ALLOW, $result->decision);
+        self::assertSame(1, $correlationStore->watchValue("watch:{$k1Key}"));
+    }
+
+    public function testApiK3WatchEscalationUsesImpliedL2(): void
+    {
+        $policy = new ApiHeavyProtectionPolicy(['k1' => 1000, 'k2' => 1000, 'k3' => 3]);
+        $correlationStore = new \Maatify\RateLimiter\Tests\Support\Correlation\StatefulInMemoryCorrelationStore($this->clock);
+        $pipeline = new EvaluationPipeline(
+            $this->store,
+            $correlationStore,
+            new BudgetTracker($this->store, $this->clock),
+            new AntiEquilibriumGate($correlationStore),
+            new DecayCalculator($this->clock),
+            new \Maatify\RateLimiter\Service\EphemeralBucket($correlationStore),
+            'test_secret',
+            'prod',
+            $this->clock,
+        );
+        $context = new RateLimitContextDTO('127.0.0.1', 'Mozilla', 'acct_123');
+        $device = new DeviceIdentityDTO('hash_123', 'HIGH', false, false, 'Mozilla');
+        $k3Key = hash_hmac('sha256', 'api_heavy_protection:rate_limiter:k3:v2:prod:127.0.0.1:hash_123', 'test_secret');
+        $this->store->set($k3Key, 1, 3600);
+        $correlationStore->incrementWatchFlag("watch:{$k3Key}", 1800);
+
+        $result = $pipeline->process($policy, $context, new RateLimitCommand('api_heavy_protection'), $device);
+
+        self::assertSame(RateLimitResultDTO::DECISION_HARD_BLOCK, $result->decision);
+        self::assertSame(2, $result->blockLevel);
+        self::assertSame(2, $this->store->checkBlock($k3Key)?->level);
     }
 
     public function testTrustedK1AdvisoryDoesNotSetFinalRetryAfter(): void

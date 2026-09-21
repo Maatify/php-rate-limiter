@@ -15,6 +15,8 @@ use Maatify\RateLimiter\DTO\ScoreThresholdsDTO;
  */
 class ApiHeavyProtectionPolicy implements BlockPolicyInterface
 {
+    private const DISABLED_THRESHOLD = PHP_INT_MAX;
+
     /** @var array<string, int> */
     private array $limits;
 
@@ -24,9 +26,9 @@ class ApiHeavyProtectionPolicy implements BlockPolicyInterface
     public function __construct(array $limits = [])
     {
         $this->limits = array_merge([
-            'k2' => 120, // Soft
-            'k3' => 300, // Hard L2
-            'k1' => 600, // Hard L3
+            'k2' => 120,
+            'k3' => 300,
+            'k1' => 600,
         ], $limits);
     }
 
@@ -43,11 +45,10 @@ class ApiHeavyProtectionPolicy implements BlockPolicyInterface
      */
     public function getScoreThresholds(): PolicyThresholdsDTO
     {
-        // Simple hard blocks for API
         return new PolicyThresholdsDTO(
             k1: new ScoreThresholdsDTO($this->limits['k1'], $this->limits['k1'], $this->limits['k1']),
-            k2: new ScoreThresholdsDTO($this->limits['k2'], $this->limits['k2'], $this->limits['k2']),
-            k3: new ScoreThresholdsDTO($this->limits['k3'], $this->limits['k3'], $this->limits['k3']),
+            k2: new ScoreThresholdsDTO($this->limits['k2'], self::DISABLED_THRESHOLD, self::DISABLED_THRESHOLD),
+            k3: new ScoreThresholdsDTO($this->limits['k3'], $this->limits['k3'], self::DISABLED_THRESHOLD),
         );
     }
 

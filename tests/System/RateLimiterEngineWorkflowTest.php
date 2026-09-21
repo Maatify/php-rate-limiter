@@ -430,6 +430,76 @@ class RateLimiterEngineWorkflowTest extends TestCase
         $this->assertEquals(1, $k1_32State->value);
     }
 
+    public function testApiHeavyDoesNotPersistIpv6MacroHierarchyBlocksBeforeAdaptiveAggregationRemediation(): void
+    {
+        $policy = new ApiHeavyProtectionPolicy(['k1' => 1, 'k2' => 100, 'k3' => 100]);
+        $engine = $this->createEngineWithStore($this->store, $policy);
+        $context = new RateLimitContextDTO('2001:db8:85a3::8a2e:370:7334', 'Mozilla/5.0', 'acct_123');
+        $hex = bin2hex((string) inet_pton($context->ip));
+        $keyForPrefix = static fn(string $prefix): string => hash_hmac(
+            'sha256',
+            "api_heavy_protection:rate_limiter:k1:v2:prod:{$prefix}",
+            'test_secret',
+        );
+        $k1Key = $keyForPrefix(substr($hex, 0, 16));
+        $macroKeys = [
+            $keyForPrefix(substr($hex, 0, 12)),
+            $keyForPrefix(substr($hex, 0, 10)),
+            $keyForPrefix(substr($hex, 0, 8)),
+        ];
+        $this->store->set($k1Key, 1, 3600);
+        foreach ($macroKeys as $macroKey) {
+            $this->store->set($macroKey, 1, 3600);
+        }
+
+        $result = $engine->limit($context, RateLimitCommand::checkOnly('api_heavy_protection'));
+
+        $this->assertSame(RateLimitResultDTO::DECISION_HARD_BLOCK, $result->decision);
+        $this->assertSame(3, $result->blockLevel);
+        $this->assertSame(3, $this->store->checkBlock($k1Key)?->level);
+        foreach ($macroKeys as $macroKey) {
+            $this->assertNull($this->store->checkBlock($macroKey));
+        }
+        $this->assertNull($this->store->checkBlock(hash_hmac(
+            'sha256',
+            'api_heavy_protection:rate_limiter:k4:v2:prod:acct_123',
+            'test_secret',
+        )));
+    }
+
+    public function testApiHeavyDoesNotPersistIpv6MacroHierarchyBlocksAfterScoreUpdate(): void
+    {
+        $policy = new ApiHeavyProtectionPolicy(['k1' => 1, 'k2' => 100, 'k3' => 100]);
+        $engine = $this->createEngineWithStore($this->store, $policy);
+        $context = new RateLimitContextDTO('2001:db8:85a3::8a2e:370:7334', 'Mozilla/5.0', 'acct_123');
+        $hex = bin2hex((string) inet_pton($context->ip));
+        $keyForPrefix = static fn(string $prefix): string => hash_hmac(
+            'sha256',
+            "api_heavy_protection:rate_limiter:k1:v2:prod:{$prefix}",
+            'test_secret',
+        );
+        $k1Key = $keyForPrefix(substr($hex, 0, 16));
+        $macroKeys = [
+            $keyForPrefix(substr($hex, 0, 12)),
+            $keyForPrefix(substr($hex, 0, 10)),
+            $keyForPrefix(substr($hex, 0, 8)),
+        ];
+
+        $result = $engine->limit($context, new RateLimitCommand('api_heavy_protection'));
+
+        $this->assertSame(RateLimitResultDTO::DECISION_HARD_BLOCK, $result->decision);
+        $this->assertSame(3, $result->blockLevel);
+        $this->assertSame(3, $this->store->checkBlock($k1Key)?->level);
+        foreach ($macroKeys as $macroKey) {
+            $this->assertNull($this->store->checkBlock($macroKey));
+        }
+        $this->assertNull($this->store->checkBlock(hash_hmac(
+            'sha256',
+            'api_heavy_protection:rate_limiter:k4:v2:prod:acct_123',
+            'test_secret',
+        )));
+    }
+
     private function createEngineWithStore(RateLimitStoreInterface $store, BlockPolicyInterface ...$policies): RateLimiterEngine
     {
         $correlationStore = new NullCorrelationStore();

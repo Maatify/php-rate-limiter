@@ -33,6 +33,8 @@ The normal consumer path uses these public types:
 
 The available policy preset names are <code>login_protection</code>, <code>otp_protection</code>, and <code>api_heavy_protection</code>. The package reference documents the full DTO and extension inventory.
 
+For <code>api_heavy_protection</code>, K2 minor overuse returns at most <code>SOFT_BLOCK</code> L1, K3 moderate overuse returns <code>HARD_BLOCK</code> L2, and K1 severe overuse returns <code>HARD_BLOCK</code> L3. The preset does not enforce account K4 or account/device K5 blocks. When K3 has LOW device confidence, a moderate signal remains a hard L2 decision and is persisted against K2.
+
 ## Inputs and Outputs
 
 <code>RateLimitContextDTO</code> accepts the request IP, user agent, optional account identifier, optional client fingerprint data, optional session device identifier, trust flags, headers, and the host-owned previously-verified-device signal.

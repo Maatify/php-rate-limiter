@@ -67,8 +67,8 @@ class RateLimiterEngine implements RateLimiterInterface
 
         if ($policy->getName() === 'api_heavy_protection') {
             $thresholds = $policy->getScoreThresholds();
-            if ($thresholds->k1 === null || $thresholds->k2 === null) {
-                throw new RateLimiterException("Policy {$policy->getName()} invalid: Must enforce K1 and K2.");
+            if ($thresholds->k1 === null || $thresholds->k2 === null || $thresholds->k3 === null) {
+                throw new RateLimiterException("Policy {$policy->getName()} invalid: Must enforce K1, K2, and K3.");
             }
         }
 

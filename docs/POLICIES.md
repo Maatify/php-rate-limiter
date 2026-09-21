@@ -3,7 +3,7 @@
 **Module:** RateLimiter
 **Namespace:** `Maatify\RateLimiter`
 **Status:** LOCKED — Policy Contract
-**Spec Version:** `1.2.0`
+**Spec Version:** `1.3.0`
 **Change Class:** Hardening Alignment
 
 This document defines the **official policy presets** provided by the Rate Limiter module.
@@ -318,13 +318,17 @@ api_heavy_protection
 
 ### Rate Enforcement
 
-| Condition        | Decision           |
-| ---------------- | ------------------ |
-| Minor overuse    | SOFT_BLOCK         |
-| Moderate overuse | HARD_BLOCK (L1–L2) |
-| Severe overuse   | HARD_BLOCK (L3–L4) |
+| Condition        | Scope | Decision / maximum level |
+| ---------------- | ----- | ------------------------ |
+| Minor overuse    | K2    | SOFT_BLOCK / L1          |
+| Moderate overuse | K3    | HARD_BLOCK / L2          |
+| Severe overuse   | K1    | HARD_BLOCK / L3          |
 
-Maximum block level is capped at **L4**.
+API Heavy has no K4 or K5 enforcement contract. A LOW-confidence moderate K3
+signal remains a `HARD_BLOCK` L2 decision, but its persisted enforcement target
+is K2 rather than K3.
+
+The API Heavy maximum enforced block level is **L3**.
 
 ---
 
