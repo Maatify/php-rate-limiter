@@ -315,7 +315,7 @@ final class RateLimiterEngineCurrentRuntimeCharacterizationTest extends TestCase
         $second = $engine->limit($context, RateLimitCommand::recordFailure('login_protection'));
         $this->assertSame(RateLimitResultDTO::DECISION_SOFT_BLOCK, $second->decision);
         $this->assertSame(1, $second->blockLevel);
-        $this->assertSame(15, $second->retryAfter);
+        $this->assertSame(1200, $second->retryAfter);
         $this->assertSame(22, $this->store->getBudget($k4Key)?->count);
         $cooldownKey = hash_hmac(
             'sha256',

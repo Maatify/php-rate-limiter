@@ -175,6 +175,13 @@ Uses the global penalty ladder defined in `DECISION_MATRIX.md`.
 
 Uses `DECISION_MATRIX.md` decay rules + deterministic modifiers.
 
+For a score-derived result, `retryAfter` is calculated by the package-owned
+`DecayCalculator` until the score exits the current decision class: below L1
+for `SOFT_BLOCK`, or below L2 for every `HARD_BLOCK` level. An active persisted
+block returns its remaining TTL, and persistence continues to use the
+`PenaltyLadder` duration. The multiple-block-cycle pause remains deferred to
+Stage 3 and is not implemented.
+
 ---
 
 ### Failure Semantics
@@ -323,7 +330,10 @@ Maximum block level is capped at **L4**.
 
 ### Decay Rules
 
-* IP score: −1 every 2 minutes
+* IP score: −1 every 3 minutes
+
+L2 and higher uses the package modifier of a doubled effective interval. The
+multiple-block-cycle pause remains deferred to Stage 3 and is not implemented.
 
 ---
 

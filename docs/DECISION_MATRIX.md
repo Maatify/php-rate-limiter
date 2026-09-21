@@ -4,7 +4,7 @@
 **Namespace:** `Maatify\RateLimiter`
 **Status:** LOCKED — Behavioral Contract
 **Scope:** Login, OTP, API Heavy Endpoints
-**Spec Version:** `1.3.0`
+**Spec Version:** `1.4.0`
 
 This document defines the **deterministic decision rules** used by the Rate Limiter.
 It is a **behavioral contract**, not explanatory documentation.
@@ -595,8 +595,29 @@ Levels decay **slower** as severity increases.
 ### 7.1 Deterministic Decay Modifiers
 
 * After reaching **L2 or higher**, decay rate is **halved**
-* After **multiple block cycles**, decay pauses for a fixed **10 minutes** (deterministic)
+* The **multiple-block-cycle 10-minute pause** remains deferred to Stage 3 and
+  is not implemented by the current runtime.
 * Budgets (Section 2.4, 3.3) are **fixed 24h epochs** and are **not affected by score decay**
+
+### 7.2 Retry-After Semantics
+
+For a score-threshold candidate with no active persisted block, `retryAfter`
+means the time until the score becomes strictly lower than the threshold that
+ends the current decision class:
+
+* `SOFT_BLOCK` exits below L1.
+* `HARD_BLOCK` exits below L2 for both L2 and L3 score levels.
+* The calculation uses the raw stored score, `updatedAt`, the current block
+  level used by decay, the scope-specific package interval, and elapsed partial
+  or complete intervals. `DecayCalculator` is the single source of truth.
+* A LOW-confidence K3 decision downgraded to effective L1 uses L1.
+* If multiple score scopes participate in the winning class, the longest
+  applicable decay wait is selected within that class.
+
+An active persisted block always takes precedence and returns its remaining TTL;
+it is not combined with the decay wait. Score-derived response retry time does
+not change the `PenaltyLadder` persistence duration. Budget cooldown and all
+non-score candidates retain their existing retry semantics.
 
 ---
 

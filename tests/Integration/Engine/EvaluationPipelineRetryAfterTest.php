@@ -8,6 +8,10 @@ use Maatify\RateLimiter\Command\RateLimitCommand;
 use Maatify\RateLimiter\DTO\DeviceIdentityDTO;
 use Maatify\RateLimiter\DTO\RateLimitContextDTO;
 use Maatify\RateLimiter\DTO\RateLimitResultDTO;
+use Maatify\RateLimiter\DTO\PolicyThresholdsDTO;
+use Maatify\RateLimiter\DTO\ScoreThresholdsDTO;
+use Maatify\RateLimiter\Config\ApiHeavyProtectionPolicy;
+use Maatify\RateLimiter\Config\LoginProtectionPolicy;
 use Maatify\RateLimiter\Service\EvaluationPipeline;
 use Maatify\RateLimiter\Service\AntiEquilibriumGate;
 use Maatify\RateLimiter\Service\BudgetTracker;
@@ -34,25 +38,8 @@ class EvaluationPipelineRetryAfterTest extends TestCase
         $this->store = new InMemoryRateLimitStore($this->clock);
         $this->correlationStore = new NullCorrelationStore();
 
-        $decayCalculator = new DecayCalculator($this->clock);
-        $budgetTracker = new BudgetTracker($this->store, $this->clock);
-        $antiEquilibriumGate = new AntiEquilibriumGate($this->correlationStore);
-
         $this->policy = new OtpProtectionPolicy();
-
-        $ephemeralBucket = new \Maatify\RateLimiter\Service\EphemeralBucket($this->correlationStore);
-
-        $this->pipeline = new EvaluationPipeline(
-            $this->store,
-            $this->correlationStore,
-            $budgetTracker,
-            $antiEquilibriumGate,
-            $decayCalculator,
-            $ephemeralBucket,
-            'test_secret',
-            'prod',
-            $this->clock,
-        );
+        $this->pipeline = $this->createPipeline();
     }
 
     public function testCleanPreCheckReturnsAllowWithoutUpdates(): void
@@ -94,6 +81,42 @@ class EvaluationPipelineRetryAfterTest extends TestCase
         $this->assertEquals(3480, $result->retryAfter);
     }
 
+    public function testCurrentGenerationActiveBlockWinsOverPreviousGeneration(): void
+    {
+        $pipeline = $this->createPipeline('previous_secret');
+        $context = new RateLimitContextDTO('127.0.0.1', 'Mozilla', 'acct_123');
+        $device = new DeviceIdentityDTO('hash_123', 'HIGH', false, false, 'Mozilla');
+        $currentKey = hash_hmac('sha256', 'otp_protection:rate_limiter:k4:v2:prod:acct_123', 'test_secret');
+        $previousKey = hash_hmac('sha256', 'otp_protection:rate_limiter:k4:v2:prod:acct_123', 'previous_secret');
+
+        $this->store->block($currentKey, 2, 600);
+        $this->store->block($previousKey, 3, 3600);
+        $this->clock->setNow(new \DateTimeImmutable('2025-01-01 12:02:00'));
+
+        $result = $pipeline->process($this->policy, $context, RateLimitCommand::checkOnly('otp_protection'), $device);
+
+        self::assertSame(RateLimitResultDTO::DECISION_HARD_BLOCK, $result->decision);
+        self::assertSame(2, $result->blockLevel);
+        self::assertSame(480, $result->retryAfter);
+    }
+
+    public function testPreviousGenerationActiveBlockRemainsAuthoritativeDuringRotation(): void
+    {
+        $pipeline = $this->createPipeline('previous_secret');
+        $context = new RateLimitContextDTO('127.0.0.1', 'Mozilla', 'acct_123');
+        $device = new DeviceIdentityDTO('hash_123', 'HIGH', false, false, 'Mozilla');
+        $previousKey = hash_hmac('sha256', 'otp_protection:rate_limiter:k4:v2:prod:acct_123', 'previous_secret');
+
+        $this->store->block($previousKey, 3, 3600);
+        $this->clock->setNow(new \DateTimeImmutable('2025-01-01 12:02:00'));
+
+        $result = $pipeline->process($this->policy, $context, RateLimitCommand::checkOnly('otp_protection'), $device);
+
+        self::assertSame(RateLimitResultDTO::DECISION_HARD_BLOCK, $result->decision);
+        self::assertSame(3, $result->blockLevel);
+        self::assertSame(3480, $result->retryAfter);
+    }
+
     public function testScoreThresholdAndDecayProducesExpectedOutcome(): void
     {
         $context = new RateLimitContextDTO('127.0.0.1', 'Mozilla', 'acct_123');
@@ -117,7 +140,184 @@ class EvaluationPipelineRetryAfterTest extends TestCase
 
         $this->assertEquals(RateLimitResultDTO::DECISION_HARD_BLOCK, $result->decision);
         $this->assertEquals(2, $result->blockLevel);
-        $this->assertEquals(60, $result->retryAfter); // L2 duration = 60
+        $this->assertEquals(600, $result->retryAfter); // Account score decay to below L2.
+        $this->assertEquals(60, $this->store->checkBlock($k4Key)?->expiresAt - $this->clock->now()->getTimestamp());
+    }
+
+    public function testAccountL1ScoreUsesAccountDecayInterval(): void
+    {
+        $context = new RateLimitContextDTO('127.0.0.1', 'Mozilla', 'acct_123');
+        $device = new DeviceIdentityDTO('hash_123', 'HIGH', false, false, 'Mozilla');
+        $k4Key = hash_hmac('sha256', 'otp_protection:rate_limiter:k4:v2:prod:acct_123', 'test_secret');
+        $this->store->set($k4Key, 4, 3600);
+
+        $result = $this->pipeline->process(
+            $this->policy,
+            $context,
+            RateLimitCommand::checkOnly('otp_protection'),
+            $device,
+        );
+
+        self::assertSame(RateLimitResultDTO::DECISION_SOFT_BLOCK, $result->decision);
+        self::assertSame(1, $result->blockLevel);
+        self::assertSame(600, $result->retryAfter);
+    }
+
+    public function testAccountL3ScoreWaitsUntilBelowL2(): void
+    {
+        $context = new RateLimitContextDTO('127.0.0.1', 'Mozilla', 'acct_123');
+        $device = new DeviceIdentityDTO('hash_123', 'HIGH', false, false, 'Mozilla');
+        $k4Key = hash_hmac('sha256', 'otp_protection:rate_limiter:k4:v2:prod:acct_123', 'test_secret');
+        $this->store->set($k4Key, 9, 3600);
+
+        $result = $this->pipeline->process(
+            $this->policy,
+            $context,
+            RateLimitCommand::recordFailure('otp_protection'),
+            $device,
+        );
+
+        self::assertSame(RateLimitResultDTO::DECISION_HARD_BLOCK, $result->decision);
+        self::assertSame(3, $result->blockLevel);
+        self::assertSame(4800, $result->retryAfter);
+        self::assertSame(300, $this->store->checkBlock($k4Key)?->expiresAt - $this->clock->now()->getTimestamp());
+    }
+
+    public function testDeviceScoreUsesDeviceDecayInterval(): void
+    {
+        $policy = new ApiHeavyProtectionPolicy(['k1' => 1000, 'k2' => 1000, 'k3' => 300]);
+        $context = new RateLimitContextDTO('127.0.0.1', 'Mozilla', 'acct_123');
+        $device = new DeviceIdentityDTO('hash_123', 'HIGH', false, false, 'Mozilla');
+        $k3Key = hash_hmac('sha256', 'api_heavy_protection:rate_limiter:k3:v2:prod:127.0.0.1:hash_123', 'test_secret');
+        $this->store->set($k3Key, 299, 3600);
+
+        $result = $this->pipeline->process(
+            $policy,
+            $context,
+            new RateLimitCommand('api_heavy_protection'),
+            $device,
+        );
+
+        self::assertSame(RateLimitResultDTO::DECISION_HARD_BLOCK, $result->decision);
+        self::assertSame(300, $result->retryAfter);
+    }
+
+    public function testIpScoreUsesIpDecayInterval(): void
+    {
+        $policy = new ApiHeavyProtectionPolicy(['k1' => 600, 'k2' => 1000, 'k3' => 1000]);
+        $context = new RateLimitContextDTO('127.0.0.1', 'Mozilla', 'acct_123');
+        $device = new DeviceIdentityDTO('hash_123', 'HIGH', false, false, 'Mozilla');
+        $k1Key = hash_hmac('sha256', 'api_heavy_protection:rate_limiter:k1:v2:prod:127.0.0.1', 'test_secret');
+        $this->store->set($k1Key, 599, 3600);
+
+        $result = $this->pipeline->process(
+            $policy,
+            $context,
+            new RateLimitCommand('api_heavy_protection'),
+            $device,
+        );
+
+        self::assertSame(RateLimitResultDTO::DECISION_HARD_BLOCK, $result->decision);
+        self::assertSame(180, $result->retryAfter);
+    }
+
+    public function testLowConfidenceK3UsesEffectiveL1ExitThreshold(): void
+    {
+        $policy = new ApiHeavyProtectionPolicy(['k1' => 1000, 'k2' => 1000, 'k3' => 300]);
+        $context = new RateLimitContextDTO('127.0.0.1', 'Mozilla', 'acct_123');
+        $device = new DeviceIdentityDTO('hash_123', 'LOW', false, false, 'Mozilla');
+        $k3Key = hash_hmac('sha256', 'api_heavy_protection:rate_limiter:k3:v2:prod:127.0.0.1:hash_123', 'test_secret');
+        $this->store->set($k3Key, 300, 3600);
+
+        $result = $this->pipeline->process($policy, $context, RateLimitCommand::checkOnly('api_heavy_protection'), $device);
+
+        self::assertSame(RateLimitResultDTO::DECISION_SOFT_BLOCK, $result->decision);
+        self::assertSame(1, $result->blockLevel);
+        self::assertSame(300, $result->retryAfter);
+    }
+
+    public function testNMinusOneWatchEscalationKeepsPenaltyLadderRetryAfter(): void
+    {
+        $correlationStore = new \Maatify\RateLimiter\Tests\Support\Correlation\StatefulInMemoryCorrelationStore($this->clock);
+        $pipeline = new EvaluationPipeline(
+            $this->store,
+            $correlationStore,
+            new BudgetTracker($this->store, $this->clock),
+            new AntiEquilibriumGate($correlationStore),
+            new DecayCalculator($this->clock),
+            new \Maatify\RateLimiter\Service\EphemeralBucket($correlationStore),
+            'test_secret',
+            'prod',
+            $this->clock,
+        );
+        $context = new RateLimitContextDTO('127.0.0.1', 'Mozilla', 'acct_123');
+        $device = new DeviceIdentityDTO('hash_123', 'HIGH', false, false, 'Mozilla');
+        $k4Key = hash_hmac('sha256', 'otp_protection:rate_limiter:k4:v2:prod:acct_123', 'test_secret');
+        $this->store->set($k4Key, 1, 3600);
+        $correlationStore->incrementWatchFlag("watch:{$k4Key}", 1800);
+
+        $result = $pipeline->process($this->policy, $context, RateLimitCommand::recordFailure('otp_protection'), $device);
+
+        self::assertSame(RateLimitResultDTO::DECISION_HARD_BLOCK, $result->decision);
+        self::assertSame(2, $result->blockLevel);
+        self::assertSame(60, $result->retryAfter);
+    }
+
+    public function testMultipleScoreScopesUseLongestWaitWithinWinningClass(): void
+    {
+        $policy = new ApiHeavyProtectionPolicy(['k1' => 1, 'k2' => 1000, 'k3' => 1]);
+        $context = new RateLimitContextDTO('127.0.0.1', 'Mozilla', 'acct_123');
+        $device = new DeviceIdentityDTO('hash_123', 'HIGH', false, false, 'Mozilla');
+
+        $result = $this->pipeline->process(
+            $policy,
+            $context,
+            new RateLimitCommand('api_heavy_protection'),
+            $device,
+        );
+
+        self::assertSame(RateLimitResultDTO::DECISION_HARD_BLOCK, $result->decision);
+        self::assertSame(300, $result->retryAfter);
+    }
+
+    public function testTrustedK1AdvisoryDoesNotSetFinalRetryAfter(): void
+    {
+        $policy = new class extends LoginProtectionPolicy {
+            public function getScoreThresholds(): PolicyThresholdsDTO
+            {
+                return new PolicyThresholdsDTO(
+                    k1: new ScoreThresholdsDTO(1, 1, 1),
+                    k5: new ScoreThresholdsDTO(100, 101, 102),
+                );
+            }
+        };
+        $context = new RateLimitContextDTO('127.0.0.1', 'Mozilla', 'acct_123');
+        $device = new DeviceIdentityDTO('hash_123', 'HIGH', true, false, 'Mozilla');
+        $k5Key = hash_hmac('sha256', 'login_protection:rate_limiter:k5:v2:prod:acct_123:hash_123', 'test_secret');
+        $this->store->set($k5Key, 105, 3600);
+
+        $result = $this->pipeline->process($policy, $context, RateLimitCommand::recordFailure('login_protection'), $device);
+
+        self::assertSame(RateLimitResultDTO::DECISION_HARD_BLOCK, $result->decision);
+        self::assertSame(2100, $result->retryAfter);
+    }
+
+    public function testPersistedScoreBlockTtlWinsOnTheNextRequest(): void
+    {
+        $context = new RateLimitContextDTO('127.0.0.1', 'Mozilla', 'acct_123');
+        $device = new DeviceIdentityDTO('hash_123', 'HIGH', false, false, 'Mozilla');
+        $k4Key = hash_hmac('sha256', 'otp_protection:rate_limiter:k4:v2:prod:acct_123', 'test_secret');
+        $this->store->set($k4Key, 2, 3600);
+        $result = $this->pipeline->process($this->policy, $context, RateLimitCommand::recordFailure('otp_protection'), $device);
+
+        self::assertSame(RateLimitResultDTO::DECISION_HARD_BLOCK, $result->decision);
+        self::assertSame(600, $result->retryAfter);
+
+        $this->clock->setNow(new \DateTimeImmutable('2025-01-01 12:00:10'));
+        $next = $this->pipeline->process($this->policy, $context, RateLimitCommand::checkOnly('otp_protection'), $device);
+
+        self::assertSame(RateLimitResultDTO::DECISION_HARD_BLOCK, $next->decision);
+        self::assertSame(50, $next->retryAfter);
     }
 
     public function testOtpBudgetActiveCheckOnlyDoesNotEnforceBudget(): void
@@ -150,7 +350,7 @@ class EvaluationPipelineRetryAfterTest extends TestCase
 
         $this->assertEquals(RateLimitResultDTO::DECISION_SOFT_BLOCK, $result->decision);
         $this->assertEquals(1, $result->blockLevel);
-        $this->assertEquals(15, $result->retryAfter);
+        $this->assertEquals(1200, $result->retryAfter);
 
         $k4Key = hash_hmac('sha256', 'otp_protection:rate_limiter:k4:v2:prod:acct_123', 'test_secret');
         $k5Key = hash_hmac('sha256', 'otp_protection:rate_limiter:k5:v2:prod:acct_123:known-fingerprint', 'test_secret');
@@ -158,6 +358,7 @@ class EvaluationPipelineRetryAfterTest extends TestCase
         $this->assertEquals(5, $this->store->get($k4Key)?->value);
         $this->assertNull($this->store->get($k5Key));
         $this->assertEquals(1, $this->store->getBudget($k4Key)?->count);
+        $this->assertEquals(15, $this->store->checkBlock($k4Key)?->expiresAt - $this->clock->now()->getTimestamp());
     }
 
     public function testApiHeavyNormalAccessBehavior(): void
@@ -194,5 +395,21 @@ class EvaluationPipelineRetryAfterTest extends TestCase
 
         $this->assertNull($this->store->get($k4Key));
         $this->assertNull($this->store->getBudget($k4Key));
+    }
+
+    private function createPipeline(?string $previousSecret = null): EvaluationPipeline
+    {
+        return new EvaluationPipeline(
+            $this->store,
+            $this->correlationStore,
+            new BudgetTracker($this->store, $this->clock),
+            new AntiEquilibriumGate($this->correlationStore),
+            new DecayCalculator($this->clock),
+            new \Maatify\RateLimiter\Service\EphemeralBucket($this->correlationStore),
+            'test_secret',
+            'prod',
+            $this->clock,
+            $previousSecret,
+        );
     }
 }
