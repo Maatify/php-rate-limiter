@@ -250,11 +250,8 @@ $limiter = new RateLimiterEngine(
     new CircuitBreaker(new ExampleCircuitBreakerStore(), $signalEmitter, $clock),
     new FailureModeResolver(),
     $signalEmitter,
-    $clock, [
-        new LoginProtectionPolicy(),
-        new OtpProtectionPolicy(),
-        new ApiHeavyProtectionPolicy(),
-    ],
+    $clock,
+    [new LoginProtectionPolicy(), new OtpProtectionPolicy(), new ApiHeavyProtectionPolicy()],
 );
 
 $context = new RateLimitContextDTO(

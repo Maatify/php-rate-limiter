@@ -20,8 +20,6 @@ return (new Config())
     ->setRiskyAllowed(false)
     ->setRules([
         '@PER-CS3x0' => true,
-        // PER-CS 3.1 owns the opening-bracket placement for multiline arrays.
-        'method_argument_space' => ['on_multiline' => 'ignore'],
     ])
     ->setFinder($finder)
     ->setUsingCache(false);
