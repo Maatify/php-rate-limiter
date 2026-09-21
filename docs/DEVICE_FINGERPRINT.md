@@ -3,7 +3,7 @@
 **Module:** RateLimiter
 **Namespace:** `Maatify\RateLimiter`
 **Status:** LOCKED — Behavioral & Privacy Contract
-**Spec Version:** `1.1.0`
+**Spec Version:** `1.2.0`
 
 This document defines the **Device Fingerprint system** used by the Rate Limiter.
 It specifies how device identity is derived, normalized, hashed, bounded, and evaluated.

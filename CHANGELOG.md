@@ -41,7 +41,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Fixed local fallback GC so cleanup removes only expired fixed-window buckets and preserves active buckets until natural rollover.
 
 ### Changed
-- Reconciled the Device Identity contract: trusted sessions are `HIGH` without
+- Reconciled the Device Fingerprint contract (`1.1.0` → `1.2.0`), Key Strategy
+  contract (`1.3.0` → `1.4.0`), and Package Reference (`1.5.0` → `1.6.0`):
+  trusted sessions are `HIGH` without
   client hints, the default resolver uses bounded canonical browser-major UA
   values and no automatic header harvesting, client-fingerprint serialization
   is recursively deterministic with explicit package exceptions on failure, and

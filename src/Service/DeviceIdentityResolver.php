@@ -79,9 +79,17 @@ class DeviceIdentityResolver implements DeviceIdentityResolverInterface
     private function normalizeClientFp(array $fp): string
     {
         try {
+            // Validate cycles, depth, and serialization before recursive canonicalization.
+            json_encode(
+                $fp,
+                JSON_PRESERVE_ZERO_FRACTION | JSON_THROW_ON_ERROR,
+                512,
+            );
+
             return json_encode(
                 $this->canonicalizeClientFingerprint($fp),
                 JSON_PRESERVE_ZERO_FRACTION | JSON_THROW_ON_ERROR,
+                512,
             );
         } catch (\JsonException $exception) {
             throw new RateLimiterException(

@@ -292,6 +292,22 @@ final class DeviceIdentityResolverContractTest extends TestCase
         ));
     }
 
+    public function testSelfReferentialClientFingerprintPayloadFailsExplicitly(): void
+    {
+        $payload = [];
+        $payload['self'] = & $payload;
+
+        $this->expectException(RateLimiterException::class);
+        $this->expectExceptionMessage('Client fingerprint payload could not be serialized.');
+
+        $this->resolver->resolve(new RateLimitContextDTO(
+            '198.51.100.38',
+            'Mozilla/5.0 Chrome/122.0.0.0',
+            'recursive-client',
+            $payload,
+        ));
+    }
+
     public function testHeadersDoNotChangeDefaultResolverFingerprint(): void
     {
         $first = new RateLimitContextDTO(
