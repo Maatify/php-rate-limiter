@@ -90,8 +90,6 @@ class EvaluationPipeline
             )
             : [];
 
-        $this->assertCredentialSprayRotationCapability($policy->getName(), $request);
-
         // 2. Check Active Blocks (Fail-Fast) on Real Keys
         if ($blocked = $this->checkActiveBlocks($realKeysV2, $realKeysV1, $policy->getName(), $device)) {
             return $blocked;
@@ -477,20 +475,6 @@ class EvaluationPipeline
             $source,
             [['key' => $k1Key, 'level' => 2, 'duration' => PenaltyLadder::getDuration(2)]],
         );
-    }
-
-    private function assertCredentialSprayRotationCapability(string $policyName, RateLimitCommand $request): void
-    {
-        if (! $request->isPreCheck || $this->previousSecret === null || ! $this->isCredentialSprayPolicy($policyName)) {
-            return;
-        }
-
-        if (! $this->correlationStore instanceof CorrelationRotationStoreInterface) {
-            throw new RateLimiterException(
-                'Credential-spray key rotation requires the CorrelationRotationStoreInterface capability; '
-                . 'the configured store cannot preserve previous-generation correlation without a silent reset.',
-            );
-        }
     }
 
     private function assertPositiveCorrelationResult(int $result, string $operation): void
