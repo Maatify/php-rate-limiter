@@ -46,9 +46,8 @@ class LocalFallbackLimiter
         // Normalize IP (IPv6 /64)
         $normalizedIp = self::getIpPrefix($ip);
 
-        // Normalize UA (Major Version + Platform)
-        // Simplified fallback normalization to avoid dependency on heavy parser
-        $normalizedUa = self::normalizeUa($ua);
+        // Use the package canonical browser-major normalization for K2 parity.
+        $normalizedUa = DeviceIdentityResolver::normalizeUserAgent($ua);
 
         if ($mode === 'DEGRADED_MODE') {
             if ($policyName === 'login_protection') {
@@ -101,35 +100,6 @@ class LocalFallbackLimiter
             }
         }
         return $ip;
-    }
-
-    private static function normalizeUa(string $ua): string
-    {
-        // Minimal coarse normalization for fallback
-        // Format: [Browser]/[Major] ([OS])
-
-        $browser = 'Other';
-        $major = '0';
-        $os = 'Unknown';
-
-        if (preg_match('#(Firefox|Chrome|Safari|Edge)/([0-9]+)#', $ua, $matches)) {
-            $browser = $matches[1];
-            $major = $matches[2];
-        }
-
-        if (str_contains($ua, 'Windows')) {
-            $os = 'Windows';
-        } elseif (str_contains($ua, 'Mac OS')) {
-            $os = 'MacOS';
-        } elseif (str_contains($ua, 'Linux')) {
-            $os = 'Linux';
-        } elseif (str_contains($ua, 'Android')) {
-            $os = 'Android';
-        } elseif (str_contains($ua, 'iOS') || str_contains($ua, 'iPhone')) {
-            $os = 'iOS';
-        }
-
-        return "{$browser}/{$major} ({$os})";
     }
 
     private static function incrementAndCheck(ClockInterface $clock, string $key, int $limit, int $window): bool

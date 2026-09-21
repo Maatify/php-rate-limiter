@@ -7,9 +7,10 @@ namespace Maatify\RateLimiter\Tests\Unit\Device;
 use Maatify\RateLimiter\Service\DeviceIdentityResolver;
 use Maatify\RateLimiter\Service\FingerprintHasher;
 use Maatify\RateLimiter\DTO\RateLimitContextDTO;
+use Maatify\RateLimiter\Exception\RateLimiterException;
 use PHPUnit\Framework\TestCase;
 
-final class DeviceIdentityResolverCurrentRuntimeCharacterizationTest extends TestCase
+final class DeviceIdentityResolverContractTest extends TestCase
 {
     private DeviceIdentityResolver $resolver;
 
@@ -36,7 +37,7 @@ final class DeviceIdentityResolverCurrentRuntimeCharacterizationTest extends Tes
         $this->assertNotNull($device->fingerprintHash);
     }
 
-    public function testCurrentCharacterizationSessionIdentifierWithoutClientFingerprintRaisesTrustedConfidence(): void
+    public function testTrustedSessionWithoutClientFingerprintHasHighConfidence(): void
     {
         $device = $this->resolver->resolve(new RateLimitContextDTO(
             '198.51.100.19',
@@ -50,6 +51,19 @@ final class DeviceIdentityResolverCurrentRuntimeCharacterizationTest extends Tes
         $this->assertTrue($device->isTrustedSession);
         $this->assertSame('HIGH', $device->confidence);
         $this->assertNotNull($device->fingerprintHash);
+    }
+
+    public function testClientFingerprintRaisesConfidenceToMedium(): void
+    {
+        $device = $this->resolver->resolve(new RateLimitContextDTO(
+            '198.51.100.24',
+            'Mozilla/5.0 Chrome/123.0.0.0',
+            'client-assisted',
+            ['timezone' => 'UTC', 'screen' => 'wide'],
+        ));
+
+        $this->assertSame('MEDIUM', $device->confidence);
+        $this->assertFalse($device->isTrustedSession);
     }
 
     public function testSessionIdentifierDoesNotResolveTrustedSessionWhenContextIsUntrusted(): void
@@ -131,7 +145,7 @@ final class DeviceIdentityResolverCurrentRuntimeCharacterizationTest extends Tes
             true,
         );
 
-        $normalizedRawIdentity = "v1|chrome/118|{\"alpha\":\"a1\",\"mango\":\"m1\",\"zebra\":\"z1\"}|sess-dev-7";
+        $normalizedRawIdentity = "v2|chrome/118|{\"alpha\":\"a1\",\"mango\":\"m1\",\"zebra\":\"z1\"}|sess-dev-7";
 
         $device = $resolver->resolve($context);
 
@@ -201,5 +215,140 @@ final class DeviceIdentityResolverCurrentRuntimeCharacterizationTest extends Tes
         $this->assertSame('LOW', $device->confidence);
         $this->assertFalse($device->isTrustedSession);
         $this->assertFalse($device->isDevicePreviouslyVerifiedForAccount);
+    }
+
+    public function testEmptyClientFingerprintDoesNotRaiseConfidence(): void
+    {
+        $device = $this->resolver->resolve(new RateLimitContextDTO(
+            '198.51.100.34',
+            'Mozilla/5.0 Chrome/121.0.0.0',
+            'empty-client',
+            [],
+        ));
+
+        $this->assertSame('LOW', $device->confidence);
+    }
+
+    public function testNestedAssociativeMapKeyOrderDoesNotChangeFingerprint(): void
+    {
+        $firstClientFingerprint = [
+            'outer' => ['z' => 1, 'a' => ['second' => true, 'first' => null]],
+            'list' => ['first', 'second'],
+        ];
+        $secondClientFingerprint = [
+            'list' => ['first', 'second'],
+            'outer' => ['a' => ['first' => null, 'second' => true], 'z' => 1],
+        ];
+        $first = new RateLimitContextDTO(
+            '198.51.100.35',
+            'Mozilla/5.0 Chrome/122.0.0.0',
+            'nested-map',
+            $firstClientFingerprint,
+        );
+        $second = new RateLimitContextDTO(
+            '198.51.100.35',
+            'Mozilla/5.0 Chrome/122.0.0.0',
+            'nested-map',
+            $secondClientFingerprint,
+        );
+
+        $this->assertSame(
+            $this->resolver->resolve($first)->fingerprintHash,
+            $this->resolver->resolve($second)->fingerprintHash,
+        );
+    }
+
+    public function testListOrderRemainsMeaningful(): void
+    {
+        $first = new RateLimitContextDTO(
+            '198.51.100.36',
+            'Mozilla/5.0 Chrome/122.0.0.0',
+            'ordered-list',
+            ['signals' => ['first', 'second']],
+        );
+        $second = new RateLimitContextDTO(
+            '198.51.100.36',
+            'Mozilla/5.0 Chrome/122.0.0.0',
+            'ordered-list',
+            ['signals' => ['second', 'first']],
+        );
+
+        $this->assertNotSame(
+            $this->resolver->resolve($first)->fingerprintHash,
+            $this->resolver->resolve($second)->fingerprintHash,
+        );
+    }
+
+    public function testInvalidClientFingerprintPayloadFailsExplicitly(): void
+    {
+        $this->expectException(RateLimiterException::class);
+        $this->expectExceptionMessage('Client fingerprint payload could not be serialized.');
+
+        $this->resolver->resolve(new RateLimitContextDTO(
+            '198.51.100.37',
+            'Mozilla/5.0 Chrome/122.0.0.0',
+            'invalid-client',
+            ['callback' => static fn(): string => 'not serializable'],
+        ));
+    }
+
+    public function testHeadersDoNotChangeDefaultResolverFingerprint(): void
+    {
+        $first = new RateLimitContextDTO(
+            '198.51.100.38',
+            'Mozilla/5.0 Chrome/123.0.0.0',
+            'headers-ignored',
+            ['hint' => 'bucketed'],
+            'session-device-headers',
+            true,
+            ['Accept-Language' => 'en-US', 'X-Platform' => 'Windows'],
+        );
+        $second = new RateLimitContextDTO(
+            '198.51.100.38',
+            'Mozilla/5.0 Chrome/123.0.0.0',
+            'headers-ignored',
+            ['hint' => 'bucketed'],
+            'session-device-headers',
+            true,
+            ['Accept-Language' => 'ar-EG', 'X-Platform' => 'Linux'],
+        );
+
+        $this->assertSame(
+            $this->resolver->resolve($first)->fingerprintHash,
+            $this->resolver->resolve($second)->fingerprintHash,
+        );
+    }
+
+    /**
+     * @dataProvider userAgentNormalizationProvider
+     */
+    public function testUserAgentNormalizationUsesBoundedBrowserMajorContract(string $ua, string $expected): void
+    {
+        $this->assertSame($expected, DeviceIdentityResolver::normalizeUserAgent($ua));
+    }
+
+    /**
+     * @return iterable<string, array{0: string, 1: string}>
+     */
+    public static function userAgentNormalizationProvider(): iterable
+    {
+        yield 'opera before chrome' => [
+            'Mozilla/5.0 Chrome/123.0.0.0 OPR/99.0.0.0 Safari/537.36',
+            'opera/99',
+        ];
+        yield 'modern edge' => ['Mozilla/5.0 Chrome/123.0.0.0 Edg/123.0.0.0', 'edge/123'];
+        yield 'android edge' => ['Mozilla/5.0 Chrome/123.0.0.0 EdgA/123.0.0.0', 'edge/123'];
+        yield 'ios edge' => ['Mozilla/5.0 CriOS/123.0.0.0 EdgiOS/123.0.0.0', 'edge/123'];
+        yield 'legacy edge' => ['Mozilla/5.0 Edge/18.19041', 'edge/18'];
+        yield 'firefox' => ['Mozilla/5.0 Firefox/124.0', 'firefox/124'];
+        yield 'ios firefox' => ['Mozilla/5.0 FxiOS/124.0', 'firefox/124'];
+        yield 'chrome' => ['Mozilla/5.0 Chrome/123.0.0.0 Safari/537.36', 'chrome/123'];
+        yield 'ios chrome' => ['Mozilla/5.0 CriOS/123.0.0.0 Mobile/15E148', 'chrome/123'];
+        yield 'safari browser major' => [
+            'Mozilla/5.0 Version/17.4.1 Mobile/15E148 Safari/604.1',
+            'safari/17',
+        ];
+        yield 'safari build is not browser major' => ['Mozilla/5.0 Safari/605.1.15', 'other/0'];
+        yield 'unknown bounded fallback' => ['custom-client raw high entropy value', 'other/0'];
     }
 }

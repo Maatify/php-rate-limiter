@@ -403,6 +403,19 @@ Device identity is resolved into a single `DeviceIdentityDTO` with:
 
 The package MUST NOT store raw fingerprint components.
 
+The default `DeviceIdentityResolver` is minimal, deterministic, and stateless:
+it canonicalizes the explicit user agent, serializes the explicit Host-provided
+low-entropy `clientFingerprint`, and applies the explicit session/trust inputs.
+It does not inspect `RateLimitContextDTO::$headers` or harvest passive request
+headers. Churn history remains a runtime correlation responsibility or an
+explicit custom resolver responsibility. The normalized raw identity uses the
+`v2|normalizedUa|normalizedClientFp|sessionDeviceId` schema; current and previous
+fingerprint hashers always receive that exact same identity.
+
+Client-fingerprint canonicalization sorts associative keys recursively, preserves
+list order and scalar/null types, and raises a package-owned exception when JSON
+serialization fails. It never silently downgrades confidence.
+
 **Dual-fingerprint rotation contract:** the identity layer owns the current and previous
 fingerprint versions; the pipeline never rebuilds or re-hashes raw fingerprint material.
 The outer key secret and the fingerprint secret are independently rotatable components, but
