@@ -3,7 +3,7 @@
 **Package:** RateLimiter
 **Namespace:** `Maatify\RateLimiter`
 **Status:** LOCKED — Architecture Contract
-**Spec Version:** `1.4.0`
+**Spec Version:** `1.5.0`
 **Location:** `src/`
 
 This document explains **why** the RateLimiter package is designed the way it is.
@@ -373,6 +373,13 @@ Policies define:
 - failure semantics mode (including degraded behavior)
 
 Policies MUST remain compliant with `docs/POLICIES.md`.
+
+The `api_heavy_protection` preset enforces API score scopes independently: K2
+produces at most `SOFT_BLOCK` L1, K3 produces at most `HARD_BLOCK` L2, and K1
+produces `HARD_BLOCK` L3 at its configured threshold. API Heavy does not enforce
+account K4 or account/device K5 blocks. A LOW-confidence moderate K3 signal is
+still a hard L2 decision, but its persisted enforcement target is K2 rather than
+K3.
 
 ### 4.5 Decision services (Escalation + Decay + Caps)
 **Location:** `Service/`

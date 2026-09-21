@@ -4,7 +4,7 @@
 **Namespace:** `Maatify\RateLimiter`
 **Status:** LOCKED — Behavioral Contract
 **Scope:** Login, OTP, API Heavy Endpoints
-**Spec Version:** `1.4.0`
+**Spec Version:** `1.5.0`
 
 This document defines the **deterministic decision rules** used by the Rate Limiter.
 It is a **behavioral contract**, not explanatory documentation.
@@ -461,11 +461,16 @@ Duration:
 
 ### 4.1 Rate Enforcement
 
-| Condition               | Key | Decision   |
-| ----------------------- | --- | ---------- |
-| Minor limit exceeded    | K2  | SOFT_BLOCK |
-| Moderate limit exceeded | K3  | HARD_BLOCK |
-| Severe limit exceeded   | K1  | HARD_BLOCK |
+| Condition               | Key | Decision / maximum level |
+| ----------------------- | --- | ------------------------ |
+| Minor limit exceeded    | K2  | SOFT_BLOCK / L1          |
+| Moderate limit exceeded | K3  | HARD_BLOCK / L2          |
+| Severe limit exceeded   | K1  | HARD_BLOCK / L3          |
+
+API Heavy persists each scope's own enforcement candidate. It does not create
+K4 or K5 thresholds, candidates, or blocks, and active current or previous K4
+or K5 blocks do not block an API Heavy request. A LOW-confidence moderate K3
+signal remains `HARD_BLOCK` L2 but is persisted against K2, never K3.
 
 ---
 

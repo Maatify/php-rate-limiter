@@ -160,7 +160,7 @@ class EvaluationPipeline
         }
 
         // 8. New Device Flood (5.4)
-        if ($ephemeralState && $context->accountId) {
+        if ($ephemeralState && $context->accountId && ! $this->isApiHeavyPolicy($policy->getName())) {
             if ($ephemeralState->accountDeviceCount >= 6) {
                 $floodKey = "flood_stage:acc:{$context->accountId}";
                 $isFloodStage = $this->correlationStore->getWatchFlag($floodKey) > 0;
@@ -253,6 +253,9 @@ class EvaluationPipeline
                 if (! $key) {
                     continue;
                 }
+                if ($this->isApiHeavyPolicy($policyName) && ! $this->isApiHeavyKeyType($keyType)) {
+                    continue;
+                }
                 if ($this->isTrustedAuthenticationPolicy($policyName, $device) && $this->isK1Key($keyType)) {
                     continue;
                 }
@@ -283,22 +286,29 @@ class EvaluationPipeline
         foreach ($scores as $keyType => $score) {
             $level = $this->determineLevel($score, $keyType, $policy);
 
-            // Fix redundant isset/offset checks by trusting the loop and explicit checks
-            if ($keyType === 'k3' && $device->confidence === 'LOW' && $level >= 2) {
-                $level = 1;
-            }
-
             if ($level > 0) {
-                $decision = ($level >= 2) ? RateLimitResultDTO::DECISION_HARD_BLOCK : RateLimitResultDTO::DECISION_SOFT_BLOCK;
+                $candidateKeyType = $keyType;
+                $candidateLevel = $level;
+                if ($this->isApiHeavyPolicy($policy->getName())
+                    && $keyType === 'k3'
+                    && $device->confidence === 'LOW'
+                    && $level >= 2) {
+                    $candidateKeyType = 'k2';
+                    $candidateLevel = 2;
+                }
+
+                $decision = ($candidateLevel >= 2)
+                    ? RateLimitResultDTO::DECISION_HARD_BLOCK
+                    : RateLimitResultDTO::DECISION_SOFT_BLOCK;
                 $source = $this->isTrustedAuthenticationPolicy($policy->getName(), $device) && $this->isK1Key($keyType)
                     ? 'trusted_advisory:score'
                     : 'score';
                 $thresholds = $this->getScopedThresholds($keyType, $policy);
                 $scoreState = $rawScores[$keyType] ?? null;
                 $key = $keys[$keyType] ?? null;
-                $retryAfter = PenaltyLadder::getDuration($level);
+                $retryAfter = PenaltyLadder::getDuration($candidateLevel);
                 if ($thresholds !== null && $scoreState !== null && $key !== null) {
-                    $exitThreshold = $level >= 2 ? $thresholds->l2 : $thresholds->l1;
+                    $exitThreshold = $candidateLevel >= 2 ? $thresholds->l2 : $thresholds->l1;
                     $retryAfter = $this->scoreDecayRetryAfter(
                         $scoreState,
                         $key,
@@ -307,7 +317,19 @@ class EvaluationPipeline
                     );
                 }
 
-                $candidates[] = $this->candidate($decision, $level, $retryAfter, $source);
+                $persistence = [];
+                if ($this->isApiHeavyPolicy($policy->getName())) {
+                    $persistenceKey = $keys[$candidateKeyType] ?? null;
+                    if ($persistenceKey !== null) {
+                        $persistence[] = [
+                            'key' => $persistenceKey,
+                            'level' => $candidateLevel,
+                            'duration' => PenaltyLadder::getDuration($candidateLevel),
+                        ];
+                    }
+                }
+
+                $candidates[] = $this->candidate($decision, $candidateLevel, $retryAfter, $source, $persistence);
             }
         }
 
@@ -564,31 +586,18 @@ class EvaluationPipeline
                 $actualScoreLevel = $this->determineLevel($newScore, $keyType, $policy);
                 $level = $actualScoreLevel;
 
-                if ($keyType === 'k3' && $device->confidence === 'LOW' && $level >= 2) {
-                    $level = 1;
-                }
-
                 $watchEscalated = false;
 
                 $thresholdsDto = $this->getScopedThresholds($keyType, $policy);
                 if ($thresholdsDto) {
-                    // Check if approaching any threshold (N-1)
-                    foreach ([$thresholdsDto->l1, $thresholdsDto->l2, $thresholdsDto->l3] as $thresh) {
+                    // Check each represented threshold once. Equal threshold
+                    // values imply the highest represented level.
+                    foreach ($this->normalizedWatchThresholds($thresholdsDto) as $thresh => $impliedLevel) {
                         if ($newScore == $thresh - 1) {
                             $wKey = "watch:{$key}";
                             $flags = $this->correlationStore->incrementWatchFlag($wKey, 1800);
                             // If watched twice, upgrade level effectively
                             if ($flags >= 2) {
-                                // Determine implied level
-                                $impliedLevel = 0;
-                                if ($thresh == $thresholdsDto->l3) {
-                                    $impliedLevel = 3;
-                                } elseif ($thresh == $thresholdsDto->l2) {
-                                    $impliedLevel = 2;
-                                } elseif ($thresh == $thresholdsDto->l1) {
-                                    $impliedLevel = 1;
-                                }
-
                                 if ($impliedLevel > $level) {
                                     $watchEscalated = true;
                                     $level = $impliedLevel;
@@ -691,7 +700,39 @@ class EvaluationPipeline
 
         $candidates = [];
         if ($newMaxLevel > 0) {
-            if ($this->isTrustedAuthenticationPolicy($policy->getName(), $device)) {
+            if ($this->isApiHeavyPolicy($policy->getName())) {
+                foreach ($levelsByKeyType as $keyType => $level) {
+                    if ($level <= 0 || ! $this->isApiHeavyKeyType($keyType)) {
+                        continue;
+                    }
+
+                    $candidateKeyType = $keyType;
+                    $candidateLevel = $level;
+                    if ($keyType === 'k3' && $device->confidence === 'LOW' && $level >= 2) {
+                        $candidateKeyType = 'k2';
+                        $candidateLevel = 2;
+                    }
+
+                    $decision = $candidateLevel >= 2
+                        ? RateLimitResultDTO::DECISION_HARD_BLOCK
+                        : RateLimitResultDTO::DECISION_SOFT_BLOCK;
+                    $duration = PenaltyLadder::getDuration($candidateLevel);
+                    $persistenceKey = $keys[$candidateKeyType] ?? null;
+                    $persistence = $persistenceKey === null
+                        ? []
+                        : [['key' => $persistenceKey, 'level' => $candidateLevel, 'duration' => $duration]];
+
+                    $candidates[] = $this->candidate(
+                        $decision,
+                        $candidateLevel,
+                        $retryAfterByKeyType[$keyType] ?? $duration,
+                        $keyType === 'k3' && $candidateKeyType === 'k2'
+                            ? 'score_update:low_confidence_k3_to_k2'
+                            : 'score_update',
+                        $persistence,
+                    );
+                }
+            } elseif ($this->isTrustedAuthenticationPolicy($policy->getName(), $device)) {
                 foreach ($levelsByKeyType as $keyType => $level) {
                     if ($level <= 0) {
                         continue;
@@ -731,23 +772,6 @@ class EvaluationPipeline
 
                 if ($context->accountId && ($keys['k4'] ?? null) !== null) {
                     $persistence[] = ['key' => $keys['k4'], 'level' => $newMaxLevel, 'duration' => $duration];
-                }
-                if ($policy->getName() === 'api_heavy_protection') {
-                    if (($keys['k1'] ?? null) !== null) {
-                        $persistence[] = ['key' => $keys['k1'], 'level' => $newMaxLevel, 'duration' => $duration];
-                    }
-                    if (($keys['k2'] ?? null) !== null) {
-                        $persistence[] = ['key' => $keys['k2'], 'level' => $newMaxLevel, 'duration' => $duration];
-                    }
-                    if (($keys['k3'] ?? null) !== null) {
-                        if ($device->confidence !== 'LOW') {
-                            $persistence[] = ['key' => $keys['k3'], 'level' => $newMaxLevel, 'duration' => $duration];
-                        } else {
-                            if (($keys['k2'] ?? null) !== null) {
-                                $persistence[] = ['key' => $keys['k2'], 'level' => $newMaxLevel, 'duration' => $duration];
-                            }
-                        }
-                    }
                 }
 
                 $candidates[] = $this->candidate($decision, $newMaxLevel, $retryAfter, 'score_update', $persistence);
@@ -824,12 +848,12 @@ class EvaluationPipeline
     /**
      * @param list<array{decision: string, level: int, retryAfter: int, source: string, persistence: list<array{key: string, level: int, duration: int}>}> $candidates
      */
-    private function persistWinningCandidates(array $candidates, ?string $winningClass): void
+    private function persistWinningCandidates(array $candidates, ?string $winningClass, bool $persistAllCandidates = false): void
     {
         /** @var array<string, array{level: int, duration: int}> $blocks */
         $blocks = [];
         foreach ($candidates as $candidate) {
-            if ($winningClass !== null && $candidate['decision'] !== $winningClass) {
+            if (! $persistAllCandidates && $winningClass !== null && $candidate['decision'] !== $winningClass) {
                 continue;
             }
 
@@ -914,7 +938,11 @@ class EvaluationPipeline
             return $this->createAllowResult();
         }
 
-        $this->persistWinningCandidates($candidates, $final['decision']);
+        $this->persistWinningCandidates(
+            $candidates,
+            $final['decision'],
+            $this->isApiHeavyPolicy($policy->getName()),
+        );
         $this->persistWinningCandidates($advisoryCandidates, null);
 
         return $this->createBlockedResult($final['level'], $final['retryAfter'], $final['decision']);
@@ -1011,6 +1039,16 @@ class EvaluationPipeline
     private function isK1Key(string $keyType): bool
     {
         return $keyType === 'k1' || str_starts_with($keyType, 'k1_');
+    }
+
+    private function isApiHeavyPolicy(string $policyName): bool
+    {
+        return $policyName === 'api_heavy_protection';
+    }
+
+    private function isApiHeavyKeyType(string $keyType): bool
+    {
+        return $this->isK1Key($keyType) || in_array($keyType, ['k2', 'k3'], true);
     }
 
     // --- Budget Key-Rotation Helpers ---
@@ -1277,6 +1315,23 @@ class EvaluationPipeline
             'k5' => $thresholds->k5,
             default => $thresholds->default,
         };
+    }
+
+    /**
+     * @return array<int, int>
+     */
+    private function normalizedWatchThresholds(ScoreThresholdsDTO $thresholds): array
+    {
+        $levelsByThreshold = [];
+        foreach ([1 => $thresholds->l1, 2 => $thresholds->l2, 3 => $thresholds->l3] as $level => $threshold) {
+            if ($threshold === PHP_INT_MAX) {
+                continue;
+            }
+
+            $levelsByThreshold[$threshold] = max($levelsByThreshold[$threshold] ?? 0, $level);
+        }
+
+        return $levelsByThreshold;
     }
 
     private function determineLevel(int $score, string $keyType, BlockPolicyInterface $policy): int

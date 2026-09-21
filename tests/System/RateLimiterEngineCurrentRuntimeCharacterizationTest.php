@@ -11,6 +11,8 @@ use Maatify\RateLimiter\Service\EphemeralBucket;
 use Maatify\RateLimiter\Service\FingerprintHasher;
 use Maatify\RateLimiter\DTO\RateLimitContextDTO;
 use Maatify\RateLimiter\DTO\RateLimitResultDTO;
+use Maatify\RateLimiter\DTO\PolicyThresholdsDTO;
+use Maatify\RateLimiter\DTO\ScoreThresholdsDTO;
 use Maatify\RateLimiter\Service\CircuitBreaker;
 use Maatify\RateLimiter\Service\EvaluationPipeline;
 use Maatify\RateLimiter\Service\FailureModeResolver;
@@ -357,7 +359,7 @@ final class RateLimiterEngineCurrentRuntimeCharacterizationTest extends TestCase
         $this->assertNull($this->store->get($cooldownKey));
     }
 
-    public function testCurrentCharacterizationApiK2CrossingMapsEqualThresholdsToHardBlock(): void
+    public function testApiK2CrossingMapsToSoftBlockL1AndOnlyK2Persistence(): void
     {
         $policy = $this->smallApiPolicy();
         $engine = $this->createEngine($policy);
@@ -371,8 +373,8 @@ final class RateLimiterEngineCurrentRuntimeCharacterizationTest extends TestCase
 
         $result = $engine->limit($context, $command);
 
-        $this->assertSame(RateLimitResultDTO::DECISION_HARD_BLOCK, $result->decision);
-        $this->assertSame(3, $result->blockLevel);
+        $this->assertSame(RateLimitResultDTO::DECISION_SOFT_BLOCK, $result->decision);
+        $this->assertSame(1, $result->blockLevel);
         $k2Key = $this->key(
             'api_heavy_protection',
             'k2',
@@ -380,10 +382,18 @@ final class RateLimiterEngineCurrentRuntimeCharacterizationTest extends TestCase
         );
         $block = $this->store->checkBlock($k2Key);
         $this->assertNotNull($block);
-        $this->assertSame(3, $block->level);
+        $this->assertSame(1, $block->level);
+        $this->assertNull($this->store->checkBlock($this->key('api_heavy_protection', 'k1', '198.51.100.14')));
+        $this->assertNull($this->store->checkBlock($this->key(
+            'api_heavy_protection',
+            'k3',
+            '198.51.100.14:' . (new DeviceIdentityResolver(new FingerprintHasher('test_secret')))->resolve($context)->fingerprintHash,
+        )));
+        $this->assertNull($this->store->checkBlock($this->key('api_heavy_protection', 'k4', 'api-k2-mapping')));
+        $this->assertNull($this->store->checkBlock($this->key('api_heavy_protection', 'k5', 'api-k2-mapping')));
     }
 
-    public function testCurrentCharacterizationApiThresholdPathCreatesK4BlockDespiteNoApiK4Contract(): void
+    public function testApiThresholdPathDoesNotPersistAccountOrDeviceAccountBlocks(): void
     {
         $policy = $this->smallApiPolicy();
         $engine = $this->createEngine($policy);
@@ -397,15 +407,121 @@ final class RateLimiterEngineCurrentRuntimeCharacterizationTest extends TestCase
 
         $result = $engine->limit($context, $command);
 
-        $this->assertSame(RateLimitResultDTO::DECISION_HARD_BLOCK, $result->decision);
-        $this->assertSame(3, $result->blockLevel);
+        $this->assertSame(RateLimitResultDTO::DECISION_SOFT_BLOCK, $result->decision);
+        $this->assertSame(1, $result->blockLevel);
         $this->assertNull($policy->getScoreThresholds()->k4);
         $this->assertNull($policy->getBudgetConfig());
 
         $k4Key = $this->key('api_heavy_protection', 'k4', 'api-k4-mapping');
         $block = $this->store->checkBlock($k4Key);
-        $this->assertNotNull($block);
-        $this->assertSame(3, $block->level);
+        $this->assertNull($block);
+    }
+
+    public function testApiHeavyThresholdsRepresentOnlyTheirContractedLevels(): void
+    {
+        $thresholds = (new ApiHeavyProtectionPolicy(['k1' => 10, 'k2' => 20, 'k3' => 30]))->getScoreThresholds();
+        $k1 = $thresholds->k1;
+        $k2 = $thresholds->k2;
+        $k3 = $thresholds->k3;
+        $this->assertNotNull($k1);
+        $this->assertNotNull($k2);
+        $this->assertNotNull($k3);
+
+        $this->assertSame(10, $k1->l1);
+        $this->assertSame(10, $k1->l2);
+        $this->assertSame(10, $k1->l3);
+        $this->assertSame(20, $k2->l1);
+        $this->assertSame(PHP_INT_MAX, $k2->l2);
+        $this->assertSame(PHP_INT_MAX, $k2->l3);
+        $this->assertSame(30, $k3->l1);
+        $this->assertSame(30, $k3->l2);
+        $this->assertSame(PHP_INT_MAX, $k3->l3);
+        $this->assertNull($thresholds->k4);
+        $this->assertNull($thresholds->k5);
+    }
+
+    public function testApiExistingScoresMapToK2L1K3L2AndK1L3Independently(): void
+    {
+        $policy = new ApiHeavyProtectionPolicy(['k1' => 3, 'k2' => 3, 'k3' => 3]);
+        $engine = $this->createEngine($policy);
+        $context = new RateLimitContextDTO(
+            '198.51.100.17',
+            'Mozilla/5.0 Chrome/123.0.0.0',
+            'api-existing-scores',
+            ['device' => 'stable'],
+        );
+        $device = (new DeviceIdentityResolver(new FingerprintHasher('test_secret')))->resolve($context);
+        $this->store->set($this->key('api_heavy_protection', 'k1', $context->ip), 3, 3600);
+        $this->store->set($this->key('api_heavy_protection', 'k2', $context->ip . ':' . $device->normalizedUa), 3, 3600);
+        $this->store->set($this->key('api_heavy_protection', 'k3', $context->ip . ':' . $device->fingerprintHash), 3, 3600);
+
+        $result = $engine->limit($context, RateLimitCommand::checkOnly('api_heavy_protection'));
+
+        $this->assertSame(RateLimitResultDTO::DECISION_HARD_BLOCK, $result->decision);
+        $this->assertSame(3, $result->blockLevel);
+        $this->assertSame(3, $this->store->checkBlock($this->key('api_heavy_protection', 'k1', $context->ip))?->level);
+        $this->assertSame(1, $this->store->checkBlock($this->key('api_heavy_protection', 'k2', $context->ip . ':' . $device->normalizedUa))?->level);
+        $this->assertSame(2, $this->store->checkBlock($this->key('api_heavy_protection', 'k3', $context->ip . ':' . $device->fingerprintHash))?->level);
+    }
+
+    public function testApiHeavyRegistrationRequiresK3Thresholds(): void
+    {
+        $this->expectException(\Maatify\RateLimiter\Exception\RateLimiterException::class);
+        $this->expectExceptionMessage('K1, K2, and K3');
+
+        $this->createEngine(new class extends ApiHeavyProtectionPolicy {
+            public function getScoreThresholds(): PolicyThresholdsDTO
+            {
+                return new PolicyThresholdsDTO(
+                    k1: new ScoreThresholdsDTO(1, 1, 1),
+                    k2: new ScoreThresholdsDTO(1, PHP_INT_MAX, PHP_INT_MAX),
+                );
+            }
+        });
+    }
+
+    public function testApiK2AndK3CandidatesKeepTheirOwnLevelsWhenTheyWinTogether(): void
+    {
+        $policy = new ApiHeavyProtectionPolicy(['k1' => 100, 'k2' => 1, 'k3' => 1]);
+        $engine = $this->createEngine($policy);
+        $context = new RateLimitContextDTO(
+            '198.51.100.18',
+            'Mozilla/5.0 Chrome/123.0.0.0',
+            'api-two-scopes',
+            ['device' => 'stable'],
+        );
+        $device = (new DeviceIdentityResolver(new FingerprintHasher('test_secret')))->resolve($context);
+
+        $result = $engine->limit($context, new RateLimitCommand('api_heavy_protection'));
+
+        $this->assertSame(RateLimitResultDTO::DECISION_HARD_BLOCK, $result->decision);
+        $this->assertSame(2, $result->blockLevel);
+        $this->assertSame(1, $this->store->checkBlock($this->key('api_heavy_protection', 'k2', $context->ip . ':' . $device->normalizedUa))?->level);
+        $this->assertSame(2, $this->store->checkBlock($this->key('api_heavy_protection', 'k3', $context->ip . ':' . $device->fingerprintHash))?->level);
+        $this->assertNull($this->store->checkBlock($this->key('api_heavy_protection', 'k1', $context->ip)));
+    }
+
+    public function testApiK1K2AndK3CandidatesPersistOnlyTheirOwnScopeLevels(): void
+    {
+        $policy = new ApiHeavyProtectionPolicy(['k1' => 1, 'k2' => 1, 'k3' => 1]);
+        $engine = $this->createEngine($policy);
+        $context = new RateLimitContextDTO(
+            '198.51.100.19',
+            'Mozilla/5.0 Chrome/123.0.0.0',
+            'api-three-scopes',
+            ['device' => 'stable'],
+        );
+        $device = (new DeviceIdentityResolver(new FingerprintHasher('test_secret')))->resolve($context);
+
+        $result = $engine->limit($context, new RateLimitCommand('api_heavy_protection'));
+
+        $this->assertSame(RateLimitResultDTO::DECISION_HARD_BLOCK, $result->decision);
+        $this->assertSame(3, $result->blockLevel);
+        $this->assertSame(3, $this->store->checkBlock($this->key('api_heavy_protection', 'k1', $context->ip))?->level);
+        $this->assertSame(1, $this->store->checkBlock($this->key('api_heavy_protection', 'k2', $context->ip . ':' . $device->normalizedUa))?->level);
+        $this->assertSame(2, $this->store->checkBlock($this->key('api_heavy_protection', 'k3', $context->ip . ':' . $device->fingerprintHash))?->level);
+        $this->assertNull($this->store->checkBlock($this->key('api_heavy_protection', 'k4', $context->accountId ?? '')));
+        $this->assertNull($this->store->checkBlock($this->key('api_heavy_protection', 'k5', ($context->accountId ?? '') . ':' . $device->fingerprintHash)));
     }
 
     public function testCredentialSprayBlocksTheFifthDistinctSubjectDuringPrecheck(): void
