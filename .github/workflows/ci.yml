@@ -200,6 +200,7 @@ jobs:
         with:
           php-version: '8.4'
           coverage: none
+          tools: composer:2.10.3
       - name: Install Dependencies
         run: composer update --no-interaction --prefer-dist --no-progress
       - name: Verify Platform and Audit
