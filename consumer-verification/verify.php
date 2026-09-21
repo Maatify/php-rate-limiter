@@ -16,6 +16,7 @@ use Maatify\RateLimiter\Service\FingerprintHasher;
 use Maatify\RateLimiter\DTO\RateLimitContextDTO;
 use Maatify\RateLimiter\DTO\RateLimitResultDTO;
 use Maatify\RateLimiter\DTO\RateLimitOperationalSnapshotDTO;
+use Maatify\RateLimiter\Repository\CorrelationRotationStoreInterface;
 use Maatify\RateLimiter\Service\CircuitBreaker;
 use Maatify\RateLimiter\Service\EvaluationPipeline;
 use Maatify\RateLimiter\Service\FailureModeResolver;
@@ -60,6 +61,10 @@ $failureSignalEmitter = new RecordingFailureSignalEmitter();
 requireCondition(
     $rateLimitStore instanceof BudgetSeedStoreInterface,
     'The consumer store does not implement the BudgetSeedStoreInterface capability.',
+);
+requireCondition(
+    $correlationStore instanceof CorrelationRotationStoreInterface,
+    'The consumer correlation store does not implement the CorrelationRotationStoreInterface capability.',
 );
 
 $deviceResolver = new DeviceIdentityResolver(new FingerprintHasher('active-key'));

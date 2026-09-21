@@ -3,7 +3,7 @@
 **Package:** RateLimiter
 **Namespace:** `Maatify\RateLimiter`
 **Status:** LOCKED — Architecture Contract
-**Spec Version:** `1.2.0`
+**Spec Version:** `1.3.0`
 **Location:** `src/`
 
 This document explains **why** the RateLimiter package is designed the way it is.
@@ -92,6 +92,7 @@ The following inventory describes the current public runtime types. Test and sup
 | `Maatify\RateLimiter\Repository\RateLimitStoreInterface` | Atomic counters, blocks, budgets, and backend health boundary. |
 | `Maatify\RateLimiter\Repository\BudgetSeedStoreInterface` | Additive capability for atomic budget-epoch seeding across key rotation. |
 | `Maatify\RateLimiter\Repository\CorrelationStoreInterface` | Bounded distinct-count and watch-flag boundary. |
+| `Maatify\RateLimiter\Repository\CorrelationRotationStoreInterface` | Additive capability for atomic credential-spray continuity across key rotation; previous state is read-only. |
 | `Maatify\RateLimiter\Repository\CircuitBreakerStoreInterface` | Circuit-breaker state persistence boundary. |
 | `Maatify\RateLimiter\Contract\FailureSignalEmitterInterface` | Failure and circuit-breaker signal delivery boundary. |
 | `Maatify\RateLimiter\Service\DeviceIdentityResolverInterface` | Device identity resolution boundary. |
@@ -144,6 +145,7 @@ Concretely:
         → RateLimiterEngine::limit()
         → DeviceIdentityResolver → EvaluationPipeline
         → RateLimitStoreInterface + CorrelationStoreInterface
+          + CorrelationRotationStoreInterface when key-secret rotation is configured
           + CircuitBreakerStoreInterface + FailureSignalEmitterInterface
         → RateLimitResultDTO and, when applicable, FailureSignalDTO
 
@@ -303,7 +305,8 @@ The public boundaries are placed under their owning responsibility:
 
 - `Config/` owns `BlockPolicyInterface` and the three policy presets.
 - `Repository/` owns `RateLimitStoreInterface`, `BudgetSeedStoreInterface`,
-  `CorrelationStoreInterface`, and `CircuitBreakerStoreInterface`.
+  `CorrelationStoreInterface`, `CorrelationRotationStoreInterface`, and
+  `CircuitBreakerStoreInterface`.
 - `Service/` owns `RateLimiterInterface` and `DeviceIdentityResolverInterface`.
 - `Contract/` retains the general host/outbound `FailureSignalEmitterInterface`.
 
@@ -406,6 +409,7 @@ are independent of `previousFingerprintHash`.
 | Dual-fingerprint public contract (identity layer)| implemented                               |
 | K3/K5 persistent two-generation rotation         | implemented                                |
 | K5 micro-cap two-generation migration            | implemented                                |
+| Credential-spray outer-secret rotation           | implemented                                |
 | Correlation/ephemeral fingerprint-secret rotation| pending — separate design                 |
 
 Generation resolution and the K5 micro-cap current/previous rule are owned by
@@ -421,6 +425,16 @@ The package owns storage contracts for the required persistence layer. Consumers
 - If a backend cannot satisfy required atomicity for an operation, the driver MUST fail explicitly and defer to Engine failure semantics
 - Drivers must be interchangeable without changing Engine logic
 - Drivers provide the atomic, no-extension primitives required by budget owner-safety (§4.8)
+
+For credential-spray key rotation, `CorrelationRotationStoreInterface` is an additive
+capability over the unchanged `CorrelationStoreInterface`. The no-rotation path needs
+only the base contract. The rotation primitives are atomic inside the concrete store:
+they write the current generation, read the previous generation without modifying its
+members or TTL, and use `previous cardinality + bridge cardinality` for the active
+spray window. A current-only fallback is forbidden; a missing capability or malformed
+previous state fails through the engine's existing failure semantics. The bridge is
+current-secret-only, fixed-TTL, and capped by the previous remaining TTL. The core
+package provides no Redis, Lua, PDO, or other concrete adapter.
 
 ### 4.8 Budget Owner-Safety — Storage Boundaries
 

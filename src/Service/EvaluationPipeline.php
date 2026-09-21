@@ -7,6 +7,7 @@ namespace Maatify\RateLimiter\Service;
 use Maatify\RateLimiter\Config\BlockPolicyInterface;
 use Maatify\RateLimiter\Repository\BudgetSeedStoreInterface;
 use Maatify\RateLimiter\Repository\CorrelationStoreInterface;
+use Maatify\RateLimiter\Repository\CorrelationRotationStoreInterface;
 use Maatify\RateLimiter\Repository\RateLimitStoreInterface;
 use Maatify\RateLimiter\DTO\BudgetStateDTO;
 use Maatify\RateLimiter\Exception\RateLimiterException;
@@ -89,6 +90,8 @@ class EvaluationPipeline
             )
             : [];
 
+        $this->assertCredentialSprayRotationCapability($policy->getName(), $request);
+
         // 2. Check Active Blocks (Fail-Fast) on Real Keys
         if ($blocked = $this->checkActiveBlocks($realKeysV2, $realKeysV1, $policy->getName(), $device)) {
             return $blocked;
@@ -147,7 +150,13 @@ class EvaluationPipeline
         // later failure/success command in the same host lifecycle must not
         // observe the same spray attempt a second time.
         if ($request->isPreCheck && $this->isCredentialSprayPolicy($policy->getName())) {
-            if ($candidate = $this->checkCredentialSpray($context, $device, $policy->getName(), $realKeysV2['k1'] ?? null)) {
+            if ($candidate = $this->checkCredentialSpray(
+                $context,
+                $device,
+                $policy->getName(),
+                $realKeysV2['k1'] ?? null,
+                $realKeysV1['k1'] ?? null,
+            )) {
                 $candidates[] = $candidate;
             }
         }
@@ -386,19 +395,70 @@ class EvaluationPipeline
         DeviceIdentityDTO $device,
         string $policyName,
         ?string $k1Key,
+        ?string $previousK1Key,
     ): ?array {
         $subject = $context->correlationId ?? $context->accountId;
         if ($subject === null || $k1Key === null) {
             return null;
         }
 
-        $member = $this->hashKey('credential_spray:subject:v1:' . $subject, $this->secret);
         $scopeKey = 'credential_spray:' . $k1Key;
-        $count = $this->correlationStore->addDistinct($scopeKey, $member, 600);
+        if ($this->previousSecret === null) {
+            $member = $this->hashKey('credential_spray:subject:v1:' . $subject, $this->secret);
+            $count = $this->correlationStore->addDistinct($scopeKey, $member, 600);
+        } else {
+            if ($previousK1Key === null) {
+                throw new RateLimiterException(
+                    'Credential-spray key rotation requires a previous K1 correlation key.',
+                );
+            }
+
+            if (! $this->correlationStore instanceof CorrelationRotationStoreInterface) {
+                throw new RateLimiterException(
+                    'Credential-spray key rotation requires the CorrelationRotationStoreInterface capability; '
+                    . 'the configured store cannot preserve previous-generation correlation without a silent reset.',
+                );
+            }
+
+            $member = $this->hashKey('credential_spray:subject:v1:' . $subject, $this->secret);
+            $previousMember = $this->hashKey(
+                'credential_spray:subject:v1:' . $subject,
+                $this->previousSecret,
+            );
+            $count = $this->correlationStore->addDistinctAcrossRotation(
+                $scopeKey,
+                'credential_spray:bridge:' . $k1Key,
+                'credential_spray:' . $previousK1Key,
+                $member,
+                $previousMember,
+                600,
+            );
+        }
+
+        if ($this->previousSecret !== null) {
+            $this->assertPositiveCorrelationResult($count, 'distinct credential-spray correlation');
+        }
 
         $thresholdMet = $count >= 5;
         if ($count === 4) {
-            $watchCount = $this->correlationStore->incrementWatchFlag($scopeKey . ':watch', 1800);
+            if ($this->previousSecret === null) {
+                $watchCount = $this->correlationStore->incrementWatchFlag($scopeKey . ':watch', 1800);
+            } else {
+                if ($previousK1Key === null || ! $this->correlationStore instanceof CorrelationRotationStoreInterface) {
+                    throw new RateLimiterException(
+                        'Credential-spray WATCH rotation requires the CorrelationRotationStoreInterface capability.',
+                    );
+                }
+
+                $watchCount = $this->correlationStore->incrementWatchFlagAcrossRotation(
+                    $scopeKey . ':watch',
+                    'credential_spray:' . $previousK1Key . ':watch',
+                    1800,
+                );
+            }
+            if ($this->previousSecret !== null) {
+                $this->assertPositiveCorrelationResult($watchCount, 'credential-spray WATCH correlation');
+            }
             $thresholdMet = $watchCount >= 2;
         }
 
@@ -417,6 +477,27 @@ class EvaluationPipeline
             $source,
             [['key' => $k1Key, 'level' => 2, 'duration' => PenaltyLadder::getDuration(2)]],
         );
+    }
+
+    private function assertCredentialSprayRotationCapability(string $policyName, RateLimitCommand $request): void
+    {
+        if (! $request->isPreCheck || $this->previousSecret === null || ! $this->isCredentialSprayPolicy($policyName)) {
+            return;
+        }
+
+        if (! $this->correlationStore instanceof CorrelationRotationStoreInterface) {
+            throw new RateLimiterException(
+                'Credential-spray key rotation requires the CorrelationRotationStoreInterface capability; '
+                . 'the configured store cannot preserve previous-generation correlation without a silent reset.',
+            );
+        }
+    }
+
+    private function assertPositiveCorrelationResult(int $result, string $operation): void
+    {
+        if ($result < 1) {
+            throw new RateLimiterException("Malformed result from {$operation}: expected a positive count.");
+        }
     }
 
     /**

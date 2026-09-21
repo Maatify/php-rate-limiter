@@ -8,6 +8,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Added
+- Rotation-safe credential-spray correlation for Login and OTP pre-checks (Spec Version `1.2.0` → `1.3.0`): the unchanged `CorrelationStoreInterface` remains the no-rotation base contract, while `CorrelationRotationStoreInterface` preserves previous history through current-secret bridge members, fixed TTLs, read-only previous state, and explicit missing-capability/corrupt-state failures. No concrete Redis/Lua/PDO adapter is included.
 - Credential-spray correlation for Login and OTP pre-checks using the optional opaque `correlationId` with `accountId` fallback, domain-separated HMAC members, a fixed K1 window, mandatory N-1 WATCH escalation, and trusted-session advisory K1 semantics (Spec Version `1.1.0` → `1.2.0`).
 - Standards-compliant read-only operational state API with point-in-time inspection that does not couple consumers to raw storage keys.
 - Implemented the locked two-generation runtime integration for persistent K3/K5 active-block
