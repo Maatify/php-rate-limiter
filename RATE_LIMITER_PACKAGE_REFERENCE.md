@@ -3,7 +3,7 @@
 **Package:** RateLimiter
 **Namespace:** `Maatify\RateLimiter`
 **Status:** LOCKED — Architecture Contract
-**Spec Version:** `1.6.0`
+**Spec Version:** `1.7.0`
 **Location:** `src/`
 
 This document explains **why** the RateLimiter package is designed the way it is.
@@ -391,6 +391,14 @@ Penalty logic is separated to:
 - avoid hidden behavioral changes inside Store drivers
 - own budget epochs/counts, the **budget cooldown** (enforcement-owned, never level-1
   `BlockState`), and the OTP **Recovery Collision Guard** transition
+
+Account-only auxiliary state is derived by `EvaluationPipeline` from the policy name,
+purpose, environment, version, and raw AccountID, then stored only as a keyed HMAC. The
+`AntiEquilibriumGate` receives opaque package-derived state keys; it does not know secrets,
+environment scope, or raw AccountID. Current-generation auxiliary state is writable, while
+one previous outer-key generation is read-only during rotation. The three policy-scoped
+purposes are repeated-missing-fingerprint, Anti-Equilibrium, and New Device Flood stage;
+fingerprint-secret rotation alone does not create a previous account-only key.
 
 ### 4.6 Identity services (Fingerprinting)
 **Location:** `Service/`

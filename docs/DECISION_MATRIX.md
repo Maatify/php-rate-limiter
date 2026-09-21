@@ -4,7 +4,7 @@
 **Namespace:** `Maatify\RateLimiter`
 **Status:** LOCKED — Behavioral Contract
 **Scope:** Login, OTP, API Heavy Endpoints
-**Spec Version:** `1.5.0`
+**Spec Version:** `1.6.0`
 
 This document defines the **deterministic decision rules** used by the Rate Limiter.
 It is a **behavioral contract**, not explanatory documentation.
@@ -152,7 +152,11 @@ short-circuit stages 4–6. Normative budget behavior is defined in §2.4, §2.5
 A “Repeated missing fingerprint (same account)” event applies if:
 
 * `DeviceFP` is missing, **and**
-* The **previous failed login** for the same `AccountID` within the last **30 minutes** was also missing `DeviceFP`.
+* The **previous failed login** for the same `AccountID` and the same policy flow within the last **30 minutes** was also missing `DeviceFP`.
+
+The marker is policy-scoped: Login history MUST NOT satisfy the OTP rule, and OTP history
+MUST NOT satisfy the Login rule. API Heavy has no repeated-missing-fingerprint contract and
+MUST NOT create or read this marker.
 
 ---
 
@@ -304,7 +308,8 @@ To prevent mathematically planned “low-and-slow” equilibrium:
 #### 2.5.1 Read / Escalation
 
 On the current `recordFailure`, and **before budget cooldown acquisition**, read only
-Anti-Equilibrium soft events from **prior requests** for the same `AccountID`.
+Anti-Equilibrium soft events from **prior requests** for the same `AccountID` and the same
+policy flow.
 
 If **≥ 3 actually-issued `SOFT_BLOCK` events within 6 hours** exist in that prior
 history:
@@ -316,7 +321,7 @@ history:
 
 The Anti-Equilibrium read/escalation operation is separate from recording the current
 request. It occurs before budget cooldown acquisition so an eligible prior history
-cannot be bypassed by a budget soft.
+cannot be bypassed by a budget soft. Login and OTP histories are independent.
 
 #### 2.5.2 Write / Record
 
@@ -359,7 +364,7 @@ OTP actions are **stricter** than password attempts.
 Applies if:
 
 * `DeviceFP` is missing, **and**
-* The **previous OTP failure** for the same `AccountID` within the last **30 minutes** was also missing `DeviceFP`.
+* The **previous OTP failure** for the same `AccountID` and the OTP policy flow within the last **30 minutes** was also missing `DeviceFP`.
 
 ---
 
@@ -469,7 +474,8 @@ Duration:
 
 API Heavy persists each scope's own enforcement candidate. It does not create
 K4 or K5 thresholds, candidates, or blocks, and active current or previous K4
-or K5 blocks do not block an API Heavy request. A LOW-confidence moderate K3
+or K5 blocks do not block an API Heavy request. It also does not create or read
+the account-only repeated-missing-fingerprint auxiliary marker. A LOW-confidence moderate K3
 signal remains `HARD_BLOCK` L2 but is persisted against K2, never K3.
 
 ---
@@ -568,6 +574,10 @@ If `DeviceConfidence = LOW` (passive-only), the decision MUST downgrade to:
 | Continued flood after soft block  | Same window                          | HARD_BLOCK (each new K5) |
 
 New DeviceFP creation MUST be capped to prevent storage exhaustion.
+
+Flood-stage state is policy-scoped. A Login stage MUST NOT make the first qualifying OTP
+flood hard, and an OTP stage MUST NOT make the first qualifying Login flood hard. The stage
+uses current-generation writes and may read one active previous outer-key generation.
 
 **Invariant:** Ephemeral routing MUST NOT erase active blocks (see `DEVICE_FINGERPRINT.md`).
 

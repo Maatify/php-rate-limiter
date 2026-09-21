@@ -162,8 +162,21 @@ class EvaluationPipeline
         // 8. New Device Flood (5.4)
         if ($ephemeralState && $context->accountId && ! $this->isApiHeavyPolicy($policy->getName())) {
             if ($ephemeralState->accountDeviceCount >= 6) {
-                $floodKey = "flood_stage:acc:{$context->accountId}";
+                $floodKey = $this->auxiliaryAccountKey(
+                    $policy->getName(),
+                    'flood_stage',
+                    $context->accountId,
+                    $this->secret,
+                );
+                $previousFloodKey = $this->previousAuxiliaryAccountKey(
+                    $policy->getName(),
+                    'flood_stage',
+                    $context->accountId,
+                );
                 $isFloodStage = $this->correlationStore->getWatchFlag($floodKey) > 0;
+                if (! $isFloodStage && $previousFloodKey !== null && $previousFloodKey !== $floodKey) {
+                    $isFloodStage = $this->correlationStore->getWatchFlag($previousFloodKey) > 0;
+                }
 
                 if ($isFloodStage) {
                     $duration = PenaltyLadder::getDuration(2);
@@ -202,7 +215,10 @@ class EvaluationPipeline
         // Anti-Equilibrium reads prior history before budget cooldown
         // acquisition. Recording happens only after final aggregation.
         if ($request->isFailure && $context->accountId !== null && $policy->getBudgetConfig() !== null
-            && $this->antiEquilibriumGate->shouldEscalate($context->accountId)) {
+            && $this->antiEquilibriumGate->shouldEscalate(
+                $this->auxiliaryAccountKey($policy->getName(), 'anti_equilibrium', $context->accountId, $this->secret),
+                $this->previousAuxiliaryAccountKey($policy->getName(), 'anti_equilibrium', $context->accountId),
+            )) {
             $persistence = ($realKeysV2['k4'] ?? null) !== null
                 ? [['key' => $realKeysV2['k4'], 'level' => 2, 'duration' => PenaltyLadder::getDuration(2)]]
                 : [];
@@ -232,7 +248,9 @@ class EvaluationPipeline
             && ! $request->isSuccess
             && $context->accountId !== null
             && $policy->getBudgetConfig() !== null) {
-            $this->antiEquilibriumGate->recordSoftBlock($context->accountId);
+            $this->antiEquilibriumGate->recordSoftBlock(
+                $this->auxiliaryAccountKey($policy->getName(), 'anti_equilibrium', $context->accountId, $this->secret),
+            );
         }
 
         return $final;
@@ -545,14 +563,27 @@ class EvaluationPipeline
     ): array {
         $deltas = $this->calculateDeltas($policy, $context, $device, $request);
 
-        if ($request->isFailure && empty($device->fingerprintHash) && $context->accountId) {
-            $key = "last_missing_fp:acc:{$context->accountId}";
+        $k4Repeated = $policy->getScoreDeltas()->k4_repeated_missing_fp;
+        if ($request->isFailure && empty($device->fingerprintHash) && $context->accountId && $k4Repeated > 0) {
+            $key = $this->auxiliaryAccountKey(
+                $policy->getName(),
+                'last_missing_fp',
+                $context->accountId,
+                $this->secret,
+            );
             $last = $this->store->get($key);
-            if ($last && ($this->clock->now()->getTimestamp() - $last->value) <= 1800) {
-                $k4Repeated = $policy->getScoreDeltas()->k4_repeated_missing_fp;
-                if ($k4Repeated > 0) {
-                    $deltas['k4'] = $deltas['k4'] + $k4Repeated;
+            if ($last === null) {
+                $previousKey = $this->previousAuxiliaryAccountKey(
+                    $policy->getName(),
+                    'last_missing_fp',
+                    $context->accountId,
+                );
+                if ($previousKey !== null && $previousKey !== $key) {
+                    $last = $this->store->get($previousKey);
                 }
+            }
+            if ($last && ($this->clock->now()->getTimestamp() - $last->value) <= 1800) {
+                $deltas['k4'] += $k4Repeated;
             }
             $this->store->set($key, $this->clock->now()->getTimestamp(), 3600);
         }
@@ -1022,6 +1053,35 @@ class EvaluationPipeline
             "{$policyName}:rate_limiter:budget_cooldown:v1:{$this->envScope}:{$accountId}",
             $secret,
         );
+    }
+
+    /**
+     * Derive an account-only auxiliary state key without exposing the subject
+     * to either storage boundary.
+     */
+    private function auxiliaryAccountKey(
+        string $policyName,
+        string $purpose,
+        string $accountId,
+        string $secret,
+    ): string {
+        return $this->hashKey(
+            "{$policyName}:rate_limiter:aux:{$purpose}:v1:{$this->envScope}:{$accountId}",
+            $secret,
+        );
+    }
+
+    /**
+     * Derive the previous outer-key generation only when that generation exists.
+     */
+    private function previousAuxiliaryAccountKey(
+        string $policyName,
+        string $purpose,
+        string $accountId,
+    ): ?string {
+        return $this->previousSecret === null
+            ? null
+            : $this->auxiliaryAccountKey($policyName, $purpose, $accountId, $this->previousSecret);
     }
 
     private function isKnownForAccount(DeviceIdentityDTO $device): bool

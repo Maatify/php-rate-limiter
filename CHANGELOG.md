@@ -7,6 +7,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Changed
+- Isolated account/policy auxiliary state for repeated missing fingerprints, Anti-Equilibrium,
+  and New Device Flood with the locked policy/environment/version HMAC namespace. Current
+  generation is writable, previous outer-key state is read-only, raw AccountID no longer
+  crosses storage boundaries, and API Heavy does not create a repeated-missing marker.
+  Updated Key Strategy `1.4.0` → `1.5.0`, Decision Matrix `1.5.0` → `1.6.0`, and Package
+  Reference `1.6.0` → `1.7.0`.
+
 ### Added
 - Rotation-safe credential-spray correlation for Login and OTP pre-checks (Spec Version `1.2.0` → `1.3.0`): the unchanged `CorrelationStoreInterface` remains the no-rotation base contract, while `CorrelationRotationStoreInterface` preserves previous history through current-secret bridge members, fixed TTLs, read-only previous state, and explicit missing-capability/corrupt-state failures. No concrete Redis/Lua/PDO adapter is included.
 - Credential-spray correlation for Login and OTP pre-checks using the optional opaque `correlationId` with `accountId` fallback, domain-separated HMAC members, a fixed K1 window, mandatory N-1 WATCH escalation, and trusted-session advisory K1 semantics (Spec Version `1.1.0` → `1.2.0`).
