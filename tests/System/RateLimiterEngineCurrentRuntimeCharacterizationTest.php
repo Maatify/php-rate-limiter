@@ -408,7 +408,7 @@ final class RateLimiterEngineCurrentRuntimeCharacterizationTest extends TestCase
         $this->assertSame(3, $block->level);
     }
 
-    public function testCurrentCharacterizationFiveAccountIdsFromOneIpDoNotCreateCredentialSprayIpBlock(): void
+    public function testCredentialSprayBlocksTheFifthDistinctSubjectDuringPrecheck(): void
     {
         $engine = $this->createEngine(new LoginProtectionPolicy());
         $ip = '198.51.100.16';
@@ -422,14 +422,18 @@ final class RateLimiterEngineCurrentRuntimeCharacterizationTest extends TestCase
                 ['device' => 'stable'],
             );
 
-            $result = $engine->limit($context, RateLimitCommand::recordFailure('login_protection'));
+            $result = $engine->limit($context, RateLimitCommand::checkOnly('login_protection'));
 
-            $this->assertSame(RateLimitResultDTO::DECISION_ALLOW, $result->decision);
+            if ($index < 5) {
+                $this->assertSame(RateLimitResultDTO::DECISION_ALLOW, $result->decision);
+            } else {
+                $this->assertSame(RateLimitResultDTO::DECISION_HARD_BLOCK, $result->decision);
+                $this->assertSame(2, $result->blockLevel);
+            }
         }
 
         $k1Key = $this->key('login_protection', 'k1', $ip);
-        $this->assertSame(25, $this->store->get($k1Key)?->value);
-        $this->assertNull($this->store->checkBlock($k1Key));
+        $this->assertSame(2, $this->store->checkBlock($k1Key)?->level);
     }
 
     public function testCurrentCharacterizationFourDevicesForOneAccountDoNotCreateInvolvedK5Block(): void

@@ -18,6 +18,7 @@ final readonly class RateLimitContextDTO implements \JsonSerializable
      * @param bool $isSessionTrusted Whether the session device identifier is trusted.
      * @param array<string, string|string[]> $headers Request headers retained as context.
      * @param bool $isDevicePreviouslyVerifiedForAccount Whether the device is known to the account.
+     * @param ?string $correlationId Stable opaque subject identity used for bounded correlation.
      */
     public function __construct(
         public string $ip,
@@ -28,6 +29,7 @@ final readonly class RateLimitContextDTO implements \JsonSerializable
         public bool $isSessionTrusted = false,
         public array $headers = [],
         public bool $isDevicePreviouslyVerifiedForAccount = false,
+        public ?string $correlationId = null,
     ) {}
 
     /**
@@ -44,6 +46,7 @@ final readonly class RateLimitContextDTO implements \JsonSerializable
             'isSessionTrusted' => $this->isSessionTrusted,
             'headers' => $this->headers,
             'isDevicePreviouslyVerifiedForAccount' => $this->isDevicePreviouslyVerifiedForAccount,
+            'correlationId' => $this->correlationId,
         ];
     }
 }
