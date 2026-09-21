@@ -161,7 +161,55 @@ final class PerCs31DeltaVerifier
             $line += substr_count($text, "\n");
         }
 
-        return $tokens;
+        return self::normalizePipeTokens($tokens);
+    }
+
+    /**
+     * Normalizes PHP 8.4's adjacent raw pipe tokens to the PHP 8.5 T_PIPE
+     * representation while keeping separated or commented forms invalid.
+     *
+     * @param list<array{id: int|null, text: string, line: int, offset: int, end: int}> $tokens
+     * @return list<array{id: int|null, text: string, line: int, offset: int, end: int}>
+     */
+    private static function normalizePipeTokens(array $tokens): array
+    {
+        $normalized = [];
+        $count = count($tokens);
+        for ($index = 0; $index < $count; $index++) {
+            $token = $tokens[$index];
+            if ($token['id'] === null && $token['text'] === '|') {
+                $next = $index + 1;
+                if ($next < $count
+                    && $tokens[$next]['id'] === null
+                    && $tokens[$next]['text'] === '>'
+                    && $token['end'] === $tokens[$next]['offset']
+                ) {
+                    $token['text'] = '|>';
+                    $token['end'] = $tokens[$next]['end'];
+                    $normalized[] = $token;
+                    $index = $next;
+                    continue;
+                }
+
+                if ($next < $count && $tokens[$next]['id'] === T_WHITESPACE) {
+                    $afterWhitespace = $next + 1;
+                    if ($afterWhitespace < $count
+                        && $tokens[$afterWhitespace]['id'] === null
+                        && $tokens[$afterWhitespace]['text'] === '>'
+                    ) {
+                        $token['text'] = '| >';
+                        $token['end'] = $tokens[$afterWhitespace]['end'];
+                        $normalized[] = $token;
+                        $index = $afterWhitespace;
+                        continue;
+                    }
+                }
+            }
+
+            $normalized[] = $token;
+        }
+
+        return $normalized;
     }
 
     /**
@@ -486,7 +534,22 @@ final class PerCs31DeltaVerifier
         foreach ($tokens as $index => $token) {
             $isPipeToken = $token['text'] === '|>'
                 && ($token['id'] === null || (defined('T_PIPE') && $token['id'] === T_PIPE));
-            if (!$isPipeToken) {
+            $isSeparatedPipe = $token['text'] !== '|>'
+                && $token['id'] === null
+                && str_contains($token['text'], '|')
+                && str_contains($token['text'], '>');
+            if (!$isPipeToken && !$isSeparatedPipe) {
+                continue;
+            }
+
+            if ($isSeparatedPipe) {
+                self::addViolation(
+                    $violations,
+                    $file,
+                    $token['line'],
+                    'pipe-spacing',
+                    'The |> operator MUST not contain whitespace between | and >.',
+                );
                 continue;
             }
 
@@ -503,19 +566,66 @@ final class PerCs31DeltaVerifier
             }
 
             $previous = self::previousMeaningful($tokens, $index - 1);
-            if ($previous !== null && $token['line'] > $tokens[$previous]['line']) {
+            $next = self::nextMeaningful($tokens, $index + 1);
+            if ($previous === null || $next === null) {
+                continue;
+            }
+
+            $previousLine = $tokens[$previous]['line'];
+            $nextLine = $tokens[$next]['line'];
+            if ($nextLine > $token['line']) {
+                self::addViolation(
+                    $violations,
+                    $file,
+                    $token['line'],
+                    'pipe-placement',
+                    'A multiline pipe operator MUST not end the preceding line.',
+                );
+            }
+
+            if ($token['line'] > $previousLine) {
                 $prefix = self::linePrefix($source, $token['offset']);
-                if (trim($prefix) !== '') {
+                $baseIndent = self::pipeBaseIndent($source, $tokens, $index);
+                $expectedIndent = self::oneIndentDeeper($baseIndent);
+                if ($prefix !== $expectedIndent) {
                     self::addViolation(
                         $violations,
                         $file,
                         $token['line'],
                         'pipe-placement',
-                        'A multiline pipe chain MUST place |> at the beginning of its line.',
+                        'A multiline pipe operator MUST be indented exactly one level relative to its chain.',
                     );
                 }
             }
         }
+    }
+
+    /**
+     * @param list<array{id: int|null, text: string, line: int, offset: int, end: int}> $tokens
+     */
+    private static function pipeBaseIndent(string $source, array $tokens, int $pipeIndex): string
+    {
+        $firstPipe = $pipeIndex;
+        for ($index = $pipeIndex - 1; $index >= 0; $index--) {
+            if (in_array($tokens[$index]['text'], [';', '{', '}'], true)) {
+                break;
+            }
+            if ($tokens[$index]['text'] === '|>') {
+                $firstPipe = $index;
+            }
+        }
+
+        $operand = self::previousMeaningful($tokens, $firstPipe - 1);
+        if ($operand === null) {
+            return '';
+        }
+
+        return self::leadingIndent($source, $tokens[$operand]['offset']);
+    }
+
+    private static function oneIndentDeeper(string $baseIndent): string
+    {
+        return $baseIndent . (str_contains($baseIndent, "\t") ? "\t" : '    ');
     }
 
     /**
@@ -618,11 +728,24 @@ final class PerCs31DeltaVerifier
                 continue;
             }
 
+            $newIndent = self::leadingIndent($source, $token['offset']);
+            $expectedIndent = self::oneIndentDeeper($newIndent);
             $attributeIndent = self::linePrefix($source, $tokens[$attributeLines[0]]['offset']);
             $classIndent = self::linePrefix($source, $tokens[$attributeIndex]['offset']);
             $lastAttribute = $attributeLines[array_key_last($attributeLines)];
-            if ($tokens[$attributeIndex]['line'] <= $tokens[$lastAttribute]['line']
+            $attributesAreCorrectlyIndented = true;
+            foreach ($attributeLines as $attributeLine) {
+                if ($tokens[$attributeLine]['line'] <= $token['line']
+                    || self::linePrefix($source, $tokens[$attributeLine]['offset']) !== $expectedIndent
+                ) {
+                    $attributesAreCorrectlyIndented = false;
+                    break;
+                }
+            }
+            if (!$attributesAreCorrectlyIndented
+                || $tokens[$attributeIndex]['line'] <= $tokens[$lastAttribute]['line']
                 || $attributeIndent !== $classIndent
+                || $classIndent !== $expectedIndent
             ) {
                 self::addViolation(
                     $violations,
@@ -844,6 +967,13 @@ final class PerCs31DeltaVerifier
         $lineStart = strrpos(substr($source, 0, $offset), "\n");
 
         return substr($source, $lineStart === false ? 0 : $lineStart + 1, $offset - ($lineStart === false ? 0 : $lineStart + 1));
+    }
+
+    private static function leadingIndent(string $source, int $offset): string
+    {
+        preg_match('/\A[ \t]*/', self::linePrefix($source, $offset), $matches);
+
+        return $matches[0] ?? '';
     }
 
     private static function lineAt(string $source, int $offset): string

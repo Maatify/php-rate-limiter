@@ -1,13 +1,9 @@
 <?php
 
 switch ($value) {
-    case 'first':
-        logValue($value);
-        // No break: deliberate fall-through.
     case (
         $value === 'allowed'
-        && $other === true
-    ):
+    ) :
         return $value;
     default:
         throw new RuntimeException('unsupported');

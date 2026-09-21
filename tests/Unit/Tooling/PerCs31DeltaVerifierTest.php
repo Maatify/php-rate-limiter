@@ -9,25 +9,37 @@ use PHPUnit\Framework\TestCase;
 final class PerCs31DeltaVerifierTest extends TestCase
 {
     /**
-     * @return iterable<string, array{string, string, string, int}>
+     * @return iterable<string, array{string, string, string, int, string}>
      */
     public static function deltaFixtures(): iterable
     {
         $root = dirname(__DIR__, 3) . '/tests/Fixtures/PerCs31Delta';
         foreach ([
-            'clone' => 0,
-            'switch' => 1,
-            'pipe' => 1,
-            'empty-closure' => 1,
-            'anonymous-class-attributes' => 1,
-            'enum-constant' => 1,
-            'multiline-array' => 1,
-        ] as $rule => $invalidExitCode) {
-            yield $rule => [
-                $rule,
-                $root . '/valid/' . $rule . '.php.txt',
-                $root . '/invalid/' . $rule . '.php.txt',
+            'clone' => ['clone', 'clone', 0, 'clone'],
+            'switch-body-braces' => ['switch', 'switch-body-braces', 1, 'switch-case-braces'],
+            'switch-fallthrough' => ['switch', 'switch-fallthrough', 1, 'switch-case-termination'],
+            'switch-condition-missing-parentheses' => ['switch', 'switch-condition-missing-parentheses', 1, 'switch-case-condition'],
+            'switch-condition-closing-placement' => ['switch', 'switch-condition-closing-placement', 1, 'switch-case-condition'],
+            'pipe-missing-spacing' => ['pipe-spaced-single-line', 'pipe-missing-spacing', 1, 'pipe-spacing'],
+            'pipe-operator-at-line-end' => ['pipe-multiline-leading', 'pipe-operator-at-line-end', 1, 'pipe-placement'],
+            'pipe-no-continuation-indent' => ['pipe-multiline-nested', 'pipe-no-continuation-indent', 1, 'pipe-placement'],
+            'pipe-wrong-indentation' => ['pipe-multiline-nested', 'pipe-wrong-indentation', 1, 'pipe-placement'],
+            'pipe-spaced-separator' => ['pipe-string-comment', 'pipe-spaced-separator', 1, 'pipe-spacing'],
+            'empty-closure' => ['empty-closure', 'empty-closure', 1, 'empty-closure'],
+            'anonymous-class-attributes-inline-after-new' => ['anonymous-class-attributes', 'anonymous-class-attributes-inline-after-new', 1, 'anonymous-class-attributes'],
+            'anonymous-class-attributes-class-inline' => ['anonymous-class-attributes-nested', 'anonymous-class-attributes-class-inline', 1, 'anonymous-class-attributes'],
+            'anonymous-class-attributes-no-indentation' => ['anonymous-class-attributes-nested', 'anonymous-class-attributes-no-indentation', 1, 'anonymous-class-attributes'],
+            'anonymous-class-attributes-too-deep' => ['anonymous-class-attributes-nested', 'anonymous-class-attributes-too-deep', 1, 'anonymous-class-attributes'],
+            'anonymous-class-attributes-misaligned' => ['anonymous-class-attributes-nested', 'anonymous-class-attributes-misaligned', 1, 'anonymous-class-attributes'],
+            'enum-constant' => ['enum-constant', 'enum-constant', 1, 'enum-constant-visibility'],
+            'multiline-array' => ['multiline-array', 'multiline-array', 1, 'multiline-array-opening'],
+        ] as $label => [$validRule, $invalidRule, $invalidExitCode, $violationRule]) {
+            yield $label => [
+                $label,
+                $root . '/valid/' . $validRule . '.php.txt',
+                $root . '/invalid/' . $invalidRule . '.php.txt',
                 $invalidExitCode,
+                $violationRule,
             ];
         }
     }
@@ -40,6 +52,7 @@ final class PerCs31DeltaVerifierTest extends TestCase
         string $validFixture,
         string $invalidFixture,
         int $invalidExitCode,
+        string $violationRule,
     ): void {
         [$validCode, $validOutput] = $this->runVerifier($validFixture);
         self::assertSame(0, $validCode, $rule . ' valid fixture must pass: ' . $validOutput);
@@ -47,7 +60,7 @@ final class PerCs31DeltaVerifierTest extends TestCase
         [$invalidCode, $invalidOutput] = $this->runVerifier($invalidFixture);
         self::assertSame($invalidExitCode, $invalidCode, $rule . ' invalid fixture result: ' . $invalidOutput);
         if ($invalidExitCode === 1) {
-            self::assertStringContainsString($rule, $invalidOutput);
+            self::assertStringContainsString($violationRule, $invalidOutput);
         } else {
             self::assertStringContainsString('ADVISORY', $invalidOutput);
             self::assertStringContainsString($rule, $invalidOutput);
