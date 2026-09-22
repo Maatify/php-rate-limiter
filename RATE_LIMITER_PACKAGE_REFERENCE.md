@@ -3,7 +3,7 @@
 **Package:** RateLimiter
 **Namespace:** `Maatify\RateLimiter`
 **Status:** LOCKED — Architecture Contract
-**Spec Version:** `1.9.0`
+**Spec Version:** `1.10.0`
 **Location:** `src/`
 
 This document explains **why** the RateLimiter package is designed the way it is.
@@ -624,6 +624,15 @@ This key set is designed to:
 - avoid IP-only enforcement
 - prevent key explosion via bounded creation rules
 - defeat IPv6 boundary spray via hierarchical aggregation
+
+For IPv6, only canonical `/64` is an enforcement K1. The `/48` → `/40` → `/32`
+hierarchy is bounded correlation detection state activated at exact `2/2`,
+`4/4`, and `8/8` child thresholds within a fixed 600-second window; it has no
+macro score or block state, and it never enters `RateLimitStoreInterface`.
+Macro Spray and Churn enforce only the current `/64` K1 or `/64 + UA` K2.
+Dilution continues to count canonical `/64` members. Hierarchy state uses
+policy/environment/version/purpose-separated keyed-HMAC references, with one
+read-only previous outer-key generation and a TTL-bounded current bridge.
 
 Detailed key rules are defined in `docs/KEY_STRATEGY.md`.
 

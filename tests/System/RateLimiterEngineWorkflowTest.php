@@ -382,7 +382,7 @@ class RateLimiterEngineWorkflowTest extends TestCase
         $this->assertSame(8, $newState->value);
     }
 
-    public function testIPv6KeyHierarchy(): void
+    public function testIPv6UsesCanonical64EnforcementKeyOnly(): void
     {
         // IPv6 address
         $context = new RateLimitContextDTO('2001:db8:85a3::8a2e:370:7334', 'Mozilla/5.0', 'acct_123');
@@ -402,15 +402,11 @@ class RateLimiterEngineWorkflowTest extends TestCase
         $prefix64 = substr($hex, 0, 16);
         $k1_64 = hash_hmac('sha256', "api_heavy_protection:rate_limiter:k1:v2:prod:{$prefix64}", 'test_secret');
 
-        // 48-bit prefix (12 chars)
+        // Legacy macro prefixes must never become enforcement keys.
         $prefix48 = substr($hex, 0, 12);
         $k1_48 = hash_hmac('sha256', "api_heavy_protection:rate_limiter:k1:v2:prod:{$prefix48}", 'test_secret');
-
-        // 40-bit prefix (10 chars)
         $prefix40 = substr($hex, 0, 10);
         $k1_40 = hash_hmac('sha256', "api_heavy_protection:rate_limiter:k1:v2:prod:{$prefix40}", 'test_secret');
-
-        // 32-bit prefix (8 chars)
         $prefix32 = substr($hex, 0, 8);
         $k1_32 = hash_hmac('sha256', "api_heavy_protection:rate_limiter:k1:v2:prod:{$prefix32}", 'test_secret');
 
@@ -418,20 +414,31 @@ class RateLimiterEngineWorkflowTest extends TestCase
         $this->assertNotNull($k1_64State);
         $this->assertEquals(1, $k1_64State->value);
 
-        $k1_48State = $this->store->get($k1_48);
-        $this->assertNotNull($k1_48State);
-        $this->assertEquals(1, $k1_48State->value);
-
-        $k1_40State = $this->store->get($k1_40);
-        $this->assertNotNull($k1_40State);
-        $this->assertEquals(1, $k1_40State->value);
-
-        $k1_32State = $this->store->get($k1_32);
-        $this->assertNotNull($k1_32State);
-        $this->assertEquals(1, $k1_32State->value);
+        $this->assertNull($this->store->get($k1_48));
+        $this->assertNull($this->store->get($k1_40));
+        $this->assertNull($this->store->get($k1_32));
     }
 
-    public function testApiHeavyDoesNotPersistIpv6MacroHierarchyBlocksBeforeAdaptiveAggregationRemediation(): void
+    public function testLegacyIpv6MacroBlocksAreIgnored(): void
+    {
+        $context = new RateLimitContextDTO('2001:db8:85a3::8a2e:370:7334', 'Mozilla/5.0', 'acct_123');
+        $hex = bin2hex((string) inet_pton($context->ip));
+        $keyForPrefix = static fn(string $prefix): string => hash_hmac(
+            'sha256',
+            "api_heavy_protection:rate_limiter:k1:v2:prod:{$prefix}",
+            'test_secret',
+        );
+
+        foreach ([substr($hex, 0, 12), substr($hex, 0, 10), substr($hex, 0, 8)] as $prefix) {
+            $this->store->block($keyForPrefix($prefix), 3, 600);
+        }
+
+        $result = $this->engine->limit($context, RateLimitCommand::checkOnly('api_heavy_protection'));
+
+        $this->assertSame(RateLimitResultDTO::DECISION_ALLOW, $result->decision);
+    }
+
+    public function testApiHeavyIgnoresLegacyIpv6MacroHierarchyState(): void
     {
         $policy = new ApiHeavyProtectionPolicy(['k1' => 1, 'k2' => 100, 'k3' => 100]);
         $engine = $this->createEngineWithStore($this->store, $policy);
@@ -468,7 +475,7 @@ class RateLimiterEngineWorkflowTest extends TestCase
         )));
     }
 
-    public function testApiHeavyDoesNotPersistIpv6MacroHierarchyBlocksAfterScoreUpdate(): void
+    public function testApiHeavyDoesNotPersistLegacyIpv6MacroBlocksAfterScoreUpdate(): void
     {
         $policy = new ApiHeavyProtectionPolicy(['k1' => 1, 'k2' => 100, 'k3' => 100]);
         $engine = $this->createEngineWithStore($this->store, $policy);
