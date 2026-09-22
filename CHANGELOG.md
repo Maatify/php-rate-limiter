@@ -18,6 +18,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   outer-key rotation continuity; Dilution remains canonical `/64`-member based.
   Version transitions: `KEY_STRATEGY.md` `1.7.0` → `1.8.0`,
   `DECISION_MATRIX.md` `1.8.0` → `1.9.0`, and package reference `1.9.0` → `1.10.0`.
+- Documented the public operational API contraction from serialized
+  `k1,k2,k3,k4,k5,k1_48,k1_40,k1_32` to `k1,k2,k3,k4,k5`. The removed macro
+  fields were enforcement-scope projections; `/48`, `/40`, and `/32` remain
+  internal correlation-detection state only. No additional specification
+  version bump is introduced for this clarification.
 - Follow-up hardening for WU-S3-04: New Device Flood now evaluates from the sixth
   admitted/account-scope observation through the rejected overflow path, while only
   admitted devices may persist K5 state. All bounded distinct-store results are validated

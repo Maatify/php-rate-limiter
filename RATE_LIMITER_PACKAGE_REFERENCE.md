@@ -634,6 +634,11 @@ Dilution continues to count canonical `/64` members. Hierarchy state uses
 policy/environment/version/purpose-separated keyed-HMAC references, with one
 read-only previous outer-key generation and a TTL-bounded current bridge.
 
+The public operational snapshot serialized shape is intentionally contracted to
+`k1`, `k2`, `k3`, `k4`, and `k5`. The former `k1_48`, `k1_40`, and `k1_32`
+serialized fields are removed: adaptive macro hierarchy is internal correlation
+detection state, not an operational enforcement scope or public hierarchy API.
+
 Detailed key rules are defined in `docs/KEY_STRATEGY.md`.
 
 ---
