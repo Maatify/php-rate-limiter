@@ -7,6 +7,7 @@ namespace Maatify\RateLimiter\Tests\Integration\Correlation;
 use Maatify\RateLimiter\Command\RateLimitCommand;
 use Maatify\RateLimiter\Config\LoginProtectionPolicy;
 use Maatify\RateLimiter\Config\OtpProtectionPolicy;
+use Maatify\RateLimiter\DTO\BlockStateDTO;
 use Maatify\RateLimiter\DTO\DeviceIdentityDTO;
 use Maatify\RateLimiter\DTO\RateLimitContextDTO;
 use Maatify\RateLimiter\DTO\RateLimitResultDTO;
@@ -134,8 +135,7 @@ final class DistributedAccountAttackTest extends TestCase
         self::assertSame(2, $ephemeral->blockLevel);
         self::assertNull($this->store->checkBlock($ephemeralK5));
         self::assertSame(4, $this->correlationStore->distinctCount($scope));
-        $oldBlockAfterEphemeral = $this->store->checkBlock($oldK5);
-        self::assertSame($oldExpiry, $oldBlockAfterEphemeral->expiresAt);
+        $this->assertBlockExpiry($this->store->checkBlock($oldK5), $oldExpiry);
     }
 
     public function testThreeDevicesSetOneWatchAndSecondQualifyingObservationReachesHardL2(): void
@@ -593,5 +593,11 @@ final class DistributedAccountAttackTest extends TestCase
             "{$policy}:rate_limiter:correlation:distributed_account_occurrences:v1:prod:scope:{$k4}",
             $secret,
         );
+    }
+
+    private function assertBlockExpiry(?BlockStateDTO $block, int $expectedExpiry): void
+    {
+        self::assertNotNull($block);
+        self::assertSame($expectedExpiry, $block->expiresAt);
     }
 }
