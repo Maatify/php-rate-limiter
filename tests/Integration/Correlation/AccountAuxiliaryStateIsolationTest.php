@@ -257,16 +257,16 @@ final class AccountAuxiliaryStateIsolationTest extends TestCase
 
         for ($index = 1; $index <= 5; $index++) {
             $this->assertSame(
-                RateLimitResultDTO::DECISION_ALLOW,
+                $index <= 3 ? RateLimitResultDTO::DECISION_ALLOW : RateLimitResultDTO::DECISION_HARD_BLOCK,
                 $this->floodRequest($pipeline, $login, $accountId, "login-device-{$index}")->decision,
             );
         }
 
         $this->assertSame(
-            RateLimitResultDTO::DECISION_SOFT_BLOCK,
+            RateLimitResultDTO::DECISION_HARD_BLOCK,
             $this->floodRequest($pipeline, $login, $accountId, 'login-device-6')->decision,
         );
-        self::assertNull($this->store->checkBlock($this->deviceKey($login->getName(), $accountId, 'login-device-6')));
+        self::assertSame(2, $this->store->checkBlock($this->deviceKey($login->getName(), $accountId, 'login-device-6'))?->level);
         $this->assertSame(
             RateLimitResultDTO::DECISION_HARD_BLOCK,
             $this->floodRequest($pipeline, $login, $accountId, 'login-device-7')->decision,
@@ -296,12 +296,12 @@ final class AccountAuxiliaryStateIsolationTest extends TestCase
         $this->assertSame(0, $this->correlationStore->watchValue($otpStageKey));
         for ($index = 1; $index <= 5; $index++) {
             $this->assertSame(
-                RateLimitResultDTO::DECISION_ALLOW,
+                $index <= 3 ? RateLimitResultDTO::DECISION_ALLOW : RateLimitResultDTO::DECISION_HARD_BLOCK,
                 $this->floodRequest($pipeline, $otp, $accountId, "otp-device-{$index}")->decision,
             );
         }
         $this->assertSame(
-            RateLimitResultDTO::DECISION_SOFT_BLOCK,
+            RateLimitResultDTO::DECISION_HARD_BLOCK,
             $this->floodRequest($pipeline, $otp, $accountId, 'otp-device-6')->decision,
         );
         $this->assertSame(1, $this->correlationStore->watchValue($otpStageKey));

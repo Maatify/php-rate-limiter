@@ -5,7 +5,8 @@ declare(strict_types=1);
 use Maatify\RateLimiter\Command\RateLimitCommand;
 use Maatify\RateLimiter\Repository\CircuitBreakerStoreInterface;
 use Maatify\RateLimiter\DTO\BoundedDistinctResultDTO;
-use Maatify\RateLimiter\Repository\BoundedCorrelationStoreInterface;
+use Maatify\RateLimiter\DTO\BoundedDistinctSnapshotDTO;
+use Maatify\RateLimiter\Repository\BoundedCorrelationSnapshotStoreInterface;
 use Maatify\RateLimiter\Contract\FailureSignalEmitterInterface;
 use Maatify\RateLimiter\Repository\RateLimitStoreInterface;
 use Maatify\RateLimiter\DTO\FailureSignalDTO;
@@ -151,7 +152,7 @@ final class ExampleRateLimitStore implements RateLimitStoreInterface
     }
 }
 
-final class ExampleCorrelationStore implements BoundedCorrelationStoreInterface
+final class ExampleCorrelationStore implements BoundedCorrelationSnapshotStoreInterface
 {
     /** @var array<string, array{items: array<string, true>, expiresAt: int}> */
     private array $sets = [];
@@ -204,6 +205,54 @@ final class ExampleCorrelationStore implements BoundedCorrelationStoreInterface
         $this->sets[$key] = $current;
 
         return new BoundedDistinctResultDTO(count($current['items']), true);
+    }
+
+    public function addDistinctBoundedWithSnapshot(
+        string $key,
+        string $item,
+        int $ttlSeconds,
+        int $maxDistinct,
+    ): BoundedDistinctSnapshotDTO {
+        if ($ttlSeconds <= 0 || $maxDistinct <= 0) {
+            throw new InvalidArgumentException('Bounded correlation TTL and cap must be positive.');
+        }
+
+        $now = $this->clock->now()->getTimestamp();
+        $current = $this->sets[$key] ?? null;
+        if ($current === null || $current['expiresAt'] <= $now) {
+            $current = ['items' => [], 'expiresAt' => $now + $ttlSeconds];
+        }
+
+        if (isset($current['items'][$item])) {
+            return new BoundedDistinctSnapshotDTO(
+                count($current['items']),
+                true,
+                false,
+                array_keys($current['items']),
+                $current['expiresAt'],
+            );
+        }
+
+        if (count($current['items']) >= $maxDistinct) {
+            return new BoundedDistinctSnapshotDTO(
+                count($current['items']),
+                false,
+                false,
+                array_keys($current['items']),
+                $current['expiresAt'],
+            );
+        }
+
+        $current['items'][$item] = true;
+        $this->sets[$key] = $current;
+
+        return new BoundedDistinctSnapshotDTO(
+            count($current['items']),
+            true,
+            true,
+            array_keys($current['items']),
+            $current['expiresAt'],
+        );
     }
 
     public function incrementWatchFlag(string $key, int $ttlSeconds): int

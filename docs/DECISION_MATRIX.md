@@ -4,7 +4,7 @@
 **Namespace:** `Maatify\RateLimiter`
 **Status:** LOCKED — Behavioral Contract
 **Scope:** Login, OTP, API Heavy Endpoints
-**Spec Version:** `1.7.0`
+**Spec Version:** `1.8.0`
 
 This document defines the **deterministic decision rules** used by the Rate Limiter.
 It is a **behavioral contract**, not explanatory documentation.
@@ -509,6 +509,13 @@ purpose/version/environment-separated keyed-HMAC references; raw account, IP, co
 and fingerprint values never cross the store boundary. Missing capabilities and corrupt
 bounded state fail explicitly rather than falling back to unbounded operations.
 
+Distributed-account device observations additionally require the additive
+`BoundedCorrelationSnapshotStoreInterface` (or its rotation companion). The snapshot returns
+the complete bounded logical member set, fixed expiry, and separate `accepted`/`added` flags;
+the pipeline validates count, uniqueness, membership, expiry, and flag consistency before
+using it for enforcement. Snapshot members are canonical opaque K5 keys and are applied
+directly to the involved-device block candidates.
+
 This is deterministic and testable (no randomness), and blocks “hover forever at N-1”.
 
 ---
@@ -556,6 +563,32 @@ If the condition in 5.2 occurs **≥ 3 times within 24 hours** for the same `Acc
 * Apply **HARD_BLOCK (Account)** at **minimum level L4**.
 
 This is the only correlation-based path that may hard-block the account.
+
+Operational contract:
+
+* The device window is a 600-second fixed-TTL bounded set capped at four logical K5 members.
+* Three members create a 30-minute account watch marker. The second qualifying three-member
+  observation is equivalent to the threshold; the fourth member meets it directly.
+* `first qualification → all involved snapshot K5s`: when
+  `occurrenceSnapshot.added = true`, persist every member in the complete bounded snapshot at
+  HARD L2.
+* `later same-window qualification → current non-ephemeral K5 only`: when
+  `occurrenceSnapshot.added = false`, do not refresh historical K5 TTLs; persist only the current
+  non-ephemeral K5. An Ephemeral request creates no new K5 persistence. The distributed set
+  remains capped at four members.
+* These involved-device decisions do not block K4 on the first or second occurrence.
+* A qualifying device snapshot contributes exactly one account-only occurrence member derived
+  from that snapshot's fixed expiry. The occurrence window is 86400 seconds and is capped at
+  three members; rejected overflow does not create a fourth member.
+* Exactly the third occurrence adds HARD_BLOCK K4 at L4 for 1800 seconds. There is no K4
+  escalation at occurrence N-1.
+* Login and OTP `checkOnly()` are the only observation path. API Heavy, missing account or
+  fingerprint, and missing real K4/K5 do not observe this rule or require its capability.
+* During rotation, the previous device set is read-only, new logical members belong to the
+  current generation and bridge, and the bridge expiry is bounded by the previous expiry.
+  Outer-only, fingerprint-only, and both-rotated inputs use one coordinated pair; no
+  Cartesian generation pairing is allowed. Fingerprint-only rotation has no prior occurrence
+  namespace.
 
 ---
 
@@ -612,9 +645,9 @@ members and 50 distinct IP-scope members. The pipeline performs the observation 
 the real current/previous generation tuple, routes only rejected new members to ephemeral,
 and never creates a fake K3/K5 key. Flood evaluation begins at the sixth logical account
 member even when that member is admitted; a rejected overflow remains eligible for the active
-flood HARD decision but cannot create or persist new K5 score/block state. S3-F08 distributed
-account attack member enumeration and repeated-occurrence account escalation remain open and
-are not implemented by this matrix revision.
+flood HARD decision but cannot create or persist new K5 score/block state. When a distributed-
+account HARD candidate and the flood SOFT candidate coexist, the HARD candidate wins while
+the flood state still advances. A distributed overflow does not admit a new K5 member.
 
 ---
 

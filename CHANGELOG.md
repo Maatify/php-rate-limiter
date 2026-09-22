@@ -20,8 +20,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   and explicit caps. Current/previous generation observations use read-only previous state
   and a TTL-capped current bridge. Ephemeral overflow performs one real-key observation,
   never creates a fake K3/K5 identity, preserves active-block checks and K4/flood handling,
-  and suppresses per-fingerprint dilution state while retaining bounded churn. S3-F08
-  distributed-account member enumeration remains outside scope and unimplemented. Version
+  and suppresses per-fingerprint dilution state while retaining bounded churn. Version
   transitions: `DEVICE_FINGERPRINT.md` `1.2.0` → `1.3.0`, `KEY_STRATEGY.md` `1.5.0` → `1.6.0`,
   `DECISION_MATRIX.md` `1.6.0` → `1.7.0`, and package reference `1.7.0` → `1.8.0`.
 - Isolated account/policy auxiliary state for repeated missing fingerprints, Anti-Equilibrium,
@@ -32,6 +31,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   Reference `1.6.0` → `1.7.0`.
 
 ### Added
+- Implemented WU-S3-08 distributed account-attack correlation for Login and OTP pre-checks.
+  The new snapshot DTO and additive snapshot store capabilities return the complete bounded
+  logical K5 member set with fixed expiry, validate it fail-closed, preserve one previous
+  generation through a current-only bridge, and keep previous state read-only. The 600-second
+  four-device window blocks every involved K5 at HARD L2; its 30-minute N-1 WATCH prevents
+  stable three-device gaming; and exactly the third 24-hour occurrence adds HARD L4 on K4.
+  API Heavy, missing identity, and non-pre-check commands do not observe the rule. Flood state
+  still advances and a distributed HARD candidate wins a concurrent flood SOFT candidate.
+  Version transitions: `KEY_STRATEGY.md` `1.6.0` → `1.7.0`, `DECISION_MATRIX.md` `1.7.0` →
+  `1.8.0`, and package reference `1.8.0` → `1.9.0`.
 - Rotation-safe credential-spray correlation for Login and OTP pre-checks (Spec Version `1.2.0` → `1.3.0`): the unchanged `CorrelationStoreInterface` remains the no-rotation base contract, while `CorrelationRotationStoreInterface` preserves previous history through current-secret bridge members, fixed TTLs, read-only previous state, and explicit missing-capability/corrupt-state failures. No concrete Redis/Lua/PDO adapter is included.
 - Credential-spray correlation for Login and OTP pre-checks using the optional opaque `correlationId` with `accountId` fallback, domain-separated HMAC members, a fixed K1 window, mandatory N-1 WATCH escalation, and trusted-session advisory K1 semantics (Spec Version `1.1.0` → `1.2.0`).
 - Standards-compliant read-only operational state API with point-in-time inspection that does not couple consumers to raw storage keys.

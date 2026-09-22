@@ -6,7 +6,10 @@ namespace Maatify\RateLimiter\Service;
 
 use Maatify\RateLimiter\Config\BlockPolicyInterface;
 use Maatify\RateLimiter\DTO\BoundedCorrelationObservationDTO;
+use Maatify\RateLimiter\DTO\BoundedDistinctSnapshotDTO;
 use Maatify\RateLimiter\Repository\BudgetSeedStoreInterface;
+use Maatify\RateLimiter\Repository\BoundedCorrelationSnapshotRotationStoreInterface;
+use Maatify\RateLimiter\Repository\BoundedCorrelationSnapshotStoreInterface;
 use Maatify\RateLimiter\Repository\BoundedCorrelationRotationStoreInterface;
 use Maatify\RateLimiter\Repository\BoundedCorrelationStoreInterface;
 use Maatify\RateLimiter\Repository\CorrelationStoreInterface;
@@ -144,7 +147,23 @@ class EvaluationPipeline
         // hidden by an active account budget.
         $candidates = $this->checkThresholds($policy, $rawScores, $decayedScores, $effectiveKeysV2, $device);
 
-        // 7. Check Correlation Rules
+        // 7. Distributed account attack is a pre-check-only observation. It
+        // must run before the older bounded correlation rules so a missing
+        // snapshot capability cannot leave partial S3-F08 state behind.
+        if ($request->isPreCheck && $this->isDistributedAccountPolicy($policy->getName())) {
+            if ($candidate = $this->checkDistributedAccountAttack(
+                $context,
+                $device,
+                $policy->getName(),
+                $isEphemeral,
+                $realKeysV2,
+                $realKeysV1,
+            )) {
+                $candidates[] = $candidate;
+            }
+        }
+
+        // 8. Check existing bounded correlation rules.
         if ($candidate = $this->checkCorrelationRules(
             $device,
             $policy->getName(),
@@ -170,7 +189,7 @@ class EvaluationPipeline
             }
         }
 
-        // 8. New Device Flood (5.4)
+        // 9. New Device Flood (5.4)
         if ($ephemeralState !== null && $context->accountId && ! $this->isApiHeavyPolicy($policy->getName())
             && $ephemeralState->accountDeviceCount >= 6) {
             $floodKey = $this->auxiliaryAccountKey(
@@ -208,7 +227,7 @@ class EvaluationPipeline
             }
         }
 
-        // 9. Process Updates (Failure / Access). Budget counting is part of
+        // 10. Process Updates (Failure / Access). Budget counting is part of
         // this step and must continue even while BudgetActive.
         $budgetState = $this->resolveActiveBudgetState($realKeysV2['k4'] ?? null, $realKeysV1['k4'] ?? null);
         $budgetRequestEligible = false;
@@ -372,6 +391,249 @@ class EvaluationPipeline
         }
 
         return $candidates;
+    }
+
+    /**
+     * Observe the distributed-account device window and its account-only
+     * repeated-occurrence gate.
+     *
+     * @param array<string, string|null> $keysV2
+     * @param array<string, string|null> $keysV1
+     * @return array{decision: string, level: int, retryAfter: int, source: string, persistence: list<array{key: string, level: int, duration: int}>}|null
+     */
+    private function checkDistributedAccountAttack(
+        RateLimitContextDTO $context,
+        DeviceIdentityDTO $device,
+        string $policyName,
+        bool $isEphemeral,
+        array $keysV2,
+        array $keysV1,
+    ): ?array {
+        if ($context->accountId === null
+            || $device->fingerprintHash === null
+            || ($keysV2['k4'] ?? null) === null
+            || ($keysV2['k5'] ?? null) === null) {
+            return null;
+        }
+
+        $devices = $this->buildDistributedDeviceObservation($policyName, $device, $keysV2, $keysV1);
+        $snapshot = $this->addBoundedSnapshot($devices, 600, 4);
+        $thresholdMet = $snapshot->count >= 4;
+
+        if ($snapshot->count === 3) {
+            $watchCount = $this->incrementWatchAcrossRotation(
+                $this->correlationStateKey($policyName, 'distributed_account_watch', $devices->currentKey, $this->secret),
+                $devices->previousKey === null
+                    ? null
+                    : $this->correlationStateKey(
+                        $policyName,
+                        'distributed_account_watch',
+                        $devices->previousKey,
+                        $this->previousSecret ?? $this->secret,
+                    ),
+                1800,
+            );
+            $thresholdMet = $watchCount >= 2;
+        }
+
+        if (! $thresholdMet) {
+            return null;
+        }
+
+        $occurrence = $this->buildDistributedOccurrenceObservation(
+            $policyName,
+            $snapshot->expiresAt,
+            $keysV2,
+            $keysV1,
+        );
+        $occurrenceSnapshot = $this->addBoundedSnapshot($occurrence, 86400, 3);
+        $persistence = [];
+        $duration = PenaltyLadder::getDuration(2);
+
+        // Persist the complete involved snapshot only for the first qualifying
+        // occurrence in this logical device window. Later qualifications must
+        // not refresh historical K5 TTLs.
+        if ($occurrenceSnapshot->added) {
+            foreach ($snapshot->members as $member) {
+                $persistence[] = ['key' => $member, 'level' => 2, 'duration' => $duration];
+            }
+        }
+
+        // A current member may be absent from the bounded distributed set
+        // after its cap is reached, or may be represented by a previous
+        // generation member during rotation. On the first qualification the
+        // complete snapshot already covers represented members; on a later
+        // qualification only the current non-ephemeral K5 is refreshed.
+        if (! $isEphemeral
+            && (! $occurrenceSnapshot->added || ! in_array($keysV2['k5'], $snapshot->members, true))) {
+            $persistence[] = ['key' => $keysV2['k5'], 'level' => 2, 'duration' => $duration];
+        }
+
+        $level = 2;
+        $retryAfter = $duration;
+        if ($occurrenceSnapshot->count >= 3) {
+            $level = 4;
+            $retryAfter = PenaltyLadder::getDuration(4);
+            $persistence[] = [
+                'key' => $keysV2['k4'],
+                'level' => 4,
+                'duration' => PenaltyLadder::getDuration(4),
+            ];
+        }
+
+        return $this->candidate(
+            RateLimitResultDTO::DECISION_HARD_BLOCK,
+            $level,
+            $retryAfter,
+            'distributed_account_attack',
+            $persistence,
+        );
+    }
+
+    /**
+     * @param array<string, string|null> $keysV2
+     * @param array<string, string|null> $keysV1
+     */
+    private function buildDistributedDeviceObservation(
+        string $policyName,
+        DeviceIdentityDTO $device,
+        array $keysV2,
+        array $keysV1,
+    ): BoundedCorrelationObservationDTO {
+        $currentK4 = $keysV2['k4'] ?? null;
+        $currentK5 = $keysV2['k5'] ?? null;
+        if ($currentK4 === null || $currentK5 === null) {
+            throw new RateLimiterException('Distributed account correlation requires real K4 and K5 keys.');
+        }
+
+        $prefix = "{$policyName}:rate_limiter:correlation:distributed_account_devices:v1:{$this->envScope}";
+        $currentKey = $this->hashKey("{$prefix}:scope:{$currentK4}", $this->secret);
+        // K5 is already the canonical opaque enforcement key. Do not HMAC it
+        // again: the snapshot must return a key that can be blocked directly.
+        $currentMember = $currentK5;
+
+        if (! $this->hasPreviousGeneration($device)) {
+            return new BoundedCorrelationObservationDTO($currentKey, $currentMember);
+        }
+
+        $previousK4 = $keysV1['k4'] ?? null;
+        $previousK5 = $keysV1['k5'] ?? null;
+        if ($previousK4 === null || $previousK5 === null) {
+            throw new RateLimiterException('Distributed account rotation requires coordinated previous K4 and K5 keys.');
+        }
+
+        $previousSecret = $this->previousSecret ?? $this->secret;
+        $previousKey = $this->hashKey("{$prefix}:scope:{$previousK4}", $previousSecret);
+
+        return new BoundedCorrelationObservationDTO(
+            $currentKey,
+            $currentMember,
+            $previousKey,
+            $previousK5,
+            $this->hashKey("{$prefix}:bridge:{$currentKey}", $this->secret),
+        );
+    }
+
+    /**
+     * Occurrence history is account-only. A fingerprint-only rotation keeps
+     * the same occurrence namespace; only an outer-secret rotation has a
+     * previous generation.
+     *
+     * @param array<string, string|null> $keysV2
+     * @param array<string, string|null> $keysV1
+     */
+    private function buildDistributedOccurrenceObservation(
+        string $policyName,
+        int $windowExpiresAt,
+        array $keysV2,
+        array $keysV1,
+    ): BoundedCorrelationObservationDTO {
+        $currentK4 = $keysV2['k4'] ?? null;
+        if ($currentK4 === null) {
+            throw new RateLimiterException('Distributed occurrence history requires a real K4 key.');
+        }
+
+        $prefix = "{$policyName}:rate_limiter:correlation:distributed_account_occurrences:v1:{$this->envScope}";
+        $currentKey = $this->hashKey("{$prefix}:scope:{$currentK4}", $this->secret);
+        $currentMember = $this->hashKey("{$prefix}:window:{$windowExpiresAt}", $this->secret);
+
+        if ($this->previousSecret === null) {
+            return new BoundedCorrelationObservationDTO($currentKey, $currentMember);
+        }
+
+        $previousK4 = $keysV1['k4'] ?? null;
+        if ($previousK4 === null) {
+            throw new RateLimiterException('Distributed occurrence rotation requires a previous K4 key.');
+        }
+
+        $previousKey = $this->hashKey("{$prefix}:scope:{$previousK4}", $this->previousSecret);
+        $previousMember = $this->hashKey("{$prefix}:window:{$windowExpiresAt}", $this->previousSecret);
+
+        return new BoundedCorrelationObservationDTO(
+            $currentKey,
+            $currentMember,
+            $previousKey,
+            $previousMember,
+            $this->hashKey("{$prefix}:bridge:{$currentKey}", $this->secret),
+        );
+    }
+
+    private function addBoundedSnapshot(
+        BoundedCorrelationObservationDTO $observation,
+        int $ttlSeconds,
+        int $maxDistinct,
+    ): BoundedDistinctSnapshotDTO {
+        $now = $this->clock->now()->getTimestamp();
+        if ($observation->previousKey === null) {
+            if (! $this->correlationStore instanceof BoundedCorrelationSnapshotStoreInterface) {
+                throw new RateLimiterException(
+                    'Bounded correlation snapshots require the BoundedCorrelationSnapshotStoreInterface capability.',
+                );
+            }
+
+            $result = $this->correlationStore->addDistinctBoundedWithSnapshot(
+                $observation->currentKey,
+                $observation->currentMember,
+                $ttlSeconds,
+                $maxDistinct,
+            );
+
+            return BoundedCorrelationResultValidator::snapshot(
+                $result,
+                $maxDistinct,
+                $now,
+                $ttlSeconds,
+                $observation->currentMember,
+            );
+        }
+
+        if (! $this->correlationStore instanceof BoundedCorrelationSnapshotRotationStoreInterface) {
+            throw new RateLimiterException(
+                'Bounded correlation snapshot rotation requires the BoundedCorrelationSnapshotRotationStoreInterface capability.',
+            );
+        }
+        if ($observation->bridgeKey === null || $observation->previousMember === null) {
+            throw new RateLimiterException('Malformed bounded correlation snapshot rotation tuple.');
+        }
+
+        $result = $this->correlationStore->addDistinctBoundedWithSnapshotAcrossRotation(
+            $observation->currentKey,
+            $observation->bridgeKey,
+            $observation->previousKey,
+            $observation->currentMember,
+            $observation->previousMember,
+            $ttlSeconds,
+            $maxDistinct,
+        );
+
+        return BoundedCorrelationResultValidator::snapshot(
+            $result,
+            $maxDistinct,
+            $now,
+            $ttlSeconds,
+            $observation->currentMember,
+            $observation->previousMember,
+        );
     }
 
     /**
@@ -1312,6 +1574,11 @@ class EvaluationPipeline
     private function isCredentialSprayPolicy(string $policyName): bool
     {
         return in_array($policyName, ['login_protection', 'otp_protection'], true);
+    }
+
+    private function isDistributedAccountPolicy(string $policyName): bool
+    {
+        return $this->isCredentialSprayPolicy($policyName);
     }
 
     private function isTrustedAuthenticationPolicy(string $policyName, DeviceIdentityDTO $device): bool

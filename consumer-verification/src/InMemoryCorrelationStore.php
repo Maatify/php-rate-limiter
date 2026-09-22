@@ -5,11 +5,12 @@ declare(strict_types=1);
 namespace ConsumerVerification;
 
 use Maatify\RateLimiter\DTO\BoundedDistinctResultDTO;
+use Maatify\RateLimiter\DTO\BoundedDistinctSnapshotDTO;
 use Maatify\RateLimiter\Exception\RateLimiterException;
-use Maatify\RateLimiter\Repository\BoundedCorrelationRotationStoreInterface;
+use Maatify\RateLimiter\Repository\BoundedCorrelationSnapshotRotationStoreInterface;
 use Maatify\SharedCommon\Contracts\ClockInterface;
 
-final class InMemoryCorrelationStore implements BoundedCorrelationRotationStoreInterface
+final class InMemoryCorrelationStore implements BoundedCorrelationSnapshotRotationStoreInterface
 {
     /** @var array<string, array{items: array<string, true>, expiresAt: int|null}> */
     private array $distinctSets = [];
@@ -70,6 +71,33 @@ final class InMemoryCorrelationStore implements BoundedCorrelationRotationStoreI
         $this->distinctSets[$key] = $set;
 
         return new BoundedDistinctResultDTO(count($set['items']), true);
+    }
+
+    public function addDistinctBoundedWithSnapshot(
+        string $key,
+        string $item,
+        int $ttlSeconds,
+        int $maxDistinct,
+    ): BoundedDistinctSnapshotDTO {
+        $this->assertTtl($ttlSeconds);
+        $this->assertMaxDistinct($maxDistinct);
+        $this->operations++;
+        $now = $this->clock->now()->getTimestamp();
+        $set = $this->prepareSet($this->distinctSets[$key] ?? null, $now, $ttlSeconds);
+        $this->assertWithinCapacity($set, $maxDistinct);
+
+        if (isset($set['items'][$item])) {
+            return $this->snapshot($set, true, false);
+        }
+
+        if (count($set['items']) >= $maxDistinct) {
+            return $this->snapshot($set, false, false);
+        }
+
+        $set['items'][$item] = true;
+        $this->distinctSets[$key] = $set;
+
+        return $this->snapshot($set, true, true);
     }
 
     public function incrementWatchFlag(string $key, int $ttlSeconds): int
@@ -238,6 +266,74 @@ final class InMemoryCorrelationStore implements BoundedCorrelationRotationStoreI
         return new BoundedDistinctResultDTO($effectiveCount + 1, true);
     }
 
+    public function addDistinctBoundedWithSnapshotAcrossRotation(
+        string $currentKey,
+        string $bridgeKey,
+        string $previousKey,
+        string $currentMember,
+        string $previousMember,
+        int $ttlSeconds,
+        int $maxDistinct,
+    ): BoundedDistinctSnapshotDTO {
+        $this->assertTtl($ttlSeconds);
+        $this->assertMaxDistinct($maxDistinct);
+        $now = $this->clock->now()->getTimestamp();
+        $previous = $this->activeSet($previousKey, $now);
+        if ($previous === null) {
+            return $this->addDistinctBoundedWithSnapshot($currentKey, $currentMember, $ttlSeconds, $maxDistinct);
+        }
+
+        $this->operations++;
+        $this->assertWithinCapacity($previous, $maxDistinct);
+
+        if ($currentKey === $previousKey) {
+            $current = $this->prepareSet($this->distinctSets[$currentKey] ?? null, $now, $ttlSeconds);
+            $this->assertWithinCapacity($current, $maxDistinct);
+            $known = isset($current['items'][$currentMember]) || isset($current['items'][$previousMember]);
+
+            if (! $known && count($current['items']) < $maxDistinct) {
+                $current['items'][$currentMember] = true;
+                $this->distinctSets[$currentKey] = $current;
+
+                return $this->snapshot($current, true, true, $previous['expiresAt']);
+            }
+
+            return $this->snapshot($current, $known, false, $previous['expiresAt']);
+        }
+
+        $current = $this->prepareSet($this->distinctSets[$currentKey] ?? null, $now, $ttlSeconds);
+        $bridge = $this->prepareBridgeSet(
+            $this->distinctSets[$bridgeKey] ?? null,
+            $now,
+            $ttlSeconds,
+            $previous['expiresAt'],
+        );
+        $this->assertWithinCapacity($current, $maxDistinct);
+        $this->assertWithinCapacity($bridge, $maxDistinct);
+        if (array_intersect_key($previous['items'], $bridge['items']) !== []) {
+            throw new RateLimiterException('Bridge bounded distinct state overlaps previous-generation members.');
+        }
+
+        $members = array_merge(array_keys($previous['items']), array_keys($bridge['items']));
+        if (count($members) > $maxDistinct) {
+            throw new RateLimiterException('Bounded distinct rotation state exceeds its logical capacity.');
+        }
+        if (isset($bridge['items'][$currentMember]) || isset($previous['items'][$previousMember])) {
+            return new BoundedDistinctSnapshotDTO(count($members), true, false, $members, $previous['expiresAt']);
+        }
+        if (count($members) >= $maxDistinct) {
+            return new BoundedDistinctSnapshotDTO(count($members), false, false, $members, $previous['expiresAt']);
+        }
+
+        $current['items'][$currentMember] = true;
+        $bridge['items'][$currentMember] = true;
+        $this->distinctSets[$currentKey] = $current;
+        $this->distinctSets[$bridgeKey] = $bridge;
+        $members[] = $currentMember;
+
+        return new BoundedDistinctSnapshotDTO(count($members), true, true, $members, $previous['expiresAt']);
+    }
+
     public function incrementWatchFlagAcrossRotation(
         string $currentKey,
         string $previousKey,
@@ -267,6 +363,26 @@ final class InMemoryCorrelationStore implements BoundedCorrelationRotationStoreI
         if ($maxDistinct < 1) {
             throw new RateLimiterException('Correlation maximum distinct count must be positive.');
         }
+    }
+
+    /**
+     * @param array{items: array<string, true>, expiresAt: int} $set
+     */
+    private function snapshot(
+        array $set,
+        bool $accepted,
+        bool $added,
+        ?int $expiresAt = null,
+    ): BoundedDistinctSnapshotDTO {
+        $members = array_keys($set['items']);
+
+        return new BoundedDistinctSnapshotDTO(
+            count($members),
+            $accepted,
+            $added,
+            $members,
+            $expiresAt ?? $set['expiresAt'],
+        );
     }
 
     /** @param array{items: array<string, true>, expiresAt: int} $set */

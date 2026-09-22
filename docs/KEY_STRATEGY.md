@@ -3,7 +3,7 @@
 **Module:** RateLimiter
 **Namespace:** `Maatify\RateLimiter`
 **Status:** LOCKED — Design & Security Contract
-**Spec Version:** `1.6.0`
+**Spec Version:** `1.7.0`
 
 This document defines the **key construction strategy** used by the RateLimiter.
 Keys determine how limits, scores, correlation, and blocks are applied.
@@ -490,6 +490,53 @@ the overflow request, continues K4/flood handling, and retains bounded churn det
 overflow request may receive the active flood decision, but it cannot persist new K5 score or
 block state. It does not create per-request keys or durable overflow identities.
 
+#### 4.3.6 Distributed Account Attack Snapshots
+
+Login and OTP `checkOnly()` requests with an account, a device fingerprint, and real K4/K5
+keys observe a separate distributed-device window. The window is 600 seconds and admits at
+most four logical K5 members. The additive snapshot capabilities are:
+
+```php
+interface BoundedCorrelationSnapshotStoreInterface extends BoundedCorrelationStoreInterface
+{
+    public function addDistinctBoundedWithSnapshot(
+        string $key,
+        string $item,
+        int $ttlSeconds,
+        int $maxDistinct,
+    ): BoundedDistinctSnapshotDTO;
+}
+
+interface BoundedCorrelationSnapshotRotationStoreInterface
+    extends BoundedCorrelationSnapshotStoreInterface, BoundedCorrelationRotationStoreInterface
+{
+    public function addDistinctBoundedWithSnapshotAcrossRotation(/* ... */): BoundedDistinctSnapshotDTO;
+}
+```
+
+`BoundedDistinctSnapshotDTO` returns `count`, `accepted`, `added`, the complete bounded
+logical `members` set, and its fixed `expiresAt`. A duplicate is accepted without being
+added; a new member at the cap is rejected without set growth. Snapshot validation is
+fail-closed for malformed counts, duplicate or unknown members, inconsistent flags, and
+invalid expiry. Snapshot members are the canonical opaque K5 enforcement keys, so no extra
+HMAC layer or raw account, fingerprint, or IP value crosses the store boundary.
+
+Three members create a 30-minute distributed WATCH marker; the second qualifying three-
+member observation or the fourth member produces HARD_BLOCK L2 for every K5 in the complete
+snapshot. K4 is not blocked by the first occurrence. A qualifying snapshot creates one
+account-only occurrence member derived from the fixed device-window expiry in an 86400-second
+window capped at three occurrences. The exact third occurrence produces HARD_BLOCK L4 on K4
+for 1800 seconds; the first two occurrences do not.
+
+Rotation reads one previous generation without changing its members or TTL. The current
+generation owns new logical members through a current-secret bridge whose TTL cannot exceed
+the previous remaining TTL. Outer-only, fingerprint-only, and both-rotated inputs use one
+coordinated current/previous pair and never probe Cartesian combinations. Fingerprint-only
+rotation has no previous occurrence namespace; occurrence continuity is account/outer-secret
+scoped. API Heavy and requests missing account, fingerprint, or real K4/K5 do not observe
+this rule and do not require the snapshot capability. Missing required capability fails
+through the package failure semantics before this observation is partially applied.
+
 ### 4.4 Namespacing & Scoping
 
 All keys MUST include:
@@ -741,8 +788,8 @@ HMAC references. Raw account IDs, IP addresses, correlation subjects, and finger
 MUST NOT be stored as keys or members. Device-cap overflow requires
 `BoundedCorrelationStoreInterface`; rotated observations require
 `BoundedCorrelationRotationStoreInterface`. Missing capabilities fail explicitly through the
-package failure semantics. S3-F08 distributed account attack member enumeration and repeated
-occurrence escalation remain outside this work unit and are not implemented here.
+package failure semantics. Distributed-account snapshots and repeated-occurrence escalation
+are implemented by the additive snapshot capabilities described in §4.3.6.
 
 This prevents storage exhaustion without providing block evasion.
 
