@@ -9,6 +9,7 @@ use Maatify\RateLimiter\Config\ApiHeavyProtectionPolicy;
 use Maatify\RateLimiter\Config\LoginProtectionPolicy;
 use Maatify\RateLimiter\Config\OtpProtectionPolicy;
 use Maatify\RateLimiter\Config\BlockPolicyInterface;
+use Maatify\RateLimiter\DTO\BoundedDistinctResultDTO;
 use Maatify\RateLimiter\DTO\DeviceIdentityDTO;
 use Maatify\RateLimiter\DTO\PolicyThresholdsDTO;
 use Maatify\RateLimiter\DTO\RateLimitContextDTO;
@@ -318,7 +319,7 @@ final class CredentialSprayAndTrustedK1Test extends TestCase
             $policy,
             $trusted,
             RateLimitCommand::checkOnly('login_protection'),
-            $this->device('trusted-fp', true, 'HIGH'),
+            $this->device('stable-fp', true, 'HIGH'),
         );
 
         self::assertSame(RateLimitResultDTO::DECISION_ALLOW, $trustedResult->decision);
@@ -336,7 +337,7 @@ final class CredentialSprayAndTrustedK1Test extends TestCase
             $policy,
             new RateLimitContextDTO('198.51.100.71', 'Mozilla/5.0 Chrome/123', 'trusted-7'),
             RateLimitCommand::checkOnly('login_protection'),
-            $this->device('trusted-fp', true, 'HIGH'),
+            $this->device('stable-fp', true, 'HIGH'),
         );
         self::assertSame(RateLimitResultDTO::DECISION_ALLOW, $trustedFollowUp->decision);
     }
@@ -525,5 +526,16 @@ final class RecordingCorrelationStore extends StatefulInMemoryCorrelationStore
         $this->members[] = $item;
 
         return parent::addDistinct($key, $item, $ttlSeconds);
+    }
+
+    public function addDistinctBounded(
+        string $key,
+        string $item,
+        int $ttlSeconds,
+        int $maxDistinct,
+    ): BoundedDistinctResultDTO {
+        $this->members[] = $item;
+
+        return parent::addDistinctBounded($key, $item, $ttlSeconds, $maxDistinct);
     }
 }

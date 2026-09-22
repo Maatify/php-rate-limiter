@@ -13,6 +13,7 @@ use Maatify\RateLimiter\Service\EphemeralBucket;
 use Maatify\RateLimiter\Service\FingerprintHasher;
 use Maatify\RateLimiter\DTO\RateLimitContextDTO;
 use Maatify\RateLimiter\DTO\RateLimitResultDTO;
+use Maatify\RateLimiter\DTO\BoundedDistinctResultDTO;
 use Maatify\RateLimiter\Service\CircuitBreaker;
 use Maatify\RateLimiter\Service\EvaluationPipeline;
 use Maatify\RateLimiter\Service\FailureModeResolver;
@@ -36,11 +37,35 @@ final class ObservedCorrelationStore extends StatefulInMemoryCorrelationStore
     /** @var list<string> */
     public array $observedItems = [];
 
+    public int $boundedRotationOperations = 0;
+
     public function addDistinct(string $key, string $item, int $ttlSeconds): int
     {
         $this->observedItems[] = $item;
 
         return parent::addDistinct($key, $item, $ttlSeconds);
+    }
+
+    public function addDistinctBoundedAcrossRotation(
+        string $currentKey,
+        string $bridgeKey,
+        string $previousKey,
+        string $currentMember,
+        string $previousMember,
+        int $ttlSeconds,
+        int $maxDistinct,
+    ): BoundedDistinctResultDTO {
+        $this->boundedRotationOperations++;
+
+        return parent::addDistinctBoundedAcrossRotation(
+            $currentKey,
+            $bridgeKey,
+            $previousKey,
+            $currentMember,
+            $previousMember,
+            $ttlSeconds,
+            $maxDistinct,
+        );
     }
 }
 
@@ -301,7 +326,7 @@ final class RateLimiterDeviceGenerationRotationTest extends TestCase
         $this->assertNull($store->getBudget($currentMicroKey));
     }
 
-    public function testPreviousFingerprintDoesNotEnterEphemeralOrCorrelationPaths(): void
+    public function testPreviousFingerprintUsesBoundedRotationWithoutCreatingRawPreviousMembers(): void
     {
         [$withoutPrevious, $withoutHashes, $withoutCorrelation] = $this->runEphemeralSequence(null);
         [$withPrevious, $withHashes, $withCorrelation] = $this->runEphemeralSequence('old-fingerprint');
@@ -309,6 +334,8 @@ final class RateLimiterDeviceGenerationRotationTest extends TestCase
         $this->assertSame($withoutPrevious, $withPrevious);
         $this->assertCount(51, $withHashes);
         $this->assertNotNull($withHashes[0]);
+        $this->assertSame(0, $withoutCorrelation->boundedRotationOperations);
+        $this->assertGreaterThan(0, $withCorrelation->boundedRotationOperations);
         foreach ($withHashes as $previousHash) {
             $this->assertNotContains($previousHash, $withCorrelation->observedItems);
         }

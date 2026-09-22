@@ -5,12 +5,12 @@ declare(strict_types=1);
 namespace Maatify\RateLimiter\DTO;
 
 /**
- * Reports whether device-cap correlation requires an ephemeral shared key.
+ * Reports whether a bounded device-cap observation rejected a new logical member.
  */
 final readonly class EphemeralStateDTO implements \JsonSerializable
 {
     /**
-     * @param bool $isEphemeral Whether the real fingerprint must be collapsed.
+     * @param bool $isEphemeral Whether the request is routed through ephemeral mode.
      * @param int $accountDeviceCount Distinct devices seen for the account/IP scope.
      * @param int $ipDeviceCount Distinct devices seen for the IP scope.
      */

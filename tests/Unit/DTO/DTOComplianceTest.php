@@ -5,6 +5,8 @@ declare(strict_types=1);
 namespace Maatify\RateLimiter\Tests\Unit\DTO;
 
 use PHPUnit\Framework\TestCase;
+use Maatify\RateLimiter\DTO\BoundedCorrelationObservationDTO;
+use Maatify\RateLimiter\DTO\BoundedDistinctResultDTO;
 use Maatify\RateLimiter\DTO\BudgetConfigDTO;
 use Maatify\RateLimiter\DTO\BudgetStatusDTO;
 use Maatify\RateLimiter\DTO\DeviceIdentityDTO;
@@ -37,6 +39,8 @@ class DTOComplianceTest extends TestCase
         BudgetConfigDTO::class,
         BudgetStatusDTO::class,
         DeviceIdentityDTO::class,
+        BoundedDistinctResultDTO::class,
+        BoundedCorrelationObservationDTO::class,
         EphemeralStateDTO::class,
         FailureSignalDTO::class,
         FailureStateDTO::class,
@@ -180,6 +184,16 @@ class DTOComplianceTest extends TestCase
                 new EphemeralStateDTO(true, 5, 10),
                 ['isEphemeral', 'accountDeviceCount', 'ipDeviceCount'],
                 ['isEphemeral' => true, 'accountDeviceCount' => 5, 'ipDeviceCount' => 10],
+            ],
+            BoundedDistinctResultDTO::class => [
+                new BoundedDistinctResultDTO(3, true),
+                ['count', 'accepted'],
+                ['count' => 3, 'accepted' => true],
+            ],
+            BoundedCorrelationObservationDTO::class => [
+                new BoundedCorrelationObservationDTO('current', 'member', 'previous', 'old-member', 'bridge'),
+                ['currentKey', 'currentMember', 'previousKey', 'previousMember', 'bridgeKey'],
+                ['currentKey' => 'current', 'currentMember' => 'member', 'previousKey' => 'previous', 'previousMember' => 'old-member', 'bridgeKey' => 'bridge'],
             ],
             FailureSignalDTO::class => [
                 new FailureSignalDTO('CRITICAL', 'test_policy', clone $metadata),

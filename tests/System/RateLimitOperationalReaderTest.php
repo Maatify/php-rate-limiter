@@ -8,11 +8,12 @@ use Maatify\RateLimiter\Config\ApiHeavyProtectionPolicy;
 use Maatify\RateLimiter\Config\LoginProtectionPolicy;
 use Maatify\RateLimiter\Command\RateLimitCommand;
 use Maatify\RateLimiter\DTO\CircuitBreakerStateDTO;
+use Maatify\RateLimiter\DTO\BoundedDistinctResultDTO;
 use Maatify\RateLimiter\DTO\FailureStateDTO;
 use Maatify\RateLimiter\DTO\RateLimitContextDTO;
 use Maatify\RateLimiter\DTO\RateLimitOperationalKeyStateDTO;
 use Maatify\RateLimiter\Repository\CircuitBreakerStoreInterface;
-use Maatify\RateLimiter\Repository\CorrelationStoreInterface;
+use Maatify\RateLimiter\Repository\BoundedCorrelationStoreInterface;
 use Maatify\RateLimiter\Service\AntiEquilibriumGate;
 use Maatify\RateLimiter\Service\BudgetTracker;
 use Maatify\RateLimiter\Service\CircuitBreaker;
@@ -56,7 +57,7 @@ final class TrackingCircuitBreakerStore implements CircuitBreakerStoreInterface
     }
 }
 
-final class TrackingCorrelationStore implements CorrelationStoreInterface
+final class TrackingCorrelationStore implements BoundedCorrelationStoreInterface
 {
     public int $operations = 0;
 
@@ -65,6 +66,13 @@ final class TrackingCorrelationStore implements CorrelationStoreInterface
         $this->operations++;
 
         return 0;
+    }
+
+    public function addDistinctBounded(string $key, string $item, int $ttlSeconds, int $maxDistinct): BoundedDistinctResultDTO
+    {
+        $this->operations++;
+
+        return new BoundedDistinctResultDTO(1, true);
     }
 
     public function incrementWatchFlag(string $key, int $ttlSeconds): int

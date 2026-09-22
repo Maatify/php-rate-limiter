@@ -51,9 +51,9 @@ final class CredentialSprayRotationTest extends TestCase
 
         $result = $pipeline->process(
             new LoginProtectionPolicy(),
-            new RateLimitContextDTO('198.51.100.80', 'Mozilla/5.0 Chrome/123', 'base-account'),
+            new RateLimitContextDTO('198.51.100.80', 'Mozilla/5.0 Chrome/123'),
             RateLimitCommand::checkOnly('login_protection'),
-            $this->device(),
+            $this->deviceWithoutFingerprint(),
         );
 
         self::assertSame(RateLimitResultDTO::DECISION_ALLOW, $result->decision);
@@ -228,7 +228,7 @@ final class CredentialSprayRotationTest extends TestCase
             $policy,
             new RateLimitContextDTO($ip, 'Mozilla/5.0 Chrome/123', 'new-5'),
             RateLimitCommand::checkOnly('login_protection'),
-            $this->device('trusted-fp', true, 'HIGH'),
+            $this->device('stable-fp', true, 'HIGH'),
         );
 
         self::assertSame(RateLimitResultDTO::DECISION_ALLOW, $trustedResult->decision);
@@ -256,7 +256,7 @@ final class CredentialSprayRotationTest extends TestCase
             $policy,
             new RateLimitContextDTO($ip, 'Mozilla/5.0 Chrome/123', 'new-7'),
             RateLimitCommand::checkOnly('login_protection'),
-            $this->device('trusted-fp', true, 'HIGH'),
+            $this->device('stable-fp', true, 'HIGH'),
         );
 
         self::assertSame(RateLimitResultDTO::DECISION_ALLOW, $trustedFollowUp->decision);

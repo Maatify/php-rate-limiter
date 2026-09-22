@@ -86,7 +86,17 @@ final class CorrelationBehaviorTest extends TestCase
             $this->assertSame(RateLimitResultDTO::DECISION_ALLOW, $result->decision);
         }
 
-        $this->assertSame(1, $this->correlationStore->getWatchFlag("watch_dilution:{$fingerprint}"));
+        $dilutionScope = hash_hmac(
+            'sha256',
+            "otp_protection:rate_limiter:correlation:dilution:v1:prod:scope:{$fingerprint}",
+            'test_secret',
+        );
+        $dilutionWatch = hash_hmac(
+            'sha256',
+            "otp_protection:rate_limiter:correlation:dilution_watch:v1:prod:{$dilutionScope}",
+            'test_secret',
+        );
+        $this->assertSame(1, $this->correlationStore->getWatchFlag($dilutionWatch));
 
         $result = $this->pipeline->process(
             $this->policy,

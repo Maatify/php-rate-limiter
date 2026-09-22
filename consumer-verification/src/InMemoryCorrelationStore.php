@@ -4,11 +4,12 @@ declare(strict_types=1);
 
 namespace ConsumerVerification;
 
+use Maatify\RateLimiter\DTO\BoundedDistinctResultDTO;
 use Maatify\RateLimiter\Exception\RateLimiterException;
-use Maatify\RateLimiter\Repository\CorrelationRotationStoreInterface;
+use Maatify\RateLimiter\Repository\BoundedCorrelationRotationStoreInterface;
 use Maatify\SharedCommon\Contracts\ClockInterface;
 
-final class InMemoryCorrelationStore implements CorrelationRotationStoreInterface
+final class InMemoryCorrelationStore implements BoundedCorrelationRotationStoreInterface
 {
     /** @var array<string, array{items: array<string, true>, expiresAt: int|null}> */
     private array $distinctSets = [];
@@ -42,6 +43,33 @@ final class InMemoryCorrelationStore implements CorrelationRotationStoreInterfac
         $this->distinctSets[$key] = $set;
 
         return count($set['items']);
+    }
+
+    public function addDistinctBounded(
+        string $key,
+        string $item,
+        int $ttlSeconds,
+        int $maxDistinct,
+    ): BoundedDistinctResultDTO {
+        $this->assertTtl($ttlSeconds);
+        $this->assertMaxDistinct($maxDistinct);
+        $this->operations++;
+        $now = $this->clock->now()->getTimestamp();
+        $set = $this->prepareSet($this->distinctSets[$key] ?? null, $now, $ttlSeconds);
+        $this->assertWithinCapacity($set, $maxDistinct);
+
+        if (isset($set['items'][$item])) {
+            return new BoundedDistinctResultDTO(count($set['items']), true);
+        }
+
+        if (count($set['items']) >= $maxDistinct) {
+            return new BoundedDistinctResultDTO(count($set['items']), false);
+        }
+
+        $set['items'][$item] = true;
+        $this->distinctSets[$key] = $set;
+
+        return new BoundedDistinctResultDTO(count($set['items']), true);
     }
 
     public function incrementWatchFlag(string $key, int $ttlSeconds): int
@@ -127,6 +155,89 @@ final class InMemoryCorrelationStore implements CorrelationRotationStoreInterfac
         return count($previous['items']) + count($bridge['items']);
     }
 
+    public function addDistinctBoundedAcrossRotation(
+        string $currentKey,
+        string $bridgeKey,
+        string $previousKey,
+        string $currentMember,
+        string $previousMember,
+        int $ttlSeconds,
+        int $maxDistinct,
+    ): BoundedDistinctResultDTO {
+        $this->assertTtl($ttlSeconds);
+        $this->assertMaxDistinct($maxDistinct);
+        $now = $this->clock->now()->getTimestamp();
+        $previous = $this->activeSet($previousKey, $now);
+        if ($previous === null) {
+            return $this->addDistinctBounded($currentKey, $currentMember, $ttlSeconds, $maxDistinct);
+        }
+        $this->operations++;
+
+        $this->assertWithinCapacity($previous, $maxDistinct);
+        if ($currentKey === $previousKey) {
+            $current = $this->prepareSet($this->distinctSets[$currentKey] ?? null, $now, $ttlSeconds);
+            $this->assertWithinCapacity($current, $maxDistinct);
+            if (isset($current['items'][$currentMember])) {
+                return new BoundedDistinctResultDTO(count($current['items']), true);
+            }
+
+            $knownPreviousMember = isset($current['items'][$previousMember]);
+            if (! $knownPreviousMember && count($current['items']) >= $maxDistinct) {
+                return new BoundedDistinctResultDTO($maxDistinct, false);
+            }
+
+            if ($knownPreviousMember) {
+                return new BoundedDistinctResultDTO(count($current['items']), true);
+            }
+
+            if (count($current['items']) < $maxDistinct) {
+                $current['items'][$currentMember] = true;
+                $this->distinctSets[$currentKey] = $current;
+            }
+
+            return new BoundedDistinctResultDTO(count($current['items']), true);
+        }
+
+        $current = $this->prepareSet($this->distinctSets[$currentKey] ?? null, $now, $ttlSeconds);
+        $bridge = $this->prepareBridgeSet(
+            $this->distinctSets[$bridgeKey] ?? null,
+            $now,
+            $ttlSeconds,
+            $previous['expiresAt'],
+        );
+        $this->assertWithinCapacity($current, $maxDistinct);
+        $this->assertWithinCapacity($bridge, $maxDistinct);
+        if (array_intersect_key($previous['items'], $bridge['items']) !== []) {
+            throw new RateLimiterException('Bridge bounded distinct state overlaps previous-generation members.');
+        }
+
+        $effectiveCount = count($previous['items']) + count($bridge['items']);
+        if ($effectiveCount > $maxDistinct) {
+            throw new RateLimiterException('Bounded distinct rotation state exceeds its logical capacity.');
+        }
+        if (isset($current['items'][$currentMember]) || isset($bridge['items'][$currentMember])) {
+            return new BoundedDistinctResultDTO($effectiveCount, true);
+        }
+        if (isset($previous['items'][$previousMember])) {
+            if (count($current['items']) < $maxDistinct) {
+                $current['items'][$currentMember] = true;
+                $this->distinctSets[$currentKey] = $current;
+            }
+
+            return new BoundedDistinctResultDTO($effectiveCount, true);
+        }
+        if ($effectiveCount >= $maxDistinct) {
+            return new BoundedDistinctResultDTO($effectiveCount, false);
+        }
+
+        $current['items'][$currentMember] = true;
+        $bridge['items'][$currentMember] = true;
+        $this->distinctSets[$currentKey] = $current;
+        $this->distinctSets[$bridgeKey] = $bridge;
+
+        return new BoundedDistinctResultDTO($effectiveCount + 1, true);
+    }
+
     public function incrementWatchFlagAcrossRotation(
         string $currentKey,
         string $previousKey,
@@ -148,6 +259,21 @@ final class InMemoryCorrelationStore implements CorrelationRotationStoreInterfac
     {
         if ($ttlSeconds < 1) {
             throw new RateLimiterException('Correlation TTL must be positive.');
+        }
+    }
+
+    private function assertMaxDistinct(int $maxDistinct): void
+    {
+        if ($maxDistinct < 1) {
+            throw new RateLimiterException('Correlation maximum distinct count must be positive.');
+        }
+    }
+
+    /** @param array{items: array<string, true>, expiresAt: int} $set */
+    private function assertWithinCapacity(array $set, int $maxDistinct): void
+    {
+        if (count($set['items']) > $maxDistinct) {
+            throw new RateLimiterException('Bounded correlation state exceeds its configured capacity.');
         }
     }
 
@@ -194,6 +320,9 @@ final class InMemoryCorrelationStore implements CorrelationRotationStoreInterfac
         if ($set !== null && $set['expiresAt'] === null) {
             throw new RateLimiterException('Current correlation distinct state has no valid TTL.');
         }
+        if ($set !== null) {
+            assert($set['expiresAt'] !== null);
+        }
 
         if ($set === null || $set['expiresAt'] <= $now) {
             return ['items' => [], 'expiresAt' => $now + $ttlSeconds];
@@ -210,6 +339,9 @@ final class InMemoryCorrelationStore implements CorrelationRotationStoreInterfac
     {
         if ($set !== null && $set['expiresAt'] === null) {
             throw new RateLimiterException('Bridge correlation state has no valid TTL.');
+        }
+        if ($set !== null) {
+            assert($set['expiresAt'] !== null);
         }
 
         if ($set === null || $set['expiresAt'] <= $now) {
@@ -234,6 +366,9 @@ final class InMemoryCorrelationStore implements CorrelationRotationStoreInterfac
     {
         if ($flag !== null && $flag['expiresAt'] === null) {
             throw new RateLimiterException('Current correlation WATCH state has no valid TTL.');
+        }
+        if ($flag !== null) {
+            assert($flag['expiresAt'] !== null);
         }
 
         if ($flag === null || $flag['expiresAt'] <= $now) {

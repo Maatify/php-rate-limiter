@@ -3,7 +3,7 @@
 **Module:** RateLimiter
 **Namespace:** `Maatify\RateLimiter`
 **Status:** LOCKED — Behavioral & Privacy Contract
-**Spec Version:** `1.2.0`
+**Spec Version:** `1.3.0`
 
 This document defines the **Device Fingerprint system** used by the Rate Limiter.
 It specifies how device identity is derived, normalized, hashed, bounded, and evaluated.
@@ -308,7 +308,7 @@ DeviceIdentityDTO.previousFingerprintHash              = implemented
 Default resolver optional previous hasher              = implemented
 K3/K5 persistent two-generation pipeline integration  = implemented
 K5 micro-cap two-generation migration                  = implemented
-Correlation/ephemeral rotation                         = pending separate design
+Bounded correlation/ephemeral rotation                 = implemented
 ```
 
 #### 5.1.1 Public Identity Contract
@@ -405,22 +405,32 @@ is only a **rotation-compatibility alias** for the same resolved device material
 
 #### 5.1.5 Correlation / Ephemeral Boundary
 
-`fingerprintHash` is also used directly in `EphemeralBucket`, churn distinct sets, dilution
-keys, and new-device/flood correlation state. These are NOT the same problem class as the
-K3/K5 persistent-key migration, and they do not currently have an atomic alias/migration
-contract.
+`fingerprintHash` is used by `EphemeralBucket`, churn distinct sets, dilution keys, and
+new-device/flood correlation state through opaque, domain-separated package references.
+Raw account identifiers, IP values, correlation subjects, and fingerprint values MUST NOT
+cross a correlation-store member or key boundary.
 
-Locked boundary statement:
+The bounded correlation contract is additive and preserves the unchanged
+`CorrelationStoreInterface`:
 
-```
-Dual fingerprint contract enables historical K3/K5 and K5 micro-cap continuity.
+* `BoundedCorrelationStoreInterface::addDistinctBounded()` admits a duplicate without
+  mutation, admits a new member only below the fixed cap, and returns
+  `BoundedDistinctResultDTO(count, accepted)`.
+* `BoundedCorrelationRotationStoreInterface::addDistinctBoundedAcrossRotation()` writes
+  only current-generation state, reads previous state without mutation, and uses a
+  current-secret bridge for new logical members.
+* The current and bridge TTLs are fixed and the bridge TTL cannot exceed the remaining
+  previous-generation TTL. A missing capability, invalid TTL, invalid cap, missing previous
+  TTL, over-cap state, or corrupt overlap fails explicitly; there is no unbounded fallback.
+* The device-cap window is 900 seconds, with a maximum of 10 distinct account members and
+  50 distinct IP-scope members. Rejected new members do not grow the set.
 
-Full fingerprint-secret rotation continuity for correlation/ephemeral state
-is NOT yet claimed by this decision.
-```
-
-This section does not resolve correlation/ephemeral state. That remains a known
-architecture boundary within this documentation only.
+The pipeline constructs one real current generation and at most one previous generation.
+It performs the bounded device-cap observation once before score evaluation. Ephemeral mode
+is a routing classification: it removes K3/K5 from normal scoring writes but never creates a
+synthetic fingerprint key, does not erase active blocks, continues K4/flood handling, and
+leaves bounded churn correlation available. In ephemeral mode, per-fingerprint dilution
+state and confirmation are not created.
 
 #### 5.1.6 Rotation-Generation Invariant (No Overlapping Generations)
 
@@ -508,7 +518,7 @@ To prevent storage exhaustion and account poisoning:
 * After cap is exceeded:
 
   * DO NOT create new fingerprint keys
-  * Route attempts to an **ephemeral device bucket**
+* Route attempts to an **ephemeral device bucket**
 
 #### 7.3.1 Ephemeral Bucket Properties (LOCKED)
 
@@ -519,6 +529,9 @@ Ephemeral bucket MUST:
 * NOT create persistent device identities / keys
 * Continue to accumulate **K4 (Account)** scoring and budget signals
 * Escalate **correlation signals** only (bounded sets/counters)
+* Use the real current/previous generation tuple when rotation is configured
+* Reject new members atomically at the cap; a known member remains admitted
+* Never use raw account, IP, correlation, or fingerprint values at the store boundary
 
 #### 7.3.2 Critical Safety Invariants (Anti “Ephemeral Ghost”)
 

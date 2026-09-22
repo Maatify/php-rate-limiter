@@ -4,18 +4,22 @@ declare(strict_types=1);
 
 namespace Maatify\RateLimiter\Service;
 
-use Maatify\RateLimiter\Repository\CorrelationStoreInterface;
+use Maatify\RateLimiter\DTO\BoundedCorrelationObservationDTO;
+use Maatify\RateLimiter\DTO\BoundedDistinctResultDTO;
 use Maatify\RateLimiter\DTO\EphemeralStateDTO;
-use Maatify\RateLimiter\DTO\RateLimitContextDTO;
+use Maatify\RateLimiter\Exception\RateLimiterException;
+use Maatify\RateLimiter\Repository\BoundedCorrelationRotationStoreInterface;
+use Maatify\RateLimiter\Repository\BoundedCorrelationStoreInterface;
+use Maatify\RateLimiter\Repository\CorrelationStoreInterface;
 
 /**
- * Collapses excessive distinct-device identities into bounded ephemeral keys.
+ * Classifies new device-cap overflows without owning raw identity material.
  */
 class EphemeralBucket
 {
     private const MAX_DEVICES_PER_ACCOUNT = 10;
     private const MAX_DEVICES_PER_IP = 50;
-    private const CAP_WINDOW = 900; // 15 mins (Flood Window)
+    private const CAP_WINDOW = 900;
 
     /**
      * @param CorrelationStoreInterface $store Distinct-device correlation store.
@@ -25,83 +29,93 @@ class EphemeralBucket
     ) {}
 
     /**
-     * Return the real fingerprint key or a shared cap key when capacity is exceeded.
+     * Observe both device-cap scopes exactly once.
      */
-    public function resolveKey(RateLimitContextDTO $context, string $realFingerprintHash): string
-    {
-        // Check state but return key string
-        // We must perform the check to know if we should return ephemeral key
-        $state = $this->check($context, $realFingerprintHash);
+    public function check(
+        BoundedCorrelationObservationDTO $ipObservation,
+        ?BoundedCorrelationObservationDTO $accountObservation = null,
+    ): EphemeralStateDTO {
+        $this->assertCapabilities($ipObservation, $accountObservation);
 
-        if ($state->isEphemeral) {
-            // Re-derive scope key for ephemeral ID
-            // Since we don't return the exact ephemeral key from check(), we reconstruct it.
-            $ipScope = $this->getIpPrefix($context->ip);
-            // Priority: Account cap over IP cap if both
-            if ($context->accountId && $state->accountDeviceCount > self::MAX_DEVICES_PER_ACCOUNT) {
-                return "ephemeral:dev_cap:acc:{$context->accountId}:{$ipScope}";
-            }
-            return "ephemeral:dev_cap:ip:{$ipScope}";
-        }
+        $accountResult = $accountObservation === null
+            ? null
+            : $this->addBounded($accountObservation, self::MAX_DEVICES_PER_ACCOUNT);
+        $ipResult = $this->addBounded($ipObservation, self::MAX_DEVICES_PER_IP);
 
-        return $realFingerprintHash;
+        return new EphemeralStateDTO(
+            ($accountResult !== null && ! $accountResult->accepted) || ! $ipResult->accepted,
+            $accountResult === null ? 0 : $accountResult->count,
+            $ipResult->count,
+        );
     }
 
-    /**
-     * Count distinct devices and report whether either account or IP cap is exceeded.
-     */
-    public function check(RateLimitContextDTO $context, string $realFingerprintHash): EphemeralStateDTO
-    {
-        // Scope Key Calculation (IPv6 Prefix)
-        $ipScope = $this->getIpPrefix($context->ip);
-        $accCount = 0;
-        $ipCount = 0;
+    private function assertCapabilities(
+        BoundedCorrelationObservationDTO $ipObservation,
+        ?BoundedCorrelationObservationDTO $accountObservation,
+    ): void {
+        $observations = array_filter(
+            [$ipObservation, $accountObservation],
+            static fn(?BoundedCorrelationObservationDTO $observation): bool => $observation !== null,
+        );
 
-        $isEphemeral = false;
-
-        // PRE-CHECK: If we are already over capacity, DO NOT add new fingerprints (Anti-Ghost)
-        // We need a lightweight check before addDistinct if possible, but store interface limits us.
-        // However, addDistinct returns current count.
-
-        // Track per-account (Scoped to IP Prefix)
-        if ($context->accountId) {
-            $accKey = "dev_cap:acc:{$context->accountId}:{$ipScope}";
-            // We use addDistinct, but logic requires we stop adding if cap exceeded?
-            // "DO NOT create new fingerprint keys" -> means don't explode the set.
-            // But we need to know if THIS fingerprint is already in the set.
-            // Current Contract: addDistinct adds if not present, returns count.
-            // If strictly "Stop Adding", we accept the count might plateau.
-            // BUT, `addDistinct` is atomic. We rely on the Store to handle set size limits if needed?
-            // No, code must enforce.
-            // Strict compliance: If we can't check membership without adding, we rely on the returned count.
-            // If count > MAX, we mark ephemeral.
-
-            $accCount = $this->store->addDistinct($accKey, $realFingerprintHash, self::CAP_WINDOW);
-        }
-
-        // Track per-IP
-        $ipKey = "dev_cap:ip:{$ipScope}";
-        $ipCount = $this->store->addDistinct($ipKey, $realFingerprintHash, self::CAP_WINDOW);
-
-        if ($context->accountId && $accCount > self::MAX_DEVICES_PER_ACCOUNT) {
-            $isEphemeral = true;
-        }
-        if ($ipCount > self::MAX_DEVICES_PER_IP) {
-            $isEphemeral = true;
-        }
-
-        return new EphemeralStateDTO($isEphemeral, $accCount, $ipCount);
-    }
-
-    private function getIpPrefix(string $ip): string
-    {
-        if (filter_var($ip, FILTER_VALIDATE_IP, FILTER_FLAG_IPV6)) {
-            $packed = inet_pton($ip);
-            if ($packed !== false) {
-                $hex = bin2hex($packed);
-                return substr($hex, 0, 16); // /64
+        $requiresRotation = false;
+        foreach ($observations as $observation) {
+            if ($observation->previousKey !== null) {
+                $requiresRotation = true;
+                break;
             }
         }
-        return $ip;
+
+        if ($requiresRotation && ! $this->store instanceof BoundedCorrelationRotationStoreInterface) {
+            throw new RateLimiterException(
+                'Bounded correlation rotation requires the BoundedCorrelationRotationStoreInterface capability.',
+            );
+        }
+
+        if (! $requiresRotation && ! $this->store instanceof BoundedCorrelationStoreInterface) {
+            throw new RateLimiterException(
+                'Bounded correlation requires the BoundedCorrelationStoreInterface capability.',
+            );
+        }
+    }
+
+    private function addBounded(
+        BoundedCorrelationObservationDTO $observation,
+        int $maxDistinct,
+    ): BoundedDistinctResultDTO {
+        if ($observation->previousKey === null) {
+            if (! $this->store instanceof BoundedCorrelationStoreInterface) {
+                throw new RateLimiterException(
+                    'Bounded correlation requires the BoundedCorrelationStoreInterface capability.',
+                );
+            }
+
+            return $this->store->addDistinctBounded(
+                $observation->currentKey,
+                $observation->currentMember,
+                self::CAP_WINDOW,
+                $maxDistinct,
+            );
+        }
+
+        if (! $this->store instanceof BoundedCorrelationRotationStoreInterface) {
+            throw new RateLimiterException(
+                'Bounded correlation rotation requires the BoundedCorrelationRotationStoreInterface capability.',
+            );
+        }
+
+        $bridgeKey = $observation->bridgeKey;
+        $previousMember = $observation->previousMember;
+        assert($bridgeKey !== null && $previousMember !== null);
+
+        return $this->store->addDistinctBoundedAcrossRotation(
+            $observation->currentKey,
+            $bridgeKey,
+            $observation->previousKey,
+            $observation->currentMember,
+            $previousMember,
+            self::CAP_WINDOW,
+            $maxDistinct,
+        );
     }
 }

@@ -4,7 +4,8 @@ declare(strict_types=1);
 
 use Maatify\RateLimiter\Command\RateLimitCommand;
 use Maatify\RateLimiter\Repository\CircuitBreakerStoreInterface;
-use Maatify\RateLimiter\Repository\CorrelationStoreInterface;
+use Maatify\RateLimiter\DTO\BoundedDistinctResultDTO;
+use Maatify\RateLimiter\Repository\BoundedCorrelationStoreInterface;
 use Maatify\RateLimiter\Contract\FailureSignalEmitterInterface;
 use Maatify\RateLimiter\Repository\RateLimitStoreInterface;
 use Maatify\RateLimiter\DTO\FailureSignalDTO;
@@ -150,7 +151,7 @@ final class ExampleRateLimitStore implements RateLimitStoreInterface
     }
 }
 
-final class ExampleCorrelationStore implements CorrelationStoreInterface
+final class ExampleCorrelationStore implements BoundedCorrelationStoreInterface
 {
     /** @var array<string, array{items: array<string, true>, expiresAt: int}> */
     private array $sets = [];
@@ -173,6 +174,36 @@ final class ExampleCorrelationStore implements CorrelationStoreInterface
         $this->sets[$key] = $current;
 
         return count($current['items']);
+    }
+
+    public function addDistinctBounded(
+        string $key,
+        string $item,
+        int $ttlSeconds,
+        int $maxDistinct,
+    ): BoundedDistinctResultDTO {
+        if ($ttlSeconds <= 0 || $maxDistinct <= 0) {
+            throw new InvalidArgumentException('Bounded correlation TTL and cap must be positive.');
+        }
+
+        $now = $this->clock->now()->getTimestamp();
+        $current = $this->sets[$key] ?? null;
+        if ($current === null || $current['expiresAt'] <= $now) {
+            $current = ['items' => [], 'expiresAt' => $now + $ttlSeconds];
+        }
+
+        if (isset($current['items'][$item])) {
+            return new BoundedDistinctResultDTO(count($current['items']), true);
+        }
+
+        if (count($current['items']) >= $maxDistinct) {
+            return new BoundedDistinctResultDTO(count($current['items']), false);
+        }
+
+        $current['items'][$item] = true;
+        $this->sets[$key] = $current;
+
+        return new BoundedDistinctResultDTO(count($current['items']), true);
     }
 
     public function incrementWatchFlag(string $key, int $ttlSeconds): int

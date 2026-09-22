@@ -255,34 +255,45 @@ final class AccountAuxiliaryStateIsolationTest extends TestCase
         $accountId = 'flood-stage-account';
         $pipeline = $this->pipeline();
 
-        $loginResults = [];
-        for ($index = 1; $index <= 6; $index++) {
-            $loginResults[] = $this->floodRequest($pipeline, $login, $accountId, "login-device-{$index}");
+        for ($index = 1; $index <= 10; $index++) {
+            $this->assertSame(
+                RateLimitResultDTO::DECISION_ALLOW,
+                $this->floodRequest($pipeline, $login, $accountId, "login-device-{$index}")->decision,
+            );
         }
 
-        $this->assertSame(RateLimitResultDTO::DECISION_SOFT_BLOCK, $loginResults[5]->decision);
+        $this->assertSame(
+            RateLimitResultDTO::DECISION_SOFT_BLOCK,
+            $this->floodRequest($pipeline, $login, $accountId, 'login-device-11')->decision,
+        );
         $this->assertSame(
             RateLimitResultDTO::DECISION_HARD_BLOCK,
-            $this->floodRequest($pipeline, $login, $accountId, 'login-device-7')->decision,
+            $this->floodRequest($pipeline, $login, $accountId, 'login-device-12')->decision,
         );
 
         $loginStageKey = $this->auxiliaryKey($login->getName(), 'flood_stage', $accountId);
         $otpStageKey = $this->auxiliaryKey($otp->getName(), 'flood_stage', $accountId);
         $this->assertSame(1, $this->correlationStore->watchValue($loginStageKey));
         $this->assertSame(0, $this->correlationStore->watchValue($otpStageKey));
+        for ($index = 1; $index <= 10; $index++) {
+            $this->assertSame(
+                RateLimitResultDTO::DECISION_ALLOW,
+                $this->floodRequest($pipeline, $otp, $accountId, "otp-device-{$index}")->decision,
+            );
+        }
         $this->assertSame(
             RateLimitResultDTO::DECISION_SOFT_BLOCK,
-            $this->floodRequest($pipeline, $otp, $accountId, 'otp-device-1')->decision,
+            $this->floodRequest($pipeline, $otp, $accountId, 'otp-device-11')->decision,
         );
         $this->assertSame(1, $this->correlationStore->watchValue($otpStageKey));
         $this->assertSame(
             RateLimitResultDTO::DECISION_HARD_BLOCK,
-            $this->floodRequest($pipeline, $otp, $accountId, 'otp-device-2')->decision,
+            $this->floodRequest($pipeline, $otp, $accountId, 'otp-device-12')->decision,
         );
 
         $previousExpiry = $this->correlationStore->watchExpiresAt($loginStageKey);
         $rotated = $this->pipeline(keySecret: 'new-secret', previousSecret: 'test_secret');
-        $rotatedResult = $this->floodRequest($rotated, $login, $accountId, 'login-device-8');
+        $rotatedResult = $this->floodRequest($rotated, $login, $accountId, 'login-device-13');
         $this->assertSame(RateLimitResultDTO::DECISION_HARD_BLOCK, $rotatedResult->decision);
         $this->assertSame(0, $this->correlationStore->watchValue($this->auxiliaryKey($login->getName(), 'flood_stage', $accountId, 'new-secret')));
         $this->assertSame(1, $this->correlationStore->watchValue($loginStageKey));

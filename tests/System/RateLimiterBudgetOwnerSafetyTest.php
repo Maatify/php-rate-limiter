@@ -293,8 +293,23 @@ final class RateLimiterBudgetOwnerSafetyTest extends TestCase
         $k4Key = $this->key('login_protection', 'k4', $account);
         $k2Key = $this->correlationK2Key('login_protection');
         $this->store->set($k4Key, 5, 86400);
-        $this->correlationStore->addDistinct("churn:{$k2Key}", 'first-fingerprint', 600);
-        $this->correlationStore->addDistinct("churn:{$k2Key}", 'second-fingerprint', 600);
+        $churnScope = hash_hmac(
+            'sha256',
+            "login_protection:rate_limiter:correlation:churn:v1:prod:scope:{$k2Key}",
+            'test_secret',
+        );
+        $this->correlationStore->addDistinctBounded(
+            $churnScope,
+            hash_hmac('sha256', 'login_protection:rate_limiter:correlation:churn:member:v1:first-fingerprint', 'test_secret'),
+            600,
+            3,
+        );
+        $this->correlationStore->addDistinctBounded(
+            $churnScope,
+            hash_hmac('sha256', 'login_protection:rate_limiter:correlation:churn:member:v1:second-fingerprint', 'test_secret'),
+            600,
+            3,
+        );
 
         $result = $this->pipeline()->process(
             new LoginProtectionPolicy(),
