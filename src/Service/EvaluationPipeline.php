@@ -215,7 +215,16 @@ class EvaluationPipeline
         $budgetSuppressed = false;
         if (! $request->isPreCheck && ($request->isFailure || $policy->getScoreDeltas()->access > 0)) {
             // We write only to V2 (Active Key); V1 stays read-only
-            $updates = $this->processUpdates($policy, $context, $request, $device, $effectiveKeysV2, $effectiveKeysV1, $rawScores);
+            $updates = $this->processUpdates(
+                $policy,
+                $context,
+                $request,
+                $device,
+                $isEphemeral,
+                $effectiveKeysV2,
+                $effectiveKeysV1,
+                $rawScores,
+            );
             $candidates = array_merge($candidates, $updates['candidates']);
             $budgetState = $updates['budgetState'];
             $budgetRequestEligible = $updates['budgetRequestEligible'];
@@ -767,11 +776,12 @@ class EvaluationPipeline
         RateLimitContextDTO $context,
         RateLimitCommand $request,
         DeviceIdentityDTO $device,
+        bool $isEphemeral,
         array $keys,
         array $keysV1,
         array $rawScores,
     ): array {
-        $deltas = $this->calculateDeltas($policy, $context, $device, $request);
+        $deltas = $this->calculateDeltas($policy, $context, $device, $request, $isEphemeral);
 
         $k4Repeated = $policy->getScoreDeltas()->k4_repeated_missing_fp;
         if ($request->isFailure && empty($device->fingerprintHash) && $context->accountId && $k4Repeated > 0) {
@@ -889,7 +899,7 @@ class EvaluationPipeline
             // A policy-owned micro-cap gates known-device failures when
             // configured. A null cap means known-device failures are directly
             // budget-eligible; the engine does not identify policy presets.
-            if ($deltas['k5'] > 0 && $context->accountId && $device->fingerprintHash
+            if (! $isEphemeral && $deltas['k5'] > 0 && $context->accountId && $device->fingerprintHash
                 && $this->isKnownForAccount($device)) {
                 if ($config->known_device_micro_cap === null) {
                     $shouldCount = true;
@@ -1533,8 +1543,13 @@ class EvaluationPipeline
     /**
      * @return array{k1: int, k2: int, k3: int, k4: int, k5: int}
      */
-    private function calculateDeltas(BlockPolicyInterface $policy, RateLimitContextDTO $context, DeviceIdentityDTO $device, RateLimitCommand $request): array
-    {
+    private function calculateDeltas(
+        BlockPolicyInterface $policy,
+        RateLimitContextDTO $context,
+        DeviceIdentityDTO $device,
+        RateLimitCommand $request,
+        bool $isEphemeral,
+    ): array {
         $deltasDto = $policy->getScoreDeltas();
         // Fix Error 3: Initialize with stable shape
         $result = ['k1' => 0, 'k2' => 0, 'k3' => 0, 'k4' => 0, 'k5' => 0];
@@ -1561,7 +1576,13 @@ class EvaluationPipeline
                 // classification through their K4/K5 failure deltas. API
                 // Heavy keeps its existing access/spray behavior because it
                 // has no authentication failure deltas.
-                if ($this->isKnownForAccount($device)) {
+                if ($isEphemeral && ! $this->isApiHeavyPolicy($policy->getName()) && $deltasDto->k4_failure > 0) {
+                    // An ephemeral overflow fingerprint has been rejected by
+                    // the bounded device cap. Keep the authentication failure
+                    // on the account path without creating any K5 identity or
+                    // known-device micro-cap state.
+                    $result['k4'] = $deltasDto->k4_failure;
+                } elseif ($this->isKnownForAccount($device)) {
                     if ($deltasDto->k5_failure > 0) {
                         $result['k5'] = $deltasDto->k5_failure;
                     }

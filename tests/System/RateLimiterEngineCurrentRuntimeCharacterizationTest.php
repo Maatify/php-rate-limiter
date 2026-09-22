@@ -267,6 +267,98 @@ final class RateLimiterEngineCurrentRuntimeCharacterizationTest extends TestCase
         $this->assertNull($this->store->getBudget($k4Key));
     }
 
+    /**
+     * @dataProvider ephemeralOverflowTrustFacts
+     */
+    public function testEphemeralLoginOverflowRoutesKnownAuthenticationFailureToK4(
+        bool $isTrustedSession,
+        bool $isDevicePreviouslyVerifiedForAccount,
+    ): void {
+        $engine = $this->createEngine(new LoginProtectionPolicy());
+        $accountId = 'login-ephemeral-overflow-' . ($isTrustedSession ? 'trusted' : 'verified');
+        $policy = 'login_protection';
+
+        for ($index = 1; $index <= 10; $index++) {
+            $result = $engine->limit(
+                $this->overflowContext(
+                    $accountId,
+                    $index,
+                    $isTrustedSession,
+                    $isDevicePreviouslyVerifiedForAccount,
+                ),
+                RateLimitCommand::checkOnly($policy),
+            );
+
+            if ($index === 6) {
+                $this->assertSame(RateLimitResultDTO::DECISION_SOFT_BLOCK, $result->decision);
+            } elseif ($index === 7) {
+                $this->assertSame(RateLimitResultDTO::DECISION_HARD_BLOCK, $result->decision);
+            }
+        }
+
+        $overflowContext = $this->overflowContext(
+            $accountId,
+            11,
+            $isTrustedSession,
+            $isDevicePreviouslyVerifiedForAccount,
+        );
+        $overflowDevice = (new DeviceIdentityResolver(new FingerprintHasher('test_secret')))->resolve($overflowContext);
+        $this->assertNotNull($overflowDevice->fingerprintHash);
+
+        $result = $engine->limit($overflowContext, RateLimitCommand::recordFailure($policy));
+
+        $this->assertSame(RateLimitResultDTO::DECISION_HARD_BLOCK, $result->decision);
+        $k4Key = $this->key($policy, 'k4', $accountId);
+        $k5Key = $this->key($policy, 'k5', "{$accountId}:{$overflowDevice->fingerprintHash}");
+        $microCapKey = $this->microCapKey($policy, $accountId, $overflowDevice->fingerprintHash);
+
+        $this->assertSame(3, $this->store->get($k4Key)?->value);
+        $this->assertSame(1, $this->store->getBudget($k4Key)?->count);
+        $this->assertNull($this->store->get($k5Key));
+        $this->assertNull($this->store->checkBlock($k5Key));
+        $this->assertNull($this->store->getBudget($microCapKey));
+        $this->assertSame(10, $this->correlationStore->distinctCount($this->deviceCapAccountKey($policy, $accountId)));
+    }
+
+    /**
+     * @return iterable<string, array{bool, bool}>
+     */
+    public static function ephemeralOverflowTrustFacts(): iterable
+    {
+        yield 'previously verified device' => [false, true];
+        yield 'trusted session' => [true, false];
+    }
+
+    public function testEphemeralOtpOverflowKeepsAccountSignalsWithoutPerDevicePersistence(): void
+    {
+        $engine = $this->createEngine(new OtpProtectionPolicy());
+        $accountId = 'otp-ephemeral-overflow';
+        $policy = 'otp_protection';
+
+        for ($index = 1; $index <= 10; $index++) {
+            $engine->limit(
+                $this->overflowContext($accountId, $index, false, true),
+                RateLimitCommand::checkOnly($policy),
+            );
+        }
+
+        $overflowContext = $this->overflowContext($accountId, 11, false, true);
+        $overflowDevice = (new DeviceIdentityResolver(new FingerprintHasher('test_secret')))->resolve($overflowContext);
+        $this->assertNotNull($overflowDevice->fingerprintHash);
+
+        $result = $engine->limit($overflowContext, RateLimitCommand::recordFailure($policy));
+
+        $this->assertSame(RateLimitResultDTO::DECISION_HARD_BLOCK, $result->decision);
+        $k4Key = $this->key($policy, 'k4', $accountId);
+        $k5Key = $this->key($policy, 'k5', "{$accountId}:{$overflowDevice->fingerprintHash}");
+
+        $this->assertSame(5, $this->store->get($k4Key)?->value);
+        $this->assertSame(1, $this->store->getBudget($k4Key)?->count);
+        $this->assertNull($this->store->get($k5Key));
+        $this->assertNull($this->store->checkBlock($k5Key));
+        $this->assertSame(10, $this->correlationStore->distinctCount($this->deviceCapAccountKey($policy, $accountId)));
+    }
+
     public function testCurrentCharacterizationLoginBudgetKeepsFixedEpochStartWithinTwentyFourHours(): void
     {
         $engine = $this->createEngine(new LoginProtectionPolicy());
@@ -644,6 +736,45 @@ final class RateLimiterEngineCurrentRuntimeCharacterizationTest extends TestCase
             'sha256',
             "{$policy}:rate_limiter:{$type}:v2:prod:{$scope}",
             $secret,
+        );
+    }
+
+    private function overflowContext(
+        string $accountId,
+        int $deviceNumber,
+        bool $isTrustedSession,
+        bool $isDevicePreviouslyVerifiedForAccount,
+    ): RateLimitContextDTO {
+        return new RateLimitContextDTO(
+            '198.51.100.29',
+            "Mozilla/5.0 Chrome/{$deviceNumber}.0.0.0",
+            $accountId,
+            ['device' => "overflow-device-{$deviceNumber}"],
+            $isTrustedSession ? 'trusted-overflow-session' : null,
+            $isTrustedSession,
+            [],
+            $isDevicePreviouslyVerifiedForAccount,
+        );
+    }
+
+    private function deviceCapAccountKey(string $policy, string $accountId): string
+    {
+        $k1 = $this->key($policy, 'k1', '198.51.100.29');
+        $k4 = $this->key($policy, 'k4', $accountId);
+
+        return hash_hmac(
+            'sha256',
+            "{$policy}:rate_limiter:correlation:device_cap_account:v1:prod:scope:{$k4}:{$k1}",
+            'test_secret',
+        );
+    }
+
+    private function microCapKey(string $policy, string $accountId, string $fingerprint): string
+    {
+        return hash_hmac(
+            'sha256',
+            "{$policy}:rate_limiter:microcap:k5:v1:{$accountId}:{$fingerprint}",
+            'test_secret',
         );
     }
 }
