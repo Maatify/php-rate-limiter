@@ -3,7 +3,7 @@
 **Package:** RateLimiter
 **Namespace:** `Maatify\RateLimiter`
 **Status:** LOCKED — Architecture Contract
-**Spec Version:** `1.8.0`
+**Spec Version:** `1.9.0`
 **Location:** `src/`
 
 This document explains **why** the RateLimiter package is designed the way it is.
@@ -80,9 +80,9 @@ This is a read-only, point-in-time operational observation and is not an alterna
 
 Correlation distinct-set members, watch-flag internals, churn sets, and dilution sets are intentionally unsupported reporting dimensions. They are internal bounded enforcement structures without a stable operational reporting semantic. The operational read surface has no mutation/reset/unblock API, global listing, arbitrary key lookup, raw-key exposure, historical audit store, Host joins, cross-package reporting, or correlation-set inspection.
 
-The bounded correlation work does not implement S3-F08 distributed-account member
-enumeration or repeated-occurrence account escalation. That decision remains open and is
-explicitly outside the current package claim.
+Distributed-account correlation is an enforcement capability, not an operational reporting
+surface. The runtime returns bounded K5 member snapshots internally to apply involved-device
+blocks; it does not expose correlation members through the operational reader.
 
 ## Public Runtime API Inventory
 
@@ -99,6 +99,8 @@ The following inventory describes the current public runtime types. Test and sup
 | `Maatify\RateLimiter\Repository\CorrelationRotationStoreInterface` | Additive capability for atomic credential-spray continuity across key rotation; previous state is read-only. |
 | `Maatify\RateLimiter\Repository\BoundedCorrelationStoreInterface` | Additive bounded distinct operation for device-cap and correlation state; preserves the base contract. |
 | `Maatify\RateLimiter\Repository\BoundedCorrelationRotationStoreInterface` | Additive bounded current/previous-generation distinct operation with a current-only bridge. |
+| `Maatify\RateLimiter\Repository\BoundedCorrelationSnapshotStoreInterface` | Additive bounded distinct operation returning the complete logical member snapshot and fixed expiry. |
+| `Maatify\RateLimiter\Repository\BoundedCorrelationSnapshotRotationStoreInterface` | Snapshot-capable current/previous-generation operation with read-only previous state and a current-only bridge. |
 | `Maatify\RateLimiter\Repository\CircuitBreakerStoreInterface` | Circuit-breaker state persistence boundary. |
 | `Maatify\RateLimiter\Contract\FailureSignalEmitterInterface` | Failure and circuit-breaker signal delivery boundary. |
 | `Maatify\RateLimiter\Service\DeviceIdentityResolverInterface` | Device identity resolution boundary. |
@@ -119,7 +121,7 @@ The following inventory describes the current public runtime types. Test and sup
 | Context and result | `Maatify\RateLimiter\DTO\RateLimitContextDTO`, `Maatify\RateLimiter\DTO\RateLimitResultDTO`, `Maatify\RateLimiter\DTO\RateLimitMetadataDTO`, `Maatify\RateLimiter\DTO\RateLimitContextMetadataDTO` |
 | Identity and policy | `Maatify\RateLimiter\DTO\DeviceIdentityDTO`, `Maatify\RateLimiter\DTO\PolicyThresholdsDTO`, `Maatify\RateLimiter\DTO\ScoreThresholdsDTO`, `Maatify\RateLimiter\DTO\ScoreDeltasDTO`, `Maatify\RateLimiter\DTO\BudgetConfigDTO` |
 | Runtime state | `Maatify\RateLimiter\DTO\BudgetStatusDTO`, `Maatify\RateLimiter\DTO\EphemeralStateDTO`, `Maatify\RateLimiter\DTO\FailureSignalDTO`, `Maatify\RateLimiter\DTO\FailureStateDTO` |
-| Bounded correlation | `Maatify\RateLimiter\DTO\BoundedDistinctResultDTO`, `Maatify\RateLimiter\DTO\BoundedCorrelationObservationDTO` |
+| Bounded correlation | `Maatify\RateLimiter\DTO\BoundedDistinctResultDTO`, `Maatify\RateLimiter\DTO\BoundedDistinctSnapshotDTO`, `Maatify\RateLimiter\DTO\BoundedCorrelationObservationDTO` |
 | Store boundary state | `Maatify\RateLimiter\DTO\RateLimitStateDTO`, `Maatify\RateLimiter\DTO\BlockStateDTO`, `Maatify\RateLimiter\DTO\BudgetStateDTO`, `Maatify\RateLimiter\DTO\CircuitBreakerStateDTO` |
 | Operational read | `Maatify\RateLimiter\DTO\RateLimitOperationalKeyStateDTO`, `Maatify\RateLimiter\DTO\RateLimitOperationalScopesDTO`, `Maatify\RateLimiter\DTO\RateLimitOperationalBudgetDTO`, `Maatify\RateLimiter\DTO\RateLimitOperationalSnapshotDTO` |
 
@@ -154,11 +156,13 @@ Concretely:
         → RateLimitStoreInterface + CorrelationStoreInterface
           + BoundedCorrelationStoreInterface for bounded observations
           + BoundedCorrelationRotationStoreInterface when a previous generation is present
+          + BoundedCorrelationSnapshotStoreInterface for distributed-account snapshots
+          + BoundedCorrelationSnapshotRotationStoreInterface for rotated distributed snapshots
           + CorrelationRotationStoreInterface for rotated WATCH state
           + CircuitBreakerStoreInterface + FailureSignalEmitterInterface
         → RateLimitResultDTO and, when applicable, FailureSignalDTO
 
-`RateLimiterEngine` selects the policy by the command's policy name. `EvaluationPipeline` resolves active blocks, identity-derived keys, scoring, correlation, budgets, decay, and final aggregation. Credential-spray correlation is observed during authentication pre-checks only; the later failure/success command does not observe the same lifecycle a second time. The integration boundaries provide the stateful primitives; the result is returned to the Host, which decides how to enforce it at its own transport or application boundary.
+`RateLimiterEngine` selects the policy by the command's policy name. `EvaluationPipeline` resolves active blocks, identity-derived keys, scoring, correlation, budgets, decay, and final aggregation. Credential-spray and distributed-account correlation are observed during Login/OTP authentication pre-checks only; the later failure/success command does not observe the same lifecycle a second time. The distributed-account path uses a 600-second, four-member snapshot of canonical K5 keys, a 30-minute N-1 watch, and a 24-hour three-occurrence account gate. API Heavy and requests without the required account/device/K4/K5 inputs do not observe it. The integration boundaries provide the stateful primitives; the result is returned to the Host, which decides how to enforce it at its own transport or application boundary.
 
 The independent operational path is:
 
@@ -489,15 +493,19 @@ package provides no Redis, Lua, PDO, or other concrete adapter.
 
 Bounded device-cap, churn, dilution, and spray distinct state uses the additive
 `BoundedCorrelationStoreInterface`; a current/previous observation requires
-`BoundedCorrelationRotationStoreInterface`. The operation returns
-`BoundedDistinctResultDTO`, admits duplicates without mutation, and rejects new members at
-the cap without set growth. The 900-second device-cap window is capped at 10 account
-members and 50 IP-scope members; spray, churn, and dilution caps are 5, 3, and 6. Rotation
-writes current state only, reads previous state without mutation, and uses a bridge whose TTL
-cannot exceed the remaining previous TTL. Corrupt or over-cap state and missing capabilities
-fail explicitly. All keys and members are opaque purpose/version/environment-separated HMAC
-references; raw account, IP, correlation, and fingerprint values do not cross the store
-boundary.
+`BoundedCorrelationRotationStoreInterface`. Distributed-account device windows additionally
+require `BoundedCorrelationSnapshotStoreInterface`, or
+`BoundedCorrelationSnapshotRotationStoreInterface` when a previous generation is active.
+The snapshot returns `count`, `accepted`, `added`, complete logical `members`, and fixed
+`expiresAt`; duplicates are accepted without being added, while new members at the cap are
+rejected without set growth. The pipeline validates malformed snapshots fail-closed before
+using the members as direct K5 enforcement keys. The distributed window is 600 seconds with
+a cap of four; its occurrence state is account-only, 86400 seconds, and capped at three.
+Rotation writes current state only, reads previous state without mutation, and uses a bridge
+whose TTL cannot exceed the remaining previous TTL. Corrupt or over-cap state and missing
+capabilities fail explicitly. All keys and members are opaque purpose/version/environment-
+separated HMAC references; raw account, IP, correlation, and fingerprint values do not cross
+the store boundary.
 
 ### 4.8 Budget Owner-Safety — Storage Boundaries
 

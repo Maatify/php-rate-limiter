@@ -65,6 +65,8 @@ The host supplies implementations for:
 - <code>CorrelationStoreInterface</code>: source-compatible base contract for distinct sets and watch flags.
 - <code>BoundedCorrelationStoreInterface</code>: required additive capability for bounded device-cap, churn, dilution, and no-rotation spray observations.
 - <code>BoundedCorrelationRotationStoreInterface</code>: required additive capability when a current/previous generation observation is active; it preserves previous state through a current-only bridge.
+- <code>BoundedCorrelationSnapshotStoreInterface</code>: required additive capability for Login/OTP distributed-account snapshots without a previous generation.
+- <code>BoundedCorrelationSnapshotRotationStoreInterface</code>: required additive capability for distributed-account snapshots when a previous generation is active.
 - <code>CorrelationRotationStoreInterface</code>: additive capability for rotated WATCH state and the existing credential-spray rotation primitives.
 - <code>CircuitBreakerStoreInterface</code>: circuit-breaker state persistence.
 - <code>FailureSignalEmitterInterface</code>: delivery of circuit-breaker and failure signals.
@@ -83,10 +85,22 @@ generation is read-only, and a current-secret bridge deduplicates subjects while
 capped by the previous remaining TTL. Bounded device-cap windows are 900 seconds with caps
 of 10 account members and 50 IP-scope members; spray, churn, and dilution are capped at 5,
 3, and 6. Duplicates are admitted without mutation, while new members at a cap are rejected
-without set growth. A missing capability or corrupt previous state fails explicitly rather
-than silently resetting enforcement. Store keys and members are opaque keyed-HMAC references;
-raw account, IP, correlation, and fingerprint values never cross the boundary. The core
-package does not include a Redis or other concrete correlation adapter.
+without set growth. Login/OTP distributed-account checks additionally require a snapshot
+capability. Their 600-second snapshot is capped at four canonical K5 members and returns the
+complete logical member set plus fixed expiry; three members create a 30-minute WATCH, the
+second qualifying WATCH or fourth member blocks every involved K5 at L2, and the exact third
+24-hour occurrence blocks K4 at L4 for 1800 seconds. API Heavy and requests missing account,
+fingerprint, or real K4/K5 do not observe this rule. A missing capability or corrupt previous
+state fails explicitly rather than silently resetting enforcement. Store keys and members are
+opaque keyed-HMAC references; raw account, IP, correlation, and fingerprint values never cross
+the boundary. The core package does not include a Redis or other concrete correlation adapter.
+
+The snapshot operation is part of the pre-check lifecycle: <code>checkOnly()</code> does not
+record a success or failure, but it may update bounded distributed-correlation state. A later
+<code>recordFailure()</code> or <code>recordSuccess()</code> for the same host lifecycle does not
+observe the distributed window again. During rotation, previous state and its TTL remain
+unchanged, new members are owned by the current generation and bridge, and outer-only,
+fingerprint-only, and both-rotated inputs never form Cartesian generation pairs.
 
 ## Capability Map
 

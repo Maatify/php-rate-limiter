@@ -289,9 +289,7 @@ final class RateLimiterEngineCurrentRuntimeCharacterizationTest extends TestCase
                 RateLimitCommand::checkOnly($policy),
             );
 
-            if ($index === 6) {
-                $this->assertSame(RateLimitResultDTO::DECISION_SOFT_BLOCK, $result->decision);
-            } elseif ($index === 7) {
+            if ($index >= 4) {
                 $this->assertSame(RateLimitResultDTO::DECISION_HARD_BLOCK, $result->decision);
             }
         }
@@ -644,7 +642,7 @@ final class RateLimiterEngineCurrentRuntimeCharacterizationTest extends TestCase
         $this->assertSame(2, $this->store->checkBlock($k1Key)?->level);
     }
 
-    public function testCurrentCharacterizationFourDevicesForOneAccountDoNotCreateInvolvedK5Block(): void
+    public function testDistributedAccountAttackBlocksInvolvedK5sAtFourthDevice(): void
     {
         $engine = $this->createEngine(new LoginProtectionPolicy());
         $accountId = 'distributed-account';
@@ -673,7 +671,12 @@ final class RateLimiterEngineCurrentRuntimeCharacterizationTest extends TestCase
 
             $result = $engine->limit($context, RateLimitCommand::checkOnly('login_protection'));
 
-            $this->assertSame(RateLimitResultDTO::DECISION_ALLOW, $result->decision);
+            if (count($resolvedFingerprintHashes) < 4) {
+                $this->assertSame(RateLimitResultDTO::DECISION_ALLOW, $result->decision);
+            } else {
+                $this->assertSame(RateLimitResultDTO::DECISION_HARD_BLOCK, $result->decision);
+                $this->assertSame(2, $result->blockLevel);
+            }
         }
 
         $k4Key = $this->key('login_protection', 'k4', $accountId);
@@ -682,7 +685,7 @@ final class RateLimiterEngineCurrentRuntimeCharacterizationTest extends TestCase
 
         foreach ($resolvedFingerprintHashes as $fingerprintHash) {
             $k5Key = $this->key('login_protection', 'k5', "{$accountId}:{$fingerprintHash}");
-            $this->assertNull($this->store->checkBlock($k5Key));
+            $this->assertSame(2, $this->store->checkBlock($k5Key)?->level);
         }
     }
 

@@ -24,6 +24,7 @@ use Maatify\RateLimiter\Config\LoginProtectionPolicy;
 use Maatify\RateLimiter\Config\OtpProtectionPolicy;
 use Maatify\RateLimiter\Tests\Support\CircuitBreaker\InMemoryCircuitBreakerStore;
 use Maatify\RateLimiter\Tests\Support\Clock\FixedClock;
+use Maatify\RateLimiter\Tests\Support\Correlation\StatefulInMemoryCorrelationStore;
 use Maatify\RateLimiter\Tests\Support\Correlation\NullCorrelationStore;
 use Maatify\RateLimiter\Tests\Support\FailureSignal\RecordingFailureSignalEmitter;
 use Maatify\RateLimiter\Tests\Support\RateLimiter\InMemoryRateLimitStore;
@@ -35,7 +36,7 @@ class RateLimiterEngineWorkflowTest extends TestCase
 {
     private FixedClock $clock;
     private InMemoryRateLimitStore $store;
-    private NullCorrelationStore $correlationStore;
+    private StatefulInMemoryCorrelationStore $correlationStore;
     private InMemoryCircuitBreakerStore $circuitBreakerStore;
     private RecordingFailureSignalEmitter $failureSignalEmitter;
     private RateLimiterEngine $engine;
@@ -46,7 +47,7 @@ class RateLimiterEngineWorkflowTest extends TestCase
 
         $this->clock = new FixedClock('2025-01-01 12:00:00');
         $this->store = new InMemoryRateLimitStore($this->clock);
-        $this->correlationStore = new NullCorrelationStore();
+        $this->correlationStore = new StatefulInMemoryCorrelationStore($this->clock);
         $this->circuitBreakerStore = new InMemoryCircuitBreakerStore();
         $this->failureSignalEmitter = new RecordingFailureSignalEmitter();
 

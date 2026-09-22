@@ -376,10 +376,8 @@ final class BoundedCorrelationCoverageTest extends TestCase
                 $this->device("overflow-device-{$index}", 'MEDIUM', null, false, $ua),
             );
 
-            if ($index <= 5) {
+            if ($index <= 3) {
                 self::assertSame(RateLimitResultDTO::DECISION_ALLOW, $result->decision);
-            } elseif ($index === 6) {
-                self::assertSame(RateLimitResultDTO::DECISION_SOFT_BLOCK, $result->decision);
             } else {
                 self::assertSame(RateLimitResultDTO::DECISION_HARD_BLOCK, $result->decision);
             }
