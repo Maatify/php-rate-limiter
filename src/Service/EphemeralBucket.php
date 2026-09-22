@@ -90,12 +90,16 @@ class EphemeralBucket
                 );
             }
 
-            return $this->store->addDistinctBounded(
+            $result = $this->store->addDistinctBounded(
                 $observation->currentKey,
                 $observation->currentMember,
                 self::CAP_WINDOW,
                 $maxDistinct,
             );
+
+            BoundedCorrelationResultValidator::count($result, $maxDistinct);
+
+            return $result;
         }
 
         if (! $this->store instanceof BoundedCorrelationRotationStoreInterface) {
@@ -108,7 +112,7 @@ class EphemeralBucket
         $previousMember = $observation->previousMember;
         assert($bridgeKey !== null && $previousMember !== null);
 
-        return $this->store->addDistinctBoundedAcrossRotation(
+        $result = $this->store->addDistinctBoundedAcrossRotation(
             $observation->currentKey,
             $bridgeKey,
             $observation->previousKey,
@@ -117,5 +121,9 @@ class EphemeralBucket
             self::CAP_WINDOW,
             $maxDistinct,
         );
+
+        BoundedCorrelationResultValidator::count($result, $maxDistinct);
+
+        return $result;
     }
 }

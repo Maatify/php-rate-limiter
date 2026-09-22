@@ -486,8 +486,9 @@ current-only fallback is forbidden.
 The fixed device-cap contract is 900 seconds, maximum 10 distinct members per account scope
 and 50 per IP scope. Ephemeral overflow is routing state, not a synthetic identity: the
 pipeline keeps real current/previous enforcement keys, removes only K3/K5 scoring writes for
-the overflow request, continues K4/flood handling, and retains bounded churn detection. It
-does not create per-request keys or durable overflow identities.
+the overflow request, continues K4/flood handling, and retains bounded churn detection. An
+overflow request may receive the active flood decision, but it cannot persist new K5 score or
+block state. It does not create per-request keys or durable overflow identities.
 
 ### 4.4 Namespacing & Scoping
 

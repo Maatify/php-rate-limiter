@@ -171,41 +171,40 @@ class EvaluationPipeline
         }
 
         // 8. New Device Flood (5.4)
-        if ($ephemeralState?->isEphemeral === true && $context->accountId && ! $this->isApiHeavyPolicy($policy->getName())) {
-            if ($ephemeralState->accountDeviceCount >= 6) {
-                $floodKey = $this->auxiliaryAccountKey(
-                    $policy->getName(),
-                    'flood_stage',
-                    $context->accountId,
-                    $this->secret,
-                );
-                $previousFloodKey = $this->previousAuxiliaryAccountKey(
-                    $policy->getName(),
-                    'flood_stage',
-                    $context->accountId,
-                );
-                $isFloodStage = $this->correlationStore->getWatchFlag($floodKey) > 0;
-                if (! $isFloodStage && $previousFloodKey !== null && $previousFloodKey !== $floodKey) {
-                    $isFloodStage = $this->correlationStore->getWatchFlag($previousFloodKey) > 0;
+        if ($ephemeralState !== null && $context->accountId && ! $this->isApiHeavyPolicy($policy->getName())
+            && $ephemeralState->accountDeviceCount >= 6) {
+            $floodKey = $this->auxiliaryAccountKey(
+                $policy->getName(),
+                'flood_stage',
+                $context->accountId,
+                $this->secret,
+            );
+            $previousFloodKey = $this->previousAuxiliaryAccountKey(
+                $policy->getName(),
+                'flood_stage',
+                $context->accountId,
+            );
+            $isFloodStage = $this->correlationStore->getWatchFlag($floodKey) > 0;
+            if (! $isFloodStage && $previousFloodKey !== null && $previousFloodKey !== $floodKey) {
+                $isFloodStage = $this->correlationStore->getWatchFlag($previousFloodKey) > 0;
+            }
+
+            if ($isFloodStage) {
+                $duration = PenaltyLadder::getDuration(2);
+                $persistence = [];
+                if (! $ephemeralState->isEphemeral && $realKeysV2['k5'] !== null) {
+                    $persistence[] = ['key' => $realKeysV2['k5'], 'level' => 2, 'duration' => $duration];
                 }
 
-                if ($isFloodStage) {
-                    $duration = PenaltyLadder::getDuration(2);
-                    $persistence = [];
-                    if ($realKeysV2['k5'] !== null) {
-                        $persistence[] = ['key' => $realKeysV2['k5'], 'level' => 2, 'duration' => $duration];
-                    }
-
-                    $candidates[] = $this->candidate(RateLimitResultDTO::DECISION_HARD_BLOCK, 2, $duration, 'flood', $persistence);
-                } else {
-                    $duration = PenaltyLadder::getDuration(1);
-                    $k4Key = $realKeysV2['k4'];
-                    $persistence = $k4Key !== null
-                        ? [['key' => $k4Key, 'level' => 1, 'duration' => $duration]]
-                        : [];
-                    $this->correlationStore->incrementWatchFlag($floodKey, 900);
-                    $candidates[] = $this->candidate(RateLimitResultDTO::DECISION_SOFT_BLOCK, 1, $duration, 'flood', $persistence);
-                }
+                $candidates[] = $this->candidate(RateLimitResultDTO::DECISION_HARD_BLOCK, 2, $duration, 'flood', $persistence);
+            } else {
+                $duration = PenaltyLadder::getDuration(1);
+                $k4Key = $realKeysV2['k4'];
+                $persistence = $k4Key !== null
+                    ? [['key' => $k4Key, 'level' => 1, 'duration' => $duration]]
+                    : [];
+                $this->correlationStore->incrementWatchFlag($floodKey, 900);
+                $candidates[] = $this->candidate(RateLimitResultDTO::DECISION_SOFT_BLOCK, 1, $duration, 'flood', $persistence);
             }
         }
 
@@ -534,12 +533,14 @@ class EvaluationPipeline
                 );
             }
 
-            return $this->correlationStore->addDistinctBounded(
+            $result = $this->correlationStore->addDistinctBounded(
                 $observation->currentKey,
                 $observation->currentMember,
                 $ttlSeconds,
                 $maxDistinct,
-            )->count;
+            );
+
+            return BoundedCorrelationResultValidator::count($result, $maxDistinct);
         }
 
         if (! $this->correlationStore instanceof BoundedCorrelationRotationStoreInterface) {
@@ -551,7 +552,7 @@ class EvaluationPipeline
             throw new RateLimiterException('Malformed bounded correlation observation rotation tuple.');
         }
 
-        return $this->correlationStore->addDistinctBoundedAcrossRotation(
+        $result = $this->correlationStore->addDistinctBoundedAcrossRotation(
             $observation->currentKey,
             $observation->bridgeKey,
             $observation->previousKey,
@@ -559,7 +560,9 @@ class EvaluationPipeline
             $observation->previousMember,
             $ttlSeconds,
             $maxDistinct,
-        )->count;
+        );
+
+        return BoundedCorrelationResultValidator::count($result, $maxDistinct);
     }
 
     private function incrementWatchAcrossRotation(
@@ -664,7 +667,8 @@ class EvaluationPipeline
                 );
             }
             $member = $this->hashKey('credential_spray:subject:v1:' . $subject, $this->secret);
-            $count = $this->correlationStore->addDistinctBounded($scopeKey, $member, 600, 5)->count;
+            $result = $this->correlationStore->addDistinctBounded($scopeKey, $member, 600, 5);
+            $count = BoundedCorrelationResultValidator::count($result, 5);
         } else {
             if ($previousK1Key === null) {
                 throw new RateLimiterException(
@@ -684,7 +688,7 @@ class EvaluationPipeline
                 'credential_spray:subject:v1:' . $subject,
                 $this->previousSecret,
             );
-            $count = $this->correlationStore->addDistinctBoundedAcrossRotation(
+            $result = $this->correlationStore->addDistinctBoundedAcrossRotation(
                 $scopeKey,
                 'credential_spray:bridge:' . $k1Key,
                 'credential_spray:' . $previousK1Key,
@@ -692,7 +696,8 @@ class EvaluationPipeline
                 $previousMember,
                 600,
                 5,
-            )->count;
+            );
+            $count = BoundedCorrelationResultValidator::count($result, 5);
         }
 
         if ($this->previousSecret !== null) {

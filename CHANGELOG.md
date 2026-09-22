@@ -8,6 +8,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Changed
+- Follow-up hardening for WU-S3-04: New Device Flood now evaluates from the sixth
+  admitted/account-scope observation through the rejected overflow path, while only
+  admitted devices may persist K5 state. All bounded distinct-store results are validated
+  centrally before classification; malformed counts or rejected-before-cap results fail
+  explicitly with a package-owned exception.
 - Completed WU-S3-04 bounded ephemeral and fingerprint-correlation hardening. The additive
   `BoundedCorrelationStoreInterface` and `BoundedCorrelationRotationStoreInterface` now
   provide atomic fixed-TTL distinct admission with `BoundedDistinctResultDTO`; device-cap,

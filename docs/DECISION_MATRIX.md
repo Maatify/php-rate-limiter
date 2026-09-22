@@ -597,7 +597,7 @@ bounded churn signal remains active.
 | Rule                              | Condition                            | Decision                 |
 | --------------------------------- | ------------------------------------ | ------------------------ |
 | Excessive new devices per account | `≥ 6 new DeviceFP within 15 minutes` | SOFT_BLOCK (Account)     |
-| Continued flood after soft block  | Same window                          | HARD_BLOCK (each new K5) |
+| Continued flood after soft block  | Same window                          | HARD_BLOCK (admitted new K5 only) |
 
 New DeviceFP creation MUST be capped to prevent storage exhaustion.
 
@@ -610,9 +610,11 @@ uses current-generation writes and may read one active previous outer-key genera
 Device-cap observations use a 900-second bounded contract: at most 10 distinct account
 members and 50 distinct IP-scope members. The pipeline performs the observation once using
 the real current/previous generation tuple, routes only rejected new members to ephemeral,
-and never creates a fake K3/K5 key. S3-F08 distributed account attack member enumeration and
-repeated-occurrence account escalation remain open and are not implemented by this matrix
-revision.
+and never creates a fake K3/K5 key. Flood evaluation begins at the sixth logical account
+member even when that member is admitted; a rejected overflow remains eligible for the active
+flood HARD decision but cannot create or persist new K5 score/block state. S3-F08 distributed
+account attack member enumeration and repeated-occurrence account escalation remain open and
+are not implemented by this matrix revision.
 
 ---
 

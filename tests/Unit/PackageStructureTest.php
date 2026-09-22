@@ -55,6 +55,7 @@ final class PackageStructureTest extends TestCase
             'Maatify\\RateLimiter\\Service\\RateLimitOperationalReader',
             'Maatify\\RateLimiter\\Service\\RateLimiterEngine',
             'Maatify\\RateLimiter\\Service\\EvaluationPipeline',
+            'Maatify\\RateLimiter\\Service\\BoundedCorrelationResultValidator',
             'Maatify\\RateLimiter\\Service\\CircuitBreaker',
             'Maatify\\RateLimiter\\Service\\FailureModeResolver',
             'Maatify\\RateLimiter\\Service\\LocalFallbackLimiter',
