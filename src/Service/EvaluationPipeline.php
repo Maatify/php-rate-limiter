@@ -171,7 +171,7 @@ class EvaluationPipeline
         }
 
         // 8. New Device Flood (5.4)
-        if ($isEphemeral && $ephemeralState !== null && $context->accountId && ! $this->isApiHeavyPolicy($policy->getName())) {
+        if ($ephemeralState?->isEphemeral === true && $context->accountId && ! $this->isApiHeavyPolicy($policy->getName())) {
             if ($ephemeralState->accountDeviceCount >= 6) {
                 $floodKey = $this->auxiliaryAccountKey(
                     $policy->getName(),
