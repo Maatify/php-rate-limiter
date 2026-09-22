@@ -10,6 +10,7 @@ use ConsumerVerification\InMemoryRateLimitStore;
 use ConsumerVerification\RecordingFailureSignalEmitter;
 use Maatify\RateLimiter\Command\RateLimitCommand;
 use Maatify\RateLimiter\Repository\BudgetSeedStoreInterface;
+use Maatify\RateLimiter\Repository\BoundedCorrelationRotationStoreInterface;
 use Maatify\RateLimiter\Service\DeviceIdentityResolver;
 use Maatify\RateLimiter\Service\EphemeralBucket;
 use Maatify\RateLimiter\Service\FingerprintHasher;
@@ -65,6 +66,10 @@ requireCondition(
 requireCondition(
     $correlationStore instanceof CorrelationRotationStoreInterface,
     'The consumer correlation store does not implement the CorrelationRotationStoreInterface capability.',
+);
+requireCondition(
+    $correlationStore instanceof BoundedCorrelationRotationStoreInterface,
+    'The consumer correlation store does not implement the bounded rotation capability.',
 );
 
 $deviceResolver = new DeviceIdentityResolver(new FingerprintHasher('active-key'));

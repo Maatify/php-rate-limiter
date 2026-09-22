@@ -62,8 +62,10 @@ The response retry time is independent from persistence: score-derived results m
 The host supplies implementations for:
 
 - <code>RateLimitStoreInterface</code>: counters, blocks, and budget state with the atomicity and TTL behavior required by the package.
-- <code>CorrelationStoreInterface</code>: bounded distinct sets and watch flags for the no-rotation base path.
-- <code>CorrelationRotationStoreInterface</code>: optional additive capability required for Login/OTP credential-spray continuity when <code>previousKeySecret</code> is configured.
+- <code>CorrelationStoreInterface</code>: source-compatible base contract for distinct sets and watch flags.
+- <code>BoundedCorrelationStoreInterface</code>: required additive capability for bounded device-cap, churn, dilution, and no-rotation spray observations.
+- <code>BoundedCorrelationRotationStoreInterface</code>: required additive capability when a current/previous generation observation is active; it preserves previous state through a current-only bridge.
+- <code>CorrelationRotationStoreInterface</code>: additive capability for rotated WATCH state and the existing credential-spray rotation primitives.
 - <code>CircuitBreakerStoreInterface</code>: circuit-breaker state persistence.
 - <code>FailureSignalEmitterInterface</code>: delivery of circuit-breaker and failure signals.
 - <code>ClockInterface</code> from <code>maatify/shared-common</code>: current time and timezone.
@@ -75,12 +77,16 @@ The package owns enforcement decisions, key construction, scoring, decay, bounde
 The base correlation contract keeps its existing signatures and remains sufficient
 without a previous key secret. Its concrete implementation must establish the first
 window TTL atomically and must not refresh that TTL on later writes. During key-secret
-rotation, the host store must implement <code>CorrelationRotationStoreInterface</code>:
-the current generation is writable, the previous generation is read-only, and a
-current-secret bridge deduplicates subjects while its TTL is capped by the previous
-remaining TTL. A missing capability or corrupt previous state fails explicitly rather
-than silently resetting spray enforcement. The core package does not include a Redis
-or other concrete correlation adapter.
+rotation, the host store must implement <code>BoundedCorrelationRotationStoreInterface</code>
+and the WATCH rotation capability: the current generation is writable, the previous
+generation is read-only, and a current-secret bridge deduplicates subjects while its TTL is
+capped by the previous remaining TTL. Bounded device-cap windows are 900 seconds with caps
+of 10 account members and 50 IP-scope members; spray, churn, and dilution are capped at 5,
+3, and 6. Duplicates are admitted without mutation, while new members at a cap are rejected
+without set growth. A missing capability or corrupt previous state fails explicitly rather
+than silently resetting enforcement. Store keys and members are opaque keyed-HMAC references;
+raw account, IP, correlation, and fingerprint values never cross the boundary. The core
+package does not include a Redis or other concrete correlation adapter.
 
 ## Capability Map
 

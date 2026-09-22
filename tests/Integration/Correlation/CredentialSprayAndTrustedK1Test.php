@@ -9,6 +9,7 @@ use Maatify\RateLimiter\Config\ApiHeavyProtectionPolicy;
 use Maatify\RateLimiter\Config\LoginProtectionPolicy;
 use Maatify\RateLimiter\Config\OtpProtectionPolicy;
 use Maatify\RateLimiter\Config\BlockPolicyInterface;
+use Maatify\RateLimiter\DTO\BoundedDistinctResultDTO;
 use Maatify\RateLimiter\DTO\DeviceIdentityDTO;
 use Maatify\RateLimiter\DTO\PolicyThresholdsDTO;
 use Maatify\RateLimiter\DTO\RateLimitContextDTO;
@@ -61,6 +62,60 @@ final class CredentialSprayAndTrustedK1Test extends TestCase
         self::assertSame(
             2,
             $this->store->checkBlock($this->key('login_protection', 'k1', '198.51.100.60'))?->level,
+        );
+    }
+
+    public function testCredentialSprayRemainsBoundedAfterTheFifthSubjectAndTrustedFollowUp(): void
+    {
+        $pipeline = $this->createPipeline();
+        $policy = new LoginProtectionPolicy();
+        $ip = '198.51.100.59';
+
+        for ($index = 1; $index <= 5; $index++) {
+            $result = $pipeline->process(
+                $policy,
+                new RateLimitContextDTO($ip, 'Mozilla/5.0 Chrome/123', "bounded-subject-{$index}"),
+                RateLimitCommand::checkOnly('login_protection'),
+                $this->device(),
+            );
+
+            if ($index < 5) {
+                self::assertSame(RateLimitResultDTO::DECISION_ALLOW, $result->decision);
+            } else {
+                self::assertSame(RateLimitResultDTO::DECISION_HARD_BLOCK, $result->decision);
+                self::assertSame(2, $result->blockLevel);
+            }
+        }
+
+        $sprayScope = 'credential_spray:' . $this->key('login_protection', 'k1', $ip);
+        self::assertSame(5, $this->correlationStore->distinctCount($sprayScope));
+
+        $trustedFollowUp = $pipeline->process(
+            $policy,
+            new RateLimitContextDTO($ip, 'Mozilla/5.0 Chrome/123', 'bounded-subject-6'),
+            RateLimitCommand::checkOnly('login_protection'),
+            $this->device('stable-fp', true, 'HIGH'),
+        );
+
+        self::assertSame(RateLimitResultDTO::DECISION_ALLOW, $trustedFollowUp->decision);
+        self::assertSame(5, $this->correlationStore->distinctCount($sprayScope));
+        self::assertNotContains(
+            hash_hmac('sha256', 'credential_spray:subject:v1:bounded-subject-6', 'test_secret'),
+            $this->correlationStore->distinctItems($sprayScope),
+        );
+
+        $untrustedFollowUp = $pipeline->process(
+            $policy,
+            new RateLimitContextDTO($ip, 'Mozilla/5.0 Chrome/123', 'bounded-subject-7'),
+            RateLimitCommand::checkOnly('login_protection'),
+            $this->device(),
+        );
+
+        self::assertSame(RateLimitResultDTO::DECISION_HARD_BLOCK, $untrustedFollowUp->decision);
+        self::assertSame(5, $this->correlationStore->distinctCount($sprayScope));
+        self::assertNotContains(
+            hash_hmac('sha256', 'credential_spray:subject:v1:bounded-subject-7', 'test_secret'),
+            $this->correlationStore->distinctItems($sprayScope),
         );
     }
 
@@ -318,7 +373,7 @@ final class CredentialSprayAndTrustedK1Test extends TestCase
             $policy,
             $trusted,
             RateLimitCommand::checkOnly('login_protection'),
-            $this->device('trusted-fp', true, 'HIGH'),
+            $this->device('stable-fp', true, 'HIGH'),
         );
 
         self::assertSame(RateLimitResultDTO::DECISION_ALLOW, $trustedResult->decision);
@@ -336,7 +391,7 @@ final class CredentialSprayAndTrustedK1Test extends TestCase
             $policy,
             new RateLimitContextDTO('198.51.100.71', 'Mozilla/5.0 Chrome/123', 'trusted-7'),
             RateLimitCommand::checkOnly('login_protection'),
-            $this->device('trusted-fp', true, 'HIGH'),
+            $this->device('stable-fp', true, 'HIGH'),
         );
         self::assertSame(RateLimitResultDTO::DECISION_ALLOW, $trustedFollowUp->decision);
     }
@@ -525,5 +580,16 @@ final class RecordingCorrelationStore extends StatefulInMemoryCorrelationStore
         $this->members[] = $item;
 
         return parent::addDistinct($key, $item, $ttlSeconds);
+    }
+
+    public function addDistinctBounded(
+        string $key,
+        string $item,
+        int $ttlSeconds,
+        int $maxDistinct,
+    ): BoundedDistinctResultDTO {
+        $this->members[] = $item;
+
+        return parent::addDistinctBounded($key, $item, $ttlSeconds, $maxDistinct);
     }
 }

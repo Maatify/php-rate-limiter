@@ -3,7 +3,7 @@
 **Module:** RateLimiter
 **Namespace:** `Maatify\RateLimiter`
 **Status:** LOCKED — Design & Security Contract
-**Spec Version:** `1.5.0`
+**Spec Version:** `1.6.0`
 
 This document defines the **key construction strategy** used by the RateLimiter.
 Keys determine how limits, scores, correlation, and blocks are applied.
@@ -439,6 +439,57 @@ The WATCH operation increments only the current flag and returns current plus ac
 previous count; the previous flag remains read-only. No concrete Redis, Lua, PDO, or
 other backend adapter is part of the core package.
 
+#### 4.3.5 Bounded Correlation and Ephemeral Rotation
+
+The unchanged `CorrelationStoreInterface` remains source-compatible. Bounded device-cap,
+churn, dilution, and credential-spray state use additive capabilities:
+
+```php
+interface BoundedCorrelationStoreInterface extends CorrelationStoreInterface
+{
+    public function addDistinctBounded(
+        string $key,
+        string $item,
+        int $ttlSeconds,
+        int $maxDistinct,
+    ): BoundedDistinctResultDTO;
+}
+
+interface BoundedCorrelationRotationStoreInterface
+    extends BoundedCorrelationStoreInterface, CorrelationRotationStoreInterface
+{
+    public function addDistinctBoundedAcrossRotation(
+        string $currentKey,
+        string $bridgeKey,
+        string $previousKey,
+        string $currentMember,
+        string $previousMember,
+        int $ttlSeconds,
+        int $maxDistinct,
+    ): BoundedDistinctResultDTO;
+}
+```
+
+`BoundedDistinctResultDTO` returns the logical distinct count and whether the observed member
+was accepted. A duplicate is accepted without mutation. A new member is accepted only when
+the logical count is below the cap; a new member at the cap is rejected without growing the
+set. The concrete operation is atomic, uses fixed TTLs without refresh, and fails on invalid
+TTL/cap, missing TTL, malformed over-cap state, or bridge overlap.
+
+The rotation operation writes only current state, reads the previous set read-only, and uses
+current-secret bridge members for new logical members. The bridge TTL is capped by the
+remaining previous TTL. If current and previous physical keys alias, the store deduplicates
+through the previous member without writing an alias or bridge entry. The pipeline supports
+only one current and one previous generation and requires the additive rotation capability;
+current-only fallback is forbidden.
+
+The fixed device-cap contract is 900 seconds, maximum 10 distinct members per account scope
+and 50 per IP scope. Ephemeral overflow is routing state, not a synthetic identity: the
+pipeline keeps real current/previous enforcement keys, removes only K3/K5 scoring writes for
+the overflow request, continues K4/flood handling, and retains bounded churn detection. An
+overflow request may receive the active flood decision, but it cannot persist new K5 score or
+block state. It does not create per-request keys or durable overflow identities.
+
 ### 4.4 Namespacing & Scoping
 
 All keys MUST include:
@@ -645,7 +696,7 @@ Correlation relies on **relationships between keys**, not single counters.
 * Rapid churn of K3 under one K2 → device evasion
 * Same DeviceFP across many K1 prefixes → fingerprint dilution
 
-Credential spray uses `correlationSubject = correlationId ?? accountId`, a fixed 600-second K1 window, and is observed during authentication `checkOnly()` only. A null subject is not observed. The threshold is five distinct subjects; at four subjects the same K1 scope uses the mandatory 1800-second WATCH flag, and a second qualifying observation escalates as if the threshold were met. During outer-secret rotation, the additive rotation capability preserves the previous spray window through current-only bridge members without merging differently-keyed HMAC members directly.
+Credential spray uses `correlationSubject = correlationId ?? accountId`, a fixed 600-second K1 window, and is observed during authentication `checkOnly()` only. A null subject is not observed. The threshold is five distinct subjects; at four subjects the same K1 scope uses the mandatory 1800-second WATCH flag, and a second qualifying observation escalates as if the threshold were met. Distinct state is capped at five and rejected new subjects do not grow the set. During outer-secret rotation, the additive bounded rotation capability preserves the previous spray window through current-only bridge members without merging differently-keyed HMAC members directly.
 
 ---
 
@@ -684,6 +735,14 @@ Required constraints:
     * MUST still honor **active blocks** (see `DEVICE_FINGERPRINT.md` 7.3 and `DECISION_MATRIX.md` 2.1 invariant)
     * escalate correlation signals only
     * continue to accumulate K4 scoring/budget signals
+
+All bounded correlation scopes use purpose/version/environment domain separation and keyed
+HMAC references. Raw account IDs, IP addresses, correlation subjects, and fingerprint hashes
+MUST NOT be stored as keys or members. Device-cap overflow requires
+`BoundedCorrelationStoreInterface`; rotated observations require
+`BoundedCorrelationRotationStoreInterface`. Missing capabilities fail explicitly through the
+package failure semantics. S3-F08 distributed account attack member enumeration and repeated
+occurrence escalation remain outside this work unit and are not implemented here.
 
 This prevents storage exhaustion without providing block evasion.
 

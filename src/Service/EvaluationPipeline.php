@@ -5,7 +5,10 @@ declare(strict_types=1);
 namespace Maatify\RateLimiter\Service;
 
 use Maatify\RateLimiter\Config\BlockPolicyInterface;
+use Maatify\RateLimiter\DTO\BoundedCorrelationObservationDTO;
 use Maatify\RateLimiter\Repository\BudgetSeedStoreInterface;
+use Maatify\RateLimiter\Repository\BoundedCorrelationRotationStoreInterface;
+use Maatify\RateLimiter\Repository\BoundedCorrelationStoreInterface;
 use Maatify\RateLimiter\Repository\CorrelationStoreInterface;
 use Maatify\RateLimiter\Repository\CorrelationRotationStoreInterface;
 use Maatify\RateLimiter\Repository\RateLimitStoreInterface;
@@ -98,33 +101,35 @@ class EvaluationPipeline
         // 3. Load budget state for later candidate evaluation. Budget loading is
         // deliberately non-enforcing; normal evaluation must always run first.
 
-        // 4. Resolve Effective Keys (Ephemeral Logic) for Scoring/Updates
-        $effectiveHash = $device->fingerprintHash;
-        if ($device->fingerprintHash) {
-            // resolveKey returns string (real or ephemeral key)
-            $effectiveHash = $this->ephemeralBucket->resolveKey($context, $device->fingerprintHash);
-        }
-        $effectiveKeysV2 = $this->buildKeys($context, $device->normalizedUa, $effectiveHash, $policy->getName(), $this->secret);
-        $effectiveKeysV1 = $this->hasPreviousGeneration($device)
-            ? $this->buildKeys(
-                $context,
-                $device->normalizedUa,
-                $this->previousFingerprintHash($device),
+        // 4. Observe bounded device caps once, using only opaque package-derived
+        // current/previous references. Ephemeral mode is a routing decision;
+        // it never creates a synthetic persistent fingerprint key.
+        $ephemeralState = null;
+        if ($device->fingerprintHash !== null) {
+            $ipObservation = $this->buildCorrelationObservation(
                 $policy->getName(),
-                $this->previousSecret ?? $this->secret,
-            )
-            : [];
-
-        // Check state just for knowing if it IS ephemeral (for key filtering)
-        // Since resolveKey already did the counting/check, we can infer from the key string or call check() to get DTO.
-        // Calling check() is idempotent for sets.
-        $ephemeralState = $device->fingerprintHash
-            ? $this->ephemeralBucket->check($context, $device->fingerprintHash)
-            : null;
-        $isEphemeral = false;
-        if ($ephemeralState !== null) {
-            $isEphemeral = $ephemeralState->isEphemeral;
+                'device_cap_ip',
+                $realKeysV2['k1'] ?? null,
+                $device->fingerprintHash,
+                $realKeysV1['k1'] ?? null,
+                $this->previousFingerprintHash($device),
+            );
+            $accountObservation = $context->accountId !== null
+                ? $this->buildCorrelationObservation(
+                    $policy->getName(),
+                    'device_cap_account',
+                    $this->accountAnchor($realKeysV2),
+                    $device->fingerprintHash,
+                    $this->accountAnchor($realKeysV1),
+                    $this->previousFingerprintHash($device),
+                )
+                : null;
+            $ephemeralState = $this->ephemeralBucket->check($ipObservation, $accountObservation);
         }
+        $isEphemeral = $ephemeralState === null ? false : $ephemeralState->isEphemeral;
+
+        $effectiveKeysV2 = $realKeysV2;
+        $effectiveKeysV1 = $realKeysV1;
 
         if ($isEphemeral) {
             unset($effectiveKeysV2['k3'], $effectiveKeysV2['k5']);
@@ -140,7 +145,13 @@ class EvaluationPipeline
         $candidates = $this->checkThresholds($policy, $rawScores, $decayedScores, $effectiveKeysV2, $device);
 
         // 7. Check Correlation Rules
-        if ($candidate = $this->checkCorrelationRules($context, $device, $policy->getName(), $isEphemeral)) {
+        if ($candidate = $this->checkCorrelationRules(
+            $device,
+            $policy->getName(),
+            $isEphemeral,
+            $realKeysV2,
+            $realKeysV1,
+        )) {
             $candidates[] = $candidate;
         }
 
@@ -160,41 +171,40 @@ class EvaluationPipeline
         }
 
         // 8. New Device Flood (5.4)
-        if ($ephemeralState && $context->accountId && ! $this->isApiHeavyPolicy($policy->getName())) {
-            if ($ephemeralState->accountDeviceCount >= 6) {
-                $floodKey = $this->auxiliaryAccountKey(
-                    $policy->getName(),
-                    'flood_stage',
-                    $context->accountId,
-                    $this->secret,
-                );
-                $previousFloodKey = $this->previousAuxiliaryAccountKey(
-                    $policy->getName(),
-                    'flood_stage',
-                    $context->accountId,
-                );
-                $isFloodStage = $this->correlationStore->getWatchFlag($floodKey) > 0;
-                if (! $isFloodStage && $previousFloodKey !== null && $previousFloodKey !== $floodKey) {
-                    $isFloodStage = $this->correlationStore->getWatchFlag($previousFloodKey) > 0;
+        if ($ephemeralState !== null && $context->accountId && ! $this->isApiHeavyPolicy($policy->getName())
+            && $ephemeralState->accountDeviceCount >= 6) {
+            $floodKey = $this->auxiliaryAccountKey(
+                $policy->getName(),
+                'flood_stage',
+                $context->accountId,
+                $this->secret,
+            );
+            $previousFloodKey = $this->previousAuxiliaryAccountKey(
+                $policy->getName(),
+                'flood_stage',
+                $context->accountId,
+            );
+            $isFloodStage = $this->correlationStore->getWatchFlag($floodKey) > 0;
+            if (! $isFloodStage && $previousFloodKey !== null && $previousFloodKey !== $floodKey) {
+                $isFloodStage = $this->correlationStore->getWatchFlag($previousFloodKey) > 0;
+            }
+
+            if ($isFloodStage) {
+                $duration = PenaltyLadder::getDuration(2);
+                $persistence = [];
+                if (! $ephemeralState->isEphemeral && $realKeysV2['k5'] !== null) {
+                    $persistence[] = ['key' => $realKeysV2['k5'], 'level' => 2, 'duration' => $duration];
                 }
 
-                if ($isFloodStage) {
-                    $duration = PenaltyLadder::getDuration(2);
-                    $persistence = [];
-                    if ($realKeysV2['k5'] !== null) {
-                        $persistence[] = ['key' => $realKeysV2['k5'], 'level' => 2, 'duration' => $duration];
-                    }
-
-                    $candidates[] = $this->candidate(RateLimitResultDTO::DECISION_HARD_BLOCK, 2, $duration, 'flood', $persistence);
-                } else {
-                    $duration = PenaltyLadder::getDuration(1);
-                    $k4Key = $realKeysV2['k4'];
-                    $persistence = $k4Key !== null
-                        ? [['key' => $k4Key, 'level' => 1, 'duration' => $duration]]
-                        : [];
-                    $this->correlationStore->incrementWatchFlag($floodKey, 900);
-                    $candidates[] = $this->candidate(RateLimitResultDTO::DECISION_SOFT_BLOCK, 1, $duration, 'flood', $persistence);
-                }
+                $candidates[] = $this->candidate(RateLimitResultDTO::DECISION_HARD_BLOCK, 2, $duration, 'flood', $persistence);
+            } else {
+                $duration = PenaltyLadder::getDuration(1);
+                $k4Key = $realKeysV2['k4'];
+                $persistence = $k4Key !== null
+                    ? [['key' => $k4Key, 'level' => 1, 'duration' => $duration]]
+                    : [];
+                $this->correlationStore->incrementWatchFlag($floodKey, 900);
+                $candidates[] = $this->candidate(RateLimitResultDTO::DECISION_SOFT_BLOCK, 1, $duration, 'flood', $persistence);
             }
         }
 
@@ -205,7 +215,16 @@ class EvaluationPipeline
         $budgetSuppressed = false;
         if (! $request->isPreCheck && ($request->isFailure || $policy->getScoreDeltas()->access > 0)) {
             // We write only to V2 (Active Key); V1 stays read-only
-            $updates = $this->processUpdates($policy, $context, $request, $device, $effectiveKeysV2, $effectiveKeysV1, $rawScores);
+            $updates = $this->processUpdates(
+                $policy,
+                $context,
+                $request,
+                $device,
+                $isEphemeral,
+                $effectiveKeysV2,
+                $effectiveKeysV1,
+                $rawScores,
+            );
             $candidates = array_merge($candidates, $updates['candidates']);
             $budgetState = $updates['budgetState'];
             $budgetRequestEligible = $updates['budgetRequestEligible'];
@@ -356,85 +375,277 @@ class EvaluationPipeline
     }
 
     /**
+     * @param array<string, string|null> $keysV2
+     * @param array<string, string|null> $keysV1
      * @return array{decision: string, level: int, retryAfter: int, source: string, persistence: list<array{key: string, level: int, duration: int}>}|null
      */
-    private function checkCorrelationRules(RateLimitContextDTO $context, DeviceIdentityDTO $device, string $policyName, bool $isEphemeral): ?array
-    {
-        $base = "{$policyName}:rate_limiter";
-        $ver = "v2";
-        $env = $this->envScope;
+    private function checkCorrelationRules(
+        DeviceIdentityDTO $device,
+        string $policyName,
+        bool $isEphemeral,
+        array $keysV2,
+        array $keysV1,
+    ): ?array {
+        if ($device->fingerprintHash === null) {
+            return null;
+        }
 
-        $k2 = $this->hashKey("{$base}:k2:{$ver}:{$env}:{$this->getIpPrefix($context->ip)}:{$device->normalizedUa}", $this->secret);
+        $churn = $this->buildCorrelationObservation(
+            $policyName,
+            'churn',
+            $keysV2['k2'] ?? null,
+            $device->fingerprintHash,
+            $keysV1['k2'] ?? null,
+            $this->previousFingerprintHash($device),
+        );
+        $churnCount = $this->addBoundedCorrelation($churn, 600, 3);
+        if ($churnCount >= 3) {
+            return $this->candidate(
+                RateLimitResultDTO::DECISION_HARD_BLOCK,
+                2,
+                60,
+                'correlation',
+                isset($keysV2['k2'])
+                    ? [['key' => $keysV2['k2'], 'level' => 2, 'duration' => 60]]
+                    : [],
+            );
+        }
 
-        if ($device->fingerprintHash) {
-            $count = $this->correlationStore->addDistinct("churn:{$k2}", $device->fingerprintHash, 600);
-            if ($count >= 3) {
+        if ($churnCount === 2) {
+            $watchCount = $this->incrementWatchAcrossRotation(
+                $this->correlationStateKey($policyName, 'churn_watch', $churn->currentKey, $this->secret),
+                $churn->previousKey === null
+                    ? null
+                    : $this->correlationStateKey(
+                        $policyName,
+                        'churn_watch',
+                        $churn->previousKey,
+                        $this->previousSecret ?? $this->secret,
+                    ),
+                1800,
+            );
+            if ($watchCount >= 2) {
                 return $this->candidate(
                     RateLimitResultDTO::DECISION_HARD_BLOCK,
                     2,
                     60,
                     'correlation',
-                    [['key' => $k2, 'level' => 2, 'duration' => 60]],
+                    isset($keysV2['k2'])
+                        ? [['key' => $keysV2['k2'], 'level' => 2, 'duration' => 60]]
+                        : [],
                 );
             }
         }
-        if ($device->fingerprintHash) {
-            $k3_raw = "dilution:{$device->fingerprintHash}";
-            $count = $this->correlationStore->addDistinct($k3_raw, $context->ip, 600);
 
-            $thresholdMet = false;
-            if ($count >= 6) {
-                $thresholdMet = true;
-            } elseif ($count === 5) {
-                // Dilution N-1 Watch
-                $wKey = "watch_dilution:{$device->fingerprintHash}";
-                $flags = $this->correlationStore->incrementWatchFlag($wKey, 1800);
-                if ($flags >= 2) {
-                    $thresholdMet = true;
-                }
-            }
-
-            if ($thresholdMet) {
-                $targetKey = null;
-                $shouldBlock = false;
-                if ($device->confidence === 'LOW') {
-                    $targetKey = $k2;
-                    $shouldBlock = true;
-                } else {
-                    // Medium+ Confidence requires 2-window confirmation (consecutive 10-minute windows)
-                    // We use a window-based key to track presence
-                    $windowId = (int) floor($this->clock->now()->getTimestamp() / 600);
-                    $prevWindowId = $windowId - 1;
-
-                    $wKey = "dilution_warn:{$device->fingerprintHash}:{$windowId}";
-                    $this->correlationStore->incrementWatchFlag($wKey, 1200); // 20 min retention
-
-                    $prevWKey = "dilution_warn:{$device->fingerprintHash}:{$prevWindowId}";
-                    $prevCount = $this->correlationStore->getWatchFlag($prevWKey);
-
-                    if ($prevCount > 0) {
-                        $targetKey = $this->hashKey("{$base}:k3:{$ver}:{$env}:{$this->getIpPrefix($context->ip)}:{$device->fingerprintHash}", $this->secret);
-                        $shouldBlock = true;
-                    }
-                }
-
-                if ($shouldBlock && $targetKey) {
-                    if ($isEphemeral && strpos($targetKey, ':k3:') !== false) {
-                        $targetKey = $k2;
-                    }
-
-                    return $this->candidate(
-                        RateLimitResultDTO::DECISION_HARD_BLOCK,
-                        2,
-                        60,
-                        'correlation',
-                        [['key' => $targetKey, 'level' => 2, 'duration' => 60]],
-                    );
-                }
-            }
+        // Ephemeral overflow has no durable per-fingerprint dilution state.
+        // Churn above remains available because it is a bounded K2 signal.
+        if ($isEphemeral) {
+            return null;
         }
 
-        return null;
+        $dilution = $this->buildCorrelationObservation(
+            $policyName,
+            'dilution',
+            $device->fingerprintHash,
+            $keysV2['k1'] ?? null,
+            $this->previousFingerprintHash($device),
+            $keysV1['k1'] ?? null,
+        );
+        if ($dilution->currentMember === '') {
+            return null;
+        }
+
+        $dilutionCount = $this->addBoundedCorrelation($dilution, 600, 6);
+        $thresholdMet = $dilutionCount >= 6;
+        if ($dilutionCount === 5) {
+            $watchCount = $this->incrementWatchAcrossRotation(
+                $this->correlationStateKey($policyName, 'dilution_watch', $dilution->currentKey, $this->secret),
+                $dilution->previousKey === null
+                    ? null
+                    : $this->correlationStateKey(
+                        $policyName,
+                        'dilution_watch',
+                        $dilution->previousKey,
+                        $this->previousSecret ?? $this->secret,
+                    ),
+                1800,
+            );
+            $thresholdMet = $watchCount >= 2;
+        }
+
+        if (! $thresholdMet) {
+            return null;
+        }
+
+        if ($device->confidence === 'LOW') {
+            return $this->candidate(
+                RateLimitResultDTO::DECISION_HARD_BLOCK,
+                2,
+                60,
+                'correlation',
+                isset($keysV2['k2'])
+                    ? [['key' => $keysV2['k2'], 'level' => 2, 'duration' => 60]]
+                    : [],
+            );
+        }
+
+        $windowId = (int) floor($this->clock->now()->getTimestamp() / 600);
+        $this->correlationStore->incrementWatchFlag(
+            $this->correlationStateKey($policyName, 'dilution_confirmation', $dilution->currentKey . ':' . $windowId, $this->secret),
+            1200,
+        );
+        $previousWindowId = $windowId - 1;
+        $previousWindowCount = $this->correlationStore->getWatchFlag(
+            $this->correlationStateKey(
+                $policyName,
+                'dilution_confirmation',
+                $dilution->currentKey . ':' . $previousWindowId,
+                $this->secret,
+            ),
+        );
+        if ($dilution->previousKey !== null) {
+            $previousWindowCount = max(
+                $previousWindowCount,
+                $this->correlationStore->getWatchFlag(
+                    $this->correlationStateKey(
+                        $policyName,
+                        'dilution_confirmation',
+                        $dilution->previousKey . ':' . $previousWindowId,
+                        $this->previousSecret ?? $this->secret,
+                    ),
+                ),
+            );
+        }
+
+        if ($previousWindowCount === 0 || $keysV2['k3'] === null) {
+            return null;
+        }
+
+        return $this->candidate(
+            RateLimitResultDTO::DECISION_HARD_BLOCK,
+            2,
+            60,
+            'correlation',
+            [['key' => $keysV2['k3'], 'level' => 2, 'duration' => 60]],
+        );
+    }
+
+    private function addBoundedCorrelation(
+        BoundedCorrelationObservationDTO $observation,
+        int $ttlSeconds,
+        int $maxDistinct,
+    ): int {
+        if ($observation->previousKey === null) {
+            if (! $this->correlationStore instanceof BoundedCorrelationStoreInterface) {
+                throw new RateLimiterException(
+                    'Bounded correlation requires the BoundedCorrelationStoreInterface capability.',
+                );
+            }
+
+            $result = $this->correlationStore->addDistinctBounded(
+                $observation->currentKey,
+                $observation->currentMember,
+                $ttlSeconds,
+                $maxDistinct,
+            );
+
+            return BoundedCorrelationResultValidator::count($result, $maxDistinct);
+        }
+
+        if (! $this->correlationStore instanceof BoundedCorrelationRotationStoreInterface) {
+            throw new RateLimiterException(
+                'Bounded correlation rotation requires the BoundedCorrelationRotationStoreInterface capability.',
+            );
+        }
+        if ($observation->bridgeKey === null || $observation->previousMember === null) {
+            throw new RateLimiterException('Malformed bounded correlation observation rotation tuple.');
+        }
+
+        $result = $this->correlationStore->addDistinctBoundedAcrossRotation(
+            $observation->currentKey,
+            $observation->bridgeKey,
+            $observation->previousKey,
+            $observation->currentMember,
+            $observation->previousMember,
+            $ttlSeconds,
+            $maxDistinct,
+        );
+
+        return BoundedCorrelationResultValidator::count($result, $maxDistinct);
+    }
+
+    private function incrementWatchAcrossRotation(
+        string $currentKey,
+        ?string $previousKey,
+        int $ttlSeconds,
+    ): int {
+        if ($previousKey === null || $previousKey === $currentKey) {
+            return $this->correlationStore->incrementWatchFlag($currentKey, $ttlSeconds);
+        }
+        if (! $this->correlationStore instanceof CorrelationRotationStoreInterface) {
+            throw new RateLimiterException(
+                'Correlation WATCH rotation requires the CorrelationRotationStoreInterface capability.',
+            );
+        }
+
+        return $this->correlationStore->incrementWatchFlagAcrossRotation($currentKey, $previousKey, $ttlSeconds);
+    }
+
+    private function buildCorrelationObservation(
+        string $policyName,
+        string $purpose,
+        ?string $currentAnchor,
+        ?string $currentMemberSeed,
+        ?string $previousAnchor,
+        ?string $previousMemberSeed,
+    ): BoundedCorrelationObservationDTO {
+        if ($currentAnchor === null || $currentMemberSeed === null) {
+            throw new RateLimiterException("Missing current opaque anchor for {$purpose} correlation state.");
+        }
+
+        $prefix = "{$policyName}:rate_limiter:correlation:{$purpose}:v1:{$this->envScope}";
+        $currentKey = $this->hashKey("{$prefix}:scope:{$currentAnchor}", $this->secret);
+        $currentMember = $this->hashKey("{$prefix}:member:{$currentMemberSeed}", $this->secret);
+
+        $hasPrevious = $previousAnchor !== null
+            && ($this->previousSecret !== null || $previousMemberSeed !== null);
+        if (! $hasPrevious) {
+            return new BoundedCorrelationObservationDTO($currentKey, $currentMember);
+        }
+
+        $previousSecret = $this->previousSecret ?? $this->secret;
+        $previousMemberSeed ??= $currentMemberSeed;
+        $previousKey = $this->hashKey("{$prefix}:scope:{$previousAnchor}", $previousSecret);
+        $previousMember = $this->hashKey("{$prefix}:member:{$previousMemberSeed}", $previousSecret);
+        $bridgeKey = $this->hashKey("{$prefix}:bridge:{$currentKey}", $this->secret);
+
+        return new BoundedCorrelationObservationDTO(
+            $currentKey,
+            $currentMember,
+            $previousKey,
+            $previousMember,
+            $bridgeKey,
+        );
+    }
+
+    /**
+     * @param array<string, string|null> $keys
+     */
+    private function accountAnchor(array $keys): ?string
+    {
+        if (($keys['k4'] ?? null) === null || ($keys['k1'] ?? null) === null) {
+            return null;
+        }
+
+        return $keys['k4'] . ':' . $keys['k1'];
+    }
+
+    private function correlationStateKey(string $policyName, string $purpose, string $anchor, string $secret): string
+    {
+        return $this->hashKey(
+            "{$policyName}:rate_limiter:correlation:{$purpose}:v1:{$this->envScope}:{$anchor}",
+            $secret,
+        );
     }
 
     /**
@@ -459,8 +670,14 @@ class EvaluationPipeline
 
         $scopeKey = 'credential_spray:' . $k1Key;
         if ($this->previousSecret === null) {
+            if (! $this->correlationStore instanceof BoundedCorrelationStoreInterface) {
+                throw new RateLimiterException(
+                    'Credential-spray bounded observation requires the BoundedCorrelationStoreInterface capability.',
+                );
+            }
             $member = $this->hashKey('credential_spray:subject:v1:' . $subject, $this->secret);
-            $count = $this->correlationStore->addDistinct($scopeKey, $member, 600);
+            $result = $this->correlationStore->addDistinctBounded($scopeKey, $member, 600, 5);
+            $count = BoundedCorrelationResultValidator::count($result, 5);
         } else {
             if ($previousK1Key === null) {
                 throw new RateLimiterException(
@@ -468,9 +685,9 @@ class EvaluationPipeline
                 );
             }
 
-            if (! $this->correlationStore instanceof CorrelationRotationStoreInterface) {
+            if (! $this->correlationStore instanceof BoundedCorrelationRotationStoreInterface) {
                 throw new RateLimiterException(
-                    'Credential-spray key rotation requires the CorrelationRotationStoreInterface capability; '
+                    'Credential-spray key rotation requires the BoundedCorrelationRotationStoreInterface capability; '
                     . 'the configured store cannot preserve previous-generation correlation without a silent reset.',
                 );
             }
@@ -480,14 +697,16 @@ class EvaluationPipeline
                 'credential_spray:subject:v1:' . $subject,
                 $this->previousSecret,
             );
-            $count = $this->correlationStore->addDistinctAcrossRotation(
+            $result = $this->correlationStore->addDistinctBoundedAcrossRotation(
                 $scopeKey,
                 'credential_spray:bridge:' . $k1Key,
                 'credential_spray:' . $previousK1Key,
                 $member,
                 $previousMember,
                 600,
+                5,
             );
+            $count = BoundedCorrelationResultValidator::count($result, 5);
         }
 
         if ($this->previousSecret !== null) {
@@ -557,11 +776,12 @@ class EvaluationPipeline
         RateLimitContextDTO $context,
         RateLimitCommand $request,
         DeviceIdentityDTO $device,
+        bool $isEphemeral,
         array $keys,
         array $keysV1,
         array $rawScores,
     ): array {
-        $deltas = $this->calculateDeltas($policy, $context, $device, $request);
+        $deltas = $this->calculateDeltas($policy, $context, $device, $request, $isEphemeral);
 
         $k4Repeated = $policy->getScoreDeltas()->k4_repeated_missing_fp;
         if ($request->isFailure && empty($device->fingerprintHash) && $context->accountId && $k4Repeated > 0) {
@@ -679,7 +899,7 @@ class EvaluationPipeline
             // A policy-owned micro-cap gates known-device failures when
             // configured. A null cap means known-device failures are directly
             // budget-eligible; the engine does not identify policy presets.
-            if ($deltas['k5'] > 0 && $context->accountId && $device->fingerprintHash
+            if (! $isEphemeral && $deltas['k5'] > 0 && $context->accountId && $device->fingerprintHash
                 && $this->isKnownForAccount($device)) {
                 if ($config->known_device_micro_cap === null) {
                     $shouldCount = true;
@@ -1323,8 +1543,13 @@ class EvaluationPipeline
     /**
      * @return array{k1: int, k2: int, k3: int, k4: int, k5: int}
      */
-    private function calculateDeltas(BlockPolicyInterface $policy, RateLimitContextDTO $context, DeviceIdentityDTO $device, RateLimitCommand $request): array
-    {
+    private function calculateDeltas(
+        BlockPolicyInterface $policy,
+        RateLimitContextDTO $context,
+        DeviceIdentityDTO $device,
+        RateLimitCommand $request,
+        bool $isEphemeral,
+    ): array {
         $deltasDto = $policy->getScoreDeltas();
         // Fix Error 3: Initialize with stable shape
         $result = ['k1' => 0, 'k2' => 0, 'k3' => 0, 'k4' => 0, 'k5' => 0];
@@ -1351,7 +1576,13 @@ class EvaluationPipeline
                 // classification through their K4/K5 failure deltas. API
                 // Heavy keeps its existing access/spray behavior because it
                 // has no authentication failure deltas.
-                if ($this->isKnownForAccount($device)) {
+                if ($isEphemeral && ! $this->isApiHeavyPolicy($policy->getName()) && $deltasDto->k4_failure > 0) {
+                    // An ephemeral overflow fingerprint has been rejected by
+                    // the bounded device cap. Keep the authentication failure
+                    // on the account path without creating any K5 identity or
+                    // known-device micro-cap state.
+                    $result['k4'] = $deltasDto->k4_failure;
+                } elseif ($this->isKnownForAccount($device)) {
                     if ($deltasDto->k5_failure > 0) {
                         $result['k5'] = $deltasDto->k5_failure;
                     }

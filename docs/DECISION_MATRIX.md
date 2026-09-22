@@ -4,7 +4,7 @@
 **Namespace:** `Maatify\RateLimiter`
 **Status:** LOCKED — Behavioral Contract
 **Scope:** Login, OTP, API Heavy Endpoints
-**Spec Version:** `1.6.0`
+**Spec Version:** `1.7.0`
 
 This document defines the **deterministic decision rules** used by the Rate Limiter.
 It is a **behavioral contract**, not explanatory documentation.
@@ -500,6 +500,15 @@ capability, corrupt previous state, or a previous state without a valid TTL is a
 failure through the normal engine failure semantics; it must not become a current-only
 reset.
 
+All distinct correlation observations use the additive bounded capability. The no-rotation
+path requires `BoundedCorrelationStoreInterface`; a current/previous observation requires
+`BoundedCorrelationRotationStoreInterface`. `BoundedDistinctResultDTO` reports the logical
+count and whether the member was accepted. Duplicates are accepted without mutation, while
+new members at the cap are rejected atomically without set growth. Bounded scopes use
+purpose/version/environment-separated keyed-HMAC references; raw account, IP, correlation,
+and fingerprint values never cross the store boundary. Missing capabilities and corrupt
+bounded state fail explicitly rather than falling back to unbounded operations.
+
 This is deterministic and testable (no randomness), and blocks “hover forever at N-1”.
 
 ---
@@ -521,6 +530,10 @@ plus bridge cardinality; the differently-keyed current and previous sets are nev
 unioned or added directly. The current and bridge windows have fixed TTLs, with the
 bridge capped by the previous remaining TTL, and the previous set and WATCH flag are
 never written or extended.
+
+The spray distinct set is capped at five members in its 600-second window. This cap is a
+storage-safety invariant as well as an enforcement threshold; rejected new subjects do not
+create additional members or keys.
 
 ---
 
@@ -564,6 +577,19 @@ If `DeviceConfidence = LOW` (passive-only), the decision MUST downgrade to:
 
 * `HARD_BLOCK (IP + UA)` (K2), not DeviceFP.
 
+Churn uses a bounded 600-second distinct set capped at three members. The third logical
+member produces a K2 hard-block candidate, and the second qualifying N-1 WATCH observation
+also produces the same candidate. During current/previous generation rotation, the previous
+set is read-only and a current-secret bridge is used with its TTL capped by the previous
+remaining TTL.
+
+Fingerprint dilution uses a separate bounded 600-second set capped at six IP-scope members.
+The fifth member creates a 30-minute WATCH; a second qualifying WATCH or the sixth member
+meets the threshold. LOW confidence targets K2 directly. MEDIUM/HIGH confidence requires a
+confirmation observation in a second 10-minute window before K3 enforcement. Ephemeral
+overflow does not create or update per-fingerprint dilution state or confirmation, but the
+bounded churn signal remains active.
+
 ---
 
 ### 5.4 New Device Flood Protection
@@ -571,7 +597,7 @@ If `DeviceConfidence = LOW` (passive-only), the decision MUST downgrade to:
 | Rule                              | Condition                            | Decision                 |
 | --------------------------------- | ------------------------------------ | ------------------------ |
 | Excessive new devices per account | `≥ 6 new DeviceFP within 15 minutes` | SOFT_BLOCK (Account)     |
-| Continued flood after soft block  | Same window                          | HARD_BLOCK (each new K5) |
+| Continued flood after soft block  | Same window                          | HARD_BLOCK (admitted new K5 only) |
 
 New DeviceFP creation MUST be capped to prevent storage exhaustion.
 
@@ -580,6 +606,15 @@ flood hard, and an OTP stage MUST NOT make the first qualifying Login flood hard
 uses current-generation writes and may read one active previous outer-key generation.
 
 **Invariant:** Ephemeral routing MUST NOT erase active blocks (see `DEVICE_FINGERPRINT.md`).
+
+Device-cap observations use a 900-second bounded contract: at most 10 distinct account
+members and 50 distinct IP-scope members. The pipeline performs the observation once using
+the real current/previous generation tuple, routes only rejected new members to ephemeral,
+and never creates a fake K3/K5 key. Flood evaluation begins at the sixth logical account
+member even when that member is admitted; a rejected overflow remains eligible for the active
+flood HARD decision but cannot create or persist new K5 score/block state. S3-F08 distributed
+account attack member enumeration and repeated-occurrence account escalation remain open and
+are not implemented by this matrix revision.
 
 ---
 

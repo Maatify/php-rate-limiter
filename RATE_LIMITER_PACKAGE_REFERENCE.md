@@ -3,7 +3,7 @@
 **Package:** RateLimiter
 **Namespace:** `Maatify\RateLimiter`
 **Status:** LOCKED — Architecture Contract
-**Spec Version:** `1.7.0`
+**Spec Version:** `1.8.0`
 **Location:** `src/`
 
 This document explains **why** the RateLimiter package is designed the way it is.
@@ -80,6 +80,10 @@ This is a read-only, point-in-time operational observation and is not an alterna
 
 Correlation distinct-set members, watch-flag internals, churn sets, and dilution sets are intentionally unsupported reporting dimensions. They are internal bounded enforcement structures without a stable operational reporting semantic. The operational read surface has no mutation/reset/unblock API, global listing, arbitrary key lookup, raw-key exposure, historical audit store, Host joins, cross-package reporting, or correlation-set inspection.
 
+The bounded correlation work does not implement S3-F08 distributed-account member
+enumeration or repeated-occurrence account escalation. That decision remains open and is
+explicitly outside the current package claim.
+
 ## Public Runtime API Inventory
 
 The following inventory describes the current public runtime types. Test and support classes are excluded.
@@ -93,6 +97,8 @@ The following inventory describes the current public runtime types. Test and sup
 | `Maatify\RateLimiter\Repository\BudgetSeedStoreInterface` | Additive capability for atomic budget-epoch seeding across key rotation. |
 | `Maatify\RateLimiter\Repository\CorrelationStoreInterface` | Bounded distinct-count and watch-flag boundary. |
 | `Maatify\RateLimiter\Repository\CorrelationRotationStoreInterface` | Additive capability for atomic credential-spray continuity across key rotation; previous state is read-only. |
+| `Maatify\RateLimiter\Repository\BoundedCorrelationStoreInterface` | Additive bounded distinct operation for device-cap and correlation state; preserves the base contract. |
+| `Maatify\RateLimiter\Repository\BoundedCorrelationRotationStoreInterface` | Additive bounded current/previous-generation distinct operation with a current-only bridge. |
 | `Maatify\RateLimiter\Repository\CircuitBreakerStoreInterface` | Circuit-breaker state persistence boundary. |
 | `Maatify\RateLimiter\Contract\FailureSignalEmitterInterface` | Failure and circuit-breaker signal delivery boundary. |
 | `Maatify\RateLimiter\Service\DeviceIdentityResolverInterface` | Device identity resolution boundary. |
@@ -113,6 +119,7 @@ The following inventory describes the current public runtime types. Test and sup
 | Context and result | `Maatify\RateLimiter\DTO\RateLimitContextDTO`, `Maatify\RateLimiter\DTO\RateLimitResultDTO`, `Maatify\RateLimiter\DTO\RateLimitMetadataDTO`, `Maatify\RateLimiter\DTO\RateLimitContextMetadataDTO` |
 | Identity and policy | `Maatify\RateLimiter\DTO\DeviceIdentityDTO`, `Maatify\RateLimiter\DTO\PolicyThresholdsDTO`, `Maatify\RateLimiter\DTO\ScoreThresholdsDTO`, `Maatify\RateLimiter\DTO\ScoreDeltasDTO`, `Maatify\RateLimiter\DTO\BudgetConfigDTO` |
 | Runtime state | `Maatify\RateLimiter\DTO\BudgetStatusDTO`, `Maatify\RateLimiter\DTO\EphemeralStateDTO`, `Maatify\RateLimiter\DTO\FailureSignalDTO`, `Maatify\RateLimiter\DTO\FailureStateDTO` |
+| Bounded correlation | `Maatify\RateLimiter\DTO\BoundedDistinctResultDTO`, `Maatify\RateLimiter\DTO\BoundedCorrelationObservationDTO` |
 | Store boundary state | `Maatify\RateLimiter\DTO\RateLimitStateDTO`, `Maatify\RateLimiter\DTO\BlockStateDTO`, `Maatify\RateLimiter\DTO\BudgetStateDTO`, `Maatify\RateLimiter\DTO\CircuitBreakerStateDTO` |
 | Operational read | `Maatify\RateLimiter\DTO\RateLimitOperationalKeyStateDTO`, `Maatify\RateLimiter\DTO\RateLimitOperationalScopesDTO`, `Maatify\RateLimiter\DTO\RateLimitOperationalBudgetDTO`, `Maatify\RateLimiter\DTO\RateLimitOperationalSnapshotDTO` |
 
@@ -124,9 +131,9 @@ The following inventory describes the current public runtime types. Test and sup
 | --- | --- | --- |
 | Primary entrypoint | `Maatify\RateLimiter\Service\RateLimiterEngine` | Production implementation of `Maatify\RateLimiter\Service\RateLimiterInterface`; composes identity resolution, evaluation, circuit-breaker, failure, and policy behavior. |
 | Composition services | `Maatify\RateLimiter\Service\EvaluationPipeline`, `Maatify\RateLimiter\Service\CircuitBreaker`, `Maatify\RateLimiter\Service\FailureModeResolver`, `Maatify\RateLimiter\Service\LocalFallbackLimiter` | Public runtime services used to assemble or extend the engine without coupling it to a storage implementation. |
-| Identity services | `Maatify\RateLimiter\Service\DeviceIdentityResolver`, `Maatify\RateLimiter\Service\FingerprintHasher`, `Maatify\RateLimiter\Service\EphemeralBucket` | Default identity hashing, normalization, bounded device handling, and ephemeral-key selection. |
+| Identity services | `Maatify\RateLimiter\Service\DeviceIdentityResolver`, `Maatify\RateLimiter\Service\FingerprintHasher`, `Maatify\RateLimiter\Service\EphemeralBucket` | Default identity hashing, normalization, bounded device-cap admission, and ephemeral routing without synthetic persistent keys. |
 | Operational read | `Maatify\RateLimiter\Service\RateLimitOperationalReader` | Resolves a read-only point-in-time snapshot from a typed context and policy without invoking enforcement or mutation primitives. |
-| Decision services | `Maatify\RateLimiter\Service\AntiEquilibriumGate`, `Maatify\RateLimiter\Service\BudgetTracker`, `Maatify\RateLimiter\Service\DecayCalculator`, `Maatify\RateLimiter\Service\PenaltyLadder` | Publicly typed services for bounded penalty, budget, decay, and escalation orchestration. |
+| Decision services | `Maatify\RateLimiter\Service\AntiEquilibriumGate`, `Maatify\RateLimiter\Service\BoundedCorrelationResultValidator`, `Maatify\RateLimiter\Service\BudgetTracker`, `Maatify\RateLimiter\Service\DecayCalculator`, `Maatify\RateLimiter\Service\PenaltyLadder` | Publicly typed services for bounded result validation, penalty, budget, decay, and escalation orchestration. |
 | Configuration presets | `Maatify\RateLimiter\Config\LoginProtectionPolicy`, `Maatify\RateLimiter\Config\OtpProtectionPolicy`, `Maatify\RateLimiter\Config\ApiHeavyProtectionPolicy` | Production policy definitions selected by the command policy name. |
 | Exception | `Maatify\RateLimiter\Exception\RateLimiterException` | Package-defined invalid-input and configuration exception implementing the package marker interface. |
 
@@ -145,7 +152,9 @@ Concretely:
         → RateLimiterEngine::limit()
         → DeviceIdentityResolver → EvaluationPipeline
         → RateLimitStoreInterface + CorrelationStoreInterface
-          + CorrelationRotationStoreInterface when key-secret rotation is configured
+          + BoundedCorrelationStoreInterface for bounded observations
+          + BoundedCorrelationRotationStoreInterface when a previous generation is present
+          + CorrelationRotationStoreInterface for rotated WATCH state
           + CircuitBreakerStoreInterface + FailureSignalEmitterInterface
         → RateLimitResultDTO and, when applicable, FailureSignalDTO
 
@@ -318,8 +327,9 @@ The public boundaries are placed under their owning responsibility:
 
 - `Config/` owns `BlockPolicyInterface` and the three policy presets.
 - `Repository/` owns `RateLimitStoreInterface`, `BudgetSeedStoreInterface`,
-  `CorrelationStoreInterface`, `CorrelationRotationStoreInterface`, and
-  `CircuitBreakerStoreInterface`.
+  `CorrelationStoreInterface`, `CorrelationRotationStoreInterface`,
+  `BoundedCorrelationStoreInterface`, `BoundedCorrelationRotationStoreInterface`,
+  and `CircuitBreakerStoreInterface`.
 - `Service/` owns `RateLimiterInterface` and `DeviceIdentityResolverInterface`.
 - `Contract/` retains the general host/outbound `FailureSignalEmitterInterface`.
 
@@ -451,7 +461,7 @@ are independent of `previousFingerprintHash`.
 | K3/K5 persistent two-generation rotation         | implemented                                |
 | K5 micro-cap two-generation migration            | implemented                                |
 | Credential-spray outer-secret rotation           | implemented                                |
-| Correlation/ephemeral fingerprint-secret rotation| pending — separate design                 |
+| Correlation/ephemeral fingerprint-secret rotation| implemented                                |
 
 Generation resolution and the K5 micro-cap current/previous rule are owned by
 `docs/KEY_STRATEGY.md` §4.3.3 / §4.5.2.
@@ -476,6 +486,18 @@ spray window. A current-only fallback is forbidden; a missing capability or malf
 previous state fails through the engine's existing failure semantics. The bridge is
 current-secret-only, fixed-TTL, and capped by the previous remaining TTL. The core
 package provides no Redis, Lua, PDO, or other concrete adapter.
+
+Bounded device-cap, churn, dilution, and spray distinct state uses the additive
+`BoundedCorrelationStoreInterface`; a current/previous observation requires
+`BoundedCorrelationRotationStoreInterface`. The operation returns
+`BoundedDistinctResultDTO`, admits duplicates without mutation, and rejects new members at
+the cap without set growth. The 900-second device-cap window is capped at 10 account
+members and 50 IP-scope members; spray, churn, and dilution caps are 5, 3, and 6. Rotation
+writes current state only, reads previous state without mutation, and uses a bridge whose TTL
+cannot exceed the remaining previous TTL. Corrupt or over-cap state and missing capabilities
+fail explicitly. All keys and members are opaque purpose/version/environment-separated HMAC
+references; raw account, IP, correlation, and fingerprint values do not cross the store
+boundary.
 
 ### 4.8 Budget Owner-Safety — Storage Boundaries
 
@@ -521,11 +543,11 @@ atomicity ownership belongs to the concrete Host repository/store implementation
 when its backend requires one.
 
 **Atomicity boundary.** Every operation declared atomic by
-`RateLimitStoreInterface`, `BudgetSeedStoreInterface`, or
-`CorrelationStoreInterface` MUST be atomic inside that concrete implementation.
+`RateLimitStoreInterface`, `BudgetSeedStoreInterface`, `CorrelationStoreInterface`, or a
+bounded correlation capability MUST be atomic inside that concrete implementation.
 This includes counter increments, fixed-TTL behavior, budget initialization and
 increment, budget seeding across rotation, cooldown acquisition, distinct
-correlation updates, and watch-flag increments. Circuit-breaker state persistence
+correlation updates, bounded-cap admission, and watch-flag increments. Circuit-breaker state persistence
 must likewise preserve the state primitive promised by its store implementation.
 
 There is no package-level distributed transaction spanning the rate-limit store,

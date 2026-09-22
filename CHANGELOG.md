@@ -8,6 +8,22 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Changed
+- Follow-up hardening for WU-S3-04: New Device Flood now evaluates from the sixth
+  admitted/account-scope observation through the rejected overflow path, while only
+  admitted devices may persist K5 state. All bounded distinct-store results are validated
+  centrally before classification; malformed counts or rejected-before-cap results fail
+  explicitly with a package-owned exception.
+- Completed WU-S3-04 bounded ephemeral and fingerprint-correlation hardening. The additive
+  `BoundedCorrelationStoreInterface` and `BoundedCorrelationRotationStoreInterface` now
+  provide atomic fixed-TTL distinct admission with `BoundedDistinctResultDTO`; device-cap,
+  churn, dilution, and credential-spray scopes use opaque domain-separated HMAC references
+  and explicit caps. Current/previous generation observations use read-only previous state
+  and a TTL-capped current bridge. Ephemeral overflow performs one real-key observation,
+  never creates a fake K3/K5 identity, preserves active-block checks and K4/flood handling,
+  and suppresses per-fingerprint dilution state while retaining bounded churn. S3-F08
+  distributed-account member enumeration remains outside scope and unimplemented. Version
+  transitions: `DEVICE_FINGERPRINT.md` `1.2.0` → `1.3.0`, `KEY_STRATEGY.md` `1.5.0` → `1.6.0`,
+  `DECISION_MATRIX.md` `1.6.0` → `1.7.0`, and package reference `1.7.0` → `1.8.0`.
 - Isolated account/policy auxiliary state for repeated missing fingerprints, Anti-Equilibrium,
   and New Device Flood with the locked policy/environment/version HMAC namespace. Current
   generation is writable, previous outer-key state is read-only, raw AccountID no longer
