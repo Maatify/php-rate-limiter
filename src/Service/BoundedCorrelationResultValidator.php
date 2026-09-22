@@ -72,14 +72,31 @@ final class BoundedCorrelationResultValidator
             throw new RateLimiterException('Bounded correlation snapshot members must be unique.');
         }
 
-        if ($result->added && $currentMember !== null && ! in_array($currentMember, $result->members, true)) {
-            throw new RateLimiterException('Bounded correlation snapshot omitted its admitted member.');
+        $currentRepresented = $currentMember !== null && in_array($currentMember, $result->members, true);
+        $previousRepresented = $previousMember !== null && in_array($previousMember, $result->members, true);
+        $sameLogicalMember = $currentMember !== null
+            && $previousMember !== null
+            && $currentMember === $previousMember;
+
+        if (! $result->accepted && ($currentRepresented || $previousRepresented)) {
+            throw new RateLimiterException('Rejected bounded correlation snapshot represented its observed member.');
         }
 
-        $knownCurrent = $currentMember !== null && in_array($currentMember, $result->members, true);
-        $knownPrevious = $previousMember !== null && in_array($previousMember, $result->members, true);
-        if ($result->accepted && ! $result->added && $currentMember !== null && ! $knownCurrent && ! $knownPrevious) {
-            throw new RateLimiterException('Bounded correlation snapshot omitted its known member.');
+        if ($result->added) {
+            if (! $currentRepresented) {
+                throw new RateLimiterException('Bounded correlation snapshot omitted its admitted member.');
+            }
+            if ($previousRepresented && ! $sameLogicalMember) {
+                throw new RateLimiterException('Added bounded correlation snapshot double-represented its member.');
+            }
+        }
+
+        if ($result->accepted && ! $result->added && $currentMember !== null) {
+            $representedOnce = $currentRepresented || $previousRepresented;
+            $representedTwice = $currentRepresented && $previousRepresented && ! $sameLogicalMember;
+            if (! $representedOnce || $representedTwice) {
+                throw new RateLimiterException('Known bounded correlation snapshot has invalid logical membership.');
+            }
         }
 
         return $result;

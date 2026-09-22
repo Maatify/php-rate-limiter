@@ -450,18 +450,22 @@ class EvaluationPipeline
         $persistence = [];
         $duration = PenaltyLadder::getDuration(2);
 
-        // The bounded snapshot is the complete involved set. It is safe to
-        // persist it on each qualifying request because it contains at most
-        // four opaque K5 enforcement keys; no unbounded enumeration occurs.
-        foreach ($snapshot->members as $member) {
-            $persistence[] = ['key' => $member, 'level' => 2, 'duration' => $duration];
+        // Persist the complete involved snapshot only for the first qualifying
+        // occurrence in this logical device window. Later qualifications must
+        // not refresh historical K5 TTLs.
+        if ($occurrenceSnapshot->added) {
+            foreach ($snapshot->members as $member) {
+                $persistence[] = ['key' => $member, 'level' => 2, 'duration' => $duration];
+            }
         }
 
-        // A current admitted member may be represented by a previous member
-        // during rotation. Keep the current enforcement alias useful too,
-        // except for a rejected Ephemeral overflow which has no new K5 state.
-        if ($snapshot->accepted && ! $isEphemeral
-            && ! in_array($keysV2['k5'], $snapshot->members, true)) {
+        // A current member may be absent from the bounded distributed set
+        // after its cap is reached, or may be represented by a previous
+        // generation member during rotation. On the first qualification the
+        // complete snapshot already covers represented members; on a later
+        // qualification only the current non-ephemeral K5 is refreshed.
+        if (! $isEphemeral
+            && (! $occurrenceSnapshot->added || ! in_array($keysV2['k5'], $snapshot->members, true))) {
             $persistence[] = ['key' => $keysV2['k5'], 'level' => 2, 'duration' => $duration];
         }
 

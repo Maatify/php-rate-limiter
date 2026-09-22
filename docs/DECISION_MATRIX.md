@@ -569,8 +569,12 @@ Operational contract:
 * The device window is a 600-second fixed-TTL bounded set capped at four logical K5 members.
 * Three members create a 30-minute account watch marker. The second qualifying three-member
   observation is equivalent to the threshold; the fourth member meets it directly.
-* The qualifying snapshot blocks every member in its complete bounded set at HARD L2. It does
-  not block K4 on the first or second occurrence.
+* On the first qualification of a logical device window (`occurrenceSnapshot.added = true`),
+  persist every member in the complete bounded snapshot at HARD L2. A later qualification in
+  that same device window must not refresh historical K5 TTLs: persist only the current
+  non-ephemeral K5; an Ephemeral request creates no new K5 persistence. The distributed set
+  remains capped at four members.
+* These involved-device decisions do not block K4 on the first or second occurrence.
 * A qualifying device snapshot contributes exactly one account-only occurrence member derived
   from that snapshot's fixed expiry. The occurrence window is 86400 seconds and is capped at
   three members; rejected overflow does not create a fourth member.

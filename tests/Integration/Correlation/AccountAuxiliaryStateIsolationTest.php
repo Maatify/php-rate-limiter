@@ -266,7 +266,7 @@ final class AccountAuxiliaryStateIsolationTest extends TestCase
             RateLimitResultDTO::DECISION_HARD_BLOCK,
             $this->floodRequest($pipeline, $login, $accountId, 'login-device-6')->decision,
         );
-        self::assertNull($this->store->checkBlock($this->deviceKey($login->getName(), $accountId, 'login-device-6')));
+        self::assertSame(2, $this->store->checkBlock($this->deviceKey($login->getName(), $accountId, 'login-device-6'))?->level);
         $this->assertSame(
             RateLimitResultDTO::DECISION_HARD_BLOCK,
             $this->floodRequest($pipeline, $login, $accountId, 'login-device-7')->decision,

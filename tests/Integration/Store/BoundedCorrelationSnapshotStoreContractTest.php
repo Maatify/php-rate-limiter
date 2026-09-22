@@ -151,6 +151,52 @@ final class BoundedCorrelationSnapshotStoreContractTest extends TestCase
         BoundedCorrelationResultValidator::snapshot($snapshot, 4, 1000, 600, 'current');
     }
 
+    public function testRejectedRotatedSnapshotCannotRepresentPreviousMember(): void
+    {
+        $this->expectException(RateLimiterException::class);
+        BoundedCorrelationResultValidator::snapshot(
+            new BoundedDistinctSnapshotDTO(4, false, false, ['previous', 'one', 'two', 'three'], 1100),
+            4,
+            1000,
+            600,
+            'current',
+            'previous',
+        );
+    }
+
+    public function testRotatedSnapshotCannotDoubleRepresentDifferentAliases(): void
+    {
+        $this->expectException(RateLimiterException::class);
+        BoundedCorrelationResultValidator::snapshot(
+            new BoundedDistinctSnapshotDTO(2, true, false, ['current', 'previous'], 1100),
+            4,
+            1000,
+            600,
+            'current',
+            'previous',
+        );
+    }
+
+    public function testPreviousOnlyKnownMemberIsValid(): void
+    {
+        $snapshot = new BoundedDistinctSnapshotDTO(1, true, false, ['previous'], 1100);
+
+        self::assertSame(
+            $snapshot,
+            BoundedCorrelationResultValidator::snapshot($snapshot, 4, 1000, 600, 'current', 'previous'),
+        );
+    }
+
+    public function testIdenticalCurrentAndPreviousAliasIsRepresentedOnce(): void
+    {
+        $snapshot = new BoundedDistinctSnapshotDTO(1, true, false, ['same'], 1100);
+
+        self::assertSame(
+            $snapshot,
+            BoundedCorrelationResultValidator::snapshot($snapshot, 4, 1000, 600, 'same', 'same'),
+        );
+    }
+
     /** @return array<string, array{BoundedDistinctSnapshotDTO}> */
     public static function malformedSnapshots(): array
     {
@@ -163,6 +209,7 @@ final class BoundedCorrelationSnapshotStoreContractTest extends TestCase
             'expiry beyond ttl' => [new BoundedDistinctSnapshotDTO(1, true, true, ['one'], 1601)],
             'rejected added' => [new BoundedDistinctSnapshotDTO(4, false, true, ['one', 'two', 'three', 'four'], 1100)],
             'rejected below cap' => [new BoundedDistinctSnapshotDTO(3, false, false, ['one', 'two', 'three'], 1100)],
+            'rejected current member' => [new BoundedDistinctSnapshotDTO(4, false, false, ['current', 'one', 'two', 'three'], 1100)],
             'added not accepted' => [new BoundedDistinctSnapshotDTO(1, false, true, ['one'], 1100)],
             'known member omitted' => [new BoundedDistinctSnapshotDTO(1, true, false, ['other'], 1100)],
         ];

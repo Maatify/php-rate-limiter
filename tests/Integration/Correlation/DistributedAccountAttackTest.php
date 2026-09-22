@@ -76,6 +76,68 @@ final class DistributedAccountAttackTest extends TestCase
         );
     }
 
+    public function testLaterSameWindowQualificationPersistsOnlyCurrentK5AndLeavesHistoryUntouched(): void
+    {
+        $pipeline = $this->pipeline(self::SECRET);
+        $policy = new LoginProtectionPolicy();
+        $account = 'same-window-persistence';
+
+        for ($index = 1; $index <= 4; $index++) {
+            $result = $pipeline->process(
+                $policy,
+                $this->context($account, $index),
+                RateLimitCommand::checkOnly($policy->getName()),
+                $this->device($index),
+            );
+
+            self::assertSame(
+                $index === 4 ? RateLimitResultDTO::DECISION_HARD_BLOCK : RateLimitResultDTO::DECISION_ALLOW,
+                $result->decision,
+            );
+        }
+
+        $scope = $this->distributedDeviceScope($policy->getName(), $account, self::SECRET);
+        $occurrenceScope = $this->occurrenceScope($policy->getName(), $account, self::SECRET);
+        $oldK5 = $this->key($policy->getName(), 'k5', "{$account}:fp-1");
+        $oldExpiry = $this->store->checkBlock($oldK5)?->expiresAt;
+        self::assertNotNull($oldExpiry);
+        self::assertSame(1, $this->correlationStore->distinctCount($occurrenceScope));
+
+        $this->clock->setNow($this->clock->now()->modify('+10 seconds'));
+
+        for ($index = 5; $index <= 10; $index++) {
+            $currentK5 = $this->key($policy->getName(), 'k5', "{$account}:fp-{$index}");
+            $result = $pipeline->process(
+                $policy,
+                $this->context($account, $index),
+                RateLimitCommand::checkOnly($policy->getName()),
+                $this->device($index),
+            );
+
+            self::assertSame(RateLimitResultDTO::DECISION_HARD_BLOCK, $result->decision);
+            self::assertSame(2, $result->blockLevel);
+            self::assertSame(2, $this->store->checkBlock($currentK5)?->level);
+            self::assertSame($oldExpiry, $this->store->checkBlock($oldK5)?->expiresAt);
+            self::assertSame(4, $this->correlationStore->distinctCount($scope));
+            self::assertSame(1, $this->correlationStore->distinctCount($occurrenceScope));
+        }
+
+        $ephemeralK5 = $this->key($policy->getName(), 'k5', "{$account}:fp-11");
+        $ephemeral = $pipeline->process(
+            $policy,
+            $this->context($account, 11),
+            RateLimitCommand::checkOnly($policy->getName()),
+            $this->device(11),
+        );
+
+        self::assertSame(RateLimitResultDTO::DECISION_HARD_BLOCK, $ephemeral->decision);
+        self::assertSame(2, $ephemeral->blockLevel);
+        self::assertNull($this->store->checkBlock($ephemeralK5));
+        self::assertSame(4, $this->correlationStore->distinctCount($scope));
+        $oldBlockAfterEphemeral = $this->store->checkBlock($oldK5);
+        self::assertSame($oldExpiry, $oldBlockAfterEphemeral->expiresAt);
+    }
+
     public function testThreeDevicesSetOneWatchAndSecondQualifyingObservationReachesHardL2(): void
     {
         $pipeline = $this->pipeline(self::SECRET);
@@ -104,6 +166,13 @@ final class DistributedAccountAttackTest extends TestCase
         self::assertSame(RateLimitResultDTO::DECISION_HARD_BLOCK, $result->decision);
         self::assertSame(2, $result->blockLevel);
         self::assertSame(2, $this->correlationStore->watchValue($watch));
+
+        foreach (range(1, 3) as $index) {
+            self::assertSame(
+                2,
+                $this->store->checkBlock($this->key('login_protection', 'k5', "watch-account:fp-{$index}"))?->level,
+            );
+        }
     }
 
     public function testTheSameDistributedWindowCreatesExactlyOneOccurrenceAndFifthMemberDoesNotGrowIt(): void
@@ -132,7 +201,7 @@ final class DistributedAccountAttackTest extends TestCase
         self::assertSame(RateLimitResultDTO::DECISION_HARD_BLOCK, $fifth->decision);
         self::assertSame(4, $this->correlationStore->distinctCount($this->distributedDeviceScope('login_protection', 'one-occurrence', self::SECRET)));
         self::assertSame(1, $this->correlationStore->distinctCount($occurrenceScope));
-        self::assertNull($this->store->checkBlock($this->key('login_protection', 'k5', 'one-occurrence:fp-5')));
+        self::assertSame(2, $this->store->checkBlock($this->key('login_protection', 'k5', 'one-occurrence:fp-5'))?->level);
     }
 
     public function testThirdSeparateWindowHardBlocksK4AtL4AndRetainsK5L2(): void
@@ -140,6 +209,69 @@ final class DistributedAccountAttackTest extends TestCase
         $pipeline = $this->pipeline(self::SECRET);
         $policy = new OtpProtectionPolicy();
         $account = 'three-occurrences';
+        $k4 = $this->key($policy->getName(), 'k4', $account);
+
+        for ($window = 1; $window <= 3; $window++) {
+            $qualification = null;
+            for ($index = 1; $index <= 4; $index++) {
+                $qualification = $pipeline->process(
+                    $policy,
+                    $this->context($account, ($window * 10) + $index),
+                    RateLimitCommand::checkOnly($policy->getName()),
+                    $this->device(($window * 10) + $index),
+                );
+            }
+
+            self::assertSame(RateLimitResultDTO::DECISION_HARD_BLOCK, $qualification->decision);
+            self::assertSame($window < 3 ? 2 : 4, $qualification->blockLevel);
+            self::assertSame(
+                $window,
+                $this->correlationStore->distinctCount($this->occurrenceScope($policy->getName(), $account, self::SECRET)),
+            );
+            if ($window < 3) {
+                $k4Block = $this->store->checkBlock($k4);
+                if ($k4Block !== null) {
+                    self::assertLessThan(2, $k4Block->level);
+                }
+            }
+
+            if ($window < 3) {
+                $this->clock->setNow($this->clock->now()->modify('+601 seconds'));
+            }
+        }
+
+        $accountBlock = $this->store->checkBlock($k4);
+        self::assertNotNull($accountBlock);
+        self::assertSame(4, $accountBlock->level);
+        self::assertSame(1800, $accountBlock->expiresAt - $this->clock->now()->getTimestamp());
+        self::assertSame(
+            2,
+            $this->store->checkBlock($this->key($policy->getName(), 'k5', "{$account}:fp-31"))?->level,
+        );
+        self::assertSame(3, $this->correlationStore->distinctCount($this->occurrenceScope($policy->getName(), $account, self::SECRET)));
+
+        $this->clock->setNow($this->clock->now()->modify('+1801 seconds'));
+        for ($index = 41; $index <= 44; $index++) {
+            $result = $pipeline->process(
+                $policy,
+                $this->context($account, $index),
+                RateLimitCommand::checkOnly($policy->getName()),
+                $this->device($index),
+            );
+
+            if ($index === 44) {
+                self::assertSame(RateLimitResultDTO::DECISION_HARD_BLOCK, $result->decision);
+                self::assertSame(4, $result->blockLevel);
+            }
+        }
+        self::assertSame(3, $this->correlationStore->distinctCount($this->occurrenceScope($policy->getName(), $account, self::SECRET)));
+    }
+
+    public function testOccurrenceHistoryResetsAfterItsFixedTwentyFourHourWindow(): void
+    {
+        $pipeline = $this->pipeline(self::SECRET);
+        $policy = new OtpProtectionPolicy();
+        $account = 'expired-occurrence-history';
 
         for ($window = 1; $window <= 3; $window++) {
             for ($index = 1; $index <= 4; $index++) {
@@ -156,16 +288,27 @@ final class DistributedAccountAttackTest extends TestCase
             }
         }
 
-        $k4 = $this->key($policy->getName(), 'k4', $account);
-        $accountBlock = $this->store->checkBlock($k4);
-        self::assertNotNull($accountBlock);
-        self::assertSame(4, $accountBlock->level);
-        self::assertSame(1800, $accountBlock->expiresAt - $this->clock->now()->getTimestamp());
-        self::assertSame(
-            2,
-            $this->store->checkBlock($this->key($policy->getName(), 'k5', "{$account}:fp-31"))?->level,
-        );
-        self::assertSame(3, $this->correlationStore->distinctCount($this->occurrenceScope($policy->getName(), $account, self::SECRET)));
+        $occurrenceScope = $this->occurrenceScope($policy->getName(), $account, self::SECRET);
+        self::assertSame(3, $this->correlationStore->distinctCount($occurrenceScope));
+        self::assertSame(4, $this->store->checkBlock($this->key($policy->getName(), 'k4', $account))?->level);
+        $this->clock->setNow($this->clock->now()->modify('+86401 seconds'));
+
+        for ($index = 41; $index <= 44; $index++) {
+            $result = $pipeline->process(
+                $policy,
+                $this->context($account, $index),
+                RateLimitCommand::checkOnly($policy->getName()),
+                $this->device($index),
+            );
+
+            if ($index === 44) {
+                self::assertSame(RateLimitResultDTO::DECISION_HARD_BLOCK, $result->decision);
+                self::assertSame(2, $result->blockLevel);
+            }
+        }
+
+        self::assertSame(1, $this->correlationStore->distinctCount($occurrenceScope));
+        self::assertNull($this->store->checkBlock($this->key($policy->getName(), 'k4', $account)));
     }
 
     #[DataProvider('policies')]
@@ -315,7 +458,56 @@ final class DistributedAccountAttackTest extends TestCase
         if ($shape === 'both') {
             self::assertNull($this->store->checkBlock($this->key($policy->getName(), 'k5', "{$account}:old-fp-3", $currentSecret)));
             self::assertNull($this->store->checkBlock($this->key($policy->getName(), 'k5', "{$account}:new-fp-3", $oldSecret)));
+            self::assertSame(1, $this->correlationStore->distinctCount($this->occurrenceScope($policy->getName(), $account, $currentSecret)));
+            self::assertSame(0, $this->correlationStore->distinctCount($this->occurrenceScope($policy->getName(), $account, $oldSecret)));
         }
+
+        if ($shape === 'fingerprint-only') {
+            self::assertSame(1, $this->correlationStore->distinctCount($this->occurrenceScope($policy->getName(), $account, $activeSecret)));
+            self::assertSame(0, $this->correlationStore->distinctCount($this->occurrenceScope($policy->getName(), $account, $currentSecret)));
+        }
+    }
+
+    public function testOuterRotationKeepsOccurrenceHistoryReadOnlyAndPersistsOnlyCurrentK5Later(): void
+    {
+        $policy = new LoginProtectionPolicy();
+        $account = 'outer-occurrence-rotation';
+        $oldSecret = 'old_secret';
+        $oldPipeline = $this->pipeline($oldSecret);
+
+        for ($index = 1; $index <= 4; $index++) {
+            $oldPipeline->process(
+                $policy,
+                $this->context($account, $index),
+                RateLimitCommand::checkOnly($policy->getName()),
+                $this->device($index),
+            );
+        }
+
+        $oldScope = $this->occurrenceScope($policy->getName(), $account, $oldSecret);
+        $oldItems = $this->correlationStore->distinctItems($oldScope);
+        $oldExpiry = $this->correlationStore->distinctExpiresAt($oldScope);
+        self::assertCount(1, $oldItems);
+
+        $this->clock->setNow($this->clock->now()->modify('+10 seconds'));
+        $currentPipeline = $this->pipeline(self::SECRET, $oldSecret);
+        $result = $currentPipeline->process(
+            $policy,
+            $this->context($account, 5),
+            RateLimitCommand::checkOnly($policy->getName()),
+            $this->device(5),
+        );
+
+        self::assertSame(RateLimitResultDTO::DECISION_HARD_BLOCK, $result->decision);
+        self::assertSame(2, $result->blockLevel);
+        self::assertSame($oldItems, $this->correlationStore->distinctItems($oldScope));
+        self::assertSame($oldExpiry, $this->correlationStore->distinctExpiresAt($oldScope));
+        self::assertSame(1, $this->correlationStore->distinctCount($oldScope));
+        self::assertSame(
+            2,
+            $this->store->checkBlock($this->key($policy->getName(), 'k5', "{$account}:fp-5", self::SECRET))?->level,
+        );
+        self::assertSame(0, $this->correlationStore->distinctCount($this->occurrenceScope($policy->getName(), $account, self::SECRET)));
     }
 
     /** @return iterable<string, array{string}> */
