@@ -164,6 +164,19 @@ final class BoundedCorrelationSnapshotStoreContractTest extends TestCase
         );
     }
 
+    public function testRejectedRotatedSnapshotCannotRepresentCurrentAndPreviousAliasesTogether(): void
+    {
+        $this->expectException(RateLimiterException::class);
+        BoundedCorrelationResultValidator::snapshot(
+            new BoundedDistinctSnapshotDTO(4, false, false, ['current', 'previous', 'one', 'two'], 1100),
+            4,
+            1000,
+            600,
+            'current',
+            'previous',
+        );
+    }
+
     public function testRotatedSnapshotCannotDoubleRepresentDifferentAliases(): void
     {
         $this->expectException(RateLimiterException::class);

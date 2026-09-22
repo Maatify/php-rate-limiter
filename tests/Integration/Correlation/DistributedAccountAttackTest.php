@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace Maatify\RateLimiter\Tests\Integration\Correlation;
 
 use Maatify\RateLimiter\Command\RateLimitCommand;
+use Maatify\RateLimiter\Config\ApiHeavyProtectionPolicy;
 use Maatify\RateLimiter\Config\LoginProtectionPolicy;
 use Maatify\RateLimiter\Config\OtpProtectionPolicy;
 use Maatify\RateLimiter\DTO\BlockStateDTO;
@@ -175,6 +176,67 @@ final class DistributedAccountAttackTest extends TestCase
         }
     }
 
+    #[DataProvider('rotationShapes')]
+    public function testWatchRotationKeepsPreviousNamespaceReadOnlyAndDoesNotDoubleCount(string $shape): void
+    {
+        $policy = new LoginProtectionPolicy();
+        $account = "watch-rotation-{$shape}";
+        $oldSecret = 'old_secret';
+        $currentSecret = $shape === 'fingerprint-only' ? $oldSecret : 'new_secret';
+        $previousOuter = $shape === 'fingerprint-only' ? null : $oldSecret;
+        $oldPipeline = $this->pipeline($oldSecret);
+
+        for ($index = 1; $index <= 3; $index++) {
+            $oldFingerprint = in_array($shape, ['fingerprint-only', 'both'], true)
+                ? "old-fp-{$index}"
+                : "fp-{$index}";
+            $result = $oldPipeline->process(
+                $policy,
+                $this->context($account, $index),
+                RateLimitCommand::checkOnly($policy->getName()),
+                $this->deviceWithFingerprint($oldFingerprint, null, $index),
+            );
+            self::assertSame(RateLimitResultDTO::DECISION_ALLOW, $result->decision, $shape);
+        }
+
+        $previousWatch = $this->distributedWatch($policy->getName(), $account, $oldSecret);
+        $previousWatchExpiry = $this->correlationStore->watchExpiresAt($previousWatch);
+        self::assertSame(1, $this->correlationStore->watchValue($previousWatch), $shape);
+        self::assertNotNull($previousWatchExpiry);
+
+        $previousScope = $this->distributedDeviceScope($policy->getName(), $account, $oldSecret);
+        $previousItems = $this->correlationStore->distinctItems($previousScope);
+        $previousExpiry = $this->correlationStore->distinctExpiresAt($previousScope);
+        $currentPipeline = $this->pipeline($currentSecret, $previousOuter);
+        $oldFingerprint = in_array($shape, ['fingerprint-only', 'both'], true) ? 'old-fp-1' : 'fp-1';
+        $currentFingerprint = in_array($shape, ['fingerprint-only', 'both'], true) ? 'new-fp-1' : 'fp-1';
+        $previousFingerprint = in_array($shape, ['fingerprint-only', 'both'], true) ? $oldFingerprint : null;
+
+        $result = $currentPipeline->process(
+            $policy,
+            $this->context($account, 1),
+            RateLimitCommand::checkOnly($policy->getName()),
+            $this->deviceWithFingerprint($currentFingerprint, $previousFingerprint, 1),
+        );
+
+        self::assertSame(RateLimitResultDTO::DECISION_HARD_BLOCK, $result->decision, $shape);
+        self::assertSame(2, $result->blockLevel, $shape);
+        $currentWatch = $this->distributedWatch($policy->getName(), $account, $currentSecret);
+        if ($shape === 'fingerprint-only') {
+            self::assertSame(2, $this->correlationStore->watchValue($currentWatch), $shape);
+        } else {
+            self::assertSame(1, $this->correlationStore->watchValue($currentWatch), $shape);
+        }
+        self::assertSame($previousWatchExpiry, $this->correlationStore->watchExpiresAt($previousWatch), $shape);
+        self::assertSame($previousItems, $this->correlationStore->distinctItems($previousScope), $shape);
+        self::assertSame($previousExpiry, $this->correlationStore->distinctExpiresAt($previousScope), $shape);
+        self::assertSame(
+            0,
+            $this->correlationStore->distinctCount($this->distributedDeviceBridge($policy->getName(), $account, $currentSecret)),
+            $shape,
+        );
+    }
+
     public function testTheSameDistributedWindowCreatesExactlyOneOccurrenceAndFifthMemberDoesNotGrowIt(): void
     {
         $pipeline = $this->pipeline(self::SECRET);
@@ -328,7 +390,7 @@ final class DistributedAccountAttackTest extends TestCase
         $scope = $this->distributedDeviceScope($policyName, "{$policyName}-account", self::SECRET);
         self::assertSame(4, $this->correlationStore->distinctCount($scope));
 
-        $api = new \Maatify\RateLimiter\Config\ApiHeavyProtectionPolicy();
+        $api = new ApiHeavyProtectionPolicy();
         $pipeline->process(
             $api,
             $this->context('api-account', 1),
@@ -368,6 +430,157 @@ final class DistributedAccountAttackTest extends TestCase
         );
 
         self::assertSame($before, $this->correlationStore->distinctItems($scope));
+    }
+
+    public function testRecordSuccessDoesNotReobserveDistributedState(): void
+    {
+        $pipeline = $this->pipeline(self::SECRET);
+        $policy = new LoginProtectionPolicy();
+        for ($index = 1; $index <= 4; $index++) {
+            $pipeline->process(
+                $policy,
+                $this->context('success-lifecycle-account', $index),
+                RateLimitCommand::checkOnly($policy->getName()),
+                $this->device($index),
+            );
+        }
+
+        $scope = $this->distributedDeviceScope($policy->getName(), 'success-lifecycle-account', self::SECRET);
+        $before = $this->correlationStore->distinctItems($scope);
+        $pipeline->process(
+            $policy,
+            $this->context('success-lifecycle-account', 5),
+            RateLimitCommand::recordSuccess($policy->getName()),
+            $this->device(5),
+        );
+
+        self::assertSame($before, $this->correlationStore->distinctItems($scope));
+    }
+
+    public function testMissingAccountSkipsDistributedObservationWithoutSnapshotCapability(): void
+    {
+        $pipeline = $this->pipeline(self::SECRET, null, new NullCorrelationStore());
+        $policy = new LoginProtectionPolicy();
+
+        $result = $pipeline->process(
+            $policy,
+            $this->contextWithoutAccount(1),
+            RateLimitCommand::checkOnly($policy->getName()),
+            $this->device(1),
+        );
+
+        self::assertSame(RateLimitResultDTO::DECISION_ALLOW, $result->decision);
+    }
+
+    public function testMissingFingerprintSkipsDistributedObservationWithoutSnapshotCapability(): void
+    {
+        $pipeline = $this->pipeline(self::SECRET, null, new NullCorrelationStore());
+        $policy = new LoginProtectionPolicy();
+
+        $result = $pipeline->process(
+            $policy,
+            $this->context('missing-fingerprint', 1),
+            RateLimitCommand::checkOnly($policy->getName()),
+            new DeviceIdentityDTO(null, 'LOW', false, false, 'chrome/1'),
+        );
+
+        self::assertSame(RateLimitResultDTO::DECISION_ALLOW, $result->decision);
+    }
+
+    public function testLoginAndOtpDistributedStateIsPolicyScopedForTheSameAccount(): void
+    {
+        $pipeline = $this->pipeline(self::SECRET);
+        $account = 'policy-isolation-account';
+
+        foreach ([new LoginProtectionPolicy(), new OtpProtectionPolicy()] as $policy) {
+            $results = [];
+            for ($index = 1; $index <= 4; $index++) {
+                $results[] = $pipeline->process(
+                    $policy,
+                    $this->context($account, $index),
+                    RateLimitCommand::checkOnly($policy->getName()),
+                    $this->device($index),
+                );
+            }
+
+            self::assertSame(
+                [RateLimitResultDTO::DECISION_ALLOW, RateLimitResultDTO::DECISION_ALLOW, RateLimitResultDTO::DECISION_ALLOW, RateLimitResultDTO::DECISION_HARD_BLOCK],
+                array_map(static fn(RateLimitResultDTO $result): string => $result->decision, $results),
+                $policy->getName(),
+            );
+            self::assertNull($this->store->checkBlock($this->key($policy->getName(), 'k4', $account)));
+            self::assertSame(4, $this->correlationStore->distinctCount($this->distributedDeviceScope($policy->getName(), $account, self::SECRET)));
+        }
+
+        self::assertNotSame(
+            $this->correlationStore->distinctItems($this->distributedDeviceScope('login_protection', $account, self::SECRET)),
+            $this->correlationStore->distinctItems($this->distributedDeviceScope('otp_protection', $account, self::SECRET)),
+        );
+    }
+
+    public function testTrustedSessionCannotBypassDistributedK5OrK4Enforcement(): void
+    {
+        $pipeline = $this->pipeline(self::SECRET);
+        $policy = new LoginProtectionPolicy();
+        $account = 'trusted-distributed-account';
+        $k4 = $this->key($policy->getName(), 'k4', $account);
+
+        for ($window = 1; $window <= 3; $window++) {
+            for ($index = 1; $index <= 4; $index++) {
+                $deviceIndex = ($window * 10) + $index;
+                $qualification = $pipeline->process(
+                    $policy,
+                    $this->context($account, $deviceIndex),
+                    RateLimitCommand::checkOnly($policy->getName()),
+                    $this->trustedDevice($deviceIndex),
+                );
+            }
+
+            self::assertSame($window < 3 ? 2 : 4, $qualification->blockLevel);
+            if ($window < 3) {
+                $this->clock->setNow($this->clock->now()->modify('+601 seconds'));
+            }
+        }
+
+        self::assertSame(4, $this->store->checkBlock($k4)?->level);
+        self::assertSame(
+            2,
+            $this->store->checkBlock($this->key($policy->getName(), 'k5', "{$account}:fp-31"))?->level,
+        );
+    }
+
+    public function testDistributedMembersAreOpaqueCanonicalK5EnforcementKeys(): void
+    {
+        $pipeline = $this->pipeline(self::SECRET);
+        $policy = new LoginProtectionPolicy();
+        $account = 'privacy-account';
+
+        for ($index = 1; $index <= 4; $index++) {
+            $pipeline->process(
+                $policy,
+                $this->context($account, $index),
+                RateLimitCommand::checkOnly($policy->getName()),
+                $this->device($index),
+            );
+        }
+
+        $members = $this->correlationStore->distinctItems($this->distributedDeviceScope($policy->getName(), $account, self::SECRET));
+        self::assertSame(
+            array_map(
+                fn(int $index): string => $this->key($policy->getName(), 'k5', "{$account}:fp-{$index}"),
+                range(1, 4),
+            ),
+            $members,
+        );
+        foreach ($this->correlationStore->distinctKeys() as $key) {
+            self::assertStringNotContainsString($account, $key);
+            self::assertStringNotContainsString('fp-', $key);
+        }
+        foreach ($members as $member) {
+            self::assertStringNotContainsString($account, $member);
+            self::assertStringNotContainsString('fp-', $member);
+            self::assertNotNull($this->store->checkBlock($member));
+        }
     }
 
     public function testDistributedObservationFailsClosedWithoutSnapshotCapability(): void
@@ -510,6 +723,101 @@ final class DistributedAccountAttackTest extends TestCase
         self::assertSame(0, $this->correlationStore->distinctCount($this->occurrenceScope($policy->getName(), $account, self::SECRET)));
     }
 
+    #[DataProvider('rotationShapes')]
+    public function testOccurrenceHistoryProgressesAcrossRotationWithoutResetOrDoubleCount(string $shape): void
+    {
+        $policy = new LoginProtectionPolicy();
+        $account = "occurrence-rotation-{$shape}";
+        $oldSecret = 'old_secret';
+        $currentSecret = $shape === 'fingerprint-only' ? $oldSecret : 'new_secret';
+        $previousOuter = $shape === 'fingerprint-only' ? null : $oldSecret;
+        $oldPipeline = $this->pipeline($oldSecret);
+
+        for ($index = 1; $index <= 4; $index++) {
+            $oldFingerprint = in_array($shape, ['fingerprint-only', 'both'], true)
+                ? "old-fp-{$index}"
+                : "fp-{$index}";
+            $result = $oldPipeline->process(
+                $policy,
+                $this->context($account, $index),
+                RateLimitCommand::checkOnly($policy->getName()),
+                $this->deviceWithFingerprint($oldFingerprint, null, $index),
+            );
+            if ($index === 4) {
+                self::assertSame(RateLimitResultDTO::DECISION_HARD_BLOCK, $result->decision, $shape);
+                self::assertSame(2, $result->blockLevel, $shape);
+            }
+        }
+
+        $oldOccurrenceScope = $this->occurrenceScope($policy->getName(), $account, $oldSecret);
+        $oldOccurrenceItems = $this->correlationStore->distinctItems($oldOccurrenceScope);
+        $oldOccurrenceExpiry = $this->correlationStore->distinctExpiresAt($oldOccurrenceScope);
+        self::assertCount(1, $oldOccurrenceItems, $shape);
+        self::assertNotNull($oldOccurrenceExpiry);
+        self::assertNull($this->store->checkBlock($this->key($policy->getName(), 'k4', $account, $oldSecret)));
+
+        $this->clock->setNow($this->clock->now()->modify('+601 seconds'));
+        $currentPipeline = $this->pipeline($currentSecret, $previousOuter);
+        $currentOccurrenceScope = $this->occurrenceScope($policy->getName(), $account, $currentSecret);
+        $currentOccurrenceBridge = $this->occurrenceBridge($policy->getName(), $account, $currentSecret);
+        $currentK4 = $this->key($policy->getName(), 'k4', $account, $currentSecret);
+
+        for ($window = 2; $window <= 3; $window++) {
+            for ($offset = 1; $offset <= 4; $offset++) {
+                $index = ($window * 10) + $offset;
+                $oldFingerprint = in_array($shape, ['fingerprint-only', 'both'], true)
+                    ? "old-fp-{$index}"
+                    : "fp-{$index}";
+                $currentFingerprint = in_array($shape, ['fingerprint-only', 'both'], true)
+                    ? "new-fp-{$index}"
+                    : "fp-{$index}";
+                $previousFingerprint = in_array($shape, ['fingerprint-only', 'both'], true)
+                    ? $oldFingerprint
+                    : null;
+                $qualification = $currentPipeline->process(
+                    $policy,
+                    $this->context($account, $index),
+                    RateLimitCommand::checkOnly($policy->getName()),
+                    $this->deviceWithFingerprint($currentFingerprint, $previousFingerprint, $index),
+                );
+            }
+
+            self::assertSame(RateLimitResultDTO::DECISION_HARD_BLOCK, $qualification->decision, $shape);
+            self::assertSame($window === 2 ? 2 : 4, $qualification->blockLevel, $shape);
+
+            if ($window === 2) {
+                $accountBlock = $this->store->checkBlock($currentK4);
+                if ($accountBlock !== null) {
+                    self::assertLessThan(2, $accountBlock->level, $shape);
+                }
+            }
+
+            self::assertSame($oldOccurrenceExpiry, $this->correlationStore->distinctExpiresAt($oldOccurrenceScope), $shape);
+
+            if ($shape === 'fingerprint-only') {
+                self::assertSame($window, $this->correlationStore->distinctCount($currentOccurrenceScope), $shape);
+                self::assertSame(0, $this->correlationStore->distinctCount($currentOccurrenceBridge), $shape);
+                self::assertSame(0, $this->correlationStore->distinctCount($this->occurrenceScope($policy->getName(), $account, 'new_secret')), $shape);
+            } else {
+                self::assertSame($oldOccurrenceItems, $this->correlationStore->distinctItems($oldOccurrenceScope), $shape);
+                self::assertSame($window - 1, $this->correlationStore->distinctCount($currentOccurrenceScope), $shape);
+                self::assertSame($window - 1, $this->correlationStore->distinctCount($currentOccurrenceBridge), $shape);
+            }
+
+            if ($window === 2) {
+                $this->clock->setNow($this->clock->now()->modify('+601 seconds'));
+            }
+        }
+
+        self::assertSame(4, $this->store->checkBlock($currentK4)?->level);
+        $currentFingerprint = $shape === 'outer-only' ? 'fp-31' : 'new-fp-31';
+        self::assertSame(
+            2,
+            $this->store->checkBlock($this->key($policy->getName(), 'k5', "{$account}:{$currentFingerprint}", $currentSecret))?->level,
+            $shape,
+        );
+    }
+
     /** @return iterable<string, array{string}> */
     public static function rotationShapes(): iterable
     {
@@ -523,13 +831,15 @@ final class DistributedAccountAttackTest extends TestCase
         ?string $previousSecret = null,
         ?CorrelationStoreInterface $correlationStore = null,
     ): EvaluationPipeline {
+        $store = $correlationStore ?? $this->correlationStore;
+
         return new EvaluationPipeline(
             $this->store,
-            $correlationStore ?? $this->correlationStore,
+            $store,
             new BudgetTracker($this->store, $this->clock),
-            new AntiEquilibriumGate($this->correlationStore),
+            new AntiEquilibriumGate($store),
             new DecayCalculator($this->clock),
-            new EphemeralBucket($this->correlationStore),
+            new EphemeralBucket($store),
             $currentSecret,
             'prod',
             $this->clock,
@@ -547,6 +857,16 @@ final class DistributedAccountAttackTest extends TestCase
         );
     }
 
+    private function contextWithoutAccount(int $index): RateLimitContextDTO
+    {
+        return new RateLimitContextDTO(
+            '198.51.100.20',
+            "Mozilla/5.0 Chrome/{$index}",
+            null,
+            ['device' => "device-{$index}"],
+        );
+    }
+
     private function device(int $index, ?string $previousFingerprint = null): DeviceIdentityDTO
     {
         return $this->deviceWithFingerprint("fp-{$index}", $previousFingerprint, $index);
@@ -557,6 +877,11 @@ final class DistributedAccountAttackTest extends TestCase
         $index ??= 1;
 
         return new DeviceIdentityDTO($fingerprint, 'MEDIUM', false, false, "chrome/{$index}", false, $previousFingerprint);
+    }
+
+    private function trustedDevice(int $index): DeviceIdentityDTO
+    {
+        return new DeviceIdentityDTO("fp-{$index}", 'HIGH', true, false, "chrome/{$index}");
     }
 
     private function key(string $policy, string $type, string $scope, string $secret = self::SECRET): string
@@ -584,6 +909,17 @@ final class DistributedAccountAttackTest extends TestCase
         );
     }
 
+    private function distributedDeviceBridge(string $policy, string $account, string $secret): string
+    {
+        $scope = $this->distributedDeviceScope($policy, $account, $secret);
+
+        return hash_hmac(
+            'sha256',
+            "{$policy}:rate_limiter:correlation:distributed_account_devices:v1:prod:bridge:{$scope}",
+            $secret,
+        );
+    }
+
     private function occurrenceScope(string $policy, string $account, string $secret): string
     {
         $k4 = $this->key($policy, 'k4', $account, $secret);
@@ -591,6 +927,17 @@ final class DistributedAccountAttackTest extends TestCase
         return hash_hmac(
             'sha256',
             "{$policy}:rate_limiter:correlation:distributed_account_occurrences:v1:prod:scope:{$k4}",
+            $secret,
+        );
+    }
+
+    private function occurrenceBridge(string $policy, string $account, string $secret): string
+    {
+        $scope = $this->occurrenceScope($policy, $account, $secret);
+
+        return hash_hmac(
+            'sha256',
+            "{$policy}:rate_limiter:correlation:distributed_account_occurrences:v1:prod:bridge:{$scope}",
             $secret,
         );
     }
