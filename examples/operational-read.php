@@ -304,7 +304,7 @@ final class OperationalExampleRateLimitStore implements HardBlockCycleStoreInter
 
         return [
             'cycles' => $cycles,
-            'pauses' => array_values($mergedPauses),
+            'pauses' => array_values((array) $mergedPauses),
         ];
     }
 }

@@ -402,7 +402,7 @@ final class InMemoryRateLimitStore implements BudgetSeedStoreInterface, HardBloc
 
         return [
             'cycles' => $cycles,
-            'pauses' => array_values($mergedPauses),
+            'pauses' => array_values((array) $mergedPauses),
         ];
     }
 }
