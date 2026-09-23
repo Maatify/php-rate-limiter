@@ -10,10 +10,12 @@ supporting files under `docs/`.
 ## Package boundaries
 
 The package owns deterministic rate-limit evaluation, bounded scoring, budgets,
-correlation, circuit-breaker behavior, failure modes, and the public DTO/service
-contracts. The host owns account and session truth, concrete storage and locking,
-transport responses, authorization, logging destinations, and cross-domain
-reporting. Keep the runtime framework-agnostic and storage-agnostic.
+correlation, circuit-breaker behavior, failure modes, the public DTO/service
+contracts, and the official Redis persistence semantics. The host owns account and
+session truth, the Redis client and connection lifecycle when using the official
+Redis store, custom storage and locking when selecting another backend, transport
+responses, authorization, logging destinations, and cross-domain reporting. Keep
+the runtime framework-agnostic and storage-agnostic at the contract/core level.
 
 The canonical source topology is a single capability:
 
@@ -72,8 +74,12 @@ PER 3.1 delta violation requires a manual mechanical fix.
 
 `composer test` runs the full maintained Unit, Integration, and System suites.
 `composer test:unit` runs the Unit suite, and `composer test:integration` is the
-focused canonical entrypoint for the Integration suite; it starts the repository-owned
-disposable Redis 7.0.15 service, runs the Integration suite, and guarantees teardown.
+focused canonical entrypoint for the Integration suite. It requires Docker with
+Compose support for the repository-owned disposable Redis 7.0.15 service and PHP
+`pcntl` in the local Integration runner because the required Redis concurrency
+proofs use independent forked PHP workers; it runs the Integration suite and
+guarantees teardown. `ext-redis` and Predis are not required, and `ext-pcntl` is
+not a package runtime dependency.
 System tests are included
 in the full `composer test` run and protect end-to-end engine workflows and
 behavioral contracts.
