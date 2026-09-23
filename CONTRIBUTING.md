@@ -72,7 +72,9 @@ PER 3.1 delta violation requires a manual mechanical fix.
 
 `composer test` runs the full maintained Unit, Integration, and System suites.
 `composer test:unit` runs the Unit suite, and `composer test:integration` is the
-focused canonical entrypoint for the Integration suite. System tests are included
+focused canonical entrypoint for the Integration suite; it starts the repository-owned
+disposable Redis 7.0.15 service, runs the Integration suite, and guarantees teardown.
+System tests are included
 in the full `composer test` run and protect end-to-end engine workflows and
 behavioral contracts.
 

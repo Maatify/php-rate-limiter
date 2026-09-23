@@ -70,9 +70,10 @@ $limiter = RateLimiterBuilder::fromFullCapabilityStore(
 ```
 
 `FullCapabilityStoreInterface` is an aggregate contract with no methods of its
-own. Its concrete implementation is host-owned; the core package provides no
-Redis, PDO, Lua, or `ext-redis` adapter. The failure-signal emitter remains a
-separate dependency, and the existing multi-store constructor remains valid.
+own. The package includes an optional built-in non-clustered Redis store; the Host
+owns the concrete client and supplies its command executor. No Redis client or
+`ext-redis` runtime dependency is added, and the existing multi-store constructor
+remains valid.
 
 Secrets are explicit and independently rotatable. `RateLimiterConfig` rejects empty or whitespace-only active, previous, and environment values without trimming valid caller input. The builder does not create a service container or no-op production adapters. Use `withClock()`, `withDeviceIdentityResolver()`, or `withPolicy()` only for the targeted overrides defined by the public contract; low-level constructors remain the Advanced Path.
 

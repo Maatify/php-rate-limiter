@@ -3,7 +3,7 @@
 **Package:** RateLimiter
 **Namespace:** `Maatify\RateLimiter`
 **Status:** LOCKED — Architecture Contract
-**Spec Version:** `1.14.0`
+**Spec Version:** `1.15.0`
 **Location:** `src/`
 
 This document explains **why** the RateLimiter package is designed the way it is.
@@ -194,8 +194,12 @@ $limiter = RateLimiterBuilder::fromFullCapabilityStore(
 `FullCapabilityStoreInterface` extends exactly `BudgetSeedStoreInterface`,
 `BoundedCorrelationSnapshotRotationStoreInterface`,
 `CircuitBreakerProbeStoreInterface`, and `HardBlockCycleStoreInterface`; it
-declares no methods of its own. The concrete adapter remains outside this core
-package, which includes no Redis, PDO, Lua, or `ext-redis` implementation.
+declares no methods of its own. The package also ships the optional official
+`Repository\\Redis\\RedisFullCapabilityStore` for one logical non-clustered Redis
+server. It has no runtime Redis-client or `ext-redis` dependency: the Host owns
+the client and supplies `RedisCommandExecutorInterface` or
+`CallableRedisCommandExecutor`. Other full-capability backends remain supported,
+and Redis Cluster is not currently claimed.
 The existing multi-store constructor remains source-compatible.
 
 `build()` supplies the UTC `SystemClock`, the default identity resolver, the package-owned evaluation graph, and the `login_protection`, `otp_protection`, and `api_heavy_protection` policies. `withClock()`, `withDeviceIdentityResolver()`, and `withPolicy()` are the only targeted overrides. A policy with an existing name replaces that policy; a new name is appended without removing defaults. Consumers needing direct control of `EvaluationPipeline` or its internal services retain the existing low-level constructors as the Advanced Path.
@@ -565,7 +569,9 @@ members or TTL, and use `previous cardinality + bridge cardinality` for the acti
 spray window. A current-only fallback is forbidden; a missing capability or malformed
 previous state fails through the engine's existing failure semantics. The bridge is
 current-secret-only, fixed-TTL, and capped by the previous remaining TTL. The core
-package provides no Redis, Lua, PDO, or other concrete adapter.
+package provides an optional Redis implementation through its command-executor
+boundary; Redis remains optional and the physical key layout is internal rather
+than a consumer contract.
 
 Bounded device-cap, churn, dilution, and spray distinct state uses the additive
 `BoundedCorrelationStoreInterface`; a current/previous observation requires
