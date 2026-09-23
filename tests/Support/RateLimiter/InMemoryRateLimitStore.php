@@ -376,7 +376,7 @@ class InMemoryRateLimitStore implements BudgetSeedStoreInterface, HardBlockCycle
                 ?: ($left['until'] <=> $right['until']);
         });
 
-        /** @var list<array{startedAt: int, until: int}> $mergedPauses */
+        /** @var array<int, array{startedAt: int, until: int}> $mergedPauses */
         $mergedPauses = [];
         foreach ($pauses as $pause) {
             $lastIndex = count($mergedPauses) - 1;
@@ -393,7 +393,7 @@ class InMemoryRateLimitStore implements BudgetSeedStoreInterface, HardBlockCycle
 
         return [
             'cycles' => $cycles,
-            'pauses' => array_values((array) $mergedPauses),
+            'pauses' => array_values($mergedPauses),
         ];
     }
 }

@@ -287,7 +287,7 @@ final class OperationalExampleRateLimitStore implements HardBlockCycleStoreInter
                 ?: ($left['until'] <=> $right['until']);
         });
 
-        /** @var list<array{startedAt: int, until: int}> $mergedPauses */
+        /** @var array<int, array{startedAt: int, until: int}> $mergedPauses */
         $mergedPauses = [];
         foreach ($pauses as $pause) {
             $lastIndex = count($mergedPauses) - 1;
@@ -304,7 +304,7 @@ final class OperationalExampleRateLimitStore implements HardBlockCycleStoreInter
 
         return [
             'cycles' => $cycles,
-            'pauses' => array_values((array) $mergedPauses),
+            'pauses' => array_values($mergedPauses),
         ];
     }
 }
