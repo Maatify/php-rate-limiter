@@ -128,6 +128,57 @@ final class HardBlockCycleStoreContractTest extends TestCase
         self::assertSame(2, $sameInvocation->cycleCount);
     }
 
+    public function testCurrentAndPreviousHistoriesBothContributeToCycleThreshold(): void
+    {
+        $currentFirst = $this->store->blockWithCycleTracking('current', null, 2, 1, 1000, 21600, 3, 600, 86400);
+        $previousFirst = $this->store->blockWithCycleTracking('previous', null, 2, 1, 1010, 21600, 3, 600, 86400);
+
+        self::assertTrue($currentFirst->newCycle);
+        self::assertTrue($previousFirst->newCycle);
+
+        $merged = $this->store->blockWithCycleTracking('current', 'previous', 2, 1, 1020, 21600, 3, 600, 86400);
+
+        self::assertTrue($merged->newCycle);
+        self::assertSame(3, $merged->cycleCount);
+        self::assertTrue($merged->pauseActivated);
+        self::assertSame(1620, $merged->pauseUntil);
+    }
+
+    public function testPreviousPauseIsReadWhenCurrentHistoryAlreadyExists(): void
+    {
+        $this->store->blockWithCycleTracking('previous', null, 2, 1, 1000, 21600, 2, 600, 86400);
+        $this->store->blockWithCycleTracking('previous', null, 2, 1, 1010, 21600, 2, 600, 86400);
+        $this->store->blockWithCycleTracking('current', null, 2, 1, 1015, 21600, 2, 600, 86400);
+
+        $state = $this->store->readDecayPauseState('current', 'previous', 1000, 1020);
+
+        self::assertSame(10, $state->elapsedPausedSeconds);
+        self::assertSame(1610, $state->activePauseUntil);
+    }
+
+    public function testAdoptionMergesBothStatesOnceAndLeavesPreviousBlockUnchanged(): void
+    {
+        $this->store->blockWithCycleTracking('previous', null, 2, 1, 1000, 21600, 2, 600, 86400);
+        $this->store->blockWithCycleTracking('previous', null, 2, 1, 1010, 21600, 2, 600, 86400);
+        $this->store->blockWithCycleTracking('current', null, 2, 1, 1015, 21600, 2, 600, 86400);
+
+        $this->setNow(1012);
+        $this->store->block('previous', 2, 10000);
+        $this->setNow(1020);
+
+        $adopted = $this->store->blockWithCycleTracking('current', 'previous', 2, 100, 1020, 21600, 3, 600, 86400);
+        self::assertFalse($adopted->newCycle);
+        self::assertSame(3, $adopted->cycleCount);
+
+        $currentOnly = $this->store->readDecayPauseState('current', null, 1000, 1020);
+        $bothGenerations = $this->store->readDecayPauseState('current', 'previous', 1000, 1020);
+        self::assertSame(10, $currentOnly->elapsedPausedSeconds);
+        self::assertSame(1610, $currentOnly->activePauseUntil);
+        self::assertSame($currentOnly->elapsedPausedSeconds, $bothGenerations->elapsedPausedSeconds);
+        self::assertSame($currentOnly->activePauseUntil, $bothGenerations->activePauseUntil);
+        self::assertSame(11012, $this->store->checkBlock('previous')?->expiresAt);
+    }
+
     public function testOpaqueHistoricalMemberIsPersistedAsItsOwnCurrentTarget(): void
     {
         $result = $this->store->blockWithCycleTracking('opaque-member', null, 2, 60, 1000, 21600, 2, 600, 86400);

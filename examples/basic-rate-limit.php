@@ -122,7 +122,13 @@ final class ExampleRateLimitStore implements HardBlockCycleStoreInterface
         int $pauseHistoryRetentionSeconds,
     ): HardBlockCycleResultDTO {
         $previousKey = $previousKey === $currentKey ? null : $previousKey;
-        $state = $this->hardBlockCycles[$currentKey] ?? $this->hardBlockCycles[$previousKey ?? ''] ?? ['cycles' => [], 'pauses' => []];
+        $state = $this->mergeHardBlockCycleStates(
+            $this->hardBlockCycles[$currentKey] ?? null,
+            $previousKey !== null ? ($this->hardBlockCycles[$previousKey] ?? null) : null,
+            $now,
+            $cycleWindowSeconds,
+            $pauseHistoryRetentionSeconds,
+        );
         $hadActiveHardBlock = false;
         foreach (array_unique(array_filter([$currentKey, $previousKey])) as $key) {
             $block = $this->blocks[$key] ?? null;
@@ -130,8 +136,6 @@ final class ExampleRateLimitStore implements HardBlockCycleStoreInterface
         }
 
         $this->blocks[$currentKey] = ['level' => $level, 'expiresAt' => $now + $durationSeconds];
-        $state['cycles'] = array_values(array_filter($state['cycles'], static fn(int $at): bool => $at >= $now - $cycleWindowSeconds));
-        $state['pauses'] = array_values(array_filter($state['pauses'], static fn(array $pause): bool => $pause['until'] > $now - $pauseHistoryRetentionSeconds));
         $newCycle = ! $hadActiveHardBlock;
         if ($newCycle) {
             $state['cycles'][] = $now;
@@ -150,16 +154,26 @@ final class ExampleRateLimitStore implements HardBlockCycleStoreInterface
 
     public function readDecayPauseState(string $currentKey, ?string $previousKey, int $fromTimestamp, int $now): DecayPauseStateDTO
     {
-        $state = $this->hardBlockCycles[$currentKey] ?? $this->hardBlockCycles[$previousKey ?? ''] ?? null;
-        if ($state === null || $fromTimestamp >= $now) {
+        $state = $this->mergeHardBlockCycleStates(
+            $this->hardBlockCycles[$currentKey] ?? null,
+            $previousKey !== null && $previousKey !== $currentKey
+                ? ($this->hardBlockCycles[$previousKey] ?? null)
+                : null,
+            $now,
+            null,
+            self::PAUSE_HISTORY_RETENTION_SECONDS,
+        );
+        if ($state['pauses'] === []) {
             return new DecayPauseStateDTO(0, 0);
         }
+
+        $activePauseUntil = $this->activePauseUntil($state['pauses'], $now);
+        if ($fromTimestamp >= $now) {
+            return new DecayPauseStateDTO(0, $activePauseUntil);
+        }
+
         $intervals = [];
-        $pauseCutoff = $now - self::PAUSE_HISTORY_RETENTION_SECONDS;
         foreach ($state['pauses'] as $pause) {
-            if ($pause['until'] <= $pauseCutoff) {
-                continue;
-            }
             $start = max($fromTimestamp, $pause['startedAt']);
             $end = min($now, $pause['until']);
             if ($start < $end) {
@@ -186,7 +200,7 @@ final class ExampleRateLimitStore implements HardBlockCycleStoreInterface
             $elapsed += $end - $start;
         }
 
-        return new DecayPauseStateDTO($elapsed, $this->activePauseUntil($state['pauses'], $now));
+        return new DecayPauseStateDTO($elapsed, $activePauseUntil);
     }
 
     public function checkBlock(string $key): ?BlockStateDTO
@@ -249,6 +263,70 @@ final class ExampleRateLimitStore implements HardBlockCycleStoreInterface
         }
 
         return $active;
+    }
+
+    /**
+     * @param array{cycles: list<int>, pauses: list<array{startedAt: int, until: int}>}|null $current
+     * @param array{cycles: list<int>, pauses: list<array{startedAt: int, until: int}>}|null $previous
+     * @return array{cycles: list<int>, pauses: list<array{startedAt: int, until: int}>}
+     */
+    private function mergeHardBlockCycleStates(
+        ?array $current,
+        ?array $previous,
+        int $now,
+        ?int $cycleWindowSeconds,
+        int $pauseHistoryRetentionSeconds,
+    ): array {
+        /** @var array<int, int> $cyclesByTimestamp */
+        $cyclesByTimestamp = [];
+        $pauses = [];
+        $cycleCutoff = $cycleWindowSeconds === null ? null : $now - $cycleWindowSeconds;
+        $pauseCutoff = $now - $pauseHistoryRetentionSeconds;
+
+        foreach ([$current, $previous] as $candidate) {
+            if ($candidate === null) {
+                continue;
+            }
+
+            foreach ($candidate['cycles'] as $transitionAt) {
+                if ($cycleCutoff === null || $transitionAt >= $cycleCutoff) {
+                    $cyclesByTimestamp[$transitionAt] = $transitionAt;
+                }
+            }
+
+            foreach ($candidate['pauses'] as $pause) {
+                if ($pause['until'] > $pauseCutoff) {
+                    $pauses[] = $pause;
+                }
+            }
+        }
+
+        $cycles = array_values($cyclesByTimestamp);
+        sort($cycles, SORT_NUMERIC);
+        usort($pauses, static function (array $left, array $right): int {
+            return ($left['startedAt'] <=> $right['startedAt'])
+                ?: ($left['until'] <=> $right['until']);
+        });
+
+        /** @var list<array{startedAt: int, until: int}> $mergedPauses */
+        $mergedPauses = [];
+        foreach ($pauses as $pause) {
+            $lastIndex = count($mergedPauses) - 1;
+            if ($lastIndex >= 0 && $pause['startedAt'] <= $mergedPauses[$lastIndex]['until']) {
+                $mergedPauses[$lastIndex]['until'] = max(
+                    $mergedPauses[$lastIndex]['until'],
+                    $pause['until'],
+                );
+                continue;
+            }
+
+            $mergedPauses[] = $pause;
+        }
+
+        return [
+            'cycles' => $cycles,
+            'pauses' => array_values($mergedPauses),
+        ];
     }
 }
 
