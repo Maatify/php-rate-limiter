@@ -17,6 +17,8 @@ class InMemoryCircuitBreakerStore implements CircuitBreakerProbeStoreInterface
 
     private int $probeAcquisitions = 0;
 
+    private int $saveCount = 0;
+
     public function load(string $policyName): ?CircuitBreakerStateDTO
     {
         return $this->store[$policyName] ?? null;
@@ -25,6 +27,7 @@ class InMemoryCircuitBreakerStore implements CircuitBreakerProbeStoreInterface
     public function save(string $policyName, CircuitBreakerStateDTO $state): void
     {
         $this->store[$policyName] = $state;
+        $this->saveCount++;
     }
 
     public function acquireProbeLease(string $policyName, int $now, int $leaseSeconds): bool
@@ -48,5 +51,10 @@ class InMemoryCircuitBreakerStore implements CircuitBreakerProbeStoreInterface
     public function probeAcquisitionCount(): int
     {
         return $this->probeAcquisitions;
+    }
+
+    public function saveCount(): int
+    {
+        return $this->saveCount;
     }
 }

@@ -113,14 +113,23 @@ class CircuitBreaker
     public function attemptRecoveryProbe(string $policyName, callable $probe): bool
     {
         $state = $this->loadState($policyName);
+        $probeStartedAt = $this->clock->now()->getTimestamp();
+
+        // The persisted guard is authoritative inside the state machine too.
+        // Check it before every recovery fast path and before the additive
+        // capability/lease boundaries so a guarded policy cannot probe or
+        // mutate state even when the caller bypasses Engine preflight.
+        if ($state->failClosedUntil > $probeStartedAt) {
+            return false;
+        }
+
         if ($state->status === FailureStateDTO::STATE_CLOSED) {
             return true;
         }
 
-        $now = $this->clock->now()->getTimestamp();
         $eligible = match ($state->status) {
-            FailureStateDTO::STATE_OPEN => $now - $state->openSince >= self::MIN_DEGRADED_DURATION,
-            FailureStateDTO::STATE_HALF_OPEN => $now - $state->lastSuccess >= self::MIN_HEALTHY_INTERVAL,
+            FailureStateDTO::STATE_OPEN => $probeStartedAt - $state->openSince >= self::MIN_DEGRADED_DURATION,
+            FailureStateDTO::STATE_HALF_OPEN => $probeStartedAt - $state->lastSuccess >= self::MIN_HEALTHY_INTERVAL,
             default => false,
         };
 
@@ -134,7 +143,7 @@ class CircuitBreaker
             );
         }
 
-        if (! $this->store->acquireProbeLease($policyName, $now, self::PROBE_LEASE)) {
+        if (! $this->store->acquireProbeLease($policyName, $probeStartedAt, self::PROBE_LEASE)) {
             return false;
         }
 
@@ -143,9 +152,10 @@ class CircuitBreaker
         } catch (\Throwable) {
             $healthy = false;
         }
+        $transitionAt = $this->clock->now()->getTimestamp();
 
         if (! $healthy) {
-            $this->recordProbeFailure($policyName, $state, $now);
+            $this->recordProbeFailure($policyName, $state, $transitionAt);
             return false;
         }
 
@@ -155,7 +165,7 @@ class CircuitBreaker
                 $state->failures,
                 $state->lastFailure,
                 $state->openSince,
-                $now,
+                $transitionAt,
                 $state->reEntries,
                 $state->failClosedUntil,
             ));
@@ -168,7 +178,7 @@ class CircuitBreaker
             [],
             0,
             0,
-            $now,
+            $transitionAt,
             $state->reEntries,
             $state->failClosedUntil,
         ));
