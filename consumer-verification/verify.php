@@ -11,6 +11,7 @@ use ConsumerVerification\RecordingFailureSignalEmitter;
 use Maatify\RateLimiter\Command\RateLimitCommand;
 use Maatify\RateLimiter\Repository\BudgetSeedStoreInterface;
 use Maatify\RateLimiter\Repository\BoundedCorrelationRotationStoreInterface;
+use Maatify\RateLimiter\Repository\HardBlockCycleStoreInterface;
 use Maatify\RateLimiter\Service\DeviceIdentityResolver;
 use Maatify\RateLimiter\Service\EphemeralBucket;
 use Maatify\RateLimiter\Service\FingerprintHasher;
@@ -62,6 +63,10 @@ $failureSignalEmitter = new RecordingFailureSignalEmitter();
 requireCondition(
     $rateLimitStore instanceof BudgetSeedStoreInterface,
     'The consumer store does not implement the BudgetSeedStoreInterface capability.',
+);
+requireCondition(
+    $rateLimitStore instanceof HardBlockCycleStoreInterface,
+    'The consumer store does not implement the HardBlockCycleStoreInterface capability.',
 );
 requireCondition(
     $correlationStore instanceof CorrelationRotationStoreInterface,

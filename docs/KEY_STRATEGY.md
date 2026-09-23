@@ -3,7 +3,7 @@
 **Module:** RateLimiter
 **Namespace:** `Maatify\RateLimiter`
 **Status:** LOCKED — Design & Security Contract
-**Spec Version:** `1.8.0`
+**Spec Version:** `1.9.0`
 
 This document defines the **key construction strategy** used by the RateLimiter.
 Keys determine how limits, scores, correlation, and blocks are applied.
@@ -555,6 +555,55 @@ rotation has no previous occurrence namespace; occurrence continuity is account/
 scoped. API Heavy and requests missing account, fingerprint, or real K4/K5 do not observe
 this rule and do not require the snapshot capability. Missing required capability fails
 through the package failure semantics before this observation is partially applied.
+
+#### 4.3.7 Multiple-block-cycle Decay Pause
+
+The additive hard-block cycle capability is:
+
+```php
+interface HardBlockCycleStoreInterface extends RateLimitStoreInterface
+{
+    public function blockWithCycleTracking(
+        string $currentKey,
+        ?string $previousKey,
+        int $level,
+        int $durationSeconds,
+        int $now,
+        int $cycleWindowSeconds,
+        int $cycleThreshold,
+        int $pauseSeconds,
+        int $pauseHistoryRetentionSeconds,
+    ): HardBlockCycleResultDTO;
+
+    public function readDecayPauseState(
+        string $currentKey,
+        ?string $previousKey,
+        int $fromTimestamp,
+        int $now,
+    ): DecayPauseStateDTO;
+}
+```
+
+`blockWithCycleTracking()` is the atomic replacement for `block()` whenever a
+persisted L2+ block is written. The operation persists only Current, classifies
+the transition from no active hard block to active hard block, updates cycle
+history, and activates a fixed decay pause. L1 continues to use
+`RateLimitStoreInterface::block()`. Before any L2+ block write in a batch, the
+pipeline requires this capability and fails explicitly if it is absent; it
+never falls back silently to `block()`.
+
+Current and Previous are one logical history. Writes target Current, Previous is
+read-only, and the first Current mutation adopts still-relevant Previous cycle
+and pause timestamps without refreshing or rewriting Previous. An opaque
+historical snapshot member with no known pair is passed as Current with
+`previousKey = null`.
+
+The package passes a 21,600-second cycle window, threshold `2`, a 600-second
+pause, and an 86,400-second pause-history retention. Cycle and pause state is
+scoped by policy, canonical enforcement key type, and logical enforcement
+identity. Pause state is read-only during decay; retained pause intersections
+with `[fromTimestamp, now)` are unioned without double counting, including
+completed pauses so lazy decay remains accurate.
 
 ### 4.4 Namespacing & Scoping
 

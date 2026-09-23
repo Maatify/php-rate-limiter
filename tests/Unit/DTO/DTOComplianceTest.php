@@ -25,6 +25,8 @@ use Maatify\RateLimiter\DTO\PipelineScoreDTO;
 use Maatify\RateLimiter\DTO\BlockStateDTO;
 use Maatify\RateLimiter\DTO\BudgetStateDTO;
 use Maatify\RateLimiter\DTO\CircuitBreakerStateDTO;
+use Maatify\RateLimiter\DTO\DecayPauseStateDTO;
+use Maatify\RateLimiter\DTO\HardBlockCycleResultDTO;
 use Maatify\RateLimiter\DTO\RateLimitStateDTO;
 use Maatify\RateLimiter\DTO\RateLimitOperationalKeyStateDTO;
 use Maatify\RateLimiter\DTO\RateLimitOperationalScopesDTO;
@@ -62,6 +64,8 @@ class DTOComplianceTest extends TestCase
         RateLimitOperationalScopesDTO::class,
         RateLimitOperationalBudgetDTO::class,
         RateLimitOperationalSnapshotDTO::class,
+        HardBlockCycleResultDTO::class,
+        DecayPauseStateDTO::class,
     ];
 
     public function testDTOsAreFinalReadonlyAndImplementJsonSerializable(): void
@@ -355,6 +359,16 @@ class DTOComplianceTest extends TestCase
                     'budget' => null,
                     'circuitBreaker' => null,
                 ],
+            ],
+            HardBlockCycleResultDTO::class => [
+                new HardBlockCycleResultDTO(true, 2, true, 1600000600),
+                ['newCycle', 'cycleCount', 'pauseActivated', 'pauseUntil'],
+                ['newCycle' => true, 'cycleCount' => 2, 'pauseActivated' => true, 'pauseUntil' => 1600000600],
+            ],
+            DecayPauseStateDTO::class => [
+                new DecayPauseStateDTO(600, 1600000600),
+                ['elapsedPausedSeconds', 'activePauseUntil'],
+                ['elapsedPausedSeconds' => 600, 'activePauseUntil' => 1600000600],
             ],
         ];
     }

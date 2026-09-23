@@ -50,6 +50,7 @@ final class PackageStructureTest extends TestCase
             'Maatify\\RateLimiter\\Repository\\BoundedCorrelationRotationStoreInterface',
             'Maatify\\RateLimiter\\Repository\\CircuitBreakerStoreInterface',
             'Maatify\\RateLimiter\\Repository\\CircuitBreakerProbeStoreInterface',
+            'Maatify\\RateLimiter\\Repository\\HardBlockCycleStoreInterface',
             'Maatify\\RateLimiter\\Service\\RateLimiterInterface',
             'Maatify\\RateLimiter\\Service\\DeviceIdentityResolverInterface',
             'Maatify\\RateLimiter\\Service\\RateLimitOperationalReaderInterface',
@@ -78,6 +79,8 @@ final class PackageStructureTest extends TestCase
             'Maatify\\RateLimiter\\DTO\\RateLimitOperationalScopesDTO',
             'Maatify\\RateLimiter\\DTO\\RateLimitOperationalBudgetDTO',
             'Maatify\\RateLimiter\\DTO\\RateLimitOperationalSnapshotDTO',
+            'Maatify\\RateLimiter\\DTO\\HardBlockCycleResultDTO',
+            'Maatify\\RateLimiter\\DTO\\DecayPauseStateDTO',
         ];
 
         foreach ($classes as $class) {

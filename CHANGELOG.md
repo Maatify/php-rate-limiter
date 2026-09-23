@@ -8,6 +8,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Changed
+- Implemented WU-S3-07 multiple-block-cycle decay pause. Persisted L2+ blocks now
+  use the additive `HardBlockCycleStoreInterface` for atomic Current-only block
+  persistence, real cycle classification, rolling six-hour K1/K2/K3/K4/K5
+  histories, fixed 600-second pauses, rotation adoption, and read-only lazy
+  decay accounting. Base-only stores remain compatible for reads and L1 writes
+  but fail explicitly before an L2+ block write. `DecayCalculator` preserves
+  source compatibility through trailing pause arguments. Version transitions:
+  `DECISION_MATRIX.md` `1.9.0` → `1.10.0`, `POLICIES.md` `1.3.0` → `1.4.0`,
+  `KEY_STRATEGY.md` `1.8.0` → `1.9.0`, and package reference `1.11.0` → `1.12.0`.
 - Implemented WU-S3-05 IPv6 adaptive aggregation. IPv6 enforcement now uses
   canonical `/64` K1 only; bounded `/48`, `/40`, and `/32` correlation scopes
   activate at exact `2/2`, `4/4`, and `8/8` child thresholds within a fixed

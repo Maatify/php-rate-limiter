@@ -144,6 +144,47 @@ class EvaluationPipelineRetryAfterTest extends TestCase
         $this->assertEquals(60, $this->store->checkBlock($k4Key)?->expiresAt - $this->clock->now()->getTimestamp());
     }
 
+    public function testScoreUpdateDuringActivePauseIncludesRemainingPauseInRetryAfter(): void
+    {
+        $context = new RateLimitContextDTO('127.0.0.1', 'Mozilla', 'acct_123');
+        $device = new DeviceIdentityDTO('hash_123', 'HIGH', false, false, 'Mozilla');
+        $k4Key = hash_hmac('sha256', 'otp_protection:rate_limiter:k4:v2:prod:acct_123', 'test_secret');
+        $base = $this->clock->now()->getTimestamp();
+
+        $this->store->set($k4Key, 2, 3600);
+        $this->store->blockWithCycleTracking($k4Key, null, 2, 1, $base, 21600, 2, 600, 86400);
+
+        $secondCycleAt = $base + 2;
+        $this->clock->setNow(new \DateTimeImmutable('@' . $secondCycleAt));
+        $pause = $this->store->blockWithCycleTracking(
+            $k4Key,
+            null,
+            2,
+            1,
+            $secondCycleAt,
+            21600,
+            2,
+            600,
+            86400,
+        );
+        self::assertTrue($pause->pauseActivated);
+
+        // The second block expires at this exact timestamp, while its pause remains active.
+        $updateAt = $base + 3;
+        $this->clock->setNow(new \DateTimeImmutable('@' . $updateAt));
+        $result = $this->pipeline->process(
+            $this->policy,
+            $context,
+            RateLimitCommand::recordFailure('otp_protection'),
+            $device,
+        );
+
+        self::assertSame(RateLimitResultDTO::DECISION_HARD_BLOCK, $result->decision);
+        self::assertSame(2, $result->blockLevel);
+        // Score wait is 600 seconds plus the 599 seconds remaining in the active pause.
+        self::assertSame(1199, $result->retryAfter);
+    }
+
     public function testAccountL1ScoreUsesAccountDecayInterval(): void
     {
         $context = new RateLimitContextDTO('127.0.0.1', 'Mozilla', 'acct_123');

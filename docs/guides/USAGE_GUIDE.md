@@ -57,7 +57,7 @@ For <code>api_heavy_protection</code>, K2 minor overuse returns at most <code>SO
 The returned <code>retryAfter</code> has three distinct contracts:
 
 - An active persisted block returns the remaining persisted block TTL. It is authoritative and is not combined with score decay.
-- A score-derived <code>SOFT_BLOCK</code> returns the time until the score is below L1. A score-derived <code>HARD_BLOCK</code>, including L3, returns the time until the score is below L2. <code>DecayCalculator</code> uses the package-owned account, device, and IP intervals together with the stored score timestamp and elapsed partial interval.
+- A score-derived <code>SOFT_BLOCK</code> returns the time until the score is below L1. A score-derived <code>HARD_BLOCK</code>, including L3, returns the time until the score is below L2. <code>DecayCalculator</code> uses the package-owned account, device, and IP intervals together with the stored score timestamp and elapsed partial interval. Retained multiple-block-cycle pauses are subtracted from elapsed decay, and an active pause's remaining time is added to score-derived Retry-After.
 - A budget result returns the remaining budget cooldown. Correlation, flood, credential-spray, and other non-score decisions retain their own existing retry rules.
 
 The response retry time is independent from persistence: score-derived results may use a decay wait while the persisted block continues to use the configured <code>PenaltyLadder</code> duration.
@@ -77,6 +77,7 @@ The host supplies implementations for:
 - <code>CircuitBreakerProbeStoreInterface</code>: additive atomic per-policy
   recovery-probe lease; required only when a recovery probe becomes eligible.
 - <code>FailureSignalEmitterInterface</code>: delivery of circuit-breaker and failure signals.
+- <code>HardBlockCycleStoreInterface</code>: atomic Current-only persistence and transition tracking for every persisted L2+ block, plus read-only Current/Previous decay-pause state. It is mandatory before the first L2+ block write; a base-only store remains valid for normal reads and L1 writes but fails explicitly for L2+ persistence.
 - <code>ClockInterface</code> from <code>maatify/shared-common</code>: current time and timezone.
 
 The host may also provide a custom <code>DeviceIdentityResolverInterface</code> or a custom <code>BlockPolicyInterface</code>. <code>BudgetSeedStoreInterface</code> is an additive storage capability used when a host store supports atomic budget-epoch seeding during key rotation.

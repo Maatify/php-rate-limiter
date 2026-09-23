@@ -35,13 +35,14 @@ class DecayCalculator
         int $lastUpdateTimestamp,
         int $currentBlockLevel,
         string $scope, // 'account', 'device', 'ip'
+        int $elapsedPausedSeconds = 0,
     ): int {
         if ($currentScore <= 0) {
             return 0;
         }
 
         $now = $this->clock->now()->getTimestamp();
-        $elapsed = $now - $lastUpdateTimestamp;
+        $elapsed = max(0, ($now - $lastUpdateTimestamp) - $elapsedPausedSeconds);
 
         if ($elapsed <= 0) {
             return 0;
@@ -68,6 +69,8 @@ class DecayCalculator
         int $currentBlockLevel,
         string $scope,
         int $threshold,
+        int $elapsedPausedSeconds = 0,
+        int $activePauseUntil = 0,
     ): int {
         if ($threshold <= 0) {
             throw new RateLimiterException('Decay threshold must be greater than zero.');
@@ -78,7 +81,8 @@ class DecayCalculator
         }
 
         $interval = $this->effectiveInterval($scope, $currentBlockLevel);
-        $elapsed = max(0, $this->clock->now()->getTimestamp() - $lastUpdateTimestamp);
+        $now = $this->clock->now()->getTimestamp();
+        $elapsed = max(0, ($now - $lastUpdateTimestamp) - $elapsedPausedSeconds);
         $completedIntervals = intdiv($elapsed, $interval);
         $pointsToLose = $currentScore - $threshold + 1;
         $remainingPoints = $pointsToLose - $completedIntervals;
@@ -87,7 +91,8 @@ class DecayCalculator
             return 0;
         }
 
-        return ($remainingPoints * $interval) - ($elapsed % $interval);
+        return (($remainingPoints * $interval) - ($elapsed % $interval))
+            + max(0, $activePauseUntil - $now);
     }
 
     private function effectiveInterval(string $scope, int $currentBlockLevel): int
