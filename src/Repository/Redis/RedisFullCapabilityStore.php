@@ -177,8 +177,12 @@ LUA;
     private const ROTATED_SNAPSHOT = <<<'LUA'
 local now = tonumber(redis.call('TIME')[1])
 local prevExists = redis.call('EXISTS', KEYS[5])
-local prevExpiry = prevExists == 1 and redis.call('HGET', KEYS[6], 'expiresAt') or false
-if prevExists == 1 and (not prevExpiry or tonumber(prevExpiry) <= now) then prevExists = 0 end
+local prevExpiry = false
+if prevExists == 1 then
+  prevExpiry = redis.call('HGET', KEYS[6], 'expiresAt')
+  if not prevExpiry then return redis.error_reply('malformed previous bounded state') end
+  if tonumber(prevExpiry) <= now then prevExists = 0 end
+end
 if prevExists == 0 then
   local exists = redis.call('EXISTS', KEYS[1])
   if exists == 1 and redis.call('TTL', KEYS[1]) < 0 then return redis.error_reply('malformed bounded state') end
@@ -199,6 +203,7 @@ local previous = redis.call('SMEMBERS', KEYS[5]); table.sort(previous)
 local currentExists = redis.call('EXISTS', KEYS[1])
 local bridgeExists = redis.call('EXISTS', KEYS[3])
 if (currentExists == 1 and redis.call('TTL', KEYS[1]) < 0) or (bridgeExists == 1 and redis.call('TTL', KEYS[3]) < 0) then return redis.error_reply('malformed rotated bounded state') end
+if currentExists == 1 and not redis.call('HGET', KEYS[2], 'expiresAt') then return redis.error_reply('malformed current bounded state') end
 local bridgeExpiry = redis.call('HGET', KEYS[4], 'expiresAt')
 if bridgeExists == 1 and not bridgeExpiry then return redis.error_reply('malformed bridge state') end
 local bridge = bridgeExists == 1 and redis.call('SMEMBERS', KEYS[3]) or {}
@@ -207,16 +212,42 @@ local members = {}
 for _, member in ipairs(previous) do members[#members + 1] = member end
 for _, member in ipairs(bridge) do members[#members + 1] = member end
 for _, member in ipairs(previous) do for _, other in ipairs(bridge) do if member == other then return redis.error_reply('bridge overlaps previous state') end end end
-if #members > tonumber(ARGV[4]) then return redis.error_reply('rotated bounded state exceeds capacity') end
-local known = redis.call('SISMEMBER', KEYS[3], ARGV[3]) == 1
-for _, member in ipairs(previous) do if member == ARGV[4] then known = true end end
+if #members > tonumber(ARGV[5]) then return redis.error_reply('rotated bounded state exceeds capacity') end
+local bridgeKnown = redis.call('SISMEMBER', KEYS[3], ARGV[3]) == 1
+local previousKnown = false
+for _, member in ipairs(previous) do if member == ARGV[4] then previousKnown = true end end
+local known = bridgeKnown or previousKnown
 local added = false
-if not known and #members < tonumber(ARGV[4]) then
-  if currentExists == 0 then redis.call('EXPIRE', KEYS[1], ARGV[2]); redis.call('HSET', KEYS[2], 'expiresAt', now + tonumber(ARGV[2])); redis.call('EXPIRE', KEYS[2], ARGV[2]) end
-  redis.call('SADD', KEYS[1], ARGV[3])
-  if bridgeExists == 0 then bridgeExpiry = math.min(now + tonumber(ARGV[2]), tonumber(prevExpiry)); redis.call('HSET', KEYS[4], 'expiresAt', bridgeExpiry); redis.call('EXPIRE', KEYS[4], math.max(1, bridgeExpiry - now)); end
-  redis.call('SADD', KEYS[3], ARGV[3]); added = true
-  members[#members + 1] = ARGV[3]; table.sort(members)
+local function ensureCurrent()
+  if currentExists == 0 then
+    redis.call('SADD', KEYS[1], ARGV[3])
+    redis.call('EXPIRE', KEYS[1], ARGV[2])
+    redis.call('HSET', KEYS[2], 'expiresAt', now + tonumber(ARGV[2]))
+    redis.call('EXPIRE', KEYS[2], ARGV[2])
+    currentExists = 1
+  else
+    redis.call('SADD', KEYS[1], ARGV[3])
+  end
+end
+local function ensureBridge()
+  if bridgeExists == 0 then
+    bridgeExpiry = math.min(now + tonumber(ARGV[2]), tonumber(prevExpiry))
+    redis.call('SADD', KEYS[3], ARGV[3])
+    redis.call('EXPIRE', KEYS[3], math.max(1, bridgeExpiry - now))
+    redis.call('HSET', KEYS[4], 'expiresAt', bridgeExpiry)
+    redis.call('EXPIRE', KEYS[4], math.max(1, bridgeExpiry - now))
+    bridgeExists = 1
+  else
+    redis.call('SADD', KEYS[3], ARGV[3])
+  end
+end
+if known then
+  ensureCurrent()
+elseif #members < tonumber(ARGV[5]) then
+  ensureCurrent()
+  ensureBridge()
+  added = true
+  members[#members + 1] = ARGV[3]
 end
 return {#members, known or added and 1 or 0, added and 1 or 0, tonumber(prevExpiry), unpack(members)}
 LUA;
@@ -230,11 +261,18 @@ LUA;
 
     private const HARD_BLOCK = <<<'LUA'
 local now = tonumber(ARGV[5])
-local function merge(source)
-  if redis.call('EXISTS', source) == 0 then return end
-  for _, member in ipairs(redis.call('ZRANGE', source, 0, -1)) do redis.call('ZADD', KEYS[1], tonumber(member), member) end
+local retention = tonumber(ARGV[9])
+local function merge(source, target)
+  if source == '' or redis.call('EXISTS', source) == 0 then return end
+  for _, member in ipairs(redis.call('ZRANGE', source, 0, -1)) do
+    redis.call('ZADD', target, tonumber(redis.call('ZSCORE', source, member)), member)
+  end
 end
-if KEYS[2] ~= '' then merge(KEYS[2]) end
+local function retain(key, seconds)
+  if key ~= '' and redis.call('EXISTS', key) == 1 and redis.call('TTL', key) < 0 then redis.call('EXPIRE', key, seconds) end
+end
+if KEYS[2] ~= '' then merge(KEYS[2], KEYS[1]) end
+retain(KEYS[1], retention)
 redis.call('ZREMRANGEBYSCORE', KEYS[1], '-inf', '(' .. (now - tonumber(ARGV[6])))
 local active = false
 for _, blockKey in ipairs({KEYS[3], KEYS[4]}) do
@@ -248,25 +286,56 @@ local newCycle = not active
 if newCycle then redis.call('ZADD', KEYS[1], now, tostring(now)) end
 local cycleCount = redis.call('ZCARD', KEYS[1])
 local pauseUntil = 0
-for _, member in ipairs(redis.call('ZRANGE', KEYS[5], 0, -1)) do local sep = string.find(member, ':'); local start = tonumber(string.sub(member, 1, sep - 1)); local finish = tonumber(string.sub(member, sep + 1)); if finish > now then pauseUntil = math.max(pauseUntil, finish) end end
-redis.call('ZREMRANGEBYSCORE', KEYS[5], '-inf', '(' .. (now - tonumber(ARGV[9])))
+if KEYS[6] ~= '' then merge(KEYS[6], KEYS[5]) end
+retain(KEYS[5], retention)
+local pauseCutoff = now - retention
+if redis.call('EXISTS', KEYS[5]) == 1 then
+  for _, member in ipairs(redis.call('ZRANGE', KEYS[5], 0, -1)) do
+    local sep = string.find(member, ':')
+    if not sep then return redis.error_reply('malformed pause history') end
+    local finish = tonumber(string.sub(member, sep + 1))
+    if not finish then return redis.error_reply('malformed pause history') end
+    if finish <= pauseCutoff then redis.call('ZREM', KEYS[5], member) elseif finish > now then pauseUntil = math.max(pauseUntil, finish) end
+  end
+end
 local activated = false
-if newCycle and cycleCount >= tonumber(ARGV[7]) and pauseUntil == 0 then pauseUntil = now + tonumber(ARGV[8]); redis.call('ZADD', KEYS[5], now, tostring(now) .. ':' .. tostring(pauseUntil)); activated = true end
+if newCycle and cycleCount >= tonumber(ARGV[7]) and pauseUntil == 0 then
+  pauseUntil = now + tonumber(ARGV[8])
+  redis.call('ZADD', KEYS[5], now, tostring(now) .. ':' .. tostring(pauseUntil))
+  retain(KEYS[5], retention)
+  activated = true
+end
 local expires = now + tonumber(ARGV[2])
 redis.call('HSET', KEYS[3], 'level', ARGV[1], 'expiresAt', expires); redis.call('EXPIRE', KEYS[3], ARGV[2])
 return {newCycle and 1 or 0, cycleCount, activated and 1 or 0, pauseUntil}
 LUA;
 
     private const PAUSE_READ = <<<'LUA'
-local now = tonumber(ARGV[2]); local from = tonumber(ARGV[1]); local cycles = {}; local pauses = {}
+local now = tonumber(ARGV[2]); local from = tonumber(ARGV[1]); local retention = 86400; local intervals = {}
 local function read(source)
   if source == '' or redis.call('EXISTS', source) == 0 then return end
-  for _, member in ipairs(redis.call('ZRANGE', source, 0, -1)) do cycles[member] = true end
-  for _, member in ipairs(redis.call('ZRANGE', KEYS[3], 0, -1)) do pauses[member] = true end
+  for _, member in ipairs(redis.call('ZRANGE', source, 0, -1)) do
+    local sep = string.find(member, ':')
+    if not sep then return redis.error_reply('malformed pause history') end
+    local start = tonumber(string.sub(member, 1, sep - 1)); local finish = tonumber(string.sub(member, sep + 1))
+    if not start or not finish then return redis.error_reply('malformed pause history') end
+    if finish > now - retention then intervals[#intervals + 1] = {start, finish} end
+  end
 end
-read(KEYS[1]); read(KEYS[2])
-local elapsed = 0; local active = 0
-for member in pairs(pauses) do local sep = string.find(member, ':'); local start = tonumber(string.sub(member, 1, sep - 1)); local finish = tonumber(string.sub(member, sep + 1)); if finish > now then active = math.max(active, finish) end; local left = math.max(from, start); local right = math.min(now, finish); if left < right then elapsed = elapsed + right - left end end
+read(KEYS[3]); read(KEYS[4])
+table.sort(intervals, function(left, right) return left[1] < right[1] or (left[1] == right[1] and left[2] < right[2]) end)
+local elapsed = 0; local active = 0; local mergedStart = nil; local mergedEnd = nil
+for _, interval in ipairs(intervals) do
+  local start = interval[1]; local finish = interval[2]
+  if finish > now then active = math.max(active, finish) end
+  local left = math.max(from, start); local right = math.min(now, finish)
+  if left < right then
+    if mergedStart == nil then mergedStart = left; mergedEnd = right
+    elseif left <= mergedEnd then mergedEnd = math.max(mergedEnd, right)
+    else elapsed = elapsed + mergedEnd - mergedStart; mergedStart = left; mergedEnd = right end
+  end
+end
+if mergedStart ~= nil then elapsed = elapsed + mergedEnd - mergedStart end
 return {elapsed, active}
 LUA;
 
@@ -403,7 +472,8 @@ LUA;
 local now = tonumber(redis.call('TIME')[1]); local previous = 0
 if redis.call('EXISTS', KEYS[2]) == 1 then local expiry = redis.call('HGET', KEYS[3], 'expiresAt'); if not expiry then return redis.error_reply('malformed previous watch state') end; if tonumber(expiry) > now then local value = redis.call('GET', KEYS[2]); if not value or not tonumber(value) then return redis.error_reply('malformed previous watch value') end; previous = tonumber(value) end end
 local exists = redis.call('EXISTS', KEYS[1]); if exists == 1 and redis.call('TTL', KEYS[1]) < 0 then return redis.error_reply('malformed current watch state') end
-local value = exists == 0 and 1 or redis.call('INCR', KEYS[1]); if exists == 0 then redis.call('EXPIRE', KEYS[1], ARGV[1]); redis.call('HSET', KEYS[4], 'expiresAt', now + tonumber(ARGV[1])); redis.call('EXPIRE', KEYS[4], ARGV[1]) end
+local value
+if exists == 0 then value = 1; redis.call('SET', KEYS[1], value, 'EX', ARGV[1]); redis.call('HSET', KEYS[4], 'expiresAt', now + tonumber(ARGV[1])); redis.call('EXPIRE', KEYS[4], ARGV[1]) else value = redis.call('INCR', KEYS[1]) end
 return value + previous
 LUA;
         return $this->integerResult($this->eval($script, [$this->key('watch', $currentKey), $this->key('watch', $previousKey), $this->key('watch-meta', $previousKey), $this->key('watch-meta', $currentKey)], [$ttlSeconds]), 'rotated watch count');
@@ -466,7 +536,14 @@ LUA;
             throw new RateLimiterException('Hard-block cycle level must be at least 2.');
         }
         $previousKey = $previousKey === $currentKey ? null : $previousKey;
-        $keys = [$this->key('cycle', $currentKey), $previousKey === null ? '' : $this->key('cycle', $previousKey), $this->key('block', $currentKey), $previousKey === null ? '' : $this->key('block', $previousKey), $this->key('pause', $currentKey)];
+        $keys = [
+            $this->key('cycle', $currentKey),
+            $previousKey === null ? '' : $this->key('cycle', $previousKey),
+            $this->key('block', $currentKey),
+            $previousKey === null ? '' : $this->key('block', $previousKey),
+            $this->key('pause', $currentKey),
+            $previousKey === null ? '' : $this->key('pause', $previousKey),
+        ];
         $result = $this->eval(self::HARD_BLOCK, $keys, [$level, $durationSeconds, $currentKey, $previousKey ?? '', $now, $cycleWindowSeconds, $cycleThreshold, $pauseSeconds, $pauseHistoryRetentionSeconds]);
         $tuple = $this->tuple($result, 4, 'hard-block cycle result');
         return new HardBlockCycleResultDTO((int) $tuple[0] === 1, (int) $tuple[1], (int) $tuple[2] === 1, (int) $tuple[3]);
@@ -474,7 +551,12 @@ LUA;
 
     public function readDecayPauseState(string $currentKey, ?string $previousKey, int $fromTimestamp, int $now): DecayPauseStateDTO
     {
-        $keys = [$this->key('cycle', $currentKey), $previousKey === null ? '' : $this->key('cycle', $previousKey), $this->key('pause', $currentKey)];
+        $keys = [
+            $this->key('cycle', $currentKey),
+            $previousKey === null ? '' : $this->key('cycle', $previousKey),
+            $this->key('pause', $currentKey),
+            $previousKey === null ? '' : $this->key('pause', $previousKey),
+        ];
         $result = $this->eval(self::PAUSE_READ, $keys, [$fromTimestamp, $now]);
         $tuple = $this->tuple($result, 2, 'decay pause state');
         return new DecayPauseStateDTO((int) $tuple[0], (int) $tuple[1]);
