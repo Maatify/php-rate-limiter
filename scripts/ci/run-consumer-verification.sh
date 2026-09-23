@@ -9,6 +9,8 @@ if [[ ! -f "$fixture_root/composer.json.template" || ! -f "$fixture_root/verify.
     exit 1
 fi
 
+bash "$package_root/scripts/ci/check-consumer-verification-boundary.sh"
+
 for run_number in 1 2; do
     consumer_root="$(mktemp -d "${TMPDIR:-/tmp}/maatify-rate-limiter-consumer.XXXXXX")"
     cleanup() {
@@ -20,9 +22,9 @@ for run_number in 1 2; do
     sed "s|__PACKAGE_ROOT__|$package_root|g" \
         "$consumer_root/composer.json.template" > "$consumer_root/composer.json"
 
-    (
-        cd "$consumer_root"
-        echo "Consumer Verification Harness clean run #$run_number"
+    bash "$package_root/scripts/ci/run-with-redis-service.sh" bash -c '
+        cd "$1"
+        echo "Consumer Verification Harness clean run #$2"
         # The external fixture intentionally accepts any detached development ref from its path repository.
         composer validate --strict --no-check-all
         composer update --no-interaction --prefer-dist --no-progress
@@ -30,7 +32,7 @@ for run_number in 1 2; do
         composer check-platform-reqs
         composer show maatify/php-rate-limiter
         php verify.php
-    )
+    ' _ "$consumer_root" "$run_number"
 
     cleanup
     trap - EXIT
