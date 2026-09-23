@@ -3,7 +3,7 @@
 **Module:** RateLimiter
 **Namespace:** `Maatify\RateLimiter`
 **Status:** LOCKED — Design & Security Contract
-**Spec Version:** `1.7.0`
+**Spec Version:** `1.8.0`
 
 This document defines the **key construction strategy** used by the RateLimiter.
 Keys determine how limits, scores, correlation, and blocks are applied.
@@ -54,37 +54,56 @@ K1 = IP_PREFIX
 **Definition:**
 
 * IPv4: exact IP address
-* IPv6: default normalization `/64`, with **hierarchical adaptive aggregation**:
+* IPv6: canonical enforcement normalization is `/64`; adaptive aggregation is
+  correlation-only:
 
 #### IPv6 Hierarchical Aggregation (Required)
 
-Correlation storage MUST support grouping IPv6 prefixes into larger scopes for detection:
+Correlation storage MUST support grouping IPv6 prefixes into larger detection-only scopes:
 
 * `/64` → `/48` → `/40` → `/32`
 
-**Escalation Triggers (Deterministic):**
+**Adaptive Activation (Deterministic):**
 
-If, within a 10-minute correlation window:
+Within one fixed 600-second window, the bounded activation chain is:
 
-1. Multiple `/64` prefixes under the same `/48` participate in correlation signals (spray/churn/dilution), then
-  * detection operates at `/48` scope, and
-  * enforcement remains scoped to **offending `/64` prefixes** unless otherwise stated by policy.
+1. `/48` becomes active only after **2 distinct participating `/64` members**;
+2. `/40` becomes active only after **4 distinct active `/48` members**;
+3. `/32` becomes active only after **8 distinct active `/40` members**.
 
-2. If the system observes correlation activity across **≥ 4 distinct `/48`** under the same `/40`, then
-  * detection also operates at `/40` scope (anti “/48 boundary spray”),
-  * enforcement remains scoped to offending `/48` and `/64` prefixes.
+The activation sets are capped at `2`, `4`, and `8` respectively. Duplicate
+members do not increase cardinality or refresh the fixed TTL. Inactive child
+scopes do not participate. These activation thresholds do not use the general
+`N-1` WATCH rule: `1/2`, `3/4`, and `7/8` are not decisions or enforcement
+states.
 
-3. If correlation activity spans **≥ 8 distinct `/40`** under the same `/32`, then
-  * detection operates at `/32` scope,
-  * enforcement remains scoped to offending `/40`/`/48`/`/64` prefixes.
+The only participants are eligible Login/OTP `checkOnly()` credential-spray
+observations and requests with a fingerprint entering the bounded churn or
+dilution path. IPv4 never creates this hierarchy state.
+
+`/48`, `/40`, and `/32` MUST NOT be represented as K1 enforcement keys. They
+have no score, block, level, retry-after, or `PenaltyLadder` state. Spray and
+churn may observe active macro scopes, but enforcement persists only the
+current canonical `/64` K1 or `/64 + UA` K2. Dilution remains fingerprint-global
+over canonical `/64` members and never replaces them with macro members.
+
+Hierarchy scopes and members use the package-owned HMAC namespace
+`policy:rate_limiter:ipv6_adaptive:purpose:v1:cidr:environment:prefix`.
+The `/48` member is the opaque canonical `/64` K1; `/40` and `/32` members are
+opaque adaptive child-scope keys. Raw IPv6 addresses and textual prefixes never
+cross the correlation-store boundary.
+
+When an outer key secret rotates, the hierarchy uses the current generation,
+one read-only previous generation, and a current-owned bridge whose TTL is
+bounded by the previous remaining TTL. Fingerprint-only rotation changes only
+macro churn members and does not create a previous IPv6 hierarchy generation.
 
 **Purpose:** Detect large-scale IPv6 spray without blanket-banning all users in a macro-scope.
 
 **Usage:**
 
-* Advisory limits
-* Correlation rules
-* Never used alone for final account blocks
+* Correlation detection only
+* Never used as an enforcement or block key
 
 ---
 

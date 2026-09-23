@@ -143,7 +143,7 @@ final class RateLimitOperationalReaderTest extends TestCase
         self::assertSame($circuitLoadsBefore + 1, $circuitBreakerStore->loadCalls);
     }
 
-    public function testReaderUsesNullableScopesAndIpv6HierarchyWithoutCreatingState(): void
+    public function testReaderUsesNullableCanonicalScopesWithoutCreatingState(): void
     {
         $clock = new FixedClock();
         $store = new InMemoryRateLimitStore($clock);
@@ -164,9 +164,6 @@ final class RateLimitOperationalReaderTest extends TestCase
         self::assertInstanceOf(RateLimitOperationalKeyStateDTO::class, $ipv4->scopes->k3);
         self::assertNull($ipv4->scopes->k4);
         self::assertNull($ipv4->scopes->k5);
-        self::assertNull($ipv4->scopes->k1_48);
-        self::assertNull($ipv4->scopes->k1_40);
-        self::assertNull($ipv4->scopes->k1_32);
 
         $ipv6 = $reader->read(
             new RateLimitContextDTO('2001:db8:1234:5678::10', 'Mozilla/5.0', 'account-123', ['platform' => 'web']),
@@ -175,9 +172,6 @@ final class RateLimitOperationalReaderTest extends TestCase
         self::assertInstanceOf(RateLimitOperationalKeyStateDTO::class, $ipv6->scopes->k3);
         self::assertInstanceOf(RateLimitOperationalKeyStateDTO::class, $ipv6->scopes->k4);
         self::assertInstanceOf(RateLimitOperationalKeyStateDTO::class, $ipv6->scopes->k5);
-        self::assertInstanceOf(RateLimitOperationalKeyStateDTO::class, $ipv6->scopes->k1_48);
-        self::assertInstanceOf(RateLimitOperationalKeyStateDTO::class, $ipv6->scopes->k1_40);
-        self::assertInstanceOf(RateLimitOperationalKeyStateDTO::class, $ipv6->scopes->k1_32);
     }
 
     public function testBudgetOwningPolicyWithoutAccountOmitsAccountScopesAndBudgetWithoutMutation(): void

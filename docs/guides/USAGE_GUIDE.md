@@ -8,6 +8,11 @@ Use this package when a host application needs deterministic, multi-signal enfor
 
 The package is framework-agnostic and storage-agnostic. It does not require a specific HTTP framework, database, cache, queue, or dependency-injection container.
 
+For IPv6, enforcement remains canonical at `/64`. The bounded `/48` → `/40` →
+`/32` hierarchy is internal correlation detection for Spray and Churn only; it
+does not create macro score or block keys, and the returned decision persists
+only the current `/64` K1 or `/64 + UA` K2 state.
+
 ## Requirements
 
 - PHP <code>^8.4</code>.

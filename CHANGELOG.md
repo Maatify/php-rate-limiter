@@ -8,6 +8,21 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Changed
+- Implemented WU-S3-05 IPv6 adaptive aggregation. IPv6 enforcement now uses
+  canonical `/64` K1 only; bounded `/48`, `/40`, and `/32` correlation scopes
+  activate at exact `2/2`, `4/4`, and `8/8` child thresholds within a fixed
+  600-second window, without hierarchy WATCH decisions or macro RateLimitStore
+  score/block state. Spray and Churn observe active macro scopes while persisting
+  only current `/64` K1 or `/64 + UA` K2 enforcement. Hierarchy keys and members
+  are policy/environment/version/purpose-separated HMAC references with bounded
+  outer-key rotation continuity; Dilution remains canonical `/64`-member based.
+  Version transitions: `KEY_STRATEGY.md` `1.7.0` → `1.8.0`,
+  `DECISION_MATRIX.md` `1.8.0` → `1.9.0`, and package reference `1.9.0` → `1.10.0`.
+- Documented the public operational API contraction from serialized
+  `k1,k2,k3,k4,k5,k1_48,k1_40,k1_32` to `k1,k2,k3,k4,k5`. The removed macro
+  fields were enforcement-scope projections; `/48`, `/40`, and `/32` remain
+  internal correlation-detection state only. No additional specification
+  version bump is introduced for this clarification.
 - Follow-up hardening for WU-S3-04: New Device Flood now evaluates from the sixth
   admitted/account-scope observation through the rejected overflow path, while only
   admitted devices may persist K5 state. All bounded distinct-store results are validated

@@ -39,6 +39,10 @@ use Maatify\SharedCommon\Contracts\ClockInterface;
 class EvaluationPipeline
 {
     private const BUDGET_EPOCH_SECONDS = 86400; // 24h
+    private const IPV6_ADAPTIVE_WINDOW_SECONDS = 600;
+    private const IPV6_ADAPTIVE_48_CAP = 2;
+    private const IPV6_ADAPTIVE_40_CAP = 4;
+    private const IPV6_ADAPTIVE_32_CAP = 8;
 
     private string $secret;
     private ?string $previousSecret;
@@ -139,6 +143,17 @@ class EvaluationPipeline
             unset($effectiveKeysV1['k3'], $effectiveKeysV1['k5']);
         }
 
+        // IPv6 macro scopes are correlation-only. Resolve their bounded
+        // activation once, before the feature-specific observations below.
+        $adaptiveIpv6Scopes = $this->resolveAdaptiveIpv6Scopes(
+            $policy,
+            $context,
+            $request,
+            $device,
+            $realKeysV2,
+            $realKeysV1,
+        );
+
         // 5. Fetch & Decay Scores (Using Effective Keys)
         $rawScores = $this->fetchScores($effectiveKeysV2, $effectiveKeysV1);
         $decayedScores = $this->applyDecay($rawScores, $effectiveKeysV2);
@@ -170,6 +185,7 @@ class EvaluationPipeline
             $isEphemeral,
             $realKeysV2,
             $realKeysV1,
+            $adaptiveIpv6Scopes,
         )) {
             $candidates[] = $candidate;
         }
@@ -184,6 +200,7 @@ class EvaluationPipeline
                 $policy->getName(),
                 $realKeysV2['k1'] ?? null,
                 $realKeysV1['k1'] ?? null,
+                $adaptiveIpv6Scopes,
             )) {
                 $candidates[] = $candidate;
             }
@@ -637,8 +654,279 @@ class EvaluationPipeline
     }
 
     /**
+     * Resolve IPv6 macro detection scopes once for the current request.
+     *
+     * The activation chain is bounded and deliberately has no near-threshold
+     * WATCH state: /48, /40, and /32 are detection namespaces only. A macro
+     * scope is returned only after its child threshold is reached.
+     *
      * @param array<string, string|null> $keysV2
      * @param array<string, string|null> $keysV1
+     * @return list<array{cidr: int, currentScope: string, previousScope: ?string}>
+     */
+    private function resolveAdaptiveIpv6Scopes(
+        BlockPolicyInterface $policy,
+        RateLimitContextDTO $context,
+        RateLimitCommand $request,
+        DeviceIdentityDTO $device,
+        array $keysV2,
+        array $keysV1,
+    ): array {
+        if (! filter_var($context->ip, FILTER_VALIDATE_IP, FILTER_FLAG_IPV6)
+            || ! $this->isAdaptiveIpv6Participant($policy->getName(), $context, $request, $device, $keysV2)) {
+            return [];
+        }
+
+        $policyName = $policy->getName();
+        $prefix48 = $this->getIpPrefix($context->ip, 48);
+        $prefix40 = $this->getIpPrefix($context->ip, 40);
+        $prefix32 = $this->getIpPrefix($context->ip, 32);
+        $hasPreviousOuterGeneration = $this->previousSecret !== null;
+        $previousK1 = $hasPreviousOuterGeneration ? ($keysV1['k1'] ?? null) : null;
+
+        $current48 = $this->adaptiveIpv6ScopeKey($policyName, 48, $prefix48, $this->secret);
+        $previous48 = $hasPreviousOuterGeneration
+            ? $this->adaptiveIpv6ScopeKey($policyName, 48, $prefix48, $this->previousSecret ?? $this->secret)
+            : null;
+        $scope48Observation = $this->buildAdaptiveHierarchyObservation(
+            $policyName,
+            48,
+            $prefix48,
+            $keysV2['k1'] ?? null,
+            $previous48,
+            $previousK1,
+        );
+        $scope48Count = $this->addBoundedCorrelation(
+            $scope48Observation,
+            self::IPV6_ADAPTIVE_WINDOW_SECONDS,
+            self::IPV6_ADAPTIVE_48_CAP,
+        );
+        if ($scope48Count < self::IPV6_ADAPTIVE_48_CAP) {
+            return [];
+        }
+
+        $activeScopes = [[
+            'cidr' => 48,
+            'currentScope' => $current48,
+            'previousScope' => $previous48,
+        ]];
+
+        $current40 = $this->adaptiveIpv6ScopeKey($policyName, 40, $prefix40, $this->secret);
+        $previous40 = $hasPreviousOuterGeneration
+            ? $this->adaptiveIpv6ScopeKey($policyName, 40, $prefix40, $this->previousSecret ?? $this->secret)
+            : null;
+        $scope40Observation = $this->buildAdaptiveHierarchyObservation(
+            $policyName,
+            40,
+            $prefix40,
+            $current48,
+            $previous40,
+            $previous48,
+        );
+        $scope40Count = $this->addBoundedCorrelation(
+            $scope40Observation,
+            self::IPV6_ADAPTIVE_WINDOW_SECONDS,
+            self::IPV6_ADAPTIVE_40_CAP,
+        );
+        if ($scope40Count < self::IPV6_ADAPTIVE_40_CAP) {
+            return $activeScopes;
+        }
+
+        $activeScopes[] = [
+            'cidr' => 40,
+            'currentScope' => $current40,
+            'previousScope' => $previous40,
+        ];
+
+        $current32 = $this->adaptiveIpv6ScopeKey($policyName, 32, $prefix32, $this->secret);
+        $previous32 = $hasPreviousOuterGeneration
+            ? $this->adaptiveIpv6ScopeKey($policyName, 32, $prefix32, $this->previousSecret ?? $this->secret)
+            : null;
+        $scope32Observation = $this->buildAdaptiveHierarchyObservation(
+            $policyName,
+            32,
+            $prefix32,
+            $current40,
+            $previous32,
+            $previous40,
+        );
+        $scope32Count = $this->addBoundedCorrelation(
+            $scope32Observation,
+            self::IPV6_ADAPTIVE_WINDOW_SECONDS,
+            self::IPV6_ADAPTIVE_32_CAP,
+        );
+        if ($scope32Count >= self::IPV6_ADAPTIVE_32_CAP) {
+            $activeScopes[] = [
+                'cidr' => 32,
+                'currentScope' => $current32,
+                'previousScope' => $previous32,
+            ];
+        }
+
+        return $activeScopes;
+    }
+
+    /**
+     * A request participates in hierarchy state only through an eligible
+     * pre-check spray observation or the existing bounded fingerprint path.
+     *
+     * @param array<string, string|null> $keysV2
+     */
+    private function isAdaptiveIpv6Participant(
+        string $policyName,
+        RateLimitContextDTO $context,
+        RateLimitCommand $request,
+        DeviceIdentityDTO $device,
+        array $keysV2,
+    ): bool {
+        $spraySubject = $context->correlationId ?? $context->accountId;
+        $sprayEligible = $request->isPreCheck
+            && $this->isCredentialSprayPolicy($policyName)
+            && $spraySubject !== null
+            && ($keysV2['k1'] ?? null) !== null;
+
+        return $sprayEligible || $device->fingerprintHash !== null;
+    }
+
+    private function adaptiveIpv6ScopeKey(string $policyName, int $cidr, string $prefix, string $secret): string
+    {
+        return $this->hashKey(
+            "{$policyName}:rate_limiter:ipv6_adaptive:hierarchy:v1:{$cidr}:{$this->envScope}:{$prefix}",
+            $secret,
+        );
+    }
+
+    private function buildAdaptiveHierarchyObservation(
+        string $policyName,
+        int $cidr,
+        string $currentPrefix,
+        ?string $currentMember,
+        ?string $previousScope,
+        ?string $previousMember,
+    ): BoundedCorrelationObservationDTO {
+        $currentScope = $this->adaptiveIpv6ScopeKey($policyName, $cidr, $currentPrefix, $this->secret);
+        if ($currentMember === null) {
+            throw new RateLimiterException('IPv6 adaptive hierarchy requires a canonical K1 member.');
+        }
+
+        if ($previousScope === null) {
+            return new BoundedCorrelationObservationDTO($currentScope, $currentMember);
+        }
+        if ($this->previousSecret === null || $previousMember === null) {
+            throw new RateLimiterException(
+                'IPv6 adaptive hierarchy rotation requires coordinated previous outer-key state.',
+            );
+        }
+
+        return new BoundedCorrelationObservationDTO(
+            $currentScope,
+            $currentMember,
+            $previousScope,
+            $previousMember,
+            $this->hashKey(
+                "{$policyName}:rate_limiter:ipv6_adaptive:hierarchy:v1:{$cidr}:{$this->envScope}:bridge:{$currentScope}",
+                $this->secret,
+            ),
+        );
+    }
+
+    private function buildAdaptiveCorrelationObservation(
+        string $policyName,
+        string $purpose,
+        int $cidr,
+        string $currentAnchor,
+        string $currentMemberSeed,
+        ?string $previousAnchor,
+        ?string $previousMemberSeed,
+    ): BoundedCorrelationObservationDTO {
+        $namespace = "{$policyName}:rate_limiter:ipv6_adaptive:{$purpose}:v1:{$cidr}:{$this->envScope}";
+        $currentKey = $this->hashKey("{$namespace}:scope:{$currentAnchor}", $this->secret);
+        $currentMember = $this->hashKey("{$namespace}:member:{$currentMemberSeed}", $this->secret);
+        $hasPrevious = $previousAnchor !== null
+            && ($this->previousSecret !== null || $previousMemberSeed !== null);
+        if (! $hasPrevious) {
+            return new BoundedCorrelationObservationDTO($currentKey, $currentMember);
+        }
+
+        $previousSecret = $this->previousSecret ?? $this->secret;
+        $previousMemberSeed ??= $currentMemberSeed;
+        $previousKey = $this->hashKey("{$namespace}:scope:{$previousAnchor}", $previousSecret);
+        $previousMember = $this->hashKey("{$namespace}:member:{$previousMemberSeed}", $previousSecret);
+
+        return new BoundedCorrelationObservationDTO(
+            $currentKey,
+            $currentMember,
+            $previousKey,
+            $previousMember,
+            $this->hashKey("{$namespace}:bridge:{$currentKey}", $this->secret),
+        );
+    }
+
+    /**
+     * @param array{cidr: int, currentScope: string, previousScope: ?string} $scope
+     */
+    private function buildAdaptiveChurnObservation(
+        string $policyName,
+        DeviceIdentityDTO $device,
+        array $scope,
+    ): BoundedCorrelationObservationDTO {
+        if ($device->fingerprintHash === null) {
+            throw new RateLimiterException('IPv6 adaptive churn requires a current fingerprint hash.');
+        }
+
+        $currentAnchor = $this->adaptiveChurnAnchor(
+            $policyName,
+            $scope['cidr'],
+            $scope['currentScope'],
+            $device->normalizedUa,
+            $this->secret,
+        );
+        $previousAnchor = null;
+        $previousMemberSeed = null;
+        if ($scope['previousScope'] !== null) {
+            $previousAnchor = $this->adaptiveChurnAnchor(
+                $policyName,
+                $scope['cidr'],
+                $scope['previousScope'],
+                $device->normalizedUa,
+                $this->previousSecret ?? $this->secret,
+            );
+            $previousMemberSeed = $this->previousFingerprintHash($device);
+        } elseif ($device->previousFingerprintHash !== null) {
+            // Fingerprint-only rotation changes members, not the hierarchy
+            // scope. It must not create a previous hierarchy generation.
+            $previousAnchor = $currentAnchor;
+            $previousMemberSeed = $device->previousFingerprintHash;
+        }
+
+        return $this->buildAdaptiveCorrelationObservation(
+            $policyName,
+            'churn',
+            $scope['cidr'],
+            $currentAnchor,
+            $device->fingerprintHash,
+            $previousAnchor,
+            $previousMemberSeed,
+        );
+    }
+
+    private function adaptiveChurnAnchor(
+        string $policyName,
+        int $cidr,
+        string $adaptiveScope,
+        string $normalizedUa,
+        string $secret,
+    ): string {
+        return $this->hashKey(
+            "{$policyName}:rate_limiter:ipv6_adaptive:churn_anchor:v1:{$cidr}:{$this->envScope}:{$adaptiveScope}:{$normalizedUa}",
+            $secret,
+        );
+    }
+
+    /**
+     * @param array<string, string|null> $keysV2
+     * @param array<string, string|null> $keysV1
+     * @param list<array{cidr: int, currentScope: string, previousScope: ?string}> $adaptiveIpv6Scopes
      * @return array{decision: string, level: int, retryAfter: int, source: string, persistence: list<array{key: string, level: int, duration: int}>}|null
      */
     private function checkCorrelationRules(
@@ -647,6 +935,7 @@ class EvaluationPipeline
         bool $isEphemeral,
         array $keysV2,
         array $keysV1,
+        array $adaptiveIpv6Scopes,
     ): ?array {
         if ($device->fingerprintHash === null) {
             return null;
@@ -660,8 +949,32 @@ class EvaluationPipeline
             $keysV1['k2'] ?? null,
             $this->previousFingerprintHash($device),
         );
-        $churnCount = $this->addBoundedCorrelation($churn, 600, 3);
-        if ($churnCount >= 3) {
+        $churnTriggered = $this->observeChurn(
+            $churn,
+            $this->correlationStateKey($policyName, 'churn_watch', $churn->currentKey, $this->secret),
+            $churn->previousKey === null
+                ? null
+                : $this->correlationStateKey(
+                    $policyName,
+                    'churn_watch',
+                    $churn->previousKey,
+                    $this->previousSecret ?? $this->secret,
+                ),
+        );
+
+        // Every active macro churn scope is observed before selecting a
+        // candidate. Macro scopes never become enforcement keys.
+        foreach ($adaptiveIpv6Scopes as $scope) {
+            $macroChurn = $this->buildAdaptiveChurnObservation($policyName, $device, $scope);
+            $macroChurnTriggered = $this->observeChurn(
+                $macroChurn,
+                $macroChurn->currentKey . ':watch',
+                $macroChurn->previousKey === null ? null : $macroChurn->previousKey . ':watch',
+            );
+            $churnTriggered = $churnTriggered || $macroChurnTriggered;
+        }
+
+        if ($churnTriggered) {
             return $this->candidate(
                 RateLimitResultDTO::DECISION_HARD_BLOCK,
                 2,
@@ -671,32 +984,6 @@ class EvaluationPipeline
                     ? [['key' => $keysV2['k2'], 'level' => 2, 'duration' => 60]]
                     : [],
             );
-        }
-
-        if ($churnCount === 2) {
-            $watchCount = $this->incrementWatchAcrossRotation(
-                $this->correlationStateKey($policyName, 'churn_watch', $churn->currentKey, $this->secret),
-                $churn->previousKey === null
-                    ? null
-                    : $this->correlationStateKey(
-                        $policyName,
-                        'churn_watch',
-                        $churn->previousKey,
-                        $this->previousSecret ?? $this->secret,
-                    ),
-                1800,
-            );
-            if ($watchCount >= 2) {
-                return $this->candidate(
-                    RateLimitResultDTO::DECISION_HARD_BLOCK,
-                    2,
-                    60,
-                    'correlation',
-                    isset($keysV2['k2'])
-                        ? [['key' => $keysV2['k2'], 'level' => 2, 'duration' => 60]]
-                        : [],
-                );
-            }
         }
 
         // Ephemeral overflow has no durable per-fingerprint dilution state.
@@ -790,6 +1077,23 @@ class EvaluationPipeline
             'correlation',
             [['key' => $keysV2['k3'], 'level' => 2, 'duration' => 60]],
         );
+    }
+
+    private function observeChurn(
+        BoundedCorrelationObservationDTO $observation,
+        string $currentWatchKey,
+        ?string $previousWatchKey,
+    ): bool {
+        $count = $this->addBoundedCorrelation($observation, 600, 3);
+        if ($count >= 3) {
+            return true;
+        }
+
+        if ($count !== 2) {
+            return false;
+        }
+
+        return $this->incrementWatchAcrossRotation($currentWatchKey, $previousWatchKey, 1800) >= 2;
     }
 
     private function addBoundedCorrelation(
@@ -916,6 +1220,7 @@ class EvaluationPipeline
      * The subject member is always a domain-separated HMAC. Raw account or
      * correlation identities never cross the correlation-store boundary.
      *
+     * @param list<array{cidr: int, currentScope: string, previousScope: ?string}> $adaptiveIpv6Scopes
      * @return array{decision: string, level: int, retryAfter: int, source: string, persistence: list<array{key: string, level: int, duration: int}>}|null
      */
     private function checkCredentialSpray(
@@ -924,78 +1229,30 @@ class EvaluationPipeline
         string $policyName,
         ?string $k1Key,
         ?string $previousK1Key,
+        array $adaptiveIpv6Scopes,
     ): ?array {
         $subject = $context->correlationId ?? $context->accountId;
         if ($subject === null || $k1Key === null) {
             return null;
         }
 
-        $scopeKey = 'credential_spray:' . $k1Key;
-        if ($this->previousSecret === null) {
-            if (! $this->correlationStore instanceof BoundedCorrelationStoreInterface) {
-                throw new RateLimiterException(
-                    'Credential-spray bounded observation requires the BoundedCorrelationStoreInterface capability.',
-                );
-            }
-            $member = $this->hashKey('credential_spray:subject:v1:' . $subject, $this->secret);
-            $result = $this->correlationStore->addDistinctBounded($scopeKey, $member, 600, 5);
-            $count = BoundedCorrelationResultValidator::count($result, 5);
-        } else {
-            if ($previousK1Key === null) {
-                throw new RateLimiterException(
-                    'Credential-spray key rotation requires a previous K1 correlation key.',
-                );
-            }
+        $thresholdMet = $this->observeCredentialSpray(
+            $this->buildCredentialSprayObservation($subject, $k1Key, $previousK1Key),
+        );
 
-            if (! $this->correlationStore instanceof BoundedCorrelationRotationStoreInterface) {
-                throw new RateLimiterException(
-                    'Credential-spray key rotation requires the BoundedCorrelationRotationStoreInterface capability; '
-                    . 'the configured store cannot preserve previous-generation correlation without a silent reset.',
-                );
-            }
-
-            $member = $this->hashKey('credential_spray:subject:v1:' . $subject, $this->secret);
-            $previousMember = $this->hashKey(
-                'credential_spray:subject:v1:' . $subject,
-                $this->previousSecret,
+        // Observe every active macro scope before choosing the final spray
+        // candidate. The current canonical K1 remains the only persistence key.
+        foreach ($adaptiveIpv6Scopes as $scope) {
+            $macroObservation = $this->buildAdaptiveCorrelationObservation(
+                $policyName,
+                'spray',
+                $scope['cidr'],
+                $scope['currentScope'],
+                $subject,
+                $scope['previousScope'],
+                $subject,
             );
-            $result = $this->correlationStore->addDistinctBoundedAcrossRotation(
-                $scopeKey,
-                'credential_spray:bridge:' . $k1Key,
-                'credential_spray:' . $previousK1Key,
-                $member,
-                $previousMember,
-                600,
-                5,
-            );
-            $count = BoundedCorrelationResultValidator::count($result, 5);
-        }
-
-        if ($this->previousSecret !== null) {
-            $this->assertPositiveCorrelationResult($count, 'distinct credential-spray correlation');
-        }
-
-        $thresholdMet = $count >= 5;
-        if ($count === 4) {
-            if ($this->previousSecret === null) {
-                $watchCount = $this->correlationStore->incrementWatchFlag($scopeKey . ':watch', 1800);
-            } else {
-                if ($previousK1Key === null || ! $this->correlationStore instanceof CorrelationRotationStoreInterface) {
-                    throw new RateLimiterException(
-                        'Credential-spray WATCH rotation requires the CorrelationRotationStoreInterface capability.',
-                    );
-                }
-
-                $watchCount = $this->correlationStore->incrementWatchFlagAcrossRotation(
-                    $scopeKey . ':watch',
-                    'credential_spray:' . $previousK1Key . ':watch',
-                    1800,
-                );
-            }
-            if ($this->previousSecret !== null) {
-                $this->assertPositiveCorrelationResult($watchCount, 'credential-spray WATCH correlation');
-            }
-            $thresholdMet = $watchCount >= 2;
+            $thresholdMet = $this->observeCredentialSpray($macroObservation) || $thresholdMet;
         }
 
         if (! $thresholdMet) {
@@ -1015,11 +1272,48 @@ class EvaluationPipeline
         );
     }
 
-    private function assertPositiveCorrelationResult(int $result, string $operation): void
+    private function observeCredentialSpray(BoundedCorrelationObservationDTO $observation): bool
     {
-        if ($result < 1) {
-            throw new RateLimiterException("Malformed result from {$operation}: expected a positive count.");
+        $count = $this->addBoundedCorrelation($observation, 600, 5);
+        if ($count >= 5) {
+            return true;
         }
+
+        if ($count !== 4) {
+            return false;
+        }
+
+        $watchCount = $this->incrementWatchAcrossRotation(
+            $observation->currentKey . ':watch',
+            $observation->previousKey === null ? null : $observation->previousKey . ':watch',
+            1800,
+        );
+
+        return $watchCount >= 2;
+    }
+
+    private function buildCredentialSprayObservation(
+        string $subject,
+        string $k1Key,
+        ?string $previousK1Key,
+    ): BoundedCorrelationObservationDTO {
+        $currentKey = 'credential_spray:' . $k1Key;
+        $currentMember = $this->hashKey('credential_spray:subject:v1:' . $subject, $this->secret);
+        if ($this->previousSecret === null) {
+            return new BoundedCorrelationObservationDTO($currentKey, $currentMember);
+        }
+
+        if ($previousK1Key === null) {
+            throw new RateLimiterException('Credential-spray key rotation requires a previous K1 correlation key.');
+        }
+
+        return new BoundedCorrelationObservationDTO(
+            $currentKey,
+            $currentMember,
+            'credential_spray:' . $previousK1Key,
+            $this->hashKey('credential_spray:subject:v1:' . $subject, $this->previousSecret),
+            'credential_spray:bridge:' . $k1Key,
+        );
     }
 
     /**
@@ -1081,12 +1375,7 @@ class EvaluationPipeline
                 continue;
             }
 
-            $deltaKey = $keyType;
-            if (str_starts_with($keyType, 'k1_')) {
-                $deltaKey = 'k1';
-            }
-
-            $delta = $deltas[$deltaKey] ?? 0;
+            $delta = $deltas[$keyType] ?? 0;
             if ($delta > 0) {
                 $scoreDto = $rawScores[$keyType] ?? null;
                 $rawVal = $scoreDto ? $scoreDto->value : 0;
@@ -1588,7 +1877,7 @@ class EvaluationPipeline
 
     private function isK1Key(string $keyType): bool
     {
-        return $keyType === 'k1' || str_starts_with($keyType, 'k1_');
+        return $keyType === 'k1';
     }
 
     private function isApiHeavyPolicy(string $policyName): bool
@@ -1752,14 +2041,7 @@ class EvaluationPipeline
         $k4 = $context->accountId ? $this->hashKey("{$base}:k4:{$ver}:{$env}:{$context->accountId}", $secret) : null;
         $k5 = $context->accountId && $fpHash ? $this->hashKey("{$base}:k5:{$ver}:{$env}:{$context->accountId}:{$fpHash}", $secret) : null;
 
-        $keys = ['k1' => $k1, 'k2' => $k2, 'k3' => $k3, 'k4' => $k4, 'k5' => $k5];
-        if (filter_var($context->ip, FILTER_VALIDATE_IP, FILTER_FLAG_IPV6)) {
-            $keys['k1_48'] = $this->hashKey("{$base}:k1:{$ver}:{$env}:{$this->getIpPrefix($context->ip, 48)}", $secret);
-            $keys['k1_40'] = $this->hashKey("{$base}:k1:{$ver}:{$env}:{$this->getIpPrefix($context->ip, 40)}", $secret);
-            $keys['k1_32'] = $this->hashKey("{$base}:k1:{$ver}:{$env}:{$this->getIpPrefix($context->ip, 32)}", $secret);
-        }
-
-        return $keys;
+        return ['k1' => $k1, 'k2' => $k2, 'k3' => $k3, 'k4' => $k4, 'k5' => $k5];
     }
 
     /**
@@ -1868,10 +2150,6 @@ class EvaluationPipeline
     private function getScopedThresholds(string $keyType, BlockPolicyInterface $policy): ?ScoreThresholdsDTO
     {
         $thresholds = $policy->getScoreThresholds();
-
-        if (str_starts_with($keyType, 'k1_')) {
-            return $thresholds->k1 ?? $thresholds->default;
-        }
 
         return match ($keyType) {
             'k1' => $thresholds->k1,

@@ -101,9 +101,6 @@ final class RateLimitOperationalReader implements RateLimitOperationalReaderInte
             $this->readOptionalKeyState('k3', $currentKeys['k3'], $previousKeys['k3'] ?? null),
             $this->readOptionalKeyState('k4', $currentKeys['k4'], $previousKeys['k4'] ?? null),
             $this->readOptionalKeyState('k5', $currentKeys['k5'], $previousKeys['k5'] ?? null),
-            $this->readOptionalKeyState('k1_48', $currentKeys['k1_48'] ?? null, $previousKeys['k1_48'] ?? null),
-            $this->readOptionalKeyState('k1_40', $currentKeys['k1_40'] ?? null, $previousKeys['k1_40'] ?? null),
-            $this->readOptionalKeyState('k1_32', $currentKeys['k1_32'] ?? null, $previousKeys['k1_32'] ?? null),
         );
     }
 
@@ -351,21 +348,6 @@ final class RateLimitOperationalReader implements RateLimitOperationalReaderInte
                 ? null
                 : $this->hashKey("{$base}:k5:{$version}:{$environment}:{$context->accountId}:{$fingerprintHash}", $secret),
         ];
-
-        if (filter_var($context->ip, FILTER_VALIDATE_IP, FILTER_FLAG_IPV6)) {
-            $keys['k1_48'] = $this->hashKey(
-                "{$base}:k1:{$version}:{$environment}:{$this->getIpPrefix($context->ip, 48)}",
-                $secret,
-            );
-            $keys['k1_40'] = $this->hashKey(
-                "{$base}:k1:{$version}:{$environment}:{$this->getIpPrefix($context->ip, 40)}",
-                $secret,
-            );
-            $keys['k1_32'] = $this->hashKey(
-                "{$base}:k1:{$version}:{$environment}:{$this->getIpPrefix($context->ip, 32)}",
-                $secret,
-            );
-        }
 
         return $keys;
     }

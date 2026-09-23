@@ -401,7 +401,7 @@ final class CredentialSprayAndTrustedK1Test extends TestCase
         $ip = '2001:db8:1234:5678::10';
         $policy = new LoginProtectionPolicy();
 
-        foreach (['k1', 'k1_48', 'k1_40', 'k1_32'] as $keyType) {
+        foreach (['k1'] as $keyType) {
             $this->resetState();
             $pipeline = $this->createPipeline();
             $context = new RateLimitContextDTO($ip, 'Mozilla/5.0 Chrome/123', "ipv6-{$keyType}");
@@ -524,14 +524,14 @@ final class CredentialSprayAndTrustedK1Test extends TestCase
 
     private function key(string $policyName, string $keyType, string $scope): string
     {
-        return hash_hmac('sha256', "{$policyName}:rate_limiter:{$this->keyNamespace($keyType)}:v2:prod:{$scope}", 'test_secret');
+        return hash_hmac('sha256', "{$policyName}:rate_limiter:{$keyType}:v2:prod:{$scope}", 'test_secret');
     }
 
     private function keyForContext(string $policyName, string $keyType, RateLimitContextDTO $context, DeviceIdentityDTO $device): string
     {
-        $prefix = $this->ipPrefix($context->ip, $this->keyCidr($keyType));
+        $prefix = $this->ipPrefix($context->ip, 64);
         $scope = match ($keyType) {
-            'k1', 'k1_48', 'k1_40', 'k1_32' => $prefix,
+            'k1' => $prefix,
             'k2' => "{$prefix}:{$device->normalizedUa}",
             'k3' => "{$prefix}:{$device->fingerprintHash}",
             'k4' => (string) $context->accountId,
@@ -540,21 +540,6 @@ final class CredentialSprayAndTrustedK1Test extends TestCase
         };
 
         return $this->key($policyName, $keyType, $scope);
-    }
-
-    private function keyNamespace(string $keyType): string
-    {
-        return str_starts_with($keyType, 'k1_') ? 'k1' : $keyType;
-    }
-
-    private function keyCidr(string $keyType): int
-    {
-        return match ($keyType) {
-            'k1_48' => 48,
-            'k1_40' => 40,
-            'k1_32' => 32,
-            default => 64,
-        };
     }
 
     private function ipPrefix(string $ip, int $cidr): string

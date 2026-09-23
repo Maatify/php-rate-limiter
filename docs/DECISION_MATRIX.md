@@ -4,7 +4,7 @@
 **Namespace:** `Maatify\RateLimiter`
 **Status:** LOCKED — Behavioral Contract
 **Scope:** Login, OTP, API Heavy Endpoints
-**Spec Version:** `1.8.0`
+**Spec Version:** `1.9.0`
 
 This document defines the **deterministic decision rules** used by the Rate Limiter.
 It is a **behavioral contract**, not explanatory documentation.
@@ -509,6 +509,11 @@ purpose/version/environment-separated keyed-HMAC references; raw account, IP, co
 and fingerprint values never cross the store boundary. Missing capabilities and corrupt
 bounded state fail explicitly rather than falling back to unbounded operations.
 
+IPv6 hierarchy activation is a separate scope-activation primitive and does not
+inherit the `N-1` WATCH rule: `/48` requires `2/2` participating `/64`s, `/40`
+requires `4/4` active `/48`s, and `/32` requires `8/8` active `/40`s. These
+thresholds produce no decision, level, retry-after, score, or block persistence.
+
 Distributed-account device observations additionally require the additive
 `BoundedCorrelationSnapshotStoreInterface` (or its rotation companion). The snapshot returns
 the complete bounded logical member set, fixed expiry, and separate `accepted`/`added` flags;
@@ -527,7 +532,7 @@ This is deterministic and testable (no randomness), and blocks “hover forever 
 | IP attempts many correlation subjects | `distinct(correlationSubject) ≥ 5 within 10 minutes` | HARD_BLOCK (IP) |
 
 **Advisory Constraint:**
-IP-only blocks, including K1 hierarchy blocks and K1 score-derived candidates, are advisory for **trusted session devices** under Login and OTP. The K1 state remains stored and active for untrusted traffic; K2/K3/K4/K5 remain authoritative.
+IP-only K1 blocks and K1 score-derived candidates are advisory for **trusted session devices** under Login and OTP. The K1 state remains stored and active for untrusted traffic; K2/K3/K4/K5 remain authoritative. IPv6 macro scopes are detection-only and never create an IP block state of their own.
 
 During key-secret rotation, the previous K1 spray set is read-only. The current K1
 uses current-secret HMAC members, and a current bridge namespace
@@ -541,6 +546,14 @@ never written or extended.
 The spray distinct set is capped at five members in its 600-second window. This cap is a
 storage-safety invariant as well as an enforcement threshold; rejected new subjects do not
 create additional members or keys.
+
+For IPv6, each active `/48`, `/40`, or `/32` detection scope has an independent
+bounded spray set with the same `5/5` threshold and 600-second window. Every
+macro observation is completed before a candidate is selected, while the only
+persisted enforcement key remains the current canonical `/64` K1. A trusted
+session treats macro K1 spray as advisory exactly as base K1 spray: state is
+stored for untrusted traffic, but the trusted request is not rejected solely by
+that macro signal. Macro scopes never create RateLimitStore score or block state.
 
 ---
 
@@ -615,6 +628,13 @@ member produces a K2 hard-block candidate, and the second qualifying N-1 WATCH o
 also produces the same candidate. During current/previous generation rotation, the previous
 set is read-only and a current-secret bridge is used with its TTL capped by the previous
 remaining TTL.
+
+Active IPv6 macro scopes observe churn using an opaque scope-plus-normalized-UA
+anchor and current/previous fingerprint members. Their `3/3` threshold and
+`2/3` WATCH behavior are independent per macro scope, but enforcement persists
+only the current canonical `/64 + UA` K2. Outer-only, fingerprint-only, and
+both-rotated requests use the coordinated bounded-generation model without
+Cartesian history.
 
 Fingerprint dilution uses a separate bounded 600-second set capped at six IP-scope members.
 The fifth member creates a 30-minute WATCH; a second qualifying WATCH or the sixth member

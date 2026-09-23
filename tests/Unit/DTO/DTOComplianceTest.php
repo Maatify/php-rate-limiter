@@ -295,15 +295,12 @@ class DTOComplianceTest extends TestCase
                     null,
                     null,
                 ),
-                ['k1', 'k2', 'k3', 'k4', 'k5', 'k1_48', 'k1_40', 'k1_32'], [
+                ['k1', 'k2', 'k3', 'k4', 'k5'], [
                     'k1' => ['score' => null, 'effectiveScore' => 0, 'scoreFromPreviousGeneration' => false, 'activeHardBlock' => null, 'blockFromPreviousGeneration' => false],
                     'k2' => ['score' => null, 'effectiveScore' => 0, 'scoreFromPreviousGeneration' => false, 'activeHardBlock' => null, 'blockFromPreviousGeneration' => false],
                     'k3' => null,
                     'k4' => null,
                     'k5' => null,
-                    'k1_48' => null,
-                    'k1_40' => null,
-                    'k1_32' => null,
                 ],
             ],
             RateLimitOperationalBudgetDTO::class => [
@@ -354,9 +351,6 @@ class DTOComplianceTest extends TestCase
                         'k3' => null,
                         'k4' => null,
                         'k5' => null,
-                        'k1_48' => null,
-                        'k1_40' => null,
-                        'k1_32' => null,
                     ],
                     'budget' => null,
                     'circuitBreaker' => null,
