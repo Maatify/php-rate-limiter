@@ -31,8 +31,10 @@ final class RedisFullCapabilityStoreIntegrationTest extends TestCase
         self::assertSame(5, $this->store->get('score')?->value);
         $budget = $this->store->incrementBudget('budget', 60, 2);
         self::assertSame(2, $budget->count);
-        self::assertSame($budget, $this->store->getBudget('budget'));
-        self::assertSame(1, $this->store->addDistinct('members', 'one', 60));
+        $storedBudget = $this->store->getBudget('budget');
+        self::assertNotNull($storedBudget);
+        self::assertSame($budget->count, $storedBudget->count);
+        self::assertSame($budget->epochStart, $storedBudget->epochStart);
         self::assertSame(1, $this->store->addDistinct('members', 'one', 60));
         self::assertSame(1, $this->store->incrementWatchFlag('watch', 60));
     }

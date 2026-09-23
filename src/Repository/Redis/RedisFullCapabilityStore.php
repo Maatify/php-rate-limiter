@@ -169,8 +169,7 @@ if count >= tonumber(ARGV[3]) then
   local members = redis.call('SMEMBERS', KEYS[1]); table.sort(members)
   return {count, 0, 0, redis.call('HGET', KEYS[2], 'expiresAt') or now, unpack(members)}
 end
-if exists == 0 then redis.call('EXPIRE', KEYS[1], ARGV[1]); redis.call('HSET', KEYS[2], 'expiresAt', now + tonumber(ARGV[1])); redis.call('EXPIRE', KEYS[2], ARGV[1]) end
-redis.call('SADD', KEYS[1], ARGV[2])
+if exists == 0 then redis.call('SADD', KEYS[1], ARGV[2]); redis.call('EXPIRE', KEYS[1], ARGV[1]); redis.call('HSET', KEYS[2], 'expiresAt', now + tonumber(ARGV[1])); redis.call('EXPIRE', KEYS[2], ARGV[1]) else redis.call('SADD', KEYS[1], ARGV[2]) end
 local members = redis.call('SMEMBERS', KEYS[1]); table.sort(members)
 return {#members, 1, 1, redis.call('HGET', KEYS[2], 'expiresAt') or now + tonumber(ARGV[1]), unpack(members)}
 LUA;
@@ -192,8 +191,7 @@ if prevExists == 0 then
     local members = redis.call('SMEMBERS', KEYS[1]); table.sort(members)
     return {count, 0, 0, redis.call('HGET', KEYS[2], 'expiresAt') or now, unpack(members)}
   end
-  if exists == 0 then redis.call('EXPIRE', KEYS[1], ARGV[2]); redis.call('HSET', KEYS[2], 'expiresAt', now + tonumber(ARGV[2])); redis.call('EXPIRE', KEYS[2], ARGV[2]) end
-  redis.call('SADD', KEYS[1], ARGV[3])
+  if exists == 0 then redis.call('SADD', KEYS[1], ARGV[3]); redis.call('EXPIRE', KEYS[1], ARGV[2]); redis.call('HSET', KEYS[2], 'expiresAt', now + tonumber(ARGV[2])); redis.call('EXPIRE', KEYS[2], ARGV[2]) else redis.call('SADD', KEYS[1], ARGV[3]) end
   local members = redis.call('SMEMBERS', KEYS[1]); table.sort(members)
   return {#members, 1, 1, redis.call('HGET', KEYS[2], 'expiresAt') or now + tonumber(ARGV[2]), unpack(members)}
 end

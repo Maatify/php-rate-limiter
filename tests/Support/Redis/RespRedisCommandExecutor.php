@@ -14,11 +14,11 @@ final class RespRedisCommandExecutor implements RedisCommandExecutorInterface
 
     public function __construct(string $host, int $port)
     {
-        $errorCode = 0;
-        $errorMessage = '';
+        $errorCode = null;
+        $errorMessage = null;
         $socket = stream_socket_client("tcp://{$host}:{$port}", $errorCode, $errorMessage, 5);
         if (! is_resource($socket)) {
-            $code = is_int($errorCode) || is_string($errorCode) ? (int) $errorCode : 0;
+            $code = is_int($errorCode) ? $errorCode : 0;
             $message = is_string($errorMessage) ? $errorMessage : 'unknown error';
             throw new RuntimeException('Redis connection failed (' . $code . '): ' . $message);
         }
