@@ -3,7 +3,7 @@
 **Package:** RateLimiter
 **Namespace:** `Maatify\RateLimiter`
 **Status:** LOCKED — Architecture Contract
-**Spec Version:** `1.14.0`
+**Spec Version:** `1.15.0`
 **Location:** `src/`
 
 This document explains **why** the RateLimiter package is designed the way it is.
@@ -20,7 +20,7 @@ The [Usage Guide](docs/guides/USAGE_GUIDE.md) is the consumer-facing walkthrough
 
 ## Package Fit and Boundaries
 
-`maatify/php-rate-limiter` is a standalone, framework-agnostic Composer package for deterministic, multi-signal rate-limit decisions. It protects host-selected operations such as login, OTP/step-up, and API-heavy access. The package owns enforcement evaluation and its bounded state semantics; the Host owns account/session truth, transport behavior, storage implementations, authorization, logging destinations, and cross-domain reporting.
+`maatify/php-rate-limiter` is a standalone, framework-agnostic Composer package for deterministic, multi-signal rate-limit decisions. It protects host-selected operations such as login, OTP/step-up, and API-heavy access. The package owns enforcement evaluation, its bounded state semantics, and the optional official Redis full-capability persistence implementation. The Host owns account/session truth, transport behavior, the Redis client and connection lifecycle when using that implementation, custom storage implementations when selecting another backend, authorization, logging destinations, and cross-domain reporting.
 
 For authentication correlation, the package uses the opaque `correlationId` supplied by the Host when present and otherwise falls back to `accountId`. The package does not derive subjects from raw usernames or email addresses, and it stores only domain-separated keyed-HMAC correlation members.
 
@@ -50,7 +50,7 @@ under the responsibility that owns them. There are no `Domain`, capability-wrapp
 
 **Classification: In Scope.**
 
-The package owns persisted operational semantics for the rate limiter even though the Host supplies the concrete storage drivers. A point-in-time operational read is therefore a package capability, not a generic dashboard or cross-domain reporting layer.
+The package owns persisted operational semantics for the rate limiter and supplies the optional official Redis persistence implementation. A Host may supply a concrete storage implementation when selecting another backend. A point-in-time operational read is therefore a package capability, not a generic dashboard or cross-domain reporting layer.
 
 Package-owned operational concepts are:
 
@@ -63,7 +63,8 @@ Package-owned operational concepts are:
 
 The Host owns:
 
-- the concrete persistence backend;
+- the Redis client and connection lifecycle when using the official Redis store;
+- a custom persistence backend when selecting another implementation;
 - account and session source of truth;
 - HTTP and transport behavior;
 - permissions;
@@ -106,6 +107,7 @@ The following inventory describes the current public runtime types. Test and sup
 | `Maatify\RateLimiter\Repository\CircuitBreakerProbeStoreInterface` | Additive atomic per-policy recovery-probe lease capability. |
 | `Maatify\RateLimiter\Repository\HardBlockCycleStoreInterface` | Additive atomic L2+ block, hard-cycle, and decay-pause capability; Previous is read-only. |
 | `Maatify\RateLimiter\Repository\FullCapabilityStoreInterface` | Aggregate contract composing the four additive full-capability storage boundaries without declaring new methods. |
+| `Maatify\RateLimiter\Repository\Redis\RedisCommandExecutorInterface` | Raw Redis command boundary supplied by the Host/client bridge for the optional official Redis store. |
 | `Maatify\RateLimiter\Contract\FailureSignalEmitterInterface` | Failure and circuit-breaker signal delivery boundary. |
 | `Maatify\RateLimiter\Service\DeviceIdentityResolverInterface` | Device identity resolution boundary. |
 | `Maatify\RateLimiter\Service\RateLimitOperationalReaderInterface` | Read-only point-in-time operational state query boundary. |
@@ -149,6 +151,7 @@ The following inventory describes the current public runtime types. Test and sup
 | Identity services | `Maatify\RateLimiter\Service\DeviceIdentityResolver`, `Maatify\RateLimiter\Service\FingerprintHasher`, `Maatify\RateLimiter\Service\EphemeralBucket` | Default identity hashing, normalization, bounded device-cap admission, and ephemeral routing without synthetic persistent keys. |
 | Operational read | `Maatify\RateLimiter\Service\RateLimitOperationalReader` | Resolves a read-only point-in-time snapshot from a typed context and policy without invoking enforcement or mutation primitives. |
 | Decision services | `Maatify\RateLimiter\Service\AntiEquilibriumGate`, `Maatify\RateLimiter\Service\BoundedCorrelationResultValidator`, `Maatify\RateLimiter\Service\BudgetTracker`, `Maatify\RateLimiter\Service\DecayCalculator`, `Maatify\RateLimiter\Service\PenaltyLadder` | Publicly typed services for bounded result validation, penalty, budget, decay, and escalation orchestration. |
+| Official Redis storage | `Maatify\RateLimiter\Repository\Redis\CallableRedisCommandExecutor`, `Maatify\RateLimiter\Repository\Redis\RedisFullCapabilityStore` | Optional package-owned store for one logical non-clustered Redis server. It has no `ext-redis` or Predis runtime dependency; the Host owns the client/connection lifecycle and supplies the raw-command executor. Other `FullCapabilityStoreInterface` implementations remain supported. |
 | Configuration presets | `Maatify\RateLimiter\Config\LoginProtectionPolicy`, `Maatify\RateLimiter\Config\OtpProtectionPolicy`, `Maatify\RateLimiter\Config\ApiHeavyProtectionPolicy` | Production policy definitions selected by the command policy name. |
 | Exception | `Maatify\RateLimiter\Exception\RateLimiterException` | Package-defined invalid-input and configuration exception implementing the package marker interface. |
 
@@ -194,8 +197,12 @@ $limiter = RateLimiterBuilder::fromFullCapabilityStore(
 `FullCapabilityStoreInterface` extends exactly `BudgetSeedStoreInterface`,
 `BoundedCorrelationSnapshotRotationStoreInterface`,
 `CircuitBreakerProbeStoreInterface`, and `HardBlockCycleStoreInterface`; it
-declares no methods of its own. The concrete adapter remains outside this core
-package, which includes no Redis, PDO, Lua, or `ext-redis` implementation.
+declares no methods of its own. The package also ships the optional official
+`Repository\\Redis\\RedisFullCapabilityStore` for one logical non-clustered Redis
+server. It has no runtime Redis-client or `ext-redis` dependency: the Host owns
+the client and supplies `RedisCommandExecutorInterface` or
+`CallableRedisCommandExecutor`. Other full-capability backends remain supported,
+and Redis Cluster is not currently claimed.
 The existing multi-store constructor remains source-compatible.
 
 `build()` supplies the UTC `SystemClock`, the default identity resolver, the package-owned evaluation graph, and the `login_protection`, `otp_protection`, and `api_heavy_protection` policies. `withClock()`, `withDeviceIdentityResolver()`, and `withPolicy()` are the only targeted overrides. A policy with an existing name replaces that policy; a new name is appended without removing defaults. Consumers needing direct control of `EvaluationPipeline` or its internal services retain the existing low-level constructors as the Advanced Path.
@@ -408,12 +415,14 @@ The public boundaries are placed under their owning responsibility:
 - `Repository/` owns `RateLimitStoreInterface`, `BudgetSeedStoreInterface`,
   `CorrelationStoreInterface`, `CorrelationRotationStoreInterface`,
   `BoundedCorrelationStoreInterface`, `BoundedCorrelationRotationStoreInterface`,
-  `CircuitBreakerStoreInterface`, `HardBlockCycleStoreInterface`, and
-  `FullCapabilityStoreInterface`.
+  `CircuitBreakerStoreInterface`, `HardBlockCycleStoreInterface`,
+  `FullCapabilityStoreInterface`, and the Redis command-executor boundary.
 - `Service/` owns `RateLimiterInterface` and `DeviceIdentityResolverInterface`.
 - `Contract/` retains the general host/outbound `FailureSignalEmitterInterface`.
 
-These interfaces are pure and storage-agnostic; concrete persistence and signal
+These interfaces are pure and storage-agnostic. The package also ships the optional
+official Redis concrete store; the Host owns its Redis client/connection lifecycle
+and the command executor. Custom persistence implementations and signal delivery
 implementations remain host-owned.
 
 ### 4.2 Commands and DTOs (Public Data Shapes)
@@ -548,7 +557,11 @@ Generation resolution and the K5 micro-cap current/previous rule are owned by
 
 ### 4.7 Infrastructure (Drivers)
 
-The package owns storage contracts for the required persistence layer. Consumers must provide implementations of these contracts. The package itself does not ship with concrete driver implementations.
+The package owns storage contracts for the required persistence layer and ships the
+optional official `RedisFullCapabilityStore` implementation. Consumers provide
+implementations of these contracts when selecting a custom backend. The official
+Redis store uses a Host-supplied command executor and has no `ext-redis` or Predis
+runtime dependency.
 
 **Infrastructure rules for consumers:**
 - Drivers MUST provide deterministic, bounded behavior
@@ -565,7 +578,9 @@ members or TTL, and use `previous cardinality + bridge cardinality` for the acti
 spray window. A current-only fallback is forbidden; a missing capability or malformed
 previous state fails through the engine's existing failure semantics. The bridge is
 current-secret-only, fixed-TTL, and capped by the previous remaining TTL. The core
-package provides no Redis, Lua, PDO, or other concrete adapter.
+package provides an optional Redis implementation through its command-executor
+boundary; Redis remains optional and the physical key layout is internal rather
+than a consumer contract.
 
 Bounded device-cap, churn, dilution, and spray distinct state uses the additive
 `BoundedCorrelationStoreInterface`; a current/previous observation requires
@@ -623,8 +638,9 @@ semantics (`docs/FAILURE_SEMANTICS.md`) — never a silent reset or loss of enfo
 
 **Transaction owner.** The package does not open or manage a general database
 transaction around `RateLimiterInterface::limit()`. Transaction and backend
-atomicity ownership belongs to the concrete Host repository/store implementation
-when its backend requires one.
+atomicity ownership belongs to the concrete repository/store implementation selected
+by the consumer—either the package-owned official Redis store or a Host-owned custom
+store—when its backend requires one.
 
 **Atomicity boundary.** Every operation declared atomic by
 `RateLimitStoreInterface`, `BudgetSeedStoreInterface`, `CorrelationStoreInterface`, or a
@@ -776,7 +792,7 @@ This package maintains strict architectural boundaries:
 - No coupling to HTTP frameworks
 - No reliance on globals (`$_SERVER`, `$_COOKIE`)
 - Contract, Command, and DTO boundaries
-- Consumers implement infrastructure drivers
+- The package supplies the optional official Redis persistence driver; consumers may provide custom infrastructure drivers for other backends
 
 Composer autoload maps:
 - `Maatify\RateLimiter\` → `src/`

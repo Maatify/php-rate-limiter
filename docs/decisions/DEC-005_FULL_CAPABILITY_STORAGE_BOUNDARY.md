@@ -6,7 +6,7 @@
 
 ## Status
 
-`ACTIVE`
+`SUPERSEDED`
 
 ## Date
 
@@ -73,7 +73,7 @@ None.
 
 ## Superseded By
 
-None.
+DEC-006
 
 ## Canonical Contract / Current Owner
 

@@ -91,9 +91,11 @@ $limiter = RateLimiterBuilder::fromFullCapabilityStore(
 )->build();
 ```
 
-`FullCapabilityStoreInterface` adds no methods of its own. Its concrete adapter
-is supplied by the consumer; the core package includes no Redis, PDO, Lua, or
-`ext-redis` implementation.
+`FullCapabilityStoreInterface` adds no methods of its own. The package includes
+an official optional non-clustered Redis implementation under `Repository\\Redis`,
+but consumers choosing another backend still install the package without a Redis
+extension or client. Redis consumers own the concrete client and pass commands
+through `RedisCommandExecutorInterface` or `CallableRedisCommandExecutor`.
 
 ## Public Runtime API
 

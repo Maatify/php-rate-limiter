@@ -56,7 +56,7 @@
         ],
         "test": "phpunit",
         "test:unit": "phpunit --testsuite Unit",
-        "test:integration": "phpunit --testsuite Integration"
+        "test:integration": "bash scripts/ci/run-integration-with-redis.sh"
     },
     "config": {
         "optimize-autoloader": true,

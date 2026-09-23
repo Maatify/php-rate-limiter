@@ -8,6 +8,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Changed
+- Added the official optional built-in Redis full-capability store. It uses a
+  Host-supplied command executor, supports one logical non-clustered Redis
+  server, preserves the backend-agnostic aggregate contract, and adds no Redis
+  client or `ext-redis` runtime dependency. Package Reference version:
+  `1.14.0` → `1.15.0`.
 - Added WU-S4-02A full-capability storage composition. `FullCapabilityStoreInterface`
   aggregates the budget-seed, bounded snapshot-rotation, circuit-probe, and
   hard-block-cycle contracts without adding methods, and

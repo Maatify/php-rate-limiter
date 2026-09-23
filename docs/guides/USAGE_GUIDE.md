@@ -19,7 +19,7 @@ only the current `/64` K1 or `/64 + UA` K2 state.
 - PHP extensions <code>filter</code>, <code>hash</code>, <code>json</code>, and <code>pcre</code>.
 - <code>maatify/exceptions</code> <code>^1.0</code>.
 - <code>maatify/shared-common</code> <code>^1.0</code>.
-- Host implementations of the storage and signal contracts listed in [Integration Boundaries](#integration-boundaries).
+- A Host-provided `FailureSignalEmitterInterface` and either the optional official Redis store with a Host-supplied command executor/client lifecycle or Host implementations of the storage contracts listed in [Integration Boundaries](#integration-boundaries).
 
 The package is proprietary and is currently in pre-release development. Follow the applicable authorization or written license agreement before integrating it.
 
@@ -29,7 +29,7 @@ The package does not provide permanent bans, WAF/CDN behavior, advanced browser 
 
 ## Default Composition
 
-Use `RateLimiterBuilder` for the production default graph. The Host may provide the four required integration boundaries separately or provide one concrete `FullCapabilityStoreInterface`; the package supplies the internal orchestration, UTC default clock, default identity resolver, and three policy presets.
+Use `RateLimiterBuilder` for the production default graph. The package supplies the optional official Redis full-capability store; otherwise the Host may provide the four required integration boundaries separately or provide one custom `FullCapabilityStoreInterface`. The package supplies the internal orchestration, UTC default clock, default identity resolver, and three policy presets.
 
 ```php
 use Maatify\RateLimiter\Builder\RateLimiterBuilder;
@@ -56,7 +56,8 @@ $limiter = new RateLimiterBuilder(
     ->build();
 ```
 
-If one host adapter owns all four additive storage capabilities, use the named
+If one adapter—either the package-owned official Redis store or a Host-owned custom
+adapter—implements all four additive storage capabilities, use the named
 full-capability composition path:
 
 ```php
@@ -70,9 +71,10 @@ $limiter = RateLimiterBuilder::fromFullCapabilityStore(
 ```
 
 `FullCapabilityStoreInterface` is an aggregate contract with no methods of its
-own. Its concrete implementation is host-owned; the core package provides no
-Redis, PDO, Lua, or `ext-redis` adapter. The failure-signal emitter remains a
-separate dependency, and the existing multi-store constructor remains valid.
+own. The package includes an optional built-in non-clustered Redis store; the Host
+owns the concrete client and supplies its command executor. No Redis client or
+`ext-redis` runtime dependency is added, and the existing multi-store constructor
+remains valid.
 
 Secrets are explicit and independently rotatable. `RateLimiterConfig` rejects empty or whitespace-only active, previous, and environment values without trimming valid caller input. The builder does not create a service container or no-op production adapters. Use `withClock()`, `withDeviceIdentityResolver()`, or `withPolicy()` only for the targeted overrides defined by the public contract; low-level constructors remain the Advanced Path.
 
@@ -113,7 +115,12 @@ The response retry time is independent from persistence: score-derived results m
 
 ## Integration Boundaries
 
-The host supplies implementations for:
+The package supplies the optional official `RedisFullCapabilityStore` for one logical
+non-clustered Redis server. Consumers selecting that store provide a
+`RedisCommandExecutorInterface` implementation, such as
+`CallableRedisCommandExecutor`, backed by a Host-owned Redis client and connection
+lifecycle. Consumers selecting another backend supply the following storage
+implementations:
 
 - <code>RateLimitStoreInterface</code>: counters, blocks, and budget state with the atomicity and TTL behavior required by the package.
 - <code>CorrelationStoreInterface</code>: source-compatible base contract for distinct sets and watch flags.
@@ -132,12 +139,12 @@ The host supplies implementations for:
 
 The host may also provide a custom <code>DeviceIdentityResolverInterface</code> or a custom <code>BlockPolicyInterface</code> through the builder's targeted overrides. A same-name policy replaces the matching default, while a new name is added. <code>BudgetSeedStoreInterface</code> is an additive storage capability used when a host store supports atomic budget-epoch seeding during key rotation.
 
-The package owns enforcement decisions, key construction, scoring, decay, bounded correlation logic, budget eligibility, circuit-breaker behavior, and result semantics. The host owns storage implementation, account and session truth, transport response behavior, authorization, logging destinations, and cross-domain reporting.
+The package owns enforcement decisions, key construction, scoring, decay, bounded correlation logic, budget eligibility, circuit-breaker behavior, result semantics, and the official Redis persistence semantics. The Host owns the Redis client and connection lifecycle for that store, custom storage implementations when selecting another backend, account and session truth, transport response behavior, authorization, logging destinations, and cross-domain reporting.
 
 The base correlation contract keeps its existing signatures and remains sufficient
 without a previous key secret. Its concrete implementation must establish the first
 window TTL atomically and must not refresh that TTL on later writes. During key-secret
-rotation, the host store must implement <code>BoundedCorrelationRotationStoreInterface</code>
+rotation, the selected store must implement <code>BoundedCorrelationRotationStoreInterface</code>
 and the WATCH rotation capability: the current generation is writable, the previous
 generation is read-only, and a current-secret bridge deduplicates subjects while its TTL is
 capped by the previous remaining TTL. Bounded device-cap windows are 900 seconds with caps
@@ -151,7 +158,10 @@ second qualifying WATCH or fourth member blocks every involved K5 at L2, and the
 fingerprint, or real K4/K5 do not observe this rule. A missing capability or corrupt previous
 state fails explicitly rather than silently resetting enforcement. Store keys and members are
 opaque keyed-HMAC references; raw account, IP, correlation, and fingerprint values never cross
-the boundary. The core package does not include a Redis or other concrete correlation adapter.
+the boundary. The package includes the optional official Redis full-capability store;
+other backends continue through <code>FullCapabilityStoreInterface</code> or the
+existing fine-grained interfaces. Redis remains optional and is not the core
+abstraction.
 
 The snapshot operation is part of the pre-check lifecycle: <code>checkOnly()</code> does not
 record a success or failure, but it may update bounded distributed-correlation state. A later
@@ -184,8 +194,8 @@ The pre-check is appropriate immediately before a protected host operation. A bl
 
     Input → Host records that the authentication or step-up attempt failed
           → Public Call → RateLimiterInterface::limit($context, RateLimitCommand::recordFailure($policy))
-          → Result → RateLimitResultDTO plus updated state through the host store adapters
-          → Boundary → Host persists through its adapters and applies the returned decision
+          → Result → RateLimitResultDTO plus updated state through the selected store adapter
+          → Boundary → The selected store persists state and the Host applies the returned decision
 
 Use the policy that matches the protected operation. The package keeps the decision and persistence semantics inside its engine; the host does not reproduce scoring or key rules.
 
@@ -249,7 +259,7 @@ runtime implementation.
 
 ## Operational Read / Reporting Boundary
 
-This package is **In Scope** for Operational Read / Reporting because it owns the persisted operational semantics of score state, temporary blocks, account budgets, known-device micro-caps, budget cooldowns, and circuit-breaker state. The Host supplies the concrete persistence backend, account/session source of truth, HTTP/transport, permissions, dashboards/UI, cross-package aggregation, and exports.
+This package is **In Scope** for Operational Read / Reporting because it owns the persisted operational semantics of score state, temporary blocks, account budgets, known-device micro-caps, budget cooldowns, and circuit-breaker state, including the optional official Redis persistence implementation. The Host supplies the Redis client and connection lifecycle for that implementation or a custom persistence backend when selecting another store, along with account/session source of truth, HTTP/transport, permissions, dashboards/UI, cross-package aggregation, and exports.
 
 The stable, framework-agnostic read contract is <code>RateLimitOperationalReaderInterface::read()</code>, implemented by <code>RateLimitOperationalReader</code>. It accepts a <code>RateLimitContextDTO</code> and <code>BlockPolicyInterface</code>, returns a typed <code>RateLimitOperationalSnapshotDTO</code>, and performs a point-in-time read without changing enforcement state. It is separate from <code>RateLimiterInterface::limit()</code>, which remains the consumer enforcement API.
 
