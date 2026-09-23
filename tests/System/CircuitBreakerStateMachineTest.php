@@ -6,6 +6,7 @@ namespace Maatify\RateLimiter\Tests\System;
 
 use Maatify\RateLimiter\Command\RateLimitCommand;
 use Maatify\RateLimiter\Config\ApiHeavyProtectionPolicy;
+use Maatify\RateLimiter\Config\BlockPolicyInterface;
 use Maatify\RateLimiter\Config\LoginProtectionPolicy;
 use Maatify\RateLimiter\DTO\CircuitBreakerStateDTO;
 use Maatify\RateLimiter\DTO\FailureSignalDTO;
@@ -491,6 +492,7 @@ final class CircuitBreakerStateMachineTest extends TestCase
     {
         $now = $this->clock->now()->getTimestamp();
         $resolver = new FailureModeResolver();
+        /** @var list<array{string, BlockPolicyInterface, string, int, string}> $cases */
         $cases = [
             ['guarded-closed', new ApiHeavyProtectionPolicy(), FailureStateDTO::STATE_CLOSED, $now + 600, 'FAIL_CLOSED'],
             ['guarded-open', new ApiHeavyProtectionPolicy(), FailureStateDTO::STATE_OPEN, $now + 600, 'FAIL_CLOSED'],
