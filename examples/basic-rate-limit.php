@@ -3,6 +3,8 @@
 declare(strict_types=1);
 
 use Maatify\RateLimiter\Command\RateLimitCommand;
+use Maatify\RateLimiter\Builder\RateLimiterBuilder;
+use Maatify\RateLimiter\Config\RateLimiterConfig;
 use Maatify\RateLimiter\Repository\CircuitBreakerProbeStoreInterface;
 use Maatify\RateLimiter\DTO\BoundedDistinctResultDTO;
 use Maatify\RateLimiter\DTO\BoundedDistinctSnapshotDTO;
@@ -18,18 +20,6 @@ use Maatify\RateLimiter\DTO\BudgetStateDTO;
 use Maatify\RateLimiter\DTO\CircuitBreakerStateDTO;
 use Maatify\RateLimiter\DTO\RateLimitStateDTO;
 use Maatify\RateLimiter\DTO\RateLimitContextDTO;
-use Maatify\RateLimiter\Service\DeviceIdentityResolver;
-use Maatify\RateLimiter\Service\FingerprintHasher;
-use Maatify\RateLimiter\Service\CircuitBreaker;
-use Maatify\RateLimiter\Service\EvaluationPipeline;
-use Maatify\RateLimiter\Service\FailureModeResolver;
-use Maatify\RateLimiter\Service\RateLimiterEngine;
-use Maatify\RateLimiter\Service\AntiEquilibriumGate;
-use Maatify\RateLimiter\Service\BudgetTracker;
-use Maatify\RateLimiter\Service\DecayCalculator;
-use Maatify\RateLimiter\Config\ApiHeavyProtectionPolicy;
-use Maatify\RateLimiter\Config\LoginProtectionPolicy;
-use Maatify\RateLimiter\Config\OtpProtectionPolicy;
 use Maatify\SharedCommon\Contracts\ClockInterface;
 use Maatify\SharedCommon\Infrastructure\SystemClock;
 
@@ -505,27 +495,19 @@ $rateLimitStore = new ExampleRateLimitStore($clock);
 $correlationStore = new ExampleCorrelationStore($clock);
 $signalEmitter = new ExampleFailureSignalEmitter();
 
-$pipeline = new EvaluationPipeline(
+$limiter = new RateLimiterBuilder(
+    new RateLimiterConfig(
+        keySecret: 'example-key-secret',
+        fingerprintSecret: 'example-fingerprint-secret',
+        environmentScope: 'example',
+    ),
     $rateLimitStore,
     $correlationStore,
-    new BudgetTracker($rateLimitStore, $clock),
-    new AntiEquilibriumGate($correlationStore),
-    new DecayCalculator($clock),
-    new Maatify\RateLimiter\Service\EphemeralBucket($correlationStore),
-    'example-key-secret',
-    'example',
-    $clock,
-);
-
-$limiter = new RateLimiterEngine(
-    new DeviceIdentityResolver(new FingerprintHasher('example-fingerprint-secret')),
-    $pipeline,
-    new CircuitBreaker(new ExampleCircuitBreakerStore(), $signalEmitter, $clock),
-    new FailureModeResolver(),
+    new ExampleCircuitBreakerStore(),
     $signalEmitter,
-    $clock,
-    [new LoginProtectionPolicy(), new OtpProtectionPolicy(), new ApiHeavyProtectionPolicy()],
-);
+)
+    ->withClock($clock)
+    ->build();
 
 $context = new RateLimitContextDTO(
     ip: '203.0.113.10',

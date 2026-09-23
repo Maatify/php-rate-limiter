@@ -23,7 +23,7 @@ final class PackageStructureTest extends TestCase
         sort($actualRoots);
 
         self::assertSame(
-            ['Command', 'Config', 'Contract', 'DTO', 'Exception', 'Repository', 'Service'],
+            ['Builder', 'Command', 'Config', 'Contract', 'DTO', 'Exception', 'Repository', 'Service'],
             $actualRoots,
         );
 
@@ -39,10 +39,12 @@ final class PackageStructureTest extends TestCase
     public function testRelocatedPublicRuntimeTypesAreAutoloadable(): void
     {
         $classes = [
+            'Maatify\\RateLimiter\\Builder\\RateLimiterBuilder',
             'Maatify\\RateLimiter\\Config\\BlockPolicyInterface',
             'Maatify\\RateLimiter\\Config\\LoginProtectionPolicy',
             'Maatify\\RateLimiter\\Config\\OtpProtectionPolicy',
             'Maatify\\RateLimiter\\Config\\ApiHeavyProtectionPolicy',
+            'Maatify\\RateLimiter\\Config\\RateLimiterConfig',
             'Maatify\\RateLimiter\\Repository\\RateLimitStoreInterface',
             'Maatify\\RateLimiter\\Repository\\BudgetSeedStoreInterface',
             'Maatify\\RateLimiter\\Repository\\CorrelationStoreInterface',

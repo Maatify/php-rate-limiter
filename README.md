@@ -47,14 +47,26 @@ The package is not yet available through a published Composer registry. Authoriz
 
 ## Usage
 
-The package provides storage and signal contracts; the consumer supplies implementations for those boundaries. See the [Usage Guide](docs/guides/USAGE_GUIDE.md) for the integration contract and [basic runnable example](examples/basic-rate-limit.php) for a complete in-memory assembly.
+The package provides storage and signal contracts; the consumer supplies implementations for those boundaries. `RateLimiterBuilder` supplies the production default composition around those explicit Host boundaries. See the [Usage Guide](docs/guides/USAGE_GUIDE.md) for the integration contract and [basic runnable example](examples/basic-rate-limit.php) for a complete in-memory assembly.
 
 ```php
+use Maatify\RateLimiter\Builder\RateLimiterBuilder;
 use Maatify\RateLimiter\Command\RateLimitCommand;
-use Maatify\RateLimiter\Service\RateLimiterInterface;
+use Maatify\RateLimiter\Config\RateLimiterConfig;
 use Maatify\RateLimiter\DTO\RateLimitContextDTO;
 
-/** @var RateLimiterInterface $limiter */
+/** @var RateLimitStoreInterface $rateLimitStore */
+/** @var CorrelationStoreInterface $correlationStore */
+/** @var CircuitBreakerStoreInterface $circuitBreakerStore */
+/** @var FailureSignalEmitterInterface $failureSignalEmitter */
+
+$limiter = new RateLimiterBuilder(
+    new RateLimiterConfig($activeKeySecret, $activeFingerprintSecret, 'production'),
+    $rateLimitStore,
+    $correlationStore,
+    $circuitBreakerStore,
+    $failureSignalEmitter,
+)->build();
 
 $context = new RateLimitContextDTO(
     ip: '203.0.113.10',
