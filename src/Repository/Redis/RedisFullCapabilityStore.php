@@ -34,12 +34,15 @@ if exists == 0 then
   redis.call('EXPIRE', KEYS[1], ARGV[1])
   return {ARGV[2], now}
 end
+if redis.call('TTL', KEYS[1]) <= 0 then return redis.error_reply('malformed score state') end
 local value = redis.call('HGET', KEYS[1], 'value')
-if not value or not redis.call('HGET', KEYS[1], 'updatedAt') then
+local updated = redis.call('HGET', KEYS[1], 'updatedAt')
+if not value or not updated then
   return redis.error_reply('malformed score state')
 end
 value = tonumber(value)
-if not value then return redis.error_reply('malformed score value') end
+updated = tonumber(updated)
+if not value or value ~= math.floor(value) or not updated or updated ~= math.floor(updated) then return redis.error_reply('malformed score state') end
 value = value + tonumber(ARGV[2])
 redis.call('HSET', KEYS[1], 'value', value, 'updatedAt', now)
 return {value, now}
@@ -47,9 +50,12 @@ LUA;
 
     private const SCORE_GET = <<<'LUA'
 if redis.call('EXISTS', KEYS[1]) == 0 then return {} end
+if redis.call('TTL', KEYS[1]) <= 0 then return redis.error_reply('malformed score state') end
 local value = redis.call('HGET', KEYS[1], 'value')
 local updated = redis.call('HGET', KEYS[1], 'updatedAt')
 if not value or not updated then return redis.error_reply('malformed score state') end
+value = tonumber(value); updated = tonumber(updated)
+if not value or value ~= math.floor(value) or not updated or updated ~= math.floor(updated) then return redis.error_reply('malformed score state') end
 return {value, updated}
 LUA;
 
@@ -70,10 +76,13 @@ LUA;
 
     private const BLOCK_GET = <<<'LUA'
 if redis.call('EXISTS', KEYS[1]) == 0 then return {} end
+if redis.call('TTL', KEYS[1]) < 0 then return redis.error_reply('malformed block state') end
 local level = redis.call('HGET', KEYS[1], 'level')
 local expires = redis.call('HGET', KEYS[1], 'expiresAt')
 if not level or not expires then return redis.error_reply('malformed block state') end
-if tonumber(expires) <= tonumber(redis.call('TIME')[1]) then
+level = tonumber(level); expires = tonumber(expires)
+if not level or level ~= math.floor(level) or not expires or expires ~= math.floor(expires) then return redis.error_reply('malformed block state') end
+if expires <= tonumber(redis.call('TIME')[1]) then
   redis.call('DEL', KEYS[1])
   return {}
 end
@@ -85,11 +94,19 @@ local now = tonumber(redis.call('TIME')[1])
 local count = redis.call('HGET', KEYS[1], 'count')
 local start = redis.call('HGET', KEYS[1], 'epochStart')
 local duration = redis.call('HGET', KEYS[1], 'epochDuration')
-if count and start and duration and now < tonumber(start) + tonumber(duration) then
-  count = tonumber(count) + tonumber(ARGV[2])
+local exists = redis.call('EXISTS', KEYS[1])
+if exists == 1 and redis.call('TTL', KEYS[1]) <= 0 then return redis.error_reply('malformed budget state') end
+if exists == 1 and (not count or not start or not duration) then return redis.error_reply('malformed budget state') end
+if exists == 1 then
+  count = tonumber(count); start = tonumber(start); duration = tonumber(duration)
+  if not count or count ~= math.floor(count) or not start or start ~= math.floor(start) or not duration or duration <= 0 or duration ~= math.floor(duration) then return redis.error_reply('malformed budget state') end
+end
+if exists == 1 and now < start + duration then
+  count = count + tonumber(ARGV[2])
   redis.call('HSET', KEYS[1], 'count', count)
   return {count, start}
 end
+if exists == 1 then redis.call('DEL', KEYS[1]) end
 redis.call('HSET', KEYS[1], 'count', ARGV[2], 'epochStart', now, 'epochDuration', ARGV[1])
 redis.call('EXPIRE', KEYS[1], ARGV[1])
 return {ARGV[2], now}
@@ -101,7 +118,10 @@ local count = redis.call('HGET', KEYS[1], 'count')
 local start = redis.call('HGET', KEYS[1], 'epochStart')
 local duration = redis.call('HGET', KEYS[1], 'epochDuration')
 if not count or not start or not duration then return redis.error_reply('malformed budget state') end
-if tonumber(redis.call('TIME')[1]) >= tonumber(start) + tonumber(duration) then
+if redis.call('TTL', KEYS[1]) <= 0 then return redis.error_reply('malformed budget state') end
+count = tonumber(count); start = tonumber(start); duration = tonumber(duration)
+if not count or count ~= math.floor(count) or not start or start ~= math.floor(start) or not duration or duration <= 0 or duration ~= math.floor(duration) then return redis.error_reply('malformed budget state') end
+if tonumber(redis.call('TIME')[1]) >= start + duration then
   redis.call('DEL', KEYS[1])
   return {}
 end
@@ -113,11 +133,19 @@ local now = tonumber(redis.call('TIME')[1])
 local count = redis.call('HGET', KEYS[1], 'count')
 local start = redis.call('HGET', KEYS[1], 'epochStart')
 local duration = redis.call('HGET', KEYS[1], 'epochDuration')
-if count and start and duration and now < tonumber(start) + tonumber(duration) then
-  count = tonumber(count) + tonumber(ARGV[4])
+local exists = redis.call('EXISTS', KEYS[1])
+if exists == 1 and redis.call('TTL', KEYS[1]) <= 0 then return redis.error_reply('malformed budget state') end
+if exists == 1 and (not count or not start or not duration) then return redis.error_reply('malformed budget state') end
+if exists == 1 then
+  count = tonumber(count); start = tonumber(start); duration = tonumber(duration)
+  if not count or count ~= math.floor(count) or not start or start ~= math.floor(start) or not duration or duration <= 0 or duration ~= math.floor(duration) then return redis.error_reply('malformed budget state') end
+end
+if exists == 1 and now < start + duration then
+  count = count + tonumber(ARGV[4])
   redis.call('HSET', KEYS[1], 'count', count)
   return {count, start}
 end
+if exists == 1 then redis.call('DEL', KEYS[1]) end
 local seedStart = tonumber(ARGV[2])
 local epochDuration = tonumber(ARGV[1])
 if now < seedStart + epochDuration then
@@ -132,16 +160,31 @@ return {ARGV[4], now}
 LUA;
 
     private const DISTINCT_ADD = <<<'LUA'
+local now = tonumber(redis.call('TIME')[1])
 local exists = redis.call('EXISTS', KEYS[1])
+local metaExists = redis.call('EXISTS', KEYS[2])
 if exists == 1 and redis.call('TTL', KEYS[1]) < 0 then return redis.error_reply('malformed distinct state') end
+if exists == 0 and metaExists == 1 then return redis.error_reply('malformed distinct metadata') end
+if exists == 1 and redis.call('SCARD', KEYS[1]) == 0 then return redis.error_reply('malformed distinct state') end
+if exists == 1 then
+  local expires = tonumber(redis.call('HGET', KEYS[2], 'expiresAt'))
+  if not expires or expires ~= math.floor(expires) or expires <= now or redis.call('TTL', KEYS[2]) < 0 then return redis.error_reply('malformed distinct metadata') end
+end
 if exists == 0 then redis.call('SADD', KEYS[1], ARGV[2]); redis.call('EXPIRE', KEYS[1], ARGV[1]); redis.call('HSET', KEYS[2], 'expiresAt', tonumber(redis.call('TIME')[1]) + tonumber(ARGV[1])); redis.call('EXPIRE', KEYS[2], ARGV[1])
 else redis.call('SADD', KEYS[1], ARGV[2]) end
 return redis.call('SCARD', KEYS[1])
 LUA;
 
     private const WATCH_INCREMENT = <<<'LUA'
+local now = tonumber(redis.call('TIME')[1])
 local exists = redis.call('EXISTS', KEYS[1])
 if exists == 1 and redis.call('TTL', KEYS[1]) < 0 then return redis.error_reply('malformed watch state') end
+local metaExists = redis.call('EXISTS', KEYS[2])
+if exists == 0 and metaExists == 1 then return redis.error_reply('malformed watch metadata') end
+if exists == 1 then
+  local expires = tonumber(redis.call('HGET', KEYS[2], 'expiresAt'))
+  if not expires or expires ~= math.floor(expires) or expires <= now or redis.call('TTL', KEYS[2]) < 0 then return redis.error_reply('malformed watch metadata') end
+end
 local value
 if exists == 0 then value = 1; redis.call('SET', KEYS[1], value, 'EX', ARGV[1]); redis.call('HSET', KEYS[2], 'expiresAt', tonumber(redis.call('TIME')[1]) + tonumber(ARGV[1])); redis.call('EXPIRE', KEYS[2], ARGV[1])
 else value = redis.call('INCR', KEYS[1]) end
@@ -152,7 +195,7 @@ LUA;
 if redis.call('EXISTS', KEYS[1]) == 0 then return 0 end
 if redis.call('TTL', KEYS[1]) < 0 then return redis.error_reply('malformed watch state') end
 local value = redis.call('GET', KEYS[1])
-if not value or not tonumber(value) then return redis.error_reply('malformed watch value') end
+if not value or not tonumber(value) or tonumber(value) ~= math.floor(tonumber(value)) then return redis.error_reply('malformed watch value') end
 return value
 LUA;
 
@@ -160,40 +203,60 @@ LUA;
 local now = tonumber(redis.call('TIME')[1])
 local exists = redis.call('EXISTS', KEYS[1])
 if exists == 1 and redis.call('TTL', KEYS[1]) < 0 then return redis.error_reply('malformed bounded state') end
+local metaExists = redis.call('EXISTS', KEYS[2])
+if exists == 0 and metaExists == 1 then return redis.error_reply('malformed bounded metadata') end
+if exists == 1 and redis.call('SCARD', KEYS[1]) == 0 then return redis.error_reply('malformed bounded state') end
+local expires = nil
+if exists == 1 then
+  expires = tonumber(redis.call('HGET', KEYS[2], 'expiresAt'))
+  if not expires or expires ~= math.floor(expires) or expires <= now or redis.call('TTL', KEYS[2]) < 0 then return redis.error_reply('malformed bounded metadata') end
+end
 if redis.call('SISMEMBER', KEYS[1], ARGV[2]) == 1 then
   local members = redis.call('SMEMBERS', KEYS[1]); table.sort(members)
-  return {#members, 1, 0, ARGV[1] == '' and 0 or (redis.call('HGET', KEYS[2], 'expiresAt') or now), unpack(members)}
+  return {#members, 1, 0, tonumber(expires), unpack(members)}
 end
 local count = redis.call('SCARD', KEYS[1])
 if count >= tonumber(ARGV[3]) then
   local members = redis.call('SMEMBERS', KEYS[1]); table.sort(members)
-  return {count, 0, 0, redis.call('HGET', KEYS[2], 'expiresAt') or now, unpack(members)}
+  return {count, 0, 0, tonumber(expires), unpack(members)}
 end
 if exists == 0 then redis.call('SADD', KEYS[1], ARGV[2]); redis.call('EXPIRE', KEYS[1], ARGV[1]); redis.call('HSET', KEYS[2], 'expiresAt', now + tonumber(ARGV[1])); redis.call('EXPIRE', KEYS[2], ARGV[1]) else redis.call('SADD', KEYS[1], ARGV[2]) end
 local members = redis.call('SMEMBERS', KEYS[1]); table.sort(members)
-return {#members, 1, 1, redis.call('HGET', KEYS[2], 'expiresAt') or now + tonumber(ARGV[1]), unpack(members)}
+return {#members, 1, 1, exists == 0 and now + tonumber(ARGV[1]) or tonumber(expires), unpack(members)}
 LUA;
 
     private const ROTATED_SNAPSHOT = <<<'LUA'
 local now = tonumber(redis.call('TIME')[1])
 local prevExists = redis.call('EXISTS', KEYS[5])
+local prevMetaExists = redis.call('EXISTS', KEYS[6])
 local prevExpiry = false
+if prevExists == 0 and prevMetaExists == 1 then return redis.error_reply('malformed previous bounded metadata') end
 if prevExists == 1 then
+  if redis.call('TTL', KEYS[5]) < 0 or redis.call('TTL', KEYS[6]) < 0 then return redis.error_reply('malformed previous bounded state') end
+  if redis.call('SCARD', KEYS[5]) == 0 then return redis.error_reply('malformed previous bounded state') end
   prevExpiry = redis.call('HGET', KEYS[6], 'expiresAt')
-  if not prevExpiry then return redis.error_reply('malformed previous bounded state') end
-  if tonumber(prevExpiry) <= now then prevExists = 0 end
+  prevExpiry = tonumber(prevExpiry)
+  if not prevExpiry or prevExpiry ~= math.floor(prevExpiry) then return redis.error_reply('malformed previous bounded state') end
+  if prevExpiry <= now then prevExists = 0 end
 end
 if prevExists == 0 then
   local exists = redis.call('EXISTS', KEYS[1])
+  local metaExists = redis.call('EXISTS', KEYS[2])
   if exists == 1 and redis.call('TTL', KEYS[1]) < 0 then return redis.error_reply('malformed bounded state') end
+  if exists == 0 and metaExists == 1 then return redis.error_reply('malformed current bounded metadata') end
+  local currentExpiry = nil
+  if exists == 1 then
+    currentExpiry = tonumber(redis.call('HGET', KEYS[2], 'expiresAt'))
+    if not currentExpiry or currentExpiry ~= math.floor(currentExpiry) or currentExpiry <= now or redis.call('TTL', KEYS[2]) < 0 then return redis.error_reply('malformed current bounded state') end
+  end
   if redis.call('SISMEMBER', KEYS[1], ARGV[3]) == 1 then
     local members = redis.call('SMEMBERS', KEYS[1]); table.sort(members)
-    return {#members, 1, 0, redis.call('HGET', KEYS[2], 'expiresAt') or now, unpack(members)}
+    return {#members, 1, 0, currentExpiry, unpack(members)}
   end
   local count = redis.call('SCARD', KEYS[1])
   if count >= tonumber(ARGV[5]) then
     local members = redis.call('SMEMBERS', KEYS[1]); table.sort(members)
-    return {count, 0, 0, redis.call('HGET', KEYS[2], 'expiresAt') or now, unpack(members)}
+    return {count, 0, 0, currentExpiry, unpack(members)}
   end
   if exists == 0 then redis.call('SADD', KEYS[1], ARGV[3]); redis.call('EXPIRE', KEYS[1], ARGV[2]); redis.call('HSET', KEYS[2], 'expiresAt', now + tonumber(ARGV[2])); redis.call('EXPIRE', KEYS[2], ARGV[2]) else redis.call('SADD', KEYS[1], ARGV[3]) end
   local members = redis.call('SMEMBERS', KEYS[1]); table.sort(members)
@@ -203,9 +266,21 @@ local previous = redis.call('SMEMBERS', KEYS[5]); table.sort(previous)
 local currentExists = redis.call('EXISTS', KEYS[1])
 local bridgeExists = redis.call('EXISTS', KEYS[3])
 if (currentExists == 1 and redis.call('TTL', KEYS[1]) < 0) or (bridgeExists == 1 and redis.call('TTL', KEYS[3]) < 0) then return redis.error_reply('malformed rotated bounded state') end
-if currentExists == 1 and not redis.call('HGET', KEYS[2], 'expiresAt') then return redis.error_reply('malformed current bounded state') end
-local bridgeExpiry = redis.call('HGET', KEYS[4], 'expiresAt')
-if bridgeExists == 1 and not bridgeExpiry then return redis.error_reply('malformed bridge state') end
+if (currentExists == 1 and redis.call('SCARD', KEYS[1]) == 0) or (bridgeExists == 1 and redis.call('SCARD', KEYS[3]) == 0) then return redis.error_reply('malformed rotated bounded state') end
+local currentMetaExists = redis.call('EXISTS', KEYS[2])
+local bridgeMetaExists = redis.call('EXISTS', KEYS[4])
+if currentExists == 0 and currentMetaExists == 1 then return redis.error_reply('malformed current bounded metadata') end
+if bridgeExists == 0 and bridgeMetaExists == 1 then return redis.error_reply('malformed bridge metadata') end
+local currentExpiry = nil
+if currentExists == 1 then
+  currentExpiry = tonumber(redis.call('HGET', KEYS[2], 'expiresAt'))
+  if not currentExpiry or currentExpiry ~= math.floor(currentExpiry) or currentExpiry <= now or redis.call('TTL', KEYS[2]) < 0 then return redis.error_reply('malformed current bounded state') end
+end
+local bridgeExpiry = nil
+if bridgeExists == 1 then
+  bridgeExpiry = tonumber(redis.call('HGET', KEYS[4], 'expiresAt'))
+  if not bridgeExpiry or bridgeExpiry ~= math.floor(bridgeExpiry) or bridgeExpiry <= now or redis.call('TTL', KEYS[4]) < 0 or bridgeExpiry > prevExpiry then return redis.error_reply('malformed bridge state') end
+end
 local bridge = bridgeExists == 1 and redis.call('SMEMBERS', KEYS[3]) or {}
 table.sort(bridge)
 local members = {}
@@ -254,7 +329,12 @@ LUA;
 
     private const LEASE = <<<'LUA'
 local current = redis.call('GET', KEYS[1])
-if current and tonumber(current) > tonumber(ARGV[1]) then return 0 end
+if current then
+  local ttl = redis.call('TTL', KEYS[1])
+  local expires = tonumber(current)
+  if ttl <= 0 or not expires or expires ~= math.floor(expires) then return redis.error_reply('malformed probe lease') end
+  if expires > tonumber(ARGV[1]) then return 0 end
+end
 redis.call('SET', KEYS[1], tonumber(ARGV[1]) + tonumber(ARGV[2]), 'EX', ARGV[2])
 return 1
 LUA;
@@ -262,49 +342,95 @@ LUA;
     private const HARD_BLOCK = <<<'LUA'
 local now = tonumber(ARGV[5])
 local retention = tonumber(ARGV[9])
-local function merge(source, target)
+local cycleWindow = tonumber(ARGV[6])
+local function validateCycles(key)
+  if key == '' or redis.call('EXISTS', key) == 0 then return end
+  if redis.call('ZCARD', key) == 0 then error('malformed cycle history') end
+  for _, member in ipairs(redis.call('ZRANGE', key, 0, -1)) do
+    local score = tonumber(redis.call('ZSCORE', key, member))
+    local timestamp = tonumber(member)
+    if not score or score ~= math.floor(score) or not timestamp or timestamp ~= math.floor(timestamp) or score ~= timestamp then error('malformed cycle history') end
+  end
+end
+local function mergeCycles(source, target)
   if source == '' or redis.call('EXISTS', source) == 0 then return end
+  validateCycles(source)
   for _, member in ipairs(redis.call('ZRANGE', source, 0, -1)) do
     redis.call('ZADD', target, tonumber(redis.call('ZSCORE', source, member)), member)
   end
 end
-local function retain(key, seconds)
-  if key ~= '' and redis.call('EXISTS', key) == 1 and redis.call('TTL', key) < 0 then redis.call('EXPIRE', key, seconds) end
+local function extendUntil(key, target)
+  if key == '' or redis.call('EXISTS', key) == 0 then return end
+  local ttl = redis.call('TTL', key)
+  local needed = math.max(1, target - now)
+  if ttl < needed then redis.call('EXPIRE', key, needed) end
 end
-if KEYS[2] ~= '' then merge(KEYS[2], KEYS[1]) end
-retain(KEYS[1], retention)
+validateCycles(KEYS[1])
+if KEYS[2] ~= '' then mergeCycles(KEYS[2], KEYS[1]) end
 redis.call('ZREMRANGEBYSCORE', KEYS[1], '-inf', '(' .. (now - tonumber(ARGV[6])))
+validateCycles(KEYS[1])
 local active = false
 for _, blockKey in ipairs({KEYS[3], KEYS[4]}) do
   if blockKey ~= '' and redis.call('EXISTS', blockKey) == 1 then
+    if redis.call('TTL', blockKey) <= 0 then return redis.error_reply('malformed hard-block state') end
     local expires = redis.call('HGET', blockKey, 'expiresAt'); local level = redis.call('HGET', blockKey, 'level')
     if not expires or not level then return redis.error_reply('malformed hard-block state') end
-    if tonumber(expires) > now and tonumber(level) >= 2 then active = true end
+    expires = tonumber(expires); level = tonumber(level)
+    if not expires or expires ~= math.floor(expires) or not level or level ~= math.floor(level) then return redis.error_reply('malformed hard-block state') end
+    if expires > now and level >= 2 then active = true end
   end
 end
 local newCycle = not active
 if newCycle then redis.call('ZADD', KEYS[1], now, tostring(now)) end
 local cycleCount = redis.call('ZCARD', KEYS[1])
+local latestCycle = redis.call('ZREVRANGE', KEYS[1], 0, 0, 'WITHSCORES')
+if #latestCycle == 2 then
+  local latestScore = tonumber(latestCycle[2])
+  if not latestScore or latestScore ~= math.floor(latestScore) then return redis.error_reply('malformed cycle history') end
+  extendUntil(KEYS[1], latestScore + cycleWindow)
+end
 local pauseUntil = 0
-if KEYS[6] ~= '' then merge(KEYS[6], KEYS[5]) end
-retain(KEYS[5], retention)
+local function validatePauses(key)
+  if key == '' or redis.call('EXISTS', key) == 0 then return end
+  for _, member in ipairs(redis.call('ZRANGE', key, 0, -1)) do
+    local sep = string.find(member, ':')
+    if not sep then error('malformed pause history') end
+    local start = tonumber(string.sub(member, 1, sep - 1)); local finish = tonumber(string.sub(member, sep + 1)); local score = tonumber(redis.call('ZSCORE', key, member))
+    if not start or start ~= math.floor(start) or not finish or finish ~= math.floor(finish) or finish < start or not score or score ~= math.floor(score) or score ~= start then error('malformed pause history') end
+  end
+end
+local function mergePauses(source, target)
+  if source == '' or redis.call('EXISTS', source) == 0 then return end
+  validatePauses(source)
+  for _, member in ipairs(redis.call('ZRANGE', source, 0, -1)) do
+    redis.call('ZADD', target, tonumber(redis.call('ZSCORE', source, member)), member)
+  end
+end
+validatePauses(KEYS[5])
+if KEYS[6] ~= '' then mergePauses(KEYS[6], KEYS[5]) end
+validatePauses(KEYS[5])
 local pauseCutoff = now - retention
+local latestPauseUntil = 0
 if redis.call('EXISTS', KEYS[5]) == 1 then
   for _, member in ipairs(redis.call('ZRANGE', KEYS[5], 0, -1)) do
     local sep = string.find(member, ':')
     if not sep then return redis.error_reply('malformed pause history') end
     local finish = tonumber(string.sub(member, sep + 1))
-    if not finish then return redis.error_reply('malformed pause history') end
-    if finish <= pauseCutoff then redis.call('ZREM', KEYS[5], member) elseif finish > now then pauseUntil = math.max(pauseUntil, finish) end
+    if not finish or finish ~= math.floor(finish) then return redis.error_reply('malformed pause history') end
+    if finish <= pauseCutoff then redis.call('ZREM', KEYS[5], member) else
+      if finish > now then pauseUntil = math.max(pauseUntil, finish) end
+      latestPauseUntil = math.max(latestPauseUntil, finish)
+    end
   end
 end
 local activated = false
 if newCycle and cycleCount >= tonumber(ARGV[7]) and pauseUntil == 0 then
   pauseUntil = now + tonumber(ARGV[8])
   redis.call('ZADD', KEYS[5], now, tostring(now) .. ':' .. tostring(pauseUntil))
-  retain(KEYS[5], retention)
+  latestPauseUntil = math.max(latestPauseUntil, pauseUntil)
   activated = true
 end
+if latestPauseUntil > 0 then extendUntil(KEYS[5], latestPauseUntil + retention) end
 local expires = now + tonumber(ARGV[2])
 redis.call('HSET', KEYS[3], 'level', ARGV[1], 'expiresAt', expires); redis.call('EXPIRE', KEYS[3], ARGV[2])
 return {newCycle and 1 or 0, cycleCount, activated and 1 or 0, pauseUntil}
@@ -314,11 +440,12 @@ LUA;
 local now = tonumber(ARGV[2]); local from = tonumber(ARGV[1]); local retention = 86400; local intervals = {}
 local function read(source)
   if source == '' or redis.call('EXISTS', source) == 0 then return end
+  if redis.call('TTL', source) < 0 then error('malformed pause history') end
   for _, member in ipairs(redis.call('ZRANGE', source, 0, -1)) do
     local sep = string.find(member, ':')
-    if not sep then return redis.error_reply('malformed pause history') end
-    local start = tonumber(string.sub(member, 1, sep - 1)); local finish = tonumber(string.sub(member, sep + 1))
-    if not start or not finish then return redis.error_reply('malformed pause history') end
+    if not sep then error('malformed pause history') end
+    local start = tonumber(string.sub(member, 1, sep - 1)); local finish = tonumber(string.sub(member, sep + 1)); local score = tonumber(redis.call('ZSCORE', source, member))
+    if not start or start ~= math.floor(start) or not finish or finish ~= math.floor(finish) or finish < start or not score or score ~= math.floor(score) or score ~= start then error('malformed pause history') end
     if finish > now - retention then intervals[#intervals + 1] = {start, finish} end
   end
 end
@@ -352,7 +479,7 @@ LUA;
     {
         $this->positive($ttlSeconds, 'Score TTL');
         $result = $this->eval(self::SCORE_INCREMENT, [$this->key('score', $key)], [$ttlSeconds, $amount]);
-        return (int) $this->tuple($result, 2, 'score increment')[0];
+        return $this->integerValue($this->tuple($result, 2, 'score increment')[0], 'score value');
     }
 
     public function get(string $key): ?RateLimitStateDTO
@@ -362,7 +489,10 @@ LUA;
             return null;
         }
         $tuple = $this->tuple($result, 2, 'score state');
-        return new RateLimitStateDTO((int) $tuple[0], (int) $tuple[1]);
+        return new RateLimitStateDTO(
+            $this->integerValue($tuple[0], 'score value'),
+            $this->integerValue($tuple[1], 'score updatedAt'),
+        );
     }
 
     public function set(string $key, int $value, int $ttlSeconds): void
@@ -384,7 +514,10 @@ LUA;
             return null;
         }
         $tuple = $this->tuple($result, 2, 'block state');
-        return new BlockStateDTO((int) $tuple[0], (int) $tuple[1]);
+        return new BlockStateDTO(
+            $this->integerValue($tuple[0], 'block level'),
+            $this->integerValue($tuple[1], 'block expiresAt'),
+        );
     }
 
     public function getBudget(string $key): ?BudgetStateDTO
@@ -394,7 +527,10 @@ LUA;
             return null;
         }
         $tuple = $this->tuple($result, 2, 'budget state');
-        return new BudgetStateDTO((int) $tuple[0], (int) $tuple[1]);
+        return new BudgetStateDTO(
+            $this->integerValue($tuple[0], 'budget count'),
+            $this->integerValue($tuple[1], 'budget epochStart'),
+        );
     }
 
     public function incrementBudget(string $key, int $epochDurationSeconds, int $amount = 1): BudgetStateDTO
@@ -402,7 +538,10 @@ LUA;
         $this->positive($epochDurationSeconds, 'Budget epoch duration');
         $result = $this->eval(self::BUDGET_INCREMENT, [$this->key('budget', $key)], [$epochDurationSeconds, $amount]);
         $tuple = $this->tuple($result, 2, 'budget increment');
-        return new BudgetStateDTO((int) $tuple[0], (int) $tuple[1]);
+        return new BudgetStateDTO(
+            $this->integerValue($tuple[0], 'budget count'),
+            $this->integerValue($tuple[1], 'budget epochStart'),
+        );
     }
 
     public function incrementBudgetWithSeed(string $key, int $epochDurationSeconds, BudgetStateDTO $seed, int $amount = 1): BudgetStateDTO
@@ -410,7 +549,10 @@ LUA;
         $this->positive($epochDurationSeconds, 'Budget epoch duration');
         $result = $this->eval(self::BUDGET_SEED, [$this->key('budget', $key)], [$epochDurationSeconds, $seed->epochStart, $seed->count, $amount]);
         $tuple = $this->tuple($result, 2, 'seeded budget');
-        return new BudgetStateDTO((int) $tuple[0], (int) $tuple[1]);
+        return new BudgetStateDTO(
+            $this->integerValue($tuple[0], 'budget count'),
+            $this->integerValue($tuple[1], 'budget epochStart'),
+        );
     }
 
     public function addDistinct(string $key, string $item, int $ttlSeconds): int
@@ -470,8 +612,26 @@ LUA;
         $this->positive($ttlSeconds, 'Correlation TTL');
         $script = <<<'LUA'
 local now = tonumber(redis.call('TIME')[1]); local previous = 0
-if redis.call('EXISTS', KEYS[2]) == 1 then local expiry = redis.call('HGET', KEYS[3], 'expiresAt'); if not expiry then return redis.error_reply('malformed previous watch state') end; if tonumber(expiry) > now then local value = redis.call('GET', KEYS[2]); if not value or not tonumber(value) then return redis.error_reply('malformed previous watch value') end; previous = tonumber(value) end end
-local exists = redis.call('EXISTS', KEYS[1]); if exists == 1 and redis.call('TTL', KEYS[1]) < 0 then return redis.error_reply('malformed current watch state') end
+local previousExists = redis.call('EXISTS', KEYS[2]); local previousMetaExists = redis.call('EXISTS', KEYS[3])
+if previousExists == 0 and previousMetaExists == 1 then return redis.error_reply('malformed previous watch metadata') end
+if previousExists == 1 then
+  if redis.call('TTL', KEYS[2]) < 0 or redis.call('TTL', KEYS[3]) < 0 then return redis.error_reply('malformed previous watch state') end
+  local expiry = tonumber(redis.call('HGET', KEYS[3], 'expiresAt'))
+  if not expiry or expiry ~= math.floor(expiry) then return redis.error_reply('malformed previous watch state') end
+  if expiry > now then
+    local value = tonumber(redis.call('GET', KEYS[2]))
+    if not value or value ~= math.floor(value) then return redis.error_reply('malformed previous watch value') end
+    previous = value
+  end
+end
+local exists = redis.call('EXISTS', KEYS[1]); local currentMetaExists = redis.call('EXISTS', KEYS[4])
+if exists == 0 and currentMetaExists == 1 then return redis.error_reply('malformed current watch metadata') end
+if exists == 1 then
+  if redis.call('TTL', KEYS[1]) < 0 or redis.call('TTL', KEYS[4]) < 0 then return redis.error_reply('malformed current watch state') end
+  local expiry = tonumber(redis.call('HGET', KEYS[4], 'expiresAt'))
+  local value = tonumber(redis.call('GET', KEYS[1]))
+  if not expiry or expiry ~= math.floor(expiry) or not value or value ~= math.floor(value) then return redis.error_reply('malformed current watch state') end
+end
 local value
 if exists == 0 then value = 1; redis.call('SET', KEYS[1], value, 'EX', ARGV[1]); redis.call('HSET', KEYS[4], 'expiresAt', now + tonumber(ARGV[1])); redis.call('EXPIRE', KEYS[4], ARGV[1]) else value = redis.call('INCR', KEYS[1]) end
 return value + previous
@@ -524,7 +684,7 @@ LUA;
         if (! is_int($result) && ! is_string($result)) {
             throw new RateLimiterException('Malformed probe lease response.');
         }
-        return (int) $result === 1;
+        return $this->integerValue($result, 'probe lease response') === 1;
     }
 
     public function blockWithCycleTracking(string $currentKey, ?string $previousKey, int $level, int $durationSeconds, int $now, int $cycleWindowSeconds, int $cycleThreshold, int $pauseSeconds, int $pauseHistoryRetentionSeconds): HardBlockCycleResultDTO
@@ -546,7 +706,12 @@ LUA;
         ];
         $result = $this->eval(self::HARD_BLOCK, $keys, [$level, $durationSeconds, $currentKey, $previousKey ?? '', $now, $cycleWindowSeconds, $cycleThreshold, $pauseSeconds, $pauseHistoryRetentionSeconds]);
         $tuple = $this->tuple($result, 4, 'hard-block cycle result');
-        return new HardBlockCycleResultDTO((int) $tuple[0] === 1, (int) $tuple[1], (int) $tuple[2] === 1, (int) $tuple[3]);
+        return new HardBlockCycleResultDTO(
+            $this->integerValue($tuple[0], 'hard-block cycle flag') === 1,
+            $this->integerValue($tuple[1], 'hard-block cycle count'),
+            $this->integerValue($tuple[2], 'hard-block pause flag') === 1,
+            $this->integerValue($tuple[3], 'hard-block pauseUntil'),
+        );
     }
 
     public function readDecayPauseState(string $currentKey, ?string $previousKey, int $fromTimestamp, int $now): DecayPauseStateDTO
@@ -559,14 +724,17 @@ LUA;
         ];
         $result = $this->eval(self::PAUSE_READ, $keys, [$fromTimestamp, $now]);
         $tuple = $this->tuple($result, 2, 'decay pause state');
-        return new DecayPauseStateDTO((int) $tuple[0], (int) $tuple[1]);
+        return new DecayPauseStateDTO(
+            $this->integerValue($tuple[0], 'decay elapsed seconds'),
+            $this->integerValue($tuple[1], 'decay active pause'),
+        );
     }
 
     public function isHealthy(): bool
     {
         try {
             $result = $this->redis->execute(['PING']);
-            return is_string($result) && strtoupper($result) === 'PONG';
+            return $result === 'PONG';
         } catch (\Throwable) {
             return false;
         }
@@ -597,13 +765,24 @@ LUA;
 
     private function integerResult(mixed $value, string $label): int
     {
-        if (! is_int($value) && ! is_string($value) && ! is_float($value)) {
-            throw new RateLimiterException('Malformed ' . $label . ' response.');
+        return $this->integerValue($value, $label . ' response');
+    }
+
+    private function integerValue(mixed $value, string $label): int
+    {
+        if (is_int($value)) {
+            return $value;
         }
-        if (! is_numeric($value)) {
-            throw new RateLimiterException('Malformed ' . $label . ' response.');
+        if (is_string($value)) {
+            if (! preg_match('/\A-?\d+\z/D', $value)) {
+                throw new RateLimiterException('Malformed ' . $label . '.');
+            }
+            return (int) $value;
         }
-        return (int) $value;
+        if (is_float($value) && is_finite($value) && floor($value) === $value) {
+            return (int) $value;
+        }
+        throw new RateLimiterException('Malformed ' . $label . '.');
     }
 
     /** @return list<int|string|float> */
@@ -626,9 +805,13 @@ LUA;
     {
         $tuple = $this->tuple($value, 4, $label);
         $members = array_map('strval', array_slice($tuple, 4));
-        if ((int) $tuple[0] !== count($members)) {
+        $count = $this->integerValue($tuple[0], $label . ' count');
+        $accepted = $this->integerValue($tuple[1], $label . ' accepted flag');
+        $added = $this->integerValue($tuple[2], $label . ' added flag');
+        $expiresAt = $this->integerValue($tuple[3], $label . ' expiresAt');
+        if ($count !== count($members) || ! in_array($accepted, [0, 1], true) || ! in_array($added, [0, 1], true)) {
             throw new RateLimiterException('Malformed ' . $label . ' members.');
         }
-        return new BoundedDistinctSnapshotDTO((int) $tuple[0], (int) $tuple[1] === 1, (int) $tuple[2] === 1, $members, (int) $tuple[3]);
+        return new BoundedDistinctSnapshotDTO($count, $accepted === 1, $added === 1, $members, $expiresAt);
     }
 }

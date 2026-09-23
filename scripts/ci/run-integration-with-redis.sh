@@ -2,7 +2,8 @@
 set -euo pipefail
 
 project="maatify-rate-limiter-${RANDOM}-${RANDOM}"
-compose=(docker compose -p "$project" -f docker/redis-integration/compose.yaml)
+docker_bin="${REDIS_INTEGRATION_DOCKER_BIN:-docker}"
+compose=("$docker_bin" compose -p "$project" -f docker/redis-integration/compose.yaml)
 cleanup() {
     original_status=$?
     cleanup_status=0
@@ -23,4 +24,12 @@ trap 'exit 143' TERM
 
 "${compose[@]}" up -d --wait
 port="$(${compose[@]} port redis 6379 | awk -F: '{print $NF}')"
-REDIS_INTEGRATION_HOST=127.0.0.1 REDIS_INTEGRATION_PORT="$port" vendor/bin/phpunit --testsuite Integration
+if [[ -n "${REDIS_INTEGRATION_TEST_STATUS:-}" ]]; then
+    verification_status="$REDIS_INTEGRATION_TEST_STATUS"
+else
+    set +e
+    REDIS_INTEGRATION_HOST=127.0.0.1 REDIS_INTEGRATION_PORT="$port" vendor/bin/phpunit --testsuite Integration
+    verification_status=$?
+    set -e
+fi
+exit "$verification_status"
