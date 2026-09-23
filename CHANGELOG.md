@@ -46,6 +46,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   Reference `1.6.0` → `1.7.0`.
 
 ### Added
+- Implemented WU-S3-06 Circuit Breaker state-machine recovery: OPEN requests
+  short-circuit shared-backend work, recovery uses leased read-only health probes
+  through HALF_OPEN, and the rolling re-entry guard is authoritative across all
+  circuit states with exactly-once transition signals and remaining Retry-After.
+  Added the additive `CircuitBreakerProbeStoreInterface`; the existing
+  `CircuitBreakerStoreInterface` remains source-compatible. Failure Semantics
+  `1.0.0` → `1.1.0` and Package Reference `1.10.0` → `1.11.0`.
 - Implemented WU-S3-08 distributed account-attack correlation for Login and OTP pre-checks.
   The new snapshot DTO and additive snapshot store capabilities return the complete bounded
   logical K5 member set with fixed expiry, validate it fail-closed, preserve one previous

@@ -11,7 +11,7 @@ use Maatify\RateLimiter\DTO\CircuitBreakerStateDTO;
 use Maatify\RateLimiter\DTO\FailureSignalDTO;
 use Maatify\RateLimiter\DTO\RateLimitContextDTO;
 use Maatify\RateLimiter\DTO\RateLimitStateDTO;
-use Maatify\RateLimiter\Repository\CircuitBreakerStoreInterface;
+use Maatify\RateLimiter\Repository\CircuitBreakerProbeStoreInterface;
 use Maatify\RateLimiter\Repository\CorrelationStoreInterface;
 use Maatify\RateLimiter\Repository\RateLimitStoreInterface;
 use Maatify\RateLimiter\Service\AntiEquilibriumGate;
@@ -146,10 +146,13 @@ final class OperationalExampleCorrelationStore implements CorrelationStoreInterf
     }
 }
 
-final class OperationalExampleCircuitBreakerStore implements CircuitBreakerStoreInterface
+final class OperationalExampleCircuitBreakerStore implements CircuitBreakerProbeStoreInterface
 {
     /** @var array<string, CircuitBreakerStateDTO> */
     private array $states = [];
+
+    /** @var array<string, int> */
+    private array $probeLeases = [];
 
     public function load(string $policyName): ?CircuitBreakerStateDTO
     {
@@ -158,6 +161,18 @@ final class OperationalExampleCircuitBreakerStore implements CircuitBreakerStore
     public function save(string $policyName, CircuitBreakerStateDTO $state): void
     {
         $this->states[$policyName] = $state;
+    }
+
+    public function acquireProbeLease(string $policyName, int $now, int $leaseSeconds): bool
+    {
+        $expiresAt = $this->probeLeases[$policyName] ?? 0;
+        if ($expiresAt > $now) {
+            return false;
+        }
+
+        $this->probeLeases[$policyName] = $now + $leaseSeconds;
+
+        return true;
     }
 }
 

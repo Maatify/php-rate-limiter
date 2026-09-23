@@ -3,7 +3,7 @@
 **Module:** RateLimiter
 **Namespace:** `Maatify\RateLimiter`
 **Status:** LOCKED — Security Contract
-**Spec Version:** `1.0.0`
+**Spec Version:** `1.1.0`
 
 This document defines how the RateLimiter behaves when **internal failures occur**.
 It specifies when the system must fail closed, fail open, or enter a strictly bounded degraded mode.
@@ -261,12 +261,58 @@ Per policy, per node:
 * **Minimum Healthy Interval (before reset):** 2 minutes of sustained success
 * **Re-Entry Guard:** DEGRADED_MODE MUST NOT be re-entered more than **2 times** within **30 minutes** for the same policy.
 
-### 5.2 Re-Entry Guard Action
+### 5.2 State Machine and Recovery Probes
+
+The circuit uses only the following states:
+
+```text
+CLOSED
+↓ trip
+OPEN --first healthy probe--> HALF_OPEN
+HALF_OPEN --second healthy probe after >=120s--> CLOSED
+HALF_OPEN --failed probe--> OPEN
+```
+
+Normal shared-backend evaluation is allowed only while `CLOSED`. An `OPEN`
+request is short-circuited before device resolution and normal pipeline work and
+is served through the existing bounded local fallback. `OPEN` remains degraded
+for at least 300 seconds. At or after that boundary, exactly one request may
+acquire the atomic per-policy 120-second probe lease and call the read-only
+`RateLimitStoreInterface::isHealthy()` boundary. A missing
+`CircuitBreakerProbeStoreInterface` at probe eligibility is an explicit
+`RateLimiterException`; probing without the lease is forbidden.
+
+The first healthy probe changes `OPEN` to `HALF_OPEN`, records `lastSuccess` as
+the healthy-interval anchor, and keeps the current request degraded. No normal
+pipeline runs and no `CB_RECOVERED` signal is emitted at that point. After a
+further 120 seconds, a second leased healthy probe changes `HALF_OPEN` to
+`CLOSED`, clears the active trip/open epoch, emits `CB_RECOVERED` once, and may
+allow that same request to continue through normal evaluation. A false or thrown
+health check is a failed probe, not a normal request failure.
+
+Probe failure while already `OPEN` keeps the circuit `OPEN`, clears the healthy
+anchor, restarts `openSince`, and does not append a re-entry or emit another
+`CB_OPENED`. Probe failure while `HALF_OPEN` is a genuine transition back to
+`OPEN`, appends one entry, emits one `CB_OPENED`, and starts a fresh 300-second
+degraded interval.
+
+### 5.3 Re-Entry Guard Action
 
 If the re-entry guard is violated:
 
-* The policy MUST enter `FAIL_CLOSED` for **10 minutes** (static backoff),
-* and MUST emit an observable critical signal to the host application.
+* The policy MUST enter `FAIL_CLOSED` until `failClosedUntil` (10 minutes from
+  activation),
+* and MUST emit one observable critical signal to the host application at guard
+  activation.
+
+The active guard is authoritative regardless of whether the persisted circuit
+state is `CLOSED`, `OPEN`, or `HALF_OPEN`. It prevents both health probes and
+normal backend evaluation. Guard denials return the remaining
+`failClosedUntil - now` as `Retry-After`; repeated requests do not reset the
+duration or emit the critical signal again.
+
+`CB_OPENED` is emitted once per actual `CLOSED → OPEN` or `HALF_OPEN → OPEN`
+transition. `CB_RECOVERED` is emitted once only for `HALF_OPEN → CLOSED`.
 
 This prevents deliberate “flap to harvest” cycles.
 

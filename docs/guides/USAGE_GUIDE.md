@@ -74,6 +74,8 @@ The host supplies implementations for:
 - <code>BoundedCorrelationSnapshotRotationStoreInterface</code>: required additive capability for distributed-account snapshots when a previous generation is active.
 - <code>CorrelationRotationStoreInterface</code>: additive capability for rotated WATCH state and the existing credential-spray rotation primitives.
 - <code>CircuitBreakerStoreInterface</code>: circuit-breaker state persistence.
+- <code>CircuitBreakerProbeStoreInterface</code>: additive atomic per-policy
+  recovery-probe lease; required only when a recovery probe becomes eligible.
 - <code>FailureSignalEmitterInterface</code>: delivery of circuit-breaker and failure signals.
 - <code>ClockInterface</code> from <code>maatify/shared-common</code>: current time and timezone.
 
@@ -160,6 +162,25 @@ The policy presets are production runtime classes. Do not invent policy names or
           → Boundary → Host observes, logs, and applies its own transport or incident handling
 
 Login and OTP policies are security-oriented and use fail-closed semantics with bounded degraded behavior. API-heavy protection may use fail-open semantics with local guardrails. See [Failure Semantics](../FAILURE_SEMANTICS.md) for the detailed contract.
+
+### Circuit-breaker recovery
+
+The engine consults the circuit breaker before resolving device identity or
+running normal evaluation. `OPEN` and `HALF_OPEN` requests use the bounded
+local fallback and do not contact the shared backend. After the 300-second
+minimum `OPEN` duration, one request may acquire the atomic 120-second
+`CircuitBreakerProbeStoreInterface` lease and invoke
+`EvaluationPipeline::isBackendHealthy()`. This is a read-only delegation to
+`RateLimitStoreInterface::isHealthy()`; it does not read or write scores,
+blocks, budgets, correlation state, or device state.
+
+The first healthy probe enters `HALF_OPEN` but remains degraded. After a further
+120-second healthy interval, the second healthy probe closes the circuit and the
+same request may continue normal evaluation. A missing probe capability at that
+eligibility point raises `RateLimiterException`; the package never probes
+without a lease. The re-entry guard has precedence over every circuit state,
+blocks both probing and normal backend work, emits its critical signal once, and
+returns the remaining guard duration as `Retry-After`.
 
 ## Runnable Example
 

@@ -17,12 +17,14 @@ class FailureModeResolver
      */
     public function resolve(BlockPolicyInterface $policy, CircuitBreaker $cb): string
     {
+        if ($cb->isReEntryGuardViolated($policy->getName())) {
+            return 'FAIL_CLOSED';
+        }
+
         $state = $cb->getState($policy->getName());
 
-        if ($state->state === FailureStateDTO::STATE_OPEN) {
-            if ($cb->isReEntryGuardViolated($policy->getName())) {
-                return 'FAIL_CLOSED';
-            }
+        if ($state->state === FailureStateDTO::STATE_OPEN
+            || $state->state === FailureStateDTO::STATE_HALF_OPEN) {
             return 'DEGRADED_MODE';
         }
 

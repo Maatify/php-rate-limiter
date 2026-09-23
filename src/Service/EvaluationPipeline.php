@@ -76,6 +76,18 @@ class EvaluationPipeline
     }
 
     /**
+     * Run the read-only backend health boundary used by circuit-breaker recovery.
+     *
+     * This method delegates only to RateLimitStoreInterface::isHealthy(). It does
+     * not resolve identity, read or write scores, evaluate blocks, touch budgets,
+     * observe correlation state, or execute normal pipeline processing.
+     */
+    public function isBackendHealthy(): bool
+    {
+        return $this->store->isHealthy();
+    }
+
+    /**
      * Evaluate a command and return the winning allow or block decision.
      *
      * Normal candidates are aggregated before budget enforcement, and only
