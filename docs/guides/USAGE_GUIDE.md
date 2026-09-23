@@ -27,13 +27,44 @@ The package is proprietary and is currently in pre-release development. Follow t
 
 The package does not provide permanent bans, WAF/CDN behavior, advanced browser fingerprinting, user tracking across contexts, HTTP controllers, routes, middleware, permissions, UI dashboards, or export formats. It also does not own host account identity, authentication, or business lifecycle state.
 
+## Default Composition
+
+Use `RateLimiterBuilder` for the production default graph. The Host must provide the four required integration boundaries; the package supplies the internal orchestration, UTC default clock, default identity resolver, and three policy presets.
+
+```php
+use Maatify\RateLimiter\Builder\RateLimiterBuilder;
+use Maatify\RateLimiter\Config\RateLimiterConfig;
+
+/** @var RateLimitStoreInterface $rateLimitStore */
+/** @var CorrelationStoreInterface $correlationStore */
+/** @var CircuitBreakerStoreInterface $circuitBreakerStore */
+/** @var FailureSignalEmitterInterface $failureSignalEmitter */
+
+$limiter = new RateLimiterBuilder(
+    new RateLimiterConfig(
+        keySecret: $activeKeySecret,
+        fingerprintSecret: $activeFingerprintSecret,
+        environmentScope: 'production',
+        previousKeySecret: $previousKeySecret,
+        previousFingerprintSecret: $previousFingerprintSecret,
+    ),
+    $rateLimitStore,
+    $correlationStore,
+    $circuitBreakerStore,
+    $failureSignalEmitter,
+)
+    ->build();
+```
+
+Secrets are explicit and independently rotatable. `RateLimiterConfig` rejects empty or whitespace-only active, previous, and environment values without trimming valid caller input. The builder does not create a service container or no-op production adapters. Use `withClock()`, `withDeviceIdentityResolver()`, or `withPolicy()` only for the targeted overrides defined by the public contract; low-level constructors remain the Advanced Path.
+
 ## Primary Public Calls
 
 The normal consumer path uses these public types:
 
 1. Build a <code>RateLimitContextDTO</code> from host-owned request and identity signals.
 2. Select a <code>RateLimitCommand</code> with <code>checkOnly()</code>, <code>recordFailure()</code>, or <code>recordSuccess()</code>.
-3. Call <code>RateLimiterInterface::limit()</code> on the configured <code>RateLimiterEngine</code>.
+3. Call <code>RateLimiterInterface::limit()</code> on the <code>RateLimiterInterface</code> returned by <code>RateLimiterBuilder::build()</code>.
 4. Handle the returned <code>RateLimitResultDTO</code> and its <code>decision</code>, <code>blockLevel</code>, <code>retryAfter</code>, <code>failureMode</code>, and optional <code>metadata</code>.
 
 The available policy preset names are <code>login_protection</code>, <code>otp_protection</code>, and <code>api_heavy_protection</code>. The package reference documents the full DTO and extension inventory.
@@ -80,7 +111,7 @@ The host supplies implementations for:
 - <code>HardBlockCycleStoreInterface</code>: atomic Current-only persistence and transition tracking for every persisted L2+ block, plus read-only Current/Previous decay-pause state. It is mandatory before the first L2+ block write; a base-only store remains valid for normal reads and L1 writes but fails explicitly for L2+ persistence.
 - <code>ClockInterface</code> from <code>maatify/shared-common</code>: current time and timezone.
 
-The host may also provide a custom <code>DeviceIdentityResolverInterface</code> or a custom <code>BlockPolicyInterface</code>. <code>BudgetSeedStoreInterface</code> is an additive storage capability used when a host store supports atomic budget-epoch seeding during key rotation.
+The host may also provide a custom <code>DeviceIdentityResolverInterface</code> or a custom <code>BlockPolicyInterface</code> through the builder's targeted overrides. A same-name policy replaces the matching default, while a new name is added. <code>BudgetSeedStoreInterface</code> is an additive storage capability used when a host store supports atomic budget-epoch seeding during key rotation.
 
 The package owns enforcement decisions, key construction, scoring, decay, bounded correlation logic, budget eligibility, circuit-breaker behavior, and result semantics. The host owns storage implementation, account and session truth, transport response behavior, authorization, logging destinations, and cross-domain reporting.
 
@@ -117,7 +148,7 @@ fingerprint-only, and both-rotated inputs never form Cartesian generation pairs.
 | Check a request before an operation | <code>RateLimiterInterface::limit()</code> + <code>RateLimitCommand::checkOnly()</code> | [Pre-check](#walkthrough-pre-check) | [basic-rate-limit.php](../../examples/basic-rate-limit.php) |
 | Record a failed login or OTP attempt | <code>RateLimitCommand::recordFailure()</code> | [Failure recording](#walkthrough-failure-recording) | [basic-rate-limit.php](../../examples/basic-rate-limit.php) |
 | Record a successful operation | <code>RateLimitCommand::recordSuccess()</code> | [Success recording](#walkthrough-success-recording) | [basic-rate-limit.php](../../examples/basic-rate-limit.php) |
-| Use a policy preset | <code>LoginProtectionPolicy</code>, <code>OtpProtectionPolicy</code>, or <code>ApiHeavyProtectionPolicy</code> | [Policy selection](#walkthrough-policy-selection) | [basic-rate-limit.php](../../examples/basic-rate-limit.php) |
+| Use a policy preset | Default <code>RateLimiterBuilder</code> policy registry | [Policy selection](#walkthrough-policy-selection) | [basic-rate-limit.php](../../examples/basic-rate-limit.php) |
 | Observe infrastructure failures | <code>FailureSignalEmitterInterface</code> + <code>RateLimitResultDTO::failureMode</code> | [Failure boundary](#walkthrough-failure-boundary) | [infrastructure-failure.php](../../examples/infrastructure-failure.php) |
 | Inspect current operational rate-limit state | <code>RateLimitOperationalReaderInterface::read()</code> | [Operational read](#walkthrough-operational-read) | [operational-read.php](../../examples/operational-read.php) |
 
@@ -149,11 +180,11 @@ Use the policy that matches the protected operation. The package keeps the decis
 ## Walkthrough: Policy Selection
 
     Input → Protected operation category: login, OTP/step-up, or API-heavy
-          → Public Call → Construct the matching policy preset and register it in RateLimiterEngine
+          → Public Call → Select one of the builder's default policy names
           → Result → The command's policy name selects the configured policy at evaluation time
           → Boundary → Host maps the result to the operation's own response contract
 
-The policy presets are production runtime classes. Do not invent policy names or infer policy behavior from test fixtures.
+The builder registers `login_protection`, `otp_protection`, and `api_heavy_protection` automatically. Use `withPolicy()` before `build()` to replace a same-name policy or add a differently named policy. The policy presets are production runtime classes. Do not invent policy behavior from test fixtures.
 
 ## Walkthrough: Failure Boundary
 

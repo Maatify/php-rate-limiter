@@ -3,7 +3,7 @@
 **Package:** RateLimiter
 **Namespace:** `Maatify\RateLimiter`
 **Status:** LOCKED — Architecture Contract
-**Spec Version:** `1.12.0`
+**Spec Version:** `1.13.0`
 **Location:** `src/`
 
 This document explains **why** the RateLimiter package is designed the way it is.
@@ -33,6 +33,7 @@ The package is currently proprietary and in pre-release development. It is not a
 The package exposes one rate-limiting capability. Its canonical runtime roots are:
 
     src/
+    ├── Builder/
     ├── Command/
     ├── Config/
     ├── Contract/
@@ -110,6 +111,13 @@ The following inventory describes the current public runtime types. Test and sup
 | `Maatify\RateLimiter\Config\BlockPolicyInterface` | Policy name, thresholds, score deltas, failure mode, and budget configuration. |
 | `Maatify\RateLimiter\Exception\RateLimiterExceptionInterface` | Package exception marker contract. |
 
+### Public Configuration and Composition
+
+| Type | Responsibility |
+| --- | --- |
+| `Maatify\RateLimiter\Config\RateLimiterConfig` | Immutable active/previous outer and fingerprint secrets plus the non-empty environment scope used by the default composition. |
+| `Maatify\RateLimiter\Builder\RateLimiterBuilder` | Package-wide default composition surface for the engine graph and the three default policy presets. |
+
 ### Public Command
 
 | Type | Contract |
@@ -134,6 +142,7 @@ The following inventory describes the current public runtime types. Test and sup
 
 | Group | Types | Consumer role |
 | --- | --- | --- |
+| Default composition | `Maatify\RateLimiter\Builder\RateLimiterBuilder` | Builds a coherent `RateLimiterInterface` graph around `RateLimiterEngine` while requiring the host storage and failure-signal boundaries explicitly. |
 | Primary entrypoint | `Maatify\RateLimiter\Service\RateLimiterEngine` | Production implementation of `Maatify\RateLimiter\Service\RateLimiterInterface`; composes identity resolution, evaluation, circuit-breaker, failure, and policy behavior. |
 | Composition services | `Maatify\RateLimiter\Service\EvaluationPipeline`, `Maatify\RateLimiter\Service\CircuitBreaker`, `Maatify\RateLimiter\Service\FailureModeResolver`, `Maatify\RateLimiter\Service\LocalFallbackLimiter` | Public runtime services used to assemble or extend the engine without coupling it to a storage implementation. `EvaluationPipeline::isBackendHealthy()` is the read-only recovery-probe boundary. |
 | Identity services | `Maatify\RateLimiter\Service\DeviceIdentityResolver`, `Maatify\RateLimiter\Service\FingerprintHasher`, `Maatify\RateLimiter\Service\EphemeralBucket` | Default identity hashing, normalization, bounded device-cap admission, and ephemeral routing without synthetic persistent keys. |
@@ -142,7 +151,33 @@ The following inventory describes the current public runtime types. Test and sup
 | Configuration presets | `Maatify\RateLimiter\Config\LoginProtectionPolicy`, `Maatify\RateLimiter\Config\OtpProtectionPolicy`, `Maatify\RateLimiter\Config\ApiHeavyProtectionPolicy` | Production policy definitions selected by the command policy name. |
 | Exception | `Maatify\RateLimiter\Exception\RateLimiterException` | Package-defined invalid-input and configuration exception implementing the package marker interface. |
 
-The primary consumer call is `Maatify\RateLimiter\Service\RateLimiterInterface::limit()` on `Maatify\RateLimiter\Service\RateLimiterEngine`. The other public concrete services are composition and extension points; their current signatures are stable only as reflected in the source and the contracts above.
+The recommended consumer construction is `Maatify\RateLimiter\Builder\RateLimiterBuilder`, which returns the `RateLimiterInterface` after composing the package-owned graph. The low-level service constructors remain available as the Advanced Path for consumers that intentionally need manual control. Their current signatures are stable only as reflected in the source and the contracts above.
+
+## Default Composition Surface
+
+The production default is constructed with required Host boundaries and a typed `RateLimiterConfig`. Secrets are caller-provided; the package does not read environment variables, generate secrets, serialize secrets, or merge outer and fingerprint rotation into one input.
+
+```php
+use Maatify\RateLimiter\Builder\RateLimiterBuilder;
+use Maatify\RateLimiter\Config\RateLimiterConfig;
+
+$limiter = new RateLimiterBuilder(
+    new RateLimiterConfig(
+        keySecret: $activeKeySecret,
+        fingerprintSecret: $activeFingerprintSecret,
+        environmentScope: 'production',
+        previousKeySecret: $previousKeySecret,
+        previousFingerprintSecret: $previousFingerprintSecret,
+    ),
+    $rateLimitStore,
+    $correlationStore,
+    $circuitBreakerStore,
+    $failureSignalEmitter,
+)
+    ->build();
+```
+
+`build()` supplies the UTC `SystemClock`, the default identity resolver, the package-owned evaluation graph, and the `login_protection`, `otp_protection`, and `api_heavy_protection` policies. `withClock()`, `withDeviceIdentityResolver()`, and `withPolicy()` are the only targeted overrides. A policy with an existing name replaces that policy; a new name is appended without removing defaults. Consumers needing direct control of `EvaluationPipeline` or its internal services retain the existing low-level constructors as the Advanced Path.
 
 ## Runtime Workflow
 
@@ -341,7 +376,8 @@ Normative Behavior: `docs/DECISION_MATRIX.md` §2.4 / §2.5 / §3.3. Preset valu
 
 The public boundaries are placed under their owning responsibility:
 
-- `Config/` owns `BlockPolicyInterface` and the three policy presets.
+- `Config/` owns `RateLimiterConfig`, `BlockPolicyInterface`, and the three policy presets.
+- `Builder/` owns the package-wide default composition surface; it does not replace the low-level Advanced Path or provide a service container.
 - `Repository/` owns `RateLimitStoreInterface`, `BudgetSeedStoreInterface`,
   `CorrelationStoreInterface`, `CorrelationRotationStoreInterface`,
   `BoundedCorrelationStoreInterface`, `BoundedCorrelationRotationStoreInterface`,

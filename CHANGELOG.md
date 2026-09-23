@@ -55,6 +55,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   Reference `1.6.0` → `1.7.0`.
 
 ### Added
+- Implemented WU-S4-01's default composition surface. Added the immutable
+  `RateLimiterConfig` contract and package-wide `RateLimiterBuilder`, which
+  require the four Host integration boundaries, compose the existing runtime
+  graph with a shared UTC default clock, register the Login/OTP/API Heavy policy
+  presets, and preserve independent outer/fingerprint rotation inputs. Package
+  Reference version: `1.12.0` → `1.13.0`. No Redis, PDO, or full aggregate store
+  implementation is included.
 - Implemented WU-S3-06 Circuit Breaker state-machine recovery: OPEN requests
   short-circuit shared-backend work, recovery uses leased read-only health probes
   through HALF_OPEN, and the rolling re-entry guard is authoritative across all
