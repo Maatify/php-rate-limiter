@@ -75,6 +75,40 @@ final class CircuitBreakerStateMachineTest extends TestCase
         self::assertCount(1, $state->reEntries);
     }
 
+    public function testFailuresOutsideRollingTenSecondWindowAreDroppedWithoutOpening(): void
+    {
+        $startedAt = $this->clock->now()->getTimestamp();
+        $this->circuitBreaker->reportFailure('api');
+
+        $this->clock->setNow(new \DateTimeImmutable('@' . ($startedAt + 11)));
+        $this->circuitBreaker->reportFailure('api');
+
+        $this->clock->setNow(new \DateTimeImmutable('@' . ($startedAt + 22)));
+        $this->circuitBreaker->reportFailure('api');
+
+        $state = $this->store->load('api');
+        self::assertNotNull($state);
+        self::assertSame(FailureStateDTO::STATE_CLOSED, $state->status);
+        self::assertSame([$startedAt + 22], $state->failures);
+        self::assertSame($startedAt + 22, $state->lastFailure);
+        self::assertSame([], $this->signalTypes());
+    }
+
+    public function testRollingTenSecondBoundaryRetainsFailureAtInclusiveBoundary(): void
+    {
+        $startedAt = $this->clock->now()->getTimestamp();
+        $this->circuitBreaker->reportFailure('api');
+
+        $this->clock->setNow(new \DateTimeImmutable('@' . ($startedAt + 10)));
+        $this->circuitBreaker->reportFailure('api');
+
+        $state = $this->store->load('api');
+        self::assertNotNull($state);
+        self::assertSame(FailureStateDTO::STATE_CLOSED, $state->status);
+        self::assertSame([$startedAt, $startedAt + 10], $state->failures);
+        self::assertSame([], $this->signalTypes());
+    }
+
     public function testOpenBeforeMinimumDurationDoesNotAcquireLeaseOrProbe(): void
     {
         $openedAt = $this->clock->now()->getTimestamp();
