@@ -49,6 +49,7 @@ final class PackageStructureTest extends TestCase
             'Maatify\\RateLimiter\\Repository\\BoundedCorrelationStoreInterface',
             'Maatify\\RateLimiter\\Repository\\BoundedCorrelationRotationStoreInterface',
             'Maatify\\RateLimiter\\Repository\\CircuitBreakerStoreInterface',
+            'Maatify\\RateLimiter\\Repository\\CircuitBreakerProbeStoreInterface',
             'Maatify\\RateLimiter\\Service\\RateLimiterInterface',
             'Maatify\\RateLimiter\\Service\\DeviceIdentityResolverInterface',
             'Maatify\\RateLimiter\\Service\\RateLimitOperationalReaderInterface',

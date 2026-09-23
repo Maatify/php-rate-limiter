@@ -3,7 +3,7 @@
 **Package:** RateLimiter
 **Namespace:** `Maatify\RateLimiter`
 **Status:** LOCKED — Architecture Contract
-**Spec Version:** `1.10.0`
+**Spec Version:** `1.11.0`
 **Location:** `src/`
 
 This document explains **why** the RateLimiter package is designed the way it is.
@@ -102,6 +102,7 @@ The following inventory describes the current public runtime types. Test and sup
 | `Maatify\RateLimiter\Repository\BoundedCorrelationSnapshotStoreInterface` | Additive bounded distinct operation returning the complete logical member snapshot and fixed expiry. |
 | `Maatify\RateLimiter\Repository\BoundedCorrelationSnapshotRotationStoreInterface` | Snapshot-capable current/previous-generation operation with read-only previous state and a current-only bridge. |
 | `Maatify\RateLimiter\Repository\CircuitBreakerStoreInterface` | Circuit-breaker state persistence boundary. |
+| `Maatify\RateLimiter\Repository\CircuitBreakerProbeStoreInterface` | Additive atomic per-policy recovery-probe lease capability. |
 | `Maatify\RateLimiter\Contract\FailureSignalEmitterInterface` | Failure and circuit-breaker signal delivery boundary. |
 | `Maatify\RateLimiter\Service\DeviceIdentityResolverInterface` | Device identity resolution boundary. |
 | `Maatify\RateLimiter\Service\RateLimitOperationalReaderInterface` | Read-only point-in-time operational state query boundary. |
@@ -132,7 +133,7 @@ The following inventory describes the current public runtime types. Test and sup
 | Group | Types | Consumer role |
 | --- | --- | --- |
 | Primary entrypoint | `Maatify\RateLimiter\Service\RateLimiterEngine` | Production implementation of `Maatify\RateLimiter\Service\RateLimiterInterface`; composes identity resolution, evaluation, circuit-breaker, failure, and policy behavior. |
-| Composition services | `Maatify\RateLimiter\Service\EvaluationPipeline`, `Maatify\RateLimiter\Service\CircuitBreaker`, `Maatify\RateLimiter\Service\FailureModeResolver`, `Maatify\RateLimiter\Service\LocalFallbackLimiter` | Public runtime services used to assemble or extend the engine without coupling it to a storage implementation. |
+| Composition services | `Maatify\RateLimiter\Service\EvaluationPipeline`, `Maatify\RateLimiter\Service\CircuitBreaker`, `Maatify\RateLimiter\Service\FailureModeResolver`, `Maatify\RateLimiter\Service\LocalFallbackLimiter` | Public runtime services used to assemble or extend the engine without coupling it to a storage implementation. `EvaluationPipeline::isBackendHealthy()` is the read-only recovery-probe boundary. |
 | Identity services | `Maatify\RateLimiter\Service\DeviceIdentityResolver`, `Maatify\RateLimiter\Service\FingerprintHasher`, `Maatify\RateLimiter\Service\EphemeralBucket` | Default identity hashing, normalization, bounded device-cap admission, and ephemeral routing without synthetic persistent keys. |
 | Operational read | `Maatify\RateLimiter\Service\RateLimitOperationalReader` | Resolves a read-only point-in-time snapshot from a typed context and policy without invoking enforcement or mutation primitives. |
 | Decision services | `Maatify\RateLimiter\Service\AntiEquilibriumGate`, `Maatify\RateLimiter\Service\BoundedCorrelationResultValidator`, `Maatify\RateLimiter\Service\BudgetTracker`, `Maatify\RateLimiter\Service\DecayCalculator`, `Maatify\RateLimiter\Service\PenaltyLadder` | Publicly typed services for bounded result validation, penalty, budget, decay, and escalation orchestration. |
@@ -284,7 +285,7 @@ Auth-critical flows MUST remain protected without turning RateLimiter into a glo
 Therefore:
 - Login/OTP use FAIL_CLOSED with mandatory bounded DEGRADED_MODE
 - API Heavy may FAIL_OPEN, but still must be bounded by local guardrails
-- Circuit breaker parameters are locked (no undefined N/window)
+- Circuit breaker parameters are locked (3 failures/10 seconds, 300-second minimum OPEN duration, 120-second probe lease, and 120-second healthy interval)
 
 Failure semantics are locked in `docs/FAILURE_SEMANTICS.md`.
 
@@ -678,6 +679,20 @@ The package is only acceptable if tests prove:
 - Correct correlation detection triggers with watch flags + confidence constraints
 - Key explosion resistance (caps + ephemeral behavior + “no bypass” invariants)
 - Failure semantics correctness (including circuit breaker constants and re-entry guard)
+
+Circuit-breaker recovery uses the public `CLOSED`, `OPEN`, and `HALF_OPEN` states.
+Normal evaluation is short-circuited outside `CLOSED`. Recovery is request-driven
+through `EvaluationPipeline::isBackendHealthy()`, which delegates only to
+`RateLimitStoreInterface::isHealthy()` and performs no score, block, budget,
+correlation, or device work. A recovery-eligible request requires the additive
+`CircuitBreakerProbeStoreInterface::acquireProbeLease()` capability with a
+120-second atomic lease; the unchanged `CircuitBreakerStoreInterface` remains
+source-compatible. The first healthy probe enters `HALF_OPEN` while remaining
+degraded; a second healthy probe after 120 seconds closes the circuit and emits
+`CB_RECOVERED` once. Failed probes restart or re-enter `OPEN` according to the
+state-machine contract. The rolling re-entry guard has precedence over every
+persisted state, suppresses probing/backend work, emits `CB_RE_ENTRY_VIOLATION`
+once at activation, and returns the remaining guard duration as `Retry-After`.
 
 ---
 
