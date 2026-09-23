@@ -195,7 +195,8 @@ final class RateLimiterBuilderTest extends TestCase
         self::assertTrue($method->isStatic());
         $returnType = $method->getReturnType();
         self::assertInstanceOf(\ReflectionNamedType::class, $returnType);
-        self::assertSame(RateLimiterBuilder::class, $returnType->getName());
+        self::assertFalse($returnType->isBuiltin());
+        self::assertContains($returnType->getName(), ['self', RateLimiterBuilder::class]);
         $parameterNames = [
             'config',
             'store',
