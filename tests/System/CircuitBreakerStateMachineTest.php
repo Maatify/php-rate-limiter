@@ -342,6 +342,7 @@ final class CircuitBreakerStateMachineTest extends TestCase
             return true;
         }));
         self::assertSame(1, $probeCalls);
+        /** @var CircuitBreakerStateDTO $recovered */
         $recovered = $this->store->load('api');
         self::assertSame(FailureStateDTO::STATE_HALF_OPEN, $recovered->status);
     }
