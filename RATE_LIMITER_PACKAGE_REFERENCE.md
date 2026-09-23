@@ -792,7 +792,7 @@ This package maintains strict architectural boundaries:
 - No coupling to HTTP frameworks
 - No reliance on globals (`$_SERVER`, `$_COOKIE`)
 - Contract, Command, and DTO boundaries
-- Consumers implement infrastructure drivers
+- The package supplies the optional official Redis persistence driver; consumers may provide custom infrastructure drivers for other backends
 
 Composer autoload maps:
 - `Maatify\RateLimiter\` → `src/`
