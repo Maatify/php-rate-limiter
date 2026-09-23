@@ -92,7 +92,7 @@ final class Ipv6AdaptiveAggregationTest extends TestCase
 
         $this->observeFingerprint($pipeline, $policy, $firstIp, 'first');
         $firstExpiry = $this->correlationStore->distinctExpiresAt($scope48);
-        self::assertSame(1, $this->correlationStore->distinctCount($scope48));
+        self::assertCount(1, $this->correlationStore->distinctItems($scope48));
 
         $this->clock->setNow($this->clock->now()->modify('+120 seconds'));
         $this->observeFingerprint($pipeline, $policy, $firstIp, 'first');
