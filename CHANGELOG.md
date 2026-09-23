@@ -8,6 +8,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Changed
+- Added WU-S4-02A full-capability storage composition. `FullCapabilityStoreInterface`
+  aggregates the budget-seed, bounded snapshot-rotation, circuit-probe, and
+  hard-block-cycle contracts without adding methods, and
+  `RateLimiterBuilder::fromFullCapabilityStore()` composes one host store across
+  those boundaries while keeping the failure-signal emitter separate. The
+  existing multi-store constructor remains source-compatible. Package Reference
+  version: `1.13.0` → `1.14.0`. No concrete Redis, PDO, Lua, or `ext-redis`
+  adapter is included.
 - Implemented WU-S3-07 multiple-block-cycle decay pause. Persisted L2+ blocks now
   use the additive `HardBlockCycleStoreInterface` for atomic Current-only block
   persistence, real cycle classification, rolling six-hour K1/K2/K3/K4/K5

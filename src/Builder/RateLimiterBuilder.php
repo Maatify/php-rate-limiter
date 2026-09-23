@@ -13,6 +13,7 @@ use Maatify\RateLimiter\Config\RateLimiterConfig;
 use Maatify\RateLimiter\Contract\FailureSignalEmitterInterface;
 use Maatify\RateLimiter\Repository\CircuitBreakerStoreInterface;
 use Maatify\RateLimiter\Repository\CorrelationStoreInterface;
+use Maatify\RateLimiter\Repository\FullCapabilityStoreInterface;
 use Maatify\RateLimiter\Repository\RateLimitStoreInterface;
 use Maatify\RateLimiter\Service\AntiEquilibriumGate;
 use Maatify\RateLimiter\Service\BudgetTracker;
@@ -63,6 +64,26 @@ final class RateLimiterBuilder
             'otp_protection' => new OtpProtectionPolicy(),
             'api_heavy_protection' => new ApiHeavyProtectionPolicy(),
         ];
+    }
+
+    /**
+     * Create a builder that uses one aggregate store for every storage boundary.
+     *
+     * The aggregate object is passed unchanged to the rate-limit, correlation,
+     * and circuit-breaker boundaries; the failure signal emitter remains separate.
+     */
+    public static function fromFullCapabilityStore(
+        RateLimiterConfig $config,
+        FullCapabilityStoreInterface $store,
+        FailureSignalEmitterInterface $failureSignalEmitter,
+    ): self {
+        return new self(
+            $config,
+            $store,
+            $store,
+            $store,
+            $failureSignalEmitter,
+        );
     }
 
     /**

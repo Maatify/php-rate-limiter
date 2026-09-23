@@ -29,7 +29,7 @@ The package does not provide permanent bans, WAF/CDN behavior, advanced browser 
 
 ## Default Composition
 
-Use `RateLimiterBuilder` for the production default graph. The Host must provide the four required integration boundaries; the package supplies the internal orchestration, UTC default clock, default identity resolver, and three policy presets.
+Use `RateLimiterBuilder` for the production default graph. The Host may provide the four required integration boundaries separately or provide one concrete `FullCapabilityStoreInterface`; the package supplies the internal orchestration, UTC default clock, default identity resolver, and three policy presets.
 
 ```php
 use Maatify\RateLimiter\Builder\RateLimiterBuilder;
@@ -55,6 +55,24 @@ $limiter = new RateLimiterBuilder(
 )
     ->build();
 ```
+
+If one host adapter owns all four additive storage capabilities, use the named
+full-capability composition path:
+
+```php
+use Maatify\RateLimiter\Builder\RateLimiterBuilder;
+
+$limiter = RateLimiterBuilder::fromFullCapabilityStore(
+    $config,
+    $fullCapabilityStore,
+    $failureSignalEmitter,
+)->build();
+```
+
+`FullCapabilityStoreInterface` is an aggregate contract with no methods of its
+own. Its concrete implementation is host-owned; the core package provides no
+Redis, PDO, Lua, or `ext-redis` adapter. The failure-signal emitter remains a
+separate dependency, and the existing multi-store constructor remains valid.
 
 Secrets are explicit and independently rotatable. `RateLimiterConfig` rejects empty or whitespace-only active, previous, and environment values without trimming valid caller input. The builder does not create a service container or no-op production adapters. Use `withClock()`, `withDeviceIdentityResolver()`, or `withPolicy()` only for the targeted overrides defined by the public contract; low-level constructors remain the Advanced Path.
 
@@ -109,6 +127,7 @@ The host supplies implementations for:
   recovery-probe lease; required only when a recovery probe becomes eligible.
 - <code>FailureSignalEmitterInterface</code>: delivery of circuit-breaker and failure signals.
 - <code>HardBlockCycleStoreInterface</code>: atomic Current-only persistence and transition tracking for every persisted L2+ block, plus read-only Current/Previous decay-pause state. It is mandatory before the first L2+ block write; a base-only store remains valid for normal reads and L1 writes but fails explicitly for L2+ persistence.
+- <code>FullCapabilityStoreInterface</code>: aggregate contract for the budget-seed, bounded snapshot-rotation, circuit-probe, and hard-block-cycle capabilities; it declares no additional methods.
 - <code>ClockInterface</code> from <code>maatify/shared-common</code>: current time and timezone.
 
 The host may also provide a custom <code>DeviceIdentityResolverInterface</code> or a custom <code>BlockPolicyInterface</code> through the builder's targeted overrides. A same-name policy replaces the matching default, while a new name is added. <code>BudgetSeedStoreInterface</code> is an additive storage capability used when a host store supports atomic budget-epoch seeding during key rotation.

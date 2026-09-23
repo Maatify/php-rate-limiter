@@ -3,7 +3,7 @@
 **Package:** RateLimiter
 **Namespace:** `Maatify\RateLimiter`
 **Status:** LOCKED — Architecture Contract
-**Spec Version:** `1.13.0`
+**Spec Version:** `1.14.0`
 **Location:** `src/`
 
 This document explains **why** the RateLimiter package is designed the way it is.
@@ -105,6 +105,7 @@ The following inventory describes the current public runtime types. Test and sup
 | `Maatify\RateLimiter\Repository\CircuitBreakerStoreInterface` | Circuit-breaker state persistence boundary. |
 | `Maatify\RateLimiter\Repository\CircuitBreakerProbeStoreInterface` | Additive atomic per-policy recovery-probe lease capability. |
 | `Maatify\RateLimiter\Repository\HardBlockCycleStoreInterface` | Additive atomic L2+ block, hard-cycle, and decay-pause capability; Previous is read-only. |
+| `Maatify\RateLimiter\Repository\FullCapabilityStoreInterface` | Aggregate contract composing the four additive full-capability storage boundaries without declaring new methods. |
 | `Maatify\RateLimiter\Contract\FailureSignalEmitterInterface` | Failure and circuit-breaker signal delivery boundary. |
 | `Maatify\RateLimiter\Service\DeviceIdentityResolverInterface` | Device identity resolution boundary. |
 | `Maatify\RateLimiter\Service\RateLimitOperationalReaderInterface` | Read-only point-in-time operational state query boundary. |
@@ -177,6 +178,26 @@ $limiter = new RateLimiterBuilder(
     ->build();
 ```
 
+When one concrete storage adapter implements the full capability contract, the
+same default graph can be built through the named convenience constructor:
+
+```php
+use Maatify\RateLimiter\Builder\RateLimiterBuilder;
+
+$limiter = RateLimiterBuilder::fromFullCapabilityStore(
+    $config,
+    $fullCapabilityStore,
+    $failureSignalEmitter,
+)->build();
+```
+
+`FullCapabilityStoreInterface` extends exactly `BudgetSeedStoreInterface`,
+`BoundedCorrelationSnapshotRotationStoreInterface`,
+`CircuitBreakerProbeStoreInterface`, and `HardBlockCycleStoreInterface`; it
+declares no methods of its own. The concrete adapter remains outside this core
+package, which includes no Redis, PDO, Lua, or `ext-redis` implementation.
+The existing multi-store constructor remains source-compatible.
+
 `build()` supplies the UTC `SystemClock`, the default identity resolver, the package-owned evaluation graph, and the `login_protection`, `otp_protection`, and `api_heavy_protection` policies. `withClock()`, `withDeviceIdentityResolver()`, and `withPolicy()` are the only targeted overrides. A policy with an existing name replaces that policy; a new name is appended without removing defaults. Consumers needing direct control of `EvaluationPipeline` or its internal services retain the existing low-level constructors as the Advanced Path.
 
 ## Runtime Workflow
@@ -199,6 +220,12 @@ Concretely:
           + CorrelationRotationStoreInterface for rotated WATCH state
           + CircuitBreakerStoreInterface + FailureSignalEmitterInterface
         → RateLimitResultDTO and, when applicable, FailureSignalDTO
+
+`FullCapabilityStoreInterface` is a composition contract for the four additive
+storage capabilities above. `fromFullCapabilityStore()` passes the same store
+object to the rate-limit, correlation, and circuit-breaker boundaries; the
+failure-signal emitter remains a separate dependency. The core package does not
+assume a shared transaction across those boundaries.
 
 `RateLimiterEngine` selects the policy by the command's policy name. `EvaluationPipeline` resolves active blocks, identity-derived keys, scoring, correlation, budgets, decay, and final aggregation. Credential-spray and distributed-account correlation are observed during Login/OTP authentication pre-checks only; the later failure/success command does not observe the same lifecycle a second time. The distributed-account path uses a 600-second, four-member snapshot of canonical K5 keys, a 30-minute N-1 watch, and a 24-hour three-occurrence account gate. API Heavy and requests without the required account/device/K4/K5 inputs do not observe it. The integration boundaries provide the stateful primitives; the result is returned to the Host, which decides how to enforce it at its own transport or application boundary.
 
@@ -381,7 +408,8 @@ The public boundaries are placed under their owning responsibility:
 - `Repository/` owns `RateLimitStoreInterface`, `BudgetSeedStoreInterface`,
   `CorrelationStoreInterface`, `CorrelationRotationStoreInterface`,
   `BoundedCorrelationStoreInterface`, `BoundedCorrelationRotationStoreInterface`,
-  `CircuitBreakerStoreInterface`, and `HardBlockCycleStoreInterface`.
+  `CircuitBreakerStoreInterface`, `HardBlockCycleStoreInterface`, and
+  `FullCapabilityStoreInterface`.
 - `Service/` owns `RateLimiterInterface` and `DeviceIdentityResolverInterface`.
 - `Contract/` retains the general host/outbound `FailureSignalEmitterInterface`.
 
