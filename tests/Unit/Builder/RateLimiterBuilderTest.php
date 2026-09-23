@@ -176,9 +176,37 @@ final class RateLimiterBuilderTest extends TestCase
             (new \ReflectionClass(RateLimiterBuilder::class))->getMethods(\ReflectionMethod::IS_PUBLIC),
         );
 
+        self::assertSame([
+            '__construct',
+            'fromFullCapabilityStore',
+            'withClock',
+            'withDeviceIdentityResolver',
+            'withPolicy',
+            'build',
+        ], $publicMethods);
+    }
+
+    public function testFullCapabilityNamedConstructorHasTheLockedSignature(): void
+    {
+        $reflection = new \ReflectionClass(RateLimiterBuilder::class);
+
+        self::assertTrue($reflection->hasMethod('fromFullCapabilityStore'));
+        $method = $reflection->getMethod('fromFullCapabilityStore');
+        self::assertTrue($method->isStatic());
+        $returnType = $method->getReturnType();
+        self::assertInstanceOf(\ReflectionNamedType::class, $returnType);
+        self::assertSame(RateLimiterBuilder::class, $returnType->getName());
+        $parameterNames = [
+            'config',
+            'store',
+            'failureSignalEmitter',
+        ];
         self::assertSame(
-            ['__construct', 'withClock', 'withDeviceIdentityResolver', 'withPolicy', 'build'],
-            $publicMethods,
+            $parameterNames,
+            array_map(
+                static fn(\ReflectionParameter $parameter): string => $parameter->getName(),
+                $method->getParameters(),
+            ),
         );
     }
 

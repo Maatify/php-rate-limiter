@@ -47,7 +47,7 @@ The package is not yet available through a published Composer registry. Authoriz
 
 ## Usage
 
-The package provides storage and signal contracts; the consumer supplies implementations for those boundaries. `RateLimiterBuilder` supplies the production default composition around those explicit Host boundaries. See the [Usage Guide](docs/guides/USAGE_GUIDE.md) for the integration contract and [basic runnable example](examples/basic-rate-limit.php) for a complete in-memory assembly.
+The package provides storage and signal contracts; the consumer supplies implementations for those boundaries. `RateLimiterBuilder` supplies the production default composition around those explicit Host boundaries, including the `fromFullCapabilityStore()` convenience path for one aggregate storage adapter. See the [Usage Guide](docs/guides/USAGE_GUIDE.md) for the integration contract and [basic runnable example](examples/basic-rate-limit.php) for a complete in-memory assembly.
 
 ```php
 use Maatify\RateLimiter\Builder\RateLimiterBuilder;
@@ -81,11 +81,25 @@ if ($result->isBlocked()) {
 }
 ```
 
+For one host adapter implementing the aggregate storage contract:
+
+```php
+$limiter = RateLimiterBuilder::fromFullCapabilityStore(
+    $config,
+    $fullCapabilityStore,
+    $failureSignalEmitter,
+)->build();
+```
+
+`FullCapabilityStoreInterface` adds no methods of its own. Its concrete adapter
+is supplied by the consumer; the core package includes no Redis, PDO, Lua, or
+`ext-redis` implementation.
+
 ## Public Runtime API
 
 `RateLimiterInterface::limit()` is the framework-agnostic consumer entrypoint. Hosts provide a `RateLimitContextDTO` and a `RateLimitCommand`, then handle the returned `RateLimitResultDTO` at their transport boundary.
 
-The public runtime surface also includes the `login_protection`, `otp_protection`, and `api_heavy_protection` policy presets; typed context, command, result, identity, state, operational snapshot, and metadata DTOs; `RateLimitOperationalReaderInterface::read()` for read-only point-in-time operational inspection; and extension contracts for rate-limit storage, atomic L2+ hard-block cycle tracking (`HardBlockCycleStoreInterface`), correlation storage, circuit-breaker state, failure signals, device identity resolution, and custom policies. A base-only rate-limit store remains compatible for reads and L1 writes, but L2+ persistence requires the additive hard-block cycle capability.
+The public runtime surface also includes the `login_protection`, `otp_protection`, and `api_heavy_protection` policy presets; typed context, command, result, identity, state, operational snapshot, and metadata DTOs; `RateLimitOperationalReaderInterface::read()` for read-only point-in-time operational inspection; and extension contracts for rate-limit storage, the aggregate full-capability storage contract (`FullCapabilityStoreInterface`), atomic L2+ hard-block cycle tracking (`HardBlockCycleStoreInterface`), correlation storage, circuit-breaker state, failure signals, device identity resolution, and custom policies. A base-only rate-limit store remains compatible for reads and L1 writes, but L2+ persistence requires the additive hard-block cycle capability.
 
 The [Package Reference](RATE_LIMITER_PACKAGE_REFERENCE.md) contains the complete public interface, command, DTO, concrete service, policy, and extension-boundary inventory. Runtime behavior is defined by the current source and the linked decision, policy, device, key, and failure documents.
 
