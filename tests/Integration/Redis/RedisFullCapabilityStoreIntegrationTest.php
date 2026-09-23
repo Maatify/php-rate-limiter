@@ -6,12 +6,17 @@ namespace Maatify\RateLimiter\Tests\Integration\Redis;
 
 use Maatify\RateLimiter\Builder\RateLimiterBuilder;
 use Maatify\RateLimiter\Command\RateLimitCommand;
+use Maatify\RateLimiter\Config\BlockPolicyInterface;
 use Maatify\RateLimiter\Config\RateLimiterConfig;
 use Maatify\RateLimiter\DTO\CircuitBreakerStateDTO;
 use Maatify\RateLimiter\DTO\BudgetStateDTO;
+use Maatify\RateLimiter\DTO\BudgetConfigDTO;
 use Maatify\RateLimiter\DTO\HardBlockCycleResultDTO;
+use Maatify\RateLimiter\DTO\PolicyThresholdsDTO;
 use Maatify\RateLimiter\DTO\RateLimitContextDTO;
 use Maatify\RateLimiter\DTO\RateLimitResultDTO;
+use Maatify\RateLimiter\DTO\ScoreDeltasDTO;
+use Maatify\RateLimiter\DTO\ScoreThresholdsDTO;
 use Maatify\RateLimiter\Repository\Redis\RedisCommandExecutorInterface;
 use Maatify\RateLimiter\Repository\Redis\RedisFullCapabilityStore;
 use Maatify\RateLimiter\Tests\Support\Clock\FixedClock;
@@ -143,6 +148,157 @@ final class RedisFullCapabilityStoreIntegrationTest extends TestCase
             self::assertSame(RateLimitResultDTO::DECISION_HARD_BLOCK, $rotated->decision);
             self::assertSame(2, $rotated->blockLevel);
         }
+    }
+
+    public function testPublicBuilderRotationWritesCurrentStateAndLeavesPreviousRedisStateReadOnly(): void
+    {
+        $account = 'redis-public-read-only-rotation';
+        $oldLimiter = RateLimiterBuilder::fromFullCapabilityStore(
+            new RateLimiterConfig('public-old-outer', 'public-stable-fingerprint', 'prod'),
+            $this->store,
+            new RecordingFailureSignalEmitter(),
+        )->build();
+        for ($device = 1; $device <= 3; $device++) {
+            $oldLimiter->limit($this->deviceContext($account, $device), RateLimitCommand::checkOnly('login_protection'));
+        }
+
+        $previousKeys = $this->redisKeys('distinct');
+        self::assertNotEmpty($previousKeys);
+        $previousSnapshot = [];
+        foreach ($previousKeys as $key) {
+            $previousSnapshot[$key] = [
+                $this->raw(['SMEMBERS', $key]),
+                $this->integer($this->raw(['PTTL', $key])),
+                $this->hashMap(str_replace(':distinct:', ':distinct-meta:', $key)),
+                $this->integer($this->raw(['PTTL', str_replace(':distinct:', ':distinct-meta:', $key)])),
+            ];
+        }
+
+        $currentLimiter = RateLimiterBuilder::fromFullCapabilityStore(
+            new RateLimiterConfig(
+                'public-new-outer',
+                'public-stable-fingerprint',
+                'prod',
+                'public-old-outer',
+                null,
+            ),
+            $this->store,
+            new RecordingFailureSignalEmitter(),
+        )->build();
+        $rotated = $currentLimiter->limit(
+            $this->deviceContext($account, 4),
+            RateLimitCommand::checkOnly('login_protection'),
+        );
+
+        self::assertSame(RateLimitResultDTO::DECISION_HARD_BLOCK, $rotated->decision);
+        $currentKeys = $this->redisKeys('distinct');
+        self::assertNotEmpty(array_diff($currentKeys, $previousKeys));
+        foreach ($previousSnapshot as $key => [$members, $pttl, $metadata, $metadataPttl]) {
+            self::assertSame($members, $this->raw(['SMEMBERS', $key]));
+            self::assertLessThanOrEqual($pttl, $this->integer($this->raw(['PTTL', $key])));
+            $metadataKey = str_replace(':distinct:', ':distinct-meta:', $key);
+            self::assertSame($metadata, $this->hashMap($metadataKey));
+            self::assertLessThanOrEqual($metadataPttl, $this->integer($this->raw(['PTTL', $metadataKey])));
+        }
+    }
+
+    public function testPublicBuilderMigratesPreviousBudgetIntoCurrentGeneration(): void
+    {
+        $clock = new FixedClock('2025-01-01 12:00:00');
+        $context = new RateLimitContextDTO(
+            '198.51.100.40',
+            'Mozilla/5.0 Chrome/123.0.0.0',
+            'redis-public-budget-migration',
+            ['device' => 'migration'],
+        );
+        $oldLimiter = RateLimiterBuilder::fromFullCapabilityStore(
+            new RateLimiterConfig('budget-old-outer', 'budget-old-fingerprint', 'prod'),
+            $this->store,
+            new RecordingFailureSignalEmitter(),
+        )->withClock($clock)->build();
+        $oldLimiter->limit($context, RateLimitCommand::recordFailure('login_protection'));
+
+        $previousKeys = $this->redisKeys('budget');
+        self::assertNotEmpty($previousKeys);
+        $previousKey = $previousKeys[0];
+        $previousState = $this->hashMap($previousKey);
+        self::assertArrayHasKey('count', $previousState);
+        self::assertArrayHasKey('epochStart', $previousState);
+        $previousPttl = $this->integer($this->raw(['PTTL', $previousKey]));
+
+        $currentLimiter = RateLimiterBuilder::fromFullCapabilityStore(
+            new RateLimiterConfig(
+                'budget-new-outer',
+                'budget-new-fingerprint',
+                'prod',
+                'budget-old-outer',
+                'budget-old-fingerprint',
+            ),
+            $this->store,
+            new RecordingFailureSignalEmitter(),
+        )->withClock($clock)->build();
+        $currentLimiter->limit($context, RateLimitCommand::recordFailure('login_protection'));
+
+        $currentKeys = array_values(array_diff($this->redisKeys('budget'), $previousKeys));
+        self::assertNotEmpty($currentKeys);
+        $currentState = $this->hashMap($currentKeys[0]);
+        self::assertSame((int) $previousState['count'] + 1, (int) $currentState['count']);
+        self::assertSame($previousState['epochStart'], $currentState['epochStart']);
+        self::assertSame($previousState, $this->hashMap($previousKey));
+        self::assertLessThanOrEqual($previousPttl, $this->integer($this->raw(['PTTL', $previousKey])));
+    }
+
+    public function testPublicBuilderPersistsHardBlockCycleAndPauseThroughLimitWorkflow(): void
+    {
+        $clock = new FixedClock('2025-01-01 12:00:00');
+        $policy = new class implements BlockPolicyInterface {
+            public function getName(): string
+            {
+                return 'public_hard_cycle';
+            }
+
+            public function getScoreThresholds(): PolicyThresholdsDTO
+            {
+                return new PolicyThresholdsDTO(k4: new ScoreThresholdsDTO(1, 1, 1));
+            }
+
+            public function getScoreDeltas(): ScoreDeltasDTO
+            {
+                return new ScoreDeltasDTO(k4_failure: 1);
+            }
+
+            public function getFailureMode(): string
+            {
+                return 'FAIL_CLOSED';
+            }
+
+            public function getBudgetConfig(): ?BudgetConfigDTO
+            {
+                return null;
+            }
+        };
+        $limiter = RateLimiterBuilder::fromFullCapabilityStore(
+            new RateLimiterConfig('public-hard-cycle-key', 'public-hard-cycle-fingerprint', 'prod'),
+            $this->store,
+            new RecordingFailureSignalEmitter(),
+        )->withClock($clock)->withPolicy($policy)->build();
+        $context = new RateLimitContextDTO(
+            '198.51.100.41',
+            'Mozilla/5.0 Chrome/123.0.0.0',
+            'redis-public-hard-cycle',
+            ['device' => 'hard-cycle'],
+        );
+
+        $first = $limiter->limit($context, RateLimitCommand::recordFailure('public_hard_cycle'));
+        self::assertSame(RateLimitResultDTO::DECISION_HARD_BLOCK, $first->decision);
+        $clock->setNow($clock->now()->modify('+61 seconds'));
+        $second = $limiter->limit($context, RateLimitCommand::recordFailure('public_hard_cycle'));
+        self::assertSame(RateLimitResultDTO::DECISION_HARD_BLOCK, $second->decision);
+
+        $pauseKeys = $this->redisKeys('pause');
+        self::assertNotEmpty($pauseKeys);
+        self::assertGreaterThan(0, $this->integer($this->raw(['PTTL', $pauseKeys[0]])));
+        self::assertNotEmpty($this->redisKeys('cycle'));
     }
 
     public function testPublicBuilderWorkflowUsesOfficialRedisBudgetAndCircuitProbePaths(): void
@@ -511,25 +667,89 @@ final class RedisFullCapabilityStoreIntegrationTest extends TestCase
 
     public function testNamespaceValidationAndFamilyIsolationUseHashNamespacedKeys(): void
     {
-        $this->assertOperationFails(fn(): RedisFullCapabilityStore => new RedisFullCapabilityStore($this->executor, 'invalid namespace'));
+        foreach (['', ' ', '{invalid}', 'invalid/slash', str_repeat('a', 129)] as $invalidNamespace) {
+            $this->assertOperationFails(fn(): RedisFullCapabilityStore => new RedisFullCapabilityStore($this->executor, $invalidNamespace));
+        }
+
+        $validNamespace = new RedisFullCapabilityStore($this->executor, 'integration.valid:namespace-1');
+        self::assertNull($validNamespace->get('same-logical-key'));
         $otherNamespace = new RedisFullCapabilityStore($this->executor, 'integration:other');
 
-        self::assertSame(1, $this->store->increment('same-logical-key', 60));
+        $logical = 'same-logical-key';
+        self::assertSame(1, $this->store->increment($logical, 60));
         self::assertNull($otherNamespace->get('same-logical-key'));
 
-        $this->store->block('same-logical-key', 2, 60);
-        self::assertSame(1, $this->store->get('same-logical-key')?->value);
-        self::assertSame(2, $this->store->checkBlock('same-logical-key')?->level);
+        $this->store->block($logical, 2, 1);
+        $budget = $this->store->incrementBudget($logical, 60);
+        self::assertSame(1, $budget->count);
+        self::assertSame(1, $this->store->addDistinct($logical, 'member', 60));
+        self::assertSame(1, $this->store->incrementWatchFlag($logical, 60));
+        $this->store->save($logical, new CircuitBreakerStateDTO('CLOSED', [], 0, 0, 0, [], 0));
+        self::assertTrue($this->store->acquireProbeLease($logical, time(), 60));
+
+        $base = time();
+        $this->store->blockWithCycleTracking($logical, null, 2, 1, $base + 2, 21600, 2, 600, 86400);
+        $this->store->blockWithCycleTracking($logical, null, 2, 1, $base + 4, 21600, 2, 600, 86400);
+        $this->store->block($logical, 2, 60);
+
+        self::assertSame(1, $this->store->get($logical)?->value);
+        self::assertSame(2, $this->store->checkBlock($logical)?->level);
+        self::assertSame('CLOSED', $this->store->load($logical)?->status);
+        foreach (['score', 'block', 'budget', 'distinct', 'distinct-meta', 'watch', 'watch-meta', 'circuit', 'probe', 'cycle', 'pause'] as $family) {
+            self::assertSame(1, $this->integer($this->raw(['EXISTS', $this->key($family, $logical)])), $family);
+        }
+    }
+
+    public function testScoreUpdatedAtTracksPersistedRedisStateAcrossWrites(): void
+    {
+        self::assertSame(1, $this->store->increment('updated-at', 60));
+        $first = $this->store->get('updated-at');
+        self::assertNotNull($first);
+        self::assertSame($first->value, $this->integer($this->raw(['HGET', $this->key('score', 'updated-at'), 'value'])));
+        self::assertSame($first->updatedAt, $this->integer($this->raw(['HGET', $this->key('score', 'updated-at'), 'updatedAt'])));
+
+        usleep(1_100_000);
+        self::assertSame(2, $this->store->increment('updated-at', 60));
+        $second = $this->store->get('updated-at');
+        self::assertNotNull($second);
+        self::assertGreaterThan($first->updatedAt, $second->updatedAt);
+        self::assertSame($second->value, $this->integer($this->raw(['HGET', $this->key('score', 'updated-at'), 'value'])));
+        self::assertSame($second->updatedAt, $this->integer($this->raw(['HGET', $this->key('score', 'updated-at'), 'updatedAt'])));
+    }
+
+    public function testFiniteSubsecondTtlRemainsValidForScoreBudgetAndProbeLease(): void
+    {
+        self::assertSame(1, $this->store->increment('subsecond-score', 60));
+        $scoreKey = $this->key('score', 'subsecond-score');
+        $this->raw(['PEXPIRE', $scoreKey, 50]);
+        self::assertSame(0, $this->integer($this->raw(['TTL', $scoreKey])));
+        self::assertSame(2, $this->store->increment('subsecond-score', 60));
+
+        $budget = $this->store->incrementBudget('subsecond-budget', 60);
+        $budgetKey = $this->key('budget', 'subsecond-budget');
+        $this->raw(['PEXPIRE', $budgetKey, 50]);
+        self::assertSame(0, $this->integer($this->raw(['TTL', $budgetKey])));
+        self::assertSame($budget->epochStart, $this->store->incrementBudget('subsecond-budget', 60)->epochStart);
+
+        $now = time();
+        self::assertTrue($this->store->acquireProbeLease('subsecond-probe', $now, 60));
+        $probeKey = $this->key('probe', 'subsecond-probe');
+        $this->raw(['PEXPIRE', $probeKey, 50]);
+        self::assertSame(0, $this->integer($this->raw(['TTL', $probeKey])));
+        self::assertFalse($this->store->acquireProbeLease('subsecond-probe', $now + 1, 60));
     }
 
     public function testScoreAndBlockWindowsKeepFixedTtlAndExpireAtExactBoundary(): void
     {
         self::assertSame(2, $this->store->increment('score-window', 60, 2));
         $scoreKey = $this->key('score', 'score-window');
-        $scoreTtl = $this->integer($this->raw(['TTL', $scoreKey]));
-        self::assertGreaterThan(0, $scoreTtl);
+        $this->raw(['PEXPIRE', $scoreKey, 5_000]);
+        $scorePttl = $this->integer($this->raw(['PTTL', $scoreKey]));
+        self::assertGreaterThan(0, $scorePttl);
         self::assertSame(5, $this->store->increment('score-window', 60, 3));
-        self::assertLessThanOrEqual($scoreTtl, $this->integer($this->raw(['TTL', $scoreKey])));
+        $scoreAfterPttl = $this->integer($this->raw(['PTTL', $scoreKey]));
+        self::assertLessThanOrEqual($scorePttl, $scoreAfterPttl);
+        self::assertLessThan(60_000, $scoreAfterPttl);
         $this->store->set('score-window', 9, 60);
         self::assertSame(9, $this->store->get('score-window')?->value);
         $this->raw(['PEXPIRE', $scoreKey, 50]);
@@ -541,16 +761,27 @@ final class RedisFullCapabilityStoreIntegrationTest extends TestCase
         $this->raw(['PEXPIRE', $this->key('block', 'block-window'), 50]);
         usleep(80_000);
         self::assertNull($this->store->checkBlock('block-window'));
+
+        $this->store->block('block-logical-boundary', 2, 60);
+        $logicalBoundaryKey = $this->key('block', 'block-logical-boundary');
+        $this->raw(['HSET', $logicalBoundaryKey, 'expiresAt', $this->redisNow()]);
+        $this->raw(['PEXPIRE', $logicalBoundaryKey, 60_000]);
+        self::assertSame(1, $this->integer($this->raw(['EXISTS', $logicalBoundaryKey])));
+        self::assertNull($this->store->checkBlock('block-logical-boundary'));
+        self::assertSame(0, $this->integer($this->raw(['EXISTS', $logicalBoundaryKey])));
     }
 
     public function testBudgetEpochAndSeedSemanticsAreFixedAndExplicit(): void
     {
         $first = $this->store->incrementBudget('budget-matrix', 60, 2);
         $budgetKey = $this->key('budget', 'budget-matrix');
-        $ttl = $this->integer($this->raw(['TTL', $budgetKey]));
+        $this->raw(['PEXPIRE', $budgetKey, 5_000]);
+        $pttl = $this->integer($this->raw(['PTTL', $budgetKey]));
         $second = $this->store->incrementBudget('budget-matrix', 60, 3);
         self::assertSame($first->epochStart, $second->epochStart);
-        self::assertLessThanOrEqual($ttl, $this->integer($this->raw(['TTL', $budgetKey])));
+        $afterPttl = $this->integer($this->raw(['PTTL', $budgetKey]));
+        self::assertLessThanOrEqual($pttl, $afterPttl);
+        self::assertLessThan(60_000, $afterPttl);
 
         $this->raw(['PEXPIRE', $budgetKey, 50]);
         usleep(1_100_000);
@@ -579,10 +810,14 @@ final class RedisFullCapabilityStoreIntegrationTest extends TestCase
         $firstDistinctCount = $this->store->addDistinct('distinct-matrix', 'one', 60);
         self::assertSame(1, $firstDistinctCount);
         $distinctKey = $this->key('distinct', 'distinct-matrix');
-        $distinctTtl = $this->integer($this->raw(['TTL', $distinctKey]));
+        $this->raw(['PEXPIRE', $distinctKey, 5_000]);
+        $this->raw(['PEXPIRE', $this->key('distinct-meta', 'distinct-matrix'), 5_000]);
+        $distinctPttl = $this->integer($this->raw(['PTTL', $distinctKey]));
         $duplicateDistinctCount = $this->store->addDistinct('distinct-matrix', 'one', 60);
         self::assertSame($firstDistinctCount, $duplicateDistinctCount);
-        self::assertLessThanOrEqual($distinctTtl, $this->integer($this->raw(['TTL', $distinctKey])));
+        $distinctAfterPttl = $this->integer($this->raw(['PTTL', $distinctKey]));
+        self::assertLessThanOrEqual($distinctPttl, $distinctAfterPttl);
+        self::assertLessThan(60_000, $distinctAfterPttl);
         self::assertSame(2, $this->store->addDistinct('distinct-matrix', 'two', 60));
         $this->raw(['PEXPIRE', $distinctKey, 50]);
         $this->raw(['PEXPIRE', $this->key('distinct-meta', 'distinct-matrix'), 50]);
@@ -592,9 +827,13 @@ final class RedisFullCapabilityStoreIntegrationTest extends TestCase
         self::assertSame(0, $this->store->getWatchFlag('missing-watch'));
         self::assertSame(1, $this->store->incrementWatchFlag('watch-matrix', 60));
         $watchKey = $this->key('watch', 'watch-matrix');
-        $watchTtl = $this->integer($this->raw(['TTL', $watchKey]));
+        $this->raw(['PEXPIRE', $watchKey, 5_000]);
+        $this->raw(['PEXPIRE', $this->key('watch-meta', 'watch-matrix'), 5_000]);
+        $watchPttl = $this->integer($this->raw(['PTTL', $watchKey]));
         self::assertSame(2, $this->store->incrementWatchFlag('watch-matrix', 60));
-        self::assertLessThanOrEqual($watchTtl, $this->integer($this->raw(['TTL', $watchKey])));
+        $watchAfterPttl = $this->integer($this->raw(['PTTL', $watchKey]));
+        self::assertLessThanOrEqual($watchPttl, $watchAfterPttl);
+        self::assertLessThan(60_000, $watchAfterPttl);
         $this->raw(['PEXPIRE', $watchKey, 50]);
         $this->raw(['PEXPIRE', $this->key('watch-meta', 'watch-matrix'), 50]);
         usleep(80_000);
@@ -602,8 +841,15 @@ final class RedisFullCapabilityStoreIntegrationTest extends TestCase
 
         $first = $this->store->addDistinctBoundedWithSnapshot('bounded-matrix', 'one', 60, 2);
         $boundedExpiry = $first->expiresAt;
+        $boundedKey = $this->key('distinct', 'bounded-matrix');
+        $this->raw(['PEXPIRE', $boundedKey, 5_000]);
+        $this->raw(['PEXPIRE', $this->key('distinct-meta', 'bounded-matrix'), 5_000]);
+        $boundedPttl = $this->integer($this->raw(['PTTL', $boundedKey]));
         $second = $this->store->addDistinctBoundedWithSnapshot('bounded-matrix', 'one', 60, 2);
         self::assertSame($boundedExpiry, $second->expiresAt);
+        $boundedAfterPttl = $this->integer($this->raw(['PTTL', $boundedKey]));
+        self::assertLessThanOrEqual($boundedPttl, $boundedAfterPttl);
+        self::assertLessThan(60_000, $boundedAfterPttl);
         self::assertTrue($this->store->addDistinctBoundedWithSnapshot('bounded-matrix', 'two', 60, 2)->accepted);
         self::assertFalse($this->store->addDistinctBoundedWithSnapshot('bounded-matrix', 'three', 60, 2)->accepted);
     }
@@ -614,25 +860,62 @@ final class RedisFullCapabilityStoreIntegrationTest extends TestCase
         $previousKey = $this->key('distinct', 'rotation-previous');
         $previousMetaKey = $this->key('distinct-meta', 'rotation-previous');
         $previousMembers = $this->raw(['SMEMBERS', $previousKey]);
-        $previousTtl = $this->integer($this->raw(['TTL', $previousKey]));
+        $this->raw(['PEXPIRE', $previousKey, 10_000]);
+        $this->raw(['PEXPIRE', $previousMetaKey, 10_000]);
+        $previousPttl = $this->integer($this->raw(['PTTL', $previousKey]));
         $previousExpiry = $this->integer($this->raw(['HGET', $previousMetaKey, 'expiresAt']));
 
-        $first = $this->store->addDistinctBoundedWithSnapshotAcrossRotation('rotation-current', 'rotation-bridge', 'rotation-previous', 'new', 'not-known', 60, 2);
+        $first = $this->store->addDistinctBoundedWithSnapshotAcrossRotation('rotation-current', 'rotation-bridge', 'rotation-previous', 'new', 'not-known', 60, 3);
         self::assertSame(['old', 'new'], $first->members);
         $currentKey = $this->key('distinct', 'rotation-current');
+        $currentMetaKey = $this->key('distinct-meta', 'rotation-current');
         $bridgeKey = $this->key('distinct', 'rotation-bridge');
-        $currentTtl = $this->integer($this->raw(['TTL', $currentKey]));
-        $bridgeTtl = $this->integer($this->raw(['TTL', $bridgeKey]));
+        $bridgeMetaKey = $this->key('distinct-meta', 'rotation-bridge');
         self::assertLessThanOrEqual($previousExpiry, $this->integer($this->raw(['HGET', $this->key('distinct-meta', 'rotation-bridge'), 'expiresAt'])));
         self::assertSame($previousExpiry, $first->expiresAt);
 
-        $duplicate = $this->store->addDistinctBoundedWithSnapshotAcrossRotation('rotation-current', 'rotation-bridge', 'rotation-previous', 'new', 'not-known', 60, 2);
+        $this->raw(['PEXPIRE', $currentKey, 5_000]);
+        $this->raw(['PEXPIRE', $currentMetaKey, 5_000]);
+        $this->raw(['PEXPIRE', $bridgeKey, 5_000]);
+        $this->raw(['PEXPIRE', $bridgeMetaKey, 5_000]);
+        $currentPttl = $this->integer($this->raw(['PTTL', $currentKey]));
+        $bridgePttl = $this->integer($this->raw(['PTTL', $bridgeKey]));
+
+        $duplicate = $this->store->addDistinctBoundedWithSnapshotAcrossRotation('rotation-current', 'rotation-bridge', 'rotation-previous', 'new', 'not-known', 60, 3);
         self::assertSame($first->members, $duplicate->members);
-        self::assertLessThanOrEqual($currentTtl, $this->integer($this->raw(['TTL', $currentKey])));
-        self::assertLessThanOrEqual($bridgeTtl, $this->integer($this->raw(['TTL', $bridgeKey])));
+        self::assertFalse($duplicate->added);
+        $currentAfterDuplicate = $this->integer($this->raw(['PTTL', $currentKey]));
+        $bridgeAfterDuplicate = $this->integer($this->raw(['PTTL', $bridgeKey]));
+        self::assertLessThanOrEqual($currentPttl, $currentAfterDuplicate);
+        self::assertLessThan(60_000, $currentAfterDuplicate);
+        self::assertLessThanOrEqual($bridgePttl, $bridgeAfterDuplicate);
+        self::assertLessThan(60_000, $bridgeAfterDuplicate);
+
+        $secondNew = $this->store->addDistinctBoundedWithSnapshotAcrossRotation('rotation-current', 'rotation-bridge', 'rotation-previous', 'second-new', 'not-known', 60, 3);
+        self::assertSame(['old', 'new', 'second-new'], $secondNew->members);
+        self::assertTrue($secondNew->added);
+        self::assertLessThanOrEqual($currentAfterDuplicate, $this->integer($this->raw(['PTTL', $currentKey])));
+        self::assertLessThanOrEqual($bridgeAfterDuplicate, $this->integer($this->raw(['PTTL', $bridgeKey])));
         self::assertSame($previousMembers, $this->raw(['SMEMBERS', $previousKey]));
         self::assertSame($previousExpiry, $this->integer($this->raw(['HGET', $previousMetaKey, 'expiresAt'])));
-        self::assertLessThanOrEqual($previousTtl, $this->integer($this->raw(['TTL', $previousKey])));
+        self::assertLessThanOrEqual($previousPttl, $this->integer($this->raw(['PTTL', $previousKey])));
+
+        self::assertSame(1, $this->store->addDistinct('known-previous', 'old-known', 60));
+        $known = $this->store->addDistinctBoundedWithSnapshotAcrossRotation(
+            'known-current',
+            'known-bridge',
+            'known-previous',
+            'current-known',
+            'old-known',
+            60,
+            3,
+        );
+        self::assertTrue($known->accepted);
+        self::assertFalse($known->added);
+        self::assertSame(1, $known->count);
+        self::assertSame(['old-known'], $known->members);
+        self::assertSame(0, $this->integer($this->raw(['EXISTS', $this->key('distinct', 'known-bridge')])));
+        self::assertSame($this->integer($this->raw(['HGET', $this->key('distinct-meta', 'known-previous'), 'expiresAt'])), $known->expiresAt);
     }
 
     public function testHardBlockCycleBoundariesAndPauseUnionUseRealRedis(): void
@@ -664,6 +947,66 @@ final class RedisFullCapabilityStoreIntegrationTest extends TestCase
         $union = $this->store->readDecayPauseState('hard-threshold', null, $base, $base + 80);
         self::assertSame(19, $union->elapsedPausedSeconds);
         self::assertSame($base + 91, $union->activePauseUntil);
+    }
+
+    public function testHardBlockUsesCanonicalInclusiveBoundaryAndPrunesOlderCycles(): void
+    {
+        $base = time();
+        $this->store->blockWithCycleTracking('hard-canonical-exact', null, 2, 1, $base, 21600, 2, 600, 86400);
+        $exact = $this->store->blockWithCycleTracking('hard-canonical-exact', null, 2, 1, $base + 21600, 21600, 2, 600, 86400);
+        self::assertTrue($exact->newCycle);
+        self::assertSame(2, $exact->cycleCount);
+        self::assertTrue($exact->pauseActivated);
+        self::assertSame($base + 22200, $exact->pauseUntil);
+
+        $this->store->blockWithCycleTracking('hard-canonical-outside', null, 2, 1, $base, 21600, 2, 600, 86400);
+        $outside = $this->store->blockWithCycleTracking('hard-canonical-outside', null, 2, 1, $base + 21601, 21600, 2, 600, 86400);
+        self::assertTrue($outside->newCycle);
+        self::assertSame(1, $outside->cycleCount);
+        self::assertFalse($outside->pauseActivated);
+    }
+
+    public function testHardBlockAdoptsPreviousHistoryWithoutMutatingPreviousPhysicalState(): void
+    {
+        $base = time();
+        $this->store->blockWithCycleTracking('hard-previous-read-only', null, 2, 600, $base, 21600, 2, 600, 86400);
+        $previousCycleKey = $this->key('cycle', 'hard-previous-read-only');
+        $previousBlockKey = $this->key('block', 'hard-previous-read-only');
+        $this->raw(['PEXPIRE', $previousCycleKey, 5_000]);
+        $this->raw(['PEXPIRE', $previousBlockKey, 5_000]);
+        $previousMembers = $this->raw(['ZRANGE', $previousCycleKey, 0, -1]);
+        $previousBlockExpires = $this->raw(['HGET', $previousBlockKey, 'expiresAt']);
+        $previousCyclePttl = $this->integer($this->raw(['PTTL', $previousCycleKey]));
+        $previousBlockPttl = $this->integer($this->raw(['PTTL', $previousBlockKey]));
+
+        $current = $this->store->blockWithCycleTracking('hard-current-read-only', 'hard-previous-read-only', 2, 1, $base + 601, 21600, 2, 600, 86400);
+        self::assertTrue($current->newCycle);
+        self::assertSame(2, $current->cycleCount);
+        $repeat = $this->store->blockWithCycleTracking('hard-current-read-only', 'hard-previous-read-only', 2, 1, $base + 601, 21600, 2, 600, 86400);
+        self::assertFalse($repeat->newCycle);
+        self::assertSame(2, $repeat->cycleCount);
+        self::assertSame($previousMembers, $this->raw(['ZRANGE', $previousCycleKey, 0, -1]));
+        self::assertSame($previousBlockExpires, $this->raw(['HGET', $previousBlockKey, 'expiresAt']));
+        self::assertLessThanOrEqual($previousCyclePttl, $this->integer($this->raw(['PTTL', $previousCycleKey])));
+        self::assertLessThanOrEqual($previousBlockPttl, $this->integer($this->raw(['PTTL', $previousBlockKey])));
+    }
+
+    public function testHardBlockStartsAnotherCanonicalPauseAfterThePreviousPauseCompletes(): void
+    {
+        $base = time();
+        $this->store->blockWithCycleTracking('hard-later-pause', null, 2, 1, $base, 21600, 2, 600, 86400);
+        $firstPause = $this->store->blockWithCycleTracking('hard-later-pause', null, 2, 1, $base + 2, 21600, 2, 600, 86400);
+        self::assertTrue($firstPause->pauseActivated);
+        self::assertSame($base + 602, $firstPause->pauseUntil);
+
+        $secondPause = $this->store->blockWithCycleTracking('hard-later-pause', null, 2, 1, $base + 603, 21600, 2, 600, 86400);
+        self::assertTrue($secondPause->newCycle);
+        self::assertTrue($secondPause->pauseActivated);
+        self::assertSame($base + 1203, $secondPause->pauseUntil);
+
+        $unknown = $this->store->readDecayPauseState('hard-unknown-current', 'hard-unknown-previous', $base, $base + 1);
+        self::assertSame(0, $unknown->elapsedPausedSeconds);
+        self::assertSame(0, $unknown->activePauseUntil);
     }
 
     public function testCompleteCircuitStateRoundTripAndProbeLeaseBoundary(): void
@@ -730,6 +1073,50 @@ final class RedisFullCapabilityStoreIntegrationTest extends TestCase
     private function raw(array $command): mixed
     {
         return $this->executor->execute($command);
+    }
+
+    private function redisNow(): int
+    {
+        $time = $this->raw(['TIME']);
+        self::assertIsArray($time);
+        self::assertArrayHasKey(0, $time);
+
+        return $this->integer($time[0]);
+    }
+
+    /**
+     * @return list<string>
+     */
+    private function redisKeys(string $family): array
+    {
+        $keys = $this->raw(['KEYS', $this->familyPrefix($family) . ':*']);
+        self::assertIsArray($keys);
+        $result = [];
+        foreach ($keys as $key) {
+            self::assertIsString($key);
+            $result[] = $key;
+        }
+
+        return $result;
+    }
+
+    /**
+     * @return array<string, string>
+     */
+    private function hashMap(string $key): array
+    {
+        $raw = $this->raw(['HGETALL', $key]);
+        self::assertIsArray($raw);
+        $values = array_values($raw);
+        self::assertSame(0, count($values) % 2);
+        $result = [];
+        for ($index = 0; $index < count($values); $index += 2) {
+            self::assertIsString($values[$index]);
+            self::assertIsString($values[$index + 1]);
+            $result[$values[$index]] = $values[$index + 1];
+        }
+
+        return $result;
     }
 
     /**
@@ -799,8 +1186,12 @@ final class RedisFullCapabilityStoreIntegrationTest extends TestCase
 
     private function key(string $family, string $logical): string
     {
-        return 'maatify:rate-limiter:v1:' . hash('sha256', $this->namespace)
-            . ':' . $family . ':' . hash('sha256', $logical);
+        return $this->familyPrefix($family) . ':' . hash('sha256', $logical);
+    }
+
+    private function familyPrefix(string $family): string
+    {
+        return 'maatify:rate-limiter:v1:' . hash('sha256', $this->namespace) . ':' . $family;
     }
 
     private function integer(mixed $value): int

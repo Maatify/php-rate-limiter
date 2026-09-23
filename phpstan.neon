@@ -1,11 +1,6 @@
 parameters:
     level: max
-    reportUnmatchedIgnoredErrors: false
     paths:
         - src
         - tests
         - examples
-    ignoreErrors:
-        -
-            identifier: staticMethod.alreadyNarrowedType
-            path: tests/Integration/Correlation/Ipv6AdaptiveAggregationTest.php

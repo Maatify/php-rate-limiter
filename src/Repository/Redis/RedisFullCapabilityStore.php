@@ -34,7 +34,7 @@ if exists == 0 then
   redis.call('EXPIRE', KEYS[1], ARGV[1])
   return {ARGV[2], now}
 end
-if redis.call('TTL', KEYS[1]) <= 0 then return redis.error_reply('malformed score state') end
+if redis.call('TTL', KEYS[1]) < 0 then return redis.error_reply('malformed score state') end
 local value = redis.call('HGET', KEYS[1], 'value')
 local updated = redis.call('HGET', KEYS[1], 'updatedAt')
 if not value or not updated then
@@ -50,7 +50,7 @@ LUA;
 
     private const SCORE_GET = <<<'LUA'
 if redis.call('EXISTS', KEYS[1]) == 0 then return {} end
-if redis.call('TTL', KEYS[1]) <= 0 then return redis.error_reply('malformed score state') end
+if redis.call('TTL', KEYS[1]) < 0 then return redis.error_reply('malformed score state') end
 local value = redis.call('HGET', KEYS[1], 'value')
 local updated = redis.call('HGET', KEYS[1], 'updatedAt')
 if not value or not updated then return redis.error_reply('malformed score state') end
@@ -95,7 +95,7 @@ local count = redis.call('HGET', KEYS[1], 'count')
 local start = redis.call('HGET', KEYS[1], 'epochStart')
 local duration = redis.call('HGET', KEYS[1], 'epochDuration')
 local exists = redis.call('EXISTS', KEYS[1])
-if exists == 1 and redis.call('TTL', KEYS[1]) <= 0 then return redis.error_reply('malformed budget state') end
+if exists == 1 and redis.call('TTL', KEYS[1]) < 0 then return redis.error_reply('malformed budget state') end
 if exists == 1 and (not count or not start or not duration) then return redis.error_reply('malformed budget state') end
 if exists == 1 then
   count = tonumber(count); start = tonumber(start); duration = tonumber(duration)
@@ -118,7 +118,7 @@ local count = redis.call('HGET', KEYS[1], 'count')
 local start = redis.call('HGET', KEYS[1], 'epochStart')
 local duration = redis.call('HGET', KEYS[1], 'epochDuration')
 if not count or not start or not duration then return redis.error_reply('malformed budget state') end
-if redis.call('TTL', KEYS[1]) <= 0 then return redis.error_reply('malformed budget state') end
+if redis.call('TTL', KEYS[1]) < 0 then return redis.error_reply('malformed budget state') end
 count = tonumber(count); start = tonumber(start); duration = tonumber(duration)
 if not count or count ~= math.floor(count) or not start or start ~= math.floor(start) or not duration or duration <= 0 or duration ~= math.floor(duration) then return redis.error_reply('malformed budget state') end
 if tonumber(redis.call('TIME')[1]) >= start + duration then
@@ -134,7 +134,7 @@ local count = redis.call('HGET', KEYS[1], 'count')
 local start = redis.call('HGET', KEYS[1], 'epochStart')
 local duration = redis.call('HGET', KEYS[1], 'epochDuration')
 local exists = redis.call('EXISTS', KEYS[1])
-if exists == 1 and redis.call('TTL', KEYS[1]) <= 0 then return redis.error_reply('malformed budget state') end
+if exists == 1 and redis.call('TTL', KEYS[1]) < 0 then return redis.error_reply('malformed budget state') end
 if exists == 1 and (not count or not start or not duration) then return redis.error_reply('malformed budget state') end
 if exists == 1 then
   count = tonumber(count); start = tonumber(start); duration = tonumber(duration)
@@ -332,7 +332,7 @@ local current = redis.call('GET', KEYS[1])
 if current then
   local ttl = redis.call('TTL', KEYS[1])
   local expires = tonumber(current)
-  if ttl <= 0 or not expires or expires ~= math.floor(expires) then return redis.error_reply('malformed probe lease') end
+  if ttl < 0 or not expires or expires ~= math.floor(expires) then return redis.error_reply('malformed probe lease') end
   if expires > tonumber(ARGV[1]) then return 0 end
 end
 redis.call('SET', KEYS[1], tonumber(ARGV[1]) + tonumber(ARGV[2]), 'EX', ARGV[2])
@@ -372,7 +372,7 @@ validateCycles(KEYS[1])
 local active = false
 for _, blockKey in ipairs({KEYS[3], KEYS[4]}) do
   if blockKey ~= '' and redis.call('EXISTS', blockKey) == 1 then
-    if redis.call('TTL', blockKey) <= 0 then return redis.error_reply('malformed hard-block state') end
+    if redis.call('TTL', blockKey) < 0 then return redis.error_reply('malformed hard-block state') end
     local expires = redis.call('HGET', blockKey, 'expiresAt'); local level = redis.call('HGET', blockKey, 'level')
     if not expires or not level then return redis.error_reply('malformed hard-block state') end
     expires = tonumber(expires); level = tonumber(level)
