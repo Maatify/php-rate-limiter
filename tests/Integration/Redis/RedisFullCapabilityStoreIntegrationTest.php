@@ -576,10 +576,12 @@ final class RedisFullCapabilityStoreIntegrationTest extends TestCase
 
     public function testDistinctWatchAndBoundedWindowsDoNotRefreshAndExpire(): void
     {
-        self::assertSame(1, $this->store->addDistinct('distinct-matrix', 'one', 60));
+        $firstDistinctCount = $this->store->addDistinct('distinct-matrix', 'one', 60);
+        self::assertSame(1, $firstDistinctCount);
         $distinctKey = $this->key('distinct', 'distinct-matrix');
         $distinctTtl = $this->integer($this->raw(['TTL', $distinctKey]));
-        self::assertSame(1, $this->store->addDistinct('distinct-matrix', 'one', 60));
+        $duplicateDistinctCount = $this->store->addDistinct('distinct-matrix', 'one', 60);
+        self::assertSame($firstDistinctCount, $duplicateDistinctCount);
         self::assertLessThanOrEqual($distinctTtl, $this->integer($this->raw(['TTL', $distinctKey])));
         self::assertSame(2, $this->store->addDistinct('distinct-matrix', 'two', 60));
         $this->raw(['PEXPIRE', $distinctKey, 50]);
