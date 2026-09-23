@@ -3,7 +3,7 @@
 **Package:** RateLimiter
 **Namespace:** `Maatify\RateLimiter`
 **Status:** LOCKED — Architecture Contract
-**Spec Version:** `1.11.0`
+**Spec Version:** `1.12.0`
 **Location:** `src/`
 
 This document explains **why** the RateLimiter package is designed the way it is.
@@ -103,6 +103,7 @@ The following inventory describes the current public runtime types. Test and sup
 | `Maatify\RateLimiter\Repository\BoundedCorrelationSnapshotRotationStoreInterface` | Snapshot-capable current/previous-generation operation with read-only previous state and a current-only bridge. |
 | `Maatify\RateLimiter\Repository\CircuitBreakerStoreInterface` | Circuit-breaker state persistence boundary. |
 | `Maatify\RateLimiter\Repository\CircuitBreakerProbeStoreInterface` | Additive atomic per-policy recovery-probe lease capability. |
+| `Maatify\RateLimiter\Repository\HardBlockCycleStoreInterface` | Additive atomic L2+ block, hard-cycle, and decay-pause capability; Previous is read-only. |
 | `Maatify\RateLimiter\Contract\FailureSignalEmitterInterface` | Failure and circuit-breaker signal delivery boundary. |
 | `Maatify\RateLimiter\Service\DeviceIdentityResolverInterface` | Device identity resolution boundary. |
 | `Maatify\RateLimiter\Service\RateLimitOperationalReaderInterface` | Read-only point-in-time operational state query boundary. |
@@ -124,6 +125,7 @@ The following inventory describes the current public runtime types. Test and sup
 | Runtime state | `Maatify\RateLimiter\DTO\BudgetStatusDTO`, `Maatify\RateLimiter\DTO\EphemeralStateDTO`, `Maatify\RateLimiter\DTO\FailureSignalDTO`, `Maatify\RateLimiter\DTO\FailureStateDTO` |
 | Bounded correlation | `Maatify\RateLimiter\DTO\BoundedDistinctResultDTO`, `Maatify\RateLimiter\DTO\BoundedDistinctSnapshotDTO`, `Maatify\RateLimiter\DTO\BoundedCorrelationObservationDTO` |
 | Store boundary state | `Maatify\RateLimiter\DTO\RateLimitStateDTO`, `Maatify\RateLimiter\DTO\BlockStateDTO`, `Maatify\RateLimiter\DTO\BudgetStateDTO`, `Maatify\RateLimiter\DTO\CircuitBreakerStateDTO` |
+| Hard-block cycle state | `Maatify\RateLimiter\DTO\HardBlockCycleResultDTO`, `Maatify\RateLimiter\DTO\DecayPauseStateDTO` |
 | Operational read | `Maatify\RateLimiter\DTO\RateLimitOperationalKeyStateDTO`, `Maatify\RateLimiter\DTO\RateLimitOperationalScopesDTO`, `Maatify\RateLimiter\DTO\RateLimitOperationalBudgetDTO`, `Maatify\RateLimiter\DTO\RateLimitOperationalSnapshotDTO` |
 
 `Maatify\RateLimiter\DTO\PipelineScoreDTO` is an internal composition DTO and is not part of the consumer Public Runtime API.
@@ -164,6 +166,15 @@ Concretely:
         → RateLimitResultDTO and, when applicable, FailureSignalDTO
 
 `RateLimiterEngine` selects the policy by the command's policy name. `EvaluationPipeline` resolves active blocks, identity-derived keys, scoring, correlation, budgets, decay, and final aggregation. Credential-spray and distributed-account correlation are observed during Login/OTP authentication pre-checks only; the later failure/success command does not observe the same lifecycle a second time. The distributed-account path uses a 600-second, four-member snapshot of canonical K5 keys, a 30-minute N-1 watch, and a 24-hour three-occurrence account gate. API Heavy and requests without the required account/device/K4/K5 inputs do not observe it. The integration boundaries provide the stateful primitives; the result is returned to the Host, which decides how to enforce it at its own transport or application boundary.
+
+`HardBlockCycleStoreInterface::blockWithCycleTracking()` is required for the
+first persisted L2+ block. It atomically persists the Current block, classifies
+the real hard-block transition, records independent K1/K2/K3/K4/K5 cycle
+history, and activates the fixed decay pause. A store that exposes only
+`RateLimitStoreInterface` remains valid for normal reads and L1 writes, but an
+L2+ persistence attempt fails explicitly before any block write. The additive
+`readDecayPauseState()` operation is read-only; Current and Previous form one
+logical history, with Current writable and Previous read-only.
 
 The independent operational path is:
 
@@ -334,7 +345,7 @@ The public boundaries are placed under their owning responsibility:
 - `Repository/` owns `RateLimitStoreInterface`, `BudgetSeedStoreInterface`,
   `CorrelationStoreInterface`, `CorrelationRotationStoreInterface`,
   `BoundedCorrelationStoreInterface`, `BoundedCorrelationRotationStoreInterface`,
-  and `CircuitBreakerStoreInterface`.
+  `CircuitBreakerStoreInterface`, and `HardBlockCycleStoreInterface`.
 - `Service/` owns `RateLimiterInterface` and `DeviceIdentityResolverInterface`.
 - `Contract/` retains the general host/outbound `FailureSignalEmitterInterface`.
 

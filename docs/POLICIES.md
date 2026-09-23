@@ -3,7 +3,7 @@
 **Module:** RateLimiter
 **Namespace:** `Maatify\RateLimiter`
 **Status:** LOCKED — Policy Contract
-**Spec Version:** `1.3.0`
+**Spec Version:** `1.4.0`
 **Change Class:** Hardening Alignment
 
 This document defines the **official policy presets** provided by the Rate Limiter module.
@@ -179,8 +179,9 @@ For a score-derived result, `retryAfter` is calculated by the package-owned
 `DecayCalculator` until the score exits the current decision class: below L1
 for `SOFT_BLOCK`, or below L2 for every `HARD_BLOCK` level. An active persisted
 block returns its remaining TTL, and persistence continues to use the
-`PenaltyLadder` duration. The multiple-block-cycle pause remains deferred to
-Stage 3 and is not implemented.
+`PenaltyLadder` duration. After two real persisted L2+ cycles for the same
+policy/key-type/logical identity, score decay pauses for a fixed 600 seconds;
+completed pause intervals remain part of lazy decay accounting for 24 hours.
 
 ---
 
@@ -337,7 +338,9 @@ The API Heavy maximum enforced block level is **L3**.
 * IP score: −1 every 3 minutes
 
 L2 and higher uses the package modifier of a doubled effective interval. The
-multiple-block-cycle pause remains deferred to Stage 3 and is not implemented.
+multiple-block-cycle pause is additive to this modifier and never changes
+block TTL, penalty duration, budget, correlation, fallback, or circuit-breaker
+timers.
 
 ---
 

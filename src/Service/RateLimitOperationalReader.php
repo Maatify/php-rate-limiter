@@ -7,6 +7,7 @@ namespace Maatify\RateLimiter\Service;
 use Maatify\RateLimiter\Config\BlockPolicyInterface;
 use Maatify\RateLimiter\DTO\BlockStateDTO;
 use Maatify\RateLimiter\DTO\BudgetStateDTO;
+use Maatify\RateLimiter\DTO\DecayPauseStateDTO;
 use Maatify\RateLimiter\DTO\DeviceIdentityDTO;
 use Maatify\RateLimiter\DTO\RateLimitContextDTO;
 use Maatify\RateLimiter\DTO\RateLimitOperationalBudgetDTO;
@@ -15,6 +16,7 @@ use Maatify\RateLimiter\DTO\RateLimitOperationalScopesDTO;
 use Maatify\RateLimiter\DTO\RateLimitOperationalSnapshotDTO;
 use Maatify\RateLimiter\DTO\RateLimitStateDTO;
 use Maatify\RateLimiter\Repository\CircuitBreakerStoreInterface;
+use Maatify\RateLimiter\Repository\HardBlockCycleStoreInterface;
 use Maatify\RateLimiter\Repository\RateLimitStoreInterface;
 use Maatify\SharedCommon\Contracts\ClockInterface;
 
@@ -129,31 +131,37 @@ final class RateLimitOperationalReader implements RateLimitOperationalReaderInte
             $scoreFromPreviousGeneration = $score !== null;
         }
 
-        // EvaluationPipeline applies score decay using the current-generation
-        // key for its block-level modifier even when the score came from V1.
+        // Use the active logical block level across Current/Previous, matching
+        // the pipeline's rotation-aware decay semantics.
+        $now = $this->clock->now()->getTimestamp();
         $currentBlock = $this->store->checkBlock($currentKey);
-        $activeHardBlock = $this->activeHardBlock($currentBlock);
+        $activeHardBlock = $this->activeHardBlock($currentBlock, $now);
         $blockFromPreviousGeneration = false;
+        $previousBlock = null;
 
         if ($activeHardBlock === null && $previousKey !== null) {
             $previousBlock = $this->store->checkBlock($previousKey);
-            $activeHardBlock = $this->activeHardBlock($previousBlock);
+            $activeHardBlock = $this->activeHardBlock($previousBlock, $now);
             $blockFromPreviousGeneration = $activeHardBlock !== null;
         }
 
         $effectiveScore = 0;
         if ($score !== null) {
-            $decayLevel = $currentBlock === null ? 0 : $currentBlock->level;
+            $decayLevel = $this->activeBlockLevel($currentBlock, $previousBlock, $now);
             $decayScope = match ($keyType) {
                 'k4' => 'account',
                 'k3', 'k5' => 'device',
                 default => 'ip',
             };
+            $pauseState = $this->store instanceof HardBlockCycleStoreInterface
+                ? $this->store->readDecayPauseState($currentKey, $previousKey, $score->updatedAt, $now)
+                : new DecayPauseStateDTO(0, 0);
             $decayAmount = $this->decayCalculator->calculateDecay(
                 $score->value,
                 $score->updatedAt,
                 $decayLevel,
                 $decayScope,
+                $pauseState->elapsedPausedSeconds,
             );
             $effectiveScore = max(0, $score->value - $decayAmount);
         }
@@ -167,9 +175,21 @@ final class RateLimitOperationalReader implements RateLimitOperationalReaderInte
         );
     }
 
-    private function activeHardBlock(?BlockStateDTO $block): ?BlockStateDTO
+    private function activeHardBlock(?BlockStateDTO $block, int $now): ?BlockStateDTO
     {
-        return $block !== null && $block->level >= 2 ? $block : null;
+        return $block !== null && $block->level >= 2 && $block->expiresAt > $now ? $block : null;
+    }
+
+    private function activeBlockLevel(?BlockStateDTO $current, ?BlockStateDTO $previous, int $now): int
+    {
+        if ($current !== null && $current->expiresAt > $now) {
+            return $current->level;
+        }
+        if ($previous !== null && $previous->expiresAt > $now) {
+            return $previous->level;
+        }
+
+        return 0;
     }
 
     /**

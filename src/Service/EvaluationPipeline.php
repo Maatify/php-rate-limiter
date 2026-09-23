@@ -14,7 +14,9 @@ use Maatify\RateLimiter\Repository\BoundedCorrelationRotationStoreInterface;
 use Maatify\RateLimiter\Repository\BoundedCorrelationStoreInterface;
 use Maatify\RateLimiter\Repository\CorrelationStoreInterface;
 use Maatify\RateLimiter\Repository\CorrelationRotationStoreInterface;
+use Maatify\RateLimiter\Repository\HardBlockCycleStoreInterface;
 use Maatify\RateLimiter\Repository\RateLimitStoreInterface;
+use Maatify\RateLimiter\DTO\DecayPauseStateDTO;
 use Maatify\RateLimiter\DTO\BudgetStateDTO;
 use Maatify\RateLimiter\Exception\RateLimiterException;
 use Maatify\RateLimiter\Service\EphemeralBucket;
@@ -39,6 +41,10 @@ use Maatify\SharedCommon\Contracts\ClockInterface;
 class EvaluationPipeline
 {
     private const BUDGET_EPOCH_SECONDS = 86400; // 24h
+    private const CYCLE_WINDOW_SECONDS = 21600;
+    private const CYCLE_THRESHOLD = 2;
+    private const DECAY_PAUSE_SECONDS = 600;
+    private const PAUSE_HISTORY_RETENTION_SECONDS = 86400;
     private const IPV6_ADAPTIVE_WINDOW_SECONDS = 600;
     private const IPV6_ADAPTIVE_48_CAP = 2;
     private const IPV6_ADAPTIVE_40_CAP = 4;
@@ -168,11 +174,18 @@ class EvaluationPipeline
 
         // 5. Fetch & Decay Scores (Using Effective Keys)
         $rawScores = $this->fetchScores($effectiveKeysV2, $effectiveKeysV1);
-        $decayedScores = $this->applyDecay($rawScores, $effectiveKeysV2);
+        $decayedScores = $this->applyDecay($rawScores, $effectiveKeysV2, $effectiveKeysV1);
 
         // 6. Evaluate normal candidates. None of these candidates may be
         // hidden by an active account budget.
-        $candidates = $this->checkThresholds($policy, $rawScores, $decayedScores, $effectiveKeysV2, $device);
+        $candidates = $this->checkThresholds(
+            $policy,
+            $rawScores,
+            $decayedScores,
+            $effectiveKeysV2,
+            $effectiveKeysV1,
+            $device,
+        );
 
         // 7. Distributed account attack is a pre-check-only observation. It
         // must run before the older bounded correlation rules so a missing
@@ -241,7 +254,12 @@ class EvaluationPipeline
                 $duration = PenaltyLadder::getDuration(2);
                 $persistence = [];
                 if (! $ephemeralState->isEphemeral && $realKeysV2['k5'] !== null) {
-                    $persistence[] = ['key' => $realKeysV2['k5'], 'level' => 2, 'duration' => $duration];
+                    $persistence[] = [
+                        'key' => $realKeysV2['k5'],
+                        'previousKey' => $realKeysV1['k5'] ?? null,
+                        'level' => 2,
+                        'duration' => $duration,
+                    ];
                 }
 
                 $candidates[] = $this->candidate(RateLimitResultDTO::DECISION_HARD_BLOCK, 2, $duration, 'flood', $persistence);
@@ -249,7 +267,12 @@ class EvaluationPipeline
                 $duration = PenaltyLadder::getDuration(1);
                 $k4Key = $realKeysV2['k4'];
                 $persistence = $k4Key !== null
-                    ? [['key' => $k4Key, 'level' => 1, 'duration' => $duration]]
+                    ? [[
+                        'key' => $k4Key,
+                        'previousKey' => $realKeysV1['k4'] ?? null,
+                        'level' => 1,
+                        'duration' => $duration,
+                    ]]
                     : [];
                 $this->correlationStore->incrementWatchFlag($floodKey, 900);
                 $candidates[] = $this->candidate(RateLimitResultDTO::DECISION_SOFT_BLOCK, 1, $duration, 'flood', $persistence);
@@ -287,7 +310,12 @@ class EvaluationPipeline
                 $this->previousAuxiliaryAccountKey($policy->getName(), 'anti_equilibrium', $context->accountId),
             )) {
             $persistence = ($realKeysV2['k4'] ?? null) !== null
-                ? [['key' => $realKeysV2['k4'], 'level' => 2, 'duration' => PenaltyLadder::getDuration(2)]]
+                ? [[
+                    'key' => $realKeysV2['k4'],
+                    'previousKey' => $realKeysV1['k4'] ?? null,
+                    'level' => 2,
+                    'duration' => PenaltyLadder::getDuration(2),
+                ]]
                 : [];
             $candidates[] = $this->candidate(
                 RateLimitResultDTO::DECISION_HARD_BLOCK,
@@ -345,8 +373,9 @@ class EvaluationPipeline
                     continue;
                 }
                 $block = $this->store->checkBlock($key);
-                if ($block && $block->level >= 2) {
-                    return $this->createBlockedResult($block->level, $block->expiresAt - $this->clock->now()->getTimestamp(), RateLimitResultDTO::DECISION_HARD_BLOCK);
+                $now = $this->clock->now()->getTimestamp();
+                if ($block && $block->level >= 2 && $block->expiresAt > $now) {
+                    return $this->createBlockedResult($block->level, $block->expiresAt - $now, RateLimitResultDTO::DECISION_HARD_BLOCK);
                 }
             }
         }
@@ -358,13 +387,15 @@ class EvaluationPipeline
      * @param array<string, ?PipelineScoreDTO> $rawScores
      * @param array<string, int> $scores
      * @param array<string, string|null> $keys
-     * @return list<array{decision: string, level: int, retryAfter: int, source: string, persistence: list<array{key: string, level: int, duration: int}>}>
+     * @param array<string, string|null> $keysV1
+     * @return list<array{decision: string, level: int, retryAfter: int, source: string, persistence: list<array{key: string, previousKey: ?string, level: int, duration: int}>}>
      */
     private function checkThresholds(
         BlockPolicyInterface $policy,
         array $rawScores,
         array $scores,
         array $keys,
+        array $keysV1,
         DeviceIdentityDTO $device,
     ): array {
         $candidates = [];
@@ -397,6 +428,7 @@ class EvaluationPipeline
                     $retryAfter = $this->scoreDecayRetryAfter(
                         $scoreState,
                         $key,
+                        $keysV1[$keyType] ?? null,
                         $keyType,
                         $exitThreshold,
                     );
@@ -409,6 +441,7 @@ class EvaluationPipeline
                     if ($persistenceKey !== null) {
                         $persistence[] = [
                             'key' => $persistenceKey,
+                            'previousKey' => $keysV1[$candidateKeyType] ?? null,
                             'level' => $candidateLevel,
                             'duration' => PenaltyLadder::getDuration($candidateLevel),
                         ];
@@ -428,7 +461,7 @@ class EvaluationPipeline
      *
      * @param array<string, string|null> $keysV2
      * @param array<string, string|null> $keysV1
-     * @return array{decision: string, level: int, retryAfter: int, source: string, persistence: list<array{key: string, level: int, duration: int}>}|null
+     * @return array{decision: string, level: int, retryAfter: int, source: string, persistence: list<array{key: string, previousKey: ?string, level: int, duration: int}>}|null
      */
     private function checkDistributedAccountAttack(
         RateLimitContextDTO $context,
@@ -484,7 +517,12 @@ class EvaluationPipeline
         // not refresh historical K5 TTLs.
         if ($occurrenceSnapshot->added) {
             foreach ($snapshot->members as $member) {
-                $persistence[] = ['key' => $member, 'level' => 2, 'duration' => $duration];
+                $persistence[] = [
+                    'key' => $member,
+                    'previousKey' => null,
+                    'level' => 2,
+                    'duration' => $duration,
+                ];
             }
         }
 
@@ -495,7 +533,12 @@ class EvaluationPipeline
         // qualification only the current non-ephemeral K5 is refreshed.
         if (! $isEphemeral
             && (! $occurrenceSnapshot->added || ! in_array($keysV2['k5'], $snapshot->members, true))) {
-            $persistence[] = ['key' => $keysV2['k5'], 'level' => 2, 'duration' => $duration];
+            $persistence[] = [
+                'key' => $keysV2['k5'],
+                'previousKey' => $keysV1['k5'] ?? null,
+                'level' => 2,
+                'duration' => $duration,
+            ];
         }
 
         $level = 2;
@@ -505,6 +548,7 @@ class EvaluationPipeline
             $retryAfter = PenaltyLadder::getDuration(4);
             $persistence[] = [
                 'key' => $keysV2['k4'],
+                'previousKey' => $keysV1['k4'] ?? null,
                 'level' => 4,
                 'duration' => PenaltyLadder::getDuration(4),
             ];
@@ -939,7 +983,7 @@ class EvaluationPipeline
      * @param array<string, string|null> $keysV2
      * @param array<string, string|null> $keysV1
      * @param list<array{cidr: int, currentScope: string, previousScope: ?string}> $adaptiveIpv6Scopes
-     * @return array{decision: string, level: int, retryAfter: int, source: string, persistence: list<array{key: string, level: int, duration: int}>}|null
+     * @return array{decision: string, level: int, retryAfter: int, source: string, persistence: list<array{key: string, previousKey: ?string, level: int, duration: int}>}|null
      */
     private function checkCorrelationRules(
         DeviceIdentityDTO $device,
@@ -993,7 +1037,12 @@ class EvaluationPipeline
                 60,
                 'correlation',
                 isset($keysV2['k2'])
-                    ? [['key' => $keysV2['k2'], 'level' => 2, 'duration' => 60]]
+                    ? [[
+                        'key' => $keysV2['k2'],
+                        'previousKey' => $keysV1['k2'] ?? null,
+                        'level' => 2,
+                        'duration' => 60,
+                    ]]
                     : [],
             );
         }
@@ -1045,7 +1094,12 @@ class EvaluationPipeline
                 60,
                 'correlation',
                 isset($keysV2['k2'])
-                    ? [['key' => $keysV2['k2'], 'level' => 2, 'duration' => 60]]
+                    ? [[
+                        'key' => $keysV2['k2'],
+                        'previousKey' => $keysV1['k2'] ?? null,
+                        'level' => 2,
+                        'duration' => 60,
+                    ]]
                     : [],
             );
         }
@@ -1082,12 +1136,19 @@ class EvaluationPipeline
             return null;
         }
 
+        $persistence = [[
+            'key' => $keysV2['k3'],
+            'previousKey' => $keysV1['k3'] ?? null,
+            'level' => 2,
+            'duration' => 60,
+        ]];
+
         return $this->candidate(
             RateLimitResultDTO::DECISION_HARD_BLOCK,
             2,
             60,
             'correlation',
-            [['key' => $keysV2['k3'], 'level' => 2, 'duration' => 60]],
+            $persistence,
         );
     }
 
@@ -1233,7 +1294,7 @@ class EvaluationPipeline
      * correlation identities never cross the correlation-store boundary.
      *
      * @param list<array{cidr: int, currentScope: string, previousScope: ?string}> $adaptiveIpv6Scopes
-     * @return array{decision: string, level: int, retryAfter: int, source: string, persistence: list<array{key: string, level: int, duration: int}>}|null
+     * @return array{decision: string, level: int, retryAfter: int, source: string, persistence: list<array{key: string, previousKey: ?string, level: int, duration: int}>}|null
      */
     private function checkCredentialSpray(
         RateLimitContextDTO $context,
@@ -1275,12 +1336,19 @@ class EvaluationPipeline
             ? 'trusted_advisory:credential_spray'
             : 'credential_spray';
 
+        $persistence = [[
+            'key' => $k1Key,
+            'previousKey' => $previousK1Key,
+            'level' => 2,
+            'duration' => PenaltyLadder::getDuration(2),
+        ]];
+
         return $this->candidate(
             RateLimitResultDTO::DECISION_HARD_BLOCK,
             2,
             PenaltyLadder::getDuration(2),
             $source,
-            [['key' => $k1Key, 'level' => 2, 'duration' => PenaltyLadder::getDuration(2)]],
+            $persistence,
         );
     }
 
@@ -1333,7 +1401,7 @@ class EvaluationPipeline
      * @param array<string, string|null> $keysV1
      * @param array<string, ?PipelineScoreDTO> $rawScores
      * @return array{
-     *     candidates: list<array{decision: string, level: int, retryAfter: int, source: string, persistence: list<array{key: string, level: int, duration: int}>}>,
+     *     candidates: list<array{decision: string, level: int, retryAfter: int, source: string, persistence: list<array{key: string, previousKey: ?string, level: int, duration: int}>}>,
      *     budgetState: ?BudgetStateDTO,
      *     budgetRequestEligible: bool,
      *     budgetSuppressed: bool
@@ -1393,7 +1461,13 @@ class EvaluationPipeline
                 $rawVal = $scoreDto ? $scoreDto->value : 0;
                 $updatedAt = $scoreDto ? $scoreDto->updatedAt : $this->clock->now()->getTimestamp();
 
-                $decayed = $this->calculateDecayedScore($rawVal, $updatedAt, $keyType, $key);
+                $decayed = $this->calculateDecayedScore(
+                    $rawVal,
+                    $updatedAt,
+                    $keyType,
+                    $key,
+                    $keysV1[$keyType] ?? null,
+                );
                 $baseValue = ($scoreDto && ! $scoreDto->isFromV1) ? $rawVal : 0;
                 $netChange = ($decayed + $delta) - $baseValue;
 
@@ -1431,12 +1505,19 @@ class EvaluationPipeline
                 $retryAfterByKeyType[$keyType] = PenaltyLadder::getDuration($level);
                 if (! $watchEscalated && $actualScoreLevel > 0 && $thresholdsDto !== null) {
                     $exitThreshold = $level >= 2 ? $thresholdsDto->l2 : $thresholdsDto->l1;
+                    $pauseState = $this->decayPauseState(
+                        $key,
+                        $keysV1[$keyType] ?? null,
+                        $this->clock->now()->getTimestamp(),
+                    );
                     $retryAfterByKeyType[$keyType] = $this->decayCalculator->secondsUntilBelowThreshold(
                         $newScore,
                         $this->clock->now()->getTimestamp(),
-                        $this->currentBlockLevel($key),
+                        $this->currentBlockLevel($key, $keysV1[$keyType] ?? null),
                         $this->scopeForKeyType($keyType),
                         $exitThreshold,
+                        $pauseState->elapsedPausedSeconds,
+                        $pauseState->activePauseUntil,
                     );
                 }
             }
@@ -1537,7 +1618,12 @@ class EvaluationPipeline
                         : null;
                     $persistence = $persistenceKey === null
                         ? []
-                        : [['key' => $persistenceKey, 'level' => $candidateLevel, 'duration' => $duration]];
+                        : [[
+                            'key' => $persistenceKey,
+                            'previousKey' => $keysV1[$candidateKeyType] ?? null,
+                            'level' => $candidateLevel,
+                            'duration' => $duration,
+                        ]];
 
                     $candidates[] = $this->candidate(
                         $decision,
@@ -1560,7 +1646,12 @@ class EvaluationPipeline
                     $isAdvisory = $this->isK1Key($keyType);
                     $persistence = [];
                     if (! $isAdvisory && $context->accountId && ($keys['k4'] ?? null) !== null) {
-                        $persistence[] = ['key' => $keys['k4'], 'level' => $level, 'duration' => $duration];
+                        $persistence[] = [
+                            'key' => $keys['k4'],
+                            'previousKey' => $keysV1['k4'] ?? null,
+                            'level' => $level,
+                            'duration' => $duration,
+                        ];
                     }
                     $candidates[] = $this->candidate(
                         $decision,
@@ -1588,7 +1679,12 @@ class EvaluationPipeline
                 $persistence = [];
 
                 if ($context->accountId && ($keys['k4'] ?? null) !== null) {
-                    $persistence[] = ['key' => $keys['k4'], 'level' => $newMaxLevel, 'duration' => $duration];
+                    $persistence[] = [
+                        'key' => $keys['k4'],
+                        'previousKey' => $keysV1['k4'] ?? null,
+                        'level' => $newMaxLevel,
+                        'duration' => $duration,
+                    ];
                 }
 
                 $candidates[] = $this->candidate($decision, $newMaxLevel, $retryAfter, 'score_update', $persistence);
@@ -1608,8 +1704,8 @@ class EvaluationPipeline
     }
 
     /**
-     * @param list<array{key: string, level: int, duration: int}> $persistence
-     * @return array{decision: string, level: int, retryAfter: int, source: string, persistence: list<array{key: string, level: int, duration: int}>}
+     * @param list<array{key: string, previousKey: ?string, level: int, duration: int}> $persistence
+     * @return array{decision: string, level: int, retryAfter: int, source: string, persistence: list<array{key: string, previousKey: ?string, level: int, duration: int}>}
      */
     private function candidate(string $decision, int $level, int $retryAfter, string $source, array $persistence = []): array
     {
@@ -1623,8 +1719,8 @@ class EvaluationPipeline
     }
 
     /**
-     * @param list<array{decision: string, level: int, retryAfter: int, source: string, persistence: list<array{key: string, level: int, duration: int}>}> $candidates
-     * @return array{decision: string, level: int, retryAfter: int, source: string, persistence: list<array{key: string, level: int, duration: int}>}|null
+     * @param list<array{decision: string, level: int, retryAfter: int, source: string, persistence: list<array{key: string, previousKey: ?string, level: int, duration: int}>}> $candidates
+     * @return array{decision: string, level: int, retryAfter: int, source: string, persistence: list<array{key: string, previousKey: ?string, level: int, duration: int}>}|null
      */
     private function aggregateCandidates(array $candidates): ?array
     {
@@ -1663,11 +1759,11 @@ class EvaluationPipeline
     }
 
     /**
-     * @param list<array{decision: string, level: int, retryAfter: int, source: string, persistence: list<array{key: string, level: int, duration: int}>}> $candidates
-     */
+     * @param list<array{decision: string, level: int, retryAfter: int, source: string, persistence: list<array{key: string, previousKey: ?string, level: int, duration: int}>}> $candidates
+    */
     private function persistWinningCandidates(array $candidates, ?string $winningClass, bool $persistAllCandidates = false): void
     {
-        /** @var array<string, array{level: int, duration: int}> $blocks */
+        /** @var array<string, array{previousKey: ?string, level: int, duration: int}> $blocks */
         $blocks = [];
         foreach ($candidates as $candidate) {
             if (! $persistAllCandidates && $winningClass !== null && $candidate['decision'] !== $winningClass) {
@@ -1675,15 +1771,45 @@ class EvaluationPipeline
             }
 
             foreach ($candidate['persistence'] as $block) {
-                $current = $blocks[$block['key']] ?? ['level' => 0, 'duration' => 0];
+                $current = $blocks[$block['key']] ?? ['previousKey' => null, 'level' => 0, 'duration' => 0];
                 $blocks[$block['key']] = [
+                    'previousKey' => $block['previousKey'] ?? $current['previousKey'],
                     'level' => max($current['level'], $block['level']),
                     'duration' => max($current['duration'], $block['duration']),
                 ];
             }
         }
 
+        foreach ($blocks as $block) {
+            if ($block['level'] >= 2 && ! $this->store instanceof HardBlockCycleStoreInterface) {
+                throw new RateLimiterException(
+                    'Persisted L2+ blocks require the HardBlockCycleStoreInterface capability.',
+                );
+            }
+        }
+
+        $cycleStore = $this->store instanceof HardBlockCycleStoreInterface ? $this->store : null;
         foreach ($blocks as $key => $block) {
+            if ($block['level'] >= 2) {
+                if ($cycleStore === null) {
+                    throw new RateLimiterException(
+                        'Persisted L2+ blocks require the HardBlockCycleStoreInterface capability.',
+                    );
+                }
+                $cycleStore->blockWithCycleTracking(
+                    $key,
+                    $block['previousKey'],
+                    $block['level'],
+                    $block['duration'],
+                    $this->clock->now()->getTimestamp(),
+                    self::CYCLE_WINDOW_SECONDS,
+                    self::CYCLE_THRESHOLD,
+                    self::DECAY_PAUSE_SECONDS,
+                    self::PAUSE_HISTORY_RETENTION_SECONDS,
+                );
+                continue;
+            }
+
             $this->store->block($key, $block['level'], $block['duration']);
         }
     }
@@ -1691,7 +1817,7 @@ class EvaluationPipeline
     /**
      * @param array<string, string|null> $keysV2
      * @param array<string, string|null> $keysV1
-     * @param list<array{decision: string, level: int, retryAfter: int, source: string, persistence: list<array{key: string, level: int, duration: int}>}> $candidates
+     * @param list<array{decision: string, level: int, retryAfter: int, source: string, persistence: list<array{key: string, previousKey: ?string, level: int, duration: int}>}> $candidates
      */
     private function finalizeDecision(
         BlockPolicyInterface $policy,
@@ -1992,13 +2118,20 @@ class EvaluationPipeline
     }
 
     // --- Helpers (Same as before) ---
-    private function calculateDecayedScore(int $value, int $updatedAt, string $keyType, string $key): int
-    {
+    private function calculateDecayedScore(
+        int $value,
+        int $updatedAt,
+        string $keyType,
+        string $key,
+        ?string $previousKey = null,
+    ): int {
+        $pauseState = $this->decayPauseState($key, $previousKey, $updatedAt);
         $decayAmount = $this->decayCalculator->calculateDecay(
             $value,
             $updatedAt,
-            $this->currentBlockLevel($key),
+            $this->currentBlockLevel($key, $previousKey),
             $this->scopeForKeyType($keyType),
+            $pauseState->elapsedPausedSeconds,
         );
 
         return max(0, $value - $decayAmount);
@@ -2007,23 +2140,53 @@ class EvaluationPipeline
     private function scoreDecayRetryAfter(
         PipelineScoreDTO $score,
         string $key,
+        ?string $previousKey,
         string $keyType,
         int $exitThreshold,
     ): int {
+        $pauseState = $this->decayPauseState($key, $previousKey, $score->updatedAt);
+
         return $this->decayCalculator->secondsUntilBelowThreshold(
             $score->value,
             $score->updatedAt,
-            $this->currentBlockLevel($key),
+            $this->currentBlockLevel($key, $previousKey),
             $this->scopeForKeyType($keyType),
             $exitThreshold,
+            $pauseState->elapsedPausedSeconds,
+            $pauseState->activePauseUntil,
         );
     }
 
-    private function currentBlockLevel(string $key): int
+    private function currentBlockLevel(string $key, ?string $previousKey = null): int
     {
         $block = $this->store->checkBlock($key);
+        $now = $this->clock->now()->getTimestamp();
+        if ($block !== null && $block->expiresAt > $now) {
+            return $block->level;
+        }
 
-        return $block === null ? 0 : $block->level;
+        if ($previousKey !== null && $previousKey !== $key) {
+            $block = $this->store->checkBlock($previousKey);
+            if ($block !== null && $block->expiresAt > $now) {
+                return $block->level;
+            }
+        }
+
+        return 0;
+    }
+
+    private function decayPauseState(string $key, ?string $previousKey, int $fromTimestamp): DecayPauseStateDTO
+    {
+        if (! $this->store instanceof HardBlockCycleStoreInterface) {
+            return new DecayPauseStateDTO(0, 0);
+        }
+
+        return $this->store->readDecayPauseState(
+            $key,
+            $previousKey,
+            $fromTimestamp,
+            $this->clock->now()->getTimestamp(),
+        );
     }
 
     private function scopeForKeyType(string $keyType): string
@@ -2083,10 +2246,11 @@ class EvaluationPipeline
     /**
      * @param   array<string, ?PipelineScoreDTO>  $rawScores
      * @param   array<string, string|null>        $keys
+     * @param   array<string, string|null>        $keysV1
      *
      * @return array<string, int>
      */
-    private function applyDecay(array $rawScores, array $keys): array
+    private function applyDecay(array $rawScores, array $keys, array $keysV1): array
     {
         $decayed = [];
         foreach ($keys as $keyType => $key) {
@@ -2095,7 +2259,13 @@ class EvaluationPipeline
                 $decayed[$keyType] = 0;
                 continue;
             }
-            $decayed[$keyType] = $this->calculateDecayedScore($dto->value, $dto->updatedAt, $keyType, $key);
+            $decayed[$keyType] = $this->calculateDecayedScore(
+                $dto->value,
+                $dto->updatedAt,
+                $keyType,
+                $key,
+                $keysV1[$keyType] ?? null,
+            );
         }
 
         return $decayed;

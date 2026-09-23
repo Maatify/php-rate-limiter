@@ -6,9 +6,12 @@ use Maatify\RateLimiter\Command\RateLimitCommand;
 use Maatify\RateLimiter\Repository\CircuitBreakerProbeStoreInterface;
 use Maatify\RateLimiter\DTO\BoundedDistinctResultDTO;
 use Maatify\RateLimiter\DTO\BoundedDistinctSnapshotDTO;
+use Maatify\RateLimiter\DTO\DecayPauseStateDTO;
+use Maatify\RateLimiter\DTO\HardBlockCycleResultDTO;
 use Maatify\RateLimiter\Repository\BoundedCorrelationSnapshotStoreInterface;
 use Maatify\RateLimiter\Contract\FailureSignalEmitterInterface;
 use Maatify\RateLimiter\Repository\RateLimitStoreInterface;
+use Maatify\RateLimiter\Repository\HardBlockCycleStoreInterface;
 use Maatify\RateLimiter\DTO\FailureSignalDTO;
 use Maatify\RateLimiter\DTO\BlockStateDTO;
 use Maatify\RateLimiter\DTO\BudgetStateDTO;
@@ -37,13 +40,18 @@ require dirname(__DIR__) . '/vendor/autoload.php';
  * Replace these adapters with the host application's atomic storage and
  * observability integrations in production.
  */
-final class ExampleRateLimitStore implements RateLimitStoreInterface
+final class ExampleRateLimitStore implements HardBlockCycleStoreInterface
 {
+    private const PAUSE_HISTORY_RETENTION_SECONDS = 86400;
+
     /** @var array<string, array{value: int, updatedAt: int, expiresAt: int}> */
     private array $counters = [];
 
     /** @var array<string, array{level: int, expiresAt: int}> */
     private array $blocks = [];
+
+    /** @var array<string, array{cycles: list<int>, pauses: list<array{startedAt: int, until: int}>}> */
+    private array $hardBlockCycles = [];
 
     /** @var array<string, array{count: int, epochStart: int, epochDuration: int}> */
     private array $budgets = [];
@@ -102,6 +110,85 @@ final class ExampleRateLimitStore implements RateLimitStoreInterface
         ];
     }
 
+    public function blockWithCycleTracking(
+        string $currentKey,
+        ?string $previousKey,
+        int $level,
+        int $durationSeconds,
+        int $now,
+        int $cycleWindowSeconds,
+        int $cycleThreshold,
+        int $pauseSeconds,
+        int $pauseHistoryRetentionSeconds,
+    ): HardBlockCycleResultDTO {
+        $previousKey = $previousKey === $currentKey ? null : $previousKey;
+        $state = $this->hardBlockCycles[$currentKey] ?? $this->hardBlockCycles[$previousKey ?? ''] ?? ['cycles' => [], 'pauses' => []];
+        $hadActiveHardBlock = false;
+        foreach (array_unique(array_filter([$currentKey, $previousKey])) as $key) {
+            $block = $this->blocks[$key] ?? null;
+            $hadActiveHardBlock = $hadActiveHardBlock || ($block !== null && $block['level'] >= 2 && $block['expiresAt'] > $now);
+        }
+
+        $this->blocks[$currentKey] = ['level' => $level, 'expiresAt' => $now + $durationSeconds];
+        $state['cycles'] = array_values(array_filter($state['cycles'], static fn(int $at): bool => $at >= $now - $cycleWindowSeconds));
+        $state['pauses'] = array_values(array_filter($state['pauses'], static fn(array $pause): bool => $pause['until'] > $now - $pauseHistoryRetentionSeconds));
+        $newCycle = ! $hadActiveHardBlock;
+        if ($newCycle) {
+            $state['cycles'][] = $now;
+        }
+        $pauseUntil = $this->activePauseUntil($state['pauses'], $now);
+        $pauseActivated = false;
+        if ($newCycle && count($state['cycles']) >= $cycleThreshold && $pauseUntil === 0) {
+            $pauseUntil = $now + $pauseSeconds;
+            $state['pauses'][] = ['startedAt' => $now, 'until' => $pauseUntil];
+            $pauseActivated = true;
+        }
+        $this->hardBlockCycles[$currentKey] = $state;
+
+        return new HardBlockCycleResultDTO($newCycle, count($state['cycles']), $pauseActivated, $pauseUntil);
+    }
+
+    public function readDecayPauseState(string $currentKey, ?string $previousKey, int $fromTimestamp, int $now): DecayPauseStateDTO
+    {
+        $state = $this->hardBlockCycles[$currentKey] ?? $this->hardBlockCycles[$previousKey ?? ''] ?? null;
+        if ($state === null || $fromTimestamp >= $now) {
+            return new DecayPauseStateDTO(0, 0);
+        }
+        $intervals = [];
+        $pauseCutoff = $now - self::PAUSE_HISTORY_RETENTION_SECONDS;
+        foreach ($state['pauses'] as $pause) {
+            if ($pause['until'] <= $pauseCutoff) {
+                continue;
+            }
+            $start = max($fromTimestamp, $pause['startedAt']);
+            $end = min($now, $pause['until']);
+            if ($start < $end) {
+                $intervals[] = [$start, $end];
+            }
+        }
+        usort($intervals, static fn(array $left, array $right): int => $left[0] <=> $right[0]);
+        $elapsed = 0;
+        $start = null;
+        $end = null;
+        foreach ($intervals as [$intervalStart, $intervalEnd]) {
+            if ($start === null) {
+                $start = $intervalStart;
+                $end = $intervalEnd;
+            } elseif ($intervalStart <= $end) {
+                $end = max($end, $intervalEnd);
+            } else {
+                $elapsed += $end - $start;
+                $start = $intervalStart;
+                $end = $intervalEnd;
+            }
+        }
+        if ($start !== null) {
+            $elapsed += $end - $start;
+        }
+
+        return new DecayPauseStateDTO($elapsed, $this->activePauseUntil($state['pauses'], $now));
+    }
+
     public function checkBlock(string $key): ?BlockStateDTO
     {
         $current = $this->blocks[$key] ?? null;
@@ -149,6 +236,19 @@ final class ExampleRateLimitStore implements RateLimitStoreInterface
     public function isHealthy(): bool
     {
         return true;
+    }
+
+    /** @param list<array{startedAt: int, until: int}> $pauses */
+    private function activePauseUntil(array $pauses, int $now): int
+    {
+        $active = 0;
+        foreach ($pauses as $pause) {
+            if ($pause['until'] > $now) {
+                $active = max($active, $pause['until']);
+            }
+        }
+
+        return $active;
     }
 }
 

@@ -4,7 +4,7 @@
 **Namespace:** `Maatify\RateLimiter`
 **Status:** LOCKED — Behavioral Contract
 **Scope:** Login, OTP, API Heavy Endpoints
-**Spec Version:** `1.9.0`
+**Spec Version:** `1.10.0`
 
 This document defines the **deterministic decision rules** used by the Rate Limiter.
 It is a **behavioral contract**, not explanatory documentation.
@@ -698,8 +698,8 @@ Levels decay **slower** as severity increases.
 ### 7.1 Deterministic Decay Modifiers
 
 * After reaching **L2 or higher**, decay rate is **halved**
-* The **multiple-block-cycle 10-minute pause** remains deferred to Stage 3 and
-  is not implemented by the current runtime.
+* The multiple-block-cycle pause is a fixed 600-second pause after the second
+  retained real hard-block cycle. Its full contract is defined below.
 * Budgets (Section 2.4, 3.3) are **fixed 24h epochs** and are **not affected by score decay**
 
 ### 7.2 Retry-After Semantics
@@ -721,6 +721,38 @@ An active persisted block always takes precedence and returns its remaining TTL;
 it is not combined with the decay wait. Score-derived response retry time does
 not change the `PenaltyLadder` persistence duration. Budget cooldown and all
 non-score candidates retain their existing retry semantics.
+
+### 7.3 Multiple-block-cycle Decay Pause
+
+Hard-block cycle history is scoped to the tuple:
+
+```text
+policy + canonical enforcement key type + logical enforcement identity
+```
+
+K1, K2, K3, K4, and K5 therefore maintain independent cycle histories. A cycle
+is recorded only when an operation transitions from no active persisted HARD
+BLOCK at L2+ to an active persisted HARD BLOCK at L2+. L1 does not count;
+escalation, refresh, and reads while the same hard block is active do not create
+another cycle. A block with `expiresAt === now` is expired and does not prevent
+a new cycle.
+
+The rolling cycle window is 21,600 seconds (six hours), and the timestamp at
+exactly `now - 21600` remains in the window. When a new cycle makes the retained
+count reach two, the store starts one fixed 600-second pause when no pause is
+active. The pause interval is half-open, `[pauseStartedAt, pauseUntil)`, so
+decay resumes at exact `pauseUntil`. Refreshes and escalations do not renew the
+pause; a real cycle during an active pause is retained but does not extend it.
+After the pause ends, a later real cycle may start another pause when the
+rolling condition still holds.
+
+The pause affects score decay only. It does not change persisted block TTLs,
+PenaltyLadder durations, budget epochs or cooldowns, correlation/WATCH TTLs,
+LocalFallback, or circuit-breaker state. Completed pauses remain part of lazy
+decay accounting for 86,400 seconds, and pause intersections are unioned
+without double counting. Active persisted-block Retry-After remains
+authoritative; score-derived Retry-After uses the same effective elapsed
+arithmetic and adds remaining active pause time.
 
 ---
 
