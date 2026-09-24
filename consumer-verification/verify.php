@@ -319,16 +319,29 @@ $context = static function (string $subject, string $ip = '203.0.113.10', bool $
     return new RateLimitContextDTO($ip, 'Mozilla/5.0 consumer-verification-' . $subject, $account, ['device' => $subject], $trusted ? 'trusted-device' : null, $trusted, [], $trusted, $correlation);
 };
 $awaitPublicReentry = static function (RateLimiterRuntimeInterface $runtime, RateLimitContextDTO $context, string $policy, RateLimitResultDTO $hard): array {
-    // Poll public checkOnly until Redis confirms that the actual persisted
-    // block expired; score-decay Retry-After may include a retained pause and
-    // is not the persisted block TTL.
-    for ($attempt = 0; $attempt < 360; $attempt++) {
+    // Wait using only the public result's bounded retry hint. Repeated
+    // checkOnly calls are themselves observable authentication checks and can
+    // activate credential-spray correlation state, so keep the recheck count
+    // deliberately small and never rotate the identity.
+    $publicBlockDuration = match (min(6, max(1, $hard->blockLevel ?? 1))) {
+        1 => 15,
+        2 => 60,
+        3 => 300,
+        4 => 1800,
+        5 => 21600,
+        default => 86400,
+    };
+    $waitSeconds = min($publicBlockDuration, max(1, $hard->retryAfter ?? $publicBlockDuration));
+    sleep($waitSeconds);
+    for ($attempt = 0; $attempt < 3; $attempt++) {
         $check = $runtime->limit($context, RateLimitCommand::checkOnly($policy));
         $metadata = $check->metadata?->postPunishmentReentry;
         if ($check->decision === RateLimitResultDTO::DECISION_ALLOW && $metadata !== null) {
             return [$check, $metadata];
         }
-        sleep(1);
+        if ($attempt < 2) {
+            sleep(2);
+        }
     }
     throw new RuntimeException('Public re-entry did not become available before the bounded expiry wait: ' . json_encode(['hard' => resultShape($hard), 'lastCheck' => isset($check) ? resultShape($check) : null], JSON_THROW_ON_ERROR));
 };
@@ -389,11 +402,11 @@ $reentryLoginSecondClaim = $limiter->claimPostPunishmentReentry($reentryLoginCon
 requireCondition($reentryLoginClaim && ! $reentryLoginSecondClaim, 'Public Login claim was not one-shot.');
 
 $reentryOtpAccount = 'consumer-account-public-reentry-otp';
-$reentryOtpContext = new RateLimitContextDTO('203.0.113.16', 'Mozilla/5.0 consumer-verification-public-reentry-otp', $reentryOtpAccount, ['device' => 'public-reentry-otp-1']);
+$reentryOtpContext = new RateLimitContextDTO('203.0.113.16', 'Mozilla/5.0 consumer-verification-public-reentry-otp', $reentryOtpAccount, ['device' => 'public-reentry-otp']);
 for ($attempt = 1; $attempt <= 3; $attempt++) {
-    // Keep one account (one K4) while rotating only the scenario-local device
-    // so this proof cannot accidentally change the protected account.
-    $reentryOtpContext = new RateLimitContextDTO('203.0.113.16', 'Mozilla/5.0 consumer-verification-public-reentry-otp-' . $attempt, $reentryOtpAccount, ['device' => 'public-reentry-otp-' . $attempt]);
+    // Keep the exact same unverified device identity for every OTP failure so
+    // this proof exercises K4 only and cannot create an independent K2 churn
+    // hard block through device rotation.
     $reentryOtpHard = $limiter->limit($reentryOtpContext, RateLimitCommand::recordFailure('otp_protection'));
     if ($reentryOtpHard->decision === RateLimitResultDTO::DECISION_HARD_BLOCK) {
         break;
@@ -576,7 +589,10 @@ for ($attempt = 1; $attempt <= 3; $attempt++) {
 }
 requireCondition($secondCycle instanceof RateLimitResultDTO, 'Default login path did not produce the second hard-block cycle.');
 requireCondition(($secondCycle->retryAfter ?? 0) >= 600, 'Second hard-block cycle did not expose the retained pause behavior.');
-$secondCycleKeys = newlyCreatedRedisKeys($secondCycleKeysBefore, redisKeys($raw));
+$secondCycleKeys = array_values(array_unique([
+    ...$firstCycleKeys,
+    ...newlyCreatedRedisKeys($secondCycleKeysBefore, redisKeys($raw)),
+]));
 $secondCycleState = redisStateSnapshot($raw, $secondCycleKeys);
 $pause = findPauseState($secondCycleState, $cycleClock->now()->getTimestamp());
 requireCondition($pause !== null && $pause['finish'] - $pause['start'] === 600, 'Second hard-block cycle did not persist the exact fixed 600-second pause.');

@@ -209,12 +209,12 @@ class RateLimiterEngine implements RateLimiterRuntimeInterface
         if ($state->state !== \Maatify\RateLimiter\DTO\FailureStateDTO::STATE_CLOSED) {
             throw new RateLimiterException('Post-punishment re-entry claim is unavailable while the circuit is not closed.');
         }
+        $device = $this->deviceResolver->resolve($context);
         try {
-            $device = $this->deviceResolver->resolve($context);
             $claimed = $this->pipeline->claimPostPunishmentReentry($context, $device, $policyName, $reentryId);
             $this->circuitBreaker->reportSuccess($policyName);
             return $claimed;
-        } catch (RateLimiterException $exception) {
+        } catch (\Throwable $exception) {
             $this->circuitBreaker->reportFailure($policyName);
             throw $exception;
         }
