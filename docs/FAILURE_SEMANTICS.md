@@ -3,7 +3,7 @@
 **Module:** RateLimiter
 **Namespace:** `Maatify\RateLimiter`
 **Status:** LOCKED — Security Contract
-**Spec Version:** `1.1.0`
+**Spec Version:** `1.2.0`
 
 This document defines how the RateLimiter behaves when **internal failures occur**.
 It specifies when the system must fail closed, fail open, or enter a strictly bounded degraded mode.

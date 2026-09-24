@@ -20,6 +20,7 @@ final readonly class RateLimitMetadataDTO implements \JsonSerializable
         public ?string $signal = null,
         public ?string $cause = null,
         public ?RateLimitContextMetadataDTO $context = null,
+        public ?PostPunishmentReentryMetadataDTO $postPunishmentReentry = null,
     ) {}
 
     /**
@@ -27,10 +28,14 @@ final readonly class RateLimitMetadataDTO implements \JsonSerializable
      */
     public function jsonSerialize(): mixed
     {
-        return [
+        $serialized = [
             'signal' => $this->signal,
             'cause' => $this->cause,
             'context' => $this->context,
         ];
+        if ($this->postPunishmentReentry !== null) {
+            $serialized['postPunishmentReentry'] = $this->postPunishmentReentry;
+        }
+        return $serialized;
     }
 }

@@ -1,5 +1,14 @@
 # Changelog
 
+## Unreleased — WU-S4-03B-01
+
+- Added DEC-007 generation-bound authentication K4 lifecycle for opt-in Login
+  and OTP policies, including typed lifecycle storage, bounded public claims,
+  early Builder capability validation, and the composite runtime surface.
+- Custom `FullCapabilityStoreInterface` implementations must add the
+  `PunishmentLifecycleStoreInterface` methods. Pre-DEC-007 writers must not
+  concurrently write the same logical namespace during migration.
+
 All notable changes to this project will be documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),

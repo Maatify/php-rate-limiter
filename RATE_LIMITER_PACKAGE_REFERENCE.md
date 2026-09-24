@@ -3,7 +3,7 @@
 **Package:** RateLimiter
 **Namespace:** `Maatify\RateLimiter`
 **Status:** LOCKED — Architecture Contract
-**Spec Version:** `1.15.0`
+**Spec Version:** `1.16.0`
 **Location:** `src/`
 
 This document explains **why** the RateLimiter package is designed the way it is.
@@ -106,7 +106,8 @@ The following inventory describes the current public runtime types. Test and sup
 | `Maatify\RateLimiter\Repository\CircuitBreakerStoreInterface` | Circuit-breaker state persistence boundary. |
 | `Maatify\RateLimiter\Repository\CircuitBreakerProbeStoreInterface` | Additive atomic per-policy recovery-probe lease capability. |
 | `Maatify\RateLimiter\Repository\HardBlockCycleStoreInterface` | Additive atomic L2+ block, hard-cycle, and decay-pause capability; Previous is read-only. |
-| `Maatify\RateLimiter\Repository\FullCapabilityStoreInterface` | Aggregate contract composing the four additive full-capability storage boundaries without declaring new methods. |
+| `Maatify\RateLimiter\Repository\PunishmentLifecycleStoreInterface` | Generation-bound K4 mutation, punishment evidence, and one-shot claim capability. |
+| `Maatify\RateLimiter\Repository\FullCapabilityStoreInterface` | Aggregate contract including the punishment lifecycle capability without declaring new methods. |
 | `Maatify\RateLimiter\Repository\Redis\RedisCommandExecutorInterface` | Raw Redis command boundary supplied by the Host/client bridge for the optional official Redis store. |
 | `Maatify\RateLimiter\Contract\FailureSignalEmitterInterface` | Failure and circuit-breaker signal delivery boundary. |
 | `Maatify\RateLimiter\Service\DeviceIdentityResolverInterface` | Device identity resolution boundary. |

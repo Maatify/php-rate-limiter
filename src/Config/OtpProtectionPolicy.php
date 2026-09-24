@@ -13,7 +13,7 @@ use Maatify\RateLimiter\DTO\ScoreThresholdsDTO;
 /**
  * Policy for OTP failures with account-scoped thresholds and recovery guard.
  */
-class OtpProtectionPolicy implements BlockPolicyInterface
+class OtpProtectionPolicy implements PostPunishmentReentryPolicyInterface
 {
     /**
      * Return the policy identifier consumed by the engine.

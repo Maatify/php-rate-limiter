@@ -13,7 +13,7 @@ use Maatify\RateLimiter\DTO\ScoreThresholdsDTO;
 /**
  * Policy for login failures with account-scoped thresholds and a budget.
  */
-class LoginProtectionPolicy implements BlockPolicyInterface
+class LoginProtectionPolicy implements PostPunishmentReentryPolicyInterface
 {
     /**
      * Return the policy identifier consumed by the engine.
