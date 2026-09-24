@@ -110,6 +110,14 @@ behavior.
 
 The public runtime surface also includes the `login_protection`, `otp_protection`, and `api_heavy_protection` policy presets; typed context, command, result, identity, state, operational snapshot, and metadata DTOs; `RateLimitOperationalReaderInterface::read()` for read-only point-in-time operational inspection; and extension contracts for rate-limit storage, the aggregate full-capability storage contract (`FullCapabilityStoreInterface`), atomic L2+ hard-block cycle tracking (`HardBlockCycleStoreInterface`), correlation storage, circuit-breaker state, failure signals, device identity resolution, and custom policies. A base-only rate-limit store remains compatible for reads and L1 writes, but L2+ persistence requires the additive hard-block cycle capability.
 
+For DEC-007, the Redis lifecycle primitive atomically couples the generation-bound
+K4 score, L2+ block, score-expiry evidence, and generation fence. Reads use a
+coherent current/previous snapshot and Redis server time; active blocks suppress
+evidence for every command. The public claim is non-consuming and uses an
+independent marker, so replay is safe. Custom opt-in authentication policies
+must implement the policy marker and lifecycle capability; API Heavy remains
+outside this flow.
+
 The [Package Reference](RATE_LIMITER_PACKAGE_REFERENCE.md) contains the complete public interface, command, DTO, concrete service, policy, and extension-boundary inventory. Runtime behavior is defined by the current source and the linked decision, policy, device, key, and failure documents.
 
 ## Exception and Error Propagation

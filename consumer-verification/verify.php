@@ -16,6 +16,8 @@ use Maatify\RateLimiter\Repository\Redis\CallableRedisCommandExecutor;
 use Maatify\RateLimiter\Repository\Redis\RedisFullCapabilityStore;
 use Maatify\RateLimiter\Service\DeviceIdentityResolver;
 use Maatify\RateLimiter\Service\DeviceIdentityResolverInterface;
+use Maatify\RateLimiter\Service\RateLimiterRuntimeInterface;
+use Maatify\RateLimiter\Config\PostPunishmentReentryPolicyInterface;
 
 require __DIR__ . '/vendor/autoload.php';
 
@@ -311,6 +313,7 @@ $store = new RedisFullCapabilityStore($executor, 'consumer-verification');
 $clock = new FixedClock(new DateTimeImmutable('now', new DateTimeZone('UTC')));
 $signals = new RecordingFailureSignalEmitter();
 $limiter = RateLimiterBuilder::fromFullCapabilityStore(new RateLimiterConfig('consumer-key', 'consumer-fingerprint', 'prod'), $store, $signals)->build();
+requireCondition($limiter instanceof RateLimiterRuntimeInterface, 'Full-capability Builder did not expose RateLimiterRuntimeInterface.');
 $context = static function (string $subject, string $ip = '203.0.113.10', bool $trusted = false, ?string $correlation = null): RateLimitContextDTO {
     $account = str_starts_with($subject, 'spray-') ? 'consumer-spray-account' : 'consumer-account-' . $subject;
     return new RateLimitContextDTO($ip, 'Mozilla/5.0 consumer-verification-' . $subject, $account, ['device' => $subject], $trusted ? 'trusted-device' : null, $trusted, [], $trusted, $correlation);
@@ -354,6 +357,60 @@ $loginSuccessContext = new RateLimitContextDTO('203.0.113.14', 'Mozilla/5.0 cons
 $loginSuccess = $limiter->limit($loginSuccessContext, RateLimitCommand::recordSuccess('login_protection'));
 requireCondition($loginProgression[array_key_last($loginProgression)]->decision === RateLimitResultDTO::DECISION_HARD_BLOCK && $loginProgression[array_key_last($loginProgression)]->blockLevel >= 2, 'Default login failure progression did not reach L2 hard block.');
 requireCondition($loginSuccess->decision === RateLimitResultDTO::DECISION_ALLOW, 'Clean login success command was not executable.');
+
+$reentryLoginContext = $context('public-reentry-login', '203.0.113.15');
+$reentryLoginHard = null;
+for ($attempt = 1; $attempt <= 6; $attempt++) {
+    $candidate = $limiter->limit($reentryLoginContext, RateLimitCommand::recordFailure('login_protection'));
+    if ($candidate->decision === RateLimitResultDTO::DECISION_HARD_BLOCK) {
+        $reentryLoginHard = $candidate;
+        break;
+    }
+}
+requireCondition($reentryLoginHard instanceof RateLimitResultDTO, 'Public Login re-entry fixture did not issue L2.');
+sleep(30);
+sleep(31);
+$reentryLoginCheck = $limiter->limit($reentryLoginContext, RateLimitCommand::checkOnly('login_protection'));
+$reentryLoginMetadata = $reentryLoginCheck->metadata?->postPunishmentReentry;
+requireCondition(
+    $reentryLoginCheck->decision === RateLimitResultDTO::DECISION_ALLOW && $reentryLoginMetadata !== null,
+    'Public Login re-entry metadata was not exposed: ' . json_encode(resultShape($reentryLoginCheck), JSON_THROW_ON_ERROR),
+);
+$reentryLoginClaim = $limiter->claimPostPunishmentReentry($reentryLoginContext, 'login_protection', $reentryLoginMetadata->id);
+$reentryLoginSecondClaim = $limiter->claimPostPunishmentReentry($reentryLoginContext, 'login_protection', $reentryLoginMetadata->id);
+requireCondition($reentryLoginClaim && ! $reentryLoginSecondClaim, 'Public Login claim was not one-shot.');
+
+$reentryOtpContext = $context('public-reentry-otp', '203.0.113.16');
+for ($attempt = 1; $attempt <= 3; $attempt++) {
+    // Keep K5 below its own threshold so this public proof isolates the
+    // generation-bound K4 lifecycle rather than serving a device block.
+    $reentryOtpContext = $context('public-reentry-otp-' . $attempt, '203.0.113.16');
+    $reentryOtpHard = $limiter->limit($reentryOtpContext, RateLimitCommand::recordFailure('otp_protection'));
+    if ($reentryOtpHard->decision === RateLimitResultDTO::DECISION_HARD_BLOCK) {
+        break;
+    }
+}
+requireCondition(isset($reentryOtpHard) && $reentryOtpHard->decision === RateLimitResultDTO::DECISION_HARD_BLOCK, 'Public OTP re-entry fixture did not issue L2.');
+sleep(301);
+$reentryOtpCheck = $limiter->limit($reentryOtpContext, RateLimitCommand::checkOnly('otp_protection'));
+$reentryOtpMetadata = $reentryOtpCheck->metadata?->postPunishmentReentry;
+requireCondition(
+    $reentryOtpCheck->decision === RateLimitResultDTO::DECISION_ALLOW && $reentryOtpMetadata !== null,
+    'Public OTP re-entry metadata was not exposed: ' . json_encode(resultShape($reentryOtpCheck), JSON_THROW_ON_ERROR),
+);
+$reentryOtpClaim = $limiter->claimPostPunishmentReentry($reentryOtpContext, 'otp_protection', $reentryOtpMetadata->id);
+requireCondition($reentryOtpClaim, 'Public OTP claim did not succeed.');
+
+$customPolicy = new class extends \Maatify\RateLimiter\Config\LoginProtectionPolicy implements PostPunishmentReentryPolicyInterface {
+    public function getName(): string
+    {
+        return 'consumer_custom_auth_k4';
+    }
+};
+$customLimiter = RateLimiterBuilder::fromFullCapabilityStore(new RateLimiterConfig('consumer-custom-key', 'consumer-custom-fingerprint', 'prod'), $store, $signals)->withPolicy($customPolicy)->build();
+requireCondition($customLimiter instanceof RateLimiterRuntimeInterface, 'Custom opt-in policy did not preserve the public runtime surface.');
+$customResult = $customLimiter->limit($context('public-reentry-custom', '203.0.113.17'), RateLimitCommand::recordFailure('consumer_custom_auth_k4'));
+requireCondition($customResult->failureMode === 'NORMAL', 'Custom opt-in policy did not execute through the public production path.');
 $loginPersistenceContext = new RateLimitContextDTO('203.0.113.11', 'Mozilla/5.0 consumer-login-persistence', 'consumer-login-persistence', ['device' => 'consumer-login-persistence']);
 $loginKeysBefore = redisKeys($raw);
 $loginPersistenceResult = $limiter->limit($loginPersistenceContext, RateLimitCommand::recordFailure('login_protection'));
@@ -651,4 +708,4 @@ requireCondition(count($circuitSignalTypes) === 2 && $circuitSignalTypes === ['C
 
 $keys = redisKeys($raw);
 requireCondition(count($keys) > 0, 'No Redis persistence was observable.');
-echo json_encode(['status' => 'PASS', 'packageInstallPath' => $installPath, 'productionAutoload' => true, 'packageTestNamespaceAvailable' => false, 'login' => ['checkOnly' => resultShape($loginCheck), 'recordFailure' => resultShape($loginFailure), 'recordSuccess' => resultShape($loginSuccess), 'progression' => array_map('resultShape', $loginProgression), 'persistenceProof' => true], 'otp' => resultShape($otp), 'apiHeavy' => resultShape($api), 'credentialSpray' => array_map('resultShape', $spray), 'sprayLifecycle' => ['recordSuccess' => resultShape($spraySuccess), 'subjectFourCheckOnly' => resultShape($spraySubjectFour)], 'trustedSession' => resultShape($trusted), 'untrustedFollowUp' => resultShape($untrustedFollowUp), 'trustedNonK1' => resultShape($trustedNonK1), 'rotations' => $rotationCases, 'budgetMigration' => ['previousCount' => (int) $previousBudgetMap['count'], 'currentCount' => (int) $currentBudgetMap['count'], 'epochStartPreserved' => true, 'previousReadOnly' => true], 'hardBlockCyclePause' => ['firstCycle' => resultShape($firstCycle), 'secondCycle' => resultShape($secondCycle), 'pauseRetained' => true], 'failureSemantics' => ['login' => resultShape($loginFailureMode), 'otp' => resultShape($otpFailureMode), 'apiHeavy' => resultShape($apiFailureMode)], 'circuit' => ['openGuard' => resultShape($openGuardResult), 'halfOpenProbe' => resultShape($halfOpenResult), 'closedRecovery' => resultShape($closedResult), 'normalWorkloadSuppressedWhileOpen' => true, 'signalCount' => count($circuitSignals->signals()), 'signalTypes' => array_values(array_unique(array_map(static fn($signal): string => $signal->type, $circuitSignals->signals())))], 'redisPersistence' => ['keyCount' => count($keys)], 'failureSignals' => count($signals->signals())], JSON_THROW_ON_ERROR) . PHP_EOL;
+echo json_encode(['status' => 'PASS', 'packageInstallPath' => $installPath, 'productionAutoload' => true, 'packageTestNamespaceAvailable' => false, 'login' => ['checkOnly' => resultShape($loginCheck), 'recordFailure' => resultShape($loginFailure), 'recordSuccess' => resultShape($loginSuccess), 'progression' => array_map('resultShape', $loginProgression), 'persistenceProof' => true, 'postPunishmentReentry' => ['checkOnly' => resultShape($reentryLoginCheck), 'claim' => $reentryLoginClaim, 'secondClaim' => $reentryLoginSecondClaim]], 'otp' => resultShape($otp), 'otpPostPunishmentReentry' => ['checkOnly' => resultShape($reentryOtpCheck), 'claim' => $reentryOtpClaim], 'customOptIn' => resultShape($customResult), 'apiHeavy' => resultShape($api), 'credentialSpray' => array_map('resultShape', $spray), 'sprayLifecycle' => ['recordSuccess' => resultShape($spraySuccess), 'subjectFourCheckOnly' => resultShape($spraySubjectFour)], 'trustedSession' => resultShape($trusted), 'untrustedFollowUp' => resultShape($untrustedFollowUp), 'trustedNonK1' => resultShape($trustedNonK1), 'rotations' => $rotationCases, 'budgetMigration' => ['previousCount' => (int) $previousBudgetMap['count'], 'currentCount' => (int) $currentBudgetMap['count'], 'epochStartPreserved' => true, 'previousReadOnly' => true], 'hardBlockCyclePause' => ['firstCycle' => resultShape($firstCycle), 'secondCycle' => resultShape($secondCycle), 'pauseRetained' => true], 'failureSemantics' => ['login' => resultShape($loginFailureMode), 'otp' => resultShape($otpFailureMode), 'apiHeavy' => resultShape($apiFailureMode)], 'circuit' => ['openGuard' => resultShape($openGuardResult), 'halfOpenProbe' => resultShape($halfOpenResult), 'closedRecovery' => resultShape($closedResult), 'normalWorkloadSuppressedWhileOpen' => true, 'signalCount' => count($circuitSignals->signals()), 'signalTypes' => array_values(array_unique(array_map(static fn($signal): string => $signal->type, $circuitSignals->signals())))], 'redisPersistence' => ['keyCount' => count($keys)], 'failureSignals' => count($signals->signals())], JSON_THROW_ON_ERROR) . PHP_EOL;

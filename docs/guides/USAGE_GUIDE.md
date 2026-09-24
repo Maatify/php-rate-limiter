@@ -152,6 +152,15 @@ exactly once through `RateLimiterRuntimeInterface::claimPostPunishmentReentry()`
 Hosts must not reconstruct package keys or generation state. API Heavy and
 custom non-opt-in policies are unaffected.
 
+This is a public workflow, not a storage recipe: `checkOnly()` may return
+`postPunishmentReentry` metadata only after a coherent unblocked generation
+check, and the host passes that metadata to
+`claimPostPunishmentReentry()`. The claim returns `true` once and `false` on
+replay while leaving evidence intact. A newer mutation, rotation mismatch, or
+active K4 block suppresses metadata. Redis uses server time and one atomic
+publication primitive, so hosts must not reproduce these checks with separate
+reads and writes.
+
 The base correlation contract keeps its existing signatures and remains sufficient
 without a previous key secret. Its concrete implementation must establish the first
 window TTL atomically and must not refresh that TTL on later writes. During key-secret

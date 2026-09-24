@@ -76,27 +76,63 @@ local current = KEYS[1]; local previous = KEYS[2]
 local exists = redis.call('EXISTS', current)
 local source = current
 if exists == 0 and previous ~= '' and redis.call('EXISTS', previous) == 1 then source = previous end
-if source ~= current and source ~= previous then return {0} end
+local expectedSource = ARGV[1]
+if expectedSource == '' and (redis.call('EXISTS', current) == 1 or (previous ~= '' and redis.call('EXISTS', previous) == 1)) then return {0} end
+if expectedSource ~= '' and expectedSource ~= source then return {0} end
 local observedGeneration = redis.call('HGET', source, 'generation')
 local observedUpdated = redis.call('HGET', source, 'updatedAt')
 local observedValue = redis.call('HGET', source, 'value')
 if not observedValue or not observedUpdated then
   if redis.call('EXISTS', source) == 0 then
-    local ttl = tonumber(ARGV[3]); if ttl <= 0 then return redis.error_reply('invalid score TTL') end
-    redis.call('HSET', current, 'value', ARGV[4], 'updatedAt', now, 'generation', 1, 'expiresAt', now + ttl)
+    local ttl = tonumber(ARGV[5]); if ttl <= 0 then return redis.error_reply('invalid score TTL') end
+    redis.call('HSET', current, 'value', ARGV[6], 'updatedAt', now, 'generation', 1, 'expiresAt', now + ttl)
     redis.call('EXPIRE', current, ttl)
-    return {1, ARGV[4], now, now + ttl, 1}
+    return {1, ARGV[6], now, now + ttl, 1}
   end
   return redis.error_reply('malformed generation-bound score state')
 end
-if ARGV[1] ~= '' then
-  if not observedGeneration or tonumber(observedGeneration) ~= tonumber(ARGV[1]) or ARGV[2] ~= source then return {0} end
+if expectedSource ~= '' then
+  if not observedValue or observedValue ~= ARGV[2] or not observedUpdated or observedUpdated ~= ARGV[3] then return {0} end
+  if ARGV[4] ~= '' and (not observedGeneration or observedGeneration ~= ARGV[4]) then return {0} end
 end
+local requestedTtl = tonumber(ARGV[5]); if requestedTtl <= 0 then return redis.error_reply('invalid score TTL') end
 local generation = source == current and (observedGeneration and tonumber(observedGeneration) + 1 or 1) or 1
-local ttl = tonumber(ARGV[3]); if ttl <= 0 then return redis.error_reply('invalid score TTL') end
-redis.call('HSET', current, 'value', ARGV[4], 'updatedAt', now, 'generation', generation, 'expiresAt', now + ttl)
-if source == current then redis.call('EXPIRE', current, math.max(1, redis.call('TTL', current))) else redis.call('EXPIRE', current, ttl) end
-return {1, ARGV[4], now, now + ttl, generation}
+local ttl = source == current and redis.call('TTL', current) or requestedTtl
+if ttl <= 0 then return {0} end
+local expiry = source == current and redis.call('HGET', current, 'expiresAt') or nil
+if expiry and (not tonumber(expiry) or tonumber(expiry) ~= math.floor(tonumber(expiry))) then return redis.error_reply('malformed score expiry') end
+expiry = expiry and tonumber(expiry) or now + ttl
+redis.call('HSET', current, 'value', ARGV[6], 'updatedAt', now, 'generation', generation, 'expiresAt', expiry)
+redis.call('EXPIRE', current, ttl)
+if KEYS[3] ~= '' then redis.call('DEL', KEYS[3]) end
+return {1, ARGV[6], now, expiry, generation}
+LUA;
+
+    private const LIFECYCLE_READ = <<<'LUA'
+local now = tonumber(redis.call('TIME')[1])
+local source = KEYS[1]
+if redis.call('EXISTS', source) == 0 then source = KEYS[2] end
+if source == '' or redis.call('EXISTS', source) == 0 then return {} end
+if redis.call('TTL', source) <= 0 then return {} end
+local value = redis.call('HGET', source, 'value'); local updated = redis.call('HGET', source, 'updatedAt')
+if not value or not updated or not tonumber(value) or tonumber(value) ~= math.floor(tonumber(value)) or not tonumber(updated) or tonumber(updated) ~= math.floor(tonumber(updated)) then return redis.error_reply('malformed generation-bound score state') end
+local expiry = redis.call('HGET', source, 'expiresAt') or (now + redis.call('TTL', source))
+if not tonumber(expiry) or tonumber(expiry) ~= math.floor(tonumber(expiry)) or tonumber(expiry) <= now then return redis.error_reply('malformed generation-bound score expiry') end
+local generation = redis.call('HGET', source, 'generation') or ''
+if generation ~= '' and (not tonumber(generation) or tonumber(generation) ~= math.floor(tonumber(generation)) or tonumber(generation) <= 0) then return redis.error_reply('malformed generation') end
+local active = false
+for _, blockKey in ipairs({KEYS[3], KEYS[4]}) do
+  if blockKey ~= '' and redis.call('EXISTS', blockKey) == 1 then
+    local blockExpiry = redis.call('HGET', blockKey, 'expiresAt'); local level = redis.call('HGET', blockKey, 'level')
+    if not blockExpiry or not level or not tonumber(blockExpiry) or tonumber(blockExpiry) ~= math.floor(tonumber(blockExpiry)) or not tonumber(level) or tonumber(level) ~= math.floor(tonumber(level)) then return redis.error_reply('malformed hard-block state') end
+    if tonumber(blockExpiry) > now and tonumber(level) >= 2 then active = true end
+  end
+end
+local evidenceGeneration = redis.call('HGET', source, 'reentryGeneration') or ''
+local evidenceId = redis.call('HGET', source, 'reentryId') or ''
+local evidenceUntil = redis.call('HGET', source, 'reentryValidUntil') or ''
+if active or generation == '' or evidenceGeneration ~= generation or evidenceId == '' or evidenceUntil == '' or not tonumber(evidenceUntil) or tonumber(evidenceUntil) ~= tonumber(expiry) or tonumber(evidenceUntil) <= now then evidenceId = ''; evidenceUntil = '' end
+return {source == KEYS[1] and 1 or 2, tonumber(value), tonumber(updated), tonumber(expiry), generation, evidenceId, evidenceUntil}
 LUA;
 
     private const LIFECYCLE_CLAIM = <<<'LUA'
@@ -107,16 +143,18 @@ for _, blockKey in ipairs({KEYS[3], KEYS[4]}) do
     if expires and expires > now then return 0 end
   end
 end
-for _, key in ipairs(KEYS) do
-  if key == KEYS[3] or key == KEYS[4] then goto continue end
+for _, key in ipairs({KEYS[1], KEYS[2]}) do
   if key ~= '' and redis.call('EXISTS', key) == 1 then
-    local id = redis.call('HGET', key, 'reentryId'); local until = redis.call('HGET', key, 'reentryValidUntil')
-    if id and until then
-      until = tonumber(until)
-      if until > now and id == ARGV[1] then redis.call('HDEL', key, 'reentryId', 'reentryValidUntil'); return 1 end
+    local generation = redis.call('HGET', key, 'generation'); local id = redis.call('HGET', key, 'reentryId'); local validUntil = redis.call('HGET', key, 'reentryValidUntil'); local evidenceGeneration = redis.call('HGET', key, 'reentryGeneration')
+    if id and validUntil and generation and evidenceGeneration == generation then
+      validUntil = tonumber(validUntil)
+      if validUntil and validUntil > now and id == ARGV[1] then
+        local markerTtl = math.max(1, validUntil - now)
+        if redis.call('SET', KEYS[5], id, 'NX', 'EX', markerTtl) then return 1 end
+        return 0
+      end
     end
   end
-  ::continue::
 end
 return 0
 LUA;
@@ -395,9 +433,20 @@ return 1
 LUA;
 
     private const HARD_BLOCK = <<<'LUA'
-local now = tonumber(ARGV[5])
+local lifecycleGeneration = ARGV[10] or ''
+local lifecycleId = ARGV[11] or ''
+local now = lifecycleGeneration ~= '' and tonumber(redis.call('TIME')[1]) or tonumber(ARGV[5])
 local retention = tonumber(ARGV[9])
 local cycleWindow = tonumber(ARGV[6])
+if lifecycleGeneration ~= '' then
+  local scoreKey = KEYS[7]
+  if scoreKey == '' or redis.call('EXISTS', scoreKey) == 0 then return {0} end
+  local generation = redis.call('HGET', scoreKey, 'generation'); local value = redis.call('HGET', scoreKey, 'value'); local updated = redis.call('HGET', scoreKey, 'updatedAt'); local scoreExpiry = redis.call('HGET', scoreKey, 'expiresAt')
+  if not generation or not value or not updated or not scoreExpiry then return redis.error_reply('malformed lifecycle score state') end
+  if not tonumber(generation) or tonumber(generation) ~= math.floor(tonumber(generation)) or generation ~= lifecycleGeneration then return {0} end
+  if not tonumber(value) or tonumber(value) ~= math.floor(tonumber(value)) or not tonumber(updated) or tonumber(updated) ~= math.floor(tonumber(updated)) or not tonumber(scoreExpiry) or tonumber(scoreExpiry) ~= math.floor(tonumber(scoreExpiry)) or tonumber(scoreExpiry) <= now then return redis.error_reply('malformed lifecycle score state') end
+  if lifecycleId == '' or string.len(lifecycleId) ~= 32 then return redis.error_reply('malformed lifecycle id') end
+end
 local function validateCycles(key)
   if key == '' or redis.call('EXISTS', key) == 0 then return end
   if redis.call('ZCARD', key) == 0 then error('malformed cycle history') end
@@ -488,6 +537,13 @@ end
 if latestPauseUntil > 0 then extendUntil(KEYS[5], latestPauseUntil + retention) end
 local expires = now + tonumber(ARGV[2])
 redis.call('HSET', KEYS[3], 'level', ARGV[1], 'expiresAt', expires); redis.call('EXPIRE', KEYS[3], ARGV[2])
+if lifecycleGeneration ~= '' then
+  local scoreKey = KEYS[7]
+  local storedId = redis.call('HGET', scoreKey, 'reentryId')
+  local actualId = storedId or lifecycleId
+  redis.call('HSET', scoreKey, 'reentryId', actualId, 'reentryValidUntil', redis.call('HGET', scoreKey, 'expiresAt'), 'reentryGeneration', lifecycleGeneration)
+  return {newCycle and 1 or 0, cycleCount, activated and 1 or 0, pauseUntil, expires, 1, actualId, redis.call('HGET', scoreKey, 'expiresAt'), lifecycleGeneration}
+end
 return {newCycle and 1 or 0, cycleCount, activated and 1 or 0, pauseUntil}
 LUA;
 
@@ -787,19 +843,45 @@ LUA;
 
     public function readGenerationBoundScoreState(string $currentKey, ?string $previousKey): ?GenerationBoundScoreStateDTO
     {
-        $current = $this->generationState($currentKey, GenerationBoundScoreStateDTO::SOURCE_CURRENT);
-        if ($current !== null) {
-            return $current;
+        $keys = [
+            $this->key('score', $currentKey),
+            $previousKey === null ? '' : $this->key('score', $previousKey),
+            $this->key('block', $currentKey),
+            $previousKey === null ? '' : $this->key('block', $previousKey),
+        ];
+        $result = $this->eval(self::LIFECYCLE_READ, $keys, []);
+        if ($result === []) {
+            return null;
         }
-        return $previousKey === null ? null : $this->generationState($previousKey, GenerationBoundScoreStateDTO::SOURCE_PREVIOUS);
+        $tuple = $this->tuple($result, 7, 'generation-bound snapshot');
+        $source = $this->integerValue($tuple[0], 'generation-bound source') === 1
+            ? GenerationBoundScoreStateDTO::SOURCE_CURRENT : GenerationBoundScoreStateDTO::SOURCE_PREVIOUS;
+        $generation = $this->stringValue($tuple[4], 'generation-bound generation');
+        $evidenceId = $this->stringValue($tuple[5], 'generation-bound evidence id');
+        $evidenceUntil = $this->stringValue($tuple[6], 'generation-bound evidence expiry');
+        $evidence = null;
+        if ($evidenceId !== '' || $evidenceUntil !== '') {
+            $evidence = new PostPunishmentReentryStateDTO($evidenceId, $this->integerValue($evidenceUntil, 'generation-bound evidence expiry'));
+        }
+        return new GenerationBoundScoreStateDTO(
+            $source,
+            $this->integerValue($tuple[1], 'generation-bound score'),
+            $this->integerValue($tuple[2], 'generation-bound updatedAt'),
+            $this->integerValue($tuple[3], 'generation-bound expiry'),
+            $generation === '' ? null : $this->integerValue($generation, 'generation-bound generation'),
+            $evidence,
+        );
     }
 
     public function mutateGenerationBoundScore(string $currentKey, ?string $previousKey, ?GenerationBoundScoreStateDTO $expectedState, int $ttlSeconds, int $newValue): GenerationBoundScoreMutationDTO
     {
         $this->positive($ttlSeconds, 'Generation-bound score TTL');
-        $expectedGeneration = $expectedState?->generation;
         $expectedSource = $expectedState === null ? '' : ($expectedState->source === GenerationBoundScoreStateDTO::SOURCE_CURRENT ? $this->key('score', $currentKey) : $this->key('score', $previousKey ?? ''));
-        $result = $this->eval(self::LIFECYCLE_MUTATE, [$this->key('score', $currentKey), $expectedSource === '' && $previousKey !== null ? $this->key('score', $previousKey) : $expectedSource], [$expectedGeneration === null ? '' : $expectedGeneration, $expectedSource, $ttlSeconds, $newValue]);
+        $result = $this->eval(
+            self::LIFECYCLE_MUTATE,
+            [$this->key('score', $currentKey), $previousKey === null ? '' : $this->key('score', $previousKey), $this->key('reentry-claim', $currentKey)],
+            [$expectedSource, $expectedState === null ? '' : $expectedState->value, $expectedState === null ? '' : $expectedState->updatedAt, $expectedState === null || $expectedState->generation === null ? '' : $expectedState->generation, $ttlSeconds, $newValue],
+        );
         $tuple = $this->tuple($result, 1, 'generation-bound mutation');
         if ($this->integerValue($tuple[0], 'generation-bound mutation flag') === 0) {
             return new GenerationBoundScoreMutationDTO(false, null);
@@ -809,20 +891,34 @@ LUA;
 
     public function blockWithPunishmentLifecycleTracking(string $currentKey, ?string $previousKey, int $expectedGeneration, string $proposedLifecycleId, int $level, int $durationSeconds, int $cycleWindowSeconds, int $cycleThreshold, int $pauseSeconds, int $pauseHistoryRetentionSeconds): PunishmentLifecycleTransitionDTO
     {
-        $state = $this->readGenerationBoundScoreState($currentKey, $previousKey);
-        if ($state === null || $state->generation !== $expectedGeneration) {
+        $id = preg_match('/\A[a-f0-9]{32}\z/D', $proposedLifecycleId) === 1 ? $proposedLifecycleId : bin2hex(random_bytes(16));
+        $previousKey = $previousKey === $currentKey ? null : $previousKey;
+        $keys = [
+            $this->key('cycle', $currentKey), $previousKey === null ? '' : $this->key('cycle', $previousKey),
+            $this->key('block', $currentKey), $previousKey === null ? '' : $this->key('block', $previousKey),
+            $this->key('pause', $currentKey), $previousKey === null ? '' : $this->key('pause', $previousKey),
+            $this->key('score', $currentKey), $previousKey === null ? '' : $this->key('score', $previousKey),
+        ];
+        $result = $this->eval(self::HARD_BLOCK, $keys, [$level, $durationSeconds, $currentKey, $previousKey ?? '', 0, $cycleWindowSeconds, $cycleThreshold, $pauseSeconds, $pauseHistoryRetentionSeconds, $expectedGeneration, $id]);
+        $tuple = $this->tuple($result, 1, 'punishment lifecycle transition');
+        if (count($tuple) < 9 || $this->integerValue($tuple[5], 'punishment lifecycle transition flag') !== 1) {
             return new PunishmentLifecycleTransitionDTO(false, null, null, null);
         }
-        $cycle = $this->blockWithCycleTracking($currentKey, $previousKey, $level, $durationSeconds, time(), $cycleWindowSeconds, $cycleThreshold, $pauseSeconds, $pauseHistoryRetentionSeconds);
-        $validUntil = min($state->expiresAt, time() + $durationSeconds);
-        $id = preg_match('/\A[a-f0-9]{32}\z/D', $proposedLifecycleId) === 1 ? $proposedLifecycleId : bin2hex(random_bytes(16));
-        $this->redis->execute(['HSET', $this->key('score', $currentKey), 'reentryId', $id, 'reentryValidUntil', $validUntil]);
-        return new PunishmentLifecycleTransitionDTO(true, $cycle, new BlockStateDTO($level, time() + $durationSeconds), new PostPunishmentReentryStateDTO($id, $validUntil));
+        $cycle = new HardBlockCycleResultDTO(
+            $this->integerValue($tuple[0], 'cycle flag') === 1,
+            $this->integerValue($tuple[1], 'cycle count'),
+            $this->integerValue($tuple[2], 'pause flag') === 1,
+            $this->integerValue($tuple[3], 'pause expiry'),
+        );
+        $blockExpiry = $this->integerValue($tuple[4], 'block expiry');
+        $actualId = $this->stringValue($tuple[6], 'lifecycle id');
+        $scoreExpiry = $this->integerValue($tuple[7], 'score expiry');
+        return new PunishmentLifecycleTransitionDTO(true, $cycle, new BlockStateDTO($level, $blockExpiry), new PostPunishmentReentryStateDTO($actualId, $scoreExpiry));
     }
 
     public function claimPostPunishmentReentry(string $currentKey, ?string $previousKey, string $lifecycleId): bool
     {
-        $keys = [$this->key('score', $currentKey), $previousKey === null ? '' : $this->key('score', $previousKey), $this->key('block', $currentKey), $previousKey === null ? '' : $this->key('block', $previousKey)];
+        $keys = [$this->key('score', $currentKey), $previousKey === null ? '' : $this->key('score', $previousKey), $this->key('block', $currentKey), $previousKey === null ? '' : $this->key('block', $previousKey), $this->key('reentry-claim', $currentKey)];
         return $this->integerValue($this->eval(self::LIFECYCLE_CLAIM, $keys, [$lifecycleId]), 're-entry claim') === 1;
     }
 
@@ -839,35 +935,6 @@ LUA;
     private function key(string $family, string $logical): string
     {
         return self::PREFIX . ':' . hash('sha256', $this->namespace) . ':' . $family . ':' . hash('sha256', $logical);
-    }
-
-    private function generationState(string $logicalKey, string $source): ?GenerationBoundScoreStateDTO
-    {
-        $result = $this->redis->execute(['HGETALL', $this->key('score', $logicalKey)]);
-        if ($result === [] || $result === null) {
-            return null;
-        }
-        if (! is_array($result)) {
-            throw new RateLimiterException('Malformed generation-bound score state.');
-        }
-        $fields = [];
-        $values = array_values($result);
-        for ($index = 0; $index + 1 < count($values); $index += 2) {
-            if (! is_scalar($values[$index]) || ! is_scalar($values[$index + 1])) {
-                throw new RateLimiterException('Malformed generation-bound score state.');
-            }
-            $fields[(string) $values[$index]] = (string) $values[$index + 1];
-        }
-        if (! isset($fields['value'], $fields['updatedAt'])) {
-            throw new RateLimiterException('Malformed generation-bound score state.');
-        }
-        $ttl = $this->integerResult($this->redis->execute(['TTL', $this->key('score', $logicalKey)]), 'score TTL');
-        $now = time();
-        $expires = isset($fields['expiresAt']) ? (int) $fields['expiresAt'] : $now + $ttl;
-        $generation = isset($fields['generation']) ? (int) $fields['generation'] : null;
-        $reentry = isset($fields['reentryId'], $fields['reentryValidUntil']) && (int) $fields['reentryValidUntil'] > $now
-            ? new PostPunishmentReentryStateDTO($fields['reentryId'], (int) $fields['reentryValidUntil']) : null;
-        return new GenerationBoundScoreStateDTO($source, (int) $fields['value'], (int) $fields['updatedAt'], $expires, $generation, $reentry);
     }
 
     /**
@@ -906,6 +973,14 @@ LUA;
         }
         if (is_float($value) && is_finite($value) && floor($value) === $value) {
             return (int) $value;
+        }
+        throw new RateLimiterException('Malformed ' . $label . '.');
+    }
+
+    private function stringValue(mixed $value, string $label): string
+    {
+        if (is_string($value) || is_int($value) || is_float($value)) {
+            return (string) $value;
         }
         throw new RateLimiterException('Malformed ' . $label . '.');
     }

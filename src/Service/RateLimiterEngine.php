@@ -64,7 +64,8 @@ class RateLimiterEngine implements RateLimiterRuntimeInterface
             if ($thresholds->k4->l1 <= 0 || $thresholds->k4->l1 > $thresholds->k4->l2 || $thresholds->k4->l2 > $thresholds->k4->l3) {
                 throw new RateLimiterException("Policy {$policy->getName()} invalid: K4 thresholds must be positive and monotonic.");
             }
-            if ($policy->getBudgetConfig() === null) {
+            if (in_array($policy->getName(), ['login_protection', 'otp_protection'], true)
+                && $policy->getBudgetConfig() === null) {
                 throw new RateLimiterException("Policy {$policy->getName()} invalid: Missing required BudgetConfig.");
             }
         }

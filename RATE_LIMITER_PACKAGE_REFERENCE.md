@@ -246,6 +246,17 @@ L2+ persistence attempt fails explicitly before any block write. The additive
 `readDecayPauseState()` operation is read-only; Current and Previous form one
 logical history, with Current writable and Previous read-only.
 
+`PunishmentLifecycleStoreInterface` is the DEC-007 capability for generation-bound
+authentication K4 state. Its Redis implementation uses one atomic lifecycle
+publication primitive for the score generation, L2+ block, and exact score-expiry
+evidence; coherent reads use Redis server time and suppress evidence while the
+selected K4 block is active. Public runtime consumers receive metadata only from
+an unblocked `checkOnly` ALLOW and claim it through an independent Current-only
+marker. A replay is an expected false result and does not consume evidence.
+Generation conflicts are retried at most three times before the transient HARD
+concurrency failure is returned. API Heavy does not opt in; custom policies must
+explicitly implement the validated opt-in marker.
+
 The independent operational path is:
 
     RateLimitContextDTO + BlockPolicyInterface

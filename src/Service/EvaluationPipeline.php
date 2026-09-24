@@ -57,6 +57,9 @@ class EvaluationPipeline
     private string $secret;
     private ?string $previousSecret;
 
+    /** @var array<string, int> Current K4 keys with qualifying score generations. */
+    private array $lifecycleEligibleKeys = [];
+
     /**
      * @param RateLimitStoreInterface $store Score and block persistence boundary.
      * @param CorrelationStoreInterface $correlationStore Correlation persistence boundary.
@@ -134,6 +137,7 @@ class EvaluationPipeline
         RateLimitCommand $request,
         DeviceIdentityDTO $device,
     ): RateLimitResultDTO {
+        $this->lifecycleEligibleKeys = [];
         // 1. Build keys for the current generation, then the one previous
         // generation when either generation component is present.
         $realKeysV2 = $this->buildKeys($context, $device->normalizedUa, $device->fingerprintHash, $policy->getName(), $this->secret);
@@ -206,15 +210,14 @@ class EvaluationPipeline
         $decayedScores = $this->applyDecay($rawScores, $effectiveKeysV2, $effectiveKeysV1);
 
         $servedReentry = null;
-        if ($request->isPreCheck && $policy instanceof PostPunishmentReentryPolicyInterface
+        if ($policy instanceof PostPunishmentReentryPolicyInterface
             && $this->store instanceof PunishmentLifecycleStoreInterface
             && ($k4 = $realKeysV2['k4'] ?? null) !== null) {
             $state = $this->store->readGenerationBoundScoreState($k4, $realKeysV1['k4'] ?? null);
             $now = $this->clock->now()->getTimestamp();
             if ($state?->generation !== null && $state->postPunishmentReentry !== null
                 && $state->postPunishmentReentry->validUntil > $now
-                && $state->expiresAt > $now
-                && $this->store->checkBlock($k4) === null) {
+                && $state->expiresAt > $now) {
                 $servedReentry = new PostPunishmentReentryMetadataDTO(
                     $state->postPunishmentReentry->id,
                     $state->postPunishmentReentry->validUntil,
@@ -395,7 +398,7 @@ class EvaluationPipeline
             );
         }
 
-        if ($servedReentry !== null && $final->decision === RateLimitResultDTO::DECISION_ALLOW) {
+        if ($servedReentry !== null && $request->isPreCheck && $final->decision === RateLimitResultDTO::DECISION_ALLOW) {
             return new RateLimitResultDTO(
                 $final->decision,
                 $final->blockLevel,
@@ -1534,6 +1537,7 @@ class EvaluationPipeline
                 $netChange = ($decayed + $delta) - $baseValue;
 
                 $newScore = null;
+                $mutation = null;
                 if ($keyType === 'k4' && $policy instanceof PostPunishmentReentryPolicyInterface
                     && $this->store instanceof PunishmentLifecycleStoreInterface) {
                     for ($attempt = 0; $attempt < 3; $attempt++) {
@@ -1554,6 +1558,11 @@ class EvaluationPipeline
                     $newScore = $this->store->increment($key, 86400, (int) $netChange);
                 }
                 $actualScoreLevel = $this->determineLevel($newScore, $keyType, $policy);
+                if ($keyType === 'k4' && $policy instanceof PostPunishmentReentryPolicyInterface
+                    && $this->store instanceof PunishmentLifecycleStoreInterface
+                    && $actualScoreLevel >= 2 && $mutation?->state?->generation !== null) {
+                    $this->lifecycleEligibleKeys[$key] = $mutation->state->generation;
+                }
                 $level = $actualScoreLevel;
 
                 $watchEscalated = false;
@@ -1873,13 +1882,14 @@ class EvaluationPipeline
         foreach ($blocks as $key => $block) {
             if ($policy instanceof PostPunishmentReentryPolicyInterface
                 && $this->store instanceof PunishmentLifecycleStoreInterface
-                && $block['level'] >= 2) {
-                $state = $this->store->readGenerationBoundScoreState($key, $block['previousKey']);
-                if ($state?->generation !== null) {
+                && $block['level'] >= 2
+                && isset($this->lifecycleEligibleKeys[$key])) {
+                $applied = false;
+                for ($attempt = 0; $attempt < 3; $attempt++) {
                     $transition = $this->store->blockWithPunishmentLifecycleTracking(
                         $key,
                         $block['previousKey'],
-                        $state->generation,
+                        $this->lifecycleEligibleKeys[$key],
                         bin2hex(random_bytes(16)),
                         $block['level'],
                         $block['duration'],
@@ -1888,25 +1898,15 @@ class EvaluationPipeline
                         self::DECAY_PAUSE_SECONDS,
                         self::PAUSE_HISTORY_RETENTION_SECONDS,
                     );
-                    if (! $transition->applied) {
-                        throw new RateLimitConcurrencyException('K4 punishment publication observed a stale generation.');
+                    if ($transition->applied) {
+                        $applied = true;
+                        break;
                     }
-                    // The lifecycle primitive owns Redis-time validity. Keep
-                    // DEC-003's package clock view synchronized for adapters
-                    // whose legacy cycle primitive accepts an explicit now.
-                    $this->store->blockWithCycleTracking(
-                        $key,
-                        $block['previousKey'],
-                        $block['level'],
-                        $block['duration'],
-                        $this->clock->now()->getTimestamp(),
-                        self::CYCLE_WINDOW_SECONDS,
-                        self::CYCLE_THRESHOLD,
-                        self::DECAY_PAUSE_SECONDS,
-                        self::PAUSE_HISTORY_RETENTION_SECONDS,
-                    );
-                    continue;
                 }
+                if (! $applied) {
+                    throw new RateLimitConcurrencyException('K4 punishment publication conflict budget exhausted.');
+                }
+                continue;
             }
             if ($block['level'] >= 2) {
                 if ($cycleStore === null) {

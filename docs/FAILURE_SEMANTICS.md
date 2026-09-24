@@ -376,3 +376,14 @@ The RateLimiter does NOT guarantee:
 
 **This document is authoritative.
 Failure semantics MUST NOT be altered without explicit versioning and security approval.**
+
+## 10.1 Generation-Bound Lifecycle Failures
+
+Generation conflicts during L2+ publication retry at most three times; exhaustion
+returns the Login/OTP transient HARD failure with
+`RateLimitConcurrencyException` provenance. A false one-shot claim is an
+expected non-error result: it does not consume evidence, create a backend
+failure, or trip the circuit. Missing lifecycle capability, malformed state,
+and atomic Redis failures are explicit integration failures and must not fall
+back to non-atomic publication. Stale, mismatched, expired, or block-suppressed
+evidence is treated as absent.

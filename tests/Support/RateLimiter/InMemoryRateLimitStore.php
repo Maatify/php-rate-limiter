@@ -39,6 +39,9 @@ class InMemoryRateLimitStore implements BudgetSeedStoreInterface, PunishmentLife
     /** @var array<string, array{generation: int, lifecycle: ?PostPunishmentReentryStateDTO}> */
     private array $generation = [];
 
+    /** @var array<string, string> */
+    private array $claimMarkers = [];
+
     public function __construct(private readonly ClockInterface $clock) {}
 
     public function increment(string $key, int $ttlSeconds, int $amount = 1): int
@@ -164,7 +167,11 @@ class InMemoryRateLimitStore implements BudgetSeedStoreInterface, PunishmentLife
             return null;
         }
         $generation = $this->generation[$key]['generation'] ?? null;
-        $lifecycle = $generation === null ? null : $this->generation[$key]['lifecycle'];
+        $activeBlock = $this->checkBlock($currentKey);
+        if ($activeBlock === null && $previousKey !== null) {
+            $activeBlock = $this->checkBlock($previousKey);
+        }
+        $lifecycle = $activeBlock === null && $generation !== null ? $this->generation[$key]['lifecycle'] : null;
         return new GenerationBoundScoreStateDTO($source, $this->data[$key]['value'], $this->data[$key]['updatedAt'], $this->data[$key]['expiresAt'], $generation, $lifecycle);
     }
 
@@ -179,6 +186,7 @@ class InMemoryRateLimitStore implements BudgetSeedStoreInterface, PunishmentLife
         $expires = $observed?->source === GenerationBoundScoreStateDTO::SOURCE_CURRENT ? $observed->expiresAt : $now + $ttlSeconds;
         $this->data[$currentKey] = ['value' => $newValue, 'updatedAt' => $now, 'expiresAt' => $expires];
         $this->generation[$currentKey] = ['generation' => $generation, 'lifecycle' => null];
+        unset($this->claimMarkers[$currentKey]);
         return new GenerationBoundScoreMutationDTO(true, new GenerationBoundScoreStateDTO(GenerationBoundScoreStateDTO::SOURCE_CURRENT, $newValue, $now, $expires, $generation));
     }
 
@@ -191,7 +199,7 @@ class InMemoryRateLimitStore implements BudgetSeedStoreInterface, PunishmentLife
         $cycle = $this->blockWithCycleTracking($currentKey, $previousKey, $level, $durationSeconds, $this->clock->now()->getTimestamp(), $cycleWindowSeconds, $cycleThreshold, $pauseSeconds, $pauseHistoryRetentionSeconds);
         $now = $this->clock->now()->getTimestamp();
         $id = preg_match('/\A[a-f0-9]{32}\z/D', $proposedLifecycleId) === 1 ? $proposedLifecycleId : bin2hex(random_bytes(16));
-        $lifecycle = new PostPunishmentReentryStateDTO($id, min($state->expiresAt, $now + $durationSeconds));
+        $lifecycle = new PostPunishmentReentryStateDTO($id, $state->expiresAt);
         $this->generation[$currentKey]['lifecycle'] = $lifecycle;
         return new PunishmentLifecycleTransitionDTO(true, $cycle, new BlockStateDTO($level, $now + $durationSeconds), $lifecycle);
     }
@@ -208,7 +216,10 @@ class InMemoryRateLimitStore implements BudgetSeedStoreInterface, PunishmentLife
         if ($state?->postPunishmentReentry?->id !== $lifecycleId || $state->postPunishmentReentry->validUntil <= $this->clock->now()->getTimestamp()) {
             return false;
         }
-        $this->generation[$currentKey]['lifecycle'] = null;
+        if (isset($this->claimMarkers[$currentKey])) {
+            return false;
+        }
+        $this->claimMarkers[$currentKey] = $lifecycleId;
         return true;
     }
 

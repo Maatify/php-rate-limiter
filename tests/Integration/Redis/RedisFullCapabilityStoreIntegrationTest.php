@@ -88,6 +88,41 @@ final class RedisFullCapabilityStoreIntegrationTest extends TestCase
         self::assertSame(1, $this->store->getWatchFlag('watch-current'));
     }
 
+    public function testGenerationBoundLifecycleIsAtomicAndClaimDoesNotConsumeEvidence(): void
+    {
+        $mutation = $this->store->mutateGenerationBoundScore('lifecycle-current', null, null, 600, 8);
+        self::assertTrue($mutation->applied);
+        self::assertNotNull($mutation->state);
+        self::assertSame(1, $mutation->state->generation);
+
+        $id = str_repeat('a', 32);
+        $transition = $this->store->blockWithPunishmentLifecycleTracking(
+            'lifecycle-current',
+            null,
+            1,
+            $id,
+            2,
+            60,
+            21600,
+            2,
+            600,
+            86400,
+        );
+        self::assertTrue($transition->applied);
+        self::assertNotNull($transition->postPunishmentReentry);
+        self::assertSame($id, $transition->postPunishmentReentry->id);
+
+        $duringBlock = $this->store->readGenerationBoundScoreState('lifecycle-current', null);
+        self::assertNotNull($duringBlock);
+        self::assertNull($duringBlock->postPunishmentReentry);
+
+        self::assertFalse($this->store->claimPostPunishmentReentry('lifecycle-current', null, $id));
+        $this->executor->execute(['DEL', 'maatify:rate-limiter:v1:' . hash('sha256', $this->namespace) . ':block:' . hash('sha256', 'lifecycle-current')]);
+        self::assertTrue($this->store->claimPostPunishmentReentry('lifecycle-current', null, $id));
+        self::assertFalse($this->store->claimPostPunishmentReentry('lifecycle-current', null, $id));
+        self::assertNotNull($this->store->readGenerationBoundScoreState('lifecycle-current', null)?->postPunishmentReentry);
+    }
+
     public function testPublicBuilderWorkflowUsesTheOfficialRedisAggregateStore(): void
     {
         $clock = new FixedClock('2025-01-01 12:00:00');
