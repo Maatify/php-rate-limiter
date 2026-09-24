@@ -11,8 +11,11 @@ use Maatify\RateLimiter\Command\RateLimitCommand;
 use Maatify\RateLimiter\Config\RateLimiterConfig;
 use Maatify\RateLimiter\DTO\RateLimitContextDTO;
 use Maatify\RateLimiter\DTO\RateLimitResultDTO;
+use Maatify\RateLimiter\DTO\DeviceIdentityDTO;
 use Maatify\RateLimiter\Repository\Redis\CallableRedisCommandExecutor;
 use Maatify\RateLimiter\Repository\Redis\RedisFullCapabilityStore;
+use Maatify\RateLimiter\Service\DeviceIdentityResolver;
+use Maatify\RateLimiter\Service\DeviceIdentityResolverInterface;
 
 require __DIR__ . '/vendor/autoload.php';
 
@@ -51,6 +54,76 @@ function redisKeys(mixed $redis): array
     sort($keys);
 
     return $keys;
+}
+
+/** @param list<array<int, int|string|float>> $commands @return list<array{command:string, numkeys:int, keys:list<string>}> */
+function recordedEvalAccesses(array $commands): array
+{
+    $accesses = [];
+    foreach ($commands as $command) {
+        if (strtoupper((string) ($command[0] ?? '')) !== 'EVAL' || ! isset($command[2])) {
+            continue;
+        }
+        $numKeys = (int) $command[2];
+        if ($numKeys < 0) {
+            continue;
+        }
+        $keys = array_map('strval', array_slice($command, 3, $numKeys));
+        $accesses[] = ['command' => 'EVAL', 'numkeys' => $numKeys, 'keys' => $keys];
+    }
+
+    return $accesses;
+}
+
+/** @param list<array{command:string, numkeys:int, keys:list<string>}> $accesses @return list<string> */
+function recordedRedisKeys(array $accesses): array
+{
+    $keys = [];
+    foreach ($accesses as $access) {
+        foreach ($access['keys'] as $key) {
+            $keys[$key] = true;
+        }
+    }
+
+    return array_keys($keys);
+}
+
+function diagnosticResponseShape(mixed $response): array
+{
+    if (is_array($response)) {
+        return ['type' => 'array', 'count' => count($response)];
+    }
+
+    return ['type' => get_debug_type($response)];
+}
+
+/** @param list<array<string,mixed>> $trace @return array{storeMethod:?string, pipelineCaller:?string} */
+function diagnosticCallers(array $trace): array
+{
+    $storeIndex = null;
+    $storeMethod = null;
+    $helperMethods = ['eval', 'execute', 'tuple', 'integerValue', 'key', 'hashKey'];
+    foreach ($trace as $index => $frame) {
+        $class = (string) ($frame['class'] ?? '');
+        $function = (string) ($frame['function'] ?? '');
+        if (str_contains($class, 'RedisFullCapabilityStore') && ! in_array($function, $helperMethods, true)) {
+            $storeIndex = $index;
+            $storeMethod = $class . '::' . $function;
+            break;
+        }
+    }
+    $pipelineCaller = null;
+    if ($storeIndex !== null) {
+        foreach (array_slice($trace, $storeIndex + 1) as $frame) {
+            $class = (string) ($frame['class'] ?? '');
+            if (str_contains($class, 'EvaluationPipeline')) {
+                $pipelineCaller = $class . '::' . (string) ($frame['function'] ?? '');
+                break;
+            }
+        }
+    }
+
+    return ['storeMethod' => $storeMethod, 'pipelineCaller' => $pipelineCaller];
 }
 
 /** @param list<string> $before @param list<string> $after @return list<string> */
@@ -110,6 +183,23 @@ function findScoreStates(array $snapshot): array
         }
         $state = redisHashMap($entry['value'] ?? null);
         if (isset($state['value'], $state['updatedAt']) && ctype_digit($state['value']) && ctype_digit($state['updatedAt'])) {
+            $states[] = ['key' => $key, 'state' => $state];
+        }
+    }
+
+    return $states;
+}
+
+/** @param array<string, array{type:string, pttl:int, value:mixed}> $snapshot @return list<array{key:string, state:array<string,string>}> */
+function findBlockStates(array $snapshot): array
+{
+    $states = [];
+    foreach ($snapshot as $key => $entry) {
+        if (($entry['type'] ?? null) !== 'hash') {
+            continue;
+        }
+        $state = redisHashMap($entry['value'] ?? null);
+        if (isset($state['level'], $state['expiresAt']) && ctype_digit($state['level']) && ctype_digit($state['expiresAt'])) {
             $states[] = ['key' => $key, 'state' => $state];
         }
     }
@@ -188,7 +278,35 @@ foreach ([':not-an-integer' . "\r\n", '$not-a-length' . "\r\n", '*not-an-array-l
     fclose($pair[1]);
     requireCondition($malformed, 'Malformed RESP numeric field was accepted.');
 }
-$executor = new CallableRedisCommandExecutor(static fn(array $command): mixed => $raw->execute($command));
+$recordRedisCommands = false;
+$recordedRedisCommands = [];
+$recordedSuccessfulRedisCommands = [];
+$recordedEvalDiagnostics = [];
+$executor = new CallableRedisCommandExecutor(static function (array $command) use ($raw, &$recordRedisCommands, &$recordedRedisCommands, &$recordedSuccessfulRedisCommands, &$recordedEvalDiagnostics): mixed {
+    $isEval = strtoupper((string) ($command[0] ?? '')) === 'EVAL';
+    $diagnosticIndex = null;
+    if ($recordRedisCommands && $isEval) {
+        $diagnosticIndex = count($recordedEvalDiagnostics);
+        $recordedEvalDiagnostics[] = ['ordinal' => $diagnosticIndex + 1, 'callers' => diagnosticCallers(debug_backtrace(DEBUG_BACKTRACE_IGNORE_ARGS)), 'responseShape' => null];
+    }
+    if ($recordRedisCommands) {
+        $recordedRedisCommands[] = $command;
+    }
+
+    try {
+        $result = $raw->execute($command);
+    } catch (Throwable $exception) {
+        throw $exception;
+    }
+    if ($recordRedisCommands) {
+        $recordedSuccessfulRedisCommands[] = $command;
+    }
+    if ($diagnosticIndex !== null) {
+        $recordedEvalDiagnostics[$diagnosticIndex]['responseShape'] = diagnosticResponseShape($result);
+    }
+
+    return $result;
+});
 $store = new RedisFullCapabilityStore($executor, 'consumer-verification');
 $clock = new FixedClock(new DateTimeImmutable('now', new DateTimeZone('UTC')));
 $signals = new RecordingFailureSignalEmitter();
@@ -307,17 +425,22 @@ foreach (['outer-only' => ['old-outer', 'stable-fingerprint', 'new-outer', 'stab
     $previousRotationKeys = array_values(array_intersect($scenarioOldKeys, $previousOnlyKeys));
     $previousRotationState = redisStateSnapshot($raw, $previousRotationKeys);
     $previousScoreStates = findScoreStates($previousRotationState);
-    $previousScoreValue = 0;
+    $previousK5Score = null;
     foreach ($previousScoreStates as $scoreState) {
-        $previousScoreValue = max($previousScoreValue, (int) $scoreState['state']['value']);
+        if ((int) $scoreState['state']['value'] === 2) {
+            $previousK5Score = $scoreState;
+            break;
+        }
     }
-    requireCondition($previousScoreValue > 0, $name . ' old public failure did not persist the expected first K5 contribution.');
+    requireCondition($previousK5Score !== null, $name . ' old public failure did not persist the expected K5 contribution of 2.');
     $rotated = RateLimiterBuilder::fromFullCapabilityStore(new RateLimiterConfig($newOuter, $newFingerprint, 'prod', $oldOuter, $oldFingerprint), $store, $signals)->build();
     $rotationCases[$name] = resultShape($rotated->limit($probeContext, RateLimitCommand::recordFailure('login_protection')));
     requireCondition(count(array_intersect($currentOnlyKeys, redisKeys($raw))) > 0, $name . ' rotation did not create Current generation state.');
     $currentRotationState = redisStateSnapshot($raw, $currentOnlyKeys);
     $currentScoreValues = array_map(static fn(array $scoreState): int => (int) $scoreState['state']['value'], findScoreStates($currentRotationState));
-    requireCondition(in_array(2 * $previousScoreValue, $currentScoreValues, true), $name . ' Current score was not a continuation of Previous plus the rotated failure.');
+    requireCondition(in_array(4, $currentScoreValues, true), $name . ' Current K5 score was not a continuation from 2 to 4 after the rotated failure.');
+    $previousK5After = redisStateSnapshot($raw, [$previousK5Score['key']]);
+    requireReadOnlySnapshot([$previousK5Score['key'] => $previousRotationState[$previousK5Score['key']]], $previousK5After, $name . ' exact Previous K5 score state');
     requireReadOnlySnapshot($previousRotationState, redisStateSnapshot($raw, $previousRotationKeys), $name . ' generation-distinct Previous state');
 }
 
@@ -389,11 +512,87 @@ requireReadOnlySnapshot($secondCycleState, redisStateSnapshot($raw, $secondCycle
 $cycleClock->setNow($cycleClock->now()->modify('+300 seconds'));
 $pauseAfterPart = findPauseState(redisStateSnapshot($raw, $secondCycleKeys), $cycleClock->now()->getTimestamp());
 requireCondition($pauseAfterPart !== null && $pauseAfterPart['remaining'] < $pause['remaining'] && $pauseAfterPart['remaining'] > 0, 'Active pause did not decrease without renewal.');
-$cycleClock->setNow($cycleClock->now()->modify('+301 seconds'));
-$postBlock = $cycleRotated->limit($cycleContext, RateLimitCommand::checkOnly('login_protection'));
-requireCondition($postBlock->decision === RateLimitResultDTO::DECISION_HARD_BLOCK, 'Public check did not retain the pause-derived hard block after the persisted L2 expiry.');
-$pauseAfterExpiry = findPauseState(redisStateSnapshot($raw, $secondCycleKeys), $cycleClock->now()->getTimestamp());
-requireCondition($pauseAfterExpiry !== null && $pauseAfterExpiry['remaining'] < $pauseAfterPart['remaining'], 'Pause remaining time did not continue decreasing after hard-block expiry.');
+$secondCycleState = redisStateSnapshot($raw, $secondCycleKeys);
+$currentK4Scores = array_values(array_filter(findScoreStates($secondCycleState), static fn(array $scoreState): bool => (int) $scoreState['state']['value'] === 11));
+requireCondition(count($currentK4Scores) === 1, 'Current K4 score state was not uniquely observed at value 11.');
+$currentL2Blocks = array_values(array_filter(findBlockStates($secondCycleState), static fn(array $blockState): bool => (int) $blockState['state']['level'] >= 2));
+requireCondition(count($currentL2Blocks) > 0, 'Current L2+ block state was not observed generically.');
+$observedBlockExpiresAt = (int) $currentL2Blocks[0]['state']['expiresAt'];
+$pauseFinish = $pause['finish'];
+$cycleClock->setNow(new DateTimeImmutable('@' . ($observedBlockExpiresAt + 1)));
+requireCondition($cycleClock->now()->getTimestamp() < $pauseFinish, 'Observed block expiry does not precede pause finish; fixture cannot prove retained pause contribution.');
+$noFingerprintResolver = new class implements DeviceIdentityResolverInterface {
+    public function resolve(RateLimitContextDTO $context): DeviceIdentityDTO
+    {
+        return new DeviceIdentityDTO(
+            null,
+            'LOW',
+            false,
+            false,
+            DeviceIdentityResolver::normalizeUserAgent($context->ua),
+            false,
+            null,
+        );
+    }
+};
+$pauseVerifier = RateLimiterBuilder::fromFullCapabilityStore(new RateLimiterConfig('cycle-new-key', 'cycle-new-fingerprint', 'prod', 'cycle-key', 'cycle-fingerprint'), $store, $signals)
+    ->withClock($cycleClock)
+    ->withDeviceIdentityResolver($noFingerprintResolver)
+    ->build();
+$recordedRedisCommands = [];
+$recordRedisCommands = true;
+$postBlock = $pauseVerifier->limit($cycleContext, RateLimitCommand::checkOnly('login_protection'));
+$recordRedisCommands = false;
+$recordedEvalAccesses = recordedEvalAccesses($recordedRedisCommands);
+$recordedCommandSummary = static function (array $commands): array {
+    return array_map(static function (array $command): array {
+        $name = strtoupper((string) ($command[0] ?? ''));
+        if ($name === 'EVAL' && isset($command[2])) {
+            $numKeys = (int) $command[2];
+            return ['command' => $name, 'numkeys' => $numKeys, 'keys' => array_map('strval', array_slice($command, 3, max(0, $numKeys)))];
+        }
+
+        return ['command' => $name, 'argumentCount' => max(0, count($command) - 1)];
+    }, $commands);
+};
+$attemptedCommandSummary = $recordedCommandSummary($recordedRedisCommands);
+$successfulCommandSummary = $recordedCommandSummary($recordedSuccessfulRedisCommands);
+$lastEvalDiagnostics = array_slice($recordedEvalDiagnostics, -5);
+requireCondition($postBlock->failureMode === 'NORMAL', 'Public pause oracle call entered fallback: ' . json_encode(resultShape($postBlock), JSON_THROW_ON_ERROR) . '; attemptedCount=' . count($attemptedCommandSummary) . '; successfulCount=' . count($successfulCommandSummary) . '; commandNames=' . implode(',', array_map(static fn(array $command): string => (string) $command['command'], $attemptedCommandSummary)) . '; evalCount=' . count($recordedEvalAccesses) . '; lastAttempted=' . json_encode($attemptedCommandSummary[array_key_last($attemptedCommandSummary)] ?? null, JSON_THROW_ON_ERROR) . '; lastSuccessful=' . json_encode($successfulCommandSummary[array_key_last($successfulCommandSummary)] ?? null, JSON_THROW_ON_ERROR) . '; lastFiveEvals=' . json_encode($lastEvalDiagnostics, JSON_THROW_ON_ERROR));
+$recordedKeys = recordedRedisKeys($recordedEvalAccesses);
+$accessedScenarioKeys = array_values(array_intersect($recordedKeys, $secondCycleKeys));
+$accessedState = redisStateSnapshot($raw, $accessedScenarioKeys);
+$accessedK4Scores = array_values(array_filter(findScoreStates($accessedState), static fn(array $scoreState): bool => (int) $scoreState['state']['value'] === 11));
+$accessedL2Blocks = array_values(array_filter(findBlockStates($accessedState), static fn(array $blockState): bool => (int) $blockState['state']['level'] >= 2));
+$accessedPause = findPauseState($accessedState, $cycleClock->now()->getTimestamp());
+requireCondition(count($accessedK4Scores) === 1, 'Public pause oracle call did not access the exact observed K4 score state.');
+requireCondition(count($accessedL2Blocks) > 0, 'Public pause oracle call did not access the observed L2+ block state.');
+requireCondition($accessedPause !== null, 'Public pause oracle call did not access the observed pause history state.');
+$oracleNow = $cycleClock->now()->getTimestamp();
+$currentK4Score = $accessedK4Scores[0]['state'];
+$currentL2Block = $accessedL2Blocks[0]['state'];
+$pause = $accessedPause;
+$pauseFinish = $pause['finish'];
+$scoreUpdatedAt = (int) $currentK4Score['updatedAt'];
+$scoreValue = (int) $currentK4Score['value'];
+$pauseOverlapStart = max($scoreUpdatedAt, $pause['start']);
+$pauseOverlapFinish = min($oracleNow, $pauseFinish);
+$elapsedPaused = $pauseOverlapFinish > $pauseOverlapStart ? $pauseOverlapFinish - $pauseOverlapStart : 0;
+$effectiveElapsed = max(0, ($oracleNow - $scoreUpdatedAt) - $elapsedPaused);
+$completedIntervals = intdiv($effectiveElapsed, 600);
+$pointsToLose = $scoreValue - 8 + 1;
+$remainingWithPause = $pointsToLose - $completedIntervals;
+$unpausedElapsed = max(0, $oracleNow - $scoreUpdatedAt);
+$remainingWithoutPause = $pointsToLose - intdiv($unpausedElapsed, 600);
+$expectedWithPause = $remainingWithPause <= 0
+    ? 0
+    : (($remainingWithPause * 600) - ($effectiveElapsed % 600) + max(0, $pauseFinish - $oracleNow));
+$expectedWithoutPause = $remainingWithoutPause <= 0
+    ? 0
+    : (($remainingWithoutPause * 600) - ($unpausedElapsed % 600));
+requireCondition($postBlock->decision === RateLimitResultDTO::DECISION_HARD_BLOCK && ($postBlock->blockLevel ?? 0) >= 2, 'Public check did not produce score-derived L2+ after the observed persisted block expiry.');
+requireCondition($postBlock->retryAfter === $expectedWithPause, 'Public Retry-After did not match the accessed-state pause-aware oracle: observed ' . $postBlock->retryAfter . ', expected ' . $expectedWithPause . '; accesses=' . json_encode($recordedEvalAccesses, JSON_THROW_ON_ERROR) . '; accessedKeys=' . json_encode($accessedScenarioKeys, JSON_THROW_ON_ERROR) . '; score=' . json_encode($currentK4Score, JSON_THROW_ON_ERROR) . '; block=' . json_encode($currentL2Block, JSON_THROW_ON_ERROR) . '; pause=' . json_encode($pause, JSON_THROW_ON_ERROR) . '; now=' . $oracleNow . '; expectedWithoutPause=' . $expectedWithoutPause . '.');
+requireCondition($expectedWithPause > $expectedWithoutPause && $expectedWithPause - $expectedWithoutPause === 600, 'Observed pause did not contribute exactly 600 seconds over the same score state without pause accounting.');
 requireReadOnlySnapshot($secondCycleState, redisStateSnapshot($raw, $secondCycleKeys), 'Pause state after active checks');
 
 $failureRaw = new RespRedisCommandExecutor($host, (int) $port);
