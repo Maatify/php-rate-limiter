@@ -100,6 +100,47 @@ function findBudgetState(mixed $redis, array $keys, ?int $expectedCount = null):
     return null;
 }
 
+/** @param array<string, array{type:string, pttl:int, value:mixed}> $snapshot @return list<array{key:string, state:array<string,string>}> */
+function findScoreStates(array $snapshot): array
+{
+    $states = [];
+    foreach ($snapshot as $key => $entry) {
+        if (($entry['type'] ?? null) !== 'hash') {
+            continue;
+        }
+        $state = redisHashMap($entry['value'] ?? null);
+        if (isset($state['value'], $state['updatedAt']) && ctype_digit($state['value']) && ctype_digit($state['updatedAt'])) {
+            $states[] = ['key' => $key, 'state' => $state];
+        }
+    }
+
+    return $states;
+}
+
+/** @param array<string, array{type:string, pttl:int, value:mixed}> $snapshot @return array{key:string, start:int, finish:int, remaining:int}|null */
+function findPauseState(array $snapshot, int $now): ?array
+{
+    foreach ($snapshot as $key => $entry) {
+        if (($entry['type'] ?? null) !== 'zset' || ! is_array($entry['value'] ?? null)) {
+            continue;
+        }
+        $members = $entry['value'];
+        for ($index = 0; $index + 1 < count($members); $index += 2) {
+            $member = (string) $members[$index];
+            if (! preg_match('/^(\d+):(\d+)$/', $member, $matches)) {
+                continue;
+            }
+            $start = (int) $matches[1];
+            $finish = (int) $matches[2];
+            if ($finish >= $start) {
+                return ['key' => $key, 'start' => $start, 'finish' => $finish, 'remaining' => max(0, $finish - $now)];
+            }
+        }
+    }
+
+    return null;
+}
+
 function requireReadOnlySnapshot(array $before, array $after, string $label): void
 {
     foreach ($before as $key => $state) {
@@ -171,7 +212,7 @@ $rotationContext = static fn(string $scope): RateLimitContextDTO => new RateLimi
     '192.0.2.50',
     'Mozilla/5.0 consumer-verification-rotation',
     'consumer-rotation-' . $scope,
-    ['device' => 'rotation-device'],
+    ['device' => 'rotation-device', 'stable' => 'rotation-stable-fingerprint'],
     null,
     false,
     [],
@@ -265,9 +306,18 @@ foreach (['outer-only' => ['old-outer', 'stable-fingerprint', 'new-outer', 'stab
     $scenarioOldKeys = newlyCreatedRedisKeys($scenarioBefore, redisKeys($raw));
     $previousRotationKeys = array_values(array_intersect($scenarioOldKeys, $previousOnlyKeys));
     $previousRotationState = redisStateSnapshot($raw, $previousRotationKeys);
+    $previousScoreStates = findScoreStates($previousRotationState);
+    $previousScoreValue = 0;
+    foreach ($previousScoreStates as $scoreState) {
+        $previousScoreValue = max($previousScoreValue, (int) $scoreState['state']['value']);
+    }
+    requireCondition($previousScoreValue > 0, $name . ' old public failure did not persist the expected first K5 contribution.');
     $rotated = RateLimiterBuilder::fromFullCapabilityStore(new RateLimiterConfig($newOuter, $newFingerprint, 'prod', $oldOuter, $oldFingerprint), $store, $signals)->build();
     $rotationCases[$name] = resultShape($rotated->limit($probeContext, RateLimitCommand::recordFailure('login_protection')));
     requireCondition(count(array_intersect($currentOnlyKeys, redisKeys($raw))) > 0, $name . ' rotation did not create Current generation state.');
+    $currentRotationState = redisStateSnapshot($raw, $currentOnlyKeys);
+    $currentScoreValues = array_map(static fn(array $scoreState): int => (int) $scoreState['state']['value'], findScoreStates($currentRotationState));
+    requireCondition(in_array(2 * $previousScoreValue, $currentScoreValues, true), $name . ' Current score was not a continuation of Previous plus the rotated failure.');
     requireReadOnlySnapshot($previousRotationState, redisStateSnapshot($raw, $previousRotationKeys), $name . ' generation-distinct Previous state');
 }
 
@@ -318,9 +368,10 @@ $rotatedCycle = $cycleRotated->limit($cycleContext, RateLimitCommand::checkOnly(
 requireCondition($rotatedCycle->decision === RateLimitResultDTO::DECISION_HARD_BLOCK, 'Rotated cycle did not retain the previous hard block.');
 requireReadOnlySnapshot($firstCycleState, redisStateSnapshot($raw, $firstCycleKeys), 'Previous cycle state');
 $cycleClock->setNow($cycleClock->now()->modify('+601 seconds'));
+$secondCycleKeysBefore = redisKeys($raw);
 $secondCycle = null;
 for ($attempt = 1; $attempt <= 3; $attempt++) {
-    $candidate = $cycleLimiter->limit($cycleContext, RateLimitCommand::recordFailure('login_protection'));
+    $candidate = $cycleRotated->limit($cycleContext, RateLimitCommand::recordFailure('login_protection'));
     if ($candidate->decision === RateLimitResultDTO::DECISION_HARD_BLOCK) {
         $secondCycle = $candidate;
         break;
@@ -328,8 +379,22 @@ for ($attempt = 1; $attempt <= 3; $attempt++) {
 }
 requireCondition($secondCycle instanceof RateLimitResultDTO, 'Default login path did not produce the second hard-block cycle.');
 requireCondition(($secondCycle->retryAfter ?? 0) >= 600, 'Second hard-block cycle did not expose the retained pause behavior.');
-$secondCycleRepeat = $cycleLimiter->limit($cycleContext, RateLimitCommand::checkOnly('login_protection'));
+$secondCycleKeys = newlyCreatedRedisKeys($secondCycleKeysBefore, redisKeys($raw));
+$secondCycleState = redisStateSnapshot($raw, $secondCycleKeys);
+$pause = findPauseState($secondCycleState, $cycleClock->now()->getTimestamp());
+requireCondition($pause !== null && $pause['finish'] - $pause['start'] === 600, 'Second hard-block cycle did not persist the exact fixed 600-second pause.');
+$secondCycleRepeat = $cycleRotated->limit($cycleContext, RateLimitCommand::checkOnly('login_protection'));
 requireCondition($secondCycleRepeat->decision === RateLimitResultDTO::DECISION_HARD_BLOCK, 'Active second cycle was not enforced by the public check path.');
+requireReadOnlySnapshot($secondCycleState, redisStateSnapshot($raw, $secondCycleKeys), 'Active second cycle');
+$cycleClock->setNow($cycleClock->now()->modify('+300 seconds'));
+$pauseAfterPart = findPauseState(redisStateSnapshot($raw, $secondCycleKeys), $cycleClock->now()->getTimestamp());
+requireCondition($pauseAfterPart !== null && $pauseAfterPart['remaining'] < $pause['remaining'] && $pauseAfterPart['remaining'] > 0, 'Active pause did not decrease without renewal.');
+$cycleClock->setNow($cycleClock->now()->modify('+301 seconds'));
+$postBlock = $cycleRotated->limit($cycleContext, RateLimitCommand::checkOnly('login_protection'));
+requireCondition($postBlock->decision === RateLimitResultDTO::DECISION_HARD_BLOCK, 'Public check did not retain the pause-derived hard block after the persisted L2 expiry.');
+$pauseAfterExpiry = findPauseState(redisStateSnapshot($raw, $secondCycleKeys), $cycleClock->now()->getTimestamp());
+requireCondition($pauseAfterExpiry !== null && $pauseAfterExpiry['remaining'] < $pauseAfterPart['remaining'], 'Pause remaining time did not continue decreasing after hard-block expiry.');
+requireReadOnlySnapshot($secondCycleState, redisStateSnapshot($raw, $secondCycleKeys), 'Pause state after active checks');
 
 $failureRaw = new RespRedisCommandExecutor($host, (int) $port);
 $failureExecutor = new CallableRedisCommandExecutor(static function (array $command) use ($failureRaw): mixed {
