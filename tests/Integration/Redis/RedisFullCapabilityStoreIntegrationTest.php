@@ -81,7 +81,7 @@ final class RedisFullCapabilityStoreIntegrationTest extends TestCase
             'distinct-previous',
             'new-member',
             'unknown-previous-member',
-            60,
+            1,
         ));
         self::assertSame(1, $this->store->incrementWatchFlag('watch-previous', 60));
         self::assertSame(2, $this->store->incrementWatchFlagAcrossRotation('watch-current', 'watch-previous', 60));
@@ -102,7 +102,7 @@ final class RedisFullCapabilityStoreIntegrationTest extends TestCase
             1,
             $id,
             2,
-            60,
+            1,
             21600,
             2,
             600,
@@ -121,6 +121,97 @@ final class RedisFullCapabilityStoreIntegrationTest extends TestCase
         self::assertTrue($this->store->claimPostPunishmentReentry('lifecycle-current', null, $id));
         self::assertFalse($this->store->claimPostPunishmentReentry('lifecycle-current', null, $id));
         self::assertNotNull($this->store->readGenerationBoundScoreState('lifecycle-current', null)?->postPunishmentReentry);
+    }
+
+    public function testLifecycleCyclesUseRedisTimeExactlyOnceAndPauseIsNotRenewed(): void
+    {
+        $mutation = $this->store->mutateGenerationBoundScore('redis-time-cycle', null, null, 600, 8);
+        self::assertTrue($mutation->applied);
+
+        $first = $this->store->blockWithPunishmentLifecycleTracking(
+            'redis-time-cycle',
+            null,
+            1,
+            str_repeat('a', 32),
+            2,
+            60,
+            21600,
+            2,
+            600,
+            86400,
+        );
+        self::assertTrue($first->applied);
+        self::assertNotNull($first->cycle);
+        self::assertTrue($first->cycle->newCycle);
+        self::assertSame(1, $first->cycle->cycleCount);
+        self::assertFalse($first->cycle->pauseActivated);
+
+        $refresh = $this->store->blockWithPunishmentLifecycleTracking(
+            'redis-time-cycle',
+            null,
+            1,
+            str_repeat('b', 32),
+            2,
+            60,
+            21600,
+            2,
+            600,
+            86400,
+        );
+        self::assertTrue($refresh->applied);
+        self::assertNotNull($refresh->cycle);
+        self::assertFalse($refresh->cycle->newCycle);
+        self::assertSame(1, $refresh->cycle->cycleCount);
+        self::assertFalse($refresh->cycle->pauseActivated);
+
+        // End only the active block fixture; cycle and lifecycle evidence stay in Redis.
+        $fixtureNow = $this->redisTime();
+        $cycleKey = $this->key('cycle', 'redis-time-cycle');
+        $this->raw(['DEL', $cycleKey]);
+        $this->raw(['ZADD', $cycleKey, $fixtureNow - 1, (string) ($fixtureNow - 1)]);
+        $this->raw(['EXPIRE', $cycleKey, 21600]);
+        $this->raw(['DEL', $this->key('block', 'redis-time-cycle')]);
+        $before = $this->redisTime();
+        $second = $this->store->blockWithPunishmentLifecycleTracking(
+            'redis-time-cycle',
+            null,
+            1,
+            str_repeat('c', 32),
+            2,
+            60,
+            21600,
+            2,
+            600,
+            86400,
+        );
+        $after = $this->redisTime();
+
+        self::assertTrue($second->applied);
+        self::assertNotNull($second->cycle);
+        self::assertTrue($second->cycle->newCycle);
+        self::assertSame(2, $second->cycle->cycleCount);
+        self::assertTrue($second->cycle->pauseActivated);
+        self::assertGreaterThanOrEqual($before + 600, $second->cycle->pauseUntil);
+        self::assertLessThanOrEqual($after + 600, $second->cycle->pauseUntil);
+
+        $duplicate = $this->store->blockWithPunishmentLifecycleTracking(
+            'redis-time-cycle',
+            null,
+            1,
+            str_repeat('d', 32),
+            2,
+            60,
+            21600,
+            2,
+            600,
+            86400,
+        );
+        self::assertTrue($duplicate->applied);
+        self::assertNotNull($duplicate->cycle);
+        self::assertFalse($duplicate->cycle->newCycle);
+        self::assertSame(2, $duplicate->cycle->cycleCount);
+        self::assertFalse($duplicate->cycle->pauseActivated);
+        self::assertSame($second->cycle->pauseUntil, $duplicate->cycle->pauseUntil);
     }
 
     public function testGenerationMutationInvalidatesOldLifecycleIdentityAndFreshPublicationUsesNewIdentity(): void
@@ -1160,6 +1251,17 @@ final class RedisFullCapabilityStoreIntegrationTest extends TestCase
     private function raw(array $command): mixed
     {
         return $this->executor->execute($command);
+    }
+
+    private function redisTime(): int
+    {
+        $time = $this->raw(['TIME']);
+
+        self::assertIsArray($time);
+
+        $seconds = $time[0] ?? 0;
+
+        return is_int($seconds) || is_string($seconds) ? (int) $seconds : 0;
     }
 
     private function redisNow(): int

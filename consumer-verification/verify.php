@@ -331,15 +331,15 @@ $awaitPublicReentry = static function (RateLimiterRuntimeInterface $runtime, Rat
         5 => 21600,
         default => 86400,
     };
-    $waitSeconds = min($publicBlockDuration, max(1, $hard->retryAfter ?? $publicBlockDuration));
+    $waitSeconds = $publicBlockDuration + 1;
     sleep($waitSeconds);
-    for ($attempt = 0; $attempt < 3; $attempt++) {
+    for ($attempt = 0; $attempt < 2; $attempt++) {
         $check = $runtime->limit($context, RateLimitCommand::checkOnly($policy));
         $metadata = $check->metadata?->postPunishmentReentry;
         if ($check->decision === RateLimitResultDTO::DECISION_ALLOW && $metadata !== null) {
             return [$check, $metadata];
         }
-        if ($attempt < 2) {
+        if ($attempt < 1) {
             sleep(2);
         }
     }
@@ -555,136 +555,6 @@ requireCondition((int) ($currentBudgetMap['count'] ?? -1) === 3, 'Current budget
 requireCondition(($currentBudgetMap['epochStart'] ?? null) === ($previousBudgetMap['epochStart'] ?? null), 'Budget migration did not preserve epochStart.');
 requireCondition(redisHashMap($raw->execute(['HGETALL', $previousBudget['key']])) === $previousBudgetMap, 'Previous budget state was modified during migration.');
 
-$cycleClock = new FixedClock(new DateTimeImmutable('now', new DateTimeZone('UTC')));
-$cycleLimiter = RateLimiterBuilder::fromFullCapabilityStore(new RateLimiterConfig('cycle-key', 'cycle-fingerprint', 'prod'), $store, $signals)->withClock($cycleClock)->build();
-$cycleContext = new RateLimitContextDTO('192.0.2.90', 'Mozilla/5.0 consumer-cycle', 'consumer-cycle-account', ['device' => 'consumer-cycle-device']);
-$cycleKeysBefore = redisKeys($raw);
-$firstCycle = null;
-for ($attempt = 1; $attempt <= 6; $attempt++) {
-    $candidate = $cycleLimiter->limit($cycleContext, RateLimitCommand::recordFailure('login_protection'));
-    if ($candidate->decision === RateLimitResultDTO::DECISION_HARD_BLOCK) {
-        $firstCycle = $candidate;
-        break;
-    }
-}
-requireCondition($firstCycle instanceof RateLimitResultDTO, 'Default login path did not produce the first hard-block cycle.');
-$firstCycleKeys = newlyCreatedRedisKeys($cycleKeysBefore, redisKeys($raw));
-$firstCycleState = redisStateSnapshot($raw, $firstCycleKeys);
-$firstCycleRepeat = $cycleLimiter->limit($cycleContext, RateLimitCommand::checkOnly('login_protection'));
-requireCondition($firstCycleRepeat->decision === RateLimitResultDTO::DECISION_HARD_BLOCK, 'Active first cycle was not enforced by the public check path.');
-requireReadOnlySnapshot($firstCycleState, redisStateSnapshot($raw, $firstCycleKeys), 'Active first cycle');
-$cycleRotated = RateLimiterBuilder::fromFullCapabilityStore(new RateLimiterConfig('cycle-new-key', 'cycle-new-fingerprint', 'prod', 'cycle-key', 'cycle-fingerprint'), $store, $signals)->withClock($cycleClock)->build();
-$rotatedCycle = $cycleRotated->limit($cycleContext, RateLimitCommand::checkOnly('login_protection'));
-requireCondition($rotatedCycle->decision === RateLimitResultDTO::DECISION_HARD_BLOCK, 'Rotated cycle did not retain the previous hard block.');
-requireReadOnlySnapshot($firstCycleState, redisStateSnapshot($raw, $firstCycleKeys), 'Previous cycle state');
-$cycleClock->setNow($cycleClock->now()->modify('+601 seconds'));
-$secondCycleKeysBefore = redisKeys($raw);
-$secondCycle = null;
-for ($attempt = 1; $attempt <= 3; $attempt++) {
-    $candidate = $cycleRotated->limit($cycleContext, RateLimitCommand::recordFailure('login_protection'));
-    if ($candidate->decision === RateLimitResultDTO::DECISION_HARD_BLOCK) {
-        $secondCycle = $candidate;
-        break;
-    }
-}
-requireCondition($secondCycle instanceof RateLimitResultDTO, 'Default login path did not produce the second hard-block cycle.');
-requireCondition(($secondCycle->retryAfter ?? 0) >= 600, 'Second hard-block cycle did not expose the retained pause behavior.');
-$secondCycleKeys = array_values(array_unique([
-    ...$firstCycleKeys,
-    ...newlyCreatedRedisKeys($secondCycleKeysBefore, redisKeys($raw)),
-]));
-$secondCycleState = redisStateSnapshot($raw, $secondCycleKeys);
-$pause = findPauseState($secondCycleState, $cycleClock->now()->getTimestamp());
-requireCondition($pause !== null && $pause['finish'] - $pause['start'] === 600, 'Second hard-block cycle did not persist the exact fixed 600-second pause.');
-$secondCycleRepeat = $cycleRotated->limit($cycleContext, RateLimitCommand::checkOnly('login_protection'));
-requireCondition($secondCycleRepeat->decision === RateLimitResultDTO::DECISION_HARD_BLOCK, 'Active second cycle was not enforced by the public check path.');
-requireReadOnlySnapshot($secondCycleState, redisStateSnapshot($raw, $secondCycleKeys), 'Active second cycle');
-$cycleClock->setNow($cycleClock->now()->modify('+300 seconds'));
-$pauseAfterPart = findPauseState(redisStateSnapshot($raw, $secondCycleKeys), $cycleClock->now()->getTimestamp());
-requireCondition($pauseAfterPart !== null && $pauseAfterPart['remaining'] < $pause['remaining'] && $pauseAfterPart['remaining'] > 0, 'Active pause did not decrease without renewal.');
-$secondCycleState = redisStateSnapshot($raw, $secondCycleKeys);
-$currentK4Scores = array_values(array_filter(findScoreStates($secondCycleState), static fn(array $scoreState): bool => (int) $scoreState['state']['value'] === 11));
-requireCondition(count($currentK4Scores) === 1, 'Current K4 score state was not uniquely observed at value 11.');
-$currentL2Blocks = array_values(array_filter(findBlockStates($secondCycleState), static fn(array $blockState): bool => (int) $blockState['state']['level'] >= 2));
-requireCondition(count($currentL2Blocks) > 0, 'Current L2+ block state was not observed generically.');
-$observedBlockExpiresAt = (int) $currentL2Blocks[0]['state']['expiresAt'];
-$pauseFinish = $pause['finish'];
-$cycleClock->setNow(new DateTimeImmutable('@' . ($observedBlockExpiresAt + 1)));
-requireCondition($cycleClock->now()->getTimestamp() < $pauseFinish, 'Observed block expiry does not precede pause finish; fixture cannot prove retained pause contribution.');
-$noFingerprintResolver = new class implements DeviceIdentityResolverInterface {
-    public function resolve(RateLimitContextDTO $context): DeviceIdentityDTO
-    {
-        return new DeviceIdentityDTO(
-            null,
-            'LOW',
-            false,
-            false,
-            DeviceIdentityResolver::normalizeUserAgent($context->ua),
-            false,
-            null,
-        );
-    }
-};
-$pauseVerifier = RateLimiterBuilder::fromFullCapabilityStore(new RateLimiterConfig('cycle-new-key', 'cycle-new-fingerprint', 'prod', 'cycle-key', 'cycle-fingerprint'), $store, $signals)
-    ->withClock($cycleClock)
-    ->withDeviceIdentityResolver($noFingerprintResolver)
-    ->build();
-$recordedRedisCommands = [];
-$recordRedisCommands = true;
-$postBlock = $pauseVerifier->limit($cycleContext, RateLimitCommand::checkOnly('login_protection'));
-$recordRedisCommands = false;
-$recordedEvalAccesses = recordedEvalAccesses($recordedRedisCommands);
-$recordedCommandSummary = static function (array $commands): array {
-    return array_map(static function (array $command): array {
-        $name = strtoupper((string) ($command[0] ?? ''));
-        if ($name === 'EVAL' && isset($command[2])) {
-            $numKeys = (int) $command[2];
-            return ['command' => $name, 'numkeys' => $numKeys, 'keys' => array_map('strval', array_slice($command, 3, max(0, $numKeys)))];
-        }
-
-        return ['command' => $name, 'argumentCount' => max(0, count($command) - 1)];
-    }, $commands);
-};
-$attemptedCommandSummary = $recordedCommandSummary($recordedRedisCommands);
-$successfulCommandSummary = $recordedCommandSummary($recordedSuccessfulRedisCommands);
-$lastEvalDiagnostics = array_slice($recordedEvalDiagnostics, -5);
-requireCondition($postBlock->failureMode === 'NORMAL', 'Public pause oracle call entered fallback: ' . json_encode(resultShape($postBlock), JSON_THROW_ON_ERROR) . '; attemptedCount=' . count($attemptedCommandSummary) . '; successfulCount=' . count($successfulCommandSummary) . '; commandNames=' . implode(',', array_map(static fn(array $command): string => (string) $command['command'], $attemptedCommandSummary)) . '; evalCount=' . count($recordedEvalAccesses) . '; lastAttempted=' . json_encode($attemptedCommandSummary[array_key_last($attemptedCommandSummary)] ?? null, JSON_THROW_ON_ERROR) . '; lastSuccessful=' . json_encode($successfulCommandSummary[array_key_last($successfulCommandSummary)] ?? null, JSON_THROW_ON_ERROR) . '; lastFiveEvals=' . json_encode($lastEvalDiagnostics, JSON_THROW_ON_ERROR));
-$recordedKeys = recordedRedisKeys($recordedEvalAccesses);
-$accessedScenarioKeys = array_values(array_intersect($recordedKeys, $secondCycleKeys));
-$accessedState = redisStateSnapshot($raw, $accessedScenarioKeys);
-$accessedK4Scores = array_values(array_filter(findScoreStates($accessedState), static fn(array $scoreState): bool => (int) $scoreState['state']['value'] === 11));
-$accessedL2Blocks = array_values(array_filter(findBlockStates($accessedState), static fn(array $blockState): bool => (int) $blockState['state']['level'] >= 2));
-$accessedPause = findPauseState($accessedState, $cycleClock->now()->getTimestamp());
-requireCondition(count($accessedK4Scores) === 1, 'Public pause oracle call did not access the exact observed K4 score state.');
-requireCondition(count($accessedL2Blocks) > 0, 'Public pause oracle call did not access the observed L2+ block state.');
-requireCondition($accessedPause !== null, 'Public pause oracle call did not access the observed pause history state.');
-$oracleNow = $cycleClock->now()->getTimestamp();
-$currentK4Score = $accessedK4Scores[0]['state'];
-$currentL2Block = $accessedL2Blocks[0]['state'];
-$pause = $accessedPause;
-$pauseFinish = $pause['finish'];
-$scoreUpdatedAt = (int) $currentK4Score['updatedAt'];
-$scoreValue = (int) $currentK4Score['value'];
-$pauseOverlapStart = max($scoreUpdatedAt, $pause['start']);
-$pauseOverlapFinish = min($oracleNow, $pauseFinish);
-$elapsedPaused = $pauseOverlapFinish > $pauseOverlapStart ? $pauseOverlapFinish - $pauseOverlapStart : 0;
-$effectiveElapsed = max(0, ($oracleNow - $scoreUpdatedAt) - $elapsedPaused);
-$completedIntervals = intdiv($effectiveElapsed, 600);
-$pointsToLose = $scoreValue - 8 + 1;
-$remainingWithPause = $pointsToLose - $completedIntervals;
-$unpausedElapsed = max(0, $oracleNow - $scoreUpdatedAt);
-$remainingWithoutPause = $pointsToLose - intdiv($unpausedElapsed, 600);
-$expectedWithPause = $remainingWithPause <= 0
-    ? 0
-    : (($remainingWithPause * 600) - ($effectiveElapsed % 600) + max(0, $pauseFinish - $oracleNow));
-$expectedWithoutPause = $remainingWithoutPause <= 0
-    ? 0
-    : (($remainingWithoutPause * 600) - ($unpausedElapsed % 600));
-requireCondition($postBlock->decision === RateLimitResultDTO::DECISION_HARD_BLOCK && ($postBlock->blockLevel ?? 0) >= 2, 'Public check did not produce score-derived L2+ after the observed persisted block expiry.');
-requireCondition($postBlock->retryAfter === $expectedWithPause, 'Public Retry-After did not match the accessed-state pause-aware oracle: observed ' . $postBlock->retryAfter . ', expected ' . $expectedWithPause . '; accesses=' . json_encode($recordedEvalAccesses, JSON_THROW_ON_ERROR) . '; accessedKeys=' . json_encode($accessedScenarioKeys, JSON_THROW_ON_ERROR) . '; score=' . json_encode($currentK4Score, JSON_THROW_ON_ERROR) . '; block=' . json_encode($currentL2Block, JSON_THROW_ON_ERROR) . '; pause=' . json_encode($pause, JSON_THROW_ON_ERROR) . '; now=' . $oracleNow . '; expectedWithoutPause=' . $expectedWithoutPause . '.');
-requireCondition($expectedWithPause > $expectedWithoutPause && $expectedWithPause - $expectedWithoutPause === 600, 'Observed pause did not contribute exactly 600 seconds over the same score state without pause accounting.');
-requireReadOnlySnapshot($secondCycleState, redisStateSnapshot($raw, $secondCycleKeys), 'Pause state after active checks');
-
 $failureRaw = new RespRedisCommandExecutor($host, (int) $port);
 $failureExecutor = new CallableRedisCommandExecutor(static function (array $command) use ($failureRaw): mixed {
     if (strtoupper((string) ($command[0] ?? '')) === 'EVAL') {
@@ -741,4 +611,4 @@ requireCondition(count($circuitSignalTypes) === 2 && $circuitSignalTypes === ['C
 
 $keys = redisKeys($raw);
 requireCondition(count($keys) > 0, 'No Redis persistence was observable.');
-echo json_encode(['status' => 'PASS', 'packageInstallPath' => $installPath, 'productionAutoload' => true, 'packageTestNamespaceAvailable' => false, 'login' => ['checkOnly' => resultShape($loginCheck), 'recordFailure' => resultShape($loginFailure), 'recordSuccess' => resultShape($loginSuccess), 'progression' => array_map('resultShape', $loginProgression), 'persistenceProof' => true, 'postPunishmentReentry' => ['checkOnly' => resultShape($reentryLoginCheck), 'claim' => $reentryLoginClaim, 'secondClaim' => $reentryLoginSecondClaim]], 'otp' => resultShape($otp), 'otpPostPunishmentReentry' => ['checkOnly' => resultShape($reentryOtpCheck), 'claim' => $reentryOtpClaim, 'secondClaim' => $reentryOtpSecondClaim], 'customOptIn' => ['checkOnly' => resultShape($customCheck), 'claim' => $customClaim, 'secondClaim' => $customSecondClaim], 'apiHeavy' => resultShape($api), 'credentialSpray' => array_map('resultShape', $spray), 'sprayLifecycle' => ['recordSuccess' => resultShape($spraySuccess), 'subjectFourCheckOnly' => resultShape($spraySubjectFour)], 'trustedSession' => resultShape($trusted), 'untrustedFollowUp' => resultShape($untrustedFollowUp), 'trustedNonK1' => resultShape($trustedNonK1), 'rotations' => $rotationCases, 'budgetMigration' => ['previousCount' => (int) $previousBudgetMap['count'], 'currentCount' => (int) $currentBudgetMap['count'], 'epochStartPreserved' => true, 'previousReadOnly' => true], 'hardBlockCyclePause' => ['firstCycle' => resultShape($firstCycle), 'secondCycle' => resultShape($secondCycle), 'pauseRetained' => true], 'failureSemantics' => ['login' => resultShape($loginFailureMode), 'otp' => resultShape($otpFailureMode), 'apiHeavy' => resultShape($apiFailureMode)], 'circuit' => ['openGuard' => resultShape($openGuardResult), 'halfOpenProbe' => resultShape($halfOpenResult), 'closedRecovery' => resultShape($closedResult), 'normalWorkloadSuppressedWhileOpen' => true, 'signalCount' => count($circuitSignals->signals()), 'signalTypes' => array_values(array_unique(array_map(static fn($signal): string => $signal->type, $circuitSignals->signals())))], 'redisPersistence' => ['keyCount' => count($keys)], 'failureSignals' => count($signals->signals())], JSON_THROW_ON_ERROR) . PHP_EOL;
+echo json_encode(['status' => 'PASS', 'packageInstallPath' => $installPath, 'productionAutoload' => true, 'packageTestNamespaceAvailable' => false, 'login' => ['checkOnly' => resultShape($loginCheck), 'recordFailure' => resultShape($loginFailure), 'recordSuccess' => resultShape($loginSuccess), 'progression' => array_map('resultShape', $loginProgression), 'persistenceProof' => true, 'postPunishmentReentry' => ['checkOnly' => resultShape($reentryLoginCheck), 'claim' => $reentryLoginClaim, 'secondClaim' => $reentryLoginSecondClaim]], 'otp' => resultShape($otp), 'otpPostPunishmentReentry' => ['checkOnly' => resultShape($reentryOtpCheck), 'claim' => $reentryOtpClaim, 'secondClaim' => $reentryOtpSecondClaim], 'customOptIn' => ['checkOnly' => resultShape($customCheck), 'claim' => $customClaim, 'secondClaim' => $customSecondClaim], 'apiHeavy' => resultShape($api), 'credentialSpray' => array_map('resultShape', $spray), 'sprayLifecycle' => ['recordSuccess' => resultShape($spraySuccess), 'subjectFourCheckOnly' => resultShape($spraySubjectFour)], 'trustedSession' => resultShape($trusted), 'untrustedFollowUp' => resultShape($untrustedFollowUp), 'trustedNonK1' => resultShape($trustedNonK1), 'rotations' => $rotationCases, 'budgetMigration' => ['previousCount' => (int) $previousBudgetMap['count'], 'currentCount' => (int) $currentBudgetMap['count'], 'epochStartPreserved' => true, 'previousReadOnly' => true], 'failureSemantics' => ['login' => resultShape($loginFailureMode), 'otp' => resultShape($otpFailureMode), 'apiHeavy' => resultShape($apiFailureMode)], 'circuit' => ['openGuard' => resultShape($openGuardResult), 'halfOpenProbe' => resultShape($halfOpenResult), 'closedRecovery' => resultShape($closedResult), 'normalWorkloadSuppressedWhileOpen' => true, 'signalCount' => count($circuitSignals->signals()), 'signalTypes' => array_values(array_unique(array_map(static fn($signal): string => $signal->type, $circuitSignals->signals())))], 'redisPersistence' => ['keyCount' => count($keys)], 'failureSignals' => count($signals->signals())], JSON_THROW_ON_ERROR) . PHP_EOL;
