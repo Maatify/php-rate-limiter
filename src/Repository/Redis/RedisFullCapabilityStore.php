@@ -93,7 +93,9 @@ if not observedValue or not observedUpdated then
 end
 if expectedSource ~= '' then
   if not observedValue or observedValue ~= ARGV[2] or not observedUpdated or observedUpdated ~= ARGV[3] then return {0} end
-  if ARGV[4] ~= '' and (not observedGeneration or observedGeneration ~= ARGV[4]) then return {0} end
+  if ARGV[4] == '' then
+    if observedGeneration then return {0} end
+  elseif not observedGeneration or observedGeneration ~= ARGV[4] then return {0} end
 end
 local requestedTtl = tonumber(ARGV[5]); if requestedTtl <= 0 then return redis.error_reply('invalid score TTL') end
 local generation = source == current and (observedGeneration and tonumber(observedGeneration) + 1 or 1) or 1
@@ -104,6 +106,7 @@ if expiry and (not tonumber(expiry) or tonumber(expiry) ~= math.floor(tonumber(e
 expiry = expiry and tonumber(expiry) or now + ttl
 redis.call('HSET', current, 'value', ARGV[6], 'updatedAt', now, 'generation', generation, 'expiresAt', expiry)
 redis.call('EXPIRE', current, ttl)
+redis.call('HDEL', current, 'reentryId', 'reentryValidUntil', 'reentryGeneration')
 if KEYS[3] ~= '' then redis.call('DEL', KEYS[3]) end
 return {1, ARGV[6], now, expiry, generation}
 LUA;
@@ -143,16 +146,16 @@ for _, blockKey in ipairs({KEYS[3], KEYS[4]}) do
     if expires and expires > now then return 0 end
   end
 end
-for _, key in ipairs({KEYS[1], KEYS[2]}) do
-  if key ~= '' and redis.call('EXISTS', key) == 1 then
-    local generation = redis.call('HGET', key, 'generation'); local id = redis.call('HGET', key, 'reentryId'); local validUntil = redis.call('HGET', key, 'reentryValidUntil'); local evidenceGeneration = redis.call('HGET', key, 'reentryGeneration')
-    if id and validUntil and generation and evidenceGeneration == generation then
-      validUntil = tonumber(validUntil)
-      if validUntil and validUntil > now and id == ARGV[1] then
-        local markerTtl = math.max(1, validUntil - now)
-        if redis.call('SET', KEYS[5], id, 'NX', 'EX', markerTtl) then return 1 end
-        return 0
-      end
+local source = KEYS[1]
+if redis.call('EXISTS', source) == 0 then source = KEYS[2] end
+if source ~= '' and redis.call('EXISTS', source) == 1 then
+  local generation = redis.call('HGET', source, 'generation'); local id = redis.call('HGET', source, 'reentryId'); local validUntil = redis.call('HGET', source, 'reentryValidUntil'); local evidenceGeneration = redis.call('HGET', source, 'reentryGeneration')
+  if id and validUntil and generation and evidenceGeneration == generation then
+    validUntil = tonumber(validUntil)
+    if validUntil and validUntil > now and id == ARGV[1] then
+      local markerTtl = math.max(1, validUntil - now)
+      if redis.call('SET', KEYS[5], id, 'NX', 'EX', markerTtl) then return 1 end
+      return 0
     end
   end
 end
@@ -540,7 +543,8 @@ redis.call('HSET', KEYS[3], 'level', ARGV[1], 'expiresAt', expires); redis.call(
 if lifecycleGeneration ~= '' then
   local scoreKey = KEYS[7]
   local storedId = redis.call('HGET', scoreKey, 'reentryId')
-  local actualId = storedId or lifecycleId
+  local storedGeneration = redis.call('HGET', scoreKey, 'reentryGeneration')
+  local actualId = storedGeneration == lifecycleGeneration and storedId or lifecycleId
   redis.call('HSET', scoreKey, 'reentryId', actualId, 'reentryValidUntil', redis.call('HGET', scoreKey, 'expiresAt'), 'reentryGeneration', lifecycleGeneration)
   return {newCycle and 1 or 0, cycleCount, activated and 1 or 0, pauseUntil, expires, 1, actualId, redis.call('HGET', scoreKey, 'expiresAt'), lifecycleGeneration}
 end

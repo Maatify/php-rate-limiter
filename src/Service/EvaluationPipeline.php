@@ -1885,14 +1885,17 @@ class EvaluationPipeline
                 && $block['level'] >= 2
                 && isset($this->lifecycleEligibleKeys[$key])) {
                 $applied = false;
+                $expectedGeneration = $this->lifecycleEligibleKeys[$key];
+                $publicationLevel = $block['level'];
+                $publicationDuration = $block['duration'];
                 for ($attempt = 0; $attempt < 3; $attempt++) {
                     $transition = $this->store->blockWithPunishmentLifecycleTracking(
                         $key,
                         $block['previousKey'],
-                        $this->lifecycleEligibleKeys[$key],
+                        $expectedGeneration,
                         bin2hex(random_bytes(16)),
-                        $block['level'],
-                        $block['duration'],
+                        $publicationLevel,
+                        $publicationDuration,
                         self::CYCLE_WINDOW_SECONDS,
                         self::CYCLE_THRESHOLD,
                         self::DECAY_PAUSE_SECONDS,
@@ -1902,6 +1905,28 @@ class EvaluationPipeline
                         $applied = true;
                         break;
                     }
+
+                    // A failed publication is a generation race, not a reason
+                    // to replay the stale block tuple. Re-read the coherent
+                    // lifecycle snapshot and recompute the current K4 level.
+                    $latest = $this->store->readGenerationBoundScoreState($key, $block['previousKey']);
+                    if ($latest?->generation === null) {
+                        break;
+                    }
+                    $latestScore = $this->calculateDecayedScore(
+                        $latest->value,
+                        $latest->updatedAt,
+                        'k4',
+                        $key,
+                        $block['previousKey'],
+                    );
+                    $latestLevel = $this->determineLevel($latestScore, 'k4', $policy);
+                    if ($latestLevel < 2) {
+                        break;
+                    }
+                    $expectedGeneration = $latest->generation;
+                    $publicationLevel = $latestLevel;
+                    $publicationDuration = PenaltyLadder::getDuration($latestLevel);
                 }
                 if (! $applied) {
                     throw new RateLimitConcurrencyException('K4 punishment publication conflict budget exhausted.');

@@ -123,6 +123,58 @@ final class RedisFullCapabilityStoreIntegrationTest extends TestCase
         self::assertNotNull($this->store->readGenerationBoundScoreState('lifecycle-current', null)?->postPunishmentReentry);
     }
 
+    public function testGenerationMutationInvalidatesOldLifecycleIdentityAndFreshPublicationUsesNewIdentity(): void
+    {
+        $first = $this->store->mutateGenerationBoundScore('lifecycle-fence', null, null, 600, 8);
+        self::assertTrue($first->applied);
+        self::assertSame(1, $first->state?->generation);
+        $idA = str_repeat('a', 32);
+        $firstTransition = $this->store->blockWithPunishmentLifecycleTracking('lifecycle-fence', null, 1, $idA, 2, 60, 21600, 2, 600, 86400);
+        self::assertTrue($firstTransition->applied);
+
+        $second = $this->store->mutateGenerationBoundScore('lifecycle-fence', null, $this->store->readGenerationBoundScoreState('lifecycle-fence', null), 600, 10);
+        self::assertTrue($second->applied);
+        self::assertSame(2, $second->state?->generation);
+        self::assertNull($this->store->readGenerationBoundScoreState('lifecycle-fence', null)?->postPunishmentReentry);
+        self::assertFalse($this->store->claimPostPunishmentReentry('lifecycle-fence', null, $idA));
+
+        $idB = str_repeat('b', 32);
+        $secondTransition = $this->store->blockWithPunishmentLifecycleTracking('lifecycle-fence', null, 2, $idB, 2, 60, 21600, 2, 600, 86400);
+        self::assertTrue($secondTransition->applied);
+        self::assertSame($idB, $secondTransition->postPunishmentReentry?->id);
+        $this->executor->execute(['DEL', $this->key('block', 'lifecycle-fence')]);
+        self::assertFalse($this->store->claimPostPunishmentReentry('lifecycle-fence', null, $idA));
+        self::assertTrue($this->store->claimPostPunishmentReentry('lifecycle-fence', null, $idB));
+        self::assertFalse($this->store->claimPostPunishmentReentry('lifecycle-fence', null, $idB));
+    }
+
+    public function testLegacyGenerationlessMutationConflictsWhenWriterAddsGeneration(): void
+    {
+        $key = $this->key('score', 'legacy-cas');
+        $this->executor->execute(['HSET', $key, 'value', '4', 'updatedAt', (string) time()]);
+        $this->executor->execute(['EXPIRE', $key, '600']);
+        $legacy = $this->store->readGenerationBoundScoreState('legacy-cas', null);
+        self::assertNotNull($legacy);
+        self::assertNull($legacy->generation);
+
+        $this->executor->execute(['HSET', $key, 'generation', '1', 'expiresAt', (string) (time() + 600)]);
+        $stale = $this->store->mutateGenerationBoundScore('legacy-cas', null, $legacy, 600, 9);
+        self::assertFalse($stale->applied);
+    }
+
+    public function testClaimUsesCurrentAsAuthoritativeOverPrevious(): void
+    {
+        $previousKey = $this->key('score', 'claim-previous');
+        $currentKey = $this->key('score', 'claim-current');
+        $now = time();
+        $this->executor->execute(['HSET', $previousKey, 'value', '8', 'updatedAt', (string) $now, 'generation', '1', 'expiresAt', (string) ($now + 600), 'reentryId', str_repeat('a', 32), 'reentryValidUntil', (string) ($now + 600), 'reentryGeneration', '1']);
+        $this->executor->execute(['EXPIRE', $previousKey, '600']);
+        $this->executor->execute(['HSET', $currentKey, 'value', '9', 'updatedAt', (string) $now, 'generation', '2', 'expiresAt', (string) ($now + 600)]);
+        $this->executor->execute(['EXPIRE', $currentKey, '600']);
+
+        self::assertFalse($this->store->claimPostPunishmentReentry('claim-current', 'claim-previous', str_repeat('a', 32)));
+    }
+
     public function testPublicBuilderWorkflowUsesTheOfficialRedisAggregateStore(): void
     {
         $clock = new FixedClock('2025-01-01 12:00:00');
