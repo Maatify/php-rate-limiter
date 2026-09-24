@@ -40,6 +40,76 @@ function redisHashMap(mixed $flat): array
     return $map;
 }
 
+/** @return list<string> */
+function redisKeys(mixed $redis): array
+{
+    $keys = $redis->execute(['KEYS', '*']);
+    if (! is_array($keys)) {
+        return [];
+    }
+    $keys = array_map('strval', $keys);
+    sort($keys);
+
+    return $keys;
+}
+
+/** @param list<string> $before @param list<string> $after @return list<string> */
+function newlyCreatedRedisKeys(array $before, array $after): array
+{
+    return array_values(array_diff($after, $before));
+}
+
+/** @param list<string> $keys @return array<string, array{type:string, pttl:int, value:mixed}> */
+function redisStateSnapshot(mixed $redis, array $keys): array
+{
+    $snapshot = [];
+    foreach ($keys as $key) {
+        $type = (string) $redis->execute(['TYPE', $key]);
+        $value = match ($type) {
+            'string' => $redis->execute(['GET', $key]),
+            'hash' => $redis->execute(['HGETALL', $key]),
+            'set' => $redis->execute(['SMEMBERS', $key]),
+            'zset' => $redis->execute(['ZRANGE', $key, '0', '-1', 'WITHSCORES']),
+            'list' => $redis->execute(['LRANGE', $key, '0', '-1']),
+            default => null,
+        };
+        $snapshot[$key] = [
+            'type' => $type,
+            'pttl' => (int) $redis->execute(['PTTL', $key]),
+            'value' => $value,
+        ];
+    }
+
+    return $snapshot;
+}
+
+/** @param list<string> $keys @return array{key:string, state:array<string,string>}|null */
+function findBudgetState(mixed $redis, array $keys, ?int $expectedCount = null): ?array
+{
+    foreach ($keys as $key) {
+        if ((string) $redis->execute(['TYPE', $key]) !== 'hash') {
+            continue;
+        }
+        $state = redisHashMap($redis->execute(['HGETALL', $key]));
+        if (isset($state['count'], $state['epochStart'], $state['epochDuration'])
+            && ($expectedCount === null || (int) $state['count'] === $expectedCount)) {
+            return ['key' => $key, 'state' => $state];
+        }
+    }
+
+    return null;
+}
+
+function requireReadOnlySnapshot(array $before, array $after, string $label): void
+{
+    foreach ($before as $key => $state) {
+        requireCondition(($after[$key]['value'] ?? null) === ($state['value'] ?? null), $label . ' changed persisted content.');
+        if (($state['pttl'] ?? -1) >= 0 && ($after[$key]['pttl'] ?? -2) >= 0) {
+            requireCondition(($after[$key]['pttl'] ?? -2) <= ($state['pttl'] ?? -1) + 2, $label . ' extended a TTL.');
+        }
+    }
+}
+
 $installPath = InstalledVersions::getInstallPath('maatify/php-rate-limiter');
 requireCondition(is_string($installPath), 'Composer did not install maatify/php-rate-limiter.');
 requireCondition(! is_link($installPath), 'The package was installed as a symlink.');
@@ -51,6 +121,25 @@ $port = getenv('REDIS_INTEGRATION_PORT');
 requireCondition(is_string($host) && is_string($port) && ctype_digit($port), 'Redis lifecycle variables are missing.');
 $raw = new RespRedisCommandExecutor($host, (int) $port);
 $raw->execute(['FLUSHDB']);
+foreach ([':not-an-integer' . "\r\n", '$not-a-length' . "\r\n", '*not-an-array-length' . "\r\n"] as $malformedReply) {
+    $pair = stream_socket_pair(STREAM_PF_UNIX, STREAM_SOCK_STREAM, 0);
+    requireCondition(is_array($pair), 'Unable to create RESP regression socket pair.');
+    $reflection = new ReflectionClass(RespRedisCommandExecutor::class);
+    /** @var RespRedisCommandExecutor $malformedExecutor */
+    $malformedExecutor = $reflection->newInstanceWithoutConstructor();
+    $socketProperty = $reflection->getProperty('socket');
+    $socketProperty->setValue($malformedExecutor, $pair[0]);
+    fwrite($pair[1], $malformedReply);
+    $malformed = false;
+    try {
+        $malformedExecutor->execute(['PING']);
+    } catch (RuntimeException) {
+        $malformed = true;
+    }
+    fclose($pair[0]);
+    fclose($pair[1]);
+    requireCondition($malformed, 'Malformed RESP numeric field was accepted.');
+}
 $executor = new CallableRedisCommandExecutor(static fn(array $command): mixed => $raw->execute($command));
 $store = new RedisFullCapabilityStore($executor, 'consumer-verification');
 $clock = new FixedClock(new DateTimeImmutable('now', new DateTimeZone('UTC')));
@@ -73,7 +162,7 @@ $sprayContext = static fn(string $correlation, bool $trusted = false): RateLimit
 );
 $rotationContext = static fn(string $scope, int $index): RateLimitContextDTO => new RateLimitContextDTO(
     '192.0.2.50',
-    'Mozilla/5.0 consumer-verification-rotation-' . $index,
+    'Mozilla/5.0 consumer-verification-rotation',
     'consumer-rotation-' . $scope,
     ['device' => 'rotation-device-' . $index],
 );
@@ -84,62 +173,97 @@ $loginFailure = $limiter->limit($loginContext, RateLimitCommand::recordFailure('
 $loginSuccess = $limiter->limit($loginContext, RateLimitCommand::recordSuccess('login_protection'));
 requireCondition($loginCheck->decision === RateLimitResultDTO::DECISION_ALLOW, 'Fresh login check was not allowed: ' . json_encode(resultShape($loginCheck), JSON_THROW_ON_ERROR));
 requireCondition($loginFailure->decision === RateLimitResultDTO::DECISION_ALLOW, 'First login failure was not allowed.');
+$loginPersistenceContext = new RateLimitContextDTO('203.0.113.11', 'Mozilla/5.0 consumer-login-persistence', 'consumer-login-persistence', ['device' => 'consumer-login-persistence']);
+$loginKeysBefore = redisKeys($raw);
+$loginPersistenceResult = $limiter->limit($loginPersistenceContext, RateLimitCommand::recordFailure('login_protection'));
+$loginKeysAfter = redisKeys($raw);
+requireCondition($loginPersistenceResult->decision === RateLimitResultDTO::DECISION_ALLOW, 'Login persistence fixture did not remain allowed.');
+requireCondition(count(newlyCreatedRedisKeys($loginKeysBefore, $loginKeysAfter)) > 0, 'Login failure did not persist scenario-local Redis state.');
 
 $otp = $limiter->limit($context('otp'), RateLimitCommand::recordFailure('otp_protection'));
 requireCondition($otp->decision === RateLimitResultDTO::DECISION_SOFT_BLOCK && $otp->blockLevel === 1, 'OTP default contract failed.');
 $api = $limiter->limit($context('api'), RateLimitCommand::recordFailure('api_heavy_protection'));
 requireCondition($api->decision === RateLimitResultDTO::DECISION_ALLOW, 'API Heavy default contract failed.');
+$apiPersistenceContext = new RateLimitContextDTO('203.0.113.12', 'Mozilla/5.0 consumer-api-persistence', 'consumer-api-persistence', ['device' => 'consumer-api-persistence']);
+$apiKeysBefore = redisKeys($raw);
+$apiPersistenceResult = $limiter->limit($apiPersistenceContext, RateLimitCommand::recordFailure('api_heavy_protection'));
+$apiKeysAfter = redisKeys($raw);
+requireCondition($apiPersistenceResult->decision === RateLimitResultDTO::DECISION_ALLOW, 'API Heavy persistence fixture did not remain allowed.');
+requireCondition(count(newlyCreatedRedisKeys($apiKeysBefore, $apiKeysAfter)) > 0, 'API Heavy request did not persist scenario-local Redis state.');
 
 $spray = [];
 $spray[] = $limiter->limit($sprayContext('spray-subject-1'), RateLimitCommand::checkOnly('login_protection'));
-$spraySuccess = $limiter->limit($sprayContext('spray-subject-1'), RateLimitCommand::recordSuccess('login_protection'));
-$spraySubjectOneRepeat = $limiter->limit($sprayContext('spray-subject-1'), RateLimitCommand::checkOnly('login_protection'));
-for ($index = 2; $index <= 5; $index++) {
+$spray[] = $limiter->limit($sprayContext('spray-subject-2'), RateLimitCommand::checkOnly('login_protection'));
+$spray[] = $limiter->limit($sprayContext('spray-subject-3'), RateLimitCommand::checkOnly('login_protection'));
+$spraySuccess = $limiter->limit($sprayContext('spray-subject-3'), RateLimitCommand::recordSuccess('login_protection'));
+$spraySubjectThreeRepeat = $limiter->limit($sprayContext('spray-subject-3'), RateLimitCommand::checkOnly('login_protection'));
+$spray[] = $spraySubjectThreeRepeat;
+$spraySubjectFour = $limiter->limit($sprayContext('spray-subject-4'), RateLimitCommand::checkOnly('login_protection'));
+$spray[] = $spraySubjectFour;
+for ($index = 5; $index <= 5; $index++) {
     $spray[] = $limiter->limit($sprayContext('spray-subject-' . $index), RateLimitCommand::checkOnly('login_protection'));
 }
-requireCondition($spray[0]->decision === 'ALLOW' && $spray[1]->decision === 'ALLOW' && $spray[2]->decision === 'ALLOW' && $spray[3]->decision === 'ALLOW', 'Credential spray early subjects changed: ' . json_encode(array_map('resultShape', $spray), JSON_THROW_ON_ERROR));
-requireCondition($spray[4]->decision === RateLimitResultDTO::DECISION_HARD_BLOCK && $spray[4]->blockLevel === 2, 'Credential spray threshold was not observed: ' . json_encode(resultShape($spray[4]), JSON_THROW_ON_ERROR));
-requireCondition($spraySuccess->decision === RateLimitResultDTO::DECISION_ALLOW, 'Spray success lifecycle did not remain observable as ALLOW.');
-requireCondition($spraySubjectOneRepeat->decision === RateLimitResultDTO::DECISION_ALLOW, 'Spray subject was observed again after success.');
+requireCondition($spray[0]->decision === 'ALLOW' && $spray[1]->decision === 'ALLOW' && $spray[2]->decision === 'ALLOW' && $spraySubjectThreeRepeat->decision === 'ALLOW' && $spraySubjectFour->decision === 'ALLOW', 'Credential spray early subjects changed: ' . json_encode(array_map('resultShape', $spray), JSON_THROW_ON_ERROR));
+requireCondition($spraySuccess->decision === RateLimitResultDTO::DECISION_ALLOW && $spraySubjectThreeRepeat->decision === RateLimitResultDTO::DECISION_ALLOW, 'Spray lifecycle double-observation changed the near-threshold result: ' . json_encode([$spraySuccess->decision, $spraySubjectThreeRepeat->decision], JSON_THROW_ON_ERROR));
+requireCondition($spray[5]->decision === RateLimitResultDTO::DECISION_HARD_BLOCK && $spray[5]->blockLevel === 2, 'Credential spray threshold was not observed: ' . json_encode(resultShape($spray[5]), JSON_THROW_ON_ERROR));
 $trusted = $limiter->limit($sprayContext('spray-subject-5', true), RateLimitCommand::checkOnly('login_protection'));
 $untrustedFollowUp = $limiter->limit($sprayContext('spray-subject-follow-up'), RateLimitCommand::checkOnly('login_protection'));
+requireCondition($trusted->decision === RateLimitResultDTO::DECISION_ALLOW, 'Trusted fifth spray subject was rejected solely by K1.');
+requireCondition($untrustedFollowUp->decision === RateLimitResultDTO::DECISION_HARD_BLOCK && $untrustedFollowUp->blockLevel === 2, 'Untrusted follow-up did not observe the persisted K1 block.');
+$trustedNonK1Context = new RateLimitContextDTO('198.51.100.51', 'Mozilla/5.0 consumer-verification-trusted-authoritative', 'consumer-trusted-authoritative-account', null, 'consumer-trusted-authoritative-device', true, [], false, 'trusted-non-k1');
+$trustedNonK1 = $limiter->limit($trustedNonK1Context, new RateLimitCommand('api_heavy_protection', 120, false, true, false));
+requireCondition($trustedNonK1->decision !== RateLimitResultDTO::DECISION_ALLOW, 'Trusted traffic bypassed authoritative non-K1 enforcement: ' . json_encode(resultShape($trustedNonK1), JSON_THROW_ON_ERROR));
 
 $rotationCases = [];
 foreach (['outer-only' => ['old-outer', 'stable-fingerprint', 'new-outer', 'stable-fingerprint'], 'fingerprint-only' => ['stable-outer', 'old-fingerprint', 'stable-outer', 'new-fingerprint'], 'both' => ['old-both-outer', 'old-both-fingerprint', 'new-both-outer', 'new-both-fingerprint']] as $name => [$oldOuter, $oldFingerprint, $newOuter, $newFingerprint]) {
+    $rotationKeysBefore = redisKeys($raw);
     $old = RateLimiterBuilder::fromFullCapabilityStore(new RateLimiterConfig($oldOuter, $oldFingerprint, 'prod'), $store, $signals)->build();
     for ($i = 1; $i <= 4; $i++) {
         $old->limit($rotationContext($name, $i), RateLimitCommand::checkOnly('login_protection'));
     }
+    $previousRotationKeys = newlyCreatedRedisKeys($rotationKeysBefore, redisKeys($raw));
+    $previousRotationState = redisStateSnapshot($raw, $previousRotationKeys);
     $rotated = RateLimiterBuilder::fromFullCapabilityStore(new RateLimiterConfig($newOuter, $newFingerprint, 'prod', $oldOuter, $oldFingerprint), $store, $signals)->build();
     $rotationCases[$name] = resultShape($rotated->limit($rotationContext($name, 5), RateLimitCommand::checkOnly('login_protection')));
     requireCondition($rotationCases[$name]['decision'] === RateLimitResultDTO::DECISION_HARD_BLOCK && $rotationCases[$name]['blockLevel'] === 2, $name . ' rotation continuity was not observed.');
+    $afterRotationState = redisStateSnapshot($raw, $previousRotationKeys);
+    foreach ($previousRotationState as $key => $state) {
+        requireCondition(($afterRotationState[$key]['value'] ?? null) === $state['value'], $name . ' previous state content changed.');
+        if ($state['pttl'] >= 0 && ($afterRotationState[$key]['pttl'] ?? -2) >= 0) {
+            requireCondition($afterRotationState[$key]['pttl'] <= $state['pttl'] + 2, $name . ' previous state TTL was extended.');
+        }
+    }
 }
 
 $budgetContext = new RateLimitContextDTO('192.0.2.80', 'Mozilla/5.0 consumer-budget', 'consumer-budget-account', ['device' => 'consumer-budget-device']);
-$budgetKeysBefore = $raw->execute(['KEYS', 'maatify:rate-limiter:v1:*:budget:*']);
+$budgetKeysBefore = redisKeys($raw);
 $budgetOld = RateLimiterBuilder::fromFullCapabilityStore(new RateLimiterConfig('budget-old-key', 'budget-old-fingerprint', 'prod'), $store, $signals)->build();
 $budgetOld->limit($budgetContext, RateLimitCommand::recordFailure('login_protection'));
-$budgetKeysAfterOld = $raw->execute(['KEYS', 'maatify:rate-limiter:v1:*:budget:*']);
-$previousBudgetKeys = array_values(array_diff(array_map('strval', is_array($budgetKeysAfterOld) ? $budgetKeysAfterOld : []), array_map('strval', is_array($budgetKeysBefore) ? $budgetKeysBefore : [])));
-requireCondition(count($previousBudgetKeys) > 0, 'Previous budget state was not persisted.');
-$previousBudgetKey = $previousBudgetKeys[0];
-$previousBudgetState = $raw->execute(['HGETALL', $previousBudgetKey]);
+$budgetKeysAfterOld = redisKeys($raw);
+$previousBudgetKeys = newlyCreatedRedisKeys($budgetKeysBefore, $budgetKeysAfterOld);
+$previousBudget = findBudgetState($raw, $budgetKeysAfterOld, 1);
+requireCondition($previousBudget !== null, 'Previous budget state was not persisted.');
 $budgetNew = RateLimiterBuilder::fromFullCapabilityStore(new RateLimiterConfig('budget-new-key', 'budget-new-fingerprint', 'prod', 'budget-old-key', 'budget-old-fingerprint'), $store, $signals)->build();
 $budgetNew->limit($budgetContext, RateLimitCommand::recordFailure('login_protection'));
-$budgetKeysAfterNew = $raw->execute(['KEYS', 'maatify:rate-limiter:v1:*:budget:*']);
-$newBudgetKeys = array_values(array_diff(array_map('strval', is_array($budgetKeysAfterNew) ? $budgetKeysAfterNew : []), array_map('strval', is_array($budgetKeysAfterOld) ? $budgetKeysAfterOld : [])));
-requireCondition(count($newBudgetKeys) > 0, 'Current budget state was not created during migration.');
-$currentBudgetState = $raw->execute(['HGETALL', $newBudgetKeys[0]]);
-$previousBudgetMap = redisHashMap($previousBudgetState);
-$currentBudgetMap = redisHashMap($currentBudgetState);
-requireCondition($previousBudgetMap !== [] && $currentBudgetMap !== [], 'Budget Redis state was malformed.');
-requireCondition((int) ($currentBudgetMap['count'] ?? -1) === (int) ($previousBudgetMap['count'] ?? -2) + 1, 'Budget migration count did not advance by one.');
+$budgetKeysAfterNew = redisKeys($raw);
+$currentBudgetKeys = newlyCreatedRedisKeys($budgetKeysAfterOld, $budgetKeysAfterNew);
+$currentBudget = findBudgetState($raw, $budgetKeysAfterNew, 2);
+requireCondition($currentBudget !== null, 'Current budget state was not created during migration.');
+$budgetNew->limit($budgetContext, RateLimitCommand::recordFailure('login_protection'));
+$budgetKeysAfterCurrent = redisKeys($raw);
+$currentBudget = findBudgetState($raw, $budgetKeysAfterCurrent, 3);
+requireCondition($currentBudget !== null, 'Current budget state did not advance on the current generation.');
+$previousBudgetMap = $previousBudget['state'];
+$currentBudgetMap = $currentBudget['state'];
+requireCondition((int) ($previousBudgetMap['count'] ?? -1) === 1, 'Previous budget count was not 1.');
+requireCondition((int) ($currentBudgetMap['count'] ?? -1) === 3, 'Current budget count was not 3.');
 requireCondition(($currentBudgetMap['epochStart'] ?? null) === ($previousBudgetMap['epochStart'] ?? null), 'Budget migration did not preserve epochStart.');
-requireCondition($raw->execute(['HGETALL', $previousBudgetKey]) === $previousBudgetState, 'Previous budget state was modified during migration.');
+requireCondition(redisHashMap($raw->execute(['HGETALL', $previousBudget['key']])) === $previousBudgetMap, 'Previous budget state was modified during migration.');
 
 $cycleClock = new FixedClock(new DateTimeImmutable('now', new DateTimeZone('UTC')));
 $cycleLimiter = RateLimiterBuilder::fromFullCapabilityStore(new RateLimiterConfig('cycle-key', 'cycle-fingerprint', 'prod'), $store, $signals)->withClock($cycleClock)->build();
 $cycleContext = new RateLimitContextDTO('192.0.2.90', 'Mozilla/5.0 consumer-cycle', 'consumer-cycle-account', ['device' => 'consumer-cycle-device']);
+$cycleKeysBefore = redisKeys($raw);
 $firstCycle = null;
 for ($attempt = 1; $attempt <= 6; $attempt++) {
     $candidate = $cycleLimiter->limit($cycleContext, RateLimitCommand::recordFailure('login_protection'));
@@ -149,6 +273,15 @@ for ($attempt = 1; $attempt <= 6; $attempt++) {
     }
 }
 requireCondition($firstCycle instanceof RateLimitResultDTO, 'Default login path did not produce the first hard-block cycle.');
+$firstCycleKeys = newlyCreatedRedisKeys($cycleKeysBefore, redisKeys($raw));
+$firstCycleState = redisStateSnapshot($raw, $firstCycleKeys);
+$firstCycleRepeat = $cycleLimiter->limit($cycleContext, RateLimitCommand::checkOnly('login_protection'));
+requireCondition($firstCycleRepeat->decision === RateLimitResultDTO::DECISION_HARD_BLOCK, 'Active first cycle was not enforced by the public check path.');
+requireReadOnlySnapshot($firstCycleState, redisStateSnapshot($raw, $firstCycleKeys), 'Active first cycle');
+$cycleRotated = RateLimiterBuilder::fromFullCapabilityStore(new RateLimiterConfig('cycle-new-key', 'cycle-new-fingerprint', 'prod', 'cycle-key', 'cycle-fingerprint'), $store, $signals)->withClock($cycleClock)->build();
+$rotatedCycle = $cycleRotated->limit($cycleContext, RateLimitCommand::checkOnly('login_protection'));
+requireCondition($rotatedCycle->decision === RateLimitResultDTO::DECISION_HARD_BLOCK, 'Rotated cycle did not retain the previous hard block.');
+requireReadOnlySnapshot($firstCycleState, redisStateSnapshot($raw, $firstCycleKeys), 'Previous cycle state');
 $cycleClock->setNow($cycleClock->now()->modify('+601 seconds'));
 $secondCycle = null;
 for ($attempt = 1; $attempt <= 3; $attempt++) {
@@ -160,6 +293,8 @@ for ($attempt = 1; $attempt <= 3; $attempt++) {
 }
 requireCondition($secondCycle instanceof RateLimitResultDTO, 'Default login path did not produce the second hard-block cycle.');
 requireCondition(($secondCycle->retryAfter ?? 0) >= 600, 'Second hard-block cycle did not expose the retained pause behavior.');
+$secondCycleRepeat = $cycleLimiter->limit($cycleContext, RateLimitCommand::checkOnly('login_protection'));
+requireCondition($secondCycleRepeat->decision === RateLimitResultDTO::DECISION_HARD_BLOCK, 'Active second cycle was not enforced by the public check path.');
 
 $failureRaw = new RespRedisCommandExecutor($host, (int) $port);
 $failureExecutor = new CallableRedisCommandExecutor(static function (array $command) use ($failureRaw): mixed {
@@ -213,6 +348,6 @@ $circuitClock->setNow($circuitClock->now()->modify('+121 seconds'));
 $closedResult = $circuitLimiter->limit($circuitContext, RateLimitCommand::checkOnly('api_heavy_protection'));
 requireCondition($closedResult->failureMode === 'NORMAL' && $circuitEvalCalls > $evalCallsAtOpen, 'Circuit did not close after the healthy interval.');
 
-$keys = $raw->execute(['KEYS', 'maatify:rate-limiter:v1:*']);
-requireCondition(is_array($keys) && count($keys) > 0, 'No Redis persistence was observable.');
-echo json_encode(['status' => 'PASS', 'packageInstallPath' => $installPath, 'productionAutoload' => true, 'packageTestNamespaceAvailable' => false, 'login' => ['checkOnly' => resultShape($loginCheck), 'recordFailure' => resultShape($loginFailure), 'recordSuccess' => resultShape($loginSuccess)], 'otp' => resultShape($otp), 'apiHeavy' => resultShape($api), 'credentialSpray' => array_map('resultShape', $spray), 'sprayLifecycle' => ['recordSuccess' => resultShape($spraySuccess), 'repeatCheckOnly' => resultShape($spraySubjectOneRepeat)], 'trustedSession' => resultShape($trusted), 'untrustedFollowUp' => resultShape($untrustedFollowUp), 'rotations' => $rotationCases, 'budgetMigration' => ['previousCount' => (int) $previousBudgetMap['count'], 'currentCount' => (int) $currentBudgetMap['count'], 'epochStartPreserved' => true, 'previousReadOnly' => true], 'hardBlockCyclePause' => ['firstCycle' => resultShape($firstCycle), 'secondCycle' => resultShape($secondCycle), 'pauseRetained' => true], 'failureSemantics' => ['login' => resultShape($loginFailureMode), 'otp' => resultShape($otpFailureMode), 'apiHeavy' => resultShape($apiFailureMode)], 'circuit' => ['openGuard' => resultShape($openGuardResult), 'halfOpenProbe' => resultShape($halfOpenResult), 'closedRecovery' => resultShape($closedResult), 'normalWorkloadSuppressedWhileOpen' => true], 'redisPersistence' => ['keyCount' => count($keys)], 'failureSignals' => count($signals->signals())], JSON_THROW_ON_ERROR) . PHP_EOL;
+$keys = redisKeys($raw);
+requireCondition(count($keys) > 0, 'No Redis persistence was observable.');
+echo json_encode(['status' => 'PASS', 'packageInstallPath' => $installPath, 'productionAutoload' => true, 'packageTestNamespaceAvailable' => false, 'login' => ['checkOnly' => resultShape($loginCheck), 'recordFailure' => resultShape($loginFailure), 'recordSuccess' => resultShape($loginSuccess), 'persistenceProof' => true], 'otp' => resultShape($otp), 'apiHeavy' => resultShape($api), 'credentialSpray' => array_map('resultShape', $spray), 'sprayLifecycle' => ['recordSuccess' => resultShape($spraySuccess), 'repeatCheckOnly' => resultShape($spraySubjectThreeRepeat)], 'trustedSession' => resultShape($trusted), 'untrustedFollowUp' => resultShape($untrustedFollowUp), 'trustedNonK1' => resultShape($trustedNonK1), 'rotations' => $rotationCases, 'budgetMigration' => ['previousCount' => (int) $previousBudgetMap['count'], 'currentCount' => (int) $currentBudgetMap['count'], 'epochStartPreserved' => true, 'previousReadOnly' => true], 'hardBlockCyclePause' => ['firstCycle' => resultShape($firstCycle), 'secondCycle' => resultShape($secondCycle), 'pauseRetained' => true], 'failureSemantics' => ['login' => resultShape($loginFailureMode), 'otp' => resultShape($otpFailureMode), 'apiHeavy' => resultShape($apiFailureMode)], 'circuit' => ['openGuard' => resultShape($openGuardResult), 'halfOpenProbe' => resultShape($halfOpenResult), 'closedRecovery' => resultShape($closedResult), 'normalWorkloadSuppressedWhileOpen' => true, 'signalCount' => count($circuitSignals->signals()), 'signalTypes' => array_values(array_unique(array_map(static fn($signal): string => $signal->type, $circuitSignals->signals())))], 'redisPersistence' => ['keyCount' => count($keys)], 'failureSignals' => count($signals->signals())], JSON_THROW_ON_ERROR) . PHP_EOL;

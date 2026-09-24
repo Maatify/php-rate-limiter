@@ -48,7 +48,7 @@ final class RespRedisCommandExecutor implements RedisCommandExecutorInterface
         return match ($prefix) {
             '+' => $this->readLine(),
             '-' => throw new RuntimeException((string) $this->readLine()),
-            ':' => (int) $this->readLine(),
+            ':' => $this->readIntegerLine(),
             '$' => $this->readBulk(),
             '*' => $this->readArray(),
             default => throw new RuntimeException('Unsupported Redis RESP reply.'),
@@ -66,7 +66,7 @@ final class RespRedisCommandExecutor implements RedisCommandExecutorInterface
 
     private function readBulk(): ?string
     {
-        $length = (int) $this->readLine();
+        $length = $this->readIntegerLine();
         if ($length === -1) {
             return null;
         }
@@ -87,11 +87,14 @@ final class RespRedisCommandExecutor implements RedisCommandExecutorInterface
         return substr($value, 0, -2);
     }
 
-    /** @return list<mixed> */
-    private function readArray(): array
+    /** @return list<mixed>|null */
+    private function readArray(): ?array
     {
-        $length = (int) $this->readLine();
-        if ($length < 0) {
+        $length = $this->readIntegerLine();
+        if ($length === -1) {
+            return null;
+        }
+        if ($length < -1) {
             throw new RuntimeException('Malformed Redis array length.');
         }
         $result = [];
@@ -99,5 +102,18 @@ final class RespRedisCommandExecutor implements RedisCommandExecutorInterface
             $result[] = $this->readReply();
         }
         return $result;
+    }
+
+    private function readIntegerLine(): int
+    {
+        $line = $this->readLine();
+        if (preg_match('/^-?(0|[1-9][0-9]*)$/D', $line) !== 1) {
+            throw new RuntimeException('Malformed Redis RESP integer.');
+        }
+        $value = filter_var($line, FILTER_VALIDATE_INT);
+        if ($value === false) {
+            throw new RuntimeException('Redis RESP integer is out of range.');
+        }
+        return $value;
     }
 }

@@ -90,8 +90,11 @@ Run the consumer verification harness twice from clean consumer directories:
 bash scripts/ci/run-consumer-verification.sh
 ```
 
-The harness validates the package as an external Composer consumer, including
-autoloading and the public runtime surface.
+The harness requires Docker with Compose support and reuses the repository-owned
+Redis 7.0.15 Compose contract. Each of its two runs creates a fresh disposable
+Redis state and cleans it afterward. It validates the package as an external
+Composer consumer, including autoloading and the public runtime surface.
+`ext-redis` and Predis are not required.
 
 To verify the lowest supported dependency bounds on PHP 8.4, run:
 

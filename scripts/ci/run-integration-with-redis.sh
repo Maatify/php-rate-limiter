@@ -2,6 +2,7 @@
 set -euo pipefail
 
 script_root="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)"
+bash "$script_root/check-redis-lifecycle-status.sh"
 if [[ -n "${REDIS_INTEGRATION_TEST_STATUS:-}" ]]; then
     command=(bash -c 'exit "$REDIS_INTEGRATION_TEST_STATUS"')
 else
