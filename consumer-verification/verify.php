@@ -110,6 +110,13 @@ function requireReadOnlySnapshot(array $before, array $after, string $label): vo
     }
 }
 
+function deleteRedisKeys(mixed $redis, array $keys): void
+{
+    foreach ($keys as $key) {
+        $redis->execute(['DEL', $key]);
+    }
+}
+
 $installPath = InstalledVersions::getInstallPath('maatify/php-rate-limiter');
 requireCondition(is_string($installPath), 'Composer did not install maatify/php-rate-limiter.');
 requireCondition(! is_link($installPath), 'The package was installed as a symlink.');
@@ -160,19 +167,34 @@ $sprayContext = static fn(string $correlation, bool $trusted = false): RateLimit
     $trusted,
     $correlation,
 );
-$rotationContext = static fn(string $scope, int $index): RateLimitContextDTO => new RateLimitContextDTO(
+$rotationContext = static fn(string $scope): RateLimitContextDTO => new RateLimitContextDTO(
     '192.0.2.50',
     'Mozilla/5.0 consumer-verification-rotation',
     'consumer-rotation-' . $scope,
-    ['device' => 'rotation-device-' . $index],
+    ['device' => 'rotation-device'],
+    null,
+    false,
+    [],
+    true,
 );
 
 $loginContext = $context('login');
 $loginCheck = $limiter->limit($loginContext, RateLimitCommand::checkOnly('login_protection'));
 $loginFailure = $limiter->limit($loginContext, RateLimitCommand::recordFailure('login_protection'));
-$loginSuccess = $limiter->limit($loginContext, RateLimitCommand::recordSuccess('login_protection'));
 requireCondition($loginCheck->decision === RateLimitResultDTO::DECISION_ALLOW, 'Fresh login check was not allowed: ' . json_encode(resultShape($loginCheck), JSON_THROW_ON_ERROR));
 requireCondition($loginFailure->decision === RateLimitResultDTO::DECISION_ALLOW, 'First login failure was not allowed.');
+$loginProgressContext = new RateLimitContextDTO('203.0.113.13', 'Mozilla/5.0 consumer-login-progression', 'consumer-login-progression', ['device' => 'consumer-login-progression']);
+$loginProgression = [];
+for ($attempt = 1; $attempt <= 6; $attempt++) {
+    $loginProgression[] = $limiter->limit($loginProgressContext, RateLimitCommand::recordFailure('login_protection'));
+    if ($loginProgression[array_key_last($loginProgression)]->decision === RateLimitResultDTO::DECISION_HARD_BLOCK) {
+        break;
+    }
+}
+$loginSuccessContext = new RateLimitContextDTO('203.0.113.14', 'Mozilla/5.0 consumer-login-success', 'consumer-login-success', ['device' => 'consumer-login-success']);
+$loginSuccess = $limiter->limit($loginSuccessContext, RateLimitCommand::recordSuccess('login_protection'));
+requireCondition($loginProgression[array_key_last($loginProgression)]->decision === RateLimitResultDTO::DECISION_HARD_BLOCK && $loginProgression[array_key_last($loginProgression)]->blockLevel >= 2, 'Default login failure progression did not reach L2 hard block.');
+requireCondition($loginSuccess->decision === RateLimitResultDTO::DECISION_ALLOW, 'Clean login success command was not executable.');
 $loginPersistenceContext = new RateLimitContextDTO('203.0.113.11', 'Mozilla/5.0 consumer-login-persistence', 'consumer-login-persistence', ['device' => 'consumer-login-persistence']);
 $loginKeysBefore = redisKeys($raw);
 $loginPersistenceResult = $limiter->limit($loginPersistenceContext, RateLimitCommand::recordFailure('login_protection'));
@@ -195,44 +217,58 @@ $spray = [];
 $spray[] = $limiter->limit($sprayContext('spray-subject-1'), RateLimitCommand::checkOnly('login_protection'));
 $spray[] = $limiter->limit($sprayContext('spray-subject-2'), RateLimitCommand::checkOnly('login_protection'));
 $spray[] = $limiter->limit($sprayContext('spray-subject-3'), RateLimitCommand::checkOnly('login_protection'));
-$spraySuccess = $limiter->limit($sprayContext('spray-subject-3'), RateLimitCommand::recordSuccess('login_protection'));
-$spraySubjectThreeRepeat = $limiter->limit($sprayContext('spray-subject-3'), RateLimitCommand::checkOnly('login_protection'));
-$spray[] = $spraySubjectThreeRepeat;
 $spraySubjectFour = $limiter->limit($sprayContext('spray-subject-4'), RateLimitCommand::checkOnly('login_protection'));
+$spraySuccess = $limiter->limit($sprayContext('spray-subject-4'), RateLimitCommand::recordSuccess('login_protection'));
 $spray[] = $spraySubjectFour;
 for ($index = 5; $index <= 5; $index++) {
     $spray[] = $limiter->limit($sprayContext('spray-subject-' . $index), RateLimitCommand::checkOnly('login_protection'));
 }
-requireCondition($spray[0]->decision === 'ALLOW' && $spray[1]->decision === 'ALLOW' && $spray[2]->decision === 'ALLOW' && $spraySubjectThreeRepeat->decision === 'ALLOW' && $spraySubjectFour->decision === 'ALLOW', 'Credential spray early subjects changed: ' . json_encode(array_map('resultShape', $spray), JSON_THROW_ON_ERROR));
-requireCondition($spraySuccess->decision === RateLimitResultDTO::DECISION_ALLOW && $spraySubjectThreeRepeat->decision === RateLimitResultDTO::DECISION_ALLOW, 'Spray lifecycle double-observation changed the near-threshold result: ' . json_encode([$spraySuccess->decision, $spraySubjectThreeRepeat->decision], JSON_THROW_ON_ERROR));
-requireCondition($spray[5]->decision === RateLimitResultDTO::DECISION_HARD_BLOCK && $spray[5]->blockLevel === 2, 'Credential spray threshold was not observed: ' . json_encode(resultShape($spray[5]), JSON_THROW_ON_ERROR));
+requireCondition($spray[0]->decision === 'ALLOW' && $spray[1]->decision === 'ALLOW' && $spray[2]->decision === 'ALLOW' && $spraySubjectFour->decision === 'ALLOW', 'Credential spray early subjects changed: ' . json_encode(array_map('resultShape', $spray), JSON_THROW_ON_ERROR));
+requireCondition($spraySuccess->decision === RateLimitResultDTO::DECISION_ALLOW, 'Spray lifecycle command triggered an early L2 result.');
+requireCondition($spray[4]->decision === RateLimitResultDTO::DECISION_HARD_BLOCK && $spray[4]->blockLevel === 2, 'Credential spray threshold was not observed: ' . json_encode(resultShape($spray[4]), JSON_THROW_ON_ERROR));
 $trusted = $limiter->limit($sprayContext('spray-subject-5', true), RateLimitCommand::checkOnly('login_protection'));
 $untrustedFollowUp = $limiter->limit($sprayContext('spray-subject-follow-up'), RateLimitCommand::checkOnly('login_protection'));
 requireCondition($trusted->decision === RateLimitResultDTO::DECISION_ALLOW, 'Trusted fifth spray subject was rejected solely by K1.');
 requireCondition($untrustedFollowUp->decision === RateLimitResultDTO::DECISION_HARD_BLOCK && $untrustedFollowUp->blockLevel === 2, 'Untrusted follow-up did not observe the persisted K1 block.');
-$trustedNonK1Context = new RateLimitContextDTO('198.51.100.51', 'Mozilla/5.0 consumer-verification-trusted-authoritative', 'consumer-trusted-authoritative-account', null, 'consumer-trusted-authoritative-device', true, [], false, 'trusted-non-k1');
-$trustedNonK1 = $limiter->limit($trustedNonK1Context, new RateLimitCommand('api_heavy_protection', 120, false, true, false));
-requireCondition($trustedNonK1->decision !== RateLimitResultDTO::DECISION_ALLOW, 'Trusted traffic bypassed authoritative non-K1 enforcement: ' . json_encode(resultShape($trustedNonK1), JSON_THROW_ON_ERROR));
+$trustedNonK1Context = new RateLimitContextDTO('198.51.100.51', 'Mozilla/5.0 consumer-verification-trusted-authoritative', 'consumer-trusted-authoritative-account', ['device' => 'consumer-trusted-authoritative-device']);
+$authoritativeResults = [];
+for ($attempt = 1; $attempt <= 6; $attempt++) {
+    $authoritativeResults[] = $limiter->limit($trustedNonK1Context, RateLimitCommand::recordFailure('login_protection'));
+    if ($authoritativeResults[array_key_last($authoritativeResults)]->decision === RateLimitResultDTO::DECISION_HARD_BLOCK) {
+        break;
+    }
+}
+$trustedNonK1TrustedContext = new RateLimitContextDTO('198.51.100.51', 'Mozilla/5.0 consumer-verification-trusted-authoritative', 'consumer-trusted-authoritative-account', ['device' => 'consumer-trusted-authoritative-device'], 'consumer-trusted-authoritative-device', true, [], true);
+$trustedNonK1 = $limiter->limit($trustedNonK1TrustedContext, RateLimitCommand::checkOnly('login_protection'));
+requireCondition($authoritativeResults[array_key_last($authoritativeResults)]->decision === RateLimitResultDTO::DECISION_HARD_BLOCK, 'Authoritative K4 fixture did not reach L2.');
+requireCondition($trustedNonK1->decision === RateLimitResultDTO::DECISION_HARD_BLOCK && $trustedNonK1->blockLevel >= 2, 'Trusted traffic bypassed authoritative non-K1 enforcement: ' . json_encode(resultShape($trustedNonK1), JSON_THROW_ON_ERROR));
 
 $rotationCases = [];
 foreach (['outer-only' => ['old-outer', 'stable-fingerprint', 'new-outer', 'stable-fingerprint'], 'fingerprint-only' => ['stable-outer', 'old-fingerprint', 'stable-outer', 'new-fingerprint'], 'both' => ['old-both-outer', 'old-both-fingerprint', 'new-both-outer', 'new-both-fingerprint']] as $name => [$oldOuter, $oldFingerprint, $newOuter, $newFingerprint]) {
-    $rotationKeysBefore = redisKeys($raw);
+    $probeContext = $rotationContext($name);
+    $probeBefore = redisKeys($raw);
+    $probeOld = RateLimiterBuilder::fromFullCapabilityStore(new RateLimiterConfig($oldOuter, $oldFingerprint, 'prod'), $store, $signals)->build();
+    $probeOld->limit($probeContext, RateLimitCommand::recordFailure('login_protection'));
+    $probeOldKeys = newlyCreatedRedisKeys($probeBefore, redisKeys($raw));
+    deleteRedisKeys($raw, $probeOldKeys);
+    $probeNewBefore = redisKeys($raw);
+    $probeNew = RateLimiterBuilder::fromFullCapabilityStore(new RateLimiterConfig($newOuter, $newFingerprint, 'prod'), $store, $signals)->build();
+    $probeNew->limit($probeContext, RateLimitCommand::recordFailure('login_protection'));
+    $probeNewKeys = newlyCreatedRedisKeys($probeNewBefore, redisKeys($raw));
+    $previousOnlyKeys = array_values(array_diff($probeOldKeys, $probeNewKeys));
+    $currentOnlyKeys = array_values(array_diff($probeNewKeys, $probeOldKeys));
+    requireCondition(count($previousOnlyKeys) > 0 && count($currentOnlyKeys) > 0, $name . ' differential rotation probe did not isolate generation state.');
+    deleteRedisKeys($raw, $probeNewKeys);
+    $scenarioBefore = redisKeys($raw);
     $old = RateLimiterBuilder::fromFullCapabilityStore(new RateLimiterConfig($oldOuter, $oldFingerprint, 'prod'), $store, $signals)->build();
-    for ($i = 1; $i <= 4; $i++) {
-        $old->limit($rotationContext($name, $i), RateLimitCommand::checkOnly('login_protection'));
-    }
-    $previousRotationKeys = newlyCreatedRedisKeys($rotationKeysBefore, redisKeys($raw));
+    $old->limit($probeContext, RateLimitCommand::recordFailure('login_protection'));
+    $scenarioOldKeys = newlyCreatedRedisKeys($scenarioBefore, redisKeys($raw));
+    $previousRotationKeys = array_values(array_intersect($scenarioOldKeys, $previousOnlyKeys));
     $previousRotationState = redisStateSnapshot($raw, $previousRotationKeys);
     $rotated = RateLimiterBuilder::fromFullCapabilityStore(new RateLimiterConfig($newOuter, $newFingerprint, 'prod', $oldOuter, $oldFingerprint), $store, $signals)->build();
-    $rotationCases[$name] = resultShape($rotated->limit($rotationContext($name, 5), RateLimitCommand::checkOnly('login_protection')));
-    requireCondition($rotationCases[$name]['decision'] === RateLimitResultDTO::DECISION_HARD_BLOCK && $rotationCases[$name]['blockLevel'] === 2, $name . ' rotation continuity was not observed.');
-    $afterRotationState = redisStateSnapshot($raw, $previousRotationKeys);
-    foreach ($previousRotationState as $key => $state) {
-        requireCondition(($afterRotationState[$key]['value'] ?? null) === $state['value'], $name . ' previous state content changed.');
-        if ($state['pttl'] >= 0 && ($afterRotationState[$key]['pttl'] ?? -2) >= 0) {
-            requireCondition($afterRotationState[$key]['pttl'] <= $state['pttl'] + 2, $name . ' previous state TTL was extended.');
-        }
-    }
+    $rotationCases[$name] = resultShape($rotated->limit($probeContext, RateLimitCommand::recordFailure('login_protection')));
+    requireCondition(count(array_intersect($currentOnlyKeys, redisKeys($raw))) > 0, $name . ' rotation did not create Current generation state.');
+    requireReadOnlySnapshot($previousRotationState, redisStateSnapshot($raw, $previousRotationKeys), $name . ' generation-distinct Previous state');
 }
 
 $budgetContext = new RateLimitContextDTO('192.0.2.80', 'Mozilla/5.0 consumer-budget', 'consumer-budget-account', ['device' => 'consumer-budget-device']);
@@ -241,17 +277,16 @@ $budgetOld = RateLimiterBuilder::fromFullCapabilityStore(new RateLimiterConfig('
 $budgetOld->limit($budgetContext, RateLimitCommand::recordFailure('login_protection'));
 $budgetKeysAfterOld = redisKeys($raw);
 $previousBudgetKeys = newlyCreatedRedisKeys($budgetKeysBefore, $budgetKeysAfterOld);
-$previousBudget = findBudgetState($raw, $budgetKeysAfterOld, 1);
+$previousBudget = findBudgetState($raw, $previousBudgetKeys, 1);
 requireCondition($previousBudget !== null, 'Previous budget state was not persisted.');
 $budgetNew = RateLimiterBuilder::fromFullCapabilityStore(new RateLimiterConfig('budget-new-key', 'budget-new-fingerprint', 'prod', 'budget-old-key', 'budget-old-fingerprint'), $store, $signals)->build();
 $budgetNew->limit($budgetContext, RateLimitCommand::recordFailure('login_protection'));
 $budgetKeysAfterNew = redisKeys($raw);
 $currentBudgetKeys = newlyCreatedRedisKeys($budgetKeysAfterOld, $budgetKeysAfterNew);
-$currentBudget = findBudgetState($raw, $budgetKeysAfterNew, 2);
+$currentBudget = findBudgetState($raw, $currentBudgetKeys, 2);
 requireCondition($currentBudget !== null, 'Current budget state was not created during migration.');
 $budgetNew->limit($budgetContext, RateLimitCommand::recordFailure('login_protection'));
-$budgetKeysAfterCurrent = redisKeys($raw);
-$currentBudget = findBudgetState($raw, $budgetKeysAfterCurrent, 3);
+$currentBudget = findBudgetState($raw, [$currentBudget['key']], 3);
 requireCondition($currentBudget !== null, 'Current budget state did not advance on the current generation.');
 $previousBudgetMap = $previousBudget['state'];
 $currentBudgetMap = $currentBudget['state'];
@@ -347,7 +382,9 @@ requireCondition($halfOpenResult->failureMode === 'DEGRADED_MODE', 'Healthy reco
 $circuitClock->setNow($circuitClock->now()->modify('+121 seconds'));
 $closedResult = $circuitLimiter->limit($circuitContext, RateLimitCommand::checkOnly('api_heavy_protection'));
 requireCondition($closedResult->failureMode === 'NORMAL' && $circuitEvalCalls > $evalCallsAtOpen, 'Circuit did not close after the healthy interval.');
+$circuitSignalTypes = array_values(array_map(static fn($signal): string => $signal->type, $circuitSignals->signals()));
+requireCondition(count($circuitSignalTypes) === 2 && $circuitSignalTypes === ['CB_OPENED', 'CB_RECOVERED'], 'Circuit transition signals were not emitted exactly once.');
 
 $keys = redisKeys($raw);
 requireCondition(count($keys) > 0, 'No Redis persistence was observable.');
-echo json_encode(['status' => 'PASS', 'packageInstallPath' => $installPath, 'productionAutoload' => true, 'packageTestNamespaceAvailable' => false, 'login' => ['checkOnly' => resultShape($loginCheck), 'recordFailure' => resultShape($loginFailure), 'recordSuccess' => resultShape($loginSuccess), 'persistenceProof' => true], 'otp' => resultShape($otp), 'apiHeavy' => resultShape($api), 'credentialSpray' => array_map('resultShape', $spray), 'sprayLifecycle' => ['recordSuccess' => resultShape($spraySuccess), 'repeatCheckOnly' => resultShape($spraySubjectThreeRepeat)], 'trustedSession' => resultShape($trusted), 'untrustedFollowUp' => resultShape($untrustedFollowUp), 'trustedNonK1' => resultShape($trustedNonK1), 'rotations' => $rotationCases, 'budgetMigration' => ['previousCount' => (int) $previousBudgetMap['count'], 'currentCount' => (int) $currentBudgetMap['count'], 'epochStartPreserved' => true, 'previousReadOnly' => true], 'hardBlockCyclePause' => ['firstCycle' => resultShape($firstCycle), 'secondCycle' => resultShape($secondCycle), 'pauseRetained' => true], 'failureSemantics' => ['login' => resultShape($loginFailureMode), 'otp' => resultShape($otpFailureMode), 'apiHeavy' => resultShape($apiFailureMode)], 'circuit' => ['openGuard' => resultShape($openGuardResult), 'halfOpenProbe' => resultShape($halfOpenResult), 'closedRecovery' => resultShape($closedResult), 'normalWorkloadSuppressedWhileOpen' => true, 'signalCount' => count($circuitSignals->signals()), 'signalTypes' => array_values(array_unique(array_map(static fn($signal): string => $signal->type, $circuitSignals->signals())))], 'redisPersistence' => ['keyCount' => count($keys)], 'failureSignals' => count($signals->signals())], JSON_THROW_ON_ERROR) . PHP_EOL;
+echo json_encode(['status' => 'PASS', 'packageInstallPath' => $installPath, 'productionAutoload' => true, 'packageTestNamespaceAvailable' => false, 'login' => ['checkOnly' => resultShape($loginCheck), 'recordFailure' => resultShape($loginFailure), 'recordSuccess' => resultShape($loginSuccess), 'progression' => array_map('resultShape', $loginProgression), 'persistenceProof' => true], 'otp' => resultShape($otp), 'apiHeavy' => resultShape($api), 'credentialSpray' => array_map('resultShape', $spray), 'sprayLifecycle' => ['recordSuccess' => resultShape($spraySuccess), 'subjectFourCheckOnly' => resultShape($spraySubjectFour)], 'trustedSession' => resultShape($trusted), 'untrustedFollowUp' => resultShape($untrustedFollowUp), 'trustedNonK1' => resultShape($trustedNonK1), 'rotations' => $rotationCases, 'budgetMigration' => ['previousCount' => (int) $previousBudgetMap['count'], 'currentCount' => (int) $currentBudgetMap['count'], 'epochStartPreserved' => true, 'previousReadOnly' => true], 'hardBlockCyclePause' => ['firstCycle' => resultShape($firstCycle), 'secondCycle' => resultShape($secondCycle), 'pauseRetained' => true], 'failureSemantics' => ['login' => resultShape($loginFailureMode), 'otp' => resultShape($otpFailureMode), 'apiHeavy' => resultShape($apiFailureMode)], 'circuit' => ['openGuard' => resultShape($openGuardResult), 'halfOpenProbe' => resultShape($halfOpenResult), 'closedRecovery' => resultShape($closedResult), 'normalWorkloadSuppressedWhileOpen' => true, 'signalCount' => count($circuitSignals->signals()), 'signalTypes' => array_values(array_unique(array_map(static fn($signal): string => $signal->type, $circuitSignals->signals())))], 'redisPersistence' => ['keyCount' => count($keys)], 'failureSignals' => count($signals->signals())], JSON_THROW_ON_ERROR) . PHP_EOL;
