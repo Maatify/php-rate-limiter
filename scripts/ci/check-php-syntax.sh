@@ -14,7 +14,9 @@ fi
 
 php_files=()
 while IFS= read -r -d '' file; do
-    php_files+=("$file")
+    if [[ -f "$file" ]]; then
+        php_files+=("$file")
+    fi
 done <"$discovery_file"
 
 if [[ "${#php_files[@]}" -eq 0 ]]; then

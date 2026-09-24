@@ -10,7 +10,7 @@ use Maatify\SharedCommon\Contracts\ClockInterface;
 
 final class FixedClock implements ClockInterface
 {
-    public function __construct(private readonly DateTimeImmutable $currentTime) {}
+    public function __construct(private DateTimeImmutable $currentTime) {}
 
     public function now(): DateTimeImmutable
     {
@@ -20,5 +20,10 @@ final class FixedClock implements ClockInterface
     public function getTimezone(): DateTimeZone
     {
         return $this->currentTime->getTimezone();
+    }
+
+    public function setNow(DateTimeImmutable $currentTime): void
+    {
+        $this->currentTime = $currentTime;
     }
 }
