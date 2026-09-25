@@ -1,10 +1,10 @@
 # DEC-008 — Policy Capability Classification and Extension Model
 
-**Decision ID:** `DEC-008`  
-**Status:** `PROPOSED`  
-**Date:** `2026-09-25`  
-**Decision authority:** Pending WU-S4-03C Lead/Owner decision  
-**Scope / Concern:** Reusable policy capability classification, official preset semantics, and public custom-policy extension behavior  
+**Decision ID:** `DEC-008`
+**Status:** `PROPOSED`
+**Date:** `2026-09-25`
+**Decision authority:** Pending WU-S4-03C Lead/Owner decision
+**Scope / Concern:** Reusable policy capability classification, official preset semantics, and public custom-policy extension behavior
 **Canonical contract / current owner:** Pending; current behavior is distributed across `BlockPolicyInterface`, `RateLimiterBuilder`, `RateLimiterEngine`, `EvaluationPipeline`, and `docs/POLICIES.md`
 
 > This record is a proposal only. It is not implementation authority while its status is `PROPOSED`.
