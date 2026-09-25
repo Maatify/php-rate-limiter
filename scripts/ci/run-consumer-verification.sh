@@ -16,6 +16,26 @@ bash "$package_root/scripts/ci/check-consumer-verification-boundary.sh"
 # process-local trap table and its own local consumer_root, so the two runs
 # cannot share or clobber each other's cleanup or temp state while running
 # concurrently.
+#
+# Cleanup is explicit, not trap-driven: the EXIT trap below is only a
+# best-effort safety net for an unexpected early termination (e.g. a signal)
+# between creating consumer_root and reaching the explicit cleanup step. Bash
+# does not guarantee that a failing EXIT trap changes the shell's exit status,
+# so relying on the trap alone could let a real cleanup failure be reported as
+# success. The explicit cleanup call below, and its captured status, are the
+# sole authority for this run's cleanup outcome, and the trap is disarmed
+# immediately afterwards so cleanup cannot run a second time.
+#
+# The verification steps themselves run in run-single-consumer-verification.sh
+# as a separate bash process, not inlined here. Bash disables `errexit` for
+# every command inside a compound command (a `{ }` group, a function body,
+# etc.) that is itself the tested operand of `||`/`&&`/`if` in the CURRENT
+# shell. Capturing this run's status with `|| verification_status=$?` would
+# therefore silently disable fail-fast for every composer/php step if they
+# were inlined in this same function, letting the run appear to pass after a
+# real failure. A separate process is unaffected by that suppression, so its
+# own `set -e` aborts on the first failing step and its real exit status is
+# what `verification_status` captures below.
 run_clean_consumer_verification() {
     local run_number="$1"
     local log_file="$2"
@@ -23,30 +43,42 @@ run_clean_consumer_verification() {
     consumer_root="$(mktemp -d "${TMPDIR:-/tmp}/maatify-rate-limiter-consumer.XXXXXX")"
     trap 'rm -rf -- "$consumer_root"' EXIT
 
+    local verification_status=0
+    bash "$package_root/scripts/ci/run-single-consumer-verification.sh" \
+        "$run_number" "$consumer_root" "$fixture_root" "$package_root" \
+        >"$log_file" 2>&1 || verification_status=$?
+
+    local cleanup_status=0
+    rm -rf -- "$consumer_root" >>"$log_file" 2>&1 || cleanup_status=$?
+    trap - EXIT
+
     {
-        echo "Consumer Verification Harness clean run #$run_number starting at $(date -u +%FT%TZ)"
+        if (( verification_status == 0 )); then
+            echo "Consumer Verification Harness clean run #$run_number verification: PASS"
+        else
+            echo "Consumer Verification Harness clean run #$run_number verification: FAIL (status $verification_status)"
+        fi
+        if (( cleanup_status == 0 )); then
+            echo "Consumer Verification Harness clean run #$run_number cleanup: PASS"
+        else
+            echo "Consumer Verification Harness clean run #$run_number cleanup: FAIL (status $cleanup_status)"
+        fi
+    } >>"$log_file" 2>&1
 
-        cp -R "$fixture_root/." "$consumer_root/"
-        sed "s|__PACKAGE_ROOT__|$package_root|g" \
-            "$consumer_root/composer.json.template" > "$consumer_root/composer.json"
-
-        bash "$package_root/scripts/ci/run-with-redis-service.sh" bash -c '
-            cd "$1"
-            echo "Consumer Verification Harness clean run #$2"
-            # The external fixture intentionally accepts any detached development ref from its path repository.
-            composer validate --strict --no-check-all
-            composer update --no-interaction --prefer-dist --no-progress
-            composer dump-autoload --optimize --strict-psr
-            composer check-platform-reqs
-            composer show maatify/php-rate-limiter
-            php verify.php
-        ' _ "$consumer_root" "$run_number"
-
-        echo "Consumer Verification Harness clean run #$run_number finished at $(date -u +%FT%TZ)"
-    } >"$log_file" 2>&1
+    if (( verification_status != 0 )); then
+        # The original verification failure is authoritative: a cleanup
+        # outcome, either way, must not hide it.
+        return "$verification_status"
+    fi
+    if (( cleanup_status != 0 )); then
+        return "$cleanup_status"
+    fi
+    return 0
 }
 
 log_dir="$(mktemp -d "${TMPDIR:-/tmp}/maatify-rate-limiter-consumer-logs.XXXXXX")"
+# Best-effort safety net only, same rationale as the per-run trap above; the
+# explicit cleanup below is what actually determines pass/fail.
 trap 'rm -rf -- "$log_dir"' EXIT
 
 run_clean_consumer_verification 1 "$log_dir/run-1.log" &
@@ -64,13 +96,20 @@ cat -- "$log_dir/run-1.log"
 echo '=== Consumer Verification Harness clean run #2 log ==='
 cat -- "$log_dir/run-2.log"
 
+log_dir_cleanup_status=0
+rm -rf -- "$log_dir" || log_dir_cleanup_status=$?
+trap - EXIT
+
 if (( status_1 != 0 )); then
     echo "Consumer Verification Harness clean run #1 failed with status $status_1." >&2
 fi
 if (( status_2 != 0 )); then
     echo "Consumer Verification Harness clean run #2 failed with status $status_2." >&2
 fi
-if (( status_1 != 0 || status_2 != 0 )); then
+if (( log_dir_cleanup_status != 0 )); then
+    echo "Consumer Verification Harness log directory cleanup failed with status $log_dir_cleanup_status." >&2
+fi
+if (( status_1 != 0 || status_2 != 0 || log_dir_cleanup_status != 0 )); then
     exit 1
 fi
 
