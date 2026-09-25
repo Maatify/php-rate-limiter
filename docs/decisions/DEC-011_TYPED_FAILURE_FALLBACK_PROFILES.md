@@ -2,10 +2,10 @@
 
 `DEC-011`
 
-**Status:** ACTIVE  
-**Decision authority:** Lead-approved technical decision under Owner-directed WU-S4-03C remediation  
-**Supersedes:** None  
-**Superseded By:** None  
+**Status:** ACTIVE
+**Decision authority:** Lead-approved technical decision under Owner-directed WU-S4-03C remediation
+**Supersedes:** None
+**Superseded By:** None
 **Canonical owner:** `docs/FAILURE_SEMANTICS.md`, typed fallback profile contracts, `LocalFallbackLimiter`, and failure resolution runtime
 
 ## Decision
