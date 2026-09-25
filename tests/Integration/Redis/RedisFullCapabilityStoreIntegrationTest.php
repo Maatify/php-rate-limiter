@@ -491,6 +491,92 @@ final class RedisFullCapabilityStoreIntegrationTest extends TestCase
         self::assertNull($this->store->readGenerationBoundScoreState('same-second-value', null)?->postPunishmentReentry);
     }
 
+    public function testLifecycleMutationPreservesPhysicalAndAuthoritativeExpiryAcrossAllK4Boundaries(): void
+    {
+        $now = $this->redisNow();
+
+        $legacyPreviousKey = $this->key('score', 'ttl-contract-legacy-previous');
+        $this->raw(['HSET', $legacyPreviousKey, 'value', '4', 'updatedAt', (string) $now]);
+        $this->raw(['PEXPIRE', $legacyPreviousKey, '1200']);
+        $legacyPreviousBefore = $this->hashMap($legacyPreviousKey);
+        $legacyPreviousPttl = $this->integer($this->raw(['PTTL', $legacyPreviousKey]));
+        $legacyPreviousState = $this->store->readGenerationBoundScoreState('ttl-contract-legacy-current', 'ttl-contract-legacy-previous');
+        self::assertNotNull($legacyPreviousState);
+        $legacyHandoff = $this->store->mutateGenerationBoundScore('ttl-contract-legacy-current', 'ttl-contract-legacy-previous', $legacyPreviousState, 86400, 5);
+        self::assertTrue($legacyHandoff->applied);
+        self::assertSame(1, $legacyHandoff->state?->generation);
+        self::assertLessThanOrEqual($legacyPreviousPttl + 25, $this->integer($this->raw(['PTTL', $this->key('score', 'ttl-contract-legacy-current')])));
+        self::assertSame($legacyPreviousBefore, $this->hashMap($legacyPreviousKey));
+
+        $generatedPrevious = $this->store->mutateGenerationBoundScore('ttl-contract-generated-previous', null, null, 600, 6);
+        self::assertTrue($generatedPrevious->applied);
+        self::assertNotNull($generatedPrevious->state);
+        $generatedPreviousKey = $this->key('score', 'ttl-contract-generated-previous');
+        $generatedPreviousBefore = $this->hashMap($generatedPreviousKey);
+        $generatedExpiry = $generatedPrevious->state->expiresAt;
+        $generatedPreviousPttl = $this->integer($this->raw(['PTTL', $generatedPreviousKey]));
+        $generatedPreviousState = $this->store->readGenerationBoundScoreState('ttl-contract-generated-current', 'ttl-contract-generated-previous');
+        self::assertNotNull($generatedPreviousState);
+        $generatedHandoff = $this->store->mutateGenerationBoundScore('ttl-contract-generated-current', 'ttl-contract-generated-previous', $generatedPreviousState, 86400, 7);
+        self::assertTrue($generatedHandoff->applied);
+        self::assertSame(2, $generatedHandoff->state?->generation);
+        self::assertSame($generatedExpiry, $generatedHandoff->state->expiresAt);
+        self::assertLessThanOrEqual($generatedPreviousPttl + 25, $this->integer($this->raw(['PTTL', $this->key('score', 'ttl-contract-generated-current')])));
+        self::assertSame($generatedPreviousBefore, $this->hashMap($generatedPreviousKey));
+
+        $current = $this->store->mutateGenerationBoundScore('ttl-contract-current', null, null, 600, 8);
+        self::assertTrue($current->applied);
+        self::assertNotNull($current->state);
+        $currentKey = $this->key('score', 'ttl-contract-current');
+        $currentBeforePttl = $this->integer($this->raw(['PTTL', $currentKey]));
+        $currentExpiry = $current->state->expiresAt;
+        $currentMutation = $this->store->mutateGenerationBoundScore('ttl-contract-current', null, $current->state, 86400, 9);
+        self::assertTrue($currentMutation->applied);
+        self::assertSame(2, $currentMutation->state?->generation);
+        self::assertSame($currentExpiry, $currentMutation->state->expiresAt);
+        self::assertLessThanOrEqual($currentBeforePttl + 25, $this->integer($this->raw(['PTTL', $currentKey])));
+
+        $subSecond = $this->store->mutateGenerationBoundScore('ttl-contract-sub-second', null, null, 600, 1);
+        self::assertTrue($subSecond->applied);
+        $subSecondKey = $this->key('score', 'ttl-contract-sub-second');
+        $this->raw(['PEXPIRE', $subSecondKey, '900']);
+        $subSecondPttl = $this->integer($this->raw(['PTTL', $subSecondKey]));
+        self::assertSame(0, intdiv($subSecondPttl, 1000));
+        self::assertGreaterThan(0, $subSecondPttl);
+        $subSecondState = $this->store->readGenerationBoundScoreState('ttl-contract-sub-second', null);
+        self::assertNotNull($subSecondState);
+        $subSecondMutation = $this->store->mutateGenerationBoundScore('ttl-contract-sub-second', null, $subSecondState, 86400, 2);
+        self::assertTrue($subSecondMutation->applied);
+        self::assertSame(2, $subSecondMutation->state?->generation);
+        self::assertLessThanOrEqual($subSecondPttl + 25, $this->integer($this->raw(['PTTL', $subSecondKey])));
+
+        $noExpiryKey = $this->key('score', 'ttl-contract-no-expiry');
+        $noExpiryNow = $this->redisNow();
+        $this->raw(['HSET', $noExpiryKey, 'value', '3', 'updatedAt', (string) $noExpiryNow, 'generation', '3', 'expiresAt', (string) ($noExpiryNow + 600)]);
+        $noExpiryHash = $this->hashMap($noExpiryKey);
+        self::assertSame(-1, $this->integer($this->raw(['PTTL', $noExpiryKey])));
+        $noExpiryState = new GenerationBoundScoreStateDTO(GenerationBoundScoreStateDTO::SOURCE_CURRENT, 3, $noExpiryNow, $noExpiryNow + 600, 3);
+        $this->assertOperationFails(fn(): mixed => $this->store->readGenerationBoundScoreState('ttl-contract-no-expiry', null));
+        $this->assertOperationFails(fn(): mixed => $this->store->mutateGenerationBoundScore('ttl-contract-no-expiry', null, $noExpiryState, 600, 4));
+        $this->assertOperationFails(fn(): mixed => $this->store->claimPostPunishmentReentry('ttl-contract-no-expiry', null, str_repeat('a', 32)));
+        self::assertSame($noExpiryHash, $this->hashMap($noExpiryKey));
+
+        $stale = $this->store->mutateGenerationBoundScore('ttl-contract-stale', null, null, 600, 1);
+        self::assertTrue($stale->applied);
+        $staleKey = $this->key('score', 'ttl-contract-stale');
+        $staleState = $stale->state;
+        self::assertNotNull($staleState);
+        $this->raw(['DEL', $staleKey]);
+        $staleMutation = $this->store->mutateGenerationBoundScore('ttl-contract-stale', null, $staleState, 600, 2);
+        self::assertFalse($staleMutation->applied);
+        self::assertSame(-2, $this->integer($this->raw(['PTTL', $staleKey])));
+
+        $empty = $this->store->mutateGenerationBoundScore('ttl-contract-empty', null, null, 600, 1);
+        self::assertTrue($empty->applied);
+        self::assertSame(1, $empty->state?->generation);
+        self::assertGreaterThan(0, $this->integer($this->raw(['PTTL', $this->key('score', 'ttl-contract-empty')])));
+    }
+
     public function testConcurrentPreviousHandoffHasNoDoubleSeedAndGenerationMutationsHaveNoLostUpdates(): void
     {
         $now = $this->redisNow();

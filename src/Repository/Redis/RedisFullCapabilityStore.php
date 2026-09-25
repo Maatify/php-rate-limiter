@@ -73,23 +73,34 @@ return now
 LUA;
 
     private const LIFECYCLE_MUTATE = <<<'LUA'
-local now = tonumber(redis.call('TIME')[1])
+local redisTime = redis.call('TIME')
+local now = tonumber(redisTime[1])
 local current = KEYS[1]; local previous = KEYS[2]
-local exists = redis.call('EXISTS', current)
-local source = current
-if exists == 0 and previous ~= '' and redis.call('EXISTS', previous) == 1 then source = previous end
 local expectedSource = ARGV[1]
-if expectedSource ~= '' and expectedSource ~= source then return {0} end
+local currentPttl = redis.call('PTTL', current)
+if currentPttl == -1 then return redis.error_reply('malformed generation-bound score state') end
+local source = ''
+local sourcePttl = 0
+if currentPttl > 0 then
+  source = current
+  sourcePttl = currentPttl
+elseif previous ~= '' then
+  local previousPttl = redis.call('PTTL', previous)
+  if previousPttl == -1 then return redis.error_reply('malformed generation-bound score state') end
+  if previousPttl > 0 then source = previous; sourcePttl = previousPttl end
+end
+if source == '' then
+  if expectedSource ~= '' then return {0} end
+  local ttl = tonumber(ARGV[5]); if ttl <= 0 then return redis.error_reply('invalid score TTL') end
+  redis.call('HSET', current, 'value', ARGV[6], 'updatedAt', now, 'generation', 1, 'expiresAt', now + ttl)
+  redis.call('PEXPIRE', current, ttl * 1000)
+  return {1, ARGV[6], now, now + ttl, 1}
+end
+if expectedSource == '' or expectedSource ~= source then return {0} end
 local observedGeneration = redis.call('HGET', source, 'generation')
 local observedUpdated = redis.call('HGET', source, 'updatedAt')
 local observedValue = redis.call('HGET', source, 'value')
 if not observedValue or not observedUpdated then
-  if redis.call('EXISTS', source) == 0 then
-    local ttl = tonumber(ARGV[5]); if ttl <= 0 then return redis.error_reply('invalid score TTL') end
-    redis.call('HSET', current, 'value', ARGV[6], 'updatedAt', now, 'generation', 1, 'expiresAt', now + ttl)
-    redis.call('EXPIRE', current, ttl)
-    return {1, ARGV[6], now, now + ttl, 1}
-  end
   return redis.error_reply('malformed generation-bound score state')
 end
 local observedExpiry = redis.call('HGET', source, 'expiresAt')
@@ -113,22 +124,25 @@ if evidenceCount == 3 then
   local numericUntil = tonumber(evidenceUntil); local numericEvidenceGeneration = tonumber(evidenceGeneration)
   if not numericUntil or numericUntil ~= math.floor(numericUntil) or numericUntil <= 0 or not numericEvidenceGeneration or numericEvidenceGeneration ~= math.floor(numericEvidenceGeneration) or numericEvidenceGeneration <= 0 then return redis.error_reply('malformed lifecycle evidence') end
 end
-if expectedSource == '' and (redis.call('EXISTS', current) == 1 or (previous ~= '' and redis.call('EXISTS', previous) == 1)) then return {0} end
-if expectedSource ~= '' then
-  if not observedValue or observedValue ~= ARGV[2] or not observedUpdated or observedUpdated ~= ARGV[3] then return {0} end
-  if ARGV[4] == '' then
-    if observedGeneration then return {0} end
-  elseif not observedGeneration or observedGeneration ~= ARGV[4] then return {0} end
-end
+if observedValue ~= ARGV[2] or observedUpdated ~= ARGV[3] then return {0} end
+if ARGV[4] == '' then
+  if observedGeneration then return {0} end
+elseif not observedGeneration or observedGeneration ~= ARGV[4] then return {0} end
 local requestedTtl = tonumber(ARGV[5]); if requestedTtl <= 0 then return redis.error_reply('invalid score TTL') end
-local generation = source == current and (observedGeneration and tonumber(observedGeneration) + 1 or 1) or 1
-local ttl = source == current and redis.call('TTL', current) or requestedTtl
-if ttl <= 0 then return {0} end
-local expiry = source == current and redis.call('HGET', current, 'expiresAt') or nil
+local generation = observedGeneration and tonumber(observedGeneration) + 1 or 1
+local expiry = redis.call('HGET', source, 'expiresAt')
 if expiry and (not tonumber(expiry) or tonumber(expiry) ~= math.floor(tonumber(expiry))) then return redis.error_reply('malformed score expiry') end
-expiry = expiry and tonumber(expiry) or now + ttl
+if expiry then
+  expiry = tonumber(expiry)
+  if expiry <= now then return {0} end
+else
+  expiry = now + math.floor((sourcePttl + 999) / 1000)
+end
+local authoritativeRemaining = (expiry - now) * 1000
+local destinationPttl = math.min(sourcePttl, authoritativeRemaining)
+if destinationPttl <= 0 then return {0} end
 redis.call('HSET', current, 'value', ARGV[6], 'updatedAt', now, 'generation', generation, 'expiresAt', expiry)
-redis.call('EXPIRE', current, ttl)
+redis.call('PEXPIRE', current, destinationPttl)
 redis.call('HDEL', current, 'reentryId', 'reentryValidUntil', 'reentryGeneration')
 if KEYS[3] ~= '' then redis.call('DEL', KEYS[3]) end
 return {1, ARGV[6], now, expiry, generation}
@@ -137,15 +151,25 @@ LUA;
     private const LIFECYCLE_READ = <<<'LUA'
 local now = tonumber(redis.call('TIME')[1])
 local source = KEYS[1]
-if redis.call('EXISTS', source) == 0 then source = KEYS[2] end
-if source == '' or redis.call('EXISTS', source) == 0 then return {} end
-if redis.call('TTL', source) <= 0 then return {} end
+local currentPttl = redis.call('PTTL', source)
+if currentPttl == -1 then return redis.error_reply('malformed generation-bound score state') end
+if currentPttl <= 0 then
+  source = KEYS[2]
+  if source == '' then return {} end
+  local previousPttl = redis.call('PTTL', source)
+  if previousPttl == -1 then return redis.error_reply('malformed generation-bound score state') end
+  if previousPttl <= 0 then return {} end
+end
 local value = redis.call('HGET', source, 'value'); local updated = redis.call('HGET', source, 'updatedAt')
 if not value or not updated or not tonumber(value) or tonumber(value) ~= math.floor(tonumber(value)) or not tonumber(updated) or tonumber(updated) ~= math.floor(tonumber(updated)) then return redis.error_reply('malformed generation-bound score state') end
 local generation = redis.call('HGET', source, 'generation') or ''
 if generation ~= '' and (not tonumber(generation) or tonumber(generation) ~= math.floor(tonumber(generation)) or tonumber(generation) <= 0) then return redis.error_reply('malformed generation') end
 local expiry = redis.call('HGET', source, 'expiresAt')
-if generation == '' and not expiry then expiry = now + redis.call('TTL', source) end
+if generation == '' and not expiry then
+  local pttl = redis.call('PTTL', source)
+  if pttl <= 0 then return {} end
+  expiry = now + math.floor((pttl + 999) / 1000)
+end
 if not expiry or not tonumber(expiry) or tonumber(expiry) ~= math.floor(tonumber(expiry)) or tonumber(expiry) <= now then return redis.error_reply('malformed generation-bound score expiry') end
 local active = false
 for _, blockKey in ipairs({KEYS[3], KEYS[4]}) do
@@ -175,19 +199,26 @@ LUA;
     private const LIFECYCLE_CLAIM = <<<'LUA'
 local now = tonumber(redis.call('TIME')[1])
 for _, blockKey in ipairs({KEYS[3], KEYS[4]}) do
-  if blockKey ~= '' and redis.call('EXISTS', blockKey) == 1 then
-    if redis.call('TTL', blockKey) < 0 then return redis.error_reply('malformed hard-block state') end
+  if blockKey ~= '' then
+    local blockPttl = redis.call('PTTL', blockKey)
+    if blockPttl == -1 then return redis.error_reply('malformed hard-block state') end
+    if blockPttl > 0 then
     local rawExpires = redis.call('HGET', blockKey, 'expiresAt'); local rawLevel = redis.call('HGET', blockKey, 'level')
     if not rawExpires or not rawLevel then return redis.error_reply('malformed hard-block state') end
     local expires = tonumber(rawExpires); local level = tonumber(rawLevel)
     if not expires or expires ~= math.floor(expires) or not level or level ~= math.floor(level) then return redis.error_reply('malformed hard-block state') end
     if expires > now then return 0 end
+    end
   end
 end
 local source = KEYS[1]
-if redis.call('EXISTS', source) == 0 then source = KEYS[2] end
-if source ~= '' and redis.call('EXISTS', source) == 1 then
-  if redis.call('TTL', source) < 0 then return redis.error_reply('malformed generation-bound score state') end
+local currentPttl = redis.call('PTTL', source)
+if currentPttl == -1 then return redis.error_reply('malformed generation-bound score state') end
+if currentPttl <= 0 then source = KEYS[2] end
+if source ~= '' then
+  local sourcePttl = redis.call('PTTL', source)
+  if sourcePttl == -1 then return redis.error_reply('malformed generation-bound score state') end
+  if sourcePttl <= 0 then return 0 end
   local rawValue = redis.call('HGET', source, 'value'); local rawUpdated = redis.call('HGET', source, 'updatedAt')
   if not rawValue or not rawUpdated then return redis.error_reply('malformed generation-bound score state') end
   local value = tonumber(rawValue); local updated = tonumber(rawUpdated)

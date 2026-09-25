@@ -201,6 +201,33 @@ final class PostPunishmentReentryLifecycleTest extends TestCase
         self::assertSame($previousBefore?->updatedAt, $store->get($previousKey)?->updatedAt);
     }
 
+    public function testGeneratedPreviousMutationAdvancesGenerationAndPreservesExpiry(): void
+    {
+        $clock = new FixedClock();
+        $store = new InMemoryRateLimitStore($clock);
+        $currentKey = 'generated-current';
+        $previousKey = 'generated-previous';
+
+        $seed = $store->mutateGenerationBoundScore($previousKey, null, null, 600, 5);
+        self::assertTrue($seed->applied);
+        self::assertNotNull($seed->state);
+        $previousBefore = $store->get($previousKey);
+        $expiryBefore = $store->expiresAt($previousKey);
+        $expected = $store->readGenerationBoundScoreState($currentKey, $previousKey);
+        self::assertNotNull($expected);
+        self::assertSame(1, $expected->generation);
+
+        $mutation = $store->mutateGenerationBoundScore($currentKey, $previousKey, $expected, 86400, 8);
+
+        self::assertTrue($mutation->applied);
+        self::assertNotNull($mutation->state);
+        self::assertSame(2, $mutation->state->generation);
+        self::assertSame($expiryBefore, $mutation->state->expiresAt);
+        self::assertSame($previousBefore?->value, $store->get($previousKey)?->value);
+        self::assertSame($previousBefore?->updatedAt, $store->get($previousKey)?->updatedAt);
+        self::assertSame($expiryBefore, $store->expiresAt($previousKey));
+    }
+
     public function testKnownDeviceK5OnlyFailureDoesNotAdvanceServedK4Generation(): void
     {
         $clock = new FixedClock();
@@ -311,7 +338,8 @@ final class PostPunishmentReentryLifecycleTest extends TestCase
             public function mutateGenerationBoundScore(string $currentKey, ?string $previousKey, ?GenerationBoundScoreStateDTO $expectedState, int $ttlSeconds, int $newValue): GenerationBoundScoreMutationDTO
             {
                 if ($this->injectConflict && $this->mutationCalls++ === 0) {
-                    parent::mutateGenerationBoundScore($currentKey, $previousKey, null, $ttlSeconds, 8);
+                    $latest = $this->readGenerationBoundScoreState($currentKey, $previousKey);
+                    parent::mutateGenerationBoundScore($currentKey, $previousKey, $latest, $ttlSeconds, 8);
                     return new GenerationBoundScoreMutationDTO(false, null);
                 }
                 $this->expectedValues[] = $expectedState?->value;

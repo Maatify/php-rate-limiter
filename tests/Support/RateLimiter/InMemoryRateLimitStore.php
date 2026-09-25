@@ -178,12 +178,15 @@ class InMemoryRateLimitStore implements BudgetSeedStoreInterface, PunishmentLife
     public function mutateGenerationBoundScore(string $currentKey, ?string $previousKey, ?GenerationBoundScoreStateDTO $expectedState, int $ttlSeconds, int $newValue): GenerationBoundScoreMutationDTO
     {
         $observed = $this->readGenerationBoundScoreState($currentKey, $previousKey);
-        if ($expectedState !== null && ($observed === null || $observed->source !== $expectedState->source || $observed->generation !== $expectedState->generation || $observed->value !== $expectedState->value)) {
+        if ($expectedState === null && $observed !== null) {
+            return new GenerationBoundScoreMutationDTO(false, null);
+        }
+        if ($expectedState !== null && ($observed === null || $observed->source !== $expectedState->source || $observed->generation !== $expectedState->generation || $observed->value !== $expectedState->value || $observed->updatedAt !== $expectedState->updatedAt)) {
             return new GenerationBoundScoreMutationDTO(false, null);
         }
         $now = $this->clock->now()->getTimestamp();
-        $generation = $observed?->source === GenerationBoundScoreStateDTO::SOURCE_CURRENT ? ($observed->generation ?? 0) + 1 : 1;
-        $expires = $observed?->source === GenerationBoundScoreStateDTO::SOURCE_CURRENT ? $observed->expiresAt : $now + $ttlSeconds;
+        $generation = $observed === null ? 1 : ($observed->generation ?? 0) + 1;
+        $expires = $observed === null ? $now + $ttlSeconds : $observed->expiresAt;
         $this->data[$currentKey] = ['value' => $newValue, 'updatedAt' => $now, 'expiresAt' => $expires];
         $this->generation[$currentKey] = ['generation' => $generation, 'lifecycle' => null];
         unset($this->claimMarkers[$currentKey]);
