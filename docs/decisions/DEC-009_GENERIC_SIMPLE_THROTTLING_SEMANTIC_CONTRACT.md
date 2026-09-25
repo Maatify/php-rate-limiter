@@ -1,13 +1,24 @@
 # DEC-009 — Generic / Simple Throttling Semantic Contract
 
-**Decision ID:** `DEC-009`
-**Status:** `PROPOSED`
-**Date:** `2026-09-25`
-**Decision authority:** Pending WU-S4-03C Lead/Owner decision
-**Scope / Concern:** First-class reusable generic/simple throttling semantics distinct from the package's score-based security policies
-**Canonical contract / current owner:** Pending; no current public simple-throttling contract exists
+## Decision ID
 
-> This record is a proposal only. It is not implementation authority while its status is `PROPOSED`.
+`DEC-009`
+
+## Status
+
+`ACTIVE`
+
+## Date
+
+2026-09-25
+
+## Decision Authority
+
+Owner-approved WU-S4-03C decision under PR #60.
+
+## Scope / Concern
+
+First-class generic/simple throttling semantics distinct from the package's score-based security-policy model.
 
 ## Context
 
@@ -21,76 +32,148 @@ The current package is optimized for multi-signal security enforcement:
 - budgets;
 - circuit-breaker and failure-mode behavior.
 
-WU-S4-03C Fresh Lead baseline found no public contract that directly represents the common reusable requirement:
+The package does not currently expose a first-class public contract for the common reusable requirement:
 
 ```text
 allow up to N events in an interval
-then return a deterministic retry boundary
+then deny until that interval ends
 ```
 
-Trying to approximate that behavior through `ScoreThresholdsDTO` is not semantically equivalent because the current score model has package-owned decay intervals and a fixed progressive penalty ladder.
+The current score model is not semantically equivalent. `DecayCalculator` uses package-owned decay intervals and `PenaltyLadder` uses fixed progressive punishment durations. Mapping a simple quota onto score thresholds would therefore create misleading behavior and retry semantics.
 
-Historical `Maatify/rate-limiter` evidence includes action-oriented `limit / interval / banTime` configuration, and mature external evidence such as Symfony RateLimiter treats general throttling as a first-class concern independent of login-specific protection. These are comparative inputs only and do not dictate this package's architecture.
+Historical `Maatify/rate-limiter` evidence includes action-level `limit / interval / banTime` configuration. Mature external implementations also treat general window-based throttling as a distinct rate-limiting concern. Those are comparative inputs only; this decision is based on the current package's reusable coverage gap.
 
-## Proposed direction
+## Decision
 
-The package should own a first-class generic/simple throttling capability **if** the final WU-S4-03C decision confirms that consumers otherwise need to build parallel rate-limit behavior for this common family.
+The package owns a first-class generic/simple throttling capability.
 
-The simple-throttling contract must remain semantically distinct from the existing score-based security-policy model.
+Version 1 of that capability is intentionally narrow:
 
-It must not be implemented by disguising a fixed event quota as arbitrary score thresholds.
+```text
+FIXED WINDOW
+cost = 1 per consume
+one policy-defined limit
+one policy-defined interval
+one caller-supplied subject
+atomic consume
+deterministic retry boundary
+```
 
-## Semantic questions that must be resolved
+It is not implemented by translating the request into `ScoreThresholdsDTO`, score decay, or the progressive penalty ladder.
 
-Before implementation, the accepted decision must define:
+### Fixed-window semantics
 
-1. **Identity / scope** — what package-owned typed input identifies the throttled subject.
-2. **Limit** — how the maximum event count is represented and validated.
-3. **Cost** — whether every operation costs exactly one unit or whether variable cost is supported.
-4. **Interval / window** — the exact window semantics and boundary behavior.
-5. **Retry-After** — deterministic derivation and exact-boundary semantics.
-6. **Mutation model** — the distinction between checking and consuming an event, if both exist.
-7. **Failure mode** — what backend failure means for a generic limiter.
-8. **Result contract** — whether existing `RateLimitResultDTO` remains semantically correct or a dedicated typed result is required.
-9. **Coexistence** — how simple throttling coexists with existing score-based security policies without creating two conflicting enforcement sources for the same logical concern.
-10. **Construction** — how the capability is discoverable through the package's public construction surface without expanding 03C into backend-breadth work owned by WU-S4-03D.
+For one `policy + subject` pair:
 
-## Scope guard
+1. the first consume starts the fixed window;
+2. consumes `1..limit` return allowed;
+3. consume `limit + 1` and later consumes inside the same window return denied;
+4. denied consumes do not renew or extend the window;
+5. the next window begins only after the current window expires and a new consume occurs;
+6. `retryAfter` is the positive remaining duration until the fixed window ends when denied;
+7. `resetAt` is the stable end instant of the current fixed window;
+8. `remaining` is clamped at zero once the limit is exhausted.
 
-WU-S4-03C may define and implement the package-owned semantic capability needed on the currently supported package path.
+Every call is an atomic consume. Version 1 does not expose a separate non-mutating `check()` followed by a later `consume()`, because that split would create a time-of-check/time-of-use race.
 
-WU-S4-03C does **not** decide:
+### Policy contract
 
-- PSR adapter breadth;
-- additional backend families;
-- Redis Cluster portability;
-- operational mutation APIs;
-- broad observability architecture.
+Simple throttling uses a dedicated typed policy contract separate from `BlockPolicyInterface`.
 
-Those remain WU-S4-03D concerns.
+The policy defines at least:
 
-## Alternatives under review
+- stable policy name;
+- positive integer limit;
+- positive integer interval in seconds.
 
-### Alternative A — No first-class simple throttling
+Version 1 uses unit cost only. Variable cost, token bucket, sliding window, leaky bucket, burst configuration, and weighted consumption are outside this decision.
 
-Declare the package intentionally limited to score-based security enforcement and require consumers to use another limiter for generic quotas.
+### Identity and key protection
 
-This is acceptable only if WU-S4-03C can prove that doing so does not force consumers to create parallel behavior that this package is expected to own.
+The Host supplies one non-empty subject identifier. The package owns physical key derivation.
 
-### Alternative B — First-class simple throttling capability
+The raw subject must not be persisted directly by the package-owned backend path. The derived key includes the environment scope and simple-policy identity and uses the package's configured key secret.
 
-Add a package-owned semantic contract for a simple event quota with deterministic retry behavior, while keeping it distinct from the score-based policy model.
+When a previous key secret is configured, fixed-window continuity across key rotation must follow the package's existing budget-epoch migration contract. A valid previous-generation epoch must not be silently reset.
 
-This is the leading proposal.
+The existing `BudgetSeedStoreInterface` capability is therefore the required migration boundary when previous-generation state must be carried into the active generation.
 
-### Alternative C — Emulate simple throttling with score policies
+### Storage semantics
 
-Map event counts onto score deltas and thresholds.
+Version 1 reuses the existing atomic budget-epoch persistence primitive:
 
-This is not considered semantically safe unless the final analysis can prove exact equivalence, including interval and Retry-After behavior.
+- `RateLimitStoreInterface::getBudget()`;
+- `RateLimitStoreInterface::incrementBudget()`;
+- `BudgetSeedStoreInterface::incrementBudgetWithSeed()` when rotation migration is required.
 
-## Decision required before implementation
+No new backend family is introduced by this decision.
 
-WU-S4-03C must resolve the semantic questions above and explicitly accept or reject a first-class simple-throttling capability.
+The simple-throttling implementation must use a distinct package-owned key namespace so simple-window state cannot collide with authentication budgets or score state.
 
-No storage/API implementation may rely on this proposal while its status remains `PROPOSED`.
+### Result contract
+
+Simple throttling uses a dedicated typed result contract rather than `RateLimitResultDTO`.
+
+The result exposes at least:
+
+- `allowed`;
+- `limit`;
+- `remaining`;
+- `retryAfter`;
+- `resetAt`;
+- explicit failure-state metadata required by the final implementation contract.
+
+It does not invent a block level or score metadata when those concepts do not exist.
+
+### Failure semantics
+
+Version 1 simple throttling is `FAIL_CLOSED` only.
+
+This keeps the capability bounded and prevents WU-S4-03C from inventing a second outage/fallback model that conflicts with the package-wide failure contract.
+
+Availability-first `FAIL_OPEN` simple throttling is not part of this decision because the current package requires bounded local guardrails during shared-backend failure. Defining a generic subject-aware local fallback model is broader integration/failure architecture and belongs to later work, including WU-S4-03D where applicable.
+
+The implementation must fail explicitly rather than silently resetting or bypassing the window when rotation migration or required persistence capability is unavailable.
+
+## Coexistence with Score-Based Policies
+
+Simple throttling and score-based security policies are separate semantic tools.
+
+A Host may use both when they protect different concerns, but the package must not automatically translate, merge, or escalate state between the two models.
+
+Simple throttling does not create K1-K5 score state, progressive punishment levels, correlation observations, authentication budgets, or DEC-007 lifecycle state.
+
+## Construction Boundary
+
+The capability must be reachable through the package-owned default composition surface without creating a second competing builder, factory, or Host-owned parallel engine.
+
+The composition evolution required to add this surface is governed by DEC-010.
+
+## Rationale
+
+A fixed-window quota is common reusable rate-limiting behavior and is materially different from the package's score/decay/punishment model.
+
+The existing budget-epoch primitives already provide the atomic persistence semantics needed for a bounded first version, including a defined migration capability for key rotation. Reusing those primitives keeps WU-S4-03C focused on package semantics rather than backend breadth.
+
+## Consequences
+
+- Generic/simple throttling moves from baseline classification C to target classification B.
+- Version 1 is fixed-window only.
+- There is no `check()`/later-`consume()` split.
+- There is no variable cost.
+- There is no `FAIL_OPEN` mode in version 1.
+- No new backend family is required.
+- Rotation continuity cannot silently reset an active window.
+- The simple result contract stays semantically separate from score-policy results.
+
+## Supersedes
+
+None.
+
+## Superseded By
+
+None.
+
+## Canonical Contract / Current Owner
+
+This decision governs the WU-S4-03C simple-throttling implementation. Until that implementation lands, no first-class simple-throttling public API is claimed by the package.
