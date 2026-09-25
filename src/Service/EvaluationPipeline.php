@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace Maatify\RateLimiter\Service;
 
 use Maatify\RateLimiter\Config\BlockPolicyInterface;
+use Maatify\RateLimiter\Config\PostPunishmentReentryPolicyInterface;
 use Maatify\RateLimiter\DTO\BoundedCorrelationObservationDTO;
 use Maatify\RateLimiter\DTO\BoundedDistinctSnapshotDTO;
 use Maatify\RateLimiter\Repository\BudgetSeedStoreInterface;
@@ -15,6 +16,9 @@ use Maatify\RateLimiter\Repository\BoundedCorrelationStoreInterface;
 use Maatify\RateLimiter\Repository\CorrelationStoreInterface;
 use Maatify\RateLimiter\Repository\CorrelationRotationStoreInterface;
 use Maatify\RateLimiter\Repository\HardBlockCycleStoreInterface;
+use Maatify\RateLimiter\Repository\PunishmentLifecycleStoreInterface;
+use Maatify\RateLimiter\Exception\RateLimitConcurrencyException;
+use Maatify\RateLimiter\DTO\PostPunishmentReentryMetadataDTO;
 use Maatify\RateLimiter\Repository\RateLimitStoreInterface;
 use Maatify\RateLimiter\DTO\DecayPauseStateDTO;
 use Maatify\RateLimiter\DTO\BudgetStateDTO;
@@ -33,10 +37,13 @@ use Maatify\RateLimiter\Service\PenaltyLadder;
 use Maatify\SharedCommon\Contracts\ClockInterface;
 
 /**
- * Executes key derivation, score evaluation, budget handling, and aggregation.
+ * Executes key derivation, score evaluation, budget handling, aggregation, and
+ * the opt-in generation-bound authentication K4 lifecycle.
  *
  * The pipeline reads both the active and previous key generation when rotation
- * is configured, while writing only to the active generation.
+ * is configured, while writing only to the active generation. It also owns K4
+ * mutation orchestration, lifecycle-publication eligibility, and the served
+ * post-punishment re-entry metadata/suppression path.
  */
 class EvaluationPipeline
 {
@@ -52,6 +59,9 @@ class EvaluationPipeline
 
     private string $secret;
     private ?string $previousSecret;
+
+    /** @var array<string, int> Current K4 keys with qualifying score generations. */
+    private array $lifecycleEligibleKeys = [];
 
     /**
      * @param RateLimitStoreInterface $store Score and block persistence boundary.
@@ -94,6 +104,40 @@ class EvaluationPipeline
     }
 
     /**
+     * Claim one package-owned, one-shot lifecycle handoff without exposing
+     * physical keys or generation state to the host.
+     *
+     * Resolves the current K4 namespace first and the previous K4 namespace
+     * only when the request carries a previous identity generation. Requires
+     * the lifecycle-store capability; missing account/K4 identity returns
+     * false. The backend owns stale, expired, generation-mismatched, absent,
+     * replayed, and malformed-evidence semantics: normal misses return false,
+     * while backend/contract corruption propagates. A successful claim consumes
+     * only the one-shot application handoff marker, never punishment evidence,
+     * score, generation, block, cycle, or pause state.
+     */
+    public function claimPostPunishmentReentry(
+        RateLimitContextDTO $context,
+        DeviceIdentityDTO $device,
+        string $policyName,
+        string $lifecycleId,
+    ): bool {
+        if (! $this->store instanceof PunishmentLifecycleStoreInterface) {
+            throw new RateLimiterException('Post-punishment re-entry requires PunishmentLifecycleStoreInterface.');
+        }
+        $current = $this->buildKeys($context, $device->normalizedUa, $device->fingerprintHash, $policyName, $this->secret);
+        $previous = $this->hasPreviousGeneration($device)
+            ? $this->buildKeys($context, $device->normalizedUa, $this->previousFingerprintHash($device), $policyName, $this->previousSecret ?? $this->secret)
+            : [];
+        $currentKey = $current['k4'] ?? null;
+        if ($currentKey === null) {
+            return false;
+        }
+
+        return $this->store->claimPostPunishmentReentry($currentKey, $previous['k4'] ?? null, $lifecycleId);
+    }
+
+    /**
      * Evaluate a command and return the winning allow or block decision.
      *
      * Normal candidates are aggregated before budget enforcement, and only
@@ -105,6 +149,7 @@ class EvaluationPipeline
         RateLimitCommand $request,
         DeviceIdentityDTO $device,
     ): RateLimitResultDTO {
+        $this->lifecycleEligibleKeys = [];
         // 1. Build keys for the current generation, then the one previous
         // generation when either generation component is present.
         $realKeysV2 = $this->buildKeys($context, $device->normalizedUa, $device->fingerprintHash, $policy->getName(), $this->secret);
@@ -175,6 +220,23 @@ class EvaluationPipeline
         // 5. Fetch & Decay Scores (Using Effective Keys)
         $rawScores = $this->fetchScores($effectiveKeysV2, $effectiveKeysV1);
         $decayedScores = $this->applyDecay($rawScores, $effectiveKeysV2, $effectiveKeysV1);
+
+        $servedReentry = null;
+        if ($policy instanceof PostPunishmentReentryPolicyInterface
+            && $this->store instanceof PunishmentLifecycleStoreInterface
+            && ($k4 = $realKeysV2['k4'] ?? null) !== null) {
+            $state = $this->store->readGenerationBoundScoreState($k4, $realKeysV1['k4'] ?? null);
+            $now = $this->clock->now()->getTimestamp();
+            if ($state?->generation !== null && $state->postPunishmentReentry !== null
+                && $state->postPunishmentReentry->validUntil > $now
+                && $state->expiresAt > $now) {
+                $servedReentry = new PostPunishmentReentryMetadataDTO(
+                    $state->postPunishmentReentry->id,
+                    $state->postPunishmentReentry->validUntil,
+                );
+                $decayedScores['k4'] = 0;
+            }
+        }
 
         // 6. Evaluate normal candidates. None of these candidates may be
         // hidden by an active account budget.
@@ -348,6 +410,21 @@ class EvaluationPipeline
             );
         }
 
+        if ($servedReentry !== null && $request->isPreCheck && $final->decision === RateLimitResultDTO::DECISION_ALLOW) {
+            return new RateLimitResultDTO(
+                $final->decision,
+                $final->blockLevel,
+                $final->retryAfter,
+                $final->failureMode,
+                new \Maatify\RateLimiter\DTO\RateLimitMetadataDTO(
+                    $final->metadata?->signal,
+                    'post_punishment_reentry',
+                    new \Maatify\RateLimiter\DTO\RateLimitContextMetadataDTO('post_punishment_reentry', 'k4'),
+                    $servedReentry,
+                ),
+            );
+        }
+
         return $final;
     }
 
@@ -418,7 +495,9 @@ class EvaluationPipeline
                     : RateLimitResultDTO::DECISION_SOFT_BLOCK;
                 $source = $this->isTrustedAuthenticationPolicy($policy->getName(), $device) && $this->isK1Key($keyType)
                     ? 'trusted_advisory:score'
-                    : 'score';
+                    : ($keyType === 'k4' && $policy instanceof PostPunishmentReentryPolicyInterface
+                        ? 'score:k4'
+                        : 'score');
                 $thresholds = $this->getScopedThresholds($keyType, $policy);
                 $scoreState = $rawScores[$keyType] ?? null;
                 $key = $keys[$keyType] ?? null;
@@ -1471,8 +1550,34 @@ class EvaluationPipeline
                 $baseValue = ($scoreDto && ! $scoreDto->isFromV1) ? $rawVal : 0;
                 $netChange = ($decayed + $delta) - $baseValue;
 
-                $newScore = $this->store->increment($key, 86400, (int) $netChange);
+                $newScore = null;
+                $mutation = null;
+                if ($keyType === 'k4' && $policy instanceof PostPunishmentReentryPolicyInterface
+                    && $this->store instanceof PunishmentLifecycleStoreInterface) {
+                    for ($attempt = 0; $attempt < 3; $attempt++) {
+                        $expected = $this->store->readGenerationBoundScoreState($key, $keysV1[$keyType] ?? null);
+                        $observedValue = $expected === null ? $rawVal : $expected->value;
+                        $observedAt = $expected === null ? $updatedAt : $expected->updatedAt;
+                        $decayed = $this->calculateDecayedScore($observedValue, $observedAt, $keyType, $key, $keysV1[$keyType] ?? null);
+                        $mutation = $this->store->mutateGenerationBoundScore($key, $keysV1[$keyType] ?? null, $expected, 86400, (int) ($decayed + $delta));
+                        if ($mutation->applied) {
+                            $newScore = $mutation->state?->value;
+                            break;
+                        }
+                    }
+                    if ($newScore === null) {
+                        throw new RateLimitConcurrencyException('K4 generation mutation conflict budget exhausted.');
+                    }
+                } else {
+                    $newScore = $this->store->increment($key, 86400, (int) $netChange);
+                }
                 $actualScoreLevel = $this->determineLevel($newScore, $keyType, $policy);
+                if ($keyType === 'k4' && $policy instanceof PostPunishmentReentryPolicyInterface
+                    && $this->store instanceof PunishmentLifecycleStoreInterface
+                    && $actualScoreLevel >= 2 && $mutation?->state?->generation !== null
+                ) {
+                    $this->lifecycleEligibleKeys[$key] = $mutation->state->generation;
+                }
                 $level = $actualScoreLevel;
 
                 $watchEscalated = false;
@@ -1503,7 +1608,10 @@ class EvaluationPipeline
 
                 $levelsByKeyType[$keyType] = $level;
                 $retryAfterByKeyType[$keyType] = PenaltyLadder::getDuration($level);
-                if (! $watchEscalated && $actualScoreLevel > 0 && $thresholdsDto !== null) {
+                $freshK4LifecycleHard = $keyType === 'k4'
+                    && $policy instanceof PostPunishmentReentryPolicyInterface
+                    && isset($this->lifecycleEligibleKeys[$key]);
+                if (! $freshK4LifecycleHard && ! $watchEscalated && $actualScoreLevel > 0 && $thresholdsDto !== null) {
                     $exitThreshold = $level >= 2 ? $thresholdsDto->l2 : $thresholdsDto->l1;
                     $pauseState = $this->decayPauseState(
                         $key,
@@ -1679,11 +1787,16 @@ class EvaluationPipeline
                 $persistence = [];
 
                 if ($context->accountId && ($keys['k4'] ?? null) !== null) {
+                    $k4LifecycleLevel = $levelsByKeyType['k4'] ?? 0;
+                    $k4IsLifecycleEligible = $policy instanceof PostPunishmentReentryPolicyInterface
+                        && $k4LifecycleLevel >= 2
+                        && isset($this->lifecycleEligibleKeys[$keys['k4']]);
+                    $persistenceLevel = $k4IsLifecycleEligible ? $k4LifecycleLevel : $newMaxLevel;
                     $persistence[] = [
                         'key' => $keys['k4'],
                         'previousKey' => $keysV1['k4'] ?? null,
-                        'level' => $newMaxLevel,
-                        'duration' => $duration,
+                        'level' => $persistenceLevel,
+                        'duration' => PenaltyLadder::getDuration($persistenceLevel),
                     ];
                 }
 
@@ -1761,7 +1874,7 @@ class EvaluationPipeline
     /**
      * @param list<array{decision: string, level: int, retryAfter: int, source: string, persistence: list<array{key: string, previousKey: ?string, level: int, duration: int}>}> $candidates
     */
-    private function persistWinningCandidates(array $candidates, ?string $winningClass, bool $persistAllCandidates = false): void
+    private function persistWinningCandidates(BlockPolicyInterface $policy, array $candidates, ?string $winningClass, bool $persistAllCandidates = false): void
     {
         /** @var array<string, array{previousKey: ?string, level: int, duration: int}> $blocks */
         $blocks = [];
@@ -1790,6 +1903,59 @@ class EvaluationPipeline
 
         $cycleStore = $this->store instanceof HardBlockCycleStoreInterface ? $this->store : null;
         foreach ($blocks as $key => $block) {
+            if ($policy instanceof PostPunishmentReentryPolicyInterface
+                && $this->store instanceof PunishmentLifecycleStoreInterface
+                && $block['level'] >= 2
+                && isset($this->lifecycleEligibleKeys[$key])) {
+                $applied = false;
+                $expectedGeneration = $this->lifecycleEligibleKeys[$key];
+                $publicationLevel = $block['level'];
+                $publicationDuration = $block['duration'];
+                for ($attempt = 0; $attempt < 3; $attempt++) {
+                    $transition = $this->store->blockWithPunishmentLifecycleTracking(
+                        $key,
+                        $block['previousKey'],
+                        $expectedGeneration,
+                        bin2hex(random_bytes(16)),
+                        $publicationLevel,
+                        $publicationDuration,
+                        self::CYCLE_WINDOW_SECONDS,
+                        self::CYCLE_THRESHOLD,
+                        self::DECAY_PAUSE_SECONDS,
+                        self::PAUSE_HISTORY_RETENTION_SECONDS,
+                    );
+                    if ($transition->applied) {
+                        $applied = true;
+                        break;
+                    }
+
+                    // A failed publication is a generation race, not a reason
+                    // to replay the stale block tuple. Re-read the coherent
+                    // lifecycle snapshot and recompute the current K4 level.
+                    $latest = $this->store->readGenerationBoundScoreState($key, $block['previousKey']);
+                    if ($latest?->generation === null) {
+                        break;
+                    }
+                    $latestScore = $this->calculateDecayedScore(
+                        $latest->value,
+                        $latest->updatedAt,
+                        'k4',
+                        $key,
+                        $block['previousKey'],
+                    );
+                    $latestLevel = $this->determineLevel($latestScore, 'k4', $policy);
+                    if ($latestLevel < 2) {
+                        break;
+                    }
+                    $expectedGeneration = $latest->generation;
+                    $publicationLevel = $latestLevel;
+                    $publicationDuration = PenaltyLadder::getDuration($latestLevel);
+                }
+                if (! $applied) {
+                    throw new RateLimitConcurrencyException('K4 punishment publication conflict budget exhausted.');
+                }
+                continue;
+            }
             if ($block['level'] >= 2) {
                 if ($cycleStore === null) {
                     throw new RateLimiterException(
@@ -1840,6 +2006,18 @@ class EvaluationPipeline
             fn(array $candidate): bool => ! str_starts_with($candidate['source'], 'trusted_advisory:'),
         ));
 
+        // A post-punishment K4 mutation is the authoritative candidate for
+        // that same logical K4 request. The pre-mutation score candidate can
+        // still carry a longer decay horizon, so remove only that marked K4
+        // residual. Correlation, budget, flood, and other independent gates
+        // remain eligible to contribute their own retry-after values.
+        if ($this->lifecycleEligibleKeys !== []) {
+            $candidates = array_values(array_filter(
+                $candidates,
+                static fn(array $candidate): bool => $candidate['source'] !== 'score:k4',
+            ));
+        }
+
         $normalCandidate = $this->aggregateCandidates($candidates);
         $config = $policy->getBudgetConfig();
         $budgetKey = $this->resolveActiveBudgetKeyV2ThenV1($keysV2['k4'] ?? null, $keysV1['k4'] ?? null);
@@ -1876,17 +2054,18 @@ class EvaluationPipeline
 
         $final = $this->aggregateCandidates($candidates);
         if ($final === null) {
-            $this->persistWinningCandidates($advisoryCandidates, null);
+            $this->persistWinningCandidates($policy, $advisoryCandidates, null);
 
             return $this->createAllowResult();
         }
 
         $this->persistWinningCandidates(
+            $policy,
             $candidates,
             $final['decision'],
             $this->isApiHeavyPolicy($policy->getName()),
         );
-        $this->persistWinningCandidates($advisoryCandidates, null);
+        $this->persistWinningCandidates($policy, $advisoryCandidates, null);
 
         return $this->createBlockedResult($final['level'], $final['retryAfter'], $final['decision']);
     }

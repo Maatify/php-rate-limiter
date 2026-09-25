@@ -3,7 +3,7 @@
 **Module:** RateLimiter
 **Namespace:** `Maatify\RateLimiter`
 **Status:** LOCKED — Policy Contract
-**Spec Version:** `1.4.0`
+**Spec Version:** `1.5.0`
 **Change Class:** Hardening Alignment
 
 This document defines the **official policy presets** provided by the Rate Limiter module.
@@ -399,3 +399,12 @@ Policy identifiers MUST remain stable.
 
 **This document is authoritative.
 Any deviation requires explicit approval and versioning.**
+
+## 7.1 Generation-Bound Re-Entry Opt-In
+
+`login_protection` and `otp_protection` implement the generation-bound K4
+post-punishment re-entry marker and require `PunishmentLifecycleStoreInterface`;
+the builder fails fast when the capability is absent. `api_heavy_protection`
+does not opt in. A custom policy must explicitly implement the marker and pass
+the same validated authentication-policy requirements before using this
+lifecycle; a custom name alone is not sufficient.

@@ -11,9 +11,13 @@ use Maatify\RateLimiter\DTO\ScoreDeltasDTO;
 use Maatify\RateLimiter\DTO\ScoreThresholdsDTO;
 
 /**
- * Policy for login failures with account-scoped thresholds and a budget.
+ * Default Login failure policy with account-scoped thresholds and a budget.
+ *
+ * It opts into DEC-007 generation-bound K4 lifecycle behavior. The policy
+ * supplies positive monotonic K4 thresholds and fail-closed failure semantics;
+ * the Builder additionally requires lifecycle-capable storage for this opt-in.
  */
-class LoginProtectionPolicy implements BlockPolicyInterface
+class LoginProtectionPolicy implements PostPunishmentReentryPolicyInterface
 {
     /**
      * Return the policy identifier consumed by the engine.

@@ -11,6 +11,10 @@ use Maatify\RateLimiter\DTO\BudgetStateDTO;
 use Maatify\RateLimiter\DTO\CircuitBreakerStateDTO;
 use Maatify\RateLimiter\DTO\DecayPauseStateDTO;
 use Maatify\RateLimiter\DTO\HardBlockCycleResultDTO;
+use Maatify\RateLimiter\DTO\GenerationBoundScoreMutationDTO;
+use Maatify\RateLimiter\DTO\GenerationBoundScoreStateDTO;
+use Maatify\RateLimiter\DTO\PostPunishmentReentryStateDTO;
+use Maatify\RateLimiter\DTO\PunishmentLifecycleTransitionDTO;
 use Maatify\RateLimiter\DTO\RateLimitStateDTO;
 use Maatify\RateLimiter\Exception\RateLimiterException;
 use Maatify\RateLimiter\Repository\FullCapabilityStoreInterface;
@@ -20,7 +24,9 @@ use Maatify\RateLimiter\Repository\FullCapabilityStoreInterface;
  *
  * The Host supplies the raw-command executor. This adapter supports one
  * logical non-clustered Redis server and deliberately has no Redis-client
- * dependency.
+ * dependency. Its lifecycle operations use Redis server time, preserve
+ * current-first/previous-read-only rotation semantics, and fail explicitly on
+ * structurally malformed generated lifecycle state.
  */
 final class RedisFullCapabilityStore implements FullCapabilityStoreInterface
 {
@@ -64,6 +70,230 @@ local now = tonumber(redis.call('TIME')[1])
 redis.call('HSET', KEYS[1], 'value', ARGV[2], 'updatedAt', now)
 redis.call('EXPIRE', KEYS[1], ARGV[1])
 return now
+LUA;
+
+    private const LIFECYCLE_MUTATE = <<<'LUA'
+local redisTime = redis.call('TIME')
+local nowSeconds = tonumber(redisTime[1])
+local nowMs = (nowSeconds * 1000) + math.floor(tonumber(redisTime[2]) / 1000)
+local current = KEYS[1]; local previous = KEYS[2]
+local expectedSource = ARGV[1]
+local currentPttl = redis.call('PTTL', current)
+if currentPttl == -1 then return redis.error_reply('malformed generation-bound score state') end
+local source = ''
+local sourcePttl = 0
+if currentPttl > 0 then
+  source = current
+  sourcePttl = currentPttl
+elseif previous ~= '' then
+  local previousPttl = redis.call('PTTL', previous)
+  if previousPttl == -1 then return redis.error_reply('malformed generation-bound score state') end
+  if previousPttl > 0 then source = previous; sourcePttl = previousPttl end
+end
+if source == '' then
+  if expectedSource ~= '' then return {0} end
+  local ttl = tonumber(ARGV[6]); if ttl <= 0 then return redis.error_reply('invalid score TTL') end
+  local requestedDeadlineMs = nowMs + (ttl * 1000)
+  local expiry = math.floor((requestedDeadlineMs + 999) / 1000)
+  redis.call('HSET', current, 'value', ARGV[7], 'updatedAt', nowSeconds, 'generation', 1, 'expiresAt', expiry)
+  redis.call('PEXPIREAT', current, requestedDeadlineMs)
+  return {1, ARGV[7], nowSeconds, expiry, 1}
+end
+local observedGeneration = redis.call('HGET', source, 'generation')
+local observedUpdated = redis.call('HGET', source, 'updatedAt')
+local observedValue = redis.call('HGET', source, 'value')
+if not observedValue or not observedUpdated then
+  return redis.error_reply('malformed generation-bound score state')
+end
+local numericObservedValue = tonumber(observedValue); local numericObservedUpdated = tonumber(observedUpdated)
+if not numericObservedValue or numericObservedValue ~= math.floor(numericObservedValue) or not numericObservedUpdated or numericObservedUpdated ~= math.floor(numericObservedUpdated) or numericObservedUpdated < 0 then return redis.error_reply('malformed generation-bound score state') end
+local observedExpiry = redis.call('HGET', source, 'expiresAt')
+if observedGeneration then
+  local numericGeneration = tonumber(observedGeneration)
+  if not numericGeneration or numericGeneration ~= math.floor(numericGeneration) or numericGeneration <= 0 then return redis.error_reply('malformed generation') end
+  if not observedExpiry then return redis.error_reply('malformed generation-bound score expiry') end
+end
+if observedExpiry then
+  local numericExpiry = tonumber(observedExpiry)
+  if not numericExpiry or numericExpiry ~= math.floor(numericExpiry) or numericExpiry <= 0 or numericExpiry < numericObservedUpdated then return redis.error_reply('malformed score expiry') end
+end
+local evidenceCount = redis.call('HEXISTS', source, 'reentryId') + redis.call('HEXISTS', source, 'reentryValidUntil') + redis.call('HEXISTS', source, 'reentryGeneration')
+if evidenceCount ~= 0 and evidenceCount ~= 3 then return redis.error_reply('malformed lifecycle evidence') end
+if evidenceCount == 3 then
+  local evidenceId = redis.call('HGET', source, 'reentryId')
+  local evidenceUntil = redis.call('HGET', source, 'reentryValidUntil')
+  local evidenceGeneration = redis.call('HGET', source, 'reentryGeneration')
+  if not observedGeneration then return redis.error_reply('malformed lifecycle evidence generation') end
+  if not evidenceId or string.len(evidenceId) ~= 32 or string.match(evidenceId, '^[a-f0-9]+$') == nil then return redis.error_reply('malformed lifecycle id') end
+  local numericUntil = tonumber(evidenceUntil); local numericEvidenceGeneration = tonumber(evidenceGeneration)
+  if not numericUntil or numericUntil ~= math.floor(numericUntil) or numericUntil <= 0 or not numericEvidenceGeneration or numericEvidenceGeneration ~= math.floor(numericEvidenceGeneration) or numericEvidenceGeneration <= 0 then return redis.error_reply('malformed lifecycle evidence') end
+end
+local effectiveObservedExpiry = observedExpiry
+if not effectiveObservedExpiry then effectiveObservedExpiry = tostring(math.floor((nowMs + sourcePttl + 999) / 1000)) end
+local physicalDeadlineMs = nowMs + sourcePttl
+if observedGeneration and physicalDeadlineMs > (tonumber(effectiveObservedExpiry) * 1000) then return redis.error_reply('inconsistent generated score expiry') end
+if expectedSource == '' or expectedSource ~= source then return {0} end
+if observedValue ~= ARGV[2] or observedUpdated ~= ARGV[3] or effectiveObservedExpiry ~= ARGV[5] then return {0} end
+if ARGV[4] == '' then
+  if observedGeneration then return {0} end
+elseif not observedGeneration or observedGeneration ~= ARGV[4] then return {0} end
+local requestedTtl = tonumber(ARGV[6]); if requestedTtl <= 0 then return redis.error_reply('invalid score TTL') end
+local generation = observedGeneration and tonumber(observedGeneration) + 1 or 1
+local expiry = redis.call('HGET', source, 'expiresAt')
+if expiry and (not tonumber(expiry) or tonumber(expiry) ~= math.floor(tonumber(expiry)) or tonumber(expiry) <= 0) then return redis.error_reply('malformed score expiry') end
+if expiry then
+  expiry = tonumber(expiry)
+  if (expiry * 1000) <= nowMs then return {0} end
+else
+  expiry = math.floor((nowMs + sourcePttl + 999) / 1000)
+end
+local destinationDeadlineMs = math.min(physicalDeadlineMs, expiry * 1000)
+if destinationDeadlineMs <= nowMs then return {0} end
+redis.call('HSET', current, 'value', ARGV[7], 'updatedAt', nowSeconds, 'generation', generation, 'expiresAt', expiry)
+redis.call('PEXPIREAT', current, destinationDeadlineMs)
+redis.call('HDEL', current, 'reentryId', 'reentryValidUntil', 'reentryGeneration')
+if KEYS[3] ~= '' then redis.call('DEL', KEYS[3]) end
+return {1, ARGV[7], nowSeconds, expiry, generation}
+LUA;
+
+    private const LIFECYCLE_READ = <<<'LUA'
+local redisTime = redis.call('TIME')
+local nowSeconds = tonumber(redisTime[1])
+local nowMs = (nowSeconds * 1000) + math.floor(tonumber(redisTime[2]) / 1000)
+local source = KEYS[1]
+local currentPttl = redis.call('PTTL', source)
+if currentPttl == -1 then return redis.error_reply('malformed generation-bound score state') end
+if currentPttl <= 0 then
+  source = KEYS[2]
+  if source == '' then return {} end
+  local previousPttl = redis.call('PTTL', source)
+  if previousPttl == -1 then return redis.error_reply('malformed generation-bound score state') end
+  if previousPttl <= 0 then return {} end
+end
+local value = redis.call('HGET', source, 'value'); local updated = redis.call('HGET', source, 'updatedAt')
+if not value or not updated or not tonumber(value) or tonumber(value) ~= math.floor(tonumber(value)) or not tonumber(updated) or tonumber(updated) ~= math.floor(tonumber(updated)) or tonumber(updated) < 0 then return redis.error_reply('malformed generation-bound score state') end
+local generation = redis.call('HGET', source, 'generation') or ''
+if generation ~= '' and (not tonumber(generation) or tonumber(generation) ~= math.floor(tonumber(generation)) or tonumber(generation) <= 0) then return redis.error_reply('malformed generation') end
+local expiry = redis.call('HGET', source, 'expiresAt')
+if generation == '' and not expiry then
+  local pttl = redis.call('PTTL', source)
+  if pttl <= 0 then return {} end
+  expiry = math.floor((nowMs + pttl + 999) / 1000)
+end
+if not expiry or not tonumber(expiry) or tonumber(expiry) ~= math.floor(tonumber(expiry)) or tonumber(expiry) <= 0 or tonumber(expiry) < tonumber(updated) then return redis.error_reply('malformed generation-bound score expiry') end
+local sourcePttl = redis.call('PTTL', source)
+if sourcePttl <= 0 then return {} end
+if generation and (nowMs + sourcePttl) > (tonumber(expiry) * 1000) then return redis.error_reply('inconsistent generated score expiry') end
+if (tonumber(expiry) * 1000) <= nowMs then return {} end
+local active = false
+for _, blockKey in ipairs({KEYS[3], KEYS[4]}) do
+  if blockKey ~= '' and redis.call('EXISTS', blockKey) == 1 then
+    local blockPttl = redis.call('PTTL', blockKey)
+    if blockPttl == -1 then return redis.error_reply('malformed hard-block state') end
+    if blockPttl > 0 then
+      local blockExpiry = redis.call('HGET', blockKey, 'expiresAt'); local level = redis.call('HGET', blockKey, 'level')
+      if not blockExpiry or not level or not tonumber(blockExpiry) or tonumber(blockExpiry) ~= math.floor(tonumber(blockExpiry)) or not tonumber(level) or tonumber(level) ~= math.floor(tonumber(level)) then return redis.error_reply('malformed hard-block state') end
+      if tonumber(blockExpiry) > nowSeconds and tonumber(level) >= 2 then active = true end
+    end
+  end
+end
+local evidenceCount = redis.call('HEXISTS', source, 'reentryId') + redis.call('HEXISTS', source, 'reentryValidUntil') + redis.call('HEXISTS', source, 'reentryGeneration')
+if evidenceCount ~= 0 and evidenceCount ~= 3 then return redis.error_reply('malformed lifecycle evidence') end
+local evidenceGeneration = ''
+local evidenceId = ''
+local evidenceUntil = ''
+if evidenceCount == 3 then
+  evidenceGeneration = redis.call('HGET', source, 'reentryGeneration')
+  evidenceId = redis.call('HGET', source, 'reentryId')
+  evidenceUntil = redis.call('HGET', source, 'reentryValidUntil')
+  if not evidenceId or string.len(evidenceId) ~= 32 or string.match(evidenceId, '^[a-f0-9]+$') == nil then return redis.error_reply('malformed lifecycle id') end
+  local numericUntil = tonumber(evidenceUntil); local numericEvidenceGeneration = tonumber(evidenceGeneration)
+  if not numericUntil or numericUntil ~= math.floor(numericUntil) or numericUntil <= 0 or not numericEvidenceGeneration or numericEvidenceGeneration ~= math.floor(numericEvidenceGeneration) or numericEvidenceGeneration <= 0 then return redis.error_reply('malformed lifecycle evidence') end
+  if generation == '' then return redis.error_reply('legacy score cannot carry lifecycle evidence') end
+  if active or numericEvidenceGeneration ~= tonumber(generation) or numericUntil ~= tonumber(expiry) or numericUntil <= nowSeconds then evidenceId = ''; evidenceUntil = '' end
+end
+return {source == KEYS[1] and 1 or 2, tonumber(value), tonumber(updated), tonumber(expiry), generation, evidenceId, evidenceUntil}
+LUA;
+
+    private const LIFECYCLE_CLAIM = <<<'LUA'
+local redisTime = redis.call('TIME')
+local nowSeconds = tonumber(redisTime[1])
+local nowMs = (nowSeconds * 1000) + math.floor(tonumber(redisTime[2]) / 1000)
+for _, blockKey in ipairs({KEYS[3], KEYS[4]}) do
+  if blockKey ~= '' then
+    local blockPttl = redis.call('PTTL', blockKey)
+    if blockPttl == -1 then return redis.error_reply('malformed hard-block state') end
+    if blockPttl > 0 then
+    local rawExpires = redis.call('HGET', blockKey, 'expiresAt'); local rawLevel = redis.call('HGET', blockKey, 'level')
+    if not rawExpires or not rawLevel then return redis.error_reply('malformed hard-block state') end
+    local expires = tonumber(rawExpires); local level = tonumber(rawLevel)
+    if not expires or expires ~= math.floor(expires) or not level or level ~= math.floor(level) then return redis.error_reply('malformed hard-block state') end
+    if expires > nowSeconds then return 0 end
+    end
+  end
+end
+local source = KEYS[1]
+local currentPttl = redis.call('PTTL', source)
+if currentPttl == -1 then return redis.error_reply('malformed generation-bound score state') end
+if currentPttl <= 0 then source = KEYS[2] end
+if source ~= '' then
+  local sourcePttl = redis.call('PTTL', source)
+  if sourcePttl == -1 then return redis.error_reply('malformed generation-bound score state') end
+  if sourcePttl <= 0 then return 0 end
+  local rawValue = redis.call('HGET', source, 'value'); local rawUpdated = redis.call('HGET', source, 'updatedAt')
+  if not rawValue or not rawUpdated then return redis.error_reply('malformed generation-bound score state') end
+  local value = tonumber(rawValue); local updated = tonumber(rawUpdated)
+  if not value or value ~= math.floor(value) or not updated or updated ~= math.floor(updated) or updated < 0 then return redis.error_reply('malformed generation-bound score state') end
+  local generation = redis.call('HGET', source, 'generation')
+  local rawExpiry = redis.call('HGET', source, 'expiresAt'); local expiry = nil
+  if rawExpiry then
+    expiry = tonumber(rawExpiry)
+    if not expiry or expiry ~= math.floor(expiry) or expiry <= 0 or expiry < updated then return redis.error_reply('malformed generation-bound score expiry') end
+  end
+  if generation and expiry == nil then return redis.error_reply('malformed generation-bound score expiry') end
+  if generation then
+    local numericGeneration = tonumber(generation)
+    if not numericGeneration or numericGeneration ~= math.floor(numericGeneration) or numericGeneration <= 0 then return redis.error_reply('malformed generation') end
+  end
+  local physicalDeadlineMs = nowMs + sourcePttl
+  if generation and physicalDeadlineMs > (expiry * 1000) then return redis.error_reply('inconsistent generated score expiry') end
+  if expiry ~= nil and expiry <= nowSeconds then return 0 end
+  local evidenceCount = redis.call('HEXISTS', source, 'reentryId') + redis.call('HEXISTS', source, 'reentryValidUntil') + redis.call('HEXISTS', source, 'reentryGeneration')
+  if evidenceCount ~= 0 and evidenceCount ~= 3 then return redis.error_reply('malformed lifecycle evidence') end
+  if evidenceCount == 3 then
+    local id = redis.call('HGET', source, 'reentryId'); local validUntil = redis.call('HGET', source, 'reentryValidUntil'); local evidenceGeneration = redis.call('HGET', source, 'reentryGeneration')
+    if not id or #id ~= 32 or string.match(id, '^[a-f0-9]+$') == nil then return redis.error_reply('malformed lifecycle id') end
+    local numericUntil = tonumber(validUntil); local numericEvidenceGeneration = tonumber(evidenceGeneration)
+    if not numericUntil or numericUntil ~= math.floor(numericUntil) or numericUntil <= 0 or not numericEvidenceGeneration or numericEvidenceGeneration ~= math.floor(numericEvidenceGeneration) or numericEvidenceGeneration <= 0 then return redis.error_reply('malformed lifecycle evidence') end
+    if not generation then return redis.error_reply('legacy score cannot carry lifecycle evidence') end
+    if numericEvidenceGeneration ~= tonumber(generation) then return 0 end
+    if expiry ~= nil and numericUntil ~= expiry then return 0 end
+    if numericUntil <= nowSeconds or id ~= ARGV[1] then return 0 end
+    local marker = redis.call('GET', KEYS[5])
+    local markerPttl = redis.call('PTTL', KEYS[5])
+    if markerPttl == -1 then return redis.error_reply('malformed lifecycle claim marker') end
+    if markerPttl > 0 then
+      if marker == id then return 0 end
+      return redis.error_reply('inconsistent lifecycle claim marker')
+    end
+    local markerDeadlineMs = math.min(physicalDeadlineMs, numericUntil * 1000)
+    if markerDeadlineMs <= nowMs then return 0 end
+    local created = redis.call('SET', KEYS[5], id, 'NX')
+    if not created then
+      local existingPttl = redis.call('PTTL', KEYS[5])
+      if existingPttl == -1 then return redis.error_reply('malformed lifecycle claim marker') end
+      if existingPttl > 0 then
+        local existing = redis.call('GET', KEYS[5])
+        if existing == id then return 0 end
+        return redis.error_reply('inconsistent lifecycle claim marker')
+      end
+      return 0
+    end
+    redis.call('PEXPIREAT', KEYS[5], markerDeadlineMs)
+    return 1
+  end
+end
+return 0
 LUA;
 
     private const BLOCK_SET = <<<'LUA'
@@ -340,23 +570,74 @@ return 1
 LUA;
 
     private const HARD_BLOCK = <<<'LUA'
-local now = tonumber(ARGV[5])
+local lifecycleGeneration = ARGV[10] or ''
+local lifecycleId = ARGV[11] or ''
+local lifecycleTime = redis.call('TIME')
+local now = lifecycleGeneration ~= '' and tonumber(lifecycleTime[1]) or tonumber(ARGV[5])
+local nowMs = lifecycleGeneration ~= '' and ((tonumber(lifecycleTime[1]) * 1000) + math.floor(tonumber(lifecycleTime[2]) / 1000)) or (now * 1000)
 local retention = tonumber(ARGV[9])
 local cycleWindow = tonumber(ARGV[6])
-local function validateCycles(key)
-  if key == '' or redis.call('EXISTS', key) == 0 then return end
-  if redis.call('ZCARD', key) == 0 then error('malformed cycle history') end
-  for _, member in ipairs(redis.call('ZRANGE', key, 0, -1)) do
-    local score = tonumber(redis.call('ZSCORE', key, member))
-    local timestamp = tonumber(member)
-    if not score or score ~= math.floor(score) or not timestamp or timestamp ~= math.floor(timestamp) or score ~= timestamp then error('malformed cycle history') end
+if lifecycleGeneration ~= '' then
+  local scoreKey = KEYS[7]
+  local scorePttl = redis.call('PTTL', scoreKey)
+  if scoreKey == '' then return redis.error_reply('lifecycle publication requires current generated score') end
+  if scorePttl == -2 then
+    if KEYS[8] ~= '' then
+      local previousScorePttl = redis.call('PTTL', KEYS[8])
+      if previousScorePttl == -1 then return redis.error_reply('malformed lifecycle previous score state') end
+      if previousScorePttl > 0 then
+        local previousValue = redis.call('HGET', KEYS[8], 'value')
+        local previousUpdated = redis.call('HGET', KEYS[8], 'updatedAt')
+        if not previousValue or not previousUpdated then return redis.error_reply('malformed lifecycle previous score state') end
+        local numericPreviousValue = tonumber(previousValue); local numericPreviousUpdated = tonumber(previousUpdated)
+        if not numericPreviousValue or numericPreviousValue ~= math.floor(numericPreviousValue) or not numericPreviousUpdated or numericPreviousUpdated ~= math.floor(numericPreviousUpdated) or numericPreviousUpdated < 0 then return redis.error_reply('malformed lifecycle previous score state') end
+        local previousGeneration = redis.call('HGET', KEYS[8], 'generation')
+        local previousExpiry = redis.call('HGET', KEYS[8], 'expiresAt')
+        if previousGeneration then
+          local numericPreviousGeneration = tonumber(previousGeneration)
+          if not numericPreviousGeneration or numericPreviousGeneration ~= math.floor(numericPreviousGeneration) or numericPreviousGeneration <= 0 then return redis.error_reply('malformed lifecycle previous score generation') end
+          if not previousExpiry then return redis.error_reply('malformed lifecycle previous score expiry') end
+        end
+        local numericPreviousExpiry = nil
+        if previousExpiry then
+          numericPreviousExpiry = tonumber(previousExpiry)
+          if not numericPreviousExpiry or numericPreviousExpiry ~= math.floor(numericPreviousExpiry) or numericPreviousExpiry <= 0 or numericPreviousExpiry < numericPreviousUpdated then return redis.error_reply('malformed lifecycle previous score expiry') end
+        end
+        local previousEvidenceCount = redis.call('HEXISTS', KEYS[8], 'reentryId') + redis.call('HEXISTS', KEYS[8], 'reentryValidUntil') + redis.call('HEXISTS', KEYS[8], 'reentryGeneration')
+        if previousEvidenceCount ~= 0 and previousEvidenceCount ~= 3 then return redis.error_reply('malformed lifecycle previous evidence') end
+        if previousEvidenceCount == 3 then
+          if not previousGeneration then return redis.error_reply('legacy previous score cannot carry lifecycle evidence') end
+          local previousEvidenceId = redis.call('HGET', KEYS[8], 'reentryId')
+          local previousEvidenceUntil = redis.call('HGET', KEYS[8], 'reentryValidUntil')
+          local previousEvidenceGeneration = redis.call('HGET', KEYS[8], 'reentryGeneration')
+          if not previousEvidenceId or string.len(previousEvidenceId) ~= 32 or string.match(previousEvidenceId, '^[a-f0-9]+$') == nil then return redis.error_reply('malformed lifecycle previous evidence id') end
+          local numericPreviousEvidenceUntil = tonumber(previousEvidenceUntil); local numericPreviousEvidenceGeneration = tonumber(previousEvidenceGeneration)
+          if not numericPreviousEvidenceUntil or numericPreviousEvidenceUntil ~= math.floor(numericPreviousEvidenceUntil) or numericPreviousEvidenceUntil <= 0 or not numericPreviousEvidenceGeneration or numericPreviousEvidenceGeneration ~= math.floor(numericPreviousEvidenceGeneration) or numericPreviousEvidenceGeneration <= 0 then return redis.error_reply('malformed lifecycle previous evidence') end
+        end
+        if previousGeneration and (nowMs + previousScorePttl) > (numericPreviousExpiry * 1000) then return redis.error_reply('inconsistent lifecycle previous score expiry') end
+      end
+    end
+    -- Current is absent; a structurally valid Previous is historical/read-only,
+    -- not a publishable source, so this is an ordinary conflict, not a failure.
+    return {0}
   end
-end
-local function mergeCycles(source, target)
-  if source == '' or redis.call('EXISTS', source) == 0 then return end
-  validateCycles(source)
-  for _, member in ipairs(redis.call('ZRANGE', source, 0, -1)) do
-    redis.call('ZADD', target, tonumber(redis.call('ZSCORE', source, member)), member)
+  if scorePttl == -1 then return redis.error_reply('malformed lifecycle score physical expiry') end
+  local generation = redis.call('HGET', scoreKey, 'generation'); local value = redis.call('HGET', scoreKey, 'value'); local updated = redis.call('HGET', scoreKey, 'updatedAt'); local scoreExpiry = redis.call('HGET', scoreKey, 'expiresAt')
+  if not generation or not value or not updated or not scoreExpiry then return redis.error_reply('malformed lifecycle score state') end
+  local numericGeneration = tonumber(generation)
+  if not numericGeneration or numericGeneration ~= math.floor(numericGeneration) or numericGeneration <= 0 then return redis.error_reply('malformed lifecycle score generation') end
+  if not tonumber(value) or tonumber(value) ~= math.floor(tonumber(value)) or not tonumber(updated) or tonumber(updated) ~= math.floor(tonumber(updated)) or tonumber(updated) < 0 or not tonumber(scoreExpiry) or tonumber(scoreExpiry) ~= math.floor(tonumber(scoreExpiry)) or tonumber(scoreExpiry) <= 0 or tonumber(scoreExpiry) < tonumber(updated) then return redis.error_reply('malformed lifecycle score state') end
+  if (nowMs + scorePttl) > (tonumber(scoreExpiry) * 1000) then return redis.error_reply('inconsistent lifecycle score expiry') end
+  if generation ~= lifecycleGeneration then return {0} end
+  if (tonumber(scoreExpiry) * 1000) <= nowMs then return {0} end
+  if lifecycleId == '' or string.len(lifecycleId) ~= 32 then return redis.error_reply('malformed lifecycle id') end
+  local evidenceCount = redis.call('HEXISTS', scoreKey, 'reentryId') + redis.call('HEXISTS', scoreKey, 'reentryValidUntil') + redis.call('HEXISTS', scoreKey, 'reentryGeneration')
+  if evidenceCount ~= 0 and evidenceCount ~= 3 then return redis.error_reply('malformed lifecycle evidence') end
+  if evidenceCount == 3 then
+    local evidenceId = redis.call('HGET', scoreKey, 'reentryId'); local evidenceUntil = redis.call('HGET', scoreKey, 'reentryValidUntil'); local evidenceGeneration = redis.call('HGET', scoreKey, 'reentryGeneration')
+    if not evidenceId or string.len(evidenceId) ~= 32 or string.match(evidenceId, '^[a-f0-9]+$') == nil then return redis.error_reply('malformed lifecycle id') end
+    local numericUntil = tonumber(evidenceUntil); local numericEvidenceGeneration = tonumber(evidenceGeneration)
+    if not numericUntil or numericUntil ~= math.floor(numericUntil) or numericUntil <= 0 or not numericEvidenceGeneration or numericEvidenceGeneration ~= math.floor(numericEvidenceGeneration) or numericEvidenceGeneration <= 0 then return redis.error_reply('malformed lifecycle evidence') end
   end
 end
 local function extendUntil(key, target)
@@ -365,74 +646,82 @@ local function extendUntil(key, target)
   local needed = math.max(1, target - now)
   if ttl < needed then redis.call('EXPIRE', key, needed) end
 end
-validateCycles(KEYS[1])
-if KEYS[2] ~= '' then mergeCycles(KEYS[2], KEYS[1]) end
-redis.call('ZREMRANGEBYSCORE', KEYS[1], '-inf', '(' .. (now - tonumber(ARGV[6])))
-validateCycles(KEYS[1])
-local active = false
-for _, blockKey in ipairs({KEYS[3], KEYS[4]}) do
-  if blockKey ~= '' and redis.call('EXISTS', blockKey) == 1 then
-    if redis.call('TTL', blockKey) < 0 then return redis.error_reply('malformed hard-block state') end
-    local expires = redis.call('HGET', blockKey, 'expiresAt'); local level = redis.call('HGET', blockKey, 'level')
-    if not expires or not level then return redis.error_reply('malformed hard-block state') end
-    expires = tonumber(expires); level = tonumber(level)
-    if not expires or expires ~= math.floor(expires) or not level or level ~= math.floor(level) then return redis.error_reply('malformed hard-block state') end
-    if expires > now and level >= 2 then active = true end
-  end
-end
-local newCycle = not active
-if newCycle then redis.call('ZADD', KEYS[1], now, tostring(now)) end
-local cycleCount = redis.call('ZCARD', KEYS[1])
-local latestCycle = redis.call('ZREVRANGE', KEYS[1], 0, 0, 'WITHSCORES')
-if #latestCycle == 2 then
-  local latestScore = tonumber(latestCycle[2])
-  if not latestScore or latestScore ~= math.floor(latestScore) then return redis.error_reply('malformed cycle history') end
-  extendUntil(KEYS[1], latestScore + cycleWindow)
-end
-local pauseUntil = 0
-local function validatePauses(key)
+
+-- Phase A: validate every existing structure and compute merged state without writes.
+local cyclesByMember = {}; local cycleMembers = {}
+local function readCycles(key)
   if key == '' or redis.call('EXISTS', key) == 0 then return end
+  if redis.call('ZCARD', key) == 0 then error('malformed cycle history') end
   for _, member in ipairs(redis.call('ZRANGE', key, 0, -1)) do
-    local sep = string.find(member, ':')
-    if not sep then error('malformed pause history') end
-    local start = tonumber(string.sub(member, 1, sep - 1)); local finish = tonumber(string.sub(member, sep + 1)); local score = tonumber(redis.call('ZSCORE', key, member))
-    if not start or start ~= math.floor(start) or not finish or finish ~= math.floor(finish) or finish < start or not score or score ~= math.floor(score) or score ~= start then error('malformed pause history') end
-  end
-end
-local function mergePauses(source, target)
-  if source == '' or redis.call('EXISTS', source) == 0 then return end
-  validatePauses(source)
-  for _, member in ipairs(redis.call('ZRANGE', source, 0, -1)) do
-    redis.call('ZADD', target, tonumber(redis.call('ZSCORE', source, member)), member)
-  end
-end
-validatePauses(KEYS[5])
-if KEYS[6] ~= '' then mergePauses(KEYS[6], KEYS[5]) end
-validatePauses(KEYS[5])
-local pauseCutoff = now - retention
-local latestPauseUntil = 0
-if redis.call('EXISTS', KEYS[5]) == 1 then
-  for _, member in ipairs(redis.call('ZRANGE', KEYS[5], 0, -1)) do
-    local sep = string.find(member, ':')
-    if not sep then return redis.error_reply('malformed pause history') end
-    local finish = tonumber(string.sub(member, sep + 1))
-    if not finish or finish ~= math.floor(finish) then return redis.error_reply('malformed pause history') end
-    if finish <= pauseCutoff then redis.call('ZREM', KEYS[5], member) else
-      if finish > now then pauseUntil = math.max(pauseUntil, finish) end
-      latestPauseUntil = math.max(latestPauseUntil, finish)
+    local score = tonumber(redis.call('ZSCORE', key, member)); local timestamp = tonumber(member)
+    if not score or score ~= math.floor(score) or not timestamp or timestamp ~= math.floor(timestamp) or score ~= timestamp then error('malformed cycle history') end
+    if timestamp >= now - cycleWindow and cyclesByMember[member] == nil then
+      cyclesByMember[member] = timestamp; cycleMembers[#cycleMembers + 1] = member
     end
   end
 end
+readCycles(KEYS[1]); readCycles(KEYS[2])
+local active = false
+for _, blockKey in ipairs({KEYS[3], KEYS[4]}) do
+  if blockKey ~= '' and redis.call('EXISTS', blockKey) == 1 then
+    local blockPttl = redis.call('PTTL', blockKey)
+    if blockPttl == -1 then return redis.error_reply('malformed hard-block state') end
+    if blockPttl > 0 then
+      local expires = tonumber(redis.call('HGET', blockKey, 'expiresAt')); local level = tonumber(redis.call('HGET', blockKey, 'level'))
+      if not expires or expires ~= math.floor(expires) or not level or level ~= math.floor(level) then return redis.error_reply('malformed hard-block state') end
+      if expires > now and level >= 2 then active = true end
+    end
+  end
+end
+local newCycle = not active
+if newCycle and cyclesByMember[tostring(now)] == nil then cyclesByMember[tostring(now)] = now; cycleMembers[#cycleMembers + 1] = tostring(now) end
+local cycleCount = #cycleMembers; local latestCycle = 0
+for _, member in ipairs(cycleMembers) do latestCycle = math.max(latestCycle, cyclesByMember[member]) end
+
+local pausesByMember = {}; local pauseMembers = {}
+local function readPauses(key)
+  if key == '' or redis.call('EXISTS', key) == 0 then return end
+  for _, member in ipairs(redis.call('ZRANGE', key, 0, -1)) do
+    local sep = string.find(member, ':'); local start = sep and tonumber(string.sub(member, 1, sep - 1)); local finish = sep and tonumber(string.sub(member, sep + 1)); local score = tonumber(redis.call('ZSCORE', key, member))
+    if not sep or not start or start ~= math.floor(start) or not finish or finish ~= math.floor(finish) or finish < start or not score or score ~= math.floor(score) or score ~= start then error('malformed pause history') end
+    if finish > now - retention and pausesByMember[member] == nil then pausesByMember[member] = {start, finish}; pauseMembers[#pauseMembers + 1] = member end
+  end
+end
+readPauses(KEYS[5]); readPauses(KEYS[6])
+local pauseUntil = 0; local latestPauseUntil = 0
+for _, member in ipairs(pauseMembers) do
+  local finish = pausesByMember[member][2]; latestPauseUntil = math.max(latestPauseUntil, finish)
+  if finish > now then pauseUntil = math.max(pauseUntil, finish) end
+end
 local activated = false
 if newCycle and cycleCount >= tonumber(ARGV[7]) and pauseUntil == 0 then
-  pauseUntil = now + tonumber(ARGV[8])
-  redis.call('ZADD', KEYS[5], now, tostring(now) .. ':' .. tostring(pauseUntil))
-  latestPauseUntil = math.max(latestPauseUntil, pauseUntil)
-  activated = true
+  pauseUntil = now + tonumber(ARGV[8]); local member = tostring(now) .. ':' .. tostring(pauseUntil)
+  pausesByMember[member] = {now, pauseUntil}; pauseMembers[#pauseMembers + 1] = member; latestPauseUntil = math.max(latestPauseUntil, pauseUntil); activated = true
 end
+
+-- Phase B is complete. Phase C contains writes only and uses prevalidated values.
+for _, member in ipairs(cycleMembers) do redis.call('ZADD', KEYS[1], cyclesByMember[member], member) end
+redis.call('ZREMRANGEBYSCORE', KEYS[1], '-inf', '(' .. (now - cycleWindow))
+if redis.call('EXISTS', KEYS[5]) == 1 then
+  for _, member in ipairs(redis.call('ZRANGE', KEYS[5], 0, -1)) do
+    if pausesByMember[member] == nil then redis.call('ZREM', KEYS[5], member) end
+  end
+end
+for _, member in ipairs(pauseMembers) do redis.call('ZADD', KEYS[5], pausesByMember[member][1], member) end
 if latestPauseUntil > 0 then extendUntil(KEYS[5], latestPauseUntil + retention) end
+if latestCycle > 0 then extendUntil(KEYS[1], latestCycle + cycleWindow) end
 local expires = now + tonumber(ARGV[2])
 redis.call('HSET', KEYS[3], 'level', ARGV[1], 'expiresAt', expires); redis.call('EXPIRE', KEYS[3], ARGV[2])
+if lifecycleGeneration ~= '' then
+  local scoreKey = KEYS[7]
+  local storedId = redis.call('HGET', scoreKey, 'reentryId')
+  local storedUntil = redis.call('HGET', scoreKey, 'reentryValidUntil')
+  local storedGeneration = redis.call('HGET', scoreKey, 'reentryGeneration')
+  local scoreExpiry = redis.call('HGET', scoreKey, 'expiresAt')
+  local actualId = storedGeneration == lifecycleGeneration and storedId and storedUntil == scoreExpiry and storedId or lifecycleId
+  redis.call('HSET', scoreKey, 'reentryId', actualId, 'reentryValidUntil', redis.call('HGET', scoreKey, 'expiresAt'), 'reentryGeneration', lifecycleGeneration)
+  return {newCycle and 1 or 0, cycleCount, activated and 1 or 0, pauseUntil, expires, 1, actualId, redis.call('HGET', scoreKey, 'expiresAt'), lifecycleGeneration}
+end
 return {newCycle and 1 or 0, cycleCount, activated and 1 or 0, pauseUntil}
 LUA;
 
@@ -730,6 +1019,180 @@ LUA;
         );
     }
 
+    /**
+     * Read one coherent current-first K4 lifecycle snapshot.
+     *
+     * The previous key is a read-only fallback consulted only when current
+     * has no live state; the result is null only when neither has live
+     * state. Generation-less state remains legacy-compatible by deriving
+     * expiry from its Redis TTL, while generated state requires an integer
+     * authoritative expiry. A malformed core score field, a stored
+     * generation present but not a positive integer, a malformed or
+     * physically inconsistent generated expiry, and partial lifecycle
+     * evidence all raise an explicit backend error — as does complete,
+     * structurally valid lifecycle evidence attached to a generation-less
+     * score, which is impossible persisted state rather than evidence to
+     * hide. Lifecycle evidence is otherwise valid only as a complete
+     * structurally valid tuple; absent evidence is normal, and stale,
+     * expired, active-block, or generation-mismatched evidence is returned
+     * as non-satisfying state without mutation and without raising.
+     */
+    public function readGenerationBoundScoreState(string $currentKey, ?string $previousKey): ?GenerationBoundScoreStateDTO
+    {
+        $keys = [
+            $this->key('score', $currentKey),
+            $previousKey === null ? '' : $this->key('score', $previousKey),
+            $this->key('block', $currentKey),
+            $previousKey === null ? '' : $this->key('block', $previousKey),
+        ];
+        $result = $this->eval(self::LIFECYCLE_READ, $keys, []);
+        if ($result === []) {
+            return null;
+        }
+        $tuple = $this->tuple($result, 7, 'generation-bound snapshot');
+        $source = $this->integerValue($tuple[0], 'generation-bound source') === 1
+            ? GenerationBoundScoreStateDTO::SOURCE_CURRENT : GenerationBoundScoreStateDTO::SOURCE_PREVIOUS;
+        $generation = $this->stringValue($tuple[4], 'generation-bound generation');
+        $evidenceId = $this->stringValue($tuple[5], 'generation-bound evidence id');
+        $evidenceUntil = $this->stringValue($tuple[6], 'generation-bound evidence expiry');
+        $evidence = null;
+        if ($evidenceId !== '' || $evidenceUntil !== '') {
+            $evidence = new PostPunishmentReentryStateDTO($evidenceId, $this->integerValue($evidenceUntil, 'generation-bound evidence expiry'));
+        }
+        return new GenerationBoundScoreStateDTO(
+            $source,
+            $this->integerValue($tuple[1], 'generation-bound score'),
+            $this->integerValue($tuple[2], 'generation-bound updatedAt'),
+            $this->integerValue($tuple[3], 'generation-bound expiry'),
+            $generation === '' ? null : $this->integerValue($generation, 'generation-bound generation'),
+            $evidence,
+        );
+    }
+
+    /**
+     * Apply one Redis-atomic, optimistic generation-bound K4 score mutation.
+     *
+     * The supplied snapshot fences the current/previous namespace; an
+     * ordinary stale snapshot — one that no longer matches the observed
+     * state — returns an unapplied DTO, never an exception. That is distinct
+     * from structurally malformed persisted state, which always raises an
+     * explicit backend failure before any mutation or clearing, regardless
+     * of whether the snapshot also happens to be stale: a malformed core
+     * field, a stored generation present but not a positive integer, a
+     * malformed, missing, or physically inconsistent generated-score expiry,
+     * partial lifecycle
+     * evidence, and complete lifecycle evidence attached to a
+     * generation-less score are all explicit failures. Legacy state keeps
+     * its remaining TTL; applied mutations write only current state, advance
+     * generation, and invalidate lifecycle evidence. Absent or complete
+     * structurally valid evidence follows the normal mutation path.
+     */
+    public function mutateGenerationBoundScore(string $currentKey, ?string $previousKey, ?GenerationBoundScoreStateDTO $expectedState, int $ttlSeconds, int $newValue): GenerationBoundScoreMutationDTO
+    {
+        $this->positive($ttlSeconds, 'Generation-bound score TTL');
+        $expectedSource = $expectedState === null ? '' : ($expectedState->source === GenerationBoundScoreStateDTO::SOURCE_CURRENT ? $this->key('score', $currentKey) : $this->key('score', $previousKey ?? ''));
+        $result = $this->eval(
+            self::LIFECYCLE_MUTATE,
+            [$this->key('score', $currentKey), $previousKey === null ? '' : $this->key('score', $previousKey), $this->key('reentry-claim', $currentKey)],
+            [$expectedSource, $expectedState === null ? '' : $expectedState->value, $expectedState === null ? '' : $expectedState->updatedAt, $expectedState === null || $expectedState->generation === null ? '' : $expectedState->generation, $expectedState === null ? '' : $expectedState->expiresAt, $ttlSeconds, $newValue],
+        );
+        $tuple = $this->tuple($result, 1, 'generation-bound mutation');
+        if ($this->integerValue($tuple[0], 'generation-bound mutation flag') === 0) {
+            return new GenerationBoundScoreMutationDTO(false, null);
+        }
+        return new GenerationBoundScoreMutationDTO(true, new GenerationBoundScoreStateDTO(GenerationBoundScoreStateDTO::SOURCE_CURRENT, $this->integerValue($tuple[1], 'score value'), $this->integerValue($tuple[2], 'updatedAt'), $this->integerValue($tuple[3], 'expiresAt'), $this->integerValue($tuple[4], 'generation')));
+    }
+
+    /**
+     * Atomically publish DEC-003 cycle/pause state, an L2+ hard block, and K4
+     * lifecycle evidence for the expected generation.
+     *
+     * Publication requires a Current generated score as its source; Previous
+     * is historical, read-only input and is never itself published from.
+     * `$expectedGeneration`, `$level` (L2+), and every
+     * duration/window/threshold/pause/retention parameter are validated as
+     * explicit contract preconditions before any Redis access.
+     *
+     * Redis server time owns the publication timestamps. Source-race
+     * semantics distinguish ordinary optimistic conflict from structural
+     * corruption: structural validation of the persisted state always runs
+     * first. When a Current score exists, its generation, core fields,
+     * expiry, and lifecycle evidence are validated structurally before any
+     * comparison against `$expectedGeneration`; a structurally valid
+     * generation that simply does not match `$expectedGeneration` then
+     * returns an ordinary unapplied transition with no partial write — never
+     * a backend-health failure. When no Current score exists, the absence of
+     * any live source and a structurally valid Previous (generated or
+     * legacy) are the same ordinary unapplied conflict, because Previous is
+     * read-only history rather than a publishable source, not because
+     * anything is wrong; Previous is left untouched either way. Only
+     * structurally malformed persisted state raises an explicit backend
+     * failure instead of a conflict: a stored Current generation present but
+     * not a positive integer, a malformed core score field, a malformed or
+     * physically inconsistent expiry, partial lifecycle evidence, a
+     * generation-less legacy score carrying complete lifecycle evidence, and
+     * — when Current is absent — a Previous persisted without a physical
+     * deadline. When Current is absent, Previous runs this exact same
+     * structural validation — core fields, generation, authoritative
+     * expiry, physical-versus-authoritative expiry consistency, and
+     * lifecycle evidence structure and legacy-impossibility — before it can
+     * be treated as an ordinary conflict.
+     *
+     * An applied transition couples the block, cycle/pause accounting, score
+     * expiry, and lifecycle evidence. When the resolved Current source
+     * already carries valid lifecycle evidence for this exact generation
+     * (its `validUntil` still equals the score's authoritative expiry), the
+     * existing lifecycle identity is preserved rather than replaced by
+     * `$proposedLifecycleId`; a publication for a new generation always
+     * establishes a new identity. The separate public claim owns the
+     * one-shot marker.
+     */
+    public function blockWithPunishmentLifecycleTracking(string $currentKey, ?string $previousKey, int $expectedGeneration, string $proposedLifecycleId, int $level, int $durationSeconds, int $cycleWindowSeconds, int $cycleThreshold, int $pauseSeconds, int $pauseHistoryRetentionSeconds): PunishmentLifecycleTransitionDTO
+    {
+        $this->validatePunishmentLifecycleParameters($expectedGeneration, $level, $durationSeconds, $cycleWindowSeconds, $cycleThreshold, $pauseSeconds, $pauseHistoryRetentionSeconds);
+        $id = preg_match('/\A[a-f0-9]{32}\z/D', $proposedLifecycleId) === 1 ? $proposedLifecycleId : bin2hex(random_bytes(16));
+        $previousKey = $previousKey === $currentKey ? null : $previousKey;
+        $keys = [
+            $this->key('cycle', $currentKey), $previousKey === null ? '' : $this->key('cycle', $previousKey),
+            $this->key('block', $currentKey), $previousKey === null ? '' : $this->key('block', $previousKey),
+            $this->key('pause', $currentKey), $previousKey === null ? '' : $this->key('pause', $previousKey),
+            $this->key('score', $currentKey), $previousKey === null ? '' : $this->key('score', $previousKey),
+        ];
+        $result = $this->eval(self::HARD_BLOCK, $keys, [$level, $durationSeconds, $currentKey, $previousKey ?? '', 0, $cycleWindowSeconds, $cycleThreshold, $pauseSeconds, $pauseHistoryRetentionSeconds, $expectedGeneration, $id]);
+        $tuple = $this->tuple($result, 1, 'punishment lifecycle transition');
+        if (count($tuple) < 9 || $this->integerValue($tuple[5], 'punishment lifecycle transition flag') !== 1) {
+            return new PunishmentLifecycleTransitionDTO(false, null, null, null);
+        }
+        $cycle = new HardBlockCycleResultDTO(
+            $this->integerValue($tuple[0], 'cycle flag') === 1,
+            $this->integerValue($tuple[1], 'cycle count'),
+            $this->integerValue($tuple[2], 'pause flag') === 1,
+            $this->integerValue($tuple[3], 'pause expiry'),
+        );
+        $blockExpiry = $this->integerValue($tuple[4], 'block expiry');
+        $actualId = $this->stringValue($tuple[6], 'lifecycle id');
+        $scoreExpiry = $this->integerValue($tuple[7], 'score expiry');
+        return new PunishmentLifecycleTransitionDTO(true, $cycle, new BlockStateDTO($level, $blockExpiry), new PostPunishmentReentryStateDTO($actualId, $scoreExpiry));
+    }
+
+    /**
+     * Atomically consume the one-shot claim marker for complete lifecycle
+     * evidence after all active hard blocks have ended.
+     *
+     * Current state is authoritative and previous state is read-only fallback.
+     * Absent, stale, expired, generation-mismatched, or replayed evidence
+     * returns false without consuming punishment evidence or changing score,
+     * generation, block, or cycle state. Partial or structurally malformed
+     * evidence, malformed blocks, and generated state without authoritative
+     * expiry raise an explicit backend error; only the separate claim marker is
+     * consumed when the claim succeeds.
+     */
+    public function claimPostPunishmentReentry(string $currentKey, ?string $previousKey, string $lifecycleId): bool
+    {
+        $keys = [$this->key('score', $currentKey), $previousKey === null ? '' : $this->key('score', $previousKey), $this->key('block', $currentKey), $previousKey === null ? '' : $this->key('block', $previousKey), $this->key('reentry-claim', $currentKey)];
+        return $this->integerValue($this->eval(self::LIFECYCLE_CLAIM, $keys, [$lifecycleId]), 're-entry claim') === 1;
+    }
+
     public function isHealthy(): bool
     {
         try {
@@ -763,6 +1226,25 @@ LUA;
         }
     }
 
+    private function validatePunishmentLifecycleParameters(int $expectedGeneration, int $level, int $durationSeconds, int $cycleWindowSeconds, int $cycleThreshold, int $pauseSeconds, int $pauseHistoryRetentionSeconds): void
+    {
+        if ($expectedGeneration <= 0) {
+            throw new RateLimiterException('Expected lifecycle generation must be positive.');
+        }
+        if ($level < 2) {
+            throw new RateLimiterException('Lifecycle publication requires an L2+ hard block.');
+        }
+        foreach ([
+            'Block duration' => $durationSeconds,
+            'Cycle window' => $cycleWindowSeconds,
+            'Cycle threshold' => $cycleThreshold,
+            'Pause duration' => $pauseSeconds,
+            'Pause history retention' => $pauseHistoryRetentionSeconds,
+        ] as $label => $value) {
+            $this->positive($value, $label);
+        }
+    }
+
     private function integerResult(mixed $value, string $label): int
     {
         return $this->integerValue($value, $label . ' response');
@@ -781,6 +1263,14 @@ LUA;
         }
         if (is_float($value) && is_finite($value) && floor($value) === $value) {
             return (int) $value;
+        }
+        throw new RateLimiterException('Malformed ' . $label . '.');
+    }
+
+    private function stringValue(mixed $value, string $label): string
+    {
+        if (is_string($value) || is_int($value) || is_float($value)) {
+            return (string) $value;
         }
         throw new RateLimiterException('Malformed ' . $label . '.');
     }

@@ -12,6 +12,7 @@ use Maatify\RateLimiter\DTO\CircuitBreakerStateDTO;
 use Maatify\RateLimiter\DTO\BudgetStateDTO;
 use Maatify\RateLimiter\DTO\BudgetConfigDTO;
 use Maatify\RateLimiter\DTO\HardBlockCycleResultDTO;
+use Maatify\RateLimiter\DTO\GenerationBoundScoreStateDTO;
 use Maatify\RateLimiter\DTO\PolicyThresholdsDTO;
 use Maatify\RateLimiter\DTO\RateLimitContextDTO;
 use Maatify\RateLimiter\DTO\RateLimitResultDTO;
@@ -86,6 +87,908 @@ final class RedisFullCapabilityStoreIntegrationTest extends TestCase
         self::assertSame(1, $this->store->incrementWatchFlag('watch-previous', 60));
         self::assertSame(2, $this->store->incrementWatchFlagAcrossRotation('watch-current', 'watch-previous', 60));
         self::assertSame(1, $this->store->getWatchFlag('watch-current'));
+    }
+
+    public function testGenerationBoundLifecycleIsAtomicAndClaimDoesNotConsumeEvidence(): void
+    {
+        $mutation = $this->store->mutateGenerationBoundScore('lifecycle-current', null, null, 600, 8);
+        self::assertTrue($mutation->applied);
+        self::assertNotNull($mutation->state);
+        self::assertSame(1, $mutation->state->generation);
+
+        $id = str_repeat('a', 32);
+        $transition = $this->store->blockWithPunishmentLifecycleTracking(
+            'lifecycle-current',
+            null,
+            1,
+            $id,
+            2,
+            1,
+            21600,
+            2,
+            600,
+            86400,
+        );
+        self::assertTrue($transition->applied);
+        self::assertNotNull($transition->postPunishmentReentry);
+        self::assertSame($id, $transition->postPunishmentReentry->id);
+
+        $duringBlock = $this->store->readGenerationBoundScoreState('lifecycle-current', null);
+        self::assertNotNull($duringBlock);
+        self::assertNull($duringBlock->postPunishmentReentry);
+
+        self::assertFalse($this->store->claimPostPunishmentReentry('lifecycle-current', null, $id));
+        $this->executor->execute(['DEL', 'maatify:rate-limiter:v1:' . hash('sha256', $this->namespace) . ':block:' . hash('sha256', 'lifecycle-current')]);
+        self::assertTrue($this->store->claimPostPunishmentReentry('lifecycle-current', null, $id));
+        self::assertFalse($this->store->claimPostPunishmentReentry('lifecycle-current', null, $id));
+        self::assertNotNull($this->store->readGenerationBoundScoreState('lifecycle-current', null)?->postPunishmentReentry);
+    }
+
+    public function testLifecycleCyclesUseRedisTimeExactlyOnceAndPauseIsNotRenewed(): void
+    {
+        $mutation = $this->store->mutateGenerationBoundScore('redis-time-cycle', null, null, 600, 8);
+        self::assertTrue($mutation->applied);
+
+        $first = $this->store->blockWithPunishmentLifecycleTracking(
+            'redis-time-cycle',
+            null,
+            1,
+            str_repeat('a', 32),
+            2,
+            60,
+            21600,
+            2,
+            600,
+            86400,
+        );
+        self::assertTrue($first->applied);
+        self::assertNotNull($first->cycle);
+        self::assertTrue($first->cycle->newCycle);
+        self::assertSame(1, $first->cycle->cycleCount);
+        self::assertFalse($first->cycle->pauseActivated);
+
+        $refresh = $this->store->blockWithPunishmentLifecycleTracking(
+            'redis-time-cycle',
+            null,
+            1,
+            str_repeat('b', 32),
+            2,
+            60,
+            21600,
+            2,
+            600,
+            86400,
+        );
+        self::assertTrue($refresh->applied);
+        self::assertNotNull($refresh->cycle);
+        self::assertFalse($refresh->cycle->newCycle);
+        self::assertSame(1, $refresh->cycle->cycleCount);
+        self::assertFalse($refresh->cycle->pauseActivated);
+
+        // End only the active block fixture; cycle and lifecycle evidence stay in Redis.
+        $fixtureNow = $this->redisTime();
+        $cycleKey = $this->key('cycle', 'redis-time-cycle');
+        $this->raw(['DEL', $cycleKey]);
+        $this->raw(['ZADD', $cycleKey, $fixtureNow - 1, (string) ($fixtureNow - 1)]);
+        $this->raw(['EXPIRE', $cycleKey, 21600]);
+        $this->raw(['DEL', $this->key('block', 'redis-time-cycle')]);
+        $before = $this->redisTime();
+        $second = $this->store->blockWithPunishmentLifecycleTracking(
+            'redis-time-cycle',
+            null,
+            1,
+            str_repeat('c', 32),
+            2,
+            60,
+            21600,
+            2,
+            600,
+            86400,
+        );
+        $after = $this->redisTime();
+
+        self::assertTrue($second->applied);
+        self::assertNotNull($second->cycle);
+        self::assertTrue($second->cycle->newCycle);
+        self::assertSame(2, $second->cycle->cycleCount);
+        self::assertTrue($second->cycle->pauseActivated);
+        self::assertGreaterThanOrEqual($before + 600, $second->cycle->pauseUntil);
+        self::assertLessThanOrEqual($after + 600, $second->cycle->pauseUntil);
+
+        $duplicate = $this->store->blockWithPunishmentLifecycleTracking(
+            'redis-time-cycle',
+            null,
+            1,
+            str_repeat('d', 32),
+            2,
+            60,
+            21600,
+            2,
+            600,
+            86400,
+        );
+        self::assertTrue($duplicate->applied);
+        self::assertNotNull($duplicate->cycle);
+        self::assertFalse($duplicate->cycle->newCycle);
+        self::assertSame(2, $duplicate->cycle->cycleCount);
+        self::assertFalse($duplicate->cycle->pauseActivated);
+        self::assertSame($second->cycle->pauseUntil, $duplicate->cycle->pauseUntil);
+    }
+
+    public function testGenerationMutationInvalidatesOldLifecycleIdentityAndFreshPublicationUsesNewIdentity(): void
+    {
+        $first = $this->store->mutateGenerationBoundScore('lifecycle-fence', null, null, 600, 8);
+        self::assertTrue($first->applied);
+        self::assertSame(1, $first->state?->generation);
+        $idA = str_repeat('a', 32);
+        $firstTransition = $this->store->blockWithPunishmentLifecycleTracking('lifecycle-fence', null, 1, $idA, 2, 60, 21600, 2, 600, 86400);
+        self::assertTrue($firstTransition->applied);
+
+        $second = $this->store->mutateGenerationBoundScore('lifecycle-fence', null, $this->store->readGenerationBoundScoreState('lifecycle-fence', null), 600, 10);
+        self::assertTrue($second->applied);
+        self::assertSame(2, $second->state?->generation);
+        self::assertNull($this->store->readGenerationBoundScoreState('lifecycle-fence', null)?->postPunishmentReentry);
+        self::assertFalse($this->store->claimPostPunishmentReentry('lifecycle-fence', null, $idA));
+
+        $idB = str_repeat('b', 32);
+        $secondTransition = $this->store->blockWithPunishmentLifecycleTracking('lifecycle-fence', null, 2, $idB, 2, 60, 21600, 2, 600, 86400);
+        self::assertTrue($secondTransition->applied);
+        self::assertSame($idB, $secondTransition->postPunishmentReentry?->id);
+        $this->executor->execute(['DEL', $this->key('block', 'lifecycle-fence')]);
+        self::assertFalse($this->store->claimPostPunishmentReentry('lifecycle-fence', null, $idA));
+        self::assertTrue($this->store->claimPostPunishmentReentry('lifecycle-fence', null, $idB));
+        self::assertFalse($this->store->claimPostPunishmentReentry('lifecycle-fence', null, $idB));
+    }
+
+    /**
+     * Republishing the same exact K4 generation preserves the existing
+     * lifecycle identity instead of adopting a newly proposed one, per the
+     * DEC-007 stable-identity contract: the same lifecycle for the same
+     * generation must keep surfacing the same opaque ID.
+     */
+    public function testRepublicationOfTheSameGenerationPreservesTheExistingLifecycleIdentity(): void
+    {
+        $mutation = $this->store->mutateGenerationBoundScore('stable-identity', null, null, 600, 8);
+        self::assertTrue($mutation->applied);
+        self::assertSame(1, $mutation->state?->generation);
+
+        $idA = str_repeat('a', 32);
+        $first = $this->store->blockWithPunishmentLifecycleTracking('stable-identity', null, 1, $idA, 2, 30, 21600, 3, 600, 86400);
+        self::assertTrue($first->applied);
+        self::assertSame($idA, $first->postPunishmentReentry?->id);
+
+        $idB = str_repeat('b', 32);
+        $refresh = $this->store->blockWithPunishmentLifecycleTracking('stable-identity', null, 1, $idB, 2, 30, 21600, 3, 600, 86400);
+        self::assertTrue($refresh->applied);
+        self::assertSame($idA, $refresh->postPunishmentReentry?->id);
+        self::assertNotSame($idB, $refresh->postPunishmentReentry->id);
+
+        $this->raw(['DEL', $this->key('block', 'stable-identity')]);
+        $state = $this->store->readGenerationBoundScoreState('stable-identity', null);
+        self::assertSame($idA, $state?->postPunishmentReentry?->id);
+    }
+
+    public function testLegacyGenerationlessMutationConflictsWhenWriterAddsGeneration(): void
+    {
+        $key = $this->key('score', 'legacy-cas');
+        $this->executor->execute(['HSET', $key, 'value', '4', 'updatedAt', (string) time()]);
+        $this->executor->execute(['EXPIRE', $key, '600']);
+        $legacy = $this->store->readGenerationBoundScoreState('legacy-cas', null);
+        self::assertNotNull($legacy);
+        self::assertNull($legacy->generation);
+
+        $this->executor->execute(['HSET', $key, 'generation', '1', 'expiresAt', (string) (time() + 601)]);
+        $stale = $this->store->mutateGenerationBoundScore('legacy-cas', null, $legacy, 600, 9);
+        self::assertFalse($stale->applied);
+    }
+
+    public function testClaimUsesCurrentAsAuthoritativeOverPrevious(): void
+    {
+        $previousKey = $this->key('score', 'claim-previous');
+        $currentKey = $this->key('score', 'claim-current');
+        $now = time();
+        $this->executor->execute(['HSET', $previousKey, 'value', '8', 'updatedAt', (string) $now, 'generation', '1', 'expiresAt', (string) ($now + 601), 'reentryId', str_repeat('a', 32), 'reentryValidUntil', (string) ($now + 601), 'reentryGeneration', '1']);
+        $this->executor->execute(['EXPIRE', $previousKey, '600']);
+        $this->executor->execute(['HSET', $currentKey, 'value', '9', 'updatedAt', (string) $now, 'generation', '2', 'expiresAt', (string) ($now + 601)]);
+        $this->executor->execute(['EXPIRE', $currentKey, '600']);
+
+        self::assertFalse($this->store->claimPostPunishmentReentry('claim-current', 'claim-previous', str_repeat('a', 32)));
+    }
+
+    public function testMalformedLifecycleClaimStateRaisesExplicitFailure(): void
+    {
+        $now = $this->redisNow();
+        $partial = $this->key('score', 'claim-malformed-partial');
+        $this->raw(['HSET', $partial, 'value', '8', 'updatedAt', (string) $now, 'expiresAt', (string) ($now + 601), 'generation', '1', 'reentryId', str_repeat('a', 32)]);
+        $this->raw(['EXPIRE', $partial, '600']);
+        $this->assertOperationFails(fn(): mixed => $this->store->claimPostPunishmentReentry('claim-malformed-partial', null, str_repeat('a', 32)));
+
+        $invalidId = $this->key('score', 'claim-malformed-id');
+        $this->raw(['HSET', $invalidId, 'value', '8', 'updatedAt', (string) $now, 'expiresAt', (string) ($now + 601), 'generation', '1', 'reentryId', str_repeat('z', 32), 'reentryValidUntil', (string) ($now + 601), 'reentryGeneration', '1']);
+        $this->raw(['EXPIRE', $invalidId, '600']);
+        $this->assertOperationFails(fn(): mixed => $this->store->claimPostPunishmentReentry('claim-malformed-id', null, str_repeat('z', 32)));
+
+        $malformedBlockScore = $this->key('score', 'claim-malformed-block');
+        $malformedBlock = $this->key('block', 'claim-malformed-block');
+        $this->raw(['HSET', $malformedBlockScore, 'value', '8', 'updatedAt', (string) $now, 'expiresAt', (string) ($now + 601), 'generation', '1', 'reentryId', str_repeat('a', 32), 'reentryValidUntil', (string) ($now + 601), 'reentryGeneration', '1']);
+        $this->raw(['EXPIRE', $malformedBlockScore, '600']);
+        $this->raw(['HSET', $malformedBlock, 'level', '2']);
+        $this->raw(['EXPIRE', $malformedBlock, '600']);
+        $this->assertOperationFails(fn(): mixed => $this->store->claimPostPunishmentReentry('claim-malformed-block', null, str_repeat('a', 32)));
+    }
+
+    public function testMalformedHardBlockFailsPublicationBeforeChangingAnyLifecycleState(): void
+    {
+        $now = $this->redisNow();
+        $score = $this->key('score', 'publication-malformed-block');
+        $block = $this->key('block', 'publication-malformed-block');
+        $cycle = $this->key('cycle', 'publication-malformed-block');
+        $pause = $this->key('pause', 'publication-malformed-block');
+        $this->raw(['HSET', $score, 'value', '8', 'updatedAt', (string) $now, 'generation', '1', 'expiresAt', (string) ($now + 600)]);
+        $this->raw(['EXPIRE', $score, '600']);
+        $this->raw(['ZADD', $cycle, $now, (string) $now]);
+        $this->raw(['EXPIRE', $cycle, '600']);
+        $this->raw(['ZADD', $pause, $now, $now . ':' . ($now + 30)]);
+        $this->raw(['EXPIRE', $pause, '86400']);
+        $this->raw(['HSET', $block, 'level', '2']);
+        $this->raw(['EXPIRE', $block, '600']);
+        $before = [$this->hashMap($score), $this->hashMap($block), $this->raw(['ZRANGE', $cycle, 0, -1, 'WITHSCORES']), $this->raw(['ZRANGE', $pause, 0, -1, 'WITHSCORES'])];
+
+        $this->assertOperationFails(fn(): mixed => $this->store->blockWithPunishmentLifecycleTracking('publication-malformed-block', null, 1, str_repeat('a', 32), 2, 60, 600, 3, 600, 86400));
+
+        self::assertSame($before, [$this->hashMap($score), $this->hashMap($block), $this->raw(['ZRANGE', $cycle, 0, -1, 'WITHSCORES']), $this->raw(['ZRANGE', $pause, 0, -1, 'WITHSCORES'])]);
+        self::assertGreaterThan(0, $this->integer($this->raw(['PTTL', $score])));
+    }
+
+    public function testMalformedPauseFailsPublicationBeforeChangingAnyLifecycleState(): void
+    {
+        $now = $this->redisNow();
+        $score = $this->key('score', 'publication-malformed-pause');
+        $cycle = $this->key('cycle', 'publication-malformed-pause');
+        $pause = $this->key('pause', 'publication-malformed-pause');
+        $this->raw(['HSET', $score, 'value', '8', 'updatedAt', (string) $now, 'generation', '1', 'expiresAt', (string) ($now + 600)]);
+        $this->raw(['EXPIRE', $score, '600']);
+        $this->raw(['ZADD', $cycle, $now, (string) $now]);
+        $this->raw(['EXPIRE', $cycle, '600']);
+        $this->raw(['ZADD', $pause, $now, 'malformed']);
+        $this->raw(['EXPIRE', $pause, '86400']);
+        $before = [$this->hashMap($score), $this->raw(['ZRANGE', $cycle, 0, -1, 'WITHSCORES']), $this->raw(['ZRANGE', $pause, 0, -1, 'WITHSCORES'])];
+
+        $this->assertOperationFails(fn(): mixed => $this->store->blockWithPunishmentLifecycleTracking('publication-malformed-pause', null, 1, str_repeat('b', 32), 2, 60, 600, 3, 600, 86400));
+
+        self::assertSame($before, [$this->hashMap($score), $this->raw(['ZRANGE', $cycle, 0, -1, 'WITHSCORES']), $this->raw(['ZRANGE', $pause, 0, -1, 'WITHSCORES'])]);
+        self::assertGreaterThan(0, $this->integer($this->raw(['PTTL', $score])));
+    }
+
+    public function testPartialLifecycleEvidenceFailsReadExplicitly(): void
+    {
+        $now = $this->redisNow();
+        $key = $this->key('score', 'read-malformed-partial');
+        $this->raw(['HSET', $key, 'value', '8', 'updatedAt', (string) $now, 'generation', '1', 'expiresAt', (string) ($now + 601), 'reentryId', str_repeat('a', 32)]);
+        $this->raw(['EXPIRE', $key, '600']);
+
+        $this->assertOperationFails(fn(): mixed => $this->store->readGenerationBoundScoreState('read-malformed-partial', null));
+    }
+
+    public function testPartialLifecycleEvidenceFailsMutationWithoutChangingPhysicalState(): void
+    {
+        $now = $this->redisNow();
+        $key = $this->key('score', 'mutation-malformed-partial');
+        $this->raw(['HSET', $key, 'value', '8', 'updatedAt', (string) $now, 'generation', '1', 'expiresAt', (string) ($now + 601), 'reentryId', str_repeat('b', 32)]);
+        $this->raw(['EXPIRE', $key, '600']);
+        $before = $this->hashMap($key);
+        $expected = new GenerationBoundScoreStateDTO(
+            GenerationBoundScoreStateDTO::SOURCE_CURRENT,
+            8,
+            $now,
+            $now + 601,
+            1,
+        );
+
+        $this->assertOperationFails(fn(): mixed => $this->store->mutateGenerationBoundScore('mutation-malformed-partial', null, $expected, 600, 9));
+
+        self::assertSame($before, $this->hashMap($key));
+        self::assertGreaterThan(0, $this->integer($this->raw(['TTL', $key])));
+    }
+
+    public function testCompleteStaleLifecycleEvidenceIsNonSatisfyingButNotCorrupt(): void
+    {
+        $now = $this->redisNow();
+        $key = $this->key('score', 'complete-stale-evidence');
+        $id = str_repeat('c', 32);
+        $this->raw(['HSET', $key, 'value', '8', 'updatedAt', (string) $now, 'generation', '2', 'expiresAt', (string) ($now + 601), 'reentryId', $id, 'reentryValidUntil', (string) ($now + 601), 'reentryGeneration', '1']);
+        $this->raw(['EXPIRE', $key, '600']);
+
+        $state = $this->store->readGenerationBoundScoreState('complete-stale-evidence', null);
+        self::assertNotNull($state);
+        self::assertNull($state->postPunishmentReentry);
+        self::assertFalse($this->store->claimPostPunishmentReentry('complete-stale-evidence', null, $id));
+    }
+
+    public function testAbsentLifecycleEvidenceRemainsValidState(): void
+    {
+        $now = $this->redisNow();
+        $key = $this->key('score', 'absent-lifecycle-evidence');
+        $this->raw(['HSET', $key, 'value', '8', 'updatedAt', (string) $now, 'generation', '1', 'expiresAt', (string) ($now + 601)]);
+        $this->raw(['EXPIRE', $key, '600']);
+
+        $state = $this->store->readGenerationBoundScoreState('absent-lifecycle-evidence', null);
+        self::assertNotNull($state);
+        self::assertNull($state->postPunishmentReentry);
+        $mutation = $this->store->mutateGenerationBoundScore('absent-lifecycle-evidence', null, $state, 600, 9);
+        self::assertTrue($mutation->applied);
+        self::assertNull($mutation->state?->postPunishmentReentry);
+    }
+
+    public function testGeneratedStateWithoutExpiresAtFailsReadClaimAndMutationWhileLegacyStateRemainsSupported(): void
+    {
+        $now = $this->redisNow();
+        $generatedRead = $this->key('score', 'generated-missing-expiry-read');
+        $this->raw(['HSET', $generatedRead, 'value', '8', 'updatedAt', (string) $now, 'generation', '1']);
+        $this->raw(['EXPIRE', $generatedRead, '600']);
+        $this->assertOperationFails(fn(): mixed => $this->store->readGenerationBoundScoreState('generated-missing-expiry-read', null));
+
+        $generatedClaim = $this->key('score', 'generated-missing-expiry-claim');
+        $this->raw(['HSET', $generatedClaim, 'value', '8', 'updatedAt', (string) $now, 'generation', '1', 'reentryId', str_repeat('a', 32), 'reentryValidUntil', (string) ($now + 601), 'reentryGeneration', '1']);
+        $this->raw(['EXPIRE', $generatedClaim, '600']);
+        $this->assertOperationFails(fn(): mixed => $this->store->claimPostPunishmentReentry('generated-missing-expiry-claim', null, str_repeat('a', 32)));
+
+        $generatedMutation = $this->key('score', 'generated-missing-expiry-mutation');
+        $this->raw(['HSET', $generatedMutation, 'value', '8', 'updatedAt', (string) $now, 'generation', '1']);
+        $this->raw(['EXPIRE', $generatedMutation, '600']);
+        $expected = new GenerationBoundScoreStateDTO(
+            GenerationBoundScoreStateDTO::SOURCE_CURRENT,
+            8,
+            $now,
+            $now + 601,
+            1,
+        );
+        $this->assertOperationFails(fn(): mixed => $this->store->mutateGenerationBoundScore('generated-missing-expiry-mutation', null, $expected, 600, 9));
+        $this->assertOperationFails(fn(): mixed => $this->store->mutateGenerationBoundScore('generated-missing-expiry-mutation', null, null, 600, 9));
+
+        $legacy = $this->key('score', 'legacy-missing-expiry-compatible');
+        $this->raw(['HSET', $legacy, 'value', '4', 'updatedAt', (string) $now]);
+        $this->raw(['EXPIRE', $legacy, '600']);
+        $legacyState = $this->store->readGenerationBoundScoreState('legacy-missing-expiry-compatible', null);
+        self::assertNotNull($legacyState);
+        self::assertNull($legacyState->generation);
+    }
+
+    public function testConcurrentRedisClaimsHaveExactlyOneWinner(): void
+    {
+        $now = $this->redisNow();
+        $id = str_repeat('c', 32);
+        $score = $this->key('score', 'claim-concurrent');
+        $this->raw(['HSET', $score, 'value', '8', 'updatedAt', (string) $now, 'expiresAt', (string) ($now + 601), 'generation', '1', 'reentryId', $id, 'reentryValidUntil', (string) ($now + 601), 'reentryGeneration', '1']);
+        $this->raw(['EXPIRE', $score, '600']);
+
+        $workers = 8;
+        $this->runConcurrentWorkers($workers, function (int $index) use ($id): void {
+            $claimed = $this->workerStore()->claimPostPunishmentReentry('claim-concurrent', null, $id);
+            $host = getenv('REDIS_INTEGRATION_HOST');
+            $port = getenv('REDIS_INTEGRATION_PORT');
+            if ($host === false || $port === false) {
+                exit(1);
+            }
+            (new RespRedisCommandExecutor($host, (int) $port))->execute([
+                'SET',
+                $this->key('claim-result', 'concurrent-' . $index),
+                $claimed ? '1' : '0',
+                'EX',
+                '60',
+            ]);
+        });
+
+        $winners = 0;
+        for ($index = 0; $index < $workers; $index++) {
+            $winners += $this->integer($this->raw(['GET', $this->key('claim-result', 'concurrent-' . $index)]));
+        }
+        self::assertSame(1, $winners);
+    }
+
+    public function testLifecyclePublicationRejectsPhysicallyInconsistentScoreWithoutPartialWrites(): void
+    {
+        $now = $this->redisNow();
+        $score = $this->key('score', 'publication-inconsistent');
+        $this->raw(['HSET', $score, 'value', '8', 'updatedAt', (string) $now, 'generation', '1', 'expiresAt', (string) ($now + 1)]);
+        $this->raw(['EXPIRE', $score, '600']);
+
+        $this->assertOperationFails(fn(): mixed => $this->store->blockWithPunishmentLifecycleTracking('publication-inconsistent', null, 1, str_repeat('a', 32), 2, 60, 21600, 2, 600, 86400));
+        self::assertSame(-2, $this->integer($this->raw(['PTTL', $this->key('block', 'publication-inconsistent')])));
+        self::assertSame([], $this->raw(['ZRANGE', $this->key('cycle', 'publication-inconsistent'), '0', '-1']));
+    }
+
+    public function testGeneratedPhysicalExpiryCorruptionFailsReadMutateClaimAndPublication(): void
+    {
+        $now = $this->redisNow();
+        foreach (['read', 'mutate', 'claim', 'publication'] as $operation) {
+            $logical = 'physical-corruption-' . $operation;
+            $score = $this->key('score', $logical);
+            $fields = ['value', '8', 'updatedAt', (string) $now, 'generation', '1', 'expiresAt', (string) ($now + 1)];
+            if ($operation !== 'read' && $operation !== 'mutate') {
+                $fields = array_merge($fields, ['reentryId', str_repeat('a', 32), 'reentryValidUntil', (string) ($now + 1), 'reentryGeneration', '1']);
+            }
+            $this->raw(array_merge(['HSET', $score], $fields));
+            $this->raw(['EXPIRE', $score, '600']);
+            $this->assertOperationFails(match ($operation) {
+                'read' => fn(): mixed => $this->store->readGenerationBoundScoreState($logical, null),
+                'mutate' => fn(): mixed => $this->store->mutateGenerationBoundScore($logical, null, new GenerationBoundScoreStateDTO(GenerationBoundScoreStateDTO::SOURCE_CURRENT, 8, $now, $now + 1, 1), 600, 9),
+                'claim' => fn(): mixed => $this->store->claimPostPunishmentReentry($logical, null, str_repeat('a', 32)),
+                default => fn(): mixed => $this->store->blockWithPunishmentLifecycleTracking($logical, null, 1, str_repeat('a', 32), 2, 60, 600, 2, 600, 86400),
+            });
+        }
+    }
+
+    public function testPersistentHardBlockReadAndPublicationPreconditionsFailExplicitly(): void
+    {
+        $now = $this->redisNow();
+        $score = $this->key('score', 'persistent-block-read');
+        $block = $this->key('block', 'persistent-block-read');
+        $this->raw(['HSET', $score, 'value', '8', 'updatedAt', (string) $now, 'generation', '1', 'expiresAt', (string) ($now + 600)]);
+        $this->raw(['EXPIRE', $score, '600']);
+        $this->raw(['HSET', $block, 'level', '2', 'expiresAt', (string) ($now + 60)]);
+        $this->assertOperationFails(fn(): mixed => $this->store->readGenerationBoundScoreState('persistent-block-read', null));
+
+        $mutation = $this->store->mutateGenerationBoundScore('publication-previous-only', null, null, 600, 8);
+        self::assertTrue($mutation->applied);
+        $this->assertOperationFails(fn(): mixed => $this->store->blockWithPunishmentLifecycleTracking('publication-previous-only', null, 0, str_repeat('a', 32), 2, 60, 600, 2, 600, 86400));
+        $this->assertOperationFails(fn(): mixed => $this->store->blockWithPunishmentLifecycleTracking('publication-previous-only', null, 1, str_repeat('a', 32), 1, 60, 600, 2, 600, 86400));
+        $this->assertOperationFails(fn(): mixed => $this->store->blockWithPunishmentLifecycleTracking('publication-previous-only', null, 1, str_repeat('a', 32), 2, 0, 600, 2, 600, 86400));
+
+        $previous = $this->store->mutateGenerationBoundScore('publication-previous', null, null, 600, 8);
+        self::assertTrue($previous->applied);
+        $previousOnlyTransition = $this->store->blockWithPunishmentLifecycleTracking('publication-new-current', 'publication-previous', 1, str_repeat('b', 32), 2, 60, 600, 2, 600, 86400);
+        self::assertFalse($previousOnlyTransition->applied);
+        self::assertNull($previousOnlyTransition->cycle);
+        self::assertNull($previousOnlyTransition->block);
+        self::assertNull($previousOnlyTransition->postPunishmentReentry);
+    }
+
+    /**
+     * R1 — malformed stored generation matrix. Zero, negative, and
+     * non-integer stored generation on an otherwise current-generated-looking
+     * physical score fail READ, MUTATE, CLAIM, and PUBLICATION explicitly,
+     * even when PUBLICATION is called with a structurally valid positive
+     * expectedGeneration.
+     */
+    public function testMalformedStoredGenerationFailsAcrossReadMutateClaimAndPublication(): void
+    {
+        $now = $this->redisNow();
+        foreach (['0', '-1', 'not-a-number'] as $index => $malformedGeneration) {
+            $logical = 'r1-malformed-generation-' . $index;
+            $score = $this->key('score', $logical);
+            $this->raw(['HSET', $score, 'value', '8', 'updatedAt', (string) $now, 'generation', $malformedGeneration, 'expiresAt', (string) ($now + 600)]);
+            $this->raw(['EXPIRE', $score, '600']);
+
+            $this->assertOperationFails(fn(): mixed => $this->store->readGenerationBoundScoreState($logical, null));
+            $this->assertOperationFails(fn(): mixed => $this->store->mutateGenerationBoundScore($logical, null, null, 600, 9));
+            $this->assertOperationFails(fn(): mixed => $this->store->claimPostPunishmentReentry($logical, null, str_repeat('a', 32)));
+            $this->assertOperationFails(fn(): mixed => $this->store->blockWithPunishmentLifecycleTracking($logical, null, 3, str_repeat('a', 32), 2, 60, 600, 2, 600, 86400));
+        }
+    }
+
+    /**
+     * R2 — control case distinguishing corruption from ordinary concurrency.
+     * A structurally valid stored generation that simply does not match the
+     * expected generation is an unapplied conflict, not an exception.
+     */
+    public function testValidGenerationMismatchDuringPublicationIsOrdinaryConflictNotCorruption(): void
+    {
+        $now = $this->redisNow();
+        $logical = 'r2-valid-generation-mismatch';
+        $score = $this->key('score', $logical);
+        $this->raw(['HSET', $score, 'value', '8', 'updatedAt', (string) $now, 'generation', '3', 'expiresAt', (string) ($now + 601)]);
+        $this->raw(['EXPIRE', $score, '600']);
+        $before = $this->hashMap($score);
+
+        $transition = $this->store->blockWithPunishmentLifecycleTracking($logical, null, 4, str_repeat('a', 32), 2, 60, 600, 2, 600, 86400);
+
+        self::assertFalse($transition->applied);
+        self::assertSame($before, $this->hashMap($score));
+        self::assertSame(-2, $this->integer($this->raw(['PTTL', $this->key('block', $logical)])));
+    }
+
+    /**
+     * R3 — a legacy generation-less score can never structurally carry
+     * complete DEC-007 lifecycle evidence; the combination is impossible
+     * persisted state, not hidden evidence, a false claim, or an ordinary
+     * mismatch, across every lifecycle operation.
+     */
+    public function testLegacyScoreWithCompleteLifecycleEvidenceFailsAcrossReadMutateClaimAndPublication(): void
+    {
+        $now = $this->redisNow();
+        $id = str_repeat('a', 32);
+        foreach (['read', 'mutate', 'claim', 'publication'] as $operation) {
+            $logical = 'r3-legacy-complete-evidence-' . $operation;
+            $score = $this->key('score', $logical);
+            $this->raw(['HSET', $score, 'value', '8', 'updatedAt', (string) $now, 'reentryId', $id, 'reentryValidUntil', (string) ($now + 600), 'reentryGeneration', '1']);
+            $this->raw(['EXPIRE', $score, '600']);
+
+            $this->assertOperationFails(match ($operation) {
+                'read' => fn(): mixed => $this->store->readGenerationBoundScoreState($logical, null),
+                'mutate' => fn(): mixed => $this->store->mutateGenerationBoundScore($logical, null, null, 600, 9),
+                'claim' => fn(): mixed => $this->store->claimPostPunishmentReentry($logical, null, $id),
+                default => fn(): mixed => $this->store->blockWithPunishmentLifecycleTracking($logical, null, 1, $id, 2, 60, 600, 2, 600, 86400),
+            });
+        }
+    }
+
+    /**
+     * R5 — publication with an absent Current classifies Previous by its own
+     * structural validity, not by its mere presence. A persistent (PTTL ==
+     * -1) or finite structurally malformed Previous is an explicit failure;
+     * a structurally valid Previous (generated or legacy) is Previous's
+     * historical/read-only nature making it a non-publishable source, so it
+     * is an ordinary unapplied conflict, never an exception. Neither case
+     * writes Current or mutates Previous.
+     */
+    public function testCurrentAbsentPublicationClassifiesPreviousByStructuralValidityNotPresence(): void
+    {
+        $now = $this->redisNow();
+
+        // D1: structurally valid generated Previous -> ordinary conflict, not a failure.
+        $validGeneratedPrevious = $this->key('score', 'r5-valid-generated-previous');
+        $this->raw(['HSET', $validGeneratedPrevious, 'value', '8', 'updatedAt', (string) $now, 'generation', '1', 'expiresAt', (string) ($now + 601)]);
+        $this->raw(['EXPIRE', $validGeneratedPrevious, '600']);
+        $validGeneratedBefore = $this->hashMap($validGeneratedPrevious);
+        $validGeneratedTransition = $this->store->blockWithPunishmentLifecycleTracking('r5-valid-generated-current', 'r5-valid-generated-previous', 1, str_repeat('a', 32), 2, 60, 600, 2, 600, 86400);
+        self::assertFalse($validGeneratedTransition->applied);
+        self::assertNull($validGeneratedTransition->cycle);
+        self::assertNull($validGeneratedTransition->block);
+        self::assertNull($validGeneratedTransition->postPunishmentReentry);
+        self::assertSame($validGeneratedBefore, $this->hashMap($validGeneratedPrevious));
+        self::assertSame(-2, $this->integer($this->raw(['PTTL', $this->key('score', 'r5-valid-generated-current')])));
+        self::assertSame(-2, $this->integer($this->raw(['PTTL', $this->key('block', 'r5-valid-generated-current')])));
+
+        // D2: structurally valid legacy (generation-less) Previous -> ordinary conflict, not a failure.
+        $validLegacyPrevious = $this->key('score', 'r5-valid-legacy-previous');
+        $this->raw(['HSET', $validLegacyPrevious, 'value', '4', 'updatedAt', (string) $now]);
+        $this->raw(['EXPIRE', $validLegacyPrevious, '500']);
+        $validLegacyBefore = $this->hashMap($validLegacyPrevious);
+        $validLegacyTransition = $this->store->blockWithPunishmentLifecycleTracking('r5-valid-legacy-current', 'r5-valid-legacy-previous', 1, str_repeat('b', 32), 2, 60, 600, 2, 600, 86400);
+        self::assertFalse($validLegacyTransition->applied);
+        self::assertNull($validLegacyTransition->cycle);
+        self::assertNull($validLegacyTransition->block);
+        self::assertNull($validLegacyTransition->postPunishmentReentry);
+        self::assertSame($validLegacyBefore, $this->hashMap($validLegacyPrevious));
+        self::assertSame(-2, $this->integer($this->raw(['PTTL', $this->key('score', 'r5-valid-legacy-current')])));
+
+        // E1: Previous persisted without a physical deadline -> explicit failure.
+        $persistentPrevious = $this->key('score', 'r5-persistent-previous');
+        $this->raw(['HSET', $persistentPrevious, 'value', '8', 'updatedAt', (string) $now, 'generation', '1', 'expiresAt', (string) ($now + 600)]);
+        $persistentBefore = $this->hashMap($persistentPrevious);
+        $this->assertOperationFails(fn(): mixed => $this->store->blockWithPunishmentLifecycleTracking('r5-persistent-current', 'r5-persistent-previous', 1, str_repeat('c', 32), 2, 60, 600, 2, 600, 86400));
+        self::assertSame(-1, $this->integer($this->raw(['PTTL', $persistentPrevious])));
+        self::assertSame($persistentBefore, $this->hashMap($persistentPrevious));
+        self::assertSame(-2, $this->integer($this->raw(['PTTL', $this->key('score', 'r5-persistent-current')])));
+
+        // E2: Previous finite but structurally malformed (generation = 0) -> explicit failure.
+        $malformedPrevious = $this->key('score', 'r5-malformed-previous');
+        $this->raw(['HSET', $malformedPrevious, 'value', '8', 'updatedAt', (string) $now, 'generation', '0', 'expiresAt', (string) ($now + 600)]);
+        $this->raw(['EXPIRE', $malformedPrevious, '600']);
+        $malformedBefore = $this->hashMap($malformedPrevious);
+        $this->assertOperationFails(fn(): mixed => $this->store->blockWithPunishmentLifecycleTracking('r5-malformed-current', 'r5-malformed-previous', 1, str_repeat('d', 32), 2, 60, 600, 2, 600, 86400));
+        self::assertSame($malformedBefore, $this->hashMap($malformedPrevious));
+        self::assertSame(-2, $this->integer($this->raw(['PTTL', $this->key('score', 'r5-malformed-current')])));
+    }
+
+    /**
+     * Current absent, Previous live: the same full structural lifecycle
+     * validation the general contract requires (core fields, generation,
+     * expiry, and evidence) applies to Previous before it can be classified
+     * as an ordinary conflict. Partial lifecycle evidence, a generation-less
+     * (legacy) Previous carrying complete evidence, and a generated Previous
+     * whose physical deadline outlives its authoritative expiry are all
+     * structural corruption, not ordinary conflicts.
+     */
+    public function testCurrentAbsentPublicationRunsFullStructuralValidationOnPreviousEvidenceAndPhysicalExpiry(): void
+    {
+        $now = $this->redisNow();
+
+        $partialEvidencePrevious = $this->key('score', 'r5-partial-evidence-previous');
+        $this->raw(['HSET', $partialEvidencePrevious, 'value', '8', 'updatedAt', (string) $now, 'generation', '3', 'expiresAt', (string) ($now + 601), 'reentryId', str_repeat('a', 32)]);
+        $this->raw(['EXPIRE', $partialEvidencePrevious, '600']);
+        $partialEvidenceBefore = $this->hashMap($partialEvidencePrevious);
+        $this->assertOperationFails(fn(): mixed => $this->store->blockWithPunishmentLifecycleTracking('r5-partial-evidence-current', 'r5-partial-evidence-previous', 1, str_repeat('e', 32), 2, 60, 600, 2, 600, 86400));
+        self::assertSame($partialEvidenceBefore, $this->hashMap($partialEvidencePrevious));
+        self::assertSame(-2, $this->integer($this->raw(['PTTL', $this->key('score', 'r5-partial-evidence-current')])));
+
+        $legacyEvidencePrevious = $this->key('score', 'r5-legacy-evidence-previous');
+        $this->raw(['HSET', $legacyEvidencePrevious, 'value', '8', 'updatedAt', (string) $now, 'reentryId', str_repeat('b', 32), 'reentryValidUntil', (string) ($now + 601), 'reentryGeneration', '1']);
+        $this->raw(['EXPIRE', $legacyEvidencePrevious, '600']);
+        $legacyEvidenceBefore = $this->hashMap($legacyEvidencePrevious);
+        $this->assertOperationFails(fn(): mixed => $this->store->blockWithPunishmentLifecycleTracking('r5-legacy-evidence-current', 'r5-legacy-evidence-previous', 1, str_repeat('f', 32), 2, 60, 600, 2, 600, 86400));
+        self::assertSame($legacyEvidenceBefore, $this->hashMap($legacyEvidencePrevious));
+        self::assertSame(-2, $this->integer($this->raw(['PTTL', $this->key('score', 'r5-legacy-evidence-current')])));
+
+        $physicallyInconsistentPrevious = $this->key('score', 'r5-physical-inconsistent-previous');
+        $this->raw(['HSET', $physicallyInconsistentPrevious, 'value', '8', 'updatedAt', (string) $now, 'generation', '1', 'expiresAt', (string) ($now + 10)]);
+        $this->raw(['EXPIRE', $physicallyInconsistentPrevious, '600']);
+        $physicallyInconsistentBefore = $this->hashMap($physicallyInconsistentPrevious);
+        $this->assertOperationFails(fn(): mixed => $this->store->blockWithPunishmentLifecycleTracking('r5-physical-inconsistent-current', 'r5-physical-inconsistent-previous', 1, str_repeat('c', 32), 2, 60, 600, 2, 600, 86400));
+        self::assertSame($physicallyInconsistentBefore, $this->hashMap($physicallyInconsistentPrevious));
+        self::assertSame(-2, $this->integer($this->raw(['PTTL', $this->key('score', 'r5-physical-inconsistent-current')])));
+    }
+
+    /**
+     * Current absent with no Previous key at all (no live source whatsoever)
+     * is an ordinary unapplied conflict, not a failure.
+     */
+    public function testPublicationWithNoLiveSourceAtAllIsOrdinaryConflict(): void
+    {
+        $transition = $this->store->blockWithPunishmentLifecycleTracking('r5-no-source-current', null, 1, str_repeat('e', 32), 2, 60, 600, 2, 600, 86400);
+
+        self::assertFalse($transition->applied);
+        self::assertNull($transition->cycle);
+        self::assertNull($transition->block);
+        self::assertNull($transition->postPunishmentReentry);
+        self::assertSame(-2, $this->integer($this->raw(['PTTL', $this->key('score', 'r5-no-source-current')])));
+        self::assertSame(-2, $this->integer($this->raw(['PTTL', $this->key('block', 'r5-no-source-current')])));
+    }
+
+    /**
+     * Full publication parameter precondition matrix: each of the seven
+     * parameters is rejected individually with the other six valid.
+     */
+    public function testPublicationRejectsEachInvalidParameterAcrossTheFullMatrix(): void
+    {
+        $mutation = $this->store->mutateGenerationBoundScore('publication-parameter-matrix', null, null, 600, 8);
+        self::assertTrue($mutation->applied);
+
+        $baseline = [1, 2, 60, 600, 2, 600, 86400];
+        $invalidValues = [0, 1, 0, 0, 0, 0, 0];
+        foreach (array_keys($baseline) as $index) {
+            $params = $baseline;
+            $params[$index] = $invalidValues[$index];
+            [$generation, $level, $duration, $window, $threshold, $pause, $retention] = $params;
+            $this->assertOperationFails(
+                fn(): mixed => $this->store->blockWithPunishmentLifecycleTracking('publication-parameter-matrix', null, $generation, str_repeat('a', 32), $level, $duration, $window, $threshold, $pause, $retention),
+            );
+        }
+    }
+
+    public function testClaimMarkerCorruptionIsExplicitAndForeignMarkerDoesNotSilentlySuppress(): void
+    {
+        $id = str_repeat('b', 32);
+        $mutation = $this->store->mutateGenerationBoundScore('marker-corruption', null, null, 600, 8);
+        self::assertTrue($mutation->applied);
+        $transition = $this->store->blockWithPunishmentLifecycleTracking('marker-corruption', null, 1, $id, 2, 1, 21600, 2, 600, 86400);
+        self::assertTrue($transition->applied);
+        $this->raw(['DEL', $this->key('block', 'marker-corruption')]);
+        $marker = $this->key('reentry-claim', 'marker-corruption');
+        $this->raw(['SET', $marker, $id]);
+        $this->assertOperationFails(fn(): mixed => $this->store->claimPostPunishmentReentry('marker-corruption', null, $id));
+
+        $foreignId = str_repeat('c', 32);
+        $mutation = $this->store->mutateGenerationBoundScore('marker-foreign', null, null, 600, 8);
+        self::assertTrue($mutation->applied);
+        $transition = $this->store->blockWithPunishmentLifecycleTracking('marker-foreign', null, 1, $id, 2, 1, 21600, 2, 600, 86400);
+        self::assertTrue($transition->applied);
+        $this->raw(['DEL', $this->key('block', 'marker-foreign')]);
+        $this->raw(['SET', $this->key('reentry-claim', 'marker-foreign'), $foreignId, 'PX', '60000']);
+        $this->assertOperationFails(fn(): mixed => $this->store->claimPostPunishmentReentry('marker-foreign', null, $id));
+    }
+
+    public function testPreviousClaimIsReadOnlyAndWritesOnlyCurrentMarker(): void
+    {
+        $now = $this->redisNow();
+        $id = str_repeat('d', 32);
+        $previous = $this->key('score', 'claim-previous-only');
+        $this->raw(['HSET', $previous, 'value', '8', 'updatedAt', (string) $now, 'expiresAt', (string) ($now + 601), 'generation', '1', 'reentryId', $id, 'reentryValidUntil', (string) ($now + 601), 'reentryGeneration', '1']);
+        $this->raw(['EXPIRE', $previous, '600']);
+        $before = $this->hashMap($previous);
+
+        self::assertTrue($this->store->claimPostPunishmentReentry('claim-previous-only-current', 'claim-previous-only', $id));
+
+        self::assertSame($before, $this->hashMap($previous));
+        self::assertSame($id, $this->raw(['GET', $this->key('reentry-claim', 'claim-previous-only-current')]));
+        $markerTtl = $this->integer($this->raw(['TTL', $this->key('reentry-claim', 'claim-previous-only-current')]));
+        self::assertGreaterThan(0, $markerTtl);
+        self::assertLessThanOrEqual(600, $markerTtl);
+        self::assertFalse($this->store->claimPostPunishmentReentry('claim-previous-only-current', 'claim-previous-only', $id));
+    }
+
+    public function testLifecycleClaimDoesNotMutateScoreBlockCycleBudgetOrGenerationEvidence(): void
+    {
+        $mutation = $this->store->mutateGenerationBoundScore('claim-nonmutation', null, null, 600, 8);
+        self::assertTrue($mutation->applied);
+        $id = str_repeat('e', 32);
+        $transition = $this->store->blockWithPunishmentLifecycleTracking('claim-nonmutation', null, 1, $id, 2, 1, 21600, 2, 600, 86400);
+        self::assertTrue($transition->applied);
+        $this->raw(['DEL', $this->key('block', 'claim-nonmutation')]);
+        $this->store->incrementBudget('claim-nonmutation-budget', 600, 3);
+
+        $scoreBefore = $this->hashMap($this->key('score', 'claim-nonmutation'));
+        $cycleBefore = $this->raw(['ZRANGE', $this->key('cycle', 'claim-nonmutation'), '0', '-1', 'WITHSCORES']);
+        $budgetBefore = $this->hashMap($this->key('budget', 'claim-nonmutation-budget'));
+        self::assertTrue($this->store->claimPostPunishmentReentry('claim-nonmutation', null, $id));
+        self::assertSame($scoreBefore, $this->hashMap($this->key('score', 'claim-nonmutation')));
+        self::assertSame($cycleBefore, $this->raw(['ZRANGE', $this->key('cycle', 'claim-nonmutation'), '0', '-1', 'WITHSCORES']));
+        self::assertSame($budgetBefore, $this->hashMap($this->key('budget', 'claim-nonmutation-budget')));
+        self::assertSame($id, $this->raw(['GET', $this->key('reentry-claim', 'claim-nonmutation')]));
+    }
+
+    public function testLegacyHandoffAndSameValueMutationAdvanceGenerationExactlyOnce(): void
+    {
+        $now = $this->redisNow();
+        $legacyCurrent = $this->key('score', 'legacy-current-boundary');
+        $this->raw(['HSET', $legacyCurrent, 'value', '4', 'updatedAt', (string) $now]);
+        $this->raw(['EXPIRE', $legacyCurrent, '600']);
+        $legacyTtlBefore = $this->integer($this->raw(['TTL', $legacyCurrent]));
+        $legacyState = $this->store->readGenerationBoundScoreState('legacy-current-boundary', null);
+        self::assertNotNull($legacyState);
+        self::assertNull($legacyState->generation);
+        $sameValue = $this->store->mutateGenerationBoundScore('legacy-current-boundary', null, $legacyState, 600, 4);
+        self::assertTrue($sameValue->applied);
+        self::assertSame(1, $sameValue->state?->generation);
+        $legacyTtlAfter = $this->integer($this->raw(['TTL', $legacyCurrent]));
+        self::assertLessThanOrEqual($legacyTtlAfter, $legacyTtlBefore);
+        self::assertGreaterThanOrEqual($legacyTtlBefore - 2, $legacyTtlAfter);
+
+        $previous = $this->key('score', 'legacy-previous-boundary');
+        $this->raw(['HSET', $previous, 'value', '6', 'updatedAt', (string) $now]);
+        $this->raw(['EXPIRE', $previous, '600']);
+        $previousBefore = $this->hashMap($previous);
+        $previousState = $this->store->readGenerationBoundScoreState('legacy-handoff-current', 'legacy-previous-boundary');
+        self::assertNotNull($previousState);
+        self::assertNull($previousState->generation);
+        $handoff = $this->store->mutateGenerationBoundScore('legacy-handoff-current', 'legacy-previous-boundary', $previousState, 600, 7);
+        self::assertTrue($handoff->applied);
+        self::assertSame(1, $handoff->state?->generation);
+        self::assertSame($previousBefore, $this->hashMap($previous));
+        self::assertFalse($this->store->mutateGenerationBoundScore('legacy-handoff-current', 'legacy-previous-boundary', $previousState, 600, 8)->applied);
+
+        $generationOne = $this->store->mutateGenerationBoundScore('same-second-value', null, null, 600, 8);
+        self::assertTrue($generationOne->applied);
+        $generationTwo = $this->store->mutateGenerationBoundScore('same-second-value', null, $generationOne->state, 600, 8);
+        self::assertTrue($generationTwo->applied);
+        self::assertSame(2, $generationTwo->state?->generation);
+        self::assertNull($this->store->readGenerationBoundScoreState('same-second-value', null)?->postPunishmentReentry);
+    }
+
+    public function testLifecycleMutationPreservesPhysicalAndAuthoritativeExpiryAcrossAllK4Boundaries(): void
+    {
+        $now = $this->redisNow();
+
+        $legacyPreviousKey = $this->key('score', 'ttl-contract-legacy-previous');
+        $this->raw(['HSET', $legacyPreviousKey, 'value', '4', 'updatedAt', (string) $now]);
+        $this->raw(['PEXPIRE', $legacyPreviousKey, '1200']);
+        $legacyPreviousBefore = $this->hashMap($legacyPreviousKey);
+        $legacyPreviousPttl = $this->integer($this->raw(['PTTL', $legacyPreviousKey]));
+        $legacyPreviousState = $this->store->readGenerationBoundScoreState('ttl-contract-legacy-current', 'ttl-contract-legacy-previous');
+        self::assertNotNull($legacyPreviousState);
+        $legacyHandoff = $this->store->mutateGenerationBoundScore('ttl-contract-legacy-current', 'ttl-contract-legacy-previous', $legacyPreviousState, 86400, 5);
+        self::assertTrue($legacyHandoff->applied);
+        self::assertSame(1, $legacyHandoff->state?->generation);
+        self::assertLessThanOrEqual($legacyPreviousPttl + 25, $this->integer($this->raw(['PTTL', $this->key('score', 'ttl-contract-legacy-current')])));
+        self::assertSame($legacyPreviousBefore, $this->hashMap($legacyPreviousKey));
+
+        $generatedPrevious = $this->store->mutateGenerationBoundScore('ttl-contract-generated-previous', null, null, 600, 6);
+        self::assertTrue($generatedPrevious->applied);
+        self::assertNotNull($generatedPrevious->state);
+        for ($generation = 2; $generation <= 3; $generation++) {
+            $generatedPrevious = $this->store->mutateGenerationBoundScore('ttl-contract-generated-previous', null, $generatedPrevious->state, 86400, 5 + $generation);
+            self::assertTrue($generatedPrevious->applied);
+            self::assertSame($generation, $generatedPrevious->state?->generation);
+        }
+        $generatedPreviousKey = $this->key('score', 'ttl-contract-generated-previous');
+        $generatedPreviousBefore = $this->hashMap($generatedPreviousKey);
+        $generatedExpiry = $generatedPrevious->state->expiresAt;
+        $generatedPreviousPttl = $this->integer($this->raw(['PTTL', $generatedPreviousKey]));
+        $generatedPreviousState = $this->store->readGenerationBoundScoreState('ttl-contract-generated-current', 'ttl-contract-generated-previous');
+        self::assertNotNull($generatedPreviousState);
+        $generatedHandoff = $this->store->mutateGenerationBoundScore('ttl-contract-generated-current', 'ttl-contract-generated-previous', $generatedPreviousState, 86400, 7);
+        self::assertTrue($generatedHandoff->applied);
+        self::assertSame(4, $generatedHandoff->state?->generation);
+        self::assertSame($generatedExpiry, $generatedHandoff->state->expiresAt);
+        self::assertLessThanOrEqual($generatedPreviousPttl + 25, $this->integer($this->raw(['PTTL', $this->key('score', 'ttl-contract-generated-current')])));
+        self::assertSame($generatedPreviousBefore, $this->hashMap($generatedPreviousKey));
+
+        $current = $this->store->mutateGenerationBoundScore('ttl-contract-current', null, null, 600, 8);
+        self::assertTrue($current->applied);
+        self::assertNotNull($current->state);
+        $currentKey = $this->key('score', 'ttl-contract-current');
+        $currentBeforePttl = $this->integer($this->raw(['PTTL', $currentKey]));
+        $currentExpiry = $current->state->expiresAt;
+        $currentMutation = $this->store->mutateGenerationBoundScore('ttl-contract-current', null, $current->state, 86400, 9);
+        self::assertTrue($currentMutation->applied);
+        self::assertSame(2, $currentMutation->state?->generation);
+        self::assertSame($currentExpiry, $currentMutation->state->expiresAt);
+        self::assertLessThanOrEqual($currentBeforePttl + 25, $this->integer($this->raw(['PTTL', $currentKey])));
+
+        $subSecond = $this->store->mutateGenerationBoundScore('ttl-contract-sub-second', null, null, 600, 1);
+        self::assertTrue($subSecond->applied);
+        $subSecondKey = $this->key('score', 'ttl-contract-sub-second');
+        $this->raw(['PEXPIRE', $subSecondKey, '900']);
+        $subSecondPttl = $this->integer($this->raw(['PTTL', $subSecondKey]));
+        self::assertSame(0, intdiv($subSecondPttl, 1000));
+        self::assertGreaterThan(0, $subSecondPttl);
+        $subSecondState = $this->store->readGenerationBoundScoreState('ttl-contract-sub-second', null);
+        self::assertNotNull($subSecondState);
+        $subSecondMutation = $this->store->mutateGenerationBoundScore('ttl-contract-sub-second', null, $subSecondState, 86400, 2);
+        self::assertTrue($subSecondMutation->applied);
+        self::assertSame(2, $subSecondMutation->state?->generation);
+        self::assertLessThanOrEqual($subSecondPttl + 25, $this->integer($this->raw(['PTTL', $subSecondKey])));
+
+        $noExpiryKey = $this->key('score', 'ttl-contract-no-expiry');
+        $noExpiryNow = $this->redisNow();
+        $this->raw(['HSET', $noExpiryKey, 'value', '3', 'updatedAt', (string) $noExpiryNow, 'generation', '3', 'expiresAt', (string) ($noExpiryNow + 600)]);
+        $noExpiryHash = $this->hashMap($noExpiryKey);
+        self::assertSame(-1, $this->integer($this->raw(['PTTL', $noExpiryKey])));
+        $noExpiryState = new GenerationBoundScoreStateDTO(GenerationBoundScoreStateDTO::SOURCE_CURRENT, 3, $noExpiryNow, $noExpiryNow + 600, 3);
+        $this->assertOperationFails(fn(): mixed => $this->store->readGenerationBoundScoreState('ttl-contract-no-expiry', null));
+        $this->assertOperationFails(fn(): mixed => $this->store->mutateGenerationBoundScore('ttl-contract-no-expiry', null, $noExpiryState, 600, 4));
+        $this->assertOperationFails(fn(): mixed => $this->store->claimPostPunishmentReentry('ttl-contract-no-expiry', null, str_repeat('a', 32)));
+        self::assertSame($noExpiryHash, $this->hashMap($noExpiryKey));
+
+        $stale = $this->store->mutateGenerationBoundScore('ttl-contract-stale', null, null, 600, 1);
+        self::assertTrue($stale->applied);
+        $staleKey = $this->key('score', 'ttl-contract-stale');
+        $staleState = $stale->state;
+        self::assertNotNull($staleState);
+        $this->raw(['DEL', $staleKey]);
+        $staleMutation = $this->store->mutateGenerationBoundScore('ttl-contract-stale', null, $staleState, 600, 2);
+        self::assertFalse($staleMutation->applied);
+        self::assertSame(-2, $this->integer($this->raw(['PTTL', $staleKey])));
+
+        $empty = $this->store->mutateGenerationBoundScore('ttl-contract-empty', null, null, 600, 1);
+        self::assertTrue($empty->applied);
+        self::assertSame(1, $empty->state?->generation);
+        self::assertGreaterThan(0, $this->integer($this->raw(['PTTL', $this->key('score', 'ttl-contract-empty')])));
+    }
+
+    public function testConcurrentPreviousHandoffHasNoDoubleSeedAndGenerationMutationsHaveNoLostUpdates(): void
+    {
+        $now = $this->redisNow();
+        $previous = $this->key('score', 'concurrent-previous');
+        $this->raw(['HSET', $previous, 'value', '5', 'updatedAt', (string) $now]);
+        $this->raw(['EXPIRE', $previous, '600']);
+        $observedPrevious = $this->store->readGenerationBoundScoreState('concurrent-current', 'concurrent-previous');
+        self::assertNotNull($observedPrevious);
+
+        $workers = 6;
+        $this->runConcurrentWorkers($workers, function (int $index) use ($observedPrevious): void {
+            $mutation = $this->workerStore()->mutateGenerationBoundScore('concurrent-current', 'concurrent-previous', $observedPrevious, 600, 6);
+            $host = getenv('REDIS_INTEGRATION_HOST');
+            $port = getenv('REDIS_INTEGRATION_PORT');
+            if ($host === false || $port === false) {
+                exit(1);
+            }
+            (new RespRedisCommandExecutor($host, (int) $port))->execute([
+                'SET',
+                $this->key('handoff-result', (string) $index),
+                $mutation->applied ? '1' : '0',
+                'EX',
+                '60',
+            ]);
+        });
+        $handoffWinners = 0;
+        for ($index = 0; $index < $workers; $index++) {
+            $handoffWinners += $this->integer($this->raw(['GET', $this->key('handoff-result', (string) $index)]));
+        }
+        self::assertSame(1, $handoffWinners);
+        self::assertSame($observedPrevious->value, $this->store->readGenerationBoundScoreState('concurrent-previous', null)?->value);
+        $handoffState = $this->store->readGenerationBoundScoreState('concurrent-current', 'concurrent-previous');
+        self::assertNotNull($handoffState);
+        self::assertSame(6, $handoffState->value);
+        self::assertSame(1, $handoffState->generation);
+
+        $this->store->mutateGenerationBoundScore('concurrent-mutations', null, null, 600, 0);
+        $this->runConcurrentWorkers($workers, function (): void {
+            for ($attempt = 0; $attempt < 8; $attempt++) {
+                $store = $this->workerStore();
+                $state = $store->readGenerationBoundScoreState('concurrent-mutations', null);
+                if ($state !== null && $store->mutateGenerationBoundScore('concurrent-mutations', null, $state, 600, $state->value + 1)->applied) {
+                    return;
+                }
+                usleep(1000);
+            }
+            exit(1);
+        });
+        $final = $this->store->readGenerationBoundScoreState('concurrent-mutations', null);
+        self::assertNotNull($final);
+        self::assertSame($workers, $final->value);
+        self::assertSame($workers + 1, $final->generation);
     }
 
     public function testPublicBuilderWorkflowUsesTheOfficialRedisAggregateStore(): void
@@ -1073,6 +1976,17 @@ final class RedisFullCapabilityStoreIntegrationTest extends TestCase
     private function raw(array $command): mixed
     {
         return $this->executor->execute($command);
+    }
+
+    private function redisTime(): int
+    {
+        $time = $this->raw(['TIME']);
+
+        self::assertIsArray($time);
+
+        $seconds = $time[0] ?? 0;
+
+        return is_int($seconds) || is_string($seconds) ? (int) $seconds : 0;
     }
 
     private function redisNow(): int

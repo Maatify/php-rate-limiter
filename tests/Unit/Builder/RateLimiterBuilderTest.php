@@ -10,10 +10,14 @@ use Maatify\RateLimiter\Config\BlockPolicyInterface;
 use Maatify\RateLimiter\Config\LoginProtectionPolicy;
 use Maatify\RateLimiter\Config\OtpProtectionPolicy;
 use Maatify\RateLimiter\Config\RateLimiterConfig;
+use Maatify\RateLimiter\Config\PostPunishmentReentryPolicyInterface;
 use Maatify\RateLimiter\Contract\FailureSignalEmitterInterface;
 use Maatify\RateLimiter\DTO\DeviceIdentityDTO;
 use Maatify\RateLimiter\DTO\RateLimitContextDTO;
 use Maatify\RateLimiter\DTO\RateLimitResultDTO;
+use Maatify\RateLimiter\DTO\PolicyThresholdsDTO;
+use Maatify\RateLimiter\DTO\ScoreThresholdsDTO;
+use Maatify\RateLimiter\Exception\RateLimiterException;
 use Maatify\RateLimiter\Repository\CircuitBreakerStoreInterface;
 use Maatify\RateLimiter\Repository\CorrelationStoreInterface;
 use Maatify\RateLimiter\Repository\RateLimitStoreInterface;
@@ -31,6 +35,7 @@ use Maatify\RateLimiter\Tests\Support\Clock\FixedClock;
 use Maatify\RateLimiter\Tests\Support\Correlation\StatefulInMemoryCorrelationStore;
 use Maatify\RateLimiter\Tests\Support\FailureSignal\RecordingFailureSignalEmitter;
 use Maatify\RateLimiter\Tests\Support\RateLimiter\InMemoryRateLimitStore;
+use Maatify\RateLimiter\Tests\Support\RateLimiter\BaseOnlyInMemoryRateLimitStore;
 use Maatify\SharedCommon\Infrastructure\SystemClock;
 use PHPUnit\Framework\TestCase;
 
@@ -241,6 +246,126 @@ final class RateLimiterBuilderTest extends TestCase
             if ($previousHasher !== null) {
                 self::assertSame($expectedFingerprint, $this->privateProperty($previousHasher, 'secret'), $name);
             }
+        }
+    }
+
+    public function testDefaultOptInRegistryFailsFastWithoutLifecycleCapability(): void
+    {
+        $builder = new RateLimiterBuilder(
+            $this->config,
+            new BaseOnlyInMemoryRateLimitStore($this->clock),
+            $this->correlationStore,
+            $this->circuitBreakerStore,
+            $this->failureSignalEmitter,
+        );
+
+        $this->expectException(RateLimiterException::class);
+        $this->expectExceptionMessage('requires PunishmentLifecycleStoreInterface');
+        $builder->build();
+    }
+
+    public function testRegistryWithoutOptInPoliciesBuildsWithBaseStore(): void
+    {
+        $baseStore = new BaseOnlyInMemoryRateLimitStore($this->clock);
+        $builder = new RateLimiterBuilder(
+            $this->config,
+            $baseStore,
+            $this->correlationStore,
+            $this->circuitBreakerStore,
+            $this->failureSignalEmitter,
+        );
+        $nonOptInLogin = new class extends ApiHeavyProtectionPolicy {
+            public function getName(): string
+            {
+                return 'login_protection';
+            }
+        };
+        $nonOptInOtp = new class extends ApiHeavyProtectionPolicy {
+            public function getName(): string
+            {
+                return 'otp_protection';
+            }
+        };
+
+        $engine = $builder->withPolicy($nonOptInLogin)->withPolicy($nonOptInOtp)->build();
+        self::assertInstanceOf(RateLimiterInterface::class, $engine);
+    }
+
+    public function testCustomOptInPoliciesRejectInvalidK4AndFailureModeContracts(): void
+    {
+        $missingK4 = new class implements BlockPolicyInterface, PostPunishmentReentryPolicyInterface {
+            public function getName(): string
+            {
+                return 'missing_k4';
+            }
+            public function getScoreThresholds(): PolicyThresholdsDTO
+            {
+                return new PolicyThresholdsDTO();
+            }
+            public function getScoreDeltas(): \Maatify\RateLimiter\DTO\ScoreDeltasDTO
+            {
+                return new \Maatify\RateLimiter\DTO\ScoreDeltasDTO(k4_failure: 1);
+            }
+            public function getFailureMode(): string
+            {
+                return 'FAIL_CLOSED';
+            }
+            public function getBudgetConfig(): ?\Maatify\RateLimiter\DTO\BudgetConfigDTO
+            {
+                return null;
+            }
+        };
+        $this->expectException(RateLimiterException::class);
+        $this->expectExceptionMessage('Must enforce Account (K4) thresholds');
+        $this->builder()->withPolicy($missingK4)->build();
+    }
+
+    public function testCustomOptInPoliciesRejectNonMonotonicK4AndFailOpen(): void
+    {
+        $invalidThresholds = new class implements BlockPolicyInterface, PostPunishmentReentryPolicyInterface {
+            public function getName(): string
+            {
+                return 'invalid_thresholds';
+            }
+            public function getScoreThresholds(): PolicyThresholdsDTO
+            {
+                return new PolicyThresholdsDTO(k4: new ScoreThresholdsDTO(4, 3, 10));
+            }
+            public function getScoreDeltas(): \Maatify\RateLimiter\DTO\ScoreDeltasDTO
+            {
+                return new \Maatify\RateLimiter\DTO\ScoreDeltasDTO(k4_failure: 1);
+            }
+            public function getFailureMode(): string
+            {
+                return 'FAIL_CLOSED';
+            }
+            public function getBudgetConfig(): ?\Maatify\RateLimiter\DTO\BudgetConfigDTO
+            {
+                return null;
+            }
+        };
+        try {
+            $this->builder()->withPolicy($invalidThresholds)->build();
+            self::fail('Invalid custom K4 thresholds were accepted.');
+        } catch (RateLimiterException $exception) {
+            self::assertStringContainsString('monotonic', $exception->getMessage());
+        }
+
+        $failOpen = new class extends LoginProtectionPolicy implements PostPunishmentReentryPolicyInterface {
+            public function getName(): string
+            {
+                return 'fail_open_opt_in';
+            }
+            public function getFailureMode(): string
+            {
+                return 'FAIL_OPEN';
+            }
+        };
+        try {
+            $this->builder()->withPolicy($failOpen)->build();
+            self::fail('FAIL_OPEN custom opt-in was accepted.');
+        } catch (RateLimiterException $exception) {
+            self::assertStringContainsString('FAIL_OPEN', $exception->getMessage());
         }
     }
 

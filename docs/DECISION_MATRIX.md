@@ -4,7 +4,7 @@
 **Namespace:** `Maatify\RateLimiter`
 **Status:** LOCKED — Behavioral Contract
 **Scope:** Login, OTP, API Heavy Endpoints
-**Spec Version:** `1.10.0`
+**Spec Version:** `1.11.0`
 
 This document defines the **deterministic decision rules** used by the Rate Limiter.
 It is a **behavioral contract**, not explanatory documentation.
@@ -913,3 +913,20 @@ No new Anti-Equilibrium soft event recorded
 
 **This document is authoritative.
 Any deviation requires a version bump and changelog entry.**
+
+## 11. Generation-Bound Authentication Re-Entry (DEC-007)
+
+For opted-in Login and OTP policies, K4 score state and punishment evidence
+form one generation-bound lifecycle. A K4 mutation returns the generation and
+score expiry atomically; a qualifying L2+ punishment publishes the block and
+evidence in one backend atomic primitive. Evidence is valid only for the
+selected current/previous score generation and exact score expiry, and active
+K4 blocks suppress it for `checkOnly`, `recordFailure`, and `recordSuccess`.
+
+The public `checkOnly` ALLOW may expose metadata. Claiming does not consume
+punishment satisfaction or evidence; it consumes only an independent
+current-generation application handoff marker, so replay returns false. Current
+is writable, previous is read-only, and a newer mutation
+invalidates older evidence. Generation conflicts retry at most three times;
+exhaustion is an explicit transient HARD failure with
+`RateLimitConcurrencyException` provenance.

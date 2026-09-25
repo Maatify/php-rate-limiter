@@ -16,6 +16,8 @@ use Maatify\RateLimiter\Repository\Redis\CallableRedisCommandExecutor;
 use Maatify\RateLimiter\Repository\Redis\RedisFullCapabilityStore;
 use Maatify\RateLimiter\Service\DeviceIdentityResolver;
 use Maatify\RateLimiter\Service\DeviceIdentityResolverInterface;
+use Maatify\RateLimiter\Service\RateLimiterRuntimeInterface;
+use Maatify\RateLimiter\Config\PostPunishmentReentryPolicyInterface;
 
 require __DIR__ . '/vendor/autoload.php';
 
@@ -311,9 +313,35 @@ $store = new RedisFullCapabilityStore($executor, 'consumer-verification');
 $clock = new FixedClock(new DateTimeImmutable('now', new DateTimeZone('UTC')));
 $signals = new RecordingFailureSignalEmitter();
 $limiter = RateLimiterBuilder::fromFullCapabilityStore(new RateLimiterConfig('consumer-key', 'consumer-fingerprint', 'prod'), $store, $signals)->build();
+requireCondition($limiter instanceof RateLimiterRuntimeInterface, 'Full-capability Builder did not expose RateLimiterRuntimeInterface.');
 $context = static function (string $subject, string $ip = '203.0.113.10', bool $trusted = false, ?string $correlation = null): RateLimitContextDTO {
     $account = str_starts_with($subject, 'spray-') ? 'consumer-spray-account' : 'consumer-account-' . $subject;
     return new RateLimitContextDTO($ip, 'Mozilla/5.0 consumer-verification-' . $subject, $account, ['device' => $subject], $trusted ? 'trusted-device' : null, $trusted, [], $trusted, $correlation);
+};
+$publicPunishmentDuration = static function (RateLimitResultDTO $hard): int {
+    return match (min(6, max(1, $hard->blockLevel ?? 1))) {
+        1 => 15,
+        2 => 60,
+        3 => 300,
+        4 => 1800,
+        5 => 21600,
+        default => 86400,
+    };
+};
+$checkPublicReentry = static function (RateLimiterRuntimeInterface $runtime, RateLimitContextDTO $context, string $policy): array {
+    // Repeated checkOnly calls are observable public requests. Keep the
+    // bounded post-wait verification deliberately small and identity-stable.
+    for ($attempt = 0; $attempt < 2; $attempt++) {
+        $check = $runtime->limit($context, RateLimitCommand::checkOnly($policy));
+        $metadata = $check->metadata?->postPunishmentReentry;
+        if ($check->decision === RateLimitResultDTO::DECISION_ALLOW && $metadata !== null) {
+            return [$check, $metadata];
+        }
+        if ($attempt < 1) {
+            sleep(2);
+        }
+    }
+    throw new RuntimeException('Public re-entry did not become available after the shared bounded expiry wait: ' . json_encode(['lastCheck' => isset($check) ? resultShape($check) : null], JSON_THROW_ON_ERROR));
 };
 $sprayContext = static fn(string $correlation, bool $trusted = false): RateLimitContextDTO => new RateLimitContextDTO(
     '198.51.100.50',
@@ -354,6 +382,76 @@ $loginSuccessContext = new RateLimitContextDTO('203.0.113.14', 'Mozilla/5.0 cons
 $loginSuccess = $limiter->limit($loginSuccessContext, RateLimitCommand::recordSuccess('login_protection'));
 requireCondition($loginProgression[array_key_last($loginProgression)]->decision === RateLimitResultDTO::DECISION_HARD_BLOCK && $loginProgression[array_key_last($loginProgression)]->blockLevel >= 2, 'Default login failure progression did not reach L2 hard block.');
 requireCondition($loginSuccess->decision === RateLimitResultDTO::DECISION_ALLOW, 'Clean login success command was not executable.');
+
+$reentryLoginContext = $context('public-reentry-login', '203.0.113.15');
+$reentryLoginHard = null;
+for ($attempt = 1; $attempt <= 6; $attempt++) {
+    $candidate = $limiter->limit($reentryLoginContext, RateLimitCommand::recordFailure('login_protection'));
+    if ($candidate->decision === RateLimitResultDTO::DECISION_HARD_BLOCK) {
+        $reentryLoginHard = $candidate;
+        break;
+    }
+}
+requireCondition($reentryLoginHard instanceof RateLimitResultDTO, 'Public Login re-entry fixture did not issue a hard block.');
+requireCondition($reentryLoginHard->blockLevel === 2 && $reentryLoginHard->retryAfter === 60, 'Public Login newly-issued K4 L2 retryAfter must be 60 seconds: ' . json_encode(resultShape($reentryLoginHard), JSON_THROW_ON_ERROR));
+
+$reentryOtpAccount = 'consumer-account-public-reentry-otp';
+$reentryOtpContext = new RateLimitContextDTO('203.0.113.16', 'Mozilla/5.0 consumer-verification-public-reentry-otp', $reentryOtpAccount, ['device' => 'public-reentry-otp']);
+for ($attempt = 1; $attempt <= 3; $attempt++) {
+    // Keep the exact same unverified device identity for every OTP failure so
+    // this proof exercises K4 only and cannot create an independent K2 churn
+    // hard block through device rotation.
+    $reentryOtpHard = $limiter->limit($reentryOtpContext, RateLimitCommand::recordFailure('otp_protection'));
+    if ($reentryOtpHard->decision === RateLimitResultDTO::DECISION_HARD_BLOCK) {
+        break;
+    }
+}
+requireCondition(isset($reentryOtpHard) && $reentryOtpHard->decision === RateLimitResultDTO::DECISION_HARD_BLOCK, 'Public OTP re-entry fixture did not issue a hard block.');
+requireCondition($reentryOtpHard->blockLevel === 3, 'Default OTP re-entry fixture did not reach the expected L3 punishment.');
+requireCondition($reentryOtpHard->retryAfter === 300, 'Public OTP newly-issued K4 L3 retryAfter must be 300 seconds: ' . json_encode(resultShape($reentryOtpHard), JSON_THROW_ON_ERROR));
+
+$customPolicy = new class extends \Maatify\RateLimiter\Config\LoginProtectionPolicy implements PostPunishmentReentryPolicyInterface {
+    public function getName(): string
+    {
+        return 'consumer_custom_auth_k4';
+    }
+};
+$customLimiter = RateLimiterBuilder::fromFullCapabilityStore(new RateLimiterConfig('consumer-custom-key', 'consumer-custom-fingerprint', 'prod'), $store, $signals)->withPolicy($customPolicy)->build();
+requireCondition($customLimiter instanceof RateLimiterRuntimeInterface, 'Custom opt-in policy did not preserve the public runtime surface.');
+$customContext = $context('public-reentry-custom', '203.0.113.17');
+$customHard = null;
+for ($attempt = 1; $attempt <= 6; $attempt++) {
+    $customResult = $customLimiter->limit($customContext, RateLimitCommand::recordFailure('consumer_custom_auth_k4'));
+    if ($customResult->decision === RateLimitResultDTO::DECISION_HARD_BLOCK) {
+        $customHard = $customResult;
+        break;
+    }
+}
+requireCondition($customHard instanceof RateLimitResultDTO, 'Custom opt-in policy did not issue a hard block.');
+requireCondition($customHard->retryAfter === 60, 'Custom newly-issued K4 L2 retryAfter must be 60 seconds: ' . json_encode(resultShape($customHard), JSON_THROW_ON_ERROR));
+// All three public punishments are issued before one shared wait. This keeps
+// the default OTP L3 proof intact while avoiding serial 60s + 300s + 60s waits.
+$sharedWaitSeconds = max(
+    $publicPunishmentDuration($reentryLoginHard),
+    $publicPunishmentDuration($reentryOtpHard),
+    $publicPunishmentDuration($customHard),
+) + 1;
+sleep($sharedWaitSeconds);
+
+[$reentryLoginCheck, $reentryLoginMetadata] = $checkPublicReentry($limiter, $reentryLoginContext, 'login_protection');
+$reentryLoginClaim = $limiter->claimPostPunishmentReentry($reentryLoginContext, 'login_protection', $reentryLoginMetadata->id);
+$reentryLoginSecondClaim = $limiter->claimPostPunishmentReentry($reentryLoginContext, 'login_protection', $reentryLoginMetadata->id);
+requireCondition($reentryLoginClaim && ! $reentryLoginSecondClaim, 'Public Login claim was not one-shot.');
+
+[$reentryOtpCheck, $reentryOtpMetadata] = $checkPublicReentry($limiter, $reentryOtpContext, 'otp_protection');
+$reentryOtpClaim = $limiter->claimPostPunishmentReentry($reentryOtpContext, 'otp_protection', $reentryOtpMetadata->id);
+$reentryOtpSecondClaim = $limiter->claimPostPunishmentReentry($reentryOtpContext, 'otp_protection', $reentryOtpMetadata->id);
+requireCondition($reentryOtpClaim && ! $reentryOtpSecondClaim, 'Public OTP claim was not one-shot.');
+
+[$customCheck, $customMetadata] = $checkPublicReentry($customLimiter, $customContext, 'consumer_custom_auth_k4');
+$customClaim = $customLimiter->claimPostPunishmentReentry($customContext, 'consumer_custom_auth_k4', $customMetadata->id);
+$customSecondClaim = $customLimiter->claimPostPunishmentReentry($customContext, 'consumer_custom_auth_k4', $customMetadata->id);
+requireCondition($customClaim && ! $customSecondClaim, 'Custom opt-in claim was not one-shot.');
 $loginPersistenceContext = new RateLimitContextDTO('203.0.113.11', 'Mozilla/5.0 consumer-login-persistence', 'consumer-login-persistence', ['device' => 'consumer-login-persistence']);
 $loginKeysBefore = redisKeys($raw);
 $loginPersistenceResult = $limiter->limit($loginPersistenceContext, RateLimitCommand::recordFailure('login_protection'));
@@ -468,133 +566,6 @@ requireCondition((int) ($currentBudgetMap['count'] ?? -1) === 3, 'Current budget
 requireCondition(($currentBudgetMap['epochStart'] ?? null) === ($previousBudgetMap['epochStart'] ?? null), 'Budget migration did not preserve epochStart.');
 requireCondition(redisHashMap($raw->execute(['HGETALL', $previousBudget['key']])) === $previousBudgetMap, 'Previous budget state was modified during migration.');
 
-$cycleClock = new FixedClock(new DateTimeImmutable('now', new DateTimeZone('UTC')));
-$cycleLimiter = RateLimiterBuilder::fromFullCapabilityStore(new RateLimiterConfig('cycle-key', 'cycle-fingerprint', 'prod'), $store, $signals)->withClock($cycleClock)->build();
-$cycleContext = new RateLimitContextDTO('192.0.2.90', 'Mozilla/5.0 consumer-cycle', 'consumer-cycle-account', ['device' => 'consumer-cycle-device']);
-$cycleKeysBefore = redisKeys($raw);
-$firstCycle = null;
-for ($attempt = 1; $attempt <= 6; $attempt++) {
-    $candidate = $cycleLimiter->limit($cycleContext, RateLimitCommand::recordFailure('login_protection'));
-    if ($candidate->decision === RateLimitResultDTO::DECISION_HARD_BLOCK) {
-        $firstCycle = $candidate;
-        break;
-    }
-}
-requireCondition($firstCycle instanceof RateLimitResultDTO, 'Default login path did not produce the first hard-block cycle.');
-$firstCycleKeys = newlyCreatedRedisKeys($cycleKeysBefore, redisKeys($raw));
-$firstCycleState = redisStateSnapshot($raw, $firstCycleKeys);
-$firstCycleRepeat = $cycleLimiter->limit($cycleContext, RateLimitCommand::checkOnly('login_protection'));
-requireCondition($firstCycleRepeat->decision === RateLimitResultDTO::DECISION_HARD_BLOCK, 'Active first cycle was not enforced by the public check path.');
-requireReadOnlySnapshot($firstCycleState, redisStateSnapshot($raw, $firstCycleKeys), 'Active first cycle');
-$cycleRotated = RateLimiterBuilder::fromFullCapabilityStore(new RateLimiterConfig('cycle-new-key', 'cycle-new-fingerprint', 'prod', 'cycle-key', 'cycle-fingerprint'), $store, $signals)->withClock($cycleClock)->build();
-$rotatedCycle = $cycleRotated->limit($cycleContext, RateLimitCommand::checkOnly('login_protection'));
-requireCondition($rotatedCycle->decision === RateLimitResultDTO::DECISION_HARD_BLOCK, 'Rotated cycle did not retain the previous hard block.');
-requireReadOnlySnapshot($firstCycleState, redisStateSnapshot($raw, $firstCycleKeys), 'Previous cycle state');
-$cycleClock->setNow($cycleClock->now()->modify('+601 seconds'));
-$secondCycleKeysBefore = redisKeys($raw);
-$secondCycle = null;
-for ($attempt = 1; $attempt <= 3; $attempt++) {
-    $candidate = $cycleRotated->limit($cycleContext, RateLimitCommand::recordFailure('login_protection'));
-    if ($candidate->decision === RateLimitResultDTO::DECISION_HARD_BLOCK) {
-        $secondCycle = $candidate;
-        break;
-    }
-}
-requireCondition($secondCycle instanceof RateLimitResultDTO, 'Default login path did not produce the second hard-block cycle.');
-requireCondition(($secondCycle->retryAfter ?? 0) >= 600, 'Second hard-block cycle did not expose the retained pause behavior.');
-$secondCycleKeys = newlyCreatedRedisKeys($secondCycleKeysBefore, redisKeys($raw));
-$secondCycleState = redisStateSnapshot($raw, $secondCycleKeys);
-$pause = findPauseState($secondCycleState, $cycleClock->now()->getTimestamp());
-requireCondition($pause !== null && $pause['finish'] - $pause['start'] === 600, 'Second hard-block cycle did not persist the exact fixed 600-second pause.');
-$secondCycleRepeat = $cycleRotated->limit($cycleContext, RateLimitCommand::checkOnly('login_protection'));
-requireCondition($secondCycleRepeat->decision === RateLimitResultDTO::DECISION_HARD_BLOCK, 'Active second cycle was not enforced by the public check path.');
-requireReadOnlySnapshot($secondCycleState, redisStateSnapshot($raw, $secondCycleKeys), 'Active second cycle');
-$cycleClock->setNow($cycleClock->now()->modify('+300 seconds'));
-$pauseAfterPart = findPauseState(redisStateSnapshot($raw, $secondCycleKeys), $cycleClock->now()->getTimestamp());
-requireCondition($pauseAfterPart !== null && $pauseAfterPart['remaining'] < $pause['remaining'] && $pauseAfterPart['remaining'] > 0, 'Active pause did not decrease without renewal.');
-$secondCycleState = redisStateSnapshot($raw, $secondCycleKeys);
-$currentK4Scores = array_values(array_filter(findScoreStates($secondCycleState), static fn(array $scoreState): bool => (int) $scoreState['state']['value'] === 11));
-requireCondition(count($currentK4Scores) === 1, 'Current K4 score state was not uniquely observed at value 11.');
-$currentL2Blocks = array_values(array_filter(findBlockStates($secondCycleState), static fn(array $blockState): bool => (int) $blockState['state']['level'] >= 2));
-requireCondition(count($currentL2Blocks) > 0, 'Current L2+ block state was not observed generically.');
-$observedBlockExpiresAt = (int) $currentL2Blocks[0]['state']['expiresAt'];
-$pauseFinish = $pause['finish'];
-$cycleClock->setNow(new DateTimeImmutable('@' . ($observedBlockExpiresAt + 1)));
-requireCondition($cycleClock->now()->getTimestamp() < $pauseFinish, 'Observed block expiry does not precede pause finish; fixture cannot prove retained pause contribution.');
-$noFingerprintResolver = new class implements DeviceIdentityResolverInterface {
-    public function resolve(RateLimitContextDTO $context): DeviceIdentityDTO
-    {
-        return new DeviceIdentityDTO(
-            null,
-            'LOW',
-            false,
-            false,
-            DeviceIdentityResolver::normalizeUserAgent($context->ua),
-            false,
-            null,
-        );
-    }
-};
-$pauseVerifier = RateLimiterBuilder::fromFullCapabilityStore(new RateLimiterConfig('cycle-new-key', 'cycle-new-fingerprint', 'prod', 'cycle-key', 'cycle-fingerprint'), $store, $signals)
-    ->withClock($cycleClock)
-    ->withDeviceIdentityResolver($noFingerprintResolver)
-    ->build();
-$recordedRedisCommands = [];
-$recordRedisCommands = true;
-$postBlock = $pauseVerifier->limit($cycleContext, RateLimitCommand::checkOnly('login_protection'));
-$recordRedisCommands = false;
-$recordedEvalAccesses = recordedEvalAccesses($recordedRedisCommands);
-$recordedCommandSummary = static function (array $commands): array {
-    return array_map(static function (array $command): array {
-        $name = strtoupper((string) ($command[0] ?? ''));
-        if ($name === 'EVAL' && isset($command[2])) {
-            $numKeys = (int) $command[2];
-            return ['command' => $name, 'numkeys' => $numKeys, 'keys' => array_map('strval', array_slice($command, 3, max(0, $numKeys)))];
-        }
-
-        return ['command' => $name, 'argumentCount' => max(0, count($command) - 1)];
-    }, $commands);
-};
-$attemptedCommandSummary = $recordedCommandSummary($recordedRedisCommands);
-$successfulCommandSummary = $recordedCommandSummary($recordedSuccessfulRedisCommands);
-$lastEvalDiagnostics = array_slice($recordedEvalDiagnostics, -5);
-requireCondition($postBlock->failureMode === 'NORMAL', 'Public pause oracle call entered fallback: ' . json_encode(resultShape($postBlock), JSON_THROW_ON_ERROR) . '; attemptedCount=' . count($attemptedCommandSummary) . '; successfulCount=' . count($successfulCommandSummary) . '; commandNames=' . implode(',', array_map(static fn(array $command): string => (string) $command['command'], $attemptedCommandSummary)) . '; evalCount=' . count($recordedEvalAccesses) . '; lastAttempted=' . json_encode($attemptedCommandSummary[array_key_last($attemptedCommandSummary)] ?? null, JSON_THROW_ON_ERROR) . '; lastSuccessful=' . json_encode($successfulCommandSummary[array_key_last($successfulCommandSummary)] ?? null, JSON_THROW_ON_ERROR) . '; lastFiveEvals=' . json_encode($lastEvalDiagnostics, JSON_THROW_ON_ERROR));
-$recordedKeys = recordedRedisKeys($recordedEvalAccesses);
-$accessedScenarioKeys = array_values(array_intersect($recordedKeys, $secondCycleKeys));
-$accessedState = redisStateSnapshot($raw, $accessedScenarioKeys);
-$accessedK4Scores = array_values(array_filter(findScoreStates($accessedState), static fn(array $scoreState): bool => (int) $scoreState['state']['value'] === 11));
-$accessedL2Blocks = array_values(array_filter(findBlockStates($accessedState), static fn(array $blockState): bool => (int) $blockState['state']['level'] >= 2));
-$accessedPause = findPauseState($accessedState, $cycleClock->now()->getTimestamp());
-requireCondition(count($accessedK4Scores) === 1, 'Public pause oracle call did not access the exact observed K4 score state.');
-requireCondition(count($accessedL2Blocks) > 0, 'Public pause oracle call did not access the observed L2+ block state.');
-requireCondition($accessedPause !== null, 'Public pause oracle call did not access the observed pause history state.');
-$oracleNow = $cycleClock->now()->getTimestamp();
-$currentK4Score = $accessedK4Scores[0]['state'];
-$currentL2Block = $accessedL2Blocks[0]['state'];
-$pause = $accessedPause;
-$pauseFinish = $pause['finish'];
-$scoreUpdatedAt = (int) $currentK4Score['updatedAt'];
-$scoreValue = (int) $currentK4Score['value'];
-$pauseOverlapStart = max($scoreUpdatedAt, $pause['start']);
-$pauseOverlapFinish = min($oracleNow, $pauseFinish);
-$elapsedPaused = $pauseOverlapFinish > $pauseOverlapStart ? $pauseOverlapFinish - $pauseOverlapStart : 0;
-$effectiveElapsed = max(0, ($oracleNow - $scoreUpdatedAt) - $elapsedPaused);
-$completedIntervals = intdiv($effectiveElapsed, 600);
-$pointsToLose = $scoreValue - 8 + 1;
-$remainingWithPause = $pointsToLose - $completedIntervals;
-$unpausedElapsed = max(0, $oracleNow - $scoreUpdatedAt);
-$remainingWithoutPause = $pointsToLose - intdiv($unpausedElapsed, 600);
-$expectedWithPause = $remainingWithPause <= 0
-    ? 0
-    : (($remainingWithPause * 600) - ($effectiveElapsed % 600) + max(0, $pauseFinish - $oracleNow));
-$expectedWithoutPause = $remainingWithoutPause <= 0
-    ? 0
-    : (($remainingWithoutPause * 600) - ($unpausedElapsed % 600));
-requireCondition($postBlock->decision === RateLimitResultDTO::DECISION_HARD_BLOCK && ($postBlock->blockLevel ?? 0) >= 2, 'Public check did not produce score-derived L2+ after the observed persisted block expiry.');
-requireCondition($postBlock->retryAfter === $expectedWithPause, 'Public Retry-After did not match the accessed-state pause-aware oracle: observed ' . $postBlock->retryAfter . ', expected ' . $expectedWithPause . '; accesses=' . json_encode($recordedEvalAccesses, JSON_THROW_ON_ERROR) . '; accessedKeys=' . json_encode($accessedScenarioKeys, JSON_THROW_ON_ERROR) . '; score=' . json_encode($currentK4Score, JSON_THROW_ON_ERROR) . '; block=' . json_encode($currentL2Block, JSON_THROW_ON_ERROR) . '; pause=' . json_encode($pause, JSON_THROW_ON_ERROR) . '; now=' . $oracleNow . '; expectedWithoutPause=' . $expectedWithoutPause . '.');
-requireCondition($expectedWithPause > $expectedWithoutPause && $expectedWithPause - $expectedWithoutPause === 600, 'Observed pause did not contribute exactly 600 seconds over the same score state without pause accounting.');
-requireReadOnlySnapshot($secondCycleState, redisStateSnapshot($raw, $secondCycleKeys), 'Pause state after active checks');
-
 $failureRaw = new RespRedisCommandExecutor($host, (int) $port);
 $failureExecutor = new CallableRedisCommandExecutor(static function (array $command) use ($failureRaw): mixed {
     if (strtoupper((string) ($command[0] ?? '')) === 'EVAL') {
@@ -651,4 +622,4 @@ requireCondition(count($circuitSignalTypes) === 2 && $circuitSignalTypes === ['C
 
 $keys = redisKeys($raw);
 requireCondition(count($keys) > 0, 'No Redis persistence was observable.');
-echo json_encode(['status' => 'PASS', 'packageInstallPath' => $installPath, 'productionAutoload' => true, 'packageTestNamespaceAvailable' => false, 'login' => ['checkOnly' => resultShape($loginCheck), 'recordFailure' => resultShape($loginFailure), 'recordSuccess' => resultShape($loginSuccess), 'progression' => array_map('resultShape', $loginProgression), 'persistenceProof' => true], 'otp' => resultShape($otp), 'apiHeavy' => resultShape($api), 'credentialSpray' => array_map('resultShape', $spray), 'sprayLifecycle' => ['recordSuccess' => resultShape($spraySuccess), 'subjectFourCheckOnly' => resultShape($spraySubjectFour)], 'trustedSession' => resultShape($trusted), 'untrustedFollowUp' => resultShape($untrustedFollowUp), 'trustedNonK1' => resultShape($trustedNonK1), 'rotations' => $rotationCases, 'budgetMigration' => ['previousCount' => (int) $previousBudgetMap['count'], 'currentCount' => (int) $currentBudgetMap['count'], 'epochStartPreserved' => true, 'previousReadOnly' => true], 'hardBlockCyclePause' => ['firstCycle' => resultShape($firstCycle), 'secondCycle' => resultShape($secondCycle), 'pauseRetained' => true], 'failureSemantics' => ['login' => resultShape($loginFailureMode), 'otp' => resultShape($otpFailureMode), 'apiHeavy' => resultShape($apiFailureMode)], 'circuit' => ['openGuard' => resultShape($openGuardResult), 'halfOpenProbe' => resultShape($halfOpenResult), 'closedRecovery' => resultShape($closedResult), 'normalWorkloadSuppressedWhileOpen' => true, 'signalCount' => count($circuitSignals->signals()), 'signalTypes' => array_values(array_unique(array_map(static fn($signal): string => $signal->type, $circuitSignals->signals())))], 'redisPersistence' => ['keyCount' => count($keys)], 'failureSignals' => count($signals->signals())], JSON_THROW_ON_ERROR) . PHP_EOL;
+echo json_encode(['status' => 'PASS', 'packageInstallPath' => $installPath, 'productionAutoload' => true, 'packageTestNamespaceAvailable' => false, 'reentryTiming' => ['loginLevel' => $reentryLoginHard->blockLevel, 'otpLevel' => $reentryOtpHard->blockLevel, 'customLevel' => $customHard->blockLevel, 'sharedWaitSeconds' => $sharedWaitSeconds], 'login' => ['checkOnly' => resultShape($loginCheck), 'recordFailure' => resultShape($loginFailure), 'recordSuccess' => resultShape($loginSuccess), 'progression' => array_map('resultShape', $loginProgression), 'persistenceProof' => true, 'postPunishmentReentry' => ['checkOnly' => resultShape($reentryLoginCheck), 'claim' => $reentryLoginClaim, 'secondClaim' => $reentryLoginSecondClaim]], 'otp' => resultShape($otp), 'otpPostPunishmentReentry' => ['checkOnly' => resultShape($reentryOtpCheck), 'claim' => $reentryOtpClaim, 'secondClaim' => $reentryOtpSecondClaim], 'customOptIn' => ['checkOnly' => resultShape($customCheck), 'claim' => $customClaim, 'secondClaim' => $customSecondClaim], 'apiHeavy' => resultShape($api), 'credentialSpray' => array_map('resultShape', $spray), 'sprayLifecycle' => ['recordSuccess' => resultShape($spraySuccess), 'subjectFourCheckOnly' => resultShape($spraySubjectFour)], 'trustedSession' => resultShape($trusted), 'untrustedFollowUp' => resultShape($untrustedFollowUp), 'trustedNonK1' => resultShape($trustedNonK1), 'rotations' => $rotationCases, 'budgetMigration' => ['previousCount' => (int) $previousBudgetMap['count'], 'currentCount' => (int) $currentBudgetMap['count'], 'epochStartPreserved' => true, 'previousReadOnly' => true], 'failureSemantics' => ['login' => resultShape($loginFailureMode), 'otp' => resultShape($otpFailureMode), 'apiHeavy' => resultShape($apiFailureMode)], 'circuit' => ['openGuard' => resultShape($openGuardResult), 'halfOpenProbe' => resultShape($halfOpenResult), 'closedRecovery' => resultShape($closedResult), 'normalWorkloadSuppressedWhileOpen' => true, 'signalCount' => count($circuitSignals->signals()), 'signalTypes' => array_values(array_unique(array_map(static fn($signal): string => $signal->type, $circuitSignals->signals())))], 'redisPersistence' => ['keyCount' => count($keys)], 'failureSignals' => count($signals->signals())], JSON_THROW_ON_ERROR) . PHP_EOL;

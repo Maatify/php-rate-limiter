@@ -7,6 +7,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+- Added DEC-007 generation-bound authentication K4 lifecycle for opt-in Login
+  and OTP policies, including typed lifecycle storage, bounded public claims,
+  early Builder capability validation, and the composite runtime surface.
+- Custom `FullCapabilityStoreInterface` implementations must add the
+  `PunishmentLifecycleStoreInterface` methods. Pre-DEC-007 writers must not
+  concurrently write the same logical namespace during migration.
+
 ### Changed
 - Added the official optional built-in Redis full-capability store. It uses a
   Host-supplied command executor, supports one logical non-clustered Redis

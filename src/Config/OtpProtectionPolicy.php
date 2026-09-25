@@ -11,9 +11,13 @@ use Maatify\RateLimiter\DTO\ScoreDeltasDTO;
 use Maatify\RateLimiter\DTO\ScoreThresholdsDTO;
 
 /**
- * Policy for OTP failures with account-scoped thresholds and recovery guard.
+ * Default OTP failure policy with account-scoped thresholds and recovery guard.
+ *
+ * It opts into DEC-007 generation-bound K4 lifecycle behavior. The policy
+ * supplies positive monotonic K4 thresholds and fail-closed failure semantics;
+ * the Builder additionally requires lifecycle-capable storage for this opt-in.
  */
-class OtpProtectionPolicy implements BlockPolicyInterface
+class OtpProtectionPolicy implements PostPunishmentReentryPolicyInterface
 {
     /**
      * Return the policy identifier consumed by the engine.
