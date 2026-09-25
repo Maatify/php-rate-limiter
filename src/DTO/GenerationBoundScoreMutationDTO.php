@@ -4,9 +4,20 @@ declare(strict_types=1);
 
 namespace Maatify\RateLimiter\DTO;
 
-/** Result of an optimistic generation-bound score mutation. */
+/**
+ * Result of one optimistic generation-bound score mutation.
+ *
+ * `applied=false` is an expected stale-snapshot conflict and carries no state;
+ * `applied=true` carries the atomically persisted current state after the
+ * generation advance. Backend corruption is not represented as a conflict.
+ */
 final readonly class GenerationBoundScoreMutationDTO implements \JsonSerializable
 {
+    /**
+     * @param bool $applied Whether the optimistic mutation won its state fence.
+     * @param ?GenerationBoundScoreStateDTO $state The new state only when
+     * applied is true.
+     */
     public function __construct(public bool $applied, public ?GenerationBoundScoreStateDTO $state)
     {
         if ($applied !== ($state !== null)) {

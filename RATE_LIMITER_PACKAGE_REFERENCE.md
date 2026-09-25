@@ -106,13 +106,16 @@ The following inventory describes the current public runtime types. Test and sup
 | `Maatify\RateLimiter\Repository\CircuitBreakerStoreInterface` | Circuit-breaker state persistence boundary. |
 | `Maatify\RateLimiter\Repository\CircuitBreakerProbeStoreInterface` | Additive atomic per-policy recovery-probe lease capability. |
 | `Maatify\RateLimiter\Repository\HardBlockCycleStoreInterface` | Additive atomic L2+ block, hard-cycle, and decay-pause capability; Previous is read-only. |
-| `Maatify\RateLimiter\Repository\PunishmentLifecycleStoreInterface` | Generation-bound K4 mutation, punishment evidence, and one-shot claim capability. |
+| `Maatify\RateLimiter\Repository\PunishmentLifecycleStoreInterface` | Generation-bound K4 mutation, atomic punishment publication, and one-shot claim capability; stale conflicts are non-applied results and malformed generated state fails explicitly. |
 | `Maatify\RateLimiter\Repository\FullCapabilityStoreInterface` | Aggregate contract including the punishment lifecycle capability without declaring new methods. |
 | `Maatify\RateLimiter\Repository\Redis\RedisCommandExecutorInterface` | Raw Redis command boundary supplied by the Host/client bridge for the optional official Redis store. |
 | `Maatify\RateLimiter\Contract\FailureSignalEmitterInterface` | Failure and circuit-breaker signal delivery boundary. |
 | `Maatify\RateLimiter\Service\DeviceIdentityResolverInterface` | Device identity resolution boundary. |
 | `Maatify\RateLimiter\Service\RateLimitOperationalReaderInterface` | Read-only point-in-time operational state query boundary. |
+| `Maatify\RateLimiter\Service\PostPunishmentReentryClaimInterface` | Public one-shot post-punishment lifecycle claim boundary; stale, expired, mismatched, absent, or replayed evidence returns `false`. |
+| `Maatify\RateLimiter\Service\RateLimiterRuntimeInterface` | Composite production runtime extending the normal limiter entrypoint with the public lifecycle claim operation. |
 | `Maatify\RateLimiter\Config\BlockPolicyInterface` | Policy name, thresholds, score deltas, failure mode, and budget configuration. |
+| `Maatify\RateLimiter\Config\PostPunishmentReentryPolicyInterface` | Explicit opt-in marker for generation-bound K4 lifecycle behavior; builder validation requires the lifecycle storage capability. |
 | `Maatify\RateLimiter\Exception\RateLimiterExceptionInterface` | Package exception marker contract. |
 
 ### Public Configuration and Composition
@@ -136,8 +139,9 @@ The following inventory describes the current public runtime types. Test and sup
 | Identity and policy | `Maatify\RateLimiter\DTO\DeviceIdentityDTO`, `Maatify\RateLimiter\DTO\PolicyThresholdsDTO`, `Maatify\RateLimiter\DTO\ScoreThresholdsDTO`, `Maatify\RateLimiter\DTO\ScoreDeltasDTO`, `Maatify\RateLimiter\DTO\BudgetConfigDTO` |
 | Runtime state | `Maatify\RateLimiter\DTO\BudgetStatusDTO`, `Maatify\RateLimiter\DTO\EphemeralStateDTO`, `Maatify\RateLimiter\DTO\FailureSignalDTO`, `Maatify\RateLimiter\DTO\FailureStateDTO` |
 | Bounded correlation | `Maatify\RateLimiter\DTO\BoundedDistinctResultDTO`, `Maatify\RateLimiter\DTO\BoundedDistinctSnapshotDTO`, `Maatify\RateLimiter\DTO\BoundedCorrelationObservationDTO` |
-| Store boundary state | `Maatify\RateLimiter\DTO\RateLimitStateDTO`, `Maatify\RateLimiter\DTO\BlockStateDTO`, `Maatify\RateLimiter\DTO\BudgetStateDTO`, `Maatify\RateLimiter\DTO\CircuitBreakerStateDTO` |
+| Store boundary state | `Maatify\RateLimiter\DTO\RateLimitStateDTO`, `Maatify\RateLimiter\DTO\BlockStateDTO`, `Maatify\RateLimiter\DTO\BudgetStateDTO`, `Maatify\RateLimiter\DTO\CircuitBreakerStateDTO`, `Maatify\RateLimiter\DTO\GenerationBoundScoreStateDTO`, `Maatify\RateLimiter\DTO\GenerationBoundScoreMutationDTO` |
 | Hard-block cycle state | `Maatify\RateLimiter\DTO\HardBlockCycleResultDTO`, `Maatify\RateLimiter\DTO\DecayPauseStateDTO` |
+| Punishment lifecycle state | `Maatify\RateLimiter\DTO\PostPunishmentReentryStateDTO`, `Maatify\RateLimiter\DTO\PostPunishmentReentryMetadataDTO`, `Maatify\RateLimiter\DTO\PunishmentLifecycleTransitionDTO` |
 | Operational read | `Maatify\RateLimiter\DTO\RateLimitOperationalKeyStateDTO`, `Maatify\RateLimiter\DTO\RateLimitOperationalScopesDTO`, `Maatify\RateLimiter\DTO\RateLimitOperationalBudgetDTO`, `Maatify\RateLimiter\DTO\RateLimitOperationalSnapshotDTO` |
 
 `Maatify\RateLimiter\DTO\PipelineScoreDTO` is an internal composition DTO and is not part of the consumer Public Runtime API.
@@ -146,17 +150,17 @@ The following inventory describes the current public runtime types. Test and sup
 
 | Group | Types | Consumer role |
 | --- | --- | --- |
-| Default composition | `Maatify\RateLimiter\Builder\RateLimiterBuilder` | Builds a coherent `RateLimiterInterface` graph around `RateLimiterEngine` while requiring the host storage and failure-signal boundaries explicitly. |
-| Primary entrypoint | `Maatify\RateLimiter\Service\RateLimiterEngine` | Production implementation of `Maatify\RateLimiter\Service\RateLimiterInterface`; composes identity resolution, evaluation, circuit-breaker, failure, and policy behavior. |
+| Default composition | `Maatify\RateLimiter\Builder\RateLimiterBuilder` | Builds the coherent default graph and returns `RateLimiterRuntimeInterface` while requiring the host storage and failure-signal boundaries explicitly. |
+| Primary entrypoint | `Maatify\RateLimiter\Service\RateLimiterEngine` | Production implementation of `RateLimiterRuntimeInterface`; composes identity resolution, evaluation, circuit-breaker, failure, policy behavior, and the public lifecycle claim. |
 | Composition services | `Maatify\RateLimiter\Service\EvaluationPipeline`, `Maatify\RateLimiter\Service\CircuitBreaker`, `Maatify\RateLimiter\Service\FailureModeResolver`, `Maatify\RateLimiter\Service\LocalFallbackLimiter` | Public runtime services used to assemble or extend the engine without coupling it to a storage implementation. `EvaluationPipeline::isBackendHealthy()` is the read-only recovery-probe boundary. |
 | Identity services | `Maatify\RateLimiter\Service\DeviceIdentityResolver`, `Maatify\RateLimiter\Service\FingerprintHasher`, `Maatify\RateLimiter\Service\EphemeralBucket` | Default identity hashing, normalization, bounded device-cap admission, and ephemeral routing without synthetic persistent keys. |
 | Operational read | `Maatify\RateLimiter\Service\RateLimitOperationalReader` | Resolves a read-only point-in-time snapshot from a typed context and policy without invoking enforcement or mutation primitives. |
 | Decision services | `Maatify\RateLimiter\Service\AntiEquilibriumGate`, `Maatify\RateLimiter\Service\BoundedCorrelationResultValidator`, `Maatify\RateLimiter\Service\BudgetTracker`, `Maatify\RateLimiter\Service\DecayCalculator`, `Maatify\RateLimiter\Service\PenaltyLadder` | Publicly typed services for bounded result validation, penalty, budget, decay, and escalation orchestration. |
 | Official Redis storage | `Maatify\RateLimiter\Repository\Redis\CallableRedisCommandExecutor`, `Maatify\RateLimiter\Repository\Redis\RedisFullCapabilityStore` | Optional package-owned store for one logical non-clustered Redis server. It has no `ext-redis` or Predis runtime dependency; the Host owns the client/connection lifecycle and supplies the raw-command executor. Other `FullCapabilityStoreInterface` implementations remain supported. |
 | Configuration presets | `Maatify\RateLimiter\Config\LoginProtectionPolicy`, `Maatify\RateLimiter\Config\OtpProtectionPolicy`, `Maatify\RateLimiter\Config\ApiHeavyProtectionPolicy` | Production policy definitions selected by the command policy name. |
-| Exception | `Maatify\RateLimiter\Exception\RateLimiterException` | Package-defined invalid-input and configuration exception implementing the package marker interface. |
+| Exception | `Maatify\RateLimiter\Exception\RateLimiterException`, `Maatify\RateLimiter\Exception\RateLimitConcurrencyException` | Package-defined invalid-input/configuration failure and bounded optimistic-concurrency exhaustion; stale mutation snapshots remain non-exceptional unapplied results. |
 
-The recommended consumer construction is `Maatify\RateLimiter\Builder\RateLimiterBuilder`, which returns the `RateLimiterInterface` after composing the package-owned graph. The low-level service constructors remain available as the Advanced Path for consumers that intentionally need manual control. Their current signatures are stable only as reflected in the source and the contracts above.
+The recommended consumer construction is `Maatify\RateLimiter\Builder\RateLimiterBuilder`, which returns the `RateLimiterRuntimeInterface` after composing the package-owned graph. Consumers receive post-punishment metadata from an unblocked `limit(..., checkOnly(...))` result and pass its opaque ID to `claimPostPunishmentReentry()` exactly once. The low-level service constructors remain available as the Advanced Path for consumers that intentionally need manual control. Their current signatures are stable only as reflected in the source and the contracts above.
 
 ## Default Composition Surface
 
@@ -217,7 +221,7 @@ The realistic consumer path is:
 Concretely:
 
     RateLimitContextDTO + RateLimitCommand
-        → RateLimiterInterface::limit()
+        → RateLimiterRuntimeInterface::limit()
         → RateLimiterEngine::limit()
         → DeviceIdentityResolver → EvaluationPipeline
         → RateLimitStoreInterface + CorrelationStoreInterface
@@ -256,6 +260,19 @@ marker. A replay is an expected false result and does not consume evidence.
 Generation conflicts are retried at most three times before the transient HARD
 concurrency failure is returned. API Heavy does not opt in; custom policies must
 explicitly implement the validated opt-in marker.
+
+The public lifecycle workflow is:
+
+    RateLimiterRuntimeInterface::limit(checkOnly)
+        → RateLimitMetadataDTO::postPunishmentReentry
+        → RateLimiterRuntimeInterface::claimPostPunishmentReentry(context, policy, id)
+        → true once, false for stale/expired/mismatched/replayed evidence
+
+Legacy generation-less Current or Previous state remains compatible for reads and
+is upgraded on its first real mutation without resetting score or remaining TTL.
+Generated state must carry authoritative `expiresAt`; malformed generated
+backend state raises the package failure path rather than becoming ordinary
+missing evidence. Previous-generation state is read-only for lifecycle claims.
 
 The independent operational path is:
 

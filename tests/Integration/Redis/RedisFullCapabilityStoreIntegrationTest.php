@@ -82,7 +82,7 @@ final class RedisFullCapabilityStoreIntegrationTest extends TestCase
             'distinct-previous',
             'new-member',
             'unknown-previous-member',
-            1,
+            60,
         ));
         self::assertSame(1, $this->store->incrementWatchFlag('watch-previous', 60));
         self::assertSame(2, $this->store->incrementWatchFlagAcrossRotation('watch-current', 'watch-previous', 60));

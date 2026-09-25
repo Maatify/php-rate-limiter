@@ -4,9 +4,22 @@ declare(strict_types=1);
 
 namespace Maatify\RateLimiter\DTO;
 
-/** Atomic hard-block, cycle, and K4 punishment-evidence transition. */
+/**
+ * Result of an atomic hard-block, cycle, and K4 evidence transition.
+ *
+ * An applied transition always returns the block, cycle, and claimable
+ * lifecycle state together. An unapplied transition is an expected generation
+ * conflict and returns no partial state.
+ */
 final readonly class PunishmentLifecycleTransitionDTO implements \JsonSerializable
 {
+    /**
+     * @param bool $applied Whether the expected generation was still current.
+     * @param ?HardBlockCycleResultDTO $cycle Updated DEC-003 cycle/pause state.
+     * @param ?BlockStateDTO $block Persisted hard-block state.
+     * @param ?PostPunishmentReentryStateDTO $postPunishmentReentry Claimable
+     * evidence attached to the same atomic transition.
+     */
     public function __construct(
         public bool $applied,
         public ?HardBlockCycleResultDTO $cycle,

@@ -4,9 +4,20 @@ declare(strict_types=1);
 
 namespace Maatify\RateLimiter\DTO;
 
-/** Internal immutable identity for one served punishment lifecycle. */
+/**
+ * Immutable backend lifecycle identity for one served punishment.
+ *
+ * This state is package-owned evidence. Consumers receive the corresponding
+ * metadata DTO and must use the public runtime claim operation instead of
+ * persisting or interpreting this object directly.
+ */
 final readonly class PostPunishmentReentryStateDTO implements \JsonSerializable
 {
+    /**
+     * @param string $id Lowercase 32-character lifecycle identity.
+     * @param int $validUntil Unix timestamp through which the identity may be
+     * claimed, subject to the authoritative score expiry.
+     */
     public function __construct(public string $id, public int $validUntil)
     {
         if (! preg_match('/\A[a-f0-9]{32}\z/D', $id) || $validUntil <= 0) {

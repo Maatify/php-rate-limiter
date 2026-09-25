@@ -56,6 +56,21 @@ Goals:
 * Algorithm or version mismatch
 * Contract violations by host application
 
+### 2.4 Generation-bound lifecycle state integrity
+
+Lifecycle operations distinguish an ordinary stale or expired lifecycle from
+backend corruption. A stale, expired, mismatched, already-claimed, or absent
+lifecycle does not satisfy a claim and returns the operation's normal negative
+result (`false` for the public claim operation). It must not be treated as
+evidence.
+
+Malformed generated score or lifecycle state, including an invalid generation,
+missing authoritative `expiresAt`, malformed expiry, partial evidence, or
+structural corruption, is an explicit storage/contract failure. The operation
+raises the package exception path instead of silently treating corruption as
+missing evidence. Legacy generation-less state may use its backend TTL during
+compatibility reads and is upgraded on a real mutation.
+
 ---
 
 ## 3. Failure Modes
