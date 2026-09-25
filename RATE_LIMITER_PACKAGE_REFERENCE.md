@@ -455,8 +455,10 @@ The public boundaries are placed under their owning responsibility:
   `CorrelationStoreInterface`, `CorrelationRotationStoreInterface`,
   `BoundedCorrelationStoreInterface`, `BoundedCorrelationRotationStoreInterface`,
   `CircuitBreakerStoreInterface`, `HardBlockCycleStoreInterface`,
-  `FullCapabilityStoreInterface`, and the Redis command-executor boundary.
-- `Service/` owns `RateLimiterInterface` and `DeviceIdentityResolverInterface`.
+  `PunishmentLifecycleStoreInterface`, `FullCapabilityStoreInterface`, and the
+  Redis command-executor boundary.
+- `Service/` owns `RateLimiterInterface`, `RateLimiterRuntimeInterface`,
+  `PostPunishmentReentryClaimInterface`, and `DeviceIdentityResolverInterface`.
 - `Contract/` retains the general host/outbound `FailureSignalEmitterInterface`.
 
 These interfaces are pure and storage-agnostic. The package also ships the optional

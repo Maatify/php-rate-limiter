@@ -35,7 +35,9 @@ final readonly class GenerationBoundScoreStateDTO implements \JsonSerializable
         public ?PostPunishmentReentryStateDTO $postPunishmentReentry = null,
     ) {
         if (! in_array($source, [self::SOURCE_CURRENT, self::SOURCE_PREVIOUS], true)
-            || $updatedAt < 0 || $expiresAt <= 0 || $expiresAt < $updatedAt) {
+            || $updatedAt < 0 || $expiresAt <= 0 || $expiresAt < $updatedAt
+            || ($generation !== null && $generation <= 0)
+            || ($postPunishmentReentry !== null && $generation === null)) {
             throw new \InvalidArgumentException('Invalid generation-bound score state.');
         }
     }

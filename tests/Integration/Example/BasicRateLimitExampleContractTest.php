@@ -93,4 +93,29 @@ final class BasicRateLimitExampleContractTest extends TestCase
         self::assertTrue($store->mutateGenerationBoundScore('claim-current', null, $current, 600, 9)->applied);
         self::assertNull($store->readGenerationBoundScoreState('claim-current', null)?->postPunishmentReentry);
     }
+
+    public function testExampleRejectsInvalidPublicationParametersAndPreviousOnlyPublication(): void
+    {
+        $clock = new FixedClock();
+        $store = new \ExampleRateLimitStore($clock);
+        $previous = $store->mutateGenerationBoundScore('previous-only', null, null, 600, 8)->state;
+        self::assertNotNull($previous);
+
+        $failures = 0;
+        foreach ([
+            [0, 2, 60, 600, 2, 600, 86400],
+            [1, 1, 60, 600, 2, 600, 86400],
+            [1, 2, 0, 600, 2, 600, 86400],
+        ] as [$generation, $level, $duration, $window, $threshold, $pause, $retention]) {
+            try {
+                $store->blockWithPunishmentLifecycleTracking('previous-only', null, $generation, str_repeat('a', 32), $level, $duration, $window, $threshold, $pause, $retention);
+            } catch (\InvalidArgumentException) {
+                $failures++;
+            }
+        }
+        self::assertSame(3, $failures);
+
+        $this->expectException(\InvalidArgumentException::class);
+        $store->blockWithPunishmentLifecycleTracking('new-current', 'previous-only', $previous->generation ?? 1, str_repeat('b', 32), 2, 60, 600, 2, 600, 86400);
+    }
 }

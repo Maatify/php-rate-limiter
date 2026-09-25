@@ -195,9 +195,13 @@ class InMemoryRateLimitStore implements BudgetSeedStoreInterface, PunishmentLife
 
     public function blockWithPunishmentLifecycleTracking(string $currentKey, ?string $previousKey, int $expectedGeneration, string $proposedLifecycleId, int $level, int $durationSeconds, int $cycleWindowSeconds, int $cycleThreshold, int $pauseSeconds, int $pauseHistoryRetentionSeconds): PunishmentLifecycleTransitionDTO
     {
+        $this->validatePunishmentLifecycleParameters($expectedGeneration, $level, $durationSeconds, $cycleWindowSeconds, $cycleThreshold, $pauseSeconds, $pauseHistoryRetentionSeconds);
         $state = $this->readGenerationBoundScoreState($currentKey, $previousKey);
         if ($state === null || $state->generation !== $expectedGeneration) {
             return new PunishmentLifecycleTransitionDTO(false, null, null, null);
+        }
+        if ($state->source !== GenerationBoundScoreStateDTO::SOURCE_CURRENT) {
+            throw new \InvalidArgumentException('Lifecycle publication requires the current generated score.');
         }
         $cycle = $this->blockWithCycleTracking($currentKey, $previousKey, $level, $durationSeconds, $this->clock->now()->getTimestamp(), $cycleWindowSeconds, $cycleThreshold, $pauseSeconds, $pauseHistoryRetentionSeconds);
         $now = $this->clock->now()->getTimestamp();
@@ -205,6 +209,13 @@ class InMemoryRateLimitStore implements BudgetSeedStoreInterface, PunishmentLife
         $lifecycle = new PostPunishmentReentryStateDTO($id, $state->expiresAt);
         $this->generation[$currentKey]['lifecycle'] = $lifecycle;
         return new PunishmentLifecycleTransitionDTO(true, $cycle, new BlockStateDTO($level, $now + $durationSeconds), $lifecycle);
+    }
+
+    private function validatePunishmentLifecycleParameters(int $expectedGeneration, int $level, int $durationSeconds, int $cycleWindowSeconds, int $cycleThreshold, int $pauseSeconds, int $pauseHistoryRetentionSeconds): void
+    {
+        if ($expectedGeneration <= 0 || $level < 2 || $durationSeconds <= 0 || $cycleWindowSeconds <= 0 || $cycleThreshold <= 0 || $pauseSeconds <= 0 || $pauseHistoryRetentionSeconds <= 0) {
+            throw new \InvalidArgumentException('Invalid lifecycle publication parameters.');
+        }
     }
 
     public function claimPostPunishmentReentry(string $currentKey, ?string $previousKey, string $lifecycleId): bool

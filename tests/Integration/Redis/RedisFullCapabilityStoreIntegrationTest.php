@@ -470,6 +470,48 @@ final class RedisFullCapabilityStoreIntegrationTest extends TestCase
         self::assertSame([], $this->raw(['ZRANGE', $this->key('cycle', 'publication-inconsistent'), '0', '-1']));
     }
 
+    public function testGeneratedPhysicalExpiryCorruptionFailsReadMutateClaimAndPublication(): void
+    {
+        $now = $this->redisNow();
+        foreach (['read', 'mutate', 'claim', 'publication'] as $operation) {
+            $logical = 'physical-corruption-' . $operation;
+            $score = $this->key('score', $logical);
+            $fields = ['value', '8', 'updatedAt', (string) $now, 'generation', '1', 'expiresAt', (string) ($now + 1)];
+            if ($operation !== 'read' && $operation !== 'mutate') {
+                $fields = array_merge($fields, ['reentryId', str_repeat('a', 32), 'reentryValidUntil', (string) ($now + 1), 'reentryGeneration', '1']);
+            }
+            $this->raw(array_merge(['HSET', $score], $fields));
+            $this->raw(['EXPIRE', $score, '600']);
+            $this->assertOperationFails(match ($operation) {
+                'read' => fn(): mixed => $this->store->readGenerationBoundScoreState($logical, null),
+                'mutate' => fn(): mixed => $this->store->mutateGenerationBoundScore($logical, null, new GenerationBoundScoreStateDTO(GenerationBoundScoreStateDTO::SOURCE_CURRENT, 8, $now, $now + 1, 1), 600, 9),
+                'claim' => fn(): mixed => $this->store->claimPostPunishmentReentry($logical, null, str_repeat('a', 32)),
+                default => fn(): mixed => $this->store->blockWithPunishmentLifecycleTracking($logical, null, 1, str_repeat('a', 32), 2, 60, 600, 2, 600, 86400),
+            });
+        }
+    }
+
+    public function testPersistentHardBlockReadAndPublicationPreconditionsFailExplicitly(): void
+    {
+        $now = $this->redisNow();
+        $score = $this->key('score', 'persistent-block-read');
+        $block = $this->key('block', 'persistent-block-read');
+        $this->raw(['HSET', $score, 'value', '8', 'updatedAt', (string) $now, 'generation', '1', 'expiresAt', (string) ($now + 600)]);
+        $this->raw(['EXPIRE', $score, '600']);
+        $this->raw(['HSET', $block, 'level', '2', 'expiresAt', (string) ($now + 60)]);
+        $this->assertOperationFails(fn(): mixed => $this->store->readGenerationBoundScoreState('persistent-block-read', null));
+
+        $mutation = $this->store->mutateGenerationBoundScore('publication-previous-only', null, null, 600, 8);
+        self::assertTrue($mutation->applied);
+        $this->assertOperationFails(fn(): mixed => $this->store->blockWithPunishmentLifecycleTracking('publication-previous-only', null, 0, str_repeat('a', 32), 2, 60, 600, 2, 600, 86400));
+        $this->assertOperationFails(fn(): mixed => $this->store->blockWithPunishmentLifecycleTracking('publication-previous-only', null, 1, str_repeat('a', 32), 1, 60, 600, 2, 600, 86400));
+        $this->assertOperationFails(fn(): mixed => $this->store->blockWithPunishmentLifecycleTracking('publication-previous-only', null, 1, str_repeat('a', 32), 2, 0, 600, 2, 600, 86400));
+
+        $previous = $this->store->mutateGenerationBoundScore('publication-previous', null, null, 600, 8);
+        self::assertTrue($previous->applied);
+        $this->assertOperationFails(fn(): mixed => $this->store->blockWithPunishmentLifecycleTracking('publication-new-current', 'publication-previous', 1, str_repeat('b', 32), 2, 60, 600, 2, 600, 86400));
+    }
+
     public function testClaimMarkerCorruptionIsExplicitAndForeignMarkerDoesNotSilentlySuppress(): void
     {
         $id = str_repeat('b', 32);
