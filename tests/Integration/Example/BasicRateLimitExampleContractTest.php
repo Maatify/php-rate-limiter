@@ -230,7 +230,7 @@ final class BasicRateLimitExampleContractTest extends TestCase
         $refresh = $store->blockWithPunishmentLifecycleTracking('example-stable-identity', null, 1, $idB, 2, 30, 600, 3, 600, 86400);
         self::assertTrue($refresh->applied);
         self::assertSame($idA, $refresh->postPunishmentReentry?->id);
-        self::assertNotSame($idB, $refresh->postPunishmentReentry?->id);
+        self::assertNotSame($idB, $refresh->postPunishmentReentry->id);
 
         $clock->setNow($clock->now()->modify('+31 seconds'));
         $state = $store->readGenerationBoundScoreState('example-stable-identity', null);
@@ -243,6 +243,6 @@ final class BasicRateLimitExampleContractTest extends TestCase
         $second = $store->blockWithPunishmentLifecycleTracking('example-stable-identity', null, 2, $idC, 2, 30, 600, 3, 600, 86400);
         self::assertTrue($second->applied);
         self::assertSame($idC, $second->postPunishmentReentry?->id);
-        self::assertNotSame($idA, $second->postPunishmentReentry?->id);
+        self::assertNotSame($idA, $second->postPunishmentReentry->id);
     }
 }

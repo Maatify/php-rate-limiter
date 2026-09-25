@@ -261,7 +261,7 @@ final class RedisFullCapabilityStoreIntegrationTest extends TestCase
         $refresh = $this->store->blockWithPunishmentLifecycleTracking('stable-identity', null, 1, $idB, 2, 30, 21600, 3, 600, 86400);
         self::assertTrue($refresh->applied);
         self::assertSame($idA, $refresh->postPunishmentReentry?->id);
-        self::assertNotSame($idB, $refresh->postPunishmentReentry?->id);
+        self::assertNotSame($idB, $refresh->postPunishmentReentry->id);
 
         $this->raw(['DEL', $this->key('block', 'stable-identity')]);
         $state = $this->store->readGenerationBoundScoreState('stable-identity', null);
