@@ -1,10 +1,10 @@
 # DEC-009 — Generic / Simple Throttling Semantic Contract
 
-**Decision ID:** `DEC-009`  
-**Status:** `PROPOSED`  
-**Date:** `2026-09-25`  
-**Decision authority:** Pending WU-S4-03C Lead/Owner decision  
-**Scope / Concern:** First-class reusable generic/simple throttling semantics distinct from the package's score-based security policies  
+**Decision ID:** `DEC-009`
+**Status:** `PROPOSED`
+**Date:** `2026-09-25`
+**Decision authority:** Pending WU-S4-03C Lead/Owner decision
+**Scope / Concern:** First-class reusable generic/simple throttling semantics distinct from the package's score-based security policies
 **Canonical contract / current owner:** Pending; no current public simple-throttling contract exists
 
 > This record is a proposal only. It is not implementation authority while its status is `PROPOSED`.
