@@ -3,12 +3,29 @@
 **Module:** RateLimiter
 **Namespace:** `Maatify\RateLimiter`
 **Status:** LOCKED — Security Contract
-**Spec Version:** `1.2.0`
+**Spec Version:** `1.3.0`
 
 This document defines how the RateLimiter behaves when **internal failures occur**.
 It specifies when the system must fail closed, fail open, or enter a strictly bounded degraded mode.
 
 Failure semantics are **security-critical** and MUST NOT be altered implicitly.
+
+Typed fallback profiles are governed by DEC-011. They are separate from
+normal-runtime `PolicyCapability` classification and are declared through the
+public `FailureFallbackProfileProviderInterface` contract.
+
+The package-owned profiles and locked caps are:
+
+* `AUTHENTICATION_PRIMARY`: AccountID 3 attempts / 600 seconds; IP prefix 20
+  attempts / 600 seconds; maximum degraded level L2.
+* `AUTHENTICATION_STEP_UP`: AccountID 2 attempts / 900 seconds; IP prefix 10
+  attempts / 900 seconds; maximum degraded level L2.
+* `API_OVERUSE`: IP prefix 120 requests / 60 seconds; IP prefix plus normalized
+  user-agent 60 requests / 60 seconds.
+
+Official Login, OTP, and API policies map to those profiles respectively.
+Arbitrary numeric settings and free-form profile names are not supported.
+Fallback counters include policy identity in their process-local namespace.
 
 ---
 

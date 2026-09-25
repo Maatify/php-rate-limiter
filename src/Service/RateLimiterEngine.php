@@ -7,6 +7,8 @@ namespace Maatify\RateLimiter\Service;
 use Maatify\RateLimiter\Config\BlockPolicyInterface;
 use Maatify\RateLimiter\Config\PolicyCapability;
 use Maatify\RateLimiter\Config\PolicyCapabilityProviderInterface;
+use Maatify\RateLimiter\Config\FailureFallbackProfile;
+use Maatify\RateLimiter\Config\FailureFallbackProfileProviderInterface;
 use Maatify\RateLimiter\Service\DeviceIdentityResolverInterface;
 use Maatify\RateLimiter\Contract\FailureSignalEmitterInterface;
 use Maatify\RateLimiter\Service\RateLimiterInterface;
@@ -62,6 +64,58 @@ class RateLimiterEngine implements RateLimiterRuntimeInterface
 
     private function registerPolicy(BlockPolicyInterface $policy): void
     {
+        $capabilities = $this->capabilities($policy);
+        $hasApi = in_array(PolicyCapability::API_OVERUSE, $capabilities, true);
+        $hasAuth = $this->isAuthRelated($policy, $capabilities);
+        $profile = $policy instanceof FailureFallbackProfileProviderInterface
+            ? $policy->getFailureFallbackProfile()
+            : null;
+
+        if ($hasAuth && $hasApi) {
+            throw new RateLimiterException("Policy {$policy->getName()} invalid: Authentication and API_OVERUSE capabilities cannot be combined.");
+        }
+
+        if ($hasAuth) {
+            $thresholds = $policy->getScoreThresholds();
+            if ($thresholds->k4 === null
+                || $thresholds->k4->l1 <= 0
+                || $thresholds->k4->l1 > $thresholds->k4->l2
+                || $thresholds->k4->l2 > $thresholds->k4->l3) {
+                throw new RateLimiterException("Policy {$policy->getName()} invalid: Must enforce Account (K4) thresholds; authentication K4 thresholds must be positive and monotonic.");
+            }
+            $deltas = $policy->getScoreDeltas();
+            if ($deltas->k4_failure <= 0) {
+                throw new RateLimiterException("Policy {$policy->getName()} invalid: Authentication policies require a positive K4 failure delta.");
+            }
+            if ($policy->getBudgetConfig() === null) {
+                throw new RateLimiterException("Policy {$policy->getName()} invalid: Authentication policies require BudgetConfig.");
+            }
+            if ($deltas->k2_missing_fp <= 0
+                && $deltas->k4_repeated_missing_fp <= 0
+                && $deltas->k5_failure <= 0) {
+                throw new RateLimiterException("Policy {$policy->getName()} invalid: Authentication policies require a device-aware positive signal.");
+            }
+            if ($policy->getFailureMode() !== 'FAIL_CLOSED') {
+                throw new RateLimiterException("Policy {$policy->getName()} invalid: FAIL_OPEN is not allowed; authentication policies must use FAIL_CLOSED.");
+            }
+            if (!in_array($profile, [FailureFallbackProfile::AUTHENTICATION_PRIMARY, FailureFallbackProfile::AUTHENTICATION_STEP_UP], true)) {
+                throw new RateLimiterException("Policy {$policy->getName()} invalid: Authentication policies require an authentication fallback profile.");
+            }
+        }
+
+        if ($hasApi && $profile !== FailureFallbackProfile::API_OVERUSE) {
+            throw new RateLimiterException("Policy {$policy->getName()} invalid: API_OVERUSE requires the API_OVERUSE fallback profile.");
+        }
+        if ($profile === FailureFallbackProfile::API_OVERUSE && ! $hasApi) {
+            throw new RateLimiterException("Policy {$policy->getName()} invalid: API_OVERUSE fallback profile requires API_OVERUSE capability.");
+        }
+        if ($profile !== null && ! $hasAuth && ! $hasApi) {
+            throw new RateLimiterException("Policy {$policy->getName()} invalid: Fallback profile requires a compatible capability or DEC-007 lifecycle.");
+        }
+        if ($policy->getFailureMode() === 'FAIL_OPEN' && ! $hasApi) {
+            throw new RateLimiterException("Policy {$policy->getName()} invalid: FAIL_OPEN requires API_OVERUSE capability and fallback profile.");
+        }
+
         if ($policy instanceof PostPunishmentReentryPolicyInterface) {
             $thresholds = $policy->getScoreThresholds();
             if ($thresholds->k4 === null) {
@@ -83,26 +137,47 @@ class RateLimiterEngine implements RateLimiterRuntimeInterface
             throw new RateLimiterException("Policy {$policy->getName()} invalid: post-punishment re-entry cannot use FAIL_OPEN.");
         }
 
-        if ($this->hasCapability($policy, PolicyCapability::API_OVERUSE)) {
+        if ($hasApi) {
             $thresholds = $policy->getScoreThresholds();
             if ($thresholds->k1 === null || $thresholds->k2 === null || $thresholds->k3 === null) {
                 throw new RateLimiterException("Policy {$policy->getName()} invalid: Must enforce K1, K2, and K3.");
             }
         }
 
-        if ($this->hasCapability($policy, PolicyCapability::DISTRIBUTED_ACCOUNT)
+        if (in_array(PolicyCapability::DISTRIBUTED_ACCOUNT, $capabilities, true)
             && ($policy->getScoreDeltas()->k4_failure <= 0 || $policy->getScoreThresholds()->k4 === null)) {
             throw new RateLimiterException("Policy {$policy->getName()} invalid: Distributed-account behavior requires a positive K4 failure delta and K4 thresholds.");
         }
-        if ($policy instanceof PolicyCapabilityProviderInterface) {
-            foreach ($policy->getCapabilities() as $capability) {
-                if (! $capability instanceof PolicyCapability) {
-                    throw new RateLimiterException("Policy {$policy->getName()} invalid: Capabilities must be PolicyCapability values.");
-                }
+        $this->policies[$policy->getName()] = $policy;
+    }
+
+    /** @return list<PolicyCapability> */
+    private function capabilities(BlockPolicyInterface $policy): array
+    {
+        if (! $policy instanceof PolicyCapabilityProviderInterface) {
+            return [];
+        }
+
+        $capabilities = $policy->getCapabilities();
+        foreach ($capabilities as $capability) {
+            // Runtime validation intentionally protects the public boundary
+            // even when a deliberately invalid fixture lies to static analysis.
+            // @phpstan-ignore-next-line instanceof.alwaysTrue
+            if (! $capability instanceof PolicyCapability) {
+                throw new RateLimiterException("Policy {$policy->getName()} invalid: Capabilities must be PolicyCapability values.");
             }
         }
 
-        $this->policies[$policy->getName()] = $policy;
+        return $capabilities;
+    }
+
+    /** @param list<PolicyCapability> $capabilities */
+    private function isAuthRelated(BlockPolicyInterface $policy, array $capabilities): bool
+    {
+        return $policy instanceof PostPunishmentReentryPolicyInterface
+            || in_array(PolicyCapability::CREDENTIAL_SPRAY, $capabilities, true)
+            || in_array(PolicyCapability::DISTRIBUTED_ACCOUNT, $capabilities, true)
+            || in_array(PolicyCapability::TRUSTED_AUTHENTICATION, $capabilities, true);
     }
 
     /**
@@ -300,9 +375,4 @@ class RateLimiterEngine implements RateLimiterRuntimeInterface
         return new RateLimitResultDTO(RateLimitResultDTO::DECISION_HARD_BLOCK, 2, 600, $mode);
     }
 
-    private function hasCapability(BlockPolicyInterface $policy, PolicyCapability $capability): bool
-    {
-        return $policy instanceof PolicyCapabilityProviderInterface
-            && in_array($capability, $policy->getCapabilities(), true);
-    }
 }

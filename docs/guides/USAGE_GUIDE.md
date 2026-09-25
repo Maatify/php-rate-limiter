@@ -244,6 +244,13 @@ is a separate DEC-007 lifecycle capability; it requires K4, monotonic positive
 K4 thresholds, fail-closed semantics, and lifecycle-capable storage regardless
 of the policy's name.
 
+Backend-failure fallback is separately selected through the typed DEC-011
+`FailureFallbackProfileProviderInterface`. Use only the package-owned
+`FailureFallbackProfile` enum cases; arbitrary numeric caps and free-form
+profile names are not supported. The fallback namespace includes policy
+identity, so differently named reusable policies do not share process-local
+counters.
+
 ## Walkthrough: Failure Boundary
 
     Input → A configured storage or runtime integration throws

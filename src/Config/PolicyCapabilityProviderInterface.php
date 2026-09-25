@@ -9,8 +9,6 @@ namespace Maatify\RateLimiter\Config;
  */
 interface PolicyCapabilityProviderInterface
 {
-    /**
-     * @return list<PolicyCapability|string> Invalid string values are rejected by runtime validation.
-     */
+    /** @return list<PolicyCapability> */
     public function getCapabilities(): array;
 }

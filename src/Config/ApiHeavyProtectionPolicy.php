@@ -13,8 +13,13 @@ use Maatify\RateLimiter\DTO\ScoreThresholdsDTO;
 /**
  * Policy for high-volume API traffic using IP and IP/user-agent scopes.
  */
-class ApiHeavyProtectionPolicy implements BlockPolicyInterface, PolicyCapabilityProviderInterface
+class ApiHeavyProtectionPolicy implements BlockPolicyInterface, PolicyCapabilityProviderInterface, FailureFallbackProfileProviderInterface
 {
+    public function getFailureFallbackProfile(): FailureFallbackProfile
+    {
+        return FailureFallbackProfile::API_OVERUSE;
+    }
+
     /** @return list<PolicyCapability> */
     public function getCapabilities(): array
     {

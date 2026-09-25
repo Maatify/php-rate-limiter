@@ -13,6 +13,8 @@ use Maatify\RateLimiter\Config\ApiHeavyProtectionPolicy;
 use Maatify\RateLimiter\DTO\RateLimitContextDTO;
 use Maatify\RateLimiter\DTO\RateLimitResultDTO;
 use Maatify\RateLimiter\DTO\DeviceIdentityDTO;
+use Maatify\RateLimiter\DTO\PolicyThresholdsDTO;
+use Maatify\RateLimiter\DTO\ScoreThresholdsDTO;
 use Maatify\RateLimiter\Repository\Redis\CallableRedisCommandExecutor;
 use Maatify\RateLimiter\Repository\Redis\RedisFullCapabilityStore;
 use Maatify\RateLimiter\Service\DeviceIdentityResolver;
@@ -430,16 +432,41 @@ for ($attempt = 1; $attempt <= 6; $attempt++) {
 }
 requireCondition($customHard instanceof RateLimitResultDTO, 'Custom opt-in policy did not issue a hard block.');
 requireCondition($customHard->retryAfter === 60, 'Custom newly-issued K4 L2 retryAfter must be 60 seconds: ' . json_encode(resultShape($customHard), JSON_THROW_ON_ERROR));
+$customSemanticAuthPolicy = new class extends \Maatify\RateLimiter\Config\LoginProtectionPolicy {
+    public function getName(): string
+    {
+        return 'consumer_custom_auth_semantics';
+    }
+};
+$customSemanticAuthLimiter = RateLimiterBuilder::fromFullCapabilityStore(new RateLimiterConfig('consumer-semantic-auth-key', 'consumer-semantic-auth-fingerprint', 'prod'), $store, $signals)->withPolicy($customSemanticAuthPolicy)->build();
+$customSprayResults = [];
+for ($index = 1; $index <= 5; $index++) {
+    $customSprayResults[] = $customSemanticAuthLimiter->limit(
+        new RateLimitContextDTO('203.0.113.19', 'Mozilla/5.0 consumer-custom-auth', 'consumer-custom-spray-' . $index, ['device' => 'stable']),
+        RateLimitCommand::checkOnly('consumer_custom_auth_semantics'),
+    );
+}
+requireCondition($customSprayResults[4]->decision === RateLimitResultDTO::DECISION_HARD_BLOCK, 'Custom auth capability policy did not execute the credential-spray branch.');
+
 $customApiPolicy = new class extends ApiHeavyProtectionPolicy {
     public function getName(): string
     {
         return 'consumer_custom_api_overuse';
     }
+
+    public function getScoreThresholds(): PolicyThresholdsDTO
+    {
+        return new PolicyThresholdsDTO(
+            k1: new ScoreThresholdsDTO(1000, 1000, 1000),
+            k2: new ScoreThresholdsDTO(1000, 1000, 1000),
+            k3: new ScoreThresholdsDTO(1, 1, 1),
+        );
+    }
 };
 $customApiLimiter = RateLimiterBuilder::fromFullCapabilityStore(new RateLimiterConfig('consumer-custom-api-key', 'consumer-custom-api-fingerprint', 'prod'), $store, $signals)->withPolicy($customApiPolicy)->build();
 $customApiContext = new RateLimitContextDTO('203.0.113.18', 'Mozilla/5.0 consumer-custom-api', null, []);
 $customApiResult = $customApiLimiter->limit($customApiContext, new RateLimitCommand('consumer_custom_api_overuse', 121));
-requireCondition($customApiResult->decision === RateLimitResultDTO::DECISION_SOFT_BLOCK && $customApiResult->blockLevel === 1, 'Custom API-overuse capability policy did not execute the reusable API semantic branch.');
+requireCondition($customApiResult->decision === RateLimitResultDTO::DECISION_HARD_BLOCK && $customApiResult->blockLevel === 2, 'Custom API-overuse capability policy did not execute the low-confidence K3-to-K2 remap branch.');
 // All three public punishments are issued before one shared wait. This keeps
 // the default OTP L3 proof intact while avoiding serial 60s + 300s + 60s waits.
 $sharedWaitSeconds = max(
@@ -594,6 +621,34 @@ $apiFailureMode = $failureLimiter->limit($failureContext, RateLimitCommand::chec
 requireCondition($loginFailureMode->decision === RateLimitResultDTO::DECISION_HARD_BLOCK && $loginFailureMode->failureMode === 'FAIL_CLOSED', 'Login backend failure did not fail closed.');
 requireCondition($otpFailureMode->decision === RateLimitResultDTO::DECISION_HARD_BLOCK && $otpFailureMode->failureMode === 'FAIL_CLOSED', 'OTP backend failure did not fail closed.');
 requireCondition($apiFailureMode->decision === RateLimitResultDTO::DECISION_ALLOW && $apiFailureMode->failureMode === 'FAIL_OPEN', 'API Heavy backend failure did not fail open.');
+
+$customPrimaryPolicy = new class extends \Maatify\RateLimiter\Config\LoginProtectionPolicy {
+    public function getName(): string
+    {
+        return 'consumer_custom_primary_fallback';
+    }
+};
+$customPrimaryLimiter = RateLimiterBuilder::fromFullCapabilityStore(new RateLimiterConfig('failure-primary-key', 'failure-primary-fingerprint', 'prod'), $failureStore, $failureSignals)->withPolicy($customPrimaryPolicy)->build();
+$customPrimaryFallback = [];
+for ($attempt = 1; $attempt <= 7; $attempt++) {
+    $customPrimaryFallback[] = $customPrimaryLimiter->limit($failureContext, RateLimitCommand::checkOnly('consumer_custom_primary_fallback'));
+}
+requireCondition($customPrimaryFallback[3]->decision === RateLimitResultDTO::DECISION_ALLOW && $customPrimaryFallback[3]->failureMode === 'DEGRADED_MODE', 'Custom primary-auth policy did not enter its typed fallback profile.');
+requireCondition($customPrimaryFallback[6]->decision === RateLimitResultDTO::DECISION_HARD_BLOCK, 'Custom primary-auth fallback did not enforce its account cap.');
+
+$customStepUpPolicy = new class extends \Maatify\RateLimiter\Config\OtpProtectionPolicy {
+    public function getName(): string
+    {
+        return 'consumer_custom_step_up_fallback';
+    }
+};
+$customStepUpLimiter = RateLimiterBuilder::fromFullCapabilityStore(new RateLimiterConfig('failure-step-up-key', 'failure-step-up-fingerprint', 'prod'), $failureStore, $failureSignals)->withPolicy($customStepUpPolicy)->build();
+$customStepUpFallback = [];
+for ($attempt = 1; $attempt <= 6; $attempt++) {
+    $customStepUpFallback[] = $customStepUpLimiter->limit($failureContext, RateLimitCommand::checkOnly('consumer_custom_step_up_fallback'));
+}
+requireCondition($customStepUpFallback[3]->decision === RateLimitResultDTO::DECISION_ALLOW && $customStepUpFallback[3]->failureMode === 'DEGRADED_MODE', 'Custom step-up policy did not enter its typed fallback profile.');
+requireCondition($customStepUpFallback[5]->decision === RateLimitResultDTO::DECISION_HARD_BLOCK, 'Custom step-up fallback did not enforce its account cap.');
 
 $circuitDown = true;
 $circuitEvalCalls = 0;

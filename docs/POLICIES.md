@@ -33,6 +33,13 @@ The official presets retain the names `login_protection`, `otp_protection`, and
 generation-bound K4 `PostPunishmentReentryPolicyInterface` remains a separate
 DEC-007 lifecycle opt-in and is validated independently of policy name.
 
+Degraded/failure behavior is a separate typed contract under DEC-011. Policies
+that use bounded local fallback implement `FailureFallbackProfileProviderInterface`
+and return `AUTHENTICATION_PRIMARY`, `AUTHENTICATION_STEP_UP`, or `API_OVERUSE`.
+The official Login, OTP, and API policies map to those profiles respectively.
+Fallback profile selection never uses `BudgetConfig` thresholds, route names, or
+policy names.
+
 ---
 
 ## 1. Global Policy Principles (Non-Negotiable)

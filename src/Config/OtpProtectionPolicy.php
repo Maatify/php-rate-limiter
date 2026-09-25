@@ -17,8 +17,13 @@ use Maatify\RateLimiter\DTO\ScoreThresholdsDTO;
  * supplies positive monotonic K4 thresholds and fail-closed failure semantics;
  * the Builder additionally requires lifecycle-capable storage for this opt-in.
  */
-class OtpProtectionPolicy implements PostPunishmentReentryPolicyInterface, PolicyCapabilityProviderInterface
+class OtpProtectionPolicy implements PostPunishmentReentryPolicyInterface, PolicyCapabilityProviderInterface, FailureFallbackProfileProviderInterface
 {
+    public function getFailureFallbackProfile(): FailureFallbackProfile
+    {
+        return FailureFallbackProfile::AUTHENTICATION_STEP_UP;
+    }
+
     /** @return list<PolicyCapability> */
     public function getCapabilities(): array
     {

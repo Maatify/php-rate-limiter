@@ -23,6 +23,7 @@ use Maatify\RateLimiter\Service\DecayCalculator;
 use Maatify\RateLimiter\Config\ApiHeavyProtectionPolicy;
 use Maatify\RateLimiter\Config\LoginProtectionPolicy;
 use Maatify\RateLimiter\Config\OtpProtectionPolicy;
+use Maatify\RateLimiter\Config\PolicyCapability;
 use Maatify\RateLimiter\Tests\Support\CircuitBreaker\InMemoryCircuitBreakerStore;
 use Maatify\RateLimiter\Tests\Support\Clock\FixedClock;
 use Maatify\RateLimiter\Tests\Support\Correlation\StatefulInMemoryCorrelationStore;
@@ -687,6 +688,125 @@ final class RateLimiterEngineCurrentRuntimeCharacterizationTest extends TestCase
             $k5Key = $this->key('login_protection', 'k5', "{$accountId}:{$fingerprintHash}");
             $this->assertSame(2, $this->store->checkBlock($k5Key)?->level);
         }
+    }
+
+    public function testDifferentlyNamedCustomPoliciesActivateEachTypedSemanticBranch(): void
+    {
+        $credentialPolicy = new class extends LoginProtectionPolicy {
+            public function getName(): string
+            {
+                return 'custom_credential_spray';
+            }
+            public function getCapabilities(): array
+            {
+                return [PolicyCapability::CREDENTIAL_SPRAY];
+            }
+        };
+        $credentialEngine = $this->createEngine($credentialPolicy);
+        for ($index = 1; $index <= 5; $index++) {
+            $result = $credentialEngine->limit(
+                new RateLimitContextDTO('198.51.100.60', 'Mozilla/5.0 Chrome/123', 'custom-spray-' . $index, ['device' => 'stable']),
+                RateLimitCommand::checkOnly('custom_credential_spray'),
+            );
+        }
+        self::assertSame(RateLimitResultDTO::DECISION_HARD_BLOCK, $result->decision);
+
+        $distributedPolicy = new class extends LoginProtectionPolicy {
+            public function getName(): string
+            {
+                return 'custom_distributed_account';
+            }
+            public function getCapabilities(): array
+            {
+                return [PolicyCapability::DISTRIBUTED_ACCOUNT];
+            }
+        };
+        $distributedEngine = $this->createEngine($distributedPolicy);
+        foreach (range(1, 4) as $index) {
+            $result = $distributedEngine->limit(
+                new RateLimitContextDTO('198.51.100.61', 'Mozilla/5.0 Chrome/' . (120 + $index), 'custom-distributed', ['device' => 'device-' . $index]),
+                RateLimitCommand::checkOnly('custom_distributed_account'),
+            );
+        }
+        self::assertSame(RateLimitResultDTO::DECISION_HARD_BLOCK, $result->decision);
+
+        $trustedPolicy = new class extends LoginProtectionPolicy {
+            public function getName(): string
+            {
+                return 'custom_trusted_authentication';
+            }
+            public function getCapabilities(): array
+            {
+                return [PolicyCapability::TRUSTED_AUTHENTICATION];
+            }
+            public function getScoreThresholds(): PolicyThresholdsDTO
+            {
+                return new PolicyThresholdsDTO(k1: new ScoreThresholdsDTO(5, 8, 12), k4: new ScoreThresholdsDTO(5, 8, 12));
+            }
+        };
+        $trustedEngine = $this->createEngine($trustedPolicy);
+        $trustedResult = $trustedEngine->limit(
+            new RateLimitContextDTO('198.51.100.62', 'Mozilla/5.0 Chrome/123', 'custom-trusted', null, 'trusted-device', true),
+            RateLimitCommand::recordFailure('custom_trusted_authentication'),
+        );
+        self::assertSame(RateLimitResultDTO::DECISION_ALLOW, $trustedResult->decision);
+
+        $apiPolicy = new class extends ApiHeavyProtectionPolicy {
+            public function getName(): string
+            {
+                return 'custom_api_overuse';
+            }
+            public function getScoreThresholds(): PolicyThresholdsDTO
+            {
+                return new PolicyThresholdsDTO(
+                    k1: new ScoreThresholdsDTO(1000, 1000, 1000),
+                    k2: new ScoreThresholdsDTO(1000, 1000, 1000),
+                    k3: new ScoreThresholdsDTO(1, 1, 1),
+                );
+            }
+        };
+        $apiEngine = $this->createEngine($apiPolicy);
+        $apiResult = $apiEngine->limit(
+            new RateLimitContextDTO('198.51.100.63', 'Mozilla/5.0 Chrome/123', null, []),
+            new RateLimitCommand('custom_api_overuse', 121),
+        );
+        self::assertSame(RateLimitResultDTO::DECISION_HARD_BLOCK, $apiResult->decision);
+        self::assertSame(2, $apiResult->blockLevel);
+    }
+
+    public function testPolicyWithoutCapabilitiesDoesNotReceiveTypedSemanticBehavior(): void
+    {
+        $policy = new class implements BlockPolicyInterface {
+            public function getName(): string
+            {
+                return 'custom_base_only';
+            }
+            public function getScoreThresholds(): PolicyThresholdsDTO
+            {
+                return new PolicyThresholdsDTO();
+            }
+            public function getScoreDeltas(): \Maatify\RateLimiter\DTO\ScoreDeltasDTO
+            {
+                return new \Maatify\RateLimiter\DTO\ScoreDeltasDTO();
+            }
+            public function getFailureMode(): string
+            {
+                return 'FAIL_CLOSED';
+            }
+            public function getBudgetConfig(): ?\Maatify\RateLimiter\DTO\BudgetConfigDTO
+            {
+                return null;
+            }
+        };
+        $engine = $this->createEngine($policy);
+        $result = null;
+        for ($index = 1; $index <= 5; $index++) {
+            $result = $engine->limit(
+                new RateLimitContextDTO('198.51.100.64', 'Mozilla/5.0 Chrome/123', 'base-only-' . $index, ['device' => 'stable']),
+                RateLimitCommand::checkOnly('custom_base_only'),
+            );
+        }
+        self::assertNotSame(RateLimitResultDTO::DECISION_HARD_BLOCK, $result->decision);
     }
 
     private function createEngine(BlockPolicyInterface ...$policies): RateLimiterEngine

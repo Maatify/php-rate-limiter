@@ -6,11 +6,12 @@ namespace Maatify\RateLimiter\Service;
 
 use Maatify\RateLimiter\Config\BlockPolicyInterface;
 use Maatify\RateLimiter\Config\ApiHeavyProtectionPolicy;
+use Maatify\RateLimiter\Config\FailureFallbackProfile;
+use Maatify\RateLimiter\Config\FailureFallbackProfileProviderInterface;
 use Maatify\RateLimiter\Config\LoginProtectionPolicy;
 use Maatify\RateLimiter\Config\OtpProtectionPolicy;
-use Maatify\RateLimiter\Config\PolicyCapability;
-use Maatify\RateLimiter\Config\PolicyCapabilityProviderInterface;
 use Maatify\SharedCommon\Contracts\ClockInterface;
+use Maatify\RateLimiter\Exception\RateLimiterException;
 
 /**
  * Applies bounded in-process limits while the distributed backend is degraded.
@@ -56,37 +57,43 @@ class LocalFallbackLimiter
         // Use the package canonical browser-major normalization for K2 parity.
         $normalizedUa = DeviceIdentityResolver::normalizeUserAgent($ua);
 
+        $profile = self::profile($policy);
         if ($mode === 'DEGRADED_MODE') {
-            if (self::hasCapability($policy, PolicyCapability::DISTRIBUTED_ACCOUNT)
-                && ! self::hasCapability($policy, PolicyCapability::API_OVERUSE)) {
-                $isOtp = $policy->getBudgetConfig()?->threshold === 10;
+            if ($profile === null) {
+                return false;
+            }
+            if ($profile === FailureFallbackProfile::AUTHENTICATION_PRIMARY
+                || $profile === FailureFallbackProfile::AUTHENTICATION_STEP_UP) {
+                $isOtp = $profile === FailureFallbackProfile::AUTHENTICATION_STEP_UP;
                 $window = $isOtp ? self::WINDOW_OTP : self::WINDOW_LOGIN;
                 $accountLimit = $isOtp ? self::DEGRADED_OTP_ACCOUNT : self::DEGRADED_LOGIN_ACCOUNT;
                 $ipLimit = $isOtp ? self::DEGRADED_OTP_IP : self::DEGRADED_LOGIN_IP;
-                $prefix = $isOtp ? 'otp' : 'login';
-                if ($accountId && !self::incrementAndCheck($clock, "deg:{$prefix}:acc:{$accountId}", $accountLimit, $window)) {
+                $namespace = self::namespace($policy, $profile);
+                if ($accountId && !self::incrementAndCheck($clock, "{$namespace}:acc:{$accountId}", $accountLimit, $window)) {
                     $allowed = false;
                 }
-                if (!self::incrementAndCheck($clock, "deg:{$prefix}:ip:{$normalizedIp}", $ipLimit, $window)) {
+                if (!self::incrementAndCheck($clock, "{$namespace}:ip:{$normalizedIp}", $ipLimit, $window)) {
                     $allowed = false;
                 }
-            } elseif (self::hasCapability($policy, PolicyCapability::API_OVERUSE)) {
+            } elseif ($profile === FailureFallbackProfile::API_OVERUSE) {
                 $window = self::WINDOW_API;
-                if (!self::incrementAndCheck($clock, "fail:api:ip:{$normalizedIp}", self::API_IP, $window)) {
+                $namespace = self::namespace($policy, $profile);
+                if (!self::incrementAndCheck($clock, "{$namespace}:ip:{$normalizedIp}", self::API_IP, $window)) {
                     $allowed = false;
                 }
                 $k2 = md5("{$normalizedIp}:{$normalizedUa}");
-                if (!self::incrementAndCheck($clock, "fail:api:k2:{$k2}", self::API_IP_UA, $window)) {
+                if (!self::incrementAndCheck($clock, "{$namespace}:k2:{$k2}", self::API_IP_UA, $window)) {
                     $allowed = false;
                 }
             }
-        } elseif ($mode === 'FAIL_OPEN' && self::hasCapability($policy, PolicyCapability::API_OVERUSE)) {
+        } elseif ($mode === 'FAIL_OPEN' && $profile === FailureFallbackProfile::API_OVERUSE) {
             $window = self::WINDOW_API;
-            if (!self::incrementAndCheck($clock, "fail:api:ip:{$normalizedIp}", self::API_IP, $window)) {
+            $namespace = self::namespace($policy, $profile);
+            if (!self::incrementAndCheck($clock, "{$namespace}:ip:{$normalizedIp}", self::API_IP, $window)) {
                 $allowed = false;
             }
             $k2 = md5("{$normalizedIp}:{$normalizedUa}");
-            if (!self::incrementAndCheck($clock, "fail:api:k2:{$k2}", self::API_IP_UA, $window)) {
+            if (!self::incrementAndCheck($clock, "{$namespace}:k2:{$k2}", self::API_IP_UA, $window)) {
                 $allowed = false;
             }
         }
@@ -94,10 +101,17 @@ class LocalFallbackLimiter
         return $allowed;
     }
 
-    private static function hasCapability(BlockPolicyInterface $policy, PolicyCapability $capability): bool
+    private static function profile(BlockPolicyInterface $policy): ?FailureFallbackProfile
     {
-        return $policy instanceof PolicyCapabilityProviderInterface
-            && in_array($capability, $policy->getCapabilities(), true);
+        return $policy instanceof FailureFallbackProfileProviderInterface
+            ? $policy->getFailureFallbackProfile()
+            : null;
+    }
+
+    private static function namespace(BlockPolicyInterface $policy, ?FailureFallbackProfile $profile): string
+    {
+        $profileName = $profile === null ? 'NONE' : $profile->value;
+        return 'fallback:' . hash('sha256', $policy->getName() . ':' . $profileName);
     }
 
     private static function normalizePolicy(BlockPolicyInterface|string $policy): BlockPolicyInterface
@@ -110,29 +124,7 @@ class LocalFallbackLimiter
             'login_protection' => new LoginProtectionPolicy(),
             'otp_protection' => new OtpProtectionPolicy(),
             'api_heavy_protection' => new ApiHeavyProtectionPolicy(),
-            default => new class ($policy) implements BlockPolicyInterface {
-                public function __construct(private readonly string $name) {}
-                public function getName(): string
-                {
-                    return $this->name;
-                }
-                public function getScoreThresholds(): \Maatify\RateLimiter\DTO\PolicyThresholdsDTO
-                {
-                    return new \Maatify\RateLimiter\DTO\PolicyThresholdsDTO();
-                }
-                public function getScoreDeltas(): \Maatify\RateLimiter\DTO\ScoreDeltasDTO
-                {
-                    return new \Maatify\RateLimiter\DTO\ScoreDeltasDTO();
-                }
-                public function getFailureMode(): string
-                {
-                    return 'FAIL_CLOSED';
-                }
-                public function getBudgetConfig(): ?\Maatify\RateLimiter\DTO\BudgetConfigDTO
-                {
-                    return null;
-                }
-            },
+            default => throw new RateLimiterException("Unknown legacy fallback policy: {$policy}"),
         };
     }
 

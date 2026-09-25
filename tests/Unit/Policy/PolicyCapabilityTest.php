@@ -64,6 +64,7 @@ final class PolicyCapabilityTest extends TestCase
 
             public function getCapabilities(): array
             {
+                // @phpstan-ignore-next-line return.type
                 return ['not-a-package-capability'];
             }
 

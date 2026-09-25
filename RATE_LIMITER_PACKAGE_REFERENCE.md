@@ -125,6 +125,8 @@ The following inventory describes the current public runtime types. Test and sup
 | `Maatify\RateLimiter\Config\BlockPolicyInterface` | Policy name, thresholds, score deltas, failure mode, and budget configuration. |
 | `Maatify\RateLimiter\Config\PolicyCapabilityProviderInterface` | Additive typed opt-in for the finite package-owned reusable capabilities. |
 | `Maatify\RateLimiter\Config\PolicyCapability` | `CREDENTIAL_SPRAY`, `DISTRIBUTED_ACCOUNT`, `TRUSTED_AUTHENTICATION`, and `API_OVERUSE`. |
+| `Maatify\RateLimiter\Config\FailureFallbackProfileProviderInterface` | DEC-011 typed declaration of a finite bounded failure fallback profile. |
+| `Maatify\RateLimiter\Config\FailureFallbackProfile` | `AUTHENTICATION_PRIMARY`, `AUTHENTICATION_STEP_UP`, and `API_OVERUSE`; package-owned locked fallback caps. |
 | `Maatify\RateLimiter\Config\PostPunishmentReentryPolicyInterface` | Explicit opt-in marker for generation-bound K4 lifecycle behavior; builder validation requires the lifecycle storage capability. |
 | `Maatify\RateLimiter\Exception\RateLimiterExceptionInterface` | Package exception marker contract. |
 
