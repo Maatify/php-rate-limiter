@@ -598,10 +598,23 @@ if lifecycleGeneration ~= '' then
           if not numericPreviousGeneration or numericPreviousGeneration ~= math.floor(numericPreviousGeneration) or numericPreviousGeneration <= 0 then return redis.error_reply('malformed lifecycle previous score generation') end
           if not previousExpiry then return redis.error_reply('malformed lifecycle previous score expiry') end
         end
+        local numericPreviousExpiry = nil
         if previousExpiry then
-          local numericPreviousExpiry = tonumber(previousExpiry)
+          numericPreviousExpiry = tonumber(previousExpiry)
           if not numericPreviousExpiry or numericPreviousExpiry ~= math.floor(numericPreviousExpiry) or numericPreviousExpiry <= 0 or numericPreviousExpiry < numericPreviousUpdated then return redis.error_reply('malformed lifecycle previous score expiry') end
         end
+        local previousEvidenceCount = redis.call('HEXISTS', KEYS[8], 'reentryId') + redis.call('HEXISTS', KEYS[8], 'reentryValidUntil') + redis.call('HEXISTS', KEYS[8], 'reentryGeneration')
+        if previousEvidenceCount ~= 0 and previousEvidenceCount ~= 3 then return redis.error_reply('malformed lifecycle previous evidence') end
+        if previousEvidenceCount == 3 then
+          if not previousGeneration then return redis.error_reply('legacy previous score cannot carry lifecycle evidence') end
+          local previousEvidenceId = redis.call('HGET', KEYS[8], 'reentryId')
+          local previousEvidenceUntil = redis.call('HGET', KEYS[8], 'reentryValidUntil')
+          local previousEvidenceGeneration = redis.call('HGET', KEYS[8], 'reentryGeneration')
+          if not previousEvidenceId or string.len(previousEvidenceId) ~= 32 or string.match(previousEvidenceId, '^[a-f0-9]+$') == nil then return redis.error_reply('malformed lifecycle previous evidence id') end
+          local numericPreviousEvidenceUntil = tonumber(previousEvidenceUntil); local numericPreviousEvidenceGeneration = tonumber(previousEvidenceGeneration)
+          if not numericPreviousEvidenceUntil or numericPreviousEvidenceUntil ~= math.floor(numericPreviousEvidenceUntil) or numericPreviousEvidenceUntil <= 0 or not numericPreviousEvidenceGeneration or numericPreviousEvidenceGeneration ~= math.floor(numericPreviousEvidenceGeneration) or numericPreviousEvidenceGeneration <= 0 then return redis.error_reply('malformed lifecycle previous evidence') end
+        end
+        if previousGeneration and (nowMs + previousScorePttl) > (numericPreviousExpiry * 1000) then return redis.error_reply('inconsistent lifecycle previous score expiry') end
       end
     end
     -- Current is absent; a structurally valid Previous is historical/read-only,
@@ -1119,7 +1132,11 @@ LUA;
      * physically inconsistent expiry, partial lifecycle evidence, a
      * generation-less legacy score carrying complete lifecycle evidence, and
      * — when Current is absent — a Previous persisted without a physical
-     * deadline or that is itself structurally malformed.
+     * deadline. When Current is absent, Previous runs this exact same
+     * structural validation — core fields, generation, authoritative
+     * expiry, physical-versus-authoritative expiry consistency, and
+     * lifecycle evidence structure and legacy-impossibility — before it can
+     * be treated as an ordinary conflict.
      *
      * An applied transition couples the block, cycle/pause accounting, score
      * expiry, and lifecycle evidence. When the resolved Current source

@@ -109,8 +109,14 @@ interface PunishmentLifecycleStoreInterface extends HardBlockCycleStoreInterface
      * physically inconsistent expiry; partial lifecycle evidence; a
      * generation-less (legacy) score carrying complete lifecycle evidence;
      * and, when Current is absent, a Previous that is itself persisted
-     * without a physical deadline or that is structurally malformed. None of
-     * this is ever silently downgraded to an ordinary conflict.
+     * without a physical deadline. When Current is absent, Previous is
+     * classified by running this exact same structural validation —
+     * core fields, generation, authoritative expiry, physical-versus-
+     * authoritative expiry consistency, and lifecycle evidence structure
+     * and legacy-impossibility — before it can be treated as an ordinary
+     * conflict; a Previous that fails any of those checks is the same
+     * explicit failure as it would be anywhere else in the lifecycle
+     * contract, never silently downgraded to an ordinary conflict.
      *
      * Stable lifecycle identity: when the resolved Current source already
      * carries valid lifecycle evidence for this same exact generation (its

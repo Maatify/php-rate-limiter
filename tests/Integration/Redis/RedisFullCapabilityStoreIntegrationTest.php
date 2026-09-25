@@ -673,6 +673,44 @@ final class RedisFullCapabilityStoreIntegrationTest extends TestCase
     }
 
     /**
+     * Current absent, Previous live: the same full structural lifecycle
+     * validation the general contract requires (core fields, generation,
+     * expiry, and evidence) applies to Previous before it can be classified
+     * as an ordinary conflict. Partial lifecycle evidence, a generation-less
+     * (legacy) Previous carrying complete evidence, and a generated Previous
+     * whose physical deadline outlives its authoritative expiry are all
+     * structural corruption, not ordinary conflicts.
+     */
+    public function testCurrentAbsentPublicationRunsFullStructuralValidationOnPreviousEvidenceAndPhysicalExpiry(): void
+    {
+        $now = $this->redisNow();
+
+        $partialEvidencePrevious = $this->key('score', 'r5-partial-evidence-previous');
+        $this->raw(['HSET', $partialEvidencePrevious, 'value', '8', 'updatedAt', (string) $now, 'generation', '3', 'expiresAt', (string) ($now + 601), 'reentryId', str_repeat('a', 32)]);
+        $this->raw(['EXPIRE', $partialEvidencePrevious, '600']);
+        $partialEvidenceBefore = $this->hashMap($partialEvidencePrevious);
+        $this->assertOperationFails(fn(): mixed => $this->store->blockWithPunishmentLifecycleTracking('r5-partial-evidence-current', 'r5-partial-evidence-previous', 1, str_repeat('e', 32), 2, 60, 600, 2, 600, 86400));
+        self::assertSame($partialEvidenceBefore, $this->hashMap($partialEvidencePrevious));
+        self::assertSame(-2, $this->integer($this->raw(['PTTL', $this->key('score', 'r5-partial-evidence-current')])));
+
+        $legacyEvidencePrevious = $this->key('score', 'r5-legacy-evidence-previous');
+        $this->raw(['HSET', $legacyEvidencePrevious, 'value', '8', 'updatedAt', (string) $now, 'reentryId', str_repeat('b', 32), 'reentryValidUntil', (string) ($now + 601), 'reentryGeneration', '1']);
+        $this->raw(['EXPIRE', $legacyEvidencePrevious, '600']);
+        $legacyEvidenceBefore = $this->hashMap($legacyEvidencePrevious);
+        $this->assertOperationFails(fn(): mixed => $this->store->blockWithPunishmentLifecycleTracking('r5-legacy-evidence-current', 'r5-legacy-evidence-previous', 1, str_repeat('f', 32), 2, 60, 600, 2, 600, 86400));
+        self::assertSame($legacyEvidenceBefore, $this->hashMap($legacyEvidencePrevious));
+        self::assertSame(-2, $this->integer($this->raw(['PTTL', $this->key('score', 'r5-legacy-evidence-current')])));
+
+        $physicallyInconsistentPrevious = $this->key('score', 'r5-physical-inconsistent-previous');
+        $this->raw(['HSET', $physicallyInconsistentPrevious, 'value', '8', 'updatedAt', (string) $now, 'generation', '1', 'expiresAt', (string) ($now + 10)]);
+        $this->raw(['EXPIRE', $physicallyInconsistentPrevious, '600']);
+        $physicallyInconsistentBefore = $this->hashMap($physicallyInconsistentPrevious);
+        $this->assertOperationFails(fn(): mixed => $this->store->blockWithPunishmentLifecycleTracking('r5-physical-inconsistent-current', 'r5-physical-inconsistent-previous', 1, str_repeat('c', 32), 2, 60, 600, 2, 600, 86400));
+        self::assertSame($physicallyInconsistentBefore, $this->hashMap($physicallyInconsistentPrevious));
+        self::assertSame(-2, $this->integer($this->raw(['PTTL', $this->key('score', 'r5-physical-inconsistent-current')])));
+    }
+
+    /**
      * Current absent with no Previous key at all (no live source whatsoever)
      * is an ordinary unapplied conflict, not a failure.
      */
