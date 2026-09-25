@@ -17,6 +17,22 @@ Policies are **pre-configured, production-ready rule sets** built strictly on to
 
 Consumers SHOULD use these presets instead of defining custom rules.
 
+## 0. Policy identity and reusable capabilities
+
+Policy names identify registry entries, state namespaces, observability, and
+same-name replacement. They do not grant reusable security behavior.
+
+Custom policies may implement the additive typed
+`PolicyCapabilityProviderInterface` and return package-owned
+`PolicyCapability` values: `CREDENTIAL_SPRAY`, `DISTRIBUTED_ACCOUNT`,
+`TRUSTED_AUTHENTICATION`, and `API_OVERUSE`. A policy without that provider
+receives only its base score-policy behavior.
+
+The official presets retain the names `login_protection`, `otp_protection`, and
+`api_heavy_protection` while declaring those capabilities explicitly. The
+generation-bound K4 `PostPunishmentReentryPolicyInterface` remains a separate
+DEC-007 lifecycle opt-in and is validated independently of policy name.
+
 ---
 
 ## 1. Global Policy Principles (Non-Negotiable)

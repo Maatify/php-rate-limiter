@@ -235,6 +235,15 @@ Use the policy that matches the protected operation. The package keeps the decis
 
 The builder registers `login_protection`, `otp_protection`, and `api_heavy_protection` automatically. Use `withPolicy()` before `build()` to replace a same-name policy or add a differently named policy. The policy presets are production runtime classes. Do not invent policy behavior from test fixtures.
 
+Reusable behavior is selected by typed capability opt-in, not by policy name. A
+custom policy can implement `PolicyCapabilityProviderInterface` and return
+`PolicyCapability` enum cases for credential spray, distributed-account
+correlation, trusted-authentication advisory behavior, or API overuse. A custom
+policy that does not opt in receives base behavior only. `PostPunishmentReentryPolicyInterface`
+is a separate DEC-007 lifecycle capability; it requires K4, monotonic positive
+K4 thresholds, fail-closed semantics, and lifecycle-capable storage regardless
+of the policy's name.
+
 ## Walkthrough: Failure Boundary
 
     Input → A configured storage or runtime integration throws

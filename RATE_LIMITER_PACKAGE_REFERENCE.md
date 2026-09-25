@@ -123,6 +123,8 @@ The following inventory describes the current public runtime types. Test and sup
 | `Maatify\RateLimiter\Service\PostPunishmentReentryClaimInterface` | Public one-shot post-punishment lifecycle claim boundary; stale, expired, mismatched, absent, or replayed evidence returns `false`. |
 | `Maatify\RateLimiter\Service\RateLimiterRuntimeInterface` | Composite production runtime extending the normal limiter entrypoint with the public lifecycle claim operation. |
 | `Maatify\RateLimiter\Config\BlockPolicyInterface` | Policy name, thresholds, score deltas, failure mode, and budget configuration. |
+| `Maatify\RateLimiter\Config\PolicyCapabilityProviderInterface` | Additive typed opt-in for the finite package-owned reusable capabilities. |
+| `Maatify\RateLimiter\Config\PolicyCapability` | `CREDENTIAL_SPRAY`, `DISTRIBUTED_ACCOUNT`, `TRUSTED_AUTHENTICATION`, and `API_OVERUSE`. |
 | `Maatify\RateLimiter\Config\PostPunishmentReentryPolicyInterface` | Explicit opt-in marker for generation-bound K4 lifecycle behavior; builder validation requires the lifecycle storage capability. |
 | `Maatify\RateLimiter\Exception\RateLimiterExceptionInterface` | Package exception marker contract. |
 

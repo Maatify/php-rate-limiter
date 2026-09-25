@@ -4,6 +4,12 @@ declare(strict_types=1);
 
 namespace Maatify\RateLimiter\Service;
 
+use Maatify\RateLimiter\Config\BlockPolicyInterface;
+use Maatify\RateLimiter\Config\ApiHeavyProtectionPolicy;
+use Maatify\RateLimiter\Config\LoginProtectionPolicy;
+use Maatify\RateLimiter\Config\OtpProtectionPolicy;
+use Maatify\RateLimiter\Config\PolicyCapability;
+use Maatify\RateLimiter\Config\PolicyCapabilityProviderInterface;
 use Maatify\SharedCommon\Contracts\ClockInterface;
 
 /**
@@ -37,8 +43,9 @@ class LocalFallbackLimiter
      * Login and OTP use account/IP caps in degraded mode. API protection also
      * applies IP/user-agent caps in degraded and fail-open modes.
      */
-    public static function check(ClockInterface $clock, string $policyName, string $mode, string $ip, ?string $accountId = null, string $ua = ''): bool
+    public static function check(ClockInterface $clock, BlockPolicyInterface|string $policy, string $mode, string $ip, ?string $accountId = null, string $ua = ''): bool
     {
+        $policy = self::normalizePolicy($policy);
         self::gc($clock);
 
         $allowed = true;
@@ -50,23 +57,20 @@ class LocalFallbackLimiter
         $normalizedUa = DeviceIdentityResolver::normalizeUserAgent($ua);
 
         if ($mode === 'DEGRADED_MODE') {
-            if ($policyName === 'login_protection') {
-                $window = self::WINDOW_LOGIN;
-                if ($accountId && !self::incrementAndCheck($clock, "deg:login:acc:{$accountId}", self::DEGRADED_LOGIN_ACCOUNT, $window)) {
+            if (self::hasCapability($policy, PolicyCapability::DISTRIBUTED_ACCOUNT)
+                && ! self::hasCapability($policy, PolicyCapability::API_OVERUSE)) {
+                $isOtp = $policy->getBudgetConfig()?->threshold === 10;
+                $window = $isOtp ? self::WINDOW_OTP : self::WINDOW_LOGIN;
+                $accountLimit = $isOtp ? self::DEGRADED_OTP_ACCOUNT : self::DEGRADED_LOGIN_ACCOUNT;
+                $ipLimit = $isOtp ? self::DEGRADED_OTP_IP : self::DEGRADED_LOGIN_IP;
+                $prefix = $isOtp ? 'otp' : 'login';
+                if ($accountId && !self::incrementAndCheck($clock, "deg:{$prefix}:acc:{$accountId}", $accountLimit, $window)) {
                     $allowed = false;
                 }
-                if (!self::incrementAndCheck($clock, "deg:login:ip:{$normalizedIp}", self::DEGRADED_LOGIN_IP, $window)) {
+                if (!self::incrementAndCheck($clock, "deg:{$prefix}:ip:{$normalizedIp}", $ipLimit, $window)) {
                     $allowed = false;
                 }
-            } elseif ($policyName === 'otp_protection') {
-                $window = self::WINDOW_OTP;
-                if ($accountId && !self::incrementAndCheck($clock, "deg:otp:acc:{$accountId}", self::DEGRADED_OTP_ACCOUNT, $window)) {
-                    $allowed = false;
-                }
-                if (!self::incrementAndCheck($clock, "deg:otp:ip:{$normalizedIp}", self::DEGRADED_OTP_IP, $window)) {
-                    $allowed = false;
-                }
-            } elseif ($policyName === 'api_heavy_protection') {
+            } elseif (self::hasCapability($policy, PolicyCapability::API_OVERUSE)) {
                 $window = self::WINDOW_API;
                 if (!self::incrementAndCheck($clock, "fail:api:ip:{$normalizedIp}", self::API_IP, $window)) {
                     $allowed = false;
@@ -76,7 +80,7 @@ class LocalFallbackLimiter
                     $allowed = false;
                 }
             }
-        } elseif ($mode === 'FAIL_OPEN' && $policyName === 'api_heavy_protection') {
+        } elseif ($mode === 'FAIL_OPEN' && self::hasCapability($policy, PolicyCapability::API_OVERUSE)) {
             $window = self::WINDOW_API;
             if (!self::incrementAndCheck($clock, "fail:api:ip:{$normalizedIp}", self::API_IP, $window)) {
                 $allowed = false;
@@ -88,6 +92,48 @@ class LocalFallbackLimiter
         }
 
         return $allowed;
+    }
+
+    private static function hasCapability(BlockPolicyInterface $policy, PolicyCapability $capability): bool
+    {
+        return $policy instanceof PolicyCapabilityProviderInterface
+            && in_array($capability, $policy->getCapabilities(), true);
+    }
+
+    private static function normalizePolicy(BlockPolicyInterface|string $policy): BlockPolicyInterface
+    {
+        if ($policy instanceof BlockPolicyInterface) {
+            return $policy;
+        }
+
+        return match ($policy) {
+            'login_protection' => new LoginProtectionPolicy(),
+            'otp_protection' => new OtpProtectionPolicy(),
+            'api_heavy_protection' => new ApiHeavyProtectionPolicy(),
+            default => new class ($policy) implements BlockPolicyInterface {
+                public function __construct(private readonly string $name) {}
+                public function getName(): string
+                {
+                    return $this->name;
+                }
+                public function getScoreThresholds(): \Maatify\RateLimiter\DTO\PolicyThresholdsDTO
+                {
+                    return new \Maatify\RateLimiter\DTO\PolicyThresholdsDTO();
+                }
+                public function getScoreDeltas(): \Maatify\RateLimiter\DTO\ScoreDeltasDTO
+                {
+                    return new \Maatify\RateLimiter\DTO\ScoreDeltasDTO();
+                }
+                public function getFailureMode(): string
+                {
+                    return 'FAIL_CLOSED';
+                }
+                public function getBudgetConfig(): ?\Maatify\RateLimiter\DTO\BudgetConfigDTO
+                {
+                    return null;
+                }
+            },
+        };
     }
 
     private static function getIpPrefix(string $ip): string

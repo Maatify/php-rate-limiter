@@ -13,8 +13,14 @@ use Maatify\RateLimiter\DTO\ScoreThresholdsDTO;
 /**
  * Policy for high-volume API traffic using IP and IP/user-agent scopes.
  */
-class ApiHeavyProtectionPolicy implements BlockPolicyInterface
+class ApiHeavyProtectionPolicy implements BlockPolicyInterface, PolicyCapabilityProviderInterface
 {
+    /** @return list<PolicyCapability> */
+    public function getCapabilities(): array
+    {
+        return [PolicyCapability::API_OVERUSE];
+    }
+
     private const DISABLED_THRESHOLD = PHP_INT_MAX;
 
     /** @var array<string, int> */

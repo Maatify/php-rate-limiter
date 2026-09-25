@@ -9,6 +9,7 @@ use ConsumerVerification\RespRedisCommandExecutor;
 use Maatify\RateLimiter\Builder\RateLimiterBuilder;
 use Maatify\RateLimiter\Command\RateLimitCommand;
 use Maatify\RateLimiter\Config\RateLimiterConfig;
+use Maatify\RateLimiter\Config\ApiHeavyProtectionPolicy;
 use Maatify\RateLimiter\DTO\RateLimitContextDTO;
 use Maatify\RateLimiter\DTO\RateLimitResultDTO;
 use Maatify\RateLimiter\DTO\DeviceIdentityDTO;
@@ -429,6 +430,16 @@ for ($attempt = 1; $attempt <= 6; $attempt++) {
 }
 requireCondition($customHard instanceof RateLimitResultDTO, 'Custom opt-in policy did not issue a hard block.');
 requireCondition($customHard->retryAfter === 60, 'Custom newly-issued K4 L2 retryAfter must be 60 seconds: ' . json_encode(resultShape($customHard), JSON_THROW_ON_ERROR));
+$customApiPolicy = new class extends ApiHeavyProtectionPolicy {
+    public function getName(): string
+    {
+        return 'consumer_custom_api_overuse';
+    }
+};
+$customApiLimiter = RateLimiterBuilder::fromFullCapabilityStore(new RateLimiterConfig('consumer-custom-api-key', 'consumer-custom-api-fingerprint', 'prod'), $store, $signals)->withPolicy($customApiPolicy)->build();
+$customApiContext = new RateLimitContextDTO('203.0.113.18', 'Mozilla/5.0 consumer-custom-api', null, []);
+$customApiResult = $customApiLimiter->limit($customApiContext, new RateLimitCommand('consumer_custom_api_overuse', 121));
+requireCondition($customApiResult->decision === RateLimitResultDTO::DECISION_SOFT_BLOCK && $customApiResult->blockLevel === 1, 'Custom API-overuse capability policy did not execute the reusable API semantic branch.');
 // All three public punishments are issued before one shared wait. This keeps
 // the default OTP L3 proof intact while avoiding serial 60s + 300s + 60s waits.
 $sharedWaitSeconds = max(

@@ -5,6 +5,8 @@ declare(strict_types=1);
 namespace Maatify\RateLimiter\Service;
 
 use Maatify\RateLimiter\Config\BlockPolicyInterface;
+use Maatify\RateLimiter\Config\PolicyCapability;
+use Maatify\RateLimiter\Config\PolicyCapabilityProviderInterface;
 use Maatify\RateLimiter\Service\DeviceIdentityResolverInterface;
 use Maatify\RateLimiter\Contract\FailureSignalEmitterInterface;
 use Maatify\RateLimiter\Service\RateLimiterInterface;
@@ -68,8 +70,7 @@ class RateLimiterEngine implements RateLimiterRuntimeInterface
             if ($thresholds->k4->l1 <= 0 || $thresholds->k4->l1 > $thresholds->k4->l2 || $thresholds->k4->l2 > $thresholds->k4->l3) {
                 throw new RateLimiterException("Policy {$policy->getName()} invalid: K4 thresholds must be positive and monotonic.");
             }
-            if (in_array($policy->getName(), ['login_protection', 'otp_protection'], true)
-                && $policy->getBudgetConfig() === null) {
+            if ($policy->getBudgetConfig() === null) {
                 throw new RateLimiterException("Policy {$policy->getName()} invalid: Missing required BudgetConfig.");
             }
         }
@@ -82,10 +83,22 @@ class RateLimiterEngine implements RateLimiterRuntimeInterface
             throw new RateLimiterException("Policy {$policy->getName()} invalid: post-punishment re-entry cannot use FAIL_OPEN.");
         }
 
-        if ($policy->getName() === 'api_heavy_protection') {
+        if ($this->hasCapability($policy, PolicyCapability::API_OVERUSE)) {
             $thresholds = $policy->getScoreThresholds();
             if ($thresholds->k1 === null || $thresholds->k2 === null || $thresholds->k3 === null) {
                 throw new RateLimiterException("Policy {$policy->getName()} invalid: Must enforce K1, K2, and K3.");
+            }
+        }
+
+        if ($this->hasCapability($policy, PolicyCapability::DISTRIBUTED_ACCOUNT)
+            && ($policy->getScoreDeltas()->k4_failure <= 0 || $policy->getScoreThresholds()->k4 === null)) {
+            throw new RateLimiterException("Policy {$policy->getName()} invalid: Distributed-account behavior requires a positive K4 failure delta and K4 thresholds.");
+        }
+        if ($policy instanceof PolicyCapabilityProviderInterface) {
+            foreach ($policy->getCapabilities() as $capability) {
+                if (! $capability instanceof PolicyCapability) {
+                    throw new RateLimiterException("Policy {$policy->getName()} invalid: Capabilities must be PolicyCapability values.");
+                }
             }
         }
 
@@ -161,7 +174,7 @@ class RateLimiterEngine implements RateLimiterRuntimeInterface
 
             // Local Fallback Check
             if ($mode !== 'FAIL_CLOSED') {
-                if (!LocalFallbackLimiter::check($this->clock, $policyName, $mode, $context->ip, $context->accountId, $context->ua)) {
+                if (!LocalFallbackLimiter::check($this->clock, $policy, $mode, $context->ip, $context->accountId, $context->ua)) {
                     $contextMeta = new RateLimitContextMetadataDTO('fallback_limit_exceeded');
                     $meta = new RateLimitMetadataDTO($signal, 'fallback_limit_exceeded', $contextMeta);
                     return new RateLimitResultDTO(RateLimitResultDTO::DECISION_HARD_BLOCK, 2, 60, $mode, $meta);
@@ -268,7 +281,7 @@ class RateLimiterEngine implements RateLimiterRuntimeInterface
         if ($mode !== 'FAIL_CLOSED'
             && ! LocalFallbackLimiter::check(
                 $this->clock,
-                $policy->getName(),
+                $policy,
                 $mode,
                 $context->ip,
                 $context->accountId,
@@ -285,5 +298,11 @@ class RateLimiterEngine implements RateLimiterRuntimeInterface
         }
 
         return new RateLimitResultDTO(RateLimitResultDTO::DECISION_HARD_BLOCK, 2, 600, $mode);
+    }
+
+    private function hasCapability(BlockPolicyInterface $policy, PolicyCapability $capability): bool
+    {
+        return $policy instanceof PolicyCapabilityProviderInterface
+            && in_array($capability, $policy->getCapabilities(), true);
     }
 }
