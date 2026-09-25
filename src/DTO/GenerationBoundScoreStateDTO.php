@@ -11,6 +11,15 @@ namespace Maatify\RateLimiter\DTO;
  * store. A null generation denotes legacy state; generated state is fenced by
  * a positive generation and requires an authoritative expiry. Re-entry state
  * is evidence attached to the snapshot and is not itself a claim.
+ *
+ * This DTO is the public semantic boundary for every
+ * `PunishmentLifecycleStoreInterface` implementation, not a Redis-specific
+ * detail: the constructor enforces `source` is one of the two constants,
+ * `updatedAt >= 0`, `expiresAt > 0`, `expiresAt >= updatedAt`, `generation`
+ * is either null or a positive integer, a null (legacy) generation cannot
+ * carry `postPunishmentReentry` evidence, and when evidence is present its
+ * `validUntil` equals this snapshot's `expiresAt` exactly. No implementation
+ * may construct or return a structurally incoherent instance.
  */
 final readonly class GenerationBoundScoreStateDTO implements \JsonSerializable
 {
@@ -24,7 +33,9 @@ final readonly class GenerationBoundScoreStateDTO implements \JsonSerializable
      * @param int $expiresAt Authoritative score expiry timestamp.
      * @param ?int $generation Null for legacy state, otherwise a positive fence.
      * @param ?PostPunishmentReentryStateDTO $postPunishmentReentry Historical
-     * evidence for the currently served punishment, when present.
+     * evidence for the currently served punishment, when present. Its
+     * `validUntil` must equal `$expiresAt`; evidence bound to a different
+     * expiry is not a valid snapshot of this score.
      */
     public function __construct(
         public string $source,
@@ -37,7 +48,8 @@ final readonly class GenerationBoundScoreStateDTO implements \JsonSerializable
         if (! in_array($source, [self::SOURCE_CURRENT, self::SOURCE_PREVIOUS], true)
             || $updatedAt < 0 || $expiresAt <= 0 || $expiresAt < $updatedAt
             || ($generation !== null && $generation <= 0)
-            || ($postPunishmentReentry !== null && $generation === null)) {
+            || ($postPunishmentReentry !== null && $generation === null)
+            || ($postPunishmentReentry !== null && $postPunishmentReentry->validUntil !== $expiresAt)) {
             throw new \InvalidArgumentException('Invalid generation-bound score state.');
         }
     }

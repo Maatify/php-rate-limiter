@@ -240,6 +240,34 @@ final class RedisFullCapabilityStoreIntegrationTest extends TestCase
         self::assertFalse($this->store->claimPostPunishmentReentry('lifecycle-fence', null, $idB));
     }
 
+    /**
+     * Republishing the same exact K4 generation preserves the existing
+     * lifecycle identity instead of adopting a newly proposed one, per the
+     * DEC-007 stable-identity contract: the same lifecycle for the same
+     * generation must keep surfacing the same opaque ID.
+     */
+    public function testRepublicationOfTheSameGenerationPreservesTheExistingLifecycleIdentity(): void
+    {
+        $mutation = $this->store->mutateGenerationBoundScore('stable-identity', null, null, 600, 8);
+        self::assertTrue($mutation->applied);
+        self::assertSame(1, $mutation->state?->generation);
+
+        $idA = str_repeat('a', 32);
+        $first = $this->store->blockWithPunishmentLifecycleTracking('stable-identity', null, 1, $idA, 2, 30, 21600, 3, 600, 86400);
+        self::assertTrue($first->applied);
+        self::assertSame($idA, $first->postPunishmentReentry?->id);
+
+        $idB = str_repeat('b', 32);
+        $refresh = $this->store->blockWithPunishmentLifecycleTracking('stable-identity', null, 1, $idB, 2, 30, 21600, 3, 600, 86400);
+        self::assertTrue($refresh->applied);
+        self::assertSame($idA, $refresh->postPunishmentReentry?->id);
+        self::assertNotSame($idB, $refresh->postPunishmentReentry?->id);
+
+        $this->raw(['DEL', $this->key('block', 'stable-identity')]);
+        $state = $this->store->readGenerationBoundScoreState('stable-identity', null);
+        self::assertSame($idA, $state?->postPunishmentReentry?->id);
+    }
+
     public function testLegacyGenerationlessMutationConflictsWhenWriterAddsGeneration(): void
     {
         $key = $this->key('score', 'legacy-cas');
@@ -509,7 +537,11 @@ final class RedisFullCapabilityStoreIntegrationTest extends TestCase
 
         $previous = $this->store->mutateGenerationBoundScore('publication-previous', null, null, 600, 8);
         self::assertTrue($previous->applied);
-        $this->assertOperationFails(fn(): mixed => $this->store->blockWithPunishmentLifecycleTracking('publication-new-current', 'publication-previous', 1, str_repeat('b', 32), 2, 60, 600, 2, 600, 86400));
+        $previousOnlyTransition = $this->store->blockWithPunishmentLifecycleTracking('publication-new-current', 'publication-previous', 1, str_repeat('b', 32), 2, 60, 600, 2, 600, 86400);
+        self::assertFalse($previousOnlyTransition->applied);
+        self::assertNull($previousOnlyTransition->cycle);
+        self::assertNull($previousOnlyTransition->block);
+        self::assertNull($previousOnlyTransition->postPunishmentReentry);
     }
 
     /**
@@ -582,30 +614,78 @@ final class RedisFullCapabilityStoreIntegrationTest extends TestCase
     }
 
     /**
-     * R5 — publication with an absent Current must classify a persistent
-     * (PTTL == -1) or finite structurally malformed Previous as an explicit
-     * failure, never as an ordinary conflict, and must not write Current or
-     * mutate Previous.
+     * R5 — publication with an absent Current classifies Previous by its own
+     * structural validity, not by its mere presence. A persistent (PTTL ==
+     * -1) or finite structurally malformed Previous is an explicit failure;
+     * a structurally valid Previous (generated or legacy) is Previous's
+     * historical/read-only nature making it a non-publishable source, so it
+     * is an ordinary unapplied conflict, never an exception. Neither case
+     * writes Current or mutates Previous.
      */
-    public function testCurrentAbsentPublicationClassifiesPersistentAndMalformedPreviousExplicitly(): void
+    public function testCurrentAbsentPublicationClassifiesPreviousByStructuralValidityNotPresence(): void
     {
         $now = $this->redisNow();
 
+        // D1: structurally valid generated Previous -> ordinary conflict, not a failure.
+        $validGeneratedPrevious = $this->key('score', 'r5-valid-generated-previous');
+        $this->raw(['HSET', $validGeneratedPrevious, 'value', '8', 'updatedAt', (string) $now, 'generation', '1', 'expiresAt', (string) ($now + 601)]);
+        $this->raw(['EXPIRE', $validGeneratedPrevious, '600']);
+        $validGeneratedBefore = $this->hashMap($validGeneratedPrevious);
+        $validGeneratedTransition = $this->store->blockWithPunishmentLifecycleTracking('r5-valid-generated-current', 'r5-valid-generated-previous', 1, str_repeat('a', 32), 2, 60, 600, 2, 600, 86400);
+        self::assertFalse($validGeneratedTransition->applied);
+        self::assertNull($validGeneratedTransition->cycle);
+        self::assertNull($validGeneratedTransition->block);
+        self::assertNull($validGeneratedTransition->postPunishmentReentry);
+        self::assertSame($validGeneratedBefore, $this->hashMap($validGeneratedPrevious));
+        self::assertSame(-2, $this->integer($this->raw(['PTTL', $this->key('score', 'r5-valid-generated-current')])));
+        self::assertSame(-2, $this->integer($this->raw(['PTTL', $this->key('block', 'r5-valid-generated-current')])));
+
+        // D2: structurally valid legacy (generation-less) Previous -> ordinary conflict, not a failure.
+        $validLegacyPrevious = $this->key('score', 'r5-valid-legacy-previous');
+        $this->raw(['HSET', $validLegacyPrevious, 'value', '4', 'updatedAt', (string) $now]);
+        $this->raw(['EXPIRE', $validLegacyPrevious, '500']);
+        $validLegacyBefore = $this->hashMap($validLegacyPrevious);
+        $validLegacyTransition = $this->store->blockWithPunishmentLifecycleTracking('r5-valid-legacy-current', 'r5-valid-legacy-previous', 1, str_repeat('b', 32), 2, 60, 600, 2, 600, 86400);
+        self::assertFalse($validLegacyTransition->applied);
+        self::assertNull($validLegacyTransition->cycle);
+        self::assertNull($validLegacyTransition->block);
+        self::assertNull($validLegacyTransition->postPunishmentReentry);
+        self::assertSame($validLegacyBefore, $this->hashMap($validLegacyPrevious));
+        self::assertSame(-2, $this->integer($this->raw(['PTTL', $this->key('score', 'r5-valid-legacy-current')])));
+
+        // E1: Previous persisted without a physical deadline -> explicit failure.
         $persistentPrevious = $this->key('score', 'r5-persistent-previous');
         $this->raw(['HSET', $persistentPrevious, 'value', '8', 'updatedAt', (string) $now, 'generation', '1', 'expiresAt', (string) ($now + 600)]);
         $persistentBefore = $this->hashMap($persistentPrevious);
-        $this->assertOperationFails(fn(): mixed => $this->store->blockWithPunishmentLifecycleTracking('r5-persistent-current', 'r5-persistent-previous', 1, str_repeat('a', 32), 2, 60, 600, 2, 600, 86400));
+        $this->assertOperationFails(fn(): mixed => $this->store->blockWithPunishmentLifecycleTracking('r5-persistent-current', 'r5-persistent-previous', 1, str_repeat('c', 32), 2, 60, 600, 2, 600, 86400));
         self::assertSame(-1, $this->integer($this->raw(['PTTL', $persistentPrevious])));
         self::assertSame($persistentBefore, $this->hashMap($persistentPrevious));
         self::assertSame(-2, $this->integer($this->raw(['PTTL', $this->key('score', 'r5-persistent-current')])));
 
+        // E2: Previous finite but structurally malformed (generation = 0) -> explicit failure.
         $malformedPrevious = $this->key('score', 'r5-malformed-previous');
         $this->raw(['HSET', $malformedPrevious, 'value', '8', 'updatedAt', (string) $now, 'generation', '0', 'expiresAt', (string) ($now + 600)]);
         $this->raw(['EXPIRE', $malformedPrevious, '600']);
         $malformedBefore = $this->hashMap($malformedPrevious);
-        $this->assertOperationFails(fn(): mixed => $this->store->blockWithPunishmentLifecycleTracking('r5-malformed-current', 'r5-malformed-previous', 1, str_repeat('b', 32), 2, 60, 600, 2, 600, 86400));
+        $this->assertOperationFails(fn(): mixed => $this->store->blockWithPunishmentLifecycleTracking('r5-malformed-current', 'r5-malformed-previous', 1, str_repeat('d', 32), 2, 60, 600, 2, 600, 86400));
         self::assertSame($malformedBefore, $this->hashMap($malformedPrevious));
         self::assertSame(-2, $this->integer($this->raw(['PTTL', $this->key('score', 'r5-malformed-current')])));
+    }
+
+    /**
+     * Current absent with no Previous key at all (no live source whatsoever)
+     * is an ordinary unapplied conflict, not a failure.
+     */
+    public function testPublicationWithNoLiveSourceAtAllIsOrdinaryConflict(): void
+    {
+        $transition = $this->store->blockWithPunishmentLifecycleTracking('r5-no-source-current', null, 1, str_repeat('e', 32), 2, 60, 600, 2, 600, 86400);
+
+        self::assertFalse($transition->applied);
+        self::assertNull($transition->cycle);
+        self::assertNull($transition->block);
+        self::assertNull($transition->postPunishmentReentry);
+        self::assertSame(-2, $this->integer($this->raw(['PTTL', $this->key('score', 'r5-no-source-current')])));
+        self::assertSame(-2, $this->integer($this->raw(['PTTL', $this->key('block', 'r5-no-source-current')])));
     }
 
     /**

@@ -26,6 +26,26 @@ interface PunishmentLifecycleStoreInterface extends HardBlockCycleStoreInterface
     /**
      * Reads one coherent current/previous K4 snapshot without mutating state.
      *
+     * Resolution is Current-first: Current is read when it has live state,
+     * and Previous is consulted only as a read-only fallback when Current
+     * does not. The result is `null` only when neither logical source has
+     * live state; it is never used to signal a storage problem.
+     *
+     * A malformed core score field (an unparsable or non-integer `value` or
+     * `updatedAt`) is an explicit failure. A stored generation that is
+     * present but not a positive integer is an explicit failure; a
+     * generated score additionally requires an authoritative `expiresAt`,
+     * and a missing, non-integer, non-positive, or physically inconsistent
+     * expiry is an explicit failure. Lifecycle evidence must be either
+     * wholly absent or a complete, structurally valid tuple; a partial or
+     * otherwise malformed tuple is an explicit failure, and so is complete,
+     * structurally valid evidence attached to a generation-less (legacy)
+     * score — that combination is impossible persisted state, not hidden
+     * evidence. None of this is confused with an ordinary, structurally
+     * valid but stale, expired, mismatched, or block-suppressed evidence
+     * tuple, which is simply omitted from the returned snapshot rather than
+     * raising a failure.
+     *
      * @return ?GenerationBoundScoreStateDTO Selecting current over previous,
      * or null when neither logical source has live state.
      */
@@ -38,8 +58,20 @@ interface PunishmentLifecycleStoreInterface extends HardBlockCycleStoreInterface
      * by an unapplied DTO. Applied mutations write only current state, advance
      * the generation, preserve legacy remaining TTL, and return the new state.
      *
+     * An ordinary stale optimistic snapshot — the observed state no longer
+     * matches `$expectedState` — is reported as `applied=false`, never an
+     * exception. That is distinct from structurally malformed persisted
+     * state, which always raises an exception regardless of whether it
+     * happens to also be stale: a malformed core field (`value`/`updatedAt`),
+     * a stored generation that is present but not a positive integer, a
+     * malformed, missing, or physically inconsistent generated-score expiry,
+     * a malformed lifecycle evidence tuple, and a generation-less (legacy)
+     * score carrying complete lifecycle evidence are all explicit failures,
+     * not conflicts.
+     *
      * @return GenerationBoundScoreMutationDTO Applied state or an optimistic
-     * concurrency miss; malformed generated state raises an exception.
+     * concurrency miss; structurally malformed persisted state raises an
+     * exception instead.
      */
     public function mutateGenerationBoundScore(
         string $currentKey,
@@ -53,29 +85,39 @@ interface PunishmentLifecycleStoreInterface extends HardBlockCycleStoreInterface
      * Atomically publishes a hard block with DEC-003 cycle/pause accounting
      * and generation-bound post-punishment evidence.
      *
-     * Publication requires a Current generated score; Previous is historical,
-     * read-only input and is never itself a publishable source. `$expectedGeneration`
-     * must be a positive integer, `$level` must be L2 or higher, and
-     * `$durationSeconds`, `$cycleWindowSeconds`, `$cycleThreshold`,
-     * `$pauseSeconds`, and `$pauseHistoryRetentionSeconds` must all be
-     * positive; any violation is an explicit contract-precondition failure
-     * before any storage access.
+     * Publication requires a Current generated score as its source; Previous
+     * is historical, read-only input and is never itself a publishable
+     * source. `$expectedGeneration` must be a positive integer, `$level`
+     * must be L2 or higher, and `$durationSeconds`, `$cycleWindowSeconds`,
+     * `$cycleThreshold`, `$pauseSeconds`, and `$pauseHistoryRetentionSeconds`
+     * must all be positive; any violation is an explicit contract-precondition
+     * failure before any storage access.
      *
-     * Structural validation of the persisted state runs before the
-     * generation fence is compared. A stored generation that is missing,
-     * non-integer, or not a positive integer is malformed persisted state and
-     * raises an explicit failure; the same applies to a malformed core score
-     * field, a malformed or physically inconsistent expiry, and partial or
-     * otherwise structurally invalid lifecycle evidence — including a
-     * generation-less (legacy) score that carries complete lifecycle
-     * evidence, which is an impossible persisted combination. Only once the
-     * stored generation is confirmed structurally valid does a mismatch
-     * against `$expectedGeneration` become an ordinary, non-exceptional
-     * unapplied transition; that stale-generation conflict never writes
-     * partial state. When no Current generated score exists, a Previous
-     * score that is itself persisted without a physical deadline or that is
-     * structurally malformed also raises an explicit failure rather than
-     * being silently treated as a Current-only contract violation.
+     * Source-race semantics: structural validation of the persisted state
+     * always runs before any optimistic comparison. When Current is present
+     * and structurally valid, a stored generation that simply does not match
+     * `$expectedGeneration` is an ordinary, non-exceptional unapplied
+     * conflict — never a backend-health or corruption failure — and writes
+     * no partial state. When Current is absent, the absence of any live
+     * source, and a structurally valid Previous (generated or legacy) alike,
+     * are the same ordinary unapplied conflict: Previous being read-only
+     * history rather than a publishable source is not itself a programming
+     * failure, and Previous is left untouched either way. Only structurally
+     * malformed persisted state is an explicit failure rather than a
+     * conflict: a stored Current generation that is missing, non-integer, or
+     * not a positive integer; a malformed core score field; a malformed or
+     * physically inconsistent expiry; partial lifecycle evidence; a
+     * generation-less (legacy) score carrying complete lifecycle evidence;
+     * and, when Current is absent, a Previous that is itself persisted
+     * without a physical deadline or that is structurally malformed. None of
+     * this is ever silently downgraded to an ordinary conflict.
+     *
+     * Stable lifecycle identity: when the resolved Current source already
+     * carries valid lifecycle evidence for this same exact generation (its
+     * `validUntil` still equals the score's authoritative expiry), a
+     * republication for that generation preserves the existing lifecycle
+     * identity and does not adopt `$proposedLifecycleId`. A publication for
+     * a different (newer) generation always establishes a new identity.
      */
     public function blockWithPunishmentLifecycleTracking(
         string $currentKey,

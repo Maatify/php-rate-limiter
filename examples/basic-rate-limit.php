@@ -232,11 +232,11 @@ final class ExampleRateLimitStore implements PunishmentLifecycleStoreInterface
             throw new InvalidArgumentException('Invalid lifecycle publication parameters.');
         }
         $state = $this->readGenerationBoundScoreState($currentKey, $previousKey);
-        if ($state === null || $state->generation !== $expectedGeneration) {
+        if ($state === null || $state->source !== GenerationBoundScoreStateDTO::SOURCE_CURRENT || $state->generation !== $expectedGeneration) {
+            // No Current generated score is a publishable source: an absent
+            // source, a stale Current, or a structurally valid but merely
+            // historical Previous are all ordinary optimistic conflicts.
             return new PunishmentLifecycleTransitionDTO(false, null, null, null);
-        }
-        if ($state->source !== GenerationBoundScoreStateDTO::SOURCE_CURRENT) {
-            throw new InvalidArgumentException('Lifecycle publication requires the current generated score.');
         }
 
         $cycle = $this->blockWithCycleTracking(
@@ -251,8 +251,15 @@ final class ExampleRateLimitStore implements PunishmentLifecycleStoreInterface
             $pauseHistoryRetentionSeconds,
         );
         $now = $this->clock->now()->getTimestamp();
-        $lifecycleId = preg_match('/\A[a-f0-9]{32}\z/D', $proposedLifecycleId) === 1
-            ? $proposedLifecycleId : bin2hex(random_bytes(16));
+        $existingLifecycle = $this->generations[$currentKey]['lifecycle'] ?? null;
+        if ($existingLifecycle !== null && $existingLifecycle->validUntil === $state->expiresAt) {
+            // Same generation, same authoritative expiry: preserve the
+            // already-published identity instead of adopting a new one.
+            $lifecycleId = $existingLifecycle->id;
+        } else {
+            $lifecycleId = preg_match('/\A[a-f0-9]{32}\z/D', $proposedLifecycleId) === 1
+                ? $proposedLifecycleId : bin2hex(random_bytes(16));
+        }
         $lifecycle = new PostPunishmentReentryStateDTO($lifecycleId, $state->expiresAt);
         $this->generations[$currentKey]['lifecycle'] = $lifecycle;
 

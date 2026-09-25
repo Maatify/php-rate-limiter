@@ -143,12 +143,11 @@ final class BasicRateLimitExampleContractTest extends TestCase
         self::assertNull($store->readGenerationBoundScoreState('claim-current', null)?->postPunishmentReentry);
     }
 
-    public function testExampleRejectsInvalidPublicationParametersAndPreviousOnlyPublication(): void
+    public function testExampleRejectsInvalidPublicationParameters(): void
     {
         $clock = new FixedClock();
         $store = new \ExampleRateLimitStore($clock);
-        $previous = $store->mutateGenerationBoundScore('previous-only', null, null, 600, 8)->state;
-        self::assertNotNull($previous);
+        $store->mutateGenerationBoundScore('previous-only', null, null, 600, 8);
 
         $baseline = [1, 2, 60, 600, 2, 600, 86400];
         $invalidValues = [0, 1, 0, 0, 0, 0, 0];
@@ -164,8 +163,86 @@ final class BasicRateLimitExampleContractTest extends TestCase
             }
         }
         self::assertSame(count($baseline), $failures);
+    }
 
-        $this->expectException(\InvalidArgumentException::class);
-        $store->blockWithPunishmentLifecycleTracking('new-current', 'previous-only', $previous->generation ?? 1, str_repeat('b', 32), 2, 60, 600, 2, 600, 86400);
+    /**
+     * With Current absent, a structurally valid Previous (generated or
+     * legacy) is historical/read-only, not a publishable source: publication
+     * is an ordinary unapplied conflict, never an exception, and Previous is
+     * never mutated. A wholly absent source is the same ordinary conflict.
+     */
+    public function testExamplePublicationWithAbsentCurrentIsOrdinaryConflictNotException(): void
+    {
+        $clock = new FixedClock();
+        $store = new \ExampleRateLimitStore($clock);
+
+        $generatedPrevious = $store->mutateGenerationBoundScore('generated-previous-only', null, null, 600, 8)->state;
+        self::assertNotNull($generatedPrevious);
+        $generatedTransition = $store->blockWithPunishmentLifecycleTracking('new-current-1', 'generated-previous-only', $generatedPrevious->generation ?? 1, str_repeat('b', 32), 2, 60, 600, 2, 600, 86400);
+        self::assertFalse($generatedTransition->applied);
+        self::assertNull($generatedTransition->cycle);
+        self::assertNull($generatedTransition->block);
+        self::assertNull($generatedTransition->postPunishmentReentry);
+        $generatedPreviousAfter = $store->readGenerationBoundScoreState('generated-previous-only', null);
+        self::assertNotNull($generatedPreviousAfter);
+        self::assertSame($generatedPrevious->value, $generatedPreviousAfter->value);
+        self::assertSame($generatedPrevious->updatedAt, $generatedPreviousAfter->updatedAt);
+        self::assertSame($generatedPrevious->expiresAt, $generatedPreviousAfter->expiresAt);
+        self::assertSame($generatedPrevious->generation, $generatedPreviousAfter->generation);
+
+        $store->set('legacy-previous-only', 4, 500);
+        $legacyPreviousBefore = $store->get('legacy-previous-only');
+        self::assertNotNull($legacyPreviousBefore);
+        $legacyTransition = $store->blockWithPunishmentLifecycleTracking('new-current-2', 'legacy-previous-only', 1, str_repeat('c', 32), 2, 60, 600, 2, 600, 86400);
+        self::assertFalse($legacyTransition->applied);
+        self::assertNull($legacyTransition->cycle);
+        self::assertNull($legacyTransition->block);
+        self::assertNull($legacyTransition->postPunishmentReentry);
+        $legacyPreviousAfter = $store->get('legacy-previous-only');
+        self::assertNotNull($legacyPreviousAfter);
+        self::assertSame($legacyPreviousBefore->value, $legacyPreviousAfter->value);
+        self::assertSame($legacyPreviousBefore->updatedAt, $legacyPreviousAfter->updatedAt);
+
+        $noSourceTransition = $store->blockWithPunishmentLifecycleTracking('no-source-current', null, 1, str_repeat('d', 32), 2, 60, 600, 2, 600, 86400);
+        self::assertFalse($noSourceTransition->applied);
+        self::assertNull($noSourceTransition->cycle);
+        self::assertNull($noSourceTransition->block);
+        self::assertNull($noSourceTransition->postPunishmentReentry);
+    }
+
+    /**
+     * Republishing the same exact K4 generation preserves the existing
+     * lifecycle identity instead of adopting a newly proposed one.
+     */
+    public function testExampleRepublicationOfTheSameGenerationPreservesTheExistingLifecycleIdentity(): void
+    {
+        $clock = new FixedClock();
+        $store = new \ExampleRateLimitStore($clock);
+        $created = $store->mutateGenerationBoundScore('example-stable-identity', null, null, 600, 8);
+        self::assertTrue($created->applied);
+
+        $idA = str_repeat('a', 32);
+        $first = $store->blockWithPunishmentLifecycleTracking('example-stable-identity', null, 1, $idA, 2, 30, 600, 3, 600, 86400);
+        self::assertTrue($first->applied);
+        self::assertSame($idA, $first->postPunishmentReentry?->id);
+
+        $idB = str_repeat('b', 32);
+        $refresh = $store->blockWithPunishmentLifecycleTracking('example-stable-identity', null, 1, $idB, 2, 30, 600, 3, 600, 86400);
+        self::assertTrue($refresh->applied);
+        self::assertSame($idA, $refresh->postPunishmentReentry?->id);
+        self::assertNotSame($idB, $refresh->postPunishmentReentry?->id);
+
+        $clock->setNow($clock->now()->modify('+31 seconds'));
+        $state = $store->readGenerationBoundScoreState('example-stable-identity', null);
+        self::assertSame($idA, $state?->postPunishmentReentry?->id);
+
+        $next = $store->mutateGenerationBoundScore('example-stable-identity', null, $state, 600, 9);
+        self::assertTrue($next->applied);
+        self::assertSame(2, $next->state?->generation);
+        $idC = str_repeat('c', 32);
+        $second = $store->blockWithPunishmentLifecycleTracking('example-stable-identity', null, 2, $idC, 2, 30, 600, 3, 600, 86400);
+        self::assertTrue($second->applied);
+        self::assertSame($idC, $second->postPunishmentReentry?->id);
+        self::assertNotSame($idA, $second->postPunishmentReentry?->id);
     }
 }

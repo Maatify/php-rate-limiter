@@ -585,8 +585,27 @@ if lifecycleGeneration ~= '' then
     if KEYS[8] ~= '' then
       local previousScorePttl = redis.call('PTTL', KEYS[8])
       if previousScorePttl == -1 then return redis.error_reply('malformed lifecycle previous score state') end
-      if previousScorePttl > 0 then return redis.error_reply('lifecycle publication requires current generated score') end
+      if previousScorePttl > 0 then
+        local previousValue = redis.call('HGET', KEYS[8], 'value')
+        local previousUpdated = redis.call('HGET', KEYS[8], 'updatedAt')
+        if not previousValue or not previousUpdated then return redis.error_reply('malformed lifecycle previous score state') end
+        local numericPreviousValue = tonumber(previousValue); local numericPreviousUpdated = tonumber(previousUpdated)
+        if not numericPreviousValue or numericPreviousValue ~= math.floor(numericPreviousValue) or not numericPreviousUpdated or numericPreviousUpdated ~= math.floor(numericPreviousUpdated) or numericPreviousUpdated < 0 then return redis.error_reply('malformed lifecycle previous score state') end
+        local previousGeneration = redis.call('HGET', KEYS[8], 'generation')
+        local previousExpiry = redis.call('HGET', KEYS[8], 'expiresAt')
+        if previousGeneration then
+          local numericPreviousGeneration = tonumber(previousGeneration)
+          if not numericPreviousGeneration or numericPreviousGeneration ~= math.floor(numericPreviousGeneration) or numericPreviousGeneration <= 0 then return redis.error_reply('malformed lifecycle previous score generation') end
+          if not previousExpiry then return redis.error_reply('malformed lifecycle previous score expiry') end
+        end
+        if previousExpiry then
+          local numericPreviousExpiry = tonumber(previousExpiry)
+          if not numericPreviousExpiry or numericPreviousExpiry ~= math.floor(numericPreviousExpiry) or numericPreviousExpiry <= 0 or numericPreviousExpiry < numericPreviousUpdated then return redis.error_reply('malformed lifecycle previous score expiry') end
+        end
+      end
     end
+    -- Current is absent; a structurally valid Previous is historical/read-only,
+    -- not a publishable source, so this is an ordinary conflict, not a failure.
     return {0}
   end
   if scorePttl == -1 then return redis.error_reply('malformed lifecycle score physical expiry') end
@@ -990,13 +1009,20 @@ LUA;
     /**
      * Read one coherent current-first K4 lifecycle snapshot.
      *
-     * The previous key is a read-only fallback. Generation-less state remains
-     * legacy-compatible by deriving expiry from its Redis TTL, while generated
-     * state requires an integer authoritative expiry. Lifecycle evidence is
-     * valid only as a complete structurally valid tuple; absent evidence is
-     * normal, partial or malformed evidence raises an explicit backend error,
-     * and stale, expired, active-block, or generation-mismatched evidence is
-     * returned as non-satisfying state without mutation.
+     * The previous key is a read-only fallback consulted only when current
+     * has no live state; the result is null only when neither has live
+     * state. Generation-less state remains legacy-compatible by deriving
+     * expiry from its Redis TTL, while generated state requires an integer
+     * authoritative expiry. A malformed core score field, a stored
+     * generation present but not a positive integer, a malformed or
+     * physically inconsistent generated expiry, and partial lifecycle
+     * evidence all raise an explicit backend error — as does complete,
+     * structurally valid lifecycle evidence attached to a generation-less
+     * score, which is impossible persisted state rather than evidence to
+     * hide. Lifecycle evidence is otherwise valid only as a complete
+     * structurally valid tuple; absent evidence is normal, and stale,
+     * expired, active-block, or generation-mismatched evidence is returned
+     * as non-satisfying state without mutation and without raising.
      */
     public function readGenerationBoundScoreState(string $currentKey, ?string $previousKey): ?GenerationBoundScoreStateDTO
     {
@@ -1033,11 +1059,19 @@ LUA;
     /**
      * Apply one Redis-atomic, optimistic generation-bound K4 score mutation.
      *
-     * The supplied snapshot fences the current/previous namespace and stale
-     * snapshots return an unapplied DTO. Legacy state keeps its remaining TTL;
-     * applied mutations write only current state, advance generation, and
-     * invalidate lifecycle evidence. Structural partial or malformed lifecycle
-     * evidence fails before any mutation or clearing, while absent or complete
+     * The supplied snapshot fences the current/previous namespace; an
+     * ordinary stale snapshot — one that no longer matches the observed
+     * state — returns an unapplied DTO, never an exception. That is distinct
+     * from structurally malformed persisted state, which always raises an
+     * explicit backend failure before any mutation or clearing, regardless
+     * of whether the snapshot also happens to be stale: a malformed core
+     * field, a stored generation present but not a positive integer, a
+     * malformed, missing, or physically inconsistent generated-score expiry,
+     * partial lifecycle
+     * evidence, and complete lifecycle evidence attached to a
+     * generation-less score are all explicit failures. Legacy state keeps
+     * its remaining TTL; applied mutations write only current state, advance
+     * generation, and invalidate lifecycle evidence. Absent or complete
      * structurally valid evidence follows the normal mutation path.
      */
     public function mutateGenerationBoundScore(string $currentKey, ?string $previousKey, ?GenerationBoundScoreStateDTO $expectedState, int $ttlSeconds, int $newValue): GenerationBoundScoreMutationDTO
@@ -1060,27 +1094,41 @@ LUA;
      * Atomically publish DEC-003 cycle/pause state, an L2+ hard block, and K4
      * lifecycle evidence for the expected generation.
      *
-     * Publication requires a Current generated score; Previous is historical,
-     * read-only input and is never itself published from. `$expectedGeneration`,
-     * `$level` (L2+), and every duration/window/threshold/pause/retention
-     * parameter are validated as explicit contract preconditions before any
-     * Redis access.
+     * Publication requires a Current generated score as its source; Previous
+     * is historical, read-only input and is never itself published from.
+     * `$expectedGeneration`, `$level` (L2+), and every
+     * duration/window/threshold/pause/retention parameter are validated as
+     * explicit contract preconditions before any Redis access.
      *
-     * Redis server time owns the publication timestamps. The stored Current
-     * generation is structurally validated — present, integer, positive, with
-     * consistent core score fields, physically consistent expiry, and only
-     * absent or complete (never partial) lifecycle evidence, including
-     * rejecting a generation-less legacy score that carries evidence — before
-     * it is compared against `$expectedGeneration`; any structural violation
-     * raises an explicit backend failure with no partial write. Only once the
-     * stored generation is confirmed structurally valid does a mismatch
-     * against `$expectedGeneration` return an unapplied transition with no
-     * partial result. When no Current generated score exists, a Previous
-     * score that is persisted without a physical deadline or that is itself
-     * structurally malformed also raises an explicit failure instead of being
-     * treated as an ordinary Current-only contract violation. An applied
-     * transition couples the block, cycle/pause accounting, score expiry, and
-     * lifecycle evidence. The separate public claim owns the one-shot marker.
+     * Redis server time owns the publication timestamps. Source-race
+     * semantics distinguish ordinary optimistic conflict from structural
+     * corruption: structural validation of the persisted state always runs
+     * first. When a Current score exists, its generation, core fields,
+     * expiry, and lifecycle evidence are validated structurally before any
+     * comparison against `$expectedGeneration`; a structurally valid
+     * generation that simply does not match `$expectedGeneration` then
+     * returns an ordinary unapplied transition with no partial write — never
+     * a backend-health failure. When no Current score exists, the absence of
+     * any live source and a structurally valid Previous (generated or
+     * legacy) are the same ordinary unapplied conflict, because Previous is
+     * read-only history rather than a publishable source, not because
+     * anything is wrong; Previous is left untouched either way. Only
+     * structurally malformed persisted state raises an explicit backend
+     * failure instead of a conflict: a stored Current generation present but
+     * not a positive integer, a malformed core score field, a malformed or
+     * physically inconsistent expiry, partial lifecycle evidence, a
+     * generation-less legacy score carrying complete lifecycle evidence, and
+     * — when Current is absent — a Previous persisted without a physical
+     * deadline or that is itself structurally malformed.
+     *
+     * An applied transition couples the block, cycle/pause accounting, score
+     * expiry, and lifecycle evidence. When the resolved Current source
+     * already carries valid lifecycle evidence for this exact generation
+     * (its `validUntil` still equals the score's authoritative expiry), the
+     * existing lifecycle identity is preserved rather than replaced by
+     * `$proposedLifecycleId`; a publication for a new generation always
+     * establishes a new identity. The separate public claim owns the
+     * one-shot marker.
      */
     public function blockWithPunishmentLifecycleTracking(string $currentKey, ?string $previousKey, int $expectedGeneration, string $proposedLifecycleId, int $level, int $durationSeconds, int $cycleWindowSeconds, int $cycleThreshold, int $pauseSeconds, int $pauseHistoryRetentionSeconds): PunishmentLifecycleTransitionDTO
     {

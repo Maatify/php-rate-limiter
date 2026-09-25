@@ -52,6 +52,20 @@ final class GenerationBoundScoreStateDTOContractTest extends TestCase
         new GenerationBoundScoreStateDTO(GenerationBoundScoreStateDTO::SOURCE_CURRENT, 1, 20, 10, null);
     }
 
+    public function testEvidenceValidUntilMustEqualExpiresAt(): void
+    {
+        $this->expectException(\InvalidArgumentException::class);
+
+        new GenerationBoundScoreStateDTO(
+            GenerationBoundScoreStateDTO::SOURCE_CURRENT,
+            1,
+            10,
+            20,
+            1,
+            new PostPunishmentReentryStateDTO(str_repeat('a', 32), 21),
+        );
+    }
+
     public function testValidLegacyAndGeneratedStatesAreAccepted(): void
     {
         $legacy = new GenerationBoundScoreStateDTO(GenerationBoundScoreStateDTO::SOURCE_CURRENT, 1, 10, 20, null);
