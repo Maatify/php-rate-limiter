@@ -512,6 +512,123 @@ final class RedisFullCapabilityStoreIntegrationTest extends TestCase
         $this->assertOperationFails(fn(): mixed => $this->store->blockWithPunishmentLifecycleTracking('publication-new-current', 'publication-previous', 1, str_repeat('b', 32), 2, 60, 600, 2, 600, 86400));
     }
 
+    /**
+     * R1 — malformed stored generation matrix. Zero, negative, and
+     * non-integer stored generation on an otherwise current-generated-looking
+     * physical score fail READ, MUTATE, CLAIM, and PUBLICATION explicitly,
+     * even when PUBLICATION is called with a structurally valid positive
+     * expectedGeneration.
+     */
+    public function testMalformedStoredGenerationFailsAcrossReadMutateClaimAndPublication(): void
+    {
+        $now = $this->redisNow();
+        foreach (['0', '-1', 'not-a-number'] as $index => $malformedGeneration) {
+            $logical = 'r1-malformed-generation-' . $index;
+            $score = $this->key('score', $logical);
+            $this->raw(['HSET', $score, 'value', '8', 'updatedAt', (string) $now, 'generation', $malformedGeneration, 'expiresAt', (string) ($now + 600)]);
+            $this->raw(['EXPIRE', $score, '600']);
+
+            $this->assertOperationFails(fn(): mixed => $this->store->readGenerationBoundScoreState($logical, null));
+            $this->assertOperationFails(fn(): mixed => $this->store->mutateGenerationBoundScore($logical, null, null, 600, 9));
+            $this->assertOperationFails(fn(): mixed => $this->store->claimPostPunishmentReentry($logical, null, str_repeat('a', 32)));
+            $this->assertOperationFails(fn(): mixed => $this->store->blockWithPunishmentLifecycleTracking($logical, null, 3, str_repeat('a', 32), 2, 60, 600, 2, 600, 86400));
+        }
+    }
+
+    /**
+     * R2 — control case distinguishing corruption from ordinary concurrency.
+     * A structurally valid stored generation that simply does not match the
+     * expected generation is an unapplied conflict, not an exception.
+     */
+    public function testValidGenerationMismatchDuringPublicationIsOrdinaryConflictNotCorruption(): void
+    {
+        $now = $this->redisNow();
+        $logical = 'r2-valid-generation-mismatch';
+        $score = $this->key('score', $logical);
+        $this->raw(['HSET', $score, 'value', '8', 'updatedAt', (string) $now, 'generation', '3', 'expiresAt', (string) ($now + 600)]);
+        $this->raw(['EXPIRE', $score, '600']);
+        $before = $this->hashMap($score);
+
+        $transition = $this->store->blockWithPunishmentLifecycleTracking($logical, null, 4, str_repeat('a', 32), 2, 60, 600, 2, 600, 86400);
+
+        self::assertFalse($transition->applied);
+        self::assertSame($before, $this->hashMap($score));
+        self::assertSame(-2, $this->integer($this->raw(['PTTL', $this->key('block', $logical)])));
+    }
+
+    /**
+     * R3 — a legacy generation-less score can never structurally carry
+     * complete DEC-007 lifecycle evidence; the combination is impossible
+     * persisted state, not hidden evidence, a false claim, or an ordinary
+     * mismatch, across every lifecycle operation.
+     */
+    public function testLegacyScoreWithCompleteLifecycleEvidenceFailsAcrossReadMutateClaimAndPublication(): void
+    {
+        $now = $this->redisNow();
+        $id = str_repeat('a', 32);
+        foreach (['read', 'mutate', 'claim', 'publication'] as $operation) {
+            $logical = 'r3-legacy-complete-evidence-' . $operation;
+            $score = $this->key('score', $logical);
+            $this->raw(['HSET', $score, 'value', '8', 'updatedAt', (string) $now, 'reentryId', $id, 'reentryValidUntil', (string) ($now + 600), 'reentryGeneration', '1']);
+            $this->raw(['EXPIRE', $score, '600']);
+
+            $this->assertOperationFails(match ($operation) {
+                'read' => fn(): mixed => $this->store->readGenerationBoundScoreState($logical, null),
+                'mutate' => fn(): mixed => $this->store->mutateGenerationBoundScore($logical, null, null, 600, 9),
+                'claim' => fn(): mixed => $this->store->claimPostPunishmentReentry($logical, null, $id),
+                default => fn(): mixed => $this->store->blockWithPunishmentLifecycleTracking($logical, null, 1, $id, 2, 60, 600, 2, 600, 86400),
+            });
+        }
+    }
+
+    /**
+     * R5 — publication with an absent Current must classify a persistent
+     * (PTTL == -1) or finite structurally malformed Previous as an explicit
+     * failure, never as an ordinary conflict, and must not write Current or
+     * mutate Previous.
+     */
+    public function testCurrentAbsentPublicationClassifiesPersistentAndMalformedPreviousExplicitly(): void
+    {
+        $now = $this->redisNow();
+
+        $persistentPrevious = $this->key('score', 'r5-persistent-previous');
+        $this->raw(['HSET', $persistentPrevious, 'value', '8', 'updatedAt', (string) $now, 'generation', '1', 'expiresAt', (string) ($now + 600)]);
+        $persistentBefore = $this->hashMap($persistentPrevious);
+        $this->assertOperationFails(fn(): mixed => $this->store->blockWithPunishmentLifecycleTracking('r5-persistent-current', 'r5-persistent-previous', 1, str_repeat('a', 32), 2, 60, 600, 2, 600, 86400));
+        self::assertSame(-1, $this->integer($this->raw(['PTTL', $persistentPrevious])));
+        self::assertSame($persistentBefore, $this->hashMap($persistentPrevious));
+        self::assertSame(-2, $this->integer($this->raw(['PTTL', $this->key('score', 'r5-persistent-current')])));
+
+        $malformedPrevious = $this->key('score', 'r5-malformed-previous');
+        $this->raw(['HSET', $malformedPrevious, 'value', '8', 'updatedAt', (string) $now, 'generation', '0', 'expiresAt', (string) ($now + 600)]);
+        $this->raw(['EXPIRE', $malformedPrevious, '600']);
+        $malformedBefore = $this->hashMap($malformedPrevious);
+        $this->assertOperationFails(fn(): mixed => $this->store->blockWithPunishmentLifecycleTracking('r5-malformed-current', 'r5-malformed-previous', 1, str_repeat('b', 32), 2, 60, 600, 2, 600, 86400));
+        self::assertSame($malformedBefore, $this->hashMap($malformedPrevious));
+        self::assertSame(-2, $this->integer($this->raw(['PTTL', $this->key('score', 'r5-malformed-current')])));
+    }
+
+    /**
+     * Full publication parameter precondition matrix: each of the seven
+     * parameters is rejected individually with the other six valid.
+     */
+    public function testPublicationRejectsEachInvalidParameterAcrossTheFullMatrix(): void
+    {
+        $mutation = $this->store->mutateGenerationBoundScore('publication-parameter-matrix', null, null, 600, 8);
+        self::assertTrue($mutation->applied);
+
+        $baseline = [1, 2, 60, 600, 2, 600, 86400];
+        $invalidValues = [0, 1, 0, 0, 0, 0, 0];
+        foreach (array_keys($baseline) as $index) {
+            $params = $baseline;
+            $params[$index] = $invalidValues[$index];
+            [$generation, $level, $duration, $window, $threshold, $pause, $retention] = $params;
+            $this->assertOperationFails(
+                fn(): mixed => $this->store->blockWithPunishmentLifecycleTracking('publication-parameter-matrix', null, $generation, str_repeat('a', 32), $level, $duration, $window, $threshold, $pause, $retention),
+            );
+        }
+    }
+
     public function testClaimMarkerCorruptionIsExplicitAndForeignMarkerDoesNotSilentlySuppress(): void
     {
         $id = str_repeat('b', 32);

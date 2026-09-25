@@ -72,7 +72,56 @@ final class BasicRateLimitExampleContractTest extends TestCase
         $previousAfter = $store->readGenerationBoundScoreState('previous', null);
         self::assertNotNull($previousAfter);
         self::assertSame($previous->value, $previousAfter->value);
+        self::assertSame($previous->updatedAt, $previousAfter->updatedAt);
         self::assertSame($previous->expiresAt, $previousAfter->expiresAt);
+        self::assertSame($previous->generation, $previousAfter->generation);
+    }
+
+    public function testExampleRejectsMutationWhenOnlyExpiresAtIsStale(): void
+    {
+        $clock = new FixedClock();
+        $store = new \ExampleRateLimitStore($clock);
+        $created = $store->mutateGenerationBoundScore('stale-expiry-cas', null, null, 600, 8);
+        self::assertTrue($created->applied);
+        $state = $created->state;
+        self::assertNotNull($state);
+
+        $staleExpiry = new GenerationBoundScoreStateDTO($state->source, $state->value, $state->updatedAt, $state->expiresAt + 1, $state->generation);
+        $conflict = $store->mutateGenerationBoundScore('stale-expiry-cas', null, $staleExpiry, 600, 9);
+
+        self::assertFalse($conflict->applied);
+        self::assertNull($conflict->state);
+        $after = $store->readGenerationBoundScoreState('stale-expiry-cas', null);
+        self::assertNotNull($after);
+        self::assertSame($state->value, $after->value);
+        self::assertSame($state->updatedAt, $after->updatedAt);
+        self::assertSame($state->expiresAt, $after->expiresAt);
+        self::assertSame($state->generation, $after->generation);
+    }
+
+    public function testExampleHandlesLegacyPreviousHandoffThroughTheNonGenerationApi(): void
+    {
+        $clock = new FixedClock();
+        $store = new \ExampleRateLimitStore($clock);
+        $store->set('legacy-previous-handoff-previous', 6, 500);
+        $legacyPreviousBefore = $store->get('legacy-previous-handoff-previous');
+        self::assertNotNull($legacyPreviousBefore);
+
+        $snapshot = $store->readGenerationBoundScoreState('legacy-previous-handoff-current', 'legacy-previous-handoff-previous');
+        self::assertNotNull($snapshot);
+        self::assertSame(GenerationBoundScoreStateDTO::SOURCE_PREVIOUS, $snapshot->source);
+        self::assertNull($snapshot->generation);
+
+        $handoff = $store->mutateGenerationBoundScore('legacy-previous-handoff-current', 'legacy-previous-handoff-previous', $snapshot, 600, 7);
+
+        self::assertTrue($handoff->applied);
+        self::assertNotNull($handoff->state);
+        self::assertSame(1, $handoff->state->generation);
+        self::assertSame($snapshot->expiresAt, $handoff->state->expiresAt);
+        $legacyPreviousAfter = $store->get('legacy-previous-handoff-previous');
+        self::assertNotNull($legacyPreviousAfter);
+        self::assertSame($legacyPreviousBefore->value, $legacyPreviousAfter->value);
+        self::assertSame($legacyPreviousBefore->updatedAt, $legacyPreviousAfter->updatedAt);
     }
 
     public function testExamplePublishesEvidenceAndAllowsExactlyOneClaimThenInvalidatesEvidenceOnMutation(): void
@@ -101,19 +150,20 @@ final class BasicRateLimitExampleContractTest extends TestCase
         $previous = $store->mutateGenerationBoundScore('previous-only', null, null, 600, 8)->state;
         self::assertNotNull($previous);
 
+        $baseline = [1, 2, 60, 600, 2, 600, 86400];
+        $invalidValues = [0, 1, 0, 0, 0, 0, 0];
         $failures = 0;
-        foreach ([
-            [0, 2, 60, 600, 2, 600, 86400],
-            [1, 1, 60, 600, 2, 600, 86400],
-            [1, 2, 0, 600, 2, 600, 86400],
-        ] as [$generation, $level, $duration, $window, $threshold, $pause, $retention]) {
+        foreach (array_keys($baseline) as $index) {
+            $params = $baseline;
+            $params[$index] = $invalidValues[$index];
+            [$generation, $level, $duration, $window, $threshold, $pause, $retention] = $params;
             try {
                 $store->blockWithPunishmentLifecycleTracking('previous-only', null, $generation, str_repeat('a', 32), $level, $duration, $window, $threshold, $pause, $retention);
             } catch (\InvalidArgumentException) {
                 $failures++;
             }
         }
-        self::assertSame(3, $failures);
+        self::assertSame(count($baseline), $failures);
 
         $this->expectException(\InvalidArgumentException::class);
         $store->blockWithPunishmentLifecycleTracking('new-current', 'previous-only', $previous->generation ?? 1, str_repeat('b', 32), 2, 60, 600, 2, 600, 86400);

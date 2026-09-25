@@ -53,9 +53,29 @@ interface PunishmentLifecycleStoreInterface extends HardBlockCycleStoreInterface
      * Atomically publishes a hard block with DEC-003 cycle/pause accounting
      * and generation-bound post-punishment evidence.
      *
-     * The expected generation fences publication. A stale generation returns
-     * an unapplied transition; an applied transition contains every resulting
-     * state object and exposes a claimable lifecycle identity.
+     * Publication requires a Current generated score; Previous is historical,
+     * read-only input and is never itself a publishable source. `$expectedGeneration`
+     * must be a positive integer, `$level` must be L2 or higher, and
+     * `$durationSeconds`, `$cycleWindowSeconds`, `$cycleThreshold`,
+     * `$pauseSeconds`, and `$pauseHistoryRetentionSeconds` must all be
+     * positive; any violation is an explicit contract-precondition failure
+     * before any storage access.
+     *
+     * Structural validation of the persisted state runs before the
+     * generation fence is compared. A stored generation that is missing,
+     * non-integer, or not a positive integer is malformed persisted state and
+     * raises an explicit failure; the same applies to a malformed core score
+     * field, a malformed or physically inconsistent expiry, and partial or
+     * otherwise structurally invalid lifecycle evidence — including a
+     * generation-less (legacy) score that carries complete lifecycle
+     * evidence, which is an impossible persisted combination. Only once the
+     * stored generation is confirmed structurally valid does a mismatch
+     * against `$expectedGeneration` become an ordinary, non-exceptional
+     * unapplied transition; that stale-generation conflict never writes
+     * partial state. When no Current generated score exists, a Previous
+     * score that is itself persisted without a physical deadline or that is
+     * structurally malformed also raises an explicit failure rather than
+     * being silently treated as a Current-only contract violation.
      */
     public function blockWithPunishmentLifecycleTracking(
         string $currentKey,

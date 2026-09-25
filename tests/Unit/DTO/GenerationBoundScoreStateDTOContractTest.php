@@ -30,4 +30,42 @@ final class GenerationBoundScoreStateDTOContractTest extends TestCase
             new PostPunishmentReentryStateDTO(str_repeat('a', 32), 20),
         );
     }
+
+    public function testUpdatedAtMustNotBeNegative(): void
+    {
+        $this->expectException(\InvalidArgumentException::class);
+
+        new GenerationBoundScoreStateDTO(GenerationBoundScoreStateDTO::SOURCE_CURRENT, 1, -1, 20, null);
+    }
+
+    public function testExpiresAtMustBePositive(): void
+    {
+        $this->expectException(\InvalidArgumentException::class);
+
+        new GenerationBoundScoreStateDTO(GenerationBoundScoreStateDTO::SOURCE_CURRENT, 1, 10, 0, null);
+    }
+
+    public function testExpiresAtMustNotPrecedeUpdatedAt(): void
+    {
+        $this->expectException(\InvalidArgumentException::class);
+
+        new GenerationBoundScoreStateDTO(GenerationBoundScoreStateDTO::SOURCE_CURRENT, 1, 20, 10, null);
+    }
+
+    public function testValidLegacyAndGeneratedStatesAreAccepted(): void
+    {
+        $legacy = new GenerationBoundScoreStateDTO(GenerationBoundScoreStateDTO::SOURCE_CURRENT, 1, 10, 20, null);
+        self::assertNull($legacy->generation);
+
+        $generated = new GenerationBoundScoreStateDTO(
+            GenerationBoundScoreStateDTO::SOURCE_CURRENT,
+            1,
+            10,
+            20,
+            1,
+            new PostPunishmentReentryStateDTO(str_repeat('a', 32), 20),
+        );
+        self::assertSame(1, $generated->generation);
+        self::assertNotNull($generated->postPunishmentReentry);
+    }
 }

@@ -209,7 +209,8 @@ if evidenceCount == 3 then
   if not evidenceId or string.len(evidenceId) ~= 32 or string.match(evidenceId, '^[a-f0-9]+$') == nil then return redis.error_reply('malformed lifecycle id') end
   local numericUntil = tonumber(evidenceUntil); local numericEvidenceGeneration = tonumber(evidenceGeneration)
   if not numericUntil or numericUntil ~= math.floor(numericUntil) or numericUntil <= 0 or not numericEvidenceGeneration or numericEvidenceGeneration ~= math.floor(numericEvidenceGeneration) or numericEvidenceGeneration <= 0 then return redis.error_reply('malformed lifecycle evidence') end
-  if active or generation == '' or numericEvidenceGeneration ~= tonumber(generation) or numericUntil ~= tonumber(expiry) or numericUntil <= nowSeconds then evidenceId = ''; evidenceUntil = '' end
+  if generation == '' then return redis.error_reply('legacy score cannot carry lifecycle evidence') end
+  if active or numericEvidenceGeneration ~= tonumber(generation) or numericUntil ~= tonumber(expiry) or numericUntil <= nowSeconds then evidenceId = ''; evidenceUntil = '' end
 end
 return {source == KEYS[1] and 1 or 2, tonumber(value), tonumber(updated), tonumber(expiry), generation, evidenceId, evidenceUntil}
 LUA;
@@ -264,7 +265,8 @@ if source ~= '' then
     if not id or #id ~= 32 or string.match(id, '^[a-f0-9]+$') == nil then return redis.error_reply('malformed lifecycle id') end
     local numericUntil = tonumber(validUntil); local numericEvidenceGeneration = tonumber(evidenceGeneration)
     if not numericUntil or numericUntil ~= math.floor(numericUntil) or numericUntil <= 0 or not numericEvidenceGeneration or numericEvidenceGeneration ~= math.floor(numericEvidenceGeneration) or numericEvidenceGeneration <= 0 then return redis.error_reply('malformed lifecycle evidence') end
-    if not generation or numericEvidenceGeneration ~= tonumber(generation) then return 0 end
+    if not generation then return redis.error_reply('legacy score cannot carry lifecycle evidence') end
+    if numericEvidenceGeneration ~= tonumber(generation) then return 0 end
     if expiry ~= nil and numericUntil ~= expiry then return 0 end
     if numericUntil <= nowSeconds or id ~= ARGV[1] then return 0 end
     local marker = redis.call('GET', KEYS[5])
@@ -580,15 +582,21 @@ if lifecycleGeneration ~= '' then
   local scorePttl = redis.call('PTTL', scoreKey)
   if scoreKey == '' then return redis.error_reply('lifecycle publication requires current generated score') end
   if scorePttl == -2 then
-    if KEYS[8] ~= '' and redis.call('PTTL', KEYS[8]) > 0 then return redis.error_reply('lifecycle publication requires current generated score') end
+    if KEYS[8] ~= '' then
+      local previousScorePttl = redis.call('PTTL', KEYS[8])
+      if previousScorePttl == -1 then return redis.error_reply('malformed lifecycle previous score state') end
+      if previousScorePttl > 0 then return redis.error_reply('lifecycle publication requires current generated score') end
+    end
     return {0}
   end
   if scorePttl == -1 then return redis.error_reply('malformed lifecycle score physical expiry') end
   local generation = redis.call('HGET', scoreKey, 'generation'); local value = redis.call('HGET', scoreKey, 'value'); local updated = redis.call('HGET', scoreKey, 'updatedAt'); local scoreExpiry = redis.call('HGET', scoreKey, 'expiresAt')
   if not generation or not value or not updated or not scoreExpiry then return redis.error_reply('malformed lifecycle score state') end
-  if not tonumber(generation) or tonumber(generation) ~= math.floor(tonumber(generation)) or generation ~= lifecycleGeneration then return {0} end
+  local numericGeneration = tonumber(generation)
+  if not numericGeneration or numericGeneration ~= math.floor(numericGeneration) or numericGeneration <= 0 then return redis.error_reply('malformed lifecycle score generation') end
   if not tonumber(value) or tonumber(value) ~= math.floor(tonumber(value)) or not tonumber(updated) or tonumber(updated) ~= math.floor(tonumber(updated)) or tonumber(updated) < 0 or not tonumber(scoreExpiry) or tonumber(scoreExpiry) ~= math.floor(tonumber(scoreExpiry)) or tonumber(scoreExpiry) <= 0 or tonumber(scoreExpiry) < tonumber(updated) then return redis.error_reply('malformed lifecycle score state') end
   if (nowMs + scorePttl) > (tonumber(scoreExpiry) * 1000) then return redis.error_reply('inconsistent lifecycle score expiry') end
+  if generation ~= lifecycleGeneration then return {0} end
   if (tonumber(scoreExpiry) * 1000) <= nowMs then return {0} end
   if lifecycleId == '' or string.len(lifecycleId) ~= 32 then return redis.error_reply('malformed lifecycle id') end
   local evidenceCount = redis.call('HEXISTS', scoreKey, 'reentryId') + redis.call('HEXISTS', scoreKey, 'reentryValidUntil') + redis.call('HEXISTS', scoreKey, 'reentryGeneration')
@@ -1052,12 +1060,27 @@ LUA;
      * Atomically publish DEC-003 cycle/pause state, an L2+ hard block, and K4
      * lifecycle evidence for the expected generation.
      *
-     * Redis server time owns the publication timestamps. A generation conflict
-     * returns an unapplied transition with no partial result; an applied
+     * Publication requires a Current generated score; Previous is historical,
+     * read-only input and is never itself published from. `$expectedGeneration`,
+     * `$level` (L2+), and every duration/window/threshold/pause/retention
+     * parameter are validated as explicit contract preconditions before any
+     * Redis access.
+     *
+     * Redis server time owns the publication timestamps. The stored Current
+     * generation is structurally validated — present, integer, positive, with
+     * consistent core score fields, physically consistent expiry, and only
+     * absent or complete (never partial) lifecycle evidence, including
+     * rejecting a generation-less legacy score that carries evidence — before
+     * it is compared against `$expectedGeneration`; any structural violation
+     * raises an explicit backend failure with no partial write. Only once the
+     * stored generation is confirmed structurally valid does a mismatch
+     * against `$expectedGeneration` return an unapplied transition with no
+     * partial result. When no Current generated score exists, a Previous
+     * score that is persisted without a physical deadline or that is itself
+     * structurally malformed also raises an explicit failure instead of being
+     * treated as an ordinary Current-only contract violation. An applied
      * transition couples the block, cycle/pause accounting, score expiry, and
      * lifecycle evidence. The separate public claim owns the one-shot marker.
-     * Malformed score, block, cycle, pause, or generated
-     * lifecycle state raises an explicit backend failure instead of repairing it.
      */
     public function blockWithPunishmentLifecycleTracking(string $currentKey, ?string $previousKey, int $expectedGeneration, string $proposedLifecycleId, int $level, int $durationSeconds, int $cycleWindowSeconds, int $cycleThreshold, int $pauseSeconds, int $pauseHistoryRetentionSeconds): PunishmentLifecycleTransitionDTO
     {

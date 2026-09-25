@@ -34,4 +34,34 @@ final class InMemoryPunishmentLifecycleContractTest extends TestCase
             }
         }
     }
+
+    public function testPublicationRejectsEveryInvalidParameterInTheFullMatrix(): void
+    {
+        $store = new InMemoryRateLimitStore(new FixedClock());
+        $store->mutateGenerationBoundScore('current', null, null, 600, 8);
+
+        $baseline = [1, 2, 60, 600, 2, 600, 86400];
+        $invalidValues = [0, 1, 0, 0, 0, 0, 0];
+        foreach (array_keys($baseline) as $index) {
+            $params = $baseline;
+            $params[$index] = $invalidValues[$index];
+            [$generation, $level, $duration, $window, $threshold, $pause, $retention] = $params;
+            try {
+                $store->blockWithPunishmentLifecycleTracking('current', null, $generation, str_repeat('c', 32), $level, $duration, $window, $threshold, $pause, $retention);
+                self::fail('Invalid lifecycle publication parameters were accepted.');
+            } catch (\InvalidArgumentException) {
+                self::addToAssertionCount(1);
+            }
+        }
+    }
+
+    public function testGeneratedPreviousStateIsNotDirectlyPublishable(): void
+    {
+        $store = new InMemoryRateLimitStore(new FixedClock());
+        $previous = $store->mutateGenerationBoundScore('previous', null, null, 600, 8)->state;
+        self::assertNotNull($previous);
+
+        $this->expectException(\InvalidArgumentException::class);
+        $store->blockWithPunishmentLifecycleTracking('missing-current', 'previous', $previous->generation ?? 1, str_repeat('d', 32), 2, 60, 600, 2, 600, 86400);
+    }
 }
