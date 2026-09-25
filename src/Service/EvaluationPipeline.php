@@ -483,7 +483,9 @@ class EvaluationPipeline
                     : RateLimitResultDTO::DECISION_SOFT_BLOCK;
                 $source = $this->isTrustedAuthenticationPolicy($policy->getName(), $device) && $this->isK1Key($keyType)
                     ? 'trusted_advisory:score'
-                    : 'score';
+                    : ($keyType === 'k4' && $policy instanceof PostPunishmentReentryPolicyInterface
+                        ? 'score:k4'
+                        : 'score');
                 $thresholds = $this->getScopedThresholds($keyType, $policy);
                 $scoreState = $rawScores[$keyType] ?? null;
                 $key = $keys[$keyType] ?? null;
@@ -1986,6 +1988,18 @@ class EvaluationPipeline
             $candidates,
             fn(array $candidate): bool => ! str_starts_with($candidate['source'], 'trusted_advisory:'),
         ));
+
+        // A post-punishment K4 mutation is the authoritative candidate for
+        // that same logical K4 request. The pre-mutation score candidate can
+        // still carry a longer decay horizon, so remove only that marked K4
+        // residual. Correlation, budget, flood, and other independent gates
+        // remain eligible to contribute their own retry-after values.
+        if ($this->lifecycleEligibleKeys !== []) {
+            $candidates = array_values(array_filter(
+                $candidates,
+                static fn(array $candidate): bool => $candidate['source'] !== 'score:k4',
+            ));
+        }
 
         $normalCandidate = $this->aggregateCandidates($candidates);
         $config = $policy->getBudgetConfig();

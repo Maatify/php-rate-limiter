@@ -190,6 +190,20 @@ class RateLimiterEngine implements RateLimiterRuntimeInterface
         }
     }
 
+    /**
+     * Atomically consume the one-shot application handoff marker for a valid
+     * post-punishment re-entry claim.
+     *
+     * An account-less context returns false. An ineligible policy, active
+     * re-entry guard, or non-closed circuit is rejected. Valid evidence returns
+     * true only once; stale, expired, generation-mismatched, absent, or replayed
+     * evidence returns false. Backend failure or corruption is reported to the
+     * circuit breaker and propagated. The claim does not mutate punishment
+     * satisfaction, evidence, or score lifecycle state.
+     *
+     * @throws RateLimiterException when the policy or circuit state disallows
+     *     the claim.
+     */
     public function claimPostPunishmentReentry(
         RateLimitContextDTO $context,
         string $policyName,

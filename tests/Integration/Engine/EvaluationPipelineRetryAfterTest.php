@@ -221,8 +221,57 @@ class EvaluationPipelineRetryAfterTest extends TestCase
 
         self::assertSame(RateLimitResultDTO::DECISION_HARD_BLOCK, $result->decision);
         self::assertSame(3, $result->blockLevel);
-        self::assertSame(1800, $result->retryAfter);
+        self::assertSame(300, $result->retryAfter);
         self::assertSame(300, $this->store->checkBlock($k4Key)?->expiresAt - $this->clock->now()->getTimestamp());
+    }
+
+    public function testFreshK4RetryAfterDoesNotSuppressIndependentLongerGate(): void
+    {
+        $policy = new class implements \Maatify\RateLimiter\Config\PostPunishmentReentryPolicyInterface {
+            public function getName(): string
+            {
+                return 'independent_gate_fixture';
+            }
+
+            public function getScoreThresholds(): PolicyThresholdsDTO
+            {
+                return new PolicyThresholdsDTO(
+                    k1: new ScoreThresholdsDTO(1, 2, 3),
+                    k4: new ScoreThresholdsDTO(4, 7, 10),
+                );
+            }
+
+            public function getScoreDeltas(): \Maatify\RateLimiter\DTO\ScoreDeltasDTO
+            {
+                return new \Maatify\RateLimiter\DTO\ScoreDeltasDTO(access: 1, k4_failure: 5);
+            }
+
+            public function getFailureMode(): string
+            {
+                return 'FAIL_CLOSED';
+            }
+
+            public function getBudgetConfig(): ?\Maatify\RateLimiter\DTO\BudgetConfigDTO
+            {
+                return null;
+            }
+        };
+        $context = new RateLimitContextDTO('127.0.0.1', 'Mozilla', 'acct_123');
+        $device = new DeviceIdentityDTO('hash_123', 'HIGH', false, false, 'Mozilla');
+        $k1Key = hash_hmac('sha256', 'independent_gate_fixture:rate_limiter:k1:v2:prod:127.0.0.1', 'test_secret');
+        $k4Key = hash_hmac('sha256', 'independent_gate_fixture:rate_limiter:k4:v2:prod:acct_123', 'test_secret');
+        $this->store->set($k1Key, 3, 3600);
+        $this->store->set($k4Key, 9, 3600);
+
+        $result = $this->pipeline->process(
+            $policy,
+            $context,
+            RateLimitCommand::recordFailure('independent_gate_fixture'),
+            $device,
+        );
+
+        self::assertSame(RateLimitResultDTO::DECISION_HARD_BLOCK, $result->decision);
+        self::assertSame(540, $result->retryAfter);
     }
 
     public function testDeviceScoreUsesDeviceDecayInterval(): void

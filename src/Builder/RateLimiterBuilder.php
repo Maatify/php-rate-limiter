@@ -121,7 +121,14 @@ final class RateLimiterBuilder
     }
 
     /**
-     * Build one coherent RateLimiterEngine graph and return its public API.
+     * Build one coherent runtime graph and return its composite public API.
+     *
+     * Policies implementing PostPunishmentReentryPolicyInterface require the
+     * PunishmentLifecycleStoreInterface capability; the builder rejects that
+     * unsupported configuration before constructing the runtime graph.
+     *
+     * @throws RateLimiterException when an opted-in policy lacks lifecycle
+     *     storage capability.
      */
     public function build(): RateLimiterRuntimeInterface
     {

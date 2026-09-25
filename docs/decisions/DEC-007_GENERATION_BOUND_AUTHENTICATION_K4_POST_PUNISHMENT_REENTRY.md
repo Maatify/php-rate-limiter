@@ -14,7 +14,8 @@
 
 ## Decision Authority / Deciders
 
-Lead-approved WU-S4-03B-01 contract under PR #58.
+Material decisions: Owner-approved under PR #57 / WU-S4-03B. Technical
+implementation details within the approved material boundary are Lead-locked.
 
 ## Scope / Concern
 

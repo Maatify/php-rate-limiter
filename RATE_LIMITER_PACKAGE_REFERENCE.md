@@ -199,10 +199,12 @@ $limiter = RateLimiterBuilder::fromFullCapabilityStore(
 )->build();
 ```
 
-`FullCapabilityStoreInterface` extends exactly `BudgetSeedStoreInterface`,
-`BoundedCorrelationSnapshotRotationStoreInterface`,
-`CircuitBreakerProbeStoreInterface`, and `HardBlockCycleStoreInterface`; it
-declares no methods of its own. The package also ships the optional official
+`FullCapabilityStoreInterface` directly extends exactly
+`BudgetSeedStoreInterface`, `BoundedCorrelationSnapshotRotationStoreInterface`,
+`CircuitBreakerProbeStoreInterface`, and
+`PunishmentLifecycleStoreInterface`; `HardBlockCycleStoreInterface` is inherited
+transitively through `PunishmentLifecycleStoreInterface`. It declares no
+methods of its own. The package also ships the optional official
 `Repository\\Redis\\RedisFullCapabilityStore` for one logical non-clustered Redis
 server. It has no runtime Redis-client or `ext-redis` dependency: the Host owns
 the client and supplies `RedisCommandExecutorInterface` or
