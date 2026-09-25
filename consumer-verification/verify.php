@@ -318,12 +318,8 @@ $context = static function (string $subject, string $ip = '203.0.113.10', bool $
     $account = str_starts_with($subject, 'spray-') ? 'consumer-spray-account' : 'consumer-account-' . $subject;
     return new RateLimitContextDTO($ip, 'Mozilla/5.0 consumer-verification-' . $subject, $account, ['device' => $subject], $trusted ? 'trusted-device' : null, $trusted, [], $trusted, $correlation);
 };
-$awaitPublicReentry = static function (RateLimiterRuntimeInterface $runtime, RateLimitContextDTO $context, string $policy, RateLimitResultDTO $hard): array {
-    // Wait using only the public result's bounded retry hint. Repeated
-    // checkOnly calls are themselves observable authentication checks and can
-    // activate credential-spray correlation state, so keep the recheck count
-    // deliberately small and never rotate the identity.
-    $publicBlockDuration = match (min(6, max(1, $hard->blockLevel ?? 1))) {
+$publicPunishmentDuration = static function (RateLimitResultDTO $hard): int {
+    return match (min(6, max(1, $hard->blockLevel ?? 1))) {
         1 => 15,
         2 => 60,
         3 => 300,
@@ -331,8 +327,10 @@ $awaitPublicReentry = static function (RateLimiterRuntimeInterface $runtime, Rat
         5 => 21600,
         default => 86400,
     };
-    $waitSeconds = $publicBlockDuration + 1;
-    sleep($waitSeconds);
+};
+$checkPublicReentry = static function (RateLimiterRuntimeInterface $runtime, RateLimitContextDTO $context, string $policy): array {
+    // Repeated checkOnly calls are observable public requests. Keep the
+    // bounded post-wait verification deliberately small and identity-stable.
     for ($attempt = 0; $attempt < 2; $attempt++) {
         $check = $runtime->limit($context, RateLimitCommand::checkOnly($policy));
         $metadata = $check->metadata?->postPunishmentReentry;
@@ -343,7 +341,7 @@ $awaitPublicReentry = static function (RateLimiterRuntimeInterface $runtime, Rat
             sleep(2);
         }
     }
-    throw new RuntimeException('Public re-entry did not become available before the bounded expiry wait: ' . json_encode(['hard' => resultShape($hard), 'lastCheck' => isset($check) ? resultShape($check) : null], JSON_THROW_ON_ERROR));
+    throw new RuntimeException('Public re-entry did not become available after the shared bounded expiry wait: ' . json_encode(['lastCheck' => isset($check) ? resultShape($check) : null], JSON_THROW_ON_ERROR));
 };
 $sprayContext = static fn(string $correlation, bool $trusted = false): RateLimitContextDTO => new RateLimitContextDTO(
     '198.51.100.50',
@@ -394,12 +392,7 @@ for ($attempt = 1; $attempt <= 6; $attempt++) {
         break;
     }
 }
-requireCondition($reentryLoginHard instanceof RateLimitResultDTO, 'Public Login re-entry fixture did not issue L2.');
-$reentryLoginPair = $awaitPublicReentry($limiter, $reentryLoginContext, 'login_protection', $reentryLoginHard);
-[$reentryLoginCheck, $reentryLoginMetadata] = $reentryLoginPair;
-$reentryLoginClaim = $limiter->claimPostPunishmentReentry($reentryLoginContext, 'login_protection', $reentryLoginMetadata->id);
-$reentryLoginSecondClaim = $limiter->claimPostPunishmentReentry($reentryLoginContext, 'login_protection', $reentryLoginMetadata->id);
-requireCondition($reentryLoginClaim && ! $reentryLoginSecondClaim, 'Public Login claim was not one-shot.');
+requireCondition($reentryLoginHard instanceof RateLimitResultDTO, 'Public Login re-entry fixture did not issue a hard block.');
 
 $reentryOtpAccount = 'consumer-account-public-reentry-otp';
 $reentryOtpContext = new RateLimitContextDTO('203.0.113.16', 'Mozilla/5.0 consumer-verification-public-reentry-otp', $reentryOtpAccount, ['device' => 'public-reentry-otp']);
@@ -413,11 +406,7 @@ for ($attempt = 1; $attempt <= 3; $attempt++) {
     }
 }
 requireCondition(isset($reentryOtpHard) && $reentryOtpHard->decision === RateLimitResultDTO::DECISION_HARD_BLOCK, 'Public OTP re-entry fixture did not issue a hard block.');
-$reentryOtpPair = $awaitPublicReentry($limiter, $reentryOtpContext, 'otp_protection', $reentryOtpHard);
-[$reentryOtpCheck, $reentryOtpMetadata] = $reentryOtpPair;
-$reentryOtpClaim = $limiter->claimPostPunishmentReentry($reentryOtpContext, 'otp_protection', $reentryOtpMetadata->id);
-$reentryOtpSecondClaim = $limiter->claimPostPunishmentReentry($reentryOtpContext, 'otp_protection', $reentryOtpMetadata->id);
-requireCondition($reentryOtpClaim && ! $reentryOtpSecondClaim, 'Public OTP claim was not one-shot.');
+requireCondition($reentryOtpHard->blockLevel === 3, 'Default OTP re-entry fixture did not reach the expected L3 punishment.');
 
 $customPolicy = new class extends \Maatify\RateLimiter\Config\LoginProtectionPolicy implements PostPunishmentReentryPolicyInterface {
     public function getName(): string
@@ -437,7 +426,26 @@ for ($attempt = 1; $attempt <= 6; $attempt++) {
     }
 }
 requireCondition($customHard instanceof RateLimitResultDTO, 'Custom opt-in policy did not issue a hard block.');
-[$customCheck, $customMetadata] = $awaitPublicReentry($customLimiter, $customContext, 'consumer_custom_auth_k4', $customHard);
+// All three public punishments are issued before one shared wait. This keeps
+// the default OTP L3 proof intact while avoiding serial 60s + 300s + 60s waits.
+$sharedWaitSeconds = max(
+    $publicPunishmentDuration($reentryLoginHard),
+    $publicPunishmentDuration($reentryOtpHard),
+    $publicPunishmentDuration($customHard),
+) + 1;
+sleep($sharedWaitSeconds);
+
+[$reentryLoginCheck, $reentryLoginMetadata] = $checkPublicReentry($limiter, $reentryLoginContext, 'login_protection');
+$reentryLoginClaim = $limiter->claimPostPunishmentReentry($reentryLoginContext, 'login_protection', $reentryLoginMetadata->id);
+$reentryLoginSecondClaim = $limiter->claimPostPunishmentReentry($reentryLoginContext, 'login_protection', $reentryLoginMetadata->id);
+requireCondition($reentryLoginClaim && ! $reentryLoginSecondClaim, 'Public Login claim was not one-shot.');
+
+[$reentryOtpCheck, $reentryOtpMetadata] = $checkPublicReentry($limiter, $reentryOtpContext, 'otp_protection');
+$reentryOtpClaim = $limiter->claimPostPunishmentReentry($reentryOtpContext, 'otp_protection', $reentryOtpMetadata->id);
+$reentryOtpSecondClaim = $limiter->claimPostPunishmentReentry($reentryOtpContext, 'otp_protection', $reentryOtpMetadata->id);
+requireCondition($reentryOtpClaim && ! $reentryOtpSecondClaim, 'Public OTP claim was not one-shot.');
+
+[$customCheck, $customMetadata] = $checkPublicReentry($customLimiter, $customContext, 'consumer_custom_auth_k4');
 $customClaim = $customLimiter->claimPostPunishmentReentry($customContext, 'consumer_custom_auth_k4', $customMetadata->id);
 $customSecondClaim = $customLimiter->claimPostPunishmentReentry($customContext, 'consumer_custom_auth_k4', $customMetadata->id);
 requireCondition($customClaim && ! $customSecondClaim, 'Custom opt-in claim was not one-shot.');
@@ -611,4 +619,4 @@ requireCondition(count($circuitSignalTypes) === 2 && $circuitSignalTypes === ['C
 
 $keys = redisKeys($raw);
 requireCondition(count($keys) > 0, 'No Redis persistence was observable.');
-echo json_encode(['status' => 'PASS', 'packageInstallPath' => $installPath, 'productionAutoload' => true, 'packageTestNamespaceAvailable' => false, 'login' => ['checkOnly' => resultShape($loginCheck), 'recordFailure' => resultShape($loginFailure), 'recordSuccess' => resultShape($loginSuccess), 'progression' => array_map('resultShape', $loginProgression), 'persistenceProof' => true, 'postPunishmentReentry' => ['checkOnly' => resultShape($reentryLoginCheck), 'claim' => $reentryLoginClaim, 'secondClaim' => $reentryLoginSecondClaim]], 'otp' => resultShape($otp), 'otpPostPunishmentReentry' => ['checkOnly' => resultShape($reentryOtpCheck), 'claim' => $reentryOtpClaim, 'secondClaim' => $reentryOtpSecondClaim], 'customOptIn' => ['checkOnly' => resultShape($customCheck), 'claim' => $customClaim, 'secondClaim' => $customSecondClaim], 'apiHeavy' => resultShape($api), 'credentialSpray' => array_map('resultShape', $spray), 'sprayLifecycle' => ['recordSuccess' => resultShape($spraySuccess), 'subjectFourCheckOnly' => resultShape($spraySubjectFour)], 'trustedSession' => resultShape($trusted), 'untrustedFollowUp' => resultShape($untrustedFollowUp), 'trustedNonK1' => resultShape($trustedNonK1), 'rotations' => $rotationCases, 'budgetMigration' => ['previousCount' => (int) $previousBudgetMap['count'], 'currentCount' => (int) $currentBudgetMap['count'], 'epochStartPreserved' => true, 'previousReadOnly' => true], 'failureSemantics' => ['login' => resultShape($loginFailureMode), 'otp' => resultShape($otpFailureMode), 'apiHeavy' => resultShape($apiFailureMode)], 'circuit' => ['openGuard' => resultShape($openGuardResult), 'halfOpenProbe' => resultShape($halfOpenResult), 'closedRecovery' => resultShape($closedResult), 'normalWorkloadSuppressedWhileOpen' => true, 'signalCount' => count($circuitSignals->signals()), 'signalTypes' => array_values(array_unique(array_map(static fn($signal): string => $signal->type, $circuitSignals->signals())))], 'redisPersistence' => ['keyCount' => count($keys)], 'failureSignals' => count($signals->signals())], JSON_THROW_ON_ERROR) . PHP_EOL;
+echo json_encode(['status' => 'PASS', 'packageInstallPath' => $installPath, 'productionAutoload' => true, 'packageTestNamespaceAvailable' => false, 'reentryTiming' => ['loginLevel' => $reentryLoginHard->blockLevel, 'otpLevel' => $reentryOtpHard->blockLevel, 'customLevel' => $customHard->blockLevel, 'sharedWaitSeconds' => $sharedWaitSeconds], 'login' => ['checkOnly' => resultShape($loginCheck), 'recordFailure' => resultShape($loginFailure), 'recordSuccess' => resultShape($loginSuccess), 'progression' => array_map('resultShape', $loginProgression), 'persistenceProof' => true, 'postPunishmentReentry' => ['checkOnly' => resultShape($reentryLoginCheck), 'claim' => $reentryLoginClaim, 'secondClaim' => $reentryLoginSecondClaim]], 'otp' => resultShape($otp), 'otpPostPunishmentReentry' => ['checkOnly' => resultShape($reentryOtpCheck), 'claim' => $reentryOtpClaim, 'secondClaim' => $reentryOtpSecondClaim], 'customOptIn' => ['checkOnly' => resultShape($customCheck), 'claim' => $customClaim, 'secondClaim' => $customSecondClaim], 'apiHeavy' => resultShape($api), 'credentialSpray' => array_map('resultShape', $spray), 'sprayLifecycle' => ['recordSuccess' => resultShape($spraySuccess), 'subjectFourCheckOnly' => resultShape($spraySubjectFour)], 'trustedSession' => resultShape($trusted), 'untrustedFollowUp' => resultShape($untrustedFollowUp), 'trustedNonK1' => resultShape($trustedNonK1), 'rotations' => $rotationCases, 'budgetMigration' => ['previousCount' => (int) $previousBudgetMap['count'], 'currentCount' => (int) $currentBudgetMap['count'], 'epochStartPreserved' => true, 'previousReadOnly' => true], 'failureSemantics' => ['login' => resultShape($loginFailureMode), 'otp' => resultShape($otpFailureMode), 'apiHeavy' => resultShape($apiFailureMode)], 'circuit' => ['openGuard' => resultShape($openGuardResult), 'halfOpenProbe' => resultShape($halfOpenResult), 'closedRecovery' => resultShape($closedResult), 'normalWorkloadSuppressedWhileOpen' => true, 'signalCount' => count($circuitSignals->signals()), 'signalTypes' => array_values(array_unique(array_map(static fn($signal): string => $signal->type, $circuitSignals->signals())))], 'redisPersistence' => ['keyCount' => count($keys)], 'failureSignals' => count($signals->signals())], JSON_THROW_ON_ERROR) . PHP_EOL;

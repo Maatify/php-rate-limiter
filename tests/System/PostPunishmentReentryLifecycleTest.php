@@ -43,6 +43,7 @@ final class PostPunishmentReentryLifecycleTest extends TestCase
         $hard = $engine->limit($context, RateLimitCommand::recordFailure('login_protection'));
         self::assertSame(RateLimitResultDTO::DECISION_HARD_BLOCK, $hard->decision);
         self::assertSame(2, $hard->blockLevel);
+        self::assertNull($hard->metadata?->postPunishmentReentry);
 
         $clock->setNow($clock->now()->modify('+601 seconds'));
         $served = $engine->limit($context, RateLimitCommand::checkOnly('login_protection'));
@@ -50,13 +51,33 @@ final class PostPunishmentReentryLifecycleTest extends TestCase
         self::assertNotNull($served->metadata?->postPunishmentReentry);
 
         $id = $served->metadata->postPunishmentReentry->id;
+        $beforeSuccess = $this->lifecycleState($engine, 'login_protection', 'login-account');
+        self::assertSame($id, $beforeSuccess?->postPunishmentReentry?->id);
         self::assertTrue($engine->claimPostPunishmentReentry($context, 'login_protection', $id));
         self::assertFalse($engine->claimPostPunishmentReentry($context, 'login_protection', $id));
-        self::assertNull($engine->limit($context, RateLimitCommand::recordSuccess('login_protection'))->metadata?->postPunishmentReentry);
-        self::assertSame(RateLimitResultDTO::DECISION_ALLOW, $engine->limit($context, RateLimitCommand::checkOnly('login_protection'))->decision);
+        $success = $engine->limit($context, RateLimitCommand::recordSuccess('login_protection'));
+        self::assertSame(RateLimitResultDTO::DECISION_ALLOW, $success->decision);
+        self::assertNull($success->metadata?->postPunishmentReentry);
+        $afterSuccess = $this->lifecycleState($engine, 'login_protection', 'login-account');
+        self::assertNotNull($afterSuccess);
+        self::assertNotNull($beforeSuccess->postPunishmentReentry);
+        self::assertNotNull($afterSuccess->postPunishmentReentry);
+        self::assertSame($beforeSuccess->generation, $afterSuccess->generation);
+        self::assertSame($beforeSuccess->postPunishmentReentry->id, $afterSuccess->postPunishmentReentry->id);
+        $servedAgain = $engine->limit($context, RateLimitCommand::checkOnly('login_protection'));
+        self::assertSame(RateLimitResultDTO::DECISION_ALLOW, $servedAgain->decision);
+        $servedAgainMetadata = $servedAgain->metadata?->postPunishmentReentry;
+        self::assertNotNull($servedAgainMetadata);
+
+        $soft = $engine->limit(
+            new RateLimitContextDTO('203.0.113.99', 'Mozilla/5.0 metadata-soft', 'metadata-soft', ['device' => 'metadata-soft-device']),
+            RateLimitCommand::recordFailure('otp_protection'),
+        );
+        self::assertSame(RateLimitResultDTO::DECISION_SOFT_BLOCK, $soft->decision);
+        self::assertNull($soft->metadata?->postPunishmentReentry);
     }
 
-    public function testOtpUsesSameUnverifiedDeviceForK4LifecycleAndPreservesRecoveryGuard(): void
+    public function testOtpUsesSameUnverifiedDeviceForK4Lifecycle(): void
     {
         $clock = new FixedClock();
         $engine = $this->engine($clock);
@@ -72,6 +93,77 @@ final class PostPunishmentReentryLifecycleTest extends TestCase
         self::assertSame(RateLimitResultDTO::DECISION_ALLOW, $served->decision);
         self::assertNotNull($served->metadata?->postPunishmentReentry);
         self::assertTrue($engine->claimPostPunishmentReentry($context, 'otp_protection', $served->metadata->postPunishmentReentry->id));
+    }
+
+    public function testKnownDeviceK5OnlyFailureDoesNotAdvanceServedK4Generation(): void
+    {
+        $clock = new FixedClock();
+        $engine = $this->engine($clock);
+        $unverified = $this->context('k5-only-account', 'unverified-device');
+
+        $engine->limit($unverified, RateLimitCommand::recordFailure('login_protection'));
+        $engine->limit($unverified, RateLimitCommand::recordFailure('login_protection'));
+        $engine->limit($unverified, RateLimitCommand::recordFailure('login_protection'));
+        $clock->setNow($clock->now()->modify('+601 seconds'));
+        $served = $engine->limit($unverified, RateLimitCommand::checkOnly('login_protection'));
+        self::assertNotNull($served->metadata?->postPunishmentReentry);
+        $before = $this->lifecycleState($engine, 'login_protection', 'k5-only-account');
+
+        $known = new RateLimitContextDTO(
+            '198.51.100.10',
+            'Mozilla/5.0 lifecycle',
+            'k5-only-account',
+            ['device' => 'known-device'],
+            null,
+            false,
+            [],
+            true,
+        );
+        $k5Failure = $engine->limit($known, RateLimitCommand::recordFailure('login_protection'));
+        self::assertSame(RateLimitResultDTO::DECISION_ALLOW, $k5Failure->decision);
+        self::assertNull($k5Failure->metadata?->postPunishmentReentry);
+        $after = $this->lifecycleState($engine, 'login_protection', 'k5-only-account');
+        self::assertNotNull($before);
+        self::assertNotNull($after);
+        self::assertNotNull($before->postPunishmentReentry);
+        self::assertNotNull($after->postPunishmentReentry);
+        self::assertSame($before->generation, $after->generation);
+        self::assertSame($before->postPunishmentReentry->id, $after->postPunishmentReentry->id);
+
+        $next = $engine->limit($unverified, RateLimitCommand::recordFailure('login_protection'));
+        $nextState = $this->lifecycleState($engine, 'login_protection', 'k5-only-account');
+        self::assertNotNull($nextState);
+        self::assertSame($before->generation + 1, $nextState->generation);
+        self::assertNull($next->metadata?->postPunishmentReentry);
+    }
+
+    public function testNewK4GenerationInvalidatesOldLifecycleAndPublishesFreshIdentity(): void
+    {
+        $clock = new FixedClock();
+        $engine = $this->engine($clock);
+        $context = $this->context('generation-account', 'generation-device');
+        $engine->limit($context, RateLimitCommand::recordFailure('login_protection'));
+        $engine->limit($context, RateLimitCommand::recordFailure('login_protection'));
+        $engine->limit($context, RateLimitCommand::recordFailure('login_protection'));
+        $clock->setNow($clock->now()->modify('+601 seconds'));
+        $served = $engine->limit($context, RateLimitCommand::checkOnly('login_protection'));
+        $oldId = $served->metadata?->postPunishmentReentry?->id;
+        self::assertNotNull($oldId);
+        $oldState = $this->lifecycleState($engine, 'login_protection', 'generation-account');
+
+        $freshFailure = $engine->limit($context, RateLimitCommand::recordFailure('login_protection'));
+        self::assertNull($freshFailure->metadata?->postPunishmentReentry);
+        for ($attempt = 0; $attempt < 3 && $freshFailure->decision !== RateLimitResultDTO::DECISION_HARD_BLOCK; $attempt++) {
+            $freshFailure = $engine->limit($context, RateLimitCommand::recordFailure('login_protection'));
+        }
+        $newState = $this->lifecycleState($engine, 'login_protection', 'generation-account');
+        self::assertNotNull($oldState);
+        self::assertNotNull($newState);
+        self::assertSame($oldState->generation + 1, $newState->generation);
+        if ($newState->postPunishmentReentry !== null) {
+            self::assertNotSame($oldId, $newState->postPunishmentReentry->id);
+        }
+        self::assertFalse($engine->claimPostPunishmentReentry($context, 'login_protection', $oldId));
     }
 
     public function testCustomOptInHasFullLifecycleAndNonOptInDoesNotNeedLifecycle(): void
@@ -102,21 +194,34 @@ final class PostPunishmentReentryLifecycleTest extends TestCase
         $store = new class ($clock) extends InMemoryRateLimitStore {
             public int $mutationCalls = 0;
             public int $publicationCalls = 0;
+            public bool $injectConflict = false;
+            /** @var list<int|null> */
+            public array $expectedValues = [];
+            /** @var list<int> */
+            public array $newValues = [];
+            /** @var list<int> */
+            public array $publicationGenerations = [];
 
             public function mutateGenerationBoundScore(string $currentKey, ?string $previousKey, ?GenerationBoundScoreStateDTO $expectedState, int $ttlSeconds, int $newValue): GenerationBoundScoreMutationDTO
             {
-                if ($this->mutationCalls++ === 0) {
+                if ($this->injectConflict && $this->mutationCalls++ === 0) {
+                    parent::mutateGenerationBoundScore($currentKey, $previousKey, null, $ttlSeconds, 8);
                     return new GenerationBoundScoreMutationDTO(false, null);
                 }
+                $this->expectedValues[] = $expectedState?->value;
+                $this->newValues[] = $newValue;
 
                 return parent::mutateGenerationBoundScore($currentKey, $previousKey, $expectedState, $ttlSeconds, $newValue);
             }
 
             public function blockWithPunishmentLifecycleTracking(string $currentKey, ?string $previousKey, int $expectedGeneration, string $proposedLifecycleId, int $level, int $durationSeconds, int $cycleWindowSeconds, int $cycleThreshold, int $pauseSeconds, int $pauseHistoryRetentionSeconds): PunishmentLifecycleTransitionDTO
             {
-                if ($this->publicationCalls++ === 0) {
+                if ($this->injectConflict && $this->publicationCalls++ === 0) {
+                    $latest = $this->readGenerationBoundScoreState($currentKey, $previousKey);
+                    parent::mutateGenerationBoundScore($currentKey, $previousKey, $latest, 86400, 10);
                     return new PunishmentLifecycleTransitionDTO(false, null, null, null);
                 }
+                $this->publicationGenerations[] = $expectedGeneration;
 
                 return parent::blockWithPunishmentLifecycleTracking($currentKey, $previousKey, $expectedGeneration, $proposedLifecycleId, $level, $durationSeconds, $cycleWindowSeconds, $cycleThreshold, $pauseSeconds, $pauseHistoryRetentionSeconds);
             }
@@ -126,13 +231,20 @@ final class PostPunishmentReentryLifecycleTest extends TestCase
 
         $engine->limit($context, RateLimitCommand::recordFailure('login_protection'));
         $engine->limit($context, RateLimitCommand::recordFailure('login_protection'));
+        $store->injectConflict = true;
         $store->mutationCalls = 0;
         $store->publicationCalls = 0;
+        $store->expectedValues = [];
+        $store->newValues = [];
+        $store->publicationGenerations = [];
         $result = $engine->limit($context, RateLimitCommand::recordFailure('login_protection'));
 
         self::assertSame(RateLimitResultDTO::DECISION_HARD_BLOCK, $result->decision);
         self::assertSame(2, $store->mutationCalls);
         self::assertSame(2, $store->publicationCalls);
+        self::assertSame([8], $store->expectedValues, json_encode(['expected' => $store->expectedValues, 'new' => $store->newValues], JSON_THROW_ON_ERROR));
+        self::assertSame([11], $store->newValues);
+        self::assertSame([$this->lifecycleState($engine, 'login_protection', 'conflict-account')?->generation], $store->publicationGenerations);
     }
 
     public function testThreeMutationConflictsReturnTransientHardWithoutCircuitFailure(): void
@@ -162,6 +274,37 @@ final class PostPunishmentReentryLifecycleTest extends TestCase
         self::assertSame('NORMAL', $result->failureMode);
         self::assertSame('k4_concurrency_conflict', $result->metadata?->cause);
         self::assertSame(3, $store->mutationCalls);
+        self::assertSame(0, $circuitStore->saveCount());
+    }
+
+    public function testThreePublicationConflictsReturnTransientHardWithoutCircuitFailure(): void
+    {
+        $clock = new FixedClock();
+        $store = new class ($clock) extends InMemoryRateLimitStore {
+            public int $publicationCalls = 0;
+
+            public function blockWithPunishmentLifecycleTracking(string $currentKey, ?string $previousKey, int $expectedGeneration, string $proposedLifecycleId, int $level, int $durationSeconds, int $cycleWindowSeconds, int $cycleThreshold, int $pauseSeconds, int $pauseHistoryRetentionSeconds): PunishmentLifecycleTransitionDTO
+            {
+                $this->publicationCalls++;
+
+                return new PunishmentLifecycleTransitionDTO(false, null, null, null);
+            }
+        };
+        $circuitStore = new InMemoryCircuitBreakerStore();
+        $engine = $this->engine($clock, [], $store, $circuitStore);
+        $context = $this->context('publication-exhaustion-account', 'publication-exhaustion-device');
+
+        $engine->limit($context, RateLimitCommand::recordFailure('login_protection'));
+        $engine->limit($context, RateLimitCommand::recordFailure('login_protection'));
+        $store->publicationCalls = 0;
+        $result = $engine->limit($context, RateLimitCommand::recordFailure('login_protection'));
+
+        self::assertSame(RateLimitResultDTO::DECISION_HARD_BLOCK, $result->decision);
+        self::assertSame(2, $result->blockLevel);
+        self::assertSame(1, $result->retryAfter);
+        self::assertSame('NORMAL', $result->failureMode);
+        self::assertSame('k4_concurrency_conflict', $result->metadata?->cause);
+        self::assertSame(3, $store->publicationCalls);
         self::assertSame(0, $circuitStore->saveCount());
     }
 
@@ -197,5 +340,20 @@ final class PostPunishmentReentryLifecycleTest extends TestCase
     private function context(string $account, string $device): RateLimitContextDTO
     {
         return new RateLimitContextDTO('198.51.100.10', 'Mozilla/5.0 lifecycle', $account, ['device' => $device]);
+    }
+
+    private function lifecycleState(RateLimiterEngine $engine, string $policy, string $account): ?GenerationBoundScoreStateDTO
+    {
+        $pipelineReflection = new \ReflectionProperty($engine, 'pipeline');
+        $pipelineReflection->setAccessible(true);
+        /** @var EvaluationPipeline $pipeline */
+        $pipeline = $pipelineReflection->getValue($engine);
+        $storeReflection = new \ReflectionProperty($pipeline, 'store');
+        $storeReflection->setAccessible(true);
+        /** @var InMemoryRateLimitStore $store */
+        $store = $storeReflection->getValue($pipeline);
+        $key = hash_hmac('sha256', $policy . ':rate_limiter:k4:v2:prod:' . $account, 'test_secret');
+
+        return $store->readGenerationBoundScoreState($key, null);
     }
 }
