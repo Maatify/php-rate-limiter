@@ -14,4 +14,4 @@ interface FullCapabilityStoreInterface extends
     BudgetSeedStoreInterface,
     BoundedCorrelationSnapshotRotationStoreInterface,
     CircuitBreakerProbeStoreInterface,
-    HardBlockCycleStoreInterface {}
+    PunishmentLifecycleStoreInterface {}

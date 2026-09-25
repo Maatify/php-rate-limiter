@@ -8,6 +8,9 @@ use Maatify\RateLimiter\Config\BlockPolicyInterface;
 use Maatify\RateLimiter\Service\DeviceIdentityResolverInterface;
 use Maatify\RateLimiter\Contract\FailureSignalEmitterInterface;
 use Maatify\RateLimiter\Service\RateLimiterInterface;
+use Maatify\RateLimiter\Service\RateLimiterRuntimeInterface;
+use Maatify\RateLimiter\Config\PostPunishmentReentryPolicyInterface;
+use Maatify\RateLimiter\Exception\RateLimitConcurrencyException;
 use Maatify\RateLimiter\DTO\RateLimitContextDTO;
 use Maatify\RateLimiter\Command\RateLimitCommand;
 use Maatify\RateLimiter\DTO\RateLimitContextMetadataDTO;
@@ -17,9 +20,13 @@ use Maatify\RateLimiter\Exception\RateLimiterException;
 use Maatify\SharedCommon\Contracts\ClockInterface;
 
 /**
- * Coordinates policy registration, evaluation, circuit breaking, and fallback.
+ * Implements the composite RateLimiterRuntimeInterface.
+ *
+ * Coordinates policy registration, public evaluation, circuit breaking,
+ * failure-mode fallback, and the circuit-boundary orchestration of the public
+ * one-shot post-punishment lifecycle claim.
  */
-class RateLimiterEngine implements RateLimiterInterface
+class RateLimiterEngine implements RateLimiterRuntimeInterface
 {
     /** @var array<string, BlockPolicyInterface> */
     private array $policies = [];
@@ -53,12 +60,16 @@ class RateLimiterEngine implements RateLimiterInterface
 
     private function registerPolicy(BlockPolicyInterface $policy): void
     {
-        if (in_array($policy->getName(), ['login_protection', 'otp_protection'])) {
+        if ($policy instanceof PostPunishmentReentryPolicyInterface) {
             $thresholds = $policy->getScoreThresholds();
             if ($thresholds->k4 === null) {
                 throw new RateLimiterException("Policy {$policy->getName()} invalid: Must enforce Account (K4) thresholds.");
             }
-            if ($policy->getBudgetConfig() === null) {
+            if ($thresholds->k4->l1 <= 0 || $thresholds->k4->l1 > $thresholds->k4->l2 || $thresholds->k4->l2 > $thresholds->k4->l3) {
+                throw new RateLimiterException("Policy {$policy->getName()} invalid: K4 thresholds must be positive and monotonic.");
+            }
+            if (in_array($policy->getName(), ['login_protection', 'otp_protection'], true)
+                && $policy->getBudgetConfig() === null) {
                 throw new RateLimiterException("Policy {$policy->getName()} invalid: Missing required BudgetConfig.");
             }
         }
@@ -66,6 +77,9 @@ class RateLimiterEngine implements RateLimiterInterface
         $mode = $policy->getFailureMode();
         if (!in_array($mode, ['FAIL_CLOSED', 'FAIL_OPEN'])) {
             throw new RateLimiterException("Policy {$policy->getName()} invalid: Unknown failure mode '$mode'.");
+        }
+        if ($policy instanceof PostPunishmentReentryPolicyInterface && $mode === 'FAIL_OPEN') {
+            throw new RateLimiterException("Policy {$policy->getName()} invalid: post-punishment re-entry cannot use FAIL_OPEN.");
         }
 
         if ($policy->getName() === 'api_heavy_protection') {
@@ -125,6 +139,18 @@ class RateLimiterEngine implements RateLimiterInterface
             $this->circuitBreaker->reportSuccess($policyName);
 
             return $result;
+        } catch (RateLimitConcurrencyException) {
+            return new RateLimitResultDTO(
+                RateLimitResultDTO::DECISION_HARD_BLOCK,
+                2,
+                1,
+                'NORMAL',
+                new RateLimitMetadataDTO(
+                    null,
+                    'k4_concurrency_conflict',
+                    new RateLimitContextMetadataDTO('k4_concurrency_conflict', 'k4'),
+                ),
+            );
         } catch (\Throwable $e) {
             $this->circuitBreaker->reportFailure($policyName);
 
@@ -165,6 +191,50 @@ class RateLimiterEngine implements RateLimiterInterface
             }
 
             return new RateLimitResultDTO(RateLimitResultDTO::DECISION_HARD_BLOCK, 2, $retryAfter, $mode, $meta);
+        }
+    }
+
+    /**
+     * Atomically consume the one-shot application handoff marker for a valid
+     * post-punishment re-entry claim.
+     *
+     * An account-less context returns false. An ineligible policy, active
+     * re-entry guard, or non-closed circuit is rejected. Valid evidence returns
+     * true only once; stale, expired, generation-mismatched, absent, or replayed
+     * evidence returns false. Backend failure or corruption is reported to the
+     * circuit breaker and propagated. The claim does not mutate punishment
+     * satisfaction, evidence, or score lifecycle state.
+     *
+     * @throws RateLimiterException when the policy or circuit state disallows
+     *     the claim.
+     */
+    public function claimPostPunishmentReentry(
+        RateLimitContextDTO $context,
+        string $policyName,
+        string $reentryId,
+    ): bool {
+        $policy = $this->policies[$policyName] ?? null;
+        if (! $policy || ! $policy instanceof PostPunishmentReentryPolicyInterface) {
+            throw new RateLimiterException("Policy is not eligible for post-punishment re-entry: {$policyName}");
+        }
+        if ($context->accountId === null) {
+            return false;
+        }
+        if ($this->circuitBreaker->isReEntryGuardViolated($policyName)) {
+            throw new RateLimiterException('Post-punishment re-entry claim is unavailable while the circuit guard is active.');
+        }
+        $state = $this->circuitBreaker->getState($policyName);
+        if ($state->state !== \Maatify\RateLimiter\DTO\FailureStateDTO::STATE_CLOSED) {
+            throw new RateLimiterException('Post-punishment re-entry claim is unavailable while the circuit is not closed.');
+        }
+        $device = $this->deviceResolver->resolve($context);
+        try {
+            $claimed = $this->pipeline->claimPostPunishmentReentry($context, $device, $policyName, $reentryId);
+            $this->circuitBreaker->reportSuccess($policyName);
+            return $claimed;
+        } catch (\Throwable $exception) {
+            $this->circuitBreaker->reportFailure($policyName);
+            throw $exception;
         }
     }
 

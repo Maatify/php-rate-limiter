@@ -3,7 +3,7 @@
 **Module:** RateLimiter
 **Namespace:** `Maatify\RateLimiter`
 **Status:** LOCKED — Security Contract
-**Spec Version:** `1.1.0`
+**Spec Version:** `1.2.0`
 
 This document defines how the RateLimiter behaves when **internal failures occur**.
 It specifies when the system must fail closed, fail open, or enter a strictly bounded degraded mode.
@@ -55,6 +55,21 @@ Goals:
 * Corrupted stored state
 * Algorithm or version mismatch
 * Contract violations by host application
+
+### 2.4 Generation-bound lifecycle state integrity
+
+Lifecycle operations distinguish an ordinary stale or expired lifecycle from
+backend corruption. A stale, expired, mismatched, already-claimed, or absent
+lifecycle does not satisfy a claim and returns the operation's normal negative
+result (`false` for the public claim operation). It must not be treated as
+evidence.
+
+Malformed generated score or lifecycle state, including an invalid generation,
+missing authoritative `expiresAt`, malformed expiry, partial evidence, or
+structural corruption, is an explicit storage/contract failure. The operation
+raises the package exception path instead of silently treating corruption as
+missing evidence. Legacy generation-less state may use its backend TTL during
+compatibility reads and is upgraded on a real mutation.
 
 ---
 
@@ -376,3 +391,14 @@ The RateLimiter does NOT guarantee:
 
 **This document is authoritative.
 Failure semantics MUST NOT be altered without explicit versioning and security approval.**
+
+## 10.1 Generation-Bound Lifecycle Failures
+
+Generation conflicts during L2+ publication retry at most three times; exhaustion
+returns the Login/OTP transient HARD failure with
+`RateLimitConcurrencyException` provenance. A false one-shot claim is an
+expected non-error result: it does not consume evidence, create a backend
+failure, or trip the circuit. Missing lifecycle capability, malformed state,
+and atomic Redis failures are explicit integration failures and must not fall
+back to non-atomic publication. Stale, mismatched, expired, or block-suppressed
+evidence is treated as absent.

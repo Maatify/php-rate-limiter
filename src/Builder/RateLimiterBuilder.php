@@ -9,6 +9,7 @@ use Maatify\RateLimiter\Config\ApiHeavyProtectionPolicy;
 use Maatify\RateLimiter\Config\BlockPolicyInterface;
 use Maatify\RateLimiter\Config\LoginProtectionPolicy;
 use Maatify\RateLimiter\Config\OtpProtectionPolicy;
+use Maatify\RateLimiter\Config\PostPunishmentReentryPolicyInterface;
 use Maatify\RateLimiter\Config\RateLimiterConfig;
 use Maatify\RateLimiter\Contract\FailureSignalEmitterInterface;
 use Maatify\RateLimiter\Repository\CircuitBreakerStoreInterface;
@@ -27,6 +28,8 @@ use Maatify\RateLimiter\Service\FailureModeResolver;
 use Maatify\RateLimiter\Service\FingerprintHasher;
 use Maatify\RateLimiter\Service\RateLimiterEngine;
 use Maatify\RateLimiter\Service\RateLimiterInterface;
+use Maatify\RateLimiter\Service\RateLimiterRuntimeInterface;
+use Maatify\RateLimiter\Exception\RateLimiterException;
 use Maatify\SharedCommon\Contracts\ClockInterface;
 use Maatify\SharedCommon\Infrastructure\SystemClock;
 
@@ -118,10 +121,25 @@ final class RateLimiterBuilder
     }
 
     /**
-     * Build one coherent RateLimiterEngine graph and return its public API.
+     * Build one coherent runtime graph and return its composite public API.
+     *
+     * Policies implementing PostPunishmentReentryPolicyInterface require the
+     * PunishmentLifecycleStoreInterface capability; the builder rejects that
+     * unsupported configuration before constructing the runtime graph.
+     *
+     * @throws RateLimiterException when an opted-in policy lacks lifecycle
+     *     storage capability.
      */
-    public function build(): RateLimiterInterface
+    public function build(): RateLimiterRuntimeInterface
     {
+        foreach ($this->policies as $policy) {
+            if ($policy instanceof PostPunishmentReentryPolicyInterface
+                && ! $this->rateLimitStore instanceof \Maatify\RateLimiter\Repository\PunishmentLifecycleStoreInterface) {
+                throw new RateLimiterException(
+                    'Policy ' . $policy->getName() . ' requires PunishmentLifecycleStoreInterface.',
+                );
+            }
+        }
         $clock = $this->clock ?? new SystemClock(new DateTimeZone('UTC'));
         $deviceIdentityResolver = $this->deviceIdentityResolver ?? $this->defaultDeviceIdentityResolver();
 

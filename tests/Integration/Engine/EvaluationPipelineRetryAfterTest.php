@@ -140,7 +140,7 @@ class EvaluationPipelineRetryAfterTest extends TestCase
 
         $this->assertEquals(RateLimitResultDTO::DECISION_HARD_BLOCK, $result->decision);
         $this->assertEquals(2, $result->blockLevel);
-        $this->assertEquals(600, $result->retryAfter); // Account score decay to below L2.
+        $this->assertEquals(60, $result->retryAfter); // Fresh lifecycle publication uses the L2 penalty duration.
         $this->assertEquals(60, $this->store->checkBlock($k4Key)?->expiresAt - $this->clock->now()->getTimestamp());
     }
 
@@ -181,8 +181,9 @@ class EvaluationPipelineRetryAfterTest extends TestCase
 
         self::assertSame(RateLimitResultDTO::DECISION_HARD_BLOCK, $result->decision);
         self::assertSame(2, $result->blockLevel);
-        // Score wait is 600 seconds plus the 599 seconds remaining in the active pause.
-        self::assertSame(1199, $result->retryAfter);
+        // Fresh lifecycle publication uses the L2 penalty duration and does not
+        // extend the response with the legacy score-decay pause calculation.
+        self::assertSame(60, $result->retryAfter);
     }
 
     public function testAccountL1ScoreUsesAccountDecayInterval(): void
@@ -220,8 +221,119 @@ class EvaluationPipelineRetryAfterTest extends TestCase
 
         self::assertSame(RateLimitResultDTO::DECISION_HARD_BLOCK, $result->decision);
         self::assertSame(3, $result->blockLevel);
-        self::assertSame(4800, $result->retryAfter);
+        self::assertSame(300, $result->retryAfter);
         self::assertSame(300, $this->store->checkBlock($k4Key)?->expiresAt - $this->clock->now()->getTimestamp());
+        self::assertSame(3, $this->store->checkBlock($k4Key)?->level);
+        $this->clock->setNow(new \DateTimeImmutable('@' . ($this->clock->now()->getTimestamp() + 301)));
+        self::assertNotNull($this->store->readGenerationBoundScoreState($k4Key, null)?->postPunishmentReentry);
+    }
+
+    public function testFreshK4RetryAfterDoesNotSuppressIndependentLongerGate(): void
+    {
+        $policy = new class implements \Maatify\RateLimiter\Config\PostPunishmentReentryPolicyInterface {
+            public function getName(): string
+            {
+                return 'independent_gate_fixture';
+            }
+
+            public function getScoreThresholds(): PolicyThresholdsDTO
+            {
+                return new PolicyThresholdsDTO(
+                    k1: new ScoreThresholdsDTO(1, 2, 3),
+                    k4: new ScoreThresholdsDTO(4, 7, 10),
+                );
+            }
+
+            public function getScoreDeltas(): \Maatify\RateLimiter\DTO\ScoreDeltasDTO
+            {
+                return new \Maatify\RateLimiter\DTO\ScoreDeltasDTO(access: 1, k4_failure: 1);
+            }
+
+            public function getFailureMode(): string
+            {
+                return 'FAIL_CLOSED';
+            }
+
+            public function getBudgetConfig(): ?\Maatify\RateLimiter\DTO\BudgetConfigDTO
+            {
+                return null;
+            }
+        };
+        $context = new RateLimitContextDTO('127.0.0.1', 'Mozilla', 'acct_123');
+        $device = new DeviceIdentityDTO('hash_123', 'HIGH', false, false, 'Mozilla');
+        $k1Key = hash_hmac('sha256', 'independent_gate_fixture:rate_limiter:k1:v2:prod:127.0.0.1', 'test_secret');
+        $k4Key = hash_hmac('sha256', 'independent_gate_fixture:rate_limiter:k4:v2:prod:acct_123', 'test_secret');
+        $this->store->set($k1Key, 3, 3600);
+        $this->store->set($k4Key, 6, 3600);
+
+        $result = $this->pipeline->process(
+            $policy,
+            $context,
+            RateLimitCommand::recordFailure('independent_gate_fixture'),
+            $device,
+        );
+
+        self::assertSame(RateLimitResultDTO::DECISION_HARD_BLOCK, $result->decision);
+        self::assertSame(3, $result->blockLevel);
+        self::assertSame(540, $result->retryAfter);
+        $k4Block = $this->store->checkBlock($k4Key);
+        self::assertNotNull($k4Block);
+        self::assertSame(2, $k4Block->level);
+        self::assertSame(60, $k4Block->expiresAt - $this->clock->now()->getTimestamp());
+        $this->clock->setNow(new \DateTimeImmutable('@' . ($this->clock->now()->getTimestamp() + 61)));
+        self::assertNotNull($this->store->readGenerationBoundScoreState($k4Key, null)?->postPunishmentReentry);
+    }
+
+    public function testIndependentHardGateDoesNotPublishK4LifecycleEvidenceBelowL2(): void
+    {
+        $policy = new class implements \Maatify\RateLimiter\Config\PostPunishmentReentryPolicyInterface {
+            public function getName(): string
+            {
+                return 'independent_hard_without_k4_fixture';
+            }
+
+            public function getScoreThresholds(): PolicyThresholdsDTO
+            {
+                return new PolicyThresholdsDTO(
+                    k1: new ScoreThresholdsDTO(1, 2, 3),
+                    k4: new ScoreThresholdsDTO(4, 7, 10),
+                );
+            }
+
+            public function getScoreDeltas(): \Maatify\RateLimiter\DTO\ScoreDeltasDTO
+            {
+                return new \Maatify\RateLimiter\DTO\ScoreDeltasDTO(access: 1);
+            }
+
+            public function getFailureMode(): string
+            {
+                return 'FAIL_CLOSED';
+            }
+
+            public function getBudgetConfig(): ?\Maatify\RateLimiter\DTO\BudgetConfigDTO
+            {
+                return null;
+            }
+        };
+        $context = new RateLimitContextDTO('127.0.0.1', 'Mozilla', 'acct_123');
+        $device = new DeviceIdentityDTO('hash_123', 'HIGH', false, false, 'Mozilla');
+        $k1Key = hash_hmac('sha256', 'independent_hard_without_k4_fixture:rate_limiter:k1:v2:prod:127.0.0.1', 'test_secret');
+        $k4Key = hash_hmac('sha256', 'independent_hard_without_k4_fixture:rate_limiter:k4:v2:prod:acct_123', 'test_secret');
+        $this->store->set($k1Key, 3, 3600);
+        $this->store->set($k4Key, 4, 3600);
+
+        $result = $this->pipeline->process(
+            $policy,
+            $context,
+            RateLimitCommand::recordFailure('independent_hard_without_k4_fixture'),
+            $device,
+        );
+
+        self::assertSame(RateLimitResultDTO::DECISION_HARD_BLOCK, $result->decision);
+        self::assertSame(3, $result->blockLevel);
+        $k4State = $this->store->readGenerationBoundScoreState($k4Key, null);
+        self::assertNotNull($k4State);
+        self::assertNull($k4State->postPunishmentReentry);
     }
 
     public function testDeviceScoreUsesDeviceDecayInterval(): void
@@ -461,7 +573,7 @@ class EvaluationPipelineRetryAfterTest extends TestCase
         $result = $this->pipeline->process($this->policy, $context, RateLimitCommand::recordFailure('otp_protection'), $device);
 
         self::assertSame(RateLimitResultDTO::DECISION_HARD_BLOCK, $result->decision);
-        self::assertSame(600, $result->retryAfter);
+        self::assertSame(60, $result->retryAfter);
 
         $this->clock->setNow(new \DateTimeImmutable('2025-01-01 12:00:10'));
         $next = $this->pipeline->process($this->policy, $context, RateLimitCommand::checkOnly('otp_protection'), $device);

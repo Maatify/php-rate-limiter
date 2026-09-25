@@ -9,11 +9,16 @@ use Maatify\RateLimiter\Repository\CircuitBreakerProbeStoreInterface;
 use Maatify\RateLimiter\DTO\BoundedDistinctResultDTO;
 use Maatify\RateLimiter\DTO\BoundedDistinctSnapshotDTO;
 use Maatify\RateLimiter\DTO\DecayPauseStateDTO;
+use Maatify\RateLimiter\DTO\GenerationBoundScoreMutationDTO;
+use Maatify\RateLimiter\DTO\GenerationBoundScoreStateDTO;
 use Maatify\RateLimiter\DTO\HardBlockCycleResultDTO;
+use Maatify\RateLimiter\DTO\PostPunishmentReentryStateDTO;
+use Maatify\RateLimiter\DTO\PunishmentLifecycleTransitionDTO;
 use Maatify\RateLimiter\Repository\BoundedCorrelationSnapshotStoreInterface;
 use Maatify\RateLimiter\Contract\FailureSignalEmitterInterface;
 use Maatify\RateLimiter\Repository\RateLimitStoreInterface;
 use Maatify\RateLimiter\Repository\HardBlockCycleStoreInterface;
+use Maatify\RateLimiter\Repository\PunishmentLifecycleStoreInterface;
 use Maatify\RateLimiter\DTO\FailureSignalDTO;
 use Maatify\RateLimiter\DTO\BlockStateDTO;
 use Maatify\RateLimiter\DTO\BudgetStateDTO;
@@ -30,7 +35,7 @@ require dirname(__DIR__) . '/vendor/autoload.php';
  * Replace these adapters with the host application's atomic storage and
  * observability integrations in production.
  */
-final class ExampleRateLimitStore implements HardBlockCycleStoreInterface
+final class ExampleRateLimitStore implements PunishmentLifecycleStoreInterface
 {
     private const PAUSE_HISTORY_RETENTION_SECONDS = 86400;
 
@@ -45,6 +50,12 @@ final class ExampleRateLimitStore implements HardBlockCycleStoreInterface
 
     /** @var array<string, array{count: int, epochStart: int, epochDuration: int}> */
     private array $budgets = [];
+
+    /** @var array<string, array{generation: int, lifecycle: ?PostPunishmentReentryStateDTO}> */
+    private array $generations = [];
+
+    /** @var array<string, string> */
+    private array $claimMarkers = [];
 
     public function __construct(private readonly ClockInterface $clock) {}
 
@@ -140,6 +151,144 @@ final class ExampleRateLimitStore implements HardBlockCycleStoreInterface
         $this->hardBlockCycles[$currentKey] = $state;
 
         return new HardBlockCycleResultDTO($newCycle, count($state['cycles']), $pauseActivated, $pauseUntil);
+    }
+
+    public function readGenerationBoundScoreState(string $currentKey, ?string $previousKey): ?GenerationBoundScoreStateDTO
+    {
+        $now = $this->clock->now()->getTimestamp();
+        $source = isset($this->counters[$currentKey]) && $this->counters[$currentKey]['expiresAt'] > $now
+            ? GenerationBoundScoreStateDTO::SOURCE_CURRENT : GenerationBoundScoreStateDTO::SOURCE_PREVIOUS;
+        $key = $source === GenerationBoundScoreStateDTO::SOURCE_CURRENT ? $currentKey : $previousKey;
+        if ($key === null || ! isset($this->counters[$key]) || $this->counters[$key]['expiresAt'] <= $now) {
+            return null;
+        }
+        $generation = $this->generations[$key]['generation'] ?? null;
+        $activeBlock = $this->checkBlock($currentKey);
+        if ($activeBlock === null && $previousKey !== null) {
+            $activeBlock = $this->checkBlock($previousKey);
+        }
+        $lifecycle = $activeBlock === null && $generation !== null ? $this->generations[$key]['lifecycle'] : null;
+
+        return new GenerationBoundScoreStateDTO(
+            $source,
+            $this->counters[$key]['value'],
+            $this->counters[$key]['updatedAt'],
+            $this->counters[$key]['expiresAt'],
+            $generation,
+            $lifecycle,
+        );
+    }
+
+    public function mutateGenerationBoundScore(
+        string $currentKey,
+        ?string $previousKey,
+        ?GenerationBoundScoreStateDTO $expectedState,
+        int $ttlSeconds,
+        int $newValue,
+    ): GenerationBoundScoreMutationDTO {
+        $observed = $this->readGenerationBoundScoreState($currentKey, $previousKey);
+        if (($expectedState === null && $observed !== null)
+            || ($expectedState !== null && ($observed === null
+                || $observed->source !== $expectedState->source
+                || $observed->generation !== $expectedState->generation
+                || $observed->value !== $expectedState->value
+                || $observed->updatedAt !== $expectedState->updatedAt
+                || $observed->expiresAt !== $expectedState->expiresAt))) {
+            return new GenerationBoundScoreMutationDTO(false, null);
+        }
+
+        $now = $this->clock->now()->getTimestamp();
+        $generation = $observed === null ? 1 : ($observed->generation ?? 0) + 1;
+        $expiresAt = $observed === null ? $now + $ttlSeconds : $observed->expiresAt;
+        $this->counters[$currentKey] = ['value' => $newValue, 'updatedAt' => $now, 'expiresAt' => $expiresAt];
+        $this->generations[$currentKey] = ['generation' => $generation, 'lifecycle' => null];
+        unset($this->claimMarkers[$currentKey]);
+
+        return new GenerationBoundScoreMutationDTO(
+            true,
+            new GenerationBoundScoreStateDTO(
+                GenerationBoundScoreStateDTO::SOURCE_CURRENT,
+                $newValue,
+                $now,
+                $expiresAt,
+                $generation,
+            ),
+        );
+    }
+
+    public function blockWithPunishmentLifecycleTracking(
+        string $currentKey,
+        ?string $previousKey,
+        int $expectedGeneration,
+        string $proposedLifecycleId,
+        int $level,
+        int $durationSeconds,
+        int $cycleWindowSeconds,
+        int $cycleThreshold,
+        int $pauseSeconds,
+        int $pauseHistoryRetentionSeconds,
+    ): PunishmentLifecycleTransitionDTO {
+        if ($expectedGeneration <= 0 || $level < 2 || $durationSeconds <= 0 || $cycleWindowSeconds <= 0 || $cycleThreshold <= 0 || $pauseSeconds <= 0 || $pauseHistoryRetentionSeconds <= 0) {
+            throw new InvalidArgumentException('Invalid lifecycle publication parameters.');
+        }
+        $state = $this->readGenerationBoundScoreState($currentKey, $previousKey);
+        if ($state === null || $state->source !== GenerationBoundScoreStateDTO::SOURCE_CURRENT || $state->generation !== $expectedGeneration) {
+            // No Current generated score is a publishable source: an absent
+            // source, a stale Current, or a structurally valid but merely
+            // historical Previous are all ordinary optimistic conflicts.
+            return new PunishmentLifecycleTransitionDTO(false, null, null, null);
+        }
+
+        $cycle = $this->blockWithCycleTracking(
+            $currentKey,
+            $previousKey,
+            $level,
+            $durationSeconds,
+            $this->clock->now()->getTimestamp(),
+            $cycleWindowSeconds,
+            $cycleThreshold,
+            $pauseSeconds,
+            $pauseHistoryRetentionSeconds,
+        );
+        $now = $this->clock->now()->getTimestamp();
+        $existingLifecycle = $this->generations[$currentKey]['lifecycle'] ?? null;
+        if ($existingLifecycle !== null && $existingLifecycle->validUntil === $state->expiresAt) {
+            // Same generation, same authoritative expiry: preserve the
+            // already-published identity instead of adopting a new one.
+            $lifecycleId = $existingLifecycle->id;
+        } else {
+            $lifecycleId = preg_match('/\A[a-f0-9]{32}\z/D', $proposedLifecycleId) === 1
+                ? $proposedLifecycleId : bin2hex(random_bytes(16));
+        }
+        $lifecycle = new PostPunishmentReentryStateDTO($lifecycleId, $state->expiresAt);
+        $this->generations[$currentKey]['lifecycle'] = $lifecycle;
+
+        return new PunishmentLifecycleTransitionDTO(
+            true,
+            $cycle,
+            new BlockStateDTO($level, $now + $durationSeconds),
+            $lifecycle,
+        );
+    }
+
+    public function claimPostPunishmentReentry(string $currentKey, ?string $previousKey, string $lifecycleId): bool
+    {
+        $now = $this->clock->now()->getTimestamp();
+        $currentBlock = $this->checkBlock($currentKey);
+        $previousBlock = $previousKey === null ? null : $this->checkBlock($previousKey);
+        if (($currentBlock === null ? 0 : $currentBlock->expiresAt) > $now
+            || ($previousBlock === null ? 0 : $previousBlock->expiresAt) > $now) {
+            return false;
+        }
+        $state = $this->readGenerationBoundScoreState($currentKey, $previousKey);
+        if ($state?->postPunishmentReentry?->id !== $lifecycleId
+            || $state->postPunishmentReentry->validUntil <= $now
+            || isset($this->claimMarkers[$currentKey])) {
+            return false;
+        }
+        $this->claimMarkers[$currentKey] = $lifecycleId;
+
+        return true;
     }
 
     public function readDecayPauseState(string $currentKey, ?string $previousKey, int $fromTimestamp, int $now): DecayPauseStateDTO

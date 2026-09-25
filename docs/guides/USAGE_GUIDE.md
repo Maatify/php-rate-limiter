@@ -134,12 +134,32 @@ implementations:
   recovery-probe lease; required only when a recovery probe becomes eligible.
 - <code>FailureSignalEmitterInterface</code>: delivery of circuit-breaker and failure signals.
 - <code>HardBlockCycleStoreInterface</code>: atomic Current-only persistence and transition tracking for every persisted L2+ block, plus read-only Current/Previous decay-pause state. It is mandatory before the first L2+ block write; a base-only store remains valid for normal reads and L1 writes but fails explicitly for L2+ persistence.
-- <code>FullCapabilityStoreInterface</code>: aggregate contract for the budget-seed, bounded snapshot-rotation, circuit-probe, and hard-block-cycle capabilities; it declares no additional methods.
+- <code>PunishmentLifecycleStoreInterface</code>: generation-bound authentication K4 score, punishment-evidence, and one-shot claim capability.
+- <code>FullCapabilityStoreInterface</code>: aggregate contract including the punishment lifecycle capability; custom implementers must add its methods.
 - <code>ClockInterface</code> from <code>maatify/shared-common</code>: current time and timezone.
 
 The host may also provide a custom <code>DeviceIdentityResolverInterface</code> or a custom <code>BlockPolicyInterface</code> through the builder's targeted overrides. A same-name policy replaces the matching default, while a new name is added. <code>BudgetSeedStoreInterface</code> is an additive storage capability used when a host store supports atomic budget-epoch seeding during key rotation.
 
 The package owns enforcement decisions, key construction, scoring, decay, bounded correlation logic, budget eligibility, circuit-breaker behavior, result semantics, and the official Redis persistence semantics. The Host owns the Redis client and connection lifecycle for that store, custom storage implementations when selecting another backend, account and session truth, transport response behavior, authorization, logging destinations, and cross-domain reporting.
+
+### Generation-bound authentication re-entry
+
+Login and OTP default policies use DEC-007. Build them with a store that
+implements `PunishmentLifecycleStoreInterface`; the Builder fails early when
+that capability is missing. A valid `checkOnly` ALLOW may contain public
+`postPunishmentReentry` metadata, and an application handoff is completed
+exactly once through `RateLimiterRuntimeInterface::claimPostPunishmentReentry()`.
+Hosts must not reconstruct package keys or generation state. API Heavy and
+custom non-opt-in policies are unaffected.
+
+This is a public workflow, not a storage recipe: `checkOnly()` may return
+`postPunishmentReentry` metadata only after a coherent unblocked generation
+check, and the host passes that metadata to
+`claimPostPunishmentReentry()`. The claim returns `true` once and `false` on
+replay while leaving evidence intact. A newer mutation, rotation mismatch, or
+active K4 block suppresses metadata. Redis uses server time and one atomic
+publication primitive, so hosts must not reproduce these checks with separate
+reads and writes.
 
 The base correlation contract keeps its existing signatures and remains sufficient
 without a previous key secret. Its concrete implementation must establish the first

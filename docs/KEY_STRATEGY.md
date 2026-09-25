@@ -3,7 +3,7 @@
 **Module:** RateLimiter
 **Namespace:** `Maatify\RateLimiter`
 **Status:** LOCKED — Design & Security Contract
-**Spec Version:** `1.9.0`
+**Spec Version:** `1.10.0`
 
 This document defines the **key construction strategy** used by the RateLimiter.
 Keys determine how limits, scores, correlation, and blocks are applied.
@@ -906,3 +906,13 @@ Rules:
 
 **This document is authoritative.
 Key strategy MUST NOT be altered without explicit versioning and security review.**
+
+## 10.1 Generation-Bound K4 Lifecycle Namespaces
+
+The lifecycle uses logical namespaces rather than host-visible physical key
+names: `K4 Current` is writable, `K4 Previous` is read-only during rotation,
+and the one-shot claim marker is Current-only and independent from evidence.
+Evidence is bound to the selected score generation and exact score expiry.
+Mutation, block publication, and evidence publication must remain atomic; raw
+account identifiers and physical backend key names are never part of this
+public contract.
