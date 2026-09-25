@@ -289,6 +289,66 @@ final class RedisFullCapabilityStoreIntegrationTest extends TestCase
         $this->assertOperationFails(fn(): mixed => $this->store->claimPostPunishmentReentry('claim-malformed-block', null, str_repeat('a', 32)));
     }
 
+    public function testPartialLifecycleEvidenceFailsReadExplicitly(): void
+    {
+        $now = $this->redisNow();
+        $key = $this->key('score', 'read-malformed-partial');
+        $this->raw(['HSET', $key, 'value', '8', 'updatedAt', (string) $now, 'generation', '1', 'expiresAt', (string) ($now + 600), 'reentryId', str_repeat('a', 32)]);
+        $this->raw(['EXPIRE', $key, '600']);
+
+        $this->assertOperationFails(fn(): mixed => $this->store->readGenerationBoundScoreState('read-malformed-partial', null));
+    }
+
+    public function testPartialLifecycleEvidenceFailsMutationWithoutChangingPhysicalState(): void
+    {
+        $now = $this->redisNow();
+        $key = $this->key('score', 'mutation-malformed-partial');
+        $this->raw(['HSET', $key, 'value', '8', 'updatedAt', (string) $now, 'generation', '1', 'expiresAt', (string) ($now + 600), 'reentryId', str_repeat('b', 32)]);
+        $this->raw(['EXPIRE', $key, '600']);
+        $before = $this->hashMap($key);
+        $expected = new GenerationBoundScoreStateDTO(
+            GenerationBoundScoreStateDTO::SOURCE_CURRENT,
+            8,
+            $now,
+            $now + 600,
+            1,
+        );
+
+        $this->assertOperationFails(fn(): mixed => $this->store->mutateGenerationBoundScore('mutation-malformed-partial', null, $expected, 600, 9));
+
+        self::assertSame($before, $this->hashMap($key));
+        self::assertGreaterThan(0, $this->integer($this->raw(['TTL', $key])));
+    }
+
+    public function testCompleteStaleLifecycleEvidenceIsNonSatisfyingButNotCorrupt(): void
+    {
+        $now = $this->redisNow();
+        $key = $this->key('score', 'complete-stale-evidence');
+        $id = str_repeat('c', 32);
+        $this->raw(['HSET', $key, 'value', '8', 'updatedAt', (string) $now, 'generation', '2', 'expiresAt', (string) ($now + 600), 'reentryId', $id, 'reentryValidUntil', (string) ($now + 600), 'reentryGeneration', '1']);
+        $this->raw(['EXPIRE', $key, '600']);
+
+        $state = $this->store->readGenerationBoundScoreState('complete-stale-evidence', null);
+        self::assertNotNull($state);
+        self::assertNull($state->postPunishmentReentry);
+        self::assertFalse($this->store->claimPostPunishmentReentry('complete-stale-evidence', null, $id));
+    }
+
+    public function testAbsentLifecycleEvidenceRemainsValidState(): void
+    {
+        $now = $this->redisNow();
+        $key = $this->key('score', 'absent-lifecycle-evidence');
+        $this->raw(['HSET', $key, 'value', '8', 'updatedAt', (string) $now, 'generation', '1', 'expiresAt', (string) ($now + 600)]);
+        $this->raw(['EXPIRE', $key, '600']);
+
+        $state = $this->store->readGenerationBoundScoreState('absent-lifecycle-evidence', null);
+        self::assertNotNull($state);
+        self::assertNull($state->postPunishmentReentry);
+        $mutation = $this->store->mutateGenerationBoundScore('absent-lifecycle-evidence', null, $state, 600, 9);
+        self::assertTrue($mutation->applied);
+        self::assertNull($mutation->state?->postPunishmentReentry);
+    }
+
     public function testGeneratedStateWithoutExpiresAtFailsReadClaimAndMutationWhileLegacyStateRemainsSupported(): void
     {
         $now = $this->redisNow();

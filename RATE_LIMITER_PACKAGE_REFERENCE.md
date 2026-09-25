@@ -46,6 +46,14 @@ All public runtime classes and interfaces use the `Maatify\RateLimiter` namespac
 under the responsibility that owns them. There are no `Domain`, capability-wrapper,
 `Engine`, `Device`, `Penalty`, `Policy`, `DTO/Internal`, or `DTO/Store` runtime roots.
 
+Current ownership within those roots is explicit: `Repository/` owns the base,
+rotation, hard-block cycle, punishment-lifecycle, full-capability, and official
+Redis storage boundaries; `Config/` owns the block-policy and explicit
+post-punishment opt-in markers; `Service/` owns the composite runtime,
+post-punishment claim, evaluation, circuit, fallback, identity, and operational
+boundaries; and `DTO/` owns the generation-bound score, punishment-lifecycle,
+runtime-result, and operational serialized data shapes listed below.
+
 ## Operational Read / Reporting Classification
 
 **Classification: In Scope.**

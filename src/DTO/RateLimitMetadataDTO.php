@@ -15,6 +15,9 @@ final readonly class RateLimitMetadataDTO implements \JsonSerializable
      * @param ?string $signal Emitted signal or diagnostic identifier.
      * @param ?string $cause Machine-readable cause of the outcome.
      * @param ?RateLimitContextMetadataDTO $context Optional reason and scope context.
+     * @param ?PostPunishmentReentryMetadataDTO $postPunishmentReentry Opaque,
+     * one-shot application handoff metadata; it is present only when a public
+     * post-punishment check exposes claimable evidence.
      */
     public function __construct(
         public ?string $signal = null,
@@ -24,7 +27,9 @@ final readonly class RateLimitMetadataDTO implements \JsonSerializable
     ) {}
 
     /**
-     * Return diagnostics in the public serialized shape.
+     * Return diagnostics in the public serialized shape. The
+     * `postPunishmentReentry` member is included only when metadata exists and
+     * is omitted entirely when the value is null.
      */
     public function jsonSerialize(): mixed
     {

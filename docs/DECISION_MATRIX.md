@@ -923,9 +923,10 @@ evidence in one backend atomic primitive. Evidence is valid only for the
 selected current/previous score generation and exact score expiry, and active
 K4 blocks suppress it for `checkOnly`, `recordFailure`, and `recordSuccess`.
 
-The public `checkOnly` ALLOW may expose metadata. Claiming is non-consuming for
-evidence and uses an independent current-generation marker, so replay returns
-false. Current is writable, previous is read-only, and a newer mutation
+The public `checkOnly` ALLOW may expose metadata. Claiming does not consume
+punishment satisfaction or evidence; it consumes only an independent
+current-generation application handoff marker, so replay returns false. Current
+is writable, previous is read-only, and a newer mutation
 invalidates older evidence. Generation conflicts retry at most three times;
 exhaustion is an explicit transient HARD failure with
 `RateLimitConcurrencyException` provenance.

@@ -25,6 +25,7 @@ final readonly class PostPunishmentReentryStateDTO implements \JsonSerializable
         }
     }
 
+    /** Return the package-owned lifecycle identity and validity boundary. */
     public function jsonSerialize(): mixed
     {
         return ['id' => $this->id, 'validUntil' => $this->validUntil];

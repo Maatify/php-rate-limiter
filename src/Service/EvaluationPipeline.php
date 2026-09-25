@@ -37,10 +37,13 @@ use Maatify\RateLimiter\Service\PenaltyLadder;
 use Maatify\SharedCommon\Contracts\ClockInterface;
 
 /**
- * Executes key derivation, score evaluation, budget handling, and aggregation.
+ * Executes key derivation, score evaluation, budget handling, aggregation, and
+ * the opt-in generation-bound authentication K4 lifecycle.
  *
  * The pipeline reads both the active and previous key generation when rotation
- * is configured, while writing only to the active generation.
+ * is configured, while writing only to the active generation. It also owns K4
+ * mutation orchestration, lifecycle-publication eligibility, and the served
+ * post-punishment re-entry metadata/suppression path.
  */
 class EvaluationPipeline
 {
@@ -103,6 +106,15 @@ class EvaluationPipeline
     /**
      * Claim one package-owned, one-shot lifecycle handoff without exposing
      * physical keys or generation state to the host.
+     *
+     * Resolves the current K4 namespace first and the previous K4 namespace
+     * only when the request carries a previous identity generation. Requires
+     * the lifecycle-store capability; missing account/K4 identity returns
+     * false. The backend owns stale, expired, generation-mismatched, absent,
+     * replayed, and malformed-evidence semantics: normal misses return false,
+     * while backend/contract corruption propagates. A successful claim consumes
+     * only the one-shot application handoff marker, never punishment evidence,
+     * score, generation, block, cycle, or pause state.
      */
     public function claimPostPunishmentReentry(
         RateLimitContextDTO $context,
@@ -1775,11 +1787,16 @@ class EvaluationPipeline
                 $persistence = [];
 
                 if ($context->accountId && ($keys['k4'] ?? null) !== null) {
+                    $k4LifecycleLevel = $levelsByKeyType['k4'] ?? 0;
+                    $k4IsLifecycleEligible = $policy instanceof PostPunishmentReentryPolicyInterface
+                        && $k4LifecycleLevel >= 2
+                        && isset($this->lifecycleEligibleKeys[$keys['k4']]);
+                    $persistenceLevel = $k4IsLifecycleEligible ? $k4LifecycleLevel : $newMaxLevel;
                     $persistence[] = [
                         'key' => $keys['k4'],
                         'previousKey' => $keysV1['k4'] ?? null,
-                        'level' => $newMaxLevel,
-                        'duration' => $duration,
+                        'level' => $persistenceLevel,
+                        'duration' => PenaltyLadder::getDuration($persistenceLevel),
                     ];
                 }
 

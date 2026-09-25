@@ -18,6 +18,7 @@ final readonly class PostPunishmentReentryMetadataDTO implements \JsonSerializab
      */
     public function __construct(public string $id, public int $validUntil) {}
 
+    /** Return the public opaque claim identity and its validity timestamp. */
     public function jsonSerialize(): mixed
     {
         return ['id' => $this->id, 'validUntil' => $this->validUntil];

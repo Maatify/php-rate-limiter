@@ -40,6 +40,10 @@ final readonly class GenerationBoundScoreStateDTO implements \JsonSerializable
         }
     }
 
+    /**
+     * Return the stable score snapshot shape, including nullable legacy
+     * generation and optional lifecycle evidence fields.
+     */
     public function jsonSerialize(): mixed
     {
         return ['source' => $this->source, 'value' => $this->value, 'updatedAt' => $this->updatedAt,

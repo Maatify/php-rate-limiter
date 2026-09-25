@@ -24,7 +24,9 @@ use Maatify\RateLimiter\Repository\FullCapabilityStoreInterface;
  *
  * The Host supplies the raw-command executor. This adapter supports one
  * logical non-clustered Redis server and deliberately has no Redis-client
- * dependency.
+ * dependency. Its lifecycle operations use Redis server time, preserve
+ * current-first/previous-read-only rotation semantics, and fail explicitly on
+ * structurally malformed generated lifecycle state.
  */
 final class RedisFullCapabilityStore implements FullCapabilityStoreInterface
 {
@@ -100,6 +102,17 @@ if observedExpiry then
   local numericExpiry = tonumber(observedExpiry)
   if not numericExpiry or numericExpiry ~= math.floor(numericExpiry) then return redis.error_reply('malformed score expiry') end
 end
+local evidenceCount = redis.call('HEXISTS', source, 'reentryId') + redis.call('HEXISTS', source, 'reentryValidUntil') + redis.call('HEXISTS', source, 'reentryGeneration')
+if evidenceCount ~= 0 and evidenceCount ~= 3 then return redis.error_reply('malformed lifecycle evidence') end
+if evidenceCount == 3 then
+  local evidenceId = redis.call('HGET', source, 'reentryId')
+  local evidenceUntil = redis.call('HGET', source, 'reentryValidUntil')
+  local evidenceGeneration = redis.call('HGET', source, 'reentryGeneration')
+  if not observedGeneration then return redis.error_reply('malformed lifecycle evidence generation') end
+  if not evidenceId or string.len(evidenceId) ~= 32 or string.match(evidenceId, '^[a-f0-9]+$') == nil then return redis.error_reply('malformed lifecycle id') end
+  local numericUntil = tonumber(evidenceUntil); local numericEvidenceGeneration = tonumber(evidenceGeneration)
+  if not numericUntil or numericUntil ~= math.floor(numericUntil) or numericUntil <= 0 or not numericEvidenceGeneration or numericEvidenceGeneration ~= math.floor(numericEvidenceGeneration) or numericEvidenceGeneration <= 0 then return redis.error_reply('malformed lifecycle evidence') end
+end
 if expectedSource == '' and (redis.call('EXISTS', current) == 1 or (previous ~= '' and redis.call('EXISTS', previous) == 1)) then return {0} end
 if expectedSource ~= '' then
   if not observedValue or observedValue ~= ARGV[2] or not observedUpdated or observedUpdated ~= ARGV[3] then return {0} end
@@ -142,10 +155,20 @@ for _, blockKey in ipairs({KEYS[3], KEYS[4]}) do
     if tonumber(blockExpiry) > now and tonumber(level) >= 2 then active = true end
   end
 end
-local evidenceGeneration = redis.call('HGET', source, 'reentryGeneration') or ''
-local evidenceId = redis.call('HGET', source, 'reentryId') or ''
-local evidenceUntil = redis.call('HGET', source, 'reentryValidUntil') or ''
-if active or generation == '' or evidenceGeneration ~= generation or evidenceId == '' or evidenceUntil == '' or not tonumber(evidenceUntil) or tonumber(evidenceUntil) ~= tonumber(expiry) or tonumber(evidenceUntil) <= now then evidenceId = ''; evidenceUntil = '' end
+local evidenceCount = redis.call('HEXISTS', source, 'reentryId') + redis.call('HEXISTS', source, 'reentryValidUntil') + redis.call('HEXISTS', source, 'reentryGeneration')
+if evidenceCount ~= 0 and evidenceCount ~= 3 then return redis.error_reply('malformed lifecycle evidence') end
+local evidenceGeneration = ''
+local evidenceId = ''
+local evidenceUntil = ''
+if evidenceCount == 3 then
+  evidenceGeneration = redis.call('HGET', source, 'reentryGeneration')
+  evidenceId = redis.call('HGET', source, 'reentryId')
+  evidenceUntil = redis.call('HGET', source, 'reentryValidUntil')
+  if not evidenceId or string.len(evidenceId) ~= 32 or string.match(evidenceId, '^[a-f0-9]+$') == nil then return redis.error_reply('malformed lifecycle id') end
+  local numericUntil = tonumber(evidenceUntil); local numericEvidenceGeneration = tonumber(evidenceGeneration)
+  if not numericUntil or numericUntil ~= math.floor(numericUntil) or numericUntil <= 0 or not numericEvidenceGeneration or numericEvidenceGeneration ~= math.floor(numericEvidenceGeneration) or numericEvidenceGeneration <= 0 then return redis.error_reply('malformed lifecycle evidence') end
+  if active or generation == '' or numericEvidenceGeneration ~= tonumber(generation) or numericUntil ~= tonumber(expiry) or numericUntil <= now then evidenceId = ''; evidenceUntil = '' end
+end
 return {source == KEYS[1] and 1 or 2, tonumber(value), tonumber(updated), tonumber(expiry), generation, evidenceId, evidenceUntil}
 LUA;
 
@@ -181,15 +204,15 @@ if source ~= '' and redis.call('EXISTS', source) == 1 then
     local numericGeneration = tonumber(generation)
     if not numericGeneration or numericGeneration ~= math.floor(numericGeneration) or numericGeneration <= 0 then return redis.error_reply('malformed generation') end
   end
-  local id = redis.call('HGET', source, 'reentryId') or ''; local validUntil = redis.call('HGET', source, 'reentryValidUntil') or ''; local evidenceGeneration = redis.call('HGET', source, 'reentryGeneration') or ''
-  local evidenceCount = (id ~= '' and 1 or 0) + (validUntil ~= '' and 1 or 0) + (evidenceGeneration ~= '' and 1 or 0)
+  local evidenceCount = redis.call('HEXISTS', source, 'reentryId') + redis.call('HEXISTS', source, 'reentryValidUntil') + redis.call('HEXISTS', source, 'reentryGeneration')
   if evidenceCount ~= 0 and evidenceCount ~= 3 then return redis.error_reply('malformed lifecycle evidence') end
   if evidenceCount == 3 then
-    if #id ~= 32 or string.match(id, '^[a-f0-9]+$') == nil then return redis.error_reply('malformed lifecycle id') end
+    local id = redis.call('HGET', source, 'reentryId'); local validUntil = redis.call('HGET', source, 'reentryValidUntil'); local evidenceGeneration = redis.call('HGET', source, 'reentryGeneration')
+    if not id or #id ~= 32 or string.match(id, '^[a-f0-9]+$') == nil then return redis.error_reply('malformed lifecycle id') end
     local numericUntil = tonumber(validUntil); local numericEvidenceGeneration = tonumber(evidenceGeneration)
-    if not numericUntil or numericUntil ~= math.floor(numericUntil) or not numericEvidenceGeneration or numericEvidenceGeneration ~= math.floor(numericEvidenceGeneration) or numericEvidenceGeneration <= 0 then return redis.error_reply('malformed lifecycle evidence') end
+    if not numericUntil or numericUntil ~= math.floor(numericUntil) or numericUntil <= 0 or not numericEvidenceGeneration or numericEvidenceGeneration ~= math.floor(numericEvidenceGeneration) or numericEvidenceGeneration <= 0 then return redis.error_reply('malformed lifecycle evidence') end
     if not generation or numericEvidenceGeneration ~= tonumber(generation) then return 0 end
-    if expiry ~= nil and numericUntil ~= expiry then return redis.error_reply('malformed lifecycle evidence expiry') end
+    if expiry ~= nil and numericUntil ~= expiry then return 0 end
     if numericUntil <= now or id ~= ARGV[1] then return 0 end
     local markerTtl = math.max(1, numericUntil - now)
     if redis.call('SET', KEYS[5], id, 'NX', 'EX', markerTtl) then return 1 end
@@ -486,6 +509,14 @@ if lifecycleGeneration ~= '' then
   if not tonumber(generation) or tonumber(generation) ~= math.floor(tonumber(generation)) or generation ~= lifecycleGeneration then return {0} end
   if not tonumber(value) or tonumber(value) ~= math.floor(tonumber(value)) or not tonumber(updated) or tonumber(updated) ~= math.floor(tonumber(updated)) or not tonumber(scoreExpiry) or tonumber(scoreExpiry) ~= math.floor(tonumber(scoreExpiry)) or tonumber(scoreExpiry) <= now then return redis.error_reply('malformed lifecycle score state') end
   if lifecycleId == '' or string.len(lifecycleId) ~= 32 then return redis.error_reply('malformed lifecycle id') end
+  local evidenceCount = redis.call('HEXISTS', scoreKey, 'reentryId') + redis.call('HEXISTS', scoreKey, 'reentryValidUntil') + redis.call('HEXISTS', scoreKey, 'reentryGeneration')
+  if evidenceCount ~= 0 and evidenceCount ~= 3 then return redis.error_reply('malformed lifecycle evidence') end
+  if evidenceCount == 3 then
+    local evidenceId = redis.call('HGET', scoreKey, 'reentryId'); local evidenceUntil = redis.call('HGET', scoreKey, 'reentryValidUntil'); local evidenceGeneration = redis.call('HGET', scoreKey, 'reentryGeneration')
+    if not evidenceId or string.len(evidenceId) ~= 32 or string.match(evidenceId, '^[a-f0-9]+$') == nil then return redis.error_reply('malformed lifecycle id') end
+    local numericUntil = tonumber(evidenceUntil); local numericEvidenceGeneration = tonumber(evidenceGeneration)
+    if not numericUntil or numericUntil ~= math.floor(numericUntil) or numericUntil <= 0 or not numericEvidenceGeneration or numericEvidenceGeneration ~= math.floor(numericEvidenceGeneration) or numericEvidenceGeneration <= 0 then return redis.error_reply('malformed lifecycle evidence') end
+  end
 end
 local function validateCycles(key)
   if key == '' or redis.call('EXISTS', key) == 0 then return end
@@ -882,6 +913,17 @@ LUA;
         );
     }
 
+    /**
+     * Read one coherent current-first K4 lifecycle snapshot.
+     *
+     * The previous key is a read-only fallback. Generation-less state remains
+     * legacy-compatible by deriving expiry from its Redis TTL, while generated
+     * state requires an integer authoritative expiry. Lifecycle evidence is
+     * valid only as a complete structurally valid tuple; absent evidence is
+     * normal, partial or malformed evidence raises an explicit backend error,
+     * and stale, expired, active-block, or generation-mismatched evidence is
+     * returned as non-satisfying state without mutation.
+     */
     public function readGenerationBoundScoreState(string $currentKey, ?string $previousKey): ?GenerationBoundScoreStateDTO
     {
         $keys = [
@@ -914,6 +956,16 @@ LUA;
         );
     }
 
+    /**
+     * Apply one Redis-atomic, optimistic generation-bound K4 score mutation.
+     *
+     * The supplied snapshot fences the current/previous namespace and stale
+     * snapshots return an unapplied DTO. Legacy state keeps its remaining TTL;
+     * applied mutations write only current state, advance generation, and
+     * invalidate lifecycle evidence. Structural partial or malformed lifecycle
+     * evidence fails before any mutation or clearing, while absent or complete
+     * structurally valid evidence follows the normal mutation path.
+     */
     public function mutateGenerationBoundScore(string $currentKey, ?string $previousKey, ?GenerationBoundScoreStateDTO $expectedState, int $ttlSeconds, int $newValue): GenerationBoundScoreMutationDTO
     {
         $this->positive($ttlSeconds, 'Generation-bound score TTL');
@@ -930,6 +982,16 @@ LUA;
         return new GenerationBoundScoreMutationDTO(true, new GenerationBoundScoreStateDTO(GenerationBoundScoreStateDTO::SOURCE_CURRENT, $this->integerValue($tuple[1], 'score value'), $this->integerValue($tuple[2], 'updatedAt'), $this->integerValue($tuple[3], 'expiresAt'), $this->integerValue($tuple[4], 'generation')));
     }
 
+    /**
+     * Atomically publish DEC-003 cycle/pause state, an L2+ hard block, and K4
+     * lifecycle evidence for the expected generation.
+     *
+     * Redis server time owns the publication timestamps. A generation conflict
+     * returns an unapplied transition with no partial result; an applied
+     * transition couples the block, cycle/pause accounting, score expiry, and
+     * one-shot marker. Malformed score, block, cycle, pause, or generated
+     * lifecycle state raises an explicit backend failure instead of repairing it.
+     */
     public function blockWithPunishmentLifecycleTracking(string $currentKey, ?string $previousKey, int $expectedGeneration, string $proposedLifecycleId, int $level, int $durationSeconds, int $cycleWindowSeconds, int $cycleThreshold, int $pauseSeconds, int $pauseHistoryRetentionSeconds): PunishmentLifecycleTransitionDTO
     {
         $id = preg_match('/\A[a-f0-9]{32}\z/D', $proposedLifecycleId) === 1 ? $proposedLifecycleId : bin2hex(random_bytes(16));
@@ -957,6 +1019,18 @@ LUA;
         return new PunishmentLifecycleTransitionDTO(true, $cycle, new BlockStateDTO($level, $blockExpiry), new PostPunishmentReentryStateDTO($actualId, $scoreExpiry));
     }
 
+    /**
+     * Atomically consume the one-shot claim marker for complete lifecycle
+     * evidence after all active hard blocks have ended.
+     *
+     * Current state is authoritative and previous state is read-only fallback.
+     * Absent, stale, expired, generation-mismatched, or replayed evidence
+     * returns false without consuming punishment evidence or changing score,
+     * generation, block, or cycle state. Partial or structurally malformed
+     * evidence, malformed blocks, and generated state without authoritative
+     * expiry raise an explicit backend error; only the separate claim marker is
+     * consumed when the claim succeeds.
+     */
     public function claimPostPunishmentReentry(string $currentKey, ?string $previousKey, string $lifecycleId): bool
     {
         $keys = [$this->key('score', $currentKey), $previousKey === null ? '' : $this->key('score', $previousKey), $this->key('block', $currentKey), $previousKey === null ? '' : $this->key('block', $previousKey), $this->key('reentry-claim', $currentKey)];

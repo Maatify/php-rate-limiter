@@ -25,6 +25,10 @@ final readonly class GenerationBoundScoreMutationDTO implements \JsonSerializabl
         }
     }
 
+    /**
+     * Return the stable serialized mutation result, including `state` only as
+     * the applied generation-bound state and otherwise as null for a conflict.
+     */
     public function jsonSerialize(): mixed
     {
         return ['applied' => $this->applied, 'state' => $this->state];

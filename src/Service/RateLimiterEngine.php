@@ -20,7 +20,11 @@ use Maatify\RateLimiter\Exception\RateLimiterException;
 use Maatify\SharedCommon\Contracts\ClockInterface;
 
 /**
- * Coordinates policy registration, evaluation, circuit breaking, and fallback.
+ * Implements the composite RateLimiterRuntimeInterface.
+ *
+ * Coordinates policy registration, public evaluation, circuit breaking,
+ * failure-mode fallback, and the circuit-boundary orchestration of the public
+ * one-shot post-punishment lifecycle claim.
  */
 class RateLimiterEngine implements RateLimiterRuntimeInterface
 {

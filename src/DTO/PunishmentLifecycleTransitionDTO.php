@@ -31,6 +31,11 @@ final readonly class PunishmentLifecycleTransitionDTO implements \JsonSerializab
         }
     }
 
+    /**
+     * Return the stable atomic transition shape; an unapplied conflict keeps
+     * all resulting state members null, while an applied transition includes
+     * cycle, block, and claimable lifecycle state together.
+     */
     public function jsonSerialize(): mixed
     {
         return ['applied' => $this->applied, 'cycle' => $this->cycle, 'block' => $this->block,
