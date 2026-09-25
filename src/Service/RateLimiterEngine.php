@@ -142,6 +142,18 @@ class RateLimiterEngine implements RateLimiterRuntimeInterface
             if ($thresholds->k1 === null || $thresholds->k2 === null || $thresholds->k3 === null) {
                 throw new RateLimiterException("Policy {$policy->getName()} invalid: Must enforce K1, K2, and K3.");
             }
+            foreach (['k1' => $thresholds->k1, 'k2' => $thresholds->k2, 'k3' => $thresholds->k3] as $scope => $scopeThresholds) {
+                if ($scopeThresholds->l1 <= 0
+                    || $scopeThresholds->l2 <= 0
+                    || $scopeThresholds->l3 <= 0
+                    || $scopeThresholds->l1 > $scopeThresholds->l2
+                    || $scopeThresholds->l2 > $scopeThresholds->l3) {
+                    throw new RateLimiterException("Policy {$policy->getName()} invalid: API_OVERUSE {$scope} thresholds must be positive and monotonic.");
+                }
+            }
+            if ($policy->getScoreDeltas()->access <= 0) {
+                throw new RateLimiterException("Policy {$policy->getName()} invalid: API_OVERUSE requires a positive access delta.");
+            }
         }
 
         if (in_array(PolicyCapability::DISTRIBUTED_ACCOUNT, $capabilities, true)

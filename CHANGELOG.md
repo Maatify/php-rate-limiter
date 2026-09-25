@@ -7,6 +7,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Changed
+- Added the typed `PolicyCapability` and `FailureFallbackProfile` extension
+  contracts for reusable custom policies, including bounded policy-identity
+  local fallback profiles and validation of their semantic thresholds.
+  Package Reference version: `1.16.0` → `1.17.0`; Policy contract version:
+  `1.5.0` → `1.6.0`; Failure Semantics remains `1.3.0`.
+
 ### Added
 - Added DEC-007 generation-bound authentication K4 lifecycle for opt-in Login
   and OTP policies, including typed lifecycle storage, bounded public claims,

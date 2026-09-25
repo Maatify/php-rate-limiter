@@ -24,6 +24,9 @@ use Maatify\RateLimiter\Config\ApiHeavyProtectionPolicy;
 use Maatify\RateLimiter\Config\LoginProtectionPolicy;
 use Maatify\RateLimiter\Config\OtpProtectionPolicy;
 use Maatify\RateLimiter\Config\PolicyCapability;
+use Maatify\RateLimiter\Config\FailureFallbackProfile;
+use Maatify\RateLimiter\Config\FailureFallbackProfileProviderInterface;
+use Maatify\RateLimiter\Config\PolicyCapabilityProviderInterface;
 use Maatify\RateLimiter\Tests\Support\CircuitBreaker\InMemoryCircuitBreakerStore;
 use Maatify\RateLimiter\Tests\Support\Clock\FixedClock;
 use Maatify\RateLimiter\Tests\Support\Correlation\StatefulInMemoryCorrelationStore;
@@ -807,6 +810,96 @@ final class RateLimiterEngineCurrentRuntimeCharacterizationTest extends TestCase
             );
         }
         self::assertNotSame(RateLimitResultDTO::DECISION_HARD_BLOCK, $result->decision);
+    }
+
+    public function testDirectCustomPoliciesImplementingPublicContractsActivateTypedSemantics(): void
+    {
+        $authPolicy = new class implements BlockPolicyInterface, PolicyCapabilityProviderInterface, FailureFallbackProfileProviderInterface {
+            private \Maatify\RateLimiter\DTO\BudgetConfigDTO $budget;
+
+            public function __construct()
+            {
+                $this->budget = new \Maatify\RateLimiter\DTO\BudgetConfigDTO(20, 3);
+            }
+
+            public function getName(): string
+            {
+                return 'direct_custom_authentication';
+            }
+            /** @return list<PolicyCapability> */
+            public function getCapabilities(): array
+            {
+                return [PolicyCapability::CREDENTIAL_SPRAY, PolicyCapability::DISTRIBUTED_ACCOUNT, PolicyCapability::TRUSTED_AUTHENTICATION];
+            }
+            public function getFailureFallbackProfile(): FailureFallbackProfile
+            {
+                return FailureFallbackProfile::AUTHENTICATION_PRIMARY;
+            }
+            public function getScoreThresholds(): PolicyThresholdsDTO
+            {
+                return new PolicyThresholdsDTO(k4: new ScoreThresholdsDTO(5, 8, 12));
+            }
+            public function getScoreDeltas(): \Maatify\RateLimiter\DTO\ScoreDeltasDTO
+            {
+                return new \Maatify\RateLimiter\DTO\ScoreDeltasDTO(k1_spray: 5, k2_missing_fp: 4, k4_failure: 3, k4_repeated_missing_fp: 6, k5_failure: 2);
+            }
+            public function getFailureMode(): string
+            {
+                return 'FAIL_CLOSED';
+            }
+            public function getBudgetConfig(): \Maatify\RateLimiter\DTO\BudgetConfigDTO
+            {
+                return $this->budget;
+            }
+        };
+        $authEngine = $this->createEngine($authPolicy);
+        $authResult = null;
+        for ($index = 1; $index <= 5; $index++) {
+            $authResult = $authEngine->limit(
+                new RateLimitContextDTO('198.51.100.65', 'Mozilla/5.0 Chrome/123', 'direct-auth-' . $index, ['device' => 'stable']),
+                RateLimitCommand::checkOnly('direct_custom_authentication'),
+            );
+        }
+        self::assertSame(RateLimitResultDTO::DECISION_HARD_BLOCK, $authResult->decision);
+
+        $apiPolicy = new class implements BlockPolicyInterface, PolicyCapabilityProviderInterface, FailureFallbackProfileProviderInterface {
+            public function getName(): string
+            {
+                return 'direct_custom_api';
+            }
+            /** @return list<PolicyCapability> */
+            public function getCapabilities(): array
+            {
+                return [PolicyCapability::API_OVERUSE];
+            }
+            public function getFailureFallbackProfile(): FailureFallbackProfile
+            {
+                return FailureFallbackProfile::API_OVERUSE;
+            }
+            public function getScoreThresholds(): PolicyThresholdsDTO
+            {
+                return new PolicyThresholdsDTO(k1: new ScoreThresholdsDTO(1000, 1000, 1000), k2: new ScoreThresholdsDTO(1000, 1000, 1000), k3: new ScoreThresholdsDTO(1, 1, 1));
+            }
+            public function getScoreDeltas(): \Maatify\RateLimiter\DTO\ScoreDeltasDTO
+            {
+                return new \Maatify\RateLimiter\DTO\ScoreDeltasDTO(access: 1);
+            }
+            public function getFailureMode(): string
+            {
+                return 'FAIL_OPEN';
+            }
+            public function getBudgetConfig(): ?\Maatify\RateLimiter\DTO\BudgetConfigDTO
+            {
+                return null;
+            }
+        };
+        $apiEngine = $this->createEngine($apiPolicy);
+        $apiResult = $apiEngine->limit(
+            new RateLimitContextDTO('198.51.100.66', '', null, []),
+            new RateLimitCommand('direct_custom_api', 121),
+        );
+        self::assertSame(RateLimitResultDTO::DECISION_HARD_BLOCK, $apiResult->decision);
+        self::assertSame(2, $apiResult->blockLevel);
     }
 
     private function createEngine(BlockPolicyInterface ...$policies): RateLimiterEngine

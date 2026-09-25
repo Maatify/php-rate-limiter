@@ -23,6 +23,14 @@ use Maatify\RateLimiter\Service\DecayCalculator;
 use Maatify\RateLimiter\Config\ApiHeavyProtectionPolicy;
 use Maatify\RateLimiter\Config\LoginProtectionPolicy;
 use Maatify\RateLimiter\Config\OtpProtectionPolicy;
+use Maatify\RateLimiter\Config\FailureFallbackProfile;
+use Maatify\RateLimiter\Config\FailureFallbackProfileProviderInterface;
+use Maatify\RateLimiter\Config\PolicyCapability;
+use Maatify\RateLimiter\Config\PolicyCapabilityProviderInterface;
+use Maatify\RateLimiter\DTO\PolicyThresholdsDTO;
+use Maatify\RateLimiter\DTO\ScoreThresholdsDTO;
+use Maatify\RateLimiter\DTO\ScoreDeltasDTO;
+use Maatify\RateLimiter\DTO\BudgetConfigDTO;
 use Maatify\RateLimiter\Tests\Support\CircuitBreaker\InMemoryCircuitBreakerStore;
 use Maatify\RateLimiter\Tests\Support\Clock\FixedClock;
 use Maatify\RateLimiter\Tests\Support\Correlation\NullCorrelationStore;
@@ -278,6 +286,85 @@ class RateLimiterEngineFallbackBlastRadiusTest extends TestCase
         $this->assertFalse(
             LocalFallbackLimiter::check($clock, 'api_heavy_protection', 'FAIL_OPEN', $ip, null, self::SAFARI_UA),
         );
+    }
+
+    public function testDirectCustomApiPolicyEnforcesTypedFallbackCaps(): void
+    {
+        $policy = new class implements BlockPolicyInterface, PolicyCapabilityProviderInterface, FailureFallbackProfileProviderInterface {
+            public function getName(): string
+            {
+                return 'direct_custom_api_fallback';
+            }
+            /** @return list<PolicyCapability> */
+            public function getCapabilities(): array
+            {
+                return [PolicyCapability::API_OVERUSE];
+            }
+            public function getFailureFallbackProfile(): FailureFallbackProfile
+            {
+                return FailureFallbackProfile::API_OVERUSE;
+            }
+            public function getScoreThresholds(): PolicyThresholdsDTO
+            {
+                return new PolicyThresholdsDTO(k1: new ScoreThresholdsDTO(1000, 1000, 1000), k2: new ScoreThresholdsDTO(1000, 1000, 1000), k3: new ScoreThresholdsDTO(1, 1, 1));
+            }
+            public function getScoreDeltas(): ScoreDeltasDTO
+            {
+                return new ScoreDeltasDTO(access: 1);
+            }
+            public function getFailureMode(): string
+            {
+                return 'FAIL_OPEN';
+            }
+            public function getBudgetConfig(): ?BudgetConfigDTO
+            {
+                return null;
+            }
+        };
+        $engine = $this->createEngineWithStore(new ThrowingRateLimitStore(), $policy);
+        $ip = '198.51.100.67';
+        foreach ([self::CHROME_UA, self::FIREFOX_UA] as $ua) {
+            for ($i = 0; $i < 60; $i++) {
+                $result = $this->limit($engine, 'direct_custom_api_fallback', $ip, $ua, null);
+                $this->assertSame(RateLimitResultDTO::DECISION_ALLOW, $result->decision);
+            }
+        }
+        $blocked = $this->limit($engine, 'direct_custom_api_fallback', $ip, self::SAFARI_UA, null);
+        $this->assertFallbackLimitExceeded($blocked);
+    }
+
+    public function testPolicyWithoutFallbackProfileFailsClosedDuringDegradedCircuit(): void
+    {
+        $policy = new class implements BlockPolicyInterface {
+            public function getName(): string
+            {
+                return 'direct_unprofiled_policy';
+            }
+            public function getScoreThresholds(): PolicyThresholdsDTO
+            {
+                return new PolicyThresholdsDTO();
+            }
+            public function getScoreDeltas(): ScoreDeltasDTO
+            {
+                return new ScoreDeltasDTO();
+            }
+            public function getFailureMode(): string
+            {
+                return 'FAIL_CLOSED';
+            }
+            public function getBudgetConfig(): ?BudgetConfigDTO
+            {
+                return null;
+            }
+        };
+        $engine = $this->createEngineWithStore(new ThrowingRateLimitStore(), $policy);
+        $first = $this->limit($engine, 'direct_unprofiled_policy', '198.51.100.68', self::CHROME_UA, null);
+        $this->assertSame(RateLimitResultDTO::DECISION_HARD_BLOCK, $first->decision);
+        $second = $this->limit($engine, 'direct_unprofiled_policy', '198.51.100.68', self::CHROME_UA, null);
+        $this->assertSame(RateLimitResultDTO::DECISION_HARD_BLOCK, $second->decision);
+        $degraded = $this->limit($engine, 'direct_unprofiled_policy', '198.51.100.68', self::CHROME_UA, null);
+        $this->assertSame(RateLimitResultDTO::DECISION_HARD_BLOCK, $degraded->decision);
+        $this->assertSame('DEGRADED_MODE', $degraded->failureMode);
     }
 
     private function createEngineWithStore(RateLimitStoreInterface $store, BlockPolicyInterface ...$policies): RateLimiterEngine
