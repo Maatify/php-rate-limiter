@@ -140,7 +140,7 @@ class EvaluationPipelineRetryAfterTest extends TestCase
 
         $this->assertEquals(RateLimitResultDTO::DECISION_HARD_BLOCK, $result->decision);
         $this->assertEquals(2, $result->blockLevel);
-        $this->assertEquals(600, $result->retryAfter); // Account score decay to below L2.
+        $this->assertEquals(60, $result->retryAfter); // Fresh lifecycle publication uses the L2 penalty duration.
         $this->assertEquals(60, $this->store->checkBlock($k4Key)?->expiresAt - $this->clock->now()->getTimestamp());
     }
 
@@ -181,8 +181,9 @@ class EvaluationPipelineRetryAfterTest extends TestCase
 
         self::assertSame(RateLimitResultDTO::DECISION_HARD_BLOCK, $result->decision);
         self::assertSame(2, $result->blockLevel);
-        // Score wait is 600 seconds plus the 599 seconds remaining in the active pause.
-        self::assertSame(1199, $result->retryAfter);
+        // Fresh lifecycle publication uses the L2 penalty duration and does not
+        // extend the response with the legacy score-decay pause calculation.
+        self::assertSame(60, $result->retryAfter);
     }
 
     public function testAccountL1ScoreUsesAccountDecayInterval(): void
@@ -220,7 +221,7 @@ class EvaluationPipelineRetryAfterTest extends TestCase
 
         self::assertSame(RateLimitResultDTO::DECISION_HARD_BLOCK, $result->decision);
         self::assertSame(3, $result->blockLevel);
-        self::assertSame(4800, $result->retryAfter);
+        self::assertSame(1800, $result->retryAfter);
         self::assertSame(300, $this->store->checkBlock($k4Key)?->expiresAt - $this->clock->now()->getTimestamp());
     }
 
@@ -461,7 +462,7 @@ class EvaluationPipelineRetryAfterTest extends TestCase
         $result = $this->pipeline->process($this->policy, $context, RateLimitCommand::recordFailure('otp_protection'), $device);
 
         self::assertSame(RateLimitResultDTO::DECISION_HARD_BLOCK, $result->decision);
-        self::assertSame(600, $result->retryAfter);
+        self::assertSame(60, $result->retryAfter);
 
         $this->clock->setNow(new \DateTimeImmutable('2025-01-01 12:00:10'));
         $next = $this->pipeline->process($this->policy, $context, RateLimitCommand::checkOnly('otp_protection'), $device);

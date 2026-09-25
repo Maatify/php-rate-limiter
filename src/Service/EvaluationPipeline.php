@@ -1561,7 +1561,7 @@ class EvaluationPipeline
                 if ($keyType === 'k4' && $policy instanceof PostPunishmentReentryPolicyInterface
                     && $this->store instanceof PunishmentLifecycleStoreInterface
                     && $actualScoreLevel >= 2 && $mutation?->state?->generation !== null
-                    && $expected?->generation !== null) {
+                ) {
                     $this->lifecycleEligibleKeys[$key] = $mutation->state->generation;
                 }
                 $level = $actualScoreLevel;

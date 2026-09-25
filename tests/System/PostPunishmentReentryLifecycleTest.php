@@ -13,6 +13,7 @@ use Maatify\RateLimiter\DTO\RateLimitResultDTO;
 use Maatify\RateLimiter\DTO\GenerationBoundScoreMutationDTO;
 use Maatify\RateLimiter\DTO\GenerationBoundScoreStateDTO;
 use Maatify\RateLimiter\DTO\PunishmentLifecycleTransitionDTO;
+use Maatify\RateLimiter\DTO\ScoreDeltasDTO;
 use Maatify\RateLimiter\Service\AntiEquilibriumGate;
 use Maatify\RateLimiter\Service\BudgetTracker;
 use Maatify\RateLimiter\Service\CircuitBreaker;
@@ -131,6 +132,73 @@ final class PostPunishmentReentryLifecycleTest extends TestCase
         $active = $engine->limit($context, RateLimitCommand::checkOnly('login_protection'));
         self::assertSame(RateLimitResultDTO::DECISION_HARD_BLOCK, $active->decision);
         self::assertSame(50, $active->retryAfter);
+    }
+
+    public function testFirstGenerationHardFromEmptyStatePublishesLifecycle(): void
+    {
+        $clock = new FixedClock();
+        $policy = new class extends LoginProtectionPolicy implements PostPunishmentReentryPolicyInterface {
+            public function getName(): string
+            {
+                return 'first_generation_hard';
+            }
+
+            public function getScoreDeltas(): ScoreDeltasDTO
+            {
+                return new ScoreDeltasDTO(k4_failure: 8);
+            }
+        };
+        $engine = $this->engine($clock, [$policy]);
+        $context = $this->context('first-generation-account', 'first-generation-device');
+        $hard = $engine->limit($context, RateLimitCommand::recordFailure('first_generation_hard'));
+
+        self::assertSame(RateLimitResultDTO::DECISION_HARD_BLOCK, $hard->decision);
+        self::assertSame(2, $hard->blockLevel);
+        self::assertSame(60, $hard->retryAfter);
+        $clock->setNow($clock->now()->modify('+61 seconds'));
+        self::assertNotNull($this->lifecycleState($engine, 'first_generation_hard', 'first-generation-account')?->postPunishmentReentry);
+    }
+
+    public function testLegacyCurrentFirstHardMutationPublishesFreshLifecycle(): void
+    {
+        $clock = new FixedClock();
+        $store = new InMemoryRateLimitStore($clock);
+        $key = hash_hmac('sha256', 'login_protection:rate_limiter:k4:v2:prod:legacy-current-hard', 'test_secret');
+        $store->set($key, 5, 86400);
+        $engine = $this->engine($clock, [], $store);
+        $hard = $engine->limit($this->context('legacy-current-hard', 'legacy-current-device'), RateLimitCommand::recordFailure('login_protection'));
+
+        self::assertSame(RateLimitResultDTO::DECISION_HARD_BLOCK, $hard->decision);
+        self::assertSame(60, $hard->retryAfter);
+        $clock->setNow($clock->now()->modify('+61 seconds'));
+        $state = $this->lifecycleState($engine, 'login_protection', 'legacy-current-hard');
+        self::assertNotNull($state);
+        self::assertSame(1, $state->generation);
+        self::assertNotNull($state->postPunishmentReentry);
+    }
+
+    public function testLegacyPreviousFirstHardMutationHandsOffAndPublishesLifecycle(): void
+    {
+        $clock = new FixedClock();
+        $store = new InMemoryRateLimitStore($clock);
+        $account = 'legacy-previous-hard';
+        $currentKey = hash_hmac('sha256', 'login_protection:rate_limiter:k4:v2:prod:' . $account, 'test_secret');
+        $previousKey = hash_hmac('sha256', 'login_protection:rate_limiter:k4:v2:prod:' . $account, 'previous_secret');
+        $store->set($previousKey, 5, 86400);
+        $previousBefore = $store->get($previousKey);
+        $engine = $this->engine($clock, [], $store, null, 'previous_secret');
+        $hard = $engine->limit($this->context($account, 'legacy-previous-device'), RateLimitCommand::recordFailure('login_protection'));
+
+        self::assertSame(RateLimitResultDTO::DECISION_HARD_BLOCK, $hard->decision);
+        self::assertSame(60, $hard->retryAfter);
+        $clock->setNow($clock->now()->modify('+61 seconds'));
+        $state = $store->readGenerationBoundScoreState($currentKey, $previousKey);
+        self::assertNotNull($state);
+        self::assertSame(GenerationBoundScoreStateDTO::SOURCE_CURRENT, $state->source);
+        self::assertSame(1, $state->generation);
+        self::assertNotNull($state->postPunishmentReentry);
+        self::assertSame($previousBefore?->value, $store->get($previousKey)?->value);
+        self::assertSame($previousBefore?->updatedAt, $store->get($previousKey)?->updatedAt);
     }
 
     public function testKnownDeviceK5OnlyFailureDoesNotAdvanceServedK4Generation(): void
@@ -347,7 +415,7 @@ final class PostPunishmentReentryLifecycleTest extends TestCase
     }
 
     /** @param list<\Maatify\RateLimiter\Config\BlockPolicyInterface> $extraPolicies */
-    private function engine(FixedClock $clock, array $extraPolicies = [], ?InMemoryRateLimitStore $store = null, ?InMemoryCircuitBreakerStore $circuitStore = null): RateLimiterEngine
+    private function engine(FixedClock $clock, array $extraPolicies = [], ?InMemoryRateLimitStore $store = null, ?InMemoryCircuitBreakerStore $circuitStore = null, ?string $previousSecret = null): RateLimiterEngine
     {
         $store ??= new InMemoryRateLimitStore($clock);
         $correlation = new StatefulInMemoryCorrelationStore($clock);
@@ -362,6 +430,7 @@ final class PostPunishmentReentryLifecycleTest extends TestCase
             'test_secret',
             'prod',
             $clock,
+            $previousSecret,
         );
 
         return new RateLimiterEngine(

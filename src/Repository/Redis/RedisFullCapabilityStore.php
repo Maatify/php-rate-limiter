@@ -77,7 +77,6 @@ local exists = redis.call('EXISTS', current)
 local source = current
 if exists == 0 and previous ~= '' and redis.call('EXISTS', previous) == 1 then source = previous end
 local expectedSource = ARGV[1]
-if expectedSource == '' and (redis.call('EXISTS', current) == 1 or (previous ~= '' and redis.call('EXISTS', previous) == 1)) then return {0} end
 if expectedSource ~= '' and expectedSource ~= source then return {0} end
 local observedGeneration = redis.call('HGET', source, 'generation')
 local observedUpdated = redis.call('HGET', source, 'updatedAt')
@@ -91,6 +90,17 @@ if not observedValue or not observedUpdated then
   end
   return redis.error_reply('malformed generation-bound score state')
 end
+local observedExpiry = redis.call('HGET', source, 'expiresAt')
+if observedGeneration then
+  local numericGeneration = tonumber(observedGeneration)
+  if not numericGeneration or numericGeneration ~= math.floor(numericGeneration) or numericGeneration <= 0 then return redis.error_reply('malformed generation') end
+  if not observedExpiry then return redis.error_reply('malformed generation-bound score expiry') end
+end
+if observedExpiry then
+  local numericExpiry = tonumber(observedExpiry)
+  if not numericExpiry or numericExpiry ~= math.floor(numericExpiry) then return redis.error_reply('malformed score expiry') end
+end
+if expectedSource == '' and (redis.call('EXISTS', current) == 1 or (previous ~= '' and redis.call('EXISTS', previous) == 1)) then return {0} end
 if expectedSource ~= '' then
   if not observedValue or observedValue ~= ARGV[2] or not observedUpdated or observedUpdated ~= ARGV[3] then return {0} end
   if ARGV[4] == '' then
@@ -119,10 +129,11 @@ if source == '' or redis.call('EXISTS', source) == 0 then return {} end
 if redis.call('TTL', source) <= 0 then return {} end
 local value = redis.call('HGET', source, 'value'); local updated = redis.call('HGET', source, 'updatedAt')
 if not value or not updated or not tonumber(value) or tonumber(value) ~= math.floor(tonumber(value)) or not tonumber(updated) or tonumber(updated) ~= math.floor(tonumber(updated)) then return redis.error_reply('malformed generation-bound score state') end
-local expiry = redis.call('HGET', source, 'expiresAt') or (now + redis.call('TTL', source))
-if not tonumber(expiry) or tonumber(expiry) ~= math.floor(tonumber(expiry)) or tonumber(expiry) <= now then return redis.error_reply('malformed generation-bound score expiry') end
 local generation = redis.call('HGET', source, 'generation') or ''
 if generation ~= '' and (not tonumber(generation) or tonumber(generation) ~= math.floor(tonumber(generation)) or tonumber(generation) <= 0) then return redis.error_reply('malformed generation') end
+local expiry = redis.call('HGET', source, 'expiresAt')
+if generation == '' and not expiry then expiry = now + redis.call('TTL', source) end
+if not expiry or not tonumber(expiry) or tonumber(expiry) ~= math.floor(tonumber(expiry)) or tonumber(expiry) <= now then return redis.error_reply('malformed generation-bound score expiry') end
 local active = false
 for _, blockKey in ipairs({KEYS[3], KEYS[4]}) do
   if blockKey ~= '' and redis.call('EXISTS', blockKey) == 1 then
@@ -158,13 +169,14 @@ if source ~= '' and redis.call('EXISTS', source) == 1 then
   if not rawValue or not rawUpdated then return redis.error_reply('malformed generation-bound score state') end
   local value = tonumber(rawValue); local updated = tonumber(rawUpdated)
   if not value or value ~= math.floor(value) or not updated or updated ~= math.floor(updated) then return redis.error_reply('malformed generation-bound score state') end
+  local generation = redis.call('HGET', source, 'generation')
   local rawExpiry = redis.call('HGET', source, 'expiresAt'); local expiry = nil
   if rawExpiry then
     expiry = tonumber(rawExpiry)
     if not expiry or expiry ~= math.floor(expiry) then return redis.error_reply('malformed generation-bound score expiry') end
     if expiry <= now then return 0 end
   end
-  local generation = redis.call('HGET', source, 'generation')
+  if generation and expiry == nil then return redis.error_reply('malformed generation-bound score expiry') end
   if generation then
     local numericGeneration = tonumber(generation)
     if not numericGeneration or numericGeneration ~= math.floor(numericGeneration) or numericGeneration <= 0 then return redis.error_reply('malformed generation') end

@@ -12,6 +12,7 @@ use Maatify\RateLimiter\DTO\CircuitBreakerStateDTO;
 use Maatify\RateLimiter\DTO\BudgetStateDTO;
 use Maatify\RateLimiter\DTO\BudgetConfigDTO;
 use Maatify\RateLimiter\DTO\HardBlockCycleResultDTO;
+use Maatify\RateLimiter\DTO\GenerationBoundScoreStateDTO;
 use Maatify\RateLimiter\DTO\PolicyThresholdsDTO;
 use Maatify\RateLimiter\DTO\RateLimitContextDTO;
 use Maatify\RateLimiter\DTO\RateLimitResultDTO;
@@ -288,6 +289,39 @@ final class RedisFullCapabilityStoreIntegrationTest extends TestCase
         $this->assertOperationFails(fn(): mixed => $this->store->claimPostPunishmentReentry('claim-malformed-block', null, str_repeat('a', 32)));
     }
 
+    public function testGeneratedStateWithoutExpiresAtFailsReadClaimAndMutationWhileLegacyStateRemainsSupported(): void
+    {
+        $now = $this->redisNow();
+        $generatedRead = $this->key('score', 'generated-missing-expiry-read');
+        $this->raw(['HSET', $generatedRead, 'value', '8', 'updatedAt', (string) $now, 'generation', '1']);
+        $this->raw(['EXPIRE', $generatedRead, '600']);
+        $this->assertOperationFails(fn(): mixed => $this->store->readGenerationBoundScoreState('generated-missing-expiry-read', null));
+
+        $generatedClaim = $this->key('score', 'generated-missing-expiry-claim');
+        $this->raw(['HSET', $generatedClaim, 'value', '8', 'updatedAt', (string) $now, 'generation', '1', 'reentryId', str_repeat('a', 32), 'reentryValidUntil', (string) ($now + 600), 'reentryGeneration', '1']);
+        $this->raw(['EXPIRE', $generatedClaim, '600']);
+        $this->assertOperationFails(fn(): mixed => $this->store->claimPostPunishmentReentry('generated-missing-expiry-claim', null, str_repeat('a', 32)));
+
+        $generatedMutation = $this->key('score', 'generated-missing-expiry-mutation');
+        $this->raw(['HSET', $generatedMutation, 'value', '8', 'updatedAt', (string) $now, 'generation', '1']);
+        $this->raw(['EXPIRE', $generatedMutation, '600']);
+        $expected = new GenerationBoundScoreStateDTO(
+            GenerationBoundScoreStateDTO::SOURCE_CURRENT,
+            8,
+            $now,
+            $now + 600,
+            1,
+        );
+        $this->assertOperationFails(fn(): mixed => $this->store->mutateGenerationBoundScore('generated-missing-expiry-mutation', null, $expected, 600, 9));
+
+        $legacy = $this->key('score', 'legacy-missing-expiry-compatible');
+        $this->raw(['HSET', $legacy, 'value', '4', 'updatedAt', (string) $now]);
+        $this->raw(['EXPIRE', $legacy, '600']);
+        $legacyState = $this->store->readGenerationBoundScoreState('legacy-missing-expiry-compatible', null);
+        self::assertNotNull($legacyState);
+        self::assertNull($legacyState->generation);
+    }
+
     public function testConcurrentRedisClaimsHaveExactlyOneWinner(): void
     {
         $now = $this->redisNow();
@@ -365,14 +399,16 @@ final class RedisFullCapabilityStoreIntegrationTest extends TestCase
         $legacyCurrent = $this->key('score', 'legacy-current-boundary');
         $this->raw(['HSET', $legacyCurrent, 'value', '4', 'updatedAt', (string) $now]);
         $this->raw(['EXPIRE', $legacyCurrent, '600']);
-        $legacyExpiry = $this->integer($this->raw(['TTL', $legacyCurrent]));
+        $legacyTtlBefore = $this->integer($this->raw(['TTL', $legacyCurrent]));
         $legacyState = $this->store->readGenerationBoundScoreState('legacy-current-boundary', null);
         self::assertNotNull($legacyState);
         self::assertNull($legacyState->generation);
         $sameValue = $this->store->mutateGenerationBoundScore('legacy-current-boundary', null, $legacyState, 600, 4);
         self::assertTrue($sameValue->applied);
         self::assertSame(1, $sameValue->state?->generation);
-        self::assertLessThanOrEqual($legacyExpiry, $this->integer($this->raw(['TTL', $legacyCurrent])));
+        $legacyTtlAfter = $this->integer($this->raw(['TTL', $legacyCurrent]));
+        self::assertLessThanOrEqual($legacyTtlAfter, $legacyTtlBefore);
+        self::assertGreaterThanOrEqual($legacyTtlBefore - 2, $legacyTtlAfter);
 
         $previous = $this->key('score', 'legacy-previous-boundary');
         $this->raw(['HSET', $previous, 'value', '6', 'updatedAt', (string) $now]);
