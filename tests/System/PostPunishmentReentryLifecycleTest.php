@@ -211,21 +211,48 @@ final class PostPunishmentReentryLifecycleTest extends TestCase
         $seed = $store->mutateGenerationBoundScore($previousKey, null, null, 600, 5);
         self::assertTrue($seed->applied);
         self::assertNotNull($seed->state);
+        for ($generation = 2; $generation <= 3; $generation++) {
+            $seed = $store->mutateGenerationBoundScore($previousKey, null, $seed->state, 86400, 5 + $generation);
+            self::assertTrue($seed->applied);
+            self::assertSame($generation, $seed->state?->generation);
+        }
         $previousBefore = $store->get($previousKey);
         $expiryBefore = $store->expiresAt($previousKey);
         $expected = $store->readGenerationBoundScoreState($currentKey, $previousKey);
         self::assertNotNull($expected);
-        self::assertSame(1, $expected->generation);
+        self::assertSame(3, $expected->generation);
 
         $mutation = $store->mutateGenerationBoundScore($currentKey, $previousKey, $expected, 86400, 8);
 
         self::assertTrue($mutation->applied);
         self::assertNotNull($mutation->state);
-        self::assertSame(2, $mutation->state->generation);
+        self::assertSame(4, $mutation->state->generation);
         self::assertSame($expiryBefore, $mutation->state->expiresAt);
         self::assertSame($previousBefore?->value, $store->get($previousKey)?->value);
         self::assertSame($previousBefore?->updatedAt, $store->get($previousKey)?->updatedAt);
         self::assertSame($expiryBefore, $store->expiresAt($previousKey));
+    }
+
+    public function testInMemoryMutationFencesAuthoritativeExpiry(): void
+    {
+        $clock = new FixedClock();
+        $store = new InMemoryRateLimitStore($clock);
+        $first = $store->mutateGenerationBoundScore('expiry-cas', null, null, 600, 4);
+        self::assertTrue($first->applied);
+        self::assertNotNull($first->state);
+
+        $stale = new GenerationBoundScoreStateDTO(
+            GenerationBoundScoreStateDTO::SOURCE_CURRENT,
+            $first->state->value,
+            $first->state->updatedAt,
+            $first->state->expiresAt + 1,
+            $first->state->generation,
+        );
+        $conflict = $store->mutateGenerationBoundScore('expiry-cas', null, $stale, 86400, 9);
+
+        self::assertFalse($conflict->applied);
+        self::assertSame($first->state->value, $store->get('expiry-cas')?->value);
+        self::assertSame($first->state->expiresAt, $store->expiresAt('expiry-cas'));
     }
 
     public function testKnownDeviceK5OnlyFailureDoesNotAdvanceServedK4Generation(): void

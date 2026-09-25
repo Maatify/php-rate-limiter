@@ -181,7 +181,7 @@ class InMemoryRateLimitStore implements BudgetSeedStoreInterface, PunishmentLife
         if ($expectedState === null && $observed !== null) {
             return new GenerationBoundScoreMutationDTO(false, null);
         }
-        if ($expectedState !== null && ($observed === null || $observed->source !== $expectedState->source || $observed->generation !== $expectedState->generation || $observed->value !== $expectedState->value || $observed->updatedAt !== $expectedState->updatedAt)) {
+        if ($expectedState !== null && ($observed === null || $observed->source !== $expectedState->source || $observed->generation !== $expectedState->generation || $observed->value !== $expectedState->value || $observed->updatedAt !== $expectedState->updatedAt || $observed->expiresAt !== $expectedState->expiresAt)) {
             return new GenerationBoundScoreMutationDTO(false, null);
         }
         $now = $this->clock->now()->getTimestamp();

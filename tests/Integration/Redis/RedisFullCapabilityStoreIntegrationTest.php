@@ -249,7 +249,7 @@ final class RedisFullCapabilityStoreIntegrationTest extends TestCase
         self::assertNotNull($legacy);
         self::assertNull($legacy->generation);
 
-        $this->executor->execute(['HSET', $key, 'generation', '1', 'expiresAt', (string) (time() + 600)]);
+        $this->executor->execute(['HSET', $key, 'generation', '1', 'expiresAt', (string) (time() + 601)]);
         $stale = $this->store->mutateGenerationBoundScore('legacy-cas', null, $legacy, 600, 9);
         self::assertFalse($stale->applied);
     }
@@ -259,9 +259,9 @@ final class RedisFullCapabilityStoreIntegrationTest extends TestCase
         $previousKey = $this->key('score', 'claim-previous');
         $currentKey = $this->key('score', 'claim-current');
         $now = time();
-        $this->executor->execute(['HSET', $previousKey, 'value', '8', 'updatedAt', (string) $now, 'generation', '1', 'expiresAt', (string) ($now + 600), 'reentryId', str_repeat('a', 32), 'reentryValidUntil', (string) ($now + 600), 'reentryGeneration', '1']);
+        $this->executor->execute(['HSET', $previousKey, 'value', '8', 'updatedAt', (string) $now, 'generation', '1', 'expiresAt', (string) ($now + 601), 'reentryId', str_repeat('a', 32), 'reentryValidUntil', (string) ($now + 601), 'reentryGeneration', '1']);
         $this->executor->execute(['EXPIRE', $previousKey, '600']);
-        $this->executor->execute(['HSET', $currentKey, 'value', '9', 'updatedAt', (string) $now, 'generation', '2', 'expiresAt', (string) ($now + 600)]);
+        $this->executor->execute(['HSET', $currentKey, 'value', '9', 'updatedAt', (string) $now, 'generation', '2', 'expiresAt', (string) ($now + 601)]);
         $this->executor->execute(['EXPIRE', $currentKey, '600']);
 
         self::assertFalse($this->store->claimPostPunishmentReentry('claim-current', 'claim-previous', str_repeat('a', 32)));
@@ -271,18 +271,18 @@ final class RedisFullCapabilityStoreIntegrationTest extends TestCase
     {
         $now = $this->redisNow();
         $partial = $this->key('score', 'claim-malformed-partial');
-        $this->raw(['HSET', $partial, 'value', '8', 'updatedAt', (string) $now, 'expiresAt', (string) ($now + 600), 'generation', '1', 'reentryId', str_repeat('a', 32)]);
+        $this->raw(['HSET', $partial, 'value', '8', 'updatedAt', (string) $now, 'expiresAt', (string) ($now + 601), 'generation', '1', 'reentryId', str_repeat('a', 32)]);
         $this->raw(['EXPIRE', $partial, '600']);
         $this->assertOperationFails(fn(): mixed => $this->store->claimPostPunishmentReentry('claim-malformed-partial', null, str_repeat('a', 32)));
 
         $invalidId = $this->key('score', 'claim-malformed-id');
-        $this->raw(['HSET', $invalidId, 'value', '8', 'updatedAt', (string) $now, 'expiresAt', (string) ($now + 600), 'generation', '1', 'reentryId', str_repeat('z', 32), 'reentryValidUntil', (string) ($now + 600), 'reentryGeneration', '1']);
+        $this->raw(['HSET', $invalidId, 'value', '8', 'updatedAt', (string) $now, 'expiresAt', (string) ($now + 601), 'generation', '1', 'reentryId', str_repeat('z', 32), 'reentryValidUntil', (string) ($now + 601), 'reentryGeneration', '1']);
         $this->raw(['EXPIRE', $invalidId, '600']);
         $this->assertOperationFails(fn(): mixed => $this->store->claimPostPunishmentReentry('claim-malformed-id', null, str_repeat('z', 32)));
 
         $malformedBlockScore = $this->key('score', 'claim-malformed-block');
         $malformedBlock = $this->key('block', 'claim-malformed-block');
-        $this->raw(['HSET', $malformedBlockScore, 'value', '8', 'updatedAt', (string) $now, 'expiresAt', (string) ($now + 600), 'generation', '1', 'reentryId', str_repeat('a', 32), 'reentryValidUntil', (string) ($now + 600), 'reentryGeneration', '1']);
+        $this->raw(['HSET', $malformedBlockScore, 'value', '8', 'updatedAt', (string) $now, 'expiresAt', (string) ($now + 601), 'generation', '1', 'reentryId', str_repeat('a', 32), 'reentryValidUntil', (string) ($now + 601), 'reentryGeneration', '1']);
         $this->raw(['EXPIRE', $malformedBlockScore, '600']);
         $this->raw(['HSET', $malformedBlock, 'level', '2']);
         $this->raw(['EXPIRE', $malformedBlock, '600']);
@@ -293,7 +293,7 @@ final class RedisFullCapabilityStoreIntegrationTest extends TestCase
     {
         $now = $this->redisNow();
         $key = $this->key('score', 'read-malformed-partial');
-        $this->raw(['HSET', $key, 'value', '8', 'updatedAt', (string) $now, 'generation', '1', 'expiresAt', (string) ($now + 600), 'reentryId', str_repeat('a', 32)]);
+        $this->raw(['HSET', $key, 'value', '8', 'updatedAt', (string) $now, 'generation', '1', 'expiresAt', (string) ($now + 601), 'reentryId', str_repeat('a', 32)]);
         $this->raw(['EXPIRE', $key, '600']);
 
         $this->assertOperationFails(fn(): mixed => $this->store->readGenerationBoundScoreState('read-malformed-partial', null));
@@ -303,14 +303,14 @@ final class RedisFullCapabilityStoreIntegrationTest extends TestCase
     {
         $now = $this->redisNow();
         $key = $this->key('score', 'mutation-malformed-partial');
-        $this->raw(['HSET', $key, 'value', '8', 'updatedAt', (string) $now, 'generation', '1', 'expiresAt', (string) ($now + 600), 'reentryId', str_repeat('b', 32)]);
+        $this->raw(['HSET', $key, 'value', '8', 'updatedAt', (string) $now, 'generation', '1', 'expiresAt', (string) ($now + 601), 'reentryId', str_repeat('b', 32)]);
         $this->raw(['EXPIRE', $key, '600']);
         $before = $this->hashMap($key);
         $expected = new GenerationBoundScoreStateDTO(
             GenerationBoundScoreStateDTO::SOURCE_CURRENT,
             8,
             $now,
-            $now + 600,
+            $now + 601,
             1,
         );
 
@@ -325,7 +325,7 @@ final class RedisFullCapabilityStoreIntegrationTest extends TestCase
         $now = $this->redisNow();
         $key = $this->key('score', 'complete-stale-evidence');
         $id = str_repeat('c', 32);
-        $this->raw(['HSET', $key, 'value', '8', 'updatedAt', (string) $now, 'generation', '2', 'expiresAt', (string) ($now + 600), 'reentryId', $id, 'reentryValidUntil', (string) ($now + 600), 'reentryGeneration', '1']);
+        $this->raw(['HSET', $key, 'value', '8', 'updatedAt', (string) $now, 'generation', '2', 'expiresAt', (string) ($now + 601), 'reentryId', $id, 'reentryValidUntil', (string) ($now + 601), 'reentryGeneration', '1']);
         $this->raw(['EXPIRE', $key, '600']);
 
         $state = $this->store->readGenerationBoundScoreState('complete-stale-evidence', null);
@@ -338,7 +338,7 @@ final class RedisFullCapabilityStoreIntegrationTest extends TestCase
     {
         $now = $this->redisNow();
         $key = $this->key('score', 'absent-lifecycle-evidence');
-        $this->raw(['HSET', $key, 'value', '8', 'updatedAt', (string) $now, 'generation', '1', 'expiresAt', (string) ($now + 600)]);
+        $this->raw(['HSET', $key, 'value', '8', 'updatedAt', (string) $now, 'generation', '1', 'expiresAt', (string) ($now + 601)]);
         $this->raw(['EXPIRE', $key, '600']);
 
         $state = $this->store->readGenerationBoundScoreState('absent-lifecycle-evidence', null);
@@ -358,7 +358,7 @@ final class RedisFullCapabilityStoreIntegrationTest extends TestCase
         $this->assertOperationFails(fn(): mixed => $this->store->readGenerationBoundScoreState('generated-missing-expiry-read', null));
 
         $generatedClaim = $this->key('score', 'generated-missing-expiry-claim');
-        $this->raw(['HSET', $generatedClaim, 'value', '8', 'updatedAt', (string) $now, 'generation', '1', 'reentryId', str_repeat('a', 32), 'reentryValidUntil', (string) ($now + 600), 'reentryGeneration', '1']);
+        $this->raw(['HSET', $generatedClaim, 'value', '8', 'updatedAt', (string) $now, 'generation', '1', 'reentryId', str_repeat('a', 32), 'reentryValidUntil', (string) ($now + 601), 'reentryGeneration', '1']);
         $this->raw(['EXPIRE', $generatedClaim, '600']);
         $this->assertOperationFails(fn(): mixed => $this->store->claimPostPunishmentReentry('generated-missing-expiry-claim', null, str_repeat('a', 32)));
 
@@ -369,10 +369,11 @@ final class RedisFullCapabilityStoreIntegrationTest extends TestCase
             GenerationBoundScoreStateDTO::SOURCE_CURRENT,
             8,
             $now,
-            $now + 600,
+            $now + 601,
             1,
         );
         $this->assertOperationFails(fn(): mixed => $this->store->mutateGenerationBoundScore('generated-missing-expiry-mutation', null, $expected, 600, 9));
+        $this->assertOperationFails(fn(): mixed => $this->store->mutateGenerationBoundScore('generated-missing-expiry-mutation', null, null, 600, 9));
 
         $legacy = $this->key('score', 'legacy-missing-expiry-compatible');
         $this->raw(['HSET', $legacy, 'value', '4', 'updatedAt', (string) $now]);
@@ -387,7 +388,7 @@ final class RedisFullCapabilityStoreIntegrationTest extends TestCase
         $now = $this->redisNow();
         $id = str_repeat('c', 32);
         $score = $this->key('score', 'claim-concurrent');
-        $this->raw(['HSET', $score, 'value', '8', 'updatedAt', (string) $now, 'expiresAt', (string) ($now + 600), 'generation', '1', 'reentryId', $id, 'reentryValidUntil', (string) ($now + 600), 'reentryGeneration', '1']);
+        $this->raw(['HSET', $score, 'value', '8', 'updatedAt', (string) $now, 'expiresAt', (string) ($now + 601), 'generation', '1', 'reentryId', $id, 'reentryValidUntil', (string) ($now + 601), 'reentryGeneration', '1']);
         $this->raw(['EXPIRE', $score, '600']);
 
         $workers = 8;
@@ -414,12 +415,46 @@ final class RedisFullCapabilityStoreIntegrationTest extends TestCase
         self::assertSame(1, $winners);
     }
 
+    public function testLifecyclePublicationRejectsPhysicallyInconsistentScoreWithoutPartialWrites(): void
+    {
+        $now = $this->redisNow();
+        $score = $this->key('score', 'publication-inconsistent');
+        $this->raw(['HSET', $score, 'value', '8', 'updatedAt', (string) $now, 'generation', '1', 'expiresAt', (string) ($now + 1)]);
+        $this->raw(['EXPIRE', $score, '600']);
+
+        $this->assertOperationFails(fn(): mixed => $this->store->blockWithPunishmentLifecycleTracking('publication-inconsistent', null, 1, str_repeat('a', 32), 2, 60, 21600, 2, 600, 86400));
+        self::assertSame(-2, $this->integer($this->raw(['PTTL', $this->key('block', 'publication-inconsistent')])));
+        self::assertSame([], $this->raw(['ZRANGE', $this->key('cycle', 'publication-inconsistent'), '0', '-1']));
+    }
+
+    public function testClaimMarkerCorruptionIsExplicitAndForeignMarkerDoesNotSilentlySuppress(): void
+    {
+        $id = str_repeat('b', 32);
+        $mutation = $this->store->mutateGenerationBoundScore('marker-corruption', null, null, 600, 8);
+        self::assertTrue($mutation->applied);
+        $transition = $this->store->blockWithPunishmentLifecycleTracking('marker-corruption', null, 1, $id, 2, 1, 21600, 2, 600, 86400);
+        self::assertTrue($transition->applied);
+        $this->raw(['DEL', $this->key('block', 'marker-corruption')]);
+        $marker = $this->key('reentry-claim', 'marker-corruption');
+        $this->raw(['SET', $marker, $id]);
+        $this->assertOperationFails(fn(): mixed => $this->store->claimPostPunishmentReentry('marker-corruption', null, $id));
+
+        $foreignId = str_repeat('c', 32);
+        $mutation = $this->store->mutateGenerationBoundScore('marker-foreign', null, null, 600, 8);
+        self::assertTrue($mutation->applied);
+        $transition = $this->store->blockWithPunishmentLifecycleTracking('marker-foreign', null, 1, $id, 2, 1, 21600, 2, 600, 86400);
+        self::assertTrue($transition->applied);
+        $this->raw(['DEL', $this->key('block', 'marker-foreign')]);
+        $this->raw(['SET', $this->key('reentry-claim', 'marker-foreign'), $foreignId, 'PX', '60000']);
+        $this->assertOperationFails(fn(): mixed => $this->store->claimPostPunishmentReentry('marker-foreign', null, $id));
+    }
+
     public function testPreviousClaimIsReadOnlyAndWritesOnlyCurrentMarker(): void
     {
         $now = $this->redisNow();
         $id = str_repeat('d', 32);
         $previous = $this->key('score', 'claim-previous-only');
-        $this->raw(['HSET', $previous, 'value', '8', 'updatedAt', (string) $now, 'expiresAt', (string) ($now + 600), 'generation', '1', 'reentryId', $id, 'reentryValidUntil', (string) ($now + 600), 'reentryGeneration', '1']);
+        $this->raw(['HSET', $previous, 'value', '8', 'updatedAt', (string) $now, 'expiresAt', (string) ($now + 601), 'generation', '1', 'reentryId', $id, 'reentryValidUntil', (string) ($now + 601), 'reentryGeneration', '1']);
         $this->raw(['EXPIRE', $previous, '600']);
         $before = $this->hashMap($previous);
 
@@ -511,6 +546,11 @@ final class RedisFullCapabilityStoreIntegrationTest extends TestCase
         $generatedPrevious = $this->store->mutateGenerationBoundScore('ttl-contract-generated-previous', null, null, 600, 6);
         self::assertTrue($generatedPrevious->applied);
         self::assertNotNull($generatedPrevious->state);
+        for ($generation = 2; $generation <= 3; $generation++) {
+            $generatedPrevious = $this->store->mutateGenerationBoundScore('ttl-contract-generated-previous', null, $generatedPrevious->state, 86400, 5 + $generation);
+            self::assertTrue($generatedPrevious->applied);
+            self::assertSame($generation, $generatedPrevious->state?->generation);
+        }
         $generatedPreviousKey = $this->key('score', 'ttl-contract-generated-previous');
         $generatedPreviousBefore = $this->hashMap($generatedPreviousKey);
         $generatedExpiry = $generatedPrevious->state->expiresAt;
@@ -519,7 +559,7 @@ final class RedisFullCapabilityStoreIntegrationTest extends TestCase
         self::assertNotNull($generatedPreviousState);
         $generatedHandoff = $this->store->mutateGenerationBoundScore('ttl-contract-generated-current', 'ttl-contract-generated-previous', $generatedPreviousState, 86400, 7);
         self::assertTrue($generatedHandoff->applied);
-        self::assertSame(2, $generatedHandoff->state?->generation);
+        self::assertSame(4, $generatedHandoff->state?->generation);
         self::assertSame($generatedExpiry, $generatedHandoff->state->expiresAt);
         self::assertLessThanOrEqual($generatedPreviousPttl + 25, $this->integer($this->raw(['PTTL', $this->key('score', 'ttl-contract-generated-current')])));
         self::assertSame($generatedPreviousBefore, $this->hashMap($generatedPreviousKey));
