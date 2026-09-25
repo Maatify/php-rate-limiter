@@ -393,6 +393,7 @@ for ($attempt = 1; $attempt <= 6; $attempt++) {
     }
 }
 requireCondition($reentryLoginHard instanceof RateLimitResultDTO, 'Public Login re-entry fixture did not issue a hard block.');
+requireCondition($reentryLoginHard->blockLevel === 2 && $reentryLoginHard->retryAfter === 60, 'Public Login newly-issued K4 L2 retryAfter must be 60 seconds: ' . json_encode(resultShape($reentryLoginHard), JSON_THROW_ON_ERROR));
 
 $reentryOtpAccount = 'consumer-account-public-reentry-otp';
 $reentryOtpContext = new RateLimitContextDTO('203.0.113.16', 'Mozilla/5.0 consumer-verification-public-reentry-otp', $reentryOtpAccount, ['device' => 'public-reentry-otp']);
@@ -407,6 +408,7 @@ for ($attempt = 1; $attempt <= 3; $attempt++) {
 }
 requireCondition(isset($reentryOtpHard) && $reentryOtpHard->decision === RateLimitResultDTO::DECISION_HARD_BLOCK, 'Public OTP re-entry fixture did not issue a hard block.');
 requireCondition($reentryOtpHard->blockLevel === 3, 'Default OTP re-entry fixture did not reach the expected L3 punishment.');
+requireCondition($reentryOtpHard->retryAfter === 300, 'Public OTP newly-issued K4 L3 retryAfter must be 300 seconds: ' . json_encode(resultShape($reentryOtpHard), JSON_THROW_ON_ERROR));
 
 $customPolicy = new class extends \Maatify\RateLimiter\Config\LoginProtectionPolicy implements PostPunishmentReentryPolicyInterface {
     public function getName(): string
@@ -426,6 +428,7 @@ for ($attempt = 1; $attempt <= 6; $attempt++) {
     }
 }
 requireCondition($customHard instanceof RateLimitResultDTO, 'Custom opt-in policy did not issue a hard block.');
+requireCondition($customHard->retryAfter === 60, 'Custom newly-issued K4 L2 retryAfter must be 60 seconds: ' . json_encode(resultShape($customHard), JSON_THROW_ON_ERROR));
 // All three public punishments are issued before one shared wait. This keeps
 // the default OTP L3 proof intact while avoiding serial 60s + 300s + 60s waits.
 $sharedWaitSeconds = max(

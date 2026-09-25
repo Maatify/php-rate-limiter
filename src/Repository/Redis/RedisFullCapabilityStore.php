@@ -142,21 +142,46 @@ LUA;
 local now = tonumber(redis.call('TIME')[1])
 for _, blockKey in ipairs({KEYS[3], KEYS[4]}) do
   if blockKey ~= '' and redis.call('EXISTS', blockKey) == 1 then
-    local expires = tonumber(redis.call('HGET', blockKey, 'expiresAt'))
-    if expires and expires > now then return 0 end
+    if redis.call('TTL', blockKey) < 0 then return redis.error_reply('malformed hard-block state') end
+    local rawExpires = redis.call('HGET', blockKey, 'expiresAt'); local rawLevel = redis.call('HGET', blockKey, 'level')
+    if not rawExpires or not rawLevel then return redis.error_reply('malformed hard-block state') end
+    local expires = tonumber(rawExpires); local level = tonumber(rawLevel)
+    if not expires or expires ~= math.floor(expires) or not level or level ~= math.floor(level) then return redis.error_reply('malformed hard-block state') end
+    if expires > now then return 0 end
   end
 end
 local source = KEYS[1]
 if redis.call('EXISTS', source) == 0 then source = KEYS[2] end
 if source ~= '' and redis.call('EXISTS', source) == 1 then
-  local generation = redis.call('HGET', source, 'generation'); local id = redis.call('HGET', source, 'reentryId'); local validUntil = redis.call('HGET', source, 'reentryValidUntil'); local evidenceGeneration = redis.call('HGET', source, 'reentryGeneration')
-  if id and validUntil and generation and evidenceGeneration == generation then
-    validUntil = tonumber(validUntil)
-    if validUntil and validUntil > now and id == ARGV[1] then
-      local markerTtl = math.max(1, validUntil - now)
-      if redis.call('SET', KEYS[5], id, 'NX', 'EX', markerTtl) then return 1 end
-      return 0
-    end
+  if redis.call('TTL', source) < 0 then return redis.error_reply('malformed generation-bound score state') end
+  local rawValue = redis.call('HGET', source, 'value'); local rawUpdated = redis.call('HGET', source, 'updatedAt')
+  if not rawValue or not rawUpdated then return redis.error_reply('malformed generation-bound score state') end
+  local value = tonumber(rawValue); local updated = tonumber(rawUpdated)
+  if not value or value ~= math.floor(value) or not updated or updated ~= math.floor(updated) then return redis.error_reply('malformed generation-bound score state') end
+  local rawExpiry = redis.call('HGET', source, 'expiresAt'); local expiry = nil
+  if rawExpiry then
+    expiry = tonumber(rawExpiry)
+    if not expiry or expiry ~= math.floor(expiry) then return redis.error_reply('malformed generation-bound score expiry') end
+    if expiry <= now then return 0 end
+  end
+  local generation = redis.call('HGET', source, 'generation')
+  if generation then
+    local numericGeneration = tonumber(generation)
+    if not numericGeneration or numericGeneration ~= math.floor(numericGeneration) or numericGeneration <= 0 then return redis.error_reply('malformed generation') end
+  end
+  local id = redis.call('HGET', source, 'reentryId') or ''; local validUntil = redis.call('HGET', source, 'reentryValidUntil') or ''; local evidenceGeneration = redis.call('HGET', source, 'reentryGeneration') or ''
+  local evidenceCount = (id ~= '' and 1 or 0) + (validUntil ~= '' and 1 or 0) + (evidenceGeneration ~= '' and 1 or 0)
+  if evidenceCount ~= 0 and evidenceCount ~= 3 then return redis.error_reply('malformed lifecycle evidence') end
+  if evidenceCount == 3 then
+    if #id ~= 32 or string.match(id, '^[a-f0-9]+$') == nil then return redis.error_reply('malformed lifecycle id') end
+    local numericUntil = tonumber(validUntil); local numericEvidenceGeneration = tonumber(evidenceGeneration)
+    if not numericUntil or numericUntil ~= math.floor(numericUntil) or not numericEvidenceGeneration or numericEvidenceGeneration ~= math.floor(numericEvidenceGeneration) or numericEvidenceGeneration <= 0 then return redis.error_reply('malformed lifecycle evidence') end
+    if not generation or numericEvidenceGeneration ~= tonumber(generation) then return 0 end
+    if expiry ~= nil and numericUntil ~= expiry then return redis.error_reply('malformed lifecycle evidence expiry') end
+    if numericUntil <= now or id ~= ARGV[1] then return 0 end
+    local markerTtl = math.max(1, numericUntil - now)
+    if redis.call('SET', KEYS[5], id, 'NX', 'EX', markerTtl) then return 1 end
+    return 0
   end
 end
 return 0

@@ -43,6 +43,7 @@ final class PostPunishmentReentryLifecycleTest extends TestCase
         $hard = $engine->limit($context, RateLimitCommand::recordFailure('login_protection'));
         self::assertSame(RateLimitResultDTO::DECISION_HARD_BLOCK, $hard->decision);
         self::assertSame(2, $hard->blockLevel);
+        self::assertSame(60, $hard->retryAfter);
         self::assertNull($hard->metadata?->postPunishmentReentry);
 
         $clock->setNow($clock->now()->modify('+601 seconds'));
@@ -87,12 +88,49 @@ final class PostPunishmentReentryLifecycleTest extends TestCase
         $hard = $engine->limit($context, RateLimitCommand::recordFailure('otp_protection'));
         self::assertSame(RateLimitResultDTO::DECISION_SOFT_BLOCK, $first->decision);
         self::assertSame(RateLimitResultDTO::DECISION_HARD_BLOCK, $hard->decision);
+        self::assertSame(300, $hard->retryAfter);
 
         $clock->setNow($clock->now()->modify('+601 seconds'));
         $served = $engine->limit($context, RateLimitCommand::checkOnly('otp_protection'));
         self::assertSame(RateLimitResultDTO::DECISION_ALLOW, $served->decision);
         self::assertNotNull($served->metadata?->postPunishmentReentry);
         self::assertTrue($engine->claimPostPunishmentReentry($context, 'otp_protection', $served->metadata->postPunishmentReentry->id));
+    }
+
+    public function testLifecycleClaimIdentityBoundariesRejectCrossAccountPolicyTamperedAndAnonymousClaims(): void
+    {
+        $clock = new FixedClock();
+        $engine = $this->engine($clock);
+        $context = $this->context('claim-account-a', 'claim-device');
+        $engine->limit($context, RateLimitCommand::recordFailure('login_protection'));
+        $engine->limit($context, RateLimitCommand::recordFailure('login_protection'));
+        $engine->limit($context, RateLimitCommand::recordFailure('login_protection'));
+        $clock->setNow($clock->now()->modify('+601 seconds'));
+        $served = $engine->limit($context, RateLimitCommand::checkOnly('login_protection'));
+        $id = $served->metadata?->postPunishmentReentry?->id;
+        self::assertNotNull($id);
+
+        self::assertFalse($engine->claimPostPunishmentReentry($this->context('claim-account-b', 'claim-device'), 'login_protection', $id));
+        self::assertFalse($engine->claimPostPunishmentReentry($context, 'otp_protection', $id));
+        self::assertFalse($engine->claimPostPunishmentReentry($context, 'login_protection', str_repeat('f', 32)));
+        self::assertFalse($engine->claimPostPunishmentReentry(new RateLimitContextDTO('203.0.113.10', 'Mozilla/5.0 claim-device', null, ['device' => 'claim-device']), 'login_protection', $id));
+        self::assertTrue($engine->claimPostPunishmentReentry($context, 'login_protection', $id));
+    }
+
+    public function testActiveK4BlockUsesRemainingPunishmentTtl(): void
+    {
+        $clock = new FixedClock();
+        $engine = $this->engine($clock);
+        $context = $this->context('active-ttl-account', 'active-ttl-device');
+        $engine->limit($context, RateLimitCommand::recordFailure('login_protection'));
+        $engine->limit($context, RateLimitCommand::recordFailure('login_protection'));
+        $issued = $engine->limit($context, RateLimitCommand::recordFailure('login_protection'));
+        self::assertSame(60, $issued->retryAfter);
+
+        $clock->setNow($clock->now()->modify('+10 seconds'));
+        $active = $engine->limit($context, RateLimitCommand::checkOnly('login_protection'));
+        self::assertSame(RateLimitResultDTO::DECISION_HARD_BLOCK, $active->decision);
+        self::assertSame(50, $active->retryAfter);
     }
 
     public function testKnownDeviceK5OnlyFailureDoesNotAdvanceServedK4Generation(): void

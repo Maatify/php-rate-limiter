@@ -1560,7 +1560,8 @@ class EvaluationPipeline
                 $actualScoreLevel = $this->determineLevel($newScore, $keyType, $policy);
                 if ($keyType === 'k4' && $policy instanceof PostPunishmentReentryPolicyInterface
                     && $this->store instanceof PunishmentLifecycleStoreInterface
-                    && $actualScoreLevel >= 2 && $mutation?->state?->generation !== null) {
+                    && $actualScoreLevel >= 2 && $mutation?->state?->generation !== null
+                    && $expected?->generation !== null) {
                     $this->lifecycleEligibleKeys[$key] = $mutation->state->generation;
                 }
                 $level = $actualScoreLevel;
@@ -1593,7 +1594,10 @@ class EvaluationPipeline
 
                 $levelsByKeyType[$keyType] = $level;
                 $retryAfterByKeyType[$keyType] = PenaltyLadder::getDuration($level);
-                if (! $watchEscalated && $actualScoreLevel > 0 && $thresholdsDto !== null) {
+                $freshK4LifecycleHard = $keyType === 'k4'
+                    && $policy instanceof PostPunishmentReentryPolicyInterface
+                    && isset($this->lifecycleEligibleKeys[$key]);
+                if (! $freshK4LifecycleHard && ! $watchEscalated && $actualScoreLevel > 0 && $thresholdsDto !== null) {
                     $exitThreshold = $level >= 2 ? $thresholdsDto->l2 : $thresholdsDto->l1;
                     $pauseState = $this->decayPauseState(
                         $key,

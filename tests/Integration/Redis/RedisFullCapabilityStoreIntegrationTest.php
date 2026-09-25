@@ -266,6 +266,189 @@ final class RedisFullCapabilityStoreIntegrationTest extends TestCase
         self::assertFalse($this->store->claimPostPunishmentReentry('claim-current', 'claim-previous', str_repeat('a', 32)));
     }
 
+    public function testMalformedLifecycleClaimStateRaisesExplicitFailure(): void
+    {
+        $now = $this->redisNow();
+        $partial = $this->key('score', 'claim-malformed-partial');
+        $this->raw(['HSET', $partial, 'value', '8', 'updatedAt', (string) $now, 'expiresAt', (string) ($now + 600), 'generation', '1', 'reentryId', str_repeat('a', 32)]);
+        $this->raw(['EXPIRE', $partial, '600']);
+        $this->assertOperationFails(fn(): mixed => $this->store->claimPostPunishmentReentry('claim-malformed-partial', null, str_repeat('a', 32)));
+
+        $invalidId = $this->key('score', 'claim-malformed-id');
+        $this->raw(['HSET', $invalidId, 'value', '8', 'updatedAt', (string) $now, 'expiresAt', (string) ($now + 600), 'generation', '1', 'reentryId', str_repeat('z', 32), 'reentryValidUntil', (string) ($now + 600), 'reentryGeneration', '1']);
+        $this->raw(['EXPIRE', $invalidId, '600']);
+        $this->assertOperationFails(fn(): mixed => $this->store->claimPostPunishmentReentry('claim-malformed-id', null, str_repeat('z', 32)));
+
+        $malformedBlockScore = $this->key('score', 'claim-malformed-block');
+        $malformedBlock = $this->key('block', 'claim-malformed-block');
+        $this->raw(['HSET', $malformedBlockScore, 'value', '8', 'updatedAt', (string) $now, 'expiresAt', (string) ($now + 600), 'generation', '1', 'reentryId', str_repeat('a', 32), 'reentryValidUntil', (string) ($now + 600), 'reentryGeneration', '1']);
+        $this->raw(['EXPIRE', $malformedBlockScore, '600']);
+        $this->raw(['HSET', $malformedBlock, 'level', '2']);
+        $this->raw(['EXPIRE', $malformedBlock, '600']);
+        $this->assertOperationFails(fn(): mixed => $this->store->claimPostPunishmentReentry('claim-malformed-block', null, str_repeat('a', 32)));
+    }
+
+    public function testConcurrentRedisClaimsHaveExactlyOneWinner(): void
+    {
+        $now = $this->redisNow();
+        $id = str_repeat('c', 32);
+        $score = $this->key('score', 'claim-concurrent');
+        $this->raw(['HSET', $score, 'value', '8', 'updatedAt', (string) $now, 'expiresAt', (string) ($now + 600), 'generation', '1', 'reentryId', $id, 'reentryValidUntil', (string) ($now + 600), 'reentryGeneration', '1']);
+        $this->raw(['EXPIRE', $score, '600']);
+
+        $workers = 8;
+        $this->runConcurrentWorkers($workers, function (int $index) use ($id): void {
+            $claimed = $this->workerStore()->claimPostPunishmentReentry('claim-concurrent', null, $id);
+            $host = getenv('REDIS_INTEGRATION_HOST');
+            $port = getenv('REDIS_INTEGRATION_PORT');
+            if ($host === false || $port === false) {
+                exit(1);
+            }
+            (new RespRedisCommandExecutor($host, (int) $port))->execute([
+                'SET',
+                $this->key('claim-result', 'concurrent-' . $index),
+                $claimed ? '1' : '0',
+                'EX',
+                '60',
+            ]);
+        });
+
+        $winners = 0;
+        for ($index = 0; $index < $workers; $index++) {
+            $winners += $this->integer($this->raw(['GET', $this->key('claim-result', 'concurrent-' . $index)]));
+        }
+        self::assertSame(1, $winners);
+    }
+
+    public function testPreviousClaimIsReadOnlyAndWritesOnlyCurrentMarker(): void
+    {
+        $now = $this->redisNow();
+        $id = str_repeat('d', 32);
+        $previous = $this->key('score', 'claim-previous-only');
+        $this->raw(['HSET', $previous, 'value', '8', 'updatedAt', (string) $now, 'expiresAt', (string) ($now + 600), 'generation', '1', 'reentryId', $id, 'reentryValidUntil', (string) ($now + 600), 'reentryGeneration', '1']);
+        $this->raw(['EXPIRE', $previous, '600']);
+        $before = $this->hashMap($previous);
+
+        self::assertTrue($this->store->claimPostPunishmentReentry('claim-previous-only-current', 'claim-previous-only', $id));
+
+        self::assertSame($before, $this->hashMap($previous));
+        self::assertSame($id, $this->raw(['GET', $this->key('reentry-claim', 'claim-previous-only-current')]));
+        $markerTtl = $this->integer($this->raw(['TTL', $this->key('reentry-claim', 'claim-previous-only-current')]));
+        self::assertGreaterThan(0, $markerTtl);
+        self::assertLessThanOrEqual(600, $markerTtl);
+        self::assertFalse($this->store->claimPostPunishmentReentry('claim-previous-only-current', 'claim-previous-only', $id));
+    }
+
+    public function testLifecycleClaimDoesNotMutateScoreBlockCycleBudgetOrGenerationEvidence(): void
+    {
+        $mutation = $this->store->mutateGenerationBoundScore('claim-nonmutation', null, null, 600, 8);
+        self::assertTrue($mutation->applied);
+        $id = str_repeat('e', 32);
+        $transition = $this->store->blockWithPunishmentLifecycleTracking('claim-nonmutation', null, 1, $id, 2, 1, 21600, 2, 600, 86400);
+        self::assertTrue($transition->applied);
+        $this->raw(['DEL', $this->key('block', 'claim-nonmutation')]);
+        $this->store->incrementBudget('claim-nonmutation-budget', 600, 3);
+
+        $scoreBefore = $this->hashMap($this->key('score', 'claim-nonmutation'));
+        $cycleBefore = $this->raw(['ZRANGE', $this->key('cycle', 'claim-nonmutation'), '0', '-1', 'WITHSCORES']);
+        $budgetBefore = $this->hashMap($this->key('budget', 'claim-nonmutation-budget'));
+        self::assertTrue($this->store->claimPostPunishmentReentry('claim-nonmutation', null, $id));
+        self::assertSame($scoreBefore, $this->hashMap($this->key('score', 'claim-nonmutation')));
+        self::assertSame($cycleBefore, $this->raw(['ZRANGE', $this->key('cycle', 'claim-nonmutation'), '0', '-1', 'WITHSCORES']));
+        self::assertSame($budgetBefore, $this->hashMap($this->key('budget', 'claim-nonmutation-budget')));
+        self::assertSame($id, $this->raw(['GET', $this->key('reentry-claim', 'claim-nonmutation')]));
+    }
+
+    public function testLegacyHandoffAndSameValueMutationAdvanceGenerationExactlyOnce(): void
+    {
+        $now = $this->redisNow();
+        $legacyCurrent = $this->key('score', 'legacy-current-boundary');
+        $this->raw(['HSET', $legacyCurrent, 'value', '4', 'updatedAt', (string) $now]);
+        $this->raw(['EXPIRE', $legacyCurrent, '600']);
+        $legacyExpiry = $this->integer($this->raw(['TTL', $legacyCurrent]));
+        $legacyState = $this->store->readGenerationBoundScoreState('legacy-current-boundary', null);
+        self::assertNotNull($legacyState);
+        self::assertNull($legacyState->generation);
+        $sameValue = $this->store->mutateGenerationBoundScore('legacy-current-boundary', null, $legacyState, 600, 4);
+        self::assertTrue($sameValue->applied);
+        self::assertSame(1, $sameValue->state?->generation);
+        self::assertLessThanOrEqual($legacyExpiry, $this->integer($this->raw(['TTL', $legacyCurrent])));
+
+        $previous = $this->key('score', 'legacy-previous-boundary');
+        $this->raw(['HSET', $previous, 'value', '6', 'updatedAt', (string) $now]);
+        $this->raw(['EXPIRE', $previous, '600']);
+        $previousBefore = $this->hashMap($previous);
+        $previousState = $this->store->readGenerationBoundScoreState('legacy-handoff-current', 'legacy-previous-boundary');
+        self::assertNotNull($previousState);
+        self::assertNull($previousState->generation);
+        $handoff = $this->store->mutateGenerationBoundScore('legacy-handoff-current', 'legacy-previous-boundary', $previousState, 600, 7);
+        self::assertTrue($handoff->applied);
+        self::assertSame(1, $handoff->state?->generation);
+        self::assertSame($previousBefore, $this->hashMap($previous));
+        self::assertFalse($this->store->mutateGenerationBoundScore('legacy-handoff-current', 'legacy-previous-boundary', $previousState, 600, 8)->applied);
+
+        $generationOne = $this->store->mutateGenerationBoundScore('same-second-value', null, null, 600, 8);
+        self::assertTrue($generationOne->applied);
+        $generationTwo = $this->store->mutateGenerationBoundScore('same-second-value', null, $generationOne->state, 600, 8);
+        self::assertTrue($generationTwo->applied);
+        self::assertSame(2, $generationTwo->state?->generation);
+        self::assertNull($this->store->readGenerationBoundScoreState('same-second-value', null)?->postPunishmentReentry);
+    }
+
+    public function testConcurrentPreviousHandoffHasNoDoubleSeedAndGenerationMutationsHaveNoLostUpdates(): void
+    {
+        $now = $this->redisNow();
+        $previous = $this->key('score', 'concurrent-previous');
+        $this->raw(['HSET', $previous, 'value', '5', 'updatedAt', (string) $now]);
+        $this->raw(['EXPIRE', $previous, '600']);
+        $observedPrevious = $this->store->readGenerationBoundScoreState('concurrent-current', 'concurrent-previous');
+        self::assertNotNull($observedPrevious);
+
+        $workers = 6;
+        $this->runConcurrentWorkers($workers, function (int $index) use ($observedPrevious): void {
+            $mutation = $this->workerStore()->mutateGenerationBoundScore('concurrent-current', 'concurrent-previous', $observedPrevious, 600, 6);
+            $host = getenv('REDIS_INTEGRATION_HOST');
+            $port = getenv('REDIS_INTEGRATION_PORT');
+            if ($host === false || $port === false) {
+                exit(1);
+            }
+            (new RespRedisCommandExecutor($host, (int) $port))->execute([
+                'SET',
+                $this->key('handoff-result', (string) $index),
+                $mutation->applied ? '1' : '0',
+                'EX',
+                '60',
+            ]);
+        });
+        $handoffWinners = 0;
+        for ($index = 0; $index < $workers; $index++) {
+            $handoffWinners += $this->integer($this->raw(['GET', $this->key('handoff-result', (string) $index)]));
+        }
+        self::assertSame(1, $handoffWinners);
+        self::assertSame($observedPrevious->value, $this->store->readGenerationBoundScoreState('concurrent-previous', null)?->value);
+        $handoffState = $this->store->readGenerationBoundScoreState('concurrent-current', 'concurrent-previous');
+        self::assertNotNull($handoffState);
+        self::assertSame(6, $handoffState->value);
+        self::assertSame(1, $handoffState->generation);
+
+        $this->store->mutateGenerationBoundScore('concurrent-mutations', null, null, 600, 0);
+        $this->runConcurrentWorkers($workers, function (): void {
+            for ($attempt = 0; $attempt < 8; $attempt++) {
+                $store = $this->workerStore();
+                $state = $store->readGenerationBoundScoreState('concurrent-mutations', null);
+                if ($state !== null && $store->mutateGenerationBoundScore('concurrent-mutations', null, $state, 600, $state->value + 1)->applied) {
+                    return;
+                }
+                usleep(1000);
+            }
+            exit(1);
+        });
+        $final = $this->store->readGenerationBoundScoreState('concurrent-mutations', null);
+        self::assertNotNull($final);
+        self::assertSame($workers, $final->value);
+        self::assertSame($workers + 1, $final->generation);
+    }
+
     public function testPublicBuilderWorkflowUsesTheOfficialRedisAggregateStore(): void
     {
         $clock = new FixedClock('2025-01-01 12:00:00');
