@@ -187,18 +187,19 @@ final class ExampleRateLimitStore implements PunishmentLifecycleStoreInterface
         int $newValue,
     ): GenerationBoundScoreMutationDTO {
         $observed = $this->readGenerationBoundScoreState($currentKey, $previousKey);
-        if ($expectedState !== null && ($observed === null
-            || $observed->source !== $expectedState->source
-            || $observed->generation !== $expectedState->generation
-            || $observed->value !== $expectedState->value)) {
+        if (($expectedState === null && $observed !== null)
+            || ($expectedState !== null && ($observed === null
+                || $observed->source !== $expectedState->source
+                || $observed->generation !== $expectedState->generation
+                || $observed->value !== $expectedState->value
+                || $observed->updatedAt !== $expectedState->updatedAt
+                || $observed->expiresAt !== $expectedState->expiresAt))) {
             return new GenerationBoundScoreMutationDTO(false, null);
         }
 
         $now = $this->clock->now()->getTimestamp();
-        $generation = $observed?->source === GenerationBoundScoreStateDTO::SOURCE_CURRENT
-            ? ($observed->generation ?? 0) + 1 : 1;
-        $expiresAt = $observed?->source === GenerationBoundScoreStateDTO::SOURCE_CURRENT
-            ? $observed->expiresAt : $now + $ttlSeconds;
+        $generation = $observed === null ? 1 : ($observed->generation ?? 0) + 1;
+        $expiresAt = $observed === null ? $now + $ttlSeconds : $observed->expiresAt;
         $this->counters[$currentKey] = ['value' => $newValue, 'updatedAt' => $now, 'expiresAt' => $expiresAt];
         $this->generations[$currentKey] = ['generation' => $generation, 'lifecycle' => null];
         unset($this->claimMarkers[$currentKey]);

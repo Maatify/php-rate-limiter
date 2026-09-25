@@ -289,6 +289,49 @@ final class RedisFullCapabilityStoreIntegrationTest extends TestCase
         $this->assertOperationFails(fn(): mixed => $this->store->claimPostPunishmentReentry('claim-malformed-block', null, str_repeat('a', 32)));
     }
 
+    public function testMalformedHardBlockFailsPublicationBeforeChangingAnyLifecycleState(): void
+    {
+        $now = $this->redisNow();
+        $score = $this->key('score', 'publication-malformed-block');
+        $block = $this->key('block', 'publication-malformed-block');
+        $cycle = $this->key('cycle', 'publication-malformed-block');
+        $pause = $this->key('pause', 'publication-malformed-block');
+        $this->raw(['HSET', $score, 'value', '8', 'updatedAt', (string) $now, 'generation', '1', 'expiresAt', (string) ($now + 600)]);
+        $this->raw(['EXPIRE', $score, '600']);
+        $this->raw(['ZADD', $cycle, $now, (string) $now]);
+        $this->raw(['EXPIRE', $cycle, '600']);
+        $this->raw(['ZADD', $pause, $now, $now . ':' . ($now + 30)]);
+        $this->raw(['EXPIRE', $pause, '86400']);
+        $this->raw(['HSET', $block, 'level', '2']);
+        $this->raw(['EXPIRE', $block, '600']);
+        $before = [$this->hashMap($score), $this->hashMap($block), $this->raw(['ZRANGE', $cycle, 0, -1, 'WITHSCORES']), $this->raw(['ZRANGE', $pause, 0, -1, 'WITHSCORES'])];
+
+        $this->assertOperationFails(fn(): mixed => $this->store->blockWithPunishmentLifecycleTracking('publication-malformed-block', null, 1, str_repeat('a', 32), 2, 60, 600, 3, 600, 86400));
+
+        self::assertSame($before, [$this->hashMap($score), $this->hashMap($block), $this->raw(['ZRANGE', $cycle, 0, -1, 'WITHSCORES']), $this->raw(['ZRANGE', $pause, 0, -1, 'WITHSCORES'])]);
+        self::assertGreaterThan(0, $this->integer($this->raw(['PTTL', $score])));
+    }
+
+    public function testMalformedPauseFailsPublicationBeforeChangingAnyLifecycleState(): void
+    {
+        $now = $this->redisNow();
+        $score = $this->key('score', 'publication-malformed-pause');
+        $cycle = $this->key('cycle', 'publication-malformed-pause');
+        $pause = $this->key('pause', 'publication-malformed-pause');
+        $this->raw(['HSET', $score, 'value', '8', 'updatedAt', (string) $now, 'generation', '1', 'expiresAt', (string) ($now + 600)]);
+        $this->raw(['EXPIRE', $score, '600']);
+        $this->raw(['ZADD', $cycle, $now, (string) $now]);
+        $this->raw(['EXPIRE', $cycle, '600']);
+        $this->raw(['ZADD', $pause, $now, 'malformed']);
+        $this->raw(['EXPIRE', $pause, '86400']);
+        $before = [$this->hashMap($score), $this->raw(['ZRANGE', $cycle, 0, -1, 'WITHSCORES']), $this->raw(['ZRANGE', $pause, 0, -1, 'WITHSCORES'])];
+
+        $this->assertOperationFails(fn(): mixed => $this->store->blockWithPunishmentLifecycleTracking('publication-malformed-pause', null, 1, str_repeat('b', 32), 2, 60, 600, 3, 600, 86400));
+
+        self::assertSame($before, [$this->hashMap($score), $this->raw(['ZRANGE', $cycle, 0, -1, 'WITHSCORES']), $this->raw(['ZRANGE', $pause, 0, -1, 'WITHSCORES'])]);
+        self::assertGreaterThan(0, $this->integer($this->raw(['PTTL', $score])));
+    }
+
     public function testPartialLifecycleEvidenceFailsReadExplicitly(): void
     {
         $now = $this->redisNow();

@@ -18,7 +18,8 @@ use Maatify\RateLimiter\DTO\PunishmentLifecycleTransitionDTO;
  * Mutation methods use optimistic state identity: a stale snapshot returns an
  * unapplied result, while malformed generated state raises the backend failure
  * path. Lifecycle publication atomically couples the hard block, cycle/pause
- * accounting, generation evidence, and one-shot claim marker.
+ * accounting, and generation evidence; the later public claim creates and
+ * consumes an independent Current-only one-shot marker.
  */
 interface PunishmentLifecycleStoreInterface extends HardBlockCycleStoreInterface
 {

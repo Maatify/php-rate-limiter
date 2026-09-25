@@ -186,9 +186,13 @@ if (tonumber(expiry) * 1000) <= nowMs then return {} end
 local active = false
 for _, blockKey in ipairs({KEYS[3], KEYS[4]}) do
   if blockKey ~= '' and redis.call('EXISTS', blockKey) == 1 then
-    local blockExpiry = redis.call('HGET', blockKey, 'expiresAt'); local level = redis.call('HGET', blockKey, 'level')
-    if not blockExpiry or not level or not tonumber(blockExpiry) or tonumber(blockExpiry) ~= math.floor(tonumber(blockExpiry)) or not tonumber(level) or tonumber(level) ~= math.floor(tonumber(level)) then return redis.error_reply('malformed hard-block state') end
-    if tonumber(blockExpiry) > nowSeconds and tonumber(level) >= 2 then active = true end
+    local blockPttl = redis.call('PTTL', blockKey)
+    if blockPttl == -1 then return redis.error_reply('malformed hard-block state') end
+    if blockPttl > 0 then
+      local blockExpiry = redis.call('HGET', blockKey, 'expiresAt'); local level = redis.call('HGET', blockKey, 'level')
+      if not blockExpiry or not level or not tonumber(blockExpiry) or tonumber(blockExpiry) ~= math.floor(tonumber(blockExpiry)) or not tonumber(level) or tonumber(level) ~= math.floor(tonumber(level)) then return redis.error_reply('malformed hard-block state') end
+      if tonumber(blockExpiry) > nowSeconds and tonumber(level) >= 2 then active = true end
+    end
   end
 end
 local evidenceCount = redis.call('HEXISTS', source, 'reentryId') + redis.call('HEXISTS', source, 'reentryValidUntil') + redis.call('HEXISTS', source, 'reentryGeneration')
@@ -242,7 +246,6 @@ if source ~= '' then
   if rawExpiry then
     expiry = tonumber(rawExpiry)
     if not expiry or expiry ~= math.floor(expiry) then return redis.error_reply('malformed generation-bound score expiry') end
-    if expiry <= nowSeconds then return 0 end
   end
   if generation and expiry == nil then return redis.error_reply('malformed generation-bound score expiry') end
   if generation then
@@ -251,6 +254,7 @@ if source ~= '' then
   end
   local physicalDeadlineMs = nowMs + sourcePttl
   if generation and physicalDeadlineMs > (expiry * 1000) then return redis.error_reply('inconsistent generated score expiry') end
+  if expiry ~= nil and expiry <= nowSeconds then return 0 end
   local evidenceCount = redis.call('HEXISTS', source, 'reentryId') + redis.call('HEXISTS', source, 'reentryValidUntil') + redis.call('HEXISTS', source, 'reentryGeneration')
   if evidenceCount ~= 0 and evidenceCount ~= 3 then return redis.error_reply('malformed lifecycle evidence') end
   if evidenceCount == 3 then
@@ -270,10 +274,19 @@ if source ~= '' then
     end
     local markerDeadlineMs = math.min(physicalDeadlineMs, numericUntil * 1000)
     if markerDeadlineMs <= nowMs then return 0 end
-    redis.call('SET', KEYS[5], id, 'NX')
+    local created = redis.call('SET', KEYS[5], id, 'NX')
+    if not created then
+      local existingPttl = redis.call('PTTL', KEYS[5])
+      if existingPttl == -1 then return redis.error_reply('malformed lifecycle claim marker') end
+      if existingPttl > 0 then
+        local existing = redis.call('GET', KEYS[5])
+        if existing == id then return 0 end
+        return redis.error_reply('inconsistent lifecycle claim marker')
+      end
+      return 0
+    end
     redis.call('PEXPIREAT', KEYS[5], markerDeadlineMs)
-    if redis.call('GET', KEYS[5]) == id then return 1 end
-    return 0
+    return 1
   end
 end
 return 0
@@ -581,94 +594,76 @@ if lifecycleGeneration ~= '' then
     if not numericUntil or numericUntil ~= math.floor(numericUntil) or numericUntil <= 0 or not numericEvidenceGeneration or numericEvidenceGeneration ~= math.floor(numericEvidenceGeneration) or numericEvidenceGeneration <= 0 then return redis.error_reply('malformed lifecycle evidence') end
   end
 end
-local function validateCycles(key)
-  if key == '' or redis.call('EXISTS', key) == 0 then return end
-  if redis.call('ZCARD', key) == 0 then error('malformed cycle history') end
-  for _, member in ipairs(redis.call('ZRANGE', key, 0, -1)) do
-    local score = tonumber(redis.call('ZSCORE', key, member))
-    local timestamp = tonumber(member)
-    if not score or score ~= math.floor(score) or not timestamp or timestamp ~= math.floor(timestamp) or score ~= timestamp then error('malformed cycle history') end
-  end
-end
-local function mergeCycles(source, target)
-  if source == '' or redis.call('EXISTS', source) == 0 then return end
-  validateCycles(source)
-  for _, member in ipairs(redis.call('ZRANGE', source, 0, -1)) do
-    redis.call('ZADD', target, tonumber(redis.call('ZSCORE', source, member)), member)
-  end
-end
 local function extendUntil(key, target)
   if key == '' or redis.call('EXISTS', key) == 0 then return end
   local ttl = redis.call('TTL', key)
   local needed = math.max(1, target - now)
   if ttl < needed then redis.call('EXPIRE', key, needed) end
 end
-validateCycles(KEYS[1])
-if KEYS[2] ~= '' then mergeCycles(KEYS[2], KEYS[1]) end
-redis.call('ZREMRANGEBYSCORE', KEYS[1], '-inf', '(' .. (now - tonumber(ARGV[6])))
-validateCycles(KEYS[1])
-local active = false
-for _, blockKey in ipairs({KEYS[3], KEYS[4]}) do
-  if blockKey ~= '' and redis.call('EXISTS', blockKey) == 1 then
-    if redis.call('TTL', blockKey) < 0 then return redis.error_reply('malformed hard-block state') end
-    local expires = redis.call('HGET', blockKey, 'expiresAt'); local level = redis.call('HGET', blockKey, 'level')
-    if not expires or not level then return redis.error_reply('malformed hard-block state') end
-    expires = tonumber(expires); level = tonumber(level)
-    if not expires or expires ~= math.floor(expires) or not level or level ~= math.floor(level) then return redis.error_reply('malformed hard-block state') end
-    if expires > now and level >= 2 then active = true end
-  end
-end
-local newCycle = not active
-if newCycle then redis.call('ZADD', KEYS[1], now, tostring(now)) end
-local cycleCount = redis.call('ZCARD', KEYS[1])
-local latestCycle = redis.call('ZREVRANGE', KEYS[1], 0, 0, 'WITHSCORES')
-if #latestCycle == 2 then
-  local latestScore = tonumber(latestCycle[2])
-  if not latestScore or latestScore ~= math.floor(latestScore) then return redis.error_reply('malformed cycle history') end
-  extendUntil(KEYS[1], latestScore + cycleWindow)
-end
-local pauseUntil = 0
-local function validatePauses(key)
+
+-- Phase A: validate every existing structure and compute merged state without writes.
+local cyclesByMember = {}; local cycleMembers = {}
+local function readCycles(key)
   if key == '' or redis.call('EXISTS', key) == 0 then return end
+  if redis.call('ZCARD', key) == 0 then error('malformed cycle history') end
   for _, member in ipairs(redis.call('ZRANGE', key, 0, -1)) do
-    local sep = string.find(member, ':')
-    if not sep then error('malformed pause history') end
-    local start = tonumber(string.sub(member, 1, sep - 1)); local finish = tonumber(string.sub(member, sep + 1)); local score = tonumber(redis.call('ZSCORE', key, member))
-    if not start or start ~= math.floor(start) or not finish or finish ~= math.floor(finish) or finish < start or not score or score ~= math.floor(score) or score ~= start then error('malformed pause history') end
-  end
-end
-local function mergePauses(source, target)
-  if source == '' or redis.call('EXISTS', source) == 0 then return end
-  validatePauses(source)
-  for _, member in ipairs(redis.call('ZRANGE', source, 0, -1)) do
-    redis.call('ZADD', target, tonumber(redis.call('ZSCORE', source, member)), member)
-  end
-end
-validatePauses(KEYS[5])
-if KEYS[6] ~= '' then mergePauses(KEYS[6], KEYS[5]) end
-validatePauses(KEYS[5])
-local pauseCutoff = now - retention
-local latestPauseUntil = 0
-if redis.call('EXISTS', KEYS[5]) == 1 then
-  for _, member in ipairs(redis.call('ZRANGE', KEYS[5], 0, -1)) do
-    local sep = string.find(member, ':')
-    if not sep then return redis.error_reply('malformed pause history') end
-    local finish = tonumber(string.sub(member, sep + 1))
-    if not finish or finish ~= math.floor(finish) then return redis.error_reply('malformed pause history') end
-    if finish <= pauseCutoff then redis.call('ZREM', KEYS[5], member) else
-      if finish > now then pauseUntil = math.max(pauseUntil, finish) end
-      latestPauseUntil = math.max(latestPauseUntil, finish)
+    local score = tonumber(redis.call('ZSCORE', key, member)); local timestamp = tonumber(member)
+    if not score or score ~= math.floor(score) or not timestamp or timestamp ~= math.floor(timestamp) or score ~= timestamp then error('malformed cycle history') end
+    if timestamp >= now - cycleWindow and cyclesByMember[member] == nil then
+      cyclesByMember[member] = timestamp; cycleMembers[#cycleMembers + 1] = member
     end
   end
 end
+readCycles(KEYS[1]); readCycles(KEYS[2])
+local active = false
+for _, blockKey in ipairs({KEYS[3], KEYS[4]}) do
+  if blockKey ~= '' and redis.call('EXISTS', blockKey) == 1 then
+    local blockPttl = redis.call('PTTL', blockKey)
+    if blockPttl == -1 then return redis.error_reply('malformed hard-block state') end
+    if blockPttl > 0 then
+      local expires = tonumber(redis.call('HGET', blockKey, 'expiresAt')); local level = tonumber(redis.call('HGET', blockKey, 'level'))
+      if not expires or expires ~= math.floor(expires) or not level or level ~= math.floor(level) then return redis.error_reply('malformed hard-block state') end
+      if expires > now and level >= 2 then active = true end
+    end
+  end
+end
+local newCycle = not active
+if newCycle and cyclesByMember[tostring(now)] == nil then cyclesByMember[tostring(now)] = now; cycleMembers[#cycleMembers + 1] = tostring(now) end
+local cycleCount = #cycleMembers; local latestCycle = 0
+for _, member in ipairs(cycleMembers) do latestCycle = math.max(latestCycle, cyclesByMember[member]) end
+
+local pausesByMember = {}; local pauseMembers = {}
+local function readPauses(key)
+  if key == '' or redis.call('EXISTS', key) == 0 then return end
+  for _, member in ipairs(redis.call('ZRANGE', key, 0, -1)) do
+    local sep = string.find(member, ':'); local start = sep and tonumber(string.sub(member, 1, sep - 1)); local finish = sep and tonumber(string.sub(member, sep + 1)); local score = tonumber(redis.call('ZSCORE', key, member))
+    if not sep or not start or start ~= math.floor(start) or not finish or finish ~= math.floor(finish) or finish < start or not score or score ~= math.floor(score) or score ~= start then error('malformed pause history') end
+    if finish > now - retention and pausesByMember[member] == nil then pausesByMember[member] = {start, finish}; pauseMembers[#pauseMembers + 1] = member end
+  end
+end
+readPauses(KEYS[5]); readPauses(KEYS[6])
+local pauseUntil = 0; local latestPauseUntil = 0
+for _, member in ipairs(pauseMembers) do
+  local finish = pausesByMember[member][2]; latestPauseUntil = math.max(latestPauseUntil, finish)
+  if finish > now then pauseUntil = math.max(pauseUntil, finish) end
+end
 local activated = false
 if newCycle and cycleCount >= tonumber(ARGV[7]) and pauseUntil == 0 then
-  pauseUntil = now + tonumber(ARGV[8])
-  redis.call('ZADD', KEYS[5], now, tostring(now) .. ':' .. tostring(pauseUntil))
-  latestPauseUntil = math.max(latestPauseUntil, pauseUntil)
-  activated = true
+  pauseUntil = now + tonumber(ARGV[8]); local member = tostring(now) .. ':' .. tostring(pauseUntil)
+  pausesByMember[member] = {now, pauseUntil}; pauseMembers[#pauseMembers + 1] = member; latestPauseUntil = math.max(latestPauseUntil, pauseUntil); activated = true
 end
+
+-- Phase B is complete. Phase C contains writes only and uses prevalidated values.
+for _, member in ipairs(cycleMembers) do redis.call('ZADD', KEYS[1], cyclesByMember[member], member) end
+redis.call('ZREMRANGEBYSCORE', KEYS[1], '-inf', '(' .. (now - cycleWindow))
+if redis.call('EXISTS', KEYS[5]) == 1 then
+  for _, member in ipairs(redis.call('ZRANGE', KEYS[5], 0, -1)) do
+    if pausesByMember[member] == nil then redis.call('ZREM', KEYS[5], member) end
+  end
+end
+for _, member in ipairs(pauseMembers) do redis.call('ZADD', KEYS[5], pausesByMember[member][1], member) end
 if latestPauseUntil > 0 then extendUntil(KEYS[5], latestPauseUntil + retention) end
+if latestCycle > 0 then extendUntil(KEYS[1], latestCycle + cycleWindow) end
 local expires = now + tonumber(ARGV[2])
 redis.call('HSET', KEYS[3], 'level', ARGV[1], 'expiresAt', expires); redis.call('EXPIRE', KEYS[3], ARGV[2])
 if lifecycleGeneration ~= '' then
@@ -1054,7 +1049,8 @@ LUA;
      * Redis server time owns the publication timestamps. A generation conflict
      * returns an unapplied transition with no partial result; an applied
      * transition couples the block, cycle/pause accounting, score expiry, and
-     * one-shot marker. Malformed score, block, cycle, pause, or generated
+     * lifecycle evidence. The separate public claim owns the one-shot marker.
+     * Malformed score, block, cycle, pause, or generated
      * lifecycle state raises an explicit backend failure instead of repairing it.
      */
     public function blockWithPunishmentLifecycleTracking(string $currentKey, ?string $previousKey, int $expectedGeneration, string $proposedLifecycleId, int $level, int $durationSeconds, int $cycleWindowSeconds, int $cycleThreshold, int $pauseSeconds, int $pauseHistoryRetentionSeconds): PunishmentLifecycleTransitionDTO
