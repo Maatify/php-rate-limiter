@@ -545,7 +545,7 @@ final class RedisFullCapabilityStoreIntegrationTest extends TestCase
         $now = $this->redisNow();
         $logical = 'r2-valid-generation-mismatch';
         $score = $this->key('score', $logical);
-        $this->raw(['HSET', $score, 'value', '8', 'updatedAt', (string) $now, 'generation', '3', 'expiresAt', (string) ($now + 600)]);
+        $this->raw(['HSET', $score, 'value', '8', 'updatedAt', (string) $now, 'generation', '3', 'expiresAt', (string) ($now + 601)]);
         $this->raw(['EXPIRE', $score, '600']);
         $before = $this->hashMap($score);
 
