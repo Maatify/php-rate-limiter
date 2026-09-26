@@ -78,7 +78,7 @@ remains valid.
 
 Secrets are explicit and independently rotatable. `RateLimiterConfig` rejects empty or whitespace-only active, previous, and environment values without trimming valid caller input. The builder does not create a service container or no-op production adapters. Use `withClock()`, `withDeviceIdentityResolver()`, `withPolicy()`, or `withSimpleThrottlePolicy()` only for the targeted overrides defined by the public contract; low-level constructors remain the Advanced Path.
 
-`build()` returns `CompositeRateLimiterRuntimeInterface`, which stays assignable to `RateLimiterRuntimeInterface` for every existing consumer.
+`build()` returns `CompositeRateLimiterRuntimeInterface`, and the result remains assignable to both `RateLimiterRuntimeInterface` and `RateLimiterInterface` for every existing consumer.
 
 ## Simple Fixed-Window Throttling
 
@@ -98,7 +98,7 @@ $limiter = (new RateLimiterBuilder($config, $rateLimitStore, $correlationStore, 
 $result = $limiter->consume('checkout_attempts', $customerId);
 ```
 
-`$limiter->consume(string $policyName, string $subject): SimpleRateLimitResultDTO` is the one atomic operation Version 1 exposes. There is no default simple policy: a Host opts in explicitly, and registering none leaves the score-based runtime unchanged. `SimpleRateLimitResultDTO` exposes `allowed`, `limit`, `remaining`, `retryAfter`, `resetAt`, and `failureMode` (`NORMAL` or `FAIL_CLOSED`); it is a dedicated result contract, separate from `RateLimitResultDTO`. Simple throttling is FAIL_CLOSED only, never creates score/budget/correlation state, and raises `RateLimiterException` for an unregistered policy name, a blank subject, or a required key-rotation migration whose store lacks `BudgetSeedStoreInterface`. See `examples/simple-fixed-window.php` for a complete runnable example.
+`$limiter->consume(string $policyName, string $subject): SimpleRateLimitResultDTO` is the one atomic operation Version 1 exposes. There is no default simple policy: a Host opts in explicitly, and registering none leaves the score-based runtime unchanged. `SimpleRateLimitResultDTO` exposes `allowed`, `limit`, `remaining`, `retryAfter`, `resetAt`, and `failureMode` (`NORMAL` or `FAIL_CLOSED`); it is a dedicated result contract, separate from `RateLimitResultDTO`. Simple throttling is FAIL_CLOSED only: it does not use score-model semantics or create authentication-budget or correlation semantics, but it persists its own fixed-window state by reusing the existing budget-epoch persistence primitives under a separate namespace. It raises `RateLimiterException` for an unregistered policy name, a blank subject, or a required key-rotation migration whose store lacks `BudgetSeedStoreInterface`. See `examples/simple-fixed-window.php` for a complete runnable example.
 
 ## Primary Public Calls
 
