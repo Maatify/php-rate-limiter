@@ -140,4 +140,4 @@ None.
 
 ## Canonical Contract / Current Owner
 
-This decision governs the WU-S4-03C capability-model implementation. Until that implementation lands, the existing runtime remains the compatibility baseline; it is not authority for introducing additional name-coupled behavior.
+The current implemented owners are `PolicyCapabilityProviderInterface`, `PolicyCapabilityEnum`, capability-aware runtime classification and validation, and `docs/POLICIES.md`.

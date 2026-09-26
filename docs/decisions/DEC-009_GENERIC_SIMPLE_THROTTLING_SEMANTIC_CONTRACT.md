@@ -176,4 +176,4 @@ None.
 
 ## Canonical Contract / Current Owner
 
-This decision governs the WU-S4-03C simple-throttling implementation. Until that implementation lands, no first-class simple-throttling public API is claimed by the package.
+The current implemented owners are `docs/SIMPLE_THROTTLING.md`, `SimpleThrottlePolicyInterface`, `SimpleRateLimiterInterface`, `FixedWindowSimpleRateLimiter`, and `SimpleRateLimitResultDTO`.

@@ -93,4 +93,4 @@ DEC-010.
 
 ## Canonical Contract / Current Owner
 
-Historical composition decision. Current composition authority is DEC-010; the existing `RateLimiterBuilder` implementation remains the compatibility baseline until the WU-S4-03C composition implementation lands.
+Historical composition decision. Current composition authority is DEC-010; the implemented composition is `RateLimiterBuilder` plus `CompositeRateLimiterRuntimeInterface`.

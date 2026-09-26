@@ -141,4 +141,4 @@ None.
 
 ## Canonical Contract / Current Owner
 
-This decision is the active composition authority for WU-S4-03C. The existing `RateLimiterBuilder` implementation remains the compatibility baseline until the corresponding implementation child lands.
+This decision is the active composition authority. The implemented owners are `RateLimiterBuilder::withSimpleThrottlePolicy()`, `RateLimiterBuilder::build(): CompositeRateLimiterRuntimeInterface`, and `CompositeRateLimiterRuntime`.
