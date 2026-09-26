@@ -30,7 +30,7 @@ require dirname(__DIR__) . '/vendor/autoload.php';
  * host application's atomic storage integration in production; see
  * examples/basic-rate-limit.php for a fully annotated version.
  */
-final class ExampleSimpleThrottleStore implements PunishmentLifecycleStoreInterface
+final class SimpleThrottleExampleStore implements PunishmentLifecycleStoreInterface
 {
     /** @var array<string, array{value: int, updatedAt: int, expiresAt: int}> */
     private array $counters = [];
@@ -155,7 +155,7 @@ final class ExampleSimpleThrottleStore implements PunishmentLifecycleStoreInterf
     }
 }
 
-final class ExampleCorrelationStore implements CorrelationStoreInterface
+final class SimpleThrottleExampleCorrelationStore implements CorrelationStoreInterface
 {
     public function addDistinct(string $key, string $item, int $ttlSeconds): int
     {
@@ -173,7 +173,7 @@ final class ExampleCorrelationStore implements CorrelationStoreInterface
     }
 }
 
-final class ExampleCircuitBreakerStore implements CircuitBreakerStoreInterface
+final class SimpleThrottleExampleCircuitBreakerStore implements CircuitBreakerStoreInterface
 {
     public function load(string $policyName): ?CircuitBreakerStateDTO
     {
@@ -183,7 +183,7 @@ final class ExampleCircuitBreakerStore implements CircuitBreakerStoreInterface
     public function save(string $policyName, CircuitBreakerStateDTO $state): void {}
 }
 
-final class ExampleFailureSignalEmitter implements FailureSignalEmitterInterface
+final class SimpleThrottleExampleFailureSignalEmitter implements FailureSignalEmitterInterface
 {
     public function emit(FailureSignalDTO $signal): void {}
 }
@@ -197,10 +197,10 @@ $limiter = (new RateLimiterBuilder(
         fingerprintSecret: 'example-fingerprint-secret',
         environmentScope: 'example',
     ),
-    new ExampleSimpleThrottleStore(),
-    new ExampleCorrelationStore(),
-    new ExampleCircuitBreakerStore(),
-    new ExampleFailureSignalEmitter(),
+    new SimpleThrottleExampleStore(),
+    new SimpleThrottleExampleCorrelationStore(),
+    new SimpleThrottleExampleCircuitBreakerStore(),
+    new SimpleThrottleExampleFailureSignalEmitter(),
 ))
     ->withSimpleThrottlePolicy(new FixedWindowThrottlePolicy(
         name: 'checkout_attempts',

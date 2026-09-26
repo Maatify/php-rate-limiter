@@ -327,6 +327,24 @@ final class FixedWindowSimpleRateLimiterTest extends TestCase
         $this->limiter([$customPolicy]);
     }
 
+    public function testDirectCustomPolicyImplementationWithZeroIntervalIsRejectedBeforeAnyStorageMutation(): void
+    {
+        // Explicit zero-boundary regression, distinct from the negative-interval
+        // case above: intervalSeconds = 0 must be rejected on its own, and the
+        // constructor must never reach a storage call for it.
+        $customPolicy = $this->customPolicy(name: 'zero_interval_policy', limit: 3, intervalSeconds: 0);
+
+        try {
+            $this->limiter([$customPolicy]);
+            self::fail('Expected RateLimiterException was not thrown for intervalSeconds = 0.');
+        } catch (RateLimiterException $exception) {
+            self::assertStringContainsString('interval', $exception->getMessage());
+        }
+
+        $budgets = (new \ReflectionProperty($this->store, 'budgets'))->getValue($this->store);
+        self::assertSame([], $budgets, 'A zero-interval custom policy must be rejected before any storage mutation.');
+    }
+
     public function testInvalidCustomPolicyIsRejectedBeforeAnyStorageMutation(): void
     {
         $customPolicy = $this->customPolicy(name: 'custom_policy', limit: -5, intervalSeconds: 60);
