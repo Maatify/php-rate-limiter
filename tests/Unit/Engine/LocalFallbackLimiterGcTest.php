@@ -32,15 +32,15 @@ class LocalFallbackLimiterGcTest extends TestCase
         $this->assertTrue(
             LocalFallbackLimiter::check($clock, 'otp_protection', 'DEGRADED_MODE', $ip),
         );
-        $namespace = 'fallback:' . hash('sha256', 'otp_protection:AUTHENTICATION_STEP_UP');
-        $staleBucketKey = $namespace . ':ip:' . $ip . ':' . intdiv($clock->now()->getTimestamp(), 900);
+        $namespace = 'fallback:' . hash('sha256', 'otp_protection');
+        $staleBucketKey = $namespace . ':ip_prefix:' . $ip . ':' . intdiv($clock->now()->getTimestamp(), 900);
 
         // At the exact hourly boundary the current OTP bucket is created without running GC.
         $clock->setNow(new \DateTimeImmutable('2025-01-01 13:00:00'));
         $this->assertTrue(
             LocalFallbackLimiter::check($clock, 'otp_protection', 'DEGRADED_MODE', $ip),
         );
-        $currentBucketKey = $namespace . ':ip:' . $ip . ':' . intdiv($clock->now()->getTimestamp(), 900);
+        $currentBucketKey = $namespace . ':ip_prefix:' . $ip . ':' . intdiv($clock->now()->getTimestamp(), 900);
 
         // Crossing the threshold triggers selective cleanup while the current bucket remains valid.
         $clock->setNow(new \DateTimeImmutable('2025-01-01 13:00:01'));

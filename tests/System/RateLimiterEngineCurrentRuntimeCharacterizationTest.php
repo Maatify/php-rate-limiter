@@ -24,8 +24,10 @@ use Maatify\RateLimiter\Config\ApiHeavyProtectionPolicy;
 use Maatify\RateLimiter\Config\LoginProtectionPolicy;
 use Maatify\RateLimiter\Config\OtpProtectionPolicy;
 use Maatify\RateLimiter\Config\PolicyCapability;
-use Maatify\RateLimiter\Config\FailureFallbackProfile;
-use Maatify\RateLimiter\Config\FailureFallbackProfileProviderInterface;
+use Maatify\RateLimiter\Config\FailureFallbackConfigurationProviderInterface;
+use Maatify\RateLimiter\Config\FailureFallbackDimension;
+use Maatify\RateLimiter\DTO\FailureFallbackConfigurationDTO;
+use Maatify\RateLimiter\DTO\FailureFallbackRuleDTO;
 use Maatify\RateLimiter\Config\PolicyCapabilityProviderInterface;
 use Maatify\RateLimiter\Tests\Support\CircuitBreaker\InMemoryCircuitBreakerStore;
 use Maatify\RateLimiter\Tests\Support\Clock\FixedClock;
@@ -814,7 +816,7 @@ final class RateLimiterEngineCurrentRuntimeCharacterizationTest extends TestCase
 
     public function testDirectCustomPoliciesImplementingPublicContractsActivateTypedSemantics(): void
     {
-        $authPolicy = new class implements BlockPolicyInterface, PolicyCapabilityProviderInterface, FailureFallbackProfileProviderInterface {
+        $authPolicy = new class implements BlockPolicyInterface, PolicyCapabilityProviderInterface, FailureFallbackConfigurationProviderInterface {
             private \Maatify\RateLimiter\DTO\BudgetConfigDTO $budget;
 
             public function __construct()
@@ -831,9 +833,12 @@ final class RateLimiterEngineCurrentRuntimeCharacterizationTest extends TestCase
             {
                 return [PolicyCapability::CREDENTIAL_SPRAY, PolicyCapability::DISTRIBUTED_ACCOUNT, PolicyCapability::TRUSTED_AUTHENTICATION];
             }
-            public function getFailureFallbackProfile(): FailureFallbackProfile
+            public function getFailureFallbackConfiguration(): FailureFallbackConfigurationDTO
             {
-                return FailureFallbackProfile::AUTHENTICATION_PRIMARY;
+                return new FailureFallbackConfigurationDTO([
+                    new FailureFallbackRuleDTO(FailureFallbackDimension::ACCOUNT, 3, 600),
+                    new FailureFallbackRuleDTO(FailureFallbackDimension::IP_PREFIX, 20, 600),
+                ]);
             }
             public function getScoreThresholds(): PolicyThresholdsDTO
             {
@@ -862,7 +867,7 @@ final class RateLimiterEngineCurrentRuntimeCharacterizationTest extends TestCase
         }
         self::assertSame(RateLimitResultDTO::DECISION_HARD_BLOCK, $authResult->decision);
 
-        $apiPolicy = new class implements BlockPolicyInterface, PolicyCapabilityProviderInterface, FailureFallbackProfileProviderInterface {
+        $apiPolicy = new class implements BlockPolicyInterface, PolicyCapabilityProviderInterface, FailureFallbackConfigurationProviderInterface {
             public function getName(): string
             {
                 return 'direct_custom_api';
@@ -872,9 +877,12 @@ final class RateLimiterEngineCurrentRuntimeCharacterizationTest extends TestCase
             {
                 return [PolicyCapability::API_OVERUSE];
             }
-            public function getFailureFallbackProfile(): FailureFallbackProfile
+            public function getFailureFallbackConfiguration(): FailureFallbackConfigurationDTO
             {
-                return FailureFallbackProfile::API_OVERUSE;
+                return new FailureFallbackConfigurationDTO([
+                    new FailureFallbackRuleDTO(FailureFallbackDimension::IP_PREFIX, 120, 60),
+                    new FailureFallbackRuleDTO(FailureFallbackDimension::IP_PREFIX_NORMALIZED_USER_AGENT, 60, 60),
+                ]);
             }
             public function getScoreThresholds(): PolicyThresholdsDTO
             {

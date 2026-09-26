@@ -7,8 +7,9 @@ namespace Maatify\RateLimiter\Service;
 use Maatify\RateLimiter\Config\BlockPolicyInterface;
 use Maatify\RateLimiter\Config\PolicyCapability;
 use Maatify\RateLimiter\Config\PolicyCapabilityProviderInterface;
-use Maatify\RateLimiter\Config\FailureFallbackProfile;
-use Maatify\RateLimiter\Config\FailureFallbackProfileProviderInterface;
+use Maatify\RateLimiter\Config\FailureFallbackConfigurationProviderInterface;
+use Maatify\RateLimiter\Config\FailureFallbackDimension;
+use Maatify\RateLimiter\DTO\FailureFallbackConfigurationDTO;
 use Maatify\RateLimiter\Service\DeviceIdentityResolverInterface;
 use Maatify\RateLimiter\Contract\FailureSignalEmitterInterface;
 use Maatify\RateLimiter\Service\RateLimiterInterface;
@@ -67,12 +68,16 @@ class RateLimiterEngine implements RateLimiterRuntimeInterface
         $capabilities = $this->capabilities($policy);
         $hasApi = in_array(PolicyCapability::API_OVERUSE, $capabilities, true);
         $hasAuth = $this->isAuthRelated($policy, $capabilities);
-        $profile = $policy instanceof FailureFallbackProfileProviderInterface
-            ? $policy->getFailureFallbackProfile()
+        $configuration = $policy instanceof FailureFallbackConfigurationProviderInterface
+            ? $policy->getFailureFallbackConfiguration()
             : null;
 
         if ($hasAuth && $hasApi) {
             throw new RateLimiterException("Policy {$policy->getName()} invalid: Authentication and API_OVERUSE capabilities cannot be combined.");
+        }
+
+        if ($configuration !== null) {
+            $this->validateFallbackConfiguration($policy, $configuration);
         }
 
         if ($hasAuth) {
@@ -98,22 +103,25 @@ class RateLimiterEngine implements RateLimiterRuntimeInterface
             if ($policy->getFailureMode() !== 'FAIL_CLOSED') {
                 throw new RateLimiterException("Policy {$policy->getName()} invalid: FAIL_OPEN is not allowed; authentication policies must use FAIL_CLOSED.");
             }
-            if (!in_array($profile, [FailureFallbackProfile::AUTHENTICATION_PRIMARY, FailureFallbackProfile::AUTHENTICATION_STEP_UP], true)) {
-                throw new RateLimiterException("Policy {$policy->getName()} invalid: Authentication policies require an authentication fallback profile.");
+            if ($configuration === null
+                || ! $configuration->hasDimension(FailureFallbackDimension::ACCOUNT)
+                || ! $configuration->hasDimension(FailureFallbackDimension::IP_PREFIX)) {
+                throw new RateLimiterException("Policy {$policy->getName()} invalid: Authentication policies require a bounded fallback configuration with ACCOUNT and IP_PREFIX dimensions.");
             }
         }
 
-        if ($hasApi && $profile !== FailureFallbackProfile::API_OVERUSE) {
-            throw new RateLimiterException("Policy {$policy->getName()} invalid: API_OVERUSE requires the API_OVERUSE fallback profile.");
-        }
-        if ($profile === FailureFallbackProfile::API_OVERUSE && ! $hasApi) {
-            throw new RateLimiterException("Policy {$policy->getName()} invalid: API_OVERUSE fallback profile requires API_OVERUSE capability.");
-        }
-        if ($profile !== null && ! $hasAuth && ! $hasApi) {
-            throw new RateLimiterException("Policy {$policy->getName()} invalid: Fallback profile requires a compatible capability or DEC-007 lifecycle.");
+        if ($hasApi) {
+            if ($configuration === null
+                || ! $configuration->hasDimension(FailureFallbackDimension::IP_PREFIX)
+                || ! $configuration->hasDimension(FailureFallbackDimension::IP_PREFIX_NORMALIZED_USER_AGENT)) {
+                throw new RateLimiterException("Policy {$policy->getName()} invalid: API_OVERUSE requires a bounded fallback configuration with IP_PREFIX and IP_PREFIX_NORMALIZED_USER_AGENT dimensions.");
+            }
+            if ($configuration->hasDimension(FailureFallbackDimension::ACCOUNT)) {
+                throw new RateLimiterException("Policy {$policy->getName()} invalid: API_OVERUSE fallback configuration must not include an ACCOUNT dimension; account-level enforcement in degraded API mode is forbidden.");
+            }
         }
         if ($policy->getFailureMode() === 'FAIL_OPEN' && ! $hasApi) {
-            throw new RateLimiterException("Policy {$policy->getName()} invalid: FAIL_OPEN requires API_OVERUSE capability and fallback profile.");
+            throw new RateLimiterException("Policy {$policy->getName()} invalid: FAIL_OPEN requires API_OVERUSE capability and a bounded fallback configuration.");
         }
 
         if ($policy instanceof PostPunishmentReentryPolicyInterface) {
@@ -161,6 +169,30 @@ class RateLimiterEngine implements RateLimiterRuntimeInterface
             throw new RateLimiterException("Policy {$policy->getName()} invalid: Distributed-account behavior requires a positive K4 failure delta and K4 thresholds.");
         }
         $this->policies[$policy->getName()] = $policy;
+    }
+
+    /**
+     * Reject a fallback configuration with a duplicate, non-positive, or
+     * non-bounded rule. This is the sole generic validation for the
+     * effective configuration; official presets and direct custom policies
+     * are checked identically.
+     */
+    private function validateFallbackConfiguration(BlockPolicyInterface $policy, FailureFallbackConfigurationDTO $configuration): void
+    {
+        $seenDimensions = [];
+        foreach ($configuration->rules as $rule) {
+            if (isset($seenDimensions[$rule->dimension->value])) {
+                throw new RateLimiterException("Policy {$policy->getName()} invalid: Fallback configuration declares a duplicate {$rule->dimension->value} dimension.");
+            }
+            $seenDimensions[$rule->dimension->value] = true;
+
+            if ($rule->limit <= 0) {
+                throw new RateLimiterException("Policy {$policy->getName()} invalid: Fallback configuration {$rule->dimension->value} limit must be positive.");
+            }
+            if ($rule->windowSeconds <= 0) {
+                throw new RateLimiterException("Policy {$policy->getName()} invalid: Fallback configuration {$rule->dimension->value} window must be positive.");
+            }
+        }
     }
 
     /** @return list<PolicyCapability> */

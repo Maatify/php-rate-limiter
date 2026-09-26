@@ -3,7 +3,7 @@
 **Module:** RateLimiter
 **Namespace:** `Maatify\RateLimiter`
 **Status:** LOCKED — Policy Contract
-**Spec Version:** `1.6.0`
+**Spec Version:** `1.7.0`
 **Change Class:** Hardening Alignment
 
 This document defines the **official policy presets** provided by the Rate Limiter module.
@@ -34,11 +34,19 @@ generation-bound K4 `PostPunishmentReentryPolicyInterface` remains a separate
 DEC-007 lifecycle opt-in and is validated independently of policy name.
 
 Degraded/failure behavior is a separate typed contract under DEC-011. Policies
-that use bounded local fallback implement `FailureFallbackProfileProviderInterface`
-and return `AUTHENTICATION_PRIMARY`, `AUTHENTICATION_STEP_UP`, or `API_OVERUSE`.
-The official Login, OTP, and API policies map to those profiles respectively.
-Fallback profile selection never uses `BudgetConfig` thresholds, route names, or
-policy names.
+that use bounded local fallback implement
+`FailureFallbackConfigurationProviderInterface` and return a generic
+`FailureFallbackConfigurationDTO` of typed `FailureFallbackRuleDTO` rules
+(`ACCOUNT`, `IP_PREFIX`, or `IP_PREFIX_NORMALIZED_USER_AGENT`, each with a
+positive limit and window). The official Login, OTP, and API policies resolve
+the package-owned `AUTHENTICATION_PRIMARY`, `AUTHENTICATION_STEP_UP`, and
+`API_OVERUSE` presets internally and require no Host wiring. A direct custom
+reusable policy composes its own bounded configuration through the same
+public contract, with numeric values independent of every official preset;
+the package validates both identically and applies them through the same
+`LocalFallbackLimiter` runtime. Fallback configuration selection never uses
+`BudgetConfig` thresholds, route names, or policy names as an inference
+input.
 
 ---
 

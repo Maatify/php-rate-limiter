@@ -244,12 +244,27 @@ is a separate DEC-007 lifecycle capability; it requires K4, monotonic positive
 K4 thresholds, fail-closed semantics, and lifecycle-capable storage regardless
 of the policy's name.
 
-Backend-failure fallback is separately selected through the typed DEC-011
-`FailureFallbackProfileProviderInterface`. Use only the package-owned
-`FailureFallbackProfile` enum cases; arbitrary numeric caps and free-form
-profile names are not supported. The fallback namespace includes policy
-identity, so differently named reusable policies do not share process-local
-counters.
+Backend-failure fallback is a separate typed DEC-011 concern from normal-runtime
+capabilities, declared through `FailureFallbackConfigurationProviderInterface`.
+
+**Ready-to-use (recommended):** `new LoginProtectionPolicy()`,
+`new OtpProtectionPolicy()`, and `new ApiHeavyProtectionPolicy()` resolve their
+official locked fallback caps internally. No fallback-specific constructor
+argument, builder call, or Host wiring is required to get this behavior.
+
+**Advanced:** a direct custom reusable policy may implement
+`FailureFallbackConfigurationProviderInterface` itself and return its own
+`FailureFallbackConfigurationDTO` — a list of `FailureFallbackRuleDTO` values,
+each pairing a `FailureFallbackDimension` (`ACCOUNT`, `IP_PREFIX`, or
+`IP_PREFIX_NORMALIZED_USER_AGENT`) with a positive limit and window in
+seconds. The values are entirely the policy's own and independent of every
+official preset; the package validates them with the same rules (positive,
+non-duplicate, and the minimum dimensions its declared capabilities require)
+and evaluates them through the same `LocalFallbackLimiter` runtime the
+official presets use — there is no separate "official" or "custom" fallback
+code path. The fallback namespace includes policy identity, so differently
+named reusable policies never share process-local counters, even when their
+configured numbers are identical.
 
 ## Walkthrough: Failure Boundary
 

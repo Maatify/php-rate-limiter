@@ -23,10 +23,12 @@ use Maatify\RateLimiter\Service\DecayCalculator;
 use Maatify\RateLimiter\Config\ApiHeavyProtectionPolicy;
 use Maatify\RateLimiter\Config\LoginProtectionPolicy;
 use Maatify\RateLimiter\Config\OtpProtectionPolicy;
-use Maatify\RateLimiter\Config\FailureFallbackProfile;
-use Maatify\RateLimiter\Config\FailureFallbackProfileProviderInterface;
+use Maatify\RateLimiter\Config\FailureFallbackConfigurationProviderInterface;
+use Maatify\RateLimiter\Config\FailureFallbackDimension;
 use Maatify\RateLimiter\Config\PolicyCapability;
 use Maatify\RateLimiter\Config\PolicyCapabilityProviderInterface;
+use Maatify\RateLimiter\DTO\FailureFallbackConfigurationDTO;
+use Maatify\RateLimiter\DTO\FailureFallbackRuleDTO;
 use Maatify\RateLimiter\DTO\PolicyThresholdsDTO;
 use Maatify\RateLimiter\DTO\ScoreThresholdsDTO;
 use Maatify\RateLimiter\DTO\ScoreDeltasDTO;
@@ -288,9 +290,166 @@ class RateLimiterEngineFallbackBlastRadiusTest extends TestCase
         );
     }
 
-    public function testDirectCustomApiPolicyEnforcesTypedFallbackCaps(): void
+    public function testDirectCustomApiPolicyEnforcesTypedIpAggregateCapIndependentOfUa(): void
     {
-        $policy = new class implements BlockPolicyInterface, PolicyCapabilityProviderInterface, FailureFallbackProfileProviderInterface {
+        // Custom values (200/80) deliberately differ from the official API Heavy
+        // preset (120/60) so this proof fails if the runtime ever falls back to
+        // hard-coded official numbers instead of the policy's own configuration.
+        $engine = $this->createEngineWithStore(new ThrowingRateLimitStore(), $this->customApiPolicy());
+        $ip = '198.51.100.67';
+
+        foreach ([self::CHROME_UA, self::FIREFOX_UA] as $ua) {
+            for ($i = 0; $i < 80; $i++) {
+                $result = $this->limit($engine, 'direct_custom_api_fallback', $ip, $ua, null);
+                $this->assertSame(RateLimitResultDTO::DECISION_ALLOW, $result->decision);
+            }
+        }
+        // 160 requests consumed across Chrome/Firefox; 40 more from a fresh Safari
+        // K2 bucket exhausts the 200 IP aggregate cap without Safari itself ever
+        // approaching its own 80 K2 cap, isolating the IP_PREFIX dimension.
+        for ($i = 0; $i < 40; $i++) {
+            $result = $this->limit($engine, 'direct_custom_api_fallback', $ip, self::SAFARI_UA, null);
+            $this->assertSame(RateLimitResultDTO::DECISION_ALLOW, $result->decision);
+        }
+        $blocked = $this->limit($engine, 'direct_custom_api_fallback', $ip, self::SAFARI_UA, null);
+        $this->assertFallbackLimitExceeded($blocked);
+    }
+
+    public function testDirectCustomApiPolicyEnforcesTypedIpUserAgentCap(): void
+    {
+        $engine = $this->createEngineWithStore(new ThrowingRateLimitStore(), $this->customApiPolicy());
+        $ip = '198.51.100.72';
+
+        for ($i = 0; $i < 80; $i++) {
+            $result = $this->limit($engine, 'direct_custom_api_fallback', $ip, self::CHROME_UA, null);
+            $this->assertSame(RateLimitResultDTO::DECISION_ALLOW, $result->decision);
+        }
+        // The 81st Chrome request is rejected purely by the 80 K2 cap; the IP
+        // aggregate (200) is nowhere near exhausted.
+        $blocked = $this->limit($engine, 'direct_custom_api_fallback', $ip, self::CHROME_UA, null);
+        $this->assertFallbackLimitExceeded($blocked);
+    }
+
+    public function testDirectCustomApiPolicyFallbackWindowRollsOverAtItsOwnDuration(): void
+    {
+        // The custom window (30s) intentionally differs from the official API
+        // Heavy window (60s): this fails if the runtime hard-codes the official
+        // window instead of reading the policy's own configuration.
+        $engine = $this->createEngineWithStore(new ThrowingRateLimitStore(), $this->customApiPolicy());
+        $ip = '198.51.100.73';
+
+        for ($i = 0; $i < 80; $i++) {
+            $result = $this->limit($engine, 'direct_custom_api_fallback', $ip, self::CHROME_UA, null);
+            $this->assertSame(RateLimitResultDTO::DECISION_ALLOW, $result->decision);
+        }
+        $blocked = $this->limit($engine, 'direct_custom_api_fallback', $ip, self::CHROME_UA, null);
+        $this->assertFallbackLimitExceeded($blocked);
+
+        $this->clock->setNow($this->clock->now()->modify('+30 seconds'));
+        $afterRollover = $this->limit($engine, 'direct_custom_api_fallback', $ip, self::CHROME_UA, null);
+        $this->assertSame(RateLimitResultDTO::DECISION_ALLOW, $afterRollover->decision);
+        // The repeated backend failures above already trip the circuit breaker
+        // into DEGRADED_MODE; both DEGRADED_MODE and FAIL_OPEN apply the same
+        // effective fallback configuration, so the rollover proof holds either way.
+        $this->assertSame('DEGRADED_MODE', $afterRollover->failureMode);
+    }
+
+    public function testDirectCustomAuthPolicyEnforcesTypedAccountCap(): void
+    {
+        // Custom values (5/300) deliberately differ from the official Login
+        // preset (3/600) so this proof fails if the runtime falls back to the
+        // hard-coded official Login numbers.
+        $engine = $this->createEngineWithStore(new ThrowingRateLimitStore(), $this->customAuthPolicy());
+        $ip = '198.51.100.74';
+        $accountId = 'custom-auth-account';
+
+        $this->enterDegradedMode($engine, 'direct_custom_auth_fallback', $ip, $accountId);
+
+        foreach ([self::CHROME_UA, self::FIREFOX_UA, self::CHROME_UA, self::FIREFOX_UA, self::CHROME_UA] as $ua) {
+            $result = $this->limit($engine, 'direct_custom_auth_fallback', $ip, $ua, $accountId);
+            $this->assertSame(RateLimitResultDTO::DECISION_ALLOW, $result->decision);
+            $this->assertSame('DEGRADED_MODE', $result->failureMode);
+        }
+
+        $blocked = $this->limit($engine, 'direct_custom_auth_fallback', $ip, self::FIREFOX_UA, $accountId);
+        $this->assertFallbackLimitExceeded($blocked);
+    }
+
+    public function testDirectCustomAuthPolicyEnforcesTypedIpCap(): void
+    {
+        $engine = $this->createEngineWithStore(new ThrowingRateLimitStore(), $this->customAuthPolicy());
+        $ip = '198.51.100.75';
+
+        $this->enterDegradedMode($engine, 'direct_custom_auth_fallback', $ip, 'custom-auth-ip-warmup');
+
+        for ($i = 0; $i < 30; $i++) {
+            $result = $this->limit(
+                $engine,
+                'direct_custom_auth_fallback',
+                $ip,
+                $i % 2 === 0 ? self::CHROME_UA : self::FIREFOX_UA,
+                'custom-auth-ip-account-' . $i,
+            );
+            $this->assertSame(RateLimitResultDTO::DECISION_ALLOW, $result->decision);
+        }
+
+        $blocked = $this->limit($engine, 'direct_custom_auth_fallback', $ip, self::FIREFOX_UA, 'custom-auth-ip-account-30');
+        $this->assertFallbackLimitExceeded($blocked);
+    }
+
+    public function testDirectCustomAuthPolicyFallbackWindowRollsOverAtItsOwnDuration(): void
+    {
+        // The custom window (300s) intentionally differs from the official Login
+        // window (600s): this fails if the runtime hard-codes the official
+        // Login window instead of reading the policy's own configuration.
+        $engine = $this->createEngineWithStore(new ThrowingRateLimitStore(), $this->customAuthPolicy());
+        $ip = '198.51.100.76';
+        $accountId = 'custom-auth-window-account';
+
+        $this->enterDegradedMode($engine, 'direct_custom_auth_fallback', $ip, $accountId);
+
+        for ($i = 0; $i < 5; $i++) {
+            $result = $this->limit($engine, 'direct_custom_auth_fallback', $ip, self::CHROME_UA, $accountId);
+            $this->assertSame(RateLimitResultDTO::DECISION_ALLOW, $result->decision);
+        }
+        $blocked = $this->limit($engine, 'direct_custom_auth_fallback', $ip, self::CHROME_UA, $accountId);
+        $this->assertFallbackLimitExceeded($blocked);
+
+        $this->clock->setNow($this->clock->now()->modify('+300 seconds'));
+        $afterRollover = $this->limit($engine, 'direct_custom_auth_fallback', $ip, self::CHROME_UA, $accountId);
+        $this->assertSame(RateLimitResultDTO::DECISION_ALLOW, $afterRollover->decision);
+        $this->assertSame('DEGRADED_MODE', $afterRollover->failureMode);
+    }
+
+    public function testCustomPolicyAndOfficialLoginPolicyWithIdenticalFallbackValuesDoNotShareCounters(): void
+    {
+        $officialEngine = $this->createEngineWithStore(new ThrowingRateLimitStore(), new LoginProtectionPolicy());
+        $customEngine = $this->createEngineWithStore(new ThrowingRateLimitStore(), $this->loginPresetValuedCustomPolicy());
+        $ip = '198.51.100.77';
+        $accountId = 'identical-values-account';
+
+        $this->enterDegradedMode($officialEngine, 'login_protection', $ip, $accountId);
+        for ($i = 0; $i < 3; $i++) {
+            $result = $this->limit($officialEngine, 'login_protection', $ip, self::CHROME_UA, $accountId);
+            $this->assertSame(RateLimitResultDTO::DECISION_ALLOW, $result->decision);
+        }
+        $officialBlocked = $this->limit($officialEngine, 'login_protection', $ip, self::CHROME_UA, $accountId);
+        $this->assertFallbackLimitExceeded($officialBlocked);
+
+        // The custom policy declares the exact same 3/600 ACCOUNT and 20/600
+        // IP_PREFIX values as official Login, yet remains fully available
+        // because fallback counters are namespaced by policy identity, not by
+        // configuration content.
+        $this->enterDegradedMode($customEngine, 'login_preset_valued_custom', $ip, $accountId);
+        for ($i = 0; $i < 3; $i++) {
+            $result = $this->limit($customEngine, 'login_preset_valued_custom', $ip, self::CHROME_UA, $accountId);
+            $this->assertSame(RateLimitResultDTO::DECISION_ALLOW, $result->decision);
+        }
+    }
+
+    private function customApiPolicy(): BlockPolicyInterface
+    {
+        return new class implements BlockPolicyInterface, PolicyCapabilityProviderInterface, FailureFallbackConfigurationProviderInterface {
             public function getName(): string
             {
                 return 'direct_custom_api_fallback';
@@ -300,9 +459,12 @@ class RateLimiterEngineFallbackBlastRadiusTest extends TestCase
             {
                 return [PolicyCapability::API_OVERUSE];
             }
-            public function getFailureFallbackProfile(): FailureFallbackProfile
+            public function getFailureFallbackConfiguration(): FailureFallbackConfigurationDTO
             {
-                return FailureFallbackProfile::API_OVERUSE;
+                return new FailureFallbackConfigurationDTO([
+                    new FailureFallbackRuleDTO(FailureFallbackDimension::IP_PREFIX, 200, 30),
+                    new FailureFallbackRuleDTO(FailureFallbackDimension::IP_PREFIX_NORMALIZED_USER_AGENT, 80, 30),
+                ]);
             }
             public function getScoreThresholds(): PolicyThresholdsDTO
             {
@@ -321,16 +483,82 @@ class RateLimiterEngineFallbackBlastRadiusTest extends TestCase
                 return null;
             }
         };
-        $engine = $this->createEngineWithStore(new ThrowingRateLimitStore(), $policy);
-        $ip = '198.51.100.67';
-        foreach ([self::CHROME_UA, self::FIREFOX_UA] as $ua) {
-            for ($i = 0; $i < 60; $i++) {
-                $result = $this->limit($engine, 'direct_custom_api_fallback', $ip, $ua, null);
-                $this->assertSame(RateLimitResultDTO::DECISION_ALLOW, $result->decision);
+    }
+
+    private function customAuthPolicy(): BlockPolicyInterface
+    {
+        return new class implements BlockPolicyInterface, PolicyCapabilityProviderInterface, FailureFallbackConfigurationProviderInterface {
+            public function getName(): string
+            {
+                return 'direct_custom_auth_fallback';
             }
-        }
-        $blocked = $this->limit($engine, 'direct_custom_api_fallback', $ip, self::SAFARI_UA, null);
-        $this->assertFallbackLimitExceeded($blocked);
+            /** @return list<PolicyCapability> */
+            public function getCapabilities(): array
+            {
+                return [PolicyCapability::CREDENTIAL_SPRAY, PolicyCapability::DISTRIBUTED_ACCOUNT, PolicyCapability::TRUSTED_AUTHENTICATION];
+            }
+            public function getFailureFallbackConfiguration(): FailureFallbackConfigurationDTO
+            {
+                return new FailureFallbackConfigurationDTO([
+                    new FailureFallbackRuleDTO(FailureFallbackDimension::ACCOUNT, 5, 300),
+                    new FailureFallbackRuleDTO(FailureFallbackDimension::IP_PREFIX, 30, 300),
+                ]);
+            }
+            public function getScoreThresholds(): PolicyThresholdsDTO
+            {
+                return new PolicyThresholdsDTO(k4: new ScoreThresholdsDTO(5, 8, 12));
+            }
+            public function getScoreDeltas(): ScoreDeltasDTO
+            {
+                return new ScoreDeltasDTO(k1_spray: 5, k2_missing_fp: 4, k4_failure: 3, k4_repeated_missing_fp: 6, k5_failure: 2);
+            }
+            public function getFailureMode(): string
+            {
+                return 'FAIL_CLOSED';
+            }
+            public function getBudgetConfig(): BudgetConfigDTO
+            {
+                return new BudgetConfigDTO(threshold: 20, block_level: 3, cooldown_seconds: 3600);
+            }
+        };
+    }
+
+    private function loginPresetValuedCustomPolicy(): BlockPolicyInterface
+    {
+        return new class implements BlockPolicyInterface, PolicyCapabilityProviderInterface, FailureFallbackConfigurationProviderInterface {
+            public function getName(): string
+            {
+                return 'login_preset_valued_custom';
+            }
+            /** @return list<PolicyCapability> */
+            public function getCapabilities(): array
+            {
+                return [PolicyCapability::CREDENTIAL_SPRAY, PolicyCapability::DISTRIBUTED_ACCOUNT, PolicyCapability::TRUSTED_AUTHENTICATION];
+            }
+            public function getFailureFallbackConfiguration(): FailureFallbackConfigurationDTO
+            {
+                return new FailureFallbackConfigurationDTO([
+                    new FailureFallbackRuleDTO(FailureFallbackDimension::ACCOUNT, 3, 600),
+                    new FailureFallbackRuleDTO(FailureFallbackDimension::IP_PREFIX, 20, 600),
+                ]);
+            }
+            public function getScoreThresholds(): PolicyThresholdsDTO
+            {
+                return new PolicyThresholdsDTO(k4: new ScoreThresholdsDTO(5, 8, 12));
+            }
+            public function getScoreDeltas(): ScoreDeltasDTO
+            {
+                return new ScoreDeltasDTO(k1_spray: 5, k2_missing_fp: 4, k4_failure: 3, k4_repeated_missing_fp: 6, k5_failure: 2);
+            }
+            public function getFailureMode(): string
+            {
+                return 'FAIL_CLOSED';
+            }
+            public function getBudgetConfig(): BudgetConfigDTO
+            {
+                return new BudgetConfigDTO(threshold: 20, block_level: 3, cooldown_seconds: 3600);
+            }
+        };
     }
 
     public function testPolicyWithoutFallbackProfileFailsClosedDuringDegradedCircuit(): void

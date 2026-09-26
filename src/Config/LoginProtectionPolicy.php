@@ -6,6 +6,7 @@ namespace Maatify\RateLimiter\Config;
 
 use Maatify\RateLimiter\Config\BlockPolicyInterface;
 use Maatify\RateLimiter\DTO\BudgetConfigDTO;
+use Maatify\RateLimiter\DTO\FailureFallbackConfigurationDTO;
 use Maatify\RateLimiter\DTO\PolicyThresholdsDTO;
 use Maatify\RateLimiter\DTO\ScoreDeltasDTO;
 use Maatify\RateLimiter\DTO\ScoreThresholdsDTO;
@@ -16,12 +17,14 @@ use Maatify\RateLimiter\DTO\ScoreThresholdsDTO;
  * It opts into DEC-007 generation-bound K4 lifecycle behavior. The policy
  * supplies positive monotonic K4 thresholds and fail-closed failure semantics;
  * the Builder additionally requires lifecycle-capable storage for this opt-in.
+ * Its bounded backend-failure fallback resolves the package-owned
+ * `AUTHENTICATION_PRIMARY` preset; no Host configuration is required.
  */
-class LoginProtectionPolicy implements PostPunishmentReentryPolicyInterface, PolicyCapabilityProviderInterface, FailureFallbackProfileProviderInterface
+class LoginProtectionPolicy implements PostPunishmentReentryPolicyInterface, PolicyCapabilityProviderInterface, FailureFallbackConfigurationProviderInterface
 {
-    public function getFailureFallbackProfile(): FailureFallbackProfile
+    public function getFailureFallbackConfiguration(): FailureFallbackConfigurationDTO
     {
-        return FailureFallbackProfile::AUTHENTICATION_PRIMARY;
+        return FailureFallbackProfile::AUTHENTICATION_PRIMARY->configuration();
     }
 
     /** @return list<PolicyCapability> */
