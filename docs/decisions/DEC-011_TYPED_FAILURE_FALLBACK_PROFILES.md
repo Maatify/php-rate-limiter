@@ -1,10 +1,10 @@
-# DEC-011 — Typed Failure Fallback Profiles for Reusable Policies
+# DEC-011 — Typed Failure Fallback Configuration and Ready-to-Use Presets
 
 `DEC-011`
 
-**Status:** ACTIVE
+**Status:** PROPOSED
 **Date:** 2026-09-26 (amended 2026-09-26)
-**Decision authority:** Lead-approved technical decision under Owner-directed WU-S4-03C remediation; pending Owner review of this amendment
+**Decision authority:** Owner approval pending; technical direction prepared under the Owner-directed WU-S4-03C remediation track.
 **Scope / Concern:** Typed, bounded backend-failure fallback configuration for reusable policies and their policy-identity state isolation.
 **Supersedes:** None
 **Superseded By:** None
@@ -165,7 +165,8 @@ unsafe or malformed configuration before registration succeeds.
 
 ## Decision Authority
 
-This amendment is Lead-approved technical direction under the
-Owner-directed WU-S4-03C remediation track. It is **not** Owner-approved.
-The amended decision, its implementation, and its test evidence remain
-pending a fresh Owner review before this status may be elevated.
+Owner approval is pending. This amendment is technical direction prepared
+under the Owner-directed WU-S4-03C remediation track; it has not been
+approved by the Project Owner. Status remains `PROPOSED`. The amended
+decision, its implementation, and its test evidence remain pending a fresh
+Owner review before this status may change.
