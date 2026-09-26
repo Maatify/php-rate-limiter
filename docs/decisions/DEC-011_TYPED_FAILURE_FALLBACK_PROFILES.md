@@ -2,9 +2,9 @@
 
 `DEC-011`
 
-**Status:** PROPOSED
+**Status:** ACTIVE
 **Date:** 2026-09-26 (amended 2026-09-26)
-**Decision authority:** Owner approval pending; technical direction prepared under the Owner-directed WU-S4-03C remediation track.
+**Decision authority:** Owner-approved under WU-S4-03C on 2026-09-26.
 **Scope / Concern:** Typed, bounded backend-failure fallback configuration for reusable policies and their policy-identity state isolation.
 **Supersedes:** None
 **Superseded By:** None
@@ -165,8 +165,6 @@ unsafe or malformed configuration before registration succeeds.
 
 ## Decision Authority
 
-Owner approval is pending. This amendment is technical direction prepared
-under the Owner-directed WU-S4-03C remediation track; it has not been
-approved by the Project Owner. Status remains `PROPOSED`. The amended
-decision, its implementation, and its test evidence remain pending a fresh
-Owner review before this status may change.
+Owner approval occurred on 2026-09-26 under WU-S4-03C. This amendment,
+prepared as technical direction under the Owner-directed WU-S4-03C
+remediation track, is Owner-approved. Status is `ACTIVE`.
