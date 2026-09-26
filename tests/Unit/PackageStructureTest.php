@@ -124,11 +124,14 @@ final class PackageStructureTest extends TestCase
             'Maatify\\RateLimiter\\DTO\\Store\\BudgetStateDTO',
             'Maatify\\RateLimiter\\DTO\\Store\\CircuitBreakerStateDTO',
             'Maatify\\RateLimiter\\DTO\\Store\\RateLimitStateDTO',
+            'Maatify\\RateLimiter\\Config\\PolicyCapability',
+            'Maatify\\RateLimiter\\Config\\FailureFallbackDimension',
+            'Maatify\\RateLimiter\\Config\\FailureFallbackProfile',
         ];
 
         foreach ($oldTypes as $oldType) {
             self::assertFalse(
-                class_exists($oldType, false) || interface_exists($oldType, false) || enum_exists($oldType, false),
+                $this->runtimeTypeExists($oldType),
                 $oldType . ' must not remain autoloadable.',
             );
         }
@@ -136,6 +139,6 @@ final class PackageStructureTest extends TestCase
 
     private function runtimeTypeExists(string $type): bool
     {
-        return class_exists($type) || interface_exists($type) || enum_exists($type);
+        return @class_exists($type) || @interface_exists($type) || @enum_exists($type);
     }
 }

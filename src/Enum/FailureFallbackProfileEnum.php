@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace Maatify\RateLimiter\Enum;
 
+use Maatify\RateLimiter\Config\FailureFallbackConfigurationProviderInterface;
 use Maatify\RateLimiter\DTO\FailureFallbackConfigurationDTO;
 use Maatify\RateLimiter\DTO\FailureFallbackRuleDTO;
 
