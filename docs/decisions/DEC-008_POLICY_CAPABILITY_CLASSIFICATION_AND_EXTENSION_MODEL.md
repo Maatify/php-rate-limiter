@@ -48,7 +48,7 @@ Policies that need reusable runtime behavior beyond the base scoring contract op
 
 ```text
 PolicyCapabilityProviderInterface
-    -> list<PolicyCapability>
+    -> list<PolicyCapabilityEnum>
 ```
 
 The package-owned capability set for this decision is:

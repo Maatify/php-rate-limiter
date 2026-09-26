@@ -6,15 +6,32 @@ namespace Maatify\RateLimiter\Config;
 
 use Maatify\RateLimiter\Config\BlockPolicyInterface;
 use Maatify\RateLimiter\DTO\BudgetConfigDTO;
+use Maatify\RateLimiter\DTO\FailureFallbackConfigurationDTO;
 use Maatify\RateLimiter\DTO\PolicyThresholdsDTO;
 use Maatify\RateLimiter\DTO\ScoreDeltasDTO;
 use Maatify\RateLimiter\DTO\ScoreThresholdsDTO;
+use Maatify\RateLimiter\Enum\FailureFallbackProfileEnum;
+use Maatify\RateLimiter\Enum\PolicyCapabilityEnum;
 
 /**
  * Policy for high-volume API traffic using IP and IP/user-agent scopes.
+ *
+ * Its bounded backend-failure fallback resolves the package-owned
+ * `API_OVERUSE` preset; no Host configuration is required.
  */
-class ApiHeavyProtectionPolicy implements BlockPolicyInterface
+class ApiHeavyProtectionPolicy implements BlockPolicyInterface, PolicyCapabilityProviderInterface, FailureFallbackConfigurationProviderInterface
 {
+    public function getFailureFallbackConfiguration(): FailureFallbackConfigurationDTO
+    {
+        return FailureFallbackProfileEnum::API_OVERUSE->configuration();
+    }
+
+    /** @return list<PolicyCapabilityEnum> */
+    public function getCapabilities(): array
+    {
+        return [PolicyCapabilityEnum::API_OVERUSE];
+    }
+
     private const DISABLED_THRESHOLD = PHP_INT_MAX;
 
     /** @var array<string, int> */

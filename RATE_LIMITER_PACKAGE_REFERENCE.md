@@ -3,7 +3,7 @@
 **Package:** RateLimiter
 **Namespace:** `Maatify\RateLimiter`
 **Status:** LOCKED — Architecture Contract
-**Spec Version:** `1.16.0`
+**Spec Version:** `1.18.0`
 **Location:** `src/`
 
 This document explains **why** the RateLimiter package is designed the way it is.
@@ -38,6 +38,7 @@ The package exposes one rate-limiting capability. Its canonical runtime roots ar
     ├── Config/
     ├── Contract/
     ├── DTO/
+    ├── Enum/
     ├── Exception/
     ├── Repository/
     └── Service/
@@ -49,7 +50,7 @@ under the responsibility that owns them. There are no `Domain`, capability-wrapp
 Current ownership within those roots is explicit: `Repository/` owns the base,
 rotation, hard-block cycle, punishment-lifecycle, full-capability, and official
 Redis storage boundaries; `Config/` owns the block-policy and explicit
-post-punishment opt-in markers; `Service/` owns the composite runtime,
+post-punishment opt-in markers; `Enum/` owns package-owned enums; `Service/` owns the composite runtime,
 post-punishment claim, evaluation, circuit, fallback, identity, and operational
 boundaries; and `DTO/` owns the generation-bound score, punishment-lifecycle,
 runtime-result, and operational serialized data shapes listed below.
@@ -123,6 +124,11 @@ The following inventory describes the current public runtime types. Test and sup
 | `Maatify\RateLimiter\Service\PostPunishmentReentryClaimInterface` | Public one-shot post-punishment lifecycle claim boundary; stale, expired, mismatched, absent, or replayed evidence returns `false`. |
 | `Maatify\RateLimiter\Service\RateLimiterRuntimeInterface` | Composite production runtime extending the normal limiter entrypoint with the public lifecycle claim operation. |
 | `Maatify\RateLimiter\Config\BlockPolicyInterface` | Policy name, thresholds, score deltas, failure mode, and budget configuration. |
+| `Maatify\RateLimiter\Config\PolicyCapabilityProviderInterface` | Additive typed opt-in for the finite package-owned reusable capabilities. |
+| `Maatify\RateLimiter\Enum\PolicyCapabilityEnum` | `CREDENTIAL_SPRAY`, `DISTRIBUTED_ACCOUNT`, `TRUSTED_AUTHENTICATION`, and `API_OVERUSE`. |
+| `Maatify\RateLimiter\Config\FailureFallbackConfigurationProviderInterface` | DEC-011 typed declaration of the effective bounded backend-failure fallback configuration; shared by official presets and direct custom policies. |
+| `Maatify\RateLimiter\Enum\FailureFallbackDimensionEnum` | `ACCOUNT`, `IP_PREFIX`, and `IP_PREFIX_NORMALIZED_USER_AGENT`; the finite fallback rule scopes. |
+| `Maatify\RateLimiter\Enum\FailureFallbackProfileEnum` | Internal package-owned factory (`AUTHENTICATION_PRIMARY`, `AUTHENTICATION_STEP_UP`, `API_OVERUSE`) resolved by the official policies into the generic configuration below; not part of the provider contract itself. |
 | `Maatify\RateLimiter\Config\PostPunishmentReentryPolicyInterface` | Explicit opt-in marker for generation-bound K4 lifecycle behavior; builder validation requires the lifecycle storage capability. |
 | `Maatify\RateLimiter\Exception\RateLimiterExceptionInterface` | Package exception marker contract. |
 
@@ -144,7 +150,7 @@ The following inventory describes the current public runtime types. Test and sup
 | Group | Types |
 | --- | --- |
 | Context and result | `Maatify\RateLimiter\DTO\RateLimitContextDTO`, `Maatify\RateLimiter\DTO\RateLimitResultDTO`, `Maatify\RateLimiter\DTO\RateLimitMetadataDTO`, `Maatify\RateLimiter\DTO\RateLimitContextMetadataDTO` |
-| Identity and policy | `Maatify\RateLimiter\DTO\DeviceIdentityDTO`, `Maatify\RateLimiter\DTO\PolicyThresholdsDTO`, `Maatify\RateLimiter\DTO\ScoreThresholdsDTO`, `Maatify\RateLimiter\DTO\ScoreDeltasDTO`, `Maatify\RateLimiter\DTO\BudgetConfigDTO` |
+| Identity and policy | `Maatify\RateLimiter\DTO\DeviceIdentityDTO`, `Maatify\RateLimiter\DTO\PolicyThresholdsDTO`, `Maatify\RateLimiter\DTO\ScoreThresholdsDTO`, `Maatify\RateLimiter\DTO\ScoreDeltasDTO`, `Maatify\RateLimiter\DTO\BudgetConfigDTO`, `Maatify\RateLimiter\DTO\FailureFallbackRuleDTO`, `Maatify\RateLimiter\DTO\FailureFallbackConfigurationDTO` |
 | Runtime state | `Maatify\RateLimiter\DTO\BudgetStatusDTO`, `Maatify\RateLimiter\DTO\EphemeralStateDTO`, `Maatify\RateLimiter\DTO\FailureSignalDTO`, `Maatify\RateLimiter\DTO\FailureStateDTO` |
 | Bounded correlation | `Maatify\RateLimiter\DTO\BoundedDistinctResultDTO`, `Maatify\RateLimiter\DTO\BoundedDistinctSnapshotDTO`, `Maatify\RateLimiter\DTO\BoundedCorrelationObservationDTO` |
 | Store boundary state | `Maatify\RateLimiter\DTO\RateLimitStateDTO`, `Maatify\RateLimiter\DTO\BlockStateDTO`, `Maatify\RateLimiter\DTO\BudgetStateDTO`, `Maatify\RateLimiter\DTO\CircuitBreakerStateDTO`, `Maatify\RateLimiter\DTO\GenerationBoundScoreStateDTO`, `Maatify\RateLimiter\DTO\GenerationBoundScoreMutationDTO` |

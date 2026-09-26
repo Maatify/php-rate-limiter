@@ -6,9 +6,12 @@ namespace Maatify\RateLimiter\Config;
 
 use Maatify\RateLimiter\Config\BlockPolicyInterface;
 use Maatify\RateLimiter\DTO\BudgetConfigDTO;
+use Maatify\RateLimiter\DTO\FailureFallbackConfigurationDTO;
 use Maatify\RateLimiter\DTO\PolicyThresholdsDTO;
 use Maatify\RateLimiter\DTO\ScoreDeltasDTO;
 use Maatify\RateLimiter\DTO\ScoreThresholdsDTO;
+use Maatify\RateLimiter\Enum\FailureFallbackProfileEnum;
+use Maatify\RateLimiter\Enum\PolicyCapabilityEnum;
 
 /**
  * Default Login failure policy with account-scoped thresholds and a budget.
@@ -16,9 +19,26 @@ use Maatify\RateLimiter\DTO\ScoreThresholdsDTO;
  * It opts into DEC-007 generation-bound K4 lifecycle behavior. The policy
  * supplies positive monotonic K4 thresholds and fail-closed failure semantics;
  * the Builder additionally requires lifecycle-capable storage for this opt-in.
+ * Its bounded backend-failure fallback resolves the package-owned
+ * `AUTHENTICATION_PRIMARY` preset; no Host configuration is required.
  */
-class LoginProtectionPolicy implements PostPunishmentReentryPolicyInterface
+class LoginProtectionPolicy implements PostPunishmentReentryPolicyInterface, PolicyCapabilityProviderInterface, FailureFallbackConfigurationProviderInterface
 {
+    public function getFailureFallbackConfiguration(): FailureFallbackConfigurationDTO
+    {
+        return FailureFallbackProfileEnum::AUTHENTICATION_PRIMARY->configuration();
+    }
+
+    /** @return list<PolicyCapabilityEnum> */
+    public function getCapabilities(): array
+    {
+        return [
+            PolicyCapabilityEnum::CREDENTIAL_SPRAY,
+            PolicyCapabilityEnum::DISTRIBUTED_ACCOUNT,
+            PolicyCapabilityEnum::TRUSTED_AUTHENTICATION,
+        ];
+    }
+
     /**
      * Return the policy identifier consumed by the engine.
      */

@@ -9,9 +9,20 @@ use ConsumerVerification\RespRedisCommandExecutor;
 use Maatify\RateLimiter\Builder\RateLimiterBuilder;
 use Maatify\RateLimiter\Command\RateLimitCommand;
 use Maatify\RateLimiter\Config\RateLimiterConfig;
+use Maatify\RateLimiter\Config\BlockPolicyInterface;
+use Maatify\RateLimiter\Config\FailureFallbackConfigurationProviderInterface;
+use Maatify\RateLimiter\Enum\FailureFallbackDimensionEnum;
+use Maatify\RateLimiter\Enum\PolicyCapabilityEnum;
+use Maatify\RateLimiter\Config\PolicyCapabilityProviderInterface;
 use Maatify\RateLimiter\DTO\RateLimitContextDTO;
 use Maatify\RateLimiter\DTO\RateLimitResultDTO;
 use Maatify\RateLimiter\DTO\DeviceIdentityDTO;
+use Maatify\RateLimiter\DTO\BudgetConfigDTO;
+use Maatify\RateLimiter\DTO\FailureFallbackConfigurationDTO;
+use Maatify\RateLimiter\DTO\FailureFallbackRuleDTO;
+use Maatify\RateLimiter\DTO\PolicyThresholdsDTO;
+use Maatify\RateLimiter\DTO\ScoreDeltasDTO;
+use Maatify\RateLimiter\DTO\ScoreThresholdsDTO;
 use Maatify\RateLimiter\Repository\Redis\CallableRedisCommandExecutor;
 use Maatify\RateLimiter\Repository\Redis\RedisFullCapabilityStore;
 use Maatify\RateLimiter\Service\DeviceIdentityResolver;
@@ -429,6 +440,128 @@ for ($attempt = 1; $attempt <= 6; $attempt++) {
 }
 requireCondition($customHard instanceof RateLimitResultDTO, 'Custom opt-in policy did not issue a hard block.');
 requireCondition($customHard->retryAfter === 60, 'Custom newly-issued K4 L2 retryAfter must be 60 seconds: ' . json_encode(resultShape($customHard), JSON_THROW_ON_ERROR));
+$customSemanticAuthPolicy = new class implements BlockPolicyInterface, PolicyCapabilityProviderInterface, FailureFallbackConfigurationProviderInterface {
+    public function getName(): string
+    {
+        return 'consumer_custom_auth_semantics';
+    }
+
+    /** @return list<PolicyCapabilityEnum> */
+    public function getCapabilities(): array
+    {
+        return [
+            PolicyCapabilityEnum::CREDENTIAL_SPRAY,
+            PolicyCapabilityEnum::DISTRIBUTED_ACCOUNT,
+            PolicyCapabilityEnum::TRUSTED_AUTHENTICATION,
+        ];
+    }
+
+    // Deliberately different from the official AUTHENTICATION_PRIMARY preset
+    // (3/600, 20/600): this is a direct custom policy, not a preset consumer.
+    public function getFailureFallbackConfiguration(): FailureFallbackConfigurationDTO
+    {
+        return new FailureFallbackConfigurationDTO([
+            new FailureFallbackRuleDTO(FailureFallbackDimensionEnum::ACCOUNT, 5, 300),
+            new FailureFallbackRuleDTO(FailureFallbackDimensionEnum::IP_PREFIX, 30, 300),
+        ]);
+    }
+
+    public function getScoreThresholds(): PolicyThresholdsDTO
+    {
+        return new PolicyThresholdsDTO(
+            k4: new ScoreThresholdsDTO(5, 8, 12),
+        );
+    }
+
+    public function getScoreDeltas(): ScoreDeltasDTO
+    {
+        return new ScoreDeltasDTO(
+            k1_spray: 5,
+            k2_missing_fp: 4,
+            k4_failure: 3,
+            k4_repeated_missing_fp: 6,
+            k5_failure: 2,
+        );
+    }
+
+    public function getFailureMode(): string
+    {
+        return 'FAIL_CLOSED';
+    }
+
+    public function getBudgetConfig(): ?BudgetConfigDTO
+    {
+        return new BudgetConfigDTO(
+            threshold: 20,
+            block_level: 3,
+            cooldown_seconds: 3600,
+            trusted_session_floor_level: 2,
+            precheck_enforcement: true,
+            known_device_micro_cap: 8,
+            recovery_collision_guard_enabled: false,
+        );
+    }
+};
+$customSemanticAuthLimiter = RateLimiterBuilder::fromFullCapabilityStore(new RateLimiterConfig('consumer-semantic-auth-key', 'consumer-semantic-auth-fingerprint', 'prod'), $store, $signals)->withPolicy($customSemanticAuthPolicy)->build();
+$customSprayResults = [];
+for ($index = 1; $index <= 5; $index++) {
+    $customSprayResults[] = $customSemanticAuthLimiter->limit(
+        new RateLimitContextDTO('203.0.113.19', 'Mozilla/5.0 consumer-custom-auth', 'consumer-custom-spray-' . $index, ['device' => 'stable']),
+        RateLimitCommand::checkOnly('consumer_custom_auth_semantics'),
+    );
+}
+requireCondition($customSprayResults[4]->decision === RateLimitResultDTO::DECISION_HARD_BLOCK, 'Custom auth capability policy did not execute the credential-spray branch.');
+
+$customApiPolicy = new class implements BlockPolicyInterface, PolicyCapabilityProviderInterface, FailureFallbackConfigurationProviderInterface {
+    public function getName(): string
+    {
+        return 'consumer_custom_api_overuse';
+    }
+
+    /** @return list<PolicyCapabilityEnum> */
+    public function getCapabilities(): array
+    {
+        return [PolicyCapabilityEnum::API_OVERUSE];
+    }
+
+    // Deliberately different from the official API_OVERUSE preset (120/60,
+    // 60/60): this is a direct custom policy, not a preset consumer.
+    public function getFailureFallbackConfiguration(): FailureFallbackConfigurationDTO
+    {
+        return new FailureFallbackConfigurationDTO([
+            new FailureFallbackRuleDTO(FailureFallbackDimensionEnum::IP_PREFIX, 200, 30),
+            new FailureFallbackRuleDTO(FailureFallbackDimensionEnum::IP_PREFIX_NORMALIZED_USER_AGENT, 80, 30),
+        ]);
+    }
+
+    public function getScoreThresholds(): PolicyThresholdsDTO
+    {
+        return new PolicyThresholdsDTO(
+            k1: new ScoreThresholdsDTO(1000, 1000, 1000),
+            k2: new ScoreThresholdsDTO(1000, 1000, 1000),
+            k3: new ScoreThresholdsDTO(1, 1, 1),
+        );
+    }
+
+    public function getScoreDeltas(): ScoreDeltasDTO
+    {
+        return new ScoreDeltasDTO(access: 1);
+    }
+
+    public function getFailureMode(): string
+    {
+        return 'FAIL_OPEN';
+    }
+
+    public function getBudgetConfig(): ?BudgetConfigDTO
+    {
+        return null;
+    }
+};
+$customApiLimiter = RateLimiterBuilder::fromFullCapabilityStore(new RateLimiterConfig('consumer-custom-api-key', 'consumer-custom-api-fingerprint', 'prod'), $store, $signals)->withPolicy($customApiPolicy)->build();
+$customApiContext = new RateLimitContextDTO('203.0.113.18', 'Mozilla/5.0 consumer-custom-api', null, []);
+$customApiResult = $customApiLimiter->limit($customApiContext, new RateLimitCommand('consumer_custom_api_overuse', 121));
+requireCondition($customApiResult->decision === RateLimitResultDTO::DECISION_HARD_BLOCK && $customApiResult->blockLevel === 2, 'Custom API-overuse capability policy did not execute the low-confidence K3-to-K2 remap branch.');
 // All three public punishments are issued before one shared wait. This keeps
 // the default OTP L3 proof intact while avoiding serial 60s + 300s + 60s waits.
 $sharedWaitSeconds = max(
@@ -584,6 +717,56 @@ requireCondition($loginFailureMode->decision === RateLimitResultDTO::DECISION_HA
 requireCondition($otpFailureMode->decision === RateLimitResultDTO::DECISION_HARD_BLOCK && $otpFailureMode->failureMode === 'FAIL_CLOSED', 'OTP backend failure did not fail closed.');
 requireCondition($apiFailureMode->decision === RateLimitResultDTO::DECISION_ALLOW && $apiFailureMode->failureMode === 'FAIL_OPEN', 'API Heavy backend failure did not fail open.');
 
+$customPrimaryPolicy = new class extends \Maatify\RateLimiter\Config\LoginProtectionPolicy {
+    public function getName(): string
+    {
+        return 'consumer_custom_primary_fallback';
+    }
+};
+$customPrimaryLimiter = RateLimiterBuilder::fromFullCapabilityStore(new RateLimiterConfig('failure-primary-key', 'failure-primary-fingerprint', 'prod'), $failureStore, $failureSignals)->withPolicy($customPrimaryPolicy)->build();
+$customPrimaryFallback = [];
+for ($attempt = 1; $attempt <= 7; $attempt++) {
+    $customPrimaryFallback[] = $customPrimaryLimiter->limit($failureContext, RateLimitCommand::checkOnly('consumer_custom_primary_fallback'));
+}
+requireCondition($customPrimaryFallback[3]->decision === RateLimitResultDTO::DECISION_ALLOW && $customPrimaryFallback[3]->failureMode === 'DEGRADED_MODE', 'Custom primary-auth policy did not enter its typed fallback profile.');
+requireCondition($customPrimaryFallback[6]->decision === RateLimitResultDTO::DECISION_HARD_BLOCK, 'Custom primary-auth fallback did not enforce its account cap.');
+
+$customStepUpPolicy = new class extends \Maatify\RateLimiter\Config\OtpProtectionPolicy {
+    public function getName(): string
+    {
+        return 'consumer_custom_step_up_fallback';
+    }
+};
+$customStepUpLimiter = RateLimiterBuilder::fromFullCapabilityStore(new RateLimiterConfig('failure-step-up-key', 'failure-step-up-fingerprint', 'prod'), $failureStore, $failureSignals)->withPolicy($customStepUpPolicy)->build();
+$customStepUpFallback = [];
+for ($attempt = 1; $attempt <= 6; $attempt++) {
+    $customStepUpFallback[] = $customStepUpLimiter->limit($failureContext, RateLimitCommand::checkOnly('consumer_custom_step_up_fallback'));
+}
+requireCondition($customStepUpFallback[3]->decision === RateLimitResultDTO::DECISION_ALLOW && $customStepUpFallback[3]->failureMode === 'DEGRADED_MODE', 'Custom step-up policy did not enter its typed fallback profile.');
+requireCondition($customStepUpFallback[5]->decision === RateLimitResultDTO::DECISION_HARD_BLOCK, 'Custom step-up fallback did not enforce its account cap.');
+
+// Direct custom policies with generic typed fallback configuration values that
+// differ from every official preset (5/300 + 30/300 for auth; 200/30 + 80/30
+// for API), proven through the same public production path and the same
+// bounded-fallback runtime as the official presets above.
+$customSemanticAuthFailureLimiter = RateLimiterBuilder::fromFullCapabilityStore(new RateLimiterConfig('failure-custom-auth-key', 'failure-custom-auth-fingerprint', 'prod'), $failureStore, $failureSignals)->withPolicy($customSemanticAuthPolicy)->build();
+$customSemanticAuthFallback = [];
+for ($attempt = 1; $attempt <= 9; $attempt++) {
+    $customSemanticAuthFallback[] = $customSemanticAuthFailureLimiter->limit($failureContext, RateLimitCommand::checkOnly('consumer_custom_auth_semantics'));
+}
+requireCondition($customSemanticAuthFallback[2]->decision === RateLimitResultDTO::DECISION_ALLOW && $customSemanticAuthFallback[2]->failureMode === 'DEGRADED_MODE', 'Custom auth policy did not enter its own typed fallback configuration.');
+requireCondition($customSemanticAuthFallback[6]->decision === RateLimitResultDTO::DECISION_ALLOW, 'Custom auth fallback did not honor its own 5-request account cap.');
+requireCondition($customSemanticAuthFallback[7]->decision === RateLimitResultDTO::DECISION_HARD_BLOCK, 'Custom auth fallback did not enforce its own account cap boundary.');
+
+$customApiFailureLimiter = RateLimiterBuilder::fromFullCapabilityStore(new RateLimiterConfig('failure-custom-api-key', 'failure-custom-api-fingerprint', 'prod'), $failureStore, $failureSignals)->withPolicy($customApiPolicy)->build();
+$customApiFallbackContext = new RateLimitContextDTO('192.0.2.93', 'Mozilla/5.0 consumer-custom-api-fallback', null, []);
+$customApiFallback = [];
+for ($attempt = 1; $attempt <= 81; $attempt++) {
+    $customApiFallback[] = $customApiFailureLimiter->limit($customApiFallbackContext, RateLimitCommand::checkOnly('consumer_custom_api_overuse'));
+}
+requireCondition($customApiFallback[79]->decision === RateLimitResultDTO::DECISION_ALLOW, 'Custom API fallback did not honor its own 80-request IP+UA cap.');
+requireCondition($customApiFallback[80]->decision === RateLimitResultDTO::DECISION_HARD_BLOCK, 'Custom API fallback did not enforce its own IP+UA cap boundary.');
+
 $circuitDown = true;
 $circuitEvalCalls = 0;
 $circuitExecutor = new CallableRedisCommandExecutor(static function (array $command) use (&$circuitDown, &$circuitEvalCalls, $raw): mixed {
@@ -622,4 +805,4 @@ requireCondition(count($circuitSignalTypes) === 2 && $circuitSignalTypes === ['C
 
 $keys = redisKeys($raw);
 requireCondition(count($keys) > 0, 'No Redis persistence was observable.');
-echo json_encode(['status' => 'PASS', 'packageInstallPath' => $installPath, 'productionAutoload' => true, 'packageTestNamespaceAvailable' => false, 'reentryTiming' => ['loginLevel' => $reentryLoginHard->blockLevel, 'otpLevel' => $reentryOtpHard->blockLevel, 'customLevel' => $customHard->blockLevel, 'sharedWaitSeconds' => $sharedWaitSeconds], 'login' => ['checkOnly' => resultShape($loginCheck), 'recordFailure' => resultShape($loginFailure), 'recordSuccess' => resultShape($loginSuccess), 'progression' => array_map('resultShape', $loginProgression), 'persistenceProof' => true, 'postPunishmentReentry' => ['checkOnly' => resultShape($reentryLoginCheck), 'claim' => $reentryLoginClaim, 'secondClaim' => $reentryLoginSecondClaim]], 'otp' => resultShape($otp), 'otpPostPunishmentReentry' => ['checkOnly' => resultShape($reentryOtpCheck), 'claim' => $reentryOtpClaim, 'secondClaim' => $reentryOtpSecondClaim], 'customOptIn' => ['checkOnly' => resultShape($customCheck), 'claim' => $customClaim, 'secondClaim' => $customSecondClaim], 'apiHeavy' => resultShape($api), 'credentialSpray' => array_map('resultShape', $spray), 'sprayLifecycle' => ['recordSuccess' => resultShape($spraySuccess), 'subjectFourCheckOnly' => resultShape($spraySubjectFour)], 'trustedSession' => resultShape($trusted), 'untrustedFollowUp' => resultShape($untrustedFollowUp), 'trustedNonK1' => resultShape($trustedNonK1), 'rotations' => $rotationCases, 'budgetMigration' => ['previousCount' => (int) $previousBudgetMap['count'], 'currentCount' => (int) $currentBudgetMap['count'], 'epochStartPreserved' => true, 'previousReadOnly' => true], 'failureSemantics' => ['login' => resultShape($loginFailureMode), 'otp' => resultShape($otpFailureMode), 'apiHeavy' => resultShape($apiFailureMode)], 'circuit' => ['openGuard' => resultShape($openGuardResult), 'halfOpenProbe' => resultShape($halfOpenResult), 'closedRecovery' => resultShape($closedResult), 'normalWorkloadSuppressedWhileOpen' => true, 'signalCount' => count($circuitSignals->signals()), 'signalTypes' => array_values(array_unique(array_map(static fn($signal): string => $signal->type, $circuitSignals->signals())))], 'redisPersistence' => ['keyCount' => count($keys)], 'failureSignals' => count($signals->signals())], JSON_THROW_ON_ERROR) . PHP_EOL;
+echo json_encode(['status' => 'PASS', 'packageInstallPath' => $installPath, 'productionAutoload' => true, 'packageTestNamespaceAvailable' => false, 'reentryTiming' => ['loginLevel' => $reentryLoginHard->blockLevel, 'otpLevel' => $reentryOtpHard->blockLevel, 'customLevel' => $customHard->blockLevel, 'sharedWaitSeconds' => $sharedWaitSeconds], 'login' => ['checkOnly' => resultShape($loginCheck), 'recordFailure' => resultShape($loginFailure), 'recordSuccess' => resultShape($loginSuccess), 'progression' => array_map('resultShape', $loginProgression), 'persistenceProof' => true, 'postPunishmentReentry' => ['checkOnly' => resultShape($reentryLoginCheck), 'claim' => $reentryLoginClaim, 'secondClaim' => $reentryLoginSecondClaim]], 'otp' => resultShape($otp), 'otpPostPunishmentReentry' => ['checkOnly' => resultShape($reentryOtpCheck), 'claim' => $reentryOtpClaim, 'secondClaim' => $reentryOtpSecondClaim], 'customOptIn' => ['checkOnly' => resultShape($customCheck), 'claim' => $customClaim, 'secondClaim' => $customSecondClaim], 'apiHeavy' => resultShape($api), 'credentialSpray' => array_map('resultShape', $spray), 'sprayLifecycle' => ['recordSuccess' => resultShape($spraySuccess), 'subjectFourCheckOnly' => resultShape($spraySubjectFour)], 'trustedSession' => resultShape($trusted), 'untrustedFollowUp' => resultShape($untrustedFollowUp), 'trustedNonK1' => resultShape($trustedNonK1), 'rotations' => $rotationCases, 'budgetMigration' => ['previousCount' => (int) $previousBudgetMap['count'], 'currentCount' => (int) $currentBudgetMap['count'], 'epochStartPreserved' => true, 'previousReadOnly' => true], 'failureSemantics' => ['login' => resultShape($loginFailureMode), 'otp' => resultShape($otpFailureMode), 'apiHeavy' => resultShape($apiFailureMode)], 'customFallbackConfiguration' => ['auth' => ['enteredFallback' => resultShape($customSemanticAuthFallback[2]), 'accountCapAllowed' => resultShape($customSemanticAuthFallback[6]), 'accountCapExceeded' => resultShape($customSemanticAuthFallback[7])], 'api' => ['ipUaCapAllowed' => resultShape($customApiFallback[79]), 'ipUaCapExceeded' => resultShape($customApiFallback[80])]], 'circuit' => ['openGuard' => resultShape($openGuardResult), 'halfOpenProbe' => resultShape($halfOpenResult), 'closedRecovery' => resultShape($closedResult), 'normalWorkloadSuppressedWhileOpen' => true, 'signalCount' => count($circuitSignals->signals()), 'signalTypes' => array_values(array_unique(array_map(static fn($signal): string => $signal->type, $circuitSignals->signals())))], 'redisPersistence' => ['keyCount' => count($keys)], 'failureSignals' => count($signals->signals())], JSON_THROW_ON_ERROR) . PHP_EOL;

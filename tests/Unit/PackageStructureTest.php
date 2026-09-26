@@ -23,7 +23,7 @@ final class PackageStructureTest extends TestCase
         sort($actualRoots);
 
         self::assertSame(
-            ['Builder', 'Command', 'Config', 'Contract', 'DTO', 'Exception', 'Repository', 'Service'],
+            ['Builder', 'Command', 'Config', 'Contract', 'DTO', 'Enum', 'Exception', 'Repository', 'Service'],
             $actualRoots,
         );
 
@@ -45,6 +45,9 @@ final class PackageStructureTest extends TestCase
             'Maatify\\RateLimiter\\Config\\OtpProtectionPolicy',
             'Maatify\\RateLimiter\\Config\\ApiHeavyProtectionPolicy',
             'Maatify\\RateLimiter\\Config\\RateLimiterConfig',
+            'Maatify\\RateLimiter\\Enum\\PolicyCapabilityEnum',
+            'Maatify\\RateLimiter\\Enum\\FailureFallbackDimensionEnum',
+            'Maatify\\RateLimiter\\Enum\\FailureFallbackProfileEnum',
             'Maatify\\RateLimiter\\Repository\\RateLimitStoreInterface',
             'Maatify\\RateLimiter\\Repository\\FullCapabilityStoreInterface',
             'Maatify\\RateLimiter\\Repository\\BudgetSeedStoreInterface',
@@ -121,15 +124,21 @@ final class PackageStructureTest extends TestCase
             'Maatify\\RateLimiter\\DTO\\Store\\BudgetStateDTO',
             'Maatify\\RateLimiter\\DTO\\Store\\CircuitBreakerStateDTO',
             'Maatify\\RateLimiter\\DTO\\Store\\RateLimitStateDTO',
+            'Maatify\\RateLimiter\\Config\\PolicyCapability',
+            'Maatify\\RateLimiter\\Config\\FailureFallbackDimension',
+            'Maatify\\RateLimiter\\Config\\FailureFallbackProfile',
         ];
 
         foreach ($oldTypes as $oldType) {
-            self::assertFalse($this->runtimeTypeExists($oldType), $oldType . ' must not remain autoloadable.');
+            self::assertFalse(
+                $this->runtimeTypeExists($oldType),
+                $oldType . ' must not remain autoloadable.',
+            );
         }
     }
 
     private function runtimeTypeExists(string $type): bool
     {
-        return class_exists($type) || interface_exists($type);
+        return @class_exists($type) || @interface_exists($type) || @enum_exists($type);
     }
 }

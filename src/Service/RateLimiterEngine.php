@@ -5,6 +5,11 @@ declare(strict_types=1);
 namespace Maatify\RateLimiter\Service;
 
 use Maatify\RateLimiter\Config\BlockPolicyInterface;
+use Maatify\RateLimiter\Enum\PolicyCapabilityEnum;
+use Maatify\RateLimiter\Config\PolicyCapabilityProviderInterface;
+use Maatify\RateLimiter\Config\FailureFallbackConfigurationProviderInterface;
+use Maatify\RateLimiter\Enum\FailureFallbackDimensionEnum;
+use Maatify\RateLimiter\DTO\FailureFallbackConfigurationDTO;
 use Maatify\RateLimiter\Service\DeviceIdentityResolverInterface;
 use Maatify\RateLimiter\Contract\FailureSignalEmitterInterface;
 use Maatify\RateLimiter\Service\RateLimiterInterface;
@@ -60,6 +65,65 @@ class RateLimiterEngine implements RateLimiterRuntimeInterface
 
     private function registerPolicy(BlockPolicyInterface $policy): void
     {
+        $capabilities = $this->capabilities($policy);
+        $hasApi = in_array(PolicyCapabilityEnum::API_OVERUSE, $capabilities, true);
+        $hasAuth = $this->isAuthRelated($policy, $capabilities);
+        $configuration = $policy instanceof FailureFallbackConfigurationProviderInterface
+            ? $policy->getFailureFallbackConfiguration()
+            : null;
+
+        if ($hasAuth && $hasApi) {
+            throw new RateLimiterException("Policy {$policy->getName()} invalid: Authentication and API_OVERUSE capabilities cannot be combined.");
+        }
+
+        if ($configuration !== null) {
+            $this->validateFallbackConfiguration($policy, $configuration);
+        }
+
+        if ($hasAuth) {
+            $thresholds = $policy->getScoreThresholds();
+            if ($thresholds->k4 === null
+                || $thresholds->k4->l1 <= 0
+                || $thresholds->k4->l1 > $thresholds->k4->l2
+                || $thresholds->k4->l2 > $thresholds->k4->l3) {
+                throw new RateLimiterException("Policy {$policy->getName()} invalid: Must enforce Account (K4) thresholds; authentication K4 thresholds must be positive and monotonic.");
+            }
+            $deltas = $policy->getScoreDeltas();
+            if ($deltas->k4_failure <= 0) {
+                throw new RateLimiterException("Policy {$policy->getName()} invalid: Authentication policies require a positive K4 failure delta.");
+            }
+            if ($policy->getBudgetConfig() === null) {
+                throw new RateLimiterException("Policy {$policy->getName()} invalid: Authentication policies require BudgetConfig.");
+            }
+            if ($deltas->k2_missing_fp <= 0
+                && $deltas->k4_repeated_missing_fp <= 0
+                && $deltas->k5_failure <= 0) {
+                throw new RateLimiterException("Policy {$policy->getName()} invalid: Authentication policies require a device-aware positive signal.");
+            }
+            if ($policy->getFailureMode() !== 'FAIL_CLOSED') {
+                throw new RateLimiterException("Policy {$policy->getName()} invalid: FAIL_OPEN is not allowed; authentication policies must use FAIL_CLOSED.");
+            }
+            if ($configuration === null
+                || ! $configuration->hasDimension(FailureFallbackDimensionEnum::ACCOUNT)
+                || ! $configuration->hasDimension(FailureFallbackDimensionEnum::IP_PREFIX)) {
+                throw new RateLimiterException("Policy {$policy->getName()} invalid: Authentication policies require a bounded fallback configuration with ACCOUNT and IP_PREFIX dimensions.");
+            }
+        }
+
+        if ($hasApi) {
+            if ($configuration === null
+                || ! $configuration->hasDimension(FailureFallbackDimensionEnum::IP_PREFIX)
+                || ! $configuration->hasDimension(FailureFallbackDimensionEnum::IP_PREFIX_NORMALIZED_USER_AGENT)) {
+                throw new RateLimiterException("Policy {$policy->getName()} invalid: API_OVERUSE requires a bounded fallback configuration with IP_PREFIX and IP_PREFIX_NORMALIZED_USER_AGENT dimensions.");
+            }
+            if ($configuration->hasDimension(FailureFallbackDimensionEnum::ACCOUNT)) {
+                throw new RateLimiterException("Policy {$policy->getName()} invalid: API_OVERUSE fallback configuration must not include an ACCOUNT dimension; account-level enforcement in degraded API mode is forbidden.");
+            }
+        }
+        if ($policy->getFailureMode() === 'FAIL_OPEN' && ! $hasApi) {
+            throw new RateLimiterException("Policy {$policy->getName()} invalid: FAIL_OPEN requires API_OVERUSE capability and a bounded fallback configuration.");
+        }
+
         if ($policy instanceof PostPunishmentReentryPolicyInterface) {
             $thresholds = $policy->getScoreThresholds();
             if ($thresholds->k4 === null) {
@@ -68,8 +132,7 @@ class RateLimiterEngine implements RateLimiterRuntimeInterface
             if ($thresholds->k4->l1 <= 0 || $thresholds->k4->l1 > $thresholds->k4->l2 || $thresholds->k4->l2 > $thresholds->k4->l3) {
                 throw new RateLimiterException("Policy {$policy->getName()} invalid: K4 thresholds must be positive and monotonic.");
             }
-            if (in_array($policy->getName(), ['login_protection', 'otp_protection'], true)
-                && $policy->getBudgetConfig() === null) {
+            if ($policy->getBudgetConfig() === null) {
                 throw new RateLimiterException("Policy {$policy->getName()} invalid: Missing required BudgetConfig.");
             }
         }
@@ -82,14 +145,83 @@ class RateLimiterEngine implements RateLimiterRuntimeInterface
             throw new RateLimiterException("Policy {$policy->getName()} invalid: post-punishment re-entry cannot use FAIL_OPEN.");
         }
 
-        if ($policy->getName() === 'api_heavy_protection') {
+        if ($hasApi) {
             $thresholds = $policy->getScoreThresholds();
             if ($thresholds->k1 === null || $thresholds->k2 === null || $thresholds->k3 === null) {
                 throw new RateLimiterException("Policy {$policy->getName()} invalid: Must enforce K1, K2, and K3.");
             }
+            foreach (['k1' => $thresholds->k1, 'k2' => $thresholds->k2, 'k3' => $thresholds->k3] as $scope => $scopeThresholds) {
+                if ($scopeThresholds->l1 <= 0
+                    || $scopeThresholds->l2 <= 0
+                    || $scopeThresholds->l3 <= 0
+                    || $scopeThresholds->l1 > $scopeThresholds->l2
+                    || $scopeThresholds->l2 > $scopeThresholds->l3) {
+                    throw new RateLimiterException("Policy {$policy->getName()} invalid: API_OVERUSE {$scope} thresholds must be positive and monotonic.");
+                }
+            }
+            if ($policy->getScoreDeltas()->access <= 0) {
+                throw new RateLimiterException("Policy {$policy->getName()} invalid: API_OVERUSE requires a positive access delta.");
+            }
         }
 
+        if (in_array(PolicyCapabilityEnum::DISTRIBUTED_ACCOUNT, $capabilities, true)
+            && ($policy->getScoreDeltas()->k4_failure <= 0 || $policy->getScoreThresholds()->k4 === null)) {
+            throw new RateLimiterException("Policy {$policy->getName()} invalid: Distributed-account behavior requires a positive K4 failure delta and K4 thresholds.");
+        }
         $this->policies[$policy->getName()] = $policy;
+    }
+
+    /**
+     * Reject a fallback configuration with a duplicate, non-positive, or
+     * non-bounded rule. This is the sole generic validation for the
+     * effective configuration; official presets and direct custom policies
+     * are checked identically.
+     */
+    private function validateFallbackConfiguration(BlockPolicyInterface $policy, FailureFallbackConfigurationDTO $configuration): void
+    {
+        $seenDimensions = [];
+        foreach ($configuration->rules as $rule) {
+            if (isset($seenDimensions[$rule->dimension->value])) {
+                throw new RateLimiterException("Policy {$policy->getName()} invalid: Fallback configuration declares a duplicate {$rule->dimension->value} dimension.");
+            }
+            $seenDimensions[$rule->dimension->value] = true;
+
+            if ($rule->limit <= 0) {
+                throw new RateLimiterException("Policy {$policy->getName()} invalid: Fallback configuration {$rule->dimension->value} limit must be positive.");
+            }
+            if ($rule->windowSeconds <= 0) {
+                throw new RateLimiterException("Policy {$policy->getName()} invalid: Fallback configuration {$rule->dimension->value} window must be positive.");
+            }
+        }
+    }
+
+    /** @return list<PolicyCapabilityEnum> */
+    private function capabilities(BlockPolicyInterface $policy): array
+    {
+        if (! $policy instanceof PolicyCapabilityProviderInterface) {
+            return [];
+        }
+
+        $capabilities = $policy->getCapabilities();
+        foreach ($capabilities as $capability) {
+            // Runtime validation intentionally protects the public boundary
+            // even when a deliberately invalid fixture lies to static analysis.
+            // @phpstan-ignore-next-line instanceof.alwaysTrue
+            if (! $capability instanceof PolicyCapabilityEnum) {
+                throw new RateLimiterException("Policy {$policy->getName()} invalid: Capabilities must be PolicyCapabilityEnum values.");
+            }
+        }
+
+        return $capabilities;
+    }
+
+    /** @param list<PolicyCapabilityEnum> $capabilities */
+    private function isAuthRelated(BlockPolicyInterface $policy, array $capabilities): bool
+    {
+        return $policy instanceof PostPunishmentReentryPolicyInterface
+            || in_array(PolicyCapabilityEnum::CREDENTIAL_SPRAY, $capabilities, true)
+            || in_array(PolicyCapabilityEnum::DISTRIBUTED_ACCOUNT, $capabilities, true)
+            || in_array(PolicyCapabilityEnum::TRUSTED_AUTHENTICATION, $capabilities, true);
     }
 
     /**
@@ -161,7 +293,7 @@ class RateLimiterEngine implements RateLimiterRuntimeInterface
 
             // Local Fallback Check
             if ($mode !== 'FAIL_CLOSED') {
-                if (!LocalFallbackLimiter::check($this->clock, $policyName, $mode, $context->ip, $context->accountId, $context->ua)) {
+                if (!LocalFallbackLimiter::check($this->clock, $policy, $mode, $context->ip, $context->accountId, $context->ua)) {
                     $contextMeta = new RateLimitContextMetadataDTO('fallback_limit_exceeded');
                     $meta = new RateLimitMetadataDTO($signal, 'fallback_limit_exceeded', $contextMeta);
                     return new RateLimitResultDTO(RateLimitResultDTO::DECISION_HARD_BLOCK, 2, 60, $mode, $meta);
@@ -268,7 +400,7 @@ class RateLimiterEngine implements RateLimiterRuntimeInterface
         if ($mode !== 'FAIL_CLOSED'
             && ! LocalFallbackLimiter::check(
                 $this->clock,
-                $policy->getName(),
+                $policy,
                 $mode,
                 $context->ip,
                 $context->accountId,
@@ -286,4 +418,5 @@ class RateLimiterEngine implements RateLimiterRuntimeInterface
 
         return new RateLimitResultDTO(RateLimitResultDTO::DECISION_HARD_BLOCK, 2, 600, $mode);
     }
+
 }

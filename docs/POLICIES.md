@@ -3,7 +3,7 @@
 **Module:** RateLimiter
 **Namespace:** `Maatify\RateLimiter`
 **Status:** LOCKED — Policy Contract
-**Spec Version:** `1.5.0`
+**Spec Version:** `1.7.0`
 **Change Class:** Hardening Alignment
 
 This document defines the **official policy presets** provided by the Rate Limiter module.
@@ -16,6 +16,37 @@ Policies are **pre-configured, production-ready rule sets** built strictly on to
 * `DEVICE_FINGERPRINT.md`
 
 Consumers SHOULD use these presets instead of defining custom rules.
+
+## 0. Policy identity and reusable capabilities
+
+Policy names identify registry entries, state namespaces, observability, and
+same-name replacement. They do not grant reusable security behavior.
+
+Custom policies may implement the additive typed
+`PolicyCapabilityProviderInterface` and return package-owned
+`PolicyCapabilityEnum` values: `CREDENTIAL_SPRAY`, `DISTRIBUTED_ACCOUNT`,
+`TRUSTED_AUTHENTICATION`, and `API_OVERUSE`. A policy without that provider
+receives only its base score-policy behavior.
+
+The official presets retain the names `login_protection`, `otp_protection`, and
+`api_heavy_protection` while declaring those capabilities explicitly. The
+generation-bound K4 `PostPunishmentReentryPolicyInterface` remains a separate
+DEC-007 lifecycle opt-in and is validated independently of policy name.
+
+Degraded/failure behavior is a separate typed contract under DEC-011. Policies
+that use bounded local fallback implement
+`FailureFallbackConfigurationProviderInterface` and return a generic
+`FailureFallbackConfigurationDTO` of typed `FailureFallbackRuleDTO` rules
+(`ACCOUNT`, `IP_PREFIX`, or `IP_PREFIX_NORMALIZED_USER_AGENT`, each with a
+positive limit and window). The official Login, OTP, and API policies resolve
+the package-owned `AUTHENTICATION_PRIMARY`, `AUTHENTICATION_STEP_UP`, and
+`API_OVERUSE` presets internally and require no Host wiring. A direct custom
+reusable policy composes its own bounded configuration through the same
+public contract, with numeric values independent of every official preset;
+the package validates both identically and applies them through the same
+`LocalFallbackLimiter` runtime. Fallback configuration selection never uses
+`BudgetConfig` thresholds, route names, or policy names as an inference
+input.
 
 ---
 

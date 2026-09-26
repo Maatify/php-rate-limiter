@@ -145,7 +145,7 @@ final class PostPunishmentReentryLifecycleTest extends TestCase
 
             public function getScoreDeltas(): ScoreDeltasDTO
             {
-                return new ScoreDeltasDTO(k4_failure: 8);
+                return new ScoreDeltasDTO(k2_missing_fp: 1, k4_failure: 8);
             }
         };
         $engine = $this->engine($clock, [$policy]);
