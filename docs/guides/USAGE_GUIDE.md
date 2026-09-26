@@ -76,7 +76,29 @@ owns the concrete client and supplies its command executor. No Redis client or
 `ext-redis` runtime dependency is added, and the existing multi-store constructor
 remains valid.
 
-Secrets are explicit and independently rotatable. `RateLimiterConfig` rejects empty or whitespace-only active, previous, and environment values without trimming valid caller input. The builder does not create a service container or no-op production adapters. Use `withClock()`, `withDeviceIdentityResolver()`, or `withPolicy()` only for the targeted overrides defined by the public contract; low-level constructors remain the Advanced Path.
+Secrets are explicit and independently rotatable. `RateLimiterConfig` rejects empty or whitespace-only active, previous, and environment values without trimming valid caller input. The builder does not create a service container or no-op production adapters. Use `withClock()`, `withDeviceIdentityResolver()`, `withPolicy()`, or `withSimpleThrottlePolicy()` only for the targeted overrides defined by the public contract; low-level constructors remain the Advanced Path.
+
+`build()` returns `CompositeRateLimiterRuntimeInterface`, which stays assignable to `RateLimiterRuntimeInterface` for every existing consumer.
+
+## Simple Fixed-Window Throttling
+
+Beside the score-based model above, the package owns a first-class generic/simple fixed-window throttling capability (see `docs/SIMPLE_THROTTLING.md` for the complete contract). It answers a common, narrower requirement — allow up to N events in an interval, then deny until that interval ends — without translating the request into score thresholds, decay, or the progressive penalty ladder.
+
+```php
+use Maatify\RateLimiter\Config\FixedWindowThrottlePolicy;
+
+$limiter = (new RateLimiterBuilder($config, $rateLimitStore, $correlationStore, $circuitBreakerStore, $failureSignalEmitter))
+    ->withSimpleThrottlePolicy(new FixedWindowThrottlePolicy(
+        name: 'checkout_attempts',
+        limit: 3,
+        intervalSeconds: 60,
+    ))
+    ->build();
+
+$result = $limiter->consume('checkout_attempts', $customerId);
+```
+
+`$limiter->consume(string $policyName, string $subject): SimpleRateLimitResultDTO` is the one atomic operation Version 1 exposes. There is no default simple policy: a Host opts in explicitly, and registering none leaves the score-based runtime unchanged. `SimpleRateLimitResultDTO` exposes `allowed`, `limit`, `remaining`, `retryAfter`, `resetAt`, and `failureMode` (`NORMAL` or `FAIL_CLOSED`); it is a dedicated result contract, separate from `RateLimitResultDTO`. Simple throttling is FAIL_CLOSED only, never creates score/budget/correlation state, and raises `RateLimiterException` for an unregistered policy name, a blank subject, or a required key-rotation migration whose store lacks `BudgetSeedStoreInterface`. See `examples/simple-fixed-window.php` for a complete runnable example.
 
 ## Primary Public Calls
 
@@ -334,3 +356,4 @@ The operational reader reads current real enforcement keys and applies the docum
 - [Device Fingerprint](../DEVICE_FINGERPRINT.md)
 - [Key Strategy](../KEY_STRATEGY.md)
 - [Failure Semantics](../FAILURE_SEMANTICS.md)
+- [Simple Fixed-Window Throttling](../SIMPLE_THROTTLING.md)

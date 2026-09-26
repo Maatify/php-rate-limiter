@@ -76,7 +76,7 @@ final class RateLimiterBuilderTest extends TestCase
         }
 
         /** @var array<string, BlockPolicyInterface> $policies */
-        $policies = $this->privateProperty($engine, 'policies');
+        $policies = $this->privateProperty($this->scoreEngine($engine), 'policies');
         self::assertSame(
             ['login_protection', 'otp_protection', 'api_heavy_protection'],
             array_keys($policies),
@@ -87,17 +87,18 @@ final class RateLimiterBuilderTest extends TestCase
     {
         $clock = new FixedClock('2025-02-03 04:05:06');
         $engine = $this->builder()->withClock($clock)->build();
+        $scoreEngine = $this->scoreEngine($engine);
 
         /** @var EvaluationPipeline $pipeline */
-        $pipeline = $this->privateProperty($engine, 'pipeline');
+        $pipeline = $this->privateProperty($scoreEngine, 'pipeline');
         /** @var CircuitBreaker $circuitBreaker */
-        $circuitBreaker = $this->privateProperty($engine, 'circuitBreaker');
+        $circuitBreaker = $this->privateProperty($scoreEngine, 'circuitBreaker');
         /** @var BudgetTracker $budgetTracker */
         $budgetTracker = $this->privateProperty($pipeline, 'budgetTracker');
         /** @var DecayCalculator $decayCalculator */
         $decayCalculator = $this->privateProperty($pipeline, 'decayCalculator');
 
-        self::assertSame($clock, $this->privateProperty($engine, 'clock'));
+        self::assertSame($clock, $this->privateProperty($scoreEngine, 'clock'));
         self::assertSame($clock, $this->privateProperty($pipeline, 'clock'));
         self::assertSame($clock, $this->privateProperty($circuitBreaker, 'clock'));
         self::assertSame($clock, $this->privateProperty($budgetTracker, 'clock'));
@@ -107,7 +108,7 @@ final class RateLimiterBuilderTest extends TestCase
     public function testDefaultClockIsUtcSystemClock(): void
     {
         $engine = $this->builder()->build();
-        $clock = $this->privateProperty($engine, 'clock');
+        $clock = $this->privateProperty($this->scoreEngine($engine), 'clock');
 
         self::assertInstanceOf(SystemClock::class, $clock);
         self::assertSame('UTC', $clock->getTimezone()->getName());
@@ -146,7 +147,7 @@ final class RateLimiterBuilderTest extends TestCase
 
         $engine = $this->builder()->withPolicy($replacement)->build();
         /** @var array<string, BlockPolicyInterface> $policies */
-        $policies = $this->privateProperty($engine, 'policies');
+        $policies = $this->privateProperty($this->scoreEngine($engine), 'policies');
 
         self::assertSame($replacement, $policies['login_protection']);
         self::assertInstanceOf(OtpProtectionPolicy::class, $policies['otp_protection']);
@@ -165,7 +166,7 @@ final class RateLimiterBuilderTest extends TestCase
 
         $engine = $this->builder()->withPolicy($customPolicy)->build();
         /** @var array<string, BlockPolicyInterface> $policies */
-        $policies = $this->privateProperty($engine, 'policies');
+        $policies = $this->privateProperty($this->scoreEngine($engine), 'policies');
 
         self::assertSame($customPolicy, $policies['custom_api_policy']);
         self::assertCount(4, $policies);
@@ -187,6 +188,7 @@ final class RateLimiterBuilderTest extends TestCase
             'withClock',
             'withDeviceIdentityResolver',
             'withPolicy',
+            'withSimpleThrottlePolicy',
             'build',
         ], $publicMethods);
     }
@@ -234,10 +236,11 @@ final class RateLimiterBuilderTest extends TestCase
                 $previousFingerprint,
             );
             $engine = $this->builder($config)->build();
+            $scoreEngine = $this->scoreEngine($engine);
             /** @var EvaluationPipeline $pipeline */
-            $pipeline = $this->privateProperty($engine, 'pipeline');
+            $pipeline = $this->privateProperty($scoreEngine, 'pipeline');
             /** @var DeviceIdentityResolver $resolver */
-            $resolver = $this->privateProperty($engine, 'deviceResolver');
+            $resolver = $this->privateProperty($scoreEngine, 'deviceResolver');
 
             self::assertSame($expectedKey, $this->privateProperty($pipeline, 'previousSecret'), $name);
             /** @var FingerprintHasher|null $previousHasher */
@@ -383,5 +386,18 @@ final class RateLimiterBuilderTest extends TestCase
     private function privateProperty(object $object, string $property): mixed
     {
         return (new \ReflectionProperty($object, $property))->getValue($object);
+    }
+
+    /**
+     * Unwrap the composite runtime's internal score-based RateLimiterEngine
+     * so existing reflection-based assertions keep inspecting the same
+     * engine internals as before the DEC-010 composite runtime evolution.
+     */
+    private function scoreEngine(object $compositeRuntime): object
+    {
+        $scoreRuntime = $this->privateProperty($compositeRuntime, 'scoreRuntime');
+        self::assertIsObject($scoreRuntime);
+
+        return $scoreRuntime;
     }
 }

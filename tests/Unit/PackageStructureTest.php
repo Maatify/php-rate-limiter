@@ -45,6 +45,8 @@ final class PackageStructureTest extends TestCase
             'Maatify\\RateLimiter\\Config\\OtpProtectionPolicy',
             'Maatify\\RateLimiter\\Config\\ApiHeavyProtectionPolicy',
             'Maatify\\RateLimiter\\Config\\RateLimiterConfig',
+            'Maatify\\RateLimiter\\Config\\SimpleThrottlePolicyInterface',
+            'Maatify\\RateLimiter\\Config\\FixedWindowThrottlePolicy',
             'Maatify\\RateLimiter\\Enum\\PolicyCapabilityEnum',
             'Maatify\\RateLimiter\\Enum\\FailureFallbackDimensionEnum',
             'Maatify\\RateLimiter\\Enum\\FailureFallbackProfileEnum',
@@ -58,6 +60,10 @@ final class PackageStructureTest extends TestCase
             'Maatify\\RateLimiter\\Repository\\CircuitBreakerProbeStoreInterface',
             'Maatify\\RateLimiter\\Repository\\HardBlockCycleStoreInterface',
             'Maatify\\RateLimiter\\Service\\RateLimiterInterface',
+            'Maatify\\RateLimiter\\Service\\SimpleRateLimiterInterface',
+            'Maatify\\RateLimiter\\Service\\FixedWindowSimpleRateLimiter',
+            'Maatify\\RateLimiter\\Service\\CompositeRateLimiterRuntimeInterface',
+            'Maatify\\RateLimiter\\Service\\CompositeRateLimiterRuntime',
             'Maatify\\RateLimiter\\Service\\DeviceIdentityResolverInterface',
             'Maatify\\RateLimiter\\Service\\RateLimitOperationalReaderInterface',
             'Maatify\\RateLimiter\\Service\\RateLimitOperationalReader',
@@ -87,6 +93,7 @@ final class PackageStructureTest extends TestCase
             'Maatify\\RateLimiter\\DTO\\RateLimitOperationalSnapshotDTO',
             'Maatify\\RateLimiter\\DTO\\HardBlockCycleResultDTO',
             'Maatify\\RateLimiter\\DTO\\DecayPauseStateDTO',
+            'Maatify\\RateLimiter\\DTO\\SimpleRateLimitResultDTO',
         ];
 
         foreach ($classes as $class) {
