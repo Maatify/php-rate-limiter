@@ -17,6 +17,12 @@ Policies are **pre-configured, production-ready rule sets** built strictly on to
 
 Consumers SHOULD use these presets instead of defining custom rules.
 
+These presets, and `BlockPolicyInterface` custom policies in general, are the
+score-based security-policy model. The separate generic/simple fixed-window
+throttling capability (`Maatify\RateLimiter\Config\SimpleThrottlePolicyInterface`,
+DEC-009) is not a score-policy preset and is documented in
+`docs/SIMPLE_THROTTLING.md`.
+
 ## 0. Policy identity and reusable capabilities
 
 Policy names identify registry entries, state namespaces, observability, and

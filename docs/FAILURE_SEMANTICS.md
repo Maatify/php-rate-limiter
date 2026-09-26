@@ -3,7 +3,7 @@
 **Module:** RateLimiter
 **Namespace:** `Maatify\RateLimiter`
 **Status:** LOCKED — Security Contract
-**Spec Version:** `1.4.0`
+**Spec Version:** `1.5.0`
 
 This document defines how the RateLimiter behaves when **internal failures occur**.
 It specifies when the system must fail closed, fail open, or enter a strictly bounded degraded mode.
@@ -284,6 +284,49 @@ These guardrails are best-effort and do not require shared storage.
 
 * Account-level enforcement in degraded API mode
 * Escalation based on degraded data
+
+---
+
+### 4.4 Generic / Simple Fixed-Window Throttling (DEC-009)
+
+**Primary Mode:**
+
+```
+FAIL_CLOSED
+```
+
+Version 1 of simple fixed-window throttling (`Maatify\RateLimiter\Service\SimpleRateLimiterInterface`)
+is FAIL_CLOSED only. It has no DEGRADED_MODE, no bounded local fallback, and no `FAIL_OPEN`
+mode, and it does not participate in the score-model circuit breaker described in §5: it is a
+separate, narrower semantic family (DEC-009) and reuses only the atomic budget-epoch storage
+primitives, never the score/circuit-breaker machinery.
+
+Two distinct outcomes both surface through `SimpleRateLimiterInterface::consume()`, and they are
+never conflated:
+
+* **Normal quota exhaustion** (the fixed-window limit is reached) is not a failure. It returns a
+  typed `SimpleRateLimitResultDTO` with `allowed = false`, `failureMode =
+  SimpleRateLimitResultDTO::NORMAL`, a positive `retryAfter`, and the stable `resetAt` of the
+  current window.
+* **Backend/runtime storage failure** — any failure a store call raises at its own call site
+  while reading or incrementing the fixed window, regardless of its exception class, including a
+  `RateLimiterException` the store implementation itself throws — returns a typed FAIL_CLOSED
+  denial: `allowed = false`, `remaining = 0`, `retryAfter = null`, `resetAt = null`,
+  `failureMode = SimpleRateLimitResultDTO::FAIL_CLOSED`. No fake window timing is invented when
+  the backend state cannot be determined.
+
+**Explicitly Forbidden:**
+
+* Silent `FAIL_OPEN`
+* A `DEGRADED_MODE` or bounded local-fallback path for simple throttling
+* Reinterpreting normal quota exhaustion as a backend failure, or vice versa
+
+**Configuration and capability failures remain exceptions, not results.** An unregistered
+policy name, a blank subject, an invalid policy (non-positive limit/interval or a blank name —
+checked package-side against every `SimpleThrottlePolicyInterface` implementation, not only
+`FixedWindowThrottlePolicy`), or a required key-rotation migration whose store lacks
+`BudgetSeedStoreInterface` all raise `RateLimiterException` rather than becoming a typed
+FAIL_CLOSED result or a normal quota decision; see `docs/SIMPLE_THROTTLING.md`.
 
 ---
 

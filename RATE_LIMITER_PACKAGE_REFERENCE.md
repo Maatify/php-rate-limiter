@@ -3,7 +3,7 @@
 **Package:** RateLimiter
 **Namespace:** `Maatify\RateLimiter`
 **Status:** LOCKED — Architecture Contract
-**Spec Version:** `1.18.0`
+**Spec Version:** `1.19.0`
 **Location:** `src/`
 
 This document explains **why** the RateLimiter package is designed the way it is.
@@ -15,6 +15,7 @@ Behavioral rules are specified in:
 - `docs/DEVICE_FINGERPRINT.md`
 - `docs/KEY_STRATEGY.md`
 - `docs/FAILURE_SEMANTICS.md`
+- `docs/SIMPLE_THROTTLING.md`
 
 The [Usage Guide](docs/guides/USAGE_GUIDE.md) is the consumer-facing walkthrough, [`examples/basic-rate-limit.php`](examples/basic-rate-limit.php) is the runnable consumer assembly, and [`examples/infrastructure-failure.php`](examples/infrastructure-failure.php) demonstrates the failure boundary. This root document remains the canonical package contract and complete public runtime inventory.
 
@@ -49,11 +50,14 @@ under the responsibility that owns them. There are no `Domain`, capability-wrapp
 
 Current ownership within those roots is explicit: `Repository/` owns the base,
 rotation, hard-block cycle, punishment-lifecycle, full-capability, and official
-Redis storage boundaries; `Config/` owns the block-policy and explicit
-post-punishment opt-in markers; `Enum/` owns package-owned enums; `Service/` owns the composite runtime,
-post-punishment claim, evaluation, circuit, fallback, identity, and operational
-boundaries; and `DTO/` owns the generation-bound score, punishment-lifecycle,
-runtime-result, and operational serialized data shapes listed below.
+Redis storage boundaries; `Config/` owns the block-policy, the simple
+fixed-window throttle policy contract and its convenience implementation, and
+explicit post-punishment opt-in markers; `Enum/` owns package-owned enums;
+`Service/` owns the composite runtime, the simple fixed-window throttle
+runtime, post-punishment claim, evaluation, circuit, fallback, identity, and
+operational boundaries; and `DTO/` owns the generation-bound score,
+punishment-lifecycle, runtime-result, simple-throttle-result, and operational
+serialized data shapes listed below.
 
 ## Operational Read / Reporting Classification
 
@@ -123,7 +127,10 @@ The following inventory describes the current public runtime types. Test and sup
 | `Maatify\RateLimiter\Service\RateLimitOperationalReaderInterface` | Read-only point-in-time operational state query boundary. |
 | `Maatify\RateLimiter\Service\PostPunishmentReentryClaimInterface` | Public one-shot post-punishment lifecycle claim boundary; stale, expired, mismatched, absent, or replayed evidence returns `false`. |
 | `Maatify\RateLimiter\Service\RateLimiterRuntimeInterface` | Composite production runtime extending the normal limiter entrypoint with the public lifecycle claim operation. |
+| `Maatify\RateLimiter\Service\SimpleRateLimiterInterface` | Consumer entrypoint for generic/simple fixed-window throttling (DEC-009): one atomic `consume(policyName, subject)` operation. |
+| `Maatify\RateLimiter\Service\CompositeRateLimiterRuntimeInterface` | Single runtime contract returned by `RateLimiterBuilder::build()` (DEC-010); extends `RateLimiterRuntimeInterface` and `SimpleRateLimiterInterface` without changing either's semantics. |
 | `Maatify\RateLimiter\Config\BlockPolicyInterface` | Policy name, thresholds, score deltas, failure mode, and budget configuration. |
+| `Maatify\RateLimiter\Config\SimpleThrottlePolicyInterface` | Simple fixed-window policy contract: stable name, positive limit, positive interval in seconds; independent of `BlockPolicyInterface`. |
 | `Maatify\RateLimiter\Config\PolicyCapabilityProviderInterface` | Additive typed opt-in for the finite package-owned reusable capabilities. |
 | `Maatify\RateLimiter\Enum\PolicyCapabilityEnum` | `CREDENTIAL_SPRAY`, `DISTRIBUTED_ACCOUNT`, `TRUSTED_AUTHENTICATION`, and `API_OVERUSE`. |
 | `Maatify\RateLimiter\Config\FailureFallbackConfigurationProviderInterface` | DEC-011 typed declaration of the effective bounded backend-failure fallback configuration; shared by official presets and direct custom policies. |
@@ -137,7 +144,8 @@ The following inventory describes the current public runtime types. Test and sup
 | Type | Responsibility |
 | --- | --- |
 | `Maatify\RateLimiter\Config\RateLimiterConfig` | Immutable active/previous outer and fingerprint secrets plus the non-empty environment scope used by the default composition. |
-| `Maatify\RateLimiter\Builder\RateLimiterBuilder` | Package-wide default composition surface for the engine graph and the three default policy presets. |
+| `Maatify\RateLimiter\Builder\RateLimiterBuilder` | Package-wide default composition surface for the engine graph, the three default policy presets, and the opt-in simple fixed-window throttle registry. |
+| `Maatify\RateLimiter\Config\FixedWindowThrottlePolicy` | Package-owned immutable `SimpleThrottlePolicyInterface` convenience implementation; name, limit, and interval remain explicit caller inputs. |
 
 ### Public Command
 
@@ -149,7 +157,7 @@ The following inventory describes the current public runtime types. Test and sup
 
 | Group | Types |
 | --- | --- |
-| Context and result | `Maatify\RateLimiter\DTO\RateLimitContextDTO`, `Maatify\RateLimiter\DTO\RateLimitResultDTO`, `Maatify\RateLimiter\DTO\RateLimitMetadataDTO`, `Maatify\RateLimiter\DTO\RateLimitContextMetadataDTO` |
+| Context and result | `Maatify\RateLimiter\DTO\RateLimitContextDTO`, `Maatify\RateLimiter\DTO\RateLimitResultDTO`, `Maatify\RateLimiter\DTO\RateLimitMetadataDTO`, `Maatify\RateLimiter\DTO\RateLimitContextMetadataDTO`, `Maatify\RateLimiter\DTO\SimpleRateLimitResultDTO` |
 | Identity and policy | `Maatify\RateLimiter\DTO\DeviceIdentityDTO`, `Maatify\RateLimiter\DTO\PolicyThresholdsDTO`, `Maatify\RateLimiter\DTO\ScoreThresholdsDTO`, `Maatify\RateLimiter\DTO\ScoreDeltasDTO`, `Maatify\RateLimiter\DTO\BudgetConfigDTO`, `Maatify\RateLimiter\DTO\FailureFallbackRuleDTO`, `Maatify\RateLimiter\DTO\FailureFallbackConfigurationDTO` |
 | Runtime state | `Maatify\RateLimiter\DTO\BudgetStatusDTO`, `Maatify\RateLimiter\DTO\EphemeralStateDTO`, `Maatify\RateLimiter\DTO\FailureSignalDTO`, `Maatify\RateLimiter\DTO\FailureStateDTO` |
 | Bounded correlation | `Maatify\RateLimiter\DTO\BoundedDistinctResultDTO`, `Maatify\RateLimiter\DTO\BoundedDistinctSnapshotDTO`, `Maatify\RateLimiter\DTO\BoundedCorrelationObservationDTO` |
@@ -164,8 +172,10 @@ The following inventory describes the current public runtime types. Test and sup
 
 | Group | Types | Consumer role |
 | --- | --- | --- |
-| Default composition | `Maatify\RateLimiter\Builder\RateLimiterBuilder` | Builds the coherent default graph and returns `RateLimiterRuntimeInterface` while requiring the host storage and failure-signal boundaries explicitly. |
+| Default composition | `Maatify\RateLimiter\Builder\RateLimiterBuilder` | Builds the coherent default graph and returns `CompositeRateLimiterRuntimeInterface` (assignable to `RateLimiterRuntimeInterface`) while requiring the host storage and failure-signal boundaries explicitly. |
 | Primary entrypoint | `Maatify\RateLimiter\Service\RateLimiterEngine` | Production implementation of `RateLimiterRuntimeInterface`; composes identity resolution, evaluation, circuit-breaker, failure, policy behavior, and the public lifecycle claim. |
+| Composite runtime | `Maatify\RateLimiter\Service\CompositeRateLimiterRuntime` | Delegating composition (DEC-010) between the existing score `RateLimiterEngine` and the new `FixedWindowSimpleRateLimiter`; the single object `build()` returns. |
+| Simple throttle entrypoint | `Maatify\RateLimiter\Service\FixedWindowSimpleRateLimiter` | Production implementation of `SimpleRateLimiterInterface` (DEC-009); reuses the atomic budget-epoch storage primitives and is FAIL_CLOSED only. See `docs/SIMPLE_THROTTLING.md`. |
 | Composition services | `Maatify\RateLimiter\Service\EvaluationPipeline`, `Maatify\RateLimiter\Service\CircuitBreaker`, `Maatify\RateLimiter\Service\FailureModeResolver`, `Maatify\RateLimiter\Service\LocalFallbackLimiter` | Public runtime services used to assemble or extend the engine without coupling it to a storage implementation. `EvaluationPipeline::isBackendHealthy()` is the read-only recovery-probe boundary. |
 | Identity services | `Maatify\RateLimiter\Service\DeviceIdentityResolver`, `Maatify\RateLimiter\Service\FingerprintHasher`, `Maatify\RateLimiter\Service\EphemeralBucket` | Default identity hashing, normalization, bounded device-cap admission, and ephemeral routing without synthetic persistent keys. |
 | Operational read | `Maatify\RateLimiter\Service\RateLimitOperationalReader` | Resolves a read-only point-in-time snapshot from a typed context and policy without invoking enforcement or mutation primitives. |
@@ -174,7 +184,7 @@ The following inventory describes the current public runtime types. Test and sup
 | Configuration presets | `Maatify\RateLimiter\Config\LoginProtectionPolicy`, `Maatify\RateLimiter\Config\OtpProtectionPolicy`, `Maatify\RateLimiter\Config\ApiHeavyProtectionPolicy` | Production policy definitions selected by the command policy name. |
 | Exception | `Maatify\RateLimiter\Exception\RateLimiterException`, `Maatify\RateLimiter\Exception\RateLimitConcurrencyException` | Package-defined invalid-input/configuration failure and bounded optimistic-concurrency exhaustion; stale mutation snapshots remain non-exceptional unapplied results. |
 
-The recommended consumer construction is `Maatify\RateLimiter\Builder\RateLimiterBuilder`, which returns the `RateLimiterRuntimeInterface` after composing the package-owned graph. Consumers receive post-punishment metadata from an unblocked `limit(..., checkOnly(...))` result and pass its opaque ID to `claimPostPunishmentReentry()` exactly once. The low-level service constructors remain available as the Advanced Path for consumers that intentionally need manual control. Their current signatures are stable only as reflected in the source and the contracts above.
+The recommended consumer construction is `Maatify\RateLimiter\Builder\RateLimiterBuilder`, which returns `CompositeRateLimiterRuntimeInterface` after composing the package-owned graph; the result remains assignable to `RateLimiterRuntimeInterface` for every existing consumer. Consumers receive post-punishment metadata from an unblocked `limit(..., checkOnly(...))` result and pass its opaque ID to `claimPostPunishmentReentry()` exactly once. The low-level service constructors remain available as the Advanced Path for consumers that intentionally need manual control. Their current signatures are stable only as reflected in the source and the contracts above.
 
 ## Default Composition Surface
 
@@ -226,7 +236,9 @@ the client and supplies `RedisCommandExecutorInterface` or
 and Redis Cluster is not currently claimed.
 The existing multi-store constructor remains source-compatible.
 
-`build()` supplies the UTC `SystemClock`, the default identity resolver, the package-owned evaluation graph, and the `login_protection`, `otp_protection`, and `api_heavy_protection` policies. `withClock()`, `withDeviceIdentityResolver()`, and `withPolicy()` are the only targeted overrides. A policy with an existing name replaces that policy; a new name is appended without removing defaults. Consumers needing direct control of `EvaluationPipeline` or its internal services retain the existing low-level constructors as the Advanced Path.
+`build()` supplies the UTC `SystemClock`, the default identity resolver, the package-owned evaluation graph, and the `login_protection`, `otp_protection`, and `api_heavy_protection` policies. `withClock()`, `withDeviceIdentityResolver()`, `withPolicy()`, and `withSimpleThrottlePolicy()` are the only targeted overrides. A policy with an existing name replaces that policy; a new name is appended without removing defaults. Consumers needing direct control of `EvaluationPipeline` or its internal services retain the existing low-level constructors as the Advanced Path.
+
+`build()` returns `CompositeRateLimiterRuntimeInterface`, which extends both `RateLimiterRuntimeInterface` and `SimpleRateLimiterInterface` (DEC-010). This return-type narrowing is source-compatible: existing consumer code that assigns the result to `RateLimiterRuntimeInterface` is unaffected. The simple fixed-window throttle registry starts empty — `withSimpleThrottlePolicy(SimpleThrottlePolicyInterface $policy)` opts in explicitly, with the same same-name-replace/new-name-append semantics as `withPolicy()` — so a Host that registers no simple policy gets an unchanged score-based runtime. See `docs/SIMPLE_THROTTLING.md` for the complete simple-throttling contract.
 
 ## Runtime Workflow
 

@@ -7,6 +7,35 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+- Added a first-class generic/simple fixed-window throttling capability
+  (DEC-009): `Config\SimpleThrottlePolicyInterface`,
+  `Config\FixedWindowThrottlePolicy`, `DTO\SimpleRateLimitResultDTO`,
+  `Service\SimpleRateLimiterInterface`, and its production implementation
+  `Service\FixedWindowSimpleRateLimiter`. Version 1 is fixed-window, unit
+  cost, one policy-defined limit and interval, one atomic `consume()`, and
+  FAIL_CLOSED only; it reuses the existing atomic budget-epoch persistence
+  primitives (`RateLimitStoreInterface::getBudget()`/`incrementBudget()`,
+  `BudgetSeedStoreInterface::incrementBudgetWithSeed()` for rotation
+  continuity) under a distinct package-owned key namespace, so no new storage
+  backend family is introduced and simple-throttle state cannot collide with
+  score/budget state.
+- Evolved the default composition surface (DEC-010, supersedes DEC-004):
+  `RateLimiterBuilder::withSimpleThrottlePolicy(SimpleThrottlePolicyInterface)`
+  registers simple policies with the same same-name-replace/new-name-append
+  semantics as `withPolicy()`; the registry starts empty. `build()` now
+  returns the new `Service\CompositeRateLimiterRuntimeInterface`
+  (implemented by `Service\CompositeRateLimiterRuntime`), which extends both
+  the existing `RateLimiterRuntimeInterface` and the new
+  `SimpleRateLimiterInterface` and remains assignable to
+  `RateLimiterRuntimeInterface` for every existing consumer.
+  `RateLimiterEngine` and its constructor are unchanged. See the new
+  `docs/SIMPLE_THROTTLING.md` for the complete contract,
+  `examples/simple-fixed-window.php` for a runnable example, and
+  `docs/KEY_STRATEGY.md` §4.7 for the key contract. Package Reference
+  version: `1.18.0` → `1.19.0`; Key Strategy version: `1.10.0` → `1.11.0`;
+  Failure Semantics version: `1.4.0` → `1.5.0`.
+
 ### Changed
 - Added the typed `PolicyCapabilityEnum` extension contract for reusable custom
   policies, and replaced the initial closed-enum `FailureFallbackProfileEnum`

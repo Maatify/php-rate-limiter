@@ -3,7 +3,7 @@
 **Module:** RateLimiter
 **Namespace:** `Maatify\RateLimiter`
 **Status:** LOCKED — Design & Security Contract
-**Spec Version:** `1.10.0`
+**Spec Version:** `1.11.0`
 
 This document defines the **key construction strategy** used by the RateLimiter.
 Keys determine how limits, scores, correlation, and blocks are applied.
@@ -742,6 +742,58 @@ New Device Flood stage is also policy-scoped. An active stage is the logical OR 
 current flag and an active distinct previous flag. The first qualifying stage writes only the
 current flag with the existing 900-second TTL; the previous flag remains read-only. Flood
 thresholds, Ephemeral counting, decision levels, and persistence semantics are unchanged.
+
+### 4.7 Simple Fixed-Window Throttling Keys (Locked)
+
+Generic/simple fixed-window throttling (DEC-009) is a semantic family separate from K1-K5
+score/budget state and uses its own package-owned, versioned keyed-HMAC contract so its state
+can never collide with authentication budgets or score state, even when a Host reuses a
+score-policy name for a simple policy.
+
+The logical components, in this exact order, are:
+
+```
+rate_limiter
+simple_fixed_window
+v1
+environmentScope
+policyName
+limit
+intervalSeconds
+subject
+```
+
+Unlike the delimited-string preimages used elsewhere in this document, this namespace uses
+canonical, collision-safe, length-prefixed component encoding to remove any ambiguity from raw
+delimiter concatenation. Each component is encoded as:
+
+```
+pack('N', strlen(component)) . component
+```
+
+and the preimage is the concatenation of the encoded components in the order above. `limit`
+and `intervalSeconds` are encoded as their canonical decimal string representation (`(string)
+$limit`, `(string) $intervalSeconds`). The stored key is:
+
+```
+HMAC-SHA256(preimage, active-or-generation-key-secret)
+```
+
+using the default hex output. The raw `subject` exists only inside this preimage and MUST NOT
+cross the `RateLimitStoreInterface` boundary directly.
+
+Including `limit` and `intervalSeconds` in the preimage is intentional and MUST NOT be removed:
+changing a simple policy's configured limit or interval changes its semantic state namespace.
+A reconfigured policy therefore never reinterprets a persisted epoch under the new limit or
+interval; it starts a fresh window under its own distinct key.
+
+Rotation follows the same Current/Previous contract as §4.3.1/§4.3.2: the current outer-key
+generation is authoritative and writable; when `previousKeySecret !== null`, a valid previous
+generation epoch is atomically seeded into Current through
+`BudgetSeedStoreInterface::incrementBudgetWithSeed()` and Previous remains read-only. Neither a
+`max()` nor a `sum()` merge is used. A store that lacks the capability when a valid Previous
+migration is required fails explicitly through `RateLimiterException` rather than silently
+resetting the window.
 
 ---
 
