@@ -9,11 +9,17 @@ use ConsumerVerification\RespRedisCommandExecutor;
 use Maatify\RateLimiter\Builder\RateLimiterBuilder;
 use Maatify\RateLimiter\Command\RateLimitCommand;
 use Maatify\RateLimiter\Config\RateLimiterConfig;
-use Maatify\RateLimiter\Config\ApiHeavyProtectionPolicy;
+use Maatify\RateLimiter\Config\BlockPolicyInterface;
+use Maatify\RateLimiter\Config\FailureFallbackProfile;
+use Maatify\RateLimiter\Config\FailureFallbackProfileProviderInterface;
+use Maatify\RateLimiter\Config\PolicyCapability;
+use Maatify\RateLimiter\Config\PolicyCapabilityProviderInterface;
 use Maatify\RateLimiter\DTO\RateLimitContextDTO;
 use Maatify\RateLimiter\DTO\RateLimitResultDTO;
 use Maatify\RateLimiter\DTO\DeviceIdentityDTO;
+use Maatify\RateLimiter\DTO\BudgetConfigDTO;
 use Maatify\RateLimiter\DTO\PolicyThresholdsDTO;
+use Maatify\RateLimiter\DTO\ScoreDeltasDTO;
 use Maatify\RateLimiter\DTO\ScoreThresholdsDTO;
 use Maatify\RateLimiter\Repository\Redis\CallableRedisCommandExecutor;
 use Maatify\RateLimiter\Repository\Redis\RedisFullCapabilityStore;
@@ -432,10 +438,61 @@ for ($attempt = 1; $attempt <= 6; $attempt++) {
 }
 requireCondition($customHard instanceof RateLimitResultDTO, 'Custom opt-in policy did not issue a hard block.');
 requireCondition($customHard->retryAfter === 60, 'Custom newly-issued K4 L2 retryAfter must be 60 seconds: ' . json_encode(resultShape($customHard), JSON_THROW_ON_ERROR));
-$customSemanticAuthPolicy = new class extends \Maatify\RateLimiter\Config\LoginProtectionPolicy {
+$customSemanticAuthPolicy = new class implements BlockPolicyInterface, PolicyCapabilityProviderInterface, FailureFallbackProfileProviderInterface {
     public function getName(): string
     {
         return 'consumer_custom_auth_semantics';
+    }
+
+    /** @return list<PolicyCapability> */
+    public function getCapabilities(): array
+    {
+        return [
+            PolicyCapability::CREDENTIAL_SPRAY,
+            PolicyCapability::DISTRIBUTED_ACCOUNT,
+            PolicyCapability::TRUSTED_AUTHENTICATION,
+        ];
+    }
+
+    public function getFailureFallbackProfile(): FailureFallbackProfile
+    {
+        return FailureFallbackProfile::AUTHENTICATION_PRIMARY;
+    }
+
+    public function getScoreThresholds(): PolicyThresholdsDTO
+    {
+        return new PolicyThresholdsDTO(
+            k4: new ScoreThresholdsDTO(5, 8, 12),
+        );
+    }
+
+    public function getScoreDeltas(): ScoreDeltasDTO
+    {
+        return new ScoreDeltasDTO(
+            k1_spray: 5,
+            k2_missing_fp: 4,
+            k4_failure: 3,
+            k4_repeated_missing_fp: 6,
+            k5_failure: 2,
+        );
+    }
+
+    public function getFailureMode(): string
+    {
+        return 'FAIL_CLOSED';
+    }
+
+    public function getBudgetConfig(): ?BudgetConfigDTO
+    {
+        return new BudgetConfigDTO(
+            threshold: 20,
+            block_level: 3,
+            cooldown_seconds: 3600,
+            trusted_session_floor_level: 2,
+            precheck_enforcement: true,
+            known_device_micro_cap: 8,
+            recovery_collision_guard_enabled: false,
+        );
     }
 };
 $customSemanticAuthLimiter = RateLimiterBuilder::fromFullCapabilityStore(new RateLimiterConfig('consumer-semantic-auth-key', 'consumer-semantic-auth-fingerprint', 'prod'), $store, $signals)->withPolicy($customSemanticAuthPolicy)->build();
@@ -448,10 +505,21 @@ for ($index = 1; $index <= 5; $index++) {
 }
 requireCondition($customSprayResults[4]->decision === RateLimitResultDTO::DECISION_HARD_BLOCK, 'Custom auth capability policy did not execute the credential-spray branch.');
 
-$customApiPolicy = new class extends ApiHeavyProtectionPolicy {
+$customApiPolicy = new class implements BlockPolicyInterface, PolicyCapabilityProviderInterface, FailureFallbackProfileProviderInterface {
     public function getName(): string
     {
         return 'consumer_custom_api_overuse';
+    }
+
+    /** @return list<PolicyCapability> */
+    public function getCapabilities(): array
+    {
+        return [PolicyCapability::API_OVERUSE];
+    }
+
+    public function getFailureFallbackProfile(): FailureFallbackProfile
+    {
+        return FailureFallbackProfile::API_OVERUSE;
     }
 
     public function getScoreThresholds(): PolicyThresholdsDTO
@@ -461,6 +529,21 @@ $customApiPolicy = new class extends ApiHeavyProtectionPolicy {
             k2: new ScoreThresholdsDTO(1000, 1000, 1000),
             k3: new ScoreThresholdsDTO(1, 1, 1),
         );
+    }
+
+    public function getScoreDeltas(): ScoreDeltasDTO
+    {
+        return new ScoreDeltasDTO(access: 1);
+    }
+
+    public function getFailureMode(): string
+    {
+        return 'FAIL_OPEN';
+    }
+
+    public function getBudgetConfig(): ?BudgetConfigDTO
+    {
+        return null;
     }
 };
 $customApiLimiter = RateLimiterBuilder::fromFullCapabilityStore(new RateLimiterConfig('consumer-custom-api-key', 'consumer-custom-api-fingerprint', 'prod'), $store, $signals)->withPolicy($customApiPolicy)->build();
