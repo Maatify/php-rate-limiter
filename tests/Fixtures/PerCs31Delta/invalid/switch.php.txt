@@ -1,0 +1,13 @@
+<?php
+
+switch ($value) {
+    case 'allowed': {
+        return $value;
+    }
+    case 'nested':
+        if ($other === true) {
+            return $value;
+        }
+    default:
+        throw new RuntimeException('unsupported');
+}

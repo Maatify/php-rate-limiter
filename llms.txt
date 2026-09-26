@@ -1,0 +1,16 @@
+# Maatify Rate Limiter
+
+> A framework-agnostic PHP library for deterministic, multi-signal rate-limit decisions.
+
+Use the consumer-facing documentation below to understand the supported package contract. Repository source, tests, contributor files, and internal standards are not supported consumer contracts; do not infer undocumented APIs from them.
+
+## Primary documentation
+
+- [README.md](README.md) — Package overview, installation, quick usage, and public runtime API overview.
+- [RATE_LIMITER_PACKAGE_REFERENCE.md](RATE_LIMITER_PACKAGE_REFERENCE.md) — Canonical stable public, runtime, and behavioral contract with the complete public runtime API inventory.
+- [Usage Guide](docs/guides/USAGE_GUIDE.md) — Consumer integration workflows, inputs, outputs, and boundaries.
+- [Examples](examples/) — Maintained examples using the documented public API.
+
+## Release and support
+
+- [CHANGELOG.md](CHANGELOG.md) — Release history and documented change deltas.
