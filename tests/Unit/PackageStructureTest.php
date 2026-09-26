@@ -23,7 +23,7 @@ final class PackageStructureTest extends TestCase
         sort($actualRoots);
 
         self::assertSame(
-            ['Builder', 'Command', 'Config', 'Contract', 'DTO', 'Exception', 'Repository', 'Service'],
+            ['Builder', 'Command', 'Config', 'Contract', 'DTO', 'Enum', 'Exception', 'Repository', 'Service'],
             $actualRoots,
         );
 
@@ -45,6 +45,11 @@ final class PackageStructureTest extends TestCase
             'Maatify\\RateLimiter\\Config\\OtpProtectionPolicy',
             'Maatify\\RateLimiter\\Config\\ApiHeavyProtectionPolicy',
             'Maatify\\RateLimiter\\Config\\RateLimiterConfig',
+            'Maatify\\RateLimiter\\Config\\SimpleThrottlePolicyInterface',
+            'Maatify\\RateLimiter\\Config\\FixedWindowThrottlePolicy',
+            'Maatify\\RateLimiter\\Enum\\PolicyCapabilityEnum',
+            'Maatify\\RateLimiter\\Enum\\FailureFallbackDimensionEnum',
+            'Maatify\\RateLimiter\\Enum\\FailureFallbackProfileEnum',
             'Maatify\\RateLimiter\\Repository\\RateLimitStoreInterface',
             'Maatify\\RateLimiter\\Repository\\FullCapabilityStoreInterface',
             'Maatify\\RateLimiter\\Repository\\BudgetSeedStoreInterface',
@@ -55,6 +60,10 @@ final class PackageStructureTest extends TestCase
             'Maatify\\RateLimiter\\Repository\\CircuitBreakerProbeStoreInterface',
             'Maatify\\RateLimiter\\Repository\\HardBlockCycleStoreInterface',
             'Maatify\\RateLimiter\\Service\\RateLimiterInterface',
+            'Maatify\\RateLimiter\\Service\\SimpleRateLimiterInterface',
+            'Maatify\\RateLimiter\\Service\\FixedWindowSimpleRateLimiter',
+            'Maatify\\RateLimiter\\Service\\CompositeRateLimiterRuntimeInterface',
+            'Maatify\\RateLimiter\\Service\\CompositeRateLimiterRuntime',
             'Maatify\\RateLimiter\\Service\\DeviceIdentityResolverInterface',
             'Maatify\\RateLimiter\\Service\\RateLimitOperationalReaderInterface',
             'Maatify\\RateLimiter\\Service\\RateLimitOperationalReader',
@@ -84,6 +93,7 @@ final class PackageStructureTest extends TestCase
             'Maatify\\RateLimiter\\DTO\\RateLimitOperationalSnapshotDTO',
             'Maatify\\RateLimiter\\DTO\\HardBlockCycleResultDTO',
             'Maatify\\RateLimiter\\DTO\\DecayPauseStateDTO',
+            'Maatify\\RateLimiter\\DTO\\SimpleRateLimitResultDTO',
         ];
 
         foreach ($classes as $class) {
@@ -121,15 +131,21 @@ final class PackageStructureTest extends TestCase
             'Maatify\\RateLimiter\\DTO\\Store\\BudgetStateDTO',
             'Maatify\\RateLimiter\\DTO\\Store\\CircuitBreakerStateDTO',
             'Maatify\\RateLimiter\\DTO\\Store\\RateLimitStateDTO',
+            'Maatify\\RateLimiter\\Config\\PolicyCapability',
+            'Maatify\\RateLimiter\\Config\\FailureFallbackDimension',
+            'Maatify\\RateLimiter\\Config\\FailureFallbackProfile',
         ];
 
         foreach ($oldTypes as $oldType) {
-            self::assertFalse($this->runtimeTypeExists($oldType), $oldType . ' must not remain autoloadable.');
+            self::assertFalse(
+                $this->runtimeTypeExists($oldType),
+                $oldType . ' must not remain autoloadable.',
+            );
         }
     }
 
     private function runtimeTypeExists(string $type): bool
     {
-        return class_exists($type) || interface_exists($type);
+        return @class_exists($type) || @interface_exists($type) || @enum_exists($type);
     }
 }

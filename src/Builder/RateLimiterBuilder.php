@@ -11,6 +11,7 @@ use Maatify\RateLimiter\Config\LoginProtectionPolicy;
 use Maatify\RateLimiter\Config\OtpProtectionPolicy;
 use Maatify\RateLimiter\Config\PostPunishmentReentryPolicyInterface;
 use Maatify\RateLimiter\Config\RateLimiterConfig;
+use Maatify\RateLimiter\Config\SimpleThrottlePolicyInterface;
 use Maatify\RateLimiter\Contract\FailureSignalEmitterInterface;
 use Maatify\RateLimiter\Repository\CircuitBreakerStoreInterface;
 use Maatify\RateLimiter\Repository\CorrelationStoreInterface;
@@ -19,6 +20,8 @@ use Maatify\RateLimiter\Repository\RateLimitStoreInterface;
 use Maatify\RateLimiter\Service\AntiEquilibriumGate;
 use Maatify\RateLimiter\Service\BudgetTracker;
 use Maatify\RateLimiter\Service\CircuitBreaker;
+use Maatify\RateLimiter\Service\CompositeRateLimiterRuntime;
+use Maatify\RateLimiter\Service\CompositeRateLimiterRuntimeInterface;
 use Maatify\RateLimiter\Service\DecayCalculator;
 use Maatify\RateLimiter\Service\DeviceIdentityResolver;
 use Maatify\RateLimiter\Service\DeviceIdentityResolverInterface;
@@ -26,9 +29,9 @@ use Maatify\RateLimiter\Service\EphemeralBucket;
 use Maatify\RateLimiter\Service\EvaluationPipeline;
 use Maatify\RateLimiter\Service\FailureModeResolver;
 use Maatify\RateLimiter\Service\FingerprintHasher;
+use Maatify\RateLimiter\Service\FixedWindowSimpleRateLimiter;
 use Maatify\RateLimiter\Service\RateLimiterEngine;
 use Maatify\RateLimiter\Service\RateLimiterInterface;
-use Maatify\RateLimiter\Service\RateLimiterRuntimeInterface;
 use Maatify\RateLimiter\Exception\RateLimiterException;
 use Maatify\SharedCommon\Contracts\ClockInterface;
 use Maatify\SharedCommon\Infrastructure\SystemClock;
@@ -48,6 +51,9 @@ final class RateLimiterBuilder
 
     /** @var array<string, BlockPolicyInterface> */
     private array $policies;
+
+    /** @var array<string, SimpleThrottlePolicyInterface> */
+    private array $simpleThrottlePolicies = [];
 
     /**
      * Create a builder with explicit host-owned integration boundaries.
@@ -121,6 +127,18 @@ final class RateLimiterBuilder
     }
 
     /**
+     * Replace a simple throttle policy with the same name or append a policy
+     * with a new name (DEC-010). The simple-policy registry starts empty:
+     * there are no package-default simple policies.
+     */
+    public function withSimpleThrottlePolicy(SimpleThrottlePolicyInterface $policy): self
+    {
+        $this->simpleThrottlePolicies[$policy->getName()] = $policy;
+
+        return $this;
+    }
+
+    /**
      * Build one coherent runtime graph and return its composite public API.
      *
      * Policies implementing PostPunishmentReentryPolicyInterface require the
@@ -130,7 +148,7 @@ final class RateLimiterBuilder
      * @throws RateLimiterException when an opted-in policy lacks lifecycle
      *     storage capability.
      */
-    public function build(): RateLimiterRuntimeInterface
+    public function build(): CompositeRateLimiterRuntimeInterface
     {
         foreach ($this->policies as $policy) {
             if ($policy instanceof PostPunishmentReentryPolicyInterface
@@ -165,7 +183,7 @@ final class RateLimiterBuilder
             $clock,
         );
 
-        return new RateLimiterEngine(
+        $scoreRuntime = new RateLimiterEngine(
             $deviceIdentityResolver,
             $evaluationPipeline,
             $circuitBreaker,
@@ -174,6 +192,17 @@ final class RateLimiterBuilder
             $clock,
             array_values($this->policies),
         );
+
+        $simpleRuntime = new FixedWindowSimpleRateLimiter(
+            array_values($this->simpleThrottlePolicies),
+            $this->rateLimitStore,
+            $clock,
+            $this->config->keySecret(),
+            $this->config->environmentScope(),
+            $this->config->previousKeySecret(),
+        );
+
+        return new CompositeRateLimiterRuntime($scoreRuntime, $simpleRuntime);
     }
 
     private function defaultDeviceIdentityResolver(): DeviceIdentityResolver

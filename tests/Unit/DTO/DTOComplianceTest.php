@@ -32,6 +32,7 @@ use Maatify\RateLimiter\DTO\RateLimitOperationalKeyStateDTO;
 use Maatify\RateLimiter\DTO\RateLimitOperationalScopesDTO;
 use Maatify\RateLimiter\DTO\RateLimitOperationalBudgetDTO;
 use Maatify\RateLimiter\DTO\RateLimitOperationalSnapshotDTO;
+use Maatify\RateLimiter\DTO\SimpleRateLimitResultDTO;
 use ReflectionClass;
 use JsonSerializable;
 
@@ -66,6 +67,7 @@ class DTOComplianceTest extends TestCase
         RateLimitOperationalSnapshotDTO::class,
         HardBlockCycleResultDTO::class,
         DecayPauseStateDTO::class,
+        SimpleRateLimitResultDTO::class,
     ];
 
     public function testDTOsAreFinalReadonlyAndImplementJsonSerializable(): void

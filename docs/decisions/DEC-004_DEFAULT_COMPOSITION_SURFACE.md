@@ -6,7 +6,7 @@
 
 ## Status
 
-`ACTIVE`
+`SUPERSEDED`
 
 ## Date
 
@@ -89,9 +89,8 @@ None.
 
 ## Superseded By
 
-None.
+DEC-010.
 
 ## Canonical Contract / Current Owner
 
-`src/Builder/RateLimiterBuilder.php`, `src/Config/RateLimiterConfig.php`, and
-the root `RATE_LIMITER_PACKAGE_REFERENCE.md`.
+Historical composition decision. Current composition authority is DEC-010; the implemented composition is `RateLimiterBuilder` plus `CompositeRateLimiterRuntimeInterface`.

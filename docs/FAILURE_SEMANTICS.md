@@ -3,12 +3,47 @@
 **Module:** RateLimiter
 **Namespace:** `Maatify\RateLimiter`
 **Status:** LOCKED — Security Contract
-**Spec Version:** `1.2.0`
+**Spec Version:** `1.5.0`
 
 This document defines how the RateLimiter behaves when **internal failures occur**.
 It specifies when the system must fail closed, fail open, or enter a strictly bounded degraded mode.
 
 Failure semantics are **security-critical** and MUST NOT be altered implicitly.
+
+Typed bounded backend-failure fallback is governed by DEC-011. It is separate
+from normal-runtime `PolicyCapabilityEnum` classification and is declared through
+the public `FailureFallbackConfigurationProviderInterface` contract, which
+returns a generic `FailureFallbackConfigurationDTO` made of typed
+`FailureFallbackRuleDTO` rules (`FailureFallbackDimensionEnum::ACCOUNT`,
+`IP_PREFIX`, or `IP_PREFIX_NORMALIZED_USER_AGENT`, each with a positive limit
+and window). Official presets and direct custom policies share this exact
+same runtime contract and the exact same validated `LocalFallbackLimiter`
+evaluation; there is no separate "official" or "custom" fallback code path.
+
+The package-owned zero-configuration presets and their locked caps, resolved
+internally by the official policies, are:
+
+* `AUTHENTICATION_PRIMARY`: AccountID 3 attempts / 600 seconds; IP prefix 20
+  attempts / 600 seconds; maximum degraded level L2.
+* `AUTHENTICATION_STEP_UP`: AccountID 2 attempts / 900 seconds; IP prefix 10
+  attempts / 900 seconds; maximum degraded level L2.
+* `API_OVERUSE`: IP prefix 120 requests / 60 seconds; IP prefix plus normalized
+  user-agent 60 requests / 60 seconds.
+
+Official Login, OTP, and API policies resolve those preset values internally
+and require no Host wiring or fallback-specific constructor argument. A
+direct custom reusable policy may instead compose its own bounded
+`FailureFallbackConfigurationDTO` with numeric values entirely independent of
+these presets; the package validates it identically (positive limit and
+window per rule, no duplicate dimension, and the capability-specific minimum
+dimensions below) and never infers it from `BudgetConfigDTO`, route names, or
+policy-name string matching. A policy without a valid bounded configuration
+is fail-closed during degraded evaluation and never receives an unbounded
+allowance. Fallback counters are namespaced by policy identity
+(`BlockPolicyInterface::getName()`), not by configuration content, so two
+policies with numerically identical configurations — including a custom
+policy that happens to reuse an official preset's exact numbers — never
+share counters.
 
 ---
 
@@ -249,6 +284,49 @@ These guardrails are best-effort and do not require shared storage.
 
 * Account-level enforcement in degraded API mode
 * Escalation based on degraded data
+
+---
+
+### 4.4 Generic / Simple Fixed-Window Throttling (DEC-009)
+
+**Primary Mode:**
+
+```
+FAIL_CLOSED
+```
+
+Version 1 of simple fixed-window throttling (`Maatify\RateLimiter\Service\SimpleRateLimiterInterface`)
+is FAIL_CLOSED only. It has no DEGRADED_MODE, no bounded local fallback, and no `FAIL_OPEN`
+mode, and it does not participate in the score-model circuit breaker described in §5: it is a
+separate, narrower semantic family (DEC-009) and reuses only the atomic budget-epoch storage
+primitives, never the score/circuit-breaker machinery.
+
+Two distinct outcomes both surface through `SimpleRateLimiterInterface::consume()`, and they are
+never conflated:
+
+* **Normal quota exhaustion** (the fixed-window limit is reached) is not a failure. It returns a
+  typed `SimpleRateLimitResultDTO` with `allowed = false`, `failureMode =
+  SimpleRateLimitResultDTO::NORMAL`, a positive `retryAfter`, and the stable `resetAt` of the
+  current window.
+* **Backend/runtime storage failure** — any failure a store call raises at its own call site
+  while reading or incrementing the fixed window, regardless of its exception class, including a
+  `RateLimiterException` the store implementation itself throws — returns a typed FAIL_CLOSED
+  denial: `allowed = false`, `remaining = 0`, `retryAfter = null`, `resetAt = null`,
+  `failureMode = SimpleRateLimitResultDTO::FAIL_CLOSED`. No fake window timing is invented when
+  the backend state cannot be determined.
+
+**Explicitly Forbidden:**
+
+* Silent `FAIL_OPEN`
+* A `DEGRADED_MODE` or bounded local-fallback path for simple throttling
+* Reinterpreting normal quota exhaustion as a backend failure, or vice versa
+
+**Configuration and capability failures remain exceptions, not results.** An unregistered
+policy name, a blank subject, an invalid policy (non-positive limit/interval or a blank name —
+checked package-side against every `SimpleThrottlePolicyInterface` implementation, not only
+`FixedWindowThrottlePolicy`), or a required key-rotation migration whose store lacks
+`BudgetSeedStoreInterface` all raise `RateLimiterException` rather than becoming a typed
+FAIL_CLOSED result or a normal quota decision; see `docs/SIMPLE_THROTTLING.md`.
 
 ---
 

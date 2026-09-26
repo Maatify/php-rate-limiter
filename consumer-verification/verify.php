@@ -9,15 +9,31 @@ use ConsumerVerification\RespRedisCommandExecutor;
 use Maatify\RateLimiter\Builder\RateLimiterBuilder;
 use Maatify\RateLimiter\Command\RateLimitCommand;
 use Maatify\RateLimiter\Config\RateLimiterConfig;
+use Maatify\RateLimiter\Config\FixedWindowThrottlePolicy;
+use Maatify\RateLimiter\Config\BlockPolicyInterface;
+use Maatify\RateLimiter\Config\FailureFallbackConfigurationProviderInterface;
+use Maatify\RateLimiter\Enum\FailureFallbackDimensionEnum;
+use Maatify\RateLimiter\Enum\PolicyCapabilityEnum;
+use Maatify\RateLimiter\Config\PolicyCapabilityProviderInterface;
 use Maatify\RateLimiter\DTO\RateLimitContextDTO;
 use Maatify\RateLimiter\DTO\RateLimitResultDTO;
+use Maatify\RateLimiter\DTO\SimpleRateLimitResultDTO;
 use Maatify\RateLimiter\DTO\DeviceIdentityDTO;
+use Maatify\RateLimiter\DTO\BudgetConfigDTO;
+use Maatify\RateLimiter\DTO\FailureFallbackConfigurationDTO;
+use Maatify\RateLimiter\DTO\FailureFallbackRuleDTO;
+use Maatify\RateLimiter\DTO\PolicyThresholdsDTO;
+use Maatify\RateLimiter\DTO\ScoreDeltasDTO;
+use Maatify\RateLimiter\DTO\ScoreThresholdsDTO;
 use Maatify\RateLimiter\Repository\Redis\CallableRedisCommandExecutor;
 use Maatify\RateLimiter\Repository\Redis\RedisFullCapabilityStore;
 use Maatify\RateLimiter\Service\DeviceIdentityResolver;
 use Maatify\RateLimiter\Service\DeviceIdentityResolverInterface;
 use Maatify\RateLimiter\Service\RateLimiterRuntimeInterface;
+use Maatify\RateLimiter\Service\CompositeRateLimiterRuntimeInterface;
+use Maatify\RateLimiter\Service\SimpleRateLimiterInterface;
 use Maatify\RateLimiter\Config\PostPunishmentReentryPolicyInterface;
+use Maatify\RateLimiter\Exception\RateLimiterException;
 
 require __DIR__ . '/vendor/autoload.php';
 
@@ -31,6 +47,11 @@ function requireCondition(bool $condition, string $message): void
 function resultShape(RateLimitResultDTO $result): array
 {
     return ['decision' => $result->decision, 'blockLevel' => $result->blockLevel, 'retryAfter' => $result->retryAfter, 'failureMode' => $result->failureMode];
+}
+
+function simpleResultShape(SimpleRateLimitResultDTO $result): array
+{
+    return ['allowed' => $result->allowed, 'limit' => $result->limit, 'remaining' => $result->remaining, 'retryAfter' => $result->retryAfter, 'resetAt' => $result->resetAt, 'failureMode' => $result->failureMode];
 }
 
 function redisHashMap(mixed $flat): array
@@ -312,8 +333,12 @@ $executor = new CallableRedisCommandExecutor(static function (array $command) us
 $store = new RedisFullCapabilityStore($executor, 'consumer-verification');
 $clock = new FixedClock(new DateTimeImmutable('now', new DateTimeZone('UTC')));
 $signals = new RecordingFailureSignalEmitter();
-$limiter = RateLimiterBuilder::fromFullCapabilityStore(new RateLimiterConfig('consumer-key', 'consumer-fingerprint', 'prod'), $store, $signals)->build();
+$limiter = RateLimiterBuilder::fromFullCapabilityStore(new RateLimiterConfig('consumer-key', 'consumer-fingerprint', 'prod'), $store, $signals)
+    ->withSimpleThrottlePolicy(new FixedWindowThrottlePolicy('consumer_simple_fixed_window', limit: 2, intervalSeconds: 60))
+    ->build();
 requireCondition($limiter instanceof RateLimiterRuntimeInterface, 'Full-capability Builder did not expose RateLimiterRuntimeInterface.');
+requireCondition($limiter instanceof CompositeRateLimiterRuntimeInterface, 'Full-capability Builder did not expose CompositeRateLimiterRuntimeInterface.');
+requireCondition($limiter instanceof SimpleRateLimiterInterface, 'Full-capability Builder did not expose SimpleRateLimiterInterface.');
 $context = static function (string $subject, string $ip = '203.0.113.10', bool $trusted = false, ?string $correlation = null): RateLimitContextDTO {
     $account = str_starts_with($subject, 'spray-') ? 'consumer-spray-account' : 'consumer-account-' . $subject;
     return new RateLimitContextDTO($ip, 'Mozilla/5.0 consumer-verification-' . $subject, $account, ['device' => $subject], $trusted ? 'trusted-device' : null, $trusted, [], $trusted, $correlation);
@@ -429,6 +454,128 @@ for ($attempt = 1; $attempt <= 6; $attempt++) {
 }
 requireCondition($customHard instanceof RateLimitResultDTO, 'Custom opt-in policy did not issue a hard block.');
 requireCondition($customHard->retryAfter === 60, 'Custom newly-issued K4 L2 retryAfter must be 60 seconds: ' . json_encode(resultShape($customHard), JSON_THROW_ON_ERROR));
+$customSemanticAuthPolicy = new class implements BlockPolicyInterface, PolicyCapabilityProviderInterface, FailureFallbackConfigurationProviderInterface {
+    public function getName(): string
+    {
+        return 'consumer_custom_auth_semantics';
+    }
+
+    /** @return list<PolicyCapabilityEnum> */
+    public function getCapabilities(): array
+    {
+        return [
+            PolicyCapabilityEnum::CREDENTIAL_SPRAY,
+            PolicyCapabilityEnum::DISTRIBUTED_ACCOUNT,
+            PolicyCapabilityEnum::TRUSTED_AUTHENTICATION,
+        ];
+    }
+
+    // Deliberately different from the official AUTHENTICATION_PRIMARY preset
+    // (3/600, 20/600): this is a direct custom policy, not a preset consumer.
+    public function getFailureFallbackConfiguration(): FailureFallbackConfigurationDTO
+    {
+        return new FailureFallbackConfigurationDTO([
+            new FailureFallbackRuleDTO(FailureFallbackDimensionEnum::ACCOUNT, 5, 300),
+            new FailureFallbackRuleDTO(FailureFallbackDimensionEnum::IP_PREFIX, 30, 300),
+        ]);
+    }
+
+    public function getScoreThresholds(): PolicyThresholdsDTO
+    {
+        return new PolicyThresholdsDTO(
+            k4: new ScoreThresholdsDTO(5, 8, 12),
+        );
+    }
+
+    public function getScoreDeltas(): ScoreDeltasDTO
+    {
+        return new ScoreDeltasDTO(
+            k1_spray: 5,
+            k2_missing_fp: 4,
+            k4_failure: 3,
+            k4_repeated_missing_fp: 6,
+            k5_failure: 2,
+        );
+    }
+
+    public function getFailureMode(): string
+    {
+        return 'FAIL_CLOSED';
+    }
+
+    public function getBudgetConfig(): ?BudgetConfigDTO
+    {
+        return new BudgetConfigDTO(
+            threshold: 20,
+            block_level: 3,
+            cooldown_seconds: 3600,
+            trusted_session_floor_level: 2,
+            precheck_enforcement: true,
+            known_device_micro_cap: 8,
+            recovery_collision_guard_enabled: false,
+        );
+    }
+};
+$customSemanticAuthLimiter = RateLimiterBuilder::fromFullCapabilityStore(new RateLimiterConfig('consumer-semantic-auth-key', 'consumer-semantic-auth-fingerprint', 'prod'), $store, $signals)->withPolicy($customSemanticAuthPolicy)->build();
+$customSprayResults = [];
+for ($index = 1; $index <= 5; $index++) {
+    $customSprayResults[] = $customSemanticAuthLimiter->limit(
+        new RateLimitContextDTO('203.0.113.19', 'Mozilla/5.0 consumer-custom-auth', 'consumer-custom-spray-' . $index, ['device' => 'stable']),
+        RateLimitCommand::checkOnly('consumer_custom_auth_semantics'),
+    );
+}
+requireCondition($customSprayResults[4]->decision === RateLimitResultDTO::DECISION_HARD_BLOCK, 'Custom auth capability policy did not execute the credential-spray branch.');
+
+$customApiPolicy = new class implements BlockPolicyInterface, PolicyCapabilityProviderInterface, FailureFallbackConfigurationProviderInterface {
+    public function getName(): string
+    {
+        return 'consumer_custom_api_overuse';
+    }
+
+    /** @return list<PolicyCapabilityEnum> */
+    public function getCapabilities(): array
+    {
+        return [PolicyCapabilityEnum::API_OVERUSE];
+    }
+
+    // Deliberately different from the official API_OVERUSE preset (120/60,
+    // 60/60): this is a direct custom policy, not a preset consumer.
+    public function getFailureFallbackConfiguration(): FailureFallbackConfigurationDTO
+    {
+        return new FailureFallbackConfigurationDTO([
+            new FailureFallbackRuleDTO(FailureFallbackDimensionEnum::IP_PREFIX, 200, 30),
+            new FailureFallbackRuleDTO(FailureFallbackDimensionEnum::IP_PREFIX_NORMALIZED_USER_AGENT, 80, 30),
+        ]);
+    }
+
+    public function getScoreThresholds(): PolicyThresholdsDTO
+    {
+        return new PolicyThresholdsDTO(
+            k1: new ScoreThresholdsDTO(1000, 1000, 1000),
+            k2: new ScoreThresholdsDTO(1000, 1000, 1000),
+            k3: new ScoreThresholdsDTO(1, 1, 1),
+        );
+    }
+
+    public function getScoreDeltas(): ScoreDeltasDTO
+    {
+        return new ScoreDeltasDTO(access: 1);
+    }
+
+    public function getFailureMode(): string
+    {
+        return 'FAIL_OPEN';
+    }
+
+    public function getBudgetConfig(): ?BudgetConfigDTO
+    {
+        return null;
+    }
+};
+$customApiLimiter = RateLimiterBuilder::fromFullCapabilityStore(new RateLimiterConfig('consumer-custom-api-key', 'consumer-custom-api-fingerprint', 'prod'), $store, $signals)->withPolicy($customApiPolicy)->build();
+$customApiContext = new RateLimitContextDTO('203.0.113.18', 'Mozilla/5.0 consumer-custom-api', null, []);
+$customApiResult = $customApiLimiter->limit($customApiContext, new RateLimitCommand('consumer_custom_api_overuse', 121));
+requireCondition($customApiResult->decision === RateLimitResultDTO::DECISION_HARD_BLOCK && $customApiResult->blockLevel === 2, 'Custom API-overuse capability policy did not execute the low-confidence K3-to-K2 remap branch.');
 // All three public punishments are issued before one shared wait. This keeps
 // the default OTP L3 proof intact while avoiding serial 60s + 300s + 60s waits.
 $sharedWaitSeconds = max(
@@ -566,6 +713,66 @@ requireCondition((int) ($currentBudgetMap['count'] ?? -1) === 3, 'Current budget
 requireCondition(($currentBudgetMap['epochStart'] ?? null) === ($previousBudgetMap['epochStart'] ?? null), 'Budget migration did not preserve epochStart.');
 requireCondition(redisHashMap($raw->execute(['HGETALL', $previousBudget['key']])) === $previousBudgetMap, 'Previous budget state was modified during migration.');
 
+$simpleThrottleSubject = 'consumer-simple-fixed-window-subject';
+$simpleKeysBefore = redisKeys($raw);
+$simpleFirst = $limiter->consume('consumer_simple_fixed_window', $simpleThrottleSubject);
+$simpleSecond = $limiter->consume('consumer_simple_fixed_window', $simpleThrottleSubject);
+$simpleThird = $limiter->consume('consumer_simple_fixed_window', $simpleThrottleSubject);
+requireCondition($simpleFirst->allowed && $simpleFirst->remaining === 1 && $simpleFirst->limit === 2, 'Simple throttle consume #1 was not allowed with remaining=1.');
+requireCondition($simpleSecond->allowed && $simpleSecond->remaining === 0, 'Simple throttle consume #2 was not allowed with remaining=0.');
+requireCondition(! $simpleThird->allowed && $simpleThird->remaining === 0, 'Simple throttle consume #3 was not denied.');
+requireCondition(($simpleThird->retryAfter ?? 0) > 0, 'Simple throttle denial did not return a positive retryAfter.');
+requireCondition($simpleFirst->resetAt === $simpleSecond->resetAt && $simpleSecond->resetAt === $simpleThird->resetAt, 'Simple throttle resetAt was not stable across consumes.');
+requireCondition(
+    $simpleFirst->failureMode === SimpleRateLimitResultDTO::NORMAL && $simpleThird->failureMode === SimpleRateLimitResultDTO::NORMAL,
+    'Simple throttle failureMode was not NORMAL.',
+);
+$simpleKeysAfter = redisKeys($raw);
+$simpleNewKeys = newlyCreatedRedisKeys($simpleKeysBefore, $simpleKeysAfter);
+requireCondition(count($simpleNewKeys) === 1, 'Simple throttle consume did not persist exactly one new Redis key.');
+foreach ($simpleNewKeys as $simpleKey) {
+    requireCondition(! str_contains($simpleKey, $simpleThrottleSubject), 'Raw simple-throttle subject leaked into a Redis key.');
+}
+
+$unknownSimplePolicyRejected = false;
+try {
+    $limiter->consume('consumer_never_registered_simple_policy', $simpleThrottleSubject);
+} catch (RateLimiterException) {
+    $unknownSimplePolicyRejected = true;
+}
+requireCondition($unknownSimplePolicyRejected, 'An unregistered simple throttle policy name did not raise RateLimiterException.');
+
+$simpleRotationSubject = 'consumer-simple-fixed-window-rotation-subject';
+$simpleRotationKeysBefore = redisKeys($raw);
+$simpleOldLimiter = RateLimiterBuilder::fromFullCapabilityStore(new RateLimiterConfig('simple-old-key', 'simple-old-fingerprint', 'prod'), $store, $signals)
+    ->withSimpleThrottlePolicy(new FixedWindowThrottlePolicy('consumer_simple_rotation', limit: 2, intervalSeconds: 60))
+    ->build();
+$simpleOldResult = $simpleOldLimiter->consume('consumer_simple_rotation', $simpleRotationSubject);
+requireCondition($simpleOldResult->allowed, 'Old-generation simple throttle consume was not allowed.');
+$simpleRotationKeysAfterOld = redisKeys($raw);
+$simplePreviousKeys = newlyCreatedRedisKeys($simpleRotationKeysBefore, $simpleRotationKeysAfterOld);
+requireCondition(count($simplePreviousKeys) === 1, 'Old-generation simple throttle did not persist exactly one key.');
+$simplePreviousKey = $simplePreviousKeys[0];
+$simplePreviousStateBefore = redisHashMap($raw->execute(['HGETALL', $simplePreviousKey]));
+
+$simpleRotatedLimiter = RateLimiterBuilder::fromFullCapabilityStore(
+    new RateLimiterConfig('simple-new-key', 'simple-new-fingerprint', 'prod', 'simple-old-key', 'simple-old-fingerprint'),
+    $store,
+    $signals,
+)
+    ->withSimpleThrottlePolicy(new FixedWindowThrottlePolicy('consumer_simple_rotation', limit: 2, intervalSeconds: 60))
+    ->build();
+$simpleMigrated = $simpleRotatedLimiter->consume('consumer_simple_rotation', $simpleRotationSubject);
+requireCondition(
+    $simpleMigrated->allowed && $simpleMigrated->remaining === 0,
+    'Rotated simple throttle consume did not seed Previous(1) + 1 = 2 into Current.',
+);
+$simpleRotationKeysAfterNew = redisKeys($raw);
+$simpleCurrentKeys = newlyCreatedRedisKeys($simpleRotationKeysAfterOld, $simpleRotationKeysAfterNew);
+requireCondition(count($simpleCurrentKeys) === 1, 'Rotation migration did not create exactly one new Current key.');
+$simplePreviousStateAfter = redisHashMap($raw->execute(['HGETALL', $simplePreviousKey]));
+requireCondition($simplePreviousStateAfter === $simplePreviousStateBefore, 'Previous simple-throttle state was modified during migration.');
+
 $failureRaw = new RespRedisCommandExecutor($host, (int) $port);
 $failureExecutor = new CallableRedisCommandExecutor(static function (array $command) use ($failureRaw): mixed {
     if (strtoupper((string) ($command[0] ?? '')) === 'EVAL') {
@@ -575,7 +782,9 @@ $failureExecutor = new CallableRedisCommandExecutor(static function (array $comm
 });
 $failureStore = new RedisFullCapabilityStore($failureExecutor, 'consumer-failure-semantics');
 $failureSignals = new RecordingFailureSignalEmitter();
-$failureLimiter = RateLimiterBuilder::fromFullCapabilityStore(new RateLimiterConfig('failure-key', 'failure-fingerprint', 'prod'), $failureStore, $failureSignals)->build();
+$failureLimiter = RateLimiterBuilder::fromFullCapabilityStore(new RateLimiterConfig('failure-key', 'failure-fingerprint', 'prod'), $failureStore, $failureSignals)
+    ->withSimpleThrottlePolicy(new FixedWindowThrottlePolicy('consumer_simple_failure', limit: 2, intervalSeconds: 60))
+    ->build();
 $failureContext = new RateLimitContextDTO('192.0.2.91', 'Mozilla/5.0 consumer-failure', 'consumer-failure-account', ['device' => 'consumer-failure-device']);
 $loginFailureMode = $failureLimiter->limit($failureContext, RateLimitCommand::checkOnly('login_protection'));
 $otpFailureMode = $failureLimiter->limit($failureContext, RateLimitCommand::checkOnly('otp_protection'));
@@ -583,6 +792,88 @@ $apiFailureMode = $failureLimiter->limit($failureContext, RateLimitCommand::chec
 requireCondition($loginFailureMode->decision === RateLimitResultDTO::DECISION_HARD_BLOCK && $loginFailureMode->failureMode === 'FAIL_CLOSED', 'Login backend failure did not fail closed.');
 requireCondition($otpFailureMode->decision === RateLimitResultDTO::DECISION_HARD_BLOCK && $otpFailureMode->failureMode === 'FAIL_CLOSED', 'OTP backend failure did not fail closed.');
 requireCondition($apiFailureMode->decision === RateLimitResultDTO::DECISION_ALLOW && $apiFailureMode->failureMode === 'FAIL_OPEN', 'API Heavy backend failure did not fail open.');
+$simpleFailureResult = $failureLimiter->consume('consumer_simple_failure', 'consumer-simple-failure-subject');
+requireCondition(
+    ! $simpleFailureResult->allowed
+    && $simpleFailureResult->failureMode === SimpleRateLimitResultDTO::FAIL_CLOSED
+    && $simpleFailureResult->retryAfter === null
+    && $simpleFailureResult->resetAt === null,
+    'Simple throttle backend failure (RuntimeException) did not fail closed.',
+);
+
+// R1 regression proof: a storage-originated RateLimiterException — not only
+// a plain RuntimeException — must also become a typed FAIL_CLOSED result,
+// never propagate as an exception. This is otherwise indistinguishable by
+// class from the package's own configuration/contract failure type.
+$rateLimiterExceptionFailureRaw = new RespRedisCommandExecutor($host, (int) $port);
+$rateLimiterExceptionFailureExecutor = new CallableRedisCommandExecutor(static function (array $command) use ($rateLimiterExceptionFailureRaw): mixed {
+    if (strtoupper((string) ($command[0] ?? '')) === 'EVAL') {
+        throw new RateLimiterException('simulated store-internal contract violation');
+    }
+    return $rateLimiterExceptionFailureRaw->execute($command);
+});
+$rateLimiterExceptionFailureStore = new RedisFullCapabilityStore($rateLimiterExceptionFailureExecutor, 'consumer-failure-semantics-rle');
+$rateLimiterExceptionFailureLimiter = RateLimiterBuilder::fromFullCapabilityStore(new RateLimiterConfig('failure-rle-key', 'failure-rle-fingerprint', 'prod'), $rateLimiterExceptionFailureStore, $failureSignals)
+    ->withSimpleThrottlePolicy(new FixedWindowThrottlePolicy('consumer_simple_failure_rle', limit: 2, intervalSeconds: 60))
+    ->build();
+$simpleFailureResultFromRateLimiterException = $rateLimiterExceptionFailureLimiter->consume('consumer_simple_failure_rle', 'consumer-simple-failure-rle-subject');
+requireCondition(
+    ! $simpleFailureResultFromRateLimiterException->allowed
+    && $simpleFailureResultFromRateLimiterException->failureMode === SimpleRateLimitResultDTO::FAIL_CLOSED
+    && $simpleFailureResultFromRateLimiterException->retryAfter === null
+    && $simpleFailureResultFromRateLimiterException->resetAt === null,
+    'Simple throttle backend failure (RateLimiterException) did not fail closed.',
+);
+
+$customPrimaryPolicy = new class extends \Maatify\RateLimiter\Config\LoginProtectionPolicy {
+    public function getName(): string
+    {
+        return 'consumer_custom_primary_fallback';
+    }
+};
+$customPrimaryLimiter = RateLimiterBuilder::fromFullCapabilityStore(new RateLimiterConfig('failure-primary-key', 'failure-primary-fingerprint', 'prod'), $failureStore, $failureSignals)->withPolicy($customPrimaryPolicy)->build();
+$customPrimaryFallback = [];
+for ($attempt = 1; $attempt <= 7; $attempt++) {
+    $customPrimaryFallback[] = $customPrimaryLimiter->limit($failureContext, RateLimitCommand::checkOnly('consumer_custom_primary_fallback'));
+}
+requireCondition($customPrimaryFallback[3]->decision === RateLimitResultDTO::DECISION_ALLOW && $customPrimaryFallback[3]->failureMode === 'DEGRADED_MODE', 'Custom primary-auth policy did not enter its typed fallback profile.');
+requireCondition($customPrimaryFallback[6]->decision === RateLimitResultDTO::DECISION_HARD_BLOCK, 'Custom primary-auth fallback did not enforce its account cap.');
+
+$customStepUpPolicy = new class extends \Maatify\RateLimiter\Config\OtpProtectionPolicy {
+    public function getName(): string
+    {
+        return 'consumer_custom_step_up_fallback';
+    }
+};
+$customStepUpLimiter = RateLimiterBuilder::fromFullCapabilityStore(new RateLimiterConfig('failure-step-up-key', 'failure-step-up-fingerprint', 'prod'), $failureStore, $failureSignals)->withPolicy($customStepUpPolicy)->build();
+$customStepUpFallback = [];
+for ($attempt = 1; $attempt <= 6; $attempt++) {
+    $customStepUpFallback[] = $customStepUpLimiter->limit($failureContext, RateLimitCommand::checkOnly('consumer_custom_step_up_fallback'));
+}
+requireCondition($customStepUpFallback[3]->decision === RateLimitResultDTO::DECISION_ALLOW && $customStepUpFallback[3]->failureMode === 'DEGRADED_MODE', 'Custom step-up policy did not enter its typed fallback profile.');
+requireCondition($customStepUpFallback[5]->decision === RateLimitResultDTO::DECISION_HARD_BLOCK, 'Custom step-up fallback did not enforce its account cap.');
+
+// Direct custom policies with generic typed fallback configuration values that
+// differ from every official preset (5/300 + 30/300 for auth; 200/30 + 80/30
+// for API), proven through the same public production path and the same
+// bounded-fallback runtime as the official presets above.
+$customSemanticAuthFailureLimiter = RateLimiterBuilder::fromFullCapabilityStore(new RateLimiterConfig('failure-custom-auth-key', 'failure-custom-auth-fingerprint', 'prod'), $failureStore, $failureSignals)->withPolicy($customSemanticAuthPolicy)->build();
+$customSemanticAuthFallback = [];
+for ($attempt = 1; $attempt <= 9; $attempt++) {
+    $customSemanticAuthFallback[] = $customSemanticAuthFailureLimiter->limit($failureContext, RateLimitCommand::checkOnly('consumer_custom_auth_semantics'));
+}
+requireCondition($customSemanticAuthFallback[2]->decision === RateLimitResultDTO::DECISION_ALLOW && $customSemanticAuthFallback[2]->failureMode === 'DEGRADED_MODE', 'Custom auth policy did not enter its own typed fallback configuration.');
+requireCondition($customSemanticAuthFallback[6]->decision === RateLimitResultDTO::DECISION_ALLOW, 'Custom auth fallback did not honor its own 5-request account cap.');
+requireCondition($customSemanticAuthFallback[7]->decision === RateLimitResultDTO::DECISION_HARD_BLOCK, 'Custom auth fallback did not enforce its own account cap boundary.');
+
+$customApiFailureLimiter = RateLimiterBuilder::fromFullCapabilityStore(new RateLimiterConfig('failure-custom-api-key', 'failure-custom-api-fingerprint', 'prod'), $failureStore, $failureSignals)->withPolicy($customApiPolicy)->build();
+$customApiFallbackContext = new RateLimitContextDTO('192.0.2.93', 'Mozilla/5.0 consumer-custom-api-fallback', null, []);
+$customApiFallback = [];
+for ($attempt = 1; $attempt <= 81; $attempt++) {
+    $customApiFallback[] = $customApiFailureLimiter->limit($customApiFallbackContext, RateLimitCommand::checkOnly('consumer_custom_api_overuse'));
+}
+requireCondition($customApiFallback[79]->decision === RateLimitResultDTO::DECISION_ALLOW, 'Custom API fallback did not honor its own 80-request IP+UA cap.');
+requireCondition($customApiFallback[80]->decision === RateLimitResultDTO::DECISION_HARD_BLOCK, 'Custom API fallback did not enforce its own IP+UA cap boundary.');
 
 $circuitDown = true;
 $circuitEvalCalls = 0;
@@ -622,4 +913,4 @@ requireCondition(count($circuitSignalTypes) === 2 && $circuitSignalTypes === ['C
 
 $keys = redisKeys($raw);
 requireCondition(count($keys) > 0, 'No Redis persistence was observable.');
-echo json_encode(['status' => 'PASS', 'packageInstallPath' => $installPath, 'productionAutoload' => true, 'packageTestNamespaceAvailable' => false, 'reentryTiming' => ['loginLevel' => $reentryLoginHard->blockLevel, 'otpLevel' => $reentryOtpHard->blockLevel, 'customLevel' => $customHard->blockLevel, 'sharedWaitSeconds' => $sharedWaitSeconds], 'login' => ['checkOnly' => resultShape($loginCheck), 'recordFailure' => resultShape($loginFailure), 'recordSuccess' => resultShape($loginSuccess), 'progression' => array_map('resultShape', $loginProgression), 'persistenceProof' => true, 'postPunishmentReentry' => ['checkOnly' => resultShape($reentryLoginCheck), 'claim' => $reentryLoginClaim, 'secondClaim' => $reentryLoginSecondClaim]], 'otp' => resultShape($otp), 'otpPostPunishmentReentry' => ['checkOnly' => resultShape($reentryOtpCheck), 'claim' => $reentryOtpClaim, 'secondClaim' => $reentryOtpSecondClaim], 'customOptIn' => ['checkOnly' => resultShape($customCheck), 'claim' => $customClaim, 'secondClaim' => $customSecondClaim], 'apiHeavy' => resultShape($api), 'credentialSpray' => array_map('resultShape', $spray), 'sprayLifecycle' => ['recordSuccess' => resultShape($spraySuccess), 'subjectFourCheckOnly' => resultShape($spraySubjectFour)], 'trustedSession' => resultShape($trusted), 'untrustedFollowUp' => resultShape($untrustedFollowUp), 'trustedNonK1' => resultShape($trustedNonK1), 'rotations' => $rotationCases, 'budgetMigration' => ['previousCount' => (int) $previousBudgetMap['count'], 'currentCount' => (int) $currentBudgetMap['count'], 'epochStartPreserved' => true, 'previousReadOnly' => true], 'failureSemantics' => ['login' => resultShape($loginFailureMode), 'otp' => resultShape($otpFailureMode), 'apiHeavy' => resultShape($apiFailureMode)], 'circuit' => ['openGuard' => resultShape($openGuardResult), 'halfOpenProbe' => resultShape($halfOpenResult), 'closedRecovery' => resultShape($closedResult), 'normalWorkloadSuppressedWhileOpen' => true, 'signalCount' => count($circuitSignals->signals()), 'signalTypes' => array_values(array_unique(array_map(static fn($signal): string => $signal->type, $circuitSignals->signals())))], 'redisPersistence' => ['keyCount' => count($keys)], 'failureSignals' => count($signals->signals())], JSON_THROW_ON_ERROR) . PHP_EOL;
+echo json_encode(['status' => 'PASS', 'packageInstallPath' => $installPath, 'productionAutoload' => true, 'packageTestNamespaceAvailable' => false, 'reentryTiming' => ['loginLevel' => $reentryLoginHard->blockLevel, 'otpLevel' => $reentryOtpHard->blockLevel, 'customLevel' => $customHard->blockLevel, 'sharedWaitSeconds' => $sharedWaitSeconds], 'login' => ['checkOnly' => resultShape($loginCheck), 'recordFailure' => resultShape($loginFailure), 'recordSuccess' => resultShape($loginSuccess), 'progression' => array_map('resultShape', $loginProgression), 'persistenceProof' => true, 'postPunishmentReentry' => ['checkOnly' => resultShape($reentryLoginCheck), 'claim' => $reentryLoginClaim, 'secondClaim' => $reentryLoginSecondClaim]], 'otp' => resultShape($otp), 'otpPostPunishmentReentry' => ['checkOnly' => resultShape($reentryOtpCheck), 'claim' => $reentryOtpClaim, 'secondClaim' => $reentryOtpSecondClaim], 'customOptIn' => ['checkOnly' => resultShape($customCheck), 'claim' => $customClaim, 'secondClaim' => $customSecondClaim], 'apiHeavy' => resultShape($api), 'credentialSpray' => array_map('resultShape', $spray), 'sprayLifecycle' => ['recordSuccess' => resultShape($spraySuccess), 'subjectFourCheckOnly' => resultShape($spraySubjectFour)], 'trustedSession' => resultShape($trusted), 'untrustedFollowUp' => resultShape($untrustedFollowUp), 'trustedNonK1' => resultShape($trustedNonK1), 'rotations' => $rotationCases, 'budgetMigration' => ['previousCount' => (int) $previousBudgetMap['count'], 'currentCount' => (int) $currentBudgetMap['count'], 'epochStartPreserved' => true, 'previousReadOnly' => true], 'simpleThrottle' => ['consume1' => simpleResultShape($simpleFirst), 'consume2' => simpleResultShape($simpleSecond), 'consume3Denied' => simpleResultShape($simpleThird), 'newRedisKeys' => count($simpleNewKeys), 'rawSubjectHiddenFromKeys' => true, 'unknownPolicyRejected' => $unknownSimplePolicyRejected, 'rotation' => ['oldGeneration' => simpleResultShape($simpleOldResult), 'migratedIntoCurrent' => simpleResultShape($simpleMigrated), 'previousReadOnly' => $simplePreviousStateAfter === $simplePreviousStateBefore], 'backendFailure' => simpleResultShape($simpleFailureResult), 'backendFailureFromRateLimiterException' => simpleResultShape($simpleFailureResultFromRateLimiterException)], 'failureSemantics' => ['login' => resultShape($loginFailureMode), 'otp' => resultShape($otpFailureMode), 'apiHeavy' => resultShape($apiFailureMode)], 'customFallbackConfiguration' => ['auth' => ['enteredFallback' => resultShape($customSemanticAuthFallback[2]), 'accountCapAllowed' => resultShape($customSemanticAuthFallback[6]), 'accountCapExceeded' => resultShape($customSemanticAuthFallback[7])], 'api' => ['ipUaCapAllowed' => resultShape($customApiFallback[79]), 'ipUaCapExceeded' => resultShape($customApiFallback[80])]], 'circuit' => ['openGuard' => resultShape($openGuardResult), 'halfOpenProbe' => resultShape($halfOpenResult), 'closedRecovery' => resultShape($closedResult), 'normalWorkloadSuppressedWhileOpen' => true, 'signalCount' => count($circuitSignals->signals()), 'signalTypes' => array_values(array_unique(array_map(static fn($signal): string => $signal->type, $circuitSignals->signals())))], 'redisPersistence' => ['keyCount' => count($keys)], 'failureSignals' => count($signals->signals())], JSON_THROW_ON_ERROR) . PHP_EOL;

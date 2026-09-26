@@ -5,6 +5,8 @@ declare(strict_types=1);
 namespace Maatify\RateLimiter\Service;
 
 use Maatify\RateLimiter\Config\BlockPolicyInterface;
+use Maatify\RateLimiter\Enum\PolicyCapabilityEnum;
+use Maatify\RateLimiter\Config\PolicyCapabilityProviderInterface;
 use Maatify\RateLimiter\Config\PostPunishmentReentryPolicyInterface;
 use Maatify\RateLimiter\DTO\BoundedCorrelationObservationDTO;
 use Maatify\RateLimiter\DTO\BoundedDistinctSnapshotDTO;
@@ -164,7 +166,7 @@ class EvaluationPipeline
             : [];
 
         // 2. Check Active Blocks (Fail-Fast) on Real Keys
-        if ($blocked = $this->checkActiveBlocks($realKeysV2, $realKeysV1, $policy->getName(), $device)) {
+        if ($blocked = $this->checkActiveBlocks($realKeysV2, $realKeysV1, $policy, $device)) {
             return $blocked;
         }
 
@@ -252,7 +254,7 @@ class EvaluationPipeline
         // 7. Distributed account attack is a pre-check-only observation. It
         // must run before the older bounded correlation rules so a missing
         // snapshot capability cannot leave partial S3-F08 state behind.
-        if ($request->isPreCheck && $this->isDistributedAccountPolicy($policy->getName())) {
+        if ($request->isPreCheck && $this->isDistributedAccountPolicy($policy)) {
             if ($candidate = $this->checkDistributedAccountAttack(
                 $context,
                 $device,
@@ -280,11 +282,11 @@ class EvaluationPipeline
         // Credential-spray observation is deliberately precheck-only. The
         // later failure/success command in the same host lifecycle must not
         // observe the same spray attempt a second time.
-        if ($request->isPreCheck && $this->isCredentialSprayPolicy($policy->getName())) {
+        if ($request->isPreCheck && $this->isCredentialSprayPolicy($policy)) {
             if ($candidate = $this->checkCredentialSpray(
                 $context,
                 $device,
-                $policy->getName(),
+                $policy,
                 $realKeysV2['k1'] ?? null,
                 $realKeysV1['k1'] ?? null,
                 $adaptiveIpv6Scopes,
@@ -294,7 +296,7 @@ class EvaluationPipeline
         }
 
         // 9. New Device Flood (5.4)
-        if ($ephemeralState !== null && $context->accountId && ! $this->isApiHeavyPolicy($policy->getName())
+        if ($ephemeralState !== null && $context->accountId && ! $this->isApiHeavyPolicy($policy)
             && $ephemeralState->accountDeviceCount >= 6) {
             $floodKey = $this->auxiliaryAccountKey(
                 $policy->getName(),
@@ -435,7 +437,7 @@ class EvaluationPipeline
     private function checkActiveBlocks(
         array $keysV2,
         array $keysV1,
-        string $policyName,
+        BlockPolicyInterface $policy,
         DeviceIdentityDTO $device,
     ): ?RateLimitResultDTO {
         foreach ([$keysV2, $keysV1] as $keys) {
@@ -443,10 +445,10 @@ class EvaluationPipeline
                 if (! $key) {
                     continue;
                 }
-                if ($this->isApiHeavyPolicy($policyName) && ! $this->isApiHeavyKeyType($keyType)) {
+                if ($this->isApiHeavyPolicy($policy) && ! $this->isApiHeavyKeyType($keyType)) {
                     continue;
                 }
-                if ($this->isTrustedAuthenticationPolicy($policyName, $device) && $this->isK1Key($keyType)) {
+                if ($this->isTrustedAuthenticationPolicy($policy, $device) && $this->isK1Key($keyType)) {
                     continue;
                 }
                 $block = $this->store->checkBlock($key);
@@ -482,7 +484,7 @@ class EvaluationPipeline
             if ($level > 0) {
                 $candidateKeyType = $keyType;
                 $candidateLevel = $level;
-                if ($this->isApiHeavyPolicy($policy->getName())
+                if ($this->isApiHeavyPolicy($policy)
                     && $keyType === 'k3'
                     && $device->confidence === 'LOW'
                     && $level >= 2) {
@@ -493,7 +495,7 @@ class EvaluationPipeline
                 $decision = ($candidateLevel >= 2)
                     ? RateLimitResultDTO::DECISION_HARD_BLOCK
                     : RateLimitResultDTO::DECISION_SOFT_BLOCK;
-                $source = $this->isTrustedAuthenticationPolicy($policy->getName(), $device) && $this->isK1Key($keyType)
+                $source = $this->isTrustedAuthenticationPolicy($policy, $device) && $this->isK1Key($keyType)
                     ? 'trusted_advisory:score'
                     : ($keyType === 'k4' && $policy instanceof PostPunishmentReentryPolicyInterface
                         ? 'score:k4'
@@ -514,7 +516,7 @@ class EvaluationPipeline
                 }
 
                 $persistence = [];
-                if ($this->isApiHeavyPolicy($policy->getName())
+                if ($this->isApiHeavyPolicy($policy)
                     && $this->isCanonicalApiHeavyEnforcementKeyType($candidateKeyType)) {
                     $persistenceKey = $keys[$candidateKeyType] ?? null;
                     if ($persistenceKey !== null) {
@@ -808,7 +810,7 @@ class EvaluationPipeline
         array $keysV1,
     ): array {
         if (! filter_var($context->ip, FILTER_VALIDATE_IP, FILTER_FLAG_IPV6)
-            || ! $this->isAdaptiveIpv6Participant($policy->getName(), $context, $request, $device, $keysV2)) {
+            || ! $this->isAdaptiveIpv6Participant($policy, $context, $request, $device, $keysV2)) {
             return [];
         }
 
@@ -908,7 +910,7 @@ class EvaluationPipeline
      * @param array<string, string|null> $keysV2
      */
     private function isAdaptiveIpv6Participant(
-        string $policyName,
+        BlockPolicyInterface $policy,
         RateLimitContextDTO $context,
         RateLimitCommand $request,
         DeviceIdentityDTO $device,
@@ -916,7 +918,7 @@ class EvaluationPipeline
     ): bool {
         $spraySubject = $context->correlationId ?? $context->accountId;
         $sprayEligible = $request->isPreCheck
-            && $this->isCredentialSprayPolicy($policyName)
+            && $this->isCredentialSprayPolicy($policy)
             && $spraySubject !== null
             && ($keysV2['k1'] ?? null) !== null;
 
@@ -1378,7 +1380,7 @@ class EvaluationPipeline
     private function checkCredentialSpray(
         RateLimitContextDTO $context,
         DeviceIdentityDTO $device,
-        string $policyName,
+        BlockPolicyInterface $policy,
         ?string $k1Key,
         ?string $previousK1Key,
         array $adaptiveIpv6Scopes,
@@ -1396,7 +1398,7 @@ class EvaluationPipeline
         // candidate. The current canonical K1 remains the only persistence key.
         foreach ($adaptiveIpv6Scopes as $scope) {
             $macroObservation = $this->buildAdaptiveCorrelationObservation(
-                $policyName,
+                $policy->getName(),
                 'spray',
                 $scope['cidr'],
                 $scope['currentScope'],
@@ -1411,7 +1413,7 @@ class EvaluationPipeline
             return null;
         }
 
-        $source = $this->isTrustedAuthenticationPolicy($policyName, $device)
+        $source = $this->isTrustedAuthenticationPolicy($policy, $device)
             ? 'trusted_advisory:credential_spray'
             : 'credential_spray';
 
@@ -1704,7 +1706,7 @@ class EvaluationPipeline
 
         $candidates = [];
         if ($newMaxLevel > 0) {
-            if ($this->isApiHeavyPolicy($policy->getName())) {
+            if ($this->isApiHeavyPolicy($policy)) {
                 foreach ($levelsByKeyType as $keyType => $level) {
                     if ($level <= 0 || ! $this->isApiHeavyKeyType($keyType)) {
                         continue;
@@ -1743,7 +1745,7 @@ class EvaluationPipeline
                         $persistence,
                     );
                 }
-            } elseif ($this->isTrustedAuthenticationPolicy($policy->getName(), $device)) {
+            } elseif ($this->isTrustedAuthenticationPolicy($policy, $device)) {
                 foreach ($levelsByKeyType as $keyType => $level) {
                     if ($level <= 0) {
                         continue;
@@ -2063,7 +2065,7 @@ class EvaluationPipeline
             $policy,
             $candidates,
             $final['decision'],
-            $this->isApiHeavyPolicy($policy->getName()),
+            $this->isApiHeavyPolicy($policy),
         );
         $this->persistWinningCandidates($policy, $advisoryCandidates, null);
 
@@ -2177,19 +2179,19 @@ class EvaluationPipeline
         return $device->isTrustedSession || $device->isDevicePreviouslyVerifiedForAccount;
     }
 
-    private function isCredentialSprayPolicy(string $policyName): bool
+    private function isCredentialSprayPolicy(BlockPolicyInterface $policy): bool
     {
-        return in_array($policyName, ['login_protection', 'otp_protection'], true);
+        return $this->hasCapability($policy, PolicyCapabilityEnum::CREDENTIAL_SPRAY);
     }
 
-    private function isDistributedAccountPolicy(string $policyName): bool
+    private function isDistributedAccountPolicy(BlockPolicyInterface $policy): bool
     {
-        return $this->isCredentialSprayPolicy($policyName);
+        return $this->hasCapability($policy, PolicyCapabilityEnum::DISTRIBUTED_ACCOUNT);
     }
 
-    private function isTrustedAuthenticationPolicy(string $policyName, DeviceIdentityDTO $device): bool
+    private function isTrustedAuthenticationPolicy(BlockPolicyInterface $policy, DeviceIdentityDTO $device): bool
     {
-        return $device->isTrustedSession && $this->isCredentialSprayPolicy($policyName);
+        return $device->isTrustedSession && $this->hasCapability($policy, PolicyCapabilityEnum::TRUSTED_AUTHENTICATION);
     }
 
     private function isK1Key(string $keyType): bool
@@ -2197,9 +2199,15 @@ class EvaluationPipeline
         return $keyType === 'k1';
     }
 
-    private function isApiHeavyPolicy(string $policyName): bool
+    private function isApiHeavyPolicy(BlockPolicyInterface $policy): bool
     {
-        return $policyName === 'api_heavy_protection';
+        return $this->hasCapability($policy, PolicyCapabilityEnum::API_OVERUSE);
+    }
+
+    private function hasCapability(BlockPolicyInterface $policy, PolicyCapabilityEnum $capability): bool
+    {
+        return $policy instanceof PolicyCapabilityProviderInterface
+            && in_array($capability, $policy->getCapabilities(), true);
     }
 
     private function isApiHeavyKeyType(string $keyType): bool
@@ -2486,7 +2494,7 @@ class EvaluationPipeline
                 // classification through their K4/K5 failure deltas. API
                 // Heavy keeps its existing access/spray behavior because it
                 // has no authentication failure deltas.
-                if ($isEphemeral && ! $this->isApiHeavyPolicy($policy->getName()) && $deltasDto->k4_failure > 0) {
+                if ($isEphemeral && ! $this->isApiHeavyPolicy($policy) && $deltasDto->k4_failure > 0) {
                     // An ephemeral overflow fingerprint has been rejected by
                     // the bounded device cap. Keep the authentication failure
                     // on the account path without creating any K5 identity or

@@ -76,7 +76,29 @@ owns the concrete client and supplies its command executor. No Redis client or
 `ext-redis` runtime dependency is added, and the existing multi-store constructor
 remains valid.
 
-Secrets are explicit and independently rotatable. `RateLimiterConfig` rejects empty or whitespace-only active, previous, and environment values without trimming valid caller input. The builder does not create a service container or no-op production adapters. Use `withClock()`, `withDeviceIdentityResolver()`, or `withPolicy()` only for the targeted overrides defined by the public contract; low-level constructors remain the Advanced Path.
+Secrets are explicit and independently rotatable. `RateLimiterConfig` rejects empty or whitespace-only active, previous, and environment values without trimming valid caller input. The builder does not create a service container or no-op production adapters. Use `withClock()`, `withDeviceIdentityResolver()`, `withPolicy()`, or `withSimpleThrottlePolicy()` only for the targeted overrides defined by the public contract; low-level constructors remain the Advanced Path.
+
+`build()` returns `CompositeRateLimiterRuntimeInterface`, and the result remains assignable to both `RateLimiterRuntimeInterface` and `RateLimiterInterface` for every existing consumer.
+
+## Simple Fixed-Window Throttling
+
+Beside the score-based model above, the package owns a first-class generic/simple fixed-window throttling capability (see `docs/SIMPLE_THROTTLING.md` for the complete contract). It answers a common, narrower requirement — allow up to N events in an interval, then deny until that interval ends — without translating the request into score thresholds, decay, or the progressive penalty ladder.
+
+```php
+use Maatify\RateLimiter\Config\FixedWindowThrottlePolicy;
+
+$limiter = (new RateLimiterBuilder($config, $rateLimitStore, $correlationStore, $circuitBreakerStore, $failureSignalEmitter))
+    ->withSimpleThrottlePolicy(new FixedWindowThrottlePolicy(
+        name: 'checkout_attempts',
+        limit: 3,
+        intervalSeconds: 60,
+    ))
+    ->build();
+
+$result = $limiter->consume('checkout_attempts', $customerId);
+```
+
+`$limiter->consume(string $policyName, string $subject): SimpleRateLimitResultDTO` is the one atomic operation Version 1 exposes. There is no default simple policy: a Host opts in explicitly, and registering none leaves the score-based runtime unchanged. `SimpleRateLimitResultDTO` exposes `allowed`, `limit`, `remaining`, `retryAfter`, `resetAt`, and `failureMode` (`NORMAL` or `FAIL_CLOSED`); it is a dedicated result contract, separate from `RateLimitResultDTO`. Simple throttling is FAIL_CLOSED only: it does not use score-model semantics or create authentication-budget or correlation semantics, but it persists its own fixed-window state by reusing the existing budget-epoch persistence primitives under a separate namespace. It raises `RateLimiterException` for an unregistered policy name, a blank subject, or a required key-rotation migration whose store lacks `BudgetSeedStoreInterface`. See `examples/simple-fixed-window.php` for a complete runnable example.
 
 ## Primary Public Calls
 
@@ -235,6 +257,37 @@ Use the policy that matches the protected operation. The package keeps the decis
 
 The builder registers `login_protection`, `otp_protection`, and `api_heavy_protection` automatically. Use `withPolicy()` before `build()` to replace a same-name policy or add a differently named policy. The policy presets are production runtime classes. Do not invent policy behavior from test fixtures.
 
+Reusable behavior is selected by typed capability opt-in, not by policy name. A
+custom policy can implement `PolicyCapabilityProviderInterface` and return
+`PolicyCapabilityEnum` enum cases for credential spray, distributed-account
+correlation, trusted-authentication advisory behavior, or API overuse. A custom
+policy that does not opt in receives base behavior only. `PostPunishmentReentryPolicyInterface`
+is a separate DEC-007 lifecycle capability; it requires K4, monotonic positive
+K4 thresholds, fail-closed semantics, and lifecycle-capable storage regardless
+of the policy's name.
+
+Backend-failure fallback is a separate typed DEC-011 concern from normal-runtime
+capabilities, declared through `FailureFallbackConfigurationProviderInterface`.
+
+**Ready-to-use (recommended):** `new LoginProtectionPolicy()`,
+`new OtpProtectionPolicy()`, and `new ApiHeavyProtectionPolicy()` resolve their
+official locked fallback caps internally. No fallback-specific constructor
+argument, builder call, or Host wiring is required to get this behavior.
+
+**Advanced:** a direct custom reusable policy may implement
+`FailureFallbackConfigurationProviderInterface` itself and return its own
+`FailureFallbackConfigurationDTO` — a list of `FailureFallbackRuleDTO` values,
+each pairing a `FailureFallbackDimensionEnum` (`ACCOUNT`, `IP_PREFIX`, or
+`IP_PREFIX_NORMALIZED_USER_AGENT`) with a positive limit and window in
+seconds. The values are entirely the policy's own and independent of every
+official preset; the package validates them with the same rules (positive,
+non-duplicate, and the minimum dimensions its declared capabilities require)
+and evaluates them through the same `LocalFallbackLimiter` runtime the
+official presets use — there is no separate "official" or "custom" fallback
+code path. The fallback namespace includes policy identity, so differently
+named reusable policies never share process-local counters, even when their
+configured numbers are identical.
+
 ## Walkthrough: Failure Boundary
 
     Input → A configured storage or runtime integration throws
@@ -303,3 +356,4 @@ The operational reader reads current real enforcement keys and applies the docum
 - [Device Fingerprint](../DEVICE_FINGERPRINT.md)
 - [Key Strategy](../KEY_STRATEGY.md)
 - [Failure Semantics](../FAILURE_SEMANTICS.md)
+- [Simple Fixed-Window Throttling](../SIMPLE_THROTTLING.md)

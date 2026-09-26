@@ -4,13 +4,27 @@ declare(strict_types=1);
 
 namespace Maatify\RateLimiter\Service;
 
+use Maatify\RateLimiter\Config\ApiHeavyProtectionPolicy;
+use Maatify\RateLimiter\Config\BlockPolicyInterface;
+use Maatify\RateLimiter\Config\FailureFallbackConfigurationProviderInterface;
+use Maatify\RateLimiter\Enum\FailureFallbackDimensionEnum;
+use Maatify\RateLimiter\Config\LoginProtectionPolicy;
+use Maatify\RateLimiter\Config\OtpProtectionPolicy;
+use Maatify\RateLimiter\DTO\FailureFallbackConfigurationDTO;
+use Maatify\RateLimiter\Exception\RateLimiterException;
 use Maatify\SharedCommon\Contracts\ClockInterface;
 
 /**
  * Applies bounded in-process limits while the distributed backend is degraded.
  *
  * Counters are process-local and therefore provide a safety fallback, not a
- * replacement for the configured persistent store.
+ * replacement for the configured persistent store. This runtime applies
+ * exactly the effective {@see FailureFallbackConfigurationDTO} a policy
+ * declares through {@see FailureFallbackConfigurationProviderInterface};
+ * package-owned official presets and host-owned direct custom
+ * configurations share this same evaluation with no separate code path. A
+ * policy without a valid bounded configuration receives no unbounded
+ * degraded/fail-open allowance.
  */
 class LocalFallbackLimiter
 {
@@ -18,76 +32,79 @@ class LocalFallbackLimiter
     private static array $counters = [];
     private static int $lastGc = 0;
 
-    // Windows (Seconds)
-    private const WINDOW_LOGIN = 600; // 10m
-    private const WINDOW_OTP = 900;   // 15m
-    private const WINDOW_API = 60;    // 1m
-
-    // Caps
-    private const DEGRADED_LOGIN_ACCOUNT = 3;
-    private const DEGRADED_LOGIN_IP = 20;
-    private const DEGRADED_OTP_ACCOUNT = 2;
-    private const DEGRADED_OTP_IP = 10;
-    private const API_IP = 120;
-    private const API_IP_UA = 60;
-
     /**
      * Return whether the fallback window still permits the request.
      *
-     * Login and OTP use account/IP caps in degraded mode. API protection also
-     * applies IP/user-agent caps in degraded and fail-open modes.
+     * Each rule in the policy's effective configuration is evaluated
+     * independently and namespaced by policy identity, so different reusable
+     * policies never share process-local counters even when their numeric
+     * values are identical.
      */
-    public static function check(ClockInterface $clock, string $policyName, string $mode, string $ip, ?string $accountId = null, string $ua = ''): bool
+    public static function check(ClockInterface $clock, BlockPolicyInterface|string $policy, string $mode, string $ip, ?string $accountId = null, string $ua = ''): bool
     {
+        $policy = self::normalizePolicy($policy);
         self::gc($clock);
 
-        $allowed = true;
+        if ($mode !== 'DEGRADED_MODE' && $mode !== 'FAIL_OPEN') {
+            return true;
+        }
 
-        // Normalize IP (IPv6 /64)
+        $configuration = self::configuration($policy);
+        if ($configuration === null || $configuration->rules === []) {
+            return false;
+        }
+
         $normalizedIp = self::getIpPrefix($ip);
-
         // Use the package canonical browser-major normalization for K2 parity.
         $normalizedUa = DeviceIdentityResolver::normalizeUserAgent($ua);
+        $namespace = self::namespace($policy);
 
-        if ($mode === 'DEGRADED_MODE') {
-            if ($policyName === 'login_protection') {
-                $window = self::WINDOW_LOGIN;
-                if ($accountId && !self::incrementAndCheck($clock, "deg:login:acc:{$accountId}", self::DEGRADED_LOGIN_ACCOUNT, $window)) {
-                    $allowed = false;
-                }
-                if (!self::incrementAndCheck($clock, "deg:login:ip:{$normalizedIp}", self::DEGRADED_LOGIN_IP, $window)) {
-                    $allowed = false;
-                }
-            } elseif ($policyName === 'otp_protection') {
-                $window = self::WINDOW_OTP;
-                if ($accountId && !self::incrementAndCheck($clock, "deg:otp:acc:{$accountId}", self::DEGRADED_OTP_ACCOUNT, $window)) {
-                    $allowed = false;
-                }
-                if (!self::incrementAndCheck($clock, "deg:otp:ip:{$normalizedIp}", self::DEGRADED_OTP_IP, $window)) {
-                    $allowed = false;
-                }
-            } elseif ($policyName === 'api_heavy_protection') {
-                $window = self::WINDOW_API;
-                if (!self::incrementAndCheck($clock, "fail:api:ip:{$normalizedIp}", self::API_IP, $window)) {
-                    $allowed = false;
-                }
-                $k2 = md5("{$normalizedIp}:{$normalizedUa}");
-                if (!self::incrementAndCheck($clock, "fail:api:k2:{$k2}", self::API_IP_UA, $window)) {
-                    $allowed = false;
-                }
+        $allowed = true;
+        foreach ($configuration->rules as $rule) {
+            $key = match ($rule->dimension) {
+                FailureFallbackDimensionEnum::ACCOUNT => $accountId !== null && $accountId !== ''
+                    ? "{$namespace}:account:{$accountId}"
+                    : null,
+                FailureFallbackDimensionEnum::IP_PREFIX => "{$namespace}:ip_prefix:{$normalizedIp}",
+                FailureFallbackDimensionEnum::IP_PREFIX_NORMALIZED_USER_AGENT => "{$namespace}:ip_prefix_ua:" . md5("{$normalizedIp}:{$normalizedUa}"),
+            };
+
+            if ($key === null) {
+                continue;
             }
-        } elseif ($mode === 'FAIL_OPEN' && $policyName === 'api_heavy_protection') {
-            $window = self::WINDOW_API;
-            if (!self::incrementAndCheck($clock, "fail:api:ip:{$normalizedIp}", self::API_IP, $window)) {
-                $allowed = false;
-            }
-            $k2 = md5("{$normalizedIp}:{$normalizedUa}");
-            if (!self::incrementAndCheck($clock, "fail:api:k2:{$k2}", self::API_IP_UA, $window)) {
+
+            if (!self::incrementAndCheck($clock, $key, $rule->limit, $rule->windowSeconds)) {
                 $allowed = false;
             }
         }
 
         return $allowed;
+    }
+
+    private static function configuration(BlockPolicyInterface $policy): ?FailureFallbackConfigurationDTO
+    {
+        return $policy instanceof FailureFallbackConfigurationProviderInterface
+            ? $policy->getFailureFallbackConfiguration()
+            : null;
+    }
+
+    private static function namespace(BlockPolicyInterface $policy): string
+    {
+        return 'fallback:' . hash('sha256', $policy->getName());
+    }
+
+    private static function normalizePolicy(BlockPolicyInterface|string $policy): BlockPolicyInterface
+    {
+        if ($policy instanceof BlockPolicyInterface) {
+            return $policy;
+        }
+
+        return match ($policy) {
+            'login_protection' => new LoginProtectionPolicy(),
+            'otp_protection' => new OtpProtectionPolicy(),
+            'api_heavy_protection' => new ApiHeavyProtectionPolicy(),
+            default => throw new RateLimiterException("Unknown legacy fallback policy: {$policy}"),
+        };
     }
 
     private static function getIpPrefix(string $ip): string

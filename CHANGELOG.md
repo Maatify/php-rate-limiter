@@ -8,6 +8,57 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Added
+- Added a first-class generic/simple fixed-window throttling capability
+  (DEC-009): `Config\SimpleThrottlePolicyInterface`,
+  `Config\FixedWindowThrottlePolicy`, `DTO\SimpleRateLimitResultDTO`,
+  `Service\SimpleRateLimiterInterface`, and its production implementation
+  `Service\FixedWindowSimpleRateLimiter`. Version 1 is fixed-window, unit
+  cost, one policy-defined limit and interval, one atomic `consume()`, and
+  FAIL_CLOSED only; it reuses the existing atomic budget-epoch persistence
+  primitives (`RateLimitStoreInterface::getBudget()`/`incrementBudget()`,
+  `BudgetSeedStoreInterface::incrementBudgetWithSeed()` for rotation
+  continuity) under a distinct package-owned key namespace, so no new storage
+  backend family is introduced and simple-throttle state cannot collide with
+  score/budget state.
+- Evolved the default composition surface (DEC-010, supersedes DEC-004):
+  `RateLimiterBuilder::withSimpleThrottlePolicy(SimpleThrottlePolicyInterface)`
+  registers simple policies with the same same-name-replace/new-name-append
+  semantics as `withPolicy()`; the registry starts empty. `build()` now
+  returns the new `Service\CompositeRateLimiterRuntimeInterface`
+  (implemented by `Service\CompositeRateLimiterRuntime`), which extends both
+  the existing `RateLimiterRuntimeInterface` and the new
+  `SimpleRateLimiterInterface` and remains assignable to
+  `RateLimiterRuntimeInterface` for every existing consumer.
+  `RateLimiterEngine` and its constructor are unchanged. See the new
+  `docs/SIMPLE_THROTTLING.md` for the complete contract,
+  `examples/simple-fixed-window.php` for a runnable example, and
+  `docs/KEY_STRATEGY.md` §4.7 for the key contract. Package Reference
+  version: `1.18.0` → `1.19.0`; Key Strategy version: `1.10.0` → `1.11.0`;
+  Failure Semantics version: `1.4.0` → `1.5.0`.
+
+### Changed
+- Added the typed `PolicyCapabilityEnum` extension contract for reusable custom
+  policies, and replaced the initial closed-enum `FailureFallbackProfileEnum`
+  fallback contract with a generic typed
+  `FailureFallbackConfigurationProviderInterface` returning a
+  `FailureFallbackConfigurationDTO` of `FailureFallbackRuleDTO` values
+  (`FailureFallbackDimensionEnum::ACCOUNT`, `IP_PREFIX`, or
+  `IP_PREFIX_NORMALIZED_USER_AGENT`, each with a positive limit and window).
+  `LoginProtectionPolicy`, `OtpProtectionPolicy`, and `ApiHeavyProtectionPolicy`
+  remain zero-configuration: they resolve their official locked caps
+  internally from the retained `FailureFallbackProfileEnum` factory, now an
+  internal preset resolver rather than the public contract. A direct custom
+  reusable policy may compose its own bounded fallback configuration with
+  values independent of every official preset, validated and evaluated
+  through the exact same `LocalFallbackLimiter` runtime — there is no
+  separate official/custom fallback code path, and `LocalFallbackLimiter` no
+  longer holds a duplicate hard-coded copy of the official numeric values.
+  Fallback state remains namespaced by policy identity only. See DEC-011
+  (amended) for the full rationale. Package Reference version: `1.17.0` →
+  `1.18.0`; Policy contract version: `1.6.0` → `1.7.0`; Failure Semantics
+  version: `1.3.0` → `1.4.0`.
+
+### Added
 - Added DEC-007 generation-bound authentication K4 lifecycle for opt-in Login
   and OTP policies, including typed lifecycle storage, bounded public claims,
   early Builder capability validation, and the composite runtime surface.
