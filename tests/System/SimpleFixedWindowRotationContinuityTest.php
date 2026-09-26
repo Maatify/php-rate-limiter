@@ -11,6 +11,7 @@ use Maatify\RateLimiter\Service\FixedWindowSimpleRateLimiter;
 use Maatify\RateLimiter\Tests\Support\Clock\FixedClock;
 use Maatify\RateLimiter\Tests\Support\RateLimiter\BaseOnlyInMemoryRateLimitStore;
 use Maatify\RateLimiter\Tests\Support\RateLimiter\InMemoryRateLimitStore;
+use Maatify\RateLimiter\Tests\Support\RateLimiter\InterleavedSeedRaceRateLimitStore;
 use PHPUnit\Framework\TestCase;
 
 final class SimpleFixedWindowRotationContinuityTest extends TestCase
@@ -146,6 +147,50 @@ final class SimpleFixedWindowRotationContinuityTest extends TestCase
         self::assertNotNull($currentBudget);
         self::assertSame(3, $currentBudget->count);
         self::assertSame($previousBudget->epochStart, $currentBudget->epochStart);
+    }
+
+    /**
+     * R3: a real, deterministic interleaving proof — not a sequential
+     * regression given a new name. Current starts genuinely absent, a
+     * concurrent actor's own first consume creates Current strictly
+     * between our "Current absent" read and our own
+     * incrementBudgetWithSeed() call, and the real, unmodified
+     * incrementBudgetWithSeed() implementation must then honor its own
+     * locked contract: existing Current wins, its count increments by
+     * exactly one, Previous is left untouched, and Current's own
+     * (concurrent-actor) epochStart remains authoritative rather than being
+     * overwritten by the seed's epochStart.
+     */
+    public function testConcurrentCurrentInitializationDuringSeedWinsOverTheStaleSeed(): void
+    {
+        $previousKey = $this->key('checkout', 3, 60, 'subject-1', 'previous-secret');
+        $previousBudget = $this->store->incrementBudget($previousKey, 60, 1);
+
+        // Advance the clock so the concurrent actor's Current epoch has a
+        // start distinct from Previous's, making "Current epochStart
+        // remains authoritative" an observable, non-coincidental assertion.
+        $this->clock->setNow($this->clock->now()->modify('+10 seconds'));
+        $concurrentEpochStart = $this->clock->now()->getTimestamp();
+
+        $raceStore = new InterleavedSeedRaceRateLimitStore($this->store);
+        $limiter = $this->limiter($raceStore, 'current-secret', 'previous-secret');
+
+        $result = $limiter->consume('checkout', 'subject-1');
+
+        self::assertTrue($result->allowed);
+        self::assertSame(1, $result->remaining, 'Count must be the concurrent actor(1) + our own +1 = 2, never duplicated or lost.');
+        self::assertSame($concurrentEpochStart + 60, $result->resetAt, "Current epochStart must remain the concurrent actor's own, not the seed's.");
+
+        $currentKey = $this->key('checkout', 3, 60, 'subject-1', 'current-secret');
+        $currentBudget = $this->store->getBudget($currentKey);
+        self::assertNotNull($currentBudget);
+        self::assertSame(2, $currentBudget->count);
+        self::assertSame($concurrentEpochStart, $currentBudget->epochStart);
+
+        $remainingPrevious = $this->store->getBudget($previousKey);
+        self::assertNotNull($remainingPrevious);
+        self::assertSame(1, $remainingPrevious->count, 'Previous must not be reseeded or modified once Current wins the race.');
+        self::assertSame($previousBudget->epochStart, $remainingPrevious->epochStart);
     }
 
     private function limiter(

@@ -5,11 +5,15 @@ declare(strict_types=1);
 namespace Maatify\RateLimiter\Tests\Unit\Service;
 
 use Maatify\RateLimiter\Config\FixedWindowThrottlePolicy;
+use Maatify\RateLimiter\Config\SimpleThrottlePolicyInterface;
 use Maatify\RateLimiter\DTO\SimpleRateLimitResultDTO;
 use Maatify\RateLimiter\Exception\RateLimiterException;
+use Maatify\RateLimiter\Repository\RateLimitStoreInterface;
 use Maatify\RateLimiter\Service\FixedWindowSimpleRateLimiter;
 use Maatify\RateLimiter\Tests\Support\Clock\FixedClock;
+use Maatify\RateLimiter\Tests\Support\RateLimiter\BaseOnlyInMemoryRateLimitStore;
 use Maatify\RateLimiter\Tests\Support\RateLimiter\InMemoryRateLimitStore;
+use Maatify\RateLimiter\Tests\Support\RateLimiter\PartialFailureRateLimitStore;
 use PHPUnit\Framework\TestCase;
 
 final class FixedWindowSimpleRateLimiterTest extends TestCase
@@ -200,8 +204,224 @@ final class FixedWindowSimpleRateLimiterTest extends TestCase
         }
     }
 
+    // --- R1: storage-originated failures must become typed FAIL_CLOSED
+    // results regardless of the exception class the store raises, while the
+    // package's own configuration/contract failures must keep propagating
+    // as exceptions. Each pair below proves the same call site fails closed
+    // for both a plain RuntimeException and a RateLimiterException raised
+    // BY THE STORE ITSELF, which is otherwise indistinguishable by class
+    // from the package's own configuration-failure exception type.
+
+    public function testGetBudgetFailureFromRuntimeExceptionIsFailClosed(): void
+    {
+        $store = new PartialFailureRateLimitStore($this->store, throwOnGetBudget: new \RuntimeException('backend unavailable'));
+        $limiter = $this->limiterWithStore($store, [new FixedWindowThrottlePolicy('checkout', 3, 60)]);
+
+        $result = $limiter->consume('checkout', 'subject-1');
+
+        self::assertFalse($result->allowed);
+        self::assertSame(0, $result->remaining);
+        self::assertNull($result->retryAfter);
+        self::assertNull($result->resetAt);
+        self::assertSame(SimpleRateLimitResultDTO::FAIL_CLOSED, $result->failureMode);
+    }
+
+    public function testGetBudgetFailureFromRateLimiterExceptionIsFailClosed(): void
+    {
+        $store = new PartialFailureRateLimitStore($this->store, throwOnGetBudget: new RateLimiterException('store-internal contract violation'));
+        $limiter = $this->limiterWithStore($store, [new FixedWindowThrottlePolicy('checkout', 3, 60)]);
+
+        $result = $limiter->consume('checkout', 'subject-1');
+
+        self::assertFalse($result->allowed);
+        self::assertSame(SimpleRateLimitResultDTO::FAIL_CLOSED, $result->failureMode);
+        self::assertNull($result->retryAfter);
+        self::assertNull($result->resetAt);
+    }
+
+    public function testIncrementBudgetFailureFromRuntimeExceptionIsFailClosed(): void
+    {
+        $store = new PartialFailureRateLimitStore($this->store, throwOnIncrementBudget: new \RuntimeException('backend unavailable'));
+        $limiter = $this->limiterWithStore($store, [new FixedWindowThrottlePolicy('checkout', 3, 60)]);
+
+        $result = $limiter->consume('checkout', 'subject-1');
+
+        self::assertFalse($result->allowed);
+        self::assertSame(SimpleRateLimitResultDTO::FAIL_CLOSED, $result->failureMode);
+    }
+
+    public function testIncrementBudgetFailureFromRateLimiterExceptionIsFailClosed(): void
+    {
+        $store = new PartialFailureRateLimitStore($this->store, throwOnIncrementBudget: new RateLimiterException('store-internal contract violation'));
+        $limiter = $this->limiterWithStore($store, [new FixedWindowThrottlePolicy('checkout', 3, 60)]);
+
+        $result = $limiter->consume('checkout', 'subject-1');
+
+        self::assertFalse($result->allowed);
+        self::assertSame(SimpleRateLimitResultDTO::FAIL_CLOSED, $result->failureMode);
+    }
+
+    public function testIncrementBudgetWithSeedFailureFromRateLimiterExceptionIsFailClosedDuringRotation(): void
+    {
+        $previousKey = $this->keyFor('checkout', 3, 60, 'subject-1', 'previous-secret');
+        $this->store->incrementBudget($previousKey, 60, 1);
+
+        $store = new PartialFailureRateLimitStore($this->store, throwOnIncrementBudgetWithSeed: new RateLimiterException('store-internal contract violation'));
+        $limiter = $this->limiterWithStore(
+            $store,
+            [new FixedWindowThrottlePolicy('checkout', 3, 60)],
+            previousKeySecret: 'previous-secret',
+        );
+
+        $result = $limiter->consume('checkout', 'subject-1');
+
+        self::assertFalse($result->allowed);
+        self::assertSame(SimpleRateLimitResultDTO::FAIL_CLOSED, $result->failureMode);
+    }
+
+    public function testMissingCapabilityConfigurationFailureStillPropagatesAsExceptionNotFailClosed(): void
+    {
+        // Contrast case: unlike a store-raised failure at a wrapped call
+        // site above, the package's OWN explicit capability check is never
+        // wrapped, so it must keep raising RateLimiterException rather than
+        // being reported as a typed FAIL_CLOSED result.
+        $previousKey = $this->keyFor('checkout', 3, 60, 'subject-1', 'previous-secret');
+        $baseOnlyStore = new BaseOnlyInMemoryRateLimitStore($this->clock);
+        $baseOnlyStore->incrementBudget($previousKey, 60, 1);
+        $limiter = $this->limiterWithStore(
+            $baseOnlyStore,
+            [new FixedWindowThrottlePolicy('checkout', 3, 60)],
+            previousKeySecret: 'previous-secret',
+        );
+
+        $this->expectException(RateLimiterException::class);
+        $this->expectExceptionMessage('BudgetSeedStoreInterface');
+        $limiter->consume('checkout', 'subject-1');
+    }
+
+    // --- R2: package-side validation must reject any SimpleThrottlePolicyInterface
+    // implementation, not only FixedWindowThrottlePolicy, and must do so before
+    // any storage mutation (i.e. at construction, in the Advanced Path too).
+
+    public function testDirectCustomPolicyImplementationWithBlankNameIsRejectedAtConstruction(): void
+    {
+        $customPolicy = $this->customPolicy(name: '   ', limit: 3, intervalSeconds: 60);
+
+        $this->expectException(RateLimiterException::class);
+        $this->limiter([$customPolicy]);
+    }
+
+    public function testDirectCustomPolicyImplementationWithNonPositiveLimitIsRejectedAtConstruction(): void
+    {
+        $customPolicy = $this->customPolicy(name: 'custom_policy', limit: 0, intervalSeconds: 60);
+
+        $this->expectException(RateLimiterException::class);
+        $this->limiter([$customPolicy]);
+    }
+
+    public function testDirectCustomPolicyImplementationWithNonPositiveIntervalIsRejectedAtConstruction(): void
+    {
+        $customPolicy = $this->customPolicy(name: 'custom_policy', limit: 3, intervalSeconds: -1);
+
+        $this->expectException(RateLimiterException::class);
+        $this->limiter([$customPolicy]);
+    }
+
+    public function testInvalidCustomPolicyIsRejectedBeforeAnyStorageMutation(): void
+    {
+        $customPolicy = $this->customPolicy(name: 'custom_policy', limit: -5, intervalSeconds: 60);
+
+        try {
+            $this->limiter([$customPolicy]);
+            self::fail('Expected RateLimiterException was not thrown.');
+        } catch (RateLimiterException) {
+            // Construction never reached consume(), so no budget key exists.
+        }
+
+        $budgets = (new \ReflectionProperty($this->store, 'budgets'))->getValue($this->store);
+        self::assertSame([], $budgets);
+    }
+
+    public function testValidDirectCustomPolicyImplementationWorksThroughConsume(): void
+    {
+        $customPolicy = $this->customPolicy(name: 'custom_policy', limit: 2, intervalSeconds: 60);
+        $limiter = $this->limiter([$customPolicy]);
+
+        $first = $limiter->consume('custom_policy', 'subject-1');
+        $second = $limiter->consume('custom_policy', 'subject-1');
+        $third = $limiter->consume('custom_policy', 'subject-1');
+
+        self::assertTrue($first->allowed);
+        self::assertSame(1, $first->remaining);
+        self::assertTrue($second->allowed);
+        self::assertSame(0, $second->remaining);
+        self::assertFalse($third->allowed);
+    }
+
+    private function customPolicy(string $name, int $limit, int $intervalSeconds): SimpleThrottlePolicyInterface
+    {
+        return new class ($name, $limit, $intervalSeconds) implements SimpleThrottlePolicyInterface {
+            public function __construct(
+                private readonly string $name,
+                private readonly int $limit,
+                private readonly int $intervalSeconds,
+            ) {}
+
+            public function getName(): string
+            {
+                return $this->name;
+            }
+
+            public function getLimit(): int
+            {
+                return $this->limit;
+            }
+
+            public function getIntervalSeconds(): int
+            {
+                return $this->intervalSeconds;
+            }
+        };
+    }
+
+    private function keyFor(string $policyName, int $limit, int $intervalSeconds, string $subject, string $secret): string
+    {
+        $encode = static fn(string $component): string => pack('N', strlen($component)) . $component;
+
+        $preimage = $encode('rate_limiter')
+            . $encode('simple_fixed_window')
+            . $encode('v1')
+            . $encode('prod')
+            . $encode($policyName)
+            . $encode((string) $limit)
+            . $encode((string) $intervalSeconds)
+            . $encode($subject);
+
+        return hash_hmac('sha256', $preimage, $secret);
+    }
+
     /**
-     * @param list<FixedWindowThrottlePolicy> $policies
+     * @param list<SimpleThrottlePolicyInterface> $policies
+     */
+    private function limiterWithStore(
+        RateLimitStoreInterface $store,
+        array $policies,
+        string $keySecret = 'active-secret',
+        string $environmentScope = 'prod',
+        ?string $previousKeySecret = null,
+    ): FixedWindowSimpleRateLimiter {
+        return new FixedWindowSimpleRateLimiter(
+            $policies,
+            $store,
+            $this->clock,
+            $keySecret,
+            $environmentScope,
+            $previousKeySecret,
+        );
+    }
+
+    /**
+     * @param list<SimpleThrottlePolicyInterface> $policies
      */
     private function limiter(
         array $policies,

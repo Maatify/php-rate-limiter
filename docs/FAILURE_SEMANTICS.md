@@ -308,10 +308,12 @@ never conflated:
   typed `SimpleRateLimitResultDTO` with `allowed = false`, `failureMode =
   SimpleRateLimitResultDTO::NORMAL`, a positive `retryAfter`, and the stable `resetAt` of the
   current window.
-* **Backend/runtime storage failure** (the store throws while reading or incrementing the fixed
-  window) returns a typed FAIL_CLOSED denial: `allowed = false`, `remaining = 0`, `retryAfter =
-  null`, `resetAt = null`, `failureMode = SimpleRateLimitResultDTO::FAIL_CLOSED`. No fake window
-  timing is invented when the backend state cannot be determined.
+* **Backend/runtime storage failure** — any failure a store call raises at its own call site
+  while reading or incrementing the fixed window, regardless of its exception class, including a
+  `RateLimiterException` the store implementation itself throws — returns a typed FAIL_CLOSED
+  denial: `allowed = false`, `remaining = 0`, `retryAfter = null`, `resetAt = null`,
+  `failureMode = SimpleRateLimitResultDTO::FAIL_CLOSED`. No fake window timing is invented when
+  the backend state cannot be determined.
 
 **Explicitly Forbidden:**
 
@@ -320,10 +322,11 @@ never conflated:
 * Reinterpreting normal quota exhaustion as a backend failure, or vice versa
 
 **Configuration and capability failures remain exceptions, not results.** An unregistered
-policy name, a blank subject, an invalid policy (non-positive limit/interval or a blank name),
-or a required key-rotation migration whose store lacks `BudgetSeedStoreInterface` all raise
-`RateLimiterException` rather than becoming a typed FAIL_CLOSED result or a normal quota
-decision; see `docs/SIMPLE_THROTTLING.md`.
+policy name, a blank subject, an invalid policy (non-positive limit/interval or a blank name —
+checked package-side against every `SimpleThrottlePolicyInterface` implementation, not only
+`FixedWindowThrottlePolicy`), or a required key-rotation migration whose store lacks
+`BudgetSeedStoreInterface` all raise `RateLimiterException` rather than becoming a typed
+FAIL_CLOSED result or a normal quota decision; see `docs/SIMPLE_THROTTLING.md`.
 
 ---
 

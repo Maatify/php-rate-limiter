@@ -34,7 +34,7 @@ FAIL_CLOSED only
 ```
 
 There is no `check()`/later-`consume()` split, no `peek()`, no `consumeMany()`,
-and no variable cost. See §8 for the complete list of non-goals.
+and no variable cost. See §11 for the complete list of non-goals.
 
 ## 2. Fixed-Window Semantics
 
@@ -55,9 +55,13 @@ For one `policyName + subject` pair:
 8. `retryAfter` on denial is `max(1, resetAt - now)`, a positive number of
    seconds; on an allowed consume, `retryAfter` is `0`.
 
-Every `consume()` call is a single atomic operation against the backing
-store: there is no read-then-write race window between the quota check and
-the increment.
+Rotation resolution may read both Current and Previous before deciding which
+mutation to apply (§8). The single state-changing mutation that actually
+executes — `incrementBudget()` on a normal path, or
+`incrementBudgetWithSeed()` on a migration path — is the one atomic store
+primitive: there is no read-then-write race window between it and the quota
+decision, because the quota decision in `consume()` is derived entirely from
+that mutation's own returned state, not from any earlier read.
 
 ## 3. Policy Contract
 
@@ -83,6 +87,14 @@ name, limit, and interval and rejects a blank name, a non-positive limit, or
 a non-positive interval with a `RateLimiterException`. The package supplies
 no default limits and no default simple policies: a Host opts in explicitly
 by registering a policy.
+
+This same validation — blank name, non-positive limit, non-positive
+interval — is enforced package-side against every
+`SimpleThrottlePolicyInterface` implementation, not only
+`FixedWindowThrottlePolicy`: `FixedWindowSimpleRateLimiter`'s constructor
+validates each supplied policy before indexing it, so a Host directly
+implementing the interface on the Advanced Path is rejected just as early,
+and always before any storage mutation can occur (§7).
 
 ## 4. Result Contract
 
@@ -151,7 +163,7 @@ own distinct key.
 The simple-throttling key namespace (`simple_fixed_window`) is
 package-owned and structurally distinct from every K1-K5 score/budget
 namespace, so a Host reusing a score-policy name for a simple policy still
-gets fully isolated state (§9).
+gets fully isolated state (§10).
 
 ## 7. Failure Contract
 
@@ -160,19 +172,29 @@ Three outcomes are kept strictly separate:
 * **Normal quota exhaustion** is not a failure. It is a typed
   `SimpleRateLimitResultDTO` with `failureMode = NORMAL` and `allowed =
   false` (§4).
-* **Backend/runtime storage failure** (the store throws while reading or
-  incrementing the window) is a typed `FAIL_CLOSED` denial (§4). There is no
-  `FAIL_OPEN` mode and no `DEGRADED_MODE` for simple throttling in Version 1;
-  see `docs/FAILURE_SEMANTICS.md` §4.4.
+* **Backend/runtime storage failure** — any failure a store call raises at
+  its own call site while reading or incrementing the window, regardless of
+  its exception class — is a typed `FAIL_CLOSED` denial (§4). This
+  explicitly includes a `RateLimiterException` the store implementation
+  itself throws from `getBudget()`, `incrementBudget()`, or
+  `incrementBudgetWithSeed()`: the distinction from a configuration/contract
+  failure below is structural (which call site raised it), never based on
+  the exception's class alone. There is no `FAIL_OPEN` mode and no
+  `DEGRADED_MODE` for simple throttling in Version 1; see
+  `docs/FAILURE_SEMANTICS.md` §4.4.
 * **Configuration/contract failures** remain exceptions, not results:
 
   * an unregistered policy name;
   * a blank subject;
-  * an invalid policy (blank name, non-positive limit, or non-positive
-    interval);
+  * an invalid policy — a blank name, a non-positive limit, or a
+    non-positive interval — checked package-side against every
+    `SimpleThrottlePolicyInterface` implementation at construction, before
+    any storage mutation, not only against `FixedWindowThrottlePolicy`;
   * a required key-rotation migration whose store does not implement
-    `BudgetSeedStoreInterface` (§8 of DEC-009; see also §6 below and
-    `docs/KEY_STRATEGY.md` §4.7).
+    `BudgetSeedStoreInterface` (see §6 below and `docs/KEY_STRATEGY.md`
+    §4.7). This check is never wrapped by the storage-failure handling
+    above, so it always raises `RateLimiterException` even though it sits
+    between two store calls in the rotation path (§8).
 
   Each of these raises `Maatify\RateLimiter\Exception\RateLimiterException`
   and MUST NOT be converted into a normal decision or a typed `FAIL_CLOSED`

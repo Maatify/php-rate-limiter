@@ -30,6 +30,11 @@ final class FixedWindowSimpleRateLimiter implements SimpleRateLimiterInterface
 
     /**
      * @param SimpleThrottlePolicyInterface[] $policies
+     * @throws RateLimiterException When any supplied policy — including a
+     *     directly implemented SimpleThrottlePolicyInterface, not only
+     *     FixedWindowThrottlePolicy — has a blank name, a non-positive
+     *     limit, or a non-positive interval. Validation happens here, before
+     *     any storage mutation can occur.
      */
     public function __construct(
         array $policies,
@@ -43,9 +48,25 @@ final class FixedWindowSimpleRateLimiter implements SimpleRateLimiterInterface
     ) {
         $indexed = [];
         foreach ($policies as $policy) {
+            self::assertValidPolicy($policy);
             $indexed[$policy->getName()] = $policy;
         }
         $this->policies = $indexed;
+    }
+
+    private static function assertValidPolicy(SimpleThrottlePolicyInterface $policy): void
+    {
+        if (trim($policy->getName()) === '') {
+            throw new RateLimiterException('Simple throttle policy name must not be empty or whitespace-only.');
+        }
+
+        if ($policy->getLimit() <= 0) {
+            throw new RateLimiterException(sprintf('Simple throttle policy "%s" limit must be a positive integer.', $policy->getName()));
+        }
+
+        if ($policy->getIntervalSeconds() <= 0) {
+            throw new RateLimiterException(sprintf('Simple throttle policy "%s" interval must be a positive integer of seconds.', $policy->getName()));
+        }
     }
 
     /**
@@ -72,11 +93,8 @@ final class FixedWindowSimpleRateLimiter implements SimpleRateLimiterInterface
             ? null
             : $this->deriveKey($policyName, $limit, $intervalSeconds, $subject, $this->previousKeySecret);
 
-        try {
-            $state = $this->incrementAcrossRotation($currentKey, $previousKey, $intervalSeconds);
-        } catch (RateLimiterException $configurationFailure) {
-            throw $configurationFailure;
-        } catch (\Throwable) {
+        $state = $this->incrementAcrossRotation($currentKey, $previousKey, $intervalSeconds);
+        if ($state === null) {
             return new SimpleRateLimitResultDTO(
                 allowed: false,
                 limit: $limit,
@@ -118,18 +136,51 @@ final class FixedWindowSimpleRateLimiter implements SimpleRateLimiterInterface
      * Current without being written to, and an absent/expired Previous
      * starts a normal Current epoch. Never a max()/sum() merge.
      *
+     * Rotation resolution may read both Current and Previous before the
+     * single state-changing mutation executes; that mutation itself
+     * (incrementBudget() or incrementBudgetWithSeed()) is the one atomic
+     * store primitive, and the quota decision in consume() is derived from
+     * its returned state. Every individual store call is wrapped here, at
+     * its own call site, so any failure it raises — regardless of exception
+     * class, including a RateLimiterException the store implementation
+     * itself throws — is treated as a storage/runtime failure and reported
+     * to the caller as null. The capability-missing check below is
+     * deliberately outside any try/catch: it is this method's own explicit
+     * configuration/contract failure and always propagates as
+     * RateLimiterException, never becoming a typed FAIL_CLOSED result.
+     *
      * @throws RateLimiterException When Previous holds a valid epoch but the
      *     store cannot atomically seed it into Current.
      */
-    private function incrementAcrossRotation(string $currentKey, ?string $previousKey, int $intervalSeconds): BudgetStateDTO
+    private function incrementAcrossRotation(string $currentKey, ?string $previousKey, int $intervalSeconds): ?BudgetStateDTO
     {
-        $currentState = $this->store->getBudget($currentKey);
+        $currentReadFailed = false;
+        try {
+            $currentState = $this->store->getBudget($currentKey);
+        } catch (\Throwable) {
+            $currentReadFailed = true;
+            $currentState = null;
+        }
+        if ($currentReadFailed) {
+            return null;
+        }
+
         if ($currentState !== null) {
-            return $this->store->incrementBudget($currentKey, $intervalSeconds, 1);
+            return $this->incrementBudget($currentKey, $intervalSeconds);
         }
 
         if ($previousKey !== null) {
-            $previousState = $this->store->getBudget($previousKey);
+            $previousReadFailed = false;
+            try {
+                $previousState = $this->store->getBudget($previousKey);
+            } catch (\Throwable) {
+                $previousReadFailed = true;
+                $previousState = null;
+            }
+            if ($previousReadFailed) {
+                return null;
+            }
+
             if ($previousState !== null) {
                 if (! $this->store instanceof BudgetSeedStoreInterface) {
                     throw new RateLimiterException(
@@ -139,11 +190,28 @@ final class FixedWindowSimpleRateLimiter implements SimpleRateLimiterInterface
                     );
                 }
 
-                return $this->store->incrementBudgetWithSeed($currentKey, $intervalSeconds, $previousState, 1);
+                try {
+                    return $this->store->incrementBudgetWithSeed($currentKey, $intervalSeconds, $previousState, 1);
+                } catch (\Throwable) {
+                    return null;
+                }
             }
         }
 
-        return $this->store->incrementBudget($currentKey, $intervalSeconds, 1);
+        return $this->incrementBudget($currentKey, $intervalSeconds);
+    }
+
+    /**
+     * incrementBudget() never legitimately returns null, so a null result
+     * here unambiguously means the store call itself failed.
+     */
+    private function incrementBudget(string $key, int $intervalSeconds): ?BudgetStateDTO
+    {
+        try {
+            return $this->store->incrementBudget($key, $intervalSeconds, 1);
+        } catch (\Throwable) {
+            return null;
+        }
     }
 
     /**
