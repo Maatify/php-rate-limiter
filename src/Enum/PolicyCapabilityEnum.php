@@ -2,12 +2,12 @@
 
 declare(strict_types=1);
 
-namespace Maatify\RateLimiter\Config;
+namespace Maatify\RateLimiter\Enum;
 
 /**
  * Package-owned reusable runtime capabilities for score-based policies.
  */
-enum PolicyCapability: string
+enum PolicyCapabilityEnum: string
 {
     case CREDENTIAL_SPRAY = 'credential_spray';
     case DISTRIBUTED_ACCOUNT = 'distributed_account';

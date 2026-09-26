@@ -10,6 +10,8 @@ use Maatify\RateLimiter\DTO\FailureFallbackConfigurationDTO;
 use Maatify\RateLimiter\DTO\PolicyThresholdsDTO;
 use Maatify\RateLimiter\DTO\ScoreDeltasDTO;
 use Maatify\RateLimiter\DTO\ScoreThresholdsDTO;
+use Maatify\RateLimiter\Enum\FailureFallbackProfileEnum;
+use Maatify\RateLimiter\Enum\PolicyCapabilityEnum;
 
 /**
  * Default Login failure policy with account-scoped thresholds and a budget.
@@ -24,16 +26,16 @@ class LoginProtectionPolicy implements PostPunishmentReentryPolicyInterface, Pol
 {
     public function getFailureFallbackConfiguration(): FailureFallbackConfigurationDTO
     {
-        return FailureFallbackProfile::AUTHENTICATION_PRIMARY->configuration();
+        return FailureFallbackProfileEnum::AUTHENTICATION_PRIMARY->configuration();
     }
 
-    /** @return list<PolicyCapability> */
+    /** @return list<PolicyCapabilityEnum> */
     public function getCapabilities(): array
     {
         return [
-            PolicyCapability::CREDENTIAL_SPRAY,
-            PolicyCapability::DISTRIBUTED_ACCOUNT,
-            PolicyCapability::TRUSTED_AUTHENTICATION,
+            PolicyCapabilityEnum::CREDENTIAL_SPRAY,
+            PolicyCapabilityEnum::DISTRIBUTED_ACCOUNT,
+            PolicyCapabilityEnum::TRUSTED_AUTHENTICATION,
         ];
     }
 

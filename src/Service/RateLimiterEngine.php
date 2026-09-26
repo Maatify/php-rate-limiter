@@ -5,10 +5,10 @@ declare(strict_types=1);
 namespace Maatify\RateLimiter\Service;
 
 use Maatify\RateLimiter\Config\BlockPolicyInterface;
-use Maatify\RateLimiter\Config\PolicyCapability;
+use Maatify\RateLimiter\Enum\PolicyCapabilityEnum;
 use Maatify\RateLimiter\Config\PolicyCapabilityProviderInterface;
 use Maatify\RateLimiter\Config\FailureFallbackConfigurationProviderInterface;
-use Maatify\RateLimiter\Config\FailureFallbackDimension;
+use Maatify\RateLimiter\Enum\FailureFallbackDimensionEnum;
 use Maatify\RateLimiter\DTO\FailureFallbackConfigurationDTO;
 use Maatify\RateLimiter\Service\DeviceIdentityResolverInterface;
 use Maatify\RateLimiter\Contract\FailureSignalEmitterInterface;
@@ -66,7 +66,7 @@ class RateLimiterEngine implements RateLimiterRuntimeInterface
     private function registerPolicy(BlockPolicyInterface $policy): void
     {
         $capabilities = $this->capabilities($policy);
-        $hasApi = in_array(PolicyCapability::API_OVERUSE, $capabilities, true);
+        $hasApi = in_array(PolicyCapabilityEnum::API_OVERUSE, $capabilities, true);
         $hasAuth = $this->isAuthRelated($policy, $capabilities);
         $configuration = $policy instanceof FailureFallbackConfigurationProviderInterface
             ? $policy->getFailureFallbackConfiguration()
@@ -104,19 +104,19 @@ class RateLimiterEngine implements RateLimiterRuntimeInterface
                 throw new RateLimiterException("Policy {$policy->getName()} invalid: FAIL_OPEN is not allowed; authentication policies must use FAIL_CLOSED.");
             }
             if ($configuration === null
-                || ! $configuration->hasDimension(FailureFallbackDimension::ACCOUNT)
-                || ! $configuration->hasDimension(FailureFallbackDimension::IP_PREFIX)) {
+                || ! $configuration->hasDimension(FailureFallbackDimensionEnum::ACCOUNT)
+                || ! $configuration->hasDimension(FailureFallbackDimensionEnum::IP_PREFIX)) {
                 throw new RateLimiterException("Policy {$policy->getName()} invalid: Authentication policies require a bounded fallback configuration with ACCOUNT and IP_PREFIX dimensions.");
             }
         }
 
         if ($hasApi) {
             if ($configuration === null
-                || ! $configuration->hasDimension(FailureFallbackDimension::IP_PREFIX)
-                || ! $configuration->hasDimension(FailureFallbackDimension::IP_PREFIX_NORMALIZED_USER_AGENT)) {
+                || ! $configuration->hasDimension(FailureFallbackDimensionEnum::IP_PREFIX)
+                || ! $configuration->hasDimension(FailureFallbackDimensionEnum::IP_PREFIX_NORMALIZED_USER_AGENT)) {
                 throw new RateLimiterException("Policy {$policy->getName()} invalid: API_OVERUSE requires a bounded fallback configuration with IP_PREFIX and IP_PREFIX_NORMALIZED_USER_AGENT dimensions.");
             }
-            if ($configuration->hasDimension(FailureFallbackDimension::ACCOUNT)) {
+            if ($configuration->hasDimension(FailureFallbackDimensionEnum::ACCOUNT)) {
                 throw new RateLimiterException("Policy {$policy->getName()} invalid: API_OVERUSE fallback configuration must not include an ACCOUNT dimension; account-level enforcement in degraded API mode is forbidden.");
             }
         }
@@ -164,7 +164,7 @@ class RateLimiterEngine implements RateLimiterRuntimeInterface
             }
         }
 
-        if (in_array(PolicyCapability::DISTRIBUTED_ACCOUNT, $capabilities, true)
+        if (in_array(PolicyCapabilityEnum::DISTRIBUTED_ACCOUNT, $capabilities, true)
             && ($policy->getScoreDeltas()->k4_failure <= 0 || $policy->getScoreThresholds()->k4 === null)) {
             throw new RateLimiterException("Policy {$policy->getName()} invalid: Distributed-account behavior requires a positive K4 failure delta and K4 thresholds.");
         }
@@ -195,7 +195,7 @@ class RateLimiterEngine implements RateLimiterRuntimeInterface
         }
     }
 
-    /** @return list<PolicyCapability> */
+    /** @return list<PolicyCapabilityEnum> */
     private function capabilities(BlockPolicyInterface $policy): array
     {
         if (! $policy instanceof PolicyCapabilityProviderInterface) {
@@ -207,21 +207,21 @@ class RateLimiterEngine implements RateLimiterRuntimeInterface
             // Runtime validation intentionally protects the public boundary
             // even when a deliberately invalid fixture lies to static analysis.
             // @phpstan-ignore-next-line instanceof.alwaysTrue
-            if (! $capability instanceof PolicyCapability) {
-                throw new RateLimiterException("Policy {$policy->getName()} invalid: Capabilities must be PolicyCapability values.");
+            if (! $capability instanceof PolicyCapabilityEnum) {
+                throw new RateLimiterException("Policy {$policy->getName()} invalid: Capabilities must be PolicyCapabilityEnum values.");
             }
         }
 
         return $capabilities;
     }
 
-    /** @param list<PolicyCapability> $capabilities */
+    /** @param list<PolicyCapabilityEnum> $capabilities */
     private function isAuthRelated(BlockPolicyInterface $policy, array $capabilities): bool
     {
         return $policy instanceof PostPunishmentReentryPolicyInterface
-            || in_array(PolicyCapability::CREDENTIAL_SPRAY, $capabilities, true)
-            || in_array(PolicyCapability::DISTRIBUTED_ACCOUNT, $capabilities, true)
-            || in_array(PolicyCapability::TRUSTED_AUTHENTICATION, $capabilities, true);
+            || in_array(PolicyCapabilityEnum::CREDENTIAL_SPRAY, $capabilities, true)
+            || in_array(PolicyCapabilityEnum::DISTRIBUTED_ACCOUNT, $capabilities, true)
+            || in_array(PolicyCapabilityEnum::TRUSTED_AUTHENTICATION, $capabilities, true);
     }
 
     /**

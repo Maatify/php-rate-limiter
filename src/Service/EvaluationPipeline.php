@@ -5,7 +5,7 @@ declare(strict_types=1);
 namespace Maatify\RateLimiter\Service;
 
 use Maatify\RateLimiter\Config\BlockPolicyInterface;
-use Maatify\RateLimiter\Config\PolicyCapability;
+use Maatify\RateLimiter\Enum\PolicyCapabilityEnum;
 use Maatify\RateLimiter\Config\PolicyCapabilityProviderInterface;
 use Maatify\RateLimiter\Config\PostPunishmentReentryPolicyInterface;
 use Maatify\RateLimiter\DTO\BoundedCorrelationObservationDTO;
@@ -2181,17 +2181,17 @@ class EvaluationPipeline
 
     private function isCredentialSprayPolicy(BlockPolicyInterface $policy): bool
     {
-        return $this->hasCapability($policy, PolicyCapability::CREDENTIAL_SPRAY);
+        return $this->hasCapability($policy, PolicyCapabilityEnum::CREDENTIAL_SPRAY);
     }
 
     private function isDistributedAccountPolicy(BlockPolicyInterface $policy): bool
     {
-        return $this->hasCapability($policy, PolicyCapability::DISTRIBUTED_ACCOUNT);
+        return $this->hasCapability($policy, PolicyCapabilityEnum::DISTRIBUTED_ACCOUNT);
     }
 
     private function isTrustedAuthenticationPolicy(BlockPolicyInterface $policy, DeviceIdentityDTO $device): bool
     {
-        return $device->isTrustedSession && $this->hasCapability($policy, PolicyCapability::TRUSTED_AUTHENTICATION);
+        return $device->isTrustedSession && $this->hasCapability($policy, PolicyCapabilityEnum::TRUSTED_AUTHENTICATION);
     }
 
     private function isK1Key(string $keyType): bool
@@ -2201,10 +2201,10 @@ class EvaluationPipeline
 
     private function isApiHeavyPolicy(BlockPolicyInterface $policy): bool
     {
-        return $this->hasCapability($policy, PolicyCapability::API_OVERUSE);
+        return $this->hasCapability($policy, PolicyCapabilityEnum::API_OVERUSE);
     }
 
-    private function hasCapability(BlockPolicyInterface $policy, PolicyCapability $capability): bool
+    private function hasCapability(BlockPolicyInterface $policy, PolicyCapabilityEnum $capability): bool
     {
         return $policy instanceof PolicyCapabilityProviderInterface
             && in_array($capability, $policy->getCapabilities(), true);

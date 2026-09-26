@@ -4,7 +4,7 @@ declare(strict_types=1);
 
 namespace Maatify\RateLimiter\DTO;
 
-use Maatify\RateLimiter\Config\FailureFallbackDimension;
+use Maatify\RateLimiter\Enum\FailureFallbackDimensionEnum;
 
 /**
  * One bounded backend-failure fallback rule for a single dimension.
@@ -12,12 +12,12 @@ use Maatify\RateLimiter\Config\FailureFallbackDimension;
 final readonly class FailureFallbackRuleDTO implements \JsonSerializable
 {
     /**
-     * @param FailureFallbackDimension $dimension Scope this rule bounds.
+     * @param FailureFallbackDimensionEnum $dimension Scope this rule bounds.
      * @param int $limit Maximum allowed count within the window.
      * @param int $windowSeconds Fixed window duration in seconds.
      */
     public function __construct(
-        public FailureFallbackDimension $dimension,
+        public FailureFallbackDimensionEnum $dimension,
         public int $limit,
         public int $windowSeconds,
     ) {}

@@ -10,6 +10,8 @@ use Maatify\RateLimiter\DTO\FailureFallbackConfigurationDTO;
 use Maatify\RateLimiter\DTO\PolicyThresholdsDTO;
 use Maatify\RateLimiter\DTO\ScoreDeltasDTO;
 use Maatify\RateLimiter\DTO\ScoreThresholdsDTO;
+use Maatify\RateLimiter\Enum\FailureFallbackProfileEnum;
+use Maatify\RateLimiter\Enum\PolicyCapabilityEnum;
 
 /**
  * Policy for high-volume API traffic using IP and IP/user-agent scopes.
@@ -21,13 +23,13 @@ class ApiHeavyProtectionPolicy implements BlockPolicyInterface, PolicyCapability
 {
     public function getFailureFallbackConfiguration(): FailureFallbackConfigurationDTO
     {
-        return FailureFallbackProfile::API_OVERUSE->configuration();
+        return FailureFallbackProfileEnum::API_OVERUSE->configuration();
     }
 
-    /** @return list<PolicyCapability> */
+    /** @return list<PolicyCapabilityEnum> */
     public function getCapabilities(): array
     {
-        return [PolicyCapability::API_OVERUSE];
+        return [PolicyCapabilityEnum::API_OVERUSE];
     }
 
     private const DISABLED_THRESHOLD = PHP_INT_MAX;

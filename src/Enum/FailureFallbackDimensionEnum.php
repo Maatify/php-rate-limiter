@@ -2,12 +2,12 @@
 
 declare(strict_types=1);
 
-namespace Maatify\RateLimiter\Config;
+namespace Maatify\RateLimiter\Enum;
 
 /**
  * Package-owned finite scopes a bounded failure-fallback rule may enforce.
  */
-enum FailureFallbackDimension: string
+enum FailureFallbackDimensionEnum: string
 {
     case ACCOUNT = 'account';
     case IP_PREFIX = 'ip_prefix';

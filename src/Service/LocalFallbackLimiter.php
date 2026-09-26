@@ -7,7 +7,7 @@ namespace Maatify\RateLimiter\Service;
 use Maatify\RateLimiter\Config\ApiHeavyProtectionPolicy;
 use Maatify\RateLimiter\Config\BlockPolicyInterface;
 use Maatify\RateLimiter\Config\FailureFallbackConfigurationProviderInterface;
-use Maatify\RateLimiter\Config\FailureFallbackDimension;
+use Maatify\RateLimiter\Enum\FailureFallbackDimensionEnum;
 use Maatify\RateLimiter\Config\LoginProtectionPolicy;
 use Maatify\RateLimiter\Config\OtpProtectionPolicy;
 use Maatify\RateLimiter\DTO\FailureFallbackConfigurationDTO;
@@ -62,11 +62,11 @@ class LocalFallbackLimiter
         $allowed = true;
         foreach ($configuration->rules as $rule) {
             $key = match ($rule->dimension) {
-                FailureFallbackDimension::ACCOUNT => $accountId !== null && $accountId !== ''
+                FailureFallbackDimensionEnum::ACCOUNT => $accountId !== null && $accountId !== ''
                     ? "{$namespace}:account:{$accountId}"
                     : null,
-                FailureFallbackDimension::IP_PREFIX => "{$namespace}:ip_prefix:{$normalizedIp}",
-                FailureFallbackDimension::IP_PREFIX_NORMALIZED_USER_AGENT => "{$namespace}:ip_prefix_ua:" . md5("{$normalizedIp}:{$normalizedUa}"),
+                FailureFallbackDimensionEnum::IP_PREFIX => "{$namespace}:ip_prefix:{$normalizedIp}",
+                FailureFallbackDimensionEnum::IP_PREFIX_NORMALIZED_USER_AGENT => "{$namespace}:ip_prefix_ua:" . md5("{$normalizedIp}:{$normalizedUa}"),
             };
 
             if ($key === null) {

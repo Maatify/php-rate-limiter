@@ -11,10 +11,10 @@ It specifies when the system must fail closed, fail open, or enter a strictly bo
 Failure semantics are **security-critical** and MUST NOT be altered implicitly.
 
 Typed bounded backend-failure fallback is governed by DEC-011. It is separate
-from normal-runtime `PolicyCapability` classification and is declared through
+from normal-runtime `PolicyCapabilityEnum` classification and is declared through
 the public `FailureFallbackConfigurationProviderInterface` contract, which
 returns a generic `FailureFallbackConfigurationDTO` made of typed
-`FailureFallbackRuleDTO` rules (`FailureFallbackDimension::ACCOUNT`,
+`FailureFallbackRuleDTO` rules (`FailureFallbackDimensionEnum::ACCOUNT`,
 `IP_PREFIX`, or `IP_PREFIX_NORMALIZED_USER_AGENT`, each with a positive limit
 and window). Official presets and direct custom policies share this exact
 same runtime contract and the exact same validated `LocalFallbackLimiter`

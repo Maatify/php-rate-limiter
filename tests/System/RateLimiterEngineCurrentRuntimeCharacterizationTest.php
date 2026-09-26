@@ -23,9 +23,9 @@ use Maatify\RateLimiter\Service\DecayCalculator;
 use Maatify\RateLimiter\Config\ApiHeavyProtectionPolicy;
 use Maatify\RateLimiter\Config\LoginProtectionPolicy;
 use Maatify\RateLimiter\Config\OtpProtectionPolicy;
-use Maatify\RateLimiter\Config\PolicyCapability;
+use Maatify\RateLimiter\Enum\PolicyCapabilityEnum;
 use Maatify\RateLimiter\Config\FailureFallbackConfigurationProviderInterface;
-use Maatify\RateLimiter\Config\FailureFallbackDimension;
+use Maatify\RateLimiter\Enum\FailureFallbackDimensionEnum;
 use Maatify\RateLimiter\DTO\FailureFallbackConfigurationDTO;
 use Maatify\RateLimiter\DTO\FailureFallbackRuleDTO;
 use Maatify\RateLimiter\Config\PolicyCapabilityProviderInterface;
@@ -704,7 +704,7 @@ final class RateLimiterEngineCurrentRuntimeCharacterizationTest extends TestCase
             }
             public function getCapabilities(): array
             {
-                return [PolicyCapability::CREDENTIAL_SPRAY];
+                return [PolicyCapabilityEnum::CREDENTIAL_SPRAY];
             }
         };
         $credentialEngine = $this->createEngine($credentialPolicy);
@@ -723,7 +723,7 @@ final class RateLimiterEngineCurrentRuntimeCharacterizationTest extends TestCase
             }
             public function getCapabilities(): array
             {
-                return [PolicyCapability::DISTRIBUTED_ACCOUNT];
+                return [PolicyCapabilityEnum::DISTRIBUTED_ACCOUNT];
             }
         };
         $distributedEngine = $this->createEngine($distributedPolicy);
@@ -742,7 +742,7 @@ final class RateLimiterEngineCurrentRuntimeCharacterizationTest extends TestCase
             }
             public function getCapabilities(): array
             {
-                return [PolicyCapability::TRUSTED_AUTHENTICATION];
+                return [PolicyCapabilityEnum::TRUSTED_AUTHENTICATION];
             }
             public function getScoreThresholds(): PolicyThresholdsDTO
             {
@@ -828,16 +828,16 @@ final class RateLimiterEngineCurrentRuntimeCharacterizationTest extends TestCase
             {
                 return 'direct_custom_authentication';
             }
-            /** @return list<PolicyCapability> */
+            /** @return list<PolicyCapabilityEnum> */
             public function getCapabilities(): array
             {
-                return [PolicyCapability::CREDENTIAL_SPRAY, PolicyCapability::DISTRIBUTED_ACCOUNT, PolicyCapability::TRUSTED_AUTHENTICATION];
+                return [PolicyCapabilityEnum::CREDENTIAL_SPRAY, PolicyCapabilityEnum::DISTRIBUTED_ACCOUNT, PolicyCapabilityEnum::TRUSTED_AUTHENTICATION];
             }
             public function getFailureFallbackConfiguration(): FailureFallbackConfigurationDTO
             {
                 return new FailureFallbackConfigurationDTO([
-                    new FailureFallbackRuleDTO(FailureFallbackDimension::ACCOUNT, 3, 600),
-                    new FailureFallbackRuleDTO(FailureFallbackDimension::IP_PREFIX, 20, 600),
+                    new FailureFallbackRuleDTO(FailureFallbackDimensionEnum::ACCOUNT, 3, 600),
+                    new FailureFallbackRuleDTO(FailureFallbackDimensionEnum::IP_PREFIX, 20, 600),
                 ]);
             }
             public function getScoreThresholds(): PolicyThresholdsDTO
@@ -872,16 +872,16 @@ final class RateLimiterEngineCurrentRuntimeCharacterizationTest extends TestCase
             {
                 return 'direct_custom_api';
             }
-            /** @return list<PolicyCapability> */
+            /** @return list<PolicyCapabilityEnum> */
             public function getCapabilities(): array
             {
-                return [PolicyCapability::API_OVERUSE];
+                return [PolicyCapabilityEnum::API_OVERUSE];
             }
             public function getFailureFallbackConfiguration(): FailureFallbackConfigurationDTO
             {
                 return new FailureFallbackConfigurationDTO([
-                    new FailureFallbackRuleDTO(FailureFallbackDimension::IP_PREFIX, 120, 60),
-                    new FailureFallbackRuleDTO(FailureFallbackDimension::IP_PREFIX_NORMALIZED_USER_AGENT, 60, 60),
+                    new FailureFallbackRuleDTO(FailureFallbackDimensionEnum::IP_PREFIX, 120, 60),
+                    new FailureFallbackRuleDTO(FailureFallbackDimensionEnum::IP_PREFIX_NORMALIZED_USER_AGENT, 60, 60),
                 ]);
             }
             public function getScoreThresholds(): PolicyThresholdsDTO

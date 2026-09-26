@@ -4,7 +4,7 @@ declare(strict_types=1);
 
 namespace Maatify\RateLimiter\DTO;
 
-use Maatify\RateLimiter\Config\FailureFallbackDimension;
+use Maatify\RateLimiter\Enum\FailureFallbackDimensionEnum;
 
 /**
  * The effective bounded backend-failure fallback configuration for a policy.
@@ -30,7 +30,7 @@ final readonly class FailureFallbackConfigurationDTO implements \JsonSerializabl
     /**
      * Return the rule declared for the given dimension, or null when absent.
      */
-    public function ruleFor(FailureFallbackDimension $dimension): ?FailureFallbackRuleDTO
+    public function ruleFor(FailureFallbackDimensionEnum $dimension): ?FailureFallbackRuleDTO
     {
         foreach ($this->rules as $rule) {
             if ($rule->dimension === $dimension) {
@@ -44,7 +44,7 @@ final readonly class FailureFallbackConfigurationDTO implements \JsonSerializabl
     /**
      * Return whether a rule is declared for the given dimension.
      */
-    public function hasDimension(FailureFallbackDimension $dimension): bool
+    public function hasDimension(FailureFallbackDimensionEnum $dimension): bool
     {
         return $this->ruleFor($dimension) !== null;
     }

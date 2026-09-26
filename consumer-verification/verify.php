@@ -11,8 +11,8 @@ use Maatify\RateLimiter\Command\RateLimitCommand;
 use Maatify\RateLimiter\Config\RateLimiterConfig;
 use Maatify\RateLimiter\Config\BlockPolicyInterface;
 use Maatify\RateLimiter\Config\FailureFallbackConfigurationProviderInterface;
-use Maatify\RateLimiter\Config\FailureFallbackDimension;
-use Maatify\RateLimiter\Config\PolicyCapability;
+use Maatify\RateLimiter\Enum\FailureFallbackDimensionEnum;
+use Maatify\RateLimiter\Enum\PolicyCapabilityEnum;
 use Maatify\RateLimiter\Config\PolicyCapabilityProviderInterface;
 use Maatify\RateLimiter\DTO\RateLimitContextDTO;
 use Maatify\RateLimiter\DTO\RateLimitResultDTO;
@@ -446,13 +446,13 @@ $customSemanticAuthPolicy = new class implements BlockPolicyInterface, PolicyCap
         return 'consumer_custom_auth_semantics';
     }
 
-    /** @return list<PolicyCapability> */
+    /** @return list<PolicyCapabilityEnum> */
     public function getCapabilities(): array
     {
         return [
-            PolicyCapability::CREDENTIAL_SPRAY,
-            PolicyCapability::DISTRIBUTED_ACCOUNT,
-            PolicyCapability::TRUSTED_AUTHENTICATION,
+            PolicyCapabilityEnum::CREDENTIAL_SPRAY,
+            PolicyCapabilityEnum::DISTRIBUTED_ACCOUNT,
+            PolicyCapabilityEnum::TRUSTED_AUTHENTICATION,
         ];
     }
 
@@ -461,8 +461,8 @@ $customSemanticAuthPolicy = new class implements BlockPolicyInterface, PolicyCap
     public function getFailureFallbackConfiguration(): FailureFallbackConfigurationDTO
     {
         return new FailureFallbackConfigurationDTO([
-            new FailureFallbackRuleDTO(FailureFallbackDimension::ACCOUNT, 5, 300),
-            new FailureFallbackRuleDTO(FailureFallbackDimension::IP_PREFIX, 30, 300),
+            new FailureFallbackRuleDTO(FailureFallbackDimensionEnum::ACCOUNT, 5, 300),
+            new FailureFallbackRuleDTO(FailureFallbackDimensionEnum::IP_PREFIX, 30, 300),
         ]);
     }
 
@@ -518,10 +518,10 @@ $customApiPolicy = new class implements BlockPolicyInterface, PolicyCapabilityPr
         return 'consumer_custom_api_overuse';
     }
 
-    /** @return list<PolicyCapability> */
+    /** @return list<PolicyCapabilityEnum> */
     public function getCapabilities(): array
     {
-        return [PolicyCapability::API_OVERUSE];
+        return [PolicyCapabilityEnum::API_OVERUSE];
     }
 
     // Deliberately different from the official API_OVERUSE preset (120/60,
@@ -529,8 +529,8 @@ $customApiPolicy = new class implements BlockPolicyInterface, PolicyCapabilityPr
     public function getFailureFallbackConfiguration(): FailureFallbackConfigurationDTO
     {
         return new FailureFallbackConfigurationDTO([
-            new FailureFallbackRuleDTO(FailureFallbackDimension::IP_PREFIX, 200, 30),
-            new FailureFallbackRuleDTO(FailureFallbackDimension::IP_PREFIX_NORMALIZED_USER_AGENT, 80, 30),
+            new FailureFallbackRuleDTO(FailureFallbackDimensionEnum::IP_PREFIX, 200, 30),
+            new FailureFallbackRuleDTO(FailureFallbackDimensionEnum::IP_PREFIX_NORMALIZED_USER_AGENT, 80, 30),
         ]);
     }
 

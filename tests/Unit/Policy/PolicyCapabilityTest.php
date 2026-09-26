@@ -7,7 +7,7 @@ namespace Maatify\RateLimiter\Tests\Unit\Policy;
 use Maatify\RateLimiter\Config\ApiHeavyProtectionPolicy;
 use Maatify\RateLimiter\Config\LoginProtectionPolicy;
 use Maatify\RateLimiter\Config\OtpProtectionPolicy;
-use Maatify\RateLimiter\Config\PolicyCapability;
+use Maatify\RateLimiter\Enum\PolicyCapabilityEnum;
 use Maatify\RateLimiter\Builder\RateLimiterBuilder;
 use Maatify\RateLimiter\Config\RateLimiterConfig;
 use Maatify\RateLimiter\Exception\RateLimiterException;
@@ -23,14 +23,14 @@ final class PolicyCapabilityTest extends TestCase
     public function testOfficialPresetsDeclareTheLockedCapabilitySets(): void
     {
         self::assertSame(
-            [PolicyCapability::CREDENTIAL_SPRAY, PolicyCapability::DISTRIBUTED_ACCOUNT, PolicyCapability::TRUSTED_AUTHENTICATION],
+            [PolicyCapabilityEnum::CREDENTIAL_SPRAY, PolicyCapabilityEnum::DISTRIBUTED_ACCOUNT, PolicyCapabilityEnum::TRUSTED_AUTHENTICATION],
             (new LoginProtectionPolicy())->getCapabilities(),
         );
         self::assertSame(
-            [PolicyCapability::CREDENTIAL_SPRAY, PolicyCapability::DISTRIBUTED_ACCOUNT, PolicyCapability::TRUSTED_AUTHENTICATION],
+            [PolicyCapabilityEnum::CREDENTIAL_SPRAY, PolicyCapabilityEnum::DISTRIBUTED_ACCOUNT, PolicyCapabilityEnum::TRUSTED_AUTHENTICATION],
             (new OtpProtectionPolicy())->getCapabilities(),
         );
-        self::assertSame([PolicyCapability::API_OVERUSE], (new ApiHeavyProtectionPolicy())->getCapabilities());
+        self::assertSame([PolicyCapabilityEnum::API_OVERUSE], (new ApiHeavyProtectionPolicy())->getCapabilities());
     }
 
     public function testCapabilitiesTravelWithADifferentlyNamedCustomPolicy(): void
@@ -48,10 +48,10 @@ final class PolicyCapabilityTest extends TestCase
             }
         };
 
-        self::assertContains(PolicyCapability::CREDENTIAL_SPRAY, $auth->getCapabilities());
-        self::assertContains(PolicyCapability::DISTRIBUTED_ACCOUNT, $auth->getCapabilities());
-        self::assertContains(PolicyCapability::TRUSTED_AUTHENTICATION, $auth->getCapabilities());
-        self::assertSame([PolicyCapability::API_OVERUSE], $api->getCapabilities());
+        self::assertContains(PolicyCapabilityEnum::CREDENTIAL_SPRAY, $auth->getCapabilities());
+        self::assertContains(PolicyCapabilityEnum::DISTRIBUTED_ACCOUNT, $auth->getCapabilities());
+        self::assertContains(PolicyCapabilityEnum::TRUSTED_AUTHENTICATION, $auth->getCapabilities());
+        self::assertSame([PolicyCapabilityEnum::API_OVERUSE], $api->getCapabilities());
     }
 
     public function testInvalidCapabilityValueIsRejectedAtRegistration(): void
@@ -90,7 +90,7 @@ final class PolicyCapabilityTest extends TestCase
         };
 
         $this->expectException(RateLimiterException::class);
-        $this->expectExceptionMessage('Capabilities must be PolicyCapability values');
+        $this->expectExceptionMessage('Capabilities must be PolicyCapabilityEnum values');
         $this->builder()->withPolicy($invalid)->build();
     }
 

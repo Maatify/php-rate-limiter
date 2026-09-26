@@ -32,7 +32,7 @@ the decision below without introducing a new DEC and without changing DEC-008.
 ## Decision (amended)
 
 Backend-failure fallback remains a separate typed concern from normal-runtime
-`PolicyCapability` classification. The runtime contract is now a **generic
+`PolicyCapabilityEnum` classification. The runtime contract is now a **generic
 typed configuration**, not a closed set of named profiles:
 
 ```text
@@ -40,7 +40,7 @@ FailureFallbackConfigurationProviderInterface
     -> FailureFallbackConfigurationDTO { rules: list<FailureFallbackRuleDTO> }
 
 FailureFallbackRuleDTO
-    -> dimension: FailureFallbackDimension (ACCOUNT | IP_PREFIX | IP_PREFIX_NORMALIZED_USER_AGENT)
+    -> dimension: FailureFallbackDimensionEnum (ACCOUNT | IP_PREFIX | IP_PREFIX_NORMALIZED_USER_AGENT)
     -> limit: positive int
     -> windowSeconds: positive int
 ```
@@ -51,7 +51,7 @@ effective configuration carries; it has no knowledge of policy names, preset
 identities, or capability names, and it holds no separate hard-coded copies
 of the official numeric values.
 
-**Package-owned zero-configuration presets.** `FailureFallbackProfile` is
+**Package-owned zero-configuration presets.** `FailureFallbackProfileEnum` is
 retained as an internal factory enum with a `configuration(): FailureFallbackConfigurationDTO`
 method. It is the single canonical source of the locked official values:
 
@@ -67,7 +67,7 @@ respectively from this single factory and return the resulting generic
 configuration from their own `getFailureFallbackConfiguration()`. A Host
 using `new LoginProtectionPolicy()`, `new OtpProtectionPolicy()`, or
 `new ApiHeavyProtectionPolicy()` performs no additional wiring and observes
-unchanged fallback behavior. `FailureFallbackProfile` is not part of the
+unchanged fallback behavior. `FailureFallbackProfileEnum` is not part of the
 public provider contract: a direct custom policy never references it and
 cannot use it to "borrow" an official identity.
 
@@ -101,10 +101,10 @@ or a direct custom policy:
 
 - every rule's `limit` and `windowSeconds` must be positive;
 - a configuration must not declare the same dimension twice;
-- a policy declaring `PolicyCapability::CREDENTIAL_SPRAY`, `DISTRIBUTED_ACCOUNT`,
+- a policy declaring `PolicyCapabilityEnum::CREDENTIAL_SPRAY`, `DISTRIBUTED_ACCOUNT`,
   or `TRUSTED_AUTHENTICATION` (or opting into DEC-007 lifecycle) must provide
   a configuration with both `ACCOUNT` and `IP_PREFIX` dimensions;
-- a policy declaring `PolicyCapability::API_OVERUSE` must provide a
+- a policy declaring `PolicyCapabilityEnum::API_OVERUSE` must provide a
   configuration with both `IP_PREFIX` and `IP_PREFIX_NORMALIZED_USER_AGENT`
   dimensions, and must not declare an `ACCOUNT` dimension (account-level
   enforcement in degraded API mode remains forbidden per
@@ -140,7 +140,7 @@ path for the effective configuration; there is no `OfficialFallbackLimiter`/
 `CustomFallbackLimiter` fork and no preset-only runtime restriction.
 
 **Preset values remain package-owned defaults.** The three official caps in
-the table above are locked constants inside `FailureFallbackProfile` and are
+the table above are locked constants inside `FailureFallbackProfileEnum` and are
 not parameters a Host can override on the official policies.
 
 **Custom values are host/policy-owned but package-validated.** A direct
@@ -161,7 +161,7 @@ unsafe or malformed configuration before registration succeeds.
   configuration content never determines namespace membership.
 - `LocalFallbackLimiter` holds no duplicate hard-coded copies of the official
   Login/OTP/API numeric values; those values exist exactly once, inside
-  `FailureFallbackProfile`.
+  `FailureFallbackProfileEnum`.
 
 ## Decision Authority
 

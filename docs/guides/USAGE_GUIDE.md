@@ -237,7 +237,7 @@ The builder registers `login_protection`, `otp_protection`, and `api_heavy_prote
 
 Reusable behavior is selected by typed capability opt-in, not by policy name. A
 custom policy can implement `PolicyCapabilityProviderInterface` and return
-`PolicyCapability` enum cases for credential spray, distributed-account
+`PolicyCapabilityEnum` enum cases for credential spray, distributed-account
 correlation, trusted-authentication advisory behavior, or API overuse. A custom
 policy that does not opt in receives base behavior only. `PostPunishmentReentryPolicyInterface`
 is a separate DEC-007 lifecycle capability; it requires K4, monotonic positive
@@ -255,7 +255,7 @@ argument, builder call, or Host wiring is required to get this behavior.
 **Advanced:** a direct custom reusable policy may implement
 `FailureFallbackConfigurationProviderInterface` itself and return its own
 `FailureFallbackConfigurationDTO` — a list of `FailureFallbackRuleDTO` values,
-each pairing a `FailureFallbackDimension` (`ACCOUNT`, `IP_PREFIX`, or
+each pairing a `FailureFallbackDimensionEnum` (`ACCOUNT`, `IP_PREFIX`, or
 `IP_PREFIX_NORMALIZED_USER_AGENT`) with a positive limit and window in
 seconds. The values are entirely the policy's own and independent of every
 official preset; the package validates them with the same rules (positive,

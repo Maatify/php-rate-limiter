@@ -24,7 +24,7 @@ same-name replacement. They do not grant reusable security behavior.
 
 Custom policies may implement the additive typed
 `PolicyCapabilityProviderInterface` and return package-owned
-`PolicyCapability` values: `CREDENTIAL_SPRAY`, `DISTRIBUTED_ACCOUNT`,
+`PolicyCapabilityEnum` values: `CREDENTIAL_SPRAY`, `DISTRIBUTED_ACCOUNT`,
 `TRUSTED_AUTHENTICATION`, and `API_OVERUSE`. A policy without that provider
 receives only its base score-policy behavior.
 

@@ -7,8 +7,8 @@ namespace Maatify\RateLimiter\Tests\Unit\Policy;
 use Maatify\RateLimiter\Builder\RateLimiterBuilder;
 use Maatify\RateLimiter\Config\BlockPolicyInterface;
 use Maatify\RateLimiter\Config\FailureFallbackConfigurationProviderInterface;
-use Maatify\RateLimiter\Config\FailureFallbackDimension;
-use Maatify\RateLimiter\Config\PolicyCapability;
+use Maatify\RateLimiter\Enum\FailureFallbackDimensionEnum;
+use Maatify\RateLimiter\Enum\PolicyCapabilityEnum;
 use Maatify\RateLimiter\Config\PolicyCapabilityProviderInterface;
 use Maatify\RateLimiter\Config\RateLimiterConfig;
 use Maatify\RateLimiter\DTO\BudgetConfigDTO;
@@ -44,19 +44,19 @@ final class PolicyCapabilityValidationTest extends TestCase
     public static function invalidPolicyProvider(): iterable
     {
         $auth = [
-            PolicyCapability::CREDENTIAL_SPRAY,
-            PolicyCapability::DISTRIBUTED_ACCOUNT,
-            PolicyCapability::TRUSTED_AUTHENTICATION,
+            PolicyCapabilityEnum::CREDENTIAL_SPRAY,
+            PolicyCapabilityEnum::DISTRIBUTED_ACCOUNT,
+            PolicyCapabilityEnum::TRUSTED_AUTHENTICATION,
         ];
-        $api = [PolicyCapability::API_OVERUSE];
+        $api = [PolicyCapabilityEnum::API_OVERUSE];
 
         $authConfig = new FailureFallbackConfigurationDTO([
-            new FailureFallbackRuleDTO(FailureFallbackDimension::ACCOUNT, 3, 600),
-            new FailureFallbackRuleDTO(FailureFallbackDimension::IP_PREFIX, 20, 600),
+            new FailureFallbackRuleDTO(FailureFallbackDimensionEnum::ACCOUNT, 3, 600),
+            new FailureFallbackRuleDTO(FailureFallbackDimensionEnum::IP_PREFIX, 20, 600),
         ]);
         $apiConfig = new FailureFallbackConfigurationDTO([
-            new FailureFallbackRuleDTO(FailureFallbackDimension::IP_PREFIX, 120, 60),
-            new FailureFallbackRuleDTO(FailureFallbackDimension::IP_PREFIX_NORMALIZED_USER_AGENT, 60, 60),
+            new FailureFallbackRuleDTO(FailureFallbackDimensionEnum::IP_PREFIX, 120, 60),
+            new FailureFallbackRuleDTO(FailureFallbackDimensionEnum::IP_PREFIX_NORMALIZED_USER_AGENT, 60, 60),
         ]);
 
         yield 'auth without budget' => [
@@ -78,18 +78,18 @@ final class PolicyCapabilityValidationTest extends TestCase
         yield 'auth fallback configuration missing account' => [
             'Authentication policies require a bounded fallback configuration with ACCOUNT and IP_PREFIX dimensions',
             new ValidationPolicy('invalid-auth-missing-account', $auth, new FailureFallbackConfigurationDTO([
-                new FailureFallbackRuleDTO(FailureFallbackDimension::IP_PREFIX, 20, 600),
+                new FailureFallbackRuleDTO(FailureFallbackDimensionEnum::IP_PREFIX, 20, 600),
             ])),
         ];
         yield 'auth fallback configuration missing ip prefix' => [
             'Authentication policies require a bounded fallback configuration with ACCOUNT and IP_PREFIX dimensions',
             new ValidationPolicy('invalid-auth-missing-ip', $auth, new FailureFallbackConfigurationDTO([
-                new FailureFallbackRuleDTO(FailureFallbackDimension::ACCOUNT, 3, 600),
+                new FailureFallbackRuleDTO(FailureFallbackDimensionEnum::ACCOUNT, 3, 600),
             ])),
         ];
         yield 'auth and api combined' => [
             'Authentication and API_OVERUSE capabilities cannot be combined',
-            new ValidationPolicy('invalid-auth-api', [...$auth, PolicyCapability::API_OVERUSE], $apiConfig),
+            new ValidationPolicy('invalid-auth-api', [...$auth, PolicyCapabilityEnum::API_OVERUSE], $apiConfig),
         ];
         yield 'api without fallback configuration' => [
             'API_OVERUSE requires a bounded fallback configuration with IP_PREFIX and IP_PREFIX_NORMALIZED_USER_AGENT dimensions',
@@ -98,21 +98,21 @@ final class PolicyCapabilityValidationTest extends TestCase
         yield 'api fallback configuration missing ip prefix' => [
             'API_OVERUSE requires a bounded fallback configuration with IP_PREFIX and IP_PREFIX_NORMALIZED_USER_AGENT dimensions',
             new ValidationPolicy('invalid-api-missing-ip', $api, new FailureFallbackConfigurationDTO([
-                new FailureFallbackRuleDTO(FailureFallbackDimension::IP_PREFIX_NORMALIZED_USER_AGENT, 60, 60),
+                new FailureFallbackRuleDTO(FailureFallbackDimensionEnum::IP_PREFIX_NORMALIZED_USER_AGENT, 60, 60),
             ]), mode: 'FAIL_OPEN'),
         ];
         yield 'api fallback configuration missing ip prefix ua' => [
             'API_OVERUSE requires a bounded fallback configuration with IP_PREFIX and IP_PREFIX_NORMALIZED_USER_AGENT dimensions',
             new ValidationPolicy('invalid-api-missing-ua', $api, new FailureFallbackConfigurationDTO([
-                new FailureFallbackRuleDTO(FailureFallbackDimension::IP_PREFIX, 120, 60),
+                new FailureFallbackRuleDTO(FailureFallbackDimensionEnum::IP_PREFIX, 120, 60),
             ]), mode: 'FAIL_OPEN'),
         ];
         yield 'api fallback configuration includes account (incompatible capability/configuration)' => [
             'API_OVERUSE fallback configuration must not include an ACCOUNT dimension',
             new ValidationPolicy('invalid-api-account-dimension', $api, new FailureFallbackConfigurationDTO([
-                new FailureFallbackRuleDTO(FailureFallbackDimension::IP_PREFIX, 120, 60),
-                new FailureFallbackRuleDTO(FailureFallbackDimension::IP_PREFIX_NORMALIZED_USER_AGENT, 60, 60),
-                new FailureFallbackRuleDTO(FailureFallbackDimension::ACCOUNT, 3, 600),
+                new FailureFallbackRuleDTO(FailureFallbackDimensionEnum::IP_PREFIX, 120, 60),
+                new FailureFallbackRuleDTO(FailureFallbackDimensionEnum::IP_PREFIX_NORMALIZED_USER_AGENT, 60, 60),
+                new FailureFallbackRuleDTO(FailureFallbackDimensionEnum::ACCOUNT, 3, 600),
             ]), mode: 'FAIL_OPEN'),
         ];
         yield 'fail open without api' => [
@@ -122,37 +122,37 @@ final class PolicyCapabilityValidationTest extends TestCase
         yield 'fallback configuration zero limit' => [
             'Fallback configuration ip_prefix limit must be positive',
             new ValidationPolicy('invalid-fallback-zero-limit', $api, new FailureFallbackConfigurationDTO([
-                new FailureFallbackRuleDTO(FailureFallbackDimension::IP_PREFIX, 0, 60),
-                new FailureFallbackRuleDTO(FailureFallbackDimension::IP_PREFIX_NORMALIZED_USER_AGENT, 60, 60),
+                new FailureFallbackRuleDTO(FailureFallbackDimensionEnum::IP_PREFIX, 0, 60),
+                new FailureFallbackRuleDTO(FailureFallbackDimensionEnum::IP_PREFIX_NORMALIZED_USER_AGENT, 60, 60),
             ]), mode: 'FAIL_OPEN'),
         ];
         yield 'fallback configuration negative limit' => [
             'Fallback configuration ip_prefix limit must be positive',
             new ValidationPolicy('invalid-fallback-negative-limit', $api, new FailureFallbackConfigurationDTO([
-                new FailureFallbackRuleDTO(FailureFallbackDimension::IP_PREFIX, -1, 60),
-                new FailureFallbackRuleDTO(FailureFallbackDimension::IP_PREFIX_NORMALIZED_USER_AGENT, 60, 60),
+                new FailureFallbackRuleDTO(FailureFallbackDimensionEnum::IP_PREFIX, -1, 60),
+                new FailureFallbackRuleDTO(FailureFallbackDimensionEnum::IP_PREFIX_NORMALIZED_USER_AGENT, 60, 60),
             ]), mode: 'FAIL_OPEN'),
         ];
         yield 'fallback configuration zero window' => [
             'Fallback configuration ip_prefix window must be positive',
             new ValidationPolicy('invalid-fallback-zero-window', $api, new FailureFallbackConfigurationDTO([
-                new FailureFallbackRuleDTO(FailureFallbackDimension::IP_PREFIX, 120, 0),
-                new FailureFallbackRuleDTO(FailureFallbackDimension::IP_PREFIX_NORMALIZED_USER_AGENT, 60, 60),
+                new FailureFallbackRuleDTO(FailureFallbackDimensionEnum::IP_PREFIX, 120, 0),
+                new FailureFallbackRuleDTO(FailureFallbackDimensionEnum::IP_PREFIX_NORMALIZED_USER_AGENT, 60, 60),
             ]), mode: 'FAIL_OPEN'),
         ];
         yield 'fallback configuration negative window' => [
             'Fallback configuration ip_prefix window must be positive',
             new ValidationPolicy('invalid-fallback-negative-window', $api, new FailureFallbackConfigurationDTO([
-                new FailureFallbackRuleDTO(FailureFallbackDimension::IP_PREFIX, 120, -60),
-                new FailureFallbackRuleDTO(FailureFallbackDimension::IP_PREFIX_NORMALIZED_USER_AGENT, 60, 60),
+                new FailureFallbackRuleDTO(FailureFallbackDimensionEnum::IP_PREFIX, 120, -60),
+                new FailureFallbackRuleDTO(FailureFallbackDimensionEnum::IP_PREFIX_NORMALIZED_USER_AGENT, 60, 60),
             ]), mode: 'FAIL_OPEN'),
         ];
         yield 'fallback configuration duplicate dimension' => [
             'Fallback configuration declares a duplicate ip_prefix dimension',
             new ValidationPolicy('invalid-fallback-duplicate', $api, new FailureFallbackConfigurationDTO([
-                new FailureFallbackRuleDTO(FailureFallbackDimension::IP_PREFIX, 120, 60),
-                new FailureFallbackRuleDTO(FailureFallbackDimension::IP_PREFIX, 200, 60),
-                new FailureFallbackRuleDTO(FailureFallbackDimension::IP_PREFIX_NORMALIZED_USER_AGENT, 60, 60),
+                new FailureFallbackRuleDTO(FailureFallbackDimensionEnum::IP_PREFIX, 120, 60),
+                new FailureFallbackRuleDTO(FailureFallbackDimensionEnum::IP_PREFIX, 200, 60),
+                new FailureFallbackRuleDTO(FailureFallbackDimensionEnum::IP_PREFIX_NORMALIZED_USER_AGENT, 60, 60),
             ]), mode: 'FAIL_OPEN'),
         ];
         yield 'api zero threshold' => [
@@ -193,7 +193,7 @@ final class PolicyCapabilityValidationTest extends TestCase
 
 final class ValidationPolicy implements BlockPolicyInterface, PolicyCapabilityProviderInterface, FailureFallbackConfigurationProviderInterface
 {
-    /** @param list<PolicyCapability> $capabilities */
+    /** @param list<PolicyCapabilityEnum> $capabilities */
     public function __construct(
         private string $name,
         private array $capabilities,
@@ -208,7 +208,7 @@ final class ValidationPolicy implements BlockPolicyInterface, PolicyCapabilityPr
     {
         return $this->name;
     }
-    /** @return list<PolicyCapability> */
+    /** @return list<PolicyCapabilityEnum> */
     public function getCapabilities(): array
     {
         return $this->capabilities;
@@ -237,13 +237,13 @@ final class ValidationPolicy implements BlockPolicyInterface, PolicyCapabilityPr
 
 final class NoConfigurationValidationPolicy implements BlockPolicyInterface, PolicyCapabilityProviderInterface
 {
-    /** @param list<PolicyCapability> $capabilities */
+    /** @param list<PolicyCapabilityEnum> $capabilities */
     public function __construct(private string $name, private array $capabilities, private string $mode = 'FAIL_CLOSED', private bool $api = false) {}
     public function getName(): string
     {
         return $this->name;
     }
-    /** @return list<PolicyCapability> */
+    /** @return list<PolicyCapabilityEnum> */
     public function getCapabilities(): array
     {
         return $this->capabilities;

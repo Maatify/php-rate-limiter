@@ -2,7 +2,7 @@
 
 declare(strict_types=1);
 
-namespace Maatify\RateLimiter\Config;
+namespace Maatify\RateLimiter\Enum;
 
 use Maatify\RateLimiter\DTO\FailureFallbackConfigurationDTO;
 use Maatify\RateLimiter\DTO\FailureFallbackRuleDTO;
@@ -20,7 +20,7 @@ use Maatify\RateLimiter\DTO\FailureFallbackRuleDTO;
  * direct custom policy never needs to reference it: the generic
  * configuration is the only thing the runtime consumes.
  */
-enum FailureFallbackProfile
+enum FailureFallbackProfileEnum
 {
     case AUTHENTICATION_PRIMARY;
     case AUTHENTICATION_STEP_UP;
@@ -33,16 +33,16 @@ enum FailureFallbackProfile
     {
         return match ($this) {
             self::AUTHENTICATION_PRIMARY => new FailureFallbackConfigurationDTO([
-                new FailureFallbackRuleDTO(FailureFallbackDimension::ACCOUNT, 3, 600),
-                new FailureFallbackRuleDTO(FailureFallbackDimension::IP_PREFIX, 20, 600),
+                new FailureFallbackRuleDTO(FailureFallbackDimensionEnum::ACCOUNT, 3, 600),
+                new FailureFallbackRuleDTO(FailureFallbackDimensionEnum::IP_PREFIX, 20, 600),
             ]),
             self::AUTHENTICATION_STEP_UP => new FailureFallbackConfigurationDTO([
-                new FailureFallbackRuleDTO(FailureFallbackDimension::ACCOUNT, 2, 900),
-                new FailureFallbackRuleDTO(FailureFallbackDimension::IP_PREFIX, 10, 900),
+                new FailureFallbackRuleDTO(FailureFallbackDimensionEnum::ACCOUNT, 2, 900),
+                new FailureFallbackRuleDTO(FailureFallbackDimensionEnum::IP_PREFIX, 10, 900),
             ]),
             self::API_OVERUSE => new FailureFallbackConfigurationDTO([
-                new FailureFallbackRuleDTO(FailureFallbackDimension::IP_PREFIX, 120, 60),
-                new FailureFallbackRuleDTO(FailureFallbackDimension::IP_PREFIX_NORMALIZED_USER_AGENT, 60, 60),
+                new FailureFallbackRuleDTO(FailureFallbackDimensionEnum::IP_PREFIX, 120, 60),
+                new FailureFallbackRuleDTO(FailureFallbackDimensionEnum::IP_PREFIX_NORMALIZED_USER_AGENT, 60, 60),
             ]),
         };
     }

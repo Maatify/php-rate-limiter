@@ -8,16 +8,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Changed
-- Added the typed `PolicyCapability` extension contract for reusable custom
-  policies, and replaced the initial closed-enum `FailureFallbackProfile`
+- Added the typed `PolicyCapabilityEnum` extension contract for reusable custom
+  policies, and replaced the initial closed-enum `FailureFallbackProfileEnum`
   fallback contract with a generic typed
   `FailureFallbackConfigurationProviderInterface` returning a
   `FailureFallbackConfigurationDTO` of `FailureFallbackRuleDTO` values
-  (`FailureFallbackDimension::ACCOUNT`, `IP_PREFIX`, or
+  (`FailureFallbackDimensionEnum::ACCOUNT`, `IP_PREFIX`, or
   `IP_PREFIX_NORMALIZED_USER_AGENT`, each with a positive limit and window).
   `LoginProtectionPolicy`, `OtpProtectionPolicy`, and `ApiHeavyProtectionPolicy`
   remain zero-configuration: they resolve their official locked caps
-  internally from the retained `FailureFallbackProfile` factory, now an
+  internally from the retained `FailureFallbackProfileEnum` factory, now an
   internal preset resolver rather than the public contract. A direct custom
   reusable policy may compose its own bounded fallback configuration with
   values independent of every official preset, validated and evaluated
