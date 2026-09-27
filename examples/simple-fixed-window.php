@@ -390,6 +390,10 @@ $reader = $builder->buildOperationalReader();
 $beforeSecondRead = $reader->readSimpleThrottle('checkout_attempts', $subject);
 $afterSecondRead = $reader->readSimpleThrottle('checkout_attempts', $subject);
 
+if ($beforeSecondRead->count !== 6) {
+    throw new RuntimeException(sprintf('Expected weighted persisted count 6, got %d.', $beforeSecondRead->count));
+}
+
 if ($beforeSecondRead->count !== $afterSecondRead->count) {
     throw new RuntimeException('Operational read must not create a new consume.');
 }

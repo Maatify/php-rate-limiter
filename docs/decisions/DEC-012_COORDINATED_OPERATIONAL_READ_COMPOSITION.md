@@ -32,7 +32,7 @@ resolver/key-generation state instead of being assembled manually outside
 
 WU-S4-03D-F02 identified two related pre-host gaps:
 
-1. Simple fixed-window persisted state (DEC-013) has no package-owned typed
+1. Simple fixed-window persisted state (DEC-009) has no package-owned typed
    read-only operational surface, unlike score-based state, which already has
    `RateLimitOperationalReaderInterface`/`RateLimitOperationalReader`.
 2. Operational reads were composed manually outside `RateLimiterBuilder`
@@ -117,12 +117,12 @@ interface CompositeRateLimitOperationalReaderInterface
 add `allowed`, a decision, `retryAfter`, a block level, a score, a
 failure-mode decision, the raw key, or the raw subject.
 
-### 6. Simple inspection is not DEC-013 enforcement
+### 6. Simple inspection is not DEC-009 enforcement
 
 `SimpleRateLimitOperationalReaderInterface::read()` is strictly a read-only
 point-in-time inspection. It is not `check()`, not `peek()` deciding whether a
 future consume is allowed, not reservation or pre-authorization, and not
-mutation. It derives the exact same DEC-013 state identity
+mutation. It derives the exact same DEC-009 state identity
 (`rate_limiter:simple_fixed_window:v1:environmentScope:policyName:limit:
 intervalSeconds:subject`, length-prefixed component encoding, HMAC-SHA256'd
 with the selected outer generation secret) that `FixedWindowSimpleRateLimiter`
@@ -223,6 +223,6 @@ None.
 
 None.
 
-DEC-012 does not supersede DEC-013 or DEC-010; it extends the package
+DEC-012 does not supersede DEC-009 or DEC-010; it extends the package
 Operational Read/composition contract without changing their enforcement
 semantics.

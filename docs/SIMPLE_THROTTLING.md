@@ -42,9 +42,9 @@ state identity. See §11 for the complete list of non-goals.
 For one `policyName + subject` pair:
 
 1. The first `consume()` starts the fixed window.
-2. Consumes `1..limit` return `allowed = true`.
-3. Consume `limit + 1` and every later consume inside the same window return
-   `allowed = false`.
+2. A consume is allowed when the resulting persisted count is `<= limit`.
+3. A consume is denied when the resulting persisted count is `> limit`. The
+   consume's full positive cost remains persisted.
 4. A denied consume MUST NOT renew or extend the window: `resetAt` stays the
    window's original fixed end instant.
 5. The next window begins only after the current window's fixed end has

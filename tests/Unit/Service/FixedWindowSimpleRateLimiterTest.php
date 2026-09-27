@@ -334,6 +334,19 @@ final class FixedWindowSimpleRateLimiterTest extends TestCase
         self::assertSame(SimpleRateLimitResultDTO::FAIL_CLOSED, $result->failureMode);
     }
 
+    public function testWeightedIncrementBudgetFailureIsFailClosed(): void
+    {
+        $store = new PartialFailureRateLimitStore($this->store, throwOnIncrementBudget: new \RuntimeException('backend unavailable'));
+        $limiter = $this->limiterWithStore($store, [new FixedWindowThrottlePolicy('checkout', 10, 60)]);
+
+        $result = $limiter->consume('checkout', 'subject-1', 5);
+
+        self::assertFalse($result->allowed);
+        self::assertSame(SimpleRateLimitResultDTO::FAIL_CLOSED, $result->failureMode);
+        self::assertNull($result->retryAfter);
+        self::assertNull($result->resetAt);
+    }
+
     public function testIncrementBudgetFailureFromRateLimiterExceptionIsFailClosed(): void
     {
         $store = new PartialFailureRateLimitStore($this->store, throwOnIncrementBudget: new RateLimiterException('store-internal contract violation'));
