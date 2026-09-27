@@ -8,6 +8,7 @@ use DateTimeZone;
 use Maatify\RateLimiter\Config\FixedWindowThrottlePolicy;
 use Maatify\RateLimiter\Repository\Redis\RedisFullCapabilityStore;
 use Maatify\RateLimiter\Service\FixedWindowSimpleRateLimiter;
+use Maatify\RateLimiter\Service\SimpleRateLimitOperationalReader;
 use Maatify\RateLimiter\Tests\Support\Redis\RespRedisCommandExecutor;
 use Maatify\SharedCommon\Contracts\ClockInterface;
 use Maatify\SharedCommon\Infrastructure\SystemClock;
@@ -127,6 +128,96 @@ final class RedisSimpleFixedWindowIntegrationTest extends TestCase
         }
     }
 
+    /**
+     * Proves the Operational Read side of DEC-012 against a real,
+     * non-mocked Redis server: it observes the exact persisted state a real
+     * consume() wrote, without itself adding a consume or creating any
+     * additional Redis key, and never exposes the raw subject.
+     */
+    public function testOperationalReadObservesExactPersistedStateWithoutMutating(): void
+    {
+        $limiter = $this->limiter($this->clock, 'current-secret', null, 60);
+        $first = $limiter->consume('checkout', 'subject-redis-op-1');
+        self::assertTrue($first->allowed);
+        $second = $limiter->consume('checkout', 'subject-redis-op-1');
+        self::assertTrue($second->allowed);
+
+        $keysAfterConsume = $this->executor->execute(['KEYS', '*']);
+        self::assertIsArray($keysAfterConsume);
+        self::assertCount(1, $keysAfterConsume, 'Two consumes for the same subject must persist exactly one Current key.');
+
+        $reader = $this->reader($this->clock, 'current-secret', null, 60);
+        $snapshot = $reader->read('checkout', 'subject-redis-op-1');
+
+        self::assertSame(2, $snapshot->count);
+        self::assertSame(0, $snapshot->remaining, 'limit=2, count=2 → remaining clamped to 0.');
+        self::assertSame($second->resetAt, $snapshot->resetAt);
+        self::assertFalse($snapshot->fromPreviousGeneration);
+
+        $keysAfterRead = $this->executor->execute(['KEYS', '*']);
+        self::assertSame($keysAfterConsume, $keysAfterRead, 'A read must not create any additional Redis key.');
+
+        $thirdAfterRead = $limiter->consume('checkout', 'subject-redis-op-1');
+        self::assertFalse($thirdAfterRead->allowed, 'The read must not have added a consume that shifts the quota.');
+
+        $json = json_encode($snapshot, JSON_THROW_ON_ERROR);
+        self::assertStringNotContainsString('subject-redis-op-1', $json);
+        self::assertStringNotContainsString('current-secret', $json);
+        foreach ($keysAfterRead as $key) {
+            self::assertIsString($key);
+            self::assertStringNotContainsString('subject-redis-op-1', $key);
+        }
+    }
+
+    /**
+     * Previous-only state must be reported with fromPreviousGeneration=true,
+     * Previous's raw persisted value must stay byte-identical, and reading
+     * it must never create a Current key.
+     */
+    public function testOperationalReadReportsPreviousOnlyStateWithoutCreatingCurrent(): void
+    {
+        $previousLimiter = $this->limiter($this->clock, 'previous-secret', null, 60);
+        $previousLimiter->consume('checkout', 'subject-redis-op-2');
+
+        $keysBeforeRead = $this->executor->execute(['KEYS', '*']);
+        self::assertIsArray($keysBeforeRead);
+        self::assertCount(1, $keysBeforeRead);
+        $previousRawKey = $keysBeforeRead[0];
+        self::assertIsString($previousRawKey);
+        $previousRawValueBefore = $this->executor->execute(['HGETALL', $previousRawKey]);
+
+        $reader = $this->reader($this->clock, 'current-secret', 'previous-secret', 60);
+        $snapshot = $reader->read('checkout', 'subject-redis-op-2');
+
+        self::assertSame(1, $snapshot->count);
+        self::assertTrue($snapshot->fromPreviousGeneration);
+
+        $previousRawValueAfter = $this->executor->execute(['HGETALL', $previousRawKey]);
+        self::assertSame($previousRawValueBefore, $previousRawValueAfter, 'Previous must stay byte-identical after a read.');
+
+        $keysAfterRead = $this->executor->execute(['KEYS', '*']);
+        self::assertSame($keysBeforeRead, $keysAfterRead, 'A Previous-only read must not create a Current key.');
+    }
+
+    /**
+     * When both Current and Previous exist, Current must win outright: no
+     * max()/sum() merge of the two counts.
+     */
+    public function testOperationalReadPrefersCurrentOverPreviousWithoutMerging(): void
+    {
+        $previousLimiter = $this->limiter($this->clock, 'previous-secret', null, 60);
+        $previousLimiter->consume('checkout', 'subject-redis-op-3');
+
+        $currentLimiter = $this->limiter($this->clock, 'current-secret', null, 60);
+        $currentLimiter->consume('checkout', 'subject-redis-op-3');
+
+        $reader = $this->reader($this->clock, 'current-secret', 'previous-secret', 60);
+        $snapshot = $reader->read('checkout', 'subject-redis-op-3');
+
+        self::assertSame(1, $snapshot->count, 'Current(1) must win outright; it must never be merged with Previous(1).');
+        self::assertFalse($snapshot->fromPreviousGeneration);
+    }
+
     private function limiter(
         ClockInterface $clock,
         string $keySecret,
@@ -134,6 +225,22 @@ final class RedisSimpleFixedWindowIntegrationTest extends TestCase
         int $intervalSeconds,
     ): FixedWindowSimpleRateLimiter {
         return new FixedWindowSimpleRateLimiter(
+            [new FixedWindowThrottlePolicy('checkout', 2, $intervalSeconds)],
+            $this->store,
+            $clock,
+            $keySecret,
+            'prod',
+            $previousKeySecret,
+        );
+    }
+
+    private function reader(
+        ClockInterface $clock,
+        string $keySecret,
+        ?string $previousKeySecret,
+        int $intervalSeconds,
+    ): SimpleRateLimitOperationalReader {
+        return new SimpleRateLimitOperationalReader(
             [new FixedWindowThrottlePolicy('checkout', 2, $intervalSeconds)],
             $this->store,
             $clock,

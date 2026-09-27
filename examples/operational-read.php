@@ -2,8 +2,10 @@
 
 declare(strict_types=1);
 
+use Maatify\RateLimiter\Builder\RateLimiterBuilder;
 use Maatify\RateLimiter\Command\RateLimitCommand;
 use Maatify\RateLimiter\Config\OtpProtectionPolicy;
+use Maatify\RateLimiter\Config\RateLimiterConfig;
 use Maatify\RateLimiter\Contract\FailureSignalEmitterInterface;
 use Maatify\RateLimiter\DTO\BlockStateDTO;
 use Maatify\RateLimiter\DTO\BudgetStateDTO;
@@ -26,7 +28,6 @@ use Maatify\RateLimiter\Service\EphemeralBucket;
 use Maatify\RateLimiter\Service\EvaluationPipeline;
 use Maatify\RateLimiter\Service\FailureModeResolver;
 use Maatify\RateLimiter\Service\FingerprintHasher;
-use Maatify\RateLimiter\Service\RateLimitOperationalReader;
 use Maatify\RateLimiter\Service\RateLimiterEngine;
 use Maatify\SharedCommon\Contracts\ClockInterface;
 use Maatify\SharedCommon\Infrastructure\SystemClock;
@@ -394,17 +395,25 @@ $context = new RateLimitContextDTO(
 );
 $limiter->limit($context, RateLimitCommand::recordFailure('otp_protection'));
 
-$reader = new RateLimitOperationalReader(
-    new DeviceIdentityResolver(new FingerprintHasher('example-fingerprint-secret')),
+// The Production Default Read Path (DEC-012): the same RateLimiterBuilder
+// that composes enforcement also composes Operational Read, resolving
+// 'otp_protection' by name from its own registered policy graph instead of
+// asking the Host to reconstruct the resolver, clock, decay calculator,
+// secrets, or policy object a second time.
+$reader = (new RateLimiterBuilder(
+    new RateLimiterConfig(
+        keySecret: 'example-outer-secret',
+        fingerprintSecret: 'example-fingerprint-secret',
+        environmentScope: 'example',
+    ),
     $store,
+    $correlationStore,
     $circuitBreakerStore,
-    new DecayCalculator($clock),
-    $clock,
-    'example-outer-secret',
-    'example',
-);
+    $emitter,
+))->buildOperationalReader();
+
 $writesBeforeRead = $store->writeCount();
-$snapshot = $reader->read($context, new OtpProtectionPolicy());
+$snapshot = $reader->readScorePolicy($context, 'otp_protection');
 if ($writesBeforeRead !== $store->writeCount()) {
     throw new RuntimeException('Operational read changed rate-limit storage state.');
 }

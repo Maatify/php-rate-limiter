@@ -191,6 +191,7 @@ final class RateLimiterBuilderTest extends TestCase
             'withPolicy',
             'withSimpleThrottlePolicy',
             'build',
+            'buildOperationalReader',
         ], $publicMethods);
     }
 

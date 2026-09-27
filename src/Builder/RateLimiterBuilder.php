@@ -32,6 +32,8 @@ use Maatify\RateLimiter\Service\BudgetTracker;
 use Maatify\RateLimiter\Service\CircuitBreaker;
 use Maatify\RateLimiter\Service\CompositeRateLimiterRuntime;
 use Maatify\RateLimiter\Service\CompositeRateLimiterRuntimeInterface;
+use Maatify\RateLimiter\Service\CompositeRateLimitOperationalReader;
+use Maatify\RateLimiter\Service\CompositeRateLimitOperationalReaderInterface;
 use Maatify\RateLimiter\Service\DecayCalculator;
 use Maatify\RateLimiter\Service\DeviceIdentityResolver;
 use Maatify\RateLimiter\Service\DeviceIdentityResolverInterface;
@@ -40,8 +42,10 @@ use Maatify\RateLimiter\Service\EvaluationPipeline;
 use Maatify\RateLimiter\Service\FailureModeResolver;
 use Maatify\RateLimiter\Service\FingerprintHasher;
 use Maatify\RateLimiter\Service\FixedWindowSimpleRateLimiter;
+use Maatify\RateLimiter\Service\RateLimitOperationalReader;
 use Maatify\RateLimiter\Service\RateLimiterEngine;
 use Maatify\RateLimiter\Service\RateLimiterInterface;
+use Maatify\RateLimiter\Service\SimpleRateLimitOperationalReader;
 use Maatify\RateLimiter\Exception\RateLimiterException;
 use Maatify\SharedCommon\Contracts\ClockInterface;
 use Maatify\SharedCommon\Infrastructure\SystemClock;
@@ -207,6 +211,53 @@ final class RateLimiterBuilder
         );
 
         return new CompositeRateLimiterRuntime($scoreRuntime, $simpleRuntime);
+    }
+
+    /**
+     * Build the package-owned default Operational Read composition from this
+     * builder's current registered state (DEC-012): the same effective
+     * clock, device identity resolver, key configuration, environment scope,
+     * rate-limit store, circuit-breaker store, score-policy registry, and
+     * simple-policy registry used by build().
+     *
+     * This is a read-only composition method. It intentionally does not run
+     * build()'s mutation-only capability preflight (assertCapabilitiesSatisfied()):
+     * Operational Read never calls a mutation-only primitive — bounded
+     * correlation, snapshot mutation, circuit probe acquisition, or
+     * punishment mutation — so construction must not fail on capabilities it
+     * never uses. It also does not weaken or change build() or any of its
+     * fail-fast behavior.
+     */
+    public function buildOperationalReader(): CompositeRateLimitOperationalReaderInterface
+    {
+        $clock = $this->clock ?? new SystemClock(new DateTimeZone('UTC'));
+        $deviceIdentityResolver = $this->deviceIdentityResolver ?? $this->defaultDeviceIdentityResolver();
+
+        $scoreReader = new RateLimitOperationalReader(
+            $deviceIdentityResolver,
+            $this->rateLimitStore,
+            $this->circuitBreakerStore,
+            new DecayCalculator($clock),
+            $clock,
+            $this->config->keySecret(),
+            $this->config->environmentScope(),
+            $this->config->previousKeySecret(),
+        );
+
+        $simpleReader = new SimpleRateLimitOperationalReader(
+            array_values($this->simpleThrottlePolicies),
+            $this->rateLimitStore,
+            $clock,
+            $this->config->keySecret(),
+            $this->config->environmentScope(),
+            $this->config->previousKeySecret(),
+        );
+
+        return new CompositeRateLimitOperationalReader(
+            $scoreReader,
+            array_values($this->policies),
+            $simpleReader,
+        );
     }
 
     private function defaultDeviceIdentityResolver(): DeviceIdentityResolver
