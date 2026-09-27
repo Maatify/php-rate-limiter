@@ -1,0 +1,98 @@
+<?php
+
+declare(strict_types=1);
+
+namespace Maatify\RateLimiter\Config;
+
+use Maatify\RateLimiter\Config\BlockPolicyInterface;
+use Maatify\RateLimiter\DTO\BudgetConfigDTO;
+use Maatify\RateLimiter\DTO\FailureFallbackConfigurationDTO;
+use Maatify\RateLimiter\DTO\PolicyThresholdsDTO;
+use Maatify\RateLimiter\DTO\ScoreDeltasDTO;
+use Maatify\RateLimiter\DTO\ScoreThresholdsDTO;
+use Maatify\RateLimiter\Enum\FailureFallbackProfileEnum;
+use Maatify\RateLimiter\Enum\PolicyCapabilityEnum;
+
+/**
+ * Default Login failure policy with account-scoped thresholds and a budget.
+ *
+ * It opts into DEC-007 generation-bound K4 lifecycle behavior. The policy
+ * supplies positive monotonic K4 thresholds and fail-closed failure semantics;
+ * the Builder additionally requires lifecycle-capable storage for this opt-in.
+ * Its bounded backend-failure fallback resolves the package-owned
+ * `AUTHENTICATION_PRIMARY` preset; no Host configuration is required.
+ */
+class LoginProtectionPolicy implements PostPunishmentReentryPolicyInterface, PolicyCapabilityProviderInterface, FailureFallbackConfigurationProviderInterface
+{
+    public function getFailureFallbackConfiguration(): FailureFallbackConfigurationDTO
+    {
+        return FailureFallbackProfileEnum::AUTHENTICATION_PRIMARY->configuration();
+    }
+
+    /** @return list<PolicyCapabilityEnum> */
+    public function getCapabilities(): array
+    {
+        return [
+            PolicyCapabilityEnum::CREDENTIAL_SPRAY,
+            PolicyCapabilityEnum::DISTRIBUTED_ACCOUNT,
+            PolicyCapabilityEnum::TRUSTED_AUTHENTICATION,
+        ];
+    }
+
+    /**
+     * Return the policy identifier consumed by the engine.
+     */
+    public function getName(): string
+    {
+        return 'login_protection';
+    }
+
+    /**
+     * Return the K4 thresholds for soft and hard login blocking.
+     */
+    public function getScoreThresholds(): PolicyThresholdsDTO
+    {
+        // Login uses K4 as primary signal
+        return new PolicyThresholdsDTO(
+            k4: new ScoreThresholdsDTO(5, 8, 12),
+        );
+    }
+
+    /**
+     * Return the score increments for login risk signals.
+     */
+    public function getScoreDeltas(): ScoreDeltasDTO
+    {
+        return new ScoreDeltasDTO(
+            k1_spray: 5,
+            k2_missing_fp: 4,
+            k4_failure: 3,
+            k4_repeated_missing_fp: 6,
+            k5_failure: 2,
+        );
+    }
+
+    /**
+     * Return the fail-closed policy used when the backing store is unavailable.
+     */
+    public function getFailureMode(): string
+    {
+        return 'FAIL_CLOSED';
+    }
+
+    /**
+     * Return the account budget and trusted-session enforcement rules.
+     */
+    public function getBudgetConfig(): ?BudgetConfigDTO
+    {
+        return new BudgetConfigDTO(
+            threshold: 20,
+            block_level: 3,
+            cooldown_seconds: 3600,
+            trusted_session_floor_level: 2,
+            precheck_enforcement: true,
+            known_device_micro_cap: 8,
+            recovery_collision_guard_enabled: false,
+        );
+    }
+}

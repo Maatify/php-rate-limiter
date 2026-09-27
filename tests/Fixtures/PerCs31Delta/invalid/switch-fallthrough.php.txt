@@ -1,0 +1,8 @@
+<?php
+
+switch ($value) {
+    case 'allowed':
+        $result = $value;
+    default:
+        throw new RuntimeException('unsupported');
+}

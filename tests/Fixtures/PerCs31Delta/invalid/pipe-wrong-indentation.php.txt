@@ -1,0 +1,10 @@
+<?php
+
+function normalize(string $input): string
+{
+    $result = $input
+        |> trim(...)
+            |> strtoupper(...);
+
+    return $result;
+}

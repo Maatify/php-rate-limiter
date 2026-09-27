@@ -1,0 +1,6 @@
+<?php
+
+enum Example
+{
+    protected const Huge = 1;
+}
