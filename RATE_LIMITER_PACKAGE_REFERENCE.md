@@ -168,7 +168,7 @@ The following inventory describes the current public runtime types. Test and sup
 
 | Type | Contract |
 | --- | --- |
-| `Maatify\RateLimiter\Command\RateLimitCommand` | Immutable execution intent with `checkOnly()`, `recordFailure()`, and `recordSuccess()` factories; `checkOnly()` does not record scoring success/failure but may update bounded pre-check correlation state. |
+| `Maatify\RateLimiter\Command\RateLimitCommand` | Immutable execution intent requiring a non-blank policy name and a positive integer cost, with `checkOnly()`, `recordFailure()`, and `recordSuccess()` factories; `checkOnly()` does not record scoring success/failure but may update bounded pre-check correlation state. Invalid policy name or cost throws `RateLimiterException` at construction. |
 
 ### Public DTOs
 
@@ -556,7 +556,7 @@ implementations remain host-owned.
 **Location:** `Command/` and `DTO/`
 
 All data crossing boundaries MUST be strictly typed:
-- Command (`RateLimitCommand`): execution/action intent (policy + action + cost)
+- Command (`RateLimitCommand`): execution/action intent (non-blank policy + action + positive cost)
 - Context DTOs (signals): context/data/state/result snapshots
 - Result DTOs (decision + retry-after + block level + failure mode)
 - Internal state DTOs (score/level/windows)
