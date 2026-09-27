@@ -377,6 +377,7 @@ if exists == 1 then redis.call('DEL', KEYS[1]) end
 local seedStart = tonumber(ARGV[2])
 local epochDuration = tonumber(ARGV[1])
 if now < seedStart + epochDuration then
+  if ARGV[6] == '1' then return redis.error_reply('seeded budget count overflow') end
   redis.call('HSET', KEYS[1], 'count', ARGV[5], 'epochStart', seedStart, 'epochDuration', epochDuration)
   redis.call('EXPIRE', KEYS[1], seedStart + epochDuration - now)
   return {redis.call('HGET', KEYS[1], 'count'), seedStart}
@@ -833,8 +834,8 @@ LUA;
     public function incrementBudgetWithSeed(string $key, int $epochDurationSeconds, BudgetStateDTO $seed, int $amount = 1): BudgetStateDTO
     {
         $this->positive($epochDurationSeconds, 'Budget epoch duration');
-        $seededCount = $this->checkedIntegerAddition($seed->count, $amount, 'Seeded budget count');
-        $result = $this->eval(self::BUDGET_SEED, [$this->key('budget', $key)], [$epochDurationSeconds, $seed->epochStart, $seed->count, $amount, $seededCount]);
+        $seededCount = $this->tryIntegerAddition($seed->count, $amount);
+        $result = $this->eval(self::BUDGET_SEED, [$this->key('budget', $key)], [$epochDurationSeconds, $seed->epochStart, $seed->count, $amount, $seededCount ?? 0, $seededCount === null ? 1 : 0]);
         $tuple = $this->tuple($result, 2, 'seeded budget');
         return new BudgetStateDTO(
             $this->integerValue($tuple[0], 'budget count'),
@@ -1274,10 +1275,10 @@ LUA;
         throw new RateLimiterException('Malformed ' . $label . '.');
     }
 
-    private function checkedIntegerAddition(int $left, int $right, string $label): int
+    private function tryIntegerAddition(int $left, int $right): ?int
     {
         if (($right > 0 && $left > PHP_INT_MAX - $right) || ($right < 0 && $left < PHP_INT_MIN - $right)) {
-            throw new RateLimiterException($label . ' overflow.');
+            return null;
         }
         return $left + $right;
     }

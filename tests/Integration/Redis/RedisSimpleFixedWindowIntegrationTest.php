@@ -7,7 +7,6 @@ namespace Maatify\RateLimiter\Tests\Integration\Redis;
 use DateTimeZone;
 use Maatify\RateLimiter\Config\FixedWindowThrottlePolicy;
 use Maatify\RateLimiter\DTO\BudgetStateDTO;
-use Maatify\RateLimiter\Exception\RateLimiterException;
 use Maatify\RateLimiter\Repository\Redis\RedisFullCapabilityStore;
 use Maatify\RateLimiter\Service\FixedWindowSimpleRateLimiter;
 use Maatify\RateLimiter\Service\SimpleRateLimitOperationalReader;
@@ -15,6 +14,7 @@ use Maatify\RateLimiter\Tests\Support\Redis\RespRedisCommandExecutor;
 use Maatify\SharedCommon\Contracts\ClockInterface;
 use Maatify\SharedCommon\Infrastructure\SystemClock;
 use PHPUnit\Framework\TestCase;
+use RuntimeException;
 
 /**
  * Proves the fixed-window simple throttle capability against a real,
@@ -166,20 +166,61 @@ final class RedisSimpleFixedWindowIntegrationTest extends TestCase
         self::assertSame($previousValueBefore, $this->executor->execute(['HGETALL', $previousKey]));
     }
 
-    public function testSeedOverflowFailsBeforeRedisEvaluation(): void
+    public function testActiveCurrentIgnoresOverflowingSeed(): void
     {
         if (PHP_INT_SIZE < 8) {
             self::markTestSkipped('This exactness proof requires 64-bit PHP integers.');
         }
 
-        $this->expectException(RateLimiterException::class);
-        $this->expectExceptionMessage('overflow');
-        $this->store->incrementBudgetWithSeed(
-            'seed-overflow',
+        $current = $this->store->incrementBudget('seed-overflow-current', 60, 1);
+        $migrated = $this->store->incrementBudgetWithSeed(
+            'seed-overflow-current',
             60,
-            new BudgetStateDTO(PHP_INT_MAX, time()),
+            new BudgetStateDTO(PHP_INT_MAX, $current->epochStart),
             1,
         );
+
+        self::assertSame(1, $current->count);
+        self::assertSame(2, $migrated->count);
+        self::assertSame($current->epochStart, $migrated->epochStart);
+    }
+
+    public function testExpiredSeedIgnoresOverflowingSumAndStartsFreshEpoch(): void
+    {
+        if (PHP_INT_SIZE < 8) {
+            self::markTestSkipped('This exactness proof requires 64-bit PHP integers.');
+        }
+
+        $before = time();
+        $fresh = $this->store->incrementBudgetWithSeed(
+            'seed-overflow-expired',
+            60,
+            new BudgetStateDTO(PHP_INT_MAX, $before - 61),
+            1,
+        );
+
+        self::assertSame(1, $fresh->count);
+        self::assertGreaterThanOrEqual($before, $fresh->epochStart);
+    }
+
+    public function testActiveSeedOverflowFailsOnlyWhenActiveSeedBranchWinsWithoutPartialMutation(): void
+    {
+        if (PHP_INT_SIZE < 8) {
+            self::markTestSkipped('This exactness proof requires 64-bit PHP integers.');
+        }
+
+        $this->expectException(RuntimeException::class);
+        $this->expectExceptionMessage('seeded budget count overflow');
+        try {
+            $this->store->incrementBudgetWithSeed(
+                'seed-overflow-active',
+                60,
+                new BudgetStateDTO(PHP_INT_MAX, time()),
+                1,
+            );
+        } finally {
+            self::assertSame([], $this->executor->execute(['KEYS', '*']));
+        }
     }
 
     public function testDeniedConsumeDoesNotRenewExpiryAndANewEpochStartsAfterRealExpiry(): void
