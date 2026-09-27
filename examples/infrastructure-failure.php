@@ -81,19 +81,24 @@ final class InfrastructureFailureRateLimitStore implements RateLimitStoreInterfa
 
 final class InfrastructureFailureCorrelationStore implements CorrelationStoreInterface
 {
+    private function fail(): never
+    {
+        throw new RuntimeException('deterministic backend failure');
+    }
+
     public function addDistinct(string $key, string $item, int $ttlSeconds): int
     {
-        return 0;
+        $this->fail();
     }
 
     public function incrementWatchFlag(string $key, int $ttlSeconds): int
     {
-        return 0;
+        $this->fail();
     }
 
     public function getWatchFlag(string $key): int
     {
-        return 0;
+        $this->fail();
     }
 }
 

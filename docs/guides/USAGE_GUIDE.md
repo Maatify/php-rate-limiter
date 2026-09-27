@@ -80,6 +80,42 @@ Secrets are explicit and independently rotatable. `RateLimiterConfig` rejects em
 
 `build()` returns `CompositeRateLimiterRuntimeInterface`, and the result remains assignable to both `RateLimiterRuntimeInterface` and `RateLimiterInterface` for every existing consumer.
 
+## Migrating from an Embedded or Legacy Rate Limiter
+
+Use this bounded migration sequence when replacing an embedded copy or legacy
+Host implementation with the package:
+
+1. Remove the embedded PSR-4 mapping and any package shadow copy from the Host.
+2. Install `maatify/php-rate-limiter` as the real Composer dependency under the
+   Host's approved repository policy.
+3. Keep the Host-owned Redis client, connection, lifecycle, credentials, and
+   transport/application response handling in the Host.
+4. Compose the official `RedisFullCapabilityStore` (or a Host adapter that
+   implements `FullCapabilityStoreInterface`) through
+   `RateLimiterBuilder::fromFullCapabilityStore()`.
+5. Move Host policy differences into the public typed policy extension surfaces
+   such as `withPolicy()` and `withSimpleThrottlePolicy()`; do not fork package
+   internals or add Athar-specific types to the generic contract.
+6. Replace copied K4/lifecycle internals with the public DEC-007
+   `RateLimiterRuntimeInterface::claimPostPunishmentReentry()` handoff.
+7. Replace direct score or internal-key reads with the DEC-012 public
+   `buildOperationalReader()` path and its typed operational snapshots.
+8. Perform the persistence namespace cutover using the package's documented
+   keys and migration plan.
+9. Remove the dual writer, copied Lua, and Host-side package-key reconstruction
+   after the cutover is verified.
+10. Run the package Consumer Verification Harness together with the Host's
+    integration and production-path verification before removing the legacy
+    path.
+
+The package owns the rate-limit policy/runtime contracts, typed DTOs and
+results, key and namespace semantics, public lifecycle handoff, operational
+read contracts, and the official Redis store implementation. The Host owns
+request/account/session truth, Redis client and connection lifecycle, transport
+responses, authorization, dashboards, logging destinations, and application
+business transactions. Athar-specific classes remain Host integration code;
+they are not part of this framework-agnostic consumer contract.
+
 ## Simple Fixed-Window Throttling
 
 Beside the score-based model above, the package owns a first-class generic/simple fixed-window throttling capability (see `docs/SIMPLE_THROTTLING.md` for the complete contract). It answers a common, narrower requirement — allow up to N events in an interval, then deny until that interval ends — without translating the request into score thresholds, decay, or the progressive penalty ladder.
