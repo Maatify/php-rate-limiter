@@ -12,7 +12,9 @@ use Maatify\RateLimiter\Config\RateLimiterConfig;
 use Maatify\RateLimiter\Contract\FailureSignalEmitterInterface;
 use Maatify\RateLimiter\DTO\BudgetConfigDTO;
 use Maatify\RateLimiter\DTO\CircuitBreakerStateDTO;
+use Maatify\RateLimiter\DTO\DeviceIdentityDTO;
 use Maatify\RateLimiter\DTO\PolicyThresholdsDTO;
+use Maatify\RateLimiter\DTO\RateLimitContextDTO;
 use Maatify\RateLimiter\DTO\ScoreDeltasDTO;
 use Maatify\RateLimiter\DTO\ScoreThresholdsDTO;
 use Maatify\RateLimiter\Enum\PolicyCapabilityEnum;
@@ -21,6 +23,7 @@ use Maatify\RateLimiter\Repository\CircuitBreakerStoreInterface;
 use Maatify\RateLimiter\Repository\CorrelationStoreInterface;
 use Maatify\RateLimiter\Repository\RateLimitStoreInterface;
 use Maatify\RateLimiter\Service\CompositeRateLimiterRuntimeInterface;
+use Maatify\RateLimiter\Service\DeviceIdentityResolverInterface;
 use Maatify\RateLimiter\Tests\Support\CircuitBreaker\InMemoryCircuitBreakerStore;
 use Maatify\RateLimiter\Tests\Support\Clock\FixedClock;
 use Maatify\RateLimiter\Tests\Support\Correlation\BoundedOnlyInMemoryCorrelationStore;
@@ -29,6 +32,7 @@ use Maatify\RateLimiter\Tests\Support\Correlation\StatefulInMemoryCorrelationSto
 use Maatify\RateLimiter\Tests\Support\FailureSignal\RecordingFailureSignalEmitter;
 use Maatify\RateLimiter\Tests\Support\FullCapability\FullCapabilityInMemoryStore;
 use Maatify\RateLimiter\Tests\Support\RateLimiter\BaseOnlyInMemoryRateLimitStore;
+use Maatify\RateLimiter\Tests\Support\RateLimiter\HardBlockCycleOnlyInMemoryRateLimitStore;
 use Maatify\RateLimiter\Tests\Support\RateLimiter\InMemoryRateLimitStore;
 use PHPUnit\Framework\TestCase;
 
@@ -88,7 +92,7 @@ final class RateLimiterBuilderCapabilityPreflightTest extends TestCase
     public function testCompleteNonRotationBoundedCorrelationIsAccepted(): void
     {
         $builder = $this->neutralizedBuilder(
-            new BaseOnlyInMemoryRateLimitStore($this->clock),
+            new HardBlockCycleOnlyInMemoryRateLimitStore($this->clock),
             new BoundedOnlyInMemoryCorrelationStore($this->clock),
             new InMemoryCircuitBreakerStore(),
         );
@@ -176,29 +180,45 @@ final class RateLimiterBuilderCapabilityPreflightTest extends TestCase
         }
     }
 
-    public function testL2PlusCapableGraphRejectsRateLimitStoreLackingHardBlockCycleCapability(): void
+    /**
+     * DEC-003 / Lead review #5852970266 (Blocker 2): EvaluationPipeline's
+     * generic bounded-correlation enforcement (churn, dilution, and related
+     * checkCorrelationRules() paths) can produce a persisted L2+ candidate
+     * independently of any policy's own score thresholds or budget
+     * configuration, so HardBlockCycleStoreInterface is a Production Default
+     * Path requirement, not something derivable from the registered policy
+     * graph. An entirely L1-only, budget-free policy graph must still be
+     * rejected.
+     */
+    public function testL1OnlyBudgetFreePolicyGraphStillRejectsRateLimitStoreLackingHardBlockCycleCapability(): void
     {
         $builder = $this->neutralizedBuilder(
             new BaseOnlyInMemoryRateLimitStore($this->clock),
             new StatefulInMemoryCorrelationStore($this->clock),
             new InMemoryCircuitBreakerStore(),
         );
-        $builder->withPolicy(new NeutralPolicy('l2_capable_policy', l2: 2, l3: 3));
 
-        try {
-            $builder->build();
-            self::fail('Expected an L2+-capable non-opt-in policy to require HardBlockCycleStoreInterface.');
-        } catch (RateLimiterException $exception) {
-            self::assertStringContainsString('l2_capable_policy', $exception->getMessage());
-            self::assertStringContainsString('HardBlockCycleStoreInterface', $exception->getMessage());
-        }
+        $this->expectException(RateLimiterException::class);
+        $this->expectExceptionMessage('HardBlockCycleStoreInterface');
+        $builder->build();
+    }
+
+    public function testHardBlockCycleOnlyRateLimitStoreBuildsSuccessfullyWithTheSameL1OnlyPolicyGraph(): void
+    {
+        $builder = $this->neutralizedBuilder(
+            new HardBlockCycleOnlyInMemoryRateLimitStore($this->clock),
+            new StatefulInMemoryCorrelationStore($this->clock),
+            new InMemoryCircuitBreakerStore(),
+        );
+
+        self::assertInstanceOf(CompositeRateLimiterRuntimeInterface::class, $builder->build());
     }
 
     public function testAccountBudgetWithPreviousOuterKeyRejectsMissingBudgetSeedCapability(): void
     {
         $config = new RateLimiterConfig('key-secret', 'fingerprint-secret', 'prod', 'previous-key-secret');
         $builder = $this->neutralizedBuilder(
-            new BaseOnlyInMemoryRateLimitStore($this->clock),
+            new HardBlockCycleOnlyInMemoryRateLimitStore($this->clock),
             new StatefulInMemoryCorrelationStore($this->clock),
             new InMemoryCircuitBreakerStore(),
             $config,
@@ -220,7 +240,7 @@ final class RateLimiterBuilderCapabilityPreflightTest extends TestCase
     {
         $config = new RateLimiterConfig('key-secret', 'fingerprint-secret', 'prod', null, 'previous-fingerprint-secret');
         $builder = $this->neutralizedBuilder(
-            new BaseOnlyInMemoryRateLimitStore($this->clock),
+            new HardBlockCycleOnlyInMemoryRateLimitStore($this->clock),
             new StatefulInMemoryCorrelationStore($this->clock),
             new InMemoryCircuitBreakerStore(),
             $config,
@@ -242,7 +262,7 @@ final class RateLimiterBuilderCapabilityPreflightTest extends TestCase
     {
         $config = new RateLimiterConfig('key-secret', 'fingerprint-secret', 'prod', 'previous-key-secret');
         $builder = $this->neutralizedBuilder(
-            new BaseOnlyInMemoryRateLimitStore($this->clock),
+            new HardBlockCycleOnlyInMemoryRateLimitStore($this->clock),
             new StatefulInMemoryCorrelationStore($this->clock),
             new InMemoryCircuitBreakerStore(),
             $config,
@@ -260,7 +280,7 @@ final class RateLimiterBuilderCapabilityPreflightTest extends TestCase
     public function testNoFalsePositiveBudgetSeedRequirementWithoutAnApplicablePreviousGeneration(): void
     {
         $builder = $this->neutralizedBuilder(
-            new BaseOnlyInMemoryRateLimitStore($this->clock),
+            new HardBlockCycleOnlyInMemoryRateLimitStore($this->clock),
             new StatefulInMemoryCorrelationStore($this->clock),
             new InMemoryCircuitBreakerStore(),
         );
@@ -302,6 +322,87 @@ final class RateLimiterBuilderCapabilityPreflightTest extends TestCase
         $this->expectException(RateLimiterException::class);
         $this->expectExceptionMessage('CircuitBreakerProbeStoreInterface');
         $builder->build();
+    }
+
+    /**
+     * Lead review #5852970266 (Blocker 1): DeviceIdentityDTO publicly
+     * permits a non-null previousFingerprintHash regardless of which
+     * DeviceIdentityResolverInterface produced it, and the runtime already
+     * treats that as an active previous generation. A Host-supplied custom
+     * resolver is therefore conservatively treated as capable of producing
+     * one, even though RateLimiterConfig::previousFingerprintSecret() is
+     * null and the resolver is never actually invoked here.
+     */
+    public function testCustomResolverRejectsCorrelationStoreLackingRotationCapability(): void
+    {
+        $builder = new RateLimiterBuilder(
+            $this->config,
+            new InMemoryRateLimitStore($this->clock),
+            new BoundedOnlyInMemoryCorrelationStore($this->clock),
+            new InMemoryCircuitBreakerStore(),
+            $this->failureSignalEmitter,
+        );
+        $builder->withDeviceIdentityResolver(new NeverInvokedDeviceIdentityResolver());
+
+        $this->expectException(RateLimiterException::class);
+        $this->expectExceptionMessage('BoundedCorrelationRotationStoreInterface');
+        $builder->build();
+    }
+
+    public function testCustomResolverWithDistributedAccountRejectsSnapshotWithoutRotationSupport(): void
+    {
+        $builder = new RateLimiterBuilder(
+            $this->config,
+            new InMemoryRateLimitStore($this->clock),
+            new SeparateSnapshotAndRotationInMemoryCorrelationStore($this->clock),
+            new InMemoryCircuitBreakerStore(),
+            $this->failureSignalEmitter,
+        );
+        $builder->withDeviceIdentityResolver(new NeverInvokedDeviceIdentityResolver());
+
+        try {
+            $builder->build();
+            self::fail('Expected a custom resolver to make DISTRIBUTED_ACCOUNT require the combined snapshot-rotation capability.');
+        } catch (RateLimiterException $exception) {
+            self::assertStringContainsString('login_protection', $exception->getMessage());
+            self::assertStringContainsString('BoundedCorrelationSnapshotRotationStoreInterface', $exception->getMessage());
+        }
+    }
+
+    public function testCustomResolverWithKnownDeviceMicroCapRejectsMissingBudgetSeedCapability(): void
+    {
+        $builder = $this->neutralizedBuilder(
+            new HardBlockCycleOnlyInMemoryRateLimitStore($this->clock),
+            new StatefulInMemoryCorrelationStore($this->clock),
+            new InMemoryCircuitBreakerStore(),
+        );
+        $builder
+            ->withDeviceIdentityResolver(new NeverInvokedDeviceIdentityResolver())
+            ->withPolicy(new NeutralPolicy(
+                'micro_cap_policy',
+                budget: new BudgetConfigDTO(threshold: 5, block_level: 1, known_device_micro_cap: 3),
+            ));
+
+        try {
+            $builder->build();
+            self::fail('Expected a custom resolver combined with a known-device micro-cap policy to require BudgetSeedStoreInterface.');
+        } catch (RateLimiterException $exception) {
+            self::assertStringContainsString('BudgetSeedStoreInterface', $exception->getMessage());
+        }
+    }
+
+    public function testValidCustomResolverCompositionWithRequiredRotationCapabilitiesBuildsSuccessfully(): void
+    {
+        $builder = new RateLimiterBuilder(
+            $this->config,
+            new InMemoryRateLimitStore($this->clock),
+            new StatefulInMemoryCorrelationStore($this->clock),
+            new InMemoryCircuitBreakerStore(),
+            $this->failureSignalEmitter,
+        );
+        $builder->withDeviceIdentityResolver(new NeverInvokedDeviceIdentityResolver());
+
+        self::assertInstanceOf(CompositeRateLimiterRuntimeInterface::class, $builder->build());
     }
 
     public function testFullCapabilityStorePathStillBuildsSuccessfully(): void
@@ -432,5 +533,19 @@ final class DistributedAccountPolicy implements BlockPolicyInterface, PolicyCapa
     public function getBudgetConfig(): ?BudgetConfigDTO
     {
         return null;
+    }
+}
+
+/**
+ * A Host-supplied custom resolver whose DeviceIdentityDTO shape the Builder
+ * cannot inspect: it is never actually invoked in these build()-only tests,
+ * which is the point — the Production Default Path must reject/accept based
+ * on the production graph contract before any request is ever resolved.
+ */
+final class NeverInvokedDeviceIdentityResolver implements DeviceIdentityResolverInterface
+{
+    public function resolve(RateLimitContextDTO $context): DeviceIdentityDTO
+    {
+        throw new \LogicException('This resolver must not be invoked by a build()-only test.');
     }
 }

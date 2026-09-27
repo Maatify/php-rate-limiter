@@ -309,22 +309,21 @@ final class RateLimiterBuilder
 
     /**
      * DEC-003: a persisted L2+ block must never fall back to
-     * RateLimitStoreInterface::block(); the rate-limit store must support
-     * HardBlockCycleStoreInterface whenever the registered graph can produce
-     * one, whether via a normal score threshold or via a budget block level.
-     * PunishmentLifecycleStoreInterface already extends this capability, so
-     * an opted-in policy validated above never re-triggers this check.
+     * RateLimitStoreInterface::block(). EvaluationPipeline's generic bounded
+     * correlation enforcement (churn, dilution, and related
+     * checkCorrelationRules() paths) can produce a persisted L2+ candidate
+     * independently of any policy's own score thresholds or budget
+     * configuration, so this is a Production Default Path requirement for
+     * the score runtime, not something derivable from the registered policy
+     * graph. PunishmentLifecycleStoreInterface already satisfies this
+     * transitively.
      */
     private function assertHardBlockCycleCapability(): void
     {
-        foreach ($this->policies as $policy) {
-            if ($this->policyCanProduceL2PlusBlock($policy)
-                && ! $this->rateLimitStore instanceof HardBlockCycleStoreInterface) {
-                throw new RateLimiterException(
-                    'Policy ' . $policy->getName() . ' can produce a persisted L2+ block and '
-                    . 'requires HardBlockCycleStoreInterface.',
-                );
-            }
+        if (! $this->rateLimitStore instanceof HardBlockCycleStoreInterface) {
+            throw new RateLimiterException(
+                'The rate-limit store requires HardBlockCycleStoreInterface.',
+            );
         }
     }
 
@@ -383,10 +382,15 @@ final class RateLimiterBuilder
 
     /**
      * A previous outer key-generation secret is always reachable when
-     * configured. A previous fingerprint-generation secret is reachable only
-     * through the package default device identity resolver: a Host-supplied
-     * custom resolver never consults RateLimiterConfig::previousFingerprintSecret(),
-     * so that value would otherwise be a false-positive trigger.
+     * configured. A previous fingerprint generation is reachable when
+     * RateLimiterConfig::previousFingerprintSecret() is configured (consumed
+     * by the package default resolver), OR when a Host-supplied custom
+     * DeviceIdentityResolverInterface is configured: DeviceIdentityDTO
+     * publicly permits a non-null previousFingerprintHash, and the runtime
+     * already treats that as an active previous generation regardless of
+     * which resolver produced it. The Builder cannot prove a custom resolver
+     * will never do so, so the Production Default Path conservatively
+     * treats a custom resolver as capable of producing one.
      */
     private function hasReachablePreviousOuterGeneration(): bool
     {
@@ -395,43 +399,13 @@ final class RateLimiterBuilder
 
     private function hasReachablePreviousFingerprintGeneration(): bool
     {
-        return $this->deviceIdentityResolver === null
-            && $this->config->previousFingerprintSecret() !== null;
+        return $this->deviceIdentityResolver !== null
+            || $this->config->previousFingerprintSecret() !== null;
     }
 
     private function hasReachablePreviousGeneration(): bool
     {
         return $this->hasReachablePreviousOuterGeneration()
             || $this->hasReachablePreviousFingerprintGeneration();
-    }
-
-    /**
-     * A scope is treated as capable of a persisted L2+ block unless its L2
-     * and L3 thresholds both use the package's disabled-threshold sentinel
-     * (PHP_INT_MAX, as used by ApiHeavyProtectionPolicy) meaning that scope
-     * can never hard-block; a budget block level of L2 or higher is an
-     * independent, capability-driven L2+ path.
-     */
-    private function policyCanProduceL2PlusBlock(BlockPolicyInterface $policy): bool
-    {
-        $thresholds = $policy->getScoreThresholds();
-        $scopes = [
-            $thresholds->k1,
-            $thresholds->k2,
-            $thresholds->k3,
-            $thresholds->k4,
-            $thresholds->k5,
-            $thresholds->default,
-        ];
-
-        foreach ($scopes as $scope) {
-            if ($scope !== null && ($scope->l2 !== PHP_INT_MAX || $scope->l3 !== PHP_INT_MAX)) {
-                return true;
-            }
-        }
-
-        $budget = $policy->getBudgetConfig();
-
-        return $budget !== null && $budget->block_level >= 2;
     }
 }
