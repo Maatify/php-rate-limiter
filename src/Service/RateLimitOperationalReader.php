@@ -336,7 +336,7 @@ final class RateLimitOperationalReader implements RateLimitOperationalReaderInte
         }
 
         return $this->hashKey(
-            "{$policyName}:rate_limiter:microcap:k5:v1:{$accountId}:{$fingerprintHash}",
+            "{$policyName}:rate_limiter:microcap:k5:v1:{$this->envScope}:{$accountId}:{$fingerprintHash}",
             $secret,
         );
     }
