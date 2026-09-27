@@ -8,6 +8,8 @@ use Maatify\RateLimiter\Config\RateLimiterConfig;
 use Maatify\RateLimiter\Contract\FailureSignalEmitterInterface;
 use Maatify\RateLimiter\DTO\BlockStateDTO;
 use Maatify\RateLimiter\DTO\BudgetStateDTO;
+use Maatify\RateLimiter\DTO\BoundedDistinctResultDTO;
+use Maatify\RateLimiter\DTO\BoundedDistinctSnapshotDTO;
 use Maatify\RateLimiter\DTO\CircuitBreakerStateDTO;
 use Maatify\RateLimiter\DTO\DecayPauseStateDTO;
 use Maatify\RateLimiter\DTO\FailureSignalDTO;
@@ -17,8 +19,8 @@ use Maatify\RateLimiter\DTO\HardBlockCycleResultDTO;
 use Maatify\RateLimiter\DTO\PostPunishmentReentryStateDTO;
 use Maatify\RateLimiter\DTO\PunishmentLifecycleTransitionDTO;
 use Maatify\RateLimiter\DTO\RateLimitStateDTO;
-use Maatify\RateLimiter\Repository\CircuitBreakerStoreInterface;
-use Maatify\RateLimiter\Repository\CorrelationStoreInterface;
+use Maatify\RateLimiter\Repository\BoundedCorrelationSnapshotStoreInterface;
+use Maatify\RateLimiter\Repository\CircuitBreakerProbeStoreInterface;
 use Maatify\RateLimiter\Repository\PunishmentLifecycleStoreInterface;
 
 require dirname(__DIR__) . '/vendor/autoload.php';
@@ -155,32 +157,180 @@ final class SimpleThrottleExampleStore implements PunishmentLifecycleStoreInterf
     }
 }
 
-final class SimpleThrottleExampleCorrelationStore implements CorrelationStoreInterface
+final class SimpleThrottleExampleCorrelationStore implements BoundedCorrelationSnapshotStoreInterface
 {
+    /** @var array<string, array{items: array<string, true>, expiresAt: int}> */
+    private array $sets = [];
+
+    /** @var array<string, array{count: int, expiresAt: int}> */
+    private array $flags = [];
+
     public function addDistinct(string $key, string $item, int $ttlSeconds): int
     {
-        return 1;
+        if ($ttlSeconds <= 0) {
+            throw new InvalidArgumentException('Correlation TTL must be positive.');
+        }
+
+        $now = time();
+        $current = $this->sets[$key] ?? null;
+        if ($current === null || $current['expiresAt'] <= $now) {
+            $current = ['items' => [], 'expiresAt' => $now + $ttlSeconds];
+        }
+
+        $current['items'][$item] = true;
+        $this->sets[$key] = $current;
+
+        return count($current['items']);
+    }
+
+    public function addDistinctBounded(
+        string $key,
+        string $item,
+        int $ttlSeconds,
+        int $maxDistinct,
+    ): BoundedDistinctResultDTO {
+        if ($ttlSeconds <= 0 || $maxDistinct <= 0) {
+            throw new InvalidArgumentException('Bounded correlation TTL and cap must be positive.');
+        }
+
+        $now = time();
+        $current = $this->sets[$key] ?? null;
+        if ($current === null || $current['expiresAt'] <= $now) {
+            $current = ['items' => [], 'expiresAt' => $now + $ttlSeconds];
+        }
+
+        if (isset($current['items'][$item])) {
+            $this->sets[$key] = $current;
+
+            return new BoundedDistinctResultDTO(count($current['items']), true);
+        }
+
+        if (count($current['items']) >= $maxDistinct) {
+            $this->sets[$key] = $current;
+
+            return new BoundedDistinctResultDTO(count($current['items']), false);
+        }
+
+        $current['items'][$item] = true;
+        $this->sets[$key] = $current;
+
+        return new BoundedDistinctResultDTO(count($current['items']), true);
+    }
+
+    public function addDistinctBoundedWithSnapshot(
+        string $key,
+        string $item,
+        int $ttlSeconds,
+        int $maxDistinct,
+    ): BoundedDistinctSnapshotDTO {
+        if ($ttlSeconds <= 0 || $maxDistinct <= 0) {
+            throw new InvalidArgumentException('Bounded correlation TTL and cap must be positive.');
+        }
+
+        $now = time();
+        $current = $this->sets[$key] ?? null;
+        if ($current === null || $current['expiresAt'] <= $now) {
+            $current = ['items' => [], 'expiresAt' => $now + $ttlSeconds];
+        }
+
+        if (isset($current['items'][$item])) {
+            $this->sets[$key] = $current;
+
+            return new BoundedDistinctSnapshotDTO(
+                count($current['items']),
+                true,
+                false,
+                array_keys($current['items']),
+                $current['expiresAt'],
+            );
+        }
+
+        if (count($current['items']) >= $maxDistinct) {
+            $this->sets[$key] = $current;
+
+            return new BoundedDistinctSnapshotDTO(
+                count($current['items']),
+                false,
+                false,
+                array_keys($current['items']),
+                $current['expiresAt'],
+            );
+        }
+
+        $current['items'][$item] = true;
+        $this->sets[$key] = $current;
+
+        return new BoundedDistinctSnapshotDTO(
+            count($current['items']),
+            true,
+            true,
+            array_keys($current['items']),
+            $current['expiresAt'],
+        );
     }
 
     public function incrementWatchFlag(string $key, int $ttlSeconds): int
     {
-        return 1;
+        if ($ttlSeconds <= 0) {
+            throw new InvalidArgumentException('Correlation flag TTL must be positive.');
+        }
+
+        $now = time();
+        $current = $this->flags[$key] ?? null;
+        if ($current === null || $current['expiresAt'] <= $now) {
+            $current = ['count' => 0, 'expiresAt' => $now + $ttlSeconds];
+        }
+
+        $current['count']++;
+        $this->flags[$key] = $current;
+
+        return $current['count'];
     }
 
     public function getWatchFlag(string $key): int
     {
-        return 0;
+        $current = $this->flags[$key] ?? null;
+        if ($current === null || $current['expiresAt'] <= time()) {
+            return 0;
+        }
+
+        return $current['count'];
     }
 }
 
-final class SimpleThrottleExampleCircuitBreakerStore implements CircuitBreakerStoreInterface
+final class SimpleThrottleExampleCircuitBreakerStore implements CircuitBreakerProbeStoreInterface
 {
+    /** @var array<string, CircuitBreakerStateDTO> */
+    private array $states = [];
+
+    /** @var array<string, int> */
+    private array $probeLeases = [];
+
     public function load(string $policyName): ?CircuitBreakerStateDTO
     {
-        return null;
+        return $this->states[$policyName] ?? null;
     }
 
-    public function save(string $policyName, CircuitBreakerStateDTO $state): void {}
+    public function save(string $policyName, CircuitBreakerStateDTO $state): void
+    {
+        $this->states[$policyName] = $state;
+    }
+
+    public function acquireProbeLease(string $policyName, int $now, int $leaseSeconds): bool
+    {
+        if ($leaseSeconds <= 0) {
+            throw new InvalidArgumentException('Circuit-breaker probe lease must be positive.');
+        }
+
+        $expiresAt = $this->probeLeases[$policyName] ?? 0;
+        if ($expiresAt > $now) {
+            return false;
+        }
+
+        $this->probeLeases[$policyName] = $now + $leaseSeconds;
+
+        return true;
+    }
 }
 
 final class SimpleThrottleExampleFailureSignalEmitter implements FailureSignalEmitterInterface
@@ -188,9 +338,12 @@ final class SimpleThrottleExampleFailureSignalEmitter implements FailureSignalEm
     public function emit(FailureSignalDTO $signal): void {}
 }
 
-// This example demonstrates only the generic/simple fixed-window throttling
-// capability (DEC-009/DEC-010): one RateLimiterBuilder, one explicit
-// FixedWindowThrottlePolicy registration, one build(), and consume().
+// This example demonstrates simple fixed-window throttling: one
+// RateLimiterBuilder, one explicit FixedWindowThrottlePolicy registration,
+// one build(), and consume(). The default Builder still constructs the
+// composite package graph, so these small adapters provide the minimum
+// current score-runtime capabilities even though this sample only calls
+// consume().
 $limiter = (new RateLimiterBuilder(
     new RateLimiterConfig(
         keySecret: 'example-key-secret',
