@@ -287,7 +287,7 @@ These guardrails are best-effort and do not require shared storage.
 
 ---
 
-### 4.4 Generic / Simple Fixed-Window Throttling (DEC-009)
+### 4.4 Generic / Simple Fixed-Window Throttling (DEC-013)
 
 **Primary Mode:**
 
@@ -298,7 +298,7 @@ FAIL_CLOSED
 Version 1 of simple fixed-window throttling (`Maatify\RateLimiter\Service\SimpleRateLimiterInterface`)
 is FAIL_CLOSED only. It has no DEGRADED_MODE, no bounded local fallback, and no `FAIL_OPEN`
 mode, and it does not participate in the score-model circuit breaker described in §5: it is a
-separate, narrower semantic family (DEC-009) and reuses only the atomic budget-epoch storage
+separate, narrower semantic family (DEC-013) and reuses only the atomic budget-epoch storage
 primitives, never the score/circuit-breaker machinery.
 
 Two distinct outcomes both surface through `SimpleRateLimiterInterface::consume()`, and they are

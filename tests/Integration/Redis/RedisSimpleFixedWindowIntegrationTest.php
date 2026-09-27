@@ -6,6 +6,7 @@ namespace Maatify\RateLimiter\Tests\Integration\Redis;
 
 use DateTimeZone;
 use Maatify\RateLimiter\Config\FixedWindowThrottlePolicy;
+use Maatify\RateLimiter\DTO\BudgetStateDTO;
 use Maatify\RateLimiter\Repository\Redis\RedisFullCapabilityStore;
 use Maatify\RateLimiter\Service\FixedWindowSimpleRateLimiter;
 use Maatify\RateLimiter\Service\SimpleRateLimitOperationalReader;
@@ -13,6 +14,7 @@ use Maatify\RateLimiter\Tests\Support\Redis\RespRedisCommandExecutor;
 use Maatify\SharedCommon\Contracts\ClockInterface;
 use Maatify\SharedCommon\Infrastructure\SystemClock;
 use PHPUnit\Framework\TestCase;
+use RuntimeException;
 
 /**
  * Proves the fixed-window simple throttle capability against a real,
@@ -61,6 +63,164 @@ final class RedisSimpleFixedWindowIntegrationTest extends TestCase
         self::assertSame($first->resetAt, $third->resetAt, 'A denied consume must not renew or extend the window.');
         self::assertGreaterThan(0, $third->retryAfter ?? 0);
         self::assertLessThanOrEqual(60, $third->retryAfter ?? 0);
+    }
+
+    public function testWeightedConsumesAccumulateAndOperationalReadReportsThePersistedCount(): void
+    {
+        $limiter = new FixedWindowSimpleRateLimiter(
+            [new FixedWindowThrottlePolicy('weighted', 10, 60)],
+            $this->store,
+            $this->clock,
+            'current-secret',
+            'prod',
+            null,
+        );
+
+        $first = $limiter->consume('weighted', 'subject-redis-weighted', 2);
+        $second = $limiter->consume('weighted', 'subject-redis-weighted', 3);
+        $denied = $limiter->consume('weighted', 'subject-redis-weighted', 6);
+
+        self::assertTrue($first->allowed);
+        self::assertSame(8, $first->remaining);
+        self::assertTrue($second->allowed);
+        self::assertSame(5, $second->remaining);
+        self::assertFalse($denied->allowed);
+        self::assertSame(0, $denied->remaining);
+        self::assertSame($first->resetAt, $denied->resetAt);
+
+        $snapshot = (new SimpleRateLimitOperationalReader(
+            [new FixedWindowThrottlePolicy('weighted', 10, 60)],
+            $this->store,
+            $this->clock,
+            'current-secret',
+            'prod',
+            null,
+        ))->read('weighted', 'subject-redis-weighted');
+
+        self::assertSame(11, $snapshot->count);
+        self::assertSame(0, $snapshot->remaining);
+        self::assertSame($denied->resetAt, $snapshot->resetAt);
+    }
+
+    public function testLargeCurrentCountRemainsExactPastLuaDoublePrecision(): void
+    {
+        if (PHP_INT_SIZE < 8) {
+            self::markTestSkipped('This exactness proof requires 64-bit PHP integers.');
+        }
+
+        $largeCost = 9007199254740993;
+        $limiter = new FixedWindowSimpleRateLimiter(
+            [new FixedWindowThrottlePolicy('large', 9007199254740995, 60)],
+            $this->store,
+            $this->clock,
+            'current-secret',
+            'prod',
+            null,
+        );
+
+        $first = $limiter->consume('large', 'subject-redis-large-current', $largeCost);
+        $second = $limiter->consume('large', 'subject-redis-large-current', 1);
+
+        self::assertTrue($first->allowed);
+        self::assertTrue($second->allowed);
+        self::assertSame(1, $second->remaining);
+        self::assertSame(9007199254740994, $this->largeReader('current-secret', null)->read('large', 'subject-redis-large-current')->count);
+    }
+
+    public function testLargePreviousCountMigratesExactlyAndPreviousRemainsUnchanged(): void
+    {
+        if (PHP_INT_SIZE < 8) {
+            self::markTestSkipped('This exactness proof requires 64-bit PHP integers.');
+        }
+
+        $largeCost = 9007199254740993;
+        $previousLimiter = new FixedWindowSimpleRateLimiter(
+            [new FixedWindowThrottlePolicy('large', 9007199254740995, 60)],
+            $this->store,
+            $this->clock,
+            'previous-secret',
+            'prod',
+            null,
+        );
+        self::assertTrue($previousLimiter->consume('large', 'subject-redis-large-rotation', $largeCost)->allowed);
+        $keysBefore = $this->executor->execute(['KEYS', '*']);
+        self::assertIsArray($keysBefore);
+        self::assertCount(1, $keysBefore);
+        $previousKey = $keysBefore[0];
+        self::assertIsString($previousKey);
+        $previousValueBefore = $this->executor->execute(['HGETALL', $previousKey]);
+
+        $rotatedLimiter = new FixedWindowSimpleRateLimiter(
+            [new FixedWindowThrottlePolicy('large', 9007199254740995, 60)],
+            $this->store,
+            $this->clock,
+            'current-secret',
+            'prod',
+            'previous-secret',
+        );
+        $migrated = $rotatedLimiter->consume('large', 'subject-redis-large-rotation', 1);
+
+        self::assertTrue($migrated->allowed);
+        self::assertSame(1, $migrated->remaining);
+        self::assertSame(9007199254740994, $this->largeReader('current-secret', 'previous-secret')->read('large', 'subject-redis-large-rotation')->count);
+        self::assertSame($previousValueBefore, $this->executor->execute(['HGETALL', $previousKey]));
+    }
+
+    public function testActiveCurrentIgnoresOverflowingSeed(): void
+    {
+        if (PHP_INT_SIZE < 8) {
+            self::markTestSkipped('This exactness proof requires 64-bit PHP integers.');
+        }
+
+        $current = $this->store->incrementBudget('seed-overflow-current', 60, 1);
+        $migrated = $this->store->incrementBudgetWithSeed(
+            'seed-overflow-current',
+            60,
+            new BudgetStateDTO(PHP_INT_MAX, $current->epochStart),
+            1,
+        );
+
+        self::assertSame(1, $current->count);
+        self::assertSame(2, $migrated->count);
+        self::assertSame($current->epochStart, $migrated->epochStart);
+    }
+
+    public function testExpiredSeedIgnoresOverflowingSumAndStartsFreshEpoch(): void
+    {
+        if (PHP_INT_SIZE < 8) {
+            self::markTestSkipped('This exactness proof requires 64-bit PHP integers.');
+        }
+
+        $before = time();
+        $fresh = $this->store->incrementBudgetWithSeed(
+            'seed-overflow-expired',
+            60,
+            new BudgetStateDTO(PHP_INT_MAX, $before - 61),
+            1,
+        );
+
+        self::assertSame(1, $fresh->count);
+        self::assertGreaterThanOrEqual($before, $fresh->epochStart);
+    }
+
+    public function testActiveSeedOverflowFailsOnlyWhenActiveSeedBranchWinsWithoutPartialMutation(): void
+    {
+        if (PHP_INT_SIZE < 8) {
+            self::markTestSkipped('This exactness proof requires 64-bit PHP integers.');
+        }
+
+        $this->expectException(RuntimeException::class);
+        $this->expectExceptionMessage('seeded budget count overflow');
+        try {
+            $this->store->incrementBudgetWithSeed(
+                'seed-overflow-active',
+                60,
+                new BudgetStateDTO(PHP_INT_MAX, time()),
+                1,
+            );
+        } finally {
+            self::assertSame([], $this->executor->execute(['KEYS', '*']));
+        }
     }
 
     public function testDeniedConsumeDoesNotRenewExpiryAndANewEpochStartsAfterRealExpiry(): void
@@ -254,6 +414,18 @@ final class RedisSimpleFixedWindowIntegrationTest extends TestCase
             [new FixedWindowThrottlePolicy('checkout', 2, $intervalSeconds)],
             $this->store,
             $clock,
+            $keySecret,
+            'prod',
+            $previousKeySecret,
+        );
+    }
+
+    private function largeReader(string $keySecret, ?string $previousKeySecret): SimpleRateLimitOperationalReader
+    {
+        return new SimpleRateLimitOperationalReader(
+            [new FixedWindowThrottlePolicy('large', 9007199254740995, 60)],
+            $this->store,
+            $this->clock,
             $keySecret,
             'prod',
             $previousKeySecret,

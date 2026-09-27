@@ -138,7 +138,7 @@ behavior.
 
 The public runtime surface also includes the `login_protection`, `otp_protection`, and `api_heavy_protection` policy presets; typed context, command, result, identity, state, operational snapshot, and metadata DTOs; `RateLimitOperationalReaderInterface::read()` for read-only point-in-time operational inspection; and extension contracts for rate-limit storage, the aggregate full-capability storage contract (`FullCapabilityStoreInterface`), atomic L2+ hard-block cycle tracking (`HardBlockCycleStoreInterface`), correlation storage, circuit-breaker state, failure signals, device identity resolution, and custom policies. A base-only rate-limit store remains compatible for reads and L1 writes, but L2+ persistence requires the additive hard-block cycle capability.
 
-`RateLimiterBuilder::buildOperationalReader()` (DEC-012) is the Production Default Read Path for Operational Read: it returns `CompositeRateLimitOperationalReaderInterface`, built from the Builder's own current registered state, so `readScorePolicy(context, policyName)` and `readSimpleThrottle(policyName, subject)` resolve the exact same score/simple policy definitions, clock, device resolver, and key configuration the Builder's `build()` enforces with — no Host reconstruction of policy semantics and no second `BlockPolicyInterface` needed. The existing `RateLimitOperationalReaderInterface`/`RateLimitOperationalReader` remain fully available as the Advanced Path. Simple fixed-window persisted state (DEC-009) is included in the Operational Read classification via `SimpleRateLimitOperationalReaderInterface`/`SimpleRateLimitOperationalReader` and `SimpleRateLimitOperationalSnapshotDTO`; this is a read-only inspection, not a second `consume()`.
+`RateLimiterBuilder::buildOperationalReader()` (DEC-012) is the Production Default Read Path for Operational Read: it returns `CompositeRateLimitOperationalReaderInterface`, built from the Builder's own current registered state, so `readScorePolicy(context, policyName)` and `readSimpleThrottle(policyName, subject)` resolve the exact same score/simple policy definitions, clock, device resolver, and key configuration the Builder's `build()` enforces with — no Host reconstruction of policy semantics and no second `BlockPolicyInterface` needed. The existing `RateLimitOperationalReaderInterface`/`RateLimitOperationalReader` remain fully available as the Advanced Path. Simple fixed-window persisted state (DEC-013) is included in the Operational Read classification via `SimpleRateLimitOperationalReaderInterface`/`SimpleRateLimitOperationalReader` and `SimpleRateLimitOperationalSnapshotDTO`; this is a read-only inspection, not a second `consume()`.
 
 For DEC-007, the Redis lifecycle primitive atomically couples the generation-bound
 K4 score, L2+ block, score-expiry evidence, and generation fence. Reads use a
@@ -178,6 +178,7 @@ See [Device Fingerprint](docs/DEVICE_FINGERPRINT.md), [Failure Semantics](docs/F
 - [Usage Guide](docs/guides/USAGE_GUIDE.md)
 - [Runnable Examples](examples/)
 - [Package Reference](RATE_LIMITER_PACKAGE_REFERENCE.md)
+- [Future Upgrade Roadmap](docs/ROADMAP.md)
 - [Decision Matrix](docs/DECISION_MATRIX.md)
 - [Device Fingerprint](docs/DEVICE_FINGERPRINT.md)
 - [Failure Semantics](docs/FAILURE_SEMANTICS.md)

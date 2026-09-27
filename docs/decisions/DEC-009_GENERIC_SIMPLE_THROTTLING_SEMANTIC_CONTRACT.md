@@ -6,7 +6,7 @@
 
 ## Status
 
-`ACTIVE`
+`SUPERSEDED`
 
 ## Date
 
@@ -47,7 +47,7 @@ Historical `Maatify/rate-limiter` evidence includes action-level `limit / interv
 
 The package owns a first-class generic/simple throttling capability.
 
-Version 1 of that capability is intentionally narrow:
+The historical Version 1 of that capability was intentionally narrow:
 
 ```text
 FIXED WINDOW
@@ -172,7 +172,7 @@ None.
 
 ## Superseded By
 
-None.
+`DEC-013`
 
 ## Canonical Contract / Current Owner
 

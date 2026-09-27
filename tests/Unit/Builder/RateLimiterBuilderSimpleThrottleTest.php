@@ -84,6 +84,18 @@ final class RateLimiterBuilderSimpleThrottleTest extends TestCase
         self::assertSame(4, $result->remaining);
     }
 
+    public function testCompositeRuntimeDelegatesTheExactWeightedCost(): void
+    {
+        $runtime = $this->builder()
+            ->withSimpleThrottlePolicy(new FixedWindowThrottlePolicy('checkout', 10, 60))
+            ->build();
+
+        $result = $runtime->consume('checkout', 'subject-1', 7);
+
+        self::assertTrue($result->allowed);
+        self::assertSame(3, $result->remaining);
+    }
+
     public function testNewNameSimplePolicyIsAppendedAlongsideExisting(): void
     {
         $checkout = new FixedWindowThrottlePolicy('checkout', 1, 60);

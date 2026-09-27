@@ -13,11 +13,12 @@ use Maatify\RateLimiter\Repository\RateLimitStoreInterface;
 use Maatify\SharedCommon\Contracts\ClockInterface;
 
 /**
- * Production implementation of SimpleRateLimiterInterface (DEC-009).
+ * Production implementation of SimpleRateLimiterInterface (DEC-013).
  *
- * Version 1 is FIXED WINDOW, cost = 1 per consume, one policy-defined limit
- * and interval, one caller-supplied subject, atomic consume, and a
- * deterministic fixed reset boundary. It reuses the existing atomic
+ * Version 1 is FIXED WINDOW, positive caller-supplied cost per consume
+ * (defaulting to 1), one policy-defined limit and interval, one
+ * caller-supplied subject, atomic consume, and a deterministic fixed reset
+ * boundary. It reuses the existing atomic
  * budget-epoch persistence primitives; no new storage backend family is
  * introduced. It is FAIL_CLOSED only and does not create score state,
  * correlation observations, or authentication budgets: its key namespace is
@@ -71,10 +72,10 @@ final class FixedWindowSimpleRateLimiter implements SimpleRateLimiterInterface
 
     /**
      * @throws RateLimiterException When the policy is unregistered, the
-     *     subject is blank, or previous-generation migration is required but
-     *     the store lacks BudgetSeedStoreInterface.
+     *     subject is blank, cost is not positive, or previous-generation
+     *     migration is required but the store lacks BudgetSeedStoreInterface.
      */
-    public function consume(string $policyName, string $subject): SimpleRateLimitResultDTO
+    public function consume(string $policyName, string $subject, int $cost = 1): SimpleRateLimitResultDTO
     {
         $policy = $this->policies[$policyName] ?? null;
         if ($policy === null) {
@@ -85,6 +86,10 @@ final class FixedWindowSimpleRateLimiter implements SimpleRateLimiterInterface
             throw new RateLimiterException('Simple throttle subject must not be empty or whitespace-only.');
         }
 
+        if ($cost < 1) {
+            throw new RateLimiterException('Simple throttle consume cost must be a positive integer.');
+        }
+
         $limit = $policy->getLimit();
         $intervalSeconds = $policy->getIntervalSeconds();
 
@@ -93,7 +98,7 @@ final class FixedWindowSimpleRateLimiter implements SimpleRateLimiterInterface
             ? null
             : $this->deriveKey($policyName, $limit, $intervalSeconds, $subject, $this->previousKeySecret);
 
-        $state = $this->incrementAcrossRotation($currentKey, $previousKey, $intervalSeconds);
+        $state = $this->incrementAcrossRotation($currentKey, $previousKey, $intervalSeconds, $cost);
         if ($state === null) {
             return new SimpleRateLimitResultDTO(
                 allowed: false,
@@ -152,7 +157,7 @@ final class FixedWindowSimpleRateLimiter implements SimpleRateLimiterInterface
      * @throws RateLimiterException When Previous holds a valid epoch but the
      *     store cannot atomically seed it into Current.
      */
-    private function incrementAcrossRotation(string $currentKey, ?string $previousKey, int $intervalSeconds): ?BudgetStateDTO
+    private function incrementAcrossRotation(string $currentKey, ?string $previousKey, int $intervalSeconds, int $cost): ?BudgetStateDTO
     {
         $currentReadFailed = false;
         try {
@@ -166,7 +171,7 @@ final class FixedWindowSimpleRateLimiter implements SimpleRateLimiterInterface
         }
 
         if ($currentState !== null) {
-            return $this->incrementBudget($currentKey, $intervalSeconds);
+            return $this->incrementBudget($currentKey, $intervalSeconds, $cost);
         }
 
         if ($previousKey !== null) {
@@ -191,24 +196,24 @@ final class FixedWindowSimpleRateLimiter implements SimpleRateLimiterInterface
                 }
 
                 try {
-                    return $this->store->incrementBudgetWithSeed($currentKey, $intervalSeconds, $previousState, 1);
+                    return $this->store->incrementBudgetWithSeed($currentKey, $intervalSeconds, $previousState, $cost);
                 } catch (\Throwable) {
                     return null;
                 }
             }
         }
 
-        return $this->incrementBudget($currentKey, $intervalSeconds);
+        return $this->incrementBudget($currentKey, $intervalSeconds, $cost);
     }
 
     /**
      * incrementBudget() never legitimately returns null, so a null result
      * here unambiguously means the store call itself failed.
      */
-    private function incrementBudget(string $key, int $intervalSeconds): ?BudgetStateDTO
+    private function incrementBudget(string $key, int $intervalSeconds, int $cost): ?BudgetStateDTO
     {
         try {
-            return $this->store->incrementBudget($key, $intervalSeconds, 1);
+            return $this->store->incrementBudget($key, $intervalSeconds, $cost);
         } catch (\Throwable) {
             return null;
         }

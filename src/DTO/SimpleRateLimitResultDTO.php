@@ -8,7 +8,7 @@ namespace Maatify\RateLimiter\DTO;
  * Typed result of one simple fixed-window throttle consume().
  *
  * This is a dedicated contract, separate from RateLimitResultDTO: simple
- * throttling has no block level or score metadata (DEC-009).
+ * throttling has no block level or score metadata (DEC-013).
  */
 final readonly class SimpleRateLimitResultDTO implements \JsonSerializable
 {

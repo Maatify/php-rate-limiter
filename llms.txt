@@ -18,4 +18,5 @@ Use the consumer-facing documentation below to understand the supported package 
 
 ## Optional
 
+- [Future Upgrade Roadmap](docs/ROADMAP.md) — Planning-only post-RC capability and quality candidates; not a runtime/API contract or release commitment.
 - [CONTRIBUTING.md](CONTRIBUTING.md) — Contribution and verification boundaries.
