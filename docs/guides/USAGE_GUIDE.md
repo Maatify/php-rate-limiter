@@ -29,7 +29,47 @@ The package does not provide permanent bans, WAF/CDN behavior, advanced browser 
 
 ## Default Composition
 
-Use `RateLimiterBuilder` for the production default graph. The package supplies the optional official Redis full-capability store; otherwise the Host may provide the four required integration boundaries separately or provide one custom `FullCapabilityStoreInterface`. The package supplies the internal orchestration, UTC default clock, default identity resolver, and three policy presets.
+The Production Default Path is a typed `RateLimiterConfig` composed with the
+official `RedisFullCapabilityStore` or a Host adapter implementing
+`FullCapabilityStoreInterface`, then passed through
+`RateLimiterBuilder::fromFullCapabilityStore()`. The Host retains ownership of
+the Redis client/connection lifecycle and supplies its command executor. The
+package supplies the internal orchestration, UTC default clock, default
+identity resolver, and three policy presets.
+
+```php
+use Maatify\RateLimiter\Builder\RateLimiterBuilder;
+use Maatify\RateLimiter\Config\RateLimiterConfig;
+
+/** @var FullCapabilityStoreInterface $fullCapabilityStore */
+/** @var FailureSignalEmitterInterface $failureSignalEmitter */
+
+$config = new RateLimiterConfig(
+    keySecret: $activeKeySecret,
+    fingerprintSecret: $activeFingerprintSecret,
+    environmentScope: 'production',
+    previousKeySecret: $previousKeySecret,
+    previousFingerprintSecret: $previousFingerprintSecret,
+);
+
+$limiter = RateLimiterBuilder::fromFullCapabilityStore(
+    $config,
+    $fullCapabilityStore,
+    $failureSignalEmitter,
+)
+    ->withPolicy($customPolicy) // Optional typed policy extension.
+    ->build();
+```
+
+For the official Redis adapter, construct `RedisFullCapabilityStore` with the
+Host-owned `RedisCommandExecutorInterface` (or
+`CallableRedisCommandExecutor`) and pass that store as
+`$fullCapabilityStore`.
+
+### Advanced multi-store composition
+
+Consumers that intentionally own separate storage boundaries may use the
+lower-level multi-store constructor:
 
 ```php
 use Maatify\RateLimiter\Builder\RateLimiterBuilder;
@@ -56,20 +96,6 @@ $limiter = new RateLimiterBuilder(
     ->build();
 ```
 
-If one adapter—either the package-owned official Redis store or a Host-owned custom
-adapter—implements all four additive storage capabilities, use the named
-full-capability composition path:
-
-```php
-use Maatify\RateLimiter\Builder\RateLimiterBuilder;
-
-$limiter = RateLimiterBuilder::fromFullCapabilityStore(
-    $config,
-    $fullCapabilityStore,
-    $failureSignalEmitter,
-)->build();
-```
-
 `FullCapabilityStoreInterface` is an aggregate contract with no methods of its
 own. The package includes an optional built-in non-clustered Redis store; the Host
 owns the concrete client and supplies its command executor. No Redis client or
@@ -79,6 +105,46 @@ remains valid.
 Secrets are explicit and independently rotatable. `RateLimiterConfig` rejects empty or whitespace-only active, previous, and environment values without trimming valid caller input. The builder does not create a service container or no-op production adapters. Use `withClock()`, `withDeviceIdentityResolver()`, `withPolicy()`, or `withSimpleThrottlePolicy()` only for the targeted overrides defined by the public contract; low-level constructors remain the Advanced Path.
 
 `build()` returns `CompositeRateLimiterRuntimeInterface`, and the result remains assignable to both `RateLimiterRuntimeInterface` and `RateLimiterInterface` for every existing consumer.
+
+## Migrating from an Embedded or Legacy Rate Limiter
+
+Use this bounded migration sequence when replacing an embedded copy or legacy
+Host implementation with the package:
+
+1. Remove the embedded PSR-4 mapping and any package shadow copy from the Host.
+2. Install `maatify/php-rate-limiter` as the real Composer dependency under the
+   Host's approved repository policy.
+3. Keep the Host-owned Redis client, connection, lifecycle, credentials, and
+   transport/application response handling in the Host.
+4. Compose the official `RedisFullCapabilityStore` (or a Host adapter that
+   implements `FullCapabilityStoreInterface`) through
+   `RateLimiterBuilder::fromFullCapabilityStore()`.
+5. Move Host policy differences into the public typed policy extension surfaces
+   such as `withPolicy()` and `withSimpleThrottlePolicy()`; do not fork package
+   internals or add Host-specific types to the generic contract.
+6. Replace copied K4/lifecycle internals with the public DEC-007
+   `RateLimiterRuntimeInterface::claimPostPunishmentReentry()` handoff.
+7. Replace direct score or internal-key reads with the DEC-012 public
+   `buildOperationalReader()` path and its typed operational snapshots.
+8. Stop the legacy embedded writer and perform a clean cutover to the
+   package-owned persistence namespace.
+9. Make the package runtime the only writer; do not reconstruct package keys in
+   the Host or copy lifecycle Lua.
+10. Run the package Consumer Verification Harness together with the Host's
+   integration and production-path verification before removing the legacy
+   path.
+
+The package owns the rate-limit policy/runtime contracts, typed DTOs and
+results, key and namespace semantics, public lifecycle handoff, operational
+read contracts, and the official Redis store implementation. The Host owns
+request/account/session truth, Redis client and connection lifecycle, transport
+responses, authorization, dashboards, logging destinations, and application
+business transactions. Host-specific classes remain integration code; they are
+not part of this framework-agnostic consumer contract.
+
+If a real consumer must preserve active legacy enforcement state instead of
+performing a clean cutover, do not invent a Host migration. Require a
+separately designed and approved migration contract before implementation.
 
 ## Simple Fixed-Window Throttling
 

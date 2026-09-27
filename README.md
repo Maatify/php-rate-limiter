@@ -15,6 +15,7 @@
 [![Examples](https://img.shields.io/badge/Docs-Examples-blue.svg)](examples/)
 [![Package Reference](https://img.shields.io/badge/Docs-Package%20Reference-blue.svg)](RATE_LIMITER_PACKAGE_REFERENCE.md)
 [![Changelog](https://img.shields.io/badge/Docs-Changelog-blue.svg)](CHANGELOG.md)
+[![Security Policy](https://img.shields.io/badge/Docs-Security%20Policy-blue.svg)](SECURITY.md)
 [![Contributing Guide](https://img.shields.io/badge/Docs-Contributing-blue.svg)](CONTRIBUTING.md)
 
 PHP library for deterministic, multi-signal rate-limit decisions.
@@ -47,7 +48,44 @@ The package is not yet available through a published Composer registry. Authoriz
 
 ## Usage
 
-The package provides storage and signal contracts; the consumer supplies implementations for those boundaries. `RateLimiterBuilder` supplies the production default composition around those explicit Host boundaries, including the `fromFullCapabilityStore()` convenience path for one aggregate storage adapter. See the [Usage Guide](docs/guides/USAGE_GUIDE.md) for the integration contract and [basic runnable example](examples/basic-rate-limit.php) for a complete in-memory assembly.
+The production default path is one `RateLimiterConfig`, one official Redis
+`RedisFullCapabilityStore` or Host implementation of
+`FullCapabilityStoreInterface`, and the named Builder convenience path. The
+Host retains ownership of the Redis client/connection lifecycle and supplies a
+command executor. See the [Usage Guide](docs/guides/USAGE_GUIDE.md) for the
+integration contract and [basic runnable example](examples/basic-rate-limit.php)
+for a complete in-memory assembly.
+
+```php
+use Maatify\RateLimiter\Builder\RateLimiterBuilder;
+use Maatify\RateLimiter\Config\RateLimiterConfig;
+
+/** @var FullCapabilityStoreInterface $fullCapabilityStore */
+/** @var FailureSignalEmitterInterface $failureSignalEmitter */
+
+$config = new RateLimiterConfig(
+    keySecret: $activeKeySecret,
+    fingerprintSecret: $activeFingerprintSecret,
+    environmentScope: 'production',
+);
+
+$limiter = RateLimiterBuilder::fromFullCapabilityStore(
+    $config,
+    $fullCapabilityStore,
+    $failureSignalEmitter,
+)
+    ->withPolicy($customPolicy) // Optional typed policy extension.
+    ->build();
+```
+
+For the official Redis adapter, construct `RedisFullCapabilityStore` with the
+Host-owned `RedisCommandExecutorInterface` (or
+`CallableRedisCommandExecutor`) and pass that store as `$fullCapabilityStore`.
+
+### Advanced composition path
+
+Consumers that intentionally keep separate storage boundaries may use the
+lower-level multi-store constructor:
 
 ```php
 use Maatify\RateLimiter\Builder\RateLimiterBuilder;
@@ -79,16 +117,6 @@ if ($result->isBlocked()) {
     http_response_code(429);
     header('Retry-After: ' . (string) $result->retryAfter);
 }
-```
-
-For one host adapter implementing the aggregate storage contract:
-
-```php
-$limiter = RateLimiterBuilder::fromFullCapabilityStore(
-    $config,
-    $fullCapabilityStore,
-    $failureSignalEmitter,
-)->build();
 ```
 
 `FullCapabilityStoreInterface` adds no methods of its own. The package includes
@@ -155,6 +183,8 @@ See [Device Fingerprint](docs/DEVICE_FINGERPRINT.md), [Failure Semantics](docs/F
 - [Failure Semantics](docs/FAILURE_SEMANTICS.md)
 - [Key Strategy](docs/KEY_STRATEGY.md)
 - [Policy Presets](docs/POLICIES.md)
+- [Security Policy](SECURITY.md)
+- [Code of Conduct](CODE_OF_CONDUCT.md)
 
 ## Quality Status
 

@@ -207,7 +207,43 @@ The recommended consumer construction is `Maatify\RateLimiter\Builder\RateLimite
 
 ## Default Composition Surface
 
-The production default is constructed with required Host boundaries and a typed `RateLimiterConfig`. Secrets are caller-provided; the package does not read environment variables, generate secrets, serialize secrets, or merge outer and fingerprint rotation into one input.
+The production default is a typed `RateLimiterConfig` composed with the
+official `RedisFullCapabilityStore` or another Host adapter implementing
+`FullCapabilityStoreInterface`, then passed through
+`RateLimiterBuilder::fromFullCapabilityStore()` with the optional typed policy
+extensions before `build()`. The Host owns the Redis client/connection
+lifecycle and supplies the command executor. Secrets are caller-provided; the
+package does not read environment variables, generate secrets, serialize
+secrets, or merge outer and fingerprint rotation into one input.
+
+```php
+use Maatify\RateLimiter\Builder\RateLimiterBuilder;
+use Maatify\RateLimiter\Config\RateLimiterConfig;
+
+/** @var FullCapabilityStoreInterface $fullCapabilityStore */
+/** @var FailureSignalEmitterInterface $failureSignalEmitter */
+
+$limiter = RateLimiterBuilder::fromFullCapabilityStore(
+    new RateLimiterConfig(
+        keySecret: $activeKeySecret,
+        fingerprintSecret: $activeFingerprintSecret,
+        environmentScope: 'production',
+    ),
+    $fullCapabilityStore,
+    $failureSignalEmitter,
+)
+    ->withPolicy($customPolicy) // Optional typed policy extension.
+    ->build();
+```
+
+The official Redis adapter is constructed with the Host-owned
+`RedisCommandExecutorInterface` (or `CallableRedisCommandExecutor`) and has no
+Redis client or `ext-redis` runtime dependency.
+
+### Advanced multi-store composition
+
+The lower-level multi-store constructor remains available for consumers that
+intentionally own separate storage boundaries:
 
 ```php
 use Maatify\RateLimiter\Builder\RateLimiterBuilder;

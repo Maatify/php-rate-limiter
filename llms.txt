@@ -14,3 +14,8 @@ Use the consumer-facing documentation below to understand the supported package 
 ## Release and support
 
 - [CHANGELOG.md](CHANGELOG.md) — Release history and documented change deltas.
+- [SECURITY.md](SECURITY.md) — Pre-release security reporting route and scope.
+
+## Optional
+
+- [CONTRIBUTING.md](CONTRIBUTING.md) — Contribution and verification boundaries.

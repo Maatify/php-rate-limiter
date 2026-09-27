@@ -312,17 +312,22 @@ final class OperationalExampleRateLimitStore implements HardBlockCycleStoreInter
 
 final class OperationalExampleCorrelationStore implements CorrelationStoreInterface
 {
+    private function fail(): never
+    {
+        throw new RuntimeException('correlation persistence is not configured in this read-only example');
+    }
+
     public function addDistinct(string $key, string $item, int $ttlSeconds): int
     {
-        return 0;
+        $this->fail();
     }
     public function incrementWatchFlag(string $key, int $ttlSeconds): int
     {
-        return 0;
+        $this->fail();
     }
     public function getWatchFlag(string $key): int
     {
-        return 0;
+        $this->fail();
     }
 }
 
