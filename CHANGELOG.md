@@ -8,6 +8,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Added
+- Added DEC-013 weighted simple fixed-window consumption. `consume()` now
+  accepts a positive caller-supplied `$cost = 1`; existing two-argument calls
+  remain compatible, while third-party interface implementers must accept the
+  evolved optional parameter. Weighted costs accumulate in the same fixed
+  window, including over-limit costs, and preserve the existing rotation,
+  FAIL_CLOSED, and operational-read semantics. Simple Throttling Spec:
+  `1.0.0` → `1.1.0`; Package Reference: `1.19.0` → `1.20.0`.
 - Added a first-class generic/simple fixed-window throttling capability
   (DEC-009): `Config\SimpleThrottlePolicyInterface`,
   `Config\FixedWindowThrottlePolicy`, `DTO\SimpleRateLimitResultDTO`,

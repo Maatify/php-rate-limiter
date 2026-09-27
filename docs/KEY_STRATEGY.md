@@ -748,7 +748,7 @@ thresholds, Ephemeral counting, decision levels, and persistence semantics are u
 
 ### 4.7 Simple Fixed-Window Throttling Keys (Locked)
 
-Generic/simple fixed-window throttling (DEC-009) is a semantic family separate from K1-K5
+Generic/simple fixed-window throttling (DEC-013) is a semantic family separate from K1-K5
 score/budget state and uses its own package-owned, versioned keyed-HMAC contract so its state
 can never collide with authentication budgets or score state, even when a Host reuses a
 score-policy name for a simple policy.

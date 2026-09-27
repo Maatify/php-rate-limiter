@@ -43,15 +43,15 @@ final class SimpleRateLimitOperationalReaderTest extends TestCase
     public function testStateCreatedThroughRealConsumeIsReadCorrectlyWithoutASecondMutation(): void
     {
         $limiter = $this->limiter([new FixedWindowThrottlePolicy('checkout', 3, 60)], 'current-secret');
-        $limiter->consume('checkout', 'subject-2');
-        $limiter->consume('checkout', 'subject-2');
+        $limiter->consume('checkout', 'subject-2', 2);
+        $limiter->consume('checkout', 'subject-2', 3);
 
         $reader = $this->reader([new FixedWindowThrottlePolicy('checkout', 3, 60)], 'current-secret');
         $writesBefore = $this->store->writeCount();
         $snapshot = $reader->read('checkout', 'subject-2');
 
-        self::assertSame(2, $snapshot->count);
-        self::assertSame(1, $snapshot->remaining);
+        self::assertSame(5, $snapshot->count);
+        self::assertSame(0, $snapshot->remaining);
         self::assertNotNull($snapshot->epochStart);
         self::assertSame($snapshot->epochStart + 60, $snapshot->resetAt);
         self::assertSame($writesBefore, $this->store->writeCount(), 'Reading must not mutate persisted state.');

@@ -34,8 +34,8 @@ final class CompositeRateLimiterRuntime implements CompositeRateLimiterRuntimeIn
         return $this->scoreRuntime->claimPostPunishmentReentry($context, $policyName, $reentryId);
     }
 
-    public function consume(string $policyName, string $subject): SimpleRateLimitResultDTO
+    public function consume(string $policyName, string $subject, int $cost = 1): SimpleRateLimitResultDTO
     {
-        return $this->simpleRuntime->consume($policyName, $subject);
+        return $this->simpleRuntime->consume($policyName, $subject, $cost);
     }
 }

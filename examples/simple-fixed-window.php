@@ -380,12 +380,19 @@ for ($attempt = 1; $attempt <= 4; $attempt++) {
     );
 }
 
+$weighted = $limiter->consume('checkout_attempts', $subject, 2);
+printf("weighted consume cost=2: allowed=%s remaining=%d\n", $weighted->allowed ? 'true' : 'false', $weighted->remaining);
+
 // Operational Read reuses the same Builder instance: it observes the
 // persisted fixed-window state the consumes above already wrote, without
 // itself performing a consume.
 $reader = $builder->buildOperationalReader();
 $beforeSecondRead = $reader->readSimpleThrottle('checkout_attempts', $subject);
 $afterSecondRead = $reader->readSimpleThrottle('checkout_attempts', $subject);
+
+if ($beforeSecondRead->count !== 6) {
+    throw new RuntimeException(sprintf('Expected weighted persisted count 6, got %d.', $beforeSecondRead->count));
+}
 
 if ($beforeSecondRead->count !== $afterSecondRead->count) {
     throw new RuntimeException('Operational read must not create a new consume.');
