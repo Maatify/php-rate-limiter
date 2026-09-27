@@ -240,6 +240,19 @@ The existing multi-store constructor remains source-compatible.
 
 `build()` returns `CompositeRateLimiterRuntimeInterface`, which extends both `RateLimiterRuntimeInterface` and `SimpleRateLimiterInterface` (DEC-010). This return-type narrowing is source-compatible: existing consumer code that assigns the result to `RateLimiterRuntimeInterface` is unaffected. The simple fixed-window throttle registry starts empty — `withSimpleThrottlePolicy(SimpleThrottlePolicyInterface $policy)` opts in explicitly, with the same same-name-replace/new-name-append semantics as `withPolicy()` — so a Host that registers no simple policy gets an unchanged score-based runtime. See `docs/SIMPLE_THROTTLING.md` for the complete simple-throttling contract.
 
+### Build-time capability preflight (DEC-010)
+
+`build()` rejects an incompatible production graph before returning a runtime, instead of letting traffic discover a missing storage capability at a later request-time code path. Every check is derived from the registered policy graph and the configured generations — never from an official preset name, a backend/class identity, or a Host callback:
+
+- The correlation store must support `BoundedCorrelationStoreInterface` unconditionally (the score runtime always evaluates bounded device-cap/churn/dilution semantics), and `BoundedCorrelationRotationStoreInterface` additionally whenever a previous generation is reachable: a configured `previousKeySecret`, a configured `previousFingerprintSecret`, or a Host-supplied custom `DeviceIdentityResolverInterface`. `DeviceIdentityDTO` publicly permits a non-null `previousFingerprintHash` regardless of which resolver produced it, and the runtime already treats that as an active previous generation, so the Builder cannot prove a custom resolver will never produce one and conservatively treats it as reachable.
+- Any registered policy declaring `PolicyCapabilityEnum::DISTRIBUTED_ACCOUNT` requires the correlation store to support `BoundedCorrelationSnapshotStoreInterface`, or `BoundedCorrelationSnapshotRotationStoreInterface` when a previous generation is reachable.
+- The rate-limit store must support `HardBlockCycleStoreInterface` (DEC-003) unconditionally for the Production Default Path: `EvaluationPipeline`'s generic bounded-correlation enforcement (churn, dilution, and related `checkCorrelationRules()` paths) can produce a persisted L2+ candidate independently of any policy's own score thresholds or budget configuration, so this is not derivable from the registered policy graph. `PunishmentLifecycleStoreInterface` already satisfies this transitively.
+- A `PostPunishmentReentryPolicyInterface` policy still requires `PunishmentLifecycleStoreInterface` (DEC-007, unchanged).
+- `BudgetSeedStoreInterface` is required only when the configured graph can genuinely need a previous-generation budget/simple-window migration (DEC-009): a previous outer-key generation combined with an account-budget policy, a reachable previous fingerprint generation (a configured `previousFingerprintSecret` or a custom `DeviceIdentityResolverInterface`) combined with a known-device-micro-cap policy, or a previous outer-key generation combined with any registered simple throttle policy.
+- The circuit-breaker store must support `CircuitBreakerProbeStoreInterface` unconditionally, so a missing recovery-probe capability is never discovered only after the circuit has entered recovery.
+
+`FullCapabilityStoreInterface` always satisfies every check above; a Host composing separate stores for each boundary must supply one that implements the specific capability its configured policy graph requires. Each rejection is a `RateLimiterException` naming the missing typed capability.
+
 ## Runtime Workflow
 
 The realistic consumer path is:

@@ -9,13 +9,23 @@ use Maatify\RateLimiter\Config\ApiHeavyProtectionPolicy;
 use Maatify\RateLimiter\Config\BlockPolicyInterface;
 use Maatify\RateLimiter\Config\LoginProtectionPolicy;
 use Maatify\RateLimiter\Config\OtpProtectionPolicy;
+use Maatify\RateLimiter\Config\PolicyCapabilityProviderInterface;
 use Maatify\RateLimiter\Config\PostPunishmentReentryPolicyInterface;
 use Maatify\RateLimiter\Config\RateLimiterConfig;
 use Maatify\RateLimiter\Config\SimpleThrottlePolicyInterface;
 use Maatify\RateLimiter\Contract\FailureSignalEmitterInterface;
+use Maatify\RateLimiter\Enum\PolicyCapabilityEnum;
+use Maatify\RateLimiter\Repository\BoundedCorrelationRotationStoreInterface;
+use Maatify\RateLimiter\Repository\BoundedCorrelationSnapshotRotationStoreInterface;
+use Maatify\RateLimiter\Repository\BoundedCorrelationSnapshotStoreInterface;
+use Maatify\RateLimiter\Repository\BoundedCorrelationStoreInterface;
+use Maatify\RateLimiter\Repository\BudgetSeedStoreInterface;
+use Maatify\RateLimiter\Repository\CircuitBreakerProbeStoreInterface;
 use Maatify\RateLimiter\Repository\CircuitBreakerStoreInterface;
 use Maatify\RateLimiter\Repository\CorrelationStoreInterface;
 use Maatify\RateLimiter\Repository\FullCapabilityStoreInterface;
+use Maatify\RateLimiter\Repository\HardBlockCycleStoreInterface;
+use Maatify\RateLimiter\Repository\PunishmentLifecycleStoreInterface;
 use Maatify\RateLimiter\Repository\RateLimitStoreInterface;
 use Maatify\RateLimiter\Service\AntiEquilibriumGate;
 use Maatify\RateLimiter\Service\BudgetTracker;
@@ -141,23 +151,17 @@ final class RateLimiterBuilder
     /**
      * Build one coherent runtime graph and return its composite public API.
      *
-     * Policies implementing PostPunishmentReentryPolicyInterface require the
-     * PunishmentLifecycleStoreInterface capability; the builder rejects that
-     * unsupported configuration before constructing the runtime graph.
+     * The registered policy graph and configured generations are validated
+     * against the storage/runtime capabilities they semantically require
+     * before any runtime object is constructed (DEC-010 fail-fast).
      *
-     * @throws RateLimiterException when an opted-in policy lacks lifecycle
-     *     storage capability.
+     * @throws RateLimiterException when the configured stores lack a
+     *     capability the registered policy graph requires.
      */
     public function build(): CompositeRateLimiterRuntimeInterface
     {
-        foreach ($this->policies as $policy) {
-            if ($policy instanceof PostPunishmentReentryPolicyInterface
-                && ! $this->rateLimitStore instanceof \Maatify\RateLimiter\Repository\PunishmentLifecycleStoreInterface) {
-                throw new RateLimiterException(
-                    'Policy ' . $policy->getName() . ' requires PunishmentLifecycleStoreInterface.',
-                );
-            }
-        }
+        $this->assertCapabilitiesSatisfied();
+
         $clock = $this->clock ?? new SystemClock(new DateTimeZone('UTC'));
         $deviceIdentityResolver = $this->deviceIdentityResolver ?? $this->defaultDeviceIdentityResolver();
 
@@ -213,5 +217,195 @@ final class RateLimiterBuilder
             new FingerprintHasher($this->config->fingerprintSecret()),
             $previousSecret === null ? null : new FingerprintHasher($previousSecret),
         );
+    }
+
+    /**
+     * Reject an incompatible production graph before any runtime object is
+     * constructed (DEC-010). Each check is a semantic requirement derived
+     * from the registered policies and configured generations, never from a
+     * preset name or backend identity.
+     *
+     * @throws RateLimiterException when a required typed capability is absent.
+     */
+    private function assertCapabilitiesSatisfied(): void
+    {
+        $this->assertPunishmentLifecycleCapability();
+        $this->assertBoundedCorrelationCapability();
+        $this->assertDistributedAccountCapability();
+        $this->assertHardBlockCycleCapability();
+        $this->assertBudgetSeedCapability();
+        $this->assertCircuitBreakerProbeCapability();
+    }
+
+    private function assertPunishmentLifecycleCapability(): void
+    {
+        foreach ($this->policies as $policy) {
+            if ($policy instanceof PostPunishmentReentryPolicyInterface
+                && ! $this->rateLimitStore instanceof PunishmentLifecycleStoreInterface) {
+                throw new RateLimiterException(
+                    'Policy ' . $policy->getName() . ' requires PunishmentLifecycleStoreInterface.',
+                );
+            }
+        }
+    }
+
+    /**
+     * The score runtime always evaluates bounded device-cap/churn/dilution
+     * semantics, independently of which policies are registered, so the
+     * correlation store must support BoundedCorrelationStoreInterface
+     * unconditionally; a configured previous generation additionally
+     * requires BoundedCorrelationRotationStoreInterface.
+     */
+    private function assertBoundedCorrelationCapability(): void
+    {
+        if (! $this->correlationStore instanceof BoundedCorrelationStoreInterface) {
+            throw new RateLimiterException(
+                'The correlation store requires BoundedCorrelationStoreInterface.',
+            );
+        }
+
+        if ($this->hasReachablePreviousGeneration()
+            && ! $this->correlationStore instanceof BoundedCorrelationRotationStoreInterface) {
+            throw new RateLimiterException(
+                'The correlation store requires BoundedCorrelationRotationStoreInterface '
+                . 'because a previous generation is configured.',
+            );
+        }
+    }
+
+    /**
+     * A policy declaring PolicyCapabilityEnum::DISTRIBUTED_ACCOUNT needs a
+     * correlation store that can produce a bounded snapshot; this is driven
+     * by the declared capability, never by an official preset name.
+     */
+    private function assertDistributedAccountCapability(): void
+    {
+        foreach ($this->policies as $policy) {
+            if (! $policy instanceof PolicyCapabilityProviderInterface
+                || ! in_array(PolicyCapabilityEnum::DISTRIBUTED_ACCOUNT, $policy->getCapabilities(), true)) {
+                continue;
+            }
+
+            if ($this->hasReachablePreviousGeneration()) {
+                if (! $this->correlationStore instanceof BoundedCorrelationSnapshotRotationStoreInterface) {
+                    throw new RateLimiterException(
+                        'Policy ' . $policy->getName() . ' declares DISTRIBUTED_ACCOUNT and requires '
+                        . 'BoundedCorrelationSnapshotRotationStoreInterface because a previous '
+                        . 'generation is configured.',
+                    );
+                }
+
+                continue;
+            }
+
+            if (! $this->correlationStore instanceof BoundedCorrelationSnapshotStoreInterface) {
+                throw new RateLimiterException(
+                    'Policy ' . $policy->getName() . ' declares DISTRIBUTED_ACCOUNT and requires '
+                    . 'BoundedCorrelationSnapshotStoreInterface.',
+                );
+            }
+        }
+    }
+
+    /**
+     * DEC-003: a persisted L2+ block must never fall back to
+     * RateLimitStoreInterface::block(). EvaluationPipeline's generic bounded
+     * correlation enforcement (churn, dilution, and related
+     * checkCorrelationRules() paths) can produce a persisted L2+ candidate
+     * independently of any policy's own score thresholds or budget
+     * configuration, so this is a Production Default Path requirement for
+     * the score runtime, not something derivable from the registered policy
+     * graph. PunishmentLifecycleStoreInterface already satisfies this
+     * transitively.
+     */
+    private function assertHardBlockCycleCapability(): void
+    {
+        if (! $this->rateLimitStore instanceof HardBlockCycleStoreInterface) {
+            throw new RateLimiterException(
+                'The rate-limit store requires HardBlockCycleStoreInterface.',
+            );
+        }
+    }
+
+    /**
+     * KEY_STRATEGY.md §4.3.2 / DEC-009: BudgetSeedStoreInterface is only
+     * genuinely required when the configured graph can produce a real
+     * previous-generation budget (K4 account budget, K5 known-device
+     * micro-cap) or simple-window migration; a previous generation that
+     * cannot reach any of those is not a false-positive trigger.
+     */
+    private function assertBudgetSeedCapability(): void
+    {
+        $hasAccountBudgetPolicy = false;
+        $hasKnownDeviceMicroCapPolicy = false;
+
+        foreach ($this->policies as $policy) {
+            $budget = $policy->getBudgetConfig();
+
+            if ($budget === null) {
+                continue;
+            }
+
+            $hasAccountBudgetPolicy = true;
+
+            if ($budget->known_device_micro_cap !== null) {
+                $hasKnownDeviceMicroCapPolicy = true;
+            }
+        }
+
+        $needsBudgetSeed
+            = ($this->hasReachablePreviousOuterGeneration() && $hasAccountBudgetPolicy)
+            || ($this->hasReachablePreviousFingerprintGeneration() && $hasKnownDeviceMicroCapPolicy)
+            || ($this->hasReachablePreviousOuterGeneration() && $this->simpleThrottlePolicies !== []);
+
+        if ($needsBudgetSeed && ! $this->rateLimitStore instanceof BudgetSeedStoreInterface) {
+            throw new RateLimiterException(
+                'The configured graph requires a previous-generation budget migration and '
+                . 'requires BudgetSeedStoreInterface.',
+            );
+        }
+    }
+
+    /**
+     * The package runtime owns recovery probing with an atomic per-policy
+     * probe lease; discovering the absence of that capability must not wait
+     * until the circuit has already entered recovery.
+     */
+    private function assertCircuitBreakerProbeCapability(): void
+    {
+        if (! $this->circuitBreakerStore instanceof CircuitBreakerProbeStoreInterface) {
+            throw new RateLimiterException(
+                'The circuit-breaker store requires CircuitBreakerProbeStoreInterface.',
+            );
+        }
+    }
+
+    /**
+     * A previous outer key-generation secret is always reachable when
+     * configured. A previous fingerprint generation is reachable when
+     * RateLimiterConfig::previousFingerprintSecret() is configured (consumed
+     * by the package default resolver), OR when a Host-supplied custom
+     * DeviceIdentityResolverInterface is configured: DeviceIdentityDTO
+     * publicly permits a non-null previousFingerprintHash, and the runtime
+     * already treats that as an active previous generation regardless of
+     * which resolver produced it. The Builder cannot prove a custom resolver
+     * will never do so, so the Production Default Path conservatively
+     * treats a custom resolver as capable of producing one.
+     */
+    private function hasReachablePreviousOuterGeneration(): bool
+    {
+        return $this->config->previousKeySecret() !== null;
+    }
+
+    private function hasReachablePreviousFingerprintGeneration(): bool
+    {
+        return $this->deviceIdentityResolver !== null
+            || $this->config->previousFingerprintSecret() !== null;
+    }
+
+    private function hasReachablePreviousGeneration(): bool
+    {
+        return $this->hasReachablePreviousOuterGeneration()
+            || $this->hasReachablePreviousFingerprintGeneration();
     }
 }
