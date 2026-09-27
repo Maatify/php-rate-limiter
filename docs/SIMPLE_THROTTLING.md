@@ -293,7 +293,9 @@ Explicitly out of scope for this contract:
 * burst capacity or weighted/variable consume cost
 * a non-mutating `check()` prior to `consume()`, or `consumeMany()`
 * manual reset or unblock operations
-* statistics/reporting expansion
+* generic statistics, aggregate reporting, historical reporting, and
+  dashboard-style reporting beyond DEC-012's typed point-in-time Operational
+  Read
 * PSR middleware/framework adapters
 * Redis Cluster portability
 * a new storage backend family
@@ -326,6 +328,66 @@ if (! $result->allowed) {
 See `examples/simple-fixed-window.php` for a complete runnable example, and
 `examples/basic-rate-limit.php` for the score-based model this capability
 coexists with on the same composite runtime.
+
+## 13. Operational Read
+
+`docs/decisions/DEC-012_COORDINATED_OPERATIONAL_READ_COMPOSITION.md` adds
+package-owned typed read-only inspection of persisted simple fixed-window
+state, alongside the existing score-based Operational Read
+(`RateLimitOperationalReaderInterface`).
+
+```php
+namespace Maatify\RateLimiter\Service;
+
+interface SimpleRateLimitOperationalReaderInterface
+{
+    public function read(string $policyName, string $subject): SimpleRateLimitOperationalSnapshotDTO;
+}
+```
+
+This is strictly a point-in-time inspection of persisted state. It is **not**
+a second enforcement operation: it is not `check()`, not `peek()` deciding
+whether a future `consume()` is allowed, not reservation or
+pre-authorization, and it never mutates state. `SimpleRateLimitOperationalReader`
+derives the exact same DEC-009 state identity `FixedWindowSimpleRateLimiter`
+writes (§6 above) and uses only the read-only store operations needed for
+inspection: `RateLimitStoreInterface::getBudget()` and
+`RateLimitStoreInterface::isHealthy()`. It never invokes
+`incrementBudget()`, `incrementBudgetWithSeed()`, `block()`, `set()`, or
+another mutation primitive.
+
+`SimpleRateLimitOperationalSnapshotDTO` exposes: `policyName`, `observedAt`,
+`backendHealthy`, `limit`, `intervalSeconds`, `count`, `remaining`,
+`epochStart`, `resetAt`, `fromPreviousGeneration`. `count` is the persisted
+count of the effective active fixed window (`0` if no active window exists);
+`remaining` is `max(0, limit - count)`; `epochStart`/`resetAt` are `null`
+when no active window exists. It never exposes the raw subject, key secrets,
+or physical storage keys.
+
+Resolution order matches the rotation contract in §8, but read-only: derive
+Current, read Current; if Current's epoch is active, Current wins. Otherwise,
+if a previous key secret is configured, read Previous; if Previous's epoch is
+active, report it with `fromPreviousGeneration = true`. Current always wins
+when present; there is never a `max()`/sum() merge, and reading Previous
+never creates Current, never increments Previous, and never changes an
+existing epoch's start or reset boundary.
+
+The recommended path is
+`RateLimiterBuilder::buildOperationalReader(): CompositeRateLimitOperationalReaderInterface`,
+which coordinates this reader together with the score-based Advanced Path
+from the Builder's own current registered state:
+
+```php
+$reader = $builder->buildOperationalReader();
+$snapshot = $reader->readSimpleThrottle('checkout_attempts', $customerId);
+```
+
+`readSimpleThrottle()` resolves the exact simple policy registered via
+`withSimpleThrottlePolicy()` by name; an unregistered name raises
+`RateLimiterException`, with no fallback to a policy the Host supplies again.
+See `examples/simple-fixed-window.php`, which reuses one Builder instance for
+both `build()` and `buildOperationalReader()` and proves that the operational
+read after the consume demonstration does not itself create a new consume.
 
 ---
 

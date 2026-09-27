@@ -223,7 +223,9 @@ fingerprint-only, and both-rotated inputs never form Cartesian generation pairs.
 | Record a successful operation | <code>RateLimitCommand::recordSuccess()</code> | [Success recording](#walkthrough-success-recording) | [basic-rate-limit.php](../../examples/basic-rate-limit.php) |
 | Use a policy preset | Default <code>RateLimiterBuilder</code> policy registry | [Policy selection](#walkthrough-policy-selection) | [basic-rate-limit.php](../../examples/basic-rate-limit.php) |
 | Observe infrastructure failures | <code>FailureSignalEmitterInterface</code> + <code>RateLimitResultDTO::failureMode</code> | [Failure boundary](#walkthrough-failure-boundary) | [infrastructure-failure.php](../../examples/infrastructure-failure.php) |
-| Inspect current operational rate-limit state | <code>RateLimitOperationalReaderInterface::read()</code> | [Operational read](#walkthrough-operational-read) | [operational-read.php](../../examples/operational-read.php) |
+| Inspect current operational rate-limit state (Production Default Read Path) | <code>RateLimiterBuilder::buildOperationalReader()</code> + <code>CompositeRateLimitOperationalReaderInterface::readScorePolicy()</code> | [Operational read](#walkthrough-operational-read) | [operational-read.php](../../examples/operational-read.php) |
+| Inspect current operational rate-limit state (Advanced Path) | <code>RateLimitOperationalReaderInterface::read()</code> | [Operational read](#walkthrough-operational-read) | [operational-read.php](../../examples/operational-read.php) |
+| Inspect persisted simple fixed-window state | <code>CompositeRateLimitOperationalReaderInterface::readSimpleThrottle()</code> | [Operational read](#walkthrough-operational-read) | [simple-fixed-window.php](../../examples/simple-fixed-window.php) |
 
 ## Walkthrough: Pre-Check
 
@@ -334,21 +336,26 @@ runtime implementation.
 
 ## Operational Read / Reporting Boundary
 
-This package is **In Scope** for Operational Read / Reporting because it owns the persisted operational semantics of score state, temporary blocks, account budgets, known-device micro-caps, budget cooldowns, and circuit-breaker state, including the optional official Redis persistence implementation. The Host supplies the Redis client and connection lifecycle for that implementation or a custom persistence backend when selecting another store, along with account/session source of truth, HTTP/transport, permissions, dashboards/UI, cross-package aggregation, and exports.
+This package is **In Scope** for Operational Read / Reporting because it owns the persisted operational semantics of score state, temporary blocks, account budgets, known-device micro-caps, budget cooldowns, circuit-breaker state, and simple fixed-window state (DEC-009/DEC-012), including the optional official Redis persistence implementation. The Host supplies the Redis client and connection lifecycle for that implementation or a custom persistence backend when selecting another store, along with account/session source of truth, HTTP/transport, permissions, dashboards/UI, cross-package aggregation, and exports.
 
-The stable, framework-agnostic read contract is <code>RateLimitOperationalReaderInterface::read()</code>, implemented by <code>RateLimitOperationalReader</code>. It accepts a <code>RateLimitContextDTO</code> and <code>BlockPolicyInterface</code>, returns a typed <code>RateLimitOperationalSnapshotDTO</code>, and performs a point-in-time read without changing enforcement state. It is separate from <code>RateLimiterInterface::limit()</code>, which remains the consumer enforcement API.
+The recommended, Builder-coordinated entrypoint is <code>RateLimiterBuilder::buildOperationalReader(): CompositeRateLimitOperationalReaderInterface</code> (DEC-012). It is built from the same Builder instance's current registered state — score-policy registry, simple-policy registry, effective clock, effective device identity resolver, active/previous key configuration, environment scope, rate-limit store, and circuit-breaker store — so a Host customizing a policy through <code>withPolicy()</code>/<code>withSimpleThrottlePolicy()</code> gets that exact registered policy resolved by name, with no need to reconstruct or re-supply the policy object to read it. Building the reader is read-only and does not run <code>build()</code>'s mutation-only capability preflight.
 
-Correlation distinct-set members, watch-flag internals, churn sets, and dilution sets are intentionally unsupported because they are internal bounded enforcement structures without a stable operational reporting semantic. The read surface has no mutation/reset/unblock, global listing, arbitrary key lookup, raw-key exposure, historical audit store, Host joins, cross-package reporting, or correlation-set inspection.
+The stable, framework-agnostic score-read contract remains <code>RateLimitOperationalReaderInterface::read()</code>, implemented by <code>RateLimitOperationalReader</code> (the Advanced Path; unchanged public signature). It accepts a <code>RateLimitContextDTO</code> and <code>BlockPolicyInterface</code>, returns a typed <code>RateLimitOperationalSnapshotDTO</code>, and performs a point-in-time read without changing enforcement state. It is separate from <code>RateLimiterInterface::limit()</code>, which remains the consumer enforcement API.
+
+Simple fixed-window persisted state is inspected read-only through <code>CompositeRateLimitOperationalReaderInterface::readSimpleThrottle()</code> (or directly via <code>SimpleRateLimitOperationalReaderInterface::read()</code>), returning a typed <code>SimpleRateLimitOperationalSnapshotDTO</code>. This is strictly a read-only inspection of persisted state — it is **not** a second enforcement <code>check()</code>/<code>peek()</code>, not reservation or pre-authorization, and it never mutates state. Current always wins when its epoch is active; Previous is used only as a read-only fallback when Current is absent (<code>fromPreviousGeneration = true</code>), and there is never a <code>max()</code>/sum() merge.
+
+Correlation distinct-set members, watch-flag internals, churn sets, and dilution sets are intentionally unsupported because they are internal bounded enforcement structures without a stable operational reporting semantic. The read surface has no mutation/reset/unblock, global listing, arbitrary key lookup, raw-key exposure, historical audit store, Host joins, cross-package reporting, correlation-set inspection, or generic reporting/statistics API.
 
 ## Walkthrough: Operational Read
 
-    Host context + policy
-        → RateLimitOperationalReaderInterface::read()
-        → Package-owned read-only state resolution
-        → RateLimitOperationalSnapshotDTO
+    Host context + policy name
+        → RateLimiterBuilder::buildOperationalReader()
+        → CompositeRateLimitOperationalReaderInterface::readScorePolicy() / readSimpleThrottle()
+        → Package-owned read-only state resolution, by name, against the Builder's own registry
+        → RateLimitOperationalSnapshotDTO / SimpleRateLimitOperationalSnapshotDTO
         → Host monitoring or operations boundary
 
-The operational reader reads current real enforcement keys and applies the documented single previous-generation fallback where configured. It does not call <code>EvaluationPipeline::process()</code>, <code>RateLimiterEngine::limit()</code>, <code>EphemeralBucket</code>, correlation mutation methods, or circuit-breaker mutation methods, and it never exposes raw storage keys, secrets, fingerprints, or Host data.
+The operational reader reads current real enforcement keys and applies the documented single previous-generation fallback where configured. It does not call <code>EvaluationPipeline::process()</code>, <code>RateLimiterEngine::limit()</code>, <code>EphemeralBucket</code>, correlation mutation methods, circuit-breaker mutation methods, or the simple fixed-window's <code>incrementBudget()</code>/<code>incrementBudgetWithSeed()</code> mutation primitives, and it never exposes raw storage keys, secrets, fingerprints, the raw subject, or Host data.
 
 ## Further Reading
 

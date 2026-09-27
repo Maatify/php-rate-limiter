@@ -343,8 +343,9 @@ final class SimpleThrottleExampleFailureSignalEmitter implements FailureSignalEm
 // one build(), and consume(). The default Builder still constructs the
 // composite package graph, so these small adapters provide the minimum
 // current score-runtime capabilities even though this sample only calls
-// consume().
-$limiter = (new RateLimiterBuilder(
+// consume(). The same Builder instance is reused below to obtain the
+// Production Default Read Path (DEC-012).
+$builder = (new RateLimiterBuilder(
     new RateLimiterConfig(
         keySecret: 'example-key-secret',
         fingerprintSecret: 'example-fingerprint-secret',
@@ -359,8 +360,9 @@ $limiter = (new RateLimiterBuilder(
         name: 'checkout_attempts',
         limit: 3,
         intervalSeconds: 60,
-    ))
-    ->build();
+    ));
+
+$limiter = $builder->build();
 
 $subject = 'customer-42';
 
@@ -377,3 +379,22 @@ for ($attempt = 1; $attempt <= 4; $attempt++) {
         $result->failureMode,
     );
 }
+
+// Operational Read reuses the same Builder instance: it observes the
+// persisted fixed-window state the consumes above already wrote, without
+// itself performing a consume.
+$reader = $builder->buildOperationalReader();
+$beforeSecondRead = $reader->readSimpleThrottle('checkout_attempts', $subject);
+$afterSecondRead = $reader->readSimpleThrottle('checkout_attempts', $subject);
+
+if ($beforeSecondRead->count !== $afterSecondRead->count) {
+    throw new RuntimeException('Operational read must not create a new consume.');
+}
+
+printf(
+    "operational read: count=%d remaining=%d resetAt=%s fromPreviousGeneration=%s\n",
+    $afterSecondRead->count,
+    $afterSecondRead->remaining,
+    $afterSecondRead->resetAt === null ? 'null' : (string) $afterSecondRead->resetAt,
+    $afterSecondRead->fromPreviousGeneration ? 'true' : 'false',
+);
