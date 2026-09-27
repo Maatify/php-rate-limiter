@@ -3,9 +3,18 @@
 **Decision ID:** `DEC-003`
 **Status:** `ACTIVE`
 **Date:** `2026-09-23`
-**Decision authority:** Lead-approved WU-S3-07 contract in PR #36
+**Decision authority:** Owner-approved WU-S3-07 material contract in PR #36 on 2026-09-23
 **Scope / Concern:** Persisted hard-block cycle history, key rotation, score decay, and the additive storage capability
 **Canonical contract / current owner:** `src/Repository/HardBlockCycleStoreInterface.php`, `src/Service/EvaluationPipeline.php`, `src/Service/DecayCalculator.php`, and the versioned contracts in `docs/DECISION_MATRIX.md`, `docs/POLICIES.md`, and `docs/KEY_STRATEGY.md`
+
+## Governance record correction
+
+During the first pre-release strict acceptance review, the Owner confirmed that
+this material decision had been approved as-is on 2026-09-23. This correction
+records the previously omitted Owner authority in the durable record only; it
+does not change the decision date, status, semantics, runtime behavior, public
+API, storage contract, or tests. The earlier Lead-approved wording did not
+represent final authority for this material decision.
 
 ## Context
 
