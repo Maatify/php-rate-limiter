@@ -395,11 +395,13 @@ $context = new RateLimitContextDTO(
 );
 $limiter->limit($context, RateLimitCommand::recordFailure('otp_protection'));
 
-// The Production Default Read Path (DEC-012): the same RateLimiterBuilder
-// that composes enforcement also composes Operational Read, resolving
-// 'otp_protection' by name from its own registered policy graph instead of
-// asking the Host to reconstruct the resolver, clock, decay calculator,
-// secrets, or policy object a second time.
+// The low-level/Advanced runtime setup above is used only to seed
+// demonstrable state. The Production Default Read Path (DEC-012) itself is
+// composed through RateLimiterBuilder, which resolves 'otp_protection' from
+// its own registered policy graph instead of asking the Host to reconstruct
+// the resolver, clock, decay calculator, secrets, or policy object a second
+// time. This example does not claim that the same Builder instance composed
+// enforcement; the Builder resolves the read graph for its own path.
 $reader = (new RateLimiterBuilder(
     new RateLimiterConfig(
         keySecret: 'example-outer-secret',

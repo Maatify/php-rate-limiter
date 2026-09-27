@@ -51,7 +51,8 @@ use Maatify\SharedCommon\Contracts\ClockInterface;
 use Maatify\SharedCommon\Infrastructure\SystemClock;
 
 /**
- * Builds the package-owned default runtime graph around RateLimiterEngine.
+ * Builds the package-owned default enforcement/runtime graph around
+ * RateLimiterEngine and the package-owned default Operational Read graph.
  *
  * Host stores and the failure signal emitter are always supplied explicitly.
  * The builder owns only package orchestration defaults and exposes targeted
@@ -110,7 +111,8 @@ final class RateLimiterBuilder
     }
 
     /**
-     * Override the clock shared by every clock-dependent runtime component.
+     * Override the clock shared by the Builder's clock-dependent runtime and
+     * operational-read components.
      */
     public function withClock(ClockInterface $clock): self
     {

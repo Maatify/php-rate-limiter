@@ -126,9 +126,10 @@ mutation. It derives the exact same DEC-009 state identity
 (`rate_limiter:simple_fixed_window:v1:environmentScope:policyName:limit:
 intervalSeconds:subject`, length-prefixed component encoding, HMAC-SHA256'd
 with the selected outer generation secret) that `FixedWindowSimpleRateLimiter`
-writes, and it only calls `RateLimitStoreInterface::getBudget()`. It never
-calls `incrementBudget()` or `incrementBudgetWithSeed()`, and it never
-requires `BudgetSeedStoreInterface` merely to read.
+writes, and it uses only the read-only store operations needed for inspection:
+`RateLimitStoreInterface::getBudget()` and `RateLimitStoreInterface::isHealthy()`.
+It never invokes `incrementBudget()`, `incrementBudgetWithSeed()`, `block()`,
+`set()`, or another mutation primitive.
 
 ### 7. Current-before-Previous fallback is read-only
 

@@ -293,7 +293,9 @@ Explicitly out of scope for this contract:
 * burst capacity or weighted/variable consume cost
 * a non-mutating `check()` prior to `consume()`, or `consumeMany()`
 * manual reset or unblock operations
-* statistics/reporting expansion
+* generic statistics, aggregate reporting, historical reporting, and
+  dashboard-style reporting beyond DEC-012's typed point-in-time Operational
+  Read
 * PSR middleware/framework adapters
 * Redis Cluster portability
 * a new storage backend family
@@ -348,9 +350,11 @@ a second enforcement operation: it is not `check()`, not `peek()` deciding
 whether a future `consume()` is allowed, not reservation or
 pre-authorization, and it never mutates state. `SimpleRateLimitOperationalReader`
 derives the exact same DEC-009 state identity `FixedWindowSimpleRateLimiter`
-writes (§6 above) and calls only `RateLimitStoreInterface::getBudget()`; it
-never calls `incrementBudget()` or `incrementBudgetWithSeed()`, and never
-requires `BudgetSeedStoreInterface` merely to read.
+writes (§6 above) and uses only the read-only store operations needed for
+inspection: `RateLimitStoreInterface::getBudget()` and
+`RateLimitStoreInterface::isHealthy()`. It never invokes
+`incrementBudget()`, `incrementBudgetWithSeed()`, `block()`, `set()`, or
+another mutation primitive.
 
 `SimpleRateLimitOperationalSnapshotDTO` exposes: `policyName`, `observedAt`,
 `backendHealthy`, `limit`, `intervalSeconds`, `count`, `remaining`,

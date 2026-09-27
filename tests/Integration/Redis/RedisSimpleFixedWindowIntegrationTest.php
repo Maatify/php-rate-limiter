@@ -145,6 +145,9 @@ final class RedisSimpleFixedWindowIntegrationTest extends TestCase
         $keysAfterConsume = $this->executor->execute(['KEYS', '*']);
         self::assertIsArray($keysAfterConsume);
         self::assertCount(1, $keysAfterConsume, 'Two consumes for the same subject must persist exactly one Current key.');
+        $currentRawKey = $keysAfterConsume[0];
+        self::assertIsString($currentRawKey);
+        $currentRawValueBefore = $this->executor->execute(['HGETALL', $currentRawKey]);
 
         $reader = $this->reader($this->clock, 'current-secret', null, 60);
         $snapshot = $reader->read('checkout', 'subject-redis-op-1');
@@ -153,6 +156,12 @@ final class RedisSimpleFixedWindowIntegrationTest extends TestCase
         self::assertSame(0, $snapshot->remaining, 'limit=2, count=2 → remaining clamped to 0.');
         self::assertSame($second->resetAt, $snapshot->resetAt);
         self::assertFalse($snapshot->fromPreviousGeneration);
+        self::assertNotNull($snapshot->epochStart);
+        self::assertSame($snapshot->epochStart + 60, $snapshot->resetAt);
+        self::assertSame($second->resetAt - 60, $snapshot->epochStart);
+
+        $currentRawValueAfter = $this->executor->execute(['HGETALL', $currentRawKey]);
+        self::assertSame($currentRawValueBefore, $currentRawValueAfter, 'The operational read must preserve the Current value byte-for-byte.');
 
         $keysAfterRead = $this->executor->execute(['KEYS', '*']);
         self::assertSame($keysAfterConsume, $keysAfterRead, 'A read must not create any additional Redis key.');
@@ -207,6 +216,7 @@ final class RedisSimpleFixedWindowIntegrationTest extends TestCase
     {
         $previousLimiter = $this->limiter($this->clock, 'previous-secret', null, 60);
         $previousLimiter->consume('checkout', 'subject-redis-op-3');
+        $previousLimiter->consume('checkout', 'subject-redis-op-3');
 
         $currentLimiter = $this->limiter($this->clock, 'current-secret', null, 60);
         $currentLimiter->consume('checkout', 'subject-redis-op-3');
@@ -214,7 +224,7 @@ final class RedisSimpleFixedWindowIntegrationTest extends TestCase
         $reader = $this->reader($this->clock, 'current-secret', 'previous-secret', 60);
         $snapshot = $reader->read('checkout', 'subject-redis-op-3');
 
-        self::assertSame(1, $snapshot->count, 'Current(1) must win outright; it must never be merged with Previous(1).');
+        self::assertSame(1, $snapshot->count, 'Current(1) must win over Previous(2); it must never use max() or sum() merging.');
         self::assertFalse($snapshot->fromPreviousGeneration);
     }
 

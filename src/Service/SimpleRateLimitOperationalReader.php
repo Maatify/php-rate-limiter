@@ -15,9 +15,10 @@ use Maatify\SharedCommon\Contracts\ClockInterface;
  * (DEC-012).
  *
  * This reader derives the exact same DEC-009 state identity as
- * FixedWindowSimpleRateLimiter and only calls RateLimitStoreInterface::getBudget().
- * It never calls incrementBudget(), incrementBudgetWithSeed(), and never
- * requires BudgetSeedStoreInterface merely to read.
+ * FixedWindowSimpleRateLimiter and uses only the read-only store operations
+ * needed for inspection: getBudget() and isHealthy(). It never invokes
+ * incrementBudget(), incrementBudgetWithSeed(), block(), set(), or another
+ * mutation primitive.
  */
 final class SimpleRateLimitOperationalReader implements SimpleRateLimitOperationalReaderInterface
 {
