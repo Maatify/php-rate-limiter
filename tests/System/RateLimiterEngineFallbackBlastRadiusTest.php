@@ -274,19 +274,20 @@ class RateLimiterEngineFallbackBlastRadiusTest extends TestCase
     public function testApiFallbackK1AggregateCapIsIndependentOfK2AcrossRawUas(): void
     {
         $clock = new FixedClock('2025-01-01 12:00:00');
+        $policy = new ApiHeavyProtectionPolicy();
         $ip = '198.51.100.25';
 
         foreach ([self::CHROME_UA, self::FIREFOX_UA] as $ua) {
             for ($i = 0; $i < 60; $i++) {
                 $this->assertTrue(
-                    LocalFallbackLimiter::check($clock, 'api_heavy_protection', 'FAIL_OPEN', $ip, null, $ua),
+                    LocalFallbackLimiter::check($clock, $policy, 'FAIL_OPEN', $ip, null, $ua),
                 );
             }
         }
 
         // The third K2 bucket is fresh, so request 121 isolates the K1 IP aggregate cap.
         $this->assertFalse(
-            LocalFallbackLimiter::check($clock, 'api_heavy_protection', 'FAIL_OPEN', $ip, null, self::SAFARI_UA),
+            LocalFallbackLimiter::check($clock, $policy, 'FAIL_OPEN', $ip, null, self::SAFARI_UA),
         );
     }
 

@@ -6,6 +6,7 @@ namespace Maatify\RateLimiter\Tests\Unit\Engine;
 
 use Maatify\RateLimiter\Service\LocalFallbackLimiter;
 use Maatify\RateLimiter\Config\LoginProtectionPolicy;
+use Maatify\RateLimiter\Config\OtpProtectionPolicy;
 use Maatify\RateLimiter\Tests\Support\Clock\FixedClock;
 use PHPUnit\Framework\TestCase;
 
@@ -28,24 +29,25 @@ class LocalFallbackLimiterGcTest extends TestCase
     {
         $clock = new FixedClock('2025-01-01 12:00:00');
         $ip = '198.51.100.40';
+        $policy = new OtpProtectionPolicy();
 
         $this->assertTrue(
-            LocalFallbackLimiter::check($clock, 'otp_protection', 'DEGRADED_MODE', $ip),
+            LocalFallbackLimiter::check($clock, $policy, 'DEGRADED_MODE', $ip),
         );
-        $namespace = 'fallback:' . hash('sha256', 'otp_protection');
+        $namespace = 'fallback:' . hash('sha256', $policy->getName());
         $staleBucketKey = $namespace . ':ip_prefix:' . $ip . ':' . intdiv($clock->now()->getTimestamp(), 900);
 
         // At the exact hourly boundary the current OTP bucket is created without running GC.
         $clock->setNow(new \DateTimeImmutable('2025-01-01 13:00:00'));
         $this->assertTrue(
-            LocalFallbackLimiter::check($clock, 'otp_protection', 'DEGRADED_MODE', $ip),
+            LocalFallbackLimiter::check($clock, $policy, 'DEGRADED_MODE', $ip),
         );
         $currentBucketKey = $namespace . ':ip_prefix:' . $ip . ':' . intdiv($clock->now()->getTimestamp(), 900);
 
         // Crossing the threshold triggers selective cleanup while the current bucket remains valid.
         $clock->setNow(new \DateTimeImmutable('2025-01-01 13:00:01'));
         $this->assertTrue(
-            LocalFallbackLimiter::check($clock, 'otp_protection', 'DEGRADED_MODE', $ip),
+            LocalFallbackLimiter::check($clock, $policy, 'DEGRADED_MODE', $ip),
         );
 
         $reflection = new \ReflectionClass(LocalFallbackLimiter::class);
