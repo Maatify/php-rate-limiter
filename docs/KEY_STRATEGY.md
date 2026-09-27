@@ -455,8 +455,11 @@ is not added to the bridge. The bridge receives a fixed TTL capped by the remain
 previous-generation TTL, and later writes do not extend it. A previous key without
 a valid TTL is corruption and fails before any partial current/bridge mutation.
 The WATCH operation increments only the current flag and returns current plus active
-previous count; the previous flag remains read-only. No concrete Redis, Lua, PDO, or
-other backend adapter is part of the core package.
+previous count; the previous flag remains read-only. The package ships the optional
+official Redis full-capability store, which implements this contract behind a
+Host-supplied command executor. No PDO or other alternative backend adapter is
+included; Redis client and connection lifecycle remain Host-owned. Custom backends
+remain available through the public storage contracts.
 
 #### 4.3.5 Bounded Correlation and Ephemeral Rotation
 
