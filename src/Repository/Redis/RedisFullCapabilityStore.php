@@ -328,18 +328,17 @@ local exists = redis.call('EXISTS', KEYS[1])
 if exists == 1 and redis.call('TTL', KEYS[1]) < 0 then return redis.error_reply('malformed budget state') end
 if exists == 1 and (not count or not start or not duration) then return redis.error_reply('malformed budget state') end
 if exists == 1 then
-  count = tonumber(count); start = tonumber(start); duration = tonumber(duration)
-  if not count or count ~= math.floor(count) or not start or start ~= math.floor(start) or not duration or duration <= 0 or duration ~= math.floor(duration) then return redis.error_reply('malformed budget state') end
+  start = tonumber(start); duration = tonumber(duration)
+  if not string.match(count, '^%-?%d+$') or not start or start ~= math.floor(start) or not duration or duration <= 0 or duration ~= math.floor(duration) then return redis.error_reply('malformed budget state') end
 end
 if exists == 1 and now < start + duration then
-  count = count + tonumber(ARGV[2])
-  redis.call('HSET', KEYS[1], 'count', count)
-  return {count, start}
+  redis.call('HINCRBY', KEYS[1], 'count', ARGV[2])
+  return {redis.call('HGET', KEYS[1], 'count'), start}
 end
 if exists == 1 then redis.call('DEL', KEYS[1]) end
 redis.call('HSET', KEYS[1], 'count', ARGV[2], 'epochStart', now, 'epochDuration', ARGV[1])
 redis.call('EXPIRE', KEYS[1], ARGV[1])
-return {ARGV[2], now}
+return {redis.call('HGET', KEYS[1], 'count'), now}
 LUA;
 
     private const BUDGET_GET = <<<'LUA'
@@ -349,13 +348,13 @@ local start = redis.call('HGET', KEYS[1], 'epochStart')
 local duration = redis.call('HGET', KEYS[1], 'epochDuration')
 if not count or not start or not duration then return redis.error_reply('malformed budget state') end
 if redis.call('TTL', KEYS[1]) < 0 then return redis.error_reply('malformed budget state') end
-count = tonumber(count); start = tonumber(start); duration = tonumber(duration)
-if not count or count ~= math.floor(count) or not start or start ~= math.floor(start) or not duration or duration <= 0 or duration ~= math.floor(duration) then return redis.error_reply('malformed budget state') end
+start = tonumber(start); duration = tonumber(duration)
+if not string.match(count, '^%-?%d+$') or not start or start ~= math.floor(start) or not duration or duration <= 0 or duration ~= math.floor(duration) then return redis.error_reply('malformed budget state') end
 if tonumber(redis.call('TIME')[1]) >= start + duration then
   redis.call('DEL', KEYS[1])
   return {}
 end
-return {count, start}
+return {redis.call('HGET', KEYS[1], 'count'), start}
 LUA;
 
     private const BUDGET_SEED = <<<'LUA'
@@ -367,26 +366,24 @@ local exists = redis.call('EXISTS', KEYS[1])
 if exists == 1 and redis.call('TTL', KEYS[1]) < 0 then return redis.error_reply('malformed budget state') end
 if exists == 1 and (not count or not start or not duration) then return redis.error_reply('malformed budget state') end
 if exists == 1 then
-  count = tonumber(count); start = tonumber(start); duration = tonumber(duration)
-  if not count or count ~= math.floor(count) or not start or start ~= math.floor(start) or not duration or duration <= 0 or duration ~= math.floor(duration) then return redis.error_reply('malformed budget state') end
+  start = tonumber(start); duration = tonumber(duration)
+  if not string.match(count, '^%-?%d+$') or not start or start ~= math.floor(start) or not duration or duration <= 0 or duration ~= math.floor(duration) then return redis.error_reply('malformed budget state') end
 end
 if exists == 1 and now < start + duration then
-  count = count + tonumber(ARGV[4])
-  redis.call('HSET', KEYS[1], 'count', count)
-  return {count, start}
+  redis.call('HINCRBY', KEYS[1], 'count', ARGV[4])
+  return {redis.call('HGET', KEYS[1], 'count'), start}
 end
 if exists == 1 then redis.call('DEL', KEYS[1]) end
 local seedStart = tonumber(ARGV[2])
 local epochDuration = tonumber(ARGV[1])
 if now < seedStart + epochDuration then
-  count = tonumber(ARGV[3]) + tonumber(ARGV[4])
-  redis.call('HSET', KEYS[1], 'count', count, 'epochStart', seedStart, 'epochDuration', epochDuration)
+  redis.call('HSET', KEYS[1], 'count', ARGV[5], 'epochStart', seedStart, 'epochDuration', epochDuration)
   redis.call('EXPIRE', KEYS[1], seedStart + epochDuration - now)
-  return {count, seedStart}
+  return {redis.call('HGET', KEYS[1], 'count'), seedStart}
 end
 redis.call('HSET', KEYS[1], 'count', ARGV[4], 'epochStart', now, 'epochDuration', epochDuration)
 redis.call('EXPIRE', KEYS[1], epochDuration)
-return {ARGV[4], now}
+return {redis.call('HGET', KEYS[1], 'count'), now}
 LUA;
 
     private const DISTINCT_ADD = <<<'LUA'
@@ -836,7 +833,8 @@ LUA;
     public function incrementBudgetWithSeed(string $key, int $epochDurationSeconds, BudgetStateDTO $seed, int $amount = 1): BudgetStateDTO
     {
         $this->positive($epochDurationSeconds, 'Budget epoch duration');
-        $result = $this->eval(self::BUDGET_SEED, [$this->key('budget', $key)], [$epochDurationSeconds, $seed->epochStart, $seed->count, $amount]);
+        $seededCount = $this->checkedIntegerAddition($seed->count, $amount, 'Seeded budget count');
+        $result = $this->eval(self::BUDGET_SEED, [$this->key('budget', $key)], [$epochDurationSeconds, $seed->epochStart, $seed->count, $amount, $seededCount]);
         $tuple = $this->tuple($result, 2, 'seeded budget');
         return new BudgetStateDTO(
             $this->integerValue($tuple[0], 'budget count'),
@@ -1259,12 +1257,29 @@ LUA;
             if (! preg_match('/\A-?\d+\z/D', $value)) {
                 throw new RateLimiterException('Malformed ' . $label . '.');
             }
+            $negative = str_starts_with($value, '-');
+            $digits = ltrim($negative ? substr($value, 1) : $value, '0');
+            $digits = $digits === '' ? '0' : $digits;
+            $maximum = $negative
+                ? (PHP_INT_SIZE === 8 ? '9223372036854775808' : '2147483648')
+                : (string) PHP_INT_MAX;
+            if (strlen($digits) > strlen($maximum) || (strlen($digits) === strlen($maximum) && strcmp($digits, $maximum) > 0)) {
+                throw new RateLimiterException('Malformed ' . $label . '.');
+            }
             return (int) $value;
         }
         if (is_float($value) && is_finite($value) && floor($value) === $value) {
             return (int) $value;
         }
         throw new RateLimiterException('Malformed ' . $label . '.');
+    }
+
+    private function checkedIntegerAddition(int $left, int $right, string $label): int
+    {
+        if (($right > 0 && $left > PHP_INT_MAX - $right) || ($right < 0 && $left < PHP_INT_MIN - $right)) {
+            throw new RateLimiterException($label . ' overflow.');
+        }
+        return $left + $right;
     }
 
     private function stringValue(mixed $value, string $label): string
