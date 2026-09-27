@@ -10,9 +10,12 @@ Use the consumer-facing documentation below to understand the supported package 
 - [RATE_LIMITER_PACKAGE_REFERENCE.md](RATE_LIMITER_PACKAGE_REFERENCE.md) — Canonical stable public, runtime, and behavioral contract with the complete public runtime API inventory.
 - [Usage Guide](docs/guides/USAGE_GUIDE.md) — Consumer integration workflows, inputs, outputs, and boundaries.
 - [Examples](examples/) — Maintained examples using the documented public API.
-- [SECURITY.md](SECURITY.md) — Pre-release security reporting route and scope.
-- [CONTRIBUTING.md](CONTRIBUTING.md) — Contribution and verification boundaries.
 
 ## Release and support
 
 - [CHANGELOG.md](CHANGELOG.md) — Release history and documented change deltas.
+- [SECURITY.md](SECURITY.md) — Pre-release security reporting route and scope.
+
+## Optional
+
+- [CONTRIBUTING.md](CONTRIBUTING.md) — Contribution and verification boundaries.

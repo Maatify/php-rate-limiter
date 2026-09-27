@@ -15,6 +15,7 @@
 [![Examples](https://img.shields.io/badge/Docs-Examples-blue.svg)](examples/)
 [![Package Reference](https://img.shields.io/badge/Docs-Package%20Reference-blue.svg)](RATE_LIMITER_PACKAGE_REFERENCE.md)
 [![Changelog](https://img.shields.io/badge/Docs-Changelog-blue.svg)](CHANGELOG.md)
+[![Security Policy](https://img.shields.io/badge/Docs-Security%20Policy-blue.svg)](SECURITY.md)
 [![Contributing Guide](https://img.shields.io/badge/Docs-Contributing-blue.svg)](CONTRIBUTING.md)
 
 PHP library for deterministic, multi-signal rate-limit decisions.
