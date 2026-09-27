@@ -77,6 +77,36 @@ final class SimpleFixedWindowRotationContinuityTest extends TestCase
         self::assertSame($previousBudget->epochStart, $remainingPrevious->epochStart);
     }
 
+    public function testCurrentAbsentWithValidPreviousSeedsTheFullWeightedCost(): void
+    {
+        $previousKey = $this->key('checkout', 10, 60, 'subject-1', 'previous-secret');
+        $previousBudget = $this->store->incrementBudget($previousKey, 60, 8);
+
+        $limiter = new FixedWindowSimpleRateLimiter(
+            [new FixedWindowThrottlePolicy('checkout', 10, 60)],
+            $this->store,
+            $this->clock,
+            'current-secret',
+            'prod',
+            'previous-secret',
+        );
+        $result = $limiter->consume('checkout', 'subject-1', 3);
+
+        self::assertFalse($result->allowed);
+        self::assertSame(0, $result->remaining);
+        self::assertSame($previousBudget->epochStart + 60, $result->resetAt);
+
+        $currentKey = $this->key('checkout', 10, 60, 'subject-1', 'current-secret');
+        $currentBudget = $this->store->getBudget($currentKey);
+        self::assertNotNull($currentBudget);
+        self::assertSame(11, $currentBudget->count);
+        self::assertSame($previousBudget->epochStart, $currentBudget->epochStart);
+
+        $remainingPrevious = $this->store->getBudget($previousKey);
+        self::assertNotNull($remainingPrevious);
+        self::assertSame(8, $remainingPrevious->count);
+    }
+
     public function testExpiredPreviousStartsANormalCurrentEpoch(): void
     {
         $previousKey = $this->key('checkout', 3, 60, 'subject-1', 'previous-secret');

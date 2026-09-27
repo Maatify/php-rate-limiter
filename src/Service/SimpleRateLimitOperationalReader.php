@@ -14,7 +14,7 @@ use Maatify\SharedCommon\Contracts\ClockInterface;
  * Production implementation of SimpleRateLimitOperationalReaderInterface
  * (DEC-012).
  *
- * This reader derives the exact same DEC-009 state identity as
+ * This reader derives the exact same DEC-013 state identity as
  * FixedWindowSimpleRateLimiter and uses only the read-only store operations
  * needed for inspection: getBudget() and isHealthy(). It never invokes
  * incrementBudget(), incrementBudgetWithSeed(), block(), set(), or another

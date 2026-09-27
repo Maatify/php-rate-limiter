@@ -63,6 +63,43 @@ final class RedisSimpleFixedWindowIntegrationTest extends TestCase
         self::assertLessThanOrEqual(60, $third->retryAfter ?? 0);
     }
 
+    public function testWeightedConsumesAccumulateAndOperationalReadReportsThePersistedCount(): void
+    {
+        $limiter = new FixedWindowSimpleRateLimiter(
+            [new FixedWindowThrottlePolicy('weighted', 10, 60)],
+            $this->store,
+            $this->clock,
+            'current-secret',
+            'prod',
+            null,
+        );
+
+        $first = $limiter->consume('weighted', 'subject-redis-weighted', 2);
+        $second = $limiter->consume('weighted', 'subject-redis-weighted', 3);
+        $denied = $limiter->consume('weighted', 'subject-redis-weighted', 6);
+
+        self::assertTrue($first->allowed);
+        self::assertSame(8, $first->remaining);
+        self::assertTrue($second->allowed);
+        self::assertSame(5, $second->remaining);
+        self::assertFalse($denied->allowed);
+        self::assertSame(0, $denied->remaining);
+        self::assertSame($first->resetAt, $denied->resetAt);
+
+        $snapshot = (new SimpleRateLimitOperationalReader(
+            [new FixedWindowThrottlePolicy('weighted', 10, 60)],
+            $this->store,
+            $this->clock,
+            'current-secret',
+            'prod',
+            null,
+        ))->read('weighted', 'subject-redis-weighted');
+
+        self::assertSame(11, $snapshot->count);
+        self::assertSame(0, $snapshot->remaining);
+        self::assertSame($denied->resetAt, $snapshot->resetAt);
+    }
+
     public function testDeniedConsumeDoesNotRenewExpiryAndANewEpochStartsAfterRealExpiry(): void
     {
         $limiter = new FixedWindowSimpleRateLimiter(

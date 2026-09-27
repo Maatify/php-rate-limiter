@@ -3,10 +3,10 @@
 **Module:** RateLimiter
 **Namespace:** `Maatify\RateLimiter`
 **Status:** LOCKED — Simple Throttling Contract
-**Spec Version:** `1.0.0`
+**Spec Version:** `1.1.0`
 
 This document is the canonical contract for the package's generic/simple
-fixed-window throttling capability, decided by `docs/decisions/DEC-009_GENERIC_SIMPLE_THROTTLING_SEMANTIC_CONTRACT.md`
+fixed-window throttling capability, currently governed by `docs/decisions/DEC-013_VARIABLE_COST_SIMPLE_FIXED_WINDOW_CONSUMPTION.md`
 and composed into the default runtime by `docs/decisions/DEC-010_COMPOSITE_RATE_LIMITING_COMPOSITION_SURFACE_EVOLUTION.md`.
 
 It is a first-class capability, distinct from the package's score-based
@@ -24,7 +24,7 @@ then deny until that interval ends
 
 ```
 FIXED WINDOW
-cost = 1 per consume
+cost = positive caller-supplied integer per consume, defaulting to 1
 one policy-defined limit
 one policy-defined interval
 one caller-supplied subject
@@ -34,7 +34,8 @@ FAIL_CLOSED only
 ```
 
 There is no `check()`/later-`consume()` split, no `peek()`, no `consumeMany()`,
-and no variable cost. See §11 for the complete list of non-goals.
+and no reservation operation. Cost is supplied per consume and is not part of
+state identity. See §11 for the complete list of non-goals.
 
 ## 2. Fixed-Window Semantics
 
@@ -79,7 +80,11 @@ interface SimpleThrottlePolicyInterface
 `SimpleThrottlePolicyInterface` is independent of `BlockPolicyInterface`,
 `ScoreThresholdsDTO`, `ScoreDeltasDTO`, and `BudgetConfigDTO`. It defines a
 stable policy name, a positive integer limit, and a positive integer
-interval in seconds. Version 1 uses unit cost only.
+interval in seconds. The current contract accepts a positive caller-supplied
+cost per consume; omitting it defaults to `1`. Cost is not policy
+configuration and is not part of state identity or key derivation. A weighted
+consume that crosses the limit is denied but its full cost remains persisted;
+`remaining` is clamped at zero.
 
 `Maatify\RateLimiter\Config\FixedWindowThrottlePolicy` is the package-owned
 immutable convenience implementation. Its constructor requires an explicit
@@ -137,7 +142,7 @@ namespace Maatify\RateLimiter\Service;
 
 interface SimpleRateLimiterInterface
 {
-    public function consume(string $policyName, string $subject): SimpleRateLimitResultDTO;
+    public function consume(string $policyName, string $subject, int $cost = 1): SimpleRateLimitResultDTO;
 }
 ```
 
@@ -290,7 +295,7 @@ between them.
 Explicitly out of scope for this contract:
 
 * sliding window, token bucket, or leaky bucket algorithms
-* burst capacity or weighted/variable consume cost
+* burst capacity or burst/refill models
 * a non-mutating `check()` prior to `consume()`, or `consumeMany()`
 * manual reset or unblock operations
 * generic statistics, aggregate reporting, historical reporting, and
@@ -349,7 +354,7 @@ This is strictly a point-in-time inspection of persisted state. It is **not**
 a second enforcement operation: it is not `check()`, not `peek()` deciding
 whether a future `consume()` is allowed, not reservation or
 pre-authorization, and it never mutates state. `SimpleRateLimitOperationalReader`
-derives the exact same DEC-009 state identity `FixedWindowSimpleRateLimiter`
+derives the exact same DEC-013 state identity `FixedWindowSimpleRateLimiter`
 writes (§6 above) and uses only the read-only store operations needed for
 inspection: `RateLimitStoreInterface::getBudget()` and
 `RateLimitStoreInterface::isHealthy()`. It never invokes

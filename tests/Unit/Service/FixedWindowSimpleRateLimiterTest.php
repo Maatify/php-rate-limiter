@@ -61,6 +61,90 @@ final class FixedWindowSimpleRateLimiterTest extends TestCase
         self::assertSame(SimpleRateLimitResultDTO::NORMAL, $result->failureMode);
     }
 
+    public function testOmittedCostMatchesExplicitUnitCost(): void
+    {
+        $limiter = $this->limiter([new FixedWindowThrottlePolicy('checkout', 3, 60)]);
+
+        $implicit = $limiter->consume('checkout', 'subject-implicit');
+        $explicit = $limiter->consume('checkout', 'subject-explicit', 1);
+
+        self::assertEquals($explicit, $implicit);
+    }
+
+    public function testZeroCostIsRejectedBeforeStorageAccessOrMutation(): void
+    {
+        $limiter = $this->limiter([new FixedWindowThrottlePolicy('checkout', 3, 60)]);
+
+        $this->expectException(RateLimiterException::class);
+        $this->expectExceptionMessage('positive integer');
+        try {
+            $limiter->consume('checkout', 'subject-1', 0);
+        } finally {
+            $budgets = (new \ReflectionProperty($this->store, 'budgets'))->getValue($this->store);
+            self::assertSame([], $budgets);
+        }
+    }
+
+    public function testNegativeCostIsRejectedBeforeStorageAccessOrMutation(): void
+    {
+        $limiter = $this->limiter([new FixedWindowThrottlePolicy('checkout', 3, 60)]);
+
+        $this->expectException(RateLimiterException::class);
+        $this->expectExceptionMessage('positive integer');
+        try {
+            $limiter->consume('checkout', 'subject-1', -1);
+        } finally {
+            $budgets = (new \ReflectionProperty($this->store, 'budgets'))->getValue($this->store);
+            self::assertSame([], $budgets);
+        }
+    }
+
+    public function testWeightedConsumeUsesPersistedCountForDecisionAndRemaining(): void
+    {
+        $limiter = $this->limiter([new FixedWindowThrottlePolicy('checkout', 10, 60)]);
+
+        $first = $limiter->consume('checkout', 'subject-1', 2);
+        $second = $limiter->consume('checkout', 'subject-1', 3);
+
+        self::assertTrue($first->allowed);
+        self::assertSame(8, $first->remaining);
+        self::assertTrue($second->allowed);
+        self::assertSame(5, $second->remaining);
+    }
+
+    public function testWeightedConsumeExactlyAtLimitIsAllowed(): void
+    {
+        $limiter = $this->limiter([new FixedWindowThrottlePolicy('checkout', 10, 60)]);
+
+        $result = $limiter->consume('checkout', 'subject-1', 10);
+
+        self::assertTrue($result->allowed);
+        self::assertSame(0, $result->remaining);
+    }
+
+    public function testWeightedConsumeCrossingLimitIsDeniedAndCountedFully(): void
+    {
+        $limiter = $this->limiter([new FixedWindowThrottlePolicy('checkout', 10, 60)]);
+
+        $limiter->consume('checkout', 'subject-1', 8);
+        $result = $limiter->consume('checkout', 'subject-1', 3);
+
+        self::assertFalse($result->allowed);
+        self::assertSame(0, $result->remaining);
+        self::assertSame(60, $result->retryAfter);
+    }
+
+    public function testCostGreaterThanLimitIsDeniedAndCounted(): void
+    {
+        $limiter = $this->limiter([new FixedWindowThrottlePolicy('checkout', 10, 60)]);
+
+        $result = $limiter->consume('checkout', 'subject-1', 11);
+
+        self::assertFalse($result->allowed);
+        self::assertSame(0, $result->remaining);
+        self::assertSame(60, $result->retryAfter);
+    }
+
     public function testConsumesOneThroughLimitAreAllowedAndLimitPlusOneIsDenied(): void
     {
         $limiter = $this->limiter([new FixedWindowThrottlePolicy('checkout', 3, 60)]);

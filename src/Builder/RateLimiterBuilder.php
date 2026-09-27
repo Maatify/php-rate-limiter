@@ -381,7 +381,7 @@ final class RateLimiterBuilder
     }
 
     /**
-     * KEY_STRATEGY.md §4.3.2 / DEC-009: BudgetSeedStoreInterface is only
+     * KEY_STRATEGY.md §4.3.2 / DEC-013: BudgetSeedStoreInterface is only
      * genuinely required when the configured graph can produce a real
      * previous-generation budget (K4 account budget, K5 known-device
      * micro-cap) or simple-window migration; a previous generation that

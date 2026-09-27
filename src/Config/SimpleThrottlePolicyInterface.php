@@ -10,7 +10,7 @@ namespace Maatify\RateLimiter\Config;
  * This contract is independent of BlockPolicyInterface, ScoreThresholdsDTO,
  * ScoreDeltasDTO, and BudgetConfigDTO: simple throttling is a separate
  * semantic family from the package's score-based security-policy model
- * (DEC-009).
+ * (DEC-013).
  */
 interface SimpleThrottlePolicyInterface
 {
