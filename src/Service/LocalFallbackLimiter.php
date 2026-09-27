@@ -4,14 +4,10 @@ declare(strict_types=1);
 
 namespace Maatify\RateLimiter\Service;
 
-use Maatify\RateLimiter\Config\ApiHeavyProtectionPolicy;
 use Maatify\RateLimiter\Config\BlockPolicyInterface;
 use Maatify\RateLimiter\Config\FailureFallbackConfigurationProviderInterface;
 use Maatify\RateLimiter\Enum\FailureFallbackDimensionEnum;
-use Maatify\RateLimiter\Config\LoginProtectionPolicy;
-use Maatify\RateLimiter\Config\OtpProtectionPolicy;
 use Maatify\RateLimiter\DTO\FailureFallbackConfigurationDTO;
-use Maatify\RateLimiter\Exception\RateLimiterException;
 use Maatify\SharedCommon\Contracts\ClockInterface;
 
 /**
@@ -40,9 +36,8 @@ class LocalFallbackLimiter
      * policies never share process-local counters even when their numeric
      * values are identical.
      */
-    public static function check(ClockInterface $clock, BlockPolicyInterface|string $policy, string $mode, string $ip, ?string $accountId = null, string $ua = ''): bool
+    public static function check(ClockInterface $clock, BlockPolicyInterface $policy, string $mode, string $ip, ?string $accountId = null, string $ua = ''): bool
     {
-        $policy = self::normalizePolicy($policy);
         self::gc($clock);
 
         if ($mode !== 'DEGRADED_MODE' && $mode !== 'FAIL_OPEN') {
@@ -91,20 +86,6 @@ class LocalFallbackLimiter
     private static function namespace(BlockPolicyInterface $policy): string
     {
         return 'fallback:' . hash('sha256', $policy->getName());
-    }
-
-    private static function normalizePolicy(BlockPolicyInterface|string $policy): BlockPolicyInterface
-    {
-        if ($policy instanceof BlockPolicyInterface) {
-            return $policy;
-        }
-
-        return match ($policy) {
-            'login_protection' => new LoginProtectionPolicy(),
-            'otp_protection' => new OtpProtectionPolicy(),
-            'api_heavy_protection' => new ApiHeavyProtectionPolicy(),
-            default => throw new RateLimiterException("Unknown legacy fallback policy: {$policy}"),
-        };
     }
 
     private static function getIpPrefix(string $ip): string
