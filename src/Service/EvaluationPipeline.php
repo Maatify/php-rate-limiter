@@ -457,26 +457,51 @@ class EvaluationPipeline
         BlockPolicyInterface $policy,
         DeviceIdentityDTO $device,
     ): ?RateLimitResultDTO {
-        foreach ([$keysV2, $keysV1] as $keys) {
-            foreach ($keys as $keyType => $key) {
-                if (! $key) {
-                    continue;
-                }
-                if ($this->isApiHeavyPolicy($policy) && ! $this->isApiHeavyKeyType($keyType)) {
-                    continue;
-                }
-                if ($this->isTrustedAuthenticationPolicy($policy, $device) && $this->isK1Key($keyType)) {
-                    continue;
-                }
-                $block = $this->store->checkBlock($key);
-                $now = $this->clock->now()->getTimestamp();
+        $now = $this->clock->now()->getTimestamp();
+        $highestLevel = 0;
+        $longestRemaining = 0;
+        $hasEffectiveBlock = false;
+
+        foreach ($keysV2 as $keyType => $currentKey) {
+            if ($this->isApiHeavyPolicy($policy) && ! $this->isApiHeavyKeyType($keyType)) {
+                continue;
+            }
+            if ($this->isTrustedAuthenticationPolicy($policy, $device) && $this->isK1Key($keyType)) {
+                continue;
+            }
+
+            $effective = null;
+            if ($currentKey) {
+                $block = $this->store->checkBlock($currentKey);
                 if ($block && $block->level >= 2 && $block->expiresAt > $now) {
-                    return $this->createBlockedResult($block->level, $block->expiresAt - $now, RateLimitResultDTO::DECISION_HARD_BLOCK);
+                    $effective = $block;
                 }
             }
+
+            if ($effective === null) {
+                $previousKey = $keysV1[$keyType] ?? null;
+                if ($previousKey && $previousKey !== $currentKey) {
+                    $block = $this->store->checkBlock($previousKey);
+                    if ($block && $block->level >= 2 && $block->expiresAt > $now) {
+                        $effective = $block;
+                    }
+                }
+            }
+
+            if ($effective === null) {
+                continue;
+            }
+
+            $hasEffectiveBlock = true;
+            $highestLevel = max($highestLevel, $effective->level);
+            $longestRemaining = max($longestRemaining, $effective->expiresAt - $now);
         }
 
-        return null;
+        if (! $hasEffectiveBlock) {
+            return null;
+        }
+
+        return $this->createBlockedResult($highestLevel, $longestRemaining, RateLimitResultDTO::DECISION_HARD_BLOCK);
     }
 
     /**
@@ -1675,12 +1700,12 @@ class EvaluationPipeline
                 if ($config->known_device_micro_cap === null) {
                     $shouldCount = true;
                 } else {
-                    $microRawV2 = "{$policy->getName()}:rate_limiter:microcap:k5:v1:{$context->accountId}:{$device->fingerprintHash}";
+                    $microRawV2 = "{$policy->getName()}:rate_limiter:microcap:k5:v1:{$this->envScope}:{$context->accountId}:{$device->fingerprintHash}";
                     $microKeyV2 = $this->hashKey($microRawV2, $this->secret);
                     $microKeyV1 = null;
 
                     if ($this->hasPreviousGeneration($device)) {
-                        $microRawV1 = "{$policy->getName()}:rate_limiter:microcap:k5:v1:{$context->accountId}:{$this->previousFingerprintHash($device)}";
+                        $microRawV1 = "{$policy->getName()}:rate_limiter:microcap:k5:v1:{$this->envScope}:{$context->accountId}:{$this->previousFingerprintHash($device)}";
                         $microKeyV1 = $this->hashKey($microRawV1, $this->previousSecret ?? $this->secret);
                     }
 

@@ -239,6 +239,42 @@ final class RateLimiterBudgetOwnerSafetyTest extends TestCase
         $this->assertSame(1, $this->store->getBudget($k4Key)?->count);
     }
 
+    public function testKnownDeviceMicroCapIsIsolatedByEnvironmentScope(): void
+    {
+        $policy = new LoginProtectionPolicy();
+        $account = 'microcap-env-isolation-account';
+        $device = $this->device('microcap-env-isolation-fp', 'MEDIUM', false, true);
+        $prodPipeline = $this->pipeline(null, 'test_secret', 'prod');
+        $stagingPipeline = $this->pipeline(null, 'test_secret', 'staging');
+
+        $prodMicroKey = $this->microCapKey('login_protection', $account, 'microcap-env-isolation-fp', 'test_secret', 'prod');
+        $stagingMicroKey = $this->microCapKey('login_protection', $account, 'microcap-env-isolation-fp', 'test_secret', 'staging');
+        $this->assertNotSame($prodMicroKey, $stagingMicroKey);
+
+        for ($attempt = 1; $attempt <= 8; $attempt++) {
+            $result = $prodPipeline->process($policy, $this->context($account), RateLimitCommand::recordFailure('login_protection'), $device);
+            $this->assertSame(RateLimitResultDTO::DECISION_ALLOW, $result->decision);
+        }
+        $this->assertSame(8, $this->store->getBudget($prodMicroKey)?->count);
+        $this->assertNull($this->store->getBudget($stagingMicroKey));
+
+        $stagingFirst = $stagingPipeline->process($policy, $this->context($account), RateLimitCommand::recordFailure('login_protection'), $device);
+        $this->assertSame(RateLimitResultDTO::DECISION_ALLOW, $stagingFirst->decision);
+        $this->assertSame(1, $this->store->getBudget($stagingMicroKey)?->count);
+        $this->assertSame(8, $this->store->getBudget($prodMicroKey)?->count);
+
+        $prodK4Key = $this->key('login_protection', 'k4', $account);
+        $stagingK4Key = hash_hmac('sha256', "login_protection:rate_limiter:k4:v2:staging:{$account}", 'test_secret');
+        $this->assertNull($this->store->getBudget($prodK4Key));
+
+        $prodNinth = $prodPipeline->process($policy, $this->context($account), RateLimitCommand::recordFailure('login_protection'), $device);
+        $this->assertSame(RateLimitResultDTO::DECISION_ALLOW, $prodNinth->decision);
+        $this->assertSame(9, $this->store->getBudget($prodMicroKey)?->count);
+        $this->assertSame(1, $this->store->getBudget($prodK4Key)?->count);
+        $this->assertSame(1, $this->store->getBudget($stagingMicroKey)?->count);
+        $this->assertNull($this->store->getBudget($stagingK4Key));
+    }
+
     public function testTrustedSessionFloorsBudgetLevelsForLoginAndOtp(): void
     {
         $loginAccount = 'trusted-login-floor';
@@ -403,7 +439,7 @@ final class RateLimiterBudgetOwnerSafetyTest extends TestCase
         $this->assertNull($this->store->get($this->cooldownKey('login_protection', $previousActiveAccount, 'new_secret')));
     }
 
-    private function pipeline(?string $previousSecret = null, string $currentSecret = 'test_secret'): EvaluationPipeline
+    private function pipeline(?string $previousSecret = null, string $currentSecret = 'test_secret', string $env = 'prod'): EvaluationPipeline
     {
         return new EvaluationPipeline(
             $this->store,
@@ -413,7 +449,7 @@ final class RateLimiterBudgetOwnerSafetyTest extends TestCase
             new DecayCalculator($this->clock),
             new EphemeralBucket($this->correlationStore),
             $currentSecret,
-            'prod',
+            $env,
             $this->clock,
             $previousSecret,
         );
@@ -479,9 +515,9 @@ final class RateLimiterBudgetOwnerSafetyTest extends TestCase
         return hash_hmac('sha256', "{$policy}:rate_limiter:{$type}:v2:prod:{$scope}", $secret);
     }
 
-    private function microCapKey(string $policy, string $account, string $fingerprint, string $secret = 'test_secret'): string
+    private function microCapKey(string $policy, string $account, string $fingerprint, string $secret = 'test_secret', string $env = 'prod'): string
     {
-        return hash_hmac('sha256', "{$policy}:rate_limiter:microcap:k5:v1:{$account}:{$fingerprint}", $secret);
+        return hash_hmac('sha256', "{$policy}:rate_limiter:microcap:k5:v1:{$env}:{$account}:{$fingerprint}", $secret);
     }
 
     private function cooldownKey(string $policy, string $account, string $secret = 'test_secret'): string

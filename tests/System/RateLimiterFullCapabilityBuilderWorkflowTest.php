@@ -289,6 +289,38 @@ final class RateLimiterFullCapabilityBuilderWorkflowTest extends TestCase
         self::assertSame(2, $currentBudget->count);
     }
 
+    /**
+     * Regression proof for the write/read namespace split: EvaluationPipeline
+     * (via the built engine) writes the K5 known-device micro-cap state, and
+     * RateLimitOperationalReader (via the same Builder's operational reader)
+     * must resolve the identical environment-scoped namespace to observe it.
+     * If either side's key derivation omits or diverges on {env} again, this
+     * assertion fails because the reader will not find what the pipeline
+     * wrote.
+     */
+    public function testOperationalReaderSurfacesTheSameKnownDeviceMicroCapStateThePipelineWrote(): void
+    {
+        $clock = new FixedClock('2025-01-01 12:00:00');
+        $store = new FullCapabilityInMemoryStore($clock);
+        $context = $this->knownDeviceContext('microcap-reader-agreement');
+        $builder = RateLimiterBuilder::fromFullCapabilityStore(
+            new RateLimiterConfig('key-secret', 'fingerprint-secret', 'prod'),
+            $store,
+            new RecordingFailureSignalEmitter(),
+        )->withClock($clock);
+        $limiter = $builder->build();
+        $reader = $builder->buildOperationalReader();
+
+        $limiter->limit($context, RateLimitCommand::recordFailure('login_protection'));
+
+        $snapshot = $reader->readScorePolicy($context, 'login_protection');
+
+        self::assertNotNull($snapshot->budget);
+        self::assertNotNull($snapshot->budget->knownDeviceMicroCap);
+        self::assertSame(1, $snapshot->budget->knownDeviceMicroCap->count);
+        self::assertFalse($snapshot->budget->knownDeviceMicroCapFromPreviousGeneration);
+    }
+
     public function testPublicWorkflowPersistsHardBlockCycleState(): void
     {
         $clock = new FixedClock('2025-01-01 12:00:00');
@@ -462,7 +494,7 @@ final class RateLimiterFullCapabilityBuilderWorkflowTest extends TestCase
     ): string {
         return hash_hmac(
             'sha256',
-            'login_protection:rate_limiter:microcap:k5:v1:'
+            'login_protection:rate_limiter:microcap:k5:v1:prod:'
                 . ($context->accountId ?? '') . ':' . $this->fingerprintHash($context, $fingerprintSecret),
             $outerSecret,
         );

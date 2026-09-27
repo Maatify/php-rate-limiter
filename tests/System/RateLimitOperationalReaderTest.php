@@ -400,7 +400,7 @@ final class RateLimitOperationalReaderTest extends TestCase
 
         return hash_hmac(
             'sha256',
-            "{$policy}:rate_limiter:microcap:k5:v1:{$accountId}:{$fingerprint}",
+            "{$policy}:rate_limiter:microcap:k5:v1:prod:{$accountId}:{$fingerprint}",
             $secret,
         );
     }
