@@ -31,11 +31,20 @@ final class FixedWindowSimpleRateLimiter implements SimpleRateLimiterInterface
 
     /**
      * @param SimpleThrottlePolicyInterface[] $policies
+     * @param string $keySecret Active, non-blank key-generation secret. Not
+     *     trimmed or otherwise normalized: accepted surrounding whitespace is
+     *     retained byte-for-byte.
+     * @param string $environmentScope Non-blank environment namespace included in derived keys.
+     * @param ?string $previousKeySecret Optional previous-generation secret;
+     *     null means no previous generation. When provided, it must not be
+     *     empty or whitespace-only, and is likewise never trimmed or normalized.
      * @throws RateLimiterException When any supplied policy — including a
      *     directly implemented SimpleThrottlePolicyInterface, not only
      *     FixedWindowThrottlePolicy — has a blank name, a non-positive
-     *     limit, or a non-positive interval. Validation happens here, before
-     *     any storage mutation can occur.
+     *     limit, or a non-positive interval; or when $keySecret or
+     *     $environmentScope is empty or whitespace-only, or a non-null
+     *     $previousKeySecret is empty or whitespace-only. Validation happens
+     *     here, before any storage mutation can occur.
      */
     public function __construct(
         array $policies,
@@ -47,6 +56,16 @@ final class FixedWindowSimpleRateLimiter implements SimpleRateLimiterInterface
         #[\SensitiveParameter]
         private readonly ?string $previousKeySecret = null,
     ) {
+        if (trim($keySecret) === '') {
+            throw new RateLimiterException('Active key secret must not be empty or whitespace-only.');
+        }
+        if (trim($environmentScope) === '') {
+            throw new RateLimiterException('Environment scope must not be empty or whitespace-only.');
+        }
+        if ($previousKeySecret !== null && trim($previousKeySecret) === '') {
+            throw new RateLimiterException('Previous key secret must not be empty or whitespace-only.');
+        }
+
         $indexed = [];
         foreach ($policies as $policy) {
             self::assertValidPolicy($policy);
