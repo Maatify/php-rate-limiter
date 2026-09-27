@@ -52,7 +52,10 @@ Variable caller-supplied cost covers weighted events while retaining the package
 - DEC-009 remains historical and is superseded; its unit-cost decision is not rewritten.
 - Existing two-argument callers remain compatible.
 - Implementers must accept the evolved optional parameter.
-- No Redis runtime or storage contract change is required.
+- No public storage contract or storage-interface change was required.
+- The official Redis implementation was hardened during implementation to preserve
+  exact signed-integer budget arithmetic and the existing Current-wins,
+  active-seed, and expired-seed branch precedence for weighted consumption.
 
 ## Supersedes
 
