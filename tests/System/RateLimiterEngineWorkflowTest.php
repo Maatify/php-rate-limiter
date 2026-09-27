@@ -243,12 +243,18 @@ class RateLimiterEngineWorkflowTest extends TestCase
             $command = new RateLimitCommand('api_heavy_protection', -1);
             $this->engine->limit($context, $command);
         } finally {
-            $normalizedUa = DeviceIdentityResolver::normalizeUserAgent('Mozilla/5.0');
+            $deviceResolver = new DeviceIdentityResolver(new FingerprintHasher('test_secret'));
+            $device = $deviceResolver->resolve($context);
+            $normalizedUa = $device->normalizedUa;
+            $fpHash = $device->fingerprintHash;
+
             $k1Key = hash_hmac('sha256', "api_heavy_protection:rate_limiter:k1:v2:prod:127.0.0.1", 'test_secret');
             $k2Key = hash_hmac('sha256', "api_heavy_protection:rate_limiter:k2:v2:prod:127.0.0.1:{$normalizedUa}", 'test_secret');
+            $k3Key = hash_hmac('sha256', "api_heavy_protection:rate_limiter:k3:v2:prod:127.0.0.1:{$fpHash}", 'test_secret');
 
             $this->assertNull($this->store->get($k1Key));
             $this->assertNull($this->store->get($k2Key));
+            $this->assertNull($this->store->get($k3Key));
         }
     }
 
