@@ -15,6 +15,7 @@ use Maatify\RateLimiter\DTO\RateLimitOperationalKeyStateDTO;
 use Maatify\RateLimiter\DTO\RateLimitOperationalScopesDTO;
 use Maatify\RateLimiter\DTO\RateLimitOperationalSnapshotDTO;
 use Maatify\RateLimiter\DTO\RateLimitStateDTO;
+use Maatify\RateLimiter\Exception\RateLimiterException;
 use Maatify\RateLimiter\Repository\CircuitBreakerStoreInterface;
 use Maatify\RateLimiter\Repository\HardBlockCycleStoreInterface;
 use Maatify\RateLimiter\Repository\RateLimitStoreInterface;
@@ -36,9 +37,16 @@ final class RateLimitOperationalReader implements RateLimitOperationalReaderInte
      * @param CircuitBreakerStoreInterface $circuitBreakerStore Circuit state store.
      * @param DecayCalculator $decayCalculator Score decay service.
      * @param ClockInterface $clock Source of observation timestamps.
-     * @param string $keySecret Active key-generation secret.
-     * @param string $envScope Environment namespace included in keys.
-     * @param ?string $previousKeySecret Optional previous-generation secret.
+     * @param string $keySecret Active, non-blank key-generation secret. Not
+     *     trimmed or otherwise normalized: accepted surrounding whitespace is
+     *     retained byte-for-byte.
+     * @param string $envScope Non-blank environment namespace included in keys.
+     * @param ?string $previousKeySecret Optional previous-generation secret;
+     *     null means no previous generation. When provided, it must not be
+     *     empty or whitespace-only, and is likewise never trimmed or normalized.
+     * @throws RateLimiterException When $keySecret or $envScope is empty or
+     *     whitespace-only, or when a non-null $previousKeySecret is empty or
+     *     whitespace-only.
      */
     public function __construct(
         private readonly DeviceIdentityResolverInterface $deviceResolver,
@@ -49,7 +57,17 @@ final class RateLimitOperationalReader implements RateLimitOperationalReaderInte
         private readonly string $keySecret,
         private readonly string $envScope,
         private readonly ?string $previousKeySecret = null,
-    ) {}
+    ) {
+        if (trim($keySecret) === '') {
+            throw new RateLimiterException('Active key secret must not be empty or whitespace-only.');
+        }
+        if (trim($envScope) === '') {
+            throw new RateLimiterException('Environment scope must not be empty or whitespace-only.');
+        }
+        if ($previousKeySecret !== null && trim($previousKeySecret) === '') {
+            throw new RateLimiterException('Previous key secret must not be empty or whitespace-only.');
+        }
+    }
 
     /**
      * Read one policy's scores, blocks, budgets, circuit state, and health.

@@ -72,10 +72,17 @@ class EvaluationPipeline
      * @param AntiEquilibriumGate $antiEquilibriumGate Repeated-soft-block guard.
      * @param DecayCalculator $decayCalculator Score decay service.
      * @param EphemeralBucket $ephemeralBucket Device-cap key resolver.
-     * @param string $keySecret Active key-generation secret.
-     * @param string $envScope Environment namespace included in derived keys.
+     * @param string $keySecret Active, non-blank key-generation secret. Not
+     *     trimmed or otherwise normalized: accepted surrounding whitespace is
+     *     retained byte-for-byte.
+     * @param string $envScope Non-blank environment namespace included in derived keys.
      * @param ClockInterface $clock Source of current timestamps.
-     * @param ?string $previousKeySecret Optional previous-generation secret.
+     * @param ?string $previousKeySecret Optional previous-generation secret;
+     *     null means no previous generation. When provided, it must not be
+     *     empty or whitespace-only, and is likewise never trimmed or normalized.
+     * @throws RateLimiterException When $keySecret or $envScope is empty or
+     *     whitespace-only, or when a non-null $previousKeySecret is empty or
+     *     whitespace-only.
      */
     public function __construct(
         private readonly RateLimitStoreInterface $store,
@@ -89,6 +96,16 @@ class EvaluationPipeline
         private readonly ClockInterface $clock,
         ?string $previousKeySecret = null,
     ) {
+        if (trim($keySecret) === '') {
+            throw new RateLimiterException('Active key secret must not be empty or whitespace-only.');
+        }
+        if (trim($this->envScope) === '') {
+            throw new RateLimiterException('Environment scope must not be empty or whitespace-only.');
+        }
+        if ($previousKeySecret !== null && trim($previousKeySecret) === '') {
+            throw new RateLimiterException('Previous key secret must not be empty or whitespace-only.');
+        }
+
         $this->secret = $keySecret;
         $this->previousSecret = $previousKeySecret;
     }
