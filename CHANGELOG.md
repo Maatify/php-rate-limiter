@@ -44,6 +44,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   Failure Semantics version: `1.4.0` → `1.5.0`.
 
 ### Changed
+- Hardened official Redis budget persistence to use exact signed-integer arithmetic
+  instead of Lua floating-point count arithmetic, covering weighted Current
+  increments, the rotation seed path, exact large-count readback, overflow handling,
+  and existing seed branch precedence. Public API: unchanged by this Redis
+  hardening. Storage interfaces: unchanged.
 - Added the typed `PolicyCapabilityEnum` extension contract for reusable custom
   policies, and replaced the initial closed-enum `FailureFallbackProfileEnum`
   fallback contract with a generic typed

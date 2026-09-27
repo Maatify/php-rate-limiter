@@ -1,7 +1,7 @@
 # Future Upgrade Roadmap
 
-**Status:** Planning only  
-**Scope:** Post-first-RC capability and quality upgrades  
+**Status:** Planning only
+**Scope:** Post-first-RC capability and quality upgrades
 **Last reviewed:** 2026-09-27
 
 This roadmap preserves upgrade candidates that were deliberately deferred during the pre-release comparative review so they are not lost when branches and pull requests are closed.
