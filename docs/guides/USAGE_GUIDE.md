@@ -146,21 +146,23 @@ implementations:
 
 - <code>RateLimitStoreInterface</code>: counters, blocks, and budget state with the atomicity and TTL behavior required by the package.
 - <code>CorrelationStoreInterface</code>: source-compatible base contract for distinct sets and watch flags.
-- <code>BoundedCorrelationStoreInterface</code>: required additive capability for bounded device-cap, churn, dilution, and no-rotation spray observations.
-- <code>BoundedCorrelationRotationStoreInterface</code>: required additive capability when a current/previous generation observation is active; it preserves previous state through a current-only bridge.
+- <code>BoundedCorrelationStoreInterface</code>: required additive capability for bounded device-cap, churn, dilution, and no-rotation spray observations; the Builder rejects a correlation store missing it at <code>build()</code>, unconditionally.
+- <code>BoundedCorrelationRotationStoreInterface</code>: required additive capability when a current/previous generation observation is active; it preserves previous state through a current-only bridge. The Builder rejects a correlation store missing it at <code>build()</code> whenever a previous generation is configured.
 - <code>BoundedCorrelationSnapshotStoreInterface</code>: required additive capability for Login/OTP distributed-account snapshots without a previous generation.
-- <code>BoundedCorrelationSnapshotRotationStoreInterface</code>: required additive capability for distributed-account snapshots when a previous generation is active.
+- <code>BoundedCorrelationSnapshotRotationStoreInterface</code>: required additive capability for distributed-account snapshots when a previous generation is active. The Builder rejects a correlation store missing the applicable snapshot capability at <code>build()</code> for any policy declaring <code>PolicyCapabilityEnum::DISTRIBUTED_ACCOUNT</code> — official or custom.
 - <code>CorrelationRotationStoreInterface</code>: additive capability for rotated WATCH state and the existing credential-spray rotation primitives.
 - <code>CircuitBreakerStoreInterface</code>: circuit-breaker state persistence.
 - <code>CircuitBreakerProbeStoreInterface</code>: additive atomic per-policy
-  recovery-probe lease; required only when a recovery probe becomes eligible.
+  recovery-probe lease; required by the Production Default Path, so the Builder
+  rejects a circuit-breaker store missing it at <code>build()</code> instead of
+  waiting for a recovery probe to become eligible.
 - <code>FailureSignalEmitterInterface</code>: delivery of circuit-breaker and failure signals.
-- <code>HardBlockCycleStoreInterface</code>: atomic Current-only persistence and transition tracking for every persisted L2+ block, plus read-only Current/Previous decay-pause state. It is mandatory before the first L2+ block write; a base-only store remains valid for normal reads and L1 writes but fails explicitly for L2+ persistence.
+- <code>HardBlockCycleStoreInterface</code>: atomic Current-only persistence and transition tracking for every persisted L2+ block, plus read-only Current/Previous decay-pause state. The Builder rejects a rate-limit store missing it at <code>build()</code> unconditionally for the Production Default Path: the score runtime's generic bounded-correlation enforcement (churn, dilution, and related correlation-rule paths) can produce a persisted L2+ candidate independently of any policy's own score thresholds or budget configuration, so this is not something a policy-shape inspection can safely rule out.
 - <code>PunishmentLifecycleStoreInterface</code>: generation-bound authentication K4 score, punishment-evidence, and one-shot claim capability.
 - <code>FullCapabilityStoreInterface</code>: aggregate contract including the punishment lifecycle capability; custom implementers must add its methods.
 - <code>ClockInterface</code> from <code>maatify/shared-common</code>: current time and timezone.
 
-The host may also provide a custom <code>DeviceIdentityResolverInterface</code> or a custom <code>BlockPolicyInterface</code> through the builder's targeted overrides. A same-name policy replaces the matching default, while a new name is added. <code>BudgetSeedStoreInterface</code> is an additive storage capability used when a host store supports atomic budget-epoch seeding during key rotation.
+The host may also provide a custom <code>DeviceIdentityResolverInterface</code> or a custom <code>BlockPolicyInterface</code> through the builder's targeted overrides. A same-name policy replaces the matching default, while a new name is added. A configured previous fingerprint generation is reachable either through <code>RateLimiterConfig::previousFingerprintSecret()</code> (consumed by the package default resolver) or through a Host-supplied custom resolver: <code>DeviceIdentityDTO</code> publicly permits a non-null <code>previousFingerprintHash</code> regardless of which resolver produced it, so the Builder conservatively treats a configured custom resolver as capable of producing one. <code>BudgetSeedStoreInterface</code> is an additive storage capability used when a host store supports atomic budget-epoch seeding during key rotation; the Builder rejects a rate-limit store missing it at <code>build()</code> whenever the configured graph can genuinely reach a previous-generation budget or simple-window migration (a previous outer-key generation with an account-budget policy or a registered simple throttle policy, or a reachable previous fingerprint generation with a known-device-micro-cap policy) — see [Build-time capability preflight](../../RATE_LIMITER_PACKAGE_REFERENCE.md#build-time-capability-preflight-dec-010) for the complete matrix.
 
 The package owns enforcement decisions, key construction, scoring, decay, bounded correlation logic, budget eligibility, circuit-breaker behavior, result semantics, and the official Redis persistence semantics. The Host owns the Redis client and connection lifecycle for that store, custom storage implementations when selecting another backend, account and session truth, transport response behavior, authorization, logging destinations, and cross-domain reporting.
 
@@ -221,7 +223,9 @@ fingerprint-only, and both-rotated inputs never form Cartesian generation pairs.
 | Record a successful operation | <code>RateLimitCommand::recordSuccess()</code> | [Success recording](#walkthrough-success-recording) | [basic-rate-limit.php](../../examples/basic-rate-limit.php) |
 | Use a policy preset | Default <code>RateLimiterBuilder</code> policy registry | [Policy selection](#walkthrough-policy-selection) | [basic-rate-limit.php](../../examples/basic-rate-limit.php) |
 | Observe infrastructure failures | <code>FailureSignalEmitterInterface</code> + <code>RateLimitResultDTO::failureMode</code> | [Failure boundary](#walkthrough-failure-boundary) | [infrastructure-failure.php](../../examples/infrastructure-failure.php) |
-| Inspect current operational rate-limit state | <code>RateLimitOperationalReaderInterface::read()</code> | [Operational read](#walkthrough-operational-read) | [operational-read.php](../../examples/operational-read.php) |
+| Inspect current operational rate-limit state (Production Default Read Path) | <code>RateLimiterBuilder::buildOperationalReader()</code> + <code>CompositeRateLimitOperationalReaderInterface::readScorePolicy()</code> | [Operational read](#walkthrough-operational-read) | [operational-read.php](../../examples/operational-read.php) |
+| Inspect current operational rate-limit state (Advanced Path) | <code>RateLimitOperationalReaderInterface::read()</code> | [Operational read](#walkthrough-operational-read) | [operational-read.php](../../examples/operational-read.php) |
+| Inspect persisted simple fixed-window state | <code>CompositeRateLimitOperationalReaderInterface::readSimpleThrottle()</code> | [Operational read](#walkthrough-operational-read) | [simple-fixed-window.php](../../examples/simple-fixed-window.php) |
 
 ## Walkthrough: Pre-Check
 
@@ -332,21 +336,26 @@ runtime implementation.
 
 ## Operational Read / Reporting Boundary
 
-This package is **In Scope** for Operational Read / Reporting because it owns the persisted operational semantics of score state, temporary blocks, account budgets, known-device micro-caps, budget cooldowns, and circuit-breaker state, including the optional official Redis persistence implementation. The Host supplies the Redis client and connection lifecycle for that implementation or a custom persistence backend when selecting another store, along with account/session source of truth, HTTP/transport, permissions, dashboards/UI, cross-package aggregation, and exports.
+This package is **In Scope** for Operational Read / Reporting because it owns the persisted operational semantics of score state, temporary blocks, account budgets, known-device micro-caps, budget cooldowns, circuit-breaker state, and simple fixed-window state (DEC-009/DEC-012), including the optional official Redis persistence implementation. The Host supplies the Redis client and connection lifecycle for that implementation or a custom persistence backend when selecting another store, along with account/session source of truth, HTTP/transport, permissions, dashboards/UI, cross-package aggregation, and exports.
 
-The stable, framework-agnostic read contract is <code>RateLimitOperationalReaderInterface::read()</code>, implemented by <code>RateLimitOperationalReader</code>. It accepts a <code>RateLimitContextDTO</code> and <code>BlockPolicyInterface</code>, returns a typed <code>RateLimitOperationalSnapshotDTO</code>, and performs a point-in-time read without changing enforcement state. It is separate from <code>RateLimiterInterface::limit()</code>, which remains the consumer enforcement API.
+The recommended, Builder-coordinated entrypoint is <code>RateLimiterBuilder::buildOperationalReader(): CompositeRateLimitOperationalReaderInterface</code> (DEC-012). It is built from the same Builder instance's current registered state — score-policy registry, simple-policy registry, effective clock, effective device identity resolver, active/previous key configuration, environment scope, rate-limit store, and circuit-breaker store — so a Host customizing a policy through <code>withPolicy()</code>/<code>withSimpleThrottlePolicy()</code> gets that exact registered policy resolved by name, with no need to reconstruct or re-supply the policy object to read it. Building the reader is read-only and does not run <code>build()</code>'s mutation-only capability preflight.
 
-Correlation distinct-set members, watch-flag internals, churn sets, and dilution sets are intentionally unsupported because they are internal bounded enforcement structures without a stable operational reporting semantic. The read surface has no mutation/reset/unblock, global listing, arbitrary key lookup, raw-key exposure, historical audit store, Host joins, cross-package reporting, or correlation-set inspection.
+The stable, framework-agnostic score-read contract remains <code>RateLimitOperationalReaderInterface::read()</code>, implemented by <code>RateLimitOperationalReader</code> (the Advanced Path; unchanged public signature). It accepts a <code>RateLimitContextDTO</code> and <code>BlockPolicyInterface</code>, returns a typed <code>RateLimitOperationalSnapshotDTO</code>, and performs a point-in-time read without changing enforcement state. It is separate from <code>RateLimiterInterface::limit()</code>, which remains the consumer enforcement API.
+
+Simple fixed-window persisted state is inspected read-only through <code>CompositeRateLimitOperationalReaderInterface::readSimpleThrottle()</code> (or directly via <code>SimpleRateLimitOperationalReaderInterface::read()</code>), returning a typed <code>SimpleRateLimitOperationalSnapshotDTO</code>. This is strictly a read-only inspection of persisted state — it is **not** a second enforcement <code>check()</code>/<code>peek()</code>, not reservation or pre-authorization, and it never mutates state. Current always wins when its epoch is active; Previous is used only as a read-only fallback when Current is absent (<code>fromPreviousGeneration = true</code>), and there is never a <code>max()</code>/sum() merge.
+
+Correlation distinct-set members, watch-flag internals, churn sets, and dilution sets are intentionally unsupported because they are internal bounded enforcement structures without a stable operational reporting semantic. The read surface has no mutation/reset/unblock, global listing, arbitrary key lookup, raw-key exposure, historical audit store, Host joins, cross-package reporting, correlation-set inspection, or generic reporting/statistics API.
 
 ## Walkthrough: Operational Read
 
-    Host context + policy
-        → RateLimitOperationalReaderInterface::read()
-        → Package-owned read-only state resolution
-        → RateLimitOperationalSnapshotDTO
+    Host context + policy name
+        → RateLimiterBuilder::buildOperationalReader()
+        → CompositeRateLimitOperationalReaderInterface::readScorePolicy() / readSimpleThrottle()
+        → Package-owned read-only state resolution, by name, against the Builder's own registry
+        → RateLimitOperationalSnapshotDTO / SimpleRateLimitOperationalSnapshotDTO
         → Host monitoring or operations boundary
 
-The operational reader reads current real enforcement keys and applies the documented single previous-generation fallback where configured. It does not call <code>EvaluationPipeline::process()</code>, <code>RateLimiterEngine::limit()</code>, <code>EphemeralBucket</code>, correlation mutation methods, or circuit-breaker mutation methods, and it never exposes raw storage keys, secrets, fingerprints, or Host data.
+The operational reader reads current real enforcement keys and applies the documented single previous-generation fallback where configured. It does not call <code>EvaluationPipeline::process()</code>, <code>RateLimiterEngine::limit()</code>, <code>EphemeralBucket</code>, correlation mutation methods, circuit-breaker mutation methods, or the simple fixed-window's <code>incrementBudget()</code>/<code>incrementBudgetWithSeed()</code> mutation primitives, and it never exposes raw storage keys, secrets, fingerprints, the raw subject, or Host data.
 
 ## Further Reading
 

@@ -36,6 +36,7 @@ use Maatify\RateLimiter\Tests\Support\Correlation\StatefulInMemoryCorrelationSto
 use Maatify\RateLimiter\Tests\Support\FailureSignal\RecordingFailureSignalEmitter;
 use Maatify\RateLimiter\Tests\Support\RateLimiter\InMemoryRateLimitStore;
 use Maatify\RateLimiter\Tests\Support\RateLimiter\BaseOnlyInMemoryRateLimitStore;
+use Maatify\RateLimiter\Tests\Support\RateLimiter\HardBlockCycleOnlyInMemoryRateLimitStore;
 use Maatify\SharedCommon\Infrastructure\SystemClock;
 use PHPUnit\Framework\TestCase;
 
@@ -190,6 +191,7 @@ final class RateLimiterBuilderTest extends TestCase
             'withPolicy',
             'withSimpleThrottlePolicy',
             'build',
+            'buildOperationalReader',
         ], $publicMethods);
     }
 
@@ -267,9 +269,15 @@ final class RateLimiterBuilderTest extends TestCase
         $builder->build();
     }
 
+    /**
+     * A non-opt-in policy graph never needs PunishmentLifecycleStoreInterface,
+     * but api_heavy_protection's K1/K3 thresholds can still produce a
+     * persisted L2+ block (WU-S4-03D-F01), so the store must at least
+     * support HardBlockCycleStoreInterface.
+     */
     public function testRegistryWithoutOptInPoliciesBuildsWithBaseStore(): void
     {
-        $baseStore = new BaseOnlyInMemoryRateLimitStore($this->clock);
+        $baseStore = new HardBlockCycleOnlyInMemoryRateLimitStore($this->clock);
         $builder = new RateLimiterBuilder(
             $this->config,
             $baseStore,

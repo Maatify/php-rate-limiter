@@ -71,8 +71,9 @@ Package-owned operational concepts are:
 - temporary block state;
 - account budget;
 - known-device micro-cap;
-- budget cooldown; and
-- circuit-breaker state.
+- budget cooldown;
+- circuit-breaker state; and
+- simple fixed-window state (DEC-009/DEC-012).
 
 The Host owns:
 
@@ -92,6 +93,20 @@ The public operational contract is `Maatify\RateLimiter\Service\RateLimitOperati
         → RateLimitOperationalSnapshotDTO
 
 This is a read-only, point-in-time operational observation and is not an alternate enforcement API. `RateLimiterInterface::limit()` remains the consumer enforcement API.
+
+`Maatify\RateLimiter\Builder\RateLimiterBuilder::buildOperationalReader()` (DEC-012) is the Production Default Read Path: it returns `Maatify\RateLimiter\Service\CompositeRateLimitOperationalReaderInterface`, coordinated from the Builder's own current registered state (score-policy registry, simple-policy registry, effective clock, effective `DeviceIdentityResolverInterface`, active/previous key configuration, environment scope, rate-limit store, circuit-breaker store):
+
+    RateLimitContextDTO + policyName
+        → CompositeRateLimitOperationalReaderInterface::readScorePolicy()
+        → RateLimitOperationalSnapshotDTO
+
+    policyName + subject
+        → CompositeRateLimitOperationalReaderInterface::readSimpleThrottle()
+        → SimpleRateLimitOperationalSnapshotDTO
+
+Both methods resolve the named policy from the Builder's own registry, so a Host customizing a policy through `withPolicy()`/`withSimpleThrottlePolicy()` never has to reconstruct or re-supply that policy object to read it back; an unknown name raises `RateLimiterException`. `buildOperationalReader()` does not run `build()`'s mutation-only capability preflight, because read-only construction never invokes a mutation-only primitive. The existing `RateLimitOperationalReaderInterface`/`RateLimitOperationalReader` remain fully source-compatible as the Advanced Path.
+
+Simple fixed-window persisted state (DEC-009) is inspected read-only through `Maatify\RateLimiter\Service\SimpleRateLimitOperationalReaderInterface`/`Maatify\RateLimiter\Service\SimpleRateLimitOperationalReader`, returning `Maatify\RateLimiter\DTO\SimpleRateLimitOperationalSnapshotDTO`. This is strictly a read-only inspection of persisted state — it is not a second enforcement operation, not `check()`/`peek()`, not reservation/pre-authorization, and never mutates state. Current always wins when its epoch is active; Previous is used only as a read-only fallback when Current is absent, with `fromPreviousGeneration = true` and no `max()`/sum() merge.
 
 Correlation distinct-set members, watch-flag internals, churn sets, and dilution sets are intentionally unsupported reporting dimensions. They are internal bounded enforcement structures without a stable operational reporting semantic. The operational read surface has no mutation/reset/unblock API, global listing, arbitrary key lookup, raw-key exposure, historical audit store, Host joins, cross-package reporting, or correlation-set inspection.
 
@@ -124,7 +139,9 @@ The following inventory describes the current public runtime types. Test and sup
 | `Maatify\RateLimiter\Repository\Redis\RedisCommandExecutorInterface` | Raw Redis command boundary supplied by the Host/client bridge for the optional official Redis store. |
 | `Maatify\RateLimiter\Contract\FailureSignalEmitterInterface` | Failure and circuit-breaker signal delivery boundary. |
 | `Maatify\RateLimiter\Service\DeviceIdentityResolverInterface` | Device identity resolution boundary. |
-| `Maatify\RateLimiter\Service\RateLimitOperationalReaderInterface` | Read-only point-in-time operational state query boundary. |
+| `Maatify\RateLimiter\Service\RateLimitOperationalReaderInterface` | Read-only point-in-time operational state query boundary (Advanced Path). |
+| `Maatify\RateLimiter\Service\SimpleRateLimitOperationalReaderInterface` | Read-only point-in-time inspection of persisted simple fixed-window state (DEC-012); not a second enforcement operation. |
+| `Maatify\RateLimiter\Service\CompositeRateLimitOperationalReaderInterface` | Single Production Default Read Path contract returned by `RateLimiterBuilder::buildOperationalReader()` (DEC-012); resolves registered score and simple policies by name. |
 | `Maatify\RateLimiter\Service\PostPunishmentReentryClaimInterface` | Public one-shot post-punishment lifecycle claim boundary; stale, expired, mismatched, absent, or replayed evidence returns `false`. |
 | `Maatify\RateLimiter\Service\RateLimiterRuntimeInterface` | Composite production runtime extending the normal limiter entrypoint with the public lifecycle claim operation. |
 | `Maatify\RateLimiter\Service\SimpleRateLimiterInterface` | Consumer entrypoint for generic/simple fixed-window throttling (DEC-009): one atomic `consume(policyName, subject)` operation. |
@@ -144,7 +161,7 @@ The following inventory describes the current public runtime types. Test and sup
 | Type | Responsibility |
 | --- | --- |
 | `Maatify\RateLimiter\Config\RateLimiterConfig` | Immutable active/previous outer and fingerprint secrets plus the non-empty environment scope used by the default composition. |
-| `Maatify\RateLimiter\Builder\RateLimiterBuilder` | Package-wide default composition surface for the engine graph, the three default policy presets, and the opt-in simple fixed-window throttle registry. |
+| `Maatify\RateLimiter\Builder\RateLimiterBuilder` | Package-wide default composition surface for the engine graph, the three default policy presets, and the opt-in simple fixed-window throttle registry. `buildOperationalReader()` (DEC-012) additively returns the coordinated Production Default Read Path built from this same registered state. |
 | `Maatify\RateLimiter\Config\FixedWindowThrottlePolicy` | Package-owned immutable `SimpleThrottlePolicyInterface` convenience implementation; name, limit, and interval remain explicit caller inputs. |
 
 ### Public Command
@@ -164,7 +181,7 @@ The following inventory describes the current public runtime types. Test and sup
 | Store boundary state | `Maatify\RateLimiter\DTO\RateLimitStateDTO`, `Maatify\RateLimiter\DTO\BlockStateDTO`, `Maatify\RateLimiter\DTO\BudgetStateDTO`, `Maatify\RateLimiter\DTO\CircuitBreakerStateDTO`, `Maatify\RateLimiter\DTO\GenerationBoundScoreStateDTO`, `Maatify\RateLimiter\DTO\GenerationBoundScoreMutationDTO` |
 | Hard-block cycle state | `Maatify\RateLimiter\DTO\HardBlockCycleResultDTO`, `Maatify\RateLimiter\DTO\DecayPauseStateDTO` |
 | Punishment lifecycle state | `Maatify\RateLimiter\DTO\PostPunishmentReentryStateDTO`, `Maatify\RateLimiter\DTO\PostPunishmentReentryMetadataDTO`, `Maatify\RateLimiter\DTO\PunishmentLifecycleTransitionDTO` |
-| Operational read | `Maatify\RateLimiter\DTO\RateLimitOperationalKeyStateDTO`, `Maatify\RateLimiter\DTO\RateLimitOperationalScopesDTO`, `Maatify\RateLimiter\DTO\RateLimitOperationalBudgetDTO`, `Maatify\RateLimiter\DTO\RateLimitOperationalSnapshotDTO` |
+| Operational read | `Maatify\RateLimiter\DTO\RateLimitOperationalKeyStateDTO`, `Maatify\RateLimiter\DTO\RateLimitOperationalScopesDTO`, `Maatify\RateLimiter\DTO\RateLimitOperationalBudgetDTO`, `Maatify\RateLimiter\DTO\RateLimitOperationalSnapshotDTO`, `Maatify\RateLimiter\DTO\SimpleRateLimitOperationalSnapshotDTO` |
 
 `Maatify\RateLimiter\DTO\PipelineScoreDTO` is an internal composition DTO and is not part of the consumer Public Runtime API.
 
@@ -178,7 +195,9 @@ The following inventory describes the current public runtime types. Test and sup
 | Simple throttle entrypoint | `Maatify\RateLimiter\Service\FixedWindowSimpleRateLimiter` | Production implementation of `SimpleRateLimiterInterface` (DEC-009); reuses the atomic budget-epoch storage primitives and is FAIL_CLOSED only. See `docs/SIMPLE_THROTTLING.md`. |
 | Composition services | `Maatify\RateLimiter\Service\EvaluationPipeline`, `Maatify\RateLimiter\Service\CircuitBreaker`, `Maatify\RateLimiter\Service\FailureModeResolver`, `Maatify\RateLimiter\Service\LocalFallbackLimiter` | Public runtime services used to assemble or extend the engine without coupling it to a storage implementation. `EvaluationPipeline::isBackendHealthy()` is the read-only recovery-probe boundary. |
 | Identity services | `Maatify\RateLimiter\Service\DeviceIdentityResolver`, `Maatify\RateLimiter\Service\FingerprintHasher`, `Maatify\RateLimiter\Service\EphemeralBucket` | Default identity hashing, normalization, bounded device-cap admission, and ephemeral routing without synthetic persistent keys. |
-| Operational read | `Maatify\RateLimiter\Service\RateLimitOperationalReader` | Resolves a read-only point-in-time snapshot from a typed context and policy without invoking enforcement or mutation primitives. |
+| Operational read | `Maatify\RateLimiter\Service\RateLimitOperationalReader` | Resolves a read-only point-in-time snapshot from a typed context and policy without invoking enforcement or mutation primitives (Advanced Path). |
+| Operational read | `Maatify\RateLimiter\Service\SimpleRateLimitOperationalReader` | Resolves a read-only point-in-time snapshot of persisted simple fixed-window state by deriving the exact same DEC-009 state identity `FixedWindowSimpleRateLimiter` writes, using only `RateLimitStoreInterface::getBudget()` and `RateLimitStoreInterface::isHealthy()`; it never invokes `incrementBudget()`, `incrementBudgetWithSeed()`, `block()`, `set()`, or another mutation primitive. |
+| Operational read | `Maatify\RateLimiter\Service\CompositeRateLimitOperationalReader` | Thin delegating/composition owner (DEC-012), analogous to `CompositeRateLimiterRuntime`, returned by `RateLimiterBuilder::buildOperationalReader()`; resolves registered score and simple policies by name and delegates to `RateLimitOperationalReaderInterface`/`SimpleRateLimitOperationalReaderInterface`. |
 | Decision services | `Maatify\RateLimiter\Service\AntiEquilibriumGate`, `Maatify\RateLimiter\Service\BoundedCorrelationResultValidator`, `Maatify\RateLimiter\Service\BudgetTracker`, `Maatify\RateLimiter\Service\DecayCalculator`, `Maatify\RateLimiter\Service\PenaltyLadder` | Publicly typed services for bounded result validation, penalty, budget, decay, and escalation orchestration. |
 | Official Redis storage | `Maatify\RateLimiter\Repository\Redis\CallableRedisCommandExecutor`, `Maatify\RateLimiter\Repository\Redis\RedisFullCapabilityStore` | Optional package-owned store for one logical non-clustered Redis server. It has no `ext-redis` or Predis runtime dependency; the Host owns the client/connection lifecycle and supplies the raw-command executor. Other `FullCapabilityStoreInterface` implementations remain supported. |
 | Configuration presets | `Maatify\RateLimiter\Config\LoginProtectionPolicy`, `Maatify\RateLimiter\Config\OtpProtectionPolicy`, `Maatify\RateLimiter\Config\ApiHeavyProtectionPolicy` | Production policy definitions selected by the command policy name. |
@@ -239,6 +258,19 @@ The existing multi-store constructor remains source-compatible.
 `build()` supplies the UTC `SystemClock`, the default identity resolver, the package-owned evaluation graph, and the `login_protection`, `otp_protection`, and `api_heavy_protection` policies. `withClock()`, `withDeviceIdentityResolver()`, `withPolicy()`, and `withSimpleThrottlePolicy()` are the only targeted overrides. A policy with an existing name replaces that policy; a new name is appended without removing defaults. Consumers needing direct control of `EvaluationPipeline` or its internal services retain the existing low-level constructors as the Advanced Path.
 
 `build()` returns `CompositeRateLimiterRuntimeInterface`, which extends both `RateLimiterRuntimeInterface` and `SimpleRateLimiterInterface` (DEC-010). This return-type narrowing is source-compatible: existing consumer code that assigns the result to `RateLimiterRuntimeInterface` is unaffected. The simple fixed-window throttle registry starts empty — `withSimpleThrottlePolicy(SimpleThrottlePolicyInterface $policy)` opts in explicitly, with the same same-name-replace/new-name-append semantics as `withPolicy()` — so a Host that registers no simple policy gets an unchanged score-based runtime. See `docs/SIMPLE_THROTTLING.md` for the complete simple-throttling contract.
+
+### Build-time capability preflight (DEC-010)
+
+`build()` rejects an incompatible production graph before returning a runtime, instead of letting traffic discover a missing storage capability at a later request-time code path. Every check is derived from the registered policy graph and the configured generations — never from an official preset name, a backend/class identity, or a Host callback:
+
+- The correlation store must support `BoundedCorrelationStoreInterface` unconditionally (the score runtime always evaluates bounded device-cap/churn/dilution semantics), and `BoundedCorrelationRotationStoreInterface` additionally whenever a previous generation is reachable: a configured `previousKeySecret`, a configured `previousFingerprintSecret`, or a Host-supplied custom `DeviceIdentityResolverInterface`. `DeviceIdentityDTO` publicly permits a non-null `previousFingerprintHash` regardless of which resolver produced it, and the runtime already treats that as an active previous generation, so the Builder cannot prove a custom resolver will never produce one and conservatively treats it as reachable.
+- Any registered policy declaring `PolicyCapabilityEnum::DISTRIBUTED_ACCOUNT` requires the correlation store to support `BoundedCorrelationSnapshotStoreInterface`, or `BoundedCorrelationSnapshotRotationStoreInterface` when a previous generation is reachable.
+- The rate-limit store must support `HardBlockCycleStoreInterface` (DEC-003) unconditionally for the Production Default Path: `EvaluationPipeline`'s generic bounded-correlation enforcement (churn, dilution, and related `checkCorrelationRules()` paths) can produce a persisted L2+ candidate independently of any policy's own score thresholds or budget configuration, so this is not derivable from the registered policy graph. `PunishmentLifecycleStoreInterface` already satisfies this transitively.
+- A `PostPunishmentReentryPolicyInterface` policy still requires `PunishmentLifecycleStoreInterface` (DEC-007, unchanged).
+- `BudgetSeedStoreInterface` is required only when the configured graph can genuinely need a previous-generation budget/simple-window migration (DEC-009): a previous outer-key generation combined with an account-budget policy, a reachable previous fingerprint generation (a configured `previousFingerprintSecret` or a custom `DeviceIdentityResolverInterface`) combined with a known-device-micro-cap policy, or a previous outer-key generation combined with any registered simple throttle policy.
+- The circuit-breaker store must support `CircuitBreakerProbeStoreInterface` unconditionally, so a missing recovery-probe capability is never discovered only after the circuit has entered recovery.
+
+`FullCapabilityStoreInterface` always satisfies every check above; a Host composing separate stores for each boundary must supply one that implements the specific capability its configured policy graph requires. Each rejection is a `RateLimiterException` naming the missing typed capability.
 
 ## Runtime Workflow
 
