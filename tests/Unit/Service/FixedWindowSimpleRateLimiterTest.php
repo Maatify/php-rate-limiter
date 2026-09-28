@@ -141,6 +141,42 @@ final class FixedWindowSimpleRateLimiterTest extends TestCase
         self::assertSame(PHP_INT_MAX, $result->resetAt);
     }
 
+    public function testActiveCurrentWinsWhenFreshClockCandidateWouldOverflow(): void
+    {
+        $interval = PHP_INT_MAX - 100;
+        $key = $this->keyFor('checkout', 3, $interval, 'subject-current-boundary', 'active-secret');
+        $budgets = new \ReflectionProperty($this->store, 'budgets');
+        $budgets->setValue($this->store, [
+            $key => ['count' => 1, 'epochStart' => 100, 'epochDuration' => $interval],
+        ]);
+
+        $result = $this->limiter([new FixedWindowThrottlePolicy('checkout', 3, $interval)])
+            ->consume('checkout', 'subject-current-boundary', 2);
+
+        self::assertTrue($result->allowed);
+        self::assertSame(0, $result->remaining);
+        self::assertSame(PHP_INT_MAX, $result->resetAt);
+    }
+
+    public function testActivePreviousMigrationWinsWhenFreshClockCandidateWouldOverflow(): void
+    {
+        $interval = PHP_INT_MAX - 100;
+        $key = $this->keyFor('checkout', 3, $interval, 'subject-previous-boundary', 'previous-secret');
+        $budgets = new \ReflectionProperty($this->store, 'budgets');
+        $budgets->setValue($this->store, [
+            $key => ['count' => 1, 'epochStart' => 100, 'epochDuration' => $interval],
+        ]);
+
+        $result = $this->limiter(
+            [new FixedWindowThrottlePolicy('checkout', 3, $interval)],
+            previousKeySecret: 'previous-secret',
+        )->consume('checkout', 'subject-previous-boundary', 2);
+
+        self::assertTrue($result->allowed);
+        self::assertSame(0, $result->remaining);
+        self::assertSame(PHP_INT_MAX, $result->resetAt);
+    }
+
     public function testWeightedConsumeUsesPersistedCountForDecisionAndRemaining(): void
     {
         $limiter = $this->limiter([new FixedWindowThrottlePolicy('checkout', 10, 60)]);

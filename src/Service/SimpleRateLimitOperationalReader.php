@@ -94,8 +94,10 @@ final class SimpleRateLimitOperationalReader implements SimpleRateLimitOperation
      * key generation is configured. There is never a max()/sum() merge, and
      * an absent Previous never creates Current.
      *
-     * @throws RateLimiterException When the policy is unregistered or the
-     *     subject is blank.
+     * @throws RateLimiterException When the policy is unregistered, the
+     *     subject is blank, or the persisted effective reset boundary is not
+     *     representable as a PHP integer. The reader remains read-only; this
+     *     contract failure is not converted to an enforcement result.
      */
     public function read(string $policyName, string $subject): SimpleRateLimitOperationalSnapshotDTO
     {

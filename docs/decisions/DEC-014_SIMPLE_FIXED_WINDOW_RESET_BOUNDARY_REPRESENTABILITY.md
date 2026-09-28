@@ -28,6 +28,8 @@ A positive interval can overflow when added to the effective epoch start, causin
 
 A simple fixed-window interval is usable only when its effective fixed reset boundary is exactly representable as a PHP integer. The package rejects an unrepresentable boundary through the existing `RateLimiterException` contract before any enforcement storage mutation. The check uses overflow-safe comparison against `PHP_INT_MAX - intervalSeconds`; it does not use an arbitrary maximum, float timestamp, string timestamp, or saturation.
 
+Every conforming store is additionally responsible for rejecting a backend-impossible expiry before the first state-changing command for the affected fresh or seed branch. This store-side check must be derived from the actual backend numeric/expiry contract, must preserve the same fixed boundary, and must leave the target and Previous state unchanged when rejected. It is an implementation obligation under this decision, not a new public storage method or a product interval maximum.
+
 `resetAt` remains an integer Unix timestamp, current fixed-window semantics and DTO shapes remain unchanged, and exactly representable boundaries remain valid. Configuration/contract rejection remains an exception rather than a quota decision or `FAIL_CLOSED`. Backend/runtime failures retain existing `FAIL_CLOSED` behavior. Operational Read applies the same checked arithmetic, raises the package exception for an unrepresentable persisted boundary, and remains read-only.
 
 This decision complements DEC-013: DEC-014 governs reset-boundary integer representability, while DEC-013 continues to govern positive variable-cost consumption and weighted fixed-window state.
