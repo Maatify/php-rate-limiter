@@ -293,6 +293,86 @@ final class CircuitBreakerStateMachineTest extends TestCase
         self::assertSame($persistent, $this->store->load('api'));
     }
 
+    public function testPreTripEmergencyClosedStateRetainsLiveEvidenceAndReleasesToPersistentState(): void
+    {
+        $startedAt = $this->clock->now()->getTimestamp();
+        $persistent = new CircuitBreakerStateDTO(
+            FailureStateDTO::STATE_OPEN,
+            [$startedAt - 1, $startedAt],
+            $startedAt,
+            $startedAt,
+            0,
+            [],
+            $startedAt + 600,
+        );
+        $this->store->save('api', $persistent);
+        $saveCount = $this->store->saveCount();
+
+        $this->store->available = false;
+        $this->circuitBreaker->reportFailure('api');
+        $loadsAtRestore = $this->store->loadCount();
+        $this->store->available = true;
+
+        $this->clock->setNow(new \DateTimeImmutable('@' . ($startedAt + 1)));
+        self::assertSame(FailureStateDTO::STATE_CLOSED, $this->circuitBreaker->getState('api')->state);
+        self::assertSame(1, $this->circuitBreaker->getState('api')->failureCount);
+        self::assertSame($loadsAtRestore, $this->store->loadCount());
+        self::assertSame($saveCount, $this->store->saveCount());
+
+        $this->clock->setNow(new \DateTimeImmutable('@' . ($startedAt + 10)));
+        self::assertSame(FailureStateDTO::STATE_CLOSED, $this->circuitBreaker->getState('api')->state);
+        self::assertSame(1, $this->circuitBreaker->getState('api')->failureCount);
+        self::assertSame($loadsAtRestore, $this->store->loadCount());
+
+        $this->clock->setNow(new \DateTimeImmutable('@' . ($startedAt + 11)));
+        $released = $this->circuitBreaker->getState('api');
+
+        self::assertSame(FailureStateDTO::STATE_OPEN, $released->state);
+        self::assertTrue($this->circuitBreaker->isReEntryGuardViolated('api'));
+        self::assertSame($persistent, $this->store->load('api'));
+        self::assertSame($saveCount, $this->store->saveCount());
+    }
+
+    public function testThirdFailureInsideLiveEmergencyWindowTripsWithoutPersistentWriteback(): void
+    {
+        $startedAt = $this->clock->now()->getTimestamp();
+        $persistent = new CircuitBreakerStateDTO(FailureStateDTO::STATE_CLOSED, [], 0, 0, 0, []);
+        $this->store->save('api', $persistent);
+        $saveCount = $this->store->saveCount();
+        $this->store->available = false;
+
+        $this->circuitBreaker->reportFailure('api');
+        $this->circuitBreaker->reportFailure('api');
+        $this->store->available = true;
+        $this->clock->setNow(new \DateTimeImmutable('@' . ($startedAt + 1)));
+        $this->circuitBreaker->reportFailure('api');
+
+        self::assertSame(FailureStateDTO::STATE_OPEN, $this->circuitBreaker->getState('api')->state);
+        self::assertSame($persistent, $this->store->load('api'));
+        self::assertSame($saveCount, $this->store->saveCount());
+    }
+
+    public function testExpiredPreTripEmergencyEvidenceDoesNotTripLaterFailure(): void
+    {
+        $startedAt = $this->clock->now()->getTimestamp();
+        $persistent = new CircuitBreakerStateDTO(FailureStateDTO::STATE_CLOSED, [], 0, 0, 0, []);
+        $this->store->save('api', $persistent);
+        $this->store->available = false;
+
+        $this->circuitBreaker->reportFailure('api');
+        $this->circuitBreaker->reportFailure('api');
+        $this->store->available = true;
+        $this->clock->setNow(new \DateTimeImmutable('@' . ($startedAt + 11)));
+
+        self::assertSame(FailureStateDTO::STATE_CLOSED, $this->circuitBreaker->getState('api')->state);
+        $this->circuitBreaker->reportFailure('api');
+
+        $state = $this->store->load('api');
+        self::assertNotNull($state);
+        self::assertSame(FailureStateDTO::STATE_CLOSED, $state->status);
+        self::assertSame([$startedAt + 11], $state->failures);
+    }
+
     public function testThrownOpenProbeUsesCompletionTimestampForNewOpenEpoch(): void
     {
         $openedAt = $this->clock->now()->getTimestamp();

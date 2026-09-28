@@ -320,7 +320,14 @@ class CircuitBreaker
     private function loadState(string $policyName): CircuitBreakerStateDTO
     {
         if (isset($this->emergencyStates[$policyName])) {
-            return $this->emergencyStates[$policyName];
+            $emergency = $this->emergencyStates[$policyName];
+            $now = $this->clock->now()->getTimestamp();
+
+            if ($this->retainsEmergencyState($emergency, $now)) {
+                return $emergency;
+            }
+
+            unset($this->emergencyStates[$policyName], $this->emergencyProbeLeases[$policyName]);
         }
 
         try {
@@ -331,6 +338,29 @@ class CircuitBreaker
         } catch (BackendFailureException) {
             return $this->closedState();
         }
+    }
+
+    /**
+     * Keep pre-trip local ownership while its rolling failure evidence or
+     * another local protection is still authoritative.
+     *
+     * The inclusive boundary is intentional: a failure at now - 10 remains
+     * eligible for the locked three-failures-in-ten-seconds trip threshold.
+     */
+    private function retainsEmergencyState(CircuitBreakerStateDTO $state, int $now): bool
+    {
+        if ($state->status !== FailureStateDTO::STATE_CLOSED
+            || $state->failClosedUntil > $now) {
+            return true;
+        }
+
+        foreach ($state->failures as $failureAt) {
+            if ($failureAt >= $now - self::TRIP_WINDOW) {
+                return true;
+            }
+        }
+
+        return false;
     }
 
     private function saveState(string $policyName, CircuitBreakerStateDTO $state): void
