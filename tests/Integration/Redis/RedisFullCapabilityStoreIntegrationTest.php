@@ -1728,6 +1728,25 @@ final class RedisFullCapabilityStoreIntegrationTest extends TestCase
         self::assertSame(1, $this->integer($this->raw(['EXISTS', $budgetKey])));
     }
 
+    public function testActiveCurrentIgnoresUnrepresentableSeedBoundary(): void
+    {
+        $current = $this->store->incrementBudget('seed-boundary-current-wins', 60, 4);
+
+        $result = $this->store->incrementBudgetWithSeed(
+            'seed-boundary-current-wins',
+            60,
+            new BudgetStateDTO(999, PHP_INT_MAX),
+        );
+
+        self::assertSame(5, $result->count);
+        self::assertSame($current->epochStart, $result->epochStart);
+
+        $persisted = $this->store->getBudget('seed-boundary-current-wins');
+        self::assertNotNull($persisted);
+        self::assertSame(5, $persisted->count);
+        self::assertSame($current->epochStart, $persisted->epochStart);
+    }
+
     public function testDistinctWatchAndBoundedWindowsDoNotRefreshAndExpire(): void
     {
         $firstDistinctCount = $this->store->addDistinct('distinct-matrix', 'one', 60);

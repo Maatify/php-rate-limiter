@@ -845,9 +845,6 @@ LUA;
     public function incrementBudgetWithSeed(string $key, int $epochDurationSeconds, BudgetStateDTO $seed, int $amount = 1): BudgetStateDTO
     {
         $this->positive($epochDurationSeconds, 'Budget epoch duration');
-        if ($seed->epochStart > PHP_INT_MAX - $epochDurationSeconds) {
-            throw new RateLimiterException('Seeded budget expiry is not representable as a PHP integer.');
-        }
         $seededCount = $this->tryIntegerAddition($seed->count, $amount);
         $result = $this->eval(self::BUDGET_SEED, [$this->key('budget', $key)], [$epochDurationSeconds, $seed->epochStart, $seed->count, $amount, $seededCount ?? 0, $seededCount === null ? 1 : 0]);
         $tuple = $this->tuple($result, 2, 'seeded budget');
