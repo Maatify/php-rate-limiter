@@ -286,6 +286,7 @@ fingerprint-only, and both-rotated inputs never form Cartesian generation pairs.
 | Consumer capability | Public contract | Walkthrough | Example |
 | --- | --- | --- | --- |
 | Check a request before an operation | <code>RateLimiterInterface::limit()</code> + <code>RateLimitCommand::checkOnly()</code> | [Pre-check](#walkthrough-pre-check) | [basic-rate-limit.php](../../examples/basic-rate-limit.php) |
+| Complete a post-punishment authentication handoff | <code>RateLimiterRuntimeInterface::claimPostPunishmentReentry()</code> | [Post-punishment re-entry](#walkthrough-post-punishment-re-entry) | [basic-rate-limit.php](../../examples/basic-rate-limit.php) |
 | Record a failed login or OTP attempt | <code>RateLimitCommand::recordFailure()</code> | [Failure recording](#walkthrough-failure-recording) | [basic-rate-limit.php](../../examples/basic-rate-limit.php) |
 | Record a successful operation | <code>RateLimitCommand::recordSuccess()</code> | [Success recording](#walkthrough-success-recording) | [basic-rate-limit.php](../../examples/basic-rate-limit.php) |
 | Use a policy preset | Default <code>RateLimiterBuilder</code> policy registry | [Policy selection](#walkthrough-policy-selection) | [basic-rate-limit.php](../../examples/basic-rate-limit.php) |
@@ -302,6 +303,17 @@ fingerprint-only, and both-rotated inputs never form Cartesian generation pairs.
           → Boundary → Host permits the operation or returns its own retry response
 
 The pre-check is appropriate immediately before a protected host operation. A blocked result is an observable decision; the package does not send an HTTP response or throw a transport-specific exception for an ordinary block.
+
+## Walkthrough: Post-Punishment Re-entry
+
+    Input → The same RateLimitContextDTO and RateLimitCommand::checkOnly('otp_protection') after the host has served the active punishment
+          → Public Call → RateLimiterInterface::limit($context, $command), then RateLimiterRuntimeInterface::claimPostPunishmentReentry($context, 'otp_protection', $opaqueId)
+          → Result → ALLOW may include postPunishmentReentry metadata; the first claim returns true and a replay returns false
+          → Boundary → The Host completes its own application handoff after a successful claim
+
+The claim is not required for the rate limiter to return `ALLOW`. Re-entry metadata is exposed only after a coherent served-punishment state: the relevant generation evidence remains valid, the hard block has expired, and no newer mutation or active block has invalidated it. The metadata `id` is opaque; the Host passes it back unchanged and never reconstructs a generation or physical key.
+
+The claim is a one-shot application handoff, not a request to reproduce package lifecycle logic. Stale, expired, mismatched, absent, or replayed claims return `false`. Backend corruption or an unavailable required capability follows the contract's failure path and is not represented as an ordinary `false`.
 
 ## Walkthrough: Failure Recording
 
