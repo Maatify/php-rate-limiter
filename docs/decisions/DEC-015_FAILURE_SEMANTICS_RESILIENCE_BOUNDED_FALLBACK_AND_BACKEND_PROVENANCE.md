@@ -46,9 +46,15 @@ is process-local only: while active, it is authoritative for that runtime and
 is not reconciled with, replaced by, or written back to persistent storage.
 The local state continues through the locked OPEN → HALF_OPEN → CLOSED
 recovery path, with no synthetic transition or signal from storage restoration.
-Once genuine local recovery reaches CLOSED, the local episode is discarded and
-the next circuit access resumes normal persistent ownership. This provides no
-cross-worker or cross-host emergency consistency guarantee.
+For a tripped/protective episode (`OPEN`, `HALF_OPEN`, or active local guard),
+genuine local recovery to `CLOSED` is the release point and the next circuit
+access resumes normal persistent ownership. A pre-trip `CLOSED` episode is a
+second lifecycle form: it remains authoritative while a failure timestamp
+satisfies the inclusive `failureAt >= now - 10` trip-window rule, or while
+other local protection is active. Once that `CLOSED` episode is quiescent, it
+is discarded without an `OPEN`/`HALF_OPEN` recovery sequence and the same load
+path resumes normal persistent ownership. This provides no cross-worker or
+cross-host emergency consistency guarantee.
 
 ## Decision
 
@@ -62,8 +68,11 @@ survivability; it is not a new public failure mode. Existing `FAIL_CLOSED`,
 persistent circuit infrastructure becomes available, the active local emergency
 state remains authoritative for that runtime and is never merged into,
 reconciled into, or written back to persistent storage. It completes the
-locked local recovery path, is discarded only after genuine CLOSED recovery,
-and the next circuit access resumes normal persistent ownership. Emergency
+locked local recovery path when it is a tripped/protective episode and is
+discarded only after genuine `CLOSED` recovery. A pre-trip `CLOSED` state is
+retained only while live inclusive trip-window evidence (`failureAt >= now -
+10`) or active local protection remains; once quiescent, it is discarded and
+the same load path resumes persistent ownership without writeback. Emergency
 state contains no request-controlled unbounded cardinality, and it cannot
 grant unlimited authentication or API allowance.
 

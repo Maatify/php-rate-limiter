@@ -20,10 +20,15 @@ untyped Host-store exceptions remain explicit exceptions and never become
 unavailable, the package may use a bounded process-local emergency circuit.
 While that local state is active it is authoritative for the current runtime:
 restored persistence is not read for reconciliation, replacement, or writeback,
-and storage recovery is not circuit recovery. After genuine local recovery to
-`CLOSED`, the emergency state is discarded and the next circuit access resumes
-normal persistent ownership. Locked recovery timings and signals remain
-unchanged.
+and storage recovery is not circuit recovery. Emergency ownership has two
+bounded lifecycle forms. A tripped `OPEN`/`HALF_OPEN` episode, or a `CLOSED`
+state with active local protection, remains authoritative through the locked
+local recovery path until genuine `CLOSED` recovery. A pre-trip `CLOSED`
+episode remains authoritative while at least one failure timestamp satisfies
+`failureAt >= now - 10` (so `T+10` remains live) or other local protection is
+active. Once that pre-trip state is quiescent, the same load path discards it
+and resumes normal persistent ownership without an `OPEN`/`HALF_OPEN` recovery
+sequence. Locked recovery timings and signals remain unchanged.
 
 Typed bounded backend-failure fallback is governed by DEC-011. It is separate
 from normal-runtime `PolicyCapabilityEnum` classification and is declared through

@@ -18,10 +18,14 @@ use Maatify\SharedCommon\Contracts\ClockInterface;
  * Maintains the per-policy circuit-breaker state machine and transition signals.
  *
  * Normal typed backend failures are accepted only while CLOSED. Emergency
- * state is process-local and remains authoritative until genuine local
- * recovery to CLOSED. Recovery is driven by read-only health probes guarded
- * by the store-owned atomic probe lease during normal operation or a bounded
- * process-local lease during an emergency episode.
+ * state is process-local. A tripped OPEN/HALF_OPEN episode remains
+ * authoritative through genuine local recovery to CLOSED, while a pre-trip
+ * CLOSED episode remains authoritative only while its rolling failure evidence
+ * or another local protection is active. Quiescent pre-trip CLOSED state is
+ * released by loadState() so persistent ownership can resume. Recovery is
+ * driven by read-only health probes guarded by the store-owned atomic probe
+ * lease during normal operation or a bounded process-local lease during an
+ * emergency episode; emergency state is never reconciled or written back.
  */
 class CircuitBreaker
 {
@@ -314,8 +318,11 @@ class CircuitBreaker
     /**
      * Load local emergency ownership before touching persistent state.
      *
-     * An emergency episode is deliberately process-local. Persistent storage
-     * recovery must not reconcile, replace, or write back that state.
+     * Tripped emergency state stays local until genuine recovery to CLOSED.
+     * Pre-trip CLOSED state stays local while its inclusive rolling failure
+     * evidence or active local protection remains; once quiescent, this same
+     * load operation releases it and resumes the persistent path. No
+     * reconciliation or writeback occurs.
      */
     private function loadState(string $policyName): CircuitBreakerStateDTO
     {

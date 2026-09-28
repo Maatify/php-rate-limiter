@@ -338,10 +338,14 @@ assume a shared transaction across those boundaries.
 If the shared circuit persistence boundary is unavailable, `CircuitBreaker`
 uses the bounded process-local emergency state defined by DEC-015. While that
 state is active it is authoritative only for the current runtime; persistent
-recovery does not reset, replace, reconcile, or write it back. After genuine
-local CLOSED recovery the emergency episode is discarded, and the next circuit
-access resumes normal persistent ownership. Storage recovery is not circuit
-recovery. This does not add Host wiring or a public failure mode. Infrastructure
+recovery does not reset, replace, reconcile, or write it back. For a tripped
+`OPEN`/`HALF_OPEN` episode or active local guard, the locked local recovery path
+reaches `CLOSED` before episode discard. A pre-trip `CLOSED` episode is
+retained only while `failureAt >= now - 10` remains live or another local
+protection is active; once quiescent, it is discarded without `OPEN`/`HALF_OPEN`
+recovery and the same load path resumes persistent ownership. Storage recovery
+is not circuit recovery. This does not add Host wiring or a public failure mode.
+Infrastructure
 adapters must translate only
 eligible operational availability/transport/command failures into
 `BackendFailureException`; malformed state and invalid input retain their
