@@ -20,6 +20,12 @@ and window). Official presets and direct custom policies share this exact
 same runtime contract and the exact same validated `LocalFallbackLimiter`
 evaluation; there is no separate "official" or "custom" fallback code path.
 
+Simple fixed-window configuration/contract failures remain exceptions: an
+unrepresentable integer reset boundary under DEC-014 is rejected before
+enforcement mutation and is never converted into quota exhaustion or
+`FAIL_CLOSED`. Backend/runtime storage failures retain the existing simple
+throttle `FAIL_CLOSED` behavior, and Operational Read remains read-only.
+
 The package-owned zero-configuration presets and their locked caps, resolved
 internally by the official policies, are:
 

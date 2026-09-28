@@ -133,6 +133,30 @@ final class SimpleRateLimitOperationalReaderTest extends TestCase
         self::assertSame(4, $freshConsume->remaining, 'A fresh Current epoch must start at count=1, not seeded from Previous.');
     }
 
+    public function testUnrepresentablePersistedBoundaryRaisesPackageExceptionWithoutMutation(): void
+    {
+        $interval = 60;
+        $key = $this->keyFor('checkout', 3, $interval, 'subject-overflow', 'current-secret');
+        $budgets = new \ReflectionProperty($this->store, 'budgets');
+        $budgets->setValue($this->store, [
+            $key => [
+                'count' => 1,
+                'epochStart' => PHP_INT_MAX - $interval + 1,
+                'epochDuration' => $interval,
+            ],
+        ]);
+        $reader = $this->reader([new FixedWindowThrottlePolicy('checkout', 3, $interval)], 'current-secret');
+        $writesBefore = $this->store->writeCount();
+
+        $this->expectException(RateLimiterException::class);
+        $this->expectExceptionMessage('reset boundary must be representable');
+        try {
+            $reader->read('checkout', 'subject-overflow');
+        } finally {
+            self::assertSame($writesBefore, $this->store->writeCount());
+        }
+    }
+
     public function testBlankSubjectRaisesRateLimiterException(): void
     {
         $reader = $this->reader([new FixedWindowThrottlePolicy('checkout', 3, 60)], 'current-secret');
@@ -223,5 +247,21 @@ final class SimpleRateLimitOperationalReaderTest extends TestCase
     private function reader(array $policies, string $keySecret, ?string $previousKeySecret = null): SimpleRateLimitOperationalReader
     {
         return new SimpleRateLimitOperationalReader($policies, $this->store, $this->clock, $keySecret, 'prod', $previousKeySecret);
+    }
+
+    private function keyFor(string $policyName, int $limit, int $intervalSeconds, string $subject, string $secret): string
+    {
+        $encode = static fn(string $component): string => pack('N', strlen($component)) . $component;
+
+        $preimage = $encode('rate_limiter')
+            . $encode('simple_fixed_window')
+            . $encode('v1')
+            . $encode('prod')
+            . $encode($policyName)
+            . $encode((string) $limit)
+            . $encode((string) $intervalSeconds)
+            . $encode($subject);
+
+        return hash_hmac('sha256', $preimage, $secret);
     }
 }

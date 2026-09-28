@@ -112,6 +112,10 @@ final class FixedWindowSimpleRateLimiter implements SimpleRateLimiterInterface
         $limit = $policy->getLimit();
         $intervalSeconds = $policy->getIntervalSeconds();
 
+        // Reject a fresh epoch that could not produce an integer reset boundary
+        // before deriving keys or touching enforcement storage.
+        self::assertResetBoundaryRepresentable($this->clock->now()->getTimestamp(), $intervalSeconds);
+
         $currentKey = $this->deriveKey($policyName, $limit, $intervalSeconds, $subject, $this->keySecret);
         $previousKey = $this->previousKeySecret === null
             ? null
@@ -129,7 +133,7 @@ final class FixedWindowSimpleRateLimiter implements SimpleRateLimiterInterface
             );
         }
 
-        $resetAt = $state->epochStart + $intervalSeconds;
+        $resetAt = self::resetAt($state->epochStart, $intervalSeconds);
 
         if ($state->count <= $limit) {
             return new SimpleRateLimitResultDTO(
@@ -190,6 +194,7 @@ final class FixedWindowSimpleRateLimiter implements SimpleRateLimiterInterface
         }
 
         if ($currentState !== null) {
+            self::assertResetBoundaryRepresentable($currentState->epochStart, $intervalSeconds);
             return $this->incrementBudget($currentKey, $intervalSeconds, $cost);
         }
 
@@ -206,6 +211,7 @@ final class FixedWindowSimpleRateLimiter implements SimpleRateLimiterInterface
             }
 
             if ($previousState !== null) {
+                self::assertResetBoundaryRepresentable($previousState->epochStart, $intervalSeconds);
                 if (! $this->store instanceof BudgetSeedStoreInterface) {
                     throw new RateLimiterException(
                         'Simple fixed-window rotation migration requires the BudgetSeedStoreInterface '
@@ -235,6 +241,22 @@ final class FixedWindowSimpleRateLimiter implements SimpleRateLimiterInterface
             return $this->store->incrementBudget($key, $intervalSeconds, $cost);
         } catch (\Throwable) {
             return null;
+        }
+    }
+
+    private static function resetAt(int $epochStart, int $intervalSeconds): int
+    {
+        self::assertResetBoundaryRepresentable($epochStart, $intervalSeconds);
+
+        return $epochStart + $intervalSeconds;
+    }
+
+    private static function assertResetBoundaryRepresentable(int $epochStart, int $intervalSeconds): void
+    {
+        if ($epochStart > PHP_INT_MAX - $intervalSeconds) {
+            throw new RateLimiterException(
+                'Simple fixed-window reset boundary must be representable as a PHP integer.',
+            );
         }
     }
 

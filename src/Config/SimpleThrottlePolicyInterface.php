@@ -20,7 +20,8 @@ interface SimpleThrottlePolicyInterface
     public function getName(): string;
 
     /**
-     * Return the positive maximum number of consumes allowed per fixed window.
+     * Return the positive quota limit in persisted consumption units per fixed
+     * window. A single consume may spend more than one unit.
      */
     public function getLimit(): int;
 

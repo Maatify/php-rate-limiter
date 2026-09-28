@@ -99,6 +99,48 @@ final class FixedWindowSimpleRateLimiterTest extends TestCase
         }
     }
 
+    public function testUnrepresentableResetBoundaryIsRejectedBeforeStorageMutation(): void
+    {
+        $limiter = $this->limiter([new FixedWindowThrottlePolicy('checkout', 3, PHP_INT_MAX)]);
+
+        $this->expectException(RateLimiterException::class);
+        $this->expectExceptionMessage('reset boundary must be representable');
+        try {
+            $limiter->consume('checkout', 'subject-unrepresentable');
+        } finally {
+            $budgets = (new \ReflectionProperty($this->store, 'budgets'))->getValue($this->store);
+            self::assertSame([], $budgets);
+        }
+    }
+
+    public function testDirectCustomSimplePolicyReceivesResetBoundaryProtection(): void
+    {
+        $limiter = $this->limiter([$this->customPolicy('custom', 3, PHP_INT_MAX)]);
+
+        $this->expectException(RateLimiterException::class);
+        $this->expectExceptionMessage('reset boundary must be representable');
+        $limiter->consume('custom', 'subject-custom-overflow');
+    }
+
+    public function testExactlyRepresentablePersistedBoundaryAtPhpIntMaxRemainsAccepted(): void
+    {
+        $interval = 60;
+        $key = $this->keyFor('checkout', 3, $interval, 'subject-boundary', 'active-secret');
+        $budgets = new \ReflectionProperty($this->store, 'budgets');
+        $budgets->setValue($this->store, [
+            $key => [
+                'count' => 1,
+                'epochStart' => PHP_INT_MAX - $interval,
+                'epochDuration' => $interval,
+            ],
+        ]);
+
+        $result = $this->limiter([new FixedWindowThrottlePolicy('checkout', 3, $interval)])->consume('checkout', 'subject-boundary');
+
+        self::assertTrue($result->allowed);
+        self::assertSame(PHP_INT_MAX, $result->resetAt);
+    }
+
     public function testWeightedConsumeUsesPersistedCountForDecisionAndRemaining(): void
     {
         $limiter = $this->limiter([new FixedWindowThrottlePolicy('checkout', 10, 60)]);

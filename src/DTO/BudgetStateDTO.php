@@ -10,7 +10,7 @@ namespace Maatify\RateLimiter\DTO;
 final readonly class BudgetStateDTO implements \JsonSerializable
 {
     /**
-     * @param int $count Number of events recorded in the epoch.
+     * @param int $count Persisted budget/consumption units recorded in the epoch.
      * @param int $epochStart Unix timestamp at which the epoch started.
      */
     public function __construct(

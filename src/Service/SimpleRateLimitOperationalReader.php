@@ -126,6 +126,7 @@ final class SimpleRateLimitOperationalReader implements SimpleRateLimitOperation
 
         $count = $state === null ? 0 : $state->count;
         $epochStart = $state?->epochStart;
+        $resetAt = $epochStart === null ? null : self::resetAt($epochStart, $intervalSeconds);
 
         return new SimpleRateLimitOperationalSnapshotDTO(
             $policyName,
@@ -136,7 +137,7 @@ final class SimpleRateLimitOperationalReader implements SimpleRateLimitOperation
             $count,
             max(0, $limit - $count),
             $epochStart,
-            $epochStart === null ? null : $epochStart + $intervalSeconds,
+            $resetAt,
             $fromPreviousGeneration,
         );
     }
@@ -171,5 +172,16 @@ final class SimpleRateLimitOperationalReader implements SimpleRateLimitOperation
     private static function encodeComponent(string $component): string
     {
         return pack('N', strlen($component)) . $component;
+    }
+
+    private static function resetAt(int $epochStart, int $intervalSeconds): int
+    {
+        if ($epochStart > PHP_INT_MAX - $intervalSeconds) {
+            throw new RateLimiterException(
+                'Simple fixed-window reset boundary must be representable as a PHP integer.',
+            );
+        }
+
+        return $epochStart + $intervalSeconds;
     }
 }

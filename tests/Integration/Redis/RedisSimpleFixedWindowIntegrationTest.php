@@ -102,6 +102,20 @@ final class RedisSimpleFixedWindowIntegrationTest extends TestCase
         self::assertSame($denied->resetAt, $snapshot->resetAt);
     }
 
+    public function testUnrepresentableBoundaryIsRejectedBeforeRealRedisCreatesState(): void
+    {
+        $limiter = $this->limiter($this->clock, 'current-secret', null, PHP_INT_MAX);
+        $keysBefore = $this->executor->execute(['KEYS', '*']);
+
+        $this->expectException(\Maatify\RateLimiter\Exception\RateLimiterException::class);
+        $this->expectExceptionMessage('reset boundary must be representable');
+        try {
+            $limiter->consume('checkout', 'subject-redis-overflow');
+        } finally {
+            self::assertSame($keysBefore, $this->executor->execute(['KEYS', '*']));
+        }
+    }
+
     public function testLargeCurrentCountRemainsExactPastLuaDoublePrecision(): void
     {
         if (PHP_INT_SIZE < 8) {

@@ -62,7 +62,11 @@ interface RateLimitStoreInterface
     public function checkBlock(string $key): ?BlockStateDTO;
 
     /**
-     * Get budget status.
+     * Return the active persisted budget epoch for the key.
+     *
+     * Absent or expired state is returned as null and is not exposed as an
+     * active budget. The returned count and epochStart describe the effective
+     * persisted state. Reading never creates, refreshes, or renews an epoch.
      *
      * @param string $key
      * @return BudgetStateDTO|null
@@ -70,10 +74,14 @@ interface RateLimitStoreInterface
     public function getBudget(string $key): ?BudgetStateDTO;
 
     /**
-     * Increment a budget counter.
-     * Logic: If key empty, start epoch at now, count = amount.
-     * If key exists, increment count.
-     * Returns the current state.
+     * Atomically initialize or increment a fixed budget epoch.
+     *
+     * Absent or expired state starts a fresh epoch with count equal to the
+     * complete amount. Active state increments by the complete amount and
+     * preserves its original epochStart; active mutation does not renew or
+     * extend the fixed epoch end or TTL. The returned DTO is the resulting
+     * persisted state. Implementations must preserve these fixed-window
+     * semantics for package services and consumers.
      *
      * @param string $key
      * @param int $epochDurationSeconds

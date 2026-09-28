@@ -294,6 +294,7 @@ fingerprint-only, and both-rotated inputs never form Cartesian generation pairs.
 | Inspect current operational rate-limit state (Production Default Read Path) | <code>RateLimiterBuilder::buildOperationalReader()</code> + <code>CompositeRateLimitOperationalReaderInterface::readScorePolicy()</code> | [Operational read](#walkthrough-operational-read) | [operational-read.php](../../examples/operational-read.php) |
 | Inspect current operational rate-limit state (Advanced Path) | <code>RateLimitOperationalReaderInterface::read()</code> | [Operational read](#walkthrough-operational-read) | [operational-read.php](../../examples/operational-read.php) |
 | Inspect persisted simple fixed-window state | <code>CompositeRateLimitOperationalReaderInterface::readSimpleThrottle()</code> | [Operational read](#walkthrough-operational-read) | [simple-fixed-window.php](../../examples/simple-fixed-window.php) |
+| Apply simple fixed-window throttling | <code>SimpleRateLimiterInterface::consume(policyName, subject, cost = 1)</code> | [Simple fixed-window consume](#walkthrough-simple-fixed-window-consume) | [simple-fixed-window.php](../../examples/simple-fixed-window.php) |
 
 ## Walkthrough: Pre-Check
 
@@ -303,6 +304,15 @@ fingerprint-only, and both-rotated inputs never form Cartesian generation pairs.
           → Boundary → Host permits the operation or returns its own retry response
 
 The pre-check is appropriate immediately before a protected host operation. A blocked result is an observable decision; the package does not send an HTTP response or throw a transport-specific exception for an ordinary block.
+
+## Walkthrough: Simple Fixed-Window Consume
+
+    Input → Explicitly registered simple policy, subject, and optional positive weighted cost
+          → Public Call → $limiter->consume($policyName, $subject, $cost = 1)
+          → Result → SimpleRateLimitResultDTO with allowed, remaining, retryAfter, resetAt, and failureMode
+          → Boundary → Host permits/denies its operation and handles retry timing; the package owns quota and fixed-window persistence
+
+The package call is reached through `RateLimiterBuilder::withSimpleThrottlePolicy(...)` and `build()` on the composite runtime. The default cost is `1`; a caller may supply a larger positive cost, which is persisted in the same fixed-window state. A normal quota denial is not a score-based block, while storage failures remain `FAIL_CLOSED`; contract failures such as an unrepresentable reset boundary raise `RateLimiterException`. Transport responses and application authorization remain Host-owned.
 
 ## Walkthrough: Post-Punishment Re-entry
 
