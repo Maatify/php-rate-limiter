@@ -63,7 +63,7 @@ final class RateLimiterBuilderTest extends TestCase
 
     public function testBuildReturnsInterfaceAndProvidesAllDefaultPolicies(): void
     {
-        $engine = $this->builder()->build();
+        $engine = $this->builder()->withClock($this->clock)->build();
 
         self::assertInstanceOf(RateLimiterInterface::class, $engine);
 

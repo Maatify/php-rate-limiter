@@ -17,6 +17,7 @@ use Maatify\RateLimiter\DTO\PostPunishmentReentryStateDTO;
 use Maatify\RateLimiter\DTO\PunishmentLifecycleTransitionDTO;
 use Maatify\RateLimiter\DTO\RateLimitStateDTO;
 use Maatify\RateLimiter\Exception\RateLimiterException;
+use Maatify\RateLimiter\Exception\BackendFailureException;
 use Maatify\RateLimiter\Repository\FullCapabilityStoreInterface;
 
 /**
@@ -940,7 +941,7 @@ LUA;
 
     public function load(string $policyName): ?CircuitBreakerStateDTO
     {
-        $raw = $this->redis->execute(['GET', $this->key('circuit', $policyName)]);
+        $raw = $this->command(['GET', $this->key('circuit', $policyName)]);
         if ($raw === null) {
             return null;
         }
@@ -973,7 +974,7 @@ LUA;
     public function save(string $policyName, CircuitBreakerStateDTO $state): void
     {
         $raw = json_encode($state, JSON_THROW_ON_ERROR);
-        $this->redis->execute(['SET', $this->key('circuit', $policyName), $raw]);
+        $this->command(['SET', $this->key('circuit', $policyName), $raw]);
     }
 
     public function acquireProbeLease(string $policyName, int $now, int $leaseSeconds): bool
@@ -1206,7 +1207,7 @@ LUA;
     public function isHealthy(): bool
     {
         try {
-            $result = $this->redis->execute(['PING']);
+            $result = $this->command(['PING']);
             return $result === 'PONG';
         } catch (\Throwable) {
             return false;
@@ -1226,7 +1227,27 @@ LUA;
     {
         /** @var non-empty-list<int|string|float> $command */
         $command = array_merge(['EVAL', $script, count($keys)], $keys, $args);
-        return $this->redis->execute($command);
+        return $this->command($command);
+    }
+
+    /**
+     * Translate only command-executor failures into the explicit backend
+     * failure contract. Package validation and malformed-state exceptions are
+     * raised after command execution and remain their original types.
+     *
+     * @param non-empty-list<int|string|float> $command
+     */
+    private function command(array $command): mixed
+    {
+        try {
+            return $this->redis->execute($command);
+        } catch (RateLimiterException $exception) {
+            throw $exception;
+        } catch (BackendFailureException $exception) {
+            throw $exception;
+        } catch (\Throwable $exception) {
+            throw new BackendFailureException('Redis command execution failed.', 0, $exception);
+        }
     }
 
     private function positive(int $value, string $label): void

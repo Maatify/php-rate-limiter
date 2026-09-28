@@ -48,7 +48,7 @@ final class RateLimiterBuilderSimpleThrottleTest extends TestCase
 
     public function testBuildResultSatisfiesEveryComposedContract(): void
     {
-        $runtime = $this->builder()->build();
+        $runtime = $this->builder()->withClock($this->clock)->build();
 
         self::assertInstanceOf(CompositeRateLimiterRuntimeInterface::class, $runtime);
         self::assertInstanceOf(RateLimiterRuntimeInterface::class, $runtime);
@@ -57,7 +57,7 @@ final class RateLimiterBuilderSimpleThrottleTest extends TestCase
 
     public function testNoSimplePolicyRegisteredLeavesTheScoreRuntimeFullyFunctional(): void
     {
-        $runtime = $this->builder()->build();
+        $runtime = $this->builder()->withClock($this->clock)->build();
 
         $result = $runtime->limit(
             new RateLimitContextDTO('192.0.2.10', 'Mozilla/5.0', 'account-1', ['fp' => 'one']),

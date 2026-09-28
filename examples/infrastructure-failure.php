@@ -11,6 +11,7 @@ use Maatify\RateLimiter\DTO\CircuitBreakerStateDTO;
 use Maatify\RateLimiter\DTO\FailureSignalDTO;
 use Maatify\RateLimiter\DTO\RateLimitContextDTO;
 use Maatify\RateLimiter\DTO\RateLimitStateDTO;
+use Maatify\RateLimiter\Exception\BackendFailureException;
 use Maatify\RateLimiter\Repository\CircuitBreakerProbeStoreInterface;
 use Maatify\RateLimiter\Repository\CorrelationStoreInterface;
 use Maatify\RateLimiter\Repository\RateLimitStoreInterface;
@@ -35,7 +36,7 @@ final class InfrastructureFailureRateLimitStore implements RateLimitStoreInterfa
 {
     private function fail(): never
     {
-        throw new RuntimeException('deterministic backend failure');
+        throw new BackendFailureException('deterministic backend failure');
     }
 
     public function increment(string $key, int $ttlSeconds, int $amount = 1): int

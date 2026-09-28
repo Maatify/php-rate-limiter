@@ -7,6 +7,7 @@ namespace Maatify\RateLimiter\Tests\System;
 use Maatify\RateLimiter\Command\RateLimitCommand;
 use Maatify\RateLimiter\Config\BlockPolicyInterface;
 use Maatify\RateLimiter\Repository\RateLimitStoreInterface;
+use Maatify\RateLimiter\Repository\CircuitBreakerStoreInterface;
 use Maatify\RateLimiter\DTO\RateLimitContextDTO;
 use Maatify\RateLimiter\DTO\RateLimitResultDTO;
 use Maatify\RateLimiter\Service\CircuitBreaker;
@@ -101,6 +102,12 @@ class RateLimiterEngineWorkflowTest extends TestCase
         $countersProperty = $reflection->getProperty('counters');
         $countersProperty->setAccessible(true);
         $countersProperty->setValue(null, []);
+        $trackedProperty = $reflection->getProperty('trackedSubjects');
+        $trackedProperty->setAccessible(true);
+        $trackedProperty->setValue(null, []);
+        $expiryProperty = $reflection->getProperty('trackedSubjectExpiries');
+        $expiryProperty->setAccessible(true);
+        $expiryProperty->setValue(null, []);
     }
 
     public function testCleanAllowedRequest(): void
@@ -302,6 +309,67 @@ class RateLimiterEngineWorkflowTest extends TestCase
         $afterTrip = $engine->limit($context, $command);
         $this->assertSame(RateLimitResultDTO::DECISION_ALLOW, $afterTrip->decision);
         $this->assertSame('DEGRADED_MODE', $afterTrip->failureMode);
+    }
+
+    public function testFullCircuitOutageUsesBoundedEmergencyStateAndReturnsToPersistentPath(): void
+    {
+        $circuitStore = new InMemoryCircuitBreakerStore(false);
+        $engine = $this->createEngineWithStore(
+            new ThrowingRateLimitStore(),
+            new ApiHeavyProtectionPolicy(),
+            $circuitStore,
+        );
+        $context = new RateLimitContextDTO('198.51.100.12', 'Mozilla/5.0', 'api-account');
+        $command = RateLimitCommand::checkOnly('api_heavy_protection');
+
+        self::assertSame('FAIL_OPEN', $engine->limit($context, $command)->failureMode);
+        $second = $engine->limit($context, $command);
+        self::assertTrue($second->failureMode === 'FAIL_OPEN');
+        self::assertSame('DEGRADED_MODE', $engine->limit($context, $command)->failureMode);
+
+        $circuitStore->available = true;
+        self::assertSame('FAIL_OPEN', $engine->limit($context, $command)->failureMode);
+        self::assertSame(
+            [1735732800],
+            $circuitStore->load('api_heavy_protection')?->failures,
+        );
+    }
+
+    public function testUntypedStoreExceptionDoesNotBecomeCircuitFailureOrFallbackAllowance(): void
+    {
+        $circuitStore = new InMemoryCircuitBreakerStore();
+        $engine = $this->createEngineWithStore(
+            new ThrowingRateLimitStore(false),
+            new ApiHeavyProtectionPolicy(),
+            $circuitStore,
+        );
+
+        $this->expectException(\RuntimeException::class);
+        try {
+            $engine->limit(
+                new RateLimitContextDTO('198.51.100.13', 'Mozilla/5.0', 'api-account'),
+                RateLimitCommand::checkOnly('api_heavy_protection'),
+            );
+        } finally {
+            self::assertNull($circuitStore->load('api_heavy_protection'));
+        }
+    }
+
+    public function testInvalidDeviceIdentityInputDoesNotBecomeBackendFailure(): void
+    {
+        $resource = fopen('php://memory', 'rb');
+        self::assertIsResource($resource);
+
+        try {
+            $this->expectException(\Maatify\RateLimiter\Exception\RateLimiterException::class);
+            $this->engine->limit(
+                new RateLimitContextDTO('198.51.100.14', 'Mozilla/5.0', 'login-account', ['resource' => $resource]),
+                RateLimitCommand::checkOnly('login_protection'),
+            );
+        } finally {
+            fclose($resource);
+            self::assertNull($this->circuitBreakerStore->load('login_protection'));
+        }
     }
 
     public function testApiHeavyFallbackK2CapThroughEngine(): void
@@ -534,8 +602,19 @@ class RateLimiterEngineWorkflowTest extends TestCase
         )));
     }
 
-    private function createEngineWithStore(RateLimitStoreInterface $store, BlockPolicyInterface ...$policies): RateLimiterEngine
-    {
+    private function createEngineWithStore(
+        RateLimitStoreInterface $store,
+        BlockPolicyInterface|CircuitBreakerStoreInterface ...$dependencies,
+    ): RateLimiterEngine {
+        $circuitStore = null;
+        $policies = [];
+        foreach ($dependencies as $dependency) {
+            if ($dependency instanceof CircuitBreakerStoreInterface) {
+                $circuitStore = $dependency;
+                continue;
+            }
+            $policies[] = $dependency;
+        }
         $correlationStore = new NullCorrelationStore();
         $emitter = new RecordingFailureSignalEmitter();
         $clock = $this->clock;
@@ -555,7 +634,7 @@ class RateLimiterEngineWorkflowTest extends TestCase
         return new RateLimiterEngine(
             new DeviceIdentityResolver(new FingerprintHasher('test_secret')),
             $pipeline,
-            new CircuitBreaker(new InMemoryCircuitBreakerStore(), $emitter, $clock),
+            new CircuitBreaker($circuitStore ?? new InMemoryCircuitBreakerStore(), $emitter, $clock),
             new FailureModeResolver(),
             $emitter,
             $clock,

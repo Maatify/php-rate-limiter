@@ -177,7 +177,7 @@ class RateLimiterEngineFallbackBlastRadiusTest extends TestCase
         $this->clock->setNow(new \DateTimeImmutable('2025-01-01 12:04:30'));
         $this->enterDegradedMode($engine, 'otp_protection', $ip, 'otp-gc-warmup-account');
 
-        // The first fallback execution establishes lastGc at an unaligned time inside the 15-minute bucket.
+        // The first fallback execution establishes the active fixed window.
         $warmup = $this->limit($engine, 'otp_protection', $ip, self::CHROME_UA, 'otp-gc-warmup-account');
         $this->assertSame(RateLimitResultDTO::DECISION_ALLOW, $warmup->decision);
         $this->assertSame('DEGRADED_MODE', $warmup->failureMode);
@@ -660,9 +660,12 @@ class RateLimiterEngineFallbackBlastRadiusTest extends TestCase
         $countersProperty = $reflection->getProperty('counters');
         $countersProperty->setAccessible(true);
         $countersProperty->setValue(null, []);
+        $trackedProperty = $reflection->getProperty('trackedSubjects');
+        $trackedProperty->setAccessible(true);
+        $trackedProperty->setValue(null, []);
+        $expiryProperty = $reflection->getProperty('trackedSubjectExpiries');
+        $expiryProperty->setAccessible(true);
+        $expiryProperty->setValue(null, []);
 
-        $lastGcProperty = $reflection->getProperty('lastGc');
-        $lastGcProperty->setAccessible(true);
-        $lastGcProperty->setValue(null, 0);
     }
 }

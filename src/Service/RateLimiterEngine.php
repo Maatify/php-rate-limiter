@@ -22,6 +22,7 @@ use Maatify\RateLimiter\DTO\RateLimitContextMetadataDTO;
 use Maatify\RateLimiter\DTO\RateLimitMetadataDTO;
 use Maatify\RateLimiter\DTO\RateLimitResultDTO;
 use Maatify\RateLimiter\Exception\RateLimiterException;
+use Maatify\RateLimiter\Exception\BackendFailureException;
 use Maatify\SharedCommon\Contracts\ClockInterface;
 
 /**
@@ -283,7 +284,7 @@ class RateLimiterEngine implements RateLimiterRuntimeInterface
                     new RateLimitContextMetadataDTO('k4_concurrency_conflict', 'k4'),
                 ),
             );
-        } catch (\Throwable $e) {
+        } catch (BackendFailureException) {
             $this->circuitBreaker->reportFailure($policyName);
 
             $mode = $this->failureResolver->resolve($policy, $this->circuitBreaker);
@@ -364,7 +365,7 @@ class RateLimiterEngine implements RateLimiterRuntimeInterface
             $claimed = $this->pipeline->claimPostPunishmentReentry($context, $device, $policyName, $reentryId);
             $this->circuitBreaker->reportSuccess($policyName);
             return $claimed;
-        } catch (\Throwable $exception) {
+        } catch (BackendFailureException $exception) {
             $this->circuitBreaker->reportFailure($policyName);
             throw $exception;
         }

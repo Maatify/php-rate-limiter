@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace Maatify\RateLimiter\Tests\Support\Redis;
 
 use Maatify\RateLimiter\Repository\Redis\RedisCommandExecutorInterface;
+use Maatify\RateLimiter\Exception\RateLimiterException;
 use RuntimeException;
 
 final class RespRedisCommandExecutor implements RedisCommandExecutorInterface
@@ -48,7 +49,7 @@ final class RespRedisCommandExecutor implements RedisCommandExecutorInterface
         }
         return match ($prefix) {
             '+' => $this->readLine(),
-            '-' => throw new RuntimeException((string) $this->readLine()),
+            '-' => throw new RateLimiterException((string) $this->readLine()),
             ':' => (int) $this->readLine(),
             '$' => $this->readBulk(),
             '*' => $this->readArray(),

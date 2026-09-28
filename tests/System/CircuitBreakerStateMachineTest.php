@@ -72,7 +72,7 @@ final class CircuitBreakerStateMachineTest extends TestCase
         self::assertSame([FailureSignalDTO::TYPE_CB_OPENED], $this->signalTypes());
         $state = $this->store->load('api');
         self::assertNotNull($state);
-        self::assertCount(1, $state->reEntries);
+        self::assertCount(0, $state->reEntries);
     }
 
     public function testFailuresOutsideRollingTenSecondWindowAreDroppedWithoutOpening(): void
@@ -118,7 +118,7 @@ final class CircuitBreakerStateMachineTest extends TestCase
             $openedAt,
             $openedAt,
             0,
-            [$openedAt],
+            [],
         ));
         $saveCount = $this->store->saveCount();
         $probeCalls = 0;
@@ -144,7 +144,7 @@ final class CircuitBreakerStateMachineTest extends TestCase
             $openedAt,
             $openedAt,
             0,
-            [$openedAt],
+            [],
         ));
         $this->clock->setNow(new \DateTimeImmutable('@' . ($openedAt + 300)));
         self::assertTrue($this->store->acquireProbeLease('api', $openedAt + 300, 120));
@@ -171,7 +171,7 @@ final class CircuitBreakerStateMachineTest extends TestCase
             $openedAt,
             $openedAt,
             0,
-            [$openedAt],
+            [],
         ));
 
         $this->clock->setNow(new \DateTimeImmutable('@' . ($openedAt + 300)));
@@ -232,6 +232,25 @@ final class CircuitBreakerStateMachineTest extends TestCase
         self::assertSame(FailureStateDTO::STATE_CLOSED, $this->circuitBreaker->getState('api')->state);
     }
 
+    public function testPassiveFailureCountAgingIsReadOnly(): void
+    {
+        $now = $this->clock->now()->getTimestamp();
+        $this->store->save('api', new CircuitBreakerStateDTO(
+            FailureStateDTO::STATE_CLOSED,
+            [$now - 11, $now - 10],
+            $now - 10,
+            0,
+            0,
+            [],
+        ));
+        $saveCount = $this->store->saveCount();
+
+        $state = $this->circuitBreaker->getState('api');
+
+        self::assertSame(1, $state->failureCount);
+        self::assertSame($saveCount, $this->store->saveCount());
+    }
+
     public function testThrownOpenProbeUsesCompletionTimestampForNewOpenEpoch(): void
     {
         $openedAt = $this->clock->now()->getTimestamp();
@@ -241,7 +260,7 @@ final class CircuitBreakerStateMachineTest extends TestCase
             $openedAt,
             $openedAt,
             0,
-            [$openedAt],
+            [],
         ));
         $this->clock->setNow(new \DateTimeImmutable('@' . ($openedAt + 300)));
         $probeStartedAt = $this->clock->now()->getTimestamp();
@@ -255,7 +274,7 @@ final class CircuitBreakerStateMachineTest extends TestCase
         self::assertNotNull($state);
         self::assertSame($probeStartedAt + 23, $state->openSince);
         self::assertSame(0, $state->lastSuccess);
-        self::assertSame([$openedAt], $state->reEntries);
+        self::assertSame([], $state->reEntries);
         self::assertSame([], $this->signalTypes());
     }
 
@@ -268,7 +287,7 @@ final class CircuitBreakerStateMachineTest extends TestCase
             $openedAt,
             $openedAt,
             0,
-            [$openedAt],
+            [],
         ));
         $this->clock->setNow(new \DateTimeImmutable('@' . ($openedAt + 300)));
         $probeStartedAt = $this->clock->now()->getTimestamp();
@@ -311,7 +330,7 @@ final class CircuitBreakerStateMachineTest extends TestCase
             $openedAt,
             $openedAt,
             0,
-            [$openedAt],
+            [],
         ));
 
         $this->clock->setNow(new \DateTimeImmutable('@' . ($openedAt + 300)));
@@ -321,7 +340,7 @@ final class CircuitBreakerStateMachineTest extends TestCase
         self::assertNotNull($state);
         self::assertSame(FailureStateDTO::STATE_OPEN, $state->status);
         self::assertSame($openedAt + 300, $state->openSince);
-        self::assertSame([$openedAt], $state->reEntries);
+        self::assertSame([], $state->reEntries);
         self::assertSame([], $this->signalTypes());
     }
 
@@ -334,7 +353,7 @@ final class CircuitBreakerStateMachineTest extends TestCase
             $openedAt,
             $openedAt,
             $openedAt,
-            [$openedAt],
+            [],
         ));
         $this->clock->setNow(new \DateTimeImmutable('@' . ($openedAt + 120)));
         $probeStartedAt = $this->clock->now()->getTimestamp();
@@ -350,7 +369,7 @@ final class CircuitBreakerStateMachineTest extends TestCase
         self::assertSame(FailureStateDTO::STATE_OPEN, $state->status);
         self::assertSame($probeStartedAt + 19, $state->openSince);
         self::assertSame(0, $state->lastSuccess);
-        self::assertSame([$openedAt, $probeStartedAt + 19], $state->reEntries);
+        self::assertSame([$probeStartedAt + 19], $state->reEntries);
         self::assertSame([FailureSignalDTO::TYPE_CB_OPENED], $this->signalTypes());
 
         $signals = $this->signalTypes();
@@ -648,12 +667,13 @@ final class CircuitBreakerStateMachineTest extends TestCase
     {
         $this->tripAndOpen();
         $this->completeHealthyIntervalAndFailProbe();
-        $secondReEntry = $this->completeHealthyIntervalAndFailProbe(17);
+        $this->completeHealthyIntervalAndFailProbe(17);
+        $thirdReEntry = $this->completeHealthyIntervalAndFailProbe(23);
 
         $state = $this->store->load('api');
         self::assertNotNull($state);
         self::assertSame(FailureStateDTO::STATE_OPEN, $state->status);
-        self::assertSame($secondReEntry['transitionAt'] + 600, $state->failClosedUntil);
+        self::assertSame($thirdReEntry['transitionAt'] + 600, $state->failClosedUntil);
         self::assertTrue($this->circuitBreaker->isReEntryGuardViolated('api'));
         self::assertSame(600, $this->circuitBreaker->getReEntryGuardRemaining('api'));
         self::assertCount(1, array_filter(

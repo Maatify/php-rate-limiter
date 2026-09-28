@@ -317,11 +317,8 @@ final class RateLimiterDeviceGenerationRotationTest extends TestCase
         $currentMicroKey = $this->microKey('login_protection', $context->accountId, $device->fingerprintHash, 'new-outer');
         $store->incrementBudget($previousMicroKey, 86400, 7);
 
-        $result = $engine->limit($context, RateLimitCommand::recordFailure('login_protection'));
-
-        $this->assertSame(RateLimitResultDTO::DECISION_HARD_BLOCK, $result->decision);
-        $this->assertSame(2, $result->blockLevel);
-        $this->assertSame('FAIL_CLOSED', $result->failureMode);
+        $this->expectException(\Maatify\RateLimiter\Exception\RateLimiterException::class);
+        $engine->limit($context, RateLimitCommand::recordFailure('login_protection'));
         $this->assertSame(7, $store->getBudget($previousMicroKey)?->count);
         $this->assertNull($store->getBudget($currentMicroKey));
     }

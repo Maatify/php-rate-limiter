@@ -9,6 +9,7 @@ use Maatify\RateLimiter\DTO\CircuitBreakerStateDTO;
 use Maatify\RateLimiter\DTO\FailureSignalDTO;
 use Maatify\RateLimiter\DTO\FailureStateDTO;
 use Maatify\RateLimiter\Exception\RateLimiterException;
+use Maatify\RateLimiter\Exception\BackendFailureException;
 use Maatify\RateLimiter\Repository\CircuitBreakerProbeStoreInterface;
 use Maatify\RateLimiter\Repository\CircuitBreakerStoreInterface;
 use Maatify\SharedCommon\Contracts\ClockInterface;
@@ -29,6 +30,12 @@ class CircuitBreaker
     private const RE_ENTRY_LIMIT = 2;
     private const RE_ENTRY_WINDOW = 1800;
     private const FAIL_CLOSED_DURATION = 600;
+
+    /** @var array<string, CircuitBreakerStateDTO> */
+    private array $emergencyStates = [];
+
+    /** @var array<string, int> */
+    private array $emergencyProbeLeases = [];
 
     /**
      * @param CircuitBreakerStoreInterface $store State persistence boundary.
@@ -71,7 +78,7 @@ class CircuitBreaker
             $status = FailureStateDTO::STATE_OPEN;
             $openSince = $now;
             $lastSuccess = 0;
-            [$reEntries, $failClosedUntil] = $this->enterOpen($policyName, $reEntries, $failClosedUntil, $now);
+            [$reEntries, $failClosedUntil] = $this->enterOpen($policyName, $reEntries, $failClosedUntil, $now, false);
         }
 
         $this->saveState($policyName, new CircuitBreakerStateDTO(
@@ -143,7 +150,7 @@ class CircuitBreaker
             );
         }
 
-        if (! $this->store->acquireProbeLease($policyName, $probeStartedAt, self::PROBE_LEASE)) {
+        if (! $this->acquireProbeLease($policyName, $probeStartedAt)) {
             return false;
         }
 
@@ -198,7 +205,10 @@ class CircuitBreaker
 
         return new FailureStateDTO(
             $data->status,
-            count($data->failures),
+            count(array_filter(
+                $data->failures,
+                static fn(int $timestamp): bool => $timestamp >= $now - self::TRIP_WINDOW,
+            )),
             $data->lastFailure,
             $isGuarded
                 || $data->status === FailureStateDTO::STATE_OPEN
@@ -248,6 +258,7 @@ class CircuitBreaker
             $state->reEntries,
             $state->failClosedUntil,
             $now,
+            true,
         );
 
         $this->saveState($policyName, new CircuitBreakerStateDTO(
@@ -273,12 +284,15 @@ class CircuitBreaker
         array $reEntries,
         int $failClosedUntil,
         int $now,
+        bool $isReEntry,
     ): array {
         $reEntries = array_values(array_filter(
             $reEntries,
             static fn(int $timestamp): bool => $timestamp >= $now - self::RE_ENTRY_WINDOW,
         ));
-        $reEntries[] = $now;
+        if ($isReEntry) {
+            $reEntries[] = $now;
+        }
 
         $this->emitter->emit(new FailureSignalDTO(FailureSignalDTO::TYPE_CB_OPENED, $policyName));
 
@@ -292,19 +306,58 @@ class CircuitBreaker
 
     private function loadState(string $policyName): CircuitBreakerStateDTO
     {
-        return $this->store->load($policyName) ?? new CircuitBreakerStateDTO(
-            FailureStateDTO::STATE_CLOSED,
-            [],
-            0,
-            0,
-            0,
-            [],
-            0,
-        );
+        try {
+            $state = $this->store->load($policyName);
+            unset($this->emergencyStates[$policyName], $this->emergencyProbeLeases[$policyName]);
+
+            return $state ?? new CircuitBreakerStateDTO(
+                FailureStateDTO::STATE_CLOSED,
+                [],
+                0,
+                0,
+                0,
+                [],
+                0,
+            );
+        } catch (BackendFailureException) {
+            return $this->emergencyStates[$policyName] ?? new CircuitBreakerStateDTO(
+                FailureStateDTO::STATE_CLOSED,
+                [],
+                0,
+                0,
+                0,
+                [],
+                0,
+            );
+        }
     }
 
     private function saveState(string $policyName, CircuitBreakerStateDTO $state): void
     {
-        $this->store->save($policyName, $state);
+        try {
+            $this->store->save($policyName, $state);
+            unset($this->emergencyStates[$policyName]);
+        } catch (BackendFailureException) {
+            $this->emergencyStates[$policyName] = $state;
+        }
+    }
+
+    private function acquireProbeLease(string $policyName, int $now): bool
+    {
+        try {
+            $acquired = $this->store instanceof CircuitBreakerProbeStoreInterface
+                && $this->store->acquireProbeLease($policyName, $now, self::PROBE_LEASE);
+            unset($this->emergencyProbeLeases[$policyName]);
+
+            return $acquired;
+        } catch (BackendFailureException) {
+            $expiresAt = $this->emergencyProbeLeases[$policyName] ?? 0;
+            if ($expiresAt > $now) {
+                return false;
+            }
+            $this->emergencyProbeLeases[$policyName] = $now + self::PROBE_LEASE;
+
+            return true;
+        }
     }
 }

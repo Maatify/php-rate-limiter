@@ -10,6 +10,16 @@ It specifies when the system must fail closed, fail open, or enter a strictly bo
 
 Failure semantics are **security-critical** and MUST NOT be altered implicitly.
 
+DEC-015 defines the Gate-11 resilience boundary: operational backend failures
+use the explicit package-owned `BackendFailureException` contract. Only that
+typed contract enters circuit accounting and bounded fallback. Invalid input,
+configuration, capability/contract violations, malformed persisted state,
+invariant failures, programming errors, `TypeError`, unknown `Throwable`, and
+untyped Host-store exceptions remain explicit exceptions and never become
+`FAIL_OPEN` or `DEGRADED_MODE` allowance. If persistent circuit state itself is
+unavailable, the package may use a bounded process-local emergency circuit;
+restored persistence returns execution to the normal persistent path.
+
 Typed bounded backend-failure fallback is governed by DEC-011. It is separate
 from normal-runtime `PolicyCapabilityEnum` classification and is declared through
 the public `FailureFallbackConfigurationProviderInterface` contract, which
@@ -50,6 +60,12 @@ allowance. Fallback counters are namespaced by policy identity
 policies with numerically identical configurations — including a custom
 policy that happens to reuse an official preset's exact numbers — never
 share counters.
+
+Each policy/dimension fallback population tracks at most 4096 active subjects.
+There is no active-entry eviction. Once full, previously unseen subjects share
+one conservative overflow bucket for the applicable window. The overflow
+bucket cannot create allowance or reset any tracked subject, and expired
+populations are collected during fallback activity.
 
 ---
 
@@ -360,6 +376,9 @@ Per policy, per node:
 * **Minimum Healthy Interval (before reset):** 2 minutes of sustained success
 * **Re-Entry Guard:** DEGRADED_MODE MUST NOT be re-entered more than **2 times** within **30 minutes** for the same policy.
 
+The initial `CLOSED → OPEN` trip is not a re-entry. Only a genuine
+`HALF_OPEN → OPEN` transition consumes a re-entry allowance.
+
 ### 5.2 State Machine and Recovery Probes
 
 The circuit uses only the following states:
@@ -425,6 +444,10 @@ This prevents deliberate “flap to harvest” cycles.
 * Failure mode selection MUST be deterministic
 * Silent fallback behavior is forbidden
 * Failure handling MUST be testable
+
+The public `FailureStateDTO::failureCount` is a read-time summary of failure
+timestamps still inside the inclusive trip window. Reading it does not persist
+state merely to prune expired timestamps.
 
 ---
 

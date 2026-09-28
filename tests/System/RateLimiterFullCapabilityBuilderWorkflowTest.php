@@ -390,6 +390,31 @@ final class RateLimiterFullCapabilityBuilderWorkflowTest extends TestCase
         );
     }
 
+    public function testProductionDefaultFullCapabilityOutageUsesEmergencyCircuitPath(): void
+    {
+        $clock = new FixedClock('2025-01-01 12:00:00');
+        $store = new FullCapabilityInMemoryStore($clock);
+        $store->available = false;
+        $store->circuitBreakerStore()->available = false;
+        $limiter = $this->fullLimiter($clock, $store, new RateLimiterConfig(
+            'key-secret',
+            'fingerprint-secret',
+            'prod',
+        ));
+        $context = $this->context('aggregate-outage', ['device' => 'outage']);
+        $command = RateLimitCommand::checkOnly('api_heavy_protection');
+
+        self::assertSame('FAIL_OPEN', $limiter->limit($context, $command)->failureMode);
+        $second = $limiter->limit($context, $command);
+        self::assertTrue($second->failureMode === 'FAIL_OPEN');
+        self::assertSame('DEGRADED_MODE', $limiter->limit($context, $command)->failureMode);
+
+        $store->available = true;
+        $store->circuitBreakerStore()->available = true;
+        self::assertSame('NORMAL', $limiter->limit($context, $command)->failureMode);
+        self::assertNull($store->load('api_heavy_protection'));
+    }
+
     public function testExistingMultiStoreBuilderConstructorStillRunsPublicWorkflow(): void
     {
         $clock = new FixedClock('2025-01-01 12:00:00');
