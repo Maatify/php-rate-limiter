@@ -33,6 +33,9 @@ interface BudgetSeedStoreInterface extends RateLimitStoreInterface
      * - If the seed is expired
      *   (now >= seed.epochStart + epochDurationSeconds), a normal new epoch
      *   starts: count = $amount, epochStart = now.
+     * - A conforming implementation rejects an unrepresentable or
+     *   backend-impossible fixed expiry before changing the target state;
+     *   Previous remains read-only and byte/state-identical on that failure.
      *
      * @param string $key
      * @param int $epochDurationSeconds

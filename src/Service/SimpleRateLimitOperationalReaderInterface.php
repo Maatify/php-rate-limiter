@@ -18,8 +18,10 @@ interface SimpleRateLimitOperationalReaderInterface
      * Read one simple throttle policy's persisted fixed-window state for the
      * given subject without mutating it.
      *
-     * @throws RateLimiterException When the policy name is unregistered or
-     *     the subject is blank.
+     * @throws RateLimiterException When the policy name is unregistered, the
+     *     subject is blank, or the persisted effective reset boundary is not
+     *     representable as a PHP integer. This is a read-only contract
+     *     failure; it is not an enforcement result.
      */
     public function read(
         string $policyName,

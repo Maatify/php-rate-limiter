@@ -129,6 +129,12 @@ through `RedisCommandExecutorInterface` or `CallableRedisCommandExecutor`.
 
 `RateLimiterInterface::limit()` is the framework-agnostic consumer entrypoint. Hosts provide a `RateLimitContextDTO` and a `RateLimitCommand`, then handle the returned `RateLimitResultDTO` at their transport boundary.
 
+The additive simple fixed-window enforcement path is:
+
+`RateLimiterBuilder` → `withSimpleThrottlePolicy(...)` → `build()` → `CompositeRateLimiterRuntimeInterface` → `SimpleRateLimiterInterface::consume(policyName, subject, cost = 1)` → `SimpleRateLimitResultDTO`.
+
+It is an opt-in weighted quota path governed by DEC-013 and DEC-014; it does not replace the existing score-based `RateLimiterInterface::limit()` path.
+
 The default Login and OTP policies opt into DEC-007 generation-bound K4
 post-punishment re-entry. Consumers that need the one-shot application handoff
 may type-hint `RateLimiterRuntimeInterface` and call

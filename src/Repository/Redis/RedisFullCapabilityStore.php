@@ -321,20 +321,25 @@ LUA;
 
     private const BUDGET_INCREMENT = <<<'LUA'
 local now = tonumber(redis.call('TIME')[1])
+local exactIntegerMax = 9007199254740991
 local count = redis.call('HGET', KEYS[1], 'count')
 local start = redis.call('HGET', KEYS[1], 'epochStart')
-local duration = redis.call('HGET', KEYS[1], 'epochDuration')
+local storedDuration = redis.call('HGET', KEYS[1], 'epochDuration')
+local requestedDuration = tonumber(ARGV[1])
 local exists = redis.call('EXISTS', KEYS[1])
 if exists == 1 and redis.call('TTL', KEYS[1]) < 0 then return redis.error_reply('malformed budget state') end
-if exists == 1 and (not count or not start or not duration) then return redis.error_reply('malformed budget state') end
+if exists == 1 and (not count or not start or not storedDuration) then return redis.error_reply('malformed budget state') end
 if exists == 1 then
-  start = tonumber(start); duration = tonumber(duration)
-  if not string.match(count, '^%-?%d+$') or not start or start ~= math.floor(start) or not duration or duration <= 0 or duration ~= math.floor(duration) then return redis.error_reply('malformed budget state') end
+  start = tonumber(start); storedDuration = tonumber(storedDuration)
+  if not string.match(count, '^%-?%d+$') or not start or start ~= math.floor(start) or not storedDuration or storedDuration <= 0 or storedDuration ~= math.floor(storedDuration) then return redis.error_reply('malformed budget state') end
+  if start > exactIntegerMax - storedDuration then return redis.error_reply('budget expiry exceeds Redis Lua exact integer range') end
 end
-if exists == 1 and now < start + duration then
+if exists == 1 and now < start + storedDuration then
   redis.call('HINCRBY', KEYS[1], 'count', ARGV[2])
   return {redis.call('HGET', KEYS[1], 'count'), start}
 end
+if not requestedDuration or requestedDuration <= 0 or requestedDuration ~= math.floor(requestedDuration) then return redis.error_reply('malformed budget state') end
+if requestedDuration > exactIntegerMax - now then return redis.error_reply('budget expiry exceeds Redis Lua exact integer range') end
 if exists == 1 then redis.call('DEL', KEYS[1]) end
 redis.call('HSET', KEYS[1], 'count', ARGV[2], 'epochStart', now, 'epochDuration', ARGV[1])
 redis.call('EXPIRE', KEYS[1], ARGV[1])
@@ -359,6 +364,7 @@ LUA;
 
     private const BUDGET_SEED = <<<'LUA'
 local now = tonumber(redis.call('TIME')[1])
+local exactIntegerMax = 9007199254740991
 local count = redis.call('HGET', KEYS[1], 'count')
 local start = redis.call('HGET', KEYS[1], 'epochStart')
 local duration = redis.call('HGET', KEYS[1], 'epochDuration')
@@ -368,20 +374,25 @@ if exists == 1 and (not count or not start or not duration) then return redis.er
 if exists == 1 then
   start = tonumber(start); duration = tonumber(duration)
   if not string.match(count, '^%-?%d+$') or not start or start ~= math.floor(start) or not duration or duration <= 0 or duration ~= math.floor(duration) then return redis.error_reply('malformed budget state') end
+  if start > exactIntegerMax - duration then return redis.error_reply('budget expiry exceeds Redis Lua exact integer range') end
 end
 if exists == 1 and now < start + duration then
   redis.call('HINCRBY', KEYS[1], 'count', ARGV[4])
   return {redis.call('HGET', KEYS[1], 'count'), start}
 end
-if exists == 1 then redis.call('DEL', KEYS[1]) end
 local seedStart = tonumber(ARGV[2])
 local epochDuration = tonumber(ARGV[1])
+if not seedStart or seedStart ~= math.floor(seedStart) or epochDuration <= 0 or epochDuration ~= math.floor(epochDuration) then return redis.error_reply('malformed seed expiry') end
+if seedStart > exactIntegerMax - epochDuration then return redis.error_reply('seed expiry exceeds Redis Lua exact integer range') end
 if now < seedStart + epochDuration then
   if ARGV[6] == '1' then return redis.error_reply('seeded budget count overflow') end
+  if exists == 1 then redis.call('DEL', KEYS[1]) end
   redis.call('HSET', KEYS[1], 'count', ARGV[5], 'epochStart', seedStart, 'epochDuration', epochDuration)
   redis.call('EXPIRE', KEYS[1], seedStart + epochDuration - now)
   return {redis.call('HGET', KEYS[1], 'count'), seedStart}
 end
+if epochDuration > exactIntegerMax - now then return redis.error_reply('budget expiry exceeds Redis Lua exact integer range') end
+if exists == 1 then redis.call('DEL', KEYS[1]) end
 redis.call('HSET', KEYS[1], 'count', ARGV[4], 'epochStart', now, 'epochDuration', epochDuration)
 redis.call('EXPIRE', KEYS[1], epochDuration)
 return {redis.call('HGET', KEYS[1], 'count'), now}

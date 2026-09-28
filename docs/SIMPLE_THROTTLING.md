@@ -6,7 +6,10 @@
 **Spec Version:** `1.1.0`
 
 This document is the canonical contract for the package's generic/simple
-fixed-window throttling capability, currently governed by `docs/decisions/DEC-013_VARIABLE_COST_SIMPLE_FIXED_WINDOW_CONSUMPTION.md`
+fixed-window throttling capability, currently governed by
+`docs/decisions/DEC-013_VARIABLE_COST_SIMPLE_FIXED_WINDOW_CONSUMPTION.md`
+and the complementary reset-boundary rule in
+`docs/decisions/DEC-014_SIMPLE_FIXED_WINDOW_RESET_BOUNDARY_REPRESENTABILITY.md`
 and composed into the default runtime by `docs/decisions/DEC-010_COMPOSITE_RATE_LIMITING_COMPOSITION_SURFACE_EVOLUTION.md`.
 
 It is a first-class capability, distinct from the package's score-based
@@ -52,7 +55,10 @@ For one `policyName + subject` pair:
 6. `remaining` is `max(0, limit - persistedCount)`; it is clamped at zero
    once the limit is exhausted and never goes negative.
 7. `resetAt` is `epochStart + intervalSeconds`, the stable end instant of the
-   current fixed window.
+   current fixed window. The addition is allowed only when the effective
+   boundary is exactly representable as a PHP integer; an unrepresentable
+   boundary is rejected before enforcement mutation using an overflow-safe
+   comparison.
 8. `retryAfter` on denial is `max(1, resetAt - now)`, a positive number of
    seconds; on an allowed consume, `retryAfter` is `0`.
 
@@ -200,6 +206,7 @@ Three outcomes are kept strictly separate:
     §4.7). This check is never wrapped by the storage-failure handling
     above, so it always raises `RateLimiterException` even though it sits
     between two store calls in the rotation path (§8).
+  * an effective reset boundary that cannot be represented as a PHP integer;
 
   Each of these raises `Maatify\RateLimiter\Exception\RateLimiterException`
   and MUST NOT be converted into a normal decision or a typed `FAIL_CLOSED`
@@ -225,7 +232,7 @@ When a previous key generation is configured:
    authoritative and is incremented normally; Previous is not read.
 2. If Current is absent, read Previous.
 3. If Previous holds a valid epoch, it is atomically seeded into Current via
-   `incrementBudgetWithSeed()`: Current's new count is `previous.count + 1`,
+   `incrementBudgetWithSeed()`: Current's new count is `previous.count + cost`,
    and `previous.epochStart` — and therefore the fixed epoch end — is
    preserved exactly. Previous itself is never written to.
 4. If Previous is absent or expired, a normal new Current epoch starts.

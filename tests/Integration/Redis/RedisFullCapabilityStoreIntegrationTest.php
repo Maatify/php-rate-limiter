@@ -1708,6 +1708,45 @@ final class RedisFullCapabilityStoreIntegrationTest extends TestCase
         self::assertSame($current->epochStart, $currentWins->epochStart);
     }
 
+    public function testExpiredExistingBudgetRejectsImpossibleFreshDurationBeforeReplacement(): void
+    {
+        $budgetKey = $this->key('budget', 'expired-existing-requested-duration');
+        $now = $this->redisNow();
+        $this->raw(['HSET', $budgetKey, 'count', 7, 'epochStart', $now - 2, 'epochDuration', 1]);
+        $this->raw(['EXPIRE', $budgetKey, 60]);
+        $before = $this->hashMap($budgetKey);
+
+        $failed = false;
+        try {
+            $this->store->incrementBudget('expired-existing-requested-duration', 9007199254740992);
+        } catch (\Throwable) {
+            $failed = true;
+        }
+
+        self::assertTrue($failed);
+        self::assertSame($before, $this->hashMap($budgetKey));
+        self::assertSame(1, $this->integer($this->raw(['EXISTS', $budgetKey])));
+    }
+
+    public function testActiveCurrentIgnoresUnrepresentableSeedBoundary(): void
+    {
+        $current = $this->store->incrementBudget('seed-boundary-current-wins', 60, 4);
+
+        $result = $this->store->incrementBudgetWithSeed(
+            'seed-boundary-current-wins',
+            60,
+            new BudgetStateDTO(999, PHP_INT_MAX),
+        );
+
+        self::assertSame(5, $result->count);
+        self::assertSame($current->epochStart, $result->epochStart);
+
+        $persisted = $this->store->getBudget('seed-boundary-current-wins');
+        self::assertNotNull($persisted);
+        self::assertSame(5, $persisted->count);
+        self::assertSame($current->epochStart, $persisted->epochStart);
+    }
+
     public function testDistinctWatchAndBoundedWindowsDoNotRefreshAndExpire(): void
     {
         $firstDistinctCount = $this->store->addDistinct('distinct-matrix', 'one', 60);
