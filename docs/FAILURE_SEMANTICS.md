@@ -18,7 +18,10 @@ invariant failures, programming errors, `TypeError`, unknown `Throwable`, and
 untyped Host-store exceptions remain explicit exceptions and never become
 `FAIL_OPEN` or `DEGRADED_MODE` allowance. If persistent circuit state itself is
 unavailable, the package may use a bounded process-local emergency circuit;
-restored persistence returns execution to the normal persistent path.
+restored persistence is conservatively reconciled by `CircuitBreaker` and
+receives the authoritative active state before ownership returns to the normal
+persistent path. Storage recovery is not circuit recovery; locked recovery
+timings and signals remain unchanged.
 
 Typed bounded backend-failure fallback is governed by DEC-011. It is separate
 from normal-runtime `PolicyCapabilityEnum` classification and is declared through

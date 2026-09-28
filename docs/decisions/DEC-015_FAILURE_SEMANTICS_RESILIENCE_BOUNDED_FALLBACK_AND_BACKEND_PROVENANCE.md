@@ -23,6 +23,31 @@ Resilience of the Production Default circuit path during full persistence
 outage, deterministic bounds for process-local fallback state, and explicit
 classification of operational backend failures.
 
+## Context
+
+The prior shared persistent circuit path had no survivable state owner when
+the full persistence topology was unavailable. A backend failure could be
+classified for policy fallback, but the circuit itself could not retain its
+trip, probe lease, epoch, or guard state. The first remediation therefore
+introduced process-local emergency state, but its first handoff implementation
+incorrectly discarded that state as soon as persistent storage responded.
+
+The emergency owner is required because the Production Default composition
+must remain usable without a second Host backend. The local fallback path also
+needs a fixed cardinality bound because a persistence outage must not turn
+request-controlled subjects into unbounded process memory. Explicit typed
+backend provenance is required because treating malformed state, invalid
+input, programming errors, or arbitrary Host throwables as infrastructure
+outages could grant security-sensitive fallback allowance.
+
+Storage restoration is therefore not circuit recovery. The `CircuitBreaker`
+owns a backend-neutral conservative handoff: it reconciles known emergency and
+persistent state, preserves the more protective active semantics and
+authoritative timestamps, persists that state, and only then returns ownership
+to the persistent state machine. Handoff is not a transition and emits no
+synthetic signal; locked OPEN → HALF_OPEN → CLOSED recovery remains the only
+recovery path.
+
 ## Decision
 
 Persistent/Redis-backed circuit state remains the normal circuit path and
@@ -32,8 +57,11 @@ unavailable, the package may use a bounded process-local emergency circuit
 temporarily. Emergency state exists only to preserve infrastructure-failure
 survivability; it is not a new public failure mode. Existing `FAIL_CLOSED`,
 `FAIL_OPEN`, and `DEGRADED_MODE` semantics remain authoritative. When
-persistent circuit infrastructure becomes available, execution returns to the
-normal persistent path. Emergency state contains no request-controlled
+persistent circuit infrastructure becomes available, the CircuitBreaker
+conservatively reconciles emergency and persistent state, persists the
+authoritative active protection state, and only then returns execution to the
+normal persistent path. If that handoff cannot be safely persisted, emergency
+state remains authoritative. Emergency state contains no request-controlled
 unbounded cardinality, and it cannot grant unlimited authentication or API
 allowance.
 
@@ -80,8 +108,9 @@ from becoming security-sensitive degraded allowances.
 
 - `BackendFailureException` is the explicit package boundary for operational
   backend failures.
-- Official Redis command execution translates transport/executor failures at
-  the adapter boundary; malformed state remains an explicit package exception.
+- The Host-owned Redis executor boundary classifies known transport/backend
+  outages explicitly; the Redis store preserves that provenance and malformed
+  state remains an explicit package exception.
 - The circuit can continue bounded state-machine behavior while its persistent
   state boundary is unavailable and resumes the persistent path after recovery.
 - Existing public policies, failure modes, numeric circuit constants, and

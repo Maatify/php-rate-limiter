@@ -17,8 +17,10 @@ use Maatify\SharedCommon\Contracts\ClockInterface;
 /**
  * Maintains the per-policy circuit-breaker state machine and transition signals.
  *
- * Normal backend failures are accepted only while CLOSED. Recovery is driven by
- * read-only health probes guarded by the store-owned atomic probe lease.
+ * Normal typed backend failures are accepted only while CLOSED. Emergency
+ * state survives persistence restoration until a conservative handoff has
+ * safely persisted the reconciled state. Recovery is driven by read-only
+ * health probes guarded by the store-owned atomic probe lease.
  */
 class CircuitBreaker
 {
@@ -109,10 +111,11 @@ class CircuitBreaker
      * Attempt the next eligible read-only recovery probe.
      *
      * The callback is invoked only after the minimum degraded/healthy interval
-     * and after atomic lease acquisition. Probe failures, including thrown health
-     * checks, restart or re-enter the state machine without entering normal
-     * request failure handling. The return value is true only when a HALF_OPEN
-     * probe has closed the circuit and the current request may continue normally.
+     * and after atomic lease acquisition. An explicit false result or a typed
+     * BackendFailureException is an unhealthy probe; unknown exceptions,
+     * programming errors, and TypeError preserve their provenance and escape.
+     * The return value is true only when a HALF_OPEN probe has closed the
+     * circuit and the current request may continue normally.
      *
      * @param callable():bool $probe Read-only backend health probe.
      * @throws RateLimiterException When an eligible probe lacks the lease capability.
@@ -156,7 +159,7 @@ class CircuitBreaker
 
         try {
             $healthy = $probe();
-        } catch (\Throwable) {
+        } catch (BackendFailureException) {
             $healthy = false;
         }
         $transitionAt = $this->clock->now()->getTimestamp();
@@ -306,29 +309,30 @@ class CircuitBreaker
 
     private function loadState(string $policyName): CircuitBreakerStateDTO
     {
+        $emergency = $this->emergencyStates[$policyName] ?? null;
+
         try {
-            $state = $this->store->load($policyName);
+            $persistent = $this->store->load($policyName);
+            if ($emergency === null) {
+                unset($this->emergencyProbeLeases[$policyName]);
+
+                return $persistent ?? $this->closedState();
+            }
+
+            $reconciled = $this->reconcileStates($emergency, $persistent ?? $this->closedState());
+            try {
+                $this->store->save($policyName, $reconciled);
+            } catch (BackendFailureException) {
+                $this->emergencyStates[$policyName] = $reconciled;
+
+                return $reconciled;
+            }
+
             unset($this->emergencyStates[$policyName], $this->emergencyProbeLeases[$policyName]);
 
-            return $state ?? new CircuitBreakerStateDTO(
-                FailureStateDTO::STATE_CLOSED,
-                [],
-                0,
-                0,
-                0,
-                [],
-                0,
-            );
+            return $reconciled;
         } catch (BackendFailureException) {
-            return $this->emergencyStates[$policyName] ?? new CircuitBreakerStateDTO(
-                FailureStateDTO::STATE_CLOSED,
-                [],
-                0,
-                0,
-                0,
-                [],
-                0,
-            );
+            return $emergency ?? $this->closedState();
         }
     }
 
@@ -359,5 +363,66 @@ class CircuitBreaker
 
             return true;
         }
+    }
+
+    private function closedState(): CircuitBreakerStateDTO
+    {
+        return new CircuitBreakerStateDTO(
+            FailureStateDTO::STATE_CLOSED,
+            [],
+            0,
+            0,
+            0,
+            [],
+            0,
+        );
+    }
+
+    private function reconcileStates(
+        CircuitBreakerStateDTO $emergency,
+        CircuitBreakerStateDTO $persistent,
+    ): CircuitBreakerStateDTO {
+        $status = $this->statusRank($emergency->status) >= $this->statusRank($persistent->status)
+            ? $emergency->status
+            : $persistent->status;
+        $openSince = 0;
+        if ($status === FailureStateDTO::STATE_OPEN) {
+            $openSince = max(
+                $emergency->status === FailureStateDTO::STATE_OPEN ? $emergency->openSince : 0,
+                $persistent->status === FailureStateDTO::STATE_OPEN ? $persistent->openSince : 0,
+            );
+        } elseif ($status === FailureStateDTO::STATE_HALF_OPEN) {
+            $openSince = max(
+                $emergency->status !== FailureStateDTO::STATE_CLOSED ? $emergency->openSince : 0,
+                $persistent->status !== FailureStateDTO::STATE_CLOSED ? $persistent->openSince : 0,
+            );
+        }
+
+        $failures = array_values(array_unique([...$emergency->failures, ...$persistent->failures]));
+        sort($failures);
+        $reEntries = array_values(array_unique([...$emergency->reEntries, ...$persistent->reEntries]));
+        sort($reEntries);
+
+        return new CircuitBreakerStateDTO(
+            $status,
+            $failures,
+            max($emergency->lastFailure, $persistent->lastFailure),
+            $openSince,
+            $status === FailureStateDTO::STATE_HALF_OPEN
+                ? max($emergency->lastSuccess, $persistent->lastSuccess)
+                : 0,
+            $reEntries,
+            max($emergency->failClosedUntil, $persistent->failClosedUntil),
+        );
+    }
+
+    private function statusRank(string $status): int
+    {
+        return match ($status) {
+            FailureStateDTO::STATE_OPEN => 3,
+            FailureStateDTO::STATE_HALF_OPEN => 2,
+            FailureStateDTO::STATE_CLOSED => 1,
+            default => 0,
+        };
     }
 }

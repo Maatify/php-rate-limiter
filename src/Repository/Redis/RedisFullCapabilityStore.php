@@ -27,7 +27,9 @@ use Maatify\RateLimiter\Repository\FullCapabilityStoreInterface;
  * logical non-clustered Redis server and deliberately has no Redis-client
  * dependency. Its lifecycle operations use Redis server time, preserve
  * current-first/previous-read-only rotation semantics, and fail explicitly on
- * structurally malformed generated lifecycle state.
+ * structurally malformed generated lifecycle state. The Host executor owns
+ * operational failure classification; this adapter does not reinterpret
+ * arbitrary throwables as backend outages.
  */
 final class RedisFullCapabilityStore implements FullCapabilityStoreInterface
 {
@@ -1040,7 +1042,7 @@ LUA;
      * authoritative expiry. A malformed core score field, a stored
      * generation present but not a positive integer, a malformed or
      * physically inconsistent generated expiry, and partial lifecycle
-     * evidence all raise an explicit backend error — as does complete,
+     * evidence all raise an explicit package/state exception — as does complete,
      * structurally valid lifecycle evidence attached to a generation-less
      * score, which is impossible persisted state rather than evidence to
      * hide. Lifecycle evidence is otherwise valid only as a complete
@@ -1087,13 +1089,13 @@ LUA;
      * ordinary stale snapshot — one that no longer matches the observed
      * state — returns an unapplied DTO, never an exception. That is distinct
      * from structurally malformed persisted state, which always raises an
-     * explicit backend failure before any mutation or clearing, regardless
+     * explicit package/state exception before any mutation or clearing, regardless
      * of whether the snapshot also happens to be stale: a malformed core
      * field, a stored generation present but not a positive integer, a
      * malformed, missing, or physically inconsistent generated-score expiry,
      * partial lifecycle
      * evidence, and complete lifecycle evidence attached to a
-     * generation-less score are all explicit failures. Legacy state keeps
+     * generation-less score are all explicit package/state failures. Legacy state keeps
      * its remaining TTL; applied mutations write only current state, advance
      * generation, and invalidate lifecycle evidence. Absent or complete
      * structurally valid evidence follows the normal mutation path.
@@ -1195,7 +1197,7 @@ LUA;
      * returns false without consuming punishment evidence or changing score,
      * generation, block, or cycle state. Partial or structurally malformed
      * evidence, malformed blocks, and generated state without authoritative
-     * expiry raise an explicit backend error; only the separate claim marker is
+     * expiry raise an explicit package/state exception; only the separate claim marker is
      * consumed when the claim succeeds.
      */
     public function claimPostPunishmentReentry(string $currentKey, ?string $previousKey, string $lifecycleId): bool
@@ -1209,7 +1211,7 @@ LUA;
         try {
             $result = $this->command(['PING']);
             return $result === 'PONG';
-        } catch (\Throwable) {
+        } catch (BackendFailureException) {
             return false;
         }
     }
@@ -1231,9 +1233,10 @@ LUA;
     }
 
     /**
-     * Translate only command-executor failures into the explicit backend
-     * failure contract. Package validation and malformed-state exceptions are
-     * raised after command execution and remain their original types.
+     * Preserve the executor's explicit failure provenance. A Host executor
+     * must raise BackendFailureException for a known operational outage;
+     * unknown throwables, server replies, and malformed protocol/state errors
+     * remain unchanged rather than being reclassified here.
      *
      * @param non-empty-list<int|string|float> $command
      */
@@ -1241,12 +1244,8 @@ LUA;
     {
         try {
             return $this->redis->execute($command);
-        } catch (RateLimiterException $exception) {
-            throw $exception;
         } catch (BackendFailureException $exception) {
             throw $exception;
-        } catch (\Throwable $exception) {
-            throw new BackendFailureException('Redis command execution failed.', 0, $exception);
         }
     }
 

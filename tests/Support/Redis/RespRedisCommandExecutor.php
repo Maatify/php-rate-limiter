@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace Maatify\RateLimiter\Tests\Support\Redis;
 
 use Maatify\RateLimiter\Repository\Redis\RedisCommandExecutorInterface;
+use Maatify\RateLimiter\Exception\BackendFailureException;
 use Maatify\RateLimiter\Exception\RateLimiterException;
 use RuntimeException;
 
@@ -21,7 +22,7 @@ final class RespRedisCommandExecutor implements RedisCommandExecutorInterface
         if (! is_resource($socket)) {
             $code = is_int($errorCode) ? $errorCode : 0;
             $message = is_string($errorMessage) ? $errorMessage : 'unknown error';
-            throw new RuntimeException('Redis connection failed (' . $code . '): ' . $message);
+            throw new BackendFailureException('Redis connection failed (' . $code . '): ' . $message);
         }
         stream_set_timeout($socket, 5);
         $this->socket = $socket;
@@ -36,7 +37,7 @@ final class RespRedisCommandExecutor implements RedisCommandExecutorInterface
             $payload .= '$' . strlen($value) . "\r\n" . $value . "\r\n";
         }
         if (fwrite($this->socket, $payload) !== strlen($payload)) {
-            throw new RuntimeException('Redis command write failed.');
+            throw new BackendFailureException('Redis command write failed.');
         }
         return $this->readReply();
     }
@@ -45,7 +46,7 @@ final class RespRedisCommandExecutor implements RedisCommandExecutorInterface
     {
         $prefix = fread($this->socket, 1);
         if ($prefix === false || $prefix === '') {
-            throw new RuntimeException('Redis reply ended unexpectedly.');
+            throw new BackendFailureException('Redis reply ended unexpectedly.');
         }
         return match ($prefix) {
             '+' => $this->readLine(),

@@ -84,7 +84,7 @@ final class InfrastructureFailureCorrelationStore implements CorrelationStoreInt
 {
     private function fail(): never
     {
-        throw new RuntimeException('deterministic backend failure');
+        throw new BackendFailureException('deterministic backend failure');
     }
 
     public function addDistinct(string $key, string $item, int $ttlSeconds): int

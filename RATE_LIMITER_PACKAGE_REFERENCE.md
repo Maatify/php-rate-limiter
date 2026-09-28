@@ -201,7 +201,7 @@ The following inventory describes the current public runtime types. Test and sup
 | Decision services | `Maatify\RateLimiter\Service\AntiEquilibriumGate`, `Maatify\RateLimiter\Service\BoundedCorrelationResultValidator`, `Maatify\RateLimiter\Service\BudgetTracker`, `Maatify\RateLimiter\Service\DecayCalculator`, `Maatify\RateLimiter\Service\PenaltyLadder` | Publicly typed services for bounded result validation, penalty, budget, decay, and escalation orchestration. |
 | Official Redis storage | `Maatify\RateLimiter\Repository\Redis\CallableRedisCommandExecutor`, `Maatify\RateLimiter\Repository\Redis\RedisFullCapabilityStore` | Optional package-owned store for one logical non-clustered Redis server. It has no `ext-redis` or Predis runtime dependency; the Host owns the client/connection lifecycle and supplies the raw-command executor. Other `FullCapabilityStoreInterface` implementations remain supported. |
 | Configuration presets | `Maatify\RateLimiter\Config\LoginProtectionPolicy`, `Maatify\RateLimiter\Config\OtpProtectionPolicy`, `Maatify\RateLimiter\Config\ApiHeavyProtectionPolicy` | Production policy definitions selected by the command policy name. |
-| Exception | `Maatify\RateLimiter\Exception\RateLimiterException`, `Maatify\RateLimiter\Exception\RateLimitConcurrencyException`, `Maatify\RateLimiter\Exception\BackendFailureException` | Package-defined invalid-input/configuration failure, bounded optimistic-concurrency exhaustion, and explicit operational backend failure. Stale mutation snapshots remain non-exceptional unapplied results; only the typed backend failure enters circuit accounting/fallback. |
+| Exception | `Maatify\RateLimiter\Exception\RateLimiterException`, `Maatify\RateLimiter\Exception\RateLimitConcurrencyException`, `Maatify\RateLimiter\Exception\BackendFailureException` | Package-defined invalid-input/configuration failure, bounded optimistic-concurrency exhaustion, and explicit operational backend failure. `BackendFailureException` uses the installed `maatify/exceptions` system hierarchy and the package marker; stale mutation snapshots remain non-exceptional unapplied results, and only the typed backend failure enters circuit accounting/fallback. |
 
 The recommended consumer construction is `Maatify\RateLimiter\Builder\RateLimiterBuilder`, which returns `CompositeRateLimiterRuntimeInterface` after composing the package-owned graph; the result remains assignable to `RateLimiterRuntimeInterface` for every existing consumer. Consumers receive post-punishment metadata from an unblocked `limit(..., checkOnly(...))` result and pass its opaque ID to `claimPostPunishmentReentry()` exactly once. The low-level service constructors remain available as the Advanced Path for consumers that intentionally need manual control. Their current signatures are stable only as reflected in the source and the contracts above.
 
@@ -336,9 +336,11 @@ failure-signal emitter remains a separate dependency. The core package does not
 assume a shared transaction across those boundaries.
 
 If the shared circuit persistence boundary is unavailable, `CircuitBreaker`
-uses the bounded process-local emergency state defined by DEC-015 and returns
-to the persistent path when the boundary recovers. This does not add Host
-wiring or a public failure mode. Infrastructure adapters must translate only
+uses the bounded process-local emergency state defined by DEC-015. When the
+boundary recovers, CircuitBreaker conservatively reconciles and persists the
+authoritative active state before ownership returns to the persistent path;
+storage recovery is not circuit recovery. This does not add Host wiring or a
+public failure mode. Infrastructure adapters must translate only
 eligible operational availability/transport/command failures into
 `BackendFailureException`; malformed state and invalid input retain their
 explicit package exception contracts.

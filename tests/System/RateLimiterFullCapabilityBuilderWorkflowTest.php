@@ -8,6 +8,7 @@ use Maatify\RateLimiter\Builder\RateLimiterBuilder;
 use Maatify\RateLimiter\Command\RateLimitCommand;
 use Maatify\RateLimiter\Config\RateLimiterConfig;
 use Maatify\RateLimiter\DTO\CircuitBreakerStateDTO;
+use Maatify\RateLimiter\DTO\FailureSignalDTO;
 use Maatify\RateLimiter\DTO\FailureStateDTO;
 use Maatify\RateLimiter\DTO\RateLimitContextDTO;
 use Maatify\RateLimiter\DTO\RateLimitResultDTO;
@@ -390,29 +391,77 @@ final class RateLimiterFullCapabilityBuilderWorkflowTest extends TestCase
         );
     }
 
-    public function testProductionDefaultFullCapabilityOutageUsesEmergencyCircuitPath(): void
-    {
+    #[DataProvider('fullOutagePolicies')]
+    public function testProductionDefaultFullCapabilityOutageUsesLockedEmergencyHandoff(
+        string $policyName,
+        string $initialDecision,
+        string $initialFailureMode,
+    ): void {
         $clock = new FixedClock('2025-01-01 12:00:00');
         $store = new FullCapabilityInMemoryStore($clock);
+        $signals = new RecordingFailureSignalEmitter();
         $store->available = false;
         $store->circuitBreakerStore()->available = false;
-        $limiter = $this->fullLimiter($clock, $store, new RateLimiterConfig(
-            'key-secret',
-            'fingerprint-secret',
-            'prod',
-        ));
-        $context = $this->context('aggregate-outage', ['device' => 'outage']);
-        $command = RateLimitCommand::checkOnly('api_heavy_protection');
+        $limiter = RateLimiterBuilder::fromFullCapabilityStore(
+            new RateLimiterConfig('key-secret', 'fingerprint-secret', 'prod'),
+            $store,
+            $signals,
+        )->withClock($clock)->build();
+        $context = $this->context('aggregate-outage-' . $policyName, ['device' => 'outage']);
+        $command = RateLimitCommand::recordFailure($policyName);
 
-        self::assertSame('FAIL_OPEN', $limiter->limit($context, $command)->failureMode);
-        $second = $limiter->limit($context, $command);
-        self::assertTrue($second->failureMode === 'FAIL_OPEN');
-        self::assertSame('DEGRADED_MODE', $limiter->limit($context, $command)->failureMode);
+        $first = $limiter->limit($context, $command);
+        self::assertSame($initialDecision, $first->decision);
+        self::assertSame($initialFailureMode, $first->failureMode);
+        self::assertSame($initialDecision, $limiter->limit($context, $command)->decision);
+        $trip = $limiter->limit($context, $command);
+        self::assertSame(RateLimitResultDTO::DECISION_ALLOW, $trip->decision);
+        self::assertSame('DEGRADED_MODE', $trip->failureMode);
 
         $store->available = true;
         $store->circuitBreakerStore()->available = true;
+        $openedAt = $clock->now()->getTimestamp();
+        $writesAtOpen = $store->writeCount();
+
+        $clock->setNow(new \DateTimeImmutable('@' . ($openedAt + 1)));
+        $open = $limiter->limit($context, $command);
+        self::assertSame('DEGRADED_MODE', $open->failureMode);
+        self::assertSame($writesAtOpen, $store->writeCount());
+        $persistentOpen = $store->load($policyName);
+        self::assertNotNull($persistentOpen);
+        self::assertSame(FailureStateDTO::STATE_OPEN, $persistentOpen->status);
+        self::assertSame($openedAt, $persistentOpen->openSince);
+        self::assertSame(
+            [FailureSignalDTO::TYPE_CB_OPENED],
+            array_map(static fn(FailureSignalDTO $signal): string => $signal->type, $signals->getEmitted()),
+        );
+
+        $clock->setNow(new \DateTimeImmutable('@' . ($openedAt + 300)));
+        $halfOpen = $limiter->limit($context, $command);
+        self::assertSame('DEGRADED_MODE', $halfOpen->failureMode);
+        $halfOpenState = $store->load($policyName);
+        self::assertNotNull($halfOpenState);
+        self::assertSame(FailureStateDTO::STATE_HALF_OPEN, $halfOpenState->status);
+        self::assertSame($openedAt, $halfOpenState->openSince);
+        self::assertCount(1, $signals->getEmitted());
+
+        $clock->setNow(new \DateTimeImmutable('@' . ($openedAt + 419)));
+        self::assertSame('DEGRADED_MODE', $limiter->limit($context, $command)->failureMode);
+        $beforeCloseState = $store->load($policyName);
+        self::assertNotNull($beforeCloseState);
+        self::assertSame(FailureStateDTO::STATE_HALF_OPEN, $beforeCloseState->status);
+        self::assertCount(1, $signals->getEmitted());
+
+        $clock->setNow(new \DateTimeImmutable('@' . ($openedAt + 420)));
         self::assertSame('NORMAL', $limiter->limit($context, $command)->failureMode);
-        self::assertNull($store->load('api_heavy_protection'));
+        $closedState = $store->load($policyName);
+        self::assertNotNull($closedState);
+        self::assertSame(FailureStateDTO::STATE_CLOSED, $closedState->status);
+        self::assertSame(
+            [FailureSignalDTO::TYPE_CB_OPENED, FailureSignalDTO::TYPE_CB_RECOVERED],
+            array_map(static fn(FailureSignalDTO $signal): string => $signal->type, $signals->getEmitted()),
+        );
+        self::assertGreaterThan($writesAtOpen, $store->writeCount());
     }
 
     public function testExistingMultiStoreBuilderConstructorStillRunsPublicWorkflow(): void
@@ -446,12 +495,23 @@ final class RateLimiterFullCapabilityBuilderWorkflowTest extends TestCase
         FixedClock $clock,
         FullCapabilityInMemoryStore $store,
         RateLimiterConfig $config,
+        ?RecordingFailureSignalEmitter $emitter = null,
     ): RateLimiterInterface {
         return RateLimiterBuilder::fromFullCapabilityStore(
             $config,
             $store,
-            new RecordingFailureSignalEmitter(),
+            $emitter ?? new RecordingFailureSignalEmitter(),
         )->withClock($clock)->build();
+    }
+
+    /**
+     * @return iterable<string, array{string, string, string}>
+     */
+    public static function fullOutagePolicies(): iterable
+    {
+        yield 'api-heavy' => ['api_heavy_protection', RateLimitResultDTO::DECISION_ALLOW, 'FAIL_OPEN'];
+        yield 'login' => ['login_protection', RateLimitResultDTO::DECISION_HARD_BLOCK, 'FAIL_CLOSED'];
+        yield 'otp' => ['otp_protection', RateLimitResultDTO::DECISION_HARD_BLOCK, 'FAIL_CLOSED'];
     }
 
     /**

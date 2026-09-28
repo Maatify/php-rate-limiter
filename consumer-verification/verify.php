@@ -34,6 +34,7 @@ use Maatify\RateLimiter\Service\CompositeRateLimiterRuntimeInterface;
 use Maatify\RateLimiter\Service\SimpleRateLimiterInterface;
 use Maatify\RateLimiter\Config\PostPunishmentReentryPolicyInterface;
 use Maatify\RateLimiter\Exception\RateLimiterException;
+use Maatify\RateLimiter\Exception\BackendFailureException;
 
 require __DIR__ . '/vendor/autoload.php';
 
@@ -792,7 +793,7 @@ requireCondition($simplePreviousStateAfter === $simplePreviousStateBefore, 'Prev
 $failureRaw = new RespRedisCommandExecutor($host, (int) $port);
 $failureExecutor = new CallableRedisCommandExecutor(static function (array $command) use ($failureRaw): mixed {
     if (strtoupper((string) ($command[0] ?? '')) === 'EVAL') {
-        throw new RuntimeException('controlled consumer backend failure');
+        throw new BackendFailureException('controlled consumer backend failure');
     }
     return $failureRaw->execute($command);
 });
@@ -817,10 +818,8 @@ requireCondition(
     'Simple throttle backend failure (RuntimeException) did not fail closed.',
 );
 
-// R1 regression proof: a storage-originated RateLimiterException — not only
-// a plain RuntimeException — must also become a typed FAIL_CLOSED result,
-// never propagate as an exception. This is otherwise indistinguishable by
-// class from the package's own configuration/contract failure type.
+// Server-side command replies remain explicit package exceptions and do not
+// become operational backend failures merely because they came from Redis.
 $rateLimiterExceptionFailureRaw = new RespRedisCommandExecutor($host, (int) $port);
 $rateLimiterExceptionFailureExecutor = new CallableRedisCommandExecutor(static function (array $command) use ($rateLimiterExceptionFailureRaw): mixed {
     if (strtoupper((string) ($command[0] ?? '')) === 'EVAL') {
@@ -840,6 +839,40 @@ requireCondition(
     && $simpleFailureResultFromRateLimiterException->resetAt === null,
     'Simple throttle backend failure (RateLimiterException) did not fail closed.',
 );
+
+$untypedSignals = new RecordingFailureSignalEmitter();
+$untypedExecutor = new CallableRedisCommandExecutor(static function (array $command): mixed {
+    throw new RuntimeException('untyped consumer executor failure');
+});
+$untypedLimiter = RateLimiterBuilder::fromFullCapabilityStore(
+    new RateLimiterConfig('failure-untyped-key', 'failure-untyped-fingerprint', 'prod'),
+    new RedisFullCapabilityStore($untypedExecutor, 'consumer-untyped-executor'),
+    $untypedSignals,
+)->build();
+$untypedPropagated = false;
+try {
+    $untypedLimiter->limit($failureContext, RateLimitCommand::checkOnly('api_heavy_protection'));
+} catch (RuntimeException $exception) {
+    $untypedPropagated = $exception->getMessage() === 'untyped consumer executor failure';
+}
+requireCondition($untypedPropagated && $untypedSignals->signals() === [], 'Untyped executor failure was converted into score fallback.');
+
+$typeErrorSignals = new RecordingFailureSignalEmitter();
+$typeErrorExecutor = new CallableRedisCommandExecutor(static function (array $command): mixed {
+    throw new TypeError('consumer programming failure');
+});
+$typeErrorLimiter = RateLimiterBuilder::fromFullCapabilityStore(
+    new RateLimiterConfig('failure-type-error-key', 'failure-type-error-fingerprint', 'prod'),
+    new RedisFullCapabilityStore($typeErrorExecutor, 'consumer-type-error-executor'),
+    $typeErrorSignals,
+)->build();
+$typeErrorPropagated = false;
+try {
+    $typeErrorLimiter->limit($failureContext, RateLimitCommand::checkOnly('api_heavy_protection'));
+} catch (TypeError $exception) {
+    $typeErrorPropagated = $exception->getMessage() === 'consumer programming failure';
+}
+requireCondition($typeErrorPropagated && $typeErrorSignals->signals() === [], 'TypeError was converted into score fallback.');
 
 $customPrimaryPolicy = new class extends \Maatify\RateLimiter\Config\LoginProtectionPolicy {
     public function getName(): string
@@ -898,11 +931,11 @@ $circuitExecutor = new CallableRedisCommandExecutor(static function (array $comm
     if ($name === 'EVAL') {
         $circuitEvalCalls++;
         if ($circuitDown) {
-            throw new RuntimeException('controlled circuit backend failure');
+            throw new BackendFailureException('controlled circuit backend failure');
         }
     }
     if ($name === 'PING' && $circuitDown) {
-        throw new RuntimeException('controlled circuit health failure');
+        throw new BackendFailureException('controlled circuit health failure');
     }
     return $raw->execute($command);
 });
