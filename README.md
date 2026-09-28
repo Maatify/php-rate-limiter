@@ -159,7 +159,15 @@ The [Package Reference](RATE_LIMITER_PACKAGE_REFERENCE.md) contains the complete
 
 ## Exception and Error Propagation
 
-Storage and atomicity failures are handled through the package's policy-specific failure semantics; host storage adapters must not swallow integration failures or silently weaken required atomic guarantees. The enforcement path owns the resulting rate-limit failure decision, while the read-only operational reader does not convert integration failures into an enforcement result.
+Only an explicitly classified operational backend failure represented by
+`BackendFailureException` enters the score-runtime circuit and bounded fallback.
+Invalid input, configuration, missing capability, malformed or corrupt state,
+programming failures, and unknown or untyped throwables retain their explicit
+package/contract exception behavior; Host adapters must not reclassify unknown
+failures as backend outages. The enforcement path owns the resulting score
+failure decision, while the read-only operational reader does not convert
+integration failures into an enforcement result. Simple fixed-window storage
+failures remain the separate DEC-013 `FAIL_CLOSED` contract.
 
 See [Failure Semantics](docs/FAILURE_SEMANTICS.md) and the [Package Reference](RATE_LIMITER_PACKAGE_REFERENCE.md) for the detailed failure contract.
 

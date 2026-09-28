@@ -5,6 +5,8 @@ declare(strict_types=1);
 namespace ConsumerVerification;
 
 use Maatify\RateLimiter\Repository\Redis\RedisCommandExecutorInterface;
+use Maatify\RateLimiter\Exception\BackendFailureException;
+use Maatify\RateLimiter\Exception\RateLimiterException;
 use RuntimeException;
 
 final class RespRedisCommandExecutor implements RedisCommandExecutorInterface
@@ -18,7 +20,7 @@ final class RespRedisCommandExecutor implements RedisCommandExecutorInterface
         $errorMessage = null;
         $socket = stream_socket_client("tcp://{$host}:{$port}", $errorCode, $errorMessage, 5);
         if (! is_resource($socket)) {
-            throw new RuntimeException('Redis connection failed (' . (int) $errorCode . '): ' . (string) $errorMessage);
+            throw new BackendFailureException('Redis connection failed (' . (int) $errorCode . '): ' . (string) $errorMessage);
         }
         stream_set_timeout($socket, 5);
         $this->socket = $socket;
@@ -34,7 +36,7 @@ final class RespRedisCommandExecutor implements RedisCommandExecutorInterface
         }
         $written = fwrite($this->socket, $payload);
         if ($written !== strlen($payload)) {
-            throw new RuntimeException('Redis command write failed.');
+            throw new BackendFailureException('Redis command write failed.');
         }
         return $this->readReply();
     }
@@ -43,11 +45,11 @@ final class RespRedisCommandExecutor implements RedisCommandExecutorInterface
     {
         $prefix = fread($this->socket, 1);
         if ($prefix === false || $prefix === '') {
-            throw new RuntimeException('Redis reply ended unexpectedly.');
+            throw new BackendFailureException('Redis reply ended unexpectedly.');
         }
         return match ($prefix) {
             '+' => $this->readLine(),
-            '-' => throw new RuntimeException((string) $this->readLine()),
+            '-' => throw new RateLimiterException((string) $this->readLine()),
             ':' => $this->readIntegerLine(),
             '$' => $this->readBulk(),
             '*' => $this->readArray(),
@@ -58,7 +60,13 @@ final class RespRedisCommandExecutor implements RedisCommandExecutorInterface
     private function readLine(): string
     {
         $line = fgets($this->socket);
-        if ($line === false || ! str_ends_with($line, "\r\n")) {
+        if ($line === false) {
+            throw new BackendFailureException('Redis reply read failed.');
+        }
+        if (! str_ends_with($line, "\r\n")) {
+            if ($this->transportReadEnded()) {
+                throw new BackendFailureException('Redis reply ended unexpectedly.');
+            }
             throw new RuntimeException('Malformed Redis RESP line.');
         }
         return substr($line, 0, -2);
@@ -77,7 +85,7 @@ final class RespRedisCommandExecutor implements RedisCommandExecutorInterface
         while (strlen($value) < $length + 2) {
             $chunk = fread($this->socket, $length + 2 - strlen($value));
             if ($chunk === false || $chunk === '') {
-                throw new RuntimeException('Malformed Redis bulk reply.');
+                throw new BackendFailureException('Redis bulk reply ended unexpectedly.');
             }
             $value .= $chunk;
         }
@@ -85,6 +93,12 @@ final class RespRedisCommandExecutor implements RedisCommandExecutorInterface
             throw new RuntimeException('Malformed Redis bulk terminator.');
         }
         return substr($value, 0, -2);
+    }
+
+    private function transportReadEnded(): bool
+    {
+        $metadata = stream_get_meta_data($this->socket);
+        return ($metadata['timed_out'] ?? false) === true || ($metadata['eof'] ?? false) === true;
     }
 
     /** @return list<mixed>|null */

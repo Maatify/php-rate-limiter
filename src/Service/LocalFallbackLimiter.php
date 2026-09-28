@@ -24,9 +24,16 @@ use Maatify\SharedCommon\Contracts\ClockInterface;
  */
 class LocalFallbackLimiter
 {
+    private const MAX_TRACKED_SUBJECTS = 4096;
+
     /** @var array<string, array{count: int, expiresAt: int}> */
     private static array $counters = [];
-    private static int $lastGc = 0;
+
+    /** @var array<string, array<string, true>> */
+    private static array $trackedSubjects = [];
+
+    /** @var array<string, int> */
+    private static array $trackedSubjectExpiries = [];
 
     /**
      * Return whether the fallback window still permits the request.
@@ -68,7 +75,9 @@ class LocalFallbackLimiter
                 continue;
             }
 
-            if (!self::incrementAndCheck($clock, $key, $rule->limit, $rule->windowSeconds)) {
+            $population = "{$namespace}:{$rule->dimension->value}";
+            $subject = $key;
+            if (!self::incrementAndCheck($clock, $population, $subject, $rule->limit, $rule->windowSeconds)) {
                 $allowed = false;
             }
         }
@@ -100,11 +109,22 @@ class LocalFallbackLimiter
         return $ip;
     }
 
-    private static function incrementAndCheck(ClockInterface $clock, string $key, int $limit, int $window): bool
+    private static function incrementAndCheck(ClockInterface $clock, string $population, string $subject, int $limit, int $window): bool
     {
-        // Use time bucket for stateless window tracking
-        $bucket = (int) floor($clock->now()->getTimestamp() / $window);
-        $bucketKey = "{$key}:{$bucket}";
+        $now = $clock->now()->getTimestamp();
+        $bucket = (int) floor($now / $window);
+        $populationKey = "{$population}:{$bucket}";
+        $tracked = self::$trackedSubjects[$populationKey] ?? [];
+        if (isset($tracked[$subject])) {
+            $bucketKey = "{$populationKey}:subject:" . hash('sha256', $subject);
+        } elseif (count($tracked) < self::MAX_TRACKED_SUBJECTS) {
+            $tracked[$subject] = true;
+            self::$trackedSubjects[$populationKey] = $tracked;
+            self::$trackedSubjectExpiries[$populationKey] = ($bucket + 1) * $window;
+            $bucketKey = "{$populationKey}:subject:" . hash('sha256', $subject);
+        } else {
+            $bucketKey = "{$populationKey}:overflow";
+        }
 
         if (!isset(self::$counters[$bucketKey])) {
             self::$counters[$bucketKey] = [
@@ -118,15 +138,17 @@ class LocalFallbackLimiter
 
     private static function gc(ClockInterface $clock): void
     {
-        // Simple GC to prevent infinite array growth
         $now = $clock->now()->getTimestamp();
-        if ($now - self::$lastGc > 3600) { // Every hour
-            foreach (self::$counters as $bucketKey => $counter) {
-                if ($counter['expiresAt'] <= $now) {
-                    unset(self::$counters[$bucketKey]);
-                }
+        foreach (self::$counters as $bucketKey => $counter) {
+            if ($counter['expiresAt'] <= $now) {
+                unset(self::$counters[$bucketKey]);
             }
-            self::$lastGc = $now;
+        }
+        foreach (self::$trackedSubjects as $populationKey => $_subjects) {
+            if ((self::$trackedSubjectExpiries[$populationKey] ?? 0) <= $now) {
+                unset(self::$trackedSubjects[$populationKey]);
+                unset(self::$trackedSubjectExpiries[$populationKey]);
+            }
         }
     }
 }

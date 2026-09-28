@@ -92,13 +92,11 @@ final class CredentialSprayRotationTest extends TestCase
             [new LoginProtectionPolicy()],
         );
 
-        $result = $engine->limit(
+        $this->expectException(RateLimiterException::class);
+        $engine->limit(
             new RateLimitContextDTO('198.51.100.81', 'Mozilla/5.0 Chrome/123', 'rotation-account'),
             RateLimitCommand::checkOnly('login_protection'),
         );
-
-        self::assertSame(RateLimitResultDTO::DECISION_HARD_BLOCK, $result->decision);
-        self::assertSame('FAIL_CLOSED', $result->failureMode);
     }
 
     public function testRotationWithoutCorrelationSubjectDoesNotRequireCapability(): void

@@ -9,6 +9,7 @@ use Maatify\RateLimiter\DTO\CircuitBreakerStateDTO;
 use Maatify\RateLimiter\DTO\FailureSignalDTO;
 use Maatify\RateLimiter\DTO\FailureStateDTO;
 use Maatify\RateLimiter\Exception\RateLimiterException;
+use Maatify\RateLimiter\Exception\BackendFailureException;
 use Maatify\RateLimiter\Repository\CircuitBreakerProbeStoreInterface;
 use Maatify\RateLimiter\Repository\CircuitBreakerStoreInterface;
 use Maatify\SharedCommon\Contracts\ClockInterface;
@@ -16,8 +17,15 @@ use Maatify\SharedCommon\Contracts\ClockInterface;
 /**
  * Maintains the per-policy circuit-breaker state machine and transition signals.
  *
- * Normal backend failures are accepted only while CLOSED. Recovery is driven by
- * read-only health probes guarded by the store-owned atomic probe lease.
+ * Normal typed backend failures are accepted only while CLOSED. Emergency
+ * state is process-local. A tripped OPEN/HALF_OPEN episode remains
+ * authoritative through genuine local recovery to CLOSED, while a pre-trip
+ * CLOSED episode remains authoritative only while its rolling failure evidence
+ * or another local protection is active. Quiescent pre-trip CLOSED state is
+ * released by loadState() so persistent ownership can resume. Recovery is
+ * driven by read-only health probes guarded by the store-owned atomic probe
+ * lease during normal operation or a bounded process-local lease during an
+ * emergency episode; emergency state is never reconciled or written back.
  */
 class CircuitBreaker
 {
@@ -29,6 +37,12 @@ class CircuitBreaker
     private const RE_ENTRY_LIMIT = 2;
     private const RE_ENTRY_WINDOW = 1800;
     private const FAIL_CLOSED_DURATION = 600;
+
+    /** @var array<string, CircuitBreakerStateDTO> */
+    private array $emergencyStates = [];
+
+    /** @var array<string, int> */
+    private array $emergencyProbeLeases = [];
 
     /**
      * @param CircuitBreakerStoreInterface $store State persistence boundary.
@@ -71,7 +85,7 @@ class CircuitBreaker
             $status = FailureStateDTO::STATE_OPEN;
             $openSince = $now;
             $lastSuccess = 0;
-            [$reEntries, $failClosedUntil] = $this->enterOpen($policyName, $reEntries, $failClosedUntil, $now);
+            [$reEntries, $failClosedUntil] = $this->enterOpen($policyName, $reEntries, $failClosedUntil, $now, false);
         }
 
         $this->saveState($policyName, new CircuitBreakerStateDTO(
@@ -102,10 +116,11 @@ class CircuitBreaker
      * Attempt the next eligible read-only recovery probe.
      *
      * The callback is invoked only after the minimum degraded/healthy interval
-     * and after atomic lease acquisition. Probe failures, including thrown health
-     * checks, restart or re-enter the state machine without entering normal
-     * request failure handling. The return value is true only when a HALF_OPEN
-     * probe has closed the circuit and the current request may continue normally.
+     * and after atomic lease acquisition. An explicit false result or a typed
+     * BackendFailureException is an unhealthy probe; unknown exceptions,
+     * programming errors, and TypeError preserve their provenance and escape.
+     * The return value is true only when a HALF_OPEN probe has closed the
+     * circuit and the current request may continue normally.
      *
      * @param callable():bool $probe Read-only backend health probe.
      * @throws RateLimiterException When an eligible probe lacks the lease capability.
@@ -143,13 +158,13 @@ class CircuitBreaker
             );
         }
 
-        if (! $this->store->acquireProbeLease($policyName, $probeStartedAt, self::PROBE_LEASE)) {
+        if (! $this->acquireProbeLease($policyName, $probeStartedAt)) {
             return false;
         }
 
         try {
             $healthy = $probe();
-        } catch (\Throwable) {
+        } catch (BackendFailureException) {
             $healthy = false;
         }
         $transitionAt = $this->clock->now()->getTimestamp();
@@ -182,6 +197,9 @@ class CircuitBreaker
             $state->reEntries,
             $state->failClosedUntil,
         ));
+        if (isset($this->emergencyStates[$policyName])) {
+            unset($this->emergencyStates[$policyName], $this->emergencyProbeLeases[$policyName]);
+        }
         $this->emitter->emit(new FailureSignalDTO(FailureSignalDTO::TYPE_CB_RECOVERED, $policyName));
 
         return true;
@@ -198,7 +216,10 @@ class CircuitBreaker
 
         return new FailureStateDTO(
             $data->status,
-            count($data->failures),
+            count(array_filter(
+                $data->failures,
+                static fn(int $timestamp): bool => $timestamp >= $now - self::TRIP_WINDOW,
+            )),
             $data->lastFailure,
             $isGuarded
                 || $data->status === FailureStateDTO::STATE_OPEN
@@ -248,6 +269,7 @@ class CircuitBreaker
             $state->reEntries,
             $state->failClosedUntil,
             $now,
+            true,
         );
 
         $this->saveState($policyName, new CircuitBreakerStateDTO(
@@ -273,12 +295,15 @@ class CircuitBreaker
         array $reEntries,
         int $failClosedUntil,
         int $now,
+        bool $isReEntry,
     ): array {
         $reEntries = array_values(array_filter(
             $reEntries,
             static fn(int $timestamp): bool => $timestamp >= $now - self::RE_ENTRY_WINDOW,
         ));
-        $reEntries[] = $now;
+        if ($isReEntry) {
+            $reEntries[] = $now;
+        }
 
         $this->emitter->emit(new FailureSignalDTO(FailureSignalDTO::TYPE_CB_OPENED, $policyName));
 
@@ -290,9 +315,110 @@ class CircuitBreaker
         return [$reEntries, $failClosedUntil];
     }
 
+    /**
+     * Load local emergency ownership before touching persistent state.
+     *
+     * Tripped emergency state stays local until genuine recovery to CLOSED.
+     * Pre-trip CLOSED state stays local while its inclusive rolling failure
+     * evidence or active local protection remains; once quiescent, this same
+     * load operation releases it and resumes the persistent path. No
+     * reconciliation or writeback occurs.
+     */
     private function loadState(string $policyName): CircuitBreakerStateDTO
     {
-        return $this->store->load($policyName) ?? new CircuitBreakerStateDTO(
+        if (isset($this->emergencyStates[$policyName])) {
+            $emergency = $this->emergencyStates[$policyName];
+            $now = $this->clock->now()->getTimestamp();
+
+            if ($this->retainsEmergencyState($emergency, $now)) {
+                return $emergency;
+            }
+
+            unset($this->emergencyStates[$policyName], $this->emergencyProbeLeases[$policyName]);
+        }
+
+        try {
+            $persistent = $this->store->load($policyName);
+            unset($this->emergencyProbeLeases[$policyName]);
+
+            return $persistent ?? $this->closedState();
+        } catch (BackendFailureException) {
+            return $this->closedState();
+        }
+    }
+
+    /**
+     * Keep pre-trip local ownership while its rolling failure evidence or
+     * another local protection is still authoritative.
+     *
+     * The inclusive boundary is intentional: a failure at now - 10 remains
+     * eligible for the locked three-failures-in-ten-seconds trip threshold.
+     */
+    private function retainsEmergencyState(CircuitBreakerStateDTO $state, int $now): bool
+    {
+        if ($state->status !== FailureStateDTO::STATE_CLOSED
+            || $state->failClosedUntil > $now) {
+            return true;
+        }
+
+        foreach ($state->failures as $failureAt) {
+            if ($failureAt >= $now - self::TRIP_WINDOW) {
+                return true;
+            }
+        }
+
+        return false;
+    }
+
+    private function saveState(string $policyName, CircuitBreakerStateDTO $state): void
+    {
+        if (isset($this->emergencyStates[$policyName])) {
+            $this->emergencyStates[$policyName] = $state;
+
+            return;
+        }
+
+        try {
+            $this->store->save($policyName, $state);
+            unset($this->emergencyStates[$policyName]);
+        } catch (BackendFailureException) {
+            $this->emergencyStates[$policyName] = $state;
+        }
+    }
+
+    private function acquireProbeLease(string $policyName, int $now): bool
+    {
+        if (isset($this->emergencyStates[$policyName])) {
+            $expiresAt = $this->emergencyProbeLeases[$policyName] ?? 0;
+            if ($expiresAt > $now) {
+                return false;
+            }
+
+            $this->emergencyProbeLeases[$policyName] = $now + self::PROBE_LEASE;
+
+            return true;
+        }
+
+        try {
+            $acquired = $this->store instanceof CircuitBreakerProbeStoreInterface
+                && $this->store->acquireProbeLease($policyName, $now, self::PROBE_LEASE);
+            unset($this->emergencyProbeLeases[$policyName]);
+
+            return $acquired;
+        } catch (BackendFailureException) {
+            $expiresAt = $this->emergencyProbeLeases[$policyName] ?? 0;
+            if ($expiresAt > $now) {
+                return false;
+            }
+            $this->emergencyProbeLeases[$policyName] = $now + self::PROBE_LEASE;
+
+            return true;
+        }
+    }
+
+    private function closedState(): CircuitBreakerStateDTO
+    {
+        return new CircuitBreakerStateDTO(
             FailureStateDTO::STATE_CLOSED,
             [],
             0,
@@ -303,8 +429,4 @@ class CircuitBreaker
         );
     }
 
-    private function saveState(string $policyName, CircuitBreakerStateDTO $state): void
-    {
-        $this->store->save($policyName, $state);
-    }
 }

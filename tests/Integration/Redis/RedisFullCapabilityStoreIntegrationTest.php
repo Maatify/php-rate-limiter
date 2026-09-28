@@ -18,6 +18,7 @@ use Maatify\RateLimiter\DTO\RateLimitContextDTO;
 use Maatify\RateLimiter\DTO\RateLimitResultDTO;
 use Maatify\RateLimiter\DTO\ScoreDeltasDTO;
 use Maatify\RateLimiter\DTO\ScoreThresholdsDTO;
+use Maatify\RateLimiter\Exception\BackendFailureException;
 use Maatify\RateLimiter\Repository\Redis\RedisCommandExecutorInterface;
 use Maatify\RateLimiter\Repository\Redis\RedisFullCapabilityStore;
 use Maatify\RateLimiter\Tests\Support\Clock\FixedClock;
@@ -1963,7 +1964,7 @@ final class RedisFullCapabilityStoreIntegrationTest extends TestCase
         self::assertTrue($this->store->acquireProbeLease('policy', 110, 10));
     }
 
-    public function testHealthBoundaryReturnsFalseForInvalidOrThrowingPingAndStatefulErrorsPassThrough(): void
+    public function testHealthBoundaryPreservesExecutorFailureProvenance(): void
     {
         $invalidPing = new class implements RedisCommandExecutorInterface {
             /** @param non-empty-list<int|string|float> $command */
@@ -1979,11 +1980,109 @@ final class RedisFullCapabilityStoreIntegrationTest extends TestCase
                 throw new \RuntimeException('backend unavailable');
             }
         };
-
+        $typed = new class implements RedisCommandExecutorInterface {
+            /** @param non-empty-list<int|string|float> $command */
+            public function execute(array $command): mixed
+            {
+                throw new BackendFailureException('backend unavailable');
+            }
+        };
         self::assertFalse((new RedisFullCapabilityStore($invalidPing, 'health-invalid'))->isHealthy());
+        $typedStore = new RedisFullCapabilityStore($typed, 'health-typed');
+        self::assertFalse($typedStore->isHealthy());
         $throwingStore = new RedisFullCapabilityStore($throwing, 'health-throwing');
-        self::assertFalse($throwingStore->isHealthy());
-        $this->assertOperationFails(fn(): mixed => $throwingStore->increment('stateful', 60));
+        $this->expectException(\RuntimeException::class);
+        $throwingStore->isHealthy();
+    }
+
+    public function testHealthBoundaryPropagatesTypeError(): void
+    {
+        $typeError = new class implements RedisCommandExecutorInterface {
+            /** @param non-empty-list<int|string|float> $command */
+            public function execute(array $command): mixed
+            {
+                throw new \TypeError('programming failure');
+            }
+        };
+        $store = new RedisFullCapabilityStore($typeError, 'health-type-error');
+
+        $this->expectException(\TypeError::class);
+        $store->isHealthy();
+    }
+
+    public function testRespExecutorSeparatesMalformedRepliesFromTransportTermination(): void
+    {
+        foreach ([':not-an-integer' . "\r\n", '$not-a-length' . "\r\n", '*not-an-array-length' . "\r\n", '+PONG' . "\n"] as $reply) {
+            $pair = stream_socket_pair(STREAM_PF_UNIX, STREAM_SOCK_STREAM, 0);
+            self::assertIsArray($pair);
+            $executor = $this->executorWithSocket($pair[0]);
+            fwrite($pair[1], $reply);
+
+            $exception = null;
+            try {
+                $executor->execute(['PING']);
+            } catch (\Throwable $caught) {
+                $exception = $caught;
+            } finally {
+                fclose($pair[0]);
+                fclose($pair[1]);
+            }
+            self::assertNotNull($exception, 'Malformed RESP reply was accepted.');
+            self::assertNotSame(BackendFailureException::class, $exception::class);
+        }
+
+        $pair = stream_socket_pair(STREAM_PF_UNIX, STREAM_SOCK_STREAM, 0);
+        self::assertIsArray($pair);
+        $executor = $this->executorWithSocket($pair[0]);
+        fwrite($pair[1], '-ERR server failure' . "\r\n");
+        try {
+            $executor->execute(['PING']);
+            self::fail('Redis server error reply was accepted.');
+        } catch (\Maatify\RateLimiter\Exception\RateLimiterException $exception) {
+            self::assertSame(\Maatify\RateLimiter\Exception\RateLimiterException::class, $exception::class);
+        } finally {
+            fclose($pair[0]);
+            fclose($pair[1]);
+        }
+
+        $pair = stream_socket_pair(STREAM_PF_UNIX, STREAM_SOCK_STREAM, 0);
+        self::assertIsArray($pair);
+        $executor = $this->executorWithSocket($pair[0]);
+        fwrite($pair[1], '$5' . "\r\nabc");
+        stream_socket_shutdown($pair[1], STREAM_SHUT_WR);
+        $transportEnded = false;
+        try {
+            $executor->execute(['PING']);
+        } catch (BackendFailureException $exception) {
+            $transportEnded = true;
+        } finally {
+            fclose($pair[0]);
+        }
+        self::assertTrue($transportEnded, 'Determinable RESP EOF was not classified as transport failure.');
+    }
+
+    public function testStatefulUnknownExecutorFailurePropagatesUnchanged(): void
+    {
+        $throwing = new class implements RedisCommandExecutorInterface {
+            /** @param non-empty-list<int|string|float> $command */
+            public function execute(array $command): mixed
+            {
+                throw new \RuntimeException('backend unavailable');
+            }
+        };
+        $throwingStore = new RedisFullCapabilityStore($throwing, 'health-throwing-stateful');
+
+        $this->expectException(\RuntimeException::class);
+        $throwingStore->increment('stateful', 60);
+    }
+
+    private function executorWithSocket(mixed $socket): RespRedisCommandExecutor
+    {
+        $reflection = new \ReflectionClass(RespRedisCommandExecutor::class);
+        /** @var RespRedisCommandExecutor $executor */
+        $executor = $reflection->newInstanceWithoutConstructor();
+        $reflection->getProperty('socket')->setValue($executor, $socket);
+        return $executor;
     }
 
     private function hardBlock(string $currentKey, int $now, int $duration, ?string $previousKey = null): HardBlockCycleResultDTO

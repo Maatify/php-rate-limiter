@@ -10,6 +10,11 @@ final class CallableRedisCommandExecutor implements RedisCommandExecutorInterfac
     private \Closure $executor;
 
     /**
+     * The callback is an explicit Host boundary: it is responsible for
+     * mapping only known operational transport failures to
+     * BackendFailureException. This adapter intentionally performs no
+     * catch-all reinterpretation.
+     *
      * @param callable(non-empty-list<int|string|float>): mixed $executor
      */
     public function __construct(callable $executor)

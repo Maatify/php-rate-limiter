@@ -3,7 +3,7 @@
 **Package:** RateLimiter
 **Namespace:** `Maatify\RateLimiter`
 **Status:** LOCKED — Architecture Contract
-**Spec Version:** `1.20.0`
+**Spec Version:** `1.21.0`
 **Location:** `src/`
 
 This document explains **why** the RateLimiter package is designed the way it is.
@@ -201,7 +201,7 @@ The following inventory describes the current public runtime types. Test and sup
 | Decision services | `Maatify\RateLimiter\Service\AntiEquilibriumGate`, `Maatify\RateLimiter\Service\BoundedCorrelationResultValidator`, `Maatify\RateLimiter\Service\BudgetTracker`, `Maatify\RateLimiter\Service\DecayCalculator`, `Maatify\RateLimiter\Service\PenaltyLadder` | Publicly typed services for bounded result validation, penalty, budget, decay, and escalation orchestration. |
 | Official Redis storage | `Maatify\RateLimiter\Repository\Redis\CallableRedisCommandExecutor`, `Maatify\RateLimiter\Repository\Redis\RedisFullCapabilityStore` | Optional package-owned store for one logical non-clustered Redis server. It has no `ext-redis` or Predis runtime dependency; the Host owns the client/connection lifecycle and supplies the raw-command executor. Other `FullCapabilityStoreInterface` implementations remain supported. |
 | Configuration presets | `Maatify\RateLimiter\Config\LoginProtectionPolicy`, `Maatify\RateLimiter\Config\OtpProtectionPolicy`, `Maatify\RateLimiter\Config\ApiHeavyProtectionPolicy` | Production policy definitions selected by the command policy name. |
-| Exception | `Maatify\RateLimiter\Exception\RateLimiterException`, `Maatify\RateLimiter\Exception\RateLimitConcurrencyException` | Package-defined invalid-input/configuration failure and bounded optimistic-concurrency exhaustion; stale mutation snapshots remain non-exceptional unapplied results. |
+| Exception | `Maatify\RateLimiter\Exception\RateLimiterException`, `Maatify\RateLimiter\Exception\RateLimitConcurrencyException`, `Maatify\RateLimiter\Exception\BackendFailureException` | Package-defined invalid-input/configuration failure, bounded optimistic-concurrency exhaustion, and explicit operational backend failure. `BackendFailureException` uses the installed `maatify/exceptions` system hierarchy and the package marker; stale mutation snapshots remain non-exceptional unapplied results, and only the typed backend failure enters circuit accounting/fallback. |
 
 The recommended consumer construction is `Maatify\RateLimiter\Builder\RateLimiterBuilder`, which returns `CompositeRateLimiterRuntimeInterface` after composing the package-owned graph; the result remains assignable to `RateLimiterRuntimeInterface` for every existing consumer. Consumers receive post-punishment metadata from an unblocked `limit(..., checkOnly(...))` result and pass its opaque ID to `claimPostPunishmentReentry()` exactly once. The low-level service constructors remain available as the Advanced Path for consumers that intentionally need manual control. Their current signatures are stable only as reflected in the source and the contracts above.
 
@@ -334,6 +334,22 @@ storage capabilities above. `fromFullCapabilityStore()` passes the same store
 object to the rate-limit, correlation, and circuit-breaker boundaries; the
 failure-signal emitter remains a separate dependency. The core package does not
 assume a shared transaction across those boundaries.
+
+If the shared circuit persistence boundary is unavailable, `CircuitBreaker`
+uses the bounded process-local emergency state defined by DEC-015. While that
+state is active it is authoritative only for the current runtime; persistent
+recovery does not reset, replace, reconcile, or write it back. For a tripped
+`OPEN`/`HALF_OPEN` episode or active local guard, the locked local recovery path
+reaches `CLOSED` before episode discard. A pre-trip `CLOSED` episode is
+retained only while `failureAt >= now - 10` remains live or another local
+protection is active; once quiescent, it is discarded without `OPEN`/`HALF_OPEN`
+recovery and the same load path resumes persistent ownership. Storage recovery
+is not circuit recovery. This does not add Host wiring or a public failure mode.
+Infrastructure
+adapters must translate only
+eligible operational availability/transport/command failures into
+`BackendFailureException`; malformed state and invalid input retain their
+explicit package exception contracts.
 
 `RateLimiterEngine` selects the policy by the command's policy name. `EvaluationPipeline` resolves active blocks, identity-derived keys, scoring, correlation, budgets, decay, and final aggregation. Credential-spray and distributed-account correlation are observed during Login/OTP authentication pre-checks only; the later failure/success command does not observe the same lifecycle a second time. The distributed-account path uses a 600-second, four-member snapshot of canonical K5 keys, a 30-minute N-1 watch, and a 24-hour three-occurrence account gate. API Heavy and requests without the required account/device/K4/K5 inputs do not observe it. The integration boundaries provide the stateful primitives; the result is returned to the Host, which decides how to enforce it at its own transport or application boundary.
 
@@ -693,7 +709,7 @@ runtime dependency.
 **Infrastructure rules for consumers:**
 - Drivers MUST provide deterministic, bounded behavior
 - Drivers MUST NOT swallow exceptions
-- If a backend cannot satisfy required atomicity for an operation, the driver MUST fail explicitly and defer to Engine failure semantics
+- If a backend cannot satisfy required atomicity for an operation, the driver MUST fail explicitly; only an operational backend outage explicitly classified as `BackendFailureException` enters the score-runtime circuit, failure-mode, and bounded-fallback semantics. Capability, contract, malformed-state, and other explicit package failures retain their own exception contracts.
 - Drivers must be interchangeable without changing Engine logic
 - Drivers provide the atomic, no-extension primitives required by budget owner-safety (§4.8)
 
@@ -702,8 +718,11 @@ capability over the unchanged `CorrelationStoreInterface`. The no-rotation path 
 only the base contract. The rotation primitives are atomic inside the concrete store:
 they write the current generation, read the previous generation without modifying its
 members or TTL, and use `previous cardinality + bridge cardinality` for the active
-spray window. A current-only fallback is forbidden; a missing capability or malformed
-previous state fails through the engine's existing failure semantics. The bridge is
+spray window. A current-only fallback is forbidden; a missing capability remains an
+explicit capability/contract exception, and malformed or corrupt previous state remains
+an explicit package/state exception. Neither enters score-runtime circuit or bounded
+fallback semantics; only an explicitly typed operational backend failure enters that
+DEC-015 score failure path. The bridge is
 current-secret-only, fixed-TTL, and capped by the previous remaining TTL. The core
 package provides an optional Redis implementation through its command-executor
 boundary; Redis remains optional and the physical key layout is internal rather
@@ -865,7 +884,7 @@ Detailed key rules are defined in `docs/KEY_STRATEGY.md`.
 ## 6. Failure Semantics (Security vs Availability)
 Rate limiting is security-critical for login and OTP.
 
-When storage fails:
+When an explicitly classified operational backend failure enters the score-runtime failure path:
 - Login/OTP MUST be FAIL_CLOSED with mandatory bounded DEGRADED_MODE
 - API Heavy MAY be FAIL_OPEN, but MUST still apply local guardrails
 - Circuit breaker parameters are LOCKED to prevent “undefined N/window” exploitation
