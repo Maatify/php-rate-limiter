@@ -44,6 +44,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   Failure Semantics version: `1.4.0` → `1.5.0`.
 
 ### Changed
+- Clarified the Gate 11 failure contract (DEC-015): public
+  `BackendFailureException` is the explicit provenance for operational backend
+  failures that may enter score-runtime circuit/fallback; configuration,
+  unknown, corrupt-state, and programming failures retain explicit exception
+  propagation. The package retains a bounded process-local emergency circuit
+  when persistent circuit state is unavailable, caps local fallback subjects,
+  and preserves corrected circuit re-entry accounting and rolling failure-count
+  semantics. Simple fixed-window failures remain governed separately by
+  DEC-013.
 - Hardened official Redis budget persistence to use exact signed-integer arithmetic
   instead of Lua floating-point count arithmetic, covering weighted Current
   increments, the rotation seed path, exact large-count readback, overflow handling,

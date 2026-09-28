@@ -60,7 +60,13 @@ final class RespRedisCommandExecutor implements RedisCommandExecutorInterface
     private function readLine(): string
     {
         $line = fgets($this->socket);
-        if ($line === false || ! str_ends_with($line, "\r\n")) {
+        if ($line === false) {
+            throw new BackendFailureException('Redis reply read failed.');
+        }
+        if (! str_ends_with($line, "\r\n")) {
+            if ($this->transportReadEnded()) {
+                throw new BackendFailureException('Redis reply ended unexpectedly.');
+            }
             throw new RuntimeException('Malformed Redis RESP line.');
         }
         return substr($line, 0, -2);
@@ -79,7 +85,7 @@ final class RespRedisCommandExecutor implements RedisCommandExecutorInterface
         while (strlen($value) < $length + 2) {
             $chunk = fread($this->socket, $length + 2 - strlen($value));
             if ($chunk === false || $chunk === '') {
-                throw new RuntimeException('Malformed Redis bulk reply.');
+                throw new BackendFailureException('Redis bulk reply ended unexpectedly.');
             }
             $value .= $chunk;
         }
@@ -87,6 +93,12 @@ final class RespRedisCommandExecutor implements RedisCommandExecutorInterface
             throw new RuntimeException('Malformed Redis bulk terminator.');
         }
         return substr($value, 0, -2);
+    }
+
+    private function transportReadEnded(): bool
+    {
+        $metadata = stream_get_meta_data($this->socket);
+        return ($metadata['timed_out'] ?? false) === true || ($metadata['eof'] ?? false) === true;
     }
 
     /** @return list<mixed>|null */

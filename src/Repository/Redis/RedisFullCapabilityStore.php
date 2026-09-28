@@ -1139,7 +1139,7 @@ LUA;
      * legacy) are the same ordinary unapplied conflict, because Previous is
      * read-only history rather than a publishable source, not because
      * anything is wrong; Previous is left untouched either way. Only
-     * structurally malformed persisted state raises an explicit backend
+     * structurally malformed persisted state raises an explicit package/state
      * failure instead of a conflict: a stored Current generation present but
      * not a positive integer, a malformed core score field, a malformed or
      * physically inconsistent expiry, partial lifecycle evidence, a

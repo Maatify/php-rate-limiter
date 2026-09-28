@@ -323,7 +323,7 @@ The package call is reached through `RateLimiterBuilder::withSimpleThrottlePolic
 
 The claim is not required for the rate limiter to return `ALLOW`. Re-entry metadata is exposed only after a coherent served-punishment state: the relevant generation evidence remains valid, the hard block has expired, and no newer mutation or active block has invalidated it. The metadata `id` is opaque; the Host passes it back unchanged and never reconstructs a generation or physical key.
 
-The claim is a one-shot application handoff, not a request to reproduce package lifecycle logic. Stale, expired, mismatched, absent, or replayed claims return `false`. Backend corruption or an unavailable required capability follows the contract's failure path and is not represented as an ordinary `false`.
+The claim is a one-shot application handoff, not a request to reproduce package lifecycle logic. Stale, expired, mismatched, absent, or replayed claims return `false`. Malformed or corrupt persisted state remains an explicit package/state failure, while only an explicitly classified operational backend failure follows the backend failure path; neither is represented as an ordinary stale `false`. An unavailable required capability follows its existing explicit contract.
 
 ## Walkthrough: Failure Recording
 
@@ -383,12 +383,20 @@ configured numbers are identical.
 
 ## Walkthrough: Failure Boundary
 
-    Input → A configured storage or runtime integration throws
-          → Public Call → RateLimiterEngine::limit() applies the selected failure semantics
+    Input → An explicitly classified operational backend failure is raised as BackendFailureException
+          → Public Call → RateLimiterEngine::limit() applies the score-runtime failure semantics
           → Result → RateLimitResultDTO with the resolved failureMode; signals go to FailureSignalEmitterInterface
           → Boundary → Host observes, logs, and applies its own transport or incident handling
 
-Login and OTP policies are security-oriented and use fail-closed semantics with bounded degraded behavior. API-heavy protection may use fail-open semantics with local guardrails. See [Failure Semantics](../FAILURE_SEMANTICS.md) for the detailed contract.
+Configuration, capability, malformed-state, programming, unknown, and
+untyped failures propagate through their explicit exception contracts; they do
+not enter score-runtime fallback. Host adapters must classify only known
+operational backend failures as `BackendFailureException`. Login and OTP
+policies are security-oriented and use fail-closed semantics with bounded
+degraded behavior. API-heavy protection may use fail-open semantics with local
+guardrails. Simple fixed-window failures remain the separate DEC-013
+`FAIL_CLOSED` contract. See [Failure Semantics](../FAILURE_SEMANTICS.md) for
+the detailed contract.
 
 ### Circuit-breaker recovery
 

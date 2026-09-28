@@ -302,6 +302,55 @@ foreach ([':not-an-integer' . "\r\n", '$not-a-length' . "\r\n", '*not-an-array-l
     fclose($pair[1]);
     requireCondition($malformed, 'Malformed RESP numeric field was accepted.');
 }
+$pair = stream_socket_pair(STREAM_PF_UNIX, STREAM_SOCK_STREAM, 0);
+requireCondition(is_array($pair), 'Unable to create RESP framing regression socket pair.');
+$reflection = new ReflectionClass(RespRedisCommandExecutor::class);
+/** @var RespRedisCommandExecutor $framingExecutor */
+$framingExecutor = $reflection->newInstanceWithoutConstructor();
+$socketProperty = $reflection->getProperty('socket');
+$socketProperty->setValue($framingExecutor, $pair[0]);
+fwrite($pair[1], "+PONG\n");
+$framingMalformed = false;
+try {
+    $framingExecutor->execute(['PING']);
+} catch (RuntimeException $exception) {
+    $framingMalformed = true;
+}
+fclose($pair[0]);
+fclose($pair[1]);
+requireCondition($framingMalformed, 'Malformed RESP framing was accepted.');
+
+$pair = stream_socket_pair(STREAM_PF_UNIX, STREAM_SOCK_STREAM, 0);
+requireCondition(is_array($pair), 'Unable to create RESP server-error regression socket pair.');
+/** @var RespRedisCommandExecutor $serverErrorExecutor */
+$serverErrorExecutor = $reflection->newInstanceWithoutConstructor();
+$socketProperty->setValue($serverErrorExecutor, $pair[0]);
+fwrite($pair[1], "-ERR server failure\r\n");
+$serverError = false;
+try {
+    $serverErrorExecutor->execute(['PING']);
+} catch (RateLimiterException $exception) {
+    $serverError = true;
+}
+fclose($pair[0]);
+fclose($pair[1]);
+requireCondition($serverError, 'Redis server error reply was classified as transport failure.');
+
+$pair = stream_socket_pair(STREAM_PF_UNIX, STREAM_SOCK_STREAM, 0);
+requireCondition(is_array($pair), 'Unable to create RESP EOF regression socket pair.');
+/** @var RespRedisCommandExecutor $eofExecutor */
+$eofExecutor = $reflection->newInstanceWithoutConstructor();
+$socketProperty->setValue($eofExecutor, $pair[0]);
+fwrite($pair[1], '$5' . "\r\nabc");
+stream_socket_shutdown($pair[1], STREAM_SHUT_WR);
+$transportEnded = false;
+try {
+    $eofExecutor->execute(['PING']);
+} catch (BackendFailureException $exception) {
+    $transportEnded = true;
+}
+fclose($pair[0]);
+requireCondition($transportEnded, 'Determinable RESP EOF was not classified as backend transport failure.');
 $recordRedisCommands = false;
 $recordedRedisCommands = [];
 $recordedSuccessfulRedisCommands = [];

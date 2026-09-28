@@ -51,7 +51,7 @@ final class RespRedisCommandExecutor implements RedisCommandExecutorInterface
         return match ($prefix) {
             '+' => $this->readLine(),
             '-' => throw new RateLimiterException((string) $this->readLine()),
-            ':' => (int) $this->readLine(),
+            ':' => $this->readIntegerLine(),
             '$' => $this->readBulk(),
             '*' => $this->readArray(),
             default => throw new RuntimeException('Unsupported Redis RESP reply.'),
@@ -61,7 +61,13 @@ final class RespRedisCommandExecutor implements RedisCommandExecutorInterface
     private function readLine(): string
     {
         $line = fgets($this->socket);
-        if ($line === false || ! str_ends_with($line, "\r\n")) {
+        if ($line === false) {
+            throw new BackendFailureException('Redis reply read failed.');
+        }
+        if (! str_ends_with($line, "\r\n")) {
+            if ($this->transportReadEnded()) {
+                throw new BackendFailureException('Redis reply ended unexpectedly.');
+            }
             throw new RuntimeException('Malformed Redis RESP line.');
         }
         return substr($line, 0, -2);
@@ -69,17 +75,21 @@ final class RespRedisCommandExecutor implements RedisCommandExecutorInterface
 
     private function readBulk(): ?string
     {
-        $length = (int) $this->readLine();
+        $length = $this->readIntegerLine();
         if ($length === -1) {
             return null;
+        }
+        if ($length < -1) {
+            throw new RuntimeException('Malformed Redis bulk length.');
         }
         $value = '';
         $remaining = $length + 2;
         while ($remaining > 0) {
             $chunk = fread($this->socket, $remaining);
             if ($chunk === false || $chunk === '') {
-                throw new RuntimeException('Malformed Redis bulk reply.');
-            } $value .= $chunk;
+                throw new BackendFailureException('Redis bulk reply ended unexpectedly.');
+            }
+            $value .= $chunk;
             $remaining -= strlen($chunk);
         }
         if (! str_ends_with($value, "\r\n")) {
@@ -88,14 +98,39 @@ final class RespRedisCommandExecutor implements RedisCommandExecutorInterface
         return substr($value, 0, -2);
     }
 
-    /** @return list<mixed> */
-    private function readArray(): array
+    /** @return list<mixed>|null */
+    private function readArray(): ?array
     {
-        $length = (int) $this->readLine();
+        $length = $this->readIntegerLine();
+        if ($length === -1) {
+            return null;
+        }
+        if ($length < -1) {
+            throw new RuntimeException('Malformed Redis array length.');
+        }
         $result = [];
         for ($index = 0; $index < $length; $index++) {
             $result[] = $this->readReply();
         }
         return $result;
+    }
+
+    private function readIntegerLine(): int
+    {
+        $line = $this->readLine();
+        if (preg_match('/^-?(0|[1-9][0-9]*)$/D', $line) !== 1) {
+            throw new RuntimeException('Malformed Redis RESP integer.');
+        }
+        $value = filter_var($line, FILTER_VALIDATE_INT);
+        if ($value === false) {
+            throw new RuntimeException('Redis RESP integer is out of range.');
+        }
+        return $value;
+    }
+
+    private function transportReadEnded(): bool
+    {
+        $metadata = stream_get_meta_data($this->socket);
+        return $metadata['timed_out'] || $metadata['eof'];
     }
 }
