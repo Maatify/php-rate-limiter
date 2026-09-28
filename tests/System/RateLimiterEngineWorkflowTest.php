@@ -311,7 +311,7 @@ class RateLimiterEngineWorkflowTest extends TestCase
         $this->assertSame('DEGRADED_MODE', $afterTrip->failureMode);
     }
 
-    public function testFullCircuitOutagePreservesEmergencyStateDuringPersistentHandoff(): void
+    public function testFullCircuitOutageKeepsEmergencyStateProcessLocalAfterPersistenceRestoration(): void
     {
         $circuitStore = new InMemoryCircuitBreakerStore(false);
         $engine = $this->createEngineWithStore(
@@ -329,14 +329,7 @@ class RateLimiterEngineWorkflowTest extends TestCase
 
         $circuitStore->available = true;
         $engine->limit($context, $command);
-        self::assertSame(
-            \Maatify\RateLimiter\DTO\FailureStateDTO::STATE_OPEN,
-            $circuitStore->load('api_heavy_protection')?->status,
-        );
-        self::assertSame(
-            [1735732800],
-            $circuitStore->load('api_heavy_protection')->failures,
-        );
+        self::assertNull($circuitStore->load('api_heavy_protection'));
     }
 
     public function testUntypedStoreExceptionDoesNotBecomeCircuitFailureOrFallbackAllowance(): void

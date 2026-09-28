@@ -18,9 +18,10 @@ use Maatify\SharedCommon\Contracts\ClockInterface;
  * Maintains the per-policy circuit-breaker state machine and transition signals.
  *
  * Normal typed backend failures are accepted only while CLOSED. Emergency
- * state survives persistence restoration until a conservative handoff has
- * safely persisted the reconciled state. Recovery is driven by read-only
- * health probes guarded by the store-owned atomic probe lease.
+ * state is process-local and remains authoritative until genuine local
+ * recovery to CLOSED. Recovery is driven by read-only health probes guarded
+ * by the store-owned atomic probe lease during normal operation or a bounded
+ * process-local lease during an emergency episode.
  */
 class CircuitBreaker
 {
@@ -192,6 +193,9 @@ class CircuitBreaker
             $state->reEntries,
             $state->failClosedUntil,
         ));
+        if (isset($this->emergencyStates[$policyName])) {
+            unset($this->emergencyStates[$policyName], $this->emergencyProbeLeases[$policyName]);
+        }
         $this->emitter->emit(new FailureSignalDTO(FailureSignalDTO::TYPE_CB_RECOVERED, $policyName));
 
         return true;
@@ -307,37 +311,36 @@ class CircuitBreaker
         return [$reEntries, $failClosedUntil];
     }
 
+    /**
+     * Load local emergency ownership before touching persistent state.
+     *
+     * An emergency episode is deliberately process-local. Persistent storage
+     * recovery must not reconcile, replace, or write back that state.
+     */
     private function loadState(string $policyName): CircuitBreakerStateDTO
     {
-        $emergency = $this->emergencyStates[$policyName] ?? null;
+        if (isset($this->emergencyStates[$policyName])) {
+            return $this->emergencyStates[$policyName];
+        }
 
         try {
             $persistent = $this->store->load($policyName);
-            if ($emergency === null) {
-                unset($this->emergencyProbeLeases[$policyName]);
+            unset($this->emergencyProbeLeases[$policyName]);
 
-                return $persistent ?? $this->closedState();
-            }
-
-            $reconciled = $this->reconcileStates($emergency, $persistent ?? $this->closedState());
-            try {
-                $this->store->save($policyName, $reconciled);
-            } catch (BackendFailureException) {
-                $this->emergencyStates[$policyName] = $reconciled;
-
-                return $reconciled;
-            }
-
-            unset($this->emergencyStates[$policyName], $this->emergencyProbeLeases[$policyName]);
-
-            return $reconciled;
+            return $persistent ?? $this->closedState();
         } catch (BackendFailureException) {
-            return $emergency ?? $this->closedState();
+            return $this->closedState();
         }
     }
 
     private function saveState(string $policyName, CircuitBreakerStateDTO $state): void
     {
+        if (isset($this->emergencyStates[$policyName])) {
+            $this->emergencyStates[$policyName] = $state;
+
+            return;
+        }
+
         try {
             $this->store->save($policyName, $state);
             unset($this->emergencyStates[$policyName]);
@@ -348,6 +351,17 @@ class CircuitBreaker
 
     private function acquireProbeLease(string $policyName, int $now): bool
     {
+        if (isset($this->emergencyStates[$policyName])) {
+            $expiresAt = $this->emergencyProbeLeases[$policyName] ?? 0;
+            if ($expiresAt > $now) {
+                return false;
+            }
+
+            $this->emergencyProbeLeases[$policyName] = $now + self::PROBE_LEASE;
+
+            return true;
+        }
+
         try {
             $acquired = $this->store instanceof CircuitBreakerProbeStoreInterface
                 && $this->store->acquireProbeLease($policyName, $now, self::PROBE_LEASE);
@@ -378,51 +392,4 @@ class CircuitBreaker
         );
     }
 
-    private function reconcileStates(
-        CircuitBreakerStateDTO $emergency,
-        CircuitBreakerStateDTO $persistent,
-    ): CircuitBreakerStateDTO {
-        $status = $this->statusRank($emergency->status) >= $this->statusRank($persistent->status)
-            ? $emergency->status
-            : $persistent->status;
-        $openSince = 0;
-        if ($status === FailureStateDTO::STATE_OPEN) {
-            $openSince = max(
-                $emergency->status === FailureStateDTO::STATE_OPEN ? $emergency->openSince : 0,
-                $persistent->status === FailureStateDTO::STATE_OPEN ? $persistent->openSince : 0,
-            );
-        } elseif ($status === FailureStateDTO::STATE_HALF_OPEN) {
-            $openSince = max(
-                $emergency->status !== FailureStateDTO::STATE_CLOSED ? $emergency->openSince : 0,
-                $persistent->status !== FailureStateDTO::STATE_CLOSED ? $persistent->openSince : 0,
-            );
-        }
-
-        $failures = array_values(array_unique([...$emergency->failures, ...$persistent->failures]));
-        sort($failures);
-        $reEntries = array_values(array_unique([...$emergency->reEntries, ...$persistent->reEntries]));
-        sort($reEntries);
-
-        return new CircuitBreakerStateDTO(
-            $status,
-            $failures,
-            max($emergency->lastFailure, $persistent->lastFailure),
-            $openSince,
-            $status === FailureStateDTO::STATE_HALF_OPEN
-                ? max($emergency->lastSuccess, $persistent->lastSuccess)
-                : 0,
-            $reEntries,
-            max($emergency->failClosedUntil, $persistent->failClosedUntil),
-        );
-    }
-
-    private function statusRank(string $status): int
-    {
-        return match ($status) {
-            FailureStateDTO::STATE_OPEN => 3,
-            FailureStateDTO::STATE_HALF_OPEN => 2,
-            FailureStateDTO::STATE_CLOSED => 1,
-            default => 0,
-        };
-    }
 }

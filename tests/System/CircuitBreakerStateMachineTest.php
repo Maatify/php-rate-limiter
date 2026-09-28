@@ -252,29 +252,45 @@ final class CircuitBreakerStateMachineTest extends TestCase
         self::assertSame($saveCount, $this->store->saveCount());
     }
 
-    public function testPersistentOpenAndGuardCannotBeErasedByWeakerEmergencyState(): void
+    public function testProcessLocalEmergencyDoesNotReadOrWritePersistentState(): void
     {
         $now = $this->clock->now()->getTimestamp();
-        $this->store->save('api', new CircuitBreakerStateDTO(
-            FailureStateDTO::STATE_OPEN,
-            [$now - 1, $now],
-            $now,
-            $now,
+        $persistent = new CircuitBreakerStateDTO(
+            FailureStateDTO::STATE_CLOSED,
+            [$now - 1],
+            $now - 1,
             0,
-            [$now],
-            $now + 600,
-        ));
+            0,
+            [$now - 1],
+        );
+        $this->store->save('api', $persistent);
+        $saveCount = $this->store->saveCount();
 
         $this->store->available = false;
         $this->circuitBreaker->reportFailure('api');
+        $this->circuitBreaker->reportFailure('api');
+        $this->circuitBreaker->reportFailure('api');
+        $loadsAtRestore = $this->store->loadCount();
         $this->store->available = true;
 
-        $state = $this->store->load('api');
-        self::assertNotNull($state);
-        self::assertSame(FailureStateDTO::STATE_OPEN, $state->status);
-        self::assertSame($now, $state->openSince);
-        self::assertSame($now + 600, $state->failClosedUntil);
-        self::assertTrue($this->circuitBreaker->isReEntryGuardViolated('api'));
+        self::assertSame($saveCount, $this->store->saveCount());
+        self::assertSame(FailureStateDTO::STATE_OPEN, $this->circuitBreaker->getState('api')->state);
+        self::assertSame($loadsAtRestore, $this->store->loadCount());
+        self::assertSame(0, $this->store->probeAcquisitionCount());
+
+        $this->clock->setNow(new \DateTimeImmutable('@' . ($now + 300)));
+        self::assertFalse($this->circuitBreaker->attemptRecoveryProbe('api', static fn(): bool => true));
+        self::assertSame($saveCount, $this->store->saveCount());
+        self::assertSame($loadsAtRestore, $this->store->loadCount());
+        self::assertSame(0, $this->store->probeAcquisitionCount());
+
+        $this->clock->setNow(new \DateTimeImmutable('@' . ($now + 420)));
+        self::assertTrue($this->circuitBreaker->attemptRecoveryProbe('api', static fn(): bool => true));
+        self::assertSame($saveCount, $this->store->saveCount());
+        self::assertSame($loadsAtRestore, $this->store->loadCount());
+        self::assertSame(FailureStateDTO::STATE_CLOSED, $this->circuitBreaker->getState('api')->state);
+        self::assertSame($loadsAtRestore + 1, $this->store->loadCount());
+        self::assertSame($persistent, $this->store->load('api'));
     }
 
     public function testThrownOpenProbeUsesCompletionTimestampForNewOpenEpoch(): void

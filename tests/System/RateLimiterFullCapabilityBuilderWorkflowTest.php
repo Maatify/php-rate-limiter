@@ -392,7 +392,7 @@ final class RateLimiterFullCapabilityBuilderWorkflowTest extends TestCase
     }
 
     #[DataProvider('fullOutagePolicies')]
-    public function testProductionDefaultFullCapabilityOutageUsesLockedEmergencyHandoff(
+    public function testProductionDefaultFullCapabilityOutageUsesLockedProcessLocalEmergencyCircuit(
         string $policyName,
         string $initialDecision,
         string $initialFailureMode,
@@ -400,6 +400,16 @@ final class RateLimiterFullCapabilityBuilderWorkflowTest extends TestCase
         $clock = new FixedClock('2025-01-01 12:00:00');
         $store = new FullCapabilityInMemoryStore($clock);
         $signals = new RecordingFailureSignalEmitter();
+        $persistent = new CircuitBreakerStateDTO(
+            FailureStateDTO::STATE_CLOSED,
+            [1],
+            1,
+            0,
+            0,
+            [1],
+        );
+        $store->save($policyName, $persistent);
+        $persistentSaveCount = $store->circuitBreakerStore()->saveCount();
         $store->available = false;
         $store->circuitBreakerStore()->available = false;
         $limiter = RateLimiterBuilder::fromFullCapabilityStore(
@@ -421,16 +431,12 @@ final class RateLimiterFullCapabilityBuilderWorkflowTest extends TestCase
         $store->available = true;
         $store->circuitBreakerStore()->available = true;
         $openedAt = $clock->now()->getTimestamp();
-        $writesAtOpen = $store->writeCount();
 
         $clock->setNow(new \DateTimeImmutable('@' . ($openedAt + 1)));
         $open = $limiter->limit($context, $command);
         self::assertSame('DEGRADED_MODE', $open->failureMode);
-        self::assertSame($writesAtOpen, $store->writeCount());
-        $persistentOpen = $store->load($policyName);
-        self::assertNotNull($persistentOpen);
-        self::assertSame(FailureStateDTO::STATE_OPEN, $persistentOpen->status);
-        self::assertSame($openedAt, $persistentOpen->openSince);
+        self::assertSame($persistent, $store->load($policyName));
+        self::assertSame($persistentSaveCount, $store->circuitBreakerStore()->saveCount());
         self::assertSame(
             [FailureSignalDTO::TYPE_CB_OPENED],
             array_map(static fn(FailureSignalDTO $signal): string => $signal->type, $signals->getEmitted()),
@@ -439,29 +445,25 @@ final class RateLimiterFullCapabilityBuilderWorkflowTest extends TestCase
         $clock->setNow(new \DateTimeImmutable('@' . ($openedAt + 300)));
         $halfOpen = $limiter->limit($context, $command);
         self::assertSame('DEGRADED_MODE', $halfOpen->failureMode);
-        $halfOpenState = $store->load($policyName);
-        self::assertNotNull($halfOpenState);
-        self::assertSame(FailureStateDTO::STATE_HALF_OPEN, $halfOpenState->status);
-        self::assertSame($openedAt, $halfOpenState->openSince);
+        self::assertSame($persistent, $store->load($policyName));
+        self::assertSame($persistentSaveCount, $store->circuitBreakerStore()->saveCount());
         self::assertCount(1, $signals->getEmitted());
 
         $clock->setNow(new \DateTimeImmutable('@' . ($openedAt + 419)));
         self::assertSame('DEGRADED_MODE', $limiter->limit($context, $command)->failureMode);
-        $beforeCloseState = $store->load($policyName);
-        self::assertNotNull($beforeCloseState);
-        self::assertSame(FailureStateDTO::STATE_HALF_OPEN, $beforeCloseState->status);
+        self::assertSame($persistent, $store->load($policyName));
+        self::assertSame($persistentSaveCount, $store->circuitBreakerStore()->saveCount());
         self::assertCount(1, $signals->getEmitted());
 
         $clock->setNow(new \DateTimeImmutable('@' . ($openedAt + 420)));
         self::assertSame('NORMAL', $limiter->limit($context, $command)->failureMode);
-        $closedState = $store->load($policyName);
-        self::assertNotNull($closedState);
-        self::assertSame(FailureStateDTO::STATE_CLOSED, $closedState->status);
+        self::assertSame($persistent, $store->load($policyName));
+        self::assertSame($persistentSaveCount, $store->circuitBreakerStore()->saveCount());
         self::assertSame(
             [FailureSignalDTO::TYPE_CB_OPENED, FailureSignalDTO::TYPE_CB_RECOVERED],
             array_map(static fn(FailureSignalDTO $signal): string => $signal->type, $signals->getEmitted()),
         );
-        self::assertGreaterThan($writesAtOpen, $store->writeCount());
+        self::assertSame(FailureStateDTO::STATE_CLOSED, $store->load($policyName)->status);
     }
 
     public function testExistingMultiStoreBuilderConstructorStillRunsPublicWorkflow(): void

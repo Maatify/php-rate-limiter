@@ -22,8 +22,11 @@ class InMemoryCircuitBreakerStore implements CircuitBreakerProbeStoreInterface
 
     private int $saveCount = 0;
 
+    private int $loadCount = 0;
+
     public function load(string $policyName): ?CircuitBreakerStateDTO
     {
+        $this->loadCount++;
         $this->assertAvailable();
 
         return $this->store[$policyName] ?? null;
@@ -65,6 +68,11 @@ class InMemoryCircuitBreakerStore implements CircuitBreakerProbeStoreInterface
     public function saveCount(): int
     {
         return $this->saveCount;
+    }
+
+    public function loadCount(): int
+    {
+        return $this->loadCount;
     }
 
     private function assertAvailable(): void

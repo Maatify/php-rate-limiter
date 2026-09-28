@@ -14,8 +14,9 @@
 
 ## Decision Authority
 
-Owner-authorized Gate 11 material decision under PR #74, recorded in Owner
-Authority comment `5869118594`.
+Owner-authorized Gate 11 clarification under PR #74, recorded in Owner
+Authority comments `5872190395` and mirrored at `5872191089`, superseding the
+earlier persistent handoff wording.
 
 ## Scope / Concern
 
@@ -40,13 +41,14 @@ backend provenance is required because treating malformed state, invalid
 input, programming errors, or arbitrary Host throwables as infrastructure
 outages could grant security-sensitive fallback allowance.
 
-Storage restoration is therefore not circuit recovery. The `CircuitBreaker`
-owns a backend-neutral conservative handoff: it reconciles known emergency and
-persistent state, preserves the more protective active semantics and
-authoritative timestamps, persists that state, and only then returns ownership
-to the persistent state machine. Handoff is not a transition and emits no
-synthetic signal; locked OPEN → HALF_OPEN → CLOSED recovery remains the only
-recovery path.
+Storage restoration is therefore not circuit recovery. The emergency circuit
+is process-local only: while active, it is authoritative for that runtime and
+is not reconciled with, replaced by, or written back to persistent storage.
+The local state continues through the locked OPEN → HALF_OPEN → CLOSED
+recovery path, with no synthetic transition or signal from storage restoration.
+Once genuine local recovery reaches CLOSED, the local episode is discarded and
+the next circuit access resumes normal persistent ownership. This provides no
+cross-worker or cross-host emergency consistency guarantee.
 
 ## Decision
 
@@ -57,13 +59,13 @@ unavailable, the package may use a bounded process-local emergency circuit
 temporarily. Emergency state exists only to preserve infrastructure-failure
 survivability; it is not a new public failure mode. Existing `FAIL_CLOSED`,
 `FAIL_OPEN`, and `DEGRADED_MODE` semantics remain authoritative. When
-persistent circuit infrastructure becomes available, the CircuitBreaker
-conservatively reconciles emergency and persistent state, persists the
-authoritative active protection state, and only then returns execution to the
-normal persistent path. If that handoff cannot be safely persisted, emergency
-state remains authoritative. Emergency state contains no request-controlled
-unbounded cardinality, and it cannot grant unlimited authentication or API
-allowance.
+persistent circuit infrastructure becomes available, the active local emergency
+state remains authoritative for that runtime and is never merged into,
+reconciled into, or written back to persistent storage. It completes the
+locked local recovery path, is discarded only after genuine CLOSED recovery,
+and the next circuit access resumes normal persistent ownership. Emergency
+state contains no request-controlled unbounded cardinality, and it cannot
+grant unlimited authentication or API allowance.
 
 Process-local fallback state is bounded at **4096 tracked subjects per policy
 and fallback dimension**. The capacity is package-owned and not
@@ -111,8 +113,10 @@ from becoming security-sensitive degraded allowances.
 - The Host-owned Redis executor boundary classifies known transport/backend
   outages explicitly; the Redis store preserves that provenance and malformed
   state remains an explicit package exception.
-- The circuit can continue bounded state-machine behavior while its persistent
-  state boundary is unavailable and resumes the persistent path after recovery.
+- The circuit can continue bounded process-local state-machine behavior while
+  its persistent state boundary is unavailable. No cross-worker or cross-host
+  emergency consistency is promised, and no CAS, reconciliation capability,
+  handoff API, or second Host backend is required.
 - Existing public policies, failure modes, numeric circuit constants, and
   fallback rule values remain unchanged.
 

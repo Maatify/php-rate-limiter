@@ -336,11 +336,13 @@ failure-signal emitter remains a separate dependency. The core package does not
 assume a shared transaction across those boundaries.
 
 If the shared circuit persistence boundary is unavailable, `CircuitBreaker`
-uses the bounded process-local emergency state defined by DEC-015. When the
-boundary recovers, CircuitBreaker conservatively reconciles and persists the
-authoritative active state before ownership returns to the persistent path;
-storage recovery is not circuit recovery. This does not add Host wiring or a
-public failure mode. Infrastructure adapters must translate only
+uses the bounded process-local emergency state defined by DEC-015. While that
+state is active it is authoritative only for the current runtime; persistent
+recovery does not reset, replace, reconcile, or write it back. After genuine
+local CLOSED recovery the emergency episode is discarded, and the next circuit
+access resumes normal persistent ownership. Storage recovery is not circuit
+recovery. This does not add Host wiring or a public failure mode. Infrastructure
+adapters must translate only
 eligible operational availability/transport/command failures into
 `BackendFailureException`; malformed state and invalid input retain their
 explicit package exception contracts.
