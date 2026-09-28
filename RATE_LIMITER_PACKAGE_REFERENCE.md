@@ -3,7 +3,7 @@
 **Package:** RateLimiter
 **Namespace:** `Maatify\RateLimiter`
 **Status:** LOCKED — Architecture Contract
-**Spec Version:** `1.20.0`
+**Spec Version:** `1.21.0`
 **Location:** `src/`
 
 This document explains **why** the RateLimiter package is designed the way it is.
@@ -709,7 +709,7 @@ runtime dependency.
 **Infrastructure rules for consumers:**
 - Drivers MUST provide deterministic, bounded behavior
 - Drivers MUST NOT swallow exceptions
-- If a backend cannot satisfy required atomicity for an operation, the driver MUST fail explicitly and defer to Engine failure semantics
+- If a backend cannot satisfy required atomicity for an operation, the driver MUST fail explicitly; only an operational backend outage explicitly classified as `BackendFailureException` enters the score-runtime circuit, failure-mode, and bounded-fallback semantics. Capability, contract, malformed-state, and other explicit package failures retain their own exception contracts.
 - Drivers must be interchangeable without changing Engine logic
 - Drivers provide the atomic, no-extension primitives required by budget owner-safety (§4.8)
 
@@ -718,8 +718,11 @@ capability over the unchanged `CorrelationStoreInterface`. The no-rotation path 
 only the base contract. The rotation primitives are atomic inside the concrete store:
 they write the current generation, read the previous generation without modifying its
 members or TTL, and use `previous cardinality + bridge cardinality` for the active
-spray window. A current-only fallback is forbidden; a missing capability or malformed
-previous state fails through the engine's existing failure semantics. The bridge is
+spray window. A current-only fallback is forbidden; a missing capability remains an
+explicit capability/contract exception, and malformed or corrupt previous state remains
+an explicit package/state exception. Neither enters score-runtime circuit or bounded
+fallback semantics; only an explicitly typed operational backend failure enters that
+DEC-015 score failure path. The bridge is
 current-secret-only, fixed-TTL, and capped by the previous remaining TTL. The core
 package provides an optional Redis implementation through its command-executor
 boundary; Redis remains optional and the physical key layout is internal rather
@@ -881,7 +884,7 @@ Detailed key rules are defined in `docs/KEY_STRATEGY.md`.
 ## 6. Failure Semantics (Security vs Availability)
 Rate limiting is security-critical for login and OTP.
 
-When storage fails:
+When an explicitly classified operational backend failure enters the score-runtime failure path:
 - Login/OTP MUST be FAIL_CLOSED with mandatory bounded DEGRADED_MODE
 - API Heavy MAY be FAIL_OPEN, but MUST still apply local guardrails
 - Circuit breaker parameters are LOCKED to prevent “undefined N/window” exploitation
