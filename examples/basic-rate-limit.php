@@ -26,9 +26,36 @@ use Maatify\RateLimiter\DTO\CircuitBreakerStateDTO;
 use Maatify\RateLimiter\DTO\RateLimitStateDTO;
 use Maatify\RateLimiter\DTO\RateLimitContextDTO;
 use Maatify\SharedCommon\Contracts\ClockInterface;
-use Maatify\SharedCommon\Infrastructure\SystemClock;
 
 require dirname(__DIR__) . '/vendor/autoload.php';
+
+/**
+ * Provides deterministic time for the runnable lifecycle demonstration.
+ */
+final class ExampleDeterministicClock implements ClockInterface
+{
+    private DateTimeImmutable $current;
+
+    public function __construct()
+    {
+        $this->current = new DateTimeImmutable('2026-01-01T00:00:00+00:00');
+    }
+
+    public function now(): DateTimeImmutable
+    {
+        return $this->current;
+    }
+
+    public function getTimezone(): DateTimeZone
+    {
+        return $this->current->getTimezone();
+    }
+
+    public function advance(int $seconds): void
+    {
+        $this->current = $this->current->modify("+{$seconds} seconds");
+    }
+}
 
 /**
  * This example supplies small in-memory adapters for the package contracts.
@@ -639,7 +666,7 @@ final class ExampleFailureSignalEmitter implements FailureSignalEmitterInterface
     }
 }
 
-$clock = new SystemClock(new DateTimeZone('UTC'));
+$clock = new ExampleDeterministicClock();
 $rateLimitStore = new ExampleRateLimitStore($clock);
 $correlationStore = new ExampleCorrelationStore($clock);
 $signalEmitter = new ExampleFailureSignalEmitter();
@@ -676,3 +703,17 @@ $results = [
 foreach ($results as $name => $result) {
     echo $name . ': ' . json_encode($result, JSON_THROW_ON_ERROR) . PHP_EOL;
 }
+
+$limiter->limit($context, RateLimitCommand::recordFailure('otp_protection'));
+$punishment = $limiter->limit($context, RateLimitCommand::recordFailure('otp_protection'));
+$clock->advance(301);
+$reentry = $limiter->limit($context, RateLimitCommand::checkOnly('otp_protection'));
+$reentryId = $reentry->metadata?->postPunishmentReentry?->id;
+if ($reentryId === null) {
+    throw new RuntimeException('Expected post-punishment re-entry metadata after the served punishment.');
+}
+
+echo 'punishment: ' . json_encode($punishment, JSON_THROW_ON_ERROR) . PHP_EOL;
+echo 're_entry_check: ' . json_encode($reentry, JSON_THROW_ON_ERROR) . PHP_EOL;
+echo 'first_claim: ' . json_encode($limiter->claimPostPunishmentReentry($context, 'otp_protection', $reentryId), JSON_THROW_ON_ERROR) . PHP_EOL;
+echo 'replay_claim: ' . json_encode($limiter->claimPostPunishmentReentry($context, 'otp_protection', $reentryId), JSON_THROW_ON_ERROR) . PHP_EOL;
