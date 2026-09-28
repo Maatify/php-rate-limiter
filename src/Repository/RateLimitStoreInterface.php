@@ -67,9 +67,6 @@ interface RateLimitStoreInterface
      * Absent or expired state is returned as null and is not exposed as an
      * active budget. The returned count and epochStart describe the effective
      * persisted state. Reading never creates, refreshes, or renews an epoch.
-     * Implementations must expose only state whose fixed expiry is
-     * representable by the backend and package integer contract.
-     *
      * @param string $key
      * @return BudgetStateDTO|null
      */

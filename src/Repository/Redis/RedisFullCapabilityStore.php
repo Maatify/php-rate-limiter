@@ -325,20 +325,21 @@ local exactIntegerMax = 9007199254740991
 local count = redis.call('HGET', KEYS[1], 'count')
 local start = redis.call('HGET', KEYS[1], 'epochStart')
 local storedDuration = redis.call('HGET', KEYS[1], 'epochDuration')
-local duration = tonumber(ARGV[1])
+local requestedDuration = tonumber(ARGV[1])
 local exists = redis.call('EXISTS', KEYS[1])
 if exists == 1 and redis.call('TTL', KEYS[1]) < 0 then return redis.error_reply('malformed budget state') end
 if exists == 1 and (not count or not start or not storedDuration) then return redis.error_reply('malformed budget state') end
 if exists == 1 then
-  start = tonumber(start); duration = tonumber(storedDuration)
-  if not string.match(count, '^%-?%d+$') or not start or start ~= math.floor(start) or not duration or duration <= 0 or duration ~= math.floor(duration) then return redis.error_reply('malformed budget state') end
-  if start > exactIntegerMax - duration then return redis.error_reply('budget expiry exceeds Redis Lua exact integer range') end
+  start = tonumber(start); storedDuration = tonumber(storedDuration)
+  if not string.match(count, '^%-?%d+$') or not start or start ~= math.floor(start) or not storedDuration or storedDuration <= 0 or storedDuration ~= math.floor(storedDuration) then return redis.error_reply('malformed budget state') end
+  if start > exactIntegerMax - storedDuration then return redis.error_reply('budget expiry exceeds Redis Lua exact integer range') end
 end
-if exists == 1 and now < start + duration then
+if exists == 1 and now < start + storedDuration then
   redis.call('HINCRBY', KEYS[1], 'count', ARGV[2])
   return {redis.call('HGET', KEYS[1], 'count'), start}
 end
-if duration > exactIntegerMax - now then return redis.error_reply('budget expiry exceeds Redis Lua exact integer range') end
+if not requestedDuration or requestedDuration <= 0 or requestedDuration ~= math.floor(requestedDuration) then return redis.error_reply('malformed budget state') end
+if requestedDuration > exactIntegerMax - now then return redis.error_reply('budget expiry exceeds Redis Lua exact integer range') end
 if exists == 1 then redis.call('DEL', KEYS[1]) end
 redis.call('HSET', KEYS[1], 'count', ARGV[2], 'epochStart', now, 'epochDuration', ARGV[1])
 redis.call('EXPIRE', KEYS[1], ARGV[1])

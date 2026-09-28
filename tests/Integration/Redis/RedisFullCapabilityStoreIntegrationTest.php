@@ -1708,6 +1708,26 @@ final class RedisFullCapabilityStoreIntegrationTest extends TestCase
         self::assertSame($current->epochStart, $currentWins->epochStart);
     }
 
+    public function testExpiredExistingBudgetRejectsImpossibleFreshDurationBeforeReplacement(): void
+    {
+        $budgetKey = $this->key('budget', 'expired-existing-requested-duration');
+        $now = $this->redisNow();
+        $this->raw(['HSET', $budgetKey, 'count', 7, 'epochStart', $now - 2, 'epochDuration', 1]);
+        $this->raw(['EXPIRE', $budgetKey, 60]);
+        $before = $this->hashMap($budgetKey);
+
+        $failed = false;
+        try {
+            $this->store->incrementBudget('expired-existing-requested-duration', 9007199254740992);
+        } catch (\Throwable) {
+            $failed = true;
+        }
+
+        self::assertTrue($failed);
+        self::assertSame($before, $this->hashMap($budgetKey));
+        self::assertSame(1, $this->integer($this->raw(['EXISTS', $budgetKey])));
+    }
+
     public function testDistinctWatchAndBoundedWindowsDoNotRefreshAndExpire(): void
     {
         $firstDistinctCount = $this->store->addDistinct('distinct-matrix', 'one', 60);
