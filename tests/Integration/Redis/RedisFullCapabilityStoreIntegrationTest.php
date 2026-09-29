@@ -2575,7 +2575,7 @@ final class RedisFullCapabilityStoreIntegrationTest extends TestCase
             [0, 9, 9],
             [7, 9, 7],
         ];
-        $script = dirname(__DIR__, 3) . '/scripts/ci/run-integration-with-redis.sh';
+        $script = dirname(__DIR__, 3) . '/scripts/ci/run-phpunit-with-redis.sh';
         $fakeDocker = dirname(__DIR__, 2) . '/Support/Redis/fake-docker.sh';
 
         foreach ($cases as [$verificationStatus, $cleanupStatus, $expectedStatus]) {

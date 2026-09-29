@@ -18,7 +18,8 @@
     ],
     "support": {
         "issues": "https://github.com/Maatify/php-rate-limiter/issues",
-        "source": "https://github.com/Maatify/php-rate-limiter"
+        "source": "https://github.com/Maatify/php-rate-limiter",
+        "security": "https://github.com/Maatify/php-rate-limiter/blob/main/SECURITY.md"
     },
     "autoload": {
         "psr-4": {
@@ -31,10 +32,12 @@
         }
     },
     "require": {
+        "ext-date": "*",
         "ext-filter": "*",
         "ext-hash": "*",
         "ext-json": "*",
         "ext-pcre": "*",
+        "ext-random": "*",
         "maatify/exceptions": "^1.0",
         "maatify/shared-common": "^1.0",
         "php": "^8.4"
@@ -54,15 +57,30 @@
             "php-cs-fixer check --config=.php-cs-fixer.dist.php",
             "@php scripts/ci/check-per-cs-31-delta.php"
         ],
-        "test": "phpunit",
+        "test": "bash scripts/ci/run-phpunit-with-redis.sh",
         "test:unit": "phpunit --testsuite Unit",
-        "test:integration": "bash scripts/ci/run-integration-with-redis.sh"
+        "test:integration": "bash scripts/ci/run-phpunit-with-redis.sh --testsuite Integration"
     },
     "config": {
         "optimize-autoloader": true,
         "sort-packages": true,
         "platform": {
             "php": "8.4.0"
+        },
+        "policy": {
+            "advisories": {
+                "block": true,
+                "audit": "fail"
+            },
+            "malware": {
+                "block": true,
+                "block-scope": "all",
+                "audit": "fail"
+            },
+            "abandoned": {
+                "block": false,
+                "audit": "fail"
+            }
         },
         "allow-plugins": false
     },
