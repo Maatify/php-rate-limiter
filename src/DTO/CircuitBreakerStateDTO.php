@@ -10,6 +10,9 @@ namespace Maatify\RateLimiter\DTO;
 final readonly class CircuitBreakerStateDTO implements \JsonSerializable
 {
     /**
+     * Every timestamp field is a non-negative Unix timestamp (DEC-017); `0`
+     * remains valid where circuit semantics already use it.
+     *
      * @param string $status Current circuit state: CLOSED, OPEN, or HALF_OPEN.
      * @param array<int, int> $failures Failure timestamps retained for trip evaluation.
      * @param int $lastFailure Unix timestamp of the latest observed failure.

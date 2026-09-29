@@ -19,6 +19,7 @@ use Maatify\RateLimiter\DTO\RateLimitResultDTO;
 use Maatify\RateLimiter\DTO\ScoreDeltasDTO;
 use Maatify\RateLimiter\DTO\ScoreThresholdsDTO;
 use Maatify\RateLimiter\Exception\BackendFailureException;
+use Maatify\RateLimiter\Exception\RateLimiterException;
 use Maatify\RateLimiter\Repository\Redis\RedisCommandExecutorInterface;
 use Maatify\RateLimiter\Repository\Redis\RedisFullCapabilityStore;
 use Maatify\RateLimiter\Tests\Support\Clock\FixedClock;
@@ -61,6 +62,980 @@ final class RedisFullCapabilityStoreIntegrationTest extends TestCase
         self::assertSame($budget->epochStart, $storedBudget->epochStart);
         self::assertSame(1, $this->store->addDistinct('members', 'one', 60));
         self::assertSame(1, $this->store->incrementWatchFlag('watch', 60));
+    }
+
+    public function testOverCapBoundedStateFailsBeforeDuplicateOrNewMemberMutation(): void
+    {
+        $setKey = $this->key('distinct', 'over-cap');
+        $metaKey = $this->key('distinct-meta', 'over-cap');
+        $this->raw(['SADD', $setKey, 'one', 'two', 'three']);
+        $this->raw(['EXPIRE', $setKey, '60']);
+        $this->raw(['HSET', $metaKey, 'expiresAt', (string) ($this->redisNow() + 60)]);
+        $this->raw(['EXPIRE', $metaKey, '60']);
+        $before = [$this->raw(['SMEMBERS', $setKey]), $this->raw(['PTTL', $setKey]), $this->hashMap($metaKey)];
+
+        $this->assertOperationFails(fn(): mixed => $this->store->addDistinctBoundedWithSnapshot('over-cap', 'one', 60, 2));
+        $this->assertOperationFails(fn(): mixed => $this->store->addDistinctBoundedWithSnapshot('over-cap', 'four', 60, 2));
+        self::assertSame($before[0], $this->raw(['SMEMBERS', $setKey]));
+        self::assertGreaterThan(0, $this->integer($this->raw(['PTTL', $setKey])));
+        self::assertSame($before[2], $this->hashMap($metaKey));
+    }
+
+    public function testBridgePhysicalTtlIsBoundedByPreviousPttlAndPreviousIsReadOnly(): void
+    {
+        $previous = $this->key('distinct', 'bridge-previous');
+        $previousMeta = $this->key('distinct-meta', 'bridge-previous');
+        $this->raw(['SADD', $previous, 'old']);
+        $this->raw(['PEXPIRE', $previous, '10000']);
+        $this->raw(['HSET', $previousMeta, 'expiresAt', (string) ($this->redisNow() + 60)]);
+        $this->raw(['PEXPIRE', $previousMeta, '10000']);
+        $beforeMembers = $this->raw(['SMEMBERS', $previous]);
+        $beforePttl = $this->integer($this->raw(['PTTL', $previous]));
+
+        $this->store->addDistinctBoundedWithSnapshotAcrossRotation('bridge-current', 'bridge', 'bridge-previous', 'new', 'unknown', 60, 10);
+        $bridgePttl = $this->integer($this->raw(['PTTL', $this->key('distinct', 'bridge')]));
+        $bridgeMetaPttl = $this->integer($this->raw(['PTTL', $this->key('distinct-meta', 'bridge')]));
+        self::assertGreaterThan(0, $bridgePttl);
+        self::assertGreaterThan(0, $bridgeMetaPttl);
+        self::assertSame($beforeMembers, $this->raw(['SMEMBERS', $previous]));
+        self::assertGreaterThan(0, $this->integer($this->raw(['PTTL', $previous])));
+    }
+
+    public function testBridgeUsesExactPreviousRemainingLifetimeAndNeverRefreshesIt(): void
+    {
+        $previous = $this->key('distinct', 'g12-bridge-previous');
+        $previousMeta = $this->key('distinct-meta', 'g12-bridge-previous');
+        $this->raw(['SADD', $previous, 'old']);
+        $this->raw(['PEXPIRE', $previous, 6_000]);
+        $expiry = $this->redisNow() + 2;
+        $this->raw(['HSET', $previousMeta, 'expiresAt', (string) $expiry]);
+        $this->raw(['PEXPIRE', $previousMeta, 6_000]);
+        $beforeMembers = $this->raw(['SMEMBERS', $previous]);
+        $beforeMeta = $this->hashMap($previousMeta);
+        $beforeDataPttl = $this->integer($this->raw(['PTTL', $previous]));
+        $beforeMetaPttl = $this->integer($this->raw(['PTTL', $previousMeta]));
+        $authoritativeRemainingMs = ($expiry * 1000) - $this->redisNowMilliseconds();
+
+        $this->store->addDistinctBoundedWithSnapshotAcrossRotation(
+            'g12-bridge-current',
+            'g12-bridge',
+            'g12-bridge-previous',
+            'new',
+            'unknown',
+            60,
+            10,
+        );
+
+        $bridgePttl = $this->integer($this->raw(['PTTL', $this->key('distinct', 'g12-bridge')]));
+        $bridgeMetaPttl = $this->integer($this->raw(['PTTL', $this->key('distinct-meta', 'g12-bridge')]));
+        self::assertLessThanOrEqual($beforeDataPttl, $bridgePttl);
+        self::assertLessThanOrEqual($beforeMetaPttl, $bridgePttl);
+        self::assertLessThanOrEqual($beforeDataPttl, $bridgeMetaPttl);
+        self::assertLessThanOrEqual($beforeMetaPttl, $bridgeMetaPttl);
+        self::assertLessThanOrEqual($authoritativeRemainingMs, $bridgePttl);
+        self::assertLessThanOrEqual($authoritativeRemainingMs, $bridgeMetaPttl);
+        self::assertSame($expiry, $this->integer($this->raw(['HGET', $this->key('distinct-meta', 'g12-bridge'), 'expiresAt'])));
+        self::assertSame($beforeMembers, $this->raw(['SMEMBERS', $previous]));
+        self::assertSame($beforeMeta, $this->hashMap($previousMeta));
+        self::assertLessThanOrEqual($beforeDataPttl, $this->integer($this->raw(['PTTL', $previous])));
+        self::assertLessThanOrEqual($beforeMetaPttl, $this->integer($this->raw(['PTTL', $previousMeta])));
+    }
+
+    public function testPersistentCycleAndPauseStateWithoutTtlFailsBeforeMutation(): void
+    {
+        $now = $this->redisNow();
+        $cases = [
+            ['cycle', 'g12-current-cycle-no-ttl', null],
+            ['cycle', 'g12-previous-cycle-no-ttl', 'g12-previous-cycle-no-ttl-source'],
+            ['pause', 'g12-current-pause-no-ttl', null],
+            ['pause', 'g12-previous-pause-no-ttl', 'g12-previous-pause-no-ttl-source'],
+        ];
+
+        foreach ($cases as [$family, $current, $previous]) {
+            $source = $previous ?? $current;
+            $key = $this->key($family, $source);
+            if ($family === 'cycle') {
+                $this->raw(['ZADD', $key, $now, (string) $now]);
+            } else {
+                $this->raw(['ZADD', $key, $now, $now . ':' . ($now + 30)]);
+            }
+            $before = [$this->raw(['ZRANGE', $key, 0, -1, 'WITHSCORES']), $this->integer($this->raw(['PTTL', $key]))];
+
+            if ($family === 'cycle') {
+                $this->assertOperationFails(fn(): mixed => $this->store->blockWithCycleTracking($current, $previous, 2, 60, $now, 600, 2, 60, 120));
+            } else {
+                $this->assertOperationFails(fn(): mixed => $this->store->readDecayPauseState($current, $previous, $now - 60, $now));
+            }
+
+            self::assertSame($before[0], $this->raw(['ZRANGE', $key, 0, -1, 'WITHSCORES']));
+            self::assertSame(-1, $before[1]);
+            self::assertSame(-1, $this->integer($this->raw(['PTTL', $key])));
+        }
+    }
+
+    public function testPersistentPausePublicationFailsBeforeAnyLifecycleMutation(): void
+    {
+        foreach ([
+            ['g12-persistent-current-pause', null],
+            ['g12-persistent-current-pause-new', 'g12-persistent-previous-pause'],
+        ] as [$current, $previous]) {
+            $source = $previous ?? $current;
+            $now = $this->redisNow();
+            $pause = $this->key('pause', $source);
+            $this->raw(['ZADD', $pause, $now, $now . ':' . ($now + 30)]);
+            $keys = [];
+            foreach (['block', 'cycle', 'pause'] as $family) {
+                $key = $this->key($family, $source);
+                $state = $family === 'block' ? $this->raw(['HGETALL', $key]) : $this->raw(['ZRANGE', $key, 0, -1, 'WITHSCORES']);
+                $keys[$family] = [$this->raw(['EXISTS', $key]), $state, $this->integer($this->raw(['PTTL', $key]))];
+            }
+            $currentKeys = [$this->key('block', $current), $this->key('cycle', $current), $this->key('pause', $current)];
+            $this->assertOperationFails(fn(): mixed => $this->store->blockWithCycleTracking($current, $previous, 2, 60, $now, 600, 2, 60, 120));
+            foreach ($keys as $family => [$exists, $state, $pttl]) {
+                $key = $this->key($family, $source);
+                self::assertSame($exists, $this->raw(['EXISTS', $key]));
+                if ($family === 'block') {
+                    self::assertSame($state, $this->raw(['HGETALL', $key]));
+                } else {
+                    self::assertSame($state, $this->raw(['ZRANGE', $key, 0, -1, 'WITHSCORES']));
+                }
+                self::assertSame($pttl, $this->integer($this->raw(['PTTL', $key])));
+            }
+            foreach ($currentKeys as $familyIndex => $key) {
+                $family = ['block', 'cycle', 'pause'][$familyIndex];
+                if ($previous === null && $family === 'pause') {
+                    self::assertSame(1, $this->integer($this->raw(['EXISTS', $key])));
+                    self::assertSame($keys['pause'][1], $this->raw(['ZRANGE', $key, 0, -1, 'WITHSCORES']));
+                    self::assertSame(-1, $this->integer($this->raw(['PTTL', $key])));
+                } else {
+                    self::assertSame(0, $this->integer($this->raw(['EXISTS', $key])));
+                }
+            }
+        }
+    }
+
+    public function testGenerationPreservesExactIntegerAboveLuaDoubleRangeAndRejectsMaxIncrement(): void
+    {
+        $now = $this->redisNow();
+        $generation = 9007199254740993;
+        $key = $this->key('score', 'g12-exact-generation');
+        $this->raw(['HSET', $key, 'value', '8', 'updatedAt', (string) $now, 'generation', (string) $generation, 'expiresAt', (string) ($now + 601)]);
+        $this->raw(['EXPIRE', $key, 600]);
+        $state = $this->store->readGenerationBoundScoreState('g12-exact-generation', null);
+        self::assertNotNull($state);
+        self::assertSame($generation, $state->generation);
+
+        $mutation = $this->store->mutateGenerationBoundScore('g12-exact-generation', null, $state, 600, 9);
+        self::assertTrue($mutation->applied);
+        self::assertSame($generation + 1, $mutation->state?->generation);
+
+        $maxKey = $this->key('score', 'g12-generation-max');
+        $this->raw(['HSET', $maxKey, 'value', '8', 'updatedAt', (string) $now, 'generation', (string) PHP_INT_MAX, 'expiresAt', (string) ($now + 601)]);
+        $this->raw(['EXPIRE', $maxKey, 600]);
+        $before = $this->hashMap($maxKey);
+        $maxState = new GenerationBoundScoreStateDTO(GenerationBoundScoreStateDTO::SOURCE_CURRENT, 8, $now, $now + 601, PHP_INT_MAX);
+        $this->assertOperationFails(fn(): mixed => $this->store->mutateGenerationBoundScore('g12-generation-max', null, $maxState, 600, 9));
+        self::assertSame($before, $this->hashMap($maxKey));
+    }
+
+    /**
+     * The PHP-side ensureGenerationTtlRepresentable() preflight reads Redis
+     * TIME once and can go stale before the EVAL that performs the actual
+     * mutation reads Redis TIME again. Proving the boundary is genuinely
+     * atomic requires showing that the LIFECYCLE_MUTATE script itself
+     * rejects an unrepresentable deadline using its own same-script TIME
+     * read, independent of whatever the PHP preflight decided. A decorator
+     * that fabricates the bare ['TIME'] reply consumed only by the PHP
+     * preflight (never the EVAL's internal redis.call('TIME')) makes the
+     * preflight accept a TTL that the real, current Redis TIME inside the
+     * script cannot represent: if the in-script guard were ever removed,
+     * this test would fail because the write would go through.
+     */
+    public function testGenerationBoundScoreCreationEnforcesAtomicInScriptTtlGuard(): void
+    {
+        $key = 'g12-atomic-generation-ttl-guard';
+        $scoreKey = $this->key('score', $key);
+        self::assertSame(0, $this->integer($this->raw(['EXISTS', $scoreKey])));
+
+        $innerExecutor = $this->executor;
+        $staleTimeExecutor = new class ($innerExecutor) implements RedisCommandExecutorInterface {
+            public function __construct(private readonly RedisCommandExecutorInterface $inner) {}
+
+            public function execute(array $command): mixed
+            {
+                if ($command === ['TIME']) {
+                    return ['0', '0'];
+                }
+
+                return $this->inner->execute($command);
+            }
+        };
+        $store = new RedisFullCapabilityStore($staleTimeExecutor, $this->namespace);
+
+        $ttlSeconds = 9007199254740;
+        $this->assertOperationFails(fn(): mixed => $store->mutateGenerationBoundScore($key, null, null, $ttlSeconds, 1));
+
+        self::assertSame(0, $this->integer($this->raw(['EXISTS', $scoreKey])));
+    }
+
+    public function testScoreReadAndIncrementPreserveExactIntegersAboveLuaDoubleRange(): void
+    {
+        $key = $this->key('score', 'g12-exact-score');
+        $this->raw(['HSET', $key, 'value', '9007199254740993', 'updatedAt', (string) $this->redisNow()]);
+        $this->raw(['EXPIRE', $key, 60]);
+        $initialState = $this->store->get('g12-exact-score');
+        self::assertNotNull($initialState);
+        self::assertSame(9007199254740993, $initialState->value);
+        self::assertSame(9007199254740994, $this->store->increment('g12-exact-score', 60, 1));
+        $incrementedState = $this->store->get('g12-exact-score');
+        self::assertNotNull($incrementedState);
+        self::assertSame(9007199254740994, $incrementedState->value);
+
+        $overflow = $this->key('score', 'g12-score-overflow');
+        $this->raw(['HSET', $overflow, 'value', (string) PHP_INT_MAX, 'updatedAt', (string) $this->redisNow()]);
+        $this->raw(['EXPIRE', $overflow, 60]);
+        $before = $this->hashMap($overflow);
+        $this->assertOperationFails(fn(): mixed => $this->store->increment('g12-score-overflow', 60, 1));
+        self::assertSame($before, $this->hashMap($overflow));
+    }
+
+    public function testUnrepresentableCallerTimeArithmeticFailsBeforeAnyRedisMutation(): void
+    {
+        $this->assertOperationFails(fn(): mixed => $this->store->acquireProbeLease('g12-overflow-lease', PHP_INT_MAX, 1));
+        self::assertSame(0, $this->integer($this->raw(['EXISTS', $this->key('probe', 'g12-overflow-lease')])));
+
+        $this->assertOperationFails(fn(): mixed => $this->store->blockWithCycleTracking('g12-overflow-block', null, 2, 1, PHP_INT_MAX, 60, 2, 30, 120));
+        foreach (['block', 'cycle', 'pause'] as $family) {
+            self::assertSame(0, $this->integer($this->raw(['EXISTS', $this->key($family, 'g12-overflow-block')])));
+        }
+
+        $this->assertOperationFails(fn(): mixed => $this->store->mutateGenerationBoundScore('g12-overflow-score', null, null, PHP_INT_MAX, 1));
+        self::assertSame(0, $this->integer($this->raw(['EXISTS', $this->key('score', 'g12-overflow-score')])));
+
+        $this->assertOperationFails(fn(): mixed => $this->store->mutateGenerationBoundScore('g12-lua-exact-overflow', null, null, 9007199254740992, 1));
+        self::assertSame(0, $this->integer($this->raw(['EXISTS', $this->key('score', 'g12-lua-exact-overflow')])));
+
+        $negativeNow = -9007199254740992;
+        $this->assertOperationFails(fn(): mixed => $this->store->acquireProbeLease('g12-negative-lua-time', $negativeNow, 1));
+        self::assertSame(0, $this->integer($this->raw(['EXISTS', $this->key('probe', 'g12-negative-lua-time')])));
+        $this->assertOperationFails(fn(): mixed => $this->store->blockWithCycleTracking('g12-negative-lua-time-block', null, 2, 1, $negativeNow, 60, 2, 30, 120));
+        foreach (['block', 'cycle', 'pause'] as $family) {
+            self::assertSame(0, $this->integer($this->raw(['EXISTS', $this->key($family, 'g12-negative-lua-time-block')])));
+        }
+    }
+
+    /**
+     * `now` itself is exact within the Lua-safe integer range, but the
+     * subtraction boundaries the HARD_BLOCK script derives from it
+     * (`now - cycleWindow`, `now - pauseHistoryRetention`) are not. Each
+     * must be rejected before any Redis mutation, not merely after `now`
+     * passes its own addition-based preflight.
+     */
+    public function testHardBlockCycleSubtractionBoundaryFailsBeforeAnyRedisMutation(): void
+    {
+        $now = -9007199254740990;
+        self::assertGreaterThanOrEqual(-9007199254740991, $now);
+        self::assertLessThanOrEqual(9007199254740991, $now);
+
+        $this->assertOperationFails(fn(): mixed => $this->store->blockWithCycleTracking('g12-cycle-window-subtraction-overflow', null, 2, 1, $now, 60, 2, 30, 120));
+        foreach (['block', 'cycle', 'pause'] as $family) {
+            self::assertSame(0, $this->integer($this->raw(['EXISTS', $this->key($family, 'g12-cycle-window-subtraction-overflow')])));
+        }
+
+        $this->assertOperationFails(fn(): mixed => $this->store->blockWithCycleTracking('g12-pause-retention-subtraction-overflow', null, 2, 1, $now, 1, 2, 30, 60));
+        foreach (['block', 'cycle', 'pause'] as $family) {
+            self::assertSame(0, $this->integer($this->raw(['EXISTS', $this->key($family, 'g12-pause-retention-subtraction-overflow')])));
+        }
+    }
+
+    /**
+     * G12-R03-A: `now`, `now + pause`, and `now + pauseHistoryRetention`
+     * are each individually representable, but the actual boundary the
+     * script computes when it activates a fresh pause —
+     * `now + pause + pauseHistoryRetention`, i.e.
+     * `latestPauseUntil + pauseHistoryRetention` — is not. This must be
+     * rejected before Phase C, not merely after each addend passes its
+     * own isolated check.
+     */
+    public function testHardBlockCombinedPauseRetentionBoundaryFailsBeforeAnyRedisMutation(): void
+    {
+        $now = 9007199254740991 - 100;
+        $durationSeconds = 1;
+        $cycleWindowSeconds = 60;
+        $cycleThreshold = 1;
+        $pauseSeconds = 50;
+        $pauseHistoryRetentionSeconds = 100;
+
+        self::assertLessThanOrEqual(9007199254740991, $now + $pauseSeconds);
+        self::assertLessThanOrEqual(9007199254740991, $now + $pauseHistoryRetentionSeconds);
+        self::assertGreaterThan(9007199254740991, $now + $pauseSeconds + $pauseHistoryRetentionSeconds);
+
+        $this->assertOperationFails(fn(): mixed => $this->store->blockWithCycleTracking(
+            'g12-combined-pause-retention-overflow',
+            null,
+            2,
+            $durationSeconds,
+            $now,
+            $cycleWindowSeconds,
+            $cycleThreshold,
+            $pauseSeconds,
+            $pauseHistoryRetentionSeconds,
+        ));
+        foreach (['block', 'cycle', 'pause'] as $family) {
+            self::assertSame(0, $this->integer($this->raw(['EXISTS', $this->key($family, 'g12-combined-pause-retention-overflow')])));
+        }
+    }
+
+    /**
+     * G12-R03-A: a structurally valid persisted pause record, once
+     * combined with this call's own retention parameter, pushes
+     * `latestPauseUntil + pauseHistoryRetention` past the Lua-exact
+     * boundary even though this call's own `now`/duration/window/pause
+     * parameters are all ordinary small values. A pre-existing active
+     * hard block keeps this call from starting a new cycle, so the
+     * rejection is attributable only to the persisted pause history's own
+     * derived arithmetic, not to this call's own `now`.
+     */
+    public function testHardBlockPersistedPauseHistoryDerivedBoundaryFailsBeforeAnyRedisMutation(): void
+    {
+        $finish = 9007199254740991 - 30;
+        $start = $finish - 10;
+        $now = 1_000;
+        $pauseHistoryRetentionSeconds = 60;
+
+        self::assertGreaterThan(9007199254740991, $finish + $pauseHistoryRetentionSeconds);
+
+        $pauseKey = $this->key('pause', 'g12-persisted-pause-retention-overflow');
+        $blockKey = $this->key('block', 'g12-persisted-pause-retention-overflow');
+        $this->raw(['ZADD', $pauseKey, (string) $start, $start . ':' . $finish]);
+        $this->raw(['EXPIRE', $pauseKey, 600]);
+        $this->raw(['HSET', $blockKey, 'level', '2', 'expiresAt', (string) ($now + 3600)]);
+        $this->raw(['EXPIRE', $blockKey, 600]);
+        $beforePause = $this->raw(['ZRANGE', $pauseKey, 0, -1, 'WITHSCORES']);
+        $beforeBlock = $this->hashMap($blockKey);
+
+        $this->assertOperationFails(fn(): mixed => $this->store->blockWithCycleTracking(
+            'g12-persisted-pause-retention-overflow',
+            null,
+            2,
+            1,
+            $now,
+            60,
+            2,
+            1,
+            $pauseHistoryRetentionSeconds,
+        ));
+
+        self::assertSame($beforePause, $this->raw(['ZRANGE', $pauseKey, 0, -1, 'WITHSCORES']));
+        self::assertSame($beforeBlock, $this->hashMap($blockKey));
+        self::assertSame(0, $this->integer($this->raw(['EXISTS', $this->key('cycle', 'g12-persisted-pause-retention-overflow')])));
+    }
+
+    /**
+     * G12-R03-B: `durationSeconds` is a large-but-ordinarily-valid
+     * positive PHP int. The punishment-lifecycle path uses real Redis
+     * TIME (DEC-016), not caller time, so this cannot be preflighted from
+     * PHP — the rejection must happen inside HARD_BLOCK itself, using the
+     * very Redis TIME read it performs, before any write, leaving a
+     * pre-existing valid generated score, its generation, and its
+     * lifecycle evidence completely untouched.
+     */
+    public function testPunishmentLifecycleRedisTimeDerivedBoundaryFailsBeforeAnyRedisMutation(): void
+    {
+        $mutation = $this->store->mutateGenerationBoundScore('g12-lifecycle-redis-time-overflow', null, null, 600, 8);
+        self::assertTrue($mutation->applied);
+        self::assertNotNull($mutation->state);
+        self::assertNotNull($mutation->state->generation);
+        $generation = $mutation->state->generation;
+        $score = $this->key('score', 'g12-lifecycle-redis-time-overflow');
+        $beforeScore = $this->hashMap($score);
+
+        $this->assertOperationFails(fn(): mixed => $this->store->blockWithPunishmentLifecycleTracking(
+            'g12-lifecycle-redis-time-overflow',
+            null,
+            $generation,
+            str_repeat('a', 32),
+            2,
+            9007199254740991,
+            600,
+            2,
+            60,
+            120,
+        ));
+
+        self::assertSame($beforeScore, $this->hashMap($score));
+        foreach (['block', 'cycle', 'pause'] as $family) {
+            self::assertSame(0, $this->integer($this->raw(['EXISTS', $this->key($family, 'g12-lifecycle-redis-time-overflow')])));
+        }
+    }
+
+    /**
+     * G12-R03-C: each of these primitives previously wrote (HSET/SADD/SET)
+     * before validating that the caller-supplied TTL could actually be
+     * represented and applied via EXPIRE. A TTL this large is still an
+     * ordinarily valid positive PHP int (PHP_INT_MAX), but must now be
+     * rejected before the first write, not after a persisted hash/set
+     * member is already created without — or with an unintended — TTL.
+     */
+    public function testBackendImpossibleTtlFailsBeforeFirstWriteAcrossMutationFamilies(): void
+    {
+        $hugeTtl = PHP_INT_MAX;
+
+        $this->assertOperationFails(fn(): mixed => $this->store->increment('g12-r03c-score-increment', $hugeTtl, 1));
+        self::assertSame(0, $this->integer($this->raw(['EXISTS', $this->key('score', 'g12-r03c-score-increment')])));
+
+        $this->assertOperationFails(function (): void {
+            $this->store->set('g12-r03c-score-set', 5, PHP_INT_MAX);
+        });
+        self::assertSame(0, $this->integer($this->raw(['EXISTS', $this->key('score', 'g12-r03c-score-set')])));
+
+        $this->assertOperationFails(function (): void {
+            $this->store->block('g12-r03c-block-set', 2, PHP_INT_MAX);
+        });
+        self::assertSame(0, $this->integer($this->raw(['EXISTS', $this->key('block', 'g12-r03c-block-set')])));
+
+        $this->assertOperationFails(fn(): mixed => $this->store->addDistinct('g12-r03c-distinct-add', 'member', $hugeTtl));
+        self::assertSame(0, $this->integer($this->raw(['EXISTS', $this->key('distinct', 'g12-r03c-distinct-add')])));
+        self::assertSame(0, $this->integer($this->raw(['EXISTS', $this->key('distinct-meta', 'g12-r03c-distinct-add')])));
+
+        $this->assertOperationFails(fn(): mixed => $this->store->incrementWatchFlag('g12-r03c-watch-increment', $hugeTtl));
+        self::assertSame(0, $this->integer($this->raw(['EXISTS', $this->key('watch', 'g12-r03c-watch-increment')])));
+        self::assertSame(0, $this->integer($this->raw(['EXISTS', $this->key('watch-meta', 'g12-r03c-watch-increment')])));
+
+        $this->assertOperationFails(fn(): mixed => $this->store->addDistinctBoundedWithSnapshot('g12-r03c-bounded-snapshot', 'member', $hugeTtl, 5));
+        self::assertSame(0, $this->integer($this->raw(['EXISTS', $this->key('distinct', 'g12-r03c-bounded-snapshot')])));
+        self::assertSame(0, $this->integer($this->raw(['EXISTS', $this->key('distinct-meta', 'g12-r03c-bounded-snapshot')])));
+
+        $this->assertOperationFails(fn(): mixed => $this->store->addDistinctBoundedWithSnapshotAcrossRotation('g12-r03c-rotated-current', 'g12-r03c-rotated-bridge', 'g12-r03c-rotated-previous', 'member', 'member', $hugeTtl, 5));
+        self::assertSame(0, $this->integer($this->raw(['EXISTS', $this->key('distinct', 'g12-r03c-rotated-current')])));
+        self::assertSame(0, $this->integer($this->raw(['EXISTS', $this->key('distinct-meta', 'g12-r03c-rotated-current')])));
+        self::assertSame(0, $this->integer($this->raw(['EXISTS', $this->key('distinct', 'g12-r03c-rotated-bridge')])));
+
+        $this->assertOperationFails(fn(): mixed => $this->store->incrementWatchFlagAcrossRotation('g12-r03c-watch-rotated-current', 'g12-r03c-watch-rotated-previous', $hugeTtl));
+        self::assertSame(0, $this->integer($this->raw(['EXISTS', $this->key('watch', 'g12-r03c-watch-rotated-current')])));
+        self::assertSame(0, $this->integer($this->raw(['EXISTS', $this->key('watch-meta', 'g12-r03c-watch-rotated-current')])));
+    }
+
+    /**
+     * G12-R03-D / R03-C: a value merely above the Lua double's
+     * exact-integer range (2^53) is NOT automatically corruption — Set/Hash
+     * metadata `expiresAt` fields are validated and compared string-safe,
+     * so they accept any canonical non-negative integer within the real
+     * Redis relative-expiry backend bound (`intdiv(PHP_INT_MAX, 1000)`),
+     * and probe-lease expiry accepts anything within PHP-int64 range.
+     * Persisted hard-block cycle timestamps are the one deliberate
+     * exception: they participate in real Redis ZSET-score arithmetic,
+     * which genuinely cannot exceed Lua-exact precision, so that boundary
+     * remains enforced there specifically (item 20). Each case below uses
+     * a value that is genuinely beyond the relevant field's real backend
+     * bound (not merely beyond 2^53), and each read/mutation-sensitive
+     * path fails explicitly before any write.
+     */
+    public function testGenuinelyBackendImpossiblePersistedTemporalFieldsFailExplicitlyBeforeWrite(): void
+    {
+        $now = $this->redisNow();
+        $abovePhpIntMax = (string) PHP_INT_MAX . '0';
+        self::assertGreaterThan(PHP_INT_MAX, $abovePhpIntMax);
+        $aboveBackendBound = '9223372036854776';
+        self::assertGreaterThan(9223372036854775, (int) $aboveBackendBound);
+        $aboveLuaExactRange = '9007199254740993';
+        self::assertGreaterThan(9007199254740991, (int) $aboveLuaExactRange);
+
+        $leaseKey = $this->key('probe', 'g12-r03d-lease');
+        $this->raw(['SET', $leaseKey, $abovePhpIntMax]);
+        $this->raw(['EXPIRE', $leaseKey, 600]);
+        $this->assertOperationFails(fn(): mixed => $this->store->acquireProbeLease('g12-r03d-lease', $now, 60));
+        self::assertSame($abovePhpIntMax, $this->raw(['GET', $leaseKey]));
+
+        $blockKey = $this->key('block', 'g12-r03d-block');
+        $this->raw(['HSET', $blockKey, 'level', '2', 'expiresAt', $aboveBackendBound]);
+        $this->raw(['EXPIRE', $blockKey, 600]);
+        $beforeBlock = $this->hashMap($blockKey);
+        $this->assertOperationFails(fn(): mixed => $this->store->checkBlock('g12-r03d-block'));
+        self::assertSame($beforeBlock, $this->hashMap($blockKey));
+
+        $distinctMeta = $this->key('distinct-meta', 'g12-r03d-distinct');
+        $distinctData = $this->key('distinct', 'g12-r03d-distinct');
+        $this->raw(['SADD', $distinctData, 'existing']);
+        $this->raw(['EXPIRE', $distinctData, 600]);
+        $this->raw(['HSET', $distinctMeta, 'expiresAt', $aboveBackendBound]);
+        $this->raw(['EXPIRE', $distinctMeta, 600]);
+        $beforeMembers = $this->raw(['SMEMBERS', $distinctData]);
+        $this->assertOperationFails(fn(): mixed => $this->store->addDistinct('g12-r03d-distinct', 'new-member', 60));
+        self::assertSame($beforeMembers, $this->raw(['SMEMBERS', $distinctData]));
+
+        $watchData = $this->key('watch', 'g12-r03d-watch');
+        $watchMeta = $this->key('watch-meta', 'g12-r03d-watch');
+        $this->raw(['SET', $watchData, '3']);
+        $this->raw(['EXPIRE', $watchData, 600]);
+        $this->raw(['HSET', $watchMeta, 'expiresAt', $aboveBackendBound]);
+        $this->raw(['EXPIRE', $watchMeta, 600]);
+        $this->assertOperationFails(fn(): mixed => $this->store->incrementWatchFlag('g12-r03d-watch', 60));
+        self::assertSame('3', $this->raw(['GET', $watchData]));
+
+        $cycleKey = $this->key('cycle', 'g12-r03d-cycle');
+        $this->raw(['ZADD', $cycleKey, $aboveLuaExactRange, $aboveLuaExactRange]);
+        $this->raw(['EXPIRE', $cycleKey, 600]);
+        $beforeCycle = $this->raw(['ZRANGE', $cycleKey, 0, -1, 'WITHSCORES']);
+        $this->assertOperationFails(fn(): mixed => $this->store->blockWithCycleTracking('g12-r03d-cycle', null, 2, 60, $now, 600, 2, 60, 120));
+        self::assertSame($beforeCycle, $this->raw(['ZRANGE', $cycleKey, 0, -1, 'WITHSCORES']));
+        self::assertSame(0, $this->integer($this->raw(['EXISTS', $this->key('block', 'g12-r03d-cycle')])));
+    }
+
+    /**
+     * G12-R03-D Current lifecycle temporal matrix: `updatedAt`, `expiresAt`,
+     * and `reentryValidUntil` are canonical non-negative PHP integers that
+     * legitimately exceed 2^53 whenever the physical PTTL of the score key
+     * itself stays within Lua-exact range (the physical-vs-authoritative
+     * consistency check only ever rejects a physical deadline that
+     * OUTLIVES the authoritative expiry, never the reverse). Read, mutate,
+     * and claim must each preserve these values exactly rather than
+     * silently rounding them.
+     */
+    public function testCurrentLifecycleTemporalFieldsAboveLuaExactRangeAreHandledExactly(): void
+    {
+        $aboveExact = 9007199254740993;
+        $expiresAt = $aboveExact + 1000;
+        $key = 'g12-r03d-current-matrix';
+        $score = $this->key('score', $key);
+        $reentryId = str_repeat('a', 32);
+        $this->raw([
+            'HSET', $score,
+            'value', '8',
+            'updatedAt', (string) $aboveExact,
+            'generation', '1',
+            'expiresAt', (string) $expiresAt,
+            'reentryId', $reentryId,
+            'reentryValidUntil', (string) $expiresAt,
+            'reentryGeneration', '1',
+        ]);
+        $this->raw(['EXPIRE', $score, 600]);
+
+        $state = $this->store->readGenerationBoundScoreState($key, null);
+        self::assertNotNull($state);
+        self::assertSame($aboveExact, $state->updatedAt);
+        self::assertSame($expiresAt, $state->expiresAt);
+        self::assertSame(1, $state->generation);
+        self::assertNotNull($state->postPunishmentReentry);
+        self::assertSame($reentryId, $state->postPunishmentReentry->id);
+        self::assertSame($expiresAt, $state->postPunishmentReentry->validUntil);
+
+        self::assertTrue($this->store->claimPostPunishmentReentry($key, null, $reentryId));
+        self::assertSame($reentryId, $this->raw(['GET', $this->key('reentry-claim', $key)]));
+
+        $mutation = $this->store->mutateGenerationBoundScore($key, null, $state, 600, 9);
+        self::assertTrue($mutation->applied);
+        self::assertNotNull($mutation->state);
+        self::assertSame($expiresAt, $mutation->state->expiresAt);
+        self::assertSame(2, $mutation->state->generation);
+        self::assertSame(0, $this->integer($this->raw(['HEXISTS', $score, 'reentryId'])));
+    }
+
+    /**
+     * G12-R03-D Previous lifecycle temporal matrix: the same exactness
+     * requirement applies to a Previous-fallback snapshot, which remains
+     * read-only — no refresh, no repair, no mutation of Previous itself.
+     */
+    public function testPreviousLifecycleTemporalFieldsAboveLuaExactRangeAreHandledExactlyAndReadOnly(): void
+    {
+        $aboveExact = 9007199254740995;
+        $expiresAt = $aboveExact + 1000;
+        $previousKey = 'g12-r03d-previous-matrix-previous';
+        $currentKey = 'g12-r03d-previous-matrix-current';
+        $previousScore = $this->key('score', $previousKey);
+        $this->raw([
+            'HSET', $previousScore,
+            'value', '4',
+            'updatedAt', (string) $aboveExact,
+            'generation', '1',
+            'expiresAt', (string) $expiresAt,
+        ]);
+        $this->raw(['EXPIRE', $previousScore, 600]);
+        $before = $this->hashMap($previousScore);
+        $beforePttl = $this->integer($this->raw(['PTTL', $previousScore]));
+
+        $state = $this->store->readGenerationBoundScoreState($currentKey, $previousKey);
+        self::assertNotNull($state);
+        self::assertSame(GenerationBoundScoreStateDTO::SOURCE_PREVIOUS, $state->source);
+        self::assertSame($aboveExact, $state->updatedAt);
+        self::assertSame($expiresAt, $state->expiresAt);
+
+        self::assertSame($before, $this->hashMap($previousScore));
+        self::assertLessThanOrEqual($beforePttl, $this->integer($this->raw(['PTTL', $previousScore])));
+    }
+
+    /**
+     * G12-R03-C item 17: every structural/temporal validation in
+     * LIFECYCLE_CLAIM completes before the claim marker is written. A
+     * malformed `reentryValidUntil` (non-canonical, not merely
+     * out-of-range) must fail before SET/PEXPIREAT of the marker, leaving
+     * no marker key behind.
+     */
+    public function testClaimMarkerNotCreatedWhenReentryValidUntilIsMalformed(): void
+    {
+        $now = $this->redisNow();
+        $key = 'g12-r03d-claim-marker-malformed';
+        $score = $this->key('score', $key);
+        $reentryId = str_repeat('b', 32);
+        $this->raw([
+            'HSET', $score,
+            'value', '5',
+            'updatedAt', (string) $now,
+            'generation', '1',
+            'expiresAt', (string) ($now + 600),
+            'reentryId', $reentryId,
+            'reentryValidUntil', '00' . ($now + 600),
+            'reentryGeneration', '1',
+        ]);
+        $this->raw(['EXPIRE', $score, 600]);
+        $beforeScore = $this->hashMap($score);
+
+        $this->assertOperationFails(fn(): mixed => $this->store->claimPostPunishmentReentry($key, null, $reentryId));
+
+        self::assertSame($beforeScore, $this->hashMap($score));
+        self::assertSame(0, $this->integer($this->raw(['EXISTS', $this->key('reentry-claim', $key)])));
+    }
+
+    /**
+     * G12-R03-C item 9: a value above 2^53 is not automatically rejected —
+     * primitives that can pass the TTL to Redis as a decimal string, or
+     * compute `expiresAt` via exact decimal-string addition, must still
+     * succeed exactly for a TTL like `2^53` (9007199254740992), which
+     * exceeds the Lua double's exact-integer range but remains well within
+     * both PHP-int and Redis relative-expiry representability.
+     */
+    public function testAboveLuaExactRangeTtlRemainsUsableWhereBackendSupportsIt(): void
+    {
+        $ttl = 9007199254740992;
+        self::assertGreaterThan(9007199254740991, $ttl);
+
+        self::assertSame(5, $this->store->increment('g12-r03c-above-exact-increment', $ttl, 5));
+        $scoreState = $this->store->get('g12-r03c-above-exact-increment');
+        self::assertNotNull($scoreState);
+        self::assertSame(5, $scoreState->value);
+        $scorePttlMs = $this->integer($this->raw(['PTTL', $this->key('score', 'g12-r03c-above-exact-increment')]));
+        self::assertGreaterThan(0, $scorePttlMs);
+        self::assertLessThanOrEqual($ttl * 1000, $scorePttlMs);
+        self::assertGreaterThan(($ttl - 60) * 1000, $scorePttlMs);
+
+        $before = $this->redisNow();
+        $this->store->block('g12-r03c-above-exact-block', 3, $ttl);
+        $blockState = $this->store->checkBlock('g12-r03c-above-exact-block');
+        self::assertNotNull($blockState);
+        self::assertSame(3, $blockState->level);
+        self::assertGreaterThan(9007199254740991, $blockState->expiresAt);
+        self::assertGreaterThanOrEqual($before + $ttl - 5, $blockState->expiresAt);
+        self::assertLessThanOrEqual($before + $ttl + 5, $blockState->expiresAt);
+
+        $snapshot = $this->store->addDistinctBoundedWithSnapshot('g12-r03c-above-exact-bounded', 'member-one', $ttl, 5);
+        self::assertTrue($snapshot->accepted);
+        self::assertTrue($snapshot->added);
+        self::assertGreaterThan(9007199254740991, $snapshot->expiresAt);
+        self::assertLessThanOrEqual($before + $ttl + 5, $snapshot->expiresAt);
+    }
+
+    /**
+     * DEC-017: `0` is a valid Unix epoch timestamp, not a "no timestamp"
+     * sentinel, for caller-supplied `$now`. The cycle-tracking path must
+     * not confuse a legitimate epoch-zero cycle with "no cycle retained"
+     * when deciding whether to extend the cycle key's TTL.
+     */
+    public function testEpochZeroCallerTimeBlockWithCycleTrackingSucceedsWithFiniteTtl(): void
+    {
+        $result = $this->store->blockWithCycleTracking('g12-dec017-epoch-zero', null, 2, 60, 0, 21_600, 2, 600, 86_400);
+
+        self::assertTrue($result->newCycle);
+        self::assertSame(1, $result->cycleCount);
+        self::assertFalse($result->pauseActivated);
+        self::assertSame(0, $result->pauseUntil);
+
+        $cycleKey = $this->key('cycle', 'g12-dec017-epoch-zero');
+        self::assertSame(['0'], $this->raw(['ZRANGE', $cycleKey, 0, -1]));
+        $cyclePttl = $this->integer($this->raw(['PTTL', $cycleKey]));
+        self::assertGreaterThan(0, $cyclePttl);
+
+        $blockKey = $this->key('block', 'g12-dec017-epoch-zero');
+        self::assertSame(1, $this->integer($this->raw(['EXISTS', $blockKey])));
+        $blockPttl = $this->integer($this->raw(['PTTL', $blockKey]));
+        self::assertGreaterThan(0, $blockPttl);
+        self::assertSame('60', $this->raw(['HGET', $blockKey, 'expiresAt']));
+
+        self::assertSame(0, $this->integer($this->raw(['EXISTS', $this->key('pause', 'g12-dec017-epoch-zero')])));
+    }
+
+    /**
+     * DEC-017: a negative caller-supplied semantic timestamp is rejected
+     * explicitly before any backend access, for both the mutating
+     * cycle-tracking capability and the read-only decay-pause capability.
+     */
+    public function testNegativeCallerSemanticTimestampsFailExplicitlyBeforeAnyRedisAccess(): void
+    {
+        $this->assertOperationFails(fn(): mixed => $this->store->blockWithCycleTracking('g12-dec017-negative-now', null, 2, 60, -1, 21_600, 2, 600, 86_400));
+        foreach (['block', 'cycle', 'pause'] as $family) {
+            self::assertSame(0, $this->integer($this->raw(['EXISTS', $this->key($family, 'g12-dec017-negative-now')])));
+        }
+
+        $this->assertOperationFails(fn(): mixed => $this->store->readDecayPauseState('g12-dec017-negative-read-now', null, 0, -1));
+        $this->assertOperationFails(fn(): mixed => $this->store->readDecayPauseState('g12-dec017-negative-read-from', null, -1, 0));
+    }
+
+    /**
+     * G12-R03-E: readDecayPauseState() is read-only and receives
+     * caller-supplied semantic time per DEC-016 — it must never
+     * substitute Redis TIME for it, but it must still refuse to compute
+     * an interval whose arithmetic cannot be exact rather than silently
+     * rounding, and it must reject a malformed persisted pause boundary
+     * the same way.
+     */
+    public function testReadDecayPauseStateRejectsUnrepresentableCallerTimeAndMalformedHistory(): void
+    {
+        $this->assertOperationFails(fn(): mixed => $this->store->readDecayPauseState('g12-r03e-now-overflow', null, 0, PHP_INT_MAX));
+        $this->assertOperationFails(fn(): mixed => $this->store->readDecayPauseState('g12-r03e-from-overflow', null, PHP_INT_MIN, 0));
+
+        $now = $this->redisNow();
+        $pauseKey = $this->key('pause', 'g12-r03e-malformed-history');
+        $malformedFinish = '9007199254740993';
+        $this->raw(['ZADD', $pauseKey, (string) ($now - 10), ($now - 10) . ':' . $malformedFinish]);
+        $this->raw(['EXPIRE', $pauseKey, 600]);
+        $this->assertOperationFails(fn(): mixed => $this->store->readDecayPauseState('g12-r03e-malformed-history', null, $now - 100, $now));
+    }
+
+    /**
+     * The physical TTL of Current data/metadata is deliberately shortened
+     * far below the 60-second TTL requested on each over-cap call. An
+     * erroneous refresh back to a fresh 60s would then overshoot this
+     * shortened baseline by a margin far larger than any elapsed-time
+     * jitter between snapshot and assertion, so it cannot slip through
+     * un-detected the way a same-magnitude before/after TTL comparison
+     * could. Duplicate-member and new-member rejections are asserted
+     * separately, each against its own freshly captured baseline.
+     */
+    public function testRotationOverCapFailsForDuplicateAndNewMemberWithoutBridgeMutation(): void
+    {
+        $current = $this->key('distinct', 'g12-rotation-over-cap');
+        $meta = $this->key('distinct-meta', 'g12-rotation-over-cap');
+        $this->raw(['SADD', $current, 'one', 'two', 'three']);
+        $authoritativeExpiry = $this->redisNow() + 3600;
+        $this->raw(['HSET', $meta, 'expiresAt', (string) $authoritativeExpiry]);
+        $this->raw(['PEXPIRE', $current, 5_000]);
+        $this->raw(['PEXPIRE', $meta, 5_000]);
+        $bridge = $this->key('distinct', 'g12-rotation-bridge');
+        $bridgeMeta = $this->key('distinct-meta', 'g12-rotation-bridge');
+        $keysBefore = $this->redisKeys('distinct');
+        $membersBaseline = $this->raw(['SMEMBERS', $current]);
+        $metaBaseline = $this->hashMap($meta);
+
+        $dataPttlBaseline = $this->integer($this->raw(['PTTL', $current]));
+        $metaPttlBaseline = $this->integer($this->raw(['PTTL', $meta]));
+        $this->assertOperationFails(fn(): mixed => $this->store->addDistinctBoundedWithSnapshotAcrossRotation('g12-rotation-over-cap', 'g12-rotation-bridge', 'missing-previous', 'one', 'one', 60, 2));
+        self::assertSame($membersBaseline, $this->raw(['SMEMBERS', $current]));
+        self::assertSame($metaBaseline, $this->hashMap($meta));
+        self::assertLessThanOrEqual($dataPttlBaseline, $this->integer($this->raw(['PTTL', $current])));
+        self::assertLessThanOrEqual($metaPttlBaseline, $this->integer($this->raw(['PTTL', $meta])));
+        self::assertSame(-2, $this->integer($this->raw(['PTTL', $bridge])));
+        self::assertSame(-2, $this->integer($this->raw(['PTTL', $bridgeMeta])));
+        self::assertSame($keysBefore, $this->redisKeys('distinct'));
+
+        $dataPttlBaseline = $this->integer($this->raw(['PTTL', $current]));
+        $metaPttlBaseline = $this->integer($this->raw(['PTTL', $meta]));
+        $this->assertOperationFails(fn(): mixed => $this->store->addDistinctBoundedWithSnapshotAcrossRotation('g12-rotation-over-cap', 'g12-rotation-bridge', 'missing-previous', 'four', 'four', 60, 2));
+        self::assertSame($membersBaseline, $this->raw(['SMEMBERS', $current]));
+        self::assertSame($metaBaseline, $this->hashMap($meta));
+        self::assertLessThanOrEqual($dataPttlBaseline, $this->integer($this->raw(['PTTL', $current])));
+        self::assertLessThanOrEqual($metaPttlBaseline, $this->integer($this->raw(['PTTL', $meta])));
+        self::assertSame(-2, $this->integer($this->raw(['PTTL', $bridge])));
+        self::assertSame(-2, $this->integer($this->raw(['PTTL', $bridgeMeta])));
+        self::assertSame($keysBefore, $this->redisKeys('distinct'));
+    }
+
+    public function testAliasedRotationReadsPreviousWithoutWritingOrRefreshingIt(): void
+    {
+        $logical = 'g12-aliased-rotation';
+        $physical = $this->key('distinct', $logical);
+        $meta = $this->key('distinct-meta', $logical);
+        $this->raw(['SADD', $physical, 'old']);
+        $this->raw(['PEXPIRE', $physical, 5_000]);
+        $this->raw(['HSET', $meta, 'expiresAt', (string) ($this->redisNow() + 60)]);
+        $this->raw(['PEXPIRE', $meta, 5_000]);
+        $members = $this->raw(['SMEMBERS', $physical]);
+        $beforeMeta = $this->hashMap($meta);
+        $beforePttl = $this->integer($this->raw(['PTTL', $physical]));
+
+        $snapshot = $this->store->addDistinctBoundedWithSnapshotAcrossRotation($logical, 'g12-aliased-bridge', $logical, 'new', 'old', 60, 3);
+        self::assertTrue($snapshot->accepted);
+        self::assertFalse($snapshot->added);
+        self::assertSame(1, $snapshot->count);
+        self::assertSame(['old'], $snapshot->members);
+        self::assertSame($members, $this->raw(['SMEMBERS', $physical]));
+        self::assertSame($beforeMeta, $this->hashMap($meta));
+        self::assertLessThanOrEqual($beforePttl, $this->integer($this->raw(['PTTL', $physical])));
+        self::assertSame(-2, $this->integer($this->raw(['PTTL', $this->key('distinct', 'g12-aliased-bridge')])));
+    }
+
+    public function testAliasedRotationAcceptsNewLogicalRepresentationWithoutPhysicalPreviousMutation(): void
+    {
+        $logical = 'g12-aliased-rotation-new';
+        $physical = $this->key('distinct', $logical);
+        $meta = $this->key('distinct-meta', $logical);
+        $this->raw(['SADD', $physical, 'old']);
+        $this->raw(['PEXPIRE', $physical, 5_000]);
+        $this->raw(['HSET', $meta, 'expiresAt', (string) ($this->redisNow() + 60)]);
+        $this->raw(['PEXPIRE', $meta, 5_000]);
+        $beforeMembers = $this->raw(['SMEMBERS', $physical]);
+        $beforeMeta = $this->hashMap($meta);
+        $beforeDataPttl = $this->integer($this->raw(['PTTL', $physical]));
+        $beforeMetaPttl = $this->integer($this->raw(['PTTL', $meta]));
+
+        $snapshot = $this->store->addDistinctBoundedWithSnapshotAcrossRotation($logical, 'g12-aliased-rotation-new-bridge', $logical, 'new', 'unknown', 60, 3);
+        self::assertTrue($snapshot->accepted);
+        self::assertTrue($snapshot->added);
+        self::assertSame(2, $snapshot->count);
+        self::assertSame(['new', 'old'], $snapshot->members);
+        self::assertSame($this->integer($this->raw(['HGET', $meta, 'expiresAt'])), $snapshot->expiresAt);
+        self::assertSame($beforeMembers, $this->raw(['SMEMBERS', $physical]));
+        self::assertSame($beforeMeta, $this->hashMap($meta));
+        self::assertLessThanOrEqual($beforeDataPttl, $this->integer($this->raw(['PTTL', $physical])));
+        self::assertLessThanOrEqual($beforeMetaPttl, $this->integer($this->raw(['PTTL', $meta])));
+        self::assertSame(-2, $this->integer($this->raw(['PTTL', $this->key('distinct', 'g12-aliased-rotation-new-bridge')])));
+    }
+
+    public function testInvalidCircuitStatusAndBlockLevelsFailExplicitly(): void
+    {
+        $circuit = $this->key('circuit', 'invalid-status');
+        $this->raw(['SET', $circuit, json_encode(['status' => 'BROKEN', 'failures' => [], 'reEntries' => [], 'lastFailure' => 0, 'openSince' => 0, 'lastSuccess' => 0, 'failClosedUntil' => 0], JSON_THROW_ON_ERROR)]);
+        $this->assertOperationFails(fn(): mixed => $this->store->load('invalid-status'));
+        $this->assertOperationFails(function (): void {
+            $this->store->block('invalid-level', 0, 60);
+        });
+        $this->assertOperationFails(function (): void {
+            $this->store->block('invalid-level-high', 7, 60);
+        });
+        $this->assertOperationFails(function (): void {
+            $this->store->block('invalid-level-negative', -1, 60);
+        });
+        foreach (['invalid-level', 'invalid-level-high', 'invalid-level-negative'] as $logical) {
+            self::assertSame(0, $this->integer($this->raw(['EXISTS', $this->key('block', $logical)])));
+        }
+
+        foreach (['0', '-1', '7'] as $index => $invalidLevel) {
+            $logical = 'persisted-invalid-level-' . $index;
+            $persisted = $this->key('block', $logical);
+            $this->raw(['HSET', $persisted, 'level', $invalidLevel, 'expiresAt', (string) ($this->redisNow() + 60)]);
+            $this->raw(['EXPIRE', $persisted, '60']);
+            $this->assertOperationFails(fn(): mixed => $this->store->checkBlock($logical));
+        }
+    }
+
+    public function testCycleAndPunishmentPublicationRejectUpperLevelBeforeMutation(): void
+    {
+        $now = $this->redisNow();
+        $this->assertOperationFails(fn(): mixed => $this->store->blockWithCycleTracking('g12-level-seven-cycle', null, 7, 60, $now, 600, 2, 60, 120));
+        foreach (['block', 'cycle', 'pause'] as $family) {
+            self::assertSame(0, $this->integer($this->raw(['EXISTS', $this->key($family, 'g12-level-seven-cycle')])));
+        }
+
+        $mutation = $this->store->mutateGenerationBoundScore('g12-level-seven-punishment', null, null, 600, 8);
+        self::assertTrue($mutation->applied);
+        $score = $this->key('score', 'g12-level-seven-punishment');
+        $beforeScore = $this->hashMap($score);
+        $this->assertOperationFails(fn(): mixed => $this->store->blockWithPunishmentLifecycleTracking('g12-level-seven-punishment', null, 1, str_repeat('a', 32), 7, 60, 600, 2, 60, 120));
+        self::assertSame($beforeScore, $this->hashMap($score));
+        foreach (['block', 'cycle', 'pause'] as $family) {
+            self::assertSame(0, $this->integer($this->raw(['EXISTS', $this->key($family, 'g12-level-seven-punishment')])));
+        }
+    }
+
+    /**
+     * Complements the upper-boundary (L7) proof above with the lower
+     * hard-block boundary: L1 is below the L2+ hard-block floor and must
+     * be rejected before any Redis mutation for both cycle-tracking and
+     * punishment-lifecycle publication, the latter leaving a pre-existing
+     * valid generated score — including its lifecycle evidence — entirely
+     * untouched.
+     */
+    public function testCycleAndPunishmentPublicationRejectLowerLevelBeforeMutation(): void
+    {
+        $now = $this->redisNow();
+        $this->assertOperationFails(fn(): mixed => $this->store->blockWithCycleTracking('g12-level-one-cycle', null, 1, 60, $now, 600, 2, 60, 120));
+        foreach (['block', 'cycle', 'pause'] as $family) {
+            self::assertSame(0, $this->integer($this->raw(['EXISTS', $this->key($family, 'g12-level-one-cycle')])));
+        }
+
+        $score = $this->key('score', 'g12-level-one-punishment');
+        $expiresAt = $now + 600;
+        $this->raw([
+            'HSET', $score,
+            'value', '8',
+            'updatedAt', (string) $now,
+            'generation', '1',
+            'expiresAt', (string) $expiresAt,
+            'reentryId', str_repeat('e', 32),
+            'reentryValidUntil', (string) $expiresAt,
+            'reentryGeneration', '1',
+        ]);
+        $this->raw(['EXPIRE', $score, 600]);
+        $beforePunishmentScore = $this->hashMap($score);
+
+        $this->assertOperationFails(fn(): mixed => $this->store->blockWithPunishmentLifecycleTracking('g12-level-one-punishment', null, 1, str_repeat('f', 32), 1, 60, 600, 2, 60, 120));
+        self::assertSame($beforePunishmentScore, $this->hashMap($score));
+        foreach (['block', 'cycle', 'pause'] as $family) {
+            self::assertSame(0, $this->integer($this->raw(['EXISTS', $this->key($family, 'g12-level-one-punishment')])));
+        }
+    }
+
+    public function testLifecycleRejectsOutOfPhpIntScoreBeforeClaimOrPublicationMutation(): void
+    {
+        $now = $this->redisNow();
+        $invalid = '9223372036854775808';
+        $claimKey = $this->key('score', 'g12-malformed-claim-score');
+        $claimId = str_repeat('b', 32);
+        $this->raw(['HSET', $claimKey, 'value', $invalid, 'updatedAt', (string) $now, 'generation', '1', 'expiresAt', (string) ($now + 600), 'reentryId', $claimId, 'reentryValidUntil', (string) ($now + 600), 'reentryGeneration', '1']);
+        $this->raw(['EXPIRE', $claimKey, 600]);
+        $beforeClaim = $this->hashMap($claimKey);
+        $this->assertOperationFails(fn(): mixed => $this->store->claimPostPunishmentReentry('g12-malformed-claim-score', null, $claimId));
+        self::assertSame($beforeClaim, $this->hashMap($claimKey));
+        self::assertSame(0, $this->integer($this->raw(['EXISTS', $this->key('reentry-claim', 'g12-malformed-claim-score')])));
+
+        $currentKey = $this->key('score', 'g12-malformed-current-publication');
+        $this->raw(['HSET', $currentKey, 'value', $invalid, 'updatedAt', (string) $now, 'generation', '1', 'expiresAt', (string) ($now + 600)]);
+        $this->raw(['EXPIRE', $currentKey, 600]);
+        $beforeCurrent = $this->hashMap($currentKey);
+        $this->assertOperationFails(fn(): mixed => $this->store->blockWithPunishmentLifecycleTracking('g12-malformed-current-publication', null, 1, str_repeat('c', 32), 2, 60, 600, 2, 60, 120));
+        self::assertSame($beforeCurrent, $this->hashMap($currentKey));
+        foreach (['block', 'cycle', 'pause'] as $family) {
+            self::assertSame(0, $this->integer($this->raw(['EXISTS', $this->key($family, 'g12-malformed-current-publication')])));
+        }
+
+        $previousKey = $this->key('score', 'g12-malformed-previous-publication');
+        $this->raw(['HSET', $previousKey, 'value', $invalid, 'updatedAt', (string) $now, 'generation', '1', 'expiresAt', (string) ($now + 600)]);
+        $this->raw(['EXPIRE', $previousKey, 600]);
+        $beforePrevious = $this->hashMap($previousKey);
+        $this->assertOperationFails(fn(): mixed => $this->store->blockWithPunishmentLifecycleTracking('g12-malformed-previous-current', 'g12-malformed-previous-publication', 1, str_repeat('d', 32), 2, 60, 600, 2, 60, 120));
+        self::assertSame($beforePrevious, $this->hashMap($previousKey));
+        foreach (['block', 'cycle', 'pause'] as $family) {
+            self::assertSame(0, $this->integer($this->raw(['EXISTS', $this->key($family, 'g12-malformed-previous-current')])));
+        }
+    }
+
+    public function testPublicBuilderRejectsBrokenPersistedCircuitWithoutFallback(): void
+    {
+        $this->raw(['SET', $this->key('circuit', 'api_heavy_protection'), json_encode([
+            'status' => 'BROKEN',
+            'failures' => [],
+            'reEntries' => [],
+            'lastFailure' => 0,
+            'openSince' => 0,
+            'lastSuccess' => 0,
+            'failClosedUntil' => 0,
+        ], JSON_THROW_ON_ERROR)]);
+        $limiter = RateLimiterBuilder::fromFullCapabilityStore(
+            new RateLimiterConfig('g12-circuit-key', 'g12-circuit-fingerprint', 'prod'),
+            $this->store,
+            new RecordingFailureSignalEmitter(),
+        )->build();
+        $context = new RateLimitContextDTO('198.51.100.60', 'Mozilla/5.0', 'g12-broken-circuit', []);
+
+        $this->assertOperationFails(fn(): mixed => $limiter->limit($context, new RateLimitCommand('api_heavy_protection')));
     }
 
     public function testEveryFullCapabilityOperationRoundTripsAgainstRealRedis(): void
@@ -1106,6 +2081,65 @@ final class RedisFullCapabilityStoreIntegrationTest extends TestCase
         }
     }
 
+    /**
+     * The outer-key rotation proof above changes the outer key secret
+     * while the fingerprint secret stays stable, which is not a
+     * fingerprint-only rotation. This proves the same read-only-previous
+     * contract holds through the public runtime when only the fingerprint
+     * secret rotates and the outer key secret is unchanged.
+     */
+    public function testPublicBuilderFingerprintOnlyRotationLeavesPreviousRedisStateReadOnly(): void
+    {
+        $account = 'redis-public-fingerprint-only-rotation';
+        $oldLimiter = RateLimiterBuilder::fromFullCapabilityStore(
+            new RateLimiterConfig('public-fingerprint-only-outer', 'public-old-fingerprint', 'prod'),
+            $this->store,
+            new RecordingFailureSignalEmitter(),
+        )->build();
+        for ($device = 1; $device <= 3; $device++) {
+            $oldLimiter->limit($this->deviceContext($account, $device), RateLimitCommand::checkOnly('login_protection'));
+        }
+
+        $previousKeys = $this->redisKeys('distinct');
+        self::assertNotEmpty($previousKeys);
+        $previousSnapshot = [];
+        foreach ($previousKeys as $key) {
+            $previousSnapshot[$key] = [
+                $this->raw(['SMEMBERS', $key]),
+                $this->integer($this->raw(['PTTL', $key])),
+                $this->hashMap(str_replace(':distinct:', ':distinct-meta:', $key)),
+                $this->integer($this->raw(['PTTL', str_replace(':distinct:', ':distinct-meta:', $key)])),
+            ];
+        }
+
+        $currentLimiter = RateLimiterBuilder::fromFullCapabilityStore(
+            new RateLimiterConfig(
+                'public-fingerprint-only-outer',
+                'public-new-fingerprint',
+                'prod',
+                null,
+                'public-old-fingerprint',
+            ),
+            $this->store,
+            new RecordingFailureSignalEmitter(),
+        )->build();
+        $rotated = $currentLimiter->limit(
+            $this->deviceContext($account, 4),
+            RateLimitCommand::checkOnly('login_protection'),
+        );
+
+        self::assertSame(RateLimitResultDTO::DECISION_HARD_BLOCK, $rotated->decision);
+        $currentKeys = $this->redisKeys('distinct');
+        self::assertNotEmpty(array_diff($currentKeys, $previousKeys));
+        foreach ($previousSnapshot as $key => [$members, $pttl, $metadata, $metadataPttl]) {
+            self::assertSame($members, $this->raw(['SMEMBERS', $key]));
+            self::assertLessThanOrEqual($pttl, $this->integer($this->raw(['PTTL', $key])));
+            $metadataKey = str_replace(':distinct:', ':distinct-meta:', $key);
+            self::assertSame($metadata, $this->hashMap($metadataKey));
+            self::assertLessThanOrEqual($metadataPttl, $this->integer($this->raw(['PTTL', $metadataKey])));
+        }
+    }
+
     public function testPublicBuilderMigratesPreviousBudgetIntoCurrentGeneration(): void
     {
         $clock = new FixedClock('2025-01-01 12:00:00');
@@ -2085,6 +3119,429 @@ final class RedisFullCapabilityStoreIntegrationTest extends TestCase
         return $executor;
     }
 
+    /**
+     * G12-R03-C: Redis validates a relative expiry in milliseconds
+     * (`ttl * 1000 + command-time ms <= 9223372036854775807`). The whole-second
+     * sum `ttl + nowSeconds <= 9223372036854775` is a strictly weaker check: at
+     * `ttl + nowSeconds == 9223372036854775` it accepts while Redis rejects
+     * whenever the current sub-second component exceeds 807 ms. Each family is
+     * driven inside that 807-999 ms window with exactly that TTL: a seconds-only
+     * preflight would pass it through to a real Redis expiry error after the
+     * first write, so the assertions fail unless the preflight is
+     * millisecond-aware and rejects before any mutation. `SET ... EX` is
+     * covered by the same preflight: real Redis only rejects `ttl * 1000`
+     * overflow there and silently wraps the absolute deadline, dropping the
+     * key, so the preflight is the only thing that prevents an untracked
+     * write.
+     */
+    public function testRelativeExpiryPreflightIsMillisecondAccurateAtTheRealRedisBoundary(): void
+    {
+        $operations = [
+            'score-increment' => function (int $ttl): void {
+                $this->store->increment('g12-ms-score-increment', $ttl, 1);
+            },
+            'score-set' => function (int $ttl): void {
+                $this->store->set('g12-ms-score-set', 5, $ttl);
+            },
+            'block' => function (int $ttl): void {
+                $this->store->block('g12-ms-block', 2, $ttl);
+            },
+            'distinct' => function (int $ttl): void {
+                $this->store->addDistinct('g12-ms-distinct', 'member', $ttl);
+            },
+            'watch' => function (int $ttl): void {
+                $this->store->incrementWatchFlag('g12-ms-watch', $ttl);
+            },
+            'bounded' => function (int $ttl): void {
+                $this->store->addDistinctBoundedWithSnapshot('g12-ms-bounded', 'member', $ttl, 5);
+            },
+            'rotated' => function (int $ttl): void {
+                $this->store->addDistinctBoundedWithSnapshotAcrossRotation('g12-ms-rotated-current', 'g12-ms-rotated-bridge', 'g12-ms-rotated-previous', 'member', 'other', $ttl, 5);
+            },
+            'watch-rotated' => function (int $ttl): void {
+                $this->store->incrementWatchFlagAcrossRotation('g12-ms-watch-rotated-current', 'g12-ms-watch-rotated-previous', $ttl);
+            },
+            'lease' => function (int $ttl): void {
+                $this->store->acquireProbeLease('g12-ms-lease', $this->redisNow(), $ttl);
+            },
+        ];
+
+        foreach ($operations as $family => $operation) {
+            $this->raw(['FLUSHDB']);
+            $rejected = false;
+            for ($attempt = 0; $attempt < 5 && ! $rejected; ++$attempt) {
+                $seconds = $this->waitForSubsecondWindow(870_000, 930_000);
+                $ttl = 9_223_372_036_854_775 - $seconds;
+                $this->assertOperationFails(function () use ($operation, $ttl): void {
+                    $operation($ttl);
+                });
+                self::assertSame(0, $this->integer($this->raw(['DBSIZE'])), $family . ' left residue after rejection');
+                $this->raw(['SET', 'g12-ms-probe', 'x']);
+                try {
+                    $this->raw(['EXPIRE', 'g12-ms-probe', $ttl]);
+                } catch (\Throwable) {
+                    // Real Redis' EXPIRE rejects this exact relative expiry in this window.
+                    $rejected = $this->redisNow() === $seconds;
+                }
+                $this->raw(['DEL', 'g12-ms-probe']);
+            }
+            self::assertTrue($rejected, $family . ' boundary window was not reached deterministically');
+            self::assertSame(0, $this->integer($this->raw(['DBSIZE'])));
+
+            // Three whole seconds below the boundary is representable in
+            // milliseconds regardless of the sub-second component.
+            $operation(9_223_372_036_854_775 - $this->redisNow() - 3);
+            self::assertGreaterThan(0, $this->integer($this->raw(['DBSIZE'])), $family . ' rejected a representable TTL');
+        }
+    }
+
+    /**
+     * R01 / R03-C: a live Previous whose physical lifetime is in the widened
+     * (> 2^53 ms) domain still rotates exactly when at least one bridge bound
+     * is exactly representable, and fails before any Current/Bridge mutation
+     * when none is. Previous stays read-only in every case.
+     */
+    public function testWidenedTtlLivePreviousRotationIsExactOrFailsBeforeMutation(): void
+    {
+        $previous = $this->key('distinct', 'g12-r01-prev');
+        $previousMeta = $this->key('distinct-meta', 'g12-r01-prev');
+        $widenedSeconds = 9_000_000_000_000_000;
+        $this->raw(['SADD', $previous, 'old']);
+        $this->raw(['PEXPIRE', $previous, '9000000000000000000']);
+        $this->raw(['HSET', $previousMeta, 'expiresAt', (string) ($this->redisNow() + $widenedSeconds)]);
+        $this->raw(['PEXPIRE', $previousMeta, '9000000000000000000']);
+        self::assertGreaterThan(9_007_199_254_740_991, $this->integer($this->raw(['PTTL', $previous])));
+        $beforeState = $this->stateFingerprint();
+        $beforePttl = [$this->integer($this->raw(['PTTL', $previous])), $this->integer($this->raw(['PTTL', $previousMeta]))];
+
+        // Every bridge bound is above the Lua exact range: nothing can be
+        // bounded exactly, so the rotation fails before writing anything.
+        $this->assertOperationFails(fn(): mixed => $this->store->addDistinctBoundedWithSnapshotAcrossRotation('g12-r01-cur', 'g12-r01-bridge', 'g12-r01-prev', 'new', 'unknown', $widenedSeconds, 10));
+        self::assertSame($beforeState, $this->stateFingerprint());
+        self::assertLessThanOrEqual($beforePttl[0], $this->integer($this->raw(['PTTL', $previous])));
+        self::assertLessThanOrEqual($beforePttl[1], $this->integer($this->raw(['PTTL', $previousMeta])));
+
+        // An ordinary requested TTL is exact, so the bridge is bounded by it.
+        $snapshot = $this->store->addDistinctBoundedWithSnapshotAcrossRotation('g12-r01-cur', 'g12-r01-bridge', 'g12-r01-prev', 'new', 'unknown', 60, 10);
+        self::assertTrue($snapshot->accepted);
+        $bridgePttl = $this->integer($this->raw(['PTTL', $this->key('distinct', 'g12-r01-bridge')]));
+        $bridgeMetaPttl = $this->integer($this->raw(['PTTL', $this->key('distinct-meta', 'g12-r01-bridge')]));
+        foreach ([$bridgePttl, $bridgeMetaPttl] as $pttl) {
+            self::assertGreaterThan(0, $pttl);
+            self::assertLessThanOrEqual(60_000, $pttl);
+        }
+        self::assertSame($beforeState[$previous], $this->stateFingerprint()[$previous]);
+        self::assertSame($beforeState[$previousMeta], $this->stateFingerprint()[$previousMeta]);
+        self::assertLessThanOrEqual($beforePttl[0], $this->integer($this->raw(['PTTL', $previous])));
+        self::assertLessThanOrEqual($beforePttl[1], $this->integer($this->raw(['PTTL', $previousMeta])));
+    }
+
+    public function testWidenedTtlRequestWithExactPreviousBoundsProducesExactBridge(): void
+    {
+        $previous = $this->key('distinct', 'g12-r01b-prev');
+        $previousMeta = $this->key('distinct-meta', 'g12-r01b-prev');
+        $this->raw(['SADD', $previous, 'old']);
+        $this->raw(['PEXPIRE', $previous, '6000']);
+        $expiry = $this->redisNow() + 30;
+        $this->raw(['HSET', $previousMeta, 'expiresAt', (string) $expiry]);
+        $this->raw(['PEXPIRE', $previousMeta, '9000']);
+        $beforePreviousPttl = $this->integer($this->raw(['PTTL', $previous]));
+        $beforeMetaPttl = $this->integer($this->raw(['PTTL', $previousMeta]));
+        $authoritativeRemainingMs = ($expiry * 1000) - $this->redisNowMilliseconds();
+
+        $this->store->addDistinctBoundedWithSnapshotAcrossRotation('g12-r01b-cur', 'g12-r01b-bridge', 'g12-r01b-prev', 'new', 'unknown', 9_000_000_000_000_000, 10);
+
+        foreach ([$this->key('distinct', 'g12-r01b-bridge'), $this->key('distinct-meta', 'g12-r01b-bridge')] as $bridgeKey) {
+            $pttl = $this->integer($this->raw(['PTTL', $bridgeKey]));
+            self::assertGreaterThan(0, $pttl);
+            self::assertLessThanOrEqual($beforePreviousPttl, $pttl);
+            self::assertLessThanOrEqual($beforeMetaPttl, $pttl);
+            self::assertLessThanOrEqual($authoritativeRemainingMs, $pttl);
+        }
+        self::assertLessThanOrEqual($beforePreviousPttl, $this->integer($this->raw(['PTTL', $previous])));
+        self::assertLessThanOrEqual($beforeMetaPttl, $this->integer($this->raw(['PTTL', $previousMeta])));
+    }
+
+    /**
+     * DEC-017: persisted cycle/pause timestamps and hard-block `expiresAt` are
+     * non-negative. A negative value is malformed state: every publication and
+     * read fails before any write and Previous stays read-only.
+     */
+    public function testNegativePersistedHistoryFailsPublicationAndReadBeforeAnyWrite(): void
+    {
+        $cases = [
+            'current-cycle' => ['cycle', false, '-5', '-5'],
+            'previous-cycle' => ['cycle', true, '-5', '-5'],
+            'current-pause' => ['pause', false, '-10:-5', '-10'],
+            'previous-pause' => ['pause', true, '-10:-5', '-10'],
+            'current-block' => ['block', false, '-5', ''],
+            'previous-block' => ['block', true, '-5', ''],
+        ];
+
+        foreach (['cycle-tracking', 'lifecycle'] as $route) {
+            foreach ($cases as $name => [$family, $onPrevious, $member, $score]) {
+                $this->raw(['FLUSHDB']);
+                $now = $this->redisNow();
+                $current = 'g12-neg-' . $route . '-' . $name . '-cur';
+                $previousLogical = 'g12-neg-' . $route . '-' . $name . '-prev';
+                if ($route === 'lifecycle') {
+                    $scoreKey = $this->key('score', $current);
+                    $this->raw(['HSET', $scoreKey, 'value', '8', 'updatedAt', (string) $now, 'generation', '1', 'expiresAt', (string) ($now + 600)]);
+                    $this->raw(['EXPIRE', $scoreKey, '600']);
+                }
+                $target = $this->key($family, $onPrevious ? $previousLogical : $current);
+                if ($family === 'block') {
+                    $this->raw(['HSET', $target, 'level', '2', 'expiresAt', $member]);
+                } else {
+                    $this->raw(['ZADD', $target, $score, $member]);
+                }
+                $this->raw(['EXPIRE', $target, '600']);
+                $beforeState = $this->stateFingerprint();
+                $beforePttl = $this->integer($this->raw(['PTTL', $target]));
+
+                if ($route === 'cycle-tracking') {
+                    $this->assertOperationFails(fn(): mixed => $this->store->blockWithCycleTracking($current, $previousLogical, 2, 60, $now, 600, 2, 60, 120));
+                } else {
+                    $this->assertOperationFails(fn(): mixed => $this->store->blockWithPunishmentLifecycleTracking($current, $previousLogical, 1, str_repeat('c', 32), 2, 60, 600, 3, 60, 120));
+                }
+                self::assertSame($beforeState, $this->stateFingerprint(), $route . '/' . $name . ' mutated state');
+                self::assertLessThanOrEqual($beforePttl, $this->integer($this->raw(['PTTL', $target])));
+
+                if ($family === 'pause') {
+                    $this->assertOperationFails(fn(): mixed => $this->store->readDecayPauseState($current, $previousLogical, 0, $now));
+                    self::assertSame($beforeState, $this->stateFingerprint());
+                }
+            }
+        }
+    }
+
+    public function testScoreUpdatedAtMustBeCanonicalNonNegativePhpIntAndIsNeverSilentlyRepaired(): void
+    {
+        foreach (['-1', '0001', '9223372036854775808', '99999999999999999999999', '1.5', ''] as $index => $updatedAt) {
+            $logical = 'g12-score-updated-at-' . $index;
+            $key = $this->key('score', $logical);
+            $this->raw(['HSET', $key, 'value', '7', 'updatedAt', $updatedAt]);
+            $this->raw(['EXPIRE', $key, '600']);
+            $before = $this->hashMap($key);
+            $pttl = $this->integer($this->raw(['PTTL', $key]));
+
+            $this->assertOperationFails(fn(): mixed => $this->store->increment($logical, 60, 1));
+            $this->assertOperationFails(fn(): mixed => $this->store->get($logical));
+
+            self::assertSame($before, $this->hashMap($key));
+            self::assertLessThanOrEqual($pttl, $this->integer($this->raw(['PTTL', $key])));
+        }
+
+        $key = $this->key('score', 'g12-score-updated-at-valid');
+        $this->raw(['HSET', $key, 'value', '7', 'updatedAt', '0']);
+        $this->raw(['EXPIRE', $key, '600']);
+        self::assertSame(0, $this->store->get('g12-score-updated-at-valid')?->updatedAt);
+        self::assertSame(8, $this->store->increment('g12-score-updated-at-valid', 60, 1));
+    }
+
+    public function testBudgetEpochStartMustBeCanonicalNonNegativeAndFailsBeforeAnyMutation(): void
+    {
+        foreach (['-1', '0001', '1.5', '1e3', ' 5', '9223372036854775808', ''] as $index => $epochStart) {
+            $logical = 'g12-budget-malformed-' . $index;
+            $key = $this->key('budget', $logical);
+            $this->raw(['HSET', $key, 'count', '5', 'epochStart', $epochStart, 'epochDuration', '60']);
+            $this->raw(['EXPIRE', $key, '600']);
+            $before = $this->hashMap($key);
+            $pttl = $this->integer($this->raw(['PTTL', $key]));
+
+            $this->assertOperationFails(fn(): mixed => $this->store->incrementBudget($logical, 60, 1));
+            $this->assertOperationFails(fn(): mixed => $this->store->getBudget($logical));
+            $this->assertOperationFails(fn(): mixed => $this->store->incrementBudgetWithSeed($logical, 60, new BudgetStateDTO(1, $this->redisNow()), 1));
+
+            self::assertSame($before, $this->hashMap($key), 'epochStart ' . $epochStart . ' was repaired or mutated');
+            self::assertLessThanOrEqual($pttl, $this->integer($this->raw(['PTTL', $key])));
+        }
+    }
+
+    public function testBudgetEpochStartAboveLuaExactRangeButInsidePhpIntIsHandledExactly(): void
+    {
+        foreach (['9007199254740993', '9223372036854775807'] as $index => $epochStart) {
+            $logical = 'g12-budget-above-exact-' . $index;
+            $key = $this->key('budget', $logical);
+            $this->raw(['HSET', $key, 'count', '5', 'epochStart', $epochStart, 'epochDuration', '60']);
+            $this->raw(['EXPIRE', $key, '600']);
+
+            $state = $this->store->getBudget($logical);
+            self::assertNotNull($state);
+            self::assertSame((int) $epochStart, $state->epochStart);
+            $incremented = $this->store->incrementBudget($logical, 60, 2);
+            self::assertSame(7, $incremented->count);
+            self::assertSame((int) $epochStart, $incremented->epochStart);
+            $seeded = $this->store->incrementBudgetWithSeed($logical, 60, new BudgetStateDTO(99, 1), 1);
+            self::assertSame(8, $seeded->count);
+            self::assertSame((int) $epochStart, $seeded->epochStart);
+            self::assertSame($epochStart, $this->raw(['HGET', $key, 'epochStart']));
+        }
+    }
+
+    public function testBudgetSeedEpochStartIsValidatedOnlyWhenTheSeedIsUsed(): void
+    {
+        // A relevant negative seed is rejected and nothing is created.
+        $this->assertOperationFails(fn(): mixed => $this->store->incrementBudgetWithSeed('g12-budget-seed-negative', 60, new BudgetStateDTO(3, -1), 1));
+        self::assertSame(0, $this->integer($this->raw(['EXISTS', $this->key('budget', 'g12-budget-seed-negative')])));
+
+        // A relevant seed whose expiry Redis cannot represent fails before mutation.
+        $this->assertOperationFails(fn(): mixed => $this->store->incrementBudgetWithSeed('g12-budget-seed-too-large', 60, new BudgetStateDTO(3, PHP_INT_MAX), 1));
+        self::assertSame(0, $this->integer($this->raw(['EXISTS', $this->key('budget', 'g12-budget-seed-too-large')])));
+
+        // An expired Current is not replaced when the relevant seed is malformed.
+        $key = $this->key('budget', 'g12-budget-seed-expired-current');
+        $this->raw(['HSET', $key, 'count', '7', 'epochStart', (string) ($this->redisNow() - 2), 'epochDuration', '1']);
+        $this->raw(['EXPIRE', $key, '60']);
+        $before = $this->hashMap($key);
+        $this->assertOperationFails(fn(): mixed => $this->store->incrementBudgetWithSeed('g12-budget-seed-expired-current', 60, new BudgetStateDTO(3, -1), 1));
+        self::assertSame($before, $this->hashMap($key));
+
+        // A seed above the Lua exact range but inside PHP int64 is preserved exactly.
+        $seeded = $this->store->incrementBudgetWithSeed('g12-budget-seed-above-exact', 60, new BudgetStateDTO(3, 9_007_199_254_740_993), 1);
+        self::assertSame(4, $seeded->count);
+        self::assertSame(9_007_199_254_740_993, $seeded->epochStart);
+        self::assertSame('9007199254740993', $this->raw(['HGET', $this->key('budget', 'g12-budget-seed-above-exact'), 'epochStart']));
+        self::assertGreaterThan(0, $this->integer($this->raw(['PTTL', $this->key('budget', 'g12-budget-seed-above-exact')])));
+    }
+
+    public function testCircuitBreakerRejectsNegativeTimestampsOnLoadAndSaveWithoutBackendFailure(): void
+    {
+        $valid = ['status' => 'OPEN', 'failures' => [10, 20], 'reEntries' => [30], 'lastFailure' => 20, 'openSince' => 20, 'lastSuccess' => 0, 'failClosedUntil' => 0];
+        $negatives = [
+            'failures' => ['failures' => [10, -20]],
+            'reEntries' => ['reEntries' => [-30]],
+            'lastFailure' => ['lastFailure' => -1],
+            'openSince' => ['openSince' => -1],
+            'lastSuccess' => ['lastSuccess' => -1],
+            'failClosedUntil' => ['failClosedUntil' => -1],
+        ];
+
+        foreach ($negatives as $field => $override) {
+            $policy = 'g12-circuit-negative-' . $field;
+            $this->raw(['SET', $this->key('circuit', $policy), json_encode(array_merge($valid, $override), JSON_THROW_ON_ERROR)]);
+            $this->assertOperationFails(fn(): mixed => $this->store->load($policy));
+
+            $saved = 'g12-circuit-save-' . $field;
+            $good = new CircuitBreakerStateDTO('OPEN', [10], 10, 10, 0, [20], 0);
+            $this->store->save($saved, $good);
+            $before = $this->raw(['GET', $this->key('circuit', $saved)]);
+            $bad = new CircuitBreakerStateDTO(
+                'OPEN',
+                $override['failures'] ?? [10],
+                $override['lastFailure'] ?? 10,
+                $override['openSince'] ?? 10,
+                $override['lastSuccess'] ?? 0,
+                $override['reEntries'] ?? [20],
+                $override['failClosedUntil'] ?? 0,
+            );
+            $this->assertOperationFails(function () use ($saved, $bad): void {
+                $this->store->save($saved, $bad);
+            });
+            self::assertSame($before, $this->raw(['GET', $this->key('circuit', $saved)]));
+
+            $missing = 'g12-circuit-save-missing-' . $field;
+            $this->assertOperationFails(function () use ($missing, $bad): void {
+                $this->store->save($missing, $bad);
+            });
+            self::assertSame(0, $this->integer($this->raw(['EXISTS', $this->key('circuit', $missing)])));
+        }
+
+        $zero = new CircuitBreakerStateDTO('CLOSED', [0], 0, 0, 0, [0], 0);
+        $this->store->save('g12-circuit-zero', $zero);
+        self::assertSame($zero->jsonSerialize(), $this->store->load('g12-circuit-zero')?->jsonSerialize());
+    }
+
+    /**
+     * G12-R03: a hard block created through the public store with an expiry
+     * above the Lua exact-integer ceiling (a Hash decimal string BLOCK_SET can
+     * create and BLOCK_GET can read) is valid state for the shared HARD_BLOCK
+     * path too. Its expiry is compared as a decimal string, never narrowed.
+     */
+    public function testWidenedHardBlockExpiryIsValidForCycleTrackingLifecycleAndPreviousReads(): void
+    {
+        $widened = 9_100_000_000_000_000;
+        $ceiling = 9_007_199_254_740_991;
+
+        // Current: active widened L3 block => no false new cycle, no corruption.
+        $this->store->block('g12-wide-cur', 3, $widened);
+        $state = $this->store->checkBlock('g12-wide-cur');
+        self::assertNotNull($state);
+        self::assertGreaterThan($ceiling, $state->expiresAt);
+        $exactExpiry = $this->raw(['HGET', $this->key('block', 'g12-wide-cur'), 'expiresAt']);
+        self::assertSame((string) $state->expiresAt, $exactExpiry);
+        $result = $this->store->blockWithCycleTracking('g12-wide-cur', null, 2, 60, $this->redisNow(), 600, 2, 60, 120);
+        self::assertFalse($result->newCycle);
+        self::assertSame(0, $result->cycleCount);
+        self::assertSame(0, $this->integer($this->raw(['EXISTS', $this->key('cycle', 'g12-wide-cur')])));
+        self::assertSame(2, $this->store->checkBlock('g12-wide-cur')?->level);
+
+        // Previous: widened active block is read correctly and stays read-only.
+        $this->store->block('g12-wide-prev', 3, $widened);
+        $previousKey = $this->key('block', 'g12-wide-prev');
+        $beforePrevious = [bin2hex($this->stringValue($this->raw(['DUMP', $previousKey]))), $this->integer($this->raw(['PTTL', $previousKey]))];
+        $result = $this->store->blockWithCycleTracking('g12-wide-cur-2', 'g12-wide-prev', 2, 60, $this->redisNow(), 600, 2, 60, 120);
+        self::assertFalse($result->newCycle);
+        self::assertSame($beforePrevious[0], bin2hex($this->stringValue($this->raw(['DUMP', $previousKey]))));
+        self::assertLessThanOrEqual($beforePrevious[1], $this->integer($this->raw(['PTTL', $previousKey])));
+        self::assertSame($this->raw(['HGET', $previousKey, 'expiresAt']), (string) $this->store->checkBlock('g12-wide-prev')?->expiresAt);
+        self::assertGreaterThan($ceiling, $this->store->checkBlock('g12-wide-prev')->expiresAt ?? 0);
+
+        // Lifecycle publication: Current widened block, then Previous widened block.
+        self::assertTrue($this->store->mutateGenerationBoundScore('g12-wide-life', null, null, 600, 8)->applied);
+        $this->store->block('g12-wide-life', 3, $widened);
+        $transition = $this->store->blockWithPunishmentLifecycleTracking('g12-wide-life', null, 1, str_repeat('a', 32), 2, 30, 21600, 3, 600, 86400);
+        self::assertTrue($transition->applied);
+        self::assertFalse($transition->cycle?->newCycle);
+
+        self::assertTrue($this->store->mutateGenerationBoundScore('g12-wide-life-2', null, null, 600, 8)->applied);
+        $beforePrevious = [bin2hex($this->stringValue($this->raw(['DUMP', $previousKey]))), $this->integer($this->raw(['PTTL', $previousKey]))];
+        $transition = $this->store->blockWithPunishmentLifecycleTracking('g12-wide-life-2', 'g12-wide-prev', 1, str_repeat('b', 32), 2, 30, 21600, 3, 600, 86400);
+        self::assertTrue($transition->applied);
+        self::assertFalse($transition->cycle?->newCycle);
+        self::assertSame($beforePrevious[0], bin2hex($this->stringValue($this->raw(['DUMP', $previousKey]))));
+        self::assertLessThanOrEqual($beforePrevious[1], $this->integer($this->raw(['PTTL', $previousKey])));
+    }
+
+    private function stringValue(mixed $value): string
+    {
+        self::assertIsString($value);
+
+        return $value;
+    }
+
+    /** @return array<string, string> */
+    private function stateFingerprint(): array
+    {
+        $keys = $this->raw(['KEYS', '*']);
+        self::assertIsArray($keys);
+        $fingerprint = [];
+        foreach ($keys as $key) {
+            self::assertIsString($key);
+            $dump = $this->raw(['DUMP', $key]);
+            self::assertIsString($dump);
+            $fingerprint[$key] = bin2hex($dump);
+        }
+        ksort($fingerprint);
+
+        return $fingerprint;
+    }
+
+    /** Block until Redis TIME's sub-second component lies in the window; return its whole seconds. */
+    private function waitForSubsecondWindow(int $fromMicroseconds, int $toMicroseconds): int
+    {
+        for ($i = 0; $i < 2_000; ++$i) {
+            $time = $this->raw(['TIME']);
+            self::assertIsArray($time);
+            $microseconds = $this->integer($time[1] ?? 0);
+            if ($microseconds >= $fromMicroseconds && $microseconds <= $toMicroseconds) {
+                return $this->integer($time[0] ?? 0);
+            }
+            usleep(2_000);
+        }
+        self::fail('Redis sub-second window was not reached.');
+    }
+
     private function hardBlock(string $currentKey, int $now, int $duration, ?string $previousKey = null): HardBlockCycleResultDTO
     {
         return $this->store->blockWithCycleTracking(
@@ -2134,6 +3591,16 @@ final class RedisFullCapabilityStoreIntegrationTest extends TestCase
         self::assertArrayHasKey(0, $time);
 
         return $this->integer($time[0]);
+    }
+
+    private function redisNowMilliseconds(): int
+    {
+        $time = $this->raw(['TIME']);
+        self::assertIsArray($time);
+        self::assertArrayHasKey(0, $time);
+        self::assertArrayHasKey(1, $time);
+
+        return $this->integer($time[0]) * 1000 + intdiv($this->integer($time[1]), 1000);
     }
 
     /**
@@ -2257,9 +3724,13 @@ final class RedisFullCapabilityStoreIntegrationTest extends TestCase
     {
         try {
             $operation();
-        } catch (\Throwable) {
+        } catch (BackendFailureException $exception) {
+            self::fail('Malformed-state assertion received BackendFailureException: ' . $exception->getMessage());
+        } catch (RateLimiterException) {
             self::addToAssertionCount(1);
             return;
+        } catch (\Throwable) {
+            self::fail('Malformed-state assertion received an unexpected exception type.');
         }
 
         self::fail('Malformed persisted Redis state was accepted.');
