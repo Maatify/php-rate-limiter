@@ -13,7 +13,11 @@ final readonly class HardBlockCycleResultDTO implements \JsonSerializable
      * @param bool $newCycle Whether this operation entered a new hard-block cycle.
      * @param int $cycleCount Number of retained cycles after this operation.
      * @param bool $pauseActivated Whether this operation started a decay pause.
-     * @param int $pauseUntil Active pause end timestamp, or zero when inactive.
+     * @param int $pauseUntil Active pause end Unix timestamp (non-negative
+     *     per DEC-017), or `0` as the sentinel for "no active pause". `0`
+     *     is not itself a possible active-pause end timestamp because a
+     *     pause is only ever activated relative to a `$now` in the same
+     *     non-negative domain plus a positive pause duration.
      */
     public function __construct(
         public bool $newCycle,

@@ -608,6 +608,19 @@ identity. Pause state is read-only during decay; retained pause intersections
 with `[fromTimestamp, now)` are unioned without double counting, including
 completed pauses so lazy decay remains accurate.
 
+Per DEC-017, `$now` (both methods) and `$fromTimestamp` are semantic Unix
+timestamps and MUST be non-negative (`>= 0`); a negative value fails
+explicitly with `RateLimiterException` before any backend mutation, or
+before it is relied upon in `readDecayPauseState()`'s interval arithmetic.
+Caller-time authority for `$now`/`$fromTimestamp` itself remains DEC-016 —
+DEC-017 only narrows the value domain, it does not change which clock is
+authoritative. Persisted cycle/pause timestamps are likewise non-negative
+canonical integers. `0` is both a valid Unix-epoch timestamp and, separately,
+the documented sentinel `HardBlockCycleResultDTO::$pauseUntil` /
+`DecayPauseStateDTO::$activePauseUntil` use for "no active pause"; the two
+meanings do not collide in practice because an active pause's end timestamp
+is always strictly greater than the `$now` it was activated relative to.
+
 ### 4.4 Namespacing & Scoping
 
 All keys MUST include:

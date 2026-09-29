@@ -517,28 +517,38 @@ final class RedisFullCapabilityStoreIntegrationTest extends TestCase
     }
 
     /**
-     * G12-R03-D: each of these persisted temporal fields is a
-     * syntactically valid PHP-int-range decimal integer that nonetheless
-     * exceeds the Lua double's exact-integer range (2^53). A naive
-     * `tonumber()` plus floor-equality check would silently round it into
-     * some other, still-integral-looking value instead of catching it.
-     * Each read/mutation-sensitive path must fail explicitly before any
-     * write.
+     * G12-R03-D / R03-C: a value merely above the Lua double's
+     * exact-integer range (2^53) is NOT automatically corruption — Set/Hash
+     * metadata `expiresAt` fields are validated and compared string-safe,
+     * so they accept any canonical non-negative integer within the real
+     * Redis relative-expiry backend bound (`intdiv(PHP_INT_MAX, 1000)`),
+     * and probe-lease expiry accepts anything within PHP-int64 range.
+     * Persisted hard-block cycle timestamps are the one deliberate
+     * exception: they participate in real Redis ZSET-score arithmetic,
+     * which genuinely cannot exceed Lua-exact precision, so that boundary
+     * remains enforced there specifically (item 20). Each case below uses
+     * a value that is genuinely beyond the relevant field's real backend
+     * bound (not merely beyond 2^53), and each read/mutation-sensitive
+     * path fails explicitly before any write.
      */
-    public function testPersistedTemporalFieldsAboveLuaExactRangeFailExplicitlyBeforeWrite(): void
+    public function testGenuinelyBackendImpossiblePersistedTemporalFieldsFailExplicitlyBeforeWrite(): void
     {
         $now = $this->redisNow();
-        $aboveExact = '9007199254740993';
-        self::assertGreaterThan(9007199254740991, (int) $aboveExact);
+        $abovePhpIntMax = (string) PHP_INT_MAX . '0';
+        self::assertGreaterThan(PHP_INT_MAX, $abovePhpIntMax);
+        $aboveBackendBound = '9223372036854776';
+        self::assertGreaterThan(9223372036854775, (int) $aboveBackendBound);
+        $aboveLuaExactRange = '9007199254740993';
+        self::assertGreaterThan(9007199254740991, (int) $aboveLuaExactRange);
 
         $leaseKey = $this->key('probe', 'g12-r03d-lease');
-        $this->raw(['SET', $leaseKey, $aboveExact]);
+        $this->raw(['SET', $leaseKey, $abovePhpIntMax]);
         $this->raw(['EXPIRE', $leaseKey, 600]);
         $this->assertOperationFails(fn(): mixed => $this->store->acquireProbeLease('g12-r03d-lease', $now, 60));
-        self::assertSame($aboveExact, $this->raw(['GET', $leaseKey]));
+        self::assertSame($abovePhpIntMax, $this->raw(['GET', $leaseKey]));
 
         $blockKey = $this->key('block', 'g12-r03d-block');
-        $this->raw(['HSET', $blockKey, 'level', '2', 'expiresAt', $aboveExact]);
+        $this->raw(['HSET', $blockKey, 'level', '2', 'expiresAt', $aboveBackendBound]);
         $this->raw(['EXPIRE', $blockKey, 600]);
         $beforeBlock = $this->hashMap($blockKey);
         $this->assertOperationFails(fn(): mixed => $this->store->checkBlock('g12-r03d-block'));
@@ -548,7 +558,7 @@ final class RedisFullCapabilityStoreIntegrationTest extends TestCase
         $distinctData = $this->key('distinct', 'g12-r03d-distinct');
         $this->raw(['SADD', $distinctData, 'existing']);
         $this->raw(['EXPIRE', $distinctData, 600]);
-        $this->raw(['HSET', $distinctMeta, 'expiresAt', $aboveExact]);
+        $this->raw(['HSET', $distinctMeta, 'expiresAt', $aboveBackendBound]);
         $this->raw(['EXPIRE', $distinctMeta, 600]);
         $beforeMembers = $this->raw(['SMEMBERS', $distinctData]);
         $this->assertOperationFails(fn(): mixed => $this->store->addDistinct('g12-r03d-distinct', 'new-member', 60));
@@ -558,18 +568,215 @@ final class RedisFullCapabilityStoreIntegrationTest extends TestCase
         $watchMeta = $this->key('watch-meta', 'g12-r03d-watch');
         $this->raw(['SET', $watchData, '3']);
         $this->raw(['EXPIRE', $watchData, 600]);
-        $this->raw(['HSET', $watchMeta, 'expiresAt', $aboveExact]);
+        $this->raw(['HSET', $watchMeta, 'expiresAt', $aboveBackendBound]);
         $this->raw(['EXPIRE', $watchMeta, 600]);
         $this->assertOperationFails(fn(): mixed => $this->store->incrementWatchFlag('g12-r03d-watch', 60));
         self::assertSame('3', $this->raw(['GET', $watchData]));
 
         $cycleKey = $this->key('cycle', 'g12-r03d-cycle');
-        $this->raw(['ZADD', $cycleKey, $aboveExact, $aboveExact]);
+        $this->raw(['ZADD', $cycleKey, $aboveLuaExactRange, $aboveLuaExactRange]);
         $this->raw(['EXPIRE', $cycleKey, 600]);
         $beforeCycle = $this->raw(['ZRANGE', $cycleKey, 0, -1, 'WITHSCORES']);
         $this->assertOperationFails(fn(): mixed => $this->store->blockWithCycleTracking('g12-r03d-cycle', null, 2, 60, $now, 600, 2, 60, 120));
         self::assertSame($beforeCycle, $this->raw(['ZRANGE', $cycleKey, 0, -1, 'WITHSCORES']));
         self::assertSame(0, $this->integer($this->raw(['EXISTS', $this->key('block', 'g12-r03d-cycle')])));
+    }
+
+    /**
+     * G12-R03-D Current lifecycle temporal matrix: `updatedAt`, `expiresAt`,
+     * and `reentryValidUntil` are canonical non-negative PHP integers that
+     * legitimately exceed 2^53 whenever the physical PTTL of the score key
+     * itself stays within Lua-exact range (the physical-vs-authoritative
+     * consistency check only ever rejects a physical deadline that
+     * OUTLIVES the authoritative expiry, never the reverse). Read, mutate,
+     * and claim must each preserve these values exactly rather than
+     * silently rounding them.
+     */
+    public function testCurrentLifecycleTemporalFieldsAboveLuaExactRangeAreHandledExactly(): void
+    {
+        $aboveExact = 9007199254740993;
+        $expiresAt = $aboveExact + 1000;
+        $key = 'g12-r03d-current-matrix';
+        $score = $this->key('score', $key);
+        $reentryId = str_repeat('a', 32);
+        $this->raw([
+            'HSET', $score,
+            'value', '8',
+            'updatedAt', (string) $aboveExact,
+            'generation', '1',
+            'expiresAt', (string) $expiresAt,
+            'reentryId', $reentryId,
+            'reentryValidUntil', (string) $expiresAt,
+            'reentryGeneration', '1',
+        ]);
+        $this->raw(['EXPIRE', $score, 600]);
+
+        $state = $this->store->readGenerationBoundScoreState($key, null);
+        self::assertNotNull($state);
+        self::assertSame($aboveExact, $state->updatedAt);
+        self::assertSame($expiresAt, $state->expiresAt);
+        self::assertSame(1, $state->generation);
+        self::assertNotNull($state->postPunishmentReentry);
+        self::assertSame($reentryId, $state->postPunishmentReentry->id);
+        self::assertSame($expiresAt, $state->postPunishmentReentry->validUntil);
+
+        self::assertTrue($this->store->claimPostPunishmentReentry($key, null, $reentryId));
+        self::assertSame($reentryId, $this->raw(['GET', $this->key('reentry-claim', $key)]));
+
+        $mutation = $this->store->mutateGenerationBoundScore($key, null, $state, 600, 9);
+        self::assertTrue($mutation->applied);
+        self::assertNotNull($mutation->state);
+        self::assertSame($expiresAt, $mutation->state->expiresAt);
+        self::assertSame(2, $mutation->state->generation);
+        self::assertSame(0, $this->integer($this->raw(['HEXISTS', $score, 'reentryId'])));
+    }
+
+    /**
+     * G12-R03-D Previous lifecycle temporal matrix: the same exactness
+     * requirement applies to a Previous-fallback snapshot, which remains
+     * read-only — no refresh, no repair, no mutation of Previous itself.
+     */
+    public function testPreviousLifecycleTemporalFieldsAboveLuaExactRangeAreHandledExactlyAndReadOnly(): void
+    {
+        $aboveExact = 9007199254740995;
+        $expiresAt = $aboveExact + 1000;
+        $previousKey = 'g12-r03d-previous-matrix-previous';
+        $currentKey = 'g12-r03d-previous-matrix-current';
+        $previousScore = $this->key('score', $previousKey);
+        $this->raw([
+            'HSET', $previousScore,
+            'value', '4',
+            'updatedAt', (string) $aboveExact,
+            'generation', '1',
+            'expiresAt', (string) $expiresAt,
+        ]);
+        $this->raw(['EXPIRE', $previousScore, 600]);
+        $before = $this->hashMap($previousScore);
+        $beforePttl = $this->integer($this->raw(['PTTL', $previousScore]));
+
+        $state = $this->store->readGenerationBoundScoreState($currentKey, $previousKey);
+        self::assertNotNull($state);
+        self::assertSame(GenerationBoundScoreStateDTO::SOURCE_PREVIOUS, $state->source);
+        self::assertSame($aboveExact, $state->updatedAt);
+        self::assertSame($expiresAt, $state->expiresAt);
+
+        self::assertSame($before, $this->hashMap($previousScore));
+        self::assertLessThanOrEqual($beforePttl, $this->integer($this->raw(['PTTL', $previousScore])));
+    }
+
+    /**
+     * G12-R03-C item 17: every structural/temporal validation in
+     * LIFECYCLE_CLAIM completes before the claim marker is written. A
+     * malformed `reentryValidUntil` (non-canonical, not merely
+     * out-of-range) must fail before SET/PEXPIREAT of the marker, leaving
+     * no marker key behind.
+     */
+    public function testClaimMarkerNotCreatedWhenReentryValidUntilIsMalformed(): void
+    {
+        $now = $this->redisNow();
+        $key = 'g12-r03d-claim-marker-malformed';
+        $score = $this->key('score', $key);
+        $reentryId = str_repeat('b', 32);
+        $this->raw([
+            'HSET', $score,
+            'value', '5',
+            'updatedAt', (string) $now,
+            'generation', '1',
+            'expiresAt', (string) ($now + 600),
+            'reentryId', $reentryId,
+            'reentryValidUntil', '00' . ($now + 600),
+            'reentryGeneration', '1',
+        ]);
+        $this->raw(['EXPIRE', $score, 600]);
+        $beforeScore = $this->hashMap($score);
+
+        $this->assertOperationFails(fn(): mixed => $this->store->claimPostPunishmentReentry($key, null, $reentryId));
+
+        self::assertSame($beforeScore, $this->hashMap($score));
+        self::assertSame(0, $this->integer($this->raw(['EXISTS', $this->key('reentry-claim', $key)])));
+    }
+
+    /**
+     * G12-R03-C item 9: a value above 2^53 is not automatically rejected —
+     * primitives that can pass the TTL to Redis as a decimal string, or
+     * compute `expiresAt` via exact decimal-string addition, must still
+     * succeed exactly for a TTL like `2^53` (9007199254740992), which
+     * exceeds the Lua double's exact-integer range but remains well within
+     * both PHP-int and Redis relative-expiry representability.
+     */
+    public function testAboveLuaExactRangeTtlRemainsUsableWhereBackendSupportsIt(): void
+    {
+        $ttl = 9007199254740992;
+        self::assertGreaterThan(9007199254740991, $ttl);
+
+        self::assertSame(5, $this->store->increment('g12-r03c-above-exact-increment', $ttl, 5));
+        $scoreState = $this->store->get('g12-r03c-above-exact-increment');
+        self::assertNotNull($scoreState);
+        self::assertSame(5, $scoreState->value);
+        $scorePttlMs = $this->integer($this->raw(['PTTL', $this->key('score', 'g12-r03c-above-exact-increment')]));
+        self::assertGreaterThan(0, $scorePttlMs);
+        self::assertLessThanOrEqual($ttl * 1000, $scorePttlMs);
+        self::assertGreaterThan(($ttl - 60) * 1000, $scorePttlMs);
+
+        $before = $this->redisNow();
+        $this->store->block('g12-r03c-above-exact-block', 3, $ttl);
+        $blockState = $this->store->checkBlock('g12-r03c-above-exact-block');
+        self::assertNotNull($blockState);
+        self::assertSame(3, $blockState->level);
+        self::assertGreaterThan(9007199254740991, $blockState->expiresAt);
+        self::assertGreaterThanOrEqual($before + $ttl - 5, $blockState->expiresAt);
+        self::assertLessThanOrEqual($before + $ttl + 5, $blockState->expiresAt);
+
+        $snapshot = $this->store->addDistinctBoundedWithSnapshot('g12-r03c-above-exact-bounded', 'member-one', $ttl, 5);
+        self::assertTrue($snapshot->accepted);
+        self::assertTrue($snapshot->added);
+        self::assertGreaterThan(9007199254740991, $snapshot->expiresAt);
+        self::assertLessThanOrEqual($before + $ttl + 5, $snapshot->expiresAt);
+    }
+
+    /**
+     * DEC-017: `0` is a valid Unix epoch timestamp, not a "no timestamp"
+     * sentinel, for caller-supplied `$now`. The cycle-tracking path must
+     * not confuse a legitimate epoch-zero cycle with "no cycle retained"
+     * when deciding whether to extend the cycle key's TTL.
+     */
+    public function testEpochZeroCallerTimeBlockWithCycleTrackingSucceedsWithFiniteTtl(): void
+    {
+        $result = $this->store->blockWithCycleTracking('g12-dec017-epoch-zero', null, 2, 60, 0, 21_600, 2, 600, 86_400);
+
+        self::assertTrue($result->newCycle);
+        self::assertSame(1, $result->cycleCount);
+        self::assertFalse($result->pauseActivated);
+        self::assertSame(0, $result->pauseUntil);
+
+        $cycleKey = $this->key('cycle', 'g12-dec017-epoch-zero');
+        self::assertSame(['0'], $this->raw(['ZRANGE', $cycleKey, 0, -1]));
+        $cyclePttl = $this->integer($this->raw(['PTTL', $cycleKey]));
+        self::assertGreaterThan(0, $cyclePttl);
+
+        $blockKey = $this->key('block', 'g12-dec017-epoch-zero');
+        self::assertSame(1, $this->integer($this->raw(['EXISTS', $blockKey])));
+        $blockPttl = $this->integer($this->raw(['PTTL', $blockKey]));
+        self::assertGreaterThan(0, $blockPttl);
+        self::assertSame('60', $this->raw(['HGET', $blockKey, 'expiresAt']));
+
+        self::assertSame(0, $this->integer($this->raw(['EXISTS', $this->key('pause', 'g12-dec017-epoch-zero')])));
+    }
+
+    /**
+     * DEC-017: a negative caller-supplied semantic timestamp is rejected
+     * explicitly before any backend access, for both the mutating
+     * cycle-tracking capability and the read-only decay-pause capability.
+     */
+    public function testNegativeCallerSemanticTimestampsFailExplicitlyBeforeAnyRedisAccess(): void
+    {
+        $this->assertOperationFails(fn(): mixed => $this->store->blockWithCycleTracking('g12-dec017-negative-now', null, 2, 60, -1, 21_600, 2, 600, 86_400));
+        foreach (['block', 'cycle', 'pause'] as $family) {
+            self::assertSame(0, $this->integer($this->raw(['EXISTS', $this->key($family, 'g12-dec017-negative-now')])));
+        }
+
+        $this->assertOperationFails(fn(): mixed => $this->store->readDecayPauseState('g12-dec017-negative-read-now', null, 0, -1));
+        $this->assertOperationFails(fn(): mixed => $this->store->readDecayPauseState('g12-dec017-negative-read-from', null, -1, 0));
     }
 
     /**
