@@ -11,6 +11,11 @@ use Maatify\RateLimiter\Exception\RateLimiterException;
  */
 final readonly class BoundedCorrelationObservationDTO implements \JsonSerializable
 {
+    /**
+     * The previousKey, previousMember, and bridgeKey values form one optional
+     * group: either all three are supplied or all three are null. Any partial
+     * combination violates the DTO contract and throws RateLimiterException.
+     */
     public function __construct(
         public string $currentKey,
         public string $currentMember,

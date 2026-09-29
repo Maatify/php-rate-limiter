@@ -15,10 +15,10 @@ use Maatify\SharedCommon\Contracts\ClockInterface;
 /**
  * Production implementation of SimpleRateLimiterInterface (DEC-013).
  *
- * Version 1 is FIXED WINDOW, positive caller-supplied cost per consume
- * (defaulting to 1), one policy-defined limit and interval, one
- * caller-supplied subject, atomic consume, and a deterministic fixed reset
- * boundary. It reuses the existing atomic
+ * The current simple-throttling contract uses FIXED WINDOW, positive
+ * caller-supplied cost per consume (defaulting to 1), one policy-defined
+ * limit and interval, one caller-supplied subject, atomic consume, and a
+ * deterministic fixed reset boundary. It reuses the existing atomic
  * budget-epoch persistence primitives; no new storage backend family is
  * introduced. It is FAIL_CLOSED only and does not create score state,
  * correlation observations, or authentication budgets: its key namespace is

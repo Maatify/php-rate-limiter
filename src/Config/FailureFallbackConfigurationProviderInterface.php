@@ -18,5 +18,11 @@ use Maatify\RateLimiter\DTO\FailureFallbackConfigurationDTO;
  */
 interface FailureFallbackConfigurationProviderInterface
 {
+    /**
+     * Return the policy's effective typed bounded backend-failure fallback
+     * configuration. Runtime consumers use this typed contract uniformly for
+     * official and custom policies without relying on policy identity or
+     * origin.
+     */
     public function getFailureFallbackConfiguration(): FailureFallbackConfigurationDTO;
 }
