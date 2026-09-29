@@ -100,13 +100,10 @@ class RateLimiterEngineWorkflowTest extends TestCase
         // Clear local fallback state
         $reflection = new \ReflectionClass(\Maatify\RateLimiter\Service\LocalFallbackLimiter::class);
         $countersProperty = $reflection->getProperty('counters');
-        $countersProperty->setAccessible(true);
         $countersProperty->setValue(null, []);
         $trackedProperty = $reflection->getProperty('trackedSubjects');
-        $trackedProperty->setAccessible(true);
         $trackedProperty->setValue(null, []);
         $expiryProperty = $reflection->getProperty('trackedSubjectExpiries');
-        $expiryProperty->setAccessible(true);
         $expiryProperty->setValue(null, []);
     }
 

@@ -31,6 +31,7 @@ use Maatify\RateLimiter\Tests\Support\Correlation\NullCorrelationStore;
 use Maatify\RateLimiter\Tests\Support\FailureSignal\RecordingFailureSignalEmitter;
 use Maatify\RateLimiter\Tests\Support\RateLimiter\InMemoryRateLimitStore;
 use PHPUnit\Framework\TestCase;
+use PHPUnit\Framework\Attributes\DataProvider;
 
 final class CircuitBreakerStateMachineTest extends TestCase
 {
@@ -574,9 +575,7 @@ final class CircuitBreakerStateMachineTest extends TestCase
         self::assertSame(FailureStateDTO::STATE_HALF_OPEN, $recovered->status);
     }
 
-    /**
-     * @dataProvider guardedStates
-     */
+    #[DataProvider('guardedStates')]
     public function testCircuitBreakerGuardBlocksRecoveryForEveryPersistedState(string $status): void
     {
         $now = $this->clock->now()->getTimestamp();

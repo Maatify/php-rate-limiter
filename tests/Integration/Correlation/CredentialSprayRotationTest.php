@@ -29,6 +29,7 @@ use Maatify\RateLimiter\Tests\Support\Correlation\StatefulInMemoryCorrelationSto
 use Maatify\RateLimiter\Tests\Support\FailureSignal\RecordingFailureSignalEmitter;
 use Maatify\RateLimiter\Tests\Support\RateLimiter\InMemoryRateLimitStore;
 use PHPUnit\Framework\TestCase;
+use PHPUnit\Framework\Attributes\DataProvider;
 
 final class CredentialSprayRotationTest extends TestCase
 {
@@ -115,9 +116,7 @@ final class CredentialSprayRotationTest extends TestCase
         self::assertSame(0, $store->mutationCalls);
     }
 
-    /**
-     * @dataProvider authoritativeBlockKeyProvider
-     */
+    #[DataProvider('authoritativeBlockKeyProvider')]
     public function testAuthoritativeActiveBlockWinsBeforeRotationCapabilityCheck(string $keyType, string $secret): void
     {
         $store = new RecordingBaseOnlyCorrelationStore();

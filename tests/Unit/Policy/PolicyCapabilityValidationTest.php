@@ -24,12 +24,11 @@ use Maatify\RateLimiter\Tests\Support\Correlation\StatefulInMemoryCorrelationSto
 use Maatify\RateLimiter\Tests\Support\FailureSignal\RecordingFailureSignalEmitter;
 use Maatify\RateLimiter\Tests\Support\RateLimiter\InMemoryRateLimitStore;
 use PHPUnit\Framework\TestCase;
+use PHPUnit\Framework\Attributes\DataProvider;
 
 final class PolicyCapabilityValidationTest extends TestCase
 {
-    /**
-     * @dataProvider invalidPolicyProvider
-     */
+    #[DataProvider('invalidPolicyProvider')]
     public function testInvalidTypedPolicyIsRejected(string $expectedMessage, BlockPolicyInterface $policy): void
     {
         $this->expectException(RateLimiterException::class);
