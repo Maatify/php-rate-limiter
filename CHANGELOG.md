@@ -93,9 +93,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   hard-block-cycle contracts without adding methods, and
   `RateLimiterBuilder::fromFullCapabilityStore()` composes one host store across
   those boundaries while keeping the failure-signal emitter separate. The
-  existing multi-store constructor remains source-compatible. No concrete Redis,
-  PDO, Lua, or `ext-redis`
-  adapter is included.
+  existing multi-store constructor remains source-compatible, and the aggregate
+  storage contract remains backend-agnostic.
 - Implemented multiple-block-cycle decay pause. Persisted L2+ blocks now
   use the additive `HardBlockCycleStoreInterface` for atomic Current-only block
   persistence, real cycle classification, rolling six-hour K1/K2/K3/K4/K5
@@ -158,8 +157,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Rotation-safe credential-spray correlation for Login and OTP pre-checks: the unchanged
   `CorrelationStoreInterface` remains the no-rotation base contract, while
   `CorrelationRotationStoreInterface` preserves previous history through current-secret bridge
-  members, fixed TTLs, read-only previous state, and explicit missing-capability/corrupt-state
-  failures. No concrete Redis/Lua/PDO adapter is included.
+  members, fixed TTLs, read-only previous state, and explicit
+  missing-capability/corrupt-state failures.
 - Credential-spray correlation for Login and OTP pre-checks using the optional opaque
   `correlationId` with `accountId` fallback, domain-separated HMAC members, a fixed K1 window,
   mandatory N-1 WATCH escalation, and trusted-session advisory K1 semantics.
