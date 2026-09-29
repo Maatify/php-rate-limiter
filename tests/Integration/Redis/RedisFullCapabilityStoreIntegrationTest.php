@@ -349,6 +349,251 @@ final class RedisFullCapabilityStoreIntegrationTest extends TestCase
     }
 
     /**
+     * G12-R03-A: `now`, `now + pause`, and `now + pauseHistoryRetention`
+     * are each individually representable, but the actual boundary the
+     * script computes when it activates a fresh pause —
+     * `now + pause + pauseHistoryRetention`, i.e.
+     * `latestPauseUntil + pauseHistoryRetention` — is not. This must be
+     * rejected before Phase C, not merely after each addend passes its
+     * own isolated check.
+     */
+    public function testHardBlockCombinedPauseRetentionBoundaryFailsBeforeAnyRedisMutation(): void
+    {
+        $now = 9007199254740991 - 100;
+        $durationSeconds = 1;
+        $cycleWindowSeconds = 60;
+        $cycleThreshold = 1;
+        $pauseSeconds = 50;
+        $pauseHistoryRetentionSeconds = 100;
+
+        self::assertLessThanOrEqual(9007199254740991, $now + $pauseSeconds);
+        self::assertLessThanOrEqual(9007199254740991, $now + $pauseHistoryRetentionSeconds);
+        self::assertGreaterThan(9007199254740991, $now + $pauseSeconds + $pauseHistoryRetentionSeconds);
+
+        $this->assertOperationFails(fn(): mixed => $this->store->blockWithCycleTracking(
+            'g12-combined-pause-retention-overflow',
+            null,
+            2,
+            $durationSeconds,
+            $now,
+            $cycleWindowSeconds,
+            $cycleThreshold,
+            $pauseSeconds,
+            $pauseHistoryRetentionSeconds,
+        ));
+        foreach (['block', 'cycle', 'pause'] as $family) {
+            self::assertSame(0, $this->integer($this->raw(['EXISTS', $this->key($family, 'g12-combined-pause-retention-overflow')])));
+        }
+    }
+
+    /**
+     * G12-R03-A: a structurally valid persisted pause record, once
+     * combined with this call's own retention parameter, pushes
+     * `latestPauseUntil + pauseHistoryRetention` past the Lua-exact
+     * boundary even though this call's own `now`/duration/window/pause
+     * parameters are all ordinary small values. A pre-existing active
+     * hard block keeps this call from starting a new cycle, so the
+     * rejection is attributable only to the persisted pause history's own
+     * derived arithmetic, not to this call's own `now`.
+     */
+    public function testHardBlockPersistedPauseHistoryDerivedBoundaryFailsBeforeAnyRedisMutation(): void
+    {
+        $finish = 9007199254740991 - 30;
+        $start = $finish - 10;
+        $now = 1_000;
+        $pauseHistoryRetentionSeconds = 60;
+
+        self::assertGreaterThan(9007199254740991, $finish + $pauseHistoryRetentionSeconds);
+
+        $pauseKey = $this->key('pause', 'g12-persisted-pause-retention-overflow');
+        $blockKey = $this->key('block', 'g12-persisted-pause-retention-overflow');
+        $this->raw(['ZADD', $pauseKey, (string) $start, $start . ':' . $finish]);
+        $this->raw(['EXPIRE', $pauseKey, 600]);
+        $this->raw(['HSET', $blockKey, 'level', '2', 'expiresAt', (string) ($now + 3600)]);
+        $this->raw(['EXPIRE', $blockKey, 600]);
+        $beforePause = $this->raw(['ZRANGE', $pauseKey, 0, -1, 'WITHSCORES']);
+        $beforeBlock = $this->hashMap($blockKey);
+
+        $this->assertOperationFails(fn(): mixed => $this->store->blockWithCycleTracking(
+            'g12-persisted-pause-retention-overflow',
+            null,
+            2,
+            1,
+            $now,
+            60,
+            2,
+            1,
+            $pauseHistoryRetentionSeconds,
+        ));
+
+        self::assertSame($beforePause, $this->raw(['ZRANGE', $pauseKey, 0, -1, 'WITHSCORES']));
+        self::assertSame($beforeBlock, $this->hashMap($blockKey));
+        self::assertSame(0, $this->integer($this->raw(['EXISTS', $this->key('cycle', 'g12-persisted-pause-retention-overflow')])));
+    }
+
+    /**
+     * G12-R03-B: `durationSeconds` is a large-but-ordinarily-valid
+     * positive PHP int. The punishment-lifecycle path uses real Redis
+     * TIME (DEC-016), not caller time, so this cannot be preflighted from
+     * PHP — the rejection must happen inside HARD_BLOCK itself, using the
+     * very Redis TIME read it performs, before any write, leaving a
+     * pre-existing valid generated score, its generation, and its
+     * lifecycle evidence completely untouched.
+     */
+    public function testPunishmentLifecycleRedisTimeDerivedBoundaryFailsBeforeAnyRedisMutation(): void
+    {
+        $mutation = $this->store->mutateGenerationBoundScore('g12-lifecycle-redis-time-overflow', null, null, 600, 8);
+        self::assertTrue($mutation->applied);
+        self::assertNotNull($mutation->state);
+        self::assertNotNull($mutation->state->generation);
+        $generation = $mutation->state->generation;
+        $score = $this->key('score', 'g12-lifecycle-redis-time-overflow');
+        $beforeScore = $this->hashMap($score);
+
+        $this->assertOperationFails(fn(): mixed => $this->store->blockWithPunishmentLifecycleTracking(
+            'g12-lifecycle-redis-time-overflow',
+            null,
+            $generation,
+            str_repeat('a', 32),
+            2,
+            9007199254740991,
+            600,
+            2,
+            60,
+            120,
+        ));
+
+        self::assertSame($beforeScore, $this->hashMap($score));
+        foreach (['block', 'cycle', 'pause'] as $family) {
+            self::assertSame(0, $this->integer($this->raw(['EXISTS', $this->key($family, 'g12-lifecycle-redis-time-overflow')])));
+        }
+    }
+
+    /**
+     * G12-R03-C: each of these primitives previously wrote (HSET/SADD/SET)
+     * before validating that the caller-supplied TTL could actually be
+     * represented and applied via EXPIRE. A TTL this large is still an
+     * ordinarily valid positive PHP int (PHP_INT_MAX), but must now be
+     * rejected before the first write, not after a persisted hash/set
+     * member is already created without — or with an unintended — TTL.
+     */
+    public function testBackendImpossibleTtlFailsBeforeFirstWriteAcrossMutationFamilies(): void
+    {
+        $hugeTtl = PHP_INT_MAX;
+
+        $this->assertOperationFails(fn(): mixed => $this->store->increment('g12-r03c-score-increment', $hugeTtl, 1));
+        self::assertSame(0, $this->integer($this->raw(['EXISTS', $this->key('score', 'g12-r03c-score-increment')])));
+
+        $this->assertOperationFails(function (): void {
+            $this->store->set('g12-r03c-score-set', 5, PHP_INT_MAX);
+        });
+        self::assertSame(0, $this->integer($this->raw(['EXISTS', $this->key('score', 'g12-r03c-score-set')])));
+
+        $this->assertOperationFails(function (): void {
+            $this->store->block('g12-r03c-block-set', 2, PHP_INT_MAX);
+        });
+        self::assertSame(0, $this->integer($this->raw(['EXISTS', $this->key('block', 'g12-r03c-block-set')])));
+
+        $this->assertOperationFails(fn(): mixed => $this->store->addDistinct('g12-r03c-distinct-add', 'member', $hugeTtl));
+        self::assertSame(0, $this->integer($this->raw(['EXISTS', $this->key('distinct', 'g12-r03c-distinct-add')])));
+        self::assertSame(0, $this->integer($this->raw(['EXISTS', $this->key('distinct-meta', 'g12-r03c-distinct-add')])));
+
+        $this->assertOperationFails(fn(): mixed => $this->store->incrementWatchFlag('g12-r03c-watch-increment', $hugeTtl));
+        self::assertSame(0, $this->integer($this->raw(['EXISTS', $this->key('watch', 'g12-r03c-watch-increment')])));
+        self::assertSame(0, $this->integer($this->raw(['EXISTS', $this->key('watch-meta', 'g12-r03c-watch-increment')])));
+
+        $this->assertOperationFails(fn(): mixed => $this->store->addDistinctBoundedWithSnapshot('g12-r03c-bounded-snapshot', 'member', $hugeTtl, 5));
+        self::assertSame(0, $this->integer($this->raw(['EXISTS', $this->key('distinct', 'g12-r03c-bounded-snapshot')])));
+        self::assertSame(0, $this->integer($this->raw(['EXISTS', $this->key('distinct-meta', 'g12-r03c-bounded-snapshot')])));
+
+        $this->assertOperationFails(fn(): mixed => $this->store->addDistinctBoundedWithSnapshotAcrossRotation('g12-r03c-rotated-current', 'g12-r03c-rotated-bridge', 'g12-r03c-rotated-previous', 'member', 'member', $hugeTtl, 5));
+        self::assertSame(0, $this->integer($this->raw(['EXISTS', $this->key('distinct', 'g12-r03c-rotated-current')])));
+        self::assertSame(0, $this->integer($this->raw(['EXISTS', $this->key('distinct-meta', 'g12-r03c-rotated-current')])));
+        self::assertSame(0, $this->integer($this->raw(['EXISTS', $this->key('distinct', 'g12-r03c-rotated-bridge')])));
+
+        $this->assertOperationFails(fn(): mixed => $this->store->incrementWatchFlagAcrossRotation('g12-r03c-watch-rotated-current', 'g12-r03c-watch-rotated-previous', $hugeTtl));
+        self::assertSame(0, $this->integer($this->raw(['EXISTS', $this->key('watch', 'g12-r03c-watch-rotated-current')])));
+        self::assertSame(0, $this->integer($this->raw(['EXISTS', $this->key('watch-meta', 'g12-r03c-watch-rotated-current')])));
+    }
+
+    /**
+     * G12-R03-D: each of these persisted temporal fields is a
+     * syntactically valid PHP-int-range decimal integer that nonetheless
+     * exceeds the Lua double's exact-integer range (2^53). A naive
+     * `tonumber()` plus floor-equality check would silently round it into
+     * some other, still-integral-looking value instead of catching it.
+     * Each read/mutation-sensitive path must fail explicitly before any
+     * write.
+     */
+    public function testPersistedTemporalFieldsAboveLuaExactRangeFailExplicitlyBeforeWrite(): void
+    {
+        $now = $this->redisNow();
+        $aboveExact = '9007199254740993';
+        self::assertGreaterThan(9007199254740991, (int) $aboveExact);
+
+        $leaseKey = $this->key('probe', 'g12-r03d-lease');
+        $this->raw(['SET', $leaseKey, $aboveExact]);
+        $this->raw(['EXPIRE', $leaseKey, 600]);
+        $this->assertOperationFails(fn(): mixed => $this->store->acquireProbeLease('g12-r03d-lease', $now, 60));
+        self::assertSame($aboveExact, $this->raw(['GET', $leaseKey]));
+
+        $blockKey = $this->key('block', 'g12-r03d-block');
+        $this->raw(['HSET', $blockKey, 'level', '2', 'expiresAt', $aboveExact]);
+        $this->raw(['EXPIRE', $blockKey, 600]);
+        $beforeBlock = $this->hashMap($blockKey);
+        $this->assertOperationFails(fn(): mixed => $this->store->checkBlock('g12-r03d-block'));
+        self::assertSame($beforeBlock, $this->hashMap($blockKey));
+
+        $distinctMeta = $this->key('distinct-meta', 'g12-r03d-distinct');
+        $distinctData = $this->key('distinct', 'g12-r03d-distinct');
+        $this->raw(['SADD', $distinctData, 'existing']);
+        $this->raw(['EXPIRE', $distinctData, 600]);
+        $this->raw(['HSET', $distinctMeta, 'expiresAt', $aboveExact]);
+        $this->raw(['EXPIRE', $distinctMeta, 600]);
+        $beforeMembers = $this->raw(['SMEMBERS', $distinctData]);
+        $this->assertOperationFails(fn(): mixed => $this->store->addDistinct('g12-r03d-distinct', 'new-member', 60));
+        self::assertSame($beforeMembers, $this->raw(['SMEMBERS', $distinctData]));
+
+        $watchData = $this->key('watch', 'g12-r03d-watch');
+        $watchMeta = $this->key('watch-meta', 'g12-r03d-watch');
+        $this->raw(['SET', $watchData, '3']);
+        $this->raw(['EXPIRE', $watchData, 600]);
+        $this->raw(['HSET', $watchMeta, 'expiresAt', $aboveExact]);
+        $this->raw(['EXPIRE', $watchMeta, 600]);
+        $this->assertOperationFails(fn(): mixed => $this->store->incrementWatchFlag('g12-r03d-watch', 60));
+        self::assertSame('3', $this->raw(['GET', $watchData]));
+
+        $cycleKey = $this->key('cycle', 'g12-r03d-cycle');
+        $this->raw(['ZADD', $cycleKey, $aboveExact, $aboveExact]);
+        $this->raw(['EXPIRE', $cycleKey, 600]);
+        $beforeCycle = $this->raw(['ZRANGE', $cycleKey, 0, -1, 'WITHSCORES']);
+        $this->assertOperationFails(fn(): mixed => $this->store->blockWithCycleTracking('g12-r03d-cycle', null, 2, 60, $now, 600, 2, 60, 120));
+        self::assertSame($beforeCycle, $this->raw(['ZRANGE', $cycleKey, 0, -1, 'WITHSCORES']));
+        self::assertSame(0, $this->integer($this->raw(['EXISTS', $this->key('block', 'g12-r03d-cycle')])));
+    }
+
+    /**
+     * G12-R03-E: readDecayPauseState() is read-only and receives
+     * caller-supplied semantic time per DEC-016 — it must never
+     * substitute Redis TIME for it, but it must still refuse to compute
+     * an interval whose arithmetic cannot be exact rather than silently
+     * rounding, and it must reject a malformed persisted pause boundary
+     * the same way.
+     */
+    public function testReadDecayPauseStateRejectsUnrepresentableCallerTimeAndMalformedHistory(): void
+    {
+        $this->assertOperationFails(fn(): mixed => $this->store->readDecayPauseState('g12-r03e-now-overflow', null, 0, PHP_INT_MAX));
+        $this->assertOperationFails(fn(): mixed => $this->store->readDecayPauseState('g12-r03e-from-overflow', null, PHP_INT_MIN, 0));
+
+        $now = $this->redisNow();
+        $pauseKey = $this->key('pause', 'g12-r03e-malformed-history');
+        $malformedFinish = '9007199254740993';
+        $this->raw(['ZADD', $pauseKey, (string) ($now - 10), ($now - 10) . ':' . $malformedFinish]);
+        $this->raw(['EXPIRE', $pauseKey, 600]);
+        $this->assertOperationFails(fn(): mixed => $this->store->readDecayPauseState('g12-r03e-malformed-history', null, $now - 100, $now));
+    }
+
+    /**
      * The physical TTL of Current data/metadata is deliberately shortened
      * far below the 60-second TTL requested on each over-cap call. An
      * erroneous refresh back to a fresh 60s would then overshoot this

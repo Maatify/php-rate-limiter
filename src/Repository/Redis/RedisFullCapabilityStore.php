@@ -48,9 +48,15 @@ local function validPhpInteger(value)
   local maximum = negative and '9223372036854775808' or '9223372036854775807'
   return string.len(digits) < 19 or (string.len(digits) == 19 and digits <= maximum)
 end
+local function ttlSecondsRepresentable(rawTtl, baseSeconds)
+  if rawTtl == nil or string.match(rawTtl, '^[1-9]%d*$') == nil then return false end
+  if string.len(rawTtl) > 16 or (string.len(rawTtl) == 16 and rawTtl > '9007199254740991') then return false end
+  return baseSeconds ~= nil and baseSeconds >= 0 and baseSeconds <= 9007199254740991 and tonumber(rawTtl) <= 9007199254740991 - baseSeconds
+end
 local exists = redis.call('EXISTS', KEYS[1])
 if exists == 0 then
   if not validPhpInteger(ARGV[2]) then return redis.error_reply('malformed score state') end
+  if not ttlSecondsRepresentable(ARGV[1], now) then return redis.error_reply('score TTL exceeds Redis Lua exact integer range') end
   redis.call('HSET', KEYS[1], 'value', ARGV[2], 'updatedAt', now)
   redis.call('EXPIRE', KEYS[1], ARGV[1])
   return {ARGV[2], now}
@@ -88,6 +94,12 @@ LUA;
 
     private const SCORE_SET = <<<'LUA'
 local now = tonumber(redis.call('TIME')[1])
+local function ttlSecondsRepresentable(rawTtl, baseSeconds)
+  if rawTtl == nil or string.match(rawTtl, '^[1-9]%d*$') == nil then return false end
+  if string.len(rawTtl) > 16 or (string.len(rawTtl) == 16 and rawTtl > '9007199254740991') then return false end
+  return baseSeconds ~= nil and baseSeconds >= 0 and baseSeconds <= 9007199254740991 and tonumber(rawTtl) <= 9007199254740991 - baseSeconds
+end
+if not ttlSecondsRepresentable(ARGV[1], now) then return redis.error_reply('score TTL exceeds Redis Lua exact integer range') end
 redis.call('HSET', KEYS[1], 'value', ARGV[2], 'updatedAt', now)
 redis.call('EXPIRE', KEYS[1], ARGV[1])
 return now
@@ -383,6 +395,12 @@ LUA;
 
     private const BLOCK_SET = <<<'LUA'
 local now = tonumber(redis.call('TIME')[1])
+local function ttlSecondsRepresentable(rawTtl, baseSeconds)
+  if rawTtl == nil or string.match(rawTtl, '^[1-9]%d*$') == nil then return false end
+  if string.len(rawTtl) > 16 or (string.len(rawTtl) == 16 and rawTtl > '9007199254740991') then return false end
+  return baseSeconds ~= nil and baseSeconds >= 0 and baseSeconds <= 9007199254740991 and tonumber(rawTtl) <= 9007199254740991 - baseSeconds
+end
+if not ttlSecondsRepresentable(ARGV[2], now) then return redis.error_reply('block duration exceeds Redis Lua exact integer range') end
 local expires = now + tonumber(ARGV[2])
 redis.call('HSET', KEYS[1], 'level', ARGV[1], 'expiresAt', expires)
 redis.call('EXPIRE', KEYS[1], ARGV[2])
@@ -390,13 +408,20 @@ return expires
 LUA;
 
     private const BLOCK_GET = <<<'LUA'
+local function validExactInteger(value)
+  if value == nil or string.match(value, '^%-?%d+$') == nil then return false end
+  local negative = string.sub(value, 1, 1) == '-'
+  local digits = negative and string.sub(value, 2) or value
+  if digits == '' or (string.len(digits) > 1 and string.sub(digits, 1, 1) == '0') or (negative and digits == '0') then return false end
+  return string.len(digits) < 16 or (string.len(digits) == 16 and digits <= '9007199254740991')
+end
 if redis.call('EXISTS', KEYS[1]) == 0 then return {} end
 if redis.call('TTL', KEYS[1]) < 0 then return redis.error_reply('malformed block state') end
 local level = redis.call('HGET', KEYS[1], 'level')
 local expires = redis.call('HGET', KEYS[1], 'expiresAt')
-if not level or not expires then return redis.error_reply('malformed block state') end
+if not level or not validExactInteger(expires) then return redis.error_reply('malformed block state') end
 level = tonumber(level); expires = tonumber(expires)
-if not level or level ~= math.floor(level) or level < 1 or level > 6 or not expires or expires ~= math.floor(expires) then return redis.error_reply('malformed block state') end
+if not level or level ~= math.floor(level) or level < 1 or level > 6 then return redis.error_reply('malformed block state') end
 if expires <= tonumber(redis.call('TIME')[1]) then
   redis.call('DEL', KEYS[1])
   return {}
@@ -485,32 +510,64 @@ LUA;
 
     private const DISTINCT_ADD = <<<'LUA'
 local now = tonumber(redis.call('TIME')[1])
+local function validExactInteger(value)
+  if value == nil or string.match(value, '^%-?%d+$') == nil then return false end
+  local negative = string.sub(value, 1, 1) == '-'
+  local digits = negative and string.sub(value, 2) or value
+  if digits == '' or (string.len(digits) > 1 and string.sub(digits, 1, 1) == '0') or (negative and digits == '0') then return false end
+  return string.len(digits) < 16 or (string.len(digits) == 16 and digits <= '9007199254740991')
+end
+local function ttlSecondsRepresentable(rawTtl, baseSeconds)
+  if rawTtl == nil or string.match(rawTtl, '^[1-9]%d*$') == nil then return false end
+  if string.len(rawTtl) > 16 or (string.len(rawTtl) == 16 and rawTtl > '9007199254740991') then return false end
+  return baseSeconds ~= nil and baseSeconds >= 0 and baseSeconds <= 9007199254740991 and tonumber(rawTtl) <= 9007199254740991 - baseSeconds
+end
 local exists = redis.call('EXISTS', KEYS[1])
 local metaExists = redis.call('EXISTS', KEYS[2])
 if exists == 1 and redis.call('TTL', KEYS[1]) < 0 then return redis.error_reply('malformed distinct state') end
 if exists == 0 and metaExists == 1 then return redis.error_reply('malformed distinct metadata') end
 if exists == 1 and redis.call('SCARD', KEYS[1]) == 0 then return redis.error_reply('malformed distinct state') end
 if exists == 1 then
-  local expires = tonumber(redis.call('HGET', KEYS[2], 'expiresAt'))
-  if not expires or expires ~= math.floor(expires) or expires <= now or redis.call('TTL', KEYS[2]) < 0 then return redis.error_reply('malformed distinct metadata') end
+  local rawExpires = redis.call('HGET', KEYS[2], 'expiresAt')
+  if not validExactInteger(rawExpires) then return redis.error_reply('malformed distinct metadata') end
+  local expires = tonumber(rawExpires)
+  if expires <= now or redis.call('TTL', KEYS[2]) < 0 then return redis.error_reply('malformed distinct metadata') end
 end
-if exists == 0 then redis.call('SADD', KEYS[1], ARGV[2]); redis.call('EXPIRE', KEYS[1], ARGV[1]); redis.call('HSET', KEYS[2], 'expiresAt', tonumber(redis.call('TIME')[1]) + tonumber(ARGV[1])); redis.call('EXPIRE', KEYS[2], ARGV[1])
+if exists == 0 then
+  if not ttlSecondsRepresentable(ARGV[1], now) then return redis.error_reply('correlation TTL exceeds Redis Lua exact integer range') end
+  redis.call('SADD', KEYS[1], ARGV[2]); redis.call('EXPIRE', KEYS[1], ARGV[1]); redis.call('HSET', KEYS[2], 'expiresAt', now + tonumber(ARGV[1])); redis.call('EXPIRE', KEYS[2], ARGV[1])
 else redis.call('SADD', KEYS[1], ARGV[2]) end
 return redis.call('SCARD', KEYS[1])
 LUA;
 
     private const WATCH_INCREMENT = <<<'LUA'
 local now = tonumber(redis.call('TIME')[1])
+local function validExactInteger(value)
+  if value == nil or string.match(value, '^%-?%d+$') == nil then return false end
+  local negative = string.sub(value, 1, 1) == '-'
+  local digits = negative and string.sub(value, 2) or value
+  if digits == '' or (string.len(digits) > 1 and string.sub(digits, 1, 1) == '0') or (negative and digits == '0') then return false end
+  return string.len(digits) < 16 or (string.len(digits) == 16 and digits <= '9007199254740991')
+end
+local function ttlSecondsRepresentable(rawTtl, baseSeconds)
+  if rawTtl == nil or string.match(rawTtl, '^[1-9]%d*$') == nil then return false end
+  if string.len(rawTtl) > 16 or (string.len(rawTtl) == 16 and rawTtl > '9007199254740991') then return false end
+  return baseSeconds ~= nil and baseSeconds >= 0 and baseSeconds <= 9007199254740991 and tonumber(rawTtl) <= 9007199254740991 - baseSeconds
+end
 local exists = redis.call('EXISTS', KEYS[1])
 if exists == 1 and redis.call('TTL', KEYS[1]) < 0 then return redis.error_reply('malformed watch state') end
 local metaExists = redis.call('EXISTS', KEYS[2])
 if exists == 0 and metaExists == 1 then return redis.error_reply('malformed watch metadata') end
 if exists == 1 then
-  local expires = tonumber(redis.call('HGET', KEYS[2], 'expiresAt'))
-  if not expires or expires ~= math.floor(expires) or expires <= now or redis.call('TTL', KEYS[2]) < 0 then return redis.error_reply('malformed watch metadata') end
+  local rawExpires = redis.call('HGET', KEYS[2], 'expiresAt')
+  if not validExactInteger(rawExpires) then return redis.error_reply('malformed watch metadata') end
+  local expires = tonumber(rawExpires)
+  if expires <= now or redis.call('TTL', KEYS[2]) < 0 then return redis.error_reply('malformed watch metadata') end
 end
 local value
-if exists == 0 then value = 1; redis.call('SET', KEYS[1], value, 'EX', ARGV[1]); redis.call('HSET', KEYS[2], 'expiresAt', tonumber(redis.call('TIME')[1]) + tonumber(ARGV[1])); redis.call('EXPIRE', KEYS[2], ARGV[1])
+if exists == 0 then
+  if not ttlSecondsRepresentable(ARGV[1], now) then return redis.error_reply('correlation TTL exceeds Redis Lua exact integer range') end
+  value = 1; redis.call('SET', KEYS[1], value, 'EX', ARGV[1]); redis.call('HSET', KEYS[2], 'expiresAt', now + tonumber(ARGV[1])); redis.call('EXPIRE', KEYS[2], ARGV[1])
 else value = redis.call('INCR', KEYS[1]) end
 return value
 LUA;
@@ -525,6 +582,18 @@ LUA;
 
     private const BOUNDED_SNAPSHOT = <<<'LUA'
 local now = tonumber(redis.call('TIME')[1])
+local function validExactInteger(value)
+  if value == nil or string.match(value, '^%-?%d+$') == nil then return false end
+  local negative = string.sub(value, 1, 1) == '-'
+  local digits = negative and string.sub(value, 2) or value
+  if digits == '' or (string.len(digits) > 1 and string.sub(digits, 1, 1) == '0') or (negative and digits == '0') then return false end
+  return string.len(digits) < 16 or (string.len(digits) == 16 and digits <= '9007199254740991')
+end
+local function ttlSecondsRepresentable(rawTtl, baseSeconds)
+  if rawTtl == nil or string.match(rawTtl, '^[1-9]%d*$') == nil then return false end
+  if string.len(rawTtl) > 16 or (string.len(rawTtl) == 16 and rawTtl > '9007199254740991') then return false end
+  return baseSeconds ~= nil and baseSeconds >= 0 and baseSeconds <= 9007199254740991 and tonumber(rawTtl) <= 9007199254740991 - baseSeconds
+end
 local exists = redis.call('EXISTS', KEYS[1])
 if exists == 1 and redis.call('TTL', KEYS[1]) < 0 then return redis.error_reply('malformed bounded state') end
 local metaExists = redis.call('EXISTS', KEYS[2])
@@ -532,8 +601,10 @@ if exists == 0 and metaExists == 1 then return redis.error_reply('malformed boun
 if exists == 1 and redis.call('SCARD', KEYS[1]) == 0 then return redis.error_reply('malformed bounded state') end
 local expires = nil
 if exists == 1 then
-  expires = tonumber(redis.call('HGET', KEYS[2], 'expiresAt'))
-  if not expires or expires ~= math.floor(expires) or expires <= now or redis.call('TTL', KEYS[2]) < 0 then return redis.error_reply('malformed bounded metadata') end
+  local rawExpires = redis.call('HGET', KEYS[2], 'expiresAt')
+  if not validExactInteger(rawExpires) then return redis.error_reply('malformed bounded metadata') end
+  expires = tonumber(rawExpires)
+  if expires <= now or redis.call('TTL', KEYS[2]) < 0 then return redis.error_reply('malformed bounded metadata') end
 end
 local count = exists == 1 and redis.call('SCARD', KEYS[1]) or 0
 if count > tonumber(ARGV[3]) then return redis.error_reply('malformed bounded state') end
@@ -545,7 +616,10 @@ if count >= tonumber(ARGV[3]) then
   local members = redis.call('SMEMBERS', KEYS[1]); table.sort(members)
   return {count, 0, 0, tonumber(expires), unpack(members)}
 end
-if exists == 0 then redis.call('SADD', KEYS[1], ARGV[2]); redis.call('EXPIRE', KEYS[1], ARGV[1]); redis.call('HSET', KEYS[2], 'expiresAt', now + tonumber(ARGV[1])); redis.call('EXPIRE', KEYS[2], ARGV[1]) else redis.call('SADD', KEYS[1], ARGV[2]) end
+if exists == 0 then
+  if not ttlSecondsRepresentable(ARGV[1], now) then return redis.error_reply('correlation TTL exceeds Redis Lua exact integer range') end
+  redis.call('SADD', KEYS[1], ARGV[2]); redis.call('EXPIRE', KEYS[1], ARGV[1]); redis.call('HSET', KEYS[2], 'expiresAt', now + tonumber(ARGV[1])); redis.call('EXPIRE', KEYS[2], ARGV[1])
+else redis.call('SADD', KEYS[1], ARGV[2]) end
 local members = redis.call('SMEMBERS', KEYS[1]); table.sort(members)
 return {#members, 1, 1, exists == 0 and now + tonumber(ARGV[1]) or tonumber(expires), unpack(members)}
 LUA;
@@ -554,6 +628,19 @@ LUA;
 local redisTime = redis.call('TIME')
 local now = tonumber(redisTime[1])
 local nowMs = (now * 1000) + math.floor(tonumber(redisTime[2]) / 1000)
+local function validExactInteger(value)
+  if value == nil or string.match(value, '^%-?%d+$') == nil then return false end
+  local negative = string.sub(value, 1, 1) == '-'
+  local digits = negative and string.sub(value, 2) or value
+  if digits == '' or (string.len(digits) > 1 and string.sub(digits, 1, 1) == '0') or (negative and digits == '0') then return false end
+  return string.len(digits) < 16 or (string.len(digits) == 16 and digits <= '9007199254740991')
+end
+local function ttlSecondsRepresentable(rawTtl, baseSeconds)
+  if rawTtl == nil or string.match(rawTtl, '^[1-9]%d*$') == nil then return false end
+  if string.len(rawTtl) > 16 or (string.len(rawTtl) == 16 and rawTtl > '9007199254740991') then return false end
+  return baseSeconds ~= nil and baseSeconds >= 0 and baseSeconds <= 9007199254740991 and tonumber(rawTtl) <= 9007199254740991 - baseSeconds
+end
+if not ttlSecondsRepresentable(ARGV[2], now) then return redis.error_reply('correlation TTL exceeds Redis Lua exact integer range') end
 local alias = KEYS[1] == KEYS[5]
 local prevExists = redis.call('EXISTS', KEYS[5])
 local prevMetaExists = redis.call('EXISTS', KEYS[6])
@@ -562,9 +649,9 @@ if prevExists == 0 and prevMetaExists == 1 then return redis.error_reply('malfor
 if prevExists == 1 then
   if redis.call('TTL', KEYS[5]) < 0 or redis.call('TTL', KEYS[6]) < 0 then return redis.error_reply('malformed previous bounded state') end
   if redis.call('SCARD', KEYS[5]) == 0 then return redis.error_reply('malformed previous bounded state') end
-  prevExpiry = redis.call('HGET', KEYS[6], 'expiresAt')
-  prevExpiry = tonumber(prevExpiry)
-  if not prevExpiry or prevExpiry ~= math.floor(prevExpiry) then return redis.error_reply('malformed previous bounded state') end
+  local rawPrevExpiry = redis.call('HGET', KEYS[6], 'expiresAt')
+  if not validExactInteger(rawPrevExpiry) then return redis.error_reply('malformed previous bounded state') end
+  prevExpiry = tonumber(rawPrevExpiry)
   if redis.call('SCARD', KEYS[5]) > tonumber(ARGV[5]) then return redis.error_reply('malformed previous bounded state') end
   if prevExpiry <= now then prevExists = 0 end
 end
@@ -575,8 +662,10 @@ if prevExists == 0 then
   if exists == 0 and metaExists == 1 then return redis.error_reply('malformed current bounded metadata') end
   local currentExpiry = nil
   if exists == 1 then
-    currentExpiry = tonumber(redis.call('HGET', KEYS[2], 'expiresAt'))
-    if not currentExpiry or currentExpiry ~= math.floor(currentExpiry) or currentExpiry <= now or redis.call('TTL', KEYS[2]) < 0 then return redis.error_reply('malformed current bounded state') end
+    local rawCurrentExpiry = redis.call('HGET', KEYS[2], 'expiresAt')
+    if not validExactInteger(rawCurrentExpiry) then return redis.error_reply('malformed current bounded state') end
+    currentExpiry = tonumber(rawCurrentExpiry)
+    if currentExpiry <= now or redis.call('TTL', KEYS[2]) < 0 then return redis.error_reply('malformed current bounded state') end
   end
   local count = exists == 1 and redis.call('SCARD', KEYS[1]) or 0
   if count > tonumber(ARGV[5]) then return redis.error_reply('malformed bounded state') end
@@ -612,13 +701,17 @@ if currentExists == 0 and currentMetaExists == 1 then return redis.error_reply('
 if bridgeExists == 0 and bridgeMetaExists == 1 then return redis.error_reply('malformed bridge metadata') end
 local currentExpiry = nil
 if currentExists == 1 then
-  currentExpiry = tonumber(redis.call('HGET', KEYS[2], 'expiresAt'))
-  if not currentExpiry or currentExpiry ~= math.floor(currentExpiry) or currentExpiry <= now or redis.call('TTL', KEYS[2]) < 0 then return redis.error_reply('malformed current bounded state') end
+  local rawCurrentExpiry = redis.call('HGET', KEYS[2], 'expiresAt')
+  if not validExactInteger(rawCurrentExpiry) then return redis.error_reply('malformed current bounded state') end
+  currentExpiry = tonumber(rawCurrentExpiry)
+  if currentExpiry <= now or redis.call('TTL', KEYS[2]) < 0 then return redis.error_reply('malformed current bounded state') end
 end
 local bridgeExpiry = nil
 if bridgeExists == 1 then
-  bridgeExpiry = tonumber(redis.call('HGET', KEYS[4], 'expiresAt'))
-  if not bridgeExpiry or bridgeExpiry ~= math.floor(bridgeExpiry) or bridgeExpiry <= now or redis.call('TTL', KEYS[4]) < 0 or bridgeExpiry > prevExpiry then return redis.error_reply('malformed bridge state') end
+  local rawBridgeExpiry = redis.call('HGET', KEYS[4], 'expiresAt')
+  if not validExactInteger(rawBridgeExpiry) then return redis.error_reply('malformed bridge state') end
+  bridgeExpiry = tonumber(rawBridgeExpiry)
+  if bridgeExpiry <= now or redis.call('TTL', KEYS[4]) < 0 or bridgeExpiry > prevExpiry then return redis.error_reply('malformed bridge state') end
 end
 local bridge = bridgeExists == 1 and redis.call('SMEMBERS', KEYS[3]) or {}
 table.sort(bridge)
@@ -673,11 +766,18 @@ return {#members, known or added and 1 or 0, added and 1 or 0, tonumber(prevExpi
 LUA;
 
     private const LEASE = <<<'LUA'
+local function validExactInteger(value)
+  if value == nil or string.match(value, '^%-?%d+$') == nil then return false end
+  local negative = string.sub(value, 1, 1) == '-'
+  local digits = negative and string.sub(value, 2) or value
+  if digits == '' or (string.len(digits) > 1 and string.sub(digits, 1, 1) == '0') or (negative and digits == '0') then return false end
+  return string.len(digits) < 16 or (string.len(digits) == 16 and digits <= '9007199254740991')
+end
 local current = redis.call('GET', KEYS[1])
 if current then
   local ttl = redis.call('TTL', KEYS[1])
+  if ttl < 0 or not validExactInteger(current) then return redis.error_reply('malformed probe lease') end
   local expires = tonumber(current)
-  if ttl < 0 or not expires or expires ~= math.floor(expires) then return redis.error_reply('malformed probe lease') end
   if expires > tonumber(ARGV[1]) then return 0 end
 end
 redis.call('SET', KEYS[1], tonumber(ARGV[1]) + tonumber(ARGV[2]), 'EX', ARGV[2])
@@ -699,10 +799,37 @@ local function validPhpInteger(value)
   local maximum = negative and '9223372036854775808' or '9223372036854775807'
   return string.len(digits) < 19 or (string.len(digits) == 19 and digits <= maximum)
 end
-local now = lifecycleGeneration ~= '' and tonumber(lifecycleTime[1]) or tonumber(ARGV[5])
-local nowMs = lifecycleGeneration ~= '' and ((tonumber(lifecycleTime[1]) * 1000) + math.floor(tonumber(lifecycleTime[2]) / 1000)) or (now * 1000)
-local retention = tonumber(ARGV[9])
+local exactIntegerMax = 9007199254740991
+local function validExactInteger(value)
+  if value == nil or string.match(value, '^%-?%d+$') == nil then return false end
+  local negative = string.sub(value, 1, 1) == '-'
+  local digits = negative and string.sub(value, 2) or value
+  if digits == '' or (string.len(digits) > 1 and string.sub(digits, 1, 1) == '0') or (negative and digits == '0') then return false end
+  return string.len(digits) < 16 or (string.len(digits) == 16 and digits <= '9007199254740991')
+end
+local function validExactPositiveInteger(value)
+  return value ~= nil and string.match(value, '^[1-9]%d*$') ~= nil and string.len(value) <= 16 and (string.len(value) < 16 or value <= '9007199254740991')
+end
+if not validExactPositiveInteger(ARGV[2]) then return redis.error_reply('hard-block expiry is not representable') end
+if not validExactPositiveInteger(ARGV[6]) then return redis.error_reply('cycle boundary is not representable') end
+if not validExactPositiveInteger(ARGV[8]) then return redis.error_reply('pause boundary is not representable') end
+if not validExactPositiveInteger(ARGV[9]) then return redis.error_reply('pause retention boundary is not representable') end
+local durationSeconds = tonumber(ARGV[2])
 local cycleWindow = tonumber(ARGV[6])
+local pauseSeconds = tonumber(ARGV[8])
+local retention = tonumber(ARGV[9])
+local now
+if lifecycleGeneration ~= '' then
+  now = tonumber(lifecycleTime[1])
+else
+  if not validExactInteger(ARGV[5]) then return redis.error_reply('hard-block caller time is not representable') end
+  now = tonumber(ARGV[5])
+end
+local nowMs = lifecycleGeneration ~= '' and ((tonumber(lifecycleTime[1]) * 1000) + math.floor(tonumber(lifecycleTime[2]) / 1000)) or (now * 1000)
+if now > exactIntegerMax - durationSeconds then return redis.error_reply('hard-block expiry is not representable') end
+if now < -exactIntegerMax + cycleWindow then return redis.error_reply('cycle boundary is not representable') end
+if now < -exactIntegerMax + retention then return redis.error_reply('pause retention boundary is not representable') end
+if now > exactIntegerMax - pauseSeconds then return redis.error_reply('pause boundary is not representable') end
 if lifecycleGeneration ~= '' then
   local scoreKey = KEYS[7]
   local scorePttl = redis.call('PTTL', scoreKey)
@@ -778,8 +905,11 @@ local function readCycles(key)
   if redis.call('TTL', key) < 0 then error('malformed cycle history') end
   if redis.call('ZCARD', key) == 0 then error('malformed cycle history') end
   for _, member in ipairs(redis.call('ZRANGE', key, 0, -1)) do
-    local score = tonumber(redis.call('ZSCORE', key, member)); local timestamp = tonumber(member)
-    if not score or score ~= math.floor(score) or not timestamp or timestamp ~= math.floor(timestamp) or score ~= timestamp then error('malformed cycle history') end
+    if not validExactInteger(member) then error('malformed cycle history') end
+    local rawScore = redis.call('ZSCORE', key, member)
+    if not validExactInteger(rawScore) then error('malformed cycle history') end
+    local score = tonumber(rawScore); local timestamp = tonumber(member)
+    if score ~= timestamp then error('malformed cycle history') end
     if timestamp >= now - cycleWindow and cyclesByMember[member] == nil then
       cyclesByMember[member] = timestamp; cycleMembers[#cycleMembers + 1] = member
     end
@@ -792,8 +922,10 @@ for _, blockKey in ipairs({KEYS[3], KEYS[4]}) do
     local blockPttl = redis.call('PTTL', blockKey)
     if blockPttl == -1 then return redis.error_reply('malformed hard-block state') end
     if blockPttl > 0 then
-      local expires = tonumber(redis.call('HGET', blockKey, 'expiresAt')); local level = tonumber(redis.call('HGET', blockKey, 'level'))
-      if not expires or expires ~= math.floor(expires) or not level or level ~= math.floor(level) or level < 1 or level > 6 then return redis.error_reply('malformed hard-block state') end
+      local rawExpires = redis.call('HGET', blockKey, 'expiresAt'); local rawLevel = redis.call('HGET', blockKey, 'level')
+      if not validExactInteger(rawExpires) or not rawLevel then return redis.error_reply('malformed hard-block state') end
+      local expires = tonumber(rawExpires); local level = tonumber(rawLevel)
+      if not level or level ~= math.floor(level) or level < 1 or level > 6 then return redis.error_reply('malformed hard-block state') end
       if expires > now and level >= 2 then active = true end
     end
   end
@@ -802,14 +934,21 @@ local newCycle = not active
 if newCycle and cyclesByMember[tostring(now)] == nil then cyclesByMember[tostring(now)] = now; cycleMembers[#cycleMembers + 1] = tostring(now) end
 local cycleCount = #cycleMembers; local latestCycle = 0
 for _, member in ipairs(cycleMembers) do latestCycle = math.max(latestCycle, cyclesByMember[member]) end
+if latestCycle > 0 and latestCycle > exactIntegerMax - cycleWindow then return redis.error_reply('cycle boundary is not representable') end
 
 local pausesByMember = {}; local pauseMembers = {}
 local function readPauses(key)
   if key == '' or redis.call('EXISTS', key) == 0 then return end
   if redis.call('TTL', key) < 0 then error('malformed pause history') end
   for _, member in ipairs(redis.call('ZRANGE', key, 0, -1)) do
-    local sep = string.find(member, ':'); local start = sep and tonumber(string.sub(member, 1, sep - 1)); local finish = sep and tonumber(string.sub(member, sep + 1)); local score = tonumber(redis.call('ZSCORE', key, member))
-    if not sep or not start or start ~= math.floor(start) or not finish or finish ~= math.floor(finish) or finish < start or not score or score ~= math.floor(score) or score ~= start then error('malformed pause history') end
+    local sep = string.find(member, ':')
+    if not sep then error('malformed pause history') end
+    local startStr = string.sub(member, 1, sep - 1); local finishStr = string.sub(member, sep + 1)
+    if not validExactInteger(startStr) or not validExactInteger(finishStr) then error('malformed pause history') end
+    local rawScore = redis.call('ZSCORE', key, member)
+    if not validExactInteger(rawScore) then error('malformed pause history') end
+    local start = tonumber(startStr); local finish = tonumber(finishStr); local score = tonumber(rawScore)
+    if finish < start or score ~= start then error('malformed pause history') end
     if finish > now - retention and pausesByMember[member] == nil then pausesByMember[member] = {start, finish}; pauseMembers[#pauseMembers + 1] = member end
   end
 end
@@ -821,9 +960,10 @@ for _, member in ipairs(pauseMembers) do
 end
 local activated = false
 if newCycle and cycleCount >= tonumber(ARGV[7]) and pauseUntil == 0 then
-  pauseUntil = now + tonumber(ARGV[8]); local member = tostring(now) .. ':' .. tostring(pauseUntil)
+  pauseUntil = now + pauseSeconds; local member = tostring(now) .. ':' .. tostring(pauseUntil)
   pausesByMember[member] = {now, pauseUntil}; pauseMembers[#pauseMembers + 1] = member; latestPauseUntil = math.max(latestPauseUntil, pauseUntil); activated = true
 end
+if latestPauseUntil > 0 and latestPauseUntil > exactIntegerMax - retention then return redis.error_reply('pause retention boundary is not representable') end
 
 -- Phase B is complete. Phase C contains writes only and uses prevalidated values.
 for _, member in ipairs(cycleMembers) do redis.call('ZADD', KEYS[1], cyclesByMember[member], member) end
@@ -836,7 +976,7 @@ end
 for _, member in ipairs(pauseMembers) do redis.call('ZADD', KEYS[5], pausesByMember[member][1], member) end
 if latestPauseUntil > 0 then extendUntil(KEYS[5], latestPauseUntil + retention) end
 if latestCycle > 0 then extendUntil(KEYS[1], latestCycle + cycleWindow) end
-local expires = now + tonumber(ARGV[2])
+local expires = now + durationSeconds
 redis.call('HSET', KEYS[3], 'level', ARGV[1], 'expiresAt', expires); redis.call('EXPIRE', KEYS[3], ARGV[2])
 if lifecycleGeneration ~= '' then
   local scoreKey = KEYS[7]
@@ -852,15 +992,34 @@ return {newCycle and 1 or 0, cycleCount, activated and 1 or 0, pauseUntil}
 LUA;
 
     private const PAUSE_READ = <<<'LUA'
-local now = tonumber(ARGV[2]); local from = tonumber(ARGV[1]); local retention = 86400; local intervals = {}
+local exactIntegerMax = 9007199254740991
+local retention = 86400
+local function validExactInteger(value)
+  if value == nil or string.match(value, '^%-?%d+$') == nil then return false end
+  local negative = string.sub(value, 1, 1) == '-'
+  local digits = negative and string.sub(value, 2) or value
+  if digits == '' or (string.len(digits) > 1 and string.sub(digits, 1, 1) == '0') or (negative and digits == '0') then return false end
+  return string.len(digits) < 16 or (string.len(digits) == 16 and digits <= '9007199254740991')
+end
+if not validExactInteger(ARGV[2]) then return redis.error_reply('caller time is not representable') end
+if not validExactInteger(ARGV[1]) then return redis.error_reply('caller from-timestamp is not representable') end
+local now = tonumber(ARGV[2]); local from = tonumber(ARGV[1])
+if now < -exactIntegerMax + retention then return redis.error_reply('pause retention boundary is not representable') end
+if from > 0 and now < -exactIntegerMax + from then return redis.error_reply('elapsed interval is not representable') end
+if from < 0 and now > exactIntegerMax + from then return redis.error_reply('elapsed interval is not representable') end
+local intervals = {}
 local function read(source)
   if source == '' or redis.call('EXISTS', source) == 0 then return end
   if redis.call('TTL', source) < 0 then error('malformed pause history') end
   for _, member in ipairs(redis.call('ZRANGE', source, 0, -1)) do
     local sep = string.find(member, ':')
     if not sep then error('malformed pause history') end
-    local start = tonumber(string.sub(member, 1, sep - 1)); local finish = tonumber(string.sub(member, sep + 1)); local score = tonumber(redis.call('ZSCORE', source, member))
-    if not start or start ~= math.floor(start) or not finish or finish ~= math.floor(finish) or finish < start or not score or score ~= math.floor(score) or score ~= start then error('malformed pause history') end
+    local startStr = string.sub(member, 1, sep - 1); local finishStr = string.sub(member, sep + 1)
+    if not validExactInteger(startStr) or not validExactInteger(finishStr) then error('malformed pause history') end
+    local rawScore = redis.call('ZSCORE', source, member)
+    if not validExactInteger(rawScore) then error('malformed pause history') end
+    local start = tonumber(startStr); local finish = tonumber(finishStr); local score = tonumber(rawScore)
+    if finish < start or score ~= start then error('malformed pause history') end
     if finish > now - retention then intervals[#intervals + 1] = {start, finish} end
   end
 end
@@ -1029,12 +1188,25 @@ LUA;
         $this->positive($ttlSeconds, 'Correlation TTL');
         $script = <<<'LUA'
 local now = tonumber(redis.call('TIME')[1]); local previous = 0
+local function validExactInteger(value)
+  if value == nil or string.match(value, '^%-?%d+$') == nil then return false end
+  local negative = string.sub(value, 1, 1) == '-'
+  local digits = negative and string.sub(value, 2) or value
+  if digits == '' or (string.len(digits) > 1 and string.sub(digits, 1, 1) == '0') or (negative and digits == '0') then return false end
+  return string.len(digits) < 16 or (string.len(digits) == 16 and digits <= '9007199254740991')
+end
+local function ttlSecondsRepresentable(rawTtl, baseSeconds)
+  if rawTtl == nil or string.match(rawTtl, '^[1-9]%d*$') == nil then return false end
+  if string.len(rawTtl) > 16 or (string.len(rawTtl) == 16 and rawTtl > '9007199254740991') then return false end
+  return baseSeconds ~= nil and baseSeconds >= 0 and baseSeconds <= 9007199254740991 and tonumber(rawTtl) <= 9007199254740991 - baseSeconds
+end
 local previousExists = redis.call('EXISTS', KEYS[2]); local previousMetaExists = redis.call('EXISTS', KEYS[3])
 if previousExists == 0 and previousMetaExists == 1 then return redis.error_reply('malformed previous watch metadata') end
 if previousExists == 1 then
   if redis.call('TTL', KEYS[2]) < 0 or redis.call('TTL', KEYS[3]) < 0 then return redis.error_reply('malformed previous watch state') end
-  local expiry = tonumber(redis.call('HGET', KEYS[3], 'expiresAt'))
-  if not expiry or expiry ~= math.floor(expiry) then return redis.error_reply('malformed previous watch state') end
+  local rawExpiry = redis.call('HGET', KEYS[3], 'expiresAt')
+  if not validExactInteger(rawExpiry) then return redis.error_reply('malformed previous watch state') end
+  local expiry = tonumber(rawExpiry)
   if expiry > now then
     local value = tonumber(redis.call('GET', KEYS[2]))
     if not value or value ~= math.floor(value) then return redis.error_reply('malformed previous watch value') end
@@ -1045,12 +1217,16 @@ local exists = redis.call('EXISTS', KEYS[1]); local currentMetaExists = redis.ca
 if exists == 0 and currentMetaExists == 1 then return redis.error_reply('malformed current watch metadata') end
 if exists == 1 then
   if redis.call('TTL', KEYS[1]) < 0 or redis.call('TTL', KEYS[4]) < 0 then return redis.error_reply('malformed current watch state') end
-  local expiry = tonumber(redis.call('HGET', KEYS[4], 'expiresAt'))
+  local rawExpiry = redis.call('HGET', KEYS[4], 'expiresAt')
+  if not validExactInteger(rawExpiry) then return redis.error_reply('malformed current watch state') end
   local value = tonumber(redis.call('GET', KEYS[1]))
-  if not expiry or expiry ~= math.floor(expiry) or not value or value ~= math.floor(value) then return redis.error_reply('malformed current watch state') end
+  if not value or value ~= math.floor(value) then return redis.error_reply('malformed current watch state') end
 end
 local value
-if exists == 0 then value = 1; redis.call('SET', KEYS[1], value, 'EX', ARGV[1]); redis.call('HSET', KEYS[4], 'expiresAt', now + tonumber(ARGV[1])); redis.call('EXPIRE', KEYS[4], ARGV[1]) else value = redis.call('INCR', KEYS[1]) end
+if exists == 0 then
+  if not ttlSecondsRepresentable(ARGV[1], now) then return redis.error_reply('correlation TTL exceeds Redis Lua exact integer range') end
+  value = 1; redis.call('SET', KEYS[1], value, 'EX', ARGV[1]); redis.call('HSET', KEYS[4], 'expiresAt', now + tonumber(ARGV[1])); redis.call('EXPIRE', KEYS[4], ARGV[1])
+else value = redis.call('INCR', KEYS[1]) end
 return value + previous
 LUA;
         return $this->integerResult($this->eval($script, [$this->key('watch', $currentKey), $this->key('watch', $previousKey), $this->key('watch-meta', $previousKey), $this->key('watch-meta', $currentKey)], [$ttlSeconds]), 'rotated watch count');
