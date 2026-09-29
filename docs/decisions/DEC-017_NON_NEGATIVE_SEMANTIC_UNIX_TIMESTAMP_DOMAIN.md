@@ -26,8 +26,8 @@ where this package owns the representation and validation contract.
 ## Context
 
 Gate 12 remediation surfaced boundary questions about caller-supplied `now`
-and `fromTimestamp` values (for example `HardBlockCycleStoreInterface::block
-WithCycleTracking()` and `::readDecayPauseState()`) and about persisted
+and `fromTimestamp` values (for example `HardBlockCycleStoreInterface::blockWithCycleTracking()`
+and `::readDecayPauseState()`) and about persisted
 cycle/pause timestamps. DEC-016 settled *which* clock is authoritative for a
 given capability contract, but left the *value domain* of a semantic
 timestamp unresolved: whether a negative caller-supplied value is a valid
@@ -96,8 +96,17 @@ Internal accumulator/boundary variables that track "the latest timestamp
 seen so far" must not use a bare `0` to mean "none yet" once `0` is an
 accepted timestamp value; they use an explicit presence signal instead.
 Persisted semantic timestamp fields are validated as canonical
-non-negative integers before use, independent of the closed G12-R03-D
-exact-integer-magnitude validation that already governs their upper bound.
+non-negative integers before use, independently of the exact-integer
+magnitude validation that governs their upper bound. This covers, at
+least: hard-block cycle members and scores, pause start/finish/scores,
+persisted hard-block `expiresAt`, score `updatedAt`, budget `epochStart`
+(persisted and, when actually used, seeded), and every temporal field of
+the circuit-breaker state. A malformed persisted value — including a
+negative one — is explicit malformed state: it is never repaired, deleted,
+or silently overwritten, and an operation that would have to use it fails
+before any mutation. A circuit-breaker state carrying a negative timestamp
+is rejected with `RateLimiterException` both when loaded and before it is
+saved; `0` remains valid wherever circuit semantics already use it.
 
 ## Supersedes
 

@@ -38,20 +38,19 @@ final class RedisFullCapabilityStore implements FullCapabilityStoreInterface
 
     private const LUA_EXACT_INTEGER_MAX = 9007199254740991;
 
-    private const SCORE_INCREMENT = <<<'LUA'
-local now = tonumber(redis.call('TIME')[1])
-local function validPhpInteger(value)
-  if value == nil or string.match(value, '^%-?%d+$') == nil then return false end
-  local negative = string.sub(value, 1, 1) == '-'
-  local digits = negative and string.sub(value, 2) or value
-  if digits == '' or (string.len(digits) > 1 and string.sub(digits, 1, 1) == '0') or (negative and digits == '0') then return false end
-  local maximum = negative and '9223372036854775808' or '9223372036854775807'
-  return string.len(digits) < 19 or (string.len(digits) == 19 and digits <= maximum)
+    private const LUA_TIME_PRELUDE = <<<'LUA'
+local redisTime = redis.call('TIME')
+local now = tonumber(redisTime[1])
+local nowStr = tostring(now)
+local nowMsStr = redisTime[1] .. string.format('%03d', math.floor(tonumber(redisTime[2]) / 1000))
+local nowMs = (now * 1000) + math.floor(tonumber(redisTime[2]) / 1000)
+local function compareDecimalStrings(a, b)
+  if #a ~= #b then return (#a < #b) and -1 or 1 end
+  if a == b then return 0 end
+  return (a < b) and -1 or 1
 end
-local function ttlSecondsBackendRepresentable(rawTtl, nowSecondsStr)
-  if rawTtl == nil or string.match(rawTtl, '^[1-9]%d*$') == nil then return false end
-  if string.len(rawTtl) > 16 or (string.len(rawTtl) == 16 and rawTtl > '9223372036854775') then return false end
-  local ra, rb = rawTtl:reverse(), nowSecondsStr:reverse()
+local function addDecimalStrings(a, b)
+  local ra, rb = a:reverse(), b:reverse()
   local out, carry = {}, 0
   local n = math.max(#ra, #rb)
   for i = 1, n do
@@ -64,14 +63,49 @@ local function ttlSecondsBackendRepresentable(rawTtl, nowSecondsStr)
   if carry == 1 then out[n + 1] = '1' end
   local rev = {}
   for i = #out, 1, -1 do rev[#rev + 1] = out[i] end
-  local sum = table.concat(rev)
-  if #sum ~= 16 then return #sum < 16 end
-  return sum <= '9223372036854775'
+  return table.concat(rev)
+end
+-- Requires a >= b, both canonical non-negative decimal strings.
+local function subtractDecimalStrings(a, b)
+  local ra, rb = a:reverse(), b:reverse()
+  local out, borrow = {}, 0
+  for i = 1, #ra do
+    local d = tonumber(ra:sub(i, i)) - borrow - (tonumber(rb:sub(i, i)) or 0)
+    if d < 0 then d = d + 10; borrow = 1 else borrow = 0 end
+    out[i] = tostring(d)
+  end
+  local rev = {}
+  for i = #out, 1, -1 do rev[#rev + 1] = out[i] end
+  local result = string.gsub(table.concat(rev), '^0+', '')
+  if result == '' then result = '0' end
+  return result
+end
+-- Redis validates a relative EXPIRE / SET EX as `ttl * 1000 + command-time ms
+-- <= 9223372036854775807`, in milliseconds. Both operands stay decimal strings
+-- (never a Lua number), so a TTL above 2^53 is judged exactly.
+local function ttlBackendRepresentable(rawTtl)
+  if rawTtl == nil or string.match(rawTtl, '^[1-9]%d*$') == nil or string.len(rawTtl) > 16 then return false end
+  return compareDecimalStrings(addDecimalStrings(rawTtl .. '000', nowMsStr), '9223372036854775807') <= 0
+end
+LUA;
+
+    private const SCORE_INCREMENT = self::LUA_TIME_PRELUDE . "\n" . <<<'LUA'
+local function validPhpInteger(value)
+  if value == nil or string.match(value, '^%-?%d+$') == nil then return false end
+  local negative = string.sub(value, 1, 1) == '-'
+  local digits = negative and string.sub(value, 2) or value
+  if digits == '' or (string.len(digits) > 1 and string.sub(digits, 1, 1) == '0') or (negative and digits == '0') then return false end
+  local maximum = negative and '9223372036854775808' or '9223372036854775807'
+  return string.len(digits) < 19 or (string.len(digits) == 19 and digits <= maximum)
+end
+-- DEC-017: `updatedAt` is a canonical non-negative PHP-int Unix timestamp.
+local function validNonNegativeInteger(value)
+  return value ~= nil and (value == '0' or (string.match(value, '^[1-9]%d*$') ~= nil and string.len(value) <= 19 and (string.len(value) < 19 or value <= '9223372036854775807')))
 end
 local exists = redis.call('EXISTS', KEYS[1])
 if exists == 0 then
   if not validPhpInteger(ARGV[2]) then return redis.error_reply('malformed score state') end
-  if not ttlSecondsBackendRepresentable(ARGV[1], tostring(now)) then return redis.error_reply('score TTL exceeds Redis backend expiry representability') end
+  if not ttlBackendRepresentable(ARGV[1]) then return redis.error_reply('score TTL exceeds Redis backend expiry representability') end
   redis.call('HSET', KEYS[1], 'value', ARGV[2], 'updatedAt', now)
   redis.call('EXPIRE', KEYS[1], ARGV[1])
   return {ARGV[2], now}
@@ -82,7 +116,7 @@ local updated = redis.call('HGET', KEYS[1], 'updatedAt')
 if not value or not updated then
   return redis.error_reply('malformed score state')
 end
-if not validPhpInteger(value) or string.match(updated, '^%d+$') == nil then return redis.error_reply('malformed score state') end
+if not validPhpInteger(value) or not validNonNegativeInteger(updated) then return redis.error_reply('malformed score state') end
 local ok, result = pcall(redis.call, 'HINCRBY', KEYS[1], 'value', ARGV[2])
 if not ok then return redis.error_reply('score integer overflow') end
 redis.call('HSET', KEYS[1], 'updatedAt', now)
@@ -98,38 +132,21 @@ local function validPhpInteger(value)
   local maximum = negative and '9223372036854775808' or '9223372036854775807'
   return string.len(digits) < 19 or (string.len(digits) == 19 and digits <= maximum)
 end
+-- DEC-017: `updatedAt` is a canonical non-negative PHP-int Unix timestamp.
+local function validNonNegativeInteger(value)
+  return value ~= nil and (value == '0' or (string.match(value, '^[1-9]%d*$') ~= nil and string.len(value) <= 19 and (string.len(value) < 19 or value <= '9223372036854775807')))
+end
 if redis.call('EXISTS', KEYS[1]) == 0 then return {} end
 if redis.call('TTL', KEYS[1]) < 0 then return redis.error_reply('malformed score state') end
 local value = redis.call('HGET', KEYS[1], 'value')
 local updated = redis.call('HGET', KEYS[1], 'updatedAt')
 if not value or not updated then return redis.error_reply('malformed score state') end
-if not validPhpInteger(value) or string.match(updated, '^%d+$') == nil then return redis.error_reply('malformed score state') end
+if not validPhpInteger(value) or not validNonNegativeInteger(updated) then return redis.error_reply('malformed score state') end
 return {value, updated}
 LUA;
 
-    private const SCORE_SET = <<<'LUA'
-local now = tonumber(redis.call('TIME')[1])
-local function ttlSecondsBackendRepresentable(rawTtl, nowSecondsStr)
-  if rawTtl == nil or string.match(rawTtl, '^[1-9]%d*$') == nil then return false end
-  if string.len(rawTtl) > 16 or (string.len(rawTtl) == 16 and rawTtl > '9223372036854775') then return false end
-  local ra, rb = rawTtl:reverse(), nowSecondsStr:reverse()
-  local out, carry = {}, 0
-  local n = math.max(#ra, #rb)
-  for i = 1, n do
-    local da = tonumber(ra:sub(i, i)) or 0
-    local db = tonumber(rb:sub(i, i)) or 0
-    local s = da + db + carry
-    carry = s >= 10 and 1 or 0
-    out[i] = tostring(s % 10)
-  end
-  if carry == 1 then out[n + 1] = '1' end
-  local rev = {}
-  for i = #out, 1, -1 do rev[#rev + 1] = out[i] end
-  local sum = table.concat(rev)
-  if #sum ~= 16 then return #sum < 16 end
-  return sum <= '9223372036854775'
-end
-if not ttlSecondsBackendRepresentable(ARGV[1], tostring(now)) then return redis.error_reply('score TTL exceeds Redis backend expiry representability') end
+    private const SCORE_SET = self::LUA_TIME_PRELUDE . "\n" . <<<'LUA'
+if not ttlBackendRepresentable(ARGV[1]) then return redis.error_reply('score TTL exceeds Redis backend expiry representability') end
 redis.call('HSET', KEYS[1], 'value', ARGV[2], 'updatedAt', now)
 redis.call('EXPIRE', KEYS[1], ARGV[1])
 return now
@@ -499,32 +516,8 @@ end
 return 0
 LUA;
 
-    private const BLOCK_SET = <<<'LUA'
-local now = tonumber(redis.call('TIME')[1])
-local function addDecimalStrings(a, b)
-  local ra, rb = a:reverse(), b:reverse()
-  local out, carry = {}, 0
-  local n = math.max(#ra, #rb)
-  for i = 1, n do
-    local da = tonumber(ra:sub(i, i)) or 0
-    local db = tonumber(rb:sub(i, i)) or 0
-    local s = da + db + carry
-    carry = s >= 10 and 1 or 0
-    out[i] = tostring(s % 10)
-  end
-  if carry == 1 then out[n + 1] = '1' end
-  local rev = {}
-  for i = #out, 1, -1 do rev[#rev + 1] = out[i] end
-  return table.concat(rev)
-end
-local function ttlSecondsBackendRepresentable(rawTtl, nowSecondsStr)
-  if rawTtl == nil or string.match(rawTtl, '^[1-9]%d*$') == nil then return false end
-  if string.len(rawTtl) > 16 or (string.len(rawTtl) == 16 and rawTtl > '9223372036854775') then return false end
-  local sum = addDecimalStrings(rawTtl, nowSecondsStr)
-  if #sum ~= 16 then return #sum < 16 end
-  return sum <= '9223372036854775'
-end
-if not ttlSecondsBackendRepresentable(ARGV[2], tostring(now)) then return redis.error_reply('block duration exceeds Redis backend expiry representability') end
+    private const BLOCK_SET = self::LUA_TIME_PRELUDE . "\n" . <<<'LUA'
+if not ttlBackendRepresentable(ARGV[2], tostring(now)) then return redis.error_reply('block duration exceeds Redis backend expiry representability') end
 local expires = addDecimalStrings(tostring(now), ARGV[2])
 redis.call('HSET', KEYS[1], 'level', ARGV[1], 'expiresAt', expires)
 redis.call('EXPIRE', KEYS[1], ARGV[2])
@@ -558,22 +551,37 @@ end
 return {level, expires}
 LUA;
 
-    private const BUDGET_INCREMENT = <<<'LUA'
-local now = tonumber(redis.call('TIME')[1])
+    private const BUDGET_INCREMENT = self::LUA_TIME_PRELUDE . "\n" . <<<'LUA'
 local exactIntegerMax = 9007199254740991
+-- DEC-017: `epochStart` is a canonical non-negative PHP-int Unix timestamp. It
+-- is compared and added as a decimal string, so a value above 2^53 is handled
+-- exactly instead of being narrowed through `tonumber()`.
+local function validNonNegativeInteger(value)
+  return value ~= nil and (value == '0' or (string.match(value, '^[1-9]%d*$') ~= nil and string.len(value) <= 19 and (string.len(value) < 19 or value <= '9223372036854775807')))
+end
+local function validPositiveDuration(value)
+  return value ~= nil and string.match(value, '^[1-9]%d*$') ~= nil and string.len(value) <= 19 and (string.len(value) < 19 or value <= '9223372036854775807')
+end
+-- Returns epoch-end as a decimal string, or nil plus an error for malformed state.
+local function persistedEpochEnd(count, start, duration)
+  if not count or not start or not duration then return nil, 'malformed budget state' end
+  if string.match(count, '^%-?%d+$') == nil or not validNonNegativeInteger(start) or not validPositiveDuration(duration) then return nil, 'malformed budget state' end
+  if compareDecimalStrings(duration, '9007199254740991') > 0 then return nil, 'budget expiry exceeds Redis Lua exact integer range' end
+  return addDecimalStrings(start, duration)
+end
 local count = redis.call('HGET', KEYS[1], 'count')
 local start = redis.call('HGET', KEYS[1], 'epochStart')
 local storedDuration = redis.call('HGET', KEYS[1], 'epochDuration')
 local requestedDuration = tonumber(ARGV[1])
 local exists = redis.call('EXISTS', KEYS[1])
 if exists == 1 and redis.call('TTL', KEYS[1]) < 0 then return redis.error_reply('malformed budget state') end
-if exists == 1 and (not count or not start or not storedDuration) then return redis.error_reply('malformed budget state') end
+local storedEnd = nil
 if exists == 1 then
-  start = tonumber(start); storedDuration = tonumber(storedDuration)
-  if not string.match(count, '^%-?%d+$') or not start or start ~= math.floor(start) or not storedDuration or storedDuration <= 0 or storedDuration ~= math.floor(storedDuration) then return redis.error_reply('malformed budget state') end
-  if start > exactIntegerMax - storedDuration then return redis.error_reply('budget expiry exceeds Redis Lua exact integer range') end
+  local endError
+  storedEnd, endError = persistedEpochEnd(count, start, storedDuration)
+  if storedEnd == nil then return redis.error_reply(endError) end
 end
-if exists == 1 and now < start + storedDuration then
+if exists == 1 and compareDecimalStrings(nowStr, storedEnd) < 0 then
   redis.call('HINCRBY', KEYS[1], 'count', ARGV[2])
   return {redis.call('HGET', KEYS[1], 'count'), start}
 end
@@ -585,95 +593,100 @@ redis.call('EXPIRE', KEYS[1], ARGV[1])
 return {redis.call('HGET', KEYS[1], 'count'), now}
 LUA;
 
-    private const BUDGET_GET = <<<'LUA'
+    private const BUDGET_GET = self::LUA_TIME_PRELUDE . "\n" . <<<'LUA'
+local exactIntegerMax = 9007199254740991
+-- DEC-017: `epochStart` is a canonical non-negative PHP-int Unix timestamp. It
+-- is compared and added as a decimal string, so a value above 2^53 is handled
+-- exactly instead of being narrowed through `tonumber()`.
+local function validNonNegativeInteger(value)
+  return value ~= nil and (value == '0' or (string.match(value, '^[1-9]%d*$') ~= nil and string.len(value) <= 19 and (string.len(value) < 19 or value <= '9223372036854775807')))
+end
+local function validPositiveDuration(value)
+  return value ~= nil and string.match(value, '^[1-9]%d*$') ~= nil and string.len(value) <= 19 and (string.len(value) < 19 or value <= '9223372036854775807')
+end
+-- Returns epoch-end as a decimal string, or nil plus an error for malformed state.
+local function persistedEpochEnd(count, start, duration)
+  if not count or not start or not duration then return nil, 'malformed budget state' end
+  if string.match(count, '^%-?%d+$') == nil or not validNonNegativeInteger(start) or not validPositiveDuration(duration) then return nil, 'malformed budget state' end
+  if compareDecimalStrings(duration, '9007199254740991') > 0 then return nil, 'budget expiry exceeds Redis Lua exact integer range' end
+  return addDecimalStrings(start, duration)
+end
 if redis.call('EXISTS', KEYS[1]) == 0 then return {} end
 local count = redis.call('HGET', KEYS[1], 'count')
 local start = redis.call('HGET', KEYS[1], 'epochStart')
 local duration = redis.call('HGET', KEYS[1], 'epochDuration')
-if not count or not start or not duration then return redis.error_reply('malformed budget state') end
 if redis.call('TTL', KEYS[1]) < 0 then return redis.error_reply('malformed budget state') end
-start = tonumber(start); duration = tonumber(duration)
-if not string.match(count, '^%-?%d+$') or not start or start ~= math.floor(start) or not duration or duration <= 0 or duration ~= math.floor(duration) then return redis.error_reply('malformed budget state') end
-if tonumber(redis.call('TIME')[1]) >= start + duration then
+local storedEnd, endError = persistedEpochEnd(count, start, duration)
+if storedEnd == nil then return redis.error_reply(endError) end
+if compareDecimalStrings(nowStr, storedEnd) >= 0 then
   redis.call('DEL', KEYS[1])
   return {}
 end
 return {redis.call('HGET', KEYS[1], 'count'), start}
 LUA;
 
-    private const BUDGET_SEED = <<<'LUA'
-local now = tonumber(redis.call('TIME')[1])
+    private const BUDGET_SEED = self::LUA_TIME_PRELUDE . "\n" . <<<'LUA'
 local exactIntegerMax = 9007199254740991
+-- DEC-017: `epochStart` is a canonical non-negative PHP-int Unix timestamp. It
+-- is compared and added as a decimal string, so a value above 2^53 is handled
+-- exactly instead of being narrowed through `tonumber()`.
+local function validNonNegativeInteger(value)
+  return value ~= nil and (value == '0' or (string.match(value, '^[1-9]%d*$') ~= nil and string.len(value) <= 19 and (string.len(value) < 19 or value <= '9223372036854775807')))
+end
+local function validPositiveDuration(value)
+  return value ~= nil and string.match(value, '^[1-9]%d*$') ~= nil and string.len(value) <= 19 and (string.len(value) < 19 or value <= '9223372036854775807')
+end
+-- Returns epoch-end as a decimal string, or nil plus an error for malformed state.
+local function persistedEpochEnd(count, start, duration)
+  if not count or not start or not duration then return nil, 'malformed budget state' end
+  if string.match(count, '^%-?%d+$') == nil or not validNonNegativeInteger(start) or not validPositiveDuration(duration) then return nil, 'malformed budget state' end
+  if compareDecimalStrings(duration, '9007199254740991') > 0 then return nil, 'budget expiry exceeds Redis Lua exact integer range' end
+  return addDecimalStrings(start, duration)
+end
 local count = redis.call('HGET', KEYS[1], 'count')
 local start = redis.call('HGET', KEYS[1], 'epochStart')
 local duration = redis.call('HGET', KEYS[1], 'epochDuration')
 local exists = redis.call('EXISTS', KEYS[1])
 if exists == 1 and redis.call('TTL', KEYS[1]) < 0 then return redis.error_reply('malformed budget state') end
-if exists == 1 and (not count or not start or not duration) then return redis.error_reply('malformed budget state') end
+local storedEnd = nil
 if exists == 1 then
-  start = tonumber(start); duration = tonumber(duration)
-  if not string.match(count, '^%-?%d+$') or not start or start ~= math.floor(start) or not duration or duration <= 0 or duration ~= math.floor(duration) then return redis.error_reply('malformed budget state') end
-  if start > exactIntegerMax - duration then return redis.error_reply('budget expiry exceeds Redis Lua exact integer range') end
+  local endError
+  storedEnd, endError = persistedEpochEnd(count, start, duration)
+  if storedEnd == nil then return redis.error_reply(endError) end
 end
-if exists == 1 and now < start + duration then
+if exists == 1 and compareDecimalStrings(nowStr, storedEnd) < 0 then
   redis.call('HINCRBY', KEYS[1], 'count', ARGV[4])
   return {redis.call('HGET', KEYS[1], 'count'), start}
 end
-local seedStart = tonumber(ARGV[2])
+-- The seed is consulted only once no active Current epoch is authoritative;
+-- only then does its epoch start have to be a valid semantic timestamp.
 local epochDuration = tonumber(ARGV[1])
-if not seedStart or seedStart ~= math.floor(seedStart) or epochDuration <= 0 or epochDuration ~= math.floor(epochDuration) then return redis.error_reply('malformed seed expiry') end
-if seedStart > exactIntegerMax - epochDuration then return redis.error_reply('seed expiry exceeds Redis Lua exact integer range') end
-if now < seedStart + epochDuration then
+if not validNonNegativeInteger(ARGV[2]) or not epochDuration or epochDuration <= 0 or epochDuration ~= math.floor(epochDuration) then return redis.error_reply('malformed seed expiry') end
+if epochDuration > exactIntegerMax then return redis.error_reply('seed expiry exceeds Redis Lua exact integer range') end
+local seedEnd = addDecimalStrings(ARGV[2], ARGV[1])
+if compareDecimalStrings(nowStr, seedEnd) < 0 then
   if ARGV[6] == '1' then return redis.error_reply('seeded budget count overflow') end
+  local remaining = subtractDecimalStrings(seedEnd, nowStr)
+  if not ttlBackendRepresentable(remaining) then return redis.error_reply('seed expiry exceeds Redis backend expiry representability') end
   if exists == 1 then redis.call('DEL', KEYS[1]) end
-  redis.call('HSET', KEYS[1], 'count', ARGV[5], 'epochStart', seedStart, 'epochDuration', epochDuration)
-  redis.call('EXPIRE', KEYS[1], seedStart + epochDuration - now)
-  return {redis.call('HGET', KEYS[1], 'count'), seedStart}
+  redis.call('HSET', KEYS[1], 'count', ARGV[5], 'epochStart', ARGV[2], 'epochDuration', ARGV[1])
+  redis.call('EXPIRE', KEYS[1], remaining)
+  return {redis.call('HGET', KEYS[1], 'count'), ARGV[2]}
 end
 if epochDuration > exactIntegerMax - now then return redis.error_reply('budget expiry exceeds Redis Lua exact integer range') end
 if exists == 1 then redis.call('DEL', KEYS[1]) end
-redis.call('HSET', KEYS[1], 'count', ARGV[4], 'epochStart', now, 'epochDuration', epochDuration)
-redis.call('EXPIRE', KEYS[1], epochDuration)
+redis.call('HSET', KEYS[1], 'count', ARGV[4], 'epochStart', now, 'epochDuration', ARGV[1])
+redis.call('EXPIRE', KEYS[1], ARGV[1])
 return {redis.call('HGET', KEYS[1], 'count'), now}
 LUA;
 
-    private const DISTINCT_ADD = <<<'LUA'
-local now = tonumber(redis.call('TIME')[1])
-local nowStr = tostring(now)
-local function compareDecimalStrings(a, b)
-  if #a ~= #b then return (#a < #b) and -1 or 1 end
-  if a == b then return 0 end
-  return (a < b) and -1 or 1
-end
+    private const DISTINCT_ADD = self::LUA_TIME_PRELUDE . "\n" . <<<'LUA'
 local function validBackendExpiry(value)
   if value == nil or value == '0' then return value == '0' end
   if string.match(value, '^[1-9]%d*$') == nil then return false end
   if #value > 16 then return false end
   if #value == 16 and value > '9223372036854775' then return false end
   return true
-end
-local function addDecimalStrings(a, b)
-  local ra, rb = a:reverse(), b:reverse()
-  local out, carry = {}, 0
-  local n = math.max(#ra, #rb)
-  for i = 1, n do
-    local da = tonumber(ra:sub(i, i)) or 0
-    local db = tonumber(rb:sub(i, i)) or 0
-    local s = da + db + carry
-    carry = s >= 10 and 1 or 0
-    out[i] = tostring(s % 10)
-  end
-  if carry == 1 then out[n + 1] = '1' end
-  local rev = {}
-  for i = #out, 1, -1 do rev[#rev + 1] = out[i] end
-  return table.concat(rev)
-end
-local function ttlSecondsBackendRepresentable(rawTtl)
-  if rawTtl == nil or string.match(rawTtl, '^[1-9]%d*$') == nil then return false end
-  if string.len(rawTtl) > 16 or (string.len(rawTtl) == 16 and rawTtl > '9223372036854775') then return false end
-  local sum = addDecimalStrings(rawTtl, nowStr)
-  if #sum ~= 16 then return #sum < 16 end
-  return sum <= '9223372036854775'
 end
 local exists = redis.call('EXISTS', KEYS[1])
 local metaExists = redis.call('EXISTS', KEYS[2])
@@ -686,49 +699,19 @@ if exists == 1 then
   if compareDecimalStrings(rawExpires, nowStr) <= 0 or redis.call('TTL', KEYS[2]) < 0 then return redis.error_reply('malformed distinct metadata') end
 end
 if exists == 0 then
-  if not ttlSecondsBackendRepresentable(ARGV[1]) then return redis.error_reply('correlation TTL exceeds Redis backend expiry representability') end
+  if not ttlBackendRepresentable(ARGV[1]) then return redis.error_reply('correlation TTL exceeds Redis backend expiry representability') end
   redis.call('SADD', KEYS[1], ARGV[2]); redis.call('EXPIRE', KEYS[1], ARGV[1]); redis.call('HSET', KEYS[2], 'expiresAt', addDecimalStrings(nowStr, ARGV[1])); redis.call('EXPIRE', KEYS[2], ARGV[1])
 else redis.call('SADD', KEYS[1], ARGV[2]) end
 return redis.call('SCARD', KEYS[1])
 LUA;
 
-    private const WATCH_INCREMENT = <<<'LUA'
-local now = tonumber(redis.call('TIME')[1])
-local nowStr = tostring(now)
-local function compareDecimalStrings(a, b)
-  if #a ~= #b then return (#a < #b) and -1 or 1 end
-  if a == b then return 0 end
-  return (a < b) and -1 or 1
-end
+    private const WATCH_INCREMENT = self::LUA_TIME_PRELUDE . "\n" . <<<'LUA'
 local function validBackendExpiry(value)
   if value == nil or value == '0' then return value == '0' end
   if string.match(value, '^[1-9]%d*$') == nil then return false end
   if #value > 16 then return false end
   if #value == 16 and value > '9223372036854775' then return false end
   return true
-end
-local function addDecimalStrings(a, b)
-  local ra, rb = a:reverse(), b:reverse()
-  local out, carry = {}, 0
-  local n = math.max(#ra, #rb)
-  for i = 1, n do
-    local da = tonumber(ra:sub(i, i)) or 0
-    local db = tonumber(rb:sub(i, i)) or 0
-    local s = da + db + carry
-    carry = s >= 10 and 1 or 0
-    out[i] = tostring(s % 10)
-  end
-  if carry == 1 then out[n + 1] = '1' end
-  local rev = {}
-  for i = #out, 1, -1 do rev[#rev + 1] = out[i] end
-  return table.concat(rev)
-end
-local function ttlSecondsBackendRepresentable(rawTtl)
-  if rawTtl == nil or string.match(rawTtl, '^[1-9]%d*$') == nil then return false end
-  if string.len(rawTtl) > 16 or (string.len(rawTtl) == 16 and rawTtl > '9223372036854775') then return false end
-  local sum = addDecimalStrings(rawTtl, nowStr)
-  if #sum ~= 16 then return #sum < 16 end
-  return sum <= '9223372036854775'
 end
 local exists = redis.call('EXISTS', KEYS[1])
 if exists == 1 and redis.call('TTL', KEYS[1]) < 0 then return redis.error_reply('malformed watch state') end
@@ -741,7 +724,7 @@ if exists == 1 then
 end
 local value
 if exists == 0 then
-  if not ttlSecondsBackendRepresentable(ARGV[1]) then return redis.error_reply('correlation TTL exceeds Redis backend expiry representability') end
+  if not ttlBackendRepresentable(ARGV[1]) then return redis.error_reply('correlation TTL exceeds Redis backend expiry representability') end
   value = 1; redis.call('SET', KEYS[1], value, 'EX', ARGV[1]); redis.call('HSET', KEYS[2], 'expiresAt', addDecimalStrings(nowStr, ARGV[1])); redis.call('EXPIRE', KEYS[2], ARGV[1])
 else value = redis.call('INCR', KEYS[1]) end
 return value
@@ -755,43 +738,13 @@ if not value or not tonumber(value) or tonumber(value) ~= math.floor(tonumber(va
 return value
 LUA;
 
-    private const BOUNDED_SNAPSHOT = <<<'LUA'
-local now = tonumber(redis.call('TIME')[1])
-local nowStr = tostring(now)
-local function compareDecimalStrings(a, b)
-  if #a ~= #b then return (#a < #b) and -1 or 1 end
-  if a == b then return 0 end
-  return (a < b) and -1 or 1
-end
+    private const BOUNDED_SNAPSHOT = self::LUA_TIME_PRELUDE . "\n" . <<<'LUA'
 local function validBackendExpiry(value)
   if value == nil or value == '0' then return value == '0' end
   if string.match(value, '^[1-9]%d*$') == nil then return false end
   if #value > 16 then return false end
   if #value == 16 and value > '9223372036854775' then return false end
   return true
-end
-local function addDecimalStrings(a, b)
-  local ra, rb = a:reverse(), b:reverse()
-  local out, carry = {}, 0
-  local n = math.max(#ra, #rb)
-  for i = 1, n do
-    local da = tonumber(ra:sub(i, i)) or 0
-    local db = tonumber(rb:sub(i, i)) or 0
-    local s = da + db + carry
-    carry = s >= 10 and 1 or 0
-    out[i] = tostring(s % 10)
-  end
-  if carry == 1 then out[n + 1] = '1' end
-  local rev = {}
-  for i = #out, 1, -1 do rev[#rev + 1] = out[i] end
-  return table.concat(rev)
-end
-local function ttlSecondsBackendRepresentable(rawTtl)
-  if rawTtl == nil or string.match(rawTtl, '^[1-9]%d*$') == nil then return false end
-  if string.len(rawTtl) > 16 or (string.len(rawTtl) == 16 and rawTtl > '9223372036854775') then return false end
-  local sum = addDecimalStrings(rawTtl, nowStr)
-  if #sum ~= 16 then return #sum < 16 end
-  return sum <= '9223372036854775'
 end
 local exists = redis.call('EXISTS', KEYS[1])
 if exists == 1 and redis.call('TTL', KEYS[1]) < 0 then return redis.error_reply('malformed bounded state') end
@@ -816,23 +769,14 @@ if count >= tonumber(ARGV[3]) then
   return {count, 0, 0, expires, unpack(members)}
 end
 if exists == 0 then
-  if not ttlSecondsBackendRepresentable(ARGV[1]) then return redis.error_reply('correlation TTL exceeds Redis backend expiry representability') end
+  if not ttlBackendRepresentable(ARGV[1]) then return redis.error_reply('correlation TTL exceeds Redis backend expiry representability') end
   redis.call('SADD', KEYS[1], ARGV[2]); redis.call('EXPIRE', KEYS[1], ARGV[1]); redis.call('HSET', KEYS[2], 'expiresAt', addDecimalStrings(nowStr, ARGV[1])); redis.call('EXPIRE', KEYS[2], ARGV[1])
 else redis.call('SADD', KEYS[1], ARGV[2]) end
 local members = redis.call('SMEMBERS', KEYS[1]); table.sort(members)
 return {#members, 1, 1, exists == 0 and addDecimalStrings(nowStr, ARGV[1]) or expires, unpack(members)}
 LUA;
 
-    private const ROTATED_SNAPSHOT = <<<'LUA'
-local redisTime = redis.call('TIME')
-local now = tonumber(redisTime[1])
-local nowStr = tostring(now)
-local nowMs = (now * 1000) + math.floor(tonumber(redisTime[2]) / 1000)
-local function compareDecimalStrings(a, b)
-  if #a ~= #b then return (#a < #b) and -1 or 1 end
-  if a == b then return 0 end
-  return (a < b) and -1 or 1
-end
+    private const ROTATED_SNAPSHOT = self::LUA_TIME_PRELUDE . "\n" . <<<'LUA'
 local function validBackendExpiry(value)
   if value == nil or value == '0' then return value == '0' end
   if string.match(value, '^[1-9]%d*$') == nil then return false end
@@ -840,30 +784,7 @@ local function validBackendExpiry(value)
   if #value == 16 and value > '9223372036854775' then return false end
   return true
 end
-local function addDecimalStrings(a, b)
-  local ra, rb = a:reverse(), b:reverse()
-  local out, carry = {}, 0
-  local n = math.max(#ra, #rb)
-  for i = 1, n do
-    local da = tonumber(ra:sub(i, i)) or 0
-    local db = tonumber(rb:sub(i, i)) or 0
-    local s = da + db + carry
-    carry = s >= 10 and 1 or 0
-    out[i] = tostring(s % 10)
-  end
-  if carry == 1 then out[n + 1] = '1' end
-  local rev = {}
-  for i = #out, 1, -1 do rev[#rev + 1] = out[i] end
-  return table.concat(rev)
-end
-local function ttlSecondsBackendRepresentable(rawTtl)
-  if rawTtl == nil or string.match(rawTtl, '^[1-9]%d*$') == nil then return false end
-  if string.len(rawTtl) > 16 or (string.len(rawTtl) == 16 and rawTtl > '9223372036854775') then return false end
-  local sum = addDecimalStrings(rawTtl, nowStr)
-  if #sum ~= 16 then return #sum < 16 end
-  return sum <= '9223372036854775'
-end
-if not ttlSecondsBackendRepresentable(ARGV[2]) then return redis.error_reply('correlation TTL exceeds Redis backend expiry representability') end
+if not ttlBackendRepresentable(ARGV[2]) then return redis.error_reply('correlation TTL exceeds Redis backend expiry representability') end
 local alias = KEYS[1] == KEYS[5]
 local prevExists = redis.call('EXISTS', KEYS[5])
 local prevMetaExists = redis.call('EXISTS', KEYS[6])
@@ -960,23 +881,40 @@ local function ensureCurrent()
     redis.call('SADD', KEYS[1], ARGV[3])
   end
 end
-local function ensureBridge()
-  -- The bridge's physical TTL is capped by real PTTL replies from Previous
-  -- (KEYS[5]/KEYS[6]), which Redis's scripting engine hands to Lua as
-  -- native numbers; that RESP-Integer-to-Lua-number conversion is the
-  -- backend/Lua boundary for this specific arithmetic, not a narrowing
-  -- this adapter introduces. `math.min` against those real, bounded PTTLs
-  -- is unaffected by the magnitude of `prevExpiry` itself: this branch is
-  -- only reachable while Previous is still alive (bridgePttl derives from
-  -- its real remaining PTTL), so it stays within the same bound proven by
-  -- G12-R04's closed bridge-PTTL-exact-bound regression.
+-- The bridge's physical lifetime is min(Previous PTTL, Previous-metadata
+-- PTTL, Previous authoritative remaining ms, requested ms), never rounded
+-- upward. PTTL reaches Lua as a native number, which is exact only up to
+-- 2^53 - 1: a value at or above that is treated as "at least 2^53" and a
+-- candidate below it is exact. The authoritative-remaining and requested
+-- candidates are derived from decimal strings, never from `tonumber()` of a
+-- huge value. Any exact candidate is therefore provably <= every inexact
+-- one, so the exact minimum is the true minimum; when every candidate is
+-- inexact the lifetime cannot be bounded exactly and the whole rotation
+-- fails before any Current or Bridge mutation.
+local exactMsMax = '9007199254740991'
+local function exactCandidate(decimal)
+  if compareDecimalStrings(decimal, exactMsMax) <= 0 then return tonumber(decimal) end
+  return nil
+end
+local function planBridgePttl()
+  local previousPttl = redis.call('PTTL', KEYS[5])
+  local previousMetaPttl = redis.call('PTTL', KEYS[6])
+  if previousPttl <= 0 or previousMetaPttl <= 0 then return nil, 'malformed previous bounded state' end
+  local candidates = {}
+  if previousPttl <= 9007199254740991 then candidates[#candidates + 1] = previousPttl end
+  if previousMetaPttl <= 9007199254740991 then candidates[#candidates + 1] = previousMetaPttl end
+  local remaining = exactCandidate(subtractDecimalStrings(prevExpiry .. '000', nowMsStr))
+  if remaining ~= nil then candidates[#candidates + 1] = remaining end
+  local requested = exactCandidate(ARGV[2] .. '000')
+  if requested ~= nil then candidates[#candidates + 1] = requested end
+  if #candidates == 0 then return nil, 'rotated bridge lifetime exceeds Redis Lua exact integer range' end
+  local bridgePttl = candidates[1]
+  for _, candidate in ipairs(candidates) do if candidate < bridgePttl then bridgePttl = candidate end end
+  if bridgePttl <= 0 then return nil, 'malformed previous bounded state' end
+  return bridgePttl
+end
+local function ensureBridge(bridgePttl)
   if bridgeExists == 0 then
-    local previousPttl = redis.call('PTTL', KEYS[5])
-    local previousMetaPttl = redis.call('PTTL', KEYS[6])
-    if previousPttl <= 0 or previousMetaPttl <= 0 then return redis.error_reply('malformed previous bounded state') end
-    local previousRemainingMs = (tonumber(prevExpiry) * 1000) - nowMs
-    local bridgePttl = math.min(previousPttl, previousMetaPttl, previousRemainingMs, tonumber(ARGV[2]) * 1000)
-    if bridgePttl <= 0 then return redis.error_reply('malformed previous bounded state') end
     bridgeExpiry = prevExpiry
     redis.call('SADD', KEYS[3], ARGV[3])
     redis.call('PEXPIRE', KEYS[3], bridgePttl)
@@ -990,38 +928,23 @@ end
 if known then
   ensureCurrent()
 elseif #members < tonumber(ARGV[5]) then
+  local bridgePttl = nil
+  if bridgeExists == 0 then
+    local planError
+    bridgePttl, planError = planBridgePttl()
+    if bridgePttl == nil then return redis.error_reply(planError) end
+  end
   ensureCurrent()
-  ensureBridge()
+  ensureBridge(bridgePttl)
   added = true
   members[#members + 1] = ARGV[3]
 end
 return {#members, known or added and 1 or 0, added and 1 or 0, prevExpiry, unpack(members)}
 LUA;
 
-    private const LEASE = <<<'LUA'
+    private const LEASE = self::LUA_TIME_PRELUDE . "\n" . <<<'LUA'
 local function validBackendExpiry(value)
   return value ~= nil and string.match(value, '^[1-9]%d*$') ~= nil and string.len(value) <= 19 and (string.len(value) < 19 or value <= '9223372036854775807')
-end
-local function compareDecimalStrings(a, b)
-  if #a ~= #b then return (#a < #b) and -1 or 1 end
-  if a == b then return 0 end
-  return (a < b) and -1 or 1
-end
-local function addDecimalStrings(a, b)
-  local ra, rb = a:reverse(), b:reverse()
-  local out, carry = {}, 0
-  local n = math.max(#ra, #rb)
-  for i = 1, n do
-    local da = tonumber(ra:sub(i, i)) or 0
-    local db = tonumber(rb:sub(i, i)) or 0
-    local s = da + db + carry
-    carry = s >= 10 and 1 or 0
-    out[i] = tostring(s % 10)
-  end
-  if carry == 1 then out[n + 1] = '1' end
-  local rev = {}
-  for i = #out, 1, -1 do rev[#rev + 1] = out[i] end
-  return table.concat(rev)
 end
 local current = redis.call('GET', KEYS[1])
 if current then
@@ -1029,6 +952,7 @@ if current then
   if ttl < 0 or not validBackendExpiry(current) then return redis.error_reply('malformed probe lease') end
   if compareDecimalStrings(current, ARGV[1]) > 0 then return 0 end
 end
+if not ttlBackendRepresentable(ARGV[2]) then return redis.error_reply('probe lease duration exceeds Redis backend expiry representability') end
 redis.call('SET', KEYS[1], addDecimalStrings(ARGV[1], ARGV[2]), 'EX', ARGV[2])
 return 1
 LUA;
@@ -1049,12 +973,11 @@ local function validPhpInteger(value)
   return string.len(digits) < 19 or (string.len(digits) == 19 and digits <= maximum)
 end
 local exactIntegerMax = 9007199254740991
-local function validExactInteger(value)
-  if value == nil or string.match(value, '^%-?%d+$') == nil then return false end
-  local negative = string.sub(value, 1, 1) == '-'
-  local digits = negative and string.sub(value, 2) or value
-  if digits == '' or (string.len(digits) > 1 and string.sub(digits, 1, 1) == '0') or (negative and digits == '0') then return false end
-  return string.len(digits) < 16 or (string.len(digits) == 16 and digits <= '9007199254740991')
+-- DEC-017: persisted semantic timestamps (cycle members/scores, pause
+-- start/finish/scores, hard-block `expiresAt`) are canonical non-negative
+-- decimals, exact within Lua's integer range where ZSET arithmetic needs it.
+local function validExactNonNegativeInteger(value)
+  return value ~= nil and (value == '0' or (string.match(value, '^[1-9]%d*$') ~= nil and string.len(value) <= 16 and (string.len(value) < 16 or value <= '9007199254740991')))
 end
 local function validExactPositiveInteger(value)
   return value ~= nil and string.match(value, '^[1-9]%d*$') ~= nil and string.len(value) <= 16 and (string.len(value) < 16 or value <= '9007199254740991')
@@ -1084,7 +1007,7 @@ local now
 if lifecycleGeneration ~= '' then
   now = tonumber(lifecycleTime[1])
 else
-  if not validExactInteger(ARGV[5]) then return redis.error_reply('hard-block caller time is not representable') end
+  if not validExactNonNegativeInteger(ARGV[5]) then return redis.error_reply('hard-block caller time is not representable') end
   now = tonumber(ARGV[5])
 end
 local nowMs = lifecycleGeneration ~= '' and ((tonumber(lifecycleTime[1]) * 1000) + math.floor(tonumber(lifecycleTime[2]) / 1000)) or (now * 1000)
@@ -1162,9 +1085,9 @@ local function readCycles(key)
   if redis.call('TTL', key) < 0 then error('malformed cycle history') end
   if redis.call('ZCARD', key) == 0 then error('malformed cycle history') end
   for _, member in ipairs(redis.call('ZRANGE', key, 0, -1)) do
-    if not validExactInteger(member) then error('malformed cycle history') end
+    if not validExactNonNegativeInteger(member) then error('malformed cycle history') end
     local rawScore = redis.call('ZSCORE', key, member)
-    if not validExactInteger(rawScore) then error('malformed cycle history') end
+    if not validExactNonNegativeInteger(rawScore) then error('malformed cycle history') end
     local score = tonumber(rawScore); local timestamp = tonumber(member)
     if score ~= timestamp then error('malformed cycle history') end
     if timestamp >= now - cycleWindow and cyclesByMember[member] == nil then
@@ -1180,7 +1103,7 @@ for _, blockKey in ipairs({KEYS[3], KEYS[4]}) do
     if blockPttl == -1 then return redis.error_reply('malformed hard-block state') end
     if blockPttl > 0 then
       local rawExpires = redis.call('HGET', blockKey, 'expiresAt'); local rawLevel = redis.call('HGET', blockKey, 'level')
-      if not validExactInteger(rawExpires) or not rawLevel then return redis.error_reply('malformed hard-block state') end
+      if not validExactNonNegativeInteger(rawExpires) or not rawLevel then return redis.error_reply('malformed hard-block state') end
       local expires = tonumber(rawExpires); local level = tonumber(rawLevel)
       if not level or level ~= math.floor(level) or level < 1 or level > 6 then return redis.error_reply('malformed hard-block state') end
       if expires > now and level >= 2 then active = true end
@@ -1201,9 +1124,9 @@ local function readPauses(key)
     local sep = string.find(member, ':')
     if not sep then error('malformed pause history') end
     local startStr = string.sub(member, 1, sep - 1); local finishStr = string.sub(member, sep + 1)
-    if not validExactInteger(startStr) or not validExactInteger(finishStr) then error('malformed pause history') end
+    if not validExactNonNegativeInteger(startStr) or not validExactNonNegativeInteger(finishStr) then error('malformed pause history') end
     local rawScore = redis.call('ZSCORE', key, member)
-    if not validExactInteger(rawScore) then error('malformed pause history') end
+    if not validExactNonNegativeInteger(rawScore) then error('malformed pause history') end
     local start = tonumber(startStr); local finish = tonumber(finishStr); local score = tonumber(rawScore)
     if finish < start or score ~= start then error('malformed pause history') end
     if finish > now - retention and pausesByMember[member] == nil then pausesByMember[member] = {start, finish}; pauseMembers[#pauseMembers + 1] = member end
@@ -1251,15 +1174,14 @@ LUA;
     private const PAUSE_READ = <<<'LUA'
 local exactIntegerMax = 9007199254740991
 local retention = 86400
-local function validExactInteger(value)
-  if value == nil or string.match(value, '^%-?%d+$') == nil then return false end
-  local negative = string.sub(value, 1, 1) == '-'
-  local digits = negative and string.sub(value, 2) or value
-  if digits == '' or (string.len(digits) > 1 and string.sub(digits, 1, 1) == '0') or (negative and digits == '0') then return false end
-  return string.len(digits) < 16 or (string.len(digits) == 16 and digits <= '9007199254740991')
+-- DEC-017: persisted semantic timestamps (cycle members/scores, pause
+-- start/finish/scores, hard-block `expiresAt`) are canonical non-negative
+-- decimals, exact within Lua's integer range where ZSET arithmetic needs it.
+local function validExactNonNegativeInteger(value)
+  return value ~= nil and (value == '0' or (string.match(value, '^[1-9]%d*$') ~= nil and string.len(value) <= 16 and (string.len(value) < 16 or value <= '9007199254740991')))
 end
-if not validExactInteger(ARGV[2]) then return redis.error_reply('caller time is not representable') end
-if not validExactInteger(ARGV[1]) then return redis.error_reply('caller from-timestamp is not representable') end
+if not validExactNonNegativeInteger(ARGV[2]) then return redis.error_reply('caller time is not representable') end
+if not validExactNonNegativeInteger(ARGV[1]) then return redis.error_reply('caller from-timestamp is not representable') end
 local now = tonumber(ARGV[2]); local from = tonumber(ARGV[1])
 if now < -exactIntegerMax + retention then return redis.error_reply('pause retention boundary is not representable') end
 if from > 0 and now < -exactIntegerMax + from then return redis.error_reply('elapsed interval is not representable') end
@@ -1272,9 +1194,9 @@ local function read(source)
     local sep = string.find(member, ':')
     if not sep then error('malformed pause history') end
     local startStr = string.sub(member, 1, sep - 1); local finishStr = string.sub(member, sep + 1)
-    if not validExactInteger(startStr) or not validExactInteger(finishStr) then error('malformed pause history') end
+    if not validExactNonNegativeInteger(startStr) or not validExactNonNegativeInteger(finishStr) then error('malformed pause history') end
     local rawScore = redis.call('ZSCORE', source, member)
-    if not validExactInteger(rawScore) then error('malformed pause history') end
+    if not validExactNonNegativeInteger(rawScore) then error('malformed pause history') end
     local start = tonumber(startStr); local finish = tonumber(finishStr); local score = tonumber(rawScore)
     if finish < start or score ~= start then error('malformed pause history') end
     if finish > now - retention then intervals[#intervals + 1] = {start, finish} end
@@ -1443,42 +1365,14 @@ LUA;
     public function incrementWatchFlagAcrossRotation(string $currentKey, string $previousKey, int $ttlSeconds): int
     {
         $this->positive($ttlSeconds, 'Correlation TTL');
-        $script = <<<'LUA'
-local now = tonumber(redis.call('TIME')[1]); local nowStr = tostring(now); local previous = 0
-local function compareDecimalStrings(a, b)
-  if #a ~= #b then return (#a < #b) and -1 or 1 end
-  if a == b then return 0 end
-  return (a < b) and -1 or 1
-end
+        $script = self::LUA_TIME_PRELUDE . "\n" . <<<'LUA'
+local previous = 0
 local function validBackendExpiry(value)
   if value == nil or value == '0' then return value == '0' end
   if string.match(value, '^[1-9]%d*$') == nil then return false end
   if #value > 16 then return false end
   if #value == 16 and value > '9223372036854775' then return false end
   return true
-end
-local function addDecimalStrings(a, b)
-  local ra, rb = a:reverse(), b:reverse()
-  local out, carry = {}, 0
-  local n = math.max(#ra, #rb)
-  for i = 1, n do
-    local da = tonumber(ra:sub(i, i)) or 0
-    local db = tonumber(rb:sub(i, i)) or 0
-    local s = da + db + carry
-    carry = s >= 10 and 1 or 0
-    out[i] = tostring(s % 10)
-  end
-  if carry == 1 then out[n + 1] = '1' end
-  local rev = {}
-  for i = #out, 1, -1 do rev[#rev + 1] = out[i] end
-  return table.concat(rev)
-end
-local function ttlSecondsBackendRepresentable(rawTtl)
-  if rawTtl == nil or string.match(rawTtl, '^[1-9]%d*$') == nil then return false end
-  if string.len(rawTtl) > 16 or (string.len(rawTtl) == 16 and rawTtl > '9223372036854775') then return false end
-  local sum = addDecimalStrings(rawTtl, nowStr)
-  if #sum ~= 16 then return #sum < 16 end
-  return sum <= '9223372036854775'
 end
 local previousExists = redis.call('EXISTS', KEYS[2]); local previousMetaExists = redis.call('EXISTS', KEYS[3])
 if previousExists == 0 and previousMetaExists == 1 then return redis.error_reply('malformed previous watch metadata') end
@@ -1503,7 +1397,7 @@ if exists == 1 then
 end
 local value
 if exists == 0 then
-  if not ttlSecondsBackendRepresentable(ARGV[1]) then return redis.error_reply('correlation TTL exceeds Redis backend expiry representability') end
+  if not ttlBackendRepresentable(ARGV[1]) then return redis.error_reply('correlation TTL exceeds Redis backend expiry representability') end
   value = 1; redis.call('SET', KEYS[1], value, 'EX', ARGV[1]); redis.call('HSET', KEYS[4], 'expiresAt', addDecimalStrings(nowStr, ARGV[1])); redis.call('EXPIRE', KEYS[4], ARGV[1])
 else value = redis.call('INCR', KEYS[1]) end
 return value + previous
@@ -1543,11 +1437,18 @@ LUA;
                 throw new RateLimiterException('Malformed circuit-breaker re-entry state.');
             } $reEntries[] = $value;
         }
-        return new CircuitBreakerStateDTO($data['status'], $failures, $data['lastFailure'], $data['openSince'], $data['lastSuccess'], $reEntries, $data['failClosedUntil']);
+        $state = new CircuitBreakerStateDTO($data['status'], $failures, $data['lastFailure'], $data['openSince'], $data['lastSuccess'], $reEntries, $data['failClosedUntil']);
+        if (! $this->circuitTimestampsNonNegative($state)) {
+            throw new RateLimiterException('Malformed circuit-breaker timestamp.');
+        }
+        return $state;
     }
 
     public function save(string $policyName, CircuitBreakerStateDTO $state): void
     {
+        if (! $this->circuitTimestampsNonNegative($state)) {
+            throw new RateLimiterException('Circuit-breaker timestamps must be non-negative Unix timestamps.');
+        }
         $raw = json_encode($state, JSON_THROW_ON_ERROR);
         $this->command(['SET', $this->key('circuit', $policyName), $raw]);
     }
@@ -1842,6 +1743,20 @@ LUA;
         if ($value <= 0) {
             throw new RateLimiterException($label . ' must be positive.');
         }
+    }
+
+    /**
+     * DEC-017: every circuit-breaker temporal field is a non-negative Unix
+     * timestamp; `0` stays valid where circuit semantics already use it.
+     */
+    private function circuitTimestampsNonNegative(CircuitBreakerStateDTO $state): bool
+    {
+        foreach ([$state->lastFailure, $state->openSince, $state->lastSuccess, $state->failClosedUntil, ...$state->failures, ...$state->reEntries] as $timestamp) {
+            if ($timestamp < 0) {
+                return false;
+            }
+        }
+        return true;
     }
 
     /**
