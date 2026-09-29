@@ -40,8 +40,17 @@ final class RedisFullCapabilityStore implements FullCapabilityStoreInterface
 
     private const SCORE_INCREMENT = <<<'LUA'
 local now = tonumber(redis.call('TIME')[1])
+local function validPhpInteger(value)
+  if value == nil or string.match(value, '^%-?%d+$') == nil then return false end
+  local negative = string.sub(value, 1, 1) == '-'
+  local digits = negative and string.sub(value, 2) or value
+  if digits == '' or (string.len(digits) > 1 and string.sub(digits, 1, 1) == '0') or (negative and digits == '0') then return false end
+  local maximum = negative and '9223372036854775808' or '9223372036854775807'
+  return string.len(digits) < 19 or (string.len(digits) == 19 and digits <= maximum)
+end
 local exists = redis.call('EXISTS', KEYS[1])
 if exists == 0 then
+  if not validPhpInteger(ARGV[2]) then return redis.error_reply('malformed score state') end
   redis.call('HSET', KEYS[1], 'value', ARGV[2], 'updatedAt', now)
   redis.call('EXPIRE', KEYS[1], ARGV[1])
   return {ARGV[2], now}
@@ -52,7 +61,7 @@ local updated = redis.call('HGET', KEYS[1], 'updatedAt')
 if not value or not updated then
   return redis.error_reply('malformed score state')
 end
-if string.match(value, '^%-?%d+$') == nil or string.match(updated, '^%d+$') == nil then return redis.error_reply('malformed score state') end
+if not validPhpInteger(value) or string.match(updated, '^%d+$') == nil then return redis.error_reply('malformed score state') end
 local ok, result = pcall(redis.call, 'HINCRBY', KEYS[1], 'value', ARGV[2])
 if not ok then return redis.error_reply('score integer overflow') end
 redis.call('HSET', KEYS[1], 'updatedAt', now)
@@ -60,12 +69,20 @@ return {result, now}
 LUA;
 
     private const SCORE_GET = <<<'LUA'
+local function validPhpInteger(value)
+  if value == nil or string.match(value, '^%-?%d+$') == nil then return false end
+  local negative = string.sub(value, 1, 1) == '-'
+  local digits = negative and string.sub(value, 2) or value
+  if digits == '' or (string.len(digits) > 1 and string.sub(digits, 1, 1) == '0') or (negative and digits == '0') then return false end
+  local maximum = negative and '9223372036854775808' or '9223372036854775807'
+  return string.len(digits) < 19 or (string.len(digits) == 19 and digits <= maximum)
+end
 if redis.call('EXISTS', KEYS[1]) == 0 then return {} end
 if redis.call('TTL', KEYS[1]) < 0 then return redis.error_reply('malformed score state') end
 local value = redis.call('HGET', KEYS[1], 'value')
 local updated = redis.call('HGET', KEYS[1], 'updatedAt')
 if not value or not updated then return redis.error_reply('malformed score state') end
-if string.match(value, '^%-?%d+$') == nil or string.match(updated, '^%d+$') == nil then return redis.error_reply('malformed score state') end
+if not validPhpInteger(value) or string.match(updated, '^%d+$') == nil then return redis.error_reply('malformed score state') end
 return {value, updated}
 LUA;
 
@@ -94,6 +111,14 @@ local function validInteger(value, allowZero)
   if normalized == '' then normalized = '0' end
   local maximum = negative and '9223372036854775808' or '9223372036854775807'
   return string.len(normalized) < 19 or (string.len(normalized) == 19 and normalized <= maximum)
+end
+local function validPhpInteger(value)
+  if value == nil or string.match(value, '^%-?%d+$') == nil then return false end
+  local negative = string.sub(value, 1, 1) == '-'
+  local digits = negative and string.sub(value, 2) or value
+  if digits == '' or (string.len(digits) > 1 and string.sub(digits, 1, 1) == '0') or (negative and digits == '0') then return false end
+  local maximum = negative and '9223372036854775808' or '9223372036854775807'
+  return string.len(digits) < 19 or (string.len(digits) == 19 and digits <= maximum)
 end
 local function incrementInteger(value)
   local digits = {}; for digit in string.gmatch(value, '%d') do digits[#digits + 1] = tonumber(digit) end
@@ -134,7 +159,7 @@ if not observedValue or not observedUpdated then
   return redis.error_reply('malformed generation-bound score state')
 end
 local numericObservedUpdated = tonumber(observedUpdated)
-if not validInteger(observedValue, true) or not numericObservedUpdated or numericObservedUpdated ~= math.floor(numericObservedUpdated) or numericObservedUpdated < 0 then return redis.error_reply('malformed generation-bound score state') end
+if not validPhpInteger(observedValue) or not validPhpInteger(ARGV[7]) or not numericObservedUpdated or numericObservedUpdated ~= math.floor(numericObservedUpdated) or numericObservedUpdated < 0 then return redis.error_reply('malformed generation-bound score state') end
 local observedExpiry = redis.call('HGET', source, 'expiresAt')
 if observedGeneration then
   if not validInteger(observedGeneration, false) then return redis.error_reply('malformed generation') end
@@ -191,6 +216,14 @@ local nowMs = (nowSeconds * 1000) + math.floor(tonumber(redisTime[2]) / 1000)
 local function validPositiveInteger(value)
   return value ~= nil and string.match(value, '^[1-9]%d*$') ~= nil and string.len(value) <= 19 and (string.len(value) < 19 or value <= '9223372036854775807')
 end
+local function validPhpInteger(value)
+  if value == nil or string.match(value, '^%-?%d+$') == nil then return false end
+  local negative = string.sub(value, 1, 1) == '-'
+  local digits = negative and string.sub(value, 2) or value
+  if digits == '' or (string.len(digits) > 1 and string.sub(digits, 1, 1) == '0') or (negative and digits == '0') then return false end
+  local maximum = negative and '9223372036854775808' or '9223372036854775807'
+  return string.len(digits) < 19 or (string.len(digits) == 19 and digits <= maximum)
+end
 local source = KEYS[1]
 local currentPttl = redis.call('PTTL', source)
 if currentPttl == -1 then return redis.error_reply('malformed generation-bound score state') end
@@ -202,7 +235,7 @@ if currentPttl <= 0 then
   if previousPttl <= 0 then return {} end
 end
 local value = redis.call('HGET', source, 'value'); local updated = redis.call('HGET', source, 'updatedAt')
-if not value or not updated or string.match(value, '^%-?%d+$') == nil or not tonumber(updated) or tonumber(updated) ~= math.floor(tonumber(updated)) or tonumber(updated) < 0 then return redis.error_reply('malformed generation-bound score state') end
+if not value or not updated or not validPhpInteger(value) or not tonumber(updated) or tonumber(updated) ~= math.floor(tonumber(updated)) or tonumber(updated) < 0 then return redis.error_reply('malformed generation-bound score state') end
 local generation = redis.call('HGET', source, 'generation') or ''
 if generation ~= '' and (string.match(generation, '^[1-9]%d*$') == nil or string.len(generation) > 19 or (string.len(generation) == 19 and generation > '9223372036854775807')) then return redis.error_reply('malformed generation') end
 local expiry = redis.call('HGET', source, 'expiresAt')
@@ -253,6 +286,14 @@ local nowMs = (nowSeconds * 1000) + math.floor(tonumber(redisTime[2]) / 1000)
 local function validPositiveInteger(value)
   return value ~= nil and string.match(value, '^[1-9]%d*$') ~= nil and string.len(value) <= 19 and (string.len(value) < 19 or value <= '9223372036854775807')
 end
+local function validPhpInteger(value)
+  if value == nil or string.match(value, '^%-?%d+$') == nil then return false end
+  local negative = string.sub(value, 1, 1) == '-'
+  local digits = negative and string.sub(value, 2) or value
+  if digits == '' or (string.len(digits) > 1 and string.sub(digits, 1, 1) == '0') or (negative and digits == '0') then return false end
+  local maximum = negative and '9223372036854775808' or '9223372036854775807'
+  return string.len(digits) < 19 or (string.len(digits) == 19 and digits <= maximum)
+end
 for _, blockKey in ipairs({KEYS[3], KEYS[4]}) do
   if blockKey ~= '' then
     local blockPttl = redis.call('PTTL', blockKey)
@@ -277,7 +318,7 @@ if source ~= '' then
   local rawValue = redis.call('HGET', source, 'value'); local rawUpdated = redis.call('HGET', source, 'updatedAt')
   if not rawValue or not rawUpdated then return redis.error_reply('malformed generation-bound score state') end
   local value = rawValue; local updated = tonumber(rawUpdated)
-  if string.match(value, '^%-?%d+$') == nil or not updated or updated ~= math.floor(updated) or updated < 0 then return redis.error_reply('malformed generation-bound score state') end
+  if not validPhpInteger(value) or not updated or updated ~= math.floor(updated) or updated < 0 then return redis.error_reply('malformed generation-bound score state') end
   local generation = redis.call('HGET', source, 'generation')
   local rawExpiry = redis.call('HGET', source, 'expiresAt'); local expiry = nil
   if rawExpiry then
@@ -546,7 +587,7 @@ if alias then
   for _, member in ipairs(previous) do if member == ARGV[3] or member == ARGV[4] then previousKnown = true end end
   if not previousKnown and #previous < tonumber(ARGV[5]) then
     previous[#previous + 1] = ARGV[3]; table.sort(previous)
-    return {#previous, 1, 0, tonumber(prevExpiry), unpack(previous)}
+    return {#previous, 1, 1, tonumber(prevExpiry), unpack(previous)}
   end
   return {#previous, previousKnown and 1 or 0, 0, tonumber(prevExpiry), unpack(previous)}
 end
@@ -596,10 +637,10 @@ local function ensureBridge()
     local previousPttl = redis.call('PTTL', KEYS[5])
     local previousMetaPttl = redis.call('PTTL', KEYS[6])
     if previousPttl <= 0 or previousMetaPttl <= 0 then return redis.error_reply('malformed previous bounded state') end
-    local previousRemainingMs = math.max(0, (tonumber(prevExpiry) - now) * 1000)
+    local previousRemainingMs = (tonumber(prevExpiry) * 1000) - nowMs
     local bridgePttl = math.min(previousPttl, previousMetaPttl, previousRemainingMs, tonumber(ARGV[2]) * 1000)
     if bridgePttl <= 0 then return redis.error_reply('malformed previous bounded state') end
-    bridgeExpiry = math.min(tonumber(prevExpiry), math.floor((nowMs + bridgePttl + 999) / 1000))
+    bridgeExpiry = tonumber(prevExpiry)
     redis.call('SADD', KEYS[3], ARGV[3])
     redis.call('PEXPIRE', KEYS[3], bridgePttl)
     redis.call('HSET', KEYS[4], 'expiresAt', bridgeExpiry)
@@ -639,6 +680,14 @@ local lifecycleTime = redis.call('TIME')
 local function validPositiveInteger(value)
   return value ~= nil and string.match(value, '^[1-9]%d*$') ~= nil and string.len(value) <= 19 and (string.len(value) < 19 or value <= '9223372036854775807')
 end
+local function validPhpInteger(value)
+  if value == nil or string.match(value, '^%-?%d+$') == nil then return false end
+  local negative = string.sub(value, 1, 1) == '-'
+  local digits = negative and string.sub(value, 2) or value
+  if digits == '' or (string.len(digits) > 1 and string.sub(digits, 1, 1) == '0') or (negative and digits == '0') then return false end
+  local maximum = negative and '9223372036854775808' or '9223372036854775807'
+  return string.len(digits) < 19 or (string.len(digits) == 19 and digits <= maximum)
+end
 local now = lifecycleGeneration ~= '' and tonumber(lifecycleTime[1]) or tonumber(ARGV[5])
 local nowMs = lifecycleGeneration ~= '' and ((tonumber(lifecycleTime[1]) * 1000) + math.floor(tonumber(lifecycleTime[2]) / 1000)) or (now * 1000)
 local retention = tonumber(ARGV[9])
@@ -655,8 +704,8 @@ if lifecycleGeneration ~= '' then
         local previousValue = redis.call('HGET', KEYS[8], 'value')
         local previousUpdated = redis.call('HGET', KEYS[8], 'updatedAt')
         if not previousValue or not previousUpdated then return redis.error_reply('malformed lifecycle previous score state') end
-        local numericPreviousValue = tonumber(previousValue); local numericPreviousUpdated = tonumber(previousUpdated)
-        if not numericPreviousValue or numericPreviousValue ~= math.floor(numericPreviousValue) or not numericPreviousUpdated or numericPreviousUpdated ~= math.floor(numericPreviousUpdated) or numericPreviousUpdated < 0 then return redis.error_reply('malformed lifecycle previous score state') end
+        local numericPreviousUpdated = tonumber(previousUpdated)
+        if not validPhpInteger(previousValue) or not numericPreviousUpdated or numericPreviousUpdated ~= math.floor(numericPreviousUpdated) or numericPreviousUpdated < 0 then return redis.error_reply('malformed lifecycle previous score state') end
         local previousGeneration = redis.call('HGET', KEYS[8], 'generation')
         local previousExpiry = redis.call('HGET', KEYS[8], 'expiresAt')
         if previousGeneration then
@@ -690,7 +739,7 @@ if lifecycleGeneration ~= '' then
   local generation = redis.call('HGET', scoreKey, 'generation'); local value = redis.call('HGET', scoreKey, 'value'); local updated = redis.call('HGET', scoreKey, 'updatedAt'); local scoreExpiry = redis.call('HGET', scoreKey, 'expiresAt')
   if not generation or not value or not updated or not scoreExpiry then return redis.error_reply('malformed lifecycle score state') end
   if not validPositiveInteger(generation) then return redis.error_reply('malformed lifecycle score generation') end
-  if not tonumber(value) or tonumber(value) ~= math.floor(tonumber(value)) or not tonumber(updated) or tonumber(updated) ~= math.floor(tonumber(updated)) or tonumber(updated) < 0 or not tonumber(scoreExpiry) or tonumber(scoreExpiry) ~= math.floor(tonumber(scoreExpiry)) or tonumber(scoreExpiry) <= 0 or tonumber(scoreExpiry) < tonumber(updated) then return redis.error_reply('malformed lifecycle score state') end
+  if not validPhpInteger(value) or not tonumber(updated) or tonumber(updated) ~= math.floor(tonumber(updated)) or tonumber(updated) < 0 or not tonumber(scoreExpiry) or tonumber(scoreExpiry) ~= math.floor(tonumber(scoreExpiry)) or tonumber(scoreExpiry) <= 0 or tonumber(scoreExpiry) < tonumber(updated) then return redis.error_reply('malformed lifecycle score state') end
   if (nowMs + scorePttl) > (tonumber(scoreExpiry) * 1000) then return redis.error_reply('inconsistent lifecycle score expiry') end
   if generation ~= lifecycleGeneration then return {0} end
   if (tonumber(scoreExpiry) * 1000) <= nowMs then return {0} end
@@ -1320,7 +1369,14 @@ LUA;
 
     private function ensureRepresentableAddition(int $left, int $right, string $label): void
     {
-        if ($this->tryIntegerAddition($left, $right) === null || ($left >= 0 && $right > self::LUA_EXACT_INTEGER_MAX - $left)) {
+        if ($this->tryIntegerAddition($left, $right) === null
+            || $left < -self::LUA_EXACT_INTEGER_MAX
+            || $left > self::LUA_EXACT_INTEGER_MAX
+            || $right < -self::LUA_EXACT_INTEGER_MAX
+            || $right > self::LUA_EXACT_INTEGER_MAX
+            || ($right > 0 && $left > self::LUA_EXACT_INTEGER_MAX - $right)
+            || ($right < 0 && $left < -self::LUA_EXACT_INTEGER_MAX - $right)
+        ) {
             throw new RateLimiterException($label . ' is not representable.');
         }
     }

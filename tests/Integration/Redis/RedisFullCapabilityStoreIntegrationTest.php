@@ -107,13 +107,14 @@ final class RedisFullCapabilityStoreIntegrationTest extends TestCase
         $previousMeta = $this->key('distinct-meta', 'g12-bridge-previous');
         $this->raw(['SADD', $previous, 'old']);
         $this->raw(['PEXPIRE', $previous, 6_000]);
-        $expiry = $this->redisNow() + 20;
+        $expiry = $this->redisNow() + 2;
         $this->raw(['HSET', $previousMeta, 'expiresAt', (string) $expiry]);
-        $this->raw(['PEXPIRE', $previousMeta, 4_000]);
+        $this->raw(['PEXPIRE', $previousMeta, 6_000]);
         $beforeMembers = $this->raw(['SMEMBERS', $previous]);
         $beforeMeta = $this->hashMap($previousMeta);
         $beforeDataPttl = $this->integer($this->raw(['PTTL', $previous]));
         $beforeMetaPttl = $this->integer($this->raw(['PTTL', $previousMeta]));
+        $authoritativeRemainingMs = ($expiry * 1000) - $this->redisNowMilliseconds();
 
         $this->store->addDistinctBoundedWithSnapshotAcrossRotation(
             'g12-bridge-current',
@@ -131,6 +132,9 @@ final class RedisFullCapabilityStoreIntegrationTest extends TestCase
         self::assertLessThanOrEqual($beforeMetaPttl, $bridgePttl);
         self::assertLessThanOrEqual($beforeDataPttl, $bridgeMetaPttl);
         self::assertLessThanOrEqual($beforeMetaPttl, $bridgeMetaPttl);
+        self::assertLessThanOrEqual($authoritativeRemainingMs, $bridgePttl);
+        self::assertLessThanOrEqual($authoritativeRemainingMs, $bridgeMetaPttl);
+        self::assertSame($expiry, $this->integer($this->raw(['HGET', $this->key('distinct-meta', 'g12-bridge'), 'expiresAt'])));
         self::assertSame($beforeMembers, $this->raw(['SMEMBERS', $previous]));
         self::assertSame($beforeMeta, $this->hashMap($previousMeta));
         self::assertLessThanOrEqual($beforeDataPttl, $this->integer($this->raw(['PTTL', $previous])));
@@ -169,6 +173,47 @@ final class RedisFullCapabilityStoreIntegrationTest extends TestCase
         }
     }
 
+    public function testPersistentPausePublicationFailsBeforeAnyLifecycleMutation(): void
+    {
+        foreach ([
+            ['g12-persistent-current-pause', null],
+            ['g12-persistent-current-pause-new', 'g12-persistent-previous-pause'],
+        ] as [$current, $previous]) {
+            $source = $previous ?? $current;
+            $now = $this->redisNow();
+            $pause = $this->key('pause', $source);
+            $this->raw(['ZADD', $pause, $now, $now . ':' . ($now + 30)]);
+            $keys = [];
+            foreach (['block', 'cycle', 'pause'] as $family) {
+                $key = $this->key($family, $source);
+                $state = $family === 'block' ? $this->raw(['HGETALL', $key]) : $this->raw(['ZRANGE', $key, 0, -1, 'WITHSCORES']);
+                $keys[$family] = [$this->raw(['EXISTS', $key]), $state, $this->integer($this->raw(['PTTL', $key]))];
+            }
+            $currentKeys = [$this->key('block', $current), $this->key('cycle', $current), $this->key('pause', $current)];
+            $this->assertOperationFails(fn(): mixed => $this->store->blockWithCycleTracking($current, $previous, 2, 60, $now, 600, 2, 60, 120));
+            foreach ($keys as $family => [$exists, $state, $pttl]) {
+                $key = $this->key($family, $source);
+                self::assertSame($exists, $this->raw(['EXISTS', $key]));
+                if ($family === 'block') {
+                    self::assertSame($state, $this->raw(['HGETALL', $key]));
+                } else {
+                    self::assertSame($state, $this->raw(['ZRANGE', $key, 0, -1, 'WITHSCORES']));
+                }
+                self::assertSame($pttl, $this->integer($this->raw(['PTTL', $key])));
+            }
+            foreach ($currentKeys as $familyIndex => $key) {
+                $family = ['block', 'cycle', 'pause'][$familyIndex];
+                if ($previous === null && $family === 'pause') {
+                    self::assertSame(1, $this->integer($this->raw(['EXISTS', $key])));
+                    self::assertSame($keys['pause'][1], $this->raw(['ZRANGE', $key, 0, -1, 'WITHSCORES']));
+                    self::assertSame(-1, $this->integer($this->raw(['PTTL', $key])));
+                } else {
+                    self::assertSame(0, $this->integer($this->raw(['EXISTS', $key])));
+                }
+            }
+        }
+    }
+
     public function testGenerationPreservesExactIntegerAboveLuaDoubleRangeAndRejectsMaxIncrement(): void
     {
         $now = $this->redisNow();
@@ -193,6 +238,23 @@ final class RedisFullCapabilityStoreIntegrationTest extends TestCase
         self::assertSame($before, $this->hashMap($maxKey));
     }
 
+    public function testScoreReadAndIncrementPreserveExactIntegersAboveLuaDoubleRange(): void
+    {
+        $key = $this->key('score', 'g12-exact-score');
+        $this->raw(['HSET', $key, 'value', '9007199254740993', 'updatedAt', (string) $this->redisNow()]);
+        $this->raw(['EXPIRE', $key, 60]);
+        self::assertSame(9007199254740993, $this->store->get('g12-exact-score')?->value);
+        self::assertSame(9007199254740994, $this->store->increment('g12-exact-score', 60, 1));
+        self::assertSame(9007199254740994, $this->store->get('g12-exact-score')?->value);
+
+        $overflow = $this->key('score', 'g12-score-overflow');
+        $this->raw(['HSET', $overflow, 'value', (string) PHP_INT_MAX, 'updatedAt', (string) $this->redisNow()]);
+        $this->raw(['EXPIRE', $overflow, 60]);
+        $before = $this->hashMap($overflow);
+        $this->assertOperationFails(fn(): mixed => $this->store->increment('g12-score-overflow', 60, 1));
+        self::assertSame($before, $this->hashMap($overflow));
+    }
+
     public function testUnrepresentableCallerTimeArithmeticFailsBeforeAnyRedisMutation(): void
     {
         $this->assertOperationFails(fn(): mixed => $this->store->acquireProbeLease('g12-overflow-lease', PHP_INT_MAX, 1));
@@ -208,6 +270,14 @@ final class RedisFullCapabilityStoreIntegrationTest extends TestCase
 
         $this->assertOperationFails(fn(): mixed => $this->store->mutateGenerationBoundScore('g12-lua-exact-overflow', null, null, 9007199254740992, 1));
         self::assertSame(0, $this->integer($this->raw(['EXISTS', $this->key('score', 'g12-lua-exact-overflow')])));
+
+        $negativeNow = -9007199254740992;
+        $this->assertOperationFails(fn(): mixed => $this->store->acquireProbeLease('g12-negative-lua-time', $negativeNow, 1));
+        self::assertSame(0, $this->integer($this->raw(['EXISTS', $this->key('probe', 'g12-negative-lua-time')])));
+        $this->assertOperationFails(fn(): mixed => $this->store->blockWithCycleTracking('g12-negative-lua-time-block', null, 2, 1, $negativeNow, 60, 2, 30, 120));
+        foreach (['block', 'cycle', 'pause'] as $family) {
+            self::assertSame(0, $this->integer($this->raw(['EXISTS', $this->key($family, 'g12-negative-lua-time-block')])));
+        }
     }
 
     public function testRotationOverCapFailsForDuplicateAndNewMemberWithoutBridgeMutation(): void
@@ -218,13 +288,19 @@ final class RedisFullCapabilityStoreIntegrationTest extends TestCase
         $this->raw(['EXPIRE', $current, 60]);
         $this->raw(['HSET', $meta, 'expiresAt', (string) ($this->redisNow() + 60)]);
         $this->raw(['EXPIRE', $meta, 60]);
-        $before = [$this->raw(['SMEMBERS', $current]), $this->hashMap($meta), $this->redisKeys('distinct')];
+        $bridge = $this->key('distinct', 'g12-rotation-bridge');
+        $bridgeMeta = $this->key('distinct-meta', 'g12-rotation-bridge');
+        $before = [$this->raw(['SMEMBERS', $current]), $this->hashMap($meta), $this->integer($this->raw(['PTTL', $current])), $this->integer($this->raw(['PTTL', $meta])), $this->redisKeys('distinct')];
 
         $this->assertOperationFails(fn(): mixed => $this->store->addDistinctBoundedWithSnapshotAcrossRotation('g12-rotation-over-cap', 'g12-rotation-bridge', 'missing-previous', 'one', 'one', 60, 2));
         $this->assertOperationFails(fn(): mixed => $this->store->addDistinctBoundedWithSnapshotAcrossRotation('g12-rotation-over-cap', 'g12-rotation-bridge', 'missing-previous', 'four', 'four', 60, 2));
         self::assertSame($before[0], $this->raw(['SMEMBERS', $current]));
         self::assertSame($before[1], $this->hashMap($meta));
-        self::assertSame(-2, $this->integer($this->raw(['PTTL', $this->key('distinct', 'g12-rotation-bridge')])));
+        self::assertLessThanOrEqual($before[2], $this->integer($this->raw(['PTTL', $current])));
+        self::assertLessThanOrEqual($before[3], $this->integer($this->raw(['PTTL', $meta])));
+        self::assertSame(-2, $this->integer($this->raw(['PTTL', $bridge])));
+        self::assertSame(-2, $this->integer($this->raw(['PTTL', $bridgeMeta])));
+        self::assertSame($before[4], $this->redisKeys('distinct'));
     }
 
     public function testAliasedRotationReadsPreviousWithoutWritingOrRefreshingIt(): void
@@ -251,6 +327,33 @@ final class RedisFullCapabilityStoreIntegrationTest extends TestCase
         self::assertSame(-2, $this->integer($this->raw(['PTTL', $this->key('distinct', 'g12-aliased-bridge')])));
     }
 
+    public function testAliasedRotationAcceptsNewLogicalRepresentationWithoutPhysicalPreviousMutation(): void
+    {
+        $logical = 'g12-aliased-rotation-new';
+        $physical = $this->key('distinct', $logical);
+        $meta = $this->key('distinct-meta', $logical);
+        $this->raw(['SADD', $physical, 'old']);
+        $this->raw(['PEXPIRE', $physical, 5_000]);
+        $this->raw(['HSET', $meta, 'expiresAt', (string) ($this->redisNow() + 60)]);
+        $this->raw(['PEXPIRE', $meta, 5_000]);
+        $beforeMembers = $this->raw(['SMEMBERS', $physical]);
+        $beforeMeta = $this->hashMap($meta);
+        $beforeDataPttl = $this->integer($this->raw(['PTTL', $physical]));
+        $beforeMetaPttl = $this->integer($this->raw(['PTTL', $meta]));
+
+        $snapshot = $this->store->addDistinctBoundedWithSnapshotAcrossRotation($logical, 'g12-aliased-rotation-new-bridge', $logical, 'new', 'unknown', 60, 3);
+        self::assertTrue($snapshot->accepted);
+        self::assertTrue($snapshot->added);
+        self::assertSame(2, $snapshot->count);
+        self::assertSame(['new', 'old'], $snapshot->members);
+        self::assertSame($this->integer($this->raw(['HGET', $meta, 'expiresAt'])), $snapshot->expiresAt);
+        self::assertSame($beforeMembers, $this->raw(['SMEMBERS', $physical]));
+        self::assertSame($beforeMeta, $this->hashMap($meta));
+        self::assertLessThanOrEqual($beforeDataPttl, $this->integer($this->raw(['PTTL', $physical])));
+        self::assertLessThanOrEqual($beforeMetaPttl, $this->integer($this->raw(['PTTL', $meta])));
+        self::assertSame(-2, $this->integer($this->raw(['PTTL', $this->key('distinct', 'g12-aliased-rotation-new-bridge')])));
+    }
+
     public function testInvalidCircuitStatusAndBlockLevelsFailExplicitly(): void
     {
         $circuit = $this->key('circuit', 'invalid-status');
@@ -262,6 +365,12 @@ final class RedisFullCapabilityStoreIntegrationTest extends TestCase
         $this->assertOperationFails(function (): void {
             $this->store->block('invalid-level-high', 7, 60);
         });
+        $this->assertOperationFails(function (): void {
+            $this->store->block('invalid-level-negative', -1, 60);
+        });
+        foreach (['invalid-level', 'invalid-level-high', 'invalid-level-negative'] as $logical) {
+            self::assertSame(0, $this->integer($this->raw(['EXISTS', $this->key('block', $logical)])));
+        }
 
         foreach (['0', '-1', '7'] as $index => $invalidLevel) {
             $logical = 'persisted-invalid-level-' . $index;
@@ -269,6 +378,59 @@ final class RedisFullCapabilityStoreIntegrationTest extends TestCase
             $this->raw(['HSET', $persisted, 'level', $invalidLevel, 'expiresAt', (string) ($this->redisNow() + 60)]);
             $this->raw(['EXPIRE', $persisted, '60']);
             $this->assertOperationFails(fn(): mixed => $this->store->checkBlock($logical));
+        }
+    }
+
+    public function testCycleAndPunishmentPublicationRejectUpperLevelBeforeMutation(): void
+    {
+        $now = $this->redisNow();
+        $this->assertOperationFails(fn(): mixed => $this->store->blockWithCycleTracking('g12-level-seven-cycle', null, 7, 60, $now, 600, 2, 60, 120));
+        foreach (['block', 'cycle', 'pause'] as $family) {
+            self::assertSame(0, $this->integer($this->raw(['EXISTS', $this->key($family, 'g12-level-seven-cycle')])));
+        }
+
+        $mutation = $this->store->mutateGenerationBoundScore('g12-level-seven-punishment', null, null, 600, 8);
+        self::assertTrue($mutation->applied);
+        $score = $this->key('score', 'g12-level-seven-punishment');
+        $beforeScore = $this->hashMap($score);
+        $this->assertOperationFails(fn(): mixed => $this->store->blockWithPunishmentLifecycleTracking('g12-level-seven-punishment', null, 1, str_repeat('a', 32), 7, 60, 600, 2, 60, 120));
+        self::assertSame($beforeScore, $this->hashMap($score));
+        foreach (['block', 'cycle', 'pause'] as $family) {
+            self::assertSame(0, $this->integer($this->raw(['EXISTS', $this->key($family, 'g12-level-seven-punishment')])));
+        }
+    }
+
+    public function testLifecycleRejectsOutOfPhpIntScoreBeforeClaimOrPublicationMutation(): void
+    {
+        $now = $this->redisNow();
+        $invalid = '9223372036854775808';
+        $claimKey = $this->key('score', 'g12-malformed-claim-score');
+        $claimId = str_repeat('b', 32);
+        $this->raw(['HSET', $claimKey, 'value', $invalid, 'updatedAt', (string) $now, 'generation', '1', 'expiresAt', (string) ($now + 600), 'reentryId', $claimId, 'reentryValidUntil', (string) ($now + 600), 'reentryGeneration', '1']);
+        $this->raw(['EXPIRE', $claimKey, 600]);
+        $beforeClaim = $this->hashMap($claimKey);
+        $this->assertOperationFails(fn(): mixed => $this->store->claimPostPunishmentReentry('g12-malformed-claim-score', null, $claimId));
+        self::assertSame($beforeClaim, $this->hashMap($claimKey));
+        self::assertSame(0, $this->integer($this->raw(['EXISTS', $this->key('reentry-claim', 'g12-malformed-claim-score')])));
+
+        $currentKey = $this->key('score', 'g12-malformed-current-publication');
+        $this->raw(['HSET', $currentKey, 'value', $invalid, 'updatedAt', (string) $now, 'generation', '1', 'expiresAt', (string) ($now + 600)]);
+        $this->raw(['EXPIRE', $currentKey, 600]);
+        $beforeCurrent = $this->hashMap($currentKey);
+        $this->assertOperationFails(fn(): mixed => $this->store->blockWithPunishmentLifecycleTracking('g12-malformed-current-publication', null, 1, str_repeat('c', 32), 2, 60, 600, 2, 60, 120));
+        self::assertSame($beforeCurrent, $this->hashMap($currentKey));
+        foreach (['block', 'cycle', 'pause'] as $family) {
+            self::assertSame(0, $this->integer($this->raw(['EXISTS', $this->key($family, 'g12-malformed-current-publication')])));
+        }
+
+        $previousKey = $this->key('score', 'g12-malformed-previous-publication');
+        $this->raw(['HSET', $previousKey, 'value', $invalid, 'updatedAt', (string) $now, 'generation', '1', 'expiresAt', (string) ($now + 600)]);
+        $this->raw(['EXPIRE', $previousKey, 600]);
+        $beforePrevious = $this->hashMap($previousKey);
+        $this->assertOperationFails(fn(): mixed => $this->store->blockWithPunishmentLifecycleTracking('g12-malformed-previous-current', 'g12-malformed-previous-publication', 1, str_repeat('d', 32), 2, 60, 600, 2, 60, 120));
+        self::assertSame($beforePrevious, $this->hashMap($previousKey));
+        foreach (['block', 'cycle', 'pause'] as $family) {
+            self::assertSame(0, $this->integer($this->raw(['EXISTS', $this->key($family, 'g12-malformed-previous-current')])));
         }
     }
 
@@ -2364,6 +2526,16 @@ final class RedisFullCapabilityStoreIntegrationTest extends TestCase
         self::assertArrayHasKey(0, $time);
 
         return $this->integer($time[0]);
+    }
+
+    private function redisNowMilliseconds(): int
+    {
+        $time = $this->raw(['TIME']);
+        self::assertIsArray($time);
+        self::assertArrayHasKey(0, $time);
+        self::assertArrayHasKey(1, $time);
+
+        return $this->integer($time[0]) * 1000 + intdiv($this->integer($time[1]), 1000);
     }
 
     /**
