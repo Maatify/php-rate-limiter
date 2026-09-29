@@ -63,6 +63,61 @@ final class RedisFullCapabilityStoreIntegrationTest extends TestCase
         self::assertSame(1, $this->store->incrementWatchFlag('watch', 60));
     }
 
+    public function testOverCapBoundedStateFailsBeforeDuplicateOrNewMemberMutation(): void
+    {
+        $setKey = $this->key('distinct', 'over-cap');
+        $metaKey = $this->key('distinct-meta', 'over-cap');
+        $this->raw(['SADD', $setKey, 'one', 'two', 'three']);
+        $this->raw(['EXPIRE', $setKey, '60']);
+        $this->raw(['HSET', $metaKey, 'expiresAt', (string) ($this->redisNow() + 60)]);
+        $this->raw(['EXPIRE', $metaKey, '60']);
+        $before = [$this->raw(['SMEMBERS', $setKey]), $this->raw(['PTTL', $setKey]), $this->hashMap($metaKey)];
+
+        $this->assertOperationFails(fn(): mixed => $this->store->addDistinctBoundedWithSnapshot('over-cap', 'one', 60, 2));
+        $this->assertOperationFails(fn(): mixed => $this->store->addDistinctBoundedWithSnapshot('over-cap', 'four', 60, 2));
+        self::assertSame($before[0], $this->raw(['SMEMBERS', $setKey]));
+        self::assertGreaterThan(0, $this->integer($this->raw(['PTTL', $setKey])));
+        self::assertSame($before[2], $this->hashMap($metaKey));
+    }
+
+    public function testBridgePhysicalTtlIsBoundedByPreviousPttlAndPreviousIsReadOnly(): void
+    {
+        $previous = $this->key('distinct', 'bridge-previous');
+        $previousMeta = $this->key('distinct-meta', 'bridge-previous');
+        $this->raw(['SADD', $previous, 'old']);
+        $this->raw(['PEXPIRE', $previous, '10000']);
+        $this->raw(['HSET', $previousMeta, 'expiresAt', (string) ($this->redisNow() + 60)]);
+        $this->raw(['PEXPIRE', $previousMeta, '10000']);
+        $beforeMembers = $this->raw(['SMEMBERS', $previous]);
+        $beforePttl = $this->integer($this->raw(['PTTL', $previous]));
+
+        $this->store->addDistinctBoundedWithSnapshotAcrossRotation('bridge-current', 'bridge', 'bridge-previous', 'new', 'unknown', 60, 10);
+        $bridgePttl = $this->integer($this->raw(['PTTL', $this->key('distinct', 'bridge')]));
+        $bridgeMetaPttl = $this->integer($this->raw(['PTTL', $this->key('distinct-meta', 'bridge')]));
+        self::assertGreaterThan(0, $bridgePttl);
+        self::assertGreaterThan(0, $bridgeMetaPttl);
+        self::assertSame($beforeMembers, $this->raw(['SMEMBERS', $previous]));
+        self::assertGreaterThan(0, $this->integer($this->raw(['PTTL', $previous])));
+    }
+
+    public function testInvalidCircuitStatusAndBlockLevelsFailExplicitly(): void
+    {
+        $circuit = $this->key('circuit', 'invalid-status');
+        $this->raw(['SET', $circuit, json_encode(['status' => 'BROKEN', 'failures' => [], 'reEntries' => [], 'lastFailure' => 0, 'openSince' => 0, 'lastSuccess' => 0, 'failClosedUntil' => 0], JSON_THROW_ON_ERROR)]);
+        $this->assertOperationFails(fn(): mixed => $this->store->load('invalid-status'));
+        $this->assertOperationFails(function (): void {
+            $this->store->block('invalid-level', 0, 60);
+        });
+        $this->assertOperationFails(function (): void {
+            $this->store->block('invalid-level-high', 7, 60);
+        });
+
+        $persisted = $this->key('block', 'persisted-invalid-level');
+        $this->raw(['HSET', $persisted, 'level', '7', 'expiresAt', (string) ($this->redisNow() + 60)]);
+        $this->raw(['EXPIRE', $persisted, '60']);
+        $this->assertOperationFails(fn(): mixed => $this->store->checkBlock('persisted-invalid-level'));
+    }
+
     public function testEveryFullCapabilityOperationRoundTripsAgainstRealRedis(): void
     {
         $this->store->set('set-value', 7, 60);

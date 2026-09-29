@@ -25,7 +25,8 @@ use Maatify\RateLimiter\Repository\FullCapabilityStoreInterface;
  *
  * The Host supplies the raw-command executor. This adapter supports one
  * logical non-clustered Redis server and deliberately has no Redis-client
- * dependency. Its lifecycle operations use Redis server time, preserve
+ * dependency. Redis-owned-time primitives use Redis server time, while
+ * capabilities receiving caller-supplied semantic time preserve that value;
  * current-first/previous-read-only rotation semantics, and fail explicitly on
  * structurally malformed generated lifecycle state. The Host executor owns
  * operational failure classification; this adapter does not reinterpret
@@ -49,12 +50,11 @@ local updated = redis.call('HGET', KEYS[1], 'updatedAt')
 if not value or not updated then
   return redis.error_reply('malformed score state')
 end
-value = tonumber(value)
-updated = tonumber(updated)
-if not value or value ~= math.floor(value) or not updated or updated ~= math.floor(updated) then return redis.error_reply('malformed score state') end
-value = value + tonumber(ARGV[2])
-redis.call('HSET', KEYS[1], 'value', value, 'updatedAt', now)
-return {value, now}
+if string.match(value, '^%-?%d+$') == nil or string.match(updated, '^%d+$') == nil then return redis.error_reply('malformed score state') end
+local ok, result = pcall(redis.call, 'HINCRBY', KEYS[1], 'value', ARGV[2])
+if not ok then return redis.error_reply('score integer overflow') end
+redis.call('HSET', KEYS[1], 'updatedAt', now)
+return {result, now}
 LUA;
 
     private const SCORE_GET = <<<'LUA'
@@ -63,8 +63,7 @@ if redis.call('TTL', KEYS[1]) < 0 then return redis.error_reply('malformed score
 local value = redis.call('HGET', KEYS[1], 'value')
 local updated = redis.call('HGET', KEYS[1], 'updatedAt')
 if not value or not updated then return redis.error_reply('malformed score state') end
-value = tonumber(value); updated = tonumber(updated)
-if not value or value ~= math.floor(value) or not updated or updated ~= math.floor(updated) then return redis.error_reply('malformed score state') end
+if string.match(value, '^%-?%d+$') == nil or string.match(updated, '^%d+$') == nil then return redis.error_reply('malformed score state') end
 return {value, updated}
 LUA;
 
@@ -81,6 +80,27 @@ local nowSeconds = tonumber(redisTime[1])
 local nowMs = (nowSeconds * 1000) + math.floor(tonumber(redisTime[2]) / 1000)
 local current = KEYS[1]; local previous = KEYS[2]
 local expectedSource = ARGV[1]
+local function validInteger(value, allowZero)
+  if value == nil or string.match(value, '^%-?%d+$') == nil then return false end
+  local negative = string.sub(value, 1, 1) == '-'
+  local digits = negative and string.sub(value, 2) or value
+  if not allowZero and digits == '0' then return false end
+  local normalized = string.gsub(digits, '^0+', '')
+  if normalized == '' then normalized = '0' end
+  local maximum = negative and '9223372036854775808' or '9223372036854775807'
+  return string.len(normalized) < 19 or (string.len(normalized) == 19 and normalized <= maximum)
+end
+local function incrementInteger(value)
+  local digits = {}; for digit in string.gmatch(value, '%d') do digits[#digits + 1] = tonumber(digit) end
+  local carry = 1
+  for index = #digits, 1, -1 do
+    local nextDigit = digits[index] + carry
+    digits[index] = nextDigit % 10; carry = math.floor(nextDigit / 10)
+  end
+  if carry == 1 then table.insert(digits, 1, 1) end
+  local result = {}; for _, digit in ipairs(digits) do result[#result + 1] = tostring(digit) end
+  return table.concat(result)
+end
 local currentPttl = redis.call('PTTL', current)
 if currentPttl == -1 then return redis.error_reply('malformed generation-bound score state') end
 local source = ''
@@ -108,12 +128,11 @@ local observedValue = redis.call('HGET', source, 'value')
 if not observedValue or not observedUpdated then
   return redis.error_reply('malformed generation-bound score state')
 end
-local numericObservedValue = tonumber(observedValue); local numericObservedUpdated = tonumber(observedUpdated)
-if not numericObservedValue or numericObservedValue ~= math.floor(numericObservedValue) or not numericObservedUpdated or numericObservedUpdated ~= math.floor(numericObservedUpdated) or numericObservedUpdated < 0 then return redis.error_reply('malformed generation-bound score state') end
+local numericObservedUpdated = tonumber(observedUpdated)
+if not validInteger(observedValue, true) or not numericObservedUpdated or numericObservedUpdated ~= math.floor(numericObservedUpdated) or numericObservedUpdated < 0 then return redis.error_reply('malformed generation-bound score state') end
 local observedExpiry = redis.call('HGET', source, 'expiresAt')
 if observedGeneration then
-  local numericGeneration = tonumber(observedGeneration)
-  if not numericGeneration or numericGeneration ~= math.floor(numericGeneration) or numericGeneration <= 0 then return redis.error_reply('malformed generation') end
+  if not validInteger(observedGeneration, false) then return redis.error_reply('malformed generation') end
   if not observedExpiry then return redis.error_reply('malformed generation-bound score expiry') end
 end
 if observedExpiry then
@@ -141,7 +160,8 @@ if ARGV[4] == '' then
   if observedGeneration then return {0} end
 elseif not observedGeneration or observedGeneration ~= ARGV[4] then return {0} end
 local requestedTtl = tonumber(ARGV[6]); if requestedTtl <= 0 then return redis.error_reply('invalid score TTL') end
-local generation = observedGeneration and tonumber(observedGeneration) + 1 or 1
+local generation = observedGeneration and incrementInteger(observedGeneration) or '1'
+if string.len(generation) > 19 or (string.len(generation) == 19 and generation > '9223372036854775807') then return redis.error_reply('generation integer overflow') end
 local expiry = redis.call('HGET', source, 'expiresAt')
 if expiry and (not tonumber(expiry) or tonumber(expiry) ~= math.floor(tonumber(expiry)) or tonumber(expiry) <= 0) then return redis.error_reply('malformed score expiry') end
 if expiry then
@@ -174,9 +194,9 @@ if currentPttl <= 0 then
   if previousPttl <= 0 then return {} end
 end
 local value = redis.call('HGET', source, 'value'); local updated = redis.call('HGET', source, 'updatedAt')
-if not value or not updated or not tonumber(value) or tonumber(value) ~= math.floor(tonumber(value)) or not tonumber(updated) or tonumber(updated) ~= math.floor(tonumber(updated)) or tonumber(updated) < 0 then return redis.error_reply('malformed generation-bound score state') end
+if not value or not updated or string.match(value, '^%-?%d+$') == nil or not tonumber(updated) or tonumber(updated) ~= math.floor(tonumber(updated)) or tonumber(updated) < 0 then return redis.error_reply('malformed generation-bound score state') end
 local generation = redis.call('HGET', source, 'generation') or ''
-if generation ~= '' and (not tonumber(generation) or tonumber(generation) ~= math.floor(tonumber(generation)) or tonumber(generation) <= 0) then return redis.error_reply('malformed generation') end
+if generation ~= '' and (string.match(generation, '^[1-9]%d*$') == nil or string.len(generation) > 19 or (string.len(generation) == 19 and generation > '9223372036854775807')) then return redis.error_reply('malformed generation') end
 local expiry = redis.call('HGET', source, 'expiresAt')
 if generation == '' and not expiry then
   local pttl = redis.call('PTTL', source)
@@ -195,7 +215,7 @@ for _, blockKey in ipairs({KEYS[3], KEYS[4]}) do
     if blockPttl == -1 then return redis.error_reply('malformed hard-block state') end
     if blockPttl > 0 then
       local blockExpiry = redis.call('HGET', blockKey, 'expiresAt'); local level = redis.call('HGET', blockKey, 'level')
-      if not blockExpiry or not level or not tonumber(blockExpiry) or tonumber(blockExpiry) ~= math.floor(tonumber(blockExpiry)) or not tonumber(level) or tonumber(level) ~= math.floor(tonumber(level)) then return redis.error_reply('malformed hard-block state') end
+      if not blockExpiry or not level or not tonumber(blockExpiry) or tonumber(blockExpiry) ~= math.floor(tonumber(blockExpiry)) or not tonumber(level) or tonumber(level) ~= math.floor(tonumber(level)) or tonumber(level) < 1 or tonumber(level) > 6 then return redis.error_reply('malformed hard-block state') end
       if tonumber(blockExpiry) > nowSeconds and tonumber(level) >= 2 then active = true end
     end
   end
@@ -213,9 +233,9 @@ if evidenceCount == 3 then
   local numericUntil = tonumber(evidenceUntil); local numericEvidenceGeneration = tonumber(evidenceGeneration)
   if not numericUntil or numericUntil ~= math.floor(numericUntil) or numericUntil <= 0 or not numericEvidenceGeneration or numericEvidenceGeneration ~= math.floor(numericEvidenceGeneration) or numericEvidenceGeneration <= 0 then return redis.error_reply('malformed lifecycle evidence') end
   if generation == '' then return redis.error_reply('legacy score cannot carry lifecycle evidence') end
-  if active or numericEvidenceGeneration ~= tonumber(generation) or numericUntil ~= tonumber(expiry) or numericUntil <= nowSeconds then evidenceId = ''; evidenceUntil = '' end
+  if active or evidenceGeneration ~= generation or numericUntil ~= tonumber(expiry) or numericUntil <= nowSeconds then evidenceId = ''; evidenceUntil = '' end
 end
-return {source == KEYS[1] and 1 or 2, tonumber(value), tonumber(updated), tonumber(expiry), generation, evidenceId, evidenceUntil}
+return {source == KEYS[1] and 1 or 2, value, updated, expiry, generation, evidenceId, evidenceUntil}
 LUA;
 
     private const LIFECYCLE_CLAIM = <<<'LUA'
@@ -230,7 +250,7 @@ for _, blockKey in ipairs({KEYS[3], KEYS[4]}) do
     local rawExpires = redis.call('HGET', blockKey, 'expiresAt'); local rawLevel = redis.call('HGET', blockKey, 'level')
     if not rawExpires or not rawLevel then return redis.error_reply('malformed hard-block state') end
     local expires = tonumber(rawExpires); local level = tonumber(rawLevel)
-    if not expires or expires ~= math.floor(expires) or not level or level ~= math.floor(level) then return redis.error_reply('malformed hard-block state') end
+    if not expires or expires ~= math.floor(expires) or not level or level ~= math.floor(level) or level < 1 or level > 6 then return redis.error_reply('malformed hard-block state') end
     if expires > nowSeconds then return 0 end
     end
   end
@@ -245,8 +265,8 @@ if source ~= '' then
   if sourcePttl <= 0 then return 0 end
   local rawValue = redis.call('HGET', source, 'value'); local rawUpdated = redis.call('HGET', source, 'updatedAt')
   if not rawValue or not rawUpdated then return redis.error_reply('malformed generation-bound score state') end
-  local value = tonumber(rawValue); local updated = tonumber(rawUpdated)
-  if not value or value ~= math.floor(value) or not updated or updated ~= math.floor(updated) or updated < 0 then return redis.error_reply('malformed generation-bound score state') end
+  local value = rawValue; local updated = tonumber(rawUpdated)
+  if string.match(value, '^%-?%d+$') == nil or not updated or updated ~= math.floor(updated) or updated < 0 then return redis.error_reply('malformed generation-bound score state') end
   local generation = redis.call('HGET', source, 'generation')
   local rawExpiry = redis.call('HGET', source, 'expiresAt'); local expiry = nil
   if rawExpiry then
@@ -255,8 +275,7 @@ if source ~= '' then
   end
   if generation and expiry == nil then return redis.error_reply('malformed generation-bound score expiry') end
   if generation then
-    local numericGeneration = tonumber(generation)
-    if not numericGeneration or numericGeneration ~= math.floor(numericGeneration) or numericGeneration <= 0 then return redis.error_reply('malformed generation') end
+    if string.match(generation, '^[1-9]%d*$') == nil or string.len(generation) > 19 or (string.len(generation) == 19 and generation > '9223372036854775807') then return redis.error_reply('malformed generation') end
   end
   local physicalDeadlineMs = nowMs + sourcePttl
   if generation and physicalDeadlineMs > (expiry * 1000) then return redis.error_reply('inconsistent generated score expiry') end
@@ -269,7 +288,7 @@ if source ~= '' then
     local numericUntil = tonumber(validUntil); local numericEvidenceGeneration = tonumber(evidenceGeneration)
     if not numericUntil or numericUntil ~= math.floor(numericUntil) or numericUntil <= 0 or not numericEvidenceGeneration or numericEvidenceGeneration ~= math.floor(numericEvidenceGeneration) or numericEvidenceGeneration <= 0 then return redis.error_reply('malformed lifecycle evidence') end
     if not generation then return redis.error_reply('legacy score cannot carry lifecycle evidence') end
-    if numericEvidenceGeneration ~= tonumber(generation) then return 0 end
+    if evidenceGeneration ~= generation then return 0 end
     if expiry ~= nil and numericUntil ~= expiry then return 0 end
     if numericUntil <= nowSeconds or id ~= ARGV[1] then return 0 end
     local marker = redis.call('GET', KEYS[5])
@@ -314,7 +333,7 @@ local level = redis.call('HGET', KEYS[1], 'level')
 local expires = redis.call('HGET', KEYS[1], 'expiresAt')
 if not level or not expires then return redis.error_reply('malformed block state') end
 level = tonumber(level); expires = tonumber(expires)
-if not level or level ~= math.floor(level) or not expires or expires ~= math.floor(expires) then return redis.error_reply('malformed block state') end
+if not level or level ~= math.floor(level) or level < 1 or level > 6 or not expires or expires ~= math.floor(expires) then return redis.error_reply('malformed block state') end
 if expires <= tonumber(redis.call('TIME')[1]) then
   redis.call('DEL', KEYS[1])
   return {}
@@ -453,11 +472,12 @@ if exists == 1 then
   expires = tonumber(redis.call('HGET', KEYS[2], 'expiresAt'))
   if not expires or expires ~= math.floor(expires) or expires <= now or redis.call('TTL', KEYS[2]) < 0 then return redis.error_reply('malformed bounded metadata') end
 end
+local count = exists == 1 and redis.call('SCARD', KEYS[1]) or 0
+if count > tonumber(ARGV[3]) then return redis.error_reply('malformed bounded state') end
 if redis.call('SISMEMBER', KEYS[1], ARGV[2]) == 1 then
   local members = redis.call('SMEMBERS', KEYS[1]); table.sort(members)
   return {#members, 1, 0, tonumber(expires), unpack(members)}
 end
-local count = redis.call('SCARD', KEYS[1])
 if count >= tonumber(ARGV[3]) then
   local members = redis.call('SMEMBERS', KEYS[1]); table.sort(members)
   return {count, 0, 0, tonumber(expires), unpack(members)}
@@ -468,7 +488,10 @@ return {#members, 1, 1, exists == 0 and now + tonumber(ARGV[1]) or tonumber(expi
 LUA;
 
     private const ROTATED_SNAPSHOT = <<<'LUA'
-local now = tonumber(redis.call('TIME')[1])
+local redisTime = redis.call('TIME')
+local now = tonumber(redisTime[1])
+local nowMs = (now * 1000) + math.floor(tonumber(redisTime[2]) / 1000)
+local alias = KEYS[1] == KEYS[5]
 local prevExists = redis.call('EXISTS', KEYS[5])
 local prevMetaExists = redis.call('EXISTS', KEYS[6])
 local prevExpiry = false
@@ -479,6 +502,7 @@ if prevExists == 1 then
   prevExpiry = redis.call('HGET', KEYS[6], 'expiresAt')
   prevExpiry = tonumber(prevExpiry)
   if not prevExpiry or prevExpiry ~= math.floor(prevExpiry) then return redis.error_reply('malformed previous bounded state') end
+  if redis.call('SCARD', KEYS[5]) > tonumber(ARGV[5]) then return redis.error_reply('malformed previous bounded state') end
   if prevExpiry <= now then prevExists = 0 end
 end
 if prevExists == 0 then
@@ -491,11 +515,12 @@ if prevExists == 0 then
     currentExpiry = tonumber(redis.call('HGET', KEYS[2], 'expiresAt'))
     if not currentExpiry or currentExpiry ~= math.floor(currentExpiry) or currentExpiry <= now or redis.call('TTL', KEYS[2]) < 0 then return redis.error_reply('malformed current bounded state') end
   end
+  local count = exists == 1 and redis.call('SCARD', KEYS[1]) or 0
+  if count > tonumber(ARGV[5]) then return redis.error_reply('malformed bounded state') end
   if redis.call('SISMEMBER', KEYS[1], ARGV[3]) == 1 then
     local members = redis.call('SMEMBERS', KEYS[1]); table.sort(members)
     return {#members, 1, 0, currentExpiry, unpack(members)}
   end
-  local count = redis.call('SCARD', KEYS[1])
   if count >= tonumber(ARGV[5]) then
     local members = redis.call('SMEMBERS', KEYS[1]); table.sort(members)
     return {count, 0, 0, currentExpiry, unpack(members)}
@@ -505,6 +530,15 @@ if prevExists == 0 then
   return {#members, 1, 1, redis.call('HGET', KEYS[2], 'expiresAt') or now + tonumber(ARGV[2]), unpack(members)}
 end
 local previous = redis.call('SMEMBERS', KEYS[5]); table.sort(previous)
+if alias then
+  local previousKnown = false
+  for _, member in ipairs(previous) do if member == ARGV[3] or member == ARGV[4] then previousKnown = true end end
+  if not previousKnown and #previous < tonumber(ARGV[5]) then
+    previous[#previous + 1] = ARGV[3]; table.sort(previous)
+    return {#previous, 1, 0, tonumber(prevExpiry), unpack(previous)}
+  end
+  return {#previous, previousKnown and 1 or 0, 0, tonumber(prevExpiry), unpack(previous)}
+end
 local currentExists = redis.call('EXISTS', KEYS[1])
 local bridgeExists = redis.call('EXISTS', KEYS[3])
 if (currentExists == 1 and redis.call('TTL', KEYS[1]) < 0) or (bridgeExists == 1 and redis.call('TTL', KEYS[3]) < 0) then return redis.error_reply('malformed rotated bounded state') end
@@ -548,11 +582,15 @@ local function ensureCurrent()
 end
 local function ensureBridge()
   if bridgeExists == 0 then
-    bridgeExpiry = math.min(now + tonumber(ARGV[2]), tonumber(prevExpiry))
+    local previousTtl = redis.call('TTL', KEYS[5])
+    if previousTtl <= 0 then return redis.error_reply('malformed previous bounded state') end
+    local bridgePttl = math.min(math.max(1, (previousTtl - 10) * 1000), tonumber(ARGV[2]) * 1000)
+    if bridgePttl <= 0 then return redis.error_reply('malformed previous bounded state') end
+    bridgeExpiry = math.min(tonumber(prevExpiry), now + math.max(1, math.floor(bridgePttl / 1000)))
     redis.call('SADD', KEYS[3], ARGV[3])
-    redis.call('EXPIRE', KEYS[3], math.max(1, bridgeExpiry - now))
+    redis.call('EXPIRE', KEYS[3], math.max(1, math.floor(bridgePttl / 1000)))
     redis.call('HSET', KEYS[4], 'expiresAt', bridgeExpiry)
-    redis.call('EXPIRE', KEYS[4], math.max(1, bridgeExpiry - now))
+    redis.call('EXPIRE', KEYS[4], math.max(1, math.floor(bridgePttl / 1000)))
     bridgeExists = 1
   else
     redis.call('SADD', KEYS[3], ARGV[3])
@@ -663,6 +701,7 @@ end
 local cyclesByMember = {}; local cycleMembers = {}
 local function readCycles(key)
   if key == '' or redis.call('EXISTS', key) == 0 then return end
+  if redis.call('TTL', key) < 0 then error('malformed cycle history') end
   if redis.call('ZCARD', key) == 0 then error('malformed cycle history') end
   for _, member in ipairs(redis.call('ZRANGE', key, 0, -1)) do
     local score = tonumber(redis.call('ZSCORE', key, member)); local timestamp = tonumber(member)
@@ -680,7 +719,7 @@ for _, blockKey in ipairs({KEYS[3], KEYS[4]}) do
     if blockPttl == -1 then return redis.error_reply('malformed hard-block state') end
     if blockPttl > 0 then
       local expires = tonumber(redis.call('HGET', blockKey, 'expiresAt')); local level = tonumber(redis.call('HGET', blockKey, 'level'))
-      if not expires or expires ~= math.floor(expires) or not level or level ~= math.floor(level) then return redis.error_reply('malformed hard-block state') end
+      if not expires or expires ~= math.floor(expires) or not level or level ~= math.floor(level) or level < 1 or level > 6 then return redis.error_reply('malformed hard-block state') end
       if expires > now and level >= 2 then active = true end
     end
   end
@@ -805,6 +844,7 @@ LUA;
     public function block(string $key, int $level, int $durationSeconds): void
     {
         $this->positive($durationSeconds, 'Block duration');
+        $this->validateBaseBlockLevel($level);
         $this->eval(self::BLOCK_SET, [$this->key('block', $key)], [$level, $durationSeconds]);
     }
 
@@ -958,6 +998,9 @@ LUA;
         if (! is_array($data) || ! is_string($data['status'] ?? null) || ! is_array($data['failures'] ?? null) || ! is_array($data['reEntries'] ?? null) || ! is_int($data['lastFailure'] ?? null) || ! is_int($data['openSince'] ?? null) || ! is_int($data['lastSuccess'] ?? null) || ! is_int($data['failClosedUntil'] ?? null)) {
             throw new RateLimiterException('Malformed circuit-breaker state.');
         }
+        if (! in_array($data['status'], ['CLOSED', 'OPEN', 'HALF_OPEN'], true)) {
+            throw new RateLimiterException('Malformed circuit-breaker status.');
+        }
         $failures = [];
         foreach ($data['failures'] as $value) {
             if (! is_int($value)) {
@@ -994,9 +1037,7 @@ LUA;
         foreach ([$durationSeconds, $cycleWindowSeconds, $cycleThreshold, $pauseSeconds, $pauseHistoryRetentionSeconds] as $value) {
             $this->positive($value, 'Hard-block cycle parameter');
         }
-        if ($level < 2) {
-            throw new RateLimiterException('Hard-block cycle level must be at least 2.');
-        }
+        $this->validateHardBlockLevel($level);
         $previousKey = $previousKey === $currentKey ? null : $previousKey;
         $keys = [
             $this->key('cycle', $currentKey),
@@ -1256,14 +1297,26 @@ LUA;
         }
     }
 
+    private function validateBaseBlockLevel(int $level): void
+    {
+        if ($level < 1 || $level > 6) {
+            throw new RateLimiterException('Block level must be between L1 and L6.');
+        }
+    }
+
+    private function validateHardBlockLevel(int $level): void
+    {
+        if ($level < 2 || $level > 6) {
+            throw new RateLimiterException('Hard-block level must be between L2 and L6.');
+        }
+    }
+
     private function validatePunishmentLifecycleParameters(int $expectedGeneration, int $level, int $durationSeconds, int $cycleWindowSeconds, int $cycleThreshold, int $pauseSeconds, int $pauseHistoryRetentionSeconds): void
     {
         if ($expectedGeneration <= 0) {
             throw new RateLimiterException('Expected lifecycle generation must be positive.');
         }
-        if ($level < 2) {
-            throw new RateLimiterException('Lifecycle publication requires an L2+ hard block.');
-        }
+        $this->validateHardBlockLevel($level);
         foreach ([
             'Block duration' => $durationSeconds,
             'Cycle window' => $cycleWindowSeconds,
@@ -1298,9 +1351,6 @@ LUA;
             if (strlen($digits) > strlen($maximum) || (strlen($digits) === strlen($maximum) && strcmp($digits, $maximum) > 0)) {
                 throw new RateLimiterException('Malformed ' . $label . '.');
             }
-            return (int) $value;
-        }
-        if (is_float($value) && is_finite($value) && floor($value) === $value) {
             return (int) $value;
         }
         throw new RateLimiterException('Malformed ' . $label . '.');
