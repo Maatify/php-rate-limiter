@@ -35,6 +35,7 @@ use Maatify\RateLimiter\Tests\Support\Correlation\StatefulInMemoryCorrelationSto
 use Maatify\RateLimiter\Tests\Support\FailureSignal\RecordingFailureSignalEmitter;
 use Maatify\RateLimiter\Tests\Support\RateLimiter\InMemoryRateLimitStore;
 use PHPUnit\Framework\TestCase;
+use PHPUnit\Framework\Attributes\DataProvider;
 
 final class RateLimiterEngineCurrentRuntimeCharacterizationTest extends TestCase
 {
@@ -273,9 +274,7 @@ final class RateLimiterEngineCurrentRuntimeCharacterizationTest extends TestCase
         $this->assertNull($this->store->getBudget($k4Key));
     }
 
-    /**
-     * @dataProvider ephemeralOverflowTrustFacts
-     */
+    #[DataProvider('ephemeralOverflowTrustFacts')]
     public function testEphemeralLoginOverflowRoutesKnownAuthenticationFailureToK4(
         bool $isTrustedSession,
         bool $isDevicePreviouslyVerifiedForAccount,

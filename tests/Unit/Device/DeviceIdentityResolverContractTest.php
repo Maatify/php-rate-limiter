@@ -9,6 +9,7 @@ use Maatify\RateLimiter\Service\FingerprintHasher;
 use Maatify\RateLimiter\DTO\RateLimitContextDTO;
 use Maatify\RateLimiter\Exception\RateLimiterException;
 use PHPUnit\Framework\TestCase;
+use PHPUnit\Framework\Attributes\DataProvider;
 
 final class DeviceIdentityResolverContractTest extends TestCase
 {
@@ -404,9 +405,7 @@ final class DeviceIdentityResolverContractTest extends TestCase
         );
     }
 
-    /**
-     * @dataProvider userAgentNormalizationProvider
-     */
+    #[DataProvider('userAgentNormalizationProvider')]
     public function testUserAgentNormalizationUsesBoundedBrowserMajorContract(string $ua, string $expected): void
     {
         $this->assertSame($expected, DeviceIdentityResolver::normalizeUserAgent($ua));

@@ -507,11 +507,9 @@ final class PostPunishmentReentryLifecycleTest extends TestCase
     private function lifecycleState(RateLimiterEngine $engine, string $policy, string $account): ?GenerationBoundScoreStateDTO
     {
         $pipelineReflection = new \ReflectionProperty($engine, 'pipeline');
-        $pipelineReflection->setAccessible(true);
         /** @var EvaluationPipeline $pipeline */
         $pipeline = $pipelineReflection->getValue($engine);
         $storeReflection = new \ReflectionProperty($pipeline, 'store');
-        $storeReflection->setAccessible(true);
         /** @var InMemoryRateLimitStore $store */
         $store = $storeReflection->getValue($pipeline);
         $key = hash_hmac('sha256', $policy . ':rate_limiter:k4:v2:prod:' . $account, 'test_secret');
