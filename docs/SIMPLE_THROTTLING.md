@@ -3,7 +3,6 @@
 **Module:** RateLimiter
 **Namespace:** `Maatify\RateLimiter`
 **Status:** LOCKED — Simple Throttling Contract
-**Spec Version:** `1.1.0`
 
 This document is the canonical contract for the package's generic/simple
 fixed-window throttling capability, currently governed by
@@ -23,7 +22,7 @@ then deny until that interval ends
 
 ---
 
-## 1. Version 1 Scope
+## 1. Current Scope
 
 ```
 FIXED WINDOW
@@ -152,7 +151,8 @@ interface SimpleRateLimiterInterface
 }
 ```
 
-`consume()` is the only public operation in Version 1. An unregistered
+`consume()` is the only public enforcement operation in the current
+simple-throttling contract. An unregistered
 `$policyName` or a blank `$subject` raises `RateLimiterException` (§7); it is
 never reported as a typed result.
 
@@ -191,7 +191,8 @@ Three outcomes are kept strictly separate:
   `incrementBudgetWithSeed()`: the distinction from a configuration/contract
   failure below is structural (which call site raised it), never based on
   the exception's class alone. There is no `FAIL_OPEN` mode and no
-  `DEGRADED_MODE` for simple throttling in Version 1; see
+  `DEGRADED_MODE` for simple throttling in the current simple-throttling
+  contract; see
   `docs/FAILURE_SEMANTICS.md` §4.4.
 * **Configuration/contract failures** remain exceptions, not results:
 
@@ -297,7 +298,7 @@ A Host may use both models together when they protect different concerns;
 the package never automatically translates, merges, or escalates state
 between them.
 
-## 11. Non-Goals (Version 1)
+## 11. Non-Goals
 
 Explicitly out of scope for this contract:
 

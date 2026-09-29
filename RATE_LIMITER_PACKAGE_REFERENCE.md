@@ -3,7 +3,6 @@
 **Package:** RateLimiter
 **Namespace:** `Maatify\RateLimiter`
 **Status:** LOCKED — Architecture Contract
-**Spec Version:** `1.21.0`
 **Location:** `src/`
 
 This document explains **why** the RateLimiter package is designed the way it is.

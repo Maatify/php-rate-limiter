@@ -20,7 +20,7 @@ the runtime framework-agnostic and storage-agnostic at the contract/core level.
 The canonical source topology is a single capability:
 
 ```text
-src/{Command,Config,Contract,DTO,Exception,Repository,Service}/
+src/{Builder,Command,Config,Contract,DTO,Enum,Exception,Repository,Service}/
 ```
 
 Do not introduce capability wrappers, duplicate namespaces, compatibility shims,

@@ -3,7 +3,6 @@
 **Module:** RateLimiter
 **Namespace:** `Maatify\RateLimiter`
 **Status:** LOCKED — Policy Contract
-**Spec Version:** `1.7.0`
 **Change Class:** Hardening Alignment
 
 This document defines the **official policy presets** provided by the Rate Limiter module.
