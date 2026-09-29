@@ -38,7 +38,7 @@ This package is in pre-release development. It is proprietary software, has no p
 ## Requirements
 
 - PHP `^8.4`.
-- PHP extensions `filter`, `hash`, `json`, and `pcre`.
+- PHP extensions `date`, `filter`, `hash`, `json`, `pcre`, and `random`.
 - `maatify/exceptions` `^1.0`.
 - `maatify/shared-common` `^1.0`.
 
