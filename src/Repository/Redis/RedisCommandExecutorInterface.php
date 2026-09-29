@@ -6,6 +6,15 @@ namespace Maatify\RateLimiter\Repository\Redis;
 
 use Maatify\RateLimiter\Exception\BackendFailureException;
 
+/**
+ * Host-facing boundary for executing raw Redis commands.
+ *
+ * The Host owns the Redis client and connection lifecycle. This package does
+ * not depend on ext-redis or Predis; an implementation returns the raw result
+ * of the command. Only an identified operational transport or backend failure
+ * may be classified as BackendFailureException. Programming, protocol, and
+ * unknown failures remain distinguishable and must not be blanket-wrapped.
+ */
 interface RedisCommandExecutorInterface
 {
     /**

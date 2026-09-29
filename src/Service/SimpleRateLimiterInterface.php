@@ -10,8 +10,9 @@ use Maatify\RateLimiter\Exception\RateLimiterException;
 /**
  * Consumer entrypoint for generic/simple fixed-window throttling (DEC-013).
  *
- * Version 1 exposes exactly one atomic operation: there is no separate
- * non-mutating check() prior to consume(), no peek(), and no consumeMany().
+ * The current contract exposes exactly one atomic operation: there is no
+ * separate non-mutating check() prior to consume(), no peek(), and no
+ * consumeMany().
  */
 interface SimpleRateLimiterInterface
 {

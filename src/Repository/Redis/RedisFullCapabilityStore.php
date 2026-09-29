@@ -1226,6 +1226,12 @@ if mergedStart ~= nil then elapsed = elapsed + mergedEnd - mergedStart end
 return {elapsed, active}
 LUA;
 
+    /**
+     * The Host supplies the raw-command executor; this adapter owns the
+     * namespace used for its keys. The namespace must match
+     * [A-Za-z0-9._:-]{1,128}; an invalid namespace throws
+     * RateLimiterException before the store can be used.
+     */
     public function __construct(
         private readonly RedisCommandExecutorInterface $redis,
         private readonly string $namespace,
