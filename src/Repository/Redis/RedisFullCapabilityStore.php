@@ -982,6 +982,13 @@ end
 local function validExactPositiveInteger(value)
   return value ~= nil and string.match(value, '^[1-9]%d*$') ~= nil and string.len(value) <= 16 and (string.len(value) < 16 or value <= '9007199254740991')
 end
+-- DEC-017: hard-block `expiresAt` is a Hash decimal string, not a ZSET score.
+-- It is canonical, non-negative, within the backend expiry range BLOCK_SET can
+-- create, and is only ever compared as a decimal string, never via tonumber().
+local function validHardBlockExpiry(value)
+  if value == nil or value == '0' then return value == '0' end
+  return string.match(value, '^[1-9]%d*$') ~= nil and (#value < 16 or (#value == 16 and value <= '9223372036854775'))
+end
 local function validNonNegativeInteger(value)
   return value ~= nil and (value == '0' or (string.match(value, '^[1-9]%d*$') ~= nil and string.len(value) <= 19 and (string.len(value) < 19 or value <= '9223372036854775807')))
 end
@@ -1103,10 +1110,10 @@ for _, blockKey in ipairs({KEYS[3], KEYS[4]}) do
     if blockPttl == -1 then return redis.error_reply('malformed hard-block state') end
     if blockPttl > 0 then
       local rawExpires = redis.call('HGET', blockKey, 'expiresAt'); local rawLevel = redis.call('HGET', blockKey, 'level')
-      if not validExactNonNegativeInteger(rawExpires) or not rawLevel then return redis.error_reply('malformed hard-block state') end
-      local expires = tonumber(rawExpires); local level = tonumber(rawLevel)
+      if not validHardBlockExpiry(rawExpires) or not rawLevel then return redis.error_reply('malformed hard-block state') end
+      local level = tonumber(rawLevel)
       if not level or level ~= math.floor(level) or level < 1 or level > 6 then return redis.error_reply('malformed hard-block state') end
-      if expires > now and level >= 2 then active = true end
+      if compareDecimalStrings(rawExpires, string.format('%.0f', now)) > 0 and level >= 2 then active = true end
     end
   end
 end

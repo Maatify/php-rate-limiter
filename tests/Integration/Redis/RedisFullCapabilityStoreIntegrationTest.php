@@ -3452,6 +3452,64 @@ final class RedisFullCapabilityStoreIntegrationTest extends TestCase
         self::assertSame($zero->jsonSerialize(), $this->store->load('g12-circuit-zero')?->jsonSerialize());
     }
 
+    /**
+     * G12-R03: a hard block created through the public store with an expiry
+     * above the Lua exact-integer ceiling (a Hash decimal string BLOCK_SET can
+     * create and BLOCK_GET can read) is valid state for the shared HARD_BLOCK
+     * path too. Its expiry is compared as a decimal string, never narrowed.
+     */
+    public function testWidenedHardBlockExpiryIsValidForCycleTrackingLifecycleAndPreviousReads(): void
+    {
+        $widened = 9_100_000_000_000_000;
+        $ceiling = 9_007_199_254_740_991;
+
+        // Current: active widened L3 block => no false new cycle, no corruption.
+        $this->store->block('g12-wide-cur', 3, $widened);
+        $state = $this->store->checkBlock('g12-wide-cur');
+        self::assertNotNull($state);
+        self::assertGreaterThan($ceiling, $state->expiresAt);
+        $exactExpiry = $this->raw(['HGET', $this->key('block', 'g12-wide-cur'), 'expiresAt']);
+        self::assertSame((string) $state->expiresAt, $exactExpiry);
+        $result = $this->store->blockWithCycleTracking('g12-wide-cur', null, 2, 60, $this->redisNow(), 600, 2, 60, 120);
+        self::assertFalse($result->newCycle);
+        self::assertSame(0, $result->cycleCount);
+        self::assertSame(0, $this->integer($this->raw(['EXISTS', $this->key('cycle', 'g12-wide-cur')])));
+        self::assertSame(2, $this->store->checkBlock('g12-wide-cur')?->level);
+
+        // Previous: widened active block is read correctly and stays read-only.
+        $this->store->block('g12-wide-prev', 3, $widened);
+        $previousKey = $this->key('block', 'g12-wide-prev');
+        $beforePrevious = [bin2hex($this->stringValue($this->raw(['DUMP', $previousKey]))), $this->integer($this->raw(['PTTL', $previousKey]))];
+        $result = $this->store->blockWithCycleTracking('g12-wide-cur-2', 'g12-wide-prev', 2, 60, $this->redisNow(), 600, 2, 60, 120);
+        self::assertFalse($result->newCycle);
+        self::assertSame($beforePrevious[0], bin2hex($this->stringValue($this->raw(['DUMP', $previousKey]))));
+        self::assertLessThanOrEqual($beforePrevious[1], $this->integer($this->raw(['PTTL', $previousKey])));
+        self::assertSame($this->raw(['HGET', $previousKey, 'expiresAt']), (string) $this->store->checkBlock('g12-wide-prev')?->expiresAt);
+        self::assertGreaterThan($ceiling, $this->store->checkBlock('g12-wide-prev')->expiresAt ?? 0);
+
+        // Lifecycle publication: Current widened block, then Previous widened block.
+        self::assertTrue($this->store->mutateGenerationBoundScore('g12-wide-life', null, null, 600, 8)->applied);
+        $this->store->block('g12-wide-life', 3, $widened);
+        $transition = $this->store->blockWithPunishmentLifecycleTracking('g12-wide-life', null, 1, str_repeat('a', 32), 2, 30, 21600, 3, 600, 86400);
+        self::assertTrue($transition->applied);
+        self::assertFalse($transition->cycle?->newCycle);
+
+        self::assertTrue($this->store->mutateGenerationBoundScore('g12-wide-life-2', null, null, 600, 8)->applied);
+        $beforePrevious = [bin2hex($this->stringValue($this->raw(['DUMP', $previousKey]))), $this->integer($this->raw(['PTTL', $previousKey]))];
+        $transition = $this->store->blockWithPunishmentLifecycleTracking('g12-wide-life-2', 'g12-wide-prev', 1, str_repeat('b', 32), 2, 30, 21600, 3, 600, 86400);
+        self::assertTrue($transition->applied);
+        self::assertFalse($transition->cycle?->newCycle);
+        self::assertSame($beforePrevious[0], bin2hex($this->stringValue($this->raw(['DUMP', $previousKey]))));
+        self::assertLessThanOrEqual($beforePrevious[1], $this->integer($this->raw(['PTTL', $previousKey])));
+    }
+
+    private function stringValue(mixed $value): string
+    {
+        self::assertIsString($value);
+
+        return $value;
+    }
+
     /** @return array<string, string> */
     private function stateFingerprint(): array
     {
