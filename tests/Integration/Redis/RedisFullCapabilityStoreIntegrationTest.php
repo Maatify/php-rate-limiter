@@ -19,6 +19,7 @@ use Maatify\RateLimiter\DTO\RateLimitResultDTO;
 use Maatify\RateLimiter\DTO\ScoreDeltasDTO;
 use Maatify\RateLimiter\DTO\ScoreThresholdsDTO;
 use Maatify\RateLimiter\Exception\BackendFailureException;
+use Maatify\RateLimiter\Exception\RateLimiterException;
 use Maatify\RateLimiter\Repository\Redis\RedisCommandExecutorInterface;
 use Maatify\RateLimiter\Repository\Redis\RedisFullCapabilityStore;
 use Maatify\RateLimiter\Tests\Support\Clock\FixedClock;
@@ -100,6 +101,156 @@ final class RedisFullCapabilityStoreIntegrationTest extends TestCase
         self::assertGreaterThan(0, $this->integer($this->raw(['PTTL', $previous])));
     }
 
+    public function testBridgeUsesExactPreviousRemainingLifetimeAndNeverRefreshesIt(): void
+    {
+        $previous = $this->key('distinct', 'g12-bridge-previous');
+        $previousMeta = $this->key('distinct-meta', 'g12-bridge-previous');
+        $this->raw(['SADD', $previous, 'old']);
+        $this->raw(['PEXPIRE', $previous, 6_000]);
+        $expiry = $this->redisNow() + 20;
+        $this->raw(['HSET', $previousMeta, 'expiresAt', (string) $expiry]);
+        $this->raw(['PEXPIRE', $previousMeta, 4_000]);
+        $beforeMembers = $this->raw(['SMEMBERS', $previous]);
+        $beforeMeta = $this->hashMap($previousMeta);
+        $beforeDataPttl = $this->integer($this->raw(['PTTL', $previous]));
+        $beforeMetaPttl = $this->integer($this->raw(['PTTL', $previousMeta]));
+
+        $this->store->addDistinctBoundedWithSnapshotAcrossRotation(
+            'g12-bridge-current',
+            'g12-bridge',
+            'g12-bridge-previous',
+            'new',
+            'unknown',
+            60,
+            10,
+        );
+
+        $bridgePttl = $this->integer($this->raw(['PTTL', $this->key('distinct', 'g12-bridge')]));
+        $bridgeMetaPttl = $this->integer($this->raw(['PTTL', $this->key('distinct-meta', 'g12-bridge')]));
+        self::assertLessThanOrEqual($beforeDataPttl, $bridgePttl);
+        self::assertLessThanOrEqual($beforeMetaPttl, $bridgePttl);
+        self::assertLessThanOrEqual($beforeDataPttl, $bridgeMetaPttl);
+        self::assertLessThanOrEqual($beforeMetaPttl, $bridgeMetaPttl);
+        self::assertSame($beforeMembers, $this->raw(['SMEMBERS', $previous]));
+        self::assertSame($beforeMeta, $this->hashMap($previousMeta));
+        self::assertLessThanOrEqual($beforeDataPttl, $this->integer($this->raw(['PTTL', $previous])));
+        self::assertLessThanOrEqual($beforeMetaPttl, $this->integer($this->raw(['PTTL', $previousMeta])));
+    }
+
+    public function testPersistentCycleAndPauseStateWithoutTtlFailsBeforeMutation(): void
+    {
+        $now = $this->redisNow();
+        $cases = [
+            ['cycle', 'g12-current-cycle-no-ttl', null],
+            ['cycle', 'g12-previous-cycle-no-ttl', 'g12-previous-cycle-no-ttl-source'],
+            ['pause', 'g12-current-pause-no-ttl', null],
+            ['pause', 'g12-previous-pause-no-ttl', 'g12-previous-pause-no-ttl-source'],
+        ];
+
+        foreach ($cases as [$family, $current, $previous]) {
+            $source = $previous ?? $current;
+            $key = $this->key($family, $source);
+            if ($family === 'cycle') {
+                $this->raw(['ZADD', $key, $now, (string) $now]);
+            } else {
+                $this->raw(['ZADD', $key, $now, $now . ':' . ($now + 30)]);
+            }
+            $before = [$this->raw(['ZRANGE', $key, 0, -1, 'WITHSCORES']), $this->integer($this->raw(['PTTL', $key]))];
+
+            if ($family === 'cycle') {
+                $this->assertOperationFails(fn(): mixed => $this->store->blockWithCycleTracking($current, $previous, 2, 60, $now, 600, 2, 60, 120));
+            } else {
+                $this->assertOperationFails(fn(): mixed => $this->store->readDecayPauseState($current, $previous, $now - 60, $now));
+            }
+
+            self::assertSame($before[0], $this->raw(['ZRANGE', $key, 0, -1, 'WITHSCORES']));
+            self::assertSame(-1, $before[1]);
+            self::assertSame(-1, $this->integer($this->raw(['PTTL', $key])));
+        }
+    }
+
+    public function testGenerationPreservesExactIntegerAboveLuaDoubleRangeAndRejectsMaxIncrement(): void
+    {
+        $now = $this->redisNow();
+        $generation = 9007199254740993;
+        $key = $this->key('score', 'g12-exact-generation');
+        $this->raw(['HSET', $key, 'value', '8', 'updatedAt', (string) $now, 'generation', (string) $generation, 'expiresAt', (string) ($now + 601)]);
+        $this->raw(['EXPIRE', $key, 600]);
+        $state = $this->store->readGenerationBoundScoreState('g12-exact-generation', null);
+        self::assertNotNull($state);
+        self::assertSame($generation, $state->generation);
+
+        $mutation = $this->store->mutateGenerationBoundScore('g12-exact-generation', null, $state, 600, 9);
+        self::assertTrue($mutation->applied);
+        self::assertSame($generation + 1, $mutation->state?->generation);
+
+        $maxKey = $this->key('score', 'g12-generation-max');
+        $this->raw(['HSET', $maxKey, 'value', '8', 'updatedAt', (string) $now, 'generation', (string) PHP_INT_MAX, 'expiresAt', (string) ($now + 601)]);
+        $this->raw(['EXPIRE', $maxKey, 600]);
+        $before = $this->hashMap($maxKey);
+        $maxState = new GenerationBoundScoreStateDTO(GenerationBoundScoreStateDTO::SOURCE_CURRENT, 8, $now, $now + 601, PHP_INT_MAX);
+        $this->assertOperationFails(fn(): mixed => $this->store->mutateGenerationBoundScore('g12-generation-max', null, $maxState, 600, 9));
+        self::assertSame($before, $this->hashMap($maxKey));
+    }
+
+    public function testUnrepresentableCallerTimeArithmeticFailsBeforeAnyRedisMutation(): void
+    {
+        $this->assertOperationFails(fn(): mixed => $this->store->acquireProbeLease('g12-overflow-lease', PHP_INT_MAX, 1));
+        self::assertSame(0, $this->integer($this->raw(['EXISTS', $this->key('probe', 'g12-overflow-lease')])));
+
+        $this->assertOperationFails(fn(): mixed => $this->store->blockWithCycleTracking('g12-overflow-block', null, 2, 1, PHP_INT_MAX, 60, 2, 30, 120));
+        foreach (['block', 'cycle', 'pause'] as $family) {
+            self::assertSame(0, $this->integer($this->raw(['EXISTS', $this->key($family, 'g12-overflow-block')])));
+        }
+
+        $this->assertOperationFails(fn(): mixed => $this->store->mutateGenerationBoundScore('g12-overflow-score', null, null, PHP_INT_MAX, 1));
+        self::assertSame(0, $this->integer($this->raw(['EXISTS', $this->key('score', 'g12-overflow-score')])));
+
+        $this->assertOperationFails(fn(): mixed => $this->store->mutateGenerationBoundScore('g12-lua-exact-overflow', null, null, 9007199254740992, 1));
+        self::assertSame(0, $this->integer($this->raw(['EXISTS', $this->key('score', 'g12-lua-exact-overflow')])));
+    }
+
+    public function testRotationOverCapFailsForDuplicateAndNewMemberWithoutBridgeMutation(): void
+    {
+        $current = $this->key('distinct', 'g12-rotation-over-cap');
+        $meta = $this->key('distinct-meta', 'g12-rotation-over-cap');
+        $this->raw(['SADD', $current, 'one', 'two', 'three']);
+        $this->raw(['EXPIRE', $current, 60]);
+        $this->raw(['HSET', $meta, 'expiresAt', (string) ($this->redisNow() + 60)]);
+        $this->raw(['EXPIRE', $meta, 60]);
+        $before = [$this->raw(['SMEMBERS', $current]), $this->hashMap($meta), $this->redisKeys('distinct')];
+
+        $this->assertOperationFails(fn(): mixed => $this->store->addDistinctBoundedWithSnapshotAcrossRotation('g12-rotation-over-cap', 'g12-rotation-bridge', 'missing-previous', 'one', 'one', 60, 2));
+        $this->assertOperationFails(fn(): mixed => $this->store->addDistinctBoundedWithSnapshotAcrossRotation('g12-rotation-over-cap', 'g12-rotation-bridge', 'missing-previous', 'four', 'four', 60, 2));
+        self::assertSame($before[0], $this->raw(['SMEMBERS', $current]));
+        self::assertSame($before[1], $this->hashMap($meta));
+        self::assertSame(-2, $this->integer($this->raw(['PTTL', $this->key('distinct', 'g12-rotation-bridge')])));
+    }
+
+    public function testAliasedRotationReadsPreviousWithoutWritingOrRefreshingIt(): void
+    {
+        $logical = 'g12-aliased-rotation';
+        $physical = $this->key('distinct', $logical);
+        $meta = $this->key('distinct-meta', $logical);
+        $this->raw(['SADD', $physical, 'old']);
+        $this->raw(['PEXPIRE', $physical, 5_000]);
+        $this->raw(['HSET', $meta, 'expiresAt', (string) ($this->redisNow() + 60)]);
+        $this->raw(['PEXPIRE', $meta, 5_000]);
+        $members = $this->raw(['SMEMBERS', $physical]);
+        $beforeMeta = $this->hashMap($meta);
+        $beforePttl = $this->integer($this->raw(['PTTL', $physical]));
+
+        $snapshot = $this->store->addDistinctBoundedWithSnapshotAcrossRotation($logical, 'g12-aliased-bridge', $logical, 'new', 'old', 60, 3);
+        self::assertTrue($snapshot->accepted);
+        self::assertFalse($snapshot->added);
+        self::assertSame(1, $snapshot->count);
+        self::assertSame(['old'], $snapshot->members);
+        self::assertSame($members, $this->raw(['SMEMBERS', $physical]));
+        self::assertSame($beforeMeta, $this->hashMap($meta));
+        self::assertLessThanOrEqual($beforePttl, $this->integer($this->raw(['PTTL', $physical])));
+        self::assertSame(-2, $this->integer($this->raw(['PTTL', $this->key('distinct', 'g12-aliased-bridge')])));
+    }
+
     public function testInvalidCircuitStatusAndBlockLevelsFailExplicitly(): void
     {
         $circuit = $this->key('circuit', 'invalid-status');
@@ -112,10 +263,34 @@ final class RedisFullCapabilityStoreIntegrationTest extends TestCase
             $this->store->block('invalid-level-high', 7, 60);
         });
 
-        $persisted = $this->key('block', 'persisted-invalid-level');
-        $this->raw(['HSET', $persisted, 'level', '7', 'expiresAt', (string) ($this->redisNow() + 60)]);
-        $this->raw(['EXPIRE', $persisted, '60']);
-        $this->assertOperationFails(fn(): mixed => $this->store->checkBlock('persisted-invalid-level'));
+        foreach (['0', '-1', '7'] as $index => $invalidLevel) {
+            $logical = 'persisted-invalid-level-' . $index;
+            $persisted = $this->key('block', $logical);
+            $this->raw(['HSET', $persisted, 'level', $invalidLevel, 'expiresAt', (string) ($this->redisNow() + 60)]);
+            $this->raw(['EXPIRE', $persisted, '60']);
+            $this->assertOperationFails(fn(): mixed => $this->store->checkBlock($logical));
+        }
+    }
+
+    public function testPublicBuilderRejectsBrokenPersistedCircuitWithoutFallback(): void
+    {
+        $this->raw(['SET', $this->key('circuit', 'api_heavy_protection'), json_encode([
+            'status' => 'BROKEN',
+            'failures' => [],
+            'reEntries' => [],
+            'lastFailure' => 0,
+            'openSince' => 0,
+            'lastSuccess' => 0,
+            'failClosedUntil' => 0,
+        ], JSON_THROW_ON_ERROR)]);
+        $limiter = RateLimiterBuilder::fromFullCapabilityStore(
+            new RateLimiterConfig('g12-circuit-key', 'g12-circuit-fingerprint', 'prod'),
+            $this->store,
+            new RecordingFailureSignalEmitter(),
+        )->build();
+        $context = new RateLimitContextDTO('198.51.100.60', 'Mozilla/5.0', 'g12-broken-circuit', []);
+
+        $this->assertOperationFails(fn(): mixed => $limiter->limit($context, new RateLimitCommand('api_heavy_protection')));
     }
 
     public function testEveryFullCapabilityOperationRoundTripsAgainstRealRedis(): void
@@ -2312,9 +2487,13 @@ final class RedisFullCapabilityStoreIntegrationTest extends TestCase
     {
         try {
             $operation();
-        } catch (\Throwable) {
+        } catch (BackendFailureException $exception) {
+            self::fail('Malformed-state assertion received BackendFailureException: ' . $exception->getMessage());
+        } catch (RateLimiterException) {
             self::addToAssertionCount(1);
             return;
+        } catch (\Throwable) {
+            self::fail('Malformed-state assertion received an unexpected exception type.');
         }
 
         self::fail('Malformed persisted Redis state was accepted.');

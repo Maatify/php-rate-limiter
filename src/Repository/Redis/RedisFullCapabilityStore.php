@@ -36,6 +36,8 @@ final class RedisFullCapabilityStore implements FullCapabilityStoreInterface
 {
     private const PREFIX = 'maatify:rate-limiter:v1';
 
+    private const LUA_EXACT_INTEGER_MAX = 9007199254740991;
+
     private const SCORE_INCREMENT = <<<'LUA'
 local now = tonumber(redis.call('TIME')[1])
 local exists = redis.call('EXISTS', KEYS[1])
@@ -78,6 +80,9 @@ LUA;
 local redisTime = redis.call('TIME')
 local nowSeconds = tonumber(redisTime[1])
 local nowMs = (nowSeconds * 1000) + math.floor(tonumber(redisTime[2]) / 1000)
+local function validPositiveInteger(value)
+  return value ~= nil and string.match(value, '^[1-9]%d*$') ~= nil and string.len(value) <= 19 and (string.len(value) < 19 or value <= '9223372036854775807')
+end
 local current = KEYS[1]; local previous = KEYS[2]
 local expectedSource = ARGV[1]
 local function validInteger(value, allowZero)
@@ -147,8 +152,8 @@ if evidenceCount == 3 then
   local evidenceGeneration = redis.call('HGET', source, 'reentryGeneration')
   if not observedGeneration then return redis.error_reply('malformed lifecycle evidence generation') end
   if not evidenceId or string.len(evidenceId) ~= 32 or string.match(evidenceId, '^[a-f0-9]+$') == nil then return redis.error_reply('malformed lifecycle id') end
-  local numericUntil = tonumber(evidenceUntil); local numericEvidenceGeneration = tonumber(evidenceGeneration)
-  if not numericUntil or numericUntil ~= math.floor(numericUntil) or numericUntil <= 0 or not numericEvidenceGeneration or numericEvidenceGeneration ~= math.floor(numericEvidenceGeneration) or numericEvidenceGeneration <= 0 then return redis.error_reply('malformed lifecycle evidence') end
+  local numericUntil = tonumber(evidenceUntil)
+  if not numericUntil or numericUntil ~= math.floor(numericUntil) or numericUntil <= 0 or not validInteger(evidenceGeneration, false) then return redis.error_reply('malformed lifecycle evidence') end
 end
 local effectiveObservedExpiry = observedExpiry
 if not effectiveObservedExpiry then effectiveObservedExpiry = tostring(math.floor((nowMs + sourcePttl + 999) / 1000)) end
@@ -183,6 +188,9 @@ LUA;
 local redisTime = redis.call('TIME')
 local nowSeconds = tonumber(redisTime[1])
 local nowMs = (nowSeconds * 1000) + math.floor(tonumber(redisTime[2]) / 1000)
+local function validPositiveInteger(value)
+  return value ~= nil and string.match(value, '^[1-9]%d*$') ~= nil and string.len(value) <= 19 and (string.len(value) < 19 or value <= '9223372036854775807')
+end
 local source = KEYS[1]
 local currentPttl = redis.call('PTTL', source)
 if currentPttl == -1 then return redis.error_reply('malformed generation-bound score state') end
@@ -230,8 +238,8 @@ if evidenceCount == 3 then
   evidenceId = redis.call('HGET', source, 'reentryId')
   evidenceUntil = redis.call('HGET', source, 'reentryValidUntil')
   if not evidenceId or string.len(evidenceId) ~= 32 or string.match(evidenceId, '^[a-f0-9]+$') == nil then return redis.error_reply('malformed lifecycle id') end
-  local numericUntil = tonumber(evidenceUntil); local numericEvidenceGeneration = tonumber(evidenceGeneration)
-  if not numericUntil or numericUntil ~= math.floor(numericUntil) or numericUntil <= 0 or not numericEvidenceGeneration or numericEvidenceGeneration ~= math.floor(numericEvidenceGeneration) or numericEvidenceGeneration <= 0 then return redis.error_reply('malformed lifecycle evidence') end
+  local numericUntil = tonumber(evidenceUntil)
+  if not numericUntil or numericUntil ~= math.floor(numericUntil) or numericUntil <= 0 or not validPositiveInteger(evidenceGeneration) then return redis.error_reply('malformed lifecycle evidence') end
   if generation == '' then return redis.error_reply('legacy score cannot carry lifecycle evidence') end
   if active or evidenceGeneration ~= generation or numericUntil ~= tonumber(expiry) or numericUntil <= nowSeconds then evidenceId = ''; evidenceUntil = '' end
 end
@@ -242,6 +250,9 @@ LUA;
 local redisTime = redis.call('TIME')
 local nowSeconds = tonumber(redisTime[1])
 local nowMs = (nowSeconds * 1000) + math.floor(tonumber(redisTime[2]) / 1000)
+local function validPositiveInteger(value)
+  return value ~= nil and string.match(value, '^[1-9]%d*$') ~= nil and string.len(value) <= 19 and (string.len(value) < 19 or value <= '9223372036854775807')
+end
 for _, blockKey in ipairs({KEYS[3], KEYS[4]}) do
   if blockKey ~= '' then
     local blockPttl = redis.call('PTTL', blockKey)
@@ -285,8 +296,8 @@ if source ~= '' then
   if evidenceCount == 3 then
     local id = redis.call('HGET', source, 'reentryId'); local validUntil = redis.call('HGET', source, 'reentryValidUntil'); local evidenceGeneration = redis.call('HGET', source, 'reentryGeneration')
     if not id or #id ~= 32 or string.match(id, '^[a-f0-9]+$') == nil then return redis.error_reply('malformed lifecycle id') end
-    local numericUntil = tonumber(validUntil); local numericEvidenceGeneration = tonumber(evidenceGeneration)
-    if not numericUntil or numericUntil ~= math.floor(numericUntil) or numericUntil <= 0 or not numericEvidenceGeneration or numericEvidenceGeneration ~= math.floor(numericEvidenceGeneration) or numericEvidenceGeneration <= 0 then return redis.error_reply('malformed lifecycle evidence') end
+    local numericUntil = tonumber(validUntil)
+    if not numericUntil or numericUntil ~= math.floor(numericUntil) or numericUntil <= 0 or not validPositiveInteger(evidenceGeneration) then return redis.error_reply('malformed lifecycle evidence') end
     if not generation then return redis.error_reply('legacy score cannot carry lifecycle evidence') end
     if evidenceGeneration ~= generation then return 0 end
     if expiry ~= nil and numericUntil ~= expiry then return 0 end
@@ -582,15 +593,17 @@ local function ensureCurrent()
 end
 local function ensureBridge()
   if bridgeExists == 0 then
-    local previousTtl = redis.call('TTL', KEYS[5])
-    if previousTtl <= 0 then return redis.error_reply('malformed previous bounded state') end
-    local bridgePttl = math.min(math.max(1, (previousTtl - 10) * 1000), tonumber(ARGV[2]) * 1000)
+    local previousPttl = redis.call('PTTL', KEYS[5])
+    local previousMetaPttl = redis.call('PTTL', KEYS[6])
+    if previousPttl <= 0 or previousMetaPttl <= 0 then return redis.error_reply('malformed previous bounded state') end
+    local previousRemainingMs = math.max(0, (tonumber(prevExpiry) - now) * 1000)
+    local bridgePttl = math.min(previousPttl, previousMetaPttl, previousRemainingMs, tonumber(ARGV[2]) * 1000)
     if bridgePttl <= 0 then return redis.error_reply('malformed previous bounded state') end
-    bridgeExpiry = math.min(tonumber(prevExpiry), now + math.max(1, math.floor(bridgePttl / 1000)))
+    bridgeExpiry = math.min(tonumber(prevExpiry), math.floor((nowMs + bridgePttl + 999) / 1000))
     redis.call('SADD', KEYS[3], ARGV[3])
-    redis.call('EXPIRE', KEYS[3], math.max(1, math.floor(bridgePttl / 1000)))
+    redis.call('PEXPIRE', KEYS[3], bridgePttl)
     redis.call('HSET', KEYS[4], 'expiresAt', bridgeExpiry)
-    redis.call('EXPIRE', KEYS[4], math.max(1, math.floor(bridgePttl / 1000)))
+    redis.call('PEXPIRE', KEYS[4], bridgePttl)
     bridgeExists = 1
   else
     redis.call('SADD', KEYS[3], ARGV[3])
@@ -623,6 +636,9 @@ LUA;
 local lifecycleGeneration = ARGV[10] or ''
 local lifecycleId = ARGV[11] or ''
 local lifecycleTime = redis.call('TIME')
+local function validPositiveInteger(value)
+  return value ~= nil and string.match(value, '^[1-9]%d*$') ~= nil and string.len(value) <= 19 and (string.len(value) < 19 or value <= '9223372036854775807')
+end
 local now = lifecycleGeneration ~= '' and tonumber(lifecycleTime[1]) or tonumber(ARGV[5])
 local nowMs = lifecycleGeneration ~= '' and ((tonumber(lifecycleTime[1]) * 1000) + math.floor(tonumber(lifecycleTime[2]) / 1000)) or (now * 1000)
 local retention = tonumber(ARGV[9])
@@ -644,8 +660,7 @@ if lifecycleGeneration ~= '' then
         local previousGeneration = redis.call('HGET', KEYS[8], 'generation')
         local previousExpiry = redis.call('HGET', KEYS[8], 'expiresAt')
         if previousGeneration then
-          local numericPreviousGeneration = tonumber(previousGeneration)
-          if not numericPreviousGeneration or numericPreviousGeneration ~= math.floor(numericPreviousGeneration) or numericPreviousGeneration <= 0 then return redis.error_reply('malformed lifecycle previous score generation') end
+          if not validPositiveInteger(previousGeneration) then return redis.error_reply('malformed lifecycle previous score generation') end
           if not previousExpiry then return redis.error_reply('malformed lifecycle previous score expiry') end
         end
         local numericPreviousExpiry = nil
@@ -661,8 +676,8 @@ if lifecycleGeneration ~= '' then
           local previousEvidenceUntil = redis.call('HGET', KEYS[8], 'reentryValidUntil')
           local previousEvidenceGeneration = redis.call('HGET', KEYS[8], 'reentryGeneration')
           if not previousEvidenceId or string.len(previousEvidenceId) ~= 32 or string.match(previousEvidenceId, '^[a-f0-9]+$') == nil then return redis.error_reply('malformed lifecycle previous evidence id') end
-          local numericPreviousEvidenceUntil = tonumber(previousEvidenceUntil); local numericPreviousEvidenceGeneration = tonumber(previousEvidenceGeneration)
-          if not numericPreviousEvidenceUntil or numericPreviousEvidenceUntil ~= math.floor(numericPreviousEvidenceUntil) or numericPreviousEvidenceUntil <= 0 or not numericPreviousEvidenceGeneration or numericPreviousEvidenceGeneration ~= math.floor(numericPreviousEvidenceGeneration) or numericPreviousEvidenceGeneration <= 0 then return redis.error_reply('malformed lifecycle previous evidence') end
+          local numericPreviousEvidenceUntil = tonumber(previousEvidenceUntil)
+          if not numericPreviousEvidenceUntil or numericPreviousEvidenceUntil ~= math.floor(numericPreviousEvidenceUntil) or numericPreviousEvidenceUntil <= 0 or not validPositiveInteger(previousEvidenceGeneration) then return redis.error_reply('malformed lifecycle previous evidence') end
         end
         if previousGeneration and (nowMs + previousScorePttl) > (numericPreviousExpiry * 1000) then return redis.error_reply('inconsistent lifecycle previous score expiry') end
       end
@@ -674,8 +689,7 @@ if lifecycleGeneration ~= '' then
   if scorePttl == -1 then return redis.error_reply('malformed lifecycle score physical expiry') end
   local generation = redis.call('HGET', scoreKey, 'generation'); local value = redis.call('HGET', scoreKey, 'value'); local updated = redis.call('HGET', scoreKey, 'updatedAt'); local scoreExpiry = redis.call('HGET', scoreKey, 'expiresAt')
   if not generation or not value or not updated or not scoreExpiry then return redis.error_reply('malformed lifecycle score state') end
-  local numericGeneration = tonumber(generation)
-  if not numericGeneration or numericGeneration ~= math.floor(numericGeneration) or numericGeneration <= 0 then return redis.error_reply('malformed lifecycle score generation') end
+  if not validPositiveInteger(generation) then return redis.error_reply('malformed lifecycle score generation') end
   if not tonumber(value) or tonumber(value) ~= math.floor(tonumber(value)) or not tonumber(updated) or tonumber(updated) ~= math.floor(tonumber(updated)) or tonumber(updated) < 0 or not tonumber(scoreExpiry) or tonumber(scoreExpiry) ~= math.floor(tonumber(scoreExpiry)) or tonumber(scoreExpiry) <= 0 or tonumber(scoreExpiry) < tonumber(updated) then return redis.error_reply('malformed lifecycle score state') end
   if (nowMs + scorePttl) > (tonumber(scoreExpiry) * 1000) then return redis.error_reply('inconsistent lifecycle score expiry') end
   if generation ~= lifecycleGeneration then return {0} end
@@ -686,8 +700,8 @@ if lifecycleGeneration ~= '' then
   if evidenceCount == 3 then
     local evidenceId = redis.call('HGET', scoreKey, 'reentryId'); local evidenceUntil = redis.call('HGET', scoreKey, 'reentryValidUntil'); local evidenceGeneration = redis.call('HGET', scoreKey, 'reentryGeneration')
     if not evidenceId or string.len(evidenceId) ~= 32 or string.match(evidenceId, '^[a-f0-9]+$') == nil then return redis.error_reply('malformed lifecycle id') end
-    local numericUntil = tonumber(evidenceUntil); local numericEvidenceGeneration = tonumber(evidenceGeneration)
-    if not numericUntil or numericUntil ~= math.floor(numericUntil) or numericUntil <= 0 or not numericEvidenceGeneration or numericEvidenceGeneration ~= math.floor(numericEvidenceGeneration) or numericEvidenceGeneration <= 0 then return redis.error_reply('malformed lifecycle evidence') end
+    local numericUntil = tonumber(evidenceUntil)
+    if not numericUntil or numericUntil ~= math.floor(numericUntil) or numericUntil <= 0 or not validPositiveInteger(evidenceGeneration) then return redis.error_reply('malformed lifecycle evidence') end
   end
 end
 local function extendUntil(key, target)
@@ -732,6 +746,7 @@ for _, member in ipairs(cycleMembers) do latestCycle = math.max(latestCycle, cyc
 local pausesByMember = {}; local pauseMembers = {}
 local function readPauses(key)
   if key == '' or redis.call('EXISTS', key) == 0 then return end
+  if redis.call('TTL', key) < 0 then error('malformed pause history') end
   for _, member in ipairs(redis.call('ZRANGE', key, 0, -1)) do
     local sep = string.find(member, ':'); local start = sep and tonumber(string.sub(member, 1, sep - 1)); local finish = sep and tonumber(string.sub(member, sep + 1)); local score = tonumber(redis.call('ZSCORE', key, member))
     if not sep or not start or start ~= math.floor(start) or not finish or finish ~= math.floor(finish) or finish < start or not score or score ~= math.floor(score) or score ~= start then error('malformed pause history') end
@@ -1025,6 +1040,7 @@ LUA;
     public function acquireProbeLease(string $policyName, int $now, int $leaseSeconds): bool
     {
         $this->positive($leaseSeconds, 'Probe lease duration');
+        $this->ensureRepresentableAddition($now, $leaseSeconds, 'Probe lease expiry');
         $result = $this->eval(self::LEASE, [$this->key('probe', $policyName)], [$now, $leaseSeconds]);
         if (! is_int($result) && ! is_string($result)) {
             throw new RateLimiterException('Malformed probe lease response.');
@@ -1038,6 +1054,10 @@ LUA;
             $this->positive($value, 'Hard-block cycle parameter');
         }
         $this->validateHardBlockLevel($level);
+        $this->ensureRepresentableAddition($now, $durationSeconds, 'Hard-block expiry');
+        $this->ensureRepresentableAddition($now, $cycleWindowSeconds, 'Cycle boundary');
+        $this->ensureRepresentableAddition($now, $pauseSeconds, 'Pause expiry');
+        $this->ensureRepresentableAddition($now, $pauseHistoryRetentionSeconds, 'Pause retention boundary');
         $previousKey = $previousKey === $currentKey ? null : $previousKey;
         $keys = [
             $this->key('cycle', $currentKey),
@@ -1144,6 +1164,7 @@ LUA;
     public function mutateGenerationBoundScore(string $currentKey, ?string $previousKey, ?GenerationBoundScoreStateDTO $expectedState, int $ttlSeconds, int $newValue): GenerationBoundScoreMutationDTO
     {
         $this->positive($ttlSeconds, 'Generation-bound score TTL');
+        $this->ensureGenerationTtlRepresentable($ttlSeconds);
         $expectedSource = $expectedState === null ? '' : ($expectedState->source === GenerationBoundScoreStateDTO::SOURCE_CURRENT ? $this->key('score', $currentKey) : $this->key('score', $previousKey ?? ''));
         $result = $this->eval(
             self::LIFECYCLE_MUTATE,
@@ -1294,6 +1315,36 @@ LUA;
     {
         if ($value <= 0) {
             throw new RateLimiterException($label . ' must be positive.');
+        }
+    }
+
+    private function ensureRepresentableAddition(int $left, int $right, string $label): void
+    {
+        if ($this->tryIntegerAddition($left, $right) === null || ($left >= 0 && $right > self::LUA_EXACT_INTEGER_MAX - $left)) {
+            throw new RateLimiterException($label . ' is not representable.');
+        }
+    }
+
+    private function ensureGenerationTtlRepresentable(int $ttlSeconds): void
+    {
+        if ($ttlSeconds > intdiv(PHP_INT_MAX, 1000)) {
+            throw new RateLimiterException('Generation-bound score expiry is not representable.');
+        }
+        $time = $this->command(['TIME']);
+        if (! is_array($time) || ! array_key_exists(0, $time) || ! array_key_exists(1, $time)) {
+            throw new RateLimiterException('Redis time response is malformed.');
+        }
+        $seconds = $this->integerValue($time[0], 'Redis time seconds');
+        $microseconds = $this->integerValue($time[1], 'Redis time microseconds');
+        if ($seconds < 0 || $microseconds < 0 || $microseconds > 999999) {
+            throw new RateLimiterException('Redis time response is malformed.');
+        }
+        if ($seconds > intdiv(PHP_INT_MAX, 1000)) {
+            throw new RateLimiterException('Redis time response is malformed.');
+        }
+        $nowMs = $this->tryIntegerAddition($seconds * 1000, intdiv($microseconds, 1000));
+        if ($nowMs === null || $nowMs > self::LUA_EXACT_INTEGER_MAX || $ttlSeconds > intdiv(self::LUA_EXACT_INTEGER_MAX - $nowMs, 1000)) {
+            throw new RateLimiterException('Generation-bound score expiry is not representable.');
         }
     }
 
