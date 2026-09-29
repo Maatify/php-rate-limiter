@@ -97,6 +97,15 @@ LUA;
 local redisTime = redis.call('TIME')
 local nowSeconds = tonumber(redisTime[1])
 local nowMs = (nowSeconds * 1000) + math.floor(tonumber(redisTime[2]) / 1000)
+local exactIntegerMax = 9007199254740991
+local exactIntegerMaxTtlSeconds = '9007199254740'
+local function ttlMillisecondsRepresentable(rawTtl, baseMs)
+  if rawTtl == nil or string.match(rawTtl, '^[1-9]%d*$') == nil then return false end
+  if string.len(rawTtl) > 13 or (string.len(rawTtl) == 13 and rawTtl > exactIntegerMaxTtlSeconds) then return false end
+  if baseMs == nil or baseMs < 0 or baseMs > exactIntegerMax then return false end
+  local ttlMs = tonumber(rawTtl) * 1000
+  return ttlMs <= exactIntegerMax - baseMs
+end
 local function validPositiveInteger(value)
   return value ~= nil and string.match(value, '^[1-9]%d*$') ~= nil and string.len(value) <= 19 and (string.len(value) < 19 or value <= '9223372036854775807')
 end
@@ -145,7 +154,9 @@ elseif previous ~= '' then
 end
 if source == '' then
   if expectedSource ~= '' then return {0} end
-  local ttl = tonumber(ARGV[6]); if ttl <= 0 then return redis.error_reply('invalid score TTL') end
+  local rawTtl = ARGV[6]
+  local ttl = tonumber(rawTtl); if ttl <= 0 then return redis.error_reply('invalid score TTL') end
+  if not ttlMillisecondsRepresentable(rawTtl, nowMs) then return redis.error_reply('generation-bound score expiry exceeds Redis Lua exact integer range') end
   local requestedDeadlineMs = nowMs + (ttl * 1000)
   local expiry = math.floor((requestedDeadlineMs + 999) / 1000)
   redis.call('HSET', current, 'value', ARGV[7], 'updatedAt', nowSeconds, 'generation', 1, 'expiresAt', expiry)
@@ -1107,6 +1118,8 @@ LUA;
         $this->ensureRepresentableAddition($now, $cycleWindowSeconds, 'Cycle boundary');
         $this->ensureRepresentableAddition($now, $pauseSeconds, 'Pause expiry');
         $this->ensureRepresentableAddition($now, $pauseHistoryRetentionSeconds, 'Pause retention boundary');
+        $this->ensureRepresentableSubtraction($now, $cycleWindowSeconds, 'Cycle boundary');
+        $this->ensureRepresentableSubtraction($now, $pauseHistoryRetentionSeconds, 'Pause retention boundary');
         $previousKey = $previousKey === $currentKey ? null : $previousKey;
         $keys = [
             $this->key('cycle', $currentKey),
@@ -1381,6 +1394,20 @@ LUA;
         }
     }
 
+    private function ensureRepresentableSubtraction(int $left, int $right, string $label): void
+    {
+        if ($this->tryIntegerSubtraction($left, $right) === null
+            || $left < -self::LUA_EXACT_INTEGER_MAX
+            || $left > self::LUA_EXACT_INTEGER_MAX
+            || $right < -self::LUA_EXACT_INTEGER_MAX
+            || $right > self::LUA_EXACT_INTEGER_MAX
+            || ($right > 0 && $left < -self::LUA_EXACT_INTEGER_MAX + $right)
+            || ($right < 0 && $left > self::LUA_EXACT_INTEGER_MAX + $right)
+        ) {
+            throw new RateLimiterException($label . ' is not representable.');
+        }
+    }
+
     private function ensureGenerationTtlRepresentable(int $ttlSeconds): void
     {
         if ($ttlSeconds > intdiv(PHP_INT_MAX, 1000)) {
@@ -1469,6 +1496,14 @@ LUA;
             return null;
         }
         return $left + $right;
+    }
+
+    private function tryIntegerSubtraction(int $left, int $right): ?int
+    {
+        if (($right < 0 && $left > PHP_INT_MAX + $right) || ($right > 0 && $left < PHP_INT_MIN + $right)) {
+            return null;
+        }
+        return $left - $right;
     }
 
     private function stringValue(mixed $value, string $label): string

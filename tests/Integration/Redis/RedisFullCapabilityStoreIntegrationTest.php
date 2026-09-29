@@ -238,14 +238,58 @@ final class RedisFullCapabilityStoreIntegrationTest extends TestCase
         self::assertSame($before, $this->hashMap($maxKey));
     }
 
+    /**
+     * The PHP-side ensureGenerationTtlRepresentable() preflight reads Redis
+     * TIME once and can go stale before the EVAL that performs the actual
+     * mutation reads Redis TIME again. Proving the boundary is genuinely
+     * atomic requires showing that the LIFECYCLE_MUTATE script itself
+     * rejects an unrepresentable deadline using its own same-script TIME
+     * read, independent of whatever the PHP preflight decided. A decorator
+     * that fabricates the bare ['TIME'] reply consumed only by the PHP
+     * preflight (never the EVAL's internal redis.call('TIME')) makes the
+     * preflight accept a TTL that the real, current Redis TIME inside the
+     * script cannot represent: if the in-script guard were ever removed,
+     * this test would fail because the write would go through.
+     */
+    public function testGenerationBoundScoreCreationEnforcesAtomicInScriptTtlGuard(): void
+    {
+        $key = 'g12-atomic-generation-ttl-guard';
+        $scoreKey = $this->key('score', $key);
+        self::assertSame(0, $this->integer($this->raw(['EXISTS', $scoreKey])));
+
+        $innerExecutor = $this->executor;
+        $staleTimeExecutor = new class ($innerExecutor) implements RedisCommandExecutorInterface {
+            public function __construct(private readonly RedisCommandExecutorInterface $inner) {}
+
+            public function execute(array $command): mixed
+            {
+                if ($command === ['TIME']) {
+                    return ['0', '0'];
+                }
+
+                return $this->inner->execute($command);
+            }
+        };
+        $store = new RedisFullCapabilityStore($staleTimeExecutor, $this->namespace);
+
+        $ttlSeconds = 9007199254740;
+        $this->assertOperationFails(fn(): mixed => $store->mutateGenerationBoundScore($key, null, null, $ttlSeconds, 1));
+
+        self::assertSame(0, $this->integer($this->raw(['EXISTS', $scoreKey])));
+    }
+
     public function testScoreReadAndIncrementPreserveExactIntegersAboveLuaDoubleRange(): void
     {
         $key = $this->key('score', 'g12-exact-score');
         $this->raw(['HSET', $key, 'value', '9007199254740993', 'updatedAt', (string) $this->redisNow()]);
         $this->raw(['EXPIRE', $key, 60]);
-        self::assertSame(9007199254740993, $this->store->get('g12-exact-score')?->value);
+        $initialState = $this->store->get('g12-exact-score');
+        self::assertNotNull($initialState);
+        self::assertSame(9007199254740993, $initialState->value);
         self::assertSame(9007199254740994, $this->store->increment('g12-exact-score', 60, 1));
-        self::assertSame(9007199254740994, $this->store->get('g12-exact-score')?->value);
+        $incrementedState = $this->store->get('g12-exact-score');
+        self::assertNotNull($incrementedState);
+        self::assertSame(9007199254740994, $incrementedState->value);
 
         $overflow = $this->key('score', 'g12-score-overflow');
         $this->raw(['HSET', $overflow, 'value', (string) PHP_INT_MAX, 'updatedAt', (string) $this->redisNow()]);
@@ -280,27 +324,76 @@ final class RedisFullCapabilityStoreIntegrationTest extends TestCase
         }
     }
 
+    /**
+     * `now` itself is exact within the Lua-safe integer range, but the
+     * subtraction boundaries the HARD_BLOCK script derives from it
+     * (`now - cycleWindow`, `now - pauseHistoryRetention`) are not. Each
+     * must be rejected before any Redis mutation, not merely after `now`
+     * passes its own addition-based preflight.
+     */
+    public function testHardBlockCycleSubtractionBoundaryFailsBeforeAnyRedisMutation(): void
+    {
+        $now = -9007199254740990;
+        self::assertGreaterThanOrEqual(-9007199254740991, $now);
+        self::assertLessThanOrEqual(9007199254740991, $now);
+
+        $this->assertOperationFails(fn(): mixed => $this->store->blockWithCycleTracking('g12-cycle-window-subtraction-overflow', null, 2, 1, $now, 60, 2, 30, 120));
+        foreach (['block', 'cycle', 'pause'] as $family) {
+            self::assertSame(0, $this->integer($this->raw(['EXISTS', $this->key($family, 'g12-cycle-window-subtraction-overflow')])));
+        }
+
+        $this->assertOperationFails(fn(): mixed => $this->store->blockWithCycleTracking('g12-pause-retention-subtraction-overflow', null, 2, 1, $now, 1, 2, 30, 60));
+        foreach (['block', 'cycle', 'pause'] as $family) {
+            self::assertSame(0, $this->integer($this->raw(['EXISTS', $this->key($family, 'g12-pause-retention-subtraction-overflow')])));
+        }
+    }
+
+    /**
+     * The physical TTL of Current data/metadata is deliberately shortened
+     * far below the 60-second TTL requested on each over-cap call. An
+     * erroneous refresh back to a fresh 60s would then overshoot this
+     * shortened baseline by a margin far larger than any elapsed-time
+     * jitter between snapshot and assertion, so it cannot slip through
+     * un-detected the way a same-magnitude before/after TTL comparison
+     * could. Duplicate-member and new-member rejections are asserted
+     * separately, each against its own freshly captured baseline.
+     */
     public function testRotationOverCapFailsForDuplicateAndNewMemberWithoutBridgeMutation(): void
     {
         $current = $this->key('distinct', 'g12-rotation-over-cap');
         $meta = $this->key('distinct-meta', 'g12-rotation-over-cap');
         $this->raw(['SADD', $current, 'one', 'two', 'three']);
-        $this->raw(['EXPIRE', $current, 60]);
-        $this->raw(['HSET', $meta, 'expiresAt', (string) ($this->redisNow() + 60)]);
-        $this->raw(['EXPIRE', $meta, 60]);
+        $authoritativeExpiry = $this->redisNow() + 3600;
+        $this->raw(['HSET', $meta, 'expiresAt', (string) $authoritativeExpiry]);
+        $this->raw(['PEXPIRE', $current, 5_000]);
+        $this->raw(['PEXPIRE', $meta, 5_000]);
         $bridge = $this->key('distinct', 'g12-rotation-bridge');
         $bridgeMeta = $this->key('distinct-meta', 'g12-rotation-bridge');
-        $before = [$this->raw(['SMEMBERS', $current]), $this->hashMap($meta), $this->integer($this->raw(['PTTL', $current])), $this->integer($this->raw(['PTTL', $meta])), $this->redisKeys('distinct')];
+        $keysBefore = $this->redisKeys('distinct');
+        $membersBaseline = $this->raw(['SMEMBERS', $current]);
+        $metaBaseline = $this->hashMap($meta);
 
+        $dataPttlBaseline = $this->integer($this->raw(['PTTL', $current]));
+        $metaPttlBaseline = $this->integer($this->raw(['PTTL', $meta]));
         $this->assertOperationFails(fn(): mixed => $this->store->addDistinctBoundedWithSnapshotAcrossRotation('g12-rotation-over-cap', 'g12-rotation-bridge', 'missing-previous', 'one', 'one', 60, 2));
-        $this->assertOperationFails(fn(): mixed => $this->store->addDistinctBoundedWithSnapshotAcrossRotation('g12-rotation-over-cap', 'g12-rotation-bridge', 'missing-previous', 'four', 'four', 60, 2));
-        self::assertSame($before[0], $this->raw(['SMEMBERS', $current]));
-        self::assertSame($before[1], $this->hashMap($meta));
-        self::assertLessThanOrEqual($before[2], $this->integer($this->raw(['PTTL', $current])));
-        self::assertLessThanOrEqual($before[3], $this->integer($this->raw(['PTTL', $meta])));
+        self::assertSame($membersBaseline, $this->raw(['SMEMBERS', $current]));
+        self::assertSame($metaBaseline, $this->hashMap($meta));
+        self::assertLessThanOrEqual($dataPttlBaseline, $this->integer($this->raw(['PTTL', $current])));
+        self::assertLessThanOrEqual($metaPttlBaseline, $this->integer($this->raw(['PTTL', $meta])));
         self::assertSame(-2, $this->integer($this->raw(['PTTL', $bridge])));
         self::assertSame(-2, $this->integer($this->raw(['PTTL', $bridgeMeta])));
-        self::assertSame($before[4], $this->redisKeys('distinct'));
+        self::assertSame($keysBefore, $this->redisKeys('distinct'));
+
+        $dataPttlBaseline = $this->integer($this->raw(['PTTL', $current]));
+        $metaPttlBaseline = $this->integer($this->raw(['PTTL', $meta]));
+        $this->assertOperationFails(fn(): mixed => $this->store->addDistinctBoundedWithSnapshotAcrossRotation('g12-rotation-over-cap', 'g12-rotation-bridge', 'missing-previous', 'four', 'four', 60, 2));
+        self::assertSame($membersBaseline, $this->raw(['SMEMBERS', $current]));
+        self::assertSame($metaBaseline, $this->hashMap($meta));
+        self::assertLessThanOrEqual($dataPttlBaseline, $this->integer($this->raw(['PTTL', $current])));
+        self::assertLessThanOrEqual($metaPttlBaseline, $this->integer($this->raw(['PTTL', $meta])));
+        self::assertSame(-2, $this->integer($this->raw(['PTTL', $bridge])));
+        self::assertSame(-2, $this->integer($this->raw(['PTTL', $bridgeMeta])));
+        self::assertSame($keysBefore, $this->redisKeys('distinct'));
     }
 
     public function testAliasedRotationReadsPreviousWithoutWritingOrRefreshingIt(): void
@@ -397,6 +490,44 @@ final class RedisFullCapabilityStoreIntegrationTest extends TestCase
         self::assertSame($beforeScore, $this->hashMap($score));
         foreach (['block', 'cycle', 'pause'] as $family) {
             self::assertSame(0, $this->integer($this->raw(['EXISTS', $this->key($family, 'g12-level-seven-punishment')])));
+        }
+    }
+
+    /**
+     * Complements the upper-boundary (L7) proof above with the lower
+     * hard-block boundary: L1 is below the L2+ hard-block floor and must
+     * be rejected before any Redis mutation for both cycle-tracking and
+     * punishment-lifecycle publication, the latter leaving a pre-existing
+     * valid generated score — including its lifecycle evidence — entirely
+     * untouched.
+     */
+    public function testCycleAndPunishmentPublicationRejectLowerLevelBeforeMutation(): void
+    {
+        $now = $this->redisNow();
+        $this->assertOperationFails(fn(): mixed => $this->store->blockWithCycleTracking('g12-level-one-cycle', null, 1, 60, $now, 600, 2, 60, 120));
+        foreach (['block', 'cycle', 'pause'] as $family) {
+            self::assertSame(0, $this->integer($this->raw(['EXISTS', $this->key($family, 'g12-level-one-cycle')])));
+        }
+
+        $score = $this->key('score', 'g12-level-one-punishment');
+        $expiresAt = $now + 600;
+        $this->raw([
+            'HSET', $score,
+            'value', '8',
+            'updatedAt', (string) $now,
+            'generation', '1',
+            'expiresAt', (string) $expiresAt,
+            'reentryId', str_repeat('e', 32),
+            'reentryValidUntil', (string) $expiresAt,
+            'reentryGeneration', '1',
+        ]);
+        $this->raw(['EXPIRE', $score, 600]);
+        $beforePunishmentScore = $this->hashMap($score);
+
+        $this->assertOperationFails(fn(): mixed => $this->store->blockWithPunishmentLifecycleTracking('g12-level-one-punishment', null, 1, str_repeat('f', 32), 1, 60, 600, 2, 60, 120));
+        self::assertSame($beforePunishmentScore, $this->hashMap($score));
+        foreach (['block', 'cycle', 'pause'] as $family) {
+            self::assertSame(0, $this->integer($this->raw(['EXISTS', $this->key($family, 'g12-level-one-punishment')])));
         }
     }
 
@@ -1477,6 +1608,65 @@ final class RedisFullCapabilityStoreIntegrationTest extends TestCase
                 'prod',
                 'public-old-outer',
                 null,
+            ),
+            $this->store,
+            new RecordingFailureSignalEmitter(),
+        )->build();
+        $rotated = $currentLimiter->limit(
+            $this->deviceContext($account, 4),
+            RateLimitCommand::checkOnly('login_protection'),
+        );
+
+        self::assertSame(RateLimitResultDTO::DECISION_HARD_BLOCK, $rotated->decision);
+        $currentKeys = $this->redisKeys('distinct');
+        self::assertNotEmpty(array_diff($currentKeys, $previousKeys));
+        foreach ($previousSnapshot as $key => [$members, $pttl, $metadata, $metadataPttl]) {
+            self::assertSame($members, $this->raw(['SMEMBERS', $key]));
+            self::assertLessThanOrEqual($pttl, $this->integer($this->raw(['PTTL', $key])));
+            $metadataKey = str_replace(':distinct:', ':distinct-meta:', $key);
+            self::assertSame($metadata, $this->hashMap($metadataKey));
+            self::assertLessThanOrEqual($metadataPttl, $this->integer($this->raw(['PTTL', $metadataKey])));
+        }
+    }
+
+    /**
+     * The outer-key rotation proof above changes the outer key secret
+     * while the fingerprint secret stays stable, which is not a
+     * fingerprint-only rotation. This proves the same read-only-previous
+     * contract holds through the public runtime when only the fingerprint
+     * secret rotates and the outer key secret is unchanged.
+     */
+    public function testPublicBuilderFingerprintOnlyRotationLeavesPreviousRedisStateReadOnly(): void
+    {
+        $account = 'redis-public-fingerprint-only-rotation';
+        $oldLimiter = RateLimiterBuilder::fromFullCapabilityStore(
+            new RateLimiterConfig('public-fingerprint-only-outer', 'public-old-fingerprint', 'prod'),
+            $this->store,
+            new RecordingFailureSignalEmitter(),
+        )->build();
+        for ($device = 1; $device <= 3; $device++) {
+            $oldLimiter->limit($this->deviceContext($account, $device), RateLimitCommand::checkOnly('login_protection'));
+        }
+
+        $previousKeys = $this->redisKeys('distinct');
+        self::assertNotEmpty($previousKeys);
+        $previousSnapshot = [];
+        foreach ($previousKeys as $key) {
+            $previousSnapshot[$key] = [
+                $this->raw(['SMEMBERS', $key]),
+                $this->integer($this->raw(['PTTL', $key])),
+                $this->hashMap(str_replace(':distinct:', ':distinct-meta:', $key)),
+                $this->integer($this->raw(['PTTL', str_replace(':distinct:', ':distinct-meta:', $key)])),
+            ];
+        }
+
+        $currentLimiter = RateLimiterBuilder::fromFullCapabilityStore(
+            new RateLimiterConfig(
+                'public-fingerprint-only-outer',
+                'public-new-fingerprint',
+                'prod',
+                null,
+                'public-old-fingerprint',
             ),
             $this->store,
             new RecordingFailureSignalEmitter(),
