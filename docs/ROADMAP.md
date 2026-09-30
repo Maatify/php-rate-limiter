@@ -207,7 +207,9 @@ Before a POST-RC-CANDIDATE becomes implementation work:
 4. Classify the change as additive, material, breaking, or rejected.
 5. Create or supersede a durable Decision Record when public semantics or ownership materially change.
 6. Define backend capability, atomicity, rotation, failure, privacy, and Operational Read implications.
-7. Define specification/documentation version changes before implementation.
+7. Define the required contract/documentation updates and identify any package,
+   runtime, or protocol version impact only when such an impact is real and
+   applicable.
 8. Require focused unit/system/integration evidence and real backend evidence where applicable.
 9. Extend Consumer Verification when the public installed-package contract changes.
 10. Run Real Host validation when the change materially affects Host integration.

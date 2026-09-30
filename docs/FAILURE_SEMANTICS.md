@@ -3,7 +3,6 @@
 **Module:** RateLimiter
 **Namespace:** `Maatify\RateLimiter`
 **Status:** LOCKED — Security Contract
-**Spec Version:** `1.6.0`
 
 This document defines how the RateLimiter behaves when **internal failures occur**.
 It specifies when the system must fail closed, fail open, or enter a strictly bounded degraded mode.
@@ -327,7 +326,7 @@ These guardrails are best-effort and do not require shared storage.
 FAIL_CLOSED
 ```
 
-Version 1 of simple fixed-window throttling (`Maatify\RateLimiter\Service\SimpleRateLimiterInterface`)
+The current simple fixed-window throttling contract (`Maatify\RateLimiter\Service\SimpleRateLimiterInterface`)
 is FAIL_CLOSED only. It has no DEGRADED_MODE, no bounded local fallback, and no `FAIL_OPEN`
 mode, and it does not participate in the score-model circuit breaker described in §5: it is a
 separate, narrower semantic family (DEC-013) and reuses only the atomic budget-epoch storage
