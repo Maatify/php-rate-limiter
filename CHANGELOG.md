@@ -8,6 +8,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Added
+- Added Builder-coordinated Production Default Operational Read (DEC-012):
+  `RateLimiterBuilder::buildOperationalReader()` returns the typed
+  `CompositeRateLimitOperationalReaderInterface`, including simple fixed-window
+  operational inspection with Current-before-Previous, read-only resolution and
+  no migration or mutation during reads. The existing
+  `RateLimitOperationalReaderInterface` remains the Advanced Path.
 - Added DEC-013 weighted simple fixed-window consumption. `consume()` now
   accepts a positive caller-supplied `$cost = 1`; existing two-argument calls
   remain compatible, while third-party interface implementers must accept the
@@ -42,6 +48,21 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   `docs/KEY_STRATEGY.md` §4.7 for the key contract.
 
 ### Changed
+- Enforced exact PHP-integer representability for simple fixed-window reset
+  boundaries (DEC-014): unrepresentable boundaries and backend-impossible
+  expiries are rejected before enforcement state changes, and Operational Read
+  applies the same checked arithmetic. Public DTO and storage signatures remain
+  unchanged.
+- Reconciled semantic clock authority (DEC-016): capabilities receiving
+  caller-supplied semantic `now` use it as the time authority and Redis Lua does
+  not substitute Redis `TIME`; primitives without caller semantic time may
+  remain Redis-time authoritative. Public interfaces and custom/fixed Clock
+  behavior remain coherent.
+- Enforced the non-negative semantic Unix timestamp domain (DEC-017): negative
+  caller timestamps fail before backend mutation or use, persisted semantic
+  timestamps are validated as canonical non-negative integers, epoch `0`
+  remains valid where applicable, and malformed persisted temporal state fails
+  explicitly without silent repair or overwrite.
 - Clarified the failure contract (DEC-015): public
   `BackendFailureException` is the explicit provenance for operational backend
   failures that may enter score-runtime circuit/fallback; configuration,
