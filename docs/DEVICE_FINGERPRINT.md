@@ -1,6 +1,6 @@
 # Device Fingerprint — Official Specification
 
-**Module:** RateLimiter
+**Package:** maatify/php-rate-limiter
 **Namespace:** `Maatify\RateLimiter`
 **Status:** LOCKED — Behavioral & Privacy Contract
 
@@ -602,11 +602,6 @@ Frequency analysis MUST NOT be used for identity inference.
   * Migration strategy
   * Changelog entry
 * Published old versions MUST remain readable during transition
-
-For this pre-release WU, the `v1` normalized identity has no published or
-deployed consumer evidence and therefore receives no compatibility shim. If
-such evidence appears, implementation MUST stop for Lead review before any
-state reset or migration strategy is chosen.
 
 ---
 

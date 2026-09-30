@@ -1,6 +1,6 @@
 # Rate Limiter — Decision Matrix (Official Specification)
 
-**Module:** RateLimiter
+**Package:** maatify/php-rate-limiter
 **Namespace:** `Maatify\RateLimiter`
 **Status:** LOCKED — Behavioral Contract
 **Scope:** Login, OTP, API Heavy Endpoints

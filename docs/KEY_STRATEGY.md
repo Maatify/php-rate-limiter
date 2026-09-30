@@ -1,6 +1,6 @@
 # RateLimiter — Key Strategy (Official)
 
-**Module:** RateLimiter
+**Package:** maatify/php-rate-limiter
 **Namespace:** `Maatify\RateLimiter`
 **Status:** LOCKED — Design & Security Contract
 
@@ -42,7 +42,7 @@ Keys are **security primitives**, not implementation details.
 
 ## 3. Canonical Evaluation Keys
 
-The module defines a **fixed, minimal key set**.
+The package defines a **fixed, minimal key set**.
 
 ### 3.1 K1 — IP / IP Prefix (Hierarchical IPv6 Aggregation)
 
