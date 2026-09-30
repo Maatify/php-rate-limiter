@@ -26,7 +26,7 @@ PHP library for deterministic, multi-signal rate-limit decisions.
 
 ## Package Status
 
-This package is in pre-release development. It is proprietary software, has no published stable release, and is not currently distributed through Packagist. Repository visibility does not grant open-source or general usage rights; authorized use requires written authorization or an applicable written license agreement from Maatify.
+This package is in pre-release development. It is proprietary software and is listed on Packagist for development distribution, but no tagged SemVer Release Candidate or stable release has been published yet. Repository visibility and registry presence do not grant open-source or general usage rights; authorized use requires written authorization or an applicable written license agreement from Maatify.
 
 ## Key Features
 
@@ -44,7 +44,7 @@ This package is in pre-release development. It is proprietary software, has no p
 
 ## Installation
 
-The package is not yet available through a published Composer registry. Authorized development consumers may use this repository as the Composer package source according to their project repository policy and the applicable written authorization or license agreement. Published installation instructions will be added when distribution is approved.
+The package is listed on Packagist for development distribution, but no tagged SemVer Release Candidate or stable release has been published yet. Authorized development consumers may install an explicitly selected development version according to their project stability policy and the applicable written authorization or license agreement. Versioned installation instructions will be documented when the Owner authorizes and publishes the first SemVer pre-release.
 
 ## Usage
 
