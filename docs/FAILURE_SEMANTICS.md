@@ -1,6 +1,6 @@
 # RateLimiter — Failure Semantics (Official)
 
-**Module:** RateLimiter
+**Package:** maatify/php-rate-limiter
 **Namespace:** `Maatify\RateLimiter`
 **Status:** LOCKED — Security Contract
 

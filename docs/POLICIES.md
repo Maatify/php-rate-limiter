@@ -1,11 +1,11 @@
 # Rate Limiter — Policy Presets (Official)
 
-**Module:** RateLimiter
+**Package:** maatify/php-rate-limiter
 **Namespace:** `Maatify\RateLimiter`
 **Status:** LOCKED — Policy Contract
 **Change Class:** Hardening Alignment
 
-This document defines the **official policy presets** provided by the Rate Limiter module.
+This document defines the **official policy presets** provided by the Rate Limiter package.
 
 Policies are **pre-configured, production-ready rule sets** built strictly on top of:
 

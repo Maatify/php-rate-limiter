@@ -5,9 +5,10 @@
 
 ## Current status
 
-This repository is in pre-release development. It has no published Stable
-release line and no published Release Candidate. No security support promise or
-release date is implied by this document.
+Version `v1.0.0-rc.1` is a published pre-release / Release Candidate. No
+Published Stable release line exists, and this RC does not establish a Stable
+support line. No Stable release is represented as published. No security support
+promise or release date is implied by this document.
 
 ## Reporting a vulnerability
 

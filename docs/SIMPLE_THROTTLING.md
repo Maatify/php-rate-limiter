@@ -1,6 +1,6 @@
 # RateLimiter — Simple Fixed-Window Throttling (Official)
 
-**Module:** RateLimiter
+**Package:** maatify/php-rate-limiter
 **Namespace:** `Maatify\RateLimiter`
 **Status:** LOCKED — Simple Throttling Contract
 
