@@ -4,13 +4,13 @@
 
 ![Maatify.dev](https://www.maatify.dev/assets/img/img/maatify_logo_white.svg)
 
-[![Status](https://img.shields.io/badge/Status-Release%20Candidate-orange)](README.md)
+[![Status](https://img.shields.io/badge/Status-Release%20Candidate-orange)](CHANGELOG.md)
 [![Published Version](https://img.shields.io/badge/Published%20Version-1.0.0--rc.1-orange)](https://packagist.org/packages/maatify/php-rate-limiter)
 [![PHP 8.4+](https://img.shields.io/badge/PHP-8.4%2B-777BB4.svg)](composer.json)
 [![License: Proprietary](https://img.shields.io/badge/License-Proprietary-red.svg)](LICENSE)
 [![PHPStan Level Max](https://img.shields.io/badge/PHPStan-Level%20Max-4F5B93.svg)](phpstan.neon)
 
-[![Packagist](https://img.shields.io/packagist/v/maatify/php-rate-limiter?include_prereleases&label=Packagist)](https://packagist.org/packages/maatify/php-rate-limiter)
+[![Registry: Packagist](https://img.shields.io/badge/Registry-Packagist-blue)](https://packagist.org/packages/maatify/php-rate-limiter)
 [![Monthly Downloads](https://img.shields.io/packagist/dm/maatify/php-rate-limiter)](https://packagist.org/packages/maatify/php-rate-limiter)
 [![Total Downloads](https://img.shields.io/packagist/dt/maatify/php-rate-limiter)](https://packagist.org/packages/maatify/php-rate-limiter)
 [![Maatify Ecosystem](https://img.shields.io/badge/Maatify-Ecosystem-blueviolet)](https://github.com/Maatify)
