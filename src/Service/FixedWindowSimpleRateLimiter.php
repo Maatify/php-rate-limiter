@@ -15,10 +15,10 @@ use Maatify\SharedCommon\Contracts\ClockInterface;
 /**
  * Production implementation of SimpleRateLimiterInterface (DEC-013).
  *
- * Version 1 is FIXED WINDOW, positive caller-supplied cost per consume
- * (defaulting to 1), one policy-defined limit and interval, one
- * caller-supplied subject, atomic consume, and a deterministic fixed reset
- * boundary. It reuses the existing atomic
+ * The current simple-throttling contract uses FIXED WINDOW, positive
+ * caller-supplied cost per consume (defaulting to 1), one policy-defined
+ * limit and interval, one caller-supplied subject, atomic consume, and a
+ * deterministic fixed reset boundary. It reuses the existing atomic
  * budget-epoch persistence primitives; no new storage backend family is
  * introduced. It is FAIL_CLOSED only and does not create score state,
  * correlation observations, or authentication budgets: its key namespace is
@@ -31,11 +31,20 @@ final class FixedWindowSimpleRateLimiter implements SimpleRateLimiterInterface
 
     /**
      * @param SimpleThrottlePolicyInterface[] $policies
+     * @param string $keySecret Active, non-blank key-generation secret. Not
+     *     trimmed or otherwise normalized: accepted surrounding whitespace is
+     *     retained byte-for-byte.
+     * @param string $environmentScope Non-blank environment namespace included in derived keys.
+     * @param ?string $previousKeySecret Optional previous-generation secret;
+     *     null means no previous generation. When provided, it must not be
+     *     empty or whitespace-only, and is likewise never trimmed or normalized.
      * @throws RateLimiterException When any supplied policy — including a
      *     directly implemented SimpleThrottlePolicyInterface, not only
      *     FixedWindowThrottlePolicy — has a blank name, a non-positive
-     *     limit, or a non-positive interval. Validation happens here, before
-     *     any storage mutation can occur.
+     *     limit, or a non-positive interval; or when $keySecret or
+     *     $environmentScope is empty or whitespace-only, or a non-null
+     *     $previousKeySecret is empty or whitespace-only. Validation happens
+     *     here, before any storage mutation can occur.
      */
     public function __construct(
         array $policies,
@@ -47,6 +56,16 @@ final class FixedWindowSimpleRateLimiter implements SimpleRateLimiterInterface
         #[\SensitiveParameter]
         private readonly ?string $previousKeySecret = null,
     ) {
+        if (trim($keySecret) === '') {
+            throw new RateLimiterException('Active key secret must not be empty or whitespace-only.');
+        }
+        if (trim($environmentScope) === '') {
+            throw new RateLimiterException('Environment scope must not be empty or whitespace-only.');
+        }
+        if ($previousKeySecret !== null && trim($previousKeySecret) === '') {
+            throw new RateLimiterException('Previous key secret must not be empty or whitespace-only.');
+        }
+
         $indexed = [];
         foreach ($policies as $policy) {
             self::assertValidPolicy($policy);
@@ -71,9 +90,12 @@ final class FixedWindowSimpleRateLimiter implements SimpleRateLimiterInterface
     }
 
     /**
-     * @throws RateLimiterException When the policy is unregistered, the
-     *     subject is blank, cost is not positive, or previous-generation
-     *     migration is required but the store lacks BudgetSeedStoreInterface.
+     * @throws RateLimiterException When a configuration/contract validation
+     *     fails: the policy is unregistered, the subject is blank, cost is not
+     *     positive, a required previous-generation migration capability is
+     *     missing, or the effective fixed reset boundary is not representable
+     *     as a PHP integer. Backend/runtime storage failures retain the typed
+     *     FAIL_CLOSED result behavior.
      */
     public function consume(string $policyName, string $subject, int $cost = 1): SimpleRateLimitResultDTO
     {
@@ -110,7 +132,7 @@ final class FixedWindowSimpleRateLimiter implements SimpleRateLimiterInterface
             );
         }
 
-        $resetAt = $state->epochStart + $intervalSeconds;
+        $resetAt = self::resetAt($state->epochStart, $intervalSeconds);
 
         if ($state->count <= $limit) {
             return new SimpleRateLimitResultDTO(
@@ -171,6 +193,7 @@ final class FixedWindowSimpleRateLimiter implements SimpleRateLimiterInterface
         }
 
         if ($currentState !== null) {
+            self::assertResetBoundaryRepresentable($currentState->epochStart, $intervalSeconds);
             return $this->incrementBudget($currentKey, $intervalSeconds, $cost);
         }
 
@@ -187,6 +210,7 @@ final class FixedWindowSimpleRateLimiter implements SimpleRateLimiterInterface
             }
 
             if ($previousState !== null) {
+                self::assertResetBoundaryRepresentable($previousState->epochStart, $intervalSeconds);
                 if (! $this->store instanceof BudgetSeedStoreInterface) {
                     throw new RateLimiterException(
                         'Simple fixed-window rotation migration requires the BudgetSeedStoreInterface '
@@ -203,6 +227,8 @@ final class FixedWindowSimpleRateLimiter implements SimpleRateLimiterInterface
             }
         }
 
+        self::assertResetBoundaryRepresentable($this->clock->now()->getTimestamp(), $intervalSeconds);
+
         return $this->incrementBudget($currentKey, $intervalSeconds, $cost);
     }
 
@@ -216,6 +242,22 @@ final class FixedWindowSimpleRateLimiter implements SimpleRateLimiterInterface
             return $this->store->incrementBudget($key, $intervalSeconds, $cost);
         } catch (\Throwable) {
             return null;
+        }
+    }
+
+    private static function resetAt(int $epochStart, int $intervalSeconds): int
+    {
+        self::assertResetBoundaryRepresentable($epochStart, $intervalSeconds);
+
+        return $epochStart + $intervalSeconds;
+    }
+
+    private static function assertResetBoundaryRepresentable(int $epochStart, int $intervalSeconds): void
+    {
+        if ($epochStart > PHP_INT_MAX - $intervalSeconds) {
+            throw new RateLimiterException(
+                'Simple fixed-window reset boundary must be representable as a PHP integer.',
+            );
         }
     }
 

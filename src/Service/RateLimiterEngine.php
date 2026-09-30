@@ -22,6 +22,7 @@ use Maatify\RateLimiter\DTO\RateLimitContextMetadataDTO;
 use Maatify\RateLimiter\DTO\RateLimitMetadataDTO;
 use Maatify\RateLimiter\DTO\RateLimitResultDTO;
 use Maatify\RateLimiter\Exception\RateLimiterException;
+use Maatify\RateLimiter\Exception\BackendFailureException;
 use Maatify\SharedCommon\Contracts\ClockInterface;
 
 /**
@@ -227,8 +228,10 @@ class RateLimiterEngine implements RateLimiterRuntimeInterface
     /**
      * Evaluate a request using the policy named by its command.
      *
-     * Backend failures are converted to the policy's configured failure mode
-     * and may use the bounded local fallback limiter.
+     * Explicitly typed operational backend failures are converted to the
+     * policy's configured failure mode and may use the bounded local fallback
+     * limiter. Unknown throwables, TypeError, invalid input, and malformed
+     * state preserve their original exception contracts.
      */
     public function limit(RateLimitContextDTO $context, RateLimitCommand $request): RateLimitResultDTO
     {
@@ -283,7 +286,7 @@ class RateLimiterEngine implements RateLimiterRuntimeInterface
                     new RateLimitContextMetadataDTO('k4_concurrency_conflict', 'k4'),
                 ),
             );
-        } catch (\Throwable $e) {
+        } catch (BackendFailureException) {
             $this->circuitBreaker->reportFailure($policyName);
 
             $mode = $this->failureResolver->resolve($policy, $this->circuitBreaker);
@@ -333,8 +336,10 @@ class RateLimiterEngine implements RateLimiterRuntimeInterface
      * An account-less context returns false. An ineligible policy, active
      * re-entry guard, or non-closed circuit is rejected. Valid evidence returns
      * true only once; stale, expired, generation-mismatched, absent, or replayed
-     * evidence returns false. Backend failure or corruption is reported to the
-     * circuit breaker and propagated. The claim does not mutate punishment
+     * evidence returns false. Only an explicitly typed operational backend
+     * failure is reported to the circuit breaker and propagated; corruption
+     * and other non-backend contract failures remain their original explicit
+     * exceptions. The claim does not mutate punishment
      * satisfaction, evidence, or score lifecycle state.
      *
      * @throws RateLimiterException when the policy or circuit state disallows
@@ -364,7 +369,7 @@ class RateLimiterEngine implements RateLimiterRuntimeInterface
             $claimed = $this->pipeline->claimPostPunishmentReentry($context, $device, $policyName, $reentryId);
             $this->circuitBreaker->reportSuccess($policyName);
             return $claimed;
-        } catch (\Throwable $exception) {
+        } catch (BackendFailureException $exception) {
             $this->circuitBreaker->reportFailure($policyName);
             throw $exception;
         }

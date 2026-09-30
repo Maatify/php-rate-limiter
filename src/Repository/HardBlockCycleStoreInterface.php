@@ -14,6 +14,11 @@ interface HardBlockCycleStoreInterface extends RateLimitStoreInterface
 {
     /**
      * Persist a hard block and update its logical cycle state atomically.
+     *
+     * `$now` is a caller-supplied semantic Unix timestamp and is
+     * caller-time authoritative per DEC-016. Per DEC-017 it MUST be a
+     * non-negative Unix timestamp (`$now >= 0`); a negative value fails
+     * explicitly before any backend mutation.
      */
     public function blockWithCycleTracking(
         string $currentKey,
@@ -29,6 +34,11 @@ interface HardBlockCycleStoreInterface extends RateLimitStoreInterface
 
     /**
      * Read retained decay-pause time without mutating persistence.
+     *
+     * `$fromTimestamp` and `$now` are caller-supplied semantic Unix
+     * timestamps and are caller-time authoritative per DEC-016. Per
+     * DEC-017 both MUST be non-negative Unix timestamps (`>= 0`); a
+     * negative value fails explicitly before relying on it in arithmetic.
      */
     public function readDecayPauseState(
         string $currentKey,

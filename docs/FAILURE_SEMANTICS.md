@@ -3,12 +3,31 @@
 **Module:** RateLimiter
 **Namespace:** `Maatify\RateLimiter`
 **Status:** LOCKED — Security Contract
-**Spec Version:** `1.5.0`
 
 This document defines how the RateLimiter behaves when **internal failures occur**.
 It specifies when the system must fail closed, fail open, or enter a strictly bounded degraded mode.
 
 Failure semantics are **security-critical** and MUST NOT be altered implicitly.
+
+DEC-015 defines the Gate-11 resilience boundary: operational backend failures
+use the explicit package-owned `BackendFailureException` contract. Only that
+typed contract enters circuit accounting and bounded fallback. Invalid input,
+configuration, capability/contract violations, malformed persisted state,
+invariant failures, programming errors, `TypeError`, unknown `Throwable`, and
+untyped Host-store exceptions remain explicit exceptions and never become
+`FAIL_OPEN` or `DEGRADED_MODE` allowance. If persistent circuit state itself is
+unavailable, the package may use a bounded process-local emergency circuit.
+While that local state is active it is authoritative for the current runtime:
+restored persistence is not read for reconciliation, replacement, or writeback,
+and storage recovery is not circuit recovery. Emergency ownership has two
+bounded lifecycle forms. A tripped `OPEN`/`HALF_OPEN` episode, or a `CLOSED`
+state with active local protection, remains authoritative through the locked
+local recovery path until genuine `CLOSED` recovery. A pre-trip `CLOSED`
+episode remains authoritative while at least one failure timestamp satisfies
+`failureAt >= now - 10` (so `T+10` remains live) or other local protection is
+active. Once that pre-trip state is quiescent, the same load path discards it
+and resumes normal persistent ownership without an `OPEN`/`HALF_OPEN` recovery
+sequence. Locked recovery timings and signals remain unchanged.
 
 Typed bounded backend-failure fallback is governed by DEC-011. It is separate
 from normal-runtime `PolicyCapabilityEnum` classification and is declared through
@@ -19,6 +38,12 @@ returns a generic `FailureFallbackConfigurationDTO` made of typed
 and window). Official presets and direct custom policies share this exact
 same runtime contract and the exact same validated `LocalFallbackLimiter`
 evaluation; there is no separate "official" or "custom" fallback code path.
+
+Simple fixed-window configuration/contract failures remain exceptions: an
+unrepresentable integer reset boundary under DEC-014 is rejected before
+enforcement mutation and is never converted into quota exhaustion or
+`FAIL_CLOSED`. Backend/runtime storage failures retain the existing simple
+throttle `FAIL_CLOSED` behavior, and Operational Read remains read-only.
 
 The package-owned zero-configuration presets and their locked caps, resolved
 internally by the official policies, are:
@@ -44,6 +69,12 @@ allowance. Fallback counters are namespaced by policy identity
 policies with numerically identical configurations — including a custom
 policy that happens to reuse an official preset's exact numbers — never
 share counters.
+
+Each policy/dimension fallback population tracks at most 4096 active subjects.
+There is no active-entry eviction. Once full, previously unseen subjects share
+one conservative overflow bucket for the applicable window. The overflow
+bucket cannot create allowance or reset any tracked subject, and expired
+populations are collected during fallback activity.
 
 ---
 
@@ -295,7 +326,7 @@ These guardrails are best-effort and do not require shared storage.
 FAIL_CLOSED
 ```
 
-Version 1 of simple fixed-window throttling (`Maatify\RateLimiter\Service\SimpleRateLimiterInterface`)
+The current simple fixed-window throttling contract (`Maatify\RateLimiter\Service\SimpleRateLimiterInterface`)
 is FAIL_CLOSED only. It has no DEGRADED_MODE, no bounded local fallback, and no `FAIL_OPEN`
 mode, and it does not participate in the score-model circuit breaker described in §5: it is a
 separate, narrower semantic family (DEC-013) and reuses only the atomic budget-epoch storage
@@ -354,6 +385,9 @@ Per policy, per node:
 * **Minimum Healthy Interval (before reset):** 2 minutes of sustained success
 * **Re-Entry Guard:** DEGRADED_MODE MUST NOT be re-entered more than **2 times** within **30 minutes** for the same policy.
 
+The initial `CLOSED → OPEN` trip is not a re-entry. Only a genuine
+`HALF_OPEN → OPEN` transition consumes a re-entry allowance.
+
 ### 5.2 State Machine and Recovery Probes
 
 The circuit uses only the following states:
@@ -380,8 +414,10 @@ the healthy-interval anchor, and keeps the current request degraded. No normal
 pipeline runs and no `CB_RECOVERED` signal is emitted at that point. After a
 further 120 seconds, a second leased healthy probe changes `HALF_OPEN` to
 `CLOSED`, clears the active trip/open epoch, emits `CB_RECOVERED` once, and may
-allow that same request to continue through normal evaluation. A false or thrown
-health check is a failed probe, not a normal request failure.
+allow that same request to continue through normal evaluation. An explicit
+`false` result or typed `BackendFailureException` is a failed probe. An
+unknown/untyped exception or `TypeError` propagates unchanged and is not
+converted into failed-probe, circuit, or degraded semantics.
 
 Probe failure while already `OPEN` keeps the circuit `OPEN`, clears the healthy
 anchor, restarts `openSince`, and does not append a re-entry or emit another
@@ -419,6 +455,10 @@ This prevents deliberate “flap to harvest” cycles.
 * Failure mode selection MUST be deterministic
 * Silent fallback behavior is forbidden
 * Failure handling MUST be testable
+
+The public `FailureStateDTO::failureCount` is a read-time summary of failure
+timestamps still inside the inclusive trip window. Reading it does not persist
+state merely to prune expired timestamps.
 
 ---
 

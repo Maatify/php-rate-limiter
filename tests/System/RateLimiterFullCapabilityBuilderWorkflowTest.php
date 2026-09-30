@@ -8,6 +8,7 @@ use Maatify\RateLimiter\Builder\RateLimiterBuilder;
 use Maatify\RateLimiter\Command\RateLimitCommand;
 use Maatify\RateLimiter\Config\RateLimiterConfig;
 use Maatify\RateLimiter\DTO\CircuitBreakerStateDTO;
+use Maatify\RateLimiter\DTO\FailureSignalDTO;
 use Maatify\RateLimiter\DTO\FailureStateDTO;
 use Maatify\RateLimiter\DTO\RateLimitContextDTO;
 use Maatify\RateLimiter\DTO\RateLimitResultDTO;
@@ -289,6 +290,38 @@ final class RateLimiterFullCapabilityBuilderWorkflowTest extends TestCase
         self::assertSame(2, $currentBudget->count);
     }
 
+    /**
+     * Regression proof for the write/read namespace split: EvaluationPipeline
+     * (via the built engine) writes the K5 known-device micro-cap state, and
+     * RateLimitOperationalReader (via the same Builder's operational reader)
+     * must resolve the identical environment-scoped namespace to observe it.
+     * If either side's key derivation omits or diverges on {env} again, this
+     * assertion fails because the reader will not find what the pipeline
+     * wrote.
+     */
+    public function testOperationalReaderSurfacesTheSameKnownDeviceMicroCapStateThePipelineWrote(): void
+    {
+        $clock = new FixedClock('2025-01-01 12:00:00');
+        $store = new FullCapabilityInMemoryStore($clock);
+        $context = $this->knownDeviceContext('microcap-reader-agreement');
+        $builder = RateLimiterBuilder::fromFullCapabilityStore(
+            new RateLimiterConfig('key-secret', 'fingerprint-secret', 'prod'),
+            $store,
+            new RecordingFailureSignalEmitter(),
+        )->withClock($clock);
+        $limiter = $builder->build();
+        $reader = $builder->buildOperationalReader();
+
+        $limiter->limit($context, RateLimitCommand::recordFailure('login_protection'));
+
+        $snapshot = $reader->readScorePolicy($context, 'login_protection');
+
+        self::assertNotNull($snapshot->budget);
+        self::assertNotNull($snapshot->budget->knownDeviceMicroCap);
+        self::assertSame(1, $snapshot->budget->knownDeviceMicroCap->count);
+        self::assertFalse($snapshot->budget->knownDeviceMicroCapFromPreviousGeneration);
+    }
+
     public function testPublicWorkflowPersistsHardBlockCycleState(): void
     {
         $clock = new FixedClock('2025-01-01 12:00:00');
@@ -358,6 +391,81 @@ final class RateLimiterFullCapabilityBuilderWorkflowTest extends TestCase
         );
     }
 
+    #[DataProvider('fullOutagePolicies')]
+    public function testProductionDefaultFullCapabilityOutageUsesLockedProcessLocalEmergencyCircuit(
+        string $policyName,
+        string $initialDecision,
+        string $initialFailureMode,
+    ): void {
+        $clock = new FixedClock('2025-01-01 12:00:00');
+        $store = new FullCapabilityInMemoryStore($clock);
+        $signals = new RecordingFailureSignalEmitter();
+        $persistent = new CircuitBreakerStateDTO(
+            FailureStateDTO::STATE_CLOSED,
+            [1],
+            1,
+            0,
+            0,
+            [1],
+        );
+        $store->save($policyName, $persistent);
+        $persistentSaveCount = $store->circuitBreakerStore()->saveCount();
+        $store->available = false;
+        $store->circuitBreakerStore()->available = false;
+        $limiter = RateLimiterBuilder::fromFullCapabilityStore(
+            new RateLimiterConfig('key-secret', 'fingerprint-secret', 'prod'),
+            $store,
+            $signals,
+        )->withClock($clock)->build();
+        $context = $this->context('aggregate-outage-' . $policyName, ['device' => 'outage']);
+        $command = RateLimitCommand::recordFailure($policyName);
+
+        $first = $limiter->limit($context, $command);
+        self::assertSame($initialDecision, $first->decision);
+        self::assertSame($initialFailureMode, $first->failureMode);
+        self::assertSame($initialDecision, $limiter->limit($context, $command)->decision);
+        $trip = $limiter->limit($context, $command);
+        self::assertSame(RateLimitResultDTO::DECISION_ALLOW, $trip->decision);
+        self::assertSame('DEGRADED_MODE', $trip->failureMode);
+
+        $store->available = true;
+        $store->circuitBreakerStore()->available = true;
+        $openedAt = $clock->now()->getTimestamp();
+
+        $clock->setNow(new \DateTimeImmutable('@' . ($openedAt + 1)));
+        $open = $limiter->limit($context, $command);
+        self::assertSame('DEGRADED_MODE', $open->failureMode);
+        self::assertSame($persistent, $store->load($policyName));
+        self::assertSame($persistentSaveCount, $store->circuitBreakerStore()->saveCount());
+        self::assertSame(
+            [FailureSignalDTO::TYPE_CB_OPENED],
+            array_map(static fn(FailureSignalDTO $signal): string => $signal->type, $signals->getEmitted()),
+        );
+
+        $clock->setNow(new \DateTimeImmutable('@' . ($openedAt + 300)));
+        $halfOpen = $limiter->limit($context, $command);
+        self::assertSame('DEGRADED_MODE', $halfOpen->failureMode);
+        self::assertSame($persistent, $store->load($policyName));
+        self::assertSame($persistentSaveCount, $store->circuitBreakerStore()->saveCount());
+        self::assertCount(1, $signals->getEmitted());
+
+        $clock->setNow(new \DateTimeImmutable('@' . ($openedAt + 419)));
+        self::assertSame('DEGRADED_MODE', $limiter->limit($context, $command)->failureMode);
+        self::assertSame($persistent, $store->load($policyName));
+        self::assertSame($persistentSaveCount, $store->circuitBreakerStore()->saveCount());
+        self::assertCount(1, $signals->getEmitted());
+
+        $clock->setNow(new \DateTimeImmutable('@' . ($openedAt + 420)));
+        self::assertSame('NORMAL', $limiter->limit($context, $command)->failureMode);
+        self::assertSame($persistent, $store->load($policyName));
+        self::assertSame($persistentSaveCount, $store->circuitBreakerStore()->saveCount());
+        self::assertSame(
+            [FailureSignalDTO::TYPE_CB_OPENED, FailureSignalDTO::TYPE_CB_RECOVERED],
+            array_map(static fn(FailureSignalDTO $signal): string => $signal->type, $signals->getEmitted()),
+        );
+        self::assertSame(FailureStateDTO::STATE_CLOSED, $store->load($policyName)->status);
+    }
+
     public function testExistingMultiStoreBuilderConstructorStillRunsPublicWorkflow(): void
     {
         $clock = new FixedClock('2025-01-01 12:00:00');
@@ -389,12 +497,23 @@ final class RateLimiterFullCapabilityBuilderWorkflowTest extends TestCase
         FixedClock $clock,
         FullCapabilityInMemoryStore $store,
         RateLimiterConfig $config,
+        ?RecordingFailureSignalEmitter $emitter = null,
     ): RateLimiterInterface {
         return RateLimiterBuilder::fromFullCapabilityStore(
             $config,
             $store,
-            new RecordingFailureSignalEmitter(),
+            $emitter ?? new RecordingFailureSignalEmitter(),
         )->withClock($clock)->build();
+    }
+
+    /**
+     * @return iterable<string, array{string, string, string}>
+     */
+    public static function fullOutagePolicies(): iterable
+    {
+        yield 'api-heavy' => ['api_heavy_protection', RateLimitResultDTO::DECISION_ALLOW, 'FAIL_OPEN'];
+        yield 'login' => ['login_protection', RateLimitResultDTO::DECISION_HARD_BLOCK, 'FAIL_CLOSED'];
+        yield 'otp' => ['otp_protection', RateLimitResultDTO::DECISION_HARD_BLOCK, 'FAIL_CLOSED'];
     }
 
     /**
@@ -462,7 +581,7 @@ final class RateLimiterFullCapabilityBuilderWorkflowTest extends TestCase
     ): string {
         return hash_hmac(
             'sha256',
-            'login_protection:rate_limiter:microcap:k5:v1:'
+            'login_protection:rate_limiter:microcap:k5:v1:prod:'
                 . ($context->accountId ?? '') . ':' . $this->fingerprintHash($context, $fingerprintSecret),
             $outerSecret,
         );

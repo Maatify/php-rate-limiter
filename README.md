@@ -26,7 +26,7 @@ PHP library for deterministic, multi-signal rate-limit decisions.
 
 ## Package Status
 
-This package is in pre-release development. It is proprietary software, has no published stable release, and is not currently distributed through Packagist. Repository visibility does not grant open-source or general usage rights; authorized use requires written authorization or an applicable written license agreement from Maatify.
+This package is in pre-release development. It is proprietary software and is listed on Packagist for development distribution, but no tagged SemVer Release Candidate or stable release has been published yet. Repository visibility and registry presence do not grant open-source or general usage rights; authorized use requires written authorization or an applicable written license agreement from Maatify.
 
 ## Key Features
 
@@ -38,13 +38,13 @@ This package is in pre-release development. It is proprietary software, has no p
 ## Requirements
 
 - PHP `^8.4`.
-- PHP extensions `filter`, `hash`, `json`, and `pcre`.
+- PHP extensions `date`, `filter`, `hash`, `json`, `pcre`, and `random`.
 - `maatify/exceptions` `^1.0`.
 - `maatify/shared-common` `^1.0`.
 
 ## Installation
 
-The package is not yet available through a published Composer registry. Authorized development consumers may use this repository as the Composer package source according to their project repository policy and the applicable written authorization or license agreement. Published installation instructions will be added when distribution is approved.
+The package is listed on Packagist for development distribution, but no tagged SemVer Release Candidate or stable release has been published yet. Authorized development consumers may install an explicitly selected development version according to their project stability policy and the applicable written authorization or license agreement. Versioned installation instructions will be documented when the Owner authorizes and publishes the first SemVer pre-release.
 
 ## Usage
 
@@ -129,6 +129,12 @@ through `RedisCommandExecutorInterface` or `CallableRedisCommandExecutor`.
 
 `RateLimiterInterface::limit()` is the framework-agnostic consumer entrypoint. Hosts provide a `RateLimitContextDTO` and a `RateLimitCommand`, then handle the returned `RateLimitResultDTO` at their transport boundary.
 
+The additive simple fixed-window enforcement path is:
+
+`RateLimiterBuilder` → `withSimpleThrottlePolicy(...)` → `build()` → `CompositeRateLimiterRuntimeInterface` → `SimpleRateLimiterInterface::consume(policyName, subject, cost = 1)` → `SimpleRateLimitResultDTO`.
+
+It is an opt-in weighted quota path governed by DEC-013 and DEC-014; it does not replace the existing score-based `RateLimiterInterface::limit()` path.
+
 The default Login and OTP policies opt into DEC-007 generation-bound K4
 post-punishment re-entry. Consumers that need the one-shot application handoff
 may type-hint `RateLimiterRuntimeInterface` and call
@@ -153,7 +159,15 @@ The [Package Reference](RATE_LIMITER_PACKAGE_REFERENCE.md) contains the complete
 
 ## Exception and Error Propagation
 
-Storage and atomicity failures are handled through the package's policy-specific failure semantics; host storage adapters must not swallow integration failures or silently weaken required atomic guarantees. The enforcement path owns the resulting rate-limit failure decision, while the read-only operational reader does not convert integration failures into an enforcement result.
+Only an explicitly classified operational backend failure represented by
+`BackendFailureException` enters the score-runtime circuit and bounded fallback.
+Invalid input, configuration, missing capability, malformed or corrupt state,
+programming failures, and unknown or untyped throwables retain their explicit
+package/contract exception behavior; Host adapters must not reclassify unknown
+failures as backend outages. The enforcement path owns the resulting score
+failure decision, while the read-only operational reader does not convert
+integration failures into an enforcement result. Simple fixed-window storage
+failures remain the separate DEC-013 `FAIL_CLOSED` contract.
 
 See [Failure Semantics](docs/FAILURE_SEMANTICS.md) and the [Package Reference](RATE_LIMITER_PACKAGE_REFERENCE.md) for the detailed failure contract.
 

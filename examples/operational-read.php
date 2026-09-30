@@ -8,6 +8,7 @@ use Maatify\RateLimiter\Config\OtpProtectionPolicy;
 use Maatify\RateLimiter\Config\RateLimiterConfig;
 use Maatify\RateLimiter\Contract\FailureSignalEmitterInterface;
 use Maatify\RateLimiter\DTO\BlockStateDTO;
+use Maatify\RateLimiter\DTO\BoundedDistinctResultDTO;
 use Maatify\RateLimiter\DTO\BudgetStateDTO;
 use Maatify\RateLimiter\DTO\DecayPauseStateDTO;
 use Maatify\RateLimiter\DTO\HardBlockCycleResultDTO;
@@ -17,6 +18,7 @@ use Maatify\RateLimiter\DTO\RateLimitContextDTO;
 use Maatify\RateLimiter\DTO\RateLimitStateDTO;
 use Maatify\RateLimiter\Repository\CircuitBreakerProbeStoreInterface;
 use Maatify\RateLimiter\Repository\CorrelationStoreInterface;
+use Maatify\RateLimiter\Repository\BoundedCorrelationStoreInterface;
 use Maatify\RateLimiter\Repository\RateLimitStoreInterface;
 use Maatify\RateLimiter\Repository\HardBlockCycleStoreInterface;
 use Maatify\RateLimiter\Service\AntiEquilibriumGate;
@@ -310,8 +312,11 @@ final class OperationalExampleRateLimitStore implements HardBlockCycleStoreInter
     }
 }
 
-final class OperationalExampleCorrelationStore implements CorrelationStoreInterface
+final class OperationalExampleCorrelationStore implements BoundedCorrelationStoreInterface
 {
+    /** @var array<string, array<string, true>> */
+    private array $boundedSets = [];
+
     private function fail(): never
     {
         throw new RuntimeException('correlation persistence is not configured in this read-only example');
@@ -323,11 +328,30 @@ final class OperationalExampleCorrelationStore implements CorrelationStoreInterf
     }
     public function incrementWatchFlag(string $key, int $ttlSeconds): int
     {
-        $this->fail();
+        return 0;
     }
     public function getWatchFlag(string $key): int
     {
-        $this->fail();
+        return 0;
+    }
+
+    public function addDistinctBounded(
+        string $key,
+        string $item,
+        int $ttlSeconds,
+        int $maxDistinct,
+    ): BoundedDistinctResultDTO {
+        $set = $this->boundedSets[$key] ?? [];
+        if (isset($set[$item])) {
+            return new BoundedDistinctResultDTO(count($set), true);
+        }
+        if (count($set) >= $maxDistinct) {
+            return new BoundedDistinctResultDTO(count($set), false);
+        }
+        $set[$item] = true;
+        $this->boundedSets[$key] = $set;
+
+        return new BoundedDistinctResultDTO(count($set), true);
     }
 }
 
@@ -396,7 +420,10 @@ $context = new RateLimitContextDTO(
     ip: '203.0.113.20',
     ua: 'Mozilla/5.0 Chrome/123',
     accountId: 'account-123',
-    clientFingerprint: ['platform' => 'web'],
+    // This focused Advanced Path example intentionally omits a device
+    // fingerprint because the lightweight correlation adapter above does not
+    // implement the bounded device-cap capability required for one.
+    clientFingerprint: null,
 );
 $limiter->limit($context, RateLimitCommand::recordFailure('otp_protection'));
 

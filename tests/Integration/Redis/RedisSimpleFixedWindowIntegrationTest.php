@@ -102,6 +102,58 @@ final class RedisSimpleFixedWindowIntegrationTest extends TestCase
         self::assertSame($denied->resetAt, $snapshot->resetAt);
     }
 
+    public function testUnrepresentableBoundaryIsRejectedBeforeRealRedisCreatesState(): void
+    {
+        $limiter = $this->limiter($this->clock, 'current-secret', null, PHP_INT_MAX);
+        $keysBefore = $this->executor->execute(['KEYS', '*']);
+
+        $this->expectException(\Maatify\RateLimiter\Exception\RateLimiterException::class);
+        $this->expectExceptionMessage('reset boundary must be representable');
+        try {
+            $limiter->consume('checkout', 'subject-redis-overflow');
+        } finally {
+            self::assertSame($keysBefore, $this->executor->execute(['KEYS', '*']));
+        }
+    }
+
+    public function testRedisLuaImpossibleExpiryFailsBeforeFreshBranchCreatesPartialState(): void
+    {
+        $redisLuaExactIntegerLimit = 9007199254740991;
+        $interval = $redisLuaExactIntegerLimit + 1;
+        $limiter = $this->limiter($this->clock, 'current-secret', null, $interval);
+        $keysBefore = $this->executor->execute(['KEYS', '*']);
+
+        $result = $limiter->consume('checkout', 'subject-redis-lua-overflow');
+
+        self::assertFalse($result->allowed);
+        self::assertSame('FAIL_CLOSED', $result->failureMode);
+        self::assertSame($keysBefore, $this->executor->execute(['KEYS', '*']));
+    }
+
+    public function testRedisLuaImpossibleExpiryFailsBeforeSeedBranchCreatesCurrentAndPreservesPrevious(): void
+    {
+        $redisLuaExactIntegerLimit = 9007199254740991;
+        $interval = $redisLuaExactIntegerLimit + 1;
+        $subject = 'subject-redis-lua-seed-overflow';
+        $previousKey = $this->redisBudgetKey('previous-secret', 2, $interval, $subject);
+        $previousState = [
+            'count', '1',
+            'epochStart', (string) $this->clock->now()->getTimestamp(),
+            'epochDuration', (string) $interval,
+        ];
+        $this->executor->execute(['HSET', $previousKey, ...$previousState]);
+        $this->executor->execute(['EXPIRE', $previousKey, 60]);
+        $previousRawValueBefore = $this->executor->execute(['HGETALL', $previousKey]);
+
+        $result = $this->limiter($this->clock, 'current-secret', 'previous-secret', $interval)
+            ->consume('checkout', $subject);
+
+        self::assertFalse($result->allowed);
+        self::assertSame('FAIL_CLOSED', $result->failureMode);
+        self::assertSame([], $this->executor->execute(['HGETALL', $this->redisBudgetKey('current-secret', 2, $interval, $subject)]));
+        self::assertSame($previousRawValueBefore, $this->executor->execute(['HGETALL', $previousKey]));
+    }
+
     public function testLargeCurrentCountRemainsExactPastLuaDoublePrecision(): void
     {
         if (PHP_INT_SIZE < 8) {
@@ -430,5 +482,26 @@ final class RedisSimpleFixedWindowIntegrationTest extends TestCase
             'prod',
             $previousKeySecret,
         );
+    }
+
+    private function redisBudgetKey(string $secret, int $limit, int $intervalSeconds, string $subject): string
+    {
+        $encode = static fn(string $component): string => pack('N', strlen($component)) . $component;
+        $logical = hash_hmac(
+            'sha256',
+            $encode('rate_limiter')
+            . $encode('simple_fixed_window')
+            . $encode('v1')
+            . $encode('prod')
+            . $encode('checkout')
+            . $encode((string) $limit)
+            . $encode((string) $intervalSeconds)
+            . $encode($subject),
+            $secret,
+        );
+
+        return 'maatify:rate-limiter:v1:'
+            . hash('sha256', 'integration:simple-throttle')
+            . ':budget:' . hash('sha256', $logical);
     }
 }

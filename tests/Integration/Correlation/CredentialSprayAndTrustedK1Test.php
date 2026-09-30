@@ -24,6 +24,7 @@ use Maatify\RateLimiter\Tests\Support\Clock\FixedClock;
 use Maatify\RateLimiter\Tests\Support\Correlation\StatefulInMemoryCorrelationStore;
 use Maatify\RateLimiter\Tests\Support\RateLimiter\InMemoryRateLimitStore;
 use PHPUnit\Framework\TestCase;
+use PHPUnit\Framework\Attributes\DataProvider;
 
 final class CredentialSprayAndTrustedK1Test extends TestCase
 {
@@ -443,9 +444,7 @@ final class CredentialSprayAndTrustedK1Test extends TestCase
         self::assertNull($this->store->checkBlock($this->keyForContext('login_protection', 'k4', $context, $device)));
     }
 
-    /**
-     * @dataProvider authoritativeTrustedKeyProvider
-     */
+    #[DataProvider('authoritativeTrustedKeyProvider')]
     public function testTrustedSessionStillRejectsAuthoritativeK2ThroughK5Blocks(string $keyType): void
     {
         $pipeline = $this->createPipeline();

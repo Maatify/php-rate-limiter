@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace Maatify\RateLimiter\Tests\Unit\Tooling;
 
 use PHPUnit\Framework\TestCase;
+use PHPUnit\Framework\Attributes\DataProvider;
 
 final class PerCs31DeltaVerifierTest extends TestCase
 {
@@ -44,9 +45,7 @@ final class PerCs31DeltaVerifierTest extends TestCase
         }
     }
 
-    /**
-     * @dataProvider deltaFixtures
-     */
+    #[DataProvider('deltaFixtures')]
     public function testValidFixturePassesAndInvalidFixtureIsNotSilentlyAccepted(
         string $rule,
         string $validFixture,

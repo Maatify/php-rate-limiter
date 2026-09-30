@@ -117,11 +117,8 @@ final class RateLimiterBudgetRotationContinuityTest extends TestCase
         $newK4Key = $this->key('login_protection', 'k4', $accountId, 'new_secret');
         $oldBudget = $baseOnlyStore->incrementBudget($oldK4Key, 86400, 19);
 
-        $result = $engine->limit($context, RateLimitCommand::recordFailure('login_protection'));
-
-        $this->assertSame(RateLimitResultDTO::DECISION_HARD_BLOCK, $result->decision);
-        $this->assertSame(2, $result->blockLevel);
-        $this->assertSame('FAIL_CLOSED', $result->failureMode);
+        $this->expectException(\Maatify\RateLimiter\Exception\RateLimiterException::class);
+        $engine->limit($context, RateLimitCommand::recordFailure('login_protection'));
 
         $storedOldBudget = $baseOnlyStore->getBudget($oldK4Key);
         $this->assertNotNull($storedOldBudget);

@@ -109,4 +109,60 @@ class RateLimitCommandTest extends TestCase
 
         new RateLimitCommand('test_policy', 1, true, true, true);
     }
+
+    public function testEmptyPolicyNameRejected(): void
+    {
+        $this->expectException(RateLimiterException::class);
+        $this->expectExceptionMessage('Rate-limit policy name must not be empty or whitespace-only.');
+
+        new RateLimitCommand('', 1);
+    }
+
+    public function testWhitespaceOnlyPolicyNameRejected(): void
+    {
+        $this->expectException(RateLimiterException::class);
+        $this->expectExceptionMessage('Rate-limit policy name must not be empty or whitespace-only.');
+
+        new RateLimitCommand('   ', 1);
+    }
+
+    public function testZeroCostRejected(): void
+    {
+        $this->expectException(RateLimiterException::class);
+        $this->expectExceptionMessage('Rate-limit command cost must be a positive integer.');
+
+        new RateLimitCommand('api_heavy_protection', 0);
+    }
+
+    public function testNegativeCostRejected(): void
+    {
+        $this->expectException(RateLimiterException::class);
+        $this->expectExceptionMessage('Rate-limit command cost must be a positive integer.');
+
+        new RateLimitCommand('api_heavy_protection', -1);
+    }
+
+    public function testCheckOnlyRejectsBlankPolicyName(): void
+    {
+        $this->expectException(RateLimiterException::class);
+        $this->expectExceptionMessage('Rate-limit policy name must not be empty or whitespace-only.');
+
+        RateLimitCommand::checkOnly('   ');
+    }
+
+    public function testRecordFailureRejectsNonPositiveCost(): void
+    {
+        $this->expectException(RateLimiterException::class);
+        $this->expectExceptionMessage('Rate-limit command cost must be a positive integer.');
+
+        RateLimitCommand::recordFailure('test_policy', 0);
+    }
+
+    public function testRecordSuccessRejectsNonPositiveCost(): void
+    {
+        $this->expectException(RateLimiterException::class);
+        $this->expectExceptionMessage('Rate-limit command cost must be a positive integer.');
+
+        RateLimitCommand::recordSuccess('test_policy', -1);
+    }
 }

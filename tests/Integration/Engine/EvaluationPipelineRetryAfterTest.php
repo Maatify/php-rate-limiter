@@ -117,6 +117,68 @@ class EvaluationPipelineRetryAfterTest extends TestCase
         self::assertSame(3480, $result->retryAfter);
     }
 
+    public function testMultipleActiveCurrentScopesUseHighestLevelAndLongestRemainingTtl(): void
+    {
+        $context = new RateLimitContextDTO('127.0.0.1', 'Mozilla', 'acct_456');
+        $device = new DeviceIdentityDTO('hash_456', 'HIGH', false, false, 'Mozilla');
+        $command = RateLimitCommand::checkOnly('otp_protection');
+
+        $k1Key = hash_hmac('sha256', 'otp_protection:rate_limiter:k1:v2:prod:127.0.0.1', 'test_secret');
+        $k4Key = hash_hmac('sha256', 'otp_protection:rate_limiter:k4:v2:prod:acct_456', 'test_secret');
+
+        // Lower level, longer remaining TTL.
+        $this->store->block($k1Key, 2, 1200);
+        // Higher level, shorter remaining TTL.
+        $this->store->block($k4Key, 3, 200);
+
+        $this->clock->setNow(new \DateTimeImmutable('2025-01-01 12:02:00')); // +120 seconds
+
+        $result = $this->pipeline->process($this->policy, $context, $command, $device);
+
+        self::assertSame(RateLimitResultDTO::DECISION_HARD_BLOCK, $result->decision);
+        // Highest level (3, from K4) and longest remaining TTL (1080, from K1)
+        // come from two different effective restrictions.
+        self::assertSame(3, $result->blockLevel);
+        self::assertSame(1080, $result->retryAfter);
+    }
+
+    public function testCrossGenerationCrossScopeActiveBlockIsNotHiddenAndCausesNoMutation(): void
+    {
+        $pipeline = $this->createPipeline('previous_secret');
+        $context = new RateLimitContextDTO('127.0.0.1', 'Mozilla', 'acct_789');
+        $device = new DeviceIdentityDTO('hash_789', 'HIGH', false, false, 'Mozilla');
+
+        $currentK4Key = hash_hmac('sha256', 'otp_protection:rate_limiter:k4:v2:prod:acct_789', 'test_secret');
+        $currentK1Key = hash_hmac('sha256', 'otp_protection:rate_limiter:k1:v2:prod:127.0.0.1', 'test_secret');
+        $previousK1Key = hash_hmac('sha256', 'otp_protection:rate_limiter:k1:v2:prod:127.0.0.1', 'previous_secret');
+
+        // Active Current restriction on the K4 scope.
+        $this->store->block($currentK4Key, 2, 300);
+        // No Current restriction on K1; an active Previous restriction exists
+        // on that different logical scope instead.
+        $this->store->block($previousK1Key, 4, 600);
+
+        $this->clock->setNow(new \DateTimeImmutable('2025-01-01 12:02:00')); // +120 seconds
+
+        $result = $pipeline->process($this->policy, $context, RateLimitCommand::recordFailure('otp_protection'), $device);
+
+        self::assertSame(RateLimitResultDTO::DECISION_HARD_BLOCK, $result->decision);
+        // The global Current-generation scan must not hide the valid
+        // Previous-generation K1 restriction behind the Current K4 restriction.
+        self::assertSame(4, $result->blockLevel);
+        self::assertSame(480, $result->retryAfter);
+
+        // No score, budget, or correlation mutation occurred once the
+        // effective active HARD state was resolved: the pipeline must
+        // terminate before any later stage runs.
+        self::assertNull($this->store->get($currentK4Key));
+        self::assertNull($this->store->getBudget($currentK4Key));
+        self::assertSame(2, $this->store->checkBlock($currentK4Key)?->level);
+        self::assertNull($this->store->get($currentK1Key));
+        self::assertNull($this->store->checkBlock($currentK1Key));
+        self::assertSame(4, $this->store->checkBlock($previousK1Key)?->level);
+    }
+
     public function testScoreThresholdAndDecayProducesExpectedOutcome(): void
     {
         $context = new RateLimitContextDTO('127.0.0.1', 'Mozilla', 'acct_123');

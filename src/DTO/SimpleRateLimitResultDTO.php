@@ -18,7 +18,8 @@ final readonly class SimpleRateLimitResultDTO implements \JsonSerializable
     /**
      * @param bool $allowed Whether this consume was admitted.
      * @param int $limit The policy-defined limit this result was evaluated against.
-     * @param int $remaining Consumes left in the current window, clamped at zero.
+     * @param int $remaining Remaining quota/consumption units in the current
+     *     window, clamped at zero. A later consume may cost more than one unit.
      * @param ?int $retryAfter Seconds until the window ends when denied; 0 when allowed; null on FAIL_CLOSED.
      * @param ?int $resetAt Fixed end instant (unix timestamp) of the current window; null on FAIL_CLOSED.
      * @param string $failureMode One of self::NORMAL or self::FAIL_CLOSED.

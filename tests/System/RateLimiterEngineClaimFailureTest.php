@@ -8,6 +8,7 @@ use Maatify\RateLimiter\Config\LoginProtectionPolicy;
 use Maatify\RateLimiter\Command\RateLimitCommand;
 use Maatify\RateLimiter\DTO\RateLimitContextDTO;
 use Maatify\RateLimiter\Exception\RateLimiterException;
+use Maatify\RateLimiter\Exception\BackendFailureException;
 use Maatify\RateLimiter\Service\AntiEquilibriumGate;
 use Maatify\RateLimiter\Service\BudgetTracker;
 use Maatify\RateLimiter\Service\CircuitBreaker;
@@ -30,12 +31,12 @@ final class RateLimiterEngineClaimFailureTest extends TestCase
 {
     public function testRuntimeBackendFailureIsReportedOnceAndPropagates(): void
     {
-        $this->assertClaimFailureIsReportedOnce(new \RuntimeException('Redis client unavailable'));
+        $this->assertClaimFailureIsReportedOnce(new BackendFailureException('Redis client unavailable'), true);
     }
 
     public function testMalformedBackendFailureIsReportedOnceAndPropagates(): void
     {
-        $this->assertClaimFailureIsReportedOnce(new \UnexpectedValueException('malformed lifecycle state'));
+        $this->assertClaimFailureIsReportedOnce(new \UnexpectedValueException('malformed lifecycle state'), false);
     }
 
     public function testStaleLifecycleMissReturnsFalseWithoutCircuitFailure(): void
@@ -81,7 +82,7 @@ final class RateLimiterEngineClaimFailureTest extends TestCase
         self::assertNull($result->metadata?->postPunishmentReentry);
     }
 
-    private function assertClaimFailureIsReportedOnce(\Exception $failure): void
+    private function assertClaimFailureIsReportedOnce(\Exception $failure, bool $reportsCircuitFailure): void
     {
         $clock = new FixedClock('2025-01-01 12:00:00');
         $store = new ClaimFailureRateLimitStore($clock, $failure);
@@ -96,7 +97,7 @@ final class RateLimiterEngineClaimFailureTest extends TestCase
                 str_repeat('b', 32),
             );
         } finally {
-            self::assertSame(1, $circuitStore->saveCount());
+            self::assertSame($reportsCircuitFailure ? 1 : 0, $circuitStore->saveCount());
         }
     }
 

@@ -4,7 +4,6 @@
 **Namespace:** `Maatify\RateLimiter`
 **Status:** LOCKED — Behavioral Contract
 **Scope:** Login, OTP, API Heavy Endpoints
-**Spec Version:** `1.11.0`
 
 This document defines the **deterministic decision rules** used by the Rate Limiter.
 It is a **behavioral contract**, not explanatory documentation.

@@ -16,10 +16,12 @@ use Maatify\RateLimiter\DTO\PunishmentLifecycleTransitionDTO;
 use Maatify\RateLimiter\DTO\BlockStateDTO;
 use Maatify\RateLimiter\DTO\BudgetStateDTO;
 use Maatify\RateLimiter\DTO\RateLimitStateDTO;
+use Maatify\RateLimiter\Exception\BackendFailureException;
 use Maatify\SharedCommon\Contracts\ClockInterface;
 
 class InMemoryRateLimitStore implements BudgetSeedStoreInterface, PunishmentLifecycleStoreInterface
 {
+    public bool $available = true;
     private const PAUSE_HISTORY_RETENTION_SECONDS = 86400;
 
     /** @var array<string, array{value: int, updatedAt: int, expiresAt: int}> */
@@ -46,6 +48,7 @@ class InMemoryRateLimitStore implements BudgetSeedStoreInterface, PunishmentLife
 
     public function increment(string $key, int $ttlSeconds, int $amount = 1): int
     {
+        $this->assertAvailable();
         $this->writes++;
         $now = $this->clock->now()->getTimestamp();
 
@@ -65,6 +68,7 @@ class InMemoryRateLimitStore implements BudgetSeedStoreInterface, PunishmentLife
 
     public function get(string $key): ?RateLimitStateDTO
     {
+        $this->assertAvailable();
         $now = $this->clock->now()->getTimestamp();
         if (!isset($this->data[$key]) || $this->data[$key]['expiresAt'] < $now) {
             return null;
@@ -83,6 +87,7 @@ class InMemoryRateLimitStore implements BudgetSeedStoreInterface, PunishmentLife
 
     public function set(string $key, int $value, int $ttlSeconds): void
     {
+        $this->assertAvailable();
         $this->writes++;
         $now = $this->clock->now()->getTimestamp();
         $this->data[$key] = [
@@ -94,6 +99,7 @@ class InMemoryRateLimitStore implements BudgetSeedStoreInterface, PunishmentLife
 
     public function block(string $key, int $level, int $durationSeconds): void
     {
+        $this->assertAvailable();
         $this->writes++;
         $now = $this->clock->now()->getTimestamp();
         $this->blocks[$key] = [
@@ -308,6 +314,7 @@ class InMemoryRateLimitStore implements BudgetSeedStoreInterface, PunishmentLife
 
     public function checkBlock(string $key): ?BlockStateDTO
     {
+        $this->assertAvailable();
         $now = $this->clock->now()->getTimestamp();
         if (!isset($this->blocks[$key]) || $this->blocks[$key]['expiresAt'] <= $now) {
             return null;
@@ -321,6 +328,7 @@ class InMemoryRateLimitStore implements BudgetSeedStoreInterface, PunishmentLife
 
     public function getBudget(string $key): ?BudgetStateDTO
     {
+        $this->assertAvailable();
         $now = $this->clock->now()->getTimestamp();
         if (!isset($this->budgets[$key])) {
             return null;
@@ -341,6 +349,7 @@ class InMemoryRateLimitStore implements BudgetSeedStoreInterface, PunishmentLife
 
     public function incrementBudget(string $key, int $epochDurationSeconds, int $amount = 1): BudgetStateDTO
     {
+        $this->assertAvailable();
         $this->writes++;
         $now = $this->clock->now()->getTimestamp();
 
@@ -396,12 +405,19 @@ class InMemoryRateLimitStore implements BudgetSeedStoreInterface, PunishmentLife
 
     public function isHealthy(): bool
     {
-        return true;
+        return $this->available;
     }
 
     public function writeCount(): int
     {
         return $this->writes;
+    }
+
+    private function assertAvailable(): void
+    {
+        if (! $this->available) {
+            throw new BackendFailureException('Rate-limit store unavailable');
+        }
     }
 
     private function hasActiveHardBlock(string $currentKey, ?string $previousKey, int $now): bool

@@ -29,6 +29,7 @@ use Maatify\RateLimiter\Tests\Support\Correlation\StatefulInMemoryCorrelationSto
 use Maatify\RateLimiter\Tests\Support\FailureSignal\RecordingFailureSignalEmitter;
 use Maatify\RateLimiter\Tests\Support\RateLimiter\InMemoryRateLimitStore;
 use PHPUnit\Framework\TestCase;
+use PHPUnit\Framework\Attributes\DataProvider;
 
 final class CredentialSprayRotationTest extends TestCase
 {
@@ -92,13 +93,11 @@ final class CredentialSprayRotationTest extends TestCase
             [new LoginProtectionPolicy()],
         );
 
-        $result = $engine->limit(
+        $this->expectException(RateLimiterException::class);
+        $engine->limit(
             new RateLimitContextDTO('198.51.100.81', 'Mozilla/5.0 Chrome/123', 'rotation-account'),
             RateLimitCommand::checkOnly('login_protection'),
         );
-
-        self::assertSame(RateLimitResultDTO::DECISION_HARD_BLOCK, $result->decision);
-        self::assertSame('FAIL_CLOSED', $result->failureMode);
     }
 
     public function testRotationWithoutCorrelationSubjectDoesNotRequireCapability(): void
@@ -117,9 +116,7 @@ final class CredentialSprayRotationTest extends TestCase
         self::assertSame(0, $store->mutationCalls);
     }
 
-    /**
-     * @dataProvider authoritativeBlockKeyProvider
-     */
+    #[DataProvider('authoritativeBlockKeyProvider')]
     public function testAuthoritativeActiveBlockWinsBeforeRotationCapabilityCheck(string $keyType, string $secret): void
     {
         $store = new RecordingBaseOnlyCorrelationStore();

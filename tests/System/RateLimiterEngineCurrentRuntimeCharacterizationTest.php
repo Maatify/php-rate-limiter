@@ -35,6 +35,7 @@ use Maatify\RateLimiter\Tests\Support\Correlation\StatefulInMemoryCorrelationSto
 use Maatify\RateLimiter\Tests\Support\FailureSignal\RecordingFailureSignalEmitter;
 use Maatify\RateLimiter\Tests\Support\RateLimiter\InMemoryRateLimitStore;
 use PHPUnit\Framework\TestCase;
+use PHPUnit\Framework\Attributes\DataProvider;
 
 final class RateLimiterEngineCurrentRuntimeCharacterizationTest extends TestCase
 {
@@ -261,7 +262,7 @@ final class RateLimiterEngineCurrentRuntimeCharacterizationTest extends TestCase
         $k5Key = $this->key('login_protection', 'k5', "{$accountId}:{$device->fingerprintHash}");
         $microCapKey = hash_hmac(
             'sha256',
-            "login_protection:rate_limiter:microcap:k5:v1:{$accountId}:{$device->fingerprintHash}",
+            "login_protection:rate_limiter:microcap:k5:v1:prod:{$accountId}:{$device->fingerprintHash}",
             'test_secret',
         );
 
@@ -273,9 +274,7 @@ final class RateLimiterEngineCurrentRuntimeCharacterizationTest extends TestCase
         $this->assertNull($this->store->getBudget($k4Key));
     }
 
-    /**
-     * @dataProvider ephemeralOverflowTrustFacts
-     */
+    #[DataProvider('ephemeralOverflowTrustFacts')]
     public function testEphemeralLoginOverflowRoutesKnownAuthenticationFailureToK4(
         bool $isTrustedSession,
         bool $isDevicePreviouslyVerifiedForAccount,
@@ -997,7 +996,7 @@ final class RateLimiterEngineCurrentRuntimeCharacterizationTest extends TestCase
     {
         return hash_hmac(
             'sha256',
-            "{$policy}:rate_limiter:microcap:k5:v1:{$accountId}:{$fingerprint}",
+            "{$policy}:rate_limiter:microcap:k5:v1:prod:{$accountId}:{$fingerprint}",
             'test_secret',
         );
     }

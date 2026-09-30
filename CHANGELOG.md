@@ -8,19 +8,25 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Added
+- Added Builder-coordinated Production Default Operational Read (DEC-012):
+  `RateLimiterBuilder::buildOperationalReader()` returns the typed
+  `CompositeRateLimitOperationalReaderInterface`, including simple fixed-window
+  operational inspection with Current-before-Previous, read-only resolution and
+  no migration or mutation during reads. The existing
+  `RateLimitOperationalReaderInterface` remains the Advanced Path.
 - Added DEC-013 weighted simple fixed-window consumption. `consume()` now
   accepts a positive caller-supplied `$cost = 1`; existing two-argument calls
   remain compatible, while third-party interface implementers must accept the
   evolved optional parameter. Weighted costs accumulate in the same fixed
   window, including over-limit costs, and preserve the existing rotation,
-  FAIL_CLOSED, and operational-read semantics. Simple Throttling Spec:
-  `1.0.0` → `1.1.0`; Package Reference: `1.19.0` → `1.20.0`.
+  FAIL_CLOSED, and operational-read semantics.
 - Added a first-class generic/simple fixed-window throttling capability
   (DEC-009): `Config\SimpleThrottlePolicyInterface`,
   `Config\FixedWindowThrottlePolicy`, `DTO\SimpleRateLimitResultDTO`,
   `Service\SimpleRateLimiterInterface`, and its production implementation
-  `Service\FixedWindowSimpleRateLimiter`. Version 1 is fixed-window, unit
-  cost, one policy-defined limit and interval, one atomic `consume()`, and
+  `Service\FixedWindowSimpleRateLimiter`. The initial simple-throttling
+  capability was fixed-window, unit cost, one policy-defined limit and interval,
+  one atomic `consume()`, and
   FAIL_CLOSED only; it reuses the existing atomic budget-epoch persistence
   primitives (`RateLimitStoreInterface::getBudget()`/`incrementBudget()`,
   `BudgetSeedStoreInterface::incrementBudgetWithSeed()` for rotation
@@ -39,11 +45,33 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   `RateLimiterEngine` and its constructor are unchanged. See the new
   `docs/SIMPLE_THROTTLING.md` for the complete contract,
   `examples/simple-fixed-window.php` for a runnable example, and
-  `docs/KEY_STRATEGY.md` §4.7 for the key contract. Package Reference
-  version: `1.18.0` → `1.19.0`; Key Strategy version: `1.10.0` → `1.11.0`;
-  Failure Semantics version: `1.4.0` → `1.5.0`.
+  `docs/KEY_STRATEGY.md` §4.7 for the key contract.
 
 ### Changed
+- Enforced exact PHP-integer representability for simple fixed-window reset
+  boundaries (DEC-014): unrepresentable boundaries and backend-impossible
+  expiries are rejected before enforcement state changes, and Operational Read
+  applies the same checked arithmetic. Public DTO and storage signatures remain
+  unchanged.
+- Reconciled semantic clock authority (DEC-016): capabilities receiving
+  caller-supplied semantic `now` use it as the time authority and Redis Lua does
+  not substitute Redis `TIME`; primitives without caller semantic time may
+  remain Redis-time authoritative. Public interfaces and custom/fixed Clock
+  behavior remain coherent.
+- Enforced the non-negative semantic Unix timestamp domain (DEC-017): negative
+  caller timestamps fail before backend mutation or use, persisted semantic
+  timestamps are validated as canonical non-negative integers, epoch `0`
+  remains valid where applicable, and malformed persisted temporal state fails
+  explicitly without silent repair or overwrite.
+- Clarified the failure contract (DEC-015): public
+  `BackendFailureException` is the explicit provenance for operational backend
+  failures that may enter score-runtime circuit/fallback; configuration,
+  unknown, corrupt-state, and programming failures retain explicit exception
+  propagation. The package retains a bounded process-local emergency circuit
+  when persistent circuit state is unavailable, caps local fallback subjects,
+  and preserves corrected circuit re-entry accounting and rolling failure-count
+  semantics. Simple fixed-window failures remain governed separately by
+  DEC-013.
 - Hardened official Redis budget persistence to use exact signed-integer arithmetic
   instead of Lua floating-point count arithmetic, covering weighted Current
   increments, the rotation seed path, exact large-count readback, overflow handling,
@@ -66,9 +94,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   separate official/custom fallback code path, and `LocalFallbackLimiter` no
   longer holds a duplicate hard-coded copy of the official numeric values.
   Fallback state remains namespaced by policy identity only. See DEC-011
-  (amended) for the full rationale. Package Reference version: `1.17.0` →
-  `1.18.0`; Policy contract version: `1.6.0` → `1.7.0`; Failure Semantics
-  version: `1.3.0` → `1.4.0`.
+  (amended) for the full rationale.
 
 ### Added
 - Added DEC-007 generation-bound authentication K4 lifecycle for opt-in Login
@@ -82,26 +108,22 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Added the official optional built-in Redis full-capability store. It uses a
   Host-supplied command executor, supports one logical non-clustered Redis
   server, preserves the backend-agnostic aggregate contract, and adds no Redis
-  client or `ext-redis` runtime dependency. Package Reference version:
-  `1.14.0` → `1.15.0`.
-- Added WU-S4-02A full-capability storage composition. `FullCapabilityStoreInterface`
+  client or `ext-redis` runtime dependency.
+- Added full-capability storage composition. `FullCapabilityStoreInterface`
   aggregates the budget-seed, bounded snapshot-rotation, circuit-probe, and
   hard-block-cycle contracts without adding methods, and
   `RateLimiterBuilder::fromFullCapabilityStore()` composes one host store across
   those boundaries while keeping the failure-signal emitter separate. The
-  existing multi-store constructor remains source-compatible. Package Reference
-  version: `1.13.0` → `1.14.0`. No concrete Redis, PDO, Lua, or `ext-redis`
-  adapter is included.
-- Implemented WU-S3-07 multiple-block-cycle decay pause. Persisted L2+ blocks now
+  existing multi-store constructor remains source-compatible, and the aggregate
+  storage contract remains backend-agnostic.
+- Implemented multiple-block-cycle decay pause. Persisted L2+ blocks now
   use the additive `HardBlockCycleStoreInterface` for atomic Current-only block
   persistence, real cycle classification, rolling six-hour K1/K2/K3/K4/K5
   histories, fixed 600-second pauses, rotation adoption, and read-only lazy
   decay accounting. Base-only stores remain compatible for reads and L1 writes
   but fail explicitly before an L2+ block write. `DecayCalculator` preserves
-  source compatibility through trailing pause arguments. Version transitions:
-  `DECISION_MATRIX.md` `1.9.0` → `1.10.0`, `POLICIES.md` `1.3.0` → `1.4.0`,
-  `KEY_STRATEGY.md` `1.8.0` → `1.9.0`, and package reference `1.11.0` → `1.12.0`.
-- Implemented WU-S3-05 IPv6 adaptive aggregation. IPv6 enforcement now uses
+  source compatibility through trailing pause arguments.
+- Implemented IPv6 adaptive aggregation. IPv6 enforcement now uses
   canonical `/64` K1 only; bounded `/48`, `/40`, and `/32` correlation scopes
   activate at exact `2/2`, `4/4`, and `8/8` child thresholds within a fixed
   600-second window, without hierarchy WATCH decisions or macro RateLimitStore
@@ -109,51 +131,41 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   only current `/64` K1 or `/64 + UA` K2 enforcement. Hierarchy keys and members
   are policy/environment/version/purpose-separated HMAC references with bounded
   outer-key rotation continuity; Dilution remains canonical `/64`-member based.
-  Version transitions: `KEY_STRATEGY.md` `1.7.0` → `1.8.0`,
-  `DECISION_MATRIX.md` `1.8.0` → `1.9.0`, and package reference `1.9.0` → `1.10.0`.
 - Documented the public operational API contraction from serialized
   `k1,k2,k3,k4,k5,k1_48,k1_40,k1_32` to `k1,k2,k3,k4,k5`. The removed macro
   fields were enforcement-scope projections; `/48`, `/40`, and `/32` remain
-  internal correlation-detection state only. No additional specification
-  version bump is introduced for this clarification.
-- Follow-up hardening for WU-S3-04: New Device Flood now evaluates from the sixth
+  internal correlation-detection state only.
+- Follow-up hardening: New Device Flood now evaluates from the sixth
   admitted/account-scope observation through the rejected overflow path, while only
   admitted devices may persist K5 state. All bounded distinct-store results are validated
   centrally before classification; malformed counts or rejected-before-cap results fail
   explicitly with a package-owned exception.
-- Completed WU-S3-04 bounded ephemeral and fingerprint-correlation hardening. The additive
+- Completed bounded ephemeral and fingerprint-correlation hardening. The additive
   `BoundedCorrelationStoreInterface` and `BoundedCorrelationRotationStoreInterface` now
   provide atomic fixed-TTL distinct admission with `BoundedDistinctResultDTO`; device-cap,
   churn, dilution, and credential-spray scopes use opaque domain-separated HMAC references
   and explicit caps. Current/previous generation observations use read-only previous state
   and a TTL-capped current bridge. Ephemeral overflow performs one real-key observation,
   never creates a fake K3/K5 identity, preserves active-block checks and K4/flood handling,
-  and suppresses per-fingerprint dilution state while retaining bounded churn. Version
-  transitions: `DEVICE_FINGERPRINT.md` `1.2.0` → `1.3.0`, `KEY_STRATEGY.md` `1.5.0` → `1.6.0`,
-  `DECISION_MATRIX.md` `1.6.0` → `1.7.0`, and package reference `1.7.0` → `1.8.0`.
+  and suppresses per-fingerprint dilution state while retaining bounded churn.
 - Isolated account/policy auxiliary state for repeated missing fingerprints, Anti-Equilibrium,
   and New Device Flood with the locked policy/environment/version HMAC namespace. Current
   generation is writable, previous outer-key state is read-only, raw AccountID no longer
   crosses storage boundaries, and API Heavy does not create a repeated-missing marker.
-  Updated Key Strategy `1.4.0` → `1.5.0`, Decision Matrix `1.5.0` → `1.6.0`, and Package
-  Reference `1.6.0` → `1.7.0`.
 
 ### Added
-- Implemented WU-S4-01's default composition surface. Added the immutable
+- Implemented the default composition surface. Added the immutable
   `RateLimiterConfig` contract and package-wide `RateLimiterBuilder`, which
   require the four Host integration boundaries, compose the existing runtime
   graph with a shared UTC default clock, register the Login/OTP/API Heavy policy
-  presets, and preserve independent outer/fingerprint rotation inputs. Package
-  Reference version: `1.12.0` → `1.13.0`. No Redis, PDO, or full aggregate store
-  implementation is included.
-- Implemented WU-S3-06 Circuit Breaker state-machine recovery: OPEN requests
+  presets, and preserve independent outer/fingerprint rotation inputs.
+- Implemented Circuit Breaker state-machine recovery: OPEN requests
   short-circuit shared-backend work, recovery uses leased read-only health probes
   through HALF_OPEN, and the rolling re-entry guard is authoritative across all
   circuit states with exactly-once transition signals and remaining Retry-After.
   Added the additive `CircuitBreakerProbeStoreInterface`; the existing
-  `CircuitBreakerStoreInterface` remains source-compatible. Failure Semantics
-  `1.0.0` → `1.1.0` and Package Reference `1.10.0` → `1.11.0`.
-- Implemented WU-S3-08 distributed account-attack correlation for Login and OTP pre-checks.
+  `CircuitBreakerStoreInterface` remains source-compatible.
+- Implemented distributed account-attack correlation for Login and OTP pre-checks.
   The new snapshot DTO and additive snapshot store capabilities return the complete bounded
   logical K5 member set with fixed expiry, validate it fail-closed, preserve one previous
   generation through a current-only bridge, and keep previous state read-only. The 600-second
@@ -161,22 +173,26 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   stable three-device gaming; and exactly the third 24-hour occurrence adds HARD L4 on K4.
   API Heavy, missing identity, and non-pre-check commands do not observe the rule. Flood state
   still advances and a distributed HARD candidate wins a concurrent flood SOFT candidate.
-  Version transitions: `KEY_STRATEGY.md` `1.6.0` → `1.7.0`, `DECISION_MATRIX.md` `1.7.0` →
-  `1.8.0`, and package reference `1.8.0` → `1.9.0`.
-- Rotation-safe credential-spray correlation for Login and OTP pre-checks (Spec Version `1.2.0` → `1.3.0`): the unchanged `CorrelationStoreInterface` remains the no-rotation base contract, while `CorrelationRotationStoreInterface` preserves previous history through current-secret bridge members, fixed TTLs, read-only previous state, and explicit missing-capability/corrupt-state failures. No concrete Redis/Lua/PDO adapter is included.
-- Credential-spray correlation for Login and OTP pre-checks using the optional opaque `correlationId` with `accountId` fallback, domain-separated HMAC members, a fixed K1 window, mandatory N-1 WATCH escalation, and trusted-session advisory K1 semantics (Spec Version `1.1.0` → `1.2.0`).
+- Rotation-safe credential-spray correlation for Login and OTP pre-checks: the unchanged
+  `CorrelationStoreInterface` remains the no-rotation base contract, while
+  `CorrelationRotationStoreInterface` preserves previous history through current-secret bridge
+  members, fixed TTLs, read-only previous state, and explicit
+  missing-capability/corrupt-state failures.
+- Credential-spray correlation for Login and OTP pre-checks using the optional opaque
+  `correlationId` with `accountId` fallback, domain-separated HMAC members, a fixed K1 window,
+  mandatory N-1 WATCH escalation, and trusted-session advisory K1 semantics.
 - Standards-compliant read-only operational state API with point-in-time inspection that does not couple consumers to raw storage keys.
 - Implemented the locked two-generation runtime integration for persistent K3/K5 active-block
   lookup and score fallback, and for K5 micro-cap current-authoritative atomic migration across
   outer-only, fingerprint-only, and both-rotated generations. `BudgetSeedStoreInterface` is
   required only when a valid Previous micro-cap must be migrated; missing capability continues
   through the existing failure semantics. Correlation/ephemeral fingerprint-secret rotation
-  remains pending as a separate design. Budget Owner-Safety orchestration is implemented for
+  is implemented. Budget Owner-Safety orchestration is implemented for
   command eligibility, cooldown, known-device eligibility, Recovery Collision Guard, decision
   aggregation, and fail-fast removal.
 - Standalone Composer package foundation for `maatify/php-rate-limiter`
 - Initial package metadata and CI quality gate
-- Locked Budget Owner-Safety architecture and public-contract decisions (Spec Version `1.0.0` → `1.1.0`):
+- Locked Budget Owner-Safety architecture and public-contract decisions:
   - Budget is a decision candidate, never a fail-fast gate; aggregation stays `HARD_BLOCK > SOFT_BLOCK > ALLOW`
   - Budget-issued `SOFT_BLOCK` is decoupled from `RateLimitStoreInterface::block()` (not `BlockState`)
   - Explicit command eligibility: Login `recordFailure`/`checkOnly` only; OTP `recordFailure` only
@@ -186,9 +202,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Declared additive capability interface `BudgetSeedStoreInterface::incrementBudgetWithSeed()` (extends `RateLimitStoreInterface`) for atomic budget-epoch hand-off across key rotation; the capability interface is additive and does not change `RateLimitStoreInterface`
 - Implemented `BudgetSeedStoreInterface::incrementBudgetWithSeed()` with the locked `KEY_STRATEGY.md` §4.3.2 seeding semantics (existing V2 state wins, seed carries the epoch on first-time initialization, expired seed starts a fresh epoch); the test-support and consumer-verification stores expose the capability while `ThrowingRateLimitStore` remains base-contract only
 - Added `BudgetSeedStore` contract and capability tests covering valid/expired/boundary seeds, no double-seeding, fixed-epoch preservation, and additive-capability compatibility
-- K4 account budget now preserves its fixed 24h epoch and cumulative count across key rotation: budget reads are V2-first with V1 fallback (never `max(v1,v2)`), and a V1→V2 migration on writes uses the atomic `BudgetSeedStoreInterface::incrementBudgetWithSeed()` hand-off; when a migration is required but the store lacks the capability, the pipeline fails explicitly through the existing failure semantics instead of silently resetting the previous-secret budget. Persistent K3/K5 two-generation continuity and K5 micro-cap migration are now implemented across the coordinated current/previous generation model; correlation/ephemeral fingerprint-secret rotation remains a separate pending design.
-- Locked the dual-fingerprint (fingerprint-secret rotation) architecture and the **additive** `previousFingerprintHash` contract (nullable, end-of-DTO, `DeviceIdentityDTO::previousFingerprintHash`) as the **previous-generation fingerprint component**, while `DeviceIdentityResolverInterface::resolve()` stays unchanged; the default resolver hashes the same normalized raw identity once with the current hasher and once with an optional previous hasher. Key continuity is modeled as **one coordinated current generation plus at most one previous generation** — previous outer `??` current outer, previous fingerprint `??` current fingerprint, previous generation present when `previousKeySecret` or `previousFingerprintHash` is non-null — covering outer-only, fingerprint-only, and both-rotated cases. Probing or merging arbitrary Cartesian historical combinations is forbidden, and overlapping generations are forbidden (a second rotation must not begin while the previous generation still needs enforcement continuity, `docs/DEVICE_FINGERPRINT.md` §5.1.6). Write-current / read-previous. K5 micro-cap becomes current/previous with current-authoritative atomic seeding and no `max()` merge. K3/K5 fingerprint-secret rotation and K5 micro-cap fingerprint-secret rotation = implemented. Correlation/ephemeral fingerprint-secret rotation = pending separate design (not claimed). Normative ownership: `docs/DEVICE_FINGERPRINT.md` §5.1, `docs/KEY_STRATEGY.md` §4.3.3 / §4.5.2.
-- Implemented the dual-fingerprint **public identity contract** (`docs/DEVICE_FINGERPRINT.md` §5.1). `DeviceIdentityDTO::previousFingerprintHash` is implemented as the nullable, additive last serialized field; the default `DeviceIdentityResolver` accepts an optional `?FingerprintHasher $previousHasher = null` after the current hasher. The default resolver builds the normalized raw identity exactly once (`v2|normalizedUa|normalizedClientFp|sessionDeviceId`), hashes it with both the current and (when configured) the previous hasher, and returns both hashes on the DTO; raw material is never stored, logged, or exposed on the DTO. Current implementation status: dual-fingerprint architecture = locked; `DeviceIdentityDTO.previousFingerprintHash` = implemented; default resolver optional previous hasher = implemented; K3/K5 pipeline generation integration = implemented; K5 micro-cap generation integration = implemented; correlation/ephemeral rotation = pending separate design. The old single-hasher constructor and the consumer integration API remain unchanged; `previousFingerprintHash` never alters `confidence`, `isTrustedSession`, `isDevicePreviouslyVerifiedForAccount`, or `isKnownForAccount` (`docs/DEVICE_FINGERPRINT.md` §5.1.4).
+- K4 account budget now preserves its fixed 24h epoch and cumulative count across key rotation: budget reads are V2-first with V1 fallback (never `max(v1,v2)`), and a V1→V2 migration on writes uses the atomic `BudgetSeedStoreInterface::incrementBudgetWithSeed()` hand-off; when a migration is required but the store lacks the capability, the pipeline fails explicitly through the existing failure semantics instead of silently resetting the previous-secret budget. Persistent K3/K5 two-generation continuity and K5 micro-cap migration are now implemented across the coordinated current/previous generation model; correlation/ephemeral fingerprint-secret rotation is implemented.
+- Locked the dual-fingerprint (fingerprint-secret rotation) architecture and the **additive** `previousFingerprintHash` contract (nullable, end-of-DTO, `DeviceIdentityDTO::previousFingerprintHash`) as the **previous-generation fingerprint component**, while `DeviceIdentityResolverInterface::resolve()` stays unchanged; the default resolver hashes the same normalized raw identity once with the current hasher and once with an optional previous hasher. Key continuity is modeled as **one coordinated current generation plus at most one previous generation** — previous outer `??` current outer, previous fingerprint `??` current fingerprint, previous generation present when `previousKeySecret` or `previousFingerprintHash` is non-null — covering outer-only, fingerprint-only, and both-rotated cases. Probing or merging arbitrary Cartesian historical combinations is forbidden, and overlapping generations are forbidden (a second rotation must not begin while the previous generation still needs enforcement continuity, `docs/DEVICE_FINGERPRINT.md` §5.1.6). Write-current / read-previous. K5 micro-cap becomes current/previous with current-authoritative atomic seeding and no `max()` merge. K3/K5 fingerprint-secret rotation and K5 micro-cap fingerprint-secret rotation = implemented. Correlation/ephemeral fingerprint-secret rotation = implemented. Normative ownership: `docs/DEVICE_FINGERPRINT.md` §5.1, `docs/KEY_STRATEGY.md` §4.3.3 / §4.5.2.
+- Implemented the dual-fingerprint **public identity contract** (`docs/DEVICE_FINGERPRINT.md` §5.1). `DeviceIdentityDTO::previousFingerprintHash` is implemented as the nullable, additive last serialized field; the default `DeviceIdentityResolver` accepts an optional `?FingerprintHasher $previousHasher = null` after the current hasher. The default resolver builds the normalized raw identity exactly once (`v2|normalizedUa|normalizedClientFp|sessionDeviceId`), hashes it with both the current and (when configured) the previous hasher, and returns both hashes on the DTO; raw material is never stored, logged, or exposed on the DTO. Current implementation status: dual-fingerprint architecture = locked; `DeviceIdentityDTO.previousFingerprintHash` = implemented; default resolver optional previous hasher = implemented; K3/K5 pipeline generation integration = implemented; K5 micro-cap generation integration = implemented; correlation/ephemeral rotation = implemented. The old single-hasher constructor and the consumer integration API remain unchanged; `previousFingerprintHash` never alters `confidence`, `isTrustedSession`, `isDevicePreviouslyVerifiedForAccount`, or `isKnownForAccount` (`docs/DEVICE_FINGERPRINT.md` §5.1.4).
 - Implemented host-provided signal `isDevicePreviouslyVerifiedForAccount` (default `false`) on `RateLimitContextDTO` and `DeviceIdentityDTO`, propagated by `DeviceIdentityResolver`, for known-device-for-account semantics without a trusted session; the host remains the sole authority and the RateLimiter performs no inference (no `K5` presence check, no `HIGH` confidence inference, no external storage query)
 
 ### Fixed
@@ -196,21 +212,20 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Fixed local fallback GC so cleanup removes only expired fixed-window buckets and preserves active buckets until natural rollover.
 
 ### Changed
-- Reconciled the Device Fingerprint contract (`1.1.0` → `1.2.0`), Key Strategy
-  contract (`1.3.0` → `1.4.0`), and Package Reference (`1.5.0` → `1.6.0`):
+- Reconciled the Device Fingerprint, Key Strategy, and Package Reference contracts:
   trusted sessions are `HIGH` without
   client hints, the default resolver uses bounded canonical browser-major UA
   values and no automatic header harvesting, client-fingerprint serialization
   is recursively deterministic with explicit package exceptions on failure, and
   the normalized identity schema is now `v2|...`; local fallback K2 uses the same
   UA source of truth.
-- Corrected API Heavy enforcement semantics (Spec Version `1.4.0` → `1.5.0`; Policy Preset contract `1.2.0` → `1.3.0`): K2 is limited to SOFT_BLOCK L1, K3 to HARD_BLOCK L2, and K1 to HARD_BLOCK L3; each API scope persists independently, K4/K5 are not enforced, equal N-1 thresholds are observed once at the highest represented level, and LOW-confidence moderate K3 enforcement targets K2.
-- Score-threshold decisions now derive `retryAfter` from the package-owned `DecayCalculator` (Spec Version `1.3.0` → `1.4.0`; Policy Preset contract `1.1.0` → `1.2.0`): active persisted block TTL remains authoritative, L3 hard decisions exit below L2, and `PenaltyLadder` persistence durations remain unchanged. The multiple-block-cycle pause remains deferred to Stage 3.
+- Corrected API Heavy enforcement semantics: K2 is limited to SOFT_BLOCK L1, K3 to HARD_BLOCK L2, and K1 to HARD_BLOCK L3; each API scope persists independently, K4/K5 are not enforced, equal N-1 thresholds are observed once at the highest represented level, and LOW-confidence moderate K3 enforcement targets K2.
+- Score-threshold decisions now derive `retryAfter` from the package-owned `DecayCalculator`: active persisted block TTL remains authoritative, L3 hard decisions exit below L2, and `PenaltyLadder` persistence durations remain unchanged. The multiple-block-cycle pause is implemented.
 - Normalized the pre-stable public namespaces and source topology to the canonical
-  Single Capability layout (`Command`, `Config`, `Contract`, `DTO`, `Exception`,
-  `Repository`, and `Service`) without changing runtime behavior or adding
+  Single Capability layout (`Builder`, `Command`, `Config`, `Contract`, `DTO`, `Enum`,
+  `Exception`, `Repository`, and `Service`) without changing runtime behavior or adding
   compatibility shims.
-- Clarified the locked Budget Owner-Safety architecture (Spec Version remains `1.1.0`):
+- Clarified the locked Budget Owner-Safety architecture:
   decision class wins before level/duration, a budget `SOFT_BLOCK` cannot upgrade hard
   properties, budget cooldown is tied to actual budget-soft issuance, Login `checkOnly`
   requires a would-be `ALLOW`, Recovery Collision Guard does not consume budget cooldown,

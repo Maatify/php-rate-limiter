@@ -6,7 +6,7 @@
 
 ## Status
 
-`ACTIVE`
+`SUPERSEDED`
 
 ## Date
 
@@ -72,4 +72,4 @@ DEC-005
 
 ## Superseded By
 
-None.
+DEC-016

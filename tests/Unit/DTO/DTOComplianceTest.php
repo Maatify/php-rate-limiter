@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace Maatify\RateLimiter\Tests\Unit\DTO;
 
 use PHPUnit\Framework\TestCase;
+use PHPUnit\Framework\Attributes\DataProvider;
 use Maatify\RateLimiter\DTO\BoundedCorrelationObservationDTO;
 use Maatify\RateLimiter\DTO\BoundedDistinctResultDTO;
 use Maatify\RateLimiter\DTO\BoundedDistinctSnapshotDTO;
@@ -136,10 +137,10 @@ class DTOComplianceTest extends TestCase
     }
 
     /**
-     * @dataProvider dtoSerializationProvider
      * @param array<int, string> $expectedKeys
      * @param array<string, mixed> $expectedValues
      */
+    #[DataProvider('dtoSerializationProvider')]
     public function testCompleteDTOSerialization(\JsonSerializable $dto, array $expectedKeys, array $expectedValues): void
     {
         $json = json_encode($dto, JSON_THROW_ON_ERROR);

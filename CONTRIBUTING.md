@@ -20,7 +20,7 @@ the runtime framework-agnostic and storage-agnostic at the contract/core level.
 The canonical source topology is a single capability:
 
 ```text
-src/{Command,Config,Contract,DTO,Exception,Repository,Service}/
+src/{Builder,Command,Config,Contract,DTO,Enum,Exception,Repository,Service}/
 ```
 
 Do not introduce capability wrappers, duplicate namespaces, compatibility shims,
@@ -45,6 +45,16 @@ approval route for the scope and sensitivity of the proposal.
 ## Local verification
 
 The repository does not commit `composer.lock`. Run the following from the repository root; dependency resolution may create an ignored temporary lock file.
+
+Dependency-policy verification requires a Composer 2.10-compatible policy model.
+Check the local Composer version before running the policy and audit commands:
+
+```bash
+composer --version
+```
+
+The authoritative local policy verification uses `config.policy` and must not
+be replaced by an older Composer release that cannot evaluate that model.
 
 ```bash
 composer validate --strict
@@ -72,14 +82,15 @@ repository-owned PER 3.1 delta verifier. `composer format` applies baseline
 formatting and then runs the same non-mutating delta verification; any remaining
 PER 3.1 delta violation requires a manual mechanical fix.
 
-`composer test` runs the full maintained Unit, Integration, and System suites.
-`composer test:unit` runs the Unit suite, and `composer test:integration` is the
-focused canonical entrypoint for the Integration suite. It requires Docker with
-Compose support for the repository-owned disposable Redis 7.0.15 service and PHP
-`pcntl` in the local Integration runner because the required Redis concurrency
-proofs use independent forked PHP workers; it runs the Integration suite and
-guarantees teardown. `ext-redis` and Predis are not required, and `ext-pcntl` is
-not a package runtime dependency.
+`composer test` runs the full maintained Unit, Integration, and System suites
+through the repository's canonical Redis lifecycle. It therefore requires
+Docker with Compose support for the repository-owned disposable Redis 7.0.15
+service. `composer test:unit` runs the Unit suite without Redis or Docker, and
+`composer test:integration` is the focused canonical entrypoint for the
+Integration suite through that same lifecycle. The Integration suite also
+requires PHP `pcntl` because its Redis concurrency proofs use independent
+forked PHP workers, but `ext-pcntl` is not a package runtime dependency.
+`ext-redis` and Predis are not required.
 System tests are included
 in the full `composer test` run and protect end-to-end engine workflows and
 behavioral contracts.
@@ -105,6 +116,14 @@ composer check-platform-reqs
 composer analyse
 composer test
 composer test:integration
+```
+
+After lowest-supported verification, restore the latest-compatible dependency
+state before continuing work:
+
+```bash
+composer update --no-interaction --prefer-dist --no-progress
+composer dump-autoload --optimize --strict-psr
 ```
 
 The CI verification mapping is intentionally split across its gates:

@@ -177,7 +177,7 @@ class RateLimiterEngineFallbackBlastRadiusTest extends TestCase
         $this->clock->setNow(new \DateTimeImmutable('2025-01-01 12:04:30'));
         $this->enterDegradedMode($engine, 'otp_protection', $ip, 'otp-gc-warmup-account');
 
-        // The first fallback execution establishes lastGc at an unaligned time inside the 15-minute bucket.
+        // The first fallback execution establishes the active fixed window.
         $warmup = $this->limit($engine, 'otp_protection', $ip, self::CHROME_UA, 'otp-gc-warmup-account');
         $this->assertSame(RateLimitResultDTO::DECISION_ALLOW, $warmup->decision);
         $this->assertSame('DEGRADED_MODE', $warmup->failureMode);
@@ -274,19 +274,20 @@ class RateLimiterEngineFallbackBlastRadiusTest extends TestCase
     public function testApiFallbackK1AggregateCapIsIndependentOfK2AcrossRawUas(): void
     {
         $clock = new FixedClock('2025-01-01 12:00:00');
+        $policy = new ApiHeavyProtectionPolicy();
         $ip = '198.51.100.25';
 
         foreach ([self::CHROME_UA, self::FIREFOX_UA] as $ua) {
             for ($i = 0; $i < 60; $i++) {
                 $this->assertTrue(
-                    LocalFallbackLimiter::check($clock, 'api_heavy_protection', 'FAIL_OPEN', $ip, null, $ua),
+                    LocalFallbackLimiter::check($clock, $policy, 'FAIL_OPEN', $ip, null, $ua),
                 );
             }
         }
 
         // The third K2 bucket is fresh, so request 121 isolates the K1 IP aggregate cap.
         $this->assertFalse(
-            LocalFallbackLimiter::check($clock, 'api_heavy_protection', 'FAIL_OPEN', $ip, null, self::SAFARI_UA),
+            LocalFallbackLimiter::check($clock, $policy, 'FAIL_OPEN', $ip, null, self::SAFARI_UA),
         );
     }
 
@@ -657,11 +658,11 @@ class RateLimiterEngineFallbackBlastRadiusTest extends TestCase
         $reflection = new \ReflectionClass(LocalFallbackLimiter::class);
 
         $countersProperty = $reflection->getProperty('counters');
-        $countersProperty->setAccessible(true);
         $countersProperty->setValue(null, []);
+        $trackedProperty = $reflection->getProperty('trackedSubjects');
+        $trackedProperty->setValue(null, []);
+        $expiryProperty = $reflection->getProperty('trackedSubjectExpiries');
+        $expiryProperty->setValue(null, []);
 
-        $lastGcProperty = $reflection->getProperty('lastGc');
-        $lastGcProperty->setAccessible(true);
-        $lastGcProperty->setValue(null, 0);
     }
 }

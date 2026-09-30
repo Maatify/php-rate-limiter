@@ -72,10 +72,17 @@ class EvaluationPipeline
      * @param AntiEquilibriumGate $antiEquilibriumGate Repeated-soft-block guard.
      * @param DecayCalculator $decayCalculator Score decay service.
      * @param EphemeralBucket $ephemeralBucket Device-cap key resolver.
-     * @param string $keySecret Active key-generation secret.
-     * @param string $envScope Environment namespace included in derived keys.
+     * @param string $keySecret Active, non-blank key-generation secret. Not
+     *     trimmed or otherwise normalized: accepted surrounding whitespace is
+     *     retained byte-for-byte.
+     * @param string $envScope Non-blank environment namespace included in derived keys.
      * @param ClockInterface $clock Source of current timestamps.
-     * @param ?string $previousKeySecret Optional previous-generation secret.
+     * @param ?string $previousKeySecret Optional previous-generation secret;
+     *     null means no previous generation. When provided, it must not be
+     *     empty or whitespace-only, and is likewise never trimmed or normalized.
+     * @throws RateLimiterException When $keySecret or $envScope is empty or
+     *     whitespace-only, or when a non-null $previousKeySecret is empty or
+     *     whitespace-only.
      */
     public function __construct(
         private readonly RateLimitStoreInterface $store,
@@ -89,6 +96,16 @@ class EvaluationPipeline
         private readonly ClockInterface $clock,
         ?string $previousKeySecret = null,
     ) {
+        if (trim($keySecret) === '') {
+            throw new RateLimiterException('Active key secret must not be empty or whitespace-only.');
+        }
+        if (trim($this->envScope) === '') {
+            throw new RateLimiterException('Environment scope must not be empty or whitespace-only.');
+        }
+        if ($previousKeySecret !== null && trim($previousKeySecret) === '') {
+            throw new RateLimiterException('Previous key secret must not be empty or whitespace-only.');
+        }
+
         $this->secret = $keySecret;
         $this->previousSecret = $previousKeySecret;
     }
@@ -440,26 +457,51 @@ class EvaluationPipeline
         BlockPolicyInterface $policy,
         DeviceIdentityDTO $device,
     ): ?RateLimitResultDTO {
-        foreach ([$keysV2, $keysV1] as $keys) {
-            foreach ($keys as $keyType => $key) {
-                if (! $key) {
-                    continue;
-                }
-                if ($this->isApiHeavyPolicy($policy) && ! $this->isApiHeavyKeyType($keyType)) {
-                    continue;
-                }
-                if ($this->isTrustedAuthenticationPolicy($policy, $device) && $this->isK1Key($keyType)) {
-                    continue;
-                }
-                $block = $this->store->checkBlock($key);
-                $now = $this->clock->now()->getTimestamp();
+        $now = $this->clock->now()->getTimestamp();
+        $highestLevel = 0;
+        $longestRemaining = 0;
+        $hasEffectiveBlock = false;
+
+        foreach ($keysV2 as $keyType => $currentKey) {
+            if ($this->isApiHeavyPolicy($policy) && ! $this->isApiHeavyKeyType($keyType)) {
+                continue;
+            }
+            if ($this->isTrustedAuthenticationPolicy($policy, $device) && $this->isK1Key($keyType)) {
+                continue;
+            }
+
+            $effective = null;
+            if ($currentKey) {
+                $block = $this->store->checkBlock($currentKey);
                 if ($block && $block->level >= 2 && $block->expiresAt > $now) {
-                    return $this->createBlockedResult($block->level, $block->expiresAt - $now, RateLimitResultDTO::DECISION_HARD_BLOCK);
+                    $effective = $block;
                 }
             }
+
+            if ($effective === null) {
+                $previousKey = $keysV1[$keyType] ?? null;
+                if ($previousKey && $previousKey !== $currentKey) {
+                    $block = $this->store->checkBlock($previousKey);
+                    if ($block && $block->level >= 2 && $block->expiresAt > $now) {
+                        $effective = $block;
+                    }
+                }
+            }
+
+            if ($effective === null) {
+                continue;
+            }
+
+            $hasEffectiveBlock = true;
+            $highestLevel = max($highestLevel, $effective->level);
+            $longestRemaining = max($longestRemaining, $effective->expiresAt - $now);
         }
 
-        return null;
+        if (! $hasEffectiveBlock) {
+            return null;
+        }
+
+        return $this->createBlockedResult($highestLevel, $longestRemaining, RateLimitResultDTO::DECISION_HARD_BLOCK);
     }
 
     /**
@@ -1658,12 +1700,12 @@ class EvaluationPipeline
                 if ($config->known_device_micro_cap === null) {
                     $shouldCount = true;
                 } else {
-                    $microRawV2 = "{$policy->getName()}:rate_limiter:microcap:k5:v1:{$context->accountId}:{$device->fingerprintHash}";
+                    $microRawV2 = "{$policy->getName()}:rate_limiter:microcap:k5:v1:{$this->envScope}:{$context->accountId}:{$device->fingerprintHash}";
                     $microKeyV2 = $this->hashKey($microRawV2, $this->secret);
                     $microKeyV1 = null;
 
                     if ($this->hasPreviousGeneration($device)) {
-                        $microRawV1 = "{$policy->getName()}:rate_limiter:microcap:k5:v1:{$context->accountId}:{$this->previousFingerprintHash($device)}";
+                        $microRawV1 = "{$policy->getName()}:rate_limiter:microcap:k5:v1:{$this->envScope}:{$context->accountId}:{$this->previousFingerprintHash($device)}";
                         $microKeyV1 = $this->hashKey($microRawV1, $this->previousSecret ?? $this->secret);
                     }
 

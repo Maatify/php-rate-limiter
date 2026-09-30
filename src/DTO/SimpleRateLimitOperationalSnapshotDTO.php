@@ -13,10 +13,10 @@ final readonly class SimpleRateLimitOperationalSnapshotDTO implements \JsonSeria
      * @param string $policyName Simple throttle policy represented by the snapshot.
      * @param int $observedAt Unix timestamp at which the snapshot was read.
      * @param bool $backendHealthy Whether the backing store reported healthy.
-     * @param int $limit Policy-defined maximum consumes per fixed window.
+     * @param int $limit Policy-defined quota/consumption-unit limit per fixed window.
      * @param int $intervalSeconds Policy-defined fixed-window duration in seconds.
-     * @param int $count Persisted count of the effective active fixed window; `0` if no active window exists.
-     * @param int $remaining `max(0, limit - count)`.
+     * @param int $count Persisted quota/consumption units in the effective active fixed window; `0` if no active window exists.
+     * @param int $remaining Remaining quota/consumption units, `max(0, limit - count)`.
      * @param ?int $epochStart Active epoch start, otherwise `null`.
      * @param ?int $resetAt `epochStart + intervalSeconds`, otherwise `null`.
      * @param bool $fromPreviousGeneration True only when Current has no active state and Previous supplies the effective state.
