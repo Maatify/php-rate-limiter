@@ -137,9 +137,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   `RateLimiterConfig` contract and package-wide `RateLimiterBuilder`, which
   require the four Host integration boundaries, compose the existing runtime
   graph with a shared UTC default clock, register the Login/OTP/API Heavy policy
-  presets, and preserve independent outer/fingerprint rotation inputs. No Redis,
-  PDO, or full aggregate store
-  implementation is included.
+  presets, and preserve independent outer/fingerprint rotation inputs.
 - Implemented Circuit Breaker state-machine recovery: OPEN requests
   short-circuit shared-backend work, recovery uses leased read-only health probes
   through HALF_OPEN, and the rolling re-entry guard is authoritative across all
