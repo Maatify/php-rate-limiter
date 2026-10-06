@@ -59,7 +59,9 @@
         ],
         "test": "bash scripts/ci/run-phpunit-with-redis.sh",
         "test:unit": "phpunit --testsuite Unit",
-        "test:integration": "bash scripts/ci/run-phpunit-with-redis.sh --testsuite Integration"
+        "test:integration": "bash scripts/ci/run-phpunit-with-redis.sh --testsuite Integration",
+        "release:verify-artifact": "@php scripts/release/verify-release-artifact.php",
+        "release:verify-published-artifact": "@php scripts/release/verify-published-artifact.php"
     },
     "config": {
         "optimize-autoloader": true,
