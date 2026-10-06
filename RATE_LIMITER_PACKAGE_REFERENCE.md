@@ -215,6 +215,21 @@ lifecycle and supplies the command executor. Secrets are caller-provided; the
 package does not read environment variables, generate secrets, serialize
 secrets, or merge outer and fingerprint rotation into one input.
 
+Native Redis replies (DEC-018): the Host owns the Redis client and its
+executor returns the client's native/raw result; the Host is not required to
+normalize it. The official Redis adapter (`RedisFullCapabilityStore`) owns the
+interpretation of the supported representations it uses. A health `PING` is
+healthy only when exactly `'PONG'` or exactly `true` (phpredis
+`rawCommand('PING')` returns `bool(true)`); any other value is unhealthy, and
+`BackendFailureException` is unhealthy while other throwables propagate.
+Circuit state is read with an internal atomic tagged Redis read
+(`redis.pcall('GET')` inside one `EVAL`) because a bare native `GET` `false` is
+ambiguous: Redis NIL (absent) and Redis ERROR (for example `WRONGTYPE`) stay
+distinguishable, and an error is an explicit non-`BackendFailureException`
+failure, never absent state. The generic storage contracts stay
+backend-independent. Support is claimed only for direct phpredis
+`rawCommand()` and string-reply executors.
+
 ```php
 use Maatify\RateLimiter\Builder\RateLimiterBuilder;
 use Maatify\RateLimiter\Config\RateLimiterConfig;

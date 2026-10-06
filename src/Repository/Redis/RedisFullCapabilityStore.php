@@ -123,6 +123,20 @@ redis.call('HSET', KEYS[1], 'updatedAt', now)
 return {result, now}
 LUA;
 
+    /**
+     * Atomic, read-only circuit-state read (DEC-018). redis.pcall keeps a Redis
+     * ERROR distinguishable from a Redis NIL before any client representation:
+     * missing key => {'absent'}; string => {'value', payload};
+     * command error => {'error', text}.
+     */
+    private const CIRCUIT_READ = <<<'LUA'
+local reply = redis.pcall('GET', KEYS[1])
+if type(reply) == 'table' and reply.err then return {'error', reply.err} end
+if reply == false then return {'absent'} end
+if type(reply) == 'string' then return {'value', reply} end
+return {'error', 'unexpected GET reply type'}
+LUA;
+
     private const SCORE_GET = <<<'LUA'
 local function validPhpInteger(value)
   if value == nil or string.match(value, '^%-?%d+$') == nil then return false end
@@ -1420,12 +1434,11 @@ LUA;
 
     public function load(string $policyName): ?CircuitBreakerStateDTO
     {
-        $raw = $this->command(['GET', $this->key('circuit', $policyName)]);
+        $raw = $this->circuitReadResult(
+            $this->eval(self::CIRCUIT_READ, [$this->key('circuit', $policyName)], []),
+        );
         if ($raw === null) {
             return null;
-        }
-        if (! is_string($raw)) {
-            throw new RateLimiterException('Malformed circuit-breaker response.');
         }
         try {
             $data = json_decode($raw, true, 512, JSON_THROW_ON_ERROR);
@@ -1708,14 +1721,52 @@ LUA;
         return $this->integerValue($this->eval(self::LIFECYCLE_CLAIM, $keys, [$lifecycleId]), 're-entry claim') === 1;
     }
 
+    /**
+     * Healthy only for a supported PING reply representation (DEC-018).
+     *
+     * BackendFailureException is unhealthy; every other throwable propagates
+     * unchanged.
+     */
     public function isHealthy(): bool
     {
         try {
-            $result = $this->command(['PING']);
-            return $result === 'PONG';
+            return $this->pingReplyIsHealthy($this->command(['PING']));
         } catch (BackendFailureException) {
             return false;
         }
+    }
+
+    /**
+     * Official Redis adapter interpretation of the native PING reply: a string
+     * client returns 'PONG'; ext-redis rawCommand() returns bool(true) for the
+     * status reply. Strict identity only, never truthiness (DEC-018).
+     */
+    private function pingReplyIsHealthy(mixed $reply): bool
+    {
+        return $reply === 'PONG' || $reply === true;
+    }
+
+    /**
+     * Strict parser for the CIRCUIT_READ tagged reply. Only the exact tuples
+     * ['absent'], ['value', string], and ['error', string] are accepted. A
+     * Redis command error is an explicit package failure: never absent state,
+     * never BackendFailureException (DEC-015).
+     */
+    private function circuitReadResult(mixed $reply): ?string
+    {
+        if (is_array($reply) && array_is_list($reply) && $reply !== []) {
+            $count = count($reply);
+            if ($reply[0] === 'absent' && $count === 1) {
+                return null;
+            }
+            if ($reply[0] === 'value' && $count === 2 && is_string($reply[1])) {
+                return $reply[1];
+            }
+            if ($reply[0] === 'error' && $count === 2 && is_string($reply[1])) {
+                throw new RateLimiterException('Redis rejected the circuit-breaker state read: ' . $reply[1]);
+            }
+        }
+        throw new RateLimiterException('Malformed circuit-breaker response.');
     }
 
     private function key(string $family, string $logical): string

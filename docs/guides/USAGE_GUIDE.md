@@ -66,6 +66,14 @@ Host-owned `RedisCommandExecutorInterface` (or
 `CallableRedisCommandExecutor`) and pass that store as
 `$fullCapabilityStore`.
 
+The Host owns the Redis client and connection lifecycle, and the executor
+returns the client's native result, for example phpredis `rawCommand()`. The
+Host does not normalize phpredis reply semantics: the official Redis store
+accepts a `PING` of `'PONG'` or `true`, and reads circuit state through an
+internal atomic tagged Redis read so that a missing key and a Redis error stay
+distinguishable (DEC-018). Only identified transport outages should be mapped
+to `BackendFailureException`; other client exceptions must propagate.
+
 ### Advanced multi-store composition
 
 Consumers that intentionally own separate storage boundaries may use the
