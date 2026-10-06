@@ -12,10 +12,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   `rawCommand()` replies without Host normalization (Issue #91, DEC-018): a
   healthy `PING` is exactly `'PONG'` or exactly `true`, which restores
   circuit-breaker recovery and `RateLimitOperationalSnapshotDTO::$backendHealthy`;
-  a missing circuit-state `GET` is absent when `null` or `false`, so the first
-  request on an empty Redis no longer fails with a malformed-response error.
-  Any other reply shape is still unhealthy/malformed, failure provenance is
-  unchanged, and generic storage contracts are unchanged.
+  circuit state is read through an internal atomic tagged Redis read, so the
+  first request on an empty Redis works through direct phpredis while a Redis
+  error such as `WRONGTYPE` stays an explicit failure instead of being treated
+  as absent state. Any other reply shape is still unhealthy/malformed, failure
+  provenance is unchanged, and generic storage contracts are unchanged.
 
 ## [1.0.0-rc.1] - 2026-09-30
 

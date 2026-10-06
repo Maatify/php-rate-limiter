@@ -13,8 +13,9 @@ use Maatify\RateLimiter\Exception\BackendFailureException;
  * not depend on ext-redis or Predis; an implementation returns the raw result
  * of the command, and is not required to normalize it: the official Redis
  * adapter interprets the supported native replies it needs (PING 'PONG' or
- * true; missing-key GET null or false; DEC-018). Only an identified
- * operational transport or backend failure may be classified as
+ * true) and avoids ambiguous bare GET replies through an internal atomic
+ * tagged read (DEC-018). Only an identified operational transport or
+ * backend failure may be classified as
  * BackendFailureException. Programming, protocol, and
  * unknown failures remain distinguishable and must not be blanket-wrapped.
  */

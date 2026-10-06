@@ -31,11 +31,13 @@ result with `'PONG'` only, but `ext-redis` (phpredis) `rawCommand('PING')`
 returns `bool(true)`, so a healthy Redis was reported unhealthy and circuit
 recovery and `backendHealthy` were wrong.
 
-Lead finding F92-02 then proved a second representation difference of the same
-nature: phpredis `rawCommand('GET', <missing key>)` returns `false` where the
-adapter only understood `null`. `RedisFullCapabilityStore::load()` threw
-`Malformed circuit-breaker response`, so the first request on an empty Redis
-failed through a direct phpredis executor. A Host-side workaround was rejected.
+Lead finding F92-02 then proved a second representation difference:
+phpredis `rawCommand('GET', <missing key>)` returns `false`. Finding F92-03
+showed that this `false` is ambiguous: phpredis can also return `false` for a
+Redis ERROR reply such as `WRONGTYPE`. Treating a bare client `false` as absent
+would turn a corrupted or wrong-type persisted circuit state into a normal
+absent state, which violates DEC-015 failure provenance. A Host-side
+normalization or a client-specific error API was rejected.
 
 A sweep of every client-side raw command the adapter issues (`GET`, `SET`,
 `PING`, `TIME`, `EVAL`), by running the whole real-Redis suite through direct
@@ -58,9 +60,18 @@ package semantics. (Commands inside Lua are unaffected by client representation.
    command-specific internal helpers. No generic reply framework or
    normalization layer is introduced.
 4. `PING` is healthy only when strictly identical to `'PONG'` or `true`.
-5. A `GET` reply for a missing circuit-state key is absent when strictly `null`
-   or `false`; an existing value is a `string`. Any other shape is an explicit
-   `RateLimiterException` (malformed response).
+5. A direct client `GET` `false` is ambiguous and is **not** used as the
+   semantic absence contract. `RedisFullCapabilityStore::load()` reads circuit
+   state with a package-owned, read-only, atomic `EVAL` primitive that runs
+   `redis.pcall('GET', key)` and returns a tagged reply, so NIL and ERROR stay
+   distinguishable before any client representation: `['absent']`,
+   `['value', <payload>]`, or `['error', <Redis error text>]`. One command, one
+   round trip, no storage migration. The PHP side accepts exactly those tuples
+   (strict identity, list shape, exact size, string payload). `['absent']` is
+   absent state; `['value', string]` continues the existing JSON/state
+   validation; `['error', string]` is an explicit `RateLimiterException` that is
+   not `BackendFailureException`, not absent, and not fallback; anything else is
+   an explicit malformed-response `RateLimiterException`.
 6. Generic truthiness and loose comparison are forbidden. `1`, `'1'`, `'OK'`,
    `'true'`, `[]`, objects, and other values are not healthy for `PING`.
 7. `BackendFailureException` remains the known operational backend failure and
@@ -86,9 +97,9 @@ to the two representations proven by real-driver evidence.
 
 ## Consequences
 
-Direct phpredis `rawCommand()` works on an empty Redis from the first request.
+Direct phpredis `rawCommand()` works on an empty Redis from the first request, and a wrong-type circuit key fails explicitly instead of being hidden.
 The proof is a strict reply matrix, real Redis + real ext-redis regressions
-(including empty-Redis first request), Operational Read and circuit recovery
+(empty-Redis first request and a real `WRONGTYPE` circuit key), Operational Read and circuit recovery
 regressions, and the Consumer Verification Harness with a direct raw bridge.
 
 ## Supersedes

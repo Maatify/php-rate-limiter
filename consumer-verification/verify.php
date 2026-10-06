@@ -55,6 +55,21 @@ function simpleResultShape(SimpleRateLimitResultDTO $result): array
     return ['allowed' => $result->allowed, 'limit' => $result->limit, 'remaining' => $result->remaining, 'retryAfter' => $result->retryAfter, 'resetAt' => $result->resetAt, 'failureMode' => $result->failureMode];
 }
 
+/**
+ * Circuit state is read through one package-owned EVAL (DEC-018). Harness outage injection fails the
+ * score/budget workload while keeping that circuit-state persistence reachable, as it did when the
+ * circuit state was a plain GET/SET. Identification is by the script's read-only GET.
+ *
+ * @param array<int, mixed> $command
+ */
+function isCircuitStateRead(array $command): bool
+{
+    return strtoupper((string) ($command[0] ?? '')) === 'EVAL'
+        && isset($command[1], $command[2], $command[3])
+        && (int) $command[2] === 1
+        && str_contains((string) $command[1], "redis.pcall('GET'");
+}
+
 function redisHashMap(mixed $flat): array
 {
     if (! is_array($flat) || count($flat) % 2 !== 0) {
@@ -841,7 +856,7 @@ requireCondition($simplePreviousStateAfter === $simplePreviousStateBefore, 'Prev
 
 $failureRaw = new RespRedisCommandExecutor($host, (int) $port);
 $failureExecutor = new CallableRedisCommandExecutor(static function (array $command) use ($failureRaw): mixed {
-    if (strtoupper((string) ($command[0] ?? '')) === 'EVAL') {
+    if (strtoupper((string) ($command[0] ?? '')) === 'EVAL' && ! isCircuitStateRead($command)) {
         throw new BackendFailureException('controlled consumer backend failure');
     }
     return $failureRaw->execute($command);
@@ -977,7 +992,7 @@ $circuitDown = true;
 $circuitEvalCalls = 0;
 $circuitExecutor = new CallableRedisCommandExecutor(static function (array $command) use (&$circuitDown, &$circuitEvalCalls, $raw): mixed {
     $name = strtoupper((string) ($command[0] ?? ''));
-    if ($name === 'EVAL') {
+    if ($name === 'EVAL' && ! isCircuitStateRead($command)) {
         $circuitEvalCalls++;
         if ($circuitDown) {
             throw new BackendFailureException('controlled circuit backend failure');
@@ -1016,16 +1031,16 @@ requireCondition($phpRedis->connect($host, (int) $port, 5.0), 'ext-redis could n
 $phpRedisPing = $phpRedis->rawCommand('PING');
 requireCondition($phpRedisPing === true || $phpRedisPing === 'PONG', 'Unexpected ext-redis PING representation: ' . get_debug_type($phpRedisPing));
 $phpRedisDown = false;
-$phpRedisExecutor = new CallableRedisCommandExecutor(static function (array $command) use ($phpRedis, &$phpRedisDown): mixed {
+$phpRedisCircuitKeys = [];
+$phpRedisExecutor = new CallableRedisCommandExecutor(static function (array $command) use ($phpRedis, &$phpRedisDown, &$phpRedisCircuitKeys): mixed {
     $name = strtoupper((string) $command[0]);
-    if ($phpRedisDown && ($name === 'EVAL' || $name === 'PING')) {
+    if (isCircuitStateRead($command)) {
+        $phpRedisCircuitKeys[] = (string) $command[3];
+    }
+    if ($phpRedisDown && (($name === 'EVAL' && ! isCircuitStateRead($command)) || $name === 'PING')) {
         throw new BackendFailureException('controlled ext-redis backend failure');
     }
-    try {
-        return $phpRedis->rawCommand((string) $command[0], ...array_slice($command, 1));
-    } catch (\RedisException $exception) {
-        throw new BackendFailureException('ext-redis transport failure: ' . $exception->getMessage(), 0, $exception);
-    }
+    return $phpRedis->rawCommand((string) $command[0], ...array_slice($command, 1));
 });
 $phpRedisStore = new RedisFullCapabilityStore($phpRedisExecutor, 'consumer-ext-redis');
 $phpRedisClock = new FixedClock(new DateTimeImmutable('now', new DateTimeZone('UTC')));
@@ -1052,8 +1067,23 @@ $phpRedisClosed = $phpRedisLimiter->limit($phpRedisContext, RateLimitCommand::ch
 requireCondition($phpRedisClosed->failureMode === 'NORMAL', 'ext-redis healthy probe did not close the circuit.');
 $phpRedisSignalTypes = array_values(array_map(static fn($signal): string => $signal->type, $phpRedisSignals->signals()));
 requireCondition(in_array('CB_RECOVERED', $phpRedisSignalTypes, true), 'ext-redis circuit recovery did not emit CB_RECOVERED.');
+// WRONGTYPE circuit state: explicit package failure, not absent, not fallback, not a backend outage.
+requireCondition($phpRedisCircuitKeys !== [], 'No circuit-state read key was observed.');
+$phpRedis->rawCommand('DEL', $phpRedisCircuitKeys[array_key_last($phpRedisCircuitKeys)]);
+$phpRedis->rawCommand('LPUSH', $phpRedisCircuitKeys[array_key_last($phpRedisCircuitKeys)], 'wrong-type');
+$phpRedisSignalCountBeforeWrongType = count($phpRedisSignals->signals());
+$wrongTypeFailure = null;
+try {
+    $phpRedisLimiter->limit($phpRedisContext, RateLimitCommand::checkOnly('api_heavy_protection'));
+} catch (BackendFailureException $exception) {
+    $wrongTypeFailure = 'backend-failure';
+} catch (RateLimiterException $exception) {
+    $wrongTypeFailure = str_contains($exception->getMessage(), 'WRONGTYPE') ? 'explicit-package-failure' : 'unexpected-message';
+}
+requireCondition($wrongTypeFailure === 'explicit-package-failure', 'WRONGTYPE circuit state did not fail explicitly as a package failure: ' . var_export($wrongTypeFailure, true));
+requireCondition(count($phpRedisSignals->signals()) === $phpRedisSignalCountBeforeWrongType, 'WRONGTYPE circuit state emitted failure signals.');
 $phpRedis->close();
 
 $keys = redisKeys($raw);
 requireCondition(count($keys) > 0, 'No Redis persistence was observable.');
-echo json_encode(['status' => 'PASS', 'packageInstallPath' => $installPath, 'productionAutoload' => true, 'packageTestNamespaceAvailable' => false, 'reentryTiming' => ['loginLevel' => $reentryLoginHard->blockLevel, 'otpLevel' => $reentryOtpHard->blockLevel, 'customLevel' => $customHard->blockLevel, 'sharedWaitSeconds' => $sharedWaitSeconds], 'login' => ['checkOnly' => resultShape($loginCheck), 'recordFailure' => resultShape($loginFailure), 'recordSuccess' => resultShape($loginSuccess), 'progression' => array_map('resultShape', $loginProgression), 'persistenceProof' => true, 'postPunishmentReentry' => ['checkOnly' => resultShape($reentryLoginCheck), 'claim' => $reentryLoginClaim, 'secondClaim' => $reentryLoginSecondClaim]], 'otp' => resultShape($otp), 'otpPostPunishmentReentry' => ['checkOnly' => resultShape($reentryOtpCheck), 'claim' => $reentryOtpClaim, 'secondClaim' => $reentryOtpSecondClaim], 'customOptIn' => ['checkOnly' => resultShape($customCheck), 'claim' => $customClaim, 'secondClaim' => $customSecondClaim], 'apiHeavy' => resultShape($api), 'credentialSpray' => array_map('resultShape', $spray), 'sprayLifecycle' => ['recordSuccess' => resultShape($spraySuccess), 'subjectFourCheckOnly' => resultShape($spraySubjectFour)], 'trustedSession' => resultShape($trusted), 'untrustedFollowUp' => resultShape($untrustedFollowUp), 'trustedNonK1' => resultShape($trustedNonK1), 'rotations' => $rotationCases, 'budgetMigration' => ['previousCount' => (int) $previousBudgetMap['count'], 'currentCount' => (int) $currentBudgetMap['count'], 'epochStartPreserved' => true, 'previousReadOnly' => true], 'simpleThrottle' => ['consume1' => simpleResultShape($simpleFirst), 'consume2' => simpleResultShape($simpleSecond), 'consume3Denied' => simpleResultShape($simpleThird), 'newRedisKeys' => count($simpleNewKeys), 'rawSubjectHiddenFromKeys' => true, 'unknownPolicyRejected' => $unknownSimplePolicyRejected, 'weighted' => ['cost2' => simpleResultShape($weightedFirst), 'cost3' => simpleResultShape($weightedSecond), 'cost6Denied' => simpleResultShape($weightedDenied), 'persistedCount' => $weightedSnapshot->count, 'operationalRemaining' => $weightedSnapshot->remaining, 'stableResetAt' => $weightedFirst->resetAt === $weightedDenied->resetAt], 'rotation' => ['oldGeneration' => simpleResultShape($simpleOldResult), 'migratedIntoCurrent' => simpleResultShape($simpleMigrated), 'previousReadOnly' => $simplePreviousStateAfter === $simplePreviousStateBefore], 'backendFailure' => simpleResultShape($simpleFailureResult), 'backendFailureFromRateLimiterException' => simpleResultShape($simpleFailureResultFromRateLimiterException)], 'failureSemantics' => ['login' => resultShape($loginFailureMode), 'otp' => resultShape($otpFailureMode), 'apiHeavy' => resultShape($apiFailureMode)], 'customFallbackConfiguration' => ['auth' => ['enteredFallback' => resultShape($customSemanticAuthFallback[2]), 'accountCapAllowed' => resultShape($customSemanticAuthFallback[6]), 'accountCapExceeded' => resultShape($customSemanticAuthFallback[7])], 'api' => ['ipUaCapAllowed' => resultShape($customApiFallback[79]), 'ipUaCapExceeded' => resultShape($customApiFallback[80])]], 'circuit' => ['openGuard' => resultShape($openGuardResult), 'halfOpenProbe' => resultShape($halfOpenResult), 'closedRecovery' => resultShape($closedResult), 'normalWorkloadSuppressedWhileOpen' => true, 'signalCount' => count($circuitSignals->signals()), 'signalTypes' => array_values(array_unique(array_map(static fn($signal): string => $signal->type, $circuitSignals->signals())))], 'extRedisCompatibility' => ['pingRepresentation' => get_debug_type($phpRedisPing), 'healthy' => true, 'emptyRedisFirstRequest' => true, 'circuitRecovered' => true], 'redisPersistence' => ['keyCount' => count($keys)], 'failureSignals' => count($signals->signals())], JSON_THROW_ON_ERROR) . PHP_EOL;
+echo json_encode(['status' => 'PASS', 'packageInstallPath' => $installPath, 'productionAutoload' => true, 'packageTestNamespaceAvailable' => false, 'reentryTiming' => ['loginLevel' => $reentryLoginHard->blockLevel, 'otpLevel' => $reentryOtpHard->blockLevel, 'customLevel' => $customHard->blockLevel, 'sharedWaitSeconds' => $sharedWaitSeconds], 'login' => ['checkOnly' => resultShape($loginCheck), 'recordFailure' => resultShape($loginFailure), 'recordSuccess' => resultShape($loginSuccess), 'progression' => array_map('resultShape', $loginProgression), 'persistenceProof' => true, 'postPunishmentReentry' => ['checkOnly' => resultShape($reentryLoginCheck), 'claim' => $reentryLoginClaim, 'secondClaim' => $reentryLoginSecondClaim]], 'otp' => resultShape($otp), 'otpPostPunishmentReentry' => ['checkOnly' => resultShape($reentryOtpCheck), 'claim' => $reentryOtpClaim, 'secondClaim' => $reentryOtpSecondClaim], 'customOptIn' => ['checkOnly' => resultShape($customCheck), 'claim' => $customClaim, 'secondClaim' => $customSecondClaim], 'apiHeavy' => resultShape($api), 'credentialSpray' => array_map('resultShape', $spray), 'sprayLifecycle' => ['recordSuccess' => resultShape($spraySuccess), 'subjectFourCheckOnly' => resultShape($spraySubjectFour)], 'trustedSession' => resultShape($trusted), 'untrustedFollowUp' => resultShape($untrustedFollowUp), 'trustedNonK1' => resultShape($trustedNonK1), 'rotations' => $rotationCases, 'budgetMigration' => ['previousCount' => (int) $previousBudgetMap['count'], 'currentCount' => (int) $currentBudgetMap['count'], 'epochStartPreserved' => true, 'previousReadOnly' => true], 'simpleThrottle' => ['consume1' => simpleResultShape($simpleFirst), 'consume2' => simpleResultShape($simpleSecond), 'consume3Denied' => simpleResultShape($simpleThird), 'newRedisKeys' => count($simpleNewKeys), 'rawSubjectHiddenFromKeys' => true, 'unknownPolicyRejected' => $unknownSimplePolicyRejected, 'weighted' => ['cost2' => simpleResultShape($weightedFirst), 'cost3' => simpleResultShape($weightedSecond), 'cost6Denied' => simpleResultShape($weightedDenied), 'persistedCount' => $weightedSnapshot->count, 'operationalRemaining' => $weightedSnapshot->remaining, 'stableResetAt' => $weightedFirst->resetAt === $weightedDenied->resetAt], 'rotation' => ['oldGeneration' => simpleResultShape($simpleOldResult), 'migratedIntoCurrent' => simpleResultShape($simpleMigrated), 'previousReadOnly' => $simplePreviousStateAfter === $simplePreviousStateBefore], 'backendFailure' => simpleResultShape($simpleFailureResult), 'backendFailureFromRateLimiterException' => simpleResultShape($simpleFailureResultFromRateLimiterException)], 'failureSemantics' => ['login' => resultShape($loginFailureMode), 'otp' => resultShape($otpFailureMode), 'apiHeavy' => resultShape($apiFailureMode)], 'customFallbackConfiguration' => ['auth' => ['enteredFallback' => resultShape($customSemanticAuthFallback[2]), 'accountCapAllowed' => resultShape($customSemanticAuthFallback[6]), 'accountCapExceeded' => resultShape($customSemanticAuthFallback[7])], 'api' => ['ipUaCapAllowed' => resultShape($customApiFallback[79]), 'ipUaCapExceeded' => resultShape($customApiFallback[80])]], 'circuit' => ['openGuard' => resultShape($openGuardResult), 'halfOpenProbe' => resultShape($halfOpenResult), 'closedRecovery' => resultShape($closedResult), 'normalWorkloadSuppressedWhileOpen' => true, 'signalCount' => count($circuitSignals->signals()), 'signalTypes' => array_values(array_unique(array_map(static fn($signal): string => $signal->type, $circuitSignals->signals())))], 'extRedisCompatibility' => ['pingRepresentation' => get_debug_type($phpRedisPing), 'healthy' => true, 'emptyRedisFirstRequest' => true, 'circuitRecovered' => true, 'wrongTypeCircuitState' => $wrongTypeFailure], 'redisPersistence' => ['keyCount' => count($keys)], 'failureSignals' => count($signals->signals())], JSON_THROW_ON_ERROR) . PHP_EOL;

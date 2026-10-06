@@ -10,6 +10,7 @@ use Maatify\RateLimiter\Config\RateLimiterConfig;
 use Maatify\RateLimiter\DTO\CircuitBreakerStateDTO;
 use Maatify\RateLimiter\DTO\RateLimitContextDTO;
 use Maatify\RateLimiter\Exception\BackendFailureException;
+use Maatify\RateLimiter\Exception\RateLimiterException;
 use Maatify\RateLimiter\Repository\Redis\CallableRedisCommandExecutor;
 use Maatify\RateLimiter\Repository\Redis\RedisFullCapabilityStore;
 use Maatify\RateLimiter\Tests\Support\Clock\FixedClock;
@@ -18,8 +19,8 @@ use PHPUnit\Framework\TestCase;
 
 /**
  * Issue #91 / DEC-018: real Redis + real ext-redis (phpredis) rawCommand()
- * through a direct raw bridge. The executor performs no reply normalization;
- * it only maps transport exceptions to BackendFailureException.
+ * through a direct raw bridge. The executor performs no reply normalization
+ * and no exception reclassification (an unexpected RedisException escapes).
  *
  * The suite is skipped only when the Redis lifecycle orchestration variables
  * are absent (same as the sibling integration suite). Once orchestrated, a
@@ -30,6 +31,11 @@ final class RedisFullCapabilityStoreExtRedisIntegrationTest extends TestCase
     private \Redis $redis;
 
     private RedisFullCapabilityStore $store;
+
+    /** @var list<string> Redis keys passed to the circuit-state read primitive. */
+    private array $circuitReadKeys = [];
+
+    private RecordingFailureSignalEmitter $signals;
 
     protected function setUp(): void
     {
@@ -47,6 +53,7 @@ final class RedisFullCapabilityStoreExtRedisIntegrationTest extends TestCase
             self::fail('ext-redis could not connect to the orchestrated Redis service.');
         }
         $this->redis->rawCommand('FLUSHDB');
+        $this->signals = new RecordingFailureSignalEmitter();
         $this->store = new RedisFullCapabilityStore($this->executor(), 'issue-91-ext-redis');
     }
 
@@ -87,6 +94,41 @@ final class RedisFullCapabilityStoreExtRedisIntegrationTest extends TestCase
         self::assertSame('NORMAL', $result->failureMode);
     }
 
+    public function testWrongTypeCircuitKeyFailsExplicitlyAndIsNotAbsent(): void
+    {
+        self::assertNull($this->store->load('api_heavy_protection'));
+        $key = $this->circuitKey();
+        self::assertSame(1, $this->redis->rawCommand('LPUSH', $key, 'wrong-type'));
+
+        try {
+            $this->store->load('api_heavy_protection');
+            self::fail('WRONGTYPE circuit state was treated as absent or valid state.');
+        } catch (BackendFailureException) {
+            self::fail('WRONGTYPE must not be classified as a backend outage.');
+        } catch (RateLimiterException $exception) {
+            self::assertStringContainsString('WRONGTYPE', $exception->getMessage());
+        }
+    }
+
+    public function testWrongTypeCircuitStateEscapesPublicRuntimeWithoutFallbackOrSignals(): void
+    {
+        $limiter = $this->limiter(new FixedClock('2025-01-01 12:00:00'));
+        $context = new RateLimitContextDTO('198.51.100.91', 'Mozilla/5.0', 'issue-91-account');
+        $limiter->limit($context, RateLimitCommand::checkOnly('api_heavy_protection'));
+        self::assertSame(1, $this->redis->rawCommand('LPUSH', $this->circuitKey(), 'wrong-type'));
+        $this->signals->clear();
+
+        try {
+            $limiter->limit($context, RateLimitCommand::checkOnly('api_heavy_protection'));
+            self::fail('WRONGTYPE circuit state produced a normal or fallback result.');
+        } catch (BackendFailureException) {
+            self::fail('WRONGTYPE must not be classified as a backend outage.');
+        } catch (RateLimiterException $exception) {
+            self::assertStringContainsString('WRONGTYPE', $exception->getMessage());
+        }
+        self::assertSame([], $this->signals->getEmitted());
+    }
+
     public function testRealRedisCircuitRecoversThroughHealthyPhpRedisPing(): void
     {
         $clock = new FixedClock('2025-01-01 12:00:00');
@@ -115,18 +157,26 @@ final class RedisFullCapabilityStoreExtRedisIntegrationTest extends TestCase
         return RateLimiterBuilder::fromFullCapabilityStore(
             new RateLimiterConfig('issue-91-key', 'issue-91-fingerprint', 'prod'),
             $this->store,
-            new RecordingFailureSignalEmitter(),
+            $this->signals,
         )->withClock($clock)->build();
+    }
+
+    private function circuitKey(): string
+    {
+        $key = end($this->circuitReadKeys);
+        self::assertIsString($key, 'No circuit-state read was observed.');
+
+        return $key;
     }
 
     private function executor(): CallableRedisCommandExecutor
     {
         return new CallableRedisCommandExecutor(function (array $command): mixed {
-            try {
-                return $this->redis->rawCommand((string) $command[0], ...array_slice($command, 1));
-            } catch (\RedisException $exception) {
-                throw new BackendFailureException('ext-redis transport failure: ' . $exception->getMessage(), 0, $exception);
+            if ($command[0] === 'EVAL' && isset($command[3]) && str_contains((string) $command[1], "redis.pcall('GET'")) {
+                $this->circuitReadKeys[] = (string) $command[3];
             }
+
+            return $this->redis->rawCommand((string) $command[0], ...array_slice($command, 1));
         });
     }
 }

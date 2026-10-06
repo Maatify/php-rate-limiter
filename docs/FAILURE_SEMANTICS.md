@@ -421,8 +421,10 @@ converted into failed-probe, circuit, or degraded semantics.
 
 For the official Redis store, a healthy `PING` is exactly `'PONG'` or exactly
 `true` (ext-redis `rawCommand()` representation, DEC-018); any other result is
-an unhealthy probe, with no new signal or logging. The same adapter treats a
-missing circuit-state `GET` reply of `null` or `false` as absent state.
+an unhealthy probe, with no new signal or logging. The same adapter reads circuit
+state through an atomic tagged read: a missing key is absent state, while a Redis
+error such as `WRONGTYPE` is an explicit `RateLimiterException`, never absent
+state, never `BackendFailureException`, and never fallback.
 
 Probe failure while already `OPEN` keeps the circuit `OPEN`, clears the healthy
 anchor, restarts `openSince`, and does not append a re-entry or emit another

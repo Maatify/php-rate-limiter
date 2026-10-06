@@ -13,52 +13,107 @@ use PHPUnit\Framework\Attributes\DataProvider;
 use PHPUnit\Framework\TestCase;
 
 /**
- * DEC-018: official Redis adapter interpretation of the circuit-state GET reply.
+ * F92-03 / DEC-018: strict tagged circuit-state read protocol. A bare GET
+ * reply (false/null) is never a semantic absence contract.
  */
 final class RedisFullCapabilityStoreCircuitLoadReplyTest extends TestCase
 {
     /** @return iterable<string, array{mixed}> */
-    public static function missingReplies(): iterable
-    {
-        yield 'null' => [null];
-        yield 'false (ext-redis nil bulk)' => [false];
-    }
-
-    /** @return iterable<string, array{mixed}> */
     public static function malformedReplies(): iterable
     {
-        yield 'true' => [true];
-        yield 'int 0' => [0];
-        yield 'int 1' => [1];
-        yield 'float' => [1.5];
-        yield 'empty array' => [[]];
+        yield 'bare false' => [false];
+        yield 'bare null' => [null];
+        yield 'bare true' => [true];
+        yield 'bare string' => ['{}'];
+        yield 'int' => [0];
         yield 'object' => [new \stdClass()];
-    }
-
-    #[DataProvider('missingReplies')]
-    public function testMissingValueIsAbsent(mixed $reply): void
-    {
-        self::assertNull($this->store(static fn(array $command): mixed => $reply)->load('api'));
+        yield 'empty array' => [[]];
+        yield 'non-list' => [['absent' => 1]];
+        yield 'non-list value' => [[1 => 'value', 2 => '{}']];
+        yield 'numeric tag' => [[0]];
+        yield 'unknown tag' => [['missing']];
+        yield 'absent with extra' => [['absent', 'extra']];
+        yield 'value missing payload' => [['value']];
+        yield 'value false payload' => [['value', false]];
+        yield 'value null payload' => [['value', null]];
+        yield 'value int payload' => [['value', 1]];
+        yield 'value extra payload' => [['value', '{}', 'extra']];
+        yield 'error missing payload' => [['error']];
+        yield 'error non-string payload' => [['error', 1]];
+        yield 'error extra payload' => [['error', 'WRONGTYPE', 'extra']];
     }
 
     #[DataProvider('malformedReplies')]
-    public function testOtherShapesAreExplicitlyMalformed(mixed $reply): void
+    public function testEveryOtherShapeIsExplicitlyMalformed(mixed $reply): void
     {
         $store = $this->store(static fn(array $command): mixed => $reply);
 
-        $this->expectException(RateLimiterException::class);
-        $this->expectExceptionMessage('Malformed circuit-breaker response.');
-        $store->load('api');
+        try {
+            $store->load('api');
+            self::fail('Malformed circuit read reply was accepted.');
+        } catch (BackendFailureException) {
+            self::fail('Malformed reply must not be a backend outage.');
+        } catch (RateLimiterException $exception) {
+            self::assertSame('Malformed circuit-breaker response.', $exception->getMessage());
+        }
     }
 
-    public function testExistingStringValueIsStillLoaded(): void
+    public function testAbsentTagIsAbsentState(): void
+    {
+        self::assertNull($this->store(static fn(array $command): mixed => ['absent'])->load('api'));
+    }
+
+    public function testErrorTagIsExplicitNonBackendFailure(): void
+    {
+        $store = $this->store(static fn(array $command): mixed => ['error', 'WRONGTYPE Operation against a key holding the wrong kind of value']);
+
+        try {
+            $store->load('api');
+            self::fail('Redis error reply was treated as absent state.');
+        } catch (BackendFailureException) {
+            self::fail('Redis error reply must not be a backend outage.');
+        } catch (RateLimiterException $exception) {
+            self::assertStringContainsString('WRONGTYPE', $exception->getMessage());
+        }
+    }
+
+    public function testValueTagIsLoadedAndUsesAtomicEvalNotDirectGet(): void
     {
         $state = new CircuitBreakerStateDTO('OPEN', [10], 10, 10, 0, [], 0);
         $json = json_encode($state, JSON_THROW_ON_ERROR);
-        $loaded = $this->store(static fn(array $command): mixed => $json)->load('api');
+        $commands = [];
+        $loaded = $this->store(static function (array $command) use ($json, &$commands): mixed {
+            $commands[] = $command;
+
+            return ['value', $json];
+        })->load('api');
 
         self::assertNotNull($loaded);
         self::assertSame($state->jsonSerialize(), $loaded->jsonSerialize());
+        self::assertCount(1, $commands);
+        self::assertSame('EVAL', $commands[0][0]);
+        self::assertStringContainsString("redis.pcall('GET'", (string) $commands[0][1]);
+        self::assertSame(1, $commands[0][2]);
+    }
+
+    /** @return iterable<string, array{string}> */
+    public static function invalidPersistedPayloads(): iterable
+    {
+        yield 'not json' => ['not-json'];
+        yield 'json scalar' => ['1'];
+        yield 'missing fields' => ['{"status":"OPEN"}'];
+        yield 'bad status' => ['{"status":"X","failures":[],"reEntries":[],"lastFailure":0,"openSince":0,"lastSuccess":0,"failClosedUntil":0}'];
+        yield 'negative timestamp' => ['{"status":"OPEN","failures":[],"reEntries":[],"lastFailure":-1,"openSince":0,"lastSuccess":0,"failClosedUntil":0}'];
+        yield 'non-int failure' => ['{"status":"OPEN","failures":["a"],"reEntries":[],"lastFailure":0,"openSince":0,"lastSuccess":0,"failClosedUntil":0}'];
+    }
+
+    #[DataProvider('invalidPersistedPayloads')]
+    public function testValuePayloadStillGetsStructuralValidation(string $payload): void
+    {
+        $store = $this->store(static fn(array $command): mixed => ['value', $payload]);
+
+        $this->expectException(RateLimiterException::class);
+        $store->load('api');
     }
 
     public function testBackendFailureStillPropagatesFromLoad(): void
