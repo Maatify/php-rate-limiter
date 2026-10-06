@@ -5,7 +5,7 @@
 ## Standard Metadata
 
 - **Standard ID:** `std-package-building`
-- **Standard Version:** `3.0.1`
+- **Standard Version:** `3.0.2`
 - **Standard Version Format:** `MAJOR.MINOR.PATCH`
 
 This document is the law for building any new standalone Composer package in the Maatify ecosystem.
@@ -97,7 +97,7 @@ Every package must contain these files at its package root (the repository root 
 
 ```
 ├── README.md                          ← installation, quick examples, what it does / does not
-├── CHANGELOG.md                       ← Keep a Changelog; release history begins at [1.0.0]
+├── CHANGELOG.md                       ← Keep a Changelog; release-preparation and CHANGELOG presentation semantics are owned by LIBRARY_PRESENTATION_STANDARD.md
 ├── {PACKAGE_NAME}_PACKAGE_REFERENCE.md ← canonical stable public/runtime package contract (e.g. EXAMPLE_PACKAGE_REFERENCE.md)
 ├── composer.json                      ← governed by COMPOSER_PACKAGE_STANDARD.md
 ├── phpstan.neon                       ← governed by Section 21

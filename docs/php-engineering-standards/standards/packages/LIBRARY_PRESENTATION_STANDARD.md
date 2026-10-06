@@ -3,7 +3,7 @@
 ## Standard Metadata
 
 - **Standard ID:** `std-library-presentation`
-- **Standard Version:** `3.0.0`
+- **Standard Version:** `5.0.0`
 - **Standard Version Format:** `MAJOR.MINOR.PATCH`
 
 ## 1. Normative Language
@@ -27,7 +27,7 @@ This Standard is responsible for governing:
 * Author and ecosystem identity.
 * GitHub description, topics and PR metadata.
 * Tag and Release consumption of a release-qualified SHA.
-* SemVer Release Candidate presentation and first Stable release readiness.
+* General exact-SemVer release preparation, SemVer Release Candidate presentation, and first Stable release readiness.
 
 It explicitly does **not** govern:
 * Runtime architecture.
@@ -41,12 +41,12 @@ It explicitly does **not** govern:
 ### Relationship to other standards:
 * `PACKAGE_BUILDING_STANDARD.md`: Governs library building, runtime architecture, and the stable public/runtime/behavioral package contract.
 * `COMPOSER_PACKAGE_STANDARD.md`: Governs Composer metadata, dependencies and Composer stability constraints, autoloading, scripts, configuration, and lock-file policy.
-* `CI_WORKFLOW_STANDARD.md`: Governs CI, quality gates, and automated testing.
-* `DOCUMENTATION_LIFECYCLE_STANDARD_AR.md`: Governs document roles, authority boundaries, current-versus-historical semantics, freshness, retention, and documentation-reference hygiene.
+* `CI_WORKFLOW_STANDARD.md`: Governs CI, quality gates, automated testing, and execution of release-artifact verification.
+* `DOCUMENTATION_LIFECYCLE_STANDARD_AR.md`: Governs document roles, authority boundaries, current-versus-historical semantics, freshness, retention, and documentation-reference hygiene, including immutable release-artifact documents versus live repository presentation.
 
 For the language of durable technical documentation, including README, Package Reference, Usage/Integration Guides, and release-facing documentation, this Standard follows the canonical default in `DOCUMENTATION_LIFECYCLE_STANDARD_AR.md`; it does not define a second language contract.
 
-This Standard owns consumer-facing presentation, release-facing consumption, and first Stable readiness. `CI_WORKFLOW_STANDARD.md` owns exact release-SHA qualification and evidence. Composer stability constraints govern dependency resolution; they do not define release eligibility or publication state.
+This Standard owns consumer-facing presentation, general exact-target release preparation, release-artifact self-consistency, release-facing consumption, and first Stable readiness. `CI_WORKFLOW_STANDARD.md` owns exact release-SHA qualification, Release Artifact Verification execution, and evidence. Composer stability constraints govern dependency resolution; they do not define release eligibility or publication state.
 
 The `llms.txt` contract defined by this Standard is an AI consumer discovery and navigation layer. It does not replace the README, Package Reference, Usage Guide, examples, `AGENTS.md`, or contributor instructions, and it does not create a second public or runtime contract.
 
@@ -97,8 +97,10 @@ The examples in this Standard use canonical placeholders. When applying these te
 * `{PACKAGE_REFERENCE_FILE}`: The specific reference markdown file for the package.
 * `{MINIMUM_PHP_VERSION}`: The minimum supported PHP version.
 * `{SUPPORTED_MAJOR_LINE}`: The actively supported release line.
-* `{RELEASE_VERSION}`: The version number for the release.
-* `{RELEASE_DATE}`: The date of the release.
+* `{EXACT_RELEASE_TARGET}`: The exact SemVer version without a tag prefix allocated to changes currently being prepared or represented, including any pre-release identifier.
+* `{ACTUAL_RELEASE_DATE}`: The actual date of an already Published release; never a planned date for an unpublished target.
+* `{LATEST_ACTUAL_PUBLISHED_VERSION}`: The latest version without a tag prefix that satisfies the Publication State Definition; used as the `[Unreleased]` compare base only when such a version exists.
+* `{PUBLISHED_RELEASE_VERSION}`: The exact already-Published version without a tag prefix used by a published-release link.
 * `{BADGE_AREA}`: The complete rendered badge groups selected for the current library according to the badge architecture defined by this Standard.
 * `{PACKAGE_SUMMARY}`: A concise and technically accurate summary of the library's primary purpose and supported scope.
 * `{ENCODED_COMPOSER_PACKAGE_NAME}`: The URL-encoded Composer package name used inside shields.io badge text, with `/` encoded as `%2F`.
@@ -184,6 +186,8 @@ The default README badge style is Shields' default/small style. `style=for-the-b
 
 ### 8.1 Publication-State Matrix
 
+This matrix governs **live/default-branch** publication-state presentation. An immutable Release Artifact may target an unpublished version and MUST follow the separate artifact-identity rules in §8.1.2; a live-state badge or value MUST NOT be copied into that artifact as an unqualified timeless claim when it can become false after publication.
+
 #### A. Development / Unpublished
 
 When no version is externally published and resolvable through an approved distribution channel, show:
@@ -210,11 +214,7 @@ When an exact pre-release is externally published and resolvable but no Stable r
 
 Do not present a prepared Stable target as published or use a generic install command that can resolve a different version.
 
-#### C. Stable Release Preparation
-
-Before the Stable tag and distribution publication, the public default-branch README MUST continue to represent the latest actually published state. A target Stable version MUST NOT appear as Latest, Published, or supported merely because release preparation is complete.
-
-#### D. Published Stable
+#### C. Published Stable
 
 After a Stable version is externally published and resolvable, show:
 
@@ -229,16 +229,56 @@ After a Stable version is externally published and resolvable, show:
 
 If the package does not use Packagist, do not use Packagist badges; use an equivalent authoritative distribution surface only when it exists.
 
-#### E. Existing Stable with a future pre-release
+#### D. Existing Stable with a future pre-release
 
 When a Stable release already exists and a future pre-release is published, the default-branch README MUST retain Stable status, the latest published Stable version, Stable download semantics, and the generic Stable install command. The future pre-release belongs in release-specific documentation and MUST NOT replace the default Stable presentation.
+
+### 8.1.1 Orthogonal Exact-Target Release Preparation
+
+`Release Target` is the exact SemVer version to which the changes being prepared are allocated. `Release Preparation` is work on the release-facing state for that exact target. It MAY be active for any exact SemVer target, including Alpha, Beta, RC, or Stable targets, whether it is the first release or a later patch-, minor-, or major-version release. It is a preparation state alongside the Publication State above; it is not a Publication State and does not change the public default-branch presentation from actual published truth.
+
+An exact Release Target MAY exist and be prepared before Publication. Target existence does not establish the existence or state of a Published release.
+
+Release Preparation MUST NOT by itself establish publication, a release-qualified SHA, Stable support, or Release Authorization. The live/default-branch README MUST represent the latest actually published state. When external Publication changes a static current/live claim on the default branch, the affected presentation MUST be synchronized so that the default branch does not knowingly remain stale. Synchronization MAY be omitted only when no static current/live claim became stale, for example because an authoritative dynamic surface already reports the new state correctly or no affected live/current claim is present. An unpublished target MUST NOT be presented as Latest, Published, Stable, or Supported merely because preparation is active.
+
+For example, this is a valid state:
+
+```text
+Release Target: 1.0.0-rc.1
+Release Preparation: active
+Publication State: unpublished
+Release Qualification: not yet established
+Stable Support: none
+```
+
+Publication is determined only by the exact package identity/version being externally resolvable and installable through an approved distribution source, as defined in Section 14. A target section in CHANGELOG, tag, GitHub Release, CI result, or documentation claim alone does not establish publication.
+
+### 8.1.2 Release Artifact Identity and Live Publication Presentation
+
+Three facts MUST remain distinct:
+
+1. **Release Target:** the exact SemVer version selected for preparation.
+2. **Release Artifact Identity / State:** the exact immutable package tree prepared to receive that version's tag, including whether it represents an Alpha, Beta, RC, or Stable lifecycle target.
+3. **Live Publication State:** whether that exact package name and version is currently externally resolvable and installable through an approved Composer distribution source.
+
+Selecting a target or preparing its artifact does not claim Publication. A tag or GitHub Release alone does not establish Publication; the Publication State Definition remains the source of truth.
+
+The Release Artifact README and the live default-branch README have different temporal roles, even when the same file serves both roles on the release-qualified `main` SHA. In that case, the README MUST label the exact artifact target and its Publication State **as of qualification** as separate facts. A release-qualified tree for target `X` MUST identify itself as the artifact for `X` and MUST NOT identify `X-1` as the identity of the artifact being installed. It MUST NOT present `X-1` as the unqualified current or latest Published version in an immutable artifact when that mutable live claim can become false after `X` is Published. If the README retains an earlier version as a live/current Publication fact, it MUST explicitly time-scope that fact, such as `Published state at qualification: X-1`, so it remains historically true; this does not reclassify ordinary chronological CHANGELOG entries as live/current claims. The live default-branch README MAY report the actual current/latest Published version under §8.1. An artifact MAY identify `X` as a Release Candidate, Stable target, or other applicable lifecycle state before publication, provided it does not claim external availability or support that has not been established; it MAY state `Publication State at qualification: unpublished`.
+
+A genuinely dynamic external display of live Publication State MAY appear in a release artifact only when it resolves actual live state from an authoritative source, keeps the artifact identity fixed at `X`, does not depend on a later source-tree commit, and cannot fall back to a false static package identity if the external source is unavailable. Dynamic badges or displays are not required. A static or dynamic display MUST NOT cause consumers to mistake an earlier Published version for the identity of artifact `X`.
+
+For a release-qualified artifact, the README MUST show the exact installation target (for example, `composer require {COMPOSER_PACKAGE_NAME}:{EXACT_RELEASE_TARGET}`) and explain that the command resolves through the approved distribution source only after that exact version is published. Before Publication, it MUST NOT say that `X` is published, latest, installable from that source, or externally supported solely because the target tree exists.
+
+The live default-branch presentation MUST continue to report actual Publication State. The same `SECURITY.md` MUST label release-artifact lifecycle identity separately from currently published support lines; an RC target MUST NOT be confused with an established Stable support line. After publication, when the Publication changes a static current/live default-branch claim, the affected claim MUST be synchronized to the actual state (including applicable latest-version wording, registry/distribution wording, badge values, actual publication date, live release links, and current/support wording). Synchronization MAY be omitted when no static current/live claim requires mutation, including when an authoritative dynamic surface already represents the new state correctly. This live-state freshness obligation MUST NOT be applied to the immutable tagged artifact: synchronization is NEVER required to make that artifact correct and MUST NOT repair or rewrite it.
+
+The release-qualified SHA MUST already be a complete, internally self-consistent representation of its exact target before it is eligible for a tag. Post-publication synchronization MUST NOT be required to make the immutable tagged Composer artifact correct. If it would be required, release qualification failed.
 
 ### 8.2 Source of Truth
 
 | Badge | Canonical truth |
 |---|---|
 | Status | Actual publication/lifecycle state |
-| Version | Actual externally published and resolvable version |
+| Version | Live/default branch: actual externally published and resolvable version. Immutable Release Artifact: exact artifact target; any earlier Publication fact is explicitly historical/as-of qualification. |
 | PHP | Current `composer.json` constraint |
 | License | Current repository/Composer license contract |
 | PHPStan | Actual configured and proven quality gate |
@@ -282,7 +322,7 @@ Templates are state-specific, not one universal badge set. The following example
 [![Maatify Ecosystem](https://img.shields.io/badge/Maatify-Ecosystem-blueviolet)](https://github.com/Maatify)
 ```
 
-### Published Distribution
+### Live Published Distribution README
 ```markdown
 [![Status](https://img.shields.io/badge/Status-{PUBLICATION_STATUS}-blue)](CHANGELOG.md)
 [![Version](https://img.shields.io/badge/Version-{PUBLISHED_VERSION}-blue)]({DISTRIBUTION_URL})
@@ -541,7 +581,7 @@ Development
 → Stable
 ```
 
-A SemVer Release Candidate (RC) MUST be an actual SemVer pre-release of the intended Stable version, such as the tag `v1.0.0-rc.1`. It MUST be published and resolvable by an external consumer through the package's approved distribution channel. For a Composer library, consumers MUST be able to resolve and install that exact tagged version through its actual Composer distribution source. A branch, Draft PR, successful CI run, documentation state, local path repository, or unpublished tag MUST NOT be treated as a SemVer RC.
+An exact SemVer RC target MUST be an actual SemVer pre-release of the intended Stable version, such as `1.0.0-rc.1`, and MAY exist during Release Preparation before Publication. To satisfy this First Stable Release Gate's SemVer RC step, that exact target MUST be Published and externally resolvable and installable by a consumer through the package's approved distribution source. For a Composer library, consumers MUST be able to resolve and install that exact version through its actual Composer distribution source. A branch, Draft PR, successful CI run, documentation state, local path repository, or unpublished tag MUST NOT satisfy the First Stable Release Gate's SemVer RC step. An RC target's existence before Publication does not satisfy that gate step.
 
 For this first-Stable sequence, the Consumer Verification Harness MUST verify the exact published RC after it becomes externally consumable. The Harness's test semantics remain owned by the [Testing Standard](../testing/TESTING_STANDARD.md). Real Host Validation MUST then use that same RC in at least two independent real projects/Hosts. Reusing one Harness twice or testing multiple environments of one Host does not satisfy the two-Host requirement. Release readiness MUST retain verifiable evidence that identifies the RC version and each Host validation.
 
@@ -553,10 +593,10 @@ Tagging, releasing, publishing, and owner approval remain governed by the applic
 When neither a SemVer RC nor a Stable release has been published, `SECURITY.md` MAY state that there is currently no supported Stable release line. When a SemVer RC has been published, Section 14.3 applies; an RC does not become a Stable release or a supported Stable line.
 
 ### 14.3 Published SemVer RC State
-A SemVer RC exists only after its actual pre-release version and tag are published and available to external consumers through the approved distribution channel. `SECURITY.md` MUST describe that version as a pre-release and MUST NOT present the target Stable version as already published. A SemVer RC does not establish a new supported Stable line; existing published Stable support lines remain governed by the actual support policy.
+An exact SemVer RC target, such as `1.0.0-rc.1`, MAY be selected and prepared before Publication. A **Published SemVer RC State** exists only after that exact version is Published and available to external consumers through the approved distribution channel. Live default-branch `SECURITY.md` MUST describe actual publication/support state and MUST NOT present the target Stable version as already published. In a release artifact, `SECURITY.md` MAY state that it represents Release Candidate `X` and does not establish a Stable support line without claiming that `X` has already been published. An RC artifact MUST NOT identify `X-1` as the current RC identity of that artifact. A SemVer RC does not establish a new supported Stable line; existing published Stable support lines remain governed by the actual support policy.
 
-### 14.4 Stable Release Preparation State
-After the SemVer RC, Consumer Verification Harness, and Real Host Validation steps in Section 14.1 have passed, release-facing files MAY be prepared internally for the target Stable version and date while awaiting owner approval and publication. This state MUST be called Stable Release Preparation or release preparation; it MUST NOT be called a Release Candidate. Until the Stable tag is published and the version is available through the approved distribution channel, the files and their PR metadata MUST NOT claim that the Stable version exists, is published, or is already supported. The target Stable support wording MUST be synchronized with the actual policy before publication.
+### 14.4 First-Stable Gate-Specific Preparation State
+After the SemVer RC, Consumer Verification Harness, and Real Host Validation steps in Section 14.1 have passed, release-facing files MAY be prepared internally for the exact target Stable version while awaiting owner approval and publication. This is a first-Stable gate-specific instance of the general exact-target Release Preparation state in Section 8.1.1; it does not define Release Preparation generally. It MUST NOT be called a Release Candidate. The exact Stable Release Target may exist before Publication. Until the Stable version satisfies the Publication State Definition, the files and their PR metadata MUST NOT claim that the target is Published, externally resolvable or installable as a Published package/version through the approved distribution source, or that it establishes Stable support. A tag, GitHub Release, or other visible source surface MAY be reported when it actually exists, but MUST NOT be presented as evidence that the package/version is Published. A planned date MUST NOT be presented as an actual published release date. The target Stable support wording MUST be synchronized with the actual policy before publication.
 
 ### 14.5 Published Stable State
 After the Stable tag is published and the version is available to consumers through the approved distribution channel, the Security Policy enters the Published Stable State. It MUST be prepared for the actual supported release lines.
@@ -588,7 +628,7 @@ In the Published Stable State, `SECURITY.md` MUST:
 - remove any wording that describes the package as unreleased, pre-release, or awaiting publication
 - remain synchronized with the actual support policy whenever a supported line is added, replaced, or retired
 
-A future release line MUST NOT be presented as actively supported before its first Stable Tag exists. SemVer RC and Stable Release Preparation states do not establish Stable support.
+A future release line MUST NOT be presented as actively supported before its first Stable Tag exists. A SemVer RC or any Release Preparation state, including first-Stable gate-specific preparation, does not establish Stable support.
 
 Publishing a patch or minor release within an already supported major line does not require a Security Policy change unless the file names an exact version, changes the support scope, or otherwise becomes inaccurate.
 
@@ -607,28 +647,41 @@ When a breaking public-contract change makes a Major release unavoidable, its co
 ## 15. CHANGELOG Presentation Standard
 
 The CHANGELOG MUST follow these rules:
-* Keep a Changelog format.
+* Keep a Changelog is the baseline for CHANGELOG structure and change presentation. The presence and allocation semantics for `[Unreleased]` and exact-target Release Preparation are owned by this Standard and govern where they differ from external guidance, including whether an empty `[Unreleased]` section is present.
 * Semantic Versioning.
-* `[Unreleased]` MUST always be present at the top.
-* Every published release MUST have its exact version and release date.
+* `[Unreleased]` represents changes shown in the CHANGELOG that have not yet been allocated to an exact release target. It MUST be present when such represented unallocated changes exist. When none exist, it is not required and MAY be omitted; retaining an empty section MUST NOT make an otherwise-compliant implementation non-compliant.
+* For changes represented in the CHANGELOG, allocation determines placement: an unallocated change MUST appear under `[Unreleased]`; a represented change explicitly allocated to an exact target MUST NOT remain under `[Unreleased]` as though it were unallocated. During Release Preparation before Publication, an allocated change MAY be represented under its exact target section. Allocation alone does not require that a change be represented in the CHANGELOG or that an exact-target section be present.
+* Before a SHA is release-qualified for exact target `X`, all implemented changes allocated to `X` MUST be moved out of `[Unreleased]` and the exact `X` section MUST be present in the release artifact. Those target changes MUST NOT remain only under `[Unreleased]` at the SHA receiving the tag. `[Unreleased]` remains at the top for implemented changes not allocated to `X`; it MAY be empty or omitted when none are represented.
+* A target section does not establish Publication. An unpublished target section MUST NOT be assigned an actual release date or linked to a tag or Release that does not exist.
+* The live default-branch CHANGELOG for every Published release MUST record its exact version and actual release date. The date becomes mandatory there when the exact target is externally Published and its actual date is established by the approved distribution/release record. Before then, including release preparation and tagging before distribution publication, no planned or inferred date may be presented as actual. The immutable release artifact MUST already contain its valid undated target section before Publication and MAY remain undated after publication; do not rewrite the tag to add a later live fact.
 * Release links MUST be at the bottom of the file.
 * Do not list features that do not exist.
 * Do not describe future changes as already implemented.
-* A SemVer RC entry MUST use its exact pre-release version and matching release date/tag, such as `1.0.0-rc.1`.
-* Stable Release Preparation MAY stage the target Stable version and planned date in an internal release PR after the first-Stable gates pass. Before its Stable tag is published, the entry MUST remain clearly a preparation and MUST NOT imply that the Stable release already exists.
+* A target section MUST use its exact SemVer version, including any pre-release identifier such as `1.0.0-rc.1`.
+* When `[Unreleased]` is used, its compare link MUST use the latest actual Published release as its base when one exists. If there is no prior Published release, do not invent a prior version or tag to complete the link template.
+* After Publication is externally established and the actual date is known, the live/default-branch CHANGELOG or release history MUST be updated to record the exact published version and actual publication date, with links to an existing tag/Release where applicable. This is a live-state update: the immutable tagged artifact MAY retain its valid undated target section from before Publication and MUST NOT be rewritten or retagged solely to add these later publication facts.
 
-### Template:
+### Preparation Template:
 ```markdown
 ## [Unreleased]
 
-## [{RELEASE_VERSION}] - {RELEASE_DATE}
+## [{EXACT_RELEASE_TARGET}]
+```
+
+The undated exact-target section is required in the release-qualified tree. When no represented changes remain unallocated, `[Unreleased]` MAY be omitted; retaining it as an empty section MUST NOT make an otherwise-compliant CHANGELOG non-compliant. Do not put a date on an unpublished target section. After publication, the live default branch MUST add the actual date and links once established; an immutable tag remains valid with its undated section and need not be rewritten to acquire a later publication fact.
+
+### Published Release Template:
+```markdown
+## [{EXACT_RELEASE_TARGET}] - {ACTUAL_RELEASE_DATE}
 ```
 
 ### Links Template:
 ```markdown
-[Unreleased]: https://github.com/Maatify/{REPOSITORY_SLUG}/compare/v{RELEASE_VERSION}...HEAD
-[{RELEASE_VERSION}]: https://github.com/Maatify/{REPOSITORY_SLUG}/releases/tag/v{RELEASE_VERSION}
+[Unreleased]: https://github.com/Maatify/{REPOSITORY_SLUG}/compare/v{LATEST_ACTUAL_PUBLISHED_VERSION}...HEAD
+[{PUBLISHED_RELEASE_VERSION}]: https://github.com/Maatify/{REPOSITORY_SLUG}/releases/tag/v{PUBLISHED_RELEASE_VERSION}
 ```
+
+Include the `[Unreleased]` compare link only when `[Unreleased]` is present and an actual Published base exists. Include a version Release link only after that exact release/tag exists. A first-release preparation has no previous published base or release link to invent. After Publication, links in the live/default-branch CHANGELOG MUST represent actual published-release truth; this does not require rewriting an immutable tagged artifact to add links that became true only later.
 
 ## 16. CONTRIBUTING Presentation
 
@@ -722,32 +775,53 @@ For an embedded Base Artifact, GitHub Description, Topics, Releases, Deployments
 
 ## 20. Pull Request Presentation Metadata
 
-Any PR preparing publication of a SemVer RC or Stable Release Preparation MUST contain:
-* A Title identifying the exact RC target or target Stable version and the actual release-preparation state.
+Any PR performing SemVer Release Preparation for an exact target MUST contain:
+* A Title identifying the exact SemVer target, actual preparation state, and actual Publication State.
 * A Body describing the actual changes.
 * A Scope confirmation.
-* For a first-Stable Release Preparation PR, verifiable references to the published RC, Consumer Verification Harness, and both independent Host validations.
+* When the PR crosses the first-Stable boundary governed by Section 14.1, verifiable references to the published RC, Consumer Verification Harness, and both independent Host validations.
 * A release-control statement confirming that no Merge, Tag, Release, or distribution publication occurs without owner approval.
-* Accurate wording that distinguishes an unpublished target version, a published SemVer RC, and a published Stable release.
+* Accurate wording that distinguishes the exact target, actual preparation state, and actual Publication State. It MUST NOT claim that a target is Published before the Publication State Definition is met.
 
-PR metadata MUST NOT describe a prepared target version as already published. If a Stable Release Preparation is pending its Stable tag, the body MUST say that the Stable release is not yet published, identify the actual published RC, and state that Stable publication awaits owner approval. Version and date wording MUST match what is known; an unknown date MUST NOT be represented as a committed release date.
+PR metadata MUST NOT describe a prepared target version as already published. When the PR crosses the first-Stable boundary governed by Section 14.1, its body MUST say that the Stable release is not yet published, identify the actual published RC, and state that Stable publication awaits owner approval. Version and date wording MUST match what is known; an unknown date MUST NOT be represented as a committed release date.
 
-If the PR scope changes, the Title and Body MUST be updated to remain an accurate historical record.
+If the PR scope changes, the Title and Body MUST be updated to remain accurate.
 
 ### 20.1 Release Integrity and Curated Release Notes
 
-Tag and Release presentation MUST consume the exact release-qualified SHA produced by the [CI Workflow Standard](CI_WORKFLOW_STANDARD.md). The required release path is:
+Tag and Release presentation MUST consume the exact SHA that became release-qualified only after Full Applicable CI and Release Artifact Verification both passed on that same SHA under the [CI Workflow Standard](CI_WORKFLOW_STANDARD.md). The required release path is:
 
 ```text
 approved integration
 → Owner merge to main
 → actual main SHA
+→ candidate release SHA for exact target X (the same commit SHA)
 → Full Applicable CI on the same SHA
-→ release-qualified SHA
+→ Release Artifact Verification on the same SHA
+→ that same SHA becomes the release-qualified SHA
 → Tag and Release targeting that exact SHA
+→ external exact-version publication verification
+→ two independent post-publication obligations:
+   ├── Published Artifact Verification
+   └── live/default-branch publication-state freshness
+       when a static current/live claim became stale
 ```
 
+Publication State and Published Artifact Verification are separate facts. The current Publication State is determined only by the Section 14 definition: whether the exact package identity and version are currently externally resolvable and installable through an approved Composer distribution source. Published Artifact Verification (PAV) records integrity evidence about the published artifact. PAV PASS or FAIL alone MUST NOT establish, erase, reverse, or redefine Publication State. PAV may observe external availability evidence, but it does not own the result.
+
+When PAV fails on artifact integrity while current external evidence still proves exact `X` resolvable and installable, `X` remains Published and publication integrity is NOT PASS. When PAV exposes credible evidence that exact `X` no longer resolves or installs, or otherwise contradicts the current Publication State, canonical Publication-State re-verification under this Section MUST be triggered. The operational determination is `RE-VERIFY` until that canonical check establishes the actual current state; this is a pending verification condition, not a second Publication-State authority or an inference that X is Published or Unpublished. The live/default-branch presentation MUST represent the state established by canonical re-verification. A PAV failure alone MUST NOT suppress synchronization when a static live claim is stale; when no static live claim became stale, no content synchronization is required solely for freshness.
+
+Historical release facts, including that `X` was actually published on a particular date, remain historical facts if current availability later changes. A later Publication-State change MUST NOT rewrite release history to imply `X` was never released or alter its immutable tag. A tracked artifact correction requires a new exact release identity.
+
 Presentation MUST NOT make a tag or Release appear qualified by CI that ran on an older SHA. A later commit intended for the same release requires new qualification. The tag/release surface is a consumer-facing projection of the qualified commit; it does not own CI evidence or create release authorization.
+
+Release Artifact Verification MUST prove that the target README identity/install target, CHANGELOG allocation and `[Unreleased]` boundary, SECURITY lifecycle/support wording, Composer manifest, required distributed consumer/release files, and actual archive/distribution behavior are consistent on the release-qualified SHA. It MUST rule out previous-release-as-current artifact claims and false pre-publication claims. Deterministic structural checks MAY be automated; claims whose truth depends on context require semantic review under the Documentation Lifecycle Standard. CI execution and local command parity are owned by `CI_WORKFLOW_STANDARD.md`.
+
+After external publication, Published Artifact Verification MUST install the exact version into a clean external Composer root and prove that Composer resolves that exact version, the installed package corresponds to the intended tagged release, required files are present, and its release-facing content is self-consistent with that version and manifest. A passing runtime Consumer Verification Harness does not substitute for this distribution-identity/content evidence.
+
+The two obligations triggered by external Publication are logically independent: PAV evaluates artifact integrity, while live/default-branch freshness evaluates whether publication made a static current/live claim stale. A PAV failure MUST NOT delay or suppress synchronization required by a stale live claim. If no static current/live claim became stale, no content synchronization commit is required solely for freshness, regardless of the PAV result.
+
+Once an exact version is externally Published, its tag and immutable release identity MUST NOT be moved or silently replaced. If distributed tracked contents require correction, publish a new exact version under the applicable package lifecycle. Post-publication synchronization is limited to live default-branch/repository facts and MUST NOT repair the immutable artifact.
 
 Curated GitHub Release Notes are an independent consumer-facing artifact. When applicable they MUST contain the exact version, a concise theme when material, a curated Overview, only the relevant Added/Changed/Fixed/Removed/Deprecated material, important runtime guarantees or links, compatibility impact, and upgrade/migration notes when needed. Empty mandatory headings are not required.
 
@@ -789,11 +863,15 @@ An explicit search for reference repository names MUST be conducted before submi
 ## 23. Release Presentation and First Stable Readiness Checklist
 
 * [ ] The first-Stable gate is applied only when the package has no previously published Stable release.
-* [ ] The SemVer RC is an actual tagged pre-release of the target Stable version and is resolvable by an external consumer through the approved distribution channel.
+* [ ] The First Stable Release Gate's SemVer RC step is counted as satisfied only when the exact RC target is Published and externally resolvable/installable through the approved distribution source; an RC target may exist before Publication without satisfying the step.
 * [ ] The Consumer Verification Harness passed against that exact published RC.
 * [ ] Real Host Validation passed against that same RC in at least two independent projects/Hosts, and verifiable evidence for both is retained.
 * [ ] The same Harness was not counted twice, and two environments of one Host were not counted as two projects/Hosts.
-* [ ] Stable Release Preparation is identified as preparation, not as another Release Candidate.
+* [ ] Release Target, Release Preparation, Publication State, Release Qualification, and Stable Support are represented as separate facts.
+* [ ] The release-qualified SHA already presents the exact target as its immutable artifact identity without claiming pre-publication availability.
+* [ ] The immutable artifact README fixes its exact artifact identity and time-scopes every static Publication State, including an unpublished-at-qualification or prior-version fact; it contains no unqualified static Publication/current/latest claim that could become false after the target is published. Any dynamic live-state display satisfies Section 8.1.2 and cannot replace or falsify artifact identity.
+* [ ] Release Artifact Verification passes on the exact SHA before Tag/Release authorization; post-publication Published Artifact Verification confirms exact Composer-distributed identity/content independently of runtime Consumer Verification. PAV alone does not establish Publication State: an integrity failure with current availability still proven leaves the version Published with integrity NOT PASS, while credible contradictory availability evidence triggers canonical Publication-State re-verification before the live presentation is updated.
+* [ ] When applicable, post-qualification First-Stable preparation is identified as a gate-specific preparation state, not as another Release Candidate.
 * [ ] Before the Stable tag and release exist, README, CHANGELOG, SECURITY, badges, and PR metadata do not claim a published or supported Stable version.
 * [ ] The two-Host gate is not imposed on already-Stable packages or later patch, minor, or Stable releases.
 * [ ] README header and Maatify identity are present.
@@ -811,15 +889,16 @@ An explicit search for reference repository names MUST be conducted before submi
 * [ ] CODE_OF_CONDUCT identity badges are correct.
 * [ ] SECURITY identity badges are correct.
 * [ ] SECURITY supported release line is correct.
-* [ ] CHANGELOG contains `[Unreleased]`.
-* [ ] CHANGELOG contains the target version and date.
-* [ ] Release links target the current repository.
+* [ ] In the CHANGELOG, represented unallocated changes appear under `[Unreleased]`; a represented change allocated to an exact target does not remain there as unallocated. An empty `[Unreleased]` section is allowed.
+* [ ] Allocated changes represented during Release Preparation may appear under their exact target section; allocation alone does not require a CHANGELOG entry or target section. An unpublished target section has no actual release date or nonexistent Release/Tag link, and its presence does not establish Publication.
+* [ ] For every externally Published release, the live/default-branch CHANGELOG or release history records the exact published version, actual publication date, and applicable existing tag/Release links. An immutable tagged artifact MAY retain its valid undated exact-target section and is not stale or non-compliant solely because this later date is absent; first-release preparation invents no previous release/version/tag.
+* [ ] `[Unreleased]` compare links use an actual Published base when one exists, and Release links target existing releases in the current repository.
 * [ ] Tag and Release target the exact CI release-qualified SHA, and curated Release Notes are distinct from CHANGELOG and PR metadata.
 * [ ] CONTRIBUTING reflects actual local verification.
 * [ ] Author block uses visible `<br>` line breaks.
 * [ ] The canonical PHP-library footer is the final README element.
 * [ ] Composer and GitHub metadata are accurate.
-* [ ] PR title and body match the actual published RC or Stable Release Preparation state.
+* [ ] PR title and body identify the exact target, actual preparation state, and actual Publication State; first-Stable evidence is included only at the applicable first-Stable boundary.
 * [ ] No foreign package names or URLs remain.
 * [ ] No `composer.lock` was introduced when the library does not track it.
 * [ ] CI Gate is successful.
@@ -839,3 +918,10 @@ This Standard explicitly does NOT force:
 * Verbatim README copying from another library.
 * Runtime changes during presentation work.
 * `llms-full.txt`, generated full-context files, or a README badge/link requirement for `llms.txt`.
+
+## Version History
+
+### `5.0.0`
+
+- Frozen baseline `4.0.0`, artifact blob `25d4d75d7f23934b3e204a28f1dbc7d06ca63c04` (Maatify/php-paymob completed VALID adoption; upstream commit `5f872d3ef7da847cba3f82fee124a19c22f1c5c4`).
+- `NORMATIVE / BREAKING_CONTRACT_CHANGE`: require exact-target release-facing self-consistency before qualification, separate immutable Release Artifact identity from live Publication State, require target allocation in CHANGELOG before tagging, and prohibit retagging a published version as remediation; existing package release workflows may otherwise qualify a stale artifact.

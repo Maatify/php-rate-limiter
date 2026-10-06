@@ -3,7 +3,7 @@
 ## Profile Metadata
 
 - **Profile ID:** `composer-package`
-- **Profile Version:** `3.0.0`
+- **Profile Version:** `4.0.0`
 - **Purpose / Applicability:** مكتبات PHP/Composer المستقلة القابلة لإعادة الاستخدام والتوزيع ضمن منظومة Maatify.
 - **Extends:** `None`
 
@@ -16,6 +16,7 @@
 - [CI Workflow Standard](../packages/CI_WORKFLOW_STANDARD.md)
 - [Library Presentation Standard](../packages/LIBRARY_PRESENTATION_STANDARD.md)
 - [Testing Standard](../testing/TESTING_STANDARD.md)
+- [External Provider Verification Standard](../integrations/EXTERNAL_PROVIDER_VERIFICATION_STANDARD.md)
 - [Documentation Lifecycle Standard](../governance/DOCUMENTATION_LIFECYCLE_STANDARD_AR.md)
 - [PHP Source Documentation Standard](../php/PHP_SOURCE_DOCUMENTATION_STANDARD.md)
 - [PHP Coding Style Standard](../php/PHP_CODING_STYLE_STANDARD.md)
@@ -23,6 +24,8 @@
 لا ينقل هذا Profile محتوى أي Standard إلى ملف Profile. وتظل تغطية وجودة توثيق PHP العامة مملوكة حصريًا لـ [PHP Source Documentation Standard](../php/PHP_SOURCE_DOCUMENTATION_STANDARD.md)، ويظل عقد تنسيق PHP مملوكًا حصريًا لـ [PHP Coding Style Standard](../php/PHP_CODING_STYLE_STANDARD.md).
 
 ## Conditional Applicability
+
+تدخل External Provider Verification Standard أعلاه بوصفها Candidate Required Standard؛ ويحدد انطباقها canonical في Stage 2 دخولها إلى Final Resolved Applicable Standards Set، وفق ملكية الـScope الفعلية لعقد provider-specific. يظل العقد مملوكًا للـStandard نفسها، ولا يوسعه هذا Profile.
 
 تظل قواعد Persistence وDatabase وPDO وSchema والمigrations والاختبارات التابعة لها مشروطة بامتلاك الحزمة Database/Persistence behavior، كما يملكها [PACKAGE_BUILDING_STANDARD.md](../packages/PACKAGE_BUILDING_STANDARD.md). الحزمة التي لا تمتلك هذا السلوك لا تُلزم بهذه القواعد المشروطة.
 

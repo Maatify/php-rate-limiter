@@ -5,7 +5,7 @@
 ## Standard Metadata
 
 - **Standard ID:** `std-composer-package`
-- **Standard Version:** `4.0.0`
+- **Standard Version:** `5.0.0`
 - **Standard Version Format:** `MAJOR.MINOR.PATCH`
 
 This document defines the canonical Composer manifest contract represented by `composer.json` for standalone, reusable PHP libraries in the Maatify ecosystem.
@@ -50,6 +50,7 @@ It owns rules for:
 - Optional package-link fields.
 - Custom repository restrictions.
 - Package archive safety.
+- Presence and identity integrity of the Composer-distributed artifact, including contractually required consumer/release documentation.
 - Reusable-library lock-file policy.
 - Composer validation and review.
 
@@ -118,10 +119,10 @@ Rules for those fields govern the library repository while it is being developed
 *Note: Composer technically allows other forms for many of these configurations, but Maatify adopts a stricter reusable-package contract to ensure consistency and reliability across the ecosystem.*
 
 1. `composer.json` is part of the package's public Composer manifest contract, not an internal installation note.
-2. Every directly used runtime dependency MUST be declared directly.
+2. Every directly used mandatory runtime dependency MUST be declared directly in `require`. Omission from `require` is permitted only for an eligible Optional Runtime Capability Dependency under §15.4, with explicit consumer-facing disclosure.
 3. A package MUST NOT rely on a transitive dependency as though it were direct.
 4. Development tools MUST NOT be placed in `require`.
-5. Runtime dependencies MUST NOT be placed only in `require-dev`.
+5. Mandatory runtime dependencies MUST NOT be placed only in `require-dev`. Repository verification of an eligible optional prerequisite follows §16 and MUST NOT replace its consumer-facing disclosure.
 6. Metadata MUST be accurate, current, and non-misleading.
 7. The PHP constraint is a public compatibility promise.
 8. The production autoload mapping is part of the public runtime contract.
@@ -151,9 +152,14 @@ Templates in this Standard use the following placeholders:
 - `{MINIMUM_PHP_PATCH_VERSION}`: The root development baseline, such as `8.4.0`.
 - `{LICENSE_SPDX}`: The approved SPDX license identifier.
 - `{PRIMARY_DOMAIN_KEYWORD}`: The main searchable domain term for the library.
-- `{RUNTIME_EXTENSION_NAME}`: A directly required PHP extension name without the `ext-` prefix.
+- `{RUNTIME_EXTENSION_NAME}`: A directly used runtime PHP extension name without the `ext-` prefix.
 - `{RUNTIME_PACKAGE_NAME}`: A direct runtime package in `vendor/package` form.
 - `{RUNTIME_PACKAGE_CONSTRAINT}`: The approved stable constraint for a runtime package.
+- `{OPTIONAL_RUNTIME_EXTENSION_NAME}`: An eligible optional capability's PHP extension name without the `ext-` prefix.
+- `{OPTIONAL_RUNTIME_PACKAGE_NAME}`: An eligible optional capability's prerequisite package in `vendor/package` form.
+- `{OPTIONAL_RUNTIME_PACKAGE_CONSTRAINT}`: The approved supported stable constraint for that optional prerequisite package.
+- `{OPTIONAL_EXTENSION_CAPABILITY}`: The exact independently selectable built-in capability requiring the optional extension.
+- `{OPTIONAL_PACKAGE_CAPABILITY}`: The exact independently selectable built-in capability requiring the optional package.
 - `{PHPUNIT_CONSTRAINT}`: The latest stable PHPUnit constraint compatible with the supported PHP range, used only in PHPUnit-specific illustrative examples.
 - `{PHPSTAN_CONSTRAINT}`: The latest stable PHPStan constraint.
 - `{CS_FIXER_CONSTRAINT}`: The approved PHP CS Fixer constraint.
@@ -536,6 +542,10 @@ Rules:
 
 The `require` field MUST contain only direct runtime contracts.
 
+Every dependency needed by the core runtime, default workflow, baseline package capability, or unconditional runtime behavior MUST be declared as a direct runtime requirement in `require`. Such a mandatory dependency MUST NOT be moved to `suggest`, `require-dev` only, documentation only, or implicit Host responsibility.
+
+A directly used runtime prerequisite MAY be omitted from `require` only through the Optional Runtime Capability Dependency contract in §15.4. Keeping an eligible optional prerequisite in `require` remains permitted; it then becomes an unconditional installation requirement.
+
 ### 15.1 PHP Constraint
 
 The canonical minimum form is:
@@ -568,9 +578,10 @@ The canonical form is:
 
 Rules:
 
-- Every extension directly required by runtime code MUST be declared.
+- Every extension directly required by the core runtime, default workflow, baseline package capability, or unconditional runtime behavior MUST be declared in `require`.
+- An extension required only by an eligible Optional Runtime Capability MAY use the optional-capability declaration path in §15.4 instead. Runtime use in a built-in adapter alone does not prove eligibility.
 - `*` is permitted for `ext-*` platform packages.
-- Runtime extensions MUST NOT be hidden in `require-dev`.
+- Mandatory runtime extensions MUST NOT be hidden in `require-dev`; optional-prerequisite verification and consumer disclosure follow §16 and §15.4 respectively.
 - An extension MUST NOT be declared if the runtime never uses it.
 - The package MUST NOT assume that a common extension exists on every PHP installation.
 - Extension polyfills do not remove the need to model the actual runtime contract accurately.
@@ -585,8 +596,9 @@ The canonical form is:
 
 Rules:
 
-- Every package directly referenced by runtime code MUST be declared directly.
-- The package MUST NOT rely on the host application to supply an undeclared dependency.
+- Every package directly referenced by the core runtime, default workflow, baseline package capability, or unconditional runtime behavior MUST be declared directly in `require`.
+- A package required only by an eligible Optional Runtime Capability MAY use §15.4 instead. Shipping an optional adapter that uses it does not, by itself, make it a mandatory consumer runtime requirement.
+- The package MUST NOT rely on the Host application to supply an undeclared mandatory dependency. An eligible optional prerequisite MUST be disclosed explicitly before the consumer selects the capability.
 - Maatify shared contracts MUST use the official shared package instead of local duplication.
 - A framework dependency MUST NOT be introduced into a framework-agnostic package.
 - Stable tagged constraints MUST be used for release-ready libraries.
@@ -596,11 +608,56 @@ Rules:
 - Caret constraints SHOULD be the default for a stable supported major line.
 - Every runtime dependency MUST have a clear package-owned reason.
 
+### 15.4 Optional Runtime Capability Dependencies
+
+An **Optional Runtime Capability Dependency** is a technology-specific prerequisite used only by an independently optional built-in runtime capability or implementation. This classification permits optional Composer declaration only after the capability's architecture proves eligibility; a Composer field or installation preference does not establish optionality.
+
+The governing order is:
+
+```text
+Architecture proves the capability is optional
+→ package-owned, technology-neutral, replaceable contract for infrastructure implementations using this permission
+→ concrete implementation owns the technology-specific prerequisite
+→ Composer may represent that prerequisite as optional
+```
+
+A package MUST NOT classify a dependency as optional merely to reduce installation requirements.
+
+#### 15.4.1 Eligibility
+
+For the purposes of this optional-dependency permission, a persistence, repository, storage, backend-client, backend-adapter, or equivalent infrastructure implementation MUST be treated as infrastructure-substitutable when its technology-specific prerequisite is omitted from `require`, even when the package currently ships only one built-in implementation. The replaceable contract is required from the first such implementation; having only one implementation today, or claiming that substitution is not currently intended, MUST NOT justify coupling the package contract to that implementation.
+
+This treatment is limited to eligibility for omitting a technology-specific runtime prerequisite from `require` under §15.4. It does not require an interface for every class or impose a general runtime architecture rule on packages that do not use this permission; their other canonical contracts continue to apply.
+
+Omission of a directly used runtime prerequisite from `require` is permitted only when **all applicable conditions** below are proven:
+
+1. **Independent optionality:** The capability MUST be explicitly optional and independently selectable. Absence of the prerequisite MUST NOT prevent package installation, core autoload, default package use, or unrelated capabilities.
+2. **Architecture before Composer:** An infrastructure implementation using this permission MUST sit behind a package-owned, technology-neutral, replaceable semantic contract/interface from its first implementation, under the treatment defined above. Eligibility MUST be assessed against [PACKAGE_BUILDING_STANDARD.md](PACKAGE_BUILDING_STANDARD.md), including its infrastructure-substitution contract requirement in §23 and the construction/integration contract in §18 and §25. That Standard owns runtime architecture and contract placement.
+3. **No concrete backend coupling:** At such a substitutable boundary, Services/orchestration MUST consume the package semantic contract rather than a concrete connection, client, framework backend, or built-in backend implementation. The concrete implementation alone owns its technology-specific prerequisite.
+4. **No technology leakage:** The neutral contract MUST represent package-owned semantics and MUST NOT expose backend-specific operations, connection/client objects, or API types that are merely implementation details and make the optional prerequisite part of that contract. A method returning a concrete backend connection is not a technology-neutral substitution boundary. Technology that genuinely belongs to the package semantic contract is assessed under that actual contract, not treated as an implementation detail; having only one built-in implementation MUST NOT establish that semantic ownership, and any prerequisite needed by a mandatory runtime path remains in `require` under §15.
+5. **Host replaceability:** For an infrastructure implementation using this permission, the Host MUST be able to supply its own implementation of the package contract without modifying package source, subclassing the built-in concrete implementation, depending on the built-in backend technology, or depending on an unrelated backend implementation.
+6. **No eager requirement:** Missing prerequisites MUST NOT break package bootstrap, Composer autoload of core/unrelated paths, the default construction path, or unrelated capabilities. An optional implementation MUST NOT be implicitly constructed or used as a default requirement while its prerequisite is represented as optional.
+7. **Explicit unavailable state:** Selecting the built-in optional capability without its prerequisite MUST produce an explicit, intentional, fail-closed capability-unavailable failure documented by the package's runtime contract. Silent fallback, undefined functions, accidental class-not-found errors, unexplained fatal errors, or behavior changes in another capability do not satisfy eligibility. Failure semantics and exception hierarchy remain owned by [PACKAGE_BUILDING_STANDARD.md §7](PACKAGE_BUILDING_STANDARD.md#7-exception-rules) and the canonical root Package Reference; this Standard requires eligibility evidence and disclosure, not a particular exception class or construction design.
+8. **Semantic growth:** For infrastructure implementations using this permission, eligibility MUST preserve the same package semantic contract across additional backends. A new backend providing the same semantics MUST NOT require backend-specific methods in the neutral contract. A genuinely new semantic capability belongs in an appropriate separate contract under the runtime architecture owner.
+
+Rare use, a config or feature flag, confinement to one class or code path, dependency size, or inconvenience to some consumers is insufficient by itself. The capability architecture MUST prove optionality. A prerequisite also needed by any mandatory runtime path remains a direct `require` dependency under §15, regardless of its optional uses.
+
+#### 15.4.2 Consumer-Facing Declaration
+
+For every eligible prerequisite omitted from `require`, the package MUST use both disclosure surfaces:
+
+1. The canonical root Package Reference under [PACKAGE_BUILDING_STANDARD.md §3](PACKAGE_BUILDING_STANDARD.md#3-required-files) MUST identify the exact built-in optional capability/implementation and exact prerequisite package or extension, supported prerequisite versions where relevant, and the selection/unavailable-state and Host/replacement contract.
+2. `composer.json` MUST contain a corresponding `suggest` entry for Composer-native discovery. Each omitted prerequisite MUST have its own entry identifying that exact package or extension and the exact built-in optional capability/implementation that needs it, including when one capability needs multiple omitted prerequisites.
+
+The Package Reference owns runtime meaning; `suggest` supplies informational discovery under §18.4. They MUST agree with actual runtime behavior. A `suggest` entry does not install the prerequisite, enforce supported versions or availability, or replace the Package Reference contract. An eligible prerequisite retained in `require` is an unconditional installation requirement and is not subject to this omission-specific `suggest` rule.
+
+The consumer must supply the disclosed prerequisite before selecting that built-in capability. A Host-provided implementation of a replaceable contract MUST NOT inherit the unrelated built-in implementation's prerequisite. `require-dev` may provision repository-owned verification under §16, but MUST NOT be the only consumer disclosure.
+
 ---
 
 ## 16. Development Requirements
 
-The `require-dev` field is reserved for direct development, analysis, formatting, and testing tools.
+The `require-dev` field is reserved for direct repository development and verification requirements: development, analysis, formatting, and testing tools, plus eligible optional prerequisites needed to verify the package's built-in optional implementations.
 
 Common categories include:
 
@@ -620,7 +677,9 @@ Rules:
 - A tool that is not installed through Composer MUST NOT be given a fictitious Composer dependency; its provisioning, versioning, and execution MUST instead be deterministic and repository-owned under the CI contract.
 - The repository MUST NOT rely on a transitive installation of a directly executed tool.
 - Development tools MUST NOT be placed in `require`.
-- Runtime dependencies MUST NOT be placed only in `require-dev`.
+- Mandatory runtime dependencies MUST NOT be placed only in `require-dev`.
+- A prerequisite eligible under §15.4 MAY also be declared in `require-dev` when tests, static analysis, or other repository-owned verification of the built-in optional implementation need it. Root development installation does not make it a consumer runtime requirement.
+- For every §15.4 prerequisite omitted from `require`, `require-dev` MUST NOT be the sole consumer disclosure: both the canonical Package Reference contract and an exact `suggest` entry are REQUIRED under §15.4.2. `require-dev` remains conditional on actual repository-owned verification needs. This permission MUST NOT hide a mandatory runtime dependency.
 - Tool constraints MUST remain compatible with the minimum supported PHP version when the tool runs there.
 - An unused tool or a tool with no maintained configuration MUST be removed.
 - A repository with testable behavior or maintained tests MUST maintain a reproducible test-execution strategy; its declared dependencies and maintained configuration MUST match the runner and tooling actually used.
@@ -630,7 +689,7 @@ Rules:
 - A code-style tool is REQUIRED when formatting is an enforced repository check.
 - Tool constraints MUST NOT hardcode patch releases as permanent policy.
 - Tool major-version upgrades require a compatibility review.
-- Development packages MUST be alphabetically sorted.
+- Development requirement maps, including optional-prerequisite verification entries, MUST be alphabetically sorted.
 
 ---
 
@@ -705,14 +764,16 @@ Rules:
 
 ### 18.4 `suggest`
 
-`suggest` MAY describe a genuinely optional enhancement.
+`suggest` MAY describe a genuinely optional enhancement. When an eligible Optional Runtime Capability Dependency is omitted from `require` under §15.4, a corresponding `suggest` entry is REQUIRED for each omitted prerequisite.
+
+`suggest` provides discovery/disclosure. It does not install the prerequisite and does not enforce dependency availability or compatibility. Its values are explanatory text, not dependency constraints.
 
 Rules:
 
 - It MUST NOT hide a required runtime dependency.
-- The description MUST explain the optional capability.
-- Suggested packages MUST be real and maintained.
-- A suggestion MUST NOT imply automatic installation.
+- Every suggestion MUST identify the exact optional capability and exact prerequisite package or extension without implying a requirement for unrelated package use.
+- Suggested packages/extensions MUST be real and maintained.
+- A suggestion MUST NOT imply automatic installation or dependency enforcement. An Optional Runtime Capability Dependency suggestion MUST also agree with the package's consumer-facing prerequisite and unavailable-state contract in §15.4.2.
 
 ---
 
@@ -752,10 +813,10 @@ Rules:
 
 Rules:
 
-- `LICENSE`, `README.md`, and `composer.json` MUST NOT be excluded.
+- `LICENSE`, `README.md`, `CHANGELOG.md`, `SECURITY.md`, `composer.json`, the canonical Package Reference, and any consumer-facing Usage Guide, examples, or `llms.txt` required by `LIBRARY_PRESENTATION_STANDARD.md` MUST NOT be excluded from the Composer-distributed artifact.
 - Runtime source MUST NOT be excluded.
 - Secrets and development artifacts MUST NOT enter the archive.
-- Exclusions MUST be reviewed against the published package contents.
+- Exclusions MUST be reviewed against the actual Composer-distributed package contents.
 
 ### 19.5 `abandoned`
 
@@ -1083,10 +1144,31 @@ Rules:
 - `.env` files, credentials, tokens, private keys, and machine-specific configuration MUST NOT be published.
 - IDE metadata and local task artifacts MUST NOT be part of the package distribution.
 - `composer.lock` MUST NOT be present in the reusable-library source distribution.
-- Runtime source, `composer.json`, `README.md`, and `LICENSE` MUST remain available.
+- Runtime source, `composer.json`, `README.md`, `LICENSE`, `CHANGELOG.md`, `SECURITY.md`, the canonical Package Reference, and any applicable consumer-facing Usage Guide, examples, and `llms.txt` required by `LIBRARY_PRESENTATION_STANDARD.md` MUST remain available in the Composer-distributed artifact.
+- `CONTRIBUTING.md` and `CODE_OF_CONDUCT.md` are repository contribution/community surfaces; this Standard does not require them in every Composer archive unless a package explicitly makes them consumer documentation.
 - Tests and documentation MAY remain in source distributions.
-- Generated archives MUST be inspected when custom archive exclusions exist.
+- The required file set is determined by the applicable Library Presentation contract; this Standard owns whether those files actually enter the Composer artifact. Every required file MUST be present in the distributed artifact and reflect the same exact Release Artifact Identity as the runtime and manifest.
+- `archive.exclude`, generated archive behavior, VCS-based dist behavior, and `.gitattributes` `export-ignore` MUST be reviewed together where applicable. No particular `.gitattributes` mechanism is mandatory. An exclusion rule MUST NOT defeat the required file set.
+- Generated archives MUST be inspected at Release Artifact Verification when custom archive exclusions or export rules exist; checks MUST inspect the resulting artifact, not only the source repository tree.
 - Package installation MUST NOT depend on files ignored by VCS or excluded from the distribution.
+- Composer repository metadata MAY expose a `source` checkout, a `dist` archive, or both for a package version. These are distinct delivery representations and MUST NOT be assumed to contain identical files. The applicable required-file set MUST be present in each representation that the package's approved distribution policy identifies as a consumer-delivery artifact.
+- When the approved Composer channel exposes `dist`, that published archive is the authoritative packaged artifact for consumers and its verification is mandatory; a `source` checkout MUST NOT substitute for verifying its contents. A source-only consumer-delivery mode is permitted only when the channel exposes no `dist` for that exact version and a valid pre-existing source-only declaration under §26.1 establishes source as intentional canonical consumer delivery. A failed `dist` download or fallback does not establish a source-only distribution, and a source-only declaration MUST NOT waive verification of an exposed `dist`.
+
+### 26.1 Source-Only Canonical Consumer Delivery
+
+When an approved Composer channel exposes no `dist` for an exact version, Published Artifact Verification MAY accept the observed source installation only when a package-owned, authoritative, durable decision already establishes source-only canonical consumer delivery before Release Artifact Verification qualifies that exact target. At the qualification boundary, the canonical evidence is an `ACTIVE`, applicable, Owner-approved package-specific Decision Record in the package repository's existing `docs/decisions/` mechanism, discoverable through its existing `docs/decisions/DECISIONS_INDEX.md`; the record MUST use the repository's existing decision governance and MUST NOT introduce a parallel exception registry or policy database. The Decision and Owner approval/effective state MUST pre-exist and be effective before Release Artifact Verification begins for the target, and therefore before qualification and Tag/Release/Publish authorization. Release Artifact Verification MUST verify and retain the qualification-time Decision and Index state and an immutable record reference under `CI_WORKFLOW_STANDARD.md` §2.5. The declaration MUST NOT be created or approved by the verification executor as part of verification.
+
+The Decision Record MUST be approved by the package/repository Owner under that repository's existing decision authority and MUST identify:
+
+- the exact Composer package identity;
+- the approved Composer repository/channel, including its authoritative identity/URL;
+- `delivery mode = source-only` and that source is the intentional canonical consumer-delivery representation;
+- the exact version or bounded version line/applicability scope, including the assessed version;
+- why `dist` is intentionally not offered/used for that scope;
+- the approving authority and approval/effective date; and
+- the responsible maintenance owner, when applicable.
+
+The durable record and its Owner approval MUST predate Release Artifact Verification and apply at the assessed target's qualification boundary. PAV MUST use the same Decision ID and immutable record reference proven at that boundary and MUST prove the actual post-publication facts separately, including that `dist` is absent, `source` is exposed, the observed install mode is `source`, and the installed source reference/content corresponds to the intended release. PAV MUST verify the retained evidence that this exact Decision was `ACTIVE`, indexed, Owner-approved, and applicable when the target qualified, and MUST verify that the Decision remains historically discoverable through a coherent current Index and supersession chain. Its current status MAY be `ACTIVE` or legitimately `SUPERSEDED`; later legitimate supersession does not make that historical qualification invalid and does not make the superseded Decision current authority. A materially applicable superseding Decision that became authoritative before Tag/Release/Publish authorization requires the release to be re-evaluated under the current governance; qualification-time evidence MUST NOT bypass it. A Decision approved after qualification or Publication, including one whose stated version scope names the existing target, MUST NOT retroactively make that exact release compliant; it MAY govern a future target when effective before that target's qualification boundary. A README, Package Reference, `composer.json` custom field, PR/comment, executor report, or unapproved policy statement alone is not this declaration. If the repository's existing decision governance cannot establish the record's Owner approval, qualification-time active/indexed status, applicability, immutable reference, or coherent history, the declaration is invalid and verification MUST fail closed. If the approved channel exposes `dist` for the assessed version, this source-only declaration does not override the `dist` verification requirement.
 
 ---
 
@@ -1100,13 +1182,16 @@ The following contracts MUST remain synchronized:
 - `homepage`, `support.source`, and `support.issues` target the current repository.
 - `license` matches `LICENSE` and repository metadata.
 - The PHP constraint matches README and CI support claims.
-- Runtime dependencies match README requirements and actual runtime use.
+- Mandatory runtime dependencies in `require` match README requirements and actual mandatory runtime use.
+- Eligible Optional Runtime Capability Dependencies are distinguished from mandatory requirements; for each prerequisite omitted from `require`, the canonical Package Reference disclosure, its exact `suggest` entry, and actual runtime behavior agree under §15.4. Repository-only entries in `require-dev` match actual verification needs under §16 when present.
 - Composer scripts match maintained contributor commands.
 - Packagist badges use the correct Composer package name.
-- The package reference does not claim undeclared runtime dependencies.
+- The Package Reference does not claim undeclared mandatory runtime dependencies, and identifies each eligible optional prerequisite and its selection/unavailable-state contract without competing with Composer manifest ownership.
 - `authors` remains consistent with approved organization metadata.
 
 `composer.json` is the source of truth for the Composer manifest contract: package identity, metadata, requirements, dependencies, autoloading, scripts, configuration, stability, and distribution declarations where applicable. Every claim inside it MUST be supported by runtime code, documentation, and verification.
+
+Composer distribution facts remain separate from presentation semantics. The exact Release Artifact Identity and the required consumer/release-facing file set are owned by `LIBRARY_PRESENTATION_STANDARD.md`; this Standard requires the manifest/archive/VCS distribution behavior to preserve that identity and file set in the artifact Composer installs.
 
 ---
 
@@ -1114,7 +1199,7 @@ The following contracts MUST remain synchronized:
 
 ### 28.1 Minimal Publishable Library
 
-This template contains no empty fields:
+This template contains no empty fields and applies when PHP is the only mandatory runtime requirement. Add actual mandatory dependencies under §28.3 and eligible optional-capability declarations under §28.4 when applicable.
 
 ```json
 {
@@ -1188,7 +1273,7 @@ The following is an optional example for a repository that selects PHPUnit as it
 
 ### 28.3 Runtime Requirement Extension
 
-Add only direct runtime contracts:
+Add direct mandatory runtime contracts. A prerequisite omitted from `require` is permitted only under §15.4 and is disclosed separately as illustrated in §28.4:
 
 ```json
 {
@@ -1200,14 +1285,33 @@ Add only direct runtime contracts:
 }
 ```
 
+### 28.4 Optional Runtime Capability Declaration
+
+For a package whose two independently selectable built-in capabilities satisfy §15.4 and whose prerequisites are omitted from `require`, the following fragment illustrates the REQUIRED `suggest` entry for each optional extension and package. Include the illustrated `require-dev` entries only when repository-owned tests, static analysis, or other verification actually need those prerequisites; consumers do not inherit them. The canonical Package Reference MUST also document each capability's runtime, selection, unavailable-state, and Host/replacement contract. Omit example entries for capabilities or verification needs the package does not have, but not a `suggest` entry for an omitted §15.4 prerequisite.
+
+```json
+{
+  "require-dev": {
+    "ext-{OPTIONAL_RUNTIME_EXTENSION_NAME}": "*",
+    "{OPTIONAL_RUNTIME_PACKAGE_NAME}": "{OPTIONAL_RUNTIME_PACKAGE_CONSTRAINT}"
+  },
+  "suggest": {
+    "ext-{OPTIONAL_RUNTIME_EXTENSION_NAME}": "Required only for {OPTIONAL_EXTENSION_CAPABILITY}; enable ext-{OPTIONAL_RUNTIME_EXTENSION_NAME} before selecting it.",
+    "{OPTIONAL_RUNTIME_PACKAGE_NAME}": "Required only for {OPTIONAL_PACKAGE_CAPABILITY}; install {OPTIONAL_RUNTIME_PACKAGE_NAME} ({OPTIONAL_RUNTIME_PACKAGE_CONSTRAINT}) before selecting it."
+  }
+}
+```
+
+Each `suggest` key identifies the exact omitted prerequisite, and its explanatory value identifies the exact built-in capability that needs it; add a separate entry for every additional omitted prerequisite. Supported version text in `suggest` is informational, not a Composer-enforced constraint; supported versions where relevant belong in the Package Reference contract. This fragment MUST NOT be used to omit any dependency needed by a mandatory runtime path from `require`.
+
 Template rules:
 
 - These snippets MUST be merged into one valid final JSON object.
 - Duplicate top-level keys are forbidden.
 - Empty objects MUST NOT be retained.
 - Unused fields MUST be omitted.
-- Runtime extensions and packages MUST reflect actual use.
-- Development tools MUST reflect actual repository commands.
+- Runtime extensions and packages MUST reflect actual use and the mandatory/eligible-optional classification in §15.
+- Development requirements MUST reflect actual repository commands or optional-implementation verification under §16.
 - The final file MUST contain no comments, placeholders, or trailing commas.
 
 ---
@@ -1236,8 +1340,8 @@ Review MUST verify:
 - Valid and current support URLs.
 - Correct PSR-4 mappings.
 - Declared PHP compatibility.
-- Direct dependency completeness.
-- Correct separation of runtime and development requirements.
+- Direct `require` completeness for mandatory runtime dependencies; for every §15.4 prerequisite omitted from `require`, the canonical Package Reference contract and an exact matching `suggest` entry identifying the prerequisite and built-in capability, including every prerequisite of a capability with multiple omissions.
+- Correct separation of mandatory runtime requirements, optional capability prerequisites, and repository development/verification requirements.
 - Real script commands and suites.
 - No committed `version` field.
 - No committed `composer.lock`.
@@ -1286,9 +1390,14 @@ Automated verification of latest dependencies, lowest dependencies, platform req
 ### Requirements and Constraints
 
 - [ ] PHP minimum matches README and CI.
-- [ ] Every directly used PHP extension is declared.
-- [ ] Every direct runtime package is declared.
-- [ ] No runtime dependency is hidden in `require-dev`.
+- [ ] Every PHP extension needed by the core runtime, default workflow, baseline capability, or unconditional behavior is declared directly in `require`.
+- [ ] Every package needed by those mandatory runtime paths is declared directly in `require`.
+- [ ] Every runtime prerequisite omitted from `require` satisfies all applicable §15.4 conditions, with architecture/Host-replaceability evidence where applicable, no eager requirement, and an explicit unavailable-state contract.
+- [ ] Every Optional Runtime Capability Dependency omitted from `require` is present in `suggest` and documented in the canonical Package Reference.
+- [ ] Every such `suggest` entry identifies the exact omitted prerequisite and exact built-in optional capability/implementation that needs it; all prerequisites of a capability are covered.
+- [ ] No mandatory runtime dependency is hidden in `suggest`, `require-dev` only, documentation only, or implicit Host responsibility.
+- [ ] Optional-prerequisite entries in `require-dev` serve actual repository verification and are not the only consumer disclosure; the Package Reference and `suggest` are both present for §15.4 omissions.
+- [ ] `suggest` entries make no installation or enforcement claim.
 - [ ] No development tool is placed in `require`.
 - [ ] No dependency relies accidentally on transitive installation.
 - [ ] Package maps are alphabetically sorted.
@@ -1370,3 +1479,10 @@ Primary Composer references:
 - Composer configuration: `https://getcomposer.org/doc/06-config.md`
 
 Official Composer documentation remains authoritative for Composer mechanics. This Standard remains authoritative for Maatify package policy.
+
+## Version History
+
+### `5.0.0`
+
+- Frozen baseline `4.1.0`, exact artifact blob `d020e3f4b09830338b4a1647851048e02c64252e`, proven by the completed VALID consumer upgrade in Maatify/php-paymob PR #10. Upstream Adoption Commit: `2ea426aee0e6a5265f0c30ced667f21bb7b1d302`; consumer integration commit: `28b790455685b3f7052688d7d20d4b939fd13795`; the consumer-pinned artifact blob is `d020e3f4b09830338b4a1647851048e02c64252e` (exact blob equality PASS).
+- `NORMATIVE / BREAKING_CONTRACT_CHANGE`: require the Composer-distributed archive to preserve the complete applicable consumer/release-facing artifact set and its exact release identity, including VCS export behavior and resulting archive inspection; existing archive/export exclusions may otherwise omit required documents. Calculated candidate from frozen baseline `4.1.0`: `5.0.0`.

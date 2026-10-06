@@ -3,9 +3,8 @@
 ## Standard Metadata
 
 - **Standard ID:** `std-php-coding-style`
-- **Standard Version:** `1.0.0`
+- **Standard Version:** `1.0.1`
 - **Standard Version Format:** `MAJOR.MINOR.PATCH`
-- **Version Status:** `OWNER-APPROVED BOOTSTRAP VERSION`
 
 ## 1. Purpose and Canonical Ownership
 
@@ -84,8 +83,20 @@ The contract does not prescribe a particular formatter or linter. A suitable too
 - its result is deterministic; and
 - its configuration does not replace the normative baseline stated in this Standard.
 
+### Composite Verification Coverage
+
+When verification is composed from a base ruleset, local overrides, and one or more supplemental verifiers, the combined verification surface MUST demonstrate the complete normative baseline.
+
+Disabling, overriding, or weakening a rule inherited from the selected base ruleset MUST be treated as removing verification coverage for every normative obligation represented by that rule.
+
+Such an override is valid only when every displaced normative obligation remains mechanically verified elsewhere in the repository-owned verification surface without conflict or coverage gap.
+
+A successful tool exit status does not establish compliance when the configured verification surface omits part of the normative baseline.
+
+When a tool limitation or preset behavior conflicts with the canonical coding-style contract, this Standard remains authoritative. The repository MUST resolve the source shape, tool configuration, or verifier composition without silently weakening normative coverage.
+
 When independently applicable, `CI_WORKFLOW_STANDARD.md` remains the sole canonical owner of CI execution and enforcement. Referencing it by canonical filename does not create a Required Standard, Candidate dependency, or pinned-file requirement, and does not expand Project Host composition. This Standard does not define CI orchestration or duplicate CI workflow rules.
 
 ## 6. Versioning and Change Control
 
-The Standard ID and Standard Version are governed by the central `STANDARD_VERSIONING_POLICY_AR.md`. This central governance policy is referenced by canonical filename only; it is not a dependency of this Standard's consumer Adoption Set, does not create a Required Standard or pinned-file requirement, and need not be copied into a consumer solely because this Standard is adopted. The `1.0.0` version above is the owner-approved bootstrap version for this newly established canonical owner.
+The Standard ID and Standard Version are governed by the central `STANDARD_VERSIONING_POLICY_AR.md`. This central governance policy is referenced by canonical filename only; it is not a dependency of this Standard's consumer Adoption Set, does not create a Required Standard or pinned-file requirement, and need not be copied into a consumer solely because this Standard is adopted. The initial `1.0.0` version was the owner-approved bootstrap version for this newly established canonical owner.
