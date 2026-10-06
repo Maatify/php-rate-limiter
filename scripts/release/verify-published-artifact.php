@@ -7,41 +7,34 @@ require_once __DIR__ . '/../../vendor/autoload.php';
 use Maatify\RateLimiter\Tests\Support\ReleaseVerification\PublishedArtifactVerifier;
 
 $options = getopt('', [
+    'qualification-evidence::',
+    'rav-evidence::',
+    'target::',
+    'qualified-sha::',
     'package::',
-    'target:',
-    'qualified-sha:',
-    'qualified-reference::',
-    'expected-mode::',
-    'source-only-decision::',
-    'source-only-decision-file::',
     'composer-repository::',
-    'installed-path::',
-    'installed-json-path::',
     'output-json::',
     'format::',
     'keep-temp',
     'help',
 ]);
 
-if (isset($options['help']) || ! isset($options['target'], $options['qualified-sha'])) {
-    fwrite(STDOUT, <<<'HELP'
-Usage: php scripts/release/verify-published-artifact.php --target=<SemVer> --qualified-sha=<SHA> [options]
+$qualificationEvidenceFile = $options['qualification-evidence'] ?? $options['rav-evidence'] ?? null;
 
-Post-publication Published Artifact Verification (CI Workflow Standard §2.6).
+if (isset($options['help']) || $qualificationEvidenceFile === null) {
+    fwrite(STDOUT, <<<'HELP'
+Usage: php scripts/release/verify-published-artifact.php --qualification-evidence=<path> [options]
+
+Post-publication Published Artifact Verification (CI Workflow Standard §2.6, §2.7; Composer Package Standard §26).
 
 Required arguments:
-  --target=<version>              Exact target SemVer version (e.g. 1.0.0-rc.2)
-  --qualified-sha=<sha>           Intended qualified commit SHA (40 hex characters)
+  --qualification-evidence=<f>    Path to machine-readable RAV qualification evidence JSON (alias: --rav-evidence)
 
 Options:
+  --target=<version>              Expected target SemVer version (must match qualification evidence)
+  --qualified-sha=<sha>           Expected qualified commit SHA (must match qualification evidence)
   --package=<name>                Package identity (default: maatify/php-rate-limiter)
-  --qualified-reference=<ref>     Intended qualified Git tag or ref (default: target version)
-  --expected-mode=<dist|source>   Expected installation mode (default: dist)
-  --source-only-decision=<id>     Decision ID if canonical delivery is source-only
-  --source-only-decision-file=<f> Path to source-only Decision Record file
   --composer-repository=<repo>    Custom Composer repository URL or JSON definition
-  --installed-path=<path>         Inspect already-installed package path (offline/inspection mode)
-  --installed-json-path=<path>    Inspect already-obtained installed.json (offline/inspection mode)
   --format=<summary|json>         Console output format (default: summary)
   --output-json=<path>            Write machine-readable JSON report to file
   --keep-temp                     Retain temporary isolated consumer environment
@@ -54,16 +47,12 @@ HELP);
 $verifier = new PublishedArtifactVerifier();
 
 $verifyOptions = [
+    'qualification_evidence_file' => (string) $qualificationEvidenceFile,
     'package' => isset($options['package']) ? (string) $options['package'] : PublishedArtifactVerifier::DEFAULT_PACKAGE_NAME,
-    'target' => (string) $options['target'],
-    'qualified_sha' => (string) $options['qualified-sha'],
-    'qualified_reference' => isset($options['qualified-reference']) ? (string) $options['qualified-reference'] : null,
-    'expected_mode' => isset($options['expected-mode']) ? (string) $options['expected-mode'] : 'dist',
-    'source_only_decision' => isset($options['source-only-decision']) ? (string) $options['source-only-decision'] : null,
-    'source_only_decision_file' => isset($options['source-only-decision-file']) ? (string) $options['source-only-decision-file'] : null,
+    'target' => isset($options['target']) ? (string) $options['target'] : null,
+    'qualified_sha' => isset($options['qualified-sha']) ? (string) $options['qualified-sha'] : null,
     'composer_repository' => isset($options['composer-repository']) ? (string) $options['composer-repository'] : null,
-    'installed_path' => isset($options['installed-path']) ? (string) $options['installed-path'] : null,
-    'installed_json_path' => isset($options['installed-json-path']) ? (string) $options['installed-json-path'] : null,
+    'repo_path' => (string) realpath(__DIR__ . '/../..'),
     'keep_temp' => isset($options['keep-temp']),
 ];
 
@@ -92,6 +81,10 @@ fwrite(STDOUT, sprintf(
 fwrite(STDOUT, sprintf("  Observed installation mode: %s\n", $result['installation_mode']));
 if ($result['installed_path'] !== '') {
     fwrite(STDOUT, sprintf("  Installed package path: %s\n", $result['installed_path']));
+}
+fwrite(STDOUT, sprintf("  Composer version: %s\n", $result['composer_audit']['composer_version']));
+if ($result['composer_audit']['effective_repo'] !== null) {
+    fwrite(STDOUT, sprintf("  Custom Composer repository: %s\n", $result['composer_audit']['effective_repo']));
 }
 
 foreach ($result['checks'] as $name => $check) {

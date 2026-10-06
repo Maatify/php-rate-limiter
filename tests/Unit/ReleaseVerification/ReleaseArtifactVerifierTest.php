@@ -10,13 +10,14 @@ use PHPUnit\Framework\TestCase;
 final class ReleaseArtifactVerifierTest extends TestCase
 {
     private string $tempDir;
+    private string $realRepoPath;
 
     protected function setUp(): void
     {
         parent::setUp();
         $this->tempDir = sys_get_temp_dir() . '/rav-test-' . bin2hex(random_bytes(6));
         mkdir($this->tempDir, 0777, true);
-        $this->populateValidFixtureTree($this->tempDir, '1.0.0-rc.3');
+        $this->realRepoPath = (string) realpath(__DIR__ . '/../../..');
     }
 
     protected function tearDown(): void
@@ -25,268 +26,417 @@ final class ReleaseArtifactVerifierTest extends TestCase
         parent::tearDown();
     }
 
-    public function testFailsOnMalformedTargetVersionSyntax(): void
+    public function testFailsQualifyingRavOnNonGitRepository(): void
     {
+        $this->populateValidFixtureTree($this->tempDir, '1.0.0-rc.3');
+        $semanticFile = $this->createValidSemanticReviewFile($this->tempDir, '1.0.0-rc.3', str_repeat('a', 40));
+
         $verifier = new ReleaseArtifactVerifier();
         $result = $verifier->verify([
-            'target' => 'not-a-semver',
+            'target' => '1.0.0-rc.3',
             'candidate_sha' => str_repeat('a', 40),
-            'repo_path' => $this->tempDir,
-            'require_clean_git' => false,
-            'require_semantic_review' => false,
+            'repo_path' => $this->tempDir, // not a git repo
+            'semantic_review_file' => $semanticFile,
         ]);
 
         self::assertSame('FAIL', $result['status']);
-        self::assertSame('FAIL', $result['checks']['target_version_syntax']['status']);
-        self::assertStringContainsString('not a valid Semantic Version', $result['checks']['target_version_syntax']['message']);
+        self::assertSame('FAIL', $result['checks']['candidate_sha_and_git']['status']);
+        self::assertStringContainsString('not inside a valid Git work tree', $result['checks']['candidate_sha_and_git']['message']);
+    }
+
+    public function testFailsOnMalformedTargetVersionSyntax(): void
+    {
+        $verifier = new ReleaseArtifactVerifier();
+        $result = $verifier->evaluateTargetVersionSyntax('not-a-semver');
+
+        self::assertSame('FAIL', $result['status']);
+        self::assertStringContainsString('not a valid Semantic Version', $result['message']);
+    }
+
+    public function testPassesOnValidTargetVersionSyntax(): void
+    {
+        $verifier = new ReleaseArtifactVerifier();
+        $result = $verifier->evaluateTargetVersionSyntax('1.0.0-rc.3');
+
+        self::assertSame('PASS', $result['status']);
     }
 
     public function testFailsOnMalformedCandidateSha(): void
     {
         $verifier = new ReleaseArtifactVerifier();
-        $result = $verifier->verify([
-            'target' => '1.0.0-rc.3',
-            'candidate_sha' => 'short-sha',
-            'repo_path' => $this->tempDir,
-            'require_clean_git' => false,
-            'require_semantic_review' => false,
-        ]);
+        $result = $verifier->evaluateCandidateShaAndGit($this->realRepoPath, 'short-sha');
 
         self::assertSame('FAIL', $result['status']);
-        self::assertSame('FAIL', $result['checks']['candidate_sha_identity']['status']);
-        self::assertStringContainsString('40-character hexadecimal commit hash', $result['checks']['candidate_sha_identity']['message']);
+        self::assertStringContainsString('40-character hexadecimal commit hash', $result['message']);
     }
 
     public function testFailsWhenCandidateShaMismatchesRepositoryHead(): void
     {
-        // Run against actual repo root where HEAD is bb185f3 or d9138bd
-        $realRepo = (string) realpath(__DIR__ . '/../../..');
         $wrongSha = str_repeat('f', 40);
 
         $verifier = new ReleaseArtifactVerifier();
-        $result = $verifier->verify([
-            'target' => '1.0.0-rc.3',
-            'candidate_sha' => $wrongSha,
-            'repo_path' => $realRepo,
-            'require_clean_git' => false,
-            'require_semantic_review' => false,
-        ]);
+        $result = $verifier->evaluateCandidateShaAndGit($this->realRepoPath, $wrongSha);
 
         self::assertSame('FAIL', $result['status']);
-        self::assertSame('FAIL', $result['checks']['candidate_sha_identity']['status']);
-        self::assertStringContainsString('does not match candidate SHA', $result['checks']['candidate_sha_identity']['message']);
+        self::assertStringContainsString('does not exist as a commit object', $result['message']);
+    }
+
+    public function testFailsWhenCandidateCommitExistsButNotCheckedOutHead(): void
+    {
+        // Obtain parent commit SHA
+        $parentOut = [];
+        exec(sprintf('git -C %s rev-parse HEAD~1 2>/dev/null', escapeshellarg($this->realRepoPath)), $parentOut);
+        $parentSha = trim($parentOut[0] ?? '');
+        if ($parentSha === '') {
+            self::markTestSkipped('No parent commit available for testing HEAD mismatch.');
+        }
+
+        $verifier = new ReleaseArtifactVerifier();
+        $result = $verifier->evaluateCandidateShaAndGit($this->realRepoPath, $parentSha);
+
+        self::assertSame('FAIL', $result['status']);
+        self::assertStringContainsString('does not match candidate SHA', $result['message']);
+    }
+
+    public function testFailsWhenPackageManifestHasWrongLicense(): void
+    {
+        $this->populateValidFixtureTree($this->tempDir, '1.0.0-rc.3');
+        $manifest = [
+            'name' => 'maatify/php-rate-limiter',
+            'license' => 'MIT', // Expected proprietary
+        ];
+        file_put_contents($this->tempDir . '/composer.json', json_encode($manifest, JSON_PRETTY_PRINT));
+
+        $verifier = new ReleaseArtifactVerifier();
+        $result = $verifier->evaluatePackageManifest($this->tempDir);
+
+        self::assertSame('FAIL', $result['status']);
+        self::assertStringContainsString('does not match expected package license "proprietary"', $result['message']);
+    }
+
+    public function testFailsWhenPackageManifestHasStaticVersion(): void
+    {
+        $this->populateValidFixtureTree($this->tempDir, '1.0.0-rc.3');
+        $manifest = [
+            'name' => 'maatify/php-rate-limiter',
+            'license' => 'proprietary',
+            'version' => '1.0.0-rc.3', // Forbidden static version
+        ];
+        file_put_contents($this->tempDir . '/composer.json', json_encode($manifest, JSON_PRETTY_PRINT));
+
+        $verifier = new ReleaseArtifactVerifier();
+        $result = $verifier->evaluatePackageManifest($this->tempDir);
+
+        self::assertSame('FAIL', $result['status']);
+        self::assertStringContainsString('MUST NOT declare a static "version" field', $result['message']);
     }
 
     public function testFailsWhenRequiredReleaseFacingFileIsMissing(): void
     {
+        $this->populateValidFixtureTree($this->tempDir, '1.0.0-rc.3');
         unlink($this->tempDir . '/llms.txt');
 
         $verifier = new ReleaseArtifactVerifier();
-        $result = $verifier->verify([
-            'target' => '1.0.0-rc.3',
-            'candidate_sha' => str_repeat('a', 40),
-            'repo_path' => $this->tempDir,
-            'require_clean_git' => false,
-            'require_semantic_review' => false,
-        ]);
+        $result = $verifier->evaluateRequiredFiles($this->tempDir);
 
         self::assertSame('FAIL', $result['status']);
-        self::assertSame('FAIL', $result['checks']['required_files']['status']);
-        self::assertStringContainsString('Missing required consumer/release-facing files: llms.txt', $result['checks']['required_files']['message']);
+        self::assertStringContainsString('Missing required consumer/release-facing files: llms.txt', $result['message']);
     }
 
-    public function testFailsWhenPackageIdentityMismatches(): void
+    public function testFailsWhenForbiddenDistributionArtifactPresent(): void
     {
-        file_put_contents($this->tempDir . '/composer.json', json_encode(['name' => 'wrong/package'], JSON_PRETTY_PRINT));
+        $this->populateValidFixtureTree($this->tempDir, '1.0.0-rc.3');
+        file_put_contents($this->tempDir . '/.env', 'SECRET=123');
 
         $verifier = new ReleaseArtifactVerifier();
-        $result = $verifier->verify([
-            'target' => '1.0.0-rc.3',
-            'candidate_sha' => str_repeat('a', 40),
-            'repo_path' => $this->tempDir,
-            'require_clean_git' => false,
-            'require_semantic_review' => false,
-        ]);
+        $result = $verifier->evaluateDistributionSafety($this->tempDir);
 
         self::assertSame('FAIL', $result['status']);
-        self::assertSame('FAIL', $result['checks']['package_identity_and_manifest']['status']);
-        self::assertStringContainsString('does not match expected package identity', $result['checks']['package_identity_and_manifest']['message']);
+        self::assertStringContainsString('Distribution safety violation: .env', $result['message']);
     }
 
-    public function testFailsWhenTargetSectionMissingFromChangelog(): void
+    public function testFailsWhenRequiredFileExportIgnoredInGitAttributes(): void
     {
-        file_put_contents($this->tempDir . '/CHANGELOG.md', "# Changelog\n\n## [Unreleased]\n- Some feature\n");
+        $this->populateValidFixtureTree($this->tempDir, '1.0.0-rc.3');
+        file_put_contents($this->tempDir . '/.gitattributes', "README.md export-ignore\n");
 
         $verifier = new ReleaseArtifactVerifier();
-        $result = $verifier->verify([
-            'target' => '1.0.0-rc.3',
-            'candidate_sha' => str_repeat('a', 40),
-            'repo_path' => $this->tempDir,
-            'require_clean_git' => false,
-            'require_semantic_review' => false,
-        ]);
+        $result = $verifier->evaluateDistributionSafety($this->tempDir);
 
         self::assertSame('FAIL', $result['status']);
-        self::assertSame('FAIL', $result['checks']['changelog_target_allocation']['status']);
-        self::assertStringContainsString('does not contain an allocated section for target version', $result['checks']['changelog_target_allocation']['message']);
+        self::assertStringContainsString('Required file "README.md" is excluded by .gitattributes export-ignore', $result['message']);
     }
 
-    public function testFailsWhenChangelogContainsInventedPublicationDatePrePublication(): void
+    public function testFailsWhenReadmeMismatchesTargetVersion(): void
     {
-        file_put_contents($this->tempDir . '/CHANGELOG.md', "# Changelog\n\n## [Unreleased]\n\n## [1.0.0-rc.3] - 2026-10-10\n- Pre-dated release\n");
+        $this->populateValidFixtureTree($this->tempDir, '1.0.0-rc.3');
+        file_put_contents($this->tempDir . '/README.md', '# Unrelated Content');
 
         $verifier = new ReleaseArtifactVerifier();
-        $result = $verifier->verify([
-            'target' => '1.0.0-rc.3',
-            'candidate_sha' => str_repeat('a', 40),
-            'repo_path' => $this->tempDir,
-            'require_clean_git' => false,
-            'require_semantic_review' => false,
-        ]);
+        $result = $verifier->evaluateReadmeIdentity($this->tempDir, '1.0.0-rc.3');
 
         self::assertSame('FAIL', $result['status']);
-        self::assertSame('FAIL', $result['checks']['changelog_target_allocation']['status']);
-        self::assertStringContainsString('contains an invented publication date before publication', $result['checks']['changelog_target_allocation']['message']);
+        self::assertStringContainsString('README.md does not reference exact target release identity', $result['message']);
     }
 
-    public function testFailsWhenReadmeHasStalePreviousReleaseArtifactIdentity(): void
+    public function testFailsWhenReadmeMakesFalsePublishedClaim(): void
     {
-        file_put_contents($this->tempDir . '/README.md', "# Rate Limiter\n\ncomposer require maatify/php-rate-limiter:1.0.0-rc.2\n");
+        $this->populateValidFixtureTree($this->tempDir, '1.0.0-rc.3');
+        file_put_contents($this->tempDir . '/README.md', "# php-rate-limiter 1.0.0-rc.3\n# Published on Packagist 1.0.0-rc.3\n");
 
         $verifier = new ReleaseArtifactVerifier();
-        $result = $verifier->verify([
-            'target' => '1.0.0-rc.3',
-            'candidate_sha' => str_repeat('a', 40),
-            'repo_path' => $this->tempDir,
-            'require_clean_git' => false,
-            'require_semantic_review' => false,
-        ]);
+        $result = $verifier->evaluateReadmeIdentity($this->tempDir, '1.0.0-rc.3');
 
         self::assertSame('FAIL', $result['status']);
-        self::assertSame('FAIL', $result['checks']['readme_artifact_identity']['status']);
-        self::assertStringContainsString('README.md does not reference exact target release identity', $result['checks']['readme_artifact_identity']['message']);
+        self::assertStringContainsString('unqualified pre-publication availability claim', $result['message']);
     }
 
-    public function testFailsWhenSecurityPromisesStableSupportForPrerelease(): void
+    public function testFailsWhenChangelogTargetSectionIsDated(): void
     {
-        file_put_contents($this->tempDir . '/SECURITY.md', "# Security Policy\n\n| Version | Supported          |\n| ------- | ------------------ |\n| 1.0.0-rc.3 | :white_check_mark: |\n");
+        $this->populateValidFixtureTree($this->tempDir, '1.0.0-rc.3');
+        $changelog = "## [Unreleased]\n\n## [1.0.0-rc.3] - 2026-10-10\n- Changes\n";
+        file_put_contents($this->tempDir . '/CHANGELOG.md', $changelog);
 
         $verifier = new ReleaseArtifactVerifier();
-        $result = $verifier->verify([
-            'target' => '1.0.0-rc.3',
-            'candidate_sha' => str_repeat('a', 40),
-            'repo_path' => $this->tempDir,
-            'require_clean_git' => false,
-            'require_semantic_review' => false,
-        ]);
+        $result = $verifier->evaluateChangelogAllocation($this->tempDir, '1.0.0-rc.3', false);
 
         self::assertSame('FAIL', $result['status']);
-        self::assertSame('FAIL', $result['checks']['security_lifecycle']['status']);
-        self::assertStringContainsString('falsely promises active Stable support for pre-release target', $result['checks']['security_lifecycle']['message']);
+        self::assertStringContainsString('contains a publication date prior to publication', $result['message']);
     }
 
-    public function testFailsWhenSemanticReviewEvidenceMissingWhenRequired(): void
+    public function testFailsWhenChangelogTargetSectionHasUpcomingOrUnreleasedSuffix(): void
     {
-        $verifier = new ReleaseArtifactVerifier();
-        $result = $verifier->verify([
-            'target' => '1.0.0-rc.3',
-            'candidate_sha' => str_repeat('a', 40),
-            'repo_path' => $this->tempDir,
-            'require_clean_git' => false,
-            'require_semantic_review' => true,
-            'semantic_review_file' => null,
-        ]);
+        $this->populateValidFixtureTree($this->tempDir, '1.0.0-rc.3');
 
-        self::assertSame('FAIL', $result['status']);
-        self::assertSame('FAIL', $result['checks']['semantic_review']['status']);
-        self::assertStringContainsString('Semantic review evidence file is required but was not provided', $result['checks']['semantic_review']['message']);
+        $verifier = new ReleaseArtifactVerifier();
+
+        file_put_contents($this->tempDir . '/CHANGELOG.md', "## [Unreleased]\n\n## [1.0.0-rc.3] - upcoming\n");
+        $resultUpcoming = $verifier->evaluateChangelogAllocation($this->tempDir, '1.0.0-rc.3', false);
+        self::assertSame('FAIL', $resultUpcoming['status']);
+        self::assertStringContainsString('must be an exact undated heading without status suffix', $resultUpcoming['message']);
+
+        file_put_contents($this->tempDir . '/CHANGELOG.md', "## [Unreleased]\n\n## [1.0.0-rc.3] - unreleased\n");
+        $resultUnreleased = $verifier->evaluateChangelogAllocation($this->tempDir, '1.0.0-rc.3', false);
+        self::assertSame('FAIL', $resultUnreleased['status']);
+        self::assertStringContainsString('must be an exact undated heading without status suffix', $resultUnreleased['message']);
     }
 
-    public function testFailsWhenSemanticReviewEvidenceMismatchesShaOrTarget(): void
+    public function testPassesWhenChangelogHasExactUndatedTargetHeading(): void
     {
-        $evidenceFile = $this->tempDir . '/semantic-review.json';
-        file_put_contents($evidenceFile, json_encode([
-            'target' => '1.0.0-rc.3',
-            'candidate_sha' => str_repeat('b', 40),
-            'status' => 'APPROVED',
-            'reviewer' => 'Lead Reviewer',
-            'reviewed_at' => '2026-10-06T20:00:00Z',
-            'claims' => ['readme_release_artifact_identity' => 'CONFIRMED'],
-        ], JSON_PRETTY_PRINT));
+        $this->populateValidFixtureTree($this->tempDir, '1.0.0-rc.3');
+        $changelog = "## [Unreleased]\n\n## [1.0.0-rc.3]\n- Allocated changes\n";
+        file_put_contents($this->tempDir . '/CHANGELOG.md', $changelog);
 
         $verifier = new ReleaseArtifactVerifier();
-        $result = $verifier->verify([
-            'target' => '1.0.0-rc.3',
-            'candidate_sha' => str_repeat('a', 40),
-            'repo_path' => $this->tempDir,
-            'require_clean_git' => false,
-            'require_semantic_review' => true,
-            'semantic_review_file' => $evidenceFile,
-        ]);
-
-        self::assertSame('FAIL', $result['status']);
-        self::assertSame('FAIL', $result['checks']['semantic_review']['status']);
-        self::assertStringContainsString('does not match candidate SHA', $result['checks']['semantic_review']['message']);
-    }
-
-    public function testPassesOnValidFixtureTreeAndSemanticReview(): void
-    {
-        $evidenceFile = $this->tempDir . '/semantic-review.json';
-        file_put_contents($evidenceFile, json_encode([
-            'target' => '1.0.0-rc.3',
-            'candidate_sha' => str_repeat('a', 40),
-            'status' => 'APPROVED',
-            'reviewer' => 'Lead Reviewer',
-            'reviewed_at' => '2026-10-06T20:00:00Z',
-            'claims' => [
-                'readme_release_artifact_identity' => 'CONFIRMED',
-                'readme_pre_publication_truth' => 'CONFIRMED',
-                'changelog_target_allocation' => 'CONFIRMED',
-                'security_lifecycle_semantics' => 'CONFIRMED',
-            ],
-        ], JSON_PRETTY_PRINT));
-
-        $verifier = new ReleaseArtifactVerifier();
-        $result = $verifier->verify([
-            'target' => '1.0.0-rc.3',
-            'candidate_sha' => str_repeat('a', 40),
-            'repo_path' => $this->tempDir,
-            'require_clean_git' => false,
-            'require_semantic_review' => true,
-            'semantic_review_file' => $evidenceFile,
-        ]);
+        $result = $verifier->evaluateChangelogAllocation($this->tempDir, '1.0.0-rc.3', false);
 
         self::assertSame('PASS', $result['status']);
-        self::assertSame([], $result['failures']);
-        self::assertSame('PASS', $result['checks']['target_version_syntax']['status']);
-        self::assertSame('PASS', $result['checks']['required_files']['status']);
-        self::assertSame('PASS', $result['checks']['distribution_safety']['status']);
-        self::assertSame('PASS', $result['checks']['readme_artifact_identity']['status']);
-        self::assertSame('PASS', $result['checks']['changelog_target_allocation']['status']);
-        self::assertSame('PASS', $result['checks']['security_lifecycle']['status']);
-        self::assertSame('PASS', $result['checks']['semantic_review']['status']);
     }
 
-    private function populateValidFixtureTree(string $dir, string $target): void
+    public function testPassesWhenChangelogOmitsUnreleasedHeadingIfSemanticallyConfirmedNoUnallocatedChanges(): void
+    {
+        $this->populateValidFixtureTree($this->tempDir, '1.0.0-rc.3');
+        // No ## [Unreleased] heading
+        $changelog = "## [1.0.0-rc.3]\n- All changes allocated\n";
+        file_put_contents($this->tempDir . '/CHANGELOG.md', $changelog);
+
+        $verifier = new ReleaseArtifactVerifier();
+
+        // When no unallocated represented changes are confirmed: PASS
+        $resultConfirmed = $verifier->evaluateChangelogAllocation($this->tempDir, '1.0.0-rc.3', true);
+        self::assertSame('PASS', $resultConfirmed['status']);
+
+        // When unallocated represented changes are NOT confirmed: FAIL
+        $resultUnconfirmed = $verifier->evaluateChangelogAllocation($this->tempDir, '1.0.0-rc.3', false);
+        self::assertSame('FAIL', $resultUnconfirmed['status']);
+        self::assertStringContainsString('missing "## [Unreleased]" boundary heading', $resultUnconfirmed['message']);
+    }
+
+    public function testFailsWhenSecurityFalselyPromisesStableSupportForPrerelease(): void
+    {
+        $this->populateValidFixtureTree($this->tempDir, '1.0.0-rc.3');
+        $security = "| 1.0.0-rc.3 | :white_check_mark: |\n";
+        file_put_contents($this->tempDir . '/SECURITY.md', $security);
+
+        $verifier = new ReleaseArtifactVerifier();
+        $result = $verifier->evaluateSecurityLifecycle($this->tempDir, '1.0.0-rc.3');
+
+        self::assertSame('FAIL', $result['status']);
+        self::assertStringContainsString('falsely promises active Stable support for pre-release target', $result['message']);
+    }
+
+    public function testFailsWhenSemanticReviewRecordIsMissing(): void
+    {
+        $verifier = new ReleaseArtifactVerifier();
+        $result = $verifier->evaluateSemanticReviewEvidence(null, '1.0.0-rc.3', str_repeat('a', 40));
+
+        self::assertSame('FAIL', $result['status']);
+        self::assertStringContainsString('Canonical semantic review evidence record is required', $result['message']);
+    }
+
+    public function testFailsWhenSemanticReviewTargetMismatches(): void
+    {
+        $sha = str_repeat('a', 40);
+        $file = $this->createValidSemanticReviewFile($this->tempDir, '1.0.0-rc.2', $sha);
+
+        $verifier = new ReleaseArtifactVerifier();
+        $result = $verifier->evaluateSemanticReviewEvidence($file, '1.0.0-rc.3', $sha);
+
+        self::assertSame('FAIL', $result['status']);
+        self::assertStringContainsString('does not match verification target', $result['message']);
+    }
+
+    public function testFailsWhenSemanticReviewShaMismatches(): void
+    {
+        $sha1 = str_repeat('a', 40);
+        $sha2 = str_repeat('b', 40);
+        $file = $this->createValidSemanticReviewFile($this->tempDir, '1.0.0-rc.3', $sha1);
+
+        $verifier = new ReleaseArtifactVerifier();
+        $result = $verifier->evaluateSemanticReviewEvidence($file, '1.0.0-rc.3', $sha2);
+
+        self::assertSame('FAIL', $result['status']);
+        self::assertStringContainsString('does not match candidate SHA', $result['message']);
+    }
+
+    public function testFailsWhenSemanticReviewDispositionNotApproved(): void
+    {
+        $sha = str_repeat('a', 40);
+        $data = $this->getValidSemanticReviewData('1.0.0-rc.3', $sha);
+        $data['disposition'] = 'REJECTED';
+        $file = $this->tempDir . '/semantic.json';
+        file_put_contents($file, json_encode($data, JSON_PRETTY_PRINT));
+
+        $verifier = new ReleaseArtifactVerifier();
+        $result = $verifier->evaluateSemanticReviewEvidence($file, '1.0.0-rc.3', $sha);
+
+        self::assertSame('FAIL', $result['status']);
+        self::assertStringContainsString('disposition is "REJECTED", expected "APPROVED"', $result['message']);
+    }
+
+    public function testFailsWhenSemanticReviewMissingOneRequiredClaim(): void
+    {
+        $sha = str_repeat('a', 40);
+        $data = $this->getValidSemanticReviewData('1.0.0-rc.3', $sha);
+        unset($data['claims']['security.lifecycle_support_semantics']);
+        $file = $this->tempDir . '/semantic.json';
+        file_put_contents($file, json_encode($data, JSON_PRETTY_PRINT));
+
+        $verifier = new ReleaseArtifactVerifier();
+        $result = $verifier->evaluateSemanticReviewEvidence($file, '1.0.0-rc.3', $sha);
+
+        self::assertSame('FAIL', $result['status']);
+        self::assertStringContainsString('missing required claim(s): security.lifecycle_support_semantics', $result['message']);
+    }
+
+    public function testFailsWhenSemanticReviewHasUnconfirmedClaim(): void
+    {
+        $sha = str_repeat('a', 40);
+        $data = $this->getValidSemanticReviewData('1.0.0-rc.3', $sha);
+        $data['claims']['readme.pre_publication_truth'] = 'PENDING';
+        $file = $this->tempDir . '/semantic.json';
+        file_put_contents($file, json_encode($data, JSON_PRETTY_PRINT));
+
+        $verifier = new ReleaseArtifactVerifier();
+        $result = $verifier->evaluateSemanticReviewEvidence($file, '1.0.0-rc.3', $sha);
+
+        self::assertSame('FAIL', $result['status']);
+        self::assertStringContainsString('unconfirmed required claim(s): readme.pre_publication_truth', $result['message']);
+    }
+
+    public function testPassesWhenSemanticReviewHasAllClaimsConfirmed(): void
+    {
+        $sha = str_repeat('a', 40);
+        $file = $this->createValidSemanticReviewFile($this->tempDir, '1.0.0-rc.3', $sha);
+
+        $verifier = new ReleaseArtifactVerifier();
+        $result = $verifier->evaluateSemanticReviewEvidence($file, '1.0.0-rc.3', $sha);
+
+        self::assertSame('PASS', $result['status']);
+        self::assertArrayHasKey('details', $result);
+        $details = $result['details'] ?? [];
+        self::assertArrayHasKey('claims', $details);
+        self::assertIsArray($details['claims']);
+        self::assertCount(8, $details['claims']);
+    }
+
+    public function testBuildContentManifestProducesDeterministicSha256Hashes(): void
+    {
+        $this->populateValidFixtureTree($this->tempDir, '1.0.0-rc.3');
+
+        $verifier = new ReleaseArtifactVerifier();
+        $manifest1 = $verifier->buildContentManifest($this->tempDir);
+        $manifest2 = $verifier->buildContentManifest($this->tempDir);
+
+        self::assertSame($manifest1, $manifest2);
+        self::assertArrayHasKey('composer.json', $manifest1);
+        self::assertArrayHasKey('README.md', $manifest1);
+        self::assertArrayHasKey('src', $manifest1);
+        self::assertMatchesRegularExpression('/^[0-9a-f]{64}$/', $manifest1['composer.json']);
+    }
+
+    private function populateValidFixtureTree(string $dir, string $version): void
     {
         mkdir($dir . '/src', 0777, true);
-        file_put_contents($dir . '/src/RateLimiter.php', "<?php\n");
-        mkdir($dir . '/examples', 0777, true);
-        file_put_contents($dir . '/examples/basic.php', "<?php\n");
         mkdir($dir . '/docs/guides', 0777, true);
-        file_put_contents($dir . '/docs/guides/USAGE_GUIDE.md', "# Usage Guide\n");
+        mkdir($dir . '/examples', 0777, true);
 
         file_put_contents($dir . '/composer.json', json_encode([
             'name' => 'maatify/php-rate-limiter',
-            'type' => 'library',
+            'license' => 'proprietary',
         ], JSON_PRETTY_PRINT));
+        file_put_contents($dir . '/README.md', "# php-rate-limiter\nVersion: " . $version . "\ncomposer require maatify/php-rate-limiter:" . $version . "\n");
+        file_put_contents($dir . '/LICENSE', 'Maatify Proprietary License');
+        file_put_contents($dir . '/CHANGELOG.md', "## [Unreleased]\n\n## [" . $version . "]\n- Initial feature set\n");
+        file_put_contents($dir . '/SECURITY.md', "## Supported Versions\n| " . $version . " | No (pre-release candidate) |\n");
+        file_put_contents($dir . '/RATE_LIMITER_PACKAGE_REFERENCE.md', '# Package Reference');
+        file_put_contents($dir . '/docs/guides/USAGE_GUIDE.md', '# Usage Guide');
+        file_put_contents($dir . '/llms.txt', '# LLM Reference');
+        file_put_contents($dir . '/src/RateLimiter.php', "<?php\n");
+        file_put_contents($dir . '/examples/basic.php', "<?php\n");
+    }
 
-        file_put_contents($dir . '/README.md', "# Rate Limiter\n\ncomposer require maatify/php-rate-limiter:{$target}\n");
-        file_put_contents($dir . '/LICENSE', "MIT License\n");
-        file_put_contents($dir . '/CHANGELOG.md', "# Changelog\n\n## [Unreleased]\n\n## [{$target}]\n- Candidate release preparation\n");
-        file_put_contents($dir . '/SECURITY.md', "# Security Policy\n\nOnly tagged Stable releases receive official security support.\n");
-        file_put_contents($dir . '/RATE_LIMITER_PACKAGE_REFERENCE.md', "# Package Reference\n");
-        file_put_contents($dir . '/llms.txt', "# LLMs reference\n");
+    /**
+     * @return array{
+     *     schema_version: string,
+     *     target: string,
+     *     candidate_sha: string,
+     *     reviewer: string,
+     *     reviewed_at: string,
+     *     disposition: string,
+     *     claims: array<string, string>,
+     *     notes: string
+     * }
+     */
+    private function getValidSemanticReviewData(string $target, string $sha): array
+    {
+        return [
+            'schema_version' => '1.0.0',
+            'target' => $target,
+            'candidate_sha' => $sha,
+            'reviewer' => 'Lead Reviewer <lead@maatify.dev>',
+            'reviewed_at' => '2026-10-06T20:00:00Z',
+            'disposition' => 'APPROVED',
+            'claims' => [
+                'readme.release_artifact_identity' => 'CONFIRMED',
+                'readme.exact_install_target' => 'CONFIRMED',
+                'readme.pre_publication_truth' => 'CONFIRMED',
+                'changelog.target_allocation' => 'CONFIRMED',
+                'changelog.undated_target_preparation' => 'CONFIRMED',
+                'changelog.no_unallocated_represented_changes' => 'CONFIRMED',
+                'security.lifecycle_support_semantics' => 'CONFIRMED',
+                'package_reference.consumer_identity_consistency' => 'CONFIRMED',
+            ],
+            'notes' => 'Test semantic review notes.',
+        ];
+    }
+
+    private function createValidSemanticReviewFile(string $dir, string $target, string $sha): string
+    {
+        $path = $dir . '/semantic-review.json';
+        file_put_contents($path, json_encode($this->getValidSemanticReviewData($target, $sha), JSON_PRETTY_PRINT));
+
+        return $path;
     }
 
     private function removeDir(string $dir): void
@@ -294,10 +444,12 @@ final class ReleaseArtifactVerifierTest extends TestCase
         if (! is_dir($dir)) {
             return;
         }
+
         $items = scandir($dir);
         if ($items === false) {
             return;
         }
+
         foreach ($items as $item) {
             if ($item === '.' || $item === '..') {
                 continue;
@@ -309,6 +461,7 @@ final class ReleaseArtifactVerifierTest extends TestCase
                 unlink($p);
             }
         }
+
         rmdir($dir);
     }
 }
