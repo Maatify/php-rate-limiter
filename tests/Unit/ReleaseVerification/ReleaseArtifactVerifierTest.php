@@ -10,19 +10,35 @@ use PHPUnit\Framework\TestCase;
 final class ReleaseArtifactVerifierTest extends TestCase
 {
     private string $tempDir;
-    private string $realRepoPath;
+    private string $tempGitDir;
+    private string $firstCommitSha;
+    private string $headCommitSha;
 
     protected function setUp(): void
     {
         parent::setUp();
         $this->tempDir = sys_get_temp_dir() . '/rav-test-' . bin2hex(random_bytes(6));
         mkdir($this->tempDir, 0777, true);
-        $this->realRepoPath = (string) realpath(__DIR__ . '/../../..');
+
+        $this->tempGitDir = sys_get_temp_dir() . '/rav-git-' . bin2hex(random_bytes(6));
+        mkdir($this->tempGitDir, 0777, true);
+        exec(sprintf('git -C %s init -q', escapeshellarg($this->tempGitDir)));
+        exec(sprintf('git -C %s config user.name "Test"', escapeshellarg($this->tempGitDir)));
+        exec(sprintf('git -C %s config user.email "test@example.com"', escapeshellarg($this->tempGitDir)));
+        exec(sprintf('git -C %s commit -q --allow-empty -m "first commit"', escapeshellarg($this->tempGitDir)));
+        $out1 = [];
+        exec(sprintf('git -C %s rev-parse HEAD', escapeshellarg($this->tempGitDir)), $out1);
+        $this->firstCommitSha = trim($out1[0] ?? '');
+        exec(sprintf('git -C %s commit -q --allow-empty -m "second commit"', escapeshellarg($this->tempGitDir)));
+        $out2 = [];
+        exec(sprintf('git -C %s rev-parse HEAD', escapeshellarg($this->tempGitDir)), $out2);
+        $this->headCommitSha = trim($out2[0] ?? '');
     }
 
     protected function tearDown(): void
     {
         $this->removeDir($this->tempDir);
+        $this->removeDir($this->tempGitDir);
         parent::tearDown();
     }
 
@@ -64,18 +80,18 @@ final class ReleaseArtifactVerifierTest extends TestCase
     public function testFailsOnMalformedCandidateSha(): void
     {
         $verifier = new ReleaseArtifactVerifier();
-        $result = $verifier->evaluateCandidateShaAndGit($this->realRepoPath, 'short-sha');
+        $result = $verifier->evaluateCandidateShaAndGit($this->tempGitDir, 'short-sha');
 
         self::assertSame('FAIL', $result['status']);
         self::assertStringContainsString('40-character hexadecimal commit hash', $result['message']);
     }
 
-    public function testFailsWhenCandidateShaMismatchesRepositoryHead(): void
+    public function testFailsWhenCandidateShaDoesNotExistInRepo(): void
     {
         $wrongSha = str_repeat('f', 40);
 
         $verifier = new ReleaseArtifactVerifier();
-        $result = $verifier->evaluateCandidateShaAndGit($this->realRepoPath, $wrongSha);
+        $result = $verifier->evaluateCandidateShaAndGit($this->tempGitDir, $wrongSha);
 
         self::assertSame('FAIL', $result['status']);
         self::assertStringContainsString('does not exist as a commit object', $result['message']);
@@ -83,19 +99,22 @@ final class ReleaseArtifactVerifierTest extends TestCase
 
     public function testFailsWhenCandidateCommitExistsButNotCheckedOutHead(): void
     {
-        // Obtain parent commit SHA
-        $parentOut = [];
-        exec(sprintf('git -C %s rev-parse HEAD~1 2>/dev/null', escapeshellarg($this->realRepoPath)), $parentOut);
-        $parentSha = trim($parentOut[0] ?? '');
-        if ($parentSha === '') {
-            self::markTestSkipped('No parent commit available for testing HEAD mismatch.');
-        }
-
         $verifier = new ReleaseArtifactVerifier();
-        $result = $verifier->evaluateCandidateShaAndGit($this->realRepoPath, $parentSha);
+        $result = $verifier->evaluateCandidateShaAndGit($this->tempGitDir, $this->firstCommitSha);
 
         self::assertSame('FAIL', $result['status']);
         self::assertStringContainsString('does not match candidate SHA', $result['message']);
+    }
+
+    public function testPassesWhenCandidateCommitMatchesCheckedOutHeadAndCleanTree(): void
+    {
+        $verifier = new ReleaseArtifactVerifier();
+        $result = $verifier->evaluateCandidateShaAndGit($this->tempGitDir, $this->headCommitSha);
+
+        self::assertSame('PASS', $result['status']);
+        self::assertArrayHasKey('details', $result);
+        $details = $result['details'] ?? [];
+        self::assertSame($this->headCommitSha, $details['candidate_sha'] ?? '');
     }
 
     public function testFailsWhenPackageManifestHasWrongLicense(): void
@@ -445,6 +464,7 @@ final class ReleaseArtifactVerifierTest extends TestCase
             return;
         }
 
+        chmod($dir, 0777);
         $items = scandir($dir);
         if ($items === false) {
             return;
@@ -458,6 +478,7 @@ final class ReleaseArtifactVerifierTest extends TestCase
             if (is_dir($p)) {
                 $this->removeDir($p);
             } else {
+                chmod($p, 0666);
                 unlink($p);
             }
         }
