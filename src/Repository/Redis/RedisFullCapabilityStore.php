@@ -1420,12 +1420,12 @@ LUA;
 
     public function load(string $policyName): ?CircuitBreakerStateDTO
     {
-        $raw = $this->command(['GET', $this->key('circuit', $policyName)]);
+        $raw = $this->nullableStringReply(
+            $this->command(['GET', $this->key('circuit', $policyName)]),
+            'circuit-breaker',
+        );
         if ($raw === null) {
             return null;
-        }
-        if (! is_string($raw)) {
-            throw new RateLimiterException('Malformed circuit-breaker response.');
         }
         try {
             $data = json_decode($raw, true, 512, JSON_THROW_ON_ERROR);
@@ -1709,21 +1709,44 @@ LUA;
     }
 
     /**
-     * Healthy only when PING returns exactly 'PONG' or exactly true (DEC-018).
+     * Healthy only for a supported PING reply representation (DEC-018).
      *
-     * ext-redis rawCommand() materializes the simple-string status reply as
-     * bool(true); string-returning clients return 'PONG'. Any other result is
-     * unhealthy. BackendFailureException is unhealthy; every other throwable
-     * propagates unchanged.
+     * BackendFailureException is unhealthy; every other throwable propagates
+     * unchanged.
      */
     public function isHealthy(): bool
     {
         try {
-            $result = $this->command(['PING']);
-            return $result === 'PONG' || $result === true;
+            return $this->pingReplyIsHealthy($this->command(['PING']));
         } catch (BackendFailureException) {
             return false;
         }
+    }
+
+    /**
+     * Official Redis adapter interpretation of the native PING reply: a string
+     * client returns 'PONG'; ext-redis rawCommand() returns bool(true) for the
+     * status reply. Strict identity only, never truthiness (DEC-018).
+     */
+    private function pingReplyIsHealthy(mixed $reply): bool
+    {
+        return $reply === 'PONG' || $reply === true;
+    }
+
+    /**
+     * Official Redis adapter interpretation of a native GET reply: a missing
+     * key is null (string clients) or false (ext-redis nil bulk reply); an
+     * existing value is a string. Any other shape is explicitly malformed.
+     */
+    private function nullableStringReply(mixed $reply, string $label): ?string
+    {
+        if ($reply === null || $reply === false) {
+            return null;
+        }
+        if (is_string($reply)) {
+            return $reply;
+        }
+        throw new RateLimiterException('Malformed ' . $label . ' response.');
     }
 
     private function key(string $family, string $logical): string

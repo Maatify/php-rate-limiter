@@ -421,7 +421,8 @@ converted into failed-probe, circuit, or degraded semantics.
 
 For the official Redis store, a healthy `PING` is exactly `'PONG'` or exactly
 `true` (ext-redis `rawCommand()` representation, DEC-018); any other result is
-an unhealthy probe, with no new signal or logging.
+an unhealthy probe, with no new signal or logging. The same adapter treats a
+missing circuit-state `GET` reply of `null` or `false` as absent state.
 
 Probe failure while already `OPEN` keeps the circuit `OPEN`, clears the healthy
 anchor, restarts `openSince`, and does not append a re-entry or emit another

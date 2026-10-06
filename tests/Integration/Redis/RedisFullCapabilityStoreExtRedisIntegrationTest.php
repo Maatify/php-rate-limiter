@@ -17,7 +17,9 @@ use Maatify\RateLimiter\Tests\Support\FailureSignal\RecordingFailureSignalEmitte
 use PHPUnit\Framework\TestCase;
 
 /**
- * Issue #91 / DEC-018: real Redis + real ext-redis (phpredis) rawCommand().
+ * Issue #91 / DEC-018: real Redis + real ext-redis (phpredis) rawCommand()
+ * through a direct raw bridge. The executor performs no reply normalization;
+ * it only maps transport exceptions to BackendFailureException.
  *
  * The suite is skipped only when the Redis lifecycle orchestration variables
  * are absent (same as the sibling integration suite). Once orchestrated, a
@@ -59,20 +61,36 @@ final class RedisFullCapabilityStoreExtRedisIntegrationTest extends TestCase
     {
         $reply = $this->redis->rawCommand('PING');
 
-        // The exact representation is phpredis-owned; the contract supports
+        // The exact representation is phpredis-owned; the adapter supports
         // precisely these two (DEC-018).
         self::assertTrue($reply === true || $reply === 'PONG', 'Unexpected phpredis PING representation: ' . get_debug_type($reply));
         self::assertTrue($this->store->isHealthy());
     }
 
+    public function testMissingCircuitStateIsAbsentThroughDirectPhpRedisGet(): void
+    {
+        $reply = $this->redis->rawCommand('GET', 'issue-91-missing-key');
+
+        self::assertTrue($reply === null || $reply === false, 'Unexpected phpredis missing-key GET representation: ' . get_debug_type($reply));
+        self::assertNull($this->store->load('api_heavy_protection'));
+    }
+
+    public function testFirstRuntimeRequestOnEmptyRedisWorksWithoutSeedingOrHostNormalization(): void
+    {
+        $limiter = $this->limiter(new FixedClock('2025-01-01 12:00:00'));
+
+        $result = $limiter->limit(
+            new RateLimitContextDTO('198.51.100.91', 'Mozilla/5.0', 'issue-91-account'),
+            RateLimitCommand::checkOnly('api_heavy_protection'),
+        );
+
+        self::assertSame('NORMAL', $result->failureMode);
+    }
+
     public function testRealRedisCircuitRecoversThroughHealthyPhpRedisPing(): void
     {
         $clock = new FixedClock('2025-01-01 12:00:00');
-        $limiter = RateLimiterBuilder::fromFullCapabilityStore(
-            new RateLimiterConfig('issue-91-key', 'issue-91-fingerprint', 'prod'),
-            $this->store,
-            new RecordingFailureSignalEmitter(),
-        )->withClock($clock)->build();
+        $limiter = $this->limiter($clock);
         $context = new RateLimitContextDTO('198.51.100.91', 'Mozilla/5.0', 'issue-91-account');
         $openedAt = $clock->now()->getTimestamp();
         $this->store->save('api_heavy_protection', new CircuitBreakerStateDTO('OPEN', [$openedAt, $openedAt, $openedAt], $openedAt, $openedAt, 0, [$openedAt], 0));
@@ -80,12 +98,25 @@ final class RedisFullCapabilityStoreExtRedisIntegrationTest extends TestCase
         $clock->setNow(new \DateTimeImmutable('@' . ($openedAt + 300)));
         $half = $limiter->limit($context, new RateLimitCommand('api_heavy_protection'));
         self::assertSame('DEGRADED_MODE', $half->failureMode);
-        self::assertSame('HALF_OPEN', $this->store->load('api_heavy_protection')?->status);
+        $halfState = $this->store->load('api_heavy_protection');
+        self::assertNotNull($halfState);
+        self::assertSame('HALF_OPEN', $halfState->status);
 
         $clock->setNow(new \DateTimeImmutable('@' . ($openedAt + 420)));
         $closed = $limiter->limit($context, new RateLimitCommand('api_heavy_protection'));
         self::assertSame('NORMAL', $closed->failureMode);
-        self::assertSame('CLOSED', $this->store->load('api_heavy_protection')?->status);
+        $closedState = $this->store->load('api_heavy_protection');
+        self::assertNotNull($closedState);
+        self::assertSame('CLOSED', $closedState->status);
+    }
+
+    private function limiter(FixedClock $clock): \Maatify\RateLimiter\Service\CompositeRateLimiterRuntimeInterface
+    {
+        return RateLimiterBuilder::fromFullCapabilityStore(
+            new RateLimiterConfig('issue-91-key', 'issue-91-fingerprint', 'prod'),
+            $this->store,
+            new RecordingFailureSignalEmitter(),
+        )->withClock($clock)->build();
     }
 
     private function executor(): CallableRedisCommandExecutor

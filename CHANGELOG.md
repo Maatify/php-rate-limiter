@@ -8,12 +8,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Fixed
-- `RedisFullCapabilityStore::isHealthy()` no longer reports a healthy Redis as
-  unhealthy when the Host executor returns `ext-redis`/phpredis's
-  `rawCommand('PING')` result `bool(true)` (Issue #91, DEC-018). Health is
-  exactly `'PONG'` or exactly `true`; this restored circuit-breaker recovery and
-  `RateLimitOperationalSnapshotDTO::$backendHealthy`. No other reply is accepted
-  and failure provenance is unchanged.
+- The official Redis adapter now interprets native `ext-redis`/phpredis
+  `rawCommand()` replies without Host normalization (Issue #91, DEC-018): a
+  healthy `PING` is exactly `'PONG'` or exactly `true`, which restores
+  circuit-breaker recovery and `RateLimitOperationalSnapshotDTO::$backendHealthy`;
+  a missing circuit-state `GET` is absent when `null` or `false`, so the first
+  request on an empty Redis no longer fails with a malformed-response error.
+  Any other reply shape is still unhealthy/malformed, failure provenance is
+  unchanged, and generic storage contracts are unchanged.
 
 ## [1.0.0-rc.1] - 2026-09-30
 

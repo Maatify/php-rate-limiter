@@ -11,10 +11,11 @@ use Maatify\RateLimiter\Exception\BackendFailureException;
  *
  * The Host owns the Redis client and connection lifecycle. This package does
  * not depend on ext-redis or Predis; an implementation returns the raw result
- * of the command. The health PING reply is accepted as exactly 'PONG' or
- * exactly true (ext-redis rawCommand() may return bool(true); DEC-018).
- * Only an identified operational transport or backend failure may be
- * classified as BackendFailureException. Programming, protocol, and
+ * of the command, and is not required to normalize it: the official Redis
+ * adapter interprets the supported native replies it needs (PING 'PONG' or
+ * true; missing-key GET null or false; DEC-018). Only an identified
+ * operational transport or backend failure may be classified as
+ * BackendFailureException. Programming, protocol, and
  * unknown failures remain distinguishable and must not be blanket-wrapped.
  */
 interface RedisCommandExecutorInterface

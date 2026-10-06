@@ -67,10 +67,11 @@ Host-owned `RedisCommandExecutorInterface` (or
 `$fullCapabilityStore`.
 
 The Host owns the Redis client and connection lifecycle, and the executor
-returns the client's raw result. For the health `PING`, the store accepts
-exactly `'PONG'` or exactly `true` (phpredis `rawCommand('PING')` may return
-`bool(true)`), so the Host does not need to normalize it to `'PONG'`. Other
-replies are not normalized by the package (DEC-018).
+returns the client's native result, for example phpredis `rawCommand()`. The
+official Redis store interprets the supported native replies itself, so the
+Host does not normalize `PING` `true` to `'PONG'` or a missing-key `GET` `false`
+to `null` (DEC-018). Only transport failures need to be mapped to
+`BackendFailureException`.
 
 ### Advanced multi-store composition
 

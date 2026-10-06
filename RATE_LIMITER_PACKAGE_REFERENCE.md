@@ -215,14 +215,17 @@ lifecycle and supplies the command executor. Secrets are caller-provided; the
 package does not read environment variables, generate secrets, serialize
 secrets, or merge outer and fingerprint rotation into one input.
 
-Health `PING` status replies (DEC-018): the executor stays client-agnostic and
-returns the client's raw result. `RedisFullCapabilityStore::isHealthy()` treats
-the result as healthy only when it is exactly `'PONG'` or exactly `true`
-(`ext-redis`/phpredis `rawCommand('PING')` may materialize the status reply as
-`bool(true)`). Any other value, such as `1`, `'OK'`, `false`, or `null`, is
-unhealthy; `BackendFailureException` is unhealthy and other throwables
-propagate. The Host is not required to normalize `PING` to `'PONG'`. This
-decision does not normalize any other command's reply representation.
+Native Redis replies (DEC-018): the Host owns the Redis client and its
+executor returns the client's native/raw result; the Host is not required to
+normalize it. The official Redis adapter (`RedisFullCapabilityStore`) owns the
+interpretation of the supported representations it uses. A health `PING` is
+healthy only when exactly `'PONG'` or exactly `true` (phpredis
+`rawCommand('PING')` returns `bool(true)`); any other value is unhealthy, and
+`BackendFailureException` is unhealthy while other throwables propagate. A
+missing circuit-state `GET` is absent when `null` or `false` (phpredis returns
+`false`); any other non-string shape is an explicit malformed-response error.
+The generic storage contracts stay backend-independent. Support is claimed only
+for direct phpredis `rawCommand()` and string-reply executors.
 
 ```php
 use Maatify\RateLimiter\Builder\RateLimiterBuilder;
