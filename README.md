@@ -5,7 +5,7 @@
 ![Maatify.dev](https://www.maatify.dev/assets/img/img/maatify_logo_white.svg)
 
 [![Status](https://img.shields.io/badge/Status-Release%20Candidate-orange)](CHANGELOG.md)
-[![Published Version](https://img.shields.io/badge/Published%20Version-1.0.0--rc.1-orange)](https://packagist.org/packages/maatify/php-rate-limiter)
+[![Published Version](https://img.shields.io/badge/Published%20Version-1.0.0--rc.2-orange)](https://packagist.org/packages/maatify/php-rate-limiter)
 [![PHP 8.4+](https://img.shields.io/badge/PHP-8.4%2B-777BB4.svg)](composer.json)
 [![License: Proprietary](https://img.shields.io/badge/License-Proprietary-red.svg)](LICENSE)
 [![PHPStan Level Max](https://img.shields.io/badge/PHPStan-Level%20Max-4F5B93.svg)](phpstan.neon)
@@ -14,7 +14,7 @@
 [![Monthly Downloads](https://img.shields.io/packagist/dm/maatify/php-rate-limiter)](https://packagist.org/packages/maatify/php-rate-limiter)
 [![Total Downloads](https://img.shields.io/packagist/dt/maatify/php-rate-limiter)](https://packagist.org/packages/maatify/php-rate-limiter)
 [![Maatify Ecosystem](https://img.shields.io/badge/Maatify-Ecosystem-blueviolet)](https://github.com/Maatify)
-[![Install RC1](https://img.shields.io/badge/Install-1.0.0--rc.1-blue)](https://packagist.org/packages/maatify/php-rate-limiter)
+[![Install RC2](https://img.shields.io/badge/Install-1.0.0--rc.2-blue)](https://packagist.org/packages/maatify/php-rate-limiter)
 
 [![Usage Guide](https://img.shields.io/badge/Docs-Usage%20Guide-blue.svg)](docs/guides/USAGE_GUIDE.md)
 [![Examples](https://img.shields.io/badge/Docs-Examples-blue.svg)](examples/)
@@ -31,7 +31,7 @@ PHP library for deterministic, multi-signal rate-limit decisions.
 
 ## Package Status
 
-This package's published pre-release is **Release Candidate `1.0.0-rc.1`**, distributed through Packagist. No Published Stable release or Stable support line exists. It is proprietary software; repository visibility and registry presence do not grant open-source or general usage rights. Authorized use requires written authorization or an applicable written license agreement from Maatify.
+This package's published pre-release is **Release Candidate `1.0.0-rc.2`**, distributed through Packagist. No Published Stable release or Stable support line exists. It is proprietary software; repository visibility and registry presence do not grant open-source or general usage rights. Authorized use requires written authorization or an applicable written license agreement from Maatify.
 
 ## Key Features
 
@@ -52,7 +52,7 @@ This package's published pre-release is **Release Candidate `1.0.0-rc.1`**, dist
 Install the exact published Release Candidate:
 
 ```bash
-composer require maatify/php-rate-limiter:1.0.0-rc.1
+composer require maatify/php-rate-limiter:1.0.0-rc.2
 ```
 
 Use remains subject to written authorization or an applicable written license agreement from Maatify.
