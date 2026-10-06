@@ -18,6 +18,7 @@
         }
     },
     "require": {
+        "ext-redis": "*",
         "maatify/php-rate-limiter": "*"
     },
     "config": {

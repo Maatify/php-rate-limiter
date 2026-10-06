@@ -215,6 +215,15 @@ lifecycle and supplies the command executor. Secrets are caller-provided; the
 package does not read environment variables, generate secrets, serialize
 secrets, or merge outer and fingerprint rotation into one input.
 
+Health `PING` status replies (DEC-018): the executor stays client-agnostic and
+returns the client's raw result. `RedisFullCapabilityStore::isHealthy()` treats
+the result as healthy only when it is exactly `'PONG'` or exactly `true`
+(`ext-redis`/phpredis `rawCommand('PING')` may materialize the status reply as
+`bool(true)`). Any other value, such as `1`, `'OK'`, `false`, or `null`, is
+unhealthy; `BackendFailureException` is unhealthy and other throwables
+propagate. The Host is not required to normalize `PING` to `'PONG'`. This
+decision does not normalize any other command's reply representation.
+
 ```php
 use Maatify\RateLimiter\Builder\RateLimiterBuilder;
 use Maatify\RateLimiter\Config\RateLimiterConfig;

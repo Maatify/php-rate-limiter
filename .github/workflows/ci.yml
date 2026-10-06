@@ -131,6 +131,7 @@ jobs:
         with:
           php-version: ${{ matrix.php }}
           coverage: none
+          extensions: redis
       - name: Install Dependencies
         run: composer update --no-interaction --prefer-dist --no-progress
       - name: Verify Autoload and Platform
@@ -153,6 +154,7 @@ jobs:
         with:
           php-version: '8.4'
           coverage: none
+          extensions: redis
       - name: Install Dependencies
         run: composer update --no-interaction --prefer-dist --no-progress
       - name: Verify Autoload and Platform
@@ -175,6 +177,7 @@ jobs:
         with:
           php-version: '8.4'
           coverage: none
+          extensions: redis
       - name: Install Lowest Dependencies
         run: composer update --prefer-lowest --prefer-stable --no-interaction --prefer-dist --no-progress
       - name: Verify Autoload and Platform
@@ -221,6 +224,7 @@ jobs:
         with:
           php-version: '8.4'
           coverage: none
+          extensions: redis
       - name: Run Consumer Verification Harness
         run: bash scripts/ci/run-consumer-verification.sh
 

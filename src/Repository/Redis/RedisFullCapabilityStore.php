@@ -1708,11 +1708,19 @@ LUA;
         return $this->integerValue($this->eval(self::LIFECYCLE_CLAIM, $keys, [$lifecycleId]), 're-entry claim') === 1;
     }
 
+    /**
+     * Healthy only when PING returns exactly 'PONG' or exactly true (DEC-018).
+     *
+     * ext-redis rawCommand() materializes the simple-string status reply as
+     * bool(true); string-returning clients return 'PONG'. Any other result is
+     * unhealthy. BackendFailureException is unhealthy; every other throwable
+     * propagates unchanged.
+     */
     public function isHealthy(): bool
     {
         try {
             $result = $this->command(['PING']);
-            return $result === 'PONG';
+            return $result === 'PONG' || $result === true;
         } catch (BackendFailureException) {
             return false;
         }

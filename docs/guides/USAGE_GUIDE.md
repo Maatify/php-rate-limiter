@@ -66,6 +66,12 @@ Host-owned `RedisCommandExecutorInterface` (or
 `CallableRedisCommandExecutor`) and pass that store as
 `$fullCapabilityStore`.
 
+The Host owns the Redis client and connection lifecycle, and the executor
+returns the client's raw result. For the health `PING`, the store accepts
+exactly `'PONG'` or exactly `true` (phpredis `rawCommand('PING')` may return
+`bool(true)`), so the Host does not need to normalize it to `'PONG'`. Other
+replies are not normalized by the package (DEC-018).
+
 ### Advanced multi-store composition
 
 Consumers that intentionally own separate storage boundaries may use the

@@ -419,6 +419,10 @@ allow that same request to continue through normal evaluation. An explicit
 unknown/untyped exception or `TypeError` propagates unchanged and is not
 converted into failed-probe, circuit, or degraded semantics.
 
+For the official Redis store, a healthy `PING` is exactly `'PONG'` or exactly
+`true` (ext-redis `rawCommand()` representation, DEC-018); any other result is
+an unhealthy probe, with no new signal or logging.
+
 Probe failure while already `OPEN` keeps the circuit `OPEN`, clears the healthy
 anchor, restarts `openSince`, and does not append a re-entry or emit another
 `CB_OPENED`. Probe failure while `HALF_OPEN` is a genuine transition back to
