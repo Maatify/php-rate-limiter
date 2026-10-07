@@ -5,10 +5,10 @@
 
 ## Current status
 
-Version `v1.0.0-rc.2` is the current published pre-release / Release Candidate. No
-Published Stable release line exists, and this RC does not establish a Stable
-support line. No Stable release is represented as published. No security support
-promise or release date is implied by this document.
+This document represents Release Candidate `1.0.0-rc.3` and does not claim that
+it has been published. No Published Stable release line exists, and this RC does
+not establish a Stable support line. No Stable release is represented as published.
+No security support promise or release date is implied by this document.
 
 ## Reporting a vulnerability
 

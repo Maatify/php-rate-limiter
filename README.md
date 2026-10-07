@@ -5,7 +5,7 @@
 ![Maatify.dev](https://www.maatify.dev/assets/img/img/maatify_logo_white.svg)
 
 [![Status](https://img.shields.io/badge/Status-Release%20Candidate-orange)](CHANGELOG.md)
-[![Published Version](https://img.shields.io/badge/Published%20Version-1.0.0--rc.2-orange)](https://packagist.org/packages/maatify/php-rate-limiter)
+[![Version](https://img.shields.io/badge/Version-1.0.0--rc.3-orange)](CHANGELOG.md)
 [![PHP 8.4+](https://img.shields.io/badge/PHP-8.4%2B-777BB4.svg)](composer.json)
 [![License: Proprietary](https://img.shields.io/badge/License-Proprietary-red.svg)](LICENSE)
 [![PHPStan Level Max](https://img.shields.io/badge/PHPStan-Level%20Max-4F5B93.svg)](phpstan.neon)
@@ -14,7 +14,7 @@
 [![Monthly Downloads](https://img.shields.io/packagist/dm/maatify/php-rate-limiter)](https://packagist.org/packages/maatify/php-rate-limiter)
 [![Total Downloads](https://img.shields.io/packagist/dt/maatify/php-rate-limiter)](https://packagist.org/packages/maatify/php-rate-limiter)
 [![Maatify Ecosystem](https://img.shields.io/badge/Maatify-Ecosystem-blueviolet)](https://github.com/Maatify)
-[![Install RC2](https://img.shields.io/badge/Install-1.0.0--rc.2-blue)](https://packagist.org/packages/maatify/php-rate-limiter)
+[![Install 1.0.0-rc.3](https://img.shields.io/badge/Install-1.0.0--rc.3-blue)](https://packagist.org/packages/maatify/php-rate-limiter)
 
 [![Usage Guide](https://img.shields.io/badge/Docs-Usage%20Guide-blue.svg)](docs/guides/USAGE_GUIDE.md)
 [![Examples](https://img.shields.io/badge/Docs-Examples-blue.svg)](examples/)
@@ -31,7 +31,7 @@ PHP library for deterministic, multi-signal rate-limit decisions.
 
 ## Package Status
 
-This package's published pre-release is **Release Candidate `1.0.0-rc.2`**, distributed through Packagist. No Published Stable release or Stable support line exists. It is proprietary software; repository visibility and registry presence do not grant open-source or general usage rights. Authorized use requires written authorization or an applicable written license agreement from Maatify.
+This artifact is **Release Candidate `1.0.0-rc.3`**. Publication State at qualification: unpublished; this document does not claim that `1.0.0-rc.3` is externally available until it is Published. The latest externally Published Release Candidate at qualification was `1.0.0-rc.2`. No Published Stable release or Stable support line exists. It is proprietary software; repository visibility and registry presence do not grant open-source or general usage rights. Authorized use requires written authorization or an applicable written license agreement from Maatify.
 
 ## Key Features
 
@@ -49,10 +49,10 @@ This package's published pre-release is **Release Candidate `1.0.0-rc.2`**, dist
 
 ## Installation
 
-Install the exact published Release Candidate:
+Install the exact Release Candidate target (available once `1.0.0-rc.3` is Published):
 
 ```bash
-composer require maatify/php-rate-limiter:1.0.0-rc.2
+composer require maatify/php-rate-limiter:1.0.0-rc.3
 ```
 
 Use remains subject to written authorization or an applicable written license agreement from Maatify.
@@ -214,7 +214,7 @@ See [Device Fingerprint](docs/DEVICE_FINGERPRINT.md), [Failure Semantics](docs/F
 
 ## Quality Status
 
-The repository quality gate covers strict Composer validation, dependency compatibility, platform requirements, PHP syntax, PHPStan at level `max`, the full PHPUnit suite, the focused `composer test:integration` suite, standalone example smoke execution, Composer security auditing, workflow linting, and whitespace verification. The package is a published pre-release and has no Published Stable release or Stable support line.
+The repository quality gate covers strict Composer validation, dependency compatibility, platform requirements, PHP syntax, PHPStan at level `max`, the full PHPUnit suite, the focused `composer test:integration` suite, standalone example smoke execution, Composer security auditing, workflow linting, and whitespace verification. The package is a pre-release (Release Candidate) and has no Published Stable release or Stable support line.
 
 ## License
 
