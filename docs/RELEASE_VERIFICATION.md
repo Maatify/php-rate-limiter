@@ -4,32 +4,29 @@ This document describes the repository-owned, maintained mechanisms for **Releas
 - `CI_WORKFLOW_STANDARD.md` §2.5 (Release Artifact Verification)
 - `CI_WORKFLOW_STANDARD.md` §2.6 (Published Artifact Verification)
 - `CI_WORKFLOW_STANDARD.md` §2.7 (Immutable Published Version)
-- `COMPOSER_PACKAGE_STANDARD.md` §26 & §26.1 (Verification Rigor and Delivery Mode Requirements)
+- `COMPOSER_PACKAGE_STANDARD.md` §26 & §26.1 (Distribution/Archive Safety and Source-Only Delivery)
 - `LIBRARY_PRESENTATION_STANDARD.md` §8.1.2, §14 & §23 (Distribution Safety, License Identity, and Readme Parity)
+
+The tooling is target-agnostic. Examples use the placeholders `<target>` and `<candidate-sha>`; nothing here asserts the state of any particular release.
 
 ---
 
 ## 1. Architectural Distinction & Lifecycle Stages
 
-To preserve release integrity across the release lifecycle, three separate verification mechanisms exist:
+Three separate verification mechanisms exist and none substitutes for another:
 
 ```text
-[ Commit Candidate Qualified ]
+[ Commit Candidate Selected ]
               │
               ▼
    Stage A: Pre-Publication
   ┌─────────────────────────────────────────────────────────────┐
   │ Release Artifact Verification (RAV)                         │
-  │ • Target-agnostic pre-publication qualification             │
-  │ • Evaluates Git candidate commit object & tree              │
-  │ • Requires checked-out HEAD == candidate SHA                │
-  │ • Requires clean Git worktree and clean index               │
-  │ • Inspects candidate Git archive export preservation        │
-  │ • Computes deterministic content manifest hashes            │
-  │ • Enforces canonical Semantic Review Record & claims        │
-  │ • Enforces undated exact target heading in CHANGELOG        │
-  │ • Validates proprietary license identity                    │
-  │ • Emits machine-readable qualification evidence JSON        │
+  │ • Qualifies the exact candidate SHA / tree for target X     │
+  │ • Reads immutable Git objects, not the mutable worktree     │
+  │ • Proves the real `git archive` carries all required content│
+  │ • Proves source-only governance from an immutable Decision  │
+  │ • Emits complete, schema-validated qualification evidence   │
   └─────────────────────────────────────────────────────────────┘
               │
       ( Tag & Publish )
@@ -38,16 +35,12 @@ To preserve release integrity across the release lifecycle, three separate verif
    Stage B: Post-Publication
   ┌─────────────────────────────────────────────────────────────┐
   │ Published Artifact Verification (PAV)                       │
-  │ • Target-agnostic post-publication qualification            │
-  │ • Consumes authoritative RAV qualification evidence         │
-  │ • Executes fresh, isolated external Composer resolution     │
-  │ • Proves exact version resolution                           │
-  │ • Proves actual installation mode (dist vs source)          │
-  │ • Prohibits source fallback when dist archive was exposed   │
-  │ • Enforces qualification-time Decision for source-only      │
-  │ • Verifies observed reference equals qualified SHA          │
-  │ • Verifies installed files match content manifest hashes    │
-  │ • Captures isolated Composer audit evidence (redacting auth)│
+  │ • Rejects incomplete RAV evidence BEFORE any network work   │
+  │ • Resolves ONLY from the qualification-bound channel        │
+  │ • Runs Composer in a fully controlled, isolated environment │
+  │ • Proves exact resolved version and actual install mode     │
+  │ • Retains dist/source metadata (credentials redacted)       │
+  │ • Proves installed content equals the qualified manifest    │
   └─────────────────────────────────────────────────────────────┘
               │
               ▼
@@ -55,91 +48,99 @@ To preserve release integrity across the release lifecycle, three separate verif
   ┌─────────────────────────────────────────────────────────────┐
   │ Consumer Verification Harness (CVH)                         │
   │ • Multi-version PHP runtime matrix validation               │
-  │ • Redis integration and public consumer contract validation │
   └─────────────────────────────────────────────────────────────┘
 ```
 
-> **Lifecycle Constraint**: RAV, PAV, and CVH represent separate lifecycle stages. RAV is executed **before** tagging and publication. PAV is executed **after** publication to public registry/VCS. CVH validates consumer runtime contract compatibility across the matrix.
+> **Meaning of PASS.** A qualifying RAV PASS means the exact candidate SHA is release-qualified under the complete applicable contract. A qualifying PAV PASS means the artifact actually delivered for the exact published version has been independently verified against that qualified evidence. Inspection and test fixtures can never produce a qualifying PASS (they report `INSPECTION_ONLY`). A caller-supplied command-line value is never evidence by itself. Everything is fail-closed.
 
 ---
 
 ## 2. Release Artifact Verification (RAV) — Pre-Publication
 
-### 2.1 Purpose & Checks Performed
-RAV validates that a git commit candidate is ready for tagging and publication. It deterministically enforces:
-1. **Target Version Syntax**: Validates strict Semantic Versioning (`MAJOR.MINOR.PATCH[-PRERELEASE][+BUILD]`).
-2. **Git Candidate Commit & Working Tree Identity**:
-   - Proves repository is a valid Git worktree.
-   - Validates candidate SHA is a 40-character hexadecimal string.
-   - Proves candidate SHA exists as a valid `commit` object in Git.
-   - Proves current checked-out `HEAD` equals the candidate SHA.
-   - Resolves candidate tree SHA (`<candidate_sha>^{tree}`).
-   - Proves Git working tree and index are completely clean (no uncommitted, modified, or untracked changes).
-3. **Package Identity and Composer Manifest**:
-   - Package name is `maatify/php-rate-limiter`.
-   - Package license is `proprietary` (matching `LICENSE` and `composer.json`).
-   - Manifest contains no static `"version"` field (versions governed by Git tags).
-4. **Required Release-Facing Files**: Ensures all consumer-facing files are present:
-   - `composer.json`
-   - `README.md`
-   - `LICENSE`
-   - `CHANGELOG.md`
-   - `SECURITY.md`
-   - `RATE_LIMITER_PACKAGE_REFERENCE.md`
-   - `docs/guides/USAGE_GUIDE.md`
-   - `examples`
-   - `llms.txt`
-   - `src`
-5. **Distribution Hygiene**: Ensures no temporary, cache, or build junk is checked in (`.env`, `.env.local`, `composer.lock`, `*.pem`, `*.key`, `.phpunit.cache`, `coverage`, `.DS_Store`, `*~`, `*.bak`, `*.swp`).
-6. **Candidate Git Archive Export Verification**: Generates a candidate archive stream (`git archive`) and proves that no required release-facing file is excluded by `.gitattributes` or export filtering.
-7. **README Artifact Identity**: Validates that `README.md` references the target version without false pre-publication claims.
-8. **CHANGELOG Undated Target Section and Boundaries**:
-   - Strictly enforces that the target heading is an **undated exact-target section**: `## [<target>]`.
-   - Rejects dated headings (`## [<target>] - YYYY-MM-DD`) and status suffixes (`- upcoming`, `- unreleased`, `(planned)`).
-   - Enforces `[Unreleased]` boundary rules: `## [Unreleased]` must exist unless semantic review confirms that no represented changes remain unallocated.
-9. **SECURITY Supported Versions**: Validates pre-release semantics (supported during release candidate cycle, but explicitly not a released stable version).
-10. **Canonical Semantic Review Verification**: Fails closed unless an authorized canonical Semantic Review Record is provided, with all 8 required assertions confirmed.
-11. **Content Manifest Hashing**: Computes deterministic SHA-256 hashes of all required release-facing files and `composer.json`.
-12. **Delivery Policy Governance**: Evaluates intended delivery policy (`dist` by default, or validates `source-only` qualification-time Decision parameters).
+### 2.1 Evidence boundary: Git objects, not the worktree
 
-### 2.2 CLI Invocations
+Qualification is for the exact Git candidate commit and tree. RAV therefore:
 
-Using Composer:
+1. requires a real Git repository, a 40-hex candidate SHA that is a `commit` object, `HEAD == candidate`, and a **clean worktree and index**;
+2. resolves `<candidate-sha>^{tree}`;
+3. exports the candidate tree's blobs from Git objects into a private snapshot (raw object content: no attributes, filters, `export-ignore` or EOL conversion) and evaluates **every content check against that snapshot**;
+4. builds the content manifest from that snapshot, and proves distribution from the actual `git archive` of the candidate.
+
+The clean checked-out worktree is still required, but no check reads a filesystem representation that could differ from the candidate object while claiming immutable candidate evidence.
+
+### 2.2 Checks performed
+
+1. **Target version syntax** — strict Semantic Versioning.
+2. **Git candidate identity** — as above.
+3. **Package identity and Composer manifest** — name `maatify/php-rate-limiter`, license `proprietary`, no static `"version"`.
+4. **Required release-facing content** — `src`, `composer.json`, `README.md`, `LICENSE`, `CHANGELOG.md`, `SECURITY.md`, `RATE_LIMITER_PACKAGE_REFERENCE.md`, `docs/guides/USAGE_GUIDE.md`, `examples`, `llms.txt`.
+5. **Distribution safety** — no forbidden tracked artifacts: `.env`/`.env.*` (except `.env.example|dist|sample`), `auth.json`, `composer.lock`, `*.pem`, `*.key`, `*.swp`, `*.bak`, `*~`, `.DS_Store`, and `vendor/`, `.idea/`, `.vscode/`, `.phpunit.cache/`, `coverage/`.
+6. **Candidate archive verification (nested content)** — the real `git archive` is generated, extracted, and compared with the candidate tree **file by file**:
+   - every tracked file under a required path (for example `src/Nested/CriticalRuntimeFile.php`, not just `src/`) must be present in the archive with identical content, so nested omissions caused by `.gitattributes` `export-ignore` or other archive behavior fail;
+   - the effective impact of `composer.json` `archive.exclude` is evaluated (gitignore-style matching, last match wins, `!` re-includes, excluded directories exclude their files). If it removes any required file, RAV fails. If it is absent the evidence records `NOT_APPLICABLE`; `archive.exclude` is never added just to exercise the verifier;
+   - no forbidden entry may enter the archive.
+7. **README identity**, 8. **CHANGELOG undated exact-target heading and `[Unreleased]` boundary**, 9. **SECURITY pre-release lifecycle semantics** — structural checks on the candidate snapshot.
+10. **Canonical semantic review** — all 8 claims `CONFIRMED` for this exact target and candidate (see §2.5).
+11. **Delivery policy** — `dist` (default) or `source-only` (see §2.6). Any other value fails.
+12. **Qualification-evidence schema** — the emitted evidence is validated against the same schema PAV enforces (see §2.4); a violation fails RAV.
+
+### 2.3 CLI
+
 ```bash
-composer release:verify-artifact -- --target=1.0.0-rc.3 --candidate-sha=<40_CHAR_COMMIT_SHA> --semantic-review-file=<path> [options]
+composer release:verify-artifact -- --target=<target> --candidate-sha=<candidate-sha> --semantic-review-file=<path> --output-evidence=<path> [options]
 ```
 
-Using native PHP:
 ```bash
-php scripts/release/verify-release-artifact.php --target=1.0.0-rc.3 --candidate-sha=<40_CHAR_COMMIT_SHA> --semantic-review-file=<path> [options]
+php scripts/release/verify-release-artifact.php --target=<target> --candidate-sha=<candidate-sha> --semantic-review-file=<path> --output-evidence=<path> [options]
 ```
-
-### 2.3 Options & Arguments
 
 | Option | Required | Description |
 |---|---|---|
-| `--target=<version>` | **Yes** | Target release version (e.g., `1.0.0-rc.3`). |
-| `--candidate-sha=<sha>` | **Yes** | 40-character hexadecimal git commit SHA of candidate. |
-| `--semantic-review-file=<path>` | **Yes** | Path to canonical semantic review evidence JSON file (alias: `--semantic-review-record`). |
-| `--repo-path=<path>` | No | Path to repository root (defaults to working directory). |
-| `--delivery-policy=<mode>` | No | Delivery policy (`dist` or `source-only`, default: `dist`). |
-| `--source-only-decision-id=<id>` | Conditional | Decision ID when delivery policy is `source-only` (e.g. `DEC-019`). |
-| `--source-only-decision-file=<path>` | Conditional | Path to source-only Decision Record file. |
-| `--source-only-commit=<sha>` | Conditional | Immutable commit SHA of source-only Decision Record. |
-| `--output-evidence=<path>` | No | Path to write machine-readable RAV qualification evidence JSON for subsequent PAV. |
-| `--output-json=<path>` | No | Path to write verification report JSON. |
-| `--format=<summary\|json>` | No | Output format (default: `summary`). |
+| `--target=<version>` | **Yes** | Exact target SemVer. |
+| `--candidate-sha=<sha>` | **Yes** | 40-hex candidate commit SHA. |
+| `--semantic-review-file=<path>` | **Yes** | Canonical semantic review JSON (alias `--semantic-review-record`). |
+| `--repo-path=<path>` | No | Repository root (default: this repository). |
+| `--delivery-policy=<mode>` | No | `dist` (default) or `source-only`. |
+| `--source-only-decision-id=<id>` | source-only | Decision ID, e.g. `DEC-NNN`. |
+| `--source-only-decision-file=<path>` | source-only | Canonical `docs/decisions/DEC-NNN_*.md` path. |
+| `--source-only-commit=<sha>` | source-only | Immutable **40-hex commit** of the Decision (verified from Git objects). |
+| `--output-evidence=<path>` | No | Writes qualification evidence **only on PASS**. |
+| `--output-json=<path>` / `--format=<summary\|json>` | No | Report output. |
 
-### 2.4 Canonical Semantic Review Record Schema
-Automated pattern matching cannot replace human semantic review of documentation accuracy. Qualifying RAV requires an authorized semantic review record file conforming to schema `1.0.0`:
+There is no option to choose the Composer channel for `dist`: the package-approved channel is fixed by the package (`https://repo.packagist.org`). For `source-only` the channel comes only from the Owner-approved Decision Record.
+
+### 2.4 Qualification evidence schema (`schema_version` `2.0.0`)
+
+One canonical schema (`QualificationEvidenceSchema`) is produced by RAV and enforced by PAV:
+
+| Field | Requirement |
+|---|---|
+| `schema_version` | exactly `2.0.0` |
+| `status` | `PASS` |
+| `package_name` | `maatify/php-rate-limiter` |
+| `target_version` | valid SemVer |
+| `candidate_sha`, `candidate_tree_sha` | 40-hex |
+| `qualification_started_at`, `qualified_at` | `YYYY-MM-DDTHH:MM:SSZ`, `started ≤ qualified` |
+| `delivery_policy` | `dist` or `source-only`; anything else fails |
+| `approved_distribution_channel` | credential-free URL; for `dist` must equal the package-approved channel |
+| `semantic_review` | the validated record: schema `1.0.0`, same target and candidate, `APPROVED`, reviewer, valid `reviewed_at`, all 8 claims `CONFIRMED` |
+| `content_manifest` | SHA-256 of exactly the 10 required paths; no malformed/ambiguous paths, no missing or extra entries |
+| `distribution_evidence` | `git-archive` verified; required files in archive; none missing; archive content equals tree; no forbidden entries; `.gitattributes` and `composer.json` `archive.exclude` impact recorded |
+| `source_only_decision` | `null` for `dist`; complete immutable qualification-time evidence for `source-only` (§2.6) |
+
+Missing, empty, malformed, wrong-schema, wrong-target/SHA, partial-manifest, or incoherent evidence is rejected by PAV before any Composer work.
+
+### 2.5 Canonical Semantic Review Record (schema `1.0.0`)
+
+Pattern matching cannot replace human review of documentation truth, so qualifying RAV requires:
 
 ```json
 {
   "schema_version": "1.0.0",
-  "target": "1.0.0-rc.3",
-  "candidate_sha": "d9138bd257e8cff384c5b5a8d284cff84237be5a",
-  "reviewer": "Lead Reviewer <lead@maatify.dev>",
-  "reviewed_at": "2026-10-06T20:00:00Z",
+  "target": "<target>",
+  "candidate_sha": "<candidate-sha>",
+  "reviewer": "Reviewer <reviewer@example.invalid>",
+  "reviewed_at": "YYYY-MM-DDTHH:MM:SSZ",
   "disposition": "APPROVED",
   "claims": {
     "readme.release_artifact_identity": "CONFIRMED",
@@ -151,67 +152,129 @@ Automated pattern matching cannot replace human semantic review of documentation
     "security.lifecycle_support_semantics": "CONFIRMED",
     "package_reference.consumer_identity_consistency": "CONFIRMED"
   },
-  "notes": "Verified semantic accuracy and contract alignment."
+  "notes": "optional"
 }
 ```
 
-All 8 claims must be explicitly present and set to `"CONFIRMED"`. Missing or unconfirmed claims cause immediate RAV failure.
+The validated record is retained inside the qualification evidence.
+
+### 2.6 Source-only delivery: immutable qualification-time proof
+
+Source-only delivery is a generic verifier capability; the normal policy for this package is `dist`, and no source-only Decision exists for it. When `delivery_policy = source-only`, RAV proves — **from Git objects at the supplied immutable commit, never from current working-tree text or a commit string** — before qualification:
+
+1. the reference is a full 40-hex SHA, exists as a **commit object**, and is an **ancestor of the candidate** (so the Decision pre-exists the qualification boundary);
+2. the Decision Record path and `docs/decisions/DECISIONS_INDEX.md` both exist **in that commit**;
+3. the record declares its own Decision ID and Status `ACTIVE`, and the Index row at that commit is `ACTIVE` for that record path;
+4. at the candidate, the record is **byte-identical** (same blob) and the Index row is still `ACTIVE` (no silent amendment);
+5. Owner approval: the record's `## Decision Authority` states `Owner-approved`, and the declaration has `Owner Approval: APPROVED`, an `Approving Authority`, an `Approval Date` and an `Effective Date`;
+6. timing: the approval/effective instant is **strictly earlier than the RAV start**. Date-only values are ambiguous about the time of day, so they are resolved to the *end* of that UTC day (a same-day approval is therefore not yet effective); missing or unparseable timing fails;
+7. the declaration names the exact package, a credential-free Composer channel, `Delivery Mode: source-only`, `Intentional Canonical Delivery: yes`, a non-empty dist rationale, and a bounded version scope that covers the target.
+
+Decision Records that may authorize source-only delivery use the repository's existing sections (`## Decision ID`, `## Status`, `## Decision Authority`, `## Supersedes`, `## Superseded By`) plus:
+
+```markdown
+## Source-Only Delivery Declaration
+
+- Package: maatify/php-rate-limiter
+- Composer Channel: https://packages.example.invalid/maatify
+- Delivery Mode: source-only
+- Intentional Canonical Delivery: yes
+- Version Scope: 1.0.x, 1.1.0-rc.1
+- Dist Rationale: <why dist is intentionally not offered>
+- Owner Approval: APPROVED
+- Approving Authority: <Owner authority>
+- Approval Date: YYYY-MM-DD
+- Effective Date: YYYY-MM-DD
+- Maintenance Owner: <when applicable>
+```
+
+`Version Scope` is a comma-separated list of exact SemVer versions, minor lines (`1.0.x`) or major lines (`1.x`); anything else is malformed and fails. A Decision created or approved after qualification cannot retroactively qualify a target.
+
+The retained evidence records: Decision ID, record path, immutable commit, record and index blob IDs, record and index status at qualification, Owner approval evidence, effective instant, package, **approved channel**, version scope and coverage, delivery mode, rationale, maintenance owner, qualification target, candidate SHA and RAV start time. That channel becomes the PAV channel.
 
 ---
 
 ## 3. Published Artifact Verification (PAV) — Post-Publication
 
-### 3.1 Purpose & Checks Performed
-PAV validates that an artifact published to Packagist, GitHub Releases, or a VCS repository can be installed cleanly by consumers and matches the qualified release. It deterministically enforces:
-1. **Authoritative Qualification Evidence Consumption**: Consumes the machine-readable qualification evidence JSON emitted by RAV.
-2. **Isolated External Composer Installation**: Spawns a clean external directory with isolated `COMPOSER_HOME` and clean cache, requiring exact `maatify/php-rate-limiter:<target>`.
-3. **Audit Evidence Capture**: Records Composer version, effective repository configuration, and environment, redacting any authentication tokens or credentials.
-4. **Exact Version Resolution**: Confirms that Composer resolves the exact target version (e.g., `1.0.0-rc.3`).
-5. **Actual Installation Mode Proof**:
-   - Inspects `vendor/composer/installed.json` for `installation-source`.
-   - Proves whether the package was installed via `dist` (archive) or `source` (git clone).
-   - Rejects unprovable or ambiguous installation sources.
-6. **Prohibition of Silent Fallback**: If Composer repository metadata exposes a `dist` archive, `dist` **must** be the installation mode. Falling back to `source` when `dist` is exposed constitutes a preference/delivery defect and fails verification.
-7. **Source-Only Delivery Governance**: If `dist` is not exposed and delivery is `source`-only:
-   - Proves that RAV qualification evidence authorized `source-only` delivery.
-   - Proves the Decision existed and was `ACTIVE` at qualification time (predating RAV).
-   - Validates that current Decision status in `DECISIONS_INDEX.md` is `ACTIVE` or legitimately `SUPERSEDED` with a coherent supersession chain.
-8. **Release Reference Proof (SHA Correspondence)**: Validates that the installed package's `reference` in `installed.json` exactly matches the release-qualified candidate commit SHA.
-9. **Installed Artifact Content & Hash Correspondence**:
-   - Verifies that all required release-facing files are present in the installed package directory.
-   - Computes SHA-256 hashes of all installed files and directories, comparing them against the `content_manifest` recorded in RAV qualification evidence.
-   - Verifies installed `composer.json` has `license: "proprietary"` and no static `"version"` property.
+### 3.1 CLI
 
-### 3.2 CLI Invocations
-
-Using Composer:
 ```bash
-composer release:verify-published-artifact -- --qualification-evidence=<path_to_rav_evidence.json> [options]
+composer release:verify-published-artifact -- --qualification-evidence=<path> [options]
 ```
 
-Using native PHP:
 ```bash
-php scripts/release/verify-published-artifact.php --qualification-evidence=<path_to_rav_evidence.json> [options]
+php scripts/release/verify-published-artifact.php --qualification-evidence=<path> [options]
 ```
-
-### 3.3 Options & Arguments
 
 | Option | Required | Description |
 |---|---|---|
-| `--qualification-evidence=<path>` | **Yes** | Path to machine-readable RAV qualification evidence JSON (alias: `--rav-evidence`). |
-| `--target=<version>` | No | Expected published target version (must match qualification evidence). |
-| `--qualified-sha=<sha>` | No | Expected 40-character commit SHA (must match qualification evidence). |
-| `--package=<name>` | No | Composer package name (defaults to `maatify/php-rate-limiter`). |
-| `--composer-repository=<url\|json>` | No | Custom Composer repository endpoint or JSON config (e.g., local mirror or testing VCS). |
-| `--keep-temp` | No | Retain temporary test workspace for post-mortem debugging. |
-| `--output-json=<path>` | No | Write machine-readable JSON report to file. |
-| `--format=<summary\|json>` | No | Output format (default: `summary`). |
+| `--qualification-evidence=<path>` | **Yes** | RAV qualification evidence (alias `--rav-evidence`). |
+| `--target=<version>` / `--qualified-sha=<sha>` | No | Assertions that must equal the evidence. |
+| `--package=<name>` | No | Must equal the evidence package. |
+| `--composer-repository=<url>` | No | **Assertion only.** It must equal the approved channel bound in the evidence; otherwise PAV fails. It never selects the channel. |
+| `--keep-temp` | No | Retain the isolated workspace for debugging (otherwise it is removed on success *and* failure). |
+| `--output-json=<path>` / `--format=<summary\|json>` | No | Report output. |
+
+### 3.2 Order of verification
+
+1. **Complete evidence validation** (schema §2.4) — before any network work.
+2. **Channel binding** — the repository used is the evidence's `approved_distribution_channel`; a differing caller value fails. Default Packagist is explicitly disabled in the consumer manifest so resolution cannot silently use another source.
+3. **Source-only historical chain** (source-only only) — proven before installation (§3.5). Unavailable repository history fails closed.
+4. **Isolated Composer installation** (§3.3).
+5. **Exact resolved version** (§3.4).
+6. **Installation mode, delivery metadata, SHA correspondence** (§3.6).
+7. **Installed content correspondence** (§3.7).
+
+### 3.3 Composer isolation and effective-configuration evidence
+
+PAV runs in a fresh external root with an isolated `HOME`, `COMPOSER_HOME` (containing an explicit empty `config.json`), `COMPOSER_CACHE_DIR`, `COMPOSER_VENDOR_DIR` and `COMPOSER` (root manifest). **The child process inherits nothing**: its environment is built explicitly from those values, `COMPOSER_NO_INTERACTION`, `PATH`, and transport-only settings (`HTTP(S)_PROXY`, `NO_PROXY`, `SSL_CERT_FILE`, `SSL_CERT_DIR`, `CURL_CA_BUNDLE`) that cannot alter repository resolution or install mode. Therefore `COMPOSER_AUTH`, `COMPOSER_ROOT_VERSION`, `COMPOSER_MIRROR_PATH_REPOS`, `COMPOSER_PREFER_STABLE`, `COMPOSER_MINIMAL_CHANGES`, `COMPOSER_WITH_ALL_DEPENDENCIES`, any inherited `COMPOSER_*`, `XDG_*`, `GIT_CONFIG_*` and similar developer-machine policy are cleared. Plugins and scripts are disabled (`--no-plugins --no-scripts`, `allow-plugins: false`). Qualifying PAV uses no credentials.
+
+The report retains non-secret audit evidence: Composer version, effective repository/channel, requested install flag and the effective `preferred-install` configuration, isolated root/home/cache, the controlled variables that were set, the **names** (never values) of inherited variables that were cleared, and the names of transport settings passed through. Credentials, `auth.json`, authorization headers and environment secrets are never persisted; the process environment is never dumped.
+
+### 3.4 Exact resolved-version proof
+
+The root constraint is not evidence. After installation PAV reads Composer-supported metadata (`vendor/composer/installed.json` and `composer.lock`) and requires: observed package name equals the qualified package, observed version equals the qualification target (a leading `v` is normalised), and `composer.lock` agrees. Missing, duplicated, mismatching or ambiguous metadata fails. Requested version, resolved version, lock version and installed package name are retained. The package's own `composer.json` (which intentionally has no static version) is never used.
+
+### 3.5 Source-only historical chain
+
+PAV consumes the same immutable evidence RAV produced and proves it again from history:
+
+- the retained evidence is **reproduced** from the Decision commit and candidate objects and must equal what was retained (same Decision ID, path, immutable reference, package, channel, scope, target, candidate, timing);
+- the candidate is contained in current history, and the Decision remains discoverable in the current Index with the same record path;
+- **still `ACTIVE`:** the Index and record agree and the record is unchanged;
+- **now `SUPERSEDED`:** the historical record still proves the old state; the current record and Index both say `SUPERSEDED`; the approved declaration and authority were **not rewritten**; the record and Index agree on `Superseded By`; each successor exists in the Index and as a record, agrees between record and Index, and **records that it supersedes** the predecessor (symmetry); cycles are rejected; the chain must end in an `ACTIVE` Decision. Merely checking `Superseded By != None` is insufficient and not accepted;
+- repository or history unavailable (for example no Git history), missing or non-discoverable records, a broken or asymmetric chain, or a rewritten record: **FAIL**.
+
+A later legitimate supersession does not invalidate the historical qualification; it also does not make the superseded Decision current authority.
+
+### 3.6 Installation mode, delivery metadata, SHA correspondence
+
+The mode is proven from Composer's installed-package metadata (`installation-source`), never from flags. PAV retains: `installation-source`, `dist` type/URL/reference, `source` type/URL/reference, resolved package and version, and install path. URLs are redacted (userinfo removed, query values masked).
+
+- If `dist` is exposed (installed metadata, or lock — which must agree) and the observed mode is `source`: **FAIL**, even if Composer succeeded, the source content is correct, or a source-only Decision exists.
+- If `dist` is not exposed, `source` is exposed and observed, the qualified policy is `source-only`, and the historical chain passes: allowed. Otherwise: FAIL.
+- The observed `dist`/`source` reference must equal the qualified candidate SHA. A tag string equal to a caller tag is not accepted.
+
+### 3.7 Content correspondence
+
+The installed package is compared against the **complete** RAV content manifest (an incomplete or absent manifest fails): every manifest path must exist and hash identically, so nested differences or injected files inside `src`/`examples` change the directory hash and fail. The installed package must also contain every required file, no forbidden/sensitive/development material (`.env*`, `auth.json`, keys, `vendor/`, `composer.lock`, IDE and cache directories, backup/swap files) and no symbolic links, and an installed `composer.json` with the proprietary license and no static version.
 
 ---
 
-## 4. Automation and CI Policy
+## 4. Qualifying vs. Test-Only Boundaries
 
-1. **Non-Trivial Release Requirement**: Both RAV and PAV are mandatory, maintained repository tools under `CI_WORKFLOW_STANDARD.md@5.0.0`.
-2. **Deterministic & Agnostic**: Neither tool is hardcoded to a specific release version (e.g., `1.0.0-rc.2` or `1.0.0-rc.3`). They accept any valid Semantic Version target and candidate commit SHA.
-3. **Strict Fail-Closed Enforcement**: Qualifying commands provide no skip flags. Preinstalled fixture inspection is restricted to internal unit tests and emits `INSPECTION_ONLY`, never qualifying `PASS`.
-4. **Execution Boundary**: Implementing this tooling establishes conformance with `CI_WORKFLOW_STANDARD.md`. Executing an actual RAV or PAV run for future releases (such as `1.0.0-rc.3`) occurs only during their respective release preparation work units.
+| Capability | Qualifying | Test-only |
+|---|---|---|
+| RAV | `ReleaseArtifactVerifier::verify()` with `is_qualifying` (the CLI always qualifies) | `is_qualifying=false` returns `INSPECTION_ONLY` |
+| PAV | `PublishedArtifactVerifier::verify()` (real isolated Composer resolution from the bound channel) | `inspectPreinstalledFixture()` always returns `INSPECTION_ONLY` |
+| Repositories | only the qualification-bound approved channel | fixture/fake repositories exist only inside unit tests and never produce a PASS |
+| Evidence input | complete schema-valid RAV evidence | partial structures are used only against individual `evaluate*` methods |
+
+---
+
+## 5. Automation and CI Policy
+
+1. **Maintained tools:** RAV and PAV are repository-owned tooling under `CI_WORKFLOW_STANDARD.md@5.0.0`; their behavior is covered by the unit suite under `tests/Unit/ReleaseVerification/`.
+2. **Deterministic & agnostic:** neither tool is hard-coded to a release version; both accept any valid SemVer target and candidate SHA.
+3. **Fail-closed:** qualifying commands have no skip flags.
+4. **Execution boundary:** having this tooling establishes conformance. Running RAV or PAV for an actual release occurs only during that release's own preparation and post-publication work units.

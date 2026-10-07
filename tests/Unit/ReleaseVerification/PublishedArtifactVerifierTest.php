@@ -4,7 +4,9 @@ declare(strict_types=1);
 
 namespace Maatify\RateLimiter\Tests\Unit\ReleaseVerification;
 
+use Maatify\RateLimiter\Tests\Support\ReleaseVerification\EvidenceFixtures;
 use Maatify\RateLimiter\Tests\Support\ReleaseVerification\PublishedArtifactVerifier;
+use Maatify\RateLimiter\Tests\Support\ReleaseVerification\ReleaseContract;
 use PHPUnit\Framework\TestCase;
 
 final class PublishedArtifactVerifierTest extends TestCase
@@ -115,7 +117,7 @@ final class PublishedArtifactVerifierTest extends TestCase
         ];
 
         $verifier = new PublishedArtifactVerifier();
-        $eval = $verifier->evaluateInstalledMetadata($pkg, $this->qualifiedSha, 'dist', null, null);
+        $eval = $verifier->evaluateInstalledMetadata($pkg, $this->qualifiedSha, 'dist', null);
 
         self::assertSame('FAIL', $eval['checks']['installation_mode']['status']);
         self::assertStringContainsString('Unprovable installation mode', $eval['checks']['installation_mode']['message']);
@@ -140,7 +142,7 @@ final class PublishedArtifactVerifierTest extends TestCase
         ];
 
         $verifier = new PublishedArtifactVerifier();
-        $eval = $verifier->evaluateInstalledMetadata($pkg, $this->qualifiedSha, 'dist', null, null);
+        $eval = $verifier->evaluateInstalledMetadata($pkg, $this->qualifiedSha, 'dist', null);
 
         self::assertSame('FAIL', $eval['checks']['installation_mode']['status']);
         self::assertStringContainsString('Dist archive was exposed by Composer repository metadata, but actual installation mode was source', $eval['checks']['installation_mode']['message']);
@@ -161,7 +163,7 @@ final class PublishedArtifactVerifierTest extends TestCase
 
         $verifier = new PublishedArtifactVerifier();
         // delivery_policy was 'dist' in qualification evidence, but channel delivered source
-        $eval = $verifier->evaluateInstalledMetadata($pkg, $this->qualifiedSha, 'dist', null, null);
+        $eval = $verifier->evaluateInstalledMetadata($pkg, $this->qualifiedSha, 'dist', null);
 
         self::assertSame('FAIL', $eval['checks']['installation_mode']['status']);
         self::assertStringContainsString('qualification evidence did not authorize source-only delivery policy', $eval['checks']['installation_mode']['message']);
@@ -181,106 +183,10 @@ final class PublishedArtifactVerifierTest extends TestCase
         ];
 
         $verifier = new PublishedArtifactVerifier();
-        $eval = $verifier->evaluateInstalledMetadata($pkg, $this->qualifiedSha, 'source-only', null, null);
+        $eval = $verifier->evaluateInstalledMetadata($pkg, $this->qualifiedSha, 'source-only', null);
 
         self::assertSame('FAIL', $eval['checks']['source_only_decision']['status']);
         self::assertStringContainsString('without qualification-time source-only Decision evidence', $eval['checks']['source_only_decision']['message']);
-    }
-
-    public function testFailsWhenDecisionWasNotActiveAtQualificationTime(): void
-    {
-        $evidence = [
-            'decision_id' => 'DEC-099',
-            'decision_file' => 'docs/decisions/DEC-099.md',
-            'status_at_qualification' => 'PROPOSED', // not ACTIVE
-        ];
-
-        $verifier = new PublishedArtifactVerifier();
-        $result = $verifier->evaluateSourceOnlyHistoricalChain($evidence, null);
-
-        self::assertSame('FAIL', $result['status']);
-        self::assertStringContainsString('Decision was not ACTIVE at qualification time', $result['message']);
-    }
-
-    public function testFailsWhenDecisionMissingFromIndexAtPavTime(): void
-    {
-        $repoDir = $this->tempDir . '/repo';
-        mkdir($repoDir . '/docs/decisions', 0777, true);
-        file_put_contents($repoDir . '/docs/decisions/DECISIONS_INDEX.md', "# Decision Index\n\n| Decision ID | Status |\n");
-
-        $evidence = [
-            'decision_id' => 'DEC-099',
-            'decision_file' => 'docs/decisions/DEC-099.md',
-            'status_at_qualification' => 'ACTIVE',
-        ];
-
-        $verifier = new PublishedArtifactVerifier();
-        $result = $verifier->evaluateSourceOnlyHistoricalChain($evidence, $repoDir);
-
-        self::assertSame('FAIL', $result['status']);
-        self::assertStringContainsString('neither ACTIVE nor SUPERSEDED in current DECISIONS_INDEX.md', $result['message']);
-    }
-
-    public function testPassesWhenQualificationDecisionWasActiveAndRemainsActiveInIndex(): void
-    {
-        $repoDir = $this->tempDir . '/repo';
-        mkdir($repoDir . '/docs/decisions', 0777, true);
-        $indexContent = "| [DEC-019](DEC-019.md) | Title | ACTIVE | Scope | Record | Owner | None | None |\n";
-        file_put_contents($repoDir . '/docs/decisions/DECISIONS_INDEX.md', $indexContent);
-
-        $evidence = [
-            'decision_id' => 'DEC-019',
-            'decision_file' => 'docs/decisions/DEC-019.md',
-            'status_at_qualification' => 'ACTIVE',
-        ];
-
-        $verifier = new PublishedArtifactVerifier();
-        $result = $verifier->evaluateSourceOnlyHistoricalChain($evidence, $repoDir);
-
-        self::assertSame('PASS', $result['status']);
-        self::assertStringContainsString('remains ACTIVE in repository Decision Index', $result['message']);
-    }
-
-    public function testPassesWhenQualificationDecisionWasActiveAndIsLegitimatelySupersededLater(): void
-    {
-        $repoDir = $this->tempDir . '/repo';
-        mkdir($repoDir . '/docs/decisions', 0777, true);
-        // DEC-019 was later superseded by DEC-020
-        $indexContent = "| [DEC-019](DEC-019.md) | Title | SUPERSEDED | Scope | Record | Owner | None | DEC-020 |\n";
-        file_put_contents($repoDir . '/docs/decisions/DECISIONS_INDEX.md', $indexContent);
-
-        $evidence = [
-            'decision_id' => 'DEC-019',
-            'decision_file' => 'docs/decisions/DEC-019.md',
-            'status_at_qualification' => 'ACTIVE',
-        ];
-
-        $verifier = new PublishedArtifactVerifier();
-        $result = $verifier->evaluateSourceOnlyHistoricalChain($evidence, $repoDir);
-
-        self::assertSame('PASS', $result['status']);
-        self::assertStringContainsString('coherent historical supersession chain (superseded by DEC-020)', $result['message']);
-    }
-
-    public function testFailsWhenSupersededDecisionHasBrokenHistory(): void
-    {
-        $repoDir = $this->tempDir . '/repo';
-        mkdir($repoDir . '/docs/decisions', 0777, true);
-        // SUPERSEDED but Superseded By is None
-        $indexContent = "| [DEC-019](DEC-019.md) | Title | SUPERSEDED | Scope | Record | Owner | None | None |\n";
-        file_put_contents($repoDir . '/docs/decisions/DECISIONS_INDEX.md', $indexContent);
-
-        $evidence = [
-            'decision_id' => 'DEC-019',
-            'decision_file' => 'docs/decisions/DEC-019.md',
-            'status_at_qualification' => 'ACTIVE',
-        ];
-
-        $verifier = new PublishedArtifactVerifier();
-        $result = $verifier->evaluateSourceOnlyHistoricalChain($evidence, $repoDir);
-
-        self::assertSame('FAIL', $result['status']);
-        self::assertStringContainsString('lacks a valid successor in DECISIONS_INDEX.md', $result['message']);
     }
 
     public function testFailsWhenObservedReferenceDoesNotProveQualifiedSha(): void
@@ -298,7 +204,7 @@ final class PublishedArtifactVerifierTest extends TestCase
         ];
 
         $verifier = new PublishedArtifactVerifier();
-        $eval = $verifier->evaluateInstalledMetadata($pkg, $this->qualifiedSha, 'dist', null, null);
+        $eval = $verifier->evaluateInstalledMetadata($pkg, $this->qualifiedSha, 'dist', null);
 
         self::assertSame('FAIL', $eval['checks']['qualified_reference']['status']);
         self::assertStringContainsString('Tag string equality alone is insufficient', $eval['checks']['qualified_reference']['message']);
@@ -306,35 +212,67 @@ final class PublishedArtifactVerifierTest extends TestCase
 
     public function testFailsWhenInstalledContentDiffersFromQualificationEvidenceManifest(): void
     {
-        $licenseHash = hash_file('sha256', $this->installedPath . '/LICENSE');
-        self::assertIsString($licenseHash);
-        $expectedManifest = [
-            'README.md' => str_repeat('0', 64), // Mismatched expected hash
-            'LICENSE' => $licenseHash,
-        ];
+        $manifest = ReleaseContract::buildManifest($this->installedPath);
+        $manifest['README.md'] = str_repeat('0', 64); // Mismatched expected hash
 
-        $verifier = new PublishedArtifactVerifier();
-        $eval = $verifier->inspectInstalledArtifact($this->installedPath, '1.0.0-rc.3', $expectedManifest);
+        $eval = (new PublishedArtifactVerifier())->inspectInstalledArtifact($this->installedPath, '1.0.0-rc.3', $manifest);
 
         self::assertSame('FAIL', $eval['checks']['content_manifest_correspondence']['status']);
         self::assertStringContainsString('Installed artifact content differs from qualified evidence', $eval['checks']['content_manifest_correspondence']['message']);
     }
 
-    public function testPassesWhenInstalledContentMatchesQualificationEvidenceManifest(): void
+    public function testFailsWhenNestedInstalledFileDiffersFromQualifiedDirectoryHash(): void
     {
-        $readmeHash = hash_file('sha256', $this->installedPath . '/README.md');
-        $licenseHash = hash_file('sha256', $this->installedPath . '/LICENSE');
-        self::assertIsString($readmeHash);
-        self::assertIsString($licenseHash);
-        $expectedManifest = [
-            'README.md' => $readmeHash,
-            'LICENSE' => $licenseHash,
-        ];
+        $manifest = ReleaseContract::buildManifest($this->installedPath);
+        file_put_contents($this->installedPath . '/src/Injected.php', "<?php\n");
 
-        $verifier = new PublishedArtifactVerifier();
-        $eval = $verifier->inspectInstalledArtifact($this->installedPath, '1.0.0-rc.3', $expectedManifest);
+        $eval = (new PublishedArtifactVerifier())->inspectInstalledArtifact($this->installedPath, '1.0.0-rc.3', $manifest);
+
+        self::assertSame('FAIL', $eval['checks']['content_manifest_correspondence']['status']);
+        self::assertStringContainsString('src', $eval['checks']['content_manifest_correspondence']['message']);
+    }
+
+    public function testPassesWhenInstalledContentMatchesCompleteQualificationManifest(): void
+    {
+        $manifest = ReleaseContract::buildManifest($this->installedPath);
+
+        $eval = (new PublishedArtifactVerifier())->inspectInstalledArtifact($this->installedPath, '1.0.0-rc.3', $manifest);
 
         self::assertSame('PASS', $eval['checks']['content_manifest_correspondence']['status']);
+        self::assertSame('PASS', $eval['checks']['installed_forbidden_content']['status']);
+    }
+
+    public function testFailsWhenQualificationManifestIsPartial(): void
+    {
+        $manifest = [
+            'README.md' => (string) hash_file('sha256', $this->installedPath . '/README.md'),
+            'LICENSE' => (string) hash_file('sha256', $this->installedPath . '/LICENSE'),
+        ];
+
+        $eval = (new PublishedArtifactVerifier())->inspectInstalledArtifact($this->installedPath, '1.0.0-rc.3', $manifest);
+
+        self::assertSame('FAIL', $eval['checks']['content_manifest_correspondence']['status']);
+        self::assertStringContainsString('incomplete', $eval['checks']['content_manifest_correspondence']['message']);
+    }
+
+    public function testFailsWhenNoQualificationManifestIsAvailable(): void
+    {
+        $eval = (new PublishedArtifactVerifier())->inspectInstalledArtifact($this->installedPath, '1.0.0-rc.3', null);
+
+        self::assertSame('FAIL', $eval['checks']['content_manifest_correspondence']['status']);
+    }
+
+    public function testFailsWhenDistributionAddsProhibitedMaterial(): void
+    {
+        $manifest = ReleaseContract::buildManifest($this->installedPath);
+        file_put_contents($this->installedPath . '/.env', 'SECRET=1');
+        mkdir($this->installedPath . '/vendor', 0777, true);
+        file_put_contents($this->installedPath . '/vendor/autoload.php', "<?php\n");
+
+        $eval = (new PublishedArtifactVerifier())->inspectInstalledArtifact($this->installedPath, '1.0.0-rc.3', $manifest);
+
+        self::assertSame('FAIL', $eval['checks']['installed_forbidden_content']['status']);
+        self::assertStringContainsString('.env', $eval['checks']['installed_forbidden_content']['message']);
     }
 
     public function testRedactsCredentialsAndTokensFromAuditDiagnostics(): void
@@ -354,22 +292,7 @@ final class PublishedArtifactVerifierTest extends TestCase
      */
     private function createValidQualificationEvidence(string $target, string $sha): array
     {
-        return [
-            'schema_version' => '1.0.0',
-            'package_name' => 'maatify/php-rate-limiter',
-            'target_version' => $target,
-            'candidate_sha' => $sha,
-            'candidate_tree_sha' => str_repeat('e', 40),
-            'delivery_policy' => 'dist',
-            'qualified_at' => '2026-10-06T20:00:00Z',
-            'content_manifest' => [
-                'composer.json' => hash_file('sha256', $this->installedPath . '/composer.json'),
-                'README.md' => hash_file('sha256', $this->installedPath . '/README.md'),
-            ],
-            'semantic_review' => [],
-            'source_only_decision' => null,
-            'status' => 'PASS',
-        ];
+        return EvidenceFixtures::validDist($target, $sha);
     }
 
     private function populateValidInstalledArtifact(string $dir, string $version): void

@@ -34,7 +34,8 @@ Options:
   --target=<version>              Expected target SemVer version (must match qualification evidence)
   --qualified-sha=<sha>           Expected qualified commit SHA (must match qualification evidence)
   --package=<name>                Package identity (default: maatify/php-rate-limiter)
-  --composer-repository=<repo>    Custom Composer repository URL or JSON definition
+  --composer-repository=<url>     Optional assertion only: MUST equal the approved channel bound in the
+                                  qualification evidence, otherwise PAV FAILS (it never selects the channel)
   --format=<summary|json>         Console output format (default: summary)
   --output-json=<path>            Write machine-readable JSON report to file
   --keep-temp                     Retain temporary isolated consumer environment
@@ -82,10 +83,9 @@ fwrite(STDOUT, sprintf("  Observed installation mode: %s\n", $result['installati
 if ($result['installed_path'] !== '') {
     fwrite(STDOUT, sprintf("  Installed package path: %s\n", $result['installed_path']));
 }
-fwrite(STDOUT, sprintf("  Composer version: %s\n", $result['composer_audit']['composer_version']));
-if ($result['composer_audit']['effective_repo'] !== null) {
-    fwrite(STDOUT, sprintf("  Custom Composer repository: %s\n", $result['composer_audit']['effective_repo']));
-}
+$audit = $result['composer_audit'];
+fwrite(STDOUT, sprintf("  Composer version: %s\n", (string) ($audit['composer_version'] ?? 'UNKNOWN')));
+fwrite(STDOUT, sprintf("  Approved channel (qualification-bound): %s\n", (string) ($audit['effective_repository'] ?? 'UNKNOWN')));
 
 foreach ($result['checks'] as $name => $check) {
     fwrite(STDOUT, sprintf("  [%s] %s: %s\n", $check['status'], $name, $check['message']));

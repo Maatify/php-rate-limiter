@@ -4,11 +4,7 @@ declare(strict_types=1);
 
 namespace Maatify\RateLimiter\Tests\Support\ReleaseVerification;
 
-use FilesystemIterator;
-use RecursiveDirectoryIterator;
-use RecursiveIteratorIterator;
 use RuntimeException;
-use SplFileInfo;
 
 /**
  * Generic, target-agnostic Published Artifact Verifier.
@@ -17,38 +13,34 @@ use SplFileInfo;
  * - CI_WORKFLOW_STANDARD.md §2.6 & §2.7
  * - COMPOSER_PACKAGE_STANDARD.md §26 & §26.1
  * - LIBRARY_PRESENTATION_STANDARD.md §14 & §23
+ *
+ * Qualifying PAV (`verify()`) requires complete RAV qualification evidence, resolves
+ * ONLY from the qualification-bound approved channel, runs Composer in a fully
+ * controlled environment, and proves exact version, delivery mode, reference and
+ * content from Composer-supported metadata. `inspectPreinstalledFixture()` is
+ * test-only and can never produce a qualifying PASS.
  */
 final class PublishedArtifactVerifier
 {
     /** @var list<string> */
-    public const array REQUIRED_INSTALLED_FILES = [
-        'src',
-        'composer.json',
-        'README.md',
-        'LICENSE',
-        'CHANGELOG.md',
-        'SECURITY.md',
-        'RATE_LIMITER_PACKAGE_REFERENCE.md',
-        'docs/guides/USAGE_GUIDE.md',
-        'examples',
-        'llms.txt',
-    ];
+    public const array REQUIRED_INSTALLED_FILES = ReleaseContract::REQUIRED_PATHS;
 
-    public const string DEFAULT_PACKAGE_NAME = 'maatify/php-rate-limiter';
-    public const string EXPECTED_LICENSE = 'proprietary';
+    public const string DEFAULT_PACKAGE_NAME = ReleaseContract::PACKAGE_NAME;
+    public const string EXPECTED_LICENSE = ReleaseContract::LICENSE;
+
+    /**
+     * Network transport settings that cannot change repository resolution or install mode;
+     * only their NAMES are ever recorded (values may embed credentials).
+     *
+     * @var list<string>
+     */
+    private const array TRANSPORT_PASSTHROUGH = [
+        'HTTP_PROXY', 'HTTPS_PROXY', 'NO_PROXY', 'http_proxy', 'https_proxy', 'no_proxy',
+        'SSL_CERT_FILE', 'SSL_CERT_DIR', 'CURL_CA_BUNDLE',
+    ];
 
     /**
      * Executes qualifying Published Artifact Verification.
-     *
-     * In qualifying mode, external Composer resolution is MANDATORY:
-     * - Consumes authoritative RAV qualification evidence
-     * - Spawns fresh isolated Composer consumer environment
-     * - Requires exact package:version
-     * - Inspects actual installed package and installed.json metadata
-     * - Proves actual installation mode (dist vs source)
-     * - Enforces dist mode when dist archive was exposed
-     * - Verifies observed reference equals the qualified candidate SHA
-     * - Compares installed content hashes against qualification manifest
      *
      * @param array{
      *     qualification_evidence_file?: string|null,
@@ -57,7 +49,6 @@ final class PublishedArtifactVerifier
      *     target?: string|null,
      *     qualified_sha?: string|null,
      *     composer_repository?: string|null,
-     *     working_dir?: string|null,
      *     repo_path?: string|null,
      *     keep_temp?: bool,
      * } $options
@@ -68,7 +59,8 @@ final class PublishedArtifactVerifier
      *     qualified_sha: string,
      *     installation_mode: string,
      *     installed_path: string,
-     *     composer_audit: array{composer_version: string, isolated_home: string, isolated_cache: string, effective_repo?: string|null},
+     *     composer_audit: array<string, mixed>,
+     *     delivery_evidence: array<string, mixed>,
      *     verified_at: string,
      *     checks: array<string, array{status: 'PASS'|'FAIL', message: string, details?: mixed}>,
      *     failures: list<string>,
@@ -79,20 +71,16 @@ final class PublishedArtifactVerifier
         $package = trim($options['package'] ?? self::DEFAULT_PACKAGE_NAME);
         $repoPath = $options['repo_path'] ?? (string) realpath(__DIR__ . '/../../..');
         $keepTemp = $options['keep_temp'] ?? false;
-        $workingDir = $options['working_dir'] ?? null;
 
-        $failures = [];
         $checks = [];
-        $observedMode = 'UNKNOWN';
-        $finalInstalledPath = '';
-        $composerAudit = [
-            'composer_version' => 'UNKNOWN',
-            'isolated_home' => '',
-            'isolated_cache' => '',
-            'effective_repo' => $options['composer_repository'] ?? null,
-        ];
+        $failures = [];
+        $audit = $this->emptyAudit();
 
-        // 1. Validate Qualification Evidence Input
+        $fail = function (string $target, string $sha, string $mode) use (&$checks, &$failures, &$audit, $package): array {
+            return $this->buildResult('FAIL', $package, $target, $sha, $mode, '', $audit, $checks, $failures, []);
+        };
+
+        // 1. Complete qualification-evidence validation BEFORE any network work
         $evidenceEval = $this->loadAndValidateQualificationEvidence(
             $options['qualification_evidence_file'] ?? null,
             $options['qualification_evidence'] ?? null,
@@ -104,82 +92,91 @@ final class PublishedArtifactVerifier
         if ($evidenceEval['status'] === 'FAIL') {
             $failures[] = $evidenceEval['message'];
 
-            return [
-                'status' => 'FAIL',
-                'package_name' => $package,
-                'target_version' => $options['target'] ?? 'UNKNOWN',
-                'qualified_sha' => $options['qualified_sha'] ?? 'UNKNOWN',
-                'installation_mode' => 'UNRESOLVED',
-                'installed_path' => '',
-                'composer_audit' => $composerAudit,
-                'verified_at' => gmdate('Y-m-d\TH:i:s\Z'),
-                'checks' => $checks,
-                'failures' => $failures,
-            ];
+            return $fail($options['target'] ?? 'UNKNOWN', $options['qualified_sha'] ?? 'UNKNOWN', 'UNRESOLVED');
         }
 
         /** @var array<string, mixed> $evidence */
         $evidence = $evidenceEval['details']['evidence'] ?? [];
-        $target = is_scalar($evidence['target_version'] ?? null) ? (string) $evidence['target_version'] : '';
-        $qualifiedSha = is_scalar($evidence['candidate_sha'] ?? null) ? (string) $evidence['candidate_sha'] : '';
-        $deliveryPolicy = is_scalar($evidence['delivery_policy'] ?? null) ? (string) $evidence['delivery_policy'] : 'dist';
+        $target = self::text($evidence, 'target_version');
+        $qualifiedSha = self::text($evidence, 'candidate_sha');
+        $deliveryPolicy = self::text($evidence, 'delivery_policy');
+        $channel = self::text($evidence, 'approved_distribution_channel');
         /** @var array<string, string> $expectedContentManifest */
-        $expectedContentManifest = is_array($evidence['content_manifest'] ?? null) ? $evidence['content_manifest'] : [];
+        $expectedContentManifest = $evidence['content_manifest'];
         /** @var array<string, mixed>|null $sourceOnlyEvidence */
-        $sourceOnlyEvidence = is_array($evidence['source_only_decision'] ?? null) ? $evidence['source_only_decision'] : null;
+        $sourceOnlyEvidence = is_array($evidence['source_only_decision']) ? $evidence['source_only_decision'] : null;
+        $audit['effective_repository'] = ReleaseContract::redactUrl($channel);
 
-        $createdTempDir = false;
+        // 2. Approved distribution channel is bound to qualification
+        $override = $options['composer_repository'] ?? null;
+        $channelCheck = $this->evaluateChannelBinding($channel, $override);
+        $checks['approved_channel'] = $channelCheck;
+        if ($channelCheck['status'] === 'FAIL') {
+            $failures[] = $channelCheck['message'];
+
+            return $fail($target, $qualifiedSha, 'UNRESOLVED');
+        }
+
+        // 3. Source-only historical chain, proven BEFORE installation
+        $sourceOnlyCheck = null;
+        if ($deliveryPolicy === 'source-only') {
+            $git = is_dir($repoPath) ? new GitRepository($repoPath) : null;
+            $sourceOnlyCheck = (new SourceOnlyDecisionVerifier())->verifyHistoricalChain($git, $sourceOnlyEvidence ?? [], $target, $qualifiedSha);
+            $checks['source_only_decision'] = $sourceOnlyCheck;
+            if ($sourceOnlyCheck['status'] === 'FAIL') {
+                $failures[] = $sourceOnlyCheck['message'];
+
+                return $fail($target, $qualifiedSha, 'UNRESOLVED');
+            }
+        }
+
         $tempRoot = null;
+        $observedMode = 'UNKNOWN';
+        $installedPath = '';
+        $deliveryEvidence = [];
 
         try {
-            // 2. Perform Isolated External Composer Resolution & Installation
-            $tempRoot = $workingDir ?? $this->createIsolatedEnvironment();
-            $createdTempDir = ($workingDir === null);
-            $composerAudit['isolated_home'] = $tempRoot . '/composer-home';
-            $composerAudit['isolated_cache'] = $tempRoot . '/composer-cache';
+            // 4. Isolated external Composer resolution & installation
+            $tempRoot = $this->createIsolatedEnvironment();
+            $audit['isolated_root'] = $tempRoot;
+            $audit['isolated_home'] = $tempRoot . '/composer-home';
+            $audit['isolated_cache'] = $tempRoot . '/composer-cache';
 
-            $installResult = $this->runIsolatedComposerInstall(
-                $tempRoot,
-                $package,
-                $target,
-                $options['composer_repository'] ?? null,
-            );
+            $installResult = $this->runIsolatedComposerInstall($tempRoot, $package, $target, $channel, $audit);
             $checks['composer_resolution'] = $installResult;
-            if (isset($installResult['details']['composer_version'])) {
-                $composerAudit['composer_version'] = (string) $installResult['details']['composer_version'];
-            }
-
             if ($installResult['status'] === 'FAIL') {
                 $failures[] = $installResult['message'];
 
-                return [
-                    'status' => 'FAIL',
-                    'package_name' => $package,
-                    'target_version' => $target,
-                    'qualified_sha' => $qualifiedSha,
-                    'installation_mode' => 'UNRESOLVED',
-                    'installed_path' => '',
-                    'composer_audit' => $composerAudit,
-                    'verified_at' => gmdate('Y-m-d\TH:i:s\Z'),
-                    'checks' => $checks,
-                    'failures' => $failures,
-                ];
+                return $fail($target, $qualifiedSha, 'UNRESOLVED');
             }
 
-            $finalInstalledPath = $tempRoot . '/vendor/' . $package;
-            $installedJsonPath = $tempRoot . '/vendor/composer/installed.json';
-            $installedData = $this->parseInstalledJson($installedJsonPath, $package);
+            // 5. Composer-supported package metadata
+            try {
+                $installedPkg = $this->parseInstalledJson($tempRoot . '/vendor/composer/installed.json', $package);
+                $lockPkg = $this->parseComposerLock($tempRoot . '/composer.lock', $package);
+            } catch (RuntimeException $e) {
+                $checks['installed_metadata'] = ['status' => 'FAIL', 'message' => 'Unable to read Composer installed-package metadata: ' . $e->getMessage()];
+                $failures[] = $checks['installed_metadata']['message'];
 
-            // 3. Evaluate Installed Package Metadata and Installation Mode
-            $metadataEval = $this->evaluateInstalledMetadata(
-                $installedData,
-                $qualifiedSha,
-                $deliveryPolicy,
-                $sourceOnlyEvidence,
-                $repoPath,
-            );
+                return $fail($target, $qualifiedSha, 'UNRESOLVED');
+            }
 
+            $versionEval = $this->evaluateResolvedVersion($installedPkg, $lockPkg, $package, $target);
+            $checks['resolved_version'] = $versionEval;
+            if ($versionEval['status'] === 'FAIL') {
+                $failures[] = $versionEval['message'];
+            }
+
+            $installedPath = $this->resolveInstalledPath($tempRoot, $installedPkg, $package);
+            if ($installedPath === null) {
+                $checks['installed_path'] = ['status' => 'FAIL', 'message' => 'Installed package path could not be proven from Composer metadata.'];
+                $failures[] = $checks['installed_path']['message'];
+                $installedPath = '';
+            }
+
+            $metadataEval = $this->evaluateInstalledMetadata($installedPkg, $qualifiedSha, $deliveryPolicy, $sourceOnlyCheck, $lockPkg);
             $observedMode = $metadataEval['mode'];
+            $deliveryEvidence = $metadataEval['delivery_evidence'];
             foreach ($metadataEval['checks'] as $key => $check) {
                 $checks[$key] = $check;
                 if ($check['status'] === 'FAIL') {
@@ -187,38 +184,41 @@ final class PublishedArtifactVerifier
                 }
             }
 
-            // 4. Inspect Installed Artifact Content and Hashes
-            $contentEval = $this->inspectInstalledArtifact($finalInstalledPath, $target, $expectedContentManifest);
-            foreach ($contentEval['checks'] as $key => $check) {
-                $checks[$key] = $check;
-                if ($check['status'] === 'FAIL') {
-                    $failures[] = $check['message'];
+            // 6. Installed artifact content
+            if ($installedPath !== '') {
+                $contentEval = $this->inspectInstalledArtifact($installedPath, $target, $expectedContentManifest);
+                foreach ($contentEval['checks'] as $key => $check) {
+                    $checks[$key] = $check;
+                    if ($check['status'] === 'FAIL') {
+                        $failures[] = $check['message'];
+                    }
                 }
             }
         } finally {
-            if ($createdTempDir && ! $keepTemp && $tempRoot !== null && is_dir($tempRoot)) {
-                $this->removeDirectory($tempRoot);
+            if ($tempRoot !== null && ! $keepTemp) {
+                ReleaseContract::removeTree($tempRoot);
             }
         }
 
-        return [
-            'status' => $failures === [] ? 'PASS' : 'FAIL',
-            'package_name' => $package,
-            'target_version' => $target,
-            'qualified_sha' => $qualifiedSha,
-            'installation_mode' => $observedMode,
-            'installed_path' => $finalInstalledPath,
-            'composer_audit' => $composerAudit,
-            'verified_at' => gmdate('Y-m-d\TH:i:s\Z'),
-            'checks' => $checks,
-            'failures' => $failures,
-        ];
+        return $this->buildResult(
+            $failures === [] ? 'PASS' : 'FAIL',
+            $package,
+            $target,
+            $qualifiedSha,
+            $observedMode,
+            $installedPath,
+            $audit,
+            $checks,
+            $failures,
+            $deliveryEvidence,
+        );
     }
 
     /**
      * Test-only inspection of preinstalled fixtures.
      *
-     * ALWAYS returns status: 'INSPECTION_ONLY', NEVER qualifying 'PASS'.
+     * ALWAYS returns status: 'INSPECTION_ONLY', NEVER qualifying 'PASS'. Fixture and
+     * test repositories can never become qualifying publication evidence.
      *
      * @param array{
      *     package?: string,
@@ -226,10 +226,10 @@ final class PublishedArtifactVerifier
      *     qualified_sha: string,
      *     installed_path: string,
      *     installed_json_path: string,
+     *     composer_lock_path?: string|null,
      *     delivery_policy?: string,
-     *     source_only_evidence?: array<string, mixed>|null,
+     *     source_only_check?: array{status: 'PASS'|'FAIL', message: string}|null,
      *     expected_content_manifest?: array<string, string>|null,
-     *     repo_path?: string|null,
      * } $options
      * @return array{
      *     status: 'INSPECTION_ONLY',
@@ -239,6 +239,7 @@ final class PublishedArtifactVerifier
      *     installation_mode: string,
      *     installed_path: string,
      *     verified_at: string,
+     *     delivery_evidence: array<string, mixed>,
      *     checks: array<string, array{status: 'PASS'|'FAIL', message: string, details?: mixed}>,
      *     failures: list<string>,
      * }
@@ -250,10 +251,6 @@ final class PublishedArtifactVerifier
         $qualifiedSha = trim($options['qualified_sha']);
         $installedPath = $options['installed_path'];
         $installedJsonPath = $options['installed_json_path'];
-        $deliveryPolicy = $options['delivery_policy'] ?? 'dist';
-        $sourceOnlyEvidence = $options['source_only_evidence'] ?? null;
-        $expectedManifest = $options['expected_content_manifest'] ?? null;
-        $repoPath = $options['repo_path'] ?? null;
 
         if (! file_exists($installedJsonPath)) {
             throw new RuntimeException('Provided installed_json_path does not exist: ' . $installedJsonPath);
@@ -263,10 +260,14 @@ final class PublishedArtifactVerifier
         }
 
         $installedData = $this->parseInstalledJson($installedJsonPath, $package);
-        $metadataEval = $this->evaluateInstalledMetadata($installedData, $qualifiedSha, $deliveryPolicy, $sourceOnlyEvidence, $repoPath);
-        $contentEval = $this->inspectInstalledArtifact($installedPath, $target, $expectedManifest);
+        $lockPath = $options['composer_lock_path'] ?? null;
+        $lockPkg = $lockPath !== null ? $this->parseComposerLock($lockPath, $package) : null;
 
-        $checks = array_merge($metadataEval['checks'], $contentEval['checks']);
+        $metadataEval = $this->evaluateInstalledMetadata($installedData, $qualifiedSha, $options['delivery_policy'] ?? 'dist', $options['source_only_check'] ?? null, $lockPkg);
+        $versionEval = $this->evaluateResolvedVersion($installedData, $lockPkg, $package, $target);
+        $contentEval = $this->inspectInstalledArtifact($installedPath, $target, $options['expected_content_manifest'] ?? null);
+
+        $checks = array_merge(['resolved_version' => $versionEval], $metadataEval['checks'], $contentEval['checks']);
         $failures = [];
         foreach ($checks as $c) {
             if ($c['status'] === 'FAIL') {
@@ -282,12 +283,15 @@ final class PublishedArtifactVerifier
             'installation_mode' => $metadataEval['mode'],
             'installed_path' => $installedPath,
             'verified_at' => gmdate('Y-m-d\TH:i:s\Z'),
+            'delivery_evidence' => $metadataEval['delivery_evidence'],
             'checks' => $checks,
             'failures' => $failures,
         ];
     }
 
     /**
+     * Loads RAV qualification evidence and validates it COMPLETELY against the canonical schema.
+     *
      * @param array<string, mixed>|null $rawEvidence
      * @return array{status: 'PASS'|'FAIL', message: string, details?: array{evidence: array<string, mixed>}}
      */
@@ -307,8 +311,7 @@ final class PublishedArtifactVerifier
                     'message' => sprintf('Qualification evidence file "%s" does not exist.', $evidenceFile),
                 ];
             }
-            $content = (string) file_get_contents($evidenceFile);
-            $decoded = json_decode($content, true);
+            $decoded = json_decode((string) file_get_contents($evidenceFile), true);
             if (! is_array($decoded)) {
                 return [
                     'status' => 'FAIL',
@@ -324,15 +327,15 @@ final class PublishedArtifactVerifier
             ];
         }
 
-        $evidenceStatus = is_scalar($evidence['status'] ?? null) ? (string) $evidence['status'] : 'UNKNOWN';
-        if ($evidenceStatus !== 'PASS') {
+        $errors = QualificationEvidenceSchema::validate($evidence);
+        if ($errors !== []) {
             return [
                 'status' => 'FAIL',
-                'message' => sprintf('Qualification evidence status is "%s", expected "PASS".', $evidenceStatus),
+                'message' => 'Qualification evidence is incomplete or invalid: ' . implode('; ', $errors) . '.',
             ];
         }
 
-        $evidencePkg = is_scalar($evidence['package_name'] ?? null) ? (string) $evidence['package_name'] : '';
+        $evidencePkg = self::text($evidence, 'package_name');
         if ($evidencePkg !== $expectedPackage) {
             return [
                 'status' => 'FAIL',
@@ -340,15 +343,8 @@ final class PublishedArtifactVerifier
             ];
         }
 
-        $target = is_scalar($evidence['target_version'] ?? null) ? (string) $evidence['target_version'] : '';
-        $sha = is_scalar($evidence['candidate_sha'] ?? null) ? (string) $evidence['candidate_sha'] : '';
-
-        if ($target === '' || ! (bool) preg_match('/^[0-9a-f]{40}$/i', $sha)) {
-            return [
-                'status' => 'FAIL',
-                'message' => 'Qualification evidence contains invalid target version or candidate commit SHA.',
-            ];
-        }
+        $target = self::text($evidence, 'target_version');
+        $sha = self::text($evidence, 'candidate_sha');
 
         if ($expectedTarget !== null && $expectedTarget !== '' && $expectedTarget !== $target) {
             return [
@@ -366,8 +362,34 @@ final class PublishedArtifactVerifier
 
         return [
             'status' => 'PASS',
-            'message' => sprintf('RAV qualification evidence verified for %s at commit %s.', $target, $sha),
+            'message' => sprintf('Complete RAV qualification evidence verified for %s at commit %s.', $target, $sha),
             'details' => ['evidence' => $evidence],
+        ];
+    }
+
+    /**
+     * A caller-supplied repository is never evidence: it must equal the qualification-bound channel.
+     *
+     * @return array{status: 'PASS'|'FAIL', message: string}
+     */
+    public function evaluateChannelBinding(string $qualifiedChannel, ?string $requestedRepository): array
+    {
+        if ($requestedRepository !== null && trim($requestedRepository) !== '') {
+            if (ReleaseContract::normalizeChannel($requestedRepository) !== ReleaseContract::normalizeChannel($qualifiedChannel)) {
+                return [
+                    'status' => 'FAIL',
+                    'message' => sprintf(
+                        'Caller-supplied Composer repository "%s" is not the approved distribution channel bound to qualification ("%s"); it cannot produce qualifying PAV.',
+                        ReleaseContract::redactUrl($requestedRepository),
+                        ReleaseContract::redactUrl($qualifiedChannel),
+                    ),
+                ];
+            }
+        }
+
+        return [
+            'status' => 'PASS',
+            'message' => sprintf('Resolution is bound to the qualification-approved channel "%s".', ReleaseContract::redactUrl($qualifiedChannel)),
         ];
     }
 
@@ -391,21 +413,101 @@ final class PublishedArtifactVerifier
             throw new RuntimeException('Invalid installed.json format: packages list missing.');
         }
 
+        $matches = [];
         foreach ($packages as $pkg) {
             if (is_array($pkg) && ($pkg['name'] ?? null) === $package) {
                 /** @var array<string, mixed> $pkg */
-                return $pkg;
+                $matches[] = $pkg;
             }
         }
 
-        throw new RuntimeException(sprintf('Package "%s" was not found in installed.json packages list.', $package));
+        if ($matches === []) {
+            throw new RuntimeException(sprintf('Package "%s" was not found in installed.json packages list.', $package));
+        }
+        if (count($matches) > 1) {
+            throw new RuntimeException(sprintf('Package "%s" appears %d times in installed.json (ambiguous).', $package, count($matches)));
+        }
+
+        return $matches[0];
+    }
+
+    /**
+     * @return array<string, mixed>|null the lock entry, or null when no lock file is available
+     */
+    public function parseComposerLock(string $lockPath, string $package): ?array
+    {
+        if (! file_exists($lockPath)) {
+            return null;
+        }
+        $decoded = json_decode((string) file_get_contents($lockPath), true);
+        if (! is_array($decoded) || ! is_array($decoded['packages'] ?? null)) {
+            throw new RuntimeException('Malformed composer.lock');
+        }
+
+        $matches = [];
+        foreach ($decoded['packages'] as $pkg) {
+            if (is_array($pkg) && ($pkg['name'] ?? null) === $package) {
+                /** @var array<string, mixed> $pkg */
+                $matches[] = $pkg;
+            }
+        }
+        if (count($matches) !== 1) {
+            throw new RuntimeException(sprintf('Package "%s" resolved %d times in composer.lock (expected exactly 1).', $package, count($matches)));
+        }
+
+        return $matches[0];
+    }
+
+    /**
+     * Proves the observed package name and exact version from Composer-supported metadata.
+     * The package's own composer.json intentionally has no static version and is never used.
+     *
+     * @param array<string, mixed> $installedPkg
+     * @param array<string, mixed>|null $lockPkg
+     * @return array{status: 'PASS'|'FAIL', message: string, details?: array<string, string|null>}
+     */
+    public function evaluateResolvedVersion(array $installedPkg, ?array $lockPkg, string $package, string $target): array
+    {
+        $name = is_string($installedPkg['name'] ?? null) ? $installedPkg['name'] : '';
+        $version = is_string($installedPkg['version'] ?? null) ? $installedPkg['version'] : '';
+        $lockVersion = is_array($lockPkg) && is_string($lockPkg['version'] ?? null) ? $lockPkg['version'] : null;
+        $details = [
+            'requested_version' => $target,
+            'resolved_version' => $version === '' ? null : $version,
+            'lock_version' => $lockVersion,
+            'installed_package' => $name === '' ? null : $name,
+        ];
+
+        if ($name !== $package) {
+            return ['status' => 'FAIL', 'message' => sprintf('Observed package "%s" is not the qualified package "%s".', $name, $package), 'details' => $details];
+        }
+        if ($version === '') {
+            return ['status' => 'FAIL', 'message' => 'Composer metadata exposes no observed package version.', 'details' => $details];
+        }
+        if (ReleaseContract::normalizeVersion($version) !== ReleaseContract::normalizeVersion($target)) {
+            return ['status' => 'FAIL', 'message' => sprintf('Observed installed version "%s" is not the exact qualified target "%s".', $version, $target), 'details' => $details];
+        }
+        if ($lockPkg !== null && ($lockVersion === null || ReleaseContract::normalizeVersion($lockVersion) !== ReleaseContract::normalizeVersion($target))) {
+            return ['status' => 'FAIL', 'message' => sprintf('composer.lock resolved version "%s" disagrees with the qualified target "%s".', $lockVersion ?? 'none', $target), 'details' => $details];
+        }
+
+        return ['status' => 'PASS', 'message' => sprintf('Composer metadata proves %s resolved exactly to %s.', $package, $version), 'details' => $details];
     }
 
     /**
      * @param array<string, mixed> $installedPkg
-     * @param array<string, mixed>|null $sourceOnlyEvidence
+     * @param array{status: 'PASS'|'FAIL', message: string, details?: array<string, mixed>}|null $sourceOnlyCheck
+     * @param array<string, mixed>|null $lockPkg
      * @return array{
      *     mode: string,
+     *     delivery_evidence: array{
+     *         installation_source: string|null,
+     *         dist: array{type: ?string, url: ?string, reference: ?string}|null,
+     *         source: array{type: ?string, url: ?string, reference: ?string}|null,
+     *         resolved_package: mixed,
+     *         resolved_version: mixed,
+     *         install_path: mixed,
+     *     },
      *     checks: array<string, array{status: 'PASS'|'FAIL', message: string, details?: mixed}>,
      * }
      */
@@ -413,14 +515,25 @@ final class PublishedArtifactVerifier
         array $installedPkg,
         string $qualifiedSha,
         string $deliveryPolicy,
-        ?array $sourceOnlyEvidence,
-        ?string $repoPath,
+        ?array $sourceOnlyCheck,
+        ?array $lockPkg = null,
     ): array {
         $checks = [];
         $mode = 'UNKNOWN';
 
-        // 1. Installation Source Mode Proof
+        $dist = $this->describeReference($installedPkg['dist'] ?? null);
+        $source = $this->describeReference($installedPkg['source'] ?? null);
         $installSource = $installedPkg['installation-source'] ?? null;
+        $evidence = [
+            'installation_source' => is_string($installSource) ? $installSource : null,
+            'dist' => $dist,
+            'source' => $source,
+            'resolved_package' => $installedPkg['name'] ?? null,
+            'resolved_version' => $installedPkg['version'] ?? null,
+            'install_path' => $installedPkg['install-path'] ?? null,
+        ];
+
+        // 1. Installation Source Mode Proof
         if (! is_string($installSource) || ! in_array($installSource, ['dist', 'source'], true)) {
             $sourceStr = is_scalar($installSource) ? (string) $installSource : get_debug_type($installSource);
             $checks['installation_mode'] = [
@@ -429,176 +542,92 @@ final class PublishedArtifactVerifier
             ];
         } else {
             $mode = $installSource;
-            $distExposed = isset($installedPkg['dist']) && is_array($installedPkg['dist']) && ($installedPkg['dist']['type'] ?? null) !== null;
+            $distExposed = $dist !== null && $dist['type'] !== null;
+            $lockDistExposed = is_array($lockPkg) && is_array($lockPkg['dist'] ?? null) && ($lockPkg['dist']['type'] ?? null) !== null;
 
-            if ($distExposed) {
+            if ($lockPkg !== null && $distExposed !== $lockDistExposed) {
+                $checks['installation_mode'] = [
+                    'status' => 'FAIL',
+                    'message' => 'Ambiguous delivery state: installed.json and composer.lock disagree on whether dist is exposed.',
+                ];
+            } elseif ($distExposed) {
                 // If dist archive was exposed by Composer repository metadata, actual mode MUST be dist
-                if ($mode !== 'dist') {
+                $checks['installation_mode'] = $mode !== 'dist' ? [
+                    'status' => 'FAIL',
+                    'message' => 'Dist archive was exposed by Composer repository metadata, but actual installation mode was source (fallback or preference failure is prohibited).',
+                ] : [
+                    'status' => 'PASS',
+                    'message' => 'Verified actual installation mode = dist, matching exposed dist archive.',
+                ];
+            } elseif ($mode !== 'source') {
+                $checks['installation_mode'] = [
+                    'status' => 'FAIL',
+                    'message' => 'Ambiguous delivery state: dist is not exposed but installation mode is not source.',
+                ];
+            } elseif ($deliveryPolicy !== 'source-only') {
+                $checks['installation_mode'] = [
+                    'status' => 'FAIL',
+                    'message' => 'Channel exposed no dist archive and source mode was observed, but qualification evidence did not authorize source-only delivery policy.',
+                ];
+            } else {
+                if ($sourceOnlyCheck === null) {
+                    $sourceOnlyCheck = [
+                        'status' => 'FAIL',
+                        'message' => 'Source-only delivery observed without qualification-time source-only Decision evidence.',
+                    ];
+                }
+                $checks['source_only_decision'] = $sourceOnlyCheck;
+                if ($sourceOnlyCheck['status'] === 'FAIL') {
                     $checks['installation_mode'] = [
                         'status' => 'FAIL',
-                        'message' => 'Dist archive was exposed by Composer repository metadata, but actual installation mode was source (fallback or preference failure is prohibited).',
+                        'message' => 'Source-only delivery observed, but qualification-time Decision record or historical supersession chain is invalid.',
+                    ];
+                } elseif ($source === null || $source['type'] === null || $source['url'] === null) {
+                    $checks['installation_mode'] = [
+                        'status' => 'FAIL',
+                        'message' => 'Source-only delivery requires the channel to expose source type and URL for the exact version.',
                     ];
                 } else {
                     $checks['installation_mode'] = [
                         'status' => 'PASS',
-                        'message' => 'Verified actual installation mode = dist, matching exposed dist archive.',
-                    ];
-                }
-            } else {
-                // Channel exposed no dist, observed mode is source
-                if ($mode === 'source') {
-                    if ($deliveryPolicy !== 'source-only') {
-                        $checks['installation_mode'] = [
-                            'status' => 'FAIL',
-                            'message' => 'Channel exposed no dist archive and source mode was observed, but qualification evidence did not authorize source-only delivery policy.',
-                        ];
-                    } else {
-                        $decisionCheck = $this->evaluateSourceOnlyHistoricalChain($sourceOnlyEvidence, $repoPath);
-                        $checks['source_only_decision'] = $decisionCheck;
-                        if ($decisionCheck['status'] === 'FAIL') {
-                            $checks['installation_mode'] = [
-                                'status' => 'FAIL',
-                                'message' => 'Source-only delivery observed, but qualification-time Decision record or historical supersession chain is invalid.',
-                            ];
-                        } else {
-                            $checks['installation_mode'] = [
-                                'status' => 'PASS',
-                                'message' => 'Source-only delivery verified under qualification-time approved Decision and valid historical chain.',
-                            ];
-                        }
-                    }
-                } else {
-                    $checks['installation_mode'] = [
-                        'status' => 'FAIL',
-                        'message' => 'Ambiguous delivery state: dist is not exposed but installation mode is not source.',
+                        'message' => 'Source-only delivery verified: dist absent, source exposed and installed, under the qualification-time approved Decision and a valid historical chain.',
                     ];
                 }
             }
         }
 
         // 2. Qualified Release Reference Correspondence (Must Prove the SHA)
-        $observedRef = null;
-        $dist = $installedPkg['dist'] ?? null;
-        $source = $installedPkg['source'] ?? null;
-        if ($mode === 'dist' && is_array($dist) && isset($dist['reference']) && is_scalar($dist['reference'])) {
-            $observedRef = (string) $dist['reference'];
-        } elseif ($mode === 'source' && is_array($source) && isset($source['reference']) && is_scalar($source['reference'])) {
-            $observedRef = (string) $source['reference'];
-        }
+        $observed = $mode === 'dist' ? $dist : ($mode === 'source' ? $source : null);
+        $observedRef = $observed['reference'] ?? null;
 
         if ($observedRef === null || $observedRef === '') {
             $checks['qualified_reference'] = [
                 'status' => 'FAIL',
                 'message' => 'Installed package metadata does not expose an exact commit or tag reference.',
             ];
+        } elseif (strtolower($observedRef) !== strtolower($qualifiedSha)) {
+            $checks['qualified_reference'] = [
+                'status' => 'FAIL',
+                'message' => sprintf(
+                    'Observed package reference "%s" does not prove the qualified release commit SHA "%s". Tag string equality alone is insufficient.',
+                    $observedRef,
+                    $qualifiedSha,
+                ),
+            ];
         } else {
-            // For this repository and release channel, the reference MUST equal the qualified SHA
-            $matchesSha = strtolower($observedRef) === strtolower($qualifiedSha);
-            if (! $matchesSha) {
-                $checks['qualified_reference'] = [
-                    'status' => 'FAIL',
-                    'message' => sprintf(
-                        'Observed package reference "%s" does not prove the qualified release commit SHA "%s". Tag string equality alone is insufficient.',
-                        $observedRef,
-                        $qualifiedSha,
-                    ),
-                ];
-            } else {
-                $checks['qualified_reference'] = [
-                    'status' => 'PASS',
-                    'message' => sprintf('Observed package reference "%s" proves exact correspondence to qualified release SHA.', $observedRef),
-                    'details' => ['observed_reference' => $observedRef],
-                ];
-            }
+            $checks['qualified_reference'] = [
+                'status' => 'PASS',
+                'message' => sprintf('Observed package reference "%s" proves exact correspondence to qualified release SHA.', $observedRef),
+                'details' => ['observed_reference' => $observedRef],
+            ];
         }
 
-        return ['mode' => $mode, 'checks' => $checks];
+        return ['mode' => $mode, 'delivery_evidence' => $evidence, 'checks' => $checks];
     }
 
     /**
-     * Evaluates source-only governance against retained qualification evidence and repository Decision Index history.
-     *
-     * In accordance with §26.1 and CI §2.5–2.6:
-     * - The Decision MUST have existed and been ACTIVE at qualification time (predating RAV).
-     * - At PAV time, current Decision status in DECISIONS_INDEX.md may be ACTIVE or legitimately SUPERSEDED.
-     * - A later legitimate SUPERSEDED state does NOT invalidate historical qualification.
-     * - Broken supersession history or decisions created after qualification fail verification.
-     *
-     * @param array<string, mixed>|null $sourceOnlyEvidence
-     * @return array{status: 'PASS'|'FAIL', message: string}
-     */
-    public function evaluateSourceOnlyHistoricalChain(?array $sourceOnlyEvidence, ?string $repoPath): array
-    {
-        if ($sourceOnlyEvidence === null) {
-            return [
-                'status' => 'FAIL',
-                'message' => 'Source-only delivery observed without qualification-time source-only Decision evidence.',
-            ];
-        }
-
-        $decisionId = is_scalar($sourceOnlyEvidence['decision_id'] ?? null) ? (string) $sourceOnlyEvidence['decision_id'] : '';
-        $decisionFile = is_scalar($sourceOnlyEvidence['decision_file'] ?? null) ? (string) $sourceOnlyEvidence['decision_file'] : '';
-        $statusAtQual = is_scalar($sourceOnlyEvidence['status_at_qualification'] ?? null) ? (string) $sourceOnlyEvidence['status_at_qualification'] : '';
-
-        if ($decisionId === '' || $decisionFile === '' || $statusAtQual !== 'ACTIVE') {
-            return [
-                'status' => 'FAIL',
-                'message' => 'Qualification-time source-only evidence is incomplete or Decision was not ACTIVE at qualification time.',
-            ];
-        }
-
-        if ($repoPath === null || ! is_dir($repoPath)) {
-            // If repository path is not available, retain qualification-time evidence
-            return [
-                'status' => 'PASS',
-                'message' => sprintf('Source-only qualification evidence verified for Decision "%s".', $decisionId),
-            ];
-        }
-
-        $indexPath = $repoPath . '/docs/decisions/DECISIONS_INDEX.md';
-        if (! file_exists($indexPath)) {
-            return [
-                'status' => 'FAIL',
-                'message' => 'DECISIONS_INDEX.md does not exist in repository.',
-            ];
-        }
-
-        $indexContent = (string) file_get_contents($indexPath);
-        // Look up Decision row in DECISIONS_INDEX.md
-        // Row format: | [DEC-XXX](...) | Title | Status | Scope | Record | Owner | Supersedes | Superseded By |
-        $pattern = '/\|\s*\[' . preg_quote($decisionId, '/') . '\][^\n]+\|\s*(ACTIVE|SUPERSEDED)\s*\|[^\n]+\|\s*([^\|]+)\|\s*([^\|]+)\s*\|/i';
-        if (! preg_match($pattern, $indexContent, $matches)) {
-            return [
-                'status' => 'FAIL',
-                'message' => sprintf('Decision "%s" is neither ACTIVE nor SUPERSEDED in current DECISIONS_INDEX.md.', $decisionId),
-            ];
-        }
-
-        $currentStatus = strtoupper(trim($matches[1]));
-        if ($currentStatus === 'ACTIVE') {
-            return [
-                'status' => 'PASS',
-                'message' => sprintf('Decision "%s" remains ACTIVE in repository Decision Index.', $decisionId),
-            ];
-        }
-
-        // If currently SUPERSEDED, verify coherent supersession chain (Superseded By column must not be None or empty)
-        $supersededBy = trim($matches[3]);
-        if ($supersededBy === '' || strtolower($supersededBy) === 'none') {
-            return [
-                'status' => 'FAIL',
-                'message' => sprintf('Decision "%s" is marked SUPERSEDED but lacks a valid successor in DECISIONS_INDEX.md.', $decisionId),
-            ];
-        }
-
-        return [
-            'status' => 'PASS',
-            'message' => sprintf('Decision "%s" was ACTIVE at qualification and has a coherent historical supersession chain (superseded by %s).', $decisionId, $supersededBy),
-        ];
-    }
-
-    /**
-     * Inspects installed artifact directory, required files, composer.json manifest, and content hashes.
+     * Inspects installed artifact directory, required files, composer.json manifest,
+     * forbidden content, and content hashes against the COMPLETE qualified manifest.
      *
      * @param array<string, string>|null $expectedContentManifest
      * @return array{
@@ -629,30 +658,40 @@ final class PublishedArtifactVerifier
         // 1. Required Files Presence
         $missing = [];
         foreach (self::REQUIRED_INSTALLED_FILES as $file) {
-            $p = $installedPath . '/' . $file;
-            if (! file_exists($p)) {
+            if (! file_exists($installedPath . '/' . $file)) {
                 $missing[] = $file;
             }
         }
 
-        if ($missing !== []) {
-            $checks['installed_required_files'] = [
-                'status' => 'FAIL',
-                'message' => sprintf('Installed artifact is missing required consumer/release-facing files: %s.', implode(', ', $missing)),
-                'details' => $missing,
-            ];
-        } else {
-            $checks['installed_required_files'] = [
-                'status' => 'PASS',
-                'message' => 'All required consumer/release-facing files are present in the installed artifact.',
-            ];
-        }
+        $checks['installed_required_files'] = $missing !== [] ? [
+            'status' => 'FAIL',
+            'message' => sprintf('Installed artifact is missing required consumer/release-facing files: %s.', implode(', ', $missing)),
+            'details' => $missing,
+        ] : [
+            'status' => 'PASS',
+            'message' => 'All required consumer/release-facing files are present in the installed artifact.',
+        ];
 
-        // 2. Installed Manifest Integrity
+        // 2. Prohibited content: distribution must not add sensitive/development material
+        $prohibited = [];
+        foreach (ReleaseContract::listFiles($installedPath) as $file) {
+            if (ReleaseContract::isForbiddenPath($file) || is_link($installedPath . '/' . $file)) {
+                $prohibited[] = $file;
+            }
+        }
+        $checks['installed_forbidden_content'] = $prohibited !== [] ? [
+            'status' => 'FAIL',
+            'message' => sprintf('Installed artifact contains prohibited content: %s.', implode(', ', $prohibited)),
+            'details' => $prohibited,
+        ] : [
+            'status' => 'PASS',
+            'message' => 'Installed artifact contains no prohibited sensitive/development material.',
+        ];
+
+        // 3. Installed Manifest Integrity
         $installedComposer = $installedPath . '/composer.json';
         if (file_exists($installedComposer)) {
-            $raw = (string) file_get_contents($installedComposer);
-            $parsed = json_decode($raw, true);
+            $parsed = json_decode((string) file_get_contents($installedComposer), true);
             if (! is_array($parsed) || ($parsed['name'] ?? '') !== self::DEFAULT_PACKAGE_NAME) {
                 $checks['installed_composer_manifest'] = [
                     'status' => 'FAIL',
@@ -678,25 +717,35 @@ final class PublishedArtifactVerifier
             }
         }
 
-        // 3. Installed README Consistency
+        // 4. Installed README Consistency
         $installedReadme = $installedPath . '/README.md';
         if (file_exists($installedReadme)) {
-            $readmeContent = (string) file_get_contents($installedReadme);
-            if (! str_contains($readmeContent, $target)) {
-                $checks['installed_readme_identity'] = [
-                    'status' => 'FAIL',
-                    'message' => sprintf('Installed README.md does not reference the target version "%s".', $target),
-                ];
-            } else {
-                $checks['installed_readme_identity'] = [
-                    'status' => 'PASS',
-                    'message' => 'Installed README.md accurately represents target artifact identity.',
-                ];
-            }
+            $checks['installed_readme_identity'] = ! str_contains((string) file_get_contents($installedReadme), $target) ? [
+                'status' => 'FAIL',
+                'message' => sprintf('Installed README.md does not reference the target version "%s".', $target),
+            ] : [
+                'status' => 'PASS',
+                'message' => 'Installed README.md accurately represents target artifact identity.',
+            ];
         }
 
-        // 4. Content Manifest Correspondence (Hash Comparison against RAV Qualification Evidence)
-        if ($expectedContentManifest !== null && $expectedContentManifest !== []) {
+        // 5. Content Manifest Correspondence against the COMPLETE RAV manifest
+        if ($expectedContentManifest === null || $expectedContentManifest === []) {
+            $checks['content_manifest_correspondence'] = [
+                'status' => 'FAIL',
+                'message' => 'No qualified content manifest is available; installed content cannot be verified.',
+            ];
+        } else {
+            $incomplete = array_diff(self::REQUIRED_INSTALLED_FILES, array_keys($expectedContentManifest));
+            if ($incomplete !== []) {
+                $checks['content_manifest_correspondence'] = [
+                    'status' => 'FAIL',
+                    'message' => sprintf('Qualified content manifest is incomplete (missing: %s); content correspondence cannot be proven.', implode(', ', $incomplete)),
+                ];
+
+                return ['checks' => $checks];
+            }
+
             $hashMismatches = [];
             foreach ($expectedContentManifest as $relPath => $expectedHash) {
                 $fullPath = $installedPath . '/' . $relPath;
@@ -704,24 +753,20 @@ final class PublishedArtifactVerifier
                     $hashMismatches[] = sprintf('%s (missing from installed package)', $relPath);
                     continue;
                 }
-                $actualHash = $this->hashPath($fullPath);
+                $actualHash = ReleaseContract::hashPath($fullPath);
                 if ($actualHash !== $expectedHash) {
                     $hashMismatches[] = sprintf('%s (expected %s, got %s)', $relPath, substr($expectedHash, 0, 12), substr($actualHash, 0, 12));
                 }
             }
 
-            if ($hashMismatches !== []) {
-                $checks['content_manifest_correspondence'] = [
-                    'status' => 'FAIL',
-                    'message' => sprintf('Installed artifact content differs from qualified evidence: %s.', implode('; ', $hashMismatches)),
-                    'details' => $hashMismatches,
-                ];
-            } else {
-                $checks['content_manifest_correspondence'] = [
-                    'status' => 'PASS',
-                    'message' => sprintf('Installed artifact content verified; all %d release-facing file hashes match qualification evidence.', count($expectedContentManifest)),
-                ];
-            }
+            $checks['content_manifest_correspondence'] = $hashMismatches !== [] ? [
+                'status' => 'FAIL',
+                'message' => sprintf('Installed artifact content differs from qualified evidence: %s.', implode('; ', $hashMismatches)),
+                'details' => $hashMismatches,
+            ] : [
+                'status' => 'PASS',
+                'message' => sprintf('Installed artifact content verified; all %d qualified content hashes match qualification evidence.', count($expectedContentManifest)),
+            ];
         }
 
         return ['checks' => $checks];
@@ -732,40 +777,7 @@ final class PublishedArtifactVerifier
      */
     public function hashPath(string $path): string
     {
-        if (is_file($path)) {
-            $hash = hash_file('sha256', $path);
-            if ($hash === false) {
-                throw new RuntimeException('Failed to hash file: ' . $path);
-            }
-
-            return $hash;
-        }
-
-        if (is_dir($path)) {
-            $files = [];
-            $iterator = new RecursiveIteratorIterator(
-                new RecursiveDirectoryIterator($path, FilesystemIterator::SKIP_DOTS),
-            );
-            /** @var SplFileInfo $fileInfo */
-            foreach ($iterator as $fileInfo) {
-                if ($fileInfo->isFile()) {
-                    $subPath = str_replace('\\', '/', substr($fileInfo->getPathname(), strlen($path) + 1));
-                    $fileHash = hash_file('sha256', $fileInfo->getPathname());
-                    if ($fileHash !== false) {
-                        $files[$subPath] = $fileHash;
-                    }
-                }
-            }
-            ksort($files);
-            $combined = '';
-            foreach ($files as $p => $h) {
-                $combined .= $p . ':' . $h . "\n";
-            }
-
-            return hash('sha256', $combined);
-        }
-
-        throw new RuntimeException('Path is neither file nor directory: ' . $path);
+        return ReleaseContract::hashPath($path);
     }
 
     /**
@@ -773,131 +785,260 @@ final class PublishedArtifactVerifier
      */
     public function redactSensitiveData(string $text): string
     {
-        $text = (string) preg_replace('/(Bearer\s+)[A-Za-z0-9_\-\.~+\/]+=*/i', '$1[REDACTED]', $text);
-        $text = (string) preg_replace('/(https?:\/\/[^:]+:)[^@]+(@)/i', '$1[REDACTED]$2', $text);
-        $text = (string) preg_replace('/(token|password|secret|auth)\s*[:=]\s*[^\s,]+/i', '$1=[REDACTED]', $text);
-
-        return $text;
-    }
-
-    private function createIsolatedEnvironment(): string
-    {
-        $dir = sys_get_temp_dir() . '/maatify-pav-' . bin2hex(random_bytes(6));
-        if (! mkdir($dir, 0777, true) && ! is_dir($dir)) {
-            throw new RuntimeException('Unable to create isolated directory: ' . $dir);
-        }
-        mkdir($dir . '/composer-home', 0777, true);
-        mkdir($dir . '/composer-cache', 0777, true);
-
-        return $dir;
+        return ReleaseContract::redactSensitiveData($text);
     }
 
     /**
-     * @return array{status: 'PASS'|'FAIL', message: string, details?: array{output: list<string>, command: string, composer_version?: string}}
+     * Builds the minimal, explicit Composer child environment. NOTHING is inherited:
+     * every COMPOSER_* / HOME / vendor-dir / root-selection variable is either set to an
+     * isolated value here or absent. Only PATH and transport settings are passed through.
+     *
+     * @param array<string, string> $parentEnv
+     * @return array{env: array<string, string>, evidence: array{set: array<string, string>, cleared: list<string>, passthrough: list<string>}}
      */
-    private function runIsolatedComposerInstall(
-        string $root,
-        string $package,
-        string $target,
-        ?string $customRepository,
-    ): array {
-        $composerJsonData = [
+    public function buildComposerEnvironment(string $root, array $parentEnv): array
+    {
+        $set = [
+            'HOME' => $root . '/home',
+            'COMPOSER_HOME' => $root . '/composer-home',
+            'COMPOSER_CACHE_DIR' => $root . '/composer-cache',
+            'COMPOSER_VENDOR_DIR' => $root . '/vendor',
+            'COMPOSER' => $root . '/composer.json',
+            'COMPOSER_NO_INTERACTION' => '1',
+        ];
+
+        $env = $set;
+        $env['PATH'] = $parentEnv['PATH'] ?? '/usr/local/bin:/usr/bin:/bin';
+
+        $passthrough = [];
+        foreach (self::TRANSPORT_PASSTHROUGH as $name) {
+            if (isset($parentEnv[$name]) && $parentEnv[$name] !== '') {
+                $env[$name] = $parentEnv[$name];
+                $passthrough[] = $name;
+            }
+        }
+
+        // Names (never values) of inherited state that is deliberately NOT forwarded:
+        // COMPOSER_AUTH, COMPOSER_ROOT_VERSION, COMPOSER_MIRROR_PATH_REPOS, COMPOSER_PREFER_STABLE,
+        // COMPOSER_MINIMAL_CHANGES, COMPOSER_WITH_ALL_DEPENDENCIES, COMPOSER_HOME overrides, etc.
+        $cleared = [];
+        foreach (array_keys($parentEnv) as $name) {
+            if ((str_starts_with($name, 'COMPOSER') || in_array($name, ['HOME', 'XDG_CONFIG_HOME', 'XDG_CACHE_HOME', 'XDG_DATA_HOME', 'GIT_CONFIG_GLOBAL', 'GIT_CONFIG_SYSTEM', 'GIT_DIR', 'PHP_INI_SCAN_DIR', 'PHPRC'], true)) && ! isset($set[$name])) {
+                $cleared[] = $name;
+            }
+        }
+        sort($cleared);
+
+        return ['env' => $env, 'evidence' => ['set' => $set, 'cleared' => $cleared, 'passthrough' => $passthrough]];
+    }
+
+    /**
+     * Fresh external consumer manifest. Only the qualification-bound channel is enabled
+     * (default Packagist is explicitly disabled so resolution cannot silently use it).
+     *
+     * @return array{
+     *     name: string,
+     *     type: string,
+     *     require: array<string, string>,
+     *     repositories: list<array<string, bool|string>>,
+     *     minimum-stability: string,
+     *     prefer-stable: bool,
+     *     config: array{secure-http: bool, preferred-install: string, allow-plugins: bool, audit: array<string, string>},
+     * }
+     */
+    public function buildConsumerManifest(string $package, string $target, string $channel): array
+    {
+        return [
             'name' => 'maatify/published-artifact-verification-consumer',
             'type' => 'project',
             'require' => [
                 'php' => '>=8.4',
                 $package => $target,
             ],
+            'repositories' => [
+                ['type' => 'composer', 'url' => $channel],
+                ['packagist.org' => false],
+            ],
             'minimum-stability' => 'dev',
             'prefer-stable' => true,
             'config' => [
                 'secure-http' => true,
+                'preferred-install' => 'dist',
+                'allow-plugins' => false,
                 'audit' => [
                     'abandoned' => 'fail',
                 ],
             ],
         ];
+    }
 
-        if ($customRepository !== null && $customRepository !== '') {
-            $repoConfig = json_decode($customRepository, true);
-            if (is_array($repoConfig)) {
-                $composerJsonData['repositories'] = $repoConfig;
-            } else {
-                $composerJsonData['repositories'] = [
-                    ['type' => 'composer', 'url' => $customRepository],
-                ];
-            }
+    /**
+     * @param array<string, mixed> $data
+     */
+    private static function text(array $data, string $key): string
+    {
+        return is_string($data[$key] ?? null) ? $data[$key] : '';
+    }
+
+    /**
+     * @return array<string, mixed>
+     */
+    private function emptyAudit(): array
+    {
+        return [
+            'composer_version' => 'UNKNOWN',
+            'isolated_root' => '',
+            'isolated_home' => '',
+            'isolated_cache' => '',
+            'effective_repository' => null,
+            'prefer_install' => ['requested_flag' => '--prefer-dist', 'configured' => 'dist', 'effective_config' => 'UNKNOWN'],
+            'controlled_environment' => ['set' => [], 'cleared' => [], 'passthrough' => []],
+        ];
+    }
+
+    /**
+     * @param 'PASS'|'FAIL' $status
+     * @param array<string, mixed> $audit
+     * @param array<string, array{status: 'PASS'|'FAIL', message: string, details?: mixed}> $checks
+     * @param list<string> $failures
+     * @param array<string, mixed> $deliveryEvidence
+     * @return array{
+     *     status: 'PASS'|'FAIL',
+     *     package_name: string,
+     *     target_version: string,
+     *     qualified_sha: string,
+     *     installation_mode: string,
+     *     installed_path: string,
+     *     composer_audit: array<string, mixed>,
+     *     delivery_evidence: array<string, mixed>,
+     *     verified_at: string,
+     *     checks: array<string, array{status: 'PASS'|'FAIL', message: string, details?: mixed}>,
+     *     failures: list<string>,
+     * }
+     */
+    private function buildResult(
+        string $status,
+        string $package,
+        string $target,
+        string $sha,
+        string $mode,
+        string $installedPath,
+        array $audit,
+        array $checks,
+        array $failures,
+        array $deliveryEvidence,
+    ): array {
+        return [
+            'status' => $status,
+            'package_name' => $package,
+            'target_version' => $target,
+            'qualified_sha' => $sha,
+            'installation_mode' => $mode,
+            'installed_path' => $installedPath,
+            'composer_audit' => $audit,
+            'delivery_evidence' => $deliveryEvidence,
+            'verified_at' => gmdate('Y-m-d\TH:i:s\Z'),
+            'checks' => $checks,
+            'failures' => $failures,
+        ];
+    }
+
+    /**
+     * @return array{type: ?string, url: ?string, reference: ?string}|null
+     */
+    private function describeReference(mixed $node): ?array
+    {
+        if (! is_array($node)) {
+            return null;
+        }
+        $str = static fn(string $k): ?string => is_string($node[$k] ?? null) && $node[$k] !== '' ? $node[$k] : null;
+        $url = $str('url');
+
+        return ['type' => $str('type'), 'url' => $url === null ? null : ReleaseContract::redactUrl($url), 'reference' => $str('reference')];
+    }
+
+    /**
+     * @param array<string, mixed> $installedPkg
+     */
+    private function resolveInstalledPath(string $root, array $installedPkg, string $package): ?string
+    {
+        $installPath = $installedPkg['install-path'] ?? null;
+        $expected = realpath($root . '/vendor/' . $package);
+        if (! is_string($installPath) || $installPath === '') {
+            return $expected === false ? null : $expected;
+        }
+        $resolved = realpath($root . '/vendor/composer/' . $installPath);
+        $vendor = realpath($root . '/vendor');
+        if ($resolved === false || $vendor === false || ! str_starts_with($resolved, $vendor . '/') || ($expected !== false && $expected !== $resolved)) {
+            return null;
         }
 
+        return $resolved;
+    }
+
+    private function createIsolatedEnvironment(): string
+    {
+        $dir = sys_get_temp_dir() . '/maatify-pav-' . bin2hex(random_bytes(6));
+        foreach ([$dir, $dir . '/home', $dir . '/composer-home', $dir . '/composer-cache'] as $d) {
+            if (! mkdir($d, 0700, true) && ! is_dir($d)) {
+                throw new RuntimeException('Unable to create isolated directory: ' . $d);
+            }
+        }
+        // Explicit, empty global configuration: no inherited global Composer policy.
+        file_put_contents($dir . '/composer-home/config.json', "{}\n");
+
+        return $dir;
+    }
+
+    /**
+     * @param array<string, mixed> $audit
+     * @return array{status: 'PASS'|'FAIL', message: string, details?: array<string, mixed>}
+     */
+    private function runIsolatedComposerInstall(string $root, string $package, string $target, string $channel, array &$audit): array
+    {
         file_put_contents(
             $root . '/composer.json',
-            (string) json_encode($composerJsonData, JSON_PRETTY_PRINT | JSON_UNESCAPED_SLASHES),
+            (string) json_encode($this->buildConsumerManifest($package, $target, $channel), JSON_PRETTY_PRINT | JSON_UNESCAPED_SLASHES),
         );
 
-        // Capture Composer version for audit
-        $versionOut = [];
-        $versionCode = 0;
-        exec('composer --version 2>/dev/null', $versionOut, $versionCode);
-        $composerVersion = trim($versionOut[0] ?? 'UNKNOWN');
+        /** @var array<string, string> $parentEnv */
+        $parentEnv = array_filter(getenv(), 'is_string');
+        $controlled = $this->buildComposerEnvironment($root, $parentEnv);
+        $env = $controlled['env'];
+        $audit['controlled_environment'] = $controlled['evidence'];
 
-        $env = sprintf(
-            'COMPOSER_HOME=%s COMPOSER_CACHE_DIR=%s',
-            escapeshellarg($root . '/composer-home'),
-            escapeshellarg($root . '/composer-cache'),
-        );
+        $version = ProcessRunner::run(['composer', '--version', '--no-ansi'], $root, $env, null, true);
+        $audit['composer_version'] = $version['code'] === 0 ? trim(explode("\n", $version['output'])[0]) : 'UNKNOWN';
 
-        $cmd = sprintf(
-            '%s composer update --working-dir=%s --no-interaction --prefer-dist --no-progress 2>&1',
+        $prefer = ProcessRunner::run(['composer', 'config', '--no-ansi', 'preferred-install'], $root, $env, null, false);
+        $audit['prefer_install'] = [
+            'requested_flag' => '--prefer-dist',
+            'configured' => 'dist',
+            'effective_config' => $prefer['code'] === 0 ? trim($prefer['output']) : 'UNKNOWN',
+        ];
+
+        $run = ProcessRunner::run(
+            ['composer', 'update', '--no-interaction', '--prefer-dist', '--no-progress', '--no-plugins', '--no-scripts', '--no-ansi'],
+            $root,
             $env,
-            escapeshellarg($root),
+            null,
+            true,
         );
 
-        $output = [];
-        $exitCode = 0;
-        exec($cmd, $output, $exitCode);
+        $cleanOutput = array_map([$this, 'redactSensitiveData'], explode("\n", $run['output']));
 
-        // Redact any sensitive credentials from captured output and command
-        $cleanOutput = array_map([$this, 'redactSensitiveData'], $output);
-        $cleanCmd = $this->redactSensitiveData($cmd);
-
-        if ($exitCode !== 0) {
+        if ($run['code'] !== 0) {
             return [
                 'status' => 'FAIL',
-                'message' => sprintf('Isolated Composer resolution failed (code %d): %s', $exitCode, implode("\n", array_slice($cleanOutput, -10))),
-                'details' => ['output' => $cleanOutput, 'command' => $cleanCmd, 'composer_version' => $composerVersion],
+                'message' => sprintf('Isolated Composer resolution failed (code %d): %s', $run['code'], implode("\n", array_slice($cleanOutput, -10))),
+                'details' => ['output' => $cleanOutput],
             ];
         }
 
         return [
             'status' => 'PASS',
             'message' => sprintf('Successfully resolved and installed "%s:%s" in isolated environment.', $package, $target),
-            'details' => ['output' => $cleanOutput, 'command' => $cleanCmd, 'composer_version' => $composerVersion],
+            'details' => ['output' => $cleanOutput],
         ];
-    }
-
-    private function removeDirectory(string $dir): void
-    {
-        if (! is_dir($dir)) {
-            return;
-        }
-
-        $items = scandir($dir);
-        if ($items === false) {
-            return;
-        }
-
-        foreach ($items as $item) {
-            if ($item === '.' || $item === '..') {
-                continue;
-            }
-            $path = $dir . '/' . $item;
-            if (is_dir($path)) {
-                $this->removeDirectory($path);
-            } else {
-                unlink($path);
-            }
-        }
-
-        rmdir($dir);
     }
 }

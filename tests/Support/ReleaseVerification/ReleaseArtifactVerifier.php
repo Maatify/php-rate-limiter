@@ -4,11 +4,7 @@ declare(strict_types=1);
 
 namespace Maatify\RateLimiter\Tests\Support\ReleaseVerification;
 
-use FilesystemIterator;
-use RecursiveDirectoryIterator;
-use RecursiveIteratorIterator;
 use RuntimeException;
-use SplFileInfo;
 
 /**
  * Generic, target-agnostic Release Artifact Verifier.
@@ -17,39 +13,25 @@ use SplFileInfo;
  * - CI_WORKFLOW_STANDARD.md §2.5
  * - COMPOSER_PACKAGE_STANDARD.md §26 & §26.1
  * - LIBRARY_PRESENTATION_STANDARD.md §8.1.2, §14 & §23
+ *
+ * Evidence boundary: qualification is for the exact Git candidate commit/tree. The
+ * checked-out worktree must be clean and at the candidate, but every content check
+ * reads an export of the candidate tree's Git objects (a "snapshot"), never the
+ * mutable filesystem, and distribution is proven from the actual `git archive` of the
+ * candidate. Source-only governance is proven from immutable Git commits.
  */
 final class ReleaseArtifactVerifier
 {
     /** @var list<string> */
-    public const array REQUIRED_RELEASE_FACING_FILES = [
-        'src',
-        'composer.json',
-        'README.md',
-        'LICENSE',
-        'CHANGELOG.md',
-        'SECURITY.md',
-        'RATE_LIMITER_PACKAGE_REFERENCE.md',
-        'docs/guides/USAGE_GUIDE.md',
-        'examples',
-        'llms.txt',
-    ];
+    public const array REQUIRED_RELEASE_FACING_FILES = ReleaseContract::REQUIRED_PATHS;
 
     /** @var list<string> */
-    public const array REQUIRED_SEMANTIC_CLAIMS = [
-        'readme.release_artifact_identity',
-        'readme.exact_install_target',
-        'readme.pre_publication_truth',
-        'changelog.target_allocation',
-        'changelog.undated_target_preparation',
-        'changelog.no_unallocated_represented_changes',
-        'security.lifecycle_support_semantics',
-        'package_reference.consumer_identity_consistency',
-    ];
+    public const array REQUIRED_SEMANTIC_CLAIMS = ReleaseContract::REQUIRED_SEMANTIC_CLAIMS;
 
-    public const string EXPECTED_PACKAGE_NAME = 'maatify/php-rate-limiter';
-    public const string EXPECTED_LICENSE = 'proprietary';
-    public const string SEMANTIC_REVIEW_SCHEMA_VERSION = '1.0.0';
-    public const string QUALIFICATION_EVIDENCE_SCHEMA_VERSION = '1.0.0';
+    public const string EXPECTED_PACKAGE_NAME = ReleaseContract::PACKAGE_NAME;
+    public const string EXPECTED_LICENSE = ReleaseContract::LICENSE;
+    public const string SEMANTIC_REVIEW_SCHEMA_VERSION = ReleaseContract::SEMANTIC_REVIEW_SCHEMA_VERSION;
+    public const string QUALIFICATION_EVIDENCE_SCHEMA_VERSION = ReleaseContract::EVIDENCE_SCHEMA_VERSION;
 
     /**
      * Executes qualifying Release Artifact Verification.
@@ -59,7 +41,9 @@ final class ReleaseArtifactVerifier
      * - Candidate SHA matching checked-out HEAD
      * - Clean Git worktree and index
      * - Valid canonical semantic review record with all required claims
-     * - Deterministic package manifest, distribution safety, and artifact checks
+     * - Checks run against the candidate tree export; distribution proven from `git archive`
+     * - Source-only governance proven from immutable Decision commits
+     * - Emitted qualification evidence satisfies the canonical schema
      *
      * @param array{
      *     target: string,
@@ -88,6 +72,7 @@ final class ReleaseArtifactVerifier
      */
     public function verify(array $options): array
     {
+        $startedAt = gmdate('Y-m-d\TH:i:s\Z');
         $target = trim($options['target']);
         $candidateSha = trim($options['candidate_sha']);
         $repoPath = realpath($options['repo_path'] ?? (string) getcwd());
@@ -99,103 +84,77 @@ final class ReleaseArtifactVerifier
         $deliveryPolicy = strtolower(trim($options['delivery_policy'] ?? 'dist'));
         $isQualifying = $options['is_qualifying'] ?? true;
 
-        $checks = [];
-        $failures = [];
-        $candidateTreeSha = '';
-
+        $ledger = new CheckLedger();
         // 1. Target Version Syntax
-        $syntaxCheck = $this->evaluateTargetVersionSyntax($target);
-        $checks['target_version_syntax'] = $syntaxCheck;
-        if ($syntaxCheck['status'] === 'FAIL') {
-            $failures[] = $syntaxCheck['message'];
-        }
+        $ledger->record('target_version_syntax', $this->evaluateTargetVersionSyntax($target));
 
         // 2. Candidate SHA, Git Identity, and Clean Tree
         $gitCheck = $this->evaluateCandidateShaAndGit($repoPath, $candidateSha);
-        $checks['candidate_sha_and_git'] = $gitCheck;
-        $candidateTreeSha = '';
-        if ($gitCheck['status'] === 'FAIL') {
-            $failures[] = $gitCheck['message'];
-        } elseif (isset($gitCheck['details'])) {
-            $candidateTreeSha = $gitCheck['details']['candidate_tree_sha'];
-        }
+        $ledger->record('candidate_sha_and_git', $gitCheck);
+        $candidateTreeSha = $gitCheck['details']['candidate_tree_sha'] ?? '';
 
-        // 3. Package Identity and Composer Manifest
-        $manifestCheck = $this->evaluatePackageManifest($repoPath);
-        $checks['package_identity_and_manifest'] = $manifestCheck;
-        if ($manifestCheck['status'] === 'FAIL') {
-            $failures[] = $manifestCheck['message'];
-        }
-
-        // 4. Required Release-Facing Files
-        $filesCheck = $this->evaluateRequiredFiles($repoPath);
-        $checks['required_files'] = $filesCheck;
-        if ($filesCheck['status'] === 'FAIL') {
-            $failures[] = $filesCheck['message'];
-        }
-
-        // 5. Distribution Safety and Forbidden Artifacts
-        $safetyCheck = $this->evaluateDistributionSafety($repoPath);
-        $checks['distribution_safety'] = $safetyCheck;
-        if ($safetyCheck['status'] === 'FAIL') {
-            $failures[] = $safetyCheck['message'];
-        }
-
-        // 6. Candidate Git Archive Export Verification
-        if ($gitCheck['status'] === 'PASS') {
-            $archiveCheck = $this->evaluateCandidateArchiveExport($repoPath, $candidateSha);
-            $checks['candidate_archive_export'] = $archiveCheck;
-            if ($archiveCheck['status'] === 'FAIL') {
-                $failures[] = $archiveCheck['message'];
+        // 3. Candidate tree snapshot (immutable Git objects, not the mutable worktree)
+        $snapshot = null;
+        $snapshotDir = null;
+        $archiveDetails = [];
+        try {
+            if ($gitCheck['status'] === 'PASS') {
+                $snapshotDir = sys_get_temp_dir() . '/maatify-rav-tree-' . bin2hex(random_bytes(6));
+                mkdir($snapshotDir, 0777, true);
+                try {
+                    $snapshot = (new GitRepository($repoPath))->exportTree($candidateSha, $snapshotDir);
+                    $unsupported = array_filter($snapshot['unsupported'], static fn(string $p): bool => self::isRequiredPath($p));
+                    if ($unsupported !== []) {
+                        $ledger->record('candidate_tree_snapshot', [
+                            'status' => 'FAIL',
+                            'message' => 'Candidate tree contains symlink/submodule entries inside required release content: ' . implode(', ', $unsupported) . '.',
+                        ]);
+                        $snapshot = null;
+                    }
+                } catch (RuntimeException $e) {
+                    $ledger->record('candidate_tree_snapshot', ['status' => 'FAIL', 'message' => 'Unable to export candidate tree: ' . $e->getMessage()]);
+                    $snapshot = null;
+                }
             }
-        }
 
-        // 7. Canonical Semantic Review Evidence Boundary
-        $semanticReviewResult = $this->evaluateSemanticReviewEvidence($semanticReviewFile, $target, $candidateSha);
-        $checks['semantic_review'] = $semanticReviewResult;
-        if ($semanticReviewResult['status'] === 'FAIL') {
-            $failures[] = $semanticReviewResult['message'];
-        }
+            $contentRoot = $snapshot !== null ? $snapshotDir : null;
+            $noUnallocatedRepresented = false;
 
-        // Extract confirmed semantic claims (if semantic review succeeded)
-        $semanticDetails = $semanticReviewResult['details'] ?? [];
-        $claims = isset($semanticDetails['claims']) && is_array($semanticDetails['claims'])
-            ? $semanticDetails['claims']
-            : [];
-        $noUnallocatedRepresented = ($claims['changelog.no_unallocated_represented_changes'] ?? null) === 'CONFIRMED';
+            // 4. Canonical Semantic Review Evidence Boundary (independent of the tree)
+            $semanticReviewResult = $this->evaluateSemanticReviewEvidence($semanticReviewFile, $target, $candidateSha);
+            $ledger->record('semantic_review', $semanticReviewResult);
+            $semanticDetails = $semanticReviewResult['details'] ?? [];
+            $claims = isset($semanticDetails['claims']) && is_array($semanticDetails['claims']) ? $semanticDetails['claims'] : [];
+            $noUnallocatedRepresented = ($claims['changelog.no_unallocated_represented_changes'] ?? null) === 'CONFIRMED';
 
-        // 8. README Release Artifact Identity
-        $readmeCheck = $this->evaluateReadmeIdentity($repoPath, $target);
-        $checks['readme_artifact_identity'] = $readmeCheck;
-        if ($readmeCheck['status'] === 'FAIL') {
-            $failures[] = $readmeCheck['message'];
-        }
+            if ($contentRoot !== null) {
+                $ledger->record('package_identity_and_manifest', $this->evaluatePackageManifest($contentRoot));
+                $ledger->record('required_files', $this->evaluateRequiredFiles($contentRoot));
+                $ledger->record('distribution_safety', $this->evaluateDistributionSafety($contentRoot));
 
-        // 9. CHANGELOG Target Allocation and Boundaries
-        $changelogCheck = $this->evaluateChangelogAllocation($repoPath, $target, $noUnallocatedRepresented);
-        $checks['changelog_target_allocation'] = $changelogCheck;
-        if ($changelogCheck['status'] === 'FAIL') {
-            $failures[] = $changelogCheck['message'];
-        }
+                $archiveCheck = $this->evaluateCandidateArchiveExport($repoPath, $candidateSha, $contentRoot);
+                $ledger->record('candidate_archive_export', $archiveCheck);
+                $archiveDetails = is_array($archiveCheck['details'] ?? null) ? $archiveCheck['details'] : [];
 
-        // 10. SECURITY Pre-Release Lifecycle Semantics
-        $securityCheck = $this->evaluateSecurityLifecycle($repoPath, $target);
-        $checks['security_lifecycle'] = $securityCheck;
-        if ($securityCheck['status'] === 'FAIL') {
-            $failures[] = $securityCheck['message'];
-        }
+                $ledger->record('readme_artifact_identity', $this->evaluateReadmeIdentity($contentRoot, $target));
+                $ledger->record('changelog_target_allocation', $this->evaluateChangelogAllocation($contentRoot, $target, $noUnallocatedRepresented));
+                $ledger->record('security_lifecycle', $this->evaluateSecurityLifecycle($contentRoot, $target));
+            }
 
-        // 11. Delivery Policy & Source-Only Qualification Governance
-        $sourceOnlyOptions = $deliveryPolicy === 'source-only' ? [
-            'decision_id' => $options['source_only_decision_id'] ?? null,
-            'decision_file' => $options['source_only_decision_file'] ?? null,
-            'commit_ref' => $options['source_only_commit'] ?? null,
-        ] : null;
+            // 5. Delivery Policy & Source-Only Qualification Governance (immutable Git evidence)
+            $sourceOnlyOptions = $deliveryPolicy === 'source-only' ? [
+                'decision_id' => $options['source_only_decision_id'] ?? null,
+                'decision_file' => $options['source_only_decision_file'] ?? null,
+                'commit_ref' => $options['source_only_commit'] ?? null,
+            ] : null;
+            $policyCheck = $this->evaluateSourceOnlyPolicy($sourceOnlyOptions, $repoPath, $target, $candidateSha, $deliveryPolicy, $startedAt);
+            $ledger->record('delivery_policy', $policyCheck);
 
-        $policyCheck = $this->evaluateSourceOnlyPolicy($sourceOnlyOptions, $repoPath, $target, $candidateSha, $deliveryPolicy);
-        $checks['delivery_policy'] = $policyCheck;
-        if ($policyCheck['status'] === 'FAIL') {
-            $failures[] = $policyCheck['message'];
+            $contentManifest = $contentRoot !== null ? ReleaseContract::buildManifest($contentRoot) : [];
+        } finally {
+            if ($snapshotDir !== null) {
+                ReleaseContract::removeTree($snapshotDir);
+            }
         }
 
         // Non-qualifying inspection mode handling
@@ -208,12 +167,44 @@ final class ReleaseArtifactVerifier
                 'candidate_tree_sha' => $candidateTreeSha,
                 'delivery_policy' => $deliveryPolicy,
                 'verified_at' => gmdate('Y-m-d\TH:i:s\Z'),
-                'checks' => $checks,
-                'failures' => $failures,
+                'checks' => $ledger->checks(),
+                'failures' => $ledger->failures(),
             ];
         }
 
-        $overallStatus = ($failures === []) ? 'PASS' : 'FAIL';
+        $qualificationEvidence = null;
+        if ($ledger->failures() === []) {
+            $policyDetails = $policyCheck['details'] ?? null;
+            $qualificationEvidence = [
+                'schema_version' => ReleaseContract::EVIDENCE_SCHEMA_VERSION,
+                'status' => 'PASS',
+                'package_name' => self::EXPECTED_PACKAGE_NAME,
+                'target_version' => $target,
+                'candidate_sha' => $candidateSha,
+                'candidate_tree_sha' => $candidateTreeSha,
+                'qualification_started_at' => $startedAt,
+                'qualified_at' => gmdate('Y-m-d\TH:i:s\Z'),
+                'delivery_policy' => $deliveryPolicy,
+                'approved_distribution_channel' => $deliveryPolicy === 'source-only' && is_array($policyDetails) && is_string($policyDetails['approved_distribution_channel'] ?? null)
+                    ? $policyDetails['approved_distribution_channel']
+                    : ReleaseContract::DEFAULT_DISTRIBUTION_CHANNEL,
+                'semantic_review' => $semanticDetails,
+                'content_manifest' => $contentManifest,
+                'distribution_evidence' => $archiveDetails,
+                'source_only_decision' => is_array($policyDetails) ? $policyDetails : null,
+            ];
+
+            $schemaErrors = QualificationEvidenceSchema::validate($qualificationEvidence);
+            $ledger->record('qualification_evidence_schema', $schemaErrors === [] ? [
+                'status' => 'PASS',
+                'message' => 'Qualification evidence satisfies the canonical schema.',
+            ] : [
+                'status' => 'FAIL',
+                'message' => 'Qualification evidence violates the canonical schema: ' . implode('; ', $schemaErrors) . '.',
+            ]);
+        }
+
+        $overallStatus = ($ledger->failures() === []) ? 'PASS' : 'FAIL';
         $result = [
             'status' => $overallStatus,
             'package_name' => self::EXPECTED_PACKAGE_NAME,
@@ -222,27 +213,11 @@ final class ReleaseArtifactVerifier
             'candidate_tree_sha' => $candidateTreeSha,
             'delivery_policy' => $deliveryPolicy,
             'verified_at' => gmdate('Y-m-d\TH:i:s\Z'),
-            'checks' => $checks,
-            'failures' => $failures,
+            'checks' => $ledger->checks(),
+            'failures' => $ledger->failures(),
         ];
 
-        // If qualifying RAV passed, emit authoritative qualification evidence
-        if ($overallStatus === 'PASS') {
-            $contentManifest = $this->buildContentManifest($repoPath);
-            $qualificationEvidence = [
-                'schema_version' => self::QUALIFICATION_EVIDENCE_SCHEMA_VERSION,
-                'package_name' => self::EXPECTED_PACKAGE_NAME,
-                'target_version' => $target,
-                'candidate_sha' => $candidateSha,
-                'candidate_tree_sha' => $candidateTreeSha,
-                'delivery_policy' => $deliveryPolicy,
-                'qualified_at' => gmdate('Y-m-d\TH:i:s\Z'),
-                'content_manifest' => $contentManifest,
-                'semantic_review' => $semanticDetails,
-                'source_only_decision' => $policyCheck['details'] ?? null,
-                'status' => 'PASS',
-            ];
-
+        if ($overallStatus === 'PASS' && $qualificationEvidence !== null) {
             $result['qualification_evidence'] = $qualificationEvidence;
 
             if (isset($options['output_evidence'])) {
@@ -254,6 +229,17 @@ final class ReleaseArtifactVerifier
         }
 
         return $result;
+    }
+
+    private static function isRequiredPath(string $path): bool
+    {
+        foreach (ReleaseContract::REQUIRED_PATHS as $required) {
+            if ($path === $required || str_starts_with($path, $required . '/')) {
+                return true;
+            }
+        }
+
+        return false;
     }
 
     /**
@@ -438,28 +424,23 @@ final class ReleaseArtifactVerifier
     }
 
     /**
+     * Scans the given tree for prohibited artifacts and invalid export exclusions.
+     *
      * @return array{status: 'PASS'|'FAIL', message: string, details?: list<string>}
      */
     public function evaluateDistributionSafety(string $repoPath): array
     {
         $forbiddenFound = [];
-        foreach (['.env', '.env.local', 'composer.lock'] as $forbidden) {
-            if (file_exists($repoPath . '/' . $forbidden)) {
-                $forbiddenFound[] = $forbidden;
-            }
-        }
-
-        $keysFound = glob($repoPath . '/*.{pem,key}', GLOB_BRACE);
-        if (is_array($keysFound) && $keysFound !== []) {
-            foreach ($keysFound as $k) {
-                $forbiddenFound[] = basename($k);
+        foreach (ReleaseContract::listFiles($repoPath) as $file) {
+            if (ReleaseContract::isForbiddenPath($file)) {
+                $forbiddenFound[] = $file;
             }
         }
 
         if (file_exists($repoPath . '/.gitattributes')) {
             $gitAttr = (string) file_get_contents($repoPath . '/.gitattributes');
             foreach (self::REQUIRED_RELEASE_FACING_FILES as $rf) {
-                if (preg_match('/^' . preg_quote($rf, '/') . '\s+.*export-ignore/m', $gitAttr)) {
+                if (preg_match('/^' . preg_quote($rf, '/') . '\/?\s+.*export-ignore/m', $gitAttr)) {
                     $forbiddenFound[] = sprintf('Required file "%s" is excluded by .gitattributes export-ignore', $rf);
                 }
             }
@@ -480,42 +461,127 @@ final class ReleaseArtifactVerifier
     }
 
     /**
-     * @return array{status: 'PASS'|'FAIL', message: string, details?: mixed}
+     * Proves actual candidate distribution content.
+     *
+     * Generates the real `git archive` of the candidate, derives the tracked required
+     * content from the candidate tree, and requires every required FILE (including nested
+     * files) to be present in the archive with identical content. Also evaluates the
+     * effective impact of `.gitattributes` export-ignore and `composer.json` archive.exclude
+     * and rejects forbidden entries entering the archive.
+     *
+     * @param string|null $treeDir Pre-exported candidate tree; exported on demand when null
+     * @return array{status: 'PASS'|'FAIL', message: string, details?: array<string, mixed>}
      */
-    public function evaluateCandidateArchiveExport(string $repoPath, string $candidateSha): array
+    public function evaluateCandidateArchiveExport(string $repoPath, string $candidateSha, ?string $treeDir = null): array
     {
-        $cmd = sprintf('git -C %s archive --format=tar %s 2>&1', escapeshellarg($repoPath), escapeshellarg($candidateSha));
-        $output = [];
-        $exitCode = 0;
-        exec($cmd . ' | tar -tf - 2>/dev/null', $output, $exitCode);
+        $work = sys_get_temp_dir() . '/maatify-rav-archive-' . bin2hex(random_bytes(6));
+        mkdir($work . '/extract', 0777, true);
 
-        if ($exitCode !== 0 || $output === []) {
-            return [
-                'status' => 'FAIL',
-                'message' => 'Unable to generate or inspect git archive for candidate commit ' . $candidateSha,
-            ];
-        }
-
-        $archiveEntries = array_map(static fn(string $f): string => rtrim($f, '/'), $output);
-        $missing = [];
-        foreach (self::REQUIRED_RELEASE_FACING_FILES as $rf) {
-            if (! in_array($rf, $archiveEntries, true)) {
-                $missing[] = $rf;
+        try {
+            $git = new GitRepository($repoPath);
+            if ($treeDir === null) {
+                $treeDir = $work . '/tree';
+                mkdir($treeDir, 0777, true);
+                $git->exportTree($candidateSha, $treeDir);
             }
-        }
 
-        if ($missing !== []) {
+            $tar = $work . '/candidate.tar';
+            if ($git->run(['archive', '--format=tar', $candidateSha], $tar)['code'] !== 0) {
+                return ['status' => 'FAIL', 'message' => 'Unable to generate git archive for candidate commit ' . $candidateSha];
+            }
+            $listing = ProcessRunner::run(['tar', '-tf', $tar]);
+            $extract = ProcessRunner::run(['tar', '-xf', $tar, '-C', $work . '/extract']);
+            if ($listing['code'] !== 0 || $extract['code'] !== 0) {
+                return ['status' => 'FAIL', 'message' => 'Unable to inspect git archive for candidate commit ' . $candidateSha];
+            }
+
+            $archiveFiles = [];
+            foreach (explode("\n", $listing['output']) as $entry) {
+                $entry = preg_replace('#^\./#', '', trim($entry)) ?? '';
+                if ($entry !== '' && ! str_ends_with($entry, '/')) {
+                    $archiveFiles[$entry] = true;
+                }
+            }
+
+            $requiredFiles = array_values(array_filter(
+                ReleaseContract::listFiles($treeDir),
+                static fn(string $p): bool => self::isRequiredPath($p),
+            ));
+            if ($requiredFiles === []) {
+                return ['status' => 'FAIL', 'message' => 'Candidate tree contains no required release content.'];
+            }
+
+            $missing = [];
+            $differing = [];
+            foreach ($requiredFiles as $file) {
+                if (! isset($archiveFiles[$file])) {
+                    $missing[] = $file;
+                } elseif (hash_file('sha256', $treeDir . '/' . $file) !== hash_file('sha256', $work . '/extract/' . $file)) {
+                    $differing[] = $file;
+                }
+            }
+
+            $forbidden = array_values(array_filter(
+                array_keys($archiveFiles),
+                static fn(string $p): bool => ReleaseContract::isForbiddenPath($p),
+            ));
+
+            $attributes = is_file($treeDir . '/.gitattributes') ? (string) file_get_contents($treeDir . '/.gitattributes') : '';
+            $hasExportIgnore = str_contains($attributes, 'export-ignore');
+
+            $archiveExclude = [];
+            $composerRaw = is_file($treeDir . '/composer.json') ? json_decode((string) file_get_contents($treeDir . '/composer.json'), true) : null;
+            if (is_array($composerRaw) && is_array($composerRaw['archive'] ?? null) && is_array($composerRaw['archive']['exclude'] ?? null)) {
+                $archiveExclude = array_values(array_filter($composerRaw['archive']['exclude'], 'is_string'));
+            }
+            $excludedByComposer = [];
+            if ($archiveExclude !== []) {
+                $matcher = new ArchiveExcludeMatcher($archiveExclude);
+                $excludedByComposer = array_values(array_filter($requiredFiles, static fn(string $p): bool => $matcher->isExcluded($p)));
+            }
+
+            $problems = [];
+            if ($missing !== []) {
+                $problems[] = sprintf('Candidate git archive export omits required release content file(s): %s', implode(', ', $missing));
+            }
+            if ($differing !== []) {
+                $problems[] = sprintf('Candidate git archive content differs from the candidate tree for: %s', implode(', ', $differing));
+            }
+            if ($excludedByComposer !== []) {
+                $problems[] = sprintf('composer.json archive.exclude removes required file(s): %s', implode(', ', $excludedByComposer));
+            }
+            if ($forbidden !== []) {
+                $problems[] = sprintf('Candidate git archive contains forbidden entries: %s', implode(', ', $forbidden));
+            }
+            if ($problems !== []) {
+                return [
+                    'status' => 'FAIL',
+                    'message' => implode('. ', $problems) . '.',
+                    'details' => ['missing' => $missing, 'differing' => $differing, 'composer_archive_exclude' => $excludedByComposer, 'forbidden' => $forbidden],
+                ];
+            }
+
             return [
-                'status' => 'FAIL',
-                'message' => sprintf('Candidate git archive export excludes required release-facing file(s): %s.', implode(', ', $missing)),
-                'details' => ['missing' => $missing],
+                'status' => 'PASS',
+                'message' => sprintf('Candidate git archive verified; all %d required content files are preserved with identical content and no forbidden entries.', count($requiredFiles)),
+                'details' => [
+                    'archive_format' => 'git-archive',
+                    'archive_verified' => true,
+                    'archive_entry_count' => count($archiveFiles),
+                    'required_files_in_archive' => count($requiredFiles),
+                    'required_files_missing' => [],
+                    'archive_content_matches_tree' => true,
+                    'forbidden_entries' => [],
+                    'gitattributes_export_ignore' => ['status' => $hasExportIgnore ? 'APPLIED_NO_REQUIRED_IMPACT' : 'NOT_APPLICABLE'],
+                    'composer_archive_exclude' => [
+                        'status' => $archiveExclude === [] ? 'NOT_APPLICABLE' : 'APPLIED_NO_REQUIRED_IMPACT',
+                        'patterns' => $archiveExclude,
+                    ],
+                ],
             ];
+        } finally {
+            ReleaseContract::removeTree($work);
         }
-
-        return [
-            'status' => 'PASS',
-            'message' => 'Candidate git archive export verified; all required release-facing files are preserved in distribution.',
-        ];
     }
 
     /**
@@ -774,12 +840,15 @@ final class ReleaseArtifactVerifier
     }
 
     /**
+     * Verifies delivery-policy governance. For source-only delivery, the Decision,
+     * Index and Owner-approval state are proven from the immutable Decision commit.
+     *
      * @param array{
      *     decision_id?: string|null,
      *     decision_file?: string|null,
      *     commit_ref?: string|null,
      * }|null $sourceOnlyOptions
-     * @return array{status: 'PASS'|'FAIL', message: string, details?: mixed}
+     * @return array{status: 'PASS'|'FAIL', message: string, details?: array<string, mixed>|null}
      */
     public function evaluateSourceOnlyPolicy(
         ?array $sourceOnlyOptions,
@@ -787,7 +856,15 @@ final class ReleaseArtifactVerifier
         string $target,
         string $candidateSha,
         string $deliveryPolicy,
+        string $qualificationStartedAt = '',
     ): array {
+        if (! in_array($deliveryPolicy, ReleaseContract::DELIVERY_POLICIES, true)) {
+            return [
+                'status' => 'FAIL',
+                'message' => sprintf('Unknown delivery policy "%s" (allowed: %s).', $deliveryPolicy, implode(', ', ReleaseContract::DELIVERY_POLICIES)),
+            ];
+        }
+
         if ($deliveryPolicy !== 'source-only') {
             return [
                 'status' => 'PASS',
@@ -803,73 +880,17 @@ final class ReleaseArtifactVerifier
             ];
         }
 
-        $decisionId = trim($sourceOnlyOptions['decision_id'] ?? '');
-        $decisionFilePath = trim($sourceOnlyOptions['decision_file'] ?? '');
-        $commitRef = trim($sourceOnlyOptions['commit_ref'] ?? '');
+        $result = (new SourceOnlyDecisionVerifier())->qualify(
+            new GitRepository($repoPath),
+            (string) ($sourceOnlyOptions['decision_id'] ?? ''),
+            (string) ($sourceOnlyOptions['decision_file'] ?? ''),
+            (string) ($sourceOnlyOptions['commit_ref'] ?? ''),
+            $target,
+            $candidateSha,
+            $qualificationStartedAt !== '' ? $qualificationStartedAt : gmdate('Y-m-d\TH:i:s\Z'),
+        );
 
-        if ($decisionId === '' || $decisionFilePath === '' || $commitRef === '') {
-            return [
-                'status' => 'FAIL',
-                'message' => 'Source-only delivery policy requires non-empty decision_id, decision_file, and commit_ref.',
-            ];
-        }
-
-        $resolvedFile = realpath($repoPath . '/' . ltrim($decisionFilePath, '/'));
-        if ($resolvedFile === false || ! file_exists($resolvedFile)) {
-            return [
-                'status' => 'FAIL',
-                'message' => sprintf('Source-only Decision file "%s" does not exist in repository.', $decisionFilePath),
-            ];
-        }
-
-        // Verify Decision Index record
-        $indexPath = $repoPath . '/docs/decisions/DECISIONS_INDEX.md';
-        if (! file_exists($indexPath)) {
-            return [
-                'status' => 'FAIL',
-                'message' => 'DECISIONS_INDEX.md does not exist in repository.',
-            ];
-        }
-
-        $indexContent = (string) file_get_contents($indexPath);
-        // Must be indexed with status ACTIVE at qualification time
-        $indexedActive = (bool) preg_match('/\|\s*\[' . preg_quote($decisionId, '/') . '\][^\n]+\|\s*ACTIVE\s*\|/i', $indexContent);
-        if (! $indexedActive) {
-            return [
-                'status' => 'FAIL',
-                'message' => sprintf('Decision "%s" is not indexed with status ACTIVE in DECISIONS_INDEX.md.', $decisionId),
-            ];
-        }
-
-        // Verify Decision Record file contents
-        $content = (string) file_get_contents($resolvedFile);
-        $hasActiveStatus = (bool) preg_match('/(?:Status:\s*ACTIVE|##\s*Status\s*\n\s*ACTIVE)/i', $content);
-        $mentionsPackage = str_contains($content, self::EXPECTED_PACKAGE_NAME);
-        $mentionsSourceOnly = str_contains($content, 'source-only') || str_contains($content, 'delivery mode = source-only');
-
-        if (! $hasActiveStatus || ! $mentionsPackage || ! $mentionsSourceOnly) {
-            return [
-                'status' => 'FAIL',
-                'message' => sprintf('Decision file "%s" is not a valid ACTIVE source-only Decision Record for "%s".', $decisionFilePath, self::EXPECTED_PACKAGE_NAME),
-            ];
-        }
-
-        $evidence = [
-            'decision_id' => $decisionId,
-            'decision_file' => str_replace('\\', '/', ltrim($decisionFilePath, '/')),
-            'commit_ref' => $commitRef,
-            'status_at_qualification' => 'ACTIVE',
-            'package_name' => self::EXPECTED_PACKAGE_NAME,
-            'target_version' => $target,
-            'candidate_sha' => $candidateSha,
-            'qualification_time' => gmdate('Y-m-d\TH:i:s\Z'),
-        ];
-
-        return [
-            'status' => 'PASS',
-            'message' => sprintf('Source-only delivery policy authorized under ACTIVE Decision "%s".', $decisionId),
-            'details' => $evidence,
-        ];
+        return $result;
     }
 
     /**
@@ -879,16 +900,7 @@ final class ReleaseArtifactVerifier
      */
     public function buildContentManifest(string $repoPath): array
     {
-        $manifest = [];
-        foreach (self::REQUIRED_RELEASE_FACING_FILES as $file) {
-            $fullPath = $repoPath . '/' . $file;
-            if (file_exists($fullPath)) {
-                $manifest[$file] = $this->hashPath($fullPath);
-            }
-        }
-        ksort($manifest);
-
-        return $manifest;
+        return ReleaseContract::buildManifest($repoPath);
     }
 
     /**
@@ -896,39 +908,6 @@ final class ReleaseArtifactVerifier
      */
     public function hashPath(string $path): string
     {
-        if (is_file($path)) {
-            $hash = hash_file('sha256', $path);
-            if ($hash === false) {
-                throw new RuntimeException('Failed to hash file: ' . $path);
-            }
-
-            return $hash;
-        }
-
-        if (is_dir($path)) {
-            $files = [];
-            $iterator = new RecursiveIteratorIterator(
-                new RecursiveDirectoryIterator($path, FilesystemIterator::SKIP_DOTS),
-            );
-            /** @var SplFileInfo $fileInfo */
-            foreach ($iterator as $fileInfo) {
-                if ($fileInfo->isFile()) {
-                    $subPath = str_replace('\\', '/', substr($fileInfo->getPathname(), strlen($path) + 1));
-                    $fileHash = hash_file('sha256', $fileInfo->getPathname());
-                    if ($fileHash !== false) {
-                        $files[$subPath] = $fileHash;
-                    }
-                }
-            }
-            ksort($files);
-            $combined = '';
-            foreach ($files as $p => $h) {
-                $combined .= $p . ':' . $h . "\n";
-            }
-
-            return hash('sha256', $combined);
-        }
-
-        throw new RuntimeException('Path is neither file nor directory: ' . $path);
+        return ReleaseContract::hashPath($path);
     }
 }

@@ -44,7 +44,8 @@ Options:
   --delivery-policy=<mode>        Intended delivery policy (dist or source-only, default: dist)
   --source-only-decision-id=<id>  Decision ID when delivery policy is source-only (e.g. DEC-019)
   --source-only-decision-file=<f> Path to source-only Decision Record file
-  --source-only-commit=<sha>      Immutable commit reference of source-only Decision Record
+  --source-only-commit=<sha>      Immutable 40-hex commit of the source-only Decision Record (verified from Git
+                                  objects; a string is never trusted)
   --output-evidence=<path>        Path to write machine-readable RAV qualification evidence JSON
   --output-json=<path>            Path to write verification report JSON
   --format=<summary|json>         Console output format (default: summary)
