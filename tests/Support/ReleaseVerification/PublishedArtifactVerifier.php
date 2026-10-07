@@ -309,9 +309,11 @@ final class PublishedArtifactVerifier
         $written = $writer->write($reportPath, $result, $repoPath);
 
         $failure = null;
+        $persistedPath = null;
         if ($written['status'] === 'FAIL') {
             $failure = $written['message'];
         } else {
+            $persistedPath = $written['path'];
             $decoded = json_decode((string) file_get_contents($written['path']), true);
             if (! is_array($decoded) || $decoded !== json_decode((string) json_encode($result), true)) {
                 unlink($written['path']);
@@ -327,7 +329,9 @@ final class PublishedArtifactVerifier
             return $result;
         }
 
-        $result['report_path'] = $written['path'];
+        if ($persistedPath !== null) {
+            $result['report_path'] = $persistedPath;
+        }
 
         return $result;
     }
