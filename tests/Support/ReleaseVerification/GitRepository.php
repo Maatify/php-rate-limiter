@@ -123,34 +123,37 @@ final class GitRepository
             $blobs[$entryPath] = $meta[2];
         }
 
+        $pipes = [];
         $process = proc_open(
             ['git', '-C', $this->path, 'cat-file', '--batch'],
             [0 => ['pipe', 'r'], 1 => ['pipe', 'w'], 2 => ['file', '/dev/null', 'w']],
             $pipes,
         );
-        if (! is_resource($process)) {
+        $stdin = is_array($pipes) ? ($pipes[0] ?? null) : null;
+        $stdout = is_array($pipes) ? ($pipes[1] ?? null) : null;
+        if (! is_resource($process) || ! is_resource($stdin) || ! is_resource($stdout)) {
             throw new RuntimeException('Unable to start git cat-file.');
         }
 
         try {
             foreach ($blobs as $entryPath => $oid) {
-                fwrite($pipes[0], $oid . "\n");
-                fflush($pipes[0]);
-                $header = fgets($pipes[1]);
+                fwrite($stdin, $oid . "\n");
+                fflush($stdin);
+                $header = fgets($stdout);
                 if (! is_string($header) || ! (bool) preg_match('/^[0-9a-f]{40} blob (\d+)$/', rtrim($header), $m)) {
                     throw new RuntimeException('Unexpected git cat-file response for ' . $entryPath);
                 }
                 $remaining = (int) $m[1];
                 $content = '';
                 while ($remaining > 0) {
-                    $chunk = fread($pipes[1], min($remaining, 65536));
+                    $chunk = fread($stdout, min($remaining, 65536));
                     if ($chunk === false || $chunk === '') {
                         throw new RuntimeException('Truncated git object ' . $oid);
                     }
                     $content .= $chunk;
                     $remaining -= strlen($chunk);
                 }
-                fgets($pipes[1]);
+                fgets($stdout);
 
                 $target = $dir . '/' . $entryPath;
                 $targetDir = dirname($target);
@@ -160,8 +163,8 @@ final class GitRepository
                 file_put_contents($target, $content);
             }
         } finally {
-            fclose($pipes[0]);
-            fclose($pipes[1]);
+            fclose($stdin);
+            fclose($stdout);
             proc_close($process);
         }
 

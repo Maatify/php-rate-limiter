@@ -33,6 +33,7 @@ final class ProcessRunner
         $stderrFile = $mergeStderr && $stdoutFile === null ? tempnam(sys_get_temp_dir(), 'maatify-stderr-') : false;
         $stderrSpec = $stderrFile !== false ? ['file', $stderrFile, 'w'] : ['file', '/dev/null', 'w'];
 
+        $pipes = [];
         $process = proc_open($command, [0 => ['file', '/dev/null', 'r'], 1 => $stdoutSpec, 2 => $stderrSpec], $pipes, $cwd, $env);
         if (! is_resource($process)) {
             if ($stderrFile !== false) {
@@ -42,9 +43,10 @@ final class ProcessRunner
         }
 
         $output = '';
-        if ($stdoutFile === null && isset($pipes[1]) && is_resource($pipes[1])) {
-            $output = (string) stream_get_contents($pipes[1]);
-            fclose($pipes[1]);
+        $stdout = is_array($pipes) ? ($pipes[1] ?? null) : null;
+        if ($stdoutFile === null && is_resource($stdout)) {
+            $output = (string) stream_get_contents($stdout);
+            fclose($stdout);
         }
 
         $code = proc_close($process);
