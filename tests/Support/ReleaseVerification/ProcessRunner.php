@@ -43,7 +43,7 @@ final class ProcessRunner
         }
 
         $output = '';
-        $stdout = is_array($pipes) ? ($pipes[1] ?? null) : null;
+        $stdout = self::pipe($pipes, 1);
         if ($stdoutFile === null && is_resource($stdout)) {
             $output = (string) stream_get_contents($stdout);
             fclose($stdout);
@@ -56,5 +56,19 @@ final class ProcessRunner
         }
 
         return ['code' => $code, 'output' => $output];
+    }
+
+    /**
+     * Returns the proc_open() pipe at $index, or null when it is not an open resource.
+     * Takes `mixed` so the check is valid across PHPStan versions' proc_open() typing.
+     */
+    public static function pipe(mixed $pipes, int $index): mixed
+    {
+        if (! is_array($pipes)) {
+            return null;
+        }
+        $pipe = $pipes[$index] ?? null;
+
+        return is_resource($pipe) ? $pipe : null;
     }
 }

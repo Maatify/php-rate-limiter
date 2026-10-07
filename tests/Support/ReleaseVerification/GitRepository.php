@@ -129,8 +129,8 @@ final class GitRepository
             [0 => ['pipe', 'r'], 1 => ['pipe', 'w'], 2 => ['file', '/dev/null', 'w']],
             $pipes,
         );
-        $stdin = is_array($pipes) ? ($pipes[0] ?? null) : null;
-        $stdout = is_array($pipes) ? ($pipes[1] ?? null) : null;
+        $stdin = ProcessRunner::pipe($pipes, 0);
+        $stdout = ProcessRunner::pipe($pipes, 1);
         if (! is_resource($process) || ! is_resource($stdin) || ! is_resource($stdout)) {
             throw new RuntimeException('Unable to start git cat-file.');
         }
