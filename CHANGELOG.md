@@ -7,6 +7,26 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.0.0-rc.3]
+
+### Added
+- Maintained Release Artifact Verification tooling (`composer release:verify-artifact`)
+  that verifies a candidate commit against the release contract and produces
+  fail-closed qualification evidence.
+- Maintained Published Artifact Verification tooling
+  (`composer release:verify-published-artifact`) that verifies the artifact
+  actually delivered for a published version against its qualified evidence.
+- Release verification documentation in `docs/RELEASE_VERIFICATION.md`.
+
+### Changed
+- Upgraded the selective pinned engineering standards adoption to the current
+  pinned upstream commit.
+- Release qualification and publication-integrity verification now fail closed:
+  inspection-only and caller-supplied values never produce a qualifying result.
+
+The public runtime API and runtime behavior of the package are unchanged from
+`1.0.0-rc.2`.
+
 ## [1.0.0-rc.2] - 2026-10-06
 
 ### Fixed
