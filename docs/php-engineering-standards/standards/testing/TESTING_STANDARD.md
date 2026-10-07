@@ -5,7 +5,7 @@
 ## Standard Metadata
 
 - **Standard ID:** `std-testing`
-- **Standard Version:** `1.1.1`
+- **Standard Version:** `2.0.0`
 - **Standard Version Format:** `MAJOR.MINOR.PATCH`
 
 This document establishes the canonical, repository-wide Testing Standard for the Maatify ecosystem. Its primary purpose is to protect implemented behavior from regressions and unintended damage during future development.
@@ -14,7 +14,9 @@ This document establishes the canonical, repository-wide Testing Standard for th
 
 ## 1. Core Principle
 
-> Every externally observable behavior, critical workflow, integration boundary, and resolved regression MUST be protected by an appropriate end-to-end or system-level test. A change MUST NOT be considered complete when its correctness depends solely on unit-level verification.
+> Every externally observable behavior, critical workflow, and integration boundary MUST be protected by an appropriate end-to-end or system-level test. Where this protection is required, a change MUST NOT be considered complete when its correctness depends solely on unit-level verification.
+
+> Every resolved regression MUST have a test capable of detecting recurrence, selected according to the actual defect boundary as detailed in Section 4.5. The narrowest useful recurrence-detecting test MAY be sufficient on its own only when the regression did not affect any behavioral boundary that independently requires System/E2E protection under this Standard. When such a boundary is affected, including externally observable behavior, a critical workflow, or an integration boundary covered by this Core Principle, the relevant System/E2E protection MUST also remain present; a narrow regression test alone is insufficient.
 
 This is a mandatory engineering rule, not a suggestion.
 
@@ -87,7 +89,17 @@ The proof MUST include Composer installation/resolution, production autoload, pu
 
 Persistence, schema/install assets, transactions, Clock, external services, cleanup, and other integration boundaries MUST be covered when they apply to the artifact's behavior, and MUST NOT be imposed on artifacts that do not need them. When the artifact owns persistence, the Harness MUST prove the relevant real persistence boundary; unit mocks alone are insufficient. When the domain has race-prone invariants and concurrent access is realistic, suitable concurrency verification MUST be included; unit mocks alone are insufficient for that proof.
 
+A Consumer Verification Harness MUST NOT be forced to call an externally controlled provider merely because the artifact owns provider-specific behavior. Its applicable deterministic workflow proof remains required; actual live-provider verification is assessed separately under `std-external-provider-verification` (`standards/integrations/EXTERNAL_PROVIDER_VERIFICATION_STANDARD.md`).
+
 The Harness is an additional external-consumer proof layer. It MUST NOT replace applicable Unit, Integration, or System/E2E coverage. System/E2E boundaries remain behavior-based as defined in Section 3.3, so browser automation is required only when browser/UI behavior is part of the contract. A Consumer Verification Harness also does not replace Real Host Validation or define release eligibility.
+
+---
+
+### 3.5. External Provider Verification Boundary
+
+Unit, Integration, System/E2E, and regression protection remain governed by this Standard. Applicable deterministic provider-contract regression protection MUST remain automated and MUST exercise the meaningful public/behavioral boundary required by this Standard. Controlled live-provider verification MUST NOT replace that testing evidence.
+
+Current-truth verification against an externally controlled provider and its evidence/fixture lifecycle are owned by `std-external-provider-verification` (`standards/integrations/EXTERNAL_PROVIDER_VERIFICATION_STANDARD.md`). Those verification concerns are not additional Testing Layers. Requirements for real repository-controlled/provisionable infrastructure remain applicable; they MUST NOT be interpreted as requiring live external-provider calls in deterministic testing or a Consumer Verification Harness. Required Host behavioral CI evidence under Section 4.7 remains binding for applicable deterministic tests; it does not turn separately governed live-provider verification into baseline Host CI.
 
 ---
 
@@ -108,10 +120,24 @@ Critical workflows MUST have system-level coverage even when their internal comp
 Where correctness depends on multiple components working together, an appropriate integration test MAY complement the coverage, but it MUST NOT replace required system/E2E protection where the Testing Standard requires it.
 
 ### 4.5. Resolved Bugs/Regressions
-A fixed regression MUST be accompanied by a test capable of detecting recurrence. Prefer the narrowest useful regression test, but when the defect affected an externally observable or critical workflow, ensure the relevant system/E2E path is protected as well.
+A fixed regression MUST be accompanied by a test capable of detecting recurrence. Prefer the narrowest useful recurrence-detecting test, selected according to the actual defect boundary; it MAY be Unit, Integration, or System/E2E. Such a test MAY be sufficient on its own only when the defect did not affect any behavioral boundary that independently requires System/E2E protection under this Standard. If such a boundary was affected, including externally observable behavior, a critical workflow, or an integration boundary covered by the Core Principle, the relevant System/E2E protection MUST also remain present. Describing a Repository/DB, persistence, or database-interaction regression as internal MUST NOT remove the System/E2E obligation for an affected integration boundary covered by the Core Principle; an Integration recurrence test alone does not replace that protection.
 
 ### 4.6. Internal-Only Refactors
 If an internal refactor does not create or change externally observable behavior, and existing E2E/system coverage already protects the behavior, that existing coverage MAY be sufficient. The rule is about behavioral protection, not test-count inflation. You are NOT required to write a new E2E test for every trivial internal change.
+
+### 4.7. Host CI Enforcement of Required Behavioral Evidence
+
+For a deployable Project Host, testing evidence required by this Standard for Host-owned observable behavior, critical workflows, integration boundaries, and resolved regressions MUST be enforced through fail-closed Host CI when that evidence is required for the current change or applicable integration boundary. Required evidence MUST NOT remain manual-only; the existence of tests or a successful manual run does not satisfy this CI enforcement obligation.
+
+When behavioral evidence is required, Host CI MUST NOT treat failure, cancelled required verification, an unexpected skip, missing required setup, a missing required test runner, or a missing required dependency or service as successful verification. Patterns such as `continue-on-error`, `allow-failure`, `|| true`, or a silent skip MUST NOT make required behavioral evidence non-binding.
+
+Host-owned Project-Aware behavior covered by this Standard follows the same enforcement contract. For example, an `HTTP → Project-Aware handler → cross-module orchestration → Host-owned persistence / joins → response / state` path requires CI-enforced System/E2E or regression evidence when required by its observable behavior, critical workflow, integration boundary, or resolved regression. This does not create a separate Project-Aware testing contract or make a Host-specific Project-Aware artifact a standalone Package CI artifact through Profile inheritance.
+
+Evidence selection remains behavior-based under Section 4.5. Host CI MUST enforce the required recurrence-detecting evidence and any independently required System/E2E protection for the affected behavioral boundary when required for the current change or applicable integration boundary. If narrow recurrence evidence is sufficient on its own under Section 4.5, that required evidence MUST be enforced fail-closed; if the affected boundary independently requires System/E2E protection, both required forms of evidence MUST be enforced fail-closed. No fixed suite name or `tests/Regression/` directory is required.
+
+Required evidence tied to changed behavior MUST NOT be omitted from CI verification. This subsection does not require every Host CI run or every micro-change to execute the entire System/E2E suite or full Host test matrix. Selection of affected verification versus broader/full applicable verification, and broader/full verification requirements at applicable integration boundaries, remain governed by the applicable repository execution/integration governance. This Standard does not redefine that governance's integration-boundary algorithm or weaken its requirements.
+
+Host architecture verification and behavioral Regression/System/E2E verification are separate obligations. When both apply, both MUST pass; neither substitutes for the other. `PROJECT_APPLICATION_ARCHITECTURE_STANDARD.md` retains architecture-verification ownership, while this Standard owns required behavioral testing evidence and its Host CI enforcement. Exact Host workflow YAML, jobs, triggers, tools, and orchestration remain repository-specific. `CI_WORKFLOW_STANDARD.md` retains its reusable Package/Base Artifact CI applicability and is not generalized to Host-only CI mechanics. Package/Base testing and CI contracts remain unchanged; Consumer Verification Harness applicability remains limited to the artifacts defined in Section 3.4 and is not extended to a Project Host by this subsection.
 
 ---
 

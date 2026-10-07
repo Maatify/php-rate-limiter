@@ -1,0 +1,1064 @@
+<?php
+
+declare(strict_types=1);
+
+namespace Maatify\RateLimiter\Tests\Support\ReleaseVerification;
+
+use RuntimeException;
+
+/**
+ * Generic, target-agnostic Release Artifact Verifier.
+ *
+ * Implements pre-publication Release Artifact Verification required by:
+ * - CI_WORKFLOW_STANDARD.md §2.5
+ * - COMPOSER_PACKAGE_STANDARD.md §26 & §26.1
+ * - LIBRARY_PRESENTATION_STANDARD.md §8.1.2, §14 & §23
+ *
+ * Evidence boundary: qualification is for the exact Git candidate commit/tree. The
+ * checked-out worktree must be clean and at the candidate, but every content check
+ * reads an export of the candidate tree's Git objects (a "snapshot"), never the
+ * mutable filesystem, and distribution is proven from the actual `git archive` of the
+ * candidate. Source-only governance is proven from immutable Git commits.
+ */
+final class ReleaseArtifactVerifier
+{
+    /** @var list<string> */
+    public const array REQUIRED_RELEASE_FACING_FILES = ReleaseContract::REQUIRED_PATHS;
+
+    /** @var list<string> */
+    public const array REQUIRED_SEMANTIC_CLAIMS = ReleaseContract::REQUIRED_SEMANTIC_CLAIMS;
+
+    public const string EXPECTED_PACKAGE_NAME = ReleaseContract::PACKAGE_NAME;
+    public const string EXPECTED_LICENSE = ReleaseContract::LICENSE;
+    public const string SEMANTIC_REVIEW_SCHEMA_VERSION = ReleaseContract::SEMANTIC_REVIEW_SCHEMA_VERSION;
+    public const string QUALIFICATION_EVIDENCE_SCHEMA_VERSION = ReleaseContract::EVIDENCE_SCHEMA_VERSION;
+
+    /**
+     * Executes qualifying Release Artifact Verification.
+     *
+     * In qualifying mode (default), all evidence gates are strictly required:
+     * - Real Git repository with valid candidate commit object
+     * - Candidate SHA matching checked-out HEAD
+     * - Clean Git worktree and index
+     * - Valid canonical semantic review record with all required claims
+     * - Checks run against the candidate tree export; distribution proven from `git archive`
+     * - Source-only governance proven from immutable Decision commits
+     * - Emitted qualification evidence satisfies the canonical schema
+     *
+     * @param array{
+     *     target: string,
+     *     candidate_sha: string,
+     *     repo_path?: string,
+     *     semantic_review_file?: string|null,
+     *     delivery_policy?: string,
+     *     source_only_decision_id?: string|null,
+     *     source_only_decision_file?: string|null,
+     *     source_only_commit?: string|null,
+     *     is_qualifying?: bool,
+     * } $options
+     * @return array{
+     *     status: 'PASS'|'FAIL'|'INSPECTION_ONLY',
+     *     package_name: string,
+     *     target_version: string,
+     *     candidate_sha: string,
+     *     candidate_tree_sha: string,
+     *     delivery_policy: string,
+     *     verified_at: string,
+     *     checks: array<string, array{status: 'PASS'|'FAIL', message: string, details?: mixed}>,
+     *     failures: list<string>,
+     *     qualification_evidence?: array<string, mixed>,
+     * }
+     */
+    public function verify(array $options): array
+    {
+        $startedAt = gmdate('Y-m-d\TH:i:s\Z');
+        $target = trim($options['target']);
+        $candidateSha = trim($options['candidate_sha']);
+        $repoPath = realpath($options['repo_path'] ?? (string) getcwd());
+        if ($repoPath === false || ! is_dir($repoPath)) {
+            throw new RuntimeException('Invalid repository path provided: ' . ($options['repo_path'] ?? ''));
+        }
+
+        $semanticReviewFile = $options['semantic_review_file'] ?? null;
+        $deliveryPolicy = strtolower(trim($options['delivery_policy'] ?? 'dist'));
+        $isQualifying = $options['is_qualifying'] ?? true;
+
+        $ledger = new CheckLedger();
+        // 1. Target Version Syntax
+        $ledger->record('target_version_syntax', $this->evaluateTargetVersionSyntax($target));
+
+        // 2. Candidate SHA, Git Identity, and Clean Tree
+        $gitCheck = $this->evaluateCandidateShaAndGit($repoPath, $candidateSha);
+        $ledger->record('candidate_sha_and_git', $gitCheck);
+        $candidateTreeSha = $gitCheck['details']['candidate_tree_sha'] ?? '';
+
+        // 3. Candidate tree snapshot (immutable Git objects, not the mutable worktree)
+        $snapshot = null;
+        $snapshotDir = null;
+        $archiveDetails = [];
+        try {
+            if ($gitCheck['status'] === 'PASS') {
+                $snapshotDir = sys_get_temp_dir() . '/maatify-rav-tree-' . bin2hex(random_bytes(6));
+                mkdir($snapshotDir, 0777, true);
+                try {
+                    $snapshot = (new GitRepository($repoPath))->exportTree($candidateSha, $snapshotDir);
+                    $unsupported = array_filter($snapshot['unsupported'], static fn(string $p): bool => self::isRequiredPath($p));
+                    if ($unsupported !== []) {
+                        $ledger->record('candidate_tree_snapshot', [
+                            'status' => 'FAIL',
+                            'message' => 'Candidate tree contains symlink/submodule entries inside required release content: ' . implode(', ', $unsupported) . '.',
+                        ]);
+                        $snapshot = null;
+                    }
+                } catch (RuntimeException $e) {
+                    $ledger->record('candidate_tree_snapshot', ['status' => 'FAIL', 'message' => 'Unable to export candidate tree: ' . $e->getMessage()]);
+                    $snapshot = null;
+                }
+            }
+
+            $contentRoot = $snapshot !== null ? $snapshotDir : null;
+            $noUnallocatedRepresented = false;
+
+            // 4. Canonical Semantic Review Evidence Boundary (independent of the tree)
+            $semanticReviewResult = $this->evaluateSemanticReviewEvidence($semanticReviewFile, $target, $candidateSha, $startedAt);
+            $ledger->record('semantic_review', $semanticReviewResult);
+            $semanticDetails = $semanticReviewResult['details'] ?? [];
+            $claims = isset($semanticDetails['claims']) && is_array($semanticDetails['claims']) ? $semanticDetails['claims'] : [];
+            $noUnallocatedRepresented = ($claims['changelog.no_unallocated_represented_changes'] ?? null) === 'CONFIRMED';
+
+            if ($contentRoot !== null) {
+                $ledger->record('package_identity_and_manifest', $this->evaluatePackageManifest($contentRoot));
+                $ledger->record('required_files', $this->evaluateRequiredFiles($contentRoot));
+                $ledger->record('distribution_safety', $this->evaluateDistributionSafety($contentRoot));
+
+                $archiveCheck = $this->evaluateCandidateArchiveExport($repoPath, $candidateSha, $contentRoot);
+                $ledger->record('candidate_archive_export', $archiveCheck);
+                $archiveDetails = is_array($archiveCheck['details'] ?? null) ? $archiveCheck['details'] : [];
+
+                $ledger->record('readme_artifact_identity', $this->evaluateReadmeIdentity($contentRoot, $target));
+                $ledger->record('changelog_target_allocation', $this->evaluateChangelogAllocation($contentRoot, $target, $noUnallocatedRepresented));
+                $ledger->record('security_lifecycle', $this->evaluateSecurityLifecycle($contentRoot, $target));
+            }
+
+            // 5. Delivery Policy & Source-Only Qualification Governance (immutable Git evidence)
+            $sourceOnlyOptions = $deliveryPolicy === 'source-only' ? [
+                'decision_id' => $options['source_only_decision_id'] ?? null,
+                'decision_file' => $options['source_only_decision_file'] ?? null,
+                'commit_ref' => $options['source_only_commit'] ?? null,
+            ] : null;
+            $policyCheck = $this->evaluateSourceOnlyPolicy($sourceOnlyOptions, $repoPath, $target, $candidateSha, $deliveryPolicy, $startedAt);
+            $ledger->record('delivery_policy', $policyCheck);
+
+            $contentManifest = $contentRoot !== null ? ReleaseContract::buildManifest($contentRoot) : [];
+        } finally {
+            if ($snapshotDir !== null) {
+                ReleaseContract::removeTree($snapshotDir);
+            }
+        }
+
+        // Non-qualifying inspection mode handling
+        if (! $isQualifying) {
+            return [
+                'status' => 'INSPECTION_ONLY',
+                'package_name' => self::EXPECTED_PACKAGE_NAME,
+                'target_version' => $target,
+                'candidate_sha' => $candidateSha,
+                'candidate_tree_sha' => $candidateTreeSha,
+                'delivery_policy' => $deliveryPolicy,
+                'verified_at' => gmdate('Y-m-d\TH:i:s\Z'),
+                'checks' => $ledger->checks(),
+                'failures' => $ledger->failures(),
+            ];
+        }
+
+        $qualificationEvidence = null;
+        if ($ledger->failures() === []) {
+            $policyDetails = $policyCheck['details'] ?? null;
+            $qualificationEvidence = [
+                'schema_version' => ReleaseContract::EVIDENCE_SCHEMA_VERSION,
+                'status' => 'PASS',
+                'package_name' => self::EXPECTED_PACKAGE_NAME,
+                'target_version' => $target,
+                'candidate_sha' => $candidateSha,
+                'candidate_tree_sha' => $candidateTreeSha,
+                'qualification_started_at' => $startedAt,
+                'qualified_at' => gmdate('Y-m-d\TH:i:s\Z'),
+                'delivery_policy' => $deliveryPolicy,
+                'approved_distribution_channel' => $deliveryPolicy === 'source-only' && is_array($policyDetails) && is_string($policyDetails['approved_distribution_channel'] ?? null)
+                    ? $policyDetails['approved_distribution_channel']
+                    : ReleaseContract::DEFAULT_DISTRIBUTION_CHANNEL,
+                'semantic_review' => $semanticDetails,
+                'content_manifest' => $contentManifest,
+                'distribution_evidence' => $archiveDetails,
+                'source_only_decision' => is_array($policyDetails) ? $policyDetails : null,
+            ];
+
+            $schemaErrors = QualificationEvidenceSchema::validate($qualificationEvidence);
+            $ledger->record('qualification_evidence_schema', $schemaErrors === [] ? [
+                'status' => 'PASS',
+                'message' => 'Qualification evidence satisfies the canonical schema.',
+            ] : [
+                'status' => 'FAIL',
+                'message' => 'Qualification evidence violates the canonical schema: ' . implode('; ', $schemaErrors) . '.',
+            ]);
+        }
+
+        $overallStatus = ($ledger->failures() === []) ? 'PASS' : 'FAIL';
+        $result = [
+            'status' => $overallStatus,
+            'package_name' => self::EXPECTED_PACKAGE_NAME,
+            'target_version' => $target,
+            'candidate_sha' => $candidateSha,
+            'candidate_tree_sha' => $candidateTreeSha,
+            'delivery_policy' => $deliveryPolicy,
+            'verified_at' => gmdate('Y-m-d\TH:i:s\Z'),
+            'checks' => $ledger->checks(),
+            'failures' => $ledger->failures(),
+        ];
+
+        if ($overallStatus === 'PASS' && $qualificationEvidence !== null) {
+            // In-memory result only: the candidate is NOT release-qualified until the evidence is
+            // durably persisted (see verifyQualifying() / finalizePersistence()).
+            $result['qualification_evidence'] = $qualificationEvidence;
+        }
+
+        return $result;
+    }
+
+    /**
+     * Qualifying RAV lifecycle: verification AND durable evidence persistence.
+     *
+     * The destination is validated before any verification work (it must be outside the
+     * candidate repository), and PASS is returned only after the complete evidence has
+     * been persisted and read back. Any persistence failure is a RAV FAIL.
+     *
+     * @param array{
+     *     target: string,
+     *     candidate_sha: string,
+     *     repo_path?: string,
+     *     semantic_review_file?: string|null,
+     *     delivery_policy?: string,
+     *     source_only_decision_id?: string|null,
+     *     source_only_decision_file?: string|null,
+     *     source_only_commit?: string|null,
+     * } $options
+     * @return array{
+     *     status: 'PASS'|'FAIL'|'INSPECTION_ONLY',
+     *     package_name: string,
+     *     target_version: string,
+     *     candidate_sha: string,
+     *     candidate_tree_sha: string,
+     *     delivery_policy: string,
+     *     verified_at: string,
+     *     checks: array<string, array{status: 'PASS'|'FAIL', message: string, details?: mixed}>,
+     *     failures: list<string>,
+     *     qualification_evidence?: array<string, mixed>,
+     *     evidence_path?: string,
+     * }
+     */
+    public function verifyQualifying(array $options, string $evidencePath, ?EvidenceWriter $writer = null): array
+    {
+        $writer ??= new EvidenceWriter();
+        $repoPath = realpath($options['repo_path'] ?? (string) getcwd());
+        if ($repoPath === false || ! is_dir($repoPath)) {
+            throw new RuntimeException('Invalid repository path provided: ' . ($options['repo_path'] ?? ''));
+        }
+
+        $destination = $writer->resolveDestination($evidencePath, $repoPath);
+        if ($destination['status'] === 'FAIL') {
+            return [
+                'status' => 'FAIL',
+                'package_name' => self::EXPECTED_PACKAGE_NAME,
+                'target_version' => trim($options['target']),
+                'candidate_sha' => trim($options['candidate_sha']),
+                'candidate_tree_sha' => '',
+                'delivery_policy' => strtolower(trim($options['delivery_policy'] ?? 'dist')),
+                'verified_at' => gmdate('Y-m-d\TH:i:s\Z'),
+                'checks' => ['evidence_persistence' => ['status' => 'FAIL', 'message' => $destination['message']]],
+                'failures' => [$destination['message']],
+            ];
+        }
+
+        return $this->finalizePersistence($this->verify($options), $evidencePath, $repoPath, $writer);
+    }
+
+    /**
+     * Makes persistence part of qualification success. A PASS result is returned only when the
+     * complete evidence was persisted, read back, schema-valid and equal to the in-memory
+     * evidence, and the candidate worktree is still clean at the candidate.
+     *
+     * @param array{
+     *     status: 'PASS'|'FAIL'|'INSPECTION_ONLY',
+     *     package_name: string,
+     *     target_version: string,
+     *     candidate_sha: string,
+     *     candidate_tree_sha: string,
+     *     delivery_policy: string,
+     *     verified_at: string,
+     *     checks: array<string, array{status: 'PASS'|'FAIL', message: string, details?: mixed}>,
+     *     failures: list<string>,
+     *     qualification_evidence?: array<string, mixed>,
+     * } $result
+     * @return array{
+     *     status: 'PASS'|'FAIL'|'INSPECTION_ONLY',
+     *     package_name: string,
+     *     target_version: string,
+     *     candidate_sha: string,
+     *     candidate_tree_sha: string,
+     *     delivery_policy: string,
+     *     verified_at: string,
+     *     checks: array<string, array{status: 'PASS'|'FAIL', message: string, details?: mixed}>,
+     *     failures: list<string>,
+     *     qualification_evidence?: array<string, mixed>,
+     *     evidence_path?: string,
+     * }
+     */
+    public function finalizePersistence(array $result, string $evidencePath, string $repoPath, ?EvidenceWriter $writer = null): array
+    {
+        if ($result['status'] !== 'PASS') {
+            return $result;
+        }
+
+        $writer ??= new EvidenceWriter();
+        $evidence = $result['qualification_evidence'] ?? null;
+        $failure = null;
+        $persistedPath = null;
+
+        if ($evidence === null) {
+            $failure = 'Qualifying RAV produced no qualification evidence to persist.';
+        } else {
+            $written = $writer->write($evidencePath, $evidence, $repoPath);
+            if ($written['status'] === 'FAIL') {
+                $failure = $written['message'];
+            } else {
+                $persistedPath = $written['path'];
+                $decoded = json_decode((string) file_get_contents($persistedPath), true);
+                if (! is_array($decoded) || $decoded !== json_decode((string) json_encode($evidence), true)) {
+                    $failure = 'Persisted qualification evidence differs from the generated evidence.';
+                } elseif (QualificationEvidenceSchema::validate($decoded) !== []) {
+                    $failure = 'Persisted qualification evidence does not satisfy the canonical schema.';
+                } elseif ($this->evaluateCandidateShaAndGit($repoPath, $result['candidate_sha'])['status'] !== 'PASS') {
+                    $failure = 'Persisting evidence left the candidate repository not clean at the candidate SHA.';
+                }
+            }
+        }
+
+        if ($failure !== null) {
+            if ($persistedPath !== null && is_file($persistedPath)) {
+                unlink($persistedPath);
+            }
+            $result['status'] = 'FAIL';
+            unset($result['qualification_evidence']);
+            $result['checks']['evidence_persistence'] = ['status' => 'FAIL', 'message' => $failure];
+            $result['failures'][] = $failure;
+
+            return $result;
+        }
+
+        $result['checks']['evidence_persistence'] = [
+            'status' => 'PASS',
+            'message' => sprintf('Complete qualification evidence persisted and verified at "%s".', (string) $persistedPath),
+        ];
+        $result['evidence_path'] = (string) $persistedPath;
+
+        return $result;
+    }
+
+    private static function isRequiredPath(string $path): bool
+    {
+        foreach (ReleaseContract::REQUIRED_PATHS as $required) {
+            if ($path === $required || str_starts_with($path, $required . '/')) {
+                return true;
+            }
+        }
+
+        return false;
+    }
+
+    /**
+     * @return array{status: 'PASS'|'FAIL', message: string}
+     */
+    public function evaluateTargetVersionSyntax(string $target): array
+    {
+        $isSemVer = ReleaseContract::isValidExactSemVer($target);
+        if (! $isSemVer) {
+            return [
+                'status' => 'FAIL',
+                'message' => sprintf('Target version "%s" is not a valid Semantic Version.', $target),
+            ];
+        }
+
+        return [
+            'status' => 'PASS',
+            'message' => sprintf('Target version "%s" is valid SemVer.', $target),
+        ];
+    }
+
+    /**
+     * @return array{status: 'PASS'|'FAIL', message: string, details?: array{candidate_sha: string, candidate_tree_sha: string, head_sha: string}}
+     */
+    public function evaluateCandidateShaAndGit(string $repoPath, string $candidateSha): array
+    {
+        // 1. Is repository inside a valid Git work tree?
+        $out = [];
+        $code = 0;
+        exec(sprintf('git -C %s rev-parse --is-inside-work-tree 2>/dev/null', escapeshellarg($repoPath)), $out, $code);
+        if ($code !== 0 || trim($out[0] ?? '') !== 'true') {
+            return [
+                'status' => 'FAIL',
+                'message' => 'Repository path is not inside a valid Git work tree. Qualifying RAV requires a real Git repository.',
+            ];
+        }
+
+        // 2. Validate candidate SHA syntax
+        if (! (bool) preg_match('/^[0-9a-f]{40}$/i', $candidateSha)) {
+            return [
+                'status' => 'FAIL',
+                'message' => sprintf('Candidate SHA "%s" must be a 40-character hexadecimal commit hash.', $candidateSha),
+            ];
+        }
+
+        // 3. Verify candidate SHA exists as a commit object in the repository
+        $typeOut = [];
+        $typeCode = 0;
+        exec(sprintf('git -C %s cat-file -t %s 2>/dev/null', escapeshellarg($repoPath), escapeshellarg($candidateSha)), $typeOut, $typeCode);
+        if ($typeCode !== 0 || trim($typeOut[0] ?? '') !== 'commit') {
+            return [
+                'status' => 'FAIL',
+                'message' => sprintf('Candidate SHA "%s" does not exist as a commit object in this repository.', $candidateSha),
+            ];
+        }
+
+        // 4. Verify checked-out HEAD equals candidate SHA
+        $headOut = [];
+        $headCode = 0;
+        exec(sprintf('git -C %s rev-parse HEAD 2>/dev/null', escapeshellarg($repoPath)), $headOut, $headCode);
+        $headSha = trim($headOut[0] ?? '');
+        if ($headCode !== 0 || strtolower($headSha) !== strtolower($candidateSha)) {
+            return [
+                'status' => 'FAIL',
+                'message' => sprintf('Checked-out HEAD "%s" does not match candidate SHA "%s".', $headSha, $candidateSha),
+            ];
+        }
+
+        // 5. Obtain candidate tree SHA
+        $treeOut = [];
+        $treeCode = 0;
+        exec(sprintf('git -C %s rev-parse %s^{tree} 2>/dev/null', escapeshellarg($repoPath), escapeshellarg($candidateSha)), $treeOut, $treeCode);
+        $treeSha = trim($treeOut[0] ?? '');
+        if ($treeCode !== 0 || ! (bool) preg_match('/^[0-9a-f]{40}$/i', $treeSha)) {
+            return [
+                'status' => 'FAIL',
+                'message' => sprintf('Unable to resolve candidate tree object for commit "%s".', $candidateSha),
+            ];
+        }
+
+        // 6. Verify clean worktree and clean index
+        $statusOut = [];
+        $statusCode = 0;
+        exec(sprintf('git -C %s status --porcelain 2>/dev/null', escapeshellarg($repoPath)), $statusOut, $statusCode);
+        if ($statusCode !== 0 || ! empty($statusOut)) {
+            return [
+                'status' => 'FAIL',
+                'message' => sprintf(
+                    'Git worktree or index is not clean (%d uncommitted modification(s)). Qualifying RAV requires an immutable clean tree.',
+                    count($statusOut),
+                ),
+            ];
+        }
+
+        return [
+            'status' => 'PASS',
+            'message' => sprintf('Candidate commit object (%s) and tree (%s) verified; git HEAD matches and working tree is clean.', $candidateSha, $treeSha),
+            'details' => [
+                'candidate_sha' => $candidateSha,
+                'candidate_tree_sha' => $treeSha,
+                'head_sha' => $headSha,
+            ],
+        ];
+    }
+
+    /**
+     * @return array{status: 'PASS'|'FAIL', message: string}
+     */
+    public function evaluatePackageManifest(string $repoPath): array
+    {
+        $manifestPath = $repoPath . '/composer.json';
+        if (! file_exists($manifestPath)) {
+            return [
+                'status' => 'FAIL',
+                'message' => 'composer.json does not exist in repository root.',
+            ];
+        }
+
+        $manifestRaw = file_get_contents($manifestPath);
+        $manifest = is_string($manifestRaw) ? json_decode($manifestRaw, true) : null;
+        if (! is_array($manifest)) {
+            return [
+                'status' => 'FAIL',
+                'message' => 'composer.json contains invalid JSON.',
+            ];
+        }
+
+        $manifestName = is_scalar($manifest['name'] ?? null) ? (string) $manifest['name'] : '';
+        if ($manifestName !== self::EXPECTED_PACKAGE_NAME) {
+            return [
+                'status' => 'FAIL',
+                'message' => sprintf('composer.json name "%s" does not match expected package identity "%s".', $manifestName, self::EXPECTED_PACKAGE_NAME),
+            ];
+        }
+
+        $manifestLicense = is_scalar($manifest['license'] ?? null) ? (string) $manifest['license'] : '';
+        if ($manifestLicense !== self::EXPECTED_LICENSE) {
+            return [
+                'status' => 'FAIL',
+                'message' => sprintf('composer.json license "%s" does not match expected package license "%s".', $manifestLicense, self::EXPECTED_LICENSE),
+            ];
+        }
+
+        if (isset($manifest['version'])) {
+            return [
+                'status' => 'FAIL',
+                'message' => 'composer.json MUST NOT declare a static "version" field; versions are governed by Git tags.',
+            ];
+        }
+
+        return [
+            'status' => 'PASS',
+            'message' => 'Package identity matches, license is proprietary, and manifest is structurally valid.',
+        ];
+    }
+
+    /**
+     * @return array{status: 'PASS'|'FAIL', message: string, details?: list<string>}
+     */
+    public function evaluateRequiredFiles(string $repoPath): array
+    {
+        $missingFiles = [];
+        foreach (self::REQUIRED_RELEASE_FACING_FILES as $file) {
+            $fullPath = $repoPath . '/' . $file;
+            if (! file_exists($fullPath)) {
+                $missingFiles[] = $file;
+            }
+        }
+
+        if ($missingFiles !== []) {
+            return [
+                'status' => 'FAIL',
+                'message' => sprintf('Missing required consumer/release-facing files: %s.', implode(', ', $missingFiles)),
+                'details' => $missingFiles,
+            ];
+        }
+
+        return [
+            'status' => 'PASS',
+            'message' => 'All required consumer/release-facing files are present.',
+        ];
+    }
+
+    /**
+     * Scans the given tree for prohibited artifacts and invalid export exclusions.
+     *
+     * @return array{status: 'PASS'|'FAIL', message: string, details?: list<string>}
+     */
+    public function evaluateDistributionSafety(string $repoPath): array
+    {
+        $forbiddenFound = [];
+        foreach (ReleaseContract::listFiles($repoPath) as $file) {
+            if (ReleaseContract::isForbiddenPath($file)) {
+                $forbiddenFound[] = $file;
+            }
+        }
+
+        if (file_exists($repoPath . '/.gitattributes')) {
+            $gitAttr = (string) file_get_contents($repoPath . '/.gitattributes');
+            foreach (self::REQUIRED_RELEASE_FACING_FILES as $rf) {
+                if (preg_match('/^' . preg_quote($rf, '/') . '\/?\s+.*export-ignore/m', $gitAttr)) {
+                    $forbiddenFound[] = sprintf('Required file "%s" is excluded by .gitattributes export-ignore', $rf);
+                }
+            }
+        }
+
+        if ($forbiddenFound !== []) {
+            return [
+                'status' => 'FAIL',
+                'message' => sprintf('Distribution safety violation: %s.', implode(', ', $forbiddenFound)),
+                'details' => $forbiddenFound,
+            ];
+        }
+
+        return [
+            'status' => 'PASS',
+            'message' => 'Distribution safety verified: no forbidden artifacts or invalid export exclusions.',
+        ];
+    }
+
+    /**
+     * Proves actual candidate distribution content.
+     *
+     * Generates the real `git archive` of the candidate, derives the tracked required
+     * content from the candidate tree, and requires every required FILE (including nested
+     * files) to be present in the archive with identical content. Also evaluates the
+     * effective impact of `.gitattributes` export-ignore and `composer.json` archive.exclude
+     * and rejects forbidden entries entering the archive.
+     *
+     * @param string|null $treeDir Pre-exported candidate tree; exported on demand when null
+     * @return array{status: 'PASS'|'FAIL', message: string, details?: array<string, mixed>}
+     */
+    public function evaluateCandidateArchiveExport(string $repoPath, string $candidateSha, ?string $treeDir = null): array
+    {
+        $work = sys_get_temp_dir() . '/maatify-rav-archive-' . bin2hex(random_bytes(6));
+        mkdir($work . '/extract', 0777, true);
+
+        try {
+            $git = new GitRepository($repoPath);
+            if ($treeDir === null) {
+                $treeDir = $work . '/tree';
+                mkdir($treeDir, 0777, true);
+                $git->exportTree($candidateSha, $treeDir);
+            }
+
+            $tar = $work . '/candidate.tar';
+            if ($git->run(['archive', '--format=tar', $candidateSha], $tar)['code'] !== 0) {
+                return ['status' => 'FAIL', 'message' => 'Unable to generate git archive for candidate commit ' . $candidateSha];
+            }
+            $listing = ProcessRunner::run(['tar', '-tf', $tar]);
+            $extract = ProcessRunner::run(['tar', '-xf', $tar, '-C', $work . '/extract']);
+            if ($listing['code'] !== 0 || $extract['code'] !== 0) {
+                return ['status' => 'FAIL', 'message' => 'Unable to inspect git archive for candidate commit ' . $candidateSha];
+            }
+
+            $archiveFiles = [];
+            foreach (explode("\n", $listing['output']) as $entry) {
+                $entry = preg_replace('#^\./#', '', trim($entry)) ?? '';
+                if ($entry !== '' && ! str_ends_with($entry, '/')) {
+                    $archiveFiles[$entry] = true;
+                }
+            }
+
+            $requiredFiles = array_values(array_filter(
+                ReleaseContract::listFiles($treeDir),
+                static fn(string $p): bool => self::isRequiredPath($p),
+            ));
+            if ($requiredFiles === []) {
+                return ['status' => 'FAIL', 'message' => 'Candidate tree contains no required release content.'];
+            }
+
+            $missing = [];
+            $differing = [];
+            foreach ($requiredFiles as $file) {
+                if (! isset($archiveFiles[$file])) {
+                    $missing[] = $file;
+                } elseif (hash_file('sha256', $treeDir . '/' . $file) !== hash_file('sha256', $work . '/extract/' . $file)) {
+                    $differing[] = $file;
+                }
+            }
+
+            $forbidden = array_values(array_filter(
+                array_keys($archiveFiles),
+                static fn(string $p): bool => ReleaseContract::isForbiddenPath($p),
+            ));
+
+            $attributes = is_file($treeDir . '/.gitattributes') ? (string) file_get_contents($treeDir . '/.gitattributes') : '';
+            $hasExportIgnore = str_contains($attributes, 'export-ignore');
+
+            $archiveExclude = [];
+            $composerRaw = is_file($treeDir . '/composer.json') ? json_decode((string) file_get_contents($treeDir . '/composer.json'), true) : null;
+            if (is_array($composerRaw) && is_array($composerRaw['archive'] ?? null) && is_array($composerRaw['archive']['exclude'] ?? null)) {
+                $archiveExclude = array_values(array_filter($composerRaw['archive']['exclude'], 'is_string'));
+            }
+            $excludedByComposer = [];
+            if ($archiveExclude !== []) {
+                $matcher = new ArchiveExcludeMatcher($archiveExclude);
+                $excludedByComposer = array_values(array_filter($requiredFiles, static fn(string $p): bool => $matcher->isExcluded($p)));
+            }
+
+            $problems = [];
+            if ($missing !== []) {
+                $problems[] = sprintf('Candidate git archive export omits required release content file(s): %s', implode(', ', $missing));
+            }
+            if ($differing !== []) {
+                $problems[] = sprintf('Candidate git archive content differs from the candidate tree for: %s', implode(', ', $differing));
+            }
+            if ($excludedByComposer !== []) {
+                $problems[] = sprintf('composer.json archive.exclude removes required file(s): %s', implode(', ', $excludedByComposer));
+            }
+            if ($forbidden !== []) {
+                $problems[] = sprintf('Candidate git archive contains forbidden entries: %s', implode(', ', $forbidden));
+            }
+            if ($problems !== []) {
+                return [
+                    'status' => 'FAIL',
+                    'message' => implode('. ', $problems) . '.',
+                    'details' => ['missing' => $missing, 'differing' => $differing, 'composer_archive_exclude' => $excludedByComposer, 'forbidden' => $forbidden],
+                ];
+            }
+
+            return [
+                'status' => 'PASS',
+                'message' => sprintf('Candidate git archive verified; all %d required content files are preserved with identical content and no forbidden entries.', count($requiredFiles)),
+                'details' => [
+                    'archive_format' => 'git-archive',
+                    'archive_verified' => true,
+                    'archive_entry_count' => count($archiveFiles),
+                    'required_files_in_archive' => count($requiredFiles),
+                    'required_files_missing' => [],
+                    'archive_content_matches_tree' => true,
+                    'forbidden_entries' => [],
+                    'gitattributes_export_ignore' => ['status' => $hasExportIgnore ? 'APPLIED_NO_REQUIRED_IMPACT' : 'NOT_APPLICABLE'],
+                    'composer_archive_exclude' => [
+                        'status' => $archiveExclude === [] ? 'NOT_APPLICABLE' : 'APPLIED_NO_REQUIRED_IMPACT',
+                        'patterns' => $archiveExclude,
+                    ],
+                ],
+            ];
+        } finally {
+            ReleaseContract::removeTree($work);
+        }
+    }
+
+    /**
+     * @return array{status: 'PASS'|'FAIL', message: string}
+     */
+    public function evaluateReadmeIdentity(string $repoPath, string $target): array
+    {
+        $readmePath = $repoPath . '/README.md';
+        if (! file_exists($readmePath)) {
+            return [
+                'status' => 'FAIL',
+                'message' => 'README.md not found.',
+            ];
+        }
+
+        $readmeContent = (string) file_get_contents($readmePath);
+        $hasTargetMention = str_contains($readmeContent, $target);
+        $hasFalsePublishedClaim = (bool) preg_match('/(?:^|\n)#[^\n]*Published on Packagist[^\n]*\b' . preg_quote($target, '/') . '\b/i', $readmeContent);
+
+        if (! $hasTargetMention) {
+            return [
+                'status' => 'FAIL',
+                'message' => sprintf('README.md does not reference exact target release identity "%s".', $target),
+            ];
+        }
+
+        if ($hasFalsePublishedClaim) {
+            return [
+                'status' => 'FAIL',
+                'message' => sprintf('README.md contains unqualified pre-publication availability claim for "%s".', $target),
+            ];
+        }
+
+        return [
+            'status' => 'PASS',
+            'message' => 'README artifact identity references target without false pre-publication assertions.',
+        ];
+    }
+
+    /**
+     * Evaluates CHANGELOG allocation against the adopted Library Presentation Standard:
+     * - The target heading must be an undated exact-target section: `## [<target>]`
+     * - Headings with dates (`## [<target>] - YYYY-MM-DD`) or status suffixes (`- upcoming`, `- unreleased`, `(planned)`) are strictly rejected.
+     * - `[Unreleased]` boundary:
+     *   - MUST exist when represented implemented changes remain unallocated.
+     *   - MAY be omitted when semantic review positively confirms no unallocated represented changes remain.
+     *
+     * @return array{status: 'PASS'|'FAIL', message: string}
+     */
+    public function evaluateChangelogAllocation(string $repoPath, string $target, bool $noUnallocatedRepresentedChanges): array
+    {
+        $changelogPath = $repoPath . '/CHANGELOG.md';
+        if (! file_exists($changelogPath)) {
+            return [
+                'status' => 'FAIL',
+                'message' => 'CHANGELOG.md not found.',
+            ];
+        }
+
+        $changelogContent = (string) file_get_contents($changelogPath);
+        $hasUnreleased = str_contains($changelogContent, '## [Unreleased]');
+
+        // Undated exact-target heading requirement: must be "## [<target>]" alone on heading line
+        $hasExactUndatedTarget = (bool) preg_match('/^## \[' . preg_quote($target, '/') . '\]\s*$/m', $changelogContent);
+
+        // Detect improper suffixed or dated headings
+        $hasDatedTarget = (bool) preg_match('/^## \[' . preg_quote($target, '/') . '\]\s*-\s*\d{4}-\d{2}-\d{2}/m', $changelogContent);
+        $hasSuffixedTarget = (bool) preg_match('/^## \[' . preg_quote($target, '/') . '\]\s*-\s*(upcoming|unreleased|planned)/im', $changelogContent);
+
+        if ($hasDatedTarget) {
+            return [
+                'status' => 'FAIL',
+                'message' => sprintf('CHANGELOG.md target section "[%s]" contains a publication date prior to publication.', $target),
+            ];
+        }
+
+        if ($hasSuffixedTarget) {
+            return [
+                'status' => 'FAIL',
+                'message' => sprintf('CHANGELOG.md target section "[%s]" must be an exact undated heading without status suffix (e.g. "## [%s]").', $target, $target),
+            ];
+        }
+
+        if (! $hasExactUndatedTarget) {
+            return [
+                'status' => 'FAIL',
+                'message' => sprintf('CHANGELOG.md does not contain an allocated undated section for target version "## [%s]".', $target),
+            ];
+        }
+
+        // [Unreleased] section check:
+        // If absent, allowed ONLY if semantic review confirms no unallocated represented changes remain
+        if (! $hasUnreleased && ! $noUnallocatedRepresentedChanges) {
+            return [
+                'status' => 'FAIL',
+                'message' => 'CHANGELOG.md is missing "## [Unreleased]" boundary heading while unallocated represented changes are not confirmed absent by semantic review.',
+            ];
+        }
+
+        return [
+            'status' => 'PASS',
+            'message' => sprintf('CHANGELOG undated target section "## [%s]" and allocation boundaries verified.', $target),
+        ];
+    }
+
+    /**
+     * @return array{status: 'PASS'|'FAIL', message: string}
+     */
+    public function evaluateSecurityLifecycle(string $repoPath, string $target): array
+    {
+        $securityPath = $repoPath . '/SECURITY.md';
+        if (! file_exists($securityPath)) {
+            return [
+                'status' => 'FAIL',
+                'message' => 'SECURITY.md not found.',
+            ];
+        }
+
+        $securityContent = (string) file_get_contents($securityPath);
+        $isPrerelease = str_contains($target, '-');
+        $promisesPrereleaseSupport = $isPrerelease && (bool) preg_match('/\|[ ]*' . preg_quote($target, '/') . '[ ]*\|[ ]*:white_check_mark:[ ]*\|/i', $securityContent);
+
+        if ($promisesPrereleaseSupport) {
+            return [
+                'status' => 'FAIL',
+                'message' => sprintf('SECURITY.md falsely promises active Stable support for pre-release target "%s".', $target),
+            ];
+        }
+
+        return [
+            'status' => 'PASS',
+            'message' => 'SECURITY.md lifecycle and pre-release support semantics verified.',
+        ];
+    }
+
+    /**
+     * Validates canonical semantic review evidence.
+     *
+     * Schema requirements:
+     * - schema_version: "1.0.0"
+     * - target: exact SemVer target
+     * - candidate_sha: exact 40-hex commit SHA
+     * - reviewer: non-empty string
+     * - reviewed_at: strict UTC timestamp (YYYY-MM-DDTHH:MM:SSZ); when $qualificationStartedAt is
+     *   given it MUST NOT be later than it (the review must already exist when RAV consumes it)
+     * - disposition: "APPROVED"
+     * - claims: array containing all 8 REQUIRED_SEMANTIC_CLAIMS confirmed as "CONFIRMED"
+     *
+     * @return array{status: 'PASS'|'FAIL', message: string, details?: array<string, mixed>}
+     */
+    public function evaluateSemanticReviewEvidence(?string $filePath, string $target, string $candidateSha, ?string $qualificationStartedAt = null): array
+    {
+        if ($filePath === null || ! file_exists($filePath)) {
+            return [
+                'status' => 'FAIL',
+                'message' => 'Canonical semantic review evidence record is required for qualifying RAV but was not provided or does not exist.',
+            ];
+        }
+
+        $raw = file_get_contents($filePath);
+        $data = is_string($raw) ? json_decode($raw, true) : null;
+        if (! is_array($data)) {
+            return [
+                'status' => 'FAIL',
+                'message' => sprintf('Semantic review evidence file "%s" is not valid JSON.', $filePath),
+            ];
+        }
+
+        $recordedSchema = is_scalar($data['schema_version'] ?? null) ? (string) $data['schema_version'] : '';
+        $recordedTarget = is_scalar($data['target'] ?? null) ? (string) $data['target'] : '';
+        $recordedSha = is_scalar($data['candidate_sha'] ?? null) ? (string) $data['candidate_sha'] : '';
+        $disposition = is_scalar($data['disposition'] ?? null) ? (string) $data['disposition'] : '';
+        $reviewer = is_scalar($data['reviewer'] ?? null) ? (string) $data['reviewer'] : '';
+        $reviewedAt = is_scalar($data['reviewed_at'] ?? null) ? (string) $data['reviewed_at'] : '';
+        $claims = $data['claims'] ?? null;
+
+        if ($recordedSchema !== self::SEMANTIC_REVIEW_SCHEMA_VERSION) {
+            return [
+                'status' => 'FAIL',
+                'message' => sprintf('Semantic review evidence schema_version "%s" does not match expected version "%s".', $recordedSchema, self::SEMANTIC_REVIEW_SCHEMA_VERSION),
+            ];
+        }
+
+        if ($recordedTarget !== $target) {
+            return [
+                'status' => 'FAIL',
+                'message' => sprintf('Semantic review target "%s" does not match verification target "%s".', $recordedTarget, $target),
+            ];
+        }
+
+        if (strtolower($recordedSha) !== strtolower($candidateSha)) {
+            return [
+                'status' => 'FAIL',
+                'message' => sprintf('Semantic review SHA "%s" does not match candidate SHA "%s".', $recordedSha, $candidateSha),
+            ];
+        }
+
+        if ($disposition !== 'APPROVED') {
+            return [
+                'status' => 'FAIL',
+                'message' => sprintf('Semantic review disposition is "%s", expected "APPROVED".', $disposition),
+            ];
+        }
+
+        if ($reviewer === '' || $reviewedAt === '') {
+            return [
+                'status' => 'FAIL',
+                'message' => 'Semantic review evidence must include non-empty reviewer identity and reviewed_at timestamp.',
+            ];
+        }
+
+        $reviewedInstant = ReleaseContract::parseTimestamp($reviewedAt);
+        if ($reviewedInstant === null) {
+            return [
+                'status' => 'FAIL',
+                'message' => sprintf('Semantic review reviewed_at "%s" is not a strict UTC timestamp (YYYY-MM-DDTHH:MM:SSZ).', $reviewedAt),
+            ];
+        }
+        if ($qualificationStartedAt !== null) {
+            $startedInstant = ReleaseContract::parseTimestamp($qualificationStartedAt);
+            if ($startedInstant === null || $reviewedInstant > $startedInstant) {
+                return [
+                    'status' => 'FAIL',
+                    'message' => sprintf('Semantic review reviewed_at "%s" is later than the RAV qualification start "%s"; the review did not exist when RAV consumed it.', $reviewedAt, $qualificationStartedAt),
+                ];
+            }
+        }
+
+        if (! is_array($claims)) {
+            return [
+                'status' => 'FAIL',
+                'message' => 'Semantic review evidence claims must be an associative map of confirmed assertions.',
+            ];
+        }
+
+        $missingClaims = [];
+        $unconfirmedClaims = [];
+        foreach (self::REQUIRED_SEMANTIC_CLAIMS as $requiredClaim) {
+            if (! array_key_exists($requiredClaim, $claims)) {
+                $missingClaims[] = $requiredClaim;
+            } elseif ($claims[$requiredClaim] !== 'CONFIRMED') {
+                $unconfirmedClaims[] = sprintf('%s (value: %s)', $requiredClaim, is_scalar($claims[$requiredClaim]) ? (string) $claims[$requiredClaim] : get_debug_type($claims[$requiredClaim]));
+            }
+        }
+
+        if ($missingClaims !== []) {
+            return [
+                'status' => 'FAIL',
+                'message' => sprintf('Semantic review evidence is missing required claim(s): %s.', implode(', ', $missingClaims)),
+            ];
+        }
+
+        if ($unconfirmedClaims !== []) {
+            return [
+                'status' => 'FAIL',
+                'message' => sprintf('Semantic review evidence contains unconfirmed required claim(s): %s.', implode(', ', $unconfirmedClaims)),
+            ];
+        }
+
+        return [
+            'status' => 'PASS',
+            'message' => sprintf('Semantic review evidence approved by %s at %s with all %d required claims CONFIRMED.', $reviewer, $reviewedAt, count(self::REQUIRED_SEMANTIC_CLAIMS)),
+            'details' => [
+                'schema_version' => $recordedSchema,
+                'target' => $recordedTarget,
+                'candidate_sha' => $recordedSha,
+                'reviewer' => $reviewer,
+                'reviewed_at' => $reviewedAt,
+                'disposition' => $disposition,
+                'claims' => $claims,
+                'notes' => is_scalar($data['notes'] ?? null) ? (string) $data['notes'] : null,
+            ],
+        ];
+    }
+
+    /**
+     * Verifies delivery-policy governance. For source-only delivery, the Decision,
+     * Index and Owner-approval state are proven from the immutable Decision commit.
+     *
+     * @param array{
+     *     decision_id?: string|null,
+     *     decision_file?: string|null,
+     *     commit_ref?: string|null,
+     * }|null $sourceOnlyOptions
+     * @return array{status: 'PASS'|'FAIL', message: string, details?: array<string, mixed>|null}
+     */
+    public function evaluateSourceOnlyPolicy(
+        ?array $sourceOnlyOptions,
+        string $repoPath,
+        string $target,
+        string $candidateSha,
+        string $deliveryPolicy,
+        string $qualificationStartedAt = '',
+    ): array {
+        if (! in_array($deliveryPolicy, ReleaseContract::DELIVERY_POLICIES, true)) {
+            return [
+                'status' => 'FAIL',
+                'message' => sprintf('Unknown delivery policy "%s" (allowed: %s).', $deliveryPolicy, implode(', ', ReleaseContract::DELIVERY_POLICIES)),
+            ];
+        }
+
+        if ($deliveryPolicy !== 'source-only') {
+            return [
+                'status' => 'PASS',
+                'message' => 'Standard archive distribution (dist) delivery policy verified.',
+                'details' => null,
+            ];
+        }
+
+        if ($sourceOnlyOptions === null) {
+            return [
+                'status' => 'FAIL',
+                'message' => 'Delivery policy is configured as source-only, but no source-only governance parameters were provided.',
+            ];
+        }
+
+        $result = (new SourceOnlyDecisionVerifier())->qualify(
+            new GitRepository($repoPath),
+            (string) ($sourceOnlyOptions['decision_id'] ?? ''),
+            (string) ($sourceOnlyOptions['decision_file'] ?? ''),
+            (string) ($sourceOnlyOptions['commit_ref'] ?? ''),
+            $target,
+            $candidateSha,
+            $qualificationStartedAt !== '' ? $qualificationStartedAt : gmdate('Y-m-d\TH:i:s\Z'),
+        );
+
+        return $result;
+    }
+
+    /**
+     * Builds deterministic SHA-256 content hashes of all required release-facing files and composer.json.
+     *
+     * @return array<string, string>
+     */
+    public function buildContentManifest(string $repoPath): array
+    {
+        return ReleaseContract::buildManifest($repoPath);
+    }
+
+    /**
+     * Recursively and deterministically hashes a file or directory using SHA-256.
+     */
+    public function hashPath(string $path): string
+    {
+        return ReleaseContract::hashPath($path);
+    }
+}

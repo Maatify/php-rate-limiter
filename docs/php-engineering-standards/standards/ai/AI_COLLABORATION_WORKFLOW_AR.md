@@ -3,7 +3,7 @@
 ## بيانات المعيار
 
 - **Standard ID:** `std-ai-collaboration-workflow`
-- **Standard Version:** `7.1.0`
+- **Standard Version:** `10.0.0`
 - **Standard Version Format:** `MAJOR.MINOR.PATCH`
 - **اللغة المعتمدة:** العربية.
 - **مالك المعيار:** مالك المشروع.
@@ -148,10 +148,11 @@
 - اختيار المهمة التالية حسب الأولوية والتبعيات، لا حسب الرقم فقط.
 - كشف التعارضات والملفات المشتركة قبل بدء التنفيذ.
 - اختيار المنفذ المناسب.
-- كتابة توجيه تنفيذي مغلق الحدود وبالحد الأدنى الكافي من المعلومات، مع اختبار ضرورة كل سطر قبل إرساله.
+- كتابة توجيه تنفيذي مغلق الحدود وبالحد الأدنى الكافي من المعلومات، مع اختبار ضرورة كل سطر وسلامة تسليم artifact المفوضة وفق §8.6 قبل إرسالها.
 - مراجعة الكود أو التوثيق، والـ diff أو الـ staged patch، والـ checks، والـ PR بنفسه قبل قبول أي ناتج عندما تكون هذه العناصر متاحة.
 - رفض الناتج أو طلب تعديله إذا خالف الواقع أو العقود أو النطاق، حتى لو ادعى تقرير المنفذ نجاحه.
-- تصحيح عنوان أو وصف الـ PR عند توفر الصلاحية.
+- الحفاظ على عنوان ووصف الـ PR كـcurrent-state resume surface دقيقة وفق §3.2.5 عند توفر الصلاحية، وتصحيحها كلما تغيّرت الحالة المادية للـPR.
+- ضمان أن أي governed work branch غير افتراضية تُنشر على GitHub تحصل على PR صحيحة كجزء من publication handoff وفق §6.3 وPhase Stack، وألا يستمر العمل على remote branch بلا PR.
 - تصنيف النتيجة: جاهزة، تحتاج تعديلًا، تحتاج follow-up، أو يجب إيقافها.
 
 ### 3.2.1 مسؤولية القرار الهندسي
@@ -163,7 +164,7 @@
 
 ### 3.2.2 سلطة التنفيذ داخل الـPhase أو الـExecution Batch
 
-بعد اعتماد Scope الـPhase أو Execution Batch صراحة من مالك المشروع، يجوز للمساعد القائد إدارة التنفيذ داخل النطاق، عندما تكون الأدوات والصلاحيات متاحة، دون الرجوع للمالك عند كل Micro-step. هذه صلاحية تنسيق وتنفيذ، وليست Standing Merge Authority.
+بعد اعتماد Scope الـPhase أو Execution Batch صراحة من مالك المشروع، يجوز للمساعد القائد **إدارة وتنظيم دورة التنفيذ** داخل النطاق، عندما تكون الأدوات والصلاحيات متاحة، دون الرجوع للمالك عند كل Micro-step. هذه صلاحية orchestration وإدارة workflow، وليست إسنادًا تلقائيًا لدور Executor إلى المساعد القائد ولا Standing Merge Authority.
 
 تشمل هذه السلطة:
 
@@ -191,6 +192,26 @@
 - لا ينفذ المساعد القائد تغييرات داخل المستودع إلا بتكليف صريح من مالك المشروع أو وفق صلاحية تنفيذ محددة في تعليمات المشروع أو المهمة.
 - عند تكليفه بالتنفيذ، يخضع لنفس قواعد النطاق والتحقق وصلاحيات Git المطبقة على أي منفذ.
 
+#### قاعدة إسناد دور التنفيذ إلى المساعد القائد
+
+موافقة مالك المشروع على التحرك أو الاستمرار في Plan أو Scope أو Phase أو Work Unit أو remediation معتمدة تمنح المساعد القائد صلاحية **تحريك وإدارة الـworkflow داخل سلطته القائمة**، لكنها لا تعيّنه تلقائيًا Executor لتعديلات المستودع.
+
+هذه القاعدة **دلالية وليست phrase-based**: لا تعتمد على كلمة أو صيغة أو قائمة عبارات بعينها. لا يصبح المساعد القائد منفذًا شخصيًا للتغيير إلا إذا كان الأثر الدلالي للتعليمات المنطبقة يحدد بوضوح أن المساعد القائد نفسه هو الـactor المسؤول عن تنفيذ تعديل المستودع، أو كانت هناك تعليمات project/phase/task نافذة تمنحه مسبقًا صلاحية التنفيذ المحددة.
+
+إذا أمكن فهم الموافقة بصورة صحيحة على أنها تفويض للمساعد القائد بإدارة العمل واختيار/تكليف Executor، وفي الوقت نفسه أمكن تخمين أنها تسمح له بالتنفيذ الشخصي، يُعتمد **التفسير الأضيق**:
+
+```text
+Owner approval to advance approved work
+→ Lead orchestration / delegation
+
+Lead personal repository implementation
+→ explicit semantic assignment of Lead as Executor required
+```
+
+لا يجوز للمساعد القائد توسيع الموافقة المبهمة إلى self-execution authority، ولا يحتاج في المقابل إلى إيقاف الـworkflow لمجرد عدم إسناد التنفيذ إليه؛ يواصل دوره الطبيعي باختيار المنفذ المناسب وكتابة التوجيه ومراجعة الناتج.
+
+وتبقى **صلاحية العملية** منفصلة عن **إسناد دور المنفذ**. التصريح بعملية محددة تحكمها قاعدة مستقلة — مثل Owner authorization لGitHub Merge — يسمح بتلك العملية وفق عقدها، لكنه لا يعيّن المساعد القائد Executor لتغييرات مستودع أخرى. وبالمثل، إسناد التنفيذ للمساعد القائد لا يمنحه تلقائيًا Branch أو Commit أو Push أو PR أو Merge authority خارج العقود والصلاحيات الخاصة بكل عملية.
+
 ### 3.2.4 استلام PR من Jules
 
 بعد أن ينهي Jules مهمته ويكتب على branch جديدة خاصة بالمهمة الحالية (Jules task branch)، تصبح بيانات الـ PR النهائية مسؤولية المساعد القائد:
@@ -202,6 +223,36 @@
 5. إذا كانت المهمة غير مكتملة، لا يُجمّل وصف الـ PR؛ بل يطلب التصحيح أو يوقفها.
 
 هذا الـ handoff طبيعي؛ لأن Jules قد يستطيع الكتابة وفتح PR، لكنه لا يُعتمد عليه لتعديل PR metadata بعد آخر كتابة أو بعد تغير الـ remote HEAD.
+
+### 3.2.5 Stewardship لحالة الـPR والاستئناف
+
+كل PR نشطة تستخدم كـexecution أو review أو integration boundary يجب أن تبقى **current-state resume surface** دقيقة وقابلة للاستئناف. المساعد القائد مسؤول عن أن يستطيع Lead جديد فهم الحالة الحالية من GitHub والمستودع والمراجع authoritative دون مطالبة مالك المشروع بإعادة سرد سياق المحادثة السابقة.
+
+يكون حجم الوصف متناسبًا مع المهمة، لكنه يحتفظ بما ينطبق ماديًا من:
+
+- الهدف والـScope المغلق.
+- exact base/parent أو comparison boundary اللازمة لفهم الحالة الحالية.
+- القرارات المقفلة أو dependencies أو non-goals الخاصة بهذه الـPR فقط.
+- حالة التنفيذ/المراجعة/التكامل الحالية.
+- exact reviewed أو accepted HEAD عندما توجد.
+- blockers أو Owner Decisions غير المحسومة عندما توجد.
+- الخطوة الصحيحة التالية والسلطة التي تملكها.
+
+وصف الـPR هو **mutable current-state snapshot** وليس historical diary. تُحدّث الحالة فيه in-place كلما تغيّر الواقع، ولا تُنسخ داخله قواعد هذا المعيار أو Phase Stack العامة؛ يكفي reference إلى المصدر canonical مع إبقاء task-specific state والحدود فقط.
+
+أما التاريخ التنفيذي فيبقى داخل GitHub timeline: commits وdiffs وreview threads وmaterial PR comments وchecks وmerge events. قبل تصنيف PR بأنها جاهزة لـOwner-authorized Merge يجب أن تكون نتيجة Direct Lead Acceptance على exact accepted HEAD قابلة للاسترجاع تاريخيًا من الـPR. وإذا غيّرت remediation حالة سبق قبولها أو رفضها، تسجل نتيجة الـFresh Review الجديدة للحالة المتراكمة بدل إعادة كتابة milestone التاريخية السابقة.
+
+إذا احتوت نفس Work Branch/PR على عدة Work Units أو logical milestones متتابعة، فلا ينتظر المساعد القائد نهاية الـPR لتوثيقها جميعًا دفعة واحدة. قبل بدء Work Unit التالية، يجب أن تكون Acceptance/Lead Review للوحدة المكتملة قابلة للاسترجاع تاريخيًا على exact HEAD الخاصة بها، وأن يُحدّث وصف الـPR من حالة الوحدة المكتملة إلى current state والخطوة التالية وفق transition gate المملوك لـPhase Stack. لا تجعل هذه القاعدة كل micro-step Work Unit مستقلة ولا تفرض PR جديدة.
+
+يحافظ السجل على high signal: لا يلزم comment لكل command أو progress update أو micro-fix أو إعادة نسخ تقرير Executor لا يغير scope أو decision أو review/integration state. وإذا احتاج claim تاريخي مادي إلى تصحيح لاحق، يضاف تصحيح جديد يحدد الحقيقة المصححة بدل تعديل التاريخ ليبدو كأن الخطأ لم يقع.
+
+بعد Owner-authorized Merge، يتولى المساعد القائد post-merge metadata reconciliation المنطبقة: لا تبقى Child PR تصف نفسها مثلًا بأنها `READY FOR MERGE` بعد دمجها، ويطبق على أي Parent/Umbrella نشطة عقد propagation وresulting-parent-HEAD gate المملوك لـPhase Stack قبل بدء العمل المتتابع أو المعتمد التالي.
+
+إذا لم تتوفر للمساعد القائد صلاحية فعلية لتحديث PR metadata المطلوبة، يعرض discrepancy صراحة ولا يدعي اكتمال resume-state reconciliation حتى يصححها actor مخول.
+
+عند تغير chat أو session أو executor، يبدأ الاستئناف من PR الحالية وGitHub timeline والـremote refs والكود/التوثيق والمراجع authoritative. Chat أو Memory أو تقرير Executor أدوات discovery فقط وليست بديلًا عن هذا السجل.
+
+لكي يكون هذا العقد متاحًا لكل published governed work branch، تطبق قاعدة DEC-017: branch محلية غير منشورة قد توجد أثناء الإعداد والتنفيذ المحلي، لكن أي non-default work branch تُنشر إلى GitHub يجب أن ترتبط بالـPR الصحيحة ضمن نفس publication handoff قبل استمرار governed execution. لا تفرض هذه القاعدة PR جديدة إذا كانت branch مرتبطة بالفعل بـPR صحيحة قائمة.
 
 ## 3.3 المنفذ المحلي (Local Executor)
 
@@ -338,7 +389,7 @@ Jules لا يقرر سياسة أو معمارية من نفسه، ولا يحو
 
 يتوقف المنفذ ويعرض الحالة الفعلية إذا وجد:
 
-- HEAD غير مطابق.
+- HEAD غير مطابق للـbaseline المطلوب التحقق منها في الخطوة الحالية؛ لا يعد اختلاف checkout الابتدائية وحده mismatch للـtarget قبل تنفيذ acquisition مصرح بها وفق §8.6.1.
 - working tree غير نظيف خلاف المطلوب.
 - staged changes سابقة غير مملوكة للمهمة.
 - تعليمات متعارضة.
@@ -403,13 +454,17 @@ Review Staging مسموح افتراضيًا ما لم يمنعه التوجيه
 - فتح PR.
 - Merge.
 
+إذا كانت baseline acquisition مسؤولية المنفذ، يجب أن تصرّح الـPrompt المكتملة داخل artifact نفسها بكل عملية Git مطلوبة تحديدًا وفق §6.4 و§8.6.1؛ طلب الوصول إلى baseline لا يمنح سلطة الانتقال إليها ضمنيًا.
+
 كل صلاحية مستقلة:
 
 - Review Staging لا يعني Commit.
 - Commit لا يعني Push.
-- Push لا يعني فتح PR.
+- Push لا يمنح المنفذ تلقائيًا صلاحية فتح PR.
 - فتح PR لا يعني Merge.
 - **كل GitHub Merge يحتاج Owner authorization صريحة منفصلة**، سواء كان إلى Phase Draft أو Batch Integration Boundary أو `main` أو parent آخر.
+
+استقلال الصلاحيات لا يسمح بحالة branch-only مستقرة. إذا أدى Push إلى نشر governed work branch غير افتراضية لا تملك PR صحيحة قائمة، تصبح publication handoff غير مكتملة. يفتح الـactor المخول الـPR في نفس التدفق؛ وإذا لم يكن الناشر مخولًا بذلك، يتولى المساعد القائد فتحها بعد التحقق من remote branch والـbase والـancestry. لا يستمر governed execution أو delegation على تلك branch حتى توجد PR صحيحة.
 
 ولرفع الالتباس الاصطلاحي، يفرق هذا المعيار بين صلاحيات عمليات Git المحلية وبين GitHub Merge. تملك Phase Stack دورة الـMerge وحدود التكامل وتسلسله، بينما يحدد هذا المعيار صلاحيات الأدوار والعمليات المحلية؛ وتظل كل GitHub Merge مشروطة بـOwner authorization صريحة.
 
@@ -460,7 +515,7 @@ git push --force-with-lease
 
 الأمر `git switch -c` أو `git checkout -b` مسموح فقط عندما ينص التوجيه على إنشاء branch بعد نجاح baseline verification.
 
-إذا كان الـ index غير نظيف عند بداية المهمة، يتوقف المنفذ بدل تغييره.
+إذا كان الـ index غير نظيف عند بداية المهمة، يتوقف المنفذ بدل تغييره. لا تمنح كلمات sync أو refresh أو update local أو move to latest parent أي صلاحية ضمنية لعملية من القائمة؛ يجب تحديد العملية وحدودها في مسار acquisition المملوك لـ§8.6.1.
 
 ## 6.5 منع amend وإعادة كتابة التاريخ
 
@@ -546,7 +601,7 @@ git diff --stat
 - من الواجهة: اختيار Repository ثم Starting branch.
 - من الـ API: تحديد `sourceContext.githubRepoContext.startingBranch`.
 
-الـ Prompt يذكر expected branch والـ exact source SHA للتحقق والتوقف فقط؛ ولا يستطيع تغيير Starting branch أو إصلاح ancestry بعد بدء الـ Session.
+الـ Prompt يذكر expected repository وexpected starting branch والـ exact source SHA للتحقق والتوقف عند mismatch؛ ولا يستطيع تغيير Starting branch أو إصلاح ancestry بعد بدء الـ Session. اختيار المصدر خارجيًا هو environment/session configuration مسموحة، ولا يجيز إبقاء expected state أو متطلبات التنفيذ معروفة فقط من إعداد خارجي أو hidden session context؛ تخضع artifact نفسها لـ§8.6.
 
 أي صلاحية عامة مصرح بها لعمليات `git switch` أو `git checkout` (كالمذكورة في §6.3 و §6.4) لا تمنح Jules الصلاحية لتغيير Source Context أو Starting Branch الخاصة بالـ Session.
 إذا كان العمل يتطلب Starting Branch مختلفة، يُمنع معالجة ذلك داخل نفس الـ Session عبر أوامر Git؛ بل يجب إيقاف الـ Session وبدء واحدة جديدة من المصدر الصحيح. (هذا لا يغير قواعد المنفذ المحلي).
@@ -625,7 +680,7 @@ git diff --stat
 
 ## المرحلة 4 — بناء التوجيه وتجهيز مسار التنفيذ
 
-يُكتب Prompt بالحد الأدنى الكافي. وفي مهام Jules يُطبق إعداد الـ Session خارج الـ Prompt وفق القسم `6.7`.
+يُكتب Prompt بالحد الأدنى الكافي، وتُسلّم الـPrompt المفوضة المكتملة كـartifact واحدة وفق §8.6. وفي مهام Jules يُطبق إعداد الـ Session خارج الـ Prompt وفق القسم `6.7` مع إبقاء expected state والتحقق منها داخل artifact نفسها.
 
 ## المرحلة 5 — التنفيذ
 
@@ -643,15 +698,17 @@ git diff --stat
 
 ## المرحلة 8 — Commit وPush وPR
 
-تحدث وفق صلاحيات Git المحددة في التوجيه. Commit وPush وفتح PR صلاحيات مستقلة يمكن التصريح بها، أما كل GitHub Merge فيحتاج Owner authorization صريحة منفصلة. كل تصحيح بعد Commit يُضاف في Commit جديد. نشر Jules واختيار Publish Branch أو Publish PR يخضعان للقسم `6.7`.
+تحدث وفق صلاحيات Git المحددة في التوجيه. Commit وPush وفتح PR صلاحيات مستقلة على مستوى actor authority، لكن نشر governed work branch جديدة إلى GitHub لا يكتمل كـworkflow state قبل وجود PR صحيحة لها وفق DEC-017 وPhase Stack. إذا لم يملك المنفذ صلاحية فتحها، ينهي الناشر الـPush ويحوّل handoff فورًا إلى المساعد القائد لفتح PR قبل استمرار التنفيذ. أما كل GitHub Merge فيحتاج Owner authorization صريحة منفصلة. كل تصحيح بعد Commit يُضاف في Commit جديد. نشر Jules واختيار Publish Branch أو Publish PR يخضعان للقسم `6.7`.
 
 ## المرحلة 9 — مراجعة PR وmetadata handoff
 
-تشمل scope وdiff وbase freshness والـ checks والـ threads. بعد مهمة Jules الناجحة، يتولى المساعد القائد تثبيت العنوان والوصف النهائيين للـ PR من الحالة الفعلية.
+تشمل scope وdiff وbase freshness والـchecks والـthreads، ويطبق المساعد القائد عقد current-state/resume في §3.2.5. قبل عرض PR بوصفها جاهزة للدمج، يثبت exact remote HEAD التي راجعها، ويجعل الوصف يعكس الحالة الحالية الفعلية، ويسجل نتيجة القبول على تلك الـHEAD في GitHub timeline بصورة قابلة للاسترجاع تاريخيًا.
 
-تستمر التصحيحات اليدوية الطبيعية داخل نفس PR. في مهام Jules تُرسل ملاحظات Lead أو PR على نفس المهمة عبر top-level PR conversation comment أو Reply عادي داخل نفس PR بمنشن صريح `@jules` وفق القسم `11.1`. أما task-scoped automatic CI remediation التابعة للمهمة نفسها فتتبع lifecycle §11.4 ولا تحتاج comment يدويًا منفصلًا لكل دورة. عند التكدس أو فقدان الاستيعاب يُطبق مسار الاستعادة في القسم `6.7`.
+بعد مهمة Jules الناجحة، يتولى المساعد القائد تثبيت العنوان والوصف النهائيين للـPR من الحالة الفعلية. تستمر التصحيحات اليدوية الطبيعية داخل نفس PR. في مهام Jules تُرسل ملاحظات Lead أو PR على نفس المهمة عبر top-level PR conversation comment أو Reply عادي داخل نفس PR بمنشن صريح `@jules` وفق القسم `11.1`. أما task-scoped automatic CI remediation التابعة للمهمة نفسها فتتبع lifecycle §11.4 ولا تحتاج comment يدويًا منفصلًا لكل دورة. عند التكدس أو فقدان الاستيعاب يُطبق مسار الاستعادة في القسم `6.7`.
 
-بعد إنشاء أي PR تُراجع `base` و`head` و`merge-base` و`changed files`. يُصلح خطأ الـ base من نفس head branch فقط عندما تكون ancestry صحيحة؛ أما branch المبنية من مصدر خاطئ فتُستبدل بbranch جديدة من المصدر الصحيح.
+بعد إنشاء أي PR تُراجع `base` و`head` و`merge-base` و`changed files`. يُصلح خطأ الـbase من نفس head branch فقط عندما تكون ancestry صحيحة؛ أما branch المبنية من مصدر خاطئ فتُستبدل بbranch جديدة من المصدر الصحيح.
+
+بعد أي Owner-authorized Merge، تنفذ metadata/state reconciliation المنطبقة وفق §3.2.5 وPhase Stack قبل اعتبار الـexecution chain جاهزة للانتقال إلى عمل متتابع أو معتمد تالٍ.
 
 ## المرحلة 10 — قرار الدمج
 
@@ -669,7 +726,7 @@ git diff --stat
 
 كل Prompt تنفيذي يحتاج فقط، عند انطباقها، إلى:
 
-1. **Exact baseline أو comparison boundary:** branch/ref وSHA وحالة working tree والـindex.
+1. **Exact baseline أو comparison boundary:** expected repository وbranch/ref وSHA وحالة working tree والـindex؛ وعند الحاجة baseline readiness ومسؤولية تجهيزها، مع المسار المصرح به وفق §8.6.1.
 2. **Authoritative references:** `AGENTS.md` والمسارات أو الأقسام اللازمة للمهمة.
 3. **Exact objective:** نتيجة واحدة واضحة.
 4. **Owned scope:** الملفات أو الحدود المملوكة.
@@ -679,6 +736,8 @@ git diff --stat
 8. **Permissions:** صلاحيات Branch وCommit وPush وPR وlocal Git وGitHub Merge كل منها على حدة.
 9. **Stop conditions:** الحالات التي توقف التنفيذ دون تخمين أو fallback.
 10. **Delivery shape:** شكل التسليم أو التقرير أو staged state المطلوبة.
+
+توجد النواة والتعليمات التشغيلية المادية الخاصة بالمهمة داخل artifact المفوضة الواحدة وفق §8.6، بما فيها required sequencing constraints عند الانطباق.
 
 ## 8.2 الوحدات الاختيارية
 
@@ -710,7 +769,7 @@ git diff --stat
 
 ## 8.3.1 حماية القرارات المقفلة
 
-لا يبرر الاختصار أو proportionality حذف locked decision أو invariant أو constraint لازمة لمنع material guessing أو alternate interpretation؛ يحذف فقط الحشو الذي لا يغير التنفيذ أو النطاق أو التحقق أو الصلاحيات.
+لا يبرر الاختصار أو proportionality حذف locked decision أو invariant أو constraint لازمة لمنع material guessing أو alternate interpretation، أو وضعها فقط خارج الـPrompt artifact؛ يحذف فقط الحشو الذي لا يغير التنفيذ أو النطاق أو التحقق أو الصلاحيات. الاختصار لا يبرر fragmentation وفق §8.6.
 
 ## 8.4 التناسب مع حجم المهمة
 
@@ -746,13 +805,95 @@ git diff --stat
 - أن contradiction أو decision gap تعود إلى Lead/Owner بالدليل.
 - Output: findings حسب severity/impact مع evidence، أو `PASS` واضح.
 
-يحدد الـClosed Review Prompt النطاق والعقد ولا يفرض نتيجة المراجعة مسبقًا.
+يحدد الـClosed Review Prompt النطاق والعقد ولا يفرض نتيجة المراجعة مسبقًا. وتخضع الـReview Prompt المكتملة لـ§8.6؛ تبقى exact target وcomparison baseline والعقود والنطاق وreview authority وfinding threshold والصلاحيات وstop/escalation boundary وoutput expectation المادية داخل artifact نفسها، ولا توضع modification permission أو review authority فقط في كلام محيط بها.
+
+## 8.6 سلامة تسليم الـPrompt المفوضة
+
+### الانطباق وعقد artifact الواحدة
+
+عندما يسلّم الـLead **completed delegated operational prompt** إلى actor/session منفصلة، يجب أن تكون **one contiguous, operationally self-contained, copy-ready artifact** تحتوي كل التعليمات التشغيلية المادية اللازمة للمهمة، مع الالتزام بالحد الأدنى الكافي والتناسب في §8.3 و§8.4.
+
+ينطبق ذلك على Execution وReview وRemediation وEvidence-Reconciliation وResume / Understanding Prompts عندما تكون توجيهًا تشغيليًا مفوضًا مكتملًا. لا يفرض هذا العقد وضع ordinary Lead analysis أو Owner-facing discussion أو finding explanation أو progress update أو decision discussion قبل التفويض داخل artifact، إلا إذا كانت المعلومة نفسها instruction مادية يحتاجها delegated actor.
+
+المقصود artifact واحدة متصلة قابلة للنسخ، وليس paragraph واحدة؛ يجوز أن تحتوي عدة Markdown sections دون أن تصبح fragmented.
+
+### التعليمات المادية والـframing الخارجي
+
+المعلومة مادية إذا كان فقدها يغير التنفيذ الصحيح أو المراجعة أو الحدود. وتشمل عند الانطباق: exact baseline / comparison boundary، authoritative references، objective، owned scope، relevant out-of-scope، locked decisions / invariants، acceptance criteria، required verification / evidence، Git permissions، branch / PR topology، stop conditions، delivery / report requirements، وrequired sequencing constraints. لا يجوز وجود أي عنصر لازم منها **فقط خارج artifact**.
+
+يجوز non-operational framing خارجها، مثل «دي الـPrompt النهائية» أو «بعد رد المنفذ ابعته لي للمراجعة»، بشرط ألا يحتاج delegated actor هذا الكلام لتنفيذ المهمة. أما instruction مادية خارج artifact فـ**MUST NOT**.
+
+الحالات التالية **NON-COMPLIANT** عندما تكون التعليمات الخارجية لازمة:
+
+- Prompt block مع instruction قبلها أو continuation بعدها.
+- fragmentان أو أكثر يجب نسخهما ودمجهما يدويًا لتكوين توجيه المهمة.
+- «اتبع أيضًا ما كتبته أعلاه» أو «استمر باستخدام الـPrompt السابقة» عندما تكون artifact الحالية مقدمة بوصفها handoff مكتملة.
+- exact baseline أو locked decision أو Git permission أو stop condition معروفة فقط من كلام الـLead المحيط أو conversation سابقة.
+- Review authority أو modification permission لازمة موجودة فقط خارج Review artifact.
+
+### Self-containment والحد الأدنى الكافي
+
+تعني operational self-containment أن artifact تحتوي كل **task-specific operational instructions** اللازمة وتحدد authoritative references التي يجب قراءتها. يجوز exact reference مثل `AGENTS.md` أو `Standard X §Y` أو `DEC-0XX` عندما تكفي؛ لا يلزم نسخ محتوى canonical الكامل.
+
+لا تعني self-contained نسخ كل Standard أو ADR أو Audit أو Roadmap أو repository history. وتظل giant dumps والتكرار غير اللازم مخالفة لـminimum-sufficient / proportionality ولو كانت داخل artifact واحدة: **contiguous لا تعني verbose، وcopy-ready لا تعني giant dump**. لا يجوز اختصار artifact بنقل instruction مادية إلى الخارج.
+
+### حياد الأداة وإعداد الجلسة
+
+عندما تدعم collaboration surface dedicated writing/document artifact، يكون استخدامها شكل التسليم المفضل. وإلا تكفي **one clearly delimited contiguous prompt artifact**. المعيار الحاكم هو integrity وcontiguity وself-containment وcopy-readiness؛ لا يُشترط vendor أو UI primitive بعينها.
+
+يبقى Jules session setup في §6.7 خارج الـPrompt: اختيار Repository وStarting branch مسبقًا هو environment/session configuration، وليس instruction يستطيع نص الـPrompt تنفيذها. يجب أن تحتوي artifact نفسها expected repository وexpected starting branch وexact source SHA وverification وmismatch stop condition، مع المهمة والنطاق والقرارات والصلاحيات والتسليم بحسب الانطباق. لا يسمح الإعداد الخارجي بإخفاء expected state أو execution requirements، ولا تطلب الـPrompt تغيير Source Context داخل الجلسة.
+
+### 8.6.1 جاهزية الـBaseline ومسار الوصول التنفيذي
+
+كل completed delegated operational prompt تحتاج local checkout baseline يجب أن توضح مسؤولية تجهيزها عند الحاجة، باستخدام مسار واحد فقط من الآتي:
+
+- **PREPARED BASELINE:** جهّز actor/environment مخول checkout قبل التفويض. تحدد artifact expected repository وbranch/ref وexact expected SHA وحالة working tree وحالة index؛ دور المنفذ **VERIFY ONLY**. أي mismatch يستدعي STOP وعرض الحالة، دون synchronization أو mutation غير اللازمة.
+- **EXECUTOR-ACQUIRED / REFRESHED BASELINE:** المنفذ مسؤول عن الوصول إلى authoritative remote baseline. تحتوي artifact authoritative remote وsource/parent branch وexact expected remote SHA، وعمليات fetch وbranch switch/creation وlocal update المصرح بها تحديدًا عند الانطباق، وclean-state preconditions، وحدود fast-forward only أو equivalent deterministic non-destructive operation، والتحقق النهائي وstop conditions، وخطوة task-branch creation/switch التالية إذا لزمت.
+
+لا يكفي مجرد expected branch/SHA مع mismatch → STOP كتسليم تنفيذي مكتمل عندما يعلم الـLead أن المنفذ مسؤول عن acquisition وأن انتقالًا لازمًا للوصول إلى target؛ يجب أن تحتوي artifact المسار المصرح به، لا أن تطلب فقط «حدّث من الريموت» أو «sync first». لا يوجد readiness mode ثالثة ضمنية أو غامضة.
+
+في executor-acquired mode يكون الترتيب الإلزامي قبل implementation:
+
+```text
+Authorized remote/source identified
+→ remote state refreshed by explicitly authorized operation
+→ remote source HEAD verified against exact expected SHA
+→ local clean-state verified
+→ authorized branch transition/update
+→ local HEAD verified equal exact authorized SHA
+→ clean working tree/index reverified
+→ task branch created/switched if required
+→ implementation starts
+```
+
+تتحقق repository/source identity قبل العمليات الموجهة إليهما. وتحدد artifact عند الحاجة هل local source branch موجودة فتُبدّل وتُحدّث، أم يجب إنشاء tracking/source branch من verified remote ref. كل switch أو creation أو update يحتاج تصريحًا مطابقًا لـ§6؛ لا تُنشأ Child من local Parent stale ثم تُصلح ancestry لاحقًا. لا يُفترض remote باسم ثابت ولا local source branch موجودة في كل بيئة.
+
+لا توجد قاعدة always run `git pull` ولا صلاحية pull ضمنية؛ قد يتبع pull إعداد merge/rebase. يجب أن تحدد أي أوامر فعلية source والطريقة وحدود الأمان بصورة deterministic ومصرح بها للمهمة. يجوز عند الانطباق flow يبدأ بـ`git fetch <REMOTE> <SOURCE_BRANCH>` ثم إثبات remote SHA قبل transition/update محلية مصرح بها ومقيدة بـfast-forward only؛ ليس هذا أمرًا عالميًا ملزمًا لكل topology/environment.
+
+يتوقف refresh mode، عند الانطباق، إذا كانت working tree dirty أو index غير فارغة خلاف المتوقع، أو authoritative remote branch مفقودة، أو remote HEAD مختلفة عن exact expected SHA، أو repository/source branch خاطئة، أو ظهرت unexpected local commits أو local/remote divergence أو unexpected ancestry، أو تعذر fast-forward آمن، أو نقص تصريح Git لازم، أو تطلب الوصول reset/rebase/force/discard. لا تُستنتج صلاحية merge أو rebase أو reset أو clean أو stash أو force أو إسقاط local commits من طلب refresh؛ ولا fallback إلى main أو branch/checkout/SHA أخرى من تلقاء المنفذ.
+
+في الحالة المتتابعة بعد Child Merge وPost-Merge Reconciliation PASS وفق [`GITHUB_PHASE_STACK_WORKFLOW_AR.md` §2.4](../GITHUB_PHASE_STACK_WORKFLOW_AR.md#24-pr-current-state-وpost-merge-reconciliation-gate)، يستخدم الـLead resulting Parent HEAD كمصدر مصرح به وفق Phase Stack، ولا يفترض أن checkout انتقلت تلقائيًا من previous Child أو older local Parent. إذا جهّزها actor آخر يستخدم PREPARED؛ وإذا كان المنفذ مسؤولًا يستخدم EXECUTOR-ACQUIRED / REFRESHED مع المسار الصريح أعلاه. لا يملك هذا القسم تسلسل reconciliation أو اختيار execution parent؛ تبقى ملكيتهما لـPhase Stack.
+
+هذا العقد role/environment aware: Jules source-context preparation ليست Local Executor baseline refresh. يثبت الـLead latest authorized remote source، ثم يختار Repository/Starting branch خارج الـPrompt وفق §6.7؛ تحتوي artifact expected repository/branch/SHA والتحقق والتوقف. لا يطبق local switch refresh model لتغيير Jules Source Context داخل الجلسة.
+
+### اختبار النسخ إلى جلسة جديدة
+
+قبل التسليم يطبّق الـLead الاختبار التالي:
+
+```text
+Copy only the delivered prompt artifact
+→ place it in a fresh delegated session
+→ every material operational instruction required for the task remains available
+→ authorized baseline-acquisition path remains available when executor-owned
+```
+
+إذا احتاج التنفيذ الصحيح إلى استرجاع instruction مادية من كلام خارج artifact، فالتسليم **NON-COMPLIANT**. تبقى قراءة authoritative references المحددة داخلها مسموحة وفق هذا القسم، ولا يعفي نجاح اختبار النسخ من §8.3 و§8.4.
 
 ---
 
 # 9. قالب المنفذ المحلي المختصر
 
-> استخدم النواة التالية، وأضف وحدة اختيارية فقط عند الحاجة.
+> استخدم النواة التالية، وأضف وحدة اختيارية فقط عند الحاجة داخل artifact نفسها. عند تسليم القالب كتوجيه نهائي، يجب أن تحتوي artifact المكتملة كل تعليمات المهمة المادية وفق §8.6؛ لا تعتمد على instruction خارجها.
 
 ````markdown
 أنت تعمل داخل الـ local checkout للمشروع `{{REPOSITORY}}`.
@@ -763,6 +904,22 @@ git diff --stat
 
 ## Baseline
 
+Baseline readiness: `{{PREPARED_BASELINE_OR_EXECUTOR_ACQUIRED_REFRESHED_BASELINE}}`
+Expected repository: `{{REPOSITORY}}`
+Source branch/ref: `{{BASE_BRANCH}}`؛ exact expected SHA: `{{BASE_SHA}}`
+Expected working tree: `{{EXPECTED_WORKTREE_STATE}}`؛ expected index: `{{EXPECTED_INDEX_STATE}}`
+
+اختر مسارًا واحدًا فقط وفق §8.6.1، واحذف نص المسار غير المنطبق قبل التسليم:
+
+- **PREPARED BASELINE:** VERIFY ONLY. تحقق من repository والفرع وHEAD وworking tree/index. أي اختلاف → STOP وعرض الحالة دون sync.
+- **EXECUTOR-ACQUIRED / REFRESHED BASELINE:**
+  - authoritative remote: `{{AUTHORIZED_REMOTE}}`؛ exact expected remote source SHA: `{{BASE_SHA}}`.
+  - بعد التحقق من repository/source، refresh فقط بـ`{{EXACT_AUTHORIZED_FETCH_OPERATION}}`، ثم أثبت remote source HEAD بـ`{{REMOTE_SHA_VERIFICATION}}`؛ mismatch أو missing remote branch → STOP.
+  - تحقق من clean working tree/index قبل transition/update. استخدم `{{EXPLICIT_EXISTING_LOCAL_SOURCE_OR_CREATE_FROM_VERIFIED_REMOTE_REF_PATH}}` بعملية `{{EXACT_AUTHORIZED_SWITCH_OR_SOURCE_CREATION}}`، ثم `{{EXACT_AUTHORIZED_LOCAL_UPDATE_OR_NO_UPDATE_REQUIRED}}`؛ safety boundary: `{{FAST_FORWARD_ONLY_OR_EQUIVALENT_DETERMINISTIC_NON_DESTRUCTIVE_CONSTRAINT}}`.
+  - wrong repository/source، dirty state، unexpected local commits/ancestry، divergence، فشل safe fast-forward، نقص تصريح، أو الحاجة إلى reset/rebase/force/discard → STOP؛ لا fallback.
+
+بعد اكتمال المسار المختار وقبل التنفيذ:
+
 ```bash
 git branch --show-current
 git rev-parse HEAD
@@ -770,8 +927,9 @@ git status --short
 git diff --cached --name-status
 ```
 
-المطلوب: `{{BASE_BRANCH}}` عند `{{BASE_SHA}}`، working tree وindex بالحالة `{{EXPECTED_STATE}}`.
-إذا اختلفت الحالة، توقف واعرضها دون محاولة إصلاح.
+تحقق من source branch عند exact SHA والحالتين أعلاه؛ mismatch → STOP.
+بعد إعادة إثبات النظافة فقط: `{{EXACT_AUTHORIZED_TASK_BRANCH_CREATION_OR_SWITCH_OR_NOT_REQUIRED}}`.
+لا تُنشئ task branch من source stale ولا تبدأ implementation قبل اكتمال التحقق.
 
 ## المهمة
 
@@ -795,6 +953,7 @@ Acceptance:
 
 ## Git
 
+- Baseline fetch / source switch or creation / local update: `{{EXACT_OPERATION_PERMISSIONS_OR_NO_FOR_PREPARED}}` وفق المسار أعلاه، دون pull ضمنية.
 - Branch: `{{BRANCH_PERMISSION}}`
 - Review Staging: `YES` للمسارات الصريحة فقط.
 - Commit: `{{YES_OR_NO}}`
@@ -806,6 +965,7 @@ Acceptance:
 
 نفّذ جميع العمليات المحددة بـ YES حتى آخر خطوة مصرح بها، بعد نجاح بواباتها.
 لا تطلب تأكيدًا إضافيًا لتنفيذ Commit أو Push أو فتح PR إذا كانت مصرحًا بها صراحة.
+إذا كانت المهمة ستنشر governed work branch جديدة وكان `PR: NO`، يجب أن يكون التوجيه قد حدد أن المساعد القائد سيتولى فتح PR الصحيحة فور الـPush؛ يتوقف المنفذ عند handoff ولا يواصل عملًا جديدًا على الـremote branch قبل إنشاء PR. أما branch التي تملك PR صحيحة قائمة فلا تحتاج PR جديدة.
 
 بعد التحقق:
 
@@ -818,6 +978,8 @@ git diff --cached --check
 
 اعرض: starting SHA، changed files، ملخص التنفيذ، نتائج الاختبارات والتحليل، staged diff checks، وحالة Git الفعلية.
 ````
+
+تظل صلاحيات عمليات الـBaseline أعلاه متوافقة مع قسم Git؛ يجب حسم placeholders إلى عمليات محددة أو NO، لا ترك تعليمات acquisition أو authority للمعلومات خارج artifact.
 
 ### وحدات المنفذ المحلي الاختيارية
 
@@ -833,7 +995,7 @@ git diff --cached --check
 
 # 10. قالب Jules المختصر
 
-> **إعداد خارج الـ Prompt:** قبل إرسال القالب، اختر `{{REPOSITORY}}` و`{{STARTING_BRANCH}}` من Jules UI، أو عيّن `sourceContext.githubRepoContext.startingBranch` في الـ API.
+> **إعداد الجلسة خارج الـ Prompt:** قبل إرسال القالب، اختر `{{REPOSITORY}}` و`{{STARTING_BRANCH}}` من Jules UI، أو عيّن `sourceContext.githubRepoContext.startingBranch` في الـ API وفق §6.7. هذا environment configuration فقط؛ تبقى expected repository/branch وexact SHA والتحقق والتوقف وكل تعليمات المهمة المادية داخل artifact النهائية وفق §8.6، بما فيها الوحدات الاختيارية اللازمة.
 
 ````markdown
 أنت تعمل على `{{REPOSITORY}}`، ويجب أن تكون الـ Session قد بدأت من `{{STARTING_BRANCH}}` عند exact source SHA `{{BASE_SHA}}`.
@@ -842,7 +1004,7 @@ git diff --cached --check
 - `AGENTS.md`
 - `{{TASK_REFERENCES}}`
 
-قبل التعديل تحقق من branch والـ exact source SHA. إذا لم تتطابق، توقف دون fallback إلى `main` ودون محاولة إصلاح ancestry.
+قبل التعديل تحقق من repository والـ expected starting branch والـ exact source SHA المذكورة أعلاه. إذا لم تتطابق، توقف دون fallback إلى `main` ودون محاولة إصلاح ancestry.
 
 أنشئ branch جديدة تخص هذه المهمة فقط (Jules task branch):
 `{{JULES_TASK_BRANCH}}`
@@ -885,7 +1047,7 @@ git diff --cached --check
 
 - إذا كانت العملية `YES` تُنفذ بعد نجاح بواباتها دون طلب تأكيد جديد.
 - كسياسة خاصة بـ Maatify: `Publish PR: YES` لا يُستخدم إلا عندما تكون `PR Base` هي `main`.
-- عندما تكون `PR Base` غير `main` يجب أن يكون `Publish PR: NO`، ويُستخدم `Publish Branch: YES` عند التصريح.
+- عندما تكون `PR Base` غير `main` يجب أن يكون `Publish PR: NO`، ويُستخدم `Publish Branch: YES` عند التصريح؛ وتكون هذه publication handoff غير مكتملة حتى يفتح المساعد القائد PR الصحيحة إلى `PR Base` المحددة بعد التحقق من الـremote branch. لا يبدأ عمل لاحق على branch المنشورة قبل هذا الـhandoff.
 
 اعرض: Starting branch، starting SHA، branch المنشورة، commits، remote HEAD، remote merge-base، changed files، `git diff --check`، وطريقة النشر، وPR URL إن وجدت.
 ````
@@ -922,11 +1084,11 @@ Jules يكتب فقط على branch **خاصة بمهمته الحالية (Jule
 
 ## 11.2 Commits والنشر
 
-يمكن السماح لـ Jules بإنشاء branch وCommit وPush أو Publish PR، لكن كل صلاحية مستقلة. إعداد Starting branch وطريقة النشر يتبعان القسم `6.7`، وMerge يظل ممنوعًا على Jules.
+يمكن السماح لـ Jules بإنشاء branch وCommit وPush أو Publish PR، لكن كل صلاحية مستقلة على مستوى صلاحية Jules. لا تغير هذه الاستقلالية DEC-017: إذا نُشرت Jules task branch ولم تنشئ Jules الـPR الصحيحة بنفسها، لا تعد publication مكتملة حتى يفتحها المساعد القائد، ولا يستمر تنفيذ governed work على branch المنشورة قبل ذلك. إعداد Starting branch وطريقة النشر يتبعان القسم `6.7`، وMerge يظل ممنوعًا على Jules.
 
 ## 11.3 PR metadata handoff
 
-عندما تُفتح PR إلى `main`، تكتب Jules عنوانًا ووصفًا أوليين. وعندما تكون base غير `main`، تنشر branch فقط ويفتح المساعد القائد PR الصحيحة بعد التحقق.
+عندما تُفتح PR إلى `main`، تكتب Jules عنوانًا ووصفًا أوليين. وعندما تكون base غير `main`، تنشر Jules branch فقط لأن فتح الـPR الصحيحة مملوك للمساعد القائد في هذا المسار؛ ويجب على المساعد القائد بعد التحقق فتح PR إلى الـbase الصحيحة فورًا كجزء من نفس publication handoff وقبل أي تنفيذ لاحق على branch.
 
 بعد النشر:
 
@@ -995,7 +1157,7 @@ CI green ≠ Lead Acceptance
 
 ## 12.1 قاعدة التقرير
 
-التقرير لا يعيد كتابة الـ Prompt. يعرض الأدلة والنتيجة فقط.
+التقرير لا يعيد كتابة الـ Prompt. يعرض الأدلة والنتيجة فقط. إذا سُلّمت معه Prompt مفوضة مكتملة لمهمة لاحقة، تخضع تلك artifact لـ§8.6 ولا تعتمد على instruction مادية موجودة فقط في التقرير.
 
 ## 12.2 تقرير المنفذ المحلي
 
@@ -1054,7 +1216,7 @@ CI green ≠ Lead Acceptance
 - Direct Lead Review هي canonical acceptance responsibility: يجب على المساعد القائد مراجعة الكود أو التوثيق، والـ diff أو الـ staged patch، والـ checks، والـ PR والمراجع authoritative ذات الصلة بنفسه قبل إعلان الجاهزية أو التوصية بالقبول.
 - إذا خالف الناتج الواقع أو العقود أو النطاق أو الأدلة، يرفضه المساعد القائد أو يطلب تعديله، ولو كانت نتيجة المنفذ أو تقريره تدعي النجاح.
 - تقرير Executor ليس acceptance. تكون Independent أو Separate Final Review إضافية مشروطة بالـrisk أو حساسية التكامل، ولا تلغي مسؤولية المساعد القائد عن المراجعة المباشرة والقبول المشروط بالأدلة.
-- أي delegated reviewer يستلم Review Prompt وفق §8.5، ولا يحسم Owner-level Architecture أو Policy أو Ownership أو Applicability أو Versioning أو Merge decisions.
+- أي delegated reviewer يستلم Review Prompt وفق §8.5 و§8.6، ولا يحسم Owner-level Architecture أو Policy أو Ownership أو Applicability أو Versioning أو Merge decisions.
 
 ### 13.1.1 Fresh Full Acceptance Review بعد remediation
 
@@ -1067,6 +1229,249 @@ Fix verification != final acceptance review
 تراجع المراجعة مقابل أحدث base وHEAD، وتشمل accumulated diff كاملًا، والـarchitecture والـcontracts والـscope، وclaims التوثيق، والاختبارات والأدلة، والـCI/checks، وحالة release عند انطباقها، وكل remediation سابقة وأي تعارضات جديدة. لا تقتصر على آخر Commit أو patch أو ملف أو finding. تُراجع آثار تحرك base أو Integration Draft وفق topology وreconciliation rules في Phase Stack؛ ولا تنشئ هذه الفقرة مسارًا بديلًا لها.
 
 يجب أن يوضح evidence الحكم النهائي على الأقل: base ref وSHA، وHEAD ref وSHA، وأن الحالة المتراكمة كاملة روجعت، والـremediations التي أُخذت في الحسبان، والـchecks المتأثرة التي أُعيد تشغيلها، وحالة Full Applicable Integration Gate عند boundary المناسبة، والحكم النهائي. لا يفرض ذلك نموذج تقرير واحدًا أو ملفًا دائمًا جديدًا. بعد micro-fix يعاد تشغيل الـchecks المتأثرة حسب المخاطر؛ أما Full Applicable Integration Gate فتكون عند boundary ذات معنى وفق `GITHUB_PHASE_STACK_WORKFLOW_AR.md` و`CI_WORKFLOW_STANDARD.md`، ولا تعني المراجعة الكاملة إعادة مصفوفة CI المكلفة بعد كل تعديل صغير.
+
+### 13.1.2 Mandatory Pre-Release Strict Lead Acceptance
+
+عند وجود `RC / Stable Release Intent` لأي إصدار من النوع `SemVer Release Candidate (RC)` أو `Stable Release`، تكون `Mandatory Pre-Release Strict Lead Acceptance Review` بوابة إلزامية دائمًا قبل `Release Authorization` أو `Tag` أو `Release` أو `Publish`. هذه البوابة ليست risk-based؛ وهي مسؤولية الـLead المباشرة وليست متطلب `Independent` أو `Separate Reviewer`. لا تلغي ذلك أي مراجعة مستقلة إضافية يفرضها `risk` أو يعيّنها الـOwner وفق العقود القائمة.
+
+لا تمنح هذه البوابة الـLead صلاحية `Tag` أو `Release` أو `Publish`، ولا تنشئ تلقائيًا Branch أو PR أو persistent report منفصلًا لمجرد ceremony. تبقى هذه الصلاحيات والعناصر محكومة بعقودها القائمة وبـ`GITHUB_PHASE_STACK_WORKFLOW_AR.md` عند انطباقه.
+
+تتبع المراجعة، للحالة النهائية المتراكمة، الترتيب المفاهيمي التالي:
+
+```text
+RC / Stable Release Intent
+↓
+Exact Candidate State
+↓
+Authority / Baseline / Instruction Resolution
+↓
+Resolve STANDARDS_MANIFEST / Final Resolved Applicable Standards Set
+↓
+Resolve DECISIONS_INDEX / Applicable ACTIVE Decisions
+↓
+Build Standards + Decisions → Review-Gate Coverage Matrix
+↓
+Strict Gate-by-Gate Direct Lead Review
+↓
+Final Standards / Decisions Reconciliation
+↓
+Fresh Full Lead Acceptance of accumulated release state
+↓
+Required Integration / Owner-authorized Merge when applicable
+↓
+Post-Merge Reconciliation
+↓
+Full Applicable CI on exact target main SHA
+↓
+Exact Release-Qualified SHA
+↓
+Owner Release Authorization
+↓
+Tag / Release / Publish
+```
+
+تظل التفاصيل التفصيلية الخاصة بـ`CI_WORKFLOW_STANDARD` و`LIBRARY_PRESENTATION_STANDARD` وغيرها من العقود مملوكة لمالكيها canonical؛ لا ينسخ هذا القسم متطلباتها.
+
+#### Standards-First order داخل كل Gate
+
+لا يجوز للـLead بدء Gate من implementation ثم الرجوع إلى الـStandard بعد ذلك. الترتيب الإلزامي لكل Gate هو:
+
+```text
+Applicable AGENTS.md
+↓
+Resolved Applicable Standards
+↓
+Gate Scope + Canonical Owning Standard(s)
+↓
+DECISIONS_INDEX
+↓
+Applicable ACTIVE Decisions
+↓
+Current Repository Evidence
+↓
+Direct Lead Review
+↓
+Verdict
+```
+
+يجوز إعادة استخدام معلومة سبق إثباتها داخل نفس المراجعة فقط بعد التحقق من أنها ما زالت current وصالحة للـexact state. لا يجوز استخدام الذاكرة أو تقرير Executor بدل المصادر authoritative.
+
+#### Coverage Matrix
+
+قبل بدء `Gate-by-Gate review` يبني الـLead `Coverage Matrix` خاصة بالـartifact تثبت تغطية كل Standard في `Final Resolved Applicable Standards Set`، وكل `ACTIVE Decision` منطبق، وكل تعليمات project-specific المادية في `AGENTS.md`، والـcapabilities والـcontracts المادية الفعلية للـartifact. كما تثبت عدم سقوط أي Standard أو Decision منطبقة من المراجعة.
+
+تكون الحالات التالية `BLOCKING`:
+
+```text
+Applicable Standard without review coverage
+Applicable ACTIVE Decision without review coverage
+Material applicable instruction without review coverage
+```
+
+لا يفرض هذا العقد عددًا ثابتًا من Gates أو أسماء موحدة لها؛ يكون Gate Map خاصًا بالـartifact.
+
+#### Verdict contract
+
+القيم الوحيدة هي `PASS` و`FAIL` و`UNRESOLVED` و`N/A`:
+
+- `PASS` يتطلب authoritative evidence.
+- `FAIL` يعني مخالفة فعلية أو `Material Quality Defect` مثبتًا.
+- `UNRESOLVED` يعني evidence غير كافية أو contradiction غير محسومة، وهو blocking.
+- `N/A` لا يستخدم إلا عندما يثبت canonical applicability أو authoritative contract عدم الانطباق.
+
+أي `Material FAIL` أو `UNRESOLVED` يمنع استمرار Release Acceptance حتى الإغلاق والمراجعة اللازمة.
+
+لا تكون المراجعة مجرد literal Standards compliance checklist؛ يجب أن يثبت الـLead معًا `Standards / Decision Compliance` و`Engineering / Contract Quality`. وبحسب applicability والـartifact الفعلية، تشمل المراجعة concerns المادية مثل architecture وscope وtopology، public contracts، runtime/domain semantics، persistence/concurrency/atomicity، failure boundaries، dependencies، source quality/static analysis/style، tests/integration/system evidence، consumer verification/examples، CI، documentation freshness، presentation/release-state truth، security/release artifacts، وhost validation عندما يطلبها الـcanonical owner. يمنع أي `Material Engineering Quality Defect` نتيجة `PASS` حتى لو لم يكن اقتباسًا حرفيًا من Standard.
+
+#### Finding ownership وFinal Reconciliation
+
+`Finding discovery location != Finding canonical ownership`. قد تُكتشف finding أثناء Gate لا تملك concern الخاصة بها. يجب تسجيلها وعدم فقدها، ثم توجيهها إلى الـGate أو canonical concern المالكة. لا تشوه finding verdict الـGate التي اكتُشفت فيها إلا إذا كانت تكسر عقد تلك Gate فعلًا. وتظل كل material finding `BLOCKING` حتى تغلق في ownership الصحيح وتُراجع النتيجة اللازمة.
+
+بعد اكتمال كل `Gate-by-Gate review` يجب تنفيذ `Final Standards / Decisions Reconciliation` صريحة قبل `Final Release Acceptance`. تثبت هذه المصالحة، على الأقل:
+
+- أن كل Standard في `Final Resolved Applicable Standards Set` راجعت.
+- أن كل applicable `ACTIVE Decision` راجعت.
+- أن كل material applicable `AGENTS.md` instruction مغطاة.
+- أن `Coverage Matrix` كاملة.
+- أن accumulated release state بالكامل راجعت.
+- أن كل remediation أُخذت في الاعتبار.
+- عدم وجود material open findings.
+- عدم وجود contradictions جديدة نتجت من remediation.
+- أن final verdict مربوط بـexact candidate state.
+- عدم بقاء أي material finding بلا ownership أو triage أو في حالة deferred صامتة.
+- أن كل material finding منطبقة على release state مغلقة أو مثبتة authoritative بوصفها `N/A` أو غير منطبقة.
+
+```text
+CI green != Release Acceptance
+```
+
+نجاح CI أو Gate منفردة أو تقرير Executor لا يكفي لإصدار Release Acceptance.
+
+#### Immediate Finding Triage and Early Corrective Remediation
+
+```text
+Review Order != Remediation Execution Order
+```
+
+يبقى ترتيب مراجعة الـGates صارمًا، لكن يجوز أن يكون ترتيب معالجة Findings `dependency-aware`. كل `material finding` تظهر أثناء أي Gate تخضع لـ`Immediate Finding Triage` فور اكتشافها. لا يجوز تأجيل تسجيلها إلى أن يأتي دور الـGate المالكة، ولا يجوز تحويل كل observation صغيرة إلى finding رسمية.
+
+يجب أن تكون كل material finding معروفة وقابلة للاسترجاع داخل review state الحالية، بالقدر المنطبق، مع:
+
+```text
+Finding ID
+Discovery Gate / context
+Canonical Owning Gate / Concern
+Authoritative Evidence
+Materiality
+Affected current / previously accepted coverage
+Remediation Timing
+Reason for Timing
+Required Reconciliation
+```
+
+يكون `Finding ID` هوية تشغيلية داخل review train، مثل `G9-F01`، ولا يعني Decision ID أو Durable Repository Decision جديدة. لا يفرض هذا العقد إنشاء Markdown report أو repository artifact جديد لمجرد تسجيل finding.
+
+يبقى:
+
+```text
+Finding discovery location != Finding canonical ownership
+```
+
+قد تُكتشف finding أثناء Gate مبكرة بينما تقع ملكية concern الخاصة بها في Gate لاحقة. لا ينقل الاكتشاف ownership إلى Gate الاكتشاف، ولا يشوه verdict الخاصة بها إلا إذا كانت finding تكسر عقدها فعلًا، ولا يسمح بترك finding للذاكرة أو فقدها.
+
+بعد إثبات finding وتحديد ownership يجب تصنيف `Remediation Timing` إلى قيمة واحدة فقط:
+
+```text
+EARLY
+DEFERRED
+```
+
+إذا تحققت معايير التصحيح المبكر الآمن، فالأصل تفضيل `EARLY`، ولا يجوز استخدام كون الـowning Gate لاحقة سببًا وحيدًا لـ`DEFERRED`.
+
+لا تصنف finding كـ`EARLY` إلا إذا ثبت جميع ما يلي:
+
+1. finding مثبتة من current authoritative evidence.
+2. canonical owning Gate / concern محددة.
+3. remediation bounded ومفهومة وقابلة للمراجعة.
+4. الحل لا يعتمد على تخمين متعلق بـGate لاحقة لم تُراجع.
+5. لا يتطلب اختيارًا جديدًا غير محسوم في Architecture أو Policy أو Ownership أو Public Contract أو Versioning أو Owner-level decision.
+6. الإصلاح المبكر يمنع known-bad-state propagation أو drift أو future conflict أو rework أو البناء فوق حالة معروفة بأنها خاطئة.
+7. يمكن إدخال التغيير وفق topology الحالية دون scope expansion غير مصرح به.
+8. يمكن تحديد أثره على current/previously accepted Gates بصورة authoritative.
+
+إذا لم يتحقق أي شرط مادي، لا يجوز التخمين ويجب استخدام `DEFERRED`. وتظل `DEFERRED` مسجلة وذات ownership ومرئية في current review state وblocking حيث ينطبق، مع بيان سبب التأجيل والـowning Gate والدليل أو القرار المنتظر وما الذي سيطلق remediation. لا تعني `DEFERRED` ignored، ولا يجوز استخدامها لمجرد أن الـowning Gate لم تصل بعد إذا كانت شروط `EARLY` متحققة.
+
+يجوز معالجة finding مملوكة لـGate لاحقة قبل الوصول الرسمي إليها عند تحقق شروط `EARLY`، لكن:
+
+```text
+Early remediation of a later-owned finding
+!=
+progression to the later Gate
+```
+
+ولا تبدأ early correction الـlater Gate، ولا تغلقها، ولا تنتج لها `PASS` أو `partial PASS` أو `pre-approval`، ولا تستبدل evidence المستقبلية لها، ولا تتجاوز الـcurrent Gate. إذا كانت الـcurrent Gate `FAIL` أو `UNRESOLVED` يظل منع progression قائمًا؛ وتنفيذ remediation تخص Gate لاحقة ليس progression إليها.
+
+تتبع طريقة Git وtopology العقود الحالية في `GITHUB_PHASE_STACK_WORKFLOW_AR.md` ولا ينسخ هذا القسم قواعدها ولا يفرض Child PR لكل finding. عند وجود Integration/Merge boundary منطبق، تبقى السلسلة:
+
+```text
+Direct Lead Review / Fresh Full Acceptance as applicable
+↓
+explicit Owner authorization for each GitHub Merge
+↓
+Merge
+↓
+Post-Merge Reconciliation
+```
+
+ولا تمنح هذه القاعدة Standing Merge Authority لأي actor.
+
+قبل دمج `EARLY` correction يجب تحديد أي Gate أو Acceptance سابقة يمكن أن تتأثر ماديًا. بعد integration تخضع كل affected prior acceptance إلى bounded reconciliation، ولا يفترض أن historical `PASS` ما زالت صالحة. إذا كان الأثر material أو non-local أو غيّر accumulated state بما يفعّل العقد القائم، تطبق `Fresh Full Acceptance Review`. أما Gate غير المتأثرة فلا تعاد شكليًا دون evidence للحاجة.
+
+حتى بعد نجاح early remediation ودمجها:
+
+```text
+Owning Later Gate = PENDING
+```
+
+وعند وصول دورها تنفذ `Fresh Standards-First Review` على then-current accumulated HEAD. لا تعتبر المعالجة المبكرة `PASS` أو `partial PASS` أو `pre-approval` لها، ويجوز إعادة استخدام evidence سابقة فقط بعد إثبات freshness وانطباقها على exact current state. لا يجوز أن تبقى في Final Reconciliation أي material finding في حالة `EARLY remediation incomplete` أو `DEFERRED unresolved` عندما تنطبق على release state؛ يجب أن تكون مغلقة أو مثبتة authoritative بوصفها `N/A` أو غير منطبقة قبل `Release Acceptance = PASS`.
+
+#### RC وStable كمعاملات قبول مستقلة
+
+```text
+RC Acceptance PASS != Stable Acceptance PASS
+```
+
+كل `rc.N`، مثل `rc.1` و`rc.2` و`rc.3`، هو `Release Acceptance transaction` مستقلة ويحتاج verdict جديدة. ويحتاج `Stable` verdict `Fresh Release Acceptance` خاصة به حتى لو كانت RC السابقة `PASS`. يجوز إعادة استخدام evidence لم تتغير فقط بعد إثبات أنها ما زالت current، وتنطبق على exact target state، ولم تصبح stale بسبب تغيير لاحق. لا تتحول verdict سابقة تلقائيًا إلى verdict لإصدار جديد.
+
+#### Staleness بعد تغيير محتوى الإصدار
+
+إذا حدث أي `content commit` مقصود دخوله في نفس release بعد `Final Release Acceptance`:
+
+```text
+previous Release Acceptance = STALE for the new state
+```
+
+يجب عندها تحديد affected review coverage، وإعادة checks المنطبقة، وإعادة Direct Lead Review اللازمة، وإصدار `Final Release Acceptance` verdict جديدة على exact resulting state. إذا كانت remediation مادية أو non-local، تطبق `Fresh Full Acceptance Review` الكامل وفق العقد الحالي. لا يعد صغر التغيير سببًا لتجاوز إعادة التحقق دون evidence لأثره.
+
+#### Exact Release Authority Boundary
+
+```text
+Merge Authorization != Release Authorization
+```
+
+ولا يجوز الوصول إلى `Tag` أو `Release` أو `Publish` إلا عند تحقق الشروط الثلاثة معًا:
+
+```text
+Mandatory Pre-Release Strict Lead Acceptance = PASS
++
+exact target main SHA = release-qualified
++
+Owner Release Authorization = explicit
+```
+
+تملك `CI_WORKFLOW_STANDARD` qualification/evidence الخاصة بـexact release-qualified SHA، ويملك applicable release/presentation Standard استهلاك هذه الحالة في Tag/Release، بينما يظل الـOwner صاحب Release/Tag/Publish authority. لا ينسخ هذا العقد التفاصيل الداخلية لتلك Standards.
+
+لا يغير هذا القسم ملكية `Fresh Full Acceptance Review` أو `Direct Lead Review` أو Phase Stack أو Owner-only `Merge`؛ بل يربطها ببوابة RC وStable الصريحة.
 
 ## 13.2 تنفيذ الكود
 
@@ -1127,6 +1532,7 @@ Fix verification != final acceptance review
 
 - Prompt مفتوحة مثل: «راجع النظام وحسنه».
 - Prompt طويلة تعيد نسخ المستندات المرجعية.
+- تسليم Prompt مفوضة مكتملة مع instruction مادية فقط خارج artifact أو fragments تحتاج دمجًا يدويًا وفق §8.6.
 - تكرار القاعدة نفسها في عدة أقسام.
 - إضافة أقسام لا تخص المهمة.
 - دمج gaps غير مترابطة.
@@ -1187,6 +1593,27 @@ Fix verification != final acceptance review
 
 # 17. سجل تغييرات المعيار
 
+## `10.0.0`
+
+- تطبيق `DEC-026`: إلزام completed delegated operational prompts بـartifact واحدة contiguous وoperationally self-contained وcopy-ready، واختبار نسخها إلى جلسة مفوضة جديدة.
+- شمول baseline readiness بنموذجي PREPARED وEXECUTOR-ACQUIRED / REFRESHED، مع remote-first verification ومسار Git صريح non-destructive وfail-closed، والحفاظ على فصل Jules Source Context وملكية Phase Stack.
+- منع fragmentation والتعليمات المادية المعروفة فقط خارج artifact، مع السماح بـnon-operational framing وexact canonical references والحفاظ على minimum-sufficient / proportionality.
+- تغطية Execution/Review/Remediation/Evidence/Resume handoffs، والحفاظ على tool/UI neutrality وJules external session setup دون hidden expected-state dependency.
+- التصنيف `NORMATIVE / BREAKING_CONTRACT_CHANGE / Major` من Frozen Version Baseline `9.0.0` إلى Mutable Candidate `10.0.0`؛ لا chained bump ولا تغيير Phase Stack أو Profiles.
+
+## `9.0.0`
+
+- تطبيق `DEC-023` كعقد `NORMATIVE / BREAKING_CONTRACT_CHANGE` يفرض `Mandatory Pre-Release Strict Lead Acceptance` قبل كل `SemVer RC` و`Stable Release`، مع Standards-First Gates وCoverage Matrix وverdict contract وفصل compliance عن engineering quality.
+- إضافة Finding ownership وImmediate Finding Triage وEARLY/DEFERRED remediation timing، مع الفصل بين Review Order وRemediation Execution Order، ومنع early correction من منح later-Gate pre-approval، وربط affected-acceptance reconciliation بالمراجعة الطبيعية للـowning Gate.
+- إضافة Final Standards / Decisions Reconciliation، وفصل RC وStable إلى Release Acceptance transactions مستقلة، وإبطال القبول السابق بعد content commit، وتثبيت Exact Release Authority Boundary دون تغيير Owner Release/Tag/Publish authority.
+
+## `8.0.0`
+
+- تطبيق `DEC-016`: جعل وصف كل PR نشطة مستخدمة كحد تنفيذ/مراجعة/تكامل current-state resume surface قابلة للاستئناف، مع إبقاء GitHub timeline سجل التنفيذ التاريخي عالي الإشارة وتوثيق انتقال Work Units المتتابعة داخل نفس PR قبل بدء التالية.
+- إلزام Lead بإثبات exact accepted HEAD وتسجيل القبول النهائي تاريخيًا قبل merge-readiness، وتنفيذ post-merge metadata reconciliation وعدم الاعتماد على chat أو memory لاستعادة السياق.
+- ربط Child/Parent post-merge propagation بPhase Stack دون تغيير Owner-only GitHub Merge authority أو فرض PR لكل Work Unit أو نسخ قواعد workflow العامة داخل أوصاف PRs.
+- تطبيق `DEC-017`: منع published governed work branch غير افتراضية من الاستقرار بلا PR، مع إبقاء صلاحيات Push وفتح PR مستقلة على مستوى actor authority وإلزام Lead بإكمال PR handoff عندما لا يملك الناشر صلاحية فتحها.
+- تطبيق `DEC-018`: تثبيت أن موافقة Owner على تحريك العمل تمنح Lead orchestration authority فقط ولا تعيّنه implementation Executor إلا بإسناد دلالي صريح للدور، مع تفسير أي ambiguity لصالح delegation وفصل role assignment عن operation-specific authorization.
 ## `7.1.0`
 
 - تطبيق `DEC-015`: اعتبار task-scoped automatic CI remediation الناتجة عن implementation أو publication للمهمة نفسها continuation لنفس Jules task lifecycle دون Owner authorization مستقلة لكل repair cycle، مع إبقاء نفس task scope وbranch وtopology وصلاحيات Git، وإلزام Lead Fresh Full Acceptance Review للحالة النهائية المتراكمة.
@@ -1319,10 +1746,11 @@ Fix verification != final acceptance review
 - **Amend:** ممنوع؛ كل تصحيح Commit جديد.
 - **جولات التصحيح:** تستمر داخل نفس PR ما دامت واضحة وداخل النطاق؛ session وbranch متتابعة تستخدم فقط عند ظهور تكدس فعلي وبتصاريح Git صريحة.
 - **التحقق البعيد:** ancestry وmerge-base وPR base تُثبت من GitHub الفعلي، لا من تقرير محلي فقط.
+- **PR current state / history:** وصف الـPR هو current resume surface؛ GitHub timeline هي historical execution ledger؛ وبعد الدمج تُصالح Child/Parent state قبل العمل المتتابع أو المعتمد التالي وفق Phase Stack.
 - **تصحيح base:** إذا كانت ancestry صحيحة يمكن إصلاح أو استبدال الـ PR من نفس head branch؛ إذا كانت ancestry خاطئة تلزم branch جديدة من المصدر الصحيح.
 - **تعثر session:** تُعالج حالة Work Unit/Component غير المكتملة وحدود التكامل وفق Phase Stack؛ ويظل هذا المعيار مسؤولًا عن session/source-context behavior، ولا يختار parent أو fallback من نفسه.
 - **العربية:** لغة التواصل والتوجيه والتقارير ووصف الـ PR افتراضيًا.
-- **Minimum Complete / Closed Prompt:** هي أقصر contract مكتملة تمنع material guessing؛ تفاصيل بنائها المعيارية مملوكة حصريًا لـSection 8.
+- **Minimum Complete / Closed Prompt:** هي أقصر contract مكتملة تمنع material guessing؛ تُسلّم الـPrompt المفوضة المكتملة كـartifact واحدة contiguous وoperationally self-contained وcopy-ready وفق §8.6، وتظل تفاصيل بنائها المعيارية مملوكة حصريًا لـSection 8.
 - **الأدلة:** مطلوبة قبل قبول أي ادعاء، ولا تخمين في القرارات؛ ما لا يملك دليلًا كافيًا يبقى غير محسوم.
 - **المراجعة:** Direct Lead Review هي canonical acceptance responsibility؛ تقرير Executor ليس acceptance، وIndependent أو Separate Final Review مشروطة بالـrisk ولا تلغي المراجعة المباشرة.
 - **التبعيات وعدم التداخل:** يسبقان الترتيب الرقمي.

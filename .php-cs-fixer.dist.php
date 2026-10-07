@@ -12,6 +12,7 @@ $finder = Finder::create()
         __DIR__ . '/examples',
         __DIR__ . '/consumer-verification',
         __DIR__ . '/scripts/ci',
+        __DIR__ . '/scripts/release',
     ])
     ->append([__DIR__ . '/.php-cs-fixer.dist.php'])
     ->exclude(['vendor']);

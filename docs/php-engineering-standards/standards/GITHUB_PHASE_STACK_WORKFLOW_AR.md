@@ -3,7 +3,7 @@
 ## بيانات المعيار
 
 - **Standard ID:** `std-github-phase-stack-workflow`
-- **Standard Version:** `3.0.1`
+- **Standard Version:** `4.0.0`
 - **Standard Version Format:** `MAJOR.MINOR.PATCH`
 - **اللغة المعتمدة:** العربية.
 - **الهدف:** تقليل زمن التسليم الكلي عبر Phase Draft أو Execution Batch وDependency-Aware Execution Train، مع الحفاظ على traceability والمراجعة والاختبارات وجودة `main` دون فرض Branch/PR أو تسلسل إداري لا تدعمه dependencies فعلية.
@@ -38,13 +38,25 @@ Strict Sequential Stack
 - **Execution Batch:** وحدة تسليم تشغيلية قد تضم Phase واحدة أو عدة Roadmap Phases مترابطة عندما تشترك في repository context أو architecture أو dependencies أو الملفات أو إعداد التحقق، أو عندما يكون استمرار نفس المنفذ على السياق الحالي أسرع من إعادة الفهم في جلسات متعددة.
 - **Work Branch:** حد Git للعزل والتنفيذ والمراجعة والـrollback. قد تخدم Branch واحدة Execution Batch كاملة، وقد تكون Phase Draft نفسها عندما لا توجد حاجة لحد تجميع إضافي.
 - **Commit:** وحدة traceability داخل Work Branch. يجوز إنشاء Commit واضحة لكل Phase أو logical milestone دون تحويل كل واحدة منها إلى Branch أو PR.
-- **PR:** حد مراجعة وتكامل يختاره الفريق عندما يضيف reviewability أو dependency isolation أو rollback clarity أو safe integration. قد تغطي PR واحدة Execution Batch كاملة وعدة Phases.
+- **PR:** حد المراجعة والتكامل والـcurrent-state لكل governed Work Branch منشورة. لا تعني كل Phase أو Work Unit PR مستقلة؛ قد تغطي PR واحدة Execution Batch كاملة وعدة Phases، لكن لا تبقى non-default work branch منشورة بلا PR مرتبطة بالـtarget الصحيح.
 
 القاعدة الصريحة:
 
 ```text
 Phase ≠ Branch ≠ PR
 ```
+
+ولا تعني هذه القاعدة أن Branch وPR يجوز فصلهما بعد نشر العمل. الـinvariant المنفصل هو:
+
+```text
+Local unpublished work branch
+→ may exist without PR
+
+Published non-default governed work branch
+→ MUST have an associated PR
+```
+
+تُفتح الـPR كجزء من نفس publication handoff إلى الـparent/integration target الصحيح، ولا يستمر governed execution أو delegation على remote branch جديدة قبل وجودها. إذا كانت branch مرتبطة بالفعل بـPR صحيحة قائمة، تُستخدم الـPR نفسها ولا تُنشأ أخرى.
 
 لا تنشأ دورة GitHub مستقلة لمجرد أن Roadmap تحتوي Phase مرقمة. إذا كانت عدة Phases مترابطة وآمنة للتنفيذ المتتابع، يجوز تنفيذها في Execution Batch واحدة وWork Branch واحدة وPR واحدة، مع حفظ phase-level traceability عبر Commits واضحة وتوثيق الـmapping والـevidence.
 
@@ -83,7 +95,7 @@ main
 ## 2.1 اختيار حد التكامل للـPhase أو الـExecution Batch
 
 1. تُفحص أحدث حالة فعلية لـ`main` دائمًا بوصفها مرجع freshness وdivergence. يبدأ Standalone Work من أحدث `main` مصرح بها، ويبدأ Stacked Work من الـauthorized parent أو Integration Boundary الخاصة بالـstack. تحرك `main` لا يغيّر execution parent تلقائيًا؛ ويحتاج Material Divergence إلى Owner-authorized reconciliation. لا يوجد fallback تلقائي إلى `main` أو Automatic Merge. وتحدد Phase Stack الحاجة إلى reconciliation وحدودها، بينما تُحكم طريقة Git الدقيقة وفق صلاحيات AI Collaboration.
-2. قبل إنشاء Branch جديدة، يحدد المساعد القائد هل توجد حاجة فعلية إلى Work Branch مستقلة أو Phase Draft منفصلة. استمرار عدة Phases مترابطة على Work Branch واحدة هو الخيار المفضل عندما تكون dependencies والملفات والسياق مشتركة ولا يضيف الفصل عزلًا أو مراجعة أو rollback وضوحًا.
+2. قبل إنشاء Branch جديدة، يحدد المساعد القائد هل توجد حاجة فعلية إلى Work Branch مستقلة أو Phase Draft منفصلة. استمرار عدة Phases مترابطة على Work Branch واحدة هو الخيار المفضل عندما تكون dependencies والملفات والسياق مشتركة ولا يضيف الفصل عزلًا أو مراجعة أو rollback وضوحًا. إذا أُنشئت Work Branch ثم نُشرت إلى GitHub، يجب أن ترتبط بـPR صحيحة ضمن نفس publication handoff قبل استمرار العمل عليها.
 3. إذا احتاجت الـBatch إلى حد تجميع ومراجعة مستقل، تُعيّن Work Branch واحدة كـPhase Draft أو Batch Integration Branch. لا تنشأ Phase Draft إضافية إذا كانت Work Branch الحالية تؤدي هذا الدور بأمان.
 4. يمكن أن تستهدف Work Branches المنفصلة Phase Draft عند وجود توازٍ حقيقي أو ownership مستقل. أما عند عدم الحاجة إلى تجميع منفصل، فتكون Work Branch/Batch PR الواحدة هي حد المراجعة النهائي قبل `main`.
 5. لا يدخل `main` إلا حد التكامل المعيّن بعد اكتمال جميع Phases وWork Units وGates المطلوبة. وكل GitHub Merge، سواء كان إلى Phase Draft أو Batch Integration Boundary أو `main`، يحتاج Owner authorization صريحة وفق §8.2.
@@ -92,12 +104,12 @@ main
 
 ## 2.2 Work Units ذات التغيير
 
-1. كل Work Unit أو Component ينتج تغييرًا في المستودع يجب أن يملك حدًا واضحًا للملكية والقبول، لكنه لا يحتاج تلقائيًا إلى Branch أو PR مستقلة. يقرر ذلك على مستوى Execution Batch بناءً على dependency isolation وreviewability وrollback clarity وsafe integration وصافي زمن التسليم.
+1. كل Work Unit أو Component ينتج تغييرًا في المستودع يجب أن يملك حدًا واضحًا للملكية والقبول، لكنه لا يحتاج تلقائيًا إلى Branch أو PR **مستقلة**؛ يجوز أن يستخدم Branch/PR قائمة للـExecution Batch. أما إذا احتاج Work Branch مستقلة ونُشرت إلى GitHub، فتكون لها PR مرتبطة بها إلزاميًا وفق DEC-017.
 2. عندما تكون الوحدات مترابطة أو متتابعة أو تشترك في الملفات أو architecture أو verification setup، يجوز تنفيذها على Work Branch واحدة مع Commits واضحة لكل Phase أو logical milestone.
-3. عندما تكون الوحدات مستقلة فعليًا ويكون التوازي أسرع بعد احتساب setup وإعادة الفهم والمراجعة وCI والتكامل والتعارضات، يجوز إنشاء Work Branchs وPRs منفصلة لها وتوجيهها إلى Phase Draft إن وجدت.
+3. عندما تكون الوحدات مستقلة فعليًا ويكون التوازي أسرع بعد احتساب setup وإعادة الفهم والمراجعة وCI والتكامل والتعارضات، يجوز إنشاء Work Branches منفصلة لها؛ وكل Branch منشورة منها تُفتح لها PR مستقلة إلى Phase Draft أو الـparent الصحيح.
 4. إذا كانت Phase Draft Branch منفصلة عن Work Branch، تظل نقطة تجميع محمية ولا تضاف إليها Commits عشوائية. وإذا كانت Work Branch الواحدة هي Batch/Phase Draft المعتمدة، يجوز أن تحتوي على Commits التنفيذ المحددة، مع بقاء review وGates واشتراط Owner authorization لكل GitHub Merge.
 5. لا يدخل إلى حد التكامل جزء سليم من Work Unit غير مكتملة. إذا تعثرت Work Unit، تطبق قواعد الاستعادة دون تقسيم acceptance الخاصة بها إلى Branch أو Component بديلة لمجرد مواصلة ceremony.
-6. لا يحتاج تغيير صغير مثل ملف واحد أو جدول SQL واحد أو Test صغير أو جزء طبيعي من Phase أكبر إلى Branch أو PR مستقلة إذا أمكن ضمه بأمان داخل Batch مترابطة وقابلة للمراجعة.
+6. لا يحتاج تغيير صغير مثل ملف واحد أو جدول SQL واحد أو Test صغير أو جزء طبيعي من Phase أكبر إلى Branch أو PR مستقلة إذا أمكن ضمه بأمان داخل Branch/PR قائمة لـBatch مترابطة وقابلة للمراجعة. إذا أنشئت له Branch جديدة ونُشرت رغم ذلك، فلا تُستثنى من mandatory PR pairing.
 
 ## 2.3 الدمج المنظم مع التوازي
 
@@ -121,6 +133,45 @@ main
 6. تخضع عمليات Git وقيودها التفصيلية لقواعد AI Collaboration؛ ولا ينشئ هذا المعيار صلاحية عملية محلية من تلقاء نفسه.
 
 عند اكتمال واعتماد Component مستقلة ذات PR، يجوز دمجها إلى Phase Draft إذا كانت Draft جزءًا من topology المختارة وبعد اجتياز Component Gate وOwner authorization الصريحة لذلك الـGitHub Merge. أما الوحدات المتتابعة داخل Work Branch واحدة فتراجع ضمن تلك الـBranch وفق الـGates نفسها، دون إنشاء Component PR لكل وحدة. لا يجوز دمج Component غير مكتملة أو تمرير تعارض لمجرد أن تنفيذها بدأ في Wave سابقة.
+
+## 2.4 PR Current-State وPost-Merge Reconciliation Gate
+
+عندما تستخدم PR كـWork/Component/Phase/Umbrella أو Integration Boundary، يجب أن تحقق current-state/resume contract المملوك لـ`AI_COLLABORATION_WORKFLOW_AR.md`. لا يعيد هذا المعيار نسخ حقول الوصف أو مسؤوليات Lead؛ يحدد فقط موضعها داخل topology ودورة التكامل.
+
+إذا دُمجت Child/Component PR إلى Parent/Umbrella نشطة، فلا يُعامل الـMerge وحده كاكتمال انتقال الحالة. قبل بدء Work Unit متتابعة أو معتمدة تستخدم الـParent الناتجة مصدرًا لها، يجب إغلاق **Post-Merge Reconciliation Gate** التالية:
+
+1. التحقق من أن الـChild دُمجت فعلًا إلى الـtarget الصحيح ومن exact accepted Child HEAD.
+2. تثبيت resulting Parent/Integration HEAD الفعلية بعد الدمج.
+3. إضافة historical completion milestone جديدة إلى Parent/Umbrella PR تحدد، بالقدر اللازم للاسترجاع: Child PR، accepted Child HEAD، نتيجة Lead review، resulting Parent HEAD، والنطاق الذي أُغلق.
+4. تحديث Parent/Umbrella PR body لتصبح snapshot للحالة المجمعة الحالية: ما اكتمل، ما بقي، الـcurrent boundary/HEAD، blockers إن وجدت، والخطوة الصحيحة التالية.
+5. تحديث Child PR current-state metadata بحيث لا تبقى تصف نفسها بحالة pre-merge مثل `READY FOR MERGE` بعد اكتمال الدمج.
+
+هذه البوابة لا تفرض تعليقًا مستقلًا لكل micro-step ولا تعيد نسخ تقارير Executor. يُحفظ فقط ما يغير lifecycle أو review أو integration understanding بصورة مادية.
+
+لا توقف هذه البوابة Work Units مستقلة فعلًا كانت تعمل بالتوازي ولا تعتمد على نتيجة الدمج. لكنها تمنع بدء عمل جديد sequential/dependent من Parent غير reconciled أو استخدام Parent stale بوصفها execution source.
+
+### Same-PR Sequential Transition Gate
+
+إذا حملت Work Branch منشورة والـPR المرتبطة بها عدة Work Units أو logical milestones متتابعة، فلا يلزم Merge أو PR مستقلة بين كل وحدة وأخرى، لكن الانتقال نفسه يجب أن يكون موثقًا قبل بدء الوحدة التالية:
+
+1. تُراجع Work Unit المكتملة وتُثبت Acceptance الخاصة بها على exact HEAD التي تمثلها.
+2. تسجل PR timeline milestone موجزة تحدد الوحدة/النطاق المكتمل وaccepted HEAD ونتيجة Lead Review بالقدر اللازم للاسترجاع.
+3. يُحدّث PR body بحيث تنتقل current-state snapshot من الوحدة المكتملة إلى ما اكتمل إجمالًا، وما هو العمل الحالي/التالي، وأي blocker أو dependency جديدة.
+4. إذا نتج عن الوحدة تغيير committed، تحفظ Git history حدًا مفاهيميًا واضحًا لها أو للـlogical milestone؛ لا ينشأ empty commit لمجرد تسجيل PASS أو Gate.
+
+لا تنطبق هذه البوابة على micro-steps داخل Work Unit واحدة، ولا تفرض فصل Work Units مترابطة إلى Branches أو PRs إضافية. هدفها منع ضياع تاريخ الوحدات المتتابعة داخل PR طويلة العمر ومنع الانتقال بينما current-state surface ما زالت تصف الوحدة السابقة.
+
+في Umbrella طويلة العمر يكون الفصل الإلزامي:
+
+```text
+Parent/Umbrella PR body
+= current aggregate state / resume point
+
+Parent/Umbrella timeline
+= append-only completed-child and material lifecycle history
+```
+
+ولا ينشأ من ذلك status/history Markdown artifact داخل المستودع؛ تظل document retention/history semantics مملوكة لـ`DOCUMENTATION_LIFECYCLE_STANDARD_AR.md` عندما تنطبق.
 
 ---
 
@@ -313,7 +364,7 @@ BLOCKED BY DECISION
 
 ## 6.3 Quality Invariant
 
-هذا التغيير لا يلغي Review أو Testing أو Quality Gates أو Regression Protection أو شرط أن `main` لا يستقبل عملًا ناقصًا أو غير مثبت. ولا يفرض في المقابل Phase Draft أو Component أو PR أو Verification أو Final Review منفصلة عندما لا تبررها Execution Topology أو المخاطر أو حد تكامل ذي معنى. تبقى الأدلة والمراجعة والتحقق مطلوبة بقدر العقد والـrisk الفعليين.
+هذا التغيير لا يلغي Review أو Testing أو Quality Gates أو Regression Protection أو شرط أن `main` لا يستقبل عملًا ناقصًا أو غير مثبت. ولا يفرض في المقابل Phase Draft أو Component أو **PR مستقلة لكل Work Unit** أو Verification أو Final Review منفصلة عندما لا تبررها Execution Topology أو المخاطر أو حد تكامل ذي معنى. لكن أي governed Work Branch غير افتراضية تُنشر فعليًا إلى GitHub تظل ملزمة بPR مرتبطة بها وفق DEC-017. تبقى الأدلة والمراجعة والتحقق مطلوبة بقدر العقد والـrisk الفعليين.
 
 ---
 
@@ -350,6 +401,7 @@ BLOCKED BY DECISION
 3. يظل كل GitHub Merge، بما في ذلك Component PR إلى Phase Draft وPhase Draft أو Batch Integration Boundary إلى `main`، مشروطًا بـOwner authorization صريحة. لا توجد Standing Merge Authority للـLead.
 لا يشكل دمج حد التكامل إلى `default branch` بحد ذاته `Standards Adoption` أو `Standards Upgrade`. وتظل `Standards Adoption` و`Standards Upgrade` محكومتين حصريًا بـ`STANDARDS_ADOPTION_STANDARD_AR.md`.
 4. إذا ضمت Work Branch/PR واحدة عدة Phases، يجوز أن تنتج Squash Commit واحدة إلى `main`، بشرط أن تكون Commits الـBranch وتوثيق الـPR قد حافظا على phase-level traceability لكل Phase وlogical milestone قبل الدمج.
+5. كل Merge إلى Parent/Umbrella نشطة يخضع بعده لـPost-Merge Reconciliation Gate في §2.4 قبل بدء عمل sequential/dependent جديد من الـParent الناتجة.
 
 عندما لا توجد Phase Draft منفصلة، يظل أي GitHub Merge من Work Branch/Batch Integration Boundary مشروطًا بـOwner authorization صريحة؛ لا ينشئ ذلك دورة PR مستقلة لكل Phase.
 
@@ -357,7 +409,7 @@ BLOCKED BY DECISION
 
 ## 8.3 Git History المستهدف
 
-يظل تاريخ `main` نظيفًا ومفاهيميًا، بينما تحفظ الـBranch والـPR والتوثيق traceability التفصيلية:
+يظل تاريخ `main` نظيفًا ومفاهيميًا، بينما تحفظ الـBranch والـPR والتوثيق traceability التفصيلية. داخل PR نفسها يكون الوصف current-state snapshot قابلة للاستئناف، بينما تحفظ الـtimeline التاريخ التنفيذي material دون تحويل الوصف إلى diary:
 
 ```text
 Execution Batch 1 — Phase A + Phase B — complete
@@ -380,6 +432,12 @@ Execution Batch 2 — Phase C — complete
 
 # 10. سجل تغييرات المعيار
 
+## `4.0.0`
+
+- تطبيق `DEC-016`: إضافة PR current-state / Same-PR Sequential Transition / Post-Merge Reconciliation Gates داخل topology التنفيذ والتكامل.
+- إلزام Child→Parent/Umbrella propagation بعد الدمج بتثبيت resulting parent HEAD، historical completion milestone، وتحديث parent/child current-state metadata قبل بدء sequential/dependent work جديد من الـParent.
+- تثبيت فصل PR body كحالة حالية عن GitHub timeline كتاريخ تنفيذي، مع الحفاظ على `Phase ≠ Branch ≠ PR` وعدم فرض micro-PRs أو تغيير Owner-only GitHub Merge authority.
+- تطبيق `DEC-017`: تثبيت pairing إلزامية بين أي published non-default governed work branch والـPR الصحيحة، مع إبقاء عدة Work Units قابلة للمشاركة في Branch/PR واحدة وعدم إنشاء Branch/PR للـNo-op.
 ## `3.0.1`
 
 - توضيح أن Merge إلى default branch لا يعني Standards Adoption؛ تظل آلية Adoption مملوكة حصريًا لـ`STANDARDS_ADOPTION_STANDARD_AR.md`.
