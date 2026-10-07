@@ -295,7 +295,7 @@ final class ReleaseArtifactQualificationTest extends TestCase
         );
         $repo2->cleanup();
         self::assertSame('FAIL', $r2['status']);
-        self::assertStringContainsString('complete Owner approval evidence', $r2['message']);
+        self::assertStringContainsString('canonical Owner approval evidence', $r2['message']);
     }
 
     public function testSourceOnlyEffectiveTimingNotBeforeRavFailsOrIsAmbiguous(): void

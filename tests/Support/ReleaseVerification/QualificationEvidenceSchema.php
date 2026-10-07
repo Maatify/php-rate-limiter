@@ -116,7 +116,7 @@ final class QualificationEvidenceSchema
 
         $channel = $str('approved_distribution_channel');
         if (! ReleaseContract::isValidChannel($channel)) {
-            $errors[] = 'approved_distribution_channel is missing or not a valid credential-free repository URL';
+            $errors[] = 'approved_distribution_channel is missing or not a valid credential-free HTTPS repository URL';
         } elseif ($policy === 'dist' && ReleaseContract::normalizeChannel($channel) !== ReleaseContract::normalizeChannel(ReleaseContract::DEFAULT_DISTRIBUTION_CHANNEL)) {
             $errors[] = 'approved_distribution_channel is not the package-approved channel for the dist delivery policy';
         }
@@ -283,7 +283,7 @@ final class QualificationEvidenceSchema
             $errors[] = 'source_only_decision was not ACTIVE and indexed at qualification';
         }
         $owner = $d['owner_approval'];
-        if (! is_array($owner) || ! (bool) preg_match('/\bOwner[- ]approved\b/i', is_string($owner['authority_statement'] ?? null) ? $owner['authority_statement'] : '') || ($owner['approving_authority'] ?? '') === '' || ($owner['approval_date'] ?? '') === '') {
+        if (! is_array($owner) || ! ReleaseContract::isCanonicalOwnerAuthorityStatement(is_string($owner['authority_statement'] ?? null) ? $owner['authority_statement'] : '') || ! ReleaseContract::isCanonicalApprovingAuthority(is_string($owner['approving_authority'] ?? null) ? $owner['approving_authority'] : '') || ($owner['approval_date'] ?? '') === '') {
             $errors[] = 'source_only_decision lacks complete Owner approval evidence';
         }
         if (is_array($owner)) {

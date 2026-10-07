@@ -122,7 +122,7 @@ One canonical schema (`QualificationEvidenceSchema`) is produced by RAV and enfo
 | `candidate_sha`, `candidate_tree_sha` | 40-hex |
 | `qualification_started_at`, `qualified_at` | strict UTC `YYYY-MM-DDTHH:MM:SSZ`; `semantic_review.reviewed_at ≤ qualification_started_at ≤ qualified_at` |
 | `delivery_policy` | `dist` or `source-only`; anything else fails |
-| `approved_distribution_channel` | credential-free URL; for `dist` must equal the package-approved channel |
+| `approved_distribution_channel` | credential-free **HTTPS** URL; for `dist` must equal the package-approved channel |
 | `semantic_review` | the validated record: schema `1.0.0`, same target and candidate, `APPROVED`, reviewer, strict-UTC `reviewed_at` **not later than `qualification_started_at`**, all 8 claims `CONFIRMED` |
 | `content_manifest` | SHA-256 of exactly the 10 required paths; no malformed/ambiguous paths, no missing or extra entries |
 | `distribution_evidence` | `git-archive` verified; required files in archive; none missing; archive content equals tree; no forbidden entries; `.gitattributes` and `composer.json` `archive.exclude` impact recorded |
@@ -177,9 +177,9 @@ Source-only delivery is a generic verifier capability; the normal policy for thi
 2. the Decision Record path and `docs/decisions/DECISIONS_INDEX.md` both exist **in that commit**;
 3. the record declares its own Decision ID and Status `ACTIVE`, and the Index row at that commit is `ACTIVE` for that record path;
 4. at the candidate, the record is **byte-identical** (same blob) and the Index row is still `ACTIVE` (no silent amendment);
-5. Owner approval: the record's `## Decision Authority` states `Owner-approved`, and the declaration has `Owner Approval: APPROVED`, an `Approving Authority`, an `Approval Date` and an `Effective Date`;
+5. Owner approval, verified by **exact equality** against one canonical machine-verifiable representation (never by substring or free-text reading): the record's `## Decision Authority` section is exactly `Owner-approved package delivery decision.`, and the declaration has exactly `Owner Approval: APPROVED` and `Approving Authority: Package Owner`, plus a valid `Approval Date` and `Effective Date`. Negated or decorated text such as `Not Owner-approved package delivery decision.`, `Owner-approved? No.` or a different authority (for example `Maintainer`) does not qualify. The same helper validates `owner_approval.authority_statement` and `owner_approval.approving_authority` in the evidence schema, so PAV rejects fabricated evidence before any Composer work;
 6. timing: the approval/effective instant is **strictly earlier than the RAV start**. Date-only values are ambiguous about the time of day, so they are resolved to the *end* of that UTC day (a same-day approval is therefore not yet effective); missing or unparseable timing fails;
-7. the declaration names the exact package, a credential-free Composer channel, `Delivery Mode: source-only`, `Intentional Canonical Delivery: yes`, a non-empty dist rationale, and a bounded version scope that covers the target.
+7. the declaration names the exact package, an approved Composer channel that is **HTTPS-only** and credential-free (no userinfo, query or fragment — qualifying PAV runs with `secure-http: true`, which is never disabled, so an `http://` channel could not be consumed and never qualifies), `Delivery Mode: source-only`, `Intentional Canonical Delivery: yes`, a non-empty dist rationale, and a bounded version scope that covers the target.
 
 Decision Records that may authorize source-only delivery use the repository's existing sections (`## Decision ID`, `## Status`, `## Decision Authority`, `## Supersedes`, `## Superseded By`) plus:
 
@@ -193,7 +193,7 @@ Decision Records that may authorize source-only delivery use the repository's ex
 - Version Scope: 1.0.x, 1.1.0-rc.1
 - Dist Rationale: <why dist is intentionally not offered>
 - Owner Approval: APPROVED
-- Approving Authority: <Owner authority>
+- Approving Authority: Package Owner
 - Approval Date: YYYY-MM-DD
 - Effective Date: YYYY-MM-DD
 - Maintenance Owner: <when applicable>

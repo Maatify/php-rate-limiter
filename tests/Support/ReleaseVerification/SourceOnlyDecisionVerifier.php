@@ -21,7 +21,9 @@ namespace Maatify\RateLimiter\Tests\Support\ReleaseVerification;
  *   Approval Date, Effective Date, and optionally Maintenance Owner.
  *
  * plus the repository-standard `## Status`, `## Decision ID` and `## Decision Authority`
- * (which MUST state `Owner-approved`) sections.
+ * sections. Owner approval is machine-verifiable by exact equality only (see ReleaseContract):
+ * Decision Authority = `Owner-approved package delivery decision.`, Owner Approval = `APPROVED`,
+ * Approving Authority = `Package Owner`.
  */
 final class SourceOnlyDecisionVerifier
 {
@@ -104,15 +106,15 @@ final class SourceOnlyDecisionVerifier
             return $this->fail(sprintf('Decision "%s" has no "Source-Only Delivery Declaration" section.', $decisionId));
         }
 
-        if (! (bool) preg_match('/\bOwner[- ]approved\b/i', $record['authority'])) {
-            return $this->fail(sprintf('Decision "%s" does not state Owner approval under "Decision Authority".', $decisionId));
+        if (! ReleaseContract::isCanonicalOwnerAuthorityStatement($record['authority'])) {
+            return $this->fail(sprintf('Decision "%s" does not carry the canonical Owner approval statement under "Decision Authority" (expected exactly "%s").', $decisionId, ReleaseContract::OWNER_AUTHORITY_STATEMENT));
         }
-        $approvalState = strtoupper($declaration['Owner Approval'] ?? '');
+        $approvalState = $declaration['Owner Approval'] ?? '';
         $approver = $declaration['Approving Authority'] ?? '';
         $approvalDate = $declaration['Approval Date'] ?? '';
         $effectiveDate = $declaration['Effective Date'] ?? '';
-        if ($approvalState !== 'APPROVED' || $approver === '' || $approvalDate === '' || $effectiveDate === '') {
-            return $this->fail(sprintf('Decision "%s" lacks complete Owner approval evidence (Owner Approval, Approving Authority, Approval Date, Effective Date).', $decisionId));
+        if (! ReleaseContract::isCanonicalOwnerApprovalState($approvalState) || ! ReleaseContract::isCanonicalApprovingAuthority($approver) || $approvalDate === '' || $effectiveDate === '') {
+            return $this->fail(sprintf('Decision "%s" lacks canonical Owner approval evidence (Owner Approval: %s, Approving Authority: %s, Approval Date, Effective Date).', $decisionId, ReleaseContract::OWNER_APPROVAL_STATE, ReleaseContract::OWNER_APPROVING_AUTHORITY));
         }
 
         $approvalAt = ReleaseContract::parseEffectiveInstant($approvalDate);

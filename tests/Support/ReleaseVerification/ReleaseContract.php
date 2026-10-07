@@ -161,15 +161,56 @@ final class ReleaseContract
         return $normalized . rtrim($parts['path'] ?? '', '/');
     }
 
+    /**
+     * Canonical approved-Composer-channel validation: HTTPS only.
+     *
+     * Qualifying PAV builds its consumer manifest with `secure-http: true`, so a channel that
+     * cannot be consumed under that contract must never qualify. The value must be exactly an
+     * `https://<host>[:port][/path]` URL: no userinfo, query, fragment, whitespace/control
+     * characters or `@`. {@see normalizeChannel()} only normalises and never makes a channel valid.
+     */
     public static function isValidChannel(string $channel): bool
     {
-        $parts = parse_url(trim($channel));
+        if ($channel === '' || (bool) preg_match('/[\s\x00-\x1f\x7f?#@]/', $channel)) {
+            return false;
+        }
+        $parts = parse_url($channel);
 
         return $parts !== false
             && isset($parts['scheme'], $parts['host'])
-            && in_array(strtolower($parts['scheme']), ['https', 'http'], true)
+            && strtolower($parts['scheme']) === 'https'
+            && $parts['host'] !== ''
             && ! isset($parts['user']) && ! isset($parts['pass']) && ! isset($parts['query']) && ! isset($parts['fragment']);
     }
+
+    /**
+     * Canonical, machine-verifiable Owner approval representation for source-only Decisions.
+     * Exact equality only: no substring matching, case folding, word lists or free-text reading.
+     * Shared by RAV (SourceOnlyDecisionVerifier) and QualificationEvidenceSchema.
+     *
+     *   ## Decision Authority            -> OWNER_AUTHORITY_STATEMENT
+     *   - Owner Approval: ...            -> OWNER_APPROVAL_STATE
+     *   - Approving Authority: ...       -> OWNER_APPROVING_AUTHORITY
+     */
+    public const string OWNER_AUTHORITY_STATEMENT = 'Owner-approved package delivery decision.';
+    public const string OWNER_APPROVAL_STATE = 'APPROVED';
+    public const string OWNER_APPROVING_AUTHORITY = 'Package Owner';
+
+    public static function isCanonicalOwnerAuthorityStatement(string $value): bool
+    {
+        return $value === self::OWNER_AUTHORITY_STATEMENT;
+    }
+
+    public static function isCanonicalOwnerApprovalState(string $value): bool
+    {
+        return $value === self::OWNER_APPROVAL_STATE;
+    }
+
+    public static function isCanonicalApprovingAuthority(string $value): bool
+    {
+        return $value === self::OWNER_APPROVING_AUTHORITY;
+    }
+
 
     /**
      * Normalises a version OBSERVED in external Composer/tag metadata (strips one leading `v`).
