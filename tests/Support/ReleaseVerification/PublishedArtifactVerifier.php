@@ -308,30 +308,56 @@ final class PublishedArtifactVerifier
         $writer ??= new EvidenceWriter();
         $written = $writer->write($reportPath, $result, $repoPath);
 
-        $failure = null;
-        $persistedPath = null;
         if ($written['status'] === 'FAIL') {
-            $failure = $written['message'];
-        } else {
-            $persistedPath = $written['path'];
-            $decoded = json_decode((string) file_get_contents($written['path']), true);
-            if (! is_array($decoded) || $decoded !== json_decode((string) json_encode($result), true)) {
-                unlink($written['path']);
-                $failure = 'Persisted PAV report differs from the generated result.';
-            }
+            return $this->withPersistenceFailure($result, $written['message']);
         }
 
-        if ($failure !== null) {
-            $result['status'] = 'FAIL';
-            $result['checks']['report_persistence'] = ['status' => 'FAIL', 'message' => $failure];
-            $result['failures'][] = $failure;
+        $decoded = json_decode((string) file_get_contents($written['path']), true);
+        if (! is_array($decoded) || $decoded !== json_decode((string) json_encode($result), true)) {
+            unlink($written['path']);
 
-            return $result;
+            return $this->withPersistenceFailure($result, 'Persisted PAV report differs from the generated result.');
         }
 
-        if ($persistedPath !== null) {
-            $result['report_path'] = $persistedPath;
-        }
+        $result['report_path'] = $written['path'];
+
+        return $result;
+    }
+
+    /**
+     * @param array{
+     *     status: 'PASS'|'FAIL',
+     *     package_name: string,
+     *     target_version: string,
+     *     qualified_sha: string,
+     *     installation_mode: string,
+     *     installed_path: string,
+     *     composer_audit: array<string, mixed>,
+     *     delivery_evidence: array<string, mixed>,
+     *     verified_at: string,
+     *     checks: array<string, array{status: 'PASS'|'FAIL', message: string, details?: mixed}>,
+     *     failures: list<string>,
+     * } $result
+     * @return array{
+     *     status: 'PASS'|'FAIL',
+     *     package_name: string,
+     *     target_version: string,
+     *     qualified_sha: string,
+     *     installation_mode: string,
+     *     installed_path: string,
+     *     composer_audit: array<string, mixed>,
+     *     delivery_evidence: array<string, mixed>,
+     *     verified_at: string,
+     *     checks: array<string, array{status: 'PASS'|'FAIL', message: string, details?: mixed}>,
+     *     failures: list<string>,
+     *     report_path?: string,
+     * }
+     */
+    private function withPersistenceFailure(array $result, string $message): array
+    {
+        $result['status'] = 'FAIL';
+        $result['checks']['report_persistence'] = ['status' => 'FAIL', 'message' => $message];
+        $result['failures'][] = $message;
 
         return $result;
     }
