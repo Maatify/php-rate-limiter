@@ -327,9 +327,7 @@ final class PublishedArtifactVerifier
             return $result;
         }
 
-        if ($written['status'] === 'PASS') {
-            $result['report_path'] = $written['path'];
-        }
+        $result['report_path'] = $written['path'];
 
         return $result;
     }
