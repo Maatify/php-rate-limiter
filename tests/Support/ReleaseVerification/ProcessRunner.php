@@ -34,7 +34,14 @@ final class ProcessRunner
         $stderrSpec = $stderrFile !== false ? ['file', $stderrFile, 'w'] : ['file', '/dev/null', 'w'];
 
         $pipes = [];
-        $process = proc_open($command, [0 => ['file', '/dev/null', 'r'], 1 => $stdoutSpec, 2 => $stderrSpec], $pipes, $cwd, $env);
+        // A failure to start (for example a missing executable) is reported through the return
+        // value below and surfaced as an explicit exception, never as a stray PHP warning.
+        set_error_handler(static fn(): bool => true);
+        try {
+            $process = proc_open($command, [0 => ['file', '/dev/null', 'r'], 1 => $stdoutSpec, 2 => $stderrSpec], $pipes, $cwd, $env);
+        } finally {
+            restore_error_handler();
+        }
         if (! is_resource($process)) {
             if ($stderrFile !== false) {
                 unlink($stderrFile);

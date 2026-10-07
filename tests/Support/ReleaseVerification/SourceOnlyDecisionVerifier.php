@@ -49,10 +49,10 @@ final class SourceOnlyDecisionVerifier
         if ($decisionId === '' || $decisionFile === '' || $decisionCommit === '') {
             return $this->fail('Source-only delivery policy requires non-empty decision_id, decision_file, and an immutable decision commit reference.');
         }
-        if (! (bool) preg_match('/^DEC-\d+$/', $decisionId)) {
+        if (! (bool) preg_match('/^DEC-\d+$/D', $decisionId)) {
             return $this->fail(sprintf('Decision ID "%s" is not a canonical Decision ID.', $decisionId));
         }
-        if (! (bool) preg_match('#^docs/decisions/DEC-\d+[A-Za-z0-9_\-]*\.md$#', $decisionFile)) {
+        if (! (bool) preg_match('#^docs/decisions/DEC-\d+[A-Za-z0-9_\-]*\.md$#D', $decisionFile)) {
             return $this->fail(sprintf('Decision record path "%s" is not a canonical docs/decisions/ record path.', $decisionFile));
         }
         if (! ReleaseContract::isSha($decisionCommit)) {

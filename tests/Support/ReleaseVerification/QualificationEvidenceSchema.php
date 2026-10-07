@@ -90,7 +90,7 @@ final class QualificationEvidenceSchema
         }
 
         $target = $str('target_version');
-        if (! (bool) preg_match('/^(0|[1-9]\d*)\.(0|[1-9]\d*)\.(0|[1-9]\d*)(?:-[0-9A-Za-z.-]+)?(?:\+[0-9A-Za-z.-]+)?$/', $target)) {
+        if (! ReleaseContract::isValidExactSemVer($target)) {
             $errors[] = sprintf('invalid target_version "%s"', $target);
         }
         $candidate = $str('candidate_sha');
@@ -268,7 +268,7 @@ final class QualificationEvidenceSchema
 
         $str = static fn(string $k): string => is_string($d[$k]) ? $d[$k] : '';
 
-        if (! (bool) preg_match('/^DEC-\d+$/', $str('decision_id')) || ! (bool) preg_match('#^docs/decisions/DEC-\d+[A-Za-z0-9_\-]*\.md$#', $str('decision_file'))) {
+        if (! (bool) preg_match('/^DEC-\d+$/D', $str('decision_id')) || ! (bool) preg_match('#^docs/decisions/DEC-\d+[A-Za-z0-9_\-]*\.md$#D', $str('decision_file'))) {
             $errors[] = 'source_only_decision has an invalid Decision ID or record path';
         }
         foreach (['decision_commit', 'record_blob_sha', 'index_blob_sha_at_qualification'] as $key) {
@@ -285,6 +285,15 @@ final class QualificationEvidenceSchema
         $owner = $d['owner_approval'];
         if (! is_array($owner) || ! (bool) preg_match('/\bOwner[- ]approved\b/i', is_string($owner['authority_statement'] ?? null) ? $owner['authority_statement'] : '') || ($owner['approving_authority'] ?? '') === '' || ($owner['approval_date'] ?? '') === '') {
             $errors[] = 'source_only_decision lacks complete Owner approval evidence';
+        }
+        if (is_array($owner)) {
+            $approvalInstant = ReleaseContract::parseEffectiveInstant(is_string($owner['approval_date'] ?? null) ? $owner['approval_date'] : '');
+            $effectiveInstant = ReleaseContract::parseEffectiveInstant(is_string($owner['effective_date'] ?? null) ? $owner['effective_date'] : '');
+            if ($approvalInstant === null || $effectiveInstant === null) {
+                $errors[] = 'source_only_decision Owner approval/effective dates are not strictly valid calendar dates or UTC timestamps';
+            } elseif (gmdate('Y-m-d\\TH:i:s\\Z', max($approvalInstant, $effectiveInstant)) !== $str('effective_at')) {
+                $errors[] = 'source_only_decision effective_at does not equal the later of the Owner approval/effective instants';
+            }
         }
         $effective = ReleaseContract::parseTimestamp($str('effective_at'));
         $started = ReleaseContract::parseTimestamp($startedAt);

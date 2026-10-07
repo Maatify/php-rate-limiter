@@ -26,6 +26,10 @@ final class PublishedArtifactVerifier
     public const array REQUIRED_INSTALLED_FILES = ReleaseContract::REQUIRED_PATHS;
 
     public const string DEFAULT_PACKAGE_NAME = ReleaseContract::PACKAGE_NAME;
+
+    /** The install preference the verification contract requires (manifest config AND CLI flag). */
+    private const string REQUIRED_PREFERENCE = 'dist';
+    private const string PREFER_FLAG = '--prefer-dist';
     public const string EXPECTED_LICENSE = ReleaseContract::LICENSE;
 
     /**
@@ -38,6 +42,12 @@ final class PublishedArtifactVerifier
         'HTTP_PROXY', 'HTTPS_PROXY', 'NO_PROXY', 'http_proxy', 'https_proxy', 'no_proxy',
         'SSL_CERT_FILE', 'SSL_CERT_DIR', 'CURL_CA_BUNDLE',
     ];
+
+    /**
+     * @param string $composerBinary Composer executable. Always `composer` in production; tests may
+     *                               inject a controlled fake executable to exercise failure paths.
+     */
+    public function __construct(private readonly string $composerBinary = 'composer') {}
 
     /**
      * Executes qualifying Published Artifact Verification.
@@ -142,7 +152,20 @@ final class PublishedArtifactVerifier
             $audit['isolated_home'] = $tempRoot . '/composer-home';
             $audit['isolated_cache'] = $tempRoot . '/composer-cache';
 
-            $installResult = $this->runIsolatedComposerInstall($tempRoot, $package, $target, $channel, $audit);
+            // 4a. REQUIRED Composer audit/configuration evidence (fail closed, BEFORE any install)
+            $context = $this->prepareComposerContext($tempRoot, $package, $target, $channel, $audit);
+            foreach ($context['checks'] as $key => $check) {
+                $checks[$key] = $check;
+                if ($check['status'] === 'FAIL') {
+                    $failures[] = $check['message'];
+                }
+            }
+            if ($context['env'] === null) {
+                return $fail($target, $qualifiedSha, 'UNRESOLVED');
+            }
+
+            // 4b. Isolated external Composer resolution & installation
+            $installResult = $this->runIsolatedComposerInstall($tempRoot, $package, $target, $context['env']);
             $checks['composer_resolution'] = $installResult;
             if ($installResult['status'] === 'FAIL') {
                 $failures[] = $installResult['message'];
@@ -1034,12 +1057,12 @@ final class PublishedArtifactVerifier
     private function emptyAudit(): array
     {
         return [
-            'composer_version' => 'UNKNOWN',
+            'composer_version' => 'NOT_OBSERVED',
             'isolated_root' => '',
             'isolated_home' => '',
             'isolated_cache' => '',
             'effective_repository' => null,
-            'prefer_install' => ['requested_flag' => '--prefer-dist', 'configured' => 'dist', 'effective_config' => 'UNKNOWN'],
+            'prefer_install' => ['requested_flag' => self::PREFER_FLAG, 'configured' => self::REQUIRED_PREFERENCE, 'effective_config' => 'NOT_OBSERVED', 'effective_normalized' => 'NOT_OBSERVED'],
             'controlled_environment' => ['set' => [], 'cleared' => [], 'passthrough' => []],
         ];
     }
@@ -1139,15 +1162,90 @@ final class PublishedArtifactVerifier
     }
 
     /**
-     * @param array<string, mixed> $audit
-     * @return array{status: 'PASS'|'FAIL', message: string, details?: array<string, mixed>}
+     * Qualifying Composer version evidence: the command must succeed and an actual
+     * `Composer version <x.y.z...>` line must be observed. Nothing is ever recorded as UNKNOWN.
+     *
+     * @return array{status: 'PASS'|'FAIL', message: string, version?: string}
      */
-    private function runIsolatedComposerInstall(string $root, string $package, string $target, string $channel, array &$audit): array
+    public function evaluateComposerVersionEvidence(int $exitCode, string $output): array
     {
-        file_put_contents(
-            $root . '/composer.json',
-            (string) json_encode($this->buildConsumerManifest($package, $target, $channel), JSON_PRETTY_PRINT | JSON_UNESCAPED_SLASHES),
-        );
+        if ($exitCode !== 0) {
+            return ['status' => 'FAIL', 'message' => sprintf('Composer version evidence is unavailable: `composer --version` exited with code %d.', $exitCode)];
+        }
+        if (trim($output) === '') {
+            return ['status' => 'FAIL', 'message' => 'Composer version evidence is unavailable: `composer --version` produced no output.'];
+        }
+        foreach (preg_split('/\R/', $output) ?: [] as $line) {
+            $line = trim($line);
+            if ((bool) preg_match('/^Composer version \d+\.\d+\.\d+(?:-[0-9A-Za-z.]+)?(?:\s.*)?$/D', $line)) {
+                $line = substr($this->redactSensitiveData($line), 0, 200);
+
+                return ['status' => 'PASS', 'message' => sprintf('Composer version evidence observed: %s.', $line), 'version' => $line];
+            }
+        }
+
+        return ['status' => 'FAIL', 'message' => 'Composer version evidence is unusable: no `Composer version <x.y.z>` line was observed.'];
+    }
+
+    /**
+     * Qualifying effective install-preference evidence, reconciled with the verification
+     * contract (manifest configuration AND the `--prefer-dist` flag are both `dist`).
+     *
+     * Composer may print a plain value (`dist`) or, for a structured setting, a JSON object of
+     * pattern => preference. A structured value is acceptable only when it has the catch-all `*`
+     * entry and every entry is `dist`. Empty, UNKNOWN, unparseable or contradictory values fail.
+     *
+     * @return array{status: 'PASS'|'FAIL', message: string, effective?: string}
+     */
+    public function evaluatePreferredInstallEvidence(int $exitCode, string $output): array
+    {
+        if ($exitCode !== 0) {
+            return ['status' => 'FAIL', 'message' => sprintf('Effective preferred-install evidence is unavailable: `composer config preferred-install` exited with code %d.', $exitCode)];
+        }
+        $raw = trim($output);
+        if ($raw === '') {
+            return ['status' => 'FAIL', 'message' => 'Effective preferred-install evidence is empty.'];
+        }
+        if (strcasecmp($raw, 'UNKNOWN') === 0) {
+            return ['status' => 'FAIL', 'message' => 'Effective preferred-install evidence is UNKNOWN, which is not qualifying evidence.'];
+        }
+
+        if (str_starts_with($raw, '{')) {
+            $decoded = json_decode($raw, true);
+            if (! is_array($decoded) || $decoded === [] || ! array_key_exists('*', $decoded)) {
+                return ['status' => 'FAIL', 'message' => 'Effective preferred-install evidence is an unparseable or incomplete structured value (catch-all "*" entry required).'];
+            }
+            foreach ($decoded as $preference) {
+                if ($preference !== self::REQUIRED_PREFERENCE) {
+                    return ['status' => 'FAIL', 'message' => sprintf('Effective preferred-install configuration contradicts the required "%s" preference.', self::REQUIRED_PREFERENCE)];
+                }
+            }
+        } elseif ($raw !== self::REQUIRED_PREFERENCE) {
+            $known = in_array($raw, ['source', 'auto'], true);
+
+            return ['status' => 'FAIL', 'message' => $known
+                ? sprintf('Effective preferred-install configuration "%s" contradicts the required "%s" preference.', $raw, self::REQUIRED_PREFERENCE)
+                : 'Effective preferred-install evidence is unparseable or unrecognised.'];
+        }
+
+        return ['status' => 'PASS', 'message' => sprintf('Effective preferred-install configuration is "%s", matching the manifest setting and the %s flag.', self::REQUIRED_PREFERENCE, self::PREFER_FLAG), 'effective' => substr($raw, 0, 200)];
+    }
+
+    /**
+     * Writes the consumer manifest, builds the controlled environment and gathers the REQUIRED
+     * audit evidence. The environment is returned only when every evidence check passed, so a
+     * missing prerequisite fails clearly before any installation is attempted.
+     *
+     * @param array<string, mixed> $audit
+     * @return array{
+     *     env: array<string, string>|null,
+     *     checks: array<string, array{status: 'PASS'|'FAIL', message: string}>,
+     * }
+     */
+    private function prepareComposerContext(string $root, string $package, string $target, string $channel, array &$audit): array
+    {
+        $manifest = $this->buildConsumerManifest($package, $target, $channel);
+        file_put_contents($root . '/composer.json', (string) json_encode($manifest, JSON_PRETTY_PRINT | JSON_UNESCAPED_SLASHES));
 
         /** @var array<string, string> $parentEnv */
         $parentEnv = array_filter(getenv(), 'is_string');
@@ -1155,18 +1253,60 @@ final class PublishedArtifactVerifier
         $env = $controlled['env'];
         $audit['controlled_environment'] = $controlled['evidence'];
 
-        $version = ProcessRunner::run(['composer', '--version', '--no-ansi'], $root, $env, null, true);
-        $audit['composer_version'] = $version['code'] === 0 ? trim(explode("\n", $version['output'])[0]) : 'UNKNOWN';
+        $version = $this->evaluateComposerVersionEvidence(...$this->composer(['--version', '--no-ansi'], $root, $env));
+        if ($version['status'] === 'PASS') {
+            $audit['composer_version'] = $version['version'] ?? '';
+        }
 
-        $prefer = ProcessRunner::run(['composer', 'config', '--no-ansi', 'preferred-install'], $root, $env, null, false);
-        $audit['prefer_install'] = [
-            'requested_flag' => '--prefer-dist',
-            'configured' => 'dist',
-            'effective_config' => $prefer['code'] === 0 ? trim($prefer['output']) : 'UNKNOWN',
+        $prefer = $this->evaluatePreferredInstallEvidence(...$this->composer(['config', '--no-ansi', 'preferred-install'], $root, $env));
+        $configured = $manifest['config']['preferred-install'];
+        if ($prefer['status'] === 'PASS' && $configured !== self::REQUIRED_PREFERENCE) {
+            $prefer = ['status' => 'FAIL', 'message' => 'The consumer manifest does not configure the required dist preference.'];
+        }
+        if ($prefer['status'] === 'PASS') {
+            $audit['prefer_install'] = [
+                'requested_flag' => self::PREFER_FLAG,
+                'configured' => $configured,
+                'effective_config' => $prefer['effective'] ?? '',
+                'effective_normalized' => self::REQUIRED_PREFERENCE,
+            ];
+        }
+
+        $checks = [
+            'composer_version_evidence' => ['status' => $version['status'], 'message' => $version['message']],
+            'preferred_install_evidence' => ['status' => $prefer['status'], 'message' => $prefer['message']],
         ];
 
+        return [
+            'env' => $version['status'] === 'PASS' && $prefer['status'] === 'PASS' ? $env : null,
+            'checks' => $checks,
+        ];
+    }
+
+    /**
+     * @param list<string> $arguments
+     * @param array<string, string> $env
+     * @return array{int, string} exit code and stdout (stderr is not part of the evidence value)
+     */
+    private function composer(array $arguments, string $root, array $env): array
+    {
+        try {
+            $result = ProcessRunner::run([$this->composerBinary, ...$arguments], $root, $env, null, false);
+        } catch (RuntimeException) {
+            return [127, ''];
+        }
+
+        return [$result['code'], $result['output']];
+    }
+
+    /**
+     * @param array<string, string> $env
+     * @return array{status: 'PASS'|'FAIL', message: string, details?: array<string, mixed>}
+     */
+    private function runIsolatedComposerInstall(string $root, string $package, string $target, array $env): array
+    {
         $run = ProcessRunner::run(
-            ['composer', 'update', '--no-interaction', '--prefer-dist', '--no-progress', '--no-plugins', '--no-scripts', '--no-ansi'],
+            [$this->composerBinary, 'update', '--no-interaction', self::PREFER_FLAG, '--no-progress', '--no-plugins', '--no-scripts', '--no-ansi'],
             $root,
             $env,
             null,

@@ -70,7 +70,7 @@ The clean checked-out worktree is still required, but no check reads a filesyste
 
 ### 2.2 Checks performed
 
-1. **Target version syntax** — strict Semantic Versioning.
+1. **Target version syntax** — canonical exact Semantic Versioning 2.0.0 (§2.4.1).
 2. **Git candidate identity** — as above.
 3. **Package identity and Composer manifest** — name `maatify/php-rate-limiter`, license `proprietary`, no static `"version"`.
 4. **Required release-facing content** — `src`, `composer.json`, `README.md`, `LICENSE`, `CHANGELOG.md`, `SECURITY.md`, `RATE_LIMITER_PACKAGE_REFERENCE.md`, `docs/guides/USAGE_GUIDE.md`, `examples`, `llms.txt`.
@@ -129,6 +129,15 @@ One canonical schema (`QualificationEvidenceSchema`) is produced by RAV and enfo
 | `source_only_decision` | `null` for `dist`; complete immutable qualification-time evidence for `source-only` (§2.6) |
 
 Missing, empty, malformed, wrong-schema, wrong-target/SHA, partial-manifest, future-dated-review, or incoherent evidence is rejected by PAV before any Composer work.
+
+#### 2.4.1 Canonical exact SemVer and strict temporal values
+
+One validator per concern is shared by RAV, the evidence schema and the Decision version-scope parser (`ReleaseContract`); there are no parallel copies.
+
+- **Exact release target** (`isValidExactSemVer`): `MAJOR.MINOR.PATCH` with no leading zeros (except `0`), an optional `-` pre-release of non-empty dot-separated `[0-9A-Za-z-]` identifiers whose numeric identifiers have no leading zeros, and an optional `+` build of non-empty dot-separated `[0-9A-Za-z-]` identifiers (leading zeros allowed). `1.0.0-rc.3` and `1.0.0-rc.3+build.1` are valid; `1.0.0-01`, `1.0.0-a..b`, `01.0.0`, `1.0.0-`, `1.0.0+`, `1.0`, trailing whitespace/newlines and `v1.0.0` are not. A leading `v` is accepted only when normalising a version *observed* in Composer/tag metadata (§3.4), never as a release target.
+- **UTC timestamps** (`parseTimestamp`): exactly `YYYY-MM-DDTHH:MM:SSZ`. The value must be a real calendar instant and must round-trip to the identical string; nothing is normalised. `2026-02-31T00:00:00Z`, non-leap `-02-29`, `T24:00:00Z`, `T23:60:00Z`, leap seconds (`:60`), offsets, fractions, space separators and trailing newlines all fail; `2028-02-29T00:00:00Z` is valid.
+- **Date-only Owner evidence** (`parseEffectiveInstant`): the date must first be a valid calendar date (`2026-02-31` fails); a valid date then resolves conservatively to the end of that UTC day (`2028-02-29` → `2028-02-29T23:59:59Z`). A full timestamp resolves to itself under the strict rule above.
+- The same parsers govern `semantic_review.reviewed_at`, `qualification_started_at`, `qualified_at`, the Owner approval/effective dates and `effective_at` (which must equal the later approval/effective instant), in RAV, the Decision verifier and the schema.
 
 ### 2.5 Canonical Semantic Review Record (schema `1.0.0`)
 
@@ -246,6 +255,15 @@ php scripts/release/verify-published-artifact.php --qualification-evidence=<evid
 PAV runs in a fresh external root with an isolated `HOME`, `COMPOSER_HOME` (containing an explicit empty `config.json`), `COMPOSER_CACHE_DIR`, `COMPOSER_VENDOR_DIR` and `COMPOSER` (root manifest). **The child process inherits nothing**: its environment is built explicitly from those values, `COMPOSER_NO_INTERACTION`, `PATH`, and transport-only settings (`HTTP(S)_PROXY`, `NO_PROXY`, `SSL_CERT_FILE`, `SSL_CERT_DIR`, `CURL_CA_BUNDLE`) that cannot alter repository resolution or install mode. Therefore `COMPOSER_AUTH`, `COMPOSER_ROOT_VERSION`, `COMPOSER_MIRROR_PATH_REPOS`, `COMPOSER_PREFER_STABLE`, `COMPOSER_MINIMAL_CHANGES`, `COMPOSER_WITH_ALL_DEPENDENCIES`, any inherited `COMPOSER_*`, `XDG_*`, `GIT_CONFIG_*` and similar developer-machine policy are cleared. Plugins and scripts are disabled (`--no-plugins --no-scripts`, `allow-plugins: false`). Qualifying PAV uses no credentials.
 
 The report retains non-secret audit evidence: Composer version, effective repository/channel, requested install flag and the effective `preferred-install` configuration, isolated root/home/cache, the controlled variables that were set, the **names** (never values) of inherited variables that were cleared, and the names of transport settings passed through. Credentials, `auth.json`, authorization headers and environment secrets are never persisted; the process environment is never dumped.
+
+#### Required Composer audit evidence (fail closed)
+
+The Composer version and the effective install preference are **qualifying evidence, not informational metadata**. Both are gathered inside the isolated root **before** any installation, recorded as ledger checks that gate PASS, and a failure stops PAV before `composer update` runs:
+
+- `composer_version_evidence` — `composer --version --no-ansi` must exit `0` and print a `Composer version <x.y.z…>` line. A non-zero exit, empty or whitespace-only output, or output that is not recognisably Composer fails. The observed line is retained in `composer_audit.composer_version`.
+- `preferred_install_evidence` — `composer config --no-ansi preferred-install` must exit `0` and report `dist`, either as a plain value or as a structured JSON object that has the catch-all `*` entry with every entry `dist`. This is reconciled with the consumer manifest (`preferred-install: dist`) and the `--prefer-dist` flag. Empty, `UNKNOWN`, unparseable, structured-without-catch-all, or contradictory (`source`, `auto`, any non-`dist` entry) values fail. The raw and normalised values are retained in `composer_audit.prefer_install`.
+
+`UNKNOWN` is never retained or accepted as qualifying evidence.
 
 ### 3.4 Exact resolved-version proof
 

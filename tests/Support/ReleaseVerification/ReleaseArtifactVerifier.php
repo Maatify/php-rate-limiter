@@ -380,7 +380,7 @@ final class ReleaseArtifactVerifier
      */
     public function evaluateTargetVersionSyntax(string $target): array
     {
-        $isSemVer = (bool) preg_match('/^(0|[1-9]\d*)\.(0|[1-9]\d*)\.(0|[1-9]\d*)(?:-((?:0|[1-9]\d*|\d*[a-zA-Z-][0-9a-zA-Z-]*)(?:\.(?:0|[1-9]\d*|\d*[a-zA-Z-][0-9a-zA-Z-]*))*))?(?:\+([0-9a-zA-Z-]+(?:\.[0-9a-zA-Z-]+)*))?$/', $target);
+        $isSemVer = ReleaseContract::isValidExactSemVer($target);
         if (! $isSemVer) {
             return [
                 'status' => 'FAIL',

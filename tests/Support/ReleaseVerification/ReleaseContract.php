@@ -4,6 +4,8 @@ declare(strict_types=1);
 
 namespace Maatify\RateLimiter\Tests\Support\ReleaseVerification;
 
+use DateTimeImmutable;
+use DateTimeZone;
 use FilesystemIterator;
 use RecursiveDirectoryIterator;
 use RecursiveIteratorIterator;
@@ -57,39 +59,90 @@ final class ReleaseContract
 
     public static function isSha(string $value): bool
     {
-        return (bool) preg_match('/^[0-9a-f]{40}$/i', $value);
+        return (bool) preg_match('/^[0-9a-f]{40}$/iD', $value);
     }
 
     public static function isSha256(string $value): bool
     {
-        return (bool) preg_match('/^[0-9a-f]{64}$/', $value);
-    }
-
-    /** Strict UTC timestamp: YYYY-MM-DDTHH:MM:SSZ. */
-    public static function parseTimestamp(string $value): ?int
-    {
-        if (! (bool) preg_match('/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}Z$/', $value)) {
-            return null;
-        }
-        $parsed = strtotime($value);
-
-        return $parsed === false ? null : $parsed;
+        return (bool) preg_match('/^[0-9a-f]{64}$/D', $value);
     }
 
     /**
-     * Date-only values are ambiguous about the time of day, so they are resolved to the
-     * END of that UTC day (conservative: the approval can only be treated as effective
-     * after the whole day has elapsed). Returns null for any other shape.
+     * Canonical exact Semantic Versioning 2.0.0 syntax for RELEASE TARGETS (no `v` prefix).
+     *
+     * This is the single authority used by RAV, the qualification-evidence schema and the
+     * Decision version-scope parser. It is intentionally separate from {@see normalizeVersion()},
+     * which only normalises versions OBSERVED in external Composer/tag metadata.
+     */
+    public static function isValidExactSemVer(string $value): bool
+    {
+        return (bool) preg_match(
+            '/^(0|[1-9]\d*)\.(0|[1-9]\d*)\.(0|[1-9]\d*)'
+            . '(?:-((?:0|[1-9]\d*|\d*[a-zA-Z-][0-9a-zA-Z-]*)(?:\.(?:0|[1-9]\d*|\d*[a-zA-Z-][0-9a-zA-Z-]*))*))?'
+            . '(?:\+([0-9a-zA-Z-]+(?:\.[0-9a-zA-Z-]+)*))?$/D',
+            $value,
+        );
+    }
+
+    /**
+     * Canonical strict UTC timestamp parser: exactly `YYYY-MM-DDTHH:MM:SSZ`.
+     *
+     * No normalisation is ever applied: impossible calendar dates, 24:00:00, leap seconds,
+     * offsets, fractions and free-form text are rejected, and the parsed value must format
+     * back to the identical input string.
+     */
+    public static function parseTimestamp(string $value): ?int
+    {
+        if (! (bool) preg_match('/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}Z$/D', $value)) {
+            return null;
+        }
+
+        return self::strictUtc('!Y-m-d\\TH:i:s\\Z', 'Y-m-d\\TH:i:s\\Z', $value)?->getTimestamp();
+    }
+
+    /**
+     * Canonical strict date-only parser (`YYYY-MM-DD`), calendar-validated without normalisation.
+     * Returns the instant of 00:00:00 UTC of that day, or null.
+     */
+    public static function parseDate(string $value): ?int
+    {
+        if (! (bool) preg_match('/^\d{4}-\d{2}-\d{2}$/D', $value)) {
+            return null;
+        }
+
+        return self::strictUtc('!Y-m-d', 'Y-m-d', $value)?->getTimestamp();
+    }
+
+    /**
+     * Owner approval/effective instants. A strictly valid date-only value is ambiguous about
+     * the time of day, so it resolves to the END of that UTC day (23:59:59Z): the approval can
+     * only be treated as effective after the whole day has elapsed. A strictly valid full
+     * timestamp resolves to itself. Anything else (including impossible dates) is null.
      */
     public static function parseEffectiveInstant(string $value): ?int
     {
-        if ((bool) preg_match('/^\d{4}-\d{2}-\d{2}$/', $value)) {
-            $parsed = strtotime($value . 'T23:59:59Z');
-
-            return $parsed === false ? null : $parsed;
+        $dayStart = self::parseDate($value);
+        if ($dayStart !== null) {
+            return $dayStart + 86399;
         }
 
         return self::parseTimestamp($value);
+    }
+
+    private static function strictUtc(string $parseFormat, string $outputFormat, string $value): ?DateTimeImmutable
+    {
+        $parsed = DateTimeImmutable::createFromFormat($parseFormat, $value, new DateTimeZone('UTC'));
+        if ($parsed === false) {
+            return null;
+        }
+
+        // getLastErrors() returns false (PHP >= 8.2) when there is nothing to report.
+        $errors = DateTimeImmutable::getLastErrors();
+        if ($errors !== false && ($errors['warning_count'] > 0 || $errors['error_count'] > 0)) {
+            return null;
+        }
+
+        return $parsed->setTimezone(new DateTimeZone('UTC'))->format($outputFormat) === $value ? $parsed : null;
     }
 
     public static function normalizeChannel(string $channel): string
@@ -118,6 +171,10 @@ final class ReleaseContract
             && ! isset($parts['user']) && ! isset($parts['pass']) && ! isset($parts['query']) && ! isset($parts['fragment']);
     }
 
+    /**
+     * Normalises a version OBSERVED in external Composer/tag metadata (strips one leading `v`).
+     * This is NOT release-target validation; targets must satisfy {@see isValidExactSemVer()}.
+     */
     public static function normalizeVersion(string $version): string
     {
         $version = strtolower(trim($version));
@@ -141,11 +198,11 @@ final class ReleaseContract
             if ($token === '') {
                 return null;
             }
-            if ((bool) preg_match('/^(\d+)\.x$/', $token, $m)) {
-                $covered = $covered || (bool) preg_match('/^' . $m[1] . '\.\d+\.\d+(?:[-+].*)?$/', $target);
-            } elseif ((bool) preg_match('/^(\d+)\.(\d+)\.x$/', $token, $m)) {
-                $covered = $covered || (bool) preg_match('/^' . $m[1] . '\.' . $m[2] . '\.\d+(?:[-+].*)?$/', $target);
-            } elseif ((bool) preg_match('/^\d+\.\d+\.\d+(?:-[0-9A-Za-z.-]+)?(?:\+[0-9A-Za-z.-]+)?$/', $token)) {
+            if ((bool) preg_match('/^(0|[1-9]\d*)\.x$/D', $token, $m)) {
+                $covered = $covered || (bool) preg_match('/^' . $m[1] . '\.\d+\.\d+(?:[-+].*)?$/D', $target);
+            } elseif ((bool) preg_match('/^(0|[1-9]\d*)\.(0|[1-9]\d*)\.x$/D', $token, $m)) {
+                $covered = $covered || (bool) preg_match('/^' . $m[1] . '\.' . $m[2] . '\.\d+(?:[-+].*)?$/D', $target);
+            } elseif (self::isValidExactSemVer($token)) {
                 $covered = $covered || $token === $target;
             } else {
                 return null;
