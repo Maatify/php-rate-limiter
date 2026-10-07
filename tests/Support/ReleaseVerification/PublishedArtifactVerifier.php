@@ -215,6 +215,126 @@ final class PublishedArtifactVerifier
     }
 
     /**
+     * Qualifying PAV lifecycle: verification AND durable machine-readable report persistence.
+     *
+     * The report destination is validated (outside the repository tree) before any network
+     * work. PASS is returned only after the complete report has been persisted and read back.
+     *
+     * @param array{
+     *     qualification_evidence_file?: string|null,
+     *     qualification_evidence?: array<string, mixed>|null,
+     *     package?: string,
+     *     target?: string|null,
+     *     qualified_sha?: string|null,
+     *     composer_repository?: string|null,
+     *     repo_path?: string|null,
+     *     keep_temp?: bool,
+     * } $options
+     * @return array{
+     *     status: 'PASS'|'FAIL',
+     *     package_name: string,
+     *     target_version: string,
+     *     qualified_sha: string,
+     *     installation_mode: string,
+     *     installed_path: string,
+     *     composer_audit: array<string, mixed>,
+     *     delivery_evidence: array<string, mixed>,
+     *     verified_at: string,
+     *     checks: array<string, array{status: 'PASS'|'FAIL', message: string, details?: mixed}>,
+     *     failures: list<string>,
+     *     report_path?: string,
+     * }
+     */
+    public function verifyQualifying(array $options, string $reportPath, ?EvidenceWriter $writer = null): array
+    {
+        $writer ??= new EvidenceWriter();
+        $repoPath = $options['repo_path'] ?? (string) realpath(__DIR__ . '/../../..');
+
+        $destination = $writer->resolveDestination($reportPath, $repoPath);
+        if ($destination['status'] === 'FAIL') {
+            $audit = $this->emptyAudit();
+
+            return $this->buildResult(
+                'FAIL',
+                trim($options['package'] ?? self::DEFAULT_PACKAGE_NAME),
+                $options['target'] ?? 'UNKNOWN',
+                $options['qualified_sha'] ?? 'UNKNOWN',
+                'UNRESOLVED',
+                '',
+                $audit,
+                ['report_persistence' => ['status' => 'FAIL', 'message' => $destination['message']]],
+                [$destination['message']],
+                [],
+            );
+        }
+
+        return $this->finalizePersistence($this->verify($options), $reportPath, $repoPath, $writer);
+    }
+
+    /**
+     * Makes report persistence part of PAV success. The complete result (PASS or FAIL) is
+     * persisted; a PASS survives only if persistence and read-back both succeed.
+     *
+     * @param array{
+     *     status: 'PASS'|'FAIL',
+     *     package_name: string,
+     *     target_version: string,
+     *     qualified_sha: string,
+     *     installation_mode: string,
+     *     installed_path: string,
+     *     composer_audit: array<string, mixed>,
+     *     delivery_evidence: array<string, mixed>,
+     *     verified_at: string,
+     *     checks: array<string, array{status: 'PASS'|'FAIL', message: string, details?: mixed}>,
+     *     failures: list<string>,
+     * } $result
+     * @return array{
+     *     status: 'PASS'|'FAIL',
+     *     package_name: string,
+     *     target_version: string,
+     *     qualified_sha: string,
+     *     installation_mode: string,
+     *     installed_path: string,
+     *     composer_audit: array<string, mixed>,
+     *     delivery_evidence: array<string, mixed>,
+     *     verified_at: string,
+     *     checks: array<string, array{status: 'PASS'|'FAIL', message: string, details?: mixed}>,
+     *     failures: list<string>,
+     *     report_path?: string,
+     * }
+     */
+    public function finalizePersistence(array $result, string $reportPath, string $repoPath, ?EvidenceWriter $writer = null): array
+    {
+        $writer ??= new EvidenceWriter();
+        $written = $writer->write($reportPath, $result, $repoPath);
+
+        $failure = null;
+        if ($written['status'] === 'FAIL') {
+            $failure = $written['message'];
+        } else {
+            $decoded = json_decode((string) file_get_contents($written['path']), true);
+            if (! is_array($decoded) || $decoded !== json_decode((string) json_encode($result), true)) {
+                unlink($written['path']);
+                $failure = 'Persisted PAV report differs from the generated result.';
+            }
+        }
+
+        if ($failure !== null) {
+            $result['status'] = 'FAIL';
+            $result['checks']['report_persistence'] = ['status' => 'FAIL', 'message' => $failure];
+            $result['failures'][] = $failure;
+
+            return $result;
+        }
+
+        if ($written['status'] === 'PASS') {
+            $result['report_path'] = $written['path'];
+        }
+
+        return $result;
+    }
+
+    /**
      * Test-only inspection of preinstalled fixtures.
      *
      * ALWAYS returns status: 'INSPECTION_ONLY', NEVER qualifying 'PASS'. Fixture and

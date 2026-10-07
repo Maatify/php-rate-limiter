@@ -21,14 +21,24 @@ $options = getopt('', [
 
 $qualificationEvidenceFile = $options['qualification-evidence'] ?? $options['rav-evidence'] ?? null;
 
-if (isset($options['help']) || $qualificationEvidenceFile === null) {
+$reportDestination = $options['output-json'] ?? null;
+
+if (
+    isset($options['help'])
+    || ! is_string($qualificationEvidenceFile)
+    || ! is_string($reportDestination)
+    || trim($reportDestination) === ''
+) {
     fwrite(STDOUT, <<<'HELP'
-Usage: php scripts/release/verify-published-artifact.php --qualification-evidence=<path> [options]
+Usage: php scripts/release/verify-published-artifact.php --qualification-evidence=<evidence-path> --output-json=<report-path> [options]
 
 Post-publication Published Artifact Verification (CI Workflow Standard §2.6, §2.7; Composer Package Standard §26).
 
 Required arguments:
   --qualification-evidence=<f>    Path to machine-readable RAV qualification evidence JSON (alias: --rav-evidence)
+  --output-json=<report-path>     MANDATORY durable machine-readable PAV report. It must be OUTSIDE the repository
+                                  tree and must not already exist. PASS is reported only after the complete report
+                                  is persisted and read back; any persistence failure is FAIL.
 
 Options:
   --target=<version>              Expected target SemVer version (must match qualification evidence)
@@ -37,7 +47,6 @@ Options:
   --composer-repository=<url>     Optional assertion only: MUST equal the approved channel bound in the
                                   qualification evidence, otherwise PAV FAILS (it never selects the channel)
   --format=<summary|json>         Console output format (default: summary)
-  --output-json=<path>            Write machine-readable JSON report to file
   --keep-temp                     Retain temporary isolated consumer environment
   --help                          Show this help message
 
@@ -57,14 +66,7 @@ $verifyOptions = [
     'keep_temp' => isset($options['keep-temp']),
 ];
 
-$result = $verifier->verify($verifyOptions);
-
-if (isset($options['output-json'])) {
-    file_put_contents(
-        (string) $options['output-json'],
-        (string) json_encode($result, JSON_PRETTY_PRINT | JSON_UNESCAPED_SLASHES),
-    );
-}
+$result = $verifier->verifyQualifying($verifyOptions, $reportDestination);
 
 $format = isset($options['format']) ? strtolower((string) $options['format']) : 'summary';
 
@@ -92,6 +94,7 @@ foreach ($result['checks'] as $name => $check) {
 }
 
 if ($result['status'] === 'PASS') {
+    fwrite(STDOUT, sprintf("  PAV report persisted: %s\n", $result['report_path'] ?? 'UNKNOWN'));
     fwrite(STDOUT, "\nOVERALL RESULT: PASS\n");
     exit(0);
 }

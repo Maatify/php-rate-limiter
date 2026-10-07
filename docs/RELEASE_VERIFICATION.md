@@ -87,25 +87,25 @@ The clean checked-out worktree is still required, but no check reads a filesyste
 ### 2.3 CLI
 
 ```bash
-composer release:verify-artifact -- --target=<target> --candidate-sha=<candidate-sha> --semantic-review-file=<path> --output-evidence=<path> [options]
+composer release:verify-artifact -- --target=<target> --candidate-sha=<candidate-sha> --semantic-review-file=<path> --output-evidence=<evidence-path> [options]
 ```
 
 ```bash
-php scripts/release/verify-release-artifact.php --target=<target> --candidate-sha=<candidate-sha> --semantic-review-file=<path> --output-evidence=<path> [options]
+php scripts/release/verify-release-artifact.php --target=<target> --candidate-sha=<candidate-sha> --semantic-review-file=<path> --output-evidence=<evidence-path> [options]
 ```
 
 | Option | Required | Description |
 |---|---|---|
 | `--target=<version>` | **Yes** | Exact target SemVer. |
 | `--candidate-sha=<sha>` | **Yes** | 40-hex candidate commit SHA. |
-| `--semantic-review-file=<path>` | **Yes** | Canonical semantic review JSON (alias `--semantic-review-record`). |
+| `--semantic-review-file=<path>` | **Yes** | Canonical semantic review JSON (alias `--semantic-review-record`); `reviewed_at` must not be later than the RAV start (§2.5). |
 | `--repo-path=<path>` | No | Repository root (default: this repository). |
 | `--delivery-policy=<mode>` | No | `dist` (default) or `source-only`. |
 | `--source-only-decision-id=<id>` | source-only | Decision ID, e.g. `DEC-NNN`. |
 | `--source-only-decision-file=<path>` | source-only | Canonical `docs/decisions/DEC-NNN_*.md` path. |
 | `--source-only-commit=<sha>` | source-only | Immutable **40-hex commit** of the Decision (verified from Git objects). |
-| `--output-evidence=<path>` | No | Writes qualification evidence **only on PASS**. |
-| `--output-json=<path>` / `--format=<summary\|json>` | No | Report output. |
+| `--output-evidence=<evidence-path>` | **Yes** | Durable destination for the qualification evidence (see §2.7). Omitting it is a usage failure (exit 2) and no verification runs. |
+| `--output-json=<report-path>` / `--format=<summary\|json>` | No | Optional report output (same destination rules as the evidence). |
 
 There is no option to choose the Composer channel for `dist`: the package-approved channel is fixed by the package (`https://repo.packagist.org`). For `source-only` the channel comes only from the Owner-approved Decision Record.
 
@@ -120,15 +120,15 @@ One canonical schema (`QualificationEvidenceSchema`) is produced by RAV and enfo
 | `package_name` | `maatify/php-rate-limiter` |
 | `target_version` | valid SemVer |
 | `candidate_sha`, `candidate_tree_sha` | 40-hex |
-| `qualification_started_at`, `qualified_at` | `YYYY-MM-DDTHH:MM:SSZ`, `started ≤ qualified` |
+| `qualification_started_at`, `qualified_at` | strict UTC `YYYY-MM-DDTHH:MM:SSZ`; `semantic_review.reviewed_at ≤ qualification_started_at ≤ qualified_at` |
 | `delivery_policy` | `dist` or `source-only`; anything else fails |
 | `approved_distribution_channel` | credential-free URL; for `dist` must equal the package-approved channel |
-| `semantic_review` | the validated record: schema `1.0.0`, same target and candidate, `APPROVED`, reviewer, valid `reviewed_at`, all 8 claims `CONFIRMED` |
+| `semantic_review` | the validated record: schema `1.0.0`, same target and candidate, `APPROVED`, reviewer, strict-UTC `reviewed_at` **not later than `qualification_started_at`**, all 8 claims `CONFIRMED` |
 | `content_manifest` | SHA-256 of exactly the 10 required paths; no malformed/ambiguous paths, no missing or extra entries |
 | `distribution_evidence` | `git-archive` verified; required files in archive; none missing; archive content equals tree; no forbidden entries; `.gitattributes` and `composer.json` `archive.exclude` impact recorded |
 | `source_only_decision` | `null` for `dist`; complete immutable qualification-time evidence for `source-only` (§2.6) |
 
-Missing, empty, malformed, wrong-schema, wrong-target/SHA, partial-manifest, or incoherent evidence is rejected by PAV before any Composer work.
+Missing, empty, malformed, wrong-schema, wrong-target/SHA, partial-manifest, future-dated-review, or incoherent evidence is rejected by PAV before any Composer work.
 
 ### 2.5 Canonical Semantic Review Record (schema `1.0.0`)
 
@@ -157,6 +157,8 @@ Pattern matching cannot replace human review of documentation truth, so qualifyi
 ```
 
 The validated record is retained inside the qualification evidence.
+
+**Chronology.** The review must already exist when RAV consumes it: `reviewed_at <= qualification_started_at` (a review exactly at the boundary or earlier is eligible; a later one fails). `reviewed_at` must be strict UTC (`YYYY-MM-DDTHH:MM:SSZ`); offsets, local time, date-only or free-form values fail rather than being normalised. The rule is enforced twice: by RAV when it reads the record, and by the qualification-evidence schema, so PAV also rejects fabricated or tampered evidence containing a future-dated review. It is deliberately not derived from Git author/committer timestamps.
 
 ### 2.6 Source-only delivery: immutable qualification-time proof
 
@@ -192,6 +194,19 @@ Decision Records that may authorize source-only delivery use the repository's ex
 
 The retained evidence records: Decision ID, record path, immutable commit, record and index blob IDs, record and index status at qualification, Owner approval evidence, effective instant, package, **approved channel**, version scope and coverage, delivery mode, rationale, maintenance owner, qualification target, candidate SHA and RAV start time. That channel becomes the PAV channel.
 
+### 2.7 Evidence persistence is part of PASS
+
+Qualification evidence that is not durably retained cannot be consumed by PAV or recorded by CI, so **the public qualifying RAV can report PASS only after the complete evidence has been persisted**:
+
+```bash
+composer release:verify-artifact -- --target=<target> --candidate-sha=<candidate-sha> --semantic-review-file=<path> --output-evidence=<evidence-path>
+```
+
+- `--output-evidence=<evidence-path>` is **mandatory**. Without it the command prints usage and exits `2`; it never verifies and never prints PASS.
+- The destination must be **outside the candidate repository** (not the root, `.git/`, any subdirectory, or a symlink into it) so persisting cannot dirty the qualified candidate. The parent directory must already exist and be writable, and the destination must **not already exist** (stale evidence is never overwritten). The destination is validated before any verification work.
+- Persistence is atomic and complete: JSON is encoded with fail-on-error semantics, written to a temporary file in the destination directory, byte-count checked, flushed and closed, re-read and decoded, then atomically renamed and re-read. The persisted JSON must equal the generated evidence and satisfy the canonical schema, and the candidate must still be clean at the candidate SHA. A failure at any step — unwritable or invalid destination, directory destination, short write, encoding or read-back failure, malformed or differing persisted data — is a **RAV FAIL with a non-zero exit** and leaves no final evidence file.
+- `ReleaseArtifactVerifier::verify()` is the in-memory engine used by unit tests. Its result is **not** a release qualification; only `verifyQualifying()` (used by the CLI) returns PASS, and only after persistence.
+
 ---
 
 ## 3. Published Artifact Verification (PAV) — Post-Publication
@@ -199,21 +214,22 @@ The retained evidence records: Decision ID, record path, immutable commit, recor
 ### 3.1 CLI
 
 ```bash
-composer release:verify-published-artifact -- --qualification-evidence=<path> [options]
+composer release:verify-published-artifact -- --qualification-evidence=<evidence-path> --output-json=<report-path> [options]
 ```
 
 ```bash
-php scripts/release/verify-published-artifact.php --qualification-evidence=<path> [options]
+php scripts/release/verify-published-artifact.php --qualification-evidence=<evidence-path> --output-json=<report-path> [options]
 ```
 
 | Option | Required | Description |
 |---|---|---|
 | `--qualification-evidence=<path>` | **Yes** | RAV qualification evidence (alias `--rav-evidence`). |
+| `--output-json=<report-path>` | **Yes** | Durable machine-readable PAV report (see §3.8). Omitting it is a usage failure (exit 2). |
 | `--target=<version>` / `--qualified-sha=<sha>` | No | Assertions that must equal the evidence. |
 | `--package=<name>` | No | Must equal the evidence package. |
 | `--composer-repository=<url>` | No | **Assertion only.** It must equal the approved channel bound in the evidence; otherwise PAV fails. It never selects the channel. |
 | `--keep-temp` | No | Retain the isolated workspace for debugging (otherwise it is removed on success *and* failure). |
-| `--output-json=<path>` / `--format=<summary\|json>` | No | Report output. |
+| `--format=<summary\|json>` | No | Console output format. |
 
 ### 3.2 Order of verification
 
@@ -261,12 +277,23 @@ The installed package is compared against the **complete** RAV content manifest 
 
 ---
 
+### 3.8 Report persistence is part of PASS
+
+CI Workflow §2.6 requires the exact version, resolved source/dist identity, installation mode, installed path/content evidence and result to be retained, so **the public qualifying PAV can report PASS only after its complete report has been persisted**:
+
+- `--output-json=<report-path>` is **mandatory** (usage failure, exit `2`, without it) and follows the same destination rules as §2.7: outside the repository tree, existing parent directory, not already existing, validated before any network work. Temporary isolated Composer roots are never the durable destination.
+- The persisted JSON is the complete result: `status`, package, target, qualified SHA, `installation_mode`, `installed_path`, `composer_audit` (version, effective channel, install preference, controlled environment), `delivery_evidence` (installation source, dist/source type/redacted URL/reference, resolved package/version/install path), every check (resolved version, installation mode, qualified reference, installed content, forbidden content), `failures` and `verified_at`. A FAIL result is persisted too, for retention.
+- Write, read-back or comparison failure turns the result into **FAIL with a non-zero exit**; `OVERALL RESULT: PASS` is printed only after persistence succeeded.
+- `PublishedArtifactVerifier::verify()` is the in-memory engine; the public lifecycle is `verifyQualifying()`.
+
+---
+
 ## 4. Qualifying vs. Test-Only Boundaries
 
 | Capability | Qualifying | Test-only |
 |---|---|---|
-| RAV | `ReleaseArtifactVerifier::verify()` with `is_qualifying` (the CLI always qualifies) | `is_qualifying=false` returns `INSPECTION_ONLY` |
-| PAV | `PublishedArtifactVerifier::verify()` (real isolated Composer resolution from the bound channel) | `inspectPreinstalledFixture()` always returns `INSPECTION_ONLY` |
+| RAV | `ReleaseArtifactVerifier::verifyQualifying()` (the CLI): verification **plus** durable evidence persistence | in-memory `verify()` results and `is_qualifying=false` (`INSPECTION_ONLY`) |
+| PAV | `PublishedArtifactVerifier::verifyQualifying()` (the CLI): real isolated Composer resolution from the bound channel **plus** durable report persistence | in-memory `verify()` and `inspectPreinstalledFixture()` (always `INSPECTION_ONLY`) |
 | Repositories | only the qualification-bound approved channel | fixture/fake repositories exist only inside unit tests and never produce a PASS |
 | Evidence input | complete schema-valid RAV evidence | partial structures are used only against individual `evaluate*` methods |
 

@@ -90,7 +90,7 @@ final class ReleaseRepositoryFixture
     /**
      * Writes a semantic review record OUTSIDE the repository (the worktree must stay clean).
      */
-    public function semanticReviewFile(string $target, string $sha): string
+    public function semanticReviewFile(string $target, string $sha, string $reviewedAt = '2026-01-01T00:00:00Z'): string
     {
         $path = $this->path . '-semantic-review.json';
         file_put_contents($path, json_encode([
@@ -98,7 +98,7 @@ final class ReleaseRepositoryFixture
             'target' => $target,
             'candidate_sha' => $sha,
             'reviewer' => 'Lead Reviewer <lead@maatify.dev>',
-            'reviewed_at' => '2026-10-06T20:00:00Z',
+            'reviewed_at' => $reviewedAt,
             'disposition' => 'APPROVED',
             'claims' => array_fill_keys(ReleaseContract::REQUIRED_SEMANTIC_CLAIMS, 'CONFIRMED'),
             'notes' => 'Test review.',

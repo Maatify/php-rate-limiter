@@ -61,7 +61,7 @@ final class QualificationEvidenceSchema
     ];
 
     /**
-     * @param array<string, mixed> $evidence
+     * @param array<mixed> $evidence
      * @return list<string> human-readable violations; empty means the evidence is complete and coherent
      */
     public static function validate(array $evidence): array
@@ -121,7 +121,7 @@ final class QualificationEvidenceSchema
             $errors[] = 'approved_distribution_channel is not the package-approved channel for the dist delivery policy';
         }
 
-        array_push($errors, ...self::validateSemanticReview($evidence['semantic_review'], $target, $candidate));
+        array_push($errors, ...self::validateSemanticReview($evidence['semantic_review'], $target, $candidate, $startedAt));
         array_push($errors, ...self::validateContentManifest($evidence['content_manifest']));
         array_push($errors, ...self::validateDistributionEvidence($evidence['distribution_evidence']));
 
@@ -145,7 +145,7 @@ final class QualificationEvidenceSchema
     /**
      * @return list<string>
      */
-    private static function validateSemanticReview(mixed $review, string $target, string $candidate): array
+    private static function validateSemanticReview(mixed $review, string $target, string $candidate, ?int $startedAt): array
     {
         if (! is_array($review) || $review === []) {
             return ['semantic_review is absent or empty'];
@@ -165,8 +165,11 @@ final class QualificationEvidenceSchema
         if ($get('disposition') !== 'APPROVED') {
             $errors[] = 'semantic_review disposition is not APPROVED';
         }
-        if ($get('reviewer') === '' || ReleaseContract::parseTimestamp($get('reviewed_at')) === null) {
+        $reviewedAt = ReleaseContract::parseTimestamp($get('reviewed_at'));
+        if ($get('reviewer') === '' || $reviewedAt === null) {
             $errors[] = 'semantic_review lacks reviewer identity or a valid reviewed_at timestamp';
+        } elseif ($startedAt === null || $reviewedAt > $startedAt) {
+            $errors[] = 'semantic_review reviewed_at is later than qualification_started_at (the review must exist before RAV consumes it)';
         }
         $claims = $review['claims'] ?? null;
         if (! is_array($claims)) {

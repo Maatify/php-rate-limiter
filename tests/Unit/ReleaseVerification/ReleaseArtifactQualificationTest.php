@@ -41,13 +41,12 @@ final class ReleaseArtifactQualificationTest extends TestCase
         $candidate = $this->repo->commit('release');
         $out = $this->repo->path . '-evidence.json';
 
-        $result = (new ReleaseArtifactVerifier())->verify([
+        $result = (new ReleaseArtifactVerifier())->verifyQualifying([
             'target' => self::TARGET,
             'candidate_sha' => $candidate,
             'repo_path' => $this->repo->path,
             'semantic_review_file' => $this->repo->semanticReviewFile(self::TARGET, $candidate),
-            'output_evidence' => $out,
-        ]);
+        ], $out);
 
         self::assertSame('PASS', $result['status'], implode("\n", $result['failures']));
         self::assertFileExists($out);
@@ -172,7 +171,6 @@ final class ReleaseArtifactQualificationTest extends TestCase
     public function testSourceOnlyFullQualifyingRavProducesSchemaValidSourceOnlyEvidence(): void
     {
         [$decisionCommit, $candidate] = $this->sourceOnlyRepo();
-        $out = $this->repo->path . '-evidence.json';
 
         $result = (new ReleaseArtifactVerifier())->verify([
             'target' => self::TARGET,
@@ -183,7 +181,6 @@ final class ReleaseArtifactQualificationTest extends TestCase
             'source_only_decision_id' => self::ID,
             'source_only_decision_file' => Fx::decisionPath(self::ID),
             'source_only_commit' => $decisionCommit,
-            'output_evidence' => $out,
         ]);
 
         self::assertSame('PASS', $result['status'], implode("\n", $result['failures']));

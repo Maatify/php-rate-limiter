@@ -54,7 +54,6 @@ final class ReleaseArtifactVerifier
      *     source_only_decision_id?: string|null,
      *     source_only_decision_file?: string|null,
      *     source_only_commit?: string|null,
-     *     output_evidence?: string|null,
      *     is_qualifying?: bool,
      * } $options
      * @return array{
@@ -121,7 +120,7 @@ final class ReleaseArtifactVerifier
             $noUnallocatedRepresented = false;
 
             // 4. Canonical Semantic Review Evidence Boundary (independent of the tree)
-            $semanticReviewResult = $this->evaluateSemanticReviewEvidence($semanticReviewFile, $target, $candidateSha);
+            $semanticReviewResult = $this->evaluateSemanticReviewEvidence($semanticReviewFile, $target, $candidateSha, $startedAt);
             $ledger->record('semantic_review', $semanticReviewResult);
             $semanticDetails = $semanticReviewResult['details'] ?? [];
             $claims = isset($semanticDetails['claims']) && is_array($semanticDetails['claims']) ? $semanticDetails['claims'] : [];
@@ -218,15 +217,149 @@ final class ReleaseArtifactVerifier
         ];
 
         if ($overallStatus === 'PASS' && $qualificationEvidence !== null) {
+            // In-memory result only: the candidate is NOT release-qualified until the evidence is
+            // durably persisted (see verifyQualifying() / finalizePersistence()).
             $result['qualification_evidence'] = $qualificationEvidence;
+        }
 
-            if (isset($options['output_evidence'])) {
-                file_put_contents(
-                    (string) $options['output_evidence'],
-                    (string) json_encode($qualificationEvidence, JSON_PRETTY_PRINT | JSON_UNESCAPED_SLASHES),
-                );
+        return $result;
+    }
+
+    /**
+     * Qualifying RAV lifecycle: verification AND durable evidence persistence.
+     *
+     * The destination is validated before any verification work (it must be outside the
+     * candidate repository), and PASS is returned only after the complete evidence has
+     * been persisted and read back. Any persistence failure is a RAV FAIL.
+     *
+     * @param array{
+     *     target: string,
+     *     candidate_sha: string,
+     *     repo_path?: string,
+     *     semantic_review_file?: string|null,
+     *     delivery_policy?: string,
+     *     source_only_decision_id?: string|null,
+     *     source_only_decision_file?: string|null,
+     *     source_only_commit?: string|null,
+     * } $options
+     * @return array{
+     *     status: 'PASS'|'FAIL'|'INSPECTION_ONLY',
+     *     package_name: string,
+     *     target_version: string,
+     *     candidate_sha: string,
+     *     candidate_tree_sha: string,
+     *     delivery_policy: string,
+     *     verified_at: string,
+     *     checks: array<string, array{status: 'PASS'|'FAIL', message: string, details?: mixed}>,
+     *     failures: list<string>,
+     *     qualification_evidence?: array<string, mixed>,
+     *     evidence_path?: string,
+     * }
+     */
+    public function verifyQualifying(array $options, string $evidencePath, ?EvidenceWriter $writer = null): array
+    {
+        $writer ??= new EvidenceWriter();
+        $repoPath = realpath($options['repo_path'] ?? (string) getcwd());
+        if ($repoPath === false || ! is_dir($repoPath)) {
+            throw new RuntimeException('Invalid repository path provided: ' . ($options['repo_path'] ?? ''));
+        }
+
+        $destination = $writer->resolveDestination($evidencePath, $repoPath);
+        if ($destination['status'] === 'FAIL') {
+            return [
+                'status' => 'FAIL',
+                'package_name' => self::EXPECTED_PACKAGE_NAME,
+                'target_version' => trim($options['target']),
+                'candidate_sha' => trim($options['candidate_sha']),
+                'candidate_tree_sha' => '',
+                'delivery_policy' => strtolower(trim($options['delivery_policy'] ?? 'dist')),
+                'verified_at' => gmdate('Y-m-d\TH:i:s\Z'),
+                'checks' => ['evidence_persistence' => ['status' => 'FAIL', 'message' => $destination['message']]],
+                'failures' => [$destination['message']],
+            ];
+        }
+
+        return $this->finalizePersistence($this->verify($options), $evidencePath, $repoPath, $writer);
+    }
+
+    /**
+     * Makes persistence part of qualification success. A PASS result is returned only when the
+     * complete evidence was persisted, read back, schema-valid and equal to the in-memory
+     * evidence, and the candidate worktree is still clean at the candidate.
+     *
+     * @param array{
+     *     status: 'PASS'|'FAIL'|'INSPECTION_ONLY',
+     *     package_name: string,
+     *     target_version: string,
+     *     candidate_sha: string,
+     *     candidate_tree_sha: string,
+     *     delivery_policy: string,
+     *     verified_at: string,
+     *     checks: array<string, array{status: 'PASS'|'FAIL', message: string, details?: mixed}>,
+     *     failures: list<string>,
+     *     qualification_evidence?: array<string, mixed>,
+     * } $result
+     * @return array{
+     *     status: 'PASS'|'FAIL'|'INSPECTION_ONLY',
+     *     package_name: string,
+     *     target_version: string,
+     *     candidate_sha: string,
+     *     candidate_tree_sha: string,
+     *     delivery_policy: string,
+     *     verified_at: string,
+     *     checks: array<string, array{status: 'PASS'|'FAIL', message: string, details?: mixed}>,
+     *     failures: list<string>,
+     *     qualification_evidence?: array<string, mixed>,
+     *     evidence_path?: string,
+     * }
+     */
+    public function finalizePersistence(array $result, string $evidencePath, string $repoPath, ?EvidenceWriter $writer = null): array
+    {
+        if ($result['status'] !== 'PASS') {
+            return $result;
+        }
+
+        $writer ??= new EvidenceWriter();
+        $evidence = $result['qualification_evidence'] ?? null;
+        $failure = null;
+        $persistedPath = null;
+
+        if ($evidence === null) {
+            $failure = 'Qualifying RAV produced no qualification evidence to persist.';
+        } else {
+            $written = $writer->write($evidencePath, $evidence, $repoPath);
+            if ($written['status'] === 'FAIL') {
+                $failure = $written['message'];
+            } else {
+                $persistedPath = $written['path'];
+                $decoded = json_decode((string) file_get_contents($persistedPath), true);
+                if (! is_array($decoded) || $decoded !== json_decode((string) json_encode($evidence), true)) {
+                    $failure = 'Persisted qualification evidence differs from the generated evidence.';
+                } elseif (QualificationEvidenceSchema::validate($decoded) !== []) {
+                    $failure = 'Persisted qualification evidence does not satisfy the canonical schema.';
+                } elseif ($this->evaluateCandidateShaAndGit($repoPath, $result['candidate_sha'])['status'] !== 'PASS') {
+                    $failure = 'Persisting evidence left the candidate repository not clean at the candidate SHA.';
+                }
             }
         }
+
+        if ($failure !== null) {
+            if ($persistedPath !== null && is_file($persistedPath)) {
+                unlink($persistedPath);
+            }
+            $result['status'] = 'FAIL';
+            unset($result['qualification_evidence']);
+            $result['checks']['evidence_persistence'] = ['status' => 'FAIL', 'message' => $failure];
+            $result['failures'][] = $failure;
+
+            return $result;
+        }
+
+        $result['checks']['evidence_persistence'] = [
+            'status' => 'PASS',
+            'message' => sprintf('Complete qualification evidence persisted and verified at "%s".', (string) $persistedPath),
+        ];
+        $result['evidence_path'] = (string) $persistedPath;
 
         return $result;
     }
@@ -725,13 +858,14 @@ final class ReleaseArtifactVerifier
      * - target: exact SemVer target
      * - candidate_sha: exact 40-hex commit SHA
      * - reviewer: non-empty string
-     * - reviewed_at: non-empty ISO 8601 UTC timestamp
+     * - reviewed_at: strict UTC timestamp (YYYY-MM-DDTHH:MM:SSZ); when $qualificationStartedAt is
+     *   given it MUST NOT be later than it (the review must already exist when RAV consumes it)
      * - disposition: "APPROVED"
      * - claims: array containing all 8 REQUIRED_SEMANTIC_CLAIMS confirmed as "CONFIRMED"
      *
      * @return array{status: 'PASS'|'FAIL', message: string, details?: array<string, mixed>}
      */
-    public function evaluateSemanticReviewEvidence(?string $filePath, string $target, string $candidateSha): array
+    public function evaluateSemanticReviewEvidence(?string $filePath, string $target, string $candidateSha, ?string $qualificationStartedAt = null): array
     {
         if ($filePath === null || ! file_exists($filePath)) {
             return [
@@ -790,6 +924,23 @@ final class ReleaseArtifactVerifier
                 'status' => 'FAIL',
                 'message' => 'Semantic review evidence must include non-empty reviewer identity and reviewed_at timestamp.',
             ];
+        }
+
+        $reviewedInstant = ReleaseContract::parseTimestamp($reviewedAt);
+        if ($reviewedInstant === null) {
+            return [
+                'status' => 'FAIL',
+                'message' => sprintf('Semantic review reviewed_at "%s" is not a strict UTC timestamp (YYYY-MM-DDTHH:MM:SSZ).', $reviewedAt),
+            ];
+        }
+        if ($qualificationStartedAt !== null) {
+            $startedInstant = ReleaseContract::parseTimestamp($qualificationStartedAt);
+            if ($startedInstant === null || $reviewedInstant > $startedInstant) {
+                return [
+                    'status' => 'FAIL',
+                    'message' => sprintf('Semantic review reviewed_at "%s" is later than the RAV qualification start "%s"; the review did not exist when RAV consumed it.', $reviewedAt, $qualificationStartedAt),
+                ];
+            }
         }
 
         if (! is_array($claims)) {
