@@ -7,7 +7,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
-## [1.0.0-rc.3]
+## [1.0.0-rc.3] - 2026-10-07
 
 ### Added
 - Maintained Release Artifact Verification tooling (`composer release:verify-artifact`)
@@ -269,6 +269,7 @@ The public runtime API and runtime behavior of the package are unchanged from
 - Package licensing established as proprietary by Owner Decision before first release
 - Expanded `BudgetConfigDTO` to the full policy-owned contract (threshold, block level, cooldown seconds, trusted-session floor, pre-check enforcement, known-device micro-cap, Recovery Collision Guard toggle) with defaults preserving current runtime semantics (`cooldown_seconds = 0`, `trusted_session_floor_level = 2`, `precheck_enforcement = true`, `known_device_micro_cap = 8`, `recovery_collision_guard_enabled = false`); locked Login/OTP preset values live in the policy objects, with the full contract in `docs/POLICIES.md`. Normative Budget Owner-Safety behavior is implemented in the runtime and covered by regression tests. Normative behavior lives in `docs/DECISION_MATRIX.md`.
 
-[Unreleased]: https://github.com/Maatify/php-rate-limiter/compare/v1.0.0-rc.2...HEAD
+[Unreleased]: https://github.com/Maatify/php-rate-limiter/compare/v1.0.0-rc.3...HEAD
+[1.0.0-rc.3]: https://github.com/Maatify/php-rate-limiter/releases/tag/v1.0.0-rc.3
 [1.0.0-rc.2]: https://github.com/Maatify/php-rate-limiter/compare/v1.0.0-rc.1...v1.0.0-rc.2
 [1.0.0-rc.1]: https://github.com/Maatify/php-rate-limiter/releases/tag/v1.0.0-rc.1

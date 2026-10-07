@@ -31,7 +31,7 @@ PHP library for deterministic, multi-signal rate-limit decisions.
 
 ## Package Status
 
-This artifact is **Release Candidate `1.0.0-rc.3`**. Publication State at qualification: unpublished; this document does not claim that `1.0.0-rc.3` is externally available until it is Published. The latest externally Published Release Candidate at qualification was `1.0.0-rc.2`. No Published Stable release or Stable support line exists. It is proprietary software; repository visibility and registry presence do not grant open-source or general usage rights. Authorized use requires written authorization or an applicable written license agreement from Maatify.
+The current Published Release Candidate is **`1.0.0-rc.3`**, published to Packagist on 2026-10-07. No Published Stable release or Stable support line exists. It is proprietary software; repository visibility and registry presence do not grant open-source or general usage rights. Authorized use requires written authorization or an applicable written license agreement from Maatify.
 
 ## Key Features
 
@@ -49,7 +49,7 @@ This artifact is **Release Candidate `1.0.0-rc.3`**. Publication State at qualif
 
 ## Installation
 
-Install the exact Release Candidate target (available once `1.0.0-rc.3` is Published):
+Install the current Published Release Candidate:
 
 ```bash
 composer require maatify/php-rate-limiter:1.0.0-rc.3
