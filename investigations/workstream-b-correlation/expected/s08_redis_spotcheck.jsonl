@@ -1,0 +1,4 @@
+{"s":"F04.redis.churn-A-B-A","attempts":["A: check:A > ok:A","B: check:A > ok:H2/~60","A: check:H2/~60 > ok:H2/~60"]}
+{"s":"F04.redis.low-dilution","attempts":["u1: check:A > ok:A","u2: check:A > ok:A","u3: check:A > ok:A","u4: check:A > ok:A","u5: check:A > ok:H2/~60","u6: check:H2/~60 > ok:H2/~60","u7: check:H2/~60 > ok:H2/~60"]}
+{"s":"F04.redis.low-dilution.record-only","attempts":["u1: ok:A","u2: ok:A","u3: ok:A","u4: ok:A","u5: ok:A","u6: ok:H2/~60","u7: ok:H2/~60"]}
+{"s":"F04.redis.bounded-state","largestSetCardinality":6,"dilutionCap":6,"ttlClassesSeconds":[600,900,1200,1800]}

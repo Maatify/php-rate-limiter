@@ -1,0 +1,14 @@
+{"s":"crosscheck.S0-vs-real","stream":"L1 NAT: 2 legit MEDIUM clients, valid logins","events":134,"mismatches":0}
+{"s":"crosscheck.S0-vs-real","stream":"L1f NAT: same + 8% typo failures","events":134,"mismatches":0}
+{"s":"crosscheck.S0-vs-real","stream":"L2 LOW population 3 new users/min, valid","events":121,"mismatches":0}
+{"s":"crosscheck.S0-vs-real","stream":"L3 LOW population + 8% typos","events":121,"mismatches":0}
+{"s":"crosscheck.S0-vs-real","stream":"L4 one real device roaming across 12 IPs (MEDIUM)","events":12,"mismatches":0}
+{"s":"crosscheck.S0-vs-real","stream":"X1 attacker: fresh FP per request, same IP/UA, failing","events":61,"mismatches":0}
+{"s":"crosscheck.S0-vs-real","stream":"X2 attacker: LOW, 1 UA, new IP+new account per attempt","events":121,"mismatches":0}
+{"s":"crosscheck.S0-vs-real","stream":"X3 attacker: FP rotation + IP rotation (new K2 each)","events":121,"mismatches":0}
+{"s":"crosscheck.S0-vs-real","stream":"X4 FP-rotating attacker sharing a K2 with 2 legit clients","events":121,"mismatches":0}
+{"s":"crosscheck.S0-vs-real","stream":"X2L attacker X2 + legit LOW population on same UA","events":151,"mismatches":0}
+{"s":"crosscheck.S0-vs-real","stream":"X5 attacker: LOW slow-roll 4 IP/10min (under threshold)","events":21,"mismatches":0}
+{"s":"crosscheck.S0-vs-real","stream":"X6 weaponization: insider on shared K2 fails with rotating FPs (colleagues legit)","events":121,"mismatches":0}
+{"s":"crosscheck.S0-vs-real","stream":"X7 evasion: X2 attacker pads each failure with 2 valid logins (ratio dilution)","events":121,"mismatches":0}
+{"s":"crosscheck.S0-vs-real","stream":"X8 weaponization: 8-IP botnet fails on the popular UA; legit LOW users share the UA","events":201,"mismatches":0}

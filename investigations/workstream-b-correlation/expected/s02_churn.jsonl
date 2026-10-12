@@ -1,0 +1,67 @@
+{"s":"B1.pre+out.valid","who":"A","t":0,"steps":"check:A>ok:A","blocked":false,"blockCmd":null,"allowedThenBlockedBy":null,"conf":"MEDIUM","dOps":9,"wOps":0,"blocks":[],"scores":[]}
+{"s":"B1.pre+out.valid","who":"B","t":20,"steps":"check:A>ok:H2/60","blocked":true,"blockCmd":"ok","allowedThenBlockedBy":"ok","conf":"MEDIUM","dOps":8,"wOps":2,"blocks":{"K2":"L2@+60s"},"scores":[]}
+{"s":"B1.pre+out.valid","who":"A","t":40,"steps":"check:H2/40>ok:H2/40","blocked":true,"blockCmd":"check","allowedThenBlockedBy":null,"conf":"MEDIUM","dOps":0,"wOps":0,"blocks":{"K2":"L2@+40s"},"scores":[]}
+{"s":"B1.pre+out.valid","who":"B","t":60,"steps":"check:H2/20>ok:H2/20","blocked":true,"blockCmd":"check","allowedThenBlockedBy":null,"conf":"MEDIUM","dOps":0,"wOps":0,"blocks":{"K2":"L2@+20s"},"scores":[]}
+{"s":"B1.pre+out.valid","who":"A","t":80,"steps":"check:H2/60>ok:H2/60","blocked":true,"blockCmd":"check","allowedThenBlockedBy":null,"conf":"MEDIUM","dOps":4,"wOps":1,"blocks":{"K2":"L2@+60s"},"scores":[]}
+{"s":"B1.pre+out.valid","who":"B","t":100,"steps":"check:H2/40>ok:H2/40","blocked":true,"blockCmd":"check","allowedThenBlockedBy":null,"conf":"MEDIUM","dOps":0,"wOps":0,"blocks":{"K2":"L2@+40s"},"scores":[]}
+{"s":"B1.pre-only","who":"A","t":0,"steps":"check:A","blocked":false,"blockCmd":null,"allowedThenBlockedBy":null,"conf":"MEDIUM","dOps":5,"wOps":0,"blocks":[],"scores":[]}
+{"s":"B1.pre-only","who":"B","t":20,"steps":"check:A","blocked":false,"blockCmd":null,"allowedThenBlockedBy":null,"conf":"MEDIUM","dOps":5,"wOps":1,"blocks":[],"scores":[]}
+{"s":"B1.pre-only","who":"A","t":40,"steps":"check:H2/60","blocked":true,"blockCmd":"check","allowedThenBlockedBy":null,"conf":"MEDIUM","dOps":4,"wOps":1,"blocks":{"K2":"L2@+60s"},"scores":[]}
+{"s":"B1.pre-only","who":"B","t":60,"steps":"check:H2/40","blocked":true,"blockCmd":"check","allowedThenBlockedBy":null,"conf":"MEDIUM","dOps":0,"wOps":0,"blocks":{"K2":"L2@+40s"},"scores":[]}
+{"s":"B1.pre-only","who":"A","t":80,"steps":"check:H2/20","blocked":true,"blockCmd":"check","allowedThenBlockedBy":null,"conf":"MEDIUM","dOps":0,"wOps":0,"blocks":{"K2":"L2@+20s"},"scores":[]}
+{"s":"B1.pre-only","who":"B","t":100,"steps":"check:H2/60","blocked":true,"blockCmd":"check","allowedThenBlockedBy":null,"conf":"MEDIUM","dOps":4,"wOps":1,"blocks":{"K2":"L2@+60s"},"scores":[]}
+{"s":"B1.out-only.valid","who":"A","t":0,"steps":"ok:A","blocked":false,"blockCmd":null,"allowedThenBlockedBy":null,"conf":"MEDIUM","dOps":4,"wOps":0,"blocks":[],"scores":[]}
+{"s":"B1.out-only.valid","who":"B","t":20,"steps":"ok:A","blocked":false,"blockCmd":null,"allowedThenBlockedBy":null,"conf":"MEDIUM","dOps":4,"wOps":1,"blocks":[],"scores":[]}
+{"s":"B1.out-only.valid","who":"A","t":40,"steps":"ok:H2/60","blocked":true,"blockCmd":"ok","allowedThenBlockedBy":null,"conf":"MEDIUM","dOps":3,"wOps":1,"blocks":{"K2":"L2@+60s"},"scores":[]}
+{"s":"B1.out-only.valid","who":"B","t":60,"steps":"ok:H2/40","blocked":true,"blockCmd":"ok","allowedThenBlockedBy":null,"conf":"MEDIUM","dOps":0,"wOps":0,"blocks":{"K2":"L2@+40s"},"scores":[]}
+{"s":"B1.out-only.valid","who":"A","t":80,"steps":"ok:H2/20","blocked":true,"blockCmd":"ok","allowedThenBlockedBy":null,"conf":"MEDIUM","dOps":0,"wOps":0,"blocks":{"K2":"L2@+20s"},"scores":[]}
+{"s":"B1.out-only.valid","who":"B","t":100,"steps":"ok:H2/60","blocked":true,"blockCmd":"ok","allowedThenBlockedBy":null,"conf":"MEDIUM","dOps":3,"wOps":1,"blocks":{"K2":"L2@+60s"},"scores":[]}
+{"s":"B2.same-fingerprint","who":"A","t":0,"steps":"check:A>ok:A","blocked":false,"blockCmd":null,"allowedThenBlockedBy":null,"conf":"MEDIUM","dOps":9,"wOps":0,"blocks":[],"scores":[]}
+{"s":"B2.same-fingerprint","who":"A","t":20,"steps":"check:A>ok:A","blocked":false,"blockCmd":null,"allowedThenBlockedBy":null,"conf":"MEDIUM","dOps":9,"wOps":0,"blocks":[],"scores":[]}
+{"s":"B2.same-fingerprint","who":"A","t":40,"steps":"check:A>ok:A","blocked":false,"blockCmd":null,"allowedThenBlockedBy":null,"conf":"MEDIUM","dOps":9,"wOps":0,"blocks":[],"scores":[]}
+{"s":"B2.same-fingerprint","who":"A","t":60,"steps":"check:A>ok:A","blocked":false,"blockCmd":null,"allowedThenBlockedBy":null,"conf":"MEDIUM","dOps":9,"wOps":0,"blocks":[],"scores":[]}
+{"s":"B2.same-fingerprint","who":"A","t":80,"steps":"check:A>ok:A","blocked":false,"blockCmd":null,"allowedThenBlockedBy":null,"conf":"MEDIUM","dOps":9,"wOps":0,"blocks":[],"scores":[]}
+{"s":"B2.same-fingerprint","who":"A","t":100,"steps":"check:A>ok:A","blocked":false,"blockCmd":null,"allowedThenBlockedBy":null,"conf":"MEDIUM","dOps":9,"wOps":0,"blocks":[],"scores":[]}
+{"s":"B3.separate-k2","who":"A","t":0,"steps":"check:A>ok:A","blocked":false,"blockCmd":null,"allowedThenBlockedBy":null,"conf":"MEDIUM","dOps":9,"wOps":0,"blocks":[],"scores":[]}
+{"s":"B3.separate-k2","who":"B","t":20,"steps":"check:A>ok:A","blocked":false,"blockCmd":null,"allowedThenBlockedBy":null,"conf":"MEDIUM","dOps":9,"wOps":0,"blocks":[],"scores":[]}
+{"s":"B3.separate-k2","who":"A","t":40,"steps":"check:A>ok:A","blocked":false,"blockCmd":null,"allowedThenBlockedBy":null,"conf":"MEDIUM","dOps":9,"wOps":0,"blocks":[],"scores":[]}
+{"s":"B3.separate-k2","who":"B","t":60,"steps":"check:A>ok:A","blocked":false,"blockCmd":null,"allowedThenBlockedBy":null,"conf":"MEDIUM","dOps":9,"wOps":0,"blocks":[],"scores":[]}
+{"s":"B3.separate-k2","who":"A","t":80,"steps":"check:A>ok:A","blocked":false,"blockCmd":null,"allowedThenBlockedBy":null,"conf":"MEDIUM","dOps":9,"wOps":0,"blocks":[],"scores":[]}
+{"s":"B3.separate-k2","who":"B","t":100,"steps":"check:A>ok:A","blocked":false,"blockCmd":null,"allowedThenBlockedBy":null,"conf":"MEDIUM","dOps":9,"wOps":0,"blocks":[],"scores":[]}
+{"s":"B4.three-clients","who":"A","t":0,"steps":"check:A>ok:A","blocked":false,"blockCmd":null,"allowedThenBlockedBy":null,"conf":"MEDIUM","dOps":9,"wOps":0,"blocks":[],"scores":[]}
+{"s":"B4.three-clients","who":"B","t":20,"steps":"check:A>ok:H2/60","blocked":true,"blockCmd":"ok","allowedThenBlockedBy":"ok","conf":"MEDIUM","dOps":8,"wOps":2,"blocks":{"K2":"L2@+60s"},"scores":[]}
+{"s":"B4.three-clients","who":"C","t":40,"steps":"check:H2/40>ok:H2/40","blocked":true,"blockCmd":"check","allowedThenBlockedBy":null,"conf":"MEDIUM","dOps":0,"wOps":0,"blocks":{"K2":"L2@+40s"},"scores":[]}
+{"s":"B4.three-clients","who":"A","t":60,"steps":"check:H2/20>ok:H2/20","blocked":true,"blockCmd":"check","allowedThenBlockedBy":null,"conf":"MEDIUM","dOps":0,"wOps":0,"blocks":{"K2":"L2@+20s"},"scores":[]}
+{"s":"B4.three-clients","who":"B","t":80,"steps":"check:H2/60>ok:H2/60","blocked":true,"blockCmd":"check","allowedThenBlockedBy":null,"conf":"MEDIUM","dOps":4,"wOps":1,"blocks":{"K2":"L2@+60s"},"scores":[]}
+{"s":"B4.three-clients","who":"C","t":100,"steps":"check:H2/40>ok:H2/40","blocked":true,"blockCmd":"check","allowedThenBlockedBy":null,"conf":"MEDIUM","dOps":0,"wOps":0,"blocks":{"K2":"L2@+40s"},"scores":[]}
+{"s":"B4b.low-clients-no-fp","who":"A","t":0,"steps":"check:A>ok:A","blocked":false,"blockCmd":null,"allowedThenBlockedBy":null,"conf":"LOW","dOps":9,"wOps":0,"blocks":[],"scores":[]}
+{"s":"B4b.low-clients-no-fp","who":"B","t":20,"steps":"check:A>ok:A","blocked":false,"blockCmd":null,"allowedThenBlockedBy":null,"conf":"LOW","dOps":9,"wOps":0,"blocks":[],"scores":[]}
+{"s":"B4b.low-clients-no-fp","who":"A","t":40,"steps":"check:A>ok:A","blocked":false,"blockCmd":null,"allowedThenBlockedBy":null,"conf":"LOW","dOps":9,"wOps":0,"blocks":[],"scores":[]}
+{"s":"B4b.low-clients-no-fp","who":"B","t":60,"steps":"check:A>ok:A","blocked":false,"blockCmd":null,"allowedThenBlockedBy":null,"conf":"LOW","dOps":9,"wOps":0,"blocks":[],"scores":[]}
+{"s":"B5.fp-rotation.fail","who":"rot0","t":0,"steps":"check:A>fail:A","blocked":false,"blockCmd":null,"allowedThenBlockedBy":null,"conf":"MEDIUM","dOps":9,"wOps":0,"blocks":[],"scores":{"K1":5,"K4":3}}
+{"s":"B5.fp-rotation.fail","who":"rot1","t":5,"steps":"check:A>fail:H2/60","blocked":true,"blockCmd":"fail","allowedThenBlockedBy":"fail","conf":"MEDIUM","dOps":8,"wOps":2,"blocks":{"K2":"L2@+60s"},"scores":{"K1":10,"K4":6}}
+{"s":"B5.fp-rotation.fail","who":"rot2","t":10,"steps":"check:H2/55>fail:H2/55","blocked":true,"blockCmd":"check","allowedThenBlockedBy":null,"conf":"MEDIUM","dOps":0,"wOps":0,"blocks":{"K2":"L2@+55s"},"scores":{"K1":10,"K4":6}}
+{"s":"B5.fp-rotation.fail","who":"rot3","t":15,"steps":"check:H2/50>fail:H2/50","blocked":true,"blockCmd":"check","allowedThenBlockedBy":null,"conf":"MEDIUM","dOps":0,"wOps":0,"blocks":{"K2":"L2@+50s"},"scores":{"K1":10,"K4":6}}
+{"s":"B5.fp-rotation.fail","who":"rot4","t":20,"steps":"check:H2/45>fail:H2/45","blocked":true,"blockCmd":"check","allowedThenBlockedBy":null,"conf":"MEDIUM","dOps":0,"wOps":0,"blocks":{"K2":"L2@+45s"},"scores":{"K1":10,"K4":6}}
+{"s":"B5.fp-rotation.fail","who":"rot5","t":25,"steps":"check:H2/40>fail:H2/40","blocked":true,"blockCmd":"check","allowedThenBlockedBy":null,"conf":"MEDIUM","dOps":0,"wOps":0,"blocks":{"K2":"L2@+40s"},"scores":{"K1":10,"K4":6}}
+{"s":"B5.fp-rotation.fail","who":"rot6","t":30,"steps":"check:H2/35>fail:H2/35","blocked":true,"blockCmd":"check","allowedThenBlockedBy":null,"conf":"MEDIUM","dOps":0,"wOps":0,"blocks":{"K2":"L2@+35s"},"scores":{"K1":10,"K4":6}}
+{"s":"B5.fp-rotation.fail","who":"rot7","t":35,"steps":"check:H2/30>fail:H2/30","blocked":true,"blockCmd":"check","allowedThenBlockedBy":null,"conf":"MEDIUM","dOps":0,"wOps":0,"blocks":{"K2":"L2@+30s"},"scores":{"K1":10,"K4":6}}
+{"s":"B5b.pivot","who":"same IP, new UA major","t":45,"steps":"check:S1/1160>fail:H2/60","blocked":true,"blockCmd":"check","allowedThenBlockedBy":null,"conf":"MEDIUM","dOps":9,"wOps":2,"blocks":{"K4":"L2@+60s"}}
+{"s":"B5b.pivot","who":"new IP, same UA","t":45,"steps":"check:H2/60>fail:H2/60","blocked":true,"blockCmd":"check","allowedThenBlockedBy":null,"conf":"MEDIUM","dOps":0,"wOps":0,"blocks":{"K4":"L2@+60s"}}
+{"s":"E1.enforcement-scope","who":"acctA other IP same UA","t":10,"steps":"check:A>ok:A","blocked":false,"blockCmd":null,"allowedThenBlockedBy":null,"conf":"MEDIUM","dOps":9,"wOps":0,"blocks":[]}
+{"s":"E1.enforcement-scope","who":"acctA same IP other UA major","t":10,"steps":"check:A>ok:A","blocked":false,"blockCmd":null,"allowedThenBlockedBy":null,"conf":"MEDIUM","dOps":9,"wOps":0,"blocks":[]}
+{"s":"E1.enforcement-scope","who":"acctC same K2 third client","t":10,"steps":"check:H2/55>ok:H2/55","blocked":true,"blockCmd":"check","allowedThenBlockedBy":null,"conf":"MEDIUM","dOps":0,"wOps":0,"blocks":{"K2":"L2@+55s"}}
+{"s":"E1.enforcement-scope","who":"acctA same K2 same FP","t":10,"steps":"check:H2/55>ok:H2/55","blocked":true,"blockCmd":"check","allowedThenBlockedBy":null,"conf":"MEDIUM","dOps":0,"wOps":0,"blocks":{"K2":"L2@+55s"}}
+{"s":"B-v6.two-clients-one-64","who":"A","t":0,"steps":"check:A>ok:A","blocked":false,"blockCmd":null,"allowedThenBlockedBy":null,"conf":"MEDIUM","dOps":8,"wOps":0,"blocks":[],"scores":[]}
+{"s":"B-v6.two-clients-one-64","who":"B","t":20,"steps":"check:A>ok:H2/60","blocked":true,"blockCmd":"ok","allowedThenBlockedBy":"ok","conf":"MEDIUM","dOps":7,"wOps":2,"blocks":{"K2":"L2@+60s"},"scores":[]}
+{"s":"B-v6.two-clients-one-64","who":"A","t":40,"steps":"check:H2/40>ok:H2/40","blocked":true,"blockCmd":"check","allowedThenBlockedBy":null,"conf":"MEDIUM","dOps":0,"wOps":0,"blocks":{"K2":"L2@+40s"},"scores":[]}
+{"s":"B-v6-macro.six-clients-six-64","who":"A","t":0,"steps":"check:A>ok:A","blocked":false,"blockCmd":null,"allowedThenBlockedBy":null,"conf":"MEDIUM","dOps":8,"wOps":0,"blocks":[],"scores":[]}
+{"s":"B-v6-macro.six-clients-six-64","who":"B","t":20,"steps":"check:A>ok:A","blocked":false,"blockCmd":null,"allowedThenBlockedBy":null,"conf":"MEDIUM","dOps":12,"wOps":0,"blocks":[],"scores":[]}
+{"s":"B-v6-macro.six-clients-six-64","who":"C","t":40,"steps":"check:A>ok:H2/60","blocked":true,"blockCmd":"ok","allowedThenBlockedBy":"ok","conf":"MEDIUM","dOps":11,"wOps":2,"blocks":{"K2":"L2@+60s"},"scores":[]}
+{"s":"B-v6-macro.six-clients-six-64","who":"D","t":60,"steps":"check:H2/60>ok:H2/60","blocked":true,"blockCmd":"check","allowedThenBlockedBy":null,"conf":"MEDIUM","dOps":5,"wOps":0,"blocks":{"K2":"L2@+60s"},"scores":[]}
+{"s":"B-v6-macro.six-clients-six-64","who":"E","t":80,"steps":"check:H2/60>ok:H2/60","blocked":true,"blockCmd":"check","allowedThenBlockedBy":null,"conf":"MEDIUM","dOps":5,"wOps":0,"blocks":{"K2":"L2@+60s"},"scores":[]}
+{"s":"B-v6-macro.six-clients-six-64","who":"F","t":100,"steps":"check:H2/60>ok:H2/60","blocked":true,"blockCmd":"check","allowedThenBlockedBy":null,"conf":"MEDIUM","dOps":5,"wOps":0,"blocks":{"K2":"L2@+60s"},"scores":[]}
+{"s":"B6.seed","t":10,"steps":"check:A>ok:H2/60","blocked":true,"blockCmd":"ok","allowedThenBlockedBy":"ok","conf":"MEDIUM","dOps":8,"wOps":2}
+{"s":"B6.single-client-after-pair","runs":["B15-600","a615-2400"]}
+{"s":"B7.two-legit-clients-4000s","client":"A","blockedAttempts":"63/67","runs":["a0-0","B60-1200","a1260-1260","B1320-2460","a2520-2520","B2580-3720","a3780-3780","B3840-3960"]}
+{"s":"B7.two-legit-clients-4000s","client":"B","blockedAttempts":"64/67","runs":["B30-570","a630-630","B690-1830","a1890-1890","B1950-3090","a3150-3150","B3210-3990"]}
