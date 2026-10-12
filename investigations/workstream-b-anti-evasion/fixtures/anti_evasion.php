@@ -209,3 +209,34 @@ function wsbPrimaryOrder(): array
 {
     return ['L1', 'L1f', 'L2', 'L3', 'L4', 'X1', 'X2', 'X2L', 'X3', 'X4', 'X5', 'X6', 'X7', 'X8', 'Y1', 'Y2a', 'Y2b', 'Y2c', 'Y2c2', 'Y4b', 'Y4c', 'Y4d', 'Y4e', 'Y4f', 'Y6b', 'Y6c', 'Y7', 'Y9a', 'Y9b'];
 }
+
+/** Streams measured on the secondary policy shapes (risk-based, not Cartesian). */
+function wsbShapeStreams(): array
+{
+    return ['L1', 'L2', 'X1', 'X2', 'X3', 'X4', 'X6', 'X8', 'Y2a', 'Y4d', 'Y4e', 'Y4f'];
+}
+
+/**
+ * EVERY (stream, shape, flow) cell a01_matrix must emit for each variant. The report validates against this list (F104-02): a missing
+ * cell is missing evidence, never a silent skip.
+ *
+ * @return list<array{0: string, 1: string, 2: string}>
+ */
+function wsbMatrixCells(): array
+{
+    $cells = [];
+    foreach (wsbPrimaryOrder() as $id) {
+        foreach (['pre+out', 'out', 'pre'] as $flow) {
+            $cells[] = [$id, 'login', $flow];
+        }
+    }
+    foreach (['login-anon', 'otp', 'api', 'api_custom'] as $shape) {
+        foreach (wsbShapeStreams() as $id) {
+            foreach (['pre+out', 'out'] as $flow) {
+                $cells[] = [$id, $shape, $flow];
+            }
+        }
+    }
+
+    return $cells;
+}

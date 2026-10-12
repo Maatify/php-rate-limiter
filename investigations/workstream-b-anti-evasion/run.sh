@@ -76,7 +76,7 @@ compare() { # name
 }
 
 # ---- 2. in-memory / reference-store scenarios, every variant ------------------------------------------------------------------
-scenarios=(a01_matrix a02_boundaries a03_rotation_ephemeral_backend a04_state_bounds a06_indistinguishability)
+scenarios=(a01_matrix a02_boundaries a03_rotation_ephemeral_backend a04_state_bounds a06_indistinguishability a07_dec003_behavior)
 for sc in "${scenarios[@]}"; do
     for v in "${variants[@]}"; do
         name="$sc.$v"
@@ -114,6 +114,7 @@ start_redis() { # name port -> REDIS_PID_VALUE REDIS_DIR_VALUE
 }
 stop_redis() { local pid=${1:-} i=0; [[ -n "$pid" ]] || return 0; kill "$pid" 2>/dev/null || return 0; while kill -0 "$pid" 2>/dev/null && [[ $i -lt 50 ]]; do i=$((i + 1)); sleep 0.1; done; return 0; }
 
+echo SKIPPED >"$actual/redis_status.txt"
 if [[ "${REDIS_SPOTCHECK:-1}" == "1" ]]; then
     if ! command -v redis-server >/dev/null 2>&1 || ! command -v redis-cli >/dev/null 2>&1; then
         for v in "${variants[@]}"; do report "a05_redis.$v" "SKIPPED (redis not installed) -> real-Redis claims UNPROVEN"; done
@@ -137,6 +138,7 @@ if [[ "${REDIS_SPOTCHECK:-1}" == "1" ]]; then
         report "a05_redis_safety" "$safety (foreign/mismatched/non-empty server refused rc=$rc1,$rc2,$rc3,$rc4; decoy sentinel intact)"
         [[ $safety == PASS ]] || status=1
         if [[ $safety == PASS ]]; then
+            echo RAN >"$actual/redis_status.txt"
             for v in "${variants[@]}"; do
                 name="a05_redis.$v"
                 for attempt in 1 2 3; do
@@ -196,6 +198,7 @@ selftest remove_storage_cap env WSB_STRICT=1 WSB_MUTATE=uncap WSB_CANDIDATE=PW L
 selftest remove_freshness_recovery env WSB_STRICT=1 WSB_MUTATE=no_fresh WSB_CANDIDATE=PW LAB_ROOT="$cand" php "$here/scenarios/a02_boundaries.php"
 selftest remove_correlation_s0 env WSB_SELFTEST_CORR_OFF=1 LAB_ROOT="$repo" php "$here/scenarios/a01_matrix.php"
 selftest move_recovery_boundary_s0 env WSB_SELFTEST_BLOCK_SHIFT=1 LAB_ROOT="$repo" php "$here/scenarios/a02_boundaries.php"
+selftest dec003_cycle_pause_semantics_s0 env WSB_SELFTEST_BLOCK_SHIFT=1 LAB_ROOT="$repo" php "$here/scenarios/a07_dec003_behavior.php"
 # Provenance guard: a candidate label pointed at the repository (baseline) tree must be REFUSED (exit 4), never mislabelled.
 set +e
 env WSB_CANDIDATE=PW LAB_ROOT="$repo" php "$here/scenarios/a01_matrix.php" >/dev/null 2>"$actual/selftest_provenance.stderr"
@@ -208,25 +211,81 @@ else
     status=1
 fi
 
-# Build recipe must FAIL explicitly when the target code differs (exit 3) or the patch no longer applies (exit 4).
+# ---- build recipe: absent / modified / drifted inputs must be REFUSED (F104-01) -------------------------------------------------------
 tamper="$work/tampered.patch"
-# Simulate drift of the target code: alter the content of the first REMOVED line, so the hunk no longer matches the file.
 awk 'BEGIN{done=0} /^-[^-]/ && !done {print $0 " /* drift */"; done=1; next} {print}' "$here/patches/wsb-candidates.patch" >"$tamper"
-set +e
-WSB_TEST_EXPECT_HASH=0000000000000000000000000000000000000000000000000000000000000000 bash "$here/build_candidate.sh" "$work/tamper-hash" >/dev/null 2>&1
-rc_hash=$?
-WSB_TEST_PATCH_FILE="$tamper" bash "$here/build_candidate.sh" "$work/tamper-patch" >/dev/null 2>&1
-rc_patch=$?
-set -e
-for d in tamper-hash tamper-patch; do
-    case "$work/$d" in "$here/results/work/"*) rm -rf "${work:?}/$d" ;; esac
-done
+build_rc() { # extra env assignments are passed as arguments; prints the exit code of build_candidate.sh
+    local d="$work/rc-build"
+    rm -rf "${d:?}"
+    set +e
+    env "$@" bash "$here/build_candidate.sh" "$d" >/dev/null 2>&1
+    local rc=$?
+    set -e
+    rm -rf "${d:?}"
+    echo "$rc"
+}
+rc_hash=$(build_rc WSB_TEST_EXPECT_HASH=0000000000000000000000000000000000000000000000000000000000000000)
+rc_missing=$(build_rc WSB_TEST_PATCH_FILE="$work/does-not-exist.patch")
+rc_modified=$(build_rc WSB_TEST_PATCH_FILE="$tamper")
+rc_drift=$(build_rc WSB_TEST_PATCH_FILE="$tamper" WSB_TEST_SKIP_PIN=1)
 rm -f "${tamper:?}"
-if [[ $rc_hash -eq 3 && $rc_patch -eq 4 ]]; then
-    report "selftest_build_recipe_fails_on_drift" "PASS (hash mismatch exit 3, drifted patch exit 4)"
+if [[ $rc_hash -eq 3 && $rc_missing -eq 5 && $rc_modified -eq 6 && $rc_drift -eq 4 ]]; then
+    report "selftest_build_recipe_refuses_bad_inputs" "PASS (target hash mismatch=3, patch absent=5, patch sha-256 modified=6, patch drift=4)"
 else
-    report "selftest_build_recipe_fails_on_drift" "FAIL (hash rc=$rc_hash patch rc=$rc_patch)"
+    report "selftest_build_recipe_refuses_bad_inputs" "FAIL (hash=$rc_hash missing=$rc_missing modified=$rc_modified drift=$rc_drift)"
     status=1
+fi
+
+# ---- gate evaluation must FAIL CLOSED on missing / malformed / skipped evidence (F104-02) ---------------------------------------------
+# Each case copies the evidence directory, removes or damages one required input, runs report.php and requires: exit 5 (or exit 0 for an
+# INTENTIONAL Redis skip) AND no PASS verdict for the named variant+gate.
+fc_case() { # name expected-rc variant gate-regex mutate-function
+    local name=$1 want=$2 variant=$3 re=$4 mut=$5
+    local d="$work/ev-$name"
+    rm -rf "${d:?}"
+    mkdir -p "$d"
+    cp "$actual"/*.jsonl "$actual"/redis_status.txt "$d"/
+    "$mut" "$d"
+    set +e
+    php "$here/report.php" "$d" "$d" >/dev/null 2>&1
+    local rc=$?
+    set -e
+    local passes
+    passes=$(php -r '$n=0; foreach (file($argv[1]) as $l) { $g=json_decode($l,true); if ($g["variant"]===$argv[2] && preg_match($argv[3], $g["gate"]) && $g["status"]==="PASS") { $n++; } } echo $n;' "$d/gates.jsonl" "$variant" "$re" 2>/dev/null || echo 99)
+    local present
+    present=$(php -r '$n=0; foreach (file($argv[1]) as $l) { $g=json_decode($l,true); if ($g["variant"]===$argv[2] && preg_match($argv[3], $g["gate"]) && $g["status"]==="UNPROVEN") { $n++; } } echo $n;' "$d/gates.jsonl" "$variant" "$re" 2>/dev/null || echo 0)
+    rm -rf "${d:?}"
+    if [[ "$rc" == "$want" && "$passes" == "0" && "$present" -ge 1 ]]; then
+        report "selftest_failclosed_$name" "PASS (report exit $rc, $variant gate /$re/ UNPROVEN, no PASS)"
+    else
+        report "selftest_failclosed_$name" "FAIL (exit $rc want $want; PASS rows=$passes UNPROVEN rows=$present)"
+        status=1
+    fi
+}
+m_del_a04() { rm -f "$1/a04_state_bounds.PW.jsonl"; }
+m_del_a05() { rm -f "$1/a05_redis.PW.jsonl"; }
+m_del_a02() { rm -f "$1/a02_boundaries.S0.jsonl"; }
+m_del_a03() { rm -f "$1/a03_rotation_ephemeral_backend.P2.jsonl"; }
+m_del_a07() { rm -f "$1/a07_dec003_behavior.RL.jsonl"; }
+m_del_cells() { grep -v '"stream":"X2"' "$1/a01_matrix.PW.jsonl" >"$1/x" && mv "$1/x" "$1/a01_matrix.PW.jsonl"; }
+m_malformed() { printf '{"s":"A04.S3",broken\n' >>"$1/a04_state_bounds.A1.jsonl"; }
+m_skip_redis() { echo SKIPPED >"$1/redis_status.txt"; rm -f "$1"/a05_redis.*.jsonl; }
+m_no_status() { rm -f "$1/redis_status.txt"; }
+fc_case a04_missing 5 PW '/^A\.4 /' m_del_a04
+fc_case a05_missing 5 PW '/^A\.(4|5) /' m_del_a05
+fc_case a02_missing 5 PW '/^A\.2 /' m_del_a02
+fc_case a03_missing 5 P2 '/^A\.(1|3) /' m_del_a03
+fc_case a07_missing 5 RL '/^A\.7 /' m_del_a07
+fc_case matrix_cells_missing 5 PW '/^(A\.6|B\.|C\.|D\. )/' m_del_cells
+fc_case malformed_json 5 A1 '/^A\.4 /' m_malformed
+fc_case redis_intentionally_skipped 0 PW '/^A\.(4|5) /' m_skip_redis
+fc_case redis_status_missing 5 PW '/^A\.4 /' m_no_status
+# A recorded evidence problem in a REAL run must never be hidden by the golden diff: the real report must exit 0.
+if [[ -s "$actual/report.stderr" ]]; then
+    report "evidence_complete" "FAIL ($(head -c 200 "$actual/evidence_problems.txt" 2>/dev/null))"
+    status=1
+else
+    report "evidence_complete" "PASS (no missing / malformed required evidence; redis_status=$(cat "$actual/redis_status.txt"))"
 fi
 
 exit "$status"

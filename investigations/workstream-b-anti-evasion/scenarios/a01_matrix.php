@@ -10,17 +10,8 @@ require dirname(__DIR__) . '/lib/wsb.php';
 emit('A01.provenance', wsbProvenance());
 $streams = wsbStreams();
 $controls = wsbControls();
-foreach (wsbPrimaryOrder() as $id) {
-    foreach (['pre+out', 'out', 'pre'] as $flow) {
-        emit('A01.matrix', ['variant' => wsbVariant(), 'level' => wsbLevel(), 'stream' => $id, 'class' => wsbClass($id), 'shape' => 'login', 'flow' => $flow] + wsbMeasure($streams[$id]['events'], 'login', $flow));
-    }
-}
-foreach (['login-anon', 'otp', 'api', 'api_custom'] as $shape) {
-    foreach (['L1', 'L2', 'X1', 'X2', 'X3', 'X4', 'X6', 'X8', 'Y2a', 'Y4d', 'Y4e', 'Y4f'] as $id) {
-        foreach (['pre+out', 'out'] as $flow) {
-            emit('A01.matrix', ['variant' => wsbVariant(), 'level' => wsbLevel(), 'stream' => $id, 'class' => wsbClass($id), 'shape' => $shape, 'flow' => $flow] + wsbMeasure($streams[$id]['events'], $shape, $flow));
-        }
-    }
+foreach (wsbMatrixCells() as [$id, $shape, $flow]) {
+    emit('A01.matrix', ['variant' => wsbVariant(), 'level' => wsbLevel(), 'stream' => $id, 'class' => wsbClass($id), 'shape' => $shape, 'flow' => $flow] + wsbMeasure($streams[$id]['events'], $shape, $flow));
 }
 foreach (wsbPrimaryOrder() as $id) {
     emit('A01.controls', ['stream' => $id, 'title' => $streams[$id]['title'], 'class' => wsbClass($id), 'controls' => $controls[$id] ?? null]);

@@ -41,13 +41,30 @@ REDIS_SPOTCHECK=0 bash investigations/workstream-b-anti-evasion/run.sh
 Recorded versions: PHP 8.5.9, Composer 2.10.2, Redis server 8.10.0, PHPUnit 11.5.x (`results/actual/versions.txt`, `candidate_build_info.txt`
 after a run). Stages: `a01_matrix` (attack-vs-legitimate, 3 Host flows + policy shapes), `a02_boundaries` (exact 60/600/1800 s boundaries,
 recovery, re-issue), `a03_rotation_ephemeral_backend`, `a04_state_bounds` (memory exhaustion, caps), `a05_redis` (real Redis, concurrency),
-`a06_indistinguishability`, `report.php` (gates + generated `summary.md`), then **self-tests** that must detect: removed storage cap,
-removed freshness/recovery, S0 with correlation silently removed, moved block boundary, provenance mislabelling, build-recipe drift.
+`a06_indistinguishability`, `a07_dec003_behavior`, `report.php` (gates + generated `summary.md`), then **self-tests** that must detect: removed storage cap,
+removed freshness/recovery, S0 with correlation silently removed, moved block boundary, moved DEC-003 cycle clock, provenance mislabelling, absent/modified/drifted patch, and nine fail-closed evidence-deletion cases.
 
 **Redis safety (inherits F103-01):** `run.sh` starts its own loopback instances (`--bind 127.0.0.1 --protected-mode yes`, no persistence),
 proves with a decoy server holding a sentinel key that foreign / mismatched-pid / mismatched-dir / non-empty servers are refused (rc 3,3,3,3,
 sentinel intact), ignores `REDIS_HOST`/`REDIS_PORT`, never issues FLUSH*/CONFIG SET/DEBUG, uses its own namespaces. Concurrency workers verify
 process id + working directory before touching anything.
+
+### 2.1 Review corrections (F104-01 … F104-03)
+
+* **F104-01 — patch committed and pinned.** The repository ignores `*.patch` globally, so `patches/wsb-candidates.patch` had not been added. `patches/.gitignore`
+  now carries a scoped exception for that one file. `build_candidate.sh` pins the patch sha-256 (`7643bf01…44db1`) and the patched
+  `EvaluationPipeline.php` sha-256 (`fc681175…929b`), and refuses: target hash mismatch (exit 3), patch drift (4), patch absent (5), patch bytes modified (6),
+  patched target different (7). Self-test `selftest_build_recipe_refuses_bad_inputs` proves 3/5/6/4. The final run was repeated from a fresh clean clone (see the PR).
+* **F104-02 — fail-closed gates.** `report.php` validates required evidence before any verdict: every matrix cell (`wsbMatrixCells()`), per-variant scenario files, the
+  required assertion / row identifiers of A02–A07, four A06 pairs, and `redis_status.txt` (`RAN` / `SKIPPED`, written by `run.sh`). Missing, empty or malformed input
+  gives the gate `UNPROVEN`, writes `evidence_problems.txt` and exits 5; an intentionally skipped Redis stage (`REDIS_SPOTCHECK=0`) gives `UNPROVEN` for A.4/A.5 and is never
+  counted as proven. Nine self-tests (`selftest_failclosed_*`) delete or damage representative A02/A03/A04/A05/A07/matrix/status evidence and require exit code + no PASS.
+  Legitimate `NOT_APPLICABLE` (A.5 for S0/A1) is kept.
+* **F104-03 — DEC-003 by behaviour.** The patch-text regex is relabelled `A.7s` (INFO, "limited structural scope check, NOT a DEC-003 proof"). Gate `A.7` now comes from
+  `scenarios/a07_dec003_behavior.php` on every variant: transition-only cycles with strictly increasing counts; pause activations and paused-decay seconds equal to a DEC-003
+  reference computed from the cycle times the runtime itself issued (so intended policy differences — a variant issuing different blocks — are separated from contract breakage);
+  no correlation / witness / cycle mutation while a persisted block is active; one logical history across Current/Previous (UNPROVEN if the variant issues no post-rotation
+  block); a single failure creates no cycle. Self-test `selftest_dec003_cycle_pause_semantics_s0` moves the cycle clock by 1 s and must be detected.
 
 ## 3. Threat matrix → streams
 
@@ -83,7 +100,7 @@ The published double observation by `pre+out` also makes N−1 gaming look bette
 | A.4 bounded storage / TTL on every key | PASS | PASS | PASS | PASS |
 | A.5 atomic evidence under concurrency (real Redis) | N/A | **FAIL** (owner) | **FAIL** (owner) | UNPROVEN |
 | A.6 lifecycle coverage (record-only, check-only, API_OVERUSE) | **FAIL** | **FAIL** | **FAIL** | PASS |
-| A.7 DEC-003 / active-block order / key derivation untouched | PASS | PASS | PASS | PASS |
+| A.7 DEC-003 **behaviour** (A07: cycle transitions, 2-cycle/600 s pause vs a reference computed from the runtime cycle times, no mutation under an active block, Current/Previous continuity) | PASS | PASS | PASS | PASS |
 | A.8 §5.3 normative text unchanged | **FAIL** (owner) | **FAIL** (owner) | **FAIL** (owner) | **FAIL** (owner) |
 | B security regression vs S0 | **FAIL** | **FAIL** | **FAIL** | **FAIL** (Y7 only) |
 | C fairness under paid poisoning | **FAIL** | **FAIL** | **FAIL** | **FAIL** |

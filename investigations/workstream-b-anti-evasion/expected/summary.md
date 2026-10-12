@@ -10,7 +10,7 @@
 | A.4 bounded storage: declared caps, TTL on every key, no key explosion beyond linear | PASS | PASS | PASS | PASS |
 | A.5 atomic evidence under concurrency (real Redis, 8 concurrent writers) | NOT_APPLICABLE | FAIL (owner) | FAIL (owner) | UNPROVEN |
 | A.6 Public Command Lifecycle coverage kept (record-only, check-only, API_OVERUSE recordSuccess-only hosts) | FAIL | FAIL | FAIL | PASS |
-| A.7 DEC-003 cycle tracking / active-block ordering / key derivation untouched | PASS | PASS | PASS | PASS |
+| A.7 DEC-003 behaviour: cycle transitions, decay pause, active-block ordering, Current/Previous continuity (A07, controlled clock) | PASS | PASS | PASS | PASS |
 | A.8 normative DECISION_MATRIX §5.3 text unchanged | FAIL (owner) | FAIL (owner) | FAIL (owner) | FAIL (owner) |
 | B. security regression: evasion traffic that S0 stops but the variant lets through | FAIL (owner) | FAIL (owner) | FAIL (owner) | FAIL (owner) |
 | C. fairness: legitimate users denied by correlation while the attacker pays only free failures / botnet traffic | FAIL (owner) | FAIL (owner) | FAIL (owner) | FAIL (owner) |

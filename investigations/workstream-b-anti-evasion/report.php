@@ -10,24 +10,53 @@ declare(strict_types=1);
 // a stated contract; where only an Owner could choose a limit the row is flagged ownerDecision=true.
 require __DIR__ . '/fixtures/anti_evasion.php';
 
+// Required evidence is validated explicitly below (F104-02); the narrative tables are generated afterwards and may probe optional cells,
+// so PHP's missing-offset warnings are not allowed to leak into stderr.
+error_reporting(E_ALL & ~E_WARNING);
+
 $dir = $argv[1] ?? (__DIR__ . '/results/actual');
 $out = $argv[2] ?? $dir;
 $variants = ['S0', 'A1', 'PW', 'P2', 'RL'];
 $candidates = ['A1', 'PW', 'P2', 'RL'];
 
+/** @var list<string> evidence problems (missing / malformed required input): any entry makes the report exit non-zero (F104-02) */
+$problems = [];
+
 /** @return list<array<string, mixed>> */
 function rows(string $dir, string $scenario, string $variant): array
 {
+    global $problems;
     $f = "$dir/$scenario.$variant.jsonl";
     if (! is_file($f)) {
+        $problems[] = "missing evidence file $scenario.$variant.jsonl";
+
         return [];
     }
     $r = [];
-    foreach (file($f, FILE_IGNORE_NEW_LINES | FILE_SKIP_EMPTY_LINES) ?: [] as $l) {
-        $r[] = json_decode($l, true, 512, JSON_THROW_ON_ERROR);
+    $bad = false;
+    foreach (file($f, FILE_IGNORE_NEW_LINES | FILE_SKIP_EMPTY_LINES) ?: [] as $n => $l) {
+        try {
+            $r[] = json_decode($l, true, 512, JSON_THROW_ON_ERROR);
+        } catch (\JsonException) {
+            $problems[] = "malformed JSON in $scenario.$variant.jsonl line " . ($n + 1);
+            $bad = true;
+        }
+    }
+    if ($bad) {
+        return []; // a damaged file proves nothing: every claim that needs it becomes UNPROVEN
+    }
+    if ($r === []) {
+        $problems[] = "empty evidence file $scenario.$variant.jsonl";
     }
 
     return $r;
+}
+
+/** run.sh writes RAN or SKIPPED (REDIS_SPOTCHECK=0 / redis missing). An intentional skip is NOT a problem but blocks every real-Redis claim. */
+$redisStatusFile = "$dir/redis_status.txt";
+$redisStatus = is_file($redisStatusFile) ? trim((string) file_get_contents($redisStatusFile)) : 'UNKNOWN';
+if (! in_array($redisStatus, ['RAN', 'SKIPPED'], true)) {
+    $problems[] = 'missing or invalid redis_status.txt (run.sh must record RAN or SKIPPED)';
 }
 
 $M = []; // [variant][stream][shape][flow] => row
@@ -38,7 +67,10 @@ foreach ($variants as $v) {
             $M[$v][$r['stream']][$r['shape']][$r['flow']] = $r;
         }
     }
-    foreach (['a02_boundaries', 'a03_rotation_ephemeral_backend', 'a04_state_bounds', 'a05_redis', 'a06_indistinguishability'] as $sc) {
+    foreach (['a02_boundaries', 'a03_rotation_ephemeral_backend', 'a04_state_bounds', 'a05_redis', 'a06_indistinguishability', 'a07_dec003_behavior'] as $sc) {
+        if ($sc === 'a05_redis' && $redisStatus !== 'RAN') {
+            continue;
+        }
         foreach (rows($dir, $sc, $v) as $r) {
             $A[$v][$sc][] = $r;
         }
@@ -59,15 +91,66 @@ $emitGate = static function (string $variant, string $gateId, string $status, st
 };
 $get = static fn(string $v, string $stream, string $shape, string $flow): ?array => $M[$v][$stream][$shape][$flow] ?? null;
 
+/** @return list<string> required matrix cells missing for a variant */
+$missingCells = static function (string $v) use (&$M): array {
+    $m = [];
+    foreach (wsbMatrixCells() as [$st, $sh, $fl]) {
+        if (! isset($M[$v][$st][$sh][$fl])) {
+            $m[] = "$st/$sh/$fl";
+        }
+    }
+
+    return $m;
+};
+/** @return list<string> required assertion fragments / row ids absent from a scenario's rows (a present-but-failed assertion is NOT missing) */
+$missingIds = static function (array $rows, array $needles, bool $asRowId = false): array {
+    $m = [];
+    foreach ($needles as $n) {
+        $found = false;
+        foreach ($rows as $r) {
+            $hay = $asRowId ? ($r['s'] ?? '') : ($r['assert'] ?? '');
+            if ($hay !== '' && str_contains($hay, $n)) {
+                $found = true;
+                break;
+            }
+        }
+        if (! $found) {
+            $m[] = $n;
+        }
+    }
+
+    return $m;
+};
+$incomplete = [];
+/** Missing required evidence turns the gate into UNPROVEN (never PASS) and is reported by the exit code. */
+$guard = static function (string $variant, string $gateId, array $missing, string $why = '') use (&$gate, &$incomplete): bool {
+    if ($missing === []) {
+        return true;
+    }
+    $gate[] = ['variant' => $variant, 'gate' => $gateId, 'status' => 'UNPROVEN', 'evidence' => 'REQUIRED EVIDENCE MISSING: ' . implode('; ', array_slice($missing, 0, 6)) . (count($missing) > 6 ? ' (+' . (count($missing) - 6) . ' more)' : '') . ($why !== '' ? " — $why" : '')];
+    $incomplete[$variant . '|' . $gateId] = $missing;
+
+    return false;
+};
+
 $evasionStreams = array_values(array_filter(wsbPrimaryOrder(), static fn(string $id): bool => in_array(wsbClass($id), ['evasion', 'both'], true)));
 $poisonPaid = ['X6', 'Y4c', 'Y4e', 'Y4f', 'Y6c'];     // attacker pays only free failures
 $benign = ['L1', 'L1f', 'L2', 'L3', 'L4'];
 
 foreach ($candidates as $v) {
     // ---- A. Contract MUST-PRESERVE ----------------------------------------------------------------------------------------------
+    // Every gate first validates that its REQUIRED evidence exists (F104-02): absent/partial input => UNPROVEN + nonzero exit, never PASS.
     $a = $A[$v]['a03_rotation_ephemeral_backend'] ?? [];
-    $rot = $assertOk($a, 'current/previous rotation keeps the evidence/count continuous');
-    $emitGate($v, 'A.1 rotation continuity (DECISION_MATRIX §5.0, KEY_STRATEGY: previous state must not become a current-only reset)', $rot === null ? 'UNPROVEN' : ($rot ? 'PASS' : 'FAIL'), 'A03.R1 pair split across an outer-key rotation must still be convicted at the third member');
+    $cellMiss = array_merge(array_map(static fn(string $c): string => "S0:$c", $missingCells('S0')), array_map(static fn(string $c): string => "$v:$c", $missingCells($v)));
+    $guardSkip = static function (string $gateId, string $why) use (&$gate, $v): void {
+        $gate[] = ['variant' => $v, 'gate' => $gateId, 'status' => 'UNPROVEN', 'evidence' => "INTENTIONALLY NOT RUN: $why"];
+    };
+
+    $g = 'A.1 rotation continuity (DECISION_MATRIX §5.0, KEY_STRATEGY: previous state must not become a current-only reset)';
+    if ($guard($v, $g, $missingIds($a, ['current/previous rotation keeps the evidence/count continuous']))) {
+        $rot = $assertOk($a, 'current/previous rotation keeps the evidence/count continuous');
+        $emitGate($v, $g, $rot ? 'PASS' : 'FAIL', 'A03.R1 pair split across an outer-key rotation must still be convicted at the third member');
+    }
 
     $b = $A[$v]['a02_boundaries'] ?? [];
     $watch = static function (array $rows, string $flow, int $t): ?bool {
@@ -81,47 +164,107 @@ foreach ($candidates as $v) {
     };
     $s0w = [$watch($A['S0']['a02_boundaries'] ?? [], 'out', 1800), $watch($A['S0']['a02_boundaries'] ?? [], 'out', 1801)];
     $vw = [$watch($b, 'out', 1800), $watch($b, 'out', 1801)];
-    $emitGate($v, 'A.2 near-threshold WATCH keeps blocking "hover at N-1" (DECISION_MATRIX §5.0)', $s0w === $vw ? 'PASS' : 'FAIL', 'A02.B3 record-only: S0=' . json_encode($s0w) . ' variant=' . json_encode($vw) . ' (second pair ending at 1800 / 1801 s)', ['ownerDecision' => $s0w !== $vw]);
-
-    $f1a = $assertOk($a, 'F1a.churn-set-write');
-    $f1b = $assertOk($a, 'F1b.witness-write');
-    $emitGate($v, 'A.3 backend failures propagate (never ALLOW / silent skip)', ($f1a === true && ($f1b === null || $f1b === true)) ? 'PASS' : 'FAIL', 'A03.F1a=' . json_encode($f1a) . ' F1b=' . json_encode($f1b));
-
-    $capFail = 0;
-    foreach (($A[$v]['a04_state_bounds'] ?? []) as $r) {
-        if (isset($r['assert']) && ! $r['ok']) {
-            $capFail++;
+    $g = 'A.2 near-threshold WATCH keeps blocking "hover at N-1" (DECISION_MATRIX §5.0)';
+    $watchMissing = [];
+    foreach (['S0' => $s0w, $v => $vw] as $who => $pair) {
+        foreach ($pair as $i => $x) {
+            if ($x === null) {
+                $watchMissing[] = "$who A02.B3 record-only " . [1800, 1801][$i];
+            }
         }
     }
+    if ($guard($v, $g, $watchMissing)) {
+        $emitGate($v, $g, $s0w === $vw ? 'PASS' : 'FAIL', 'A02.B3 record-only: S0=' . json_encode($s0w) . ' variant=' . json_encode($vw) . ' (second pair ending at 1800 / 1801 s)', ['ownerDecision' => $s0w !== $vw]);
+    }
+
+    $g = 'A.3 backend failures propagate (never ALLOW / silent skip)';
+    $needF = ['F1a.churn-set-write'];
+    if (in_array($v, ['PW', 'P2', 'RL'], true)) {
+        $needF[] = 'F1b.witness-write';
+    }
+    if ($guard($v, $g, $missingIds($a, $needF))) {
+        $f1a = $assertOk($a, 'F1a.churn-set-write');
+        $f1b = $assertOk($a, 'F1b.witness-write');
+        $emitGate($v, $g, ($f1a === true && ($f1b === null || $f1b === true)) ? 'PASS' : 'FAIL', 'A03.F1a=' . json_encode($f1a) . ' F1b=' . json_encode($f1b));
+    }
+
+    $g = 'A.4 bounded storage: declared caps, TTL on every key, no key explosion beyond linear';
+    $a04 = $A[$v]['a04_state_bounds'] ?? [];
     $redis = $A[$v]['a05_redis'] ?? [];
-    $redisFail = 0;
-    foreach ($redis as $r) {
-        if (isset($r['assert']) && ! $r['ok'] && ! str_starts_with($r['assert'], 'R4')) {
-            $redisFail++;
+    $m4 = $missingIds($a04, ['S1 negative control', 'S1 declared caps', 'S1 TTL hygiene', 'S2 negative control', 'S2 declared caps', 'S3 negative control', 'S3 declared caps', 'S3 total growth', 'S3 TTL hygiene']);
+    if ($redisStatus !== 'RAN') {
+        $guardSkip($g, 'real-Redis stage not run (status ' . $redisStatus . '; REDIS_SPOTCHECK=0 or redis missing); the Redis half of this claim is UNPROVEN');
+    } elseif ($guard($v, $g, array_merge($m4, $missingIds($redis, ['R1:', 'R2:', 'R3 negative control', 'R3: largest set', 'R5 negative control', 'R5: concurrent distinct']))) ) {
+        $capFail = 0;
+        foreach ($a04 as $r) {
+            if (isset($r['assert']) && ! $r['ok']) {
+                $capFail++;
+            }
         }
+        $redisFail = 0;
+        foreach ($redis as $r) {
+            if (isset($r['assert']) && ! $r['ok'] && ! str_starts_with($r['assert'], 'R4')) {
+                $redisFail++;
+            }
+        }
+        $emitGate($v, $g, ($capFail === 0 && $redisFail === 0) ? 'PASS' : 'FAIL', "A04 failed assertions=$capFail, A05 (R1-R3,R5) failed assertions=$redisFail");
     }
-    $emitGate($v, 'A.4 bounded storage: declared caps, TTL on every key, no key explosion beyond linear', ($capFail === 0 && $redisFail === 0) ? 'PASS' : 'FAIL', "A04 failed assertions=$capFail, A05 (R1-R3,R5) failed assertions=$redisFail");
 
-    $r4 = $assertOk($redis, 'R4:');
-    $emitGate($v, 'A.5 atomic evidence under concurrency (real Redis, 8 concurrent writers)', $v === 'RL' ? 'UNPROVEN' : ($r4 === null ? 'NOT_APPLICABLE' : ($r4 ? 'PASS' : 'FAIL')), $v === 'RL' ? 'RL latch races (a duplicate mis-flagged as fresh defeats the latch, i.e. fails toward S0) need a post-expiry concurrent test; Redis owns time so it cannot be driven deterministically here' : 'A05.R4 duplicate-member race', ['ownerDecision' => $r4 === false, 'note' => 'requires an atomic "added" signal = store-contract change if it must be fixed']);
+    $g = 'A.5 atomic evidence under concurrency (real Redis, 8 concurrent writers)';
+    if ($redisStatus !== 'RAN') {
+        $guardSkip($g, 'real-Redis stage not run (status ' . $redisStatus . '); concurrency is UNPROVEN');
+    } elseif ($v === 'RL') {
+        $emitGate($v, $g, 'UNPROVEN', 'RL latch races (a duplicate mis-flagged as fresh defeats the latch, i.e. fails toward S0) need a post-expiry concurrent test; Redis owns time so it cannot be driven deterministically here');
+    } elseif (in_array($v, ['PW', 'P2'], true)) {
+        if ($guard($v, $g, $missingIds($redis, ['R4:']))) {
+            $r4 = $assertOk($redis, 'R4:');
+            $emitGate($v, $g, $r4 ? 'PASS' : 'FAIL', 'A05.R4 duplicate-member race', ['ownerDecision' => $r4 === false, 'note' => 'requires an atomic "added" signal = store-contract change if it must be fixed']);
+        }
+    } else {
+        $emitGate($v, $g, 'NOT_APPLICABLE', 'no read-then-increment evidence tally in this variant');
+    }
 
-    $cov = [];
-    foreach ([['X2', 'login', 'out'], ['X2', 'login', 'pre'], ['X2', 'api', 'out'], ['X1', 'api', 'out']] as [$st, $sh, $fl]) {
-        $r0 = $get('S0', $st, $sh, $fl);
-        $rv = $get($v, $st, $sh, $fl);
-        if ($r0 !== null && $rv !== null) {
+    $g = 'A.6 Public Command Lifecycle coverage kept (record-only, check-only, API_OVERUSE recordSuccess-only hosts)';
+    if ($guard($v, $g, $cellMiss)) {
+        $cov = [];
+        foreach ([['X2', 'login', 'out'], ['X2', 'login', 'pre'], ['X2', 'api', 'out'], ['X1', 'api', 'out']] as [$st, $sh, $fl]) {
+            $r0 = $get('S0', $st, $sh, $fl);
+            $rv = $get($v, $st, $sh, $fl);
             $cov["$st/$sh/$fl"] = ['S0' => $r0['attackDenied'] . '/' . $r0['attackAttempts'], $v => $rv['attackDenied'] . '/' . $rv['attackAttempts']];
         }
+        $lost = array_filter($cov, static fn(array $x): bool => (int) explode('/', $x[$v])[0] < (int) explode('/', $x['S0'])[0]);
+        $emitGate($v, $g, $lost === [] ? 'PASS' : 'FAIL', json_encode($cov), ['lostIn' => array_keys($lost)]);
     }
-    $lost = array_filter($cov, static fn(array $x): bool => (int) explode('/', $x[$v])[0] < (int) explode('/', $x['S0'])[0]);
-    $emitGate($v, 'A.6 Public Command Lifecycle coverage kept (record-only, check-only, API_OVERUSE recordSuccess-only hosts)', $lost === [] ? 'PASS' : 'FAIL', json_encode($cov), ['lostIn' => array_keys($lost)]);
 
-    $patch = (string) file_get_contents(__DIR__ . '/patches/wsb-candidates.patch');
-    $touchesPersistence = preg_match('/^[+-].*(blockWithCycleTracking|persistWinningCandidates|checkActiveBlocks|buildKeys)/m', $patch) === 1;
-    $emitGate($v, 'A.7 DEC-003 cycle tracking / active-block ordering / key derivation untouched', $touchesPersistence ? 'FAIL' : 'PASS', 'patch hunks reference none of blockWithCycleTracking / persistWinningCandidates / checkActiveBlocks / buildKeys (static check of patches/wsb-candidates.patch)');
+    // A.7 — DEC-003 proven by BEHAVIOUR (A07: cycle transition, 21600 s window, 2-cycle / 600 s pause, active-block ordering, Current/Previous).
+    $g = 'A.7 DEC-003 behaviour: cycle transitions, decay pause, active-block ordering, Current/Previous continuity (A07, controlled clock)';
+    $a07 = $A[$v]['a07_dec003_behavior'] ?? [];
+    $m7 = $missingIds($a07, ['D1 behavioural negative control', 'D1 every issued K2 block', 'D1 pause activations', 'D1 elapsed paused', 'D1 independent histories', 'D2 negative control', 'D2 active persisted block', 'D3 negative control', 'D4 a single failing attempt']);
+    if ($guard($v, $g, $m7)) {
+        $bad = array_values(array_filter($a07, static fn(array $r): bool => isset($r['assert']) && ! $r['ok']));
+        $d3 = $missingIds($a07, ['D3 Current/Previous are one logical cycle history']) === [];
+        if ($bad !== []) {
+            $emitGate($v, $g, 'FAIL', 'violated: ' . implode('; ', array_map(static fn(array $r): string => substr($r['assert'], 0, 60), $bad)), ['ownerDecision' => true]);
+        } elseif (! $d3) {
+            $emitGate($v, $g, 'UNPROVEN', 'D1/D2/D4 pass; Current/Previous continuity (D3) could not be exercised: the variant issued no block after rotation');
+        } else {
+            $emitGate($v, $g, 'PASS', 'D1 transition-only cycles + pause = reference derived from runtime cycle times, D2 no state mutation under an active block, D3 one logical history across rotation, D4 L1/single failure creates no cycle');
+        }
+    }
+    // Limited structural scope check — explicitly NOT a DEC-003 proof (F104-03).
+    $patchText = (string) file_get_contents(__DIR__ . '/patches/wsb-candidates.patch');
+    $touches = preg_match('/^[+-].*(blockWithCycleTracking|persistWinningCandidates|checkActiveBlocks|buildKeys)/m', $patchText) === 1;
+    $gate[] = ['variant' => $v, 'gate' => 'A.7s structural scope of the patch (limited; NOT a DEC-003 proof)', 'status' => 'INFO', 'evidence' => $touches ? 'patch text references a persistence / key function name' : 'patch text adds/removes no line naming blockWithCycleTracking / persistWinningCandidates / checkActiveBlocks / buildKeys; this proves at most that those names were not textually changed'];
 
-    $emitGate($v, 'A.8 normative DECISION_MATRIX §5.3 text unchanged', 'FAIL', 'every candidate changes WHEN a triggered §5.3 rule enforces (evidence gating / LOW exemption); adopting it needs a contract version bump', ['ownerDecision' => true]);
+    $emitGate($v, 'A.8 normative DECISION_MATRIX §5.3 text unchanged', 'FAIL', 'every candidate changes WHEN a triggered §5.3 rule enforces (evidence gating / LOW exemption / recovery latch); adopting it needs a contract version bump', ['ownerDecision' => true]);
 
+    // ---- B/C/D need the COMPLETE matrix for S0 and the variant (F104-02) ------------------------------------------------------------
+    $matrixOk = $guard($v, 'B. security regression: evasion traffic that S0 stops but the variant lets through', $cellMiss);
+    $guard($v, 'C. fairness: legitimate users denied by correlation while the attacker pays only free failures / botnet traffic', $cellMiss);
+    $guard($v, 'D. residual: attack streams that fully reach verification under S0 AND the variant', $cellMiss);
+    if (! $matrixOk) {
+        continue;
+    }
     // ---- B. Security regression vs S0 -------------------------------------------------------------------------------------------
     // pre+out / pre: an attacker attempt "reaches verification" when checkOnly lets it through, so MORE reach than S0 = lost protection.
     // out (record-only Host): the Host has verified every attempt before recording, so reach is always full; the protection is the
@@ -203,9 +346,25 @@ foreach ($candidates as $v) {
     $emitGate($v, 'D. residual: attack streams that fully reach verification under S0 AND the variant', 'PASS', 'residual (not separable from the available signals): ' . implode(', ', $resid), ['residualStreams' => $resid, 'note' => 'status PASS = analysis complete, not "no residual threat"']);
 }
 
-$ind = $A['S0']['a06_indistinguishability'] ?? [];
-$indOk = $ind !== [] && count(array_filter($ind, static fn(array $r): bool => isset($r['assert']) && ! $r['ok'])) === 0;
-$gate[] = ['variant' => 'ALL', 'gate' => 'D2 indistinguishability: attacker and legitimate streams with identical observable tuples', 'status' => $indOk ? 'PASS' : 'FAIL', 'evidence' => count(array_filter($ind, static fn(array $r): bool => $r['s'] === 'A06.pair')) . ' pairs with equal observable digests receive identical treatment on every variant (no policy over these inputs can separate them)'];
+$indMissing = [];
+foreach ($variants as $v) {
+    $pairs = count(array_filter($A[$v]['a06_indistinguishability'] ?? [], static fn(array $r): bool => ($r['s'] ?? '') === 'A06.pair'));
+    if ($pairs !== 4) {
+        $indMissing[] = "$v: $pairs of 4 A06 pairs";
+    }
+}
+if ($indMissing !== []) {
+    $gate[] = ['variant' => 'ALL', 'gate' => 'D2 indistinguishability: attacker and legitimate streams with identical observable tuples', 'status' => 'UNPROVEN', 'evidence' => 'REQUIRED EVIDENCE MISSING: ' . implode('; ', $indMissing)];
+    $incomplete['ALL|D2'] = $indMissing;
+} else {
+    $indOk = true;
+    foreach ($variants as $v) {
+        foreach ($A[$v]['a06_indistinguishability'] as $r) {
+            $indOk = $indOk && ! (isset($r['assert']) && ! $r['ok']);
+        }
+    }
+    $gate[] = ['variant' => 'ALL', 'gate' => 'D2 indistinguishability: attacker and legitimate streams with identical observable tuples', 'status' => $indOk ? 'PASS' : 'FAIL', 'evidence' => '4 pairs with equal observable digests receive identical treatment on every variant (no policy over these inputs can separate them)'];
+}
 
 // ---- Offline prediction vs runtime fidelity (PR #103 model vs the experimental runtime) -------------------------------------------
 $modelFile = dirname(__DIR__) . '/workstream-b-correlation/expected/model_matrix.jsonl';
@@ -231,6 +390,8 @@ foreach ($fidelity as $p => $rowsF) {
 }
 
 @mkdir($out, 0777, true);
+$problemLines = array_merge($problems, array_map(static fn(string $k, array $m): string => "incomplete gate $k: " . implode(', ', array_slice($m, 0, 4)), array_keys($incomplete), $incomplete));
+file_put_contents("$out/evidence_problems.txt", $problemLines === [] ? "none\n" : implode("\n", $problemLines) . "\n");
 $fh = fopen("$out/gates.jsonl", 'w');
 foreach ($gate as $g) {
     fwrite($fh, json_encode($g, JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNICODE | JSON_THROW_ON_ERROR) . "\n");
@@ -373,3 +534,8 @@ foreach ($fidelity as $p => $rowsF) {
 }
 file_put_contents("$out/summary.md", rtrim($md) . "\n");
 echo "gates: " . count($gate) . " rows -> $out/gates.jsonl\n";
+
+if ($problemLines !== []) {
+    fwrite(STDERR, "EVIDENCE INCOMPLETE (" . count($problemLines) . " problem(s)); see " . "$out/evidence_problems.txt\n");
+    exit(5);
+}
