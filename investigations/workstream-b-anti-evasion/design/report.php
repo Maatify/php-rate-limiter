@@ -108,6 +108,17 @@ foreach (['s0', 'advisory', 'narrow', 'wide'] as $opt) {
 
 const DSG_CELL_INT_FIELDS = ['attackAttempts', 'attackReachedVerification', 'attackDenied', 'attackDeniedByCorrelation', 'attackDeniedOther', 'legitAttempts', 'legitDenied', 'legitDeniedByCorrelation', 'legitDeniedOther', 'controlLegitDenied', 'controlAttackReachedVerification', 'blockIssuancesTotal'];
 
+/**
+ * Identifier (I1..I4) a pair row ('pair') or an assertion ('assert') refers to: the first token after the optional 'indistinguishable: ' prefix.
+ */
+function dsgA06Id(array $r): ?string
+{
+    $text = (string) ($r['pair'] ?? $r['assert'] ?? '');
+    $text = preg_replace('/^indistinguishable:\s*/', '', $text) ?? '';
+
+    return preg_match('/^(I[1-4])\b/', $text, $m) === 1 ? $m[1] : null;
+}
+
 /** @return list<string> */
 function dsgCellProblems(array $c): array
 {
@@ -173,8 +184,22 @@ foreach ($variants as $v) {
     if (count(array_filter($A[$v]['a06_indistinguishability'] ?? [], static fn(array $r): bool => $r['s'] === 'A06.pair')) !== 4) {
         $problems[] = "a06.$v must carry exactly four A06.pair rows";
     }
-    if (count(array_filter($A[$v]['a06_indistinguishability'] ?? [], static fn(array $r): bool => isset($r['assert']) && str_starts_with($r['assert'], 'indistinguishable:'))) !== 4) {
-        $problems[] = "a06.$v must carry exactly four 'indistinguishable:' assertions next to its four A06.pair rows";
+    $a06Pairs = array_values(array_filter($A[$v]['a06_indistinguishability'] ?? [], static fn(array $r): bool => $r['s'] === 'A06.pair'));
+    $a06Asserts = array_values(array_filter($A[$v]['a06_indistinguishability'] ?? [], static fn(array $r): bool => isset($r['assert']) && str_starts_with($r['assert'], 'indistinguishable:')));
+    $pairIds = array_map('dsgA06Id', $a06Pairs);
+    $assertIds = array_map('dsgA06Id', $a06Asserts);
+    sort($pairIds);
+    sort($assertIds);
+    if ($pairIds !== ['I1', 'I2', 'I3', 'I4'] || $assertIds !== ['I1', 'I2', 'I3', 'I4']) {
+        $problems[] = "a06.$v: the four A06.pair rows and the four 'indistinguishable:' assertions must cover exactly I1, I2, I3, I4 once each (pairs " . json_encode($pairIds) . ', assertions ' . json_encode($assertIds) . ')';
+    }
+    if (in_array($v, ['EQW', 'EQL', 'EQV'], true)) {
+        foreach (['B10 evidence window', 'B11 fixed window'] as $needle) {
+            $n = count(array_filter($A[$v]['d02_recovery_boundaries'] ?? [], static fn(array $r): bool => isset($r['assert']) && str_starts_with($r['assert'], $needle)));
+            if ($n !== 1) {
+                $problems[] = "d02.$v must carry exactly one '$needle' assertion next to its measurement row (found $n)";
+            }
+        }
     }
     if (count(array_filter($A[$v]['a07_dec003_behavior'] ?? [], static fn(array $r): bool => isset($r['assert']))) < 3) {
         $problems[] = "a07.$v carries fewer than three DEC-003 behaviour assertions";
@@ -326,16 +351,19 @@ foreach ($candidates as $v) {
     $b5 = $assertOk($v, 'd02_recovery_boundaries', 'B5 no history-only');
     $b6 = $assertOk($v, 'd02_recovery_boundaries', 'B6 evidence boundary');
     $b7 = $assertOk($v, 'd02_recovery_boundaries', 'B7:');
+    $b10 = $assertOk($v, 'd02_recovery_boundaries', 'B10 evidence window');
+    $b11 = $assertOk($v, 'd02_recovery_boundaries', 'B11 fixed window');
+    $windowOk = in_array($v, ['EQW', 'EQL', 'EQV'], true) ? ($b10 === true && $b11 === true) : true;
     $liveRow = $row($v, 'd05_redis', 'D05.R6.live-recovery');
     $liveRan = $redisStatus === 'RAN' && $redisLive && $liveRow !== null && ($liveRow['applicable'] ?? true) !== false;
     $liveOk = $liveRan ? $assertOk($v, 'd05_redis', 'R6:') : null;
     $recStatus = 'FAIL';
-    if ($b1 === true && $b5 === true && $b6 === true && $b7 === true) {
+    if ($b1 === true && $b5 === true && $b6 === true && $b7 === true && $windowOk) {
         $recStatus = in_array($v, ['EQL', 'EQV'], true) ? ($liveOk === true ? 'PASS' : ($liveOk === false ? 'FAIL' : 'UNPROVEN')) : 'PASS';
     }
     $b1row = $row($v, 'd02_recovery_boundaries', 'D02.B1.lone-legit-after-trigger');
     $b5row = $row($v, 'd02_recovery_boundaries', 'D02.B5.single-seed-then-silence');
-    $gate($v, 'G5 recovery without history-only re-block (controlled clock + live Redis clock)', $recStatus, 'lone legit first allowed at t=' . ($b1row['legitFirstAllowedT'] ?? '?') . ' (S0 ' . ($row('S0', 'd02_recovery_boundaries', 'D02.B1.lone-legit-after-trigger')['legitFirstAllowedT'] ?? '?') . '); last denial after a single seed t=' . ($b5row['lastLegitDenialT'] ?? '?') . ' (S0 ' . ($row('S0', 'd02_recovery_boundaries', 'D02.B5.single-seed-then-silence')['lastLegitDenialT'] ?? '?') . '); live Redis clock: ' . ($liveOk === null ? 'not run' : var_export($liveOk, true)));
+    $gate($v, 'G5 recovery without history-only re-block (controlled clock + live Redis clock)', $recStatus, 'lone legit first allowed at t=' . ($b1row['legitFirstAllowedT'] ?? '?') . ' (S0 ' . ($row('S0', 'd02_recovery_boundaries', 'D02.B1.lone-legit-after-trigger')['legitFirstAllowedT'] ?? '?') . '); last denial after a single seed t=' . ($b5row['lastLegitDenialT'] ?? '?') . ' (S0 ' . ($row('S0', 'd02_recovery_boundaries', 'D02.B5.single-seed-then-silence')['lastLegitDenialT'] ?? '?') . '); evidence-window assertions B10 (0/59/60/61/119 s) = ' . var_export($b10, true) . ', B11 (not sliding) = ' . var_export($b11, true) . '; live Redis clock: ' . ($liveOk === null ? 'not run' : var_export($liveOk, true)));
 
     // G6 security regression versus S0 (never averaged: every attack cell is classified)
     $counts = ['equal-or-better' => 0, 'bounded-renewal' => 0, 'removed-correlation-protection' => 0, 'unbounded-regression' => 0, 'unknown' => 0];
@@ -440,7 +468,12 @@ foreach ($candidates as $v) {
     $assertRows = array_values(array_filter($A[$v]['a06_indistinguishability'] ?? [], static fn(array $r): bool => isset($r['assert']) && str_starts_with($r['assert'], 'indistinguishable:')));
     $same = count($pairs) === 4 && count(array_filter($pairs, static fn(array $r): bool => $r['identicalTreatment'] === true)) === 4;
     $assertsOk = count($assertRows) === 4 && count(array_filter($assertRows, static fn(array $r): bool => $r['ok'] === true)) === 4;
-    $gate($v, 'G15 A06: attacker/legitimate pairs with identical inputs are treated identically (no pretence of separation)', $same && $assertsOk ? 'PASS' : 'FAIL', count($pairs) . ' pair rows (identical decisions: ' . var_export($same, true) . ') AND ' . count($assertRows) . ' indistinguishable assertions (all ok: ' . var_export($assertsOk, true) . '); both are required');
+    $pairIds = array_map('dsgA06Id', $pairs);
+    $assertIds = array_map('dsgA06Id', $assertRows);
+    sort($pairIds);
+    sort($assertIds);
+    $idsMatch = $pairIds === ['I1', 'I2', 'I3', 'I4'] && $assertIds === ['I1', 'I2', 'I3', 'I4'];
+    $gate($v, 'G15 A06: attacker/legitimate pairs with identical inputs are treated identically (no pretence of separation)', $same && $assertsOk && $idsMatch ? 'PASS' : 'FAIL', count($pairs) . ' pair rows (identical decisions: ' . var_export($same, true) . ') AND ' . count($assertRows) . ' indistinguishable assertions (all ok: ' . var_export($assertsOk, true) . '); identifiers I1–I4 matched one-to-one between pairs and assertions: ' . var_export($idsMatch, true) . '; all three are required');
 }
 
 // G16 provenance and S0 baseline stability (not per candidate)

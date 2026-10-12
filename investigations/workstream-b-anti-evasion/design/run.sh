@@ -303,6 +303,23 @@ rows = [json.loads(l) for l in open(p)]
 rows = [r for r in rows if not r['s'].startswith('D02.B10') and not r['s'].startswith('D02.B11')]
 open(p, 'w').write('\n'.join(json.dumps(r, separators=(',', ':')) for r in rows) + '\n')
 PY"
+failclosed duplicate_a06_identifier "python3 - \"\$fc/a06_indistinguishability.EQL.jsonl\" <<'PY'
+import json, sys
+p = sys.argv[1]
+rows = [json.loads(l) for l in open(p)]
+i1 = next(r for r in rows if r.get('assert', '').startswith('indistinguishable: I1'))
+for k, r in enumerate(rows):
+    if r.get('assert', '').startswith('indistinguishable: I4'):
+        rows[k] = dict(i1)
+open(p, 'w').write('\n'.join(json.dumps(r, separators=(',', ':')) for r in rows) + '\n')
+PY"
+failclosed delete_window_assertions "python3 - \"\$fc/d02_recovery_boundaries.EQL.jsonl\" <<'PY'
+import json, sys
+p = sys.argv[1]
+rows = [json.loads(l) for l in open(p)]
+rows = [r for r in rows if not (r.get('assert', '').startswith('B10 ') or r.get('assert', '').startswith('B11 '))]
+open(p, 'w').write('\n'.join(json.dumps(r, separators=(',', ':')) for r in rows) + '\n')
+PY"
 failclosed delete_low_scope 'rm -f "$fc/d07_low_scope.narrow.jsonl"'
 failclosed delete_redis_status 'rm -f "$fc/redis_status.txt"'
 failclosed drop_matrix_field "python3 - \"\$fc/d01_matrix.EQL.jsonl\" <<'PY'
