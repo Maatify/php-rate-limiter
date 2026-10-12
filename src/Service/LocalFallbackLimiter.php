@@ -26,6 +26,13 @@ class LocalFallbackLimiter
 {
     private const MAX_TRACKED_SUBJECTS = 4096;
 
+    /**
+     * Retry hint for a denial that has no fixed window to derive a reset from
+     * (a degraded policy without a valid bounded configuration). It is the
+     * historical value, kept unchanged so that denial is never relaxed.
+     */
+    private const UNWINDOWED_DENIAL_RETRY_AFTER = 60;
+
     /** @var array<string, array{count: int, expiresAt: int}> */
     private static array $counters = [];
 
@@ -45,15 +52,35 @@ class LocalFallbackLimiter
      */
     public static function check(ClockInterface $clock, BlockPolicyInterface $policy, string $mode, string $ip, ?string $accountId = null, string $ua = ''): bool
     {
+        return self::evaluate($clock, $policy, $mode, $ip, $accountId, $ua) === null;
+    }
+
+    /**
+     * Evaluate every applicable rule once and return the Retry-After hint.
+     *
+     * Returns `null` when the request is permitted. When denied, returns the
+     * largest remaining fixed-window time, in seconds, among the dimensions
+     * that denied this same evaluation, assuming no further requests arrive.
+     * It is a wait hint, not a guarantee that the next request is accepted.
+     * Each rule's counter is consumed exactly once per evaluation, so callers
+     * must use this method instead of {@see self::check()} followed by a
+     * second query.
+     *
+     * @internal Runtime collaborator of {@see RateLimiterEngine}.
+     *
+     * @return int<1, max>|null
+     */
+    public static function evaluate(ClockInterface $clock, BlockPolicyInterface $policy, string $mode, string $ip, ?string $accountId = null, string $ua = ''): ?int
+    {
         self::gc($clock);
 
         if ($mode !== 'DEGRADED_MODE' && $mode !== 'FAIL_OPEN') {
-            return true;
+            return null;
         }
 
         $configuration = self::configuration($policy);
         if ($configuration === null || $configuration->rules === []) {
-            return false;
+            return self::UNWINDOWED_DENIAL_RETRY_AFTER;
         }
 
         $normalizedIp = self::getIpPrefix($ip);
@@ -61,7 +88,7 @@ class LocalFallbackLimiter
         $normalizedUa = DeviceIdentityResolver::normalizeUserAgent($ua);
         $namespace = self::namespace($policy);
 
-        $allowed = true;
+        $retryAfter = null;
         foreach ($configuration->rules as $rule) {
             $key = match ($rule->dimension) {
                 FailureFallbackDimensionEnum::ACCOUNT => $accountId !== null && $accountId !== ''
@@ -77,12 +104,13 @@ class LocalFallbackLimiter
 
             $population = "{$namespace}:{$rule->dimension->value}";
             $subject = $key;
-            if (!self::incrementAndCheck($clock, $population, $subject, $rule->limit, $rule->windowSeconds)) {
-                $allowed = false;
+            $ruleRetryAfter = self::incrementAndCheck($clock, $population, $subject, $rule->limit, $rule->windowSeconds);
+            if ($ruleRetryAfter !== null && ($retryAfter === null || $ruleRetryAfter > $retryAfter)) {
+                $retryAfter = $ruleRetryAfter;
             }
         }
 
-        return $allowed;
+        return $retryAfter;
     }
 
     private static function configuration(BlockPolicyInterface $policy): ?FailureFallbackConfigurationDTO
@@ -109,7 +137,10 @@ class LocalFallbackLimiter
         return $ip;
     }
 
-    private static function incrementAndCheck(ClockInterface $clock, string $population, string $subject, int $limit, int $window): bool
+    /**
+     * @return int<1, max>|null Remaining seconds of the denying window, or null when permitted.
+     */
+    private static function incrementAndCheck(ClockInterface $clock, string $population, string $subject, int $limit, int $window): ?int
     {
         $now = $clock->now()->getTimestamp();
         $bucket = (int) floor($now / $window);
@@ -133,7 +164,11 @@ class LocalFallbackLimiter
             ];
         }
         self::$counters[$bucketKey]['count']++;
-        return self::$counters[$bucketKey]['count'] <= $limit;
+        if (self::$counters[$bucketKey]['count'] <= $limit) {
+            return null;
+        }
+
+        return max(1, self::$counters[$bucketKey]['expiresAt'] - $now);
     }
 
     private static function gc(ClockInterface $clock): void

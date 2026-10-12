@@ -76,6 +76,16 @@ one conservative overflow bucket for the applicable window. The overflow
 bucket cannot create allowance or reset any tracked subject, and expired
 populations are collected during fallback activity.
 
+A `fallback_limit_exceeded` denial (`HARD_BLOCK`, block level 2) reports
+`retryAfter` as the largest remaining fixed-window time among the fallback
+dimensions that denied that same evaluation, assuming no further requests
+arrive. It is a wait hint, not a guarantee that the next request is accepted,
+and it is not a fixed value. Each dimension is consumed exactly once per
+evaluation. This applies identically to the typed backend-failure path and to
+the `OPEN`/`HALF_OPEN` degraded path. A degraded policy without a valid bounded
+configuration has no window to derive a reset from and remains denied with the
+historical `retryAfter` of 60.
+
 ---
 
 ## 1. Purpose
