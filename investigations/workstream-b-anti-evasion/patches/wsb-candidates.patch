@@ -1,0 +1,256 @@
+--- a/src/Service/EvaluationPipeline.php
++++ b/src/Service/EvaluationPipeline.php
+@@ -171,0 +172 @@
++        $this->wsbRlSets = []; // WSB-EXPERIMENT (RL): sets observed by THIS command
+@@ -218,0 +220,6 @@
++
++        // WSB-EXPERIMENT (test-only patch, never part of src/): candidate failure-witness / ratio writes. Reached only after
++        // the active-block fail-fast above, exactly like every other state mutation of this method.
++        if (! $request->isPreCheck && $this->wsbCandidate() !== 'S0') {
++            $this->wsbWriteWitness($policy->getName(), $request, $device, $realKeysV2, $isEphemeral);
++        }
+@@ -1122,0 +1130 @@
++        $this->wsbPolicyName = $policyName; // WSB-EXPERIMENT
+@@ -1157 +1165 @@
+-            return $this->candidate(
++            return $this->wsbGate($this->candidate(
+@@ -1170 +1178 @@
+-            );
++            ), 'churn', $device, $policyName, $keysV2, $isEphemeral);
+@@ -1191,0 +1200 @@
++        $this->wsbRlObserve('dilution', $dilution->currentKey, $dilutionCount, $policyName);
+@@ -1214 +1223 @@
+-            return $this->candidate(
++            return $this->wsbGate($this->candidate(
+@@ -1227 +1236 @@
+-            );
++            ), 'dilutionLow', $device, $policyName, $keysV2, $isEphemeral);
+@@ -1269 +1278 @@
+-        return $this->candidate(
++        return $this->wsbGate($this->candidate(
+@@ -1275 +1284,103 @@
+-        );
++        ), 'dilutionK3', $device, $policyName, $keysV2, $isEphemeral);
++    }
++
++    /** @var array<string, list<string>> WSB-EXPERIMENT (RL): kind => opaque set keys observed by the current command */
++    private array $wsbRlSets = [];
++    private bool $wsbLastAccepted = true;
++    private string $wsbPolicyName = '';
++
++    // ------------------------------------------------------------------------------------------------------------------
++    // WSB-EXPERIMENT — Workstream B anti-evasion candidates A1 / PW / P2 / RL (investigation patch; NOT production code).
++    // Selected by env WSB_CANDIDATE (S0 = unmodified behaviour). WSB_MUTATE is a test-only fault injector used to prove that
++    // the investigation assertions can fail (uncap | no_fresh) or to isolate storage probes (no_enforce). State uses ONLY existing store capabilities
++    // (BoundedCorrelationStoreInterface / WATCH flags). NOT rotation-bridged, NOT IPv6-macro aware (documented limitation).
++    // ------------------------------------------------------------------------------------------------------------------
++    private function wsbCandidate(): string
++    {
++        $c = getenv('WSB_CANDIDATE');
++
++        return $c === false || $c === '' ? 'S0' : $c;
++    }
++
++    /** WSB_MUTATE is a comma list of test-only fault injectors (uncap | no_fresh | no_enforce). */
++    /**
++     * RL (recovery latch) observation: after every S0 bounded-set write, note whether THIS request brought a NEW distinct member
++     * (count above the per-set tally, or a member rejected at the cap). Fresh arrivals are recorded per 60 s window. Outcome
++     * independent: no failure evidence, no LOW exemption.
++     */
++    private function wsbRlObserve(string $kind, string $setKey, int $count, ?string $policyName = null): void
++    {
++        if ($this->wsbCandidate() !== 'RL') {
++            return;
++        }
++        $policy = $policyName ?? $this->wsbPolicyName;
++        $tally = $this->wsbKey($policy, 'rl-tally', $setKey);
++        $prev = $this->correlationStore->getWatchFlag($tally);
++        if ($count > $prev) {
++            $this->correlationStore->incrementWatchFlag($tally, 600);
++        }
++        if ($count > $prev || ! $this->wsbLastAccepted) {
++            $win = intdiv($this->clock->now()->getTimestamp(), 60);
++            $this->correlationStore->incrementWatchFlag($this->wsbKey($policy, 'rl-fresh', $setKey, (string) $win), 660);
++        }
++        $this->wsbRlSets[$kind][] = $setKey;
++    }
++
++    private function wsbMutation(string $name): bool
++    {
++        $m = getenv('WSB_MUTATE');
++
++        return $m !== false && in_array($name, explode(',', $m), true);
++    }
++
++    private function wsbKey(string $policyName, string $purpose, string $anchor, string $extra = ''): string
++    {
++        return $this->hashKey("{$policyName}:rate_limiter:wsb:{$purpose}:v1:{$this->envScope}:{$anchor}:{$extra}", $this->secret);
++    }
++
++    private function wsbBounded(): BoundedCorrelationStoreInterface
++    {
++        if (! $this->correlationStore instanceof BoundedCorrelationStoreInterface) {
++            throw new RateLimiterException('WSB candidate requires the BoundedCorrelationStoreInterface capability.');
++        }
++
++        return $this->correlationStore;
++    }
++
++    /** @param array<string, string|null> $keysV2 */
++    private function wsbWriteWitness(string $policyName, RateLimitCommand $request, DeviceIdentityDTO $device, array $keysV2, bool $isEphemeral): void
++    {
++        $cand = $this->wsbCandidate();
++        if (! in_array($cand, ['PW', 'P2'], true) || $device->fingerprintHash === null || ($keysV2['k2'] ?? null) === null) {
++            return;
++        }
++        $store = $this->wsbBounded();
++        $win = intdiv($this->clock->now()->getTimestamp(), 60);
++        $cap = $this->wsbMutation('uncap') ? 1000 : 3;
++        if ($request->isFailure) {
++            // Evidence = bounded distinct failing members per scope (cap 3, fixed TTL 600) + freshness flag per 60 s window.
++            $this->wsbEvidence($store, $policyName, 'k2', $keysV2['k2'], $device->fingerprintHash, $cap);
++            $this->correlationStore->incrementWatchFlag($this->wsbKey($policyName, 'fresh', 'k2:' . $keysV2['k2'], (string) $win), 660);
++            if (! $isEphemeral && ($keysV2['k1'] ?? null) !== null) {
++                $this->wsbEvidence($store, $policyName, 'fp', $device->fingerprintHash, $keysV2['k1'], $cap);
++                $this->correlationStore->incrementWatchFlag($this->wsbKey($policyName, 'fresh', 'fp:' . $device->fingerprintHash, (string) $win), 660);
++            }
++        }
++        if ($cand === 'P2') {
++            $ua = $device->normalizedUa;
++            $this->correlationStore->incrementWatchFlag($this->wsbKey($policyName, $request->isFailure ? 'rf' : 'rs', $ua, (string) $win), 660);
++            if ($request->isFailure && ($keysV2['k1'] ?? null) !== null) {
++                $this->wsbTally($store, $this->wsbKey($policyName, 'rk-set', $ua, (string) $win), $this->wsbKey($policyName, 'rk', $ua, (string) $win), $keysV2['k1']);
++            }
++        }
++    }
++
++    private function wsbEvidence(BoundedCorrelationStoreInterface $store, string $policyName, string $scope, string $anchor, string $member, int $cap): void
++    {
++        $setKey = $this->wsbKey($policyName, 'wit-set', "{$scope}:{$anchor}");
++        $r = $store->addDistinctBounded($setKey, $this->wsbKey($policyName, 'wit-member', "{$scope}:{$anchor}", $member), 600, $cap);
++        $tally = $this->wsbKey($policyName, 'wit', "{$scope}:{$anchor}");
++        // tally == number of distinct admitted members; only a brand-new accepted member raises it (count == tally + 1 check).
++        if ($r->accepted && $r->count > $this->correlationStore->getWatchFlag($tally)) {
++            $this->correlationStore->incrementWatchFlag($tally, 600);
++        }
+@@ -1277,0 +1389,114 @@
++    private function wsbTally(BoundedCorrelationStoreInterface $store, string $setKey, string $tallyKey, string $member): void
++    {
++        // Used by the ratio denominator: per-window distinct failing K1 count, derived from the tally flag (set cap 6).
++        $count = $this->correlationStore->getWatchFlag($tallyKey);
++        $r = $store->addDistinctBounded($setKey, $this->hashKey($member, $this->secret), 660, 6);
++        if ($r->accepted && $r->count > $count) {
++            $this->correlationStore->incrementWatchFlag($tallyKey, 660);
++        }
++    }
++
++    /** @param array<string, string|null> $keysV2 */
++    private function wsbGate(?array $candidate, string $kind, DeviceIdentityDTO $device, string $policyName, array $keysV2, bool $isEphemeral): ?array
++    {
++        $cand = $this->wsbCandidate();
++        if ($candidate === null || $cand === 'S0') {
++            return $candidate;
++        }
++        if ($this->wsbMutation('no_enforce')) {
++            // Storage-cap probes only: suppress enforcement so that every failed request still reaches the witness write.
++            return null;
++        }
++        $low = $device->confidence === 'LOW';
++        if ($cand === 'RL') {
++            $enforcementKey = $kind === 'dilutionK3' ? ($keysV2['k3'] ?? '') : ($keysV2['k2'] ?? '');
++            $sets = $this->wsbRlSets[$kind === 'churn' ? 'churn' : 'dilution'] ?? [];
++            $win = intdiv($this->clock->now()->getTimestamp(), 60);
++            $latchWin = null;
++            for ($w = $win; $w >= $win - 10; $w--) {
++                if ($this->correlationStore->getWatchFlag($this->wsbKey($policyName, 'latch', $enforcementKey, (string) $w)) > 0) {
++                    $latchWin = $w;
++                    break;
++                }
++            }
++            if ($latchWin !== null && ! $this->wsbMutation('no_fresh')) {
++                $fresh = false;
++                foreach ($sets as $setKey) {
++                    for ($w = $latchWin + 1; $w <= $win && ! $fresh; $w++) {
++                        $fresh = $this->correlationStore->getWatchFlag($this->wsbKey($policyName, 'rl-fresh', $setKey, (string) $w)) > 0;
++                    }
++                }
++                if (! $fresh) {
++                    return null;
++                }
++            }
++            $this->correlationStore->incrementWatchFlag($this->wsbKey($policyName, 'latch', $enforcementKey, (string) $win), 700);
++
++            return $candidate;
++        }
++        if ($cand === 'A1') {
++            return $low ? null : $candidate;
++        }
++        if (! in_array($cand, ['PW', 'P2'], true)) {
++            throw new RateLimiterException('Unknown WSB candidate: ' . $cand);
++        }
++        if ($kind === 'dilutionLow') {
++            // K2 enforcement from a LOW-confidence dilution has no failure witness by construction (no fingerprint members).
++            if ($cand === 'P2' && $this->wsbP2Soft($policyName, $device->normalizedUa)) {
++                $candidate['persistence'] = [];
++
++                return $candidate;
++            }
++
++            return null;
++        }
++        if ($kind === 'churn') {
++            $scope = 'k2:' . ($keysV2['k2'] ?? '');
++            $enforcementKey = $keysV2['k2'] ?? '';
++        } else {
++            $scope = 'fp:' . ($device->fingerprintHash ?? '');
++            $enforcementKey = $keysV2['k3'] ?? '';
++        }
++        if ($this->correlationStore->getWatchFlag($this->wsbKey($policyName, 'wit', $scope)) < 3) {
++            return null;
++        }
++        $win = intdiv($this->clock->now()->getTimestamp(), 60);
++        $latchWin = null;
++        for ($w = $win; $w >= $win - 10; $w--) {
++            if ($this->correlationStore->getWatchFlag($this->wsbKey($policyName, 'latch', $enforcementKey, (string) $w)) > 0) {
++                $latchWin = $w;
++                break;
++            }
++        }
++        if ($latchWin !== null && ! $this->wsbMutation('no_fresh')) {
++            $fresh = false;
++            for ($w = $latchWin + 1; $w <= $win; $w++) {
++                if ($this->correlationStore->getWatchFlag($this->wsbKey($policyName, 'fresh', $scope, (string) $w)) > 0) {
++                    $fresh = true;
++                    break;
++                }
++            }
++            if (! $fresh) {
++                return null;
++            }
++        }
++        $this->correlationStore->incrementWatchFlag($this->wsbKey($policyName, 'latch', $enforcementKey, (string) $win), 700);
++
++        return $candidate;
++    }
++
++    private function wsbP2Soft(string $policyName, string $ua): bool
++    {
++        $win = intdiv($this->clock->now()->getTimestamp(), 60);
++        $f = 0;
++        $s = 0;
++        $k = 0;
++        for ($w = $win - 9; $w <= $win; $w++) {
++            $f += $this->correlationStore->getWatchFlag($this->wsbKey($policyName, 'rf', $ua, (string) $w));
++            $s += $this->correlationStore->getWatchFlag($this->wsbKey($policyName, 'rs', $ua, (string) $w));
++            $k += $this->correlationStore->getWatchFlag($this->wsbKey($policyName, 'rk', $ua, (string) $w));
++        }
++
++        return $k >= 6 && ($f + $s) > 0 && $f / ($f + $s) >= 0.5;
++    }
++
+@@ -1283,0 +1509 @@
++        $this->wsbRlObserve('churn', $observation->currentKey, $count);
+@@ -1312,0 +1539 @@
++            $this->wsbLastAccepted = $result->accepted; // WSB-EXPERIMENT
+@@ -1334,0 +1562 @@
++        $this->wsbLastAccepted = $result->accepted; // WSB-EXPERIMENT

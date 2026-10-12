@@ -1,0 +1,21 @@
+{"s":"A02.provenance","variant":"S0","level":"S0_RUNTIME_OBSERVED","baseSha":"56f601cdc9a7062391395c326f1867d472a4ee49","pipelineSha256":"4b259d3397adf492d9767572141c9bdf5efc5744886bce63592ae9f36b95f4fc","patched":false}
+{"s":"A02.B1.lone-legit-after-trigger","variant":"S0","attackSteps":["check:A>fail:A","check:A>fail:H2/60","check:H2/59"],"legitRuns":"B3-600,a601-720","legitFirstAllowedT":601,"blockIssuances":10}
+{"s":"A02","variant":"S0","assert":"S0 exact block boundary: the block issued at t=1 (second member, double-observed by pre+out) has exactly 58 s left at t=3 (persisted K2 expiry = issuance + 60 s)","ok":true,"k2RemainingAtT3":58}
+{"s":"A02","variant":"S0","assert":"S0 exact recovery boundary: a lone legitimate client is first allowed at t=601 after a 3-member trigger (stale 600 s set; block 60 s)","ok":true,"firstAllowed":601}
+{"s":"A02","variant":"S0","assert":"B1: the trigger itself is enforced at the third logical member (S0) or suppressed (candidates need 3 FAILING members: here they exist)","ok":true,"steps":"check:H2/59"}
+{"s":"A02.B2.set-ttl-boundary","variant":"S0","flow":"pre+out","f3At":599,"f3Outcome":"fail","f3Blocked":true,"step":"check:H2/60"}
+{"s":"A02.B2.set-ttl-boundary","variant":"S0","flow":"pre+out","f3At":599,"f3Outcome":"ok","f3Blocked":true,"step":"check:H2/60"}
+{"s":"A02.B2.set-ttl-boundary","variant":"S0","flow":"pre+out","f3At":600,"f3Outcome":"fail","f3Blocked":false,"step":"check:A>fail:A"}
+{"s":"A02.B2.set-ttl-boundary","variant":"S0","flow":"pre+out","f3At":600,"f3Outcome":"ok","f3Blocked":false,"step":"check:A>ok:A"}
+{"s":"A02.B2.set-ttl-boundary","variant":"S0","flow":"out","f3At":599,"f3Outcome":"fail","f3Blocked":true,"step":"fail:H2/60"}
+{"s":"A02.B2.set-ttl-boundary","variant":"S0","flow":"out","f3At":599,"f3Outcome":"ok","f3Blocked":true,"step":"ok:H2/60"}
+{"s":"A02.B2.set-ttl-boundary","variant":"S0","flow":"out","f3At":600,"f3Outcome":"fail","f3Blocked":false,"step":"fail:A"}
+{"s":"A02.B2.set-ttl-boundary","variant":"S0","flow":"out","f3At":600,"f3Outcome":"ok","f3Blocked":false,"step":"ok:A"}
+{"s":"A02.B3.watch-boundary","variant":"S0","flow":"pre+out","secondPairEndsAt":1800,"blockedAtSecondPairEnd":true,"step":"check:H2/60"}
+{"s":"A02.B3.watch-boundary","variant":"S0","flow":"pre+out","secondPairEndsAt":1801,"blockedAtSecondPairEnd":true,"step":"check:A>fail:H2/60"}
+{"s":"A02.B3.watch-boundary","variant":"S0","flow":"out","secondPairEndsAt":1800,"blockedAtSecondPairEnd":true,"step":"fail:H2/60"}
+{"s":"A02.B3.watch-boundary","variant":"S0","flow":"out","secondPairEndsAt":1801,"blockedAtSecondPairEnd":false,"step":"fail:A"}
+{"s":"A02.B4.persistent-attacker-reissue","variant":"S0","attackerRuns":"a0-0,B1-130","blockIssuances":3,"attackerReached":2}
+{"s":"A02.B5.single-seed-then-silence","variant":"S0","legitDenied":120,"legitAttempts":300,"lastLegitDenialT":600,"legitRuns":"B5-600,a605-1500","blockIssuances":10}
+{"s":"A02","variant":"S0","assert":"S0 B5 recovery abuse: one seed burst denies a lone legitimate client until the 600 s set expires (last denial = 600)","ok":true,"lastLegitDenialT":600}
+{"s":"A02","variant":"S0","assert":"B6: recording rows were produced for every probe (negative control: probes reached the pipeline)","ok":true,"legitProbes":300}

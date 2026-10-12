@@ -1,0 +1,10 @@
+{"s":"A03.provenance","variant":"A1","level":"CANDIDATE_EXPERIMENTAL_RUNTIME","baseSha":"56f601cdc9a7062391395c326f1867d472a4ee49","pipelineSha256":"fc681175e7494d0e8edb9fef656826463238b839bb8af08c114ce37e2df8929b","patched":true}
+{"s":"A03.R1.rotation","variant":"A1","shape":"none","steps":["fail:A","fail:A","fail:H2/60"],"thirdBlocked":true}
+{"s":"A03","variant":"A1","assert":"R1: control without rotation blocks at the third failing member only if the variant accepts 3 failing members as evidence","ok":true,"steps":["fail:A","fail:A","fail:H2/60"]}
+{"s":"A03.R1.rotation","variant":"A1","shape":"rotated(old A,B -> new C)","steps":["fail:A","fail:A","fail:H2/60"],"thirdBlocked":true}
+{"s":"A03","variant":"A1","assert":"R1: current/previous rotation keeps the evidence/count continuous (third member blocked across the rotation)","ok":true,"steps":["fail:A","fail:A","fail:H2/60"]}
+{"s":"A03.R2.block-continuity","variant":"A1","blockedAfterRotation":true,"step":"check:H2/52"}
+{"s":"A03.E1.ephemeral-overflow","variant":"A1","attempts":["fail:A []","fail:S1/1200 {\"K4\":\"L1@+15s\"}","fail:H2/60 {\"K2\":\"L2@+60s\",\"K4\":\"L2@+60s\"}","fail:H2/55 {\"K2\":\"L2@+55s\",\"K4\":\"L2@+55s\"}"]}
+{"s":"A03.F1a.churn-set-write","variant":"A1","applicable":true,"result":"BackendFailureException","storeThrows":1}
+{"s":"A03","variant":"A1","assert":"F1a.churn-set-write: a backend failure on this path propagates (never ALLOW / never silent skip)","ok":true,"result":"BackendFailureException"}
+{"s":"A03.F1b.witness-write","variant":"A1","applicable":false,"result":"no-exception","storeThrows":0}
