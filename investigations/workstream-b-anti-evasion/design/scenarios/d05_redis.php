@@ -17,7 +17,7 @@ use Maatify\RateLimiter\Tests\Support\Redis\RespRedisCommandExecutor;
 emit('D05.provenance', dsgProvenance());
 $ex = wsbRedisConnectVerified(true);
 $isS0 = wsbVariant() === 'S0';
-$isEq = in_array(wsbVariant(), ['EQW', 'EQL'], true);
+$isEq = in_array(wsbVariant(), ['EQW', 'EQL', 'EQV'], true);
 
 $inventory = static function (RespRedisCommandExecutor $ex): array {
     $keys = array_map('strval', (array) $ex->execute(['KEYS', '*']));
@@ -162,7 +162,7 @@ if ($isEq) {
 }
 
 // R6 — LIVE recovery on the Redis clock: three failing fingerprints block the K2; ~62 s later a lone success-only client probes.
-$live = getenv('DSG_REDIS_LIVE') !== '0' && in_array(wsbVariant(), ['S0', 'EQL'], true);
+$live = getenv('DSG_REDIS_LIVE') !== '0' && in_array(wsbVariant(), ['S0', 'EQL', 'EQV'], true);
 if ($live) {
     $rt = wsbRedisPipeline($ex, 'dsg:r6');
     $store6 = new RedisFullCapabilityStore($ex, 'dsg:r6');
@@ -188,7 +188,7 @@ if ($live) {
         WsbAsserts::check('D05', 'R6: a FRESH failing fingerprint after the expiry is fresh evidence and re-blocks the K2 on the Redis clock', str_contains($freshFail, 'H') || str_contains($afterFresh, 'H'), ['freshFail' => $freshFail, 'afterFresh' => $afterFresh]);
     }
 } else {
-    emit('D05.R6.live-recovery', ['variant' => wsbVariant(), 'applicable' => false, 'reason' => getenv('DSG_REDIS_LIVE') === '0' ? 'skipped by DSG_REDIS_LIVE=0 (UNPROVEN)' : 'only S0 and EQL run the 63 s live check']);
+    emit('D05.R6.live-recovery', ['variant' => wsbVariant(), 'applicable' => false, 'reason' => getenv('DSG_REDIS_LIVE') === '0' ? 'skipped by DSG_REDIS_LIVE=0 (UNPROVEN)' : 'only S0, EQL and EQV run the 63 s live check']);
 }
 
 WsbAsserts::finish();

@@ -1,4 +1,4 @@
-{"s":"D05.provenance","variant":"EQL","level":"CANDIDATE_EXPERIMENTAL_RUNTIME","baseSha":"107b795d9454a89ea5f5752d6a7ccf7053a6e7e0","pipelineSha256":"834a3d8fb58c9483f22b34688c8555e66527da259924df43259b8f0ee4539965","patched":true}
+{"s":"D05.provenance","variant":"EQL","level":"CANDIDATE_EXPERIMENTAL_RUNTIME","baseSha":"107b795d9454a89ea5f5752d6a7ccf7053a6e7e0","pipelineSha256":"98d95cc97836066ea8e76cf8399a41ede457c1e3dca156fdaa05b1b3096813c4","patched":true}
 {"s":"D05.R1.record-only-churn","variant":"EQL","steps":["fail:A","fail:A","fail:H2/~60"],"thirdDenied":true}
 {"s":"D05","variant":"EQL","assert":"R1: three failing fingerprints on one K2 are denied at the third attempt on real Redis","ok":true,"steps":["fail:A","fail:A","fail:H2/~60"]}
 {"s":"D05.R1b.third-member-success","variant":"EQL","steps":["fail:A","fail:A","ok:H2/~60"],"thirdDenied":true}

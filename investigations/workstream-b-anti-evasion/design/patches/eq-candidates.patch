@@ -1,7 +1,7 @@
 --- a/src/Service/EvaluationPipeline.php
 +++ b/src/Service/EvaluationPipeline.php
 @@ -287,0 +288 @@ class EvaluationPipeline
-+        $this->eqScored = $this->eqScoredCommand($policy, $request); // EQ-EXPERIMENT
++        $this->eqScored = $this->eqScoredCommand($policy, $request, $decayedScores); // EQ-EXPERIMENT
 @@ -1122,0 +1124,4 @@ class EvaluationPipeline
 +        if ($this->eqMode() === 'EQN' && ! $this->eqScored) {
 +            return null; // EQ-EXPERIMENT (N): only policy-scored commands observe or enforce
@@ -17,7 +17,7 @@
 +            $macroChurnTriggered = $macroChurnTriggered
 +                && $this->eqQualified($policyName, 'macro', $macroChurn->currentKey, $macroChurn->previousKey);
 @@ -1178,0 +1189,5 @@ class EvaluationPipeline
-+        if ($this->eqMode() === 'EQL' && $device->confidence === 'LOW' && ! $this->eqMutation('low_enforce') && ! $this->eqMutation('low_narrow')) {
++        if (in_array($this->eqMode(), ['EQL', 'EQV'], true) && $device->confidence === 'LOW' && ! $this->eqMutation('low_enforce') && ! $this->eqMutation('low_narrow')) {
 +            // EQ-EXPERIMENT (L): a UA-only (LOW confidence) cross-IP signal is advisory — no state is written, nothing is enforced.
 +            return null;
 +        }
@@ -37,14 +37,15 @@
 +            return null; // EQ-EXPERIMENT: no fresh scored evidence in this fingerprint scope
 +        }
 +
-@@ -1277,0 +1305,61 @@ class EvaluationPipeline
+@@ -1277,0 +1305,89 @@ class EvaluationPipeline
 +    private bool $eqScored = false;
 +
 +    // ------------------------------------------------------------------------------------------------------------------
 +    // EQ-EXPERIMENT — Evidence-Qualified Correlation Enforcement (design proof; NOT production code, never part of src/).
 +    // WSB_CANDIDATE selects the variant: EQN = detection+enforcement only on policy-scored commands (rejected ablation); EQW = S0
 +    // detection on every command, enforcement only with fresh scored evidence (a fixed 60 s WATCH marker) in the detection scope;
-+    // EQL = EQW, except that LOW (UA-only) cross-IP dilution is advisory (no state, no enforcement). EQ_MUTATE (test-only fault injectors):
++    // EQL = EQW, except that LOW (UA-only) cross-IP dilution is advisory (no state, no enforcement); EQV = EQL, except that for access-scored
++    // policies a call is evidence only at the near-threshold volume score (L1 - 1) of K2/K3. EQ_MUTATE (test-only fault injectors):
 +    // ungated | no_marker | no_previous | long_marker | low_enforce (= EQW's LOW rule) | low_narrow (LOW enforced on the scored request only).  Existing store capabilities only (incrementWatchFlag / getWatchFlag); no read-then-increment.
 +    // ------------------------------------------------------------------------------------------------------------------
 +    private function eqMode(): string
@@ -61,9 +62,36 @@
 +        return $m !== false && in_array($name, explode(',', $m), true);
 +    }
 +
-+    private function eqScoredCommand(BlockPolicyInterface $policy, RateLimitCommand $request): bool
++    /**
++     * @param array<string, int> $decayedScores
++     */
++    private function eqScoredCommand(BlockPolicyInterface $policy, RateLimitCommand $request, array $decayedScores): bool
 +    {
-+        return ! $request->isPreCheck && ($request->isFailure || $policy->getScoreDeltas()->access > 0);
++        if ($request->isPreCheck) {
++            return false;
++        }
++        if ($request->isFailure) {
++            return true;
++        }
++        $access = $policy->getScoreDeltas()->access;
++        if ($access <= 0) {
++            return false;
++        }
++        if ($this->eqMode() !== 'EQV') {
++            return true;
++        }
++
++        // EQV: an access-scored policy has no failures; its own evidence of overuse is the volume score. A call is evidence only when the
++        // K2 or K3 score after this call reaches the near-threshold level (L1 - 1) that DECISION_MATRIX section 5.0 already uses for WATCH.
++        foreach (['k2', 'k3'] as $type) {
++            $thresholds = $this->getScopedThresholds($type, $policy);
++            if ($thresholds !== null && $thresholds->l1 !== PHP_INT_MAX
++                && ($decayedScores[$type] ?? 0) + $access * $request->cost >= $thresholds->l1 - 1) {
++                return true;
++            }
++        }
++
++        return false;
 +    }
 +
 +    private function eqMarkerKey(string $policyName, string $kind, string $scope, string $secret): string
@@ -74,7 +102,7 @@
 +    /** Fresh scored evidence marker (fixed 60 s, atomic increment; the previous generation is read-only). */
 +    private function eqMark(string $policyName, string $kind, string $scope): void
 +    {
-+        if (! in_array($this->eqMode(), ['EQW', 'EQL'], true) || ! $this->eqScored || $this->eqMutation('no_marker')) {
++        if (! in_array($this->eqMode(), ['EQW', 'EQL', 'EQV'], true) || ! $this->eqScored || $this->eqMutation('no_marker')) {
 +            return;
 +        }
 +        $this->correlationStore->incrementWatchFlag(
@@ -85,7 +113,7 @@
 +
 +    private function eqQualified(string $policyName, string $kind, string $scope, ?string $previousScope): bool
 +    {
-+        if (! in_array($this->eqMode(), ['EQW', 'EQL'], true) || $this->eqMutation('ungated')) {
++        if (! in_array($this->eqMode(), ['EQW', 'EQL', 'EQV'], true) || $this->eqMutation('ungated')) {
 +            return true;
 +        }
 +        if ($this->correlationStore->getWatchFlag($this->eqMarkerKey($policyName, $kind, $scope, $this->secret)) > 0) {

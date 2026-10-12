@@ -25,4 +25,7 @@
 {"s":"D02","variant":"S0","assert":"S0 B6: the success-only fourth member trigger is enforced by S0 history (every probe up to +120 is denied or the set expired)","ok":true,"probes":{"1":true,"30":true,"59":true,"60":true,"61":true,"120":true}}
 {"s":"D02.B7.single-typo-on-stale-set","variant":"S0","legitDenied":83,"attempts":84,"firstDeniedT":1,"lastDeniedT":500,"runs":"a0-0,B1-500"}
 {"s":"D02.B8.sustained-leak-30min","variant":"S0","attempts":1801,"reachedVerification":4,"blockIssuances":30}
+{"s":"D02.B10.evidence-window-boundary","variant":"S0","triggerBySuccessAtPlusK_enforced":{"0":true,"59":true,"60":true,"61":true,"119":true}}
+{"s":"D02","variant":"S0","assert":"S0 B10: history alone enforces the same trigger at every offset up to the 600 s set expiry","ok":true,"enforced":{"0":true,"59":true,"60":true,"61":true,"119":true}}
+{"s":"D02.B11.window-not-sliding","variant":"S0","duplicateFailureAt159_triggerEnforcedAt":{"159":true,"160":true}}
 {"s":"D02","variant":"S0","assert":"B9: every B5 probe produced a row (negative control: probes reached the pipeline)","ok":true,"probes":300}

@@ -13,10 +13,10 @@ controlled clock) and `investigations/workstream-b-anti-evasion/` (PR #104: stre
 | Level | What ran |
 |---|---|
 | **S0 Runtime Observed** | The repository's unpatched `EvaluationPipeline` (sha-256 `4b259d33…f4fc`) at baseline `107b795d9454a89ea5f5752d6a7ccf7053a6e7e0`; asserted by every scenario. |
-| **Candidate Experimental Runtime** | The same baseline exported with `git archive` into `results/work/candidate` + `patches/eq-candidates.patch` (one file, pure additions to private members, sha-256 pinned; `build_candidate.sh` refuses a wrong target hash (exit 3), a drifted/inapplicable patch (4), an absent patch (5), modified patch bytes (6), a wrong patched hash (7)). Variants are selected with env `WSB_CANDIDATE`: `EQN`, `EQW`, `EQL`. |
+| **Candidate Experimental Runtime** | The same baseline exported with `git archive` into `results/work/candidate` + `patches/eq-candidates.patch` (one file, pure additions to private members, sha-256 pinned; `build_candidate.sh` refuses a wrong target hash (exit 3), a drifted/inapplicable patch (4), an absent patch (5), modified patch bytes (6), a wrong patched hash (7)). Variants are selected with env `WSB_CANDIDATE`: `EQN`, `EQW`, `EQL`, `EQV`. |
 | **Reference (not re-run)** | PR #104's published candidates (RL/PW/P2/A1) are read from `../expected/` only for the comparison table. |
 
-Variants: **EQL** = recommended base design; **EQW** = alternative (LOW rule kept, enforced only with fresh evidence); **EQN** = rejected ablation. Test-only fault
+Variants: **EQL** = base design under evaluation (not adopted, not a unified ready fix); **EQV** = EQL + volume-qualified evidence for access-scored policies (bounded alternative for the API_OVERUSE shortfall); **EQW** = alternative (LOW rule kept, enforced only with fresh evidence); **EQN** = rejected ablation. Test-only fault
 injectors (`EQ_MUTATE=ungated|no_marker|no_previous|long_marker|low_enforce|low_narrow`) exist only to prove that the assertions can fail and to reproduce the LOW-scope options.
 
 ## 2. Reproduce
@@ -50,12 +50,12 @@ uses its own namespaces; workers verify process id + working directory before to
 | `scenarios/d06_api_surface.php` | Reflection fingerprint of the public surface of all 99 package classes (+ sensitivity controls) |
 | `scenarios/d07_low_scope.php` | The LOW-scope options (advisory / narrow / wide) on one runtime, for OD-1 |
 | PR #104 `a06`, `a07` | Indistinguishability and DEC-003 behaviour, run unchanged on every variant |
-| `report.php` | 16 gates + verdict + generated `summary.md`; **fails closed** (exit 5) on missing / empty / malformed evidence |
+| `report.php` | 17 gates + verdict + generated `summary.md`; **fails closed** (exit 5) on missing / empty / malformed evidence |
 | `run.sh` | Everything above, plus self-tests that must *detect* mutations, mislabelled provenance, bad build inputs and damaged evidence |
 
 ## 4. Gates
 
 `G1` public API surface identical · `G2` store contract (existing base operations only; minimal custom store runs) · `G3` independent protections unchanged (no-correlation control equals S0 in every cell) ·
 `G4` benign traffic not denied by correlation · `G5` recovery (controlled + live Redis clock) · `G6` attacker verification vs S0 (every attack cell classified, never averaged) · `G7` Redis concurrency / atomic evidence ·
-`G8` rotation + ephemeral · `G9` N-1 WATCH boundary equals S0 · `G10` bounded state / TTL · `G11` failure propagation · `G12` DEC-003 behaviour · `G13` lifecycle coverage (pre+out / record-only / check-only; API_OVERUSE) ·
-`G14` cost · `G15` indistinguishability honesty · `G16` provenance and S0 = PR #104 baseline. Vocabulary: `PASS | FAIL | UNPROVEN | NOT_APPLICABLE | OWNER_DECISION_REQUIRED`.
+`G8` rotation + ephemeral · `G9` N-1 WATCH boundary equals S0 · `G10` bounded state / TTL · `G11` failure propagation · `G12` DEC-003 behaviour · `G13` API_OVERUSE (#100 improved?) ·
+`G14` cost · `G15` indistinguishability honesty (A06: four pair rows **and** four assertions) · `G16` provenance and S0 = PR #104 baseline · `G17` check-only-only integrations (scoped NO-GO). Vocabulary: `PASS | FAIL | UNPROVEN | NOT_APPLICABLE | OWNER_DECISION_REQUIRED`.

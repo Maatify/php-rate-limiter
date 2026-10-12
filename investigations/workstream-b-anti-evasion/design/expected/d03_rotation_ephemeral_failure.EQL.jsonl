@@ -1,4 +1,4 @@
-{"s":"D03.provenance","variant":"EQL","level":"CANDIDATE_EXPERIMENTAL_RUNTIME","baseSha":"107b795d9454a89ea5f5752d6a7ccf7053a6e7e0","pipelineSha256":"834a3d8fb58c9483f22b34688c8555e66527da259924df43259b8f0ee4539965","patched":true}
+{"s":"D03.provenance","variant":"EQL","level":"CANDIDATE_EXPERIMENTAL_RUNTIME","baseSha":"107b795d9454a89ea5f5752d6a7ccf7053a6e7e0","pipelineSha256":"98d95cc97836066ea8e76cf8399a41ede457c1e3dca156fdaa05b1b3096813c4","patched":true}
 {"s":"D03.R1.rotation-failing-pair-then-third","variant":"EQL","steps":["fail:A","fail:A","fail:H2/60"],"thirdBlocked":true}
 {"s":"D03","variant":"EQL","assert":"R1: the failing pair split across a key rotation is still enforced at the third failing member (set continuity)","ok":true,"steps":["fail:A","fail:A","fail:H2/60"]}
 {"s":"D03.R2.marker-continuity","variant":"EQL","step":"ok:H2/60","thirdBlocked":true}

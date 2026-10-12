@@ -10,7 +10,7 @@
 #
 # Runtime levels (never merged into one result):
 #   S0                = S0_RUNTIME_OBSERVED            the repository checkout, UNPATCHED EvaluationPipeline (sha-256 asserted by every scenario)
-#   EQN / EQW / EQL   = CANDIDATE_EXPERIMENTAL_RUNTIME an isolated copy of the pinned baseline + patches/eq-candidates.patch (build_candidate.sh)
+#   EQN / EQW / EQL / EQV = CANDIDATE_EXPERIMENTAL_RUNTIME an isolated copy of the pinned baseline + patches/eq-candidates.patch (build_candidate.sh)
 #   The PR #104 candidates (A1/PW/P2/RL) are NOT re-run here; their published numbers are read from ../expected/ for comparison only.
 set -euo pipefail
 
@@ -74,7 +74,7 @@ only_one=$(grep -c . "$actual/candidate_diff.txt" || true)
 report "candidate_differs_in_one_file" "$([[ "$only_one" == "1" ]] && grep -q 'Service/EvaluationPipeline.php' "$actual/candidate_diff.txt" && echo PASS || echo "FAIL ($only_one files)")"
 [[ "$only_one" == "1" ]] || status=1
 
-variants=(S0 EQN EQW EQL)
+variants=(S0 EQN EQW EQL EQV)
 root_for() { if [[ $1 == S0 ]]; then echo "$repo"; else echo "$cand"; fi; }
 env_for() { if [[ $1 == S0 ]]; then echo "WSB_CANDIDATE="; else echo "WSB_CANDIDATE=$1"; fi; }
 
@@ -289,6 +289,20 @@ failclosed empty_recovery ': >"$fc/d02_recovery_boundaries.EQL.jsonl"'
 failclosed damage_rotation 'echo "{broken" >>"$fc/d03_rotation_ephemeral_failure.EQL.jsonl"'
 failclosed delete_surface 'rm -f "$fc/d06_api_surface.EQL.jsonl"'
 failclosed delete_dec003 'rm -f "$fc/a07_dec003_behavior.EQL.jsonl"'
+failclosed delete_a06_assertions "python3 - \"\$fc/a06_indistinguishability.EQL.jsonl\" <<'PY'
+import json, sys
+p = sys.argv[1]
+rows = [json.loads(l) for l in open(p)]
+rows = [r for r in rows if 'assert' not in r]
+open(p, 'w').write('\n'.join(json.dumps(r, separators=(',', ':')) for r in rows) + '\n')
+PY"
+failclosed delete_window_rows "python3 - \"\$fc/d02_recovery_boundaries.EQL.jsonl\" <<'PY'
+import json, sys
+p = sys.argv[1]
+rows = [json.loads(l) for l in open(p)]
+rows = [r for r in rows if not r['s'].startswith('D02.B10') and not r['s'].startswith('D02.B11')]
+open(p, 'w').write('\n'.join(json.dumps(r, separators=(',', ':')) for r in rows) + '\n')
+PY"
 failclosed delete_low_scope 'rm -f "$fc/d07_low_scope.narrow.jsonl"'
 failclosed delete_redis_status 'rm -f "$fc/redis_status.txt"'
 failclosed drop_matrix_field "python3 - \"\$fc/d01_matrix.EQL.jsonl\" <<'PY'

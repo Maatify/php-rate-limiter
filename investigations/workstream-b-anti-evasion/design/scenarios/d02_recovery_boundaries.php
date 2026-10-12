@@ -149,6 +149,33 @@ if (! $isS0) {
     WsbAsserts::check('D02', 'B8 sustained leak is bounded: verifications reaching the protected operation <= 3 + ceil(1800/62) over 30 minutes', $reached <= 3 + (int) ceil(1800 / 62), ['reached' => $reached]);
 }
 
+// B10 — evidence window boundary (fixed TTL from the FIRST scored write). A single FAILING member A at t=100 writes the marker (the set holds one
+// member, nothing triggers). B succeeds at t=100 (count 2, N-1 WATCH #1). A SUCCEEDING member C arrives at t=100+k and fills the set (count 3 =
+// trigger). C is enforced only if the marker from t=100 is still alive. Offsets 0/59/60/61/119 s; record-only flow so every command is evaluated alone.
+$b10 = [];
+foreach ([0, 59, 60, 61, 119] as $k) {
+    $r = d02Run([$ev(100, 'mA', 'a1', 'fail'), $ev(100, 'mB', 'a2', 'ok', 'legit'), $ev(100 + $k, 'mC', 'a3', 'ok', 'legit')], 'out');
+    $b10[$k] = $r['rows'][2]['blocked'];
+}
+emit('D02.B10.evidence-window-boundary', ['variant' => wsbVariant(), 'triggerBySuccessAtPlusK_enforced' => $b10]);
+if (in_array(wsbVariant(), ['EQW', 'EQL', 'EQV'], true)) {
+    WsbAsserts::check('D02', 'B10 evidence window: a trigger reached by a succeeding member is enforced at +0, +59 s and NOT at +60, +61, +119 s after the first failing write', $b10[0] === true && $b10[59] === true && $b10[60] === false && $b10[61] === false && $b10[119] === false, ['enforced' => $b10]);
+}
+if ($isS0) {
+    WsbAsserts::check('D02', 'S0 B10: history alone enforces the same trigger at every offset up to the 600 s set expiry', $b10[0] === true && $b10[59] === true && $b10[60] === true && $b10[61] === true && $b10[119] === true, ['enforced' => $b10]);
+}
+
+// B11 — the window is NOT sliding: a duplicate failure by A at t=159 (1 s before the window ends; same member, so no WATCH/N-1 side effect) must not extend it. B and C then fill the set at 159 (alive) vs 160 (expired).
+$b11 = [];
+foreach ([159, 160] as $tc) {
+    $r = d02Run([$ev(100, 'mA', 'a1', 'fail'), $ev(159, 'mA', 'a1', 'fail'), $ev($tc, 'mB', 'a2', 'ok', 'legit'), $ev($tc, 'mC', 'a3', 'ok', 'legit')], 'out');
+    $b11[$tc] = $r['rows'][3]['blocked'];
+}
+emit('D02.B11.window-not-sliding', ['variant' => wsbVariant(), 'duplicateFailureAt159_triggerEnforcedAt' => $b11]);
+if (in_array(wsbVariant(), ['EQW', 'EQL', 'EQV'], true)) {
+    WsbAsserts::check('D02', 'B11 fixed window: a failure at +59 s does not extend the evidence (trigger enforced at +59, not at +60 even though a failure happened 1 s earlier)', $b11[159] === true && $b11[160] === false, ['enforced' => $b11]);
+}
+
 // B9 — negative control: probes really reached the pipeline.
 WsbAsserts::check('D02', 'B9: every B5 probe produced a row (negative control: probes reached the pipeline)', $b5Probes === 300, ['probes' => $b5Probes]);
 WsbAsserts::finish();

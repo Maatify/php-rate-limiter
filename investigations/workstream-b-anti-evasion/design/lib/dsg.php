@@ -6,14 +6,14 @@ declare(strict_types=1);
 // DeviceIdentityResolver + reference stores + controlled clock) and the PR #104 wsb harness (streams L1–L4 / X1–X8 / Y*, wsbMeasure).
 // LAB_ROOT selects the package tree under test:
 //   S0              : the repository checkout (UNPATCHED src/; pipeline sha-256 asserted below)
-//   EQN / EQW / EQM : the isolated tree made by design/build_candidate.sh (baseline + patches/eq-candidates.patch), selected with
+//   EQN / EQW / EQL / EQV : the isolated tree made by design/build_candidate.sh (baseline + patches/eq-candidates.patch), selected with
 //                     env WSB_CANDIDATE. The loaded EvaluationPipeline must be byte-identical to the pinned patched file.
 require_once dirname(__DIR__, 2) . '/lib/wsb.php';
 require_once dirname(__DIR__) . '/fixtures/design.php';
 
 const DSG_BASE_SHA = '107b795d9454a89ea5f5752d6a7ccf7053a6e7e0';
-const DSG_PATCHED_PIPELINE_SHA256 = '834a3d8fb58c9483f22b34688c8555e66527da259924df43259b8f0ee4539965';
-const DSG_VARIANTS = ['S0', 'EQN', 'EQW', 'EQL'];
+const DSG_PATCHED_PIPELINE_SHA256 = '98d95cc97836066ea8e76cf8399a41ede457c1e3dca156fdaa05b1b3096813c4';
+const DSG_VARIANTS = ['S0', 'EQN', 'EQW', 'EQL', 'EQV'];
 
 /**
  * Proves WHICH EvaluationPipeline was loaded. S0 must be byte-identical to the pinned baseline AND be the repository's own file; a

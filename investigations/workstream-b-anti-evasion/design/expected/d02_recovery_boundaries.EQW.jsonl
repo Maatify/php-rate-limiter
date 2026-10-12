@@ -1,4 +1,4 @@
-{"s":"D02.provenance","variant":"EQW","level":"CANDIDATE_EXPERIMENTAL_RUNTIME","baseSha":"107b795d9454a89ea5f5752d6a7ccf7053a6e7e0","pipelineSha256":"834a3d8fb58c9483f22b34688c8555e66527da259924df43259b8f0ee4539965","patched":true}
+{"s":"D02.provenance","variant":"EQW","level":"CANDIDATE_EXPERIMENTAL_RUNTIME","baseSha":"107b795d9454a89ea5f5752d6a7ccf7053a6e7e0","pipelineSha256":"98d95cc97836066ea8e76cf8399a41ede457c1e3dca156fdaa05b1b3096813c4","patched":true}
 {"s":"D02.B1.lone-legit-after-trigger","variant":"EQW","attackSteps":["check:A>fail:A","check:A>fail:H2/60","check:H2/59"],"legitRuns":"B3-60,a61-720","legitFirstAllowedT":61,"blockIssuances":1}
 {"s":"D02","variant":"EQW","assert":"B1 recovery: a lone legitimate client is allowed no later than t=63 (block ends at 62; no history-only re-block)","ok":true,"firstAllowed":61}
 {"s":"D02","variant":"EQW","assert":"B1 the trigger is enforced at the third failing member (negative control: failing evidence exists)","ok":true,"steps":"check:H2/59"}
@@ -35,4 +35,8 @@
 {"s":"D02","variant":"EQW","assert":"B7: one colleague typo costs the NAT at most one 60 s block; the following successes are never re-blocked (last denial <= t=160)","ok":true,"lastDeniedT":155}
 {"s":"D02.B8.sustained-leak-30min","variant":"EQW","attempts":1801,"reachedVerification":31,"blockIssuances":30}
 {"s":"D02","variant":"EQW","assert":"B8 sustained leak is bounded: verifications reaching the protected operation <= 3 + ceil(1800/62) over 30 minutes","ok":true,"reached":31}
+{"s":"D02.B10.evidence-window-boundary","variant":"EQW","triggerBySuccessAtPlusK_enforced":{"0":true,"59":true,"60":false,"61":false,"119":false}}
+{"s":"D02","variant":"EQW","assert":"B10 evidence window: a trigger reached by a succeeding member is enforced at +0, +59 s and NOT at +60, +61, +119 s after the first failing write","ok":true,"enforced":{"0":true,"59":true,"60":false,"61":false,"119":false}}
+{"s":"D02.B11.window-not-sliding","variant":"EQW","duplicateFailureAt159_triggerEnforcedAt":{"159":true,"160":false}}
+{"s":"D02","variant":"EQW","assert":"B11 fixed window: a failure at +59 s does not extend the evidence (trigger enforced at +59, not at +60 even though a failure happened 1 s earlier)","ok":true,"enforced":{"159":true,"160":false}}
 {"s":"D02","variant":"EQW","assert":"B9: every B5 probe produced a row (negative control: probes reached the pipeline)","ok":true,"probes":300}

@@ -1,4 +1,4 @@
-{"s":"A07.provenance","variant":"EQW","level":"CANDIDATE_EXPERIMENTAL_RUNTIME","baseSha":"56f601cdc9a7062391395c326f1867d472a4ee49","pipelineSha256":"834a3d8fb58c9483f22b34688c8555e66527da259924df43259b8f0ee4539965","patched":true}
+{"s":"A07.provenance","variant":"EQW","level":"CANDIDATE_EXPERIMENTAL_RUNTIME","baseSha":"56f601cdc9a7062391395c326f1867d472a4ee49","pipelineSha256":"98d95cc97836066ea8e76cf8399a41ede457c1e3dca156fdaa05b1b3096813c4","patched":true}
 {"s":"A07.D1.cycles","variant":"EQW","k2CycleTimes":[2,701,1401],"cycleCounts":[1,2,3],"pauseActivationsAt":[701,1401],"referencePauseActivationsAt":[701,1401],"elapsedPausedSeconds":699,"referencePausedSeconds":699,"otherKeysWithCycles":0}
 {"s":"A07","variant":"EQW","assert":"D1 behavioural negative control: the runtime issued at least 3 K2 cycles in the scenario (so the checks below are not vacuous)","ok":true,"cycles":3}
 {"s":"A07","variant":"EQW","assert":"D1 every issued K2 block is a NEW cycle with a strictly increasing retained count (transition-only, DEC-003 §2)","ok":true,"counts":[1,2,3]}

@@ -3,7 +3,7 @@
 declare(strict_types=1);
 
 // Gate evaluation + summary generator for the Design & Proof Gate (#97 / #100). Reads results/actual/<scenario>.<variant>.jsonl produced by
-// run.sh for S0, EQN, EQW, EQL and writes:
+// run.sh for S0, EQN, EQW, EQL, EQV and writes:
 //   <out>/gates.jsonl   machine-readable gate results (one row per variant x gate) — golden-diffed by run.sh
 //   <out>/summary.md    human-readable tables generated from the SAME data (no hand-typed numbers)
 // Gate vocabulary: PASS | FAIL | UNPROVEN | NOT_APPLICABLE | OWNER_DECISION_REQUIRED. Thresholds are NEVER fitted: every comparison is against
@@ -15,8 +15,8 @@ error_reporting(E_ALL & ~E_WARNING);
 
 $dir = $argv[1] ?? (__DIR__ . '/results/actual');
 $out = $argv[2] ?? $dir;
-$variants = ['S0', 'EQN', 'EQW', 'EQL'];
-$candidates = ['EQN', 'EQW', 'EQL'];
+$variants = ['S0', 'EQN', 'EQW', 'EQL', 'EQV'];
+$candidates = ['EQN', 'EQW', 'EQL', 'EQV'];
 const RECOMMENDED = 'EQL';
 $published = dirname(__DIR__) . '/expected';
 
@@ -131,7 +131,7 @@ function dsgCellProblems(array $c): array
 
 // ---- required-evidence validation (fail closed) ------------------------------------------------------------------------------------
 $requiredRows = [
-    'd02_recovery_boundaries' => ['D02.provenance', 'D02.B1.lone-legit-after-trigger', 'D02.B4.persistent-attacker-reissue', 'D02.B5.single-seed-then-silence', 'D02.B6.evidence-boundary', 'D02.B7.single-typo-on-stale-set', 'D02.B8.sustained-leak-30min'],
+    'd02_recovery_boundaries' => ['D02.provenance', 'D02.B10.evidence-window-boundary', 'D02.B11.window-not-sliding', 'D02.B1.lone-legit-after-trigger', 'D02.B4.persistent-attacker-reissue', 'D02.B5.single-seed-then-silence', 'D02.B6.evidence-boundary', 'D02.B7.single-typo-on-stale-set', 'D02.B8.sustained-leak-30min'],
     'd03_rotation_ephemeral_failure' => ['D03.provenance', 'D03.R1.rotation-failing-pair-then-third', 'D03.R2.marker-continuity', 'D03.R3.rotation-no-evidence', 'D03.R4.block-continuity', 'D03.E1.ephemeral-overflow', 'D03.F1a.churn-set-write', 'D03.F1b.marker-write', 'D03.F1c.marker-read', 'D03.C1.custom-store-minimal-capabilities'],
     'd04_state_bounds_ops' => ['D04.provenance', 'D04.S1', 'D04.S2', 'D04.S3', 'D04.O1.ops'],
     'd06_api_surface' => ['D06.provenance', 'D06.surface', 'D06.private'],
@@ -172,6 +172,9 @@ foreach ($variants as $v) {
     }
     if (count(array_filter($A[$v]['a06_indistinguishability'] ?? [], static fn(array $r): bool => $r['s'] === 'A06.pair')) !== 4) {
         $problems[] = "a06.$v must carry exactly four A06.pair rows";
+    }
+    if (count(array_filter($A[$v]['a06_indistinguishability'] ?? [], static fn(array $r): bool => isset($r['assert']) && str_starts_with($r['assert'], 'indistinguishable:'))) !== 4) {
+        $problems[] = "a06.$v must carry exactly four 'indistinguishable:' assertions next to its four A06.pair rows";
     }
     if (count(array_filter($A[$v]['a07_dec003_behavior'] ?? [], static fn(array $r): bool => isset($r['assert']))) < 3) {
         $problems[] = "a07.$v carries fewer than three DEC-003 behaviour assertions";
@@ -252,13 +255,16 @@ $classify = static function (string $v, string $id, string $shape, string $flow)
         $class = 'equal-or-better';
     } elseif ($r <= $leakBound($s0r, $span)) {
         $class = 'bounded-renewal';
-    } elseif ($s0r < $ctl && $r >= $ctl) {
+    } elseif ($r <= $ctl) {
+        // beyond the renewal bound but not worse than having no correlation at all: S0's protective gain is partly or fully gone
         $class = 'removed-correlation-protection';
     } else {
         $class = 'unbounded-regression';
     }
 
-    return ['class' => $class, 's0' => $s0r, 'v' => $r, 'ctl' => $ctl, 'bound' => $leakBound($s0r, $span), 'attempts' => $c['attackAttempts']];
+    $gain = $ctl - $s0r;
+
+    return ['class' => $class, 's0' => $s0r, 'v' => $r, 'ctl' => $ctl, 'bound' => $leakBound($s0r, $span), 'attempts' => $c['attackAttempts'], 'lostPct' => $gain > 0 ? (int) round(100 * ($r - $s0r) / $gain) : 0];
 };
 
 foreach ($candidates as $v) {
@@ -325,7 +331,7 @@ foreach ($candidates as $v) {
     $liveOk = $liveRan ? $assertOk($v, 'd05_redis', 'R6:') : null;
     $recStatus = 'FAIL';
     if ($b1 === true && $b5 === true && $b6 === true && $b7 === true) {
-        $recStatus = $v === 'EQL' ? ($liveOk === true ? 'PASS' : ($liveOk === false ? 'FAIL' : 'UNPROVEN')) : 'PASS';
+        $recStatus = in_array($v, ['EQL', 'EQV'], true) ? ($liveOk === true ? 'PASS' : ($liveOk === false ? 'FAIL' : 'UNPROVEN')) : 'PASS';
     }
     $b1row = $row($v, 'd02_recovery_boundaries', 'D02.B1.lone-legit-after-trigger');
     $b5row = $row($v, 'd02_recovery_boundaries', 'D02.B5.single-seed-then-silence');
@@ -352,7 +358,7 @@ foreach ($candidates as $v) {
         }
     }
     $g6 = $present ? ($unbounded !== [] ? 'FAIL' : ($removed !== [] ? 'OWNER_DECISION_REQUIRED' : 'PASS')) : 'UNPROVEN';
-    $gate($v, 'G6 attacker verification vs S0 (Login/OTP/API shapes, pre+out)', $g6, 'attack cells: ' . json_encode($counts) . '; removed correlation protection in: ' . ($removed === [] ? 'none' : implode(', ', array_keys($removed))) . '; unbounded: ' . ($unbounded === [] ? 'none' : implode(', ', array_keys($unbounded))), ['ownerDecision' => $removed !== []]);
+    $gate($v, 'G6 attacker verification vs S0 (Login/OTP/API shapes, pre+out)', $g6, 'attack cells: ' . json_encode($counts) . '; correlation protection lost or degraded (share of S0\'s gain over the no-correlation control that is gone) in: ' . ($removed === [] ? 'none' : implode(', ', array_map(static fn(string $k, array $x): string => "$k {$x['lostPct']}%", array_keys($removed), $removed))) . '; unbounded: ' . ($unbounded === [] ? 'none' : implode(', ', array_keys($unbounded))), ['ownerDecision' => $removed !== []]);
 
     // G7 concurrency / atomicity on real Redis
     if ($redisStatus !== 'RAN') {
@@ -387,30 +393,33 @@ foreach ($candidates as $v) {
     [$dok, $dbad] = $allAsserts($v, 'a07_dec003_behavior');
     $gate($v, 'G12 DEC-003 hard-block cycle / pause behaviour (PR #104 A07, unchanged)', $dbad === [] && $dok >= 3 ? 'PASS' : 'FAIL', "A07 assertions ok=$dok violated=" . json_encode($dbad));
 
-    // G13 lifecycle coverage
-    $life = [];
-    foreach (['pre+out', 'out', 'pre'] as $flow) {
-        $life[$flow] = 0;
-        foreach (['X1', 'X3', 'Y1', 'Y9a', 'Y9b', 'D7'] as $id) {
-            $a = $cell('S0', $id, 'login', $flow);
-            $b = $cell($v, $id, 'login', $flow);
-            if ($a !== null && $b !== null) {
-                $life[$flow] += $b['attackDenied'] - $a['attackDenied'];
-            }
-        }
-    }
-    // API_OVERUSE is access-scored: every successful call is scored activity, so the evidence rule cannot discriminate there.
+    // G13 API_OVERUSE (access-scored): is #100 (NAT churn) fixed there?
     $apiNotImproved = [];
+    $apiRows = [];
     foreach (['api', 'api_custom'] as $shape) {
         foreach (['L1', 'X4', 'Y4e', 'D2'] as $id) {
             $a = $cell('S0', $id, $shape, 'pre+out');
             $b = $cell($v, $id, $shape, 'pre+out');
-            if ($a !== null && $b !== null && $a['legitDeniedByCorrelation'] > 0 && $b['legitDeniedByCorrelation'] >= $a['legitDeniedByCorrelation']) {
-                $apiNotImproved[] = "$id/$shape {$a['legitDeniedByCorrelation']}->{$b['legitDeniedByCorrelation']}";
+            if ($a !== null && $b !== null && $a['legitDeniedByCorrelation'] > 0) {
+                $apiRows[] = "$id/$shape {$a['legitDeniedByCorrelation']}->{$b['legitDeniedByCorrelation']}";
+                if ($b['legitDeniedByCorrelation'] >= $a['legitDeniedByCorrelation']) {
+                    $apiNotImproved[] = "$id/$shape";
+                }
             }
         }
     }
-    $gate($v, 'G13 lifecycle coverage: precheck+outcome, record-only, check-only; API_OVERUSE', $v === 'EQN' ? 'FAIL' : 'OWNER_DECISION_REQUIRED', 'attacker denials delta vs S0 on X1,X3,Y1,Y9a,Y9b,D7 per flow: ' . json_encode($life) . '; API_OVERUSE (access-scored: every call is scored) legit denials attributed to correlation NOT improved on: ' . ($apiNotImproved === [] ? 'none' : implode(', ', $apiNotImproved)) . '. A host that only ever calls checkOnly never reports an outcome: correlation cannot be evidence-qualified for it (documented limitation)', ['ownerDecision' => true]);
+    $gate($v, 'G13 API_OVERUSE (access-scored): #100 NAT churn improved', $v === 'EQN' ? 'FAIL' : ($apiNotImproved === [] ? 'PASS' : 'OWNER_DECISION_REQUIRED'), 'legit denials attributed to correlation S0->' . $v . ': ' . implode(', ', $apiRows) . '; NOT improved on: ' . ($apiNotImproved === [] ? 'none' : implode(', ', $apiNotImproved)) . ($apiNotImproved === [] ? '. The security cost of the volume rule is classified in G6 (API shapes).' : '. Every call is scored activity, so the evidence rule cannot discriminate'), ['ownerDecision' => $apiNotImproved !== []]);
+
+    // G17 check-only-only hosts
+    $pre = [];
+    foreach (['X1', 'X3', 'Y1', 'Y9a', 'Y9b', 'X2'] as $id) {
+        $a = $cell('S0', $id, 'login', 'pre');
+        $b = $cell($v, $id, 'login', 'pre');
+        if ($a !== null && $b !== null) {
+            $pre[] = "$id {$a['attackReachedVerification']}->{$b['attackReachedVerification']}/{$a['attackAttempts']}";
+        }
+    }
+    $gate($v, 'G17 check-only-only integrations keep correlation protection', 'NO_GO_SCOPED', 'NO-GO for this integration within the API/Redis constraints: a host that only calls checkOnly never reports an outcome, so no outcome-based evidence exists and S0 behaviour can only be restored by treating checkOnly itself as evidence (= S0, i.e. the original false positives). Attacker reach in the check-only flow S0->' . $v . ': ' . implode(', ', $pre), ['ownerDecision' => true]);
 
     // G14 cost
     $ops = [];
@@ -428,8 +437,10 @@ foreach ($candidates as $v) {
 
     // G15 indistinguishability
     $pairs = array_values(array_filter($A[$v]['a06_indistinguishability'] ?? [], static fn(array $r): bool => $r['s'] === 'A06.pair'));
-    $same = $pairs !== [] && count(array_filter($pairs, static fn(array $r): bool => $r['identicalTreatment'] === true)) === count($pairs);
-    $gate($v, 'G15 A06: attacker/legitimate pairs with identical inputs are treated identically (no pretence of separation)', $same ? 'PASS' : 'FAIL', count($pairs) . ' pairs, identical observable digests, identical decisions: ' . var_export($same, true));
+    $assertRows = array_values(array_filter($A[$v]['a06_indistinguishability'] ?? [], static fn(array $r): bool => isset($r['assert']) && str_starts_with($r['assert'], 'indistinguishable:')));
+    $same = count($pairs) === 4 && count(array_filter($pairs, static fn(array $r): bool => $r['identicalTreatment'] === true)) === 4;
+    $assertsOk = count($assertRows) === 4 && count(array_filter($assertRows, static fn(array $r): bool => $r['ok'] === true)) === 4;
+    $gate($v, 'G15 A06: attacker/legitimate pairs with identical inputs are treated identically (no pretence of separation)', $same && $assertsOk ? 'PASS' : 'FAIL', count($pairs) . ' pair rows (identical decisions: ' . var_export($same, true) . ') AND ' . count($assertRows) . ' indistinguishable assertions (all ok: ' . var_export($assertsOk, true) . '); both are required');
 }
 
 // G16 provenance and S0 baseline stability (not per candidate)
@@ -473,7 +484,8 @@ foreach ($candidates as $v) {
     $mine = array_values(array_filter($gates, static fn(array $g): bool => $g['variant'] === $v || $g['variant'] === 'ALL'));
     $by = array_count_values(array_column($mine, 'status'));
     $hard = ($by['FAIL'] ?? 0) > 0;
-    $verdict[$v] = $hard ? 'NO-GO' : (($by['OWNER_DECISION_REQUIRED'] ?? 0) > 0 || ($by['UNPROVEN'] ?? 0) > 0 ? 'CONDITIONAL — OWNER DECISION REQUIRED' : 'GO');
+    $scoped = ($by['NO_GO_SCOPED'] ?? 0) > 0;
+    $verdict[$v] = $hard ? 'NO-GO' : (($by['OWNER_DECISION_REQUIRED'] ?? 0) > 0 || ($by['UNPROVEN'] ?? 0) > 0 || $scoped ? 'CONDITIONAL — OWNER DECISION REQUIRED' . ($scoped ? ' — NOT A UNIFIED READY FIX (scoped NO-GO: check-only-only)' : '') : 'GO');
     $gate($v, 'VERDICT', $verdict[$v], json_encode($by));
 }
 
@@ -497,7 +509,7 @@ fclose($fh);
 $md = [];
 $md[] = '# Design & Proof Gate — summary (generated by `report.php`; do not edit by hand)';
 $md[] = '';
-$md[] = 'Every number below is read from `results/actual/*.jsonl` produced by `run.sh`. `S0` = unpatched repository runtime; `EQN`, `EQW`, `EQL` = isolated experimental runtimes (baseline + `patches/eq-candidates.patch`). **None of this is production code or an approved policy.**';
+$md[] = 'Every number below is read from `results/actual/*.jsonl` produced by `run.sh`. `S0` = unpatched repository runtime; `EQN`, `EQW`, `EQL`, `EQV` = isolated experimental runtimes (baseline + `patches/eq-candidates.patch`). **None of this is production code or an approved policy.**';
 $md[] = '';
 $md[] = '## 1. Variants';
 $md[] = '';
@@ -506,12 +518,13 @@ $md[] = '|---|---|';
 $md[] = '| S0 | Unpatched `EvaluationPipeline` at the pinned baseline. |';
 $md[] = '| EQN | *Rejected ablation.* Detection **and** enforcement only on policy-scored commands (a reported failure, or access scoring); nothing is observed or enforced at `checkOnly`. |';
 $md[] = '| EQW | *Alternative.* S0 detection on every command, unchanged. Enforcement only with **fresh scored evidence** (a fixed 60 s WATCH marker written by a scored command) in the detection scope — for every rule including the LOW (UA-only) dilution. |';
-$md[] = '| **EQL** | **Recommended base design.** EQW, except that the LOW-confidence (UA-only) cross-IP dilution is **advisory**: no state is written and nothing is enforced. |';
+$md[] = '| **EQL** | **Base design under evaluation (not adopted).** EQW, except that the LOW-confidence (UA-only) cross-IP dilution is **advisory**: no state is written and nothing is enforced. |';
+$md[] = '| EQV | *Bounded alternative for the API_OVERUSE shortfall.* EQL, except that for access-scored policies a call is evidence only when the K2/K3 volume score reaches the near-threshold level (L1 - 1) that §5.0 already uses for WATCH. |';
 $md[] = '';
 $md[] = '## 2. Gates (`OWNER_DECISION_REQUIRED` = a measured loss of protection that only the Owner can accept)';
 $md[] = '';
-$md[] = '| Gate | EQN | EQW | EQL |';
-$md[] = '|---|---|---|---|';
+$md[] = '| Gate | ' . implode(' | ', $candidates) . ' |';
+$md[] = '|---|' . str_repeat('---|', count($candidates));
 $ids = [];
 foreach ($gates as $g) {
     if ($g['variant'] !== 'ALL' && $g['gate'] !== 'VERDICT') {
@@ -526,7 +539,7 @@ foreach (array_keys($ids) as $gid) {
     }
     $md[] = "| $gid | " . implode(' | ', $cells) . ' |';
 }
-$md[] = '| **Verdict** | **' . $verdict['EQN'] . '** | **' . $verdict['EQW'] . '** | **' . $verdict['EQL'] . '** |';
+$md[] = '| **Verdict** | ' . implode(' | ', array_map(static fn(string $c): string => '**' . $verdict[$c] . '**', $candidates)) . ' |';
 foreach ($gates as $g) {
     if ($g['variant'] === 'ALL') {
         $md[] = '| ' . $g['gate'] . ' | ' . $g['status'] . ' (all variants) | | |';
@@ -554,8 +567,9 @@ $fmt = static function (?array $c, bool $attack): string {
 };
 $tableFor = static function (string $shape, string $flow, array $ids) use ($cell, $fmt, $classOf, $variants): array {
     $t = [];
-    $t[] = '| Stream | Class | S0 attacker reach | EQN | EQW | EQL | no-correlation control reach | S0 legit denied[by correlation] | EQN | EQW | EQL |';
-    $t[] = '|---|---|---|---|---|---|---|---|---|---|---|';
+    $names = implode(' | ', array_slice($variants, 1));
+    $t[] = "| Stream | Class | S0 attacker reach | $names | no-correlation control reach | S0 legit denied[by correlation] | $names |";
+    $t[] = '|---|---|---|' . str_repeat('---|', count($variants) - 1) . '---|---|' . str_repeat('---|', count($variants) - 1);
     foreach ($ids as $id) {
         $s0 = $cell('S0', $id, $shape, $flow);
         if ($s0 === null) {
@@ -627,8 +641,8 @@ $md[] = '## 4. Per-cell classification of attacker verification versus S0 (EQL, 
 $md[] = '';
 $md[] = 'Bound derived from the design, not fitted: S0 reach + one verification per 60 s block cycle over the stream span + 1.';
 $md[] = '';
-$md[] = '| Stream | Shape | S0 reach | EQL reach | design bound | no-correlation control | Class |';
-$md[] = '|---|---|---|---|---|---|---|';
+$md[] = '| Stream | Shape | S0 reach | EQL reach | design bound | no-correlation control | Class | share of S0 gain lost |';
+$md[] = '|---|---|---|---|---|---|---|---|';
 foreach ($attackIds as $id) {
     foreach ($shapesAll as $shape) {
         if ($cell('S0', $id, $shape, 'pre+out') === null) {
@@ -638,7 +652,7 @@ foreach ($attackIds as $id) {
         if ($k['class'] === 'equal-or-better' && $k['v'] === $k['s0']) {
             continue; // identical rows are summarised below
         }
-        $md[] = "| $id | $shape | {$k['s0']} | {$k['v']}/{$k['attempts']} | {$k['bound']} | {$k['ctl']} | {$k['class']} |";
+        $md[] = "| $id | $shape | {$k['s0']} | {$k['v']}/{$k['attempts']} | {$k['bound']} | {$k['ctl']} | {$k['class']} | {$k['lostPct']}% |";
     }
 }
 $md[] = '';
@@ -675,10 +689,29 @@ foreach (['L3', 'D1', 'D3', 'D4', 'X2', 'X7', 'X2L', 'X8', 'Y2c'] as $id) {
 $md[] = '';
 $md[] = 'Streams where `narrow` protects better than the no-correlation control: ' . ($narrowAdds === [] ? '**none**' : implode(', ', $narrowAdds)) . '. Legitimate denials by correlation under `narrow` (D1): ' . ($D7['narrow']['D1']['legitDeniedByCorrelation'] ?? '?') . ' of ' . ($D7['narrow']['D1']['legitAttempts'] ?? '?') . '; under `wide` (D1): ' . ($D7['wide']['D1']['legitDeniedByCorrelation'] ?? '?') . '; under `advisory`: ' . ($D7['advisory']['D1']['legitDeniedByCorrelation'] ?? '?') . '.';
 $md[] = '';
+$md[] = '## 4c. API_OVERUSE shortfall: S0 vs EQL vs EQV (bounded alternative; pre+out; reach = attacker attempts reaching verification, legit = denied[by correlation]/attempts; control = reach with correlation disabled)';
+$md[] = '';
+$md[] = '| Stream | Shape | control reach | S0 | EQL | EQV |';
+$md[] = '|---|---|---|---|---|---|';
+foreach (['api', 'api_custom'] as $shape) {
+    foreach (['L1', 'L2', 'D1', 'D2', 'X4', 'Y4e', 'X1', 'X3', 'Y7', 'D5', 'D3'] as $id) {
+        $s0c = $cell('S0', $id, $shape, 'pre+out');
+        if ($s0c === null) {
+            continue;
+        }
+        $line4 = "| $id | $shape | {$s0c['controlAttackReachedVerification']} |";
+        foreach (['S0', 'EQL', 'EQV'] as $v4) {
+            $c4 = $cell($v4, $id, $shape, 'pre+out');
+            $line4 .= ' ' . $c4['attackReachedVerification'] . '/' . $c4['attackAttempts'] . ' · ' . $c4['legitDenied'] . '[' . $c4['legitDeniedByCorrelation'] . ']/' . $c4['legitAttempts'] . ' |';
+        }
+        $md[] = $line4;
+    }
+}
+$md[] = '';
 $md[] = '## 5. Recovery, renewal and boundaries (D02, controlled clock)';
 $md[] = '';
-$md[] = '| Measurement | S0 | EQN | EQW | EQL |';
-$md[] = '|---|---|---|---|---|';
+$md[] = '| Measurement | S0 | EQN | EQW | EQL | EQV |';
+$md[] = '|---|---|---|---|---|---|';
 $line = static function (string $label, callable $f) use ($variants): string {
     $s = "| $label |";
     foreach ($variants as $v) {
@@ -704,8 +737,8 @@ $md[] = '';
 
 $md[] = '## 6. Redis / store cost (correlation-store API calls per command; the Redis adapter issues one atomic script per call)';
 $md[] = '';
-$md[] = '| Case | S0 | EQN | EQW | EQL |';
-$md[] = '|---|---|---|---|---|';
+$md[] = '| Case | S0 | EQN | EQW | EQL | EQV |';
+$md[] = '|---|---|---|---|---|---|';
 foreach (['legit-success-pre+out', 'legit-typo-pre+out', 'low-success-pre+out', 'three-failing-fingerprints-pre+out'] as $case) {
     $md[] = $line($case, function ($v) use ($A, $case) {
         foreach ($A[$v]['d04_state_bounds_ops'] ?? [] as $r) {
@@ -731,8 +764,8 @@ $md[] = '';
 if ($redisStatus !== 'RAN') {
     $md[] = 'The real-Redis stage did not run: every real-Redis claim is **UNPROVEN**.';
 } else {
-    $md[] = '| Check | S0 | EQN | EQW | EQL |';
-    $md[] = '|---|---|---|---|---|';
+    $md[] = '| Check | S0 | EQN | EQW | EQL | EQV |';
+    $md[] = '|---|---|---|---|---|---|';
     foreach (['R3: in every round' => 'R3 concurrent distinct members: K2 block in all 12 rounds', 'R4: 8 concurrent' => 'R4 8 concurrent duplicates: no block', 'R5:' => 'R5 marker counts exactly 8 writers', 'R2: every key' => 'R2 TTL on every key', 'R6: a lone legitimate' => 'R6 live recovery at 63 s (Redis clock)'] as $needle => $label) {
         $md[] = $line($label, function ($v) use ($assertOk, $needle) {
             $r = $assertOk($v, 'd05_redis', $needle);

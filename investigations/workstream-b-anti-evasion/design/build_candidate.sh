@@ -16,8 +16,8 @@ BASE_SHA=107b795d9454a89ea5f5752d6a7ccf7053a6e7e0
 TARGET=src/Service/EvaluationPipeline.php
 BASE_HASH=${DSG_TEST_EXPECT_HASH:-4b259d3397adf492d9767572141c9bdf5efc5744886bce63592ae9f36b95f4fc} # override: run.sh self-test only
 PATCH=${DSG_TEST_PATCH_FILE:-$here/patches/eq-candidates.patch}                                       # override: run.sh self-test only
-PATCH_SHA256=2e1e35c343d239080390e34caa765201e2d4a79657109ee296b67694d56a4baf
-TARGET_AFTER_SHA256=834a3d8fb58c9483f22b34688c8555e66527da259924df43259b8f0ee4539965
+PATCH_SHA256=62eafa5a34781da1ab934d4ecb8d924e6bfac27eb16040f3b08a281817ef1bb4
+TARGET_AFTER_SHA256=98d95cc97836066ea8e76cf8399a41ede457c1e3dca156fdaa05b1b3096813c4
 AFTER_PIN=${DSG_TEST_EXPECT_AFTER:-$TARGET_AFTER_SHA256} # override: run.sh self-test only
 SKIP_PIN=${DSG_TEST_SKIP_PIN:-0} # override: run.sh self-test only (lets a drifted patch reach `git apply`)
 [[ -f "$PATCH" ]] || { echo "PATCH MISSING: $PATCH" >&2; exit 5; }

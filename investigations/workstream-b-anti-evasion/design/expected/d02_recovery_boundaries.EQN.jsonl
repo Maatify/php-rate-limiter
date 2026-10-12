@@ -1,4 +1,4 @@
-{"s":"D02.provenance","variant":"EQN","level":"CANDIDATE_EXPERIMENTAL_RUNTIME","baseSha":"107b795d9454a89ea5f5752d6a7ccf7053a6e7e0","pipelineSha256":"834a3d8fb58c9483f22b34688c8555e66527da259924df43259b8f0ee4539965","patched":true}
+{"s":"D02.provenance","variant":"EQN","level":"CANDIDATE_EXPERIMENTAL_RUNTIME","baseSha":"107b795d9454a89ea5f5752d6a7ccf7053a6e7e0","pipelineSha256":"98d95cc97836066ea8e76cf8399a41ede457c1e3dca156fdaa05b1b3096813c4","patched":true}
 {"s":"D02.B1.lone-legit-after-trigger","variant":"EQN","attackSteps":["check:A>fail:A","check:A>fail:A","check:A>fail:H2/60"],"legitRuns":"B3-61,a62-720","legitFirstAllowedT":62,"blockIssuances":1}
 {"s":"D02","variant":"EQN","assert":"B1 recovery: a lone legitimate client is allowed no later than t=63 (block ends at 62; no history-only re-block)","ok":true,"firstAllowed":62}
 {"s":"D02","variant":"EQN","assert":"B1 the trigger is enforced at the third failing member (negative control: failing evidence exists)","ok":true,"steps":"check:A>fail:H2/60"}
@@ -35,4 +35,6 @@
 {"s":"D02","variant":"EQN","assert":"B7: one colleague typo costs the NAT at most one 60 s block; the following successes are never re-blocked (last denial <= t=160)","ok":false,"lastDeniedT":null}
 {"s":"D02.B8.sustained-leak-30min","variant":"EQN","attempts":1801,"reachedVerification":34,"blockIssuances":30}
 {"s":"D02","variant":"EQN","assert":"B8 sustained leak is bounded: verifications reaching the protected operation <= 3 + ceil(1800/62) over 30 minutes","ok":false,"reached":34}
+{"s":"D02.B10.evidence-window-boundary","variant":"EQN","triggerBySuccessAtPlusK_enforced":{"0":false,"59":false,"60":false,"61":false,"119":false}}
+{"s":"D02.B11.window-not-sliding","variant":"EQN","duplicateFailureAt159_triggerEnforcedAt":{"159":false,"160":false}}
 {"s":"D02","variant":"EQN","assert":"B9: every B5 probe produced a row (negative control: probes reached the pipeline)","ok":true,"probes":300}

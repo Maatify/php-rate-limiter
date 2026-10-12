@@ -43,7 +43,7 @@ $new->at(2);
 $step = $new->attempt($new->ctx(NAT, CHROME, null, $fpC('C')), 'out', 'ok')['steps'];
 $blocked = str_contains($step, 'H2');
 emit('D03.R2.marker-continuity', ['variant' => wsbVariant(), 'step' => $step, 'thirdBlocked' => $blocked]);
-if (in_array(wsbVariant(), ['EQW', 'EQL'], true)) {
+if (in_array(wsbVariant(), ['EQW', 'EQL', 'EQV'], true)) {
     WsbAsserts::check('D03', 'R2: evidence written under the previous generation still qualifies the trigger after rotation (previous marker is read, never a current-only reset)', $blocked, ['step' => $step]);
 }
 
@@ -165,7 +165,7 @@ foreach (['distinct' => 'F1a.churn-set-write', 'marker-write' => 'F1b.marker-wri
         $outcome = 'BackendFailureException';
     }
     // S0 has no marker; the distinct-set write exists in every variant.
-    $applicable = $mode === 'distinct' || in_array(wsbVariant(), ['EQW', 'EQL'], true);
+    $applicable = $mode === 'distinct' || in_array(wsbVariant(), ['EQW', 'EQL', 'EQV'], true);
     emit('D03.' . $name, ['variant' => wsbVariant(), 'applicable' => $applicable, 'result' => $outcome, 'storeThrows' => $throwing->thrown]);
     if ($applicable) {
         WsbAsserts::check('D03', "$name: a backend failure on this path propagates (never ALLOW / never silent skip)", $outcome === 'BackendFailureException', ['result' => $outcome]);
