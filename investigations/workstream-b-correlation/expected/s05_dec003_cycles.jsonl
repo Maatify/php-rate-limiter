@@ -1,0 +1,3 @@
+{"s":"F04.dec003.login","hardBlockWritesOnK2":115,"newCyclesRecorded":115,"maxCycleCountSeen":115,"pauseActivations":12,"elapsedPausedSecondsOver7200s":6780,"activePauseUntilOffset":7620,"otherKeysWithCycles":0}
+{"s":"F04.dec003.api","hardBlockWritesOnK2":113,"newCyclesRecorded":113,"maxCycleCountSeen":113,"pauseActivations":12,"elapsedPausedSecondsOver7200s":6840,"activePauseUntilOffset":7560,"otherKeysWithCycles":0}
+{"s":"F04.dec003.single-pair","cyclesOnK2":1}
