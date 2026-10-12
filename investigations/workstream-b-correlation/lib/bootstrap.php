@@ -231,7 +231,13 @@ final class Lab
     }
 
     /**
-     * One LOGICAL attempt as a host may integrate it. $flow: 'pre+out' | 'pre' | 'out'.
+     * One LOGICAL attempt as a host may integrate it.
+     *
+     * $flow: 'pre+out'              host-realistic: checkOnly, then record the outcome ONLY if checkOnly allowed
+     *        'pre+out-unconditional' INVALID CONTROL: records even after a denial (the pipeline then returns early on the
+     *                                active block, so state is unchanged; kept only to show that control explicitly)
+     *        'pre'                  checkOnly only
+     *        'out'                  record-only (recordSuccess / recordFailure only)
      * $outcome: 'ok' | 'fail' (ignored by flow 'pre').
      *
      * @return array<string, mixed>
@@ -242,7 +248,8 @@ final class Lab
         if ($flow !== 'out') {
             $steps[] = $this->run($c, 'check');
         }
-        if ($flow !== 'pre') {
+        $denied = $steps !== [] && $steps[0]['d'] !== 'A';
+        if ($flow !== 'pre' && ! ($denied && $flow === 'pre+out')) {
             $steps[] = $this->run($c, $outcome);
         }
         $fmt = static fn(array $s): string => $s['cmd'] . ':' . ($s['d'] === 'A' ? 'A' : $s['d'] . $s['lvl'] . '/' . $s['retry']);

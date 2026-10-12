@@ -1,0 +1,2 @@
+{"s":"F103-02.denied-record-only","model":"PW","timeline":["0:A","10:A","20:H60","25:H55","35:H45","45:H35","55:H25","65:H15","75:H5","80:A","85:A"],"witnessWritesWhileDenied":0}
+{"s":"F103-02.denied-record-only","model":"PW-legacy-order(REJECTED)","timeline":["0:A","10:A","20:H60","25:H55","35:H45","45:H35","55:H25","65:H15","75:H5","80:H60","85:H55"],"witnessWritesWhileDenied":7}

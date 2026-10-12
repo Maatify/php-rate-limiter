@@ -8,6 +8,18 @@ implements a policy. Everything under `investigations/workstream-b-correlation/`
 Related: [#97](https://github.com/Maatify/php-rate-limiter/issues/97), [#100](https://github.com/Maatify/php-rate-limiter/issues/100).
 Independent of #98 and #99.
 
+## 0. Revision 2 — response to the Direct Lead Review of `37c3558` (F103-01 … F103-05)
+
+| Finding | Correction (files) | Evidence |
+|---|---|---|
+| **F103-01** unsafe `FLUSHDB` | `scenarios/s08_redis_spotcheck.php` no longer reads `REDIS_HOST`/`REDIS_PORT`, never issues `FLUSHDB`/`FLUSHALL`/`CONFIG SET`, connects to `127.0.0.1` only, and uses a separate key namespace per scenario. It proceeds only if `run.sh` proves ownership: the server's `process_id` equals the pid of the instance `run.sh` started, its `dir` equals the directory `run.sh` created, and it is empty (`DBSIZE 0`). `run.sh` starts its own instances with `--bind 127.0.0.1 --protected-mode yes`, on a free port. | `run.sh` stage `s08_redis_safety`: starts a **decoy** Redis holding a sentinel key and proves that (1) a foreign server selected via inherited `REDIS_HOST/REDIS_PORT`, (2) a mismatched pid, (3) a mismatched dir and (4) a non-empty server with matching pid/dir are all **refused (exit 3)** and the sentinel stays intact; the real run then executes with a hostile `REDIS_HOST=198.51.100.1` that is ignored. Output: `s08_redis_safety PASS (… rc=3,3,3,3; decoy sentinel intact)`. |
+| **F103-02** witnesses before the active-block check | `model/PolicyModel.php::observeCommand()` now checks active K2/K3 blocks **first** and returns before any witness/ratio write, exactly like `EvaluationPipeline::process()`. | New `model/regression.php` → `expected/model_regression.jsonl`: record-only host, attacker keeps failing during the 60 s block, then only a lone success after expiry. Correct model: `80:A, 85:A`, 0 witness writes while denied. The rejected legacy ordering (kept behind a flag) writes 7 witnesses from denied requests and **re-blocks at 80**. Matrix goldens regenerated. |
+| **F103-03** boolean-only crosscheck | `model/crosscheck.php` now compares, for **14 streams × 3 flows (pre+out, record-only, checkOnly-only) = 42 runs / 4,683 events**: per-step decision, block level and retry-after, `reachedVerification`, the persisted **K2 and K3 remaining seconds** for each event's keys, and the total number of persisted hard-block issuances against the real `HardBlockCycleStoreInterface` log (2,640 cycles). Gate in `run.sh`: every counter must be 0. | `expected/model_crosscheck.jsonl`: **0 mismatches** on all of the above. **Not compared** (opaque or outside the model): WATCH counters, distinct-set contents, scores, K1/K4/K5 state, winning `source`. The equivalence claim is therefore limited to S0 on those observables and these fixtures; **A1/A2/P/PW/P2/P0 remain unverified offline predictions.** |
+| **F103-04** harness flow mismatch | `Lab::attempt()` now uses host-realistic semantics for `pre+out`: the outcome is recorded **only if `checkOnly` allowed**, like `replayStream()`. The unconditional double call survives only as the explicitly named **`pre+out-unconditional` — INVALID CONTROL** flow (extra rows in `s04`). Independent `pre` and `out` flows are kept. | All goldens regenerated; headline numbers unchanged (`104/121`, `127/134`, `63/67`, `64/67`, all `s04` first-block positions and persisted K2 state identical to the previous goldens) because a denied request returns before any mutation — only the displayed `steps` strings and operation counters changed. |
+| **F103-05** unbounded model state | The model's witness structures are now explicitly typed. **P, P0, A2 = IDEALIZED-UNBOUNDED** timestamped witnesses (labelled in every `F05.matrix` row, field `state`). **PW and P2 = bounded window model**: failure witnesses in 60 s window sets capped at 3 members per (scope, window), 10 windows kept, older windows evicted; ratio state = two integers per UA per window plus a failing-K1 set capped at 6. | `peakBoundedStateEntries` is now reported: PW peaks at 10–54 entries on benign/single-K2 streams but **230 (X2), 232 (X2L), 320 (X3), 193 (X8)** where an attacker creates many distinct K2 scopes: per-scope caps hold, the **total** scales with distinct anchors. P2 shows 17 on X2 only because it denies the attacker (denied requests write nothing). No claim is made that witness limits are implemented, nor that rotation/ephemeral behaviour of witness state works — neither is modelled. |
+
+**Additional correction found while re-running (not a reviewer finding):** the Redis stage intermittently failed (`invalid snapshot`) when a wall-clock second ticked during the run, because it paired a frozen PHP clock with Redis-owned time (DEC-016). The stage's clock now reads `TIME` from the same Redis instance, `run.sh` waits for each instance to exit before starting the next (a dying instance removes its pidfile) and retries on a fresh owned instance. Verified: 5 consecutive full runs with `RUN_PHPUNIT=1`, all stages PASS, no leftover Redis processes.
+
 ## 1. Provenance (B-F01)
 
 | Item | Value |
@@ -18,7 +30,7 @@ Independent of #98 and #99.
 | Files changed between `7b6a23d` and `1668a0c` | `CHANGELOG.md`, `docs/FAILURE_SEMANTICS.md`, `docs/guides/USAGE_GUIDE.md`, `src/Service/LocalFallbackLimiter.php`, `src/Service/RateLimiterEngine.php`, `tests/System/RateLimiterEngineFallback*Test.php` — **no correlation, identity, key, store or DECISION_MATRIX/DEVICE_FINGERPRINT/KEY_STRATEGY file** |
 | Integration of moved `main` | Only after comparing the touched files above; this branch had no commits, so it was fast-forwarded (`git merge --ff-only`) — no merge commit, no rebase of any work. The harness drives `EvaluationPipeline` directly (the engine only adds circuit-breaker/fallback, i.e. #99 scope). |
 | Runtime | PHP 8.5.9, Composer 2.10.2, PHPUnit 11.5.57 (see `results/actual/versions.txt` after a run) |
-| Result across artifacts | **All 10 deterministic stages are byte-identical** on `v1.0.0-rc.3`, `7b6a23d` and `1668a0c` (command below). |
+| Result across artifacts | **All 11 deterministic stages are byte-identical** on `v1.0.0-rc.3`, `7b6a23d` and `1668a0c` (command below). |
 
 ```bash
 # from the repository root
@@ -30,8 +42,7 @@ RUN_PHPUNIT=1 bash investigations/workstream-b-correlation/run.sh         # + th
 UPDATE=1 bash investigations/workstream-b-correlation/run.sh              # regenerate expected/ (review the git diff!)
 ```
 
-Real-Redis stage: `run.sh` starts a **dedicated** `redis-server` on `REDIS_PORT` (default 6399) and refuses to run if the port is
-in use; it never touches another instance. `REDIS_SPOTCHECK=0` skips it. A long PHPUnit/CI run may be in progress on a machine —
+Real-Redis stage: `run.sh` starts its **own** `redis-server` (and a decoy for the safety proof) on loopback, on the first free port from `REDIS_PORT` (default 6399); the PHP stage ignores `REDIS_HOST`/`REDIS_PORT` and verifies ownership before touching anything (§0, F103-01). `REDIS_SPOTCHECK=0` skips it. A long PHPUnit/CI run may be in progress on a machine —
 `run.sh` never invokes the whole suite and never kills other processes.
 
 ## 2. Layout
@@ -43,7 +54,8 @@ lib/replay.php               host-realistic replay of fixture streams through th
 fixtures/streams.php         deterministic event streams L1–L4, X1–X8 shared by harness and model
 scenarios/s01..s08           machine-readable JSONL scenario runners (below)
 model/PolicyModel.php        OFFLINE model: S0 (current §5.3) + alternatives A1/A2/P/PW/P2/P0 + observation mechanisms
-model/crosscheck.php         S0 model vs real pipeline, event-by-event (gate: 0 mismatches)
+model/crosscheck.php         S0 model vs real pipeline: per step/level/retry, reached flag, K2/K3 remaining, cycle count (gate: all 0)
+model/regression.php         F103-02 regression (denied record-only requests must not feed witnesses)
 model/run_matrix.php         attack-vs-legitimate policy matrix (B-F05)
 model/mechanisms.php         "once per logical attempt" mechanisms × host flows (B-F02)
 expected/*.jsonl             golden machine outputs (diffed by run.sh)
@@ -67,7 +79,7 @@ expected/*.jsonl             golden machine outputs (diffed by run.sh)
 - Harness/model/fixtures/commands: this directory. Reported numbers reproduced by the **real pipeline** (`expected/s01_dilution.jsonl`, `s02_churn.jsonl`):
   - `104/121` — `C1.every-20s` · `127/134` — `B7.two-legit-clients-4000s` (A `63/67` + B `64/67`).
   - `51/81` and `11` — offline model `P0` rows of `expected/model_matrix.jsonl` (X4 / X1). The model is validated against the real pipeline:
-    `expected/model_crosscheck.jsonl` shows **0 mismatches in 14 streams (1,561 events)**, so S0 in the model is the runtime, not an approximation.
+    `expected/model_crosscheck.jsonl` shows **0 mismatches** on the observables listed in §0 (F103-03) over 42 runs / 4,683 events. That limits the claim to S0 on those observables; it is not a proof for any alternative policy.
 - **The 45 tests** (`CorrelationBehaviorTest`, `BoundedCorrelationCoverageTest`, `Ipv6AdaptiveAggregationTest`): `RUN_PHPUNIT=1` → `tests=45 assertions=749 failures=0 errors=0`.
   Limits (counted with `grep`, not assumed): `CorrelationBehaviorTest` and `BoundedCorrelationCoverageTest` use **`checkOnly` only** (0 `recordSuccess`, 0 `recordFailure`);
   `Ipv6AdaptiveAggregationTest` has 1 `recordSuccess`, 0 `recordFailure`; none exercises benign independent clients, typos, record-only hosts,
@@ -96,7 +108,7 @@ Independent flows × policies measured on the **real pipeline**: Login, OTP, `Ap
   Therefore the only usable statistic is *distinct failing members*, not "a failure happened".
 - **Proposed witness state (not accepted):** (a) per K2: bounded set of failing fingerprint HMACs, cap 3, TTL 600; (b) per fingerprint: bounded set of failing K1 HMACs, cap 3, TTL 600 — both via the
   existing `addDistinctBounded`/rotation capabilities, opaque HMAC members, policy+env domain-separated; (c) latch: WATCH-style counter. **Freshness "failure at/after block expiry" cannot be expressed with fixed-TTL sets**
-  (no per-member timestamps). Two options: window-keyed sets (model `PW`, 60 s windows × 10, conservative by ≤ 60 s at the boundary) or a **new store capability** (contract decision). `P` (timestamps) and `PW` give identical numbers on every fixture.
+  (no per-member timestamps). Two options: window-keyed sets (model `PW`, 60 s windows × 10, conservative by ≤ 60 s at the boundary) or a **new store capability** (contract decision). `P` (idealized timestamps) and `PW` (bounded windows) give identical outputs on every fixture, but only `PW` has any claim to boundedness (§0, F103-05).
 - **Ordering at the boundary:** a block is active iff `expiresAt > now` (measured: `F04.block-expiry-boundary` t=79 blocked `+1s`, t=80 re-issued). A witness in the same 60 s window as expiry counts as fresh (PW). Not evidenced on the real runtime — specification only.
 - **Current + previous / ephemeral:** witness sets would need the same coordinated bridge as churn (no Cartesian pairs); overflow members keep K2 witnesses but never create K3/K5.
   The real runtime evidence available today is only for the *existing* sets (§4.4); witness-set rotation/ephemeral behaviour is **UNPROVEN** until implemented.
@@ -108,7 +120,7 @@ Independent flows × policies measured on the **real pipeline**: Login, OTP, `Ap
   X7 evasion — padding each failure with two successful logins on the attacker's own account drops detection from `115/121` to **`0/121`**. P2 is both weaponizable and evadable ⇒ **not accepted by default**.
 
 ### 4.4 B-F04 — dependency/correctness proofs (`scenarios/s03_recovery_boundaries.php`, `s05_dec003_cycles.php`, `s06_scope_rotation_caps.php`, `s08_redis_spotcheck.php`)
-- **DEC-003 measured** (every persisted correlation block goes through `blockWithCycleTracking`): two legitimate clients behind one NAT for 2 h →
+- **DEC-003 measured** (every persisted correlation block goes through `blockWithCycleTracking`; host-realistic skip-on-denial flow): two legitimate clients behind one NAT for 2 h →
   **115 K2 cycles, 12 decay-pause activations, 6,780 of 7,200 s (94 %) of K2 decay paused** (Login); API_OVERUSE: 113 / 12 / 6,840 s. Only K2 is affected (other keys: 0). A single genuine trigger = 1 cycle.
 - **Exact boundaries** (fixed TTL from creation, not sliding): block `t=79 +1s`, `t=80` re-issue; distinct set `t=599` re-block, **`t=600` allowed**; WATCH `1809` blocked, **`1810` allowed**;
   first unblocked second for a lone legitimate client after the trigger: **621**; fresh independent pair at 700/710 is convicted at 710 by the stale WATCH.
@@ -117,7 +129,7 @@ Independent flows × policies measured on the **real pipeline**: Login, OTP, `Ap
 - **Rotation:** none / outer-only / fingerprint-only / both: identical decisions; a pair split across an outer-key rotation (A under old secret, B under new + previous) blocks at B with set sizes ≤ 1 (bridge bounded).
 - **Caps / bounded state:** 1 fingerprint × 600 IPs → largest set 6 (cap 6); 1 K2 × 600 fingerprints → 3 (cap 3); account/IP device caps and ephemeral overflow as in `F04.ephemeral.overflow-then-rotation` (K2 churn still fires; no K3/K5 for overflow).
   **Caveat (measured, not hidden):** 600 distinct requests created 3,600 sets (each ≤ cap, TTL ≤ 1800 s): state is bounded **per scope** and by TTL, but the *number* of scopes scales with distinct anchors; a witness design adds more scopes per request and must be sized, not assumed free.
-- **Real Redis** (`expected/s08_redis_spotcheck.jsonl`; dedicated instance, immediate sequences only because Redis owns time — DEC-016): churn A/B/A, LOW dilution (5th client blocked at `recordSuccess`),
+- **Real Redis** (`expected/s08_redis_spotcheck.jsonl`; ownership-verified instance, immediate sequences only because Redis owns time — DEC-016): churn A/B/A, LOW dilution (5th client blocked at `recordSuccess`),
   **record-only** LOW dilution (6th client blocked), largest Redis set `SCARD = 6`, TTL classes `600/900/1200/1800`. Matches the reference stores.
 
 ### 4.5 B-F05 — security trade-off matrix (`expected/model_matrix.jsonl`, `expected/s07_compensation.jsonl`)

@@ -10,12 +10,13 @@ require dirname(__DIR__) . '/lib/bootstrap.php';
 function flowsFor(string $policy): array
 {
     if ($policy === 'api' || $policy === 'api_custom') {
-        return [['pre+out(ok)', 'pre+out', 'ok'], ['pre-only', 'pre', 'ok'], ['recordSuccess-only', 'out', 'ok']];
+        return [['pre+out(ok)', 'pre+out', 'ok'], ['INVALID-CONTROL pre+out-unconditional(ok)', 'pre+out-unconditional', 'ok'], ['pre-only', 'pre', 'ok'], ['recordSuccess-only', 'out', 'ok']];
     }
 
     return [
         ['pre+out(ok)', 'pre+out', 'ok'],
         ['pre+out(fail)', 'pre+out', 'fail'],
+        ['INVALID-CONTROL pre+out-unconditional(ok)', 'pre+out-unconditional', 'ok'],
         ['pre-only', 'pre', 'ok'],
         ['recordSuccess-only', 'out', 'ok'],
         ['recordFailure-only', 'out', 'fail'],
