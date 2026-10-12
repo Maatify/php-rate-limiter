@@ -1,0 +1,31 @@
+{"s":"D02.provenance","variant":"S0","level":"S0_RUNTIME_OBSERVED","baseSha":"107b795d9454a89ea5f5752d6a7ccf7053a6e7e0","pipelineSha256":"4b259d3397adf492d9767572141c9bdf5efc5744886bce63592ae9f36b95f4fc","patched":false}
+{"s":"D02.B1.lone-legit-after-trigger","variant":"S0","attackSteps":["check:A>fail:A","check:A>fail:H2/60","check:H2/59"],"legitRuns":"B3-600,a601-720","legitFirstAllowedT":601,"blockIssuances":10}
+{"s":"D02","variant":"S0","assert":"S0 B1 recovery: a lone legitimate client is first allowed at t=601 (stale 600 s set; block 60 s) — the #104 published boundary","ok":true,"firstAllowed":601}
+{"s":"D02","variant":"S0","assert":"B1 the trigger is enforced at the third failing member (negative control: failing evidence exists)","ok":true,"steps":"check:H2/59"}
+{"s":"D02.B2.set-ttl-boundary","variant":"S0","flow":"pre+out","f3At":599,"f3Outcome":"fail","f3Blocked":true,"step":"check:H2/60"}
+{"s":"D02.B2.set-ttl-boundary","variant":"S0","flow":"pre+out","f3At":599,"f3Outcome":"ok","f3Blocked":true,"step":"check:H2/60"}
+{"s":"D02.B2.set-ttl-boundary","variant":"S0","flow":"pre+out","f3At":600,"f3Outcome":"fail","f3Blocked":false,"step":"check:A>fail:A"}
+{"s":"D02.B2.set-ttl-boundary","variant":"S0","flow":"pre+out","f3At":600,"f3Outcome":"ok","f3Blocked":false,"step":"check:A>ok:A"}
+{"s":"D02.B2.set-ttl-boundary","variant":"S0","flow":"out","f3At":599,"f3Outcome":"fail","f3Blocked":true,"step":"fail:H2/60"}
+{"s":"D02.B2.set-ttl-boundary","variant":"S0","flow":"out","f3At":599,"f3Outcome":"ok","f3Blocked":true,"step":"ok:H2/60"}
+{"s":"D02.B2.set-ttl-boundary","variant":"S0","flow":"out","f3At":600,"f3Outcome":"fail","f3Blocked":false,"step":"fail:A"}
+{"s":"D02.B2.set-ttl-boundary","variant":"S0","flow":"out","f3At":600,"f3Outcome":"ok","f3Blocked":false,"step":"ok:A"}
+{"s":"D02.B3.watch-boundary","variant":"S0","flow":"pre+out","secondPairEndsAt":1800,"blockedAtSecondPairEnd":true,"step":"check:H2/60"}
+{"s":"D02","variant":"S0","assert":"B3 pre+out: the N-1 WATCH boundary equals the S0 behaviour (second pair ending at 1800 enforced)","ok":true,"blocked":true}
+{"s":"D02.B3.watch-boundary","variant":"S0","flow":"pre+out","secondPairEndsAt":1801,"blockedAtSecondPairEnd":true,"step":"check:A>fail:H2/60"}
+{"s":"D02","variant":"S0","assert":"B3 pre+out: the N-1 WATCH boundary equals the S0 behaviour (second pair ending at 1801 enforced)","ok":true,"blocked":true}
+{"s":"D02.B3.watch-boundary","variant":"S0","flow":"out","secondPairEndsAt":1800,"blockedAtSecondPairEnd":true,"step":"fail:H2/60"}
+{"s":"D02","variant":"S0","assert":"B3 out: the N-1 WATCH boundary equals the S0 behaviour (second pair ending at 1800 enforced)","ok":true,"blocked":true}
+{"s":"D02.B3.watch-boundary","variant":"S0","flow":"out","secondPairEndsAt":1801,"blockedAtSecondPairEnd":false,"step":"fail:A"}
+{"s":"D02","variant":"S0","assert":"B3 out: the N-1 WATCH boundary equals the S0 behaviour (second pair ending at 1801 not enforced)","ok":true,"blocked":false}
+{"s":"D02.B4.persistent-attacker-reissue","variant":"S0","attackerRuns":"a0-0,B1-130","blockIssuances":3,"attackerReached":2}
+{"s":"D02.B5.single-seed-then-silence","variant":"S0","legitDenied":120,"legitAttempts":300,"lastLegitDenialT":600,"legitRuns":"B5-600,a605-1500","blockIssuances":10}
+{"s":"D02","variant":"S0","assert":"S0 B5 history-only re-block: one seed burst denies a lone legitimate client until the 600 s set expires (last denial = 600)","ok":true,"lastLegitDenialT":600}
+{"s":"D02.B6.evidence-boundary","variant":"S0","failingMemberStep":"check:H2/60","probeBlockedAtPlusK":{"1":true,"30":true,"59":true,"60":true,"61":true,"120":true}}
+{"s":"D02","variant":"S0","assert":"S0 B6: the success-only fourth member trigger is enforced by S0 history (every probe up to +120 is denied or the set expired)","ok":true,"probes":{"1":true,"30":true,"59":true,"60":true,"61":true,"120":true}}
+{"s":"D02.B7.single-typo-on-stale-set","variant":"S0","legitDenied":83,"attempts":84,"firstDeniedT":1,"lastDeniedT":500,"runs":"a0-0,B1-500"}
+{"s":"D02.B8.sustained-leak-30min","variant":"S0","attempts":1801,"reachedVerification":4,"blockIssuances":30}
+{"s":"D02.B10.evidence-window-boundary","variant":"S0","triggerBySuccessAtPlusK_enforced":{"0":true,"59":true,"60":true,"61":true,"119":true}}
+{"s":"D02","variant":"S0","assert":"S0 B10: history alone enforces the same trigger at every offset up to the 600 s set expiry","ok":true,"enforced":{"0":true,"59":true,"60":true,"61":true,"119":true}}
+{"s":"D02.B11.window-not-sliding","variant":"S0","duplicateFailureAt159_triggerEnforcedAt":{"159":true,"160":true}}
+{"s":"D02","variant":"S0","assert":"B9: every B5 probe produced a row (negative control: probes reached the pipeline)","ok":true,"probes":300}

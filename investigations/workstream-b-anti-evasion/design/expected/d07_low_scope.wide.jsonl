@@ -1,0 +1,10 @@
+{"s":"D07.provenance","variant":"EQL","level":"CANDIDATE_EXPERIMENTAL_RUNTIME","baseSha":"107b795d9454a89ea5f5752d6a7ccf7053a6e7e0","pipelineSha256":"98d95cc97836066ea8e76cf8399a41ede457c1e3dca156fdaa05b1b3096813c4","patched":true}
+{"s":"D07.option","option":"wide","stream":"L3","class":"benign","attackReach":0,"attackAttempts":0,"controlReach":0,"legitDenied":13,"legitDeniedByCorrelation":13,"legitAttempts":121}
+{"s":"D07.option","option":"wide","stream":"D1","class":"benign","attackReach":0,"attackAttempts":0,"controlReach":0,"legitDenied":538,"legitDeniedByCorrelation":538,"legitAttempts":600}
+{"s":"D07.option","option":"wide","stream":"D3","class":"both","attackReach":1,"attackAttempts":200,"controlReach":32,"legitDenied":550,"legitDeniedByCorrelation":550,"legitAttempts":600}
+{"s":"D07.option","option":"wide","stream":"D4","class":"both","attackReach":0,"attackAttempts":12,"controlReach":4,"legitDenied":538,"legitDeniedByCorrelation":538,"legitAttempts":600}
+{"s":"D07.option","option":"wide","stream":"X2","class":"evasion","attackReach":15,"attackAttempts":121,"controlReach":121,"legitDenied":0,"legitDeniedByCorrelation":0,"legitAttempts":0}
+{"s":"D07.option","option":"wide","stream":"X7","class":"evasion","attackReach":15,"attackAttempts":121,"controlReach":121,"legitDenied":0,"legitDeniedByCorrelation":0,"legitAttempts":0}
+{"s":"D07.option","option":"wide","stream":"X2L","class":"both","attackReach":14,"attackAttempts":121,"controlReach":121,"legitDenied":29,"legitDeniedByCorrelation":29,"legitAttempts":30}
+{"s":"D07.option","option":"wide","stream":"X8","class":"both","attackReach":7,"attackAttempts":151,"controlReach":32,"legitDenied":29,"legitDeniedByCorrelation":29,"legitAttempts":50}
+{"s":"D07.option","option":"wide","stream":"Y2c","class":"evasion","attackReach":18,"attackAttempts":20,"controlReach":20,"legitDenied":0,"legitDeniedByCorrelation":0,"legitAttempts":0}

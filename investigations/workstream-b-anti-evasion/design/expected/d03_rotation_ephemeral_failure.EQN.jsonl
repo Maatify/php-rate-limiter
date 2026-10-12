@@ -1,0 +1,16 @@
+{"s":"D03.provenance","variant":"EQN","level":"CANDIDATE_EXPERIMENTAL_RUNTIME","baseSha":"107b795d9454a89ea5f5752d6a7ccf7053a6e7e0","pipelineSha256":"98d95cc97836066ea8e76cf8399a41ede457c1e3dca156fdaa05b1b3096813c4","patched":true}
+{"s":"D03.R1.rotation-failing-pair-then-third","variant":"EQN","steps":["fail:A","fail:A","fail:H2/60"],"thirdBlocked":true}
+{"s":"D03","variant":"EQN","assert":"R1: the failing pair split across a key rotation is still enforced at the third failing member (set continuity)","ok":true,"steps":["fail:A","fail:A","fail:H2/60"]}
+{"s":"D03.R2.marker-continuity","variant":"EQN","step":"ok:A","thirdBlocked":false}
+{"s":"D03.R3.rotation-no-evidence","variant":"EQN","step":"ok:A","thirdBlocked":false}
+{"s":"D03","variant":"EQN","assert":"R3: three SUCCESSFUL members across a rotation are not enforced (no evidence in either generation)","ok":true,"step":"ok:A"}
+{"s":"D03.R4.block-continuity","variant":"EQN","blockedAfterRotation":true,"step":"check:H2/52"}
+{"s":"D03","variant":"EQN","assert":"R4: a persisted K2 block survives the rotation","ok":true,"step":"check:H2/52"}
+{"s":"D03.E1.ephemeral-overflow","variant":"EQN","attempts":["fail:A []","fail:S1/1200 {\"K4\":\"L1@+15s\"}","fail:H2/60 {\"K2\":\"L2@+60s\",\"K4\":\"L2@+60s\"}","fail:H2/55 {\"K2\":\"L2@+55s\",\"K4\":\"L2@+55s\"}"]}
+{"s":"D03","variant":"EQN","assert":"E1: ephemeral overflow requests still feed the bounded K2 churn signal and are enforced at the third failing member","ok":true,"attempts":["fail:A []","fail:S1/1200 {\"K4\":\"L1@+15s\"}","fail:H2/60 {\"K2\":\"L2@+60s\",\"K4\":\"L2@+60s\"}","fail:H2/55 {\"K2\":\"L2@+55s\",\"K4\":\"L2@+55s\"}"]}
+{"s":"D03.F1a.churn-set-write","variant":"EQN","applicable":true,"result":"BackendFailureException","storeThrows":1}
+{"s":"D03","variant":"EQN","assert":"F1a.churn-set-write: a backend failure on this path propagates (never ALLOW / never silent skip)","ok":true,"result":"BackendFailureException"}
+{"s":"D03.F1b.marker-write","variant":"EQN","applicable":false,"result":"no-exception","storeThrows":0}
+{"s":"D03.F1c.marker-read","variant":"EQN","applicable":false,"result":"no-exception","storeThrows":0}
+{"s":"D03.C1.custom-store-minimal-capabilities","variant":"EQN","storeInterfaces":["BoundedCorrelationRotationStoreInterface","BoundedCorrelationStoreInterface","CorrelationRotationStoreInterface","CorrelationStoreInterface"],"steps":["A","A","H2"],"exception":null,"snapshotCapabilityPresent":false}
+{"s":"D03","variant":"EQN","assert":"C1: the variant runs on a custom store that exposes ONLY the baseline non-distributed capabilities (no snapshot, no new method) without error","ok":true,"exception":null}

@@ -1,0 +1,2 @@
+# The repository ignores *.patch globally; this ONE file is the committed design-proof input.
+!eq-candidates.patch

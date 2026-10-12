@@ -1,0 +1,15 @@
+{"s":"D03.provenance","variant":"S0","level":"S0_RUNTIME_OBSERVED","baseSha":"107b795d9454a89ea5f5752d6a7ccf7053a6e7e0","pipelineSha256":"4b259d3397adf492d9767572141c9bdf5efc5744886bce63592ae9f36b95f4fc","patched":false}
+{"s":"D03.R1.rotation-failing-pair-then-third","variant":"S0","steps":["fail:A","fail:A","fail:H2/60"],"thirdBlocked":true}
+{"s":"D03","variant":"S0","assert":"R1: the failing pair split across a key rotation is still enforced at the third failing member (set continuity)","ok":true,"steps":["fail:A","fail:A","fail:H2/60"]}
+{"s":"D03.R2.marker-continuity","variant":"S0","step":"ok:H2/60","thirdBlocked":true}
+{"s":"D03.R3.rotation-no-evidence","variant":"S0","step":"ok:H2/60","thirdBlocked":true}
+{"s":"D03.R4.block-continuity","variant":"S0","blockedAfterRotation":true,"step":"check:H2/52"}
+{"s":"D03","variant":"S0","assert":"R4: a persisted K2 block survives the rotation","ok":true,"step":"check:H2/52"}
+{"s":"D03.E1.ephemeral-overflow","variant":"S0","attempts":["fail:A []","fail:S1/1200 {\"K4\":\"L1@+15s\"}","fail:H2/60 {\"K2\":\"L2@+60s\",\"K4\":\"L2@+60s\"}","fail:H2/55 {\"K2\":\"L2@+55s\",\"K4\":\"L2@+55s\"}"]}
+{"s":"D03","variant":"S0","assert":"E1: ephemeral overflow requests still feed the bounded K2 churn signal and are enforced at the third failing member","ok":true,"attempts":["fail:A []","fail:S1/1200 {\"K4\":\"L1@+15s\"}","fail:H2/60 {\"K2\":\"L2@+60s\",\"K4\":\"L2@+60s\"}","fail:H2/55 {\"K2\":\"L2@+55s\",\"K4\":\"L2@+55s\"}"]}
+{"s":"D03.F1a.churn-set-write","variant":"S0","applicable":true,"result":"BackendFailureException","storeThrows":1}
+{"s":"D03","variant":"S0","assert":"F1a.churn-set-write: a backend failure on this path propagates (never ALLOW / never silent skip)","ok":true,"result":"BackendFailureException"}
+{"s":"D03.F1b.marker-write","variant":"S0","applicable":false,"result":"no-exception","storeThrows":0}
+{"s":"D03.F1c.marker-read","variant":"S0","applicable":false,"result":"no-exception","storeThrows":0}
+{"s":"D03.C1.custom-store-minimal-capabilities","variant":"S0","storeInterfaces":["BoundedCorrelationRotationStoreInterface","BoundedCorrelationStoreInterface","CorrelationRotationStoreInterface","CorrelationStoreInterface"],"steps":["A","A","H2"],"exception":null,"snapshotCapabilityPresent":false}
+{"s":"D03","variant":"S0","assert":"C1: the variant runs on a custom store that exposes ONLY the baseline non-distributed capabilities (no snapshot, no new method) without error","ok":true,"exception":null}

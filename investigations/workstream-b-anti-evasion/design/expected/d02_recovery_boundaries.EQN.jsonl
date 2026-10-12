@@ -1,0 +1,40 @@
+{"s":"D02.provenance","variant":"EQN","level":"CANDIDATE_EXPERIMENTAL_RUNTIME","baseSha":"107b795d9454a89ea5f5752d6a7ccf7053a6e7e0","pipelineSha256":"98d95cc97836066ea8e76cf8399a41ede457c1e3dca156fdaa05b1b3096813c4","patched":true}
+{"s":"D02.B1.lone-legit-after-trigger","variant":"EQN","attackSteps":["check:A>fail:A","check:A>fail:A","check:A>fail:H2/60"],"legitRuns":"B3-61,a62-720","legitFirstAllowedT":62,"blockIssuances":1}
+{"s":"D02","variant":"EQN","assert":"B1 recovery: a lone legitimate client is allowed no later than t=63 (block ends at 62; no history-only re-block)","ok":true,"firstAllowed":62}
+{"s":"D02","variant":"EQN","assert":"B1 the trigger is enforced at the third failing member (negative control: failing evidence exists)","ok":true,"steps":"check:A>fail:H2/60"}
+{"s":"D02.B2.set-ttl-boundary","variant":"EQN","flow":"pre+out","f3At":599,"f3Outcome":"fail","f3Blocked":true,"step":"check:A>fail:H2/60"}
+{"s":"D02","variant":"EQN","assert":"B2 pre+out f3@599/fail: enforced only for a FAILING third member inside the 600 s set (set boundary exact)","ok":true,"blocked":true,"expected":true}
+{"s":"D02.B2.set-ttl-boundary","variant":"EQN","flow":"pre+out","f3At":599,"f3Outcome":"ok","f3Blocked":false,"step":"check:A>ok:A"}
+{"s":"D02","variant":"EQN","assert":"B2 pre+out f3@599/ok: enforced only for a FAILING third member inside the 600 s set (set boundary exact)","ok":true,"blocked":false,"expected":false}
+{"s":"D02.B2.set-ttl-boundary","variant":"EQN","flow":"pre+out","f3At":600,"f3Outcome":"fail","f3Blocked":false,"step":"check:A>fail:A"}
+{"s":"D02","variant":"EQN","assert":"B2 pre+out f3@600/fail: enforced only for a FAILING third member inside the 600 s set (set boundary exact)","ok":true,"blocked":false,"expected":false}
+{"s":"D02.B2.set-ttl-boundary","variant":"EQN","flow":"pre+out","f3At":600,"f3Outcome":"ok","f3Blocked":false,"step":"check:A>ok:A"}
+{"s":"D02","variant":"EQN","assert":"B2 pre+out f3@600/ok: enforced only for a FAILING third member inside the 600 s set (set boundary exact)","ok":true,"blocked":false,"expected":false}
+{"s":"D02.B2.set-ttl-boundary","variant":"EQN","flow":"out","f3At":599,"f3Outcome":"fail","f3Blocked":true,"step":"fail:H2/60"}
+{"s":"D02","variant":"EQN","assert":"B2 out f3@599/fail: enforced only for a FAILING third member inside the 600 s set (set boundary exact)","ok":true,"blocked":true,"expected":true}
+{"s":"D02.B2.set-ttl-boundary","variant":"EQN","flow":"out","f3At":599,"f3Outcome":"ok","f3Blocked":false,"step":"ok:A"}
+{"s":"D02","variant":"EQN","assert":"B2 out f3@599/ok: enforced only for a FAILING third member inside the 600 s set (set boundary exact)","ok":true,"blocked":false,"expected":false}
+{"s":"D02.B2.set-ttl-boundary","variant":"EQN","flow":"out","f3At":600,"f3Outcome":"fail","f3Blocked":false,"step":"fail:A"}
+{"s":"D02","variant":"EQN","assert":"B2 out f3@600/fail: enforced only for a FAILING third member inside the 600 s set (set boundary exact)","ok":true,"blocked":false,"expected":false}
+{"s":"D02.B2.set-ttl-boundary","variant":"EQN","flow":"out","f3At":600,"f3Outcome":"ok","f3Blocked":false,"step":"ok:A"}
+{"s":"D02","variant":"EQN","assert":"B2 out f3@600/ok: enforced only for a FAILING third member inside the 600 s set (set boundary exact)","ok":true,"blocked":false,"expected":false}
+{"s":"D02.B3.watch-boundary","variant":"EQN","flow":"pre+out","secondPairEndsAt":1800,"blockedAtSecondPairEnd":true,"step":"check:A>fail:H2/60"}
+{"s":"D02","variant":"EQN","assert":"B3 pre+out: the N-1 WATCH boundary equals the S0 behaviour (second pair ending at 1800 enforced)","ok":true,"blocked":true}
+{"s":"D02.B3.watch-boundary","variant":"EQN","flow":"pre+out","secondPairEndsAt":1801,"blockedAtSecondPairEnd":false,"step":"check:A>fail:A"}
+{"s":"D02","variant":"EQN","assert":"B3 pre+out: the N-1 WATCH boundary equals the S0 behaviour (second pair ending at 1801 enforced)","ok":false,"blocked":false}
+{"s":"D02.B3.watch-boundary","variant":"EQN","flow":"out","secondPairEndsAt":1800,"blockedAtSecondPairEnd":true,"step":"fail:H2/60"}
+{"s":"D02","variant":"EQN","assert":"B3 out: the N-1 WATCH boundary equals the S0 behaviour (second pair ending at 1800 enforced)","ok":true,"blocked":true}
+{"s":"D02.B3.watch-boundary","variant":"EQN","flow":"out","secondPairEndsAt":1801,"blockedAtSecondPairEnd":false,"step":"fail:A"}
+{"s":"D02","variant":"EQN","assert":"B3 out: the N-1 WATCH boundary equals the S0 behaviour (second pair ending at 1801 not enforced)","ok":true,"blocked":false}
+{"s":"D02.B4.persistent-attacker-reissue","variant":"EQN","attackerRuns":"a0-1,B2-130","blockIssuances":3,"attackerReached":5}
+{"s":"D02.B5.single-seed-then-silence","variant":"EQN","legitDenied":12,"legitAttempts":300,"lastLegitDenialT":60,"legitRuns":"B5-60,a65-1500","blockIssuances":1}
+{"s":"D02","variant":"EQN","assert":"B5 no history-only re-block: after the seeded block expires a lone legitimate client is never denied again (last denial <= 62)","ok":true,"lastLegitDenialT":60}
+{"s":"D02.B6.evidence-boundary","variant":"EQN","failingMemberStep":"check:A>fail:A","probeBlockedAtPlusK":{"1":false,"30":false,"59":false,"60":false,"61":false,"120":false}}
+{"s":"D02","variant":"EQN","assert":"B6 evidence boundary: the single failing member is enforced (+1,+30,+59 denied) and the fixed 60 s evidence ends together with the 60 s block (+60 allowed, +61 allowed, +120 allowed)","ok":false,"probes":{"1":false,"30":false,"59":false,"60":false,"61":false,"120":false}}
+{"s":"D02.B7.single-typo-on-stale-set","variant":"EQN","legitDenied":0,"attempts":84,"firstDeniedT":null,"lastDeniedT":null,"runs":"a0-500"}
+{"s":"D02","variant":"EQN","assert":"B7: one colleague typo costs the NAT at most one 60 s block; the following successes are never re-blocked (last denial <= t=160)","ok":false,"lastDeniedT":null}
+{"s":"D02.B8.sustained-leak-30min","variant":"EQN","attempts":1801,"reachedVerification":34,"blockIssuances":30}
+{"s":"D02","variant":"EQN","assert":"B8 sustained leak is bounded: verifications reaching the protected operation <= 3 + ceil(1800/62) over 30 minutes","ok":false,"reached":34}
+{"s":"D02.B10.evidence-window-boundary","variant":"EQN","triggerBySuccessAtPlusK_enforced":{"0":false,"59":false,"60":false,"61":false,"119":false}}
+{"s":"D02.B11.window-not-sliding","variant":"EQN","duplicateFailureAt159_triggerEnforcedAt":{"159":false,"160":false}}
+{"s":"D02","variant":"EQN","assert":"B9: every B5 probe produced a row (negative control: probes reached the pipeline)","ok":true,"probes":300}

@@ -1,0 +1,20 @@
+{"s":"D05.provenance","variant":"S0","level":"S0_RUNTIME_OBSERVED","baseSha":"107b795d9454a89ea5f5752d6a7ccf7053a6e7e0","pipelineSha256":"4b259d3397adf492d9767572141c9bdf5efc5744886bce63592ae9f36b95f4fc","patched":false}
+{"s":"D05.R1.record-only-churn","variant":"S0","steps":["fail:A","fail:A","fail:H2/~60"],"thirdDenied":true}
+{"s":"D05","variant":"S0","assert":"R1: three failing fingerprints on one K2 are denied at the third attempt on real Redis","ok":true,"steps":["fail:A","fail:A","fail:H2/~60"]}
+{"s":"D05.R1b.third-member-success","variant":"S0","steps":["fail:A","fail:A","ok:H2/~60"],"thirdDenied":true}
+{"s":"D05.R1c.no-evidence","variant":"S0","steps":["ok:A","ok:A","ok:H2/~60","ok:H2/~60"],"anyDenied":true}
+{"s":"D05.R2.anchor-rotation","variant":"S0","requests":400,"denied":0,"keysPerRequestRounded":7,"keysWithoutTtl":0,"maxSetCardinality":3,"maxTtlWithinTwoDays":true}
+{"s":"D05","variant":"S0","assert":"R2: every key created has a TTL (no immortal state) on real Redis","ok":true,"keysWithoutTtl":0}
+{"s":"D05","variant":"S0","assert":"R2 negative control: the rotation probes reached storage (no denial) and created keys","ok":true,"denied":0}
+{"s":"D05","variant":"S0","assert":"R2: largest set on real Redis stays within the largest declared cap (50)","ok":true,"max":3}
+{"s":"D05.R3.distinct-member-race","variant":"S0","rounds":12,"workersCompleted":96,"roundsWithK2Block":12,"maxSetCardinality":8}
+{"s":"D05","variant":"S0","assert":"R3 negative control: all 96 concurrent workers completed","ok":true,"completed":96}
+{"s":"D05","variant":"S0","assert":"R3: concurrent distinct failing members never push a set above the largest declared cap (50)","ok":true,"max":8}
+{"s":"D05","variant":"S0","assert":"R3: in every round the concurrent failing members reached the threshold and a K2 block exists (no lost evidence)","ok":true,"roundsWithK2Block":12}
+{"s":"D05.R4.duplicate-member-race","variant":"S0","rounds":12,"workersCompleted":96,"roundsWithK2Block":0}
+{"s":"D05","variant":"S0","assert":"R4 negative control: all 96 concurrent workers completed","ok":true,"completed":96}
+{"s":"D05","variant":"S0","assert":"R4: 8 concurrent failures of ONE fingerprint never create a block (duplicates never inflate evidence)","ok":true,"roundsWithK2Block":0}
+{"s":"D05.R5.marker-atomicity","variant":"S0","applicable":false,"reason":"no evidence marker in this variant"}
+{"s":"D05.R6.live-recovery","variant":"S0","deniedWhileBlocked":true,"reblockedAfter63sFromHistory":true,"successAfter63s":"denied","freshFailureAfterExpiry":"enforced","legitDeniedAfterFreshFailure":true}
+{"s":"D05","variant":"S0","assert":"R6: the 60 s block is enforced right after the trigger on the Redis clock","ok":true,"immediate":"check:H2/~60"}
+{"s":"D05","variant":"S0","assert":"S0 R6: the stale set re-blocks a lone legitimate client 63 s after the trigger (history-only renewal)","ok":true,"afterBlock":"check:H2/~60"}
