@@ -89,6 +89,18 @@ if grep -vE '"mismatches":\{"blocked":0,"reached":0,"stepDecision":0,"stepLevel"
     status=1
 fi
 
+# Gate self-test (F103-05b): the same assertions run against a deliberately UNCAPPED witness store must FAIL (non-zero exit and
+# at least one ok:false), proving the storage-cap assertions can actually fail.
+if php "$here/model/state_bounds.php" --self-test-violation >"$actual/model_state_bounds_selftest.jsonl" 2>/dev/null; then
+    report "model_state_bounds_selftest" "FAIL (uncapped control passed: the gate cannot detect a missing cap)"
+    status=1
+elif grep -q '"ok":false' "$actual/model_state_bounds_selftest.jsonl"; then
+    report "model_state_bounds_selftest" "PASS (uncapped control fails as required: $(grep -c '"ok":false' "$actual/model_state_bounds_selftest.jsonl") assertions violated, exit non-zero)"
+else
+    report "model_state_bounds_selftest" "FAIL (non-zero exit without a recorded violated assertion)"
+    status=1
+fi
+
 # --- Real-Redis stage (F103-01): only against Redis instances THIS script starts, on loopback, in a directory it creates. ---
 # The PHP stage never reads REDIS_HOST/REDIS_PORT and never flushes; it accepts the server only if its process_id and working
 # directory match what this script started and it is empty. REDIS_PORT here only chooses the first port to try.

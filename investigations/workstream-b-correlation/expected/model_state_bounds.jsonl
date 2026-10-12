@@ -16,3 +16,17 @@
 {"s":"F103-05.state-bounds","assert":"P2.H3.drained-after-1h-idle","ok":true,"store":2,"latch":0,"idealized":0,"bounded":2,"uaAnchors":1,"failWinScopes":0,"maxScopeWindows":0,"maxWindowMembers":0,"note":"only the lone success itself may remain (ratio counters for P2, reference-store members)"}
 {"s":"F103-05.state-bounds","assert":"P2.H2.cap-3-per-scope-window (40 distinct failing fingerprints in one window)","ok":true,"maxWindowMembers":3}
 {"s":"F103-05.state-bounds","assert":"P2.H2.10-window-sliding-eviction (3 h of one failure per minute on one K2)","ok":true,"store":3,"latch":1,"idealized":0,"bounded":50,"uaAnchors":1,"failWinScopes":11,"maxScopeWindows":10,"maxWindowMembers":1}
+{"s":"F103-05.state-bounds","assert":"PW.C1a.all-40-admitted-to-witness-path","ok":true,"witnessWriteAttempts":40,"blocksIssued":0}
+{"s":"F103-05.state-bounds","assert":"PW.C1a.exactly-3-members-retained-for-k2-window (40 distinct offered)","ok":true,"retained":3,"members":["member0","member1","member2"],"offered":40}
+{"s":"F103-05.state-bounds","assert":"PW.C1b.all-40-admitted-to-witness-path","ok":true,"witnessWriteAttempts":40,"blocksIssued":0}
+{"s":"F103-05.state-bounds","assert":"PW.C1b.exactly-3-k1-members-retained-for-fp-window (40 distinct offered)","ok":true,"retained":3,"offered":40}
+{"s":"F103-05.state-bounds","assert":"PW.C2.boundary-10th-window: exactly 10 live, none evicted yet","ok":true,"live":[0,9],"count":10}
+{"s":"F103-05.state-bounds","assert":"PW.C2.boundary-11th-window: oldest window evicted, 10 live","ok":true,"liveOffsets":[1,10],"count":10,"window0Present":false}
+{"s":"F103-05.state-bounds","assert":"PW.C2.14-windows-never-exceed-10-live-and-slide","ok":true,"liveOffsets":[4,13],"maxLive":10,"admitted":14,"blocksIssued":0}
+{"s":"F103-05.state-bounds","assert":"P2.C1a.all-40-admitted-to-witness-path","ok":true,"witnessWriteAttempts":40,"blocksIssued":0}
+{"s":"F103-05.state-bounds","assert":"P2.C1a.exactly-3-members-retained-for-k2-window (40 distinct offered)","ok":true,"retained":3,"members":["member0","member1","member2"],"offered":40}
+{"s":"F103-05.state-bounds","assert":"P2.C1b.all-40-admitted-to-witness-path","ok":true,"witnessWriteAttempts":40,"blocksIssued":0}
+{"s":"F103-05.state-bounds","assert":"P2.C1b.exactly-3-k1-members-retained-for-fp-window (40 distinct offered)","ok":true,"retained":3,"offered":40}
+{"s":"F103-05.state-bounds","assert":"P2.C2.boundary-10th-window: exactly 10 live, none evicted yet","ok":true,"live":[0,9],"count":10}
+{"s":"F103-05.state-bounds","assert":"P2.C2.boundary-11th-window: oldest window evicted, 10 live","ok":true,"liveOffsets":[1,10],"count":10,"window0Present":false}
+{"s":"F103-05.state-bounds","assert":"P2.C2.14-windows-never-exceed-10-live-and-slide","ok":true,"liveOffsets":[4,13],"maxLive":10,"admitted":14,"blocksIssued":0}

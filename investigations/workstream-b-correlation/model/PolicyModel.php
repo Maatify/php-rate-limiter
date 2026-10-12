@@ -133,7 +133,7 @@ final class PolicyModel
     public int $peakBoundedWitnessEntries = 0;
 
     /** Regression switch: reproduces the REJECTED earlier ordering (witness written before the active-block check). */
-    public function __construct(public string $enforce, public string $observe = 'every', public bool $legacyWitnessBeforeActiveCheck = false)
+    public function __construct(public string $enforce, public string $observe = 'every', public bool $legacyWitnessBeforeActiveCheck = false, public int $witnessCap = self::WITNESS_CAP)
     {
         $this->st = new ModelStore();
     }
@@ -195,6 +195,24 @@ final class PolicyModel
         return false;
     }
 
+    /** Number of failed records that reached the witness-write path (storage-cap probe: all must be admitted). */
+    public int $witnessWriteAttempts = 0;
+
+    /** @return list<int> live window ids retained for a witness scope, ascending */
+    public function windowIds(string $scope): array
+    {
+        $ids = array_keys($this->failWin[$scope] ?? []);
+        sort($ids);
+
+        return $ids;
+    }
+
+    /** @return list<string> members retained for a scope in one window */
+    public function windowMembers(string $scope, int $window): array
+    {
+        return array_keys($this->failWin[$scope][$window] ?? []);
+    }
+
     private function writeWitness(array $e, int $now): void
     {
         $k1 = $e['ip'];
@@ -210,12 +228,15 @@ final class PolicyModel
 
             return;
         }
+        if (($this->enforce === 'PW' || $this->enforce === 'P2') && $e['outcome'] === 'fail') {
+            $this->witnessWriteAttempts++;
+        }
         if ($this->enforce === 'PW' || $this->enforce === 'P2') {
             // BOUNDED window witnesses: cap 3 per (scope, window); a full window rejects new members (bounded-set semantics)
             if ($e['outcome'] === 'fail') {
                 foreach (['k2:' . $k2 => $fp, 'fp:' . $fp => $k1] as $scope => $member) {
                     $set = $this->failWin[$scope][$win] ?? [];
-                    if (isset($set[$member]) || count($set) < self::WITNESS_CAP) {
+                    if (isset($set[$member]) || count($set) < $this->witnessCap) {
                         $set[$member] = 1;
                         $this->failWin[$scope][$win] = $set;
                     }
