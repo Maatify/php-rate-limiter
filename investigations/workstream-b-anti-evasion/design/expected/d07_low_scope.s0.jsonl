@@ -1,0 +1,10 @@
+{"s":"D07.provenance","variant":"S0","level":"S0_RUNTIME_OBSERVED","baseSha":"107b795d9454a89ea5f5752d6a7ccf7053a6e7e0","pipelineSha256":"4b259d3397adf492d9767572141c9bdf5efc5744886bce63592ae9f36b95f4fc","patched":false}
+{"s":"D07.option","option":"s0","stream":"L3","class":"benign","attackReach":0,"attackAttempts":0,"controlReach":0,"legitDenied":104,"legitDeniedByCorrelation":104,"legitAttempts":121}
+{"s":"D07.option","option":"s0","stream":"D1","class":"benign","attackReach":0,"attackAttempts":0,"controlReach":0,"legitDenied":596,"legitDeniedByCorrelation":596,"legitAttempts":600}
+{"s":"D07.option","option":"s0","stream":"D3","class":"both","attackReach":1,"attackAttempts":200,"controlReach":32,"legitDenied":597,"legitDeniedByCorrelation":597,"legitAttempts":600}
+{"s":"D07.option","option":"s0","stream":"D4","class":"both","attackReach":0,"attackAttempts":12,"controlReach":4,"legitDenied":596,"legitDeniedByCorrelation":596,"legitAttempts":600}
+{"s":"D07.option","option":"s0","stream":"X2","class":"evasion","attackReach":6,"attackAttempts":121,"controlReach":121,"legitDenied":0,"legitDeniedByCorrelation":0,"legitAttempts":0}
+{"s":"D07.option","option":"s0","stream":"X7","class":"evasion","attackReach":6,"attackAttempts":121,"controlReach":121,"legitDenied":0,"legitDeniedByCorrelation":0,"legitAttempts":0}
+{"s":"D07.option","option":"s0","stream":"X2L","class":"both","attackReach":5,"attackAttempts":121,"controlReach":121,"legitDenied":29,"legitDeniedByCorrelation":29,"legitAttempts":30}
+{"s":"D07.option","option":"s0","stream":"X8","class":"both","attackReach":4,"attackAttempts":151,"controlReach":32,"legitDenied":49,"legitDeniedByCorrelation":49,"legitAttempts":50}
+{"s":"D07.option","option":"s0","stream":"Y2c","class":"evasion","attackReach":18,"attackAttempts":20,"controlReach":20,"legitDenied":0,"legitDeniedByCorrelation":0,"legitAttempts":0}

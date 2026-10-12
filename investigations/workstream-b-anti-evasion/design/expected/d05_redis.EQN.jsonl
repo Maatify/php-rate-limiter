@@ -1,0 +1,18 @@
+{"s":"D05.provenance","variant":"EQN","level":"CANDIDATE_EXPERIMENTAL_RUNTIME","baseSha":"107b795d9454a89ea5f5752d6a7ccf7053a6e7e0","pipelineSha256":"834a3d8fb58c9483f22b34688c8555e66527da259924df43259b8f0ee4539965","patched":true}
+{"s":"D05.R1.record-only-churn","variant":"EQN","steps":["fail:A","fail:A","fail:H2/~60"],"thirdDenied":true}
+{"s":"D05","variant":"EQN","assert":"R1: three failing fingerprints on one K2 are denied at the third attempt on real Redis","ok":true,"steps":["fail:A","fail:A","fail:H2/~60"]}
+{"s":"D05.R1b.third-member-success","variant":"EQN","steps":["fail:A","fail:A","ok:A"],"thirdDenied":false}
+{"s":"D05.R1c.no-evidence","variant":"EQN","steps":["ok:A","ok:A","ok:A","ok:A"],"anyDenied":false}
+{"s":"D05.R2.anchor-rotation","variant":"EQN","requests":400,"denied":0,"keysPerRequestRounded":7,"keysWithoutTtl":0,"maxSetCardinality":4,"maxTtlWithinTwoDays":true}
+{"s":"D05","variant":"EQN","assert":"R2: every key created has a TTL (no immortal state) on real Redis","ok":true,"keysWithoutTtl":0}
+{"s":"D05","variant":"EQN","assert":"R2 negative control: the rotation probes reached storage (no denial) and created keys","ok":true,"denied":0}
+{"s":"D05","variant":"EQN","assert":"R2: largest set on real Redis stays within the largest declared cap (50)","ok":true,"max":4}
+{"s":"D05.R3.distinct-member-race","variant":"EQN","rounds":12,"workersCompleted":96,"roundsWithK2Block":12,"maxSetCardinality":8}
+{"s":"D05","variant":"EQN","assert":"R3 negative control: all 96 concurrent workers completed","ok":true,"completed":96}
+{"s":"D05","variant":"EQN","assert":"R3: concurrent distinct failing members never push a set above the largest declared cap (50)","ok":true,"max":8}
+{"s":"D05","variant":"EQN","assert":"R3: in every round the concurrent failing members reached the threshold and a K2 block exists (no lost evidence)","ok":true,"roundsWithK2Block":12}
+{"s":"D05.R4.duplicate-member-race","variant":"EQN","rounds":12,"workersCompleted":96,"roundsWithK2Block":0}
+{"s":"D05","variant":"EQN","assert":"R4 negative control: all 96 concurrent workers completed","ok":true,"completed":96}
+{"s":"D05","variant":"EQN","assert":"R4: 8 concurrent failures of ONE fingerprint never create a block (duplicates never inflate evidence)","ok":true,"roundsWithK2Block":0}
+{"s":"D05.R5.marker-atomicity","variant":"EQN","applicable":false,"reason":"no evidence marker in this variant"}
+{"s":"D05.R6.live-recovery","variant":"EQN","applicable":false,"reason":"only S0 and EQL run the 63 s live check"}

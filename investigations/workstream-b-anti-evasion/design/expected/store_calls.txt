@@ -1,0 +1,3 @@
+store_operations_called_by_added_lines:
+correlationStore->getWatchFlag
+correlationStore->incrementWatchFlag

@@ -1,0 +1,24 @@
+{"s":"D05.provenance","variant":"EQL","level":"CANDIDATE_EXPERIMENTAL_RUNTIME","baseSha":"107b795d9454a89ea5f5752d6a7ccf7053a6e7e0","pipelineSha256":"834a3d8fb58c9483f22b34688c8555e66527da259924df43259b8f0ee4539965","patched":true}
+{"s":"D05.R1.record-only-churn","variant":"EQL","steps":["fail:A","fail:A","fail:H2/~60"],"thirdDenied":true}
+{"s":"D05","variant":"EQL","assert":"R1: three failing fingerprints on one K2 are denied at the third attempt on real Redis","ok":true,"steps":["fail:A","fail:A","fail:H2/~60"]}
+{"s":"D05.R1b.third-member-success","variant":"EQL","steps":["fail:A","fail:A","ok:H2/~60"],"thirdDenied":true}
+{"s":"D05","variant":"EQL","assert":"R1b: a successful third member is enforced only because fresh failing evidence exists in the same scope","ok":true,"steps":["fail:A","fail:A","ok:H2/~60"]}
+{"s":"D05.R1c.no-evidence","variant":"EQL","steps":["ok:A","ok:A","ok:A","ok:A"],"anyDenied":false}
+{"s":"D05","variant":"EQL","assert":"R1c: four SUCCESSFUL fingerprints on one K2 are never denied on real Redis (no evidence)","ok":true,"steps":["ok:A","ok:A","ok:A","ok:A"]}
+{"s":"D05.R2.anchor-rotation","variant":"EQL","requests":400,"denied":0,"keysPerRequestRounded":11,"keysWithoutTtl":0,"maxSetCardinality":4,"maxTtlWithinTwoDays":true}
+{"s":"D05","variant":"EQL","assert":"R2: every key created has a TTL (no immortal state) on real Redis","ok":true,"keysWithoutTtl":0}
+{"s":"D05","variant":"EQL","assert":"R2 negative control: the rotation probes reached storage (no denial) and created keys","ok":true,"denied":0}
+{"s":"D05","variant":"EQL","assert":"R2: largest set on real Redis stays within the largest declared cap (50)","ok":true,"max":4}
+{"s":"D05.R3.distinct-member-race","variant":"EQL","rounds":12,"workersCompleted":96,"roundsWithK2Block":12,"maxSetCardinality":8}
+{"s":"D05","variant":"EQL","assert":"R3 negative control: all 96 concurrent workers completed","ok":true,"completed":96}
+{"s":"D05","variant":"EQL","assert":"R3: concurrent distinct failing members never push a set above the largest declared cap (50)","ok":true,"max":8}
+{"s":"D05","variant":"EQL","assert":"R3: in every round the concurrent failing members reached the threshold and a K2 block exists (no lost evidence)","ok":true,"roundsWithK2Block":12}
+{"s":"D05.R4.duplicate-member-race","variant":"EQL","rounds":12,"workersCompleted":96,"roundsWithK2Block":0}
+{"s":"D05","variant":"EQL","assert":"R4 negative control: all 96 concurrent workers completed","ok":true,"completed":96}
+{"s":"D05","variant":"EQL","assert":"R4: 8 concurrent failures of ONE fingerprint never create a block (duplicates never inflate evidence)","ok":true,"roundsWithK2Block":0}
+{"s":"D05.R5.marker-atomicity","variant":"EQL","rounds":12,"roundsWithExactCount8":12}
+{"s":"D05","variant":"EQL","assert":"R5: the evidence marker counts exactly the 8 concurrent writers in every round (atomic increment, no lost update)","ok":true,"roundsWithExactCount8":12}
+{"s":"D05.R6.live-recovery","variant":"EQL","deniedWhileBlocked":true,"reblockedAfter63sFromHistory":false,"successAfter63s":"allowed","freshFailureAfterExpiry":"enforced","legitDeniedAfterFreshFailure":true}
+{"s":"D05","variant":"EQL","assert":"R6: the 60 s block is enforced right after the trigger on the Redis clock","ok":true,"immediate":"check:H2/~60"}
+{"s":"D05","variant":"EQL","assert":"R6: a lone legitimate client is allowed 63 s after the trigger (block and evidence both expired; no history-only re-block)","ok":true,"afterBlock":"check:A","afterOk":"ok:A"}
+{"s":"D05","variant":"EQL","assert":"R6: a FRESH failing fingerprint after the expiry is fresh evidence and re-blocks the K2 on the Redis clock","ok":true,"freshFail":"fail:H2/~60","afterFresh":"check:H2/~60"}
