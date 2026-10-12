@@ -7,6 +7,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed
+- Bounded local-fallback denials (`fallback_limit_exceeded`) no longer return a
+  constant `retryAfter` of 60. The value is now the largest remaining
+  fixed-window time among the dimensions that denied the evaluation, on both the
+  typed backend-failure path and the open-circuit degraded path. Quotas,
+  denial decisions, failure modes, and public contracts are unchanged.
+
 ## [1.0.0-rc.3] - 2026-10-07
 
 ### Added

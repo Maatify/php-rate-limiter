@@ -202,11 +202,12 @@ For <code>api_heavy_protection</code>, K2 minor overuse returns at most <code>SO
 
 ### Retry-After Semantics
 
-The returned <code>retryAfter</code> has three distinct contracts:
+The returned <code>retryAfter</code> has four distinct contracts:
 
 - An active persisted block returns the remaining persisted block TTL. It is authoritative and is not combined with score decay.
 - A score-derived <code>SOFT_BLOCK</code> returns the time until the score is below L1. A score-derived <code>HARD_BLOCK</code>, including L3, returns the time until the score is below L2. <code>DecayCalculator</code> uses the package-owned account, device, and IP intervals together with the stored score timestamp and elapsed partial interval. Retained multiple-block-cycle pauses are subtracted from elapsed decay, and an active pause's remaining time is added to score-derived Retry-After.
 - A budget result returns the remaining budget cooldown. Correlation, flood, credential-spray, and other non-score decisions retain their own existing retry rules.
+- A bounded local-fallback denial (<code>fallback_limit_exceeded</code>) returns the largest remaining fixed-window time among the fallback dimensions that denied the same evaluation. It is a wait hint, not an acceptance guarantee.
 
 The response retry time is independent from persistence: score-derived results may use a decay wait while the persisted block continues to use the configured <code>PenaltyLadder</code> duration.
 

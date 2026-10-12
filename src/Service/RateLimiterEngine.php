@@ -296,10 +296,11 @@ class RateLimiterEngine implements RateLimiterRuntimeInterface
 
             // Local Fallback Check
             if ($mode !== 'FAIL_CLOSED') {
-                if (!LocalFallbackLimiter::check($this->clock, $policy, $mode, $context->ip, $context->accountId, $context->ua)) {
+                $fallbackRetryAfter = LocalFallbackLimiter::evaluate($this->clock, $policy, $mode, $context->ip, $context->accountId, $context->ua);
+                if ($fallbackRetryAfter !== null) {
                     $contextMeta = new RateLimitContextMetadataDTO('fallback_limit_exceeded');
                     $meta = new RateLimitMetadataDTO($signal, 'fallback_limit_exceeded', $contextMeta);
-                    return new RateLimitResultDTO(RateLimitResultDTO::DECISION_HARD_BLOCK, 2, 60, $mode, $meta);
+                    return new RateLimitResultDTO(RateLimitResultDTO::DECISION_HARD_BLOCK, 2, $fallbackRetryAfter, $mode, $meta);
                 }
             }
 
@@ -402,19 +403,21 @@ class RateLimiterEngine implements RateLimiterRuntimeInterface
             return $this->guardResult($policy->getName());
         }
 
-        if ($mode !== 'FAIL_CLOSED'
-            && ! LocalFallbackLimiter::check(
+        if ($mode !== 'FAIL_CLOSED') {
+            $fallbackRetryAfter = LocalFallbackLimiter::evaluate(
                 $this->clock,
                 $policy,
                 $mode,
                 $context->ip,
                 $context->accountId,
                 $context->ua,
-            )) {
-            $contextMeta = new RateLimitContextMetadataDTO('fallback_limit_exceeded');
-            $meta = new RateLimitMetadataDTO(null, 'fallback_limit_exceeded', $contextMeta);
+            );
+            if ($fallbackRetryAfter !== null) {
+                $contextMeta = new RateLimitContextMetadataDTO('fallback_limit_exceeded');
+                $meta = new RateLimitMetadataDTO(null, 'fallback_limit_exceeded', $contextMeta);
 
-            return new RateLimitResultDTO(RateLimitResultDTO::DECISION_HARD_BLOCK, 2, 60, $mode, $meta);
+                return new RateLimitResultDTO(RateLimitResultDTO::DECISION_HARD_BLOCK, 2, $fallbackRetryAfter, $mode, $meta);
+            }
         }
 
         if ($mode === 'FAIL_OPEN' || $mode === 'DEGRADED_MODE') {

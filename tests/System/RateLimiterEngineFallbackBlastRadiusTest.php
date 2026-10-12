@@ -119,7 +119,7 @@ class RateLimiterEngineFallbackBlastRadiusTest extends TestCase
 
         $blocked = $this->limit($engine, 'login_protection', $ip, self::FIREFOX_UA, $accountId);
 
-        $this->assertFallbackLimitExceeded($blocked);
+        $this->assertFallbackLimitExceeded($blocked, 600);
         // Locked fallback cap: 3 requests per account in 10 minutes.
     }
 
@@ -144,7 +144,7 @@ class RateLimiterEngineFallbackBlastRadiusTest extends TestCase
 
         $blocked = $this->limit($engine, 'login_protection', $ip, self::FIREFOX_UA, 'login-ip-account-20');
 
-        $this->assertFallbackLimitExceeded($blocked);
+        $this->assertFallbackLimitExceeded($blocked, 600);
         // Locked fallback cap: 20 requests per IP in 10 minutes.
     }
 
@@ -165,7 +165,7 @@ class RateLimiterEngineFallbackBlastRadiusTest extends TestCase
 
         $blocked = $this->limit($engine, 'otp_protection', $ip, self::FIREFOX_UA, $accountId);
 
-        $this->assertFallbackLimitExceeded($blocked);
+        $this->assertFallbackLimitExceeded($blocked, 900);
         // Locked fallback cap: 2 requests per account in 15 minutes.
     }
 
@@ -196,7 +196,7 @@ class RateLimiterEngineFallbackBlastRadiusTest extends TestCase
         $this->clock->setNow(new \DateTimeImmutable('2025-01-01 13:04:31'));
         $third = $this->limit($engine, 'otp_protection', $ip, self::CHROME_UA, 'otp-gc-target-account');
 
-        $this->assertFallbackLimitExceeded($third);
+        $this->assertFallbackLimitExceeded($third, 629);
     }
 
     public function testOtpFallbackNaturallyResetsOnlyWhenFixedWindowRollsOver(): void
@@ -219,7 +219,7 @@ class RateLimiterEngineFallbackBlastRadiusTest extends TestCase
 
         $this->assertSame(RateLimitResultDTO::DECISION_ALLOW, $first->decision);
         $this->assertSame(RateLimitResultDTO::DECISION_ALLOW, $second->decision);
-        $this->assertFallbackLimitExceeded($third);
+        $this->assertFallbackLimitExceeded($third, 630);
 
         // The next fixed 15-minute bucket starts at 12:15:00; GC has not been crossed.
         $this->clock->setNow(new \DateTimeImmutable('2025-01-01 12:15:00'));
@@ -250,7 +250,7 @@ class RateLimiterEngineFallbackBlastRadiusTest extends TestCase
 
         $blocked = $this->limit($engine, 'otp_protection', $ip, self::CHROME_UA, 'otp-ip-account-10');
 
-        $this->assertFallbackLimitExceeded($blocked);
+        $this->assertFallbackLimitExceeded($blocked, 900);
         // Locked fallback cap: 10 requests per IP in 15 minutes.
     }
 
@@ -313,7 +313,7 @@ class RateLimiterEngineFallbackBlastRadiusTest extends TestCase
             $this->assertSame(RateLimitResultDTO::DECISION_ALLOW, $result->decision);
         }
         $blocked = $this->limit($engine, 'direct_custom_api_fallback', $ip, self::SAFARI_UA, null);
-        $this->assertFallbackLimitExceeded($blocked);
+        $this->assertFallbackLimitExceeded($blocked, 30);
     }
 
     public function testDirectCustomApiPolicyEnforcesTypedIpUserAgentCap(): void
@@ -328,7 +328,7 @@ class RateLimiterEngineFallbackBlastRadiusTest extends TestCase
         // The 81st Chrome request is rejected purely by the 80 K2 cap; the IP
         // aggregate (200) is nowhere near exhausted.
         $blocked = $this->limit($engine, 'direct_custom_api_fallback', $ip, self::CHROME_UA, null);
-        $this->assertFallbackLimitExceeded($blocked);
+        $this->assertFallbackLimitExceeded($blocked, 30);
     }
 
     public function testDirectCustomApiPolicyFallbackWindowRollsOverAtItsOwnDuration(): void
@@ -344,7 +344,7 @@ class RateLimiterEngineFallbackBlastRadiusTest extends TestCase
             $this->assertSame(RateLimitResultDTO::DECISION_ALLOW, $result->decision);
         }
         $blocked = $this->limit($engine, 'direct_custom_api_fallback', $ip, self::CHROME_UA, null);
-        $this->assertFallbackLimitExceeded($blocked);
+        $this->assertFallbackLimitExceeded($blocked, 30);
 
         $this->clock->setNow($this->clock->now()->modify('+30 seconds'));
         $afterRollover = $this->limit($engine, 'direct_custom_api_fallback', $ip, self::CHROME_UA, null);
@@ -373,7 +373,7 @@ class RateLimiterEngineFallbackBlastRadiusTest extends TestCase
         }
 
         $blocked = $this->limit($engine, 'direct_custom_auth_fallback', $ip, self::FIREFOX_UA, $accountId);
-        $this->assertFallbackLimitExceeded($blocked);
+        $this->assertFallbackLimitExceeded($blocked, 300);
     }
 
     public function testDirectCustomAuthPolicyEnforcesTypedIpCap(): void
@@ -395,7 +395,7 @@ class RateLimiterEngineFallbackBlastRadiusTest extends TestCase
         }
 
         $blocked = $this->limit($engine, 'direct_custom_auth_fallback', $ip, self::FIREFOX_UA, 'custom-auth-ip-account-30');
-        $this->assertFallbackLimitExceeded($blocked);
+        $this->assertFallbackLimitExceeded($blocked, 300);
     }
 
     public function testDirectCustomAuthPolicyFallbackWindowRollsOverAtItsOwnDuration(): void
@@ -414,7 +414,7 @@ class RateLimiterEngineFallbackBlastRadiusTest extends TestCase
             $this->assertSame(RateLimitResultDTO::DECISION_ALLOW, $result->decision);
         }
         $blocked = $this->limit($engine, 'direct_custom_auth_fallback', $ip, self::CHROME_UA, $accountId);
-        $this->assertFallbackLimitExceeded($blocked);
+        $this->assertFallbackLimitExceeded($blocked, 300);
 
         $this->clock->setNow($this->clock->now()->modify('+300 seconds'));
         $afterRollover = $this->limit($engine, 'direct_custom_auth_fallback', $ip, self::CHROME_UA, $accountId);
@@ -435,7 +435,7 @@ class RateLimiterEngineFallbackBlastRadiusTest extends TestCase
             $this->assertSame(RateLimitResultDTO::DECISION_ALLOW, $result->decision);
         }
         $officialBlocked = $this->limit($officialEngine, 'login_protection', $ip, self::CHROME_UA, $accountId);
-        $this->assertFallbackLimitExceeded($officialBlocked);
+        $this->assertFallbackLimitExceeded($officialBlocked, 600);
 
         // The custom policy declares the exact same 3/600 ACCOUNT and 20/600
         // IP_PREFIX values as official Login, yet remains fully available
@@ -641,11 +641,11 @@ class RateLimiterEngineFallbackBlastRadiusTest extends TestCase
         );
     }
 
-    private function assertFallbackLimitExceeded(RateLimitResultDTO $result): void
+    private function assertFallbackLimitExceeded(RateLimitResultDTO $result, int $expectedRetryAfter): void
     {
         $this->assertSame(RateLimitResultDTO::DECISION_HARD_BLOCK, $result->decision);
         $this->assertSame(2, $result->blockLevel);
-        $this->assertSame(60, $result->retryAfter);
+        $this->assertSame($expectedRetryAfter, $result->retryAfter);
         $this->assertSame('DEGRADED_MODE', $result->failureMode);
         $metadata = $result->metadata;
         $this->assertNotNull($metadata);
