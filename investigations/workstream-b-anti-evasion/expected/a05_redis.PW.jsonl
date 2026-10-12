@@ -1,0 +1,13 @@
+{"s":"A05.provenance","variant":"PW","level":"CANDIDATE_EXPERIMENTAL_RUNTIME","baseSha":"56f601cdc9a7062391395c326f1867d472a4ee49","pipelineSha256":"fc681175e7494d0e8edb9fef656826463238b839bb8af08c114ce37e2df8929b","patched":true}
+{"s":"A05.R1.record-only-churn","variant":"PW","steps":["fail:A","fail:A","fail:H2/~60"],"thirdDenied":true}
+{"s":"A05","variant":"PW","assert":"R1: three failing fingerprints on one K2 are denied at the third attempt on real Redis","ok":true,"steps":["fail:A","fail:A","fail:H2/~60"]}
+{"s":"A05.R1b.third-member-success","variant":"PW","steps":["fail:A","fail:A","ok:A"],"thirdDenied":false}
+{"s":"A05.R3.anchor-rotation","variant":"PW","requests":400,"denied":0,"keysPerRequestRounded":19,"ttlClassesSeen":[60,600,660,700,900,1800,21600,86400],"keysWithoutTtl":0,"maxSetCardinality":3}
+{"s":"A05","variant":"PW","assert":"R2: every key created has a TTL (no immortal state) on real Redis","ok":true,"keysWithoutTtl":0}
+{"s":"A05","variant":"PW","assert":"R3 negative control: the rotation probes reached storage (no denial) and created keys","ok":true,"denied":0}
+{"s":"A05","variant":"PW","assert":"R3: largest set on real Redis stays within the largest declared cap (50)","ok":true,"max":3}
+{"s":"A05.R4.duplicate-member-race","variant":"PW","rounds":20,"workersPerRound":8,"inflationObserved":true,"oneFingerprintReachedThreshold":true,"correctValue":1}
+{"s":"A05","variant":"PW","assert":"R4: 8 concurrent failures of ONE fingerprint never inflate the distinct-evidence tally above 1","ok":false,"inflationObserved":true}
+{"s":"A05.R5.distinct-member-race","variant":"PW","rounds":12,"workersCompleted":96,"maxSetCardinality":8}
+{"s":"A05","variant":"PW","assert":"R5 negative control: all 96 concurrent workers completed","ok":true,"completed":96}
+{"s":"A05","variant":"PW","assert":"R5: concurrent distinct members never push any set above the largest declared cap (50)","ok":true,"max":8}

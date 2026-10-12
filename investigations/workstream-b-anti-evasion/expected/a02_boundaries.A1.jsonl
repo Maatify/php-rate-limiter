@@ -1,0 +1,18 @@
+{"s":"A02.provenance","variant":"A1","level":"CANDIDATE_EXPERIMENTAL_RUNTIME","baseSha":"56f601cdc9a7062391395c326f1867d472a4ee49","pipelineSha256":"fc681175e7494d0e8edb9fef656826463238b839bb8af08c114ce37e2df8929b","patched":true}
+{"s":"A02.B1.lone-legit-after-trigger","variant":"A1","attackSteps":["check:A>fail:A","check:A>fail:H2/60","check:H2/59"],"legitRuns":"B3-600,a601-720","legitFirstAllowedT":601,"blockIssuances":10}
+{"s":"A02","variant":"A1","assert":"B1: the trigger itself is enforced at the third logical member (S0) or suppressed (candidates need 3 FAILING members: here they exist)","ok":true,"steps":"check:H2/59"}
+{"s":"A02.B2.set-ttl-boundary","variant":"A1","flow":"pre+out","f3At":599,"f3Outcome":"fail","f3Blocked":true,"step":"check:H2/60"}
+{"s":"A02.B2.set-ttl-boundary","variant":"A1","flow":"pre+out","f3At":599,"f3Outcome":"ok","f3Blocked":true,"step":"check:H2/60"}
+{"s":"A02.B2.set-ttl-boundary","variant":"A1","flow":"pre+out","f3At":600,"f3Outcome":"fail","f3Blocked":false,"step":"check:A>fail:A"}
+{"s":"A02.B2.set-ttl-boundary","variant":"A1","flow":"pre+out","f3At":600,"f3Outcome":"ok","f3Blocked":false,"step":"check:A>ok:A"}
+{"s":"A02.B2.set-ttl-boundary","variant":"A1","flow":"out","f3At":599,"f3Outcome":"fail","f3Blocked":true,"step":"fail:H2/60"}
+{"s":"A02.B2.set-ttl-boundary","variant":"A1","flow":"out","f3At":599,"f3Outcome":"ok","f3Blocked":true,"step":"ok:H2/60"}
+{"s":"A02.B2.set-ttl-boundary","variant":"A1","flow":"out","f3At":600,"f3Outcome":"fail","f3Blocked":false,"step":"fail:A"}
+{"s":"A02.B2.set-ttl-boundary","variant":"A1","flow":"out","f3At":600,"f3Outcome":"ok","f3Blocked":false,"step":"ok:A"}
+{"s":"A02.B3.watch-boundary","variant":"A1","flow":"pre+out","secondPairEndsAt":1800,"blockedAtSecondPairEnd":true,"step":"check:H2/60"}
+{"s":"A02.B3.watch-boundary","variant":"A1","flow":"pre+out","secondPairEndsAt":1801,"blockedAtSecondPairEnd":true,"step":"check:A>fail:H2/60"}
+{"s":"A02.B3.watch-boundary","variant":"A1","flow":"out","secondPairEndsAt":1800,"blockedAtSecondPairEnd":true,"step":"fail:H2/60"}
+{"s":"A02.B3.watch-boundary","variant":"A1","flow":"out","secondPairEndsAt":1801,"blockedAtSecondPairEnd":false,"step":"fail:A"}
+{"s":"A02.B4.persistent-attacker-reissue","variant":"A1","attackerRuns":"a0-0,B1-130","blockIssuances":3,"attackerReached":2}
+{"s":"A02.B5.single-seed-then-silence","variant":"A1","legitDenied":120,"legitAttempts":300,"lastLegitDenialT":600,"legitRuns":"B5-600,a605-1500","blockIssuances":10}
+{"s":"A02","variant":"A1","assert":"B6: recording rows were produced for every probe (negative control: probes reached the pipeline)","ok":true,"legitProbes":300}
