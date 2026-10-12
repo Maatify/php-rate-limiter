@@ -58,7 +58,7 @@ process id + working directory before touching anything.
 * **F104-02 — fail-closed gates.** `report.php` validates required evidence before any verdict: every matrix cell (`wsbMatrixCells()`), per-variant scenario files, the
   required assertion / row identifiers of A02–A07, four A06 pairs, and `redis_status.txt` (`RAN` / `SKIPPED`, written by `run.sh`). Missing, empty or malformed input
   gives the gate `UNPROVEN`, writes `evidence_problems.txt` and exits 5; an intentionally skipped Redis stage (`REDIS_SPOTCHECK=0`) gives `UNPROVEN` for A.4/A.5 and is never
-  counted as proven. Nine self-tests (`selftest_failclosed_*`) delete or damage representative A02/A03/A04/A05/A07/matrix/status evidence and require exit code + no PASS.
+  counted as proven. Gate D2 requires the four `indistinguishable: I1…I4` assertions per variant (not only the four `A06.pair` records), and every A01 cell is validated for the twelve core integer fields (present, integer, non-negative, `denied = byCorrelation + other`, counts ≤ attempts) — a missing field such as `legitDeniedByCorrelation` makes B/C/D/A.6 `UNPROVEN`. Eleven self-tests (`selftest_failclosed_*`) delete or damage representative A02/A03/A04/A05/A07/matrix/status evidence and require exit code + no PASS.
   Legitimate `NOT_APPLICABLE` (A.5 for S0/A1) is kept.
 * **F104-03 — DEC-003 by behaviour.** The patch-text regex is relabelled `A.7s` (INFO, "limited structural scope check, NOT a DEC-003 proof"). Gate `A.7` now comes from
   `scenarios/a07_dec003_behavior.php` on every variant: transition-only cycles with strictly increasing counts; pause activations and paused-decay seconds equal to a DEC-003

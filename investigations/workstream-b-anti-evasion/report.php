@@ -91,12 +91,41 @@ $emitGate = static function (string $variant, string $gateId, string $status, st
 };
 $get = static fn(string $v, string $stream, string $shape, string $flow): ?array => $M[$v][$stream][$shape][$flow] ?? null;
 
-/** @return list<string> required matrix cells missing for a variant */
+/** Core numeric fields every A01 cell must carry (F104-02): presence AND type/consistency are validated, not just the row. */
+const WSB_CELL_INT_FIELDS = ['attackAttempts', 'attackReachedVerification', 'attackDenied', 'attackDeniedByCorrelation', 'attackDeniedOther', 'legitAttempts', 'legitDenied', 'legitDeniedByCorrelation', 'legitDeniedOther', 'controlLegitDenied', 'controlAttackReachedVerification', 'blockIssuancesTotal'];
+
+/** @return list<string> problems of one cell: missing/non-integer/negative fields or arithmetic inconsistency */
+function wsbCellProblems(array $c): array
+{
+    $p = [];
+    foreach (WSB_CELL_INT_FIELDS as $f) {
+        if (! array_key_exists($f, $c) || ! is_int($c[$f]) || $c[$f] < 0) {
+            $p[] = $f;
+        }
+    }
+    if ($p === []) {
+        if ($c['attackDenied'] !== $c['attackDeniedByCorrelation'] + $c['attackDeniedOther'] || $c['legitDenied'] !== $c['legitDeniedByCorrelation'] + $c['legitDeniedOther']) {
+            $p[] = 'denied != byCorrelation + other';
+        }
+        if ($c['attackDenied'] > $c['attackAttempts'] || $c['legitDenied'] > $c['legitAttempts'] || $c['attackReachedVerification'] > $c['attackAttempts']) {
+            $p[] = 'count exceeds attempts';
+        }
+    }
+
+    return $p;
+}
+
+/** @return list<string> required matrix cells missing or invalid for a variant */
 $missingCells = static function (string $v) use (&$M): array {
     $m = [];
     foreach (wsbMatrixCells() as [$st, $sh, $fl]) {
         if (! isset($M[$v][$st][$sh][$fl])) {
             $m[] = "$st/$sh/$fl";
+            continue;
+        }
+        $bad = wsbCellProblems($M[$v][$st][$sh][$fl]);
+        if ($bad !== []) {
+            $m[] = "$st/$sh/$fl: invalid " . implode(',', $bad);
         }
     }
 
@@ -348,9 +377,14 @@ foreach ($candidates as $v) {
 
 $indMissing = [];
 foreach ($variants as $v) {
-    $pairs = count(array_filter($A[$v]['a06_indistinguishability'] ?? [], static fn(array $r): bool => ($r['s'] ?? '') === 'A06.pair'));
+    $a06 = $A[$v]['a06_indistinguishability'] ?? [];
+    $pairs = count(array_filter($a06, static fn(array $r): bool => ($r['s'] ?? '') === 'A06.pair'));
     if ($pairs !== 4) {
         $indMissing[] = "$v: $pairs of 4 A06 pairs";
+    }
+    // The verdict rests on the four ASSERTIONS (digest equality + identical treatment), not on the pair records alone.
+    foreach ($missingIds($a06, ['indistinguishable: I1', 'indistinguishable: I2', 'indistinguishable: I3', 'indistinguishable: I4']) as $n) {
+        $indMissing[] = "$v: assertion '$n' absent";
     }
 }
 if ($indMissing !== []) {

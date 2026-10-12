@@ -268,6 +268,8 @@ m_del_a02() { rm -f "$1/a02_boundaries.S0.jsonl"; }
 m_del_a03() { rm -f "$1/a03_rotation_ephemeral_backend.P2.jsonl"; }
 m_del_a07() { rm -f "$1/a07_dec003_behavior.RL.jsonl"; }
 m_del_cells() { grep -v '"stream":"X2"' "$1/a01_matrix.PW.jsonl" >"$1/x" && mv "$1/x" "$1/a01_matrix.PW.jsonl"; }
+m_del_d2_asserts() { grep -v '"assert"' "$1/a06_indistinguishability.A1.jsonl" >"$1/x"; mv "$1/x" "$1/a06_indistinguishability.A1.jsonl"; }
+m_del_cell_field() { sed 's/"legitDeniedByCorrelation":[0-9]*,//' "$1/a01_matrix.PW.jsonl" >"$1/x"; mv "$1/x" "$1/a01_matrix.PW.jsonl"; }
 m_malformed() { printf '{"s":"A04.S3",broken\n' >>"$1/a04_state_bounds.A1.jsonl"; }
 m_skip_redis() { echo SKIPPED >"$1/redis_status.txt"; rm -f "$1"/a05_redis.*.jsonl; }
 m_no_status() { rm -f "$1/redis_status.txt"; }
@@ -277,6 +279,8 @@ fc_case a02_missing 5 PW '/^A\.2 /' m_del_a02
 fc_case a03_missing 5 P2 '/^A\.(1|3) /' m_del_a03
 fc_case a07_missing 5 RL '/^A\.7 /' m_del_a07
 fc_case matrix_cells_missing 5 PW '/^(A\.6|B\.|C\.|D\. )/' m_del_cells
+fc_case d2_assertions_missing 5 ALL '/^D2 /' m_del_d2_asserts
+fc_case cell_field_missing 5 PW '/^(A\.6|B\.|C\.|D\. )/' m_del_cell_field
 fc_case malformed_json 5 A1 '/^A\.4 /' m_malformed
 fc_case redis_intentionally_skipped 0 PW '/^A\.(4|5) /' m_skip_redis
 fc_case redis_status_missing 5 PW '/^A\.4 /' m_no_status
