@@ -1,0 +1,18 @@
+{"s":"F103-05.state-bounds","assert":"PW.H1.plateau (peak after hour 2 never exceeds peak of first 2 h)","ok":true,"peakFirst2h":120,"peakLater":120,"events":8640}
+{"s":"F103-05.state-bounds","assert":"PW.H1.ua-anchors-only-live-windows (<= 10 windows x 6 events = 60 UA anchors)","ok":true,"uaAnchorsRetained":0,"uniqueUaSeen":8640}
+{"s":"F103-05.state-bounds","assert":"PW.H1.no-idealized-state","ok":true,"idealizedPeak":0}
+{"s":"F103-05.state-bounds","assert":"PW.H1.scope-windows<=10","ok":true,"maxScopeWindows":1}
+{"s":"F103-05.state-bounds","assert":"PW.H1.window-members<=cap","ok":true,"maxWindowMembers":1}
+{"s":"F103-05.state-bounds","assert":"PW.H1.reference-store-plateau (sets/flags/blocks expire by TTL)","ok":true,"peakStoreEntries":120}
+{"s":"F103-05.state-bounds","assert":"PW.H3.drained-after-1h-idle","ok":true,"store":2,"latch":0,"idealized":0,"bounded":0,"uaAnchors":0,"failWinScopes":0,"maxScopeWindows":0,"maxWindowMembers":0,"note":"only the lone success itself may remain (ratio counters for P2, reference-store members)"}
+{"s":"F103-05.state-bounds","assert":"PW.H2.cap-3-per-scope-window (40 distinct failing fingerprints in one window)","ok":true,"maxWindowMembers":3}
+{"s":"F103-05.state-bounds","assert":"PW.H2.10-window-sliding-eviction (3 h of one failure per minute on one K2)","ok":true,"store":3,"latch":1,"idealized":0,"bounded":20,"uaAnchors":0,"failWinScopes":11,"maxScopeWindows":10,"maxWindowMembers":1}
+{"s":"F103-05.state-bounds","assert":"P2.H1.plateau (peak after hour 2 never exceeds peak of first 2 h)","ok":true,"peakFirst2h":300,"peakLater":300,"events":8640}
+{"s":"F103-05.state-bounds","assert":"P2.H1.ua-anchors-only-live-windows (<= 10 windows x 6 events = 60 UA anchors)","ok":true,"uaAnchorsRetained":60,"uniqueUaSeen":8640}
+{"s":"F103-05.state-bounds","assert":"P2.H1.no-idealized-state","ok":true,"idealizedPeak":0}
+{"s":"F103-05.state-bounds","assert":"P2.H1.scope-windows<=10","ok":true,"maxScopeWindows":1}
+{"s":"F103-05.state-bounds","assert":"P2.H1.window-members<=cap","ok":true,"maxWindowMembers":1}
+{"s":"F103-05.state-bounds","assert":"P2.H1.reference-store-plateau (sets/flags/blocks expire by TTL)","ok":true,"peakStoreEntries":120}
+{"s":"F103-05.state-bounds","assert":"P2.H3.drained-after-1h-idle","ok":true,"store":2,"latch":0,"idealized":0,"bounded":2,"uaAnchors":1,"failWinScopes":0,"maxScopeWindows":0,"maxWindowMembers":0,"note":"only the lone success itself may remain (ratio counters for P2, reference-store members)"}
+{"s":"F103-05.state-bounds","assert":"P2.H2.cap-3-per-scope-window (40 distinct failing fingerprints in one window)","ok":true,"maxWindowMembers":3}
+{"s":"F103-05.state-bounds","assert":"P2.H2.10-window-sliding-eviction (3 h of one failure per minute on one K2)","ok":true,"store":3,"latch":1,"idealized":0,"bounded":50,"uaAnchors":1,"failWinScopes":11,"maxScopeWindows":10,"maxWindowMembers":1}

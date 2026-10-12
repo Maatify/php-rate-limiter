@@ -45,6 +45,7 @@ stages=(
     "model_matrix:model/run_matrix.php"
     "model_mechanisms:model/mechanisms.php"
     "model_regression:model/regression.php"
+    "model_state_bounds:model/state_bounds.php"
 )
 
 status=0
@@ -68,7 +69,11 @@ compare() {
 for stage in "${stages[@]}"; do
     name=${stage%%:*}
     script=${stage#*:}
-    php "$here/$script" >"$actual/$name.jsonl" 2>"$actual/$name.stderr"
+    if ! php "$here/$script" >"$actual/$name.jsonl" 2>"$actual/$name.stderr"; then
+        report "$name" "FAIL (non-zero exit: an in-script assertion failed or the script crashed; see results/actual/$name.jsonl / .stderr)"
+        status=1
+        continue
+    fi
     if [[ -s "$actual/$name.stderr" ]]; then
         report "$name" "FAIL (stderr not empty: results/actual/$name.stderr)"
         status=1

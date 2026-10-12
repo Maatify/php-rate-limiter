@@ -13,14 +13,18 @@ declare(strict_types=1);
  * mutated, for every command. Failure witnesses / ratio counters are therefore written only for requests that were not
  * denied by an active block (regression: model/regression.php).
  *
- * State boundedness (F103-05):
- *   S0, A1, A2         — only bounded distinct sets / WATCH flags with fixed TTL (identical to the reference stores).
- *   P, P0 ("ideal")    — failure witnesses with per-member timestamps and NO cap/eviction: IDEALIZED-UNBOUNDED, shown only to
- *                        separate policy logic from storage; they are not an implementable bounded design.
- *   PW, P2 (bounded)   — witnesses live in 60 s window sets, cap 3 members per (scope, window), 10 windows kept; ratio state is
- *                        two integers per UA per window plus a failing-K1 set capped at 6; older windows are evicted.
- *                        Peak entry counts are reported by run_matrix.php. Rotation (current+previous) and ephemeral
- *                        interaction of this state are NOT modelled and remain unproven.
+ * State model (F103-05) — each policy allocates ONLY the structure it is defined to use:
+ *   S0, A1             — reference-store state only: bounded distinct sets / WATCH flags / blocks with fixed TTL. Expired entries
+ *                        are garbage-collected on every command (same visible semantics: expired == absent).
+ *   A2, P, P0 (ideal)  — plus failure witnesses with per-member timestamps, NO cap and NO eviction: IDEALIZED-UNBOUNDED,
+ *                        shown only to separate policy logic from storage; not an implementable bounded design.
+ *   PW                 — plus failure witnesses in 60 s window sets, cap 3 members per (scope, window), 10 windows kept; empty
+ *                        scopes are removed. It allocates NO idealized `fail` state and NO ratio state.
+ *   P2                 — PW witnesses plus ratio state: per UA per 60 s window two integers and a failing-K1 set capped at 6;
+ *                        10 windows kept; empty UA anchors are removed.
+ *   Retained state is MEASURED after every command (`retained()`), split into reference-store entries and witness entries, and
+ *   the peak of each is reported by run_matrix.php. Rotation (current+previous) and ephemeral interaction of witness state are
+ *   NOT modelled and remain unproven.
  *
  * Observation mechanisms: every | pre (M1) | distinct (M2) | debounce (M3) — see model/mechanisms.php.
  */
@@ -68,6 +72,36 @@ final class ModelStore
 
         return ($f !== null && $f['e'] > $now) ? $f['c'] : 0;
     }
+
+    /** Removes expired state. Visible semantics are unchanged: every accessor already treats expired as absent. */
+    public function gc(int $now): void
+    {
+        foreach ($this->sets as $k => $v) {
+            if ($v['e'] <= $now) {
+                unset($this->sets[$k]);
+            }
+        }
+        foreach ($this->flags as $k => $v) {
+            if ($v['e'] <= $now) {
+                unset($this->flags[$k]);
+            }
+        }
+        foreach ($this->blocks as $k => $exp) {
+            if ($exp <= $now) {
+                unset($this->blocks[$k]);
+            }
+        }
+    }
+
+    public function entries(): int
+    {
+        $n = count($this->flags) + count($this->blocks);
+        foreach ($this->sets as $v) {
+            $n += count($v['i']);
+        }
+
+        return $n;
+    }
 }
 
 final class PolicyModel
@@ -77,6 +111,7 @@ final class PolicyModel
     public const WINDOWS = 10;
     public const WITNESS_CAP = 3;
     public const FAILING_K1_CAP = 6;
+    public const LATCH_RETAIN = 600; // = witness horizon: after it no witness can satisfy the >=3 evidence rule, so the marker is redundant
 
     public ModelStore $st;
     /** @var array<string, array<string, int>> IDEALIZED-UNBOUNDED timestamped witnesses: scope => member => last t */
@@ -87,10 +122,15 @@ final class PolicyModel
     private array $ratio = [];
     /** @var array<string, int> */
     private array $lastObs = [];
+    /** @var array<string, int> latch marker (P family): scope key => expiry of the last correlation block; kept LATCH_RETAIN s past expiry */
+    private array $latch = [];
 
     public int $cycles = 0;
     public int $witnessWritesWhileDenied = 0;
-    public int $peakBoundedEntries = 0;
+    public int $peakStoreEntries = 0;
+    public int $peakWitnessEntries = 0;
+    public int $peakIdealizedWitnessEntries = 0;
+    public int $peakBoundedWitnessEntries = 0;
 
     /** Regression switch: reproduces the REJECTED earlier ordering (witness written before the active-block check). */
     public function __construct(public string $enforce, public string $observe = 'every', public bool $legacyWitnessBeforeActiveCheck = false)
@@ -161,30 +201,41 @@ final class PolicyModel
         $k2 = $e['ip'] . '|' . $e['ua'];
         $fp = $e['fp'] ?? ('LOW:' . $e['ua']);
         $win = intdiv($now, self::WIN);
-        if ($e['outcome'] === 'fail') {
-            // idealized-unbounded (P, P0)
-            $this->fail['k2:' . $k2][$fp] = $now;
-            $this->fail['fp:' . $fp][$k1] = $now;
-            // bounded (PW, P2): cap 3 per (scope, window); a full window rejects new members (bounded-set semantics)
-            foreach (['k2:' . $k2 => $fp, 'fp:' . $fp => $k1] as $scope => $member) {
-                $set = $this->failWin[$scope][$win] ?? [];
-                if (isset($set[$member]) || count($set) < self::WITNESS_CAP) {
-                    $set[$member] = 1;
-                    $this->failWin[$scope][$win] = $set;
+        if (in_array($this->enforce, ['A2', 'P'], true)) {
+            // IDEALIZED-UNBOUNDED timestamped witnesses (only for the policies defined to use them)
+            if ($e['outcome'] === 'fail') {
+                $this->fail['k2:' . $k2][$fp] = $now;
+                $this->fail['fp:' . $fp][$k1] = $now;
+            }
+
+            return;
+        }
+        if ($this->enforce === 'PW' || $this->enforce === 'P2') {
+            // BOUNDED window witnesses: cap 3 per (scope, window); a full window rejects new members (bounded-set semantics)
+            if ($e['outcome'] === 'fail') {
+                foreach (['k2:' . $k2 => $fp, 'fp:' . $fp => $k1] as $scope => $member) {
+                    $set = $this->failWin[$scope][$win] ?? [];
+                    if (isset($set[$member]) || count($set) < self::WITNESS_CAP) {
+                        $set[$member] = 1;
+                        $this->failWin[$scope][$win] = $set;
+                    }
                 }
             }
         }
-        $r = $this->ratio[$e['ua']][$win] ?? ['f' => 0, 's' => 0, 'k' => []];
-        $r[$e['outcome'] === 'fail' ? 'f' : 's']++;
-        if ($e['outcome'] === 'fail' && count($r['k']) < self::FAILING_K1_CAP) {
-            $r['k'][$k1] = 1;
+        if ($this->enforce === 'P2') {
+            $r = $this->ratio[$e['ua']][$win] ?? ['f' => 0, 's' => 0, 'k' => []];
+            $r[$e['outcome'] === 'fail' ? 'f' : 's']++;
+            if ($e['outcome'] === 'fail' && count($r['k']) < self::FAILING_K1_CAP) {
+                $r['k'][$k1] = 1;
+            }
+            $this->ratio[$e['ua']][$win] = $r;
         }
-        $this->ratio[$e['ua']][$win] = $r;
-        $this->evict($win);
     }
 
-    private function evict(int $win): void
+    /** Evicts expired windows and removes emptied scope / UA anchors (called on every command, like store TTL expiry). */
+    private function evict(int $now): void
     {
+        $win = intdiv($now, self::WIN);
         foreach ($this->failWin as $scope => $windows) {
             foreach (array_keys($windows) as $w) {
                 if ($w <= $win - self::WINDOWS) {
@@ -201,19 +252,64 @@ final class PolicyModel
                     unset($this->ratio[$ua][$w]);
                 }
             }
+            if ($this->ratio[$ua] === []) {
+                unset($this->ratio[$ua]);
+            }
         }
-        $entries = 0;
+        foreach ($this->latch as $k => $exp) {
+            if ($exp + self::LATCH_RETAIN <= $now) {
+                unset($this->latch[$k]);
+            }
+        }
+        foreach ($this->lastObs as $d => $t) {
+            if ($now - $t >= self::DEBOUNCE) {
+                unset($this->lastObs[$d]);
+            }
+        }
+    }
+
+    /** @return array{store: int, latch: int, idealized: int, bounded: int, uaAnchors: int, failWinScopes: int, maxScopeWindows: int, maxWindowMembers: int} entries RETAINED right now */
+    public function retained(): array
+    {
+        $ideal = 0;
+        foreach ($this->fail as $members) {
+            $ideal += count($members);
+        }
+        $bounded = 0;
+        $maxScopeWindows = 0;
+        $maxWindowMembers = 0;
         foreach ($this->failWin as $windows) {
+            $maxScopeWindows = max($maxScopeWindows, count($windows));
             foreach ($windows as $members) {
-                $entries += count($members);
+                $bounded += count($members);
+                $maxWindowMembers = max($maxWindowMembers, count($members));
             }
         }
         foreach ($this->ratio as $windows) {
             foreach ($windows as $r) {
-                $entries += 2 + count($r['k']);
+                $bounded += 2 + count($r['k']);
             }
         }
-        $this->peakBoundedEntries = max($this->peakBoundedEntries, $entries);
+
+        return [
+            'store' => $this->st->entries() + count($this->lastObs),
+            'latch' => count($this->latch),
+            'idealized' => $ideal,
+            'bounded' => $bounded,
+            'uaAnchors' => count($this->ratio),
+            'failWinScopes' => count($this->failWin),
+            'maxScopeWindows' => $maxScopeWindows,
+            'maxWindowMembers' => $maxWindowMembers,
+        ];
+    }
+
+    private function track(): void
+    {
+        $r = $this->retained();
+        $this->peakStoreEntries = max($this->peakStoreEntries, $r['store']);
+        $this->peakIdealizedWitnessEntries = max($this->peakIdealizedWitnessEntries, $r['idealized']);
+        $this->peakBoundedWitnessEntries = max($this->peakBoundedWitnessEntries, $r['bounded']);
+        $this->peakWitnessEntries = max($this->peakWitnessEntries, $r['idealized'] + $r['bounded'] + $r['latch']);
     }
 
     /**
@@ -221,6 +317,20 @@ final class PolicyModel
      * @return array{blocked: bool, retry: int}
      */
     public function observeCommand(array $e, string $phase): array
+    {
+        $this->st->gc($e['t']);
+        $this->evict($e['t']);
+        $r = $this->observeCommandInner($e, $phase);
+        $this->track();
+
+        return $r;
+    }
+
+    /**
+     * @param array<string, mixed> $e
+     * @return array{blocked: bool, retry: int}
+     */
+    private function observeCommandInner(array $e, string $phase): array
     {
         $now = $e['t'];
         $k1 = $e['ip'];
@@ -317,13 +427,16 @@ final class PolicyModel
                 if (! $ok) {
                     return ['blocked' => false, 'retry' => 0];
                 }
-                $exp = $S->blocks[$trig[1]] ?? 0;
+                $exp = $this->latch[$trig[1]] ?? 0;
                 if ($exp > 0 && ! $this->freshSince($scope, $exp, $bounded)) {
                     return ['blocked' => false, 'retry' => 0];
                 }
                 break;
         }
         $S->blocks[$trig[1]] = $now + 60;
+        if (in_array($this->enforce, ['P', 'PW', 'P2'], true)) {
+            $this->latch[$trig[1]] = $now + 60;
+        }
         $this->cycles++;
 
         return ['blocked' => true, 'retry' => 60];
