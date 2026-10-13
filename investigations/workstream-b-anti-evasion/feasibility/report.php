@@ -175,12 +175,94 @@ foreach (VARIANTS as $v) {
         $problem("f07_poisoning_cost.$v: expected 6 rows, got $n");
     }
 }
+// F107-02: every sensitivity cell must be the exact (knob, cap, stream, shape, flow) cell of its file, once, with the PSC provenance row.
+$sensSpec = [];
+foreach (fsbSensitivityCells() as [$sShape, $sIds, $sFlow, $sKnob, $sCaps]) {
+    $sensSpec[$sKnob === 'PSC_CAP_CHURN' ? 'churn' : 'dilution'] = [$sShape, $sIds, $sFlow, $sKnob];
+}
 foreach ($SENS as $knob => $caps) {
+    [$sShape, $sIds, $sFlow, $sKnob] = $sensSpec[$knob];
     foreach ($caps as $cap => $rows) {
-        $n = count(array_filter($rows ?? [], static fn(array $r): bool => ($r['s'] ?? '') === 'F02.sensitivity'));
-        if ($rows !== null && $n !== 5 + ($knob === 'dilution' ? 1 : 0)) {
-            $problem("f02_sensitivity.PSC.$knob$cap: expected " . (5 + ($knob === 'dilution' ? 1 : 0)) . " rows, got $n");
+        if ($rows === null) {
+            continue;
         }
+        $label = "f02_sensitivity.PSC.$knob$cap";
+        $prov = $rows[0] ?? [];
+        if (($prov['s'] ?? '') !== 'F02.provenance' || ($prov['variant'] ?? '') !== 'PSC' || ($prov['pipelineSha256'] ?? '') !== $pinPsc || ($prov['patched'] ?? null) !== true) {
+            $problem("$label: provenance row missing or not the pinned PSC pipeline");
+        }
+        $seen = [];
+        foreach ($rows as $r) {
+            if (($r['s'] ?? '') !== 'F02.sensitivity') {
+                continue;
+            }
+            $id = (string) ($r['stream'] ?? '?');
+            if (isset($seen[$id])) {
+                $problem("$label: duplicate cell for stream $id");
+            }
+            $seen[$id] = true;
+            if (($r['variant'] ?? '') !== 'PSC' || ($r['knob'] ?? '') !== $sKnob || ($r['cap'] ?? null) !== $cap || ($r['shape'] ?? '') !== $sShape || ($r['flow'] ?? '') !== $sFlow || ! in_array($id, $sIds, true)) {
+                $problem("$label: cell $id has wrong identity (variant/knob/cap/shape/flow/stream)");
+            }
+            foreach (['attackAttempts', 'attackReachedVerification', 'legitAttempts', 'legitDenied', 'legitDeniedByCorrelation', 'controlLegitDenied', 'controlAttackReachedVerification'] as $f) {
+                if (! isset($r[$f]) || ! is_int($r[$f])) {
+                    $problem("$label: cell $id lacks integer field $f");
+                }
+            }
+        }
+        foreach ($sIds as $id) {
+            if (! isset($seen[$id])) {
+                $problem("$label: missing cell for stream $id");
+            }
+        }
+        if (count($seen) !== count($sIds)) {
+            $problem("$label: expected " . count($sIds) . ' distinct stream cells, got ' . count($seen));
+        }
+    }
+}
+// F107-01: A06 must contain exactly the four pairs I1..I4, once each, with one matching assertion each, equal observable digests (also equal across
+// variants: the digest is a property of the pair, not of the runtime), identical treatment and equal labelled denial counts.
+$a06Ref = [];
+foreach (VARIANTS as $v) {
+    $rows = $F['a06_indistinguishability'][$v] ?? null;
+    if ($rows === null) {
+        continue;
+    }
+    $pairRows = array_values(array_filter($rows, static fn(array $r): bool => ($r['s'] ?? '') === 'A06.pair'));
+    $assertRows = array_values(array_filter($rows, static fn(array $r): bool => array_key_exists('assert', $r)));
+    $byId = [];
+    foreach ($pairRows as $r) {
+        $id = preg_match('/^(I[1-4]) /', (string) ($r['pair'] ?? ''), $mm) === 1 ? $mm[1] : '?';
+        if (isset($byId[$id]) || $id === '?') {
+            $problem("a06.$v: duplicate or unknown pair identifier " . ($r['pair'] ?? '?'));
+        }
+        $byId[$id] = $r;
+    }
+    foreach (['I1', 'I2', 'I3', 'I4'] as $id) {
+        if (! isset($byId[$id])) {
+            $problem("a06.$v: missing pair $id");
+            continue;
+        }
+        $r = $byId[$id];
+        $dl = (string) ($r['observableDigestLegit'] ?? '');
+        $da = (string) ($r['observableDigestAttack'] ?? '');
+        if (preg_match('/^[0-9a-f]{64}$/', $dl) !== 1 || $dl !== $da) {
+            $problem("a06.$v: pair $id observable digests are malformed or differ between the legit and attack labelling");
+        }
+        if (($a06Ref[$id] ?? $dl) !== $dl) {
+            $problem("a06.$v: pair $id digest differs from the digest of another variant");
+        }
+        $a06Ref[$id] = $dl;
+        if (($r['identicalTreatment'] ?? null) !== true || ! is_array($r['labelledLegit'] ?? null) || ($r['labelledLegit'] ?? null) !== ($r['labelledAttack'] ?? 'x')) {
+            $problem("a06.$v: pair $id is not treated identically");
+        }
+        $match = array_filter($assertRows, static fn(array $a): bool => ($a['assert'] ?? '') === 'indistinguishable: ' . $r['pair']);
+        if (count($match) !== 1 || array_values($match)[0]['ok'] !== true) {
+            $problem("a06.$v: pair $id lacks exactly one passing assertion with its own title");
+        }
+    }
+    if (count($pairRows) !== 4 || count($assertRows) !== 4) {
+        $problem("a06.$v: expected exactly 4 pair rows and 4 assertions, got " . count($pairRows) . ' / ' . count($assertRows));
     }
 }
 if ($redisStatus === 'RAN') {

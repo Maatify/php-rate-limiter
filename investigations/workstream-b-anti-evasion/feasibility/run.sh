@@ -310,6 +310,57 @@ drop = next(i for i, r in enumerate(rows) if r.get('s') == 'F01.matrix' and r['s
 del rows[drop]
 open(p, 'w').write('\n'.join(json.dumps(r, separators=(',', ':')) for r in rows) + '\n')
 PY"
+failclosed a06_delete_pair "python3 - \"\$fc/a06_indistinguishability.PSC.jsonl\" <<'PY'
+import json, sys
+p = sys.argv[1]
+rows = [json.loads(l) for l in open(p)]
+i = next(k for k, r in enumerate(rows) if r.get('s') == 'A06.pair' and r['pair'].startswith('I3 '))
+del rows[i]
+open(p, 'w').write('\\n'.join(json.dumps(r, separators=(',', ':')) for r in rows) + '\\n')
+PY"
+failclosed a06_duplicate_pair_keep_count "python3 - \"\$fc/a06_indistinguishability.PSC.jsonl\" <<'PY'
+import json, sys
+p = sys.argv[1]
+rows = [json.loads(l) for l in open(p)]
+i1 = next(r for r in rows if r.get('s') == 'A06.pair' and r['pair'].startswith('I1 '))
+k = next(k for k, r in enumerate(rows) if r.get('s') == 'A06.pair' and r['pair'].startswith('I4 '))
+rows[k] = dict(i1)
+open(p, 'w').write('\\n'.join(json.dumps(r, separators=(',', ':')) for r in rows) + '\\n')
+PY"
+failclosed a06_corrupt_digest_assertions_ok "python3 - \"\$fc/a06_indistinguishability.PSC.jsonl\" <<'PY'
+import json, sys
+p = sys.argv[1]
+rows = [json.loads(l) for l in open(p)]
+for r in rows:
+    if r.get('s') == 'A06.pair' and r['pair'].startswith('I2 '):
+        r['observableDigestAttack'] = '0' * 64
+open(p, 'w').write('\\n'.join(json.dumps(r, separators=(',', ':')) for r in rows) + '\\n')
+PY"
+failclosed sens_duplicate_stream_keep_count "python3 - \"\$fc/f02_sensitivity.PSC.churn4.jsonl\" <<'PY'
+import json, sys
+p = sys.argv[1]
+rows = [json.loads(l) for l in open(p)]
+a = next(r for r in rows if r.get('s') == 'F02.sensitivity' and r['stream'] == 'L1')
+k = next(k for k, r in enumerate(rows) if r.get('s') == 'F02.sensitivity' and r['stream'] == 'D7')
+rows[k] = dict(a)
+open(p, 'w').write('\\n'.join(json.dumps(r, separators=(',', ':')) for r in rows) + '\\n')
+PY"
+failclosed sens_change_cap "python3 - \"\$fc/f02_sensitivity.PSC.dilution12.jsonl\" <<'PY'
+import json, sys
+p = sys.argv[1]
+rows = [json.loads(l) for l in open(p)]
+for r in rows:
+    if r.get('s') == 'F02.sensitivity' and r['stream'] == 'X7':
+        r['cap'] = 24
+open(p, 'w').write('\\n'.join(json.dumps(r, separators=(',', ':')) for r in rows) + '\\n')
+PY"
+failclosed sens_bad_provenance "python3 - \"\$fc/f02_sensitivity.PSC.churn6.jsonl\" <<'PY'
+import json, sys
+p = sys.argv[1]
+rows = [json.loads(l) for l in open(p)]
+rows[0]['pipelineSha256'] = '0' * 64
+open(p, 'w').write('\\n'.join(json.dumps(r, separators=(',', ':')) for r in rows) + '\\n')
+PY"
 failclosed delete_a06_assertions "python3 - \"\$fc/a06_indistinguishability.PSC.jsonl\" <<'PY'
 import json, sys
 p = sys.argv[1]
