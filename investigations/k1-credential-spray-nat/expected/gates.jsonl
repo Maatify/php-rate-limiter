@@ -1,0 +1,10 @@
+{"gate":"G1","title":"Baseline reproduction: the four arms reproduce the published S0 D2 numbers (117/108/115/7)","status":"PASS"}
+{"gate":"G2","title":"Isolated TEST-ONLY controls work (arm C/D disable K1 spray, arm B keeps it; spray stream constrained only by K1)","status":"PASS"}
+{"gate":"G3","title":"K1 boundaries and recovery measured exactly (4/5 WATCH, 5/5, 600 s fixed window, 1800 s WATCH, 60 s block vs set, OTP)","status":"PASS"}
+{"gate":"G4","title":"Command lifecycle: precheck-only observation, no double count, record-only has no K1","status":"PASS"}
+{"gate":"G5","title":"Trust: only session-bound trusted devices are advisory; advisory still persists the block","status":"PASS"}
+{"gate":"G6","title":"IPv6 macro scopes and Current/Previous rotation","status":"PASS"}
+{"gate":"G7","title":"Host correlation-subject quality (absent / opaque / constant / per-request unique)","status":"PASS"}
+{"gate":"G8","title":"Reference-store bounds and TTL hygiene","status":"PASS"}
+{"gate":"G9","title":"Typo-seed robustness of the benign numbers (20 seeds)","status":"PASS"}
+{"gate":"G10","title":"Real Redis: parity, TTL hygiene, atomic cap under concurrency, rotation","status":"PASS"}

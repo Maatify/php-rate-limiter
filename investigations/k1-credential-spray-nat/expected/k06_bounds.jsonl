@@ -1,0 +1,10 @@
+{"s":"K06.provenance","level":"S0_RUNTIME_OBSERVED","baseSha":"4d9495ded05f647ce0421352781ce948ceeaa606","pipelineSha256":"4b259d3397adf492d9767572141c9bdf5efc5744886bce63592ae9f36b95f4fc","patched":false}
+{"s":"K06.M1.one-ip-bulk","subjects":5000,"sets":1,"flags":1,"maxSet":5,"members":5,"maxSetTtl":100,"maxFlagTtl":1300}
+{"s":"K06","assert":"M1 5000 distinct subjects from ONE IP leave exactly one spray set of 5 members and one WATCH flag (rejected members never grow the set)","ok":true,"sets":1,"flags":1,"maxSet":5,"members":5,"maxSetTtl":100,"maxFlagTtl":1300}
+{"s":"K06.M2.fixed-window","ttlRemainingAt500":100,"ttlRemainingAt599":1,"watchTtlRemainingAt500":1800}
+{"s":"K06","assert":"M2 later members do not extend the 600 s set TTL (100 s left at t=500, 1 s at t=599) and the WATCH flag keeps its fixed 1800 s TTL (1303 s left at t=500: created by the 4th request at t=500)","ok":true,"at500":{"sets":1,"flags":1,"maxSet":4,"members":4,"maxSetTtl":100,"maxFlagTtl":1800},"at599":{"sets":1,"flags":1,"maxSet":4,"members":4,"maxSetTtl":1,"maxFlagTtl":1701}}
+{"s":"K06.M3.expiry","sets":0,"flags":0,"maxSet":0,"members":0,"maxSetTtl":0,"maxFlagTtl":0}
+{"s":"K06","assert":"M3 no spray set and no WATCH flag is active 1800 s after the last request","ok":true,"sets":0,"flags":0,"maxSet":0,"members":0,"maxSetTtl":0,"maxFlagTtl":0}
+{"s":"K06.M4.many-ips","ips":2000,"requests":12000,"reachedVerification":8000,"sets":1996,"flags":2000,"maxSet":5,"members":9980,"maxSetTtl":599,"maxFlagTtl":1799}
+{"s":"K06","assert":"M4 every spray set stays <=5 members and each K1 owns at most one set and one flag: state is linear in the number of IPs, bounded per IP","ok":true,"sets":1996,"flags":2000,"maxSet":5,"members":9980,"maxSetTtl":599,"maxFlagTtl":1799}
+{"s":"K06","assert":"M4 a 6-subject-per-IP attacker spread over 2000 IPs reaches verification with 4 of every 6 subjects (K1 is per K1/IP and cannot see the aggregate)","ok":true,"reached":8000}
