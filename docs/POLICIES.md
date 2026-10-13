@@ -400,6 +400,12 @@ Correlation rules are mandatory and enforced per `DECISION_MATRIX.md`, including
 * Near-threshold WATCH flags (anti N-1 gaming)
 * Confidence constraints for DeviceFP dilution blocks
 
+These rules remain the shipped behavior under the Owner-approved interim Security-first
+posture recorded in
+[DEC-019](decisions/DEC-019_INTERIM_SECURITY_FIRST_CORRELATION_POSTURE.md). That posture is
+not a fix: issues #97, #100, and #106 remain OPEN, and shared-NAT false positives are
+unresolved. No rule or threshold changes.
+
 ---
 
 ## 6. Custom Policies (Restricted)
