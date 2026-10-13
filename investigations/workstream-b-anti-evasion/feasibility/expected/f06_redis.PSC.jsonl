@@ -1,0 +1,26 @@
+{"s":"F06.provenance","variant":"PSC","level":"CANDIDATE_EXPERIMENTAL_RUNTIME","baseSha":"b34f12eb3f892c2dd6fa423280ead0cdaafc868f","pipelineSha256":"86beb1632f023778b74f916f95aa39fc48bdffe931e9fe3450dd54d13ee3fbe5","patched":true}
+{"s":"F06.R1.record-only-churn","variant":"PSC","steps":["fail:A","fail:A","fail:H2/~60"],"thirdDenied":true}
+{"s":"F06","variant":"PSC","assert":"R1: three failing fingerprints on one K2 are denied at the third attempt on real Redis","ok":true,"steps":["fail:A","fail:A","fail:H2/~60"]}
+{"s":"F06.R1c.no-corroboration","variant":"PSC","steps":["ok:A","ok:A","ok:A","ok:A"],"anyDenied":false}
+{"s":"F06","variant":"PSC","assert":"R1c: four SUCCESSFUL fingerprints on one K2 are never denied on real Redis (no corroboration)","ok":true,"steps":["ok:A","ok:A","ok:A","ok:A"]}
+{"s":"F06.R2.anchor-rotation","variant":"PSC","requests":400,"denied":0,"keysPerRequestRounded":11,"keysWithoutTtl":0,"maxSetCardinality":4,"maxTtlWithinTwoDays":true}
+{"s":"F06","variant":"PSC","assert":"R2: every key created has a TTL (no immortal state) on real Redis","ok":true,"keysWithoutTtl":0}
+{"s":"F06","variant":"PSC","assert":"R2 negative control: the rotation probes reached storage (no denial) and created keys","ok":true,"denied":0}
+{"s":"F06","variant":"PSC","assert":"R2: largest set on real Redis stays within the largest declared cap (50)","ok":true,"max":4}
+{"s":"F06.R3.distinct-member-race","variant":"PSC","rounds":12,"workersCompleted":96,"roundsWithK2Block":12,"maxSetCardinality":8,"roundsWindowSetWithinCap3":12,"roundsWindowTtlWithin60":12,"roundsWithMarker":12}
+{"s":"F06","variant":"PSC","assert":"R3 negative control: all 96 concurrent workers completed","ok":true,"completed":96}
+{"s":"F06","variant":"PSC","assert":"R3: concurrent distinct failing members never push a set above the largest declared cap (50)","ok":true,"max":8}
+{"s":"F06","variant":"PSC","assert":"R3: in every round the concurrent failing members reached the threshold and a K2 block exists (no lost corroboration)","ok":true,"roundsWithK2Block":12}
+{"s":"F06","variant":"PSC","assert":"R3: the 60 s window set never exceeds its cap of 3 under concurrency (atomic bounded add)","ok":true,"rounds":12}
+{"s":"F06","variant":"PSC","assert":"R3: the window set has a fixed TTL <= 60 s in every round (never refreshed past its window)","ok":true,"rounds":12}
+{"s":"F06","variant":"PSC","assert":"R3: the qualification marker exists in every round that reached the cap (atomic first-writer, no lost marker)","ok":true,"rounds":12}
+{"s":"F06.R4.duplicate-member-race","variant":"PSC","rounds":12,"workersCompleted":96,"roundsWithK2Block":0,"roundsWithMarker":0}
+{"s":"F06","variant":"PSC","assert":"R4 negative control: all 96 concurrent workers completed","ok":true,"completed":96}
+{"s":"F06","variant":"PSC","assert":"R4: 8 concurrent failures of ONE fingerprint never create a block (duplicates never inflate evidence)","ok":true,"roundsWithK2Block":0}
+{"s":"F06","variant":"PSC","assert":"R4: 8 concurrent failures of ONE fingerprint never create a corroboration marker","ok":true,"roundsWithMarker":0}
+{"s":"F06.R6.live-recovery","variant":"PSC","deniedWhileBlocked":true,"reblockedAfter63sFromHistory":false,"successAfter63s":"allowed","singleFreshFailureAfterExpiry":"allowed","legitDeniedAfterFreshFailure":false}
+{"s":"F06","variant":"PSC","assert":"R6: the 60 s block is enforced right after the trigger on the Redis clock","ok":true,"immediate":"check:H2/~60"}
+{"s":"F06","variant":"PSC","assert":"R6: a lone legitimate client is allowed 63 s after the trigger (block, window and marker all expired; no history-only re-block)","ok":true,"afterBlock":"check:A","afterOk":"ok:A"}
+{"s":"F06","variant":"PSC","assert":"R6: ONE fresh failing fingerprint after the expiry does not re-block the NAT (it is not corroboration), so a colleague typo costs nothing","ok":true,"freshFail":"fail:A","afterFresh":"check:A"}
+{"s":"F06.R7.redis-outage","variant":"PSC","result":"BackendFailureException"}
+{"s":"F06","variant":"PSC","assert":"R7: after the Redis instance dies the pipeline throws BackendFailureException (never ALLOW, never a silent skip)","ok":true,"result":"BackendFailureException"}

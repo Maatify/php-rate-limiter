@@ -1,0 +1,19 @@
+{"s":"F03.provenance","variant":"PSCA","level":"CANDIDATE_EXPERIMENTAL_RUNTIME","baseSha":"b34f12eb3f892c2dd6fa423280ead0cdaafc868f","pipelineSha256":"86beb1632f023778b74f916f95aa39fc48bdffe931e9fe3450dd54d13ee3fbe5","patched":true}
+{"s":"F03.R1.lone-legit-after-trigger","variant":"PSCA","attackSteps":["check:A>fail:A","check:A>fail:A","check:A>fail:H2/60"],"legitRuns":"B3-61,a62-720","legitFirstAllowedT":62,"blockIssuances":1}
+{"s":"F03","variant":"PSCA","assert":"R1 recovery: a lone legitimate client is allowed no later than t=63 (block ends at 62; no history-only re-block)","ok":true,"firstAllowed":62}
+{"s":"F03","variant":"PSCA","assert":"R1 negative control: the trigger is enforced at the third failing member (corroborating evidence exists)","ok":true,"steps":"check:A>fail:H2/60"}
+{"s":"F03.R2.single-seed-then-silence","variant":"PSCA","legitDenied":12,"legitAttempts":300,"lastLegitDenialT":60,"legitRuns":"B5-60,a65-1500","blockIssuances":1}
+{"s":"F03","variant":"PSCA","assert":"R2 no history-only re-block: after the seeded block expires a lone legitimate client is never denied again (last denial <= 62)","ok":true,"lastLegitDenialT":60}
+{"s":"F03.R3.single-typo-on-stale-set","variant":"PSCA","legitDenied":0,"attempts":84,"firstDeniedT":null,"lastDeniedT":null,"runs":"a0-500"}
+{"s":"F03","variant":"PSCA","assert":"R3: one colleague typo never re-arms the NAT cohort from old history (zero denials: a single failing member is not corroboration)","ok":true,"denied":0}
+{"s":"F03.R4.history-horizons-2000s","variant":"PSCA","legitRuns":"B10-60,a70-2000","lastLegitDenialT":60,"blockIssuances":1}
+{"s":"F03","variant":"PSCA","assert":"R4: over 2000 s (60 s block, 600 s set, 1800 s WATCH horizons) the lone legitimate client is denied only inside the seeded 60 s block","ok":true,"last":60,"issuances":1}
+{"s":"F03.R5.sustained-leak-30min","variant":"PSCA","attempts":1801,"reachedVerification":90,"blockIssuances":30}
+{"s":"F03","variant":"PSCA","assert":"R5 sustained leak is bounded: verifications reaching the protected operation <= 3 per block cycle (<= 93 over 30 minutes)","ok":true,"reached":90,"bound":93}
+{"s":"F03.R6.window-fixed-distinct","variant":"PSCA","thirdFailingMemberEnforcedAt":{"0/30/59":true,"0/30/60":false,"0/30/61":false,"same-fingerprint-x4":false}}
+{"s":"F03","variant":"PSCA","assert":"R6 fixed window: three distinct failing members enforce at +59 s and do NOT enforce when the third arrives at +60 / +61 s (the window is not sliding)","ok":true,"enforced":{"0/30/59":true,"0/30/60":false,"0/30/61":false,"same-fingerprint-x4":false}}
+{"s":"F03","variant":"PSCA","assert":"R6 distinct: four failures of ONE fingerprint never corroborate","ok":true,"enforced":{"0/30/59":true,"0/30/60":false,"0/30/61":false,"same-fingerprint-x4":false}}
+{"s":"F03.R7.renewal-needs-new-corroboration","variant":"PSCA","steps":["0:check:A>fail:A","1:check:A>fail:A","2:check:A>fail:H2/60","100:check:A>fail:A","101:check:A>fail:A","102:check:A>fail:H2/60","103:check:H2/59"],"issuances":2}
+{"s":"F03","variant":"PSCA","assert":"R7 renewal: after the first block expires the next three failing members are admitted until the third re-corroborates (1st and 2nd allowed, 3rd enforced)","ok":true,"steps":["0:check:A>fail:A","1:check:A>fail:A","2:check:A>fail:H2/60","100:check:A>fail:A","101:check:A>fail:A","102:check:A>fail:H2/60","103:check:H2/59"]}
+{"s":"F03.R8.n1-watch-gaming","variant":"PSCA","stream":"Y2a","attackAttempts":8,"attackReachedVerification":8,"controlAttackReachedVerification":8}
+{"s":"F03.R8.n1-watch-gaming","variant":"PSCA","stream":"Y2b","attackAttempts":8,"attackReachedVerification":8,"controlAttackReachedVerification":8}

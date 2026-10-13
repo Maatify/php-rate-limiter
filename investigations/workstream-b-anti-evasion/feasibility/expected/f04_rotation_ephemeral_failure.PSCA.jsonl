@@ -1,0 +1,20 @@
+{"s":"F04.provenance","variant":"PSCA","level":"CANDIDATE_EXPERIMENTAL_RUNTIME","baseSha":"b34f12eb3f892c2dd6fa423280ead0cdaafc868f","pipelineSha256":"86beb1632f023778b74f916f95aa39fc48bdffe931e9fe3450dd54d13ee3fbe5","patched":true}
+{"s":"F04.R1.rotation-failing-pair-then-third","variant":"PSCA","steps":["fail:A","fail:A","fail:H2/60"],"thirdBlocked":true}
+{"s":"F04","variant":"PSCA","assert":"R1: the failing pair split across a key rotation is still enforced at the third failing member (window-set continuity, no Cartesian pairs)","ok":true,"steps":["fail:A","fail:A","fail:H2/60"]}
+{"s":"F04.R2.rotation-no-evidence","variant":"PSCA","step":"ok:A","thirdBlocked":false}
+{"s":"F04","variant":"PSCA","assert":"R2: three SUCCESSFUL members across a rotation are not enforced (no corroborating failures in either generation)","ok":true,"step":"ok:A"}
+{"s":"F04.R3.rotation-two-failures-one-success","variant":"PSCA","step":"fail:A","thirdBlocked":false}
+{"s":"F04.R4.block-continuity","variant":"PSCA","blockedAfterRotation":true,"step":"check:H2/52"}
+{"s":"F04","variant":"PSCA","assert":"R4: a persisted K2 block survives the rotation","ok":true,"step":"check:H2/52"}
+{"s":"F04.E1.ephemeral-overflow","variant":"PSCA","attempts":["fail:A []","fail:S1/1200 {\"K4\":\"L1@+15s\"}","fail:H2/60 {\"K2\":\"L2@+60s\",\"K4\":\"L2@+60s\"}","fail:H2/55 {\"K2\":\"L2@+55s\",\"K4\":\"L2@+55s\"}"]}
+{"s":"F04","variant":"PSCA","assert":"E1: ephemeral overflow requests still feed the bounded K2 churn signal and are enforced at the third failing member","ok":true,"attempts":["fail:A []","fail:S1/1200 {\"K4\":\"L1@+15s\"}","fail:H2/60 {\"K2\":\"L2@+60s\",\"K4\":\"L2@+60s\"}","fail:H2/55 {\"K2\":\"L2@+55s\",\"K4\":\"L2@+55s\"}"]}
+{"s":"F04.F1a.churn-set-write","variant":"PSCA","applicable":true,"result":"BackendFailureException","storeThrows":1}
+{"s":"F04","variant":"PSCA","assert":"F1a.churn-set-write: a backend failure on this path propagates (never ALLOW / never silent skip)","ok":true,"result":"BackendFailureException"}
+{"s":"F04.F1b.window-set-write","variant":"PSCA","applicable":true,"result":"BackendFailureException","storeThrows":1}
+{"s":"F04","variant":"PSCA","assert":"F1b.window-set-write: a backend failure on this path propagates (never ALLOW / never silent skip)","ok":true,"result":"BackendFailureException"}
+{"s":"F04.F1c.marker-write","variant":"PSCA","applicable":true,"result":"BackendFailureException","storeThrows":1}
+{"s":"F04","variant":"PSCA","assert":"F1c.marker-write: a backend failure on this path propagates (never ALLOW / never silent skip)","ok":true,"result":"BackendFailureException"}
+{"s":"F04.F1d.marker-read","variant":"PSCA","applicable":true,"result":"BackendFailureException","storeThrows":1}
+{"s":"F04","variant":"PSCA","assert":"F1d.marker-read: a backend failure on this path propagates (never ALLOW / never silent skip)","ok":true,"result":"BackendFailureException"}
+{"s":"F04.C1.custom-store-minimal-capabilities","variant":"PSCA","storeInterfaces":["BoundedCorrelationRotationStoreInterface","BoundedCorrelationStoreInterface","CorrelationRotationStoreInterface","CorrelationStoreInterface"],"steps":["A","A","H2"],"exception":null,"snapshotCapabilityPresent":false}
+{"s":"F04","variant":"PSCA","assert":"C1: the variant runs on a custom store that exposes ONLY the baseline non-distributed capabilities (no snapshot, no new method) without error","ok":true,"exception":null}

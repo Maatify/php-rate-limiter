@@ -1,0 +1,7 @@
+{"s":"F07.provenance","variant":"EQL","level":"CANDIDATE_EXPERIMENTAL_RUNTIME","baseSha":"b34f12eb3f892c2dd6fa423280ead0cdaafc868f","pipelineSha256":"98d95cc97836066ea8e76cf8399a41ede457c1e3dca156fdaa05b1b3096813c4","patched":true}
+{"s":"F07.poisoning-cost","variant":"EQL","insiderFailuresPer60s":1,"legitAttempts":120,"legitDenied":108,"legitDeniedByCorrelation":108,"controlLegitDenied":0,"insiderFailuresReachedVerification":10,"insiderAttempts":11}
+{"s":"F07.poisoning-cost","variant":"EQL","insiderFailuresPer60s":2,"legitAttempts":120,"legitDenied":114,"legitDeniedByCorrelation":114,"controlLegitDenied":0,"insiderFailuresReachedVerification":10,"insiderAttempts":21}
+{"s":"F07.poisoning-cost","variant":"EQL","insiderFailuresPer60s":3,"legitAttempts":120,"legitDenied":116,"legitDeniedByCorrelation":116,"controlLegitDenied":0,"insiderFailuresReachedVerification":10,"insiderAttempts":31}
+{"s":"F07.poisoning-cost","variant":"EQL","insiderFailuresPer60s":4,"legitAttempts":120,"legitDenied":117,"legitDeniedByCorrelation":117,"controlLegitDenied":0,"insiderFailuresReachedVerification":10,"insiderAttempts":41}
+{"s":"F07.poisoning-cost","variant":"EQL","insiderFailuresPer60s":6,"legitAttempts":120,"legitDenied":118,"legitDeniedByCorrelation":118,"controlLegitDenied":0,"insiderFailuresReachedVerification":10,"insiderAttempts":61}
+{"s":"F07.poisoning-cost","variant":"EQL","insiderFailuresPer60s":12,"legitAttempts":120,"legitDenied":119,"legitDeniedByCorrelation":119,"controlLegitDenied":0,"insiderFailuresReachedVerification":10,"insiderAttempts":121}
