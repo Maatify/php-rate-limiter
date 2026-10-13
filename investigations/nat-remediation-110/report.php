@@ -32,6 +32,7 @@ const REQUIRED = [
     'o03_rotation_ipv6' => ['S0' => ['R2' => 6, 'H1' => 1, 'H2' => 1, 'H2b' => 1], 'cand' => ['R1' => 12, 'R2' => 6, 'H1' => 1, 'H2' => 1, 'H2b' => 1]],
     'o04_bounds_rollback' => ['S0' => ['B1' => 1, 'B2' => 1, 'B3' => 2, 'R1' => 1, 'R2' => 2], 'cand' => ['B1' => 1, 'B2' => 1, 'B3' => 2, 'R1' => 1, 'R2' => 2]],
     'o05_redis' => ['S0' => ['P1' => 1, 'P1b' => 1, 'P2' => 1, 'P2b' => 1, 'P3' => 1, 'P3b' => 1, 'P4' => 1, 'P4b' => 1], 'cand' => ['P1' => 1, 'P1b' => 1, 'P2' => 1, 'P2b' => 1, 'P3' => 1, 'P3b' => 1, 'P4' => 1, 'P4b' => 1]],
+    'o06_concurrency' => ['S0' => ['C1' => 2, 'C2' => 2, 'C2s' => 1, 'C3' => 2, 'C4' => 1, 'C4b' => 1, 'E1' => 1, 'T1' => 1], 'cand' => ['C1' => 2, 'C2' => 2, 'C2s' => 1, 'C3' => 2, 'C4' => 1, 'C4b' => 1, 'E1' => 1, 'T1' => 1]],
 ];
 
 $problems = [];
@@ -66,6 +67,7 @@ if (! in_array($redisStatus, ['RAN', 'SKIPPED'], true)) {
 $files = FILES;
 if ($redisStatus === 'RAN') {
     $files[] = 'o05_redis';
+    $files[] = 'o06_concurrency';
 }
 foreach ($files as $f) {
     foreach (ARMS as $arm) {
@@ -89,7 +91,7 @@ foreach ($files as $f) {
 }
 // Required assertions: each id present exactly the expected number of times; no unknown rows. (ok:false is a finding, handled by the gates.)
 foreach (REQUIRED as $f => $sets) {
-    if ($f === 'o05_redis' && $redisStatus !== 'RAN') {
+    if (in_array($f, ['o05_redis', 'o06_concurrency'], true) && $redisStatus !== 'RAN') {
         continue;
     }
     foreach (ARMS as $arm) {
@@ -163,7 +165,7 @@ $cell = static fn(string $arm, string $id, string $shape, string $flow): ?array 
 $assertGate = static function (array $need, string $arm) use ($rowsFor, $redisStatus): string {
     $status = 'PASS';
     foreach ($need as $f => $ids) {
-        if ($f === 'o05_redis' && $redisStatus !== 'RAN') {
+        if (in_array($f, ['o05_redis', 'o06_concurrency'], true) && $redisStatus !== 'RAN') {
             return 'UNPROVEN';
         }
         foreach ($ids as $i) {
@@ -271,7 +273,8 @@ if ($problems === []) {
         $g('G7', $arm, 'Current/Previous rotation (3 modes) and IPv6 macro scopes', $assertGate(['o03_rotation_ipv6' => $arm === 'S0' ? ['R2', 'H1', 'H2', 'H2b'] : ['R1', 'R2', 'H1', 'H2', 'H2b']], $arm));
         $g('G8', $arm, 'Storage bounds (2 marker keys per scope, TTL-bounded, 0 per request), rollback and mixed-version safety', $assertGate(['o04_bounds_rollback' => ['B1', 'B2', 'B3', 'R1', 'R2']], $arm));
         $g('G9', $arm, 'Real Redis: decision parity, record-only K1, TTL hygiene, liveness markers on the adapter', $assertGate(['o05_redis' => ['P1', 'P1b', 'P2', 'P2b', 'P3', 'P3b', 'P4', 'P4b']], $arm));
-        foreach (['o02_targeted', 'o03_rotation_ipv6', 'o04_bounds_rollback', 'o05_redis'] as $f) {
+        $g('G10', $arm, 'Concurrency on real Redis (F111-02): simultaneous checkOnly bursts on live K1 / K2 scopes, the silent-scope control, the block after the burst', $assertGate(['o06_concurrency' => ['C1', 'C2', 'C2s', 'C3', 'C4', 'C4b', 'E1', 'T1']], $arm));
+        foreach (['o02_targeted', 'o03_rotation_ipv6', 'o04_bounds_rollback', 'o05_redis', 'o06_concurrency'] as $f) {
             foreach ($assertions[$f][$arm] ?? [] as $a) {
                 if (($a['ok'] ?? false) !== true) {
                     $findings[$arm][] = "$f: " . $a['assert'];
@@ -280,7 +283,7 @@ if ($problems === []) {
         }
     }
 } else {
-    foreach (['G1', 'G2', 'G3', 'G4', 'G5', 'G6', 'G7', 'G8', 'G9'] as $id) {
+    foreach (['G1', 'G2', 'G3', 'G4', 'G5', 'G6', 'G7', 'G8', 'G9', 'G10'] as $id) {
         $g($id, '*', 'UNPROVEN (evidence problems)', 'UNPROVEN');
     }
 }
@@ -430,8 +433,21 @@ if ($redisStatus === 'RAN') {
         $d = $data['o05_redis'][$arm];
         $h("* **$arm Redis** — A/B/A benign `" . implode('', $d['O05.P1.aba-parity'][0]['benignRedis']) . '` attacker `' . implode('', $d['O05.P1.aba-parity'][0]['attackerRedis']) . '` (reference identical: ' . (($d['O05.P1.aba-parity'][0]['benignRedis'] === $d['O05.P1.aba-parity'][0]['benignReference'] && $d['O05.P1.aba-parity'][0]['attackerRedis'] === $d['O05.P1.aba-parity'][0]['attackerReference']) ? 'yes' : 'NO') . '); spray `' . implode('', $d['O05.P2.spray-parity'][0]['redis']) . '`; record-only `' . implode('', $d['O05.P3.record-only-parity'][0]['redis']) . '`; TTL hygiene ' . json_encode(array_diff_key($d['O05.P4.ttl-hygiene'][0], ['s' => 0, 'arm' => 0])) . '.');
     }
+    $h('');
+    $h('## 8. Concurrency on real Redis (F111-02) — simultaneous checkOnly requests that passed, per round');
+    $h('');
+    $rows = [];
+    foreach (ARMS as $arm) {
+        $d = $data['o06_concurrency'][$arm];
+        $c1 = $d['O06.C1.k1-live-burst'][0];
+        $c2 = $d['O06.C2.k2-live-burst'][0];
+        $c3 = $d['O06.C3.k1-silent-burst'][0];
+        $rows[] = [$arm, implode(' / ', array_column($c1['rounds'], 'allowedChecks')) . ' of 16', implode(' / ', array_column($c2['rounds'], 'allowedChecks')) . ' of 8', implode(' / ', array_column($c3['rounds'], 'allowedChecks')) . ' of 16', implode(' ', $c1['nextSequentialCheck']), 'L' . max(array_column($c1['rounds'], 'maxLevelIssuedInBurst')) . ' / L' . max(array_column($c2['rounds'], 'maxLevelIssuedInBurst'))];
+    }
+    $table(['Arm', 'C1 live K1 scope: 16 distinct failing subjects at once', 'C2 live K2 scope: 8 distinct fingerprints at once', 'C3 silent K1 scope (control)', 'C4 next sequential checkOnly', 'Highest block level issued inside one burst (K1 / K2)'], $rows);
+    $h('Every worker\'s checkOnly precedes every worker\'s recordFailure (two-phase Redis-clock barrier). On a live scope the candidate observes nothing at checkOnly, so the whole burst is verified before the first failure issues the block: the per-cycle leak equals the concurrency, not 1.');
 } else {
-    $h('* Real-Redis stage **SKIPPED** — gate G9 is UNPROVEN.');
+    $h('* Real-Redis stage **SKIPPED** — gates G9 and G10 are UNPROVEN.');
 }
 file_put_contents("$out/summary.md", implode("\n", $md) . "\n");
 echo 'OK gates=' . count($gates) . " problems=0\n";

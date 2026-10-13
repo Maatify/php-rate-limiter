@@ -15,15 +15,19 @@
 {"gate":"G7","arm":"S0","title":"Current/Previous rotation (3 modes) and IPv6 macro scopes","status":"PASS"}
 {"gate":"G8","arm":"S0","title":"Storage bounds (2 marker keys per scope, TTL-bounded, 0 per request), rollback and mixed-version safety","status":"PASS"}
 {"gate":"G9","arm":"S0","title":"Real Redis: decision parity, record-only K1, TTL hygiene, liveness markers on the adapter","status":"PASS"}
+{"gate":"G10","arm":"S0","title":"Concurrency on real Redis (F111-02): simultaneous checkOnly bursts on live K1 / K2 scopes, the silent-scope control, the block after the burst","status":"PASS"}
 {"gate":"G6","arm":"OQC","title":"Targeted probes: A/B/A pair, one K1 observation per attempt, liveness marker lifecycle, success never erases failures, typo cost, WATCH gap","status":"PASS"}
 {"gate":"G7","arm":"OQC","title":"Current/Previous rotation (3 modes) and IPv6 macro scopes","status":"PASS"}
 {"gate":"G8","arm":"OQC","title":"Storage bounds (2 marker keys per scope, TTL-bounded, 0 per request), rollback and mixed-version safety","status":"PASS"}
 {"gate":"G9","arm":"OQC","title":"Real Redis: decision parity, record-only K1, TTL hygiene, liveness markers on the adapter","status":"PASS"}
+{"gate":"G10","arm":"OQC","title":"Concurrency on real Redis (F111-02): simultaneous checkOnly bursts on live K1 / K2 scopes, the silent-scope control, the block after the burst","status":"PASS"}
 {"gate":"G6","arm":"OQCW","title":"Targeted probes: A/B/A pair, one K1 observation per attempt, liveness marker lifecycle, success never erases failures, typo cost, WATCH gap","status":"PASS"}
 {"gate":"G7","arm":"OQCW","title":"Current/Previous rotation (3 modes) and IPv6 macro scopes","status":"PASS"}
 {"gate":"G8","arm":"OQCW","title":"Storage bounds (2 marker keys per scope, TTL-bounded, 0 per request), rollback and mixed-version safety","status":"PASS"}
 {"gate":"G9","arm":"OQCW","title":"Real Redis: decision parity, record-only K1, TTL hygiene, liveness markers on the adapter","status":"PASS"}
+{"gate":"G10","arm":"OQCW","title":"Concurrency on real Redis (F111-02): simultaneous checkOnly bursts on live K1 / K2 scopes, the silent-scope control, the block after the burst","status":"PASS"}
 {"gate":"G6","arm":"OQCE","title":"Targeted probes: A/B/A pair, one K1 observation per attempt, liveness marker lifecycle, success never erases failures, typo cost, WATCH gap","status":"PASS"}
 {"gate":"G7","arm":"OQCE","title":"Current/Previous rotation (3 modes) and IPv6 macro scopes","status":"PASS"}
 {"gate":"G8","arm":"OQCE","title":"Storage bounds (2 marker keys per scope, TTL-bounded, 0 per request), rollback and mixed-version safety","status":"PASS"}
 {"gate":"G9","arm":"OQCE","title":"Real Redis: decision parity, record-only K1, TTL hygiene, liveness markers on the adapter","status":"PASS"}
+{"gate":"G10","arm":"OQCE","title":"Concurrency on real Redis (F111-02): simultaneous checkOnly bursts on live K1 / K2 scopes, the silent-scope control, the block after the burst","status":"FAIL"}

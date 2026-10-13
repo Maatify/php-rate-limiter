@@ -133,7 +133,7 @@ stop_redis() { local pid=${1:-} i=0; [[ -n "$pid" ]] || return 0; kill "$pid" 2>
 echo SKIPPED >"$actual/redis_status.txt"
 if [[ "${REDIS_SPOTCHECK:-1}" == "1" ]]; then
     if ! command -v redis-server >/dev/null 2>&1 || ! command -v redis-cli >/dev/null 2>&1; then
-        for a in "${arms[@]}"; do report "o05_redis.$a" "SKIPPED (redis not installed) -> real-Redis claims UNPROVEN"; done
+        for a in "${arms[@]}"; do report "o05_redis.$a / o06_concurrency.$a" "SKIPPED (redis not installed) -> real-Redis claims UNPROVEN"; done
     else
         own_port=$(free_port "${REDIS_PORT:-6399}")
         decoy_port=$(free_port $((own_port + 1)))
@@ -156,18 +156,19 @@ if [[ "${REDIS_SPOTCHECK:-1}" == "1" ]]; then
         [[ $safety == PASS ]] || status=1
         if [[ $safety == PASS ]]; then
             echo RAN >"$actual/redis_status.txt"
+            for sc in o05_redis o06_concurrency; do
             for a in "${arms[@]}"; do
-                name="o05_redis.$a"
+                name="$sc.$a"
                 for attempt in 1 2 3; do
                     stop_redis "$own_pid"
                     own_port=$(free_port "$own_port")
-                    start_redis "own-$a-$attempt" "$own_port"; own_pid=$REDIS_PID_VALUE; own_dir=$REDIS_DIR_VALUE
+                    start_redis "own-$sc-$a-$attempt" "$own_port"; own_pid=$REDIS_PID_VALUE; own_dir=$REDIS_DIR_VALUE
                     if [[ $a == S0 ]]; then
                         env -u OQC_ARM -u WSB_CANDIDATE LAB_ROOT="$repo" REDIS_HOST=198.51.100.1 REDIS_PORT=1 WSB_REDIS_PORT="$own_port" WSB_REDIS_PID="$own_pid" WSB_REDIS_DIR="$own_dir" \
-                            php "$here/scenarios/o05_redis.php" >"$actual/$name.jsonl" 2>"$actual/$name.stderr" || true
+                            php "$here/scenarios/$sc.php" >"$actual/$name.jsonl" 2>"$actual/$name.stderr" || true
                     else
                         env -u WSB_CANDIDATE OQC_ARM="$a" LAB_ROOT="$cand" REDIS_HOST=198.51.100.1 REDIS_PORT=1 WSB_REDIS_PORT="$own_port" WSB_REDIS_PID="$own_pid" WSB_REDIS_DIR="$own_dir" \
-                            php "$here/scenarios/o05_redis.php" >"$actual/$name.jsonl" 2>"$actual/$name.stderr" || true
+                            php "$here/scenarios/$sc.php" >"$actual/$name.jsonl" 2>"$actual/$name.stderr" || true
                     fi
                     if [[ ! -s "$actual/$name.stderr" ]] && { [[ "${UPDATE:-0}" == "1" ]] || diff -q "$expected/$name.jsonl" "$actual/$name.jsonl" >/dev/null 2>&1; }; then
                         break
@@ -180,6 +181,7 @@ if [[ "${REDIS_SPOTCHECK:-1}" == "1" ]]; then
                     rm -f "${actual:?}/$name.stderr"
                     compare "$name"
                 fi
+            done
             done
         fi
     fi
@@ -260,6 +262,7 @@ fc_check forged_candidate_pipeline_sha256 'sed -i.bak "s/\"pipelineSha256\":\"[0
 fc_check arm_label_swapped 'sed -i.bak "s/\"arm\":\"OQCW\"/\"arm\":\"OQC\"/g" "$dir/o01_matrix.OQCW.jsonl" && rm -f "$dir/o01_matrix.OQCW.jsonl.bak"'
 fc_check unknown_assertion_row 'sed "s/\"assert\":\"B1 /\"assert\":\"Z9 /" "$dir/o04_bounds_rollback.OQC.jsonl" | grep "Z9 " >>"$dir/o04_bounds_rollback.OQC.jsonl"'
 fc_check redis_evidence_deleted 'rm -f "$dir/o05_redis.OQC.jsonl"; echo RAN >"$dir/redis_status.txt"'
+fc_check concurrency_evidence_deleted 'rm -f "$dir/o06_concurrency.OQCE.jsonl"; echo RAN >"$dir/redis_status.txt"'
 
 if [[ "${UPDATE:-0}" == "1" ]]; then
     report "UPDATE" "expected/ regenerated — review the git diff before committing"

@@ -19,6 +19,9 @@ decision**: DEC-019 remains ACTIVE; the Owner decides DEC-020 under Decision Gov
 | G7 rotation (3 modes) and IPv6 macro scopes | PASS | PASS | PASS | PASS |
 | G8 storage bounds, rollback, mixed version | PASS | PASS | PASS | PASS |
 | G9 real Redis parity, TTL hygiene, markers | PASS | PASS | PASS | PASS |
+| G10 concurrency on real Redis (F111-02): simultaneous `checkOnly` bursts on live scopes, block level inside one burst | PASS | PASS | PASS | FAIL (escalation reaches L4 inside one burst) |
+
+G10 PASS means the concurrency measurement is valid, not that the candidate is safe under concurrency: its result (§4, §5.1) is that the per-cycle leak of every candidate arm equals the concurrency of the burst.
 
 A FAIL above is a **finding** against the candidate (the evidence is valid). The three findings are explained in §5.
 
@@ -76,8 +79,11 @@ Other shapes (pre+out): D2 on OTP 117→49 (OQC) / 65 (OQCE); D2 on Login-withou
 | D7 persistent single-K2 attacker, 1 / s for 30 min | 4/1801 (53) | 34/1801 (54) | 34 | **5**/1801 (4) | 4 |
 | MIX / MIXT / MIXN attacker behind the office NAT | 0 / 3 / 2 | 13 / 14 / 16 | same | 6 / 8 / 9 | 0 / 3 / 2 |
 
-Record-only Hosts (attacker requests **denied**; every request is verified before the library sees it): SP1n 0→195/200, SP3 0→991/1000, SP6 0→1174/1200,
-ABA_A 117→117, Y1 113→113 on OQC. S0 has no K1 at all for record-only Hosts (#108 L2); OQC gives it to them from the second failure of a scope.
+Record-only Hosts (attacker requests whose `recordFailure` **returned a block**): SP1n 0→195/200, SP3 0→991/1000, SP6 0→1174/1200, ABA_A 117→117,
+Y1 113→113 on OQC. A record-only Host never calls `checkOnly`, so no persisted block is consulted before any verification: every one of these requests was
+verified by the Host before the library saw it, and a returned block prevents nothing unless the Host acts on the returned decision itself. S0 has no K1
+signal at all for record-only Hosts (#108 L2); OQC returns one from the second failure of a scope. This is a **post-outcome signal**, not prevention
+(F111-03).
 
 ## 4. The mechanism, as measured
 
@@ -88,7 +94,16 @@ ABA_A 117→117, Y1 113→113 on OQC. S0 has no K1 at all for record-only Hosts 
   → 100 keys, 0 per request; present on real Redis with TTL ≤ 1200; every arm key gone 1801 s after a stream.
 * **Success never erases failure evidence** (O02 P1, D5, Y4d/Y6b): five own-account successes between failures do not move the K1 count; D5's padding
   attacker still pays one verification per block cycle; the successes-only poisoners (Y4d, Y6b) no longer poison the office at all.
-* **checkOnly-only Hosts are S0 to the byte** (G2 PASS for OQC and OQCE, 317 cells each). **Record-only Hosts gain K1** (and its collateral, §5).
+* **checkOnly-only Hosts are S0 to the byte** (G2 PASS for OQC and OQCE, 317 cells each). **Record-only Hosts get a post-outcome K1 signal** (and its collateral, §5).
+* **Concurrency (O06, real Redis, F111-02)**: on an outcome-live scope the candidate observes nothing at `checkOnly`, so a burst of simultaneous requests
+  that all precede the first `recordFailure` is verified in full: **16 of 16** simultaneous distinct failing subjects pass a live K1 scope (S0: 3 of 16,
+  the K1 set is observed atomically at `checkOnly`), **8 of 8** simultaneous distinct fingerprints pass a live K2 scope (S0: 0 of 8 in every measured
+  round, at most 1 by the sequential rule), identical on OQC, OQCW and OQCE in every one of 3 rounds; the next sequential `checkOnly` after the burst is
+  denied on every arm; the same K1 burst on a *silent* scope passes exactly 4 of 16 on every arm (the silent path is S0, observed atomically). Hence the
+  sequential "+1 per correlation block" of §5.1 is a lower bound: **the per-cycle leak equals the concurrency of the attacker**, and escalation (OQCE)
+  shortens the number of cycles, not the leak inside one. **OQCE under concurrency escalates inside a single burst**: the concurrent failures each
+  re-issue the block before the previous one is persisted, so one burst reaches **L4 / 1800 s** (G10 FAIL for OQCE); a NAT office whose colleagues
+  mistype simultaneously would be locked out for 30 minutes.
 * **Rotation** (O03): 6 streams × 3 modes, every arm within the reference ± 2 (D2 on OQC: 32/32/30 vs 30). **IPv6**: the all-success /48 office goes from
   25/31 denied (S0, macro spray) to 0/31 on every candidate arm; the attacker rotating /64s stays at 5/200.
 * **Rollback / mixed version** (O04 R1/R2): the unpatched rule continues on candidate state without error (second 600 s of ABA_A: 1 verification, S0
@@ -98,10 +113,13 @@ ABA_A 117→117, Y1 113→113 on OQC. S0 has no K1 at all for record-only Hosts 
 
 ## 5. Findings the Owner must weigh (each is a measured number, not an estimate)
 
-1. **The attacker leak is exactly "+1 verification per correlation block", and that is 3→23 on the #100 control.** Because the evidence arrives after the
-   verification, every expired block admits one more verified attempt before it is re-issued: ABA_A 3→23/120, SP1n 4→14, SP3 7→24, SP6 20→79, D7 4→34,
-   Y1 8→48, SP5c 2→12. The #100 Lead gate was "no increase over S0"; OQC does not meet it, and the G4 bound (≤ triggers + untouched 5-subject budget + 1)
-   only formalises the leak, it does not remove it. The slow hovers SP2 (60→72/72) and SP4u (480→576/576) lose S0's WATCH-at-pre-check catch entirely.
+1. **The attacker leak is "+1 verification per correlation block" for a sequential attacker, and that is 3→23 on the #100 control.** Because the evidence
+   arrives after the verification, every expired block admits one more verified attempt before it is re-issued: ABA_A 3→23/120, SP1n 4→14, SP3 7→24,
+   SP6 20→79, D7 4→34, Y1 8→48, SP5c 2→12. The #100 Lead gate was "no increase over S0"; OQC does not meet it, and the G4 bound (≤ triggers + untouched
+   5-subject budget + 1) only formalises the leak, it does not remove it. The slow hovers SP2 (60→72/72) and SP4u (480→576/576) lose S0's
+   WATCH-at-pre-check catch entirely. **Under concurrency the "+1" becomes "+N"** (O06): 16 of 16 simultaneous subjects pass a live K1 scope and 8 of 8
+   fingerprints a live K2 scope where S0 passes 3 and 0. Any design that moves enforcement from the pre-check to the outcome carries this property; it
+   is the cost of evidence arriving after the verification, not a tuning issue.
 2. **Escalation (OQCE) buys the leak back — ABA_A 5, SP3 7, SP6 14 (below S0), D7 5 — at a fairness price**: D2 53/121 instead of 30 (still far from
    S0's 117), MIX 106/121, and it is *worse than S0* on the mixed isolated office MIXN (49→53) and on the failure-paying poisoners Y4c/Y6c. Escalation
    applies only to live scopes, so checkOnly-only Hosts stay S0 (G2 PASS).
@@ -115,7 +133,8 @@ ABA_A 117→117, Y1 113→113 on OQC. S0 has no K1 at all for record-only Hosts 
 
 ## 6. Limits of the proof
 
-Deterministic synthetic streams, the reference stores and the controlled clock (real Redis only for sequential parity and TTL hygiene; the 60/600/1200 s
-boundaries are proved on the controlled clock). Rotation on the candidate's extra keys (tally, re-issue counter) is keyed on the Current scope only
+Deterministic synthetic streams, the reference stores and the controlled clock (real Redis for sequential parity, TTL hygiene and the concurrent bursts of
+O06; the 60/600/1200 s boundaries are proved on the controlled clock; the S0 rule that denies the second fingerprint of a concurrent K2 burst, where the
+sequential run allows it, was not isolated). Rotation on the candidate's extra keys (tally, re-issue counter) is keyed on the Current scope only
 (documented). The candidate is an investigation patch with `getenv` arm selection and is **not** production code; a Runtime change would be a separate,
 reviewed Work Unit after an Owner decision under DEC-019 §5 / Decision Governance. Nothing here closes #97, #100 or #106.

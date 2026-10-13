@@ -42,7 +42,8 @@ the /48 spray scope and the all-success office was denied 5/31).
 | `scenarios/o03_rotation_ipv6.php` | Current/Previous rotation in three modes (outer secret + fingerprint bridged / outer only / fingerprint secret only) mid-stream on 6 streams vs the no-rotation reference on the same arm; IPv6 /48 office (successes, typos), attacker rotating /64s of one /48 and /48s of one /40 |
 | `scenarios/o04_bounds_rollback.php` | exact marker keys and expiry for one scope, 2 keys per scope (3 on OQCW) for fifty scopes and 0 per request, every arm key expired 1801 s after a stream, rollback (old rule on candidate state), mixed version (alternating old/new per request) |
 | `scenarios/o05_redis.php` | real Redis (instance owned and proven by `run.sh`): sequential decision parity with the reference store (A/B/A pair, spray, record-only), TTL hygiene, the two liveness markers on the adapter |
-| `report.php` | fail-closed gates G1–G9 per arm (exit 5 on any missing / malformed / mislabelled evidence; a violated candidate assertion or bound is a **finding**, not an evidence problem), generated `summary.md` |
+| `scenarios/o06_concurrency.php` (+ `o06_worker.php`) | real Redis, **concurrency** (F111-02): 16 simultaneous distinct failing subjects on a live K1 scope, 8 simultaneous distinct fingerprints on a live K2 scope, the same K1 burst on a silent scope (control), the block after each burst, the highest block level issued inside one burst; two-phase Redis-clock barrier (every worker's `checkOnly` precedes every worker's `recordFailure`) |
+| `report.php` | fail-closed gates G1–G10 per arm (exit 5 on any missing / malformed / mislabelled evidence; a violated candidate assertion or bound is a **finding**, not an evidence problem), generated `summary.md` |
 
 **Attribution** is the PR #108 method unchanged: for every request the harness records the persisted blocks active on its canonical keys before it, the blocks it
 issued (DEC-003 cycle log → enforcement key) and the correlation signals the store observed during it. `correlationIssuances` (K1 + K2 blocks issued) is the
@@ -68,5 +69,5 @@ anything it did not start. Raw Redis TTL values depend on wall time and are neve
 
 **Self-tests (negative controls, all in `run.sh`):** a candidate arm on the repository tree, the S0 arm on the candidate tree and an unknown arm must be refused
 (exit 4); a drifted patch must be refused by the hash pin (exit 6) and by `git apply` when the pin is bypassed (exit 4); a violated candidate assertion must be
-fatal under `OQC_STRICT=1`; thirteen fail-closed cases (deleted per-arm files, a deleted matrix cell, a removed field, a deleted assertion row, forged S0 and
-candidate pipeline hashes, a swapped arm label, an unknown assertion row, deleted Redis evidence) must all make `report.php` exit 5 with no PASS gate.
+fatal under `OQC_STRICT=1`; fourteen fail-closed cases (deleted per-arm files, a deleted matrix cell, a removed field, a deleted assertion row, forged S0 and
+candidate pipeline hashes, a swapped arm label, an unknown assertion row, deleted Redis and concurrency evidence) must all make `report.php` exit 5 with no PASS gate.
