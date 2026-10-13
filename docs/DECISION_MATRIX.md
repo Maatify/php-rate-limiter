@@ -481,6 +481,13 @@ signal remains `HARD_BLOCK` L2 but is persisted against K2, never K3.
 
 ## 5. Correlation Rules (Attack Detection)
 
+> **Interim posture (DEC-019):** the correlation rules in this section remain the shipped
+> behavior under the Owner-approved interim Security-first posture recorded in
+> [DEC-019](decisions/DEC-019_INTERIM_SECURITY_FIRST_CORRELATION_POSTURE.md). That posture
+> is not a fix: issues #97 (LOW passive-UA), #100 (K2 shared-NAT churn), and #106 (K1 spray
+> on shared NAT) remain OPEN, and legitimate shared-NAT users can still be denied. This note
+> changes no rule, threshold, or table.
+
 ### 5.0 Near-Threshold Watch (Mandatory Anti N-1 Gaming)
 
 Many rules use thresholds. To prevent stable `N-1` bypass:
