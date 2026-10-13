@@ -1,0 +1,15 @@
+{"s":"O04.provenance","arm":"OQCE","level":"CANDIDATE_EXPERIMENTAL_RUNTIME","baseSha":"63fbb4abf0a6d7899d063d1fbd5d6fc7a1920ba1","pipelineSha256":"189f6e41020f983cc7e58531e3248b49fe84b8d39f08c3e283950c4d442f776f","patched":true}
+{"s":"O04.B1.one-scope","arm":"OQCE","flags":2,"expectedPresent":true,"expiresAtOffsets":[1200]}
+{"s":"O04","arm":"OQCE","assert":"B1 one outcome-live scope holds exactly the expected keys (sha-256 of \"oqc:live:v1:\" + the K1 spray scope / the K2 churn scope key + the 600 s window id; plus one K1 tally on arm OQCW), markers expiring 1200 s after the first outcome (tally 600 s)","ok":true,"flags":2,"expectedKeys":2,"offsets":[1200]}
+{"s":"O04.B2.many-scopes","arm":"OQCE","scopes":50,"flagsWritten":100,"aliveAt599":100,"aliveAt1199":100,"aliveAt1249":0,"keysPerScope":2}
+{"s":"O04","arm":"OQCE","assert":"B2 fifty scopes with one login each write exactly 2 marker keys per scope (+1 tally on arm OQCW) and 0 per request; the 100 markers are alive at t=1199 and all expired at t=1249 (1200 s after the last write)","ok":true,"written":100,"alive599":100,"alive1199":100,"alive1249":0}
+{"s":"O04.B3.arm-keys","arm":"OQCE","stream":"SP1n","flagsAtEnd":4,"setsAtEnd":18,"flagsAfter1801s":0,"setsAfter1801s":0}
+{"s":"O04","arm":"OQCE","assert":"B3 SP1n every correlation key written on this arm (markers, WATCH, tally, re-issue counters, bounded sets) has expired 1801 s after the stream ends","ok":true,"flagsAfter":0,"setsAfter":0}
+{"s":"O04.B3.arm-keys","arm":"OQCE","stream":"ABA_A","flagsAtEnd":6,"setsAtEnd":1,"flagsAfter1801s":0,"setsAfter1801s":0}
+{"s":"O04","arm":"OQCE","assert":"B3 ABA_A every correlation key written on this arm (markers, WATCH, tally, re-issue counters, bounded sets) has expired 1801 s after the stream ends","ok":true,"flagsAfter":0,"setsAfter":0}
+{"s":"O04.R1.rollback","arm":"OQCE","reachedFirst600sOnThisArm":5,"reachedSecond600sOnOldCode":0,"error":null,"secondSteps":["600:B","610:B","620:B","630:B","640:B","650:B","660:B","670:B"]}
+{"s":"O04","arm":"OQCE","assert":"R1 rollback: the unpatched rule (arm S0) continues on state written by the candidate without error and the attacker is again denied at checkOnly (at most 3 of 60 reach verification in the second 600 s)","ok":true,"reached2":0,"error":null}
+{"s":"O04.R2.mixed-version","arm":"OQCE","stream":"SP1n","reachedMixed":7,"reachedThisArmOnly":7,"error":null}
+{"s":"O04","arm":"OQCE","assert":"R2 SP1n mixed old/new code on one state never errors and the attacker reach stays within [S0-like, this arm] (<= this arm's own reach + 1)","ok":true,"mixed":7,"mono":7,"error":null}
+{"s":"O04.R2.mixed-version","arm":"OQCE","stream":"ABA_A","reachedMixed":6,"reachedThisArmOnly":5,"error":null}
+{"s":"O04","arm":"OQCE","assert":"R2 ABA_A mixed old/new code on one state never errors and the attacker reach stays within [S0-like, this arm] (<= this arm's own reach + 1)","ok":true,"mixed":6,"mono":5,"error":null}

@@ -1,0 +1,13 @@
+{"s":"O05.provenance","arm":"OQC","level":"CANDIDATE_EXPERIMENTAL_RUNTIME","baseSha":"63fbb4abf0a6d7899d063d1fbd5d6fc7a1920ba1","pipelineSha256":"189f6e41020f983cc7e58531e3248b49fe84b8d39f08c3e283950c4d442f776f","patched":true}
+{"s":"O05.P1.aba-parity","arm":"OQC","benignRedis":["a","a","a","a","a","a"],"benignReference":["a","a","a","a","a","a"],"attackerRedis":["a","a","B","B","B","B"],"attackerReference":["a","a","B","B","B","B"]}
+{"s":"O05","arm":"OQC","assert":"P1 A/B/A parity: the real Redis adapter and the reference store give identical decisions for the innocent pair and for the failing attacker on this arm","ok":true,"benignRedis":["a","a","a","a","a","a"],"benignRef":["a","a","a","a","a","a"],"attackerRedis":["a","a","B","B","B","B"],"attackerRef":["a","a","B","B","B","B"]}
+{"s":"O05","arm":"OQC","assert":"P1b on this arm the innocent successful pair is never denied and the failing attacker is denied from the 4th request (3 reach verification)","ok":true,"benign":["a","a","a","a","a","a"],"attacker":["a","a","B","B","B","B"]}
+{"s":"O05.P2.spray-parity","arm":"OQC","redis":["a","a","a","a","B","B","B"],"reference":["a","a","a","a","B","B","B"]}
+{"s":"O05","arm":"OQC","assert":"P2 spray parity (pre+out): identical decisions on Redis and the reference store for 7 distinct failing subjects","ok":true,"redis":["a","a","a","a","B","B","B"],"reference":["a","a","a","a","B","B","B"]}
+{"s":"O05","arm":"OQC","assert":"P2b on this arm the 5th subject is denied only at recordFailure (after verification) and the 6th/7th at checkOnly","ok":true,"redis":["a","a","a","a","B","B","B"]}
+{"s":"O05.P3.record-only-parity","arm":"OQC","redis":["a","a","a","a","a","B","B","B"],"reference":["a","a","a","a","a","B","B","B"]}
+{"s":"O05","arm":"OQC","assert":"P3 record-only parity: identical decisions on Redis and the reference store for 8 distinct failing subjects","ok":true,"redis":["a","a","a","a","a","B","B","B"],"reference":["a","a","a","a","a","B","B","B"]}
+{"s":"O05","arm":"OQC","assert":"P3b record-only Host on this arm: the first failure only makes the scope live, failures 2..6 are observed, the 6th request (5th observed subject) returns the K1 block it issued and the 7th/8th are denied (K1 protection gained)","ok":true,"redis":["a","a","a","a","a","B","B","B"]}
+{"s":"O05.P4.ttl-hygiene","arm":"OQC","keys":147,"keysWithoutTtl":0,"livenessMarkers":2,"markerTtlWithin1To1200":true}
+{"s":"O05","arm":"OQC","assert":"P4 every Redis key written on this arm has a TTL","ok":true,"keys":147,"noTtl":0}
+{"s":"O05","arm":"OQC","assert":"P4b the two liveness markers of the innocent scope exist on Redis as WATCH keys with TTL in 1..1200 s","ok":true,"markers":2}
