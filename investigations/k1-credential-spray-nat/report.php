@@ -18,16 +18,25 @@ if (! is_dir($in) || ! is_dir($out)) {
 
 const FILES = ['k02_matrix', 'k03_boundaries_recovery', 'k04_lifecycle_trust', 'k05_ipv6_rotation_subject', 'k06_bounds', 'k08_seed_sensitivity'];
 
-/** Required assertion identifiers (leading token of the assertion text) per scenario file. */
+/**
+ * Required assertions: exact identifier (the text before the first space after the id, so `H2` never matches `H2b` and `R1` never matches
+ * `R1b`/`R1c`) => exact number of rows. Any assertion row that matches no identifier is an unknown row and a problem.
+ */
 const REQUIRED = [
-    'k02_matrix' => ['D2 arm A', 'D2 arm B', 'D2 record-only', 'CONTROL: arm C', 'CONTROL: arm B', 'CONTROL: the spray', 'DEC: spray'],
-    'k03_boundaries_recovery' => ['B1', 'B2', 'B3', 'B4', 'B5', 'B6', 'B7', 'B8'],
-    'k04_lifecycle_trust' => ['L1', 'L2', 'T1', 'T2'],
-    'k05_ipv6_rotation_subject' => ['H1', 'H2', 'H2b', 'R1', 'R2', 'R3', 'R4', 'R5', 'S1', 'S2', 'S3', 'S4', 'S5'],
-    'k06_bounds' => ['M1', 'M2', 'M3', 'M4'],
-    'k08_seed_sensitivity' => ['D2:', 'Nu12'],
-    'k07_redis' => ['R1', 'R1b', 'R1c', 'R2', 'R3', 'R4', 'R5'],
+    'k02_matrix' => ['D2 arm A' => 1, 'D2 arm B' => 1, 'D2 record-only:' => 1, 'CONTROL: arm C' => 1, 'CONTROL: arm B' => 1, 'CONTROL: the spray' => 1, 'DEC: spray' => 1],
+    'k03_boundaries_recovery' => ['B1' => 2, 'B2' => 2, 'B3' => 1, 'B4' => 4, 'B5' => 4, 'B6' => 1, 'B7' => 2, 'B8' => 1],
+    'k04_lifecycle_trust' => ['L1' => 4, 'L2' => 2, 'T1' => 1, 'T2' => 1],
+    'k05_ipv6_rotation_subject' => ['H1' => 1, 'H2' => 1, 'H2b' => 1, 'R1' => 1, 'R2' => 1, 'R3' => 1, 'R4' => 1, 'R5' => 1, 'S1' => 1, 'S2' => 1, 'S3' => 1, 'S4' => 1, 'S5' => 1],
+    'k06_bounds' => ['M1' => 1, 'M2' => 1, 'M3' => 1, 'M4' => 2],
+    'k08_seed_sensitivity' => ['D2:' => 1, 'Nu12' => 1],
+    'k07_redis' => ['R1' => 1, 'R1b' => 1, 'R1c' => 1, 'R2' => 1, 'R3' => 2, 'R4' => 2, 'R5' => 3],
 ];
+
+/** Rows of $f whose assertion text is exactly identified by $id (id followed by a space). */
+$rowsFor = static function (array $assertions, string $f, string $id): array {
+    return array_values(array_filter($assertions[$f] ?? [], static fn(array $a): bool => str_starts_with($a['assert'], $id . ' ')));
+};
+const PINNED_PIPELINE_SHA256 = '4b259d3397adf492d9767572141c9bdf5efc5744886bce63592ae9f36b95f4fc';
 
 $problems = [];
 $data = [];
@@ -68,21 +77,22 @@ if ($redisStatus === 'RAN') {
 // Provenance: every file must carry exactly the S0 provenance row.
 foreach (array_merge(FILES, $redisStatus === 'RAN' ? ['k07_redis'] : []) as $f) {
     $p = $data[$f][strtoupper(substr($f, 0, 3)) . '.provenance'] ?? null;
-    if ($p === null || count($p) !== 1 || ($p[0]['level'] ?? '') !== 'S0_RUNTIME_OBSERVED' || ($p[0]['patched'] ?? true) !== false || ($p[0]['baseSha'] ?? '') !== '4d9495ded05f647ce0421352781ce948ceeaa606') {
-        $problems[] = "$f: provenance row missing or not the unpatched S0 baseline";
+    if ($p === null || count($p) !== 1 || ($p[0]['level'] ?? '') !== 'S0_RUNTIME_OBSERVED' || ($p[0]['patched'] ?? true) !== false || ($p[0]['baseSha'] ?? '') !== '4d9495ded05f647ce0421352781ce948ceeaa606' || ($p[0]['pipelineSha256'] ?? '') !== PINNED_PIPELINE_SHA256) {
+        $problems[] = "$f: provenance row missing or not the unpatched S0 baseline (level, baseSha, patched flag and pinned pipelineSha256)";
     }
 }
 
-// Required assertions: present, and ALL true.
+// Required assertions: each id present exactly the expected number of times, all true; no unknown rows.
 foreach (REQUIRED as $f => $ids) {
     if ($f === 'k07_redis' && $redisStatus !== 'RAN') {
         continue;
     }
-    foreach ($ids as $id) {
-        $rows = array_filter($assertions[$f] ?? [], static fn(array $a): bool => str_starts_with($a['assert'], $id));
-        if ($rows === []) {
-            $problems[] = "$f: required assertion '$id' not present";
-            continue;
+    $matched = 0;
+    foreach ($ids as $id => $expect) {
+        $rows = $rowsFor($assertions, $f, $id);
+        $matched += count($rows);
+        if (count($rows) !== $expect) {
+            $problems[] = "$f: assertion '$id' present " . count($rows) . " time(s), expected $expect";
         }
         foreach ($rows as $a) {
             if (($a['ok'] ?? false) !== true) {
@@ -90,12 +100,25 @@ foreach (REQUIRED as $f => $ids) {
             }
         }
     }
+    if ($matched !== count($assertions[$f] ?? [])) {
+        $problems[] = "$f: " . (count($assertions[$f] ?? []) - $matched) . ' unknown/unmatched assertion row(s)';
+    }
 }
 
 // Matrix completeness + integer fields.
 $cells = [];
+$expectedCells = [];
+foreach (k1MatrixCells() as [$id, $shape, $flow]) {
+    $expectedCells["$id|$shape|$flow"] = true;
+}
 foreach ($data['k02_matrix']['K02.matrix'] ?? [] as $r) {
-    $cells[$r['stream'] . '|' . $r['shape'] . '|' . $r['flow']] = $r;
+    $key = ($r['stream'] ?? '?') . '|' . ($r['shape'] ?? '?') . '|' . ($r['flow'] ?? '?');
+    if (! isset($expectedCells[$key])) {
+        $problems[] = "k02_matrix: unknown matrix cell $key";
+    } elseif (isset($cells[$key])) {
+        $problems[] = "k02_matrix: duplicate matrix cell $key";
+    }
+    $cells[$key] ??= $r;
 }
 foreach (k1MatrixCells() as [$id, $shape, $flow]) {
     $r = $cells["$id|$shape|$flow"] ?? null;
@@ -133,7 +156,7 @@ foreach (['k03_boundaries_recovery' => ['K03.B1.four-five-boundary', 'K03.B4.rec
 }
 
 const GATES = [
-    ['G1', 'Baseline reproduction: the four arms reproduce the published S0 D2 numbers (117/108/115/7)', ['k02_matrix' => ['D2 arm A', 'D2 arm B', 'D2 record-only']]],
+    ['G1', 'Baseline reproduction: the four arms reproduce the published S0 D2 numbers (117/108/115/7)', ['k02_matrix' => ['D2 arm A', 'D2 arm B', 'D2 record-only:']]],
     ['G2', 'Isolated TEST-ONLY controls work (arm C/D disable K1 spray, arm B keeps it; spray stream constrained only by K1)', ['k02_matrix' => ['CONTROL: arm C', 'CONTROL: arm B', 'CONTROL: the spray'], 'k03_boundaries_recovery' => ['B7']]],
     ['G3', 'K1 boundaries and recovery measured exactly (4/5 WATCH, 5/5, 600 s fixed window, 1800 s WATCH, 60 s block vs set, OTP)', ['k03_boundaries_recovery' => ['B1', 'B2', 'B3', 'B4', 'B5', 'B6', 'B8']]],
     ['G4', 'Command lifecycle: precheck-only observation, no double count, record-only has no K1', ['k02_matrix' => ['DEC: spray'], 'k04_lifecycle_trust' => ['L1', 'L2']]],
@@ -154,7 +177,7 @@ foreach (GATES as [$id, $title, $need]) {
             continue;
         }
         foreach ($ids as $i) {
-            $rows = array_filter($assertions[$f] ?? [], static fn(array $a): bool => str_starts_with($a['assert'], $i));
+            $rows = $rowsFor($assertions, $f, $i);
             if ($rows === []) {
                 $status = 'UNPROVEN';
             }

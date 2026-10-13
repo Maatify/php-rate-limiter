@@ -223,6 +223,28 @@ fc_check matrix_field_removed 'sed -i.bak "s/\"sprayThresholdRequests\"/\"zzz\"/
 fc_check assertion_row_deleted 'grep -v "\"assert\":\"B5 " "$dir/k03_boundaries_recovery.jsonl" >"$dir/t" && mv "$dir/t" "$dir/k03_boundaries_recovery.jsonl"'
 fc_check assertion_failed 'sed -i.bak "s/\"ok\":true/\"ok\":false/" "$dir/k04_lifecycle_trust.jsonl" && rm -f "$dir/k04_lifecycle_trust.jsonl.bak"'
 fc_check redis_evidence_deleted 'rm -f "$dir/k07_redis.jsonl"; echo RAN >"$dir/redis_status.txt"'
+# F108-01: a forged pipelineSha256 in the provenance row with every assertion still true must be refused
+fc_check forged_pipeline_sha256 'sed -i.bak "s/4b259d3397adf492d9767572141c9bdf5efc5744886bce63592ae9f36b95f4fc/0000000000000000000000000000000000000000000000000000000000000000/" "$dir/k02_matrix.jsonl" && rm -f "$dir/k02_matrix.jsonl.bak"'
+fc_check forged_pipeline_sha256_redis 'sed -i.bak "s/4b259d3397adf492d9767572141c9bdf5efc5744886bce63592ae9f36b95f4fc/0000000000000000000000000000000000000000000000000000000000000000/" "$dir/k07_redis.jsonl" && rm -f "$dir/k07_redis.jsonl.bak"'
+# F108-02: exact assertion identity (H2 is not H2b; R1 is not R1b/R1c) and exact matrix-cell identity
+fc_check h2_deleted_h2b_present 'grep -v "\"assert\":\"H2 " "$dir/k05_ipv6_rotation_subject.jsonl" >"$dir/t" && mv "$dir/t" "$dir/k05_ipv6_rotation_subject.jsonl"'
+fc_check r1_deleted_r1b_r1c_present 'grep -v "\"assert\":\"R1 " "$dir/k07_redis.jsonl" >"$dir/t" && mv "$dir/t" "$dir/k07_redis.jsonl"'
+fc_check assertion_row_duplicated 'grep "\"assert\":\"B3 " "$dir/k03_boundaries_recovery.jsonl" >>"$dir/k03_boundaries_recovery.jsonl"'
+fc_check unknown_assertion_row 'sed "s/\"assert\":\"B3 /\"assert\":\"Z9 /" "$dir/k03_boundaries_recovery.jsonl" | grep "Z9 " >>"$dir/k03_boundaries_recovery.jsonl"'
+# duplicate D2 cell with a changed measurement while the line count and every assertion stay unchanged (another cell is replaced)
+fc_check d2_cell_duplicated_count_preserved 'python3 - "$dir/k02_matrix.jsonl" <<"PY"
+import sys, json
+p = sys.argv[1]
+rows = [json.loads(l) for l in open(p)]
+d2 = next(r for r in rows if r.get("s") == "K02.matrix" and r["stream"] == "D2" and r["shape"] == "login" and r["flow"] == "pre+out")
+victim = next(i for i, r in enumerate(rows) if r.get("s") == "K02.matrix" and r["stream"] == "N3" and r["flow"] == "pre")
+import copy
+dup = copy.deepcopy(d2)
+dup["arms"]["A"]["legitDenied"] = 1
+rows[victim] = dup
+open(p, "w").write("\n".join(json.dumps(r, separators=(",", ":")) for r in rows) + "\n")
+PY'
+fc_check unknown_matrix_cell 'sed "s/\"stream\":\"N3\",\"class\":\"benign\",\"shape\":\"login\",\"flow\":\"pre\"/\"stream\":\"NX\",\"class\":\"benign\",\"shape\":\"login\",\"flow\":\"pre\"/" "$dir/k02_matrix.jsonl" >"$dir/t" && mv "$dir/t" "$dir/k02_matrix.jsonl"'
 
 if [[ "${UPDATE:-0}" == "1" ]]; then
     report "UPDATE" "expected/ regenerated — review the git diff before committing"
