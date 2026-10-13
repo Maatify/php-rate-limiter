@@ -1,0 +1,6 @@
+{"s":"A07.provenance","arm":"S0","level":"S0_RUNTIME_OBSERVED","baseSha":"72f6dea8ab0729e63492b622e682e334c527c966","pipelineSha256":"4b259d3397adf492d9767572141c9bdf5efc5744886bce63592ae9f36b95f4fc","redisAdapterSha256":"520574d4b0758470c0fc36ec304001825cf20a183e28bf6a999bcd41d54297a4","experimentalInterface":false,"patched":false}
+{"s":"A07.H1.host-pre-out","arm":"S0","legitDenied":38,"legitSucceeded":2,"attackVerified":0,"attackDenied":20,"libraryCalls":62,"attempts":60,"oaaaKeys":0}
+{"s":"A07.H2.host-pre-only","arm":"S0","legitDenied":38,"legitSucceeded":2,"attackVerified":0,"attackDenied":20,"libraryCalls":60,"attempts":60,"oaaaKeys":0}
+{"s":"A07","arm":"S0","assert":"H0 the Host adapter makes exactly the documented calls on this arm (checkOnly per attempt, plus one outcome call per admitted attempt in pre+out) and is identical code on both arms","ok":true,"h1":62,"h2":60}
+{"s":"A07","arm":"S0","assert":"H1 S0 reference: no OAAA key is written","ok":true,"legitDenied":38,"legitSucceeded":2,"attackVerified":0,"attackDenied":20,"libraryCalls":62,"attempts":60,"oaaaKeys":0}
+{"s":"A07","arm":"S0","assert":"H2 S0 reference: pre-only Host","ok":true,"legitDenied":38,"legitSucceeded":2,"attackVerified":0,"attackDenied":20,"libraryCalls":60,"attempts":60,"oaaaKeys":0}

@@ -1,0 +1,43 @@
+{"s":"A02.provenance","arm":"OAAA","level":"CANDIDATE_EXPERIMENTAL_RUNTIME","baseSha":"72f6dea8ab0729e63492b622e682e334c527c966","pipelineSha256":"2af6f5599c809a829c0a7c792e35e49dc9e777482f2560250fa60f59067ffa20","redisAdapterSha256":"a8af48c7661f1a466fe12416530598f7677583ae3683f7dd4a1eb3456002977f","experimentalInterface":true,"patched":true}
+{"s":"A02.L1.pure-attacker","arm":"OAAA","seq":"aaaaaaaaB-B-B-B-B-B-B-B-B-B-B-B-B-B-B-B-","granted":0}
+{"s":"A02","arm":"OAAA","assert":"L1 a pure attacker (no verified success in its scope) is admitted for the first 4 victims only and nothing is ever granted","ok":true,"seq":"aaaaaaaaB-B-B-B-B-B-B-B-B-B-B-B-B-B-B-B-"}
+{"s":"A02.L2.credit-gating","arm":"OAAA","seq":"aaaaaaaaaaB-B-","sprayUnits":1}
+{"s":"A02","arm":"OAAA","assert":"L2 one verified success lends exactly one unit: the 5th distinct subject is admitted, the 6th and a later credited attempt are refused while the unit is spent","ok":true,"seq":"aaaaaaaaaaB-B-"}
+{"s":"A02.L3.pre-only","arm":"OAAA","saturation":"aaaaaaaaaa","seq":"aaB","unitsAfterThreePreChecks":2,"after1300":"a"}
+{"s":"A02","arm":"OAAA","assert":"L3 two pre-only reservations are granted and never returned (2 units stay spent), the third is refused","ok":true,"saturation":"aaaaaaaaaa","seq":"aaB","units":2,"late":"a"}
+{"s":"A02.L4.success-returns","arm":"OAAA","admitted":50,"maxUnitsAfterOutcome":0}
+{"s":"A02","arm":"OAAA","assert":"L4 all 50 credited successful attempts are admitted and every unit is returned (0 units held after each outcome)","ok":true,"admitted":50,"maxUnits":0}
+{"s":"A02.L5.same-tuple-refund","arm":"OAAA","MEDIUM":{"seq":"aaaa","unitsAfterTypo":1,"unitsAfterSuccess":0},"LOW":{"seq":"aaaa","unitsAfterTypo":1,"unitsAfterSuccess":1}}
+{"s":"A02","arm":"OAAA","assert":"L5 MEDIUM: the typo holds 1 unit and the same tuple's success returns both (0); LOW: the success returns only its own unit (1 stays spent)","ok":true,"MEDIUM":{"seq":"aaaa","unitsAfterTypo":1,"unitsAfterSuccess":0},"LOW":{"seq":"aaaa","unitsAfterTypo":1,"unitsAfterSuccess":1}}
+{"s":"A02.L6.cross-account","arm":"OAAA","seq":"aaaa","unitsAfter":1}
+{"s":"A02","arm":"OAAA","assert":"L6 a success on the attacker's own account (same device, IP, UA) returns its own unit only: the victim attempt's unit stays spent","ok":true,"seq":"aaaa","units":1}
+{"s":"A02.L7.replayed-success","arm":"OAAA","seq":"aaaaaaBBB","unitsAfterEachStep":[1,0,0,1,0,0]}
+{"s":"A02","arm":"OAAA","assert":"L7 a replayed success returns nothing when nothing of its tuple is outstanding, returns at most the recorded failures of the SAME tuple (here 1), and a further replay returns nothing; units are never negative","ok":true,"seq":"aaaaaaBBB","units":[1,0,0,1,0,0]}
+{"s":"A02.L8.duplicate-failure","arm":"OAAA","seq":"aaB","unitsAfter":1}
+{"s":"A02","arm":"OAAA","assert":"L8 a duplicated failure report spends no second unit","ok":true,"seq":"aaB","units":1}
+{"s":"A02.L9.out-of-order","arm":"OAAA","success-first":{"pre":"aa","units":1},"failure-first":{"pre":"aa","units":1}}
+{"s":"A02","arm":"OAAA","assert":"L9 two in-flight attempts of one LOW tuple, one success and one failure, leave exactly 1 unit spent in either order","ok":true,"success-first":{"pre":"aa","units":1},"failure-first":{"pre":"aa","units":1}}
+{"s":"A02.L10.late-completion","arm":"OAAA","pre":"a","dayUnitsBefore":1,"dayUnitsAfterLateSuccess":1}
+{"s":"A02","arm":"OAAA","assert":"L10 a success that arrives after the 600 s tuple expired returns nothing: the day tier keeps the unit","ok":true,"pre":"a","before":1,"after":1}
+{"s":"A02.L11.epoch-rollover","arm":"OAAA","first":"a","second":"a","keepCredits":"aaaaaaaaaaaaaa","e2UnitsBefore":1,"e2UnitsAfterOldSuccess":1}
+{"s":"A02","arm":"OAAA","assert":"L11 a success for a reservation taken in an earlier epoch is never credited into the new epoch (E2 keeps its 1 unit)","ok":true,"first":"a","second":"a","before":1,"after":1}
+{"s":"A02.L12.day-tier","arm":"OAAA","seq":"aaaaaaaaaaaaB-B-B-B-B-B-","admittedFailing":6,"dayUnits":6}
+{"s":"A02","arm":"OAAA","assert":"L12 the scope day tier admits exactly 6 failing attempts in the day although every epoch still has credit and room","ok":true,"seq":"aaaaaaaaaaaaB-B-B-B-B-B-","dayUnits":6}
+{"s":"A02.L13.global-tier","arm":"OAAA","scopes":7,"attempts":14,"admitted":12,"globalEpochUnits":12}
+{"s":"A02","arm":"OAAA","assert":"L13 over 7 credited scopes (14 units of scope room) the global tier admits exactly 12 failing attempts in the epoch","ok":true,"admitted":12,"global":12}
+{"s":"A02.L14.own-credit-cap","arm":"OAAA","own":"aaaaaaaaaa","seq":"aaaaB-B-B-B-","admittedFailing":2}
+{"s":"A02","arm":"OAAA","assert":"L14 5 successful own accounts lend at most 2 units: exactly 2 failing victim attempts are admitted beyond S0","ok":true,"own":"aaaaaaaaaa","seq":"aaaaB-B-B-B-"}
+{"s":"A02.L15.trusted-advisory","arm":"OAAA","seq":"aaaBB-B-B-B-B-B-B-B-B-B-B-","oaaaCalls":3}
+{"s":"A02.L16.persisted-block","arm":"OAAA","seq":"aaaaaaaaB-B-"}
+{"s":"A02.L17.api-overuse","arm":"OAAA","seq":"aaaBB-B-B-B-B-B-B-B-B-B-B-B-B-B-B-B-B-B-B-B-B-B-B-B-B-B-B-B-","oaaaCalls":0}
+{"s":"A02.L18.login-anon","arm":"OAAA","seq":"aaaBB-B-B-B-B-B-B-B-B-B-B-B-B-B-B-B-B-B-","oaaaCalls":0}
+{"s":"A02","arm":"OAAA","assert":"L17/L18 API_OVERUSE and account-less Login make no OAAA store call","ok":true,"api":0,"anon":0}
+{"s":"A02.L19.no-capability","arm":"OAAA","bits":{"D2":"67373d86ee4e291eb0a50c3458cf17ee","ABA_B":"a8d832dc8dbaec66a8cb946b5af31193","SP1n":"da6d5667c9777a8cfcf87dd28725a3b5","OWN1":"9cc634be1ef95248c46bcb12d1641141"}}
+{"s":"A02.L20.cancel","arm":"OAAA","seq":"aaaBB-B-","cancels":1,"unitsAfter":0}
+{"s":"A02","arm":"OAAA","assert":"L20 the 4th-device request is denied by §5.2 although its spray reservation was granted; the reservation is cancelled at once (0 units held)","ok":true,"seq":"aaaBB-B-","cancels":1,"units":0}
+{"s":"A02.L21.all-or-nothing","arm":"OAAA","pre":"aaaaaaaa","probe":"B-","sprayUnitsBefore":0,"sprayUnits":0,"churnUnits":0,"refusals":1}
+{"s":"A02","arm":"OAAA","assert":"L21 a request firing K1 spray (credited, room) and K2 churn (no credit) is refused as a whole and takes no unit on K1 either (no over-spend)","ok":true,"pre":"aaaaaaaa","probe":"B-","sprayBefore":0,"spray":0,"churn":0,"refusals":1}
+{"s":"A02.L22.pairing","arm":"OAAA","probe":"aa","churnUnits":1,"grants":1}
+{"s":"A02","arm":"OAAA","assert":"L22 a pre+out failing attempt that fires K2 churn on both commands spends exactly one unit (one grant, paired outcome)","ok":true,"probe":"aa","units":1,"grants":1}
+{"s":"A02.L23.record-only","arm":"OAAA","seq":"aaBB","churnUnits":2}
+{"s":"A02","arm":"OAAA","assert":"L23 record-only failures firing churn take one unit each (2) and then receive the S0 block decision","ok":true,"seq":"aaBB","units":2}
