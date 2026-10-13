@@ -48,7 +48,7 @@ A FAIL above is a **finding** against the candidate (the evidence is valid). The
 | Y4f / Y6c poisoning paying failures | pre+out | 79/81 · 28/30 | 12/81 · 5/30 | same | 75/81 · 25/30 | escalation punishes the shared scope |
 | MIX D2 office + spray attacker behind the same NAT | pre+out | 117/121 | 51/121 | 51 | 106/121 | |
 | MIXN 12 isolated colleagues + attacker | pre+out | 49/61 | 15/61 | 15 | **53/61** | |
-| MIXN | out | **0/61** | **15/61** | 15 | 53/61 | K1 protection gained by record-only Hosts brings its NAT collateral |
+| MIXN | out | **0/61** | **15/61** | 15 | 53/61 | Record-only is a post-outcome signal; it does not protect K1 before verification |
 
 Other shapes (pre+out): D2 on OTP 117→49 (OQC) / 65 (OQCE); D2 on Login-without-account 117→15 / 51; OTPB on OTP 58→34 / 32.
 
@@ -97,8 +97,8 @@ signal at all for record-only Hosts (#108 L2); OQC returns one from the second f
 * **checkOnly-only Hosts are S0 to the byte** (G2 PASS for OQC and OQCE, 317 cells each). **Record-only Hosts get a post-outcome K1 signal** (and its collateral, §5).
 * **Concurrency (O06, real Redis, F111-02)**: on an outcome-live scope the candidate observes nothing at `checkOnly`, so a burst of simultaneous requests
   that all precede the first `recordFailure` is verified in full: **16 of 16** simultaneous distinct failing subjects pass a live K1 scope (S0: 3 of 16,
-  the K1 set is observed atomically at `checkOnly`), **8 of 8** simultaneous distinct fingerprints pass a live K2 scope (S0: 0 of 8 in every measured
-  round, at most 1 by the sequential rule), identical on OQC, OQCW and OQCE in every one of 3 rounds; the next sequential `checkOnly` after the burst is
+  the K1 set is observed atomically at `checkOnly`), **8 of 8** simultaneous distinct fingerprints pass a live K2 scope (S0: at most 1 of 8; each measured round allowed 0 or 1),
+  identically on OQC, OQCW and OQCE in all 3 rounds; the next sequential `checkOnly` after the burst is
   denied on every arm; the same K1 burst on a *silent* scope passes exactly 4 of 16 on every arm (the silent path is S0, observed atomically). Hence the
   sequential "+1 per correlation block" of §5.1 is a lower bound: **the per-cycle leak equals the concurrency of the attacker**, and escalation (OQCE)
   shortens the number of cycles, not the leak inside one. **OQCE under concurrency escalates inside a single burst**: the concurrent failures each
@@ -118,7 +118,7 @@ signal at all for record-only Hosts (#108 L2); OQC returns one from the second f
    SP6 20→79, D7 4→34, Y1 8→48, SP5c 2→12. The #100 Lead gate was "no increase over S0"; OQC does not meet it, and the G4 bound (≤ triggers + untouched
    5-subject budget + 1) only formalises the leak, it does not remove it. The slow hovers SP2 (60→72/72) and SP4u (480→576/576) lose S0's
    WATCH-at-pre-check catch entirely. **Under concurrency the "+1" becomes "+N"** (O06): 16 of 16 simultaneous subjects pass a live K1 scope and 8 of 8
-   fingerprints a live K2 scope where S0 passes 3 and 0. Any design that moves enforcement from the pre-check to the outcome carries this property; it
+   fingerprints a live K2 scope where S0 passes 3 of 16 and at most 1 of 8. Any design that moves enforcement from the pre-check to the outcome carries this property; it
    is the cost of evidence arriving after the verification, not a tuning issue.
 2. **Escalation (OQCE) buys the leak back — ABA_A 5, SP3 7, SP6 14 (below S0), D7 5 — at a fairness price**: D2 53/121 instead of 30 (still far from
    S0's 117), MIX 106/121, and it is *worse than S0* on the mixed isolated office MIXN (49→53) and on the failure-paying poisoners Y4c/Y6c. Escalation
