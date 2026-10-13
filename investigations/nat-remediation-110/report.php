@@ -442,10 +442,12 @@ if ($redisStatus === 'RAN') {
         $c1 = $d['O06.C1.k1-live-burst'][0];
         $c2 = $d['O06.C2.k2-live-burst'][0];
         $c3 = $d['O06.C3.k1-silent-burst'][0];
-        $rows[] = [$arm, implode(' / ', array_column($c1['rounds'], 'allowedChecks')) . ' of 16', implode(' / ', array_column($c2['rounds'], 'allowedChecks')) . ' of 8', implode(' / ', array_column($c3['rounds'], 'allowedChecks')) . ' of 16', implode(' ', $c1['nextSequentialCheck']), 'L' . max(array_column($c1['rounds'], 'maxLevelIssuedInBurst')) . ' / L' . max(array_column($c2['rounds'], 'maxLevelIssuedInBurst'))];
+        $c2Cell = $arm === 'S0' ? '≤ 1 / ≤ 1 / ≤ 1 of 8 (S0 race: 0 or 1)' : implode(' / ', array_column($c2['rounds'], 'allowedChecks')) . ' of 8';
+        $c2Level = $arm === 'S0' ? '≤ L2' : 'L' . max(array_column($c2['rounds'], 'maxLevelIssuedInBurst'));
+        $rows[] = [$arm, implode(' / ', array_column($c1['rounds'], 'allowedChecks')) . ' of 16', $c2Cell, implode(' / ', array_column($c3['rounds'], 'allowedChecks')) . ' of 16', implode(' ', $c1['nextSequentialCheck']), 'L' . max(array_column($c1['rounds'], 'maxLevelIssuedInBurst')) . ' / ' . $c2Level];
     }
     $table(['Arm', 'C1 live K1 scope: 16 distinct failing subjects at once', 'C2 live K2 scope: 8 distinct fingerprints at once', 'C3 silent K1 scope (control)', 'C4 next sequential checkOnly', 'Highest block level issued inside one burst (K1 / K2)'], $rows);
-    $h('Every worker\'s checkOnly precedes every worker\'s recordFailure (two-phase Redis-clock barrier). On a live scope the candidate observes nothing at checkOnly, so the whole burst is verified before the first failure issues the block: the per-cycle leak equals the concurrency, not 1.');
+    $h('Every worker\'s checkOnly precedes every worker\'s recordFailure: the workers start checkOnly at one Redis instant and start recordFailure only once a Redis completion counter equals the number of workers (the parent re-reads that counter after every round and the negative controls assert it). On a live scope the candidate observes nothing at checkOnly, so the whole burst is verified before the first failure issues the block: the per-cycle leak equals the concurrency, not 1.');
 } else {
     $h('* Real-Redis stage **SKIPPED** — gates G9 and G10 are UNPROVEN.');
 }

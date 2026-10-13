@@ -6,7 +6,7 @@ declare(strict_types=1);
 // the 60/600 s boundaries are proved on the controlled clock in O02/O04; here only SEQUENTIAL decisions (no waiting on expiry):
 //   P1  A/B/A pair parity (reference store vs Redis): innocent successes, then the failing attacker
 //   P2  spray parity: 7 distinct failing subjects in pre+out (5th observed at recordFailure on a candidate arm, 6th denied)
-//   P3  record-only parity: 8 distinct failing subjects (candidate arms gain K1 after the first failure)
+//   P3  record-only parity: 8 distinct failing subjects (candidate arms return a post-outcome K1 block from the 6th request)
 //   P4  TTL hygiene: every key has a TTL; the two liveness markers of one scope exist on Redis with TTL in 1..600
 require dirname(__DIR__, 2) . '/workstream-b-anti-evasion/lib/redis.php';
 require dirname(__DIR__) . '/lib/oqc.php';

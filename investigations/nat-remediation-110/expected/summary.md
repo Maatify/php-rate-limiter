@@ -374,9 +374,9 @@ Record-only Hosts (every attempt is verified before the library sees it; the mea
 
 | Arm | C1 live K1 scope: 16 distinct failing subjects at once | C2 live K2 scope: 8 distinct fingerprints at once | C3 silent K1 scope (control) | C4 next sequential checkOnly | Highest block level issued inside one burst (K1 / K2) |
 |---|---|---|---|---|---|
-| S0 | 3 / 3 / 3 of 16 | 0 / 0 / 0 of 8 | 4 / 4 / 4 of 16 | denied denied denied | L2 / L0 |
+| S0 | 3 / 3 / 3 of 16 | ≤ 1 / ≤ 1 / ≤ 1 of 8 (S0 race: 0 or 1) | 4 / 4 / 4 of 16 | denied denied denied | L2 / ≤ L2 |
 | OQC | 16 / 16 / 16 of 16 | 8 / 8 / 8 of 8 | 4 / 4 / 4 of 16 | denied denied denied | L2 / L2 |
 | OQCW | 16 / 16 / 16 of 16 | 8 / 8 / 8 of 8 | 4 / 4 / 4 of 16 | denied denied denied | L2 / L2 |
 | OQCE | 16 / 16 / 16 of 16 | 8 / 8 / 8 of 8 | 4 / 4 / 4 of 16 | denied denied denied | L4 / L4 |
 
-Every worker's checkOnly precedes every worker's recordFailure (two-phase Redis-clock barrier). On a live scope the candidate observes nothing at checkOnly, so the whole burst is verified before the first failure issues the block: the per-cycle leak equals the concurrency, not 1.
+Every worker's checkOnly precedes every worker's recordFailure: the workers start checkOnly at one Redis instant and start recordFailure only once a Redis completion counter equals the number of workers (the parent re-reads that counter after every round and the negative controls assert it). On a live scope the candidate observes nothing at checkOnly, so the whole burst is verified before the first failure issues the block: the per-cycle leak equals the concurrency, not 1.

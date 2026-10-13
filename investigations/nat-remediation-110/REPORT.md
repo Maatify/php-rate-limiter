@@ -123,8 +123,9 @@ signal at all for record-only Hosts (#108 L2); OQC returns one from the second f
 2. **Escalation (OQCE) buys the leak back — ABA_A 5, SP3 7, SP6 14 (below S0), D7 5 — at a fairness price**: D2 53/121 instead of 30 (still far from
    S0's 117), MIX 106/121, and it is *worse than S0* on the mixed isolated office MIXN (49→53) and on the failure-paying poisoners Y4c/Y6c. Escalation
    applies only to live scopes, so checkOnly-only Hosts stay S0 (G2 PASS).
-3. **Record-only Hosts gain K1 protection and its shared-NAT collateral at once**: SP1n/SP3/SP6 go from 0 denied to 195/991/1174, and MIXN (12
-   colleagues + an attacker behind the NAT) goes from 0/61 to 15/61 colleagues denied. S0 had neither. This is the G5 FAIL on OQC/OQCW.
+3. **Record-only Hosts get a post-outcome K1 signal and its shared-NAT collateral at once**: the `recordFailure` of SP1n/SP3/SP6 returns a block
+   195/991/1174 times instead of 0 (after the verification already happened, §3), and MIXN (12 colleagues + an attacker behind the NAT) goes from 0/61
+   to 15/61 colleagues denied. S0 had neither. This is the G5 FAIL on OQC/OQCW.
 4. **OQCW (K1 WATCH on new members) changes K1 for every Host, not only outcome-reporting ones** (G2 FAIL, by construction of Q1): `Nu4` 47→4 and
    `K1R4` 4→200 in checkOnly-only flows. It adds nothing over OQC where outcomes are reported (every pre+out cell identical). It is a separate K1 policy
    question (the documented 5 vs the implemented 4+repeat), not an OQC arm.
