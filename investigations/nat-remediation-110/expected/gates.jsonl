@@ -1,0 +1,29 @@
+{"gate":"G1","arm":"S0","title":"Baseline reproduction: published S0 numbers (D2 117/115, SP1n/SP3/SP6 4/7/20, L1 127, X1 2, X2 6, Y9b 3) and the #100 Lead control ABA_A 3/120 reproduced on the real pipeline","status":"PASS"}
+{"gate":"G2","arm":"OQC","title":"checkOnly-only Hosts keep S0 exactly (every flow=pre cell identical to S0 in denials, reach, denied and correlation issuances)","status":"PASS"}
+{"gate":"G3","arm":"OQC","title":"API_OVERUSE and custom API policies are untouched (every api/api_custom cell identical to S0)","status":"PASS"}
+{"gate":"G4","arm":"OQC","title":"Protection bound: on every attack/evasion/mixed cell (pre+out) the extra attacker verifications vs S0 are at most (correlation blocks issued by the arm) + max(0, 5 - S0 reach) + 1","status":"PASS"}
+{"gate":"G5","arm":"OQC","title":"Fairness non-regression: no benign, mixed or poisoning cell (pre+out, record-only) has more legitimate denials than S0","status":"FAIL","detail":["MIXN/login/out legit denied 0->15","MIXN/otp/out legit denied 4->19"]}
+{"gate":"G2","arm":"OQCW","title":"checkOnly-only Hosts keep S0 exactly (every flow=pre cell identical to S0 in denials, reach, denied and correlation issuances)","status":"FAIL","detail":["N5/login correlationIssuances 46->44","N6/login correlationIssuances 48->30","Nu4/login legitDenied 47->4","Nu4/login correlationIssuances 24->2","Nu5/login legitDenied 47->39","Nu5/login correlationIssuances 24->20","D6/login correlationIssuances 18->10","K1R4/login attackReachedVerification 4->200","K1R4/login attackDenied 196->0","K1R4/login correlationIssuances 10->0","OTPB/login correlationIssuances 52->31"]}
+{"gate":"G3","arm":"OQCW","title":"API_OVERUSE and custom API policies are untouched (every api/api_custom cell identical to S0)","status":"PASS"}
+{"gate":"G4","arm":"OQCW","title":"Protection bound: on every attack/evasion/mixed cell (pre+out) the extra attacker verifications vs S0 are at most (correlation blocks issued by the arm) + max(0, 5 - S0 reach) + 1","status":"FAIL","detail":["K1R4/login reach 4->8 (+4) > bound 2 (triggers 0)"]}
+{"gate":"G5","arm":"OQCW","title":"Fairness non-regression: no benign, mixed or poisoning cell (pre+out, record-only) has more legitimate denials than S0","status":"FAIL","detail":["MIXN/login/out legit denied 0->15","MIXN/otp/out legit denied 4->19"]}
+{"gate":"G2","arm":"OQCE","title":"checkOnly-only Hosts keep S0 exactly (every flow=pre cell identical to S0 in denials, reach, denied and correlation issuances)","status":"PASS"}
+{"gate":"G3","arm":"OQCE","title":"API_OVERUSE and custom API policies are untouched (every api/api_custom cell identical to S0)","status":"PASS"}
+{"gate":"G4","arm":"OQCE","title":"Protection bound: on every attack/evasion/mixed cell (pre+out) the extra attacker verifications vs S0 are at most (correlation blocks issued by the arm) + max(0, 5 - S0 reach) + 1","status":"PASS"}
+{"gate":"G5","arm":"OQCE","title":"Fairness non-regression: no benign, mixed or poisoning cell (pre+out, record-only) has more legitimate denials than S0","status":"FAIL","detail":["MIXN/login/pre+out legit denied 49->53","MIXN/login/out legit denied 0->53","Y4c/login/pre+out legit denied 28->29","Y4c/login/out legit denied 28->29","Y6c/login/out legit denied 27->29","MIXN/otp/pre+out legit denied 50->53","MIXN/otp/out legit denied 4->53"]}
+{"gate":"G6","arm":"S0","title":"Targeted probes: A/B/A pair, one K1 observation per attempt, liveness marker lifecycle, success never erases failures, typo cost, WATCH gap","status":"PASS"}
+{"gate":"G7","arm":"S0","title":"Current/Previous rotation (3 modes) and IPv6 macro scopes","status":"PASS"}
+{"gate":"G8","arm":"S0","title":"Storage bounds (2 marker keys per scope, TTL-bounded, 0 per request), rollback and mixed-version safety","status":"PASS"}
+{"gate":"G9","arm":"S0","title":"Real Redis: decision parity, record-only K1, TTL hygiene, liveness markers on the adapter","status":"PASS"}
+{"gate":"G6","arm":"OQC","title":"Targeted probes: A/B/A pair, one K1 observation per attempt, liveness marker lifecycle, success never erases failures, typo cost, WATCH gap","status":"PASS"}
+{"gate":"G7","arm":"OQC","title":"Current/Previous rotation (3 modes) and IPv6 macro scopes","status":"PASS"}
+{"gate":"G8","arm":"OQC","title":"Storage bounds (2 marker keys per scope, TTL-bounded, 0 per request), rollback and mixed-version safety","status":"PASS"}
+{"gate":"G9","arm":"OQC","title":"Real Redis: decision parity, record-only K1, TTL hygiene, liveness markers on the adapter","status":"PASS"}
+{"gate":"G6","arm":"OQCW","title":"Targeted probes: A/B/A pair, one K1 observation per attempt, liveness marker lifecycle, success never erases failures, typo cost, WATCH gap","status":"PASS"}
+{"gate":"G7","arm":"OQCW","title":"Current/Previous rotation (3 modes) and IPv6 macro scopes","status":"PASS"}
+{"gate":"G8","arm":"OQCW","title":"Storage bounds (2 marker keys per scope, TTL-bounded, 0 per request), rollback and mixed-version safety","status":"PASS"}
+{"gate":"G9","arm":"OQCW","title":"Real Redis: decision parity, record-only K1, TTL hygiene, liveness markers on the adapter","status":"PASS"}
+{"gate":"G6","arm":"OQCE","title":"Targeted probes: A/B/A pair, one K1 observation per attempt, liveness marker lifecycle, success never erases failures, typo cost, WATCH gap","status":"PASS"}
+{"gate":"G7","arm":"OQCE","title":"Current/Previous rotation (3 modes) and IPv6 macro scopes","status":"PASS"}
+{"gate":"G8","arm":"OQCE","title":"Storage bounds (2 marker keys per scope, TTL-bounded, 0 per request), rollback and mixed-version safety","status":"PASS"}
+{"gate":"G9","arm":"OQCE","title":"Real Redis: decision parity, record-only K1, TTL hygiene, liveness markers on the adapter","status":"PASS"}

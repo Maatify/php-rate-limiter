@@ -1,0 +1,249 @@
+--- a/src/Service/EvaluationPipeline.php
++++ b/src/Service/EvaluationPipeline.php
+@@ -189,0 +190,4 @@
++        // OQC-EXPERIMENT (#110 plan 1; investigation patch, NOT production code): outcome-liveness snapshot of the
++        // K1 (IP) and K2 (IP+UA) scopes BEFORE any observation, marker write AFTER the snapshot. Arm S0 = unchanged.
++        $this->oqcPrepare($policy, $request, $device, $realKeysV2, $realKeysV1);
++
+@@ -237,0 +242 @@
++        $this->oqcMarkMacro($adaptiveIpv6Scopes, $request); // OQC-EXPERIMENT: no-op on arm S0 / ineligible policies
+@@ -302 +307 @@
+-        if ($request->isPreCheck && $this->isCredentialSprayPolicy($policy)) {
++        if ($this->oqcSprayCommand($request) && $this->isCredentialSprayPolicy($policy)) {
+@@ -962 +967 @@
+-        $sprayEligible = $request->isPreCheck
++        $sprayEligible = $this->oqcSprayCommand($request)
+@@ -1122,0 +1128,3 @@
++        $churnTriggered = false;
++        $churnScopeKey = null;
++        if ($this->oqcChurnCommand()) { // OQC-EXPERIMENT: S0 = always true
+@@ -1130,0 +1139 @@
++        $churnScopeKey = $churn->currentKey;
+@@ -1146,0 +1156,3 @@
++            if (! $this->oqcMacroCommand($scope)) { // OQC-EXPERIMENT: the macro scope has its own liveness
++                continue;
++            }
+@@ -1154,0 +1167 @@
++        } // OQC-EXPERIMENT
+@@ -1156,0 +1170 @@
++            $issue = $this->oqcIssue('churn', (string) $churnScopeKey); // OQC-EXPERIMENT: [2, 60] unless arm OQCE and the scope is live
+@@ -1159,2 +1173,2 @@
+-                2,
+-                60,
++                $issue['level'],
++                $issue['duration'],
+@@ -1166,2 +1180,2 @@
+-                        'level' => 2,
+-                        'duration' => 60,
++                        'level' => $issue['level'],
++                        'duration' => $issue['duration'],
+@@ -1441,0 +1456,3 @@
++            if (! $this->oqcMacroCommand($scope)) { // OQC-EXPERIMENT: the macro scope has its own liveness
++                continue;
++            }
+@@ -1461,0 +1479 @@
++        $issue = $this->oqcIssue('spray', 'credential_spray:' . $k1Key); // OQC-EXPERIMENT: [2, 60] unless arm OQCE and the scope is live
+@@ -1465,2 +1483,2 @@
+-            'level' => 2,
+-            'duration' => PenaltyLadder::getDuration(2),
++            'level' => $issue['level'],
++            'duration' => $issue['duration'],
+@@ -1471,2 +1489,2 @@
+-            2,
+-            PenaltyLadder::getDuration(2),
++            $issue['level'],
++            $issue['duration'],
+@@ -1480,0 +1499 @@
++        $newMember = $this->oqcNewMember($observation->currentKey, $count); // OQC-EXPERIMENT: always true unless arm OQCW
+@@ -1485 +1504 @@
+-        if ($count !== 4) {
++        if ($count !== 4 || ! $newMember) {
+@@ -2614,0 +2634,77 @@
++    }
++
++    // ------------------------------------------------------------------------------------------------------------------
++    // OQC-EXPERIMENT — #110 plan 1 "Outcome-Qualified Correlation" (investigation patch; NOT production code).
++    // Arms, selected by env OQC_ARM: S0 (unmodified behaviour) | OQC | OQCW (OQC + K1 WATCH on new member only) |
++    // OQCE (OQC + re-issue escalation L2 -> L3 -> L4 on the K1 / K2 correlation blocks).
++    // Rule (eligible policies = CREDENTIAL_SPRAY or DISTRIBUTED_ACCOUNT capability): K1 spray and K2 churn are observed AND
++    // evaluated only when (scope outcome-live AND command is recordFailure) OR (scope silent: S0 behaviour). A scope is
++    // outcome-live when ANY outcome command was processed for it in the current or the previous 600 s window (two window-id
++    // marker keys per scope, TTL 1200 s, exactly like S0's `dilution_confirmation` windows): liveness therefore lasts 600..1200 s
++    // after the last reported outcome and is renewed by outcomes. Markers are written AFTER the snapshot was taken (the outcome
++    // command that makes a silent scope live never observes under the live rule). The marker key is a plain sha-256 of the
++    // already-opaque scope key (not derived from the rotating secret); Current and Previous scope keys are both read, only
++    // Current is written. Scopes: K1 = IP, K2 = IP+UA, and every active IPv6 macro hierarchy scope (own markers).
++    // State uses ONLY the existing WATCH-flag capability of the correlation store (existence test; the count is irrelevant).
++    // ------------------------------------------------------------------------------------------------------------------
++    private ?bool $oqcChurnLive = null;
++    private ?bool $oqcSprayLive = null;
++    private ?RateLimitCommand $oqcRequest = null;
++    private bool $oqcActive = false;
++
++    private function oqcArm(): string
++    {
++        $a = getenv('OQC_ARM');
++
++        return $a === false || $a === '' ? 'S0' : $a;
++    }
++
++    /**
++     * @param array<string, string|null> $keysV2
++     * @param array<string, string|null> $keysV1
++     */
++    private function oqcPrepare(BlockPolicyInterface $policy, RateLimitCommand $request, DeviceIdentityDTO $device, array $keysV2, array $keysV1): void
++    {
++        $this->oqcChurnLive = null;
++        $this->oqcSprayLive = null;
++        $this->oqcRequest = $request;
++        $this->oqcActive = false;
++        if ($this->oqcArm() === 'S0' || ! ($this->isCredentialSprayPolicy($policy) || $this->isDistributedAccountPolicy($policy))) {
++            return;
++        }
++        $this->oqcActive = true;
++        $policyName = $policy->getName();
++        $scopes = [];
++        if ($device->fingerprintHash !== null && ($keysV2['k2'] ?? null) !== null) {
++            $churn = $this->buildCorrelationObservation(
++                $policyName,
++                'churn',
++                $keysV2['k2'],
++                $device->fingerprintHash,
++                $keysV1['k2'] ?? null,
++                $this->previousFingerprintHash($device),
++            );
++            $scopes['churn'] = [$churn->currentKey, $churn->previousKey];
++        }
++        if (($keysV2['k1'] ?? null) !== null) {
++            $previous = $this->previousSecret !== null && ($keysV1['k1'] ?? null) !== null ? 'credential_spray:' . $keysV1['k1'] : null;
++            $scopes['spray'] = ['credential_spray:' . $keysV2['k1'], $previous];
++        }
++        foreach ($scopes as $kind => [$current, $previous]) {
++            $live = $this->oqcLiveRead($current, $previous);
++            if ($kind === 'churn') {
++                $this->oqcChurnLive = $live;
++            } else {
++                $this->oqcSprayLive = $live;
++            }
++        }
++        if ($request->isFailure || $request->isSuccess) {
++            foreach ($scopes as [$current]) {
++                $this->oqcLiveWrite($current);
++            }
++        }
++    }
++
++    private function oqcWindow(int $offset = 0): int
++    {
++        return intdiv($this->clock->now()->getTimestamp(), 600) + $offset;
+@@ -2616,0 +2713,110 @@
++    private function oqcLiveKey(string $scopeKey, int $window): string
++    {
++        return hash('sha256', 'oqc:live:v1:' . $scopeKey . ':' . $window);
++    }
++
++    /** Outcome-live = an outcome command was processed for the scope (Current or Previous key) in this or the previous 600 s window. */
++    private function oqcLiveRead(string $current, ?string $previous): bool
++    {
++        foreach ([$this->oqcWindow(), $this->oqcWindow(-1)] as $w) {
++            if ($this->correlationStore->getWatchFlag($this->oqcLiveKey($current, $w)) > 0) {
++                return true;
++            }
++            if ($previous !== null && $previous !== $current && $this->correlationStore->getWatchFlag($this->oqcLiveKey($previous, $w)) > 0) {
++                return true;
++            }
++        }
++
++        return false;
++    }
++
++    private function oqcLiveWrite(string $current): void
++    {
++        $this->correlationStore->incrementWatchFlag($this->oqcLiveKey($current, $this->oqcWindow()), 1200);
++    }
++
++    /**
++     * IPv6 macro scopes carry their own liveness (one hierarchy scope aggregates many base scopes, each of which starts silent).
++     *
++     * @param array{cidr: int, currentScope: string, previousScope: ?string} $scope
++     */
++    private function oqcMacroCommand(array $scope): bool
++    {
++        if (! $this->oqcActive || ! $this->oqcLiveRead($scope['currentScope'], $scope['previousScope'])) {
++            return true; // S0 / ineligible / silent macro scope
++        }
++
++        return $this->oqcRequest !== null && $this->oqcRequest->isFailure;
++    }
++
++    /** @param list<array{cidr: int, currentScope: string, previousScope: ?string}> $scopes */
++    private function oqcMarkMacro(array $scopes, RateLimitCommand $request): void
++    {
++        if (! $this->oqcActive || ! ($request->isFailure || $request->isSuccess)) {
++            return;
++        }
++        foreach ($scopes as $scope) {
++            $this->oqcLiveWrite($scope['currentScope']);
++        }
++    }
++
++    /** K2 churn (base + macro) may be observed and evaluated by the current command. */
++    private function oqcChurnCommand(): bool
++    {
++        if ($this->oqcChurnLive === null || ! $this->oqcChurnLive) {
++            return true; // S0 / ineligible / silent scope
++        }
++
++        return $this->oqcRequest !== null && $this->oqcRequest->isFailure;
++    }
++
++    /** K1 spray (base + macro) may be observed and evaluated by $request. */
++    private function oqcSprayCommand(RateLimitCommand $request): bool
++    {
++        if ($this->oqcSprayLive === null || ! $this->oqcSprayLive) {
++            return $request->isPreCheck; // S0 rule: pre-check only
++        }
++
++        return $request->isFailure;
++    }
++
++    /**
++     * Correlation block level/duration for a scope: S0 values unless arm OQCE AND the scope is outcome-live (silent scopes and
++     * checkOnly-only Hosts keep S0 exactly), where every re-issue within 1800 s escalates (1st L2/60 s, 2nd L3/300 s,
++     * 3rd+ L4/1800 s). Counter keyed on the Current scope key only (documented limitation).
++     *
++     * @return array{level: int, duration: int}
++     */
++    private function oqcIssue(string $kind, string $scopeKey): array
++    {
++        $live = $kind === 'churn' ? $this->oqcChurnLive : $this->oqcSprayLive;
++        if ($this->oqcArm() !== 'OQCE' || $live !== true) {
++            return ['level' => 2, 'duration' => 60];
++        }
++        $n = $this->correlationStore->incrementWatchFlag(hash('sha256', 'oqc:reissue:v1:' . $scopeKey), 1800);
++        $level = min(4, 1 + $n);
++
++        return ['level' => $level, 'duration' => PenaltyLadder::getDuration($level)];
++    }
++
++    /**
++     * Arm OQCW: true only when this observation raised the K1 distinct count (a new member arrived). The tally is created by
++     * the same observation that creates the set, so both expire together (fixed 600 s). Other arms: always true.
++     */
++    private function oqcNewMember(string $scopeKey, int $count): bool
++    {
++        if ($this->oqcArm() !== 'OQCW') {
++            return true;
++        }
++        $key = hash('sha256', 'oqc:tally:v1:' . $scopeKey);
++        $previous = $this->correlationStore->getWatchFlag($key);
++        if ($count <= $previous) {
++            return false;
++        }
++        for ($i = $previous; $i < $count; $i++) {
++            $this->correlationStore->incrementWatchFlag($key, 600);
++        }
++
++        return true;
++    }
++

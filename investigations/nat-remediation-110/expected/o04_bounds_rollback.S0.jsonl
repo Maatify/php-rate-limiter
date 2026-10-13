@@ -1,0 +1,15 @@
+{"s":"O04.provenance","arm":"S0","level":"S0_RUNTIME_OBSERVED","baseSha":"63fbb4abf0a6d7899d063d1fbd5d6fc7a1920ba1","pipelineSha256":"4b259d3397adf492d9767572141c9bdf5efc5744886bce63592ae9f36b95f4fc","patched":false}
+{"s":"O04.B1.one-scope","arm":"S0","flags":0,"expectedPresent":false,"expiresAtOffsets":[]}
+{"s":"O04","arm":"S0","assert":"B1 S0 holds no WATCH flag after one successful login","ok":true,"flags":0}
+{"s":"O04.B2.many-scopes","arm":"S0","scopes":50,"flagsWritten":0,"aliveAt599":0,"aliveAt1199":0,"aliveAt1249":0,"keysPerScope":2}
+{"s":"O04","arm":"S0","assert":"B2 S0 writes no WATCH flag for fifty single successful logins","ok":true,"written":0}
+{"s":"O04.B3.arm-keys","arm":"S0","stream":"SP1n","flagsAtEnd":1,"setsAtEnd":32,"flagsAfter1801s":0,"setsAfter1801s":0}
+{"s":"O04","arm":"S0","assert":"B3 SP1n every correlation key written on this arm (markers, WATCH, tally, re-issue counters, bounded sets) has expired 1801 s after the stream ends","ok":true,"flagsAfter":0,"setsAfter":0}
+{"s":"O04.B3.arm-keys","arm":"S0","stream":"ABA_A","flagsAtEnd":2,"setsAtEnd":31,"flagsAfter1801s":0,"setsAfter1801s":0}
+{"s":"O04","arm":"S0","assert":"B3 ABA_A every correlation key written on this arm (markers, WATCH, tally, re-issue counters, bounded sets) has expired 1801 s after the stream ends","ok":true,"flagsAfter":0,"setsAfter":0}
+{"s":"O04.R1.rollback","arm":"S0","reachedFirst600sOnThisArm":2,"reachedSecond600sOnOldCode":1,"error":null,"secondSteps":["600:B","610:a","620:B","630:B","640:B","650:B","660:B","670:B"]}
+{"s":"O04","arm":"S0","assert":"R1 S0 reference: both halves of the attacker stream run on the unpatched rule (3/120 overall)","ok":true,"reached1":2,"reached2":1}
+{"s":"O04.R2.mixed-version","arm":"S0","stream":"SP1n","reachedMixed":4,"reachedThisArmOnly":4,"error":null}
+{"s":"O04","arm":"S0","assert":"R2 SP1n mixed old/new code on one state never errors and the attacker reach stays within [S0-like, this arm] (<= this arm's own reach + 1)","ok":true,"mixed":4,"mono":4,"error":null}
+{"s":"O04.R2.mixed-version","arm":"S0","stream":"ABA_A","reachedMixed":3,"reachedThisArmOnly":3,"error":null}
+{"s":"O04","arm":"S0","assert":"R2 ABA_A mixed old/new code on one state never errors and the attacker reach stays within [S0-like, this arm] (<= this arm's own reach + 1)","ok":true,"mixed":3,"mono":3,"error":null}

@@ -1,0 +1,13 @@
+{"s":"O05.provenance","arm":"S0","level":"S0_RUNTIME_OBSERVED","baseSha":"63fbb4abf0a6d7899d063d1fbd5d6fc7a1920ba1","pipelineSha256":"4b259d3397adf492d9767572141c9bdf5efc5744886bce63592ae9f36b95f4fc","patched":false}
+{"s":"O05.P1.aba-parity","arm":"S0","benignRedis":["a","B","B","B","B","B"],"benignReference":["a","B","B","B","B","B"],"attackerRedis":["a","B","B","B","B","B"],"attackerReference":["a","B","B","B","B","B"]}
+{"s":"O05","arm":"S0","assert":"P1 A/B/A parity: the real Redis adapter and the reference store give identical decisions for the innocent pair and for the failing attacker on this arm","ok":true,"benignRedis":["a","B","B","B","B","B"],"benignRef":["a","B","B","B","B","B"],"attackerRedis":["a","B","B","B","B","B"],"attackerRef":["a","B","B","B","B","B"]}
+{"s":"O05","arm":"S0","assert":"P1b S0 denies both pairs from the 3rd request","ok":true,"benign":["a","B","B","B","B","B"],"attacker":["a","B","B","B","B","B"]}
+{"s":"O05.P2.spray-parity","arm":"S0","redis":["a","a","a","a","B","B","B"],"reference":["a","a","a","a","B","B","B"]}
+{"s":"O05","arm":"S0","assert":"P2 spray parity (pre+out): identical decisions on Redis and the reference store for 7 distinct failing subjects","ok":true,"redis":["a","a","a","a","B","B","B"],"reference":["a","a","a","a","B","B","B"]}
+{"s":"O05","arm":"S0","assert":"P2b S0 denies the 5th subject at checkOnly","ok":true,"redis":["a","a","a","a","B","B","B"]}
+{"s":"O05.P3.record-only-parity","arm":"S0","redis":["a","a","a","a","a","a","a","a"],"reference":["a","a","a","a","a","a","a","a"]}
+{"s":"O05","arm":"S0","assert":"P3 record-only parity: identical decisions on Redis and the reference store for 8 distinct failing subjects","ok":true,"redis":["a","a","a","a","a","a","a","a"],"reference":["a","a","a","a","a","a","a","a"]}
+{"s":"O05","arm":"S0","assert":"P3b S0 record-only Host: nothing is denied (no K1 observation)","ok":true,"redis":["a","a","a","a","a","a","a","a"]}
+{"s":"O05.P4.ttl-hygiene","arm":"S0","keys":129,"keysWithoutTtl":0,"livenessMarkers":0,"markerTtlWithin1To1200":null}
+{"s":"O05","arm":"S0","assert":"P4 every Redis key written on this arm has a TTL","ok":true,"keys":129,"noTtl":0}
+{"s":"O05","arm":"S0","assert":"P4b S0 writes no liveness marker","ok":true,"markers":0}

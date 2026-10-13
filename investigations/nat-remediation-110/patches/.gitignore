@@ -1,0 +1,2 @@
+# The repository ignores *.patch globally; this ONE file is the committed OQC candidate input (#110 plan 1).
+!oqc-candidates.patch
