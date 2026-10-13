@@ -1,0 +1,20 @@
+{"s":"K07.provenance","level":"S0_RUNTIME_OBSERVED","baseSha":"4d9495ded05f647ce0421352781ce948ceeaa606","pipelineSha256":"4b259d3397adf492d9767572141c9bdf5efc5744886bce63592ae9f36b95f4fc","patched":false}
+{"s":"K07.R1.sequential-parity","redis":["A","A","A","A","H2","H2"],"reference":["A","A","A","A","H2","H2"]}
+{"s":"K07","variant":"S0","assert":"R1 five-of-five parity: the real Redis adapter and the reference store give the same decisions for 6 sequential distinct subjects","ok":true,"redis":["A","A","A","A","H2","H2"],"reference":["A","A","A","A","H2","H2"]}
+{"s":"K07.R1b.watch-parity","redis":["A","A","A","A","H2"]}
+{"s":"K07","variant":"S0","assert":"R1b WATCH parity: 4 distinct subjects + a repeat is denied on real Redis too (the 4/5 WATCH counts requests)","ok":true,"redis":["A","A","A","A","H2"]}
+{"s":"K07.R1c.trusted-advisory","trusted5th":"check:A","untrustedNext":"check:H2/~60"}
+{"s":"K07","variant":"S0","assert":"R1c trusted advisory on real Redis: the trusted 5th subject is allowed, the K1 block it triggered denies the next untrusted subject","ok":true,"trusted":"check:A","untrusted":"check:H2/~60"}
+{"s":"K07.R2.ttl-hygiene","sprayKeys":3,"sprayMaxCard":5,"sprayMinCard":4,"sprayTtlWithin1To600":true,"keysWithoutTtl":0}
+{"s":"K07","variant":"S0","assert":"R2 the three spray sets exist on Redis (cardinality 4..5), every Redis key has a TTL, no spray set exceeds the fixed 600 s window or 5 members","ok":true,"sprayKeys":3,"sprayMaxCard":5,"sprayMinCard":4,"sprayTtlWithin1To600":true,"keysWithoutTtl":0}
+{"s":"K07.R3.distinct-race","rounds":8,"workers":128,"workersCompleted":128,"allowedPerRound":[4,4,4,4,4,4,4,4],"sprayKeys":8,"sprayMaxCard":5,"sprayMinCard":5,"sprayTtlWithin1To600":true,"keysWithoutTtl":0}
+{"s":"K07","variant":"S0","assert":"R3 negative control: all 128 concurrent workers completed","ok":true,"completed":128}
+{"s":"K07","variant":"S0","assert":"R3 atomic cap under concurrency: in every round exactly 4 of 16 simultaneous distinct subjects are allowed (never 5+), each of the 8 spray sets holds exactly 5 members with a TTL <= 600","ok":true,"allowedPerRound":[4,4,4,4,4,4,4,4],"maxCard":5}
+{"s":"K07.R4.duplicate-race","rounds":6,"workers":72,"workersCompleted":72,"allowedPerRound":[12,12,12,12,12,12]}
+{"s":"K07","variant":"S0","assert":"R4 negative control: all 72 concurrent workers completed","ok":true,"completed":72}
+{"s":"K07","variant":"S0","assert":"R4 one subject is one member: 12 simultaneous requests of the SAME subject are all allowed (no inflated distinct count)","ok":true,"allowedPerRound":[12,12,12,12,12,12]}
+{"s":"K07.R5.rotation","splitThreeTwo":["A","A","A","A","H2"],"fourThenRepeatAfterRotation":["A","A","A","A","H2"]}
+{"s":"K07","variant":"S0","assert":"R5 rotation on real Redis: 3 subjects under the previous secret + 2 under the new one deny the 5th distinct subject (previous set read, bridge written)","ok":true,"steps":["A","A","A","A","H2"]}
+{"s":"K07","variant":"S0","assert":"R5 a subject already in the previous set is not double counted across rotation: 4 + one repeat gives the same WATCH denial as without rotation","ok":true,"steps":["A","A","A","A","H2"]}
+{"s":"K07.R5.final-inventory","sprayKeys":2,"sprayMaxCard":2,"sprayMinCard":1,"sprayTtlWithin1To600":true,"keysWithoutTtl":0}
+{"s":"K07","variant":"S0","assert":"R5 after rotation every Redis key still has a TTL; the current-generation spray sets exist (bridge cardinality <= 5) with TTL <= 600","ok":true,"sprayKeys":2,"sprayMaxCard":2,"sprayMinCard":1,"sprayTtlWithin1To600":true,"keysWithoutTtl":0}

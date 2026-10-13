@@ -1,0 +1,27 @@
+{"s":"K04.provenance","level":"S0_RUNTIME_OBSERVED","baseSha":"4d9495ded05f647ce0421352781ce948ceeaa606","pipelineSha256":"4b259d3397adf492d9767572141c9bdf5efc5744886bce63592ae9f36b95f4fc","patched":false}
+{"s":"K04.L1.lifecycle","shape":"login","flow":"pre+out","subjects":4,"sprayObservations":4,"attempts":4,"firstDenyT":null,"reachedVerification":4}
+{"s":"K04.L1.lifecycle","shape":"login","flow":"pre+out","subjects":8,"sprayObservations":5,"attempts":8,"firstDenyT":4,"reachedVerification":4}
+{"s":"K04.L1.lifecycle","shape":"login","flow":"pre","subjects":4,"sprayObservations":4,"attempts":4,"firstDenyT":null,"reachedVerification":4}
+{"s":"K04.L1.lifecycle","shape":"login","flow":"pre","subjects":8,"sprayObservations":5,"attempts":8,"firstDenyT":4,"reachedVerification":4}
+{"s":"K04.L1.lifecycle","shape":"login","flow":"out","subjects":4,"sprayObservations":0,"attempts":4,"firstDenyT":null,"reachedVerification":4}
+{"s":"K04.L1.lifecycle","shape":"login","flow":"out","subjects":8,"sprayObservations":0,"attempts":8,"firstDenyT":null,"reachedVerification":8}
+{"s":"K04","assert":"L1 [login] 4 distinct subjects (no block): pre+out and checkOnly-only make the SAME 4 observations, one per logical attempt — recordFailure/recordSuccess after an allowed check add none (no double count)","ok":true,"0":{"sprayObservations":4,"attempts":4,"firstDenyT":null,"reachedVerification":4},"1":{"sprayObservations":4,"attempts":4,"firstDenyT":null,"reachedVerification":4}}
+{"s":"K04","assert":"L1 [login] 8 distinct subjects: the 5th is denied at t=4 in both pre+out and checkOnly-only; observations stop at 5 because the active K1 block short-circuits the engine; 4 attempts reach verification","ok":true,"0":{"sprayObservations":5,"attempts":8,"firstDenyT":4,"reachedVerification":4},"1":{"sprayObservations":5,"attempts":8,"firstDenyT":4,"reachedVerification":4}}
+{"s":"K04","assert":"L2 [login] record-only: ZERO spray observations and no K1 denial for 8 distinct subjects — a Host that only calls recordFailure/recordSuccess has no K1 spray protection","ok":true,"sprayObservations":0,"attempts":8,"firstDenyT":null,"reachedVerification":8}
+{"s":"K04.L1.lifecycle","shape":"otp","flow":"pre+out","subjects":4,"sprayObservations":4,"attempts":4,"firstDenyT":null,"reachedVerification":4}
+{"s":"K04.L1.lifecycle","shape":"otp","flow":"pre+out","subjects":8,"sprayObservations":5,"attempts":8,"firstDenyT":4,"reachedVerification":4}
+{"s":"K04.L1.lifecycle","shape":"otp","flow":"pre","subjects":4,"sprayObservations":4,"attempts":4,"firstDenyT":null,"reachedVerification":4}
+{"s":"K04.L1.lifecycle","shape":"otp","flow":"pre","subjects":8,"sprayObservations":5,"attempts":8,"firstDenyT":4,"reachedVerification":4}
+{"s":"K04.L1.lifecycle","shape":"otp","flow":"out","subjects":4,"sprayObservations":0,"attempts":4,"firstDenyT":null,"reachedVerification":4}
+{"s":"K04.L1.lifecycle","shape":"otp","flow":"out","subjects":8,"sprayObservations":0,"attempts":8,"firstDenyT":null,"reachedVerification":8}
+{"s":"K04","assert":"L1 [otp] 4 distinct subjects (no block): pre+out and checkOnly-only make the SAME 4 observations, one per logical attempt — recordFailure/recordSuccess after an allowed check add none (no double count)","ok":true,"0":{"sprayObservations":4,"attempts":4,"firstDenyT":null,"reachedVerification":4},"1":{"sprayObservations":4,"attempts":4,"firstDenyT":null,"reachedVerification":4}}
+{"s":"K04","assert":"L1 [otp] 8 distinct subjects: the 5th is denied at t=4 in both pre+out and checkOnly-only; observations stop at 5 because the active K1 block short-circuits the engine; 4 attempts reach verification","ok":true,"0":{"sprayObservations":5,"attempts":8,"firstDenyT":4,"reachedVerification":4},"1":{"sprayObservations":5,"attempts":8,"firstDenyT":4,"reachedVerification":4}}
+{"s":"K04","assert":"L2 [otp] record-only: ZERO spray observations and no K1 denial for 8 distinct subjects — a Host that only calls recordFailure/recordSuccess has no K1 spray protection","ok":true,"sprayObservations":0,"attempts":8,"firstDenyT":null,"reachedVerification":8}
+{"s":"K04.T1.trust-shape","shape":"untrusted, no session","allowed":false,"src":"persisted:K1(spray)","sprayCount":0}
+{"s":"K04.T1.trust-shape","shape":"session id present, NOT trusted","allowed":false,"src":"persisted:K1(spray)","sprayCount":0}
+{"s":"K04.T1.trust-shape","shape":"trusted flag but NO session id","allowed":false,"src":"persisted:K1(spray)","sprayCount":0}
+{"s":"K04.T1.trust-shape","shape":"previously verified device (known), no session trust","allowed":false,"src":"persisted:K1(spray)","sprayCount":0}
+{"s":"K04.T1.trust-shape","shape":"trusted session device","allowed":true,"src":null,"sprayCount":5}
+{"s":"K04","assert":"T1 only a session-bound trusted device is exempt from K1 enforcement: untrusted / session-not-trusted / trusted-flag-without-session / previously-verified (known) devices are all denied","ok":true,"untrusted, no session":false,"session id present, NOT trusted":false,"trusted flag but NO session id":false,"previously verified device (known), no session trust":false,"trusted session device":true}
+{"s":"K04.T2.advisory-persists","trustedAllowed":true,"trustedIssued":["K1"],"untrustedDenied":true,"untrustedSrc":"persisted:K1(spray)"}
+{"s":"K04","assert":"T2 the 5th subject being TRUSTED is allowed (advisory) but the K1 block it triggers is persisted and denies the next untrusted subject of the same IP","ok":true,"untrustedSrc":"persisted:K1(spray)"}
