@@ -48,7 +48,7 @@ A FAIL above is a **finding** against the candidate (the evidence is valid). The
 | Y4f / Y6c poisoning paying failures | pre+out | 79/81 · 28/30 | 12/81 · 5/30 | same | 75/81 · 25/30 | escalation punishes the shared scope |
 | MIX D2 office + spray attacker behind the same NAT | pre+out | 117/121 | 51/121 | 51 | 106/121 | |
 | MIXN 12 isolated colleagues + attacker | pre+out | 49/61 | 15/61 | 15 | **53/61** | |
-| MIXN | out | **0/61** | **15/61** | 15 | 53/61 | K1 protection gained by record-only Hosts brings its NAT collateral |
+| MIXN | out | **0/61** | **15/61** | 15 | 53/61 | Record-only is a post-outcome signal; it does not protect K1 before verification |
 
 Other shapes (pre+out): D2 on OTP 117→49 (OQC) / 65 (OQCE); D2 on Login-without-account 117→15 / 51; OTPB on OTP 58→34 / 32.
 
