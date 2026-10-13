@@ -1,0 +1,13 @@
+{"s":"F03.provenance","variant":"S0","level":"S0_RUNTIME_OBSERVED","baseSha":"b34f12eb3f892c2dd6fa423280ead0cdaafc868f","pipelineSha256":"4b259d3397adf492d9767572141c9bdf5efc5744886bce63592ae9f36b95f4fc","patched":false}
+{"s":"F03.R1.lone-legit-after-trigger","variant":"S0","attackSteps":["check:A>fail:A","check:A>fail:H2/60","check:H2/59"],"legitRuns":"B3-600,a601-720","legitFirstAllowedT":601,"blockIssuances":10}
+{"s":"F03","variant":"S0","assert":"S0 R1 recovery: a lone legitimate client is first allowed at t=601 (stale 600 s set; block 60 s) — the #104/#105 boundary","ok":true,"firstAllowed":601}
+{"s":"F03.R2.single-seed-then-silence","variant":"S0","legitDenied":120,"legitAttempts":300,"lastLegitDenialT":600,"legitRuns":"B5-600,a605-1500","blockIssuances":10}
+{"s":"F03","variant":"S0","assert":"S0 R2 history-only re-block: one seed burst denies a lone legitimate client until the 600 s set expires (last denial = 600)","ok":true,"lastLegitDenialT":600}
+{"s":"F03.R3.single-typo-on-stale-set","variant":"S0","legitDenied":83,"attempts":84,"firstDeniedT":1,"lastDeniedT":500,"runs":"a0-0,B1-500"}
+{"s":"F03.R4.history-horizons-2000s","variant":"S0","legitRuns":"B10-600,a610-2000","lastLegitDenialT":600,"blockIssuances":10}
+{"s":"F03.R5.sustained-leak-30min","variant":"S0","attempts":1801,"reachedVerification":4,"blockIssuances":30}
+{"s":"F03.R6.window-fixed-distinct","variant":"S0","thirdFailingMemberEnforcedAt":{"0/30/59":true,"0/30/60":true,"0/30/61":true,"same-fingerprint-x4":false}}
+{"s":"F03.R7.renewal-needs-new-corroboration","variant":"S0","steps":["0:check:A>fail:A","1:check:A>fail:H2/60","2:check:H2/59","100:check:H2/60","101:check:H2/59","102:check:H2/58","103:check:H2/57"],"issuances":2}
+{"s":"F03","variant":"S0","assert":"S0 R7: history re-blocks the very first failing member after expiry","ok":true,"steps":["0:check:A>fail:A","1:check:A>fail:H2/60","2:check:H2/59","100:check:H2/60","101:check:H2/59","102:check:H2/58","103:check:H2/57"]}
+{"s":"F03.R8.n1-watch-gaming","variant":"S0","stream":"Y2a","attackAttempts":8,"attackReachedVerification":6,"controlAttackReachedVerification":8}
+{"s":"F03.R8.n1-watch-gaming","variant":"S0","stream":"Y2b","attackAttempts":8,"attackReachedVerification":8,"controlAttackReachedVerification":8}

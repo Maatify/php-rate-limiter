@@ -1,0 +1,106 @@
+--- a/src/Service/EvaluationPipeline.php
++++ b/src/Service/EvaluationPipeline.php
+@@ -241,0 +242 @@
++        $this->pscScored = $this->pscScoredCommand($policy, $request); // PSC-EXPERIMENT
+@@ -1142,0 +1144,2 @@
++
++        $churnTriggered = $this->pscGate('churn', $churn, 3, $churnTriggered); // PSC-EXPERIMENT
+@@ -1152,0 +1156 @@
++            $macroChurnTriggered = $this->pscGate('macro', $macroChurn, 3, $macroChurnTriggered); // PSC-EXPERIMENT
+@@ -1176,0 +1181,4 @@
++        }
++
++        if ($this->pscMode() === 'PSCA' && $device->confidence === 'LOW') {
++            return null; // PSC-EXPERIMENT (A): UA-only cross-IP dilution is advisory (no state, no enforcement)
+@@ -1208,0 +1217,2 @@
++        $thresholdMet = $this->pscGate('dilution', $dilution, 6, $thresholdMet); // PSC-EXPERIMENT
++
+@@ -1292,0 +1303,19 @@
++    }
++
++    private bool $pscScored = false;
++
++    // ------------------------------------------------------------------------------------------------------------------
++    // PSC-EXPERIMENT — Policy-Specific Corroboration + Scope-Safe Recovery (feasibility proof; NOT production code, never part of src/).
++    // WSB_CANDIDATE selects the variant: PSC = S0 detection on every command (unchanged sets, WATCH, rotation, macro scopes); a trigger is
++    // ENFORCED only if the same scope has been re-corroborated by NEW scored evidence inside a fixed 60 s window: the S0 threshold (churn 3
++    // distinct members, dilution 6) is met again by members of commands the policy itself scores (a reported failure, or any outcome of a
++    // policy with access scoring). The window is a bounded distinct set with a fixed 60 s TTL; reaching the cap writes a fixed 60 s marker
++    // read by any later command. Neither outlives the 60 s block, so history alone can never re-issue a block. PSCA = PSC, except that
++    // LOW (UA-only) cross-IP dilution is advisory. PSC_MUTATE (test-only fault injectors): ungated | long_window; PSC_CAP_CHURN / PSC_CAP_DILUTION (test-only sensitivity knobs).
++    // Existing store capabilities only (addDistinctBounded[AcrossRotation], incrementWatchFlag, getWatchFlag); no read-then-increment.
++    // ------------------------------------------------------------------------------------------------------------------
++    private function pscMode(): string
++    {
++        $c = getenv('WSB_CANDIDATE');
++
++        return $c === false || $c === '' ? 'S0' : $c;
+@@ -1294,0 +1324,68 @@
++    private function pscActive(): bool
++    {
++        return in_array($this->pscMode(), ['PSC', 'PSCA'], true);
++    }
++
++    private function pscMutation(string $name): bool
++    {
++        $m = getenv('PSC_MUTATE');
++
++        return $m !== false && in_array($name, explode(',', $m), true);
++    }
++
++    private function pscScoredCommand(BlockPolicyInterface $policy, RateLimitCommand $request): bool
++    {
++        return ! $request->isPreCheck && ($request->isFailure || $policy->getScoreDeltas()->access > 0);
++    }
++
++    private function pscWindowObservation(string $kind, BoundedCorrelationObservationDTO $o): BoundedCorrelationObservationDTO
++    {
++        $domain = "psc:window:v1:{$this->envScope}:{$kind}";
++        $previousSecret = $this->previousSecret ?? $this->secret;
++
++        return new BoundedCorrelationObservationDTO(
++            $this->hashKey("{$domain}:scope:{$o->currentKey}", $this->secret),
++            $o->currentMember,
++            $o->previousKey === null ? null : $this->hashKey("{$domain}:scope:{$o->previousKey}", $previousSecret),
++            $o->previousMember,
++            $o->bridgeKey === null ? null : $this->hashKey("{$domain}:bridge:{$o->currentKey}", $this->secret),
++        );
++    }
++
++    private function pscMarkerKey(string $kind, string $scope, string $secret): string
++    {
++        return $this->hashKey("psc:qualified:v1:{$this->envScope}:{$kind}:{$scope}", $secret);
++    }
++
++    /** Test-only sensitivity knob (PSC_CAP_CHURN / PSC_CAP_DILUTION): the corroboration window cap; unset = the S0 threshold (3 / 6). */
++    private function pscCap(string $kind, int $default): int
++    {
++        $v = getenv($kind === 'dilution' ? 'PSC_CAP_DILUTION' : 'PSC_CAP_CHURN');
++
++        return $v === false || $v === '' ? $default : max($default, min(50, (int) $v));
++    }
++
++    private function pscGate(string $kind, BoundedCorrelationObservationDTO $observation, int $cap, bool $triggered): bool
++    {
++        if (! $this->pscActive() || $this->pscMutation('ungated')) {
++            return $triggered;
++        }
++        $ttl = $this->pscMutation('long_window') ? 600 : 60;
++        $cap = $this->pscCap($kind, $cap);
++        if ($this->pscScored
++            && $this->addBoundedCorrelation($this->pscWindowObservation($kind, $observation), $ttl, $cap) >= $cap) {
++            $this->correlationStore->incrementWatchFlag($this->pscMarkerKey($kind, $observation->currentKey, $this->secret), $ttl);
++        }
++        if (! $triggered) {
++            return false;
++        }
++        if ($this->correlationStore->getWatchFlag($this->pscMarkerKey($kind, $observation->currentKey, $this->secret)) > 0) {
++            return true;
++        }
++
++        return $observation->previousKey !== null
++            && $this->correlationStore->getWatchFlag(
++                $this->pscMarkerKey($kind, $observation->previousKey, $this->previousSecret ?? $this->secret),
++            ) > 0;
++    }
++

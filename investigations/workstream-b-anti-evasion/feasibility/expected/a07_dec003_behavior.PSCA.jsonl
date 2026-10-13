@@ -1,0 +1,14 @@
+{"s":"A07.provenance","variant":"PSCA","level":"CANDIDATE_EXPERIMENTAL_RUNTIME","baseSha":"56f601cdc9a7062391395c326f1867d472a4ee49","pipelineSha256":"86beb1632f023778b74f916f95aa39fc48bdffe931e9fe3450dd54d13ee3fbe5","patched":true}
+{"s":"A07.D1.cycles","variant":"PSCA","k2CycleTimes":[2,702,1402],"cycleCounts":[1,2,3],"pauseActivationsAt":[702,1402],"referencePauseActivationsAt":[702,1402],"elapsedPausedSeconds":698,"referencePausedSeconds":698,"otherKeysWithCycles":0}
+{"s":"A07","variant":"PSCA","assert":"D1 behavioural negative control: the runtime issued at least 3 K2 cycles in the scenario (so the checks below are not vacuous)","ok":true,"cycles":3}
+{"s":"A07","variant":"PSCA","assert":"D1 every issued K2 block is a NEW cycle with a strictly increasing retained count (transition-only, DEC-003 §2)","ok":true,"counts":[1,2,3]}
+{"s":"A07","variant":"PSCA","assert":"D1 pause activations equal the reference derived from the runtime cycle times (2 retained cycles in 21600 s, fixed 600 s, no renewal; §3)","ok":true,"runtime":[702,1402],"reference":[702,1402]}
+{"s":"A07","variant":"PSCA","assert":"D1 elapsed paused decay seconds equal the reference (pause only affects decay, bounded to the window; §3, §5)","ok":true,"runtime":698,"reference":698}
+{"s":"A07","variant":"PSCA","assert":"D1 independent histories per enforcement key (§1): only K2 recorded cycles in this scenario","ok":true}
+{"s":"A07.D2.active-block-ordering","variant":"PSCA","cyclesAtTrigger":1,"probes":38,"denied":38,"stateMutationsWhileDenied":0}
+{"s":"A07","variant":"PSCA","assert":"D2 negative control: the trigger issued a persisted block and every probe during it was denied","ok":true,"cyclesAtTrigger":1,"denied":38}
+{"s":"A07","variant":"PSCA","assert":"D2 active persisted block short-circuits before ANY correlation/witness/cycle mutation (DEC-003 §2: refresh and reads create no cycle)","ok":true,"mutations":0}
+{"s":"A07.D3.rotation-continuity","variant":"PSCA","firstCycleIssued":true,"secondCycleIssuedAfterRotation":true,"secondCycleCount":2,"secondPauseActivated":true}
+{"s":"A07","variant":"PSCA","assert":"D3 negative control: the first (pre-rotation) cycle was issued","ok":true,"issued":1}
+{"s":"A07","variant":"PSCA","assert":"D3 Current/Previous are one logical cycle history: the post-rotation cycle is the 2nd retained cycle and activates the pause (§7)","ok":true,"count":2,"pause":true}
+{"s":"A07","variant":"PSCA","assert":"D4 a single failing attempt creates no hard-block cycle","ok":true,"cycles":0}

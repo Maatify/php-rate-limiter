@@ -1,0 +1,18 @@
+{"s":"F06.provenance","variant":"EQV","level":"CANDIDATE_EXPERIMENTAL_RUNTIME","baseSha":"b34f12eb3f892c2dd6fa423280ead0cdaafc868f","pipelineSha256":"98d95cc97836066ea8e76cf8399a41ede457c1e3dca156fdaa05b1b3096813c4","patched":true}
+{"s":"F06.R1.record-only-churn","variant":"EQV","steps":["fail:A","fail:A","fail:H2/~60"],"thirdDenied":true}
+{"s":"F06","variant":"EQV","assert":"R1: three failing fingerprints on one K2 are denied at the third attempt on real Redis","ok":true,"steps":["fail:A","fail:A","fail:H2/~60"]}
+{"s":"F06.R1c.no-corroboration","variant":"EQV","steps":["ok:A","ok:A","ok:A","ok:A"],"anyDenied":false}
+{"s":"F06.R2.anchor-rotation","variant":"EQV","requests":400,"denied":0,"keysPerRequestRounded":11,"keysWithoutTtl":0,"maxSetCardinality":4,"maxTtlWithinTwoDays":true}
+{"s":"F06","variant":"EQV","assert":"R2: every key created has a TTL (no immortal state) on real Redis","ok":true,"keysWithoutTtl":0}
+{"s":"F06","variant":"EQV","assert":"R2 negative control: the rotation probes reached storage (no denial) and created keys","ok":true,"denied":0}
+{"s":"F06","variant":"EQV","assert":"R2: largest set on real Redis stays within the largest declared cap (50)","ok":true,"max":4}
+{"s":"F06.R3.distinct-member-race","variant":"EQV","rounds":12,"workersCompleted":96,"roundsWithK2Block":12,"maxSetCardinality":8}
+{"s":"F06","variant":"EQV","assert":"R3 negative control: all 96 concurrent workers completed","ok":true,"completed":96}
+{"s":"F06","variant":"EQV","assert":"R3: concurrent distinct failing members never push a set above the largest declared cap (50)","ok":true,"max":8}
+{"s":"F06","variant":"EQV","assert":"R3: in every round the concurrent failing members reached the threshold and a K2 block exists (no lost corroboration)","ok":true,"roundsWithK2Block":12}
+{"s":"F06.R4.duplicate-member-race","variant":"EQV","rounds":12,"workersCompleted":96,"roundsWithK2Block":0}
+{"s":"F06","variant":"EQV","assert":"R4 negative control: all 96 concurrent workers completed","ok":true,"completed":96}
+{"s":"F06","variant":"EQV","assert":"R4: 8 concurrent failures of ONE fingerprint never create a block (duplicates never inflate evidence)","ok":true,"roundsWithK2Block":0}
+{"s":"F06.R6.live-recovery","variant":"EQV","applicable":false,"reason":"only S0 and PSC run the 63 s live check"}
+{"s":"F06.R7.redis-outage","variant":"EQV","result":"BackendFailureException"}
+{"s":"F06","variant":"EQV","assert":"R7: after the Redis instance dies the pipeline throws BackendFailureException (never ALLOW, never a silent skip)","ok":true,"result":"BackendFailureException"}

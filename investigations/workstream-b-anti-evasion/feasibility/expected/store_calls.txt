@@ -1,0 +1,7 @@
+store_operations_called_by_added_lines (psc patch):
+correlationStore->getWatchFlag
+correlationStore->incrementWatchFlag
+internal_helpers_called_by_added_lines (psc patch):
+this->addBoundedCorrelation
+this->hashKey
+non_private_declarations_added (psc patch; public/protected/interface/abstract/const/use):
