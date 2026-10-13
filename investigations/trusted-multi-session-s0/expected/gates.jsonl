@@ -1,0 +1,4 @@
+{"gate":"G1","title":"Provenance: every scenario ran the repository's unpatched EvaluationPipeline at the pinned baseline (S0_RUNTIME_OBSERVED, no candidate arm)","status":"PASS"}
+{"gate":"G2","title":"Baseline reproduction: the published #108 numbers of the reference streams (N12T 56/61, SP5 200/200) reproduced on the real pipeline","status":"PASS"}
+{"gate":"G3","title":"Stream construction: TMS is N12T request for request with every outcome = fail; every attacker stream has 12 targets on the N12T NAT","status":"PASS"}
+{"gate":"G4","title":"Evidence completeness: every matrix cell (streams × shapes × flows) with all fields, every trace and every divergence row present","status":"PASS"}
