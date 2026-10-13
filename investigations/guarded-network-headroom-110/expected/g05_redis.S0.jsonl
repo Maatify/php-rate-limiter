@@ -1,0 +1,9 @@
+{"s":"G05.provenance","arm":"S0","level":"S0_RUNTIME_OBSERVED","baseSha":"1ad9af289f83f86346667a014dd486f9c4b8fc08","pipelineSha256":"4b259d3397adf492d9767572141c9bdf5efc5744886bce63592ae9f36b95f4fc","patched":false}
+{"s":"G05.P1.parity","arm":"S0","sequences":{"k1-spray-zone":{"redis":"aaaaBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBB","reference":"aaaaBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBB","allowedRedis":4},"k2-churn-zone":{"redis":"aaBBBBBBBBBBBBBBBBBBBBB","reference":"aaBBBBBBBBBBBBBBBBBBBBB","allowedRedis":2}}}
+{"s":"G05","arm":"S0","assert":"P1 sequential decision parity: the K1 and K2 zone sequences give identical decisions on the official Redis store and on the reference store","ok":true,"k1-spray-zone":{"redis":"aaaaBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBB","reference":"aaaaBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBB","allowedRedis":4},"k2-churn-zone":{"redis":"aaBBBBBBBBBBBBBBBBBBBBB","reference":"aaBBBBBBBBBBBBBBBBBBBBB","allowedRedis":2}}
+{"s":"G05","arm":"S0","assert":"P1b S0 on Redis: 4 of 35 (K1) and 2 of 23 (K2) checkOnly requests allowed","ok":true,"k1":4,"k2":2}
+{"s":"G05.P.reference","arm":"S0","note":"rollback / mixed version on Redis are measured on the candidate arms (S0 code is the rollback target)"}
+{"s":"G05","arm":"S0","assert":"P3 S0 reference: not applicable on S0 (the rollback target itself)","ok":true}
+{"s":"G05","arm":"S0","assert":"P4 S0 reference: not applicable on S0 (the old version itself)","ok":true}
+{"s":"G05.P2.ttl-hygiene","arm":"S0","keys":true,"keysWithoutTtl":0,"budgetFlags":{"spray":{"present":false,"ttlAtMost600":false,"value":null},"churn":{"present":false,"ttlAtMost600":false,"value":null}}}
+{"s":"G05","arm":"S0","assert":"P2 every Redis key written on this arm has a TTL; no budget flag exists on this arm","ok":true,"noTtl":0,"budgetFlags":{"spray":{"present":false,"ttlAtMost600":false,"value":null},"churn":{"present":false,"ttlAtMost600":false,"value":null}}}

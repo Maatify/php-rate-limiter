@@ -1,0 +1,133 @@
+--- a/src/Service/EvaluationPipeline.php
++++ b/src/Service/EvaluationPipeline.php
+@@ -1191,17 +1191,15 @@ class EvaluationPipeline
+-        $dilutionCount = $this->addBoundedCorrelation($dilution, 600, 6);
+-        $thresholdMet = $dilutionCount >= 6;
+-        if ($dilutionCount === 5) {
+-            $watchCount = $this->incrementWatchAcrossRotation(
+-                $this->correlationStateKey($policyName, 'dilution_watch', $dilution->currentKey, $this->secret),
+-                $dilution->previousKey === null
+-                    ? null
+-                    : $this->correlationStateKey(
+-                        $policyName,
+-                        'dilution_watch',
+-                        $dilution->previousKey,
+-                        $this->previousSecret ?? $this->secret,
+-                    ),
+-                1800,
+-            );
+-            $thresholdMet = $watchCount >= 2;
+-        }
++        // GNH-EXPERIMENT: the S0 dilution rule (cap 6, WATCH at 5) routed through the arm's guarded rule.
++        $thresholdMet = $this->gnhGuardedRule(
++            'dilution',
++            $dilution,
++            6,
++            $this->correlationStateKey($policyName, 'dilution_watch', $dilution->currentKey, $this->secret),
++            $dilution->previousKey === null
++                ? null
++                : $this->correlationStateKey(
++                    $policyName,
++                    'dilution_watch',
++                    $dilution->previousKey,
++                    $this->previousSecret ?? $this->secret,
++                ),
++        );
+@@ -1283,2 +1281,29 @@ class EvaluationPipeline
+-        $count = $this->addBoundedCorrelation($observation, 600, 3);
+-        if ($count >= 3) {
++        // GNH-EXPERIMENT: the S0 churn rule (cap 3, WATCH at 2) routed through the arm's guarded rule.
++        return $this->gnhGuardedRule('churn', $observation, 3, $currentWatchKey, $previousWatchKey);
++    }
++
++    // GNH-EXPERIMENT (#110 Guarded Network Headroom study; investigation patch, NOT production code). Arm from env GNH_ARM:
++    //   TH5   the three correlation rules with every cap x5 (spray 25, churn 15, dilution 30) and WATCH at the new N-1, on the S0 keys.
++    //   GNH5  the S0 rule on the S0 keys (unchanged state), a x5 rule on a separate key namespace, and a per-scope fixed-window
++    //         headroom budget: a request that the S0 rule would block and the x5 rule would not is admitted only while one atomic
++    //         WATCH-flag increment on that scope's budget key (current + read-only previous) stays <= GNH_BUDGET[rule].
++    // Any other value throws: the experimental tree never runs as S0.
++    private const GNH_FACTOR = 5;
++    private const GNH_BUDGET = ['spray' => 20, 'churn' => 12, 'dilution' => 24];
++    private const GNH_BUDGET_WINDOW_SECONDS = 600;
++
++    private static function gnhArm(): string
++    {
++        $arm = getenv('GNH_ARM');
++        if ($arm !== 'TH5' && $arm !== 'GNH5') {
++            throw new RateLimiterException('GNH-EXPERIMENT: env GNH_ARM must be TH5 or GNH5 on the experimental tree.');
++        }
++
++        return $arm;
++    }
++
++    /** The S0 rule shape: count >= cap, or count = cap - 1 with the second WATCH increment (600 s set, 1800 s WATCH). */
++    private function gnhRule(BoundedCorrelationObservationDTO $observation, int $cap, string $currentWatchKey, ?string $previousWatchKey): bool
++    {
++        $count = $this->addBoundedCorrelation($observation, 600, $cap);
++        if ($count >= $cap) {
+@@ -1288 +1313 @@ class EvaluationPipeline
+-        if ($count !== 2) {
++        if ($count !== $cap - 1) {
+@@ -1294,0 +1320,41 @@ class EvaluationPipeline
++    private function gnhGuardedRule(
++        string $rule,
++        BoundedCorrelationObservationDTO $observation,
++        int $s0Cap,
++        string $currentWatchKey,
++        ?string $previousWatchKey,
++    ): bool {
++        $x5Cap = self::GNH_FACTOR * $s0Cap;
++        if (self::gnhArm() === 'TH5') {
++            return $this->gnhRule($observation, $x5Cap, $currentWatchKey, $previousWatchKey);
++        }
++
++        $s0 = $this->gnhRule($observation, $s0Cap, $currentWatchKey, $previousWatchKey);
++        $x5 = $this->gnhRule(
++            new BoundedCorrelationObservationDTO(
++                'gnh5:x5:' . $observation->currentKey,
++                $observation->currentMember,
++                $observation->previousKey === null ? null : 'gnh5:x5:' . $observation->previousKey,
++                $observation->previousMember,
++                $observation->bridgeKey === null ? null : 'gnh5:x5:' . $observation->bridgeKey,
++            ),
++            $x5Cap,
++            'gnh5:x5:' . $currentWatchKey,
++            $previousWatchKey === null ? null : 'gnh5:x5:' . $previousWatchKey,
++        );
++        if ($x5) {
++            return true;
++        }
++        if (! $s0) {
++            return false;
++        }
++
++        $consumed = $this->incrementWatchAcrossRotation(
++            'gnh5:budget:' . $rule . ':' . $observation->currentKey,
++            $observation->previousKey === null ? null : 'gnh5:budget:' . $rule . ':' . $observation->previousKey,
++            self::GNH_BUDGET_WINDOW_SECONDS,
++        );
++
++        return $consumed > self::GNH_BUDGET[$rule];
++    }
++
+@@ -1480,10 +1546,5 @@ class EvaluationPipeline
+-        $count = $this->addBoundedCorrelation($observation, 600, 5);
+-        if ($count >= 5) {
+-            return true;
+-        }
+-
+-        if ($count !== 4) {
+-            return false;
+-        }
+-
+-        $watchCount = $this->incrementWatchAcrossRotation(
++        // GNH-EXPERIMENT: the S0 credential-spray rule (cap 5, WATCH at 4) routed through the arm's guarded rule.
++        return $this->gnhGuardedRule(
++            'spray',
++            $observation,
++            5,
+@@ -1492 +1552,0 @@ class EvaluationPipeline
+-            1800,
+@@ -1494,2 +1553,0 @@ class EvaluationPipeline
+-
+-        return $watchCount >= 2;
