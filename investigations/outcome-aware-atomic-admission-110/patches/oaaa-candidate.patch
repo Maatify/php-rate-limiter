@@ -1,0 +1,621 @@
+diff --git a/src/Repository/OutcomeAdmissionStoreInterface.php b/src/Repository/OutcomeAdmissionStoreInterface.php
+new file mode 100644
+index 0000000..60d385c
+--- /dev/null
++++ b/src/Repository/OutcomeAdmissionStoreInterface.php
+@@ -0,0 +1,64 @@
++<?php
++
++declare(strict_types=1);
++
++namespace Maatify\RateLimiter\Repository;
++
++/**
++ * EXPERIMENTAL (#110 OAAA study only; not a package contract): atomic,
++ * outcome-linked admission reservations for correlation headroom.
++ *
++ * A tier is a fixed-TTL counter of admission units ("u") stamped with an epoch
++ * identifier ("e") that is set when the tier is created and never refreshed.
++ * A tuple record remembers, per tier, how many of its reservations are still
++ * unresolved ("p"), how many were resolved as failures ("f") and the tier epoch
++ * they were taken in. Every method is one atomic operation over all keys it
++ * names; a partial reservation is never visible.
++ */
++interface OutcomeAdmissionStoreInterface
++{
++    /**
++     * Reserve one unit on every tier, or on none.
++     *
++     * A tier admits when its current units plus the units of its read-only
++     * previous generation are below its effective capacity. The effective
++     * capacity is the tier cap, or, when credit keys are given, the smaller of
++     * the cap and the number of distinct members in the union of those credit
++     * sets. Absent tiers are created with their TTL; the tuple record is created
++     * with its TTL on first use and never refreshed.
++     *
++     * @param list<array{key: string, previousKey: ?string, cap: int, ttl: int, creditKeys: list<string>}> $tiers
++     * @return bool True when every tier admitted and one unit was taken on each.
++     * @throws \Throwable When state is malformed or atomicity cannot be provided.
++     */
++    public function reserveAdmission(string $tupleKey, int $tupleTtlSeconds, array $tiers): bool;
++
++    /**
++     * Resolve one reservation of the tuple with a Host outcome.
++     *
++     * outcome "failure": one unresolved reservation per tier becomes a recorded
++     * failure (its unit stays spent). outcome "success": one unresolved
++     * reservation per tier is released, plus at most $refundFailures recorded
++     * failures of the same tuple, and the credit member is added to every
++     * credit set (bounded by $creditCap, TTL set on creation). outcome "cancel":
++     * one unresolved reservation per tier is released, nothing else changes.
++     * Units are returned only to the tier epoch they were taken from and only
++     * for tiers listed in $tierKeys; anything else stays spent.
++     *
++     * @param string $outcome One of "success", "failure" or "cancel"; anything else is rejected.
++     * @param list<string> $tierKeys
++     * @param list<string> $creditKeys
++     * @return list<string> Tier keys on which an unresolved reservation of the tuple was resolved.
++     * @throws \Throwable When state is malformed or atomicity cannot be provided.
++     */
++    public function completeAdmission(
++        string $tupleKey,
++        string $outcome,
++        array $tierKeys,
++        int $refundFailures,
++        array $creditKeys,
++        string $creditMember,
++        int $creditCap,
++        int $creditTtlSeconds,
++    ): array;
++}
+diff --git a/src/Repository/Redis/RedisFullCapabilityStore.php b/src/Repository/Redis/RedisFullCapabilityStore.php
+index 2e63bec..7b6b156 100644
+--- a/src/Repository/Redis/RedisFullCapabilityStore.php
++++ b/src/Repository/Redis/RedisFullCapabilityStore.php
+@@ -21,0 +22 @@ use Maatify\RateLimiter\Repository\FullCapabilityStoreInterface;
++use Maatify\RateLimiter\Repository\OutcomeAdmissionStoreInterface;
+@@ -35 +36 @@ use Maatify\RateLimiter\Repository\FullCapabilityStoreInterface;
+-final class RedisFullCapabilityStore implements FullCapabilityStoreInterface
++final class RedisFullCapabilityStore implements FullCapabilityStoreInterface, OutcomeAdmissionStoreInterface
+@@ -1723,0 +1725,182 @@ LUA;
++    // ---- EXPERIMENTAL #110 OAAA (study only) -------------------------------------------------------------------------
++
++    private const OAAA_RESERVE = <<<'LUA'
++local tupleKey = KEYS[1]
++local n = tonumber(ARGV[2])
++local ki, ai = 2, 3
++local tiers = {}
++for i = 1, n do
++  local t = {key = KEYS[ki], cap = tonumber(ARGV[ai]), ttl = tonumber(ARGV[ai + 1]), hasPrev = tonumber(ARGV[ai + 2]), nCredit = tonumber(ARGV[ai + 3]), credits = {}}
++  ki = ki + 1
++  ai = ai + 4
++  if t.hasPrev == 1 then t.prev = KEYS[ki]; ki = ki + 1 end
++  for c = 1, t.nCredit do t.credits[c] = KEYS[ki]; ki = ki + 1 end
++  tiers[i] = t
++end
++local function units(key)
++  if redis.call('EXISTS', key) == 0 then return 0 end
++  if redis.call('TTL', key) < 0 then return nil end
++  local u = tonumber(redis.call('HGET', key, 'u'))
++  if not u or u < 0 or u ~= math.floor(u) or not redis.call('HGET', key, 'e') then return nil end
++  return u
++end
++for i = 1, n do
++  local t = tiers[i]
++  local used = units(t.key)
++  if used == nil then return redis.error_reply('malformed admission tier') end
++  if t.prev then
++    local previous = units(t.prev)
++    if previous == nil then return redis.error_reply('malformed previous admission tier') end
++    used = used + previous
++  end
++  local effective = t.cap
++  if t.nCredit > 0 then
++    local seen, count = {}, 0
++    for c = 1, t.nCredit do
++      if redis.call('EXISTS', t.credits[c]) == 1 then
++        if redis.call('TTL', t.credits[c]) < 0 then return redis.error_reply('malformed admission credit') end
++        for _, m in ipairs(redis.call('SMEMBERS', t.credits[c])) do
++          if not seen[m] then seen[m] = true; count = count + 1 end
++        end
++      end
++    end
++    if count < effective then effective = count end
++  end
++  if used >= effective then return 0 end
++end
++local tupleExisted = redis.call('EXISTS', tupleKey)
++if tupleExisted == 1 and redis.call('TTL', tupleKey) < 0 then return redis.error_reply('malformed admission tuple') end
++local now = redis.call('TIME')
++local epochId = now[1] .. '.' .. now[2]
++for i = 1, n do
++  local t = tiers[i]
++  if redis.call('EXISTS', t.key) == 0 then
++    redis.call('HSET', t.key, 'e', epochId, 'u', 0)
++    redis.call('EXPIRE', t.key, t.ttl)
++  end
++  redis.call('HINCRBY', t.key, 'u', 1)
++  local e = redis.call('HGET', t.key, 'e')
++  if redis.call('HGET', tupleKey, 'e|' .. t.key) ~= e then
++    redis.call('HSET', tupleKey, 'e|' .. t.key, e, 'p|' .. t.key, 0, 'f|' .. t.key, 0)
++  end
++  redis.call('HINCRBY', tupleKey, 'p|' .. t.key, 1)
++end
++if tupleExisted == 0 then redis.call('EXPIRE', tupleKey, ARGV[1]) end
++return 1
++LUA;
++
++    private const OAAA_COMPLETE = <<<'LUA'
++local tupleKey = KEYS[1]
++local outcome = ARGV[1]
++local n = tonumber(ARGV[2])
++local refundMax = tonumber(ARGV[3])
++local m = tonumber(ARGV[4])
++local plan = {}
++local paired = {}
++if redis.call('EXISTS', tupleKey) == 1 then
++  if redis.call('TTL', tupleKey) < 0 then return redis.error_reply('malformed admission tuple') end
++  for i = 1, n do
++    local k = KEYS[1 + i]
++    local p = tonumber(redis.call('HGET', tupleKey, 'p|' .. k) or '0')
++    local f = tonumber(redis.call('HGET', tupleKey, 'f|' .. k) or '0')
++    if not p or not f or p < 0 or f < 0 then return redis.error_reply('malformed admission tuple') end
++    if p > 0 or f > 0 then
++      local e = redis.call('HGET', tupleKey, 'e|' .. k)
++      local live = e ~= false and redis.call('EXISTS', k) == 1 and redis.call('HGET', k, 'e') == e
++      local refund = 0
++      if p > 0 then paired[#paired + 1] = i end
++      if outcome == 'success' then
++        if p > 0 then p = p - 1; refund = 1 end
++        local rf = math.min(f, refundMax)
++        refund = refund + rf
++        f = f - rf
++      elseif outcome == 'failure' then
++        if p > 0 then p = p - 1; f = f + 1 end
++      else
++        if p > 0 then p = p - 1; refund = 1 end
++      end
++      if not live then p, f, refund = 0, 0, 0 end
++      if refund > 0 then
++        local u = tonumber(redis.call('HGET', k, 'u'))
++        if not u or u < refund then return redis.error_reply('malformed admission tier') end
++      end
++      plan[#plan + 1] = {k = k, p = p, f = f, refund = refund}
++    end
++  end
++end
++for _, s in ipairs(plan) do
++  if s.refund > 0 then redis.call('HINCRBY', s.k, 'u', -s.refund) end
++  redis.call('HSET', tupleKey, 'p|' .. s.k, s.p, 'f|' .. s.k, s.f)
++end
++if outcome == 'success' then
++  for c = 1, m do
++    local ck = KEYS[1 + n + c]
++    local existed = redis.call('EXISTS', ck)
++    if redis.call('SISMEMBER', ck, ARGV[5]) == 0 and redis.call('SCARD', ck) < tonumber(ARGV[6]) then
++      redis.call('SADD', ck, ARGV[5])
++      if existed == 0 then redis.call('EXPIRE', ck, ARGV[7]) end
++    end
++  end
++end
++return paired
++LUA;
++
++    public function reserveAdmission(string $tupleKey, int $tupleTtlSeconds, array $tiers): bool
++    {
++        $this->positive($tupleTtlSeconds, 'Admission tuple TTL');
++        $keys = [$this->key('oaaa', $tupleKey)];
++        $args = [$tupleTtlSeconds, count($tiers)];
++        foreach ($tiers as $tier) {
++            $this->positive($tier['ttl'], 'Admission tier TTL');
++            if ($tier['cap'] < 0) {
++                throw new RateLimiterException('Admission tier capacity must not be negative.');
++            }
++            $keys[] = $this->key('oaaa', $tier['key']);
++            if ($tier['previousKey'] !== null) {
++                $keys[] = $this->key('oaaa', $tier['previousKey']);
++            }
++            foreach ($tier['creditKeys'] as $creditKey) {
++                $keys[] = $this->key('oaaa', $creditKey);
++            }
++            array_push($args, $tier['cap'], $tier['ttl'], $tier['previousKey'] === null ? 0 : 1, count($tier['creditKeys']));
++        }
++        $granted = $this->integerValue($this->eval(self::OAAA_RESERVE, $keys, $args), 'admission reservation');
++        if ($granted !== 0 && $granted !== 1) {
++            throw new RateLimiterException('Malformed admission reservation response.');
++        }
++
++        return $granted === 1;
++    }
++
++    public function completeAdmission(string $tupleKey, string $outcome, array $tierKeys, int $refundFailures, array $creditKeys, string $creditMember, int $creditCap, int $creditTtlSeconds): array
++    {
++        if (! in_array($outcome, ['success', 'failure', 'cancel'], true) || $refundFailures < 0) {
++            throw new RateLimiterException('Invalid admission completion.');
++        }
++        $this->positive($creditCap, 'Admission credit capacity');
++        $this->positive($creditTtlSeconds, 'Admission credit TTL');
++        $keys = [$this->key('oaaa', $tupleKey)];
++        foreach ($tierKeys as $tierKey) {
++            $keys[] = $this->key('oaaa', $tierKey);
++        }
++        foreach ($creditKeys as $creditKey) {
++            $keys[] = $this->key('oaaa', $creditKey);
++        }
++        $result = $this->eval(self::OAAA_COMPLETE, $keys, [$outcome, count($tierKeys), $refundFailures, count($creditKeys), $creditMember, $creditCap, $creditTtlSeconds]);
++        if (! is_array($result)) {
++            throw new RateLimiterException('Malformed admission completion response.');
++        }
++        $paired = [];
++        foreach ($result as $index) {
++            $i = $this->integerValue($index, 'admission completion index');
++            if ($i < 1 || $i > count($tierKeys)) {
++                throw new RateLimiterException('Malformed admission completion response.');
++            }
++            $paired[] = $tierKeys[$i - 1];
++        }
++
++        return $paired;
++    }
++
++    // ---- end EXPERIMENTAL #110 OAAA -----------------------------------------------------------------------------------
++
+diff --git a/src/Service/EvaluationPipeline.php b/src/Service/EvaluationPipeline.php
+index 661c59b..2a4e649 100644
+--- a/src/Service/EvaluationPipeline.php
++++ b/src/Service/EvaluationPipeline.php
+@@ -20,0 +21 @@ use Maatify\RateLimiter\Repository\HardBlockCycleStoreInterface;
++use Maatify\RateLimiter\Repository\OutcomeAdmissionStoreInterface;
+@@ -60,0 +62,11 @@ class EvaluationPipeline
++    // EXPERIMENTAL #110 OAAA (study only): outcome-aware atomic admission parameters.
++    private const OAAA_SCOPE_EPOCH_UNITS = 2;
++    private const OAAA_SCOPE_EPOCH_SECONDS = 600;
++    private const OAAA_SCOPE_DAY_UNITS = 6;
++    private const OAAA_DAY_SECONDS = 86400;
++    private const OAAA_GLOBAL_EPOCH_UNITS = 12;
++    private const OAAA_GLOBAL_DAY_UNITS = 48;
++    private const OAAA_TUPLE_SECONDS = 600;
++    private const OAAA_CREDIT_WINDOW_SECONDS = 600;
++    private const OAAA_CREDIT_MEMBERS = 2;
++    private const OAAA_REFUND_FAILURES = 2;
+@@ -67,0 +80,3 @@ class EvaluationPipeline
++    /** @var list<array{rule: string, key: string, previousKey: ?string, fired: bool, advisory: bool}> OAAA: correlation scopes observed by the current command. */
++    private array $oaaaObserved = [];
++
+@@ -107,0 +123,4 @@ class EvaluationPipeline
++        // EXPERIMENTAL #110 OAAA: this patched tree never runs as S0.
++        if (getenv('OAAA_ARM') !== 'OAAA') {
++            throw new RateLimiterException('OAAA experimental runtime requires OAAA_ARM=OAAA.');
++        }
+@@ -171,0 +191 @@ class EvaluationPipeline
++        $this->oaaaObserved = [];
+@@ -314,0 +335,16 @@ class EvaluationPipeline
++        // EXPERIMENTAL #110 OAAA: outcome-aware atomic admission over the
++        // correlation candidates of this command (S0 everywhere else).
++        $oaaaReservation = null;
++        if ($this->isOutcomeAwareAdmissionActive($policy, $context, $realKeysV2)) {
++            [$candidates, $oaaaReservation] = $this->applyOutcomeAwareAdmission(
++                $policy,
++                $context,
++                $request,
++                $device,
++                $realKeysV2,
++                $realKeysV1,
++                $adaptiveIpv6Scopes,
++                $candidates,
++            );
++        }
++
+@@ -422,0 +459,15 @@ class EvaluationPipeline
++        // EXPERIMENTAL #110 OAAA: a reservation whose request another
++        // protection denies never reaches verification; release it.
++        if ($oaaaReservation !== null && $final->decision !== RateLimitResultDTO::DECISION_ALLOW) {
++            $this->outcomeAdmissionStore()->completeAdmission(
++                $oaaaReservation['tuple'],
++                'cancel',
++                $oaaaReservation['tiers'],
++                0,
++                [],
++                '',
++                self::OAAA_CREDIT_MEMBERS,
++                2 * self::OAAA_CREDIT_WINDOW_SECONDS,
++            );
++        }
++
+@@ -1142,0 +1194 @@ class EvaluationPipeline
++        $this->noteOutcomeAdmissionScope('churn', $churn, $churnTriggered);
+@@ -1152,0 +1205 @@ class EvaluationPipeline
++            $this->noteOutcomeAdmissionScope('churn', $macroChurn, $macroChurnTriggered);
+@@ -1189,0 +1243,2 @@ class EvaluationPipeline
++        $dilutionScope = count($this->oaaaObserved);
++        $this->noteOutcomeAdmissionScope('dilution', $dilution, false);
+@@ -1213,0 +1269,2 @@ class EvaluationPipeline
++            $this->oaaaObserved[$dilutionScope]['fired'] = true;
++
+@@ -1267,0 +1325 @@ class EvaluationPipeline
++        $this->oaaaObserved[$dilutionScope]['fired'] = true;
+@@ -1435,3 +1493,4 @@ class EvaluationPipeline
+-        $thresholdMet = $this->observeCredentialSpray(
+-            $this->buildCredentialSprayObservation($subject, $k1Key, $previousK1Key),
+-        );
++        $advisory = $this->isTrustedAuthenticationPolicy($policy, $device);
++        $canonicalObservation = $this->buildCredentialSprayObservation($subject, $k1Key, $previousK1Key);
++        $thresholdMet = $this->observeCredentialSpray($canonicalObservation);
++        $this->noteOutcomeAdmissionScope('spray', $canonicalObservation, $thresholdMet, $advisory);
+@@ -1451 +1510,3 @@ class EvaluationPipeline
+-            $thresholdMet = $this->observeCredentialSpray($macroObservation) || $thresholdMet;
++            $macroMet = $this->observeCredentialSpray($macroObservation);
++            $this->noteOutcomeAdmissionScope('spray', $macroObservation, $macroMet, $advisory);
++            $thresholdMet = $macroMet || $thresholdMet;
+@@ -1862,0 +1924,271 @@ class EvaluationPipeline
++    // ---- EXPERIMENTAL #110 OAAA (study only) -------------------------------------------------------------------------
++
++    private function noteOutcomeAdmissionScope(
++        string $rule,
++        BoundedCorrelationObservationDTO $observation,
++        bool $fired,
++        bool $advisory = false,
++    ): void {
++        $this->oaaaObserved[] = [
++            'rule' => $rule,
++            'key' => $observation->currentKey,
++            'previousKey' => $observation->previousKey,
++            'fired' => $fired,
++            'advisory' => $advisory,
++        ];
++    }
++
++    /**
++     * @param array<string, string|null> $keysV2
++     */
++    private function isOutcomeAwareAdmissionActive(
++        BlockPolicyInterface $policy,
++        RateLimitContextDTO $context,
++        array $keysV2,
++    ): bool {
++        return $this->correlationStore instanceof OutcomeAdmissionStoreInterface
++            && ! $this->isApiHeavyPolicy($policy)
++            && ($this->isCredentialSprayPolicy($policy)
++                || $this->hasCapability($policy, PolicyCapabilityEnum::TRUSTED_AUTHENTICATION))
++            && $context->accountId !== null
++            && ($keysV2['k4'] ?? null) !== null
++            && ($keysV2['k1'] ?? null) !== null
++            && ($keysV2['k2'] ?? null) !== null;
++    }
++
++    private function outcomeAdmissionStore(): OutcomeAdmissionStoreInterface
++    {
++        if (! $this->correlationStore instanceof OutcomeAdmissionStoreInterface) {
++            throw new RateLimiterException('Outcome-aware admission requires OutcomeAdmissionStoreInterface.');
++        }
++
++        return $this->correlationStore;
++    }
++
++    /**
++     * Pre-check: when an S0 correlation rule fires, reserve one unit on every
++     * fired scope (credit-gated), the scope day tier and the global tiers in one
++     * atomic operation; granted removes the correlation candidates, refused
++     * keeps them (S0). Outcome commands first resolve the tuple's reservations;
++     * a success never issues a correlation block, a paired failure is already
++     * paid, an unpaired failure must reserve-and-spend like a pre-check.
++     *
++     * @param array<string, string|null> $keysV2
++     * @param array<string, string|null> $keysV1
++     * @param list<array{cidr: int, currentScope: string, previousScope: ?string}> $adaptiveIpv6Scopes
++     * @param list<array{decision: string, level: int, retryAfter: int, source: string, persistence: list<array{key: string, previousKey: ?string, level: int, duration: int}>}> $candidates
++     * @return array{0: list<array{decision: string, level: int, retryAfter: int, source: string, persistence: list<array{key: string, previousKey: ?string, level: int, duration: int}>}>, 1: ?array{tuple: string, tiers: list<string>}}
++     */
++    private function applyOutcomeAwareAdmission(
++        BlockPolicyInterface $policy,
++        RateLimitContextDTO $context,
++        RateLimitCommand $request,
++        DeviceIdentityDTO $device,
++        array $keysV2,
++        array $keysV1,
++        array $adaptiveIpv6Scopes,
++        array $candidates,
++    ): array {
++        $store = $this->outcomeAdmissionStore();
++        $policyName = $policy->getName();
++        $scopes = $this->oaaaObserved;
++        if (! $request->isPreCheck && $this->isCredentialSprayPolicy($policy)) {
++            $subject = $context->correlationId ?? $context->accountId;
++            if ($subject !== null) {
++                $scopes[] = $this->outcomeAdmissionSprayScope(
++                    $this->buildCredentialSprayObservation($subject, (string) $keysV2['k1'], $keysV1['k1'] ?? null),
++                );
++                foreach ($adaptiveIpv6Scopes as $scope) {
++                    $scopes[] = $this->outcomeAdmissionSprayScope($this->buildAdaptiveCorrelationObservation(
++                        $policyName,
++                        'spray',
++                        $scope['cidr'],
++                        $scope['currentScope'],
++                        $subject,
++                        $scope['previousScope'],
++                        $subject,
++                    ));
++                }
++            }
++        }
++
++        $tuple = $this->hashKey(
++            "{$policyName}:rate_limiter:oaaa:tuple:v1:{$this->envScope}:{$keysV2['k4']}:{$device->fingerprintHash}:{$keysV2['k1']}:{$keysV2['k2']}",
++            $this->secret,
++        );
++        $allTierKeys = $this->outcomeAdmissionTierKeys($scopes, $policyName);
++
++        $paired = [];
++        if (! $request->isPreCheck) {
++            $paired = $store->completeAdmission(
++                $tuple,
++                $request->isSuccess ? 'success' : 'failure',
++                $allTierKeys,
++                $device->confidence === 'LOW' ? 0 : self::OAAA_REFUND_FAILURES,
++                $request->isSuccess ? $this->outcomeAdmissionCreditKeys($scopes) : [],
++                $this->hashKey("{$policyName}:rate_limiter:oaaa:credit:v1:{$this->envScope}:{$keysV2['k4']}", $this->secret),
++                self::OAAA_CREDIT_MEMBERS,
++                2 * self::OAAA_CREDIT_WINDOW_SECONDS,
++            );
++        }
++
++        $fired = [];
++        foreach ($scopes as $scope) {
++            if ($scope['fired'] && ! $scope['advisory']) {
++                $fired[$scope['rule'] . '|' . $scope['key']] = $scope;
++            }
++        }
++        $isCorrelation = static fn(array $candidate): bool => in_array($candidate['source'], ['correlation', 'credential_spray'], true);
++        $withoutCorrelation = array_values(array_filter($candidates, static fn(array $candidate): bool => ! $isCorrelation($candidate)));
++        if ($fired === [] || count($withoutCorrelation) === count($candidates)) {
++            return [$candidates, null];
++        }
++        $fired = array_values($fired);
++
++        if ($request->isSuccess) {
++            return [$withoutCorrelation, null];
++        }
++
++        if ($request->isFailure) {
++            $unpaired = array_values(array_filter(
++                $fired,
++                fn(array $scope): bool => ! in_array($this->outcomeAdmissionEpochTier($scope['rule'], $scope['key']), $paired, true),
++            ));
++            if ($unpaired === []) {
++                return [$withoutCorrelation, null];
++            }
++            if (! $store->reserveAdmission($tuple, self::OAAA_TUPLE_SECONDS, $this->outcomeAdmissionTiers($unpaired, $policyName))) {
++                return [$candidates, null];
++            }
++            $store->completeAdmission(
++                $tuple,
++                'failure',
++                $this->outcomeAdmissionTierKeys($unpaired, $policyName),
++                0,
++                [],
++                '',
++                self::OAAA_CREDIT_MEMBERS,
++                2 * self::OAAA_CREDIT_WINDOW_SECONDS,
++            );
++
++            return [$withoutCorrelation, null];
++        }
++
++        if (! $store->reserveAdmission($tuple, self::OAAA_TUPLE_SECONDS, $this->outcomeAdmissionTiers($fired, $policyName))) {
++            return [$candidates, null];
++        }
++
++        return [$withoutCorrelation, ['tuple' => $tuple, 'tiers' => $this->outcomeAdmissionTierKeys($fired, $policyName)]];
++    }
++
++    /**
++     * @return array{rule: string, key: string, previousKey: ?string, fired: bool, advisory: bool}
++     */
++    private function outcomeAdmissionSprayScope(BoundedCorrelationObservationDTO $observation): array
++    {
++        return ['rule' => 'spray', 'key' => $observation->currentKey, 'previousKey' => $observation->previousKey, 'fired' => false, 'advisory' => false];
++    }
++
++    private function outcomeAdmissionEpochTier(string $rule, string $scopeKey): string
++    {
++        return "oaaa:v1:e:{$rule}:{$scopeKey}";
++    }
++
++    private function outcomeAdmissionDayTier(string $rule, string $scopeKey): string
++    {
++        return "oaaa:v1:d:{$rule}:{$scopeKey}";
++    }
++
++    private function outcomeAdmissionCreditKey(string $rule, string $scopeKey, int $window): string
++    {
++        return "oaaa:v1:c:{$rule}:{$scopeKey}:{$window}";
++    }
++
++    /** @return array{0: string, 1: string} global epoch and day tiers; secret-independent so rotation never resets them. */
++    private function outcomeAdmissionGlobalTiers(string $policyName): array
++    {
++        $scope = hash('sha256', "{$policyName}:{$this->envScope}");
++
++        return ["oaaa:v1:g:e:{$scope}", "oaaa:v1:g:d:{$scope}"];
++    }
++
++    private function outcomeAdmissionWindow(): int
++    {
++        return intdiv($this->clock->now()->getTimestamp(), self::OAAA_CREDIT_WINDOW_SECONDS);
++    }
++
++    /**
++     * @param list<array{rule: string, key: string, previousKey: ?string, fired: bool, advisory: bool}> $scopes
++     * @return list<array{key: string, previousKey: ?string, cap: int, ttl: int, creditKeys: list<string>}>
++     */
++    private function outcomeAdmissionTiers(array $scopes, string $policyName): array
++    {
++        $window = $this->outcomeAdmissionWindow();
++        $tiers = [];
++        foreach ($scopes as $scope) {
++            $credits = [
++                $this->outcomeAdmissionCreditKey($scope['rule'], $scope['key'], $window),
++                $this->outcomeAdmissionCreditKey($scope['rule'], $scope['key'], $window - 1),
++            ];
++            if ($scope['previousKey'] !== null && $scope['previousKey'] !== $scope['key']) {
++                $credits[] = $this->outcomeAdmissionCreditKey($scope['rule'], $scope['previousKey'], $window);
++                $credits[] = $this->outcomeAdmissionCreditKey($scope['rule'], $scope['previousKey'], $window - 1);
++            }
++            $previous = $scope['previousKey'] !== null && $scope['previousKey'] !== $scope['key'] ? $scope['previousKey'] : null;
++            $tiers[] = [
++                'key' => $this->outcomeAdmissionEpochTier($scope['rule'], $scope['key']),
++                'previousKey' => $previous === null ? null : $this->outcomeAdmissionEpochTier($scope['rule'], $previous),
++                'cap' => self::OAAA_SCOPE_EPOCH_UNITS,
++                'ttl' => self::OAAA_SCOPE_EPOCH_SECONDS,
++                'creditKeys' => $credits,
++            ];
++            $tiers[] = [
++                'key' => $this->outcomeAdmissionDayTier($scope['rule'], $scope['key']),
++                'previousKey' => $previous === null ? null : $this->outcomeAdmissionDayTier($scope['rule'], $previous),
++                'cap' => self::OAAA_SCOPE_DAY_UNITS,
++                'ttl' => self::OAAA_DAY_SECONDS,
++                'creditKeys' => [],
++            ];
++        }
++        [$globalEpoch, $globalDay] = $this->outcomeAdmissionGlobalTiers($policyName);
++        $tiers[] = ['key' => $globalEpoch, 'previousKey' => null, 'cap' => self::OAAA_GLOBAL_EPOCH_UNITS, 'ttl' => self::OAAA_SCOPE_EPOCH_SECONDS, 'creditKeys' => []];
++        $tiers[] = ['key' => $globalDay, 'previousKey' => null, 'cap' => self::OAAA_GLOBAL_DAY_UNITS, 'ttl' => self::OAAA_DAY_SECONDS, 'creditKeys' => []];
++
++        return $tiers;
++    }
++
++    /**
++     * @param list<array{rule: string, key: string, previousKey: ?string, fired: bool, advisory: bool}> $scopes
++     * @return list<string> current-generation tiers only (refunds never touch a previous generation)
++     */
++    private function outcomeAdmissionTierKeys(array $scopes, string $policyName): array
++    {
++        $keys = [];
++        foreach ($scopes as $scope) {
++            $keys[] = $this->outcomeAdmissionEpochTier($scope['rule'], $scope['key']);
++            $keys[] = $this->outcomeAdmissionDayTier($scope['rule'], $scope['key']);
++        }
++        foreach ($this->outcomeAdmissionGlobalTiers($policyName) as $key) {
++            $keys[] = $key;
++        }
++
++        return array_values(array_unique($keys));
++    }
++
++    /**
++     * @param list<array{rule: string, key: string, previousKey: ?string, fired: bool, advisory: bool}> $scopes
++     * @return list<string>
++     */
++    private function outcomeAdmissionCreditKeys(array $scopes): array
++    {
++        $window = $this->outcomeAdmissionWindow();
++        $keys = [];
++        foreach ($scopes as $scope) {
++            $keys[] = $this->outcomeAdmissionCreditKey($scope['rule'], $scope['key'], $window);
++        }
++
++        return array_values(array_unique($keys));
++    }
++
++    // ---- end EXPERIMENTAL #110 OAAA -----------------------------------------------------------------------------------
++
