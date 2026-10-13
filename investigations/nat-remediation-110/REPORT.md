@@ -97,8 +97,8 @@ signal at all for record-only Hosts (#108 L2); OQC returns one from the second f
 * **checkOnly-only Hosts are S0 to the byte** (G2 PASS for OQC and OQCE, 317 cells each). **Record-only Hosts get a post-outcome K1 signal** (and its collateral, §5).
 * **Concurrency (O06, real Redis, F111-02)**: on an outcome-live scope the candidate observes nothing at `checkOnly`, so a burst of simultaneous requests
   that all precede the first `recordFailure` is verified in full: **16 of 16** simultaneous distinct failing subjects pass a live K1 scope (S0: 3 of 16,
-  the K1 set is observed atomically at `checkOnly`), **8 of 8** simultaneous distinct fingerprints pass a live K2 scope (S0: at most 1 of 8; the measured race may allow 0 or 1)
-  round, at most 1 by the sequential rule), identical on OQC, OQCW and OQCE in every one of 3 rounds; the next sequential `checkOnly` after the burst is
+  the K1 set is observed atomically at `checkOnly`), **8 of 8** simultaneous distinct fingerprints pass a live K2 scope (S0: at most 1 of 8; each measured round allowed 0 or 1),
+  identically on OQC, OQCW and OQCE in all 3 rounds; the next sequential `checkOnly` after the burst is
   denied on every arm; the same K1 burst on a *silent* scope passes exactly 4 of 16 on every arm (the silent path is S0, observed atomically). Hence the
   sequential "+1 per correlation block" of §5.1 is a lower bound: **the per-cycle leak equals the concurrency of the attacker**, and escalation (OQCE)
   shortens the number of cycles, not the leak inside one. **OQCE under concurrency escalates inside a single burst**: the concurrent failures each
