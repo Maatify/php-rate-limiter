@@ -273,6 +273,8 @@ fc_check unknown_assertion_row 'sed "s/\"assert\":\"S1 /\"assert\":\"Z9 /" "$dir
 fc_check redis_evidence_deleted 'rm -f "$dir/g05_redis.GNH5.jsonl"; echo RAN >"$dir/redis_status.txt"'
 fc_check concurrency_evidence_deleted 'rm -f "$dir/g06_concurrency.TH5.jsonl"; echo RAN >"$dir/redis_status.txt"'
 fc_check redis_status_missing 'rm -f "$dir/redis_status.txt"'
+fc_check state_parity_evidence_deleted 'grep -v "G04.R3.s0-key-state-parity" "$dir/g04_bounds_rollback.GNH5.jsonl" >"$dir/t" && mv "$dir/t" "$dir/g04_bounds_rollback.GNH5.jsonl"'
+fc_check decision_parity_assertion_deleted 'grep -v "\"assert\":\"R4 " "$dir/g04_bounds_rollback.TH5.jsonl" >"$dir/t" && mv "$dir/t" "$dir/g04_bounds_rollback.TH5.jsonl"'
 
 # gate detection: inject a violation into otherwise VALID evidence; report.php must still exit 0 and the targeted gate must turn FAIL
 gate_check() { # name gate arm mutation-command-on-copy

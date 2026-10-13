@@ -15,12 +15,12 @@ ACTIVE, ×5 and B are experimental parameters, the Owner decides under Decision 
 
 | Part of the question | TH5 (thresholds ×5 only) | GNH5 (×5 + guard) |
 |---|---|---|
-| Guard exists and holds (per scope, per window, under concurrency, rotation, failure) | **No** — the zone between the S0 and the x5 trigger is free: 65/65 known-subject requests, 16/16 simultaneous (G1a FAIL) | **Yes** — exactly B per scope per fixed window, ≤ the remaining budget under simultaneous requests, carried across rotation, fail-closed (G1a PASS) |
+| Guard exists and holds while the backend is healthy (per scope, per window, under concurrency, rotation) | **No** — the zone between the S0 and the x5 trigger is free: 65/65 known-subject requests, 16/16 simultaneous (G1a FAIL) | **Yes** — exactly B per scope per fixed window, ≤ the remaining budget under simultaneous requests, carried across rotation (G1a PASS, normal mode only). During a budget outage the DEC-015 degraded path ALLOWS without the budget (measured 3 ALLOWs; G4f) |
 | No full collapse vs S0 | **No** — 36 attack cells go to full reach, e.g. TMSd 2→200/200, TMSs 18→204/204, SP4 78→576/576, ABA_A (no account / API) 3→120/120 (G1b FAIL) | **No** — 15 cells, all where S0 was already weak or the stream is tiny: SP2 60→72/72, SP4u 480→576/576, Y2a 6→8/8, Y2c 18→20/20, Y4b / Y4d 1→3/3, D6 2→3/3, Y9b (`pre`) 3→12/12 (G1b FAIL) |
 | Extra attacker reach | 71 cells above 5×S0, 12 cells where S0 admitted none; largest +590 (XN1n `pre`), +198 inside one 600 s window (TMSd) | 43 cells above 5×S0, 12 cells where S0 admitted none; largest +432 (SP4 `pre`), +48 inside one 600 s window (Y1 `pre`) (G2) |
 | False blocks reduced (task fairness cells, Login `pre+out`, Σ legit denied) | 1732 → 847 | 1732 → 1279 |
 | Never more legitimate denials than S0 | yes, 0 of 165 cells (G3a PASS) | yes, 0 of 165 cells (G3a PASS) |
-| Contract / integration cost | none at the API; **not rollback-safe** (S0 code errors on its state) | none at the API (G4g PASS); rollback-safe; two contract blockers recorded (attempt identity, cross-key reservation) |
+| Contract / integration cost | none at the API; **not rollback-safe** (S0 code errors on its state) | none at the API (G4g PASS); rollback raises no exception, but S0 state is not preserved (G4h FAIL: S0 keys diverge, XN1 1/200 decision differs after rollback, mixed D2 29→23); two contract blockers recorded (attempt identity, cross-key reservation) |
 
 **Answer: NO-GO for ×5 network headroom as tested, with a guard that is buildable and measurably bounded.** The guard turns "unbounded inside
 the window" (TH5) into "≤ B per scope per window" (GNH5), and that bound holds exactly under concurrency. But a per-scope bound of this size
@@ -35,7 +35,7 @@ candidate arms fail.
 | Gate | TH5 | GNH5 |
 |---|---|---|
 | E0 baseline reproduction (S0: D2 117/115, SP1n/SP3/SP6 4/7/20, L1 127, D1 596, X1 2, X2 6, X7 6, Y9b 3, ABA_A 3, ABA_B 118, TMSd 2, TMX 200) | PASS (S0) | PASS (S0) |
-| G1a Bounded Security — per-scope admission bound, from measured admissions | **FAIL** (B1 65/65, B3 41/41, sliding 67, after rotation 40/40, C1 16/16, C2 8/8) | **PASS** |
+| G1a Bounded Security — per-scope admission bound, from measured admissions, healthy backend only | **FAIL** (B1 65/65, B3 41/41, sliding 67, after rotation 40/40, C1 16/16, C2 8/8) | **PASS** |
 | G1b Bounded Security — no full collapse vs S0 | **FAIL** (36 cells) | **FAIL** (15 cells) |
 | G2 Security trade-off (5×S0 indicative, S0=0, full reach, absolute / per window) | OWNER_DECISION_REQUIRED | OWNER_DECISION_REQUIRED |
 | G3a Fairness non-regression (165 cells with legitimate traffic) | PASS (140 improved) | PASS (139 improved) |
@@ -43,9 +43,10 @@ candidate arms fail.
 | G4a Real Redis parity, zone admissions on the adapter, TTL, budget flags | PASS | PASS |
 | G4b Concurrency on real Redis at the budget boundary | PASS (measurement valid: TH5 admits the whole burst) | PASS |
 | G4c Rotation (3 modes × 7 streams), budget across rotation, IPv6 macro | **FAIL** (XN1 outer-only 46→69; macro H2 25 / H2b 31 > 24) | **FAIL** (XN1 22→26 under outer rotation, +4 > +3 tolerance) |
-| G4d Rollback mid-window and mixed version with the REAL S0 code | **FAIL** (reference store and Redis: S0 code throws on TH5 state) | PASS |
+| G4d Rollback mid-window and mixed version with the REAL S0 code — **no exception only** | **FAIL** (reference store and Redis: S0 code throws on TH5 state) | PASS |
+| G4h S0 parity after rollback (F115-01): S0-key state, churn → dilution, decisions | **FAIL** (state diverges; S0 throws) | **FAIL** (S0 keys differ in every tested history; dilution set of the churn-admitted device 0 on S0 vs 1 on GNH5; XN1 1 of 200 decisions differ after rollback; mixed D2 29→23) |
 | G4e Storage keys / TTL bounds / set size | PASS | PASS |
-| G4f Budget backend failure through the real engine; DEC-003 cycles | PASS (no budget op exists) | PASS |
+| G4f Budget backend failure through the real engine; DEC-003 cycles — PASS = behaves as DEC-015 documents, **not** the B-bound | PASS (no budget op exists) | PASS (`FAIL_CLOSED` t=4–5, then **ALLOW/DEGRADED_MODE t=6–8**, then the fallback limit) |
 | G4g Patch contract surface (no public method, interface or new store call) | PASS | PASS |
 
 A FAIL is a **finding** (the evidence is valid). OWNER_DECISION_REQUIRED means the gate measures a trade-off no engineering gate can accept.
@@ -142,9 +143,11 @@ Other flows and shapes (full rows in `expected/summary.md` §2, §4):
 | G06 C3 32 simultaneous distinct subjects, fresh scope | exactly 4 | ≤ 24 | ≤ 24, ≤ B headroom |
 | G06 C4 both budgets in zone (K2 5 left, K1 15 left) | 0 | 8 | **5**, and ≥ 1 K1 slot spent by a request K2 refused (no cross-key reservation) |
 | G03 R3 spent budget across outer rotation | 0 after | 40/40 after | exactly 10 after (10 spent before) |
-| G04 F1 budget op fails (real engine) | unaffected | unaffected | `FAIL_CLOSED` L2/600, then DEC-015 degraded path; never `NORMAL` |
-| G04 R1 / G05 P3 rollback mid-window to the REAL S0 code | — | **S0 throws** (`bounded distinct state exceeds its configured capacity` / Redis `malformed bounded state`) | no error; S0 resumes (ABA_A 1/60 reached after) |
-| G04 R2 / G05 P4 mixed version (alternating per request) | — | **S0 throws** on D2 | no error |
+| G04 F1 budget op fails (real engine) | unaffected | unaffected | `FAIL_CLOSED` L2/600 at t=4–5; after the breaker opens **ALLOW/DEGRADED_MODE at t=6, 7, 8** (the budget is not consulted), then the DEC-015 local fallback limit denies t=9–11 |
+| G04 R1 / G05 P3 rollback mid-window to the REAL S0 code | — | **S0 throws** (`bounded distinct state exceeds its configured capacity` / Redis `malformed bounded state`) | no exception (that is all it proves) |
+| G04 R2 / G05 P4 mixed version (alternating per request) | — | **S0 throws** on D2 | no exception; vs S0-only: SP1n reach 4 → 5, D2 legit denied 29 → 23 |
+| G04 R3 S0-family keys after the same history, key for key | — | differ (S0 sets above cap) | **differ** in all 4 histories; churn-admitted device 3 reaches the original dilution set (S0 0, GNH5 1 member) |
+| G04 R4 REAL S0 decisions after the arm's history vs after an S0-only history | — | S0 throws | identical on probe, ABA_A, D2; XN1 **1 of 200** differs |
 
 The rollback hazard is a property of changing a bounded-set cap **in place**: any future cap change on these keys must use a new key
 namespace (as GNH5 does) or a migration, otherwise every S0 node errors on every scope above its cap for up to 600 s.
@@ -176,6 +179,17 @@ namespace (as GNH5 does) or a migration, otherwise every S0 node errors on every
 8. **Any cap change on bounded sets must be rollback-safe** (new namespace or migration) — measured TH5 hazard.
 9. Whether to act on the incidental S0 observation in §8 (no Issue opened).
 
+## 6b. Corrections after the Lead review (F115-01, F115-02)
+
+* **F115-01** — the earlier claim that GNH5 writes the S0 keys "exactly as S0 would" was wrong. G04 R1/R2 / G05 P3/P4 prove only that the S0
+  code raises no exception on GNH5 state. The new G04 R3/R4 measure the state and the decisions: the S0-family keys diverge in every tested
+  history, including the churn → dilution path the Lead identified, and the REAL S0 code then decides 1 of 200 XN1 requests differently;
+  a mixed fleet denies D2 less (23 vs 29) and lets SP1n reach once more (5 vs 4). Gate G4h records this as FAIL; G4d now says "no exception".
+* **F115-02** — G1a is a normal-mode property only. G04 F1 (unchanged numbers) shows `ALLOW/DEGRADED_MODE` at t=6–8 while the budget is not
+  consulted: during an outage the bound is the existing DEC-015 fallback, not B. G1a no longer uses F1 and says so; G4f PASS means "as
+  DEC-015 documents", not "B retained". A B-bound during outages (global, parallel or per node) is UNPROVEN. DEC-015 is not changed or
+  questioned here.
+
 ## 7. Measured vs not measured
 
 Measured (this directory, both stores where stated): every task §6 protection and fairness cell (none dropped; the list is enforced by
@@ -186,6 +200,8 @@ renewal, backend failure through the real engine, real-Redis parity and concurre
 
 **UNMEASURED** (never estimated):
 
+* the B-bound during a backend outage (any form; the DEC-015 degraded path decides, measured on one sequence only);
+* S0 state / decision parity after rollback for any history other than the four measured in G04 R3/R4;
 * an explicit ±1 s probe at the 1800 s WATCH boundary on the x5 WATCH (the 1800 s carry-over is observed only through S0 B2 and TTL bounds);
 * concurrency of `pre+out` bursts (failure phase) on GNH5 — only `checkOnly` bursts were run (OQC's two-phase barrier was not reused);
 * a custom **authentication** policy (DEC-008) — only the custom API policy was run;

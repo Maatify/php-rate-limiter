@@ -36,10 +36,10 @@ applied by `build_candidate.sh` to a `git archive` of the baseline in an isolate
 | `scenarios/g01_matrix.php` | 81 streams × 3 flows on Login, plus OTP / Login-without-account / `API_OVERUSE` / DEC-008 custom API cells, **per arm** (311 cells): the #108, #104, #105, #111, #113 streams and the study's own XN1 / XN1n / XN1k (N−1 gaming at the ×5 level), BURN (a neighbour spending the NAT headroom) and N12V (previously verified devices). S0 invariants (hard-fail) reproduce the published numbers |
 | `scenarios/g02_guard.php` | the guard: exact budget (K1, K2), fixed window and boundary burst, `pre` / `pre+out` / record-only spending, one party exhausting the NAT, 60 / 600 s boundaries and renewal, DEC-003 cycles |
 | `scenarios/g03_rotation_ipv6.php` | three rotation modes on 7 streams, the budget across rotation, an incidental S0 rotation observation (R4), IPv6 /48 office and /64 → /48 → /40 attackers |
-| `scenarios/g04_bounds_rollback.php` (+ `g04_child.php`) | keys per in-zone scope, TTL bounds, budget backend failure through the REAL `RateLimiterEngine`, rollback mid-window and mixed version with the REAL S0 code in another process on the same state |
+| `scenarios/g04_bounds_rollback.php` (+ `g04_child.php`) | keys per in-zone scope, TTL bounds, budget backend failure through the REAL `RateLimiterEngine` (incl. the DEC-015 degraded ALLOWs), rollback mid-window and mixed version with the REAL S0 code in another process on the same state, S0-key state parity key for key (incl. the churn → dilution path) and S0 decision parity after rollback / mixed version |
 | `scenarios/g05_redis.php` (+ `g05_child.php`) | official Redis store: parity with the reference store, TTL and budget flags, rollback and mixed version with the REAL S0 code |
 | `scenarios/g06_concurrency.php` (+ `g06_worker.php`) | real Redis concurrency: simultaneous requests above the remaining budget at the boundary (K1, K2), a fresh-scope burst, two budgets on the same requests |
-| `report.php` | fail-closed evidence validation (exit 5) and gates E0, G1a/G1b (Bounded Security), G2 (trade-off), G3a/G3b (fairness), G4a–G4g (operational); generated `summary.md` |
+| `report.php` | fail-closed evidence validation (exit 5) and gates E0, G1a/G1b (Bounded Security), G2 (trade-off), G3a/G3b (fairness), G4a–G4h (operational; G4h = S0 state / decision parity after rollback); generated `summary.md` |
 
 Attribution is the PR #108 method (persisted blocks before the request, blocks issued by it from the DEC-003 cycle log, correlation signals
 observed by the store), extended in `lib/gnh.php` with the final decision, level / Retry-After, the GNH5 headroom admissions (budget increments
@@ -68,6 +68,6 @@ recorded.
 **Self-tests (negative controls, all in `run.sh`):** a candidate arm on the repository tree, the S0 arm on the candidate tree, an unknown arm and a
 foreign arm variable are refused (exit 4); the patched tree refuses to run without a valid `GNH_ARM` even when the harness provenance is bypassed;
 a drifted patch is refused by the hash pin (exit 6) and by `git apply` (exit 4); a wrong baseline target hash is refused (exit 3); a violated
-candidate assertion is fatal under `GNH_STRICT=1` and a violated S0 invariant is always fatal; twenty-one fail-closed evidence cases make
+candidate assertion is fatal under `GNH_STRICT=1` and a violated S0 invariant is always fatal; twenty-two fail-closed evidence cases make
 `report.php` exit 5 with no PASS gate; three gate-detection cases inject a violation into valid evidence and require G1a, G1b and G3a to turn
 FAIL.

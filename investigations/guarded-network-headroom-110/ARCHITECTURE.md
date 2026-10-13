@@ -58,7 +58,7 @@ Effect of the ×5 thresholds on the S0 machinery (all measured in this study):
 For each of the three rules, on every evaluation where S0 evaluates it (same commands, same scopes, same macro scopes):
 
 ```text
-s0  = S0 rule on the S0 keys           (cap c, WATCH at c−1)         -- the S0 state is kept exactly as S0 writes it
+s0  = S0 rule on the S0 keys           (cap c, WATCH at c−1)         -- same keys and rule as S0 (the STATE diverges: see Rollback below)
 x5  = same rule on "gnh5:x5:" keys      (cap 5c, WATCH at 5c−1)       -- separate namespace, never visible to the S0 code
 if x5:            trigger                                             -- the x5 rule as in TH5
 elif not s0:      no trigger                                          -- S0 would allow: allow
@@ -82,18 +82,26 @@ helpers; TH5 is the same patch with `GNH_ARM=TH5` (x5 rule on the S0 keys, no bu
 | 5 | Concurrent Redis workers | The budget is **one key, one atomic Lua script** (`incrementWatchFlagAcrossRotation`): every worker gets a distinct value; admissions are exactly the values ≤ B. A worker refused by a block persisted in the burst consumes nothing. | G06 C1 6 of 16 with 6 left, C2 4 of 8 with 4 left (3/3 rounds each) |
 | 6 | `checkOnly` vs `recordFailure` / `recordSuccess` | Every command that evaluates the rule spends; `checkOnly` is the only command that can stop a verification. | G02 B3 / B4 |
 | 7 | Record-only Hosts | The budget bounds the **ALLOW decisions returned** to record-only calls (≤ B per window), not verifications: in record-only every attempt is verified before the library sees it (S0 too). Spray is never observed record-only (S0 property). | matrix `out` rows; G02 B4 `out` 14/41 |
-| 8 | Redis failure | A failing budget operation throws `BackendFailureException` (no silent zero); the REAL engine returns the Login `FAIL_CLOSED` decision, and once the circuit breaker trips the DEC-015 degraded path decides. No `NORMAL` decision is taken without the budget. | G04 F1 |
+| 8 | Redis failure | A failing budget operation throws `BackendFailureException` (no silent zero). Through the REAL engine (measured): `FAIL_CLOSED` L2/600 at t=4 and t=5; once the circuit breaker opens, the **DEC-015 degraded path ALLOWS t=6..8** (3 requests the budget never admitted) and its local fallback limit denies t=9..11. **The B-bound is a normal-mode property only**: during `DEGRADED_MODE` the budget is not consulted, and the outage bound is the existing DEC-015 fallback, not GNH5. A global / parallel B-bound during an outage is UNPROVEN. | G04 F1 |
 | 9 | Current / Previous rotation | Budget = current + read-only previous (`incrementWatchFlagAcrossRotation`); the previous generation is never written. Spent budget survives rotation. | G03 R3: 10 before, exactly 10 after |
 | 10 | New Store capability / public contract | **None.** Only `addBoundedCorrelation()` and `incrementWatchAcrossRotation()` (existing private helpers over existing capabilities); no public / protected method, no interface, no DTO, no Builder change. | G4g static check on the committed patch |
-| 11 | One attacker inside the NAT exhausting the budget | After exhaustion the scope is decided exactly like S0 (the S0 rule fires, the S0 candidate is issued). It cannot be **worse** than S0: a GNH5 trigger implies the S0 rule fired on the same request. It **can** take the whole benefit away from everyone behind that NAT. | G02 B5 (colleague 15/15 denied on S0 and GNH5, 0 on TH5); matrix BURN; G3a 0 regressions in 165 cells |
+| 11 | One attacker inside the NAT exhausting the budget | After exhaustion the scope is decided exactly like S0 (the S0 rule fires, the S0 candidate is issued). A GNH5 trigger implies the S0 rule fired on the same request **as evaluated on GNH5's own (diverged) state**; measured, no cell is denied more than on S0 (G3a), but that is a measured result over 165 cells, not a proof. It **can** take the whole benefit away from everyone behind that NAT. | G02 B5 (colleague 15/15 denied on S0 and GNH5, 0 on TH5); matrix BURN; G3a 0 regressions in 165 cells |
 
 **Cross-key reservation.** A request in the zone of both K1 and K2 spends both budgets, without a reservation spanning the two keys. Because
 there is no refund, a request refused by one budget may still spend the other (measured: G06 C4, at least one K1 slot spent by a request K2
 refused, every round). The over-spend is fail-closed: admissions stay ≤ the smaller remaining budget (C4: exactly 5 of 8 with K2 5 left).
 An exact two-key reservation would need a new atomic multi-key Store capability — a contract change, not built here.
 
-**Rollback / mixed version.** GNH5 writes the S0 keys exactly as S0 would and keeps its larger sets in a separate namespace, so the REAL S0
-code runs on GNH5 state without error (G04 R1/R2, G05 P3/P4). **TH5** (the in-place ×5) writes S0 sets above the S0 cap: the S0 code then
+**Rollback / mixed version (corrected after Lead review F115-01).** GNH5 keeps its larger sets in a separate namespace and never writes an
+S0 set above the S0 cap, so the REAL S0 code runs on GNH5 state **without an exception** (G04 R1/R2, G05 P3/P4). That is all R1/R2 prove.
+GNH5 does **not** write the S0 keys "exactly as S0 would": a request the S0 rule would stop and the budget admits continues through the rest of
+`checkCorrelationRules()` and later requests are not refused by a persisted block, so they keep observing. Measured (G04 R3, same history,
+key for key, `gnh5:` keys excluded): the S0-family keys differ after every tested history (probe head 3 extra keys + 3 differing values; ABA_A /
+D2 / XN1 first 300 s: 10 / 14 / 18 extra keys and 2 / 3 / 9 differing values; XN1 also 4 S0 keys absent on GNH5). The churn → dilution path
+is confirmed: device 3, stopped by S0's churn rule at t=2, never reaches the dilution observation on S0 (0 members) but does on GNH5 (1
+member). Decision consequence of that divergence (G04 R4, REAL S0 code continuing after the GNH5 history vs after an S0-only history): probe
+tail 0 differing decisions, ABA_A 0, D2 0, XN1 **1** of 200; mixed version vs S0-only: SP1n reach 4 → 5, D2 legit denied 29 → 23. Rollback
+**semantic** parity therefore does not hold; it is bounded only by these measured cells, and any other history is UNPROVEN. **TH5** (the in-place ×5) writes S0 sets above the S0 cap: the S0 code then
 throws `RateLimiterException` (`bounded distinct state exceeds its configured capacity` on the reference store, `malformed bounded state` on
 Redis), which the engine does not convert (line 233) — for up to 600 s after a rollback or on every S0 node of a mixed fleet.
 
@@ -101,11 +109,11 @@ Redis), which the engine does not convert (line 233) — for up to 600 s after a
 
 | ID | Invariant | Measured by |
 |---|---|---|
-| I1 | GNH5 never triggers where the S0 rule does not fire on the same request | G3a: 0 of 165 legitimate cells more denied than S0 (both candidate arms) |
+| I1 | GNH5 never triggers where the S0 rule (on GNH5's own state) does not fire on the same request | G3a: 0 of 165 legitimate cells more denied than S0 (both candidate arms) |
 | I2 | ≤ B headroom admissions per rule scope per fixed 600 s window, including under simultaneous requests | G02 B1/B2/B3, G06 C1/C2/C4 |
 | I3 | Spent budget survives Current/Previous rotation | G03 R3 |
-| I4 | A failing budget operation never yields a NORMAL decision | G04 F1 |
-| I5 | The S0 code can always read GNH5 state (rollback / mixed version) | G04 R1/R2, G05 P3/P4 |
+| I4 | While the backend is healthy, the budget is consulted on every in-zone evaluation; a failing budget operation is typed (never a silent zero) and the engine decides by the policy failure mode — `FAIL_CLOSED`, then the DEC-015 degraded path, which ALLOWS without the budget (measured 3 ALLOWs) | G04 F1 |
+| I5 | The S0 code can read GNH5 state without an exception (rollback / mixed version). **Not** state or decision parity: S0-family keys diverge (R3) and decisions may differ (R4: XN1 1/200, mixed D2 29→23) | G04 R1/R2/R3/R4, G05 P3/P4 |
 | I6 | Every key GNH5 adds is fixed-TTL 600 s or 1800 s; at most one x5 set per S0 rule set and one budget flag per in-zone rule scope; no per-request key | G04 S1/S2, G05 P2 |
 | I7 | No public contract, interface or Store capability change | G4g |
 
@@ -124,7 +132,9 @@ Redis), which the engine does not convert (line 233) — for up to 600 s after a
 ## 6. Feasibility verdict (task §4.C)
 
 **`FEASIBLE_WITH_EXISTING_CONTRACTS`** — for the guard exactly as specified in §3: a per-rule-scope, fixed-window, pre-verification budget
-whose admission bound is atomic under concurrency, rotation-aware and fail-closed, built only from existing Store capabilities (I2–I7 measured).
+whose admission bound is atomic under concurrency and rotation-aware **while the backend is healthy**, and whose failure is typed, built only from
+existing Store capabilities (I2–I7 measured). It does not retain the B-bound during an outage (DEC-015 degraded path decides; I4) and it does
+not preserve S0 correlation state or decisions after rollback (I5).
 
 This verdict is about **buildability of the guard**, not acceptance of the candidate. Two properties the task asks about are **not**
 achievable within the current contracts and are recorded as contract blockers, not worked around:

@@ -30,7 +30,7 @@ const REQUIRED = [
     'g01_matrix' => ['S0' => ['S0 D2' => 1, 'S0 SP1n/SP3/SP6' => 1, 'S0 L1' => 1, 'S0 ABA_A' => 1, 'S0 TMSd' => 1], 'cand' => []],
     'g02_guard' => ['S0' => ['B1' => 1, 'B2' => 1, 'B3' => 1, 'B4' => 1, 'B5' => 1, 'B6' => 1, 'B7' => 1], 'cand' => ['B1' => 1, 'B2' => 1, 'B3' => 1, 'B4' => 1, 'B5' => 1, 'B6' => 1, 'B7' => 1]],
     'g03_rotation_ipv6' => ['S0' => ['R1' => 9, 'R2' => 12, 'R3' => 1, 'R4' => 1, 'H1' => 1, 'H2' => 1, 'H2b' => 1], 'cand' => ['R1' => 9, 'R2' => 12, 'R3' => 1, 'R4' => 1, 'H1' => 1, 'H2' => 1, 'H2b' => 1]],
-    'g04_bounds_rollback' => ['S0' => ['S1' => 1, 'S2' => 1, 'F1' => 1, 'R1' => 1, 'R2' => 1], 'cand' => ['S1' => 1, 'S2' => 1, 'F1' => 1, 'R1' => 1, 'R2' => 1]],
+    'g04_bounds_rollback' => ['S0' => ['S1' => 1, 'S2' => 1, 'F1' => 1, 'R1' => 1, 'R2' => 1, 'R3' => 1, 'R3b' => 1, 'R4' => 1], 'cand' => ['S1' => 1, 'S2' => 1, 'F1' => 1, 'R1' => 1, 'R2' => 1, 'R3' => 1, 'R3b' => 1, 'R4' => 1]],
     'g05_redis' => ['S0' => ['P1' => 1, 'P1b' => 1, 'P2' => 1, 'P3' => 1, 'P4' => 1], 'cand' => ['P1' => 1, 'P1b' => 1, 'P2' => 1, 'P3' => 1, 'P4' => 1]],
     'g06_concurrency' => ['S0' => ['C1' => 2, 'C2' => 2, 'C3' => 2, 'C4' => 2, 'T1' => 1], 'cand' => ['C1' => 2, 'C2' => 2, 'C3' => 2, 'C4' => 2, 'T1' => 1]],
 ];
@@ -38,7 +38,7 @@ const REQUIRED = [
 const DATA_ROWS = [
     'g02_guard' => ['*' => ['G02.B1.spray-budget', 'G02.B2.window-boundary', 'G02.B3.churn-budget-flows', 'G02.B5.nat-exhaustion', 'G02.B6.boundaries', 'G02.B7.dec003-cycles']],
     'g03_rotation_ipv6' => ['*' => ['G03.R.rotation', 'G03.R3.budget-rotation', 'G03.R4.outer-only-single-device', 'G03.H.ipv6']],
-    'g04_bounds_rollback' => ['*' => ['G04.S1.per-scope-storage', 'G04.S2.ttl-bounds', 'G04.F1.budget-backend-failure'], 'S0' => ['G04.R.reference'], 'cand' => ['G04.R1.rollback', 'G04.R2.mixed-version']],
+    'g04_bounds_rollback' => ['*' => ['G04.S1.per-scope-storage', 'G04.S2.ttl-bounds', 'G04.F1.budget-backend-failure'], 'S0' => ['G04.R.reference'], 'cand' => ['G04.R1.rollback', 'G04.R2.mixed-version', 'G04.R3.s0-key-state-parity', 'G04.R4.rollback-decision-parity']],
     'g05_redis' => ['*' => ['G05.P1.parity', 'G05.P2.ttl-hygiene'], 'S0' => ['G05.P.reference'], 'cand' => ['G05.P3.rollback-redis', 'G05.P4.mixed-version-redis']],
     'g06_concurrency' => ['*' => ['G06.C1.k1-boundary-burst', 'G06.C2.k2-boundary-burst', 'G06.C3.k1-fresh-burst', 'G06.C4.two-budget-burst', 'G06.T1.ttl-hygiene']],
 ];
@@ -298,10 +298,10 @@ if ($problems === []) {
                 }
             }
         }
-        $need = ['g02_guard' => ['B1', 'B2', 'B3', 'B4', 'B6'], 'g03_rotation_ipv6' => ['R3'], 'g04_bounds_rollback' => ['F1'], 'g06_concurrency' => ['C1', 'C2', 'C3', 'C4']];
+        $need = ['g02_guard' => ['B1', 'B2', 'B3', 'B4', 'B6'], 'g03_rotation_ipv6' => ['R3'], 'g06_concurrency' => ['C1', 'C2', 'C3', 'C4']];
         $asserted = $assertGate($need, $arm);
         $g1a = $bound !== [] ? 'FAIL' : $asserted;
-        $g('G1a', $arm, 'Bounded Security — per-scope admission bound of the zone between the S0 trigger and the x5 trigger, from measured admissions: <= B per fixed window (sequential), <= 2(4 + B) in a sliding 600 s, carried across rotation, <= the remaining budget under simultaneous requests at the boundary, fail-closed on budget failure', $g1a, $bound !== [] ? $bound : $failedAsserts($need, $arm));
+        $g('G1a', $arm, 'Bounded Security — per-scope admission bound of the zone between the S0 trigger and the x5 trigger, from measured admissions, WHILE THE BACKEND IS HEALTHY (normal mode only): <= B per fixed window (sequential), <= 2(4 + B) in a sliding 600 s, carried across rotation, <= the remaining budget under simultaneous requests at the boundary. Not a claim about outages (see G4f)', $g1a, $bound !== [] ? $bound : $failedAsserts($need, $arm));
         // G1b — no full collapse: no attack/evasion/mixed/poisoning cell (pre+out or checkOnly-only, every shape) where this arm lets EVERY attempt reach
         // verification while S0 did not.
         $collapse = [];
@@ -383,13 +383,14 @@ if ($problems === []) {
         $g('G4a', $arm, 'Real Redis: decision parity with the reference store, the zone admissions on the official adapter, TTL hygiene and budget flags', $assertGate(['g05_redis' => ['P1', 'P1b', 'P2']], $arm));
         $g('G4b', $arm, 'Concurrency on real Redis: simultaneous requests at the budget boundary, a fresh-scope burst, two budgets on the same requests, TTL hygiene', $assertGate(['g06_concurrency' => ['C1', 'C2', 'C3', 'C4', 'T1']], $arm), $failedAsserts(['g06_concurrency' => ['C1', 'C2', 'C3', 'C4', 'T1']], $arm));
         $g('G4c', $arm, 'Current/Previous rotation (3 modes on 7 streams), budget across rotation, IPv6 macro scopes', $assertGate(['g03_rotation_ipv6' => ['R1', 'R2', 'R3', 'R4', 'H1', 'H2', 'H2b']], $arm), $failedAsserts(['g03_rotation_ipv6' => ['R1', 'R2', 'R3', 'R4', 'H1', 'H2', 'H2b']], $arm));
-        $g('G4d', $arm, 'Rollback mid-window and mixed version with the REAL S0 code (reference store and official Redis store)', $assertGate(['g04_bounds_rollback' => ['R1', 'R2'], 'g05_redis' => ['P3', 'P4']], $arm), $failedAsserts(['g04_bounds_rollback' => ['R1', 'R2'], 'g05_redis' => ['P3', 'P4']], $arm));
+        $g('G4d', $arm, 'Rollback mid-window and mixed version with the REAL S0 code: NO EXCEPTION only (reference store and official Redis store) — not state or decision parity (see G4h)', $assertGate(['g04_bounds_rollback' => ['R1', 'R2'], 'g05_redis' => ['P3', 'P4']], $arm), $failedAsserts(['g04_bounds_rollback' => ['R1', 'R2'], 'g05_redis' => ['P3', 'P4']], $arm));
+        $g('G4h', $arm, 'S0 parity after rollback (F115-01): S0-family keys equal S0 key for key after the same history; the churn-stopped request does not reach the original dilution observation; the REAL S0 code decides the remaining stream exactly as after an S0-only history', $assertGate(['g04_bounds_rollback' => ['R3', 'R3b', 'R4']], $arm), $failedAsserts(['g04_bounds_rollback' => ['R3', 'R3b', 'R4']], $arm));
         $g('G4e', $arm, 'Storage: keys per in-zone scope, TTL bounds (every short-TTL key gone 1801 s after a stream, no new long-TTL key), set size <= 30', $assertGate(['g04_bounds_rollback' => ['S1', 'S2']], $arm), $failedAsserts(['g04_bounds_rollback' => ['S1', 'S2']], $arm));
-        $g('G4f', $arm, 'Backend failure of the budget operation through the REAL RateLimiterEngine (typed failure, policy failure mode, DEC-015 degraded path) and DEC-003 cycles', $assertGate(['g04_bounds_rollback' => ['F1'], 'g02_guard' => ['B7']], $arm));
+        $g('G4f', $arm, 'Backend failure of the budget operation through the REAL RateLimiterEngine and DEC-003 cycles: the MEASURED sequence matches (FAIL_CLOSED until the breaker opens, then DEC-015 degraded ALLOWs and the local fallback limit). PASS = behaviour as documented by DEC-015, NOT the GNH5 B-bound: during DEGRADED_MODE the budget is not consulted and B is not retained', $assertGate(['g04_bounds_rollback' => ['F1'], 'g02_guard' => ['B7']], $arm));
     }
     $g('G4g', 'TH5+GNH5', 'Contract surface of the committed patch: no public / protected method, no interface, no new store call — only private methods over the existing addBoundedCorrelation / incrementWatchAcrossRotation capabilities', $contractHits === [] ? 'PASS' : 'FAIL', ['privateCallsAdded' => array_keys($patchCalls), 'contractHits' => $contractHits]);
 } else {
-    foreach (['E0', 'G1a', 'G1b', 'G2', 'G3a', 'G3b', 'G4a', 'G4b', 'G4c', 'G4d', 'G4e', 'G4f', 'G4g'] as $id) {
+    foreach (['E0', 'G1a', 'G1b', 'G2', 'G3a', 'G3b', 'G4a', 'G4b', 'G4c', 'G4d', 'G4e', 'G4f', 'G4g', 'G4h'] as $id) {
         $g($id, '*', 'UNPROVEN (evidence problems)', 'UNPROVEN');
     }
 }
@@ -561,8 +562,11 @@ $h('');
 foreach (ARMS as $arm) {
     $d = $data['g04_bounds_rollback'][$arm];
     $h("* **$arm** — in-zone scopes: " . json_encode(array_diff_key($d['G04.S1.per-scope-storage'][0], ['s' => 0, 'arm' => 0])) . '; TTL after 1801 s: ' . json_encode(array_map(static fn(array $x): array => ['keysAtEnd' => $x['keysAtEnd'], 'maxSet' => $x['maxSetAtEnd'], 'survivorsByWriteTtl' => $x['aliveAfter1801sByWriteTtl']], $d['G04.S2.ttl-bounds'][0]['streams'])) . '; budget failure through the engine: `' . implode(' ', $d['G04.F1.budget-backend-failure'][0]['decisions']) . '`.');
+    $h('  * budget failure: ' . $d['G04.F1.budget-backend-failure'][0]['budgetFailures'] . ' failing budget operations, ' . $d['G04.F1.budget-backend-failure'][0]['degradedModeAllows'] . ' ALLOW/DEGRADED_MODE decisions the budget never admitted (DEC-015 path; the B-bound is not retained during the outage).');
     if ($arm !== 'S0') {
         $h("  * rollback at t=300 to the real S0 code: " . json_encode($d['G04.R1.rollback'][0]['streams']) . '; mixed version: ' . json_encode($d['G04.R2.mixed-version'][0]['streams']));
+        $h('  * S0-key state parity (R3): ' . json_encode($d['G04.R3.s0-key-state-parity'][0]['histories']));
+        $h('  * decision parity after rollback / mixed version (R4): ' . json_encode($d['G04.R4.rollback-decision-parity'][0]['cases']));
     }
 }
 $h('');
