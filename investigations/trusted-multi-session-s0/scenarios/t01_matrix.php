@@ -40,6 +40,23 @@ TmsAsserts::check('T01', 'STREAM TMS is N12T request for request (t, ip, ua, fin
 
     return true;
 })(), ['events' => count($streams['TMS']['events'])]);
+// The R23-01 premise itself (F113-01): in every multi-session attacker stream the 12 target accounts are bound to 12 distinct, stable trusted
+// sessions (a bijection on the events) and the REAL resolver derives 12 distinct, stable fingerprint hashes from them. The Host-violating
+// controls must show the opposite: 12 accounts, ONE session, ONE fingerprint.
+foreach (['TMS', 'TMSd', 'TMSs', 'TMR'] as $id) {
+    $b = tmsSessionBindings($streams[$id]['events'], 12);
+    if ($id === 'TMR') {
+        // TMR rotates the client fingerprint on purpose: the session binding must still be a stable bijection, the fingerprint is not stable.
+        $b['ok'] = $b['bijection'] && $b['trustedAll'] && $b['sessions'] === 12;
+    }
+    TmsAsserts::check('T01', "BINDING $id: 12 target accounts <-> 12 distinct trusted session identifiers (bijection, stable for the whole stream), and the real resolver derives one distinct fingerprint per account" . ($id === 'TMR' ? ' (session binding only; the client fingerprint rotates by design)' : ''), $b['ok'], $b);
+}
+foreach (['TMX', 'TMXb'] as $id) {
+    $b = tmsSessionBindings($streams[$id]['events'], 12);
+    TmsAsserts::check('T01', "BINDING $id control: 12 target accounts but ONE session identifier and ONE resolved fingerprint (Host-violating by DECISION_MATRIX §0)", $b['sessions'] === 1 && $b['fingerprints'] === 1 && $b['accounts'] === 12 && $b['trustedAll'] && ! $b['bijection'], $b);
+}
+$bu = tmsSessionBindings($streams['TMU']['events'], 12);
+TmsAsserts::check('T01', 'BINDING TMU control: the TMSd bijection with isSessionTrusted = false on every request', $bu['bijection'] && $bu['stable'] && $bu['fingerprints'] === 12 && ! $bu['trustedAll'], $bu);
 TmsAsserts::check('T01', 'STREAM every attacker stream carries exactly 12 distinct target accounts and sits on the N12T NAT address', (static function () use ($streams): bool {
     foreach (['TMS', 'TMSd', 'TMSs', 'TMR', 'TMX', 'TMXb', 'TMU'] as $id) {
         $accts = array_unique(array_column($streams[$id]['events'], 'acct'));
@@ -51,4 +68,10 @@ TmsAsserts::check('T01', 'STREAM every attacker stream carries exactly 12 distin
 
     return true;
 })());
+
+// Contract-COMPLIANT slice of TMXb: its first 25 requests target vic0, the account the single session is bound to. For that slice the
+// request is a trusted session by DECISION_MATRIX §0, so it is a compliant measurement of the per-account bound of one trusted session.
+$x = tmsMeasure($streams['TMXb']['events'], 'login', 'pre+out', true);
+$slice = array_values(array_filter($x['rows'], static fn(array $r): bool => $r['subject'] === 'vic0'));
+emit('T01.compliant', ['stream' => 'TMXb', 'account' => 'vic0', 'flow' => 'pre+out', 'requests' => count($slice), 'reached' => count(array_filter($slice, static fn(array $r): bool => $r['reached'])), 'denied' => count(array_filter($slice, static fn(array $r): bool => $r['blocked'])), 'spanSeconds' => $slice === [] ? 0 : end($slice)['t'] - $slice[0]['t'], 'runs' => k1Runs($slice)]);
 TmsAsserts::finish();

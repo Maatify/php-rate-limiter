@@ -85,6 +85,16 @@ function tmsStreams(): array
     }
     $S['TMS'] = ['title' => 'TMS attacker with 12 VALID trusted sessions (one per target account) behind the N12T NAT, N12T cadence (1 / 40 s, 40 min), all attempts fail', 'class' => 'attack', 'events' => $ev];
 
+    // run.sh self-test only: a mis-built stream (two targets sharing one session identifier) must be DETECTED by the binding assertions.
+    if (getenv('TMS_SELFTEST_BREAK_SESS') === '1') {
+        foreach ($ev as $i => $e) {
+            if ($e['acct'] === 'vic1') {
+                $ev[$i]['sess'] = 'sess-vic0';
+            }
+        }
+    }
+    $S['TMS']['events'] = $ev;
+
     // TMSd — the same attacker, dense: 200 attempts at 1 / 3 s cycling the 12 targets (the SP1n cadence).
     $ev = [];
     for ($i = 0; $i < 200; $i++) {
@@ -221,6 +231,46 @@ function tmsMeasure(array $events, string $shape, string $flow, bool $withRows =
     }
 
     return $agg;
+}
+
+/**
+ * The R23-01 premise, proved on the events AND on the real resolver: every target account of the stream is bound to exactly one session
+ * identifier, every session identifier to exactly one account (a bijection), the binding is stable for the whole stream, every request is
+ * trusted, and the REAL DeviceIdentityResolver turns those sessions into exactly as many distinct fingerprint hashes (one per account, stable).
+ *
+ * @param list<array<string, mixed>> $events
+ * @return array{ok: bool, accounts: int, sessions: int, fingerprints: int, stable: bool, trustedAll: bool, bijection: bool}
+ */
+function tmsSessionBindings(array $events, int $expectAccounts): array
+{
+    $lab = k1Lab('A', 'login');
+    $acctToSess = [];
+    $sessToAcct = [];
+    $acctToFp = [];
+    $stable = true;
+    $trustedAll = true;
+    foreach ($events as $e) {
+        $acct = (string) $e['acct'];
+        $sess = (string) ($e['sess'] ?? '');
+        if ($sess === '' || ! ($e['trusted'] ?? false)) {
+            $trustedAll = false;
+        }
+        if (isset($acctToSess[$acct]) && $acctToSess[$acct] !== $sess) {
+            $stable = false;
+        }
+        $acctToSess[$acct] = $sess;
+        $sessToAcct[$sess][$acct] = true;
+        $fp = $lab->resolver->resolve(k1Ctx($e, 'login'))->fingerprintHash;
+        if (isset($acctToFp[$acct]) && $acctToFp[$acct] !== $fp) {
+            $stable = false;
+        }
+        $acctToFp[$acct] = $fp;
+    }
+    $bijection = count($acctToSess) === $expectAccounts && count($sessToAcct) === $expectAccounts
+        && count(array_filter($sessToAcct, static fn(array $a): bool => count($a) === 1)) === $expectAccounts;
+    $fps = count(array_unique(array_values($acctToFp)));
+
+    return ['ok' => $bijection && $stable && $trustedAll && $fps === $expectAccounts, 'accounts' => count($acctToSess), 'sessions' => count($sessToAcct), 'fingerprints' => $fps, 'stable' => $stable, 'trustedAll' => $trustedAll, 'bijection' => $bijection];
 }
 
 /** ASSERT helper: a violated S0 invariant exits non-zero (the study is then not measuring the published runtime). */

@@ -53,7 +53,7 @@ Shapes: Login with account (all streams, flows `pre+out` / `pre` = checkOnly onl
 
 | File | Content |
 |---|---|
-| `scenarios/t01_matrix.php` | 13 streams × 3 flows on Login + 7 × 3 on OTP (60 cells); per cell: attacker reach, reach in the first 600 s, max per account, accounts verified, first reach / first deny time, blocks issued by key, denials by source (PR #108 attribution). S0 invariants (hard-fail): `N12T` 56/61 and `SP5` 200/200 reproduced; `TMS` is `N12T` request for request; every attacker stream has 12 targets on the NAT |
+| `scenarios/t01_matrix.php` | 13 streams × 3 flows on Login + 7 × 3 on OTP (60 cells); per cell: attacker reach, reach in the first 600 s, max per account, accounts verified, first reach / first deny time, blocks issued by key, denials by source (PR #108 attribution). S0 invariants (hard-fail): `N12T` 56/61 and `SP5` 200/200 reproduced; `TMS` is `N12T` request for request; every attacker stream has 12 targets on the NAT; **the R23-01 premise** — 12 accounts ↔ 12 distinct, stable trusted sessions ↔ 12 distinct resolver fingerprints (bijection, on the events and on the real `DeviceIdentityResolver`) in `TMS`/`TMSd`/`TMSs`/`TMR`, ONE session / ONE fingerprint in the `TMX`/`TMXb` controls, `TMU` untrusted. Plus the contract-compliant `vic0` slice of `TMXb` |
 | `scenarios/t02_trace.php` | per-request traces (first 80 requests + a run-length encoding of the whole stream) for `N12T`, `TMS`, `TMSd`, `TMSs`, `TMR`, `TMX`, `TMU` in the three flows; request-for-request decision divergence `N12T` vs `TMS` per flow |
 | `report.php` | fail-closed evidence gates G1–G4 (exit 5 on any missing / malformed evidence; never a PASS then), generated `summary.md` |
 
@@ -65,11 +65,14 @@ bash investigations/trusted-multi-session-s0/run.sh            # everything, dif
 UPDATE=1 bash investigations/trusted-multi-session-s0/run.sh   # regenerate expected/ (review the git diff!)
 ```
 
-The run **fails closed**: the baseline gate refuses any change under `src/` or the Composer files; every scenario aborts with exit 4 unless the loaded
-pipeline is the repository's unpatched baseline (sha-256 `4b259d33…f4fc`) and no candidate label (`WSB_CANDIDATE`, `OQC_ARM`) is set; `report.php` exits 5
-and marks every gate UNPROVEN on missing, malformed or mislabelled evidence. Self-tests in `run.sh`: candidate labels refused (exit 4); eight fail-closed
-cases (deleted matrix / trace file, deleted cell, removed field, deleted assertion row, forged pipeline hash, deleted divergence row, deleted trace) must all
-make `report.php` exit 5 with no PASS gate. `results/` is git-ignored scratch; the committed evidence is `expected/`.
+The run **fails closed**: `run.sh` itself refuses a set candidate label (`WSB_CANDIDATE`, `OQC_ARM`) with exit 4 (it never unsets one silently); the
+baseline gate refuses any change under `src/` or the Composer files; every scenario aborts with exit 4 unless the loaded pipeline is the repository's
+unpatched baseline (sha-256 `4b259d33…f4fc`) and no candidate label is set; a violated S0 invariant exits the scenario with 1; `report.php` exits 5 and marks
+every gate UNPROVEN on missing, malformed or mislabelled evidence, and exits 6 (gate FAIL recorded, summary still written) on any violated assertion.
+Self-tests in `run.sh`: candidate labels refused by the scenarios and by the runner (exit 4); a mis-built stream (two targets sharing one session) is
+detected by the binding assertion (exit 1); a flipped `ok:true → ok:false` makes `report.php` exit 6; eight fail-closed cases (deleted matrix / trace file,
+deleted cell, removed field, deleted assertion row, forged pipeline hash, deleted divergence row, deleted trace) must all make `report.php` exit 5 with no
+PASS gate. `results/` is git-ignored scratch; the committed evidence is `expected/`.
 
 Reference stores and the controlled clock only: sequential decision parity of this pipeline with real Redis was proven in #108 / #111; concurrency is
 out of this study's scope (it would have to be measured on any candidate, as #111 showed).

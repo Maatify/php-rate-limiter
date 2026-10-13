@@ -55,9 +55,11 @@ attribution of co-active blocks, the denying key is K2 (see the per-request trac
 
 `TMX` presents one fingerprint to K2, so the shared K2 set never churns; everything else (K1 advisory, per-account K4/K5/budget, 12 targets, 1 / 3 s)
 is `TMSd`. A design that makes the K2 correlation block advisory for the trusted request removes exactly the control that separates `TMSd` (2/200) from
-`TMX` (200/200). Plan 2's account guard (cap 3 fingerprints per account) does not change this: `TMSd` shows **one** fingerprint per account, so the guard
-never triggers; §5.2 (cap 4 per account) likewise. The composite's per-cell reach on `TMSd` is therefore bounded below by `TMX`'s 200/200 unless it keeps
-some cross-account control on IP + UA — and that control is K2 under another name, which would deny `N12T` again (§2).
+`TMX` (200/200) **in S0**. Plan 2's account guard (cap 3 fingerprints per account) would not restore it: `TMSd` shows **one** fingerprint per account, so
+the guard never triggers; §5.2 (cap 4 per account) likewise. What is proved here is the **loss of the shared control**; the reach a candidate would
+actually show on `TMSd` is **not measured** — 200/200 is the conditional expectation if the candidate adds no other cross-account control on IP + UA and
+changes nothing else on this path, not a proven bound. A candidate that keeps any such control must be measured on `TMSd` / `TMS` / `TPAIRT` **and** on
+`N12T` together, because in S0 that control is K2 under another name and denies `N12T` too (§2).
 
 ### 3.3 The per-account bound for a trusted session is far above the K2 window
 
@@ -68,6 +70,11 @@ So within the K2 window a trusted session's failures on one account are bounded 
 OTP (thresholds 4/7/10, budget 10) behaves the same on `TMX` (200/200; the 24 `persisted:K1(spray)` labels are post-verification `recordFailure` returns).
 This is a **pre-existing S0 property** (it is why `SP5` is 200/200 in #108); the trust family would extend it from "one session, many accounts" to
 "many sessions, many accounts".
+
+**Contract-compliant evidence of the same property** (`summary.md` §6b): the first 25 requests of `TMXb` target `vic0`, the account its session is bound
+to — for that slice the request *is* a trusted session by `DECISION_MATRIX.md` §0, nothing Host-violating about it. Result: 25/25 reached, 0 denied, over
+72 s. One compliant trusted session can fail 25 times on its own account inside the K2 window without any denial. Recorded as an independent finding
+for the Owner; no Issue is opened by this study.
 
 ### 3.4 Mixed NAT
 
@@ -91,8 +98,9 @@ populations alike, 32 K2 blocks over 40 min. Under an advisory-K2 design the off
 - The R23-01 objection is **confirmed with numbers**: S0 bounds the multi-session trusted attacker at 2/200 (dense) and 7/61 (office cadence) through K2
   alone; `TMU` proves trust is irrelevant to that bound; `TMX` shows what remains without it (200/200).
 - The executor's earlier claim "`TMULTI-S` is bounded by N × K4 in S0" is **refuted**: K4 never fires for a known device on Login; the bound was K2.
-- Plans 2, 3 and 2+3 **as written** (K2 correlation advisory for every trusted account-bound request) cannot meet the per-cell "no increase over S0" gate on
-  `TMSd` / `TMS` / `TPAIRT`; the inference is structural (§3.2) and would be confirmed, not discovered, by a candidate build.
+- Plans 2, 3 and 2+3 **as written** (K2 correlation advisory for every trusted account-bound request) lose, by construction, the only control that bounds
+  this attacker in S0 (§3.2); the per-cell "no increase over S0" gate on `TMSd` / `TMS` / `TPAIRT` is therefore expected to fail for them, but the
+  candidate reach itself is unmeasured and this study does not claim a number for it.
 - Not shown: that every more selective design is impossible. The outcome streams differ (§2), the per-account bound could be made to exist for trusted
   sessions (§3.3 is an S0 property the Owner may want to look at independently of #110), and a cross-account control that distinguishes `N12T` from
   `TMS` would need a signal S0 does not use.

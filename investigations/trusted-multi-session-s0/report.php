@@ -17,7 +17,7 @@ if (! is_dir($in) || ! is_dir($out)) {
 }
 const FILES = ['t01_matrix', 't02_trace'];
 const REQUIRED = [
-    't01_matrix' => ['S0 N12T' => 1, 'S0 SP5' => 1, 'STREAM TMS' => 1, 'STREAM every' => 1],
+    't01_matrix' => ['S0 N12T' => 1, 'S0 SP5' => 1, 'STREAM TMS' => 1, 'STREAM every' => 1, 'BINDING TMS:' => 1, 'BINDING TMSd:' => 1, 'BINDING TMSs:' => 1, 'BINDING TMR:' => 1, 'BINDING TMX control:' => 1, 'BINDING TMXb control:' => 1, 'BINDING TMU control:' => 1],
     't02_trace' => [],
 ];
 
@@ -113,6 +113,10 @@ foreach (array_keys(tmsStreamClasses()) as $id) {
         $problems[] = "t01_matrix: stream description row for $id missing or duplicated";
     }
 }
+$compliant = $data['t01_matrix']['T01.compliant'][0] ?? null;
+if (count($data['t01_matrix']['T01.compliant'] ?? []) !== 1 || ! is_int($compliant['requests'] ?? null) || ! is_int($compliant['reached'] ?? null) || ! is_int($compliant['denied'] ?? null)) {
+    $problems[] = 't01_matrix: T01.compliant row (TMXb vic0 slice) missing or malformed';
+}
 // Trace completeness.
 $traces = [];
 foreach ($data['t02_trace']['T02.trace'] ?? [] as $r) {
@@ -140,7 +144,7 @@ foreach (['pre+out', 'pre', 'out'] as $flow) {
 const GATES = [
     ['G1', 'Provenance: every scenario ran the repository\'s unpatched EvaluationPipeline at the pinned baseline (S0_RUNTIME_OBSERVED, no candidate arm)', []],
     ['G2', 'Baseline reproduction: the published #108 numbers of the reference streams (N12T 56/61, SP5 200/200) reproduced on the real pipeline', ['t01_matrix' => ['S0 N12T', 'S0 SP5']]],
-    ['G3', 'Stream construction: TMS is N12T request for request with every outcome = fail; every attacker stream has 12 targets on the N12T NAT', ['t01_matrix' => ['STREAM TMS', 'STREAM every']]],
+    ['G3', 'Stream construction and the R23-01 premise: TMS is N12T request for request with every outcome = fail; every attacker stream has 12 targets on the N12T NAT; 12 accounts <-> 12 distinct stable trusted sessions <-> 12 resolver fingerprints (bijection) in TMS/TMSd/TMSs/TMR; ONE session / ONE fingerprint in the TMX/TMXb controls; TMU untrusted', ['t01_matrix' => ['STREAM TMS', 'STREAM every', 'BINDING TMS:', 'BINDING TMSd:', 'BINDING TMSs:', 'BINDING TMR:', 'BINDING TMX control:', 'BINDING TMXb control:', 'BINDING TMU control:']]],
     ['G4', 'Evidence completeness: every matrix cell (streams × shapes × flows) with all fields, every trace and every divergence row present', []],
 ];
 $gates = [];
@@ -168,6 +172,22 @@ if ($problems !== []) {
     exit(5);
 }
 @unlink("$out/evidence_problems.txt");
+// F113-02: a violated assertion (ok:false) is an S0-invariant failure, never a report that exits 0. The gates and the summary are still
+// written (so the violation is visible), then the generator exits 6.
+$violated = [];
+foreach ($assertions as $f => $rows) {
+    foreach ($rows as $a) {
+        if (($a['ok'] ?? false) !== true) {
+            $violated[] = "$f: " . $a['assert'];
+        }
+    }
+}
+register_shutdown_function(static function () use ($violated): void {
+    if ($violated !== []) {
+        fwrite(STDOUT, "VIOLATED ASSERTIONS (" . count($violated) . "):\n" . implode("\n", $violated) . "\n");
+        exit(6);
+    }
+});
 
 // ------------------------------------------------------------------------------------------------------------------------------------
 // summary.md
@@ -280,6 +300,12 @@ foreach (['N12T', 'TMS', 'TMSd', 'TMSs', 'TMR', 'TMX', 'TMU'] as $id) {
     }
 }
 $table(['Stream', 'Flow', 'legit denied', 'attacker reach', 'max/account', 'blocks issued by key', 'denials by source'], $rows);
+
+$h('## 6b. Contract-compliant slice of `TMXb`: the account the single session is bound to');
+$h('');
+$h('The first requests of `TMXb` target `vic0`, the account its session is bound to; for that slice the request *is* a trusted session by `DECISION_MATRIX.md` §0. It measures the per-account bound of one compliant trusted session on Login.');
+$h('');
+$table(['Account', 'Flow', 'requests', 'reached', 'denied', 'span (s)', 'runs'], [[$compliant['account'], $compliant['flow'], (string) $compliant['requests'], '**' . $compliant['reached'] . '**', (string) $compliant['denied'], (string) $compliant['spanSeconds'], '`' . $compliant['runs'] . '`']]);
 
 $h('## 7. Per-request traces (first 24 requests of the trace streams, Login, pre+out; the full runs are in `expected/t02_trace.jsonl`)');
 $h('');

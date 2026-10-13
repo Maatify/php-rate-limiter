@@ -9,6 +9,14 @@
 # candidate tree, no patch and no arm in this study; a candidate label (WSB_CANDIDATE / OQC_ARM) is refused with exit 4. Reference stores and
 # the controlled clock only (sequential decision parity of this pipeline with real Redis was proven in #108 / #111; concurrency is out of scope).
 set -euo pipefail
+report() { printf '%-48s %s\n' "$1" "$2"; }
+# F113-03: a candidate label is REFUSED, never silently unset. This study has no candidate; running it under one is a provenance error.
+for label in WSB_CANDIDATE OQC_ARM; do
+    if [[ -n "${!label:-}" ]]; then
+        report "candidate_label" "FAIL ($label='${!label}' is set; this study runs S0 only — unset it)"
+        exit 4
+    fi
+done
 
 here=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 repo=$(cd "$here/../.." && pwd)
@@ -24,7 +32,6 @@ if [[ ! -f "$repo/vendor/autoload.php" ]]; then
     exit 2
 fi
 status=0
-report() { printf '%-48s %s\n' "$1" "$2"; }
 
 # ---- 0. baseline + provenance ------------------------------------------------------------------------------------------------------
 {
@@ -61,7 +68,7 @@ compare() { # name
 
 # ---- 1. deterministic reference-store scenarios, S0 only -----------------------------------------------------------------------------
 for sc in t01_matrix t02_trace; do
-    if ! env -u WSB_CANDIDATE -u OQC_ARM LAB_ROOT="$repo" php "$here/scenarios/$sc.php" >"$actual/$sc.jsonl" 2>"$actual/$sc.stderr"; then
+    if ! env LAB_ROOT="$repo" php "$here/scenarios/$sc.php" >"$actual/$sc.jsonl" 2>"$actual/$sc.stderr"; then
         report "$sc" "FAIL (non-zero exit; see results/actual/$sc.jsonl / .stderr)"
         status=1
         continue
@@ -103,9 +110,47 @@ selftest_exit() { # name expected-exit command...
     rm -f "$actual/selftest_$name.out" "$actual/selftest_$name.err"
     if [[ $rc -eq $want ]]; then report "selftest_$name" "PASS (refused with exit $rc)"; else report "selftest_$name" "FAIL (expected exit $want, got $rc)"; status=1; fi
 }
-# provenance: a candidate label must be refused with exit 4 (this study never runs a patched tree)
+# provenance: a candidate label must be refused with exit 4 by the scenarios AND by this runner (this study never runs a patched tree)
 selftest_exit candidate_label_refused 4 env WSB_CANDIDATE=EQL LAB_ROOT="$repo" php "$here/scenarios/t01_matrix.php"
 selftest_exit oqc_arm_refused 4 env OQC_ARM=OQC LAB_ROOT="$repo" php "$here/scenarios/t01_matrix.php"
+selftest_exit runner_refuses_candidate_label 4 env WSB_CANDIDATE=EQL bash "$here/run.sh"
+selftest_exit runner_refuses_oqc_arm 4 env OQC_ARM=OQC bash "$here/run.sh"
+# the R23-01 premise must be DETECTED when a stream is mis-built (two targets sharing one session): the binding assertion fails, exit 1
+selftest_premise() {
+    local rc
+    set +e
+    env TMS_SELFTEST_BREAK_SESS=1 LAB_ROOT="$repo" php "$here/scenarios/t01_matrix.php" >"$actual/selftest_premise.jsonl" 2>/dev/null
+    rc=$?
+    set -e
+    if [[ $rc -ne 0 ]] && grep -q '"assert":"BINDING TMS:[^"]*","ok":false' "$actual/selftest_premise.jsonl"; then
+        report "selftest_broken_session_binding_detected" "PASS (BINDING TMS assertion false, exit $rc)"
+    else
+        report "selftest_broken_session_binding_detected" "FAIL (exit $rc; expected non-zero with BINDING TMS ok:false)"
+        status=1
+    fi
+    rm -f "$actual/selftest_premise.jsonl"
+}
+selftest_premise
+# a violated assertion with complete, well-formed evidence must make report.php exit 6 (F113-02), with the gate recorded as FAIL
+fc_assert_false() {
+    local dir="$actual/failclosed-assertion_false" rc
+    rm -rf "${dir:?}"
+    mkdir -p "$dir"
+    cp "$actual"/t01_matrix.jsonl "$actual"/t02_trace.jsonl "$dir"/
+    sed -i.bak 's/\("assert":"S0 SP5 [^"]*","ok":\)true/\1false/' "$dir/t01_matrix.jsonl" && rm -f "$dir/t01_matrix.jsonl.bak"
+    set +e
+    php "$here/report.php" "$dir" "$dir" >"$dir/report.out" 2>"$dir/report.stderr"
+    rc=$?
+    set -e
+    if [[ $rc -eq 6 ]] && grep -q '"gate":"G2"[^}]*"status":"FAIL"' "$dir/gates.jsonl" && [[ -f "$dir/summary.md" ]]; then
+        report "selftest_violated_assertion_is_fatal" "PASS (report.php exit 6; G2 FAIL recorded; summary still written)"
+    else
+        report "selftest_violated_assertion_is_fatal" "FAIL (exit $rc; expected 6 with G2 FAIL)"
+        status=1
+    fi
+    rm -rf "${dir:?}"
+}
+fc_assert_false
 # fail-closed evidence: delete / damage representative evidence and require report.php to refuse (exit 5) and write no PASS gate
 fc_check() { # name mutation-command-on-copy
     local name=$1 dir="$actual/failclosed-$1" rc
