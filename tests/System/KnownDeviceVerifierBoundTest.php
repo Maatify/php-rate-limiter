@@ -328,9 +328,6 @@ final class KnownDeviceVerifierBoundTest extends TestCase
     }
 
     /**
-     * @return array{attempts: int, reached: int}
-     */
-    /**
      * FixedClock::sleep() is a no-op; time must be advanced explicitly.
      */
     private function advance(int $seconds): void
@@ -338,6 +335,9 @@ final class KnownDeviceVerifierBoundTest extends TestCase
         $this->clock->setNow($this->clock->now()->modify("+{$seconds} seconds"));
     }
 
+    /**
+     * @return array{attempts: int, reached: int}
+     */
     private function dayStream(bool $known, bool $rotate, int $interval): array
     {
         $pipeline = $this->pipeline();
