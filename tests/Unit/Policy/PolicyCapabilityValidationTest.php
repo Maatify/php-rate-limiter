@@ -320,7 +320,7 @@ final class AllowanceValidationPolicy implements KnownDeviceAccountAllowancePoli
     {
         return $this->budget;
     }
-    public function getKnownDeviceAccountAllowance(): ?int
+    public function getKnownDeviceAccountAllowance(): int
     {
         return $this->allowance;
     }

@@ -200,12 +200,12 @@ final class CustomAllowancePolicy implements KnownDeviceAccountAllowancePolicyIn
         return 'FAIL_CLOSED';
     }
 
-    public function getBudgetConfig(): ?BudgetConfigDTO
+    public function getBudgetConfig(): BudgetConfigDTO
     {
         return new BudgetConfigDTO(20, 3);
     }
 
-    public function getKnownDeviceAccountAllowance(): ?int
+    public function getKnownDeviceAccountAllowance(): int
     {
         return 2;
     }
