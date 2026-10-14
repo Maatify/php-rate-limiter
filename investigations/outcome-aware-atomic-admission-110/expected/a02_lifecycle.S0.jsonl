@@ -41,3 +41,7 @@
 {"s":"A02","arm":"S0","assert":"L22 S0: the 3rd fingerprint is denied","ok":true,"probe":"B-","units":0,"grants":0}
 {"s":"A02.L23.record-only","arm":"S0","seq":"BBBB","churnUnits":0}
 {"s":"A02","arm":"S0","assert":"L23 S0: record-only failures from the 3rd fingerprint on receive the block decision","ok":true,"seq":"BBBB","units":0}
+{"s":"A02.L24.two-pending-replayed-success","arm":"S0","steps":"BBBBB","verifierReach":2,"genuineFailures":1,"unitsAfterEachStep":[0,0,0,0],"correctFinalUnits":1,"attemptLevelCorrect":null}
+{"s":"A02.L25.replayed-success-no-new-attempt","arm":"S0","seq":"B-BB","unitsAfterFailure":0,"unitsAfterTwoReplayedSuccesses":0,"correctFinalUnits":1,"attemptLevelCorrect":null}
+{"s":"A02.L26.medium-reorder","arm":"S0","success-first":{"pre":"BB","units":0},"failure-first":{"pre":"BB","units":0},"orderIndependent":null,"attemptLevelCorrect":null}
+{"s":"A02.L27.mixed-flow-pre-only","arm":"S0","office":"aaaaaaaaB-","preOnly":"BBBBBBBB","admittedPreOnly":0,"unitsSpentNeverResolved":0}

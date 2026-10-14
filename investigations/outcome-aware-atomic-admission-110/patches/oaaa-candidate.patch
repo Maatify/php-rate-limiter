@@ -69,7 +69,7 @@ index 0000000..60d385c
 +    ): array;
 +}
 diff --git a/src/Repository/Redis/RedisFullCapabilityStore.php b/src/Repository/Redis/RedisFullCapabilityStore.php
-index 2e63bec..7b6b156 100644
+index 2e63bec..6cd4785 100644
 --- a/src/Repository/Redis/RedisFullCapabilityStore.php
 +++ b/src/Repository/Redis/RedisFullCapabilityStore.php
 @@ -21,0 +22 @@ use Maatify\RateLimiter\Repository\FullCapabilityStoreInterface;
@@ -77,7 +77,7 @@ index 2e63bec..7b6b156 100644
 @@ -35 +36 @@ use Maatify\RateLimiter\Repository\FullCapabilityStoreInterface;
 -final class RedisFullCapabilityStore implements FullCapabilityStoreInterface
 +final class RedisFullCapabilityStore implements FullCapabilityStoreInterface, OutcomeAdmissionStoreInterface
-@@ -1723,0 +1725,182 @@ LUA;
+@@ -1723,0 +1725,210 @@ LUA;
 +    // ---- EXPERIMENTAL #110 OAAA (study only) -------------------------------------------------------------------------
 +
 +    private const OAAA_RESERVE = <<<'LUA'
@@ -92,6 +92,18 @@ index 2e63bec..7b6b156 100644
 +  if t.hasPrev == 1 then t.prev = KEYS[ki]; ki = ki + 1 end
 +  for c = 1, t.nCredit do t.credits[c] = KEYS[ki]; ki = ki + 1 end
 +  tiers[i] = t
++end
++local function typeIs(key, wanted)
++  local t = redis.call('TYPE', key)['ok']
++  return t == 'none' or t == wanted
++end
++if not typeIs(tupleKey, 'hash') then return redis.error_reply('malformed admission tuple') end
++for i = 1, n do
++  local t = tiers[i]
++  if not typeIs(t.key, 'hash') or (t.prev and not typeIs(t.prev, 'hash')) then return redis.error_reply('malformed admission tier') end
++  for c = 1, t.nCredit do
++    if not typeIs(t.credits[c], 'set') then return redis.error_reply('malformed admission credit') end
++  end
 +end
 +local function units(key)
 +  if redis.call('EXISTS', key) == 0 then return 0 end
@@ -126,6 +138,10 @@ index 2e63bec..7b6b156 100644
 +end
 +local tupleExisted = redis.call('EXISTS', tupleKey)
 +if tupleExisted == 1 and redis.call('TTL', tupleKey) < 0 then return redis.error_reply('malformed admission tuple') end
++for i = 1, n do
++  local pending = redis.call('HGET', tupleKey, 'p|' .. tiers[i].key)
++  if pending and (not tonumber(pending) or tonumber(pending) < 0 or tonumber(pending) ~= math.floor(tonumber(pending))) then return redis.error_reply('malformed admission tuple') end
++end
 +local now = redis.call('TIME')
 +local epochId = now[1] .. '.' .. now[2]
 +for i = 1, n do
@@ -151,6 +167,18 @@ index 2e63bec..7b6b156 100644
 +local n = tonumber(ARGV[2])
 +local refundMax = tonumber(ARGV[3])
 +local m = tonumber(ARGV[4])
++local function typeIs(key, wanted)
++  local t = redis.call('TYPE', key)['ok']
++  return t == 'none' or t == wanted
++end
++if not typeIs(tupleKey, 'hash') then return redis.error_reply('malformed admission tuple') end
++for i = 1, n do
++  if not typeIs(KEYS[1 + i], 'hash') then return redis.error_reply('malformed admission tier') end
++end
++for c = 1, m do
++  if not typeIs(KEYS[1 + n + c], 'set') then return redis.error_reply('malformed admission credit') end
++  if redis.call('EXISTS', KEYS[1 + n + c]) == 1 and redis.call('TTL', KEYS[1 + n + c]) < 0 then return redis.error_reply('malformed admission credit') end
++end
 +local plan = {}
 +local paired = {}
 +if redis.call('EXISTS', tupleKey) == 1 then

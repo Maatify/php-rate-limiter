@@ -79,3 +79,17 @@ burst; worst-case rolling window; extra reach not explained by granted reservati
    Owner can decide whether a different limit or parameterisation is worth a new, separately authorised unit.
 3. Else ⇒ **GO_FOR_OWNER_RISK_REVIEW**, with the required optional contract extension listed as an Owner decision (it is never assumed).
 4. F2, O-gate FAILs and every UNPROVEN item are listed explicitly in the report and the PR body whatever the verdict.
+
+## 4. Amendment after Direct Lead Review 5512846831 (PR #116, 2026-10-14) — not pre-registered
+
+Nothing above is changed or relaxed. E4 / E1 / E3 stay as registered (Y6b / Y4d remain attack-class cells). Added, as reported gates that
+can only add failures:
+
+| ID | Gate | Rule |
+|---|---|---|
+| X1 | F116-01 attempt-level replay idempotency | `a02` L24 / L25 / L26 end at the per-attempt correct units (1, 1, 1 / 1), reproduced on Redis (`a05` Q7) |
+| X2 | F116-02 no partial write | every wrong-type / malformed key case of `a05` Q6 leaves all involved keys unchanged on the current patch; the superseded `0df807f` adapter is recorded for comparison (`a08`) |
+| X3 | F116-03 mixed flows | a pre-only route sharing a scope with credited `pre+out` traffic decides like S0 (`a02` L27, `a05` Q8, `a07` H3) |
+
+Scope correction of registered rows (wording, not rule): **O1** proves "pre-only = S0" for **isolated** pre-only histories only; **E5** proves
+"no **unbounded** replay / concurrency admission" (bounded per tuple), not attempt-level replay idempotency (that is X1).

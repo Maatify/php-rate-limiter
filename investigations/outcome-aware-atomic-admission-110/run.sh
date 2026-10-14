@@ -19,7 +19,7 @@ actual="${here:?}/results/actual"
 work="${here:?}/results/work"
 expected="${here:?}/expected"
 BASE_SHA=72f6dea8ab0729e63492b622e682e334c527c966
-GATES=(E4 E5 E6 E1 E2 E3 F1 F2 O1 O2 O3 O4 O5 O6 O7a O7b O7c O7d O8 O9 O10 DECISION)
+GATES=(E4 E5 E6 E1 E2 E3 F1 F2 O1 O2 O3 O4 O5 O6 O7a O7b O7c O7d O8 O9 O10 X1 X2 X3 DECISION)
 mkdir -p "$actual" "$work" "$expected"
 find "${actual:?}" -maxdepth 1 -type f \( -name '*.jsonl' -o -name '*.diff' -o -name '*.stderr' -o -name '*.txt' -o -name 'summary.md' -o -name 'report.out' \) -delete
 rm -rf "${actual:?}"/redis-* "${actual:?}"/failclosed-* "${actual:?}"/gatecheck-*
@@ -61,6 +61,18 @@ esac
 bash "$here/build_candidate.sh" "$cand" >/dev/null
 cp "$cand/BUILD_INFO.txt" "$actual/candidate_build_info.txt"
 report "candidate_build" "PASS (pipeline_sha256_after $(grep pipeline_sha256_after "$cand/BUILD_INFO.txt" | cut -d' ' -f2 | cut -c1-16)...)"
+
+# F116-02 historical evidence: the SUPERSEDED candidate patch as committed at 0df807f, read from git history and hash-pinned, applied to a
+# git archive of the baseline (only its Redis adapter is probed by scenarios/a08_prefix_lua_probe.php; never used as an arm).
+prefix="$work/candidate-prefix"
+case "$prefix" in "$here/results/work/"*) rm -rf "${prefix:?}" ;; *) echo "refusing to remove $prefix" >&2; exit 2 ;; esac
+mkdir -p "$prefix"
+git -C "$repo" show 0df807fa2e3e280961d45842c27f7165de935653:investigations/outcome-aware-atomic-admission-110/patches/oaaa-candidate.patch >"$work/prefix.patch"
+[[ "$(shasum -a 256 "$work/prefix.patch" | cut -d' ' -f1)" == "e8032f5de23e7185d49daa371c08dc56d7edf723268b24e2d0ece3ff24639aac" ]] || { report "prefix_build" "FAIL (superseded patch hash)"; exit 6; }
+git -C "$repo" archive "$BASE_SHA" | tar -x -C "$prefix"
+(cd "$prefix" && git init -q . && git apply --unidiff-zero "$work/prefix.patch" && rm -rf .git) || { report "prefix_build" "FAIL (superseded patch does not apply)"; exit 4; }
+cp -R "$repo/vendor" "$prefix/vendor"
+report "prefix_build" "PASS (superseded 0df807f patch e8032f5d..., Redis adapter $(shasum -a 256 "$prefix/src/Repository/Redis/RedisFullCapabilityStore.php" | cut -c1-16)...)"
 
 arms=(S0 OAAA)
 run_arm() { # arm scenario out err [extra env...]
@@ -172,6 +184,13 @@ if [[ "${REDIS_SPOTCHECK:-1}" == "1" ]]; then
                     fi
                 done
             done
+            name="a08_prefix_lua_probe.PREFIX"
+            stop_redis "$own_pid"
+            own_port=$(free_port "$own_port")
+            start_redis "own-a08" "$own_port"; own_pid=$REDIS_PID_VALUE; own_dir=$REDIS_DIR_VALUE
+            env -u OAAA_ARM -u GNH_ARM -u OQC_ARM -u WSB_CANDIDATE LAB_ROOT="$prefix" REDIS_HOST=198.51.100.1 REDIS_PORT=1 WSB_REDIS_PORT="$own_port" WSB_REDIS_PID="$own_pid" WSB_REDIS_DIR="$own_dir" \
+                php "$here/scenarios/a08_prefix_lua_probe.php" >"$actual/$name.jsonl" 2>"$actual/$name.stderr" || true
+            if [[ -s "$actual/$name.stderr" ]]; then report "$name" "FAIL (stderr: results/actual/$name.stderr)"; status=1; else rm -f "${actual:?}/$name.stderr"; compare "$name"; fi
             stop_redis "$own_pid"
         fi
     fi
@@ -288,6 +307,7 @@ fc_check redis_evidence_deleted 'rm -f "$dir/a05_redis.OAAA.jsonl"; echo RAN >"$
 fc_check concurrency_evidence_deleted 'rm -f "$dir/a06_concurrency.S0.jsonl"; echo RAN >"$dir/redis_status.txt"'
 fc_check host_probe_deleted 'rm -f "$dir/a07_host_probe.OAAA.jsonl"; echo RAN >"$dir/redis_status.txt"'
 fc_check redis_status_missing 'rm -f "$dir/redis_status.txt"'
+fc_check superseded_adapter_probe_deleted 'rm -f "$dir/a08_prefix_lua_probe.PREFIX.jsonl"'
 # invalid patch provenance: a copy of the reporter next to a drifted copy of the committed patch must refuse the evidence
 fc_patch() {
     local dir="$actual/failclosed-patch" rc
@@ -338,6 +358,7 @@ gate_check e2_detects_burst_leak E2 'mutate "$dir/a06_concurrency.OAAA.jsonl" "(
 gate_check e5_detects_replay_violation E5 'mutate "$dir/a02_lifecycle.OAAA.jsonl" "isset(\$r[\"assert\"]) && str_starts_with(\$r[\"assert\"], \"L7 \") ? [\"ok\" => false] + \$r : \$r"'
 gate_check e6_detects_aggregate_violation E6 'mutate "$dir/a01_matrix.OAAA.jsonl" "(\$r[\"s\"] === \"A01.matrix\" && \$r[\"stream\"] === \"OWN4\" && \$r[\"shape\"] === \"login\" && \$r[\"flow\"] === \"pre+out\") ? [\"attackReachedByIp600\" => array_map(static fn(array \$w): array => array_map(static fn(int \$n): int => \$n + 5, \$w), \$r[\"attackReachedByIp600\"])] + \$r : \$r"'
 gate_check f2_detects_fairness_regression F2 'mutate "$dir/a01_matrix.OAAA.jsonl" "(\$r[\"s\"] === \"A01.matrix\" && \$r[\"stream\"] === \"D2\" && \$r[\"shape\"] === \"login\" && \$r[\"flow\"] === \"pre+out\") ? [\"legitDenied\" => 120] + \$r : \$r"'
+gate_check x2_detects_partial_write X2 'mutate "$dir/a05_redis.OAAA.jsonl" "(\$r[\"s\"] === \"A05.Q6.wrong-type-no-partial-write\") ? [\"probes\" => array_map(static fn(array \$x): array => [\"unchanged\" => false] + \$x, \$r[\"probes\"])] + \$r : \$r"'
 gate_check o1_detects_pre_only_change O1 'mutate "$dir/a01_matrix.OAAA.jsonl" "(\$r[\"s\"] === \"A01.matrix\" && \$r[\"stream\"] === \"ABA_B\" && \$r[\"shape\"] === \"login\" && \$r[\"flow\"] === \"pre\") ? [\"legitDeniedBits\" => strtr(\$r[\"legitDeniedBits\"], \"01\", \"10\")] + \$r : \$r"'
 
 if [[ "${UPDATE:-0}" == "1" ]]; then

@@ -99,12 +99,12 @@ failure) or receives the S0 candidate.
 | Who owns the reservation id? | **The package.** There is no id on the wire. The reservation is a counter inside a package-derived tuple: HMAC(policy, env, K4, device hash, K1, K2) under the active key secret. The Host never sees, sends or chooses it. |
 | Package-generated or Host-provided? | Package-generated from the same context the Host already passes; **no `RateLimitCommand` change** and no new Host call for `pre+out` Hosts. |
 | Can it be forged or reused? | The tuple is the request context itself. A client that presents *the same* account + device + IP + UA as a legitimate user **is** that tuple (the identical-tuple case, §5 and TGTM / TGTL); presenting it gives no unit by itself — units come only from the shared, credit-gated tiers. Reuse = a second outcome; see "outcome twice". |
-| Single-use? | Each reservation is resolved at most once: `p` is decremented once per outcome; a resolved reservation cannot be resolved again. Several concurrent attempts of one tuple are **fungible** counters (n reservations, n outcomes ⇒ exact accounting). |
+| Single-use? | **Per tuple, not per attempt** (corrected after F116-01). Each outcome resolves at most one unresolved counter `p` of its tuple, but several concurrent attempts of one tuple are **fungible**: a replayed or misattributed success can resolve *another* pending attempt of the same tuple (`a02` L24: 0 units left instead of 1). Attempt-level single use needs an attempt-bound identity, i.e. a Host-visible token or equivalent: **CONTRACT_CHANGE_REQUIRED** (CONTRACT_FEASIBILITY.md §2a). |
 | How is it bound to policy, scope and attempt? | policy and env are in the tuple and tier keys; the scopes are the tier keys (the tuple records a counter **per tier key and per tier epoch**); the attempt is one `p` unit. |
-| Outcome arrives twice | The second finds `p = 0`: nothing is returned for a duplicate failure; a duplicate success can return only recorded failures of the same tuple (≤ 2, MEDIUM/HIGH) — never units of another tuple. |
+| Outcome arrives twice | A duplicate failure returns nothing. A duplicate success returns **another pending reservation of the same tuple, if any** (`a02` L24), and **up to 2 recorded failures of the same tuple even without a new successful attempt** (`a02` L25, L7) — measured defects of the tuple design (gate X1 FAIL), bounded to units already taken by that tuple, never units of another tuple. |
 | Outcome never arrives | The unit stays spent (`p` is never returned). Pre-only Hosts therefore never return units; they also never earn credit, so for them OAAA ≡ S0. |
 | Process dies after the reservation | Same as a missing outcome: spent until the tier epoch ends. No cleanup job; no unbounded history. |
-| Can units be returned? | Only by a Host-reported **success** of the same tuple, only to the same tier **epoch** (an expired / recreated tier is never credited), only for current-generation tiers (rotation never writes a previous generation). |
+| Can units be returned? | Only by a Host-reported **success** of the same tuple (a genuine one or a Host replay of one — F116-01), only to the same tier **epoch** (an expired / recreated tier is never credited), only for current-generation tiers (rotation never writes a previous generation). |
 | Refund exploitation | A refund needs a Host-verified success of the **same account** from the same device, IP and UA. An attacker can only produce it for an account it owns (own attempts are harmless) or has already compromised. Cross-account refund is impossible: the account is part of the tuple. |
 | Attacker succeeds on an account it owns | Its own tuple's unit is returned (net zero) and that account enters the credit sets of the attacker's scopes: at most **2 distinct accounts per scope per window** count, so own accounts can raise a scope's epoch cap from 0 to at most 2 — never more (measured: OWN1, OWN2, OWN6, OWN4, OWNK2, D5). |
 | Double counting `checkOnly` + outcome | The pre-check takes one unit; the outcome command resolves it instead of taking another. Spray runs only on `checkOnly` (S0); churn / dilution that fire again on the outcome command are covered by the resolution (paired) — a second unit is taken only if a scope fires on the outcome that did not fire on the pre-check (fail-closed over-count, never under-count). |
@@ -132,12 +132,12 @@ failure) or receives the S0 candidate.
 |---|---|
 | Fabricated successful logins | The library never accepts a success claim from the client; only the Host's `recordSuccess`. A Host-verified success on an attacker-owned account returns only that account's own unit and adds at most one credit member; ≤ 2 members per scope per window. |
 | Success on an attacker-owned account | as above (OWN*, D5) |
-| Failure / success replay | single-use `p`; a replayed success returns at most 2 recorded failures of the same tuple (`a02` L7) |
+| Failure / success replay | **Not attempt-level idempotent** (F116-01, gate X1 FAIL): a replayed success can resolve another pending attempt of the same tuple and return up to 2 recorded failures without a new successful attempt (`a02` L24 / L25, Redis `a05` Q7). Bounded to the tuple's own units. |
 | Cross-account substitution | the account is part of the tuple: a success on A cannot touch a reservation taken for V (`a02` L6) |
 | Missing outcome | unit stays spent (`a02` L3) |
 | Delayed outcome | returned only while the tuple (600 s) and the same tier epoch are alive; otherwise stays spent (`a02` L10, L11) |
-| Out-of-order outcomes | fungible counters per tuple: the totals are exact whatever the order (`a02` L9) |
-| Multiple workers finalizing one attempt | one Lua script per completion; concurrent duplicates resolve `p` at most once (`a06` C6) |
+| Out-of-order outcomes | LOW tuples: the totals are the same in either order (`a02` L9). **MEDIUM / HIGH tuples: order-dependent** — success-then-failure leaves 1 unit, failure-then-success 0 (`a02` L26, Redis `a05` Q7; F116-01). |
+| Multiple workers finalizing one attempt | one Lua script per completion; 8 concurrent duplicates of one success with ONE pending reservation resolve it once (`a06` C6). With two or more pending reservations of the tuple a duplicate resolves the next one (F116-01). |
 | Result after expiry | as delayed; never credited into a new epoch (epoch id check) |
 | False trusted-session labels | the trusted flag plays **no** role in OAAA (same rule for trusted and untrusted); S0 trusted-advisory spray unchanged |
 | One success clearing other accounts' history | impossible: a success returns units of its own tuple only; S0 sets, WATCH flags, K4/K5 scores and persisted blocks are never cleared |
@@ -147,7 +147,7 @@ failure) or receives the S0 candidate.
 * **`pre+out` Hosts (the documented flow):** no new call, no new field. The Host keeps calling `checkOnly`, verifies, then `recordFailure` /
   `recordSuccess` with the **same context**. A context that differs between the two commands is simply not paired (fail-closed: the unit stays
   spent).
-* **`pre`-only Hosts:** no outcome → no credit → OAAA never grants → identical to S0 (measured: every `pre` cell).
+* **`pre`-only Hosts:** an isolated pre-only Host (no outcome-reporting traffic on the same scope) earns no credit and stays at S0 (every `pre` cell). **Corrected after F116-03:** a pre-only route that shares a scope with credited `pre+out` traffic is admitted from that credit where S0 denies, and its units stay spent until the epoch ends (`a02` L27: 2 admitted vs 0; Redis `a05` Q8; public API `a07` H3; gate X3 FAIL). OAAA cannot tell which route will report an outcome, and this study does not invent Host-intent detection.
 * **record-only (`out`) Hosts:** no pre-verification protection exists in S0 either; OAAA only changes the decision returned to the outcome
   command (successes never get correlation blocks; failures need a unit).
 * No Laravel / framework, no JavaScript, no WebAuthn, no external service, no client fingerprint proof; Native PHP through `RateLimiterInterface::limit()`.
@@ -176,8 +176,8 @@ failure) or receives the S0 candidate.
 | I1 | A scope with no Host-verified success of any account in the current or previous 600 s window grants nothing: pure attackers are S0 | matrix: every attack cell without own successes; `a02` L1 |
 | I2 | At most 2 units in use per scope epoch, 6 per scope day, 12 per 600 s and 48 per day globally — under any concurrency | `a02` L2/L12/L13, `a06` C1–C5 |
 | I3 | A reservation is all-or-nothing across every tier of the request | `a02` L21, `a06` C3 |
-| I4 | A unit is returned only by a Host success of the same tuple, once, into the same epoch, current generation only | `a02` L4–L11, `a03` R2, `a06` C6 |
-| I5 | `pre`-only, account-less, `API_OVERUSE` and capability-less stores are byte-identical to S0 | matrix bit strings, `a02` L17–L19 |
+| I4 | A unit is returned only by a Host success of the same tuple, into the same epoch, current generation only — **per tuple, not per attempt** (F116-01: replays and reordering are not attempt-idempotent) | `a02` L4–L11, L24–L26, `a03` R2, `a06` C6, `a05` Q7 |
+| I5 | **Isolated** `pre`-only histories, account-less, `API_OVERUSE` and capability-less stores are byte-identical to S0; a pre-only route sharing a credited scope is NOT (F116-03) | matrix bit strings, `a02` L17–L19, L27, `a05` Q8, `a07` H3 |
 | I6 | Every OAAA key has a fixed TTL ≤ 86 400 s; credit sets ≤ 2 members; tuples ≤ granted reservations | `a04` S1/S2, `a05` T1 |
 | I7 | No public contract change other than the one optional interface (study tree only) and the opt-in | static check of the committed patch (`a04` P1) |
 
@@ -196,3 +196,19 @@ failure) or receives the S0 candidate.
 * **Outage.** The bound is a healthy-backend property (DEC-015 degraded ALLOW is unchanged).
 * **Rollback / mixed version.** OAAA admits requests S0 would have blocked, so the S0-family state written afterwards differs; "no exception"
   is not "state parity" (#115 F115-01). Measured in `a04` R1–R4 and `a05` P3/P4.
+
+## 5. Corrections after Direct Lead Review 5512846831 (PR #116, 2026-10-14)
+
+This contract was committed before the run (`d7c8623`); the corrections below are made in place and listed here so nothing is hidden.
+
+* **F116-01 (replay).** The tuple is a fungible per-tuple counter, not an attempt identity. Claims of "single-use", "replay-safe" and
+  "exact whatever the order" were too broad and are corrected in §2.4 / §2.6 / I4. Measured: a replayed success resolves another pending
+  attempt (L24), a success with no new successful attempt returns a recorded failure (L25), MEDIUM outcome order changes the result (L26),
+  identically on Redis (Q7). Attempt-level idempotency requires an attempt-bound identity: **CONTRACT_CHANGE_REQUIRED**, recorded as a distinct
+  blocker. No production API is designed here.
+* **F116-02 (Lua partial writes).** "Validate then write / no partial write" did not hold for wrong-type tuple / credit keys: Redis does not
+  roll back writes made before a script error. The isolated patch now checks the TYPE of every tuple, tier and credit key and the integer form
+  of the tuple's pending fields before the first write (re-pinned; the pipeline is unchanged). Measured on real Redis: the current patch leaves
+  every involved key unchanged (`a05` Q6); the superseded `0df807f` adapter left a created tier behind after a failed reservation and refunded
+  a unit before a failed completion (`a08`). The claim now reads "for the malformed-state cases probed in Q3 / Q6".
+* **F116-03 (pre-only).** "Pre-only Hosts = S0" holds for isolated histories only; mixed flows on a shared scope differ (§2.7, I5).

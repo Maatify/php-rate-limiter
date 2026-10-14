@@ -28,6 +28,11 @@ declare(strict_types=1);
 //   L21 all-or-nothing: K1 has credit, K2 has none -> refused and K1 keeps 0 units (contrast #115 G06 C4)
 //   L22 pre+out pairing: churn fires on both commands, exactly one unit is spent
 //   L23 record-only failure: takes a unit (unpaired), refused once the scope is spent
+//   --- added after Lead review F116-01 / F116-03 (not pre-registered; the gates are X1 / X3 in report.php) ---
+//   L24 two pending reservations of ONE tuple, one genuine success, the success replayed before the second attempt's failure
+//   L25 a success replayed with nothing pending and a recorded failure of the same tuple (no new successful attempt)
+//   L26 MEDIUM / HIGH tuple: two pending attempts, one success and one failure, both orders
+//   L27 mixed flows on one scope: credit created by pre+out traffic, then a pre-only route (no outcome ever) on the same scope
 require dirname(__DIR__) . '/lib/oaaa.php';
 
 use Maatify\RateLimiter\DTO\RateLimitContextDTO;
@@ -183,7 +188,7 @@ $units[] = $u($lab, $k7['spray']);
 $seq .= $cmd($lab, $c, 'ok');                                         // again: nothing left
 $units[] = $u($lab, $k7['spray']);
 emit('A02.L7.replayed-success', ['arm' => $arm, 'seq' => $seq, 'unitsAfterEachStep' => $units]);
-OaaaAsserts::check('A02', 'L7 ' . ($cand ? 'a replayed success returns nothing when nothing of its tuple is outstanding, returns at most the recorded failures of the SAME tuple (here 1), and a further replay returns nothing; units are never negative' : 'S0: every attempt denied'), $cand
+OaaaAsserts::check('A02', 'L7 ' . ($cand ? 'CHARACTERISATION (not a safety claim, F116-01): a replayed success with nothing outstanding returns nothing, but after a new recorded failure a replayed success with NO new successful attempt returns that failure of the SAME tuple (units 1 -> 0); a further replay returns nothing; units never negative' : 'S0: every attempt denied'), $cand
     ? $units === [1, 0, 0, 1, 0, 0]
     : str_starts_with($seq, 'B-'), ['seq' => $seq, 'units' => $units]);
 
@@ -381,5 +386,66 @@ for ($i = 0; $i < 4; $i++) {
 }
 emit('A02.L23.record-only', ['arm' => $arm, 'seq' => $seq, 'churnUnits' => $u($lab, $k23['churn'])]);
 OaaaAsserts::check('A02', 'L23 ' . ($cand ? 'record-only failures firing churn take one unit each (2) and then receive the S0 block decision' : 'S0: record-only failures from the 3rd fingerprint on receive the block decision'), $cand ? $seq === 'aaBB' && $u($lab, $k23['churn']) === 2 : $seq === 'BBBB', ['seq' => $seq, 'units' => $u($lab, $k23['churn'])]);
+
+// L24 — two pending reservations of ONE MEDIUM tuple (own UA: only the K1 spray scope fires), one genuine success, the same success replayed
+// by the Host BEFORE the second attempt's failure arrives, then that failure. Correct per-attempt accounting would end at 1 unit spent.
+$lab = oaaaLab();
+$saturate($lab, '10.2.30.1', 'l24');
+$k24 = $k($lab, $ctx('10.2.30.1', 'x'));
+$c = $ctx('10.2.30.1', 'l24col', 'l24fp', 131);
+$steps = [$cmd($lab, $c, 'check'), $cmd($lab, $c, 'check')];
+$u24 = [$u($lab, $k24['spray'])];
+$steps[] = $cmd($lab, $c, 'ok');                                   // attempt 1 succeeded
+$u24[] = $u($lab, $k24['spray']);
+$steps[] = $cmd($lab, $c, 'ok');                                   // the SAME success replayed (Host bug)
+$u24[] = $u($lab, $k24['spray']);
+$steps[] = $cmd($lab, $c, 'fail');                                 // attempt 2's real failure
+$u24[] = $u($lab, $k24['spray']);
+$l24 = ['steps' => implode('', $steps), 'verifierReach' => 2, 'genuineFailures' => 1, 'unitsAfterEachStep' => $u24, 'correctFinalUnits' => 1, 'attemptLevelCorrect' => $cand ? end($u24) === 1 : null];
+emit('A02.L24.two-pending-replayed-success', ['arm' => $arm] + $l24);
+// L25 — nothing pending, one recorded failure, a success replayed twice with no new successful attempt.
+$lab = oaaaLab();
+$saturate($lab, '10.2.31.1', 'l25');
+$k25 = $k($lab, $ctx('10.2.31.1', 'x'));
+$c = $ctx('10.2.31.1', 'l25col', 'l25fp', 132);
+$seq = $attempt($lab, $c, 'fail');
+$u25 = [$u($lab, $k25['spray'])];
+$seq .= $cmd($lab, $c, 'ok') . $cmd($lab, $c, 'ok');
+$u25[] = $u($lab, $k25['spray']);
+$l25 = ['seq' => $seq, 'unitsAfterFailure' => $u25[0], 'unitsAfterTwoReplayedSuccesses' => $u25[1], 'correctFinalUnits' => 1, 'attemptLevelCorrect' => $cand ? $u25[1] === 1 : null];
+emit('A02.L25.replayed-success-no-new-attempt', ['arm' => $arm] + $l25);
+// L26 — MEDIUM tuple, two pending, one success + one failure in both orders. Correct accounting: 1 unit spent in BOTH orders.
+$l26 = [];
+foreach (['success-first' => ['ok', 'fail'], 'failure-first' => ['fail', 'ok']] as $order => $outs) {
+    $lab = oaaaLab();
+    $saturate($lab, '10.2.32.1', 'l26');
+    $kk = $k($lab, $ctx('10.2.32.1', 'x'));
+    $c = $ctx('10.2.32.1', 'l26col', 'l26fp', 133);
+    $pre = $cmd($lab, $c, 'check') . $cmd($lab, $c, 'check');
+    $cmd($lab, $c, $outs[0]);
+    $cmd($lab, $c, $outs[1]);
+    $l26[$order] = ['pre' => $pre, 'units' => $u($lab, $kk['spray'])];
+}
+$l26['orderIndependent'] = $cand ? $l26['success-first']['units'] === $l26['failure-first']['units'] : null;
+$l26['attemptLevelCorrect'] = $cand ? $l26['success-first']['units'] === 1 && $l26['failure-first']['units'] === 1 : null;
+emit('A02.L26.medium-reorder', ['arm' => $arm] + $l26);
+if ($cand) {
+    OaaaAsserts::check('A02', 'L24/L25/L26 CHARACTERISATION (F116-01): tuple-fungible counters are NOT attempt-level idempotent — a replayed success can resolve another pending attempt (L24 ends at ' . end($u24) . ' instead of 1), a success with no new successful attempt returns a recorded failure (L25 ends at ' . $u25[1] . ' instead of 1), and MEDIUM outcome order changes the result (L26 ' . $l26['success-first']['units'] . ' vs ' . $l26['failure-first']['units'] . ')', ! $l24['attemptLevelCorrect'] && ! $l25['attemptLevelCorrect'] && ! $l26['orderIndependent'], ['L24' => $u24, 'L25' => $u25, 'L26' => [$l26['success-first']['units'], $l26['failure-first']['units']]]);
+}
+
+// L27 — mixed flows on one scope (F116-03): pre+out traffic of the office creates credit; then a pre-only route on the SAME policy and scope
+// (8 new subjects, checkOnly only, never an outcome). Compared with S0 request for request in report.php.
+$lab = oaaaLab();
+$office = $saturate($lab, '10.2.33.1', 'l27');
+$k27 = $k($lab, $ctx('10.2.33.1', 'x'));
+$pre = '';
+for ($i = 0; $i < 8; $i++) {
+    $lab->at(10 + $i);
+    $pre .= $cmd($lab, $ctx('10.2.33.1', "l27p$i"), 'check');
+}
+emit('A02.L27.mixed-flow-pre-only', ['arm' => $arm, 'office' => $office, 'preOnly' => $pre, 'admittedPreOnly' => substr_count($pre, 'a'), 'unitsSpentNeverResolved' => $u($lab, $k27['spray'])]);
+if ($cand) {
+    OaaaAsserts::check('A02', 'L27 CHARACTERISATION (F116-03): a pre-only route sharing a scope with credited pre+out traffic is NOT S0: it is admitted ' . substr_count($pre, 'a') . ' times where S0 denies, and the units stay spent (never resolved)', substr_count($pre, 'a') > 0 && $u($lab, $k27['spray']) === substr_count($pre, 'a'), ['preOnly' => $pre, 'units' => $u($lab, $k27['spray'])]);
+}
 
 OaaaAsserts::finish();

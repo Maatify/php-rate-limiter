@@ -1,0 +1,2 @@
+{"s":"A08.provenance","runtime":"SUPERSEDED_CANDIDATE_0df807f","redisAdapterSha256":"a8af48c7661f1a466fe12416530598f7677583ae3683f7dd4a1eb3456002977f"}
+{"s":"A08.F116-02.superseded-lua-partial-write","reserveTupleIsString":{"error":"Maatify\\RateLimiter\\Exception\\RateLimiterException","unchanged":false,"tierTypeAfter":"hash","globalTypeAfter":"none"},"completeCreditIsString":{"error":"Maatify\\RateLimiter\\Exception\\RateLimiterException","unchanged":false,"tierUnitsBefore":1,"tierUnitsAfter":0}}

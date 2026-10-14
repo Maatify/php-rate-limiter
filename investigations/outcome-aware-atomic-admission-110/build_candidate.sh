@@ -19,9 +19,9 @@ IFACE=src/Repository/OutcomeAdmissionStoreInterface.php
 PIPELINE_BEFORE=${OAAA_TEST_EXPECT_HASH:-4b259d3397adf492d9767572141c9bdf5efc5744886bce63592ae9f36b95f4fc} # override: run.sh self-test only
 REDIS_BEFORE=520574d4b0758470c0fc36ec304001825cf20a183e28bf6a999bcd41d54297a4
 PATCH=${OAAA_TEST_PATCH_FILE:-$here/patches/oaaa-candidate.patch}                                   # override: run.sh self-test only
-PATCH_SHA256=e8032f5de23e7185d49daa371c08dc56d7edf723268b24e2d0ece3ff24639aac
+PATCH_SHA256=04a89f1db689a2382b7a4f68c72f11a7606002dc64acf773cbd68afd9441fba7
 PIPELINE_AFTER=2af6f5599c809a829c0a7c792e35e49dc9e777482f2560250fa60f59067ffa20
-REDIS_AFTER=a8af48c7661f1a466fe12416530598f7677583ae3683f7dd4a1eb3456002977f
+REDIS_AFTER=c57320d945cfca96bc17b702fd67c613a347bf0d764e4d4d091951c3c4aaee90
 IFACE_AFTER=8db98be51202774d48f540e577b8619895bf6046f45ae3b8e00d8f16058942e2
 SKIP_PIN=${OAAA_TEST_SKIP_PIN:-0} # override: run.sh self-test only (lets a drifted patch reach `git apply`)
 [[ -f "$PATCH" ]] || { echo "PATCH MISSING: $PATCH" >&2; exit 5; }

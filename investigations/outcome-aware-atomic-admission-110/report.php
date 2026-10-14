@@ -21,35 +21,37 @@ if (! is_dir($in) || ! is_dir($out)) {
 const ARMS = OAAA_ARMS_LIST;
 const FILES = ['a01_matrix', 'a02_lifecycle', 'a03_rotation_ipv6', 'a04_failure_rollback_bounds'];
 const REDIS_FILES = ['a05_redis', 'a06_concurrency', 'a07_host_probe'];
+/** F116-02 historical probe of the SUPERSEDED 0df807f adapter (one runtime, labelled PREFIX). */
+const PREFIX_FILE = 'a08_prefix_lua_probe';
 const BASE_SHA = '72f6dea8ab0729e63492b622e682e334c527c966';
 const PINNED = [
     'S0' => ['pipeline' => '4b259d3397adf492d9767572141c9bdf5efc5744886bce63592ae9f36b95f4fc', 'redis' => '520574d4b0758470c0fc36ec304001825cf20a183e28bf6a999bcd41d54297a4', 'iface' => false],
-    'OAAA' => ['pipeline' => '2af6f5599c809a829c0a7c792e35e49dc9e777482f2560250fa60f59067ffa20', 'redis' => 'a8af48c7661f1a466fe12416530598f7677583ae3683f7dd4a1eb3456002977f', 'iface' => true],
+    'OAAA' => ['pipeline' => '2af6f5599c809a829c0a7c792e35e49dc9e777482f2560250fa60f59067ffa20', 'redis' => 'c57320d945cfca96bc17b702fd67c613a347bf0d764e4d4d091951c3c4aaee90', 'iface' => true],
 ];
 const PATCH_FILE = __DIR__ . '/patches/oaaa-candidate.patch';
-const PATCH_SHA256 = 'e8032f5de23e7185d49daa371c08dc56d7edf723268b24e2d0ece3ff24639aac';
+const PATCH_SHA256 = '04a89f1db689a2382b7a4f68c72f11a7606002dc64acf773cbd68afd9441fba7';
 const S0_GOLDEN = __DIR__ . '/../guarded-network-headroom-110/expected/g01_matrix.S0.jsonl';
 const GOLDEN_SHA256 = '6958858d2012f79e392c6acdf52cc4488c8f6e99b8ecab6cf229e66d26fd9caa';
 
 /** Required assertions per file: identifier => count, per arm. */
 const REQUIRED = [
     'a01_matrix' => ['S0' => ['S0 D2' => 1, 'S0 SP1n/SP3/SP6' => 1, 'S0 L1' => 1, 'S0 ABA_A' => 1, 'S0 TMSd' => 1, 'S0 Nu4' => 1], 'OAAA' => []],
-    'a02_lifecycle' => ['S0' => ['L1' => 1, 'L2' => 1, 'L3' => 1, 'L4' => 1, 'L5' => 1, 'L6' => 1, 'L7' => 1, 'L8' => 1, 'L9' => 1, 'L10' => 1, 'L11' => 1, 'L12' => 1, 'L13' => 1, 'L14' => 1, 'L17/L18' => 1, 'L20' => 1, 'L21' => 1, 'L22' => 1, 'L23' => 1], 'OAAA' => ['L1' => 1, 'L2' => 1, 'L3' => 1, 'L4' => 1, 'L5' => 1, 'L6' => 1, 'L7' => 1, 'L8' => 1, 'L9' => 1, 'L10' => 1, 'L11' => 1, 'L12' => 1, 'L13' => 1, 'L14' => 1, 'L17/L18' => 1, 'L20' => 1, 'L21' => 1, 'L22' => 1, 'L23' => 1]],
+    'a02_lifecycle' => ['S0' => ['L1' => 1, 'L2' => 1, 'L3' => 1, 'L4' => 1, 'L5' => 1, 'L6' => 1, 'L7' => 1, 'L8' => 1, 'L9' => 1, 'L10' => 1, 'L11' => 1, 'L12' => 1, 'L13' => 1, 'L14' => 1, 'L17/L18' => 1, 'L20' => 1, 'L21' => 1, 'L22' => 1, 'L23' => 1], 'OAAA' => ['L1' => 1, 'L2' => 1, 'L3' => 1, 'L4' => 1, 'L5' => 1, 'L6' => 1, 'L7' => 1, 'L8' => 1, 'L9' => 1, 'L10' => 1, 'L11' => 1, 'L12' => 1, 'L13' => 1, 'L14' => 1, 'L17/L18' => 1, 'L20' => 1, 'L21' => 1, 'L22' => 1, 'L23' => 1, 'L24/L25/L26' => 1, 'L27' => 1]],
     'a03_rotation_ipv6' => ['S0' => ['R2' => 1, 'R3' => 1, 'H1' => 1, 'H2' => 1], 'OAAA' => ['R2' => 1, 'R3' => 1, 'H1' => 1, 'H2' => 1]],
     'a04_failure_rollback_bounds' => ['S0' => ['F1' => 1], 'OAAA' => ['S1/S2' => 1, 'F1' => 1, 'R1' => 1, 'R2' => 1, 'R3' => 1, 'R4' => 1, 'R5' => 1]],
-    'a05_redis' => ['S0' => ['Q1' => 1, 'Q2' => 1], 'OAAA' => ['Q1' => 1, 'Q2' => 1, 'Q3' => 1, 'Q4' => 1, 'Q5' => 1]],
+    'a05_redis' => ['S0' => ['Q1' => 1, 'Q2' => 1, 'Q7' => 1], 'OAAA' => ['Q1' => 1, 'Q2' => 1, 'Q3' => 1, 'Q4' => 1, 'Q5' => 1, 'Q6' => 1, 'Q7' => 1]],
     'a06_concurrency' => ['S0' => ['C1' => 2, 'C2' => 2, 'C3' => 2, 'C4' => 2, 'C5' => 2, 'C6' => 2, 'C8' => 2, 'T1' => 1], 'OAAA' => ['C1' => 2, 'C2' => 2, 'C3' => 2, 'C4' => 2, 'C5' => 2, 'C6' => 2, 'C7' => 1, 'C8' => 2, 'T1' => 1]],
     'a07_host_probe' => ['S0' => ['H0' => 1, 'H1' => 1, 'H2' => 1], 'OAAA' => ['H0' => 1, 'H1' => 1, 'H2' => 1]],
 ];
 /** Data rows each file must carry ('*' every arm, or one arm). */
 const DATA_ROWS = [
     'a01_matrix' => ['*' => ['A01.matrix', 'A01.stream']],
-    'a02_lifecycle' => ['*' => ['A02.L1.pure-attacker', 'A02.L2.credit-gating', 'A02.L3.pre-only', 'A02.L4.success-returns', 'A02.L5.same-tuple-refund', 'A02.L6.cross-account', 'A02.L7.replayed-success', 'A02.L8.duplicate-failure', 'A02.L9.out-of-order', 'A02.L10.late-completion', 'A02.L11.epoch-rollover', 'A02.L12.day-tier', 'A02.L13.global-tier', 'A02.L14.own-credit-cap', 'A02.L15.trusted-advisory', 'A02.L16.persisted-block', 'A02.L17.api-overuse', 'A02.L18.login-anon', 'A02.L19.no-capability', 'A02.L20.cancel', 'A02.L21.all-or-nothing', 'A02.L22.pairing', 'A02.L23.record-only']],
+    'a02_lifecycle' => ['*' => ['A02.L1.pure-attacker', 'A02.L2.credit-gating', 'A02.L3.pre-only', 'A02.L4.success-returns', 'A02.L5.same-tuple-refund', 'A02.L6.cross-account', 'A02.L7.replayed-success', 'A02.L8.duplicate-failure', 'A02.L9.out-of-order', 'A02.L10.late-completion', 'A02.L11.epoch-rollover', 'A02.L12.day-tier', 'A02.L13.global-tier', 'A02.L14.own-credit-cap', 'A02.L15.trusted-advisory', 'A02.L16.persisted-block', 'A02.L17.api-overuse', 'A02.L18.login-anon', 'A02.L19.no-capability', 'A02.L20.cancel', 'A02.L21.all-or-nothing', 'A02.L22.pairing', 'A02.L23.record-only', 'A02.L24.two-pending-replayed-success', 'A02.L25.replayed-success-no-new-attempt', 'A02.L26.medium-reorder', 'A02.L27.mixed-flow-pre-only']],
     'a03_rotation_ipv6' => ['*' => ['A03.R1.rotation', 'A03.R2.units-across-rotation', 'A03.R3.credit-across-rotation', 'A03.R4.outer-only-single-device', 'A03.H.ipv6']],
     'a04_failure_rollback_bounds' => ['*' => ['A04.S1.storage', 'A04.P1.public-surface', 'A04.F1.oaaa-operation-failure', 'A04.F2a.store-outage', 'A04.F2b.store-outage'], 'S0' => ['A04.R.reference'], 'OAAA' => ['A04.R1.rollback', 'A04.R2.mixed-version', 'A04.R3.s0-family-state-parity', 'A04.R4.rollback-decision-parity', 'A04.R5.roll-forward']],
-    'a05_redis' => ['*' => ['A05.Q1.parity', 'A05.Q2.key-hygiene'], 'S0' => ['A05.Q.reference'], 'OAAA' => ['A05.Q3.malformed-state', 'A05.Q4.rollback-redis', 'A05.Q5.mixed-version-redis']],
+    'a05_redis' => ['*' => ['A05.Q1.parity', 'A05.Q2.key-hygiene', 'A05.Q7.replay-reorder-redis', 'A05.Q8.mixed-flow-redis'], 'S0' => ['A05.Q.reference'], 'OAAA' => ['A05.Q3.malformed-state', 'A05.Q4.rollback-redis', 'A05.Q5.mixed-version-redis', 'A05.Q6.wrong-type-no-partial-write']],
     'a06_concurrency' => ['*' => ['A06.C1.burst-one-unit-left', 'A06.C2.burst-no-unit-left', 'A06.C3.k1-k2-all-or-nothing', 'A06.C4.global-tier-burst', 'A06.C5.successes-racing-prechecks', 'A06.C6.replayed-completion', 'A06.C8.rotation-active-reservations', 'A06.T1.ttl-hygiene'], 'OAAA' => ['A06.C7.expiry-during-verification']],
-    'a07_host_probe' => ['*' => ['A07.H1.host-pre-out', 'A07.H2.host-pre-only']],
+    'a07_host_probe' => ['*' => ['A07.H1.host-pre-out', 'A07.H2.host-pre-only', 'A07.H3.host-mixed-routes']],
 ];
 
 $problems = [];
@@ -91,6 +93,19 @@ if ($redisStatus === 'RAN') {
 foreach ($files as $f) {
     foreach (ARMS as $arm) {
         $load($f, $arm);
+    }
+}
+$prefixRows = [];
+if ($redisStatus === 'RAN') {
+    $pp = "$in/" . PREFIX_FILE . '.PREFIX.jsonl';
+    foreach (is_file($pp) ? file($pp, FILE_IGNORE_NEW_LINES | FILE_SKIP_EMPTY_LINES) : [] as $line) {
+        $row = json_decode($line, true);
+        if (is_array($row) && isset($row['s'])) {
+            $prefixRows[$row['s']] = $row;
+        }
+    }
+    if (($prefixRows['A08.provenance']['redisAdapterSha256'] ?? '') !== 'a8af48c7661f1a466fe12416530598f7677583ae3683f7dd4a1eb3456002977f' || ! isset($prefixRows['A08.F116-02.superseded-lua-partial-write'])) {
+        $problems[] = PREFIX_FILE . '.PREFIX.jsonl missing, malformed, or not from the superseded 0df807f adapter';
     }
 }
 if (! is_file(PATCH_FILE) || hash_file('sha256', PATCH_FILE) !== PATCH_SHA256) {
@@ -226,7 +241,7 @@ $gate = static function (string $id, string $group, string $status, string $rule
 $problems = array_values(array_unique($problems));
 if ($problems !== []) {
     file_put_contents("$out/evidence_problems.txt", implode("\n", $problems) . "\n");
-    foreach (['E1', 'E2', 'E3', 'E4', 'E5', 'E6', 'F1', 'F2', 'O1', 'O2', 'O3', 'O4', 'O5', 'O6', 'O7a', 'O7b', 'O7c', 'O7d', 'O8', 'O9', 'O10'] as $g) {
+    foreach (['E1', 'E2', 'E3', 'E4', 'E5', 'E6', 'F1', 'F2', 'O1', 'O2', 'O3', 'O4', 'O5', 'O6', 'O7a', 'O7b', 'O7c', 'O7d', 'O8', 'O9', 'O10', 'X1', 'X2', 'X3'] as $g) {
         $gate($g, '-', 'UNPROVEN', 'evidence problems: see evidence_problems.txt');
     }
     $gates[] = ['gate' => 'DECISION', 'group' => '-', 'status' => 'UNPROVEN', 'rule' => 'evidence problems'];
@@ -316,7 +331,7 @@ foreach ($e5ids as $f => $ids) {
     }
 }
 $e5status = in_array(null, $e5, true) ? 'UNPROVEN' : (in_array(false, $e5, true) ? 'FAIL' : 'PASS');
-$gate('E5', 'forbidden', $e5status, 'every replay / duplicate / late / cross-account / out-of-order / all-or-nothing assertion (a02) and every real-Redis concurrency assertion (a06) holds on OAAA', ['assertions' => $e5, 'redis' => $redisStatus]);
+$gate('E5', 'forbidden', $e5status, 'no UNBOUNDED replay- or concurrency-based admission: the a02 / a06 assertions as pre-registered hold (bounded per tuple). Attempt-level replay idempotency is NOT claimed here: see X1 (F116-01)', ['assertions' => $e5, 'redis' => $redisStatus]);
 // E6 aggregate
 $multi = array_filter($gated, static fn(array $c): bool => $c['scopes'] > 1);
 $e6bad = array_keys(array_filter($multi, static fn(array $c): bool => $c['aggMax600'] > OAAA_PARAMS['globalEpochUnits'] || $c['delta'] > OAAA_PARAMS['globalDayUnits']));
@@ -386,7 +401,7 @@ foreach ($M['S0'] as $k => $s) {
         $o1[] = $k;
     }
 }
-$gate('O1', 'operational', $o1 === [] ? 'PASS' : 'FAIL', 'every pre-only cell is request-for-request identical to S0', ['differing' => $o1]);
+$gate('O1', 'operational', $o1 === [] ? 'PASS' : 'FAIL', 'every pre-only cell of an ISOLATED history (no outcome-reporting traffic on the same scope) is request-for-request identical to S0; mixed flows on a shared scope: see X3 (F116-03)', ['differing' => $o1]);
 $o2 = [];
 foreach ($M['S0'] as $k => $s) {
     $shape = explode('|', $k)[1];
@@ -463,13 +478,46 @@ $redisClass = 'Maatify\\RateLimiter\\Repository\\Redis\\RedisFullCapabilityStore
 $expected = [$redisClass => ['added' => ['public completeAdmission(string $tupleKey,string $outcome,array $tierKeys,int $refundFailures,array $creditKeys,string $creditMember,int $creditCap,int $creditTtlSeconds)', 'public reserveAdmission(string $tupleKey,int $tupleTtlSeconds,array $tiers)'], 'removed' => [], 'interfacesAdded' => ['Maatify\\RateLimiter\\Repository\\OutcomeAdmissionStoreInterface']]];
 $gate('O10', 'operational', $surfaceDiff === $expected && $p1s['experimentalInterface'] === null && $p1o['experimentalInterface'] !== null ? 'PASS' : 'FAIL', 'public surface: the patch adds only the experimental interface and its two methods on the Redis adapter; EvaluationPipeline, engine, command, context, result and Builder surfaces unchanged', ['diff' => $surfaceDiff]);
 
+// ---- Gates added after Direct Lead Review 5512846831 (F116-01 / F116-02 / F116-03). NOT pre-registered; they never relax a registered gate.
+$l24 = $data['a02_lifecycle']['OAAA']['A02.L24.two-pending-replayed-success'][0];
+$l25 = $data['a02_lifecycle']['OAAA']['A02.L25.replayed-success-no-new-attempt'][0];
+$l26 = $data['a02_lifecycle']['OAAA']['A02.L26.medium-reorder'][0];
+$x1 = ['L24 two pending + replayed success: final units (correct 1)' => end($l24['unitsAfterEachStep']), 'L25 replayed success, no new attempt (correct 1)' => $l25['unitsAfterTwoReplayedSuccesses'], 'L26 MEDIUM order (correct 1 / 1)' => [$l26['success-first']['units'], $l26['failure-first']['units']]];
+if ($redisStatus === 'RAN') {
+    $x1['Redis parity of L24 / L25 / L26 (Q7)'] = $okOf('a05_redis', 'OAAA', 'Q7');
+}
+$x1ok = $l24['attemptLevelCorrect'] === true && $l25['attemptLevelCorrect'] === true && $l26['attemptLevelCorrect'] === true;
+$gate('X1', 'post-review', $x1ok ? 'PASS' : 'FAIL', 'F116-01 attempt-level replay idempotency: a replayed or reordered outcome never resolves another attempt or returns a unit without a new successful attempt (tuple-fungible counters cannot provide it: CONTRACT_CHANGE_REQUIRED for an attempt-bound identity)', $x1);
+if ($redisStatus === 'RAN') {
+    $q6 = $data['a05_redis']['OAAA']['A05.Q6.wrong-type-no-partial-write'][0]['probes'];
+    $pre = $prefixRows['A08.F116-02.superseded-lua-partial-write'];
+    $x2ok = $okOf('a05_redis', 'OAAA', 'Q6') === true && array_reduce($q6, static fn(bool $c, array $r): bool => $c && $r['unchanged'] === true, true);
+    $gate('X2', 'post-review', $x2ok ? 'PASS' : 'FAIL', 'F116-02 no partial write: on the CURRENT patch every wrong-type / malformed key case is refused before any write (all involved keys unchanged); the superseded 0df807f adapter is recorded for comparison', ['current' => array_map(static fn(array $r): bool => $r['unchanged'], $q6), 'superseded0df807f' => ['reserveTupleIsString unchanged' => $pre['reserveTupleIsString']['unchanged'], 'tier left behind' => $pre['reserveTupleIsString']['tierTypeAfter'], 'completeCreditIsString unchanged' => $pre['completeCreditIsString']['unchanged'], 'tier units before -> after the failed completion' => $pre['completeCreditIsString']['tierUnitsBefore'] . ' -> ' . $pre['completeCreditIsString']['tierUnitsAfter']]]);
+} else {
+    $gate('X2', 'post-review', 'UNPROVEN', 'real Redis did not run');
+}
+$l27s = $data['a02_lifecycle']['S0']['A02.L27.mixed-flow-pre-only'][0];
+$l27o = $data['a02_lifecycle']['OAAA']['A02.L27.mixed-flow-pre-only'][0];
+$x3 = ['reference L27 pre-only admitted S0 / OAAA' => [$l27s['admittedPreOnly'], $l27o['admittedPreOnly']], 'reference units spent, never resolved' => $l27o['unitsSpentNeverResolved']];
+$x3same = $l27s['preOnly'] === $l27o['preOnly'];
+if ($redisStatus === 'RAN') {
+    $q8s = $data['a05_redis']['S0']['A05.Q8.mixed-flow-redis'][0];
+    $q8o = $data['a05_redis']['OAAA']['A05.Q8.mixed-flow-redis'][0];
+    $h3s = $data['a07_host_probe']['S0']['A07.H3.host-mixed-routes'][0];
+    $h3o = $data['a07_host_probe']['OAAA']['A07.H3.host-mixed-routes'][0];
+    $x3 += ['Redis Q8 pre-only admitted S0 / OAAA' => [$q8s['admittedPreOnly'], $q8o['admittedPreOnly']], 'public API H3 pre-only route verified S0 / OAAA' => [$h3s['preOnlyReachedVerifier'], $h3o['preOnlyReachedVerifier']]];
+    $x3same = $x3same && $q8s['preOnly'] === $q8o['preOnly'] && $h3s['preOnlyRouteB'] === $h3o['preOnlyRouteB'];
+}
+$gate('X3', 'post-review', $x3same ? 'PASS' : 'FAIL', 'F116-03 a pre-only route sharing a scope with outcome-reporting traffic decides like S0 (it does not: credit from other traffic admits it and its units stay spent)', $x3);
+
 // Decision (pre-registered rule, SECURITY_ENVELOPE.md §3)
 $st = array_column($gates, 'status', 'gate');
 $forbidden = array_filter(['E4', 'E5', 'E6'], static fn(string $g): bool => $st[$g] === 'FAIL');
 $provisional = array_filter(['E1', 'E2', 'E3'], static fn(string $g): bool => $st[$g] === 'FAIL');
 $unproven = array_filter(['E1', 'E2', 'E3', 'E4', 'E5', 'E6'], static fn(string $g): bool => $st[$g] === 'UNPROVEN');
 $decision = $forbidden !== [] ? 'NO-GO' : ($provisional !== [] ? 'NO-GO' : ($unproven !== [] ? 'UNPROVEN' : 'GO_FOR_OWNER_RISK_REVIEW'));
-$gates[] = ['gate' => 'DECISION', 'group' => 'rule', 'status' => $decision, 'rule' => 'SECURITY_ENVELOPE.md §3', 'detail' => ['forbiddenFail' => array_values($forbidden), 'provisionalFail' => array_values($provisional), 'unproven' => array_values($unproven)]];
+$postReview = array_values(array_filter(['X1', 'X2', 'X3'], static fn(string $g): bool => $st[$g] !== 'PASS'));
+$gates[] = ['gate' => 'DECISION', 'group' => 'rule', 'status' => $decision, 'rule' => 'SECURITY_ENVELOPE.md §3 (the post-review gates X1-X3 are reported, never used to relax it)', 'detail' => ['forbiddenFail' => array_values($forbidden), 'provisionalFail' => array_values($provisional), 'unproven' => array_values($unproven), 'postReviewNotPass' => $postReview]];
 file_put_contents("$out/gates.jsonl", implode("\n", array_map(static fn(array $g): string => json_encode($g, JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNICODE), $gates)) . "\n");
 
 // ---------------------------------------------------------------------------------------------------------------------------------------
@@ -486,6 +534,8 @@ $md[] = '|---|---|---|---|';
 foreach ($gates as $g) {
     $md[] = "| {$g['gate']} | {$g['group']} | **{$g['status']}** | " . str_replace('|', '/', $g['rule']) . ' |';
 }
+$md[] = '';
+$md[] = 'Gates X1–X3 were added after the Direct Lead Review of PR #116 (F116-01 / F116-02 / F116-03); they are not pre-registered and never relax E1–E6.';
 $md[] = '';
 $md[] = 'E4 collapse cells: ' . ($collapse === [] ? 'none' : '`' . implode('`, `', $collapse) . '`') . '.';
 $md[] = '';
@@ -560,9 +610,17 @@ if ($redisStatus === 'RAN') {
     $md[] = '* Host probe pre+out: office legit denied S0 ' . $h['S0']['A07.H1.host-pre-out'][0]['legitDenied'] . ' / OAAA ' . $h['OAAA']['A07.H1.host-pre-out'][0]['legitDenied'] . ' of 40; co-located sprayer verified S0 ' . $h['S0']['A07.H1.host-pre-out'][0]['attackVerified'] . ' / OAAA ' . $h['OAAA']['A07.H1.host-pre-out'][0]['attackVerified'] . ' of 20; pre-only Host: identical (' . json_encode($h['S0']['A07.H2.host-pre-only'][0]['legitDenied'] === $h['OAAA']['A07.H2.host-pre-only'][0]['legitDenied'] && $h['S0']['A07.H2.host-pre-only'][0]['attackVerified'] === $h['OAAA']['A07.H2.host-pre-only'][0]['attackVerified']) . ').';
 }
 $md[] = '';
+$md[] = '### Post-review evidence (Direct Lead Review 5512846831)';
+$md[] = '';
+$md[] = '* X1 / F116-01 attempt-level replay idempotency: ' . json_encode($x1, JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNICODE) . '.';
+if ($redisStatus === 'RAN') {
+    $md[] = '* X2 / F116-02 no partial write: current patch ' . json_encode(array_map(static fn(array $r): bool => $r['unchanged'], $q6)) . '; superseded 0df807f adapter: failed reserve left a tier of type `' . $pre['reserveTupleIsString']['tierTypeAfter'] . '` behind, failed completion moved tier units ' . $pre['completeCreditIsString']['tierUnitsBefore'] . ' -> ' . $pre['completeCreditIsString']['tierUnitsAfter'] . '.';
+}
+$md[] = '* X3 / F116-03 mixed flows: ' . json_encode($x3, JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNICODE) . '.';
+$md[] = '';
 $md[] = "## 5. Decision (pre-registered rule): **$decision**";
 $md[] = '';
-$md[] = 'Forbidden-row FAILs: ' . ($forbidden === [] ? 'none' : implode(', ', $forbidden)) . '. Provisional-row FAILs: ' . ($provisional === [] ? 'none' : implode(', ', $provisional)) . '. UNPROVEN security rows: ' . ($unproven === [] ? 'none' : implode(', ', $unproven)) . '.';
+$md[] = 'Forbidden-row FAILs: ' . ($forbidden === [] ? 'none' : implode(', ', $forbidden)) . '. Provisional-row FAILs: ' . ($provisional === [] ? 'none' : implode(', ', $provisional)) . '. UNPROVEN security rows: ' . ($unproven === [] ? 'none' : implode(', ', $unproven)) . '. Post-review gates not PASS: ' . ($postReview === [] ? 'none' : implode(', ', $postReview)) . '.';
 file_put_contents("$out/summary.md", implode("\n", $md) . "\n");
 fwrite(STDOUT, "decision: $decision\n");
 exit(0);

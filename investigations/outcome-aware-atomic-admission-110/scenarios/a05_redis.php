@@ -10,6 +10,12 @@ declare(strict_types=1);
 //   Q3  malformed OAAA state is an explicit error (never a backend failure, never a silent zero) and leaves no partial write
 //   Q4  rollback on Redis: OAAA writes a spent, credited scope; the REAL unpatched S0 code (child process) continues on it
 //   Q5  mixed version on Redis: OAAA (in process) and the REAL S0 code (child) alternate per request on one scope
+//   --- added after Lead review F116 (not pre-registered; gates X1 / X2 / X3 in report.php) ---
+//   Q6  F116-02 wrong-type / malformed keys injected (owned, TTL-bearing): tuple key as a STRING on reserve, credit key as a STRING on a
+//       success completion, tier key as a SET on reserve, a non-integer pending field in the tuple on reserve — before / error / after of
+//       every involved key; no partial write allowed
+//   Q7  F116-01 replay / reorder sequences (L24, L25, L26) on real Redis, units read from Redis, parity with the reference store
+//   Q8  F116-03 mixed flows on one shared Redis scope: pre+out office, then a pre-only route
 require dirname(__DIR__, 2) . '/workstream-b-anti-evasion/lib/redis.php';
 require dirname(__DIR__) . '/lib/oaaa.php';
 
@@ -179,6 +185,108 @@ if ($cand) {
 } else {
     emit('A05.Q.reference', ['arm' => $arm, 'note' => 'malformed OAAA state, rollback and mixed version on Redis are measured on the candidate arm']);
 }
+
+// Q6 — F116-02 malformed / wrong-type keys (candidate only). A snapshot is the TYPE and full content of every involved key.
+if ($cand) {
+    $snapKey = static function (string $k) use ($ex): array {
+        $t = (string) $ex->execute(['TYPE', $k]);
+        $v = match ($t) {
+            'hash' => (array) $ex->execute(['HGETALL', $k]),
+            'set' => (static function (array $m): array {
+                sort($m);
+                return $m;
+            })((array) $ex->execute(['SMEMBERS', $k])),
+            'string' => (string) $ex->execute(['GET', $k]),
+            default => null,
+        };
+
+        return ['type' => $t, 'value' => $v];
+    };
+    $snap = static function (string $ns, array $logical) use ($snapKey, $physical): array {
+        $o = [];
+        foreach ($logical as $l) {
+            $o[$l] = $snapKey($physical($ns, $l));
+        }
+
+        return $o;
+    };
+    $q6 = [];
+    $store = wsbRedisPipeline($ex, 'oaaa:q6')['store'];
+    $call = static function (callable $f): ?string {
+        try {
+            $f();
+
+            return null;
+        } catch (\Throwable $e) {
+            return get_class($e) . ': ' . preg_replace('/script: \w+/', 'script', $e->getMessage());
+        }
+    };
+    $tier = ['key' => 'oaaa:v1:e:spray:q6s', 'previousKey' => null, 'cap' => 2, 'ttl' => 600, 'creditKeys' => []];
+    $glob = ['key' => 'oaaa:v1:g:e:q6', 'previousKey' => null, 'cap' => 12, 'ttl' => 600, 'creditKeys' => []];
+    // (a) tuple key is a STRING (TTL-bearing) on reserve
+    $ex->execute(['SET', $physical('oaaa:q6', 'q6tupleA'), 'not-a-hash', 'EX', '600']);
+    $keys = ['q6tupleA', $tier['key'], $glob['key']];
+    $before = $snap('oaaa:q6', $keys);
+    $err = $call(static fn() => $store->reserveAdmission('q6tupleA', 600, [$tier, $glob]));
+    $q6['reserve-tuple-is-string'] = ['error' => $err, 'unchanged' => $snap('oaaa:q6', $keys) === $before];
+    // (b) credit key is a STRING on a success completion whose tuple holds one pending reservation on tier T2 (u=1)
+    $t2 = 'oaaa:v1:e:spray:q6s2';
+    $store->reserveAdmission('q6tupleB', 600, [['key' => $t2, 'previousKey' => null, 'cap' => 2, 'ttl' => 600, 'creditKeys' => []]]);
+    $ex->execute(['SET', $physical('oaaa:q6', 'q6credit'), 'not-a-set', 'EX', '600']);
+    $keys = ['q6tupleB', $t2, 'q6credit'];
+    $before = $snap('oaaa:q6', $keys);
+    $err = $call(static fn() => $store->completeAdmission('q6tupleB', 'success', [$t2], 2, ['q6credit'], 'member', 2, 1200));
+    $q6['complete-credit-is-string'] = ['error' => $err, 'unchanged' => $snap('oaaa:q6', $keys) === $before, 'tierUnitsBefore' => (int) ($before[$t2]['value'][array_search('u', $before[$t2]['value'], true) + 1] ?? -1)];
+    // (c) tier key is a SET on reserve (the global tier, listed after a valid tier)
+    $ex->execute(['SADD', $physical('oaaa:q6', 'oaaa:v1:g:e:q6c'), 'x']);
+    $ex->execute(['EXPIRE', $physical('oaaa:q6', 'oaaa:v1:g:e:q6c'), '600']);
+    $keys = ['q6tupleC', 'oaaa:v1:e:spray:q6s3', 'oaaa:v1:g:e:q6c'];
+    $before = $snap('oaaa:q6', $keys);
+    $err = $call(static fn() => $store->reserveAdmission('q6tupleC', 600, [['key' => 'oaaa:v1:e:spray:q6s3', 'previousKey' => null, 'cap' => 2, 'ttl' => 600, 'creditKeys' => []], ['key' => 'oaaa:v1:g:e:q6c', 'previousKey' => null, 'cap' => 12, 'ttl' => 600, 'creditKeys' => []]]));
+    $q6['reserve-tier-is-set'] = ['error' => $err, 'unchanged' => $snap('oaaa:q6', $keys) === $before];
+    // (d) the tuple's pending field for a tier is not an integer
+    $tierPhys = $physical('oaaa:q6', 'oaaa:v1:e:spray:q6s4');
+    $ex->execute(['HSET', $physical('oaaa:q6', 'q6tupleD'), 'p|' . $tierPhys, 'abc']);
+    $ex->execute(['EXPIRE', $physical('oaaa:q6', 'q6tupleD'), '600']);
+    $keys = ['q6tupleD', 'oaaa:v1:e:spray:q6s4'];
+    $before = $snap('oaaa:q6', $keys);
+    $err = $call(static fn() => $store->reserveAdmission('q6tupleD', 600, [['key' => 'oaaa:v1:e:spray:q6s4', 'previousKey' => null, 'cap' => 2, 'ttl' => 600, 'creditKeys' => []]]));
+    $q6['reserve-pending-not-integer'] = ['error' => $err, 'unchanged' => $snap('oaaa:q6', $keys) === $before];
+    emit('A05.Q6.wrong-type-no-partial-write', ['arm' => $arm, 'probes' => $q6]);
+    $ok = true;
+    foreach ($q6 as $r) {
+        $ok = $ok && $r['error'] !== null && str_starts_with($r['error'], 'Maatify\\RateLimiter\\Exception\\RateLimiterException') && $r['unchanged'];
+    }
+    OaaaAsserts::check('A05', 'Q6 F116-02: a wrong-type tuple, credit or tier key and a non-integer tuple field are refused with an explicit RateLimiterException and EVERY involved key is unchanged (type and content) — no partial write', $ok, $q6);
+}
+
+// Q7 — F116-01 replay / reorder on real Redis (both arms), units read from Redis; parity with the reference store is checked here.
+$q7 = [];
+$seqs = [
+    'L24 two pending + replayed success' => array_merge($sat('10.81.8.1', 'q7a', 80), [['10.81.8.1', 'q7fp', 'q7col', 81, 'check'], ['10.81.8.1', 'q7fp', 'q7col', 81, 'check'], ['10.81.8.1', 'q7fp', 'q7col', 81, 'ok'], ['10.81.8.1', 'q7fp', 'q7col', 81, 'ok'], ['10.81.8.1', 'q7fp', 'q7col', 81, 'fail']]),
+    'L25 replayed success, no new attempt' => array_merge($sat('10.81.9.1', 'q7b', 82), $att('10.81.9.1', 'q7fq', 'q7col2', 83, 'fail'), [['10.81.9.1', 'q7fq', 'q7col2', 83, 'ok'], ['10.81.9.1', 'q7fq', 'q7col2', 83, 'ok']]),
+    'L26 MEDIUM success-first' => array_merge($sat('10.81.10.1', 'q7c', 84), [['10.81.10.1', 'q7fr', 'q7col3', 85, 'check'], ['10.81.10.1', 'q7fr', 'q7col3', 85, 'check'], ['10.81.10.1', 'q7fr', 'q7col3', 85, 'ok'], ['10.81.10.1', 'q7fr', 'q7col3', 85, 'fail']]),
+    'L26 MEDIUM failure-first' => array_merge($sat('10.81.11.1', 'q7d', 86), [['10.81.11.1', 'q7fs', 'q7col4', 87, 'check'], ['10.81.11.1', 'q7fs', 'q7col4', 87, 'check'], ['10.81.11.1', 'q7fs', 'q7col4', 87, 'fail'], ['10.81.11.1', 'q7fs', 'q7col4', 87, 'ok']]),
+];
+foreach ($seqs as $name => $seq) {
+    $ns = 'oaaa:q7:' . md5($name);
+    $redis = $onRedis($ns, $seq);
+    [$reference, $lab] = $onReference($seq);
+    $last = end($seq);
+    $logical = $tiersOf($lab, $last[0], $last[3])['spray'];
+    $r = $ex->execute(['HGET', $physical($ns, $logical), 'u']);
+    $q7[$name] = ['redis' => $redis, 'reference' => $reference, 'unitsRedis' => $r === null ? null : (int) $r, 'unitsReference' => $lab->corr instanceof OaaaStore ? ($lab->corr->tiers[$logical]['u'] ?? null) : null];
+}
+emit('A05.Q7.replay-reorder-redis', ['arm' => $arm, 'sequences' => $q7]);
+OaaaAsserts::check('A05', 'Q7 F116-01 replay / reorder sequences give identical decisions and identical units on Redis (Lua) and on the reference store' . ($cand ? ' — i.e. the attempt-level accounting defects of L24 / L25 / L26 are properties of the design, reproduced on the official adapter' : ''), array_reduce($q7, static fn(bool $c, array $x): bool => $c && $x['redis'] === $x['reference'] && $x['unitsRedis'] === $x['unitsReference'], true), $q7);
+
+// Q8 — F116-03 mixed flows on one shared Redis scope: office pre+out (credits), then a pre-only route with 8 new subjects.
+$seq = $sat('10.81.12.1', 'q8', 88);
+$mine = $onRedis('oaaa:q8', $seq);
+$pre = $onRedis('oaaa:q8', array_map(static fn(int $i): array => ['10.81.12.1', null, "q8p$i", 88, 'check'], range(0, 7)));
+$lab = oaaaLab();
+$u8 = $ex->execute(['HGET', $physical('oaaa:q8', $tiersOf($lab, '10.81.12.1', 88)['spray']), 'u']);
+emit('A05.Q8.mixed-flow-redis', ['arm' => $arm, 'office' => $mine, 'preOnly' => $pre, 'admittedPreOnly' => substr_count($pre, 'a'), 'unitsSpentNeverResolved' => $u8 === null ? 0 : (int) $u8]);
 
 // Q2 — key hygiene of everything written above.
 $keys = array_map('strval', (array) $ex->execute(['KEYS', '*']));

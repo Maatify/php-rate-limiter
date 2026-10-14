@@ -10,6 +10,8 @@ declare(strict_types=1);
 // The SAME adapter code runs on both arms: OAAA needs no new Host call, field or metadata.
 //   H1  office NAT (8 colleagues, 2 typos) + a sprayer behind the same NAT (20 victims), pre+out
 //   H2  the same traffic, pre-only Host
+//   H3  (added after Lead review F116-03) ONE limiter, two routes on the same policy and NAT scope: a pre+out login route used by the office
+//       and a pre-only route (no outcome ever reported) used by 6 other subjects afterwards
 require dirname(__DIR__, 2) . '/workstream-b-anti-evasion/lib/redis.php';
 require dirname(__DIR__) . '/lib/oaaa.php';
 
@@ -95,9 +97,24 @@ $h1 = $probe('oaaa:host:pre-out', true);
 $h2 = $probe('oaaa:host:pre', false);
 emit('A07.H1.host-pre-out', ['arm' => $arm] + $h1);
 emit('A07.H2.host-pre-only', ['arm' => $arm] + $h2);
+// H3 — mixed routes on one shared limiter / Redis scope.
+$store = new RedisFullCapabilityStore($ex, 'oaaa:host:mixed');
+$limiter = RateLimiterBuilder::fromFullCapabilityStore(new RateLimiterConfig('host-key-secret', 'host-fingerprint-secret', 'production'), $store, new RecordingFailureSignalEmitter())->withClock(wsbRedisClock($ex))->build();
+$routeA = new HostLogin($limiter, $passwords, true);
+$routeB = new HostLogin($limiter, $passwords, false);
+$office = '';
+for ($i = 0; $i < 8; $i++) {
+    $office .= $routeA->attempt(new RateLimitContextDTO('203.0.113.78', CHROME, "office$i", null), "pw-office-$i")[0];
+}
+$preOnly = '';
+for ($i = 0; $i < 6; $i++) {
+    $preOnly .= $routeB->attempt(new RateLimitContextDTO('203.0.113.78', CHROME, "victim$i", null), 'guess') === 'denied' ? 'B' : 'v';
+}
+$h3 = ['officeRouteA' => $office, 'preOnlyRouteB' => $preOnly, 'preOnlyReachedVerifier' => substr_count($preOnly, 'v'), 'oaaaKeys' => count((array) $ex->execute(['KEYS', 'maatify:rate-limiter:v1:' . hash('sha256', 'oaaa:host:mixed') . ':oaaa:*']))];
+emit('A07.H3.host-mixed-routes', ['arm' => $arm] + $h3);
 OaaaAsserts::check('A07', 'H0 the Host adapter makes exactly the documented calls on this arm (checkOnly per attempt, plus one outcome call per admitted attempt in pre+out) and is identical code on both arms', $h1['libraryCalls'] === $h1['attempts'] + $h1['legitSucceeded'] + ($h1['attempts'] - $h1['legitDenied'] - $h1['attackDenied'] - $h1['legitSucceeded']) && $h2['libraryCalls'] === $h2['attempts'], ['h1' => $h1['libraryCalls'], 'h2' => $h2['libraryCalls']]);
 OaaaAsserts::check('A07', 'H1 ' . ($cand ? 'pre+out through the public API: OAAA keys are written, the office is denied less than on S0 would be (S0 reference in the S0 row) and the co-located sprayer reaches the Host verifier at most 2 times more than its 5th-subject S0 baseline (2 units, one epoch)' : 'S0 reference: no OAAA key is written'), $cand
     ? $h1['oaaaKeys'] > 0 && $h1['attackVerified'] <= 6
     : $h1['oaaaKeys'] === 0, $h1);
-OaaaAsserts::check('A07', 'H2 ' . ($cand ? 'a pre-only Host (no outcome) earns no credit: no reservation can be granted' : 'S0 reference: pre-only Host'), $cand ? $h2['attackVerified'] <= 4 : $h2['oaaaKeys'] === 0, $h2);
+OaaaAsserts::check('A07', 'H2 ' . ($cand ? 'a pre-only Host ALONE on its scope (no other outcome-reporting traffic) earns no credit and stays at S0 (see H3 for a shared scope)' : 'S0 reference: pre-only Host'), $cand ? $h2['attackVerified'] <= 4 : $h2['oaaaKeys'] === 0, $h2);
 OaaaAsserts::finish();
