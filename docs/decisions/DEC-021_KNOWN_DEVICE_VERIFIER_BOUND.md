@@ -90,7 +90,13 @@ unknown device on the same Login streams reaches it 37–39 times.
    skips the account watcher. Device events escalate (three in 6 h, on `recordFailure`) to a
    K5 `HARD_BLOCK` L2 on that account + device only; account events keep the K4 account-wide
    escalation. A device-only `SOFT_BLOCK` without a durable device identity is recorded on
-   the account watcher. Both watchers follow rotation. Rationale: §2.5 exists to break
+   the account watcher. Both watchers follow rotation. The device watcher exists only for a
+   budgeted, non-`API_OVERUSE` policy with K5 thresholds (the account watcher's eligibility
+   plus a K5 level source); for any other policy it is never read, written, or escalated,
+   including after a same-name policy replacement with stored events (F117-FR-01). The two
+   watcher writes are not atomic; the device event is written first, so a fault between them
+   leaves at most a device-scoped event and never an orphan account event (F117-FR-02). A
+   fully atomic two-key publication would need a new Store capability and is not proposed. Rationale: §2.5 exists to break
    "low-and-slow" equilibrium; for a K5-only source the equilibrium is per device, so the
    escalation is kept at the same scope as the penalty. Account protection against a known
    device is not lost: rotating devices fall under the fingerprint-independent allowance and
@@ -130,6 +136,12 @@ harness does not contain the known-device owner-retry scenario; it is covered by
   74 / 61 / 60). The #113 / #116 harness cells are identical to `744f571`.
 - **Account-wide effect after the allowance.** Beyond the allowance, K4 scoring (and its
   DEC-007 punishment / re-entry lifecycle) applies to the account as for an unknown device.
+- **Partial commit on faults (pre-existing, narrowed).** The pipeline is not transactional
+  across store operations (as on S0): a fault after a request's blocks are persisted leaves
+  them persisted. For the two Anti-Equilibrium writes the order is fixed so that no orphan
+  account event can be left. Through `limit()`, repeated faulted mixed requests answered
+  `FAIL_CLOSED` then `DEGRADED_MODE` and never created an account-wide `HARD_BLOCK`
+  (`KnownDeviceAntiEquilibriumBoundaryTest`).
 - **Concurrency.** Pre-checks are read-only, so in-flight attempts are not serialized
   (unchanged from S0). The allowance counter is exact under real-Redis overlap. Under heavy
   same-account overlap, DEC-007 K4 generation conflicts answer some demoted failures with a
@@ -145,12 +157,18 @@ harness does not contain the known-device owner-retry scenario; it is covered by
 - **Mixed version and rollback.** Committed regressions replay the old worker with a
   pinned S0 pipeline fixture (`tests/Fixtures/S0Baseline`, provenance-checked against
   `main@4d37be5`) and assert these semantic differences, not parity:
+  - The S0 pipeline is byte-identical to `main@4d37be5` after a reversible rename; the S0
+    Login policy fixture is a compatibility subclass whose effective configuration is
+    pinned by a snapshot hash of the real S0 preset, not a copy of its source.
   - M1: a K4 block that S0 derived from a K5 level is honored by this Runtime and keeps
     blocking the owner's other device until it expires (this Runtime alone blocks only the
     offending device).
   - M2: S0 honors K5 blocks written by this Runtime for that device only.
-  - M3: on the #114 burst, S0 alone 25/25, this Runtime alone 4/25, alternating per
-    request 15/25 (real Redis).
+  - M3 (real Redis, instantaneous back-to-back sequence, not the timed #114 stream):
+    S0 alone 25/25, this Runtime alone 4/25, alternating per request 15/25.
+  - M3t (advancing clock, the timed #114 stream: 25 attempts every 3 s): S0 alone 25,
+    this Runtime alone 4, alternating 15 (S0 first) / 14 (new first), S0 pre-checks with
+    this Runtime recording 6, this Runtime pre-checks with S0 recording 4.
   - M4: after rollback, S0 ignores the allowance counter, the K5 L1 level and the device
     Anti-Equilibrium events, and does not escalate the account; rolling forward, this
     Runtime escalates on K5 only.

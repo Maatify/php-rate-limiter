@@ -146,6 +146,19 @@ short-circuit stages 4–6. Normative budget behavior is defined in §2.4, §2.5
 | Repeated missing fingerprint (same account) | K4  | +6          | Accelerated escalation |
 | IP attempts multiple accounts               | K1  | +5          | Credential spray       |
 
+#### 2.2.1 “Repeated missing fingerprint” Rule (Deterministic)
+
+A “Repeated missing fingerprint (same account)” event applies if:
+
+* `DeviceFP` is missing, **and**
+* The **previous failed login** for the same `AccountID` and the same policy flow within the last **30 minutes** was also missing `DeviceFP`.
+
+The marker is policy-scoped: Login history MUST NOT satisfy the OTP rule, and OTP history
+MUST NOT satisfy the Login rule. API Heavy has no repeated-missing-fingerprint contract and
+MUST NOT create or read this marker.
+
+---
+
 #### 2.2.2 Known-Device Verifier Bound (DEC-021, PROPOSED)
 
 A known device (`isKnownForAccount`) is scored on K5, and K5 is bounded:
@@ -176,19 +189,6 @@ A known device (`isKnownForAccount`) is scored on K5, and K5 is bounded:
   L2 on that device only, not toward the account watcher.
 * A backend failure while consuming the allowance is a typed backend failure (DEC-015);
   it is never converted into a normal-mode allowance.
-
-#### 2.2.1 “Repeated missing fingerprint” Rule (Deterministic)
-
-A “Repeated missing fingerprint (same account)” event applies if:
-
-* `DeviceFP` is missing, **and**
-* The **previous failed login** for the same `AccountID` and the same policy flow within the last **30 minutes** was also missing `DeviceFP`.
-
-The marker is policy-scoped: Login history MUST NOT satisfy the OTP rule, and OTP history
-MUST NOT satisfy the Login rule. API Heavy has no repeated-missing-fingerprint contract and
-MUST NOT create or read this marker.
-
----
 
 ### 2.3 Login Thresholds (Per Account Score)
 
@@ -341,6 +341,9 @@ On the current `recordFailure`, and **before budget cooldown acquisition**, read
 Anti-Equilibrium soft events from **prior requests** for the same `AccountID` and the same
 policy flow.
 
+_DEC-021 (PROPOSED) would restrict this account read to account-scoped events and add a
+device-scoped read; see §2.5.3. Until DEC-021 is ACTIVE, this section is the contract._
+
 If **≥ 3 actually-issued `SOFT_BLOCK` events within 6 hours** exist in that prior
 history:
 
@@ -357,6 +360,9 @@ cannot be bypassed by a budget soft. Login and OTP histories are independent.
 
 After final aggregation, if and only if the final issued decision is `SOFT_BLOCK`,
 record exactly one Anti-Equilibrium event. This event affects future requests only.
+
+_DEC-021 (PROPOSED) would record one event per scope of the issued `SOFT_BLOCK`; see
+§2.5.3._
 
 The third `SOFT_BLOCK` remains a `SOFT_BLOCK`; recording it MUST NOT turn that same
 request into `HARD_BLOCK`. A request whose final decision is `ALLOW` or `HARD_BLOCK`
@@ -388,6 +394,15 @@ account watcher, a **device** event on a device watcher for the same account and
 K5 level and an account level records one event on each watcher. A device-only
 `SOFT_BLOCK` without a durable device identity (ephemeral or missing fingerprint) is recorded
 on the account watcher.
+
+The device watcher exists only for a policy that the account watcher also covers (a
+budgeted policy), that is not `API_OVERUSE`, and that defines K5 thresholds; otherwise it
+is never read, written, or escalated, even if events are stored under the same policy name.
+
+The two watcher writes are separate store operations, not one atomic publication. The
+device event is written first: if the second write fails, the request ends in the typed
+backend-failure path and only a device-scoped event may remain; an orphan account event
+cannot.
 
 Escalation (§2.5.1) reads both watchers on `recordFailure`: three prior account events add
 `HARD_BLOCK (Account)` L2 on K4 as before; three prior device events add `HARD_BLOCK` L2 on

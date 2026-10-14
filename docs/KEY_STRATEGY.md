@@ -739,7 +739,8 @@ fingerprint hash:
 {policy}:rate_limiter:aux:anti_equilibrium_device:v1:{env}:{accountId}:{fingerprintHash}
 ```
 
-It exists only for a non-ephemeral, fingerprinted, account-bound request. Its previous
+It exists only for a non-ephemeral, fingerprinted, account-bound request under a
+budgeted, non-`API_OVERUSE` policy with K5 thresholds. Its previous
 generation uses `previousKeySecret ?? currentKeySecret` and
 `previousFingerprintHash ?? fingerprintHash`, exists only when either is present, and is
 read-only.
