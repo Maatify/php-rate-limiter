@@ -228,36 +228,6 @@ final class KnownDeviceVerifierBoundTest extends TestCase
     }
 
     /**
-     * Characterization (declared in DEC-021, not changed by this slice): K5 L1
-     * decisions are actually-issued SOFT_BLOCKs, so they feed the ACTIVE
-     * Anti-Equilibrium gate (DECISION_MATRIX.md §2.5). Four typos, three retries
-     * during the soft window, and one more typo after K5 decays give an
-     * account-wide K4 L2 hard block that also stops the owner's other device.
-     */
-    public function testK5SoftDecisionsFeedTheAntiEquilibriumAccountGate(): void
-    {
-        $pipeline = $this->pipeline();
-        $policy = new LoginProtectionPolicy();
-        $laptop = $this->device('owner-laptop', 'HIGH', true);
-        $phone = $this->device('owner-phone', 'HIGH', true);
-
-        for ($attempt = 0; $attempt < 4; $attempt++) {
-            $this->assertTrue($this->preThenFailure($pipeline, $policy, $this->context('equilibrium-owner'), $laptop));
-        }
-        for ($retry = 0; $retry < 3; $retry++) {
-            $soft = $pipeline->process($policy, $this->context('equilibrium-owner'), RateLimitCommand::checkOnly('login_protection'), $laptop);
-            $this->assertSame(RateLimitResultDTO::DECISION_SOFT_BLOCK, $soft->decision);
-        }
-
-        $this->advance(300);
-        $this->assertTrue($this->preThenFailure($pipeline, $policy, $this->context('equilibrium-owner'), $laptop));
-
-        $this->assertSame(2, $this->store->checkBlock($this->key('login_protection', 'k4', 'equilibrium-owner'))?->level);
-        $other = $pipeline->process($policy, $this->context('equilibrium-owner'), RateLimitCommand::checkOnly('login_protection'), $phone);
-        $this->assertSame(RateLimitResultDTO::DECISION_HARD_BLOCK, $other->decision);
-    }
-
-    /**
      * Custom policies that do not opt into the account allowance keep the S0
      * known-device scoring: K4 is never touched by known-device failures.
      */

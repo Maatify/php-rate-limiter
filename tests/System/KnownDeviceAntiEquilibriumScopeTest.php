@@ -68,9 +68,9 @@ final class KnownDeviceAntiEquilibriumScopeTest extends TestCase
     }
 
     /**
-     * (ii) An attacker that keeps retrying on the offending device stays
-     * capped there: after the device escalation every pre-check during the
-     * block is denied, and later failures keep escalating on K5.
+     * (ii) An attacker that keeps retrying on the offending device every
+     * minute stays capped there: each further failure re-escalates on K5
+     * (HARD L2), and at most four attempts reach the verifier in an hour.
      */
     public function testRepeatedRetriesStayCappedOnTheOffendingDevice(): void
     {
@@ -79,14 +79,20 @@ final class KnownDeviceAntiEquilibriumScopeTest extends TestCase
         $stolen = $this->device('stolen-session', 'HIGH', true);
 
         $this->typosThenSoftRetries($pipeline, $policy, 'scope-victim', $stolen);
-        $reached = 0;
+        $failures = [];
         for ($minute = 0; $minute < 60; $minute++) {
             $this->advance(60);
-            $reached += $this->preThenFailure($pipeline, $policy, 'scope-victim', $stolen) ? 1 : 0;
+            if ($this->check($pipeline, $policy, 'scope-victim', $stolen)->decision === RateLimitResultDTO::DECISION_ALLOW) {
+                $failures[] = $pipeline->process($policy, $this->context('scope-victim'), RateLimitCommand::recordFailure('login_protection'), $stolen);
+            }
         }
 
-        $this->assertLessThanOrEqual(6, $reached);
-        $this->assertGreaterThanOrEqual(2, $this->store->checkBlock($this->key('login_protection', 'k5', 'scope-victim:stolen-session'))?->level ?? 0);
+        $this->assertLessThanOrEqual(4, count($failures));
+        $this->assertNotSame([], $failures);
+        foreach ($failures as $failure) {
+            $this->assertSame(RateLimitResultDTO::DECISION_HARD_BLOCK, $failure->decision);
+            $this->assertSame(2, $failure->blockLevel);
+        }
     }
 
     /**
