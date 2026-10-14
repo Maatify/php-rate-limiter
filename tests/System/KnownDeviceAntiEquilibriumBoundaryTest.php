@@ -126,7 +126,7 @@ final class KnownDeviceAntiEquilibriumBoundaryTest extends TestCase
         $policy = new MixedFaultPolicy();
         $device = $this->device('mixed-fp');
         $pipeline->process($policy, $this->context('mixed-owner'), RateLimitCommand::recordFailure('mixed_fault_flow'), $device);
-        $this->assertSame([0, 1], $this->watchers('mixed-owner', 'mixed-fp'));
+        $before = $this->watchers('mixed-owner', 'mixed-fp');
 
         $this->store->failWritesTo = [$this->deviceWatcher('mixed_fault_flow', 'mixed-owner', 'mixed-fp')];
         try {
@@ -135,7 +135,8 @@ final class KnownDeviceAntiEquilibriumBoundaryTest extends TestCase
         } catch (BackendFailureException) {
         }
 
-        $this->assertSame([0, 1], $this->watchers('mixed-owner', 'mixed-fp'));
+        $this->assertSame([0, 1], $before);
+        $this->assertSame($before, $this->watchers('mixed-owner', 'mixed-fp'));
     }
 
     /**
