@@ -97,10 +97,12 @@ class OtpProtectionPolicy implements PostPunishmentReentryPolicyInterface, Known
 
     /**
      * Known-device failures per account and 24-hour epoch scored on K5 only;
-     * later known-device failures are also scored on K4.
+     * later known-device failures also add the K4 failure delta. A subclass
+     * whose effective configuration has no K5 scoring (no K5 failure delta or
+     * no K5 thresholds) keeps the allowance disabled.
      */
-    public function getKnownDeviceAccountAllowance(): int
+    public function getKnownDeviceAccountAllowance(): ?int
     {
-        return 2;
+        return $this->getScoreDeltas()->k5_failure > 0 && $this->getScoreThresholds()->k5 !== null ? 2 : null;
     }
 }

@@ -1554,12 +1554,13 @@ class EvaluationPipeline
             && ($keys['k4'] ?? null) !== null
             && $deltas['k5'] > 0
             && $deltas['k4'] === 0
-            && $this->isKnownForAccount($device)) {
+            && $this->isKnownForAccount($device)
+            && ($allowanceLimit = $policy->getKnownDeviceAccountAllowance()) !== null) {
             $allowance = $this->incrementBudgetAcrossRotation(
                 $this->auxiliaryAccountKey($policy->getName(), 'known_device_allowance', $context->accountId, $this->secret),
                 $this->previousAuxiliaryAccountKey($policy->getName(), 'known_device_allowance', $context->accountId),
             );
-            if ($allowance->count > $policy->getKnownDeviceAccountAllowance()) {
+            if ($allowance->count > $allowanceLimit) {
                 $deltas['k4'] = $policy->getScoreDeltas()->k4_failure;
             }
         }

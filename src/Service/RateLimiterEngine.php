@@ -166,17 +166,20 @@ class RateLimiterEngine implements RateLimiterRuntimeInterface
             }
         }
 
-        if ($policy instanceof KnownDeviceAccountAllowancePolicyInterface) {
-            $thresholds = $policy->getScoreThresholds();
-            if ($policy->getKnownDeviceAccountAllowance() < 1) {
+        // The allowance is an authentication capability (isAuthRelated), so
+        // every authentication prerequisite above already applies and API_OVERUSE
+        // is rejected. Its own promise is per-device K5 enforcement.
+        if ($policy instanceof KnownDeviceAccountAllowancePolicyInterface
+            && ($allowance = $policy->getKnownDeviceAccountAllowance()) !== null) {
+            $k5 = $policy->getScoreThresholds()->k5;
+            if ($allowance < 1) {
                 throw new RateLimiterException("Policy {$policy->getName()} invalid: Known-device account allowance must be a positive integer.");
             }
-            if ($policy->getScoreDeltas()->k4_failure <= 0
-                || $thresholds->k4 === null
-                || $thresholds->k4->l1 <= 0
-                || $thresholds->k4->l1 > $thresholds->k4->l2
-                || $thresholds->k4->l2 > $thresholds->k4->l3) {
-                throw new RateLimiterException("Policy {$policy->getName()} invalid: Known-device account allowance requires a positive K4 failure delta and positive, monotonic K4 thresholds.");
+            if ($policy->getScoreDeltas()->k5_failure <= 0) {
+                throw new RateLimiterException("Policy {$policy->getName()} invalid: Known-device account allowance requires a positive K5 failure delta.");
+            }
+            if ($k5 === null || $k5->l1 <= 0 || $k5->l1 > $k5->l2 || $k5->l2 > $k5->l3) {
+                throw new RateLimiterException("Policy {$policy->getName()} invalid: Known-device account allowance requires positive, monotonic K5 thresholds.");
             }
         }
 
@@ -235,6 +238,7 @@ class RateLimiterEngine implements RateLimiterRuntimeInterface
     private function isAuthRelated(BlockPolicyInterface $policy, array $capabilities): bool
     {
         return $policy instanceof PostPunishmentReentryPolicyInterface
+            || $policy instanceof KnownDeviceAccountAllowancePolicyInterface
             || in_array(PolicyCapabilityEnum::CREDENTIAL_SPRAY, $capabilities, true)
             || in_array(PolicyCapabilityEnum::DISTRIBUTED_ACCOUNT, $capabilities, true)
             || in_array(PolicyCapabilityEnum::TRUSTED_AUTHENTICATION, $capabilities, true);
