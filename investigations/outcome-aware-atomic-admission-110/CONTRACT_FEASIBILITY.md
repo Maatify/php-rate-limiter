@@ -54,7 +54,6 @@ interface OutcomeAdmissionStoreInterface            // optional, additive; disco
 ```
 
 * Study implementations: reference store `lib/oaaa_store.php`; official Redis adapter (isolated copy) two Lua scripts that validate the TYPE of every key and the integer form of the tuple's pending fields **before the first write** (corrected after F116-02: the `0df807f` scripts could leave a partial write behind a `WRONGTYPE` error, measured in `a08`; Redis does not roll back a script's earlier writes). "No partial write" is established for the malformed-state cases probed (`a05` Q3, Q6), not for every conceivable runtime error (`patches/oaaa-candidate.patch`).
-  malformed state never leaves a partial write (`patches/oaaa-candidate.patch`).
 * Redis Cluster: the reservation touches several keys in one script; the official adapter is documented non-clustered. A clustered
   implementation would need hash-tagging all OAAA keys of a policy into one slot (and the global tiers make that slot hot). Not built.
 * Opt-in (proposal, **not** built in the package): a new `PolicyCapabilityEnum` case, e.g. `OUTCOME_AWARE_ADMISSION`, declared by an

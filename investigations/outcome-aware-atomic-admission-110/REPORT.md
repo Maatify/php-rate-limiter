@@ -133,8 +133,8 @@ Record-only (`out`) cells: every attempt is verified before the library is calle
   units; LOW tuples get no same-tuple refund.
 * F2 PASS: no cell denies more legitimate requests in total; 59 individual legitimate requests across all non-API cells are newly denied
   (path differences, e.g. D2 2, MIX 3, L1f 5), always outweighed in their cell.
-* Host probe (`a07`, public Builder over Redis): office 38 → 28 of 40 denied, co-located sprayer 0 → 2 of 20 verified; the pre-only Host is
-  identical to S0.
+* Host probe (`a07`, public Builder over Redis): office 38 → 28 of 40 denied, co-located sprayer 0 → 2 of 20 verified; the pre-only Host **alone on its scope** (H2) is
+  identical to S0; a pre-only route on a scope shared with the credited pre+out route (H3) is not (2 vs 0, F116-03).
 
 ## 4. Operational
 
