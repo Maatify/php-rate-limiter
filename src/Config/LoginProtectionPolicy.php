@@ -22,7 +22,7 @@ use Maatify\RateLimiter\Enum\PolicyCapabilityEnum;
  * Its bounded backend-failure fallback resolves the package-owned
  * `AUTHENTICATION_PRIMARY` preset; no Host configuration is required.
  */
-class LoginProtectionPolicy implements PostPunishmentReentryPolicyInterface, PolicyCapabilityProviderInterface, FailureFallbackConfigurationProviderInterface
+class LoginProtectionPolicy implements PostPunishmentReentryPolicyInterface, KnownDeviceAccountAllowancePolicyInterface, PolicyCapabilityProviderInterface, FailureFallbackConfigurationProviderInterface
 {
     public function getFailureFallbackConfiguration(): FailureFallbackConfigurationDTO
     {
@@ -52,9 +52,10 @@ class LoginProtectionPolicy implements PostPunishmentReentryPolicyInterface, Pol
      */
     public function getScoreThresholds(): PolicyThresholdsDTO
     {
-        // Login uses K4 as primary signal
+        // K4 is the account signal; K5 bounds a known device on its own key.
         return new PolicyThresholdsDTO(
             k4: new ScoreThresholdsDTO(5, 8, 12),
+            k5: new ScoreThresholdsDTO(8, 12, 16),
         );
     }
 
@@ -94,5 +95,14 @@ class LoginProtectionPolicy implements PostPunishmentReentryPolicyInterface, Pol
             known_device_micro_cap: 8,
             recovery_collision_guard_enabled: false,
         );
+    }
+
+    /**
+     * Known-device failures per account and 24-hour epoch scored on K5 only;
+     * later known-device failures are also scored on K4.
+     */
+    public function getKnownDeviceAccountAllowance(): int
+    {
+        return 8;
     }
 }

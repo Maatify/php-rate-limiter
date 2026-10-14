@@ -7,6 +7,7 @@ namespace Maatify\RateLimiter\Builder;
 use DateTimeZone;
 use Maatify\RateLimiter\Config\ApiHeavyProtectionPolicy;
 use Maatify\RateLimiter\Config\BlockPolicyInterface;
+use Maatify\RateLimiter\Config\KnownDeviceAccountAllowancePolicyInterface;
 use Maatify\RateLimiter\Config\LoginProtectionPolicy;
 use Maatify\RateLimiter\Config\OtpProtectionPolicy;
 use Maatify\RateLimiter\Config\PolicyCapabilityProviderInterface;
@@ -383,8 +384,8 @@ final class RateLimiterBuilder
     /**
      * KEY_STRATEGY.md §4.3.2 / DEC-013: BudgetSeedStoreInterface is only
      * genuinely required when the configured graph can produce a real
-     * previous-generation budget (K4 account budget, K5 known-device
-     * micro-cap) or simple-window migration; a previous generation that
+     * previous-generation budget (K4 account budget, known-device account
+     * allowance, K5 known-device micro-cap) or simple-window migration; a previous generation that
      * cannot reach any of those is not a false-positive trigger.
      */
     private function assertBudgetSeedCapability(): void
@@ -393,6 +394,12 @@ final class RateLimiterBuilder
         $hasKnownDeviceMicroCapPolicy = false;
 
         foreach ($this->policies as $policy) {
+            // The known-device account allowance is a fixed-epoch account
+            // counter carried across outer-secret rotation like the budget.
+            if ($policy instanceof KnownDeviceAccountAllowancePolicyInterface) {
+                $hasAccountBudgetPolicy = true;
+            }
+
             $budget = $policy->getBudgetConfig();
 
             if ($budget === null) {

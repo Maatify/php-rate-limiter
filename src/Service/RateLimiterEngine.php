@@ -14,6 +14,7 @@ use Maatify\RateLimiter\Service\DeviceIdentityResolverInterface;
 use Maatify\RateLimiter\Contract\FailureSignalEmitterInterface;
 use Maatify\RateLimiter\Service\RateLimiterInterface;
 use Maatify\RateLimiter\Service\RateLimiterRuntimeInterface;
+use Maatify\RateLimiter\Config\KnownDeviceAccountAllowancePolicyInterface;
 use Maatify\RateLimiter\Config\PostPunishmentReentryPolicyInterface;
 use Maatify\RateLimiter\Exception\RateLimitConcurrencyException;
 use Maatify\RateLimiter\DTO\RateLimitContextDTO;
@@ -162,6 +163,20 @@ class RateLimiterEngine implements RateLimiterRuntimeInterface
             }
             if ($policy->getScoreDeltas()->access <= 0) {
                 throw new RateLimiterException("Policy {$policy->getName()} invalid: API_OVERUSE requires a positive access delta.");
+            }
+        }
+
+        if ($policy instanceof KnownDeviceAccountAllowancePolicyInterface) {
+            $thresholds = $policy->getScoreThresholds();
+            if ($policy->getKnownDeviceAccountAllowance() < 1) {
+                throw new RateLimiterException("Policy {$policy->getName()} invalid: Known-device account allowance must be a positive integer.");
+            }
+            if ($policy->getScoreDeltas()->k4_failure <= 0
+                || $thresholds->k4 === null
+                || $thresholds->k4->l1 <= 0
+                || $thresholds->k4->l1 > $thresholds->k4->l2
+                || $thresholds->k4->l2 > $thresholds->k4->l3) {
+                throw new RateLimiterException("Policy {$policy->getName()} invalid: Known-device account allowance requires a positive K4 failure delta and positive, monotonic K4 thresholds.");
             }
         }
 

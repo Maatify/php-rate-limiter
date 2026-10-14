@@ -7,6 +7,7 @@ namespace Maatify\RateLimiter\Tests\Unit\Policy;
 use Maatify\RateLimiter\Builder\RateLimiterBuilder;
 use Maatify\RateLimiter\Config\BlockPolicyInterface;
 use Maatify\RateLimiter\Config\FailureFallbackConfigurationProviderInterface;
+use Maatify\RateLimiter\Config\KnownDeviceAccountAllowancePolicyInterface;
 use Maatify\RateLimiter\Enum\FailureFallbackDimensionEnum;
 use Maatify\RateLimiter\Enum\PolicyCapabilityEnum;
 use Maatify\RateLimiter\Config\PolicyCapabilityProviderInterface;
@@ -170,6 +171,18 @@ final class PolicyCapabilityValidationTest extends TestCase
                 k3: new ScoreThresholdsDTO(1, 1, 1),
             )),
         ];
+        yield 'known-device allowance not positive' => [
+            'Known-device account allowance must be a positive integer',
+            new AllowanceValidationPolicy('invalid-allowance-zero', 0),
+        ];
+        yield 'known-device allowance without K4 failure delta' => [
+            'Known-device account allowance requires a positive K4 failure delta',
+            new AllowanceValidationPolicy('invalid-allowance-delta', 8, new ScoreDeltasDTO(k5_failure: 2)),
+        ];
+        yield 'known-device allowance without monotonic K4 thresholds' => [
+            'Known-device account allowance requires a positive K4 failure delta and positive, monotonic K4 thresholds',
+            new AllowanceValidationPolicy('invalid-allowance-k4', 8, thresholds: new PolicyThresholdsDTO(k4: new ScoreThresholdsDTO(5, 4, 12))),
+        ];
         yield 'api non positive access' => [
             'API_OVERUSE requires a positive access delta',
             new ValidationPolicy('invalid-api-access', $api, $apiConfig, mode: 'FAIL_OPEN', deltas: new ScoreDeltasDTO()),
@@ -231,6 +244,41 @@ final class ValidationPolicy implements BlockPolicyInterface, PolicyCapabilityPr
     public function getBudgetConfig(): ?BudgetConfigDTO
     {
         return $this->budget;
+    }
+}
+
+final class AllowanceValidationPolicy implements KnownDeviceAccountAllowancePolicyInterface
+{
+    public function __construct(
+        private string $name,
+        private int $allowance,
+        private ScoreDeltasDTO $deltas = new ScoreDeltasDTO(k4_failure: 3, k5_failure: 2),
+        private PolicyThresholdsDTO $thresholds = new PolicyThresholdsDTO(k4: new ScoreThresholdsDTO(5, 8, 12)),
+    ) {}
+
+    public function getName(): string
+    {
+        return $this->name;
+    }
+    public function getScoreThresholds(): PolicyThresholdsDTO
+    {
+        return $this->thresholds;
+    }
+    public function getScoreDeltas(): ScoreDeltasDTO
+    {
+        return $this->deltas;
+    }
+    public function getFailureMode(): string
+    {
+        return 'FAIL_CLOSED';
+    }
+    public function getBudgetConfig(): ?BudgetConfigDTO
+    {
+        return null;
+    }
+    public function getKnownDeviceAccountAllowance(): int
+    {
+        return $this->allowance;
     }
 }
 

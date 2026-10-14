@@ -65,6 +65,9 @@ final class KnownDeviceAllowanceConcurrencyIntegrationTest extends TestCase
         foreach ($pids as $pid) {
             $status = 0;
             self::assertSame($pid, pcntl_waitpid($pid, $status));
+            if (! is_int($status)) {
+                self::fail('Redis concurrency worker status was malformed.');
+            }
             self::assertTrue(pcntl_wifexited($status));
             self::assertSame(0, pcntl_wexitstatus($status));
         }
@@ -79,7 +82,12 @@ final class KnownDeviceAllowanceConcurrencyIntegrationTest extends TestCase
 
         $allowance = $store->getBudget($this->auxiliaryKey('known_device_allowance', 'concurrent-owner'));
         self::assertSame(self::WORKERS, $allowance?->count);
-        self::assertSame(2 * self::WORKERS, $store->get($this->key('k5', 'concurrent-owner:concurrent-fp'))?->value);
+        // Only demoted failures touch K4, so DEC-007 generation conflicts can
+        // occur only among the WORKERS - 8 demoted requests. A conflicted
+        // request ends before its K5 update (K4 is scored first) and the
+        // engine answers it fail-closed with k4_concurrency_conflict.
+        self::assertLessThanOrEqual(self::WORKERS - 8, $conflicts);
+        self::assertSame(2 * (self::WORKERS - $conflicts), $store->get($this->key('k5', 'concurrent-owner:concurrent-fp'))?->value);
         self::assertSame(3 * (self::WORKERS - 8 - $conflicts), $store->get($this->key('k4', 'concurrent-owner'))?->value);
     }
 

@@ -101,7 +101,7 @@ final class KnownDeviceVerifierBoundTest extends TestCase
             $last = $pipeline->process($policy, $this->context('owner'), RateLimitCommand::recordFailure('login_protection'), $stolen);
         }
 
-        $this->assertSame(RateLimitResultDTO::DECISION_HARD_BLOCK, $last?->decision);
+        $this->assertSame(RateLimitResultDTO::DECISION_HARD_BLOCK, $last->decision);
         $this->assertSame(2, $this->store->checkBlock($this->key('login_protection', 'k5', 'owner:stolen-session-fp'))?->level);
         $this->assertNull($this->store->checkBlock($this->key('login_protection', 'k4', 'owner')));
 
@@ -132,7 +132,7 @@ final class KnownDeviceVerifierBoundTest extends TestCase
             $last = $pipeline->process($policy, $this->context('custom-owner'), RateLimitCommand::recordFailure('custom_authentication_flow'), $device);
         }
 
-        $this->assertSame(RateLimitResultDTO::DECISION_HARD_BLOCK, $last?->decision);
+        $this->assertSame(RateLimitResultDTO::DECISION_HARD_BLOCK, $last->decision);
         $this->assertSame(2, $this->store->checkBlock($this->key('custom_authentication_flow', 'k5', 'custom-owner:custom-fp'))?->level);
         $this->assertNull($this->store->checkBlock($this->key('custom_authentication_flow', 'k4', 'custom-owner')));
 
@@ -242,19 +242,21 @@ final class KnownDeviceVerifierBoundTest extends TestCase
     /**
      * The allowance is a fixed-epoch account counter and survives outer
      * key-secret rotation: the ninth known-device failure is scored on K4
-     * even when it is the first failure written under the new secret.
+     * even when it is the first failure written under the new secret. Each
+     * failure uses its own IP, user agent and fingerprint so that K2 churn and
+     * K5 thresholds stay out of the measurement.
      */
     public function testAllowanceCarriesAcrossOuterSecretRotation(): void
     {
         $policy = new LoginProtectionPolicy();
         $old = $this->pipeline();
         for ($attempt = 0; $attempt < 8; $attempt++) {
-            $old->process($policy, $this->context('rotating-owner'), RateLimitCommand::recordFailure('login_protection'), $this->device("rot-fp-{$attempt}", 'MEDIUM', false, true));
+            $old->process($policy, $this->context('rotating-owner', "198.51.100.{$attempt}"), RateLimitCommand::recordFailure('login_protection'), $this->rotatedDevice($attempt));
         }
         $this->assertNull($this->store->get($this->key('login_protection', 'k4', 'rotating-owner')));
 
         $rotated = $this->pipeline('test_secret', 'new_secret');
-        $rotated->process($policy, $this->context('rotating-owner'), RateLimitCommand::recordFailure('login_protection'), $this->device('rot-fp-8', 'MEDIUM', false, true));
+        $rotated->process($policy, $this->context('rotating-owner', '198.51.100.8'), RateLimitCommand::recordFailure('login_protection'), $this->rotatedDevice(8));
 
         $this->assertSame(3, $this->store->get($this->key('login_protection', 'k4', 'rotating-owner', 'new_secret'))?->value);
     }
@@ -350,6 +352,11 @@ final class KnownDeviceVerifierBoundTest extends TestCase
     private function device(string $fingerprint, string $confidence = 'MEDIUM', bool $trusted = false, bool $previouslyVerified = false): DeviceIdentityDTO
     {
         return new DeviceIdentityDTO($fingerprint, $confidence, $trusted, false, 'chrome/123', $previouslyVerified);
+    }
+
+    private function rotatedDevice(int $index): DeviceIdentityDTO
+    {
+        return new DeviceIdentityDTO("rot-fp-{$index}", 'MEDIUM', false, false, "agent/{$index}", true);
     }
 
     private function key(string $policy, string $type, string $scope, string $secret = 'test_secret'): string

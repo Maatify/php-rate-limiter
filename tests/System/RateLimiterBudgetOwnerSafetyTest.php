@@ -218,22 +218,25 @@ final class RateLimiterBudgetOwnerSafetyTest extends TestCase
 
     public function testKnownDeviceFirstEightFailuresBuildMicroCapAndNinthEntersAccountBudget(): void
     {
-        $policy = new LoginProtectionPolicy();
+        // The micro-cap mechanism is exercised on a policy without K5
+        // thresholds: official Login now bounds the same device on K5 at the
+        // fourth and sixth failures (KnownDeviceVerifierBoundTest).
+        $policy = $this->customBudgetPolicy(8);
         $account = 'known-micro-cap';
         $device = $this->device('known-fp', 'MEDIUM', false, true);
         $pipeline = $this->pipeline();
 
         for ($attempt = 1; $attempt <= 8; $attempt++) {
-            $result = $pipeline->process($policy, $this->context($account), RateLimitCommand::recordFailure('login_protection'), $device);
+            $result = $pipeline->process($policy, $this->context($account), RateLimitCommand::recordFailure('custom_authentication_flow'), $device);
             $this->assertSame(RateLimitResultDTO::DECISION_ALLOW, $result->decision);
-            $this->assertNull($this->store->getBudget($this->key('login_protection', 'k4', $account)));
+            $this->assertNull($this->store->getBudget($this->key('custom_authentication_flow', 'k4', $account)));
         }
 
-        $microKey = $this->microCapKey('login_protection', $account, 'known-fp');
-        $k4Key = $this->key('login_protection', 'k4', $account);
+        $microKey = $this->microCapKey('custom_authentication_flow', $account, 'known-fp');
+        $k4Key = $this->key('custom_authentication_flow', 'k4', $account);
         $this->assertSame(8, $this->store->getBudget($microKey)?->count);
 
-        $ninth = $pipeline->process($policy, $this->context($account), RateLimitCommand::recordFailure('login_protection'), $device);
+        $ninth = $pipeline->process($policy, $this->context($account), RateLimitCommand::recordFailure('custom_authentication_flow'), $device);
         $this->assertSame(RateLimitResultDTO::DECISION_ALLOW, $ninth->decision);
         $this->assertSame(9, $this->store->getBudget($microKey)?->count);
         $this->assertSame(1, $this->store->getBudget($k4Key)?->count);
@@ -241,33 +244,33 @@ final class RateLimiterBudgetOwnerSafetyTest extends TestCase
 
     public function testKnownDeviceMicroCapIsIsolatedByEnvironmentScope(): void
     {
-        $policy = new LoginProtectionPolicy();
+        $policy = $this->customBudgetPolicy(8);
         $account = 'microcap-env-isolation-account';
         $device = $this->device('microcap-env-isolation-fp', 'MEDIUM', false, true);
         $prodPipeline = $this->pipeline(null, 'test_secret', 'prod');
         $stagingPipeline = $this->pipeline(null, 'test_secret', 'staging');
 
-        $prodMicroKey = $this->microCapKey('login_protection', $account, 'microcap-env-isolation-fp', 'test_secret', 'prod');
-        $stagingMicroKey = $this->microCapKey('login_protection', $account, 'microcap-env-isolation-fp', 'test_secret', 'staging');
+        $prodMicroKey = $this->microCapKey('custom_authentication_flow', $account, 'microcap-env-isolation-fp', 'test_secret', 'prod');
+        $stagingMicroKey = $this->microCapKey('custom_authentication_flow', $account, 'microcap-env-isolation-fp', 'test_secret', 'staging');
         $this->assertNotSame($prodMicroKey, $stagingMicroKey);
 
         for ($attempt = 1; $attempt <= 8; $attempt++) {
-            $result = $prodPipeline->process($policy, $this->context($account), RateLimitCommand::recordFailure('login_protection'), $device);
+            $result = $prodPipeline->process($policy, $this->context($account), RateLimitCommand::recordFailure('custom_authentication_flow'), $device);
             $this->assertSame(RateLimitResultDTO::DECISION_ALLOW, $result->decision);
         }
         $this->assertSame(8, $this->store->getBudget($prodMicroKey)?->count);
         $this->assertNull($this->store->getBudget($stagingMicroKey));
 
-        $stagingFirst = $stagingPipeline->process($policy, $this->context($account), RateLimitCommand::recordFailure('login_protection'), $device);
+        $stagingFirst = $stagingPipeline->process($policy, $this->context($account), RateLimitCommand::recordFailure('custom_authentication_flow'), $device);
         $this->assertSame(RateLimitResultDTO::DECISION_ALLOW, $stagingFirst->decision);
         $this->assertSame(1, $this->store->getBudget($stagingMicroKey)?->count);
         $this->assertSame(8, $this->store->getBudget($prodMicroKey)?->count);
 
-        $prodK4Key = $this->key('login_protection', 'k4', $account);
-        $stagingK4Key = hash_hmac('sha256', "login_protection:rate_limiter:k4:v2:staging:{$account}", 'test_secret');
+        $prodK4Key = $this->key('custom_authentication_flow', 'k4', $account);
+        $stagingK4Key = hash_hmac('sha256', "custom_authentication_flow:rate_limiter:k4:v2:staging:{$account}", 'test_secret');
         $this->assertNull($this->store->getBudget($prodK4Key));
 
-        $prodNinth = $prodPipeline->process($policy, $this->context($account), RateLimitCommand::recordFailure('login_protection'), $device);
+        $prodNinth = $prodPipeline->process($policy, $this->context($account), RateLimitCommand::recordFailure('custom_authentication_flow'), $device);
         $this->assertSame(RateLimitResultDTO::DECISION_ALLOW, $prodNinth->decision);
         $this->assertSame(9, $this->store->getBudget($prodMicroKey)?->count);
         $this->assertSame(1, $this->store->getBudget($prodK4Key)?->count);

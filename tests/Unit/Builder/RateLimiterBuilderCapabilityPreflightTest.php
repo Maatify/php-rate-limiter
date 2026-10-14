@@ -7,6 +7,7 @@ namespace Maatify\RateLimiter\Tests\Unit\Builder;
 use Maatify\RateLimiter\Builder\RateLimiterBuilder;
 use Maatify\RateLimiter\Config\BlockPolicyInterface;
 use Maatify\RateLimiter\Config\FixedWindowThrottlePolicy;
+use Maatify\RateLimiter\Config\KnownDeviceAccountAllowancePolicyInterface;
 use Maatify\RateLimiter\Config\PolicyCapabilityProviderInterface;
 use Maatify\RateLimiter\Config\RateLimiterConfig;
 use Maatify\RateLimiter\Contract\FailureSignalEmitterInterface;
@@ -231,6 +232,25 @@ final class RateLimiterBuilderCapabilityPreflightTest extends TestCase
         try {
             $builder->build();
             self::fail('Expected an account-budget policy with previous outer-key rotation to require BudgetSeedStoreInterface.');
+        } catch (RateLimiterException $exception) {
+            self::assertStringContainsString('BudgetSeedStoreInterface', $exception->getMessage());
+        }
+    }
+
+    public function testKnownDeviceAccountAllowanceWithPreviousOuterKeyRejectsMissingBudgetSeedCapability(): void
+    {
+        $config = new RateLimiterConfig('key-secret', 'fingerprint-secret', 'prod', 'previous-key-secret');
+        $builder = $this->neutralizedBuilder(
+            new HardBlockCycleOnlyInMemoryRateLimitStore($this->clock),
+            new StatefulInMemoryCorrelationStore($this->clock),
+            new InMemoryCircuitBreakerStore(),
+            $config,
+        );
+        $builder->withPolicy(new NeutralAllowancePolicy('known_device_allowance_policy'));
+
+        try {
+            $builder->build();
+            self::fail('Expected a known-device account allowance with previous outer-key rotation to require BudgetSeedStoreInterface.');
         } catch (RateLimiterException $exception) {
             self::assertStringContainsString('BudgetSeedStoreInterface', $exception->getMessage());
         }
@@ -493,6 +513,44 @@ final class NeutralPolicy implements BlockPolicyInterface
     public function getBudgetConfig(): ?BudgetConfigDTO
     {
         return $this->budget;
+    }
+}
+
+/**
+ * Budget-less policy that only opts into the known-device account allowance.
+ */
+final class NeutralAllowancePolicy implements KnownDeviceAccountAllowancePolicyInterface
+{
+    public function __construct(private readonly string $name) {}
+
+    public function getName(): string
+    {
+        return $this->name;
+    }
+
+    public function getScoreThresholds(): PolicyThresholdsDTO
+    {
+        return new PolicyThresholdsDTO(k4: new ScoreThresholdsDTO(5, 8, 12));
+    }
+
+    public function getScoreDeltas(): ScoreDeltasDTO
+    {
+        return new ScoreDeltasDTO(k4_failure: 3, k5_failure: 2);
+    }
+
+    public function getFailureMode(): string
+    {
+        return 'FAIL_CLOSED';
+    }
+
+    public function getBudgetConfig(): ?BudgetConfigDTO
+    {
+        return null;
+    }
+
+    public function getKnownDeviceAccountAllowance(): int
+    {
+        return 8;
     }
 }
 

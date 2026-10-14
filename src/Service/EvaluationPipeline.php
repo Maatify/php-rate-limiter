@@ -6,6 +6,7 @@ namespace Maatify\RateLimiter\Service;
 
 use Maatify\RateLimiter\Config\BlockPolicyInterface;
 use Maatify\RateLimiter\Enum\PolicyCapabilityEnum;
+use Maatify\RateLimiter\Config\KnownDeviceAccountAllowancePolicyInterface;
 use Maatify\RateLimiter\Config\PolicyCapabilityProviderInterface;
 use Maatify\RateLimiter\Config\PostPunishmentReentryPolicyInterface;
 use Maatify\RateLimiter\DTO\BoundedCorrelationObservationDTO;
@@ -1542,6 +1543,27 @@ class EvaluationPipeline
     ): array {
         $deltas = $this->calculateDeltas($policy, $context, $device, $request, $isEphemeral);
 
+        // A known-device failure always consumes the fingerprint-independent
+        // account allowance. Once it is spent, the failure is also scored on
+        // K4, so device rotation and pacing below K5 decay cannot keep a
+        // known device less bounded than an unknown one.
+        if ($request->isFailure
+            && $policy instanceof KnownDeviceAccountAllowancePolicyInterface
+            && ! $isEphemeral
+            && $context->accountId !== null
+            && ($keys['k4'] ?? null) !== null
+            && $deltas['k5'] > 0
+            && $deltas['k4'] === 0
+            && $this->isKnownForAccount($device)) {
+            $allowance = $this->incrementBudgetAcrossRotation(
+                $this->auxiliaryAccountKey($policy->getName(), 'known_device_allowance', $context->accountId, $this->secret),
+                $this->previousAuxiliaryAccountKey($policy->getName(), 'known_device_allowance', $context->accountId),
+            );
+            if ($allowance->count > $policy->getKnownDeviceAccountAllowance()) {
+                $deltas['k4'] = $policy->getScoreDeltas()->k4_failure;
+            }
+        }
+
         $k4Repeated = $policy->getScoreDeltas()->k4_repeated_missing_fp;
         if ($request->isFailure && empty($device->fingerprintHash) && $context->accountId && $k4Repeated > 0) {
             $key = $this->auxiliaryAccountKey(
@@ -1796,11 +1818,13 @@ class EvaluationPipeline
                     $duration = PenaltyLadder::getDuration($level);
                     $retryAfter = $retryAfterByKeyType[$keyType] ?? $duration;
                     $isAdvisory = $this->isK1Key($keyType);
+                    // A K5 level is device scoped and never locks the account.
+                    $persistenceKeyType = $keyType === 'k5' ? 'k5' : 'k4';
                     $persistence = [];
-                    if (! $isAdvisory && $context->accountId && ($keys['k4'] ?? null) !== null) {
+                    if (! $isAdvisory && $context->accountId && ($keys[$persistenceKeyType] ?? null) !== null) {
                         $persistence[] = [
-                            'key' => $keys['k4'],
-                            'previousKey' => $keysV1['k4'] ?? null,
+                            'key' => $keys[$persistenceKeyType],
+                            'previousKey' => $keysV1[$persistenceKeyType] ?? null,
                             'level' => $level,
                             'duration' => $duration,
                         ];
@@ -1830,17 +1854,36 @@ class EvaluationPipeline
                 }
                 $persistence = [];
 
-                if ($context->accountId && ($keys['k4'] ?? null) !== null) {
+                // K5 levels persist on the device key only; every other
+                // scored level keeps its account-wide K4 persistence.
+                $k5Level = $levelsByKeyType['k5'] ?? 0;
+                $accountLevel = 0;
+                foreach ($levelsByKeyType as $keyType => $level) {
+                    if ($keyType !== 'k5') {
+                        $accountLevel = max($accountLevel, $level);
+                    }
+                }
+
+                if ($accountLevel > 0 && $context->accountId && ($keys['k4'] ?? null) !== null) {
                     $k4LifecycleLevel = $levelsByKeyType['k4'] ?? 0;
                     $k4IsLifecycleEligible = $policy instanceof PostPunishmentReentryPolicyInterface
                         && $k4LifecycleLevel >= 2
                         && isset($this->lifecycleEligibleKeys[$keys['k4']]);
-                    $persistenceLevel = $k4IsLifecycleEligible ? $k4LifecycleLevel : $newMaxLevel;
+                    $persistenceLevel = $k4IsLifecycleEligible ? $k4LifecycleLevel : $accountLevel;
                     $persistence[] = [
                         'key' => $keys['k4'],
                         'previousKey' => $keysV1['k4'] ?? null,
                         'level' => $persistenceLevel,
                         'duration' => PenaltyLadder::getDuration($persistenceLevel),
+                    ];
+                }
+
+                if ($k5Level > 0 && $context->accountId && ($keys['k5'] ?? null) !== null) {
+                    $persistence[] = [
+                        'key' => $keys['k5'],
+                        'previousKey' => $keysV1['k5'] ?? null,
+                        'level' => $k5Level,
+                        'duration' => PenaltyLadder::getDuration($k5Level),
                     ];
                 }
 
