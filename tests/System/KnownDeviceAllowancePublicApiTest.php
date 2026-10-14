@@ -53,7 +53,7 @@ final class KnownDeviceAllowancePublicApiTest extends TestCase
                 $reached++;
                 $limiter->limit($context, RateLimitCommand::recordFailure('login_protection'));
             }
-            $this->clock->sleep(3);
+            $this->advance(3);
         }
 
         $this->assertSame(4, $reached);
@@ -151,6 +151,14 @@ final class KnownDeviceAllowancePublicApiTest extends TestCase
             [RateLimitResultDTO::DECISION_HARD_BLOCK, 'DEGRADED_MODE', 'fallback_limit_exceeded'],
         ], $observed);
         $this->assertNull($store->get(hash_hmac('sha256', 'login_protection:rate_limiter:k4:v2:prod:outage-owner', 'key-secret')));
+    }
+
+    /**
+     * FixedClock::sleep() is a no-op; time must be advanced explicitly.
+     */
+    private function advance(int $seconds): void
+    {
+        $this->clock->setNow($this->clock->now()->modify("+{$seconds} seconds"));
     }
 
     private function limiter(FullCapabilityInMemoryStore $store, ?BlockPolicyInterface $policy = null): RateLimiterInterface

@@ -63,11 +63,13 @@ final class KnownDeviceVerifierBoundTest extends TestCase
         $reached = 0;
         for ($attempt = 0; $attempt < 25; $attempt++) {
             $reached += $this->preThenFailure($pipeline, $policy, $this->context('owner'), $device) ? 1 : 0;
-            $this->clock->sleep(3);
+            $this->advance(3);
         }
 
+        // The L1 decision comes from the K5 score (8), which decays one point
+        // per 300 s; the short L1 block record itself expires after 15 s.
         $this->assertSame(4, $reached);
-        $this->assertSame(1, $this->store->checkBlock($this->key('login_protection', 'k5', 'owner:trusted-fp'))?->level);
+        $this->assertSame(8, $this->store->get($this->key('login_protection', 'k5', 'owner:trusted-fp'))?->value);
         $this->assertNull($this->store->checkBlock($this->key('login_protection', 'k4', 'owner')));
         $this->assertNull($this->store->get($this->key('login_protection', 'k4', 'owner')));
     }
@@ -81,7 +83,7 @@ final class KnownDeviceVerifierBoundTest extends TestCase
         $reached = 0;
         for ($attempt = 0; $attempt < 25; $attempt++) {
             $reached += $this->preThenFailure($pipeline, $policy, $this->context('owner'), $device) ? 1 : 0;
-            $this->clock->sleep(3);
+            $this->advance(3);
         }
 
         $this->assertSame(2, $reached);
@@ -148,10 +150,10 @@ final class KnownDeviceVerifierBoundTest extends TestCase
     }
 
     /**
-     * A stable trusted device that paces one failure every 600 s keeps its K5
-     * score below the first K5 threshold forever (+2 per failure, -2 decay per
-     * 600 s). After the account allowance, a known device must be bounded no
-     * worse than an unknown device running the same stream.
+     * A stable trusted device pacing one failure every 600 s for 24 h. S0
+     * lets 128 of 144 attempts reach the verifier (an unknown device on the
+     * same stream: 39). After the account allowance, a known device must be
+     * bounded no worse than an unknown device plus the allowance.
      */
     public function testPacedKnownDeviceIsBoundedLikeAnUnknownDeviceAfterAllowance(): void
     {
@@ -165,10 +167,12 @@ final class KnownDeviceVerifierBoundTest extends TestCase
     }
 
     /**
-     * Rotating fingerprint and user agent on every attempt is already bounded
-     * in S0 by the distributed-account rule; the slice must not weaken it.
+     * Rotating fingerprint and user agent every 300 s for 24 h creates a fresh
+     * K5 and K2 each time, so neither K5 thresholds nor K2 churn apply. S0 lets
+     * all 288 attempts reach the verifier; the fingerprint-independent account
+     * allowance bounds it like an unknown device.
      */
-    public function testRotatingKnownDeviceStaysBoundedByDistributedAccountRule(): void
+    public function testRotatingKnownDeviceIsBoundedLikeAnUnknownDeviceAfterAllowance(): void
     {
         $known = $this->dayStream(true, true, 300);
 
@@ -176,7 +180,6 @@ final class KnownDeviceVerifierBoundTest extends TestCase
         $unknown = $this->dayStream(false, true, 300);
 
         $this->assertSame(288, $known['attempts']);
-        $this->assertLessThanOrEqual(3, $known['reached']);
         $this->assertLessThanOrEqual($unknown['reached'] + 8, $known['reached']);
     }
 
@@ -197,7 +200,7 @@ final class KnownDeviceVerifierBoundTest extends TestCase
             if ($this->preThenFailure($pipeline, $policy, $this->context("victim{$account}", '203.0.113.20'), $device)) {
                 $reachedByAccount[$account]++;
             }
-            $this->clock->sleep(3);
+            $this->advance(3);
         }
 
         foreach ($reachedByAccount as $reached) {
@@ -214,7 +217,7 @@ final class KnownDeviceVerifierBoundTest extends TestCase
 
         for ($attempt = 0; $attempt < 3; $attempt++) {
             $this->assertTrue($this->preThenFailure($pipeline, $policy, $this->context('typo-owner'), $device));
-            $this->clock->sleep(5);
+            $this->advance(5);
         }
 
         $check = $pipeline->process($policy, $this->context('typo-owner'), RateLimitCommand::checkOnly('login_protection'), $device);
@@ -222,6 +225,36 @@ final class KnownDeviceVerifierBoundTest extends TestCase
 
         $this->assertSame(RateLimitResultDTO::DECISION_ALLOW, $check->decision);
         $this->assertSame(RateLimitResultDTO::DECISION_ALLOW, $success->decision);
+    }
+
+    /**
+     * Characterization (declared in DEC-021, not changed by this slice): K5 L1
+     * decisions are actually-issued SOFT_BLOCKs, so they feed the ACTIVE
+     * Anti-Equilibrium gate (DECISION_MATRIX.md §2.5). Four typos, three retries
+     * during the soft window, and one more typo after K5 decays give an
+     * account-wide K4 L2 hard block that also stops the owner's other device.
+     */
+    public function testK5SoftDecisionsFeedTheAntiEquilibriumAccountGate(): void
+    {
+        $pipeline = $this->pipeline();
+        $policy = new LoginProtectionPolicy();
+        $laptop = $this->device('owner-laptop', 'HIGH', true);
+        $phone = $this->device('owner-phone', 'HIGH', true);
+
+        for ($attempt = 0; $attempt < 4; $attempt++) {
+            $this->assertTrue($this->preThenFailure($pipeline, $policy, $this->context('equilibrium-owner'), $laptop));
+        }
+        for ($retry = 0; $retry < 3; $retry++) {
+            $soft = $pipeline->process($policy, $this->context('equilibrium-owner'), RateLimitCommand::checkOnly('login_protection'), $laptop);
+            $this->assertSame(RateLimitResultDTO::DECISION_SOFT_BLOCK, $soft->decision);
+        }
+
+        $this->advance(300);
+        $this->assertTrue($this->preThenFailure($pipeline, $policy, $this->context('equilibrium-owner'), $laptop));
+
+        $this->assertSame(2, $this->store->checkBlock($this->key('login_protection', 'k4', 'equilibrium-owner'))?->level);
+        $other = $pipeline->process($policy, $this->context('equilibrium-owner'), RateLimitCommand::checkOnly('login_protection'), $phone);
+        $this->assertSame(RateLimitResultDTO::DECISION_HARD_BLOCK, $other->decision);
     }
 
     /**
@@ -297,6 +330,14 @@ final class KnownDeviceVerifierBoundTest extends TestCase
     /**
      * @return array{attempts: int, reached: int}
      */
+    /**
+     * FixedClock::sleep() is a no-op; time must be advanced explicitly.
+     */
+    private function advance(int $seconds): void
+    {
+        $this->clock->setNow($this->clock->now()->modify("+{$seconds} seconds"));
+    }
+
     private function dayStream(bool $known, bool $rotate, int $interval): array
     {
         $pipeline = $this->pipeline();
@@ -308,7 +349,7 @@ final class KnownDeviceVerifierBoundTest extends TestCase
             $suffix = $rotate ? (string) $attempts : 'stable';
             $device = new DeviceIdentityDTO("day-fp-{$suffix}", $known ? 'HIGH' : 'MEDIUM', $known, false, "agent/{$suffix}");
             $reached += $this->preThenFailure($pipeline, $policy, $this->context('day-target'), $device) ? 1 : 0;
-            $this->clock->sleep($interval);
+            $this->advance($interval);
         }
 
         return ['attempts' => $attempts, 'reached' => $reached];
