@@ -131,6 +131,20 @@ Account-level keys (K4) are authoritative.
 | 8 – 11        | HARD_BLOCK (L2)  |
 | ≥ 12          | HARD_BLOCK (L3+) |
 
+### Known-Device Bound (DEC-021, PROPOSED)
+
+| Known-device K5 score | Decision (that account + device only) |
+| --------------------- | ------------------------------------- |
+| < 8                   | ALLOW                                 |
+| 8 – 11                | SOFT_BLOCK (L1)                       |
+| 12 – 15               | HARD_BLOCK (L2)                       |
+| ≥ 16                  | HARD_BLOCK (L3+)                      |
+
+* A K5 level is persisted on K5 only; it never blocks the account (K4) or other devices.
+* Known-device account allowance: **8** known-device failures per account and fixed 24h
+  epoch, independent of the fingerprint. Further known-device failures are also scored on
+  K4 (+3) like a new device (`DECISION_MATRIX.md` §2.2.2).
+
 ---
 
 ### Login Failure Budget (Fixed 24h Epoch)
@@ -276,6 +290,13 @@ IP-only signals are advisory only.
 | 4 – 6 | SOFT_BLOCK (L1)  |
 | 7 – 9 | HARD_BLOCK (L2)  |
 | ≥ 10  | HARD_BLOCK (L3+) |
+
+### Known-Device Bound (DEC-021, PROPOSED)
+
+* Known-device K5 thresholds `8 / 12 / 16` (L1 at the 2nd known-device OTP failure, L2 at
+  the 3rd, L3 at the 4th), persisted on K5 only.
+* Known-device account allowance: **2** per account and fixed 24h epoch; further
+  known-device OTP failures are also scored on K4 (+5) (`DECISION_MATRIX.md` §3.1.2).
 
 ---
 

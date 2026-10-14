@@ -15,6 +15,7 @@ use Maatify\RateLimiter\DTO\RateLimitContextDTO;
 use Maatify\RateLimiter\DTO\RateLimitResultDTO;
 use Maatify\RateLimiter\DTO\ScoreDeltasDTO;
 use Maatify\RateLimiter\DTO\ScoreThresholdsDTO;
+use Maatify\RateLimiter\Exception\BackendFailureException;
 use Maatify\RateLimiter\Service\AntiEquilibriumGate;
 use Maatify\RateLimiter\Service\BudgetTracker;
 use Maatify\RateLimiter\Service\DecayCalculator;
@@ -23,6 +24,7 @@ use Maatify\RateLimiter\Service\EvaluationPipeline;
 use Maatify\RateLimiter\Tests\Support\Clock\FixedClock;
 use Maatify\RateLimiter\Tests\Support\Correlation\StatefulInMemoryCorrelationStore;
 use Maatify\RateLimiter\Tests\Support\RateLimiter\InMemoryRateLimitStore;
+use Maatify\RateLimiter\Tests\Support\RateLimiter\PartialFailureRateLimitStore;
 use PHPUnit\Framework\TestCase;
 
 /**
@@ -259,6 +261,37 @@ final class KnownDeviceVerifierBoundTest extends TestCase
         $rotated->process($policy, $this->context('rotating-owner', '198.51.100.8'), RateLimitCommand::recordFailure('login_protection'), $this->rotatedDevice(8));
 
         $this->assertSame(3, $this->store->get($this->key('login_protection', 'k4', 'rotating-owner', 'new_secret'))?->value);
+    }
+
+    /**
+     * DEC-015: a backend failure while consuming the account allowance is a
+     * typed backend failure for the engine's bounded fallback, never a silent
+     * normal-mode allowance, and it leaves no partial K5 or K4 score behind.
+     */
+    public function testAllowanceBackendFailurePropagatesWithoutPartialScoring(): void
+    {
+        $failing = new PartialFailureRateLimitStore($this->store, throwOnIncrementBudget: new BackendFailureException('allowance backend down'));
+        $pipeline = new EvaluationPipeline(
+            $failing,
+            $this->correlationStore,
+            new BudgetTracker($failing, $this->clock),
+            new AntiEquilibriumGate($this->correlationStore),
+            new DecayCalculator($this->clock),
+            new EphemeralBucket($this->correlationStore),
+            'test_secret',
+            'prod',
+            $this->clock,
+            null,
+        );
+
+        try {
+            $pipeline->process(new LoginProtectionPolicy(), $this->context('outage-owner'), RateLimitCommand::recordFailure('login_protection'), $this->device('outage-fp', 'HIGH', true));
+            self::fail('Expected the allowance backend failure to propagate.');
+        } catch (BackendFailureException) {
+        }
+
+        $this->assertNull($this->store->get($this->key('login_protection', 'k5', 'outage-owner:outage-fp')));
+        $this->assertNull($this->store->get($this->key('login_protection', 'k4', 'outage-owner')));
     }
 
     /**

@@ -146,6 +146,29 @@ short-circuit stages 4–6. Normative budget behavior is defined in §2.4, §2.5
 | Repeated missing fingerprint (same account) | K4  | +6          | Accelerated escalation |
 | IP attempts multiple accounts               | K1  | +5          | Credential spray       |
 
+#### 2.2.2 Known-Device Verifier Bound (DEC-021, PROPOSED)
+
+A known device (`isKnownForAccount`) is scored on K5, and K5 is bounded:
+
+| K5 score | Decision on that account + device |
+| -------- | --------------------------------- |
+| < 8      | ALLOW                             |
+| 8 – 11   | SOFT_BLOCK (L1)                   |
+| 12 – 15  | HARD_BLOCK (L2)                   |
+| ≥ 16     | HARD_BLOCK (L3+)                  |
+
+* A level derived from K5 is persisted on the **K5 key only**, never on K4, for every
+  policy. Levels derived from other keys keep their K4 persistence. The owner's other
+  devices on the same account are not blocked by a K5 level.
+* **Known-device account allowance** (`KnownDeviceAccountAllowancePolicyInterface`;
+  Login = 8): every known-device failure consumes one unit of a fingerprint-independent
+  account counter with a fixed 24-hour epoch (`KEY_STRATEGY.md` §4.6, purpose
+  `known_device_allowance`). A known-device failure beyond the allowance is **also** scored
+  on K4 with the new-device delta (+3) and is budget-eligible (§2.4.1). Ephemeral and
+  missing-fingerprint failures keep their existing K4 scoring and do not consume it.
+* A backend failure while consuming the allowance is a typed backend failure (DEC-015);
+  it is never converted into a normal-mode allowance.
+
 #### 2.2.1 “Repeated missing fingerprint” Rule (Deterministic)
 
 A “Repeated missing fingerprint (same account)” event applies if:
@@ -208,7 +231,7 @@ Login failures are **classified**, not all scored with K4 + K5 together:
 
 | Classification              | Scoring                                      | Budget eligibility                                        |
 | --------------------------- | -------------------------------------------- | --------------------------------------------------------- |
-| **Known device failure**    | K5 score delta applies (**+2**); K4 “new device” delta does **NOT** apply | Budget-eligible **only after** `failed_login_count(K5) ≥ 8` within the fixed epoch (known-device micro-cap) |
+| **Known device failure**    | K5 score delta applies (**+2**); K4 “new device” delta does **NOT** apply within the known-device account allowance (§2.2.2) and **also** applies beyond it | Budget-eligible **only after** `failed_login_count(K5) ≥ 8` within the fixed epoch (known-device micro-cap), or immediately once beyond the account allowance |
 | **New / unverified device failure** | K4 new-device delta applies (**+3**) | Budget-eligible immediately |
 
 * “Known device” means `isKnownForAccount` (§0; `DEVICE_FINGERPRINT.md` §4.3).
@@ -366,6 +389,14 @@ Applies if:
 * The **previous OTP failure** for the same `AccountID` and the OTP policy flow within the last **30 minutes** was also missing `DeviceFP`.
 
 ---
+
+
+#### 3.1.2 Known-Device Verifier Bound (DEC-021, PROPOSED)
+
+OTP uses the §2.2.2 contract with the OTP deltas: K5 thresholds `8 / 12 / 16` (L1 at the
+2nd known-device failure, L2 at the 3rd, L3 at the 4th), K5 levels persisted on K5 only,
+and a known-device account allowance of **2** per fixed 24-hour epoch, beyond which the
+OTP new-device delta (+5) also applies to K4. OTP budget eligibility (§3.3) is unchanged.
 
 ### 3.2 OTP Thresholds
 
