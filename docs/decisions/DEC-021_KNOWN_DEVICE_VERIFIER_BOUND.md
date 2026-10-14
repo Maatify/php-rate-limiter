@@ -85,22 +85,22 @@ unknown device on the same Login streams reaches it 37–39 times.
 5. **Source-scoped Anti-Equilibrium (amends ACTIVE `DECISION_MATRIX.md` §2.5, PROPOSED).**
    Every issued `SOFT_BLOCK` carries the scopes of its winning candidates. A level that
    comes from K5 alone has **device** scope; every other source keeps **account** scope (the
-   conservative default, i.e. the current §2.5 behavior). One event is recorded per present
-   scope, so a mixed K5 + account `SOFT_BLOCK` feeds each watcher exactly once and never
-   skips the account watcher. Device events escalate (three in 6 h, on `recordFailure`) to a
-   K5 `HARD_BLOCK` L2 on that account + device only; account events keep the K4 account-wide
-   escalation. A device-only `SOFT_BLOCK` without a durable device identity is recorded on
-   the account watcher. Both watchers follow rotation. The device watcher exists only for a
-   budgeted, non-`API_OVERUSE` policy with K5 thresholds (the account watcher's eligibility
-   plus a K5 level source); for any other policy it is never read, written, or escalated,
-   including after a same-name policy replacement with stored events (F117-FR-01). The two
-   watcher writes are not atomic; the device event is written first, so a fault between them
-   leaves at most a device-scoped event and never an orphan account event (F117-FR-02). A
-   fully atomic two-key publication would need a new Store capability and is not proposed. Rationale: §2.5 exists to break
+   conservative default, i.e. the current §2.5 behavior). Each issued `SOFT_BLOCK` writes
+   exactly **one** event: on the account watcher whenever any account source is present
+   (mixed K4 + K5 included), on the device watcher only for a K5-only `SOFT_BLOCK` with an
+   eligible device, and on the account watcher otherwise (F117-FR-02, Lead decision
+   [5521663868](https://github.com/Maatify/php-rate-limiter/pull/117#pullrequestreview-5521663868)).
+   Device events escalate (three in 6 h, on `recordFailure`) to a K5 `HARD_BLOCK` L2 on that
+   account + device only; account events keep the K4 account-wide escalation. Both watchers
+   follow rotation. The device watcher exists only for a budgeted, non-`API_OVERUSE` policy
+   with K5 thresholds (the account watcher's eligibility plus a K5 level source); for any
+   other policy it is never read, written, or escalated, including after a same-name policy
+   replacement with stored events (F117-FR-01). Rationale: §2.5 exists to break
    "low-and-slow" equilibrium; for a K5-only source the equilibrium is per device, so the
-   escalation is kept at the same scope as the penalty. Account protection against a known
-   device is not lost: rotating devices fall under the fingerprint-independent allowance and
-   then under K4 scoring, whose soft events remain account-scoped.
+   escalation is kept at the same scope as the penalty, and mixed evidence keeps the
+   stronger account escalation. Account protection against a known device is not lost:
+   rotating devices fall under the fingerprint-independent allowance and then under K4
+   scoring, whose soft events remain account-scoped.
 6. **Unchanged.** Budget, cooldown, micro-cap, the account watcher and its K4 escalation,
    OTP `precheck_enforcement = false`, K1/K2/K3 correlation, trusted K1 advisory, Store and
    Redis contracts, and DEC-003 / DEC-007 / DEC-008 / DEC-015 / DEC-019.
@@ -111,7 +111,7 @@ The bound is account- and device-scoped, uses no network correlation, and reuses
 primitives (score thresholds, the fixed-epoch budget counter, K4 lifecycle). Measured with
 an explicitly advancing clock, one account, 24 h, Login `pre+out`: a stable known device
 reaches the verifier 45 / 44 / 45 times (failing every 600 / 300 / 60 s), and a rotating one
-44 times, against 37–39 for an unknown device. OTP: a stable known device 54 / 51 / 51 (S0
+44 times, against 37–39 for an unknown device. OTP: a stable known device 54 / 52 / 51 (S0
 144 / 288 / 1440); a rotating one 285, equal to the unknown OTP device (285, S0 property).
 On the merged #113 / #116 harness streams (unchanged; driver control reproduces the S0
 goldens 355/355 and 60/60): the #114 control 25/25 → 4/25; Host-tampered trust TMX
@@ -132,16 +132,20 @@ harness does not contain the known-device owner-retry scenario; it is covered by
   offending device reaches the verifier at most 4 times in an hour, each further failure
   re-escalating to K5 L2. Measured with an advancing clock, 24 h, one account, Login
   `pre+out`: stable known device 45 / 44 / 45 (failing every 600 / 300 / 60 s; `744f571`:
-  45 / 44 / 44), rotating 44 (unchanged); OTP stable known device 54 / 51 / 51 (`744f571`:
+  45 / 44 / 44), rotating 44 (unchanged); OTP stable known device 54 / 52 / 51 (`744f571`:
   74 / 61 / 60). The #113 / #116 harness cells are identical to `744f571`.
 - **Account-wide effect after the allowance.** Beyond the allowance, K4 scoring (and its
   DEC-007 punishment / re-entry lifecycle) applies to the account as for an unknown device.
-- **Partial commit on faults (pre-existing, narrowed).** The pipeline is not transactional
-  across store operations (as on S0): a fault after a request's blocks are persisted leaves
-  them persisted. For the two Anti-Equilibrium writes the order is fixed so that no orphan
-  account event can be left. Through `limit()`, repeated faulted mixed requests answered
-  `FAIL_CLOSED` then `DEGRADED_MODE` and never created an account-wide `HARD_BLOCK`
-  (`KnownDeviceAntiEquilibriumBoundaryTest`).
+- **Partial commit on faults (pre-existing).** The pipeline is not transactional across
+  store operations (as on S0): a fault after a request's blocks are persisted leaves them
+  persisted. Anti-Equilibrium recording is a single write per issued `SOFT_BLOCK`, so no
+  two-watcher partial publication exists. Through `limit()`, mixed requests whose account
+  write fails answered `FAIL_CLOSED` twice then `DEGRADED_MODE`, left no watcher event and no
+  account-wide `HARD_BLOCK` (`KnownDeviceAntiEquilibriumBoundaryTest`).
+- **Cost of the single-write rule (measured).** Mixed K4 + K5 soft events no longer count on
+  the device watcher. Against HEAD `09c58d1` (which wrote both), every Login 24 h row is
+  identical; one OTP row (stable known device failing every 300 s) reaches the verifier 52
+  instead of 51 times in 24 h, with unchanged per-600 / 1800 / 3600 s peaks (2 / 3 / 5).
 - **Concurrency.** Pre-checks are read-only, so in-flight attempts are not serialized
   (unchanged from S0). The allowance counter is exact under real-Redis overlap. Under heavy
   same-account overlap, DEC-007 K4 generation conflicts answer some demoted failures with a

@@ -388,21 +388,22 @@ Each issued `SOFT_BLOCK` carries the scopes of its winning `SOFT_BLOCK` candidat
 * **account** — every other source (K4 score, budget, flood, Recovery Guard, other keys).
   This is the conservative default and keeps the §2.5.1 / §2.5.2 behavior.
 
-Recording (§2.5.2) writes exactly one event per present scope: an **account** event on the
-account watcher, a **device** event on a device watcher for the same account and device
-(`KEY_STRATEGY.md` §4.6, purpose `anti_equilibrium_device`). A `SOFT_BLOCK` that aggregates a
-K5 level and an account level records one event on each watcher. A device-only
-`SOFT_BLOCK` without a durable device identity (ephemeral or missing fingerprint) is recorded
-on the account watcher.
+Recording (§2.5.2) writes exactly **one** event per issued `SOFT_BLOCK`, on one watcher:
+
+* the **account** watcher whenever any winning candidate has account scope, including a
+  `SOFT_BLOCK` that aggregates a K5 level with an account level (the stronger, existing
+  account protection);
+* the **device** watcher for the same account and device (`KEY_STRATEGY.md` §4.6, purpose
+  `anti_equilibrium_device`) only when every winning candidate is device-scoped (K5 alone)
+  and the device watcher is eligible;
+* the **account** watcher otherwise (for example a device-only `SOFT_BLOCK` without a durable
+  device identity).
 
 The device watcher exists only for a policy that the account watcher also covers (a
 budgeted policy), that is not `API_OVERUSE`, and that defines K5 thresholds; otherwise it
 is never read, written, or escalated, even if events are stored under the same policy name.
-
-The two watcher writes are separate store operations, not one atomic publication. The
-device event is written first: if the second write fails, the request ends in the typed
-backend-failure path and only a device-scoped event may remain; an orphan account event
-cannot.
+With a single write there is no two-key partial publication; an operational exception
+around that one write keeps the existing store semantics (DEC-015).
 
 Escalation (§2.5.1) reads both watchers on `recordFailure`: three prior account events add
 `HARD_BLOCK (Account)` L2 on K4 as before; three prior device events add `HARD_BLOCK` L2 on
