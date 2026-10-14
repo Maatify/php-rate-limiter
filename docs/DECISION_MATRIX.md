@@ -161,11 +161,18 @@ A known device (`isKnownForAccount`) is scored on K5, and K5 is bounded:
   policy. Levels derived from other keys keep their K4 persistence. The owner's other
   devices on the same account are not blocked by a K5 level.
 * **Known-device account allowance** (`KnownDeviceAccountAllowancePolicyInterface`;
-  Login = 8): every known-device failure consumes one unit of a fingerprint-independent
-  account counter with a fixed 24-hour epoch (`KEY_STRATEGY.md` §4.6, purpose
-  `known_device_allowance`). A known-device failure beyond the allowance is **also** scored
-  on K4 with the new-device delta (+3) and is budget-eligible (§2.4.1). Ephemeral and
+  Login = 8): while active, every known-device failure consumes one unit of a
+  fingerprint-independent account counter with a fixed 24-hour epoch (`KEY_STRATEGY.md`
+  §4.6, purpose `known_device_allowance`). Every known-device failure beyond the allowance
+  **also** adds the new-device delta (+3) to K4 and is budget-eligible (§2.4.1). This is a
+  per-failure K4 scoring rule, not an absolute cap on verifier reaches: K4 protection
+  decays and depends on recorded outcomes, and pre-checks reserve nothing. Ephemeral and
   missing-fingerprint failures keep their existing K4 scoring and do not consume it.
+* The opt-in is an authentication capability: all authentication prerequisites apply,
+  `API_OVERUSE` cannot be combined with it, and an active allowance requires a positive
+  `k5_failure` and positive monotonic K5 thresholds. A `null` allowance disables it.
+* K5 L1 decisions are actually-issued `SOFT_BLOCK`s and therefore count toward the
+  Anti-Equilibrium gate (§2.5), whose escalation is an account-wide K4 `HARD_BLOCK`.
 * A backend failure while consuming the allowance is a typed backend failure (DEC-015);
   it is never converted into a normal-mode allowance.
 

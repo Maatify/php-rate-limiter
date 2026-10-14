@@ -140,10 +140,13 @@ Account-level keys (K4) are authoritative.
 | 12 – 15               | HARD_BLOCK (L2)                       |
 | ≥ 16                  | HARD_BLOCK (L3+)                      |
 
-* A K5 level is persisted on K5 only; it never blocks the account (K4) or other devices.
+* A K5 level is persisted on K5 only; the K5 level itself never blocks the account (K4).
+  K5 `SOFT_BLOCK`s do count toward Anti-Equilibrium (`DECISION_MATRIX.md` §2.5), whose
+  escalation is an account-wide K4 `HARD_BLOCK`.
 * Known-device account allowance: **8** known-device failures per account and fixed 24h
-  epoch, independent of the fingerprint. Further known-device failures are also scored on
-  K4 (+3) like a new device (`DECISION_MATRIX.md` §2.2.2).
+  epoch, independent of the fingerprint. Each further known-device failure also adds +3 to
+  K4 like a new device; this is a per-failure scoring rule, not an absolute cap on verifier
+  reaches (`DECISION_MATRIX.md` §2.2.2).
 
 ---
 

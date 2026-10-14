@@ -10,16 +10,20 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Changed (pending DEC-021, PROPOSED — not mergeable before Owner approval)
 - Login and OTP bound known devices (trusted session or previously verified device):
   K5 thresholds `8 / 12 / 16`, and a fingerprint-independent known-device account
-  allowance (Login 8, OTP 2 per fixed 24h epoch) beyond which known-device failures are
-  also scored on K4 like a new device. A trusted session failing on its own account now
-  reaches the verifier 4 times in a 72 s burst instead of 25 (Login).
-- A score level derived from K5 is persisted on the K5 key only and no longer locks the
-  account key K4. This also applies to custom policies that define K5 thresholds.
+  allowance (Login 8, OTP 2 per fixed 24h epoch); each known-device failure beyond it also
+  adds the K4 new-device delta. This is a per-failure scoring rule, not an absolute cap.
+  A trusted session failing on its own account now reaches the verifier 4 times in a 72 s
+  Login burst instead of 25; a stable known device failing every 300 s for 24 h reaches it
+  44 times instead of 268 (an unknown device: 37).
+- A score level derived from K5 is persisted on the K5 key only and no longer on the account
+  key K4. This also applies to custom policies that define K5 thresholds.
+- K5 `SOFT_BLOCK` decisions count toward the existing Anti-Equilibrium gate, so repeated
+  known-device soft blocks can now lead to an account-wide K4 `HARD_BLOCK` L2.
 
 ### Added
-- `KnownDeviceAccountAllowancePolicyInterface` (opt-in) for custom authentication
-  policies, validated by the runtime and covered by the Builder `BudgetSeedStoreInterface`
-  preflight under outer-key rotation.
+- `KnownDeviceAccountAllowancePolicyInterface` (opt-in, authentication capability) for
+  custom authentication policies. An active allowance requires positive K5 failure delta
+  and K5 thresholds; `API_OVERUSE` cannot be combined with it; `null` disables it.
 
 ### Fixed
 - Bounded local-fallback denials (`fallback_limit_exceeded`) no longer return a
