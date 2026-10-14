@@ -457,23 +457,20 @@ class EvaluationPipeline
             && ! $request->isSuccess
             && $context->accountId !== null
             && $policy->getBudgetConfig() !== null) {
-            // A device-only SOFT_BLOCK without a durable device watcher (no
-            // K5 identity) falls back to the account watcher: never drop it.
+            // Exactly one watcher write per issued SOFT_BLOCK: the account
+            // watcher whenever any winning SOFT candidate has account scope
+            // (mixed K4 + K5 included, the stronger account protection), the
+            // device watcher only for a K5-only SOFT with an eligible device,
+            // and the account watcher otherwise.
             $issuedSoftScopes = $this->issuedSoftScopes();
-            $recordAccount = in_array(self::SCOPE_ACCOUNT, $issuedSoftScopes, true)
-                || $deviceWatcher === null
-                || $issuedSoftScopes === [];
-            // The two watcher writes are not atomic. The device event is
-            // written first, so a fault between them can leave only a
-            // device-scoped residue, never an orphan account event.
-            if ($deviceWatcher !== null && in_array(self::SCOPE_DEVICE, $issuedSoftScopes, true)) {
-                $this->antiEquilibriumGate->recordSoftBlock($deviceWatcher['current']);
-            }
-            if ($recordAccount) {
-                $this->antiEquilibriumGate->recordSoftBlock(
-                    $this->auxiliaryAccountKey($policy->getName(), 'anti_equilibrium', $context->accountId, $this->secret),
-                );
-            }
+            $deviceOnly = $deviceWatcher !== null
+                && $issuedSoftScopes !== []
+                && ! in_array(self::SCOPE_ACCOUNT, $issuedSoftScopes, true);
+            $this->antiEquilibriumGate->recordSoftBlock(
+                $deviceOnly
+                    ? $deviceWatcher['current']
+                    : $this->auxiliaryAccountKey($policy->getName(), 'anti_equilibrium', $context->accountId, $this->secret),
+            );
         }
 
         if ($servedReentry !== null && $request->isPreCheck && $final->decision === RateLimitResultDTO::DECISION_ALLOW) {

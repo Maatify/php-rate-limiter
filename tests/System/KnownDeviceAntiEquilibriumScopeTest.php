@@ -127,6 +127,9 @@ final class KnownDeviceAntiEquilibriumScopeTest extends TestCase
     public function testMixedK5AndAccountSoftIsRecordedOnTheAccountWatcherOnly(): void
     {
         foreach (['aggregated' => false, 'separate' => true] as $shape => $trusted) {
+            // Fresh state per shape: two fingerprints on one IP + user agent
+            // would otherwise meet through K2 churn.
+            $this->setUp();
             $pipeline = $this->pipeline();
             $policy = new MixedScopePolicy();
             $account = "mixed-{$shape}";
