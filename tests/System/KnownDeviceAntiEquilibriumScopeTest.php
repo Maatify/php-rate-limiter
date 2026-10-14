@@ -118,25 +118,59 @@ final class KnownDeviceAntiEquilibriumScopeTest extends TestCase
     }
 
     /**
-     * (iv) One issued SOFT that aggregates a K5 level and an account level
-     * counts exactly once on each watcher: no missed account event, no double
-     * count.
+     * (iv) An issued SOFT that aggregates a K5 level and an account level is
+     * recorded once, on the ACCOUNT watcher only (one write per issued SOFT,
+     * account protection preserved); the device watcher is not touched. Shown
+     * for both candidate shapes: one aggregated candidate (previously verified
+     * device) and separate K4 / K5 candidates (trusted session).
      */
-    public function testMixedK5AndAccountSoftCountsOncePerScope(): void
+    public function testMixedK5AndAccountSoftIsRecordedOnTheAccountWatcherOnly(): void
+    {
+        foreach (['aggregated' => false, 'separate' => true] as $shape => $trusted) {
+            $pipeline = $this->pipeline();
+            $policy = new MixedScopePolicy();
+            $account = "mixed-{$shape}";
+            $device = $this->device("mixed-{$shape}-fp", $trusted ? 'HIGH' : 'MEDIUM', $trusted, ! $trusted);
+
+            $first = $pipeline->process($policy, $this->context($account), RateLimitCommand::recordFailure('mixed_scope_flow'), $device);
+            $this->assertSame(RateLimitResultDTO::DECISION_SOFT_BLOCK, $first->decision);
+            $this->assertSame([0, 1], $this->watchers('mixed_scope_flow', $account, "mixed-{$shape}-fp"), $shape);
+
+            $second = $pipeline->process($policy, $this->context($account), RateLimitCommand::recordFailure('mixed_scope_flow'), $device);
+            $this->assertSame(RateLimitResultDTO::DECISION_SOFT_BLOCK, $second->decision);
+            $this->assertSame([1, 1], $this->watchers('mixed_scope_flow', $account, "mixed-{$shape}-fp"), $shape);
+        }
+    }
+
+    /**
+     * (iv) Three mixed SOFT events still escalate on the account (K4 L2), as
+     * the ACTIVE §2.5 account gate requires.
+     */
+    public function testThreeMixedSoftEventsStillEscalateTheAccount(): void
     {
         $pipeline = $this->pipeline();
         $policy = new MixedScopePolicy();
-        $device = $this->device('mixed-fp', 'MEDIUM', false, true);
+        $device = $this->device('mixed-escalation-fp', 'MEDIUM', false, true);
 
-        $first = $pipeline->process($policy, $this->context('mixed-owner'), RateLimitCommand::recordFailure('mixed_scope_flow'), $device);
-        $this->assertSame(RateLimitResultDTO::DECISION_SOFT_BLOCK, $first->decision);
-        $this->assertSame(0, $this->correlationStore->getWatchFlag($this->accountWatcher('mixed_scope_flow', 'mixed-owner')));
-        $this->assertSame(1, $this->correlationStore->getWatchFlag($this->deviceWatcher('mixed_scope_flow', 'mixed-owner', 'mixed-fp')));
+        $decisions = [];
+        for ($attempt = 0; $attempt < 5; $attempt++) {
+            $decisions[] = $pipeline->process($policy, $this->context('mixed-escalation'), RateLimitCommand::recordFailure('mixed_scope_flow'), $device)->decision;
+        }
 
-        $second = $pipeline->process($policy, $this->context('mixed-owner'), RateLimitCommand::recordFailure('mixed_scope_flow'), $device);
-        $this->assertSame(RateLimitResultDTO::DECISION_SOFT_BLOCK, $second->decision);
-        $this->assertSame(1, $this->correlationStore->getWatchFlag($this->accountWatcher('mixed_scope_flow', 'mixed-owner')));
-        $this->assertSame(2, $this->correlationStore->getWatchFlag($this->deviceWatcher('mixed_scope_flow', 'mixed-owner', 'mixed-fp')));
+        $this->assertSame(['SOFT_BLOCK', 'SOFT_BLOCK', 'SOFT_BLOCK', 'SOFT_BLOCK', 'HARD_BLOCK'], $decisions);
+        $this->assertSame([3, 1], $this->watchers('mixed_scope_flow', 'mixed-escalation', 'mixed-escalation-fp'));
+        $this->assertSame(2, $this->store->checkBlock($this->key('mixed_scope_flow', 'k4', 'mixed-escalation'))?->level);
+    }
+
+    /**
+     * @return list<int> [account watcher, device watcher]
+     */
+    private function watchers(string $policy, string $account, string $fingerprint): array
+    {
+        return [
+            $this->correlationStore->getWatchFlag($this->accountWatcher($policy, $account)),
+            $this->correlationStore->getWatchFlag($this->deviceWatcher($policy, $account, $fingerprint)),
+        ];
     }
 
     /**

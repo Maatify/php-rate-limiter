@@ -35,8 +35,8 @@ use PHPUnit\Framework\TestCase;
 /**
  * Boundaries of the device Anti-Equilibrium watcher (DEC-021 PROPOSED):
  * F117-FR-01 — it belongs only to budgeted, non-API authentication policies
- * that score K5; F117-FR-02 — a mixed-scope SOFT_BLOCK whose second watcher
- * write fails never leaves an orphan account event.
+ * that score K5; F117-FR-02 — every issued SOFT_BLOCK performs exactly one
+ * watcher write (account for any account source, device for K5-only).
  */
 final class KnownDeviceAntiEquilibriumBoundaryTest extends TestCase
 {
@@ -116,40 +116,36 @@ final class KnownDeviceAntiEquilibriumBoundaryTest extends TestCase
     }
 
     /**
-     * FR-02: the second known-device failure under MixedFaultPolicy issues one
-     * SOFT_BLOCK with device and account scope. When the device watcher write
-     * fails, no watcher is written, so no orphan account event exists.
+     * FR-02: a mixed device + account SOFT_BLOCK performs exactly one watcher
+     * write, on the account watcher; the device watcher is never written for
+     * it (a fault injected on the device watcher is not even reached).
      */
-    public function testMixedSoftWithFailingDeviceWriteLeavesNoOrphanEvent(): void
+    public function testMixedSoftWritesOnlyTheAccountWatcher(): void
     {
         $pipeline = $this->pipeline();
         $policy = new MixedFaultPolicy();
         $device = $this->device('mixed-fp');
         $pipeline->process($policy, $this->context('mixed-owner'), RateLimitCommand::recordFailure('mixed_fault_flow'), $device);
-        $before = $this->watchers('mixed-owner', 'mixed-fp');
+        $this->assertSame([0, 1], $this->watchers('mixed-owner', 'mixed-fp'));
 
         $this->store->failWritesTo = [$this->deviceWatcher('mixed_fault_flow', 'mixed-owner', 'mixed-fp')];
-        try {
-            $pipeline->process($policy, $this->context('mixed-owner'), RateLimitCommand::recordFailure('mixed_fault_flow'), $device);
-            self::fail('Expected the device watcher write to fail.');
-        } catch (BackendFailureException) {
-        }
+        $mixed = $pipeline->process($policy, $this->context('mixed-owner'), RateLimitCommand::recordFailure('mixed_fault_flow'), $device);
 
-        $this->assertSame([0, 1], $before);
-        $this->assertSame($before, $this->watchers('mixed-owner', 'mixed-fp'));
+        $this->assertSame(RateLimitResultDTO::DECISION_SOFT_BLOCK, $mixed->decision);
+        $this->assertSame([1, 1], $this->watchers('mixed-owner', 'mixed-fp'));
     }
 
     /**
-     * FR-02 reverse order: when the account watcher write fails after the
-     * device write, the account watcher stays unchanged; the only residue is a
-     * device-scoped event (declared in DEC-021), never an account event.
+     * FR-02: when the single selected (account) write of a mixed SOFT fails,
+     * no event of any scope is left behind.
      */
-    public function testMixedSoftWithFailingAccountWriteLeavesOnlyADeviceEvent(): void
+    public function testMixedSoftWithFailingAccountWriteLeavesNoEvent(): void
     {
         $pipeline = $this->pipeline();
         $policy = new MixedFaultPolicy();
         $device = $this->device('reverse-fp');
         $pipeline->process($policy, $this->context('reverse-owner'), RateLimitCommand::recordFailure('mixed_fault_flow'), $device);
+        $before = $this->watchers('reverse-owner', 'reverse-fp');
 
         $this->store->failWritesTo = [$this->accountWatcher('mixed_fault_flow', 'reverse-owner')];
         try {
@@ -158,15 +154,17 @@ final class KnownDeviceAntiEquilibriumBoundaryTest extends TestCase
         } catch (BackendFailureException) {
         }
 
-        $this->assertSame([0, 2], $this->watchers('reverse-owner', 'reverse-fp'));
+        $this->assertSame([0, 1], $before);
+        $this->assertSame($before, $this->watchers('reverse-owner', 'reverse-fp'));
     }
 
     /**
-     * FR-02 through limit(): faulted mixed requests are answered by the
-     * engine's existing typed failure path, nothing is published on the
-     * account watcher, and repeating them never escalates K4.
+     * FR-02 through limit(): with the single account write of mixed requests
+     * failing, the engine answers through its existing typed failure path, no
+     * watcher event is published, no account-wide HARD exists, and the owner's
+     * other device is not hard blocked.
      */
-    public function testMixedSoftWriteFaultThroughPublicApiNeverEscalatesTheAccount(): void
+    public function testMixedSoftWriteFaultThroughPublicApiLeavesNoWatcherEvent(): void
     {
         $limiter = RateLimiterBuilder::fromFullCapabilityStore(new RateLimiterConfig('key-secret', 'fingerprint-secret', 'prod'), $this->store, new RecordingFailureSignalEmitter())
             ->withClock($this->clock)
@@ -178,13 +176,15 @@ final class KnownDeviceAntiEquilibriumBoundaryTest extends TestCase
 
         $first = $limiter->limit($context, RateLimitCommand::recordFailure('mixed_fault_flow'));
         $this->assertSame(RateLimitResultDTO::DECISION_SOFT_BLOCK, $first->decision);
+        $this->assertSame(1, $this->store->getWatchFlag($deviceWatcher));
 
-        $this->store->failWritesTo = [$deviceWatcher];
+        $this->store->failWritesTo = [$accountWatcher];
         $faulted = [];
         for ($attempt = 0; $attempt < 3; $attempt++) {
             $result = $limiter->limit($context, RateLimitCommand::recordFailure('mixed_fault_flow'));
             $faulted[] = [$result->decision, $result->failureMode];
         }
+
         // DEC-015 unchanged: two typed failures fail closed, then the open
         // circuit serves the bounded local fallback without the pipeline.
         $this->assertSame([
@@ -196,8 +196,7 @@ final class KnownDeviceAntiEquilibriumBoundaryTest extends TestCase
         $this->assertSame(1, $this->store->getWatchFlag($deviceWatcher));
         // The faulted request's own K4 L1 score persistence is written before
         // the watcher write fails (the pipeline is not transactional across
-        // store operations, as on S0). L1 never denies; no account-wide HARD
-        // exists.
+        // store operations, as on S0). L1 never denies; no account-wide HARD.
         $this->assertSame(1, $this->store->checkBlock(hash_hmac('sha256', 'mixed_fault_flow:rate_limiter:k4:v2:prod:engine-owner', 'key-secret'))?->level);
         $after = $limiter->limit(
             new RateLimitContextDTO('198.51.100.90', 'Chrome/123', 'engine-owner', ['canvas' => 'engine-phone'], 'engine-session-2', true),
