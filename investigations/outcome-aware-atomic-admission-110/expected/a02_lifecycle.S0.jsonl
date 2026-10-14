@@ -1,0 +1,47 @@
+{"s":"A02.provenance","arm":"S0","level":"S0_RUNTIME_OBSERVED","baseSha":"72f6dea8ab0729e63492b622e682e334c527c966","pipelineSha256":"4b259d3397adf492d9767572141c9bdf5efc5744886bce63592ae9f36b95f4fc","redisAdapterSha256":"520574d4b0758470c0fc36ec304001825cf20a183e28bf6a999bcd41d54297a4","experimentalInterface":false,"patched":false}
+{"s":"A02.L1.pure-attacker","arm":"S0","seq":"aaaaaaaaB-B-B-B-B-B-B-B-B-B-B-B-B-B-B-B-","granted":0}
+{"s":"A02","arm":"S0","assert":"L1 a pure attacker (no verified success in its scope) is admitted for the first 4 victims only and nothing is ever granted","ok":true,"seq":"aaaaaaaaB-B-B-B-B-B-B-B-B-B-B-B-B-B-B-B-"}
+{"s":"A02.L2.credit-gating","arm":"S0","seq":"aaaaaaaaB-B-B-","sprayUnits":0}
+{"s":"A02","arm":"S0","assert":"L2 S0: the 5th distinct subject and every later attempt in the 600 s window are denied","ok":true,"seq":"aaaaaaaaB-B-B-"}
+{"s":"A02.L3.pre-only","arm":"S0","saturation":"aaaaaaaaB-","seq":"BBB","unitsAfterThreePreChecks":0,"after1300":"a"}
+{"s":"A02","arm":"S0","assert":"L3 S0: the 5th subject and every later pre-check are denied","ok":true,"saturation":"aaaaaaaaB-","seq":"BBB","units":0,"late":"a"}
+{"s":"A02.L4.success-returns","arm":"S0","admitted":0,"maxUnitsAfterOutcome":0}
+{"s":"A02","arm":"S0","assert":"L4 S0: none of the 50 attempts is admitted (persisted K1 block / stale set)","ok":true,"admitted":0,"maxUnits":0}
+{"s":"A02.L5.same-tuple-refund","arm":"S0","MEDIUM":{"seq":"B-B-","unitsAfterTypo":0,"unitsAfterSuccess":0},"LOW":{"seq":"B-B-","unitsAfterTypo":0,"unitsAfterSuccess":0}}
+{"s":"A02","arm":"S0","assert":"L5 S0: the typo and the retry are both denied","ok":true,"MEDIUM":{"seq":"B-B-","unitsAfterTypo":0,"unitsAfterSuccess":0},"LOW":{"seq":"B-B-","unitsAfterTypo":0,"unitsAfterSuccess":0}}
+{"s":"A02.L6.cross-account","arm":"S0","seq":"B-B-","unitsAfter":0}
+{"s":"A02","arm":"S0","assert":"L6 S0: both attempts denied","ok":true,"seq":"B-B-","units":0}
+{"s":"A02.L7.replayed-success","arm":"S0","seq":"B-B-BB-BB","unitsAfterEachStep":[0,0,0,0,0,0]}
+{"s":"A02","arm":"S0","assert":"L7 S0: every attempt denied","ok":true,"seq":"B-B-BB-BB","units":[0,0,0,0,0,0]}
+{"s":"A02.L8.duplicate-failure","arm":"S0","seq":"B-B","unitsAfter":0}
+{"s":"A02","arm":"S0","assert":"L8 S0: the attempt and the duplicate report are denied","ok":true,"seq":"B-B","units":0}
+{"s":"A02.L9.out-of-order","arm":"S0","success-first":{"pre":"BB","units":0},"failure-first":{"pre":"BB","units":0}}
+{"s":"A02","arm":"S0","assert":"L9 S0: both pre-checks denied","ok":true,"success-first":{"pre":"BB","units":0},"failure-first":{"pre":"BB","units":0}}
+{"s":"A02.L10.late-completion","arm":"S0","pre":"B","dayUnitsBefore":0,"dayUnitsAfterLateSuccess":0}
+{"s":"A02","arm":"S0","assert":"L10 S0: the pre-check is denied","ok":true,"pre":"B","before":0,"after":0}
+{"s":"A02.L11.epoch-rollover","arm":"S0","first":"B","second":"B","keepCredits":"B-B-B-B-B-B-B-","e2UnitsBefore":0,"e2UnitsAfterOldSuccess":0}
+{"s":"A02","arm":"S0","assert":"L11 S0: both pre-checks denied","ok":true,"first":"B","second":"B","before":0,"after":0}
+{"s":"A02.L12.day-tier","arm":"S0","seq":"B-B-B-B-B-B-B-B-B-B-B-B-","admittedFailing":0,"dayUnits":0}
+{"s":"A02","arm":"S0","assert":"L12 S0 reference sequence recorded","ok":true,"seq":"B-B-B-B-B-B-B-B-B-B-B-B-","dayUnits":0}
+{"s":"A02.L13.global-tier","arm":"S0","scopes":7,"attempts":14,"admitted":6,"globalEpochUnits":0}
+{"s":"A02","arm":"S0","assert":"L13 S0 reference: 6 of the 14 failing attempts are admitted (deterministic S0 value)","ok":true,"admitted":6,"global":0}
+{"s":"A02.L14.own-credit-cap","arm":"S0","own":"aaaaaaaaB-","seq":"B-B-B-B-B-B-","admittedFailing":0}
+{"s":"A02","arm":"S0","assert":"L14 S0: the own logins fill the spray set; no victim attempt is admitted","ok":true,"own":"aaaaaaaaB-","seq":"B-B-B-B-B-B-"}
+{"s":"A02.L15.trusted-advisory","arm":"S0","seq":"aaaBB-B-B-B-B-B-B-B-B-B-B-","oaaaCalls":0}
+{"s":"A02.L16.persisted-block","arm":"S0","seq":"aaaaaaaaB-B-"}
+{"s":"A02.L17.api-overuse","arm":"S0","seq":"aaaBB-B-B-B-B-B-B-B-B-B-B-B-B-B-B-B-B-B-B-B-B-B-B-B-B-B-B-B-","oaaaCalls":0}
+{"s":"A02.L18.login-anon","arm":"S0","seq":"aaaBB-B-B-B-B-B-B-B-B-B-B-B-B-B-B-B-B-B-","oaaaCalls":0}
+{"s":"A02","arm":"S0","assert":"L17/L18 API_OVERUSE and account-less Login make no OAAA store call","ok":true,"api":0,"anon":0}
+{"s":"A02.L19.no-capability","arm":"S0","bits":{"D2":"67373d86ee4e291eb0a50c3458cf17ee","ABA_B":"a8d832dc8dbaec66a8cb946b5af31193","SP1n":"da6d5667c9777a8cfcf87dd28725a3b5","OWN1":"9cc634be1ef95248c46bcb12d1641141"}}
+{"s":"A02.L20.cancel","arm":"S0","seq":"aaaBB-B-","cancels":0,"unitsAfter":0}
+{"s":"A02","arm":"S0","assert":"L20 S0: the 4th-device request is denied","ok":true,"seq":"aaaBB-B-","cancels":0,"units":0}
+{"s":"A02.L21.all-or-nothing","arm":"S0","pre":"aaaaaBB-","probe":"B-","sprayUnitsBefore":0,"sprayUnits":0,"churnUnits":0,"refusals":0}
+{"s":"A02","arm":"S0","assert":"L21 S0: the probe is denied","ok":true,"pre":"aaaaaBB-","probe":"B-","sprayBefore":0,"spray":0,"churn":0,"refusals":0}
+{"s":"A02.L22.pairing","arm":"S0","probe":"B-","churnUnits":0,"grants":0}
+{"s":"A02","arm":"S0","assert":"L22 S0: the 3rd fingerprint is denied","ok":true,"probe":"B-","units":0,"grants":0}
+{"s":"A02.L23.record-only","arm":"S0","seq":"BBBB","churnUnits":0}
+{"s":"A02","arm":"S0","assert":"L23 S0: record-only failures from the 3rd fingerprint on receive the block decision","ok":true,"seq":"BBBB","units":0}
+{"s":"A02.L24.two-pending-replayed-success","arm":"S0","steps":"BBBBB","verifierReach":2,"genuineFailures":1,"unitsAfterEachStep":[0,0,0,0],"correctFinalUnits":1,"attemptLevelCorrect":null}
+{"s":"A02.L25.replayed-success-no-new-attempt","arm":"S0","seq":"B-BB","unitsAfterFailure":0,"unitsAfterTwoReplayedSuccesses":0,"correctFinalUnits":1,"attemptLevelCorrect":null}
+{"s":"A02.L26.medium-reorder","arm":"S0","success-first":{"pre":"BB","units":0},"failure-first":{"pre":"BB","units":0},"orderIndependent":null,"attemptLevelCorrect":null}
+{"s":"A02.L27.mixed-flow-pre-only","arm":"S0","office":"aaaaaaaaB-","preOnly":"BBBBBBBB","admittedPreOnly":0,"unitsSpentNeverResolved":0}
