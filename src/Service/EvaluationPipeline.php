@@ -70,7 +70,7 @@ class EvaluationPipeline
 
     /**
      * Anti-Equilibrium scopes of the winning SOFT_BLOCK candidates of the
-     * current request (DEC-021 PROPOSED).
+     * current request (DEC-021).
      *
      * @var list<string>
      */
@@ -398,7 +398,7 @@ class EvaluationPipeline
         // Anti-Equilibrium reads prior history before budget cooldown
         // acquisition. Recording happens only after final aggregation. The
         // account watcher keeps the §2.5 account-wide escalation; the device
-        // watcher (DEC-021 PROPOSED) escalates SOFT_BLOCKs that came from K5
+        // watcher (DEC-021) escalates SOFT_BLOCKs that came from K5
         // alone on that account + device only.
         if ($request->isFailure && $context->accountId !== null && $policy->getBudgetConfig() !== null
             && $this->antiEquilibriumGate->shouldEscalate(
@@ -2317,8 +2317,8 @@ class EvaluationPipeline
     /**
      * Current and previous device Anti-Equilibrium watcher keys for the
      * account + device of a non-ephemeral, fingerprinted, account-bound
-     * request under a budgeted, non-API policy with K5 thresholds (DEC-021
-     * PROPOSED); null otherwise.
+     * request under a budgeted, non-API policy with K5 thresholds (DEC-021);
+     * null otherwise.
      *
      * @return array{current: string, previous: ?string}|null
      */

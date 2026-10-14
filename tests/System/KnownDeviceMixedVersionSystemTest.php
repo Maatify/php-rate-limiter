@@ -23,7 +23,7 @@ use PHPUnit\Framework\TestCase;
 
 /**
  * Rollback and previous-generation regression for the known-device bound
- * (F117-06, DEC-021 PROPOSED) on the full-capability reference store, where
+ * (F117-06, DEC-021) on the full-capability reference store, where
  * time can be advanced. The old worker is the pinned S0 pipeline with the S0
  * Login preset; both workers share one store. Real-Redis mixed workers are in
  * KnownDeviceMixedVersionIntegrationTest.

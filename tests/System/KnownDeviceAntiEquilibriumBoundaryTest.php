@@ -33,7 +33,7 @@ use Maatify\RateLimiter\Tests\Support\FullCapability\FullCapabilityInMemoryStore
 use PHPUnit\Framework\TestCase;
 
 /**
- * Boundaries of the device Anti-Equilibrium watcher (DEC-021 PROPOSED):
+ * Boundaries of the device Anti-Equilibrium watcher (DEC-021):
  * F117-FR-01 — it belongs only to budgeted, non-API authentication policies
  * that score K5; F117-FR-02 — every issued SOFT_BLOCK performs exactly one
  * watcher write (account for any account source, device for K5-only).

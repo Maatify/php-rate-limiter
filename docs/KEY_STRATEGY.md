@@ -730,9 +730,9 @@ HMAC-SHA256(preimage, active-or-generation-key-secret)
 ```
 
 The locked purposes are `last_missing_fp`, `anti_equilibrium`, `flood_stage`, and
-`known_device_allowance` (DEC-021, PROPOSED).
+`known_device_allowance` (DEC-021).
 
-The device Anti-Equilibrium watcher (DEC-021, PROPOSED) extends this preimage with the
+The device Anti-Equilibrium watcher (DEC-021) extends this preimage with the
 fingerprint hash:
 
 ```

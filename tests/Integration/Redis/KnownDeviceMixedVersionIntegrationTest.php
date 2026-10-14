@@ -28,7 +28,7 @@ use PHPUnit\Framework\TestCase;
 
 /**
  * Mixed-version regression for the known-device bound on real Redis (F117-06,
- * DEC-021 PROPOSED). The old worker is the pinned S0 pipeline
+ * DEC-021). The old worker is the pinned S0 pipeline
  * (S0EvaluationPipeline, provenance-checked) with the S0 Login preset; the new
  * worker is the current pipeline. Both share one real Redis namespace owned by
  * the test. Redis owns time for its primitives (DEC-016), so the workers'

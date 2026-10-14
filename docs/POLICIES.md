@@ -131,7 +131,7 @@ Account-level keys (K4) are authoritative.
 | 8 – 11        | HARD_BLOCK (L2)  |
 | ≥ 12          | HARD_BLOCK (L3+) |
 
-### Known-Device Bound (DEC-021, PROPOSED)
+### Known-Device Bound (DEC-021)
 
 | Known-device K5 score | Decision (that account + device only) |
 | --------------------- | ------------------------------------- |
@@ -294,7 +294,7 @@ IP-only signals are advisory only.
 | 7 – 9 | HARD_BLOCK (L2)  |
 | ≥ 10  | HARD_BLOCK (L3+) |
 
-### Known-Device Bound (DEC-021, PROPOSED)
+### Known-Device Bound (DEC-021)
 
 * Known-device K5 thresholds `8 / 12 / 16` (L1 at the 2nd known-device OTP failure, L2 at
   the 3rd, L3 at the 4th), persisted on K5 only.

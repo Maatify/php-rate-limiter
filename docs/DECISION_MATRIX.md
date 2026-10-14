@@ -159,7 +159,7 @@ MUST NOT create or read this marker.
 
 ---
 
-#### 2.2.2 Known-Device Verifier Bound (DEC-021, PROPOSED)
+#### 2.2.2 Known-Device Verifier Bound (DEC-021)
 
 A known device (`isKnownForAccount`) is scored on K5, and K5 is bounded:
 
@@ -339,10 +339,8 @@ To prevent mathematically planned “low-and-slow” equilibrium:
 
 On the current `recordFailure`, and **before budget cooldown acquisition**, read only
 Anti-Equilibrium soft events from **prior requests** for the same `AccountID` and the same
-policy flow.
-
-_DEC-021 (PROPOSED) would restrict this account read to account-scoped events and add a
-device-scoped read; see §2.5.3. Until DEC-021 is ACTIVE, this section is the contract._
+policy flow. Only account-scoped events are recorded there; device-scoped events have their
+own watcher and escalation (§2.5.3).
 
 If **≥ 3 actually-issued `SOFT_BLOCK` events within 6 hours** exist in that prior
 history:
@@ -359,10 +357,8 @@ cannot be bypassed by a budget soft. Login and OTP histories are independent.
 #### 2.5.2 Write / Record
 
 After final aggregation, if and only if the final issued decision is `SOFT_BLOCK`,
-record exactly one Anti-Equilibrium event. This event affects future requests only.
-
-_DEC-021 (PROPOSED) would record one event per scope of the issued `SOFT_BLOCK`; see
-§2.5.3._
+record exactly one Anti-Equilibrium event, on the watcher selected by its source scope
+(§2.5.3). This event affects future requests only.
 
 The third `SOFT_BLOCK` remains a `SOFT_BLOCK`; recording it MUST NOT turn that same
 request into `HARD_BLOCK`. A request whose final decision is `ALLOW` or `HARD_BLOCK`
@@ -380,7 +376,7 @@ WRITE / RECORD:
 
 This is deterministic, testable, and breaks stable decay arithmetic.
 
-#### 2.5.3 Source Scope (DEC-021, PROPOSED)
+#### 2.5.3 Source Scope (DEC-021)
 
 Each issued `SOFT_BLOCK` carries the scopes of its winning `SOFT_BLOCK` candidates:
 
@@ -436,7 +432,7 @@ Applies if:
 ---
 
 
-#### 3.1.2 Known-Device Verifier Bound (DEC-021, PROPOSED)
+#### 3.1.2 Known-Device Verifier Bound (DEC-021)
 
 OTP uses the §2.2.2 contract with the OTP deltas: K5 thresholds `8 / 12 / 16` (L1 at the
 2nd known-device failure, L2 at the 3rd, L3 at the 4th), K5 levels persisted on K5 only,

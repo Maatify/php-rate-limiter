@@ -26,8 +26,8 @@ use Maatify\RateLimiter\Tests\Support\RateLimiter\InMemoryRateLimitStore;
 use PHPUnit\Framework\TestCase;
 
 /**
- * Source/scope-aware Anti-Equilibrium for known devices (F117-05, DEC-021
- * PROPOSED). A SOFT_BLOCK derived only from K5 is a device-scoped event; it
+ * Source/scope-aware Anti-Equilibrium for known devices (F117-05, DEC-021).
+ * A SOFT_BLOCK derived only from K5 is a device-scoped event; it
  * escalates on that account + device (K5), not on the whole account (K4).
  * Every other issued SOFT_BLOCK keeps the ACTIVE account-wide §2.5 behavior.
  */

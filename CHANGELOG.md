@@ -7,7 +7,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
-### Changed (pending DEC-021, PROPOSED — not mergeable before Owner approval)
+### Changed (DEC-021)
 - Login and OTP bound known devices (trusted session or previously verified device):
   K5 thresholds `8 / 12 / 16`, and a fingerprint-independent known-device account
   allowance (Login 8, OTP 2 per fixed 24h epoch); each known-device failure beyond it also
