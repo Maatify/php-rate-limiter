@@ -82,34 +82,52 @@ unknown device on the same Login streams reaches it 37–39 times.
    explicitly. The official presets return their allowance only when their effective
    configuration scores K5 (positive `k5_failure` and K5 thresholds), so a Host subclass
    that overrides thresholds without K5 keeps S0 known-device behavior.
-5. **Unchanged.** Budget, cooldown, micro-cap, Anti-Equilibrium (§2.5), OTP
-   `precheck_enforcement = false`, K1/K2/K3 correlation, trusted K1 advisory, Store and Redis
-   contracts, and DEC-003 / DEC-007 / DEC-008 / DEC-015 / DEC-019.
+5. **Source-scoped Anti-Equilibrium (amends ACTIVE `DECISION_MATRIX.md` §2.5, PROPOSED).**
+   Every issued `SOFT_BLOCK` carries the scopes of its winning candidates. A level that
+   comes from K5 alone has **device** scope; every other source keeps **account** scope (the
+   conservative default, i.e. the current §2.5 behavior). One event is recorded per present
+   scope, so a mixed K5 + account `SOFT_BLOCK` feeds each watcher exactly once and never
+   skips the account watcher. Device events escalate (three in 6 h, on `recordFailure`) to a
+   K5 `HARD_BLOCK` L2 on that account + device only; account events keep the K4 account-wide
+   escalation. A device-only `SOFT_BLOCK` without a durable device identity is recorded on
+   the account watcher. Both watchers follow rotation. Rationale: §2.5 exists to break
+   "low-and-slow" equilibrium; for a K5-only source the equilibrium is per device, so the
+   escalation is kept at the same scope as the penalty. Account protection against a known
+   device is not lost: rotating devices fall under the fingerprint-independent allowance and
+   then under K4 scoring, whose soft events remain account-scoped.
+6. **Unchanged.** Budget, cooldown, micro-cap, the account watcher and its K4 escalation,
+   OTP `precheck_enforcement = false`, K1/K2/K3 correlation, trusted K1 advisory, Store and
+   Redis contracts, and DEC-003 / DEC-007 / DEC-008 / DEC-015 / DEC-019.
 
 ## Rationale
 
 The bound is account- and device-scoped, uses no network correlation, and reuses existing
 primitives (score thresholds, the fixed-epoch budget counter, K4 lifecycle). Measured with
 an explicitly advancing clock, one account, 24 h, Login `pre+out`: a stable known device
-reaches the verifier 45 / 44 / 44 times (failing every 600 / 300 / 60 s), and a rotating one
-44 times, against 37–39 for an unknown device. OTP: a stable known device 74 / 61 / 60 (S0
+reaches the verifier 45 / 44 / 45 times (failing every 600 / 300 / 60 s), and a rotating one
+44 times, against 37–39 for an unknown device. OTP: a stable known device 54 / 51 / 51 (S0
 144 / 288 / 1440); a rotating one 285, equal to the unknown OTP device (285, S0 property).
 On the merged #113 / #116 harness streams (unchanged; driver control reproduces the S0
 goldens 355/355 and 60/60): the #114 control 25/25 → 4/25; Host-tampered trust TMX
 200 → 60 (Login) and 200 → 36 (OTP); TMXb 300 → 48; TMSs 18 → 5 / 3; no legitimate
-decision changes in any of 415 cells and no attacker reach increases.
+decision changes and no attacker reach increases **within those 415 harness cells**. The
+harness does not contain the known-device owner-retry scenario; it is covered by
+`KnownDeviceAntiEquilibriumScopeTest`.
 
 ## Consequences
 
 - **Owner friction on one device.** Four consecutive Login typos on one known device give
   `SOFT_BLOCK` L1 on that device for 300 s; six give a K5 hard block on that device only.
-- **Account-wide effect through the ACTIVE Anti-Equilibrium gate.** K5 L1 decisions are
-  actually-issued `SOFT_BLOCK`s, including soft-denied pre-checks, so they count toward
-  §2.5 (three soft events in 6 h). The next `recordFailure` on that account becomes a K4
-  `HARD_BLOCK` L2 that stops every device of the account, the owner's included (measured:
-  four typos, three retries during the soft window, one more typo after 300 s). Under S0 a
-  known device never produced such soft events. This slice does not change §2.5; whether K5
-  soft events should feed it is an Owner decision.
+- **Device-scoped Anti-Equilibrium (F117-05).** Four typos, three retries during the soft
+  window, and one more typo after 300 s now give a K5 `HARD_BLOCK` L2 on that device only;
+  the owner's other device stays allowed and the account watcher records nothing
+  (`KnownDeviceAntiEquilibriumScopeTest`). Before this change (HEAD `744f571`) the same
+  sequence gave an account-wide K4 `HARD_BLOCK` L2. An attacker retrying every minute on the
+  offending device reaches the verifier at most 4 times in an hour, each further failure
+  re-escalating to K5 L2. Measured with an advancing clock, 24 h, one account, Login
+  `pre+out`: stable known device 45 / 44 / 45 (failing every 600 / 300 / 60 s; `744f571`:
+  45 / 44 / 44), rotating 44 (unchanged); OTP stable known device 54 / 51 / 51 (`744f571`:
+  74 / 61 / 60). The #113 / #116 harness cells are identical to `744f571`.
 - **Account-wide effect after the allowance.** Beyond the allowance, K4 scoring (and its
   DEC-007 punishment / re-entry lifecycle) applies to the account as for an unknown device.
 - **Concurrency.** Pre-checks are read-only, so in-flight attempts are not serialized
@@ -124,27 +142,27 @@ decision changes in any of 415 cells and no attacker reach increases.
   backend-failure path. Observed through `limit()`: two `FAIL_CLOSED` `HARD_BLOCK`s, then the
   open circuit's `DEGRADED_MODE` fallback admits three per account per 600 s
   (`AUTHENTICATION_PRIMARY`), then `fallback_limit_exceeded`. Unchanged by this slice.
-- **Mixed version and rollback (measured on real Redis, S0 `4d37be5` and this Runtime
-  sharing one namespace).** These are semantic differences, not parity:
-  - S0 honors K5 blocks written by this Runtime (same device blocked, other device allowed).
-  - This Runtime honors K4 blocks written by S0, including a K4 block S0 derived from a K5
-    level, which keeps blocking the owner's other devices until it expires.
-  - Alternating S0 / this Runtime per request on the #114 burst: 15/25 reach the verifier
-    (S0 alone 25, this Runtime alone 4); S0 pre-checks with this Runtime recording: 6/25;
-    this Runtime pre-checks with S0 recording: 4/25.
-  - Rollback after this Runtime handled 10 attempts: S0 ignores the allowance counter and the
-    K5 L1 level, but the Anti-Equilibrium soft events written by this Runtime still apply,
-    so S0's next failure produced a K4 L2 account block (1/15 further reaches).
-  - Previous generation: state written by S0 under the old secret (K5 = 10) is read by this
-    Runtime through the previous key; its next pre-check is `SOFT_BLOCK` L1 and its next
-    failure writes K5 = 12 (L2) and the allowance under the current secret only; the old
-    keys stay read-only.
+- **Mixed version and rollback.** Committed regressions replay the old worker with a
+  pinned S0 pipeline fixture (`tests/Fixtures/S0Baseline`, provenance-checked against
+  `main@4d37be5`) and assert these semantic differences, not parity:
+  - M1: a K4 block that S0 derived from a K5 level is honored by this Runtime and keeps
+    blocking the owner's other device until it expires (this Runtime alone blocks only the
+    offending device).
+  - M2: S0 honors K5 blocks written by this Runtime for that device only.
+  - M3: on the #114 burst, S0 alone 25/25, this Runtime alone 4/25, alternating per
+    request 15/25 (real Redis).
+  - M4: after rollback, S0 ignores the allowance counter, the K5 L1 level and the device
+    Anti-Equilibrium events, and does not escalate the account; rolling forward, this
+    Runtime escalates on K5 only.
+  - M5: S0 scores and account events written under the previous secret, and device events
+    written by this Runtime under the previous secret, are read through the previous keys;
+    writes go to the current secret only.
 - **Upgrade.** Existing K5 scores (24 h TTL) are evaluated against the new thresholds
   immediately.
 
 ## Canonical Contract / Current Owner
 
-`docs/DECISION_MATRIX.md` §2.2.2 and §3.1.2, `docs/POLICIES.md` (Login and OTP),
+`docs/DECISION_MATRIX.md` §2.2.2, §2.5.3 and §3.1.2, `docs/POLICIES.md` (Login and OTP),
 `docs/KEY_STRATEGY.md` §4.6, `KnownDeviceAccountAllowancePolicyInterface`,
 `LoginProtectionPolicy`, `OtpProtectionPolicy`, `RateLimiterEngine`, and
 `EvaluationPipeline`.

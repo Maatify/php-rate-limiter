@@ -731,6 +731,18 @@ HMAC-SHA256(preimage, active-or-generation-key-secret)
 
 The locked purposes are `last_missing_fp`, `anti_equilibrium`, `flood_stage`, and
 `known_device_allowance` (DEC-021, PROPOSED).
+
+The device Anti-Equilibrium watcher (DEC-021, PROPOSED) extends this preimage with the
+fingerprint hash:
+
+```
+{policy}:rate_limiter:aux:anti_equilibrium_device:v1:{env}:{accountId}:{fingerprintHash}
+```
+
+It exists only for a non-ephemeral, fingerprinted, account-bound request. Its previous
+generation uses `previousKeySecret ?? currentKeySecret` and
+`previousFingerprintHash ?? fingerprintHash`, exists only when either is present, and is
+read-only.
 The raw `AccountID` exists only inside this preimage and MUST NOT cross either the
 `RateLimitStoreInterface` or `CorrelationStoreInterface` boundary. Policy, environment,
 module, purpose, and algorithm namespace version are all part of the derivation, so Login,

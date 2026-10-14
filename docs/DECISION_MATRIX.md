@@ -171,8 +171,9 @@ A known device (`isKnownForAccount`) is scored on K5, and K5 is bounded:
 * The opt-in is an authentication capability: all authentication prerequisites apply,
   `API_OVERUSE` cannot be combined with it, and an active allowance requires a positive
   `k5_failure` and positive monotonic K5 thresholds. A `null` allowance disables it.
-* K5 L1 decisions are actually-issued `SOFT_BLOCK`s and therefore count toward the
-  Anti-Equilibrium gate (§2.5), whose escalation is an account-wide K4 `HARD_BLOCK`.
+* K5 L1 decisions are actually-issued `SOFT_BLOCK`s with **device** scope: they count
+  toward the device Anti-Equilibrium watcher (§2.5.3), whose escalation is a K5 `HARD_BLOCK`
+  L2 on that device only, not toward the account watcher.
 * A backend failure while consuming the allowance is a typed backend failure (DEC-015);
   it is never converted into a normal-mode allowance.
 
@@ -372,6 +373,27 @@ WRITE / RECORD:
 ```
 
 This is deterministic, testable, and breaks stable decay arithmetic.
+
+#### 2.5.3 Source Scope (DEC-021, PROPOSED)
+
+Each issued `SOFT_BLOCK` carries the scopes of its winning `SOFT_BLOCK` candidates:
+
+* **device** — the candidate's level comes from K5 alone (known-device score);
+* **account** — every other source (K4 score, budget, flood, Recovery Guard, other keys).
+  This is the conservative default and keeps the §2.5.1 / §2.5.2 behavior.
+
+Recording (§2.5.2) writes exactly one event per present scope: an **account** event on the
+account watcher, a **device** event on a device watcher for the same account and device
+(`KEY_STRATEGY.md` §4.6, purpose `anti_equilibrium_device`). A `SOFT_BLOCK` that aggregates a
+K5 level and an account level records one event on each watcher. A device-only
+`SOFT_BLOCK` without a durable device identity (ephemeral or missing fingerprint) is recorded
+on the account watcher.
+
+Escalation (§2.5.1) reads both watchers on `recordFailure`: three prior account events add
+`HARD_BLOCK (Account)` L2 on K4 as before; three prior device events add `HARD_BLOCK` L2 on
+that account + device (K5) only. Both watchers follow outer-secret rotation (current is
+writable, previous is read-only); the device watcher also follows the previous fingerprint
+generation.
 
 ---
 
