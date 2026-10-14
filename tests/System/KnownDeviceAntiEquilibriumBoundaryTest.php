@@ -215,7 +215,10 @@ final class KnownDeviceAntiEquilibriumBoundaryTest extends TestCase
     }
 
     /**
-     * @return array{int, int} [account watcher, device watcher]
+     * Reads live store state; the value changes between calls.
+     *
+     * @phpstan-impure
+     * @return list<int> [account watcher, device watcher]
      */
     private function watchers(string $account, string $fingerprint): array
     {
