@@ -129,10 +129,12 @@ final class KnownDeviceMixedVersionIntegrationTest extends TestCase
     }
 
     /**
-     * M3 — observed mixed fleet. Alternating S0 / new workers per request on
-     * the #114 burst (one trusted session failing on its own account) reaches
-     * the verifier more often than the new worker alone and less often than
-     * S0 alone. The exact count pins the observed interleaving.
+     * M3 — observed mixed fleet, INSTANTANEOUS sequence on real Redis: 25
+     * back-to-back checkOnly / recordFailure pairs of one trusted session on
+     * its own account, with no time between attempts (the clock follows Redis
+     * TIME). This is not the timed #114 stream (25 attempts every 3 s); that
+     * timed mixed case is KnownDeviceMixedVersionSystemTest::
+     * testAlternatingWorkersOnTheTimedTrustedStream.
      */
     public function testAlternatingWorkersOnTheTrustedBurst(): void
     {

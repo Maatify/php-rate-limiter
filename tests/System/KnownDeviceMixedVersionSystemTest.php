@@ -118,6 +118,52 @@ final class KnownDeviceMixedVersionSystemTest extends TestCase
         self::assertSame($deviceEvents, $this->store->getWatchFlag($this->auxiliary('anti_equilibrium_device', 'm5-device:m5-device-owner', 'old_secret')));
     }
 
+    /**
+     * M3t — the timed #114 stream (25 attempts every 3 s over 72 s, advancing
+     * clock) through every mixed-fleet arrangement of the pinned S0 worker and
+     * the new worker. Observed values, not parity.
+     */
+    public function testAlternatingWorkersOnTheTimedTrustedStream(): void
+    {
+        $observed = [];
+        foreach (['s0', 'new', 'alternate-s0-first', 'alternate-new-first', 'pre-s0-out-new', 'pre-new-out-s0'] as $fleet) {
+            $this->setUp();
+            $s0 = $this->s0Worker();
+            $new = $this->newWorker();
+            $device = $this->device('m3t-session');
+            $reached = 0;
+            for ($attempt = 0; $attempt < 25; $attempt++) {
+                $preOnS0 = match ($fleet) {
+                    's0', 'pre-s0-out-new' => true,
+                    'new', 'pre-new-out-s0' => false,
+                    'alternate-s0-first' => $attempt % 2 === 0,
+                    'alternate-new-first' => $attempt % 2 === 1,
+                };
+                $outOnS0 = match ($fleet) {
+                    'pre-s0-out-new' => false,
+                    'pre-new-out-s0' => true,
+                    default => $preOnS0,
+                };
+                $pre = $this->check($preOnS0 ? $s0 : $new, $preOnS0 ? new S0LoginProtectionPolicy() : new LoginProtectionPolicy(), 'm3t-owner', $device);
+                if ($pre->decision === RateLimitResultDTO::DECISION_ALLOW) {
+                    $reached++;
+                    $this->failure($outOnS0 ? $s0 : $new, $outOnS0 ? new S0LoginProtectionPolicy() : new LoginProtectionPolicy(), 'm3t-owner', $device);
+                }
+                $this->advance(3);
+            }
+            $observed[$fleet] = $reached;
+        }
+
+        self::assertSame([
+            's0' => 25,
+            'new' => 4,
+            'alternate-s0-first' => 15,
+            'alternate-new-first' => 14,
+            'pre-s0-out-new' => 6,
+            'pre-new-out-s0' => 4,
+        ], $observed);
+    }
+
     private function check(EvaluationPipeline|S0EvaluationPipeline $worker, BlockPolicyInterface $policy, string $account, DeviceIdentityDTO $device): RateLimitResultDTO
     {
         return $worker->process($policy, $this->context($account), RateLimitCommand::checkOnly($policy->getName()), $device);
