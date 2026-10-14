@@ -463,13 +463,16 @@ class EvaluationPipeline
             $recordAccount = in_array(self::SCOPE_ACCOUNT, $issuedSoftScopes, true)
                 || $deviceWatcher === null
                 || $issuedSoftScopes === [];
+            // The two watcher writes are not atomic. The device event is
+            // written first, so a fault between them can leave only a
+            // device-scoped residue, never an orphan account event.
+            if ($deviceWatcher !== null && in_array(self::SCOPE_DEVICE, $issuedSoftScopes, true)) {
+                $this->antiEquilibriumGate->recordSoftBlock($deviceWatcher['current']);
+            }
             if ($recordAccount) {
                 $this->antiEquilibriumGate->recordSoftBlock(
                     $this->auxiliaryAccountKey($policy->getName(), 'anti_equilibrium', $context->accountId, $this->secret),
                 );
-            }
-            if ($deviceWatcher !== null && in_array(self::SCOPE_DEVICE, $issuedSoftScopes, true)) {
-                $this->antiEquilibriumGate->recordSoftBlock($deviceWatcher['current']);
             }
         }
 
@@ -2317,7 +2320,8 @@ class EvaluationPipeline
     /**
      * Current and previous device Anti-Equilibrium watcher keys for the
      * account + device of a non-ephemeral, fingerprinted, account-bound
-     * request (DEC-021 PROPOSED); null when no durable device identity exists.
+     * request under a budgeted, non-API policy with K5 thresholds (DEC-021
+     * PROPOSED); null otherwise.
      *
      * @return array{current: string, previous: ?string}|null
      */
@@ -2327,7 +2331,15 @@ class EvaluationPipeline
         DeviceIdentityDTO $device,
         bool $isEphemeral,
     ): ?array {
-        if ($isEphemeral || $context->accountId === null || $device->fingerprintHash === null || $device->fingerprintHash === '') {
+        // Same eligibility as the account watcher (a budgeted policy), and
+        // only where a K5 level can exist: never for API_OVERUSE.
+        if ($policy->getBudgetConfig() === null
+            || $this->isApiHeavyPolicy($policy)
+            || $policy->getScoreThresholds()->k5 === null
+            || $isEphemeral
+            || $context->accountId === null
+            || $device->fingerprintHash === null
+            || $device->fingerprintHash === '') {
             return null;
         }
 
