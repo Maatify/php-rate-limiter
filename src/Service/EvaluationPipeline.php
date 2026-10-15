@@ -2206,8 +2206,11 @@ class EvaluationPipeline
         $final = $this->aggregateCandidates($candidates);
         if ($final !== null && $final['decision'] === RateLimitResultDTO::DECISION_SOFT_BLOCK) {
             // Provenance of the issued SOFT_BLOCK: the union of the winning
-            // SOFT candidates' scopes, so a mixed K5 + account decision feeds
-            // each watcher exactly once.
+            // SOFT candidates' scopes. It is only collected here; process()
+            // then records exactly one event on one watcher: the account
+            // watcher for any account scope (mixed K4 + K5 included), the
+            // device watcher only for a K5-only SOFT with an eligible device,
+            // and the account watcher otherwise.
             foreach ($candidates as $candidate) {
                 if ($candidate['decision'] === RateLimitResultDTO::DECISION_SOFT_BLOCK) {
                     $this->issuedSoftScopes = array_values(array_unique(array_merge($this->issuedSoftScopes, $candidate['scopes'])));
