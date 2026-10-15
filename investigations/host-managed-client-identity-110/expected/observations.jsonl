@@ -1,0 +1,10 @@
+{"id":"O1","result":"REPRODUCED","title":"Shared NAT larger than the 50-member IP device cap is already mostly denied with no browser id (M0, K1 spray)","evidence":"OFF100 M0 usersDenied=90/100"}
+{"id":"O2","result":"REPRODUCED","title":"A per-browser id in clientFingerprint (direction A) does not reduce NAT collateral; it adds K2 churn denials","evidence":"OFF12 M0→M1 8→10; OFF100 90→97"}
+{"id":"O3","result":"REPRODUCED","title":"sessionDeviceId without trust (M2) behaves exactly like M1 for decisions: the id enters the composite DeviceFP","evidence":"OFF100 and SPR_R check strings identical M1 vs M2"}
+{"id":"O4","result":"REPRODUCED","title":"Pre-authentication trust on a host cookie (M3) gives a stable sprayer full verifier reach (K1 advisory for trusted)","evidence":"SPR_S reach M0=7 M3=200/200"}
+{"id":"O5","result":"REPRODUCED","title":"Pre-authentication trust (M3) does not relieve the benign NAT: K2 churn still denies trusted browsers","evidence":"OFF100 M3 usersDenied=97"}
+{"id":"O6","result":"REPRODUCED","title":"Pre-authentication trust (M3) widens per-account brute-force reach (known-device classification, DEC-021 bound applies)","evidence":"BRU_S reach M0=3 M3=7/100"}
+{"id":"O7","result":"REPRODUCED","title":"correlationId = browser id (M4) removes credential-spray protection for a stable-id sprayer","evidence":"SPR_S M4 reach=200/200"}
+{"id":"O8","result":"REPRODUCED","title":"correlationId = browser id (M4) gives the benign NAT nothing (spray subjects are still distinct per browser)","evidence":"OFF100 check strings identical M0 vs M4"}
+{"id":"O9","result":"REPRODUCED","title":"Rotating the id per attempt never gains reach over a stable id in any mode on S0-on-main (churn / K4 still bind)","evidence":"SPR_R reach 7/3/3/3/7; BRU_R reach 3/2/2/2/3 (M0..M4)"}
+{"id":"O10","result":"REPRODUCED","title":"A browser update (UA major) splits a stable id into a new DeviceFP / K5 in every mode; the known owner gains reach","evidence":"UAS reach=5 UAC reach=8 distinctK5=2 (all modes equal)"}
