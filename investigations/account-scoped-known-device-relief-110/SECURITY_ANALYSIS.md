@@ -14,7 +14,8 @@ Relief keys on a proof the attacker can hold without being the account owner tod
   verified list;
 * a **shared or office device** that is verified for a colleague's account;
 * an **insider on the same NAT** who holds verified devices for several accounts (their own and test / shared accounts);
-* a **Host that sets the flag loosely**: cookie presence only, or for any claimed account.
+* a **Host that violates the contract** and sets the flag loosely (cookie presence only, or for any claimed account). This is an
+  integration-risk scenario, measured as a control and kept separate from compliant traffic (§7).
 
 Several of these attackers have already authenticated to the account once. That does not make further verifier reach harmless: guessing the
 new password, the OTP, or a second factor are exactly the attempts the account bound exists for. The #113 review (R23) already declined
@@ -123,21 +124,26 @@ The mechanism is reproduced on the **real pipeline**, not an idealized model:
 
 **So the variants can avoid the pool effect or help the unknown user, not both.**
 
-## 7. Host misuse and spoofing
+## 7. Host-contract violation and spoofing (integration risk, not compliant traffic)
 
-* `isDevicePreviouslyVerifiedForAccount` is a bare boolean (`CURRENT_STATE.md` §1). Under B / C / D1:
+* By contract, `isDevicePreviouslyVerifiedForAccount` is a Host-proven association with the **specific** account; the library does not check
+  it independently (`CURRENT_STATE.md` §1). The following are therefore **contract violations**, measured as misconfiguration controls.
+  Under B / C / D1:
   * a Host that sets it from cookie presence, or for any claimed account, turns relief into a full credential-spray bypass (SPV 200 / 200);
   * reusing one account's proof for others (VMX) is bounded only per account.
+* These results show how much the variants depend on Host compliance. They are not evidence of a failure under a compliant Host, and they
+  do not by themselves show that a new verifiable proof is required.
 * A trusted session sent before authentication or without an account already bypasses K1 on main. That is HMCI F-HMCI-03 and H01 M3
   (200 / 200).
-* The library cannot detect either case. Any candidate would depend entirely on Host guidance that does not exist today (HMCI F-HMCI-04).
+* The library cannot detect either case. Host guidance (none exists today, HMCI F-HMCI-04) or an independently verifiable binding are
+  possible hardening choices for an Owner decision, not current contractual requirements.
 
 ## 8. Flows
 
 | Flow | Effect of relief |
 |---|---|
 | `pre+out` | Per-account DEC-021 bound applies (TMSd 60, D24T 504 / 248) |
-| `pre` (check-only) | **No bound at all** for a known attacker: TMSd 200 / 200, D24T 2880 / 2880, VMSd 200 / 200 (R4). Main's only bound for this Host was K2. The library cannot tell a check-only Host from a `pre+out` one (OAAA #116 X3) |
+| `pre` (check-only) | **No bound at all** for a known attacker: TMSd 200 / 200, D24T 2880 / 2880, VMSd 200 / 200 (R4). Main's only bound for this Host was K2. The library cannot tell a check-only Host from a `pre+out` one (OAAA #116 X3). A design that bounds `checkOnly` itself from existing state was not modelled; whether it avoids this is unresolved |
 | `out` (record-only) | Every attempt is verified before the decision in MAIN and in C1 alike. Relief changes decisions after the fact only |
 
 ## 9. OTP
@@ -162,6 +168,6 @@ OTP budget pre-check enforcement is off by preset (`OtpProtectionPolicy.php:92`)
 | **Bounded storage** | No new state except D2: one bounded set per IP prefix and window, capped at R |
 | **Custom policies (DEC-008)** | A preset subclass without K5 thresholds keeps S0 known-device behaviour and a disabled allowance (DEC-021 §4). For such a policy the per-account bound under relief is the S0 one: TMX 200 / 200 and TMXb 300 / 300 on S0 `[PRIOR]` #113. Relief there means **complete reach even in `pre+out`** |
 | **API_OVERUSE** | Not an authentication policy; DEC-021 forbids combining it with the allowance. Relief does not apply |
-| **Privacy / Host contract** | No new data. The whole security of the design rests on the Host's flag, which no current guidance constrains (§7) |
+| **Privacy / Host contract** | No new data. The variants rely on Host compliance with `DEVICE_FINGERPRINT.md` §4.3; violations are amplified (§7). No operational Host guidance exists today (F-HMCI-04) |
 | **DEC-019** | Every relief variant changes K1 / K2 enforcement, which DEC-019 keeps as S0 until an Owner-approved replacement. None of this is authorized here |
 | **DEC-021** | Unchanged and effective per account under relief (R7). It is the **only** bound left for known attackers in `pre+out` |

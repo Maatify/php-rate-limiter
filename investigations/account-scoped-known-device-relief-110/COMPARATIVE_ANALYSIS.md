@@ -71,12 +71,12 @@ From `CURRENT_STATE.md` §6 and `expected/summary.md` §2:
 | Item | C1 | D1 |
 |---|---|---|
 | **A. What changes** | Enforcement scope only: a known request is not denied by K1 / K2. Evidence source, trigger and thresholds unchanged; the known request still counts and still triggers collective blocks | same, while the account's DEC-021 allowance is unspent |
-| **B. Protection vs main** | Credential-less streams (SP1n, SP2, SP3, SP4*, SP6, the X / Y / D series): **identical to main** whenever they carry no known request (G-INERT, by construction). Mixed with a known office: NC −3 … +3 across the O01 cells under C1 (`expected/summary.md` §7). Known-device attackers: TMS 7 → 61, TMSd 2 → 60 (`pre` 200), D24T 172 → 504, KS50 2 → 200, SPV 4 → 200 | same, except D24T 172 → 248 |
+| **B. Protection vs main** | Credential-less streams (SP1n, SP2, SP3, SP4*, SP6, the X / Y / D series): **identical to main** whenever they carry no known request (G-INERT, by construction). Mixed with a known office: NC −3 … +3 across the O01 cells under C1 (`expected/summary.md` §7). Known-device attackers: TMS 7 → 61, TMSd 2 → 60 (`pre` 200), D24T 172 → 504, KS50 2 → 200. Host-violation control (not compliant traffic): SPV 4 → 200 | same, except D24T 172 → 248 |
 | **C. Fairness** | Only streams whose users are known change: N12T 56 → 0, N12M 56 → 30. The framework's #97 D1 / L1, #100 ABA_B and #106 Nu4 / Nu12 / D2 streams carry no known request, so they are **unchanged** (G-INERT). They improve only to the extent their users become known (bootstrap, §2.1) | same |
 | **D. Mandatory dimensions** | `pre+out` / `pre` / `out` measured. Login and OTP measured. IPv6, rotation, Redis concurrency, custom policies, API_OVERUSE: analytic (`SECURITY_ANALYSIS.md` §10). Trusted and untrusted collateral measured (N12T, N12M, offices) | same; plus the allowance read is a time-of-check race |
 | **E. Compatibility** | No public API, Builder, DTO or Policy change; no new key; no migration. It depends on the Host flag, whose semantics would need Host guidance | same |
 | **F. What it does not solve** | Unknown / new / cookie-less users, day 0, LOW cohorts of anonymous users (#97 D1), the ABA_B innocent pair (#100), untrusted colleagues (#106) | same |
-| **G. Open points / contradictions** | Indistinguishability (`ARCHITECTURE.md` §3); check-only collapse; unbound Host flag; the pool effect if consumption is dropped (C3) | same; and D1 does not bound the first 600 s |
+| **G. Open points / contradictions** | Same relief for office and attacker (`ARCHITECTURE.md` §3); check-only collapse; amplification of Host-contract violations (SPV, a control); the pool effect if consumption is dropped (C3) | same; and D1 does not bound the first 600 s |
 | **H. Root causes addressed** | (4) "enforcement scope wider than the actor", for known requests only. (1) command feeding, (2) WATCH counting requests, (3) level-triggered evaluation and (5) the K1 / K2 overlap are untouched. (5) forces K1 and K2 relief together (R9) | same |
 
 ## 4. Earlier #110 studies (`[PRIOR]` figures as recorded in #110)
@@ -88,7 +88,7 @@ From `CURRENT_STATE.md` §6 and `expected/summary.md` §2:
 | #115 GNH5 | ×5 network headroom + budget | D1 596 → 584, ABA_B 118 → 106, D2 117 → 93, Nu 47 → 0 | TMSd 2 → 8, SP4 78 → 294 | NO-GO |
 | #116 OAAA | outcome-aware atomic admission | ABA_B 118 → 0, Nu 47 → 0, D2 117 → 70, L1 127 → 0, D1 596 → 579 | Y6b 2 → 36/36 on own accounts; `pre`-only X3 FAIL | NO-GO |
 | #118 HMCI | host-issued browser id / earned standing | bootstrap-limited (day 9 in idealized model) | B5 13 → 22 per day (model); M3 sprayer 200/200 | C not acceptable; direction INCONCLUSIVE |
-| **this study** | relief for host-proven known devices | known office 56 → 0; known browsers fully relieved; unknown unchanged | TMS 7 → 61, TMSd 2 → 60 (`pre` 200), D24T 172 → 504 (D1 248), SPV 4 → 200 | **NO-GO** |
+| **this study** | relief for host-proven known devices | known office 56 → 0; known browsers fully relieved; unknown unchanged | TMS 7 → 61, TMSd 2 → 60 (`pre` 200), D24T 172 → 504 (D1 248); Host-violation control SPV 4 → 200 | **NO-GO** for the seven modelled variants |
 
 What this study adds to them:
 

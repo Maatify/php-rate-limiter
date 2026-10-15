@@ -20,9 +20,11 @@ network and the account stay protected against an attacker who holds valid devic
 
 ## Verdict
 
-**NO-GO** for a candidate investigation of this direction under the current #110 constraints. The relief works for known users. It does not
-work as a security design, for structural reasons that a patch cannot tune away. See [`REPORT.md`](REPORT.md) §1 and §3 for the scoped
-statement, and §5 for what would have to change first.
+**NO-GO** for the seven modelled relief variants (A, B, C1, C2, C3, D1, D2). They relieve known users fully, but give an attacker holding the
+same proofs the same relief, and reach every attempt for check-only Hosts. Other designs that need no new public field (for example a
+pre-check bound from existing state) were not modelled and remain unresolved; this study does not show that a public contract change is
+necessary. See [`REPORT.md`](REPORT.md) §1 and §3 for the scoped statement, §5 for the open questions and §9 for the Lead review
+reconciliation.
 
 ## Read in this order
 

@@ -8,14 +8,15 @@ labels are defined in [`README.md`](README.md). `EP` = `src/Service/EvaluationPi
 | Concept (brief) | Input / state in the code today | Who asserts it | Can the library check it? |
 |---|---|---|---|
 | 1. Device / browser identity | `DeviceFP = HMAC("v2|" . uaMajor . "|" . canonical(clientFingerprint) . "|" . (sessionDeviceId ?? ""))` `[CODE]` `DIR:39-41` | derived from client data + Host session id | no: LOW = one value per UA major on every IP; any change in UA major, hints or session id gives a new DeviceFP (`[PRIOR]` HMCI `CURRENT_STATE.md` §3–§4) |
-| 2. Device ↔ account association | `isDevicePreviouslyVerifiedForAccount` (bool, default `false`) `[CODE]` `src/DTO/RateLimitContextDTO.php:31`, passed through unchanged `DIR:49` | Host only (`DEVICE_FINGERPRINT.md` §4.3, `DECISION_MATRIX.md` §0) `[CONTRACT]` | **no**: it is a bare boolean, not bound to the DeviceFP, the account id or any token |
+| 2. Device ↔ account association | `isDevicePreviouslyVerifiedForAccount` (bool, default `false`) `[CODE]` `src/DTO/RateLimitContextDTO.php:31`, passed through unchanged `DIR:49` | Host only (`DEVICE_FINGERPRINT.md` §4.3, `DECISION_MATRIX.md` §0) `[CONTRACT]` | **no, by design**: the contract makes the Host the authority for a prior association with the **specific** account; the library receives a boolean and performs no independent check (it is not tied to the DeviceFP or a token) |
 | 3. Trust of the current session | `isTrustedSession = sessionDeviceId !== '' && isSessionTrusted` `[CODE]` `DIR:35` | Host (`DECISION_MATRIX.md` §0: Level 3 id, bound to the same account, matching the server's association) `[CONTRACT]` | only "non-empty + flag". The binding to the account is the Host's promise (HMCI F-HMCI-03) |
 | 4. Account risk / history | K4 score and levels; account auxiliary state: budget, `known_device_allowance` (DEC-021), Anti-Equilibrium, flood (`EP:2363-2386`) `[CODE]` | library | yes, but only from **recorded** outcomes |
 | 5. Shared network risk | K1 (IP prefix), K2 (IP prefix + UA major), the spray / churn / dilution bounded sets, device caps `[CODE]` `EP:2603-2618`, `EP:1162-1327`, `EP:1473-1571` | library | yes, but the scope is the whole IP (K1) or IP + UA major (K2) |
 
 `isKnownForAccount = isTrustedSession || isDevicePreviouslyVerifiedForAccount` `[CODE]` `EP:2388-2391`, `[CONTRACT]` `DECISION_MATRIX.md` §0,
-`DEVICE_FINGERPRINT.md` §4.3. A proof for account A is a proof for A only by the Host's construction. Nothing in the library ties the flag
-to the account it is sent with (measured consequence: `VMX`, `SPV` in `SECURITY_ANALYSIS.md` §2).
+`DEVICE_FINGERPRINT.md` §4.3. By contract the flag means "the Host has proven a prior association between this device and **this**
+account"; the library relies on the Host for that and does not verify it. A Host that sends it for other accounts violates the contract.
+`SECURITY_ANALYSIS.md` §7 measures that misconfiguration (`VMX`, `SPV`) as a control, separate from compliant traffic.
 
 ## 2. Answers to the brief's §4 questions
 

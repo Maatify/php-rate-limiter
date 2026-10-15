@@ -62,7 +62,7 @@ flowchart TD
     H --> E[Own decision from K3/K4/K5, budget, Anti-Equilibrium, DEC-021]
 ```
 
-## 3. Why the matrix cannot separate the office from the attacker
+## 3. Why the modelled variants do not separate the office from the attacker
 
 The decision of every network rule is a function of the request tuple (IP prefix, UA major, DeviceFP, account / correlation subject,
 trusted flag, verified flag, time) and of shared state built from earlier tuples. **Recorded outcomes never enter K1 / K2** (spray is
@@ -70,19 +70,22 @@ observed at pre-check; churn ignores the command type; `recordSuccess` lowers no
 
 * `[MAIN]` M3: the trusted office `N12T` and the attacker `TMS` holding 12 valid trusted sessions send the same tuples. They receive identical
   decisions, request for request, in `pre+out`, `pre` and `out`.
-* Any relief rule that is a function of those tuples and of the existing state therefore gives `TMS` exactly what it gives `N12T`. `[MODEL]` R2:
-  in every variant where `N12T` is fully relieved (A, C1, C2, C3, D1), `TMS` reaches the verifier on **61/61** attempts (main 7/61).
-* What differs between the two streams is the outcome history: 61 failures versus about 5 typos. The only state that sees it today is per
-  account (K4, K5, the DEC-021 allowance). So once K1 / K2 are relieved, the attacker is bounded per account, not across accounts. The
-  bound then scales with the number of accounts held (`[MODEL]` R6: KS1 5, KS2 10, KS5 25, 12 accounts 60, KS50 200 of 200 in one 600 s
-  window).
+* M3 is a measured fact about these two 61-request streams on today's runtime, not a theorem about every rule. The seven modelled
+  variants key relief on the known-device flag only, so they give `TMS` what they give `N12T`. `[MODEL]` R2: in every modelled variant where
+  `N12T` is fully relieved (A, C1, C2, C3, D1), `TMS` reaches the verifier on **61/61** attempts (main 7/61).
+* What differs between the two streams is the outcome history: 61 failures versus about 5 typos. That difference is **already in existing
+  state** (K4, K5, the DEC-021 allowance), all per account; D1's 24 h result (504 → 248) shows it diverges. In the modelled variants, once
+  K1 / K2 are relieved the attacker is bounded per account, not across accounts, and the bound scales with the accounts held (`[MODEL]`
+  R6: KS1 5, KS2 10, KS5 25, 12 accounts 60, KS50 200 of 200 in one 600 s window).
 * A cross-account guard on the relieved traffic (D2) restores some of the bound. It is a function of the same tuples, so it withdraws relief
   from the office by the same rule (`[MODEL]` R14: N12T denied 0 → 28/61; N100 LOW 100 % known: 0 → 80 locked out). The office and the
   attacker move together for every R. A model sweep over R would only redraw this line.
 
-A design that separates them needs a signal the library does not receive. Examples: an outcome-qualified rule (studied as OQC #111 and
-OAAA #116, both NO-GO for their own reasons), or a binding the library can verify between the proof and the account (not in the current
-contract). Both are outside "no new public field".
+This study does **not** show that no rule can separate them. Unmodelled possibilities that need no new public field include rules that use
+the outcome history the existing state already holds, or that bound each known device's `checkOnly` against an account / device budget in
+existing store state. Two outcome-qualified proposals were measured NO-GO for their own reasons (OQC #111, OAAA #116); that does not cover
+every outcome-sensitive algorithm. New Host evidence or a verifiable binding are further options. All of these are unresolved and outside
+the seven models here.
 
 ## 4. How the variants are modelled (and what that does not prove)
 
@@ -118,13 +121,16 @@ What the model does **not** reproduce:
 * Redis atomicity, concurrency, secret rotation (the decorators throw rather than guess), IPv6, mixed versions or DEC-015.
 * The D2 counter is a harness array, not a store capability.
 
-The model is sufficient for this study's NO-GO, because the deciding results are structural:
+The model is sufficient for the NO-GO of the seven variants, because their deciding results do not depend on implementation detail:
 
-* R2 follows from M3 (identical tuples), independent of how relief is coded.
-* R4 follows from pre-checks never scoring K4 / K5, independent of how relief is coded.
-* R8 follows from the flag being unbound.
+* R2 follows from M3 and from relief being keyed on the known-device flag alone.
+* R4 follows from today's pre-checks not scoring K4 / K5 or consuming the allowance, which none of the variants changes.
 
-A candidate cannot change these without changing those facts.
+R8 (SPV, VMX) is a Host-contract-violation control, not a compliant-traffic result: the contract makes the Host the authority for the
+association with the specific account (`DEVICE_FINGERPRINT.md` §4.3). It measures how much the variants depend on Host compliance.
+
+A design that changes either premise (for example a pre-check bound from existing state, or an outcome-sensitive rule) is a different
+design and is not judged here.
 
 ## 5. Alternatives considered and not modelled
 
@@ -132,6 +138,7 @@ A candidate cannot change these without changing those facts.
 |---|---|
 | Relief keyed on K5 presence, a stable DeviceFP, HIGH confidence or a K5 score history | Forbidden by the brief and by `DEVICE_FINGERPRINT.md` §4.3 (K5 presence and HIGH are not proof) |
 | Relief issued on a site visit or a client-sent id | Forbidden by the brief. HMCI (#118) measured the client-id mappings: NO-GO |
-| Relief only for Hosts that record outcomes (`pre+out`) | The library cannot detect the Host's flow (OAAA #116 X3). It would need a new Host declaration, i.e. a public contract change |
+| Relief only for Hosts that record outcomes (`pre+out`) | The library cannot detect the Host's flow today (OAAA #116 X3). A Host flow declaration is one option; a pre-check bound that does not need to know the flow is another. Neither was modelled, and neither is shown to be necessary |
+| A pre-check bound for known devices from existing state (charge each `checkOnly` against an account / device budget, independent of `recordFailure`) | Outside the brief's seven alternatives. Raised by the Lead review (F119-01) as an untested no-new-field possibility; its availability cost, aggregation across accounts and atomicity are unproven |
 | Relief only after a recorded success on this device today | A success is the attacker's own once he holds a valid credential (OAAA #116 E4, Y6b 2 → 36/36). On a login page the success comes after the pre-check that relief must decide |
 | A sweep of D2's R | The office and the attacker move together for every R (§3). A sweep would add numbers without a decision |
