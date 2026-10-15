@@ -28,14 +28,20 @@ In scope:
 * a comparison of directions A, B, C and D;
 * a proposed model;
 * a threat model and validation plan;
-* one isolated observation (H01) of how the **existing** inputs behave when a Host puts a browser id in them.
+* one isolated observation (H01) of how the **existing** inputs behave when a Host puts a browser id in them;
+* one bootstrap model (H02): can an office actually reach the proposed standing, starting from a fresh store? Its NEW part
+  runs the real runtime; its ESTABLISHED part is idealized and labelled as such.
 
 Out of scope: building or measuring a candidate runtime, passkeys, new fingerprinting, and any decision.
 
 ## Read in this order
 
-1. [`REPORT.md`](REPORT.md) — summary, results, verdict (`INCONCLUSIVE` for direction C; NO-GO for A, B, `correlationId`
-   reuse and D), findings, Owner decisions.
+1. [`REPORT.md`](REPORT.md) — summary, results, scoped verdicts, findings, Owner decisions, and §6 reconciliation of the
+   Lead review F118-01 … F118-05. Verdicts:
+   * overall direction: `INCONCLUSIVE`;
+   * proposal C: not acceptable as specified;
+   * the A / B / `correlationId` mappings on the current runtime: NO-GO on the measured streams;
+   * D as a class: not excluded.
 2. [`CURRENT_STATE.md`](CURRENT_STATE.md) — fields, keys, limits and contract-versus-code differences, with file:line.
 3. [`ARCHITECTURE.md`](ARCHITECTURE.md) — the four directions, the proposed model, lifecycles, Key & Consumption Matrix.
 4. [`SECURITY_ANALYSIS.md`](SECURITY_ANALYSIS.md) — threat model, rotation, spray, NAT, trust, privacy, storage,
@@ -43,14 +49,15 @@ Out of scope: building or measuring a candidate runtime, passkeys, new fingerpri
 5. [`CONTRACT_FEASIBILITY.md`](CONTRACT_FEASIBILITY.md) — `CONTRACT_CHANGE_REQUIRED`; compatibility, Redis,
    concurrency, rollback.
 6. [`VALIDATION_PLAN.md`](VALIDATION_PLAN.md) — scenarios V1–V17, gates and the missing evidence.
-7. [`expected/summary.md`](expected/summary.md) — every H01 number, generated.
+7. [`expected/summary.md`](expected/summary.md) — every H01 and H02 number, generated.
 
 ## Kinds of evidence (kept separate everywhere)
 
 | Kind | Where |
 |---|---|
 | Analytic proof from code / contracts | `CURRENT_STATE.md` (`[CODE]`, `[CONTRACT]`, `[TEST]`), `ARCHITECTURE.md` / `SECURITY_ANALYSIS.md` (`[ANALYTIC]`) |
-| Isolated reproducible experiment | H01 (`[H01]`): `scenarios/h01_input_modes.php`, `expected/` |
+| Isolated reproducible experiment | H01 (`[H01]`): `scenarios/h01_input_modes.php`; H02 NEW-browser part (`[H02]`): `scenarios/h02_bootstrap.php`; `expected/` |
+| Model with an idealized part | H02 ESTABLISHED browsers (`[H02 MODEL]`): assumed admitted and absent from the shared sets — an upper bound for the office, never a fairness result |
 | Prior merged evidence | `[PRIOR]` with study and file reference |
 | Not executed | the direction-C candidate and every gate in `VALIDATION_PLAN.md` |
 | Approved Runtime | `main@a6c79f4` as is (S0 rules + DEC-021) — unchanged by this study |
@@ -80,14 +87,30 @@ A REPRODUCED H01 observation is a fact about the shipped runtime. It is not a se
   * a NAT above the 50-device IP cap;
   * id rotation;
   * a UA change on a stable id.
-* Not covered by H01: Redis, concurrency, mixed versions, IPv6, secret rotation, OTP. Those belong to a candidate
+* Not covered by H01 / H02: Redis, concurrency, mixed versions, IPv6, secret rotation, OTP. Those belong to a candidate
   study (`VALIDATION_PLAN.md`).
+
+## H02 — what was run
+
+* Setup: 100 browsers on one NAT and one Firefox major, 14 days, one shared store from empty. Each day there are arrivals
+  in a shuffled order, ~10 % typos, and up to 3 retries after `max(retryAfter, 60 s)`.
+* NEW browsers: real MAIN pipeline with M0 inputs, which are the inputs proposal C sends for them.
+* Establishment rule (model): a MAIN-admitted, recorded successful login, under the per-network daily cap `E_net`.
+* ESTABLISHED browsers: idealized.
+* Variants:
+  * MAIN: no establishment (the control).
+  * BASE: uncapped.
+  * CAP5: `E_net = 5`.
+  * CLR10: 10 % cookie clearing per day.
+  * FIX7: fixed 7-day standing.
+  * ATK: BASE plus a credential-less sprayer on the NAT.
+  * ATKM: MAIN plus the same sprayer (the control for ATK).
 
 ## Reproduce
 
 ```bash
 composer install
-bash investigations/host-managed-client-identity-110/run.sh             # ~2 s; diffs against expected/
+bash investigations/host-managed-client-identity-110/run.sh             # ~20 s; diffs against expected/
 UPDATE=1 bash investigations/host-managed-client-identity-110/run.sh    # regenerate expected/ (review the git diff)
 ```
 
@@ -95,21 +118,36 @@ UPDATE=1 bash investigations/host-managed-client-identity-110/run.sh    # regene
 
 * It refuses a baseline that is not an ancestor of HEAD.
 * It refuses any difference or uncommitted change under `src/`, `tests/`, `docs/` or the Composer files.
-* The scenario aborts (exit 4) if the loaded runtime is not the pinned unpatched baseline, or if a foreign candidate
-  label is set.
-* `report.php` exits 5 on missing, empty, malformed or mislabelled evidence, a wrong runtime hash, a missing cell, or a
-  per-request string that does not match its attempt count.
+* Both scenarios abort (exit 4) if the loaded runtime is not the pinned unpatched baseline, or if a foreign candidate label
+  is set.
+* `report.php` exits 5 on invalid evidence:
+  * missing, empty, malformed or mislabelled evidence;
+  * a wrong runtime hash;
+  * unknown, duplicate or missing cells / rows;
+  * fields outside the exact per-class schema;
+  * characters outside the decision alphabet, or a record step not allowed after its check step;
+  * a wrong confidence for the mode;
+  * any stored metric that differs from the value re-derived from the archived traces and the deterministic schedule;
+  * broken day-to-day continuity in H02.
+* `report.php` exits 6 when the evidence is valid but an observation is not reproduced.
 
-There are seven negative self-tests: empty file, missing cell, patched label, wrong hash, bad request string, malformed
-JSON, and a foreign candidate label. `results/` is git-ignored scratch; the committed evidence is `expected/`.
+`selftest.php` generates 20 mutations, and `run.sh` checks the exact expected exit code for each:
+* 18 must be rejected with exit 5 (for example a corrupt-but-length-correct trace, a duplicate cell, a mismatched reach).
+* 2 must turn an observation NOT_REPRODUCED with exit 6: a masked rotation regression and a masked attack gain.
+
+Two further checks show each scenario refuses a foreign candidate label. `results/` is git-ignored scratch; the committed
+evidence is `expected/`.
 
 ## Files
 
 | Path | Content |
 |---|---|
-| `lib/hmci.php` | provenance pins, input modes, context builder, block attribution |
+| `lib/hmci.php` | provenance pins, input modes, context builder, block attribution, shared schedule / trace helpers and the H01 matrix definition |
 | `scenarios/h01_input_modes.php` | the 40-cell matrix (8 streams × 5 modes) |
-| `report.php` | evidence validation and generated `summary.md` / `observations.jsonl` |
+| `scenarios/h02_bootstrap.php` | the 7-variant × 14-day bootstrap model |
+| `report.php` | fail-closed evidence validation (trace-derived) and generated `summary.md` / `observations.jsonl` |
+| `selftest.php` | negative-control mutation generator used by `run.sh` |
 | `run.sh` | runner with baseline gate and self-tests |
 | `expected/h01_input_modes.jsonl` | raw per-cell evidence with per-request `check` / `record` decision strings |
-| `expected/summary.md`, `expected/observations.jsonl` | generated tables and the observations O1–O10 |
+| `expected/h02_bootstrap.jsonl` | raw per-day H02 evidence with per-request `check` strings of NEW browsers |
+| `expected/summary.md`, `expected/observations.jsonl` | generated tables and the observations O1–O10, B1–B6 |

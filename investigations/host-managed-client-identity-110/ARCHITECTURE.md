@@ -1,7 +1,9 @@
 # Architecture — Host-Managed Client Instance Identity (HMCI)
 
-Status: **architectural study only.** Nothing here is a Runtime, a contract or a decision. The model in §3 is an
-unimplemented, unmeasured direction (`[ANALYTIC]`); its security acceptance is **UNPROVEN** (see `VALIDATION_PLAN.md`).
+Status: **architectural study only.** Nothing here is a Runtime, a contract or a decision. §3 is **one** unimplemented
+proposal (`[ANALYTIC]`). Its bootstrap and its effect on the shared pool were examined with the H02 model (`[H02 MODEL]`,
+ESTABLISHED part idealized), which found structural problems. Its security acceptance is **UNPROVEN** and it is not
+recommended as specified (see `REPORT.md`, `VALIDATION_PLAN.md`).
 Evidence labels as in [`CURRENT_STATE.md`](CURRENT_STATE.md).
 
 ## 1. Three things that today share one value
@@ -34,7 +36,9 @@ carries must therefore be **earned**, not granted at issuance.
   distinct K2 churn member (O2); a browser update still splits the identity (O10).
 * The id is never available as itself: it is a hash input mixed with UA and hints, so the package cannot key anything by
   "this browser" independently of its appearance.
-* Verdict: **NO-GO as the instance identity** (measured). Remains valid as what it is: an optional low-entropy hint.
+* Verdict, scoped: **NO-GO for this mapping on the current runtime** (measured on the H01 streams). It does not exclude a
+  future contract that gives a client id in `clientFingerprint` a different meaning — that would be a new contract (C-like).
+  The id remains valid as what it is today: an optional low-entropy hint.
 
 ### B — widen `sessionDeviceId` to work before authentication
 
@@ -45,15 +49,18 @@ carries must therefore be **earned**, not granted at issuance.
   harm `[H01]`: a stable sprayer reaches the verifier 200/200 (O4, trusted K1 advisory); per-account brute force reach
   3 → 7 (O6, every attempt classified as a known device); the benign NAT still loses 97/100 (O5, K2 churn is authoritative
   for trusted sessions).
-* Verdict: **NO-GO** (contract-breaking and measured).
+* Verdict, scoped: **NO-GO for this mapping** (contract-breaking under `DEVICE_FINGERPRINT.md` §3.3, and measured on the H01
+  streams).
 
 ### C — an explicit, separate instance-identity contract
 
 * One new optional input that is **not** folded into the DeviceFP and **not** a trust signal. Its value comes only from
   state the package records itself after host-proven outcomes (§3).
-* Only direction that adds the missing observable without redefining an existing field. Cost: a public-contract
-  addition, a new decision record, canonical changes, new bounded state (`CONTRACT_FEASIBILITY.md`).
-* Verdict: **feasible direction, security UNPROVEN** (no candidate built or measured).
+* Adds an observable without redefining an existing field. Cost: a public-contract addition, a new decision record, canonical
+  changes, new bounded state (`CONTRACT_FEASIBILITY.md`).
+* §3 describes **one** proposal of this kind. It is unimplemented and unmeasured, and has open problems: the bootstrap
+  (H02 B1–B4), the pool term (H02 B5), the credential term (`SECURITY_ANALYSIS.md` §4) and T-CNET. It is not shown to be
+  the only viable design.
 
 ### D — keep the inputs, reorganise interpretation / consumption
 
@@ -63,7 +70,14 @@ carries must therefore be **earned**, not granted at issuance.
 * A "reserved key" inside `clientFingerprint` (e.g. treating `clientFingerprint['instance']` specially) is a hidden schema
   (`DEVICE_FINGERPRINT.md` §3.2 "the package does not … invent a … schema") and is direction C in disguise, without a
   contract.
-* Verdict: **NO-GO as a NAT remedy** by the A06 indistinguishability argument and prior measurements.
+* Scoped result: the **measured** D candidates were each rejected or left conditional, and A06 shows that the *tested*
+  observables cannot separate four benign / attacker pairs. That rejects those candidates; it is **not** a proof that every
+  reinterpretation of today's inputs must fail.
+* Untested D variant identified by this revision: use the **existing** Host fact `isDevicePreviouslyVerifiedForAccount`
+  (or a trusted session) to exempt a device from network-scope collective K1 / K2 blocks **for that account only**. The
+  Host already knows which browser authenticated to which account. Such relief touches no new subjects, so it has no
+  cross-account gain by construction (`SECURITY_ANALYSIS.md` §4, "account-scoped variant"). It shares the bootstrap problem
+  and the B5 pool effect, and needs re-evaluation against the #113 trusted-session results. Not measured.
 
 ### Comparison
 
@@ -72,18 +86,24 @@ carries must therefore be **earned**, not granted at issuance.
 | Separates instance from composite FP | no | no | **yes** | no |
 | Separates instance from trust | yes | **no** | **yes** | n/a |
 | Survives a browser update | no (O10) | no | **yes** (by design) | no |
-| Benign NAT effect | worse (O2) | worse (O5) | better for *returning* instances only (§4, not measured) | prior candidates: partial, with attacker gain |
-| Attacker gain | none on S0 (O9) | 200/200 sprayer (O4) | bounded by earned standing; not measured | measured gains (#111, #115, #116) |
+| Benign NAT effect | worse (O2) | worse (O5) | only for established instances; bootstrap takes days and is capped / eroded (H02 B1–B4, ESTABLISHED idealized) | measured candidates: partial, with attacker gain; account-scoped variant untested |
+| Attacker gain | none on MAIN (O9) | 200/200 sprayer (O4) | T1 pool term measured in the H02 model (B5: 13 → 22 / day); credential term accumulates over the standing TTL (`SECURITY_ANALYSIS.md` §4) | measured gains (#111, #115, #116); account-scoped variant: credential term 0 by construction, pool term not measured |
 | DEC-021 bound | kept | weakened (O6) | kept by construction (§3.4) | kept |
 | Public API change | none | none (semantic break) | one optional field | none |
 | Consumer complexity | low | low but unsafe | low: issue a cookie / installation id, pass it | none |
 
-**Least consumer complexity that keeps the required guarantees: C**, with a single optional field and no new Host facts
-beyond the identifier itself — standing is computed by the package from outcomes the Host already reports
-(`recordSuccess` / `recordFailure`). A and B are cheaper for the consumer but measured unsafe or useless; D is free for the
-consumer but cannot distinguish the cases.
+**Consumer complexity versus guarantees.** No option is shown to keep the required guarantees:
+* The A and B mappings and `correlationId` reuse are measured unsafe or useless on the current runtime.
+* The C proposal needs one optional field, but its guarantees are unproven and partly contradicted by H02.
+* The account-scoped D variant needs no new input (the Host already supplies the known-device fact), but it is unmeasured.
 
-## 3. Proposed model (direction C) — "identity is free, standing is earned"
+The study therefore does **not** name a least-complex safe option. It names the evidence each candidate still needs
+(`VALIDATION_PLAN.md`).
+
+## 3. One proposal of direction C — "identity is free, standing is earned"
+
+This section records the proposal as reviewed, with the problems found since. It is a design under study, not a
+recommendation.
 
 ### 3.1 Inputs
 
@@ -106,7 +126,9 @@ consumer but cannot distinguish the cases.
 Establishment is the only way to gain anything. It requires a **successful authentication** reported by the Host, i.e.
 knowledge of a valid credential for some account. It is bounded:
 
-* per account: at most `E_acct` new establishments per 24 h (bounded set keyed by K4, like the device caps);
+* per account: at most `E_acct` new establishments per 24 h (bounded set keyed by K4, like the device caps). This is a
+  *daily admission* cap. Over a standing TTL of `T` days the established **stock** reaches `k · E_acct · T`. A concurrent stock
+  cap (`M_acct`, `M_net`) is required and was missing from the first version (`SECURITY_ANALYSIS.md` §3, F118-01);
 * per network scope: at most `E_net` establishments per K1 per 24 h;
 * standing expires (TTL, e.g. 30 days) — `DEVICE_FINGERPRINT.md` §10 requires TTL on all fingerprint data.
 
@@ -161,8 +183,12 @@ instance a session was issued to, but the package must not infer one from the ot
    stored by the app). Package state: `NEW` (nothing stored until observed, then bounded).
 2. Anonymous traffic and the first login attempts: judged as S0. The same instance trying several accounts is counted on K6
    (observation) and on K1 (S0 enforcement).
-3. First successful login (`recordSuccess` with `accountId`): establishment, subject to `E_acct` / `E_net`.
-4. Return visits (same or another day): `ESTABLISHED`; office colleagues' logins no longer deny it through K1/K2.
+3. First successful login (`recordSuccess` with `accountId`): establishment, subject to `E_acct` / `E_net`. **That login must
+   first pass MAIN.** In H02, about 87 of 100 office browsers have no successful login on a given day, so this step is the
+   bottleneck (B1).
+4. Return visits after establishment: `ESTABLISHED`; office colleagues' logins no longer deny it through K1/K2. Under the
+   idealized H02 model, a 100-browser office reaches this state in full only on day 9 without caps. With `E_net = 5` per day
+   it is 70 % after 14 days. With 10 % daily cookie clearing or 7-day standing it plateaus near 75–83 % (B2–B4).
 5. Browser update: DeviceFP changes; the instance id does not; standing is kept; per-instance churn sees one change (not
    churn). K5 history still follows DeviceFP unless K5 is re-keyed (open option O-4 in `REPORT.md`).
 6. Cookie cleared / app reinstalled: a new id → `NEW`; the old standing is orphaned and expires. No quota is created.
@@ -185,7 +211,7 @@ Logout ends the session, not the instance.
 |---|---|
 | Before login, attempts follow the browser even when the targeted account changes | K6 observes every attempt of the instance regardless of `accountId`; per-instance spray counts subjects per instance |
 | After login, browser risk continues while account / known-device limits apply | K6 keeps instance history; K4 / K5 / DEC-021 unchanged and additive |
-| Identity rotation must not buy quota | new ids are `NEW` = S0; standing needs a successful authentication and is capped per account and per network |
-| Shared NAT must not punish independent users | established instances are not judged by other clients' K1 / K2 evidence; newcomers remain S0 (**day-0 and cookie-less users get no relief**) |
-| Distributed attack must keep K1 / K2 / spray | NEW / ABSENT traffic keeps S0 rules; established traffic has per-instance and network-ceiling bounds; no general exemption |
+| Identity rotation must not buy quota | a new id's own decisions are MAIN's. Standing needs a successful authentication; daily caps alone let the stock accumulate over the TTL, so concurrent stock caps are required (`SECURITY_ANALYSIS.md` §3) |
+| Shared NAT must not punish independent users | only once established, and establishment is slow and partial (H02 B1–B4). Day-0 and cookie-less users get no relief |
+| Distributed attack must keep K1 / K2 / spray | NEW / ABSENT traffic keeps MAIN rules, **but** removing established traffic from the shared spray set raised a credential-less sprayer's reach in the H02 model (B5: 13 → 22 per day). The proposal does not keep the K1 bound unchanged |
 | UA / session change | the instance id is the stable part; DeviceFP and session may change; instance standing and K6 history persist |

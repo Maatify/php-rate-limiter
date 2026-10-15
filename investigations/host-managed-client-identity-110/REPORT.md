@@ -1,105 +1,133 @@
 # Report — Host-Managed Client Instance Identity for shared NAT (#110)
 
 Baseline `main@a6c79f45e79171e26031fc720822428e09e6e36c`. DEC-019 ACTIVE, DEC-021 ACTIVE, DEC-020 not approved. #97, #100,
-#106, #110 stay OPEN. **Nothing here is a Runtime approval, a decision or a fix.**
+#106 and #110 stay OPEN. **Nothing here is a Runtime approval, a decision or a fix.** This revision answers the Lead review
+on PR #118 (F118-01 … F118-05, §6).
 
 ## 1. Executive summary
 
 * The runtime has **no client-instance identity**. It folds instance, appearance (UA major, hints) and session into one
-  DeviceFP. So it cannot tell an office of stable browsers from one browser that keeps changing its fingerprint. Earlier
-  studies proved those two cases are observably identical with today's inputs (#104 A06).
-* A host-issued browser id carried through **today's** inputs does not help, measured on post-DEC-021 `main` (`[H01]`):
-  * In `clientFingerprint` or in an untrusted `sessionDeviceId`, NAT collateral **rises**: 90 → 97 of 100 browsers
-    denied, 8 → 10 of 12. Each browser becomes a K2 churn member.
-  * As a pre-authentication trusted session, a credential sprayer reaches the verifier **200/200** (instead of 7).
-    Per-account brute force reaches it 3 → 7 times.
-  * As `correlationId`, the sprayer also gets **200/200**, and the office gains nothing.
-  * A browser update still splits the identity.
-* Only one direction survives: **C**, an explicit, separate `clientInstanceId`, under the rule "identity is free,
-  standing is earned".
-  * A new or absent id is judged exactly as today, so rotation can never buy quota.
-  * Value comes only after a successful authentication, capped per account and per network.
-  * Even then, the instance is judged by its own cross-account bounds instead of other clients' K1/K2 evidence.
-  * Account rules and DEC-021 are untouched.
-* C needs a public-contract addition, canonical changes and a new ADR. **Its security is unproven.** It also has one
-  unresolved design tension (T-CNET, §5) that decides whether it can be safe.
-* It gives **no relief** to a browser on its first day, or after its cookies are cleared.
+  DeviceFP. So the tested observables cannot tell an office of stable browsers from one browser that keeps changing its
+  fingerprint.
+* A host-issued browser id carried through **today's inputs, as the current runtime interprets them**, did not help on the
+  measured streams (H01, real runtime):
+  * In `clientFingerprint` or an untrusted `sessionDeviceId`, NAT collateral rose: 90 → 97 of 100 browsers, 8 → 10 of 12.
+  * As a pre-authentication trusted session, a credential sprayer reached the verifier 200 of 200 times instead of 7.
+    Per-account brute force rose from 3 to 7.
+  * As `correlationId`, the sprayer also reached 200 of 200.
+* **Proposal C** is a new `clientInstanceId` input, where "identity is free, standing is earned". It is **one unimplemented
+  proposal**, not the only viable direction. Examining it found three problems:
+  * **Bootstrap (H02).** On MAIN, about 87 of 100 office browsers cannot log in on a given day, and that login is the only
+    way into standing. Even with the established browsers idealized, the office is fully established only on day 9. With a
+    cap of 5 per day it is 70 % after 14 days. With cookie clearing or expiry it plateaus near 75–83 %.
+  * **Pool term (H02, B5).** Taking established traffic out of the shared spray set raised a credential-less sprayer's
+    reach from 13 to 22 per day. Unchanged MAIN stays at 13. The proposal's own gate "T1 Δ = 0" is not met by construction.
+  * **Credential term (corrected bound).** Daily establishment caps let the established stock accumulate over the standing
+    TTL (60 instances per credential with `E_acct = 2`, `T = 30`). Distinct-subject caps do not bound admitted
+    verifications. As first written, the gain could reach thousands of admitted verifications per day per credential.
+* An **untested** direction-D variant was identified: account-scoped relief for host-proven known devices, using the
+  existing `isDevicePreviouslyVerifiedForAccount`. Its credential term is zero by construction. It shares the bootstrap and
+  pool problems.
 
-**Verdict on the architectural direction: `INCONCLUSIVE`.** C is feasible and is the only direction not refuted. It is not
-GO, because no candidate was built or measured, and T-CNET is open. A, B, `correlationId` reuse and D are **NO-GO**. This
-is a verdict on direction feasibility, not a Runtime acceptance.
+**Verdicts (each scoped to its evidence):**
 
-## 2. Results established by this study
+| Item | Verdict |
+|---|---|
+| Overall: "a host-managed instance identity can relieve shared NAT safely" | **INCONCLUSIVE** |
+| Proposal C as specified | **Not acceptable as specified**: model-level and analytic contradictions with its own gates. Not a measured candidate NO-GO |
+| A / B / `correlationId` mappings on the current runtime | **NO-GO** on the measured streams |
+| Direction D as a class | **Not excluded**. Only the measured D candidates were rejected |
+
+None of this is a Runtime acceptance.
+
+## 2. Results
 
 | # | Result | Kind |
 |---|---|---|
 | R1 | Field responsibilities, pre/post-auth availability, DeviceFP derivation, K1–K5 scope, limits (`CURRENT_STATE.md` §1–§9) | `[CODE]` / `[CONTRACT]` |
-| R2 | `correlationId` is a spray subject; reusing it as browser id disables spray for a stable-id sprayer | `[TEST]` + `[H01]` O7, O8 |
-| R3 | Browser id in `clientFingerprint` (A) or untrusted `sessionDeviceId` (B) increases NAT collateral; the two are decision-identical | `[H01]` O2, O3 |
-| R4 | Trusted pre-auth session (B with trust) = sprayer 200/200, per-account reach 3 → 7, office not relieved | `[H01]` O4, O5, O6 |
-| R5 | A NAT above the 50-device IP cap is already 90/100 denied without any id, first denial always K1 | `[H01]` O1 |
-| R6 | On MAIN, id rotation never gains reach over a stable id or no id | `[H01]` O9 |
+| R2 | `correlationId` is a spray subject; reusing it as a browser id disables spray for a stable-id sprayer, with no office gain | `[TEST]` + `[H01]` O7, O8 |
+| R3 | A browser id in `clientFingerprint` or in an untrusted `sessionDeviceId` increases NAT collateral on the measured streams; the two give identical decisions | `[H01]` O2, O3 |
+| R4 | A trusted pre-auth session gives the sprayer 200/200 and raises per-account reach 3 → 7; the office is not relieved | `[H01]` O4–O6 |
+| R5 | A NAT above the 50-device IP cap is already 90/100 denied with no id; every first denial is K1 | `[H01]` O1 |
+| R6 | On MAIN, a rotating id never beats the same-mode stable id nor no id | `[H01]` O9 (now checked against both) |
 | R7 | A UA-major update gives a stable browser a new DeviceFP / K5 in every mode (known owner reach 5 → 8 / 12) | `[H01]` O10 |
-| R8 | The missing-fingerprint rules are unreachable with the default resolver (F-HMCI-01) | `[CODE]` + `[TEST]` |
-| R9 | Contract intent "fair under shared IPs" is not met for one NAT + one browser major; §3.2 and §7.1 conflict (F-HMCI-02) | `[CONTRACT]` + `[H01]` + `[PRIOR]` |
+| R8 | On MAIN with retries, 86–88 of 100 office browsers have no successful login on each of 14 days | `[H02]` B1 (real pipeline) |
+| R9 | Idealized standing: whole office only on day 9; `E_net = 5`: 70 % on day 14; cookie clearing / 7-day standing plateau 75–83 %; an attacker slows bootstrap (day 7: 64 vs 83) | `[H02 MODEL]` B2–B4, B6 |
+| R10 | Excluding established traffic from the shared set raises T1 reach 13 → 22 per day (MAIN control: flat 13) | `[H02 MODEL]` B5 |
+| R11 | The first bound was wrong in units and ignored accumulation over the TTL; corrected accounting in admitted verifications | `[ANALYTIC]` `SECURITY_ANALYSIS.md` §3–§4 |
+| R12 | Missing-fingerprint rules are unreachable with the default resolver (F-HMCI-01) | `[CODE]` + `[TEST]` |
+| R13 | Contract intent "fair under shared IPs" is not met for one NAT + one browser major; §3.2 and §7.1 conflict (F-HMCI-02) | `[CONTRACT]` + `[H01]` + `[PRIOR]` |
 
-Not established (`[ANALYTIC]` only): every property of direction C (`ARCHITECTURE.md` §3, `SECURITY_ANALYSIS.md` §3–§9).
+How to read the evidence:
+* H02's NEW part is the real MAIN pipeline. Its ESTABLISHED part is idealized, so B2–B6 are upper bounds for the office.
+* B5 arises in the real pipeline once the office's subjects are absent. It does not depend on how established browsers
+  would themselves be treated.
 
-## 3. Alternatives
+## 3. Alternatives (scoped)
 
-| Direction | Verdict | Basis |
+| Direction | Verdict | Scope of the evidence |
 |---|---|---|
-| A `clientFingerprint` | NO-GO as instance identity | R3, R7; still valid as a low-entropy hint |
-| B `sessionDeviceId` before auth | NO-GO | R3, R4; breaks `DEVICE_FINGERPRINT.md` §3.3 and DEC-021's trust basis |
-| `correlationId` reuse | NO-GO | R2 |
-| C explicit `clientInstanceId` with earned standing | INCONCLUSIVE — feasible, unproven | `ARCHITECTURE.md` §3, `CONTRACT_FEASIBILITY.md` |
-| D reinterpret existing inputs | NO-GO as NAT remedy | #104 A06 indistinguishability; #105 / #107 / #111 / #115 / #116 measured |
-| C variant: standing from age only (no authentication) | rejected | cookie farming is free; gives T1 value — breaks G-T1 |
-| C variant: standing granted at issuance | rejected | identical to "more ids = more quota" |
-| C variant: id folded into DeviceFP | rejected | that is A (R3) |
+| A — id in `clientFingerprint` | NO-GO for this mapping on the current runtime | H01 streams (R3, R7). A future contract giving the field another meaning is not covered |
+| B — `sessionDeviceId` before authentication | NO-GO for this mapping | H01 streams (R3, R4); also breaks `DEVICE_FINGERPRINT.md` §3.3 |
+| `correlationId` as browser id | NO-GO for this mapping | R2 |
+| D — measured candidates (EQL/EQV, PSC, OQC, GNH5, OAAA) | rejected or conditional, in their own studies | those candidates and streams only |
+| D — account-scoped relief for known devices (existing `isDevicePreviouslyVerifiedForAccount` / trusted session) | **untested**; credential term 0 by construction; bootstrap and B5 still apply; #113 needs re-evaluation | `SECURITY_ANALYSIS.md` §4 |
+| C — proposal of `ARCHITECTURE.md` §3 | not acceptable as specified | R9–R11; no candidate built |
+| C — standing from age only, or granted at issuance | rejected | free cookie farming gives T1 value |
+| Other new-contract directions (per-attempt identity #116, host-attested outcome / signed device token #104) | not studied here | out of scope |
 
 ## 4. Engineering recommendation
 
-1. **Do not** advise Hosts to put a browser id in `clientFingerprint`, `sessionDeviceId` or `correlationId` to fix NAT.
-   The measured effect is harm (R2–R4).
-2. If the Owner wants to pursue the idea, pursue **C only**, in this order:
-   * (a) resolve T-CNET on paper;
-   * (b) Owner sets the quantified bounds (`E_acct`, `E_net`, `S_inst`, `C_net`, `R`, TTL) and the acceptable T2/T3 gain;
-   * (c) build an isolated candidate and run `VALIDATION_PLAN.md` V1–V17 against MAIN;
-   * (d) only then draft the ADR and canonical changes.
-3. Accept honestly that C cannot remove day-0 collateral (new or cookie-less browsers stay at MAIN behaviour). Day-0 and
-   K1 spray for newcomers remain DEC-019 territory.
+1. **Do not** advise Hosts to put a browser id in `clientFingerprint`, `sessionDeviceId` or `correlationId` to fix NAT. The
+   measured effect is harm (R2–R4).
+2. **Do not** open a candidate study of proposal C *as specified*. It needs three things first:
+   * a bootstrap solution (R8–R9);
+   * a design whose pool term is zero or approved (R10);
+   * concurrent stock caps with a bound stated in admitted verifications (R11).
+3. If the Owner wants to continue this line, the cheapest next question is the **account-scoped known-device variant**. It
+   needs no new input, and its credential term is zero by construction. A paper evaluation should come first: does B5 apply
+   to it, can bootstrap work, and what do the #113 trusted-session results mean for it. Whether to do this, and when, is an
+   Owner / Lead decision. This study does not start it.
+4. Day-0 and cookie-less collateral remain under DEC-019 for every instance-identity design examined here.
 
-## 5. Findings and open questions
+## 5. Findings on `main` and open questions
 
-Findings concern `main`; this study does not fix them (Runtime and canonical edits are out of scope). Per the Owner rule,
-each needs an explicit disposition.
+Findings concern `main`. This study does not fix them, because Runtime and canonical edits are out of scope. Each needs
+an explicit disposition.
 
 | ID | Finding | Evidence | Proposed disposition (Owner) |
 |---|---|---|---|
-| F-HMCI-01 | `DECISION_MATRIX.md` §2.2, §2.2.1, §2.4.1.2, §3.1, §3.1.1 define "missing DeviceFP" scoring (K2 +4/+6, repeated K4 +6/+8, budget eligibility). With the default `DeviceIdentityResolver`, `fingerprintHash` is always a non-empty HMAC, so these paths run only with a custom resolver. Tests reach them only with hand-built DTOs. | `DeviceIdentityResolver.php:39-40`, `FingerprintHasher.php:33-36`, `EvaluationPipeline.php:1619`, `:1764`, `:2693`; `RateLimiterBudgetOwnerSafetyTest.php:135`, `:153`; `AccountAuxiliaryStateIsolationTest.php:347-350` | decide: document as custom-resolver-only, or define "absent" for the default resolver (Runtime change, separate issue) |
-| F-HMCI-02 | `DECISION_MATRIX.md` §5.3 says "≥ 3 changes"; the code counts distinct DeviceFP per IP + UA. `DEVICE_FINGERPRINT.md` §3.2 promises the client ID "improves differentiation under NAT/VPN", while §7.1 churn turns that differentiation into a K2 HARD. | `EvaluationPipeline.php:1174-1222`, `[H01]` O2, `[PRIOR]` #108 N3 56/61 | contract wording correction or a canonical decision; overlaps #100 |
-| F-HMCI-03 | `DEVICE_FINGERPRINT.md` §3.3 restricts `sessionDeviceId` to post-auth, account-bound use. The runtime accepts it without `accountId` or trust and folds it into DeviceFP (LOW but distinct). No Host guidance warns against pre-auth use. | `DeviceIdentityResolver.php:34-39`, `[H01]` O3 | Host guidance (documentation), no Runtime change proposed |
-| F-HMCI-04 | `USAGE_GUIDE.md` gives no guidance for `clientFingerprint`, `sessionDeviceId` or `correlationId`. The measured misuses (M1–M4) are each a plausible Host reading of the field names. | `docs/guides/USAGE_GUIDE.md` (no matches), `[H01]` O2–O8 | documentation |
+| F-HMCI-01 | `DECISION_MATRIX.md` §2.2, §2.2.1, §2.4.1.2, §3.1 and §3.1.1 define "missing DeviceFP" scoring. With the default `DeviceIdentityResolver`, `fingerprintHash` is always a non-empty HMAC, so these paths run only with a custom resolver. Tests reach them only with hand-built DTOs | `DeviceIdentityResolver.php:39-40`, `FingerprintHasher.php:33-36`, `EvaluationPipeline.php:1619`, `:1764`, `:2693`; `RateLimiterBudgetOwnerSafetyTest.php:135`, `:153`; `AccountAuxiliaryStateIsolationTest.php:347-350` | document as custom-resolver-only, or define "absent" for the default resolver (separate issue) |
+| F-HMCI-02 | `DECISION_MATRIX.md` §5.3 says "≥ 3 changes"; the code counts distinct DeviceFP per IP + UA. `DEVICE_FINGERPRINT.md` §3.2 promises NAT differentiation that §7.1 churn turns into a K2 HARD | `EvaluationPipeline.php:1174-1222`, `[H01]` O2, `[PRIOR]` #108 N3 56/61 | contract wording correction or a canonical decision; overlaps #100 |
+| F-HMCI-03 | `sessionDeviceId` is accepted before authentication and without trust, and enters the DeviceFP; there is no Host guidance against that | `DeviceIdentityResolver.php:34-39`, `[H01]` O3 | Host guidance (documentation) |
+| F-HMCI-04 | `USAGE_GUIDE.md` gives no guidance for `clientFingerprint`, `sessionDeviceId` or `correlationId`; each measured misuse is a plausible reading of the field name | `[H01]` O2–O8 | documentation |
 
 Open questions:
 
-* **O-1 / T-CNET:** count the network ceiling at `checkOnly` (office hits it) or at `recordFailure` (concurrency leak)?
-  This decides whether C can be both fair and safe.
-* **O-2:** what T2/T3 gain, if any, is acceptable for an attacker who holds valid credentials?
-* **O-3:** does establishment need an atomic "admit + write standing" Store capability, or is the two-step fail-safe
-  acceptable?
-* **O-4:** should K5 be re-keyed by instance id (survives browser updates; R7) or stay DeviceFP-based? This touches DEC-021
-  evidence and needs its own measurement.
-* **O-5:** standing TTL and the privacy classification of the instance cookie (Host / legal).
-* **O-6:** how does an anonymous endpoint (no `accountId`, no outcome) benefit? In the model it cannot establish standing,
-  so it stays at MAIN.
+* **O-1 / T-CNET:** count the network ceiling at `checkOnly` (an office reaches it) or at `recordFailure` (concurrency leak)?
+  Not needed by the account-scoped variant's credential term.
+* **O-2:** what gain, if any, is acceptable for an attacker holding valid credentials, stated in admitted verifications per
+  600 s, per 24 h and per standing TTL?
+* **O-3:** does establishment need an atomic "admit + write standing" Store capability?
+* **O-4:** should K5 be re-keyed by instance id (survives browser updates, R7)? This touches DEC-021 evidence.
+* **O-5:** standing TTL and the privacy classification of an instance cookie (Host / legal).
+* **O-6:** anonymous endpoints have no outcome, so they cannot earn standing in any design examined here.
+* **O-7 (new):** is any bootstrap path possible that does not pass through a MAIN-admitted login, without giving T1 value?
 
-## 6. Owner decisions requested
+## 6. Reconciliation of the Lead review (PR #118, review 5539925676 on `654ea72`)
 
-1. Accept this study as evidence only, and record A, B, `correlationId` reuse and D as NO-GO directions for the NAT
-   problem.
-2. Decide whether direction C is worth a candidate study: yes / no / after other #110 work.
-3. If yes, set the parameters and the acceptable T2/T3 gain (O-1, O-2, O-5), or ask for a T-CNET design note first.
-4. Dispose of F-HMCI-01 … F-HMCI-04: separate issues, documentation follow-up, or accepted as designed.
-5. Confirm that no Host guidance recommending a browser id is published before a decision on C.
+| Finding | Resolution in this revision |
+|---|---|
+| F118-01 bound units / accumulation | `SECURITY_ANALYSIS.md` §3–§4 rebuilt:<br>• stock `I` accumulating over the TTL;<br>• admitted verifications = distinct subjects × per-account admitted reach `r_W` / `r_D` (measured inputs cited);<br>• attempted vs admitted separated;<br>• worked example showing the first bound understated the gain;<br>• concurrent caps required.<br>`ARCHITECTURE.md` §3.2 updated |
+| F118-02 unreachable day-1 office | New scenario H02: bootstrap from a fresh store over 14 days, with real MAIN admission for NEW browsers, retries, caps, cookie clearing, expiry and attacker interference. Results are tracked per day, and the idealized part is labelled. `VALIDATION_PLAN.md` V1 now requires bootstrap without idealization (G-BOOT), with V1i as a labelled upper bound only |
+| F118-03 contradictory mixed-version gate | G-MIX split into G-MIX-OLD (old worker = MAIN), G-MIX-NEW (no / new id = MAIN) and G-MIX-EST (established traffic may differ only MAIN-deny → allow, within the approved envelope, under concurrency, mixed state, rollback and failures) |
+| F118-04 harness not fail-closed | `report.php` now enforces:<br>• exact per-class schemas;<br>• no duplicate or unknown cells / rows, and completeness;<br>• the decision alphabet and the check → record transition;<br>• confidence per mode;<br>• every metric re-derived from the archived traces and the deterministic schedule.<br>O9 compares rotation to both the same-mode stable id and no id. `run.sh` has 20 mutation self-tests with expected exit codes (corrupt-but-length-correct trace, duplicate cell, mismatched reach / users, masked rotation, H02 continuity and masked attack gain, …) plus 2 foreign-label refusals. Goldens re-run and archived |
+| F118-05 exclusivity overstated | Every NO-GO is scoped to its mapping and streams. C is described as one unimplemented proposal. D is not excluded, and an untested account-scoped D variant is named |
+
+## 7. Owner decisions requested
+
+1. Accept this study as evidence only, with the scoped verdicts of §1 and §3.
+2. Decide whether the account-scoped known-device variant deserves a paper evaluation, and when. Proposal C as specified is
+   not recommended for a candidate study.
+3. Dispose of F-HMCI-01 … F-HMCI-04.
+4. Confirm that no Host guidance recommending a browser id is published before a decision.

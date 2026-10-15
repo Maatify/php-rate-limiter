@@ -1,8 +1,9 @@
 # Security Analysis — Host-Managed Client Instance Identity
 
-Evidence labels as in [`CURRENT_STATE.md`](CURRENT_STATE.md). The model analysed is the direction-C model of
-[`ARCHITECTURE.md`](ARCHITECTURE.md) §3; **none of it is implemented or measured** — every claim about it is `[ANALYTIC]`
-and becomes a gate in [`VALIDATION_PLAN.md`](VALIDATION_PLAN.md).
+Evidence labels as in [`CURRENT_STATE.md`](CURRENT_STATE.md), plus `[H02 MODEL]` for the bootstrap model whose NEW part
+is the real MAIN pipeline and whose ESTABLISHED part is idealized. The proposal analysed is proposal C of
+[`ARCHITECTURE.md`](ARCHITECTURE.md) §3 — **one unimplemented, unmeasured proposal**, not the only possible design. Claims
+about it are `[ANALYTIC]` unless marked `[H02 MODEL]`, and become gates in [`VALIDATION_PLAN.md`](VALIDATION_PLAN.md).
 
 ## 1. What prior evidence already rules out
 
@@ -17,9 +18,11 @@ and becomes a gate in [`VALIDATION_PLAN.md`](VALIDATION_PLAN.md).
 | OAAA (#116) | atomic outcome-aware admission | NO-GO (E4 / E1 / E3); co-located attacker +2 / 600 s, OWN2/OWN4 +6 |
 | Two observably identical cases (#104 A06) | `(t, ip, UA, fingerprint, account, outcome)` | four legit / attacker pairs are byte-identical; any rule on those observables must hurt one of the pair |
 
-Conclusion carried into this study: **a new observable is required**; re-interpreting existing ones (direction D) has been
-measured five times. The host-issued instance id is such an observable — but only its *stability* is new information;
-its *issuance* is free to an attacker.
+Scope of that table: each row rejects **the specific candidate measured**, on the streams of that study. Together with #104
+A06 (identical *tested* observables for four benign/attacker pairs) they show that the tested reinterpretations do not
+separate office from sprayer. They do **not** prove that every reinterpretation of the existing inputs must fail. The
+account-scoped use of the existing known-device fact (§4) is one such untested reinterpretation. A host-issued instance id is
+a new observable, but only its *stability* is new information; its *issuance* is free to an attacker.
 
 ## 2. Threat model
 
@@ -44,59 +47,113 @@ Host trust assumptions (all already stated for existing inputs, none new except 
   authentication of that account.
 * H3 (existing, DEC-021): `isSessionTrusted` and `isDevicePreviouslyVerifiedForAccount` are Host-proven account facts.
 
-## 3. Identifier rotation
+## 3. Identifier rotation and accumulation of standing
 
-* **S0-on-main.** Rotation never gains reach: SPR_R ≤ SPR_S and BRU_R ≤ BRU_S in every input mode `[H01]` O9. When the id
-  is inside the DeviceFP, rotation trips K2 churn (SPR_R 3/200 in M1–M3).
-* **Direction C.** A fresh id is `NEW` and judged as S0 ⇒ rotation is never better than no id, by construction. The only
-  way to obtain value is establishment, which needs a successful authentication. Bound on established ids an actor can
-  hold within 24 h `[ANALYTIC]`:
+* **MAIN.** Rotation never gains reach: in every input mode a rotating id is ≤ the same-mode stable id **and** ≤ no id
+  (`[H01]` O9: SPR_R 7/3/3/3/7 vs SPR_S 7/7/7/200/200; BRU_R 3/2/2/2/3 vs BRU_S 3/3/3/7/3). With the id inside the DeviceFP,
+  rotation trips K2 churn.
+* **Proposal C, fresh ids.** A fresh id is `NEW` and its *own* decisions are those of MAIN, so issuing ids buys nothing
+  directly. This does **not** make the T1 effect zero: see §5, B5.
+* **Proposal C, established stock (corrected, F118-01).** `E_acct` and `E_net` are *daily admission* caps, while standing
+  lives for a TTL of `T` days and can be renewed by the attacker logging in to an account it controls. The number of
+  established instances an actor holds is a **stock that accumulates** `[ANALYTIC]`:
 
-  `established ≤ min(k · E_acct, E_net per K1 used)` for T2/T3 with k valid credentials; **0 for T1**.
+  `I(t) ≤ min(k · E_acct · T,  n · E_net · T)` — `k` valid credentials, `n` K1 scopes used, `T` in days.
 
-* Loss of protection to watch: removing established instances' DeviceFP from the K2 churn set (§3.3 of the
-  architecture) must not let a T2 actor rotate *appearance* under one established id. That is why per-instance churn
-  (distinct DeviceFP per K6) replaces the population rule for established instances.
+  With the illustrative `E_acct = 2`, `T = 30`: **60 established instances per credential**, not 2. The proposal as first
+  written had no cap on the *concurrent* stock; any viable variant needs one (`M_acct` per account, `M_net` per K1), giving
+  `I ≤ min(k · M_acct, n · M_net)`.
+* Loss of protection to watch: removing established instances' DeviceFP from the K2 churn set must not let an actor
+  rotate *appearance* under one established id; per-instance churn (distinct DeviceFP per K6) is proposed for that. Not
+  measured.
 
-## 4. Credential spray
+## 4. Credential spray — verifier-reach bound (corrected, F118-01)
 
-| Actor | S0-on-main | Direction C `[ANALYTIC]` |
+The first version bounded verifier **attempts** by `min(k·E_acct·S_inst, C_net)`. That was wrong in units: `S_inst` and
+`C_net` are cardinalities of **distinct subjects**. Repeated attempts against one subject do not grow either set, so they bound
+how many accounts are touched, not how many verifications are admitted. Corrected accounting `[ANALYTIC]`:
+
+| Symbol | Meaning | Unit |
 |---|---|---|
-| T1 | ~4–7 verifier reaches per K1 per window (`[H01]` SPR_S 7/200 over 20 min; `[PRIOR]` SP1n 4/200) | identical (all its ids are `NEW`) — **gate Δ = 0** |
-| T2 / T3 with k credentials | as T1 | additional reach per window ≤ `min(k · E_acct · S_inst, C_net)` over S0; e.g. `E_acct = 2`, `S_inst = 2` ⇒ ≤ 4k, capped by `C_net` (whose design is the open tension T-CNET in §5) — **requires measurement and an explicit Owner decision on the quantified gain** |
+| `I` | established instances held (§3) | instances (stock) |
+| `S_inst` | distinct subjects one established instance may touch | subjects per instance per 24 h (proposal) |
+| `C_net` | distinct subjects of all established instances on one K1 | subjects per K1 per its window (window and counting point unresolved: T-CNET) |
+| `r_W(acct)`, `r_D(acct)` | verifications the **account rules** (K4, budget, Anti-Equilibrium, DEC-021) admit on one account | admitted `checkOnly` per 600 s / per 24 h |
+| attempted | requests sent | unbounded — the attacker chooses |
+| admitted | `checkOnly` ALLOW = verifier reached | the security metric |
+
+Additional admitted verifications over MAIN, for an actor with established instances:
+
+`Δ_W ≤ min(I · S_inst, C_net) · r_W(acct)`  and  `Δ_D ≤ min(I · S_inst, C_net,D) · r_D(acct)`  plus the pool term of §5 (B5).
+
+Measured inputs for `r` on MAIN (an unknown device on one account, no K1 help):
+* per 600 s, from the archived BRU_S M0 trace (one attempt every 30 s): **2, 0, 1, 0, 0** admitted in the first five windows
+  `[H01]` (`expected/summary.md`). This is an observed sequence, not a proven maximum.
+* per 24 h: **37–39** for an unknown device on the Login streams of the DEC-021 measurement `[PRIOR]` (measured on S0; DEC-021
+  states it does not change the unknown-device path).
+
+Illustration, proposal as first written (`E_acct = 2`, `T = 30`, `S_inst = 2`, no concurrent cap, `C_net` absent):
+`I = 60` per credential ⇒ up to 120 distinct subjects per day ⇒ `Δ_D` up to **≈ 120 × 39 ≈ 4,700** admitted verifications per
+day per credential. That is **not acceptable**, and it shows the original bound understated the gain by orders of
+magnitude. With a concurrent cap `M_acct = 2`, it is still `4 × 39 ≈ 156` per day per credential.
+
+**Account-scoped variant (C-acct, not measured).** If an established instance's relief applies **only to the account(s) it
+established with** (`S_inst` = its own establishing accounts, no cross-account allowance), it touches no new subjects, and the
+credential term is **0**: attacking one's own account is pointless. The relief then matches the benign need (each employee
+logs in to their own account from their own browser), and per-account reach stays governed by K4/K5/DEC-021. This variant
+is close to an **existing-input** design: the Host already can assert `isDevicePreviouslyVerifiedForAccount` for a browser
+that previously authenticated to that account (DEC-021). A runtime that exempted *known-for-this-account* devices from
+network-scope collective K1/K2 blocks would be a direction-D variant **not covered** by any measured study (see
+`REPORT.md` §3). It is listed as untested; the #113 result (TMULTI-S ≡ N12T; TMX 200/200 with Host-tampered trust) must be
+re-evaluated against it, since a per-account scope changes what that attacker can gain.
+
+| Actor | MAIN | Proposal C as specified `[ANALYTIC]` + `[H02 MODEL]` |
+|---|---|---|
+| T1 (no credential) | `[H01]` SPR_S 7/200 over 20 min; `[H02]` ATKM 13 per day (71 attempts) | own decisions = MAIN, **but** pool term B5: 13 → up to 22 per day as the office is established |
+| T2 / T3 with k credentials | as T1 | `Δ_D ≤ min(I·S_inst, C_net,D) · r_D` with `I` accumulating over `T` (above) — unbounded in practice without `M_acct` / `M_net` |
 | T6 trusted sessions (#113) | TMSd 2/200, TMX 200/200 | unchanged: HMCI does not touch trusted K1 advisory |
 
-Why `S_inst` is a cross-account bound and not an exemption: an established instance that attempts more than `S_inst`
-distinct subjects is blocked on K6 regardless of the network; the network ceiling `C_net` bounds the sum over all
-established instances on one K1. The #113 lesson (removing K2 removes the only cross-account bound) is respected because
-the bound moves to the instance, it is not deleted.
+Concurrency: `S_inst` and a `checkOnly`-counted `C_net` would use the existing atomic bounded-set primitive, like S0 spray;
+establishment at `recordSuccess` would be bounded by an atomic `E_acct` set. Not measured.
 
-Concurrency: both `S_inst` and `C_net` are observed at `checkOnly` with the existing atomic bounded-set primitive
-(`BoundedCorrelationStoreInterface::addDistinctBounded()`), like S0 spray, so the "+N under concurrency" leak of
-outcome-time enforcement (#111 OQC 16/16) does not apply to them `[ANALYTIC]`. Establishment itself happens at
-`recordSuccess`; concurrent successes on one account are bounded by the atomic `E_acct` set. Not measured.
+## 5. Shared NAT — can the office reach the relief? (F118-02, measured with H02)
 
-## 5. Shared NAT
+The first version assumed returning office browsers are established. H02 tests that assumption from a fresh store. NEW
+browsers run through the **real** MAIN pipeline with retries. Established browsers are **idealized** (assumed admitted and
+absent from the shared sets), so every H02 number is an *upper bound* for the office.
 
-| Case | S0-on-main `[H01]` | Direction C `[ANALYTIC]` |
-|---|---|---|
-| Office, all browsers returning and established | OFF100 90/100 users denied (K1) with no id; 97/100 with the id in the DeviceFP | established instances are not denied by others' K1 / K2 evidence **unless the network ceiling `C_net` is reached** — see the open tension below |
-| Office, day 0 / new browsers / cookie-less | same | **no relief** — `NEW` = S0. Honest limit of the model |
-| Mixed: office established + attacker T1 on the same NAT | S0 denies the office when T1 sprays | T1's spray blocks the `NEW` / ABSENT pool (incl. new colleagues); established colleagues keep working |
-| Mixed: office + insider T3 holding credentials | — | T3 may establish ≤ `E_acct` instances per credential and is then bounded by `S_inst` and `C_net`; reaching `C_net` blocks **all** established instances on that K1 — a deliberate fail-safe that re-introduces collateral under attack |
+| Result `[H02]` | Value |
+|---|---|
+| B1 — on MAIN, browsers with no successful login at all, per day (100 browsers, ≤ 3 retries each) | 86–88 every day |
+| B2 — idealized, uncapped: established at end of day 1…14 | 13, 27, 39, 50, 63, 73, 83, 94, 100 — full office only on **day 9** |
+| B3 — `E_net = 5` per day | 5, 10, …, 70 on day 14 (linear, the cap binds) |
+| B4 — 10 % cookie clearing per day / fixed 7-day standing | plateau 75–79 / 79–83; never the whole office |
+| B6 — a T1 sprayer on the same NAT | slower bootstrap: 64 vs 83 established on day 7 |
+| **B5 — T1 reach as the office leaves the shared pool** | **13 → 22 admitted per day (ATK), vs a flat 13 on MAIN (ATKM)** |
 
-**Open tension T-CNET (unresolved, decisive for GO / NO-GO).** `C_net` is the only bound on the *sum* of established
-instances on one network. If it counts distinct subjects at `checkOnly` (concurrency-safe, like S0 spray), an office of
-`N` established users logging in within one window reaches it as soon as `N ≥ C_net` — so `C_net` must exceed the
-largest office to give relief, and then lets a T3 insider with enough established instances use up to `C_net` subjects.
-If it instead counts **failed** subjects at `recordFailure` (an office rarely fails), it separates office from sprayer but
-inherits the outcome-time concurrency leak measured for OQC (#111: 16/16 through a live scope) and the record-only /
-check-only Host limitations of #116. The model is therefore only as good as the `C_net` design, which this study does not
-resolve. With `C_net` removed, the model degrades to "per-instance bounds only", whose T2/T3 gain is
-`k · E_acct · S_inst` per window with no network cap.
+Consequences:
 
-Not assumed: that many browsers means attack, or that distinct ids mean distinct people. The model never gives an id value
-for being distinct; it gives value only to an id that has carried a successful authentication.
+* **Bootstrap is the binding constraint.** The way into standing is a successful login through MAIN. On MAIN, about 87 % of
+  this office cannot log in on a given day, so the relief reaches the office only gradually, over days. Every per-network
+  cap (`E_net`), cookie clearing or expiry stretches or caps it.
+* **B5 contradicts the original gate G-T1 (Δ = 0).** On MAIN, the office's own login subjects keep K1 saturated, which also
+  stops the sprayer. Removing established traffic from the shared set returns that capacity to the attacker. Any design
+  that excludes established subjects from the network spray set has this effect. It is a property of the proposal, not
+  of the idealization.
+* Mixed office + insider T3 holding credentials: as §4. A `C_net` breach would block all established instances on the K1
+  (fail-safe, collateral returns).
+
+**Open tension T-CNET (unresolved).** `C_net` is the only bound on the *sum* over established instances on one network.
+* Counted as distinct subjects at `checkOnly` (concurrency-safe, like S0 spray): an office of `N` established users reaches
+  it once `N ≥ C_net`. So `C_net` must exceed the largest office to give relief, and it then admits that many subjects to an
+  insider.
+* Counted as **failed** subjects at `recordFailure`: it separates office from sprayer, but inherits the outcome-time
+  concurrency leak measured for OQC (#111: 16/16 through a live scope) and the record-only / check-only Host limits of #116.
+
+The account-scoped variant above does not need `C_net` for the credential term, because it has no cross-account allowance.
+It still has the B5 pool term and the bootstrap constraint.
+
+Not assumed: that many browsers means attack, or that distinct ids mean distinct people.
 
 ## 6. Trust boundaries
 
@@ -129,6 +186,7 @@ New state per policy (all bounded, all HMAC, all TTL) `[ANALYTIC]`:
 | per-instance churn set | cap 3 |
 | per-instance network set (replay) | cap `R` |
 | establishment sets | `E_acct` per account, `E_net` per K1, fixed windows |
+| established stock | concurrent caps `M_acct` per account and `M_net` per K1 (required, §3); without them the stock grows to `k · E_acct · T` |
 | standing record | one per established instance, TTL |
 
 Rule `KEY_STRATEGY.md` §8 "Per-request random keys" forbidden: satisfied only if `NEW` instance state is capped; an uncapped
@@ -142,4 +200,6 @@ K6 for every fresh id would violate it. Gate G-STOR.
   failure cannot leave standing without its cap accounting.
 * Mixed versions: an old worker ignores `clientInstanceId` (does not know the field) and applies S0 ⇒ only availability
   differs, never weaker security. Rollback: new keys are ignored; established users fall back to S0 collateral.
-  Requires measurement (gate G-MIX).
+  Requires measurement (gate G-MIX-*, `VALIDATION_PLAN.md` §3). An old worker deliberately makes the decision MAIN makes,
+  including the denial an upgraded worker would lift for an established browser. That difference is the expected effect,
+  not a security regression.

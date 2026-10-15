@@ -29,35 +29,6 @@ require_once dirname(__DIR__) . '/lib/hmci.php';
 $prov = hmciProvenance();
 emit('h01', ['row' => 'provenance'] + $prov);
 
-/** @return array{0: string, 1: string} check char, record char */
-function decisionChars(array $r): array
-{
-    $steps = explode('>', $r['steps']);
-    $char = static fn(string $step): string => str_ends_with($step, ':A') ? 'A' : $step[strpos($step, ':') + 1];
-
-    return [$char($steps[0]), isset($steps[1]) ? $char($steps[1]) : '-'];
-}
-
-/** @return list<array{t: int, who: string, account: string, outcome: string}> */
-function officeEvents(int $browsers, int $spacing, int $seed): array
-{
-    $rng = new Lcg($seed);
-    $events = [];
-    for ($i = 0; $i < $browsers; $i++) {
-        $t = $i * $spacing;
-        $who = sprintf('u%03d', $i);
-        if ($rng->pct() <= 10) {
-            $events[] = ['t' => $t, 'who' => $who, 'account' => "acct-$who", 'outcome' => 'fail'];
-            $events[] = ['t' => $t + 15, 'who' => $who, 'account' => "acct-$who", 'outcome' => 'ok'];
-        } else {
-            $events[] = ['t' => $t, 'who' => $who, 'account' => "acct-$who", 'outcome' => 'ok'];
-        }
-    }
-    usort($events, static fn(array $a, array $b): int => [$a['t'], $a['who']] <=> [$b['t'], $b['who']]);
-
-    return $events;
-}
-
 foreach (['OFF12' => [12, 30], 'OFF100' => [100, 18]] as $stream => [$n, $spacing]) {
     foreach (HMCI_MODES as $mode) {
         $lab = new Lab('login');

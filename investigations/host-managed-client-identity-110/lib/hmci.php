@@ -122,3 +122,49 @@ function hmciBlockedKeys(Lab $lab, RateLimitContextDTO $c): string
 
     return $out === [] ? '-' : implode('+', $out);
 }
+
+/** @return array{0: string, 1: string} check char, record char */
+function decisionChars(array $r): array
+{
+    $steps = explode('>', $r['steps']);
+    $char = static fn(string $step): string => str_ends_with($step, ':A') ? 'A' : $step[strpos($step, ':') + 1];
+
+    return [$char($steps[0]), isset($steps[1]) ? $char($steps[1]) : '-'];
+}
+
+/** @return list<array{t: int, who: string, account: string, outcome: string}> */
+function officeEvents(int $browsers, int $spacing, int $seed): array
+{
+    $rng = new Lcg($seed);
+    $events = [];
+    for ($i = 0; $i < $browsers; $i++) {
+        $t = $i * $spacing;
+        $who = sprintf('u%03d', $i);
+        if ($rng->pct() <= 10) {
+            $events[] = ['t' => $t, 'who' => $who, 'account' => "acct-$who", 'outcome' => 'fail'];
+            $events[] = ['t' => $t + 15, 'who' => $who, 'account' => "acct-$who", 'outcome' => 'ok'];
+        } else {
+            $events[] = ['t' => $t, 'who' => $who, 'account' => "acct-$who", 'outcome' => 'ok'];
+        }
+    }
+    usort($events, static fn(array $a, array $b): int => [$a['t'], $a['who']] <=> [$b['t'], $b['who']]);
+
+    return $events;
+}
+
+/**
+ * The H01 matrix definition shared by the scenario and the report: stream => [class, shape]. For benign streams the shape is
+ * [browsers, spacing] of officeEvents(); otherwise it is the fixed attempt count.
+ */
+const HMCI_H01_STREAMS = [
+    'OFF12' => ['benign', [12, 30]],
+    'OFF100' => ['benign', [100, 18]],
+    'SPR_S' => ['attack', 200],
+    'SPR_R' => ['attack', 200],
+    'BRU_S' => ['attack', 100],
+    'BRU_R' => ['attack', 100],
+    'UAS' => ['owner', 12],
+    'UAC' => ['owner', 12],
+];
+/** Confidence the default resolver must report for each input mode (benign and attack cells carry it). */
+const HMCI_MODE_CONFIDENCE = ['M0' => 'LOW', 'M1' => 'MEDIUM', 'M2' => 'LOW', 'M3' => 'HIGH', 'M4' => 'LOW'];
