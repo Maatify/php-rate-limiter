@@ -28,21 +28,14 @@ declare(strict_types=1);
 //   ATK    BASE + a credential sprayer (no valid credential, all its ids NEW) on the same NAT, one attempt every 60 s from 08:50 to 10:00
 //   ATKM   MAIN + the same sprayer — the control for ATK's attacker reach
 //
+// Event-level evidence (Lead review F118-R2-02): every day row also archives `clearedWho`, `expiredWho` and `events`, one token per
+// pipeline request in processing order. A browser token is `<who><o|f><try><check><est>`: outcome ok / fail, retry number 0–3, the
+// checkOnly decision A / S / H, and `E` (established by this request), `C` (eligible but capped by E_net) or `-`. An attacker token is
+// `atk<check>`. report.php re-derives every day counter, the `check` string and the established set from these tokens.
+//
 // `cappedEligible` counts browsers whose admitted successful login would have established them but for E_net (for MAIN / ATKM, where
 // E_net = 0, it is simply "admitted successful logins").
 require_once dirname(__DIR__) . '/lib/hmci.php';
-
-const H02_DAYS = 14;
-const H02_BROWSERS = 100;
-const H02_VARIANTS = [
-    'MAIN' => ['enet' => 0, 'clear' => 0, 'ttlDays' => null, 'attack' => false],
-    'BASE' => ['enet' => null, 'clear' => 0, 'ttlDays' => null, 'attack' => false],
-    'CAP5' => ['enet' => 5, 'clear' => 0, 'ttlDays' => null, 'attack' => false],
-    'CLR10' => ['enet' => null, 'clear' => 10, 'ttlDays' => null, 'attack' => false],
-    'FIX7' => ['enet' => null, 'clear' => 0, 'ttlDays' => 7, 'attack' => false],
-    'ATK' => ['enet' => null, 'clear' => 0, 'ttlDays' => null, 'attack' => true],
-    'ATKM' => ['enet' => 0, 'clear' => 0, 'ttlDays' => null, 'attack' => true],
-];
 
 $prov = hmciProvenance();
 emit('h02', ['row' => 'provenance'] + $prov);
@@ -57,18 +50,18 @@ foreach (H02_VARIANTS as $variant => $cfg) {
     for ($day = 0; $day < H02_DAYS; $day++) {
         $base = $day * 86400 + 9 * 3600;
         $startEstablished = 0;
-        $cleared = 0;
-        $expired = 0;
+        $cleared = [];
+        $expired = [];
         foreach (array_keys($establishedDay) as $who) {
             if ($cfg['ttlDays'] !== null && $day - $establishedDay[$who] >= $cfg['ttlDays']) {
                 unset($establishedDay[$who]);
-                $expired++;
+                $expired[] = $who;
                 continue;
             }
             if ($cfg['clear'] > 0 && $rng->pct() <= $cfg['clear']) {
                 unset($establishedDay[$who]);
                 $idGen[$who]++;
-                $cleared++;
+                $cleared[] = $who;
                 continue;
             }
             $startEstablished++;
@@ -106,6 +99,7 @@ foreach (H02_VARIANTS as $variant => $cfg) {
         $capped = 0;
         $attackReach = 0;
         $check = '';
+        $events = [];
         while ($queue !== []) {
             usort($queue, static fn(array $a, array $b): int => [$a['t'], $a['who'], $a['try']] <=> [$b['t'], $b['who'], $b['try']]);
             $e = array_shift($queue);
@@ -113,7 +107,9 @@ foreach (H02_VARIANTS as $variant => $cfg) {
             if ($e['who'] === 'attacker') {
                 $c = hmciCtx('M0', OFFICE_NAT, FIREFOX_130, sprintf('acct-v%02d-%03d', $day, $e['n']), bid('attacker', $day * 1000 + $e['n']));
                 $r = $lab->attempt($c, 'pre+out', 'fail');
-                $attackReach += decisionChars($r)[0] === 'A' ? 1 : 0;
+                $attackerCheck = decisionChars($r)[0];
+                $attackReach += $attackerCheck === 'A' ? 1 : 0;
+                $events[] = 'atk' . $attackerCheck;
                 continue;
             }
             $who = $e['who'];
@@ -125,7 +121,9 @@ foreach (H02_VARIANTS as $variant => $cfg) {
             $r = $lab->attempt($c, 'pre+out', $e['outcome']);
             [$ch] = decisionChars($r);
             $check .= $ch;
+            $event = $who . ($e['outcome'] === 'ok' ? 'o' : 'f') . $e['try'] . $ch;
             if ($ch !== 'A') {
+                $events[] = $event . '-';
                 $deniedOnce[$who] = true;
                 if ($e['try'] < 3) {
                     preg_match('#/(\d+)$#', explode('>', $r['steps'])[0], $m);
@@ -133,24 +131,29 @@ foreach (H02_VARIANTS as $variant => $cfg) {
                 }
                 continue;
             }
-            if ($e['outcome'] === 'ok') {
-                $admittedOk[$who] = true;
-                if ($cfg['enet'] === null || $gained < $cfg['enet']) {
-                    $establishedDay[$who] = $day;
-                    $gained++;
-                } else {
-                    $capped++;
-                }
+            if ($e['outcome'] !== 'ok') {
+                $events[] = $event . '-';
+                continue;
+            }
+            $admittedOk[$who] = true;
+            if ($cfg['enet'] === null || $gained < $cfg['enet']) {
+                $establishedDay[$who] = $day;
+                $gained++;
+                $events[] = $event . 'E';
+            } else {
+                $capped++;
+                $events[] = $event . 'C';
             }
         }
 
         emit('h02', [
             'row' => 'day', 'variant' => $variant, 'day' => $day + 1,
-            'establishedAtStart' => $startEstablished, 'cleared' => $cleared, 'expired' => $expired,
+            'establishedAtStart' => $startEstablished, 'cleared' => count($cleared), 'expired' => count($expired),
             'newcomers' => count($newcomers), 'newcomersDeniedOnce' => count($deniedOnce),
             'newcomersAdmittedLogin' => count($admittedOk), 'newcomersNoLoginToday' => count($newcomers) - count($admittedOk),
             'gained' => $gained, 'cappedEligible' => $capped, 'establishedAtEnd' => count($establishedDay),
             'attackerReach' => $cfg['attack'] ? $attackReach : null, 'check' => $check,
+            'clearedWho' => implode(' ', $cleared), 'expiredWho' => implode(' ', $expired), 'events' => implode(' ', $events),
         ]);
     }
 }

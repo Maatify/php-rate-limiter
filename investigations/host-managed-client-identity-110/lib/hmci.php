@@ -168,3 +168,18 @@ const HMCI_H01_STREAMS = [
 ];
 /** Confidence the default resolver must report for each input mode (benign and attack cells carry it). */
 const HMCI_MODE_CONFIDENCE = ['M0' => 'LOW', 'M1' => 'MEDIUM', 'M2' => 'LOW', 'M3' => 'HIGH', 'M4' => 'LOW'];
+
+/** H02 bootstrap model definition shared by the scenario and the report (see scenarios/h02_bootstrap.php). */
+const H02_DAYS = 14;
+const H02_BROWSERS = 100;
+/** Attacker attempts per day in the ATK / ATKM variants: one every 60 s from 08:50 to 10:00 inclusive. */
+const H02_ATTACKS_PER_DAY = 71;
+const H02_VARIANTS = [
+    'MAIN' => ['enet' => 0, 'clear' => 0, 'ttlDays' => null, 'attack' => false],
+    'BASE' => ['enet' => null, 'clear' => 0, 'ttlDays' => null, 'attack' => false],
+    'CAP5' => ['enet' => 5, 'clear' => 0, 'ttlDays' => null, 'attack' => false],
+    'CLR10' => ['enet' => null, 'clear' => 10, 'ttlDays' => null, 'attack' => false],
+    'FIX7' => ['enet' => null, 'clear' => 0, 'ttlDays' => 7, 'attack' => false],
+    'ATK' => ['enet' => null, 'clear' => 0, 'ttlDays' => null, 'attack' => true],
+    'ATKM' => ['enet' => 0, 'clear' => 0, 'ttlDays' => null, 'attack' => true],
+];

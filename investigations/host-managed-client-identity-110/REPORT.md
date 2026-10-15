@@ -2,7 +2,7 @@
 
 Baseline `main@a6c79f45e79171e26031fc720822428e09e6e36c`. DEC-019 ACTIVE, DEC-021 ACTIVE, DEC-020 not approved. #97, #100,
 #106 and #110 stay OPEN. **Nothing here is a Runtime approval, a decision or a fix.** This revision answers the Lead review
-on PR #118 (F118-01 … F118-05, §6).
+on PR #118 (F118-01 … F118-05, §6) and the second review (F118-R2-01 … R2-03, §6.1).
 
 ## 1. Executive summary
 
@@ -21,13 +21,19 @@ on PR #118 (F118-01 … F118-05, §6).
     way into standing. Even with the established browsers idealized, the office is fully established only on day 9. With a
     cap of 5 per day it is 70 % after 14 days. With cookie clearing or expiry it plateaus near 75–83 %.
   * **Pool term (H02, B5).** Taking established traffic out of the shared spray set raised a credential-less sprayer's
-    reach from 13 to 22 per day. Unchanged MAIN stays at 13. The proposal's own gate "T1 Δ = 0" is not met by construction.
-  * **Credential term (corrected bound).** Daily establishment caps let the established stock accumulate over the standing
-    TTL (60 instances per credential with `E_acct = 2`, `T = 30`). Distinct-subject caps do not bound admitted
-    verifications. As first written, the gain could reach thousands of admitted verifications per day per credential.
+    reach from 13 to 22 per day. Unchanged MAIN stays at 13. The proposal's own gate "T1 Δ = 0" is not met in the H02 model. The mechanism (the office's subjects leave the
+    shared set) applies to any design that removes established subjects from it.
+  * **Credential term (no proven bound).** Daily establishment caps let the established stock accumulate over the standing
+    TTL (60 instances per credential with `E_acct = 2`, `T = 30`). Under stated hypotheses this bounds the **distinct
+    subjects** touched (120 per day per credential in that example). It does **not** bound **admitted verifications**, and
+    this study proves no such bound. A sample-based exposure estimate of about 4,700 per day per credential illustrates the
+    scale. It is not a ceiling and is not a figure for Owner approval.
 * An **untested** direction-D variant was identified: account-scoped relief for host-proven known devices, using the
-  existing `isDevicePreviouslyVerifiedForAccount`. Its credential term is zero by construction. It shares the bootstrap and
-  pool problems.
+  existing `isDevicePreviouslyVerifiedForAccount`. It gives an instance **zero new cross-account subjects**. It is **not**
+  zero-gain:
+  * it can raise admitted verifications against the associated account, and several known sessions multiply that path;
+  * it has the pool effect and the bootstrap problem.
+  Each of these needs measurement against #113 and DEC-021.
 
 **Verdicts (each scoped to its evidence):**
 
@@ -54,7 +60,7 @@ None of this is a Runtime acceptance.
 | R8 | On MAIN with retries, 86–88 of 100 office browsers have no successful login on each of 14 days | `[H02]` B1 (real pipeline) |
 | R9 | Idealized standing: whole office only on day 9; `E_net = 5`: 70 % on day 14; cookie clearing / 7-day standing plateau 75–83 %; an attacker slows bootstrap (day 7: 64 vs 83) | `[H02 MODEL]` B2–B4, B6 |
 | R10 | Excluding established traffic from the shared set raises T1 reach 13 → 22 per day (MAIN control: flat 13) | `[H02 MODEL]` B5 |
-| R11 | The first bound was wrong in units and ignored accumulation over the TTL; corrected accounting in admitted verifications | `[ANALYTIC]` `SECURITY_ANALYSIS.md` §3–§4 |
+| R11 | The first bound was wrong in units and ignored accumulation over the TTL. Only subject-cardinality bounds hold, and only under stated hypotheses; **no admitted-verification bound is proven**; the 4,700 / 156 per day figures are sample-based exposure estimates | `[ANALYTIC]` `SECURITY_ANALYSIS.md` §3–§4 |
 | R12 | Missing-fingerprint rules are unreachable with the default resolver (F-HMCI-01) | `[CODE]` + `[TEST]` |
 | R13 | Contract intent "fair under shared IPs" is not met for one NAT + one browser major; §3.2 and §7.1 conflict (F-HMCI-02) | `[CONTRACT]` + `[H01]` + `[PRIOR]` |
 
@@ -71,7 +77,7 @@ How to read the evidence:
 | B — `sessionDeviceId` before authentication | NO-GO for this mapping | H01 streams (R3, R4); also breaks `DEVICE_FINGERPRINT.md` §3.3 |
 | `correlationId` as browser id | NO-GO for this mapping | R2 |
 | D — measured candidates (EQL/EQV, PSC, OQC, GNH5, OAAA) | rejected or conditional, in their own studies | those candidates and streams only |
-| D — account-scoped relief for known devices (existing `isDevicePreviouslyVerifiedForAccount` / trusted session) | **untested**; credential term 0 by construction; bootstrap and B5 still apply; #113 needs re-evaluation | `SECURITY_ANALYSIS.md` §4 |
+| D — account-scoped relief for known devices (existing `isDevicePreviouslyVerifiedForAccount` / trusted session) | **untested**; zero new cross-account subjects only. Same-account delta, multiple known sessions, pool effect (B5) and bootstrap all unmeasured; #113 and DEC-021 re-evaluation required | `SECURITY_ANALYSIS.md` §4 |
 | C — proposal of `ARCHITECTURE.md` §3 | not acceptable as specified | R9–R11; no candidate built |
 | C — standing from age only, or granted at issuance | rejected | free cookie farming gives T1 value |
 | Other new-contract directions (per-attempt identity #116, host-attested outcome / signed device token #104) | not studied here | out of scope |
@@ -83,11 +89,16 @@ How to read the evidence:
 2. **Do not** open a candidate study of proposal C *as specified*. It needs three things first:
    * a bootstrap solution (R8–R9);
    * a design whose pool term is zero or approved (R10);
-   * concurrent stock caps with a bound stated in admitted verifications (R11).
+   * concurrent stock caps, and a **measured** admitted-verification envelope (R11).
 3. If the Owner wants to continue this line, the cheapest next question is the **account-scoped known-device variant**. It
-   needs no new input, and its credential term is zero by construction. A paper evaluation should come first: does B5 apply
-   to it, can bootstrap work, and what do the #113 trusted-session results mean for it. Whether to do this, and when, is an
-   Owner / Lead decision. This study does not start it.
+   needs no new input and adds no new cross-account subjects. It is **not** zero-gain. A separate evaluation would first
+   have to settle four questions:
+   * its same-account delta, including several known sessions or devices per account;
+   * whether B5 applies to it;
+   * whether bootstrap can work;
+   * what the #113 trusted-session and DEC-021 results mean for it.
+
+   Whether to do this, and when, is an Owner / Lead decision. This study does not start it.
 4. Day-0 and cookie-less collateral remain under DEC-019 for every instance-identity design examined here.
 
 ## 5. Findings on `main` and open questions
@@ -121,8 +132,16 @@ Open questions:
 | F118-01 bound units / accumulation | `SECURITY_ANALYSIS.md` §3–§4 rebuilt:<br>• stock `I` accumulating over the TTL;<br>• admitted verifications = distinct subjects × per-account admitted reach `r_W` / `r_D` (measured inputs cited);<br>• attempted vs admitted separated;<br>• worked example showing the first bound understated the gain;<br>• concurrent caps required.<br>`ARCHITECTURE.md` §3.2 updated |
 | F118-02 unreachable day-1 office | New scenario H02: bootstrap from a fresh store over 14 days, with real MAIN admission for NEW browsers, retries, caps, cookie clearing, expiry and attacker interference. Results are tracked per day, and the idealized part is labelled. `VALIDATION_PLAN.md` V1 now requires bootstrap without idealization (G-BOOT), with V1i as a labelled upper bound only |
 | F118-03 contradictory mixed-version gate | G-MIX split into G-MIX-OLD (old worker = MAIN), G-MIX-NEW (no / new id = MAIN) and G-MIX-EST (established traffic may differ only MAIN-deny → allow, within the approved envelope, under concurrency, mixed state, rollback and failures) |
-| F118-04 harness not fail-closed | `report.php` now enforces:<br>• exact per-class schemas;<br>• no duplicate or unknown cells / rows, and completeness;<br>• the decision alphabet and the check → record transition;<br>• confidence per mode;<br>• every metric re-derived from the archived traces and the deterministic schedule.<br>O9 compares rotation to both the same-mode stable id and no id. `run.sh` has 20 mutation self-tests with expected exit codes (corrupt-but-length-correct trace, duplicate cell, mismatched reach / users, masked rotation, H02 continuity and masked attack gain, …) plus 2 foreign-label refusals. Goldens re-run and archived |
+| F118-04 harness not fail-closed | `report.php` now enforces:<br>• exact per-class schemas;<br>• no duplicate or unknown cells / rows, and completeness;<br>• the decision alphabet and the check → record transition;<br>• confidence per mode;<br>• every H01 metric re-derived from the archived traces and the deterministic schedule.<br>O9 compares rotation to both the same-mode stable id and no id. Mutation self-tests with expected exit codes (corrupt-but-length-correct trace, duplicate cell, mismatched reach / users, masked rotation, …) plus foreign-label refusals. Goldens re-run and archived. The H02 part of this claim was overstated in that revision; corrected under F118-R2-02 (§6.1) |
 | F118-05 exclusivity overstated | Every NO-GO is scoped to its mapping and streams. C is described as one unimplemented proposal. D is not excluded, and an untested account-scoped D variant is named |
+
+### 6.1 Reconciliation of the second review (review 5540224304 on `2efb5b2`)
+
+| Finding | Resolution in this revision |
+|---|---|
+| F118-R2-01 reach "bound" not proven | `SECURITY_ANALYSIS.md` §4 now separates three tiers:<br>• (a) subject-cardinality bounds, proven only under the stated atomic-cap hypotheses H-a1 to H-a3;<br>• (b) admitted-verification bounds: **none claimed**, because no supremum of per-account reach over histories, policies and concurrency is proven;<br>• (c) sample-based exposure estimates (4,700 / 156 per day), labelled non-guaranteed and not for Owner limit approval.<br>B5 is reported as an observed maximum, not a bound. G-T2 requires a measured envelope. §1, R11 and the alternatives table are updated |
+| F118-R2-02 H02 trace-derivation overclaimed | Implemented the stronger option. H02 now archives per-request event tokens (browser, outcome, retry number, check decision, establishment marker; attacker check), plus the cleared and expired browsers. `report.php` replays them to re-derive **every** day counter and the `check` string. It also verifies per-user transitions (no event after establishment, one first login each, retries only after a denial, establishment only after an admitted successful login, the `E_net` cap, the FIX7 expiry rule, the carried established set). Four new mutations show this: an arithmetic-preserving metric change, an attacker-reach shift, an event tamper and a dropped retry, all rejected (exit 5). The masked-attack mutation was made event-consistent so it still exits 6. The stated integrity scope is narrowed: the validator proves consistency with the archived per-request evidence. That each archived decision is the runtime's is shown by re-running the scenarios (`run.sh` byte-diff). CLR10's random clearing is checked for consistency only |
+| F118-R2-03 "zero by construction" too broad | The account-scoped claim is limited to **zero new cross-account subjects**. Same-account delta, several known sessions per account, pool side effects and the #113 / DEC-021 re-evaluation are listed as required separate measurements (`SECURITY_ANALYSIS.md` §4, `VALIDATION_PLAN.md` G-D21, V9). Proposal C's own "DEC-021 kept by construction" wording is corrected the same way (`ARCHITECTURE.md` §2 table, §3.3) |
 
 ## 7. Owner decisions requested
 

@@ -75,9 +75,10 @@ carries must therefore be **earned**, not granted at issuance.
   reinterpretation of today's inputs must fail.
 * Untested D variant identified by this revision: use the **existing** Host fact `isDevicePreviouslyVerifiedForAccount`
   (or a trusted session) to exempt a device from network-scope collective K1 / K2 blocks **for that account only**. The
-  Host already knows which browser authenticated to which account. Such relief touches no new subjects, so it has no
-  cross-account gain by construction (`SECURITY_ANALYSIS.md` §4, "account-scoped variant"). It shares the bootstrap problem
-  and the B5 pool effect, and needs re-evaluation against the #113 trusted-session results. Not measured.
+  Host already knows which browser authenticated to which account. Such relief gives an instance **zero new cross-account
+  subjects**. It is **not** zero attacker gain: it can raise admitted verifications against the associated account, multiple
+  known sessions multiply that path, and it has the B5 pool effect and the bootstrap problem (`SECURITY_ANALYSIS.md` §4).
+  It needs measurement against the #113 trusted-session streams and DEC-021. Not measured.
 
 ### Comparison
 
@@ -87,15 +88,16 @@ carries must therefore be **earned**, not granted at issuance.
 | Separates instance from trust | yes | **no** | **yes** | n/a |
 | Survives a browser update | no (O10) | no | **yes** (by design) | no |
 | Benign NAT effect | worse (O2) | worse (O5) | only for established instances; bootstrap takes days and is capped / eroded (H02 B1–B4, ESTABLISHED idealized) | measured candidates: partial, with attacker gain; account-scoped variant untested |
-| Attacker gain | none on MAIN (O9) | 200/200 sprayer (O4) | T1 pool term measured in the H02 model (B5: 13 → 22 / day); credential term accumulates over the standing TTL (`SECURITY_ANALYSIS.md` §4) | measured gains (#111, #115, #116); account-scoped variant: credential term 0 by construction, pool term not measured |
-| DEC-021 bound | kept | weakened (O6) | kept by construction (§3.4) | kept |
+| Attacker gain | none on MAIN (O9) | 200/200 sprayer (O4) | T1 pool term observed in the H02 model (B5: 13 → 22 / day); subject stock accumulates over the standing TTL; admitted-verification gain not bounded (`SECURITY_ANALYSIS.md` §4) | measured gains (#111, #115, #116); account-scoped variant: zero new cross-account subjects, other gains unmeasured |
+| DEC-021 / per-account reach | kept | weakened (O6) | account rules unchanged, but per-account admitted reach vs MAIN **not shown equal** once K1 / K2 denials are removed for established traffic | measured candidates kept it; account-scoped variant: same-account delta unmeasured |
 | Public API change | none | none (semantic break) | one optional field | none |
 | Consumer complexity | low | low but unsafe | low: issue a cookie / installation id, pass it | none |
 
 **Consumer complexity versus guarantees.** No option is shown to keep the required guarantees:
 * The A and B mappings and `correlationId` reuse are measured unsafe or useless on the current runtime.
 * The C proposal needs one optional field, but its guarantees are unproven and partly contradicted by H02.
-* The account-scoped D variant needs no new input (the Host already supplies the known-device fact), but it is unmeasured.
+* The account-scoped D variant needs no new input (the Host already supplies the known-device fact), but it is unmeasured
+  and not zero-gain.
 
 The study therefore does **not** name a least-complex safe option. It names the evidence each candidate still needs
 (`VALIDATION_PLAN.md`).
@@ -158,8 +160,9 @@ Design properties `[ANALYTIC]`:
 2. **No general exemption.** An established instance loses only the *collective* judgment by others' traffic; it keeps a
    cross-account bound of its own (per-instance spray, `S_inst`) and a shared ceiling (`C_net`). This answers the #113
    result that removing K2 for trusted traffic removes the only cross-account IP + UA control (TMSd 2/200 vs TMX 200/200).
-3. **The account side is untouched.** Per-account verifier reach is governed by K4/K5/DEC-021 for every state, so the
-   DEC-021 bound holds by construction.
+3. **The account rules are untouched.** K4 / K5 / DEC-021 apply in every state. That does **not** make per-account admitted
+   reach equal to MAIN: an established instance no longer meets shared K1 / K2 denials, so it may reach its own account's
+   verifier more often than on MAIN. The same-account delta must be measured (gate G-D21, `SECURITY_ANALYSIS.md` §4).
 4. **Absent = S0.** A Host that does nothing, an old Host, a broken cookie and a rollback all fall back to S0-on-main.
 
 ### 3.4 Separation from trust and from DEC-021

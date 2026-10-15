@@ -75,7 +75,8 @@ st="$actual/selftest"
 mkdir -p "$st"
 for m in empty malformed missing_cell duplicate_cell extra_field patched_label wrong_hash bad_length bad_alphabet bad_transition \
     corrupt_trace mismatched_reach mismatched_users wrong_conf masked_rotation \
-    h02_missing_row h02_duplicate_row h02_broken_continuity h02_reach_on_non_attack h02_masked_attack_gain; do
+    h02_missing_row h02_duplicate_row h02_broken_continuity h02_reach_on_non_attack h02_masked_attack_gain \
+    h02_metric_preserving_arithmetic h02_attacker_reach_shift h02_event_check_tamper h02_dropped_retry; do
     read -r p01 p02 want < <(php "$here/selftest.php" "$m" "$actual/h01_input_modes.jsonl" "$actual/h02_bootstrap.jsonl" "$st")
     set +e
     php "$here/report.php" "$p01" "$p02" "$st/out" >/dev/null 2>&1

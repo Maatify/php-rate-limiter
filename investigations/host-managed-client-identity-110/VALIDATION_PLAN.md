@@ -33,7 +33,7 @@ Host flows `pre+out`, `pre` and `out`.
 | V6 | T3 insider in the V1 office | office collateral and attacker reach together |
 | V7 | T4 replay of an established id from N networks | suspension latency; admitted verifications before suspension |
 | V8 | T5 one-account brute force: stable / rotating ids, an established id of another account | per-account admitted reach equal to MAIN (DEC-021) |
-| V9 | T6 trusted-session streams of #113 (TMS, TMSd, TMX, TMXb) and the DEC-021 known-device streams | equal to MAIN; for C-acct, the re-evaluation called for in `SECURITY_ANALYSIS.md` §4 |
+| V9 | T6 trusted-session streams of #113 (TMS, TMSd, TMSs, TMX, TMXb) and the DEC-021 known-device streams, including several known sessions / devices per account | equal to MAIN for C; for C-acct, the same-account delta and pool effect called for in `SECURITY_ANALYSIS.md` §4 |
 | V10 | Absent / malformed / oversized / empty / non-UTF-8 id | bit-identical to MAIN; invalid-input policy decided |
 | V11 | UA and session change on one established instance | instance history kept; K5 as MAIN |
 | V12 | Storage: 10⁵ fresh ids per K1 / per account | bounded key and member counts |
@@ -50,8 +50,8 @@ Host flows `pre+out`, `pre` and `out`.
 | G-S0 | every cell with no instance id is bit-identical to MAIN (decisions, levels, retry-after, persisted keys) |
 | G-T1 | for every T1 stream, admitted verifications ≤ MAIN + the **Owner-approved pool term**, measured with an established office on the same K1 (V4). A design claiming Δ = 0 must show it with that office present; H02 B5 shows that excluding established subjects from the network set raises T1 reach (13 → 22 per day) |
 | G-ROT | rotating ids never beat the same-mode stable id **nor** no id (MAIN property `[H01]` O9 preserved) |
-| G-T2 | V5 admitted-verification gain ≤ the Owner-approved bound per 600 s, per 24 h and per standing TTL, with the established stock accumulated over the whole TTL and under concurrency (V13). Bounds are stated in admitted verifications, never in distinct subjects |
-| G-D21 | V8 / V9 per-account reach and DEC-021 decisions equal to MAIN |
+| G-T2 | V5 admitted-verification gain ≤ the Owner-approved envelope per 600 s, per 24 h and per standing TTL, **measured** with the established stock accumulated over the whole TTL, varied account histories / pacings / policies, and concurrency (V13). The envelope is stated in admitted verifications. Subject-cardinality bounds and the exposure estimates of `SECURITY_ANALYSIS.md` §4 are not substitutes, and no inferred number is presented for approval |
+| G-D21 | V8 / V9: per-account admitted reach and DEC-021 decisions equal to MAIN for non-established traffic. For established / relieved traffic (C and C-acct), the same-account delta is measured, including several known sessions or devices per account, and must stay within the approved envelope (G-MIX-EST) |
 | G-BOOT | V1 (no idealization): the established fraction and the browsers-with-no-login per day meet the Owner-approved fairness target **from a fresh store**; V1i may be reported only as a labelled upper bound |
 | G-FAIR | V1 / V2 users denied per day ≤ target, reported per day from day 1, not only at steady state |
 | G-REPLAY | V7 admitted verifications before suspension ≤ bound |
@@ -80,8 +80,9 @@ which is to allow some established browsers that MAIN denies. It is replaced by 
 2. A solution to the bootstrap problem (H02 B1–B4): on MAIN about 87 % of a 100-browser office cannot log in on a given day,
    and that login is the only way into standing.
 3. A design whose T1 pool term (H02 B5) is either zero with an established office present, or quantified and approved.
-4. Concurrent stock caps (`M_acct`, `M_net`) and a credential-term bound in admitted verifications (`SECURITY_ANALYSIS.md`
-   §4), or the account-scoped variant whose credential term is zero.
+4. Concurrent stock caps (`M_acct`, `M_net`) and a **measured** admitted-verification envelope (`SECURITY_ANALYSIS.md` §4).
+   The account-scoped variant removes only the cross-account subject term; its same-account delta and pool effect still need
+   measurement.
 5. A resolved `C_net` design (T-CNET), or a design that does not need one.
 6. Owner-approved parameters and accepted gains.
 7. Real-Redis concurrency and failure evidence (V13, V14), and mixed-version / rollback evidence (V15).

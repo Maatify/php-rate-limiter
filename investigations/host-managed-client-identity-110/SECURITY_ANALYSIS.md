@@ -56,7 +56,8 @@ Host trust assumptions (all already stated for existing inputs, none new except 
   directly. This does **not** make the T1 effect zero: see §5, B5.
 * **Proposal C, established stock (corrected, F118-01).** `E_acct` and `E_net` are *daily admission* caps, while standing
   lives for a TTL of `T` days and can be renewed by the attacker logging in to an account it controls. The number of
-  established instances an actor holds is a **stock that accumulates** `[ANALYTIC]`:
+  established instances an actor holds is a **stock that accumulates** `[ANALYTIC]`, assuming the caps are enforced
+  atomically (hypothesis H-a1, §4):
 
   `I(t) ≤ min(k · E_acct · T,  n · E_net · T)` — `k` valid credentials, `n` K1 scopes used, `T` in days.
 
@@ -67,54 +68,87 @@ Host trust assumptions (all already stated for existing inputs, none new except 
   rotate *appearance* under one established id; per-instance churn (distinct DeviceFP per K6) is proposed for that. Not
   measured.
 
-## 4. Credential spray — verifier-reach bound (corrected, F118-01)
+## 4. Credential spray — what is bounded and what is not (F118-01, F118-R2-01)
 
 The first version bounded verifier **attempts** by `min(k·E_acct·S_inst, C_net)`. That was wrong in units: `S_inst` and
-`C_net` are cardinalities of **distinct subjects**. Repeated attempts against one subject do not grow either set, so they bound
-how many accounts are touched, not how many verifications are admitted. Corrected accounting `[ANALYTIC]`:
+`C_net` are cardinalities of **distinct subjects**, not counts of admitted verifications. The second version still wrote an
+inequality for admitted verifications, using reach values taken from samples. That is also not a proven bound (Lead review
+F118-R2-01). This section now keeps three kinds of statement strictly apart:
+
+| Kind | What it says | Status |
+|---|---|---|
+| **(a) Subject-cardinality bounds** | how many distinct accounts the established instances can touch | proven **only under stated hypotheses** (below); the caps themselves are unimplemented and unmeasured |
+| **(b) Admitted-verification bounds** | how many `checkOnly` ALLOWs an actor obtains | **none proven** in this study |
+| **(c) Exposure estimates** | sample-based illustrations of possible scale | **not guaranteed**; neither ceilings nor floors; not usable for Owner limit approval |
+
+Symbols:
 
 | Symbol | Meaning | Unit |
 |---|---|---|
 | `I` | established instances held (§3) | instances (stock) |
 | `S_inst` | distinct subjects one established instance may touch | subjects per instance per 24 h (proposal) |
 | `C_net` | distinct subjects of all established instances on one K1 | subjects per K1 per its window (window and counting point unresolved: T-CNET) |
-| `r_W(acct)`, `r_D(acct)` | verifications the **account rules** (K4, budget, Anti-Equilibrium, DEC-021) admit on one account | admitted `checkOnly` per 600 s / per 24 h |
 | attempted | requests sent | unbounded — the attacker chooses |
 | admitted | `checkOnly` ALLOW = verifier reached | the security metric |
 
-Additional admitted verifications over MAIN, for an actor with established instances:
+**(a) Subject cardinality.** Hypotheses H-a1 to H-a3:
+* **H-a1:** `E_acct`, `E_net` and (if adopted) `M_acct`, `M_net` are enforced atomically.
+* **H-a2:** `S_inst` is enforced atomically per instance per 24 h.
+* **H-a3:** `C_net` (if adopted) is enforced atomically per K1 per window.
 
-`Δ_W ≤ min(I · S_inst, C_net) · r_W(acct)`  and  `Δ_D ≤ min(I · S_inst, C_net,D) · r_D(acct)`  plus the pool term of §5 (B5).
+Under these hypotheses:
+* the stock satisfies the §3 inequalities;
+* the distinct subjects touched through established instances in 24 h number at most `I · S_inst`;
+* per `C_net` window they number at most `C_net`.
 
-Measured inputs for `r` on MAIN (an unknown device on one account, no K1 help):
-* per 600 s, from the archived BRU_S M0 trace (one attempt every 30 s): **2, 0, 1, 0, 0** admitted in the first five windows
-  `[H01]` (`expected/summary.md`). This is an observed sequence, not a proven maximum.
-* per 24 h: **37–39** for an unknown device on the Login streams of the DEC-021 measurement `[PRIOR]` (measured on S0; DEC-021
-  states it does not change the unknown-device path).
+Example (`E_acct = 2`, `T = 30`, `S_inst = 2`, no concurrent cap): **at most 120 distinct subjects per day per credential**.
+With `M_acct = 2`: at most 4.
 
-Illustration, proposal as first written (`E_acct = 2`, `T = 30`, `S_inst = 2`, no concurrent cap, `C_net` absent):
-`I = 60` per credential ⇒ up to 120 distinct subjects per day ⇒ `Δ_D` up to **≈ 120 × 39 ≈ 4,700** admitted verifications per
-day per credential. That is **not acceptable**, and it shows the original bound understated the gain by orders of
-magnitude. With a concurrent cap `M_acct = 2`, it is still `4 × 39 ≈ 156` per day per credential.
+**(b) Admitted verifications — no bound is claimed.** Each touched subject can be verified as often as that account's rules
+admit. Those rules are K4 decay, budget and cooldown, Anti-Equilibrium, the DEC-021 K5 / allowance, and the shared K1 / K2
+state that proposal C removes for established traffic. That number depends on the account's history, the policy, the pacing,
+other traffic on the same account, and concurrency. This study has **no supremum** of per-account admitted reach over
+admissible histories, policies and concurrent multi-instance traffic. So it gives **no upper bound** on admitted verifications
+for any variant. A product of the form "subjects × per-account reach" becomes a bound only once such a supremum is proven
+or measured as an envelope; that is gate G-T2.
 
-**Account-scoped variant (C-acct, not measured).** If an established instance's relief applies **only to the account(s) it
-established with** (`S_inst` = its own establishing accounts, no cross-account allowance), it touches no new subjects, and the
-credential term is **0**: attacking one's own account is pointless. The relief then matches the benign need (each employee
-logs in to their own account from their own browser), and per-account reach stays governed by K4/K5/DEC-021. This variant
-is close to an **existing-input** design: the Host already can assert `isDevicePreviouslyVerifiedForAccount` for a browser
-that previously authenticated to that account (DEC-021). A runtime that exempted *known-for-this-account* devices from
-network-scope collective K1/K2 blocks would be a direction-D variant **not covered** by any measured study (see
-`REPORT.md` §3). It is listed as untested; the #113 result (TMULTI-S ≡ N12T; TMX 200/200 with Host-tampered trust) must be
-re-evaluated against it, since a per-account scope changes what that attacker can gain.
+**(c) Exposure estimates (illustrative, not guaranteed).** Two sampled per-account reach values exist:
+* The archived BRU_S M0 trace on MAIN (one unknown-device attacker, one account, one attempt every 30 s) shows **2, 0, 1, 0, 0**
+  admitted in its first five 600-s windows `[H01]`.
+* The DEC-021 measurement on S0 shows **37–39** admitted per 24 h for an unknown device on its Login streams `[PRIOR]`.
 
-| Actor | MAIN | Proposal C as specified `[ANALYTIC]` + `[H02 MODEL]` |
+Multiplying the cardinalities in (a) by the second value gives about **120 × 39 ≈ 4,700** and **4 × 39 ≈ 156** admitted
+verifications per day per credential. These figures:
+* show that the first version's arithmetic understated the possible scale by orders of magnitude;
+* rest on one pacing and one prior stream, so other pacings, policies or concurrent instances can give more or less;
+* are **not ceilings**, and must not be presented to the Owner as limits.
+
+**Account-scoped variant (C-acct, not measured) — scoped claim (F118-R2-03).** An established instance (or host-proven
+known device) is relieved **only for the account(s) it is associated with**. **What this guarantees:** the instance gains
+**zero new cross-account subjects**, because it cannot use standing to touch accounts it is not associated with. **What it
+does not guarantee** — each item needs its own measurement:
+
+* **Same-account delta.** Bypassing a shared K1 / K2 block can increase `checkOnly` admissions against the **already-associated**
+  account. K4 / K5 / DEC-021 still apply, but this study does not show they make per-account reach equal to MAIN once the
+  K1 / K2 denials are removed for that traffic.
+* **Several known sessions or devices for one account.** Each one is a separate relieved path to the same account. Its
+  combined reach against DEC-021's allowance and K5 thresholds is unmeasured.
+* **Pool side effects.** Removing relieved traffic from the shared K1 / K2 sets frees capacity for a T1 actor on the same
+  network. That is the B5 mechanism of §5, measured for proposal C's model.
+* **#113 counter-cases.** Trusted multi-session attackers (TMS, TMSd, TMSs) and Host-tampered trust (TMX, TMXb) must be
+  re-measured against this variant, including multiple known sessions per account.
+
+It is therefore **not** a zero-gain design. It only removes the cross-account subject term.
+
+| Actor | MAIN | Proposal C as specified |
 |---|---|---|
-| T1 (no credential) | `[H01]` SPR_S 7/200 over 20 min; `[H02]` ATKM 13 per day (71 attempts) | own decisions = MAIN, **but** pool term B5: 13 → up to 22 per day as the office is established |
-| T2 / T3 with k credentials | as T1 | `Δ_D ≤ min(I·S_inst, C_net,D) · r_D` with `I` accumulating over `T` (above) — unbounded in practice without `M_acct` / `M_net` |
-| T6 trusted sessions (#113) | TMSd 2/200, TMX 200/200 | unchanged: HMCI does not touch trusted K1 advisory |
+| T1 (no credential) | `[H01]` SPR_S 7/200 over 20 min; `[H02]` ATKM 13 per day (71 attempts) | own decisions = MAIN; pool term B5: **observed** 13 → 22 per day in the H02 model (maximum over its 14 days, not a bound) |
+| T2 / T3 with k credentials | as T1 | subjects: at most `I · S_inst` under H-a1 to H-a3; admitted verifications: **no proven bound**; exposure estimate as in (c) |
+| T6 trusted sessions (#113) | TMSd 2/200, TMX 200/200 | unchanged for C: HMCI does not touch trusted K1 advisory (C-acct: see above) |
 
-Concurrency: `S_inst` and a `checkOnly`-counted `C_net` would use the existing atomic bounded-set primitive, like S0 spray;
-establishment at `recordSuccess` would be bounded by an atomic `E_acct` set. Not measured.
+Concurrency: `S_inst` and a `checkOnly`-counted `C_net` would use the existing atomic bounded-set primitive, like S0 spray, and
+establishment at `recordSuccess` would use an atomic `E_acct` set. Whether the hypotheses H-a1 to H-a3 hold under real Redis
+concurrency is unmeasured.
 
 ## 5. Shared NAT — can the office reach the relief? (F118-02, measured with H02)
 
@@ -150,8 +184,8 @@ Consequences:
 * Counted as **failed** subjects at `recordFailure`: it separates office from sprayer, but inherits the outcome-time
   concurrency leak measured for OQC (#111: 16/16 through a live scope) and the record-only / check-only Host limits of #116.
 
-The account-scoped variant above does not need `C_net` for the credential term, because it has no cross-account allowance.
-It still has the B5 pool term and the bootstrap constraint.
+The account-scoped variant above does not need `C_net` to limit cross-account subjects, because it has no cross-account
+allowance. It still has the same-account delta, the B5 pool term and the bootstrap constraint (§4).
 
 Not assumed: that many browsers means attack, or that distinct ids mean distinct people.
 

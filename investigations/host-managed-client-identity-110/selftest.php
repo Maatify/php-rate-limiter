@@ -122,13 +122,56 @@ switch ($mutation) {
         $h02[find($h02, $dayRow('FIX7', 2))]['attackerReach'] = 0;
         break;
     case 'h02_masked_attack_gain':
-        // ATK reach equal to the MAIN control on every day: B5 must turn NOT_REPRODUCED (exit 6).
+        // ATK reach equal to the MAIN control on every day, with the archived attacker tokens changed consistently (excess admitted
+        // attacker checks become denials): the evidence stays valid, so B5 must turn NOT_REPRODUCED (exit 6).
         foreach ($h02 as $i => $r) {
-            if (($r['variant'] ?? null) === 'ATK') {
-                $h02[$i]['attackerReach'] = 13;
+            if (($r['variant'] ?? null) !== 'ATK') {
+                continue;
             }
+            $tokens = explode(' ', $r['events']);
+            $admitted = 0;
+            foreach ($tokens as $k => $tok) {
+                if ($tok === 'atkA' && ++$admitted > 13) {
+                    $tokens[$k] = 'atkH';
+                }
+            }
+            $h02[$i]['events'] = implode(' ', $tokens);
+            $h02[$i]['attackerReach'] = min(13, $r['attackerReach']);
         }
         $expect = 6;
+        break;
+    case 'h02_metric_preserving_arithmetic':
+        // Still satisfies every arithmetic relation (deniedOnce ≤ newcomers, ≤ denied checks); only the event replay can reject it.
+        $h02[find($h02, $dayRow('BASE', 2))]['newcomersDeniedOnce']--;
+        break;
+    case 'h02_attacker_reach_shift':
+        $h02[find($h02, $dayRow('ATK', 5))]['attackerReach']++;
+        break;
+    case 'h02_event_check_tamper':
+        // A denied failed-login token becomes admitted; counters and the check string are left as archived.
+        $i = find($h02, $dayRow('BASE', 1));
+        $h02[$i]['events'] = (string) preg_replace('/\b(u\d{3}f\d)H-/', '${1}A-', $h02[$i]['events'], 1, $n);
+        if ($n !== 1) {
+            throw new RuntimeException('selftest: no denied failed-login token to tamper');
+        }
+        break;
+    case 'h02_dropped_retry':
+        // Remove one retry token (try >= 1) and its check character: the denied attempt before it now has no retry.
+        $i = find($h02, $dayRow('BASE', 1));
+        $tokens = explode(' ', $h02[$i]['events']);
+        $userIdx = -1;
+        foreach ($tokens as $k => $tok) {
+            if (str_starts_with($tok, 'atk')) {
+                continue;
+            }
+            $userIdx++;
+            if (preg_match('/^u\d{3}[of][1-3]/', $tok) === 1) {
+                array_splice($tokens, $k, 1);
+                $h02[$i]['check'] = substr($h02[$i]['check'], 0, $userIdx) . substr($h02[$i]['check'], $userIdx + 1);
+                break;
+            }
+        }
+        $h02[$i]['events'] = implode(' ', $tokens);
         break;
     default:
         fwrite(STDERR, "selftest: unknown mutation $mutation\n");

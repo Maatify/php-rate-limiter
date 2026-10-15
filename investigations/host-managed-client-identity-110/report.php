@@ -8,8 +8,13 @@ declare(strict_types=1);
 //
 // Exit 5  EVIDENCE INVALID (fail-closed): missing / empty / malformed / mislabelled file, wrong provenance or runtime hash, unknown /
 //         duplicate / missing cell or row, a field outside the exact per-class schema, a character outside the decision alphabet, a
-//         record step that is not allowed after its check step, or ANY stored metric that differs from the value re-derived from the
-//         archived per-request traces and the deterministic schedule.
+//         record step that is not allowed after its check step, an H01 metric that differs from the value re-derived from the archived
+//         per-request traces and the deterministic schedule, or an H02 counter / transition that differs from the replay of the
+//         archived per-request event tokens.
+//
+// Integrity scope: this validator proves the archived numbers are consistent with the archived per-request evidence. It does not prove
+// that each archived decision is what the runtime returns; that is established by re-running the committed scenarios (run.sh diffs
+// them byte-for-byte against expected/) on the pinned runtime.
 // Exit 6  evidence valid, but at least one descriptive observation is NOT_REPRODUCED.
 //
 // Observations are facts about the unpatched MAIN runtime (H01) and about the H02 bootstrap model whose ESTABLISHED part is IDEALIZED.
@@ -176,62 +181,191 @@ foreach (array_keys(HMCI_H01_STREAMS) as $s) {
 }
 
 // ---------------------------------------------------------------------------------------------------------------------------- H02
+// Every H02 day counter is RE-DERIVED by replaying the archived event tokens (see scenarios/h02_bootstrap.php): per-user transitions,
+// retry obligations, the E_net cap, FIX7 expiry and the carried established set. What cannot be re-derived from the archive — that each
+// token is the real MAIN decision for that request — is covered by re-running the committed scenario (run.sh diffs it against
+// expected/), not by this validator. CLR10's random clearing draw is checked for consistency (subset of the established set), not
+// recomputed.
 const H02_VARIANT_NAMES = ['MAIN', 'BASE', 'CAP5', 'CLR10', 'FIX7', 'ATK', 'ATKM'];
-const H02_DAY_COUNT = 14;
-$h02 = [];
+const H02_DAY_COUNT = H02_DAYS;
+if (array_keys(H02_VARIANTS) !== H02_VARIANT_NAMES) {
+    invalid('h02: variant definition drift between lib and report');
+}
+/** @return list<string> */
+function whoList(mixed $v, string $where): array
+{
+    if (! is_string($v)) {
+        invalid("$where: who list must be a string");
+    }
+    $list = $v === '' ? [] : explode(' ', $v);
+    foreach ($list as $w) {
+        if (preg_match('/^u\d{3}$/', $w) !== 1 || (int) substr($w, 1) >= H02_BROWSERS) {
+            invalid("$where: malformed browser id '$w'");
+        }
+    }
+    if (count(array_unique($list)) !== count($list)) {
+        invalid("$where: duplicate browser in list");
+    }
+
+    return $list;
+}
+
+$rawRows = [];
 foreach (checkProvenance(readJsonl($h02Path, 'h02'), 'h02') as $i => $r) {
     $where = 'h02 row ' . ($i + 2);
     if (($r['row'] ?? null) !== 'day') {
         invalid("$where: unknown row type");
     }
     exactKeys($r, ['s', 'row', 'variant', 'day', 'establishedAtStart', 'cleared', 'expired', 'newcomers', 'newcomersDeniedOnce',
-        'newcomersAdmittedLogin', 'newcomersNoLoginToday', 'gained', 'cappedEligible', 'establishedAtEnd', 'attackerReach', 'check'], $where);
+        'newcomersAdmittedLogin', 'newcomersNoLoginToday', 'gained', 'cappedEligible', 'establishedAtEnd', 'attackerReach', 'check',
+        'clearedWho', 'expiredWho', 'events'], $where);
     $v = $r['variant'];
     $d = $r['day'];
     if (! in_array($v, H02_VARIANT_NAMES, true) || ! is_int($d) || $d < 1 || $d > H02_DAY_COUNT) {
         invalid("$where: unknown variant / day");
     }
-    if (isset($h02[$v][$d])) {
+    if (isset($rawRows[$v][$d])) {
         invalid("$where: duplicate row $v/day $d");
     }
-    foreach (['establishedAtStart', 'cleared', 'expired', 'newcomers', 'newcomersDeniedOnce', 'newcomersAdmittedLogin',
-        'newcomersNoLoginToday', 'gained', 'cappedEligible', 'establishedAtEnd'] as $f) {
-        if (! is_int($r[$f]) || $r[$f] < 0) {
-            invalid("$where: $f must be a non-negative integer");
-        }
-    }
-    assertAlphabet((string) $r['check'], '/^[ASH]*$/', "$where check");
-    $nonAllowed = strlen($r['check']) - substr_count($r['check'], 'A');
-    $isAttack = in_array($v, ['ATK', 'ATKM'], true);
-    if ($r['establishedAtStart'] + $r['newcomers'] !== 100
-        || $r['newcomersAdmittedLogin'] + $r['newcomersNoLoginToday'] !== $r['newcomers']
-        || $r['newcomersDeniedOnce'] > $r['newcomers']
-        || $r['newcomersDeniedOnce'] > $nonAllowed
-        || ($r['newcomers'] > 0 && $nonAllowed + substr_count($r['check'], 'A') < $r['newcomers'])
-        || $r['establishedAtEnd'] !== $r['establishedAtStart'] + $r['gained']
-        || $r['gained'] + $r['cappedEligible'] !== $r['newcomersAdmittedLogin']
-        || (in_array($v, ['MAIN', 'ATKM'], true) && $r['gained'] !== 0)
-        || ($v === 'CAP5' && $r['gained'] > 5)
-        || ($v !== 'CLR10' && $r['cleared'] !== 0)
-        || ($v !== 'FIX7' && $r['expired'] !== 0)
-        || ($isAttack !== is_int($r['attackerReach']))
-        || ($isAttack && ($r['attackerReach'] < 0 || $r['attackerReach'] > 71))) {
-        invalid("$where: inconsistent day accounting");
-    }
-    $h02[$v][$d] = $r;
+    $rawRows[$v][$d] = $r;
 }
+$allBrowsers = array_map(static fn(int $i): string => sprintf('u%03d', $i), range(0, H02_BROWSERS - 1));
+$h02 = [];
 foreach (H02_VARIANT_NAMES as $v) {
+    $cfg = H02_VARIANTS[$v];
+    /** @var array<string, int> $estDay who => 1-based day of establishment */
+    $estDay = [];
     for ($d = 1; $d <= H02_DAY_COUNT; $d++) {
-        if (! isset($h02[$v][$d])) {
-            invalid("h02: missing row $v/day $d");
+        $where = "h02 $v day $d";
+        $r = $rawRows[$v][$d] ?? invalid("h02: missing row $v/day $d");
+        $cleared = whoList($r['clearedWho'], "$where clearedWho");
+        $expired = whoList($r['expiredWho'], "$where expiredWho");
+        $wantExpired = $cfg['ttlDays'] === null ? [] : array_keys(array_filter($estDay, static fn(int $e): bool => $d - $e >= $cfg['ttlDays']));
+        sort($wantExpired);
+        $sortedExpired = $expired;
+        sort($sortedExpired);
+        if ($sortedExpired !== $wantExpired) {
+            invalid("$where: expired browsers differ from the TTL rule");
         }
-        if ($d > 1) {
-            $prev = $h02[$v][$d - 1];
-            $cur = $h02[$v][$d];
-            if ($cur['establishedAtStart'] !== $prev['establishedAtEnd'] - $cur['cleared'] - $cur['expired']) {
-                invalid("h02: $v day $d does not continue day " . ($d - 1));
+        if (($cfg['clear'] === 0 && $cleared !== [])
+            || array_diff($cleared, array_keys($estDay)) !== [] || array_intersect($cleared, $expired) !== []) {
+            invalid("$where: cleared browsers are not a subset of the non-expired established set");
+        }
+        foreach ([...$cleared, ...$expired] as $w) {
+            unset($estDay[$w]);
+        }
+        $start = $estDay;
+
+        // Replay the event tokens.
+        $tokens = $r['events'] === '' ? [] : explode(' ', (string) $r['events']);
+        $seen = [];
+        $denied = [];
+        $admitted = [];
+        $estToday = [];
+        $okTry0 = [];
+        $failTry0 = [];
+        $pendingRetry = [];
+        $gained = 0;
+        $capped = 0;
+        $attackerTokens = 0;
+        $attackerReach = 0;
+        $check = '';
+        foreach ($tokens as $k => $tok) {
+            if (preg_match('/^atk([ASH])$/', $tok, $m) === 1) {
+                if (! $cfg['attack']) {
+                    invalid("$where: attacker token in a non-attack variant");
+                }
+                $attackerTokens++;
+                $attackerReach += $m[1] === 'A' ? 1 : 0;
+                continue;
+            }
+            if (preg_match('/^(u\d{3})([of])([0-3])([ASH])([EC-])$/', $tok, $m) !== 1 || (int) substr($m[1], 1) >= H02_BROWSERS) {
+                invalid("$where: malformed event token #" . ($k + 1));
+            }
+            [, $who, $outcome, $try, $ch, $est] = $m;
+            $try = (int) $try;
+            $key = "$who|$outcome";
+            if (isset($start[$who]) || isset($estToday[$who])) {
+                invalid("$where: event for an already established browser ($tok)");
+            }
+            if ($try === 0) {
+                if ($outcome === 'o') {
+                    $okTry0[$who] = ($okTry0[$who] ?? 0) + 1;
+                } else {
+                    $failTry0[$who] = ($failTry0[$who] ?? 0) + 1;
+                }
+            } elseif (($pendingRetry[$key] ?? null) !== $try) {
+                invalid("$where: retry $tok without the preceding denied attempt");
+            }
+            unset($pendingRetry[$key]);
+            if (($est !== '-') !== ($ch === 'A' && $outcome === 'o')) {
+                invalid("$where: establishment marker not allowed after this check / outcome ($tok)");
+            }
+            if ($est === 'E' && $cfg['enet'] !== null && $gained >= $cfg['enet']) {
+                invalid("$where: establishment beyond E_net ($tok)");
+            }
+            if ($est === 'C' && ($cfg['enet'] === null || $gained < $cfg['enet'])) {
+                invalid("$where: capped marker while E_net was not reached ($tok)");
+            }
+            $seen[$who] = true;
+            $check .= $ch;
+            if ($ch !== 'A') {
+                $denied[$who] = true;
+                if ($try < 3) {
+                    $pendingRetry[$key] = $try + 1;
+                }
+                continue;
+            }
+            if ($outcome === 'o') {
+                $admitted[$who] = true;
+            }
+            if ($est === 'E') {
+                $estToday[$who] = true;
+                $gained++;
+            } elseif ($est === 'C') {
+                $capped++;
             }
         }
+        foreach (array_keys($pendingRetry) as $key) {
+            if (! isset($estToday[explode('|', $key)[0]])) {
+                invalid("$where: a denied attempt was never retried ($key)");
+            }
+        }
+        $newcomerSet = array_values(array_diff($allBrowsers, array_keys($start)));
+        $seenSet = array_keys($seen);
+        sort($seenSet);
+        if ($seenSet !== $newcomerSet) {
+            invalid("$where: the browsers in the events are not exactly the non-established browsers");
+        }
+        foreach ($newcomerSet as $w) {
+            if (($okTry0[$w] ?? 0) !== 1 || ($failTry0[$w] ?? 0) > 1) {
+                invalid("$where: browser $w does not have exactly one first login attempt");
+            }
+        }
+        if ($cfg['attack'] && $attackerTokens !== H02_ATTACKS_PER_DAY) {
+            invalid("$where: attacker schedule has $attackerTokens tokens");
+        }
+        $derived = [
+            'establishedAtStart' => count($start), 'cleared' => count($cleared), 'expired' => count($expired),
+            'newcomers' => count($newcomerSet), 'newcomersDeniedOnce' => count($denied),
+            'newcomersAdmittedLogin' => count($admitted), 'newcomersNoLoginToday' => count($newcomerSet) - count($admitted),
+            'gained' => $gained, 'cappedEligible' => $capped, 'establishedAtEnd' => count($start) + $gained,
+            'attackerReach' => $cfg['attack'] ? $attackerReach : null, 'check' => $check,
+        ];
+        foreach ($derived as $field => $value) {
+            if ($r[$field] !== $value) {
+                invalid("$where: stored $field differs from the value re-derived from the archived events");
+            }
+        }
+        foreach (array_keys($estToday) as $w) {
+            $estDay[$w] = $d;
+        }
+        $h02[$v][$d] = $r;
+    }
+}
+foreach ($rawRows as $v => $days) {
+    if (count($days) !== H02_DAY_COUNT) {
+        invalid("h02: $v has " . count($days) . ' rows');
     }
 }
 

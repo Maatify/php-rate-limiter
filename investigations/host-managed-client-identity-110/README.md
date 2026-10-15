@@ -127,12 +127,22 @@ UPDATE=1 bash investigations/host-managed-client-identity-110/run.sh    # regene
   * fields outside the exact per-class schema;
   * characters outside the decision alphabet, or a record step not allowed after its check step;
   * a wrong confidence for the mode;
-  * any stored metric that differs from the value re-derived from the archived traces and the deterministic schedule;
-  * broken day-to-day continuity in H02.
+  * an H01 metric that differs from the value re-derived from the archived per-request traces and the deterministic
+    schedule;
+  * an H02 counter, `check` string or per-user transition that differs from the replay of the archived per-request event
+    tokens (first login once per browser, retries only after a denial, establishment only after an admitted successful
+    login, the `E_net` cap, the FIX7 expiry rule, the carried established set).
 * `report.php` exits 6 when the evidence is valid but an observation is not reproduced.
 
-`selftest.php` generates 20 mutations, and `run.sh` checks the exact expected exit code for each:
-* 18 must be rejected with exit 5 (for example a corrupt-but-length-correct trace, a duplicate cell, a mismatched reach).
+Integrity scope:
+* The validator proves that the archived numbers are consistent with the archived per-request evidence.
+* That each archived decision is what the pinned runtime returns is shown by re-running both scenarios; `run.sh` diffs them
+  byte-for-byte against `expected/`.
+* CLR10's random cookie-clearing draw is checked for consistency (a subset of the established set), not recomputed.
+
+`selftest.php` generates 24 mutations, and `run.sh` checks the exact expected exit code for each:
+* 22 must be rejected with exit 5. Examples: a corrupt-but-length-correct trace, a duplicate cell, a mismatched reach, an
+  H02 counter change that keeps every arithmetic relation, an attacker-reach shift, a tampered event token, a dropped retry.
 * 2 must turn an observation NOT_REPRODUCED with exit 6: a masked rotation regression and a masked attack gain.
 
 Two further checks show each scenario refuses a foreign candidate label. `results/` is git-ignored scratch; the committed
@@ -145,9 +155,9 @@ evidence is `expected/`.
 | `lib/hmci.php` | provenance pins, input modes, context builder, block attribution, shared schedule / trace helpers and the H01 matrix definition |
 | `scenarios/h01_input_modes.php` | the 40-cell matrix (8 streams × 5 modes) |
 | `scenarios/h02_bootstrap.php` | the 7-variant × 14-day bootstrap model |
-| `report.php` | fail-closed evidence validation (trace-derived) and generated `summary.md` / `observations.jsonl` |
+| `report.php` | fail-closed evidence validation (H01 trace-derived, H02 event-replay) and generated `summary.md` / `observations.jsonl` |
 | `selftest.php` | negative-control mutation generator used by `run.sh` |
 | `run.sh` | runner with baseline gate and self-tests |
 | `expected/h01_input_modes.jsonl` | raw per-cell evidence with per-request `check` / `record` decision strings |
-| `expected/h02_bootstrap.jsonl` | raw per-day H02 evidence with per-request `check` strings of NEW browsers |
+| `expected/h02_bootstrap.jsonl` | raw per-day H02 evidence: day counters, the `check` string, and the per-request event tokens and cleared / expired browsers they are re-derived from |
 | `expected/summary.md`, `expected/observations.jsonl` | generated tables and the observations O1–O10, B1–B6 |
