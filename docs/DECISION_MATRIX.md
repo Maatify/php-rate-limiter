@@ -95,10 +95,13 @@ Evaluation order is **strict and non-negotiable**:
    (`recordFailure` MUST continue even while `BudgetActive`).
 6. Apply the OTP **Recovery Collision Guard** if the exact transition qualifies.
 7. On `recordFailure`, evaluate Anti-Equilibrium escalation using **only** soft-block
-   events recorded by prior requests. If at least 3 prior actually-issued
-   `SOFT_BLOCK` events exist within 6 hours, add an Anti-Equilibrium
-   `HARD_BLOCK(Account)` candidate at minimum L2. The current request MUST NOT count
-   toward this prerequisite.
+   events recorded by prior requests, per source scope (§2.5.3). If at least 3 prior
+   actually-issued account-scoped `SOFT_BLOCK` events exist within 6 hours, add an
+   Anti-Equilibrium `HARD_BLOCK(Account)` candidate (K4) at minimum L2. If at least 3
+   prior actually-issued device-scoped (K5-only) `SOFT_BLOCK` events exist within 6 hours
+   for the same account and device, add an Anti-Equilibrium `HARD_BLOCK` candidate on that
+   account + device (K5) at minimum L2. Device-scoped events never count as account
+   evidence. The current request MUST NOT count toward either prerequisite.
 8. Resolve the normal, Recovery Guard, and Anti-Equilibrium candidate class.
    If any `HARD_BLOCK` candidate exists, the budget `SOFT_BLOCK` is ineligible and
    budget cooldown MUST NOT be acquired.

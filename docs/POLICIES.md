@@ -201,18 +201,25 @@ Account-level keys (K4) are authoritative.
 
 ### Anti-Equilibrium Gate
 
-On the current `recordFailure`, read only **prior** actually-issued `SOFT_BLOCK` events
-for the same account **before budget cooldown acquisition**. If **≥ 3 such events
-within 6 hours** exist:
+Soft events are kept per source scope (`DECISION_MATRIX.md` §2.5.3, DEC-021). On the
+current `recordFailure`, read only **prior** actually-issued `SOFT_BLOCK` events **before
+budget cooldown acquisition**:
 
-* The current failure MUST add `HARD_BLOCK(Account)` at minimum **L2** as an
-  Anti-Equilibrium candidate.
-* The budget `SOFT_BLOCK` is ineligible and its cooldown MUST NOT be acquired.
+* **≥ 3 account-scoped events** for the same account within 6 hours: the current failure
+  MUST add `HARD_BLOCK(Account)` (K4) at minimum **L2** as an Anti-Equilibrium candidate.
+* **≥ 3 device-scoped events** (K5-only, known device) for the same account and device
+  within 6 hours: the current failure MUST add `HARD_BLOCK` on that account + device (K5)
+  at minimum **L2**. Device-scoped events never count toward the account watcher.
+* In either case the budget `SOFT_BLOCK` is ineligible and its cooldown MUST NOT be
+  acquired.
 
-After final aggregation, record exactly one Anti-Equilibrium event only when the final
-issued decision is `SOFT_BLOCK`; the event affects future requests only. The third soft
-event remains a `SOFT_BLOCK`, and recording it MUST NOT turn that same request into
-`HARD_BLOCK`. `ALLOW` and `HARD_BLOCK` final decisions record no soft event.
+After final aggregation, record exactly one Anti-Equilibrium event, on exactly one watcher,
+only when the final issued decision is `SOFT_BLOCK`: the account watcher whenever the
+`SOFT_BLOCK` has any account source (mixed K4 + K5 included), the device watcher only for
+a K5-only `SOFT_BLOCK` with an eligible device, and the account watcher otherwise. The
+event affects future requests only. The third soft event remains a `SOFT_BLOCK`, and
+recording it MUST NOT turn that same request into `HARD_BLOCK`. `ALLOW` and `HARD_BLOCK`
+final decisions record no soft event.
 
 ---
 
