@@ -729,7 +729,21 @@ The stored key is:
 HMAC-SHA256(preimage, active-or-generation-key-secret)
 ```
 
-The locked purposes are `last_missing_fp`, `anti_equilibrium`, and `flood_stage`.
+The locked purposes are `last_missing_fp`, `anti_equilibrium`, `flood_stage`, and
+`known_device_allowance` (DEC-021).
+
+The device Anti-Equilibrium watcher (DEC-021) extends this preimage with the
+fingerprint hash:
+
+```
+{policy}:rate_limiter:aux:anti_equilibrium_device:v1:{env}:{accountId}:{fingerprintHash}
+```
+
+It exists only for a non-ephemeral, fingerprinted, account-bound request under a
+budgeted, non-`API_OVERUSE` policy with K5 thresholds. Its previous
+generation uses `previousKeySecret ?? currentKeySecret` and
+`previousFingerprintHash ?? fingerprintHash`, exists only when either is present, and is
+read-only.
 The raw `AccountID` exists only inside this preimage and MUST NOT cross either the
 `RateLimitStoreInterface` or `CorrelationStoreInterface` boundary. Policy, environment,
 module, purpose, and algorithm namespace version are all part of the derivation, so Login,
@@ -752,6 +766,13 @@ Anti-Equilibrium uses policy-scoped opaque state keys. Its threshold remains thr
 within the six-hour window. The effective count is the current count plus the active previous
 count, except that a null or identical previous key is not read twice. Recording a final
 `SOFT_BLOCK` increments only the current key.
+
+The known-device account allowance (`known_device_allowance`) is a fixed 24-hour epoch
+counter stored through the budget primitives and is not derived from any fingerprint. It
+follows the budget rotation survival contract (§4.3.1, §4.3.2): writes go to the current
+outer-key generation; when only the previous generation holds a valid epoch it is seeded
+atomically into the current key through `BudgetSeedStoreInterface`, never reset and never
+merged with `max`.
 
 New Device Flood stage is also policy-scoped. An active stage is the logical OR of the
 current flag and an active distinct previous flag. The first qualifying stage writes only the

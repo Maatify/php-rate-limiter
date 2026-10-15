@@ -131,6 +131,23 @@ Account-level keys (K4) are authoritative.
 | 8 – 11        | HARD_BLOCK (L2)  |
 | ≥ 12          | HARD_BLOCK (L3+) |
 
+### Known-Device Bound (DEC-021)
+
+| Known-device K5 score | Decision (that account + device only) |
+| --------------------- | ------------------------------------- |
+| < 8                   | ALLOW                                 |
+| 8 – 11                | SOFT_BLOCK (L1)                       |
+| 12 – 15               | HARD_BLOCK (L2)                       |
+| ≥ 16                  | HARD_BLOCK (L3+)                      |
+
+* A K5 level is persisted on K5 only; it never blocks the account (K4). Repeated K5
+  `SOFT_BLOCK`s escalate through the device Anti-Equilibrium watcher to a K5 `HARD_BLOCK`
+  L2 on that device only (`DECISION_MATRIX.md` §2.5.3).
+* Known-device account allowance: **8** known-device failures per account and fixed 24h
+  epoch, independent of the fingerprint. Each further known-device failure also adds +3 to
+  K4 like a new device; this is a per-failure scoring rule, not an absolute cap on verifier
+  reaches (`DECISION_MATRIX.md` §2.2.2).
+
 ---
 
 ### Login Failure Budget (Fixed 24h Epoch)
@@ -184,18 +201,25 @@ Account-level keys (K4) are authoritative.
 
 ### Anti-Equilibrium Gate
 
-On the current `recordFailure`, read only **prior** actually-issued `SOFT_BLOCK` events
-for the same account **before budget cooldown acquisition**. If **≥ 3 such events
-within 6 hours** exist:
+Soft events are kept per source scope (`DECISION_MATRIX.md` §2.5.3, DEC-021). On the
+current `recordFailure`, read only **prior** actually-issued `SOFT_BLOCK` events **before
+budget cooldown acquisition**:
 
-* The current failure MUST add `HARD_BLOCK(Account)` at minimum **L2** as an
-  Anti-Equilibrium candidate.
-* The budget `SOFT_BLOCK` is ineligible and its cooldown MUST NOT be acquired.
+* **≥ 3 account-scoped events** for the same account within 6 hours: the current failure
+  MUST add `HARD_BLOCK(Account)` (K4) at minimum **L2** as an Anti-Equilibrium candidate.
+* **≥ 3 device-scoped events** (K5-only, known device) for the same account and device
+  within 6 hours: the current failure MUST add `HARD_BLOCK` on that account + device (K5)
+  at minimum **L2**. Device-scoped events never count toward the account watcher.
+* In either case the budget `SOFT_BLOCK` is ineligible and its cooldown MUST NOT be
+  acquired.
 
-After final aggregation, record exactly one Anti-Equilibrium event only when the final
-issued decision is `SOFT_BLOCK`; the event affects future requests only. The third soft
-event remains a `SOFT_BLOCK`, and recording it MUST NOT turn that same request into
-`HARD_BLOCK`. `ALLOW` and `HARD_BLOCK` final decisions record no soft event.
+After final aggregation, record exactly one Anti-Equilibrium event, on exactly one watcher,
+only when the final issued decision is `SOFT_BLOCK`: the account watcher whenever the
+`SOFT_BLOCK` has any account source (mixed K4 + K5 included), the device watcher only for
+a K5-only `SOFT_BLOCK` with an eligible device, and the account watcher otherwise. The
+event affects future requests only. The third soft event remains a `SOFT_BLOCK`, and
+recording it MUST NOT turn that same request into `HARD_BLOCK`. `ALLOW` and `HARD_BLOCK`
+final decisions record no soft event.
 
 ---
 
@@ -276,6 +300,13 @@ IP-only signals are advisory only.
 | 4 – 6 | SOFT_BLOCK (L1)  |
 | 7 – 9 | HARD_BLOCK (L2)  |
 | ≥ 10  | HARD_BLOCK (L3+) |
+
+### Known-Device Bound (DEC-021)
+
+* Known-device K5 thresholds `8 / 12 / 16` (L1 at the 2nd known-device OTP failure, L2 at
+  the 3rd, L3 at the 4th), persisted on K5 only.
+* Known-device account allowance: **2** per account and fixed 24h epoch; further
+  known-device OTP failures are also scored on K4 (+5) (`DECISION_MATRIX.md` §3.1.2).
 
 ---
 

@@ -22,7 +22,7 @@ use Maatify\RateLimiter\Enum\PolicyCapabilityEnum;
  * Its bounded backend-failure fallback resolves the package-owned
  * `AUTHENTICATION_STEP_UP` preset; no Host configuration is required.
  */
-class OtpProtectionPolicy implements PostPunishmentReentryPolicyInterface, PolicyCapabilityProviderInterface, FailureFallbackConfigurationProviderInterface
+class OtpProtectionPolicy implements PostPunishmentReentryPolicyInterface, KnownDeviceAccountAllowancePolicyInterface, PolicyCapabilityProviderInterface, FailureFallbackConfigurationProviderInterface
 {
     public function getFailureFallbackConfiguration(): FailureFallbackConfigurationDTO
     {
@@ -48,12 +48,13 @@ class OtpProtectionPolicy implements PostPunishmentReentryPolicyInterface, Polic
     }
 
     /**
-     * Return the K4 thresholds for soft and hard OTP blocking.
+     * Return the K4 thresholds and the device-scoped known-device K5 thresholds.
      */
     public function getScoreThresholds(): PolicyThresholdsDTO
     {
         return new PolicyThresholdsDTO(
             k4: new ScoreThresholdsDTO(4, 7, 10),
+            k5: new ScoreThresholdsDTO(8, 12, 16),
         );
     }
 
@@ -92,5 +93,16 @@ class OtpProtectionPolicy implements PostPunishmentReentryPolicyInterface, Polic
             known_device_micro_cap: null,
             recovery_collision_guard_enabled: true,
         );
+    }
+
+    /**
+     * Known-device failures per account and 24-hour epoch scored on K5 only;
+     * later known-device failures also add the K4 failure delta. A subclass
+     * whose effective configuration has no K5 scoring (no K5 failure delta or
+     * no K5 thresholds) keeps the allowance disabled.
+     */
+    public function getKnownDeviceAccountAllowance(): ?int
+    {
+        return $this->getScoreDeltas()->k5_failure > 0 && $this->getScoreThresholds()->k5 !== null ? 2 : null;
     }
 }

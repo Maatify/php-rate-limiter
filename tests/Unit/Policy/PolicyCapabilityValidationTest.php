@@ -7,6 +7,7 @@ namespace Maatify\RateLimiter\Tests\Unit\Policy;
 use Maatify\RateLimiter\Builder\RateLimiterBuilder;
 use Maatify\RateLimiter\Config\BlockPolicyInterface;
 use Maatify\RateLimiter\Config\FailureFallbackConfigurationProviderInterface;
+use Maatify\RateLimiter\Config\KnownDeviceAccountAllowancePolicyInterface;
 use Maatify\RateLimiter\Enum\FailureFallbackDimensionEnum;
 use Maatify\RateLimiter\Enum\PolicyCapabilityEnum;
 use Maatify\RateLimiter\Config\PolicyCapabilityProviderInterface;
@@ -170,10 +171,53 @@ final class PolicyCapabilityValidationTest extends TestCase
                 k3: new ScoreThresholdsDTO(1, 1, 1),
             )),
         ];
+        yield 'known-device allowance not positive' => [
+            'Known-device account allowance must be a positive integer',
+            new AllowanceValidationPolicy('invalid-allowance-zero', 0, $authConfig),
+        ];
+        yield 'known-device allowance without K4 failure delta' => [
+            'Authentication policies require a positive K4 failure delta',
+            new AllowanceValidationPolicy('invalid-allowance-delta', 8, $authConfig, new ScoreDeltasDTO(k5_failure: 2)),
+        ];
+        yield 'known-device allowance without monotonic K4 thresholds' => [
+            'authentication K4 thresholds must be positive and monotonic',
+            new AllowanceValidationPolicy('invalid-allowance-k4', 8, $authConfig, thresholds: new PolicyThresholdsDTO(k4: new ScoreThresholdsDTO(5, 4, 12), k5: new ScoreThresholdsDTO(8, 12, 16))),
+        ];
+        yield 'known-device allowance with an inert K5 failure delta' => [
+            'Known-device account allowance requires a positive K5 failure delta',
+            new AllowanceValidationPolicy('invalid-allowance-k5-delta', 8, $authConfig, new ScoreDeltasDTO(k2_missing_fp: 4, k4_failure: 3)),
+        ];
+        yield 'known-device allowance without K5 thresholds' => [
+            'Known-device account allowance requires positive, monotonic K5 thresholds',
+            new AllowanceValidationPolicy('invalid-allowance-k5-missing', 8, $authConfig, thresholds: new PolicyThresholdsDTO(k4: new ScoreThresholdsDTO(5, 8, 12))),
+        ];
+        yield 'known-device allowance with non monotonic K5 thresholds' => [
+            'Known-device account allowance requires positive, monotonic K5 thresholds',
+            new AllowanceValidationPolicy('invalid-allowance-k5-order', 8, $authConfig, thresholds: new PolicyThresholdsDTO(k4: new ScoreThresholdsDTO(5, 8, 12), k5: new ScoreThresholdsDTO(12, 8, 16))),
+        ];
+        yield 'known-device allowance without budget' => [
+            'Authentication policies require BudgetConfig',
+            new AllowanceValidationPolicy('invalid-allowance-budget', 8, $authConfig, budget: null),
+        ];
+        yield 'known-device allowance combined with API_OVERUSE' => [
+            'Authentication and API_OVERUSE capabilities cannot be combined',
+            new AllowanceValidationPolicy('invalid-allowance-api', 8, $apiConfig, capabilities: $api),
+        ];
         yield 'api non positive access' => [
             'API_OVERUSE requires a positive access delta',
             new ValidationPolicy('invalid-api-access', $api, $apiConfig, mode: 'FAIL_OPEN', deltas: new ScoreDeltasDTO()),
         ];
+    }
+
+    public function testValidCustomKnownDeviceAllowancePolicyRegisters(): void
+    {
+        $authConfig = new FailureFallbackConfigurationDTO([
+            new FailureFallbackRuleDTO(FailureFallbackDimensionEnum::ACCOUNT, 3, 600),
+            new FailureFallbackRuleDTO(FailureFallbackDimensionEnum::IP_PREFIX, 20, 600),
+        ]);
+
+        $this->builder()->withPolicy(new AllowanceValidationPolicy('valid-custom-allowance', 4, $authConfig))->build();
+        $this->addToAssertionCount(1);
     }
 
     private function builder(): RateLimiterBuilder
@@ -231,6 +275,54 @@ final class ValidationPolicy implements BlockPolicyInterface, PolicyCapabilityPr
     public function getBudgetConfig(): ?BudgetConfigDTO
     {
         return $this->budget;
+    }
+}
+
+final class AllowanceValidationPolicy implements KnownDeviceAccountAllowancePolicyInterface, PolicyCapabilityProviderInterface, FailureFallbackConfigurationProviderInterface
+{
+    /** @param list<PolicyCapabilityEnum> $capabilities */
+    public function __construct(
+        private string $name,
+        private int $allowance,
+        private FailureFallbackConfigurationDTO $configuration,
+        private ScoreDeltasDTO $deltas = new ScoreDeltasDTO(k2_missing_fp: 4, k4_failure: 3, k5_failure: 2),
+        private PolicyThresholdsDTO $thresholds = new PolicyThresholdsDTO(k4: new ScoreThresholdsDTO(5, 8, 12), k5: new ScoreThresholdsDTO(8, 12, 16)),
+        private ?BudgetConfigDTO $budget = new BudgetConfigDTO(20, 3),
+        private array $capabilities = [],
+    ) {}
+
+    public function getName(): string
+    {
+        return $this->name;
+    }
+    /** @return list<PolicyCapabilityEnum> */
+    public function getCapabilities(): array
+    {
+        return $this->capabilities;
+    }
+    public function getFailureFallbackConfiguration(): FailureFallbackConfigurationDTO
+    {
+        return $this->configuration;
+    }
+    public function getScoreThresholds(): PolicyThresholdsDTO
+    {
+        return $this->thresholds;
+    }
+    public function getScoreDeltas(): ScoreDeltasDTO
+    {
+        return $this->deltas;
+    }
+    public function getFailureMode(): string
+    {
+        return 'FAIL_CLOSED';
+    }
+    public function getBudgetConfig(): ?BudgetConfigDTO
+    {
+        return $this->budget;
+    }
+    public function getKnownDeviceAccountAllowance(): int
+    {
+        return $this->allowance;
     }
 }
 

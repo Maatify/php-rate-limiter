@@ -7,6 +7,26 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Changed (DEC-021)
+- Login and OTP bound known devices (trusted session or previously verified device):
+  K5 thresholds `8 / 12 / 16`, and a fingerprint-independent known-device account
+  allowance (Login 8, OTP 2 per fixed 24h epoch); each known-device failure beyond it also
+  adds the K4 new-device delta. This is a per-failure scoring rule, not an absolute cap.
+  A trusted session failing on its own account now reaches the verifier 4 times in a 72 s
+  Login burst instead of 25; a stable known device failing every 300 s for 24 h reaches it
+  44 times instead of 268 (an unknown device: 37).
+- A score level derived from K5 is persisted on the K5 key only and no longer on the account
+  key K4. This also applies to custom policies that define K5 thresholds.
+- Anti-Equilibrium is source-scoped with one event per issued `SOFT_BLOCK`: a
+  `SOFT_BLOCK` that comes from K5 alone counts on a device watcher and escalates to a K5
+  `HARD_BLOCK` L2 on that device only; every `SOFT_BLOCK` with an account source (mixed
+  included) keeps the account-wide escalation on K4.
+
+### Added
+- `KnownDeviceAccountAllowancePolicyInterface` (opt-in, authentication capability) for
+  custom authentication policies. An active allowance requires positive K5 failure delta
+  and K5 thresholds; `API_OVERUSE` cannot be combined with it; `null` disables it.
+
 ### Fixed
 - Bounded local-fallback denials (`fallback_limit_exceeded`) no longer return a
   constant `retryAfter` of 60. The value is now the largest remaining

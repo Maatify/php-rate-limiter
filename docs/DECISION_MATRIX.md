@@ -95,10 +95,13 @@ Evaluation order is **strict and non-negotiable**:
    (`recordFailure` MUST continue even while `BudgetActive`).
 6. Apply the OTP **Recovery Collision Guard** if the exact transition qualifies.
 7. On `recordFailure`, evaluate Anti-Equilibrium escalation using **only** soft-block
-   events recorded by prior requests. If at least 3 prior actually-issued
-   `SOFT_BLOCK` events exist within 6 hours, add an Anti-Equilibrium
-   `HARD_BLOCK(Account)` candidate at minimum L2. The current request MUST NOT count
-   toward this prerequisite.
+   events recorded by prior requests, per source scope (§2.5.3). If at least 3 prior
+   actually-issued account-scoped `SOFT_BLOCK` events exist within 6 hours, add an
+   Anti-Equilibrium `HARD_BLOCK(Account)` candidate (K4) at minimum L2. If at least 3
+   prior actually-issued device-scoped (K5-only) `SOFT_BLOCK` events exist within 6 hours
+   for the same account and device, add an Anti-Equilibrium `HARD_BLOCK` candidate on that
+   account + device (K5) at minimum L2. Device-scoped events never count as account
+   evidence. The current request MUST NOT count toward either prerequisite.
 8. Resolve the normal, Recovery Guard, and Anti-Equilibrium candidate class.
    If any `HARD_BLOCK` candidate exists, the budget `SOFT_BLOCK` is ineligible and
    budget cooldown MUST NOT be acquired.
@@ -159,6 +162,37 @@ MUST NOT create or read this marker.
 
 ---
 
+#### 2.2.2 Known-Device Verifier Bound (DEC-021)
+
+A known device (`isKnownForAccount`) is scored on K5, and K5 is bounded:
+
+| K5 score | Decision on that account + device |
+| -------- | --------------------------------- |
+| < 8      | ALLOW                             |
+| 8 – 11   | SOFT_BLOCK (L1)                   |
+| 12 – 15  | HARD_BLOCK (L2)                   |
+| ≥ 16     | HARD_BLOCK (L3+)                  |
+
+* A level derived from K5 is persisted on the **K5 key only**, never on K4, for every
+  policy. Levels derived from other keys keep their K4 persistence. The owner's other
+  devices on the same account are not blocked by a K5 level.
+* **Known-device account allowance** (`KnownDeviceAccountAllowancePolicyInterface`;
+  Login = 8): while active, every known-device failure consumes one unit of a
+  fingerprint-independent account counter with a fixed 24-hour epoch (`KEY_STRATEGY.md`
+  §4.6, purpose `known_device_allowance`). Every known-device failure beyond the allowance
+  **also** adds the new-device delta (+3) to K4 and is budget-eligible (§2.4.1). This is a
+  per-failure K4 scoring rule, not an absolute cap on verifier reaches: K4 protection
+  decays and depends on recorded outcomes, and pre-checks reserve nothing. Ephemeral and
+  missing-fingerprint failures keep their existing K4 scoring and do not consume it.
+* The opt-in is an authentication capability: all authentication prerequisites apply,
+  `API_OVERUSE` cannot be combined with it, and an active allowance requires a positive
+  `k5_failure` and positive monotonic K5 thresholds. A `null` allowance disables it.
+* K5 L1 decisions are actually-issued `SOFT_BLOCK`s with **device** scope: they count
+  toward the device Anti-Equilibrium watcher (§2.5.3), whose escalation is a K5 `HARD_BLOCK`
+  L2 on that device only, not toward the account watcher.
+* A backend failure while consuming the allowance is a typed backend failure (DEC-015);
+  it is never converted into a normal-mode allowance.
+
 ### 2.3 Login Thresholds (Per Account Score)
 
 | Account Score | Decision   | Block Level |
@@ -208,7 +242,7 @@ Login failures are **classified**, not all scored with K4 + K5 together:
 
 | Classification              | Scoring                                      | Budget eligibility                                        |
 | --------------------------- | -------------------------------------------- | --------------------------------------------------------- |
-| **Known device failure**    | K5 score delta applies (**+2**); K4 “new device” delta does **NOT** apply | Budget-eligible **only after** `failed_login_count(K5) ≥ 8` within the fixed epoch (known-device micro-cap) |
+| **Known device failure**    | K5 score delta applies (**+2**); K4 “new device” delta does **NOT** apply within the known-device account allowance (§2.2.2) and **also** applies beyond it | Budget-eligible **only after** `failed_login_count(K5) ≥ 8` within the fixed epoch (known-device micro-cap), or immediately once beyond the account allowance |
 | **New / unverified device failure** | K4 new-device delta applies (**+3**) | Budget-eligible immediately |
 
 * “Known device” means `isKnownForAccount` (§0; `DEVICE_FINGERPRINT.md` §4.3).
@@ -308,7 +342,8 @@ To prevent mathematically planned “low-and-slow” equilibrium:
 
 On the current `recordFailure`, and **before budget cooldown acquisition**, read only
 Anti-Equilibrium soft events from **prior requests** for the same `AccountID` and the same
-policy flow.
+policy flow. Only account-scoped events are recorded there; device-scoped events have their
+own watcher and escalation (§2.5.3).
 
 If **≥ 3 actually-issued `SOFT_BLOCK` events within 6 hours** exist in that prior
 history:
@@ -325,7 +360,8 @@ cannot be bypassed by a budget soft. Login and OTP histories are independent.
 #### 2.5.2 Write / Record
 
 After final aggregation, if and only if the final issued decision is `SOFT_BLOCK`,
-record exactly one Anti-Equilibrium event. This event affects future requests only.
+record exactly one Anti-Equilibrium event, on the watcher selected by its source scope
+(§2.5.3). This event affects future requests only.
 
 The third `SOFT_BLOCK` remains a `SOFT_BLOCK`; recording it MUST NOT turn that same
 request into `HARD_BLOCK`. A request whose final decision is `ALLOW` or `HARD_BLOCK`
@@ -342,6 +378,37 @@ WRITE / RECORD:
 ```
 
 This is deterministic, testable, and breaks stable decay arithmetic.
+
+#### 2.5.3 Source Scope (DEC-021)
+
+Each issued `SOFT_BLOCK` carries the scopes of its winning `SOFT_BLOCK` candidates:
+
+* **device** — the candidate's level comes from K5 alone (known-device score);
+* **account** — every other source (K4 score, budget, flood, Recovery Guard, other keys).
+  This is the conservative default and keeps the §2.5.1 / §2.5.2 behavior.
+
+Recording (§2.5.2) writes exactly **one** event per issued `SOFT_BLOCK`, on one watcher:
+
+* the **account** watcher whenever any winning candidate has account scope, including a
+  `SOFT_BLOCK` that aggregates a K5 level with an account level (the stronger, existing
+  account protection);
+* the **device** watcher for the same account and device (`KEY_STRATEGY.md` §4.6, purpose
+  `anti_equilibrium_device`) only when every winning candidate is device-scoped (K5 alone)
+  and the device watcher is eligible;
+* the **account** watcher otherwise (for example a device-only `SOFT_BLOCK` without a durable
+  device identity).
+
+The device watcher exists only for a policy that the account watcher also covers (a
+budgeted policy), that is not `API_OVERUSE`, and that defines K5 thresholds; otherwise it
+is never read, written, or escalated, even if events are stored under the same policy name.
+With a single write there is no two-key partial publication; an operational exception
+around that one write keeps the existing store semantics (DEC-015).
+
+Escalation (§2.5.1) reads both watchers on `recordFailure`: three prior account events add
+`HARD_BLOCK (Account)` L2 on K4 as before; three prior device events add `HARD_BLOCK` L2 on
+that account + device (K5) only. Both watchers follow outer-secret rotation (current is
+writable, previous is read-only); the device watcher also follows the previous fingerprint
+generation.
 
 ---
 
@@ -366,6 +433,14 @@ Applies if:
 * The **previous OTP failure** for the same `AccountID` and the OTP policy flow within the last **30 minutes** was also missing `DeviceFP`.
 
 ---
+
+
+#### 3.1.2 Known-Device Verifier Bound (DEC-021)
+
+OTP uses the §2.2.2 contract with the OTP deltas: K5 thresholds `8 / 12 / 16` (L1 at the
+2nd known-device failure, L2 at the 3rd, L3 at the 4th), K5 levels persisted on K5 only,
+and a known-device account allowance of **2** per fixed 24-hour epoch, beyond which the
+OTP new-device delta (+5) also applies to K4. OTP budget eligibility (§3.3) is unchanged.
 
 ### 3.2 OTP Thresholds
 

@@ -6,6 +6,7 @@ namespace Maatify\RateLimiter\Service;
 
 use Maatify\RateLimiter\Config\BlockPolicyInterface;
 use Maatify\RateLimiter\Enum\PolicyCapabilityEnum;
+use Maatify\RateLimiter\Config\KnownDeviceAccountAllowancePolicyInterface;
 use Maatify\RateLimiter\Config\PolicyCapabilityProviderInterface;
 use Maatify\RateLimiter\Config\PostPunishmentReentryPolicyInterface;
 use Maatify\RateLimiter\DTO\BoundedCorrelationObservationDTO;
@@ -50,6 +51,8 @@ use Maatify\SharedCommon\Contracts\ClockInterface;
 class EvaluationPipeline
 {
     private const BUDGET_EPOCH_SECONDS = 86400; // 24h
+    private const SCOPE_ACCOUNT = 'account';
+    private const SCOPE_DEVICE = 'device';
     private const CYCLE_WINDOW_SECONDS = 21600;
     private const CYCLE_THRESHOLD = 2;
     private const DECAY_PAUSE_SECONDS = 600;
@@ -64,6 +67,14 @@ class EvaluationPipeline
 
     /** @var array<string, int> Current K4 keys with qualifying score generations. */
     private array $lifecycleEligibleKeys = [];
+
+    /**
+     * Anti-Equilibrium scopes of the winning SOFT_BLOCK candidates of the
+     * current request (DEC-021).
+     *
+     * @var list<string>
+     */
+    private array $issuedSoftScopes = [];
 
     /**
      * @param RateLimitStoreInterface $store Score and block persistence boundary.
@@ -169,6 +180,7 @@ class EvaluationPipeline
         DeviceIdentityDTO $device,
     ): RateLimitResultDTO {
         $this->lifecycleEligibleKeys = [];
+        $this->issuedSoftScopes = [];
         // 1. Build keys for the current generation, then the one previous
         // generation when either generation component is present.
         $realKeysV2 = $this->buildKeys($context, $device->normalizedUa, $device->fingerprintHash, $policy->getName(), $this->secret);
@@ -384,7 +396,10 @@ class EvaluationPipeline
         }
 
         // Anti-Equilibrium reads prior history before budget cooldown
-        // acquisition. Recording happens only after final aggregation.
+        // acquisition. Recording happens only after final aggregation. The
+        // account watcher keeps the §2.5 account-wide escalation; the device
+        // watcher (DEC-021) escalates SOFT_BLOCKs that came from K5
+        // alone on that account + device only.
         if ($request->isFailure && $context->accountId !== null && $policy->getBudgetConfig() !== null
             && $this->antiEquilibriumGate->shouldEscalate(
                 $this->auxiliaryAccountKey($policy->getName(), 'anti_equilibrium', $context->accountId, $this->secret),
@@ -406,6 +421,24 @@ class EvaluationPipeline
                 $persistence,
             );
         }
+        $deviceWatcher = $this->deviceAntiEquilibriumKeys($policy, $context, $device, $isEphemeral);
+        if ($request->isFailure && $deviceWatcher !== null && ($realKeysV2['k5'] ?? null) !== null
+            && $this->antiEquilibriumGate->shouldEscalate($deviceWatcher['current'], $deviceWatcher['previous'])) {
+            $persistence = [[
+                'key' => $realKeysV2['k5'],
+                'previousKey' => $realKeysV1['k5'] ?? null,
+                'level' => 2,
+                'duration' => PenaltyLadder::getDuration(2),
+            ]];
+            $candidates[] = $this->candidate(
+                RateLimitResultDTO::DECISION_HARD_BLOCK,
+                2,
+                PenaltyLadder::getDuration(2),
+                'anti_equilibrium:device',
+                $persistence,
+                [self::SCOPE_DEVICE],
+            );
+        }
 
         $final = $this->finalizeDecision(
             $policy,
@@ -424,8 +457,19 @@ class EvaluationPipeline
             && ! $request->isSuccess
             && $context->accountId !== null
             && $policy->getBudgetConfig() !== null) {
+            // Exactly one watcher write per issued SOFT_BLOCK: the account
+            // watcher whenever any winning SOFT candidate has account scope
+            // (mixed K4 + K5 included, the stronger account protection), the
+            // device watcher only for a K5-only SOFT with an eligible device,
+            // and the account watcher otherwise.
+            $issuedSoftScopes = $this->issuedSoftScopes();
+            $deviceOnly = $deviceWatcher !== null
+                && $issuedSoftScopes !== []
+                && ! in_array(self::SCOPE_ACCOUNT, $issuedSoftScopes, true);
             $this->antiEquilibriumGate->recordSoftBlock(
-                $this->auxiliaryAccountKey($policy->getName(), 'anti_equilibrium', $context->accountId, $this->secret),
+                $deviceOnly
+                    ? $deviceWatcher['current']
+                    : $this->auxiliaryAccountKey($policy->getName(), 'anti_equilibrium', $context->accountId, $this->secret),
             );
         }
 
@@ -509,7 +553,7 @@ class EvaluationPipeline
      * @param array<string, int> $scores
      * @param array<string, string|null> $keys
      * @param array<string, string|null> $keysV1
-     * @return list<array{decision: string, level: int, retryAfter: int, source: string, persistence: list<array{key: string, previousKey: ?string, level: int, duration: int}>}>
+     * @return list<array{decision: string, level: int, retryAfter: int, source: string, persistence: list<array{key: string, previousKey: ?string, level: int, duration: int}>, scopes: list<string>}>
      */
     private function checkThresholds(
         BlockPolicyInterface $policy,
@@ -571,7 +615,14 @@ class EvaluationPipeline
                     }
                 }
 
-                $candidates[] = $this->candidate($decision, $candidateLevel, $retryAfter, $source, $persistence);
+                $candidates[] = $this->candidate(
+                    $decision,
+                    $candidateLevel,
+                    $retryAfter,
+                    $source,
+                    $persistence,
+                    $candidateKeyType === 'k5' ? [self::SCOPE_DEVICE] : [self::SCOPE_ACCOUNT],
+                );
             }
         }
 
@@ -584,7 +635,7 @@ class EvaluationPipeline
      *
      * @param array<string, string|null> $keysV2
      * @param array<string, string|null> $keysV1
-     * @return array{decision: string, level: int, retryAfter: int, source: string, persistence: list<array{key: string, previousKey: ?string, level: int, duration: int}>}|null
+     * @return array{decision: string, level: int, retryAfter: int, source: string, persistence: list<array{key: string, previousKey: ?string, level: int, duration: int}>, scopes: list<string>}|null
      */
     private function checkDistributedAccountAttack(
         RateLimitContextDTO $context,
@@ -1106,7 +1157,7 @@ class EvaluationPipeline
      * @param array<string, string|null> $keysV2
      * @param array<string, string|null> $keysV1
      * @param list<array{cidr: int, currentScope: string, previousScope: ?string}> $adaptiveIpv6Scopes
-     * @return array{decision: string, level: int, retryAfter: int, source: string, persistence: list<array{key: string, previousKey: ?string, level: int, duration: int}>}|null
+     * @return array{decision: string, level: int, retryAfter: int, source: string, persistence: list<array{key: string, previousKey: ?string, level: int, duration: int}>, scopes: list<string>}|null
      */
     private function checkCorrelationRules(
         DeviceIdentityDTO $device,
@@ -1417,7 +1468,7 @@ class EvaluationPipeline
      * correlation identities never cross the correlation-store boundary.
      *
      * @param list<array{cidr: int, currentScope: string, previousScope: ?string}> $adaptiveIpv6Scopes
-     * @return array{decision: string, level: int, retryAfter: int, source: string, persistence: list<array{key: string, previousKey: ?string, level: int, duration: int}>}|null
+     * @return array{decision: string, level: int, retryAfter: int, source: string, persistence: list<array{key: string, previousKey: ?string, level: int, duration: int}>, scopes: list<string>}|null
      */
     private function checkCredentialSpray(
         RateLimitContextDTO $context,
@@ -1524,7 +1575,7 @@ class EvaluationPipeline
      * @param array<string, string|null> $keysV1
      * @param array<string, ?PipelineScoreDTO> $rawScores
      * @return array{
-     *     candidates: list<array{decision: string, level: int, retryAfter: int, source: string, persistence: list<array{key: string, previousKey: ?string, level: int, duration: int}>}>,
+     *     candidates: list<array{decision: string, level: int, retryAfter: int, source: string, persistence: list<array{key: string, previousKey: ?string, level: int, duration: int}>, scopes: list<string>}>,
      *     budgetState: ?BudgetStateDTO,
      *     budgetRequestEligible: bool,
      *     budgetSuppressed: bool
@@ -1541,6 +1592,28 @@ class EvaluationPipeline
         array $rawScores,
     ): array {
         $deltas = $this->calculateDeltas($policy, $context, $device, $request, $isEphemeral);
+
+        // A known-device failure always consumes the fingerprint-independent
+        // account allowance. Once it is spent, the failure is also scored on
+        // K4, so device rotation and pacing below K5 decay cannot keep a
+        // known device less bounded than an unknown one.
+        if ($request->isFailure
+            && $policy instanceof KnownDeviceAccountAllowancePolicyInterface
+            && ! $isEphemeral
+            && $context->accountId !== null
+            && ($keys['k4'] ?? null) !== null
+            && $deltas['k5'] > 0
+            && $deltas['k4'] === 0
+            && $this->isKnownForAccount($device)
+            && ($allowanceLimit = $policy->getKnownDeviceAccountAllowance()) !== null) {
+            $allowance = $this->incrementBudgetAcrossRotation(
+                $this->auxiliaryAccountKey($policy->getName(), 'known_device_allowance', $context->accountId, $this->secret),
+                $this->previousAuxiliaryAccountKey($policy->getName(), 'known_device_allowance', $context->accountId),
+            );
+            if ($allowance->count > $allowanceLimit) {
+                $deltas['k4'] = $policy->getScoreDeltas()->k4_failure;
+            }
+        }
 
         $k4Repeated = $policy->getScoreDeltas()->k4_repeated_missing_fp;
         if ($request->isFailure && empty($device->fingerprintHash) && $context->accountId && $k4Repeated > 0) {
@@ -1796,11 +1869,13 @@ class EvaluationPipeline
                     $duration = PenaltyLadder::getDuration($level);
                     $retryAfter = $retryAfterByKeyType[$keyType] ?? $duration;
                     $isAdvisory = $this->isK1Key($keyType);
+                    // A K5 level is device scoped and never locks the account.
+                    $persistenceKeyType = $keyType === 'k5' ? 'k5' : 'k4';
                     $persistence = [];
-                    if (! $isAdvisory && $context->accountId && ($keys['k4'] ?? null) !== null) {
+                    if (! $isAdvisory && $context->accountId && ($keys[$persistenceKeyType] ?? null) !== null) {
                         $persistence[] = [
-                            'key' => $keys['k4'],
-                            'previousKey' => $keysV1['k4'] ?? null,
+                            'key' => $keys[$persistenceKeyType],
+                            'previousKey' => $keysV1[$persistenceKeyType] ?? null,
                             'level' => $level,
                             'duration' => $duration,
                         ];
@@ -1811,6 +1886,7 @@ class EvaluationPipeline
                         $retryAfter,
                         $isAdvisory ? 'trusted_advisory:score_update' : 'score_update',
                         $persistence,
+                        $keyType === 'k5' ? [self::SCOPE_DEVICE] : [self::SCOPE_ACCOUNT],
                     );
                 }
             } else {
@@ -1830,12 +1906,22 @@ class EvaluationPipeline
                 }
                 $persistence = [];
 
-                if ($context->accountId && ($keys['k4'] ?? null) !== null) {
+                // K5 levels persist on the device key only; every other
+                // scored level keeps its account-wide K4 persistence.
+                $k5Level = $levelsByKeyType['k5'] ?? 0;
+                $accountLevel = 0;
+                foreach ($levelsByKeyType as $keyType => $level) {
+                    if ($keyType !== 'k5') {
+                        $accountLevel = max($accountLevel, $level);
+                    }
+                }
+
+                if ($accountLevel > 0 && $context->accountId && ($keys['k4'] ?? null) !== null) {
                     $k4LifecycleLevel = $levelsByKeyType['k4'] ?? 0;
                     $k4IsLifecycleEligible = $policy instanceof PostPunishmentReentryPolicyInterface
                         && $k4LifecycleLevel >= 2
                         && isset($this->lifecycleEligibleKeys[$keys['k4']]);
-                    $persistenceLevel = $k4IsLifecycleEligible ? $k4LifecycleLevel : $newMaxLevel;
+                    $persistenceLevel = $k4IsLifecycleEligible ? $k4LifecycleLevel : $accountLevel;
                     $persistence[] = [
                         'key' => $keys['k4'],
                         'previousKey' => $keysV1['k4'] ?? null,
@@ -1844,7 +1930,24 @@ class EvaluationPipeline
                     ];
                 }
 
-                $candidates[] = $this->candidate($decision, $newMaxLevel, $retryAfter, 'score_update', $persistence);
+                if ($k5Level > 0 && $context->accountId && ($keys['k5'] ?? null) !== null) {
+                    $persistence[] = [
+                        'key' => $keys['k5'],
+                        'previousKey' => $keysV1['k5'] ?? null,
+                        'level' => $k5Level,
+                        'duration' => PenaltyLadder::getDuration($k5Level),
+                    ];
+                }
+
+                $scopes = [];
+                if ($accountLevel > 0) {
+                    $scopes[] = self::SCOPE_ACCOUNT;
+                }
+                if ($k5Level > 0) {
+                    $scopes[] = self::SCOPE_DEVICE;
+                }
+
+                $candidates[] = $this->candidate($decision, $newMaxLevel, $retryAfter, 'score_update', $persistence, $scopes);
             }
         }
 
@@ -1862,9 +1965,12 @@ class EvaluationPipeline
 
     /**
      * @param list<array{key: string, previousKey: ?string, level: int, duration: int}> $persistence
-     * @return array{decision: string, level: int, retryAfter: int, source: string, persistence: list<array{key: string, previousKey: ?string, level: int, duration: int}>}
+     * @param list<string> $scopes Anti-Equilibrium scopes of an issued SOFT_BLOCK
+     *     from this candidate: SCOPE_DEVICE only when the level comes from K5
+     *     alone; SCOPE_ACCOUNT is the conservative §2.5 default.
+     * @return array{decision: string, level: int, retryAfter: int, source: string, persistence: list<array{key: string, previousKey: ?string, level: int, duration: int}>, scopes: list<string>}
      */
-    private function candidate(string $decision, int $level, int $retryAfter, string $source, array $persistence = []): array
+    private function candidate(string $decision, int $level, int $retryAfter, string $source, array $persistence = [], array $scopes = [self::SCOPE_ACCOUNT]): array
     {
         return [
             'decision' => $decision,
@@ -1872,12 +1978,13 @@ class EvaluationPipeline
             'retryAfter' => max(0, $retryAfter),
             'source' => $source,
             'persistence' => $persistence,
+            'scopes' => $scopes,
         ];
     }
 
     /**
-     * @param list<array{decision: string, level: int, retryAfter: int, source: string, persistence: list<array{key: string, previousKey: ?string, level: int, duration: int}>}> $candidates
-     * @return array{decision: string, level: int, retryAfter: int, source: string, persistence: list<array{key: string, previousKey: ?string, level: int, duration: int}>}|null
+     * @param list<array{decision: string, level: int, retryAfter: int, source: string, persistence: list<array{key: string, previousKey: ?string, level: int, duration: int}>, scopes: list<string>}> $candidates
+     * @return array{decision: string, level: int, retryAfter: int, source: string, persistence: list<array{key: string, previousKey: ?string, level: int, duration: int}>, scopes: list<string>}|null
      */
     private function aggregateCandidates(array $candidates): ?array
     {
@@ -1916,7 +2023,7 @@ class EvaluationPipeline
     }
 
     /**
-     * @param list<array{decision: string, level: int, retryAfter: int, source: string, persistence: list<array{key: string, previousKey: ?string, level: int, duration: int}>}> $candidates
+     * @param list<array{decision: string, level: int, retryAfter: int, source: string, persistence: list<array{key: string, previousKey: ?string, level: int, duration: int}>, scopes: list<string>}> $candidates
     */
     private function persistWinningCandidates(BlockPolicyInterface $policy, array $candidates, ?string $winningClass, bool $persistAllCandidates = false): void
     {
@@ -2027,7 +2134,7 @@ class EvaluationPipeline
     /**
      * @param array<string, string|null> $keysV2
      * @param array<string, string|null> $keysV1
-     * @param list<array{decision: string, level: int, retryAfter: int, source: string, persistence: list<array{key: string, previousKey: ?string, level: int, duration: int}>}> $candidates
+     * @param list<array{decision: string, level: int, retryAfter: int, source: string, persistence: list<array{key: string, previousKey: ?string, level: int, duration: int}>, scopes: list<string>}> $candidates
      */
     private function finalizeDecision(
         BlockPolicyInterface $policy,
@@ -2097,6 +2204,19 @@ class EvaluationPipeline
         }
 
         $final = $this->aggregateCandidates($candidates);
+        if ($final !== null && $final['decision'] === RateLimitResultDTO::DECISION_SOFT_BLOCK) {
+            // Provenance of the issued SOFT_BLOCK: the union of the winning
+            // SOFT candidates' scopes. It is only collected here; process()
+            // then records exactly one event on one watcher: the account
+            // watcher for any account scope (mixed K4 + K5 included), the
+            // device watcher only for a K5-only SOFT with an eligible device,
+            // and the account watcher otherwise.
+            foreach ($candidates as $candidate) {
+                if ($candidate['decision'] === RateLimitResultDTO::DECISION_SOFT_BLOCK) {
+                    $this->issuedSoftScopes = array_values(array_unique(array_merge($this->issuedSoftScopes, $candidate['scopes'])));
+                }
+            }
+        }
         if ($final === null) {
             $this->persistWinningCandidates($policy, $advisoryCandidates, null);
 
@@ -2185,6 +2305,55 @@ class EvaluationPipeline
             "{$policyName}:rate_limiter:budget_cooldown:v1:{$this->envScope}:{$accountId}",
             $secret,
         );
+    }
+
+    /**
+     * Scopes of the SOFT_BLOCK issued by the last finalized decision.
+     *
+     * @return list<string>
+     */
+    private function issuedSoftScopes(): array
+    {
+        return $this->issuedSoftScopes;
+    }
+
+    /**
+     * Current and previous device Anti-Equilibrium watcher keys for the
+     * account + device of a non-ephemeral, fingerprinted, account-bound
+     * request under a budgeted, non-API policy with K5 thresholds (DEC-021);
+     * null otherwise.
+     *
+     * @return array{current: string, previous: ?string}|null
+     */
+    private function deviceAntiEquilibriumKeys(
+        BlockPolicyInterface $policy,
+        RateLimitContextDTO $context,
+        DeviceIdentityDTO $device,
+        bool $isEphemeral,
+    ): ?array {
+        // Same eligibility as the account watcher (a budgeted policy), and
+        // only where a K5 level can exist: never for API_OVERUSE.
+        if ($policy->getBudgetConfig() === null
+            || $this->isApiHeavyPolicy($policy)
+            || $policy->getScoreThresholds()->k5 === null
+            || $isEphemeral
+            || $context->accountId === null
+            || $device->fingerprintHash === null
+            || $device->fingerprintHash === '') {
+            return null;
+        }
+
+        $prefix = "{$policy->getName()}:rate_limiter:aux:anti_equilibrium_device:v1:{$this->envScope}:{$context->accountId}";
+        $current = $this->hashKey("{$prefix}:{$device->fingerprintHash}", $this->secret);
+        $previous = null;
+        if ($this->hasPreviousGeneration($device)) {
+            $previous = $this->hashKey("{$prefix}:{$this->previousFingerprintHash($device)}", $this->previousSecret ?? $this->secret);
+            if ($previous === $current) {
+                $previous = null;
+            }
+        }
+
+        return ['current' => $current, 'previous' => $previous];
     }
 
     /**
