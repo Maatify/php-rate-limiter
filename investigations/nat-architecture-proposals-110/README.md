@@ -16,6 +16,7 @@
 | 3 | Gemini 3.1 Pro — "Contextual Risk Enclaves & Challenge-Response Routing" | UNREVIEWED / VERBATIM | [proposals/03-gemini-3-1-pro.md](proposals/03-gemini-3-1-pro.md) | 213 | 9,812 | 15,299 | `ece025d4067db873280aa2fc4eb721e2d6975997b5859b3cd9f6065ba1dde3e6` |
 | 4 | DeepSeek — "Hierarchical Fair-Share Admission Control with Client Instance Accounting and Graduated Challenges" | UNREVIEWED / VERBATIM | [proposals/04-deepseek.md](proposals/04-deepseek.md) | 371 | 16,536 | 25,109 | `a5983432edb8cfdc370743749d7df9645f6a1087e0c18ca4d9e109f21006bcf2` |
 | 5 | Grok — "مساران، ميزانية غير قابلة للمضاعفة، عقوبة بأضيق نطاق" | UNREVIEWED / VERBATIM | [proposals/05-grok.md](proposals/05-grok.md) | 246 | 24,055 | 40,450 | `0c8337ff6a24fa64c7add0bbb77885b894637764f69e4c4d36fdbb33ad732c50` |
+| 6 | GPT-6.1 Sol — "قبول محدود مع إثبات محدد الهدف وحصص محفوظة" | UNREVIEWED / VERBATIM | [proposals/06-gpt-6-1-sol.md](proposals/06-gpt-6-1-sol.md) | 922 | 35,975 | 60,648 | `51093b4c5333cb7ef32439c0f7dec3044e5756fe2862a7b41b780e9ecf4f4729` |
 
 - كل نص قدمه المالك في 2026-10-16، وسُجّل كما ورد حرفيًا، بما فيه الأخطاء الموجودة في الأصل. البصمة محسوبة على ملف هذا المستودع.
 - تصاميم أخرى ستُضاف بأرقام تالية عند وصولها.
