@@ -2,22 +2,22 @@
 
 **Type:** study artifact — paper analysis of design texts only. No runtime, API, Store Contract or DEC change; no ranking, no winner, no candidate selection, no merged design.
 **Umbrella:** [#122](https://github.com/Maatify/php-rate-limiter/issues/122) (sub-issue of #110).
-**Source snapshot (pinned):** every citation below refers to the files under `proposals/` at commit `ecd0d96247afaa32cbcfcf98741a85099dab9e35`. The proposal files have not changed since `2cff5cc`. If any proposal file changes, this comparison must be reconciled against the new SHA-256 before any of its statements are reused.
+**Source snapshot (pinned):** every citation below refers to the files under `proposals/` at commit `54e119e10848006ad4037dc9200bf70579061ae4` (source reconciliation, §0.5). Line numbering is identical to the earlier snapshot `ecd0d96`. If any proposal file changes, this comparison must be reconciled against the new SHA-256 before any of its statements are reused.
 **Status:** draft for engineering review. Nothing here is accepted until the Owner and the Lead review it.
 
 | # | File | SHA-256 |
 |---|---|---|
-| 01 | `proposals/01-kimi-3.md` | `f67c02590751a32a2d997c6c4263bf134c55eebecf6998fb7e613acf63f43b4a` |
-| 02 | `proposals/02-gemini-argon.md` | `49c732cc8553759196060d423816be71a10c5713c5e2bfeb2422c9e0e26c46aa` |
-| 03 | `proposals/03-gemini-3-1-pro.md` | `ece025d4067db873280aa2fc4eb721e2d6975997b5859b3cd9f6065ba1dde3e6` |
-| 04 | `proposals/04-deepseek.md` | `a5983432edb8cfdc370743749d7df9645f6a1087e0c18ca4d9e109f21006bcf2` |
-| 05 | `proposals/05-grok.md` | `0c8337ff6a24fa64c7add0bbb77885b894637764f69e4c4d36fdbb33ad732c50` |
-| 06 | `proposals/06-gpt-6-1-sol.md` | `51093b4c5333cb7ef32439c0f7dec3044e5756fe2862a7b41b780e9ecf4f4729` |
-| 07 | `proposals/07-gpt-6-astra.md` | `6add4bee5011366cae39fc64a2d96733b3357f19339b3a1804be41d06a8ee6b9` |
-| 08 | `proposals/08-gpt-6-luna.md` | `fe1b9dd63491e9b030c4f0ab497c654ed354413c19b678e3e00cdadad5fbbbe8` |
-| 09 | `proposals/09-gpt-6-5-terra.md` | `2650412df72b90da32db9e2e885c93ac231aaaf2c281124da3c7fa6707baf2e3` |
+| 01 | `proposals/01-kimi-3.md` | `e08f1342243b7bbaa1af6efc0fc71e9aba0c3333ee4cbcb2c660e63f9a10220d` |
+| 02 | `proposals/02-gemini-argon.md` | `361a773618fe10e427376cdace96bae788417c6d6049586fda360e9289dd6944` |
+| 03 | `proposals/03-gemini-3-1-pro.md` | `77a52e28c4b4208500bd8afbd3f1cc5686519fc1f9f1883ff4f935ff3c9809f6` |
+| 04 | `proposals/04-deepseek.md` | `55c90cb72405f6b8d6bb04f9fa841aa6a0895359bd90b035f914c486a73f87fb` |
+| 05 | `proposals/05-grok.md` | `1b5fb2157b418a95072c8a2e5f2253f1b83a9a718674a71f3b7cc24911829f61` |
+| 06 | `proposals/06-gpt-6-1-sol.md` | `08b5680b457fc088b21a98cfdac5a28b490ef8993896f2e55d936185f0a5c96d` |
+| 07 | `proposals/07-gpt-6-astra.md` | `6699f88ba1c5546426a938ca480b998d77c407ae2284a4a6428ff289d32a8b02` |
+| 08 | `proposals/08-gpt-6-luna.md` | `d442a23e05ff3090a6bcec6f27989aaacb7e7f67614f67ac3b7c3df6f9b06bfb` |
+| 09 | `proposals/09-gpt-6-5-terra.md` | `9d626820e7fa476269e81073006e98f363963e4fb7989aba9b22f8c0b6f94db8` |
 | 10 | `proposals/10-fable-5-1.md` | `67cd22828e0dae192e1222337d7d37323a015695d63bb489b153af15a0996bfb` |
-| 11 | `proposals/11-opus-5-5.md` | `b511388d710f2b919f6f173cfe4462afb187dd430289a3d330667a48e4a311cd` |
+| 11 | `proposals/11-opus-5-5.md` | `f69479abd38a6c597096e13d9cd9d84e029cab338a58f3486987769f05c0f605` |
 
 ---
 
@@ -54,6 +54,27 @@ The same evidence standard applies to all eleven designs. Model name, popularity
 - `08:L264` says the author used "ملاحظة سابقة تخص تقييم أدلة rate limiter" in addition to the challenge text.
 - `11:L1` states the answer was written from the challenge text only.
 
+### 0.5 Source reconciliation (F123-01)
+
+| # | Original available? | Result at `54e119e` |
+|---|---|---|
+| 01 | yes, #110 record (SHA-256 recorded) | byte-identical after removing a trailing LF added at recording |
+| 02 | yes, #110 record (13 segments, SHA-256 recorded) | byte-identical after removing the added LF |
+| 05 | yes, #110 record (20 segments, SHA-256 recorded) | 21 Arabic diacritic pairs had been reordered (fatha/kasratan before shadda, Unicode canonical order) on the paste path; original order restored; byte-identical |
+| 10 | yes, Owner file `NAT_ARCHITECTURE_STUDY_2026-10-16_AR.md` and #110 record | byte-identical, unchanged |
+| 11 | yes, #110 record (SHA-256 recorded) | byte-identical after removing the added LF |
+| 04 | partial: #110 holds only part 1/10, chars [0, 1751) of 16,535, and marks the record INCOMPLETE | prefix matches; total length 16,535 matches; remainder unverifiable |
+| 03, 08, 09 | no original outside the Owner's chat paste | added LF removed; the text contains no shadda + short-vowel sequences, so the reordering seen in 05 cannot have occurred |
+| 06, 07 | no original outside the Owner's chat paste | added LF removed; the text contains 4 and 6 short-vowel + shadda sequences whose original order cannot be verified |
+
+The reordering in 05 does not change any word, line or citation used here. All Arabic quotes in this document were re-checked against the reconciled files (§0.6).
+
+### 0.6 Scope of the reviews behind this document
+
+- **First pass (`501a525`):** four LLM reviewers, one per group of designs, were asked to check (1) that each cited line contains the claimed text, (2) exact Arabic quotes, (3) fairness of the reading, and (4) to try to refute each `CONTRA` and `DERIV` item. They did not prove bounds formally and did not run experiments. One reviewer proposed a derivation (C‑14, "unbounded K4 inflation") that was wrong; it was adopted without an independent derivation.
+- **Engineering review of `501a525` (Owner):** found F123-01 to F123-05. C‑01 and C‑13 were reclassified from `CONTRA` to `DERIV` because each admits a consistent reading; C‑14 was re-derived; the shared-refund effect was added (C‑15); C‑08 was tightened with the K4 cap.
+- **Status of every `CONTRA`, `DERIV` and bound here:** paper findings for engineering review. A citation check does not validate a security conclusion; acceptance of any `CONTRA` or reach bound requires the engineering review, and claims marked `EXP` require a reproducible experiment.
+
 ---
 
 ## 1. Design cards
@@ -76,7 +97,7 @@ Each card answers the same fields. "State model" refers to how an identity or a 
 | Failure modes | Configurable fail-closed with small local bucket or fail-open with alert (`01:L177`); versioned keys; IPv6 /64 (`01:L178–L180`). |
 | Strongest contribution | The punishment-scope rule (`01:L136–L142`) and an explicit list of self-rejection criteria R1–R4 (`01:L261–L265`). |
 | Most dangerous assumption | That issuing an Instance Token costs the attacker more than rotating a cookie (`01:L59`), while no issuance limit is defined (`01:L225`); the author also states any budget given to a new user is given to every new attacker identity (`01:L67`). |
-| Possible break | `DERIV`: B3 skips any request that carries a token (`01:L141`); tokens are issued at first visit (`01:L225`); each new identifier gets a first-contact budget (`01:L155`). An attacker who requests a fresh token per attempt therefore stays outside B3, and reach_foreign grows with the number of tokens × first-contact budget, limited only by B1 per victim account. See §4, item C‑01. |
+| Possible break | `DERIV`, `COND[cheap token issuance; first-contact budget per identifier]`: B3 skips any request that carries a token (`01:L141`); tokens are issued at first visit (`01:L225`); each new identifier gets a first-contact budget (`01:L155`). Under both conditions a token-rotating attacker stays outside B3 and reach_foreign grows with the number of tokens, limited by B1 per victim account. Neither condition is settled by the text. See C‑01. |
 
 ### 02 — Gemini Argon, "Sovereign Quota & Asymmetric Escalation Engine" (SQAEE)
 
@@ -87,7 +108,7 @@ Each card answers the same fields. "State model" refers to how an identity or a 
 | Identity | Library-generated HMAC token carrying bound subjects client-side in the recommended contract (`02:L397–L404`); Host-issued tokens are also allowed (`02:L49`, `02:L146`, `02:L258`); revocation state in Redis (`02:L405`). |
 | Separation vs budget | Unverified IDs get no own budget beyond a sub-cap inside the pool (`02:L165–L170`). Verified CITs get their own bucket on bound accounts (`02:L237`). |
 | State model | Unverified → Verified only after a signed successful authentication (`02:L125`); bound accounts list; fan-out allowance of one extra account per 24 h (`02:L150`); burned after two failures on unbound accounts (`02:L153`). |
-| Success effect | **Refund** of "80% إلى 100%" of the pool debit for that reservation only, never above the original cap (`02:L211–L212`). Failure counters are never reduced (`02:L126`). |
+| Success effect | **Refund** of "80% إلى 100%" of the pool debit for that reservation only, never above the original cap (`02:L211–L212`), returned to the shared `IP_Unverified_Budget` (C‑15). Failure counters are never reduced (`02:L126`). |
 | Decisions | ALLOW / STEP_UP / BLOCK (`02:L49–L50`, `02:L379`). |
 | Host tiers | Pre-check only: no refund, no automatic promotion unless the Host passes `is_known_device_for_account` (`02:L335–L338`). |
 | Atomicity claim | One Lua script, in-flight counter TTL 5 s, one-time reservation id (`02:L195–L208`). Cluster `UNSPEC`. |
@@ -231,14 +252,14 @@ Each card answers the same fields. "State model" refers to how an identity or a 
 | Identity | Library mints; minting requires an `I` token; else DENY_ISSUANCE or CHALLENGE (`10:L162`, `10:L201`). |
 | Separation vs budget | Fresh identity gets its full individual budget immediately, never more (`10:L153`). |
 | State model | Pair known only after `recordSuccess(admissionId)` (`10:L216`); standing CLEAN/SUSPECT/DEGRADED tightens only (`10:L217`). |
-| Success effect | No reset of identity counters; optional (Owner Q9) return of one `net:unknown` unit (`10:L216`). |
+| Success effect | No reset of identity counters; optional (Owner Q9) return of one unit to the shared `net:unknown` of the current window (`10:L216`, C‑15). |
 | Decisions | ALLOW / DENY / CHALLENGE (`10:L201–L205`, `10:L238`). |
 | Host tiers | Tier 0 carry credential, Tier 1 outcomes with admissionId, Tier 2 challenge (`10:L305–L321`). |
 | Atomicity claim | One Lua script; in Cluster a fixed-order per-scope script where units consumed before a later rejection "تبقى ... محسوبة على الطالب" (`10:L211`). |
 | Failure modes | Signature verification stateless; minting impossible during outage; local per-ac limit in DEGRADED (`10:L332`); kid grace re-sign same id (`10:L336`). |
 | Strongest contribution | Privilege on the pair, not the identity, with a falsification list that includes a neighbour test (`10:L357`) and a mutation test for atomicity (`10:L352`). |
 | Most dangerous assumption | That limiting minting per network (`I`) is not itself an exhaustion surface. |
-| Possible break | `DERIV` (Cluster only): units consumed on earlier scopes remain charged when a later scope rejects (`10:L211`); a request rejected at U has already consumed the victim's K4 unit, so rejections burn victim K4 without reaching the verifier, bounded by the attacker's own `(I+H) × A` per victim per W, not by U (C‑08). `CONTRA`: U is defined as a count of pairs but consumed per admission (C‑13). |
+| Possible break | `DERIV` (Cluster only): units consumed on earlier scopes remain charged when a later scope rejects (`10:L211`); a request rejected at U has already consumed the victim's K4 unit, so rejections burn victim K4 without reaching the verifier, up to `min(K4 cap, (I+H) × A)` per victim per W (C‑08). Optional Q9 refund returns capacity to a shared pool (C‑15). Ambiguous U definition and non-tight bound (C‑13). |
 
 ### 11 — Opus 5.5, "Pairwise Admission with Novelty Budgets"
 
@@ -256,7 +277,7 @@ Each card answers the same fields. "State model" refers to how an identity or a 
 | Failure modes | Existing FAIL_CLOSED/DEGRADED; kid with verify-only old keys and same-id re-sign (`11:L317–L327`). |
 | Strongest contribution | Separates SEEN from KNOWN so that pre-check-only still bounds the number of **new** accounts touched (`11:L57–L64`, `11:L69–L79`), and compensates earlier reservations on rejection to avoid permanent K4 burn (`11:L180`, `11:L186`). |
 | Most dangerous assumption | That free minting is safe because cost is charged at novelty (`11:L136–L138`). |
-| Possible break | `CONTRA`: reach_foreign is stated `≤ U` but U counts only new pairs while each pair allows up to A admissions (C‑12). `DERIV` (Cluster only): compensated rejections are free, so victim K4 can be kept temporarily saturated by concurrency (C‑14). `CLAIM` (`11:L57–L64`, `11:L277`): in pre-check only, retries on SEEN pairs have no cross-account cap, which follows from free minting plus no pre-check V (C‑11). `UNSPEC`: the collateral of /24 aggregation on unrelated /32 users is not discussed (only /48 is, `11:L290`). |
+| Possible break | `CONTRA`: reach_foreign is stated `≤ U` but U counts only new pairs while each pair allows up to A admissions (C‑12). `DERIV`/`EXP` (Cluster only): compensated rejections are free; held K4 units never exceed the K4 cap, but sustained floods may over-reject the victim (starvation hypothesis, C‑14). `CLAIM` (`11:L57–L64`, `11:L277`): in pre-check only, retries on SEEN pairs have no cross-account cap, which follows from free minting plus no pre-check V (C‑11). `UNSPEC`: the collateral of /24 aggregation on unrelated /32 users is not discussed (only /48 is, `11:L290`). |
 
 ---
 
@@ -284,7 +305,7 @@ Cells: codes + evidence. "—" in the Evidence column means the design does not 
 
 | # | Codes | Evidence | Note |
 |---|---|---|---|
-| 01 | **CONTRA**, DERIV | `01:L141` vs `01:L199`; `01:L155` | New identifier gets a first-contact budget; issuance unlimited. |
+| 01 | DERIV, COND | `01:L141`, `01:L155`, `01:L225` | Token-holders bypass B3; multiplication holds if issuance is cheap and first-contact budget is per identifier (C‑01). |
 | 02 | MECH, CLAIM | `02:L163–L170` | Rotation stays inside one pool. |
 | 03 | MECH, DERIV | `03:L75–L79`, `03:L150–L154` | CID bucket rotatable; only risk pool limits. |
 | 04 | MECH, COND[issuance limit] | `04:L158–L159` | Limit values `UNSPEC`. |
@@ -312,21 +333,23 @@ Cells: codes + evidence. "—" in the Evidence column means the design does not 
 | 10 | MECH, CLAIM | `10:L154`, `10:L262` | Pair-level; "صافي المكسب عبر الحسابات = 0 بالتصميم (يُقاس)". |
 | 11 | MECH, CLAIM | `11:L130`, `11:L249` | Pair-level; gain = 0 "ويجب قياس ذلك". |
 
-### Axis 4 — Washing by success
+### Axis 4 — Success credit: double refund, washing, shared replenishment
 
-| # | Codes | Evidence | Note |
-|---|---|---|---|
-| 01 | MECH | `01:L148` | No refund. |
-| 02 | MECH, CLAIM | `02:L211–L212` | 80–100% refund of the same reservation; capped at original; self-cancelling by design. `EXP` for timing under concurrency. |
-| 03 | MECH, DERIV | `03:L89`, `03:L110` | Network-level −2 per success and lowering on challenge pass → washing path (C‑04). |
-| 04 | MECH | `04:L133`, `04:L170`, `04:L215` | Credit adjusts Failure Debt only; amount `UNSPEC`. Term "Success Refund" (`04:L256`, `04:L342`) is used without definition (ambiguity, not contradiction). |
-| 05 | MECH | `05:L121` | Refund rejected with reasoning. |
-| 06 | MECH | `06:L376–L389` | No refund; separate local per-method error counter reset allowed. |
-| 07 | MECH | `07:L293–L297` | No refund. |
-| 08 | MECH | `08:L115` | No refund. |
-| 09 | MECH | `09:L90` | Local debt only. |
-| 10 | MECH, COND[Q9 off] | `10:L216` | Optional one-unit return; author asks it be measured and dropped if it raises foreign reach (`10:L362`). |
-| 11 | MECH | `11:L196` | No refund. |
+Three different properties are separated here (F123-04). A refund bound to the request's own reservation prevents fake or repeated refunds; it does **not** by itself stop the returned capacity from benefiting someone else, because the capacity goes back to a shared pool.
+
+| # | (a) Fake / double refund prevented | (b) Own success washes own failures | (c) Shared capacity replenished (benefits any requester, incl. an adjacent attacker) | Evidence |
+|---|---|---|---|---|
+| 01 | n/a (no refund) | no | no | `01:L148` |
+| 02 | yes: one-time `Attempt_Reservation_ID` (`02:L202`, `02:L208`), spoofed-refund test (`02:L462`) | no: failure and fan-out counters never reduced (`02:L126`) | **yes**: 80–100% returned to the shared `IP_Unverified_Budget` (`02:L211`); capped at the original level (`02:L212`) but usable by any unverified requester on the IP (C‑15) | `02:L207–L213` |
+| 03 | `UNSPEC` (no attempt reference) | **yes** at network level (C‑04) | **yes**: −2 on the shared IP risk per success and on challenge pass (`03:L89`, `03:L110`) | `03:L87–L91` |
+| 04 | `UNSPEC` for the credit | no: credit adjusts Failure Debt only (`04:L133`) | no: network/global spray counters untouched (`04:L170`) | `04:L133`, `04:L170`, `04:L215` |
+| 05 | n/a (refund rejected) | no | no | `05:L121` |
+| 06 | n/a | no | no | `06:L376–L389` |
+| 07 | n/a | no | no | `07:L293–L297` |
+| 08 | n/a | no | no | `08:L115` |
+| 09 | `UNSPEC` | local debt only (`09:L90`) | no | `09:L90` |
+| 10 | yes when enabled: bound to `admissionId` (`10:L212`, `10:L216`) | no: identity counters not reset (`10:L216`) | **yes when Q9 is enabled**: one unit returned to the shared `net:unknown` of the current window (`10:L216`); the author's claim that it "لا يفيد مهاجمًا مجاورًا إلا بقدر ما استهلك هو نفسه" needs measurement (C‑15) | `10:L216`, `10:L362` |
+| 11 | n/a (no refund) | no | no | `11:L196` |
 
 ### Axis 5 — Hard limit before the verifier under concurrency
 
@@ -341,8 +364,8 @@ Cells: codes + evidence. "—" in the Evidence column means the design does not 
 | 07 | MECH, COND[single slot] | `07:L307–L342` | Permits vs running calls; δ in window proof (`07:L340–L342`). |
 | 08 | MECH, COND[single op space] | `08:L103–L113` | |
 | 09 | MECH, COND[single primary or leases] | `09:L92–L104` | |
-| 10 | MECH, COND / DERIV | `10:L203–L211` | Cluster: no over-admission claimed; over-rejection charged to requester; K4 burn path (C‑08). |
-| 11 | MECH, COND / DERIV | `11:L171–L192` | Cluster: compensation on rejection; no over-admission claimed. Compensated rejections are free, so temporary victim K4 inflation is bounded only by attacker concurrency (C‑14). `EXP`. |
+| 10 | MECH, COND / DERIV | `10:L203–L211` | Cluster: no over-admission claimed; over-rejection charged to requester; permanent victim K4 burn up to `min(K4 cap, (I+H)×A)` (C‑08). |
+| 11 | MECH, COND / DERIV | `11:L171–L192` | Cluster: compensation on rejection; no over-admission claimed. Held K4 units ≤ K4 cap at any instant; rejected requests cost the attacker no budget, so sustained over-rejection of the victim is a hypothesis to test (C‑14). `EXP`. |
 
 ### Axis 6 — Behaviour per Host mode
 
@@ -389,10 +412,10 @@ Cells: codes + evidence. "—" in the Evidence column means the design does not 
 | 07 | `A_U + A_P`, `A_P ≤ min(P_Σ, Σ P_a)` (`07:L246–L272`) | attempts / T | owned accounts (`m·p`) | MECH, CLAIM |
 | 08 | `B₀` then cost-only (`08:L92–L101`) | attempts | challenge-solving capacity | CLAIM |
 | 09 | none (`09:L115`, `09:L121`) | — | — | UNSPEC |
-| 10 | `min(U, (I+H)×S)×A` per W; pre-check `(I+H)×S×A` (`10:L261`) | stated as attempts; U's unit inconsistent (C‑13) | `H` (stored identities, grows with windows) | CLAIM, **CONTRA** (C‑13), DERIV (C‑10) |
+| 10 | `min(U, (I+H)×S)×A` per W; pre-check `(I+H)×S×A` (`10:L261`) | attempts; author's form is a non-tight upper bound under the admissions reading (C‑13) | `H` (stored identities, grows with windows) | CLAIM, DERIV (C‑13: non-tight bound, ambiguous U; C‑10: grows) |
 | 11 | reach_foreign `≤ U` per W per level (`11:L248`, `11:L250`) | stated for admissions, holds only for new accounts (C‑12) | levels; `× A` per pair; retries on SEEN bounded per account only in pre-check (`11:L62`) | CLAIM, **CONTRA** (C‑12) |
 
-Units are not comparable across rows: 05, 06, 07 count attempts; 10 and 11 state bounds whose unit is internally inconsistent (C‑13, C‑12); 03's network counter is in risk points and the stated ~25 is attempts derived from them.
+Units are not comparable across rows: 05, 06, 07, 10 count attempts (10's bound is non-tight, C‑13); 11 states a bound in U whose unit conflicts with its own definition of reach_foreign (C‑12); 03's network counter is in risk points and the stated ~25 is attempts derived from them.
 
 ### Axis 9 — Operations (Redis outage, rotation, mixed deploy, rollback, IPv6)
 
@@ -509,14 +532,14 @@ Codes as in §0.2. "Handled" means a mechanism is described; it does not mean th
 | 07 | counted (`P` lane) | U | `07:L401` |
 | 08 | no bypass | network + account | `08:L140` |
 | 09 | no bypass | "جزء محدود" `UNSPEC` | `09:L115` |
-| 10 | no network cap (reach_own) | `min(U, 12×S)×A` (unit of U inconsistent, C‑13) | `10:L263`, `10:L278` |
+| 10 | no network cap (reach_own) | `min(U, 12×S)×A`, non-tight under the admissions reading (C‑13) | `10:L263`, `10:L278` |
 | 11 | no network cap (reach_own) | `≤ U` stated; `U × A` or `U + V` admissions by the mechanism (C‑12) | `11:L250`, `11:L273` |
 
 ### S5 — Rotation of client identity, fingerprint, browser
 
 | # | Mechanism and limit | Evidence |
 |---|---|---|
-| 01 | `CONTRA` (C‑01) | `01:L141`, `01:L199` |
+| 01 | `DERIV`, `COND` (C‑01) | `01:L141`, `01:L199` |
 | 02 | One pool, sub-cap bypassed, pool cap holds | `02:L301–L304` |
 | 03 | CID bucket bypassed; risk pool fills | `03:L148–L154` |
 | 04 | Issuance-limited probation | `04:L235–L240` |
@@ -537,7 +560,7 @@ See Axis 7. Common finding across designs that state it (05, 06, 07, 10, 11, 02)
 | # | Effect on own budgets | Effect on others / shared | Evidence |
 |---|---|---|---|
 | 01 | edge trust on own accounts | none (no refund) | `01:L148`, `01:L154` |
-| 02 | Verified binding + self refund | refund capped at own reservation | `02:L210–L213` |
+| 02 | Verified binding + refund of own reservation | **returned capacity goes to the shared pool and is usable by others, incl. an adjacent attacker** (C‑15) | `02:L210–L213` |
 | 03 | trust flag (Host) | **lowers shared network risk** (C‑04) | `03:L89` |
 | 04 | benign credit on Failure Debt only (amount `UNSPEC`) | none on network/global | `04:L133`, `04:L170` |
 | 05 | binding on own account | none | `05:L121` |
@@ -545,7 +568,7 @@ See Axis 7. Common finding across designs that state it (05, 06, 07, 10, 11, 02)
 | 07 | none | none | `07:L296` |
 | 08 | none | none | `08:L115` |
 | 09 | local debt | none | `09:L90` |
-| 10 | known pair | optional one-unit U return (Q9) | `10:L216` |
+| 10 | known pair | if Q9 is enabled, one unit returned to the shared `net:unknown`, usable by others (C‑15) | `10:L216` |
 | 11 | KNOWN pair | none | `11:L196` |
 
 ### S8 — Concurrent requests before outcomes
@@ -562,22 +585,24 @@ See Axis 9. Lost replies are addressed explicitly only by 06 (`06:L422–L424`),
 
 Only items with two quoted passages that cannot both hold are marked `CONTRA`. `DERIV` items show the derivation. Ambiguities are marked `UNSPEC`.
 
-- **C‑01 (01, `CONTRA`).** `01:L141`: "الحماية الشبكية الواسعة (B3) تُفعَّل **فقط** لحركة غير مثبتة الهوية (LOW: لا Instance Token ولا جلسة)". `01:L199` (rotation scenario): "كل هوية جديدة = أرضية صفرية صغيرة فقط؛ الإجمالي مقيد بـB3/budget الإجمالي للشبكة والحساب" and "التدوير لا يضاعف الميزانية الإجمالية". The author also states, in the feasibility section, "أي ميزانية نمنحها للمستخدم الجديد تُمنح لكل هوية جديدة يصنعها المهاجم" (`01:L67`). A request carrying a freshly issued token is not "غير مثبتة الهوية", so B3 does not apply to it (`01:L141`); L1 contains no other network budget (`01:L122–L126`). The author's counter-mechanism is per-principal escalation for zero-trust edges (`01:L199`, `01:L140`, `01:L142`), but it fires "بعد استنفاد الأرضية مع فشل متكرر" (`01:L195`), so a principal used for one attempt never reaches it. `UNSPEC`: whether the first-contact budget is per identifier or drawn from the shared LOW share (`01:L119`, `01:L156`, `01:L195`); `01:L67` and `01:L213` read as per identifier. The contradiction stands under that reading.
+- **C‑01 (01, `DERIV`, `COND[cheap token issuance; first-contact budget per identifier]`).** `01:L141`: "الحماية الشبكية الواسعة (B3) تُفعَّل **فقط** لحركة غير مثبتة الهوية (LOW: لا Instance Token ولا جلسة)". Tokens are issued "عند أول زيارة" (`01:L225`) with no stated issuance limit, and "معرّف جديد = أرضية صفرية + ميزانية أول-اتصال صغيرة" (`01:L155`); the author also states "أي ميزانية نمنحها للمستخدم الجديد تُمنح لكل هوية جديدة يصنعها المهاجم" (`01:L67`). Derivation: if (a) a fresh token can be obtained at low cost per attempt and (b) the first-contact budget is held per identifier, a token-rotating attacker stays outside B3, and reach_foreign grows with the number of tokens × first-contact budget, limited by B1 per victim account and the per-principal escalation, which fires only "بعد استنفاد الأرضية مع فشل متكرر" (`01:L195`). This is not marked `CONTRA`: the rotation scenario (`01:L199`, "الإجمالي مقيد بـB3/budget الإجمالي للشبكة والحساب") has a consistent reading in which rotated identities are token-less LOW traffic, to which B3 does apply. Neither condition is settled by the text: the token issuance contract is `UNSPEC` (`01:L59`, `01:L225`), and whether the first-contact budget is per identifier or drawn from the shared LOW share is `UNSPEC` (`01:L119`, `01:L156`, `01:L195`; `01:L67` and `01:L213` lean towards per identifier).
 - **C‑02 (02, `DERIV`).** `02:L353` gives "2 / 200" when every unbound attempt requires STEP_UP ("ومنعنا أي Fan-out بدون STEP_UP"), and "10–15" when the exemption is only limited to the bound account. The two conditions differ, so this is not a contradiction. But a token-less attacker already reaches the unverified pool: "بحد أقصى 10 إلى 20 محاولة من أصل 200" (`02:L283`) and "فقط سعة IP_Unverified_Budget (من 10 إلى 20 محاولة)" (`02:L304`). Attacker C can drop its tokens and use that pool, so 2/200 holds only if the pool itself also requires STEP_UP, which the text does not say.
 - **C‑03 (03, `UNSPEC`).** `03:L87–L91` define +1 per pre-check, −2 per success, +4 per failure, without saying whether outcome weights add to or replace the +1. `03:L130` ("يزيد خطر IP بمقدار 8، ثم ينقص بمقدار 2") and `03:L136` ("~25", i.e. 25 × 4 = 100) both match the non-additive reading; `03:L172` attaches the bare +1 to the no-outcome mode. Under the additive reading, L130 would be +9 and L136 about 20.
 - **C‑04 (03, `DERIV`).** Washing by own successes. Additive reading: own success nets −1, foreign failure +5 → five own successes offset one foreign failure. Non-additive reading: −2 and +4 → two own successes offset one. Passing a challenge also lowers IP risk (`03:L110`). Under both readings an attacker with valid accounts can keep the IP risk below the threshold; reach_foreign is then limited only by the rotatable CID bucket (`03:L75–L79`) and per-victim account buckets (`03:L69–L73`).
 - **C‑05 (03, `DERIV`).** Burst before outcomes. Additive reading: only +1 per request accrues before outcomes, so a burst can pass up to the pool maximum (`03:L85`, e.g. 100), not "~25" (`03:L136`). Non-additive reading: for a Host that reports outcomes nothing accrues before they arrive, so the risk pool gives no burst bound at all; scenario 9 relies on "امتلاء الـ Buckets" (`03:L168`), i.e. the account bucket (10) and the rotatable CID bucket (15).
 - **C‑06 (02, `CLAIM`, `COND[M=1]`).** The author states it: "إذا سمحنا لكل رمز موثوق بمحاولة حساب إضافي واحد قبل سحب الإعفاء، قد يمرر المهاجم محاولة واحدة لكل جلسة يملكها حتى يصطدم بـ Enforcer 4" (`02:L353`). Under the strict rule, unbound attempts by Verified CITs go to the pool (`02:L161`, `02:L293`); `02:L150` is the M=1 option of question Q1 (`02:L470`). The aggregate is bounded by Enforcer 4 (`02:L180–L182`, needs outcomes); per victim, Enforcer 1 applies (`02:L140`). Note: the symbol `M` is used both for fan-out (`02:L151`, `02:L184`) and for rotated fingerprints (`02:L443`); this is ambiguity, not a contradiction.
 - **C‑07 (01, `UNSPEC` vs claim).** `01:L200` claims colleagues are protected by a guaranteed floor (min-fair). §4 (`01:L107–L186`) defines no floor; the only "أرضية" in §4 is the new-identifier floor (`01:L155`). Alternative 1 kept the floor "كمكوّن" (`01:L81`), and it reappears as a validation target (`01:L243`, `01:L256`, `01:L263`) without a definition. Part of the claim holds without a floor: token-holding colleagues are outside any shared network budget (`01:L140–L141`), and token-less ones get a per-principal challenge, not a block (`01:L173`).
-- **C‑08 (10, `DERIV`, Redis Cluster only).** On a single Redis the script consumes nothing on rejection (`10:L204`). In Cluster mode units consumed on earlier scopes stay charged on a later rejection (`10:L211`), with order identity → pair → account → network. A request rejected at U (and at I only under the `10:L203` reading; `10:L201` checks I before any account scope) has already debited the victim's K4. Each such rejection also consumes the attacker's own pair (A) and identity (S) budgets, so K4-burning rejections are bounded by `(I+H) × A` per victim per W, not by U; U exhaustion therefore does not cap victim K4 lockout. Only the reserved lane for known pairs remains (`10:L222`).
+- **C‑08 (10, `DERIV`, Redis Cluster only).** On a single Redis the script consumes nothing on rejection (`10:L204`). In Cluster mode each scope runs "INCR-ثم-قارن-ثم-DECR-عند-التجاوز" and units consumed on earlier scopes stay charged on a later rejection (`10:L211`), order identity → pair → account → network. A request rejected at U (and at I only under the `10:L203` reading; `10:L201` checks I before any account scope) has therefore already debited the victim's K4 permanently for the window. Bound: because K4 itself is INCR-and-compare, the burned units per victim per W cannot exceed the K4 cap; each burned unit also costs the attacker one unit of its own pair budget A on (identity, victim), so the burn is `≤ min(K4 cap, (I+H) × A)` per victim per W. Consequence: an attacker who can field about `K4 cap / A` identities can hold the victim's non-known path at K4 for the whole window without any verifier call; only the reserved lane for known pairs remains (`10:L222`). U exhaustion does not limit this.
 - **C‑09 (04, `DERIV`, conditional).** `04:L110`: DENY on Global exhaustion; the author names this as a deliberate exception: "الحجب الجماعي يُستبدل بـChallenge/Throttle، إلا في حالات Global DoS القصوى" (`04:L131`). An attacker able to exhaust Global denies the operation to every user. This requires a multi-network attacker (declared out of scope, `04:L67`, `04:L280`, `04:L347`) or a Global budget not larger than a network budget (values `UNSPEC`, `04:L283`); whether challenged or denied attempts debit Global is `UNSPEC` (`04:L175`).
 - **C‑10 (10, `CLAIM` that grows).** Pre-check-only bound `(I + H) × S × A` per W (`10:L261`), where `H` is identities held from earlier windows. `H` grows with stored inventory (≤ `I` × windows within the 30-day idle TTL, `10:L170`). `D` in the budget table is per identity/day and per account/day (`10:L190`) and does not cap `H`; a daily minting cap is mentioned in prose (`10:L88`, `10:L267`) but is absent from the budget table (`UNSPEC`).
 - **C‑11 (11, `CLAIM`, framing).** Pre-check-only: retries on SEEN pairs are capped per account only (`11:L62`, `11:L277`). The author calls this an impossibility ("مهما كانت الخوارزمية", `11:L62`). 11 itself defines a per-network cap on SEEN retries (V) and limits it to the Outcome tier (`11:L160`, `11:L179`); a pre-check V is possible at the cost of hitting returning office traffic (`11:L59–L61`). SEEN is per (credential, subject) (`11:L142`) and S is per credential (`11:L176`); the aggregate is unbounded because minting is free (`11:L136`). This is a trade-off, not an impossibility.
-- **C‑12 (11, `CONTRA`).** `11:L250`: "محاولاته على غير حساباته (reach_foreign) ≤ U في النافذة" (also `11:L273`, H3 at `11:L336`, rejection criterion 2 at `11:L362`). reach_foreign is defined as verifier admissions: "قبولات الـVerifier على حسابات لا يملك المهاجم بيانات دخولها" (`11:L349`). But only NEW pairs consume U ("U (only if state == NEW)", `11:L178`); scenario 5 allows "≤ A لكل زوج" (`11:L272`); SEEN retries consume V in the Outcome tier (`11:L179`) and only per-account limits in pre-check (`11:L62`). Foreign admissions per W can therefore reach `U × A` (or `U + V`), which exceeds U whenever A > 1. Under its own criterion (`11:L362`) the design would reject itself. The bound holds only if U is read as a count of new accounts, not admissions.
-- **C‑13 (10, `CONTRA`).** `10:L175` defines U's key as "عدّاد الأزواج غير المعروفة المقبولة" (a count of pairs), and the bound `min(U, (I + H) × S) × A` (`10:L261`) only makes sense if U counts pairs. But the admission script consumes U on every admission of a not-known pair ("net unknown (if !known)", `10:L203`), and the pre-check rationale "U يُعطَّل (لأنه سيساوي عدّ المحاولات)" (`10:L192`) holds only if U counts attempts. If U counts pairs, the L192 reason fails (counting distinct pairs is what 11 does in pre-check); if U counts attempts, the stated bounds (`10:L261`, `10:L277`, `10:L278`) should be `min(U, (I+H)×S×A)`.
-- **C‑14 (11, `DERIV`, Redis Cluster only).** Compensation (`11:L180`) means a request rejected at U leaves A, S and K4 unchanged, so rejected requests cost the attacker nothing. Meanwhile, "قد يرى طلب ما عدادًا أعلى مؤقتًا فيُرفض، وهذا رفض زائد محدود" (`11:L191`). Because rejected requests are free, temporary inflation of a victim's K4 equals the attacker's number of in-flight U-rejected requests, which no budget limits; a sustained flood keeps the victim's K4 saturated without any verifier call, the harm `11:L186` says compensation prevents. KNOWN pairs keep the reserved lane (`11:L177`), but pre-check-only Hosts have none (`11:L277`). H10 (`11:L343`) tests only the value at rest. 10 trades this for a permanent but budget-bounded burn (C‑08).
+- **C‑12 (11, `CONTRA`).** `11:L250`: "محاولاته على غير حساباته (reach_foreign) ≤ U في النافذة" (also `11:L273`, H3 at `11:L336`, rejection criterion 2 at `11:L362`). reach_foreign is defined as verifier admissions: "قبولات الـVerifier على حسابات لا يملك المهاجم بيانات دخولها" (`11:L349`). But only NEW pairs consume U ("U (only if state == NEW)", `11:L178`); scenario 5 allows "≤ A لكل زوج" (`11:L272`); SEEN retries consume V in the Outcome tier (`11:L179`) and only per-account limits in pre-check (`11:L62`). Foreign admissions per W can therefore reach `U × A` (or `U + V`), which exceeds U whenever A > 1, and the design itself requires "A ≥ 3" for the legitimate retry scenario (`11:L271`). Under its own criterion (`11:L362`) the design would reject itself. A consistent reading would need reach_foreign in `11:L250`/`11:L336`/`11:L362` to mean new accounts, which `11:L349` rules out by defining it as verifier admissions.
+- **C‑13 (10, `DERIV`, ambiguous definition — not `CONTRA`).** `10:L175` describes U's key as "عدّاد الأزواج غير المعروفة المقبولة". This admits two readings: a count of distinct unknown pairs, or a count of admissions of unknown pairs. The admission script consumes U on every admission of a not-known pair ("net unknown (if !known)", `10:L203`), and the pre-check rationale "U يُعطَّل (لأنه سيساوي عدّ المحاولات)" (`10:L192`) holds under the admissions reading. Under that consistent reading, foreign admissions per W are bounded by `min(U, (I+H) × S × A)`. The author's bound `min(U, (I+H) × S) × A` (`10:L261`) equals `min(U·A, (I+H)·S·A)`, which is ≥ `min(U, (I+H)·S·A)`: it is a valid but non-tight upper bound. The two coincide when `(I+H)·S·A ≤ U`; otherwise the author's bound overstates reach by up to a factor A. Under the distinct-pairs reading the author's bound is the natural one, but the L192 rationale would not hold. No two passages are irreconcilable, so this is recorded as ambiguity plus a non-tight bound.
+- **C‑14 (11, `DERIV` for the numeric bound; `EXP` for starvation; Redis Cluster only).** Reservation order is pair (A) → credential (S) → account (K4) → network (U), each step "atomic INCR-and-compare" (`11:L174–L178`), and a later rejection compensates (DECR) earlier reservations (`11:L180`). (1) **Numeric bound:** K4 is INCR-and-compare, so the number of K4 units held at any instant cannot exceed the K4 cap; there is no unbounded inflation. (2) **Hold time:** a unit taken by a request later rejected at U stays held from its K4 INCR until the compensating DECR, i.e. at least the U round trip plus the DECR round trip; if the Worker fails in between, it stays held "حتى انتهاء النافذة" (`11:L192`). Behaviour on a lost Redis reply is `UNSPEC`. (3) **Cost to the attacker:** compensation also releases the attacker's own A and S, and the pair is not marked SEEN because it was never admitted (`11:L181`); repeated U-rejected requests therefore cost no budget, only request rate. U must already be exhausted on the network, which the attacker can do with NEW pairs. (4) **Starvation hypothesis (not proven):** by occupancy (Little's law), if the attacker sustains a rate λ of such requests on one victim with mean hold time h, the mean number of held K4 units is about λ·h; when λ·h approaches the K4 cap, the victim's non-KNOWN requests are likely to see K4 full and be over-rejected. KNOWN pairs keep the reserved lane (`11:L177`); pre-check-only Hosts have no KNOWN pairs (`11:L277`). The test H10 (`11:L343`) checks only the value at rest. Whether sustained starvation occurs depends on λ, h and the K4 cap and needs a reproducible concurrency experiment. Comparison: 10 makes the burn permanent but budget-bounded (C‑08); 11 makes it temporary and budget-free.
 
-`CONTRA` found: C‑01 (01), C‑12 (11), C‑13 (10). No `CONTRA` was found in 02, 03, 04, 05, 06, 07, 08, 09 at the pinned commit; 09 has one ambiguity noted in its card. This is a statement about this review, not a proof of consistency.
+- **C‑15 (02, 10 Q9; `DERIV`).** A refund bound to a reservation (`02:L202`, `02:L208`; `10:L216`) prevents fake and repeated refunds, but the returned amount goes into a shared pool: `IP_Unverified_Budget` per IP (`02:L211`) or `net:unknown` per network window (`10:L216`). The pool cap is a **level**, not a cumulative count: within one window, the number of admissions the pool can fund is its cap plus everything refunded into it. Legitimate successes therefore raise the capacity available to any other requester on the same IP or network, including an adjacent attacker; the author of 02 states this replenishment is intended for new employees (`02:L211`). Consequently the per-window reach bounds stated for 02 ("10 إلى 20", `02:L283`, `02:L304`) hold only for a window without refunds, and for 10 the U-based bounds hold only with Q9 off. 10's author claims the net effect is ≤ 0 for the attacker's own refunds and asks for measurement (`10:L216`, `10:L362`); the neighbour effect is not addressed. 03 has the same shared effect through the risk score (C‑04).
+
+`CONTRA` found: C‑12 (11). C‑01 (01) and C‑13 (10) were reclassified after engineering review (F123-05, F123-02) because each admits a consistent reading; the derivations remain. No `CONTRA` was found in 01–10 at the pinned commit; 09 has one ambiguity noted in its card. This is a statement about this review, not a proof of consistency.
 
 ---
 
@@ -585,7 +610,7 @@ Only items with two quoted passages that cannot both hold are marked `CONTRA`. `
 
 | ID | Question | Positions |
 |---|---|---|
-| X1 | Refund on success | Refund or credit: 02 (80–100% own reservation, `02:L211`), 03 (network −2, `03:L89`), 04 (benign credit account/client, `04:L170`), 10 (optional one unit, `10:L216`). No refund: 01 (`01:L148`), 05 (`05:L121`), 06 (`06:L376`), 07 (`07:L296`), 08 (`08:L115`), 09 (`09:L90`), 11 (`11:L196`). |
+| X1 | Refund on success | Refund or credit: 02 (80–100% of the own reservation, returned to the shared pool, `02:L211`), 03 (network −2, `03:L89`), 04 (benign credit on account/client Failure Debt, `04:L133`, `04:L170`), 10 (optional one unit to the shared `net:unknown`, `10:L216`). Shared replenishment (Axis 4 column c): 02, 03, 10 (Q9). No refund: 01 (`01:L148`), 05 (`05:L121`), 06 (`06:L376`), 07 (`07:L296`), 08 (`08:L115`), 09 (`09:L90`), 11 (`11:L196`). |
 | X2 | Cost of creating an identity | Budgeted minting: 10 (`I`, `10:L162`), 04 (`04:L159`), 09 (`09:L162`). Free minting by design: 11 (`11:L136–L138`, reason: minting budget is an exhaustion surface). Free issuance acknowledged and neutralised: 05 (overflow bucket, `05:L86`, `05:L190`), 06 (no budget per identity, state-creation cap, `06:L270–L272`, `06:L439`). Host issuance without a stated limit: 01 (`01:L225`), 03 (`03:L187`), 07, 08. Library-issued without issuance limit: 02 (`02:L397`). |
 | X3 | Who issues the identity | Library: 10, 11 (default), 02 (recommended contract; Host also allowed, `02:L146`, `02:L258`). Host: 01, 03, 04, 05, 06, 07 (optional library helper, `07:L474`), 08, 09. 11 allows Host ids only if unguessable (`11:L139`). |
 | X4 | What the network counts | 01: account breadth + failure ratio for token-less traffic, fixed attempt budget in pre-check-only (`01:L170–L171`). Attempts: 04, 06, 07, 08, 09. Risk score: 03. Unverified-pool attempts + unbound failures: 02. Unbound attempts per day: 05. Minting + unknown pairs: 10. New pairs (novelty): 11. |
@@ -646,7 +671,7 @@ Only items with two quoted passages that cannot both hold are marked `CONTRA`. `
 | Host assertion honesty | 02, 03, 05, 06, 07 | Contract/integration review; not observable by the library. |
 | Redis failover loss and mixed deploys | 01, 02, 04, 05, 06, 07, 08, 09, 10, 11 | Fault injection: lost replies, failover with acknowledged-write loss, mixed versions, rollback, key rotation. |
 | Growth of bounds over time | 10 (C‑10), 11 (C‑11) | 30-day inventory simulation. |
-| Refund timing under concurrency | 02, 10 (Q9) | Concurrency test with refunds arriving out of order. |
+| Refund timing and shared replenishment | 02, 03, 10 (Q9) | Paired runs: adjacent attacker with and without legitimate successes refunding into the shared pool in the same window; refunds arriving out of order under concurrency. |
 
 ---
 
