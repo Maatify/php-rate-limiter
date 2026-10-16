@@ -13,6 +13,7 @@
 |---|---|---|---|---|---|---|---|
 | 1 | KIMI 3 — "Anchored Fair Limiter" (AFL) | UNREVIEWED / VERBATIM | [proposals/01-kimi-3.md](proposals/01-kimi-3.md) | 289 | 20,421 | 33,099 | `f67c02590751a32a2d997c6c4263bf134c55eebecf6998fb7e613acf63f43b4a` |
 | 2 | Gemini Argon — "Sovereign Quota & Asymmetric Escalation Engine" (SQAEE) | UNREVIEWED / VERBATIM | [proposals/02-gemini-argon.md](proposals/02-gemini-argon.md) | 487 | 39,807 | 60,721 | `49c732cc8553759196060d423816be71a10c5713c5e2bfeb2422c9e0e26c46aa` |
+| 3 | Gemini 3.1 Pro — "Contextual Risk Enclaves & Challenge-Response Routing" | UNREVIEWED / VERBATIM | [proposals/03-gemini-3-1-pro.md](proposals/03-gemini-3-1-pro.md) | 213 | 9,812 | 15,299 | `ece025d4067db873280aa2fc4eb721e2d6975997b5859b3cd9f6065ba1dde3e6` |
 
 - كل نص قدمه المالك في 2026-10-16، وسُجّل كما ورد حرفيًا، بما فيه الأخطاء الموجودة في الأصل. البصمة محسوبة على ملف هذا المستودع.
 - تصاميم أخرى ستُضاف بأرقام تالية عند وصولها.
