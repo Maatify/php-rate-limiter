@@ -20,8 +20,10 @@
 | 7 | GPT-6 Astra — "قبول مبني على إثبات محدود للحساب والعملية" (مساران U/P) | UNREVIEWED / VERBATIM | [proposals/07-gpt-6-astra.md](proposals/07-gpt-6-astra.md) | 621 | 33,670 | 57,168 | `6add4bee5011366cae39fc64a2d96733b3357f19339b3a1804be41d06a8ee6b9` |
 | 8 | GPT-6 Luna — "Admission ذري قبل الـVerifier مع تصعيد إلى إثبات إضافي" | UNREVIEWED / VERBATIM | [proposals/08-gpt-6-luna.md](proposals/08-gpt-6-luna.md) | 264 | 20,896 | 35,322 | `fe1b9dd63491e9b030c4f0ab497c654ed354413c19b678e3e00cdadad5fbbbe8` |
 | 9 | GPT-6.5 Terra — "Hierarchical Costed Admission Control" | UNREVIEWED / VERBATIM | [proposals/09-gpt-6-5-terra.md](proposals/09-gpt-6-5-terra.md) | 220 | 10,329 | 15,922 | `2650412df72b90da32db9e2e885c93ac231aaaf2c281124da3c7fa6707baf2e3` |
+| 10 | Fable 5.1 — "الهوية المسكوكة والقبول على مستوى الزوج" | UNREVIEWED / VERBATIM | [proposals/10-fable-5-1.md](proposals/10-fable-5-1.md) | 404 | 36,600 | 59,075 | `67cd22828e0dae192e1222337d7d37323a015695d63bb489b153af15a0996bfb` |
 
 - كل نص قدمه المالك في 2026-10-16، وسُجّل كما ورد حرفيًا، بما فيه الأخطاء الموجودة في الأصل. البصمة محسوبة على ملف هذا المستودع.
+- التصميم 10 منسوخ بايتًا ببايت من ملف المالك `NAT_ARCHITECTURE_STUDY_2026-10-16_AR.md`، بما فيه سطور قرارات المالك المسجلة داخله.
 - تصاميم أخرى ستُضاف بأرقام تالية عند وصولها.
 
 ## المقارنة
