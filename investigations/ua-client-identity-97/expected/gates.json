@@ -1,0 +1,383 @@
+{
+    "verdict": "NO-GO",
+    "failedHardGates": [
+        "G-S1",
+        "G-S1b",
+        "G-S3",
+        "G-S4",
+        "G-S5",
+        "G-F5"
+    ],
+    "gates": {
+        "G-S1": {
+            "pass": false,
+            "failures": [
+                "FAIL X7/login/pre best reach CIRI 121 vs S0N 44",
+                "FAIL X7/login/pre+out best reach CIRI 121 vs S0N 44",
+                "FAIL BRD/login/pre best reach CIRI 37 vs S0N 22"
+            ],
+            "checked": 24
+        },
+        "G-S1b": {
+            "pass": false,
+            "failures": [
+                "FAIL X7/login/pre/static_uarot reach CIRI 121 vs S0I 44",
+                "FAIL X7/login/pre+out/static_uarot reach CIRI 121 vs S0I 44",
+                "FAIL BRU/login/pre/static_uarot reach CIRI 100 vs S0I 3",
+                "FAIL BRU/login/pre+out/static_uarot reach CIRI 3 vs S0I 2",
+                "FAIL BRD/login/pre/static_uarot reach CIRI 37 vs S0I 7",
+                "FAIL X1/login/pre/static_uarot reach CIRI 61 vs S0I 3"
+            ],
+            "checked": 122
+        },
+        "G-S2": {
+            "pass": true,
+            "failures": [],
+            "checked": 177
+        },
+        "G-S3": {
+            "pass": false,
+            "failures": [
+                "FAIL SP / BRU / BRD covered by G-S1 and G-S1b"
+            ],
+            "checked": 17
+        },
+        "G-S4": {
+            "pass": false,
+            "failures": [
+                "FAIL POI/pre+out attacker reach CIRI(stolen) 32 vs S0N(none) 4",
+                "FAIL POI/pre attacker reach CIRI(stolen) 32 vs S0N(none) 4"
+            ],
+            "checked": 242
+        },
+        "G-S5": {
+            "pass": false,
+            "failures": [
+                "FAIL ops/command CIRI 6 vs S0I 5 X2|login|CIRI|static_uarot|pre+out",
+                "FAIL ops/command CIRI 6 vs S0I 5 X2|login|CIRI|static_uarot|pre",
+                "FAIL ops/command CIRI 5 vs S0I 4 X2|login|CIRI|static_uarot|out",
+                "FAIL ops/command CIRI 5 vs S0I 4 X7|login|CIRI|static_uarot|out",
+                "FAIL ops/command CIRI 6 vs S0I 5 X2L|login|CIRI|static_uarot|pre+out",
+                "FAIL ops/command CIRI 6 vs S0I 5 X2L|login|CIRI|static_uarot|pre",
+                "FAIL ops/command CIRI 5 vs S0I 4 X2L|login|CIRI|static_uarot|out",
+                "FAIL ops/command CIRI 7 vs S0I 6 X8|login|CIRI|static_uarot|pre+out",
+                "FAIL ops/command CIRI 7 vs S0I 6 X8|login|CIRI|static_uarot|pre",
+                "FAIL ops/command CIRI 5 vs S0I 4 X8|login|CIRI|static_uarot|out",
+                "FAIL ops/command CIRI 7 vs S0I 6 BRD|login|CIRI|static_uarot|pre",
+                "FAIL ops/command CIRI 7 vs S0I 6 POI|login|CIRI|static_uarot|pre+out",
+                "FAIL ops/command CIRI 7 vs S0I 6 POI|login|CIRI|static_uarot|pre",
+                "FAIL ops/command CIRI 6 vs S0I 4 POI|login|CIRI|static_uarot|out",
+                "FAIL ops/command CIRI 4 vs S0I 3 X1API|api|CIRI|static_uarot|out",
+                "FAIL ops/command CIRI 4 vs S0I 3 X1API|api|CIRI|static_uarot|pre+out",
+                "FAIL ops/command CIRI 4 vs S0I 3 X2API|api|CIRI|static_uarot|out",
+                "FAIL ops/command CIRI 5 vs S0I 3 X2API|api|CIRI|static_uarot|pre+out",
+                "FAIL ops/command CIRI 4 vs S0I 3 X2API|api_custom|CIRI|static_uarot|out",
+                "FAIL ops/command CIRI 5 vs S0I 3 X2API|api_custom|CIRI|static_uarot|pre+out"
+            ],
+            "checked": 236
+        },
+        "G-S6": {
+            "pass": true,
+            "failures": [],
+            "checked": 2
+        },
+        "G-F1": {
+            "pass": true,
+            "failures": [],
+            "checked": 10
+        },
+        "G-F2": {
+            "pass": true,
+            "failures": [],
+            "checked": 3
+        },
+        "G-F3": {
+            "pass": true,
+            "failures": [],
+            "checked": 3
+        },
+        "G-F4": {
+            "pass": true,
+            "failures": [],
+            "checked": 9
+        },
+        "G-F5": {
+            "pass": false,
+            "failures": [
+                "FAIL L1/pre+out legit denied CIRI 127 vs S0N 0",
+                "FAIL L1/pre legit denied CIRI 124 vs S0N 0",
+                "FAIL L1/out legit denied CIRI 124 vs S0N 0",
+                "FAIL OFF12/pre+out legit denied CIRI 11 vs S0N 8",
+                "FAIL OFF12/pre legit denied CIRI 10 vs S0N 8",
+                "FAIL OFF12/out legit denied CIRI 10 vs S0N 0",
+                "FAIL V6L1/pre+out legit denied CIRI 127 vs S0N 0",
+                "FAIL V6L1/pre legit denied CIRI 124 vs S0N 0",
+                "FAIL V6L1/out legit denied CIRI 124 vs S0N 0"
+            ],
+            "checked": 9
+        },
+        "G-F6": {
+            "pass": true,
+            "failures": [],
+            "checked": 3
+        }
+    },
+    "posthocDiagnosis": {
+        "G-S1 (CIRLI)": [
+            "PASS X2/login/pre best reach CIRLI 121 vs S0N 121",
+            "PASS X2/login/pre+out best reach CIRLI 121 vs S0N 121",
+            "PASS X7/login/pre best reach CIRLI 44 vs S0N 44",
+            "PASS X7/login/pre+out best reach CIRLI 44 vs S0N 44",
+            "PASS X2L/login/pre best reach CIRLI 121 vs S0N 121",
+            "PASS X2L/login/pre+out best reach CIRLI 121 vs S0N 121",
+            "PASS X8/login/pre best reach CIRLI 32 vs S0N 32",
+            "PASS X8/login/pre+out best reach CIRLI 32 vs S0N 32",
+            "PASS SP/login/pre best reach CIRLI 7 vs S0N 7",
+            "PASS SP/login/pre+out best reach CIRLI 7 vs S0N 7",
+            "PASS BRU/login/pre best reach CIRLI 100 vs S0N 100",
+            "PASS BRU/login/pre+out best reach CIRLI 3 vs S0N 3",
+            "PASS BRD/login/pre best reach CIRLI 22 vs S0N 22",
+            "PASS BRD/login/pre+out best reach CIRLI 3 vs S0N 3",
+            "PASS X1/login/pre best reach CIRLI 61 vs S0N 61",
+            "PASS X1/login/pre+out best reach CIRLI 2 vs S0N 2",
+            "PASS MASS/login/pre best reach CIRLI 4 vs S0N 4",
+            "PASS MASS/login/pre+out best reach CIRLI 4 vs S0N 4",
+            "PASS POI/login/pre best reach CIRLI 80 vs S0N 80",
+            "PASS POI/login/pre+out best reach CIRLI 80 vs S0N 80",
+            "PASS X1API/api/pre+out best reach CIRLI 301 vs S0N 301",
+            "PASS X1API/api_custom/pre+out best reach CIRLI 41 vs S0N 41",
+            "PASS X2API/api/pre+out best reach CIRLI 121 vs S0N 121",
+            "PASS X2API/api_custom/pre+out best reach CIRLI 121 vs S0N 121"
+        ],
+        "G-S1b (CIRLI)": [
+            "PASS X2/login/pre/none reach CIRLI 6 vs S0I 6",
+            "PASS X2/login/pre/uarot reach CIRLI 121 vs S0I 121",
+            "PASS X2/login/pre/static reach CIRLI 6 vs S0I 121",
+            "PASS X2/login/pre/rotate reach CIRLI 121 vs S0I 121",
+            "PASS X2/login/pre/static_uarot reach CIRLI 6 vs S0I 121",
+            "PASS X2/login/pre+out/none reach CIRLI 6 vs S0I 6",
+            "PASS X2/login/pre+out/uarot reach CIRLI 121 vs S0I 121",
+            "PASS X2/login/pre+out/static reach CIRLI 6 vs S0I 121",
+            "PASS X2/login/pre+out/rotate reach CIRLI 121 vs S0I 121",
+            "PASS X2/login/pre+out/static_uarot reach CIRLI 6 vs S0I 121",
+            "PASS X7/login/pre/none reach CIRLI 6 vs S0I 6",
+            "PASS X7/login/pre/uarot reach CIRLI 44 vs S0I 44",
+            "PASS X7/login/pre/static reach CIRLI 6 vs S0I 121",
+            "PASS X7/login/pre/rotate reach CIRLI 44 vs S0I 44",
+            "PASS X7/login/pre/static_uarot reach CIRLI 6 vs S0I 44",
+            "PASS X7/login/pre+out/none reach CIRLI 6 vs S0I 6",
+            "PASS X7/login/pre+out/uarot reach CIRLI 44 vs S0I 44",
+            "PASS X7/login/pre+out/static reach CIRLI 6 vs S0I 121",
+            "PASS X7/login/pre+out/rotate reach CIRLI 44 vs S0I 44",
+            "PASS X7/login/pre+out/static_uarot reach CIRLI 6 vs S0I 44",
+            "PASS X2L/login/pre/none reach CIRLI 6 vs S0I 6",
+            "PASS X2L/login/pre/uarot reach CIRLI 121 vs S0I 121",
+            "PASS X2L/login/pre/static reach CIRLI 6 vs S0I 121",
+            "PASS X2L/login/pre/rotate reach CIRLI 121 vs S0I 121",
+            "PASS X2L/login/pre/static_uarot reach CIRLI 6 vs S0I 121",
+            "PASS X2L/login/pre+out/none reach CIRLI 6 vs S0I 6",
+            "PASS X2L/login/pre+out/uarot reach CIRLI 121 vs S0I 121",
+            "PASS X2L/login/pre+out/static reach CIRLI 6 vs S0I 121",
+            "PASS X2L/login/pre+out/rotate reach CIRLI 121 vs S0I 121",
+            "PASS X2L/login/pre+out/static_uarot reach CIRLI 6 vs S0I 121",
+            "PASS X8/login/pre/none reach CIRLI 5 vs S0I 5",
+            "PASS X8/login/pre/uarot reach CIRLI 32 vs S0I 32",
+            "PASS X8/login/pre/static reach CIRLI 5 vs S0I 32",
+            "PASS X8/login/pre/rotate reach CIRLI 16 vs S0I 16",
+            "PASS X8/login/pre/static_uarot reach CIRLI 5 vs S0I 32",
+            "PASS X8/login/pre+out/none reach CIRLI 5 vs S0I 5",
+            "PASS X8/login/pre+out/uarot reach CIRLI 32 vs S0I 32",
+            "PASS X8/login/pre+out/static reach CIRLI 5 vs S0I 32",
+            "PASS X8/login/pre+out/rotate reach CIRLI 16 vs S0I 16",
+            "PASS X8/login/pre+out/static_uarot reach CIRLI 5 vs S0I 32",
+            "PASS SP/login/pre/none reach CIRLI 7 vs S0I 7",
+            "PASS SP/login/pre/uarot reach CIRLI 7 vs S0I 7",
+            "PASS SP/login/pre/static reach CIRLI 7 vs S0I 7",
+            "PASS SP/login/pre/rotate reach CIRLI 3 vs S0I 3",
+            "PASS SP/login/pre/static_uarot reach CIRLI 7 vs S0I 7",
+            "PASS SP/login/pre+out/none reach CIRLI 7 vs S0I 7",
+            "PASS SP/login/pre+out/uarot reach CIRLI 7 vs S0I 7",
+            "PASS SP/login/pre+out/static reach CIRLI 7 vs S0I 7",
+            "PASS SP/login/pre+out/rotate reach CIRLI 3 vs S0I 3",
+            "PASS SP/login/pre+out/static_uarot reach CIRLI 7 vs S0I 7",
+            "PASS BRU/login/pre/none reach CIRLI 100 vs S0I 100",
+            "PASS BRU/login/pre/uarot reach CIRLI 3 vs S0I 3",
+            "PASS BRU/login/pre/static reach CIRLI 100 vs S0I 100",
+            "PASS BRU/login/pre/rotate reach CIRLI 2 vs S0I 2",
+            "FAIL BRU/login/pre/static_uarot reach CIRLI 100 vs S0I 3",
+            "PASS BRU/login/pre+out/none reach CIRLI 3 vs S0I 3",
+            "PASS BRU/login/pre+out/uarot reach CIRLI 2 vs S0I 2",
+            "PASS BRU/login/pre+out/static reach CIRLI 3 vs S0I 3",
+            "PASS BRU/login/pre+out/rotate reach CIRLI 2 vs S0I 2",
+            "FAIL BRU/login/pre+out/static_uarot reach CIRLI 3 vs S0I 2",
+            "PASS BRD/login/pre/none reach CIRLI 22 vs S0I 22",
+            "PASS BRD/login/pre/uarot reach CIRLI 7 vs S0I 7",
+            "PASS BRD/login/pre/static reach CIRLI 22 vs S0I 37",
+            "PASS BRD/login/pre/rotate reach CIRLI 7 vs S0I 7",
+            "FAIL BRD/login/pre/static_uarot reach CIRLI 22 vs S0I 7",
+            "PASS BRD/login/pre+out/none reach CIRLI 3 vs S0I 3",
+            "PASS BRD/login/pre+out/uarot reach CIRLI 3 vs S0I 3",
+            "PASS BRD/login/pre+out/static reach CIRLI 3 vs S0I 3",
+            "PASS BRD/login/pre+out/rotate reach CIRLI 3 vs S0I 3",
+            "PASS BRD/login/pre+out/static_uarot reach CIRLI 3 vs S0I 3",
+            "PASS X1/login/pre/none reach CIRLI 61 vs S0I 61",
+            "PASS X1/login/pre/uarot reach CIRLI 3 vs S0I 3",
+            "PASS X1/login/pre/static reach CIRLI 61 vs S0I 61",
+            "PASS X1/login/pre/rotate reach CIRLI 2 vs S0I 2",
+            "FAIL X1/login/pre/static_uarot reach CIRLI 61 vs S0I 3",
+            "PASS X1/login/pre+out/none reach CIRLI 2 vs S0I 2",
+            "PASS X1/login/pre+out/uarot reach CIRLI 2 vs S0I 2",
+            "PASS X1/login/pre+out/static reach CIRLI 2 vs S0I 2",
+            "PASS X1/login/pre+out/rotate reach CIRLI 2 vs S0I 2",
+            "PASS X1/login/pre+out/static_uarot reach CIRLI 2 vs S0I 2",
+            "PASS MASS/login/pre/none reach CIRLI 4 vs S0I 4",
+            "PASS MASS/login/pre/uarot reach CIRLI 4 vs S0I 4",
+            "PASS MASS/login/pre/static reach CIRLI 4 vs S0I 4",
+            "PASS MASS/login/pre/rotate reach CIRLI 2 vs S0I 2",
+            "PASS MASS/login/pre/static_uarot reach CIRLI 4 vs S0I 4",
+            "PASS MASS/login/pre+out/none reach CIRLI 4 vs S0I 4",
+            "PASS MASS/login/pre+out/uarot reach CIRLI 4 vs S0I 4",
+            "PASS MASS/login/pre+out/static reach CIRLI 4 vs S0I 4",
+            "PASS MASS/login/pre+out/rotate reach CIRLI 2 vs S0I 2",
+            "PASS MASS/login/pre+out/static_uarot reach CIRLI 4 vs S0I 4",
+            "PASS POI/login/pre/none reach CIRLI 5 vs S0I 5",
+            "PASS POI/login/pre/uarot reach CIRLI 80 vs S0I 80",
+            "PASS POI/login/pre/static reach CIRLI 5 vs S0I 32",
+            "PASS POI/login/pre/rotate reach CIRLI 32 vs S0I 32",
+            "PASS POI/login/pre/static_uarot reach CIRLI 5 vs S0I 80",
+            "PASS POI/login/pre/stolen reach CIRLI 4 vs S0I 32",
+            "PASS POI/login/pre+out/none reach CIRLI 5 vs S0I 5",
+            "PASS POI/login/pre+out/uarot reach CIRLI 80 vs S0I 80",
+            "PASS POI/login/pre+out/static reach CIRLI 5 vs S0I 32",
+            "PASS POI/login/pre+out/rotate reach CIRLI 32 vs S0I 32",
+            "PASS POI/login/pre+out/static_uarot reach CIRLI 5 vs S0I 80",
+            "PASS POI/login/pre+out/stolen reach CIRLI 4 vs S0I 32",
+            "PASS X1API/api/pre+out/none reach CIRLI 122 vs S0I 122",
+            "PASS X1API/api/pre+out/uarot reach CIRLI 301 vs S0I 301",
+            "PASS X1API/api/pre+out/static reach CIRLI 122 vs S0I 122",
+            "PASS X1API/api/pre+out/rotate reach CIRLI 2 vs S0I 2",
+            "PASS X1API/api/pre+out/static_uarot reach CIRLI 300 vs S0I 301",
+            "PASS X1API/api_custom/pre+out/none reach CIRLI 23 vs S0I 23",
+            "PASS X1API/api_custom/pre+out/uarot reach CIRLI 41 vs S0I 41",
+            "PASS X1API/api_custom/pre+out/static reach CIRLI 23 vs S0I 23",
+            "PASS X1API/api_custom/pre+out/rotate reach CIRLI 2 vs S0I 2",
+            "PASS X1API/api_custom/pre+out/static_uarot reach CIRLI 31 vs S0I 41",
+            "PASS X2API/api/pre+out/none reach CIRLI 6 vs S0I 6",
+            "PASS X2API/api/pre+out/uarot reach CIRLI 121 vs S0I 121",
+            "PASS X2API/api/pre+out/static reach CIRLI 6 vs S0I 121",
+            "PASS X2API/api/pre+out/rotate reach CIRLI 121 vs S0I 121",
+            "PASS X2API/api/pre+out/static_uarot reach CIRLI 6 vs S0I 121",
+            "PASS X2API/api_custom/pre+out/none reach CIRLI 6 vs S0I 6",
+            "PASS X2API/api_custom/pre+out/uarot reach CIRLI 121 vs S0I 121",
+            "PASS X2API/api_custom/pre+out/static reach CIRLI 6 vs S0I 121",
+            "PASS X2API/api_custom/pre+out/rotate reach CIRLI 121 vs S0I 121",
+            "PASS X2API/api_custom/pre+out/static_uarot reach CIRLI 6 vs S0I 121"
+        ],
+        "G-S4b (CIRLI)": [
+            "PASS POI/pre+out owner 12 vs 12, attacker 4 vs 4",
+            "PASS POI/pre owner 12 vs 12, attacker 4 vs 4"
+        ],
+        "G-F1/F2 (CIRLI)": [
+            "PASS D1/login/pre+out 0/600",
+            "PASS D1/login/pre 0/600",
+            "PASS D1/login/out 0/600",
+            "PASS L3/login/pre+out 0/121",
+            "PASS L3/login/pre 0/121",
+            "PASS L3/login/out 0/121",
+            "PASS D1A/login/pre+out 0/600",
+            "PASS D1A/login/pre 0/600",
+            "PASS D1A/login/out 0/600",
+            "PASS D1API/api/out 0/600",
+            "PASS D1API/api/pre+out 0/600",
+            "PASS D1API/api_custom/out 0/600",
+            "PASS D1API/api_custom/pre+out 0/600"
+        ],
+        "G-F4/F5/F6 (CIRLI)": [
+            "FAIL L1/pre+out CIRLI 127 vs S0N 0",
+            "FAIL L1/pre CIRLI 124 vs S0N 0",
+            "FAIL L1/out CIRLI 124 vs S0N 0",
+            "FAIL OFF12/pre+out CIRLI 11 vs S0N 8",
+            "FAIL OFF12/pre CIRLI 10 vs S0N 8",
+            "FAIL OFF12/out CIRLI 10 vs S0N 0",
+            "FAIL V6L1/pre+out CIRLI 127 vs S0N 0",
+            "FAIL V6L1/pre CIRLI 124 vs S0N 0",
+            "FAIL V6L1/out CIRLI 124 vs S0N 0",
+            "PASS RM2/pre+out CIRLI 48 vs S0N 48",
+            "PASS RM2/pre CIRLI 47 vs S0N 47",
+            "PASS RM2/out CIRLI 47 vs S0N 47",
+            "PASS SESS/pre+out CIRLI 6 vs S0N 6",
+            "PASS SESS/pre CIRLI 5 vs S0N 5",
+            "PASS SESS/out CIRLI 5 vs S0N 5"
+        ]
+    },
+    "observations": [
+        {
+            "observation": "O1 baseline reproduces published S0 numbers (D1 596/600, X2 6/121, X7 6/121, L1 with client ids 127/134)",
+            "reproduced": true
+        },
+        {
+            "observation": "O2 #97 relief: CIRI D1 / L3 / D1A 0 legitimate denials vs S0N 596 / 104 / 596, all correlation-attributed in S0N",
+            "reproduced": true
+        },
+        {
+            "observation": "O3 the relief needs no code change: S0I decision strings equal CIRI on D1, L3, D1A, L1, OFF12 (every flow)",
+            "reproduced": true
+        },
+        {
+            "observation": "O4 enforcement-path downgrade: X7 with one static id reaches 121/121 total (incl. own-account padding) under CIRI and S0I; S0N best response 44/121",
+            "reproduced": true
+        },
+        {
+            "observation": "O5 stolen id: POI attacker reach 32/180 (CIRI) vs 4/180 (S0N none); owner denied 8/15 vs 12/15",
+            "reproduced": true
+        },
+        {
+            "observation": "O6 shared NAT: L1 0 -> 127/134 and OFF12 8 -> 11/13 with ids; with churn neutralised 0 and 8 (churn-attributed)",
+            "reproduced": true
+        },
+        {
+            "observation": "O7 UA update: CIRI keeps 1 fingerprint / 1 K5 key (S0I: 2); known-device reach 5/12 (CIRI) vs 8/12 (S0I)",
+            "reproduced": true
+        },
+        {
+            "observation": "O8 Q4 null fingerprint (NUA): X2 none 6 -> 121, BRU none 3 -> 11, BRD none 3 -> 11, KD first denial on K4 instead of K5",
+            "reproduced": true
+        },
+        {
+            "observation": "O9 pre-existing session-transition churn: SESS 6/8 denied in S0N already; 0/8 with churn neutralised",
+            "reproduced": true
+        },
+        {
+            "observation": "O10 S0N adaptive attacker: X2 uarot reaches 121/121 (LOW dilution gives no protection against UA rotation); X7 uarot 44/121",
+            "reproduced": true
+        },
+        {
+            "observation": "O11 post-hoc CIRLI: X7 best 44, POI stolen = S0N none (owner 12, attacker 4), D1 0/600, L1 127/134",
+            "reproduced": true
+        },
+        {
+            "observation": "O12 the official Builder/Engine composition reproduces the Lab decisions (D1, L1 for S0N and CIRI; X7 static CIRI)",
+            "reproduced": true
+        },
+        {
+            "observation": "O13 mixed fleet / rollout: known device KD reaches the verifier 6 (MIX) / 7 (ROLL) times vs 5 (CIRI or S0I alone), with K2 hard blocks from 2 fingerprints of one device",
+            "reproduced": true
+        },
+        {
+            "observation": "O14 fingerprint-secret rotation is decision-transparent for CIRI and S0I (D1, X2 static)",
+            "reproduced": true
+        },
+        {
+            "observation": "O15 roaming carrier: RM2 48/60 (S0N, K2) -> 32/60 (CIRI, K3 via MEDIUM dilution)",
+            "reproduced": true
+        },
+        {
+            "observation": "O16 victim-guess reach (post-hoc metric): X7 best response 40/40 in S0N and CIRI (the 44 -> 121 total-reach delta is own-account padding only); the only best-response increase is BRD checkOnly-only 22 -> 37",
+            "reproduced": true
+        },
+        {
+            "observation": "O17 DEC-021 attribution (F125-01): in KD and UAC, for CIRI and S0I in every flow with a denial, the first owner denial is a K5-only SOFT — device watcher written, account watcher not — and is ALLOW once K5 cannot produce a level",
+            "reproduced": true
+        }
+    ]
+}
