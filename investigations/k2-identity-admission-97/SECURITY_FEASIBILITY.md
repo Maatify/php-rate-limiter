@@ -9,7 +9,8 @@
 > **as if** the relevant decision were taken, and marks every such result with the decision it depends on (Owner decisions
 > D1–D7 and Lead choices LT-1 … LT-7, `P§11`). A result marked "per Dn" is not a claim that the design is acceptable; it is
 > what the design would give if the Owner chose so.
-> **Revision:** corrected after the Direct Lead Review of PR #126 (F126-01 … F126-05); see `P§13`.
+> **Revision:** corrected after the Direct Lead Review of PR #126 (F126-01 … F126-05) and its re-review (F126-R2-01 … R2-04);
+> see `P§13`.
 
 ---
 
@@ -196,7 +197,8 @@ The two cases are exhaustive. Only a proof (D3) escapes the dichotomy. ∎
 | U-2 | `U_acct` per window (case 1) | yes | no | renewable refusal of unproven owners, as S0's K4 in `pre+out` |
 | U-3 | per-source floor `f` on `a`, plus `U_acct` above it | `≤ U_acct + σ·f` | yes for a clean source | re-creates source scaling |
 
-Proven owners are outside the dichotomy: their requests are in P, which unproven traffic cannot consume or close (I4).
+Proven owners are outside the dichotomy while the DEC-021 allowance lasts: their requests are in P, which unproven traffic cannot
+consume or close (I4).
 
 ---
 
@@ -221,7 +223,7 @@ Conditions (each invariant names the ones it needs):
 | I1′ | Any interval of length `W`: `≤ 2·c_x`; any duration `T`: `≤ c_x·(⌈T/W⌉ + 1)` | I1 | An interval meets at most two fixed windows | — |
 | **I2** | Verifier calls attributable to `x` `≤ admitted(x, j)` | I1, C2 | H1 maps verifier calls injectively to admissions | `out` routes; Host reuse of an admission; old workers (§6.7) |
 | **I3** | For fixed source, subject and class, U admissions `≤` the minimum of the adopted parents (`U_src`, `U_acct`, `U_glob`) whatever the number of UAs, client ids, fingerprints or sessions used | I1, C3 | No parent key contains a client-chosen value; hint sub-limits are additional conjuncts and can only refuse | a parent keyed on a client value (forbidden by `P§6.1`) |
-| **I4** | U traffic never changes a P counter, and account penalties never deny a P request | C1, D2 | Disjoint key namespaces; account-scoped candidates are advisory on P requests and active K4 blocks are not read for them (`P§7.2`, M-C) | without D2 / LT-1 (GA-4) |
+| **I4** | U traffic never changes a P counter, and, inside the DEC-021 allowance, account penalties never deny a P request | C1, C8, D2 | Disjoint key namespaces; under M-G a non-demoted P request skips active K4 blocks and account-scoped candidates (`P§7.4`); only known-device failures consume the allowance, so U traffic cannot trigger demotion | a Host trust claim for the wrong account; without D2 / LT-1 (GA-4); after the allowance is exhausted P is demoted to U by design |
 | **I5** | P admissions for account `a` come only from holders of a proof for `a`; `≤ P_acct` per window | I1, C8 | Lane P requires the equality check | a Host that mis-binds proofs (`MEASURED` control SPV 4 → 200/200, #119) |
 | **I6** | Per account: `≤ U_acct + P_acct` per window | I1, I2, D4 (U-2) | Sum of disjoint lanes | without `U_acct`: U part bounded only by `min(σ·U_src, U_glob)` |
 | **I7** | Per class: `≤ U_glob + P_glob` per window | I1, I2, D5 | Sum of lanes | without globals: no finite total; with per-policy instead of per-class globals: `× number of policies` (B4-6) |
@@ -267,11 +269,11 @@ decision), **RESIDUAL** (cannot be solved in scope; harm is bounded and named), 
 | 2 | D1 / LOW cross-IP | A common UA is not one identity | No dilution punishment; each user is its own source; refusal only if `U_glob < D_glob` or the user's own `U_acct` is exhausted | **PASS** conditional on `U_glob` sizing (D5) | `MEASURED` D1 596/600 (S0N) → 0/600 when the cohort is no longer one fingerprint (#125, `main@9e95f2f`). Attacker side: X2 (new IP and victim per attempt) is bounded only by `U_glob`; without it, 121/121 — S0's best-response reach (UA rotation, #125); the S0 naive one-UA cell was 6/121 |
 | 3 | Office day 0 | What happens with no prior proof | Every employee is U; refusals `≥ N·d − U_src` per window; without D3 Login has no way out of U | **RESIDUAL** (indistinguishable from an attacker at the same source) | `MEASURED` S0 context: 86–88 of 100 office browsers without a successful login per day (#118 R8, `main@a6c79f4`); day-0 gives nothing to known-device relief (#119 R13) |
 | 4 | Shared NAT + attacker | Who can drain which share | `U_src`: anyone at the source; `U_acct(a)`: anyone anywhere; `U_glob`: anyone; `P_acct(a)`: only holders of a proof for `a`; office P shares untouchable by the attacker | **RESIDUAL** for U; **CONDITIONAL** (D3, D2) for P | Same-IP office and rotating attacker give identical observables (#105 A06; #125 same-IP tally). No credit, so a co-located attacker gets at most `U_src` — unlike #116 where it used colleagues' credit (`MEASURED` E3 FAIL, MIX/X4/X6 +2) |
-| 5 | UA / id rotation | No new units | No scope keyed on UA or id (I3). On a proven device a UA change gives a new passive K5, but `P_proof` is keyed on the proof reference (`P§4.5`) | **PASS** | `MEASURED` S0 minted scope by UA major: TMSd 2/200 vs TMUA 36/200 (#120); X2 6 → 121/121 by UA rotation (#125) |
+| 5 | UA / id rotation | No new units | No scope keyed on UA or id (I3). K5 derivation is unchanged, so a UA change gives a proven device a new K5; across UA changes it stays bounded by the fingerprint-independent DEC-021 allowance, then by demotion (`P§4.5`, `P§7.3` S1′), and by `P_proof`, keyed on the proof reference | **PASS** for capacity; per-device K5 history does not survive a UA change (as today, `MEASURED` UAC 8/12, #125) | `MEASURED` S0 minted scope by UA major: TMSd 2/200 vs TMUA 36/200 (#120); X2 6 → 121/121 by UA rotation (#125) |
 | 6 | Multiple IPs | Limits beyond one source | Foreign U reach `≤ min(σ·U_src, |T|·U_acct, U_glob)`. One target: `U_acct` per window regardless of `σ`. IPv6: a `/48` holds 65 536 `/64` sources; the hierarchy is `UNPROVEN`. IPv4 exact: CGNAT users share one `U_src` | **CONDITIONAL** (D4, U-2) for one target; **RESIDUAL** for many targets without `U_glob` | `MEASURED` S0 BRD (one account, new IP per attempt) checkOnly-only best response 22/100 victim guesses (#125). Under U/P: `≤ U_acct·(⌈T/W⌉+1)` independent of outcomes (`DERIVED`, conditional) |
 | 7 | 12 trusted accounts | Multiplication; total verifier cost | P reach `≤ min(12·P_acct, P_glob)` per window (per account `≤ P_acct`); with `P_src`, `≤ P_src` | **RESIDUAL** without `P_src`; D5 | `MEASURED` S0 TMSd 2/200; when only per-account DEC-021 bounds remain, TMSd 2 → 60/200 and gain grows with accounts held (#119 R3, R6, model on the real pipeline); office N12T ≡ attacker TMS request for request (#119 M3). In `pre`, relief variants reached 200/200 (#119 R4); here `pre` is bounded by `P_acct` per window (`DERIVED`) |
-| 8 | Target-account harassment | Owner keeps a usable share | Owner with a proof: `P_acct` / `P_proof` untouched by U, and account penalties not enforced on P (I4). Owner without a proof: case 1 or case 2 of §2.9, chosen by D4 | **CONDITIONAL** (D2, D3) for proven owners; **RESIDUAL, proven** (§2.9) for unproven owners: renewable refusal under U-1/U-2 (as S0's K4 score), source scaling under U-3 | `CODE` today: K4 blocks reach the owner's trusted session (`P§7.1`); not measured |
-| 9 | Anonymous API | What can be proven | Per-source and per-class capacity; no attribution; no per-person fairness within a source | **PASS** (capacity); **RESIDUAL** (fairness) | `MEASURED` D1API 596/600 → 0/600 once the cohort is not one fingerprint (#125): correlation, not rate, caused that harm |
+| 8 | Target-account harassment | Owner keeps a usable share | Owner with a proof: `P_acct` / `P_proof` untouched by U, and, inside the allowance, account penalties not enforced on P (I4). Owner without a proof: case 1 or case 2 of §2.9, chosen by D4 | **CONDITIONAL** (D2, D3) for proven owners; **RESIDUAL, proven** (§2.9) for unproven owners: renewable refusal under U-1/U-2 (as S0's K4 score), source scaling under U-3 | `CODE` today: K4 blocks reach the owner's trusted session (`P§7.1`); not measured |
+| 9 | Anonymous API | What can be proven | Under A-cap (`P§9.2`): per-source and per-class window capacity, nothing persisted or escalated, no attribution. Today (A-pen) K1 L3, K3 L2 and the LOW-K3 → K2 remap are persisted, renewable shared penalties (`P§9.1`) | **PASS** (bounded capacity, under D1); **RESIDUAL** (a heavy co-located client exhausts the shared window; no per-person fairness) | `MEASURED` D1API 596/600 → 0/600 once the cohort is not one fingerprint (#125) — correlation-caused; the rate paths' collateral is `UNPROVEN` in size |
 | 10 | Missing outcomes | What the library guarantees | Per-window bounds hold (I9); no escalation without outcomes; `out` has no pre-verifier bound | **PASS** (`pre`, `pre+out` with drops); **FAIL** (`out`, by call order) | `MEASURED` S0 D24K1 `pre` 1440/1440 (#119 R16) |
 | 11 | Redis failure / rotation | Bounds stay correct or weaken explicitly | Rotation: dual-generation sum keeps I1 if interval ≥ `W`. Failover: lost acknowledged reserves re-issue capacity. Outage: DEC-015 degraded mode uses process-local counters without lanes | **DEGRADED, explicit** (§6) | `CODE` `LocalFallbackLimiter.php:37-43`; `MEASURED` #116 O6: a failing admission operation produced 8 `DEGRADED_MODE` ALLOWs where S0 kept blocking (`main@72f6dea`) |
 
@@ -349,8 +351,8 @@ after the fleet is upgraded.
 
 ### 6.8 Rollback
 
-S0 ignores admission counters and permits; they expire by TTL. K4 keeps its key and history (M-C, `P§7.2`), so no penalty history
-is lost, and S0 again enforces it on every requester. Rolling forward within the same window finds the old counters; traffic
+S0 ignores admission counters and permits; they expire by TTL. K4 and K5 keep their keys and derivations (M-G, `P§7.2`, `P§4.5`), so no penalty
+history is lost, and S0 again enforces it on every requester. Rolling forward within the same window finds the old counters; traffic
 admitted by S0 meanwhile was not counted, so that window's bound becomes `c_x + S0-phase admissions`. Nothing is re-issued
 beyond that (`DERIVED`).
 
@@ -385,7 +387,7 @@ admission operation must take the typed failure path for the whole request, neve
 | B4-7 | Concurrent requests | One linearizable script ⇒ no over-admission (I1). Punishment reads are not atomic with the reserve; extra in-flight requests still hold counted units (§2.4). Cluster with compensation: no over-admission, transient false refusals (§6.3) | Cluster throughput (one slot) |
 | B4-8 | Re-issue on rotation or rollback | Rotation: safe if interval ≥ `W` (§6.4); two rotations in one window re-issue `c_x`. Rollback / roll-forward in one window: `+` S0-phase admissions (§6.8) | operational preconditions, not code |
 | B4-9 | Proof attributed to another account | Library refuses a proof whose account or operation differs (C8). A Host that mis-binds proofs defeats it | Host compliance (`MEASURED` control SPV 4 → 200/200, #119). Contrast S0: a Host-attested trusted session spraying 200 fresh accounts reached 200/200 (SP5, #108); with a proof that names its own account, those requests are U for each target and bounded by `U_src` (`DERIVED`) |
-| B4-10 | Unintended loss of K4 protection | Removed on purpose: account penalties no longer deny P requests (advisory there); DEC-007 re-entry is irrelevant to P. Kept: every S0 K4 mechanism on U, on the same key; DEC-021 K5 and allowance on both lanes, with its K4 overflow still recorded; P bounded by window and day caps per account and per proof, which also hold in `pre` | none found beyond the intended removals; depends on D2 and on M-C being implemented as specified (`P§7.2`) |
+| B4-10 | Unintended loss of K4 protection | Removed on purpose: inside the DEC-021 allowance, account penalties earned from others' evidence no longer deny P requests, and those requests neither consume nor expose DEC-007 re-entry evidence. Kept: every S0 K4 mechanism on U, on the same key; DEC-021 K5, allowance and overflow unchanged; demotion to U once the allowance is exhausted; P caps per account and per proof, which also hold in `pre`. Under M-C instead, a stolen proof would be bounded only by P caps (`P§7.3` S1) | none found for M-G beyond the intended removals; LT-1 remains conditional on measurement (`P§7.3`) |
 
 ---
 
@@ -422,4 +424,8 @@ parameters:
 * Rotation (one and two within a window), mixed fleet, rollback and roll-forward, fault injection for lost replies and failover
   with acknowledged-write loss, DEC-015 outage.
 * Office multi-day bootstrap with and without a proof contract; CGNAT and IPv6 hierarchy cells.
-* The K4 lane split against DEC-007 lifecycle and DEC-021 regressions (`KnownDeviceAntiEquilibriumScopeTest` scenarios).
+* LT-1: M-G against M-A, with M-C as a control, on `P§7.3` S1–S6 (stolen proof over days, UA rotation, OTP step-up, several
+  proofs, mixed owner successes and attacker failures, owner typos), reporting `reach_foreign`, `reach_proof` and owner denials;
+  plus DEC-007 lifecycle and DEC-021 regressions (`KnownDeviceAntiEquilibriumScopeTest` scenarios).
+* API: A-cap against A-pen on shared-NAT and heavy-client streams, all three keys.
+* T0 integration: probe factor `ρ`, abandoned admissions and retries of real Host flows on the opt-in variants.
