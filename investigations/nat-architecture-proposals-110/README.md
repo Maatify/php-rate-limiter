@@ -1,23 +1,22 @@
 # مقارنة التصاميم المعمارية لـ Shared NAT — ضمن #110
 
 **النوع:** سجل تصاميم ومقارنة فقط — لا `src/` ولا `tests/` ولا Public API ولا Store Contract ولا DEC. لا شيء هنا مرشح Runtime معتمد.
-**الأصل:** [#110](https://github.com/Maatify/php-rate-limiter/issues/110) · **المظلة:** [#122](https://github.com/Maatify/php-rate-limiter/issues/122). بوابة الإصدار المسجلة هناك ما زالت ملزمة.
+**المظلة:** [#122](https://github.com/Maatify/php-rate-limiter/issues/122).
 
 ## لماذا هذا المجلد
 
-هذا المجلد هو المرجع الوحيد لنصوص التصاميم: كل تصميم ملف مستقل هنا، والمقارنة تُكتب في ملف واحد. لا يُنشأ ملف قبل أن يكون له محتوى.
+هذا المجلد هو المرجع الوحيد لنصوص التصاميم: كل تصميم ملف مستقل هنا، منقول من مصدره كما ورد، ومرقّم بترتيب وصوله. المقارنة تُكتب في ملف واحد عند بدئها. لا يُنشأ ملف قبل أن يكون له محتوى.
 
 ## فهرس التصاميم
 
 | # | المصدر | الحالة | الملف | Lines | Characters | UTF-8 bytes | SHA-256 |
 |---|---|---|---|---|---|---|---|
-| 2 | Gemini Argon — "Sovereign Quota & Asymmetric Escalation Engine" (SQAEE) | UNREVIEWED / VERBATIM | [proposals/02-gemini-argon.md](proposals/02-gemini-argon.md) | 487 | 39,806 | 60,720 | `361a773618fe10e427376cdace96bae788417c6d6049586fda360e9289dd6944` |
-| 7 | KIMI 3 — "Anchored Fair Limiter" (AFL) | UNREVIEWED / VERBATIM | [proposals/07-kimi-3.md](proposals/07-kimi-3.md) | 289 | 20,421 | 33,099 | `f67c02590751a32a2d997c6c4263bf134c55eebecf6998fb7e613acf63f43b4a` |
+| 1 | KIMI 3 — "Anchored Fair Limiter" (AFL) | UNREVIEWED / VERBATIM | [proposals/01-kimi-3.md](proposals/01-kimi-3.md) | 289 | 20,421 | 33,099 | `f67c02590751a32a2d997c6c4263bf134c55eebecf6998fb7e613acf63f43b4a` |
+| 2 | Gemini Argon — "Sovereign Quota & Asymmetric Escalation Engine" (SQAEE) | UNREVIEWED / VERBATIM | [proposals/02-gemini-argon.md](proposals/02-gemini-argon.md) | 487 | 39,807 | 60,721 | `49c732cc8553759196060d423816be71a10c5713c5e2bfeb2422c9e0e26c46aa` |
 
-- الأرقام ثابتة لكل مصدر؛ أي رقم غير موجود في الجدول لم يُضف ملفه بعد.
-- التصميم 2: بصمته مطابقة لبصمة ملف المالك الأصلي، والملف بلا سطر جديد في نهايته كما في الأصل.
-- التصميم 7: نصّ قدمه المالك في 2026-10-16، وسُجّل كما ورد حرفيًا، بما فيه الأخطاء الإملائية الموجودة في الأصل. البصمة محسوبة على ملف هذا المستودع؛ لا يوجد ملف أصلي منفصل للمقارنة به.
+- كل نص قدمه المالك في 2026-10-16، وسُجّل كما ورد حرفيًا، بما فيه الأخطاء الموجودة في الأصل. البصمة محسوبة على ملف هذا المستودع.
+- تصاميم أخرى ستُضاف بأرقام تالية عند وصولها.
 
-## الإطار
+## المقارنة
 
-تُقاس كل التصاميم على إطار A–H نفسه وأرقام S0 المعرّفة في #110. لم تبدأ المقارنة بعد.
+لم تبدأ بعد. إطار المقارنة يُحدَّد ويُكتب هنا عند بدئها.
