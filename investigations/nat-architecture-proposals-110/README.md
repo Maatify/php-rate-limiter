@@ -18,6 +18,7 @@
 | 5 | Grok — "مساران، ميزانية غير قابلة للمضاعفة، عقوبة بأضيق نطاق" | UNREVIEWED / VERBATIM | [proposals/05-grok.md](proposals/05-grok.md) | 246 | 24,055 | 40,450 | `0c8337ff6a24fa64c7add0bbb77885b894637764f69e4c4d36fdbb33ad732c50` |
 | 6 | GPT-6.1 Sol — "قبول محدود مع إثبات محدد الهدف وحصص محفوظة" | UNREVIEWED / VERBATIM | [proposals/06-gpt-6-1-sol.md](proposals/06-gpt-6-1-sol.md) | 922 | 35,975 | 60,648 | `51093b4c5333cb7ef32439c0f7dec3044e5756fe2862a7b41b780e9ecf4f4729` |
 | 7 | GPT-6 Astra — "قبول مبني على إثبات محدود للحساب والعملية" (مساران U/P) | UNREVIEWED / VERBATIM | [proposals/07-gpt-6-astra.md](proposals/07-gpt-6-astra.md) | 621 | 33,670 | 57,168 | `6add4bee5011366cae39fc64a2d96733b3357f19339b3a1804be41d06a8ee6b9` |
+| 8 | GPT-6 Luna — "Admission ذري قبل الـVerifier مع تصعيد إلى إثبات إضافي" | UNREVIEWED / VERBATIM | [proposals/08-gpt-6-luna.md](proposals/08-gpt-6-luna.md) | 264 | 20,896 | 35,322 | `fe1b9dd63491e9b030c4f0ab497c654ed354413c19b678e3e00cdadad5fbbbe8` |
 
 - كل نص قدمه المالك في 2026-10-16، وسُجّل كما ورد حرفيًا، بما فيه الأخطاء الموجودة في الأصل. البصمة محسوبة على ملف هذا المستودع.
 - تصاميم أخرى ستُضاف بأرقام تالية عند وصولها.
