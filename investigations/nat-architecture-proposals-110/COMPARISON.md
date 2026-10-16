@@ -63,9 +63,11 @@ The same evidence standard applies to all eleven designs. Model name, popularity
 | 05 | yes, #110 record (20 segments, SHA-256 recorded) | 21 Arabic diacritic pairs had been reordered (fatha/kasratan before shadda, Unicode canonical order) on the paste path; original order restored; byte-identical |
 | 10 | yes, Owner file `NAT_ARCHITECTURE_STUDY_2026-10-16_AR.md` and #110 record | byte-identical, unchanged |
 | 11 | yes, #110 record (SHA-256 recorded) | byte-identical after removing the added LF |
-| 04 | partial: #110 holds only part 1/10, chars [0, 1751) of 16,535, and marks the record INCOMPLETE | prefix matches; total length 16,535 matches; remainder unverifiable |
+| 04 | partial: #110 held only part 1/10, chars [0, 1751) of 16,535, and marked the record INCOMPLETE | prefix matches; total length 16,535 matches; remainder unverifiable |
 | 03, 08, 09 | no original outside the Owner's chat paste | added LF removed; the text contains no shadda + short-vowel sequences, so the reordering seen in 05 cannot have occurred |
 | 06, 07 | no original outside the Owner's chat paste | added LF removed; the text contains 4 and 6 short-vowel + shadda sequences whose original order cannot be verified |
+
+**Archive status (2026-10-16, after merge of #123):** the 85 #110 comments that held these verbatim records (79 source segments and 6 COMPLETE VERBATIM records for 01, 02, 04, 05, 10, 11) were deleted by the Owner after each one was verified byte-for-byte against the files on `main` (segments contained in the file; records carrying the file's SHA-256). The "#110 record" entries above therefore describe the reference used at reconciliation time, not comments that still exist. A full pre-deletion backup of all 139 #110 comments is held by the Owner outside the repository: `comments-20261016T140552Z.json`, SHA-256 `466b98a440b60387d3fb718c992ef5b7c192d5323edab13752f937405c98f948`.
 
 The reordering in 05 does not change any word, line or citation used here. All Arabic quotes in this document were re-checked against the reconciled files (§0.6).
 
