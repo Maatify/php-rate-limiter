@@ -153,8 +153,47 @@ All gates are evaluated mechanically by `report.php` from the archived per-reque
 
 ## 6. Execution record
 
-To be filled after the run (column "Executed / result" per gate), without editing §1–§5.
+Executed with `bash investigations/ua-client-identity-97/run.sh` on the baseline; evidence in `expected/`, gate details in
+`expected/gates.json`, tables in `expected/summary.md`.
+
+| Gate | Executed / result | Checks | Decisive failures |
+|---|---|---|---|
+| G-S1 best response | executed — **FAIL** | 24 | X7 `pre` / `pre+out`: CIRI 121 vs S0N 44; BRD `pre`: 37 vs 22 |
+| G-S1b same input | executed — **FAIL** | 122 | `static_uarot`: X7 121 vs 44; BRU `pre` 100 vs 3; X1 `pre` 61 vs 3; BRD `pre` 37 vs 7; BRU `pre+out` 3 vs 2 |
+| G-S2 no-id parity | executed — PASS | 177 | — |
+| G-S3 K1 / K4 / DEC-021 | executed — **FAIL** | 13 | only through G-S1b's BRU / BRD cells; KD / UAC owner reach and K5 path PASS |
+| G-S4 possession ≠ trust | executed — **FAIL** | 242 | (a) PASS on every CIRI request; (b) POI attacker reach 32 vs 4 (`pre`, `pre+out`) |
+| G-S5 bounded cost | executed — **FAIL** | 236 | 20 `static_uarot` cells, +1 or +2 correlation calls per command (maximum 7) |
+| G-S6 rotation | executed — PASS | 2 | — |
+| G-F1 #97 relief | executed — PASS | 10 | — |
+| G-F2 `other/0` relief | executed — PASS | 3 | — |
+| G-F3 UA-update continuity | executed — PASS | 3 | — |
+| G-F4 mobility | executed — PASS | 9 | — |
+| G-F5 shared NAT | executed — **FAIL** | 9 | L1 0 → 127/134; OFF12 8 → 11/13; V6L1 0 → 127/134 (every flow) |
+| G-F6 session transition | executed — PASS | 3 | — |
+
+Verdict by the §5 rule: **NO-GO**.
+
+Not executed (as announced in §3): OTP; Redis; concurrency.
 
 ## 7. Post-run notes
 
-None yet.
+Everything below happened after the pre-registered run. None of it changes a gate formula, threshold, stream, strategy set or the
+verdict rule.
+
+1. **Operationalisation of G-S3** (wording fixed before the run, implementation chosen after): "owner reach" = owner attempts whose
+   `checkOnly` allowed; "the DEC-021 K5 path is the denying path" = the K5 score at the owner's first denial is ≥ the K5 `l1`
+   threshold (8). In checkOnly-only cells no failure is ever recorded, so no owner is denied in either arm; the first harness
+   version reported those vacuous cells as FAIL and was corrected to "not applicable". G-S3 still FAILs, through G-S1b.
+2. **G-S4a** keeps the registered equality test (`confMismatch`); a separate `confEscalation` counter was added for the post-hoc
+   probe, whose confidence is lower than the shipped resolver's by design.
+3. **Two pinned observation texts** (O7, O13) were corrected to the measured values (known-device reach is 5 vs 8, and 6 / 7 vs 5;
+   the first draft had read denied counts instead of allowed counts). Observations are claims checked by `report.php`, not gates.
+4. **Post-hoc probe CIRLI** (`scenarios/c03_posthoc_probe.php`): the CIR derivation with an untrusted id kept at LOW. Added because
+   the run showed the MEDIUM lift as a root cause. It is labelled in the evidence, excluded from the verdict, and its gate results
+   are reported only as diagnosis.
+5. **Post-hoc cell V6D1W** (`c02`): the pre-registered V6D1 places all 600 users in one `/48`, where adaptive IPv6 aggregation
+   dominates every arm (596–598/600). V6D1W puts each user in its own `/32`; it is disclosure only. V6D1 stays as registered.
+6. **Post-hoc metric "victim-guess reach"** (`report.php`, O16): attacker attempts that are failed guesses against accounts the
+   attacker does not own. Added because G-S1's X7 failure turned out to consist only of admitted padding logins on the attacker's
+   own account. It explains the size of the registered failures; it does not replace `reach` in any gate.
