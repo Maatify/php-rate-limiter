@@ -5,19 +5,19 @@
 **Source snapshot (pinned):** every citation below refers to the files under `proposals/` at commit `54e119e10848006ad4037dc9200bf70579061ae4` (source reconciliation, §0.5). Line numbering is identical to the earlier snapshot `ecd0d96`. If any proposal file changes, this comparison must be reconciled against the new SHA-256 before any of its statements are reused.
 **Status:** draft for engineering review. Nothing here is accepted until the Owner and the Lead review it.
 
-| # | File | SHA-256 |
-|---|---|---|
-| 01 | `proposals/01-kimi-3.md` | `e08f1342243b7bbaa1af6efc0fc71e9aba0c3333ee4cbcb2c660e63f9a10220d` |
-| 02 | `proposals/02-gemini-argon.md` | `361a773618fe10e427376cdace96bae788417c6d6049586fda360e9289dd6944` |
-| 03 | `proposals/03-gemini-3-1-pro.md` | `77a52e28c4b4208500bd8afbd3f1cc5686519fc1f9f1883ff4f935ff3c9809f6` |
-| 04 | `proposals/04-deepseek.md` | `55c90cb72405f6b8d6bb04f9fa841aa6a0895359bd90b035f914c486a73f87fb` |
-| 05 | `proposals/05-grok.md` | `1b5fb2157b418a95072c8a2e5f2253f1b83a9a718674a71f3b7cc24911829f61` |
-| 06 | `proposals/06-gpt-6-1-sol.md` | `08b5680b457fc088b21a98cfdac5a28b490ef8993896f2e55d936185f0a5c96d` |
-| 07 | `proposals/07-gpt-6-astra.md` | `6699f88ba1c5546426a938ca480b998d77c407ae2284a4a6428ff289d32a8b02` |
-| 08 | `proposals/08-gpt-6-luna.md` | `d442a23e05ff3090a6bcec6f27989aaacb7e7f67614f67ac3b7c3df6f9b06bfb` |
-| 09 | `proposals/09-gpt-6-5-terra.md` | `9d626820e7fa476269e81073006e98f363963e4fb7989aba9b22f8c0b6f94db8` |
-| 10 | `proposals/10-fable-5-1.md` | `67cd22828e0dae192e1222337d7d37323a015695d63bb489b153af15a0996bfb` |
-| 11 | `proposals/11-opus-5-5.md` | `f69479abd38a6c597096e13d9cd9d84e029cab338a58f3486987769f05c0f605` |
+| # | File | SHA-256 | Original verification (§0.5) |
+|---|---|---|---|
+| 01 | `proposals/01-kimi-3.md` | `e08f1342243b7bbaa1af6efc0fc71e9aba0c3333ee4cbcb2c660e63f9a10220d` | BYTE-VERIFIED |
+| 02 | `proposals/02-gemini-argon.md` | `361a773618fe10e427376cdace96bae788417c6d6049586fda360e9289dd6944` | BYTE-VERIFIED |
+| 03 | `proposals/03-gemini-3-1-pro.md` | `77a52e28c4b4208500bd8afbd3f1cc5686519fc1f9f1883ff4f935ff3c9809f6` | NOT VERIFIABLE (no original) |
+| 04 | `proposals/04-deepseek.md` | `55c90cb72405f6b8d6bb04f9fa841aa6a0895359bd90b035f914c486a73f87fb` | PARTIAL (prefix [0, 1751) + length) |
+| 05 | `proposals/05-grok.md` | `1b5fb2157b418a95072c8a2e5f2253f1b83a9a718674a71f3b7cc24911829f61` | BYTE-VERIFIED |
+| 06 | `proposals/06-gpt-6-1-sol.md` | `08b5680b457fc088b21a98cfdac5a28b490ef8993896f2e55d936185f0a5c96d` | NOT VERIFIABLE (no original) |
+| 07 | `proposals/07-gpt-6-astra.md` | `6699f88ba1c5546426a938ca480b998d77c407ae2284a4a6428ff289d32a8b02` | NOT VERIFIABLE (no original) |
+| 08 | `proposals/08-gpt-6-luna.md` | `d442a23e05ff3090a6bcec6f27989aaacb7e7f67614f67ac3b7c3df6f9b06bfb` | NOT VERIFIABLE (no original) |
+| 09 | `proposals/09-gpt-6-5-terra.md` | `9d626820e7fa476269e81073006e98f363963e4fb7989aba9b22f8c0b6f94db8` | NOT VERIFIABLE (no original) |
+| 10 | `proposals/10-fable-5-1.md` | `67cd22828e0dae192e1222337d7d37323a015695d63bb489b153af15a0996bfb` | BYTE-VERIFIED |
+| 11 | `proposals/11-opus-5-5.md` | `f69479abd38a6c597096e13d9cd9d84e029cab338a58f3486987769f05c0f605` | BYTE-VERIFIED |
 
 ---
 
@@ -73,6 +73,7 @@ The reordering in 05 does not change any word, line or citation used here. All A
 
 - **First pass (`501a525`):** four LLM reviewers, one per group of designs, were asked to check (1) that each cited line contains the claimed text, (2) exact Arabic quotes, (3) fairness of the reading, and (4) to try to refute each `CONTRA` and `DERIV` item. They did not prove bounds formally and did not run experiments. One reviewer proposed a derivation (C‑14, "unbounded K4 inflation") that was wrong; it was adopted without an independent derivation.
 - **Engineering review of `501a525` (Owner):** found F123-01 to F123-05. C‑01 and C‑13 were reclassified from `CONTRA` to `DERIV` because each admits a consistent reading; C‑14 was re-derived; the shared-refund effect was added (C‑15); C‑08 was tightened with the K4 cap.
+- **Engineering review of `a00af51` (Owner):** found F123-06: the first version of C‑15 inferred a reach_foreign break from gross admissions. C‑15 was rewritten: refunds give neighbour benefit and gross admissions above the cap, but unrefunded admissions, and so failed foreign attempts, stay within the cap per fixed window.
 - **Status of every `CONTRA`, `DERIV` and bound here:** paper findings for engineering review. A citation check does not validate a security conclusion; acceptance of any `CONTRA` or reach bound requires the engineering review, and claims marked `EXP` require a reproducible experiment.
 
 ---
@@ -335,12 +336,12 @@ Cells: codes + evidence. "—" in the Evidence column means the design does not 
 
 ### Axis 4 — Success credit: double refund, washing, shared replenishment
 
-Three different properties are separated here (F123-04). A refund bound to the request's own reservation prevents fake or repeated refunds; it does **not** by itself stop the returned capacity from benefiting someone else, because the capacity goes back to a shared pool.
+Three different properties are separated here (F123-04). A refund bound to the request's own reservation prevents fake or repeated refunds; it does **not** stop the returned capacity from benefiting someone else, because it goes back to a shared pool. Column (c) is about who can use returned capacity, not about attacker reach: a refund limited to the request's own debit keeps unrefunded admissions — and therefore failed foreign attempts — within the pool cap per window (C‑15, F123-06).
 
 | # | (a) Fake / double refund prevented | (b) Own success washes own failures | (c) Shared capacity replenished (benefits any requester, incl. an adjacent attacker) | Evidence |
 |---|---|---|---|---|
 | 01 | n/a (no refund) | no | no | `01:L148` |
-| 02 | yes: one-time `Attempt_Reservation_ID` (`02:L202`, `02:L208`), spoofed-refund test (`02:L462`) | no: failure and fan-out counters never reduced (`02:L126`) | **yes**: 80–100% returned to the shared `IP_Unverified_Budget` (`02:L211`); capped at the original level (`02:L212`) but usable by any unverified requester on the IP (C‑15) | `02:L207–L213` |
+| 02 | yes: one-time `Attempt_Reservation_ID` (`02:L202`, `02:L208`), spoofed-refund test (`02:L462`) | no: failure and fan-out counters never reduced (`02:L126`) | **yes**: 80–100% of the request's own debit returned to the shared `IP_Unverified_Budget` (`02:L211`, `02:L212`); usable by any unverified requester on the IP; gross admissions can exceed the cap, unrefunded admissions cannot (C‑15) | `02:L207–L213` |
 | 03 | `UNSPEC` (no attempt reference) | **yes** at network level (C‑04) | **yes**: −2 on the shared IP risk per success and on challenge pass (`03:L89`, `03:L110`) | `03:L87–L91` |
 | 04 | `UNSPEC` for the credit | no: credit adjusts Failure Debt only (`04:L133`) | no: network/global spray counters untouched (`04:L170`) | `04:L133`, `04:L170`, `04:L215` |
 | 05 | n/a (refund rejected) | no | no | `05:L121` |
@@ -348,7 +349,7 @@ Three different properties are separated here (F123-04). A refund bound to the r
 | 07 | n/a | no | no | `07:L293–L297` |
 | 08 | n/a | no | no | `08:L115` |
 | 09 | `UNSPEC` | local debt only (`09:L90`) | no | `09:L90` |
-| 10 | yes when enabled: bound to `admissionId` (`10:L212`, `10:L216`) | no: identity counters not reset (`10:L216`) | **yes when Q9 is enabled**: one unit returned to the shared `net:unknown` of the current window (`10:L216`); the author's claim that it "لا يفيد مهاجمًا مجاورًا إلا بقدر ما استهلك هو نفسه" needs measurement (C‑15) | `10:L216`, `10:L362` |
+| 10 | yes when enabled: bound to `admissionId` (`10:L212`, `10:L216`) | no: identity counters not reset (`10:L216`) | **yes when Q9 is enabled**: one unit, only if this admission consumed it, returned to the shared `net:unknown` of the current window (`10:L216`); usable by others, but unrefunded admissions stay ≤ U (C‑15); the author's claim "لا يفيد مهاجمًا مجاورًا إلا بقدر ما استهلك هو نفسه" is consistent with this | `10:L216`, `10:L362` |
 | 11 | n/a (no refund) | no | no | `11:L196` |
 
 ### Axis 5 — Hard limit before the verifier under concurrency
@@ -560,7 +561,7 @@ See Axis 7. Common finding across designs that state it (05, 06, 07, 10, 11, 02)
 | # | Effect on own budgets | Effect on others / shared | Evidence |
 |---|---|---|---|
 | 01 | edge trust on own accounts | none (no refund) | `01:L148`, `01:L154` |
-| 02 | Verified binding + refund of own reservation | **returned capacity goes to the shared pool and is usable by others, incl. an adjacent attacker** (C‑15) | `02:L210–L213` |
+| 02 | Verified binding + refund of own reservation | returned capacity goes to the shared pool and is usable by others, incl. an adjacent attacker; the attacker's unrefunded (foreign) admissions remain ≤ the pool cap per window (C‑15) | `02:L210–L213` |
 | 03 | trust flag (Host) | **lowers shared network risk** (C‑04) | `03:L89` |
 | 04 | benign credit on Failure Debt only (amount `UNSPEC`) | none on network/global | `04:L133`, `04:L170` |
 | 05 | binding on own account | none | `05:L121` |
@@ -568,7 +569,7 @@ See Axis 7. Common finding across designs that state it (05, 06, 07, 10, 11, 02)
 | 07 | none | none | `07:L296` |
 | 08 | none | none | `08:L115` |
 | 09 | local debt | none | `09:L90` |
-| 10 | known pair | if Q9 is enabled, one unit returned to the shared `net:unknown`, usable by others (C‑15) | `10:L216` |
+| 10 | known pair | if Q9 is enabled, one unit returned to the shared `net:unknown`, usable by others; unrefunded admissions remain ≤ U per window (C‑15) | `10:L216` |
 | 11 | KNOWN pair | none | `11:L196` |
 
 ### S8 — Concurrent requests before outcomes
@@ -600,7 +601,12 @@ Only items with two quoted passages that cannot both hold are marked `CONTRA`. `
 - **C‑13 (10, `DERIV`, ambiguous definition — not `CONTRA`).** `10:L175` describes U's key as "عدّاد الأزواج غير المعروفة المقبولة". This admits two readings: a count of distinct unknown pairs, or a count of admissions of unknown pairs. The admission script consumes U on every admission of a not-known pair ("net unknown (if !known)", `10:L203`), and the pre-check rationale "U يُعطَّل (لأنه سيساوي عدّ المحاولات)" (`10:L192`) holds under the admissions reading. Under that consistent reading, foreign admissions per W are bounded by `min(U, (I+H) × S × A)`. The author's bound `min(U, (I+H) × S) × A` (`10:L261`) equals `min(U·A, (I+H)·S·A)`, which is ≥ `min(U, (I+H)·S·A)`: it is a valid but non-tight upper bound. The two coincide when `(I+H)·S·A ≤ U`; otherwise the author's bound overstates reach by up to a factor A. Under the distinct-pairs reading the author's bound is the natural one, but the L192 rationale would not hold. No two passages are irreconcilable, so this is recorded as ambiguity plus a non-tight bound.
 - **C‑14 (11, `DERIV` for the numeric bound; `EXP` for starvation; Redis Cluster only).** Reservation order is pair (A) → credential (S) → account (K4) → network (U), each step "atomic INCR-and-compare" (`11:L174–L178`), and a later rejection compensates (DECR) earlier reservations (`11:L180`). (1) **Numeric bound:** K4 is INCR-and-compare, so the number of K4 units held at any instant cannot exceed the K4 cap; there is no unbounded inflation. (2) **Hold time:** a unit taken by a request later rejected at U stays held from its K4 INCR until the compensating DECR, i.e. at least the U round trip plus the DECR round trip; if the Worker fails in between, it stays held "حتى انتهاء النافذة" (`11:L192`). Behaviour on a lost Redis reply is `UNSPEC`. (3) **Cost to the attacker:** compensation also releases the attacker's own A and S, and the pair is not marked SEEN because it was never admitted (`11:L181`); repeated U-rejected requests therefore cost no budget, only request rate. U must already be exhausted on the network, which the attacker can do with NEW pairs. (4) **Starvation hypothesis (not proven):** by occupancy (Little's law), if the attacker sustains a rate λ of such requests on one victim with mean hold time h, the mean number of held K4 units is about λ·h; when λ·h approaches the K4 cap, the victim's non-KNOWN requests are likely to see K4 full and be over-rejected. KNOWN pairs keep the reserved lane (`11:L177`); pre-check-only Hosts have no KNOWN pairs (`11:L277`). The test H10 (`11:L343`) checks only the value at rest. Whether sustained starvation occurs depends on λ, h and the K4 cap and needs a reproducible concurrency experiment. Comparison: 10 makes the burn permanent but budget-bounded (C‑08); 11 makes it temporary and budget-free.
 
-- **C‑15 (02, 10 Q9; `DERIV`).** A refund bound to a reservation (`02:L202`, `02:L208`; `10:L216`) prevents fake and repeated refunds, but the returned amount goes into a shared pool: `IP_Unverified_Budget` per IP (`02:L211`) or `net:unknown` per network window (`10:L216`). The pool cap is a **level**, not a cumulative count: within one window, the number of admissions the pool can fund is its cap plus everything refunded into it. Legitimate successes therefore raise the capacity available to any other requester on the same IP or network, including an adjacent attacker; the author of 02 states this replenishment is intended for new employees (`02:L211`). Consequently the per-window reach bounds stated for 02 ("10 إلى 20", `02:L283`, `02:L304`) hold only for a window without refunds, and for 10 the U-based bounds hold only with Q9 off. 10's author claims the net effect is ≤ 0 for the attacker's own refunds and asks for measurement (`10:L216`, `10:L362`); the neighbour effect is not addressed. 03 has the same shared effect through the risk score (C‑04).
+- **C‑15 (02, 10 Q9; `DERIV`; corrected after F123-06).** Scope: the refund mechanism as written, in one fixed window, with time-based refill and successes on target accounts treated separately (below). A refund is bound to the request's own reservation (`02:L202`, `02:L208`, `02:L212`; `10:L216`: "إذا كان هذا القبول قد استهلكها") and returns at most what that request debited, into a shared pool (`IP_Unverified_Budget` per IP, `02:L211`; `net:unknown` per network window, `10:L216`).
+  - **(a) Neighbour benefit — yes.** Capacity returned by one requester's success is usable by any other requester on the same IP or network, including an adjacent attacker.
+  - **(b) Gross admissions above the cap — yes.** With pool cap `U`, the number of admissions funded in the window is `U` plus everything refunded; e.g. 100 refunded legitimate logins followed by 20 attacker attempts on a pool of 20.
+  - **(c) reach_foreign above the cap — not shown.** Every admission debits one unit and only a successful admission can be refunded, so in a fixed window `unrefunded admissions ≤ U` (with a partial refund such as 80% in 02, the unrefunded amount is still bounded by U). Attacker attempts on accounts it does not own fail and are not refunded, so `reach_foreign ≤ U` in the window; refunds do not by themselves break the stated per-window bounds (`02:L283`, `02:L304`; 10 with Q9 on).
+  - **What refunds do change.** Without refunds, legitimate traffic in the window would have consumed part of `U` and left the attacker less; with refunds the attacker can still take up to the full `U` after many legitimate logins. The worst-case bound is unchanged; the incidental reduction from legitimate consumption disappears. This is the same effect 07 describes for removing legitimate traffic from a shared lane (`07:L232`).
+  - **Treated separately.** (i) Time-based refill: 02's pool is also described as a rate ("10 محاولات لكل 10 دقائق", `02:L66`), so reach over longer periods grows with the number of windows, independently of refunds. (ii) Successes on target accounts: an attacker attempt that succeeds on a victim account would be refunded, so foreign admissions could exceed U only by the number of successful foreign guesses, each of which is an account compromise and is counted as such, not as a refund effect. (iii) 03 is different: its −2 per success is not bounded by what the request debited (+1), so it creates net capacity (C‑04).
 
 `CONTRA` found: C‑12 (11). C‑01 (01) and C‑13 (10) were reclassified after engineering review (F123-05, F123-02) because each admits a consistent reading; the derivations remain. No `CONTRA` was found in 01–10 at the pinned commit; 09 has one ambiguity noted in its card. This is a statement about this review, not a proof of consistency.
 
@@ -671,7 +677,7 @@ Only items with two quoted passages that cannot both hold are marked `CONTRA`. `
 | Host assertion honesty | 02, 03, 05, 06, 07 | Contract/integration review; not observable by the library. |
 | Redis failover loss and mixed deploys | 01, 02, 04, 05, 06, 07, 08, 09, 10, 11 | Fault injection: lost replies, failover with acknowledged-write loss, mixed versions, rollback, key rotation. |
 | Growth of bounds over time | 10 (C‑10), 11 (C‑11) | 30-day inventory simulation. |
-| Refund timing and shared replenishment | 02, 03, 10 (Q9) | Paired runs: adjacent attacker with and without legitimate successes refunding into the shared pool in the same window; refunds arriving out of order under concurrency. |
+| Refund timing and shared replenishment | 02, 03, 10 (Q9) | Paired runs in a fixed window: check that unrefunded admissions and reach_foreign stay ≤ the pool cap with and without legitimate refunds; measure the availability effect separately; refunds arriving out of order or duplicated under concurrency; for 03, the net capacity created by success credits. |
 
 ---
 
