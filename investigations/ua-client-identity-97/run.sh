@@ -79,7 +79,8 @@ st="$actual/selftest"
 mkdir -p "$st"
 for m in empty malformed missing_cell duplicate_cell extra_field wrong_hash patched_flag bad_alphabet bad_transition metric_mismatch \
     kinds_tamper missing_ctl attribution_gap c02_missing_row c02_bad_workers posthoc_unlabelled \
-    masked_evasion masked_nat_regression baseline_drift composition_mismatch; do
+    first_denial_index masked_evasion masked_nat_regression baseline_drift composition_mismatch masked_k5_attribution \
+    ablation_still_denied; do
     read -r p01 p02 p03 want < <(php "$here/selftest.php" "$m" "$src/c01_matrix.jsonl" "$src/c02_lifecycle.jsonl" "$src/c03_posthoc_probe.jsonl" "$st")
     set +e
     php "$here/report.php" "$p01" "$p02" "$p03" "$st/out" >/dev/null 2>&1

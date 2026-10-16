@@ -125,6 +125,23 @@ switch ($mutation) {
         $r['record'][10] = '-';
         $rows['c02'][$i] = $remetric($r);
         break;
+    case 'first_denial_index':
+        $i = $find($rows['c01'], ['stream' => 'KD', 'arm' => 'CIRI', 'flow' => 'pre+out']);
+        $rows['c01'][$i]['ownerFirstDenial']['index']++;
+        break;
+    case 'masked_k5_attribution':
+        // The runtime witness is moved to the account watcher (a concurrent account-scoped SOFT) — consistent with every string.
+        $want = 6;
+        $i = $find($rows['c01'], ['stream' => 'KD', 'arm' => 'CIRI', 'flow' => 'pre+out']);
+        $rows['c01'][$i]['ownerFirstDenial']['accountWatcherDelta'] = 1;
+        $rows['c01'][$i]['ownerFirstDenial']['deviceWatcherDelta'] = 0;
+        break;
+    case 'ablation_still_denied':
+        $want = 6;
+        $i = $find($rows['c01'], ['stream' => 'UAC', 'arm' => 'S0I', 'flow' => 'out']);
+        $k = $rows['c01'][$i]['ownerFirstDenial']['index'];
+        $rows['c01'][$i]['k5AblatedRecord'][$k] = 'S';
+        break;
     default:
         fwrite(STDERR, "unknown mutation $mutation\n");
         exit(2);

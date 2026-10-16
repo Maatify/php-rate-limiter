@@ -161,7 +161,7 @@ Executed with `bash investigations/ua-client-identity-97/run.sh` on the baseline
 | G-S1 best response | executed — **FAIL** | 24 | X7 `pre` / `pre+out`: CIRI 121 vs S0N 44; BRD `pre`: 37 vs 22 |
 | G-S1b same input | executed — **FAIL** | 122 | `static_uarot`: X7 121 vs 44; BRU `pre` 100 vs 3; X1 `pre` 61 vs 3; BRD `pre` 37 vs 7; BRU `pre+out` 3 vs 2 |
 | G-S2 no-id parity | executed — PASS | 177 | — |
-| G-S3 K1 / K4 / DEC-021 | executed — **FAIL** | 13 | only through G-S1b's BRU / BRD cells; KD / UAC owner reach and K5 path PASS |
+| G-S3 K1 / K4 / DEC-021 | executed — **FAIL** | 17 | only through G-S1b's BRU / BRD cells; KD / UAC owner reach and K5 path PASS (K5 path proven by runtime watcher witness + ablation, see §7 note 7) |
 | G-S4 possession ≠ trust | executed — **FAIL** | 242 | (a) PASS on every CIRI request; (b) POI attacker reach 32 vs 4 (`pre`, `pre+out`) |
 | G-S5 bounded cost | executed — **FAIL** | 236 | 20 `static_uarot` cells, +1 or +2 correlation calls per command (maximum 7) |
 | G-S6 rotation | executed — PASS | 2 | — |
@@ -197,3 +197,9 @@ verdict rule.
 6. **Post-hoc metric "victim-guess reach"** (`report.php`, O16): attacker attempts that are failed guesses against accounts the
    attacker does not own. Added because G-S1's X7 failure turned out to consist only of admitted padding logins on the attacker's
    own account. It explains the size of the registered failures; it does not replace `reach` in any gate.
+7. **G-S3 K5-path evidence strengthened** (Lead review F125-01 on `084a88e`): note 1's score test ("K5 score ≥ l1 at the first
+   denial") did not prove that K5 was the winning source. It is replaced by two required conditions per cell with a denial: the
+   runtime wrote that SOFT to the device Anti-Equilibrium watcher and not to the account watcher (only a K5-only winning set does
+   that), and under `Ci97K5LevelAblatedLoginPolicy` the earlier decisions are identical and the denied command is ALLOW. A HARD
+   first denial counts as not attributed. The §5 wording is unchanged; the `out` flow is now also attributed. Result unchanged
+   (PASS for the K5 part; G-S3 FAIL through G-S1b).

@@ -40,7 +40,7 @@
             "failures": [
                 "FAIL SP / BRU / BRD covered by G-S1 and G-S1b"
             ],
-            "checked": 13
+            "checked": 17
         },
         "G-S4": {
             "pass": false,
@@ -373,6 +373,10 @@
         },
         {
             "observation": "O16 victim-guess reach (post-hoc metric): X7 best response 40/40 in S0N and CIRI (the 44 -> 121 total-reach delta is own-account padding only); the only best-response increase is BRD checkOnly-only 22 -> 37",
+            "reproduced": true
+        },
+        {
+            "observation": "O17 DEC-021 attribution (F125-01): in KD and UAC, for CIRI and S0I in every flow with a denial, the first owner denial is a K5-only SOFT — device watcher written, account watcher not — and is ALLOW once K5 cannot produce a level",
             "reproduced": true
         }
     ]

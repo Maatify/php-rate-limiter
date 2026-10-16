@@ -28,6 +28,13 @@ foreach (ci97Streams() as $stream => $def) {
                     $row['ctlCheck'] = $ctl['check'];
                     $row['ctlRecord'] = $ctl['record'];
                 }
+                if ($def['cls'] === 'owner') {
+                    $ablLab = ci97Lab('CIRLI', $shape);
+                    $ablLab->policy = new Ci97K5LevelAblatedLoginPolicy();
+                    $abl = ci97Replay(static fn(int $i): Lab => $ablLab, $events, $shape, $flow);
+                    $row['k5AblatedCheck'] = $abl['check'];
+                    $row['k5AblatedRecord'] = $abl['record'];
+                }
                 emit('c03', $row);
             }
         }

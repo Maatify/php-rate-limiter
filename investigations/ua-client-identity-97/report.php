@@ -103,7 +103,7 @@ function expectedWho(array $events): array
 
 const CELL_FIELDS = ['s', 'row', 'stream', 'cls', 'shape', 'arm', 'strategy', 'flow', 'legitAttempts', 'legitDenied', 'legitUsers',
     'legitUsersDenied', 'attackAttempts', 'reach', 'attackDenied', 'check', 'record', 'kinds', 'who', 'firstDenialBlockedKeys',
-    'confMismatch', 'confEscalation', 'ownerFirstDenialScores', 'maxOpsPerCommand', 'distinctFingerprints', 'distinctK3', 'distinctK5'];
+    'confMismatch', 'confEscalation', 'ownerFirstDenial', 'maxOpsPerCommand', 'distinctFingerprints', 'distinctK3', 'distinctK5'];
 const METRIC_FIELDS = ['legitAttempts', 'legitDenied', 'legitUsers', 'legitUsersDenied', 'attackAttempts', 'reach', 'attackDenied'];
 
 /** Validate a matrix row (C01 / C03) against its stream definition; returns the cell key. */
@@ -116,6 +116,9 @@ function validateCell(array $r, array $streams, bool $posthoc): string
     $needsCtl = ($r['cls'] ?? null) !== 'attack' && ($r['arm'] ?? null) !== 'CIRI-CHOFF';
     if ($needsCtl) {
         array_push($fields, 'ctlCheck', 'ctlRecord');
+    }
+    if (($r['cls'] ?? null) === 'owner') {
+        array_push($fields, 'k5AblatedCheck', 'k5AblatedRecord');
     }
     $keys = array_keys($r);
     sort($keys);
@@ -155,8 +158,33 @@ function validateCell(array $r, array $streams, bool $posthoc): string
         fail("$where: first-denial attribution does not cover exactly the denied legitimate actors");
     }
     $owner = $r['cls'] === 'owner' && $r['legitDenied'] > 0;
-    if ($owner !== is_array($r['ownerFirstDenialScores'])) {
-        fail("$where: owner first-denial scores present iff an owner was denied");
+    if ($owner !== is_array($r['ownerFirstDenial'])) {
+        fail("$where: owner first-denial record present iff an owner was denied");
+    }
+    if ($r['cls'] === 'owner') {
+        checkStrings("$where k5-ablated", $r['k5AblatedCheck'], $r['k5AblatedRecord'], $r['flow'], $n);
+    }
+    if ($owner) {
+        // The first-denial record must be the first denied owner request of the archived strings, with its command and decision.
+        $d = $r['ownerFirstDenial'];
+        if (array_keys($d) !== ['index', 'command', 'decision', 'accountWatcherDelta', 'deviceWatcherDelta', 'K4', 'K5']) {
+            fail("$where: owner first-denial record outside its exact schema");
+        }
+        $first = null;
+        for ($i = 0; $i < $n && $first === null; $i++) {
+            $isDenied = ($r['check'][$i] !== '-' && $r['check'][$i] !== 'A') || ($r['record'][$i] !== '-' && $r['record'][$i] !== 'A');
+            $first = $r['kinds'][$i] === 'O' && $isDenied ? $i : null;
+        }
+        $cmd = $r['check'][$first] !== '-' && $r['check'][$first] !== 'A' ? 'check' : 'record';
+        $dec = $cmd === 'check' ? $r['check'][$first] : $r['record'][$first];
+        if ($d['index'] !== $first || $d['command'] !== $cmd || $d['decision'] !== $dec) {
+            fail("$where: owner first-denial record does not match the first denied owner request");
+        }
+        foreach (['accountWatcherDelta', 'deviceWatcherDelta', 'K4', 'K5'] as $f) {
+            if (! is_int($d[$f]) || $d[$f] < 0) {
+                fail("$where: owner first-denial $f is not a non-negative integer");
+            }
+        }
     }
 
     return implode('|', [$r['stream'], $r['shape'], $r['arm'], $r['strategy'], $r['flow']]);
@@ -349,19 +377,40 @@ foreach ($G['G-S1b']['items'] ?? [] as $it) {
     }
 }
 $add('G-S3', $s3Base, 'SP / BRU / BRD covered by G-S1 and G-S1b');
+// "The DEC-021 K5 path is the denying path" (review F125-01): proven per cell by TWO independent pieces of evidence, both required —
+//  (1) runtime witness: the first owner denial is a SOFT_BLOCK whose single Anti-Equilibrium write went to the DEVICE watcher and not
+//      to the account watcher. The runtime writes the device watcher only when the union of the scopes of ALL winning SOFT
+//      candidates is device-only (EvaluationPipeline.php:2209-2217, :455-472), and only a K5-derived level carries device scope
+//      (:624, :1889, :1944-1947). Concurrent SOFT sources (K4, budget, any account-scoped candidate) would force the account watcher.
+//  (2) ablation: with K5 unable to produce a level (Ci97K5LevelAblatedLoginPolicy), every decision before the denied request is
+//      identical and the denied command itself is ALLOW — K5's level is necessary and no other source denies that request alone.
+// A HARD first denial carries no watcher write and is reported as NOT attributed (fail-closed).
+$k5Attributed = static function (array $r): array {
+    $d = $r['ownerFirstDenial'];
+    $i = $d['index'];
+    $witness = $d['decision'] === 'S' && $d['deviceWatcherDelta'] === 1 && $d['accountWatcherDelta'] === 0;
+    $prefix = substr($r['k5AblatedCheck'], 0, $i) === substr($r['check'], 0, $i) && substr($r['k5AblatedRecord'], 0, $i) === substr($r['record'], 0, $i);
+    $allowed = $d['command'] === 'check'
+        ? $r['k5AblatedCheck'][$i] === 'A'
+        : $r['k5AblatedCheck'][$i] === $r['check'][$i] && $r['k5AblatedRecord'][$i] === 'A';
+
+    return [$witness && $prefix && $allowed, "{$d['command']} {$d['decision']} at request $i; device/account watcher +{$d['deviceWatcherDelta']}/+{$d['accountWatcherDelta']}; ablated: prefix " . ($prefix ? 'identical' : 'DIFFERENT') . ', denied command ' . ($allowed ? 'ALLOW' : 'still denied')];
+};
 foreach (['KD', 'UAC'] as $st) {
-    foreach (['pre+out', 'pre'] as $fl) {
+    foreach (['pre+out', 'pre', 'out'] as $fl) {
         $a = $cell($st, 'login', 'CIRI', '-', $fl);
         $b = $cell($st, 'login', 'S0I', '-', $fl);
-        $add('G-S3', $ownerReach($a) <= $ownerReach($b), "$st/$fl owner-device reach CIRI {$ownerReach($a)} vs S0I {$ownerReach($b)}");
+        if ($fl !== 'out') {
+            $add('G-S3', $ownerReach($a) <= $ownerReach($b), "$st/$fl owner-device reach CIRI {$ownerReach($a)} vs S0I {$ownerReach($b)}");
+        }
         foreach (['CIRI' => $a, 'S0I' => $b] as $arm => $r) {
             if ($r['legitDenied'] === 0) {
                 // checkOnly-only records no failure, so no K5 score and no denial exist in either arm: nothing to attribute.
                 $add('G-S3', true, "$st/$fl/$arm no owner denial (no recorded failure), K5 path not applicable");
                 continue;
             }
-            $k5 = $r['ownerFirstDenialScores']['K5'] ?? -1;
-            $add('G-S3', $k5 >= 8, "$st/$fl/$arm first denial on the DEC-021 K5 path (K5 score $k5 >= l1 8)");
+            [$ok, $why] = $k5Attributed($r);
+            $add('G-S3', $ok, "$st/$fl/$arm first denial attributed to K5 alone: $why");
         }
     }
 }
@@ -525,6 +574,8 @@ $O = [
     'O16 victim-guess reach (post-hoc metric): X7 best response 40/40 in S0N and CIRI (the 44 -> 121 total-reach delta is own-account padding only); the only best-response increase is BRD checkOnly-only 22 -> 37' =>
         $VR['X7|pre+out'] === ['S0N' => 40, 'CIRI' => 40, 'CIRLI' => 40] && $VR['BRD|pre']['S0N'] === 22 && $VR['BRD|pre']['CIRI'] === 37
         && array_keys(array_filter($VR, static fn(array $v): bool => $v['CIRI'] > $v['S0N'])) === ['BRD|pre'],
+    'O17 DEC-021 attribution (F125-01): in KD and UAC, for CIRI and S0I in every flow with a denial, the first owner denial is a K5-only SOFT — device watcher written, account watcher not — and is ALLOW once K5 cannot produce a level' =>
+        array_reduce(['KD', 'UAC'], static fn(bool $c, string $st): bool => $c && array_reduce(['CIRI', 'S0I'], static fn(bool $c2, string $arm): bool => $c2 && array_reduce(['pre+out', 'out'], static fn(bool $c3, string $fl): bool => $c3 && $k5Attributed($cell($st, 'login', $arm, '-', $fl))[0], true), true), true),
 ];
 $notReproduced = array_keys(array_filter($O, static fn(bool $v): bool => ! $v));
 

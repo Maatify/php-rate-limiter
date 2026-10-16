@@ -13,7 +13,7 @@ Failed hard gates: G-S1, G-S1b, G-S3, G-S4, G-S5, G-F5.
 | G-S1 | **FAIL** | 24 | X7/login/pre best reach CIRI 121 vs S0N 44<br>X7/login/pre+out best reach CIRI 121 vs S0N 44<br>BRD/login/pre best reach CIRI 37 vs S0N 22 |
 | G-S1b | **FAIL** | 122 | X7/login/pre/static_uarot reach CIRI 121 vs S0I 44<br>X7/login/pre+out/static_uarot reach CIRI 121 vs S0I 44<br>BRU/login/pre/static_uarot reach CIRI 100 vs S0I 3<br>BRU/login/pre+out/static_uarot reach CIRI 3 vs S0I 2<br>BRD/login/pre/static_uarot reach CIRI 37 vs S0I 7<br>X1/login/pre/static_uarot reach CIRI 61 vs S0I 3 |
 | G-S2 | PASS | 177 | — |
-| G-S3 | **FAIL** | 13 | SP / BRU / BRD covered by G-S1 and G-S1b |
+| G-S3 | **FAIL** | 17 | SP / BRU / BRD covered by G-S1 and G-S1b |
 | G-S4 | **FAIL** | 242 | POI/pre+out attacker reach CIRI(stolen) 32 vs S0N(none) 4<br>POI/pre attacker reach CIRI(stolen) 32 vs S0N(none) 4 |
 | G-S5 | **FAIL** | 236 | ops/command CIRI 6 vs S0I 5 X2|login|CIRI|static_uarot|pre+out<br>ops/command CIRI 6 vs S0I 5 X2|login|CIRI|static_uarot|pre<br>ops/command CIRI 5 vs S0I 4 X2|login|CIRI|static_uarot|out<br>ops/command CIRI 5 vs S0I 4 X7|login|CIRI|static_uarot|out<br>ops/command CIRI 6 vs S0I 5 X2L|login|CIRI|static_uarot|pre+out<br>ops/command CIRI 6 vs S0I 5 X2L|login|CIRI|static_uarot|pre<br>ops/command CIRI 5 vs S0I 4 X2L|login|CIRI|static_uarot|out<br>ops/command CIRI 7 vs S0I 6 X8|login|CIRI|static_uarot|pre+out<br>… (20 total) |
 | G-S6 | PASS | 2 | — |
@@ -168,3 +168,4 @@ Failed hard gates: G-S1, G-S1b, G-S3, G-S4, G-S5, G-F5.
 * REPRODUCED — O14 fingerprint-secret rotation is decision-transparent for CIRI and S0I (D1, X2 static)
 * REPRODUCED — O15 roaming carrier: RM2 48/60 (S0N, K2) -> 32/60 (CIRI, K3 via MEDIUM dilution)
 * REPRODUCED — O16 victim-guess reach (post-hoc metric): X7 best response 40/40 in S0N and CIRI (the 44 -> 121 total-reach delta is own-account padding only); the only best-response increase is BRD checkOnly-only 22 -> 37
+* REPRODUCED — O17 DEC-021 attribution (F125-01): in KD and UAC, for CIRI and S0I in every flow with a denial, the first owner denial is a K5-only SOFT — device watcher written, account watcher not — and is ALLOW once K5 cannot produce a level

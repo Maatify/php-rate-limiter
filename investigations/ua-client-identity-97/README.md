@@ -24,8 +24,8 @@ the same id with today's resolver, and a "remove UA entirely" control.
 ## Result
 
 **`NO-GO`** by the pre-registered rule. The #97 cohort denials disappear (D1 596/600 → 0/600), but two people behind one router go
-from 0 to 127/134 denials through K2 churn (#100), and any constant or stolen id moves the request onto the weak MEDIUM
-enforcement path (a naive replayer: X2 6 → 121/121, stolen id 4 → 32/180; against today's best attacker response the loss is
+from 0 to 127/134 denials through K2 churn (#100) in the measured L1 stream, and a constant or stolen id moves the request onto the
+weak MEDIUM enforcement path (a naive replayer: X2 6 → 121/121, stolen id 4 → 32/180; against today's best attacker response the loss is
 narrow — +15 victim guesses in checkOnly-only BRD). Details, answers to Q1–Q5 and Owner decisions:
 [`REPORT.md`](REPORT.md).
 
@@ -45,8 +45,8 @@ narrow — +15 victim guesses in checkOnly-only BRD). Details, answers to Q1–Q
 | `scenarios/c01_matrix.php` | the pre-registered matrix: 905 cells (stream × shape × arm × strategy × flow) with a correlation-off counterfactual for every non-attack cell |
 | `scenarios/c02_lifecycle.php` | secret rotation, mixed fleet, rollout switch, malformed ids, shared-empty-id D1, the official `RateLimiterBuilder` composition check, post-hoc IPv6 cell |
 | `scenarios/c03_posthoc_probe.php` | post-hoc probe CIRLI over the whole matrix (diagnosis only) |
-| `report.php` | fail-closed validator, mechanical gate evaluation, verdict, pinned observations O1–O16, generated summary |
-| `selftest.php` | 20 negative-control mutations used by `run.sh` |
+| `report.php` | fail-closed validator, mechanical gate evaluation, verdict, pinned observations O1–O17, generated summary |
+| `selftest.php` | 23 negative-control mutations used by `run.sh` |
 | `run.sh` | runner with baseline gate, byte-for-byte golden diff and self-tests |
 | `expected/` | committed evidence (`c01_matrix.jsonl`, `c02_lifecycle.jsonl`, `c03_posthoc_probe.jsonl`), `summary.md`, `gates.json` |
 
@@ -73,8 +73,9 @@ UPDATE=1 bash investigations/ua-client-identity-97/run.sh   # regenerate expecte
   event kinds or actors that differ from the stream definition, metrics that differ from their re-derivation, a missing
   counterfactual, an attribution that does not cover the denied actors) and exit 6 when the evidence is consistent but a pinned
   observation is not reproduced;
-* `selftest.php` produces 20 mutations; 16 must exit 5 and 4 must exit 6 — the latter are internally consistent tamperings that
-  would mask the evasion result, the NAT regression, a baseline drift or a composition mismatch.
+* `selftest.php` produces 23 mutations; 17 must exit 5 and 6 must exit 6 — the latter are internally consistent tamperings that
+  would mask the evasion result, the NAT regression, a baseline drift, a composition mismatch, a concurrent account-scoped source
+  at a known device's first denial, or a denial that survives K5 ablation.
 
 `results/` is git-ignored scratch.
 

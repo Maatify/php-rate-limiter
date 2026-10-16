@@ -19,7 +19,9 @@ use Maatify\RateLimiter\Config\ApiHeavyProtectionPolicy;
 use Maatify\RateLimiter\Config\LoginProtectionPolicy;
 use Maatify\RateLimiter\DTO\BoundedDistinctResultDTO;
 use Maatify\RateLimiter\DTO\DeviceIdentityDTO;
+use Maatify\RateLimiter\DTO\PolicyThresholdsDTO;
 use Maatify\RateLimiter\DTO\RateLimitContextDTO;
+use Maatify\RateLimiter\DTO\ScoreThresholdsDTO;
 use Maatify\RateLimiter\Service\AntiEquilibriumGate;
 use Maatify\RateLimiter\Service\BudgetTracker;
 use Maatify\RateLimiter\Service\DecayCalculator;
@@ -133,6 +135,22 @@ final class Ci97LowConfidenceProbeResolver extends Ci97ClientInstanceResolver
             $d->normalizedUa,
             $d->isDevicePreviouslyVerifiedForAccount,
             $d->previousFingerprintHash,
+        );
+    }
+}
+
+/**
+ * Attribution counterfactual for G-S3 (review F125-01): the official Login policy, byte-for-byte, except that its K5 thresholds can
+ * never be reached, so K5 can never produce a level. K5 stays non-null, so K5 scoring, the DEC-021 known-device allowance and the
+ * device Anti-Equilibrium watcher eligibility are unchanged. Never a candidate.
+ */
+final class Ci97K5LevelAblatedLoginPolicy extends LoginProtectionPolicy
+{
+    public function getScoreThresholds(): PolicyThresholdsDTO
+    {
+        return new PolicyThresholdsDTO(
+            k4: parent::getScoreThresholds()->k4,
+            k5: new ScoreThresholdsDTO(PHP_INT_MAX, PHP_INT_MAX, PHP_INT_MAX),
         );
     }
 }
@@ -512,6 +530,23 @@ function ci97BlockedKeys(Lab $lab, RateLimitContextDTO $c): string
 
 const CI97_CONF_RANK = ['LOW' => 0, 'MEDIUM' => 1, 'HIGH' => 2];
 
+/**
+ * The two DEC-021 Anti-Equilibrium watchers of one request, keyed exactly as EvaluationPipeline derives them (auxiliaryAccountKey()
+ * and deviceAntiEquilibriumKeys(); current generation, env "prod"). Every issued SOFT_BLOCK on a failure writes exactly one of them,
+ * from the union of the scopes of ALL winning SOFT candidates: the device watcher only when that union is device-only (K5 alone).
+ *
+ * @return array{account: int, device: int}
+ */
+function ci97WatcherCounts(Lab $lab, RateLimitContextDTO $c): array
+{
+    $p = $lab->policy->getName();
+    $fp = $lab->resolver->resolve($c)->fingerprintHash;
+    $account = hash_hmac('sha256', "{$p}:rate_limiter:aux:anti_equilibrium:v1:prod:{$c->accountId}", Lab::SECRET);
+    $device = hash_hmac('sha256', "{$p}:rate_limiter:aux:anti_equilibrium_device:v1:prod:{$c->accountId}:{$fp}", Lab::SECRET);
+
+    return ['account' => $lab->corr->getWatchFlag($account), 'device' => $lab->corr->getWatchFlag($device)];
+}
+
 function ci97Char(array $r): string
 {
     return $r['d'];
@@ -536,7 +571,7 @@ function ci97Replay(callable $labFor, array $events, string $shape, string $flow
     $firstDenyKeys = [];
     $confMismatch = 0;
     $confEscalation = 0;
-    $ownerFirstDenialScores = null;
+    $ownerFirstDenial = null;
     $maxOps = 0;
     $fps = [];
     $k3 = [];
@@ -566,6 +601,8 @@ function ci97Replay(callable $labFor, array $events, string $shape, string $flow
         $ch = '-';
         $rc = '-';
         $denied = false;
+        $isOwner = $ev['kind'] === 'owner' && $c->accountId !== null;
+        $w0 = $isOwner ? ci97WatcherCounts($lab, $c) : null;
         if ($flow !== 'out') {
             $r = $lab->run($c, 'check');
             $ch = ci97Char($r);
@@ -586,9 +623,19 @@ function ci97Replay(callable $labFor, array $events, string $shape, string $flow
         $who[] = $whoIndex[$whoKey];
         if ($denied && $kind !== 'X' && ! isset($firstDenyKeys[$whoKey])) {
             $firstDenyKeys[$whoKey] = ci97BlockedKeys($lab, $c);
-            if ($kind === 'O') {
+            if ($kind === 'O' && $w0 !== null) {
+                // Only the denied command can write a watcher (an ALLOW writes none), so the delta over the request is its write.
+                $w1 = ci97WatcherCounts($lab, $c);
                 $s = $lab->scores($c);
-                $ownerFirstDenialScores = ['K4' => $s['K4'] ?? 0, 'K5' => $s['K5'] ?? 0];
+                $ownerFirstDenial = [
+                    'index' => $i,
+                    'command' => $ch !== 'A' && $ch !== '-' ? 'check' : 'record',
+                    'decision' => $ch !== 'A' && $ch !== '-' ? $ch : $rc,
+                    'accountWatcherDelta' => $w1['account'] - $w0['account'],
+                    'deviceWatcherDelta' => $w1['device'] - $w0['device'],
+                    'K4' => $s['K4'] ?? 0,
+                    'K5' => $s['K5'] ?? 0,
+                ];
             }
         }
         $check .= $ch;
@@ -617,7 +664,7 @@ function ci97Replay(callable $labFor, array $events, string $shape, string $flow
         'firstDenialBlockedKeys' => $attr,
         'confMismatch' => $confMismatch,
         'confEscalation' => $confEscalation,
-        'ownerFirstDenialScores' => $ownerFirstDenialScores,
+        'ownerFirstDenial' => $ownerFirstDenial,
         'maxOpsPerCommand' => $maxOps,
         'distinctFingerprints' => count($fps),
         'distinctK3' => count($k3),

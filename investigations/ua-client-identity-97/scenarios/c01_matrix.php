@@ -29,6 +29,14 @@ foreach (ci97Streams() as $stream => $def) {
                         $row['ctlCheck'] = $ctl['check'];
                         $row['ctlRecord'] = $ctl['record'];
                     }
+                    if ($def['cls'] === 'owner') {
+                        // G-S3 attribution counterfactual (F125-01): same events, same arm, K5 unable to produce a level.
+                        $ablLab = ci97Lab($arm, $shape);
+                        $ablLab->policy = new Ci97K5LevelAblatedLoginPolicy();
+                        $abl = ci97Replay(static fn(int $i): Lab => $ablLab, $events, $shape, $flow);
+                        $row['k5AblatedCheck'] = $abl['check'];
+                        $row['k5AblatedRecord'] = $abl['record'];
+                    }
                     emit('c01', $row);
                 }
             }
