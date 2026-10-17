@@ -1,0 +1,130 @@
+{
+    "v0": true,
+    "v0Misses": [],
+    "gates": {
+        "FC-1 FC4": {
+            "pass": true,
+            "detail": []
+        },
+        "FC-2 FC4": {
+            "pass": false,
+            "detail": [
+                "D2 32 > S40 27",
+                "MIX 65 > S40 59"
+            ]
+        },
+        "FC-3 FC4": {
+            "pass": true,
+            "detail": []
+        },
+        "FC-1 FC8": {
+            "pass": false,
+            "detail": [
+                "MIX 14 > S12 10"
+            ]
+        },
+        "FC-2 FC8": {
+            "pass": false,
+            "detail": [
+                "MIX 64 > S40 59"
+            ]
+        },
+        "FC-3 FC8": {
+            "pass": true,
+            "detail": []
+        },
+        "FC-2 detector FCALL8": {
+            "pass": true,
+            "detail": [
+                "N12 16 > 0",
+                "D2 48 > 27"
+            ]
+        },
+        "TB-1 detector FW16": {
+            "pass": true,
+            "detail": [
+                "FW16 2304 vs TB10 147"
+            ]
+        },
+        "TB-2 detector G1ESC": {
+            "pass": true,
+            "detail": [
+                "delta 0: 1860",
+                "delta 60: 1860",
+                "delta 300: 1860",
+                "delta 900: 1860",
+                "delta 1800: 1860",
+                "delta 3600: 3600"
+            ]
+        },
+        "TB-1 TB10": {
+            "pass": true,
+            "detail": [
+                "admitted 147, bound 148, recount 147"
+            ]
+        },
+        "TB-2 TB10": {
+            "pass": false,
+            "detail": [
+                "delta 900: 900",
+                "delta 1800: 1800",
+                "delta 3600: 3600"
+            ]
+        },
+        "TB-3 TB10R": {
+            "pass": false,
+            "detail": [
+                "UAC 8 > S40 6"
+            ]
+        },
+        "TB-1 TB30": {
+            "pass": true,
+            "detail": [
+                "admitted 51, bound 52, recount 51"
+            ]
+        },
+        "TB-2 TB30": {
+            "pass": false,
+            "detail": [
+                "delta 3600: 3600"
+            ]
+        },
+        "TB-3 TB30R": {
+            "pass": false,
+            "detail": [
+                "UAC 9 > S40 6"
+            ]
+        },
+        "TB-1 TB60": {
+            "pass": true,
+            "detail": [
+                "admitted 27, bound 28, recount 27"
+            ]
+        },
+        "TB-2 TB60": {
+            "pass": true,
+            "detail": [
+                "delta 0: 1860 s",
+                "delta 60: 1860 s",
+                "delta 300: 1860 s",
+                "delta 900: 1860 s",
+                "delta 1800: 1860 s",
+                "delta 3600: 3600 s"
+            ]
+        },
+        "TB-3 TB60R": {
+            "pass": false,
+            "detail": [
+                "UAC 9 > S40 6"
+            ]
+        }
+    },
+    "verdicts": {
+        "FC": false,
+        "TB": {
+            "TB10": false,
+            "TB30": false,
+            "TB60": false
+        }
+    }
+}

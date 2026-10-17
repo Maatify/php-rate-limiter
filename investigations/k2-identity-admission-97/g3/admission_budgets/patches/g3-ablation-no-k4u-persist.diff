@@ -1,0 +1,67 @@
+--- a/src/Service/EvaluationPipeline.php
++++ b/src/Service/EvaluationPipeline.php
+@@ -2022,6 +2022,48 @@ class EvaluationPipeline
+         ];
+     }
+
++    /**
++     * G3 ablation helper: keeps device-scoped candidates, rebuilds mixed account + device candidates from their K5 persistence
++     * only, and drops purely account-scoped candidates.
++     *
++     * @param list<array{decision: string, level: int, retryAfter: int, source: string, persistence: list<array{key: string, previousKey: ?string, level: int, duration: int}>, scopes: list<string>}> $candidates
++     * @param array<string, string|null> $keysV2
++     * @param array<string, string|null> $keysV1
++     * @return list<array{decision: string, level: int, retryAfter: int, source: string, persistence: list<array{key: string, previousKey: ?string, level: int, duration: int}>, scopes: list<string>}>
++     */
++    private function g3DeviceScopedOnly(array $candidates, array $keysV2, array $keysV1): array
++    {
++        $k4 = array_values(array_filter([$keysV2['k4'] ?? null, $keysV1['k4'] ?? null], static fn(?string $k): bool => $k !== null));
++        $out = [];
++        foreach ($candidates as $candidate) {
++            if (! in_array(self::SCOPE_ACCOUNT, $candidate['scopes'], true)) {
++                $out[] = $candidate;
++                continue;
++            }
++            if (! in_array(self::SCOPE_DEVICE, $candidate['scopes'], true)) {
++                continue;
++            }
++            $persistence = array_values(array_filter(
++                $candidate['persistence'],
++                static fn(array $p): bool => ! in_array($p['key'], $k4, true),
++            ));
++            if ($persistence === []) {
++                continue;
++            }
++            $level = max(array_map(static fn(array $p): int => $p['level'], $persistence));
++            $out[] = $this->candidate(
++                $level >= 2 ? RateLimitResultDTO::DECISION_HARD_BLOCK : RateLimitResultDTO::DECISION_SOFT_BLOCK,
++                $level,
++                PenaltyLadder::getDuration($level),
++                $candidate['source'],
++                $persistence,
++                [self::SCOPE_DEVICE],
++            );
++        }
++
++        return $out;
++    }
++
+     /**
+      * @param list<array{decision: string, level: int, retryAfter: int, source: string, persistence: list<array{key: string, previousKey: ?string, level: int, duration: int}>, scopes: list<string>}> $candidates
+      * @return array{decision: string, level: int, retryAfter: int, source: string, persistence: list<array{key: string, previousKey: ?string, level: int, duration: int}>, scopes: list<string>}|null
+@@ -2197,6 +2239,15 @@ class EvaluationPipeline
+             fn(array $candidate): bool => ! str_starts_with($candidate['source'], 'trusted_advisory:'),
+         ));
+
++        // G3 ABLATION no-k4u-persist (investigations/k2-identity-admission-97/g3/admission_budgets). U lane only: no
++        // account-scoped candidate (K4U score levels, account watcher, distributed-account and flood reactions, recovery
++        // guard) refuses or persists; device-scoped (K5) parts are kept; the 24 h budget never adds a candidate. Scores are
++        // still written and read, so they remain observable. P lane, K4P and K5 are untouched.
++        if ($this->g1Lane === 'U') {
++            $candidates = $this->g3DeviceScopedOnly($candidates, $keysV2, $keysV1);
++            $budgetSuppressed = true;
++        }
++
+         // A post-punishment K4 mutation is the authoritative candidate for
+         // that same logical K4 request. The pre-mutation score candidate can
+         // still carry a longer decay horizon, so remove only that marked K4

@@ -1,0 +1,7 @@
+{"s":"s03","fixture":"BRU24","arm":"G1ESC","build":"CAND","tbT":null,"tbC":null,"attackAdmitted":33,"tbTakesRecount":0,"refunds":0,"attackDeniedByCause":{"pen:K4":5525,"pen:K4+K5":46,"pen:K5":75,"soft":113}}
+{"s":"s03","fixture":"REC","arm":"G1ESC","build":"CAND","tbT":null,"delta":0,"admittedAfterAttackEnd":1860,"tries":32,"firstCauses":["H:pen:K4","H:pen:K4","H:pen:K4","H:pen:K4","H:pen:K4"]}
+{"s":"s03","fixture":"REC","arm":"G1ESC","build":"CAND","tbT":null,"delta":60,"admittedAfterAttackEnd":1860,"tries":31,"firstCauses":["H:pen:K4","H:pen:K4","H:pen:K4","H:pen:K4","H:pen:K4"]}
+{"s":"s03","fixture":"REC","arm":"G1ESC","build":"CAND","tbT":null,"delta":300,"admittedAfterAttackEnd":1860,"tries":27,"firstCauses":["H:pen:K4","H:pen:K4","H:pen:K4","H:pen:K4","H:pen:K4"]}
+{"s":"s03","fixture":"REC","arm":"G1ESC","build":"CAND","tbT":null,"delta":900,"admittedAfterAttackEnd":1860,"tries":17,"firstCauses":["H:pen:K4","H:pen:K4","H:pen:K4","H:pen:K4","H:pen:K4"]}
+{"s":"s03","fixture":"REC","arm":"G1ESC","build":"CAND","tbT":null,"delta":1800,"admittedAfterAttackEnd":1860,"tries":2,"firstCauses":["S:soft","A:-"]}
+{"s":"s03","fixture":"REC","arm":"G1ESC","build":"CAND","tbT":null,"delta":3600,"admittedAfterAttackEnd":3600,"tries":1,"firstCauses":["A:-"]}
