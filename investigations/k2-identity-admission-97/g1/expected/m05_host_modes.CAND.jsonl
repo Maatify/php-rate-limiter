@@ -1,0 +1,6 @@
+{"s":"m05","case":"H-1 probe rho=1","realAttempts":3,"realAdmitted":3}
+{"s":"m05","case":"H-1 probe rho=2","realAttempts":3,"realAdmitted":2}
+{"s":"m05","case":"H-2 abandon","admitted":true,"srcConsumed":1,"scores":[]}
+{"s":"m05","case":"H-3 lost reply retry","acctAdmissionsForOneAttempt":2}
+{"s":"m05","case":"H-4 T1 claims","claims":["p1:fail@+5=accepted","p1:fail@+6=duplicate","p1:ok@+7=conflict","p1:fail@+8=rejected","p2:fail@+131=late","p3:fail@+831=unknown","p4-never-issued:fail@+300=unknown"],"scoredFailures":1,"K4":3,"atMostOncePerPermit":true}
+{"s":"m05","case":"H-5 mixed routes","verifierCalls":6,"countedAdmissions":3,"note":"record-only calls reach the verifier without being counted; no pre-verifier bound covers them"}
