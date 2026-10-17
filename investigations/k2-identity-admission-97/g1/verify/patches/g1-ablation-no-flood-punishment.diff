@@ -1,0 +1,20 @@
+--- a/src/Service/EvaluationPipeline.php
++++ b/src/Service/EvaluationPipeline.php
+@@ -413,5 +413,7 @@
+                 }
+
+-                $candidates[] = $this->candidate(RateLimitResultDTO::DECISION_HARD_BLOCK, 2, $duration, 'flood', $persistence);
++                // G1 ABLATION no-flood-punishment: the flood stage is observed (account device count, watch flag), but no HARD
++                // candidate and no K5 persistence on group association.
++                unset($persistence);
+             } else {
+                 $duration = PenaltyLadder::getDuration(1);
+@@ -426,5 +428,7 @@
+                     : [];
+                 $this->correlationStore->incrementWatchFlag($floodKey, 900);
+-                $candidates[] = $this->candidate(RateLimitResultDTO::DECISION_SOFT_BLOCK, 1, $duration, 'flood', $persistence);
++                // G1 ABLATION no-flood-punishment: the flood stage is still recorded (watch flag above); no SOFT candidate and no
++                // K4 persistence on group association.
++                unset($persistence);
+             }
+         }

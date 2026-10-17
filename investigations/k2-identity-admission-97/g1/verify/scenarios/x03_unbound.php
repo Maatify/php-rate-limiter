@@ -12,11 +12,11 @@ require dirname(__DIR__) . '/lib/verify.php';
 use Maatify\RateLimiter\DTO\RateLimitContextDTO;
 
 $prov = g1Provenance();
-if (! in_array($prov['build'], ['TRACE', 'DAO'], true)) {
+if (! in_array($prov['build'], ['TRACE', 'DAO', 'DAOF'], true)) {
     fwrite(STDERR, "x03 must run on the TRACE or DAO build\n");
     exit(4);
 }
-$variant = $prov['build'] === 'TRACE' ? 'CAND' : 'CAND-no-DA-punishment';
+$variant = ['TRACE' => 'CAND', 'DAO' => 'CAND-no-DA-punishment', 'DAOF' => 'CAND-no-DA-no-flood-punishment'][$prov['build']];
 $har = static function (bool $proven): array {
     $rows = [];
     $owner = new RateLimitContextDTO('198.51.100.140', FIREFOX_130, 'acct-har', null, $proven ? 'sd-har-owner' : null, $proven, [], false, null);

@@ -12,11 +12,11 @@ require dirname(__DIR__) . '/lib/verify.php';
 use Maatify\RateLimiter\DTO\RateLimitContextDTO;
 
 $prov = g1Provenance();
-if (! in_array($prov['build'], ['TRACE', 'DAM', 'DAO'], true)) {
+if (! in_array($prov['build'], ['TRACE', 'DAM', 'DAO', 'DAOF'], true)) {
     fwrite(STDERR, "x02 must run on the TRACE, DAM or DAO build\n");
     exit(4);
 }
-$arm = ['TRACE' => 'CAND', 'DAM' => 'CAND-DA-M', 'DAO' => 'CAND-no-DA-punishment'][$prov['build']];
+$arm = ['TRACE' => 'CAND', 'DAM' => 'CAND-DA-M', 'DAO' => 'CAND-no-DA-punishment', 'DAOF' => 'CAND-no-DA-no-flood-punishment'][$prov['build']];
 $p = g1Params('R');
 $row = static fn(int $t, RateLimitContextDTO $c, ?string $proof, string $kind, string $out): array =>
     ['t' => $t, 'ctx' => $c, 'proof' => $proof, 'kind' => $kind, 'own' => false, 'who' => $kind, 'outcome' => $out];

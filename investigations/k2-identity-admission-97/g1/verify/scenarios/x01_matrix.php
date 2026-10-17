@@ -9,11 +9,11 @@ declare(strict_types=1);
 require dirname(__DIR__) . '/lib/verify.php';
 
 $prov = g1Provenance();
-if (! in_array($prov['build'], ['TRACE', 'DAM', 'DAO'], true)) {
+if (! in_array($prov['build'], ['TRACE', 'DAM', 'DAO', 'DAOF'], true)) {
     fwrite(STDERR, "x01 must run on the TRACE, DAM or DAO build\n");
     exit(4);
 }
-$variant = ['TRACE' => 'CAND', 'DAM' => 'CAND-DA-M', 'DAO' => 'CAND-no-DA-punishment'][$prov['build']];
+$variant = ['TRACE' => 'CAND', 'DAM' => 'CAND-DA-M', 'DAO' => 'CAND-no-DA-punishment', 'DAOF' => 'CAND-no-DA-no-flood-punishment'][$prov['build']];
 $archived = [];
 foreach (file(dirname(__DIR__, 2) . '/expected/m01_matrix.CAND.jsonl') as $line) {
     $x = json_decode($line, true);

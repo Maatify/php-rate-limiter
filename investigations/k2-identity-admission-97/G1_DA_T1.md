@@ -1,5 +1,10 @@
 # G1 targeted falsification — distributed-account punishment ablation and T1 negative fixtures (#97)
 
+> **Follow-up:** the Lead's review of this step
+> ([comment 6229298358](https://github.com/Maatify/php-rate-limiter/pull/126#issuecomment-6229298358)) required the New Device
+> Flood counterexample. Its result, and the single final G1 disposition, are in [`G1_FINAL_DISPOSITION.md`](G1_FINAL_DISPOSITION.md).
+> This file is unchanged otherwise.
+
 > **Status:** G1 EVIDENCE, append-only. It answers the Principal Architect's G1 verification addendum review
 > ([PR #126 comment 6228568914](https://github.com/Maatify/php-rate-limiter/pull/126#issuecomment-6228568914)):
 > F126-G1-R2-01 (the optional DA ablation) and F126-G1-R2-02 (T1). R-1 / G1 scope only.

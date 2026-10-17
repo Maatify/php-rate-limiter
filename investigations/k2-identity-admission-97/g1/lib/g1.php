@@ -29,6 +29,8 @@ const G1_VERIFY_PIPELINE_SHA256 = [
     // DA ablation arms (verify/DA_T1_PLAN.md §1), both on top of the trace build
     'DAM' => 'abd2e51f2ccba4a4da1bff973c532387a8f13e87f1970e49547732c65fafe6e7',
     'DAO' => 'fa29130ab27955a46081ffa098c5a8071b11bc69e3c6daed72a6325c20e0ca96',
+    // flood ablation arm (verify/FLOOD_PLAN.md §1), on top of DAO
+    'DAOF' => '0b6a52a72fcbf85757b3ba605e15288ae19662d9fd645f10ea5e153183d1984c',
 ];
 
 function g1Build(): string

@@ -149,6 +149,10 @@ function g1VReplay(G1Cell $cell, array $rows, string $flow, array $o = []): arra
     $dec = $lanes = $reach = $kinds = '';
     $byCause = [];
     $blockOrigin = [];
+    if (array_key_exists('blockOrigin', $o)) {
+        // a caller-held map, so a request-by-request replay keeps the origin of every persisted block across calls
+        $blockOrigin = &$o['blockOrigin'];
+    }
     $benignOrigins = [];
     $attackOrigins = [];
     $c9v = [];
@@ -263,6 +267,7 @@ function g1VReplay(G1Cell $cell, array $rows, string $flow, array $o = []): arra
         $kinds .= $r['kind'] === 'X' ? ($r['own'] ? 'o' : 'X') : $r['kind'];
         if ($denied) {
             $key = str_starts_with($cause, 'cap:') ? $cause : ($trace ? 'origin:' . ($origins === [] ? 'none' : implode('+', $origins)) : $cause);
+            $evOrigins[$i] = $key;
             if ($r['kind'] !== 'X') {
                 $byCause[$cause] = ($byCause[$cause] ?? 0) + 1;
                 $benignOrigins[$key] = ($benignOrigins[$key] ?? 0) + 1;
@@ -277,7 +282,8 @@ function g1VReplay(G1Cell $cell, array $rows, string $flow, array $o = []): arra
 
     return ['dec' => $dec, 'lanes' => $lanes, 'reach' => $reach, 'kinds' => $kinds, 'legitDeniedByCause' => $byCause,
         'benignOrigins' => $benignOrigins, 'attackOrigins' => $attackOrigins,
-        'c9' => ['checked' => $c9Checked, 'mixedChecked' => $c9Mixed, 'violations' => $c9v], 'mutantApplied' => $mutantDone];
+        'c9' => ['checked' => $c9Checked, 'mixedChecked' => $c9Mixed, 'violations' => $c9v], 'mutantApplied' => $mutantDone,
+        'evOrigins' => $evOrigins];
     // (mutantPick: optional predicate choosing which U failure the lane-leak mutant hits; null = the first one on mutantAcct)
 }
 
