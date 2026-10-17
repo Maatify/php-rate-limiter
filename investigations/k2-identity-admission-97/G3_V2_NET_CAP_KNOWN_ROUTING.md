@@ -91,7 +91,19 @@ bound — for example the DEC-021 allowance overflowing into the bucket instead 
 | Per-account guessing budget (§6.2) | With refund and known-device routing the bucket passes every registered gate. Two conditions remain before adoption: a per-account bound for known devices (§4.3), and an answer for checkOnly-only Hosts, where refunds cannot happen |
 | Binding (§7) | Known-device routing is a stand-in for binding and inherits the Host-trust risk; the library-verified binding of the proposal would narrow it to stolen tokens, and is still not built |
 
-## 6. Limits
+## 6. Deviation from the plan (review F130-01)
+
+`PLAN.md` §5 ends with "`TBK30R-HV` and the `out` flow are reported without a gate." The Host-violation control was run and is
+reported (§4.3). **The `out` (record-only) flow was not executed in v2:** `PLAN.md` §4 lists only `pre+out` for every arm and `pre`
+for `FCN4-24`, `FCN4-40` and `TBK30R`, and the v2 scenarios implement exactly that list. There are therefore **no v2 `out`
+measurements** in this archive, and none are reported here.
+
+This is an omission of one non-gated reporting item. It does not touch any registered gate, the archived results or a verdict, and
+the plan is left as committed. The only `out` numbers in the G3 series are the v1 ones (S40, FC8 and TB30R; `G3_ADMISSION_BUDGETS.md`
+and `g3/admission_budgets/expected/summary.md`), which do not include the v2 arms. Measuring v2 `out` would need a separate
+pre-registered supplement if the Owner asks for it; this report does not open one.
+
+## 7. Limits
 
 As v1: reference stores and a controlled clock, no Redis or concurrency, synthetic streams, test values only. CGN was not re-run.
 No v3 is opened by this report.
