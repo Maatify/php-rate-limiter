@@ -12,6 +12,8 @@
 > [`G2_PROOF_ACQUISITION_FEASIBILITY.md`](G2_PROOF_ACQUISITION_FEASIBILITY.md). It does not repeat their contracts; it adds the
 > identity layer, the attribution rule, trust-from-success binding, and the budgets the Owner has to state.
 > **Review history:** the text went through four review passes before it was committed (§16).
+> **Post-G3 notes (2026-10-18):** the G3 study ([`G3_ADMISSION_BUDGETS.md`](G3_ADMISSION_BUDGETS.md)) ran after this proposal was
+> written. Where its results change a statement here, a dated note is added next to that statement; the original text is kept.
 > **Authority:** the Owner decides every material policy, public contract, ADR, study, merge and release.
 
 | Label | Meaning |
@@ -168,16 +170,22 @@ rest of the day. Escalation capped at one window is the same, only shorter. No o
 
 **The decision is one number, T** — the longest an owner may wait after an attack stops. If the per-account bound is a token
 bucket that refills one attempt every T, the owner gets a first attempt within T of the attack's end, and the attacker gets at most
-86,400 / T attempts per day, plus a small burst for typos (`DERIVED`).
+86,400 / T refills per day, plus the initial burst C, so the daily ceiling is `C + ⌊86,400 / T⌋` (`DERIVED`). The table uses the
+study burst C = 4.
 
-| T (longest wait after the attack) | Guesses on one account per day |
-| --- | --- |
-| zero (opens when the attack stops) | unbounded |
-| 10 minutes | ~144 |
-| 30 minutes | ~48 |
-| 60 minutes | ~24 |
-| S0 today, Host records outcomes | ~20, but escalation can keep the lock much longer after the attack |
-| G1 without escalation: fixed window, 16 per 10 minutes | ~2,300, with the same 10-minute wait |
+| T (longest wait after the attack) | Refills per day (86,400 / T) | Ceiling per day with C = 4 |
+| --- | --- | --- |
+| zero (opens when the attack stops) | unbounded | unbounded |
+| 10 minutes | 144 | 148 |
+| 30 minutes | 48 | 52 |
+| 60 minutes | 24 | 28 |
+| S0 today, Host records outcomes | ~20 (not a refill rate), but escalation can keep the lock much longer after the attack | |
+| G1 without escalation: fixed window, 16 per 10 minutes | ~2,300, with the same 10-minute wait | |
+
+> **Post-G3 note (2026-10-18).** G3 measured the bucket on BRU24 (one victim, source and UA rotating every 15 s for 24 h): 147 /
+> **51** / 27 attacker attempts reached the verifier for T = 10 / 30 / 60 minutes, against ceilings 148 / **52** / 28
+> (`G3_ADMISSION_BUDGETS.md` §4.4). For the Owner's study value T = 30 minutes the three numbers are: **48 refills per day, a
+> ceiling of 52, and 51 measured.**
 
 The last row is why the shape matters: a fixed window with a large capacity gives the same recovery time as a bucket that refills
 every 10 minutes, with 16 times the attacker throughput. Recovery time is set by the refill rate, not by the capacity. The cost to a
@@ -186,7 +194,8 @@ session or a bound device (§7) is unaffected.
 
 **Recommendation:** state the decision as a per-account guessing budget, in the same form as the spray budget, implemented as a
 token bucket and not a fixed window. The study measures T = 10, 30 and 60 minutes. **Owner decision (2026-10-17): T = 30 minutes
-(~48 guesses per account per day) is the study value.** The final number is decided after the study.
+is the study value** (48 refills per day; ceiling 52 with C = 4). It is a value for the study only, not an accepted production value
+or an accepted number of guesses. The final number is decided after the study.
 
 ### 6.3 Spray budget: the value of `U_src`
 
@@ -220,6 +229,12 @@ that would be about 29 accounts per day from one IP (`ASSUMPTION`, illustrative 
    Two colleagues behind one NAT cannot do anything.
 4. Botnet spray already passes S0 (SP4b 432/432, #108); this bound only stops a single-IP attacker.
 
+> **Post-G3 note (2026-10-18).** Reason 1 is out of date. G3 measured `U_src` = 24 as well, and it also leaves no benign stream
+> worse than S0 (L1 0; D2 39, ABA_B 72, MIX 63 legitimate denials, against S40's 27, 56 and 59), with lower single-IP spray reach
+> (SP6 144 per hour against 240) (`G3_ADMISSION_BUDGETS.md` §4.2). The spray budget now has three measured points (12, 24, 40).
+> Adopting any `U_src` replaces K1's spray protection and is a **separate Owner security decision**; accepting this proposal or
+> the G3 study does not accept that trade.
+
 **Cost at 40:** up to 240 attempts per hour per IP on distinct accounts (~5,760 per day); a co-located attacker (MIX) reaches 55
 instead of 0. **Caveats:** not measured on CGNAT; `U_acct` = 16 per fixed window is not usable without escalation (~2,300 per account
 per day) and is replaced by the bucket of §6.2; if binding (§7) proves that bound devices leave `U_src` without hurting L1, the
@@ -237,17 +252,23 @@ no errors because it was just created, not because it is good. Therefore:
 **Device binding.** After a successful login, the Host issues a signed token that binds (account, instance). A bound device enters
 the proven door for that account next time. Precisely: **the source of trust is still the Host**, because the token is issued when
 the Host says the login succeeded. What the library gains over today's `isDevicePreviouslyVerifiedForAccount` boolean is that it
-verifies the token's integrity, its binding to account and instance, and that it is neither transferred nor replayed.
+can verify the token's integrity, that it names this account (and operation, where required), that the presented
+`clientInstanceId` matches the bound one, its expiry, and its revocation epoch.
+
+What it **cannot** verify: possession of the original device. On the web the `clientInstanceId` is a cookie value and the token
+is a bearer credential; whoever copies both can present them and is accepted as the bound device. The signature and the binding
+limit the damage to one account and one operation class, within the proven door's bounds, until the token expires or the epoch is
+revoked; they do not prevent transfer or replay between holders. A possession mechanism is out of scope for this proposal.
 
 | Binding condition | Why |
 | --- | --- |
 | For one account, not general trust | A binding to account A gives nothing on account B; otherwise an attacker logs into an own account and uses that trust against others (#120) |
-| Same instance | The successful login must have happened with the same `clientInstanceId` that is bound; no transfer between instances |
+| Same instance | The successful login must have happened with the same `clientInstanceId` that is bound, and the token is accepted only with that id. This stops reuse of a token with a different id; it does not stop a holder who copied both (see "Stolen cookie") |
 | Mints no budget | The proven door has one budget per account, shared by all bound devices, plus a daily cap on new devices (`P_acct`, `N_P`, `P§7.3`, measured in #127) |
 | Revocable | On password change or "log out everywhere", via a per-account epoch: one integer per account, carried by the token, compared on use. **Not** the generational namespaces of `KS` §10.1, which mean "the previous generation is still read during rotation"; revocation means "everything before X is void", and merging them would break one of the two. The counter belongs under the account auxiliary keys of `KS` §4.6, which is LOCKED and needs an amendment |
 | "No prior taint" | Measured as the **number of distinct accounts** the instance failed on in the window before the success, not the number of failures. Failures on the same account never count (typos). A hygiene condition, not a security guarantee: an attacker can log in from a clean instance |
 | Assurance per operation | A binding made after login is not automatically enough for an operation that requires stronger verification |
-| Stolen cookie | The thief gets the proven door of one account, within P bounds, but also **consumes the shared `P_acct`**, so the owner on the bound device can be refused inside P (`P§7.2` item 3 for the shared allowance, item 4 for P penalties from another proof holder; #127 residual 5). A negative score on (account, instance) lands on the victim's own device; the epoch fixes it only after detection. **Open proposal:** a negative score on a bound device is a throttle only. That changes DEC-021, which persists K5 blocks for known devices as the known-device guessing bound, so it needs measurement (§13) |
+| Stolen cookie | The id and the token are bearer values: a thief who copies both is accepted as the bound device. The thief gets the proven door of one account, within P bounds, until expiry or epoch revocation, but also **consumes the shared `P_acct`**, so the owner on the bound device can be refused inside P (`P§7.2` item 3 for the shared allowance, item 4 for P penalties from another proof holder; #127 residual 5). A negative score on (account, instance) lands on the victim's own device; the epoch fixes it only after detection. **Open proposal:** a negative score on a bound device is a throttle only. That changes DEC-021, which persists K5 blocks for known devices as the known-device guessing bound, so it needs measurement (§13) |
 
 Effect: most users sign in from the same devices, so the accepted risk narrows from "any owner without proof" to "an owner on a new
 device or with cleared cookies", without forcing a passkey or a link on any consumer.
@@ -298,15 +319,16 @@ change of `checkOnly` for the policies that enable it (GA-5) and requires store 
 
 ## 11. Accepted risk
 
-The proposal does not increase overall risk; it moves it. Risk grows for two attack types, both because of values the Owner chooses
-(`U_src` and T, §6), not because of the idea itself.
+The proposal changes **which** risks the library carries; the data show security / availability trade-offs, not a guarantee that
+overall risk does not grow. Risk grows for two attack types, and both are set by values the Owner chooses (`U_src` and T, §6);
+risk falls for others. Whether the total is lower depends on how the Owner weighs innocent users denied against attacker reach.
 
 | Attack | S0 today | Proposal |
 | --- | --- | --- |
 | Single-IP spray on many accounts | ~20 per hour | up to 240 per hour at `U_src` = 40 |
 | Multi-IP spray (botnet) | passes (SP4b 432/432, X2 121/121) | unchanged |
 | One account, rotating IPs, checkOnly-only Host | no bound (1440/1440) | bounded by the account bucket |
-| Same attack, Host records outcomes | bounded by K4 escalation (BRU 3/100) | 86,400 / T per day (§6.2): ~48 at T = 30 minutes against ~20 on S0; not measured |
+| Same attack, Host records outcomes | bounded by K4 escalation (BRU 3/100) | `C + ⌊86,400 / T⌋` per day (§6.2): at T = 30 minutes, 48 refills and a ceiling of 52 against ~20 on S0. Post-G3: 51 measured on BRU24, and G1 escalation 33 on the same fixture (`G3_ADMISSION_BUDGETS.md` §4.4) |
 | Stolen session tried on other accounts | 200/200 (SP5) | the proof is bound to one account; other accounts are strangers |
 | Lockout of an owner with a session or bound device | 14/15 (HAR) | 0/15 (HARp) |
 | Attacker with sessions for many accounts | 2/200 (TMSd) | grows linearly with the accounts held, on the attacker's own accounts |
@@ -413,9 +435,9 @@ decision, not a measurement.
 | # | Decision | State |
 | --- | --- | --- |
 | 1 | Write ADR part 1 (§14), including the best-response definition over free identifiers | pending |
-| 2 | Single-IP spray budget: adopt `U_src` = 40 as the study value, and defer the final ADR number until the failure-cap result (§6.3) | pending |
+| 2 | Single-IP spray budget: adopt `U_src` = 40 as the study value, and defer the final ADR number until the failure-cap result (§6.3) | pending. Post-G3 (2026-10-18): `U_src` = 24 is a measured alternative, and the failure cap was NO-GO as registered (`G3_ADMISSION_BUDGETS.md` §2, §4.1–§4.2); any `U_src` is a separate Owner security decision |
 | 3 | K5 separation by binding (recommended), with the allowance tied to the P family and E2 as a regression check (§13) | pending |
-| 4 | Per-account guessing budget: T, the longest an owner without proof waits after an attack stops, which sets the guesses per day (86,400 / T) | **approved by the Owner on 2026-10-17: T = 30 minutes (~48 per account per day) as the study value**; the final value follows the study |
+| 4 | Per-account guessing budget: T, the longest an owner without proof waits after an attack stops, which sets the guesses per day (86,400 / T) | **approved by the Owner on 2026-10-17: T = 30 minutes as the study value only** (48 refills per day, ceiling 52 with C = 4; post-G3: 51 measured); not a production value. The final value follows the study |
 
 ## 16. Review history
 

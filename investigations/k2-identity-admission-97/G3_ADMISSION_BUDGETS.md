@@ -148,9 +148,9 @@ attempts while that source was saturated.
 
 | Proposal item | Effect of G3 |
 | --- | --- |
-| Spray budget (§6.3) | A third measured point: `U_src` = 24 has no benign stream worse than S0 and 144 / h on SP6. The "only 40 qualifies" argument no longer holds |
+| Spray budget (§6.3) | A third measured point: `U_src` = 24 has no benign stream worse than S0 and 144 / h on SP6. The "only 40 qualifies" argument no longer holds. Adopting any `U_src` replaces K1's spray protection and stays a separate Owner security decision; accepting this study does not accept that trade |
 | Failure cap (§13) | NO-GO as registered; the misses are offices with failures (D2) and a co-located attacker (MIX). A v2 could test F between 4 and 8, or count an account only after repeated failures, against the same gates |
-| Per-account guessing budget (§6.2) | The 86,400 / T bound is exact under rotation, and refund-on-success is required. NO-GO as registered because of the known-device owner stream (UAC); a v2 should route known or bound devices as the proposal does (DEC-021 path or P lane) before judging TB-3 |
+| Per-account guessing budget (§6.2) | The `C + ⌊86,400 / T⌋` bound is exact under rotation; at the Owner's study value T = 30 minutes that is 48 refills per day, a ceiling of 52 with C = 4, and 51 measured on BRU24. T = 30 minutes is a study value only. Refund-on-success is required. NO-GO as registered because of the known-device owner stream (UAC); a v2 should route known or bound devices as the proposal does (DEC-021 path or P lane) before judging TB-3 |
 | Escalation versus bucket | In this fixture G1 escalation is as strict as TB60 and outlives the attack by about the same time; the decisive difference is that the bucket also bounds checkOnly-only Hosts |
 | Co-located attacker / CGNAT | No source cap protects co-tenants from a co-located sprayer (92–100 % refused in the model). Relief for co-tenants can only come from the proven lane |
 
