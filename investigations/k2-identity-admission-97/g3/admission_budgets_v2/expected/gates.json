@@ -1,0 +1,162 @@
+{
+    "v0": true,
+    "v0Rows": 211,
+    "v0Misses": [],
+    "gates": {
+        "FCN-1 FCN4-24": {
+            "pass": true,
+            "detail": []
+        },
+        "FCN-2 FCN4-24": {
+            "pass": true,
+            "detail": []
+        },
+        "FCN-3 FCN4-24": {
+            "pass": true,
+            "detail": [
+                "MIX legit 66 (S0 117), attack 8 (S24 27)"
+            ]
+        },
+        "FCN-4 FCN4-24": {
+            "pass": true,
+            "detail": [
+                "pre identical to S24"
+            ]
+        },
+        "FCN-1 FCN8-24": {
+            "pass": true,
+            "detail": []
+        },
+        "FCN-2 FCN8-24": {
+            "pass": true,
+            "detail": []
+        },
+        "FCN-3 FCN8-24": {
+            "pass": true,
+            "detail": [
+                "MIX legit 65 (S0 117), attack 15 (S24 27)"
+            ]
+        },
+        "FCN-1 FCN4-40": {
+            "pass": true,
+            "detail": []
+        },
+        "FCN-2 FCN4-40": {
+            "pass": false,
+            "detail": [
+                "D2 29 > S40 27"
+            ]
+        },
+        "FCN-3 FCN4-40": {
+            "pass": true,
+            "detail": [
+                "MIX legit 66 (S0 117), attack 8 (S40 55)"
+            ]
+        },
+        "FCN-4 FCN4-40": {
+            "pass": true,
+            "detail": [
+                "pre identical to S40"
+            ]
+        },
+        "FCN-1 FCN8-40": {
+            "pass": true,
+            "detail": []
+        },
+        "FCN-2 FCN8-40": {
+            "pass": true,
+            "detail": []
+        },
+        "FCN-3 FCN8-40": {
+            "pass": true,
+            "detail": [
+                "MIX legit 65 (S0 117), attack 16 (S40 55)"
+            ]
+        },
+        "FCN-2 detector FC4-40": {
+            "pass": true,
+            "detail": [
+                "D2 FC4-40 32 vs FCN4-40 29"
+            ]
+        },
+        "TBK-3 detector TB30R": {
+            "pass": true,
+            "detail": [
+                "UAC TB30R 9 vs S40 6"
+            ]
+        },
+        "TBK-1 TBK10R": {
+            "pass": true,
+            "detail": [
+                "admitted 147, bound 148, recount 147"
+            ]
+        },
+        "TBK-2 TBK10R": {
+            "pass": true,
+            "detail": [
+                "delta 0: wait 60",
+                "delta 60: wait 0",
+                "delta 300: wait 0",
+                "delta 900: wait 0",
+                "delta 1800: wait 0",
+                "delta 3600: wait 0"
+            ]
+        },
+        "TBK-3 TBK10R": {
+            "pass": true,
+            "detail": []
+        },
+        "TBK-1 TBK30R": {
+            "pass": true,
+            "detail": [
+                "admitted 51, bound 52, recount 51"
+            ]
+        },
+        "TBK-2 TBK30R": {
+            "pass": true,
+            "detail": [
+                "delta 0: wait 60",
+                "delta 60: wait 0",
+                "delta 300: wait 0",
+                "delta 900: wait 0",
+                "delta 1800: wait 0",
+                "delta 3600: wait 0"
+            ]
+        },
+        "TBK-3 TBK30R": {
+            "pass": true,
+            "detail": []
+        },
+        "TBK-1 TBK60R": {
+            "pass": true,
+            "detail": [
+                "admitted 27, bound 28, recount 27"
+            ]
+        },
+        "TBK-2 TBK60R": {
+            "pass": true,
+            "detail": [
+                "delta 0: wait 1860",
+                "delta 60: wait 1800",
+                "delta 300: wait 1560",
+                "delta 900: wait 960",
+                "delta 1800: wait 60",
+                "delta 3600: wait 0"
+            ]
+        },
+        "TBK-3 TBK60R": {
+            "pass": true,
+            "detail": []
+        }
+    },
+    "verdicts": {
+        "FCN": [
+            "FCN4-24"
+        ],
+        "TBK": {
+            "TBK10R": true,
+            "TBK30R": true,
+            "TBK60R": true
+        }
+    }
+}
