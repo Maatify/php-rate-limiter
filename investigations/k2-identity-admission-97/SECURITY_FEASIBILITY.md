@@ -9,7 +9,7 @@
 > **as if** the relevant decision were taken, and marks every such result with the decision it depends on (Owner decisions
 > R-1, D1–D7 and Lead choices LT-1 … LT-7, `P§11`). A result marked "per Dn" is not a claim that the design is acceptable; it is
 > what the design would give if the Owner chose so.
-> **Revision:** corrected after four Direct Lead Reviews of PR #126 (F126-01 … 05, R2-01 … 04, R3-01 … 05, R4-01 … 03); see
+> **Revision:** corrected after five Direct Lead Reviews of PR #126 (F126-01 … 05, R2-01 … 04, R3-01 … 05, R4-01 … 03, R5-01 … 03); see
 > `P§13`.
 
 ---
@@ -216,7 +216,7 @@ Conditions (each invariant names the ones it needs):
 | C6 | One authoritative time for window indices; worker skew `ε ≪ W` |
 | C7 | The backend is healthy (DEC-015 degraded mode not active) |
 | C8 | The Host validates proof binding; the library checks `proof.account = target` and `proof.operation = operation` |
-| C9 | Every P request carries a server-issued, secret, per-device `sessionDeviceId`, and the resolver keeps it in the fingerprint material (`P§7.3` P-1) |
+| C9 | Every P request carries a server-issued, secret, per-device `sessionDeviceId`, the resolver keeps it in the fingerprint material, and P requests bypass both U device caps (`P§7.3` P-1, P-3) |
 
 | ID | Statement | Needs | Proof sketch | Breaks when |
 | --- | --- | --- | --- | --- |
@@ -225,7 +225,7 @@ Conditions (each invariant names the ones it needs):
 | **I2** | Verifier calls attributable to `x` `≤ admitted(x, j)` | I1, C2 | H1 maps verifier calls injectively to admissions | `out` routes; Host reuse of an admission; old workers (§6.7) |
 | **I3** | For fixed source, subject and class, U admissions `≤` the minimum of the adopted parents (`U_src`, `U_acct`, `U_glob`) whatever the number of UAs, client ids, fingerprints or sessions used | I1, C3 | No parent key contains a client-chosen value; hint sub-limits are additional conjuncts and can only refuse | a parent keyed on a client value (forbidden by `P§6.1`) |
 | **I4a** | U traffic never changes a P admission counter and never writes K4P, a P budget or a P watcher, so it cannot consume P capacity or create a P-lane **account** penalty | C1, D2 | Disjoint key namespaces (`P§6.1`, `P§7.2`, M-A); K4U is not read for P requests and K4P is not read for U requests | a non-lane-scoped implementation (GA-4). **Not covered:** the shared DEC-021 allowance (`P§7.2` item 3) |
-| **I4b** | U traffic cannot create a **device-level** penalty on a P request (K5 score or block, device watcher, micro-cap, distributed-account or flood candidate, ephemeral routing) unless it presents that device's `sessionDeviceId` | C1, C9, D3 | Rule P-1 keys every P request's K5 family on a secret value; P-2 keeps P out of the U device-population sets and candidates; P-3 gives P its own device cap (`P§7.3`) | a request presenting the same `sessionDeviceId` (same device without a proof, or a stolen secret); a custom resolver that drops `sessionDeviceId` from the material; old workers on paths 5–7 during a mixed rollout |
+| **I4b** | U traffic cannot create a **device-level** penalty on a P request (K5 score or block, device watcher, micro-cap, distributed-account or flood candidate) nor change its device routing (account or IP device cap, ephemeral routing) unless it presents that device's `sessionDeviceId` | C1, C9, D3 | Rule P-1 keys every P request's K5 family on a secret value; P-2 keeps P out of the U device-population sets and candidates; P-3 keeps P out of **both** `EphemeralBucket` caps (account and IP) and bounds P device state by a per-account cap `N_P` with capacity refusal on overflow (`P§7.3`) | a request presenting the same `sessionDeviceId` (same device without a proof, or a stolen secret); a custom resolver that drops `sessionDeviceId` from the material; old workers on paths 5–7 during a mixed rollout. Counterexample of the previous revision (50 U + 1 P through the IP cap) is acceptance stream DV-1 |
 | **I5** | P admissions for account `a` come only from holders of a proof for `a`; `≤ P_acct` per window | I1, C8 | Lane P requires the equality check | a Host that mis-binds proofs (`MEASURED` control SPV 4 → 200/200, #119) |
 | **I6** | Per account: `≤ U_acct + P_acct` per window | I1, I2, D4 (U-2) | Sum of disjoint lanes | without `U_acct`: U part bounded only by `min(σ·U_src, U_glob)` |
 | **I7** | Per class: `≤ U_glob + P_glob` per window | I1, I2, D5 | Sum of lanes | without globals: no finite total; with per-policy instead of per-class globals: `× number of policies` (B4-6) |
@@ -271,7 +271,7 @@ decision), **RESIDUAL** (cannot be solved in scope; harm is bounded and named), 
 | 2 | D1 / LOW cross-IP | A common UA is not one identity | No dilution punishment; each user is its own source; refusal only if `U_glob < D_glob` or the user's own `U_acct` is exhausted | **PASS** conditional on `U_glob` sizing (D5) | `MEASURED` D1 596/600 (S0N) → 0/600 when the cohort is no longer one fingerprint (#125, `main@9e95f2f`). Attacker side: X2 (new IP and victim per attempt) is bounded only by `U_glob`; without it, 121/121 — S0's best-response reach (UA rotation, #125); the S0 naive one-UA cell was 6/121 |
 | 3 | Office day 0 | What happens with no prior proof | Every employee is U; refusals `≥ N·d − U_src` per window; without D3 Login has no way out of U | **RESIDUAL** (indistinguishable from an attacker at the same source) | `MEASURED` S0 context: 86–88 of 100 office browsers without a successful login per day (#118 R8, `main@a6c79f4`); day-0 gives nothing to known-device relief (#119 R13) |
 | 4 | Shared NAT + attacker | Who can drain which share | `U_src`: anyone at the source; `U_acct(a)`: anyone anywhere; `U_glob`: anyone; `P_acct(a)`: only holders of a proof for `a`; office P shares untouchable by the attacker | **RESIDUAL** for U, and `U_src` itself needs D7 (`P§6.7`); **CONDITIONAL** (D3, D2) for P | Same-IP office and rotating attacker give identical observables (#105 A06; #125 same-IP tally). No credit, so a co-located attacker gets at most `U_src` — unlike #116 where it used colleagues' credit (`MEASURED` E3 FAIL, MIX/X4/X6 +2) |
-| 5 | UA / id rotation | No new units | No scope keyed on UA or id (I3). K5 derivation is unchanged, so a UA change gives a known device a new K5; across UA changes it stays bounded by the fingerprint-independent DEC-021 allowance and then by its lane's K4U / K4P scoring (`P§4.5`), and by `P_proof`, keyed on the proof reference | **PASS** for capacity; per-device K5 history does not survive a UA change (as today, `MEASURED` UAC 8/12, #125) |
+| 5 | UA / id rotation | No new units | No scope keyed on UA or id (I3). The K5 formula is unchanged, so a UA change (or a newly sent `sessionDeviceId`) gives a known device a new K5; across UA changes it stays bounded by the fingerprint-independent DEC-021 allowance and then by its lane's K4U / K4P scoring (`P§4.5`), and by `P_proof`, keyed on the proof reference | **PASS** for capacity; per-device K5 history does not survive a UA change (as today, `MEASURED` UAC 8/12, #125) |
 | 6 | Multiple IPs | Limits beyond one source | Foreign U reach `≤ min(σ·U_src, |T|·U_acct, U_glob)`. One target: `U_acct` per window regardless of `σ`. IPv6: a `/48` holds 65 536 `/64` sources; the hierarchy is `UNPROVEN`. IPv4 exact: CGNAT users share one `U_src` | **CONDITIONAL** (D4, U-2) for one target; **RESIDUAL** for many targets without `U_glob` | `MEASURED` S0 BRD (one account, new IP per attempt) checkOnly-only best response 22/100 victim guesses (#125). Under U/P: `≤ U_acct·(⌈T/W⌉+1)` independent of outcomes (`DERIVED`, conditional) |
 | 7 | 12 trusted accounts | Multiplication; total verifier cost | P reach `≤ min(12·P_acct, P_glob)` per window (per account `≤ P_acct`); with `P_src`, `≤ P_src` | **RESIDUAL** without `P_src`; D5 | `MEASURED` S0 TMSd 2/200; when only per-account DEC-021 bounds remain, TMSd 2 → 60/200 and gain grows with accounts held (#119 R3, R6, model on the real pipeline); office N12T ≡ attacker TMS request for request (#119 M3). In `pre`, relief variants reached 200/200 (#119 R4); here `pre` is bounded by `P_acct` per window (`DERIVED`) |
 | 8 | Target-account harassment | Owner keeps a usable share | Owner with a proof: `P_acct` / `P_proof` and K4P untouched by U (I4a), and device-level state untouched unless U presents the device's `sessionDeviceId` (I4b); another holder of a proof for the account can still penalize the proven lane, and historical-known U requests can exhaust the shared allowance (`P§7.2`). Owner without a proof: case 1 or case 2 of §2.9, chosen by D4 | **CONDITIONAL** (D2, D3) for proven owners; **RESIDUAL, proven** (§2.9) for unproven owners: renewable refusal under U-1/U-2 (as S0's K4 score), source scaling under U-3 | `CODE` today: K4 blocks reach the owner's trusted session (`P§7.1`); not measured |
@@ -332,7 +332,7 @@ Per verifier class and window `j`, with `A_j` admissions, `s` scopes per admissi
 | Admission counters | `≤ s·A_j` (a scope key is created by the first admission on it in the window and reused after) | `W` plus the previous generation's remainder (`≤ 2W`) |
 | Permit records (T1) | `= A_j` | `D + G`, which may overlap the next window |
 | Hint sub-limit keys | `≤ 50` per source (existing cap, `EphemeralBucket.php:21`); later clients use the parent only, no shared overflow | `W` |
-| P device-cap entries (`P§7.3` P-3) | `≤` the device secrets the Host issued per account | `W` |
+| P device-cap members (`P§7.3` P-3, option PA) | `≤ N_P` per account (at most three set keys with rotation); new members per window `≤` P admissions of the window; refused requests add none; overflow is a capacity refusal, not a new key | `T_P` |
 | Refused requests | `0` | — |
 
 Live admission keys at any instant: at most the counters of the two windows alive plus the permits issued in the last `D + G`
@@ -438,7 +438,10 @@ thresholds swept as parameters:
   denials; and DEC-007 / DEC-021 regressions (`KnownDeviceAntiEquilibriumScopeTest` scenarios).
 * API: K1-parent-only against K1 + K2 (+ LOW-K3) window sub-limits, and against today's score penalties, on shared-NAT and
   heavy-client streams.
-* Device-level isolation: the nine paths of `P§7.3` with U requests sharing and not sharing a proven device's
-  `sessionDeviceId`, including flood, distributed-account and device-cap exhaustion, on new and old workers.
+* Device-level isolation: the paths of `P§7.3` and acceptance streams DV-1 … DV-6 — in particular **50 U + 1 P** through the
+  shared IP device cap, 10 U + 1 P through the account cap, `N_P` + 1 proven devices (capacity refusal), and proven devices not
+  affecting U routing — on new and old workers.
+* K5 continuity: the trace of `P§7.3` (passive identity → secret, outer-secret rotation, code rollback with and without the
+  Host context), reporting which K5 scores, blocks, micro-caps and device watcher events are read on each side.
 * Source capacity ceiling: SC-1 … SC-6 of `P§6.7`.
 * T0 integration: probe factor `ρ`, abandoned admissions and retries of real Host flows on the opt-in variants.

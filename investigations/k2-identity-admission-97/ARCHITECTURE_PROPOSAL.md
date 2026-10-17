@@ -2,7 +2,7 @@
 
 > **Status:** ARCHITECTURE PROPOSAL, analysed through Gate A (architecture contract) and Gate B (paper security
 > feasibility). **NOT APPROVED. NO PRODUCTION CHANGE.** Not an ADR, not a GO, not a prototype authorization.
-> **Verdict:** `CORRECTED PER G0 REVIEW R4 (F126-R4-01 … R4-03) — PENDING LEAD G0`. One recommended architecture
+> **Verdict:** `CORRECTED PER G0 REVIEW R5 (F126-R5-01 … R5-03) — PENDING LEAD G0`. One recommended architecture
 > (§12); no research, prototype, policy or merge is authorized; gate order in §11.
 > **Workstream:** [#97](https://github.com/Maatify/php-rate-limiter/issues/97); dependencies
 > [#100](https://github.com/Maatify/php-rate-limiter/issues/100), [#106](https://github.com/Maatify/php-rate-limiter/issues/106),
@@ -46,7 +46,7 @@ admits" is not automatically a regression, and removing an unsound block does no
 ## 2. Result in brief
 
 Gate A found three contract gaps that the executor cannot close. The first version (`a79c06d`) also over-stated what the
-mechanism itself requires; four Direct Lead Reviews of PR #126 (F126-01 … 05, R2-01 … 04, R3-01 … 05, R4-01 … 03) corrected
+mechanism itself requires; five Direct Lead Reviews of PR #126 (F126-01 … 05, R2-01 … 04, R3-01 … 05, R4-01 … 03, R5-01 … 03) corrected
 that. This revision gives one recommended architecture (§12), keeps rejected variants as short evidence, separates **Lead
 technical choices** from **Owner security decisions**, and orders them in non-circular gates (§11).
 
@@ -229,7 +229,7 @@ impact, (8) contracts and decisions touched. Admission scopes named here are def
 | 2 | Known-device failure score with DEC-021 thresholds and K5-only persistence (`EP:1933-1940`); flood `HARD` (`EP:347-358`); every member of a distributed-account snapshot L2 (`EP:692-716`); device Anti-Equilibrium L2 |
 | 3 | Device-scoped `SOFT`/`HARD` on that account |
 | 4 | With LOW confidence the "device" is account + UA major (`DIR:39`, `EP:2615`): the owner's same-major browsers and an attacker who picks that major share one K5, and distributed-account persistence writes attacker-chosen fingerprints (`DERIVED`). A browser update creates a new K5 (`MEASURED` UAC known-device reach 8/12, #125) |
-| 5 | **K5 derivation unchanged** (`AccountID + fingerprintHash`, `EP:2615`; the hash includes UA, client fingerprint and `sessionDeviceId`, `DIR:37-40`), so DEC-021 thresholds, K5 history, the device watcher, the micro-cap and rotation coexistence keep their keys. Consequence, stated rather than hidden: a known device that changes UA gets a new K5; across UA changes it stays bounded by the fingerprint-independent allowance and then by K4U or K4P scoring of its lane. `P_proof` is a new admission counter keyed on the proof reference; it is not a substitute for DEC-021's outcome rules. **A proof-keyed K5 is not proposed:** it would change K5 key material, need a two-derivation read during migration that must not coincide with a secret rotation (`DFP` §5.1.6), and lose proven-lane K5 history on rollback. Lane isolation at device level is obtained instead by rules P-1 … P-3 (§7.3) |
+| 5 | **K5 formula unchanged** (`AccountID + fingerprintHash`, `EP:2615`; the hash includes UA, client fingerprint and `sessionDeviceId`, `DIR:37-40`), so DEC-021 thresholds and rotation coexistence keep working; but a device that starts sending a `sessionDeviceId` (rule P-1) gets a **new** K5, device watcher and micro-cap, and its passive K5 history does not carry over (§7.3, continuity). Consequence, stated rather than hidden: a known device that changes UA gets a new K5; across UA changes it stays bounded by the fingerprint-independent allowance and then by K4U or K4P scoring of its lane. `P_proof` is a new admission counter keyed on the proof reference; it is not a substitute for DEC-021's outcome rules. **A proof-keyed K5 is not proposed:** it would change K5 key material, need a two-derivation read during migration that must not coincide with a secret rotation (`DFP` §5.1.6), and lose proven-lane K5 history on rollback. Lane isolation at device level is obtained instead by rules P-1 … P-3 (§7.3) |
 | 6 | Login/OTP |
 | 7 | DEC-021 opt-in policies |
 | 8 | DEC-021, `DM` §2.2.2, §5.2, §5.4, `KS` §3.5, §4.3.3 |
@@ -514,7 +514,7 @@ specifies for K4, and never the lane.
 Splitting the allowance per lane would remove coupling 3 but redefine DEC-021 and double the free known-device failures per
 account (`A_kd` per lane) for an attacker who holds both a historical association and a proof; it is not recommended.
 
-### 7.3 Device-level isolation: K5 and device-population signals (F126-R4-01)
+### 7.3 Device-level isolation: K5 and device-population signals (F126-R4-01, F126-R5-01 … R5-03)
 
 Splitting K4 alone does not isolate the lanes. K5 is `HMAC(account + fingerprintHash)` with no lane (`EP:2615`), and the
 fingerprint material is `v2|UA|clientFingerprint|sessionDeviceId` (`DIR:35-39`). Every path by which U activity can reach a P
@@ -528,39 +528,110 @@ request below the account level:
 | 4 | Distributed-account member persistence | `EP:692-716` | writes L2 on the K5 of every member fingerprint | key identity (P-1) |
 | 5 | Distributed-account candidate on the current request | `EP:286-297`, `EP:640-738` | a P pre-check joins the account device set that U devices pushed toward 4 | lane gating (P-2) |
 | 6 | Flood stage and flood `HARD` on the current request's K5 | `EP:328-373` | the flood stage is account-level and is set by U device churn | lane gating (P-2) |
-| 7 | Account device cap → ephemeral routing | `EP:209-238`, `EphemeralBucket.php:20-21` | U fills the 10-per-account set; a P request becomes ephemeral, gets no K5 and is scored on the account path (`EP:2708-2713`) | P-lane cap (P-3) |
+| 7a | Account device cap (10 per account, 900 s) | `EphemeralBucket.php:20`, `EphemeralBucket.php:40-42`, `EP:218-230` | U devices fill the account set | P-3 |
+| 7b | **IP device cap (50 per IP, 900 s)** | `EphemeralBucket.php:21`, `EphemeralBucket.php:43-46`, `EP:210-217` | U devices from the same IP fill the IP set, whatever the account | P-3 |
+| 7c | Consequence of 7a or 7b: ephemeral routing | `EP:230-238`, `EP:2708-2713`, `EP:1764-1766` | the request loses K3/K5, a failure is scored as a new device on the account key and counts for the budget | P-3 |
 | 8 | Previous fingerprint generation | `EP:186-195` | same material under the previous secret | follows P-1 per generation |
 | 9 | DEC-021 allowance | `EP:1600-1616` | one counter per account | stated coupling (§7.2 item 3) |
 
-Rules (`PROPOSED`, part of LT-1):
+`EphemeralBucket::check()` rejects a new member if **either** the account set or the IP set is full (`EphemeralBucket.php:40-49`),
+so isolating only the account cap (the previous revision) left path 7b open: **50 U + 1 P counterexample (F126-R5-01).** On IP X,
+unproven requests contribute 50 distinct fingerprints within 900 s; a request for account A with a valid proof and a fresh,
+secret `sessionDeviceId` arrives from X; the IP set rejects its fingerprint; the request becomes ephemeral, its K5 is dropped and a
+failure is scored as a new device on the account key (K4P in this design). The secret did not help.
+
+#### Rules (`PROPOSED`, part of LT-1)
 
 * **P-1 — a proven request carries a device secret.** A request enters P only if, besides the typed proof, it carries a
-  non-empty `sessionDeviceId`: server-issued, random, HttpOnly, bound to the account (`DFP` §3.3). The resolver puts
-  `sessionDeviceId` into the fingerprint material whether or not the session is trusted (`DIR:35-39`), so every P request's K5,
-  device watcher and micro-cap are keyed on a value the U side does not have. Presence is library-checked; secrecy and
-  per-device uniqueness are Host-assured (D3). The K5 derivation does not change.
+  non-empty `sessionDeviceId`: server-issued, random, HttpOnly, bound to the account (`DFP` §3.3). The resolver puts it into the
+  fingerprint material whether or not the session is trusted (`DIR:35-39`), so every P request's K5, device watcher and
+  micro-cap are keyed on a value the U side does not have. Presence is library-checked; secrecy and per-device uniqueness are
+  Host-assured (D3).
 * **P-2 — device-population signals are U-lane signals.** P requests are not added to the account device sets of the
   distributed-account and flood rules, and those candidates are not evaluated for P requests.
-* **P-3 — separate P device cap.** P requests are not routed by the U account device cap; a per-account P device cap, bounded by
-  the device secrets the Host issues, protects storage.
+* **P-3 — P requests never enter the U device caps.** A P request is neither observed into nor routed by `EphemeralBucket` —
+  neither the account set (7a) nor the IP set (7b) — so it is never ephemeral because of U traffic, and P devices never consume
+  U cap slots. Storage for P device state is bounded by a P-only cap, defined next.
 
-Result (`DERIVED`): a U request can change a P request's device-level state only by presenting that device's `sessionDeviceId` —
-the same physical device without a current proof (own-device evidence), or a stolen device secret (compromise). Conditions:
-the official resolver, or a custom resolver that keeps `sessionDeviceId` in the material (`RateLimiterBuilder.php:127-133` lets
-a Host replace it); the Host keeps the identifier secret and per device.
+#### P device cap (F126-R5-03)
 
-Compatibility: no K5 derivation change, so DEC-021 thresholds, K5 history, rotation coexistence and rollback are unaffected. A
-device that starts sending `sessionDeviceId` gets a new K5 once (as with a UA update). Paths 1–4 and 8 are isolated on old
-workers too, because isolation comes from the material; paths 5–7 are isolated only on new workers, so during a mixed rollout
-they stay cross-lane until the fleet fence (LT-6).
+Two options for the P-side bound:
+
+| Option | Scope | Shared-NAT effect | Verdict |
+| --- | --- | --- | --- |
+| **PA** — per-account P cap only | at most `N_P` distinct P device members per account per `T_P` | none: only proof-and-secret holders of the **same** account occupy its slots | **recommended** |
+| PI — P-account cap plus a P-IP cap | PA plus at most `N_PI` P devices per IP | proven users of **other** accounts on the same NAT fill the P-IP set; an attacker who registers accounts and logs in to them gets proofs and can fill it — cross-account P collateral on a shared IP | **NO-GO**: recreates shared-NAT collateral inside P |
+
+PA specification (`PROPOSED`; `N_P` and `T_P` are parameters for the G1 study, no value is approved):
+
+* **Membership:** the P request's fingerprint hash (which includes its secret) in a per-account distinct set, at most `N_P`
+  members, entries living `T_P`.
+* **Atomicity:** the set check-and-add is part of the same all-or-nothing P reservation as `P_acct` / `P_proof` / `P_glob`
+  (LT-4), so a refused request adds no member and a member is never added without an admission.
+* **Rotation:** current / bridge / previous handling as for the existing bounded sets (`KS` §4.3.5): a device already present
+  under the previous secret is not counted twice, the previous set is read-only, and the total stays at most `N_P`.
+* **Storage:** per account at most `N_P` members in at most three set keys; new members per window at most the P admissions of
+  that window; no key is created by a refused request (`KS` §2 "bounded keys").
+* **Overflow** — the next valid P device of A when `N_P` members are live:
+
+| Overflow behaviour | Moves P to U? | New unbounded state? | Penalty on other P devices? | Verdict |
+| --- | --- | --- | --- | --- |
+| E — ephemeral routing (today's U behaviour) | no | no | **yes**: failures scored as new device on K4P, which binds A's whole proven lane | NO-GO |
+| O — one shared overflow device key per account | no | no (one key) | yes, among A's overflow devices | not recommended |
+| **R — capacity refusal** `p_device_capacity` with Retry-After until the oldest member expires | no | no | **no**: nothing is scored, nothing persisted | **recommended** |
+
+With R, only holders of a proof **and** a device secret for A can fill A's slots: the owner's own devices beyond `N_P`, or a
+within-account compromise (an attacker who knows the password and logs in repeatedly to collect secrets). That residual is an
+availability refusal of the owner's next new device, bounded by `T_P`; it is not U→P influence.
+
+#### Result and acceptance streams
+
+Result (`DERIVED`): with P-1 … P-3, a U request can change a P request's device-level state only by presenting that device's
+`sessionDeviceId` — the same physical device without a current proof (own-device evidence) or a stolen device secret. Conditions:
+the official resolver, or a custom resolver that keeps `sessionDeviceId` in the material (`RateLimiterBuilder.php:127-133` lets a
+Host replace it); the Host keeps the identifier secret and per device; new workers only (paths 5–7 stay cross-lane on old
+workers until the fleet fence, LT-6).
+
+Acceptance streams for G1 (F§9):
+
+| ID | Stream | Pass condition |
+| --- | --- | --- |
+| DV-1 | **50 U + 1 P**: 50 distinct unproven fingerprints from IP X within 900 s, then a P request for A from X with a fresh secret; it fails | not ephemeral; scored on its own K5 (known) or as a new device on K4P only by its own failure (§5.1); decisions identical to a control without the 50 U |
+| DV-2 | 10 U devices on account A, then 1 P device of A | as DV-1 |
+| DV-3 | `N_P` live P devices of A, then one more | refusal `p_device_capacity`; no K4P, K5 or budget change; the existing devices unaffected |
+| DV-4 | 50 P devices of different accounts on IP X, then 1 U request | U routing unchanged versus a control without the P devices |
+| DV-5 | U requests presenting a proven device's `sessionDeviceId` | shares that K5 (own-device coupling, expected) |
+| DV-6 | Paths 5–7 on an old worker during a mixed rollout | cross-lane as disclosed |
+
+#### Continuity of K5 history (F126-R5-02)
+
+The K5 **formula** does not change, but P-1 changes the **value** of the material for every device that did not send a
+`sessionDeviceId` before. Trace (`DERIVED` from `DIR:35-39`, `EP:2603-2618`, `EP:186-195`):
+
+| Step | Material | K5 and device state |
+| --- | --- | --- |
+| Before upgrade: device D of account A, UA major `u`, no secret | `v2\|u\|\|` | `K5₀ = HMAC(A, H(v2|u||))`, shared by every passive device of A with major `u`; holds K5 score and blocks, micro-cap, device watcher |
+| After upgrade, Host issues secret `s`, D proven | `v2\|u\|\|s` | `K5₁`: **new key, empty**. K5₀'s score, blocks, micro-cap and device watcher are not read for D; they keep applying to U requests with passive material `v2\|u\|\|` until their TTL (24 h) |
+| Outer-secret rotation after the switch | previous-generation keys of `v2\|u\|\|s` | nothing to read for `K5₁` under the previous secret; `K5₀`'s previous-generation reads continue for U |
+| Code rollback to S0, Host keeps sending `s` | `v2\|u\|\|s` | S0 computes `K5₁` (same formula) and keeps its history |
+| Code and Host context rolled back (no `s`) | `v2\|u\|\|` | `K5₀` (if not expired) applies again; `K5₁` is orphaned until its TTL |
+
+What is preserved: the DEC-021 account allowance (fingerprint-independent), K4U history, and DEC-021 thresholds. What is **not**
+preserved: per-device K5 score, active K5 blocks, micro-cap progress and device Anti-Equilibrium events of the passive identity.
+Security implication: a device starts its proven life with a clean K5 once per secret; a holder of the password who logs in
+repeatedly gets a fresh K5 per secret (as UA rotation already does, §4.5), bounded by the shared allowance, K4P and the P caps.
+Seeding `K5₁` from `K5₀` is not proposed: `K5₀` is shared by every passive device of A with the same UA major, so importing it
+would re-create collective attribution. A further migration effect (`MEASURED` on S0, #125 SESS 6/8): a browser that starts
+sending `sessionDeviceId` on the same IP and UA triggers K2 churn on itself under S0 rules, which matters on old workers and
+after a rollback. The transition itself is part of D3.
 
 Costs: a request with a proof but no device secret is U; distributed-account and flood no longer observe proven devices, whose
-rotation is bounded instead by P caps and by the number of secrets the Host issues; own-device coupling remains.
+rotation is bounded instead by P caps and `N_P`; own-device coupling remains; a proven device's K5 history restarts once.
 
 Alternative **K5-L** (a lane marker in the K5 derivation): isolates even the same device across lanes, but changes K5 key
-material (a new K5P family), lets an actor holding both an association and a proof fail `A_kd`-independently up to the K5
-thresholds once per lane, needs the fence for paths 1–4 too, and loses K5P on rollback. Not recommended; it is the option if
-the Owner requires same-device isolation.
+material (a new K5P family), lets an actor holding both an association and a proof fail up to the K5 thresholds once per lane,
+needs the fence for paths 1–4 too, and loses K5P on rollback. Not recommended; it is the option if the Owner requires
+same-device isolation.
 
 ### 7.4 Concurrency (F126-R3-02)
 
@@ -719,7 +790,7 @@ co-located residual (F§8 item 1), non-persistent and non-escalating; it is not 
 | Builder / DEC-008 | new typed capability; fail-fast without the Store capability (DEC-007 precedent); official behaviour ships as separately named variants, default preset names unchanged; custom policies keep S0 unless they opt in | LT-2 |
 | `API_OVERUSE` semantics | score with decay and persisted blocks → K1 window counter; K2 / K3 thresholds no longer enforced for the new capability (today's validation requires them, `RLE:150-161`); `retryAfter` meaning changes | D1, LT-7 |
 | DEC-007 | unchanged lifecycle on K4U (legacy key); the same key-parameterised primitives applied to K4P, with re-entry exposed only to P requests (extension) | D2 |
-| DEC-021 | K5 derivation, thresholds and the shared allowance unchanged; overflow goes to the failing request's lane key (K4U or K4P) | D2 |
+| DEC-021 | K5 formula, thresholds and the shared allowance unchanged; overflow goes to the failing request's lane key (K4U or K4P); per-device K5 history restarts once for devices that start sending a secret (§7.3) | D2, D3 |
 | DEC-015 / DEC-011 | admission bounds do not hold in degraded mode; lanes are absent in fallback | D6 |
 | DEC-019 | superseded only by a future approved replacement (Decision Governance §9) | D1 |
 | Canonical docs | `DM` §0, §1, §2.2.2–§2.5, §3.3, §5.1–§5.4, §10; `POL` §1, §5, §6; `DFP` §3.3, §4.2, §4.3; `KS` §3, §4.3, §4.6; `FS` §4; `docs/guides/USAGE_GUIDE.md` (`checkOnly` semantics) | with each decision |
@@ -730,9 +801,11 @@ co-located residual (F§8 item 1), non-persistent and non-escalating; it is not 
 2. Fence: an operator-set admission epoch in the store enables the new path only after every worker runs the new version; old
    workers do not reserve, so bounds are `UNPROVEN` while mixed.
 3. While enabled, existing K1/K2/K3 correlation blocks are honoured read-only until expiry (≤ 60 s for correlation L2) and no
-   new ones are written. K4U is the legacy K4 key and K5 keeps its derivation, so their history continues; K4P starts empty.
+   new ones are written. K4U is the legacy K4 key, so its history continues; K4P starts empty; K5 keeps its formula, but a device
+   that starts sending a `sessionDeviceId` starts a new K5 (§7.3 continuity).
 4. Rollback: S0 reads K4 and K5 as before and ignores admission counters and permits (they expire by TTL). No penalty history is
-   lost except K4P (P-lane account penalties, at most their TTL); K4U (= K4) and K5 survive and S0 applies them to everyone.
+   lost except K4P (P-lane account penalties, at most their TTL); K4U (= K4) survives; K5 keys survive as long as the Host's
+   context (with or without `sessionDeviceId`) is unchanged (§7.3 continuity trace). S0 applies them to everyone.
    S0's collective blocks resume.
 5. Secret rotation: counters are read across the current and previous generation and summed (F§6.4); a second rotation
    within one window re-issues capacity (`DERIVED`), so rotation interval ≥ window is a precondition (`DFP` §5.1.6).
@@ -761,7 +834,7 @@ No research starts before G1; no policy is implied by G1. Today the PR is **befo
 | LT-3 | Outcome guarantee | at-most-once per permit, no unbound fallback (F§2.3) | replay, conflict, expiry, failover traces |
 | LT-4 | Storage | one atomic script per verifier class, caller time, dual-generation read (F§6) | concurrency with mutation, rotation, failover |
 | LT-5 | Verifier class | required for any global ceiling (F§7 B4-6) | — |
-| LT-6 | Migration | dormant ship, fleet fence, K4U = legacy K4, K5 unchanged, K4P lost on rollback (§10) | mixed fleet, rollback, roll-forward |
+| LT-6 | Migration | dormant ship, fleet fence, K4U = legacy K4, K5 formula unchanged with a one-time K5 restart for devices that start sending a secret, K4P lost on rollback (§10, §7.3) | mixed fleet, rollback, roll-forward |
 | LT-7 | API anonymous | **A-parent** (K1 only), optional identified-client sub-limit; K2/LOW-K3 enforcement NO-GO (§9.2) | A-parent vs A-cap+K2 on shared-NAT and heavy-client streams |
 
 ### 11.3 Owner decisions
@@ -771,7 +844,7 @@ No research starts before G1; no policy is implied by G1. Today the PR is **befo
 | **R-1** | G1 | Authorize an isolated comparative study (no Runtime, no policy) of the architecture in this document | Authorize, after G0 | Cost of the study only |
 | **D1** | G3 | Replace collective penalties on shared scopes (correlation, and the API score penalties of §9.1) with capacity admission; adopt in the default presets per §6.5; supersede DEC-019 by a new ADR | Decide on G1 evidence | Removes measured correlation harm (D1 596/600, ABA_B 118/120, D2 117/121); the naive one-UA cross-IP attacker S0 stopped (X2 6/121) is bounded only by `U_glob`; best-response reach unchanged (121/121) |
 | **D2** | G3 | Lane-scoped account penalties (M-A): U evidence never penalizes the proven lane; a proven holder's failures penalize the proven lane of that account; the DEC-021 allowance stays shared with the coupling of §7.2 item 3 | Decide on G1 evidence | Another holder of a proof for A can close A's proven lane (§7.2 item 4); historical-known U requests can exhaust the shared allowance |
-| **D3** | G3 | Optional typed Host proof, independent of the known-device flags (§5.1); trusted session as proof only for same-account re-authentication and OTP step-up; API principal input | Approve | P integrity rests on the Host (`MEASURED` control SPV 4 → 200/200, #119); without D3 there is no proven lane |
+| **D3** | G3 | Optional typed Host proof, independent of the known-device flags (§5.1); trusted session as proof only for same-account re-authentication and OTP step-up; API principal input | Approve, including the transition: every proven device needs a secret, and its K5 history restarts once (§7.3) | P integrity rests on the Host (`MEASURED` control SPV 4 → 200/200, #119); without D3 there is no proven lane |
 | **D4** | G3 | Unproven-owner availability (F§2.9): U-1, U-2 or U-3 | U-2 with D3, and amend the owner-safety clause of `POL` §1 to name proven owners | U-2 makes refusal of an unproven owner reachable in `pre` too; U-3 re-creates source scaling; U-1 leaves `pre` unbounded per account |
 | **D5** | G3 | Envelope: global ceilings as resource guards per verifier class, no `P_src` (#120 disposition), approved values, residuals of F§8 | Decide on G1 evidence | A binding global denies the whole lane; stolen-session reach grows with sessions held |
 | **D6** | G3 | Outage semantics under DEC-015 (including the API IP + UA fallback dimension) | Accept the documented weaker guarantee | Owner protection and bounds absent during outages |
@@ -781,7 +854,7 @@ No research starts before G1; no policy is implied by G1. Today the PR is **befo
 
 ## 12. Final recommendation
 
-**Status of this revision: `CORRECTED PER G0 REVIEW R4 (F126-R4-01 … R4-03) — PENDING LEAD G0`.** No research,
+**Status of this revision: `CORRECTED PER G0 REVIEW R5 (F126-R5-01 … R5-03) — PENDING LEAD G0`.** No research,
 prototype, policy or merge is authorized.
 
 **One recommended architecture:**
@@ -790,7 +863,7 @@ prototype, policy or merge is authorized.
 | --- | --- |
 | Lanes | U / P by a current typed proof (D3), independent of DEC-021 classification (§5.1) |
 | Admission | atomic, irreversible, at `checkOnly` (T0; T1 optional): `U_src` per D7, `U_acct` per D4, `U_glob` optional; `P_acct`, `P_proof`, `P_glob` optional (§6) |
-| Account and device penalties | M-A: K4U (legacy key) and K4P per lane; shared DEC-021 allowance; K5 derivation unchanged with device-level rules P-1 … P-3 (P requires a device secret; device-population signals U-only; separate P device cap); no demotion (§7.2, §7.3) |
+| Account and device penalties | M-A: K4U (legacy key) and K4P per lane; shared DEC-021 allowance; K5 formula unchanged with device-level rules P-1 … P-3 (P requires a device secret; device-population signals U-only; P never enters the U account or IP device caps; per-account P device cap `N_P` with capacity refusal on overflow); no demotion (§7.2, §7.3) |
 | Correlation | observation only; no collective penalty (D1) |
 | Anonymous API | K1 window ceiling only (per D7); optional identified-client sub-limit; principal budgets (§9.2) |
 | Rollout | pilot variants, then required default-preset adoption by Owner decision (§6.5) |
@@ -818,7 +891,8 @@ improvement is `DERIVED` and holds only if the proof names its own account (C8).
 | `6c78fb8` | Direct Lead Review: F126-01 owner-safety mechanisms compared, M-C recommended over the key split (§7.2); F126-02 permit state machine with an at-most-once guarantee and no unbound fallback (F§2.3); F126-03 decision class separated from availability effect, trade-off proven (F§2.9), options in D4; F126-04 minimum contract tiers, T0 needs no type change (§6.5); F126-05 storage bound restated per class and window, permit records counted, no absolute "bounded" claim (F§3 I10, F§6.6); decision register split into Lead choices and seven Owner decisions (§11) |
 | `04d6d0f` | Direct Lead Re-review: R2-01 every API penalty path traced and A-cap proposed per key, GA-6 (§9); R2-02 K5 derivation kept unchanged, proof-keyed K5 withdrawn from Gate C with its migration and rollback cost stated (§4.5); R2-03 M-G added, scenario matrix against M-A and M-C, dominance claim withdrawn, LT-1 conditional, required pipeline changes listed and the advisory-pattern claim corrected (§7.2–§7.4); R2-04 T0 restated as a material behavioural change with opt-in variants and probe/retry/cancel sizing (§6.5); register and status updated (§11, §12) |
 | `bee26cf` | Direct Lead Re-review R3: R3-01/02 M-G declared NO-GO (U requests with a historical flag consume the shared allowance; demotion is a new policy; TOCTOU), M-C NO-GO, **M-A** recommended with a stated allowance coupling and a concurrency trace (§7); R3-03 K2 / LOW-K3 as anonymous API enforcement NO-GO, K1 parent only (§9.2); R3-04 proof and known-device classification made independent (§5.1); R3-05 required default-preset end state (§6.5) and non-circular gate order G0–G3 (§11); one recommended architecture (§12) |
-| this revision | G0 review R4: R4-01 every K5 and device-population path traced; owner safety split into account-level (I4a) and device-level (I4b) statements; rules P-1 (proven request carries a server-issued device secret), P-2 (device-population signals U-only), P-3 (separate P device cap); K5 derivation unchanged; K5-L kept as the alternative (§7.3); R4-02 source-only refusals (`U_src`, anonymous-API K1) recorded as a conflict with the LOCKED `KS` §2, Owner amendment D7 with exact delta and acceptance tests SC-1 … SC-6 (§6.7, GA-7); R4-03 API rows of §6.1, §8.3 and F§2.7 aligned with §9.2 |
+| `a3db68e` | G0 review R4: R4-01 every K5 and device-population path traced; owner safety split into account-level (I4a) and device-level (I4b) statements; rules P-1 (proven request carries a server-issued device secret), P-2 (device-population signals U-only), P-3 (separate P device cap); K5 derivation unchanged; K5-L kept as the alternative (§7.3); R4-02 source-only refusals (`U_src`, anonymous-API K1) recorded as a conflict with the LOCKED `KS` §2, Owner amendment D7 with exact delta and acceptance tests SC-1 … SC-6 (§6.7, GA-7); R4-03 API rows of §6.1, §8.3 and F§2.7 aligned with §9.2 |
+| this revision | G0 review R5: R5-01 the shared 50-per-IP device cap added to the path table (7b), 50 U + 1 P counterexample recorded, rule P-3 now keeps P out of **both** `EphemeralBucket` caps; P-IP cap option rejected (cross-account P collateral); acceptance streams DV-1 … DV-6 (§7.3). R5-02 "K5 history unaffected" withdrawn: the formula is unchanged but a device that starts sending a secret gets a new K5; continuity trace for rotation and rollback; SESS self-churn on old workers disclosed (§7.3, §4.5, §10). R5-03 per-account P device cap `N_P` with TTL `T_P`, rotation accounting, atomic membership in the P reservation and capacity-refusal overflow `p_device_capacity` (§7.3, F§6.6) |
 
 The earlier validation matrix and work-sequence sections of `89ef2d2` are superseded by F§9 and §12; its evidence summary is
 folded into §4 and F§5.
