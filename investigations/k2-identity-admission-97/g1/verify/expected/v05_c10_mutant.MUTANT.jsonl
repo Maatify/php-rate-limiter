@@ -1,0 +1,7 @@
+{"s":"v05","case":"C10-H detector M-C10","stream":"D1","legitDenied":596,"legitAttempts":600,"benignOrigins":{"origin:correlation":596},"c10":{"forbidden":596,"unattributed":0},"detected":true}
+{"s":"v05","case":"C10-H detector M-C10","stream":"L3","legitDenied":104,"legitAttempts":121,"benignOrigins":{"origin:correlation":104},"c10":{"forbidden":104,"unattributed":0},"detected":true}
+{"s":"v05","case":"C10-H detector M-C10","stream":"SESS","legitDenied":6,"legitAttempts":8,"benignOrigins":{"origin:correlation":6},"c10":{"forbidden":6,"unattributed":0},"detected":true}
+{"s":"v05","case":"C10-H detector M-C10","stream":"D2","legitDenied":117,"legitAttempts":121,"benignOrigins":{"origin:correlation":39,"origin:k2":78},"c10":{"forbidden":117,"unattributed":0},"detected":true}
+{"s":"v05","case":"C10-H detector M-C10","stream":"ABA_B","legitDenied":118,"legitAttempts":120,"benignOrigins":{"origin:correlation":20,"origin:k2":98},"c10":{"forbidden":118,"unattributed":0},"detected":true}
+{"s":"v05","case":"C10-H detector M-C10","stream":"N12V","legitDenied":56,"legitAttempts":61,"benignOrigins":{"origin:correlation":28,"origin:k2":28},"c10":{"forbidden":56,"unattributed":0},"detected":true}
+{"s":"v05","case":"C10-H detector M-C10","stream":"X2L","legitDenied":29,"legitAttempts":30,"benignOrigins":{"origin:correlation":29},"c10":{"forbidden":29,"unattributed":0},"detected":true}

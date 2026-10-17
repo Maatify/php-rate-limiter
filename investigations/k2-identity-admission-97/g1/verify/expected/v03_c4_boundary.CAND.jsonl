@@ -1,0 +1,9 @@
+{"s":"v03","case":"C4-H(a) M1 re-derivation from the DTO","eventsChecked":9662,"pLanes":2444,"mismatches":0,"first":[],"pass":true,"scope":"conditional on the Host implementing M1"}
+{"s":"v03","case":"B1 proof names another account","lane":"U","expected":"U","pass":true,"status":"PASS (M1)"}
+{"s":"v03","case":"B2 empty device secret","lane":"U","expected":"U","pass":true,"status":"PASS (M1)"}
+{"s":"v03","case":"B2 null device secret","lane":"U","expected":"U","pass":true,"status":"PASS (M1)"}
+{"s":"v03","case":"B3 Host-asserted trusted session of another target (SP5, all events)","lane":"U","expected":"U","pass":true,"status":"PASS (M1)"}
+{"s":"v03","case":"B4 proof minted for login presented on otp","lane":"P","expected":"not enforced by M1 (no operation binding)","pass":null,"status":"NOT ENFORCED"}
+{"s":"v03","case":"B5 direct lane claim","pipelineAcceptsLaneP":true,"admissionAcceptsForeignP":true,"status":"NOT ENFORCED ⇒ package-boundary guarantee UNPROVEN (no typed proof/account/operation binding in the isolated patch; building one needs a new API, not authorized)"}
+{"s":"v03","case":"B5 consequence: forged P claim, fixed secret","attackerAttempts":240,"attackerReach":8,"attackerLanes":"P","ownerDecisions":"AAAAAAAAAAAA","ownerDenied":0,"ownerDeniedByCause":[],"victimSnap":{"K4":null,"K4P":null,"K5":null,"K5key":"b1133d77764a","blkK4":null,"blkK4P":null,"blkK5":null,"budgetK4":null,"budgetK4P":null,"allowance":8}}
+{"s":"v03","case":"B5 consequence: forged P claim, rotating secrets","attackerAttempts":240,"attackerReach":9,"attackerLanes":"P","ownerDecisions":"ASAAAAAAAAAA","ownerDenied":1,"ownerDeniedByCause":{"cap:pacct":1},"victimSnap":{"K4":null,"K4P":3,"K5":null,"K5key":"b1133d77764a","blkK4":null,"blkK4P":null,"blkK5":null,"budgetK4":null,"budgetK4P":1,"allowance":9}}

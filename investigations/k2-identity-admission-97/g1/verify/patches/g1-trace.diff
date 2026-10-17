@@ -1,0 +1,62 @@
+--- a/src/Service/EvaluationPipeline.php
++++ b/src/Service/EvaluationPipeline.php
+@@ -102,6 +102,24 @@
+     private string $g1Lane = 'U';
+
+     /**
++     * G1 VERIFICATION TRACE BUILD ONLY (investigations/k2-identity-admission-97/g1/verify). Record-only side channel: which
++     * candidates, sources, score key types and active blocks produced the last decision. Never read by the pipeline.
++     *
++     * @var list<array<string, mixed>>
++     */
++    private array $g1Trace = [];
++
++    /** @return list<array<string, mixed>> the trace since the previous call (and resets it) */
++    public function g1TakeTrace(): array
++    {
++        self::g1Guard();
++        $t = $this->g1Trace;
++        $this->g1Trace = [];
++
++        return $t;
++    }
++
++    /**
+      * G1 candidate only: select the admission lane before process(). Refuses to run outside the study arm.
+      */
+     public function g1SetLane(string $lane): void
+@@ -577,6 +595,7 @@
+             }
+
+             $hasEffectiveBlock = true;
++            $this->g1Trace[] = ['ev' => 'active', 'keyType' => $keyType, 'level' => $effective->level, 'key' => $currentKey];
+             $highestLevel = max($highestLevel, $effective->level);
+             $longestRemaining = max($longestRemaining, $effective->expiresAt - $now);
+         }
+@@ -655,6 +674,7 @@
+                     }
+                 }
+
++                $this->g1Trace[] = ['ev' => 'threshold', 'keyType' => $keyType, 'candidateKeyType' => $candidateKeyType, 'decision' => $decision, 'level' => $candidateLevel];
+                 $candidates[] = $this->candidate(
+                     $decision,
+                     $candidateLevel,
+@@ -1860,6 +1880,7 @@
+         }
+
+         $candidates = [];
++        $this->g1Trace[] = ['ev' => 'levels', 'levels' => $levelsByKeyType, 'k4' => $keys['k4'] ?? null, 'k5' => $keys['k5'] ?? null];
+         if ($newMaxLevel > 0) {
+             if ($this->isApiHeavyPolicy($policy)) {
+                 foreach ($levelsByKeyType as $keyType => $level) {
+@@ -2244,6 +2265,10 @@
+         }
+
+         $final = $this->aggregateCandidates($candidates);
++        $this->g1Trace[] = ['ev' => 'final', 'decision' => $final['decision'] ?? null, 'candidates' => array_map(
++            static fn(array $c): array => ['decision' => $c['decision'], 'source' => $c['source'], 'keys' => array_column($c['persistence'], 'key')],
++            $candidates,
++        )];
+         if ($final !== null && $final['decision'] === RateLimitResultDTO::DECISION_SOFT_BLOCK) {
+             // Provenance of the issued SOFT_BLOCK: the union of the winning
+             // SOFT candidates' scopes. It is only collected here; process()

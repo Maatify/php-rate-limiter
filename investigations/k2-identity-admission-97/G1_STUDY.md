@@ -1,5 +1,12 @@
 # G1 — Isolated comparative study of identity-aware bounded admission (#97)
 
+> **Read with the verification addendum.** The independent G1 evidence review
+> ([comment 6228274086](https://github.com/Maatify/php-rate-limiter/pull/126#issuecomment-6228274086)) showed that the checkers
+> behind C9, C4, C1 and C10 cannot detect some of the defects their gates name (F126-G1-01 … 03). The gate results below are
+> kept exactly as originally recorded. They are **the harness's conditional result**, not an independently accepted security
+> proof. Hardened gates with mutation controls, the C4 Host / package-boundary split and the `U_acct` sweep are in
+> [`G1_VERIFICATION.md`](G1_VERIFICATION.md).
+
 > **Status:** G1 EVIDENCE, authorized by Owner R-1
 > ([PR #126 comment 6227307995](https://github.com/Maatify/php-rate-limiter/pull/126#issuecomment-6227307995)).
 > **Not a policy approval.** This study does not decide D1–D7, does not approve any threshold, default or ADR, and does not

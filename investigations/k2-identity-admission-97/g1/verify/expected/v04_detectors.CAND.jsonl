@@ -1,0 +1,14 @@
+{"s":"v04","case":"C1-H real","stream":"X1","flow":"pre","logOver":[],"eventOver":[],"refusals":56,"flagged":false,"clean":true}
+{"s":"v04","case":"C1-H real","stream":"BRU","flow":"pre","logOver":[],"eventOver":[],"refusals":80,"flagged":false,"clean":true}
+{"s":"v04","case":"C1-H real","stream":"SP3","flow":"pre","logOver":[],"eventOver":[],"refusals":976,"flagged":false,"clean":true}
+{"s":"v04","case":"C1-H real","stream":"KS50","flow":"pre","logOver":[],"eventOver":[],"refusals":0,"flagged":false,"clean":true}
+{"s":"v04","case":"C1-H real","stream":"D24K1","flow":"pre","logOver":[],"eventOver":[],"refusals":1380,"flagged":false,"clean":true}
+{"s":"v04","case":"C1-H real","stream":"X1API","flow":"pre+out","logOver":[],"eventOver":[],"refusals":0,"flagged":false,"clean":true}
+{"s":"v04","case":"C1-H M-C1 over-cap store","stream":"X1","flow":"pre","logOver":["acct 5>4"],"eventOver":["acct 5>4"],"refusals":55,"flagged":true,"clean":false}
+{"s":"v04","case":"C1-H M-C1 over-cap store","stream":"BRU","flow":"pre","logOver":["acct 5>4"],"eventOver":["acct 5>4"],"refusals":75,"flagged":true,"clean":false}
+{"s":"v04","case":"C1-H M-C1 over-cap store","stream":"SP3","flow":"pre","logOver":["src 13>12"],"eventOver":["src 13>12"],"refusals":974,"flagged":true,"clean":false}
+{"s":"v04","case":"C1-H M-C1 over-cap store","stream":"KS50","flow":"pre","logOver":[],"eventOver":[],"refusals":0,"flagged":false,"clean":true}
+{"s":"v04","case":"C1-H M-C1 over-cap store","stream":"D24K1","flow":"pre","logOver":["pproof 7>6","pproof_day 31>30"],"eventOver":["pproof 7>6","pproof_day 31>30"],"refusals":1378,"flagged":true,"clean":false}
+{"s":"v04","case":"C1-H M-C1 over-cap store","stream":"X1API","flow":"pre+out","logOver":[],"eventOver":[],"refusals":0,"flagged":false,"clean":true}
+{"s":"v04","case":"R3-H real","refused":["acct","acct"],"original(keysUnchanged)":[true,true],"hardened(valuesUnchanged)":[true,true],"originalPass":true,"hardenedPass":true}
+{"s":"v04","case":"R3-H M-R3 partial-write store","refused":["acct","acct"],"original(keysUnchanged)":[false,true],"hardened(valuesUnchanged)":[false,false],"originalPass":false,"hardenedPass":false}

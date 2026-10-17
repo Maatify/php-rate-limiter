@@ -22,6 +22,18 @@ use Maatify\RateLimiter\Service\EvaluationPipeline;
 const G1_BASELINE_SHA = '4c6ca618d8206ba502961eaf06ffb82a5d61b50d';
 const G1_S0_PIPELINE_SHA256 = '402139452040cb319208ca7a441b2f70210bf1acee4bd4a0ad666e8101ef6eab';
 const G1_CAND_PIPELINE_SHA256 = '1840d6e2b57cd57674beb7101d25d458e97949b719d473580db28f50ac13dfd9';
+// Verification addendum builds (verify/build_verify.sh), selected with G1_ARM=CAND + G1_BUILD=TRACE|MUTANT. Unset = the candidate.
+const G1_VERIFY_PIPELINE_SHA256 = [
+    'TRACE' => '9c23ec24c11b89d2e8e8376a473f76270590b42e7828526b30206d3d25aecf6d',
+    'MUTANT' => 'ecc9928d211cfd4366fce1975a72c9ab7dfaf1eedb39a2cde61c8c45615c4661',
+];
+
+function g1Build(): string
+{
+    $b = getenv('G1_BUILD');
+
+    return $b === false || $b === '' ? 'CAND' : $b;
+}
 
 function g1Runtime(): string
 {
@@ -47,7 +59,7 @@ function g1Provenance(): array
     $rt = g1Runtime();
     $ok = match ($rt) {
         'S0' => $inRepo && $sha === G1_S0_PIPELINE_SHA256,
-        'CAND' => ! $inRepo && $sha === G1_CAND_PIPELINE_SHA256,
+        'CAND' => ! $inRepo && $sha === (g1Build() === 'CAND' ? G1_CAND_PIPELINE_SHA256 : (G1_VERIFY_PIPELINE_SHA256[g1Build()] ?? '')),
         default => false,
     };
     if (! $ok) {
@@ -55,7 +67,7 @@ function g1Provenance(): array
         exit(4);
     }
 
-    return ['runtime' => $rt, 'pipeline_sha256' => $sha];
+    return ['runtime' => $rt, 'build' => $rt === 'S0' ? 'S0' : g1Build(), 'pipeline_sha256' => $sha];
 }
 
 /** @return list<string> cell arms allowed on the current runtime */
