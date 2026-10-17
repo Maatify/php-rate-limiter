@@ -78,7 +78,7 @@
 @@ -296,8 +332,8 @@
              }
          }
- 
+
 -        // 8. Check existing bounded correlation rules.
 -        if ($candidate = $this->checkCorrelationRules(
 +        // 8. G1 / D1: churn and dilution are observations only; no collective candidate.
@@ -96,7 +96,7 @@
                  $context,
                  $device,
 @@ -326,6 +362,7 @@
- 
+
          // 9. New Device Flood (5.4)
          if ($ephemeralState !== null && $context->accountId && ! $this->isApiHeavyPolicy($policy)
 +            && $this->g1Lane !== 'P'
@@ -122,7 +122,7 @@
 +                    : $this->auxiliaryAccountKey($policy->getName(), $this->g1Purpose('anti_equilibrium'), $context->accountId, $this->secret),
              );
          }
- 
+
 @@ -513,6 +550,9 @@
              if ($this->isTrustedAuthenticationPolicy($policy, $device) && $this->isK1Key($keyType)) {
                  continue;
@@ -130,7 +130,7 @@
 +            if ($this->g1Lane === 'P' && in_array($keyType, ['k1', 'k2', 'k3'], true)) {
 +                continue;
 +            }
- 
+
              $effective = null;
              if ($currentKey) {
 @@ -2302,7 +2342,7 @@
@@ -150,5 +150,5 @@
 +        $k4Type = $this->g1Lane === 'P' ? 'k4p' : 'k4';
 +        $k4 = $context->accountId ? $this->hashKey("{$base}:{$k4Type}:{$ver}:{$env}:{$context->accountId}", $secret) : null;
          $k5 = $context->accountId && $fpHash ? $this->hashKey("{$base}:k5:{$ver}:{$env}:{$context->accountId}:{$fpHash}", $secret) : null;
- 
+
          return ['k1' => $k1, 'k2' => $k2, 'k3' => $k3, 'k4' => $k4, 'k5' => $k5];

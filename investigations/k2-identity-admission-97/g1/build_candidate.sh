@@ -16,7 +16,7 @@ TARGET=src/Service/EvaluationPipeline.php
 TARGET_BEFORE=402139452040cb319208ca7a441b2f70210bf1acee4bd4a0ad666e8101ef6eab
 TARGET_AFTER=1840d6e2b57cd57674beb7101d25d458e97949b719d473580db28f50ac13dfd9
 PATCH="$here/patches/g1-candidate.diff"
-PATCH_SHA256=0caafe66ade9631ac5186b3c215947899aec8e91a5969b5e8a1f9db6af790d57
+PATCH_SHA256=0f382509e8e563052030c5e0b6987d5e507c41b49c4917ed40a25e0b29e0bca6
 [[ -f "$PATCH" ]] || { echo "PATCH MISSING: $PATCH" >&2; exit 5; }
 [[ "$(shasum -a 256 "$PATCH" | cut -d' ' -f1)" == "$PATCH_SHA256" ]] || { echo "PATCH SHA-256 MISMATCH" >&2; exit 6; }
 out=${1:?usage: build_candidate.sh <empty-out-dir>}
