@@ -1,0 +1,14 @@
+{"s":"d","fixture":"D-cid","n":1,"lanes":{"U":1200},"reachForeign":24,"reachForeignMaxWindow":4}
+{"s":"d","fixture":"D-cid","n":100,"lanes":{"U":1200},"reachForeign":24,"reachForeignMaxWindow":4}
+{"s":"d","fixture":"D-ip","n":1,"lanes":{"U":1200},"reachForeign":24,"reachForeignMaxWindow":4}
+{"s":"d","fixture":"D-ip","n":30,"lanes":{"U":1200},"reachForeign":24,"reachForeignMaxWindow":4}
+{"s":"d","fixture":"D-dev","n":1,"lanes":{"U":1200},"reachForeign":24,"reachForeignMaxWindow":4}
+{"s":"d","fixture":"D-dev","n":50,"lanes":{"U":1200},"reachForeign":24,"reachForeignMaxWindow":4}
+{"s":"d","fixture":"D-stolen","mode":"one","T":3600,"attempts":240,"reachProof":36,"reachProofMaxWindow":6,"reachProofMaxDay":36,"admittedDevices":1,"refusedBy":{"pproof":204},"proofsMinted":2,"sigVerify":2}
+{"s":"d","fixture":"D-stolen","mode":"renew","T":3600,"attempts":240,"reachProof":60,"reachProofMaxWindow":10,"reachProofMaxDay":60,"admittedDevices":1,"refusedBy":{"pacct":180},"proofsMinted":240,"sigVerify":240}
+{"s":"d","fixture":"D-stolen","mode":"renew-dev","T":3600,"attempts":240,"reachProof":10,"reachProofMaxWindow":10,"reachProofMaxDay":10,"admittedDevices":10,"refusedBy":{"p_device":200,"pacct":30},"proofsMinted":240,"sigVerify":240}
+{"s":"d","fixture":"D-stolen","mode":"one","T":86400,"attempts":5760,"reachProof":60,"reachProofMaxWindow":6,"reachProofMaxDay":60,"admittedDevices":1,"refusedBy":{"pacct_day":5394,"pproof":306},"proofsMinted":48,"sigVerify":48}
+{"s":"d","fixture":"D-stolen","mode":"renew","T":86400,"attempts":5760,"reachProof":60,"reachProofMaxWindow":10,"reachProofMaxDay":60,"admittedDevices":1,"refusedBy":{"pacct":180,"pacct_day":5520},"proofsMinted":5760,"sigVerify":5760}
+{"s":"d","fixture":"D-stolen","mode":"renew-dev","T":86400,"attempts":5760,"reachProof":10,"reachProofMaxWindow":10,"reachProofMaxDay":10,"admittedDevices":10,"refusedBy":{"p_device":5720,"pacct":30},"proofsMinted":5760,"sigVerify":5760}
+{"s":"d","fixture":"D-own","m":1,"reachOwn":60,"reachOwnMaxPerAccountWindow":10,"reachForeign":24,"reachForeignMaxWindow":4,"verifierCallsTotal":84,"proofAcquisitionOps":{"challenges":240,"sigVerify":240,"proofsMinted":240},"pathStoreWrites":720,"admissionStoreWrites":313}
+{"s":"d","fixture":"D-own","m":20,"reachOwn":1200,"reachOwnMaxPerAccountWindow":10,"reachForeign":24,"reachForeignMaxWindow":4,"verifierCallsTotal":1224,"proofAcquisitionOps":{"challenges":4800,"sigVerify":4560,"proofsMinted":4560},"pathStoreWrites":13920,"admissionStoreWrites":4892}
