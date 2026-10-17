@@ -45,13 +45,13 @@
 | CAND-no-DA-punishment | **HARD, origin flood; K5 L2** | **HARD, inherited flood** | U A, P A |
 | CAND-no-DA-no-flood-punishment | SOFT (`k4` / `cap:acct`, account-level U) | **ALLOW**, identical to control | U A, P A |
 
-The same result holds with a benign household (FLOOD-Pok-NAT). No stolen secret is needed; other devices behind the same source suffice. **The flood punishment is the same group-attribution error as DA**, and P-2 does not isolate its effect.
+The same owner result holds with a benign household (FLOOD-Pok-NAT). There, under DAO, **4 of the 6 household device attempts reached the verifier**: the 5th was refused by `cap:acct`, and the 6th was refused at check time by the flood SOFT that set `flood_stage`. The failing population (FLOOD-P-NAT) had **2 of 6** reach the verifier. The admission limits did not prevent the effect: **the pre-admission device observations alone were enough** to make the owner's next proven request inherit a K5 HARD. No stolen secret is needed; other devices behind the same source suffice. **The flood punishment is the same group-attribution error as DA**, and P-2 does not isolate its effect.
 
 ### 2.2 Cost of removing the flood punishment (DAOF against DAO, same parameters)
 
 | Item | Result |
 | --- | --- |
-| Rule F1–F4 | all pass: no hardened-gate failure, 0 benign DA / flood denials, owner P identical to control in FLOOD-P*, MX and MXE, no cap exceeded. DV and lifecycle outputs byte-identical to the archived CAND |
+| Rule F1–F4 | all pass. No hardened-gate failure, 0 benign DA / flood denials, no cap exceeded. **F3 as pre-registered passes:** no proven-owner P difference **with a population origin** in FLOOD-P*, MX or MXE. Owner P decisions are identical to control in FLOOD-P* and every MX subset. **In MXE they are not identical:** phase C is `ASSSHSS` with other devices against `HSSSSSS` without them (`phaseCIdenticalToControl = false`), with 0 population-origin denials. The difference runs through the declared shared and own-outcome couplings (K4U, K5, DEC-021 allowance). So the DA / flood-origin punishment is eliminated, but **complete P-decision parity fails on MXE**, and perfect owner isolation is **not** established. DV and lifecycle outputs are byte-identical to the archived CAND |
 | Matrix | 16 of 644 cells change, all device-rotating strategies in `pre` only: BRU 16 → 20 and X1 4 → 5 (R, R-src4, R-src40, ALLU) |
 | Account cap not binding (X03) | BRU 20 → 80 / 100, X1 5 → 17 / 41 |
 | Best response | **unchanged in every sampled cell** (modelled strategies only) |
@@ -74,7 +74,7 @@ Combined with `G1_DA_T1.md` §2, the two device-population punishments only cons
 These are objective, and are restated from the evidence, not newly chosen:
 
 1. **The hardened gates.** C1-H, C9-H, C10-H and R3-H, with their detector controls firing, on the complete assembly.
-2. **No device-group punishment.** Zero benign denials of `distributed_account_attack` or `flood` origin. Proven-owner P decisions identical to the no-population control in MX, MXE and FLOOD-P-NAT.
+2. **No device-group punishment.** Zero benign denials of `distributed_account_attack` or `flood` origin. Zero proven-owner P denials with a population origin in MX, MXE and FLOOD-P-NAT. Any remaining P-decision difference against the no-population control must be attributed to a declared coupling and reported; G1 measured such a difference in MXE (§2.2).
 3. **A library-enforced proof boundary.** B1–B5 of `G1_VERIFICATION.md` §4 must refuse **inside the library**, not only through the Host mapping.
 4. **T0 store integrity.** The T1-N4b / N5 equivalents hold for the production store, plus R-1 / R-2 races.
 5. **A stated, bounded answer for distributed-spray reach and unproven-owner availability.** It must be measured on the same streams and must not count S0's false-positive denials as protection.
@@ -96,3 +96,14 @@ Do **not** carry forward:
 Resolve P1 and P2 before any implementation. Treat P3 / P4 as design problems with measured targets.
 
 **Not done here.** No G2 / G3, no merge, no Runtime, no Owner question.
+
+## 6. Report corrections (Final Independent G1 Review, [comment 6232870999](https://github.com/Maatify/php-rate-limiter/pull/126#issuecomment-6232870999))
+
+These are documentation-only corrections. No experiment was re-run, and every pre-registration, archived evidence file and historic FAIL is unchanged.
+
+* **F126-G1-FINAL-01.** §2.2 and §4 item 2 previously said that owner P decisions were identical to control in MXE. The archived `g1/verify/expected_flood/x02_owner.DAOF.jsonl` records `phaseCIdenticalToControl = false` (`ASSSHSS` vs `HSSSSSS`) with `populationOriginDenials = 0`. The wording now separates **F3 PASS** (no population-origin difference) from **complete P-decision parity, which fails on MXE**.
+* **F126-G1-FINAL-02.** §2.1 now states the attempt / reach distinction for the NAT fixtures:
+  * FLOOD-Pok-NAT: 4 of 6 household attempts reached the verifier;
+  * FLOOD-P-NAT: 2 of 6.
+
+  The flood stage was set by pre-admission observations nonetheless.
