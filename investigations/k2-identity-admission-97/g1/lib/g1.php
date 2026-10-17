@@ -26,6 +26,9 @@ const G1_CAND_PIPELINE_SHA256 = '1840d6e2b57cd57674beb7101d25d458e97949b719d4735
 const G1_VERIFY_PIPELINE_SHA256 = [
     'TRACE' => '9c23ec24c11b89d2e8e8376a473f76270590b42e7828526b30206d3d25aecf6d',
     'MUTANT' => 'ecc9928d211cfd4366fce1975a72c9ab7dfaf1eedb39a2cde61c8c45615c4661',
+    // DA ablation arms (verify/DA_T1_PLAN.md §1), both on top of the trace build
+    'DAM' => 'abd2e51f2ccba4a4da1bff973c532387a8f13e87f1970e49547732c65fafe6e7',
+    'DAO' => 'fa29130ab27955a46081ffa098c5a8071b11bc69e3c6daed72a6325c20e0ca96',
 ];
 
 function g1Build(): string

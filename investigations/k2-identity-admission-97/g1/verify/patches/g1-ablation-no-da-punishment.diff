@@ -1,0 +1,11 @@
+--- a/src/Service/EvaluationPipeline.php
++++ b/src/Service/EvaluationPipeline.php
+@@ -347,5 +347,7 @@
+                 $realKeysV1,
+             )) {
+-                $candidates[] = $candidate;
++                // G1 ABLATION CAND-no-DA-punishment: the distributed-account window is still observed (the call above records its
++                // snapshots), but its candidate is discarded: no decision and no K5 / K4 persistence on group association.
++                unset($candidate);
+             }
+         }

@@ -1,5 +1,10 @@
 # G1 verification addendum — hardened gates, boundary split and `U_acct` sweep (#97)
 
+> **Follow-up:** the Lead's review of this addendum
+> ([comment 6228568914](https://github.com/Maatify/php-rate-limiter/pull/126#issuecomment-6228568914)) made the
+> distributed-account HARD punishment of §3.3 / §5 a NO-GO for the current candidate. The targeted ablation it asked for, and
+> the T1 negative fixtures, are in [`G1_DA_T1.md`](G1_DA_T1.md). This file is unchanged otherwise.
+
 > **Status:** G1 VERIFICATION EVIDENCE. This addendum answers the Principal Architect's independent G1 evidence review
 > ([PR #126 comment 6228274086](https://github.com/Maatify/php-rate-limiter/pull/126#issuecomment-6228274086), findings
 > F126-G1-01 … 04) under the Owner's R-1 authorization
