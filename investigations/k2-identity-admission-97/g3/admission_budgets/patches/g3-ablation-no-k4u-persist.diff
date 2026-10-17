@@ -3,7 +3,7 @@
 @@ -2022,6 +2022,48 @@ class EvaluationPipeline
          ];
      }
- 
+
 +    /**
 +     * G3 ablation helper: keeps device-scoped candidates, rebuilds mixed account + device candidates from their K5 persistence
 +     * only, and drops purely account-scoped candidates.
@@ -52,7 +52,7 @@
 @@ -2197,6 +2239,15 @@ class EvaluationPipeline
              fn(array $candidate): bool => ! str_starts_with($candidate['source'], 'trusted_advisory:'),
          ));
- 
+
 +        // G3 ABLATION no-k4u-persist (investigations/k2-identity-admission-97/g3/admission_budgets). U lane only: no
 +        // account-scoped candidate (K4U score levels, account watcher, distributed-account and flood reactions, recovery
 +        // guard) refuses or persists; device-scoped (K5) parts are kept; the 24 h budget never adds a candidate. Scores are

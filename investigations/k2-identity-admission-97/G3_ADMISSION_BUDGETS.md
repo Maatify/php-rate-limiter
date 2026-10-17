@@ -16,7 +16,7 @@
 | --- | --- |
 | Source baseline | `main@597fda0a2c728232cdf7f3d697ab46f2abeedede`; `src/`, `composer.json`, `composer.lock` byte-identical to the G1 baseline `4c6ca618d8206ba502961eaf06ffb82a5d61b50d` (checked by `run.sh`) |
 | Branch | `study/97-g3-admission-budgets`, on top of the proposal commit `819bc01` |
-| Builds | `CAND`: the G1 candidate (pipeline sha-256 `1840d6e2…dfd9`, G1 builder unchanged). `NOESC`: CAND + [`g3-ablation-no-k4u-persist.diff`](g3/admission_budgets/patches/g3-ablation-no-k4u-persist.diff) (patch sha-256 `09520b3c…897a`, pipeline sha-256 `2926e1c5…1db4`). S0: the repository `src/` (G1 provenance check) |
+| Builds | `CAND`: the G1 candidate (pipeline sha-256 `1840d6e2…dfd9`, G1 builder unchanged). `NOESC`: CAND + [`g3-ablation-no-k4u-persist.diff`](g3/admission_budgets/patches/g3-ablation-no-k4u-persist.diff) (patch sha-256 `fdd85079…cd2b`, pipeline sha-256 `2926e1c5…1db4`). S0: the repository `src/` (G1 provenance check) |
 | Reused unchanged | G1 cell engine, replay, streams and admission layer (`g1/lib/g1.php`, `g1/lib/admission.php`, `g1/verify/lib/verify.php`) |
 | New | `g3/admission_budgets/lib/g3.php` (the FC / TB gate around `G1Admission`, and `g3Replay` = `g1Replay` with that gate and an outcome hook), four scenarios, `report.php`, `run.sh`, `build_g3.sh` |
 | Toolchain | PHP 8.4.4; reference stores and controlled clock (no Redis in this study) |

@@ -10,7 +10,7 @@ mkdir -p "$out"
 [[ -z "$(ls -A "$out")" ]] || { echo "out-dir must be empty: $out" >&2; exit 2; }
 TARGET=src/Service/EvaluationPipeline.php
 CAND_AFTER=1840d6e2b57cd57674beb7101d25d458e97949b719d473580db28f50ac13dfd9
-NOESC_PATCH_SHA256=09520b3c5bd108810f594e7d5d5830ef777a8dd13e8bd03fe9b7637823df897a
+NOESC_PATCH_SHA256=fdd85079c633c18e844b577ac38da3d5c02780b190462724fc3f2f488942cd2b
 NOESC_AFTER=2926e1c5d6ce058e62bd06a9aec9fe86e532b8870d9af54a3fe1f42ec55e1db4
 sha() { shasum -a 256 "$1" | cut -d' ' -f1; }
 bash "$here/../../g1/build_candidate.sh" "$out/candidate" >/dev/null
