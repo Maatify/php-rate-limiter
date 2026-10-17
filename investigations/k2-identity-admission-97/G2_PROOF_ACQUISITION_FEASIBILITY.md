@@ -7,6 +7,11 @@
 > **Pre-registration:** [`g2/proof_acquisition/PLAN.md`](g2/proof_acquisition/PLAN.md) v1, committed in `c7c3fef` **before**
 > any harness code or result. Gates, values and verdict rules were not changed afterwards. One post-hoc diagnostic was added and
 > is labelled as such (§8.5); it is excluded from every gate and from the verdict.
+>
+> **Revision (F127-01 … F127-03, documentation only).** Corrected after the Direct Lead Review of PR #127
+> ([comment 6235493895](https://github.com/Maatify/php-rate-limiter/pull/127#issuecomment-6235493895)) on `02cc9fe`. The
+> correction narrows the scope of three claims (§8.3, §8.6, §8.7, §10, §11). `PLAN.md` v1, the harness, the fixtures and the
+> archived `expected/` outputs are unchanged, and the verdict is unchanged.
 > **Evidence classes:** `CODE` (read from the source at the baseline), `MEASURED` (archived harness output), `DERIVED`
 > (follows from stated premises), `CONDITIONAL` (holds only under a named Host premise), `UNPROVEN`.
 
@@ -144,7 +149,7 @@ possession factor and is never treated as a full login here.
 | C integrity (27 / 24 probes) | PASS | PASS |
 | D multiplication | PASS | PASS |
 | **E isolation on the real candidate pipeline** | **FAIL** | **FAIL** |
-| F atomicity on Redis | PASS | PASS |
+| F atomicity on Redis (outage case: proof minting only, §8.6) | PASS | PASS |
 | G host modes | PASS | PASS |
 | Detectors (12) | all fired | all fired |
 
@@ -169,19 +174,40 @@ The chain, traced (`expected/summary.md` §E): population failures raise the acc
 they are recorded, and the device's DEC-021 watcher escalates (`H origin:anti_equilibrium:device`). The owner's own-device
 history therefore differs when P resumes, and the P decisions shift (four rows, two in each direction, same number of HARD).
 
-**Interpretation.** Population traffic changes a re-proven owner's P decisions through shared U-lane state and the device's
-own history (K-6). Re-acquiring a proof does **not** restore isolation for a device that ran unproven during the attack. This
-is G1's MXE coupling, now shown to survive acquisition.
+**What E2 shows and what it does not (F127-01).** Three results must be kept apart:
+
+1. **Verdict under PLAN v1.** E-(i) requires identical owner P admissions and P counters with and without the population. On
+   E2 they are 7 and 6, so E-(i) fails. Rule §6.3 then makes the complete candidate **NO-GO AFTER EXPERIMENT**. That verdict
+   stands. It is the verdict of the complete pre-registered candidate under PLAN v1, not a verdict on proof acquisition alone.
+2. **The isolation result itself** (`MEASURED`). There is no direct U → P effect:
+   * no U request wrote P state (c9 = 0 over 128 U operations);
+   * there is no population-origin penalty on P (0 denials);
+   * acquisition results are identical in both runs.
+
+   The difference is a **history-mediated decision divergence** of one device. The population raises K4U, which refuses the
+   owner's unproven attempts before the verifier, so their outcomes are not recorded. The device's own K5 history and DEC-021
+   device watcher therefore differ when the re-proven device returns to P (K-6).
+
+   The difference runs in the owner's favour on the measured count: 7 P admissions with the population against 6 without.
+   This is not evidence that the population consumed or exhausted P capacity, and it must not be read as a direct breach of
+   P isolation. What it does show is that the owner's P decisions are **not identical** to the control after a re-proof on a
+   device that ran unproven. Complete isolation is therefore not established for that case. This is G1's MXE coupling,
+   still present after acquisition.
+3. **Proof-acquisition feasibility for A and B.** E2 does not refute it. In E2, acquisition succeeded identically with and
+   without the population (iii). Acquisition is also tested directly by A-1 … D, F and G, which pass with every detector
+   firing (§8.2). E2 is therefore not evidence that mechanisms A or B fail in principle. Their feasibility remains
+   **conditional** and is limited to the isolated Host models of this study (§7, §10).
 
 **Disclosed label mapping.** (iv) treats the DEC-021 device watcher (`anti_equilibrium:device`) as part of the "own-device K5"
 coupling: its escalation is a K5 `HARD_BLOCK` on the same account + device only (DEC-021 §5). The mapping was fixed in code after
 the first run. A narrower reading would make (iv) fail on E2 as well. This does not change the verdict, which already follows
 from (i).
 
-**Defect in the pre-registration, disclosed, not corrected.** (i) as written cannot hold whenever (iv) admits a declared
-decision difference: different owner decisions imply different owner admissions. The property (i) was meant to protect is that
-U traffic never consumes or writes P state. c9 measures that property directly, and it holds on every E fixture. Under the plan's
-rule 5, correcting the gate would require plan v2. That was not done, and the verdict follows v1.
+**Tension in the pre-registration, disclosed, not corrected.** (i) and (iv) are not contradictory in general. They can
+conflict when a coupling that (iv) accepts as declared changes the **number** of owner admissions, as it does on E2. The
+property behind (i) is that U traffic never consumes or writes P state. c9 measures that property directly, and it holds on
+every E fixture. Neither gate is changed retroactively: under the plan's rule 5 that would require plan v2. That was not done,
+and the verdict follows v1.
 
 ### 8.4 Other E fixtures
 
@@ -207,11 +233,60 @@ show a large availability harm. The diagnostic does not change the result.
 
 * **F.** Over 32 workers × 20 rounds on real Redis, each challenge nonce and each link was consumed exactly once per round, and
   issuance stopped at exactly 3 at cap 3. The non-atomic mutants over-admit in 20/20 rounds. Retries after lost replies return
-  `used` and never mint a second proof. Issuance retries count against the cap (3 issued, 2 refused). Malformed key types
-  answer an error with no write (value-level snapshot). A real outage of the instance mints nothing, leaves the owner in U and
-  admits nothing.
+  `used` and never mint a second proof. This is **at-most-once consumption**. It is not recoverable completion (§8.7).
+  Issuance retries count against the cap (3 issued, 2 refused). Malformed key types answer an error with no write
+  (value-level snapshot).
+* **F6 scope (F127-03).** F6 stops the ephemeral Redis that backs the **proof path**. The challenge step then raises a
+  `RedisException`, and no proof token is minted (`tokenMinted = false`, `proofsMinted = 0`). The result is precisely:
+  *proof minting fails during this simulated proof-store outage*.
+
+  F6 does not show the following:
+  * **Admission refusal.** F6 never calls `G1Admission::reserve()`, so `admissions = 0` in `expected/f.jsonl` is an unused
+    counter, not evidence.
+  * **A boundary decision during an outage.** `lane = U` only restates that the boundary refuses a missing token.
+  * **DEC-015 behaviour or integration**, Redis failover, replication loss or Cluster. These remain `UNPROVEN` (§9 P5, §10).
 * **G.** In `pre` and `pre+out`, every owner P request after acquisition is admitted and the attacker is held to ≤ 4 per window.
   In `out` the attacker reaches 240/240. NOPROOF: owner `HHSS`.
+
+### 8.7 Gap: recoverable completion after redemption (F127-02, `UNPROVEN`)
+
+**The gap.** Single-use consumption does not let the owner recover the proof when the response is lost (`CODE`, `DERIVED`):
+
+1. **Ordering.** Redemption first commits `ISSUED → REDEEMED` atomically (`lib/redis.php` `REDEEM`, `lib/proof.php`
+   `redeem()`). Only after that commit does the Host mint the proof token. The study persists no result between the two steps.
+2. **Failure window.** The owner gets nothing if either of these happens: a crash between the commit and the mint, or a token
+   that is minted but whose response never reaches the owner.
+3. **No recovery.** A retry with the same link returns `used`. F4 measures exactly this, as the safety property "no second
+   proof".
+4. **Exposure in case B.** Issuance is capped per (account, operation). If the attacker has also consumed the current issuance
+   window, the owner may be without a usable link until the window rolls over or another valid link reaches the mailbox.
+
+So F4 proves **at-most-once consumption**. It does **not** prove **recoverable completion**. This is an availability gap of
+the proof path, classified `UNPROVEN`.
+
+**Case A** has the same ordering: the nonce is consumed before minting. There the owner can request a fresh challenge, because
+challenges carry no per-account cap. Recovery is then bounded only by the per-source proof-path caps (`DERIVED`; lost replies
+were not exercised for case A).
+
+**Architectural conditions any recoverable completion would have to meet** (analysis only; no remedy, fixture or test is part
+of this study):
+
+* **Binding of the completion record.** The stored result must be bound to the same tenant, account, operation and link or
+  nonce, and to the redeeming device (`H(sessionDeviceId)`) or an equivalent requester secret presented at redemption.
+* **Retrieval rules.** A retry may retrieve the result only with that binding. A retry from another device, or for another
+  account or operation, must get nothing.
+* **No new authority.** Retrieval returns the **same** token (same `jti`, same `exp`) and never mints a second independent
+  proof. `P_proof` / `P_acct` accounting is therefore unchanged by retries.
+* **Bounded retention.** The result is retained for a short window, no longer than the link's remaining validity, and expires
+  with it. Revocation (account epoch, `jti`) applies to a retrieved token exactly as to a fresh one.
+* **Atomic state and result.** Commit and result storage are atomic, or the result is stored first and published atomically
+  with the commit, so that a crash cannot leave a consumed link without a retrievable result.
+* **Integrity at rest.** The stored result is protected against disclosure and tampering, because it is a bearer credential.
+* **Uniform failure answers.** Failures stay indistinguishable for an attacker. Retrieval must not reveal whether a link
+  exists for another device.
+
+Whether such a mechanism is needed, and its design, require an independent experiment gate with its own pre-registered plan.
+Neither is authorized here.
 
 ## 9. G1 P1–P6 mapping
 
@@ -221,13 +296,14 @@ show a large availability harm. The diagnostic does not change the result.
 | **P3** unproven-owner availability | **Narrowed, not closed.** Owners with a case-A credential or a case-B channel can leave U during the attack (`MEASURED`). Day-0 and case-C owners are unchanged (§2.9). Residuals: co-location, global ceilings, harassment, and (E) re-proven devices that ran unproven | needs D3 and Owner policy on the residuals |
 | **P4** distributed spray | **Unchanged.** The path adds no U capacity (D), but proven own accounts add `reach_own` linearly and #120's multi-account trust question remains | needs D5 / D7, as before |
 | **P2** T0 store integrity | Not retested. The new primitives (nonce, link, issuance cap) are atomic on one Redis instance | implementation-stage evidence |
-| **P5** operations | Cluster (the primitives use one hash tag), failover with lost acknowledged consumption (a lost nonce record re-opens a challenge until it expires), mixed fleet, DEC-015 (no lanes during an outage) — `UNPROVEN` | as before |
+| **P5** operations | Cluster (the primitives use one hash tag), failover with lost acknowledged consumption (a lost nonce record re-opens a challenge until it expires), mixed fleet, DEC-015 (no lanes during an outage) — `UNPROVEN`. F6 shows only that proof minting fails during a simulated proof-store outage (§8.6); recoverable completion after redemption is `UNPROVEN` (§8.7) | as before |
 | **P6** values | None. Every value here is a test value | after P1–P5 |
 
 ## 10. Residual risks
 
-1. **Isolation after re-proof (E2).** A device that ran unproven during the attack carries population-influenced history into
-   P (MXE coupling). It is not repaired by acquisition.
+1. **Isolation after re-proof (E2).** A device that ran unproven during the attack carries history into P that the population
+   influenced (MXE coupling). Its owner P decisions are therefore not identical to the control. This is not a direct U → P write
+   and not a population-origin penalty (§8.3). Acquisition does not repair it.
 2. **MXE / K-6.** One K5 family per device, regardless of proof state.
 3. **Proof-path ceilings.** Per-source caps refuse a co-located owner. Global caps are a lane-wide denial lever. Without them,
    the aggregate cost of the path (signature checks, store writes, messages) grows with attacker sources.
@@ -238,13 +314,25 @@ show a large availability harm. The diagnostic does not change the result.
    binding.
 7. **#120.** Multi-account trusted sessions with UA rotation stay open. P removes K2 from P decisions but scales reach with
    proven accounts.
-8. **Outage.** DEC-015 degraded mode has no lanes, so no owner protection exists during an outage.
+8. **Outage.** DEC-015 degraded mode has no lanes, so no owner protection exists during an outage (`DERIVED`, K-8). The study
+   measured only that proof minting fails while its own proof store is down (F6). Admission behaviour and DEC-015
+   integration during an outage were not tested.
+10. **Recoverable completion.** A crash or a lost reply after redemption leaves a consumed link and no proof. In case B this
+    can leave the owner temporarily without a path while issuance is exhausted (§8.7, `UNPROVEN`).
 9. **Not modelled.** Real WebAuthn (attestation, origin, UV, counters), real mail / SMS, attacker control of the channel,
    timing side channels, production Redis topologies.
 
 ## 11. Final verdict and next gate
 
-**Final verdict: NO-GO AFTER EXPERIMENT**, under the pre-registered rule (PLAN §6.3): gate E fails for both cases on E2.
+**Final verdict: NO-GO AFTER EXPERIMENT**, under the pre-registered rule (PLAN §6.3): gate E-(i) fails for both cases on E2.
+
+**Scope of this verdict.** It is the verdict of the complete pre-registered candidate under PLAN v1. It is not a finding that
+proof acquisition fails in principle. E2 shows a history-mediated divergence of a re-proven device's P decisions:
+* 7 against 6 P admissions;
+* no U → P state write;
+* no population-origin penalty.
+
+E2 does not refute mechanism A or B (§8.3).
 
 What the evidence supports and does not support:
 
@@ -254,12 +342,15 @@ What the evidence supports and does not support:
     path itself is flooded;
   * the attacker gains no proof, no P admission and no extra U capacity;
   * the boundary refuses every forged, replayed, cross-bound or merely claimed proof;
-  * the new primitives are atomic on Redis.
+  * the new primitives are at-most-once on a single Redis instance; proof minting fails during a simulated proof-store outage.
 * **Not supported:**
   * complete owner isolation on the candidate pipeline for a device that ran unproven during the attack (E2);
   * any guarantee for case C or day-0;
   * any guarantee against co-located or global-ceiling denial;
-  * any answer to P4.
+  * any answer to P4;
+  * recoverable completion after redemption (§8.7);
+  * admission behaviour or DEC-015 integration during a store outage;
+  * any production guarantee: every supported result is limited to the isolated Host models of this study.
 * **Not decided here:**
   * whether a v2 study should re-scope E to newly acquired devices (E1/E3/E4 hold) or change K-6 (one K5 family per device);
   * every policy question above (global proof-path ceilings, harassment budget, P friction on new devices, D3 contract shape).
