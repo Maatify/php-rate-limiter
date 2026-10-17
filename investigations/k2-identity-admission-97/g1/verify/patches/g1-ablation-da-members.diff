@@ -1,0 +1,29 @@
+--- a/src/Service/EvaluationPipeline.php
++++ b/src/Service/EvaluationPipeline.php
+@@ -749,24 +749,14 @@
+         // Persist the complete involved snapshot only for the first qualifying
+         // occurrence in this logical device window. Later qualifications must
+         // not refresh historical K5 TTLs.
+-        if ($occurrenceSnapshot->added) {
+-            foreach ($snapshot->members as $member) {
+-                $persistence[] = [
+-                    'key' => $member,
+-                    'previousKey' => null,
+-                    'level' => 2,
+-                    'duration' => $duration,
+-                ];
+-            }
+-        }
++        // G1 ABLATION CAND-DA-M: no persistence on the OTHER member K5 keys of the snapshot (group association alone).
+
+         // A current member may be absent from the bounded distributed set
+         // after its cap is reached, or may be represented by a previous
+         // generation member during rotation. On the first qualification the
+         // complete snapshot already covers represented members; on a later
+         // qualification only the current non-ephemeral K5 is refreshed.
+-        if (! $isEphemeral
+-            && (! $occurrenceSnapshot->added || ! in_array($keysV2['k5'], $snapshot->members, true))) {
++        if (! $isEphemeral) {
+             $persistence[] = [
+                 'key' => $keysV2['k5'],
+                 'previousKey' => $keysV1['k5'] ?? null,

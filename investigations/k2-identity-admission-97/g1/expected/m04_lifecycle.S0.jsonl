@@ -1,0 +1,6 @@
+{"s":"m04","case":"LT-1 S1","arm":"S0","policy":"login","m":{"attackerAttempts":288,"attackerReach":44,"ownerAttempts":0,"ownerDenied":0},"attackerReachPer6h":[18,9,9,8]}
+{"s":"m04","case":"LT-1 S2","arm":"S0","policy":"login","m":{"attackerAttempts":288,"attackerReach":44,"ownerAttempts":0,"ownerDenied":0},"attackerReachPer6h":[18,9,9,8]}
+{"s":"m04","case":"LT-1 S3","arm":"S0","policy":"otp","m":{"attackerAttempts":120,"attackerReach":7,"ownerAttempts":0,"ownerDenied":0},"attackerReachPer6h":[7]}
+{"s":"m04","case":"LT-1 S4","arm":"S0","policy":"login","m":{"attackerAttempts":288,"attackerReach":44,"ownerAttempts":0,"ownerDenied":0},"attackerReachPer6h":[18,9,9,8]}
+{"s":"m04","case":"LT-1 S5","arm":"S0","policy":"login","m":{"attackerAttempts":720,"attackerReach":44,"ownerAttempts":144,"ownerDenied":129},"attackerReachPer6h":[17,9,9,9]}
+{"s":"m04","case":"LT-1 S6","arm":"S0","policy":"login","m":{"attackerAttempts":0,"attackerReach":0,"ownerAttempts":96,"ownerDenied":83},"attackerReachPer6h":[]}

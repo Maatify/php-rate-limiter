@@ -1,0 +1,5 @@
+{"s":"m07","sc":"SC-1 cause","sequence":["A","A","A","A","cap:src"],"pass":true}
+{"s":"m07","sc":"SC-3 no escalation","stateUnchangedByRefusal":true,"pass":true}
+{"s":"m07","sc":"SC-2 no persistence","nextWindow":"A","k1Block":null,"pass":true}
+{"s":"m07","sc":"SC-4 lane scope","unprovenAfterExhaustion":"cap:src","provenFromSameSource":"A","pass":true}
+{"s":"m07","sc":"SC-5 rotation invariance","attempts":30,"admittedInOneWindow":4,"cap":4,"pass":true}

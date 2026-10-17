@@ -1,0 +1,6 @@
+{"s":"m03","pa":"PA-2","admitted":20,"deviceMembers":1,"pass":true}
+{"s":"m03","pa":"PA-3","sequence":["A","A","p_device","A"],"pass":true}
+{"s":"m03","pa":"PA-4","pDevicesAfterRotation":["A","A","A","A","A","A","A","p_device"],"setSizes":[4,6],"uSrcBeforeRotation":10,"uSrcAfterOneRotation":2,"uSrcAfterSecondRotationSameWindow":10,"pass":true,"secondRotationReissue":10}
+{"s":"m03","pa":"PA-5","admittedLastSecondOfWindow":12,"admittedFirstSecondOfNext":12,"pass":true,"note":"I1 holds per fixed window; I1′ 2·c in an interval of length W is observed, as stated"}
+{"s":"m03","pa":"PA-6","refused":"acct","writesUnchanged":true,"keysUnchanged":true,"pass":true}
+{"s":"m03","pa":"PA-7","refused":"p_device","refusalLane":"P","uAdmissions":0,"pass":true}

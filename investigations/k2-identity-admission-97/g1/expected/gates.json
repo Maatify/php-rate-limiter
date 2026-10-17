@@ -1,0 +1,91 @@
+{
+    "C1": {
+        "status": "PASS",
+        "matrixViolations": [],
+        "cellsChecked": 644,
+        "redisRace": [
+            3,
+            3,
+            3
+        ],
+        "mutationControlDetected": true
+    },
+    "C2": {
+        "status": "PASS",
+        "attackCellsChecked": 468,
+        "sc5": "4/4"
+    },
+    "C3": {
+        "status": "PASS",
+        "S0_DV1_identical": false,
+        "S0_DV4_identical": false,
+        "DV5_sharedK5": true,
+        "DV6_oldWorkerTrace": "ASSSSS"
+    },
+    "C4": {
+        "status": "PASS",
+        "violations": [],
+        "tmxOwnAccountProofLanes": 17,
+        "checkerCorrection": "the first report run also listed TMX at stream level, which counted 17 valid own-account proofs as violations; corrected to the pre-registered SP5/POI list plus the event-level check"
+    },
+    "C5": {
+        "status": "PASS",
+        "preFlowViolations": []
+    },
+    "C6": {
+        "status": "PASS",
+        "violations": []
+    },
+    "C7": {
+        "status": "PASS",
+        "failing": [],
+        "redisDeviceRace": [
+            1,
+            1,
+            1
+        ]
+    },
+    "C8": {
+        "status": "PASS",
+        "reference": [
+            "p1:fail@+5=accepted",
+            "p1:fail@+6=duplicate",
+            "p1:ok@+7=conflict",
+            "p1:fail@+8=rejected",
+            "p2:fail@+131=late",
+            "p3:fail@+831=unknown",
+            "p4-never-issued:fail@+300=unknown"
+        ],
+        "redis": [
+            "accepted",
+            "duplicate",
+            "conflict",
+            "rejected",
+            "late",
+            "unknown"
+        ]
+    },
+    "C9": {
+        "status": "PASS",
+        "violations": []
+    },
+    "C10": {
+        "status": "PASS",
+        "violations": []
+    },
+    "DECISION": {
+        "status": "GO for later policy consideration (G2/G3)",
+        "core": {
+            "C1": "PASS",
+            "C2": "PASS",
+            "C3": "PASS",
+            "C4": "PASS",
+            "C5": "PASS",
+            "C6": "PASS",
+            "C7": "PASS",
+            "C8": "PASS",
+            "C9": "PASS",
+            "C10": "PASS"
+        }
+    }
+}

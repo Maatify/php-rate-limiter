@@ -1,0 +1,1118 @@
+{
+    "PRECONDITION": {
+        "status": "PASS",
+        "candMatrixCellsEquivalent": "644/644",
+        "originalScenariosIdenticalToArchivedCand": {
+            "m02_device.TRACE": true,
+            "m02_device.DAM": true,
+            "m02_device.DAO": true,
+            "m04_lifecycle.TRACE": true,
+            "m04_lifecycle.DAM": true,
+            "m04_lifecycle.DAO": true
+        }
+    },
+    "VARIANT CAND": {
+        "status": "reference (fails N2, N3)",
+        "N1": {
+            "c9Violations": 0,
+            "c10Forbidden": 0,
+            "c10Unattributed": 0,
+            "c1LogOver": 0
+        },
+        "N2 benignDAdenials": 384,
+        "benignFloodDenials (reported)": 0,
+        "N3": [
+            "MX 02 (+4 population-origin owner denials)",
+            "MX 0123 (+7 population-origin owner denials)",
+            "MXE (+8 population-origin owner denials)"
+        ],
+        "N4 eventRecountOverCells": 0,
+        "matrixCellsChangedVsCand": 0,
+        "deltasVsCand": [],
+        "originalScenariosIdenticalToArchivedCand": {
+            "m02_device": true,
+            "m04_lifecycle": true
+        }
+    },
+    "VARIANT CAND-DA-M": {
+        "status": "NO-GO (N2, N3)",
+        "N1": {
+            "c9Violations": 0,
+            "c10Forbidden": 0,
+            "c10Unattributed": 0,
+            "c1LogOver": 0
+        },
+        "N2 benignDAdenials": 384,
+        "benignFloodDenials (reported)": 0,
+        "N3": [
+            "MX 02 (+4 population-origin owner denials)",
+            "MX 0123 (+5 population-origin owner denials)",
+            "MXE (+8 population-origin owner denials)"
+        ],
+        "N4 eventRecountOverCells": 0,
+        "matrixCellsChangedVsCand": 0,
+        "deltasVsCand": [],
+        "originalScenariosIdenticalToArchivedCand": {
+            "m02_device": true,
+            "m04_lifecycle": true
+        }
+    },
+    "VARIANT CAND-no-DA-punishment": {
+        "status": "GO (engineering component)",
+        "N1": {
+            "c9Violations": 0,
+            "c10Forbidden": 0,
+            "c10Unattributed": 0,
+            "c1LogOver": 0
+        },
+        "N2 benignDAdenials": 0,
+        "benignFloodDenials (reported)": 0,
+        "N3": [],
+        "N4 eventRecountOverCells": 0,
+        "matrixCellsChangedVsCand": 52,
+        "deltasVsCand": {
+            "X1|login|uarot|CAND|R|pre": {
+                "F": [
+                    3,
+                    4
+                ],
+                "V": [
+                    3,
+                    4
+                ]
+            },
+            "X1|login|uarot|CAND|R-src4|pre": {
+                "F": [
+                    3,
+                    4
+                ],
+                "V": [
+                    3,
+                    4
+                ]
+            },
+            "X1|login|uarot|CAND|R-src40|pre": {
+                "F": [
+                    3,
+                    4
+                ],
+                "V": [
+                    3,
+                    4
+                ]
+            },
+            "X1|login|uarot|ALLU|R|pre": {
+                "F": [
+                    3,
+                    4
+                ],
+                "V": [
+                    3,
+                    4
+                ]
+            },
+            "X1|login|rotate|CAND|R|pre": {
+                "F": [
+                    3,
+                    4
+                ],
+                "V": [
+                    3,
+                    4
+                ]
+            },
+            "X1|login|rotate|CAND|R-src4|pre": {
+                "F": [
+                    3,
+                    4
+                ],
+                "V": [
+                    3,
+                    4
+                ]
+            },
+            "X1|login|rotate|CAND|R-src40|pre": {
+                "F": [
+                    3,
+                    4
+                ],
+                "V": [
+                    3,
+                    4
+                ]
+            },
+            "X1|login|rotate|ALLU|R|pre": {
+                "F": [
+                    3,
+                    4
+                ],
+                "V": [
+                    3,
+                    4
+                ]
+            },
+            "X7|login|uarot|CAND|R|pre+out": {
+                "O": [
+                    4,
+                    5
+                ],
+                "V": [
+                    44,
+                    45
+                ]
+            },
+            "X7|login|uarot|CAND|R|pre": {
+                "O": [
+                    4,
+                    5
+                ],
+                "V": [
+                    44,
+                    45
+                ]
+            },
+            "X7|login|uarot|CAND|R-src4|pre+out": {
+                "O": [
+                    4,
+                    5
+                ],
+                "V": [
+                    44,
+                    45
+                ]
+            },
+            "X7|login|uarot|CAND|R-src4|pre": {
+                "O": [
+                    4,
+                    5
+                ],
+                "V": [
+                    44,
+                    45
+                ]
+            },
+            "X7|login|uarot|CAND|R-src40|pre+out": {
+                "O": [
+                    4,
+                    5
+                ],
+                "V": [
+                    44,
+                    45
+                ]
+            },
+            "X7|login|uarot|CAND|R-src40|pre": {
+                "O": [
+                    4,
+                    5
+                ],
+                "V": [
+                    44,
+                    45
+                ]
+            },
+            "X7|login|uarot|ALLU|R|pre+out": {
+                "O": [
+                    4,
+                    5
+                ],
+                "V": [
+                    44,
+                    45
+                ]
+            },
+            "X7|login|uarot|ALLU|R|pre": {
+                "O": [
+                    4,
+                    5
+                ],
+                "V": [
+                    44,
+                    45
+                ]
+            },
+            "X7|login|rotate|CAND|R|pre+out": {
+                "O": [
+                    4,
+                    5
+                ],
+                "V": [
+                    44,
+                    45
+                ]
+            },
+            "X7|login|rotate|CAND|R|pre": {
+                "O": [
+                    4,
+                    5
+                ],
+                "V": [
+                    44,
+                    45
+                ]
+            },
+            "X7|login|rotate|CAND|R-src4|pre+out": {
+                "O": [
+                    4,
+                    5
+                ],
+                "V": [
+                    44,
+                    45
+                ]
+            },
+            "X7|login|rotate|CAND|R-src4|pre": {
+                "O": [
+                    4,
+                    5
+                ],
+                "V": [
+                    44,
+                    45
+                ]
+            },
+            "X7|login|rotate|CAND|R-src40|pre+out": {
+                "O": [
+                    4,
+                    5
+                ],
+                "V": [
+                    44,
+                    45
+                ]
+            },
+            "X7|login|rotate|CAND|R-src40|pre": {
+                "O": [
+                    4,
+                    5
+                ],
+                "V": [
+                    44,
+                    45
+                ]
+            },
+            "X7|login|rotate|ALLU|R|pre+out": {
+                "O": [
+                    4,
+                    5
+                ],
+                "V": [
+                    44,
+                    45
+                ]
+            },
+            "X7|login|rotate|ALLU|R|pre": {
+                "O": [
+                    4,
+                    5
+                ],
+                "V": [
+                    44,
+                    45
+                ]
+            },
+            "BRU|login|uarot|CAND|R|pre+out": {
+                "F": [
+                    2,
+                    3
+                ],
+                "V": [
+                    2,
+                    3
+                ]
+            },
+            "BRU|login|uarot|CAND|R|pre": {
+                "F": [
+                    3,
+                    16
+                ],
+                "V": [
+                    3,
+                    16
+                ]
+            },
+            "BRU|login|uarot|CAND|R-src4|pre+out": {
+                "F": [
+                    2,
+                    3
+                ],
+                "V": [
+                    2,
+                    3
+                ]
+            },
+            "BRU|login|uarot|CAND|R-src4|pre": {
+                "F": [
+                    3,
+                    16
+                ],
+                "V": [
+                    3,
+                    16
+                ]
+            },
+            "BRU|login|uarot|CAND|R-src40|pre+out": {
+                "F": [
+                    2,
+                    3
+                ],
+                "V": [
+                    2,
+                    3
+                ]
+            },
+            "BRU|login|uarot|CAND|R-src40|pre": {
+                "F": [
+                    3,
+                    16
+                ],
+                "V": [
+                    3,
+                    16
+                ]
+            },
+            "BRU|login|uarot|ALLU|R|pre+out": {
+                "F": [
+                    2,
+                    3
+                ],
+                "V": [
+                    2,
+                    3
+                ]
+            },
+            "BRU|login|uarot|ALLU|R|pre": {
+                "F": [
+                    3,
+                    16
+                ],
+                "V": [
+                    3,
+                    16
+                ]
+            },
+            "BRU|login|rotate|CAND|R|pre+out": {
+                "F": [
+                    2,
+                    3
+                ],
+                "V": [
+                    2,
+                    3
+                ]
+            },
+            "BRU|login|rotate|CAND|R|pre": {
+                "F": [
+                    3,
+                    16
+                ],
+                "V": [
+                    3,
+                    16
+                ]
+            },
+            "BRU|login|rotate|CAND|R-src4|pre+out": {
+                "F": [
+                    2,
+                    3
+                ],
+                "V": [
+                    2,
+                    3
+                ]
+            },
+            "BRU|login|rotate|CAND|R-src4|pre": {
+                "F": [
+                    3,
+                    16
+                ],
+                "V": [
+                    3,
+                    16
+                ]
+            },
+            "BRU|login|rotate|CAND|R-src40|pre+out": {
+                "F": [
+                    2,
+                    3
+                ],
+                "V": [
+                    2,
+                    3
+                ]
+            },
+            "BRU|login|rotate|CAND|R-src40|pre": {
+                "F": [
+                    3,
+                    16
+                ],
+                "V": [
+                    3,
+                    16
+                ]
+            },
+            "BRU|login|rotate|ALLU|R|pre+out": {
+                "F": [
+                    2,
+                    3
+                ],
+                "V": [
+                    2,
+                    3
+                ]
+            },
+            "BRU|login|rotate|ALLU|R|pre": {
+                "F": [
+                    3,
+                    16
+                ],
+                "V": [
+                    3,
+                    16
+                ]
+            },
+            "BRD|login|uarot|CAND|R|pre": {
+                "F": [
+                    7,
+                    20
+                ],
+                "V": [
+                    7,
+                    20
+                ]
+            },
+            "BRD|login|uarot|CAND|R-src4|pre": {
+                "F": [
+                    7,
+                    20
+                ],
+                "V": [
+                    7,
+                    20
+                ]
+            },
+            "BRD|login|uarot|CAND|R-src40|pre": {
+                "F": [
+                    7,
+                    20
+                ],
+                "V": [
+                    7,
+                    20
+                ]
+            },
+            "BRD|login|uarot|ALLU|R|pre": {
+                "F": [
+                    7,
+                    20
+                ],
+                "V": [
+                    7,
+                    20
+                ]
+            },
+            "BRD|login|rotate|CAND|R|pre": {
+                "F": [
+                    7,
+                    20
+                ],
+                "V": [
+                    7,
+                    20
+                ]
+            },
+            "BRD|login|rotate|CAND|R-src4|pre": {
+                "F": [
+                    7,
+                    20
+                ],
+                "V": [
+                    7,
+                    20
+                ]
+            },
+            "BRD|login|rotate|CAND|R-src40|pre": {
+                "F": [
+                    7,
+                    20
+                ],
+                "V": [
+                    7,
+                    20
+                ]
+            },
+            "BRD|login|rotate|ALLU|R|pre": {
+                "F": [
+                    7,
+                    20
+                ],
+                "V": [
+                    7,
+                    20
+                ]
+            },
+            "D2|login|none|CAND|R-src40|pre+out": {
+                "L": [
+                    27,
+                    7
+                ],
+                "V": [
+                    95,
+                    116
+                ]
+            },
+            "D2|login|none|CAND|R-src40|pre": {
+                "L": [
+                    24,
+                    0
+                ],
+                "V": [
+                    97,
+                    121
+                ]
+            },
+            "MIX|login|none|CAND|R-src40|pre+out": {
+                "L": [
+                    59,
+                    35
+                ],
+                "V": [
+                    117,
+                    141
+                ]
+            },
+            "MIX|login|none|CAND|R-src40|pre": {
+                "L": [
+                    59,
+                    35
+                ],
+                "V": [
+                    117,
+                    141
+                ]
+            }
+        },
+        "originalScenariosIdenticalToArchivedCand": {
+            "m02_device": true,
+            "m04_lifecycle": true
+        }
+    },
+    "X03 diagnostic (account cap not binding)": {
+        "status": "reported",
+        "strategyLevelChanges": {
+            "BRD|uarot|R|pre": {
+                "F": [
+                    7,
+                    20
+                ],
+                "L": [
+                    0,
+                    0
+                ],
+                "T": [
+                    3,
+                    4
+                ]
+            },
+            "BRD|rotate|R|pre": {
+                "F": [
+                    7,
+                    20
+                ],
+                "L": [
+                    0,
+                    0
+                ],
+                "T": [
+                    3,
+                    4
+                ]
+            },
+            "BRU|uarot|R|pre+out": {
+                "F": [
+                    2,
+                    3
+                ],
+                "L": [
+                    0,
+                    0
+                ],
+                "T": [
+                    2,
+                    2
+                ]
+            },
+            "BRU|uarot|R|pre": {
+                "F": [
+                    3,
+                    16
+                ],
+                "L": [
+                    0,
+                    0
+                ],
+                "T": [
+                    3,
+                    4
+                ]
+            },
+            "BRU|rotate|R|pre+out": {
+                "F": [
+                    2,
+                    3
+                ],
+                "L": [
+                    0,
+                    0
+                ],
+                "T": [
+                    2,
+                    2
+                ]
+            },
+            "BRU|rotate|R|pre": {
+                "F": [
+                    3,
+                    16
+                ],
+                "L": [
+                    0,
+                    0
+                ],
+                "T": [
+                    3,
+                    4
+                ]
+            },
+            "X1|uarot|R|pre": {
+                "F": [
+                    3,
+                    4
+                ],
+                "L": [
+                    0,
+                    0
+                ],
+                "T": [
+                    3,
+                    4
+                ]
+            },
+            "X1|rotate|R|pre": {
+                "F": [
+                    3,
+                    4
+                ],
+                "L": [
+                    0,
+                    0
+                ],
+                "T": [
+                    3,
+                    4
+                ]
+            },
+            "BRD|uarot|Ua16-s40|pre": {
+                "F": [
+                    7,
+                    80
+                ],
+                "L": [
+                    0,
+                    0
+                ],
+                "T": [
+                    3,
+                    16
+                ]
+            },
+            "BRD|rotate|Ua16-s40|pre": {
+                "F": [
+                    7,
+                    80
+                ],
+                "L": [
+                    0,
+                    0
+                ],
+                "T": [
+                    3,
+                    16
+                ]
+            },
+            "BRU|uarot|Ua16-s40|pre+out": {
+                "F": [
+                    2,
+                    3
+                ],
+                "L": [
+                    0,
+                    0
+                ],
+                "T": [
+                    2,
+                    2
+                ]
+            },
+            "BRU|uarot|Ua16-s40|pre": {
+                "F": [
+                    3,
+                    20
+                ],
+                "L": [
+                    0,
+                    0
+                ],
+                "T": [
+                    3,
+                    5
+                ]
+            },
+            "BRU|rotate|Ua16-s40|pre+out": {
+                "F": [
+                    2,
+                    3
+                ],
+                "L": [
+                    0,
+                    0
+                ],
+                "T": [
+                    2,
+                    2
+                ]
+            },
+            "BRU|rotate|Ua16-s40|pre": {
+                "F": [
+                    3,
+                    20
+                ],
+                "L": [
+                    0,
+                    0
+                ],
+                "T": [
+                    3,
+                    5
+                ]
+            },
+            "X1|uarot|Ua16-s40|pre": {
+                "F": [
+                    3,
+                    5
+                ],
+                "L": [
+                    0,
+                    0
+                ],
+                "T": [
+                    3,
+                    5
+                ]
+            },
+            "X1|rotate|Ua16-s40|pre": {
+                "F": [
+                    3,
+                    5
+                ],
+                "L": [
+                    0,
+                    0
+                ],
+                "T": [
+                    3,
+                    5
+                ]
+            },
+            "D2|none|Ua16-s40|pre+out": {
+                "F": [
+                    0,
+                    0
+                ],
+                "L": [
+                    27,
+                    7
+                ],
+                "T": [
+                    0,
+                    0
+                ]
+            },
+            "D2|none|Ua16-s40|pre": {
+                "F": [
+                    0,
+                    0
+                ],
+                "L": [
+                    24,
+                    0
+                ],
+                "T": [
+                    0,
+                    0
+                ]
+            },
+            "MIX|none|Ua16-s40|pre+out": {
+                "F": [
+                    55,
+                    55
+                ],
+                "L": [
+                    59,
+                    35
+                ],
+                "T": [
+                    1,
+                    1
+                ]
+            },
+            "MIX|none|Ua16-s40|pre": {
+                "F": [
+                    55,
+                    55
+                ],
+                "L": [
+                    59,
+                    35
+                ],
+                "T": [
+                    1,
+                    1
+                ]
+            },
+            "BRD|uarot|Uaoff-s40|pre": {
+                "F": [
+                    7,
+                    100
+                ],
+                "L": [
+                    0,
+                    0
+                ],
+                "T": [
+                    3,
+                    20
+                ]
+            },
+            "BRD|rotate|Uaoff-s40|pre": {
+                "F": [
+                    7,
+                    100
+                ],
+                "L": [
+                    0,
+                    0
+                ],
+                "T": [
+                    3,
+                    20
+                ]
+            },
+            "BRU|uarot|Uaoff-s40|pre+out": {
+                "F": [
+                    2,
+                    3
+                ],
+                "L": [
+                    0,
+                    0
+                ],
+                "T": [
+                    2,
+                    2
+                ]
+            },
+            "BRU|uarot|Uaoff-s40|pre": {
+                "F": [
+                    3,
+                    20
+                ],
+                "L": [
+                    0,
+                    0
+                ],
+                "T": [
+                    3,
+                    5
+                ]
+            },
+            "BRU|rotate|Uaoff-s40|pre+out": {
+                "F": [
+                    2,
+                    3
+                ],
+                "L": [
+                    0,
+                    0
+                ],
+                "T": [
+                    2,
+                    2
+                ]
+            },
+            "BRU|rotate|Uaoff-s40|pre": {
+                "F": [
+                    3,
+                    20
+                ],
+                "L": [
+                    0,
+                    0
+                ],
+                "T": [
+                    3,
+                    5
+                ]
+            },
+            "X1|uarot|Uaoff-s40|pre": {
+                "F": [
+                    3,
+                    5
+                ],
+                "L": [
+                    0,
+                    0
+                ],
+                "T": [
+                    3,
+                    5
+                ]
+            },
+            "X1|rotate|Uaoff-s40|pre": {
+                "F": [
+                    3,
+                    5
+                ],
+                "L": [
+                    0,
+                    0
+                ],
+                "T": [
+                    3,
+                    5
+                ]
+            },
+            "D2|none|Uaoff-s40|pre+out": {
+                "F": [
+                    0,
+                    0
+                ],
+                "L": [
+                    27,
+                    7
+                ],
+                "T": [
+                    0,
+                    0
+                ]
+            },
+            "D2|none|Uaoff-s40|pre": {
+                "F": [
+                    0,
+                    0
+                ],
+                "L": [
+                    24,
+                    0
+                ],
+                "T": [
+                    0,
+                    0
+                ]
+            },
+            "MIX|none|Uaoff-s40|pre+out": {
+                "F": [
+                    55,
+                    55
+                ],
+                "L": [
+                    59,
+                    35
+                ],
+                "T": [
+                    1,
+                    1
+                ]
+            },
+            "MIX|none|Uaoff-s40|pre": {
+                "F": [
+                    55,
+                    55
+                ],
+                "L": [
+                    59,
+                    35
+                ],
+                "T": [
+                    1,
+                    1
+                ]
+            }
+        },
+        "bestResponseChanges": []
+    },
+    "T1": {
+        "status": "original T1 NOT RECOMMENDED (failing fixtures kept); fixed store: fixtures pass in isolation (single Redis), UNPROVEN for production",
+        "originalFailing": [
+            "T1-N2 re-issue a CLAIMED id @ original/reference",
+            "T1-N3 re-issue an ISSUED id @ original/reference",
+            "T1-N1 wrong-type permit key @ original/redis",
+            "T1-N2 re-issue a CLAIMED id @ original/redis",
+            "T1-N3 re-issue an ISSUED id @ original/redis",
+            "T1-N4b refused by the device cap @ original/redis",
+            "T1-N5 admitted, previous set read-only @ original/redis"
+        ],
+        "matrix": {
+            "T1-N1 wrong-type permit key": {
+                "original/redis": false,
+                "fixed/redis": true
+            },
+            "T1-N2 re-issue a CLAIMED id": {
+                "original/reference": false,
+                "fixed/reference": true,
+                "original/redis": false,
+                "fixed/redis": true
+            },
+            "T1-N3 re-issue an ISSUED id": {
+                "original/reference": false,
+                "fixed/reference": true,
+                "original/redis": false,
+                "fixed/redis": true
+            },
+            "T1-N4a refused by a counter": {
+                "original/reference": true,
+                "fixed/reference": true,
+                "original/redis": true,
+                "fixed/redis": true
+            },
+            "T1-N4b refused by the device cap": {
+                "original/reference": true,
+                "fixed/reference": true,
+                "original/redis": false,
+                "fixed/redis": true
+            },
+            "T1-N5 admitted, previous set read-only": {
+                "original/reference": true,
+                "fixed/reference": true,
+                "original/redis": false,
+                "fixed/redis": true
+            },
+            "T1-N6 R-3 value-level (new source)": {
+                "fixed/redis": true
+            },
+            "T1-N6 R-3 value-level (same source)": {
+                "fixed/redis": true
+            },
+            "T1-N6 claim series": {
+                "fixed/reference": true,
+                "fixed/redis": true
+            },
+            "T1-N6 counter race": {
+                "fixed/redis": true
+            },
+            "T1-N6 device race": {
+                "fixed/redis": true
+            }
+        }
+    }
+}

@@ -1,0 +1,490 @@
+{
+    "FLOOD-P counterexample": {
+        "status": "NOT EXERCISED by the declared fixture / CONFIRMED (shared-IP fixture, added)",
+        "whyDeclaredNotExercised": "the flood device count is EphemeralBucket::check(accountObservation) keyed by accountAnchor() = K4 + K1, i.e. per (account, source); six devices on six IPs give count 1 per anchor (measured), so flood_stage is never set",
+        "perArm": {
+            "CAND": {
+                "FLOOD-P": {
+                    "provenDecisions": "AAAA",
+                    "control": "AAAA",
+                    "provenDeniedByFlood": 0,
+                    "confirmed": false
+                },
+                "FLOOD-Pok": {
+                    "provenDecisions": "AAAA",
+                    "control": "AAAA",
+                    "provenDeniedByFlood": 0,
+                    "confirmed": false
+                },
+                "FLOOD-P-NAT": {
+                    "provenDecisions": "HAAAA",
+                    "control": "AAAAA",
+                    "provenDeniedByFlood": 1,
+                    "confirmed": true
+                },
+                "FLOOD-Pok-NAT": {
+                    "provenDecisions": "HAAAA",
+                    "control": "AAAAA",
+                    "provenDeniedByFlood": 1,
+                    "confirmed": true
+                }
+            },
+            "CAND-no-DA-punishment": {
+                "FLOOD-P": {
+                    "provenDecisions": "AAAA",
+                    "control": "AAAA",
+                    "provenDeniedByFlood": 0,
+                    "confirmed": false
+                },
+                "FLOOD-Pok": {
+                    "provenDecisions": "AAAA",
+                    "control": "AAAA",
+                    "provenDeniedByFlood": 0,
+                    "confirmed": false
+                },
+                "FLOOD-P-NAT": {
+                    "provenDecisions": "HAAAA",
+                    "control": "AAAAA",
+                    "provenDeniedByFlood": 1,
+                    "confirmed": true
+                },
+                "FLOOD-Pok-NAT": {
+                    "provenDecisions": "HAAAA",
+                    "control": "AAAAA",
+                    "provenDeniedByFlood": 1,
+                    "confirmed": true
+                }
+            },
+            "CAND-no-DA-no-flood-punishment": {
+                "FLOOD-P": {
+                    "provenDecisions": "AAAA",
+                    "control": "AAAA",
+                    "provenDeniedByFlood": 0,
+                    "confirmed": false
+                },
+                "FLOOD-Pok": {
+                    "provenDecisions": "AAAA",
+                    "control": "AAAA",
+                    "provenDeniedByFlood": 0,
+                    "confirmed": false
+                },
+                "FLOOD-P-NAT": {
+                    "provenDecisions": "AAAAA",
+                    "control": "AAAAA",
+                    "provenDeniedByFlood": 0,
+                    "confirmed": false
+                },
+                "FLOOD-Pok-NAT": {
+                    "provenDecisions": "AAAAA",
+                    "control": "AAAAA",
+                    "provenDeniedByFlood": 0,
+                    "confirmed": false
+                }
+            }
+        }
+    },
+    "VARIANT CAND-no-DA-no-flood-punishment": {
+        "status": "GO (engineering component)",
+        "F1": {
+            "c9Violations": 0,
+            "c10Forbidden": 0,
+            "c10Unattributed": 0,
+            "c1LogOver": 0
+        },
+        "F2": {
+            "benignDA": 0,
+            "benignFlood": 0
+        },
+        "F3": [],
+        "F4 eventRecountOverCells": 0,
+        "matrixCellsChangedVsDAO": 16,
+        "originalScenariosIdenticalToArchivedCand": {
+            "m02_device": true,
+            "m04_lifecycle": true
+        },
+        "deltasVsDAO": {
+            "X1|login|uarot|CAND|R|pre": {
+                "F": [
+                    4,
+                    5
+                ],
+                "V": [
+                    4,
+                    5
+                ]
+            },
+            "X1|login|uarot|CAND|R-src4|pre": {
+                "F": [
+                    4,
+                    5
+                ],
+                "V": [
+                    4,
+                    5
+                ]
+            },
+            "X1|login|uarot|CAND|R-src40|pre": {
+                "F": [
+                    4,
+                    5
+                ],
+                "V": [
+                    4,
+                    5
+                ]
+            },
+            "X1|login|uarot|ALLU|R|pre": {
+                "F": [
+                    4,
+                    5
+                ],
+                "V": [
+                    4,
+                    5
+                ]
+            },
+            "X1|login|rotate|CAND|R|pre": {
+                "F": [
+                    4,
+                    5
+                ],
+                "V": [
+                    4,
+                    5
+                ]
+            },
+            "X1|login|rotate|CAND|R-src4|pre": {
+                "F": [
+                    4,
+                    5
+                ],
+                "V": [
+                    4,
+                    5
+                ]
+            },
+            "X1|login|rotate|CAND|R-src40|pre": {
+                "F": [
+                    4,
+                    5
+                ],
+                "V": [
+                    4,
+                    5
+                ]
+            },
+            "X1|login|rotate|ALLU|R|pre": {
+                "F": [
+                    4,
+                    5
+                ],
+                "V": [
+                    4,
+                    5
+                ]
+            },
+            "BRU|login|uarot|CAND|R|pre": {
+                "F": [
+                    16,
+                    20
+                ],
+                "V": [
+                    16,
+                    20
+                ]
+            },
+            "BRU|login|uarot|CAND|R-src4|pre": {
+                "F": [
+                    16,
+                    20
+                ],
+                "V": [
+                    16,
+                    20
+                ]
+            },
+            "BRU|login|uarot|CAND|R-src40|pre": {
+                "F": [
+                    16,
+                    20
+                ],
+                "V": [
+                    16,
+                    20
+                ]
+            },
+            "BRU|login|uarot|ALLU|R|pre": {
+                "F": [
+                    16,
+                    20
+                ],
+                "V": [
+                    16,
+                    20
+                ]
+            },
+            "BRU|login|rotate|CAND|R|pre": {
+                "F": [
+                    16,
+                    20
+                ],
+                "V": [
+                    16,
+                    20
+                ]
+            },
+            "BRU|login|rotate|CAND|R-src4|pre": {
+                "F": [
+                    16,
+                    20
+                ],
+                "V": [
+                    16,
+                    20
+                ]
+            },
+            "BRU|login|rotate|CAND|R-src40|pre": {
+                "F": [
+                    16,
+                    20
+                ],
+                "V": [
+                    16,
+                    20
+                ]
+            },
+            "BRU|login|rotate|ALLU|R|pre": {
+                "F": [
+                    16,
+                    20
+                ],
+                "V": [
+                    16,
+                    20
+                ]
+            }
+        }
+    },
+    "X03 vs DAO": {
+        "status": "reported",
+        "strategyLevelChanges": {
+            "BRU|uarot|R|pre": {
+                "F": [
+                    16,
+                    20
+                ],
+                "O": [
+                    0,
+                    0
+                ],
+                "L": [
+                    0,
+                    0
+                ],
+                "T": [
+                    4,
+                    4
+                ]
+            },
+            "BRU|rotate|R|pre": {
+                "F": [
+                    16,
+                    20
+                ],
+                "O": [
+                    0,
+                    0
+                ],
+                "L": [
+                    0,
+                    0
+                ],
+                "T": [
+                    4,
+                    4
+                ]
+            },
+            "X1|uarot|R|pre": {
+                "F": [
+                    4,
+                    5
+                ],
+                "O": [
+                    0,
+                    0
+                ],
+                "L": [
+                    0,
+                    0
+                ],
+                "T": [
+                    4,
+                    4
+                ]
+            },
+            "X1|rotate|R|pre": {
+                "F": [
+                    4,
+                    5
+                ],
+                "O": [
+                    0,
+                    0
+                ],
+                "L": [
+                    0,
+                    0
+                ],
+                "T": [
+                    4,
+                    4
+                ]
+            },
+            "BRU|uarot|Ua16-s40|pre": {
+                "F": [
+                    20,
+                    80
+                ],
+                "O": [
+                    0,
+                    0
+                ],
+                "L": [
+                    0,
+                    0
+                ],
+                "T": [
+                    5,
+                    16
+                ]
+            },
+            "BRU|rotate|Ua16-s40|pre": {
+                "F": [
+                    20,
+                    80
+                ],
+                "O": [
+                    0,
+                    0
+                ],
+                "L": [
+                    0,
+                    0
+                ],
+                "T": [
+                    5,
+                    16
+                ]
+            },
+            "X1|uarot|Ua16-s40|pre": {
+                "F": [
+                    5,
+                    17
+                ],
+                "O": [
+                    0,
+                    0
+                ],
+                "L": [
+                    0,
+                    0
+                ],
+                "T": [
+                    5,
+                    16
+                ]
+            },
+            "X1|rotate|Ua16-s40|pre": {
+                "F": [
+                    5,
+                    17
+                ],
+                "O": [
+                    0,
+                    0
+                ],
+                "L": [
+                    0,
+                    0
+                ],
+                "T": [
+                    5,
+                    16
+                ]
+            },
+            "BRU|uarot|Uaoff-s40|pre": {
+                "F": [
+                    20,
+                    100
+                ],
+                "O": [
+                    0,
+                    0
+                ],
+                "L": [
+                    0,
+                    0
+                ],
+                "T": [
+                    5,
+                    20
+                ]
+            },
+            "BRU|rotate|Uaoff-s40|pre": {
+                "F": [
+                    20,
+                    100
+                ],
+                "O": [
+                    0,
+                    0
+                ],
+                "L": [
+                    0,
+                    0
+                ],
+                "T": [
+                    5,
+                    20
+                ]
+            },
+            "X1|uarot|Uaoff-s40|pre": {
+                "F": [
+                    5,
+                    41
+                ],
+                "O": [
+                    0,
+                    0
+                ],
+                "L": [
+                    0,
+                    0
+                ],
+                "T": [
+                    5,
+                    40
+                ]
+            },
+            "X1|rotate|Uaoff-s40|pre": {
+                "F": [
+                    5,
+                    41
+                ],
+                "O": [
+                    0,
+                    0
+                ],
+                "L": [
+                    0,
+                    0
+                ],
+                "T": [
+                    5,
+                    40
+                ]
+            }
+        },
+        "bestResponseChanges": []
+    }
+}

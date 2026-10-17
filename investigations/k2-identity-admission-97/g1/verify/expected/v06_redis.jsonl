@@ -1,0 +1,2 @@
+{"s":"v06","case":"R3-H Redis real","cases":{"new source":{"refused":"acct","keysUnchanged":true,"valuesUnchanged":true},"same source":{"refused":"acct","keysUnchanged":true,"valuesUnchanged":true}},"originalPass":true,"hardenedPass":true}
+{"s":"v06","case":"R3-H Redis M-R3 partial-write store","cases":{"new source":{"refused":"acct","keysUnchanged":false,"valuesUnchanged":false},"same source":{"refused":"acct","keysUnchanged":true,"valuesUnchanged":false}},"originalPass":false,"hardenedPass":false}

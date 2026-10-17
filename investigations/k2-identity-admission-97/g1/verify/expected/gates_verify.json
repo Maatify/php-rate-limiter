@@ -1,0 +1,538 @@
+{
+    "TRACE-EQUIVALENCE": {
+        "status": "PASS",
+        "cells": 805,
+        "different": 0,
+        "first": []
+    },
+    "C10-H": {
+        "status": "PASS",
+        "forbiddenBenignDenials": 0,
+        "unattributedBenignDenials": 0,
+        "cells": [],
+        "detector": {
+            "M-C10": [
+                "D1 596/600 {\"origin:correlation\":596}",
+                "L3 104/121 {\"origin:correlation\":104}",
+                "SESS 6/8 {\"origin:correlation\":6}",
+                "D2 117/121 {\"origin:correlation\":39,\"origin:k2\":78}",
+                "ABA_B 118/120 {\"origin:correlation\":20,\"origin:k2\":98}",
+                "N12V 56/61 {\"origin:correlation\":28,\"origin:k2\":28}",
+                "X2L 29/30 {\"origin:correlation\":29}"
+            ],
+            "allDetected": true
+        }
+    },
+    "C9-H": {
+        "status": "PASS",
+        "matrix": {
+            "uEventsChecked": 152071,
+            "onAccountsWithPState": 72,
+            "violations": 0
+        },
+        "MX": {
+            "uEventsChecked": 154,
+            "onAccountsWithPState": 154,
+            "violations": 0
+        },
+        "detector": {
+            "M-C9a": true,
+            "M-C9b": true,
+            "M-C9a0 (first placement, no P-specific write; recorded)": false,
+            "originalCheckerDetectsAny": false
+        }
+    },
+    "C1-H": {
+        "status": "PASS",
+        "logRecountOver": [],
+        "eventRecountOver": [],
+        "logVsEventCountMismatch": [],
+        "redisRace": [
+            3,
+            3,
+            3
+        ],
+        "R-1m detected": true,
+        "M-C1": [
+            {
+                "stream": "X1",
+                "capBindsInRealRun": true,
+                "realClean": true,
+                "mutantFlagged": true
+            },
+            {
+                "stream": "BRU",
+                "capBindsInRealRun": true,
+                "realClean": true,
+                "mutantFlagged": true
+            },
+            {
+                "stream": "SP3",
+                "capBindsInRealRun": true,
+                "realClean": true,
+                "mutantFlagged": true
+            },
+            {
+                "stream": "KS50",
+                "capBindsInRealRun": false,
+                "realClean": true,
+                "mutantFlagged": false
+            },
+            {
+                "stream": "D24K1",
+                "capBindsInRealRun": true,
+                "realClean": true,
+                "mutantFlagged": true
+            },
+            {
+                "stream": "X1API",
+                "capBindsInRealRun": false,
+                "realClean": true,
+                "mutantFlagged": false
+            }
+        ],
+        "originalGateDifference": "the original C1 PASS did not require R-1m; C1-H does, and adds the event recount and the M-C1 control"
+    },
+    "R3-H": {
+        "status": "PASS",
+        "reference": {
+            "real": true,
+            "mutantCaughtByHardened": true,
+            "mutantSameSourceSeenByOriginal": false
+        },
+        "redis": {
+            "real": true,
+            "mutantCaughtByHardened": true,
+            "mutantSameSourceSeenByOriginal": false
+        }
+    },
+    "C4-H(a) Host mapping M1": {
+        "status": "PASS (conditional on the Host implementing M1)",
+        "eventsChecked": 9662,
+        "pLanes": 2444,
+        "mismatches": 0,
+        "negative": [
+            "B1 proof names another account: U",
+            "B2 empty device secret: U",
+            "B2 null device secret: U",
+            "B3 Host-asserted trusted session of another target (SP5, all events): U"
+        ]
+    },
+    "C4-H(b) package boundary": {
+        "status": "UNPROVEN",
+        "tests": [
+            "B4 proof minted for login presented on otp: NOT ENFORCED",
+            "B5 direct lane claim: NOT ENFORCED ⇒ package-boundary guarantee UNPROVEN (no typed proof/account/operation binding in the isolated patch; building one needs a new API, not authorized)",
+            "B5 consequence: forged P claim, fixed secret: {\"attackerAttempts\":240,\"attackerReach\":8,\"ownerDenied\":0,\"ownerDeniedByCause\":[]}",
+            "B5 consequence: forged P claim, rotating secrets: {\"attackerAttempts\":240,\"attackerReach\":9,\"ownerDenied\":1,\"ownerDeniedByCause\":{\"cap:pacct\":1}}"
+        ]
+    },
+    "ADDENDUM-DECISION": {
+        "status": "hardened gates PASS; package-boundary C4 UNPROVEN",
+        "hardened": {
+            "C1-H": "PASS",
+            "C9-H": "PASS",
+            "C10-H": "PASS",
+            "R3-H": "PASS",
+            "C4-H(a)": "PASS (conditional on the Host implementing M1)",
+            "C4-H(b)": "UNPROVEN"
+        }
+    },
+    "SWEEP-SCREEN": {
+        "anySetDominatesS0": [],
+        "cells": {
+            "CAND|Ua4-s12": {
+                "arm": "CAND",
+                "set": "Ua4-s12",
+                "U_acct": 4,
+                "U_src": 12,
+                "B": 2,
+                "Bstreams": [
+                    "L1",
+                    "UAC"
+                ],
+                "A": 6,
+                "Astreams": [
+                    "MIX",
+                    "POI",
+                    "SP6",
+                    "SP3",
+                    "SP1n",
+                    "ABA_A"
+                ],
+                "dominatesS0": false
+            },
+            "CAND|Ua4-s40": {
+                "arm": "CAND",
+                "set": "Ua4-s40",
+                "U_acct": 4,
+                "U_src": 40,
+                "B": 2,
+                "Bstreams": [
+                    "L1",
+                    "UAC"
+                ],
+                "A": 6,
+                "Astreams": [
+                    "MIX",
+                    "POI",
+                    "SP6",
+                    "SP3",
+                    "SP1n",
+                    "ABA_A"
+                ],
+                "dominatesS0": false
+            },
+            "CAND|Ua8-s12": {
+                "arm": "CAND",
+                "set": "Ua8-s12",
+                "U_acct": 8,
+                "U_src": 12,
+                "B": 1,
+                "Bstreams": [
+                    "L1"
+                ],
+                "A": 6,
+                "Astreams": [
+                    "MIX",
+                    "POI",
+                    "SP6",
+                    "SP3",
+                    "SP1n",
+                    "ABA_A"
+                ],
+                "dominatesS0": false
+            },
+            "CAND|Ua8-s40": {
+                "arm": "CAND",
+                "set": "Ua8-s40",
+                "U_acct": 8,
+                "U_src": 40,
+                "B": 1,
+                "Bstreams": [
+                    "L1"
+                ],
+                "A": 6,
+                "Astreams": [
+                    "MIX",
+                    "POI",
+                    "SP6",
+                    "SP3",
+                    "SP1n",
+                    "ABA_A"
+                ],
+                "dominatesS0": false
+            },
+            "CAND|Ua16-s12": {
+                "arm": "CAND",
+                "set": "Ua16-s12",
+                "U_acct": 16,
+                "U_src": 12,
+                "B": 1,
+                "Bstreams": [
+                    "L1"
+                ],
+                "A": 6,
+                "Astreams": [
+                    "MIX",
+                    "POI",
+                    "SP6",
+                    "SP3",
+                    "SP1n",
+                    "ABA_A"
+                ],
+                "dominatesS0": false
+            },
+            "CAND|Ua16-s40": {
+                "arm": "CAND",
+                "set": "Ua16-s40",
+                "U_acct": 16,
+                "U_src": 40,
+                "B": 0,
+                "Bstreams": [],
+                "A": 6,
+                "Astreams": [
+                    "MIX",
+                    "POI",
+                    "SP6",
+                    "SP3",
+                    "SP1n",
+                    "ABA_A"
+                ],
+                "dominatesS0": false
+            },
+            "CAND|Ua32-s12": {
+                "arm": "CAND",
+                "set": "Ua32-s12",
+                "U_acct": 32,
+                "U_src": 12,
+                "B": 1,
+                "Bstreams": [
+                    "L1"
+                ],
+                "A": 6,
+                "Astreams": [
+                    "MIX",
+                    "POI",
+                    "SP6",
+                    "SP3",
+                    "SP1n",
+                    "ABA_A"
+                ],
+                "dominatesS0": false
+            },
+            "CAND|Ua32-s40": {
+                "arm": "CAND",
+                "set": "Ua32-s40",
+                "U_acct": 32,
+                "U_src": 40,
+                "B": 0,
+                "Bstreams": [],
+                "A": 6,
+                "Astreams": [
+                    "MIX",
+                    "POI",
+                    "SP6",
+                    "SP3",
+                    "SP1n",
+                    "ABA_A"
+                ],
+                "dominatesS0": false
+            },
+            "CAND|Uaoff-s12": {
+                "arm": "CAND",
+                "set": "Uaoff-s12",
+                "U_acct": 1000000,
+                "U_src": 12,
+                "B": 1,
+                "Bstreams": [
+                    "L1"
+                ],
+                "A": 6,
+                "Astreams": [
+                    "MIX",
+                    "POI",
+                    "SP6",
+                    "SP3",
+                    "SP1n",
+                    "ABA_A"
+                ],
+                "dominatesS0": false
+            },
+            "CAND|Uaoff-s40": {
+                "arm": "CAND",
+                "set": "Uaoff-s40",
+                "U_acct": 1000000,
+                "U_src": 40,
+                "B": 0,
+                "Bstreams": [],
+                "A": 6,
+                "Astreams": [
+                    "MIX",
+                    "POI",
+                    "SP6",
+                    "SP3",
+                    "SP1n",
+                    "ABA_A"
+                ],
+                "dominatesS0": false
+            },
+            "ALLU|Ua4-s12": {
+                "arm": "ALLU",
+                "set": "Ua4-s12",
+                "U_acct": 4,
+                "U_src": 12,
+                "B": 2,
+                "Bstreams": [
+                    "L1",
+                    "UAC"
+                ],
+                "A": 6,
+                "Astreams": [
+                    "MIX",
+                    "POI",
+                    "SP6",
+                    "SP3",
+                    "SP1n",
+                    "ABA_A"
+                ],
+                "dominatesS0": false
+            },
+            "ALLU|Ua4-s40": {
+                "arm": "ALLU",
+                "set": "Ua4-s40",
+                "U_acct": 4,
+                "U_src": 40,
+                "B": 2,
+                "Bstreams": [
+                    "L1",
+                    "UAC"
+                ],
+                "A": 6,
+                "Astreams": [
+                    "MIX",
+                    "POI",
+                    "SP6",
+                    "SP3",
+                    "SP1n",
+                    "ABA_A"
+                ],
+                "dominatesS0": false
+            },
+            "ALLU|Ua8-s12": {
+                "arm": "ALLU",
+                "set": "Ua8-s12",
+                "U_acct": 8,
+                "U_src": 12,
+                "B": 1,
+                "Bstreams": [
+                    "L1"
+                ],
+                "A": 6,
+                "Astreams": [
+                    "MIX",
+                    "POI",
+                    "SP6",
+                    "SP3",
+                    "SP1n",
+                    "ABA_A"
+                ],
+                "dominatesS0": false
+            },
+            "ALLU|Ua8-s40": {
+                "arm": "ALLU",
+                "set": "Ua8-s40",
+                "U_acct": 8,
+                "U_src": 40,
+                "B": 1,
+                "Bstreams": [
+                    "L1"
+                ],
+                "A": 6,
+                "Astreams": [
+                    "MIX",
+                    "POI",
+                    "SP6",
+                    "SP3",
+                    "SP1n",
+                    "ABA_A"
+                ],
+                "dominatesS0": false
+            },
+            "ALLU|Ua16-s12": {
+                "arm": "ALLU",
+                "set": "Ua16-s12",
+                "U_acct": 16,
+                "U_src": 12,
+                "B": 1,
+                "Bstreams": [
+                    "L1"
+                ],
+                "A": 6,
+                "Astreams": [
+                    "MIX",
+                    "POI",
+                    "SP6",
+                    "SP3",
+                    "SP1n",
+                    "ABA_A"
+                ],
+                "dominatesS0": false
+            },
+            "ALLU|Ua16-s40": {
+                "arm": "ALLU",
+                "set": "Ua16-s40",
+                "U_acct": 16,
+                "U_src": 40,
+                "B": 0,
+                "Bstreams": [],
+                "A": 6,
+                "Astreams": [
+                    "MIX",
+                    "POI",
+                    "SP6",
+                    "SP3",
+                    "SP1n",
+                    "ABA_A"
+                ],
+                "dominatesS0": false
+            },
+            "ALLU|Ua32-s12": {
+                "arm": "ALLU",
+                "set": "Ua32-s12",
+                "U_acct": 32,
+                "U_src": 12,
+                "B": 1,
+                "Bstreams": [
+                    "L1"
+                ],
+                "A": 6,
+                "Astreams": [
+                    "MIX",
+                    "POI",
+                    "SP6",
+                    "SP3",
+                    "SP1n",
+                    "ABA_A"
+                ],
+                "dominatesS0": false
+            },
+            "ALLU|Ua32-s40": {
+                "arm": "ALLU",
+                "set": "Ua32-s40",
+                "U_acct": 32,
+                "U_src": 40,
+                "B": 0,
+                "Bstreams": [],
+                "A": 6,
+                "Astreams": [
+                    "MIX",
+                    "POI",
+                    "SP6",
+                    "SP3",
+                    "SP1n",
+                    "ABA_A"
+                ],
+                "dominatesS0": false
+            },
+            "ALLU|Uaoff-s12": {
+                "arm": "ALLU",
+                "set": "Uaoff-s12",
+                "U_acct": 1000000,
+                "U_src": 12,
+                "B": 1,
+                "Bstreams": [
+                    "L1"
+                ],
+                "A": 6,
+                "Astreams": [
+                    "MIX",
+                    "POI",
+                    "SP6",
+                    "SP3",
+                    "SP1n",
+                    "ABA_A"
+                ],
+                "dominatesS0": false
+            },
+            "ALLU|Uaoff-s40": {
+                "arm": "ALLU",
+                "set": "Uaoff-s40",
+                "U_acct": 1000000,
+                "U_src": 40,
+                "B": 0,
+                "Bstreams": [],
+                "A": 6,
+                "Astreams": [
+                    "MIX",
+                    "POI",
+                    "SP6",
+                    "SP3",
+                    "SP1n",
+                    "ABA_A"
+                ],
+                "dominatesS0": false
+            }
+        }
+    }
+}

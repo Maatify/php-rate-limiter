@@ -1,0 +1,10 @@
+{"s":"m06","case":"R-1 counter race","expectedExact":3,"admittedPerRound":[3,3,3],"pass":true,"role":"gate C1"}
+{"s":"m06","case":"R-1m mutation control","overAdmissionDetected":true,"pass":true,"role":"detector check"}
+{"s":"m06","case":"R-2 device-set race","expectedExact":1,"admittedPerRound":[1,1,1],"pass":true}
+{"s":"m06","case":"R-3 all-or-nothing","refused":"acct","keysUnchanged":true,"valuesUnchanged":true,"pass":true}
+{"s":"m06","case":"R-4 reference parity","reservations":600,"admitted":516,"decisionDifferences":0,"pass":true}
+{"s":"m06","case":"R-5 simulated state loss","admittedBefore":5,"admittedAfterLoss":5,"reissued":5,"status":"DEGRADED (as F\u00a76.9 predicts): the bound holds per window only modulo lost acknowledged writes; SIMULATED, not a real failover"}
+{"s":"m06","case":"R-6 unknown write","chargedForOneAttempt":2,"status":"as specified (F\u00a72.3): fails toward over-charging"}
+{"s":"m06","case":"R-7 malformed state","error":"RedisException","srcCounterUnchanged":true,"pass":true}
+{"s":"m06","case":"R-8 T1 parity","claims":["accepted","duplicate","conflict","rejected","late","unknown"],"pass":true,"note":"late / unknown are decided on the caller clock (deadline stored in the record); the record lifetime is a relative EXPIRE"}
+{"s":"m06","case":"R-9 Redis unavailable","error":"RedisException","status":"UNPROVEN: DEC-015 integration of the admission layer not built"}

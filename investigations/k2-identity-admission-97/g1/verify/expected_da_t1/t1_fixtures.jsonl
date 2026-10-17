@@ -1,0 +1,28 @@
+{"s":"t1","store":"original/reference","fixture":"T1-N2 re-issue a CLAIMED id","firstClaim":"accepted","reissue":"admitted","secondClaim":"accepted","secondAccepted":true,"pass":false}
+{"s":"t1","store":"original/reference","fixture":"T1-N3 re-issue an ISSUED id","reissue":"admitted","recordUnchanged":false,"pass":false}
+{"s":"t1","store":"original/reference","fixture":"T1-N4a refused by a counter","result":"pacct","currentSetUnchanged":true,"previousSetUnchanged":true,"pass":true}
+{"s":"t1","store":"original/reference","fixture":"T1-N4b refused by the device cap","result":"p_device","currentSetUnchanged":true,"previousSetUnchanged":true,"pass":true}
+{"s":"t1","store":"original/reference","fixture":"T1-N5 admitted, previous set read-only","result":"admitted","currentSetUnchanged":false,"previousSetUnchanged":true,"pass":true}
+{"s":"t1","store":"fixed/reference","fixture":"T1-N2 re-issue a CLAIMED id","firstClaim":"accepted","reissue":"permit_exists","secondClaim":"duplicate","secondAccepted":false,"pass":true}
+{"s":"t1","store":"fixed/reference","fixture":"T1-N3 re-issue an ISSUED id","reissue":"permit_exists","recordUnchanged":true,"pass":true}
+{"s":"t1","store":"fixed/reference","fixture":"T1-N4a refused by a counter","result":"pacct","currentSetUnchanged":true,"previousSetUnchanged":true,"pass":true}
+{"s":"t1","store":"fixed/reference","fixture":"T1-N4b refused by the device cap","result":"p_device","currentSetUnchanged":true,"previousSetUnchanged":true,"pass":true}
+{"s":"t1","store":"fixed/reference","fixture":"T1-N5 admitted, previous set read-only","result":"admitted","currentSetUnchanged":false,"previousSetUnchanged":true,"pass":true}
+{"s":"t1","store":"original/redis","fixture":"T1-N1 wrong-type permit key","result":"error:RuntimeException","stateUnchanged":false,"pass":false}
+{"s":"t1","store":"original/redis","fixture":"T1-N2 re-issue a CLAIMED id","firstClaim":"accepted","reissue":"admitted","secondClaim":"accepted","secondAccepted":true,"pass":false}
+{"s":"t1","store":"original/redis","fixture":"T1-N3 re-issue an ISSUED id","reissue":"admitted","recordUnchanged":false,"pass":false}
+{"s":"t1","store":"original/redis","fixture":"T1-N4a refused by a counter","result":"pacct","currentSetUnchanged":true,"previousSetUnchanged":true,"pass":true}
+{"s":"t1","store":"original/redis","fixture":"T1-N4b refused by the device cap","result":"p_device","currentSetUnchanged":false,"previousSetUnchanged":false,"pass":false}
+{"s":"t1","store":"original/redis","fixture":"T1-N5 admitted, previous set read-only","result":"admitted","currentSetUnchanged":false,"previousSetUnchanged":false,"pass":false}
+{"s":"t1","store":"fixed/redis","fixture":"T1-N1 wrong-type permit key","result":"permit_exists","stateUnchanged":true,"pass":true}
+{"s":"t1","store":"fixed/redis","fixture":"T1-N2 re-issue a CLAIMED id","firstClaim":"accepted","reissue":"permit_exists","secondClaim":"duplicate","secondAccepted":false,"pass":true}
+{"s":"t1","store":"fixed/redis","fixture":"T1-N3 re-issue an ISSUED id","reissue":"permit_exists","recordUnchanged":true,"pass":true}
+{"s":"t1","store":"fixed/redis","fixture":"T1-N4a refused by a counter","result":"pacct","currentSetUnchanged":true,"previousSetUnchanged":true,"pass":true}
+{"s":"t1","store":"fixed/redis","fixture":"T1-N4b refused by the device cap","result":"p_device","currentSetUnchanged":true,"previousSetUnchanged":true,"pass":true}
+{"s":"t1","store":"fixed/redis","fixture":"T1-N5 admitted, previous set read-only","result":"admitted","currentSetUnchanged":false,"previousSetUnchanged":true,"pass":true}
+{"s":"t1","store":"fixed/reference","fixture":"T1-N6 claim series","claims":["accepted","duplicate","conflict","rejected","late","unknown"],"pass":true}
+{"s":"t1","store":"fixed/redis","fixture":"T1-N6 claim series","claims":["accepted","duplicate","conflict","rejected","late","unknown"],"pass":true}
+{"s":"t1","store":"fixed/redis","fixture":"T1-N6 counter race","expectedExact":3,"admittedPerRound":[3,3,3],"pass":true}
+{"s":"t1","store":"fixed/redis","fixture":"T1-N6 device race","expectedExact":1,"admittedPerRound":[1,1,1],"pass":true}
+{"s":"t1","store":"fixed/redis","fixture":"T1-N6 R-3 value-level (new source)","refused":"acct","stateUnchanged":true,"pass":true}
+{"s":"t1","store":"fixed/redis","fixture":"T1-N6 R-3 value-level (same source)","refused":"acct","stateUnchanged":true,"pass":true}

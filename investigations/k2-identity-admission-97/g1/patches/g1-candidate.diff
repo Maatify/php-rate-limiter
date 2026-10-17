@@ -1,0 +1,154 @@
+--- a/src/Service/EvaluationPipeline.php
++++ b/src/Service/EvaluationPipeline.php
+@@ -95,6 +95,37 @@
+      *     whitespace-only, or when a non-null $previousKeySecret is empty or
+      *     whitespace-only.
+      */
++    /**
++     * G1 ISOLATED CANDIDATE (investigations/k2-identity-admission-97/g1). Not package runtime.
++     * Admission lane of the current request: 'U' (unproven) or 'P' (current proof + device secret).
++     */
++    private string $g1Lane = 'U';
++
++    /**
++     * G1 candidate only: select the admission lane before process(). Refuses to run outside the study arm.
++     */
++    public function g1SetLane(string $lane): void
++    {
++        self::g1Guard();
++        if ($lane !== 'U' && $lane !== 'P') {
++            throw new RateLimiterException('G1 lane must be U or P.');
++        }
++        $this->g1Lane = $lane;
++    }
++
++    private static function g1Guard(): void
++    {
++        if (getenv('G1_ARM') !== 'CAND') {
++            throw new RateLimiterException('G1 isolated candidate tree: refusing to run without G1_ARM=CAND.');
++        }
++    }
++
++    /** Lane-scoped auxiliary purpose: P-lane account watcher and budget cooldown live on their own keys (M-A). */
++    private function g1Purpose(string $purpose): string
++    {
++        return $this->g1Lane === 'P' ? $purpose . '_p' : $purpose;
++    }
++
+     public function __construct(
+         private readonly RateLimitStoreInterface $store,
+         private readonly CorrelationStoreInterface $correlationStore,
+@@ -107,6 +138,7 @@
+         private readonly ClockInterface $clock,
+         ?string $previousKeySecret = null,
+     ) {
++        self::g1Guard();
+         if (trim($keySecret) === '') {
+             throw new RateLimiterException('Active key secret must not be empty or whitespace-only.');
+         }
+@@ -181,6 +213,10 @@
+     ): RateLimitResultDTO {
+         $this->lifecycleEligibleKeys = [];
+         $this->issuedSoftScopes = [];
++        if ($this->isApiHeavyPolicy($policy)) {
++            // G1 / LT-7: anonymous API is a K1 window ceiling in the study admission layer; no score, no persisted block.
++            return $this->createAllowResult();
++        }
+         // 1. Build keys for the current generation, then the one previous
+         // generation when either generation component is present.
+         $realKeysV2 = $this->buildKeys($context, $device->normalizedUa, $device->fingerprintHash, $policy->getName(), $this->secret);
+@@ -206,7 +242,7 @@
+         // current/previous references. Ephemeral mode is a routing decision;
+         // it never creates a synthetic persistent fingerprint key.
+         $ephemeralState = null;
+-        if ($device->fingerprintHash !== null) {
++        if ($device->fingerprintHash !== null && $this->g1Lane !== 'P') {
+             $ipObservation = $this->buildCorrelationObservation(
+                 $policy->getName(),
+                 'device_cap_ip',
+@@ -283,7 +319,7 @@
+         // 7. Distributed account attack is a pre-check-only observation. It
+         // must run before the older bounded correlation rules so a missing
+         // snapshot capability cannot leave partial S3-F08 state behind.
+-        if ($request->isPreCheck && $this->isDistributedAccountPolicy($policy)) {
++        if ($request->isPreCheck && $this->isDistributedAccountPolicy($policy) && $this->g1Lane !== 'P') {
+             if ($candidate = $this->checkDistributedAccountAttack(
+                 $context,
+                 $device,
+@@ -296,8 +332,8 @@
+             }
+         }
+
+-        // 8. Check existing bounded correlation rules.
+-        if ($candidate = $this->checkCorrelationRules(
++        // 8. G1 / D1: churn and dilution are observations only; no collective candidate.
++        if (false && $candidate = $this->checkCorrelationRules(
+             $device,
+             $policy->getName(),
+             $isEphemeral,
+@@ -311,7 +347,7 @@
+         // Credential-spray observation is deliberately precheck-only. The
+         // later failure/success command in the same host lifecycle must not
+         // observe the same spray attempt a second time.
+-        if ($request->isPreCheck && $this->isCredentialSprayPolicy($policy)) {
++        if (false && $request->isPreCheck && $this->isCredentialSprayPolicy($policy)) {
+             if ($candidate = $this->checkCredentialSpray(
+                 $context,
+                 $device,
+@@ -326,6 +362,7 @@
+
+         // 9. New Device Flood (5.4)
+         if ($ephemeralState !== null && $context->accountId && ! $this->isApiHeavyPolicy($policy)
++            && $this->g1Lane !== 'P'
+             && $ephemeralState->accountDeviceCount >= 6) {
+             $floodKey = $this->auxiliaryAccountKey(
+                 $policy->getName(),
+@@ -402,8 +439,8 @@
+         // alone on that account + device only.
+         if ($request->isFailure && $context->accountId !== null && $policy->getBudgetConfig() !== null
+             && $this->antiEquilibriumGate->shouldEscalate(
+-                $this->auxiliaryAccountKey($policy->getName(), 'anti_equilibrium', $context->accountId, $this->secret),
+-                $this->previousAuxiliaryAccountKey($policy->getName(), 'anti_equilibrium', $context->accountId),
++                $this->auxiliaryAccountKey($policy->getName(), $this->g1Purpose('anti_equilibrium'), $context->accountId, $this->secret),
++                $this->previousAuxiliaryAccountKey($policy->getName(), $this->g1Purpose('anti_equilibrium'), $context->accountId),
+             )) {
+             $persistence = ($realKeysV2['k4'] ?? null) !== null
+                 ? [[
+@@ -469,7 +506,7 @@
+             $this->antiEquilibriumGate->recordSoftBlock(
+                 $deviceOnly
+                     ? $deviceWatcher['current']
+-                    : $this->auxiliaryAccountKey($policy->getName(), 'anti_equilibrium', $context->accountId, $this->secret),
++                    : $this->auxiliaryAccountKey($policy->getName(), $this->g1Purpose('anti_equilibrium'), $context->accountId, $this->secret),
+             );
+         }
+
+@@ -513,6 +550,9 @@
+             if ($this->isTrustedAuthenticationPolicy($policy, $device) && $this->isK1Key($keyType)) {
+                 continue;
+             }
++            if ($this->g1Lane === 'P' && in_array($keyType, ['k1', 'k2', 'k3'], true)) {
++                continue;
++            }
+
+             $effective = null;
+             if ($currentKey) {
+@@ -2302,7 +2342,7 @@
+     private function budgetCooldownKey(string $policyName, string $accountId, string $secret): string
+     {
+         return $this->hashKey(
+-            "{$policyName}:rate_limiter:budget_cooldown:v1:{$this->envScope}:{$accountId}",
++            "{$policyName}:rate_limiter:{$this->g1Purpose('budget_cooldown')}:v1:{$this->envScope}:{$accountId}",
+             $secret,
+         );
+     }
+@@ -2611,7 +2651,8 @@
+         $k1 = $this->hashKey("{$base}:k1:{$ver}:{$env}:{$this->getIpPrefix($context->ip)}", $secret);
+         $k2 = $this->hashKey("{$base}:k2:{$ver}:{$env}:{$this->getIpPrefix($context->ip)}:{$ua}", $secret);
+         $k3 = $fpHash ? $this->hashKey("{$base}:k3:{$ver}:{$env}:{$this->getIpPrefix($context->ip)}:{$fpHash}", $secret) : null;
+-        $k4 = $context->accountId ? $this->hashKey("{$base}:k4:{$ver}:{$env}:{$context->accountId}", $secret) : null;
++        $k4Type = $this->g1Lane === 'P' ? 'k4p' : 'k4';
++        $k4 = $context->accountId ? $this->hashKey("{$base}:{$k4Type}:{$ver}:{$env}:{$context->accountId}", $secret) : null;
+         $k5 = $context->accountId && $fpHash ? $this->hashKey("{$base}:k5:{$ver}:{$env}:{$context->accountId}:{$fpHash}", $secret) : null;
+
+         return ['k1' => $k1, 'k2' => $k2, 'k3' => $k3, 'k4' => $k4, 'k5' => $k5];
