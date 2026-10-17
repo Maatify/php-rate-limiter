@@ -944,7 +944,11 @@ $customPrimaryPolicy = new class extends \Maatify\RateLimiter\Config\LoginProtec
         return 'consumer_custom_primary_fallback';
     }
 };
-$customPrimaryLimiter = RateLimiterBuilder::fromFullCapabilityStore(new RateLimiterConfig('failure-primary-key', 'failure-primary-fingerprint', 'prod'), $failureStore, $failureSignals)->withPolicy($customPrimaryPolicy)->build();
+// Fallback windows are fixed buckets (floor(now / window)). A controlled clock
+// keeps each cap-boundary loop below inside one bucket instead of depending on
+// where the wall clock falls; the bucket rollover is checked explicitly.
+$fallbackClock = new FixedClock(new DateTimeImmutable('now', new DateTimeZone('UTC')));
+$customPrimaryLimiter = RateLimiterBuilder::fromFullCapabilityStore(new RateLimiterConfig('failure-primary-key', 'failure-primary-fingerprint', 'prod'), $failureStore, $failureSignals)->withPolicy($customPrimaryPolicy)->withClock($fallbackClock)->build();
 $customPrimaryFallback = [];
 for ($attempt = 1; $attempt <= 7; $attempt++) {
     $customPrimaryFallback[] = $customPrimaryLimiter->limit($failureContext, RateLimitCommand::checkOnly('consumer_custom_primary_fallback'));
@@ -958,7 +962,7 @@ $customStepUpPolicy = new class extends \Maatify\RateLimiter\Config\OtpProtectio
         return 'consumer_custom_step_up_fallback';
     }
 };
-$customStepUpLimiter = RateLimiterBuilder::fromFullCapabilityStore(new RateLimiterConfig('failure-step-up-key', 'failure-step-up-fingerprint', 'prod'), $failureStore, $failureSignals)->withPolicy($customStepUpPolicy)->build();
+$customStepUpLimiter = RateLimiterBuilder::fromFullCapabilityStore(new RateLimiterConfig('failure-step-up-key', 'failure-step-up-fingerprint', 'prod'), $failureStore, $failureSignals)->withPolicy($customStepUpPolicy)->withClock($fallbackClock)->build();
 $customStepUpFallback = [];
 for ($attempt = 1; $attempt <= 6; $attempt++) {
     $customStepUpFallback[] = $customStepUpLimiter->limit($failureContext, RateLimitCommand::checkOnly('consumer_custom_step_up_fallback'));
@@ -970,7 +974,7 @@ requireCondition($customStepUpFallback[5]->decision === RateLimitResultDTO::DECI
 // differ from every official preset (5/300 + 30/300 for auth; 200/30 + 80/30
 // for API), proven through the same public production path and the same
 // bounded-fallback runtime as the official presets above.
-$customSemanticAuthFailureLimiter = RateLimiterBuilder::fromFullCapabilityStore(new RateLimiterConfig('failure-custom-auth-key', 'failure-custom-auth-fingerprint', 'prod'), $failureStore, $failureSignals)->withPolicy($customSemanticAuthPolicy)->build();
+$customSemanticAuthFailureLimiter = RateLimiterBuilder::fromFullCapabilityStore(new RateLimiterConfig('failure-custom-auth-key', 'failure-custom-auth-fingerprint', 'prod'), $failureStore, $failureSignals)->withPolicy($customSemanticAuthPolicy)->withClock($fallbackClock)->build();
 $customSemanticAuthFallback = [];
 for ($attempt = 1; $attempt <= 9; $attempt++) {
     $customSemanticAuthFallback[] = $customSemanticAuthFailureLimiter->limit($failureContext, RateLimitCommand::checkOnly('consumer_custom_auth_semantics'));
@@ -979,7 +983,7 @@ requireCondition($customSemanticAuthFallback[2]->decision === RateLimitResultDTO
 requireCondition($customSemanticAuthFallback[6]->decision === RateLimitResultDTO::DECISION_ALLOW, 'Custom auth fallback did not honor its own 5-request account cap.');
 requireCondition($customSemanticAuthFallback[7]->decision === RateLimitResultDTO::DECISION_HARD_BLOCK, 'Custom auth fallback did not enforce its own account cap boundary.');
 
-$customApiFailureLimiter = RateLimiterBuilder::fromFullCapabilityStore(new RateLimiterConfig('failure-custom-api-key', 'failure-custom-api-fingerprint', 'prod'), $failureStore, $failureSignals)->withPolicy($customApiPolicy)->build();
+$customApiFailureLimiter = RateLimiterBuilder::fromFullCapabilityStore(new RateLimiterConfig('failure-custom-api-key', 'failure-custom-api-fingerprint', 'prod'), $failureStore, $failureSignals)->withPolicy($customApiPolicy)->withClock($fallbackClock)->build();
 $customApiFallbackContext = new RateLimitContextDTO('192.0.2.93', 'Mozilla/5.0 consumer-custom-api-fallback', null, []);
 $customApiFallback = [];
 for ($attempt = 1; $attempt <= 81; $attempt++) {
@@ -987,6 +991,12 @@ for ($attempt = 1; $attempt <= 81; $attempt++) {
 }
 requireCondition($customApiFallback[79]->decision === RateLimitResultDTO::DECISION_ALLOW, 'Custom API fallback did not honor its own 80-request IP+UA cap.');
 requireCondition($customApiFallback[80]->decision === RateLimitResultDTO::DECISION_HARD_BLOCK, 'Custom API fallback did not enforce its own IP+UA cap boundary.');
+$fallbackClock->setNow($fallbackClock->now()->modify('+30 seconds'));
+$customApiFallbackNextWindow = $customApiFailureLimiter->limit($customApiFallbackContext, RateLimitCommand::checkOnly('consumer_custom_api_overuse'));
+requireCondition(
+    $customApiFallbackNextWindow->decision === RateLimitResultDTO::DECISION_ALLOW && $customApiFallbackNextWindow->failureMode === 'DEGRADED_MODE',
+    'Custom API fallback did not admit again in its next 30-second IP+UA window.',
+);
 
 $circuitDown = true;
 $circuitEvalCalls = 0;
