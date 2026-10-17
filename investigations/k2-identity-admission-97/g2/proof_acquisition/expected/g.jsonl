@@ -1,0 +1,4 @@
+{"s":"g","arm":"PA","flow":"pre","attackAttempts":240,"attackerReach":23,"attackerReachMaxWindow":4,"ownerDecisions":"AAAA","ownerLanes":"UPPP","ownerProofAcquired":true}
+{"s":"g","arm":"PA","flow":"pre+out","attackAttempts":240,"attackerReach":4,"attackerReachMaxWindow":2,"ownerDecisions":"HAAA","ownerLanes":"UPPP","ownerProofAcquired":true}
+{"s":"g","arm":"PA","flow":"out","attackAttempts":240,"attackerReach":240,"attackerReachMaxWindow":40,"ownerDecisions":"HAAA","ownerLanes":"UPPP","ownerProofAcquired":true}
+{"s":"g","arm":"NOPROOF","flow":"pre+out","attackAttempts":240,"attackerReach":4,"attackerReachMaxWindow":2,"ownerDecisions":"HHSS","ownerLanes":"UUUU","ownerProofAcquired":false}

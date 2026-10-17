@@ -1,0 +1,146 @@
+{
+    "verdict": {
+        "A": "NO-GO AFTER EXPERIMENT (failed: E)",
+        "B": "NO-GO AFTER EXPERIMENT (failed: E)",
+        "C": "NO-GO (Gate 1; not tested)"
+    },
+    "harnessInvalid": [],
+    "fixtureValidity": {
+        "ACQ NOPROOF refuses the owner in >= 10/12": true
+    },
+    "detectors": {
+        "N-A-ACCTCAP": 11,
+        "N-A-SINGLE": 11,
+        "N-U": 11,
+        "N-B-BOUND": 9,
+        "N-B-SHORT": 11,
+        "N-B-TTL": 9,
+        "N-B-SHAREDOP": 10,
+        "N-BIND-A": 9,
+        "N-BIND-B": 9,
+        "F mutant nonce": 20,
+        "F mutant redeem": 20,
+        "F mutant issuance": 20
+    },
+    "gates": {
+        "A-1/A-2": {
+            "PA": {
+                "result": "PASS",
+                "detail": "12/12 admitted, 0 proof-path refusals, U admissions = NOPROOF"
+            },
+            "PB": {
+                "result": "PASS",
+                "detail": "12/12 admitted, 0 proof-path refusals, U admissions = NOPROOF"
+            }
+        },
+        "A-3": {
+            "PA": {
+                "result": "PASS",
+                "detail": "attacker reach_foreign 23 per run (max 4 per window) = NOPROOF; 0 acquisitions; 0 P admissions"
+            },
+            "PB": {
+                "result": "PASS",
+                "detail": "attacker reach_foreign 23 per run (max 4 per window) = NOPROOF; 0 acquisitions; 0 P admissions"
+            }
+        },
+        "B-1": {
+            "PA": {
+                "result": "PASS",
+                "detail": "A-1 and A-2 hold in ACQ-x10 and ACQ-LONG"
+            },
+            "PB": {
+                "result": "PASS",
+                "detail": "A-1 and A-2 hold in ACQ-x10 and ACQ-LONG"
+            }
+        },
+        "C": {
+            "PA": {
+                "result": "PASS",
+                "detail": "27 probes, 0 accepted"
+            },
+            "PB": {
+                "result": "PASS",
+                "detail": "24 probes, 0 accepted"
+            }
+        },
+        "D": {
+            "PA": {
+                "result": "PASS",
+                "detail": "reach_foreign 1 vs N identical, <= U_acct per window; stolen key <= P_proof / P_acct / P_acct_day / N_P; own accounts <= P_acct each; 0 acquisitions without the key"
+            },
+            "PB": {
+                "result": "PASS",
+                "detail": "reach_foreign 1 vs N identical, <= U_acct per window; stolen key <= P_proof / P_acct / P_acct_day / N_P; own accounts <= P_acct each; 0 acquisitions without the key"
+            }
+        },
+        "E": {
+            "PA": {
+                "result": "FAIL",
+                "detail": "E2 ACQ-EXPIRY: (i) P counters {\"pacct\":7,\"pacct_day\":7,\"pproof\":7,\"pproof_day\":7} vs control {\"pacct\":6,\"pacct_day\":6,\"pproof\":6,\"pproof_day\":6}"
+            },
+            "PB": {
+                "result": "FAIL",
+                "detail": "E2 ACQ-EXPIRY: (i) P counters {\"pacct\":7,\"pacct_day\":7,\"pproof\":7,\"pproof_day\":7} vs control {\"pacct\":6,\"pacct_day\":6,\"pproof\":6,\"pproof_day\":6}"
+            }
+        },
+        "F": {
+            "PA": {
+                "result": "PASS",
+                "detail": "32 workers x 20 rounds: nonce and link exactly 1 success per round, issuance 3 per round at cap 3; lost-reply retries used / used, issuance counter 3; malformed: error, no write; outage: no proof, lane U, 0 admissions"
+            },
+            "PB": {
+                "result": "PASS",
+                "detail": "32 workers x 20 rounds: nonce and link exactly 1 success per round, issuance 3 per round at cap 3; lost-reply retries used / used, issuance counter 3; malformed: error, no write; outage: no proof, lane U, 0 admissions"
+            }
+        },
+        "G": {
+            "PA": {
+                "result": "PASS",
+                "detail": "pre and pre+out: owner P requests admitted, attacker <= U_acct per window; NOPROOF owner refused; out reported only"
+            },
+            "PB": {
+                "result": "PASS",
+                "detail": "pre and pre+out: owner P requests admitted, attacker <= U_acct per window; NOPROOF owner refused; out reported only"
+            }
+        }
+    },
+    "residuals": {
+        "B-2": [
+            {
+                "fixture": "COLOC",
+                "arm": "PA",
+                "ownerAdmitted": 12,
+                "arrivals": 12,
+                "arrivalsWithProofPathRefusal": 4
+            },
+            {
+                "fixture": "COLOC",
+                "arm": "PB",
+                "ownerAdmitted": 12,
+                "arrivals": 12,
+                "arrivalsWithProofPathRefusal": 4
+            },
+            {
+                "fixture": "GLOB",
+                "arm": "PA",
+                "ownerAdmitted": 8,
+                "arrivals": 12,
+                "arrivalsWithProofPathRefusal": 4
+            },
+            {
+                "fixture": "GLOB",
+                "arm": "PB",
+                "ownerAdmitted": 2,
+                "arrivals": 12,
+                "arrivalsWithProofPathRefusal": 10
+            }
+        ],
+        "messagesToVictimPerDayPB": 576,
+        "messagesBoundPerDay": {
+            "perOp": 288,
+            "linkableOps": 2
+        },
+        "N-B-INVAL ownerFailures": 2,
+        "G out attackerReach": "240/240"
+    }
+}
