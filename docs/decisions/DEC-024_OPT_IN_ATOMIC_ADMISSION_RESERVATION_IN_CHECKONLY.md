@@ -24,8 +24,9 @@ form), and with NM-5, NM-6, NM-7 and a separate Runtime authorisation before any
 GitHub in [PR #134 comment 6256657121](https://github.com/Maatify/php-rate-limiter/pull/134#issuecomment-6256657121), posted by the Lead on the Owner's behalf after the Owner's explicit approval.
 It is a contract and capability decision only: not an approval of FULL2, of any value, of any Runtime, or of a Public API
 change. On the same day the Owner chose how this record relates to DEC-021: DEC-021 is not touched, and the supersession of
-DEC-021 is a binding part of the first activation (Decision point 4). An in-place edit of DEC-021 was rejected under
-Decision Governance §9. A supersession of DEC-021 in this step was deferred to step 5.
+DEC-021 is a binding part of the first activation (Decision point 4). In the Owner's assignment for recording this decision
+(2026-10-19, quoted in the description of the PR that adds this record), an in-place edit of DEC-021 was rejected under
+Decision Governance §9, and a supersession of DEC-021 in this step was deferred to step 5.
 
 Technical review: the independent Lead reviews of PR #134
 ([comment 6255448192](https://github.com/Maatify/php-rate-limiter/pull/134#issuecomment-6255448192),
@@ -68,16 +69,16 @@ store failed it (`G1_FINAL_DISPOSITION.md` §3). The per-mode evidence is in
    | C-c6 | Dormant ship, then a fleet fence; bounds are `UNPROVEN` while the fleet is mixed | `ARCHITECTURE_PROPOSAL.md` §10, migration steps 1–2 |
    | C-c7 | For every enabled policy, one `checkOnly` = one admission, stated in the usage guide | `ARCHITECTURE_PROPOSAL.md` §6.5 |
 
-3. **Preconditions before any production code.** Both of the following:
+3. **Preconditions before any production code.** Both of the following, as the Owner set them:
    - the gates NM-5 (Host integration), NM-6 (production store integrity) and NM-7 (concurrency, failover, mixed fleet,
-     rollback), as defined in the decision paper §5, registered and passed;
+     rollback), as defined in the decision paper §5, which places them in step 5;
    - a separate Runtime authorisation in step 5.
 
    This record is not that authorisation.
 4. **DEC-021 supersession is part of the first activation (binding).** The first activation of this principle is the step-5
    change that lets any policy opt in. That change **MUST** include, in the same PR, a new decision record that supersedes
    DEC-021 **entirely** under Decision Governance §9 (the new record `ACTIVE`, DEC-021 `SUPERSEDED`). The canonical contracts
-   and the code references to DEC-021 are updated in that same change (Decision Governance §3). No policy may opt in before
+   and the code references to DEC-021 are updated in that same change (Decision Governance §3, §9). No policy may opt in before
    that record is `ACTIVE`.
 
 ### Not adopted
@@ -95,10 +96,12 @@ store failed it (`G1_FINAL_DISPOSITION.md` §3). The per-mode evidence is in
 ## Relationship to DEC-021
 
 1. **Its two statements stay accurate now.** DEC-021 Decision 3 ("read-only pre-checks reserve nothing") and its
-   Consequences ("Pre-checks are read-only, so concurrent in-flight attempts on one device are not serialized") remain true,
-   because no policy can opt into a reservation before step 5: the capability does not exist in the code.
-2. **No overlap until the first activation.** This record applies only to policies that opt in. Until a policy can opt in,
-   its scope does not overlap DEC-021's, so no two `ACTIVE` decisions conflict on the same scope (Decision Governance §6).
+   Consequences ("Pre-checks are read-only, so concurrent in-flight attempts on one device are not serialized") remain true
+   for the state DEC-021 governs (its allowance and K5), because no policy can opt into a reservation before step 5: the
+   capability does not exist in the code. (`checkOnly` as a whole is not globally read-only; see Context.)
+2. **No overlap until the first activation.** This record applies only to policies that opt in, and Decision point 4 forbids
+   any opt-in before a record superseding DEC-021 is `ACTIVE`. Until then no policy can fall under both records, so no two
+   `ACTIVE` decisions conflict on the same scope (Decision Governance §6).
 3. **Supersession at the first activation.** Decision point 4 binds the first activation to a record that supersedes DEC-021
    entirely, in the same PR.
 

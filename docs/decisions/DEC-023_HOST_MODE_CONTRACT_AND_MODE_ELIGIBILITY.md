@@ -87,8 +87,10 @@ Three facts from that evidence shape the decision:
    This trust boundary, **outcome completeness (missing or late outcomes)**, is `UNPROVEN`, and the declaration does not
    resolve it. It is the open item NM-10 (paper §5).
 4. **NM-10 is a precondition.** No activation of the capability may happen before the NM-10 gate (paper §5) is registered,
-   with the drop shares its template leaves to the later plan, and passes.
-5. **A separate preventive contract for `pre` (option B) is `DEFERRED`.** No known information source gives a `pre` Host
+   with the outcome-drop shares that its template leaves to the later plan, and passes.
+5. **A separate preventive contract for `pre` (option B) is `DEFERRED`.** Option B was that contract: its own security
+   guarantees for `pre` Hosts, designed in a later, separately authorised study, without exempting known devices from their
+   budgets. No known information source gives a `pre` Host
    both the protection and the refund: in `pre` the P budget and the P refund exclude each other (#132 §5.5), and the only
    outcome-related input the evidence shows there, Host-side token issuance and renewal, was never measured as a stand-in for
    a recorded success (paper §6; NM-8). Deferral does not remove or change today's support for `pre` Hosts: point 1 applies
