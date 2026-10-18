@@ -71,7 +71,7 @@ store failed it (`G1_FINAL_DISPOSITION.md` §3). The per-mode evidence is in
 
 3. **Preconditions before any production code.** Both of the following, as the Owner set them:
    - the gates NM-5 (Host integration), NM-6 (production store integrity) and NM-7 (concurrency, failover, mixed fleet,
-     rollback), as defined in the decision paper §5, which places them in step 5;
+     rollback), as defined in the decision paper §5, which places NM-5 in step 5 or a separate study, and NM-6 and NM-7 in step 5;
    - a separate Runtime authorisation in step 5.
 
    This record is not that authorisation.
