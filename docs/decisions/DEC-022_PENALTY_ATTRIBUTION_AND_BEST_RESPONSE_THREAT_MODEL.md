@@ -4,7 +4,8 @@
 
 `DEC-022`
 
-`DEC-020` remains intentionally unallocated, as recorded in DEC-021.
+`DEC-020` remains intentionally unallocated, as recorded in DEC-021. DEC-022 is not that
+reserved label: it proposes only the UA-similarity part of a DEC-019 replacement.
 
 ## Status
 
@@ -45,7 +46,7 @@ every budget value, the FULL2 assembly and its components, and every DEC-021 bou
 #97 documents legitimate users who are hard-blocked because they share an IP and a browser
 major (K2) or a passive UA-only fingerprint (LOW K3) with other people. DEC-019 kept the
 shipped S0 correlation behavior as a deliberate, temporary, security-first posture, while
-#97, #100 and #106 stay open. Its §6 sets the exit conditions: an Owner-approved
+#97, #100 and #106 stay open. Its Decision 6 sets the exit conditions: an Owner-approved
 replacement material decision, its durable ADR and canonical contract, and separately
 proven and reviewed Runtime.
 
@@ -53,9 +54,10 @@ The merged studies #108 to #132 (see [Evidence](#evidence)) converge on two poin
 
 1. **The harm comes from where the penalty is written.** Candidates that changed thresholds,
    key material or credit rules but kept writing penalties on a scope shared by many people
-   either kept the #97 harm or moved it to the NAT. Examples: PSC (#107), GNH5 (#115), OAAA
-   (#116), and CIR (#125), which removed the cohort denials but raised two browsers behind
-   one router from 0/134 to 127/134 denied. The candidates that stopped writing UA-similarity
+   either kept the #97 harm or moved it to the NAT. PSC (#107), GNH5 (#115) and OAAA (#116)
+   kept most of it (D1 596/600 on S0; 584 and 579 under GNH5 and OAAA). CIR (#125) removed
+   the cohort denials but raised two browsers without client fingerprints behind one router
+   from 0/134 to 127/134 denied. The candidates that stopped writing UA-similarity
    penalties removed the cohort denials: G1 (#126) and CIR (#125).
 2. **The protection K2 gives against UA-based evasion only stops an attacker who keeps one
    UA.** In #125 (F97-01) LOW dilution stopped the X2 attacker that kept one UA (6/121). The
@@ -64,7 +66,8 @@ The merged studies #108 to #132 (see [Evidence](#evidence)) converge on two poin
 
 The studies also show that K2 enforcement does more than catch UA-based evasion. On S0 it
 is the bound that stops an attacker holding valid sessions for many accounts (#113,
-`TMSd` 2/200). It also carries low-volume API anti-evasion (#107, as recorded in DEC-019).
+`TMSd` 2/200). It also carries low-volume API anti-evasion: DEC-019 records S0 as
+stronger than EQV there.
 Converting K2 to observation is therefore not free against attackers who are not naive.
 This record states that cost; it does not waive it.
 
@@ -98,24 +101,35 @@ mechanism.
    may have only two roles: observation, or a per-window capacity bound that neither
    escalates nor persists. No one is penalised for *resembling* someone else.
 
-   **Where the rule applies on activation:** UA-similarity penalties (Decision 2) only. The
-   rule also has consequences for three existing contracts:
-   - K1 credential spray (#106);
-   - distributed-account punishment;
-   - new-device-flood punishment.
+   **Where the rule applies on activation:** UA-similarity penalties (Decision 2) only.
+   Several existing contracts do not conform to the rule today. Applying it to any of them
+   changes how much protection it gives, so it takes effect only through the later
+   decision named below. Until that decision exists, each contract stays as it is, owned by
+   its current authority, and is not changed by this record:
 
-   Applying it to them changes how much protection they give, so it takes effect only
-   through the Level 2 decision. Until that decision exists, those rules stay as they are
-   and are not changed by this record.
-2. **K2 is an observation key.** No `HARD_BLOCK` and no persisted penalty is derived from
-   UA similarity at LOW confidence:
+   | Contract that does not conform today | Later decision that owns it |
+   | --- | --- |
+   | K1 credential-spray `HARD_BLOCK` (#106) | Level 2 |
+   | API Heavy K1 severe `HARD_BLOCK` L3 | Level 2 |
+   | API Heavy K2 minor `SOFT_BLOCK` L1, persisted per scope | Level 2 |
+   | Distributed-account punishment | Level 2 |
+   | New-device-flood punishment | Level 2 |
+   | MEDIUM/HIGH dilution `HARD_BLOCK (DeviceFP)` on K3 | Level 3 |
+   | Account-wide K4 penalties with no U/P door split (K4 scoring, account Anti-Equilibrium, the DEC-007 lifecycle) | Levels 2 and 3 |
+
+   The FAIL_OPEN per-node K1/K2 throttles already conform: they are non-persisted capacity
+   bounds.
+2. **K2 is an observation key for correlation and UA similarity.** No `HARD_BLOCK` and no
+   persisted penalty is derived from UA similarity at LOW confidence:
    - K2 churn;
    - LOW dilution downgraded to K2;
    - the API Heavy LOW moderate K3 signal persisted on K2;
    - missing-fingerprint deltas scored on K2.
 
    These signals stay observable. K2 penalties are not moved to K1 or to any other shared
-   key.
+   key. Two K2 uses are not UA-similarity attribution and are not changed by this decision:
+   K2 as the API Heavy minor-limit rate scope (Decision 1 table, Level 2), and the FAIL_OPEN
+   K2 throttle.
 3. **Reference threat model.** The reference attacker is the **best response over free
    identifiers**: UA, cookie, client instance id and fingerprint. An identifier is "free"
    when the attacker can mint an unbounded number of them without paying anything outside
@@ -138,8 +152,9 @@ mechanism.
      sessions for several accounts (TMS family) and API fingerprint rotation (X1/API,
      Y7/API).
 
-   This change authorises nobody to ignore a security regression. It removes one
-   protection only: the stop against an attacker who keeps one UA.
+   This change authorises nobody to ignore a security regression. It reclassifies only the
+   constant-UA cells. The other costs of Decision 2 are declared under
+   [Consequences](#consequences) and stay gates.
 
 ## Three decision levels
 
@@ -148,7 +163,7 @@ first.
 
 | Level | What it is | Status in this record |
 | --- | --- | --- |
-| **1. Architectural principle** | The attribution rule, K2 as observation, the reference threat model, and the change of acceptance criteria (Decision 1–4). The evidence for it is settled across independent studies | **Proposed here** |
+| **1. Architectural principle** | The attribution rule, K2 as observation, the reference threat model, and the change of acceptance criteria (Decision 1–4). The evidence for it is consistent across the merged studies | **Proposed here** |
 | **2. Security decision on cost** | Any relaxation of a source's protection against credential spray (K1 role, source capacity `U_src`, failure cap `F`). The per-account guessing budget (`T`, `C`). The disposition of the distributed-account and new-device-flood punishments. Any replacement of the bounds K2 enforcement gives today against multi-session and API rotation attackers. Each needs the Owner to approve its measured cost | **Not proposed.** Named as separate later decision(s). No value is stated or implied |
 | **3. Experimental design with limited scope** | The FULL2 assembly (#132): client instance id, device binding, U/P lanes, P-lane refund budget, sliding renewal, password-change binding, K5 separation. Status: EXPERIMENTALLY SUPPORTED — LIMITED SCOPE, for Hosts that record outcomes only | **Not proposed.** Named as separate later decision(s). Several of its components would amend DEC-021 or LOCKED contracts |
 
@@ -169,18 +184,19 @@ became `ACTIVE`, and separates three kinds of effect:
 
 | Contract | Today | Effect if DEC-022 became `ACTIVE` | Relation |
 | --- | --- | --- | --- |
-| **DEC-019** (whole record) | Interim preserve-default posture for K1 / K2 / LOW-UA correlation. §6 exits only through an Owner-approved replacement material decision, its ADR and canonical contract, and proven and reviewed Runtime | DEC-022 could be that replacement **for the UA/K2/LOW part only**. Decision Governance §9 has no partial supersession. The activation step must therefore give the rest of DEC-019's scope an explicit `ACTIVE` owner, either as unchanged retained posture inside the activating record or in a successor record: K1 credential spray (#106), API anti-evasion, `checkOnly` limitations, and custom policies under DEC-008. This record does not choose the form | #97 (partial) |
+| **DEC-019** (whole record) | Interim preserve-default posture for K1 / K2 / LOW-UA correlation. Decision 6 exits only through an Owner-approved replacement material decision, its ADR and canonical contract, and proven and reviewed Runtime | DEC-022 could be that replacement **for the UA/K2/LOW part only**. Decision Governance §9 has no partial supersession. The activation step must therefore give the rest of DEC-019's scope an explicit `ACTIVE` owner, either as unchanged retained posture inside the activating record or in a successor record: K1 credential spray (#106), API anti-evasion, `checkOnly` limitations, and custom policies under DEC-008. This record does not choose the form | #97 (partial) |
 | DEC-019 Decision 5 | Future changes must quantify fairness and attacker reach: `checkOnly`-only / record-only guarantees, K1 + K2 overlap, IPv6 macro scopes, Current/Previous rotation, trusted / nontrusted collateral, block renewal, cap / N−1 | Carried unchanged into Condition 4 | #97 |
-| `KEY_STRATEGY.md` §3.2 (K2) | Purposes: differentiate devices behind shared IPs; reduce NAT/VPN false positives; "safer fallback when DeviceFP confidence is LOW" | K2 keeps its observation purposes and loses every enforcement purpose, including the LOW fallback | #97 |
+| `KEY_STRATEGY.md` §3.2 (K2) | Purposes: differentiate devices behind shared IPs; reduce NAT/VPN false positives; "safer fallback when DeviceFP confidence is LOW" | K2 keeps its observation purposes and loses its correlation and UA-similarity enforcement purposes, including the LOW fallback. K2 as the API Heavy rate scope and as the FAIL_OPEN throttle scope is not #97 and is unchanged (rows `DECISION_MATRIX.md` §4.1 and `FAILURE_SEMANTICS.md` below) | #97 (correlation, LOW fallback); not #97 (API rate, FAIL_OPEN) |
 | `KEY_STRATEGY.md` §3.3 (K3, LOW rule) | LOW K3 may throttle | LOW K3 is observation, like K2. Any MEDIUM/HIGH K3 role is Level 3 | #97 (LOW); not #97 (MEDIUM/HIGH) |
-| `KEY_STRATEGY.md` §5.1 / §5.2 | K2 is a secondary key for Login and OTP | K2 secondary in observation only | #97 |
+| `KEY_STRATEGY.md` §5.1 / §5.2 | K2 is a secondary key for Login and OTP. §5.1 says "Missing fingerprint accelerates K4 escalation only", while `DECISION_MATRIX.md` §2.2 also scores K2 +4 (an existing inconsistency between the two contracts) | K2 secondary in observation only. The contract update must resolve the inconsistency, keeping missing-fingerprint escalation on K4 | #97 |
 | `KEY_STRATEGY.md` §5.3 | API Heavy: K2 and K3 primary, K1 secondary | The LOW K3 → K2 persistence ends (#97). K2's role as the API minor-limit rate scope and K1's API role are API protection, not #97: unchanged by this record, and any reshaping is a separate decision | #97 (LOW persistence); not #97 (API rate) |
 | `KEY_STRATEGY.md` §6.1 | Canonical correlations | "Rapid churn of K3 under one K2" and LOW "same DeviceFP across many K1" become observation (#97). "Many correlation subjects under one K1" (spray) is Level 2, not #97, unchanged here. "Many K3 under one K4" (distributed account) is Level 2, not #97 | #97 (churn, LOW dilution); not #97 (spray, distributed account) |
+| `KEY_STRATEGY.md` §3.1 (IPv6 hierarchy) | Spray and churn observe macro scopes; enforcement persists only the current canonical `/64` K1 or `/64 + UA` K2 | Macro churn persists no K2 (#97). The `/64` K1 spray persistence is Level 2 and unchanged here | #97 (K2); not #97 (K1) |
 | `KEY_STRATEGY.md` §4.3.5 | Bounded correlation and rotation state | Still needed for observation; no change proposed | Unchanged |
 | `KEY_STRATEGY.md` §4.6 | LOCKED account auxiliary keys | Untouched by Level 1. A revocation epoch counter (Level 3) would need its own amendment | Not #97 |
 | `DECISION_MATRIX.md` §1 (evaluation order) and §2.1 (pre-attempt check) | Step 2 resolves active `HARD_BLOCK` on K4/K5/K3/K1/K2; step 4 evaluates correlation | K2 leaves the set of keys that can hold a correlation `HARD_BLOCK` (#97). The K1 row is Level 2, not #97. A pre-verifier admission stage is Condition 1, not part of this record | #97 (K2); not #97 (K1, admission stage) |
 | `DECISION_MATRIX.md` §2.2 (Login scoring) | "Missing device fingerprint → K2 +4" | No persisted K2 penalty from a missing fingerprint. "Repeated missing fingerprint → K4 +6" is on the Subject and is allowed by Decision 1. Where the first missing-fingerprint signal goes is later design | #97 |
-| `DECISION_MATRIX.md` §3.1 (OTP scoring) | "OTP failure without device fingerprint → K2 +6" | As §2.2. OTP K4/K5 rules and DEC-021 §3.1.2 unchanged | #97 |
+| `DECISION_MATRIX.md` §3.1 (OTP scoring) | "OTP failure without device fingerprint → K2 +6" | As §2.2. OTP K4/K5 rules and `DECISION_MATRIX.md` §3.1.2 (DEC-021) unchanged | #97 |
 | `DECISION_MATRIX.md` §4.1 (API Heavy) | Minor K2 `SOFT_BLOCK` L1; moderate K3 `HARD_BLOCK` L2, persisted on K2 at LOW; severe K1 `HARD_BLOCK` L3 | The LOW moderate signal persisted on K2 as `HARD_BLOCK` ends (#97). DEC-019 records that S0 low-volume API anti-evasion is stronger than EQV, so a measured API replacement is part of Conditions 3 and 4. The minor K2 limit and the severe K1 limit are not #97 and are unchanged here | #97 (LOW); not #97 (minor, severe) |
 | `DECISION_MATRIX.md` §5.0 (WATCH) | N−1 WATCH for spray, churn, dilution | Churn and LOW dilution WATCH become observation (#97). Spray WATCH is Level 2 | #97; not #97 (spray) |
 | `DECISION_MATRIX.md` §5.1 (K1 spray) | `HARD_BLOCK (IP)` at five distinct subjects in 600 s; advisory for trusted sessions | **No change proposed.** Any change to K1 spray protection is Level 2 | Not #97 |
@@ -189,8 +205,9 @@ became `ACTIVE`, and separates three kinds of effect:
 | `DECISION_MATRIX.md` §2.4, §2.5, §3.3 (budgets, Anti-Equilibrium) | Account budgets; account and device watchers (DEC-021) | Unchanged by Level 1. Any U/P split of account state must state its effect on these sections, DEC-007 and DEC-021 | Unchanged |
 | `POLICIES.md` §2, §3, §4 (presets that depend on K2) | `login_protection` and `otp_protection` list K2 and score missing fingerprints on it; `api_heavy_protection` uses K2 for rate enforcement and for LOW K3 persistence | The K2 enforcement uses in these presets change as the matching `DECISION_MATRIX.md` rows above. Custom policies with `CREDENTIAL_SPRAY`, `DISTRIBUTED_ACCOUNT` or `API_OVERUSE` follow the same contracts. The DEC-008 capability model is unchanged | #97 (rows above) |
 | `POLICIES.md` §1, §5 | "Correlation rules are enforced …"; DEC-019 interim note | Wording follows the amended correlation contract; the DEC-019 note follows DEC-019's exit | #97 |
-| `DEVICE_FINGERPRINT.md` §7.1 / §7.2 | Churn detection is mandatory and "MUST trigger … correlation-based enforcement" | Detection stays mandatory; enforcement on IP + UA becomes observation | #97 |
+| `DEVICE_FINGERPRINT.md` §7.1 / §7.2 | Churn detection is mandatory and MUST trigger increased scoring weight, accelerated escalation and correlation-based enforcement | Detection stays mandatory. Correlation enforcement on IP + UA becomes observation. Increased weight and accelerated escalation may apply only to a Subject door or an Actor × Subject relationship, never to IP + UA | #97 |
 | `DEVICE_FINGERPRINT.md` §4.2, §5.1 | Confidence levels; fingerprint-secret rotation | Unchanged by Level 1. A client instance id that never raises confidence, and K5 material without the UA, are Level 3 / Condition 2 | Not #97 (Level 3) |
+| `docs/guides/USAGE_GUIDE.md` | States that `/64 + UA` K2 state is persisted and that the API Heavy LOW moderate signal is persisted against K2 | Follows the amended `DECISION_MATRIX.md` §4.1 and §5.3 and `KEY_STRATEGY.md` §3.1 | #97 |
 | `FAILURE_SEMANTICS.md` FAIL_OPEN local guardrails | Per-node, per-minute K1 / K2 coarse throttles with no shared state (DEC-011, DEC-015) | Already a non-persisted capacity bound; consistent with Decision 1; unchanged | Unchanged |
 | DEC-021 | Known-device K5 bound, allowance, device watcher | Unchanged by Level 1. Condition 2 measures UA-free K5 against these bounds. K5 separation, tying the allowance to the P family, and "a negative score on a bound device is a throttle only" (Level 3) would each amend DEC-021 through their own decision | Not #97 (Level 3) |
 | DEC-003, DEC-007, DEC-008, DEC-015 | Cycle pause; K4 lifecycle; capability model; failure semantics | Unchanged. Any new key or door introduced later must state its DEC-003 cycles, DEC-007 lifecycle, DEC-008 capability and DEC-015 failure behavior | Unchanged |
@@ -227,8 +244,9 @@ bounded scope, as DEC-021 was in #117.
 ## Rationale
 
 - **Why attribution, not a new identity.** Every candidate that kept penalties on a shared
-  scope moved the harm instead of removing it (#107, #115, #116, #125). Every candidate that
-  stopped them removed the #97 cohort denials (#125 and #126 G1: D1 596 → 0). The finding is
+  scope kept most of the harm (#107, #115, #116) or moved it to the NAT (#125). Every
+  candidate that stopped the UA-similarity penalties removed the #97 cohort denials (#125
+  and #126 G1: D1 596 → 0). The finding is
   consistent across designs with different identities and parameters, which is why it is
   proposed as a principle and separated from the values.
 - **Why best response over free identifiers.** A gate that a free identifier change defeats
@@ -243,7 +261,7 @@ bounded scope, as DEC-021 was in #117.
 
 **While `PROPOSED` (now):** no Runtime, contract, preset, threshold or test changes.
 DEC-019 and DEC-021 stay `ACTIVE` and unchanged. #97, #100 and #106 stay open. S0 remains
-the deliberate interim posture under DEC-019, and its exit follows DEC-019 §6.
+the deliberate interim posture under DEC-019, and its exit follows DEC-019 Decision 6.
 
 **If activated (declared costs of Level 1, independent of Levels 2 and 3):**
 
@@ -272,14 +290,14 @@ Study arm parameters are study values only and are not repeated here.
 | PR | Study (folder under `investigations/`) | Evidence used here | Class |
 | --- | --- | --- | --- |
 | #108 | `k1-credential-spray-nat/` (#106) | D2 office, legitimate denied of 121: S0 117; churn/dilution off 108; K1 spray off 117; both off 27. K1 and K2 mask each other. K1-isolated Nu4: 47/61. K1 off: SP1n 4 → 200, SP3 7 → 1000, SP6 20 → 1200. 8-IP botnet SP4b: 432/432 on S0 | `MEASURED` |
-| #111 | `nat-remediation-110/` | OQC family: the per-cycle leak of every candidate arm equals the concurrency of the burst; admission needs an atomic reservation | `MEASURED` |
+| #111 | `nat-remediation-110/` | OQC family: the per-cycle leak of every candidate arm equals the concurrency of the burst | `MEASURED` |
 | #113 | `trusted-multi-session-s0/` | On S0 the shared K2 churn set is what bounds an attacker with valid sessions for 12 accounts: `TMSd` 2/200, `TMS` 7/61. Host-violating `TMX`: 200/200. Record-only: 200/200 | `MEASURED` |
 | #115 | `guarded-network-headroom-110/` | GNH5: D1 596 → 584 (partial). A per-scope bound multiplies by the scopes the attacker holds. Rollback does not preserve S0 state. NO-GO | `MEASURED` |
-| #116 | `outcome-aware-atomic-admission-110/` | OAAA: L1 127/134 → 0/134, D1 596 → 579. Successful logins on attacker-owned accounts wash credit: Y6b 2 → 36/36. NO-GO | `MEASURED` |
-| #118 | `host-managed-client-identity-110/` | Browser id in today's inputs: NAT collateral 90 → 97 of 100 browsers; as a pre-auth trusted session, sprayer 200/200 instead of 7 (H01). Bootstrap and pool-term limits (H02) | `MEASURED` (H01); `MODEL` (H02) |
+| #116 | `outcome-aware-atomic-admission-110/` | OAAA: L1 (browsers with client fingerprints) 127/134 → 0/134, D1 596 → 579. Successful logins on attacker-owned accounts wash credit: Y6b 2 → 36/36. One all-or-nothing atomic reservation per request is exact under real concurrency. NO-GO | `MEASURED` |
+| #118 | `host-managed-client-identity-110/` | Browser id in today's inputs: NAT collateral 90 → 97 of 100 browsers; as a pre-auth trusted session, sprayer 200/200 instead of 7 (H01). On MAIN, 86–88 of 100 office browsers have no successful login on each of 14 days (H02 B1, real pipeline). Idealized standing and pool-term limits (H02 B2–B6) | `MEASURED` (H01, H02 B1); `MODEL` (H02 B2–B6) |
 | #119 | `account-scoped-known-device-relief-110/` | Relieving K1/K2 for known devices relieves the attacker equally: `TMS` 7/61 → 61/61, `TMSd` 2/200 → 60/200. NO-GO | `MODEL` |
 | #123 | `nat-architecture-proposals-110/` | Eleven designs recorded verbatim with a paper comparison; no measurement | `DERIVED` |
-| #125 | `ua-client-identity-97/` | CIR: D1 596/600 → 0/600, L3 104/121 → 0/121, but L1 0/134 → 127/134 (NO-GO). F97-01: LOW dilution stops only the constant-UA X2 (6/121); browser-major rotation reaches 121/121. A constant id raises checkOnly-only BRD 22 → 37/100 | `MEASURED` |
+| #125 | `ua-client-identity-97/` | CIR: D1 596/600 → 0/600, L3 104/121 → 0/121, but L1 (two browsers without client fingerprints) 0/134 → 127/134 (NO-GO). F97-01: LOW dilution stops only the constant-UA X2 (6/121); browser-major rotation reaches 121/121. A constant id raises checkOnly-only BRD 22 → 37/100 | `MEASURED` |
 | #126 | `k2-identity-admission-97/` (G1) | C10-H: 0 benign denials of K1/K2/K3/correlation origin; D1 596 → 0, D1API 595 → 0, L3 104 → 0. No sampled parameter set beats S0 on both axes. HAR 14/15, HARp 0/15. Distributed-account and flood punishments: observation only (engineering result). Per-target bound load-bearing. Complete candidate NO-GO | `MEASURED` |
 | #127 | `k2-identity-admission-97/` (G2) | Proof cases: owner admitted 12/12 with key (A) and link (B); 11/12 refused without a proof path. Short codes NO-GO. Overall NO-GO AFTER EXPERIMENT (E2, device history) | `MEASURED`; `DERIVED` (short codes) |
 | #129 | `k2-identity-admission-97/` (G3) | Gross failure cap and per-account bucket: NO-GO AFTER EXPERIMENT as registered. Source midpoint and CGN: reporting only | `MEASURED`; `MODEL` (CGN) |
