@@ -35,7 +35,7 @@ posture. The matrix below answers that item for FULL2 and its components.
 
 ## 2. Preconditions common to every cell
 
-A cell is read **under** these conditions. They do not vary by mode, so they are not repeated in the cells.
+A cell is read **under** these conditions. They apply to every mode, so they are not repeated in the cells; C-7 states its per-mode effect in its own row.
 
 | # | Precondition | Source |
 | --- | --- | --- |
@@ -44,7 +44,7 @@ A cell is read **under** these conditions. They do not vary by mode, so they are
 | C-3 | **Values are the Owner's** (step 4). Every number is a study value | the Owner's five-step plan; DEC-022 Condition 3 (`PROPOSED`, not approved) |
 | C-4 | **Runtime proven and reviewed** (step 5) | the Owner's five-step plan; DEC-022 Condition 4 (`PROPOSED`, not approved) |
 | C-5 | **Study scope:** reference stores and a controlled clock; no Redis, concurrency or failover; synthetic streams; study-code tokens and a Host model; the password change modelled as a proven Host event | `G4_V2_INTEGRATED_REASSEMBLY.md` §2, §9; `G3_V2_NET_CAP_KNOWN_ROUTING.md` §7 |
-| C-6 | **The UA stays in the K5 material** in every FULL2 measurement; UA-free K5 is step 3 and does not depend on the mode | `G4_V2_INTEGRATED_REASSEMBLY.md` §9; DEC-022 Condition 2 |
+| C-6 | **The UA stays in the K5 material** in every FULL2 measurement; UA-free K5 is step 3 and does not depend on the mode | `G4_V2_INTEGRATED_REASSEMBLY.md` §9; DEC-022 Condition 2 (`PROPOSED`, not approved) |
 | C-7 | **Degraded mode (DEC-015):** admission bounds do not hold and lanes are absent in fallback. Every command takes the same fallback code path, which does not receive the command, but it consumes its counters once per call. So the per-mode effect differs (`DERIVED` from the code): a `pre+out` attempt makes two calls and uses two fallback units; a `pre` attempt uses one; in `out` the fallback decision arrives after the verifier, so it gives no pre-verifier bound | `ARCHITECTURE_PROPOSAL.md` §10 (D6); `CODE` `src/Service/RateLimiterEngine.php:308-323`, `:418-440`; `src/Service/LocalFallbackLimiter.php:60-73` ("consumed exactly once per evaluation") |
 
 ## 3. The matrix

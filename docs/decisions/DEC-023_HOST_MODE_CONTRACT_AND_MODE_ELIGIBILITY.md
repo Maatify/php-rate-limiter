@@ -105,7 +105,7 @@ If selected, this record would state:
 | DEC-015 | Unchanged. Admission bounds do not hold in degraded mode (`ARCHITECTURE_PROPOSAL.md` §10, Owner decision D6). The fallback is one code path for every command but counts calls, so per mode: a `pre+out` attempt uses two fallback units, a `pre` attempt one, and in `out` the fallback decision arrives after the verifier, with no pre-verifier bound (paper §2 C-7) |
 | DEC-021 | Unchanged in every mode. Its statement that check-only (`pre`) Hosts report no failures, so its bound cannot learn from them, stays true. K5 separation and the allowance coupling are step 3 |
 | Public API | No change to any existing method signature or command, and no change to the meaning of an existing case. Additive public surfaces: a new case on the existing public `PolicyCapabilityEnum`, a new Store capability interface (`ARCHITECTURE_PROPOSAL.md` §10), new values in the existing `RateLimitMetadataDTO::$cause` string (§6.5), and, under A-2 only, the eligibility declaration. Optional context inputs (instance id, token) are step 3 |
-| New measurement | Not needed to take A. The `pre+out` cells are measured within the studies' scope; A claims nothing in the cells marked NOT MEASURED, so NM-1 … NM-3 are not preconditions. Runtime proof is step 5 |
+| New measurement | Not needed to take A. The `pre+out` cells are measured within the studies' scope; A claims nothing in the cells marked NOT MEASURED, so NM-1 … NM-3 and NM-9 are not preconditions. Runtime proof is step 5 |
 
 ### Option B — Option A plus a separate preventive contract for `pre`
 
@@ -124,7 +124,7 @@ If selected, this record would state everything in A, plus:
 | Legitimate users | Now: as A. For the later `pre` contract, the measured trade-offs (#132 `pre` table): a bucket gives BRU 5 with D2 61; a fixed window gives D2 24 with BRU 80 and X1 17. A P budget without refund costs L1 72 and KD / UAC 4 / 4; `P-NETF` removes both in `pre` (L1 0, KD / UAC 0 / 0) but leaves a stolen token only `N_P` (paper §6). Routing around the bucket, which relieved the bucket's KD / UAC cost on the U door in `pre` (8 / 8 → 0 / 0, #129 / #130), is excluded by condition 2 |
 | Attacker reach | Now: as A. For a `pre` contract, single-source spray is bounded only by the source ceiling: SP6 144 at `U_src` 24, 240 at 40 (#132). S0's K1 spray protection gives SP6 20 in `pre+out` (#108 §3), and `pre` makes the same spray observations (#108 §5), so the same protection in `pre` is `DERIVED`. A `pre` contract that replaced it with the source ceiling alone would be a regression against that figure unless it kept an equivalent |
 | DEC-008 | Now: as A. Later: a second capability or variant, only if the study supports one |
-| DEC-015 | Now: as A. The `pre` contract must state its own degraded behaviour; the fallback is the same in every mode |
+| DEC-015 | Now: as A. The `pre` contract must state its own degraded behaviour. The fallback code path is the same for every command; its per-mode effect is as in A (paper §2 C-7) |
 | DEC-021 | Unchanged. A `pre` contract cannot rely on K5 learning, because nothing is recorded |
 | Public API | None now. If the study finds that an outcome-carrying input is needed (paper §6), that input would be additive and decided then |
 | New measurement | Yes: the separately authorised `pre` study, with at least NM-1, NM-2, NM-8 and NM-9 (paper §5) |
