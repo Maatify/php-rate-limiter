@@ -18,6 +18,9 @@
 > whole assembly with binding; its notes are added the same way.
 > **Post-G4 v2 note (2026-10-18):** G4 v2 ([`G4_V2_INTEGRATED_REASSEMBLY.md`](G4_V2_INTEGRATED_REASSEMBLY.md)) re-measured G4 with
 > the instance id delivered to the pipeline (F131-01) and measured three new components; its notes are added the same way.
+> **Arabic companion:** [`IDENTITY_ATTRIBUTION_PROPOSAL_AR.md`](IDENTITY_ATTRIBUTION_PROPOSAL_AR.md) (Owner-approved 2026-10-18,
+> `DOCUMENTATION_LIFECYCLE_STANDARD_AR.md` §2.1). This English text is the reference and prevails on any conflict. Any PR that
+> changes one of the two files changes the other in the same PR, with the same scope limits.
 > **Authority:** the Owner decides every material policy, public contract, ADR, study, merge and release.
 
 | Label | Meaning |
@@ -276,6 +279,26 @@ revoked; they do not prevent transfer or replay between holders. A possession me
 | "No prior taint" | Measured as the **number of distinct accounts** the instance failed on in the window before the success, not the number of failures. Failures on the same account never count (typos). A hygiene condition, not a security guarantee: an attacker can log in from a clean instance |
 | Assurance per operation | A binding made after login is not automatically enough for an operation that requires stronger verification |
 | Stolen cookie | The id and the token are bearer values: a thief who copies both is accepted as the bound device. The thief gets the proven door of one account, within P bounds, until expiry or epoch revocation, but also **consumes the shared `P_acct`**, so the owner on the bound device can be refused inside P (`P§7.2` item 3 for the shared allowance, item 4 for P penalties from another proof holder; #127 residual 5). A negative score on (account, instance) lands on the victim's own device; the epoch fixes it only after detection. **Open proposal:** a negative score on a bound device is a throttle only. That changes DEC-021, which persists K5 blocks for known devices as the known-device guessing bound, so it needs measurement (§13) |
+
+### Trust Score path (added 2026-10-18)
+
+*A description of how the idea developed. It was first written in the Arabic companion; this is its English counterpart.*
+
+The idea was raised in the discussion with the Owner on 2026-10-17 and is not recorded in the repository under the name "Trust
+Score"; this proposal is the only place that describes it. It had two parts:
+
+1. **"A new device stays clean until its first error, and counting starts from there": rejected** (§12). A new device has no errors
+   because it was just created, not because it is good. An attacker can create a new device every time, so every new id gives the
+   attacker a free error and the penalty lands on honest clients only. Instead, a new device is **neutral** under the account bound,
+   and a negative score is used for a short throttle only.
+2. **"After a successful login the device is recognised as the customer's, if it carries no earlier taint": adopted**, and it became
+   the device binding of this section, with its conditions: bound to one account, from the same instance, mints no budget,
+   revocable. "Taint" was defined as the number of distinct accounts the device failed on before the success.
+
+**Status when this was written (after G3 v2, before G4):** the binding was **neither built nor measured**. What G3 v2 measured was a
+temporary stand-in, routing the devices the Host marks as known, which trusts the Host exactly as DEC-021 does (a lying Host:
+5,760 / 5,760). The next step for the idea was to design the binding: a signed token the library itself verifies (condition P1),
+with its own per-account bound for known devices. The Post-G4 and Post-G4 v2 notes below record what happened next.
 
 Effect: most users sign in from the same devices, so the accepted risk narrows from "any owner without proof" to "an owner on a new
 device or with cleared cookies", without forcing a passkey or a link on any consumer.
