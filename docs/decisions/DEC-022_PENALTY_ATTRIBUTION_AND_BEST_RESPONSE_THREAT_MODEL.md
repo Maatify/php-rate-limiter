@@ -54,8 +54,9 @@ The merged studies #108 to #132 (see [Evidence](#evidence)) converge on two poin
 
 1. **The harm comes from where the penalty is written.** Candidates that changed thresholds,
    key material or credit rules but kept writing penalties on a scope shared by many people
-   either kept the #97 harm or moved it to the NAT. PSC (#107), GNH5 (#115) and OAAA (#116)
-   kept most of it (D1 596/600 on S0; 584 and 579 under GNH5 and OAAA). CIR (#125) removed
+   either kept the #97 harm or moved it to the NAT. GNH5 (#115) and OAAA (#116) kept most
+   of it (D1 596/600 on S0; 584 and 579 under GNH5 and OAAA). PSC (#107) reduced D1 to
+   180/600, still denied, and was NO-GO on attacker reach (DEC-019). CIR (#125) removed
    the cohort denials but raised two browsers without client fingerprints behind one router
    from 0/134 to 127/134 denied. The candidates that stopped writing UA-similarity
    penalties removed the cohort denials: G1 (#126) and CIR (#125).
@@ -109,7 +110,7 @@ mechanism.
 
    | Contract that does not conform today | Later decision that owns it |
    | --- | --- |
-   | K1 credential-spray `HARD_BLOCK` (#106) | Level 2 |
+   | K1 credential-spray `HARD_BLOCK` and the Login K1 +5 credential-spray score (#106) | Level 2 |
    | API Heavy K1 severe `HARD_BLOCK` L3 | Level 2 |
    | API Heavy K2 minor `SOFT_BLOCK` L1, persisted per scope | Level 2 |
    | Distributed-account punishment | Level 2 |
@@ -195,7 +196,7 @@ became `ACTIVE`, and separates three kinds of effect:
 | `KEY_STRATEGY.md` §4.3.5 | Bounded correlation and rotation state | Still needed for observation; no change proposed | Unchanged |
 | `KEY_STRATEGY.md` §4.6 | LOCKED account auxiliary keys | Untouched by Level 1. A revocation epoch counter (Level 3) would need its own amendment | Not #97 |
 | `DECISION_MATRIX.md` §1 (evaluation order) and §2.1 (pre-attempt check) | Step 2 resolves active `HARD_BLOCK` on K4/K5/K3/K1/K2; step 4 evaluates correlation | K2 leaves the set of keys that can hold a correlation `HARD_BLOCK` (#97). The K1 row is Level 2, not #97. A pre-verifier admission stage is Condition 1, not part of this record | #97 (K2); not #97 (K1, admission stage) |
-| `DECISION_MATRIX.md` §2.2 (Login scoring) | "Missing device fingerprint → K2 +4" | No persisted K2 penalty from a missing fingerprint. "Repeated missing fingerprint → K4 +6" is on the Subject and is allowed by Decision 1. Where the first missing-fingerprint signal goes is later design | #97 |
+| `DECISION_MATRIX.md` §2.2 (Login scoring) | "Missing device fingerprint → K2 +4" | No persisted K2 penalty from a missing fingerprint. "Repeated missing fingerprint → K4 +6" (and the OTP +8) stays on undivided K4 as today, under the non-conformance row for account-wide K4 in Decision 1, until Levels 2 and 3; once the U/P door split exists it applies on the door the failure came through. Where the first missing-fingerprint signal goes is later design | #97 |
 | `DECISION_MATRIX.md` §3.1 (OTP scoring) | "OTP failure without device fingerprint → K2 +6" | As §2.2. OTP K4/K5 rules and `DECISION_MATRIX.md` §3.1.2 (DEC-021) unchanged | #97 |
 | `DECISION_MATRIX.md` §4.1 (API Heavy) | Minor K2 `SOFT_BLOCK` L1; moderate K3 `HARD_BLOCK` L2, persisted on K2 at LOW; severe K1 `HARD_BLOCK` L3 | The LOW moderate signal persisted on K2 as `HARD_BLOCK` ends (#97). DEC-019 records that S0 low-volume API anti-evasion is stronger than EQV, so a measured API replacement is part of Conditions 3 and 4. The minor K2 limit and the severe K1 limit are not #97 and are unchanged here | #97 (LOW); not #97 (minor, severe) |
 | `DECISION_MATRIX.md` §5.0 (WATCH) | N−1 WATCH for spray, churn, dilution | Churn and LOW dilution WATCH become observation (#97). Spray WATCH is Level 2 | #97; not #97 (spray) |
@@ -205,7 +206,7 @@ became `ACTIVE`, and separates three kinds of effect:
 | `DECISION_MATRIX.md` §2.4, §2.5, §3.3 (budgets, Anti-Equilibrium) | Account budgets; account and device watchers (DEC-021) | Unchanged by Level 1. Any U/P split of account state must state its effect on these sections, DEC-007 and DEC-021 | Unchanged |
 | `POLICIES.md` §2, §3, §4 (presets that depend on K2) | `login_protection` and `otp_protection` list K2 and score missing fingerprints on it; `api_heavy_protection` uses K2 for rate enforcement and for LOW K3 persistence | The K2 enforcement uses in these presets change as the matching `DECISION_MATRIX.md` rows above. Custom policies with `CREDENTIAL_SPRAY`, `DISTRIBUTED_ACCOUNT` or `API_OVERUSE` follow the same contracts. The DEC-008 capability model is unchanged | #97 (rows above) |
 | `POLICIES.md` §1, §5 | "Correlation rules are enforced …"; DEC-019 interim note | Wording follows the amended correlation contract; the DEC-019 note follows DEC-019's exit | #97 |
-| `DEVICE_FINGERPRINT.md` §7.1 / §7.2 | Churn detection is mandatory and MUST trigger increased scoring weight, accelerated escalation and correlation-based enforcement | Detection stays mandatory. Correlation enforcement on IP + UA becomes observation. Increased weight and accelerated escalation may apply only to a Subject door or an Actor × Subject relationship, never to IP + UA | #97 |
+| `DEVICE_FINGERPRINT.md` §7.1 / §7.2 | Churn detection is mandatory and MUST trigger increased scoring weight, accelerated escalation and correlation-based enforcement | Detection stays mandatory. Correlation enforcement on IP + UA becomes observation. Increased weight and accelerated escalation never apply to IP + UA. Today they stay on undivided K4 under the non-conformance row for account-wide K4 in Decision 1; once the U/P door split exists they apply to a Subject door or an Actor × Subject relationship | #97 |
 | `DEVICE_FINGERPRINT.md` §4.2, §5.1 | Confidence levels; fingerprint-secret rotation | Unchanged by Level 1. A client instance id that never raises confidence, and K5 material without the UA, are Level 3 / Condition 2 | Not #97 (Level 3) |
 | `docs/guides/USAGE_GUIDE.md` | States that `/64 + UA` K2 state is persisted and that the API Heavy LOW moderate signal is persisted against K2 | Follows the amended `DECISION_MATRIX.md` §4.1 and §5.3 and `KEY_STRATEGY.md` §3.1 | #97 |
 | `FAILURE_SEMANTICS.md` FAIL_OPEN local guardrails | Per-node, per-minute K1 / K2 coarse throttles with no shared state (DEC-011, DEC-015) | Already a non-persisted capacity bound; consistent with Decision 1; unchanged | Unchanged |
@@ -244,7 +245,7 @@ bounded scope, as DEC-021 was in #117.
 ## Rationale
 
 - **Why attribution, not a new identity.** Every candidate that kept penalties on a shared
-  scope kept most of the harm (#107, #115, #116) or moved it to the NAT (#125). Every
+  scope kept part or most of the harm (#107, #115, #116) or moved it to the NAT (#125). Every
   candidate that stopped the UA-similarity penalties removed the #97 cohort denials (#125
   and #126 G1: D1 596 → 0). The finding is
   consistent across designs with different identities and parameters, which is why it is
