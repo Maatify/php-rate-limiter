@@ -49,7 +49,7 @@ Its matrix, in short:
 
 ¹ In `pre` the P budget and the P refund exclude each other: with refunds L1 72; with `P-NETF` L1 0, but a stolen token
 has no P budget except `N_P` (#132 §5.5). ² Not part of FULL2; measured on the G3 v2 `TBK` arms (#130). The conditions,
-the evidence for every cell and the gates NM-1 … NM-9 are in the paper (§3–§5).
+the evidence for every cell and the gates NM-1 … NM-10 are in the paper (§3–§5).
 
 Three facts from that evidence shape the options:
 
@@ -59,8 +59,10 @@ Three facts from that evidence shape the options:
    (#130), refunds cannot happen (#130: L1 122/134, D2 61), gate P fails (#132: L1 72, D2 61), and the DEC-021 bound
    never learns (#119: `D24K1` 1440/1440).
 3. **Every admission bound is a reservation inside `checkOnly`.** That is a material behavioural change of `checkOnly`
-   for the policies that enable it, with no type-signature change (`ARCHITECTURE_PROPOSAL.md` §6.5, GA-5). The store needs
-   integrity P2: no write before the decision, previous generation read-only (`G1_FINAL_DISPOSITION.md` §3).
+   for the policies that enable it, with no type-signature change (`ARCHITECTURE_PROPOSAL.md` §6.5, GA-5). The new
+   reservation state needs integrity P2: no reservation write before the decision, previous generation read-only
+   (`G1_FINAL_DISPOSITION.md` §3). The bounded observation writes `checkOnly` already makes in S0 are a separate matter
+   (C-c2).
 
 ## Decision
 
@@ -94,8 +96,15 @@ If selected, this record would state:
      enables the capability anyway is outside the contract and gets the matching matrix row. For a `pre` Host that means
      losing the S0 protection kept for it, with only the outer ceiling in its place (SP6 144 at `U_src` 24, #132) and the
      measured costs L1 72, D2 61; this is the outcome R-3 below rejects as a supported behaviour.
-   - **A-2, enforced at runtime.** A new additive declaration lets the library refuse or ignore the capability for a Host
-     that has not declared `pre+out`. Its form is not designed here; it would be an additive Public API surface.
+   - **A-2, enforces the declared eligibility.** A new additive declaration lets the library refuse or ignore the capability
+     for a Host that has not declared `pre+out`. It does nothing more. Its form is not designed here; it would be an additive
+     Public API surface.
+
+     **A declaration is not evidence that outcomes are complete.** It does not prove that the Host actually calls
+     `recordFailure` and `recordSuccess` after every attempt. A Host that declares `pre+out` but does not record its outcomes
+     runs, for those attempts, as `pre`: the net failure cap is inert, nothing is refunded, and gate P fails (#130, #132).
+     This trust boundary, **outcome completeness (missing or late outcomes)**, is `UNPROVEN`, and the declaration does not
+     resolve it. It is the open item NM-10 (paper §5).
 
 | Item | Effect of A (from existing evidence) |
 | --- | --- |
@@ -105,7 +114,7 @@ If selected, this record would state:
 | DEC-015 | Unchanged. Admission bounds do not hold in degraded mode (`ARCHITECTURE_PROPOSAL.md` §10, Owner decision D6). The fallback is one code path for every command but counts calls, so per mode: a `pre+out` attempt uses two fallback units, a `pre` attempt one, and in `out` the fallback decision arrives after the verifier, with no pre-verifier bound (paper §2 C-7) |
 | DEC-021 | Unchanged in every mode. Its statement that check-only (`pre`) Hosts report no failures, so its bound cannot learn from them, stays true. K5 separation and the allowance coupling are step 3 |
 | Public API | No change to any existing method signature or command, and no change to the meaning of an existing case. Additive public surfaces: a new case on the existing public `PolicyCapabilityEnum`, a new Store capability interface (`ARCHITECTURE_PROPOSAL.md` §10), new values in the existing `RateLimitMetadataDTO::$cause` string (§6.5), and, under A-2 only, the eligibility declaration. Optional context inputs (instance id, token) are step 3 |
-| New measurement | Not needed to take A. The `pre+out` cells are measured within the studies' scope; A claims nothing in the cells marked NOT MEASURED, so NM-1 … NM-3 and NM-9 are not preconditions. Runtime proof is step 5 |
+| New measurement | Not needed to take A. The `pre+out` cells are measured within the studies' scope; A claims nothing in the cells marked NOT MEASURED, so NM-1 … NM-3 and NM-9 are not preconditions. Outcome completeness under A-2 (NM-10) is an open item for step 5 or a separate study, not a precondition of the choice. Runtime proof is step 5 |
 
 ### Option B — Option A plus a separate preventive contract for `pre`
 
@@ -138,7 +147,7 @@ refuses each one; none is accepted here.
 | # | Condition | Source |
 | --- | --- | --- |
 | C-c1 | Opt-in only, through a typed capability. The official default names and every custom policy that does not opt in keep today's `checkOnly`. Nothing switches the defaults implicitly | `ARCHITECTURE_PROPOSAL.md` §6.5 and LT-2; DEC-008 Backward Compatibility |
-| C-c2 | All-or-nothing across every reserved scope; nothing written on a refusal | `G1_FINAL_DISPOSITION.md` §3 P2; `ARCHITECTURE_PROPOSAL.md` §6.2 |
+| C-c2 | Applies to the T0 admission-reservation writes only: all-or-nothing across every reserved scope; on a T0 refusal no part of the reservation state is written; the previous generation stays read-only (C-c3). It does not forbid the observation writes `checkOnly` already makes in S0, where it is not globally read-only: it records bounded correlation and WATCH observations (`docs/DECISION_MATRIX.md` §5.0, §5.1; `docs/guides/USAGE_GUIDE.md`). The condition covers the new reservation state only, as the DEC-015 row below also states | `G1_FINAL_DISPOSITION.md` §3 P2; `ARCHITECTURE_PROPOSAL.md` §6.2 |
 | C-c3 | The previous generation is read-only, and the secret-rotation interval is at least the window | `G1_FINAL_DISPOSITION.md` §3 P2; `ARCHITECTURE_PROPOSAL.md` §10, migration step 5 |
 | C-c4 | Registration fails fast when the Store lacks the reservation capability | `ARCHITECTURE_PROPOSAL.md` §10; DEC-007 precedent |
 | C-c5 | The new Store operation reports outages through the typed backend-failure contract | DEC-015 |
@@ -164,7 +173,7 @@ can see why they are not options.
 | --- | --- | --- |
 | R-1 | Turning the reservation on by default, or implicitly, for the official names or for custom policies that did not opt in | A silent behavioural change of the public `checkOnly`. It contradicts DEC-008 Backward Compatibility items 2 and 4 and `ARCHITECTURE_PROPOSAL.md` §6.5 ("Nothing switches the defaults implicitly"). The same section sets an explicit, versioned adoption by the default presets as the proposal's required end state; that explicit adoption is a later Owner decision and is outside the options of this record |
 | R-2 | Requiring every Host to record outcomes, or changing the signatures or meaning of `checkOnly`, `recordFailure` or `recordSuccess` for existing policies | Modifies the current Public API and drops the `pre` and `out` usages it supports today |
-| R-3 | Making FULL2's removal of collective penalties the supported or default behaviour for `pre` or `out` Hosts, or for policies that did not opt in | Weakens the S0 protection that DEC-019 keeps. In `pre`, the K2 cross-account bound (`TMSd` 2/200, #113) and the K1 spray protection (SP6 20 in `pre+out`, #108 §3; the same observations in `pre`, #108 §5) would be replaced at most by the outer source ceiling (SP6 144 at `U_src` 24, #132), with no net cap and no refund available. Under option A-1 a `pre` Host can still reach this state by enabling the capability outside the contract; A-2 is the option that prevents it |
+| R-3 | Making FULL2's removal of collective penalties the supported or default behaviour for `pre` or `out` Hosts, or for policies that did not opt in | Weakens the S0 protection that DEC-019 keeps. In `pre`, the K2 cross-account bound (`TMSd` 2/200, #113) and the K1 spray protection (SP6 20 in `pre+out`, #108 §3; the same observations in `pre`, #108 §5) would be replaced at most by the outer source ceiling (SP6 144 at `U_src` 24, #132), with no net cap and no refund available. Under option A-1 a `pre` Host can still reach this state by enabling the capability outside the contract. A-2 prevents enabling it without a declaration; reaching the weaker behaviour through missing outcomes after a declaration stays open (A-2 above; NM-10, paper §5) |
 
 ## Rationale
 
