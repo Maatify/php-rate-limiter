@@ -14,6 +14,8 @@
 > **Review history:** the text went through four review passes before it was committed (§16).
 > **Post-G3 notes (2026-10-18):** the G3 study ([`G3_ADMISSION_BUDGETS.md`](G3_ADMISSION_BUDGETS.md)) ran after this proposal was
 > written. Where its results change a statement here, a dated note is added next to that statement; the original text is kept.
+> **Post-G4 note (2026-10-18):** the integrated G4 study ([`G4_INTEGRATED_ASSEMBLY.md`](G4_INTEGRATED_ASSEMBLY.md)) measured the
+> whole assembly with binding; its notes are added the same way.
 > **Authority:** the Owner decides every material policy, public contract, ADR, study, merge and release.
 
 | Label | Meaning |
@@ -273,6 +275,13 @@ revoked; they do not prevent transfer or replay between holders. A possession me
 Effect: most users sign in from the same devices, so the accepted risk narrows from "any owner without proof" to "an owner on a new
 device or with cleared cookies", without forcing a passkey or a link on any consumer.
 
+> **Post-G4 note (2026-10-18).** G4 built this binding as study code and measured it in the full assembly
+> ([`G4_INTEGRATED_ASSEMBLY.md`](G4_INTEGRATED_ASSEMBLY.md)): NO-GO as registered (A1, C4, E, P). The binding itself held every
+> claim of this section that G4 tested (owner under harassment 0 denials, NAT and CGNAT bound clients 0 refusals, a Host's false
+> known flag no longer bypasses the account bound, 0 cross-account use, stolen token bounded and revoked). Two gaps decide the
+> verdict: the G1 P-lane budgets (`P_proof`) charge the successful logins of a bound device, so heavy users are refused (§4.2
+> there), and an owner who falls back to the strangers' door during a continuing attack is starved by the bucket (§4.3 there).
+
 ## 8. Optional evidence
 
 | What the Host has | The request enters | Under attack |
@@ -436,7 +445,7 @@ decision, not a measurement.
 | --- | --- | --- |
 | 1 | Write ADR part 1 (§14), including the best-response definition over free identifiers | pending |
 | 2 | Single-IP spray budget: adopt `U_src` = 40 as the study value, and defer the final ADR number until the failure-cap result (§6.3) | pending. Post-G3 (2026-10-18): `U_src` = 24 is a measured alternative, and the failure cap was NO-GO as registered (`G3_ADMISSION_BUDGETS.md` §2, §4.1–§4.2); any `U_src` is a separate Owner security decision |
-| 3 | K5 separation by binding (recommended), with the allowance tied to the P family and E2 as a regression check (§13) | pending |
+| 3 | K5 separation by binding (recommended), with the allowance tied to the P family and E2 as a regression check (§13) | pending; approved for the G4 study only (2026-10-18). Post-G4: removes the carry-over of the owner's own U failures into P (post-hoc), but the registered E2 gate failed for an unrelated reason and the component was "not shown necessary" (`G4_INTEGRATED_ASSEMBLY.md` §4.4) |
 | 4 | Per-account guessing budget: T, the longest an owner without proof waits after an attack stops, which sets the guesses per day (86,400 / T) | **approved by the Owner on 2026-10-17: T = 30 minutes as the study value only** (48 refills per day, ceiling 52 with C = 4; post-G3: 51 measured); not a production value. The final value follows the study |
 
 ## 16. Review history

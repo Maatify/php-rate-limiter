@@ -1,0 +1,62 @@
+--- a/src/Service/EvaluationPipeline.php
++++ b/src/Service/EvaluationPipeline.php
+@@ -120,6 +120,12 @@ class EvaluationPipeline
+         }
+     }
+
++    /** G4 K5 separation: the K5 key family of the current lane ('k5p' on the P lane). */
++    private function g4K5(): string
++    {
++        return $this->g1Lane === 'P' ? 'k5p' : 'k5';
++    }
++
+     /** Lane-scoped auxiliary purpose: P-lane account watcher and budget cooldown live on their own keys (M-A). */
+     private function g1Purpose(string $purpose): string
+     {
+@@ -1647,8 +1653,8 @@ class EvaluationPipeline
+             && $this->isKnownForAccount($device)
+             && ($allowanceLimit = $policy->getKnownDeviceAccountAllowance()) !== null) {
+             $allowance = $this->incrementBudgetAcrossRotation(
+-                $this->auxiliaryAccountKey($policy->getName(), 'known_device_allowance', $context->accountId, $this->secret),
+-                $this->previousAuxiliaryAccountKey($policy->getName(), 'known_device_allowance', $context->accountId),
++                $this->auxiliaryAccountKey($policy->getName(), $this->g1Purpose('known_device_allowance'), $context->accountId, $this->secret),
++                $this->previousAuxiliaryAccountKey($policy->getName(), $this->g1Purpose('known_device_allowance'), $context->accountId),
+             );
+             if ($allowance->count > $allowanceLimit) {
+                 $deltas['k4'] = $policy->getScoreDeltas()->k4_failure;
+@@ -1813,12 +1819,12 @@ class EvaluationPipeline
+                 if ($config->known_device_micro_cap === null) {
+                     $shouldCount = true;
+                 } else {
+-                    $microRawV2 = "{$policy->getName()}:rate_limiter:microcap:k5:v1:{$this->envScope}:{$context->accountId}:{$device->fingerprintHash}";
++                    $microRawV2 = "{$policy->getName()}:rate_limiter:microcap:{$this->g4K5()}:v1:{$this->envScope}:{$context->accountId}:{$device->fingerprintHash}";
+                     $microKeyV2 = $this->hashKey($microRawV2, $this->secret);
+                     $microKeyV1 = null;
+
+                     if ($this->hasPreviousGeneration($device)) {
+-                        $microRawV1 = "{$policy->getName()}:rate_limiter:microcap:k5:v1:{$this->envScope}:{$context->accountId}:{$this->previousFingerprintHash($device)}";
++                        $microRawV1 = "{$policy->getName()}:rate_limiter:microcap:{$this->g4K5()}:v1:{$this->envScope}:{$context->accountId}:{$this->previousFingerprintHash($device)}";
+                         $microKeyV1 = $this->hashKey($microRawV1, $this->previousSecret ?? $this->secret);
+                     }
+
+@@ -2434,7 +2440,7 @@ class EvaluationPipeline
+             return null;
+         }
+
+-        $prefix = "{$policy->getName()}:rate_limiter:aux:anti_equilibrium_device:v1:{$this->envScope}:{$context->accountId}";
++        $prefix = "{$policy->getName()}:rate_limiter:aux:{$this->g1Purpose('anti_equilibrium_device')}:v1:{$this->envScope}:{$context->accountId}";
+         $current = $this->hashKey("{$prefix}:{$device->fingerprintHash}", $this->secret);
+         $previous = null;
+         if ($this->hasPreviousGeneration($device)) {
+@@ -2703,8 +2709,10 @@ class EvaluationPipeline
+         $k2 = $this->hashKey("{$base}:k2:{$ver}:{$env}:{$this->getIpPrefix($context->ip)}:{$ua}", $secret);
+         $k3 = $fpHash ? $this->hashKey("{$base}:k3:{$ver}:{$env}:{$this->getIpPrefix($context->ip)}:{$fpHash}", $secret) : null;
+         $k4Type = $this->g1Lane === 'P' ? 'k4p' : 'k4';
++        // G4 K5 SEPARATION (investigations/k2-identity-admission-97/g4/integrated): P-lane device history has its own key.
++        $k5Type = $this->g4K5();
+         $k4 = $context->accountId ? $this->hashKey("{$base}:{$k4Type}:{$ver}:{$env}:{$context->accountId}", $secret) : null;
+-        $k5 = $context->accountId && $fpHash ? $this->hashKey("{$base}:k5:{$ver}:{$env}:{$context->accountId}:{$fpHash}", $secret) : null;
++        $k5 = $context->accountId && $fpHash ? $this->hashKey("{$base}:{$k5Type}:{$ver}:{$env}:{$context->accountId}:{$fpHash}", $secret) : null;
+
+         return ['k1' => $k1, 'k2' => $k2, 'k3' => $k3, 'k4' => $k4, 'k5' => $k5];
+     }
