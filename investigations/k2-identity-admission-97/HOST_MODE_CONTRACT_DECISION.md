@@ -5,6 +5,10 @@
 > none is selected. Documentation only: no change to `src/`, `tests/`, `composer.json`, any public contract, preset, threshold
 > or value, and no change to the text or status of DEC-019, DEC-021 or DEC-022. No new measurement: every number below is
 > quoted from a merged study or decision record, at that source's baseline.
+> **Owner decision (2026-10-19, [PR #134 comment 6256657121](https://github.com/Maatify/php-rate-limiter/pull/134#issuecomment-6256657121)):** option A with A-2 and option B deferred, recorded in
+> [DEC-023](../../docs/decisions/DEC-023_HOST_MODE_CONTRACT_AND_MODE_ELIGIBILITY.md) (`ACTIVE`); option C as a principle,
+> recorded in [DEC-024](../../docs/decisions/DEC-024_OPT_IN_ATOMIC_ADMISSION_RESERVATION_IN_CHECKONLY.md) (`ACTIVE`). The rest
+> of this paper, including the matrix and the gates, is unchanged and records the evidence as it stood when the Owner chose.
 > **Question.** For each Host mode, what the library can guarantee, what needs a recorded outcome to be guaranteed, and what the
 > Host cannot get past. The answer is a contract and capability decision, not a choice of value.
 
