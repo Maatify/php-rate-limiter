@@ -276,11 +276,12 @@ Effect: most users sign in from the same devices, so the accepted risk narrows f
 device or with cleared cookies", without forcing a passkey or a link on any consumer.
 
 > **Post-G4 note (2026-10-18).** G4 built this binding as study code and measured it in the full assembly
-> ([`G4_INTEGRATED_ASSEMBLY.md`](G4_INTEGRATED_ASSEMBLY.md)): NO-GO as registered (A1, C4, E, P). The binding itself held every
-> claim of this section that G4 tested (owner under harassment 0 denials, NAT and CGNAT bound clients 0 refusals, a Host's false
-> known flag no longer bypasses the account bound, 0 cross-account use, stolen token bounded and revoked). Two gaps decide the
-> verdict: the G1 P-lane budgets (`P_proof`) charge the successful logins of a bound device, so heavy users are refused (§4.2
-> there), and an owner who falls back to the strangers' door during a continuing attack is starved by the bucket (§4.3 there).
+> ([`G4_INTEGRATED_ASSEMBLY.md`](G4_INTEGRATED_ASSEMBLY.md)): NO-GO as registered (A1, C4, E, P). In the fixtures whose input was
+> delivered as planned, the binding held the claims of this section that G4 tested (owner under harassment 0 denials, NAT and
+> CGNAT bound clients 0 refusals, 0 cross-account use, stolen token bounded and revoked), and an owner who falls back to the
+> strangers' door during a continuing attack is starved by the bucket (§4.3 there). **Review F131-01:** the stream and BRU24-based
+> fixtures did not deliver the instance id to the pipeline, so the stream results (including the `P_proof` refusals of heavy
+> bound users, §4.2 there) and the BRU24-HV count are not evidenced as planned (§6.4 there).
 
 ## 8. Optional evidence
 

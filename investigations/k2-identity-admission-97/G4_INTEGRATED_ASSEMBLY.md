@@ -10,6 +10,11 @@
 > **Owner input:** K5 separation by binding approved **for this study only** (2026-10-18); T = 30 minutes stays the study value.
 > **Evidence classes:** `MEASURED` (archived harness output), `DERIVED` (follows from stated premises), `POST-HOC` (added after the
 > first results, not in any gate), `MODEL` (the CGN-B admission-layer simulation), `UNPROVEN`.
+> **Input deviation F131-01 (found in review, 2026-10-18):** in the `STREAMS` fixture and in every `BRU24`-based fixture
+> (`BRU24`, `BRU24-HV`, the attacker rows of `REC`) the instance id never reached the pipeline. The Host binding model received it
+> and lane selection is as planned, but the pipeline received the original context. The archived results and the recorded verdict
+> are kept unchanged as the result of **this exact harness**; the gates built on those fixtures are **not evidenced as planned**.
+> Scope and the claims that remain usable are in §6.4. This is not a clean measurement of the full assembly.
 
 ## 1. Baseline and provenance
 
@@ -24,27 +29,30 @@
 
 ## 2. Verdict (`PLAN.md` §5)
 
-**NO-GO AFTER EXPERIMENT — failed gates A1, C4, E, P.** Every detector fired (C1, C3, C5, E), so every passed gate is
-evidenced.
+**NO-GO AFTER EXPERIMENT — failed gates A1, C4, E, P** — the recorded result of the archived harness. Every detector fired (C1,
+C3, C5, E). The last column marks the gates whose fixtures are affected by F131-01 (§6.4): their numbers are what this harness
+measured, and they are **not evidenced as planned**, whether they passed or failed.
 
-| Gate | Result | `MEASURED` (`FULL`) |
-| --- | --- | --- |
-| V0 | PASS | 34 / 34 rows equal |
-| **A1** benign ≤ S0 and ≤ S24 | **FAIL** | L1 72 (S0 0), ABA_B 94 (S24 72), Y6b 10 (S24 0); every one of them `cap:pproof` / `cap:pproof_day` |
-| A2 MIX ≤ S0 | PASS | 54 (S0 117, S24 63) |
-| A3 spray ≤ S12 | PASS | SP1n 4, SP3 8, SP6 24, ABA_A 8 (S12: 12, 24, 72, 24; S0: 4, 7, 20, 3) |
-| B1 per-account bound | PASS | BRU24 51 admitted, recount 51, ceiling 52 |
-| B2 recovery | PASS | wait from arrival 60 s at δ = 0, 0 for every other δ |
-| C1 bound owner under harassment | PASS | HAR-B 0 owner denials; detector `NO-BIND` 14 |
-| C2 Host-violation hole | PASS | BRU24-HV 51 admitted (G3 v2 `TBK30R-HV`: 5,760) |
-| C3 cross-account | PASS | 0 P admissions on 200 victims, reach 4 (= `NO-BIND`); detector `WEAKBIND` 6 P admissions on victims |
-| **C4** stolen token | **FAIL** | thief ≤ 2 P per window, 9 in 24 h, 0 after the epoch bump (all pass); **the owner's U login after the bump is never admitted** while the thief keeps failing |
-| C5 NAT bootstrap | PASS | BOOT 0 / 383 refused; BOOT-X 0 refusals of bound instances; detector `NO-BIND` refuses 28 such requests |
-| C6 CGNAT (`MODEL`) | PASS | N = 5,000, λ = 1: day-3 refusal share 0.0096 %; with the sprayer 0 refusals of bound clients |
-| **E** E2 | **FAIL** | owner rows differ with and without the population; detector `NO-K5SEP` differs too |
-| **P** checkOnly-only Hosts | **FAIL** | `pre`: L1 72 (≤ 0), D2 61 (≤ 36) |
+| Gate | Result | `MEASURED` (`FULL`) | Input (F131-01) |
+| --- | --- | --- | --- |
+| V0 | PASS | 34 / 34 rows equal | as designed (no ids by definition) |
+| **A1** benign ≤ S0 and ≤ S24 | **FAIL** | L1 72 (S0 0), ABA_B 94 (S24 72), Y6b 10 (S24 0); every one of them `cap:pproof` / `cap:pproof_day` | **affected** (`STREAMS`) |
+| A2 MIX ≤ S0 | PASS | 54 (S0 117, S24 63) | **affected** (`STREAMS`) |
+| A3 spray ≤ S12 | PASS | SP1n 4, SP3 8, SP6 24, ABA_A 8 (S12: 12, 24, 72, 24; S0: 4, 7, 20, 3) | **affected** (`STREAMS`) |
+| B1 per-account bound | PASS | BRU24 51 admitted, recount 51, ceiling 52 | **affected** (`BRU24`) |
+| B2 recovery | PASS | wait from arrival 60 s at δ = 0, 0 for every other δ | **affected** (attacker rows from `BRU24`) |
+| C1 bound owner under harassment | PASS | HAR-B 0 owner denials; detector `NO-BIND` 14 | as planned |
+| C2 Host-violation hole | PASS | BRU24-HV 51 admitted (G3 v2 `TBK30R-HV`: 5,760) | **affected** (`BRU24-HV`) |
+| C3 cross-account | PASS | 0 P admissions on 200 victims, reach 4 (= `NO-BIND`); detector `WEAKBIND` 6 P admissions on victims | as planned |
+| **C4** stolen token | **FAIL** | thief ≤ 2 P per window, 9 in 24 h, 0 after the epoch bump (all pass); **the owner's U login after the bump is never admitted** while the thief keeps failing | as planned |
+| C5 NAT bootstrap | PASS | BOOT 0 / 383 refused; BOOT-X 0 refusals of bound instances; detector `NO-BIND` refuses 28 such requests | as planned |
+| C6 CGNAT (`MODEL`) | PASS | N = 5,000, λ = 1: day-3 refusal share 0.0096 %; with the sprayer 0 refusals of bound clients | not applicable (no pipeline) |
+| **E** E2 | **FAIL** | owner rows differ with and without the population; detector `NO-K5SEP` differs too | as planned |
+| **P** checkOnly-only Hosts | **FAIL** | `pre`: L1 72 (≤ 0), D2 61 (≤ 36) | **affected** (`STREAMS`) |
 
 ## 3. Results (`MEASURED`, `pre+out`, legitimate denied / best-response attack reach)
+
+> Every row of this table comes from `STREAMS` and is affected by F131-01 (§6.4): the pipeline did not receive the instance ids.
 
 | Stream | S0 | S24 | **FULL** | FULL-40 | NO-BIND | NO-FCN | NO-TB | NO-K5SEP | ESC |
 | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |
@@ -72,20 +80,24 @@ Binding is the component that does what the earlier studies could not:
 
 * **The owner on a bound device is not refused because of strangers.** HAR (30 rotating sources failing every 10 s on the owner's
   account): 0 owner denials, against 14 without binding.
-* **A Host's false "known" flag no longer bypasses the account bound.** The flag selects nothing; only a verified token opens P.
-  BRU24-HV: 51, against 5,760 for G3 v2 known-device routing.
+* **A Host's false "known" flag no longer selects the proven door.** The flag selects nothing; only a verified token opens P (lane
+  selection is unaffected by F131-01). The BRU24-HV count of 51 against 5,760 for G3 v2 comes from an affected fixture (§6.4).
 * **A token never works on another account.** CROSS: 0 P admissions on 200 victims; the weak boundary (no account check) admits 6.
 * **Offices and CGNAT.** BOOT-X (40 browsers behind one IP, sprayer on the same IP for 8 h): 0 refusals of bound browsers, against
   28 refusals of the same requests without binding. CGN-B (`MODEL`, N = 5,000, λ = 1): day-3 refusal share 0.0096 % with binding,
   41.9 % without; during a full day of spraying at 1 / s, 0 refusals of bound clients (45.3 % of all requests refused, all of
   them from clients not yet bound).
-* **checkOnly-only Hosts benefit too.** Issuance needs no outcome reporting: in `pre`, L1 drops from 122 to 72, Nu4 from 41 to 0,
-  Y6b from 26 to 10, UAC from 8 to 4 (FULL against NO-BIND).
+* **checkOnly-only Hosts.** Issuance needs no outcome reporting, so binding exists in `pre` too. The `pre` counts (L1 122 → 72,
+  Nu4 41 → 0, Y6b 26 → 10, UAC 8 → 4, FULL against NO-BIND) come from `STREAMS` and are affected by F131-01 (§6.4).
 * **Stolen token: bounded and revocable.** The thief who copied the owner's id and token reached 9 P-lane attempts in 12 h (bounded
   by `N_P` and K4P penalties), and 0 after the epoch bump. The thief's P-lane failures cost the owner 2 of 6 P logins before the
   bump (`soft`, the shared-account P penalties the proposal already declares in §7 "Stolen cookie").
 
 ### 4.2 Failure 1 — P-lane budgets refuse heavy bound users (A1, P)
+
+> F131-01: every count in this subsection comes from `STREAMS`. The mechanism (`P_proof` is keyed by the token id that the Host
+> model issues, and successful P-lane logins are charged to it) does not read the context's `sessionDeviceId`; whether the counts
+> change with the planned input is **not evidenced**.
 
 The G1 P-lane budgets (`P_proof` 6 per window and 30 per day per proof reference) were sized for a **proof**: something an
 attacker might hold and use to guess. Under binding, the token **is** the everyday credential of a legitimate device, so a
@@ -139,6 +151,9 @@ pre-registered measurement.
 
 ### 4.5 Necessity (Q3, registered rule)
 
+> F131-01: the rows built on `STREAMS` or `BRU24` (A-gates, BRU24, BRU24-HV, REC, `pre`) are affected; HAR-B, BOOT-X, CGN-B, CROSS,
+> STEAL and E2 are not.
+
 | Removed | Registered expectation | Worse than FULL (`MEASURED`) | Result |
 | --- | --- | --- | --- |
 | Binding (`NO-BIND`) | C1, C5, C6 | HAR-B owner 14; BOOT-X bound-instance refusals 28; CGN-B day 3 8,713 refusals (FULL 2), with sprayer day 2 21,066 (9,587); UAC 9; `pre` L1 122 | shown |
@@ -150,6 +165,8 @@ pre-registered measurement.
 Removing binding **improves** L1, ABA_B and Y6b (back on U), which is §4.2 seen from the other side.
 
 ### 4.6 Q4 — `U_src` 24 or 40 (reported, no winner declared)
+
+> F131-01: the stream rows of this comparison are affected; the CGN-B rows are not.
 
 With binding and the net cap, 40 lowers D2 from 24 to 2 and MIX from 54 to 42 in `pre+out`, and CGN-B bootstrap refusals (day 1,
 N = 5,000, λ = 1: 3,996 → 987; λ = 4: 47,729 → 25,924). Single-IP spray in `pre+out` is the same (the failure cap binds first). In
@@ -165,6 +182,9 @@ checkOnly-only Hosts and office / CGNAT bootstrap; it stays an Owner security de
 * **X1 / BRU / BRD** reach 4 / 5 / 5 against 2 / 3 / 3 on S0: the bucket's initial C = 4, as in G3 v2.
 
 ## 5. What this means for the proposal (`DERIVED`, not decisions)
+
+> Read with F131-01 (§6.4): the binding claims rest on the unaffected fixtures (HAR-B, CROSS, STEAL, BOOT / BOOT-X, CGN-B, E2);
+> the budget claims rest on affected ones.
 
 | Proposal item | Effect of G4 |
 | --- | --- |
@@ -205,6 +225,43 @@ the archive:
 
 The owner offset of +5 s in STEAL (§4.3), the decomposition of E2 (§4.4), and the cause breakdowns of the STEAL owner denials
 before and after the bump (§4.1, §4.3; from a diagnostic replay of the archived fixture, not archived).
+
+### 6.4 Input deviation F131-01 (independent review, 2026-10-18)
+
+**Defect.** `g4FromStream()` (`lib/g4.php`) and `g4Bru()` (`scenarios/g4_fixtures.php`) build each row as
+`$r + ['ctx' => g4Ctx(...), 'inst' => ..., 'holder' => ...]`. The source row `$r` already has a `ctx` key, and PHP's array union
+keeps the left operand's key, so the replacement context carrying the instance id in `sessionDeviceId` is silently dropped. The
+new keys `inst` and `holder` are added. Checked against the archived code: 12,512 of 12,512 `STREAMS` rows (every stream, strategy
+and id policy) and 5,760 of 5,760 `BRU24` rows reach the pipeline without the declared instance id.
+
+**Why it matters.** `DeviceIdentityResolver::resolve()` puts `sessionDeviceId` into the fingerprint hash even when it is not
+trusted (`v2|ua|clientFp|sessionDeviceId`). That hash is the K5 material and the P-lane device member counted by `N_P`. In the
+affected fixtures the pipeline therefore saw the stream's original device identity (account + UA in most rows), not the planned
+one: the `fresh` / `const` id policies changed only the Host model's jar and lane selection, not K5 or `N_P`. Different results
+between the two policies are not evidence that the pipeline received them.
+
+| Fixture | Built by | Pipeline input | Gates |
+| --- | --- | --- | --- |
+| `STREAMS` (all arms, `pre+out` and `pre`) | `g4FromStream()` | **affected** | A1, A2, A3, P; Q4 stream rows; necessity rows from streams |
+| `BRU24`, `BRU24-HV`; `REC` attacker rows | `g4Bru()` | **affected** | B1, C2, B2; necessity BRU rows |
+| `REC` owner rows | `g4Row1()` | as planned | (B2 depends on the affected attacker rows) |
+| `HAR-B`, `HAR-N`, `CROSS`, `STEAL`, `CLEAR`, `E2`, `BOOT`, `BOOT-X` | `g4Row1()` | as planned | C1, C3, C4, C5, E |
+| `CGN-B` | admission model, no pipeline | not applicable | C6 |
+| V0 | `g4FromStream(..., withIds: false)` | as designed: no ids by definition, so V0 cannot detect this defect | V0 |
+
+**What stays usable.** The results of the unaffected fixtures: owner protection under harassment (C1), no cross-account use (C3),
+the stolen-token bound and revocation, and the owner's starvation on U after revocation (C4), NAT bootstrap (C5), CGNAT (C6), and
+E2 (E). Lane selection by the Host model in every fixture.
+
+**What is not evidenced as planned.** Every number from `STREAMS` and from the `BRU24`-based fixtures, pass or fail: A1, A2, A3,
+B1, B2, C2, P, the stream tables of §3 and `expected/summary.md`, Q4's stream rows, and the necessity rows built on them. No
+claim is made that they would be numerically unchanged with the planned input.
+
+**Disposition.** The plan, harness, `expected/` and verdict are left exactly as archived; nothing was regenerated. A corrected
+measurement needs Owner authorisation and a new pre-registered plan, and must add an input-shape assertion (for every non-V0 row
+that declares an instance id, the DTO's `sessionDeviceId` equals it) with a detector that fails when `ctx` silently reverts to the
+original. The other array unions in the G4 code (`G4Gate::admit()`, `g4Row()`, the scenario emitters) add keys the left
+operand does not have, so they are not affected.
 
 ## 7. Limits
 
