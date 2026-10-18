@@ -1,0 +1,434 @@
+{
+    "partN": {
+        "verdict": "EXPERIMENTALLY SUPPORTED — LIMITED SCOPE (pre+out Hosts)",
+        "gateP": "FAIL",
+        "gates": {
+            "A1": {
+                "pass": true,
+                "detail": [
+                    "every benign stream ≤ S0 and ≤ S24"
+                ]
+            },
+            "A2": {
+                "pass": true,
+                "detail": [
+                    "MIX legit 54 (S0 117)"
+                ]
+            },
+            "A3": {
+                "pass": true,
+                "detail": [
+                    "SP1n 4 (S12 12)",
+                    "SP3 8 (S12 24)",
+                    "SP6 24 (S12 72)",
+                    "ABA_A 8 (S12 24)"
+                ]
+            },
+            "B1": {
+                "pass": true,
+                "detail": [
+                    "admitted 51, recount 51, ceiling 52"
+                ]
+            },
+            "B2": {
+                "pass": true,
+                "detail": [
+                    "δ 0: 60 ≤ 1860",
+                    "δ 60: 0 ≤ 1800",
+                    "δ 300: 0 ≤ 1560",
+                    "δ 900: 0 ≤ 960",
+                    "δ 1800: 0 ≤ 60",
+                    "δ 3600: 0 ≤ 0"
+                ]
+            },
+            "C1": {
+                "pass": true,
+                "detail": [
+                    "owner denials 0"
+                ],
+                "detector": {
+                    "fired": true,
+                    "detail": "R-NO-BIND owner denials 14"
+                }
+            },
+            "C2": {
+                "pass": true,
+                "detail": [
+                    "admitted 51, ceiling 52"
+                ]
+            },
+            "C3": {
+                "pass": true,
+                "detail": [
+                    "victim P 0; reach 4 (R-NO-BIND 4)"
+                ],
+                "detector": {
+                    "fired": true,
+                    "detail": "R-WEAKBIND victim P 6"
+                }
+            },
+            "C4v2": {
+                "pass": true,
+                "detail": [
+                    "thief P/window 2 ≤ 6, 24 h 9 ≤ 30, after the change 0; thief U after 27 ≤ 28",
+                    "owner admitted after 0 s on P (≤ 60 s, P)"
+                ],
+                "detector": {
+                    "fired": true,
+                    "detail": "N-NOPWB owner wait never"
+                }
+            },
+            "C5": {
+                "pass": true,
+                "detail": [
+                    "BOOT refused 0 / 383",
+                    "BOOT-X bound-instance refusals 0"
+                ],
+                "detector": {
+                    "fired": true,
+                    "detail": "R-NO-BIND refused 28 day-1 requests from bound instances"
+                }
+            },
+            "C6": {
+                "pass": true,
+                "detail": [
+                    "day-3 share 9.6E-5",
+                    "bound refusals with sprayer 0"
+                ],
+                "class": "MODEL"
+            },
+            "E": {
+                "pass": true,
+                "detail": [
+                    "identical: yes"
+                ],
+                "detector": {
+                    "fired": true,
+                    "detail": "N-NORENEW differs: yes"
+                }
+            },
+            "K5": {
+                "pass": true,
+                "detail": [
+                    "owner rows from 960 s identical between fail and ctl: yes"
+                ],
+                "detector": {
+                    "fired": true,
+                    "detail": "N-NOK5SEP differs: yes"
+                }
+            },
+            "P": {
+                "pass": false,
+                "detail": [
+                    "pre L1 72 ≤ 0, D2 61 ≤ 36"
+                ]
+            }
+        },
+        "necessity": {
+            "N-PG1": {
+                "expected": "A1",
+                "worse": [
+                    "legit L1 72 (FULL2 0)",
+                    "legit ABA_B 94 (FULL2 0)",
+                    "legit Y6b 10 (FULL2 0)",
+                    "E2 differs 1 (FULL2 0)"
+                ],
+                "better": [],
+                "shown": true
+            },
+            "N-NORENEW": {
+                "expected": "E",
+                "worse": [
+                    "E2 differs 1 (FULL2 0)"
+                ],
+                "better": [],
+                "shown": true
+            },
+            "N-NOPWB": {
+                "expected": "C4v2",
+                "worse": [
+                    "STEAL owner wait never (FULL2 0)"
+                ],
+                "better": [],
+                "shown": true
+            },
+            "N-NOK5SEP": {
+                "expected": "K5",
+                "worse": [
+                    "K5U differs 1 (FULL2 0)"
+                ],
+                "better": [],
+                "shown": true
+            }
+        }
+    },
+    "partR": {
+        "verdict": "NO-GO AFTER EXPERIMENT (A1, C4, E, P)",
+        "gates": {
+            "A1": {
+                "pass": false,
+                "detail": [
+                    "L1 72 > S0 0 ({\"cap:pproof\":38,\"cap:pproof_day\":34})",
+                    "ABA_B 94 > S24 72 ({\"cap:pproof\":94})",
+                    "Y6b 10 > S24 0 ({\"cap:pproof\":10})"
+                ]
+            },
+            "A2": {
+                "pass": true,
+                "detail": [
+                    "MIX legit 54 (S0 117)"
+                ]
+            },
+            "A3": {
+                "pass": true,
+                "detail": [
+                    "SP1n 4 (S12 12)",
+                    "SP3 8 (S12 24)",
+                    "SP6 24 (S12 72)",
+                    "ABA_A 8 (S12 24)"
+                ]
+            },
+            "B1": {
+                "pass": true,
+                "detail": [
+                    "admitted 51, recount 51, ceiling 52"
+                ]
+            },
+            "B2": {
+                "pass": true,
+                "detail": [
+                    "δ 0: 60 ≤ 1860",
+                    "δ 60: 0 ≤ 1800",
+                    "δ 300: 0 ≤ 1560",
+                    "δ 900: 0 ≤ 960",
+                    "δ 1800: 0 ≤ 60",
+                    "δ 3600: 0 ≤ 0"
+                ]
+            },
+            "C1": {
+                "pass": true,
+                "detail": [
+                    "owner denials 0"
+                ],
+                "detector": {
+                    "fired": true,
+                    "detail": "R-NO-BIND owner denials 14"
+                }
+            },
+            "C2": {
+                "pass": true,
+                "detail": [
+                    "admitted 51, ceiling 52"
+                ]
+            },
+            "C3": {
+                "pass": true,
+                "detail": [
+                    "victim P 0; reach 4 (R-NO-BIND 4)"
+                ],
+                "detector": {
+                    "fired": true,
+                    "detail": "R-WEAKBIND victim P 6"
+                }
+            },
+            "C4": {
+                "pass": false,
+                "detail": [
+                    "thief P/window 2, 24 h 9, after 0; owner wait never"
+                ]
+            },
+            "C5": {
+                "pass": true,
+                "detail": [
+                    "BOOT refused 0 / 383",
+                    "BOOT-X bound-instance refusals 0"
+                ],
+                "detector": {
+                    "fired": true,
+                    "detail": "R-NO-BIND refused 28 day-1 requests from bound instances"
+                }
+            },
+            "C6": {
+                "pass": true,
+                "detail": [
+                    "day-3 share 9.6E-5",
+                    "bound refusals with sprayer 0"
+                ],
+                "class": "MODEL"
+            },
+            "E": {
+                "pass": false,
+                "detail": [
+                    "identical: no"
+                ],
+                "detector": {
+                    "fired": true,
+                    "detail": "R-NO-K5SEP differs: yes"
+                }
+            },
+            "P": {
+                "pass": false,
+                "detail": [
+                    "pre L1 72 ≤ 0, D2 61 ≤ 36"
+                ]
+            }
+        },
+        "necessity": {
+            "R-NO-BIND": {
+                "expected": "C1, C5, C6",
+                "worse": [
+                    "legit UAC 9 (R-FULL 6)",
+                    "HAR-B owner denials 14 (R-FULL 0)",
+                    "pre legit L1 122 (R-FULL 72)",
+                    "BOOT-X refusals 96 (R-FULL 68)",
+                    "BOOT-X refusals of bound instances 28 (R-FULL 0)",
+                    "CGN 5000/1 day-3 refused 8713 (R-FULL 2)",
+                    "CGN 5000/1 + sprayer, day-2 refused 21066 (R-FULL 9587)"
+                ],
+                "better": [
+                    "legit L1 0 (R-FULL 72)",
+                    "legit ABA_B 72 (R-FULL 94)",
+                    "legit Y6b 0 (R-FULL 10)",
+                    "STEAL thief P / window 0 (R-FULL 2)"
+                ],
+                "shown": true
+            },
+            "R-NO-FCN": {
+                "expected": "A3",
+                "worse": [
+                    "reach SP1n 24 (R-FULL 4)",
+                    "reach SP3 48 (R-FULL 8)",
+                    "reach SP6 144 (R-FULL 24)",
+                    "reach ABA_A 48 (R-FULL 8)",
+                    "CROSS victim reach 24 (R-FULL 4)"
+                ],
+                "better": [
+                    "legit MIX 51 (R-FULL 54)"
+                ],
+                "shown": true
+            },
+            "R-NO-TB": {
+                "expected": "B1, pre BRU reach",
+                "worse": [
+                    "BRU24 admitted 2304 (R-FULL 51)",
+                    "BRU24-HV admitted 2304 (R-FULL 51)",
+                    "pre reach BRU 80 (R-FULL 5)"
+                ],
+                "better": [
+                    "STEAL owner wait 0 (R-FULL never)",
+                    "pre legit D2 24 (R-FULL 61)"
+                ],
+                "shown": true
+            },
+            "R-NO-K5SEP": {
+                "expected": "E",
+                "worse": [],
+                "better": [],
+                "shown": false
+            },
+            "R-ESC": {
+                "expected": "B2",
+                "worse": [
+                    "legit D2 39 (R-FULL 24)",
+                    "legit MIX 66 (R-FULL 54)",
+                    "REC wait δ0 1860 (R-FULL 60)",
+                    "REC wait δ60 1800 (R-FULL 0)",
+                    "REC wait δ300 1560 (R-FULL 0)",
+                    "REC wait δ900 960 (R-FULL 0)",
+                    "REC wait δ1800 60 (R-FULL 0)"
+                ],
+                "better": [
+                    "BRU24 admitted 33 (R-FULL 51)",
+                    "BRU24-HV admitted 37 (R-FULL 51)"
+                ],
+                "shown": true
+            }
+        },
+        "changesFromG4": [],
+        "rowChangesFromG4": [
+            [
+                "ESC",
+                "pre+out",
+                "Y6b",
+                "none",
+                "fresh",
+                "reachOwn 36 → 11, verifierCalls 56 → 31, attackReachMaxPerWindow 13 → 5, attackReachMaxSliding 13 → 5",
+                "attack []; legit {\"cap:pproof\":10}",
+                "attack {\"pen:K4\":5,\"pen:K4+K5\":1,\"pen:K5\":14,\"pen:unpersisted\":4,\"soft\":1}; legit {\"cap:pproof\":10}"
+            ],
+            [
+                "ESC",
+                "pre+out",
+                "X1",
+                "none",
+                "fresh",
+                "decisions or causes only",
+                "attack {\"soft\":60}; legit []",
+                "attack {\"pen:K5\":7,\"pen:unpersisted\":51,\"soft\":2}; legit []"
+            ],
+            [
+                "ESC",
+                "pre+out",
+                "X7",
+                "none",
+                "fresh",
+                "reachOwn 81 → 4, verifierCalls 121 → 44, attackReachMaxPerWindow 120 → 43, attackReachMaxSliding 120 → 43",
+                "attack []; legit []",
+                "attack {\"pen:K5\":77}; legit []"
+            ],
+            [
+                "ESC",
+                "pre+out",
+                "BRU",
+                "none",
+                "fresh",
+                "reachForeign 3 → 2, verifierCalls 3 → 2",
+                "attack {\"pen:K4\":2,\"soft\":97}; legit []",
+                "attack {\"pen:K4\":57,\"pen:K4+K5\":1,\"pen:K5\":18,\"pen:unpersisted\":21,\"soft\":2}; legit []"
+            ],
+            [
+                "ESC",
+                "pre+out",
+                "BRD",
+                "none",
+                "fresh",
+                "decisions or causes only",
+                "attack {\"pen:K4\":2,\"soft\":97}; legit []",
+                "attack {\"pen:K4\":58,\"pen:K4+K5\":1,\"pen:K5\":35,\"soft\":5}; legit []"
+            ]
+        ]
+    },
+    "validity": {
+        "V0": 34,
+        "V1": 74,
+        "D-IN": [
+            {
+                "s": "din",
+                "family": "STREAMS",
+                "revertedRejected": 68,
+                "reverted": 68,
+                "correctedRejected": 0,
+                "corrected": 68,
+                "pass": true
+            },
+            {
+                "s": "din",
+                "family": "BRU24",
+                "revertedRejected": 1,
+                "reverted": 1,
+                "correctedRejected": 0,
+                "corrected": 1,
+                "pass": true
+            },
+            {
+                "s": "din",
+                "family": "HAR-B",
+                "revertedRejected": 1,
+                "reverted": 1,
+                "correctedRejected": 0,
+                "corrected": 1,
+                "pass": true
+            }
+        ]
+    }
+}

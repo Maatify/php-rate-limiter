@@ -16,6 +16,11 @@
 > written. Where its results change a statement here, a dated note is added next to that statement; the original text is kept.
 > **Post-G4 note (2026-10-18):** the integrated G4 study ([`G4_INTEGRATED_ASSEMBLY.md`](G4_INTEGRATED_ASSEMBLY.md)) measured the
 > whole assembly with binding; its notes are added the same way.
+> **Post-G4 v2 note (2026-10-18):** G4 v2 ([`G4_V2_INTEGRATED_REASSEMBLY.md`](G4_V2_INTEGRATED_REASSEMBLY.md)) re-measured G4 with
+> the instance id delivered to the pipeline (F131-01) and measured three new components; its notes are added the same way.
+> **Arabic companion:** [`IDENTITY_ATTRIBUTION_PROPOSAL_AR.md`](IDENTITY_ATTRIBUTION_PROPOSAL_AR.md) (Owner-approved 2026-10-18,
+> `DOCUMENTATION_LIFECYCLE_STANDARD_AR.md` §2.1). This English text is the reference and prevails on any conflict. Any PR that
+> changes one of the two files changes the other in the same PR, with the same scope limits.
 > **Authority:** the Owner decides every material policy, public contract, ADR, study, merge and release.
 
 | Label | Meaning |
@@ -117,6 +122,9 @@ Rules for `clientInstanceId`:
    BRD 7 → 37/100 — compared with the **same strategy** on S0. The best response for BRU and X1 is the same on S0 (100/100 and 61/61,
    nothing is recorded), and the only best-response difference was BRD, caused by the confidence lift (rule 1), not by removing
    the UA. These cells are observations under §3; the reservation of §9 is what bounds that flow.
+   > **Post-G4 v2 note (2026-10-18).** Not measured yet. G4 and G4 v2 carried the instance id in `sessionDeviceId` (untrusted) and
+   > kept the UA in the K5 material, a declared deviation; this rule, and the promise that a browser update is not a new device,
+   > are therefore not implemented in any study (`G4_V2_INTEGRATED_REASSEMBLY.md` §9).
 3. **A new id mints no budget** — not for the account, the source or the operation. Otherwise an attacker clears the cookie and
    starts over.
 4. **Absence is declared absence.** A client without an id is an anonymous individual and is never grouped with every user of the
@@ -272,6 +280,26 @@ revoked; they do not prevent transfer or replay between holders. A possession me
 | Assurance per operation | A binding made after login is not automatically enough for an operation that requires stronger verification |
 | Stolen cookie | The id and the token are bearer values: a thief who copies both is accepted as the bound device. The thief gets the proven door of one account, within P bounds, until expiry or epoch revocation, but also **consumes the shared `P_acct`**, so the owner on the bound device can be refused inside P (`P§7.2` item 3 for the shared allowance, item 4 for P penalties from another proof holder; #127 residual 5). A negative score on (account, instance) lands on the victim's own device; the epoch fixes it only after detection. **Open proposal:** a negative score on a bound device is a throttle only. That changes DEC-021, which persists K5 blocks for known devices as the known-device guessing bound, so it needs measurement (§13) |
 
+### Trust Score path (added 2026-10-18)
+
+*A description of how the idea developed. It was first written in the Arabic companion; this is its English counterpart.*
+
+The idea was raised in the discussion with the Owner on 2026-10-17 and is not recorded in the repository under the name "Trust
+Score"; this proposal is the only place that describes it. It had two parts:
+
+1. **"A new device stays clean until its first error, and counting starts from there": rejected** (§12). A new device has no errors
+   because it was just created, not because it is good. An attacker can create a new device every time, so every new id gives the
+   attacker a free error and the penalty lands on honest clients only. Instead, a new device is **neutral** under the account bound,
+   and a negative score is used for a short throttle only.
+2. **"After a successful login the device is recognised as the customer's, if it carries no earlier taint": adopted**, and it became
+   the device binding of this section, with its conditions: bound to one account, from the same instance, mints no budget,
+   revocable. "Taint" was defined as the number of distinct accounts the device failed on before the success.
+
+**Status when this was written (after G3 v2, before G4):** the binding was **neither built nor measured**. What G3 v2 measured was a
+temporary stand-in, routing the devices the Host marks as known, which trusts the Host exactly as DEC-021 does (a lying Host:
+5,760 / 5,760). The next step for the idea was to design the binding: a signed token the library itself verifies (condition P1),
+with its own per-account bound for known devices. The Post-G4 and Post-G4 v2 notes below record what happened next.
+
 Effect: most users sign in from the same devices, so the accepted risk narrows from "any owner without proof" to "an owner on a new
 device or with cleared cookies", without forcing a passkey or a link on any consumer.
 
@@ -282,6 +310,16 @@ device or with cleared cookies", without forcing a passkey or a link on any cons
 > strangers' door during a continuing attack is starved by the bucket (§4.3 there). **Review F131-01:** the stream and BRU24-based
 > fixtures did not deliver the instance id to the pipeline, so the stream results (including the `P_proof` refusals of heavy
 > bound users, §4.2 there) and the BRU24-HV count are not evidenced as planned (§6.4 there).
+
+> **Post-G4 v2 note (2026-10-18).** G4 v2 re-measured every G4 arm with the planned input: no gate, best-response number or
+> BRU24 / BRU24-HV / REC number changed (5 of 684 stream rows differ, none a best response), so the G4 results above now stand as
+> planned, including the `P_proof` refusals and BRU24-HV 51. It then measured `FULL2` = the G4 assembly plus three components:
+> a P-lane budget that refunds successful logins, sliding token renewal on every verified success (30 days, absolute 90), and a new
+> token issued at the password change to the device that made it. **`FULL2` is EXPERIMENTALLY SUPPORTED — LIMITED SCOPE for Hosts
+> that record outcomes:** heavy bound users are no longer refused (L1 72 → 0), the owner is back on P at once after the password
+> change while the thief keeps failing (G4: never), E2 is identical with and without the population, and each new component and K5
+> separation is shown necessary. checkOnly-only Hosts still fail (gate P: L1 72, D2 61). Remaining owner residual: a new device, or
+> a token past its absolute lifetime, during a continuing attack (`G4_V2_INTEGRATED_REASSEMBLY.md` §2, §5).
 
 ## 8. Optional evidence
 
@@ -446,7 +484,7 @@ decision, not a measurement.
 | --- | --- | --- |
 | 1 | Write ADR part 1 (§14), including the best-response definition over free identifiers | pending |
 | 2 | Single-IP spray budget: adopt `U_src` = 40 as the study value, and defer the final ADR number until the failure-cap result (§6.3) | pending. Post-G3 (2026-10-18): `U_src` = 24 is a measured alternative, and the failure cap was NO-GO as registered (`G3_ADMISSION_BUDGETS.md` §2, §4.1–§4.2); any `U_src` is a separate Owner security decision |
-| 3 | K5 separation by binding (recommended), with the allowance tied to the P family and E2 as a regression check (§13) | pending; approved for the G4 study only (2026-10-18). Post-G4: removes the carry-over of the owner's own U failures into P (post-hoc), but the registered E2 gate failed for an unrelated reason and the component was "not shown necessary" (`G4_INTEGRATED_ASSEMBLY.md` §4.4) |
+| 3 | K5 separation by binding (recommended), with the allowance tied to the P family and E2 as a regression check (§13) | pending; approved for the G4 study only (2026-10-18). Post-G4: removes the carry-over of the owner's own U failures into P (post-hoc), but the registered E2 gate failed for an unrelated reason and the component was "not shown necessary" (`G4_INTEGRATED_ASSEMBLY.md` §4.4). Post-G4 v2: shown necessary by a registered gate (the owner's own U failures on the same instance stay out of later P decisions; without separation 12 owner rows differ, `G4_V2_INTEGRATED_REASSEMBLY.md` §5.4) |
 | 4 | Per-account guessing budget: T, the longest an owner without proof waits after an attack stops, which sets the guesses per day (86,400 / T) | **approved by the Owner on 2026-10-17: T = 30 minutes as the study value only** (48 refills per day, ceiling 52 with C = 4; post-G3: 51 measured); not a production value. The final value follows the study |
 
 ## 16. Review history
