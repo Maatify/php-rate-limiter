@@ -188,8 +188,8 @@ checkOnly-only Hosts and office / CGNAT bootstrap; it stays an Owner security de
 
 | Proposal item | Effect of G4 |
 | --- | --- |
-| §7 trust from success | The binding behaves as the proposal claims for owner protection, NAT, CGNAT, Host violations, cross-account use and stolen tokens. It is not adoptable with the G1 P-lane budgets: those must stop charging successful logins of bound devices (§4.2) |
-| §6.2 per-account bucket | Bounds the attacker exactly as measured before, but an owner who falls back to U during a continuing attack is starved (§4.3). The fall-back path (rebinding after password change, token lifetime) needs a design and a measurement |
+| §7 trust from success | In the unaffected fixtures the binding behaves as the proposal claims for owner protection (HAR-B), NAT (BOOT-X), CGNAT (CGN-B), cross-account use (CROSS) and stolen tokens (STEAL). **Host violations:** by the boundary rule, a Host's `known` flag alone never selects P (supported by the code and by lane selection, which F131-01 does not affect); the BRU24-HV verifier count (51) comes from an affected fixture and is not evidenced as planned. **`P_proof`:** the mechanism (successful P-lane logins of a bound device are charged to the token's budget) is observed; the stream denial counts (§4.2) are not validated for the planned input. Adoption with the G1 P-lane budgets would need those budgets to stop charging such successes |
+| §6.2 per-account bucket | The archived BRU24 / REC counts (B1, B2) come from affected fixtures, so the bound and the recovery are not re-evidenced for the planned input. Unaffected (STEAL, E2): an owner who falls back to U during a continuing attack is starved (§4.3). The fall-back path (rebinding after password change, token lifetime) needs a design and a measurement |
 | §15 decision 3, K5 separation | Its measured effect is the removal of U-history carry-over into the owner's P decisions (§4.4, post-hoc); the registered gate could not show it. It stays an Owner decision |
 | §6.3 `U_src` | §4.6 |
 
