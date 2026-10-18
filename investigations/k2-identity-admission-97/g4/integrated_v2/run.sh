@@ -19,6 +19,10 @@ mkdir -p "$actual" "$work" "$expected"
 rm -f "$actual"/*.jsonl "$actual"/*.diff "$actual"/*.stderr "$actual"/summary.md "$actual"/gates.json
 status=0
 say() { printf '%-32s %s\n' "$1" "$2"; }
+# Every php call gets this memory limit, whatever the local php.ini says: v2_cgn peaks near 200 MB and fails at the CLI default
+# of 128M (runner correction after the archived results, G4_V2_INTEGRATED_REASSEMBLY.md §7; it changes no measurement).
+PHP_MEMORY_LIMIT=1G
+php() { command php -d memory_limit="$PHP_MEMORY_LIMIT" "$@"; }
 
 [[ -f "$repo/vendor/autoload.php" ]] || { echo "no vendor/ — run 'composer install' first" >&2; exit 2; }
 git -C "$repo" merge-base --is-ancestor "$BASE_SHA" HEAD || { say baseline_is_ancestor FAIL; exit 4; }
@@ -27,7 +31,7 @@ if [[ -n "$(git -C "$repo" diff --name-only "$BASE_SHA" -- src composer.json com
     exit 4
 fi
 say baseline_src_identical "PASS ($BASE_SHA)"
-echo "php: $(php -r 'echo PHP_VERSION;')" >"$actual/versions.txt"
+echo "php: $(php -r 'echo PHP_VERSION;'), memory_limit $(php -r 'echo ini_get("memory_limit");')" >"$actual/versions.txt"
 
 trees="$work/trees"
 case "$trees" in "$here/results/work/"*) rm -rf "${trees:?}" ;; *) exit 2 ;; esac

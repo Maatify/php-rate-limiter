@@ -119,6 +119,9 @@ Rules for `clientInstanceId`:
    BRD 7 → 37/100 — compared with the **same strategy** on S0. The best response for BRU and X1 is the same on S0 (100/100 and 61/61,
    nothing is recorded), and the only best-response difference was BRD, caused by the confidence lift (rule 1), not by removing
    the UA. These cells are observations under §3; the reservation of §9 is what bounds that flow.
+   > **Post-G4 v2 note (2026-10-18).** Not measured yet. G4 and G4 v2 carried the instance id in `sessionDeviceId` (untrusted) and
+   > kept the UA in the K5 material, a declared deviation; this rule, and the promise that a browser update is not a new device,
+   > are therefore not implemented in any study (`G4_V2_INTEGRATED_REASSEMBLY.md` §9).
 3. **A new id mints no budget** — not for the account, the source or the operation. Otherwise an attacker clears the cookie and
    starts over.
 4. **Absence is declared absence.** A client without an id is an anonymous individual and is never grouped with every user of the

@@ -18,7 +18,7 @@
 | Source baseline | `main@ac97c1232dd1c03f73cacaffdffb7ed9345f06ef`; `src/`, `composer.json`, `composer.lock` byte-identical to `4c6ca61` (checked by `run.sh`) |
 | Builds | the archived G4 builder, unchanged: `CAND`, `NOESC`, `G4` (NOESC + K5 separation, pipeline `45d201d0…63fd`), `C5` (CAND + K5 separation, `3111c315…6f79`); K5 separation patch `7af55e4a…b278b1` |
 | New code | [`lib/g4v2.php`](g4/integrated_v2/lib/g4v2.php): corrected builders, the input assertion, the Host model with the password-change binding and sliding renewal (`G4V2Host`), the gate with the P-lane refund budget (`G4V2Gate`, `G4V2PBudget`), and the replay with both hooks. Four scenarios, `report.php`, `run.sh`. The G4 library is reused read-only |
-| Reproduction | `bash investigations/k2-identity-admission-97/g4/integrated_v2/run.sh`; two consecutive runs byte-identical. Exit 0 = `FULL2` supported for `pre+out` |
+| Reproduction | `bash investigations/k2-identity-admission-97/g4/integrated_v2/run.sh`; two consecutive runs byte-identical. Exit 0 = `FULL2` supported for `pre+out`. The runner passes `memory_limit=1G` to every php call (§7) |
 
 ### 1.1 Harness validity (PLAN.md §1, §6.1)
 
@@ -38,7 +38,8 @@
 | Part R — G4 with corrected input | **NO-GO AFTER EXPERIMENT (A1, C4, E, P)**: the same verdict and the same failed gates as the G4 archive |
 
 Scope of the Part N verdict: synthetic streams, reference stores and a controlled clock; study-code tokens and a Host model; the
-password change modelled as a proven Host event; the UA kept in the K5 material (§9). It is not an Architecture GO.
+password change modelled as a proven Host event; the UA kept in the K5 material, so the proposal's §5 rule 2 promise (a browser
+update is not a new device) is **not measured** (§9). It is not an Architecture GO.
 
 ## 3. What changed from G4 after the input correction (Part R, `MEASURED`)
 
@@ -150,6 +151,14 @@ escalation shown, K5 separation not shown (E2 gate). Both tables are in [`expect
 * **Development corrections before the first archived run** (none changes a scenario after its results were seen): a PHP 8 nested
   ternary in the BOOT pairing; in `report.php`, the V1 row-count check, C6 for an arm without CGN-B, the BOOT / CGN-B measures in the
   necessity table, and a cause column that joined two arrays with `+` (the F131-01 defect class) — replaced by two labelled fields.
+* **Runner correction after the results (review of PR #132).** `run.sh` relied on the local `php.ini` (1024M on the machine
+  that produced the archive). On a PHP CLI with the default `memory_limit` of 128M, `v2_cgn.php` stops with "Allowed memory size of
+  134217728 bytes exhausted" (its peak resident size is about 200 MB; it completes at 256M). `run.sh` now passes
+  `-d memory_limit=1G` to every php call (scenarios and `report.php`) and records the effective limit in `versions.txt`. The plan,
+  the scenarios, `report.php` and `expected/` are unchanged; a full re-run under an ini that sets only `memory_limit=128M`
+  reproduces `expected/` byte for byte (exit 0). It changes no measurement. The archived G4 runner (`g4/integrated/run.sh`) has the
+  same dependency (`g4_cgn.php` also fails at 128M); it is left unchanged as part of the G4 archive and needs
+  `php -d memory_limit=1G` or a php.ini limit of at least 256M to be reproduced.
 * **Post-hoc material** (excluded from every gate): §3's explanation of why the input mattered little, and §5.3's observation on the
   owner's own P-lane penalties.
 
@@ -167,6 +176,8 @@ escalation shown, K5 separation not shown (E2 gate). Both tables are in [`expect
 ## 9. Limits
 
 As G4: reference stores and a controlled clock; no Redis, concurrency or failover; synthetic streams and a CGN model; study-code
-tokens and a Host model, not real cookies; the UA stays in the K5 material (the instance id is in `sessionDeviceId`, untrusted); the
+tokens and a Host model, not real cookies; the UA stays in the K5 material (declared deviation, as in G4: the instance id is in
+`sessionDeviceId`, untrusted), so the proposal's §5 rule 2 (K5 = account + id without the UA; a browser update is not a new
+device) is not implemented and not measured; the
 stolen-token thief rotates its UA; the proof-acquisition paths of G2 are not combined; multi-IP spray and `U_glob` are out of scope;
 the security of the Host's password-change or recovery flow is outside the library. Test values only.
