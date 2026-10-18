@@ -16,6 +16,8 @@
 > written. Where its results change a statement here, a dated note is added next to that statement; the original text is kept.
 > **Post-G4 note (2026-10-18):** the integrated G4 study ([`G4_INTEGRATED_ASSEMBLY.md`](G4_INTEGRATED_ASSEMBLY.md)) measured the
 > whole assembly with binding; its notes are added the same way.
+> **Post-G4 v2 note (2026-10-18):** G4 v2 ([`G4_V2_INTEGRATED_REASSEMBLY.md`](G4_V2_INTEGRATED_REASSEMBLY.md)) re-measured G4 with
+> the instance id delivered to the pipeline (F131-01) and measured three new components; its notes are added the same way.
 > **Authority:** the Owner decides every material policy, public contract, ADR, study, merge and release.
 
 | Label | Meaning |
@@ -283,6 +285,16 @@ device or with cleared cookies", without forcing a passkey or a link on any cons
 > fixtures did not deliver the instance id to the pipeline, so the stream results (including the `P_proof` refusals of heavy
 > bound users, §4.2 there) and the BRU24-HV count are not evidenced as planned (§6.4 there).
 
+> **Post-G4 v2 note (2026-10-18).** G4 v2 re-measured every G4 arm with the planned input: no gate, best-response number or
+> BRU24 / BRU24-HV / REC number changed (5 of 684 stream rows differ, none a best response), so the G4 results above now stand as
+> planned, including the `P_proof` refusals and BRU24-HV 51. It then measured `FULL2` = the G4 assembly plus three components:
+> a P-lane budget that refunds successful logins, sliding token renewal on every verified success (30 days, absolute 90), and a new
+> token issued at the password change to the device that made it. **`FULL2` is EXPERIMENTALLY SUPPORTED — LIMITED SCOPE for Hosts
+> that record outcomes:** heavy bound users are no longer refused (L1 72 → 0), the owner is back on P at once after the password
+> change while the thief keeps failing (G4: never), E2 is identical with and without the population, and each new component and K5
+> separation is shown necessary. checkOnly-only Hosts still fail (gate P: L1 72, D2 61). Remaining owner residual: a new device, or
+> a token past its absolute lifetime, during a continuing attack (`G4_V2_INTEGRATED_REASSEMBLY.md` §2, §5).
+
 ## 8. Optional evidence
 
 | What the Host has | The request enters | Under attack |
@@ -446,7 +458,7 @@ decision, not a measurement.
 | --- | --- | --- |
 | 1 | Write ADR part 1 (§14), including the best-response definition over free identifiers | pending |
 | 2 | Single-IP spray budget: adopt `U_src` = 40 as the study value, and defer the final ADR number until the failure-cap result (§6.3) | pending. Post-G3 (2026-10-18): `U_src` = 24 is a measured alternative, and the failure cap was NO-GO as registered (`G3_ADMISSION_BUDGETS.md` §2, §4.1–§4.2); any `U_src` is a separate Owner security decision |
-| 3 | K5 separation by binding (recommended), with the allowance tied to the P family and E2 as a regression check (§13) | pending; approved for the G4 study only (2026-10-18). Post-G4: removes the carry-over of the owner's own U failures into P (post-hoc), but the registered E2 gate failed for an unrelated reason and the component was "not shown necessary" (`G4_INTEGRATED_ASSEMBLY.md` §4.4) |
+| 3 | K5 separation by binding (recommended), with the allowance tied to the P family and E2 as a regression check (§13) | pending; approved for the G4 study only (2026-10-18). Post-G4: removes the carry-over of the owner's own U failures into P (post-hoc), but the registered E2 gate failed for an unrelated reason and the component was "not shown necessary" (`G4_INTEGRATED_ASSEMBLY.md` §4.4). Post-G4 v2: shown necessary by a registered gate (the owner's own U failures on the same instance stay out of later P decisions; without separation 12 owner rows differ, `G4_V2_INTEGRATED_REASSEMBLY.md` §5.4) |
 | 4 | Per-account guessing budget: T, the longest an owner without proof waits after an attack stops, which sets the guesses per day (86,400 / T) | **approved by the Owner on 2026-10-17: T = 30 minutes as the study value only** (48 refills per day, ceiling 52 with C = 4; post-G3: 51 measured); not a production value. The final value follows the study |
 
 ## 16. Review history

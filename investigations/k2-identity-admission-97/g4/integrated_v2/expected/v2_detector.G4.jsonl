@@ -1,0 +1,3 @@
+{"s":"din","family":"STREAMS","revertedRejected":68,"reverted":68,"correctedRejected":0,"corrected":68,"pass":true}
+{"s":"din","family":"BRU24","revertedRejected":1,"reverted":1,"correctedRejected":0,"corrected":1,"pass":true}
+{"s":"din","family":"HAR-B","revertedRejected":1,"reverted":1,"correctedRejected":0,"corrected":1,"pass":true}
