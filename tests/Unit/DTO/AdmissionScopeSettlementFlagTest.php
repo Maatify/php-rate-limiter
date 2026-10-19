@@ -35,7 +35,7 @@ final class AdmissionScopeSettlementFlagTest extends TestCase
                 new AdmissionScopeDTO('n', $kind, 'k', 1, 1, null, $member, null, true);
                 self::fail('The flag must be rejected on ' . $kind->value);
             } catch (RateLimiterException) {
-                self::assertTrue(true);
+                $this->addToAssertionCount(1);
             }
         }
     }

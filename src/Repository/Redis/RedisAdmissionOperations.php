@@ -92,6 +92,14 @@ local function checkType(k, expected, label)
   if t == expected and not hasExpiry(k) then return label .. ' key has no expiry' end
   return nil
 end
+-- Settled size of a failure set: its members plus the pending members that are due (score <= now) and not yet in it.
+local function settledSize(setKey, pendingKey, now)
+  local size = redis.call('SCARD', setKey)
+  for _, m in ipairs(redis.call('ZRANGEBYSCORE', pendingKey, '-inf', now)) do
+    if redis.call('SISMEMBER', setKey, m) == 0 then size = size + 1 end
+  end
+  return size
+end
 -- Bucket: absent => full; a valid bucket => its refilled credit; anything else => nil, reason.
 local function readBucket(k, capacity, now)
   local t = keyType(k)
@@ -145,10 +153,18 @@ for i = 1, n do
     if prev ~= '' then live = live + redis.call('ZCOUNT', prev, '(' .. nowStr, '+inf') end
     s.exists, s.live = exists, live
   elseif kind == 's' then
+    -- A set scope carries its pending key in the slot a previous generation would use.
     local e = checkType(cur, 'set', 'set')
     if e then return bad(e) end
-    s.isMember = redis.call('SISMEMBER', cur, s.member) == 1
-    s.card = redis.call('SCARD', cur)
+    local ep = checkType(prev, 'zset', 'pending set')
+    if ep then return bad(ep) end
+    s.pending = prev
+    s.deadline = hasPermit and tonumber(ARGV[7]) or 0
+    s.inSet = redis.call('SISMEMBER', cur, s.member) == 1
+    local score = redis.call('ZSCORE', prev, s.member)
+    s.isMember = s.inSet or (score and tonumber(score) <= now)
+    s.card = settledSize(cur, prev, now)
+    s.freshPending = redis.call('EXISTS', prev) == 0
   elseif kind == 'b' then
     s.full = cap * ttl
     local credit, existsOrErr = readBucket(cur, s.full, now)
@@ -192,6 +208,11 @@ for i = 1, n do
       redis.call('ZADD', s.cur, string.format('%d', now + s.ttl), s.member)
       redis.call('EXPIRE', s.cur, s.ttl)
     end
+  elseif s.kind == 's' then
+    if hasPermit and not s.inSet then
+      redis.call('ZADD', s.pending, 'LT', string.format('%d', s.deadline), s.member)
+      if s.freshPending then redis.call('EXPIRE', s.pending, s.ttl) end
+    end
   elseif s.kind == 'b' then
     local remaining = s.credit - s.ttl
     redis.call('HSET', s.cur, 'credit', string.format('%d', remaining), 'last', nowStr)
@@ -217,15 +238,20 @@ local success = ARGV[3] == 's'
 local sc = {}
 -- Phase 1: validate every key this outcome will touch. Nothing is written.
 for i = 1, n do
-  local base = 4 + (i - 1) * 4
+  local base = 4 + (i - 1) * 5
   local kind = ARGV[base]
   local cap = tonumber(ARGV[base + 1])
   local ttl = tonumber(ARGV[base + 2])
-  local cur = KEYS[i]
-  local s = {kind = kind, cap = cap, ttl = ttl, cur = cur, member = ARGV[base + 3]}
+  local cur = KEYS[2 * i - 1]
+  local s = {kind = kind, cap = cap, ttl = ttl, cur = cur, member = ARGV[base + 3], keepsSettled = ARGV[base + 4] == '1'}
   if kind == 's' then
     local e = checkType(cur, 'set', 'set')
     if e then return bad(e) end
+    local ep = checkType(KEYS[2 * i], 'zset', 'pending set')
+    if ep then return bad(ep) end
+    s.pending = KEYS[2 * i]
+    local score = redis.call('ZSCORE', s.pending, s.member)
+    s.score = score and tonumber(score) or nil
     s.fresh = redis.call('EXISTS', cur) == 0
   elseif kind == 'c' and success then
     local v, e = readCounter(cur)
@@ -239,15 +265,18 @@ for i = 1, n do
   end
   sc[i] = s
 end
--- Phase 2: apply. A failure only adds to a set; a success removes from a set and refunds counters and the bucket.
+-- Phase 2: apply. A failure settles its member; a success cancels a pending member that is not yet due, removes a settled
+-- one unless the scope keeps it, and refunds counters and the bucket. A success never removes a due pending member.
 for i = 1, n do
   local s = sc[i]
   if s.kind == 's' then
     if success then
-      redis.call('SREM', s.cur, s.member)
+      if not s.keepsSettled then redis.call('SREM', s.cur, s.member) end
+      if s.score ~= nil and s.score > now then redis.call('ZREM', s.pending, s.member) end
     else
       redis.call('SADD', s.cur, s.member)
       if s.fresh then redis.call('EXPIRE', s.cur, s.ttl) end
+      redis.call('ZREM', s.pending, s.member)
     end
   elseif s.kind == 'c' and success then
     if s.value > 0 then redis.call('DECR', s.cur) end
@@ -316,6 +345,12 @@ LUA;
         return $this->base() . ':' . self::KIND_CODE[$kind->value] . ':' . hash('sha256', $verifierClass . "\0" . $key);
     }
 
+    /** Pending (not yet settled) members of a failure set: a zset scored by the permit deadline, same logical key as its set. */
+    public function pendingKey(string $verifierClass, string $key): string
+    {
+        return $this->base() . ':p:' . hash('sha256', $verifierClass . "\0" . $key);
+    }
+
     public function permitKey(string $permitId): string
     {
         return $this->base() . ':permit:' . hash('sha256', $permitId);
@@ -339,6 +374,13 @@ LUA;
                 throw new RateLimiterException('Admission permit lifetime exceeds the representable expiry.');
             }
         }
+        if ($permit !== null) {
+            foreach ($request->scopes as $scope) {
+                if ($scope->kind === AdmissionScopeKindEnum::SET_SIZE && $permit->deadlineAt - $now > $scope->ttlSeconds) {
+                    throw new RateLimiterException('Admission permit deadline lies beyond the lifetime of a failure-set scope.');
+                }
+            }
+        }
         $keys = [];
         $args = [
             (string) $now,
@@ -353,7 +395,9 @@ LUA;
         foreach ($request->scopes as $scope) {
             $previous = $this->previousKeyOf($scope);
             $keys[] = $this->scopeKey($request->verifierClass, $scope->kind, $scope->key);
-            $keys[] = $previous === null ? '' : $this->scopeKey($request->verifierClass, $scope->kind, $previous);
+            $keys[] = $scope->kind === AdmissionScopeKindEnum::SET_SIZE
+                ? $this->pendingKey($request->verifierClass, $scope->key)
+                : ($previous === null ? '' : $this->scopeKey($request->verifierClass, $scope->kind, $previous));
             array_push(
                 $args,
                 self::KIND_CODE[$scope->kind->value],
@@ -396,7 +440,15 @@ LUA;
         $args = [(string) $now, (string) count($outcome->scopes), $outcome->outcome === AdmissionOutcomeKindEnum::SUCCESS ? 's' : 'f'];
         foreach ($outcome->scopes as $scope) {
             $keys[] = $this->scopeKey($outcome->verifierClass, $scope->kind, $scope->key);
-            array_push($args, self::KIND_CODE[$scope->kind->value], (string) $scope->capacity, (string) $scope->ttlSeconds, $scope->member ?? '');
+            $keys[] = $scope->kind === AdmissionScopeKindEnum::SET_SIZE ? $this->pendingKey($outcome->verifierClass, $scope->key) : '';
+            array_push(
+                $args,
+                self::KIND_CODE[$scope->kind->value],
+                (string) $scope->capacity,
+                (string) $scope->ttlSeconds,
+                $scope->member ?? '',
+                $scope->successKeepsSettled ? '1' : '0',
+            );
         }
         if ($this->integer($this->eval(self::OUTCOME, $keys, $args), 'admission outcome response') !== 1) {
             throw new RateLimiterException('Malformed admission outcome response.');

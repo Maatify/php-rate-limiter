@@ -35,6 +35,9 @@ final class AdmissionInMemoryReferenceStore extends FullCapabilityInMemoryStore 
     /** @var array<string, array<string, true>> */
     private array $sets = [];
 
+    /** @var array<string, array<string, int>> member => permit deadline, pending members of a failure set */
+    private array $pending = [];
+
     /** @var array<string, array{credit: int, last: int}> */
     private array $buckets = [];
 
@@ -54,6 +57,13 @@ final class AdmissionInMemoryReferenceStore extends FullCapabilityInMemoryStore 
                 throw new RateLimiterException('Only counter and device-member admission scopes can name a previous generation.');
             }
         }
+        if ($request->permit !== null) {
+            foreach ($request->scopes as $scope) {
+                if ($scope->kind === AdmissionScopeKindEnum::SET_SIZE && $request->permit->deadlineAt - $now > $scope->ttlSeconds) {
+                    throw new RateLimiterException('Admission permit deadline lies beyond the lifetime of a failure-set scope.');
+                }
+            }
+        }
         foreach ($request->scopes as $scope) {
             $own = $class . "\0" . $scope->key;
             $previous = $scope->previousKey === null || $scope->previousKey === $scope->key ? null : $class . "\0" . $scope->previousKey;
@@ -67,8 +77,7 @@ final class AdmissionInMemoryReferenceStore extends FullCapabilityInMemoryStore 
                     return new AdmissionReservationResultDTO(false, $scope->name);
                 }
             } elseif ($scope->kind === AdmissionScopeKindEnum::SET_SIZE) {
-                $members = $this->sets[$own] ?? [];
-                if (! isset($members[(string) $scope->member]) && count($members) >= $scope->capacity) {
+                if (! $this->isSettledMember($own, (string) $scope->member, $now) && $this->settledSize($own, $now) >= $scope->capacity) {
                     return new AdmissionReservationResultDTO(false, $scope->name);
                 }
             } else {
@@ -93,6 +102,9 @@ final class AdmissionInMemoryReferenceStore extends FullCapabilityInMemoryStore 
                 $this->devices[$own][(string) $scope->member] = $now + $scope->ttlSeconds;
             } elseif ($scope->kind === AdmissionScopeKindEnum::BUCKET) {
                 $this->buckets[$own] = ['credit' => $credits[$own] - $scope->ttlSeconds, 'last' => $now];
+            } elseif ($scope->kind === AdmissionScopeKindEnum::SET_SIZE && $permit !== null && ! isset($this->sets[$own][(string) $scope->member])) {
+                $member = (string) $scope->member;
+                $this->pending[$own][$member] = min($this->pending[$own][$member] ?? $permit->deadlineAt, $permit->deadlineAt);
             }
         }
         if ($permit !== null) {
@@ -115,10 +127,17 @@ final class AdmissionInMemoryReferenceStore extends FullCapabilityInMemoryStore 
         foreach ($outcome->scopes as $scope) {
             $own = $outcome->verifierClass . "\0" . $scope->key;
             if ($scope->kind === AdmissionScopeKindEnum::SET_SIZE) {
+                $member = (string) $scope->member;
                 if ($success) {
-                    unset($this->sets[$own][(string) $scope->member]);
+                    if (! $scope->successKeepsSettled) {
+                        unset($this->sets[$own][$member]);
+                    }
+                    if (isset($this->pending[$own][$member]) && $this->pending[$own][$member] > $now) {
+                        unset($this->pending[$own][$member]);
+                    }
                 } else {
-                    $this->sets[$own][(string) $scope->member] = true;
+                    $this->sets[$own][$member] = true;
+                    unset($this->pending[$own][$member]);
                 }
             } elseif ($success && $scope->kind === AdmissionScopeKindEnum::COUNTER) {
                 if (($this->counters[$own] ?? 0) > 0) {
@@ -171,6 +190,23 @@ final class AdmissionInMemoryReferenceStore extends FullCapabilityInMemoryStore 
         $this->permits[$permitId]['outcome'] = $outcome->value;
 
         return AdmissionPermitClaimEnum::ACCEPTED;
+    }
+
+    private function isSettledMember(string $own, string $member, int $now): bool
+    {
+        return isset($this->sets[$own][$member]) || ($this->pending[$own][$member] ?? PHP_INT_MAX) <= $now;
+    }
+
+    private function settledSize(string $own, int $now): int
+    {
+        $size = count($this->sets[$own] ?? []);
+        foreach ($this->pending[$own] ?? [] as $member => $deadline) {
+            if ($deadline <= $now && ! isset($this->sets[$own][$member])) {
+                $size++;
+            }
+        }
+
+        return $size;
     }
 
     private function deviceExists(AdmissionScopeDTO $scope, string $own, ?string $previous, int $now): bool

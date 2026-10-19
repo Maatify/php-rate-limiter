@@ -891,6 +891,7 @@ Redis it supports:
 
 ```
 {prefix}:{sha256(namespace)}:adm:{family}:{sha256(verifierClass \0 key)}      scope keys
+{prefix}:{sha256(namespace)}:adm:p:{sha256(verifierClass \0 key)}              pending members of a failure set
 {prefix}:{sha256(namespace)}:adm:permit:{sha256(permitId)}                     permit records
 {prefix}:{sha256(namespace)}:adm:epoch:{sha256(key)}                           binding epochs
 ```
@@ -905,6 +906,7 @@ set) and `b` (bucket); one logical key never changes family.
 | `d` device members | sorted set | member scored by its expiry (caller time + member lifetime); a member is live when its score is above the caller's `now`; the key is pruned only by an admitted write to the current set, and `EXPIRE` is refreshed only by that write |
 | `s` set | set | accounts of the net-failure set (U) or the D8 set (P); `EXPIRE` set when the first failure creates it; removed members never prune other members |
 | `b` bucket | hash `credit`, `last` | credit-seconds, refilled 1 per second of caller time up to `C x T`; absent means full; `EXPIRE` is the time to full, so an expired bucket and an absent bucket are the same state |
+| `p` pending (reserved, dormant; 5-b2.1) | sorted set | pending members of the failure set with the same logical key: member scored by its permit `deadline` (an earlier deadline wins on a second reservation). A member counts toward the set only when its score is `<= now` and it is not already in the set; a success removes a pending member only while its score is `> now`. `EXPIRE` equals the scope `ttlSeconds`, set when the key is created and never renewed; a reservation without a permit never writes it; a refusal never writes it |
 | permit | hash `state`, `lane`, `subject`, `operation`, `deadline`, `grace`, `outcome` | created by the admitting reservation in the same script, lifetime `deadline + grace - now`; `ISSUED` then `CLAIMED`; a claim is one compare-and-set |
 | epoch | string | a canonical non-negative integer **with no TTL**: the interface carries no lifetime and a lapsed epoch would revive voided credentials; retention of the key is the Host operator's concern until a decision fixes a lifetime |
 

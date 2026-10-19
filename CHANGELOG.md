@@ -23,6 +23,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   included) keeps the account-wide escalation on K4.
 
 ### Added
+- Settlement of expired admission permits in the admission store (dormant, no policy can opt in): a reservation that carries a permit records a pending member in each failure set it names, and the member counts as one failure from the permit `deadline` (never before, never twice); an explicit failure counts at once, a success cancels a not-yet-due member, counters and buckets are untouched. New optional trailing `AdmissionScopeDTO::$successKeepsSettled` (default `false`, set-size scopes only) and a reserved `p` key family. No interface method was added or changed.
 - `KnownDeviceAccountAllowancePolicyInterface` (opt-in, authentication capability) for
   custom authentication policies. An active allowance requires positive K5 failure delta
   and K5 thresholds; `API_OVERUSE` cannot be combined with it; `null` disables it.

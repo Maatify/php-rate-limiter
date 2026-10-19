@@ -90,6 +90,6 @@ final class AdmissionSettlementNm7RedisTest extends AdmissionRedisGateTestCase
     public function testDetectorNonAtomicSettlementExceedsTheCapUnderTheSameConcurrency(): void
     {
         $all = [...$this->rounds(16, 'nonatomic'), ...$this->rounds(64, 'nonatomic')];
-        self::assertGreaterThan(3, max($all), 'DETECTOR: the non-atomic control must exceed the cap: ' . json_encode($all));
+        self::assertGreaterThan(3, max([...$all, 0]), 'DETECTOR: the non-atomic control must exceed the cap: ' . json_encode($all));
     }
 }
