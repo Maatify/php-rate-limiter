@@ -69,10 +69,23 @@ final class FamilyRpG5Test extends TestCase
 
         self::assertSame($kdl['dec'], $uac['dec']);
         self::assertTrue($uac['k5SameKey']);
-        self::assertSame($uac['before']['k5key'], $uac['after']['k5key']);
-        self::assertSame($uac['before']['allowKey'], $uac['after']['allowKey']);
-        self::assertSame($kdl['after']['allowance'], $uac['after']['allowance']);
+        foreach (['k5key', 'allowKey'] as $field) {
+            self::assertSame(self::part($uac, 'before')[$field], self::part($uac, 'after')[$field]);
+        }
+        self::assertSame(self::part($kdl, 'after')['allowance'], self::part($uac, 'after')['allowance']);
         self::assertSame($uax['ctl'], $uax['flip']);
+    }
+
+    /**
+     * @param array<string, mixed> $row
+     * @return array<string, mixed>
+     */
+    private static function part(array $row, string $name): array
+    {
+        $part = $row[$name] ?? null;
+        self::assertIsArray($part);
+
+        return FamilyFixtures::normalize($part);
     }
 
     /** @return iterable<string, array{0: string}> */
@@ -158,7 +171,7 @@ final class FamilyRpG5Test extends TestCase
         foreach (['P', 'U'] as $lane) {
             $row = FamilyFixtures::normalize(FamilyFixtures::run('AE', self::lane($lane), $mutant));
             self::assertSame($archive["{$lane}|AE"], $row);
-            self::assertNotSame($reference["{$lane}|AE"]['dec'], $row['dec']);
+            self::assertNotSame($reference["{$lane}|AE"], $row, 'The ablation must change the row (U: the decision string, P: the second device).');
         }
     }
 

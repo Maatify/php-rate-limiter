@@ -153,6 +153,20 @@ K4 = AccountID
 * AccountID MUST be a blind index or internal ID
 * Raw usernames/emails MUST NOT be used
 
+**Admission family K4P (reserved, dormant; DEC-024, DEC-025 4.A).** For a policy that declares
+the admission capability, a request carrying the proven lane derives the account key from the key
+type `k4p` instead of `k4`:
+
+```
+K4P = AccountID          // {policy}:rate_limiter:k4p:v2:{env}:{accountId}
+```
+
+Rule A only: account-wide and **not** cleared at a password change; there is no scope suffix
+(rules B and C are not implemented). The slot of the pipeline's key map stays `k4`, so the DEC-007
+lifecycle primitives and the DEC-003 cycle history apply to K4P with no change, as a distinct
+logical identity from K4. The unproven lane and every policy that did not opt in keep `k4`. No
+policy can opt in yet; the change of this section's LOCKED status rides with DEC-026.
+
 ---
 
 ### 3.5 K5 — Account Identifier + Device Fingerprint
@@ -173,6 +187,18 @@ K5 = AccountID + DeviceFP
 * K5 failures are subject to per-device micro-caps for budget eligibility (see `DECISION_MATRIX.md` 2.4.1 and §4.5.2)
 * K5 presence alone does NOT prove a device was previously verified for the account
   (see `DEVICE_FINGERPRINT.md` §4.3)
+
+**Admission family K5p and the K5 material (reserved, dormant; DEC-025 9.1).** For a policy that
+declares the admission capability: (1) the proven lane derives the device key from the key type
+`k5p` (`{policy}:rate_limiter:k5p:v2:{env}:{accountId}:{material}`) and keeps the unsuffixed
+`k5` for the unproven lane; (2) `{material}` is the instance-id component `deviceIdHash` when the
+device carries one, else the fingerprint component (today's derivation). The pipeline selects a
+component and never re-hashes it (`DEVICE_FINGERPRINT.md` §5.1.1). The micro-cap key
+(`microcap:k5` / `microcap:k5p`) and the device Anti-Equilibrium watcher
+(`anti_equilibrium_device` / `anti_equilibrium_device_p`) follow the same family and material.
+K3, K2, churn, dilution, the device caps and the distributed-account snapshots (whose member is
+the K5 enforcement key itself) are not re-derived. A request without a lane, and every policy
+that did not opt in, ignore any instance id and derive today's keys. No policy can opt in yet.
 
 ---
 
@@ -746,9 +772,9 @@ dormant: no code in this change derives a key with any of them.
 * The `_p` purposes of the proven (P) lane: `known_device_allowance_p`, `anti_equilibrium_device_p`,
   `anti_equilibrium_p` and `budget_cooldown_p`, each the unsuffixed purpose with `_p` appended
   (same preimage shape, same rotation rules), and the key types `K4P` and `K5p` of §3.4 / §3.5.
-  They are reserved here so the P family cannot collide with the unsuffixed family; the pipeline
-  that writes them arrives with the engine stage (5-b3a), and a policy that did not opt in never
-  reads or writes them.
+  They are reserved here so the P family cannot collide with the unsuffixed family. The evaluation
+  pipeline derives them (stage 5-b3a) only for a call that carries the proven lane, which no
+  production code passes yet; a policy that did not opt in never reads or writes them.
 
 The device Anti-Equilibrium watcher (DEC-021) extends this preimage with the
 fingerprint hash:

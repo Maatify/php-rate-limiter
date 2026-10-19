@@ -59,30 +59,43 @@ final class FamilyFixtures
         }
         $rows = [];
         foreach ($lines as $line) {
-            $row = json_decode($line, true, 512, JSON_THROW_ON_ERROR);
-            if (! is_array($row)) {
-                throw new \LogicException('Archive row is not an object.');
+            $row = self::object(json_decode($line, true, 512, JSON_THROW_ON_ERROR));
+            $lane = $row['lane'] ?? null;
+            $fixture = $row['fixture'] ?? null;
+            if (! is_string($lane) || ! is_string($fixture)) {
+                throw new \LogicException('Archive row has no lane or fixture.');
             }
-            $key = $row['lane'] . '|' . $row['fixture'];
             unset($row['s'], $row['arm'], $row['lane'], $row['fixture']);
-            $rows[$key] = $row;
+            $rows[$lane . '|' . $fixture] = $row;
         }
 
         return $rows;
     }
 
     /**
-     * @param array<string, mixed> $row
+     * @param array<mixed> $row
      * @return array<string, mixed>
      */
     public static function normalize(array $row): array
     {
-        $decoded = json_decode(json_encode($row, JSON_THROW_ON_ERROR), true, 512, JSON_THROW_ON_ERROR);
+        return self::object(json_decode(json_encode($row, JSON_THROW_ON_ERROR), true, 512, JSON_THROW_ON_ERROR));
+    }
+
+    /** @return array<string, mixed> */
+    private static function object(mixed $decoded): array
+    {
         if (! is_array($decoded)) {
-            throw new \LogicException('Row did not normalize to an object.');
+            throw new \LogicException('Value is not an object.');
+        }
+        $object = [];
+        foreach ($decoded as $key => $value) {
+            if (! is_string($key)) {
+                throw new \LogicException('Object has a non-string key.');
+            }
+            $object[$key] = $value;
         }
 
-        return $decoded;
+        return $object;
     }
 
     /**
@@ -122,7 +135,7 @@ final class FamilyFixtures
         return $b !== null && $b->expiresAt > $lab->clock->now()->getTimestamp() ? $b->level : null;
     }
 
-    /** @return array<string, mixed> */
+    /** @return array{k5key: string, k5score: ?int, blkK5: ?int, blkK4: ?int, allowKey: string, allowance: ?int} */
     public static function snapshot(FamilyLab $lab, RateLimitContextDTO $c): array
     {
         $k5 = self::k5Key($lab, $c);
@@ -166,113 +179,122 @@ final class FamilyFixtures
         $lab = self::lab($lane, $pipelineClass);
         $reach = 0;
         $dec = '';
-        switch ($base) {
-            case 'STABLE-600':
-            case 'STABLE-300':
-            case 'STABLE-60':
-                $iv = (int) substr($base, 7);
-                $maxK4 = 0;
-                for ($t = 0; $t < 86400; $t += $iv) {
-                    $lab->at($t);
-                    $c = self::context(self::UA_A, $inst('i:kd'));
-                    self::attempt($lab, $c, $dec, $reach);
-                    $maxK4 = max($maxK4, (int) $lab->store->get(self::k4Key($lab, $c))?->value);
-                }
-
-                return ['reach' => $reach, 'maxK4score' => $maxK4];
-            case 'KDL':
-            case 'UAC12':
-                $c1 = self::context(self::UA_A, $inst('i:kd'));
-                $c2 = self::context($base === 'UAC12' ? self::UA_B : self::UA_A, $inst('i:kd'));
-                $maxK5 = $maxK4 = 0;
-                for ($i = 0; $i < 12; $i++) {
-                    $lab->at($i * 60);
-                    $cur = $i >= 6 ? $c2 : $c1;
-                    self::attempt($lab, $cur, $dec, $reach);
-                    $snap = self::snapshot($lab, $cur);
-                    $maxK5 = max($maxK5, (int) $snap['blkK5']);
-                    $maxK4 = max($maxK4, (int) $snap['blkK4']);
-                }
-                $other = $lab->run(self::context(self::UA_A, $inst('i:other')), 'check')['d'];
-
-                return [
-                    'dec' => $dec, 'reach' => $reach, 'maxK5Level' => $maxK5, 'maxK4Level' => $maxK4, 'secondDevice' => $other,
-                    'before' => self::snapshot($lab, $c1), 'after' => self::snapshot($lab, $c2),
-                    'k5SameKey' => self::k5Key($lab, $c1) === self::k5Key($lab, $c2),
-                ];
-            case 'UAX24':
-                $out = [];
-                foreach (['flip' => true, 'ctl' => false] as $k => $flip) {
-                    $lab = self::lab($lane, $pipelineClass);
-                    $reach = 0;
-                    $dec = '';
-                    for ($t = 0; $t < 86400; $t += 60) {
-                        $lab->at($t);
-                        self::attempt($lab, self::context($flip && $t >= 43200 ? self::UA_B : self::UA_A, $inst('i:kd')), $dec, $reach);
-                    }
-                    $out[$k] = $reach;
-                }
-
-                return ['flip' => $out['flip'], 'ctl' => $out['ctl']];
-            case 'AE':
+        if (in_array($base, ['STABLE-600', 'STABLE-300', 'STABLE-60'], true)) {
+            $iv = (int) substr($base, 7);
+            $maxK4 = 0;
+            for ($t = 0; $t < 86400; $t += $iv) {
+                $lab->at($t);
                 $c = self::context(self::UA_A, $inst('i:kd'));
-                $lab->at(0);
-                for ($i = 0; $i < 4; $i++) {
-                    self::attempt($lab, $c, $dec, $reach);
-                }
-                for ($i = 0; $i < 3; $i++) {
-                    $dec .= $lab->run($c, 'check')['d'];
-                }
-                $lab->at(300);
-                $r = $lab->run($c, 'check');
-                $dec .= '|' . $r['d'];
-                if ($r['d'] === 'A') {
-                    $f = $lab->run($c, 'fail');
-                    $dec .= 'f' . $f['d'] . $f['lvl'];
-                }
-                $same = $lab->run($c, 'check')['d'];
-                $second = $lab->run(self::context(self::UA_A, $inst('i:other')), 'check')['d'];
+                self::attempt($lab, $c, $dec, $reach);
+                $maxK4 = max($maxK4, $lab->store->get(self::k4Key($lab, $c))->value ?? 0);
+            }
 
-                return ['dec' => $dec, 'sameDevice' => $same, 'secondDevice' => $second, 'snap' => self::snapshot($lab, $c)];
-            case 'MIXPRES':
-                $out = [];
-                foreach (['both' => true, 'ctl' => false] as $k => $withB) {
-                    $lab = self::lab($lane, $pipelineClass);
-                    $a = $unused = '';
-                    $n = 0;
-                    if ($withB) {
-                        foreach ([0, 30, 60, 90] as $t) {
-                            $lab->at($t);
-                            self::attempt($lab, self::context(self::UA_B, null), $unused, $n);
-                        }
-                    }
-                    foreach ([120, 150] as $t) {
+            return ['reach' => $reach, 'maxK4score' => $maxK4];
+        }
+
+        if (in_array($base, ['KDL', 'UAC12'], true)) {
+            $c1 = self::context(self::UA_A, $inst('i:kd'));
+            $c2 = self::context($base === 'UAC12' ? self::UA_B : self::UA_A, $inst('i:kd'));
+            $maxK5 = $maxK4 = 0;
+            for ($i = 0; $i < 12; $i++) {
+                $lab->at($i * 60);
+                $cur = $i >= 6 ? $c2 : $c1;
+                self::attempt($lab, $cur, $dec, $reach);
+                $snap = self::snapshot($lab, $cur);
+                $maxK5 = max($maxK5, $snap['blkK5'] ?? 0);
+                $maxK4 = max($maxK4, $snap['blkK4'] ?? 0);
+            }
+            $other = $lab->run(self::context(self::UA_A, $inst('i:other')), 'check')['d'];
+
+            return [
+                'dec' => $dec, 'reach' => $reach, 'maxK5Level' => $maxK5, 'maxK4Level' => $maxK4, 'secondDevice' => $other,
+                'before' => self::snapshot($lab, $c1), 'after' => self::snapshot($lab, $c2),
+                'k5SameKey' => self::k5Key($lab, $c1) === self::k5Key($lab, $c2),
+            ];
+        }
+
+        if ($base === 'UAX24') {
+            $out = [];
+            foreach (['flip' => true, 'ctl' => false] as $k => $flip) {
+                $lab = self::lab($lane, $pipelineClass);
+                $reach = 0;
+                $dec = '';
+                for ($t = 0; $t < 86400; $t += 60) {
+                    $lab->at($t);
+                    self::attempt($lab, self::context($flip && $t >= 43200 ? self::UA_B : self::UA_A, $inst('i:kd')), $dec, $reach);
+                }
+                $out[$k] = $reach;
+            }
+
+            return ['flip' => $out['flip'], 'ctl' => $out['ctl']];
+        }
+
+        if ($base === 'AE') {
+            $c = self::context(self::UA_A, $inst('i:kd'));
+            $lab->at(0);
+            for ($i = 0; $i < 4; $i++) {
+                self::attempt($lab, $c, $dec, $reach);
+            }
+            for ($i = 0; $i < 3; $i++) {
+                $dec .= $lab->run($c, 'check')['d'];
+            }
+            $lab->at(300);
+            $r = $lab->run($c, 'check');
+            $dec .= '|' . $r['d'];
+            if ($r['d'] === 'A') {
+                $f = $lab->run($c, 'fail');
+                $dec .= 'f' . $f['d'] . $f['lvl'];
+            }
+            $same = $lab->run($c, 'check')['d'];
+            $second = $lab->run(self::context(self::UA_A, $inst('i:other')), 'check')['d'];
+
+            return ['dec' => $dec, 'sameDevice' => $same, 'secondDevice' => $second, 'snap' => self::snapshot($lab, $c)];
+        }
+
+        if ($base === 'MIXPRES') {
+            $out = [];
+            foreach (['both' => true, 'ctl' => false] as $k => $withB) {
+                $lab = self::lab($lane, $pipelineClass);
+                $a = $unused = '';
+                $n = 0;
+                if ($withB) {
+                    foreach ([0, 30, 60, 90] as $t) {
                         $lab->at($t);
-                        self::attempt($lab, self::context(self::UA_A, 'i:a'), $a, $n);
+                        self::attempt($lab, self::context(self::UA_B, null), $unused, $n);
                     }
-                    $out[$k] = $a;
                 }
-                $keyA = substr(self::k5Key($lab, self::context(self::UA_A, 'i:a')), 0, 12);
-                $keyB = substr(self::k5Key($lab, self::context(self::UA_B, null)), 0, 12);
-
-                return [
-                    'both' => $out['both'], 'ctl' => $out['ctl'], 'k5KeyA' => $keyA, 'k5KeyB' => $keyB,
-                    'keysDiffer' => $keyA !== $keyB, 'aIdentical' => $out['both'] === $out['ctl'],
-                ];
-            case 'ROT-300':
-                for ($t = 0; $t < 86400; $t += 300) {
+                foreach ([120, 150] as $t) {
                     $lab->at($t);
-                    self::attempt($lab, self::context(self::UA_A, $inst('i:r' . $t)), $dec, $reach);
+                    self::attempt($lab, self::context(self::UA_A, 'i:a'), $a, $n);
                 }
+                $out[$k] = $a;
+            }
+            $keyA = substr(self::k5Key($lab, self::context(self::UA_A, 'i:a')), 0, 12);
+            $keyB = substr(self::k5Key($lab, self::context(self::UA_B, null)), 0, 12);
 
-                return ['reach' => $reach];
-            case 'UAROT-300':
-                for ($t = 0; $t < 86400; $t += 300) {
-                    $lab->at($t);
-                    self::attempt($lab, self::context(intdiv($t, 300) % 2 === 1 ? self::UA_A : self::UA_B, $inst('i:kd')), $dec, $reach);
-                }
+            return [
+                'both' => $out['both'], 'ctl' => $out['ctl'], 'k5KeyA' => $keyA, 'k5KeyB' => $keyB,
+                'keysDiffer' => $keyA !== $keyB, 'aIdentical' => $out['both'] === $out['ctl'],
+            ];
+        }
 
-                return ['reach' => $reach];
+        if ($base === 'ROT-300') {
+            for ($t = 0; $t < 86400; $t += 300) {
+                $lab->at($t);
+                self::attempt($lab, self::context(self::UA_A, $inst('i:r' . $t)), $dec, $reach);
+            }
+
+            return ['reach' => $reach];
+        }
+
+        if ($base === 'UAROT-300') {
+            for ($t = 0; $t < 86400; $t += 300) {
+                $lab->at($t);
+                self::attempt($lab, self::context(intdiv($t, 300) % 2 === 1 ? self::UA_A : self::UA_B, $inst('i:kd')), $dec, $reach);
+            }
+
+            return ['reach' => $reach];
+
         }
 
         throw new \LogicException("unknown pipeline fixture {$fixture}");

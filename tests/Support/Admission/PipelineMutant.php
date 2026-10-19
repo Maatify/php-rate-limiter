@@ -32,7 +32,9 @@ final class PipelineMutant
 
         $class = 'Maatify\\RateLimiter\\Service\\' . $name;
         self::load($source, $name);
-        self::assertClass($class, EvaluationPipeline::class);
+        if (! class_exists($class) || ! is_a($class, EvaluationPipeline::class, true)) {
+            throw new \LogicException("Mutant {$class} did not load as a pipeline.");
+        }
 
         return $class;
     }
@@ -55,7 +57,9 @@ final class PipelineMutant
 
         $class = 'Maatify\\RateLimiter\\Service\\' . $name;
         self::load($source, $name);
-        self::assertClass($class, LaneAwareReaderInterface::class);
+        if (! class_exists($class) || ! is_a($class, LaneAwareReaderInterface::class, true)) {
+            throw new \LogicException("Mutant {$class} did not load as a lane-aware reader.");
+        }
 
         return $class;
     }
@@ -133,14 +137,6 @@ final class PipelineMutant
             require $file;
         } finally {
             unlink($file);
-        }
-    }
-
-    /** @param class-string $parent */
-    private static function assertClass(string $class, string $parent): void
-    {
-        if (! class_exists($class) || ! is_a($class, $parent, true)) {
-            throw new \LogicException("Mutant {$class} did not load as a {$parent}.");
         }
     }
 }

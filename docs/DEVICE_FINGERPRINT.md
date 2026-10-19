@@ -334,6 +334,19 @@ is consumed as one member of the previous generation (`docs/KEY_STRATEGY.md` §4
 with the previous-generation outer secret (`previousKeySecret ?? currentKeySecret`) — never
 recombined across generations.
 
+**Instance-id component (reserved, dormant).** `DeviceIdentityDTO` also carries the optional
+`deviceIdHash` and `previousDeviceIdHash`: the resolver hashes `"id1|" + clientInstanceId` once by
+the current and (when configured) the previous hasher, exactly like the fingerprint. The id is an
+untrusted continuity hint: the component **never raises `confidence`** and never sets
+`isTrustedSession` or `isDevicePreviouslyVerifiedForAccount`. Only an evaluation call that carries
+an admission lane (a policy that declared the admission capability, none yet in production)
+consumes it, and only for the K5 family (K5 score, K5 micro-cap, device Anti-Equilibrium watcher):
+the pipeline **selects** `deviceIdHash` when present and `fingerprintHash` otherwise, and never
+re-hashes either. The previous generation of the id material is the same material hashed by the
+previous hasher and keyed by the previous outer secret; a device that starts sending an id changes
+its K5 material and therefore restarts its K5 (a one-time cost, `RUNTIME_IMPLEMENTATION_CONTRACT.md`
+§6 M4). `FingerprintHasher` is unchanged. A call without a lane ignores the id entirely.
+
 #### 5.1.2 Resolver Responsibility
 
 `DeviceIdentityResolverInterface::resolve(RateLimitContextDTO $context): DeviceIdentityDTO`

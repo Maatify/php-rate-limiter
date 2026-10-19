@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace Maatify\RateLimiter\Service;
 
 use Maatify\RateLimiter\Config\BlockPolicyInterface;
+use Maatify\RateLimiter\Enum\AdmissionLaneEnum;
 use Maatify\RateLimiter\Enum\PolicyCapabilityEnum;
 use Maatify\RateLimiter\Config\KnownDeviceAccountAllowancePolicyInterface;
 use Maatify\RateLimiter\Config\PolicyCapabilityProviderInterface;
@@ -145,19 +146,24 @@ class EvaluationPipeline
      * while backend/contract corruption propagates. A successful claim consumes
      * only the one-shot application handoff marker, never punishment evidence,
      * score, generation, block, cycle, or pause state.
+     *
+     * The optional lane selects the account key family the evidence is read
+     * from: `P` reads K4P, any other value reads K4. `null` is today's
+     * behaviour. The lane is trusted here (only a policy name is available).
      */
     public function claimPostPunishmentReentry(
         RateLimitContextDTO $context,
         DeviceIdentityDTO $device,
         string $policyName,
         string $lifecycleId,
+        ?AdmissionLaneEnum $lane = null,
     ): bool {
         if (! $this->store instanceof PunishmentLifecycleStoreInterface) {
             throw new RateLimiterException('Post-punishment re-entry requires PunishmentLifecycleStoreInterface.');
         }
-        $current = $this->buildKeys($context, $device->normalizedUa, $device->fingerprintHash, $policyName, $this->secret);
+        $current = $this->buildKeys($context, $device->normalizedUa, $device->fingerprintHash, $policyName, $this->secret, $lane, $this->k5Material($device, $lane));
         $previous = $this->hasPreviousGeneration($device)
-            ? $this->buildKeys($context, $device->normalizedUa, $this->previousFingerprintHash($device), $policyName, $this->previousSecret ?? $this->secret)
+            ? $this->buildKeys($context, $device->normalizedUa, $this->previousFingerprintHash($device), $policyName, $this->previousSecret ?? $this->secret, $lane, $this->previousK5Material($device, $lane))
             : [];
         $currentKey = $current['k4'] ?? null;
         if ($currentKey === null) {
@@ -172,18 +178,30 @@ class EvaluationPipeline
      *
      * Normal candidates are aggregated before budget enforcement, and only
      * winning candidates are persisted as blocks.
+     *
+     * The optional admission lane is a call parameter, never object state.
+     * `null` is today's behaviour, byte for byte, and ignores any instance id
+     * the device carries. A non-null lane is accepted only for a policy that
+     * declares the admission capability: `U` applies the unproven-lane rules
+     * (no account-scoped refusal or persistence, device-scoped parts kept),
+     * `P` the proven-lane rules (own K4P and K5p families, no collective
+     * K1/K2/K3 penalties, no device-cap observation, no flood). Both lanes drop
+     * the collective correlation rules and take the K5 material from the
+     * instance id when the device carries one.
      */
     public function process(
         BlockPolicyInterface $policy,
         RateLimitContextDTO $context,
         RateLimitCommand $request,
         DeviceIdentityDTO $device,
+        ?AdmissionLaneEnum $lane = null,
     ): RateLimitResultDTO {
+        $this->assertLaneAllowed($policy, $lane);
         $this->lifecycleEligibleKeys = [];
         $this->issuedSoftScopes = [];
         // 1. Build keys for the current generation, then the one previous
         // generation when either generation component is present.
-        $realKeysV2 = $this->buildKeys($context, $device->normalizedUa, $device->fingerprintHash, $policy->getName(), $this->secret);
+        $realKeysV2 = $this->buildKeys($context, $device->normalizedUa, $device->fingerprintHash, $policy->getName(), $this->secret, $lane, $this->k5Material($device, $lane));
         $realKeysV1 = $this->hasPreviousGeneration($device)
             ? $this->buildKeys(
                 $context,
@@ -191,11 +209,13 @@ class EvaluationPipeline
                 $this->previousFingerprintHash($device),
                 $policy->getName(),
                 $this->previousSecret ?? $this->secret,
+                $lane,
+                $this->previousK5Material($device, $lane),
             )
             : [];
 
         // 2. Check Active Blocks (Fail-Fast) on Real Keys
-        if ($blocked = $this->checkActiveBlocks($realKeysV2, $realKeysV1, $policy, $device)) {
+        if ($blocked = $this->checkActiveBlocks($realKeysV2, $realKeysV1, $policy, $device, $lane)) {
             return $blocked;
         }
 
@@ -206,7 +226,7 @@ class EvaluationPipeline
         // current/previous references. Ephemeral mode is a routing decision;
         // it never creates a synthetic persistent fingerprint key.
         $ephemeralState = null;
-        if ($device->fingerprintHash !== null) {
+        if ($device->fingerprintHash !== null && ! $this->isProvenLane($lane)) {
             $ipObservation = $this->buildCorrelationObservation(
                 $policy->getName(),
                 'device_cap_ip',
@@ -278,12 +298,13 @@ class EvaluationPipeline
             $effectiveKeysV2,
             $effectiveKeysV1,
             $device,
+            $lane,
         );
 
         // 7. Distributed account attack is a pre-check-only observation. It
         // must run before the older bounded correlation rules so a missing
         // snapshot capability cannot leave partial S3-F08 state behind.
-        if ($request->isPreCheck && $this->isDistributedAccountPolicy($policy)) {
+        if ($request->isPreCheck && $this->isDistributedAccountPolicy($policy) && ! $this->isProvenLane($lane)) {
             if ($candidate = $this->checkDistributedAccountAttack(
                 $context,
                 $device,
@@ -296,22 +317,24 @@ class EvaluationPipeline
             }
         }
 
-        // 8. Check existing bounded correlation rules.
-        if ($candidate = $this->checkCorrelationRules(
+        // 8. Check existing bounded correlation rules. An opted policy takes
+        // no collective churn / dilution penalty and writes none of their
+        // observations.
+        if ($this->appliesCollectiveCorrelation($lane) && ($candidate = $this->checkCorrelationRules(
             $device,
             $policy->getName(),
             $isEphemeral,
             $realKeysV2,
             $realKeysV1,
             $adaptiveIpv6Scopes,
-        )) {
+        ))) {
             $candidates[] = $candidate;
         }
 
         // Credential-spray observation is deliberately precheck-only. The
         // later failure/success command in the same host lifecycle must not
         // observe the same spray attempt a second time.
-        if ($request->isPreCheck && $this->isCredentialSprayPolicy($policy)) {
+        if ($request->isPreCheck && $this->isCredentialSprayPolicy($policy) && $this->appliesCollectiveCorrelation($lane)) {
             if ($candidate = $this->checkCredentialSpray(
                 $context,
                 $device,
@@ -324,7 +347,8 @@ class EvaluationPipeline
             }
         }
 
-        // 9. New Device Flood (5.4)
+        // 9. New Device Flood (5.4). It needs the device-cap observation, which
+        // the proven lane never makes ($ephemeralState stays null there).
         if ($ephemeralState !== null && $context->accountId && ! $this->isApiHeavyPolicy($policy)
             && $ephemeralState->accountDeviceCount >= 6) {
             $floodKey = $this->auxiliaryAccountKey(
@@ -388,6 +412,7 @@ class EvaluationPipeline
                 $effectiveKeysV2,
                 $effectiveKeysV1,
                 $rawScores,
+                $lane,
             );
             $candidates = array_merge($candidates, $updates['candidates']);
             $budgetState = $updates['budgetState'];
@@ -402,8 +427,8 @@ class EvaluationPipeline
         // alone on that account + device only.
         if ($request->isFailure && $context->accountId !== null && $policy->getBudgetConfig() !== null
             && $this->antiEquilibriumGate->shouldEscalate(
-                $this->auxiliaryAccountKey($policy->getName(), 'anti_equilibrium', $context->accountId, $this->secret),
-                $this->previousAuxiliaryAccountKey($policy->getName(), 'anti_equilibrium', $context->accountId),
+                $this->auxiliaryAccountKey($policy->getName(), $this->laneAuxiliaryPurpose($lane, 'anti_equilibrium'), $context->accountId, $this->secret),
+                $this->previousAuxiliaryAccountKey($policy->getName(), $this->laneAuxiliaryPurpose($lane, 'anti_equilibrium'), $context->accountId),
             )) {
             $persistence = ($realKeysV2['k4'] ?? null) !== null
                 ? [[
@@ -421,7 +446,7 @@ class EvaluationPipeline
                 $persistence,
             );
         }
-        $deviceWatcher = $this->deviceAntiEquilibriumKeys($policy, $context, $device, $isEphemeral);
+        $deviceWatcher = $this->deviceAntiEquilibriumKeys($policy, $context, $device, $isEphemeral, $lane);
         if ($request->isFailure && $deviceWatcher !== null && ($realKeysV2['k5'] ?? null) !== null
             && $this->antiEquilibriumGate->shouldEscalate($deviceWatcher['current'], $deviceWatcher['previous'])) {
             $persistence = [[
@@ -451,6 +476,7 @@ class EvaluationPipeline
             $budgetState,
             $budgetRequestEligible,
             $budgetSuppressed,
+            $lane,
         );
 
         if ($final->decision === RateLimitResultDTO::DECISION_SOFT_BLOCK
@@ -469,7 +495,7 @@ class EvaluationPipeline
             $this->antiEquilibriumGate->recordSoftBlock(
                 $deviceOnly
                     ? $deviceWatcher['current']
-                    : $this->auxiliaryAccountKey($policy->getName(), 'anti_equilibrium', $context->accountId, $this->secret),
+                    : $this->auxiliaryAccountKey($policy->getName(), $this->laneAuxiliaryPurpose($lane, 'anti_equilibrium'), $context->accountId, $this->secret),
             );
         }
 
@@ -500,6 +526,7 @@ class EvaluationPipeline
         array $keysV1,
         BlockPolicyInterface $policy,
         DeviceIdentityDTO $device,
+        ?AdmissionLaneEnum $lane,
     ): ?RateLimitResultDTO {
         $now = $this->clock->now()->getTimestamp();
         $highestLevel = 0;
@@ -511,6 +538,9 @@ class EvaluationPipeline
                 continue;
             }
             if ($this->isTrustedAuthenticationPolicy($policy, $device) && $this->isK1Key($keyType)) {
+                continue;
+            }
+            if ($this->ignoresCollectiveKeyType($lane, $keyType)) {
                 continue;
             }
 
@@ -562,9 +592,13 @@ class EvaluationPipeline
         array $keys,
         array $keysV1,
         DeviceIdentityDTO $device,
+        ?AdmissionLaneEnum $lane,
     ): array {
         $candidates = [];
         foreach ($scores as $keyType => $score) {
+            if ($this->ignoresCollectiveKeyType($lane, $keyType)) {
+                continue;
+            }
             $level = $this->determineLevel($score, $keyType, $policy);
 
             if ($level > 0) {
@@ -1590,6 +1624,7 @@ class EvaluationPipeline
         array $keys,
         array $keysV1,
         array $rawScores,
+        ?AdmissionLaneEnum $lane,
     ): array {
         $deltas = $this->calculateDeltas($policy, $context, $device, $request, $isEphemeral);
 
@@ -1607,8 +1642,8 @@ class EvaluationPipeline
             && $this->isKnownForAccount($device)
             && ($allowanceLimit = $policy->getKnownDeviceAccountAllowance()) !== null) {
             $allowance = $this->incrementBudgetAcrossRotation(
-                $this->auxiliaryAccountKey($policy->getName(), 'known_device_allowance', $context->accountId, $this->secret),
-                $this->previousAuxiliaryAccountKey($policy->getName(), 'known_device_allowance', $context->accountId),
+                $this->auxiliaryAccountKey($policy->getName(), $this->laneAuxiliaryPurpose($lane, 'known_device_allowance'), $context->accountId, $this->secret),
+                $this->previousAuxiliaryAccountKey($policy->getName(), $this->laneAuxiliaryPurpose($lane, 'known_device_allowance'), $context->accountId),
             );
             if ($allowance->count > $allowanceLimit) {
                 $deltas['k4'] = $policy->getScoreDeltas()->k4_failure;
@@ -1687,6 +1722,11 @@ class EvaluationPipeline
                     }
                 } else {
                     $newScore = $this->store->increment($key, 86400, (int) $netChange);
+                }
+                if ($this->ignoresCollectiveKeyType($lane, $keyType)) {
+                    // The collective score is written (the observation stays); no level,
+                    // watch flag or candidate derives from it on the proven lane.
+                    continue;
                 }
                 $actualScoreLevel = $this->determineLevel($newScore, $keyType, $policy);
                 if ($keyType === 'k4' && $policy instanceof PostPunishmentReentryPolicyInterface
@@ -1773,12 +1813,12 @@ class EvaluationPipeline
                 if ($config->known_device_micro_cap === null) {
                     $shouldCount = true;
                 } else {
-                    $microRawV2 = "{$policy->getName()}:rate_limiter:microcap:k5:v1:{$this->envScope}:{$context->accountId}:{$device->fingerprintHash}";
+                    $microRawV2 = "{$policy->getName()}:rate_limiter:microcap:{$this->k5KeyType($lane)}:v1:{$this->envScope}:{$context->accountId}:{$this->k5Material($device, $lane)}";
                     $microKeyV2 = $this->hashKey($microRawV2, $this->secret);
                     $microKeyV1 = null;
 
                     if ($this->hasPreviousGeneration($device)) {
-                        $microRawV1 = "{$policy->getName()}:rate_limiter:microcap:k5:v1:{$this->envScope}:{$context->accountId}:{$this->previousFingerprintHash($device)}";
+                        $microRawV1 = "{$policy->getName()}:rate_limiter:microcap:{$this->k5KeyType($lane)}:v1:{$this->envScope}:{$context->accountId}:{$this->previousK5Material($device, $lane)}";
                         $microKeyV1 = $this->hashKey($microRawV1, $this->previousSecret ?? $this->secret);
                     }
 
@@ -2147,6 +2187,7 @@ class EvaluationPipeline
         ?BudgetStateDTO $budgetState,
         bool $budgetRequestEligible,
         bool $budgetSuppressed,
+        ?AdmissionLaneEnum $lane,
     ): RateLimitResultDTO {
         $advisoryCandidates = array_values(array_filter(
             $candidates,
@@ -2156,6 +2197,16 @@ class EvaluationPipeline
             $candidates,
             fn(array $candidate): bool => ! str_starts_with($candidate['source'], 'trusted_advisory:'),
         ));
+
+        // Unproven lane of an opted policy: no account-scoped candidate (K4U
+        // score levels, account watcher, distributed-account and flood
+        // reactions, recovery guard) refuses or persists, the device-scoped
+        // (K5) parts are kept, and the 24 h budget never adds a candidate.
+        // Scores are still written and read, so they stay observable.
+        if ($this->keepsDeviceScopeOnly($lane)) {
+            $candidates = $this->deviceScopedOnly($candidates, $keysV2, $keysV1);
+        }
+        $budgetSuppressed = $budgetSuppressed || $this->suppressesBudget($lane);
 
         // A post-punishment K4 mutation is the authoritative candidate for
         // that same logical K4 request. The pre-mutation score candidate can
@@ -2187,6 +2238,7 @@ class EvaluationPipeline
                 $context->accountId,
                 $device,
                 $config->cooldown_seconds,
+                $lane,
             );
 
             if ($cooldown['issued']) {
@@ -2258,12 +2310,13 @@ class EvaluationPipeline
         ?string $accountId,
         DeviceIdentityDTO $device,
         int $cooldownSeconds,
+        ?AdmissionLaneEnum $lane,
     ): array {
         if ($accountId === null) {
             return ['issued' => false, 'retryAfter' => 0];
         }
 
-        $currentKey = $this->budgetCooldownKey($policy->getName(), $accountId, $this->secret);
+        $currentKey = $this->budgetCooldownKey($policy->getName(), $accountId, $this->secret, $lane);
         $currentMarker = $this->store->get($currentKey);
         if ($currentMarker !== null) {
             return [
@@ -2277,6 +2330,7 @@ class EvaluationPipeline
                 $policy->getName(),
                 $accountId,
                 $this->previousSecret ?? $this->secret,
+                $lane,
             );
             if ($previousKey !== $currentKey) {
                 $previousMarker = $this->store->get($previousKey);
@@ -2299,10 +2353,10 @@ class EvaluationPipeline
         return ['issued' => true, 'retryAfter' => max(0, $cooldownSeconds)];
     }
 
-    private function budgetCooldownKey(string $policyName, string $accountId, string $secret): string
+    private function budgetCooldownKey(string $policyName, string $accountId, string $secret, ?AdmissionLaneEnum $lane): string
     {
         return $this->hashKey(
-            "{$policyName}:rate_limiter:budget_cooldown:v1:{$this->envScope}:{$accountId}",
+            "{$policyName}:rate_limiter:{$this->laneAuxiliaryPurpose($lane, 'budget_cooldown')}:v1:{$this->envScope}:{$accountId}",
             $secret,
         );
     }
@@ -2330,6 +2384,7 @@ class EvaluationPipeline
         RateLimitContextDTO $context,
         DeviceIdentityDTO $device,
         bool $isEphemeral,
+        ?AdmissionLaneEnum $lane,
     ): ?array {
         // Same eligibility as the account watcher (a budgeted policy), and
         // only where a K5 level can exist: never for API_OVERUSE.
@@ -2343,11 +2398,11 @@ class EvaluationPipeline
             return null;
         }
 
-        $prefix = "{$policy->getName()}:rate_limiter:aux:anti_equilibrium_device:v1:{$this->envScope}:{$context->accountId}";
-        $current = $this->hashKey("{$prefix}:{$device->fingerprintHash}", $this->secret);
+        $prefix = "{$policy->getName()}:rate_limiter:aux:{$this->laneAuxiliaryPurpose($lane, 'anti_equilibrium_device')}:v1:{$this->envScope}:{$context->accountId}";
+        $current = $this->hashKey("{$prefix}:{$this->k5Material($device, $lane)}", $this->secret);
         $previous = null;
         if ($this->hasPreviousGeneration($device)) {
-            $previous = $this->hashKey("{$prefix}:{$this->previousFingerprintHash($device)}", $this->previousSecret ?? $this->secret);
+            $previous = $this->hashKey("{$prefix}:{$this->previousK5Material($device, $lane)}", $this->previousSecret ?? $this->secret);
             if ($previous === $current) {
                 $previous = null;
             }
@@ -2419,6 +2474,130 @@ class EvaluationPipeline
     {
         return $policy instanceof PolicyCapabilityProviderInterface
             && in_array($capability, $policy->getCapabilities(), true);
+    }
+
+    // --- Admission lane (opted policies only; `null` is today's behaviour) ---
+
+    /**
+     * A lane is accepted only for a policy that declares the admission
+     * capability: the U and P rules never reach a policy that did not opt in.
+     */
+    private function assertLaneAllowed(BlockPolicyInterface $policy, ?AdmissionLaneEnum $lane): void
+    {
+        if ($lane !== null && ! $this->hasCapability($policy, PolicyCapabilityEnum::ADMISSION_RESERVATION)) {
+            throw new RateLimiterException('An admission lane requires a policy that declares the admission capability.');
+        }
+    }
+
+    /** Account key type: K4P on the proven lane, K4 otherwise. */
+    private function k4KeyType(?AdmissionLaneEnum $lane): string
+    {
+        return $lane === AdmissionLaneEnum::P ? 'k4p' : 'k4';
+    }
+
+    /** Device key type: K5p on the proven lane, K5 otherwise. */
+    private function k5KeyType(?AdmissionLaneEnum $lane): string
+    {
+        return $lane === AdmissionLaneEnum::P ? 'k5p' : 'k5';
+    }
+
+    /** Auxiliary purpose of the lane: the proven family is the unsuffixed purpose with `_p` appended. */
+    private function laneAuxiliaryPurpose(?AdmissionLaneEnum $lane, string $purpose): string
+    {
+        return $lane === AdmissionLaneEnum::P ? $purpose . '_p' : $purpose;
+    }
+
+    /**
+     * K5 material: with a lane, the instance-id component when the device carries one, else the fingerprint
+     * component (the A0 path); without a lane always the fingerprint (an instance id is ignored). The pipeline
+     * selects a component and never re-hashes it.
+     */
+    private function k5Material(DeviceIdentityDTO $device, ?AdmissionLaneEnum $lane): ?string
+    {
+        return $lane === null ? $device->fingerprintHash : ($device->deviceIdHash ?? $device->fingerprintHash);
+    }
+
+    /**
+     * Previous generation of the K5 material. It is the same material derived by the previous hasher (the previous
+     * secret selects the previous key); a device without an id, or no lane, keeps the fingerprint generation.
+     */
+    private function previousK5Material(DeviceIdentityDTO $device, ?AdmissionLaneEnum $lane): ?string
+    {
+        return $lane === null || $device->deviceIdHash === null
+            ? $this->previousFingerprintHash($device)
+            : ($device->previousDeviceIdHash ?? $device->deviceIdHash);
+    }
+
+    /** The collective churn, dilution and credential-spray rules apply only without a lane. */
+    private function appliesCollectiveCorrelation(?AdmissionLaneEnum $lane): bool
+    {
+        return $lane === null;
+    }
+
+    /** Proven lane: no device-cap observation, no distributed-account observation, no flood. */
+    private function isProvenLane(?AdmissionLaneEnum $lane): bool
+    {
+        return $lane === AdmissionLaneEnum::P;
+    }
+
+    /** Proven lane: a K1, K2 or K3 score yields no block read, threshold candidate or level. */
+    private function ignoresCollectiveKeyType(?AdmissionLaneEnum $lane, string $keyType): bool
+    {
+        return $lane === AdmissionLaneEnum::P && in_array($keyType, ['k1', 'k2', 'k3'], true);
+    }
+
+    /** Unproven lane: only device-scoped candidates refuse or persist. */
+    private function keepsDeviceScopeOnly(?AdmissionLaneEnum $lane): bool
+    {
+        return $lane === AdmissionLaneEnum::U;
+    }
+
+    /** Unproven lane: the 24 h account budget adds no candidate. */
+    private function suppressesBudget(?AdmissionLaneEnum $lane): bool
+    {
+        return $lane === AdmissionLaneEnum::U;
+    }
+
+    /**
+     * Keeps device-scoped candidates, rebuilds mixed account + device candidates from their K5 persistence only,
+     * and drops purely account-scoped candidates.
+     *
+     * @param list<array{decision: string, level: int, retryAfter: int, source: string, persistence: list<array{key: string, previousKey: ?string, level: int, duration: int}>, scopes: list<string>}> $candidates
+     * @param array<string, string|null> $keysV2
+     * @param array<string, string|null> $keysV1
+     * @return list<array{decision: string, level: int, retryAfter: int, source: string, persistence: list<array{key: string, previousKey: ?string, level: int, duration: int}>, scopes: list<string>}>
+     */
+    private function deviceScopedOnly(array $candidates, array $keysV2, array $keysV1): array
+    {
+        $k4 = array_values(array_filter([$keysV2['k4'] ?? null, $keysV1['k4'] ?? null], static fn(?string $k): bool => $k !== null));
+        $out = [];
+        foreach ($candidates as $candidate) {
+            if (! in_array(self::SCOPE_ACCOUNT, $candidate['scopes'], true)) {
+                $out[] = $candidate;
+                continue;
+            }
+            if (! in_array(self::SCOPE_DEVICE, $candidate['scopes'], true)) {
+                continue;
+            }
+            $persistence = array_values(array_filter(
+                $candidate['persistence'],
+                static fn(array $p): bool => ! in_array($p['key'], $k4, true),
+            ));
+            if ($persistence === []) {
+                continue;
+            }
+            $level = max(array_map(static fn(array $p): int => $p['level'], $persistence));
+            $out[] = $this->candidate(
+                $level >= 2 ? RateLimitResultDTO::DECISION_HARD_BLOCK : RateLimitResultDTO::DECISION_SOFT_BLOCK,
+                $level,
+                PenaltyLadder::getDuration($level),
+                $candidate['source'],
+                $persistence,
+                [self::SCOPE_DEVICE],
+            );
+        }
+
+        return $out;
     }
 
     private function isApiHeavyKeyType(string $keyType): bool
@@ -2600,8 +2779,15 @@ class EvaluationPipeline
     /**
      * @return array<string, string|null>
      */
-    private function buildKeys(RateLimitContextDTO $context, string $ua, ?string $fpHash, string $policyName, string $secret): array
-    {
+    private function buildKeys(
+        RateLimitContextDTO $context,
+        string $ua,
+        ?string $fpHash,
+        string $policyName,
+        string $secret,
+        ?AdmissionLaneEnum $lane = null,
+        ?string $k5Material = null,
+    ): array {
         // Enforce strict Key Strategy namespacing:
         // {policy}:rate_limiter:{type}:{algo_ver}:{env}:{scope_val}
         $base = "{$policyName}:rate_limiter";
@@ -2611,8 +2797,8 @@ class EvaluationPipeline
         $k1 = $this->hashKey("{$base}:k1:{$ver}:{$env}:{$this->getIpPrefix($context->ip)}", $secret);
         $k2 = $this->hashKey("{$base}:k2:{$ver}:{$env}:{$this->getIpPrefix($context->ip)}:{$ua}", $secret);
         $k3 = $fpHash ? $this->hashKey("{$base}:k3:{$ver}:{$env}:{$this->getIpPrefix($context->ip)}:{$fpHash}", $secret) : null;
-        $k4 = $context->accountId ? $this->hashKey("{$base}:k4:{$ver}:{$env}:{$context->accountId}", $secret) : null;
-        $k5 = $context->accountId && $fpHash ? $this->hashKey("{$base}:k5:{$ver}:{$env}:{$context->accountId}:{$fpHash}", $secret) : null;
+        $k4 = $context->accountId ? $this->hashKey("{$base}:{$this->k4KeyType($lane)}:{$ver}:{$env}:{$context->accountId}", $secret) : null;
+        $k5 = $context->accountId && $fpHash ? $this->hashKey("{$base}:{$this->k5KeyType($lane)}:{$ver}:{$env}:{$context->accountId}:" . ($k5Material ?? $fpHash), $secret) : null;
 
         return ['k1' => $k1, 'k2' => $k2, 'k3' => $k3, 'k4' => $k4, 'k5' => $k5];
     }

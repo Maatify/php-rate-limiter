@@ -87,7 +87,16 @@ final class FamilyLifecycleTest extends TestCase
         $state = $p->store->readGenerationBoundScoreState(self::k4pKey(), null);
         self::assertNotNull($state);
         self::assertNotNull($state->generation);
-        self::assertNotNull($state->postPunishmentReentry);
+
+        // Atomic hard block with cycle accounting on the K4P key.
+        $cycles = array_values(array_filter($p->store->cycleLog, static fn(array $e): bool => $e['key'] === self::k4pKey()));
+        self::assertCount(1, $cycles);
+        self::assertSame(1, $cycles[0]['result']->cycleCount);
+
+        // The reference store exposes the evidence once the block has expired (DEC-007).
+        $p->at(603);
+        $afterBlock = $p->store->readGenerationBoundScoreState(self::k4pKey(), null);
+        self::assertNotNull($afterBlock?->postPunishmentReentry);
         self::assertNull($p->store->readGenerationBoundScoreState(self::k4Key(), null), 'Nothing is written on the K4 key.');
     }
 

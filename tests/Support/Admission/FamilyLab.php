@@ -105,7 +105,7 @@ final class FamilyLab
 
         return [
             'd' => $r->decision === RateLimitResultDTO::DECISION_ALLOW ? 'A' : ($r->decision === RateLimitResultDTO::DECISION_HARD_BLOCK ? 'H' : 'S'),
-            'lvl' => $r->blockLevel,
+            'lvl' => $r->blockLevel ?? 0,
         ];
     }
 }

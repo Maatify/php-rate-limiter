@@ -47,6 +47,7 @@ final class FamilyGuardsTest extends TestCase
         );
     }
 
+    /** @param class-string<EvaluationPipeline> $class */
     private function lab(?AdmissionLaneEnum $lane, string $class = EvaluationPipeline::class, ?BlockPolicyInterface $policy = null): FamilyLab
     {
         return new FamilyLab($policy ?? new OptedLoginPolicy(), $lane, $class);
@@ -64,7 +65,10 @@ final class FamilyGuardsTest extends TestCase
         return $decisions;
     }
 
-    /** @return list<string> decisions on null, U and P */
+    /**
+     * @param class-string<EvaluationPipeline> $class
+     * @return list<string> decisions on null, U and P
+     */
     private function sweepOnEveryLane(string $class = EvaluationPipeline::class): array
     {
         return [
@@ -92,7 +96,7 @@ final class FamilyGuardsTest extends TestCase
                 $lab->at($i);
                 $lab->run(self::context('203.0.113.50', "acct-{$i}", "dev-{$i}"), 'check');
             }
-            $counts[$lane?->value ?? 'none'] = count($lab->corr->distinctKeys);
+            $counts[$lane->value ?? 'none'] = count($lab->corr->distinctKeys);
         }
 
         // U keeps only the two device-cap observations per request; P keeps none; no lane keeps the rest.

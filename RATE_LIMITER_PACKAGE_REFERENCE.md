@@ -179,6 +179,8 @@ Additive shapes that are **dormant and not selectable through the builder**: no 
 | `Maatify\RateLimiter\Service\AdmissionBindingControlInterface` | Host-proven revocation of an account's credentials; interface only. |
 | `Maatify\RateLimiter\Service\AdmissionRuntime` | `@internal` empty shell; not part of the supported composition. |
 
+The evaluation pipeline (`EvaluationPipeline::process()`, `claimPostPunishmentReentry()`) and the concrete `RateLimitOperationalReader::read()` take an optional last `?Enum\AdmissionLaneEnum $lane` (internal; `null` is today's behaviour and ignores an instance id; a lane is refused for a policy without the admission capability). With a lane the pipeline derives the `k4p` / `k5p` key families and the `_p` auxiliary purposes, drops the collective correlation rules, and takes the K5 material from the instance-id component when present; nothing in the engine or the builder passes a lane yet (see `docs/KEY_STRATEGY.md` §3.4, §3.5 and `docs/DEVICE_FINGERPRINT.md` §5.1.1).
+
 Additive optional trailing inputs on existing types: `RateLimitContextDTO` (`clientInstanceId`, `admissionCredential`), `DeviceIdentityDTO` (`deviceIdHash`, `previousDeviceIdHash`), `RateLimiterConfig` (`bindingKeySecret`, `previousBindingKeySecret`), `RateLimitCommand` (`permit`, outcome commands only) and `RateLimitMetadataDTO` (`permit`). The optional DTO members are serialized only when present, and a policy that did not opt in ignores them.
 
 ### Public Command

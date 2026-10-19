@@ -15,6 +15,7 @@ use Maatify\RateLimiter\DTO\RateLimitOperationalKeyStateDTO;
 use Maatify\RateLimiter\DTO\RateLimitOperationalScopesDTO;
 use Maatify\RateLimiter\DTO\RateLimitOperationalSnapshotDTO;
 use Maatify\RateLimiter\DTO\RateLimitStateDTO;
+use Maatify\RateLimiter\Enum\AdmissionLaneEnum;
 use Maatify\RateLimiter\Exception\RateLimiterException;
 use Maatify\RateLimiter\Repository\CircuitBreakerStoreInterface;
 use Maatify\RateLimiter\Repository\HardBlockCycleStoreInterface;
@@ -71,10 +72,18 @@ final class RateLimitOperationalReader implements RateLimitOperationalReaderInte
 
     /**
      * Read one policy's scores, blocks, budgets, circuit state, and health.
+     *
+     * The optional admission lane selects the key family and K5 material the
+     * state was written under by the evaluation pipeline (K4P / K5p and the
+     * `_p` budget cooldown on the proven lane; the instance-id material when
+     * the device carries one). `null` is today's read. This concrete method
+     * only: the public reader interface is unchanged, so no Host can ask for a
+     * lane before the admission runtime exists.
      */
     public function read(
         RateLimitContextDTO $context,
         BlockPolicyInterface $policy,
+        ?AdmissionLaneEnum $lane = null,
     ): RateLimitOperationalSnapshotDTO {
         $device = $this->deviceResolver->resolve($context);
         $currentKeys = $this->buildKeys(
@@ -83,6 +92,8 @@ final class RateLimitOperationalReader implements RateLimitOperationalReaderInte
             $device->fingerprintHash,
             $policy->getName(),
             $this->keySecret,
+            $lane,
+            $this->k5Material($device, $lane),
         );
         $previousKeys = $this->hasPreviousGeneration($device)
             ? $this->buildKeys(
@@ -91,12 +102,14 @@ final class RateLimitOperationalReader implements RateLimitOperationalReaderInte
                 $this->previousFingerprintHash($device),
                 $policy->getName(),
                 $this->previousKeySecret ?? $this->keySecret,
+                $lane,
+                $this->previousK5Material($device, $lane),
             )
             : [];
 
         $backendHealthy = $this->store->isHealthy();
         $scopes = $this->buildScopes($currentKeys, $previousKeys);
-        $budget = $this->buildBudget($context, $device, $policy, $currentKeys, $previousKeys);
+        $budget = $this->buildBudget($context, $device, $policy, $currentKeys, $previousKeys, $lane);
         $circuitBreaker = $this->circuitBreakerStore->load($policy->getName());
 
         return new RateLimitOperationalSnapshotDTO(
@@ -220,6 +233,7 @@ final class RateLimitOperationalReader implements RateLimitOperationalReaderInte
         BlockPolicyInterface $policy,
         array $currentKeys,
         array $previousKeys,
+        ?AdmissionLaneEnum $lane,
     ): ?RateLimitOperationalBudgetDTO {
         $config = $policy->getBudgetConfig();
         if ($config === null || $context->accountId === null) {
@@ -239,13 +253,14 @@ final class RateLimitOperationalReader implements RateLimitOperationalReaderInte
         $microCapExceeded = false;
         if ($config->known_device_micro_cap !== null && ($currentKeys['k5'] ?? null) !== null) {
             [$microCap, $microCapFromPreviousGeneration] = $this->resolveBudgetState(
-                $this->microCapKey($policy->getName(), $context->accountId, $device->fingerprintHash, $this->keySecret),
+                $this->microCapKey($policy->getName(), $context->accountId, $this->k5Material($device, $lane), $this->keySecret, $lane),
                 $this->hasPreviousGeneration($device)
                     ? $this->microCapKey(
                         $policy->getName(),
                         $context->accountId,
-                        $this->previousFingerprintHash($device),
+                        $this->previousK5Material($device, $lane),
                         $this->previousKeySecret ?? $this->keySecret,
+                        $lane,
                     )
                     : null,
             );
@@ -256,6 +271,7 @@ final class RateLimitOperationalReader implements RateLimitOperationalReaderInte
             $policy->getName(),
             $context->accountId,
             $device,
+            $lane,
         );
         $cooldownRemainingSeconds = $cooldown === null
             ? 0
@@ -299,9 +315,9 @@ final class RateLimitOperationalReader implements RateLimitOperationalReaderInte
     /**
      * @return array{0: ?RateLimitStateDTO, 1: bool}
      */
-    private function resolveCooldown(string $policyName, string $accountId, DeviceIdentityDTO $device): array
+    private function resolveCooldown(string $policyName, string $accountId, DeviceIdentityDTO $device, ?AdmissionLaneEnum $lane): array
     {
-        $currentKey = $this->budgetCooldownKey($policyName, $accountId, $this->keySecret);
+        $currentKey = $this->budgetCooldownKey($policyName, $accountId, $this->keySecret, $lane);
         $current = $this->store->get($currentKey);
         if ($current !== null) {
             return [$current, false];
@@ -312,6 +328,7 @@ final class RateLimitOperationalReader implements RateLimitOperationalReaderInte
                 $policyName,
                 $accountId,
                 $this->previousKeySecret ?? $this->keySecret,
+                $lane,
             );
             if ($previousKey !== $currentKey) {
                 $previous = $this->store->get($previousKey);
@@ -329,24 +346,59 @@ final class RateLimitOperationalReader implements RateLimitOperationalReaderInte
         return $state->epochStart + self::BUDGET_EPOCH_SECONDS > $this->clock->now()->getTimestamp();
     }
 
-    private function microCapKey(string $policyName, string $accountId, ?string $fingerprintHash, string $secret): ?string
+    private function microCapKey(string $policyName, string $accountId, ?string $k5Material, string $secret, ?AdmissionLaneEnum $lane): ?string
     {
-        if ($fingerprintHash === null) {
+        if ($k5Material === null) {
             return null;
         }
 
         return $this->hashKey(
-            "{$policyName}:rate_limiter:microcap:k5:v1:{$this->envScope}:{$accountId}:{$fingerprintHash}",
+            "{$policyName}:rate_limiter:microcap:{$this->k5KeyType($lane)}:v1:{$this->envScope}:{$accountId}:{$k5Material}",
             $secret,
         );
     }
 
-    private function budgetCooldownKey(string $policyName, string $accountId, string $secret): string
+    private function budgetCooldownKey(string $policyName, string $accountId, string $secret, ?AdmissionLaneEnum $lane): string
     {
         return $this->hashKey(
-            "{$policyName}:rate_limiter:budget_cooldown:v1:{$this->envScope}:{$accountId}",
+            "{$policyName}:rate_limiter:{$this->laneAuxiliaryPurpose($lane, 'budget_cooldown')}:v1:{$this->envScope}:{$accountId}",
             $secret,
         );
+    }
+
+    // The five helpers below are the reader's own copy of the pipeline's lane rules (same names, same meaning);
+    // READER-PARITY is the gate that keeps them equal.
+
+    /** Account key type: K4P on the proven lane, K4 otherwise. */
+    private function k4KeyType(?AdmissionLaneEnum $lane): string
+    {
+        return $lane === AdmissionLaneEnum::P ? 'k4p' : 'k4';
+    }
+
+    /** Device key type: K5p on the proven lane, K5 otherwise. */
+    private function k5KeyType(?AdmissionLaneEnum $lane): string
+    {
+        return $lane === AdmissionLaneEnum::P ? 'k5p' : 'k5';
+    }
+
+    /** Auxiliary purpose of the lane: the proven family is the unsuffixed purpose with `_p` appended. */
+    private function laneAuxiliaryPurpose(?AdmissionLaneEnum $lane, string $purpose): string
+    {
+        return $lane === AdmissionLaneEnum::P ? $purpose . '_p' : $purpose;
+    }
+
+    /** K5 material: with a lane the instance-id component when present, else the fingerprint; without a lane the fingerprint. */
+    private function k5Material(DeviceIdentityDTO $device, ?AdmissionLaneEnum $lane): ?string
+    {
+        return $lane === null ? $device->fingerprintHash : ($device->deviceIdHash ?? $device->fingerprintHash);
+    }
+
+    /** Previous generation of the K5 material: the same material by the previous hasher; no id or no lane keeps the fingerprint generation. */
+    private function previousK5Material(DeviceIdentityDTO $device, ?AdmissionLaneEnum $lane): ?string
+    {
+        return $lane === null || $device->deviceIdHash === null
+            ? $this->previousFingerprintHash($device)
+            : ($device->previousDeviceIdHash ?? $device->deviceIdHash);
     }
 
     private function hasPreviousGeneration(DeviceIdentityDTO $device): bool
@@ -368,6 +420,8 @@ final class RateLimitOperationalReader implements RateLimitOperationalReaderInte
         ?string $fingerprintHash,
         string $policyName,
         string $secret,
+        ?AdmissionLaneEnum $lane = null,
+        ?string $k5Material = null,
     ): array {
         $base = "{$policyName}:rate_limiter";
         $version = 'v2';
@@ -381,10 +435,10 @@ final class RateLimitOperationalReader implements RateLimitOperationalReaderInte
                 : $this->hashKey("{$base}:k3:{$version}:{$environment}:{$this->getIpPrefix($context->ip)}:{$fingerprintHash}", $secret),
             'k4' => $context->accountId === null
                 ? null
-                : $this->hashKey("{$base}:k4:{$version}:{$environment}:{$context->accountId}", $secret),
+                : $this->hashKey("{$base}:{$this->k4KeyType($lane)}:{$version}:{$environment}:{$context->accountId}", $secret),
             'k5' => $context->accountId === null || $fingerprintHash === null
                 ? null
-                : $this->hashKey("{$base}:k5:{$version}:{$environment}:{$context->accountId}:{$fingerprintHash}", $secret),
+                : $this->hashKey("{$base}:{$this->k5KeyType($lane)}:{$version}:{$environment}:{$context->accountId}:" . ($k5Material ?? $fingerprintHash), $secret),
         ];
 
         return $keys;
