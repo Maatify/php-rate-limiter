@@ -1,0 +1,6 @@
+{"s":"posthoc","fixture":"LOST","arm":"NOUA2","interval":600,"attempts":144,"reach":51,"bucketAdmissions":51,"deniedByCause":{"cap:acct_tb":93},"allowanceU":51,"allowanceUK":null}
+{"s":"posthoc","fixture":"LOST","arm":"NOUA2","interval":300,"attempts":288,"reach":51,"bucketAdmissions":51,"deniedByCause":{"cap:acct_tb":237},"allowanceU":51,"allowanceUK":null}
+{"s":"posthoc","fixture":"LOST","arm":"NOUA2","interval":60,"attempts":1440,"reach":51,"bucketAdmissions":51,"deniedByCause":{"cap:acct_tb":1385,"pen:K5":12,"soft":5},"allowanceU":51,"allowanceUK":null}
+{"s":"posthoc","fixture":"LOST","arm":"UKD","interval":600,"attempts":144,"reach":48,"bucketAdmissions":48,"deniedByCause":{"cap:acct_tb":59,"pen:K4UK":16,"soft":38},"allowanceU":null,"allowanceUK":48}
+{"s":"posthoc","fixture":"LOST","arm":"UKD","interval":300,"attempts":288,"reach":47,"bucketAdmissions":47,"deniedByCause":{"cap:acct_tb":155,"pen:K4UK":15,"soft":87},"allowanceU":null,"allowanceUK":47}
+{"s":"posthoc","fixture":"LOST","arm":"UKD","interval":60,"attempts":1440,"reach":48,"bucketAdmissions":48,"deniedByCause":{"cap:acct_tb":927,"pen:K4UK":16,"pen:K5":12,"soft":467},"allowanceU":null,"allowanceUK":48}

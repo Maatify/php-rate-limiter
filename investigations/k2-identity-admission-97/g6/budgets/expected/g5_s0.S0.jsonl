@@ -1,0 +1,14 @@
+{"s":"pipe","arm":"S0","lane":null,"fixture":"STABLE-600","reach":45,"maxK4score":7}
+{"s":"pipe","arm":"S0","lane":null,"fixture":"STABLE-300","reach":44,"maxK4score":7}
+{"s":"pipe","arm":"S0","lane":null,"fixture":"STABLE-60","reach":45,"maxK4score":7}
+{"s":"pipe","arm":"S0","lane":null,"fixture":"KDL","dec":"AAAA!SSSSSA!HSSS","reach":5,"maxK5Level":2,"maxK4Level":0,"secondDevice":"A","before":{"k5key":"32c50b1f2788","k5score":9,"blkK5":null,"blkK4":null,"allowKey":"897b9c99eea2","allowance":5},"after":{"k5key":"32c50b1f2788","k5score":9,"blkK5":null,"blkK4":null,"allowKey":"897b9c99eea2","allowance":5},"k5SameKey":true}
+{"s":"pipe","arm":"S0","lane":null,"fixture":"UAC12","dec":"AAAA!SSSAAAA!SSS","reach":8,"maxK5Level":1,"maxK4Level":0,"secondDevice":"A","before":{"k5key":"32c50b1f2788","k5score":8,"blkK5":null,"blkK4":null,"allowKey":"897b9c99eea2","allowance":8},"after":{"k5key":"0e9f664f5c1f","k5score":8,"blkK5":null,"blkK4":null,"allowKey":"897b9c99eea2","allowance":8},"k5SameKey":false}
+{"s":"pipe","arm":"S0","lane":null,"fixture":"UAX24","flip":45,"ctl":45}
+{"s":"pipe","arm":"S0","lane":null,"fixture":"AE","dec":"AAAA!SSSS|AfH2","sameDevice":"H","secondDevice":"A","snap":{"k5key":"32c50b1f2788","k5score":9,"blkK5":2,"blkK4":null,"allowKey":"897b9c99eea2","allowance":5}}
+{"s":"pipe","arm":"S0","lane":null,"fixture":"MIXPRES","both":"AA","ctl":"AA","k5KeyA":"562b0b7dd385","k5KeyB":"16234adec320","keysDiffer":true,"aIdentical":true}
+{"s":"pipe","arm":"S0","lane":null,"fixture":"ROT-300","reach":43}
+{"s":"pipe","arm":"S0","lane":null,"fixture":"UAROT-300","reach":44}
+{"s":"pipe","arm":"S0","lane":null,"fixture":"NOID-STABLE-300","reach":44,"maxK4score":7}
+{"s":"pipe","arm":"S0","lane":null,"fixture":"NOID-KDL","dec":"AAAA!SSSSSA!HSSS","reach":5,"maxK5Level":2,"maxK4Level":0,"secondDevice":"S","before":{"k5key":"0875bc3e4f74","k5score":9,"blkK5":null,"blkK4":null,"allowKey":"897b9c99eea2","allowance":5},"after":{"k5key":"0875bc3e4f74","k5score":9,"blkK5":null,"blkK4":null,"allowKey":"897b9c99eea2","allowance":5},"k5SameKey":true}
+{"s":"pipe","arm":"S0","lane":null,"fixture":"NOID-UAC12","dec":"AAAA!SSSAAAA!SSS","reach":8,"maxK5Level":1,"maxK4Level":0,"secondDevice":"A","before":{"k5key":"0875bc3e4f74","k5score":8,"blkK5":null,"blkK4":null,"allowKey":"897b9c99eea2","allowance":8},"after":{"k5key":"16234adec320","k5score":8,"blkK5":null,"blkK4":null,"allowKey":"897b9c99eea2","allowance":8},"k5SameKey":false}
+{"s":"pipe","arm":"S0","lane":null,"fixture":"NOID-AE","dec":"AAAA!SSSS|AfH2","sameDevice":"H","secondDevice":"H","snap":{"k5key":"0875bc3e4f74","k5score":9,"blkK5":2,"blkK4":null,"allowKey":"897b9c99eea2","allowance":5}}
