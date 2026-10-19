@@ -147,16 +147,18 @@ final class AdmissionCredentialCodec
             || ! is_string($data['kid'])) {
             return null;
         }
+        $budgetGroups = [];
         foreach ($groups as $group) {
             if (! is_string($group)) {
                 return null;
             }
+            $budgetGroups[] = $group;
         }
 
         try {
             return new AdmissionCredentialDTO(
                 $data['sub'],
-                $groups,
+                $budgetGroups,
                 $data['ins'],
                 $data['jti'],
                 $data['exp'],
