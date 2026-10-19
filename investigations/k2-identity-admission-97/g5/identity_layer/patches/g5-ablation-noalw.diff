@@ -1,0 +1,11 @@
+--- a/src/Service/EvaluationPipeline.php
++++ b/src/Service/EvaluationPipeline.php
+@@ -1663,7 +1663,7 @@
+             && $deltas['k5'] > 0
+             && $deltas['k4'] === 0
+             && $this->isKnownForAccount($device)
+-            && ($allowanceLimit = $policy->getKnownDeviceAccountAllowance()) !== null) {
++            && ($allowanceLimit = null) !== null) {
+             $allowance = $this->incrementBudgetAcrossRotation(
+                 $this->auxiliaryAccountKey($policy->getName(), $this->g1Purpose('known_device_allowance'), $context->accountId, $this->secret),
+                 $this->previousAuxiliaryAccountKey($policy->getName(), $this->g1Purpose('known_device_allowance'), $context->accountId),

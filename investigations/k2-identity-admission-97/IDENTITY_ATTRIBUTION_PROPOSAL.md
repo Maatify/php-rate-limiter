@@ -18,6 +18,10 @@
 > whole assembly with binding; its notes are added the same way.
 > **Post-G4 v2 note (2026-10-18):** G4 v2 ([`G4_V2_INTEGRATED_REASSEMBLY.md`](G4_V2_INTEGRATED_REASSEMBLY.md)) re-measured G4 with
 > the instance id delivered to the pipeline (F131-01) and measured three new components; its notes are added the same way.
+> **Post-G5 note (2026-10-19):** G5 ([`G5_IDENTITY_LAYER.md`](G5_IDENTITY_LAYER.md), design in
+> [`IDENTITY_LAYER_DESIGN.md`](IDENTITY_LAYER_DESIGN.md)) measured the identity layer itself — K5 material without the UA, K5
+> separation and the binding; registered verdict **NO-GO AFTER EXPERIMENT (G3, G5, R:STEAL, R:STREAMS)**. Its notes are added the same
+> way.
 > **Arabic companion:** [`IDENTITY_ATTRIBUTION_PROPOSAL_AR.md`](IDENTITY_ATTRIBUTION_PROPOSAL_AR.md) (Owner-approved 2026-10-18,
 > `DOCUMENTATION_LIFECYCLE_STANDARD_AR.md` §2.1). This English text is the reference and prevails on any conflict. Any PR that
 > changes one of the two files changes the other in the same PR, with the same scope limits.
@@ -125,6 +129,18 @@ Rules for `clientInstanceId`:
    > **Post-G4 v2 note (2026-10-18).** Not measured yet. G4 and G4 v2 carried the instance id in `sessionDeviceId` (untrusted) and
    > kept the UA in the K5 material, a declared deviation; this rule, and the promise that a browser update is not a new device,
    > are therefore not implemented in any study (`G4_V2_INTEGRATED_REASSEMBLY.md` §9).
+   > **Post-G5 note (2026-10-19).** Measured (`G5_IDENTITY_LAYER.md`, `MEASURED`). With K5 = account + id and no UA: a browser update is
+   > not a new device (the `UAC12` ladder equals the no-change ladder, one K5 key, one allowance counter); a new or forged id mints no
+   > budget (BRU24 51, forged id on a stolen token 0 P admissions, minted ids 51 ≤ 52); on the P family the DEC-021 allowance,
+   > K4 overflow, K5 ladder and device watcher keep their numbers exactly (a stable known device 45 / 44 / 45; each removed mechanism is
+   > shown necessary); and an absent id reproduces the assembly and DEC-021's K5 behavior. **Registered verdict NO-GO AFTER EXPERIMENT
+   > (G3, G5, R:STEAL, R:STREAMS)**: (a) an owner who keeps mistyping across a browser update keeps their K5 history (stream `UAC`,
+   > legit-denied 6 → 9) — the designed behavior, counted as a loss by the registered item; (b) the P-lane new-device member `N_P`, when
+   > keyed by the id (a separate choice in the same layer, design §2.1), stops bounding a stolen-token thief that keeps the id and
+   > rotates IP and UA (9 → 20 P admissions before the password change; the owner then waits 1,260 s); the `POST-HOC` arm that keeps
+   > the member on the fingerprint reproduces G4 v2 on STEAL and on the streams. The UA-free K5 material alone explains (a) and nothing
+   > in (b). The U family does not keep DEC-021's number for a known device with a lost token (51 in 24 h against 45 / 44 / 45), with or
+   > without this step (`G5_IDENTITY_LAYER.md` §4, F-G5-04).
 3. **A new id mints no budget** — not for the account, the source or the operation. Otherwise an attacker clears the cookie and
    starts over.
 4. **Absence is declared absence.** A client without an id is an anonymous individual and is never grouped with every user of the
@@ -320,6 +336,13 @@ device or with cleared cookies", without forcing a passkey or a link on any cons
 > change while the thief keeps failing (G4: never), E2 is identical with and without the population, and each new component and K5
 > separation is shown necessary. checkOnly-only Hosts still fail (gate P: L1 72, D2 61). Remaining owner residual: a new device, or
 > a token past its absolute lifetime, during a continuing attack (`G4_V2_INTEGRATED_REASSEMBLY.md` §2, §5).
+
+> **Post-G5 note (2026-10-19).** The binding's separation of K5 and the proof-lane budgets were not changed by G5 (K5U, E2, STEAL's
+> bounds on the registered axes still hold on `NOUA`). One cost was measured next to "Stolen cookie": with the P-lane new-device
+> member keyed by the instance id, a thief that holds the id and rotates IP and UA is no longer capped by `N_P` (9 → 20 P admissions in
+> the 12 hours before the password change, still within 6 per window and 30 per day), its recorded failures raise the account-wide
+> `K4P`, and the owner's first login after the password change waits 1,260 s (0 with the member on the fingerprint). The password
+> change bumps the epoch and issues a new credential but does not clear `K4P` (`G5_IDENTITY_LAYER.md` §4, F-G5-01, F-G5-02).
 
 ## 8. Optional evidence
 

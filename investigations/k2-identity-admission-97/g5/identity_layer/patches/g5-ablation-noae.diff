@@ -1,0 +1,14 @@
+--- a/src/Service/EvaluationPipeline.php
++++ b/src/Service/EvaluationPipeline.php
+@@ -2440,8 +2440,9 @@
+         DeviceIdentityDTO $device,
+         bool $isEphemeral,
+     ): ?array {
+-        // Same eligibility as the account watcher (a budgeted policy), and
+-        // only where a K5 level can exist: never for API_OVERUSE.
++        if (true) {
++            return null;
++        }
+         if ($policy->getBudgetConfig() === null
+             || $this->isApiHeavyPolicy($policy)
+             || $policy->getScoreThresholds()->k5 === null

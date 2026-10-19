@@ -1,0 +1,259 @@
+{
+    "verdict": "NO-GO AFTER EXPERIMENT (G3, G5, R:STEAL, R:STREAMS)",
+    "supported": false,
+    "failed": [
+        "G3",
+        "G5",
+        "R:STEAL",
+        "R:STREAMS"
+    ],
+    "gates": {
+        "G1 UAX": {
+            "pass": true,
+            "detectorFires": true,
+            "checks": {
+                "1 UAC12 string equals KDL (P)": {
+                    "pass": true,
+                    "values": "AAAA!SSSSSA!HSSS / AAAA!SSSSSA!HSSS"
+                },
+                "2 one K5 key, score under it (P)": {
+                    "pass": true,
+                    "values": "key e642ba908800, score 9"
+                },
+                "3 one allowance counter, same value as KDL (P)": {
+                    "pass": true,
+                    "values": "UAC12 5 / KDL 5"
+                },
+                "4 UAX24 reach equals control (P)": {
+                    "pass": true,
+                    "values": "45 / 45"
+                },
+                "1 UAC12 string equals KDL (U)": {
+                    "pass": true,
+                    "values": "AAAA!SSSSSA!HSSS / AAAA!SSSSSA!HSSS"
+                },
+                "2 one K5 key, score under it (U)": {
+                    "pass": true,
+                    "values": "key c380f14af9e8, score 9"
+                },
+                "3 one allowance counter, same value as KDL (U)": {
+                    "pass": true,
+                    "values": "UAC12 5 / KDL 5"
+                },
+                "4 UAX24 reach equals control (U)": {
+                    "pass": true,
+                    "values": "77 / 77"
+                },
+                "5 UAX-ASM stays on P": {
+                    "pass": true,
+                    "values": "PPPPPPPPPPPP"
+                },
+                "6 UAX-NP 0 refusals, all P": {
+                    "pass": true,
+                    "values": "refused 0, PPPPPPPPPPPP"
+                }
+            }
+        },
+        "G2 IDM": {
+            "pass": true,
+            "detectorFires": true,
+            "checks": {
+                "1 BRU24 admissions ≤ archive": {
+                    "pass": true,
+                    "values": "51 / archive 51"
+                },
+                "1 X1 best-response reach ≤ archive": {
+                    "pass": true,
+                    "values": "4 / archive 4"
+                },
+                "1 BRU best-response reach ≤ archive": {
+                    "pass": true,
+                    "values": "5 / archive 5"
+                },
+                "1 BRD best-response reach ≤ archive": {
+                    "pass": true,
+                    "values": "5 / archive 5"
+                },
+                "1 HAR-N attack reach ≤ archive": {
+                    "pass": true,
+                    "values": "4 / archive 4"
+                },
+                "2 FORGE thief P = 0, U reach ≤ REF": {
+                    "pass": true,
+                    "values": "P 0, U 27 / REF 27"
+                },
+                "3 MINT reach ≤ REF and ≤ 52": {
+                    "pass": true,
+                    "values": "51 / REF 51"
+                }
+            }
+        },
+        "G3 KDP": {
+            "pass": false,
+            "detectorFires": true,
+            "checks": {
+                "1 TOKEN 600 s equals S0 and REF": {
+                    "pass": true,
+                    "values": "NOUA 45 / REF 45 / S0 45"
+                },
+                "1 pipeline STABLE-600 (P) equals S0": {
+                    "pass": true,
+                    "values": "45 / S0 45"
+                },
+                "1 TOKEN 300 s equals S0 and REF": {
+                    "pass": true,
+                    "values": "NOUA 44 / REF 44 / S0 44"
+                },
+                "1 pipeline STABLE-300 (P) equals S0": {
+                    "pass": true,
+                    "values": "44 / S0 44"
+                },
+                "1 TOKEN 60 s equals S0 and REF": {
+                    "pass": true,
+                    "values": "NOUA 45 / REF 45 / S0 45"
+                },
+                "1 pipeline STABLE-60 (P) equals S0": {
+                    "pass": true,
+                    "values": "45 / S0 45"
+                },
+                "2 KDL string equals S0 and REF (P)": {
+                    "pass": true,
+                    "values": "AAAA!SSSSSA!HSSS"
+                },
+                "3 UAC12 reach ≤ S0 (P)": {
+                    "pass": true,
+                    "values": "5 / S0 8"
+                },
+                "2 KDL string equals S0 and REF (U)": {
+                    "pass": true,
+                    "values": "AAAA!SSSSSA!HSSS"
+                },
+                "3 UAC12 reach ≤ S0 (U)": {
+                    "pass": true,
+                    "values": "5 / S0 8"
+                },
+                "4 LOST 600 s reach ≤ REF": {
+                    "pass": true,
+                    "values": "51 / REF 51"
+                },
+                "4 LOST 300 s reach ≤ REF": {
+                    "pass": true,
+                    "values": "51 / REF 51"
+                },
+                "4 LOST 60 s reach ≤ REF": {
+                    "pass": true,
+                    "values": "51 / REF 51"
+                },
+                "5 stream KD legitDenied and reach ≤ REF": {
+                    "pass": true,
+                    "values": "legitDenied 9/9 reach 0/0"
+                },
+                "5 stream UAC legitDenied and reach ≤ REF": {
+                    "pass": false,
+                    "values": "legitDenied 9/6 reach 0/0"
+                }
+            }
+        },
+        "G4 MECH": {
+            "pass": true,
+            "detectorFires": true,
+            "checks": {
+                "allowance/overflow STABLE-600 (P): NOUA = REF = S0 (reach, K4 score)": {
+                    "pass": true,
+                    "values": "reach 45, max K4 score 7 / S0 reach 45, K4 7"
+                },
+                "allowance/overflow STABLE-300 (P): NOUA = REF = S0 (reach, K4 score)": {
+                    "pass": true,
+                    "values": "reach 44, max K4 score 7 / S0 reach 44, K4 7"
+                },
+                "allowance/overflow STABLE-60 (P): NOUA = REF = S0 (reach, K4 score)": {
+                    "pass": true,
+                    "values": "reach 45, max K4 score 7 / S0 reach 45, K4 7"
+                },
+                "overflow lands on K4P: D-NOOVF max K4 score below NOUA (STABLE-300, P)": {
+                    "pass": true,
+                    "values": "0 < 7"
+                },
+                "K5 KDL (P): string = REF = S0; persisted on K5 not K4; second device allowed": {
+                    "pass": true,
+                    "values": "AAAA!SSSSSA!HSSS, K5 level 2, K4 level 0, second A"
+                },
+                "AE (P): string = REF = S0; no K4 block; second device allowed": {
+                    "pass": true,
+                    "values": "AAAA!SSSS|AfH2, K5 block 2, K4 block null, second A"
+                },
+                "K5 KDL (U): string = REF = S0; persisted on K5 not K4; second device allowed": {
+                    "pass": true,
+                    "values": "AAAA!SSSSSA!HSSS, K5 level 2, K4 level 0, second A"
+                },
+                "AE (U): string = REF = S0; no K4 block; second device allowed": {
+                    "pass": true,
+                    "values": "AAAA!SSSS|AfH2, K5 block 2, K4 block null, second A"
+                }
+            }
+        },
+        "G5 ABS": {
+            "pass": false,
+            "detectorFires": true,
+            "checks": {
+                "1 STREAMS with no ids: NOUA = REF on every field (68 rows)": {
+                    "pass": true,
+                    "values": "identical"
+                },
+                "2 NOID-STABLE-300 (P): NOUA = REF = S0": {
+                    "pass": true,
+                    "values": "44"
+                },
+                "2 NOID-STABLE-300 (U): NOUA = REF = S0": {
+                    "pass": false,
+                    "values": "79"
+                },
+                "2 NOID-KDL (P): NOUA = REF = S0": {
+                    "pass": true,
+                    "values": "\"AAAA!SSSSSA!HSSS\""
+                },
+                "2 NOID-KDL (U): NOUA = REF = S0": {
+                    "pass": true,
+                    "values": "\"AAAA!SSSSSA!HSSS\""
+                },
+                "2 NOID-UAC12 (P): NOUA = REF = S0": {
+                    "pass": true,
+                    "values": "AAAA!SSSAAAA!SSS (differs from KDL, as DEC-021 ships)"
+                },
+                "2 NOID-UAC12 (U): NOUA = REF = S0": {
+                    "pass": true,
+                    "values": "AAAA!SSSAAAA!SSS (differs from KDL, as DEC-021 ships)"
+                },
+                "2 NOID-AE (P): NOUA = REF = S0": {
+                    "pass": true,
+                    "values": "\"AAAA!SSSS|AfH2\""
+                },
+                "2 NOID-AE (U): NOUA = REF = S0": {
+                    "pass": true,
+                    "values": "\"AAAA!SSSS|AfH2\""
+                },
+                "3 MIXPRES (U): K5 keys differ and A unchanged by B": {
+                    "pass": true,
+                    "values": "keys a10fde97fe70 / 16234adec320, A AA vs AA"
+                }
+            }
+        }
+    },
+    "regression": {
+        "R:E2": true,
+        "R:K5U": true,
+        "R:STEAL": false,
+        "R:CROSS": true,
+        "R:HAR-B": true,
+        "R:HAR-N": true,
+        "R:BRU24": true,
+        "R:BRU24-HV": true,
+        "R:REC": true,
+        "R:CLEAR": true,
+        "R:BOOT": true,
+        "R:BOOT-X": true,
+        "R:CGN-B (archived model script, byte-identical to the archive; checked by run.sh)": true,
+        "R:STREAMS": false,
+        "R:STREAMS-UA": true
+    }
+}

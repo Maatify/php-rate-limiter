@@ -1,0 +1,11 @@
+--- a/src/Service/EvaluationPipeline.php
++++ b/src/Service/EvaluationPipeline.php
+@@ -2826,7 +2826,7 @@
+                     $result['k4'] = $deltasDto->k4_failure;
+                 } elseif ($this->isKnownForAccount($device)) {
+                     if ($deltasDto->k5_failure > 0) {
+-                        $result['k5'] = $deltasDto->k5_failure;
++                        $result['k5'] = 0;
+                     }
+                 } elseif ($deltasDto->k4_failure > 0) {
+                     $result['k4'] = $deltasDto->k4_failure;

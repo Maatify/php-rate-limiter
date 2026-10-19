@@ -1,0 +1,127 @@
+--- a/src/DTO/DeviceIdentityDTO.php
++++ b/src/DTO/DeviceIdentityDTO.php
+@@ -26,6 +26,8 @@
+         public string $normalizedUa = '',
+         public bool $isDevicePreviouslyVerifiedForAccount = false,
+         public ?string $previousFingerprintHash = null,
++        public ?string $deviceIdHash = null,
++        public ?string $previousDeviceIdHash = null,
+     ) {}
+
+     /**
+--- a/src/Service/DeviceIdentityResolver.php
++++ b/src/Service/DeviceIdentityResolver.php
+@@ -40,6 +40,8 @@
+         $hash = $this->currentHasher->hash($rawString);
+         $previousHash = $this->previousHasher?->hash($rawString);
+
++        $idRaw = $sessionFp !== '' ? "id1|{$sessionFp}" : null;
++
+         return new DeviceIdentityDTO(
+             $hash,
+             $confidence,
+@@ -48,6 +50,8 @@
+             $ua,
+             $context->isDevicePreviouslyVerifiedForAccount,
+             $previousHash,
++            $idRaw === null ? null : $this->currentHasher->hash($idRaw),
++            $idRaw === null ? null : $this->previousHasher?->hash($idRaw),
+         );
+     }
+
+--- a/src/Service/EvaluationPipeline.php
++++ b/src/Service/EvaluationPipeline.php
+@@ -120,6 +120,17 @@
+         }
+     }
+
++    /** G5 K5 material: the instance-id component when present, else the fingerprint component (today's derivation). */
++    private function g5K5Material(DeviceIdentityDTO $device): ?string
++    {
++        return $device->deviceIdHash ?? $device->fingerprintHash;
++    }
++
++    private function g5PreviousK5Material(DeviceIdentityDTO $device): ?string
++    {
++        return $device->deviceIdHash !== null ? ($device->previousDeviceIdHash ?? $device->deviceIdHash) : $this->previousFingerprintHash($device);
++    }
++
+     /** G4 K5 separation: the K5 key family of the current lane ('k5p' on the P lane). */
+     private function g4K5(): string
+     {
+@@ -193,9 +204,9 @@
+         if (! $this->store instanceof PunishmentLifecycleStoreInterface) {
+             throw new RateLimiterException('Post-punishment re-entry requires PunishmentLifecycleStoreInterface.');
+         }
+-        $current = $this->buildKeys($context, $device->normalizedUa, $device->fingerprintHash, $policyName, $this->secret);
++        $current = $this->buildKeys($context, $device->normalizedUa, $device->fingerprintHash, $policyName, $this->secret, $this->g5K5Material($device));
+         $previous = $this->hasPreviousGeneration($device)
+-            ? $this->buildKeys($context, $device->normalizedUa, $this->previousFingerprintHash($device), $policyName, $this->previousSecret ?? $this->secret)
++            ? $this->buildKeys($context, $device->normalizedUa, $this->previousFingerprintHash($device), $policyName, $this->previousSecret ?? $this->secret, $this->g5PreviousK5Material($device))
+             : [];
+         $currentKey = $current['k4'] ?? null;
+         if ($currentKey === null) {
+@@ -225,7 +236,7 @@
+         }
+         // 1. Build keys for the current generation, then the one previous
+         // generation when either generation component is present.
+-        $realKeysV2 = $this->buildKeys($context, $device->normalizedUa, $device->fingerprintHash, $policy->getName(), $this->secret);
++        $realKeysV2 = $this->buildKeys($context, $device->normalizedUa, $device->fingerprintHash, $policy->getName(), $this->secret, $this->g5K5Material($device));
+         $realKeysV1 = $this->hasPreviousGeneration($device)
+             ? $this->buildKeys(
+                 $context,
+@@ -233,6 +244,7 @@
+                 $this->previousFingerprintHash($device),
+                 $policy->getName(),
+                 $this->previousSecret ?? $this->secret,
++                $this->g5PreviousK5Material($device),
+             )
+             : [];
+
+@@ -1819,12 +1831,12 @@
+                 if ($config->known_device_micro_cap === null) {
+                     $shouldCount = true;
+                 } else {
+-                    $microRawV2 = "{$policy->getName()}:rate_limiter:microcap:{$this->g4K5()}:v1:{$this->envScope}:{$context->accountId}:{$device->fingerprintHash}";
++                    $microRawV2 = "{$policy->getName()}:rate_limiter:microcap:{$this->g4K5()}:v1:{$this->envScope}:{$context->accountId}:{$this->g5K5Material($device)}";
+                     $microKeyV2 = $this->hashKey($microRawV2, $this->secret);
+                     $microKeyV1 = null;
+
+                     if ($this->hasPreviousGeneration($device)) {
+-                        $microRawV1 = "{$policy->getName()}:rate_limiter:microcap:{$this->g4K5()}:v1:{$this->envScope}:{$context->accountId}:{$this->previousFingerprintHash($device)}";
++                        $microRawV1 = "{$policy->getName()}:rate_limiter:microcap:{$this->g4K5()}:v1:{$this->envScope}:{$context->accountId}:{$this->g5PreviousK5Material($device)}";
+                         $microKeyV1 = $this->hashKey($microRawV1, $this->previousSecret ?? $this->secret);
+                     }
+
+@@ -2441,10 +2453,10 @@
+         }
+
+         $prefix = "{$policy->getName()}:rate_limiter:aux:{$this->g1Purpose('anti_equilibrium_device')}:v1:{$this->envScope}:{$context->accountId}";
+-        $current = $this->hashKey("{$prefix}:{$device->fingerprintHash}", $this->secret);
++        $current = $this->hashKey("{$prefix}:{$this->g5K5Material($device)}", $this->secret);
+         $previous = null;
+         if ($this->hasPreviousGeneration($device)) {
+-            $previous = $this->hashKey("{$prefix}:{$this->previousFingerprintHash($device)}", $this->previousSecret ?? $this->secret);
++            $previous = $this->hashKey("{$prefix}:{$this->g5PreviousK5Material($device)}", $this->previousSecret ?? $this->secret);
+             if ($previous === $current) {
+                 $previous = null;
+             }
+@@ -2697,7 +2709,7 @@
+     /**
+      * @return array<string, string|null>
+      */
+-    private function buildKeys(RateLimitContextDTO $context, string $ua, ?string $fpHash, string $policyName, string $secret): array
++    private function buildKeys(RateLimitContextDTO $context, string $ua, ?string $fpHash, string $policyName, string $secret, ?string $k5Material = null): array
+     {
+         // Enforce strict Key Strategy namespacing:
+         // {policy}:rate_limiter:{type}:{algo_ver}:{env}:{scope_val}
+@@ -2712,7 +2724,8 @@
+         // G4 K5 SEPARATION (investigations/k2-identity-admission-97/g4/integrated): P-lane device history has its own key.
+         $k5Type = $this->g4K5();
+         $k4 = $context->accountId ? $this->hashKey("{$base}:{$k4Type}:{$ver}:{$env}:{$context->accountId}", $secret) : null;
+-        $k5 = $context->accountId && $fpHash ? $this->hashKey("{$base}:{$k5Type}:{$ver}:{$env}:{$context->accountId}:{$fpHash}", $secret) : null;
++        $k5m = $k5Material ?? $fpHash;
++        $k5 = $context->accountId && $fpHash ? $this->hashKey("{$base}:{$k5Type}:{$ver}:{$env}:{$context->accountId}:{$k5m}", $secret) : null;
+
+         return ['k1' => $k1, 'k2' => $k2, 'k3' => $k3, 'k4' => $k4, 'k5' => $k5];
+     }
