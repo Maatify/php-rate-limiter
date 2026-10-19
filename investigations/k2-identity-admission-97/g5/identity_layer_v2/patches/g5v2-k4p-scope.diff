@@ -1,0 +1,65 @@
+--- a/src/Service/EvaluationPipeline.php
++++ b/src/Service/EvaluationPipeline.php
+@@ -141,6 +141,24 @@
+     private function g1Purpose(string $purpose): string
+     {
+         return $this->g1Lane === 'P' ? $purpose . '_p' : $purpose;
++    }
++
++    /**
++     * G5 v2 K4P SCOPE (investigations/k2-identity-admission-97/g5/identity_layer_v2). null = the account-wide P penalty state of G4 v2 / G5
++     * (rule A). A non-null scope suffixes that state on the P lane only: the k4p key (score, levels, budget), the account Anti-Equilibrium
++     * watcher and the budget cooldown (rule B: account + epoch, rule C: account + credential id). Never read outside a study arm.
++     */
++    private ?string $g5v2K4pScope = null;
++
++    public function g5v2SetK4pScope(?string $scope): void
++    {
++        self::g1Guard();
++        $this->g5v2K4pScope = $scope;
++    }
++
++    private function g5v2PenaltyPurpose(string $purpose): string
++    {
++        return $this->g1Lane === 'P' && $this->g5v2K4pScope !== null ? $purpose . '_p~' . $this->g5v2K4pScope : $this->g1Purpose($purpose);
+     }
+
+     public function __construct(
+@@ -457,8 +475,8 @@
+         // alone on that account + device only.
+         if ($request->isFailure && $context->accountId !== null && $policy->getBudgetConfig() !== null
+             && $this->antiEquilibriumGate->shouldEscalate(
+-                $this->auxiliaryAccountKey($policy->getName(), $this->g1Purpose('anti_equilibrium'), $context->accountId, $this->secret),
+-                $this->previousAuxiliaryAccountKey($policy->getName(), $this->g1Purpose('anti_equilibrium'), $context->accountId),
++                $this->auxiliaryAccountKey($policy->getName(), $this->g5v2PenaltyPurpose('anti_equilibrium'), $context->accountId, $this->secret),
++                $this->previousAuxiliaryAccountKey($policy->getName(), $this->g5v2PenaltyPurpose('anti_equilibrium'), $context->accountId),
+             )) {
+             $persistence = ($realKeysV2['k4'] ?? null) !== null
+                 ? [[
+@@ -524,7 +542,7 @@
+             $this->antiEquilibriumGate->recordSoftBlock(
+                 $deviceOnly
+                     ? $deviceWatcher['current']
+-                    : $this->auxiliaryAccountKey($policy->getName(), $this->g1Purpose('anti_equilibrium'), $context->accountId, $this->secret),
++                    : $this->auxiliaryAccountKey($policy->getName(), $this->g5v2PenaltyPurpose('anti_equilibrium'), $context->accountId, $this->secret),
+             );
+         }
+
+@@ -2411,7 +2429,7 @@
+     private function budgetCooldownKey(string $policyName, string $accountId, string $secret): string
+     {
+         return $this->hashKey(
+-            "{$policyName}:rate_limiter:{$this->g1Purpose('budget_cooldown')}:v1:{$this->envScope}:{$accountId}",
++            "{$policyName}:rate_limiter:{$this->g5v2PenaltyPurpose('budget_cooldown')}:v1:{$this->envScope}:{$accountId}",
+             $secret,
+         );
+     }
+@@ -2720,7 +2738,7 @@
+         $k1 = $this->hashKey("{$base}:k1:{$ver}:{$env}:{$this->getIpPrefix($context->ip)}", $secret);
+         $k2 = $this->hashKey("{$base}:k2:{$ver}:{$env}:{$this->getIpPrefix($context->ip)}:{$ua}", $secret);
+         $k3 = $fpHash ? $this->hashKey("{$base}:k3:{$ver}:{$env}:{$this->getIpPrefix($context->ip)}:{$fpHash}", $secret) : null;
+-        $k4Type = $this->g1Lane === 'P' ? 'k4p' : 'k4';
++        $k4Type = $this->g1Lane === 'P' ? ($this->g5v2K4pScope !== null ? 'k4p~' . $this->g5v2K4pScope : 'k4p') : 'k4';
+         // G4 K5 SEPARATION (investigations/k2-identity-admission-97/g4/integrated): P-lane device history has its own key.
+         $k5Type = $this->g4K5();
+         $k4 = $context->accountId ? $this->hashKey("{$base}:{$k4Type}:{$ver}:{$env}:{$context->accountId}", $secret) : null;
