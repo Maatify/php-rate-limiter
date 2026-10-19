@@ -1,7 +1,7 @@
 # G6 budgets — the two registered measurements of step 4: the UK lane (F-G5-04) and the TMS family on `FULL2` (#97)
 
 > **Status:** G6 INVESTIGATION EVIDENCE for the step-4 decision paper. Not an ADR, not a policy, not a production value, not a public API shape, not a statement that Runtime is ready, and not an Owner
-> decision on any budget. No change to `src/`, `tests/`, `composer.json`, public contracts, presets, thresholds, ADRs, standards, `DECISIONS_INDEX.md`, or any earlier study or archive (the G5 v2, G5 and G4 v2
+> decision on any budget. No change to `src/`, `tests/`, `composer.json`, public contracts, presets, thresholds, ADRs, standards, or any earlier study or archive (the G5 v2, G5 and G4 v2
 > archives are reused read-only). DEC-015, DEC-019, DEC-021, DEC-023 and DEC-024 stay ACTIVE and unchanged; DEC-022 stays PROPOSED.
 > **Pre-registration:** [`g6/budgets/PLAN.md`](g6/budgets/PLAN.md) (v1 in `c5262e0`, v1.1 in `7af3fc2`), committed **before** the harness (`1f278ca`) and before any archived result (`956ffa3`).
 > Gates, values and verdict rules were not changed afterwards (§5).
@@ -15,7 +15,7 @@
 | --- | --- |
 | Source baseline | the branch is cut from `main@f4851eb` (G5 v2, PR #138, merged); `src/`, `composer.json`, `composer.lock` byte-identical to `4c6ca61` (checked by `run.sh`) |
 | Reference builds | the archived builders, run unchanged: `G4` (pipeline `45d201d0…63fd`), `G5V2` (`dcf1161a…3b77`); `S0` = the repository's own unpatched `src/` (`40213945…eab6`, asserted) |
-| New build | `G6UK` = `G5V2` + [`patches/g6-uk-lane.diff`](g6/budgets/patches/g6-uk-lane.diff) (patch sha-256 `d7e5d4aa…b050`, pipeline `924ce118…e7a7`, both pinned in [`build_g6.sh`](g6/budgets/build_g6.sh); only the pipeline file differs from `G5V2`, resolver and DTO are the G5 ones, asserted) |
+| New build | `G6UK` = `G5V2` + [`patches/g6-uk-lane.diff`](g6/budgets/patches/g6-uk-lane.diff) (patch sha-256 `3d12b98e…1d0e`, pipeline `924ce118…e7a7`, both pinned in [`build_g6.sh`](g6/budgets/build_g6.sh); only the pipeline file differs from `G5V2`, resolver and DTO are the G5 ones, asserted) |
 | New code | [`lib/g6.php`](g6/budgets/lib/g6.php), six scenarios, [`report.php`](g6/budgets/report.php), [`run.sh`](g6/budgets/run.sh). The G5 v2, G5, G4 v2, G3 v2, G3 and G1 libraries, the Host model and the stream tables are reused read-only |
 | Reproduction | `bash investigations/k2-identity-admission-97/g6/budgets/run.sh`; two consecutive runs byte-identical, the second under a `php.ini` that sets only `memory_limit=128M` (scan directory emptied); the runner passes `-d memory_limit=1G` to **every** php call. Exit 0 = arm 1 SUPPORTED; 3 = harness valid and arm 1 NO-GO (this result). PHP 8.5.9 here; the G5 v2 archive was produced on PHP 8.4.4 and, run unchanged on this machine before G6 started, reproduced byte for byte (PLAN.md §1) |
 

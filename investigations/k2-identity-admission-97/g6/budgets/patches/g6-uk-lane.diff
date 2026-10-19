@@ -14,7 +14,7 @@
 @@ -137,10 +137,14 @@
          return $this->g1Lane === 'P' ? 'k5p' : 'k5';
      }
- 
+
 -    /** Lane-scoped auxiliary purpose: P-lane account watcher and budget cooldown live on their own keys (M-A). */
 +    /**
 +     * Lane-scoped auxiliary purpose: P-lane account watcher and budget cooldown live on their own keys (M-A).
@@ -26,7 +26,7 @@
 -        return $this->g1Lane === 'P' ? $purpose . '_p' : $purpose;
 +        return $this->g1Lane === 'P' ? $purpose . '_p' : ($this->g1Lane === 'UK' ? $purpose . '_uk' : $purpose);
      }
- 
+
      /**
 @@ -355,7 +359,7 @@
          // 7. Distributed account attack is a pre-check-only observation. It
@@ -38,7 +38,7 @@
                  $context,
                  $device,
 @@ -398,7 +402,7 @@
- 
+
          // 9. New Device Flood (5.4)
          if ($ephemeralState !== null && $context->accountId && ! $this->isApiHeavyPolicy($policy)
 -            && $this->g1Lane !== 'P'

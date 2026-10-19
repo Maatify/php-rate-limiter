@@ -129,7 +129,7 @@ Every number is quoted from the merged study named, at that study's baseline, ex
 - **DEC-023 and DEC-024:** `ACTIVE`, unchanged. They decide the mode contract and the reservation principle; this record decides no value of theirs.
 - **DEC-021, DEC-019, DEC-015:** `ACTIVE`, unchanged; effects as stated above.
 - **DEC-003, DEC-007, DEC-008:** unchanged; any new key or door states its effects when implemented.
-- **Index:** this record is **not** in `DECISIONS_INDEX.md` in this PR, by the step-4 assignment; its line is added in the PR that records the Owner's choice. Decision Governance §6 counts a record under `docs/decisions/` that the index does not list as a discovery gap, so the omission is deliberate and lasts only until that PR (steps 1 and 2 each added their `PROPOSED` line in the PR that introduced the record).
+- **Index:** `DECISIONS_INDEX.md` lists this record as `PROPOSED`, as it did DEC-022 (#133) and DEC-023 (#134). The line changes with the PR that records the Owner's choice.
 
 ## Canonical Contract / Current Owner
 

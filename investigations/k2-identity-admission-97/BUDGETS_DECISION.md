@@ -5,7 +5,7 @@
 > DEC-021, DEC-015 and DEC-008, and whether the evidence is enough or a new measurement is needed. The options are carried, numbered and without a choice, by
 > [DEC-025](../../docs/decisions/DEC-025_LEVEL_2_ADMISSION_BUDGETS_AND_IDENTITY_LAYER_COST_DECISIONS.md) (`PROPOSED`).
 > Documentation and one registered measurement (G6: [`G6_BUDGETS_MEASUREMENT.md`](G6_BUDGETS_MEASUREMENT.md), plan in `g6/budgets/PLAN.md`). No change to `src/`, `tests/`, `composer.json`, any public contract, preset or
-> threshold, and no change to the text or status of DEC-015, DEC-019, DEC-021, DEC-022, DEC-023 or DEC-024. `DECISIONS_INDEX.md` is not touched by this PR.
+> threshold, and no change to the text or status of DEC-015, DEC-019, DEC-021, DEC-022, DEC-023 or DEC-024. This PR adds the `PROPOSED` line of DEC-025 to `DECISIONS_INDEX.md` and nothing else there.
 > **Every number is quoted from a merged archive at that archive's baseline, with its archive values** (`U_src` 12, 24 or 40, `F` 4 or 8, `T` 600, 1800 or 3600 s, `C` 4, `P_acct` 10 per window and 60 per day, `P_proof` 6 and 30, `N_P` 10 per day,
 > `U_glob` 1000, token TTL 30 days sliding and 90 days absolute, taint 3), **except the G6 rows, which are this PR's own archived measurement.** No value is proposed as a choice.
 > **Question.** For each of the nine decisions: which point does the Owner write as the declared budget, with its measured cost on the legitimate user and on the attacker?
@@ -353,4 +353,4 @@ Enough for Login at the DEC-021 values. Not measured: any other value; **OTP und
 
 ## 12. What this paper does not decide
 
-It chooses no option and no value; it does not approve `FULL2`, the identity layer, the UK lane or any Runtime; it changes no contract, preset, DEC-019 / DEC-021 text or status, and adds no line to `DECISIONS_INDEX.md`. It does not state that any measured point is acceptable.
+It chooses no option and no value; it does not approve `FULL2`, the identity layer, the UK lane or any Runtime; it changes no contract, preset, DEC-019 / DEC-021 text or status, and adds to `DECISIONS_INDEX.md` only the `PROPOSED` line of DEC-025. It does not state that any measured point is acceptable.
