@@ -234,6 +234,7 @@ them will be approved. A step that is refused or fails its gates leaves DEC-022 
    and per-account guessing budget (`T`, `C`), plus any API and multi-session replacement
    bounds. Each is a Level 2 security decision with its measured cost stated, including
    where the single-IP spray gate is set. This record assumes no value.
+   Step 4 was decided on 2026-10-19 by DEC-025 (declared study-value budgets).
 4. **Runtime proven and reviewed (step 5).** An implementation of the approved design,
    measured on the DEC-019 Decision 5 list and on the best-response and paid-identifier
    gates of Decision 4, with independent Lead review on the exact HEAD.
