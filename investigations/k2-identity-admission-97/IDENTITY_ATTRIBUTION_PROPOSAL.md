@@ -25,6 +25,9 @@
 > **Post-G5 v2 note (2026-10-19):** G5 v2 ([`G5_V2_IDENTITY_LAYER.md`](G5_V2_IDENTITY_LAYER.md), design amendments in
 > [`IDENTITY_LAYER_DESIGN.md`](IDENTITY_LAYER_DESIGN.md)) re-measured the identity layer with the new-device member on the fingerprint and
 > the three registered fixes to the G5 plan; registered verdict **SUPPORTED — LIMITED SCOPE**. Its notes are added the same way.
+>
+> **Post-G7 note (2026-10-19):** G7 ([`G7_CROSS_ACCOUNT_P.md`](G7_CROSS_ACCOUNT_P.md), design in [`D8_CROSS_ACCOUNT_P_FAILURE_DESIGN.md`](D8_CROSS_ACCOUNT_P_FAILURE_DESIGN.md)) measured a per-window cross-account failure capacity on the proven door
+> (`F` 4, `F` 8) on `FULL2`; registered verdict **SUPPORTED — LIMITED SCOPE**: the office alone (`N12T`) is not refused more, `TMX` and every attacker cell are unchanged; `TMS` 61 → 29 and `TMSd` 120 → 40 in `pre+out`, still above S0's 7/61 and 2/200 (a declared cost); an office that shares its source with the attacker pays (`TPAIRT`, 0 → 21 of 61).
 > **Arabic companion:** [`IDENTITY_ATTRIBUTION_PROPOSAL_AR.md`](IDENTITY_ATTRIBUTION_PROPOSAL_AR.md) (Owner-approved 2026-10-18,
 > `DOCUMENTATION_LIFECYCLE_STANDARD_AR.md` §2.1). This English text is the reference and prevails on any conflict. Any PR that
 > changes one of the two files changes the other in the same PR, with the same scope limits.
