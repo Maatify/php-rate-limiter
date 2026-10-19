@@ -42,13 +42,28 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   - `RateLimitContextDTO`: optional trailing `clientInstanceId` and `admissionCredential`,
     serialized only when present and ignored by every policy that did not opt in.
   - `DeviceIdentityDTO`: optional trailing `deviceIdHash` and `previousDeviceIdHash`, produced by
-    `DeviceIdentityResolver` when an instance id is supplied and consumed by no path yet.
+    `DeviceIdentityResolver` when an instance id is supplied; consumed only by the evaluation
+    pipeline for a call that carries an admission lane (below), which nothing passes yet.
   - `AdmissionCredentialCodec` and `AdmissionCredentialDTO` (encode and verify only; the Host
     decides when to issue), with `RateLimiterConfig` optional trailing `bindingKeySecret` and
     `previousBindingKeySecret`.
   - `AdmissionBindingControlInterface` (`revokeAccountBinding()`), interface only.
   - `RateLimitCommand` optional trailing `permit` (outcome commands only) and
     `RateLimitMetadataDTO` optional trailing `permit`, shapes only.
+- `EvaluationPipeline::process()` and `claimPostPunishmentReentry()` take an optional last
+  parameter, the admission lane (`Enum\AdmissionLaneEnum`, internal: `U`, `P`), and
+  `RateLimitOperationalReader::read()` (the concrete class only; its interface and the composite
+  are unchanged) takes the same optional lane. `null`, the default, is today's behaviour byte for
+  byte and ignores any instance id; **no production code passes a lane yet** (the engine and the
+  builder are untouched), and a lane is refused for a policy that did not declare the admission
+  capability. With a lane the pipeline applies, as explicit rules: no collective churn,
+  dilution or credential-spray rule on either lane; on `U` no account-scoped refusal or
+  persistence and no 24 h budget candidate (device-scoped K5 parts kept); on `P` its own account
+  key `k4p` (rule A, not cleared) and device key `k5p`, the `_p` purposes of the known-device
+  allowance, device and account Anti-Equilibrium watchers and budget cooldown, the `k5p`
+  micro-cap, and no device-cap observation, flood or K1/K2/K3 block, threshold or level. K5
+  material is the instance-id component when present, else the fingerprint component, selected
+  without re-hashing; `FingerprintHasher` is unchanged. See `docs/KEY_STRATEGY.md` §3.4 and §3.5.
 - `RedisFullCapabilityStore` implements `AdmissionCapableFullStoreInterface` and
   `AdmissionPermitStoreInterface` (DEC-024), still **dormant**: nothing calls the new operations,
   the builder composes no admission runtime, and no existing Lua script, store method or test
