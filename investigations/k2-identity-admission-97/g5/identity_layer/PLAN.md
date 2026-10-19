@@ -1,6 +1,7 @@
 # G5 — Identity layer: K5 material without the UA, K5 separation, binding — pre-registered plan (#97, #110)
 
-> **Status:** PRE-REGISTRATION, plan **v1**. Committed **before** any G5 harness code exists and before any G5 result. Evidence
+> **Status:** PRE-REGISTRATION, plan **v1.1** (v1 = commit `72183b0`; the two amendments of §10 were committed before the harness commit
+> and before the archived run). Committed **before** any G5 harness code is committed and before any archived G5 result. Evidence
 > only. **Not** an architecture, policy, threshold, contract or public-API approval. No change to `src/`, `tests/`,
 > `composer.json`, `composer.lock`, presets, public contracts, ADRs, standards, DEC-015 / DEC-019 / DEC-021 (ACTIVE, unchanged) /
 > DEC-022 (PROPOSED) / DEC-023 / DEC-024 (ACTIVE), or any earlier study. The proposal stays PROPOSED.
@@ -92,7 +93,7 @@ and `S0` arms run **pipeline-level** fixtures only (§4.2); `D-IDMINT` runs BRU2
 | **LOST** (new) | a device the Host marks known, **token lost** (never issued), constant id and UA, failing every 600, 300 and 60 s for 24 h | G3 |
 | **TOKEN** (new) | as LOST with a valid token (P lane) | G3 |
 | **UAX-ASM** (new) | an owner with a valid token and one id; 12 failures 60 s apart, the browser major changing from the 7th | G1 |
-| **MIXPRES** (new) | one account, two devices of the same owner: device A sends an id, device B does not; B fails four times, then A fails twice (all known) | G5 |
+| **MIXPRES-ASM** (new, amendment A1) | one account, two devices of the same owner: device A sends an id, device B does not; B fails four times, then A fails twice (all known), assembled. **Reported, not gated** (§10 A1) | R |
 
 ### 4.2 Pipeline-level (no admission layer), arms `REF`, `NOUA`, the four ablations and `S0`
 
@@ -110,6 +111,7 @@ is recorded only if the pre-check allowed). "Reach" = pre-checks allowed.
 | **ROT-i** (i = 300) | a **fresh id per attempt**, constant UA, failing every i seconds for 24 h |
 | **UAROT-i** (i = 300) | constant id, the UA alternating every i seconds |
 | **NOID-\*** | STABLE-300, KDL, UAC12 and AE with **no id** (the A0 path) |
+| **MIXPRES** (amendment A1) | one account, **U lane**, two devices of the same owner on the same IP: device B sends no id and fails four times, then device A (an id) fails twice, all Host-known; control without B's failures |
 
 Each KDL / UAC12 / AE row records the decision string, the K5 key and score, the persisted level on the K5 key and on K4, the
 allowance counter and its key (lane purpose included), and, for the second device, the pre-check decision.
@@ -165,7 +167,7 @@ Pipeline-level, `NOUA == REF == S0` on each row below, and the ablation must be 
 | allowance | `STABLE-300`, `STABLE-600`, `STABLE-60` (P) | reach 44 / 45 / 45 | `D-NOALW` reach `>` `NOUA`'s at every interval |
 | K4 overflow | same | same, and the overflow delta lands on `K4P` | `D-NOOVF` reach `>` `NOUA`'s at every interval |
 | K5 | `KDL` (P and U) | decision string; the persisted level is on the K5 key (id-derived) and **not** on K4; the second device is allowed | `D-NOK5` string differs (more admissions) on both lanes |
-| Anti-Equilibrium, one watcher | `AE` (P and U) | decision string; no K4 block; the second device is allowed | `D-NOAE`: the second device is **not** allowed |
+| Anti-Equilibrium, one watcher | `AE` (P and U) | decision string; no K4 block; the second device is allowed | `D-NOAE`: on the P lane the second device is **not** allowed; on the U lane the main device is no longer escalated (decision string differs). Amendment A2 |
 
 Also reported: on the U lane the allowance and K4 overflow have no observable enforcement (`STABLE-300` U equal in `NOUA`,
 `D-NOALW`, `D-NOOVF`), recorded as a finding with the design §5 row 4 attribution.
@@ -173,7 +175,7 @@ Also reported: on the U lane the allowance and K4 overflow have no observable en
 **G5 — ABS (the absence of an id is a defined path with no worse cell).**
 1. STREAMS with no ids, both flows: every row of `NOUA` equals `REF`'s on every field.
 2. `NOID-*` pipeline fixtures: `NOUA == REF == S0` on every recorded field (UAC12 differing from KDL, as DEC-021 ships).
-3. `MIXPRES`: the K5 keys of A and B differ, and A's decisions equal A's decisions in the same fixture without B's failures.
+3. `MIXPRES` (pipeline level, U lane; amendment A1): the K5 keys of A and B differ, and A's decisions equal A's decisions in the same fixture without B's failures.
 **Detector:** `D-NOK5` differs from `NOUA` on `NOID-KDL` (the no-id fixtures can see a lost K5).
 
 ### 5.3 Regression checks (verdict-relevant, §6 rule 4)
@@ -221,3 +223,14 @@ Builds the G4 trees with the archived builder and the G5 trees with `build_g5.sh
 under `-d memory_limit=1G`, the archived D-IN and CGN-B scenarios unchanged, the `S0` scenario in its own process, and the
 report; diffs against `expected/`. Exit 0 = SUPPORTED; 3 = harness valid and NO-GO; 5 = V0 / V1 miss; 6 = IN / D-IN failure;
 1 = output differs or a scenario fails. `UPDATE=1` regenerates `expected/`.
+
+## 10. Amendments (before the harness commit and before the archived run)
+
+Both were found while the harness was being developed, when the first realisation of the fixtures was executed on the reference and
+primary arms. Neither touches a gate's condition on the primary arm, an arm, a value or a verdict rule; each corrects what this plan
+said about *where* or *on which lane* a measurement is taken. They are listed so that they can be audited against `72183b0`.
+
+| # | Amendment | Why |
+| --- | --- | --- |
+| A1 | `MIXPRES` is measured at **pipeline level on the U lane** (gate G5 item 3); its assembled realisation `MIXPRES-ASM` is still run and reported, not gated | the first assembled realisation showed that two U-lane requests of one account always meet in the account bucket (`acct_tb`, identity-independent by design, `IAP§6.2`), in `REF` and `NOUA` alike (device A refused after device B's four failures, both arms identical): the assembled form cannot test K5 isolation. The condition itself (K5 keys differ, A's decisions unchanged by B's failures) is kept word for word |
+| A2 | The `D-NOAE` firing condition is evaluated on the lane where the second-device effect exists: on the **P** lane the second device is not allowed (account-wide K4P escalation instead of the device watcher); on the **U** lane, where K4 is not persisted by the assembly, the detector shows as the main device no longer being escalated (decision string differs) | the plan wrote one condition for both lanes; the pre-plan pilot's own U-lane output already showed the second device allowed with the watcher removed (a property of the no-U-escalation element). The row's guarantee (`NOUA == REF == S0`) is unchanged |
