@@ -732,6 +732,24 @@ HMAC-SHA256(preimage, active-or-generation-key-secret)
 The locked purposes are `last_missing_fp`, `anti_equilibrium`, `flood_stage`, and
 `known_device_allowance` (DEC-021).
 
+Two additions ship with the admission store operations (DEC-024, DEC-025; stage 5-b2). They are
+dormant: no code in this change derives a key with any of them.
+
+* `binding_epoch` — one integer per account, the per-account epoch of the admission binding
+  credential. The preimage is the same, `{policy}:rate_limiter:aux:binding_epoch:v1:{env}:{accountId}`,
+  with the **budget group** of the verifier class in place of `{policy}` so that login,
+  re-authentication and password change share one epoch (DEC-025 6.1). It is **not** a §10.1
+  generation-bound namespace. Current key is written; the previous-generation key is read-only
+  and read only when the current key is absent. The derivation itself lands with the engine stage
+  (5-b3b); the store operations (`readBindingEpoch`, `bumpBindingEpoch`) already receive opaque,
+  already-derived keys; see §4.8.
+* The `_p` purposes of the proven (P) lane: `known_device_allowance_p`, `anti_equilibrium_device_p`,
+  `anti_equilibrium_p` and `budget_cooldown_p`, each the unsuffixed purpose with `_p` appended
+  (same preimage shape, same rotation rules), and the key types `K4P` and `K5p` of §3.4 / §3.5.
+  They are reserved here so the P family cannot collide with the unsuffixed family; the pipeline
+  that writes them arrives with the engine stage (5-b3a), and a policy that did not opt in never
+  reads or writes them.
+
 The device Anti-Equilibrium watcher (DEC-021) extends this preimage with the
 fingerprint hash:
 
@@ -832,6 +850,50 @@ migration is required fails explicitly through `RateLimiterException` rather tha
 resetting the window.
 
 ---
+
+### 4.8 Admission Keys (Locked)
+
+The atomic admission reservation (DEC-024, stage 5-b2) is a store capability
+(`AdmissionReservationStoreInterface`, `AdmissionPermitStoreInterface`). The package derives opaque,
+hash-based scope keys per Budget Group and hands them to the store; the store never receives a raw
+account identifier, IP address or fingerprint, and a request that carries one is the caller's error,
+not something the store can detect.
+
+The official Redis adapter stores them under one namespace-level hash tag so that every admission key
+of a namespace (hence of every verifier class) sits in one hash slot on the single, non-clustered
+Redis it supports:
+
+```
+{prefix}:{sha256(namespace)}:adm:{family}:{sha256(verifierClass \0 key)}      scope keys
+{prefix}:{sha256(namespace)}:adm:permit:{sha256(permitId)}                     permit records
+{prefix}:{sha256(namespace)}:adm:epoch:{sha256(key)}                           binding epochs
+```
+
+(the braces around the namespace hash are literal Redis hash-tag braces; `{prefix}` is
+`maatify:rate-limiter:v1`). The families are `c` (counter), `d` (device-member set), `s` (set-size
+set) and `b` (bucket); one logical key never changes family.
+
+| Family | Redis type | Content and lifetime |
+| --- | --- | --- |
+| `c` counter | string | a canonical non-negative integer; `EXPIRE` set only when the reservation creates it, never refreshed; a refund decrements but never below 0 and leaves the TTL untouched. The window or day is part of the **caller's key**, so the TTL is garbage collection, not the window |
+| `d` device members | sorted set | member scored by its expiry (caller time + member lifetime); a member is live when its score is above the caller's `now`; the key is pruned only by an admitted write to the current set, and `EXPIRE` is refreshed only by that write |
+| `s` set | set | accounts of the net-failure set (U) or the D8 set (P); `EXPIRE` set when the first failure creates it; removed members never prune other members |
+| `b` bucket | hash `credit`, `last` | credit-seconds, refilled 1 per second of caller time up to `C x T`; absent means full; `EXPIRE` is the time to full, so an expired bucket and an absent bucket are the same state |
+| permit | hash `state`, `lane`, `subject`, `operation`, `deadline`, `grace`, `outcome` | created by the admitting reservation in the same script, lifetime `deadline + grace - now`; `ISSUED` then `CLAIMED`; a claim is one compare-and-set |
+| epoch | string | a canonical non-negative integer **with no TTL**: the interface carries no lifetime and a lapsed epoch would revive voided credentials; retention of the key is the Host operator's concern until a decision fixes a lifetime |
+
+Rotation. A counter or a device-member scope may name one previous-generation key. Counters sum the
+current and previous values; the device-member gate counts the live members of both sets and treats a
+member of either as existing; **a previous-generation key is never written** (not on admit, not on
+refuse, not pruned, not refreshed). A set-size or bucket scope has no previous generation in this
+contract (the store rejects one): a binding-secret rotation restarts them, which is the capacity
+re-issue the rotation interval rule (at least the window) already prices.
+
+Validation. Every scope key of a request is read and validated (type, fields, an existing key without
+a TTL) **before the first write**, because Redis does not roll back the writes of a failed script. A
+malformed value is a `RateLimiterException` and never a `BackendFailureException`; a refusal writes
+nothing and names the first refusing scope in request order. The scripts take the caller's time as a
+parameter and never call `TIME`.
 
 ## 5. Key Usage by Context
 
