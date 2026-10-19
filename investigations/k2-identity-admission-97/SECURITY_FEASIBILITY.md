@@ -231,6 +231,8 @@ Conditions (each invariant names the ones it needs):
 | **I7** | Per class: `≤ U_glob + P_glob` per window | I1, I2, D5 | Sum of lanes | without globals: no finite total; with per-policy instead of per-class globals: `× number of policies` (B4-6) |
 | **I8** | New attacker accounts add no foreign-target capacity | C3, C4 | Foreign U scopes are keyed by the target subject; no refunds or credits move capacity between subjects | refunds or credits (excluded by C4) |
 | **I9** | I1–I8 do not depend on outcomes | C4 | Outcomes never touch counters | — |
+
+> **Note, 2026-10-19 (5-b2.1, history not rewritten).** I9 and the "EXPIRED is a tombstone" consequence of §2.3 describe the store as first designed. By the Owner's decision on LT-15 (option 3, #147/#148) the store now settles an expired permit as **one failure in the failure sets that admission reserved** (never before `deadline`, never twice, counters and buckets untouched). The bound I9 states for the counters is unchanged; the failure sets `F` and D8 are no longer independent of a dropped outcome. See `RUNTIME_IMPLEMENTATION_CONTRACT.md` §2.4 and §3 row (b).
 | **I10** | Keys are written only on admission: new admission keys per class and window `≤ (s + p)·A_j` plus capped hint keys (§6.6); counters live `≤ 2W`, permits `≤ D + G` | C1 | The script checks before its first write and writes nothing on refusal | a non-atomic implementation that writes before checking (#116 F116-02 lesson). `A_j` is finite only if the global ceilings exist; otherwise storage grows with the admissions obtainable across sources (§6.6) |
 
 I1, I1′, I3, I8, I9 and I10 depend only on the mechanism (D1 with the Lead choices LT-2 and LT-4); I4a–I7 additionally depend on
