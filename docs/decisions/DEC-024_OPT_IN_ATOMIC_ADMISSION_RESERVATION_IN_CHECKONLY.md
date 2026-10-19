@@ -9,8 +9,9 @@
 `ACTIVE` — as a principle, on the Owner's decision of 2026-10-19.
 
 It closes the choice of whether `checkOnly` may take an admission reservation (Decision Governance §8). It is **not** an
-authorisation to write production code: Decision point 3 lists what must happen first. It approves neither FULL2, nor any
-value, nor any API shape.
+authorisation to write production code: that code is written under the separate Runtime authorisation of step 5, and the
+gates of Decision point 3 must pass before any change that implements the reservation is merged or shipped, and before any
+policy can opt in. It approves neither FULL2, nor any value, nor any API shape.
 
 ## Date
 
@@ -20,7 +21,10 @@ value, nor any API shape.
 
 **Owner.** Step 2 of the Owner's five-step plan for #97. This decision was option C of DEC-023 as prepared in PR #134. On
 2026-10-19 the Owner approved it as a principle, with the seven conditions C-c1 … C-c7 as written there (C-c2 in its amended
-form), and with NM-5, NM-6, NM-7 and a separate Runtime authorisation before any production code. The decision is recorded on
+form). NM-5, NM-6 and NM-7 must pass before any change that implements the reservation is merged or shipped, and before any
+policy can opt in; the code itself is written under a separate Runtime authorisation in step 5. (The Owner's decision says
+"before any production code"; the Lead ruled on 2026-10-19 that this means before merge or shipping, because the three
+gates need an implementation to be measured.) The decision is recorded on
 GitHub in [PR #134 comment 6256657121](https://github.com/Maatify/php-rate-limiter/pull/134#issuecomment-6256657121), posted by the Lead on the Owner's behalf after the Owner's explicit approval.
 It is a contract and capability decision only: not an approval of FULL2, of any value, of any Runtime, or of a Public API
 change. On the same day the Owner chose how this record relates to DEC-021: DEC-021 is not touched, and the supersession of
@@ -69,10 +73,12 @@ store failed it (`G1_FINAL_DISPOSITION.md` §3). The per-mode evidence is in
    | C-c6 | Dormant ship, then a fleet fence; bounds are `UNPROVEN` while the fleet is mixed | `ARCHITECTURE_PROPOSAL.md` §10, migration steps 1–2 |
    | C-c7 | For every enabled policy, one `checkOnly` = one admission, stated in the usage guide | `ARCHITECTURE_PROPOSAL.md` §6.5 |
 
-3. **Preconditions before any production code.** Both of the following, as the Owner set them:
-   - the gates NM-5 (Host integration), NM-6 (production store integrity) and NM-7 (concurrency, failover, mixed fleet,
-     rollback), as defined in the decision paper §5, which places NM-5 in step 5 or a separate study, and NM-6 and NM-7 in step 5;
-   - a separate Runtime authorisation in step 5.
+3. **Gates before merge or shipping, and a separate Runtime authorisation.**
+   - The gates NM-5 (Host integration), NM-6 (production store integrity) and NM-7 (concurrency, failover, mixed fleet,
+     rollback), as defined in the decision paper §5 (which places NM-5 in step 5 or a separate study, and NM-6 and NM-7 in
+     step 5), **MUST** pass before any change that implements the reservation is merged or shipped, and before any policy
+     can opt in. They need an implementation to be measured, so they do not precede writing it.
+   - Writing that code is done under a separate Runtime authorisation in step 5.
 
    This record is not that authorisation.
 4. **DEC-021 supersession is part of the first activation (binding).** The first activation of this principle is the step-5
