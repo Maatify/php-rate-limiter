@@ -31,8 +31,7 @@ final readonly class AdmissionCredentialDTO
             throw new RateLimiterException('Admission credential requires at least one budget group.');
         }
         foreach ($budgetGroups as $group) {
-            // @phpstan-ignore-next-line function.alreadyNarrowedType
-            if (! is_string($group) || trim($group) === '') {
+            if (trim($group) === '') {
                 throw new RateLimiterException('Admission credential budget groups must be non-empty strings.');
             }
         }
