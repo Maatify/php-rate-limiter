@@ -13,7 +13,7 @@ Use the consumer-facing documentation below to understand the supported package 
 
 ## Release and support
 
-- [CHANGELOG.md](CHANGELOG.md) — Release history and documented change deltas.
+- [CHANGELOG.md](CHANGELOG.md) — Release history and documented change deltas, including the dormant admission-reservation shapes that are not selectable through the builder.
 - [SECURITY.md](SECURITY.md) — Pre-release security reporting route and scope.
 
 ## Optional

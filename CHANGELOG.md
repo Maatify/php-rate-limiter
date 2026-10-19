@@ -26,6 +26,28 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - `KnownDeviceAccountAllowancePolicyInterface` (opt-in, authentication capability) for
   custom authentication policies. An active allowance requires positive K5 failure delta
   and K5 thresholds; `API_OVERUSE` cannot be combined with it; `null` disables it.
+- Admission-reservation shapes (DEC-023, DEC-024, DEC-025), all **dormant, not selectable
+  through the builder**: no official preset declares them, `RateLimiterBuilder::build()` never
+  composes an admission runtime, and registering a policy that declares the capability fails.
+  Existing behavior is unchanged byte for byte. Each shape is additive:
+  - `PolicyCapabilityEnum::ADMISSION_RESERVATION` (authentication-related; cannot be combined
+    with `API_OVERUSE`).
+  - `AdmissionReservationPolicyInterface` (`getAdmissionHostMode()`, `getAdmissionBudgetGroup()`)
+    and `AdmissionHostModeEnum` with the single case `PRE_AND_OUT`. `BlockPolicyInterface` is
+    unchanged.
+  - Store interfaces `AdmissionReservationStoreInterface`, `AdmissionPermitStoreInterface` and
+    `AdmissionCapableFullStoreInterface`, with their DTOs and enums. Interfaces only: no store
+    implements them yet. `FullCapabilityStoreInterface` is unchanged.
+  - `RateLimitContextDTO`: optional trailing `clientInstanceId` and `admissionCredential`,
+    serialized only when present and ignored by every policy that did not opt in.
+  - `DeviceIdentityDTO`: optional trailing `deviceIdHash` and `previousDeviceIdHash`, produced by
+    `DeviceIdentityResolver` when an instance id is supplied and consumed by no path yet.
+  - `AdmissionCredentialCodec` and `AdmissionCredentialDTO` (encode and verify only; the Host
+    decides when to issue), with `RateLimiterConfig` optional trailing `bindingKeySecret` and
+    `previousBindingKeySecret`.
+  - `AdmissionBindingControlInterface` (`revokeAccountBinding()`), interface only.
+  - `RateLimitCommand` optional trailing `permit` (outcome commands only) and
+    `RateLimitMetadataDTO` optional trailing `permit`, shapes only.
 
 ### Fixed
 - Bounded local-fallback denials (`fallback_limit_exceeded`) no longer return a
