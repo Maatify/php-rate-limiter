@@ -68,6 +68,7 @@ final class EngineLab
         string $runtimeClass = AdmissionRuntime::class,
         string $engineClass = RateLimiterEngine::class,
         bool $registerOptedPolicy = true,
+        ?AdmissionPermitStoreInterface $admissionInner = null,
     ) {
         if ($runtimeClass !== AdmissionRuntime::class && $engineClass === RateLimiterEngine::class) {
             // A mutation of the runtime is not an `AdmissionRuntime`: the engine under test accepts any object in its place.
@@ -79,7 +80,7 @@ final class EngineLab
         }
         $this->clock = new FixedClock('@' . self::T0);
         $this->store = new AdmissionInMemoryReferenceStore($this->clock);
-        $this->admissionStore = new FaultInjectingAdmissionStore($this->store);
+        $this->admissionStore = new FaultInjectingAdmissionStore($admissionInner ?? $this->store);
         $this->codec = new AdmissionCredentialCodec(self::BINDING_SECRET);
         $this->emitter = new RecordingFailureSignalEmitter();
         $this->runtime = new $runtimeClass(
@@ -150,7 +151,7 @@ final class EngineLab
 
     public function openFence(string $group = self::GROUP): void
     {
-        $this->store->bumpBindingEpoch(AdmissionRuntime::fenceKey(self::ENV, $group, self::KEY_SECRET), null);
+        $this->admissionStore->bumpBindingEpoch(AdmissionRuntime::fenceKey(self::ENV, $group, self::KEY_SECRET), null);
     }
 
     public function at(int $secondsFromStart): void

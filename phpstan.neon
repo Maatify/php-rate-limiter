@@ -4,3 +4,6 @@ parameters:
         - src
         - tests
         - examples
+    excludePaths:
+        # Runs in its own process against the archived study libraries (global functions of the archive), by design.
+        - tests/Support/Admission/Archive/archive-dump.php
