@@ -65,7 +65,7 @@ final class AdmissionEngineReserveTest extends TestCase
         $lab = new EngineLab(EngineLab::budgets(sourceFailureCap: 1));
         $ctx = $lab->context('acct-1', self::IP);
         $permit = EngineLab::permit($lab->check($ctx));
-        self::assertNotNull($permit);
+        self::assertNotSame('', $permit);
         $lab->outcome($ctx, false, $permit);
 
         $this->assertRefusal($lab->check($lab->context('acct-2', self::IP)), 'source_failure_cap', 'source');
@@ -99,7 +99,7 @@ final class AdmissionEngineReserveTest extends TestCase
         $lab = new EngineLab(EngineLab::budgets(crossAccountFailureCap: 1));
         $a = $lab->context('acct-1', self::IP, 'inst-1', $lab->mint('acct-1', 'inst-1'));
         $permit = EngineLab::permit($lab->check($a));
-        self::assertNotNull($permit);
+        self::assertNotSame('', $permit);
         $lab->outcome($a, false, $permit);
 
         $b = $lab->context('acct-2', self::IP, 'inst-2', $lab->mint('acct-2', 'inst-2'));
@@ -127,7 +127,7 @@ final class AdmissionEngineReserveTest extends TestCase
         }
         // An unbound outcome of a non-opted policy is T0, as today.
         $r = $lab->engine->limit($lab->context('acct-1', self::IP), RateLimitCommand::recordFailure('otp_protection'));
-        self::assertNotNull($r->decision);
+        self::assertNotSame('', $r->decision);
     }
 
     public function testAnOutcomeWithNoPermitIsAContractViolationForAnOptedPolicy(): void
@@ -198,8 +198,11 @@ final class AdmissionEngineReserveTest extends TestCase
         $p1 = (string) EngineLab::permit($lab->check($ctx));
         $lab->outcome($ctx, true, $p1);
 
-        // The success refunded the one bucket take and left no failure: the same account and another are admitted.
-        self::assertSame(RateLimitResultDTO::DECISION_ALLOW, $lab->check($ctx)->decision);
+        // The success refunded the one bucket take and left no failure: the same account is admitted again, and once that
+        // admission also ends in a success another account is admitted after the deadline.
+        $again = $lab->check($ctx);
+        self::assertSame(RateLimitResultDTO::DECISION_ALLOW, $again->decision);
+        $lab->outcome($ctx, true, (string) EngineLab::permit($again));
         $lab->at(31);
         self::assertSame(RateLimitResultDTO::DECISION_ALLOW, $lab->check($lab->context('acct-2', self::IP))->decision);
     }

@@ -22,7 +22,10 @@ use Maatify\RateLimiter\Service\EphemeralBucket;
 use Maatify\RateLimiter\Service\EvaluationPipeline;
 use Maatify\RateLimiter\Service\FailureModeResolver;
 use Maatify\RateLimiter\Service\FingerprintHasher;
+use Maatify\RateLimiter\Service\AdmissionBindingControlInterface;
+use Maatify\RateLimiter\Service\AdmissionBindingEpochInterface;
 use Maatify\RateLimiter\Service\RateLimiterEngine;
+use Maatify\RateLimiter\Service\RateLimiterRuntimeInterface;
 use Maatify\RateLimiter\Tests\Support\CircuitBreaker\InMemoryCircuitBreakerStore;
 use Maatify\RateLimiter\Tests\Support\Clock\FixedClock;
 use Maatify\RateLimiter\Tests\Support\FailureSignal\RecordingFailureSignalEmitter;
@@ -46,14 +49,17 @@ final class EngineLab
     public AdmissionInMemoryReferenceStore $store;
     public FaultInjectingAdmissionStore $admissionStore;
     public AdmissionCredentialCodec $codec;
-    public AdmissionRuntime $runtime;
-    public RateLimiterEngine $engine;
+    /** An `AdmissionRuntime` or a mutation of it (detectors). */
+    public object $runtime;
+
+    /** A `RateLimiterEngine` or a mutation of it (detectors). */
+    public RateLimiterRuntimeInterface&AdmissionBindingControlInterface&AdmissionBindingEpochInterface $engine;
     public RecordingFailureSignalEmitter $emitter;
 
     /**
      * @param list<BlockPolicyInterface> $policies registered besides the opted Login policy
-     * @param class-string<AdmissionRuntime> $runtimeClass
-     * @param class-string<RateLimiterEngine> $engineClass
+     * @param class-string $runtimeClass
+     * @param class-string $engineClass
      */
     public function __construct(
         ?AdmissionBudgetsDTO $budgets = null,
@@ -63,6 +69,14 @@ final class EngineLab
         string $engineClass = RateLimiterEngine::class,
         bool $registerOptedPolicy = true,
     ) {
+        if ($runtimeClass !== AdmissionRuntime::class && $engineClass === RateLimiterEngine::class) {
+            // A mutation of the runtime is not an `AdmissionRuntime`: the engine under test accepts any object in its place.
+            $engineClass = ServiceMutant::load('RateLimiterEngine', [], [
+                ['private readonly ?AdmissionRuntime $admission = null,', 'private readonly ?object $admission = null,'],
+                ["        AdmissionRuntime \$admission,\n        BlockPolicyInterface \$policy,", "        object \$admission,\n        BlockPolicyInterface \$policy,"],
+                ['private function requireAdmission(): AdmissionRuntime', 'private function requireAdmission(): object'],
+            ]);
+        }
         $this->clock = new FixedClock('@' . self::T0);
         $this->store = new AdmissionInMemoryReferenceStore($this->clock);
         $this->admissionStore = new FaultInjectingAdmissionStore($this->store);
@@ -88,7 +102,7 @@ final class EngineLab
             $this->clock,
         );
         $all = $registerOptedPolicy ? [new OptedEngineLoginPolicy(self::GROUP), ...$policies] : $policies;
-        $this->engine = new $engineClass(
+        $engine = new $engineClass(
             new DeviceIdentityResolver(new FingerprintHasher(self::FINGERPRINT_SECRET)),
             $pipeline,
             new CircuitBreaker(new InMemoryCircuitBreakerStore(), $this->emitter, $this->clock),
@@ -98,6 +112,10 @@ final class EngineLab
             $all,
             $this->runtime,
         );
+        if (! $engine instanceof RateLimiterRuntimeInterface || ! $engine instanceof AdmissionBindingControlInterface || ! $engine instanceof AdmissionBindingEpochInterface) {
+            throw new \LogicException('The engine under test must implement the binding interfaces.');
+        }
+        $this->engine = $engine;
         if ($openFence) {
             $this->openFence();
         }

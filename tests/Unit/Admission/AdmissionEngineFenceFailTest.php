@@ -143,12 +143,13 @@ final class AdmissionEngineFenceFailTest extends TestCase
         for ($i = 0; $i < 12; $i++) {
             $lab->check($lab->context('acct-1', self::IP));
         }
+        $ctx = $lab->context('acct-1', self::IP, 'inst-1', $lab->mint('acct-1', 'inst-1'));
         $lab->admissionStore->calls = [];
         $lab->admissionStore->fail = [];
-        $r = $lab->check($lab->context('acct-1', self::IP, 'inst-1', $lab->mint('acct-1', 'inst-1')));
+        $r = $lab->check($ctx);
 
         self::assertSame([], $lab->admissionStore->calls, 'an open circuit performs no admission call, no epoch read, no fence read');
-        self::assertNotNull($r->decision);
+        self::assertNotSame('', $r->decision);
     }
 
     // ---- S8 and its read side ------------------------------------------------------------------------------------------------
