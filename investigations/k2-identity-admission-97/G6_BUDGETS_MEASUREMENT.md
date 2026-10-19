@@ -101,7 +101,7 @@ it does alone. The same effect is why the `UKD` value is still **below** the buc
 
 | Item | Result |
 | --- | --- |
-| STREAMS | 0 of 182 rows differ from `NOUA2`. 48 requests were routed to the UK lane, all in `KD` and `UAC` with no ids (12 requests × 2 flows each); their decisions are unchanged (legit denied 9 / 9 in `pre+out`, 8 / 8 in `pre`) |
+| STREAMS | 0 of 182 rows differ from `NOUA2`. 48 requests were routed to the UK lane, all in `KD` and `UAC` with no ids (12 requests × 2 flows × 2 streams); their decisions are unchanged (legit denied 9 / 9 in `pre+out`, 8 / 8 in `pre`) |
 | Fixtures that differ | `BRU24-HV` 51 → 48, `MINT` 51 → 48, `LOST` 51 → 48 / 47 / 48 (all lower; none higher) |
 | Host-violation (`BRU24-HV`, every attacker request marked known) | 48: the marked attacker writes the `uk` state and is bounded by it (`pen:K4UK` 64 denials); without the state, `D-UKBYP` admits 5,760 |
 | Owner-side cost | a legitimate known device that lost its token and keeps failing now meets `pen:K4UK` / `soft` after the allowance, as it does today on S0 and on the P lane (45 / 44 / 45). The only legitimate streams routed to the UK lane are `KD` and `UAC` without ids, and their decisions are unchanged; no longer legitimate stream with a known device and no token exists among the 22, so the owner-side cost of a long failing run is measured only by `LOST` itself |
@@ -129,7 +129,7 @@ What bounds each cell on `FULL2` (attacker denial causes, `fresh`): `TMS`, none 
 | --- | --- | --- | --- |
 | #113 `S0` at baseline `ce89cb2`, `pre+out` / `pre` | 7/61 / 6/61 | 2/200 / 2/200 | **200/200** / 200/200 |
 | `S0` at `4c6ca61` (this baseline; G1 archive, V4), `pre+out` / `pre` | 7/61 / 6/61 | 2/200 / 2/200 | **60/200** / 200/200 |
-| G1 candidate, set R (`G1_VERIFICATION.md` §6.2 item 5) | 61/61 | 60/200 | 12 F + 5 own-proof P |
+| G1 candidate, set R (`G1_STUDY.md` §6.2 item 5) | 61/61 | 60/200 | 12 F + 5 own-proof P |
 | #119 `MODEL`, relief variants | 61/61 | 60/200 | — |
 
 ## 5. Findings
@@ -139,7 +139,7 @@ What bounds each cell on `FULL2` (attacker denial causes, `fresh`): `TMS`, none 
 | **F-G6-01** | **The UK lane restores DEC-021's bound at the pipeline level, on its own state.** `STABLE-600 / 300 / 60` 45 / 44 / 45 with a maximum `k4uk` score of 7 and an allowance counter of 45 / 44 / 45, equal to `S0` and to the P lane; the `KDL` string is DEC-021's. No state is shared with the U strangers' door (`k4`, the unsuffixed allowance) or with the P door (`k4p`, `_p`) |
 | **F-G6-02** | **Behind the U admission layer the registered gate U1 fails by 3 / 3 / 3** (48 / 47 / 48 against 45 / 44 / 45), while the value is 3 / 4 / 3 below the bucket-only 51. `POST-HOC`, `DERIVED`: refusals by the bucket record no failure, so the pipeline's counters advance on the admitted attempts only (§3.4). The 45 / 44 / 45 of DEC-021 is therefore not reproduced by this design (the pipeline behind the U admission layer); whether a design that counts those refusals as failures of the device would reach it is **not measured** |
 | **F-G6-03** | **No attacker cell rises (U2).** `BRU24-HV` and `MINT` fall from 51 to 48; every other attacker cell is equal. The other way to route a known device (G3 v2's: not charged to the bucket) admits 5,760 on `BRU24-HV`, so the check can see a violation |
-| **F-G6-04** | **`FULL2` bounds the multi-session attacker far less than S0 on the cells where S0 is strongest.** `TMS` 61/61 against 7/61; `TMSd` 120/200 against 2/200 (best response over id policies). The bound is `P_acct` per account and window times the accounts held, as DEC-022's Consequences anticipate. `REF` and `NOUA2` are identical in every cell, so the identity layer neither helps nor hurts here |
+| **F-G6-04** | **`FULL2` bounds the multi-session attacker far less than S0 on the cells where S0 is strongest.** `TMS` 61/61 against 7/61; `TMSd` 120/200 against 2/200 (best response over id policies). The bound is `P_acct` per account and window times the accounts held, the form of bound `SECURITY_FEASIBILITY.md` row 7 derives (`≤ min(12·P_acct, P_glob)`); DEC-022's Consequences say only that K2's bound goes away unless Level 2 replaces it. `REF` and `NOUA2` are identical in every cell, so the identity layer neither helps nor hurts here |
 | **F-G6-05** | **The `S0` reference of `TMX` depends on the baseline.** At `ce89cb2` (#113) `TMX` is 200/200; at `4c6ca61`, with DEC-021's K5 thresholds and allowance, it is **60/200** in `pre+out` and still 200/200 in `pre`. Where the paper and DEC-022 quote 200/200 for `S0`, it is the earlier baseline's value. `TMS` and `TMSd` are unchanged by DEC-021 (7/61, 2/200) |
 | **F-G6-06** | **Under `FULL2` the Host-violating `TMX` is bounded below `S0` in both flows** (26/200 and 34/200 against 60/200 and 200/200): its eleven foreign targets sit on the U door, behind the source ceiling and the failure cap |
 
@@ -153,6 +153,7 @@ What bounds each cell on `FULL2` (attacker denial causes, `fresh`): `TMS`, none 
 * **Interpretations.** The UK lane is requested for a request that is on the U door and Host-known by the pipeline's own predicate, evaluated by the harness on the resolver's DTO; the admission layer stays on the U door.
   Arm 2 inherits the archived mapping M1 and the corrected G4 v2 builder (which provisions a credential per fresh instance id of a proof holder). `TMS`'s `fresh` policy therefore models an attacker that can obtain a credential for
   each instance id it presents; this is the archived modelling, not a G6 choice.
+* **Erratum found by an independent fact-check (the plan stays frozen; no number changes):** PLAN.md §7 and the first archived `summary.md` cite the G1 candidate's `TMS` / `TMSd` / `TMX` values as `G1_VERIFICATION.md` §6.2 item 5; the source is `G1_STUDY.md` §6.2 item 5. `report.php` and `expected/summary.md` were corrected (only that line changed); PLAN.md keeps the wrong file name.
 * **Post-hoc material** (excluded from every gate): §3.4 and the explanation in F-G6-02.
 * The runner passes `memory_limit=1G` to every php call from the first one; G6 does not run the memory-heavy CGN-B script.
 

@@ -1,12 +1,12 @@
 # Admission budgets and the cost decisions of the identity layer — decision paper (#97, step 4)
 
-> **Status:** DECISION PAPER for the Owner. It prepares the step-4 decisions of the Owner's five-step plan for #97 (DEC-022 Condition 3, "Level 2: security decisions on cost"). It takes **no**
+> **Status:** DECISION PAPER for the Owner. It prepares the step-4 decisions of the Owner's five-step plan for #97 (DEC-022 Condition 3, "Level 2: security decisions on cost"). DEC-022 names `U_src`, `F`, `T`, `C` and the API and multi-session replacement bounds; G5 v2 §8 names four more (`N_P` cost, `K4P`, F-G5-04, re-issue); `U_glob`, the K5 micro-cap and allowance, and the P caps are in this paper because the Owner's step-4 assignment lists them. It takes **no**
 > decision and states **no** recommendation, default or preferred value: for each decision it lists the options that were measured, what each costs the legitimate user and the attacker, what it does to
 > DEC-021, DEC-015 and DEC-008, and whether the evidence is enough or a new measurement is needed. The options are carried, numbered and without a choice, by
 > [DEC-025](../../docs/decisions/DEC-025_LEVEL_2_ADMISSION_BUDGETS_AND_IDENTITY_LAYER_COST_DECISIONS.md) (`PROPOSED`).
 > Documentation and one registered measurement (G6: [`G6_BUDGETS_MEASUREMENT.md`](G6_BUDGETS_MEASUREMENT.md), plan in `g6/budgets/PLAN.md`). No change to `src/`, `tests/`, `composer.json`, any public contract, preset or
 > threshold, and no change to the text or status of DEC-015, DEC-019, DEC-021, DEC-022, DEC-023 or DEC-024. `DECISIONS_INDEX.md` is not touched by this PR.
-> **Every number is quoted from a merged archive at that archive's baseline, with its archive values** (`U_src` 24 or 40, `F` 4, `T` 1800 s, `C` 4, `P_acct` 10 per window and 60 per day, `P_proof` 6 and 30, `N_P` 10 per day,
+> **Every number is quoted from a merged archive at that archive's baseline, with its archive values** (`U_src` 12, 24 or 40, `F` 4 or 8, `T` 600, 1800 or 3600 s, `C` 4, `P_acct` 10 per window and 60 per day, `P_proof` 6 and 30, `N_P` 10 per day,
 > `U_glob` 1000, token TTL 30 days sliding and 90 days absolute, taint 3), **except the G6 rows, which are this PR's own archived measurement.** No value is proposed as a choice.
 > **Question.** For each of the nine decisions: which point does the Owner write as the declared budget, with its measured cost on the legitimate user and on the attacker?
 
@@ -80,7 +80,7 @@ KD and UAC are 9 / 6 in every row (equal to S0): no option changes the known-dev
   D2 32 and MIX 65 at 40.
 * **Attacker (single IP).** `SP6` reach grows with `U_src` (72 / 144 / 240 at 12 / 24 / 40) and is cut to 24 or 48 by `F` 4 or 8 in `pre+out`; `S0` is 20. The cap does not dominate S0: `SP6` 24 against 20, `ABA_A` 8 against 3, MIX attack 8 against 0
   (G3v2 §4.1). `POI` (eight sources, one fresh account each) is 180 with no cap that binds and **96** with `F` 4, because each source hits its own cap; `F` 8 leaves 180.
-* **Co-located attacker.** MIX legit denied is 54–66 against 117 on S0, and no source cap protects co-tenants from a co-located sprayer: in the CGNAT `MODEL` every arm refuses 92–100 % of co-tenants once a sprayer is behind the source (G3 §4.3).
+* **Co-located attacker.** MIX legit denied is 117 on S0, 63 at 24 with no cap, 65–66 with a net cap (G3 v2), 54 in `FULL2` and 42 in `FULL2-40` (G4 v2), and no source cap protects co-tenants from a co-located sprayer: in the CGNAT `MODEL` every arm refuses 92–100 % of co-tenants once a sprayer is behind the source (G3 §4.3).
 * **CGNAT `MODEL` (G3 §4.3, `MODEL`).** Refused share of legitimate unproven attempts, N = 5,000 behind one source, λ = 1 per client per day, no attacker: `U_src` 12 / 24 / 40 = 88.46 % / 76.77 % / 61.18 % with no client yet proven; with 80 % already proven 44.94 % / 4.96 % / 0.00 %.
   Inside `FULL2` (binding, `MODEL` CGN-B, day 1, 21,144 attempts): 3,996 refused at 24, 987 at 40 (day 3: 2 and 0).
 * **Hosts that record no outcome.** In `pre` the failure cap is inert (options 4, 6, 8, 9 equal options 2 and 3 there): `SP6` 144 at 24 and 240 at 40. In `out` nothing is bounded before the verifier (DEC-023 table). `FULL2` fails gate P in `pre` (L1 72, D2 61).
@@ -112,7 +112,7 @@ waits at most about `T`.
 | reference: no bucket (`R-NO-TB`, G4v2) | — | none | **2,304** (recount 0) | 60 | **17 / 80 / 80** (`S0`: 2 / 3 / 3) | D2 24 | 6 | `BRU` 80, `X1` 17 (S24 / S40 `pre`) |
 | 1 | 600 s (10 min) | 148 | **147** (147) | 60 | **5 / 8 / 8** | 0, 40, 0, 35 | 6 / 8 | not run for 10 min |
 | 2 | 1800 s (30 min) | 52 | **51** (51) | 60 | **4 / 5 / 5** | 0, 40, 0, 35 | 6 / 9 | L1 122, ABA_B 112, D2 61, Nu4 41; `BRU` 5, `X1` 4 |
-| 3 | 3600 s (60 min) | 28 | **27** (27) | **1860** (= `T` + 60) | **4 / 4 / 4** | 0, 40, 0, 35 | 6 / 9 | not run for 60 min |
+| 3 | 3600 s (60 min) | 28 | **27** (27) | **1860** (≤ `T` + 60) | **4 / 4 / 4** | 0, 40, 0, 35 | 6 / 9 | not run for 60 min |
 | in `FULL2` (`T` 30) | 1800 s | 52 | 51 (51); `BRU24-HV` 51 | 60 | 4 / 5 / 5 | 0, 0, 24, 54 | 6 (owner on P) | L1 72, D2 61 (gate P fails) |
 
 Sources: G3v2 `expected/summary.md` (`TBK10R` / `TBK30R` / `TBK60R`, the `pre` table, BRU24 / REC table); G3 (`TB10R` … `TB60R`, no routing); G4v2 `expected/summary.md` (`FULL2`). `MEASURED`. The recovery gate reads "wait from arrival ≤ `max(0, T + 60 − δ)`"
@@ -153,7 +153,7 @@ stream above S0 and S24), and the `X1` / `BRU` / `BRD` reach recorded against 2 
 | `N_P` | 10 new devices per day per account (`T_P` 86,400 s), member = fingerprint | a rotating attacker and the new-device flood | refusals on twelve logins a day with `k` distinct browser majors: 0 for `k` ≤ 10, 1 at 11, 2 at 12 (a normal browser update consumes one member) | a rotating attacker with many credentials is held at 10 by `N_P` (`MULTITOK` 10) | G5v2 F-G5v2-02, §5.1 |
 
 `UAX-NP-K` curve (refusals out of 12, `NOUA2` = `REF`): k = 1, 2, 5, 10, 11, 12 → 0, 0, 0, 0, 1, 2 (the id-keyed member of G5 gives 0 at every k and lets the thief that rotates IP and UA reach 20 P admissions before the change instead of 9: STEAL).
-The assignment's "refusal after 10 issues in a day" is the `k` = 11 point of this curve.
+A refusal after 10 issues in a day is the `k` = 11 point of this curve.
 
 ### D3.2 What is missing
 
@@ -216,7 +216,7 @@ DEC-021 and 3 / 4 / 3 below option 1.
 
 ### D5.2 What each option costs
 
-* **Legitimate user.** A known device that lost its token keeps failing until the bucket or the lane stops it: 51 (option 1), 48 / 47 / 48 (option 2), 45 / 44 / 45 (DEC-021, with a token). No legitimate stream among the 22 reaches the UK lane's limits (`KD` and `UAC` without ids stop at 12 requests; decisions unchanged).
+* **Legitimate user.** A known device that lost its token keeps failing until the bucket or the lane stops it: 51 (option 1), 48 / 47 / 48 (option 2), 45 / 44 / 45 (DEC-021, with a token). No legitimate stream among the 22 reaches the UK lane's limits (`KD` and `UAC` without ids are 12 attempts each, denied by the pipeline and the bucket as before; decisions unchanged).
 * **Attacker.** Option 2 never raises an attacker cell and lowers the two that a Host-marked-known attacker can drive (51 → 48). Option 3 is the one that does not hold under a Host violation (5,760).
 * **Trust.** Options 2 and 3 both rely on the Host's known-device signal exactly as DEC-021 does. A Host that marks an attacker known lets it write the `uk` state (option 2) or skip the bucket (option 3).
 
@@ -285,7 +285,7 @@ DEC-021 / DEC-015 / DEC-008: a global counter is one more admission key, absent 
 | `TMSd` (200, dense) `pre+out` / `pre` | 2/200 / 2/200 | 2/200 / 2/200 | **120/200** / 120/200 | 120 / 60 / 16 | `P_acct` 10 per account and window × 12 accounts |
 | `TMX` (one session, 12 accounts) `pre+out` / `pre` | **200/200** / 200/200 | **60/200** / 200/200 | 26/200 / 34/200 | 26 / 21 / 16 | source ceiling and failure cap on the 11 foreign accounts |
 
-The `S0` value of `TMX` depends on the baseline: 200/200 before DEC-021 (#113 at `ce89cb2`), **60/200** in `pre+out` after it (the G1 archive at `4c6ca61`, reproduced in G6, V4). Other history: the G1 candidate gave `TMS` 61/61, `TMSd` 60, `TMX` 12 F + 5 own-proof P (G1V §6.2 item 5); #119 `MODEL` relief variants 61/61 and 60/200.
+The `S0` value of `TMX` depends on the baseline: 200/200 before DEC-021 (#113 at `ce89cb2`), **60/200** in `pre+out` after it (the G1 archive at `4c6ca61`, reproduced in G6, V4). Other history: the G1 candidate gave `TMS` 61/61, `TMSd` 60, `TMX` 12 F + 5 own-proof P (`G1_STUDY.md` §6.2 item 5); #119 `MODEL` relief variants 61/61 and 60/200.
 
 ### D8.2 The API cells (G1 archive, `MEASURED`; attacker reach / attempts; legitimate denied / attempts)
 

@@ -45,7 +45,7 @@ shape; Runtime (step 5).
 
 ## Context
 
-DEC-022 (`PROPOSED`) names, in its Condition 3, an Owner choice of the budgets, "each a Level-2 security decision with its measured cost stated, including where the single-IP spray gate is set", and assumes no value. Steps 1 to 3 are closed:
+DEC-022 (`PROPOSED`) names, in its Condition 3, an Owner choice of the budgets, "Each is a Level 2 security decision with its measured cost stated, including where the single-IP spray gate is set", and assumes no value. Steps 1 to 3 are closed:
 DEC-022 `PROPOSED`; DEC-023 and DEC-024 `ACTIVE` (the mode contract and the opt-in reservation, as principles); the identity layer `SUPPORTED — LIMITED SCOPE` (G5 v2). The measured cost of every option, per decision, on the legitimate user
 (`L1`, `D2`, `ABA_B`, MIX legitimate, HAR, UAC, KD) and on the attacker's reach (`SP6` / `SP3` / `SP1n`, `POI`, `BRU24`, `X1` / `BRU` / `BRD`, STEAL, `MULTITOK`), with its effect on DEC-021, DEC-015 and DEC-008 and its sources, is in the decision paper
 [`investigations/k2-identity-admission-97/BUDGETS_DECISION.md`](../../investigations/k2-identity-admission-97/BUDGETS_DECISION.md). The one registered measurement of this step is
@@ -89,7 +89,7 @@ No option of this record approves, and the choice of any option does not approve
 ## Rationale
 
 - **Why options and no choice.** DEC-022 assumes no value and DEC-023 / DEC-024 closed the step-2 choices without one; the values are the Owner's. The numbers are measured; whether they are acceptable is a security decision on cost.
-- **Why nine points in one record.** They are the Level-2 decisions DEC-022 Condition 3 and G5 v2 §8 hand to step 4; a single option list lets the Owner see the interactions (paper §10). Decision Governance's default is one material decision per record: when
+- **Why nine points in one record.** DEC-022 Condition 3 names decisions 1, 2 and 8, G5 v2 §8 names 3 (the `N_P` cost), 4, 5 and 6, and the Owner's step-4 assignment adds the P caps, 7 and 9; a single option list lets the Owner see the interactions (paper §10). Decision Governance's default is one material decision per record: when
   the Owner chooses, the recording PR may split the choice into records by decision, as step 2 was recorded in DEC-023 and DEC-024.
 - **Why some options are marked not measured.** The registered rule of the studies is that a gate with no evidence is not a gate that passed. The missing measurements are written as gate-shaped items, not run here.
 

@@ -157,5 +157,5 @@ S0 is the repository's own `src/` at this baseline (`4c6ca61`), re-run in this s
 | #113 `S0` at `ce89cb2`, `pre` | 6/61 | 2/200 | 200/200 |
 | G1 archive `S0` at `4c6ca61`, `pre+out` (V4) | 7/61 | 2/200 | 60/200 |
 | G1 archive `S0` at `4c6ca61`, `pre` (V4) | 6/61 | 2/200 | 200/200 |
-| G1 candidate (`G1_VERIFICATION.md` §6.2 item 5, P lane, set R) | 61/61 | 60/200 | 12 F + 5 own-proof P |
+| G1 candidate (`G1_STUDY.md` §6.2 item 5, P lane, set R) | 61/61 | 60/200 | 12 F + 5 own-proof P |
 | #119 `MODEL`, relief variants | 61/61 | 60/200 | — |

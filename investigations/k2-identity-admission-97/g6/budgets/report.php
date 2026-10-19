@@ -462,7 +462,7 @@ $md .= "\n### History quoted from archives (not re-run here)\n\n| Source | TMS |
 $md .= "| #113 `S0` at `ce89cb2`, `pre+out` | 7/61 | 2/200 | 200/200 |\n| #113 `S0` at `ce89cb2`, `pre` | 6/61 | 2/200 | 200/200 |\n";
 $md .= '| G1 archive `S0` at `4c6ca61`, `pre+out` (V4) | ' . cnt($s0Idx['TMS|pre+out']['reach']) . '/61 | ' . cnt($s0Idx['TMSd|pre+out']['reach']) . '/200 | ' . cnt($s0Idx['TMX|pre+out']['reach']) . "/200 |\n";
 $md .= '| G1 archive `S0` at `4c6ca61`, `pre` (V4) | ' . cnt($s0Idx['TMS|pre']['reach']) . '/61 | ' . cnt($s0Idx['TMSd|pre']['reach']) . '/200 | ' . cnt($s0Idx['TMX|pre']['reach']) . "/200 |\n";
-$md .= "| G1 candidate (`G1_VERIFICATION.md` §6.2 item 5, P lane, set R) | 61/61 | 60/200 | 12 F + 5 own-proof P |\n| #119 `MODEL`, relief variants | 61/61 | 60/200 | — |\n";
+$md .= "| G1 candidate (`G1_STUDY.md` §6.2 item 5, P lane, set R) | 61/61 | 60/200 | 12 F + 5 own-proof P |\n| #119 `MODEL`, relief variants | 61/61 | 60/200 | — |\n";
 file_put_contents("$outDir/summary.md", $md);
 file_put_contents("$outDir/gates.json", json_encode(['verdict' => $verdict, 'gates' => $g, 'tmsBest' => $tmsBest], JSON_PRETTY_PRINT | JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNICODE) . "\n");
 
