@@ -1,6 +1,6 @@
 # Runtime implementation contract — step 5, stage 5-a (#97)
 
-> **Status:** CONTRACT ON PAPER for Lead review and two Owner decisions. Documentation only: no change to `src/`, `tests/`, `composer.json`, `composer.lock`, any preset, threshold, canonical contract, `DECISIONS_INDEX.md`, or the text or status of DEC-015, DEC-019, DEC-021, DEC-022, DEC-023, DEC-024 or DEC-025.
+> **Status:** CONTRACT ON PAPER, reviewed by the Lead (TECHNICAL PASS, [PR #143 comment 6264644406](https://github.com/Maatify/php-rate-limiter/pull/143#issuecomment-6264644406)); the two Owner decisions OD-1 and OD-2 are decided ([comment 6264699340](https://github.com/Maatify/php-rate-limiter/pull/143#issuecomment-6264699340), 2026-10-19). Documentation only: no change to `src/`, `tests/`, `composer.json`, `composer.lock`, any preset, threshold, canonical contract, `DECISIONS_INDEX.md`, or the text or status of DEC-015, DEC-019, DEC-021, DEC-022, DEC-023, DEC-024 or DEC-025.
 > It is not Runtime authority, not an API approval, and not an Architecture GO. Stage 5-b (code) starts only after this document is accepted and merged. Stage 5-c (first activation) is a separate atomic PR.
 > **Binding inputs (all `ACTIVE`):** DEC-023 (mode eligibility, declaration A-2), DEC-024 (opt-in T0 reservation, conditions C-c1 … C-c7, gates NM-5 / NM-6 / NM-7 before merge or ship, DEC-021 full supersession at first activation), DEC-025 (declared study-value budgets, decision 8 as rule 8.2: [PR #141 comment 6264207884](https://github.com/Maatify/php-rate-limiter/pull/141#issuecomment-6264207884)), DEC-008 (typed capabilities, Backward Compatibility 1–4), DEC-015, DEC-003, DEC-007.
 > **Evidence classes:** `CODE` (read from `main@21065b2`), `MEASURED` (a merged archive), `DERIVED` (reasoning from a cited contract), `PROPOSED` (this document, for review). Every number is an archive value quoted at that archive's baseline.
@@ -53,7 +53,7 @@ Every shape is additive: no existing signature, default or meaning changes. Name
 | **S6** | `Service\AdmissionCredentialCodec` (final) and `DTO\AdmissionCredentialDTO` (claims: subject, budget groups, instance, `jti`, `exp`, `bindAt`, `epoch`, key id); `RateLimiterConfig`: optional trailing `bindingKeySecret` and `previousBindingKeySecret` | The credential format is public because the Host mints it. The library verifies (integrity, subject, budget group, instance, expiry, epoch; ILD §4.2) and provides the primitive to encode claims; it never decides when to issue (§0.2). A binding key rotates independently of the key and fingerprint secrets | DEC-025 6.1 (re-issue), 3.1; ILD §4.1–§4.5 |
 | **S7** | New values in the existing `RateLimitMetadataDTO::$cause`: `source_capacity`, `source_failure_cap`, `account_bucket`, `proof_capacity`, `new_device_cap`, `source_proof_failure_cap` (study codes in §2.3). A capacity refusal is `SOFT_BLOCK` with a retry-after to the end of the window, never persisted, never counted by Anti-Equilibrium, budgets or cycles | The result shape needs no new field (AP §6.3). SC-1 (a source refusal is distinct from every penalty cause) | DEC-024 Consequences (Public API); AP §6.3, §6.7 |
 | **S8** | `Service\AdmissionBindingControlInterface` with `revokeAccountBinding(string $accountId): void` (bumps the per-account epoch), implemented by the engine and reached through the composite runtime by `instanceof`; **not** added to `RateLimiterRuntimeInterface` | The password-change / recovery event that voids every older credential is a Host proof; the library cannot learn it from the client (ILD §4.3). A new interface keeps existing implementers of the runtime interfaces valid | DEC-025 6.1; ILD §4.3 |
-| **S9** | (Only if NM-10 option (b) is chosen) optional `?string $permit = null` on `RateLimitCommand` and an optional `permit` element in `RateLimitMetadataDTO` on `ALLOW`; `Repository\AdmissionPermitStoreInterface extends AdmissionReservationStoreInterface` | Binds one outcome to one admission (T1). Shape in §3 | DEC-023 point 4 (NM-10); AP §6.5 |
+| **S9** | (Approved shape: OD-1 decided option (b), §3) optional `?string $permit = null` on `RateLimitCommand` and an optional `permit` element in `RateLimitMetadataDTO` on `ALLOW`; `Repository\AdmissionPermitStoreInterface extends AdmissionReservationStoreInterface` | Binds one outcome to one admission (T1). Shape in §3 | DEC-023 point 4 (NM-10); AP §6.5 |
 
 **What no shape does.** No `BlockPolicyInterface` method, no `RateLimiterInterface` / `RateLimiterRuntimeInterface` method, no change to a result constant or `RateLimitCommand::checkOnly|recordFailure|recordSuccess` signature, no official preset declaring S1, no value on any public surface.
 
@@ -164,7 +164,7 @@ The per-account epoch is a **new locked purpose** in `KS` §4.6 (LOCKED): the am
 - Cost the Owner accepts with (b): S9 public surface; a permit record per admission; a Host migration for the activating Host (thread one opaque token from `checkOnly` to the outcome); two new values `D`, `G`; and the guarantee is "at most once, modulo failover".
 - If the Owner prefers a lenient Host contract: (b) with the token optional, and the A-2 residual stated as open for token-less Hosts.
 
-**What the Owner is asked to decide (OD-1):** (a), (b) required, or (b) optional; and, with (b), the values `D` and `G` and the drop shares for the gate. Until then 5-b implements neither mechanism and stage 5-b3's NM-10 gate cannot be registered.
+**Decided (OD-1, 2026-10-19, [comment 6264699340](https://github.com/Maatify/php-rate-limiter/pull/143#issuecomment-6264699340)): option (b), a T1 permit that is required for policies that opt into the admission capability only.** An outcome without a valid permit is rejected for an opted policy and is never re-sent as an unbound outcome. Policies that did not opt in are not affected (T0 as today). The values `D` (the deadline, `D ≤ W`), `G` (the grace) and the outcome-drop shares for the NM-10 gate are **study values**: they are proposed and registered in the 5-b3 plan before it runs, not in this decision. S9 (an optional `permit` field on `RateLimitCommand`, a `permit` element in the `ALLOW` metadata, the permit store interface) is an approved additive shape. Options (a) and (b′) were not chosen. The text above is the analysis as presented to the Owner.
 
 ## 4. DEC-015 behaviour, DEC-003 cycles, DEC-007 lifecycles
 
@@ -207,11 +207,11 @@ DEC-024 point 4 binds the first activation to a **new record that supersedes DEC
 **Plan.**
 
 1. Draft **DEC-026** (Appendix A), `PROPOSED` in 5-a. It is a section of this document and **not** a file under `docs/decisions/`, and it is not indexed: a `PROPOSED` record is not implementation authority (Decision Governance §5), and 5-b needs none of it. It moves to `docs/decisions/` with its index line in 5-c, or earlier if the Owner asks.
-2. DEC-026 carries **every** decision, rationale, consequence and alternative of DEC-021 as they are, for every policy; the delta is exactly three changes (Appendix A, "Delta").
+2. DEC-026 carries **every** decision, rationale, consequence and alternative of DEC-021 as they are, for every policy; the delta is the four items of Appendix A, "Delta".
 3. In 5-c, one atomic PR: DEC-026 `ACTIVE`, DEC-021 `SUPERSEDED` (`Superseded By: DEC-026`; DEC-026 `Supersedes: DEC-021`), the index, the canonical contracts (§7), the code references to DEC-021, and the first opting policy.
 4. DEC-021's historical text, rationale and measurements are never rewritten (Decision Governance §9).
 
-**What the Owner decides (OD-2):** that the delta in Appendix A is the whole delta, and that DEC-026 is the number and the form (a full replacement record carrying DEC-021 unchanged for non-opted policies). The Lead reviews the wording.
+**Decided (OD-2, 2026-10-19, [comment 6264699340](https://github.com/Maatify/php-rate-limiter/pull/143#issuecomment-6264699340)):** the draft of Appendix A is accepted as written, in number and form: a full replacement record that carries DEC-021 unchanged for every policy that did not opt in. It stays a draft inside this document until 5-c.
 
 ## 6. Migration and rollback
 
@@ -299,14 +299,14 @@ DEC-022 `ACTIVE` and DEC-019's exit are 5-c conditions (§9.3). The permit and t
 
 ## 9. Decisions and checks requested
 
-### 9.1 Owner decisions (OD)
+### 9.1 Owner decisions (OD) — both decided ([comment 6264699340](https://github.com/Maatify/php-rate-limiter/pull/143#issuecomment-6264699340))
 
 | ID | Decision | Options | Executor's recommendation |
 | --- | --- | --- | --- |
-| **OD-1** | **NM-10:** how an outcome is bound to its admission | (a) deadline, counted as a failure; (b) T1 permit, required for opted policies; (b′) T1 permit, optional | **(b), required for opted policies** (§3). With it the Owner states `D`, `G` and the drop shares for the gate |
-| **OD-2** | **Draft DEC-026:** that Appendix A is the whole delta from DEC-021, and its number and form | accept / amend | Accept. It restates DEC-021 unchanged for non-opted policies and adds exactly three changes |
+| **OD-1** | **NM-10:** how an outcome is bound to its admission | (a) deadline, counted as a failure; (b) T1 permit, required for opted policies; (b′) T1 permit, optional | **Decided: (b), required for opted policies only.** `D`, `G` (`D ≤ W`) and the drop shares are study values registered in the 5-b3 plan before it runs |
+| **OD-2** | **Draft DEC-026:** that Appendix A is the whole delta from DEC-021, and its number and form | accept / amend | **Decided: accepted as written.** It restates DEC-021 unchanged for non-opted policies and adds the four items of the Appendix A delta |
 
-### 9.2 Lead technical choices (LT), proposed here for review
+### 9.2 Lead technical choices (LT) — accepted by the Lead (comment 6264644406): LT-1 to LT-8 as written, with `blockLevel` 1 (LT-2) and LT-4 (`correlationId ?? accountId`; a new `subject` input is rejected for now) confirmed
 
 | ID | Choice | Proposed |
 | --- | --- | --- |
@@ -321,7 +321,7 @@ DEC-022 `ACTIVE` and DEC-019's exit are 5-c conditions (§9.3). The permit and t
 
 ### 9.3 What is deferred to 5-c (named so it is not forgotten)
 
-DEC-022 `ACTIVE` needs its four conditions: (1) DEC-023 / DEC-024 (decided), (2) UA-free K5 measured with DEC-021 parity (G5 v2, `SUPPORTED — LIMITED SCOPE`), (3) DEC-025 (decided), (4) **Runtime proven and reviewed**: measured on the DEC-019 Decision 5 list (the `checkOnly`-only and record-only guarantees, K1 + K2 overlap, IPv6 macro scopes, Current / Previous rotation, trusted / nontrusted collateral, block renewal, cap / N−1) and on the best-response and paid-identifier gates of DEC-022 Decision 4, with independent Lead review on the exact HEAD. DEC-019 Decision 6: the exit needs a replacement material decision, its ADR and canonical contract, and proven Runtime; Decision Governance §9 has no partial supersession, so 5-c gives the rest of DEC-019's scope (K1 credential spray for non-opted policies, API anti-evasion, `checkOnly` limitations, custom policies under DEC-008) an explicit `ACTIVE` owner by an explicit record. The Maatify-dedicated policy that first selects T0 is a 5-c item; the free mode stays on today's defaults until a separate Owner decision (assignment).
+DEC-022 `ACTIVE` needs its four conditions: (1) DEC-023 / DEC-024 (decided), (2) UA-free K5 measured with DEC-021 parity (G5 v2, `SUPPORTED — LIMITED SCOPE`), (3) DEC-025 (decided), (4) **Runtime proven and reviewed**: measured on the DEC-019 Decision 5 list (the `checkOnly`-only and record-only guarantees, K1 + K2 overlap, IPv6 macro scopes, Current / Previous rotation, trusted / nontrusted collateral, block renewal, cap / N−1) and on the best-response and paid-identifier gates of DEC-022 Decision 4, with independent Lead review on the exact HEAD. DEC-019 Decision 6: the exit needs a replacement material decision, its ADR and canonical contract, and proven Runtime; Decision Governance §9 has no partial supersession, so 5-c gives the rest of DEC-019's scope (K1 credential spray for non-opted policies, API anti-evasion, `checkOnly` limitations, custom policies under DEC-008) an explicit `ACTIVE` owner by an explicit record. **LOCKED contracts (Lead ruling, comment 6264644406; no third Owner decision):** `KS` §4.6 (the `binding_epoch` purpose and the `_p` purposes) and `KS` §3.4 / §3.5 belong to DEC-026 as its canonical contract and are amended in the atomic 5-c PR, under Decision Governance §3. `KS` §2 (the source-capacity class) belongs to DEC-022 Level 1 and is amended when DEC-022 becomes `ACTIVE`, also in 5-c. DEC-026's "Canonical Contract / Current Owner" names these sections. The Maatify-dedicated policy that first selects T0 is a 5-c item; the free mode stays on today's defaults until a separate Owner decision (assignment).
 
 ### 9.4 Findings of this document the Lead should check first
 
@@ -330,7 +330,7 @@ DEC-022 `ACTIVE` needs its four conditions: (1) DEC-023 / DEC-024 (decided), (2)
 3. §8.2 RP-GLOB: the archive arms carried global ceilings that DEC-025 7.1 does not.
 4. §1.1: dormancy is a code property (null `AdmissionRuntime`), not a convention.
 5. Appendix A states DEC-026 is a draft inside this document, not a file or an index line.
-6. **LOCKED contracts.** §7 lists amendments to `KS` §2 (the source-capacity class, `AP` §6.7 / AP D7, `PROPOSED` there), `KS` §4.6 (the `binding_epoch` purpose and the `_p` purposes) and `KS` §3.4 / §3.5. DEC-025 decides the budgets; none of DEC-023 / 024 / 025 names these LOCKED-contract amendments as decided. The Lead should say whether DEC-025 1.4 and DEC-026 cover them or whether a separate Owner decision is needed before 5-b2 / 5-b3 edit those sections. This does not block 5-a.
+6. **LOCKED contracts — ruled by the Lead, see §9.3 (no third Owner decision).** §7 lists amendments to `KS` §2 (the source-capacity class, `AP` §6.7 / AP D7, `PROPOSED` there), `KS` §4.6 (the `binding_epoch` purpose and the `_p` purposes) and `KS` §3.4 / §3.5. DEC-025 decides the budgets; none of DEC-023 / 024 / 025 names these LOCKED-contract amendments as decided. The Lead should say whether DEC-025 1.4 and DEC-026 cover them or whether a separate Owner decision is needed before 5-b2 / 5-b3 edit those sections. This does not block 5-a.
 
 ## 10. Stage 5-b: the PRs
 
@@ -342,7 +342,7 @@ Each PR is dormant, has a Lead review before merge, and carries the registered g
 | **5-b2** Store | `RedisFullCapabilityStore` and the reference store implement S3 (reserve, outcome, epoch; permit operations if OD-1 = (b)); `AdmissionCapableFullStoreInterface`; `KS` key sections | NM-6, NM-7 (concurrency and failover, store level), ROT (store part), FAIL (store part) | The store can, nothing calls it |
 | **5-b3** Engine and pipeline | `AdmissionRuntime`, lane resolution, the pipeline family split and the study guards as explicit rules, the operational reader, outcome hooks, permit handling, canonical documents | RP-G4, RP-G5, RP-G6, RP-G7, RP-GLOB, CYCLES, LIFECYCLE, FAIL, SC-1…6, NM-5, NM-7 (mixed fleet, rollback), NM-10 | Yes, but unreachable through the builder (§1.1) |
 
-5-b3 is the largest PR and may split by Lead decision along the pipeline (identity family split) and the engine (admission runtime) if the review cannot hold it.
+5-b3 is **split in advance** (Lead ruling): **5-b3a** the family split in the pipeline and the K5 material (identity family selection, the study guards as explicit rules; RP-G5, CYCLES, LIFECYCLE parts), and **5-b3b** `AdmissionRuntime`, lanes, the permit, outcome hooks and the canonical documents (RP-G4, RP-G6, RP-G7, RP-GLOB, FAIL, SC-1…6, NM-5, NM-7 mixed fleet and rollback, NM-10). The row above is the union of the two.
 
 ## 11. Limits
 
@@ -352,7 +352,7 @@ This document decides nothing that DEC-023, DEC-024 or DEC-025 did not, and inve
 
 ## Appendix A — Draft record DEC-026 (`PROPOSED`, not a file, not indexed)
 
-> The text below is a **draft inside this document**. It is not implementation authority (Decision Governance §5) and it does not change the status or text of DEC-021. In 5-c it becomes `docs/decisions/DEC-026_<title>.md` with its index line, in the same PR in which it becomes `ACTIVE` and DEC-021 becomes `SUPERSEDED`.
+> **Status: accepted as draft by the Owner (OD-2, [comment 6264699340](https://github.com/Maatify/php-rate-limiter/pull/143#issuecomment-6264699340)); the text is unchanged and the record stays `PROPOSED` until 5-c.** The text below is a **draft inside this document**. It is not implementation authority (Decision Governance §5) and it does not change the status or text of DEC-021. In 5-c it becomes `docs/decisions/DEC-026_<title>.md` with its index line, in the same PR in which it becomes `ACTIVE` and DEC-021 becomes `SUPERSEDED`.
 
 ### DEC-026 — Known-Device Verifier Bound, restated for the admission layer (replaces DEC-021)
 
