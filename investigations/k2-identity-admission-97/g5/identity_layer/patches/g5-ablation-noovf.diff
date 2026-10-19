@@ -1,0 +1,10 @@
+--- a/src/Service/EvaluationPipeline.php
++++ b/src/Service/EvaluationPipeline.php
+@@ -1669,7 +1669,6 @@
+                 $this->previousAuxiliaryAccountKey($policy->getName(), $this->g1Purpose('known_device_allowance'), $context->accountId),
+             );
+             if ($allowance->count > $allowanceLimit) {
+-                $deltas['k4'] = $policy->getScoreDeltas()->k4_failure;
+             }
+         }
+ 
