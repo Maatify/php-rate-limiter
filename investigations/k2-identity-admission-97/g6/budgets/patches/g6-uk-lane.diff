@@ -1,0 +1,57 @@
+--- a/src/Service/EvaluationPipeline.php
++++ b/src/Service/EvaluationPipeline.php
+@@ -107,8 +107,8 @@
+     public function g1SetLane(string $lane): void
+     {
+         self::g1Guard();
+-        if ($lane !== 'U' && $lane !== 'P') {
+-            throw new RateLimiterException('G1 lane must be U or P.');
++        if ($lane !== 'U' && $lane !== 'P' && $lane !== 'UK') {
++            throw new RateLimiterException('G1 lane must be U, P or UK.');
+         }
+         $this->g1Lane = $lane;
+     }
+@@ -137,10 +137,14 @@
+         return $this->g1Lane === 'P' ? 'k5p' : 'k5';
+     }
+
+-    /** Lane-scoped auxiliary purpose: P-lane account watcher and budget cooldown live on their own keys (M-A). */
++    /**
++     * Lane-scoped auxiliary purpose: P-lane account watcher and budget cooldown live on their own keys (M-A).
++     * G6 UK LANE (investigations/k2-identity-admission-97/g6/budgets): a request on the U door that the Host already vouches for keeps the
++     * DEC-021 allowance, K4 overflow, account watcher and budget cooldown on its own `_uk` state. Never read outside a study arm.
++     */
+     private function g1Purpose(string $purpose): string
+     {
+-        return $this->g1Lane === 'P' ? $purpose . '_p' : $purpose;
++        return $this->g1Lane === 'P' ? $purpose . '_p' : ($this->g1Lane === 'UK' ? $purpose . '_uk' : $purpose);
+     }
+
+     /**
+@@ -355,7 +359,7 @@
+         // 7. Distributed account attack is a pre-check-only observation. It
+         // must run before the older bounded correlation rules so a missing
+         // snapshot capability cannot leave partial S3-F08 state behind.
+-        if ($request->isPreCheck && $this->isDistributedAccountPolicy($policy) && $this->g1Lane !== 'P') {
++        if ($request->isPreCheck && $this->isDistributedAccountPolicy($policy) && $this->g1Lane === 'U') {
+             if ($candidate = $this->checkDistributedAccountAttack(
+                 $context,
+                 $device,
+@@ -398,7 +402,7 @@
+
+         // 9. New Device Flood (5.4)
+         if ($ephemeralState !== null && $context->accountId && ! $this->isApiHeavyPolicy($policy)
+-            && $this->g1Lane !== 'P'
++            && $this->g1Lane === 'U'
+             && $ephemeralState->accountDeviceCount >= 6) {
+             $floodKey = $this->auxiliaryAccountKey(
+                 $policy->getName(),
+@@ -2738,7 +2742,7 @@
+         $k1 = $this->hashKey("{$base}:k1:{$ver}:{$env}:{$this->getIpPrefix($context->ip)}", $secret);
+         $k2 = $this->hashKey("{$base}:k2:{$ver}:{$env}:{$this->getIpPrefix($context->ip)}:{$ua}", $secret);
+         $k3 = $fpHash ? $this->hashKey("{$base}:k3:{$ver}:{$env}:{$this->getIpPrefix($context->ip)}:{$fpHash}", $secret) : null;
+-        $k4Type = $this->g1Lane === 'P' ? ($this->g5v2K4pScope !== null ? 'k4p~' . $this->g5v2K4pScope : 'k4p') : 'k4';
++        $k4Type = $this->g1Lane === 'P' ? ($this->g5v2K4pScope !== null ? 'k4p~' . $this->g5v2K4pScope : 'k4p') : ($this->g1Lane === 'UK' ? 'k4uk' : 'k4');
+         // G4 K5 SEPARATION (investigations/k2-identity-admission-97/g4/integrated): P-lane device history has its own key.
+         $k5Type = $this->g4K5();
+         $k4 = $context->accountId ? $this->hashKey("{$base}:{$k4Type}:{$ver}:{$env}:{$context->accountId}", $secret) : null;

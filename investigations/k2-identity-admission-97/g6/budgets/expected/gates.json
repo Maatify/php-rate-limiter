@@ -1,0 +1,96 @@
+{
+    "verdict": "NO-GO AFTER EXPERIMENT (U1)",
+    "gates": {
+        "U1": {
+            "items": [
+                {
+                    "check": "LOST 600 s reach ≤ S0 STABLE-600",
+                    "ok": false,
+                    "value": "UKD 48 / S0 45 / reference NOUA2 51"
+                },
+                {
+                    "check": "LOST 300 s reach ≤ S0 STABLE-300",
+                    "ok": false,
+                    "value": "UKD 47 / S0 44 / reference NOUA2 51"
+                },
+                {
+                    "check": "LOST 60 s reach ≤ S0 STABLE-60",
+                    "ok": false,
+                    "value": "UKD 48 / S0 45 / reference NOUA2 51"
+                }
+            ],
+            "pass": false,
+            "detector": true
+        },
+        "U2": {
+            "items": [
+                {
+                    "check": "1 STREAMS rows: attacker reach (foreign + proof) ≤ reference",
+                    "ok": true,
+                    "value": "182 rows"
+                },
+                {
+                    "check": "2 BRU24 attackAdmitted ≤ reference",
+                    "ok": true,
+                    "value": "attackAdmitted 51 / 51"
+                },
+                {
+                    "check": "2 BRU24-HV attackAdmitted ≤ reference",
+                    "ok": true,
+                    "value": "attackAdmitted 48 / 51"
+                },
+                {
+                    "check": "3 HAR-B attack reach ≤ reference",
+                    "ok": true,
+                    "value": "reachForeign+reachProof 4 / 4"
+                },
+                {
+                    "check": "3 HAR-N attack reach ≤ reference",
+                    "ok": true,
+                    "value": "reachForeign+reachProof 4 / 4"
+                },
+                {
+                    "check": "4 FORGE ≤ reference",
+                    "ok": true,
+                    "value": "thiefPAdmitted 0 / 0, thiefUReach 27 / 27"
+                },
+                {
+                    "check": "4 MINT ≤ reference",
+                    "ok": true,
+                    "value": "reach 48 / 51, pLane 0 / 0"
+                },
+                {
+                    "check": "4 CROSS ≤ reference",
+                    "ok": true,
+                    "value": "victimReach 4 / 4, victimPAdmitted 0 / 0"
+                },
+                {
+                    "check": "4 BOOT-X ≤ reference",
+                    "ok": true,
+                    "value": "fullAttackReach 192 / 192"
+                },
+                {
+                    "check": "5 STEAL thief ≤ reference",
+                    "ok": true,
+                    "value": "thiefPBeforeChange 9 / 9, thiefPMaxPerWindow 2 / 2, thiefPAfterChange 0 / 0, thiefUAfterChange 27 / 27"
+                }
+            ],
+            "pass": true,
+            "detector": true
+        }
+    },
+    "tmsBest": {
+        "TMS|pre+out|REF": 61,
+        "TMS|pre+out|NOUA2": 61,
+        "TMS|pre|REF": 61,
+        "TMS|pre|NOUA2": 61,
+        "TMSd|pre+out|REF": 120,
+        "TMSd|pre+out|NOUA2": 120,
+        "TMSd|pre|REF": 120,
+        "TMSd|pre|NOUA2": 120,
+        "TMX|pre+out|REF": 26,
+        "TMX|pre+out|NOUA2": 26,
+        "TMX|pre|REF": 34,
+        "TMX|pre|NOUA2": 34
+    }
+}
