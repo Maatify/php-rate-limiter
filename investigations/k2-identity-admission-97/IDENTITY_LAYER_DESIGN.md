@@ -18,6 +18,9 @@
 > device-watcher rows, §3, §4.1–§4.3 and §5 rows 2–8 were measured and hold on the P family; **the `N_P` row of the §2.1 table (member keyed by the id) is the
 > one choice the results do not support** (G5 F-G5-01, F-G5-02), and §5 row 4's U-family sentence is confirmed (F-G5-04). §6 (migration, rollback) stays `DERIVED`.
 
+> **Post-G5 v2 note (2026-10-19).** The amendments at the end of this document (§"v2 amendments") put the `N_P` member on the fingerprint and write the `K4P` rule as three arms; measured by
+> [`G5_V2_IDENTITY_LAYER.md`](G5_V2_IDENTITY_LAYER.md) (registered verdict SUPPORTED — LIMITED SCOPE). The text above is still not edited.
+
 ## 0. The question and what this document settles
 
 **Question (step 3).** Can the K5 material be *account + instance id* without the User-Agent (`IAP§5` rule 2), with K5 separated
@@ -286,3 +289,75 @@ to follow the same material.
   still looks like several devices to them. Whether that is acceptable is not decided here.
 * Real cookies, Redis, concurrency, failover, DEC-015 degraded mode, and the strength of the Host's issuance and recovery flows
   are outside the library and outside this step.
+
+## v2 amendments (2026-10-19)
+
+> **Status:** amendments written **after** the G5 results ([`G5_IDENTITY_LAYER.md`](G5_IDENTITY_LAYER.md), NO-GO AFTER EXPERIMENT: G3, G5, R:STEAL, R:STREAMS) and **before**
+> the G5 v2 plan and harness (`g5/identity_layer_v2/PLAN.md`). The text above is the design as committed in `8283d4b` and is not edited; where an
+> amendment contradicts it, the amendment wins for G5 v2 only. Same status as the rest of the document: `DESIGN`, not an ADR, not a policy, not a
+> production value, not a public API shape, not an Owner decision. DEC-015, DEC-019, DEC-021, DEC-023, DEC-024 stay ACTIVE and unchanged; DEC-022
+> and the proposal stay PROPOSED. Nothing here re-opens fixed evidence (the G5 results on the P family, G4 v2 `pre+out`, the removal of the collective
+> penalties). Evidence classes as above; `MEASURED` below cites the archived G5 numbers and nothing newer.
+
+### V2-1. The P-lane new-device member `N_P` is keyed by the fingerprint, not by the id (amends §2.1, row "P-lane new-device member of `N_P`")
+
+| Consumer | Scope | v2 material | Why |
+| --- | --- | --- | --- |
+| K5 score and persisted level, K5 micro-cap, device Anti-Equilibrium watcher | account + device | **`M` (id)** | unchanged from §2.1 |
+| P-lane new-device member of `N_P` (`P§7.3`) | account + client presentation | **today's `fingerprintHash`** (`v2\|normalizedUa\|normalizedClientFp\|sessionDeviceId`, UA-inclusive) | see below |
+
+**Why the two "devices" must differ.** K5 and `N_P` answer opposite questions about the word "device":
+
+* For **K5** the device is a long-lived *instance*: its failure history must survive a browser update (G1 UAX, `MEASURED` in G5: one K5 key across the UA
+  change, the ladder continues).
+* For **`N_P`** the device is a *count of distinct presentations an account sees per day*: a browser update must not be free for an actor that rotates
+  presentations on purpose. A stolen-token thief copies the token **and** the id; the id is therefore a constant for the thief, and a member keyed by the id
+  stops counting it. The fingerprint also contains the UA and the client fingerprint, which the thief has to rotate (IP and UA rotation is what the
+  studies model) to avoid per-source limits, and so it keeps consuming `N_P`.
+
+`MEASURED` in G5 (F-G5-01, F-G5-02, post-hoc arm `NOUA-FPN`): with the member on the id the thief's P admissions before the password change went 9 → 20, the owner's wait after
+the change 0 → 1,260 s, and the attacker's own-account reach in X7 / rotate / const 11 → 81 (70 `cap:p_device` refusals disappeared); with the member on the
+fingerprint and K5 on the id every one of those cells equals the reference.
+
+**Declared cost.** An owner whose browser changes version consumes one `N_P` member per distinct version seen in a day. `MEASURED` in G5 (post-hoc): 12 successful logins
+a day, a new browser major each time, `N_P` = 10 per day → 2 refused (`cap:p_device`), the same number the reference produces. The identity layer adds no refusal
+here; it does not remove the reference's either. Whether this number is a cost to accept or a gate is **registered in the plan before the run**, not after.
+
+**Where the member lives.** `N_P` is not part of `src/`: it is the `p_device` member of the admission layer's reservation (the study's `G1Admission`; a
+Host or admission component in a runtime), which receives its member material from the caller. The id component added to the resolver and DTO (G5 patch, unchanged) is
+consumed by K5, the micro-cap and the device watcher in the pipeline only. So "the member is on the fingerprint" is a property of the admission call, and the
+G5 v2 harness proves it in code (a per-admission audit of the reservation's member set against the resolver's fingerprint and id components, plan §3) rather than by
+this paragraph.
+
+Every other row of the §2.1 table is unchanged (K3, K2, churn, dilution, `device_cap_ip`, `device_cap_account` keep the fingerprint).
+
+### V2-2. The fate of `K4P` at a password change or recovery (new rule; amends §4.1, §4.3)
+
+§4.1 and §4.3 say the epoch is bumped and the owner's device gets a new chain. They say nothing about the account-wide P penalty state, and G5 F-G5-02 showed that the
+state is not cleared: the thief's recorded failures stay on the account after the change. The "account-wide P penalty state" here means everything derived from the P
+lane's `k4p` key: the K4P score, its persisted levels and budget, plus the account Anti-Equilibrium watcher and the budget cooldown of the P family (`*_p`). The known-device allowance
+counter (`known_device_allowance_p`), K5p, the device watcher, `N_P` and the P admission counters keep their scope under every option.
+
+Three options, written as arms to be **measured**, each with its cost to the account owner and to the holder of a *second proof of the same account* (`P§7.2` item 4: a second
+device with its own credential):
+
+| Arm | Rule | Cost to the owner | Cost to a second proof holder | Cost of the design |
+| --- | --- | --- | --- | --- |
+| **A** | `K4P` is account-wide and **not** cleared at the event (G4 v2 / G5 behavior) | pays for whatever a thief scored on `K4P` before the change, for as long as the persisted levels last; bounded by the P admission counters and `N_P` | the same account-wide state penalizes every credential of the account: failures presented with credential 1 can deny credential 2, before and after the event | none new: no new mechanism, no new input to the pipeline, `K4P` keeps the meaning it has in `P§7.2` |
+| **B** | `K4P` state is keyed by account **and epoch**: an epoch bump leaves the old state unreachable (equal, for every read after the bump, to clearing it) | starts clean after a proven event | no gain before the event; at the bump every older credential is void, so the second holder falls to the U lane anyway | the pipeline must read the epoch (a new input today unknown to it); pre-event evidence against **every** actor of the account is dropped, including evidence about an attacker that regains a P credential through a later U success; the clearing is only as strong as the Host's proof of the event (a Host step-up question, `Gate 0/1` blueprint) |
+| **C** | `K4P` state is keyed by account **and the presented credential's id** (`jti`) instead of the account | a re-issued credential (new chain, new `jti`) starts clean | isolated: failures presented with credential 1 never reach credential 2 | `K4P` stops being account-wide: an attacker holding *k* credentials of one account gets *k* penalty states. The account-wide bound left is the P admission counters (`P_acct`); the levels no longer escalate per account. One state per credential in storage |
+
+**Primary arm: A.** The plan registers A as the arm whose result decides R:STEAL, **before** the run; B and C are measured and reported, and no gate depends on them. The reasons, in
+order: (1) A is the behavior already measured in G4 v2 and G5 and the meaning `P§7.2` item 4 gives `K4P`; it needs no new contract surface or pipeline input. (2) B and C each
+trade one cost for another that only an Owner decision on the Host's proof of the event (B) or on what "account-wide" must mean (C) can weigh, and the harness cannot price those
+costs, only report the measurable half of them. (3) Disclosed, not a reason: G5's post-hoc arm `NOUA-FPN` already showed that with `N_P` on the fingerprint the thief and the owner
+in STEAL equal the reference under A, so the registered gate for A is known to be passable; what the plan adds is the same measurement under registered gates, plus B and C. If A
+fails its gate in the run the verdict is NO-GO on R:STEAL and B or C cannot rescue it (rule 5 of the plan).
+
+The arms are also run with the member on the id (the G5 behavior) so that the report can say whether B or C would have repaired F-G5-02 at all.
+
+### V2-3. What the amendments do not change
+
+K5 material, K5 micro-cap and the device watcher stay on the id (§2.1). The K5 separation by the binding, the binding itself (§4), the absent-id path (§2.3), migration and
+rollback (§6) are unchanged. K5 migration and rollback stay `DERIVED`. The step-4 question of §5 row 4 (the known device that fell to U keeps the bucket bound rather than DEC-021's K4 overflow)
+is **not** part of G5 v2: it is recorded there as F-G5-04 with a single written proposal for step 4 and is not measured.

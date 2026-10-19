@@ -1,0 +1,2 @@
+# Study patch files: hunk lines may legitimately carry trailing whitespace and end without a blank line.
+*.diff whitespace=-trailing-space,-blank-at-eof

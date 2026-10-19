@@ -1,0 +1,14 @@
+{"s":"fx","fixture":"STEAL","arm":"REF","thiefPMaxPerWindow":2,"thiefPBeforeChange":9,"thiefPAfterChange":0,"thiefUAfterChange":27,"ownerDeniedBeforeChange":2,"ownerWaitAfterChange":0,"ownerLaneAtAdmission":"P","ownerDeniedAfterChangeByCause":[],"pwBinds":1}
+{"s":"np","arm":"REF","scenario":"STEAL","pAdmitted":14,"memberIsFingerprint":14,"memberIsIdComponent":0}
+{"s":"fx","fixture":"STEAL2","arm":"REF","thiefPMaxPerWindow":2,"thiefPBeforeChange":8,"thiefPAfterChange":0,"thiefUAfterChange":27,"ownerDeniedBeforeChange":2,"ownerWaitAfterChange":0,"ownerLaneAtAdmission":"P","ownerDeniedAfterChangeByCause":[],"pwBinds":1,"o2DeniedBeforeChange":25,"o2DeniedBeforeByCause":{"soft":25},"o2WaitAfterChange":null,"o2LaneAtAdmission":null,"o2DeniedAfterChangeByCause":{"cap:acct_tb":719}}
+{"s":"np","arm":"REF","scenario":"STEAL2","pAdmitted":60,"memberIsFingerprint":60,"memberIsIdComponent":0}
+{"s":"fx","fixture":"MULTITOK","arm":"REF","attempts":5756,"pAdmitted":10,"uReach":0,"attackDeniedByCause":{"cap:p_device":4435,"pen:K4P":32,"soft":1288}}
+{"s":"fx","fixture":"MULTITOK-S","arm":"REF","attempts":5756,"pAdmitted":38,"uReach":0,"attackDeniedByCause":{"pen:K4P":144,"soft":5611}}
+{"s":"np","arm":"REF","scenario":"MULTITOK","pAdmitted":48,"memberIsFingerprint":48,"memberIsIdComponent":0}
+{"s":"fx","fixture":"UAX-NP-K","arm":"REF","lanes":"PPPPPPPPPPPP","dec":"AAAAAAAAAAAA","refused":0,"causes":[],"k":1}
+{"s":"fx","fixture":"UAX-NP-K","arm":"REF","lanes":"PPPPPPPPPPPP","dec":"AAAAAAAAAAAA","refused":0,"causes":[],"k":2}
+{"s":"fx","fixture":"UAX-NP-K","arm":"REF","lanes":"PPPPPPPPPPPP","dec":"AAAAAAAAAAAA","refused":0,"causes":[],"k":5}
+{"s":"fx","fixture":"UAX-NP-K","arm":"REF","lanes":"PPPPPPPPPPPP","dec":"AAAAAAAAAAAA","refused":0,"causes":[],"k":10}
+{"s":"fx","fixture":"UAX-NP-K","arm":"REF","lanes":"PPPPPPPPPPPP","dec":"AAAAAAAAAAAS","refused":1,"causes":{"cap:p_device":1},"k":11}
+{"s":"fx","fixture":"UAX-NP-K","arm":"REF","lanes":"PPPPPPPPPPPP","dec":"AAAAAAAAAASS","refused":2,"causes":{"cap:p_device":2},"k":12}
+{"s":"np","arm":"REF","scenario":"UAX-NP-K","pAdmitted":69,"memberIsFingerprint":69,"memberIsIdComponent":0}

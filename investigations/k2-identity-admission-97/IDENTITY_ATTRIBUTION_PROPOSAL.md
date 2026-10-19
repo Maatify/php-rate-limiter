@@ -22,6 +22,9 @@
 > [`IDENTITY_LAYER_DESIGN.md`](IDENTITY_LAYER_DESIGN.md)) measured the identity layer itself — K5 material without the UA, K5
 > separation and the binding; registered verdict **NO-GO AFTER EXPERIMENT (G3, G5, R:STEAL, R:STREAMS)**. Its notes are added the same
 > way.
+> **Post-G5 v2 note (2026-10-19):** G5 v2 ([`G5_V2_IDENTITY_LAYER.md`](G5_V2_IDENTITY_LAYER.md), design amendments in
+> [`IDENTITY_LAYER_DESIGN.md`](IDENTITY_LAYER_DESIGN.md)) re-measured the identity layer with the new-device member on the fingerprint and
+> the three registered fixes to the G5 plan; registered verdict **SUPPORTED — LIMITED SCOPE**. Its notes are added the same way.
 > **Arabic companion:** [`IDENTITY_ATTRIBUTION_PROPOSAL_AR.md`](IDENTITY_ATTRIBUTION_PROPOSAL_AR.md) (Owner-approved 2026-10-18,
 > `DOCUMENTATION_LIFECYCLE_STANDARD_AR.md` §2.1). This English text is the reference and prevails on any conflict. Any PR that
 > changes one of the two files changes the other in the same PR, with the same scope limits.
@@ -141,6 +144,14 @@ Rules for `clientInstanceId`:
    > the member on the fingerprint reproduces G4 v2 on STEAL and on the streams. The UA-free K5 material alone explains (a) and nothing
    > in (b). The U family does not keep DEC-021's number for a known device with a lost token (51 in 24 h against 45 / 44 / 45), with or
    > without this step (`G5_IDENTITY_LAYER.md` §4, F-G5-04).
+   > **Post-G5 v2 note (2026-10-19).** Re-measured under the amended plan (`G5_V2_IDENTITY_LAYER.md`, `MEASURED`); **registered verdict
+   > SUPPORTED — LIMITED SCOPE** (G1–G5, every detector firing, no regression check failing). K5 = account + id without the UA, with the
+   > new-device member `N_P` **on the fingerprint** (design V2-1): STEAL equals the reference (thief 9 P admissions, owner wait 0) and every
+   > stream cell that varies the UA or the client fingerprint equals the reference except `UAC`, which is the designed behavior (equal to the
+   > same arm's `KD`; legit-denied 6 → 9, a declared cost). The cost of the member on the fingerprint is declared, not gated: each
+   > distinct browser version seen in a day consumes one member, and refusals appear only beyond 10 distinct versions (11 → 1, 12 → 2),
+   > the same numbers as the reference. The pass is the registered form of a measurement G5 had already made post-hoc (`G5_V2_IDENTITY_LAYER.md`
+   > §2); it is not a statement that Runtime is ready.
 3. **A new id mints no budget** — not for the account, the source or the operation. Otherwise an attacker clears the cookie and
    starts over.
 4. **Absence is declared absence.** A client without an id is an anonymous individual and is never grouped with every user of the
@@ -343,6 +354,13 @@ device or with cleared cookies", without forcing a passkey or a link on any cons
 > the 12 hours before the password change, still within 6 per window and 30 per day), its recorded failures raise the account-wide
 > `K4P`, and the owner's first login after the password change waits 1,260 s (0 with the member on the fingerprint). The password
 > change bumps the epoch and issues a new credential but does not clear `K4P` (`G5_IDENTITY_LAYER.md` §4, F-G5-01, F-G5-02).
+
+> **Post-G5 v2 note (2026-10-19).** With `N_P` on the fingerprint the thief of the note above is bounded as in the reference (9 P admissions,
+> owner wait 0). What to do with `K4P` at a password change was measured as three arms (`G5_V2_IDENTITY_LAYER.md` §5.1): under the tested
+> primary arm (A, not cleared) a second device holding its own credential is denied 25 times before the change; rule C (one state per
+> credential) removes that and weakens the account bound (eight stolen credentials: 38 → 120 P admissions with fixed presentations); rule B
+> (keyed by epoch) has no effect before the event. After the change the device that is not re-issued is refused by the U lane's account bucket
+> for the rest of the day in every arm, the reference included. The choice is an Owner decision for step 4.
 
 ## 8. Optional evidence
 
