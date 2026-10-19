@@ -72,10 +72,12 @@ final class RateLimiterConfigTest extends TestCase
 
         $parameters = $reflection->getConstructor()?->getParameters();
         self::assertNotNull($parameters);
-        self::assertCount(5, $parameters);
+        self::assertCount(7, $parameters);
         self::assertNotEmpty($parameters[0]->getAttributes(\SensitiveParameter::class));
         self::assertNotEmpty($parameters[1]->getAttributes(\SensitiveParameter::class));
         self::assertNotEmpty($parameters[3]->getAttributes(\SensitiveParameter::class));
         self::assertNotEmpty($parameters[4]->getAttributes(\SensitiveParameter::class));
+        self::assertNotEmpty($parameters[5]->getAttributes(\SensitiveParameter::class));
+        self::assertNotEmpty($parameters[6]->getAttributes(\SensitiveParameter::class));
     }
 }
