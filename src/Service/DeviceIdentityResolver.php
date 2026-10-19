@@ -40,6 +40,11 @@ class DeviceIdentityResolver implements DeviceIdentityResolverInterface
         $hash = $this->currentHasher->hash($rawString);
         $previousHash = $this->previousHasher?->hash($rawString);
 
+        // Instance-id component: hashed here with the same two generations, never rebuilt by a consumer.
+        // It is produced for every request that carries an id and consumed by no path yet.
+        $instanceId = $context->clientInstanceId ?? '';
+        $idRawString = $instanceId !== '' ? "id1|{$instanceId}" : null;
+
         return new DeviceIdentityDTO(
             $hash,
             $confidence,
@@ -48,6 +53,8 @@ class DeviceIdentityResolver implements DeviceIdentityResolverInterface
             $ua,
             $context->isDevicePreviouslyVerifiedForAccount,
             $previousHash,
+            $idRawString === null ? null : $this->currentHasher->hash($idRawString),
+            $idRawString === null ? null : $this->previousHasher?->hash($idRawString),
         );
     }
 

@@ -19,6 +19,8 @@ final readonly class RateLimitContextDTO implements \JsonSerializable
      * @param array<string, string|string[]> $headers Request headers retained as context.
      * @param bool $isDevicePreviouslyVerifiedForAccount Whether the device is known to the account.
      * @param ?string $correlationId Stable opaque subject identity used for bounded correlation.
+     * @param ?string $clientInstanceId Optional untrusted client instance identifier. It is a continuity hint only and is ignored by every policy that has not opted into the admission capability.
+     * @param ?string $admissionCredential Optional opaque admission credential, verified only for policies that have opted into the admission capability.
      */
     public function __construct(
         public string $ip,
@@ -30,6 +32,8 @@ final readonly class RateLimitContextDTO implements \JsonSerializable
         public array $headers = [],
         public bool $isDevicePreviouslyVerifiedForAccount = false,
         public ?string $correlationId = null,
+        public ?string $clientInstanceId = null,
+        public ?string $admissionCredential = null,
     ) {}
 
     /**
@@ -47,6 +51,25 @@ final readonly class RateLimitContextDTO implements \JsonSerializable
             'headers' => $this->headers,
             'isDevicePreviouslyVerifiedForAccount' => $this->isDevicePreviouslyVerifiedForAccount,
             'correlationId' => $this->correlationId,
+            ...$this->optionalAdmissionInputs(),
         ];
+    }
+
+    /**
+     * The admission inputs, present in the serialized shape only when supplied.
+     *
+     * @return array<string, string>
+     */
+    private function optionalAdmissionInputs(): array
+    {
+        $inputs = [];
+        if ($this->clientInstanceId !== null) {
+            $inputs['clientInstanceId'] = $this->clientInstanceId;
+        }
+        if ($this->admissionCredential !== null) {
+            $inputs['admissionCredential'] = $this->admissionCredential;
+        }
+
+        return $inputs;
     }
 }

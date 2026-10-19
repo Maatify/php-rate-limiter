@@ -60,9 +60,9 @@ final class AdmissionShapesTest extends TestCase
         self::assertSame([], self::declaredMethodNames(FullCapabilityStoreInterface::class));
         self::assertNotContains(AdmissionReservationStoreInterface::class, $full->getInterfaceNames());
 
-        self::assertTrue(is_subclass_of(AdmissionCapableFullStoreInterface::class, FullCapabilityStoreInterface::class));
-        self::assertTrue(is_subclass_of(AdmissionCapableFullStoreInterface::class, AdmissionReservationStoreInterface::class));
-        self::assertTrue(is_subclass_of(AdmissionPermitStoreInterface::class, AdmissionReservationStoreInterface::class));
+        self::assertTrue((new \ReflectionClass(AdmissionCapableFullStoreInterface::class))->implementsInterface(FullCapabilityStoreInterface::class));
+        self::assertTrue((new \ReflectionClass(AdmissionCapableFullStoreInterface::class))->implementsInterface(AdmissionReservationStoreInterface::class));
+        self::assertTrue((new \ReflectionClass(AdmissionPermitStoreInterface::class))->implementsInterface(AdmissionReservationStoreInterface::class));
         self::assertFalse(is_subclass_of(AdmissionReservationStoreInterface::class, FullCapabilityStoreInterface::class));
         self::assertSame(
             ['applyAdmissionOutcome', 'bumpBindingEpoch', 'readBindingEpoch', 'reserveAdmission'],
@@ -176,8 +176,8 @@ final class AdmissionShapesTest extends TestCase
 
         self::assertNull(RateLimitCommand::checkOnly('p')->permit);
         self::assertNull(RateLimitCommand::recordFailure('p')->permit);
-        self::assertSame('permit-1', RateLimitCommand::recordFailure('p', 1, 'permit-1')->permit);
-        self::assertSame('permit-2', RateLimitCommand::recordSuccess('p', 1, 'permit-2')->permit);
+        self::assertSame('permit-1', (new RateLimitCommand('p', 1, false, true, false, 'permit-1'))->permit);
+        self::assertSame('permit-2', (new RateLimitCommand('p', 1, false, false, true, 'permit-2'))->permit);
     }
 
     public function testPermitIsRejectedOnACheckOnlyCommandAndWhenBlank(): void
@@ -190,7 +190,7 @@ final class AdmissionShapesTest extends TestCase
         }
 
         $this->expectException(RateLimiterException::class);
-        RateLimitCommand::recordFailure('p', 1, '  ');
+        new RateLimitCommand('p', 1, false, true, false, '  ');
     }
 
     public function testMetadataGainsAnOptionalTrailingPermitSerialisedOnlyWhenPresent(): void
@@ -239,7 +239,10 @@ final class AdmissionShapesTest extends TestCase
         }
     }
 
-    /** @param class-string $type @return list<string> */
+    /**
+     * @param class-string $type
+     * @return list<string>
+     */
     private static function methodNames(string $type): array
     {
         $names = array_map(static fn(\ReflectionMethod $m): string => $m->name, (new \ReflectionClass($type))->getMethods());
@@ -248,7 +251,10 @@ final class AdmissionShapesTest extends TestCase
         return $names;
     }
 
-    /** @param class-string $type @return list<string> */
+    /**
+     * @param class-string $type
+     * @return list<string>
+     */
     private static function declaredMethodNames(string $type): array
     {
         $names = array_values(array_map(

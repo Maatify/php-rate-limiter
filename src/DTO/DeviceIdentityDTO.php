@@ -17,6 +17,8 @@ final readonly class DeviceIdentityDTO implements \JsonSerializable
      * @param string $normalizedUa Coarse normalized user-agent representation.
      * @param bool $isDevicePreviouslyVerifiedForAccount Whether the device is known to the account.
      * @param ?string $previousFingerprintHash Previous-generation fingerprint hash, when available.
+     * @param ?string $deviceIdHash Current-generation hash of the client instance identifier, when one was supplied. Consumed only by policies that opted into the admission capability.
+     * @param ?string $previousDeviceIdHash Previous-generation hash of the client instance identifier, when available.
      */
     public function __construct(
         public ?string $fingerprintHash,
@@ -26,6 +28,8 @@ final readonly class DeviceIdentityDTO implements \JsonSerializable
         public string $normalizedUa = '',
         public bool $isDevicePreviouslyVerifiedForAccount = false,
         public ?string $previousFingerprintHash = null,
+        public ?string $deviceIdHash = null,
+        public ?string $previousDeviceIdHash = null,
     ) {}
 
     /**
@@ -41,6 +45,25 @@ final readonly class DeviceIdentityDTO implements \JsonSerializable
             'normalizedUa' => $this->normalizedUa,
             'isDevicePreviouslyVerifiedForAccount' => $this->isDevicePreviouslyVerifiedForAccount,
             'previousFingerprintHash' => $this->previousFingerprintHash,
+            ...$this->optionalDeviceIdComponents(),
         ];
+    }
+
+    /**
+     * The instance-id components, present in the serialized shape only when supplied.
+     *
+     * @return array<string, string>
+     */
+    private function optionalDeviceIdComponents(): array
+    {
+        $components = [];
+        if ($this->deviceIdHash !== null) {
+            $components['deviceIdHash'] = $this->deviceIdHash;
+        }
+        if ($this->previousDeviceIdHash !== null) {
+            $components['previousDeviceIdHash'] = $this->previousDeviceIdHash;
+        }
+
+        return $components;
     }
 }

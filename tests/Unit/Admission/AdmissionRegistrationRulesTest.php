@@ -129,13 +129,13 @@ final class AdmissionRegistrationRulesTest extends TestCase
 
     public function testBuilderWithoutAnAdmissionPolicyBuildsExactlyAsBefore(): void
     {
-        $runtime = RateLimiterBuilder::fromFullCapabilityStore(
+        RateLimiterBuilder::fromFullCapabilityStore(
             $this->config(withBindingKey: false),
             new FullCapabilityInMemoryStore(new FixedClock()),
             new RecordingFailureSignalEmitter(),
         )->withPolicy(new DeclaresCapabilityWithoutInterfacePolicy('plain-auth'))->build();
 
-        self::assertNotNull($runtime);
+        $this->addToAssertionCount(1);
     }
 
     // ---- builder-level rules (store capability, binding key) ----
@@ -188,13 +188,13 @@ final class AdmissionRegistrationRulesTest extends TestCase
             self::assertNotContains(PolicyCapabilityEnum::ADMISSION_RESERVATION, $preset->getCapabilities());
         }
 
-        $runtime = RateLimiterBuilder::fromFullCapabilityStore(
+        RateLimiterBuilder::fromFullCapabilityStore(
             $this->config(withBindingKey: false),
             new FullCapabilityInMemoryStore(new FixedClock()),
             new RecordingFailureSignalEmitter(),
         )->build();
 
-        self::assertNotNull($runtime);
+        $this->addToAssertionCount(1);
     }
 
     /** @param list<BlockPolicyInterface> $policies */

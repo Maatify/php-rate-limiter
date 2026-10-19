@@ -30,8 +30,8 @@ final class AdmissionS0ParityTest extends TestCase
     public function testNewContextInputsChangeNoDecisionAndNoStateForPoliciesThatDidNotOptIn(): void
     {
         foreach (self::POLICIES as $policy) {
-            $baseline = $this->run($policy, withNewInputs: false, account: 'acct-1');
-            $withInputs = $this->run($policy, withNewInputs: true, account: 'acct-1');
+            $baseline = $this->play($policy, withNewInputs: false, account: 'acct-1');
+            $withInputs = $this->play($policy, withNewInputs: true, account: 'acct-1');
 
             self::assertSame($baseline['decisions'], $withInputs['decisions'], "decisions differ for {$policy}");
             self::assertSame($baseline['state'], $withInputs['state'], "stored state differs for {$policy}");
@@ -42,8 +42,8 @@ final class AdmissionS0ParityTest extends TestCase
     {
         // Detector: the harness is sensitive. A run that really differs (another account hits
         // another key and a different history) is told apart from the baseline.
-        $baseline = $this->run('login_protection', withNewInputs: false, account: 'acct-1');
-        $different = $this->run('login_protection', withNewInputs: false, account: 'acct-2');
+        $baseline = $this->play('login_protection', withNewInputs: false, account: 'acct-1');
+        $different = $this->play('login_protection', withNewInputs: false, account: 'acct-2');
 
         self::assertNotSame($baseline['state'], $different['state']);
         self::assertNotEmpty($baseline['state']);
@@ -52,16 +52,16 @@ final class AdmissionS0ParityTest extends TestCase
 
     public function testRunsExerciseEveryCommandKindAndReachAnEnforcingDecision(): void
     {
-        $decisions = $this->run('login_protection', withNewInputs: true, account: 'acct-1')['decisions'];
-        $kinds = array_unique(array_map(static fn(array $d): string => $d['decision'], $decisions));
+        $decisions = $this->play('login_protection', withNewInputs: true, account: 'acct-1')['decisions'];
+        $kinds = array_unique(array_map(static fn(array $d): string => (string) $d['decision'], $decisions));
 
         self::assertGreaterThan(1, count($kinds), 'The scripted sequence must reach a non-ALLOW decision.');
     }
 
     /**
-     * @return array{decisions: list<array{decision: string, level: int, retryAfter: int, mode: string, cause: ?string}>, state: array<string, mixed>}
+     * @return array{decisions: list<array<string, int|string|null>>, state: array<string, string>}
      */
-    private function run(string $policy, bool $withNewInputs, string $account): array
+    private function play(string $policy, bool $withNewInputs, string $account): array
     {
         $clock = new FixedClock('2025-01-01 12:00:00');
         $store = new FullCapabilityInMemoryStore($clock);

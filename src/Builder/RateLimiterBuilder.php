@@ -25,6 +25,8 @@ use Maatify\RateLimiter\Repository\CircuitBreakerStoreInterface;
 use Maatify\RateLimiter\Repository\CorrelationStoreInterface;
 use Maatify\RateLimiter\Repository\FullCapabilityStoreInterface;
 use Maatify\RateLimiter\Repository\HardBlockCycleStoreInterface;
+use Maatify\RateLimiter\Repository\AdmissionPermitStoreInterface;
+use Maatify\RateLimiter\Repository\AdmissionReservationStoreInterface;
 use Maatify\RateLimiter\Repository\PunishmentLifecycleStoreInterface;
 use Maatify\RateLimiter\Repository\RateLimitStoreInterface;
 use Maatify\RateLimiter\Service\AntiEquilibriumGate;
@@ -288,6 +290,41 @@ final class RateLimiterBuilder
         $this->assertHardBlockCycleCapability();
         $this->assertBudgetSeedCapability();
         $this->assertCircuitBreakerProbeCapability();
+        $this->assertAdmissionReservationCapability();
+    }
+
+    /**
+     * A policy declaring PolicyCapabilityEnum::ADMISSION_RESERVATION needs a store with both admission
+     * capabilities (reservation and permit) and a configured binding key. This runs before the runtime is
+     * composed; the builder never composes an admission runtime in this release, so a fully equipped policy
+     * is then rejected as unavailable by the engine.
+     */
+    private function assertAdmissionReservationCapability(): void
+    {
+        foreach ($this->policies as $policy) {
+            if (! $policy instanceof PolicyCapabilityProviderInterface
+                || ! in_array(PolicyCapabilityEnum::ADMISSION_RESERVATION, $policy->getCapabilities(), true)) {
+                continue;
+            }
+
+            if (! $this->rateLimitStore instanceof AdmissionReservationStoreInterface) {
+                throw new RateLimiterException(
+                    'Policy ' . $policy->getName() . ' requires AdmissionReservationStoreInterface.',
+                );
+            }
+
+            if (! $this->rateLimitStore instanceof AdmissionPermitStoreInterface) {
+                throw new RateLimiterException(
+                    'Policy ' . $policy->getName() . ' requires AdmissionPermitStoreInterface.',
+                );
+            }
+
+            if ($this->config->bindingKeySecret() === null) {
+                throw new RateLimiterException(
+                    'Policy ' . $policy->getName() . ' requires a binding key secret.',
+                );
+            }
+        }
     }
 
     private function assertPunishmentLifecycleCapability(): void

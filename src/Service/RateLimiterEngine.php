@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace Maatify\RateLimiter\Service;
 
+use Maatify\RateLimiter\Config\AdmissionReservationPolicyInterface;
 use Maatify\RateLimiter\Config\BlockPolicyInterface;
 use Maatify\RateLimiter\Enum\PolicyCapabilityEnum;
 use Maatify\RateLimiter\Config\PolicyCapabilityProviderInterface;
@@ -46,6 +47,8 @@ class RateLimiterEngine implements RateLimiterRuntimeInterface
      * @param FailureSignalEmitterInterface $emitter Failure transition sink.
      * @param ClockInterface $clock Source of fallback timestamps.
      * @param BlockPolicyInterface[] $policies Policies available by name.
+     * @param ?AdmissionRuntime $admission Internal admission runtime. Absent in the supported composition, so a policy
+     *                                     that declares the admission capability is rejected at registration.
      */
     public function __construct(
         private readonly DeviceIdentityResolverInterface $deviceResolver,
@@ -55,6 +58,7 @@ class RateLimiterEngine implements RateLimiterRuntimeInterface
         FailureSignalEmitterInterface $emitter,
         private readonly ClockInterface $clock,
         array $policies,
+        private readonly ?AdmissionRuntime $admission = null,
     ) {
         // Retain the historical constructor boundary; transition signals are
         // emitted by CircuitBreaker at the actual state transition.
@@ -187,7 +191,37 @@ class RateLimiterEngine implements RateLimiterRuntimeInterface
             && ($policy->getScoreDeltas()->k4_failure <= 0 || $policy->getScoreThresholds()->k4 === null)) {
             throw new RateLimiterException("Policy {$policy->getName()} invalid: Distributed-account behavior requires a positive K4 failure delta and K4 thresholds.");
         }
+        $this->assertAdmissionCapability($policy, $capabilities);
         $this->policies[$policy->getName()] = $policy;
+    }
+
+    /**
+     * Admission-capability rules. The authentication prerequisites above already apply because the capability is
+     * authentication-related (so `API_OVERUSE`, `FAIL_OPEN` and a missing BudgetConfig are rejected there). The
+     * dormancy check is last: a policy that is invalid for another reason reports that reason first.
+     *
+     * @param list<PolicyCapabilityEnum> $capabilities
+     */
+    private function assertAdmissionCapability(BlockPolicyInterface $policy, array $capabilities): void
+    {
+        $declares = in_array(PolicyCapabilityEnum::ADMISSION_RESERVATION, $capabilities, true);
+        $implements = $policy instanceof AdmissionReservationPolicyInterface;
+
+        if ($implements && ! $declares) {
+            throw new RateLimiterException("Policy {$policy->getName()} invalid: AdmissionReservationPolicyInterface requires the ADMISSION_RESERVATION capability.");
+        }
+        if (! $declares) {
+            return;
+        }
+        if (! $policy instanceof AdmissionReservationPolicyInterface) {
+            throw new RateLimiterException("Policy {$policy->getName()} invalid: ADMISSION_RESERVATION requires AdmissionReservationPolicyInterface.");
+        }
+        if (trim($policy->getAdmissionBudgetGroup()) === '') {
+            throw new RateLimiterException("Policy {$policy->getName()} invalid: the admission budget group must not be empty.");
+        }
+        if ($this->admission === null) {
+            throw new RateLimiterException("Policy {$policy->getName()} invalid: ADMISSION_RESERVATION is not available: no admission runtime is configured.");
+        }
     }
 
     /**
@@ -239,6 +273,7 @@ class RateLimiterEngine implements RateLimiterRuntimeInterface
     {
         return $policy instanceof PostPunishmentReentryPolicyInterface
             || $policy instanceof KnownDeviceAccountAllowancePolicyInterface
+            || in_array(PolicyCapabilityEnum::ADMISSION_RESERVATION, $capabilities, true)
             || in_array(PolicyCapabilityEnum::CREDENTIAL_SPRAY, $capabilities, true)
             || in_array(PolicyCapabilityEnum::DISTRIBUTED_ACCOUNT, $capabilities, true)
             || in_array(PolicyCapabilityEnum::TRUSTED_AUTHENTICATION, $capabilities, true);
