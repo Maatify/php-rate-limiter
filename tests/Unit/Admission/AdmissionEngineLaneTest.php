@@ -22,7 +22,11 @@ final class AdmissionEngineLaneTest extends TestCase
 {
     private const IP = '198.51.100.7';
 
-    /** True when the request travelled the P door (a second admission from an exhausted source is admitted). */
+    /**
+     * True when the request travelled the P door (a second admission from an exhausted source is admitted).
+     *
+     * @param \Closure(EngineLab): \Maatify\RateLimiter\DTO\RateLimitContextDTO $contextFor
+     */
     private function reachesPDoor(EngineLab $lab, \Closure $contextFor): bool
     {
         $first = $lab->check($contextFor($lab));
@@ -102,8 +106,10 @@ final class AdmissionEngineLaneTest extends TestCase
         ]);
         $lab = new EngineLab(EngineLab::budgets(sourceCapacity: 1), runtimeClass: $class);
 
+        // The request reaches the credential check (a credential that does not verify) while the Host says "known device".
+        $unverified = $lab->mint('acct-other', 'inst-1');
         self::assertTrue(
-            $this->reachesPDoor($lab, static fn(EngineLab $l) => $l->context('acct-1', self::IP, 'inst-1', null, 'd1', true)),
+            $this->reachesPDoor($lab, static fn(EngineLab $l) => $l->context('acct-1', self::IP, 'inst-1', $unverified, 'd1', true)),
             'DETECTOR: the mutated lane must put a known-device request on the P door, which the gate above forbids',
         );
     }

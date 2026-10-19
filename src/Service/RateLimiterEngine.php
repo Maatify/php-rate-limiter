@@ -34,7 +34,7 @@ use Maatify\SharedCommon\Contracts\ClockInterface;
  * failure-mode fallback, and the circuit-boundary orchestration of the public
  * one-shot post-punishment lifecycle claim.
  */
-class RateLimiterEngine implements RateLimiterRuntimeInterface
+class RateLimiterEngine implements RateLimiterRuntimeInterface, AdmissionBindingControlInterface, AdmissionBindingEpochInterface
 {
     /** @var array<string, BlockPolicyInterface> */
     private array $policies = [];
@@ -322,8 +322,13 @@ class RateLimiterEngine implements RateLimiterRuntimeInterface
 
         try {
             $device = $this->deviceResolver->resolve($context);
+            $group = $this->admissionGroup($policy);
 
-            $result = $this->pipeline->process($policy, $context, $request, $device);
+            if ($group !== null && $this->admission !== null && $this->admission->fenceOpen($group)) {
+                $result = $this->limitWithAdmission($this->admission, $policy, $group, $context, $request, $device);
+            } else {
+                $result = $this->pipeline->process($policy, $context, $request, $device);
+            }
 
             $this->circuitBreaker->reportSuccess($policyName);
 
@@ -421,13 +426,78 @@ class RateLimiterEngine implements RateLimiterRuntimeInterface
         }
         $device = $this->deviceResolver->resolve($context);
         try {
-            $claimed = $this->pipeline->claimPostPunishmentReentry($context, $device, $policyName, $reentryId);
+            // The lane is passed only after the opt-in is verified (5-b3a constraint): a policy that did not opt in, or an
+            // engine whose fence is closed, claims exactly as before.
+            $group = $this->admissionGroup($policy);
+            $lane = $group !== null && $this->admission !== null && $this->admission->fenceOpen($group)
+                ? $this->admission->resolveLane($group, $context)->lane
+                : null;
+            $claimed = $this->pipeline->claimPostPunishmentReentry($context, $device, $policyName, $reentryId, $lane);
             $this->circuitBreaker->reportSuccess($policyName);
             return $claimed;
         } catch (BackendFailureException $exception) {
             $this->circuitBreaker->reportFailure($policyName);
             throw $exception;
         }
+    }
+
+    /** @throws RateLimiterException when no admission runtime is configured */
+    public function revokeAccountBinding(string $accountId): void
+    {
+        $this->requireAdmission()->revokeAccountBinding($accountId);
+    }
+
+    /** @throws RateLimiterException when no admission runtime is configured */
+    public function bindingEpoch(string $accountId): int
+    {
+        return $this->requireAdmission()->bindingEpoch($accountId);
+    }
+
+    private function requireAdmission(): AdmissionRuntime
+    {
+        return $this->admission ?? throw new RateLimiterException('No admission runtime is configured.');
+    }
+
+    /** The budget group of a policy that declared the admission capability (registration guarantees the interface). */
+    private function admissionGroup(BlockPolicyInterface $policy): ?string
+    {
+        return $policy instanceof AdmissionReservationPolicyInterface
+            && in_array(PolicyCapabilityEnum::ADMISSION_RESERVATION, $this->capabilities($policy), true)
+            ? $policy->getAdmissionBudgetGroup()
+            : null;
+    }
+
+    /**
+     * Evaluate a request of an opted policy while the fleet fence is open (contract §2.1): lane, pipeline with the lane as a
+     * parameter, the reservation after an allowed pre-check, and the permit-bound outcome hooks.
+     */
+    private function limitWithAdmission(
+        AdmissionRuntime $admission,
+        BlockPolicyInterface $policy,
+        string $group,
+        RateLimitContextDTO $context,
+        RateLimitCommand $request,
+        \Maatify\RateLimiter\DTO\DeviceIdentityDTO $device,
+    ): RateLimitResultDTO {
+        if ($request->isFailure || $request->isSuccess) {
+            if ($request->permit === null) {
+                throw new RateLimiterException("Policy {$policy->getName()} invalid use: an outcome of an admission policy requires the permit issued with its admission.");
+            }
+            $applied = $admission->applyOutcome($policy->getName(), $group, $context, $request->permit, $request->isSuccess);
+            if ($applied instanceof RateLimitResultDTO) {
+                return $applied;
+            }
+
+            return $this->pipeline->process($policy, $context, $request, $device, $applied);
+        }
+
+        $lane = $admission->resolveLane($group, $context);
+        $result = $this->pipeline->process($policy, $context, $request, $device, $lane->lane);
+        if ($request->isPreCheck && $result->decision === RateLimitResultDTO::DECISION_ALLOW) {
+            return $admission->reserve($policy->getName(), $group, $context, $device, $lane, $result);
+        }
+
+        return $result;
     }
 
     /**

@@ -24,6 +24,7 @@ final class AdmissionCredentialCodec
     private const VERSION = 1;
     private const MAX_LENGTH = 4096;
     private const DOMAIN = 'maatify.admission.credential.v1|';
+    private const PERMIT_DOMAIN = 'maatify.admission.permit-token.v1|';
     private const KEY_ID_DOMAIN = 'maatify.admission.key-id.v1';
     private const KEYS = ['v', 'sub', 'grp', 'ins', 'jti', 'exp', 'bat', 'epo', 'kid'];
 
@@ -123,6 +124,41 @@ final class AdmissionCredentialCodec
         }
 
         return new AdmissionCredentialVerificationDTO(AdmissionCredentialVerdictEnum::VALID, $claims);
+    }
+
+    /**
+     * Sign an opaque permit-token payload (LT-14) with the current binding key under a domain of its own, so a permit token
+     * can never verify as a credential or the reverse. Returns `base64url(payload) . '.' . base64url(mac)`.
+     */
+    public function signPermitToken(string $payload): string
+    {
+        $part = self::base64UrlEncode($payload);
+
+        return $part . '.' . self::base64UrlEncode(hash_hmac('sha256', self::PERMIT_DOMAIN . $part, $this->bindingKey, true));
+    }
+
+    /** The payload of a permit token signed by the current or the previous binding key, else null (never throws). */
+    public function verifyPermitToken(string $token): ?string
+    {
+        if ($token === '' || strlen($token) > self::MAX_LENGTH) {
+            return null;
+        }
+        $parts = explode('.', $token);
+        if (count($parts) !== 2 || $parts[0] === '' || $parts[1] === '') {
+            return null;
+        }
+        $mac = self::base64UrlDecode($parts[1]);
+        $payload = self::base64UrlDecode($parts[0]);
+        if ($mac === null || $payload === null) {
+            return null;
+        }
+        foreach ([$this->bindingKey, $this->previousBindingKey] as $key) {
+            if ($key !== null && hash_equals(hash_hmac('sha256', self::PERMIT_DOMAIN . $parts[0], $key, true), $mac)) {
+                return $payload;
+            }
+        }
+
+        return null;
     }
 
     private function decodePayload(string $payloadPart): ?AdmissionCredentialDTO
