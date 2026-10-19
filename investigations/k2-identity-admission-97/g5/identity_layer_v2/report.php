@@ -191,7 +191,7 @@ foreach ($g5Ph as $ph) {
 $g5NoSteal = $fxOf($g5FxNo, 'STEAL', 'NOUA');
 $v3['D-NPID STEAL = G5 NOUA STEAL'] = $core((array) $fxOf($costNo, 'STEAL', 'D-NPID')) === $core((array) $g5NoSteal);
 $v3['REF STEAL (new code) = G5 archive REF'] = $core((array) $fxOf($costRef, 'STEAL', 'REF')) === $core((array) $fxOf($fxRef, 'STEAL', 'REF'));
-$v3['REF UAX-NP (new code) = G5 archive REF'] = $core((array) $fxOf($costRef, 'UAX-NP-K', 'REF')) !== [] ;
+$v3['REF UAX-NP (new code) = G5 archive REF'] = false;
 foreach ($costRef as $r) {
     if (($r['fixture'] ?? '') === 'UAX-NP-K' && $r['k'] === 12) {
         $v3['REF UAX-NP (new code) = G5 archive REF'] = $core(array_diff_key($r, ['k' => 1, 'fixture' => 1])) === $core(array_diff_key((array) $fxOf($fxRef, 'UAX-NP', 'REF'), ['fixture' => 1]));
@@ -422,7 +422,7 @@ foreach (['E2', 'K5U', 'CROSS', 'HAR-B', 'HAR-N', 'BRU24', 'BRU24-HV', 'REC', 'C
 foreach (['BOOT', 'BOOT-X'] as $fx) {
     $reg["R:$fx"] = [withArm($fxOf($fxRef, $fx, 'REF+R-NO-BIND'), 'NOUA2+R-NO-BIND') === $fxOf($fxNo, $fx, 'NOUA2+R-NO-BIND'), $fx];
 }
-$reg['R:CGN-B (archived model script, byte-identical to the archive; V2)'] = [true, 'cmp'];
+$reg['R:CGN-B (archived model script, byte-identical to the archive; V2)'] = [@file_get_contents("$in/v2_cgn.G4.jsonl") === @file_get_contents("$arch/v2_cgn.G4.jsonl"), 'cmp'];
 $stealR = $fxOf($fxRef, 'STEAL', 'REF');
 $stealN = $fxOf($costNo, 'STEAL', 'NOUA2');
 $stealD = $fxOf($costNo, 'STEAL', 'D-NPID');
@@ -554,6 +554,11 @@ $md .= "\n### F-G5-04 — the U-family known device (a U-lane property, independ
 $md .= "* `LOST` reach at 600 / 300 / 60 s: NOUA2 " . implode(' / ', array_map(static fn(int $i): string => (string) $lost['byInterval'][$i]['reach'], [600, 300, 60])) . '; REF '
     . implode(' / ', array_map(static fn(int $i): string => (string) $lostRef['byInterval'][$i]['reach'], [600, 300, 60])) . '; DEC-021 (S0) ' . implode(' / ', $s0Stable)
     . '. Pipeline alone on the U lane: ' . implode(' / ', array_map(static fn(int $i): string => (string) $P('NOUA2', 'U', "STABLE-$i")['reach'], [600, 300, 60])) . ".\n";
+$u0 = [];
+foreach (['NOID-KDL', 'NOID-UAC12', 'NOID-AE'] as $fx) {
+    $u0[] = "$fx " . ($coreP($P('NOUA2', 'U', $fx)) === $coreP($P('S0', '-', $fx)) ? 'equal' : 'DIFFERS');
+}
+$md .= "* U-lane every-recorded-field equality with `S0` (G5's stricter reading of item 2, reported here because the plan text gates the behavioral fields only): " . implode(', ', $u0) . ".\n";
 $md .= "* `NOID-STABLE-300`, U lane: NOUA2 {$P('NOUA2', 'U', 'NOID-STABLE-300')['reach']} = REF {$P('REF', 'U', 'NOID-STABLE-300')['reach']}, S0 {$P('S0', '-', 'NOID-STABLE-300')['reach']} (the comparison left the gate).\n";
 $md .= "* Allowance and K4 overflow on the U lane (`STABLE-300`, NOUA2 / D-NOALW / D-NOOVF): " . implode(' / ', $uLaneAllow) . ' — ' . ($uLaneAllow[0] === $uLaneAllow[1] && $uLaneAllow[1] === $uLaneAllow[2] ? 'no observable enforcement on the U lane' : 'an effect on the U lane') . ".\n";
 $md .= "* **One written proposal for step 4, not measured here:** a known device that lost its token on U stays under DEC-021's allowance and K4 overflow, instead of being bounded only by the account bucket ceiling.\n";

@@ -177,6 +177,7 @@ legit-denied: REF 6 (`AAASSSAASSAS`), NOUA2 9 (`AAASSSSSHSSS`), NOUA2 on KD 9 (`
 ### F-G5-04 — the U-family known device (a U-lane property, independent of this step)
 
 * `LOST` reach at 600 / 300 / 60 s: NOUA2 51 / 51 / 51; REF 51 / 51 / 51; DEC-021 (S0) 45 / 44 / 45. Pipeline alone on the U lane: 144 / 79 / 77.
+* U-lane every-recorded-field equality with `S0` (G5's stricter reading of item 2, reported here because the plan text gates the behavioral fields only): NOID-KDL equal, NOID-UAC12 equal, NOID-AE equal.
 * `NOID-STABLE-300`, U lane: NOUA2 79 = REF 79, S0 44 (the comparison left the gate).
 * Allowance and K4 overflow on the U lane (`STABLE-300`, NOUA2 / D-NOALW / D-NOOVF): 79 / 79 / 79 — no observable enforcement on the U lane.
 * **One written proposal for step 4, not measured here:** a known device that lost its token on U stays under DEC-021's allowance and K4 overflow, instead of being bounded only by the account bucket ceiling.

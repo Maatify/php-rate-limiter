@@ -215,7 +215,7 @@ foreach (['flip' => true, 'ctl' => false] as $k => $flip) {
 }
 g4Emit('fx', ['fixture' => 'UAX-ASM', 'arm' => $arm, 'flip' => $asm['flip'], 'ctl' => $asm['ctl'], 'identical' => $asm['flip'] === $asm['ctl']]);
 
-// MIXPRES-ASM (reported, not gated; PLAN.md §10 A1): one account, two devices of the owner; B sends no id and fails four times, then A (an id) fails twice; control without B.
+// MIXPRES-ASM (G5's assembled form, not gated: the G5 item 3 condition is measured at pipeline level, MIXPRES): one account, two devices of the owner; B sends no id and fails four times, then A (an id) fails twice; control without B.
 $mix = [];
 foreach (['both' => true, 'ctl' => false] as $k => $withB) {
     [$cell, $gate, $host] = g5v2Cell($arm);
