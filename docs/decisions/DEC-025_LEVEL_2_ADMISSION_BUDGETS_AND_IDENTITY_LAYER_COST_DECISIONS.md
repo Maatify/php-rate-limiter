@@ -6,7 +6,7 @@
 
 ## Status
 
-`ACTIVE` — as a record of **declared budgets with study values**, on the Owner's decision of 2026-10-19. Decision 8 is active as a **direction conditional on the G7 measurement**, with its fallback recorded (see below).
+`ACTIVE` — as a record of **declared budgets with study values**, on the Owner's decision of 2026-10-19. Decision 8 is recorded as **rule 8.2 in the form measured in G7**, on the Owner's decision of the same date (see Decision Authority).
 
 It is **not** an Architecture GO, not an approval of `FULL2` as a product, not Runtime authority and not a Public API change. Every value below is a **study value** from a merged archive; it becomes a production value only through
 the Runtime authorisation of step 5. DEC-015, DEC-019 and DEC-021 stay `ACTIVE` and unchanged until step 5; DEC-022 stays `PROPOSED`; DEC-023 and DEC-024 stay `ACTIVE`.
@@ -21,6 +21,8 @@ the Runtime authorisation of step 5. DEC-015, DEC-019 and DEC-021 stay `ACTIVE` 
 [`BUDGETS_DECISION.md`](../../investigations/k2-identity-admission-97/BUDGETS_DECISION.md) and this record were presented in plain language with the cost of every option. The choice is recorded on GitHub in
 [PR #139 comment 6263682706](https://github.com/Maatify/php-rate-limiter/pull/139#issuecomment-6263682706), posted by the Lead on the Owner's behalf after the Owner's explicit approval, following the precedent of step 2
 ([PR #134 comment 6256657121](https://github.com/Maatify/php-rate-limiter/pull/134#issuecomment-6256657121), recorded in DEC-023 and DEC-024 by PR #135). The Owner's text is the authority; the table below follows it.
+
+Decision 8 was decided in two stages. On 2026-10-19 the Owner chose 8.2 as a direction conditional on the G7 study, with 8.1 (no replacement bound) as the recorded fallback. G7 was merged as evidence (PR #141, `21065b2`, `SUPPORTED — LIMITED SCOPE`), and the Owner then decided **8.2 as a rule**, in the form measured in G7, accepting the two declared costs `X2` and `TPAIRT` below. That decision is on GitHub in [PR #141 comment 6264207884](https://github.com/Maatify/php-rate-limiter/pull/141#issuecomment-6264207884), posted by the Lead on the Owner's behalf, and is the authority for the Decision 8 row. Option 8.1 was **not chosen**; it is kept here only as the alternative the Owner did not select.
 
 The evidence is the merged step-3 study ([PR #138](https://github.com/Maatify/php-rate-limiter/pull/138), `f4851eb`, G5 v2), the merged studies G3, G3 v2 and G4 v2 named under [Evidence](#evidence), and the registered
 measurement of this step (G6, PR #139). Technical review: the independent Lead reviews of PR #139.
@@ -61,14 +63,13 @@ The Owner chose the following. Numbers are archive values; the measured cost of 
 | 5 | Known device on the strangers' door [paper D5] | **5.1:** the account bucket only. Option 5.4 is an open item (below) |
 | 6 | Re-issue at a password change [paper D6] | **6.1:** the changing device only; F-G5v2-05 is a declared cost |
 | 7 | Global ceiling and multi-IP spray [paper D7] | **7.1:** no global ceiling. P4 is an open item (below) |
-| 8 | Replacement bounds for what K2 gives [paper D8] | **8.2 as a direction conditional on G7:** a narrow rule on **failures across different accounts from one source on the proven door**, measured in G7; the decisive benign gate is that the legitimate office `N12T` is refused no more than `FULL2` does today. **If that gate fails, 8.2 falls and 8.1 (none) is recorded as a declared cost:** `TMS` 61/61 and `TMSd` 120/200 on `FULL2` against 7/61 and 2/200 on S0. **API: 8.4**, today's enforcement unchanged |
+| 8 | Replacement bounds for what K2 gives [paper D8] | **8.2 as a rule, in the form measured in G7** ([`G7_CROSS_ACCOUNT_P.md`](../../investigations/k2-identity-admission-97/G7_CROSS_ACCOUNT_P.md)): a per-source, per-window capacity on the **proven door (P)** that counts the **different accounts that failed through P**; a P request for a further account is refused (`cap:pfail_src`) when the source's set already holds `F` such accounts. Success is neither counted nor refunded. Nothing is persisted outside the window; no escalation and no block on the source. **Study values: `F` 4, window 600 s.** Declared costs accepted by the Owner: **`X2`** (the rule does not return `TMS` and `TMSd` to S0's values: 61/61 and 120/200 on `FULL2` become 29/61 and 40/200 in `pre+out`, S0 being 7/61 and 2/200; inert in `pre`) and **`TPAIRT`** (an office that shares its source with a `TMSd` attacker has 21 of 61 requests refused instead of 0, and the attacker's reach falls 120 → 72; the residual of being unable to tell them apart in a shared source, G3 §4.3). **API: 8.4**, today's enforcement unchanged |
 | 9 | K5 micro-cap and known-device allowance [paper D9] | **9.1:** the DEC-021 values unchanged (Login: K5 8 / 12 / 16, allowance 8, micro-cap 8; OTP: allowance 2) |
 
 ### Open items (gate-shaped, none is run or approved here)
 
 - **Option 5.4** (the UK lane counting admission refusals as failures of the device): *not measured*; gate N-4 of the decision paper §11 (`LOST` ≤ 45 / 44 / 45 behind the bucket, no attacker cell above the reference).
 - **P4** (multi-IP spray with no global ceiling): `POI` 96, `SP4b` 432 / 432 on S0, `X2` 121 / 121; any finite `U_glob` is a lane-wide denial lever (#115, #127). A measurement of that lever on the U door is gate N-6.
-- **Decision 8, the direction:** its gate is the G7 study (`investigations/k2-identity-admission-97/g7/cross_account_p/`). Its verdict is recorded by a later record; until then 8.2 is a direction, not a rule.
 
 ### What this record does not approve
 
@@ -79,13 +80,12 @@ activation of DEC-022.
 
 - **Why study values.** DEC-022 assumes no value; the values are the Owner's. The numbers are measured; the Owner accepted their measured cost on 2026-10-19 as declared budgets, and they become production values only in step 5.
 - **Why nine points in one record.** DEC-022 Condition 3 names decisions 1, 2 and 8, G5 v2 §8 names 3 (the `N_P` cost), 4, 5 and 6, and the Owner's step-4 assignment adds the P caps, 7 and 9; one record shows the interactions (paper §10). Decision Governance's default is one material decision per record; the nine are recorded together as one budget declaration, and a later change to one of them supersedes this record under §9.
-- **Why some points are open items.** A gate with no evidence is not a gate that passed. 5.4, P4 and the direction of decision 8 are written as gates, not decided.
+- **Why some points are open items.** A gate with no evidence is not a gate that passed. 5.4 and P4 are written as gates, not decided.
 
 ## Consequences
 
 - **Values are study values.** They become production values only through the step-5 Runtime authorisation. No Runtime, API or Store shape follows from this record. DEC-015, DEC-019 and DEC-021 are unchanged until then.
-- **Declared costs the Owner accepted** (decision paper): S0's collective spray denial is retired at `U_src` 24 / `F` 4 (`SP6` 24 in `pre+out`, 144 in `pre`; `POI` 96); owner recovery up to about 30 minutes on a continuing attack; a known device that lost its token is bounded by the bucket (51 against DEC-021's 45 / 44 / 45); a second credential holder is locked out after a password change (F-G5v2-05); no global ceiling (P4 open); the `UAX-NP-K` curve (refusals from the 11th distinct browser major in a day).
-- **Decision 8 is conditional.** If the G7 gate fails, 8.1 is the declared cost: `TMS` 61/61 and `TMSd` 120/200 on `FULL2` (best response), against 7/61 and 2/200 on S0.
+- **Declared costs the Owner accepted** (decision paper): S0's collective spray denial is retired at `U_src` 24 / `F` 4 (`SP6` 24 in `pre+out`, 144 in `pre`; `POI` 96); owner recovery up to about 30 minutes on a continuing attack; a known device that lost its token is bounded by the bucket (51 against DEC-021's 45 / 44 / 45); `X2` and `TPAIRT` of decision 8 (the multi-session cells fall to 29/61 and 40/200 in `pre+out`, not to S0's 7/61 and 2/200; a co-located office pays 21 of 61 beside a `TMSd` attacker); a second credential holder is locked out after a password change (F-G5v2-05); no global ceiling (P4 open); the `UAX-NP-K` curve (refusals from the 11th distinct browser major in a day).
 - Every admission bound is absent in degraded mode (DEC-024 Consequences) and unavailable to `pre` / `out` Hosts as DEC-023 states; every new admission state family must state its DEC-003 cycles, DEC-007 lifecycle, DEC-008 capability and DEC-015 failure behaviour when implemented.
 
 | Record | Effect |
@@ -109,6 +109,7 @@ Every number is quoted from the merged study named, at that study's baseline (G6
 | #113 | `trusted-multi-session-s0/` | `TMS`, `TMSd`, `TMX` on S0 at baseline `ce89cb2` | `MEASURED` |
 | #108 | `k1-credential-spray-nat/` | `SP4b` 432 / 432 on S0 | `MEASURED` |
 | #126, #127 | `k2-identity-admission-97/` G1, G2 | API cells, `U_glob` binding, proof-path global ceilings | `MEASURED` |
+| #141 | `k2-identity-admission-97/g7/cross_account_p/` | decision 8: the rule `PX4` (`F` 4, 600 s), gates X1–X4, the declared costs `X2` and `TPAIRT` | `MEASURED` |
 | #139 | `k2-identity-admission-97/g6/budgets/` | the UK lane (`UKD`: gate U1 FAIL, gate U2 PASS) and the `TMS` family on `FULL2` | `MEASURED`; `POST-HOC` (G6 §3.4) |
 
 ## Relationship to Other Decisions
