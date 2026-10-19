@@ -18,6 +18,9 @@
 > device-watcher rows, §3, §4.1–§4.3 and §5 rows 2–8 were measured and hold on the P family; **the `N_P` row of the §2.1 table (member keyed by the id) is the
 > one choice the results do not support** (G5 F-G5-01, F-G5-02), and §5 row 4's U-family sentence is confirmed (F-G5-04). §6 (migration, rollback) stays `DERIVED`.
 
+> **Post-G5 v2 note (2026-10-19).** The amendments at the end of this document (§"v2 amendments") put the `N_P` member on the fingerprint and write the `K4P` rule as three arms; measured by
+> [`G5_V2_IDENTITY_LAYER.md`](G5_V2_IDENTITY_LAYER.md) (registered verdict SUPPORTED — LIMITED SCOPE). The text above is still not edited.
+
 ## 0. The question and what this document settles
 
 **Question (step 3).** Can the K5 material be *account + instance id* without the User-Agent (`IAP§5` rule 2), with K5 separated
