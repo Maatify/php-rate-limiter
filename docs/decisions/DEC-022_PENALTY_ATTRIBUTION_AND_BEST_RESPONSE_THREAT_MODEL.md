@@ -225,6 +225,7 @@ them will be approved. A step that is refused or fails its gates leaves DEC-022 
    the previous generation read-only. The decision must also state what is promised to
    `checkOnly`-only Hosts and to record-only Hosts. FULL2 fails gate P for `checkOnly`-only
    Hosts (#132), and record-only Hosts get no pre-verifier bound in any measured design.
+   Step 2 was decided on 2026-10-19 by DEC-023 (mode eligibility) and DEC-024 (opt-in T0 reservation).
 2. **Measurement of UA-free K5 with DEC-021 parity (step 3).** K5 material without the UA
    when a client instance id is present, and today's derivation without one. It must be
    measured against the DEC-021 known-device bounds. No study has implemented it: G4 and
