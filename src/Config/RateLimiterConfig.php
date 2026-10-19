@@ -25,6 +25,10 @@ final readonly class RateLimiterConfig
 
     private ?string $previousFingerprintSecret;
 
+    private ?string $bindingKeySecret;
+
+    private ?string $previousBindingKeySecret;
+
     /**
      * Validate and retain the active and optional previous generation inputs.
      *
@@ -33,6 +37,8 @@ final readonly class RateLimiterConfig
      * @param string $environmentScope Non-blank namespace included in derived keys.
      * @param ?string $previousKeySecret Optional previous outer key-generation secret.
      * @param ?string $previousFingerprintSecret Optional previous fingerprint-generation secret.
+     * @param ?string $bindingKeySecret Optional admission-credential binding key. Required only when a policy declares the admission capability.
+     * @param ?string $previousBindingKeySecret Optional previous binding key; valid only together with an active one.
      * @throws RateLimiterException When any required or provided optional value is blank.
      */
     public function __construct(
@@ -45,6 +51,10 @@ final readonly class RateLimiterConfig
         ?string $previousKeySecret = null,
         #[\SensitiveParameter]
         ?string $previousFingerprintSecret = null,
+        #[\SensitiveParameter]
+        ?string $bindingKeySecret = null,
+        #[\SensitiveParameter]
+        ?string $previousBindingKeySecret = null,
     ) {
         self::assertNotBlank($keySecret, 'Active key secret');
         self::assertNotBlank($fingerprintSecret, 'Active fingerprint secret');
@@ -58,11 +68,24 @@ final readonly class RateLimiterConfig
             self::assertNotBlank($previousFingerprintSecret, 'Previous fingerprint secret');
         }
 
+        if ($bindingKeySecret !== null) {
+            self::assertNotBlank($bindingKeySecret, 'Binding key secret');
+        }
+
+        if ($previousBindingKeySecret !== null) {
+            self::assertNotBlank($previousBindingKeySecret, 'Previous binding key secret');
+            if ($bindingKeySecret === null) {
+                throw new RateLimiterException('A previous binding key secret requires an active binding key secret.');
+            }
+        }
+
         $this->keySecret = $keySecret;
         $this->fingerprintSecret = $fingerprintSecret;
         $this->environmentScope = $environmentScope;
         $this->previousKeySecret = $previousKeySecret;
         $this->previousFingerprintSecret = $previousFingerprintSecret;
+        $this->bindingKeySecret = $bindingKeySecret;
+        $this->previousBindingKeySecret = $previousBindingKeySecret;
     }
 
     /**
@@ -103,6 +126,22 @@ final readonly class RateLimiterConfig
     public function previousFingerprintSecret(): ?string
     {
         return $this->previousFingerprintSecret;
+    }
+
+    /**
+     * Return the optional active admission-credential binding key.
+     */
+    public function bindingKeySecret(): ?string
+    {
+        return $this->bindingKeySecret;
+    }
+
+    /**
+     * Return the optional previous admission-credential binding key.
+     */
+    public function previousBindingKeySecret(): ?string
+    {
+        return $this->previousBindingKeySecret;
     }
 
     private static function assertNotBlank(string $value, string $name): void

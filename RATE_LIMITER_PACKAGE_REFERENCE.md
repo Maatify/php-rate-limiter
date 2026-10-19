@@ -163,6 +163,23 @@ The following inventory describes the current public runtime types. Test and sup
 | `Maatify\RateLimiter\Builder\RateLimiterBuilder` | Package-wide default composition surface for the engine graph, the three default policy presets, and the opt-in simple fixed-window throttle registry. `buildOperationalReader()` (DEC-012) additively returns the coordinated Production Default Read Path built from this same registered state. |
 | `Maatify\RateLimiter\Config\FixedWindowThrottlePolicy` | Package-owned immutable `SimpleThrottlePolicyInterface` convenience implementation; name, limit, and interval remain explicit caller inputs. |
 
+### Dormant Admission Reservation Shapes (DEC-023, DEC-024, DEC-025)
+
+Additive shapes that are **dormant and not selectable through the builder**: no official preset declares the capability, `RateLimiterBuilder::build()` never composes an admission runtime, and registering a policy that declares `PolicyCapabilityEnum::ADMISSION_RESERVATION` fails with a `RateLimiterException`. No existing signature, default or result changes.
+
+| Type | Responsibility |
+| --- | --- |
+| `Maatify\RateLimiter\Enum\PolicyCapabilityEnum::ADMISSION_RESERVATION` | Authentication-related typed opt-in; cannot be combined with `API_OVERUSE`. |
+| `Maatify\RateLimiter\Config\AdmissionReservationPolicyInterface` | Separate declaration (`getAdmissionHostMode()`, `getAdmissionBudgetGroup()`); `BlockPolicyInterface` is unchanged. |
+| `Maatify\RateLimiter\Enum\AdmissionHostModeEnum` | `PRE_AND_OUT`, the only eligible Host mode. |
+| `Maatify\RateLimiter\Repository\AdmissionReservationStoreInterface`, `AdmissionPermitStoreInterface`, `AdmissionCapableFullStoreInterface` | Store capabilities for the atomic reservation, the permit and the combined full store. Interfaces only; no store implements them yet. |
+| `Maatify\RateLimiter\DTO\AdmissionScopeDTO`, `AdmissionPermitDTO`, `AdmissionReservationRequestDTO`, `AdmissionReservationResultDTO`, `AdmissionOutcomeDTO` and `Maatify\RateLimiter\Enum\AdmissionScopeKindEnum`, `AdmissionOutcomeKindEnum`, `AdmissionPermitClaimEnum` | Store-boundary shapes. |
+| `Maatify\RateLimiter\Service\AdmissionCredentialCodec`, `Maatify\RateLimiter\DTO\AdmissionCredentialDTO`, `AdmissionCredentialVerificationDTO`, `Maatify\RateLimiter\Enum\AdmissionCredentialVerdictEnum` | Credential format authority: encode and verify only. A failed check is a verdict, never an exception. The Host decides when to issue. |
+| `Maatify\RateLimiter\Service\AdmissionBindingControlInterface` | Host-proven revocation of an account's credentials; interface only. |
+| `Maatify\RateLimiter\Service\AdmissionRuntime` | `@internal` empty shell; not part of the supported composition. |
+
+Additive optional trailing inputs on existing types: `RateLimitContextDTO` (`clientInstanceId`, `admissionCredential`), `DeviceIdentityDTO` (`deviceIdHash`, `previousDeviceIdHash`), `RateLimiterConfig` (`bindingKeySecret`, `previousBindingKeySecret`), `RateLimitCommand` (`permit`, outcome commands only) and `RateLimitMetadataDTO` (`permit`). The optional DTO members are serialized only when present, and a policy that did not opt in ignores them.
+
 ### Public Command
 
 | Type | Contract |

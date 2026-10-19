@@ -18,12 +18,14 @@ final readonly class RateLimitMetadataDTO implements \JsonSerializable
      * @param ?PostPunishmentReentryMetadataDTO $postPunishmentReentry Opaque,
      * one-shot application handoff metadata; it is present only when a public
      * post-punishment check exposes claimable evidence.
+     * @param ?string $permit Opaque admission permit, present only on an admission that opted into the permit contract.
      */
     public function __construct(
         public ?string $signal = null,
         public ?string $cause = null,
         public ?RateLimitContextMetadataDTO $context = null,
         public ?PostPunishmentReentryMetadataDTO $postPunishmentReentry = null,
+        public ?string $permit = null,
     ) {}
 
     /**
@@ -40,6 +42,9 @@ final readonly class RateLimitMetadataDTO implements \JsonSerializable
         ];
         if ($this->postPunishmentReentry !== null) {
             $serialized['postPunishmentReentry'] = $this->postPunishmentReentry;
+        }
+        if ($this->permit !== null) {
+            $serialized['permit'] = $this->permit;
         }
         return $serialized;
     }

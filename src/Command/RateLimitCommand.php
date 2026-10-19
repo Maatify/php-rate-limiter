@@ -30,6 +30,7 @@ final readonly class RateLimitCommand
         public bool $isPreCheck = false,
         public bool $isFailure = false,
         public bool $isSuccess = false,
+        public ?string $permit = null,
     ) {
         $trueCount = ($this->isPreCheck ? 1 : 0) + ($this->isFailure ? 1 : 0) + ($this->isSuccess ? 1 : 0);
         if ($trueCount > 1) {
@@ -42,6 +43,10 @@ final readonly class RateLimitCommand
 
         if ($this->cost < 1) {
             throw new RateLimiterException('Rate-limit command cost must be a positive integer.');
+        }
+
+        if ($this->permit !== null && (trim($this->permit) === '' || $this->isPreCheck)) {
+            throw new RateLimiterException('A command permit must be non-blank and may accompany only a recorded outcome.');
         }
     }
 
