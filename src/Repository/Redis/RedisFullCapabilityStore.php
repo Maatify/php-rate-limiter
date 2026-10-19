@@ -4,6 +4,9 @@ declare(strict_types=1);
 
 namespace Maatify\RateLimiter\Repository\Redis;
 
+use Maatify\RateLimiter\DTO\AdmissionOutcomeDTO;
+use Maatify\RateLimiter\DTO\AdmissionReservationRequestDTO;
+use Maatify\RateLimiter\DTO\AdmissionReservationResultDTO;
 use Maatify\RateLimiter\DTO\BlockStateDTO;
 use Maatify\RateLimiter\DTO\BoundedDistinctResultDTO;
 use Maatify\RateLimiter\DTO\BoundedDistinctSnapshotDTO;
@@ -18,7 +21,10 @@ use Maatify\RateLimiter\DTO\PunishmentLifecycleTransitionDTO;
 use Maatify\RateLimiter\DTO\RateLimitStateDTO;
 use Maatify\RateLimiter\Exception\RateLimiterException;
 use Maatify\RateLimiter\Exception\BackendFailureException;
-use Maatify\RateLimiter\Repository\FullCapabilityStoreInterface;
+use Maatify\RateLimiter\Enum\AdmissionOutcomeKindEnum;
+use Maatify\RateLimiter\Enum\AdmissionPermitClaimEnum;
+use Maatify\RateLimiter\Repository\AdmissionCapableFullStoreInterface;
+use Maatify\RateLimiter\Repository\AdmissionPermitStoreInterface;
 
 /**
  * Official Redis-backed aggregate store.
@@ -32,9 +38,11 @@ use Maatify\RateLimiter\Repository\FullCapabilityStoreInterface;
  * operational failure classification; this adapter does not reinterpret
  * arbitrary throwables as backend outages.
  */
-final class RedisFullCapabilityStore implements FullCapabilityStoreInterface
+final class RedisFullCapabilityStore implements AdmissionCapableFullStoreInterface, AdmissionPermitStoreInterface
 {
     private const PREFIX = 'maatify:rate-limiter:v1';
+
+    private ?RedisAdmissionOperations $admission = null;
 
     private const LUA_EXACT_INTEGER_MAX = 9007199254740991;
 
@@ -1719,6 +1727,42 @@ LUA;
     {
         $keys = [$this->key('score', $currentKey), $previousKey === null ? '' : $this->key('score', $previousKey), $this->key('block', $currentKey), $previousKey === null ? '' : $this->key('block', $previousKey), $this->key('reentry-claim', $currentKey)];
         return $this->integerValue($this->eval(self::LIFECYCLE_CLAIM, $keys, [$lifecycleId]), 're-entry claim') === 1;
+    }
+
+    public function reserveAdmission(AdmissionReservationRequestDTO $request, int $now): AdmissionReservationResultDTO
+    {
+        return $this->admission()->reserve($request, $now);
+    }
+
+    public function applyAdmissionOutcome(AdmissionOutcomeDTO $outcome, int $now): void
+    {
+        $this->admission()->applyOutcome($outcome, $now);
+    }
+
+    public function readBindingEpoch(string $key, ?string $previousKey): int
+    {
+        return $this->admission()->readEpoch($key, $previousKey);
+    }
+
+    public function bumpBindingEpoch(string $key, ?string $previousKey): int
+    {
+        return $this->admission()->bumpEpoch($key, $previousKey);
+    }
+
+    public function claimAdmissionPermit(
+        string $permitId,
+        string $lane,
+        string $subject,
+        string $operation,
+        AdmissionOutcomeKindEnum $outcome,
+        int $now,
+    ): AdmissionPermitClaimEnum {
+        return $this->admission()->claimPermit($permitId, $lane, $subject, $operation, $outcome, $now);
+    }
+
+    private function admission(): RedisAdmissionOperations
+    {
+        return $this->admission ??= new RedisAdmissionOperations($this->redis, $this->namespace);
     }
 
     /**

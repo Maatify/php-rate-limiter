@@ -7,65 +7,93 @@ declare(strict_types=1);
 // Prints one JSON object: {"ok": bool, "refused": ?string, "claim": ?string}.
 
 use Maatify\RateLimiter\DTO\AdmissionOutcomeDTO;
+use Maatify\RateLimiter\DTO\AdmissionPermitDTO;
 use Maatify\RateLimiter\DTO\AdmissionReservationRequestDTO;
 use Maatify\RateLimiter\DTO\AdmissionScopeDTO;
-use Maatify\RateLimiter\DTO\AdmissionPermitDTO;
 use Maatify\RateLimiter\Enum\AdmissionOutcomeKindEnum;
 use Maatify\RateLimiter\Enum\AdmissionScopeKindEnum;
 use Maatify\RateLimiter\Repository\Redis\RedisAdmissionOperations;
 use Maatify\RateLimiter\Repository\Redis\RedisFullCapabilityStore;
+use Maatify\RateLimiter\Tests\Support\Admission\AdmissionRaceSpec;
 use Maatify\RateLimiter\Tests\Support\Admission\NonAtomicAdmissionControl;
 use Maatify\RateLimiter\Tests\Support\Redis\RespRedisCommandExecutor;
 
 require dirname(__DIR__, 3) . '/vendor/autoload.php';
 
-[$_, $host, $port, $barrier, $index, $encoded] = $argv;
-$spec = json_decode((string) base64_decode($encoded, true), true, 512, JSON_THROW_ON_ERROR);
-$executor = new RespRedisCommandExecutor($host, (int) $port);
-$store = new RedisFullCapabilityStore($executor, (string) $spec['namespace']);
-$operations = new RedisAdmissionOperations($executor, (string) $spec['namespace']);
-$at = static fn(?string $value): ?string => $value === null ? null : str_replace('{i}', (string) $index, $value);
+$args = [];
+$raw = $_SERVER['argv'] ?? [];
+foreach (is_array($raw) ? $raw : [] as $argument) {
+    if (is_string($argument)) {
+        $args[] = $argument;
+    }
+}
+if (count($args) !== 6) {
+    fwrite(STDERR, "usage: race-worker.php <host> <port> <barrier> <index> <spec>\n");
+    exit(2);
+}
+[, $host, $port, $barrier, $index, $encoded] = $args;
+$json = base64_decode($encoded, true);
+if ($json === false) {
+    fwrite(STDERR, "malformed spec\n");
+    exit(2);
+}
+$spec = AdmissionRaceSpec::fromJson($json);
+$executor = new RespRedisCommandExecutor($host, intval($port));
+$store = new RedisFullCapabilityStore($executor, $spec->namespace);
+$operations = new RedisAdmissionOperations($executor, $spec->namespace);
+$fill = static fn(string $value): string => str_replace('{i}', $index, $value);
+$at = static fn(?string $value): ?string => $value === null ? null : $fill($value);
+$reply = static fn(bool $ok, ?string $refused = null, ?string $claim = null): string => json_encode(['ok' => $ok, 'refused' => $refused, 'claim' => $claim], JSON_THROW_ON_ERROR);
 
 $scopes = [];
-foreach ($spec['scopes'] ?? [] as $s) {
+foreach ($spec->scopes as $s) {
     $scopes[] = new AdmissionScopeDTO(
         $s['name'],
         AdmissionScopeKindEnum::from($s['kind']),
-        (string) $at($s['key']),
-        (int) $s['capacity'],
-        (int) $s['ttl'],
+        $fill($s['key']),
+        $s['capacity'],
+        $s['ttl'],
         $at($s['previousKey'] ?? null),
         $at($s['member'] ?? null),
         $at($s['previousMember'] ?? null),
     );
 }
-$now = (int) $spec['now'];
 
 while (microtime(true) < (float) $barrier) {
     usleep(200);
 }
 
-if ($spec['op'] === 'outcome') {
-    $store->applyAdmissionOutcome(new AdmissionOutcomeDTO('login', AdmissionOutcomeKindEnum::from((string) $spec['outcome']), $scopes), $now);
-    echo json_encode(['ok' => true, 'refused' => null, 'claim' => null]);
+if ($spec->op === 'outcome') {
+    if ($spec->outcome === null) {
+        fwrite(STDERR, "outcome op without an outcome\n");
+        exit(2);
+    }
+    $store->applyAdmissionOutcome(new AdmissionOutcomeDTO('login', AdmissionOutcomeKindEnum::from($spec->outcome), $scopes), $spec->now);
+    echo $reply(true);
     exit(0);
 }
 
-if ($spec['op'] === 'claim') {
-    if ($spec['mode'] === 'nonatomic') {
-        echo json_encode(['ok' => (new NonAtomicAdmissionControl($executor, $operations))->claim($spec['permit']), 'refused' => null, 'claim' => null]);
+if ($spec->op === 'claim') {
+    $permitId = $spec->permit;
+    if ($permitId === null) {
+        fwrite(STDERR, "claim op without a permit\n");
+        exit(2);
+    }
+    if ($spec->mode === 'nonatomic') {
+        echo $reply((new NonAtomicAdmissionControl($executor, $operations))->claim($permitId));
         exit(0);
     }
-    $claim = $store->claimAdmissionPermit($spec['permit'], 'U', 'acctT', 'login', AdmissionOutcomeKindEnum::FAILURE, $now);
-    echo json_encode(['ok' => $claim->value === 'accepted', 'refused' => null, 'claim' => $claim->value]);
+    $claim = $store->claimAdmissionPermit($permitId, 'U', 'acctT', 'login', AdmissionOutcomeKindEnum::FAILURE, $spec->now);
+    echo $reply($claim->value === 'accepted', null, $claim->value);
     exit(0);
 }
 
-$permit = isset($spec['issuePermit']) ? new AdmissionPermitDTO((string) $at($spec['issuePermit']), 'U', 'acctT', 'login', $now + 30, 600) : null;
+$issue = $at($spec->issuePermit);
+$permit = $issue === null ? null : new AdmissionPermitDTO($issue, 'U', 'acctT', 'login', $spec->now + 30, 600);
 $request = new AdmissionReservationRequestDTO('login', $scopes, $permit);
-if ($spec['mode'] === 'nonatomic') {
-    echo json_encode(['ok' => (new NonAtomicAdmissionControl($executor, $operations))->reserve($request, $now), 'refused' => null, 'claim' => null]);
+if ($spec->mode === 'nonatomic') {
+    echo $reply((new NonAtomicAdmissionControl($executor, $operations))->reserve($request, $spec->now));
     exit(0);
 }
-$result = $store->reserveAdmission($request, $now);
-echo json_encode(['ok' => $result->admitted, 'refused' => $result->refusedScope, 'claim' => null]);
+$result = $store->reserveAdmission($request, $spec->now);
+echo $reply($result->admitted, $result->refusedScope);

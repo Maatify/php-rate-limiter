@@ -94,10 +94,8 @@ LUA;
         }
         $argv[] = '0';
         $reply = $redis->execute(array_merge(['EVAL', self::RESERVE, 0], $argv));
-        if (! is_array($reply)) {
-            throw new \RuntimeException('Study reserve script returned a non-array reply.');
-        }
+        $reply = ReplyValue::list($reply);
 
-        return ['ok' => (int) $reply[0] === 1, 'refusedIndex' => (int) $reply[1]];
+        return ['ok' => ReplyValue::integer($reply[0] ?? null) === 1, 'refusedIndex' => ReplyValue::integer($reply[1] ?? null)];
     }
 }

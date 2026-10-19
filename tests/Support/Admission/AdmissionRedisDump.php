@@ -15,11 +15,10 @@ final class AdmissionRedisDump
     /** @return array<string, array{type: string, value: mixed, hasTtl: bool}> */
     public static function take(RedisCommandExecutorInterface $redis, string $pattern = '*'): array
     {
-        $keys = $redis->execute(['KEYS', $pattern]);
         $out = [];
-        foreach (is_array($keys) ? $keys : [] as $key) {
-            $key = (string) $key;
-            $type = (string) $redis->execute(['TYPE', $key]);
+        foreach (ReplyValue::list($redis->execute(['KEYS', $pattern])) as $reply) {
+            $key = ReplyValue::text($reply);
+            $type = ReplyValue::text($redis->execute(['TYPE', $key]));
             $value = match ($type) {
                 'string' => $redis->execute(['GET', $key]),
                 'zset' => self::pairs($redis->execute(['ZRANGE', $key, 0, -1, 'WITHSCORES'])),
@@ -38,11 +37,10 @@ final class AdmissionRedisDump
     /** @return array<string, int> PTTL in milliseconds per key, -1 when none. */
     public static function pttl(RedisCommandExecutorInterface $redis, string $pattern = '*'): array
     {
-        $keys = $redis->execute(['KEYS', $pattern]);
         $out = [];
-        foreach (is_array($keys) ? $keys : [] as $key) {
-            $pttl = $redis->execute(['PTTL', (string) $key]);
-            $out[(string) $key] = is_int($pttl) ? $pttl : -2;
+        foreach (ReplyValue::list($redis->execute(['KEYS', $pattern])) as $reply) {
+            $key = ReplyValue::text($reply);
+            $out[$key] = ReplyValue::integer($redis->execute(['PTTL', $key]));
         }
         ksort($out);
 
@@ -53,9 +51,9 @@ final class AdmissionRedisDump
     private static function pairs(mixed $flat): array
     {
         $out = [];
-        $flat = is_array($flat) ? array_values($flat) : [];
+        $flat = ReplyValue::list($flat);
         for ($i = 0; $i + 1 < count($flat); $i += 2) {
-            $out[(string) $flat[$i]] = (string) $flat[$i + 1];
+            $out[ReplyValue::text($flat[$i])] = ReplyValue::text($flat[$i + 1]);
         }
         ksort($out);
 
@@ -65,7 +63,7 @@ final class AdmissionRedisDump
     /** @return list<string> */
     private static function sorted(mixed $members): array
     {
-        $out = array_map('strval', is_array($members) ? $members : []);
+        $out = array_map(ReplyValue::text(...), ReplyValue::list($members));
         sort($out);
 
         return $out;

@@ -8,36 +8,35 @@ namespace Maatify\RateLimiter\Tests\Support\Admission;
 final class AdmissionRaceRunner
 {
     /**
-     * @param array<string, mixed> $spec
      * @return list<array{ok: bool, refused: ?string, claim: ?string}>
      */
-    public static function run(string $host, int $port, int $processes, array $spec): array
+    public static function run(string $host, int $port, int $processes, AdmissionRaceSpec $spec): array
     {
-        $barrier = microtime(true) + 1.5 + ($processes / 40);
-        $encoded = base64_encode(json_encode($spec, JSON_THROW_ON_ERROR));
+        $barrier = microtime(true) + 1.5 + ($processes / 10);
+        $encoded = base64_encode($spec->toJson());
         $handles = [];
         for ($index = 0; $index < $processes; $index++) {
-            $command = [PHP_BINARY, __DIR__ . '/race-worker.php', $host, (string) $port, sprintf('%.6f', $barrier), (string) $index, $encoded];
-            $pipes = [];
-            $process = proc_open($command, [1 => ['pipe', 'w'], 2 => ['pipe', 'w']], $pipes);
-            if (! is_resource($process)) {
+            $command = implode(' ', array_map(escapeshellarg(...), [PHP_BINARY, __DIR__ . '/race-worker.php', $host, (string) $port, sprintf('%.6f', $barrier), (string) $index, $encoded])) . ' 2>&1';
+            $handle = popen($command, 'r');
+            if ($handle === false) {
                 throw new \RuntimeException('Unable to start a race worker.');
             }
-            $handles[] = [$process, $pipes];
+            $handles[] = $handle;
         }
         $results = [];
-        foreach ($handles as [$process, $pipes]) {
-            $out = (string) stream_get_contents($pipes[1]);
-            $err = (string) stream_get_contents($pipes[2]);
-            fclose($pipes[1]);
-            fclose($pipes[2]);
-            $status = proc_close($process);
+        foreach ($handles as $handle) {
+            $out = (string) stream_get_contents($handle);
+            $status = pclose($handle);
             if ($status !== 0 || $out === '') {
-                throw new \RuntimeException('Race worker failed (' . $status . '): ' . $err);
+                throw new \RuntimeException('Race worker failed (' . $status . '): ' . $out);
             }
-            /** @var array{ok: bool, refused: ?string, claim: ?string} $decoded */
             $decoded = json_decode($out, true, 512, JSON_THROW_ON_ERROR);
-            $results[] = $decoded;
+            if (! is_array($decoded) || ! is_bool($decoded['ok'] ?? null)) {
+                throw new \RuntimeException('Race worker returned a malformed reply: ' . $out);
+            }
+            $refused = $decoded['refused'] ?? null;
+            $claim = $decoded['claim'] ?? null;
+            $results[] = ['ok' => $decoded['ok'], 'refused' => is_string($refused) ? $refused : null, 'claim' => is_string($claim) ? $claim : null];
         }
 
         return $results;

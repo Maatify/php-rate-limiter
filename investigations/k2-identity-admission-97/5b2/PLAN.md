@@ -94,3 +94,9 @@ The same contract fixtures (counters, rotation, device members, sets, bucket, ou
 ## 5. Order of commits
 
 1. this plan; 2. the tagged tests and fixtures (they fail: no implementation yet); 3. the implementation and the reference store; 4. documents; 5. evidence file `5b2/RESULTS.md` with the run at the exact HEAD.
+
+## 6. Amendments after the tests were committed (disclosed, none weakens a gate)
+
+1. Two contract tests that asserted counter and set-key expiry through the **caller's clock** were removed before the implementation existed: a Redis `EXPIRE` runs on the server clock, and the window is part of the caller's key, so counter and set lifetimes are garbage collection that the caller's `now` cannot observe (DEC-016). Device-member expiry, bucket refill and permit deadlines are caller-time and stay tested.
+2. The barrier of the race runner was lengthened (`1.5 s + processes / 10`) after a first run showed that 64 workers started later than the barrier and serialised, so the non-atomic detector did not fire at 64 (it fired at 16). Store results are unaffected; the detector now fires at both levels.
+3. The failover `lagged` variant first used `docker pause` (L = 0: the kernel socket buffer still delivered the stream) and then `docker network disconnect`, which is what produces a known lag; both runs are in `RESULTS.md`.

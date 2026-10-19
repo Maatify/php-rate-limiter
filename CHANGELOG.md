@@ -36,8 +36,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
     and `AdmissionHostModeEnum` with the single case `PRE_AND_OUT`. `BlockPolicyInterface` is
     unchanged.
   - Store interfaces `AdmissionReservationStoreInterface`, `AdmissionPermitStoreInterface` and
-    `AdmissionCapableFullStoreInterface`, with their DTOs and enums. Interfaces only: no store
-    implements them yet. `FullCapabilityStoreInterface` is unchanged.
+    `AdmissionCapableFullStoreInterface`, with their DTOs and enums. `RedisFullCapabilityStore`
+    implements them (below); nothing in the engine or the pipeline calls them yet.
+    `FullCapabilityStoreInterface` is unchanged.
   - `RateLimitContextDTO`: optional trailing `clientInstanceId` and `admissionCredential`,
     serialized only when present and ignored by every policy that did not opt in.
   - `DeviceIdentityDTO`: optional trailing `deviceIdHash` and `previousDeviceIdHash`, produced by
@@ -48,6 +49,26 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   - `AdmissionBindingControlInterface` (`revokeAccountBinding()`), interface only.
   - `RateLimitCommand` optional trailing `permit` (outcome commands only) and
     `RateLimitMetadataDTO` optional trailing `permit`, shapes only.
+- `RedisFullCapabilityStore` implements `AdmissionCapableFullStoreInterface` and
+  `AdmissionPermitStoreInterface` (DEC-024), still **dormant**: nothing calls the new operations,
+  the builder composes no admission runtime, and no existing Lua script, store method or test
+  changed. One Lua script per operation, the caller's `now` as a parameter, relative TTLs, no
+  `TIME` call:
+  - `reserveAdmission`: validates the type and fields of every key before the first write, then
+    admits or refuses all scopes together (counter gates with an optional previous generation that
+    is summed and never written, a device-member gate over a current and a previous set, set-size
+    gates, a credit bucket, and the permit record). A refusal writes and prunes nothing and names
+    the first refusing scope in request order.
+  - `applyAdmissionOutcome`: a failure adds the account to the failure set; a success removes it
+    and refunds the bucket or the counters (never below zero). No idempotency is claimed.
+  - `readBindingEpoch` / `bumpBindingEpoch`: one integer per account, current else previous else 0;
+    a bump writes the current key as `max(current, previous) + 1`.
+  - `claimAdmissionPermit`: one compare-and-set per claim, answering `accepted`, `duplicate`,
+    `conflict`, `rejected`, `late` or `unknown`.
+  - Malformed stored state is a `RateLimiterException`; an outage reaches the caller as the
+    executor's own `BackendFailureException`; other throwables propagate unchanged; no fallback.
+  - `docs/KEY_STRATEGY.md` §4.6 (the `binding_epoch` purpose and the reserved `_p` purposes) and
+    the new §4.8 (admission keys) describe the key layout.
 
 ### Fixed
 - Bounded local-fallback denials (`fallback_limit_exceeded`) no longer return a

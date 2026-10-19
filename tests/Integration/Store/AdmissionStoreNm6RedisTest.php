@@ -7,6 +7,7 @@ namespace Maatify\RateLimiter\Tests\Integration\Store;
 use Maatify\RateLimiter\Enum\AdmissionScopeKindEnum;
 use Maatify\RateLimiter\Exception\RateLimiterException;
 use Maatify\RateLimiter\Tests\Support\Admission\AdmissionRaceRunner;
+use Maatify\RateLimiter\Tests\Support\Admission\AdmissionRaceSpec;
 use Maatify\RateLimiter\Tests\Support\Admission\AdmissionScenarioBuilder as S;
 use Maatify\RateLimiter\Tests\Support\Admission\StudyOriginalReserve;
 use PHPUnit\Framework\Attributes\DataProvider;
@@ -57,7 +58,10 @@ final class AdmissionStoreNm6RedisTest extends AdmissionRedisGateTestCase
         return ['admitted' => $result->admitted, 'refused' => $result->refusedScope];
     }
 
-    /** @return array{admitted: bool, refused: ?string} */
+    /**
+     * @param array{cur: string, prev: string, counter: string} $keys
+     * @return array{admitted: bool, refused: ?string}
+     */
     private function studyReserve(string $fixture, array $keys): array
     {
         $counters = $fixture === 'N4a' ? [['key' => $keys['counter'], 'cap' => 2, 'ttl' => 1200, 'prev' => null]] : [];
@@ -95,7 +99,9 @@ final class AdmissionStoreNm6RedisTest extends AdmissionRedisGateTestCase
         self::assertSame($expectAdmitted, $result['admitted']);
         self::assertSame($expectRefused, $result['refused']);
         self::assertTrue($this->fixturePasses($fixture, $keys, $before, $this->dump(), $result['admitted']), $fixture . ' violated the all-or-nothing / previous-read-only rule.');
-        self::assertTrue($this->noTtlRefreshed($pttl), $fixture . ' refreshed a TTL.');
+        // A refusal refreshes no TTL at all; an admission may refresh only the current set it writes, never the previous one.
+        $watched = $expectAdmitted ? array_intersect_key($pttl, [$keys['prev'] => 1]) : $pttl;
+        self::assertTrue($this->noTtlRefreshed($watched), $fixture . ' refreshed a TTL it must not touch.');
     }
 
     /** @return iterable<string, array{string, bool, ?string}> */
@@ -135,8 +141,7 @@ final class AdmissionStoreNm6RedisTest extends AdmissionRedisGateTestCase
             'set-string' => S::request(S::counter('ok', 'c:ok-' . $label, 5), S::setSize('bad', 's:bad', 5, 'acct')),
             'bucket-string' => S::request(S::counter('ok', 'c:ok-' . $label, 5), S::bucket('bad', 'b:bad', 4, 1800)),
             'bucket-bad-field' => S::request(S::counter('ok', 'c:ok-' . $label, 5), S::bucket('bad', 'b:bad', 4, 1800)),
-            'permit-string' => S::withPermit(S::permit('p-bad', self::NOW + 30), S::counter('ok', 'c:ok-' . $label, 5)),
-            default => throw new \LogicException('Unknown label.'),
+            default => S::withPermit(S::permit('p-bad', self::NOW + 30), S::counter('ok', 'c:ok-' . $label, 5)),
         };
         match ($label) {
             'counter-hash' => $this->raw('HSET', $this->key(AdmissionScopeKindEnum::COUNTER, 'c:bad'), 'f', 'v'),
@@ -193,14 +198,13 @@ final class AdmissionStoreNm6RedisTest extends AdmissionRedisGateTestCase
         self::assertTrue($this->noTtlRefreshed($pttl));
     }
 
-    /** @return array<string, mixed> */
-    private function raceSpec(string $case, string $mode): array
+    private function raceSpec(string $case, string $mode): AdmissionRaceSpec
     {
         $scopes = $case === 'counter'
             ? [['name' => 'src', 'kind' => 'counter', 'key' => 'race:c', 'capacity' => 5, 'ttl' => 1200]]
             : [['name' => 'np', 'kind' => 'device_member', 'key' => 'race:d', 'capacity' => 5, 'ttl' => 86400, 'member' => 'race-dev-{i}']];
 
-        return ['namespace' => self::NAMESPACE, 'op' => 'reserve', 'mode' => $mode, 'now' => self::NOW, 'scopes' => $scopes];
+        return new AdmissionRaceSpec(self::NAMESPACE, 'reserve', $mode, self::NOW, $scopes);
     }
 
     private function seedRace(string $case): void
@@ -244,7 +248,7 @@ final class AdmissionStoreNm6RedisTest extends AdmissionRedisGateTestCase
     {
         $counter = $this->raceRounds('counter', 'nonatomic');
         $device = $this->raceRounds('device', 'nonatomic');
-        self::assertGreaterThan(3, max($counter), 'DETECTOR: the non-atomic control must exceed the counter cap in a round: ' . json_encode($counter));
-        self::assertGreaterThan(1, max($device), 'DETECTOR: the non-atomic control must exceed the device cap in a round: ' . json_encode($device));
+        self::assertGreaterThan(3, max([...$counter, 0]), 'DETECTOR: the non-atomic control must exceed the counter cap in a round: ' . json_encode($counter));
+        self::assertGreaterThan(1, max([...$device, 0]), 'DETECTOR: the non-atomic control must exceed the device cap in a round: ' . json_encode($device));
     }
 }

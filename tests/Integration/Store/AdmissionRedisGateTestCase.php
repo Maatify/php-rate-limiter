@@ -65,7 +65,11 @@ abstract class AdmissionRedisGateTestCase extends TestCase
         return AdmissionRedisDump::pttl($this->executor);
     }
 
-    /** True when no key's TTL grew since `$before` (a refresh would raise a PTTL). @param array<string, int> $before */
+    /**
+     * True when no key's TTL grew since `$before` (a refresh would raise a PTTL).
+     *
+     * @param array<string, int> $before
+     */
     protected function noTtlRefreshed(array $before): bool
     {
         foreach ($this->pttl() as $key => $pttl) {

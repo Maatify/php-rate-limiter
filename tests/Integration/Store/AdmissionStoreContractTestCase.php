@@ -40,14 +40,6 @@ abstract class AdmissionStoreContractTestCase extends TestCase
         self::assertSame('src', $refused->refusedScope);
     }
 
-    public function testCounterKeyExpiresAfterItsRelativeTtl(): void
-    {
-        $store = $this->newStore();
-        self::assertTrue($this->admitted($store, S::request(S::counter('src', 'c:ttl', 1, 100))));
-        self::assertFalse($this->admitted($store, S::request(S::counter('src', 'c:ttl', 1, 100)), self::NOW + 50));
-        self::assertTrue($this->admitted($store, S::request(S::counter('src', 'c:ttl', 1, 100)), self::NOW + 101));
-    }
-
     public function testCounterRotationSumsPreviousAndNeverWritesIt(): void
     {
         $store = $this->newStore();
@@ -117,15 +109,6 @@ abstract class AdmissionStoreContractTestCase extends TestCase
         $store->applyAdmissionOutcome(S::outcome(AdmissionOutcomeKindEnum::FAILURE, $set('acct-2')), self::NOW);
         self::assertTrue($this->admitted($store, S::request($set('acct-2'))));
         self::assertTrue($this->admitted($store, S::request($set('acct-3'))));
-    }
-
-    public function testSetSizeSetExpiresWithItsWindow(): void
-    {
-        $store = $this->newStore();
-        $set = static fn(string $account) => S::setSize('d8', 's:p', 1, $account, 600);
-        $store->applyAdmissionOutcome(S::outcome(AdmissionOutcomeKindEnum::FAILURE, $set('acct-1')), self::NOW);
-        self::assertFalse($this->admitted($store, S::request($set('acct-2')), self::NOW + 599));
-        self::assertTrue($this->admitted($store, S::request($set('acct-2')), self::NOW + 601));
     }
 
     public function testBucketAdmitsCapacityTakesThenRefusesWithTheRefillWaitAndRefills(): void

@@ -19,8 +19,7 @@ final class NonAtomicAdmissionControl
     public function __construct(
         private readonly RedisCommandExecutorInterface $redis,
         private readonly RedisAdmissionOperations $keys,
-    ) {
-    }
+    ) {}
 
     /** @return bool admitted */
     public function reserve(AdmissionReservationRequestDTO $request, int $now): bool
@@ -28,12 +27,12 @@ final class NonAtomicAdmissionControl
         foreach ($request->scopes as $scope) {
             $key = $this->keys->scopeKey($request->verifierClass, $scope->kind, $scope->key);
             if ($scope->kind === AdmissionScopeKindEnum::COUNTER) {
-                if ((int) ($this->redis->execute(['GET', $key]) ?? 0) >= $scope->capacity) {
+                $current = $this->redis->execute(['GET', $key]);
+                if (($current === null ? 0 : ReplyValue::integer($current)) >= $scope->capacity) {
                     return false;
                 }
             } elseif ($scope->kind === AdmissionScopeKindEnum::DEVICE_MEMBER) {
-                $live = $this->redis->execute(['ZCOUNT', $key, '(' . $now, '+inf']);
-                if ((is_int($live) ? $live : 0) >= $scope->capacity) {
+                if (ReplyValue::integer($this->redis->execute(['ZCOUNT', $key, '(' . $now, '+inf'])) >= $scope->capacity) {
                     return false;
                 }
             }
@@ -42,7 +41,7 @@ final class NonAtomicAdmissionControl
         foreach ($request->scopes as $scope) {
             $key = $this->keys->scopeKey($request->verifierClass, $scope->kind, $scope->key);
             if ($scope->kind === AdmissionScopeKindEnum::COUNTER) {
-                if ((int) $this->redis->execute(['INCR', $key]) === 1) {
+                if (ReplyValue::integer($this->redis->execute(['INCR', $key])) === 1) {
                     $this->redis->execute(['EXPIRE', $key, $scope->ttlSeconds]);
                 }
             } elseif ($scope->kind === AdmissionScopeKindEnum::DEVICE_MEMBER) {

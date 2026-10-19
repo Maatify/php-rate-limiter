@@ -11,6 +11,7 @@ use Maatify\RateLimiter\Exception\BackendFailureException;
 use Maatify\RateLimiter\Exception\RateLimiterException;
 use Maatify\RateLimiter\Repository\Redis\RedisCommandExecutorInterface;
 use Maatify\RateLimiter\Tests\Support\Admission\AdmissionRaceRunner;
+use Maatify\RateLimiter\Tests\Support\Admission\AdmissionRaceSpec;
 use Maatify\RateLimiter\Tests\Support\Admission\AdmissionScenarioBuilder as S;
 use Maatify\RateLimiter\Tests\Support\Admission\StudyOriginalReserve;
 use PHPUnit\Framework\Attributes\DataProvider;
@@ -79,7 +80,11 @@ final class AdmissionStoreRotFailPermitRedisTest extends AdmissionRedisGateTestC
 
     // ---- FAIL ----------------------------------------------------------------------------------------------------------
 
-    /** Runs the five operations through `$executor` and reports each outcome's throwable class (null when none). @return array<string, ?class-string<\Throwable>> */
+    /**
+     * Runs the five operations through `$executor` and reports each outcome's throwable class (null when none).
+     *
+     * @return array<string, class-string<\Throwable>|null>
+     */
     private function failureClasses(RedisCommandExecutorInterface $executor): array
     {
         $store = $this->executorFor($executor);
@@ -106,9 +111,7 @@ final class AdmissionStoreRotFailPermitRedisTest extends AdmissionRedisGateTestC
     private function failingExecutor(\Throwable $throwable): RedisCommandExecutorInterface
     {
         return new class ($this->executor, $throwable) implements RedisCommandExecutorInterface {
-            public function __construct(private readonly RedisCommandExecutorInterface $inner, private readonly \Throwable $throwable)
-            {
-            }
+            public function __construct(private readonly RedisCommandExecutorInterface $inner, private readonly \Throwable $throwable) {}
 
             public function execute(array $command): mixed
             {
@@ -141,9 +144,7 @@ final class AdmissionStoreRotFailPermitRedisTest extends AdmissionRedisGateTestC
     public function testDetectorBlanketWrappingExecutorIsCaught(): void
     {
         $wrapping = new class ($this->failingExecutor(new \LogicException('programming error'))) implements RedisCommandExecutorInterface {
-            public function __construct(private readonly RedisCommandExecutorInterface $inner)
-            {
-            }
+            public function __construct(private readonly RedisCommandExecutorInterface $inner) {}
 
             public function execute(array $command): mixed
             {
@@ -211,9 +212,7 @@ final class AdmissionStoreRotFailPermitRedisTest extends AdmissionRedisGateTestC
         $this->resetRedis();
         self::assertTrue($this->store->reserveAdmission(S::withPermit(S::permit('p-race', self::NOW + 30), S::counter('src', 'c:permit-race', 100)), self::NOW)->admitted);
 
-        return AdmissionRaceRunner::run($this->host, $this->port, 16, [
-            'namespace' => self::NAMESPACE, 'op' => 'claim', 'mode' => $mode, 'now' => self::NOW + 5, 'permit' => 'p-race', 'scopes' => [],
-        ]);
+        return AdmissionRaceRunner::run($this->host, $this->port, 16, new AdmissionRaceSpec(self::NAMESPACE, 'claim', $mode, self::NOW + 5, [], 'p-race'));
     }
 
     #[Group('permit')]
@@ -242,10 +241,15 @@ final class AdmissionStoreRotFailPermitRedisTest extends AdmissionRedisGateTestC
     {
         for ($round = 0; $round < 3; $round++) {
             $this->resetRedis();
-            $results = AdmissionRaceRunner::run($this->host, $this->port, 16, [
-                'namespace' => self::NAMESPACE, 'op' => 'reserve', 'mode' => 'store', 'now' => self::NOW, 'issuePermit' => 'p-single',
-                'scopes' => [['name' => 'src', 'kind' => 'counter', 'key' => 'c:issue-race', 'capacity' => 100, 'ttl' => 1200]],
-            ]);
+            $results = AdmissionRaceRunner::run($this->host, $this->port, 16, new AdmissionRaceSpec(
+                self::NAMESPACE,
+                'reserve',
+                'store',
+                self::NOW,
+                [['name' => 'src', 'kind' => 'counter', 'key' => 'c:issue-race', 'capacity' => 100, 'ttl' => 1200]],
+                null,
+                'p-single',
+            ));
             self::assertSame(1, AdmissionRaceRunner::admitted($results));
             self::assertSame('1', $this->raw('GET', $this->key(AdmissionScopeKindEnum::COUNTER, 'c:issue-race')));
             self::assertSame(['permit_exists'], array_values(array_unique(array_map(static fn(array $r): ?string => $r['refused'], array_filter($results, static fn(array $r): bool => ! $r['ok'])))));

@@ -6,6 +6,7 @@ namespace Maatify\RateLimiter\Tests\Integration\Store;
 
 use Maatify\RateLimiter\Enum\AdmissionScopeKindEnum;
 use Maatify\RateLimiter\Tests\Support\Admission\AdmissionRaceRunner;
+use Maatify\RateLimiter\Tests\Support\Admission\AdmissionRaceSpec;
 use Maatify\RateLimiter\Tests\Support\Admission\AdmissionScenarioBuilder as S;
 use PHPUnit\Framework\Attributes\DataProvider;
 use PHPUnit\Framework\Attributes\Group;
@@ -20,14 +21,14 @@ final class AdmissionStoreNm7RedisTest extends AdmissionRedisGateTestCase
 {
     private const NOW = S::NOW;
 
-    /** @param list<array<string, mixed>> $scopes @return array<string, mixed> */
-    private function spec(array $scopes, string $mode = 'store', string $op = 'reserve', array $extra = []): array
+    /** @param list<array{name: string, kind: string, key: string, capacity: int, ttl: int, previousKey?: string|null, member?: string|null, previousMember?: string|null}> $scopes */
+    private function spec(array $scopes, string $mode = 'store', string $op = 'reserve', ?string $outcome = null): AdmissionRaceSpec
     {
-        return ['namespace' => self::NAMESPACE, 'op' => $op, 'mode' => $mode, 'now' => self::NOW, 'scopes' => $scopes] + $extra;
+        return new AdmissionRaceSpec(self::NAMESPACE, $op, $mode, self::NOW, $scopes, null, null, $outcome);
     }
 
     /** @return list<int> */
-    private function rounds(int $processes, callable $seed, array $spec): array
+    private function rounds(int $processes, callable $seed, AdmissionRaceSpec $spec): array
     {
         $out = [];
         for ($round = 0; $round < 3; $round++) {
@@ -76,8 +77,7 @@ final class AdmissionStoreNm7RedisTest extends AdmissionRedisGateTestCase
     public function testBucketTakesNeverExceedTheCapacity(int $processes): void
     {
         $spec = $this->spec([['name' => 'acct_tb', 'kind' => 'bucket', 'key' => 'b:nm7', 'capacity' => 4, 'ttl' => 1800]]);
-        self::assertSame([4, 4, 4], $this->rounds($processes, static function (): void {
-        }, $spec));
+        self::assertSame([4, 4, 4], $this->rounds($processes, static function (): void {}, $spec));
         self::assertSame('0', $this->raw('HGET', $this->key(AdmissionScopeKindEnum::BUCKET, 'b:nm7'), 'credit'));
     }
 
@@ -118,11 +118,11 @@ final class AdmissionStoreNm7RedisTest extends AdmissionRedisGateTestCase
             }
             AdmissionRaceRunner::run($this->host, $this->port, $processes, $this->spec([
                 ['name' => 'fail_src', 'kind' => 'set_size', 'key' => 's:nm7', 'capacity' => 1000, 'ttl' => 1200, 'member' => 'acct-{i}'],
-            ], 'store', 'outcome', ['outcome' => 'failure']));
+            ], 'store', 'outcome', 'failure'));
             self::assertSame($processes, $this->raw('SCARD', $this->key(AdmissionScopeKindEnum::SET_SIZE, 's:nm7')));
             AdmissionRaceRunner::run($this->host, $this->port, $processes, $this->spec([
                 ['name' => 'p_acct', 'kind' => 'counter', 'key' => 'c:refund', 'capacity' => 1000, 'ttl' => 1200],
-            ], 'store', 'outcome', ['outcome' => 'success']));
+            ], 'store', 'outcome', 'success'));
             self::assertSame((string) (100 - $processes), $this->raw('GET', $this->key(AdmissionScopeKindEnum::COUNTER, 'c:refund')));
         }
     }
@@ -152,6 +152,6 @@ final class AdmissionStoreNm7RedisTest extends AdmissionRedisGateTestCase
         $spec = $this->spec([['name' => 'src', 'kind' => 'counter', 'key' => 'c:nm7', 'capacity' => 5, 'ttl' => 1200]], 'nonatomic');
         $at16 = $this->rounds(16, $seed, $spec);
         $at64 = $this->rounds(64, $seed, $spec);
-        self::assertGreaterThan(3, max([...$at16, ...$at64]), 'DETECTOR: the non-atomic control must exceed the ceiling: ' . json_encode([$at16, $at64]));
+        self::assertGreaterThan(3, max([...$at16, ...$at64, 0]), 'DETECTOR: the non-atomic control must exceed the ceiling: ' . json_encode([$at16, $at64]));
     }
 }
