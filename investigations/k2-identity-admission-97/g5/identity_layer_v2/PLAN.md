@@ -1,6 +1,7 @@
 # G5 v2 — Identity layer after the G5 results: pre-registered plan (#97, #110, step 3)
 
-> **Status:** PRE-REGISTRATION, plan **v1**. Committed **after** the design amendments
+> **Status:** PRE-REGISTRATION, plan **v1.1** (v1 = commit `da1e9fc`; the two amendments of §10 were committed before the harness commit and before any
+> archived result). Committed **after** the design amendments
 > ([`../../IDENTITY_LAYER_DESIGN.md`](../../IDENTITY_LAYER_DESIGN.md) §"v2 amendments", commit `ed4176d`) and **before** any G5 v2 harness code
 > and before any G5 v2 result. Evidence only. **Not** an architecture, policy, threshold, contract or public-API approval. No change to `src/`,
 > `tests/`, `composer.json`, `composer.lock`, presets, public contracts, ADRs, standards, DEC-015 / DEC-019 / DEC-021 (ACTIVE, unchanged) /
@@ -100,7 +101,8 @@ as detectors; a result in B or C never changes the verdict.
   **unchanged** for the reference arm, so a difference means the harness or a build changed. Exit 5.
 * **V3** (new): the primary arm is the arm G5 measured post-hoc, and the detector arm is G5's primary: `NOUA2` rows equal the G5 archive's post-hoc rows (`g5_posthoc.G5.jsonl`: STEAL, `UAX-NP`,
   and the three stream cells), and the `D-NPID` STEAL row equals the G5 archive's `NOUA` STEAL row, field for field (arm label aside). This proves that the new patch is inert with no scope set and
-  that the new harness reproduces the old one where it should. Exit 5.
+  that the new harness reproduces the old one where it should. **[A1]** The `REF` STEAL and `UAX-NP` rows produced by the new harness code (arm `REF` of `g5v2_costs`) must equal the G5 archive's `REF` rows
+  likewise, so the port is checked on the reference build too. Exit 5.
 
 ## 4. Fixtures
 
@@ -117,6 +119,7 @@ REC, CROSS, CLEAR, E2, K5U, BOOT, BOOT-X, **UAX-NP**, FORGE, MINT, LOST, TOKEN, 
 | **STEAL** | G5's STEAL (password-change variant), unchanged: owner token copied to a thief at 600 s, the thief fails every 15 s (rotating IP and UA, the owner's id and token) to 43,200 s, the owner changes the password there, the owner then tries every 60 s from 43,260 s until admitted | R:STEAL |
 | **STEAL2** (new, reported) | STEAL on an account with **two credential holders**: the owner (O1) and a second device (O2, id `i:o2`, its own credential issued at 0). O2 logs in successfully every 600 s from 120 s. The thief copies O1's credential. Same event at 43,200 s (an epoch bump voids every credential; only O1's device is re-issued). Recorded: O2 denials before the change (count, by cause), O2's lane and wait after it, O1 as in STEAL | reporting: cost to a second proof holder |
 | **MULTITOK** (new, reported) | one account, **eight** credentials (eight holders `mt1`…`mt8`, one id each, issued at 0); an attacker holding all eight fails every 15 s (rotating IP and UA, round robin over the credentials) from 60 s to 86,399 s; no password change | reporting: cost of rule C (K4P stops being account-wide) |
+| **MULTITOK-S** (new, reported, **[A2]**) | MULTITOK with each credential presented from **one fixed (IP, UA) pair** (eight presentations, so `N_P` on the fingerprint does not bind first) instead of rotating IP and UA on every request | reporting: cost of rule C under the primary member |
 | **UAX-NP-K** (new, reported) | `UAX-NP` with `k` distinct browser majors over the twelve logins (`k` ∈ 1, 2, 5, 10, 11, 12; the major index is ⌊12-login index × k / 12⌋), one id, one credential | reporting: the cost curve of `N_P` on the fingerprint |
 
 STEAL is the only member of this family that is gated.
@@ -232,3 +235,14 @@ bash investigations/k2-identity-admission-97/g5/identity_layer_v2/run.sh
 Builds the G4 and G5 trees with the archived builders (run unchanged), then the `G5V2` trees with `build_g5v2.sh` (patches sha-256 pinned), runs every scenario under `-d memory_limit=1G` (**passed to every `php` call, the first included**),
 the G5 scenarios unchanged for the reference arm, the archived D-IN and CGN-B scenarios unchanged, the `S0` scenario in its own process, and the report; diffs against `expected/`. Exit 0 = SUPPORTED; 3 = harness valid and NO-GO;
 5 = V0 / V1 / V2 / V3 miss; 6 = IN / D-IN failure; 7 = NP-IN failure; 4 = baseline / provenance; 1 = output differs or a scenario fails. `UPDATE=1` regenerates `expected/`.
+
+## 10. Amendments (before the harness commit and before any archived result)
+
+Both were found while the harness was being developed; neither touches a gate, an arm, a value or a verdict rule. They are listed so that they can be audited against `da1e9fc`. The development run that
+motivated A2 (one execution of the cost scenario on the six G5V2 arms, not archived) showed that with `N_P` on the fingerprint a rotating attacker is bounded at 10 P admissions by `N_P` itself in every `K4P` arm,
+which hides the cost of rule C; no gate depends on it.
+
+| # | Amendment | Why |
+| --- | --- | --- |
+| A1 | V3 also requires the `REF` STEAL and `UAX-NP` rows produced by the new code to equal the G5 archive's | the reference arm of the cost scenario is run by the new code (the G5 scenarios cannot run STEAL2, MULTITOK or the `K4P` arms); the check proves that the port reproduces the archived reference row. It can only make the run stricter |
+| A2 | `MULTITOK-S` is added to §4.2 (reporting only) | with rotating presentations `N_P` binds first in every arm; the fixed-presentation variant measures what rule C costs when the attacker is not stopped by `N_P` |
