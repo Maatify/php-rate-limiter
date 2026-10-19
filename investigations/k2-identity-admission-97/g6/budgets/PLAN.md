@@ -1,6 +1,6 @@
 # G6 budgets — two registered measurements for the step-4 decision paper: pre-registered plan (#97, step 4)
 
-> **Status:** PRE-REGISTRATION, plan **v1**. Committed **before** any G6 harness code, patch or result. Evidence only. **Not** an architecture, policy, threshold,
+> **Status:** PRE-REGISTRATION, plan **v1.1** (v1 = commit `c5262e0`; the one amendment of §10 was committed before the harness commit and before any result). Committed **before** any G6 harness code, patch or result. Evidence only. **Not** an architecture, policy, threshold,
 > contract or public-API approval. No change to `src/`, `tests/`, `composer.json`, `composer.lock`, presets, public contracts, ADRs, standards,
 > DEC-015 / DEC-019 / DEC-021 (ACTIVE, unchanged), DEC-022 (PROPOSED), DEC-023 / DEC-024 (ACTIVE), `DECISIONS_INDEX.md`, or any earlier study or archive.
 > **Baseline:** the branch is cut from `main@f4851eb` (G5 v2, PR #138, merged). `src/`, `composer.json`, `composer.lock` are byte-identical to the G1 baseline
@@ -67,7 +67,7 @@ measured by `BRU24-HV`).
 | --- | --- | --- | --- |
 | `NOUA2` | `G5V2` (archive) and `G6UK` (new code, lane never requested) | off | the **reference**; its archived rows are the reference values; the `G6UK` replay is V0 |
 | **`UKD`** | `G6UK` | **on** | the proposal |
-| `D-UKBYP` | `G6UK` | off, **admission bypass** for a known device on U | detector of gate U2: the other way to "route a known device", as G3 v2's known-device routing (the request skips the U admission layer) |
+| `D-UKBYP` | `G6UK` | off; the U gate has G3 v2's **`known` switch** on (a request whose device is Host-known is not charged to the account bucket) | detector of gate U2: the other way to "route a known device", exactly G3 v2's mechanism (`TBK`). **[A1]** |
 
 ### 2.2 Arm 2 — the TMS family
 
@@ -162,3 +162,9 @@ bash investigations/k2-identity-admission-97/g6/budgets/run.sh
 Builds the G4, G5 and G5V2 trees with the archived builders (run unchanged), then `G6UK` with `build_g6.sh` (patch sha-256 pinned); runs every scenario under `-d memory_limit=1G` (**passed to every `php` call,
 the first included**); runs the archived D-IN and the archived `g5_s0` scenarios unchanged; runs the `S0` TMS scenario in its own process; the report; and diffs against `expected/`. Exit 0 = arm 1 SUPPORTED;
 3 = harness valid and arm 1 NO-GO; 5 = V0 / V1 / V2 / V3 / V4 miss; 6 = IN / D-IN failure; 7 = NP-IN failure; 4 = baseline / provenance; 1 = output differs or a scenario fails. `UPDATE=1` regenerates `expected/`.
+
+## 10. Amendments (before the harness commit and before any result)
+
+| # | Amendment | Why |
+| --- | --- | --- |
+| A1 | The detector arm `D-UKBYP` is realised with the **`known` switch of the archived `G3V2Gate`** (the U gate does not charge the account bucket to a request whose device is Host-known; `U_src`, the net failure cap and the pipeline are unchanged), not with a bypass of the whole U admission layer as v1 of §2.1 words it | it is exactly G3 v2's known-device routing (`TBK`, whose Host-violation control admitted 5,760 of 5,760), reused unchanged instead of a new mechanism; found when the harness was being written. It changes no gate, no value and no verdict rule |
