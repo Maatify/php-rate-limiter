@@ -27,7 +27,10 @@ final class FaultInjectingAdmissionStore implements AdmissionPermitStoreInterfac
     /** @var list<string> */
     public array $calls = [];
 
-    public function __construct(public readonly AdmissionInMemoryReferenceStore $inner) {}
+    /** @var list<AdmissionReservationRequestDTO> every request the store admitted (for independent recounts) */
+    public array $admitted = [];
+
+    public function __construct(public readonly AdmissionPermitStoreInterface $inner) {}
 
     private function enter(string $operation): void
     {
@@ -40,8 +43,12 @@ final class FaultInjectingAdmissionStore implements AdmissionPermitStoreInterfac
     public function reserveAdmission(AdmissionReservationRequestDTO $request, int $now): AdmissionReservationResultDTO
     {
         $this->enter('reserve');
+        $result = $this->inner->reserveAdmission($request, $now);
+        if ($result->admitted) {
+            $this->admitted[] = $request;
+        }
 
-        return $this->inner->reserveAdmission($request, $now);
+        return $result;
     }
 
     public function applyAdmissionOutcome(AdmissionOutcomeDTO $outcome, int $now): void

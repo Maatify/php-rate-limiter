@@ -49,7 +49,7 @@ final class AdmissionRegistrationRulesTest extends TestCase
 
     public function testControlPolicyRegistersWhenAnAdmissionRuntimeIsPresent(): void
     {
-        $this->engine(new AdmissionRuntime(), [new AdmissionTestPolicy()]);
+        $this->engine(self::runtime(), [new AdmissionTestPolicy()]);
         $this->addToAssertionCount(1);
     }
 
@@ -92,7 +92,7 @@ final class AdmissionRegistrationRulesTest extends TestCase
         $this->expectException(RateLimiterException::class);
         $this->expectExceptionMessage($message);
 
-        $this->engine(new AdmissionRuntime(), [$policy]);
+        $this->engine(self::runtime(), [$policy]);
     }
 
     // ---- DORMANT (§1.1) ----
@@ -195,6 +195,21 @@ final class AdmissionRegistrationRulesTest extends TestCase
         )->build();
 
         $this->addToAssertionCount(1);
+    }
+
+    /** A real runtime (5-b3b, LT-22): the empty shell of 5-b1 no longer exists. Test key, fixed clock, reference store. */
+    private static function runtime(): AdmissionRuntime
+    {
+        $clock = new FixedClock();
+
+        return new AdmissionRuntime(
+            new \Maatify\RateLimiter\Tests\Support\Admission\AdmissionInMemoryReferenceStore($clock),
+            new \Maatify\RateLimiter\Service\AdmissionCredentialCodec('binding-secret'),
+            \Maatify\RateLimiter\Tests\Support\Admission\EngineLab::budgets(),
+            $clock,
+            'key-secret',
+            'prod',
+        );
     }
 
     /** @param list<BlockPolicyInterface> $policies */
