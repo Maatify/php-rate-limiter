@@ -93,6 +93,15 @@ All run in `composer test:unit` (no Redis). Test classes carry the PHPUnit group
 * **LT-10b** (D5): K1/K2/K3 blocks are not read on P (study parity); M3 says old blocks are honoured read-only.
 * **LT-10c** (D10): distributed-account snapshot member follows the K5 key, not the fingerprint, as in the study; L111 lists snapshots among the fingerprint consumers.
 
+### Ruled by the Lead (PR #146, comment of 2026-10-19 14:47 UTC and review of 14:56 UTC; no code change)
+
+* **LT-9 — reading A as built; finding `F-5b3a-LT9`.** Reading B cannot be built without inventing an input and a length. The second sentence of M4 and ILD §6.2 describe a mechanism with no input; the correction rides with the 5-c contract amendments (DEC-026 package). Accepting the declared cost (a one-time K5 restart for a device that starts sending an id, ILD §6.1) is an Owner decision at 5-c; nothing in 5-b3a depends on it.
+* **LT-10a — as built; finding `F-5b3a-LT10a`** (contract and DEC-022 Decision 2, which lists churn and dilution among the signals that "stay observable"): either narrow that list to what the opted path actually observes, or add and measure an observe-only churn/dilution pass, before 5-c; Owner decision with DEC-022 activation.
+* **LT-10b — as built; finding `F-5b3a-LT10b`:** M3 is corrected at 5-c to "honoured read-only on U; not read on P".
+* **LT-10c — as built; finding `F-5b3a-LT10c`:** L111 is corrected at 5-c (the distributed-account snapshot member is the K5 key, not a fingerprint consumer); inert in the lanes.
+* **LT-11 — `Enum\AdmissionLaneEnum` (`@internal`) accepted;** it joins the shape list in the 5-c contract amendment.
+* **Constraint on 5-b3b:** the engine verifies the opt-in before passing a lane to `claimPostPunishmentReentry()` (the lane is trusted there); it is part of the LANE / REG gate of the 5-b3b plan.
+
 ## 9. Amendments
 
 **Before the tests were committed (this commit, nothing had run against the implementation):**
