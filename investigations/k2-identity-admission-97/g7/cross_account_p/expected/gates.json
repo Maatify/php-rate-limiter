@@ -1,0 +1,126 @@
+{
+    "verdict": "SUPPORTED — LIMITED SCOPE",
+    "gates": {
+        "X1": {
+            "items": [
+                {
+                    "check": "legit denied ≤ reference on N12T and the legitimate STREAMS rows, `pre+out` and `pre` (60 rows)",
+                    "ok": true,
+                    "value": "no row above"
+                },
+                {
+                    "check": "N12T legit denied (PX4 / reference)",
+                    "ok": true,
+                    "value": "pre+out/fresh: 0 (ref 0); pre+out/none: 0 (ref 0); pre/fresh: 0 (ref 0); pre/none: 1 (ref 1)"
+                }
+            ],
+            "pass": true,
+            "detector": true,
+            "detail": "N12T|none|fresh|pre+out D-PXALL 32 / ref 0; N12T|none|none|pre+out D-PXALL 0 / ref 0; N12|none|fresh|pre+out D-PXALL 24 / ref 0; N12|none|none|pre+out D-PXALL 0 / ref 0"
+        },
+        "X3": {
+            "items": [
+                {
+                    "check": "TMX best response, pre+out, ≤ reference",
+                    "ok": true,
+                    "value": "26 / ref 26"
+                },
+                {
+                    "check": "TMX best response, pre, ≤ reference",
+                    "ok": true,
+                    "value": "34 / ref 34"
+                }
+            ],
+            "pass": true,
+            "detector": true
+        },
+        "X4": {
+            "items": [
+                {
+                    "check": "STREAMS, N12T / TPAIRT, TMS family rows: attacker reach (foreign + proof) ≤ reference (210 rows)",
+                    "ok": true,
+                    "value": "no row above"
+                },
+                {
+                    "check": "BRU24 attackAdmitted ≤ reference",
+                    "ok": true,
+                    "value": "attackAdmitted 51 / 51"
+                },
+                {
+                    "check": "BRU24-HV attackAdmitted ≤ reference",
+                    "ok": true,
+                    "value": "attackAdmitted 51 / 51"
+                },
+                {
+                    "check": "HAR-B attack reach ≤ reference",
+                    "ok": true,
+                    "value": "reachForeign+reachProof 4 / 4"
+                },
+                {
+                    "check": "HAR-N attack reach ≤ reference",
+                    "ok": true,
+                    "value": "reachForeign+reachProof 4 / 4"
+                },
+                {
+                    "check": "FORGE ≤ reference",
+                    "ok": true,
+                    "value": "thiefPAdmitted 0 / 0, thiefUReach 27 / 27"
+                },
+                {
+                    "check": "MINT ≤ reference",
+                    "ok": true,
+                    "value": "reach 51 / 51, pLane 0 / 0"
+                },
+                {
+                    "check": "CROSS ≤ reference",
+                    "ok": true,
+                    "value": "victimReach 4 / 4, victimPAdmitted 0 / 0"
+                },
+                {
+                    "check": "BOOT-X ≤ reference",
+                    "ok": true,
+                    "value": "fullAttackReach 192 / 192"
+                },
+                {
+                    "check": "STEAL thief ≤ reference",
+                    "ok": true,
+                    "value": "thiefPBeforeChange 9 / 9, thiefPMaxPerWindow 2 / 2, thiefPAfterChange 0 / 0, thiefUAfterChange 27 / 27"
+                }
+            ],
+            "pass": true,
+            "detector": true
+        }
+    },
+    "x2": {
+        "TMS|pre+out": {
+            "NOUA2": 61,
+            "PX4": 29,
+            "PX8": 45
+        },
+        "TMS|pre": {
+            "NOUA2": 61,
+            "PX4": 61,
+            "PX8": 61
+        },
+        "TMSd|pre+out": {
+            "NOUA2": 120,
+            "PX4": 40,
+            "PX8": 80
+        },
+        "TMSd|pre": {
+            "NOUA2": 120,
+            "PX4": 120,
+            "PX8": 120
+        },
+        "TMX|pre+out": {
+            "NOUA2": 26,
+            "PX4": 26,
+            "PX8": 26
+        },
+        "TMX|pre": {
+            "NOUA2": 34,
+            "PX4": 34,
+            "PX8": 34
+        }
+    }
+}
