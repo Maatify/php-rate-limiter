@@ -7,14 +7,14 @@
 +        public ?string $deviceIdHash = null,
 +        public ?string $previousDeviceIdHash = null,
      ) {}
- 
+
      /**
 --- a/src/Service/DeviceIdentityResolver.php
 +++ b/src/Service/DeviceIdentityResolver.php
 @@ -40,6 +40,8 @@
          $hash = $this->currentHasher->hash($rawString);
          $previousHash = $this->previousHasher?->hash($rawString);
- 
+
 +        $idRaw = $sessionFp !== '' ? "id1|{$sessionFp}" : null;
 +
          return new DeviceIdentityDTO(
@@ -28,13 +28,13 @@
 +            $idRaw === null ? null : $this->previousHasher?->hash($idRaw),
          );
      }
- 
+
 --- a/src/Service/EvaluationPipeline.php
 +++ b/src/Service/EvaluationPipeline.php
 @@ -120,6 +120,17 @@
          }
      }
- 
+
 +    /** G5 K5 material: the instance-id component when present, else the fingerprint component (today's derivation). */
 +    private function g5K5Material(DeviceIdentityDTO $device): ?string
 +    {
@@ -77,7 +77,7 @@
 +                $this->g5PreviousK5Material($device),
              )
              : [];
- 
+
 @@ -1819,12 +1831,12 @@
                  if ($config->known_device_micro_cap === null) {
                      $shouldCount = true;
@@ -86,16 +86,16 @@
 +                    $microRawV2 = "{$policy->getName()}:rate_limiter:microcap:{$this->g4K5()}:v1:{$this->envScope}:{$context->accountId}:{$this->g5K5Material($device)}";
                      $microKeyV2 = $this->hashKey($microRawV2, $this->secret);
                      $microKeyV1 = null;
- 
+
                      if ($this->hasPreviousGeneration($device)) {
 -                        $microRawV1 = "{$policy->getName()}:rate_limiter:microcap:{$this->g4K5()}:v1:{$this->envScope}:{$context->accountId}:{$this->previousFingerprintHash($device)}";
 +                        $microRawV1 = "{$policy->getName()}:rate_limiter:microcap:{$this->g4K5()}:v1:{$this->envScope}:{$context->accountId}:{$this->g5PreviousK5Material($device)}";
                          $microKeyV1 = $this->hashKey($microRawV1, $this->previousSecret ?? $this->secret);
                      }
- 
+
 @@ -2441,10 +2453,10 @@
          }
- 
+
          $prefix = "{$policy->getName()}:rate_limiter:aux:{$this->g1Purpose('anti_equilibrium_device')}:v1:{$this->envScope}:{$context->accountId}";
 -        $current = $this->hashKey("{$prefix}:{$device->fingerprintHash}", $this->secret);
 +        $current = $this->hashKey("{$prefix}:{$this->g5K5Material($device)}", $this->secret);
@@ -122,6 +122,6 @@
 -        $k5 = $context->accountId && $fpHash ? $this->hashKey("{$base}:{$k5Type}:{$ver}:{$env}:{$context->accountId}:{$fpHash}", $secret) : null;
 +        $k5m = $k5Material ?? $fpHash;
 +        $k5 = $context->accountId && $fpHash ? $this->hashKey("{$base}:{$k5Type}:{$ver}:{$env}:{$context->accountId}:{$k5m}", $secret) : null;
- 
+
          return ['k1' => $k1, 'k2' => $k2, 'k3' => $k3, 'k4' => $k4, 'k5' => $k5];
      }
