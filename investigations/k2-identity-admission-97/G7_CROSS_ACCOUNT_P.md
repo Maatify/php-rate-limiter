@@ -2,7 +2,7 @@
 
 > **Status:** G7 INVESTIGATION EVIDENCE for the conditional direction of DEC-025 decision 8. Not an ADR, not a policy, not a production value, not a public API shape, not a statement that Runtime is ready, and not an Owner decision.
 > No change to `src/`, `tests/`, `composer.json`, presets, public contracts, DEC-015 / DEC-019 / DEC-021 / DEC-023 / DEC-024 / DEC-025, `DECISIONS_INDEX.md`, or any earlier study or archive (the G5 v2, G6 and G4 v2 archives are reused read-only).
-> **Design on paper:** [`D8_CROSS_ACCOUNT_P_FAILURE_DESIGN.md`](D8_CROSS_ACCOUNT_P_FAILURE_DESIGN.md) (`10aee4f`). **Pre-registration:** [`g7/cross_account_p/PLAN.md`](g7/cross_account_p/PLAN.md) (v1, `fa7ad3f`), committed **before** the harness (the harness commit) and before any
+> **Design on paper:** [`D8_CROSS_ACCOUNT_P_FAILURE_DESIGN.md`](D8_CROSS_ACCOUNT_P_FAILURE_DESIGN.md) (`10aee4f`). **Pre-registration:** [`g7/cross_account_p/PLAN.md`](g7/cross_account_p/PLAN.md) (v1, `fa7ad3f`), committed **before** the harness (`27be6ca`) and before any
 > archived result. Gates, values and verdict rules were not changed afterwards (§5). **No `POST-HOC` material.**
 > **Owner scope:** the Owner's choice on [PR #139 comment 6263682706](https://github.com/Maatify/php-rate-limiter/pull/139#issuecomment-6263682706). `U_src` 24, `F` 4 (U door), `T` 1800 s, `C` 4, set R are archive values. Test values only.
 
