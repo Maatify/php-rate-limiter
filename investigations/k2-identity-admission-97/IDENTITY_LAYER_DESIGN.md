@@ -13,6 +13,11 @@
 > `KS` = `docs/KEY_STRATEGY.md`; `DM` = `docs/DECISION_MATRIX.md`; `P§` = [`ARCHITECTURE_PROPOSAL.md`](ARCHITECTURE_PROPOSAL.md);
 > `IAP§` = [`IDENTITY_ATTRIBUTION_PROPOSAL.md`](IDENTITY_ATTRIBUTION_PROPOSAL.md).
 
+> **Post-G5 note (2026-10-19).** Measured by [`G5_IDENTITY_LAYER.md`](G5_IDENTITY_LAYER.md) (registered verdict NO-GO AFTER EXPERIMENT: G3, G5,
+> R:STEAL, R:STREAMS). The text below is the design as written before the plan and is not edited. What the results say about it: §2.1's K5, micro-cap and
+> device-watcher rows, §3, §4.1–§4.3 and §5 rows 2–8 were measured and hold on the P family; **the `N_P` row of the §2.1 table (member keyed by the id) is the
+> one choice the results do not support** (G5 F-G5-01, F-G5-02), and §5 row 4's U-family sentence is confirmed (F-G5-04). §6 (migration, rollback) stays `DERIVED`.
+
 ## 0. The question and what this document settles
 
 **Question (step 3).** Can the K5 material be *account + instance id* without the User-Agent (`IAP§5` rule 2), with K5 separated
