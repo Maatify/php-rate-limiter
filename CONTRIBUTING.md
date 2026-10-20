@@ -141,7 +141,7 @@ The CI verification mapping is intentionally split across its gates:
 - The `composer test:core` matrix runs on PHP 8.4 and 8.5: the full Unit, Integration, and System suite except the `archive` group, on both versions.
 - The `composer test:archive` matrix (Archive Replay Suite) runs the `archive` group on PHP 8.4 and 8.5; the Final Gate requires it, so `composer test:core` and `composer test:archive` together are the complete `composer test` in CI on both versions.
 - The focused `composer test:integration` job runs independently on PHP 8.4.
-- The lowest-supported dependency job runs the complete `composer test` as its two parts in sequence, `composer test:core` then `composer test:archive`, the `archive` group included.
+- The lowest-supported dependency job runs the complete `composer test` as its two parts in sequence, `composer test:core` then `composer test:archive`, the `archive` group included; `composer test:archive` also runs when `composer test:core` fails, so both parts report their failures, as the single `composer test` run did.
 - PHP syntax, PHPStan, Composer audit, Consumer Verification, and lowest-supported dependency verification run on PHP 8.4.
 - The PHP coding-style gate runs on PHP 8.5.
 - Workflow lint and whitespace are repository-level gates, not PHP compatibility-matrix jobs.

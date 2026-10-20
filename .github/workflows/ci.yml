@@ -215,8 +215,10 @@ jobs:
       - name: Run PHPStan
         run: composer analyse
       - name: Run PHPUnit (all suites except the archive replays)
+        id: test-core
         run: composer test:core
       - name: Run the Archive Replay Group
+        if: ${{ !cancelled() && steps.test-core.outcome != 'skipped' }}
         run: composer test:archive
 
   composer-audit:
