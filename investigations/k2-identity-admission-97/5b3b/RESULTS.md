@@ -15,6 +15,14 @@ Tested tree: `a8ca627` (the plan amendment of the Owner's decision `0877f12`, th
 
 The suites print the reported (not gated) values as `REPORT <gate> <json>` lines; the values quoted below are those lines of `suite-normal.log`, and the `REPORT` lines of the two logs are identical. The assertion count varies between runs with the test count constant (N-146-01, known since 5-b3a). The normal run took 31 min against 18–19 min for the earlier normal runs on the same machine; its results and `REPORT` lines equal those of the lowest run, so the time is not a difference of the code.
 
+## CI change declared in this PR (Owner's decision, PLAN §14; after the tested tree)
+
+On `6e6733b` the CI jobs `Test Suite (PHP 8.4)` and `Test Suite (PHP 8.5)` were cancelled at their `timeout-minutes: 10` (1,525 of 1,892 tests run, none failed) and `Final Gate` failed with them; every other job passed (`Lowest Supported Dependencies` ran the complete suite in 12 min of 15; `Integration Test Suite` 9 min 18 s of 10). The Owner chose a dedicated job in this PR. `7fbc6dc` changes only `.github/workflows/ci.yml`, `composer.json` (two scripts), `CONTRIBUTING.md` and the plan; no source file, no test and no gate condition:
+
+* `composer test:core` = `run-phpunit-with-redis.sh --exclude-group archive`; `composer test:archive` = `run-phpunit-with-redis.sh --group archive --fail-on-empty-test-suite`; `composer test` (the complete suite) and `composer test:integration` keep their meaning.
+* CI: the PHP 8.4 / 8.5 matrix runs `test:core`; the new `Archive Replay Suite` (PHP 8.4, Redis, 25 min) runs `test:archive` and is required by `Final Gate`; `Integration Test Suite` 15 min; `Lowest Supported Dependencies` keeps the complete `composer test`.
+* Evidence on `7fbc6dc`, normal dependencies, local: `composer test:archive` `OK (101 tests, 795 assertions)` in 8 min 27 s; `composer test:core` `OK (1791 tests, 24197 assertions)` in 11 min 04 s; 101 + 1,791 = 1,892 = the complete suite of `a8ca627` (`--list-tests` gives the same partition); `--group no-such-group --fail-on-empty-test-suite` exits 1. actionlint is not installable on this machine (the repository's installer is Linux x86_64 only): the workflow is linted by the CI job `Workflow Lint`.
+
 ## Conditions of the assignment
 
 | Condition | Evidence |
