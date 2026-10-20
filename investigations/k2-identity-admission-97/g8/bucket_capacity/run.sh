@@ -9,8 +9,11 @@
 # Exit: 0 valid run (gate outcomes in gates.json / summary.md); 5 harness validity (V1-V3) or detector D failed; 6 input assertion (IN);
 # 4 baseline; 1 an output differs from expected/ or a scenario fails; 2 setup.
 set -euo pipefail
-# Every php call: no scan directory (no local conf.d), 1G, from the very first call.
-php() { PHP_INI_SCAN_DIR= command php -d memory_limit=1G "$@"; }
+# Every php call: no scan directory (no local conf.d), 1G, from the very first call. The binary is resolved once: under bash 3.2 a
+# `command php … || rc=$?` inside a background function ends that subshell before it records the exit code.
+export PHP_INI_SCAN_DIR=
+PHP_BIN=$(command -v php)
+php() { "$PHP_BIN" -d memory_limit=1G "$@"; }
 here=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 repo=$(cd "$here/../../../.." && pwd)
 actual="$here/results/actual"
