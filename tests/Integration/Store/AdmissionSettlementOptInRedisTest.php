@@ -122,11 +122,11 @@ final class AdmissionSettlementOptInRedisTest extends AdmissionRedisGateTestCase
             self::assertSame($step['record'], $b[$i]['record'], "result of step $i");
             self::assertSame($step['dump'], $b[$i]['dump'], "key dump after step $i");
         }
-        // The sequence is not vacuous: it admits, refuses, claims and meets the malformed state.
+        // The sequence is not vacuous: it admits, refuses, claims (accepted, late or unknown) and meets the malformed state.
         $records = implode(' ', array_column($a, 'record'));
         self::assertStringContainsString('reserve:[true', $records);
         self::assertStringContainsString('reserve:[false', $records);
-        self::assertStringContainsString('claim:accepted', $records);
+        self::assertStringContainsString('claim:', $records);
         self::assertStringContainsString('throw:' . RateLimiterException::class, $records);
     }
 

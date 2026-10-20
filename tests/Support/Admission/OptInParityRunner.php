@@ -10,6 +10,7 @@ use Maatify\RateLimiter\DTO\AdmissionReservationRequestDTO;
 use Maatify\RateLimiter\DTO\AdmissionScopeDTO;
 use Maatify\RateLimiter\Enum\AdmissionOutcomeKindEnum;
 use Maatify\RateLimiter\Enum\AdmissionScopeKindEnum;
+use Maatify\RateLimiter\Repository\Redis\RedisAdmissionOperations;
 use Maatify\RateLimiter\Repository\Redis\RedisCommandExecutorInterface;
 
 /**
@@ -26,17 +27,16 @@ final class OptInParityRunner
     private const CLASS_NAME = 'login';
 
     /**
-     * @param object $ops an object with reserve(), applyOutcome(), claimPermit() and scopeKey()
      * @return list<array{step: int, record: string, dump: array<string, array{type: string, value: mixed, hasTtl: bool}>}>
      */
-    public static function run(object $ops, RedisCommandExecutorInterface $redis, int $seed, int $steps): array
+    public static function run(RedisAdmissionOperations|MergedAdmissionOperations $ops, RedisCommandExecutorInterface $redis, int $seed, int $steps): array
     {
         mt_srand($seed);
         $now = 1767268800;
         $permits = [];
         $log = [];
         for ($i = 0; $i < $steps; $i++) {
-            $now += mt_rand(0, 400);
+            $now += mt_rand(0, 9) === 0 ? mt_rand(0, 400) : mt_rand(0, 15);
             $op = mt_rand(0, 9);
             // NM-6 style malformed state: a wrong-type failure set for a while, then removed (both runs see the same).
             $malformed = $ops->scopeKey(self::CLASS_NAME, AdmissionScopeKindEnum::SET_SIZE, 's:parity:2');
@@ -47,7 +47,12 @@ final class OptInParityRunner
                 $redis->execute(['DEL', $malformed]);
             }
             try {
-                if ($op <= 4) {
+                if ($i === 125) {
+                    // Forced: touches the wrong-type set injected at step 120, so the malformed path is always met.
+                    $scope = new AdmissionScopeDTO('d8', AdmissionScopeKindEnum::SET_SIZE, 's:parity:2', 2, 1200, null, 'acct-0');
+                    $result = $ops->reserve(new AdmissionReservationRequestDTO(self::CLASS_NAME, [$scope]), $now);
+                    $record = 'reserve:' . json_encode([$result->admitted, $result->refusedScope, $result->retryAfterSeconds]);
+                } elseif ($op <= 4) {
                     $scopes = self::scopes(mt_rand(1, 3));
                     $permit = null;
                     if (mt_rand(0, 2) > 0) {

@@ -125,12 +125,13 @@ local hasPermit = ARGV[3] == '1'
 local sc = {}
 -- Phase 1: read and validate every key of every scope and of the permit. Nothing is written.
 for i = 1, n do
-  local base = 9 + (i - 1) * 5
+  local base = 9 + (i - 1) * 6
   local kind = ARGV[base]
   local cap = tonumber(ARGV[base + 1])
   local ttl = tonumber(ARGV[base + 2])
   local cur, prev = KEYS[2 * i - 1], KEYS[2 * i]
   local s = {kind = kind, cap = cap, ttl = ttl, cur = cur, prev = prev, member = ARGV[base + 3], prevMember = ARGV[base + 4]}
+  s.settles = ARGV[base + 5] == '1'
   if kind == 'c' then
     local a, ea = readCounter(cur)
     if a == nil then return bad(ea) end
@@ -156,15 +157,21 @@ for i = 1, n do
     -- A set scope carries its pending key in the slot a previous generation would use.
     local e = checkType(cur, 'set', 'set')
     if e then return bad(e) end
-    local ep = checkType(prev, 'zset', 'pending set')
-    if ep then return bad(ep) end
-    s.pending = prev
-    s.deadline = hasPermit and tonumber(ARGV[7]) or 0
     s.inSet = redis.call('SISMEMBER', cur, s.member) == 1
-    local score = redis.call('ZSCORE', prev, s.member)
-    s.isMember = s.inSet or (score and tonumber(score) <= now)
-    s.card = settledSize(cur, prev, now)
-    s.freshPending = redis.call('EXISTS', prev) == 0
+    if s.settles then
+      local ep = checkType(prev, 'zset', 'pending set')
+      if ep then return bad(ep) end
+      s.pending = prev
+      s.deadline = hasPermit and tonumber(ARGV[7]) or 0
+      local score = redis.call('ZSCORE', prev, s.member)
+      s.isMember = s.inSet or (score and tonumber(score) <= now)
+      s.card = settledSize(cur, prev, now)
+      s.freshPending = redis.call('EXISTS', prev) == 0
+    else
+      -- Tombstone semantics (the operations as merged at d6aea4d): the pending key is neither read nor written.
+      s.isMember = s.inSet
+      s.card = redis.call('SCARD', cur)
+    end
   elseif kind == 'b' then
     s.full = cap * ttl
     local credit, existsOrErr = readBucket(cur, s.full, now)
@@ -209,7 +216,7 @@ for i = 1, n do
       redis.call('EXPIRE', s.cur, s.ttl)
     end
   elseif s.kind == 's' then
-    if hasPermit and not s.inSet then
+    if hasPermit and s.settles and not s.inSet then
       redis.call('ZADD', s.pending, 'LT', string.format('%d', s.deadline), s.member)
       if s.freshPending then redis.call('EXPIRE', s.pending, s.ttl) end
     end
@@ -238,20 +245,23 @@ local success = ARGV[3] == 's'
 local sc = {}
 -- Phase 1: validate every key this outcome will touch. Nothing is written.
 for i = 1, n do
-  local base = 4 + (i - 1) * 5
+  local base = 4 + (i - 1) * 6
   local kind = ARGV[base]
   local cap = tonumber(ARGV[base + 1])
   local ttl = tonumber(ARGV[base + 2])
   local cur = KEYS[2 * i - 1]
   local s = {kind = kind, cap = cap, ttl = ttl, cur = cur, member = ARGV[base + 3], keepsSettled = ARGV[base + 4] == '1'}
+  s.settlesOut = ARGV[base + 5] == '1'
   if kind == 's' then
     local e = checkType(cur, 'set', 'set')
     if e then return bad(e) end
-    local ep = checkType(KEYS[2 * i], 'zset', 'pending set')
-    if ep then return bad(ep) end
-    s.pending = KEYS[2 * i]
-    local score = redis.call('ZSCORE', s.pending, s.member)
-    s.score = score and tonumber(score) or nil
+    if s.settlesOut then
+      local ep = checkType(KEYS[2 * i], 'zset', 'pending set')
+      if ep then return bad(ep) end
+      s.pending = KEYS[2 * i]
+      local score = redis.call('ZSCORE', s.pending, s.member)
+      s.score = score and tonumber(score) or nil
+    end
     s.fresh = redis.call('EXISTS', cur) == 0
   elseif kind == 'c' and success then
     local v, e = readCounter(cur)
@@ -271,12 +281,16 @@ for i = 1, n do
   local s = sc[i]
   if s.kind == 's' then
     if success then
-      if not s.keepsSettled then redis.call('SREM', s.cur, s.member) end
-      if s.score ~= nil and s.score > now then redis.call('ZREM', s.pending, s.member) end
+      if s.settlesOut then
+        if not s.keepsSettled then redis.call('SREM', s.cur, s.member) end
+        if s.score ~= nil and s.score > now then redis.call('ZREM', s.pending, s.member) end
+      else
+        redis.call('SREM', s.cur, s.member)
+      end
     else
       redis.call('SADD', s.cur, s.member)
       if s.fresh then redis.call('EXPIRE', s.cur, s.ttl) end
-      redis.call('ZREM', s.pending, s.member)
+      if s.settlesOut then redis.call('ZREM', s.pending, s.member) end
     end
   elseif s.kind == 'c' and success then
     if s.value > 0 then redis.call('DECR', s.cur) end
@@ -376,7 +390,7 @@ LUA;
         }
         if ($permit !== null) {
             foreach ($request->scopes as $scope) {
-                if ($scope->kind === AdmissionScopeKindEnum::SET_SIZE && $permit->deadlineAt - $now > $scope->ttlSeconds) {
+                if ($scope->kind === AdmissionScopeKindEnum::SET_SIZE && $scope->settlesOnExpiry && $permit->deadlineAt - $now > $scope->ttlSeconds) {
                     throw new RateLimiterException('Admission permit deadline lies beyond the lifetime of a failure-set scope.');
                 }
             }
@@ -405,6 +419,7 @@ LUA;
                 (string) $scope->ttlSeconds,
                 $scope->member ?? '',
                 $scope->previousMember ?? '',
+                $scope->settlesOnExpiry ? '1' : '0',
             );
         }
         $keys[] = $permit === null ? '' : $this->permitKey($permit->id);
@@ -448,6 +463,7 @@ LUA;
                 (string) $scope->ttlSeconds,
                 $scope->member ?? '',
                 $scope->successKeepsSettled ? '1' : '0',
+                $scope->settlesOnExpiry ? '1' : '0',
             );
         }
         if ($this->integer($this->eval(self::OUTCOME, $keys, $args), 'admission outcome response') !== 1) {

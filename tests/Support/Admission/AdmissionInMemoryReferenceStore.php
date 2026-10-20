@@ -59,7 +59,7 @@ final class AdmissionInMemoryReferenceStore extends FullCapabilityInMemoryStore 
         }
         if ($request->permit !== null) {
             foreach ($request->scopes as $scope) {
-                if ($scope->kind === AdmissionScopeKindEnum::SET_SIZE && $request->permit->deadlineAt - $now > $scope->ttlSeconds) {
+                if ($scope->kind === AdmissionScopeKindEnum::SET_SIZE && $scope->settlesOnExpiry && $request->permit->deadlineAt - $now > $scope->ttlSeconds) {
                     throw new RateLimiterException('Admission permit deadline lies beyond the lifetime of a failure-set scope.');
                 }
             }
@@ -77,7 +77,7 @@ final class AdmissionInMemoryReferenceStore extends FullCapabilityInMemoryStore 
                     return new AdmissionReservationResultDTO(false, $scope->name);
                 }
             } elseif ($scope->kind === AdmissionScopeKindEnum::SET_SIZE) {
-                if (! $this->isSettledMember($own, (string) $scope->member, $now) && $this->settledSize($own, $now) >= $scope->capacity) {
+                if (! $this->isSettledMember($own, (string) $scope->member, $now, $scope->settlesOnExpiry) && $this->settledSize($own, $now, $scope->settlesOnExpiry) >= $scope->capacity) {
                     return new AdmissionReservationResultDTO(false, $scope->name);
                 }
             } else {
@@ -102,7 +102,7 @@ final class AdmissionInMemoryReferenceStore extends FullCapabilityInMemoryStore 
                 $this->devices[$own][(string) $scope->member] = $now + $scope->ttlSeconds;
             } elseif ($scope->kind === AdmissionScopeKindEnum::BUCKET) {
                 $this->buckets[$own] = ['credit' => $credits[$own] - $scope->ttlSeconds, 'last' => $now];
-            } elseif ($scope->kind === AdmissionScopeKindEnum::SET_SIZE && $permit !== null && ! isset($this->sets[$own][(string) $scope->member])) {
+            } elseif ($scope->kind === AdmissionScopeKindEnum::SET_SIZE && $scope->settlesOnExpiry && $permit !== null && ! isset($this->sets[$own][(string) $scope->member])) {
                 $member = (string) $scope->member;
                 $this->pending[$own][$member] = min($this->pending[$own][$member] ?? $permit->deadlineAt, $permit->deadlineAt);
             }
@@ -129,15 +129,17 @@ final class AdmissionInMemoryReferenceStore extends FullCapabilityInMemoryStore 
             if ($scope->kind === AdmissionScopeKindEnum::SET_SIZE) {
                 $member = (string) $scope->member;
                 if ($success) {
-                    if (! $scope->successKeepsSettled) {
+                    if (! $scope->settlesOnExpiry || ! $scope->successKeepsSettled) {
                         unset($this->sets[$own][$member]);
                     }
-                    if (isset($this->pending[$own][$member]) && $this->pending[$own][$member] > $now) {
+                    if ($scope->settlesOnExpiry && isset($this->pending[$own][$member]) && $this->pending[$own][$member] > $now) {
                         unset($this->pending[$own][$member]);
                     }
                 } else {
                     $this->sets[$own][$member] = true;
-                    unset($this->pending[$own][$member]);
+                    if ($scope->settlesOnExpiry) {
+                        unset($this->pending[$own][$member]);
+                    }
                 }
             } elseif ($success && $scope->kind === AdmissionScopeKindEnum::COUNTER) {
                 if (($this->counters[$own] ?? 0) > 0) {
@@ -192,14 +194,17 @@ final class AdmissionInMemoryReferenceStore extends FullCapabilityInMemoryStore 
         return AdmissionPermitClaimEnum::ACCEPTED;
     }
 
-    private function isSettledMember(string $own, string $member, int $now): bool
+    private function isSettledMember(string $own, string $member, int $now, bool $settles): bool
     {
-        return isset($this->sets[$own][$member]) || ($this->pending[$own][$member] ?? PHP_INT_MAX) <= $now;
+        return isset($this->sets[$own][$member]) || ($settles && ($this->pending[$own][$member] ?? PHP_INT_MAX) <= $now);
     }
 
-    private function settledSize(string $own, int $now): int
+    private function settledSize(string $own, int $now, bool $settles): int
     {
         $size = count($this->sets[$own] ?? []);
+        if (! $settles) {
+            return $size;
+        }
         foreach ($this->pending[$own] ?? [] as $member => $deadline) {
             if ($deadline <= $now && ! isset($this->sets[$own][$member])) {
                 $size++;
