@@ -1,60 +1,71 @@
-# Stage 5-b3b results (partial) — AdmissionRuntime, lanes, permit, outcome hooks, documents
+# Stage 5-b3b results — AdmissionRuntime, lanes, permit, outcome hooks, documents
 
-Tested tree: `9a417f0` (this file is the only later change). PHP 8.5.9, Redis 7.0.15 (`docker/redis-integration`). **Partial:** commit 2b-2 (the fixture gates, LT-23) and four contract gates are not written yet (see "Not covered"). Nothing here is a verdict.
+Tested tree: `dde7417` (the plan amendment of the Owner's decision `0877f12`, the 2b-3 tests `335f9f7`, the implementation `87318d5`, the documents `1790eda`, the declared test amendments `9d8a4a5` and `dde7417`; this file and the two logs are the only later change). Base `main@9d8b033` (#149). PHP 8.5.9, Redis 7.0.15 (`docker/redis-integration`) via `scripts/ci/run-with-redis-service.sh`. **One contract question is open (LT-25, PLAN §12.5): its two tests fail by design until it is ruled; nothing else fails.**
 
-## Suites
+## Suites (full logs, not tails: `5b3b/logs/suite-normal.log`, `5b3b/logs/suite-lowest.log`; a fresh install for each mode (`rm -rf vendor composer.lock`, then `composer install` or `composer update --prefer-lowest --prefer-stable`), `COMPOSER_PROCESS_TIMEOUT=0 composer test -- --display-errors`)
 
 | Run | Result |
 | --- | --- |
-| Full suite, normal dependencies (PHPStan 2.3.1), Redis, `COMPOSER_PROCESS_TIMEOUT=0 composer test` | `Tests: 1748, Assertions: 20735, Failures: 10` — the 10 are the registered-PASS tests of NM-10 and NM-5 listed below; every other test passes (baseline at `7057abc`: 1674; +74) |
-| Full suite, `--prefer-lowest --prefer-stable` (phpunit 11.5.50, PHPStan 2.0.0), Redis | `Tests: 1748, Assertions: 20731, Failures: 10` — the same 10 |
-| PHPStan max, normal and lowest | `[OK] No errors` (`--memory-limit=1G`) |
-| `composer format:check` | clean |
+| Full suite, normal dependencies (phpunit 11.5.57, PHPStan 2.3.1), Redis | `Tests: 1892, Assertions: 24820, Failures: 2`, 18 min 08 s. The two failures are `AdmissionArchiveG7Test::testEveryArchivedG7RowIsReproducedFieldForField` (`NOUA2`, `PX4`), the 7 cause rows of LT-25 each; no error, warning, risky or skipped test. Baseline at `9d8b033`: 1704 tests (+188) |
+| Full suite, `--prefer-lowest --prefer-stable` (phpunit 11.5.50, PHPStan 2.0.0), Redis | `Tests: 1892, Assertions: 25356, Failures: 2`, 19 min 31 s: the same two tests, the same rows |
+| PHPStan max, normal (2.3.1) and lowest (2.0.0), `--memory-limit=1G` | `[OK] No errors` in both. (The first lowest run, on `9d8a4a5`, found one error in a test, fixed at `dde7417` as amendment §12.6 (3); both suites were then re-run in full on `dde7417`) |
+| `composer format:check` | clean (the two advisories of `DTOComplianceTest` are of `main`) |
 
-## Conditions of the rulings
+The suites print the reported (not gated) values as `REPORT <gate> <json>` lines; the values quoted below are those lines of `suite-normal.log`, and the `REPORT` lines of the two logs are identical. The assertion count varies between runs with the test count constant (N-146-01, known since 5-b3a).
+
+## Conditions of the assignment
 
 | Condition | Evidence |
 | --- | --- |
-| LT-22 (1): only lines 52 and 95 of `AdmissionRegistrationRulesTest` change, to a helper in the same file | `git diff --diff-filter=M --name-only 7057abc -- tests` lists that one file. Whole diff: `new AdmissionRuntime()` → `self::runtime()` twice, and the added private static `runtime()` building a real runtime (reference store, `AdmissionCredentialCodec('binding-secret')`, `EngineLab::budgets()`, `FixedClock`, `'key-secret'`, `'prod'`). No assertion, exception message or data set changed. 16 tests pass |
-| LT-22 (2): `assertAdmissionCapability` unchanged | sha-256 of its text `5926175faa72b708729062f59e0719c1f060dd079ae53fe809b7c9682e15dcc3` at `7057abc` and at HEAD |
-| LT-22 (3): dormancy tests unchanged and passing | `testEngineWithoutAdmissionRuntimeRejectsAValidAdmissionPolicy` and the builder tests pass unmodified |
-| LT-20 (1): the archive is not touched | `git diff --stat 7057abc -- investigations/k2-identity-admission-97` outside `5b3b/` is empty |
-| LT-20 (3): sha-256 and row counts of the dump | `streams.jsonl` 91 lines `932767ad…66ab`; `bru.jsonl` 2 lines `c27486c4…7204`; `constants.json` 1 line `dfcc3d7f…ffa0`. The 91 tuples equal the tuples of the G5 v2 archive; for every one of the 57 tuples of the G4 v2 archive the number of non-event rows equals `strlen(dec)` of the archived `FULL2` row (tested) |
-| LT-20 (2), (4) | events are the archive's own closures executed against an archived Host and recorded by observable effect; the dump runs at test time with `PHP_INI_SCAN_DIR=` and `memory_limit=1G` |
+| The archive is not touched | `git diff --stat origin/main -- investigations/k2-identity-admission-97/g{1,3,4,5,7}` is empty (and `g2`, `g6`); `origin/main` = `9d8b033` |
+| Existing files modified under `tests/` | `git diff --name-only --diff-filter=M origin/main HEAD -- tests` lists **`tests/Unit/Admission/AdmissionRegistrationRulesTest.php` only** (LT-22: lines 52 and 95 call `self::runtime()`, a private helper building a real runtime over the reference store; no assertion, message or data set changed). No test of `main` is deleted |
+| `assertAdmissionCapability` unchanged | sha-256 of its text `5926175faa72b708729062f59e0719c1f060dd079ae53fe809b7c9682e15dcc3` at `origin/main` and at `dde7417` |
+| No DEC-025 constant, no `D` / `G` in `src/` | the added lines of `git diff origin/main HEAD -- src` hold no budget number (the only small literals are `LT-4` in a comment, a JSON depth 4 and the `/64` nibble count `ceil($cidr / 4)` moved from the pipeline); the constants added are `DAY = 86400` (the day index), `TOKEN_VERSION = 1`, `NO_SUBJECT`, `CAUSES`, the permit domain string; `AdmissionBudgetsDTO` has no default value; no `$D`, `$G` or `D` / `G` constant |
+| The runtime passes `F` and D8 without `settlesOnExpiry` | `AdmissionRuntime::failureSet()` builds every set-size scope with the store defaults (no `successKeepsSettled`, no `settlesOnExpiry`); a success on P sends the proof counters only (`proofRefund`), a failure on P sends D8 alone as a failure (`crossAccountFailure`, `entersCrossAccountSet`) |
+| LT-20 (3): sha-256 and row count of every dump file | `streams.jsonl` 91 lines `932767ad3299c994c209ae01dee937ff865ab4897050b36dabf0b33759b366ab`; `bru.jsonl` 2 `c27486c4adbe557d970bf14e24b9ec77763ed88da92e33b1838a63ecd90f7204`; `g7streams.jsonl` 14 `ac56a122acc820cd25353b7d06cd56b3a942c575ab1252368f36c346c2477a39`; `fixtures.jsonl` 25 `fd5d76e63bb383aca7599fe06355861374b8ca18af2c75b1c774cf0e451c9420`; `constants.json` 1 `dfcc3d7f8ef17c22d4a682d0513954f1dc0697034d1b386abcd2b3f690ccffa0` (`REPORT dump-manifest`). `streams.jsonl` and `bru.jsonl` are byte-identical to the 2b-1 dump. Archive counts checked: 57 G4 v2 tuples with `strlen(dec)` rows each, 91 = the G5 v2 tuples, FORGE 2,840 and MINT 1,440 attempts, HAR-B 195 rows, BOOT 383 legitimate rows |
+| LT-23 (1)–(4) | every transcribed loop cites its file:line in `archive-dump.php`; library functions of the archive are called where they exist (`g5Har`, `g5OwnerRows`, `g5Boot`, `g4v2Bru`, `g4v2FromStream`); the archive row is the reference (reproduced / measured difference); IN on every row of every replay and D-IN on 14 fixture families; CGN-B reported as a `MODEL` |
+| Amendments after the tests | PLAN §12.6: (1) a missing-key guard in the `D-PXALL` archive read (a PHP warning), (2) the `REPORT dump-manifest` line, (3) K4P presence after the rollback asserted instead of reported (PHPStan 2.0.0). No assertion weakened |
 
-## Gates
+## Gates (re-registered NM-10 / NM-5, PLAN §11; the rest as §5.2, read as §12)
 
-| Gate | Result |
-| --- | --- |
-| **LANE** (`lane`) | pass: a verified credential selects the proven door; eight failed checks (wrong account, wrong group, wrong instance, expired, stale epoch, tampered MAC, foreign binding key, none) are the unproven door and neither a refusal nor an exception; `isDevicePreviouslyVerifiedForAccount`, a trusted session and an instance id alone never select it; unproven requests write no proven state. Detector: `laneFromVerdict` mutated to let `isKnownForAccount` select P puts a known-device request on the proven door |
-| Refusal shape and the six causes, permit, outcome hooks (`admission-engine`) | pass: `SOFT_BLOCK`, `blockLevel` 1, `retryAfter` to the window end (or the bucket wait), `reason` = cause, `scope` ∈ source / account / proof / device; a permit (at most 512 characters, also with a 3,000-character credential id) on every admission; `permit_duplicate / conflict / rejected / late / unknown` are `ALLOW` results with scope `permit` and no scoring; an outcome with no permit is a `RateLimiterException`; a dropped outcome counts as one failure exactly from the deadline; success refunds the bucket and the proven counters, failure never; D8 is cancelled by a success and a failure enters it |
-| **FAIL** | pass: a typed outage of the reserve, the epoch read, the claim and the outcome takes the existing `FAIL_CLOSED` path; malformed state is a `RateLimiterException`; an unclassified throwable escapes and never enters the circuit; an open circuit performs no admission, epoch or fence call. Detector: a `catch (\Throwable)` mutation of the engine hides the unclassified throwable |
-| **Fence** (LT-13) | pass: a closed fence is the engine without admission (no permit, no reserve, unbound outcomes accepted); an open fence enables it. Detector: `fenceOpen` returning true reserves through a closed fence |
-| S8, LT-21, LT-12, LT-18 | pass: `revokeAccountBinding` and `bindingEpoch` on the engine; budgets validated (`D ≤ W`); the pipeline and `SourcePrefix` derive the same source for IPv4, IPv6, mapped and loopback |
-| **RP-G4** (streams) | pass with one declared difference: every `FULL2` `pre+out` row of `v2_streams.G4.jsonl` is reproduced field for field (decision, reach, kinds, lanes, metrics) **except `UAC`**: 9 legit denials, the archived G5 v2 value (`AAASSSSSHSSS`), not 6. A2 holds (MIX 54, S0 117); A3 holds (SP1n 4, SP3 8, SP6 24, ABA_A 8) |
-| **RP-G5** (streams) | pass: every `NOUA2` row of `g5v2_streams.G5V2.jsonl` in `pre+out`, 91 tuples including the no-id variants, equal field for field with the Host counts (`issued`, `tainted`) |
-| Gate P (reported) | the arm without the mechanism reproduces **every** archived `pre` row; with the mechanism the `pre` rows of ABA_A, D2, MIX, N12, OFF12, POI, SP1n and SP6 differ (settlement counts each unclaimed admission as a failure) |
-| **NM-10** | detector 1 fired: without the mechanism at share 1.00, SP6 144, SP3 48, SP1n 24, ABA_A 48, A3 fails. **Registered PASS not met** — see F-5b3b-NM10 |
-| **NM-10 B1** | pass at shares 0, 0.10, 0.25, 0.50, 1.00: BRU24 admitted 51 ≤ 52, equal to the independent recount of admitted bucket reservations; `account_bucket` 5,709 |
-| **NM-5** | harness validity pass (`ρ` 1, abandonment 0 = RP-G4 values); detector fired (`ρ` 3 refuses benign streams more than `ρ` 1). **Registered PASS not met** — see F-5b3b-NM5 |
+| Gate | Result | Detector and its value |
+| --- | --- | --- |
+| **NM-10 (a)** parity of the arms | pass at 0.10, 0.25, 0.50, 1.00: on real Redis the production engine over `RedisFullCapabilityStore` and over `MergedAdmissionOperations` replay the 91 archived tuples identically row by row, and both equal the in-memory reference replay; in memory the production reference store and `PreSettlementReferenceStore` too | a parity statement (a difference would be a finding) |
+| **NM-10 (b)** binding per admission | pass on BRU24 and STEAL at every share: scored outcomes = accepted claims = the honest run (BRU24 46 / 39 / 26 / 0, STEAL 37 / 32 / 22 / 0 at 0.10 / 0.25 / 0.50 / 1.00), identical rows, every case its registered result; all six cases occur on both streams (BRU24 at 0.10: missing 51, unknown 51, rejected 51, duplicate 46, conflict 46, late 5) | the optional-permit engine accepts the missing-permit outcome and scores it: more scorings than the honest run (fires) |
+| **NM-10 (c)** B1 | pass at 0, 0.10, 0.25, 0.50, 1.00: BRU24 admitted 51 ≤ 52 = the recount of bucket reservations; `account_bucket` 5,709 | — |
+| NM-10, reported A1 (without `UAC`) / A3 | 0.10: both hold; 0.25: A1 `L1 7`; 0.50: A1 `L1 31`; 1.00: A1 `L1 72`, `ABA_B 94`, `D2 61`, `Y6b 10`, A3 `SP1n 24`, `SP3 48`, `SP6 144`, `ABA_A 48` = the archived `pre` values (a dropping Host is a `pre` Host: the A-2 remainder, on both arms) | — |
+| **NM-5** | validity pass (`ρ` 1, abandonment 0 = RP-G4). Reported per benign stream, legit refused (delta from `ρ` 1) and causes: `ρ` 2: L1 82 (+82) `proof_capacity`, ABA_B 98 (+98) `proof_capacity`, D2 85 (+61) `account_bucket` 32 / `source_capacity` 53, Y6b 13 (+13), OFF12 1 (+1); `ρ` 3: L1 112, ABA_B 110, D2 109 (+85), Nu4 32, Y6b 22, OFF12 6, N12 4; abandonment 0.10: no change; 0.25: ABA_B 36, L1 7, Nu4 10, D2 +1, KD and UAC −1; `ρ` 3 with 0.25: as `ρ` 3 and N12 15. Every added refusal is a capacity refusal of an unrefunded reservation (`proof_capacity`, `account_bucket`, `source_capacity`) | `ρ` 3 refuses a benign stream more than `ρ` 1 (fires) |
+| **A1** without `UAC` | pass on the FULL2 streams; `UAC` = 9, the G5 v2 value (`summary.md` L79, L193), asserted separately | — |
+| **RP-G4** streams | as 2b-1: every FULL2 `pre+out` row field for field except `UAC` (the declared cost); A2 (MIX 54), A3 (SP1n 4, SP3 8, SP6 24, ABA_A 8) | — |
+| **RP-G4 / RP-G7 X4** fixtures (LT-23) | **reproduced field for field** on `NOUA2` and `PX4`: HAR-B, HAR-N, BRU24, BRU24-HV, REC, CROSS, CLEAR, E2, K5U, BOOT, BOOT-X (with the NO-BIND side), STEAL (thief 9 P before the change, ≤ 2 per window, 0 after, U 27; owner wait 0 on P, `pwBinds` 1) | no P refund (`proofRefund` → `[]`): L1 72 (fires); no renewal: E2 differs (fires); no password binding: the STEAL owner never admitted, `account_bucket` 719 (fires); no K5 separation (`k5KeyType` → `k5`): K5U differs (fires) |
+| **RP-G5** fixtures | reproduced on both arms: UAX-NP (2 of 12, `cap:p_device`), FORGE (0 P, U 27), MINT (51, 0 P), LOST / TOKEN, UAX-ASM, MIXPRES-ASM (decisions); **NP-IN**: FIXTURES 932 P admissions, 932 on the fingerprint member, 0 on the id; STEAL 14 / 14 / 0 = the archived NP-IN rows; D-IDMINT 5,760 shown (read) against the production 51 | `D-NPID` (`N_P` member on the id): STEAL thief 20, owner wait 1,260 s, UAX-NP 0 refusals = the archived values (fires) |
+| **RP-G6** | `NOUA2` best response TMS 61/61, TMSd 120/200 (`pre+out` and `pre`) | the archived S0 7/61 and 2/200 (read) |
+| **RP-G7** | X1 pass (no legitimate row and not `N12T` refused more under the cap; `N12T` 0, `pre`/none 1 = ref); X3 pass (TMX 26/200, 34/200); X4 pass (no attacker cell above the reference); declared costs TMS 29/61, TMSd 40/200 (`pre+out`), 61/61, 120/200 (`pre`); TPAIRT office 21/61, attacker 120 → 72 | `D-PXALL` (`entersCrossAccountSet` → true): `N12T` 32/61, `N12` 24/61 = the archived rows (fires) |
+| **G7 rows field for field** (210 per arm) | **fails on LT-25 only**: decision, reach, kinds, lanes, metrics, Host counts, `refusedPx` and the `g6TmsRow` measures equal on all 210 rows of each arm; the capacity cause differs on 7 rows per arm (`D2|none|{fresh,none}|pre`, `MIX|none|{fresh,const,none}|pre`, `TPAIRT|none|none|{pre+out,pre}`) where several U scopes are exhausted at once | — |
+| **RP-GLOB** | no row differs because of a global ceiling. Rows that differ from an archive, listed: `UAC` (declared cost, §11.5) and the 7 cause rows of LT-25 (not a global binding: a finding under RP-GLOB's own rule, raised as LT-25). The archive's `X2` / `X2API` streams are G1 streams, not in the replayed sets | — |
+| **CGN-B** (`MODEL`) | reproduced: the 8 cells (N 500 / 5,000, λ 1 / 4, sprayer off / on) equal the archived FULL2 rows through the production `AdmissionRuntime` | — |
+| **NM-7 engine** | behind the fence the mixed fleet (old shares 0.25 and 0.50) decides exactly as the all-old fleet and only the fence is read; fence open while mixed: per window admitted 8 / 7 / 7 (0.25) and 8 / 5 / 7 (0.50) ≤ `c_x` 24 + old-worker calls 30 / 60; M6: the old build decides on the new build's stores as on a copy with every admission structure emptied, K4U survives on the K4 key, K4P present after the rollback and not read by the old build (lost by name: K4P, K5p, k5p, `anti_equilibrium_device_p`, `known_device_allowance_p`, `anti_equilibrium_p`, `budget_cooldown_p`), roll-forward admits exactly the 4 left of 24 | an ignored fence (`fenceOpen` → true): behind a closed fence the new workers refuse, the fleet is not S0 (fires) |
+| **S0 goldens through the engine** | Login `19bfcf29…679c`, OTP `568dbec2…cacab` (decisions and state, read by reflection) with a runtime and the fence open, the fence closed, and no runtime, the Host sending the instance id and a credential | `k5Material` ignoring the lane breaks the Login state (fires) |
+| **CYCLES / LIFECYCLE** (lane from the engine) | K4 (fence closed) and K4P, K5 and K5p: separate keys, cycle 1 each; twenty capacity refusals leave the score store as twenty admitted pre-checks do, no cycle; K4P evidence served and claimed on P only (one claim), not on U | `k4KeyType` / `k5KeyType` → one key: cycle 2 (fire); K4P merged into K4: evidence visible on U (fires) |
+| **SC-1 … SC-6** | SC-1 `source_capacity` / `source`, `SOFT_BLOCK` level 1; SC-2 the refusal writes nothing to the admission store, the next window is admitted; SC-3 the pipeline state after a refused pre-check equals an admitted one (the pre-check wrote observations: reported `true`, LT-17); SC-4 a P request and another policy from the exhausted source are admitted; SC-5 100 rotations of UA, id and fingerprint: 24 admitted; SC-6 every legitimate refusal the store attributes to the source counter is `source_capacity` / `source`, per stream: ABA_B none 72, D2 fresh 22, D2 none 22, MIX fresh / const / none 12 each, TPAIRT none 4 | SC-1 cause renamed; SC-2 a writing refusal; SC-3 a scored refusal; SC-4 the source scope on P; SC-5 a UA-keyed source (> 24); SC-6 the scope renamed (all fire) |
+| LANE, FAIL, fence, refusal shape, permit, outcome effects, S8, LT-12/18/21 (2a) | pass as at 2b-1, with the tombstone versions of the three settlement tests (PLAN §12.4) and the new D8 test: a success on P never removes a recorded D8 failure, and no success outcome carries the D8 scope | the 2a detectors (fire) |
 
-## Findings (each is a red test of a registered PASS condition; none weakened)
+## Open (blocks the merge)
+
+1. **LT-25** (PLAN §12.5): the U-door refusal order. Recommendation (a), the study's order `F` → bucket → `src`. Not built; its two tests fail as shown above.
+
+## Not covered here (named)
+
+* **The CVH scenarios of contract §8.1.** The CVH runs the public composition, which cannot opt in before 5-c (§1.1); the replays run in the PHPUnit harness that builds the engine directly (§5.1). They ride 5-c.
+* Store-level concurrency and failover of NM-7: the 5-b2 values of record (not re-run, §4).
+
+## Archive — measured under 5-b2.1 settlement, superseded by the Owner's decision
+
+Measured at `aad21af` (base `7057abc`, the 2026-10-19 registration of §5.2) and kept unchanged; the Owner's decision of 2026-10-20 (issuecomment-6280355276) made settlement opt-in and off by default (#149), recorded NM-10 NO-GO as a store mechanism, excluded `UAC` from A1, and re-registered NM-10 / NM-5 (PLAN §11). At that run: full suite `Tests: 1748, Failures: 10` in both modes, the 10 being the registered-PASS tests of NM-10 and NM-5.
 
 1. **F-5b3b-A1-UAC.** A1 fails at its own baseline (drop share 0, `ρ` 1): `UAC` 9 against S0 6 and S24 6. K5 is on the client instance id; the production row equals the G5 v2 archive row, the declared owner cost of DEC-026 draft Delta item 4. The registered "A1 holds at every share and combination" cannot hold at its baseline.
 2. **F-5b3b-NM10.** With the mechanism: A3 fails at 1.00 (SP1n 13 / 12, SP3 48 / 24, SP6 78 / 72); benign streams are refused above S0 and S24 from 0.25 (L1 7), 0.50 (L1 31, D2 62, N12 4, OFF12 5) and 1.00 (L1 72, ABA_B 94, D2 80, N12 12, OFF12 8, Y6b 10). Without the mechanism at 0.50: A3 holds (SP6 47) and L1 31; so the clause "at the highest share where the mechanism passes, the arm without it fails" is not evidenced (the mechanism passes at no registered share).
 3. **F-5b3b-NM5.** `ρ` 2: L1 82, ABA_B 98, D2 87, Y6b 13; `ρ` 3: L1 112, ABA_B 110, D2 109, Nu4 32, Y6b 22; abandonment 0.10 / 0.25 add D2 +2 / +13, ABA_B +0 / +36, L1 0 / 7. A probe is a permit never claimed (no refund of the proven counters, a failure for the net set).
-4. **Gate P.** Reported above; no verdict.
+4. **Gate P.** The settlement changed the `pre` rows of ABA_A, D2, MIX, N12, OFF12, POI, SP1n and SP6 against the archive; the arm without it reproduced every archived `pre` row.
 
-The numbers of findings 2 and 3 are the measured values of this run (`StreamGates`, `A1` / `A3` over the archived best-response definitions); A1 compares against S0 (`s00_s0.jsonl`), S24 (`v2_streams.CAND.jsonl`) and S12 (`v2_fc.CAND.jsonl`), read at run time.
-
-## Not covered here (named)
-
-* **Commit 2b-2, LT-23:** the fixture gates (RP-G4 C1, C3, C4v2, C5, C6, E, K5; RP-G5 `UAX-NP`, `D-IDMINT`, `BRU24` 51 / `FORGE` / `MINT` / `STEAL` / `NP-IN`; RP-G6; RP-G7; RP-GLOB for fixtures; B2 REC), pending the ruling on LT-23.
-* **Written after the seams are registered:** NM-7 at engine level (mixed fleet behind the fence, M6 rollback), the S0 goldens through the engine with a lane, CYCLES and LIFECYCLE with the lane from the engine, SC-1…SC-6 with the co-tenant harm per stream, the CVH scenarios (§8.1). The stream gates above already exercise the engine end to end; these are separate registered gates.
-* LT-14 reported test: written (an outcome from another source lands on that source's failure set; the admission source's pending entry settles at the deadline).
-
-## Open items
-
-1. The four findings and LT-23.
-2. The reference store changed in 5-b2.1 is not modified here; `PreSettlementReferenceStore` is its verbatim copy at `d6aea4d` (the arm without the mechanism), `MergedAdmissionOperations` the verbatim Redis operations.
-3. `phpstan.neon` has one `excludePaths` entry (the dump script runs in its own process against the archive's global functions). `AdmissionArchiveStreamsTest` raises the test process memory limit to 1G, as the archive's own runner does.
+The numbers of findings 2 and 3 were the measured values of that run (`StreamGates`, `A1` / `A3` over the archived best-response definitions; A1 against S0 `s00_s0.jsonl`, S24 `v2_streams.CAND.jsonl`, S12 `v2_fc.CAND.jsonl`, read at run time).
