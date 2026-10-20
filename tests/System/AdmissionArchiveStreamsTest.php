@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace Maatify\RateLimiter\Tests\System;
 
 use Maatify\RateLimiter\Tests\Support\Admission\Archive\ArchiveData;
+use Maatify\RateLimiter\Tests\Support\Admission\Archive\GateReport;
 use Maatify\RateLimiter\Tests\Support\Admission\Archive\StreamGates;
 use Maatify\RateLimiter\Tests\Support\Admission\Archive\StreamReplay;
 use Maatify\RateLimiter\Tests\Support\Admission\EngineLab;
@@ -19,7 +20,10 @@ use PHPUnit\Framework\TestCase;
  * the REAL engine (`StreamReplay`). Every archive value is read at run time from the archive's own `expected/` files; the
  * rows come from the archive's own functions through `archive-dump.php` (LT-20).
  *
- * The "arm without the mechanism" is the admission store exactly as merged at d6aea4d (`PreSettlementReferenceStore`).
+ * NM-10 and NM-5 are registered as re-registered on 2026-10-20 (5b3b/PLAN.md §11.3, §11.4: the mechanism is the required permit
+ * only; settlement is off by default). The arm without the permit mechanism of NM-10 (a) is the admission store exactly as merged
+ * at d6aea4d: in memory `PreSettlementReferenceStore` here, and `MergedAdmissionOperations` on real Redis in
+ * `AdmissionNm10RedisParityTest`. A1 excludes `UAC` as a declared cost (§11.5, `StreamGates::DECLARED_COSTS`).
  */
 #[Group('archive')]
 final class AdmissionArchiveStreamsTest extends TestCase
@@ -155,13 +159,15 @@ final class AdmissionArchiveStreamsTest extends TestCase
         self::assertSame(9, $uac['m']['legitDenied']);
     }
 
-    public function testRpG4GatesA2AndA3HoldAndA1FailsOnlyOnUac(): void
+    /** A1 (with `UAC` the declared cost, PLAN §11.5), A2 and A3 on the FULL2 streams; `UAC` is the G5 v2 value 9. */
+    public function testRpG4GatesA1A2A3HoldWithUacTheDeclaredCost(): void
     {
         $best = StreamGates::best(StreamGates::replayAll(self::mechanism(...), 'pre+out'));
 
         self::assertTrue(StreamGates::a2($best));
         self::assertSame([], StreamGates::a3($best));
-        self::assertSame(['UAC 9 (S0 6, S24 6)'], StreamGates::a1($best));
+        self::assertSame([], StreamGates::a1($best));
+        self::assertSame(9, $best['UAC']['legit'], 'UAC = the G5 v2 value (summary.md L79, L193: 6 -> 9)');
         $reach = array_intersect_key(array_map(static fn(array $c): int => $c['reach'], $best), array_flip(StreamGates::SPRAY));
         ksort($reach);
         self::assertSame(['ABA_A' => 8, 'SP1n' => 4, 'SP3' => 8, 'SP6' => 24], $reach);
@@ -183,23 +189,20 @@ final class AdmissionArchiveStreamsTest extends TestCase
         self::assertSame([], $this->compare(self::G5V2, 'NOUA2', 'pre', self::withoutMechanism(...), true, true));
     }
 
-    public function testGatePIsReportedTheSettlementChangesExactlyTheStreamsOfTheArchivedPreCost(): void
+    /**
+     * Gate P (reported; replaces the settlement version, PLAN §11.8): at the store default the production `pre` rows are the
+     * archived `pre` rows (a `checkOnly`-only Host changes no bound), with the reference values L1 72 and D2 61.
+     */
+    public function testGatePReportedTheProductionPreRowsAreTheArchivedPreRows(): void
     {
-        $diff = $this->compare(self::G5V2, 'NOUA2', 'pre', self::mechanism(...), true);
-        $streams = array_values(array_unique(array_map(static fn(string $d): string => explode('|', $d)[0], $diff)));
-        sort($streams);
-
-        // Reported, not a gate: with the mechanism a checkOnly-only Host's admissions settle as failures at the deadline.
-        self::assertSame(['ABA_A', 'D2', 'MIX', 'N12', 'OFF12', 'POI', 'SP1n', 'SP6'], $streams);
+        self::assertSame([], $this->compare(self::G5V2, 'NOUA2', 'pre', self::mechanism(...), true, true));
         $best = StreamGates::best(StreamGates::replayAll(self::mechanism(...), 'pre'));
-        $archive = StreamGates::best(StreamGates::replayAll(self::withoutMechanism(...), 'pre'));
-        $archiveReach = array_intersect_key(array_map(static fn(array $c): int => $c['reach'], $archive), array_flip(StreamGates::SPRAY));
-        ksort($archiveReach);
-        self::assertSame(['ABA_A' => 48, 'SP1n' => 24, 'SP3' => 48, 'SP6' => 144], $archiveReach, 'the archived FULL2 pre values');
-        self::assertLessThan($archive['SP6']['reach'], $best['SP6']['reach'], 'the mechanism lowers the attacker reach of a pre Host');
+        GateReport::emit('gate-p', ['L1' => $best['L1']['legit'], 'D2' => $best['D2']['legit'], 'SP6' => $best['SP6']['reach']]);
+        self::assertSame(72, $best['L1']['legit']);
+        self::assertSame(61, $best['D2']['legit']);
     }
 
-    // ---- NM-10 -------------------------------------------------------------------------------------------------------------------
+    // ---- NM-10 (re-registered 2026-10-20, PLAN §11.3) --------------------------------------------------------------------------
 
     /** @return iterable<string, array{float}> */
     public static function dropShares(): iterable
@@ -209,43 +212,56 @@ final class AdmissionArchiveStreamsTest extends TestCase
         }
     }
 
+    /**
+     * NM-10 (a), in memory: the arm with the permit (the production store at its default) and the arm without it (the store as
+     * merged at d6aea4d) give the same replay row by row for every archived stream, ids and no ids, at the share.
+     */
     #[DataProvider('dropShares')]
     #[Group('nm10')]
-    public function testNm10RegisteredPassConditionA1A3WithTheMechanism(float $share): void
+    public function testNm10aTheTwoArmsAreIdenticalRowByRowInMemory(float $share): void
+    {
+        $diff = [];
+        $tuples = 0;
+        foreach (ArchiveData::get()->streams() as $s) {
+            $with = StreamReplay::run($s['rows'], 'pre+out', self::mechanism(), $share);
+            $without = StreamReplay::run($s['rows'], 'pre+out', self::withoutMechanism(), $share);
+            if ($with !== $without) {
+                $diff[] = $s['stream'] . '|' . $s['strategy'] . '|' . $s['ids'];
+            }
+            $tuples++;
+        }
+
+        self::assertSame(91, $tuples);
+        self::assertSame([], $diff, "rows that differ between the arms at share $share");
+    }
+
+    /** NM-10, reported at every share (not a gate): A1 (without `UAC`) and A3, the characterisation of the A-2 remainder. */
+    #[DataProvider('dropShares')]
+    #[Group('nm10')]
+    public function testNm10ReportedA1AndA3AtTheShare(float $share): void
     {
         $best = StreamGates::best(StreamGates::replayAll(self::mechanism(...), 'pre+out', $share));
+        $a1 = StreamGates::a1($best);
+        $a3 = StreamGates::a3($best);
+        GateReport::emit('nm10-a1-a3', ['share' => $share, 'A1' => $a1, 'A3' => $a3]);
 
-        self::assertSame([], StreamGates::a1($best), "A1 at drop share $share");
-        self::assertSame([], StreamGates::a3($best), "A3 at drop share $share");
+        self::assertCount(count(StreamGates::BENIGN) + count(StreamGates::SPRAY) + 1, array_intersect_key($best, array_flip([...StreamGates::BENIGN, ...StreamGates::SPRAY, 'MIX'])));
     }
 
+    /**
+     * NM-10, reported: a Host that drops every outcome is the `pre` flow (the archived FULL2 `pre` reach, A3 fails), on both
+     * arms. It is the A-2 remainder the USAGE_GUIDE duty names, not a gate. (Was the settlement-era detector 1; renamed, §11.8.)
+     */
     #[Group('nm10')]
-    public function testNm10DetectorTheArmWithoutTheMechanismAtShareOneReproducesFull2PreAndFailsA3(): void
+    public function testNm10ReportedAtShareOneADroppingHostIsThePreFlowOnBothArms(): void
     {
-        $best = StreamGates::best(StreamGates::replayAll(self::withoutMechanism(...), 'pre+out', 1.0));
-
-        $reach = array_intersect_key(array_map(static fn(array $c): int => $c['reach'], $best), array_flip(StreamGates::SPRAY));
-        ksort($reach);
-        self::assertSame(['ABA_A' => 48, 'SP1n' => 24, 'SP3' => 48, 'SP6' => 144], $reach);
-        self::assertNotSame([], StreamGates::a3($best), 'DETECTOR: without the mechanism A3 fails at share 1.00');
-    }
-
-    #[Group('nm10')]
-    public function testNm10DetectorSeparatesTheTwoArmsAtTheHighestSharesTheMechanismPasses(): void
-    {
-        // Registered: "at the highest share at which the mechanism passes, the arm without it fails". The shares are scanned
-        // from the highest down; the first share where the mechanism passes A1 and A3 must be a share where the arm without
-        // the mechanism fails A1 or A3.
-        foreach ([1.00, 0.50, 0.25, 0.10] as $share) {
-            $with = StreamGates::best(StreamGates::replayAll(self::mechanism(...), 'pre+out', $share));
-            if (StreamGates::a1($with) === [] && StreamGates::a3($with) === []) {
-                $without = StreamGates::best(StreamGates::replayAll(self::withoutMechanism(...), 'pre+out', $share));
-                self::assertTrue(StreamGates::a1($without) !== [] || StreamGates::a3($without) !== [], "the arms are not separated at share $share");
-
-                return;
-            }
+        foreach ([self::mechanism(...), self::withoutMechanism(...)] as $labFor) {
+            $best = StreamGates::best(StreamGates::replayAll($labFor, 'pre+out', 1.0));
+            $reach = array_intersect_key(array_map(static fn(array $c): int => $c['reach'], $best), array_flip(StreamGates::SPRAY));
+            ksort($reach);
+            self::assertSame(['ABA_A' => 48, 'SP1n' => 24, 'SP3' => 48, 'SP6' => 144], $reach);
+            self::assertNotSame([], StreamGates::a3($best));
         }
-        self::fail('The mechanism passes at no registered share, so the detector has no share to separate the arms at.');
     }
 
     #[Group('nm10')]
@@ -275,6 +291,29 @@ final class AdmissionArchiveStreamsTest extends TestCase
 
     // ---- NM-5 -----------------------------------------------------------------------------------------------------------------------
 
+    /**
+     * The worst (best-response) legit refusals of each benign stream and the causes of that replay.
+     *
+     * @param list<array{stream: string, strategy: string, ids: string, result: array{dec: string, reach: string, kinds: string, lanes: string, m: array<string, int>, issued: int, tainted: int, causes: array<string, int>, attackCauses: array<string, int>}}> $replays
+     * @return array<string, array{legit: int, causes: array<string, int>}>
+     */
+    private static function worstPerBenignStream(array $replays): array
+    {
+        $out = [];
+        foreach ($replays as $r) {
+            if (! in_array($r['stream'], StreamGates::BENIGN, true)) {
+                continue;
+            }
+            $legit = $r['result']['m']['legitDenied'];
+            if ($legit >= ($out[$r['stream']]['legit'] ?? -1)) {
+                $out[$r['stream']] = ['legit' => $legit, 'causes' => $r['result']['causes']];
+            }
+        }
+        ksort($out);
+
+        return $out;
+    }
+
     /** @return iterable<string, array{int, float}> */
     public static function probeCombinations(): iterable
     {
@@ -285,13 +324,26 @@ final class AdmissionArchiveStreamsTest extends TestCase
         yield 'rho 3 and abandon 0.25' => [3, 0.25];
     }
 
+    /**
+     * NM-5 (re-registered, PLAN §11.4), reported per benign stream: the legit refusals by cause at the combination and their
+     * difference from `rho` 1, abandonment 0. A probe or an abandoned admission is a reservation no success refunds (the bucket
+     * and the counters); no A1 condition (`rho` > 1 is outside C-c7).
+     */
     #[DataProvider('probeCombinations')]
     #[Group('nm5')]
-    public function testNm5RegisteredPassConditionA1HoldsAtEveryCombination(int $rho, float $abandon): void
+    public function testNm5ReportedTheEffectOfTheUnrefundedReservationsPerBenignStream(int $rho, float $abandon): void
     {
-        $best = StreamGates::best(StreamGates::replayAll(self::mechanism(...), 'pre+out', 0.0, $rho, $abandon));
+        $base = StreamGates::replayAll(self::mechanism(...), 'pre+out');
+        $run = StreamGates::replayAll(self::mechanism(...), 'pre+out', 0.0, $rho, $abandon);
+        $one = self::worstPerBenignStream($base);
+        $now = self::worstPerBenignStream($run);
+        $report = [];
+        foreach ($now as $stream => $v) {
+            $report[$stream] = ['legit' => $v['legit'], 'delta' => $v['legit'] - ($one[$stream]['legit'] ?? 0), 'causes' => $v['causes']];
+        }
+        GateReport::emit('nm5', ['rho' => $rho, 'abandon' => $abandon, 'streams' => $report]);
 
-        self::assertSame([], StreamGates::a1($best), "A1 at rho $rho and abandonment $abandon");
+        self::assertSame(StreamGates::BENIGN, array_values(array_intersect(StreamGates::BENIGN, array_keys($report))), 'every benign stream is reported');
     }
 
     #[Group('nm5')]

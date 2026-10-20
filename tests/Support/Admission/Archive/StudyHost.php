@@ -27,14 +27,20 @@ final class StudyHost
     public int $issued = 0;
     public int $tainted = 0;
     public int $renewed = 0;
+    public int $pwBinds = 0;
     private int $seq = 0;
 
-    /** @param array{tokenTtl: int, taint: int, maxLife: int} $constants */
+    /**
+     * @param array{tokenTtl: int, taint: int, maxLife: int} $constants
+     * @param bool $binding false is the study's Host mode `off` (`R-NO-BIND`, g4/integrated/lib/g4.php:58): no credential is ever
+     *                      presented and nothing is bound
+     */
     public function __construct(
         private readonly EngineLab $lab,
         private readonly array $constants,
         public bool $renew = true,
         public bool $passwordBinding = true,
+        public bool $binding = true,
     ) {}
 
     public function issue(string $holder, string $acct, string $inst, int $now, ?int $ttl = null, ?int $bindAt = null, ?string $jti = null): void
@@ -57,6 +63,22 @@ final class StudyHost
         }
     }
 
+    /** `copyJar()` and FORGE's jar copy (g4v2.php:166-169; g5v2_fixtures.php:168-170): the holder's tokens become another's. */
+    public function copy(string $fromJarKey, string $toJarKey): void
+    {
+        $this->jar[$toJarKey] = $this->jar[$fromJarKey] ?? [];
+    }
+
+    /** `passwordChange()` (g4v2.php:177-185): an epoch bump and, with the binding on, a new chain for the changing device only. */
+    public function passwordChange(string $holder, string $acct, string $inst, int $now): void
+    {
+        $this->revoke($acct);
+        if ($this->passwordBinding && $this->binding) {
+            $this->issue($holder, $acct, $inst, $now);
+            $this->pwBinds++;
+        }
+    }
+
     /**
      * Apply the observable effects of one archived event (see archive-dump.php).
      *
@@ -72,6 +94,12 @@ final class StudyHost
             if (isset($effect['revoke'])) {
                 $this->revoke($effect['revoke']['acct'], $effect['revoke']['times']);
             }
+            if (isset($effect['copy'])) {
+                $this->copy($effect['copy']['from'], $effect['copy']['to']);
+            }
+            if (isset($effect['password'])) {
+                $this->passwordChange($effect['password']['holder'], $effect['password']['acct'], $effect['password']['inst'], $now);
+            }
         }
     }
 
@@ -82,7 +110,7 @@ final class StudyHost
      */
     public function token(string $holder, ?string $inst, string $acct, int $now): ?array
     {
-        if ($inst === null) {
+        if ($inst === null || ! $this->binding) {
             return null;
         }
         $t = $this->jar[$holder . '|' . $inst][$acct] ?? null;
@@ -114,6 +142,9 @@ final class StudyHost
      */
     public function observe(string $holder, string $inst, string $acct, bool $proven, string $outcome, int $now, ?array $token): void
     {
+        if (! $this->binding) {
+            return;
+        }
         $w = $inst . '@' . intdiv($now, 600);
         if ($outcome === 'fail') {
             $this->fails[$w][$acct] = true;

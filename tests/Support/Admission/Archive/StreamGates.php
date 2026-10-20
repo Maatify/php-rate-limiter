@@ -14,13 +14,19 @@ use Maatify\RateLimiter\Tests\Support\Admission\EngineLab;
 final class StreamGates
 {
     public const BENIGN = ['L1', 'ABA_B', 'D2', 'N12', 'Nu4', 'OFF12', 'Y6b', 'KD', 'UAC', 'L3', 'D1'];
+
+    /**
+     * Benign streams excluded from A1 as declared costs, as `MIX` is (5b3b/PLAN.md §11.5, the Owner's decision of 2026-10-20):
+     * `UAC` = `KD` once K5 is on the instance id; G5 v2 `g5/identity_layer_v2/expected/summary.md` L79 and L193 (`6 → 9`), F-G5v2-06.
+     */
+    public const DECLARED_COSTS = ['UAC'];
     public const SPRAY = ['SP1n', 'SP3', 'SP6', 'ABA_A'];
 
     /**
      * Replay every archived stream that carries ids through a fresh lab and keep the per-stream metrics.
      *
      * @param \Closure(): EngineLab $labFor
-     * @return list<array{stream: string, strategy: string, ids: string, result: array<string, mixed>}>
+     * @return list<array{stream: string, strategy: string, ids: string, result: array{dec: string, reach: string, kinds: string, lanes: string, m: array<string, int>, issued: int, tainted: int, causes: array<string, int>, attackCauses: array<string, int>}}>
      */
     public static function replayAll(\Closure $labFor, string $flow, float $dropShare = 0.0, int $rho = 1, float $abandon = 0.0): array
     {
@@ -37,14 +43,13 @@ final class StreamGates
     }
 
     /**
-     * @param list<array{stream: string, result: array<string, mixed>}> $replays
+     * @param list<array{stream: string, result: array{m: array<string, int>}}> $replays
      * @return array<string, array{legit: int, reach: int}>
      */
     public static function best(array $replays): array
     {
         $o = [];
         foreach ($replays as $r) {
-            /** @var array<string, int> $m */
             $m = $r['result']['m'];
             $c = $o[$r['stream']] ?? ['legit' => 0, 'reach' => 0];
             $c['legit'] = max($c['legit'], $m['legitDenied']);
@@ -105,7 +110,7 @@ final class StreamGates
     }
 
     /**
-     * A1: every benign stream (MIX apart) at most S0 and at most S24.
+     * A1: every benign stream (MIX and the declared costs apart) at most S0 and at most S24.
      *
      * @param array<string, array{legit: int, reach: int}> $best
      * @return list<string> the failing streams, empty when the gate passes
@@ -115,7 +120,7 @@ final class StreamGates
         $s0 = self::s0();
         $s24 = self::s24();
         $failed = [];
-        foreach (self::BENIGN as $s) {
+        foreach (array_diff(self::BENIGN, self::DECLARED_COSTS) as $s) {
             if ($best[$s]['legit'] > $s0[$s]['legit'] || $best[$s]['legit'] > $s24[$s]['legit']) {
                 $failed[] = "$s {$best[$s]['legit']} (S0 {$s0[$s]['legit']}, S24 {$s24[$s]['legit']})";
             }

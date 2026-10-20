@@ -30,6 +30,12 @@ final class FaultInjectingAdmissionStore implements AdmissionPermitStoreInterfac
     /** @var list<AdmissionReservationRequestDTO> every request the store admitted (for independent recounts) */
     public array $admitted = [];
 
+    /** @var list<AdmissionOutcomeDTO> every outcome the store applied */
+    public array $outcomes = [];
+
+    /** @var list<string> the refusing scope of every refused reservation (an independent record of the refusals) */
+    public array $refused = [];
+
     public function __construct(public readonly AdmissionPermitStoreInterface $inner) {}
 
     private function enter(string $operation): void
@@ -46,6 +52,8 @@ final class FaultInjectingAdmissionStore implements AdmissionPermitStoreInterfac
         $result = $this->inner->reserveAdmission($request, $now);
         if ($result->admitted) {
             $this->admitted[] = $request;
+        } else {
+            $this->refused[] = (string) $result->refusedScope;
         }
 
         return $result;
@@ -55,6 +63,7 @@ final class FaultInjectingAdmissionStore implements AdmissionPermitStoreInterfac
     {
         $this->enter('outcome');
         $this->inner->applyAdmissionOutcome($outcome, $now);
+        $this->outcomes[] = $outcome;
     }
 
     public function readBindingEpoch(string $key, ?string $previousKey): int

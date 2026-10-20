@@ -5,6 +5,9 @@ declare(strict_types=1);
 namespace Maatify\RateLimiter\Tests\Unit\Admission;
 
 use Maatify\RateLimiter\Command\RateLimitCommand;
+use Maatify\RateLimiter\DTO\AdmissionOutcomeDTO;
+use Maatify\RateLimiter\DTO\AdmissionScopeDTO;
+use Maatify\RateLimiter\Enum\AdmissionOutcomeKindEnum;
 use Maatify\RateLimiter\DTO\RateLimitResultDTO;
 use Maatify\RateLimiter\Exception\RateLimiterException;
 use Maatify\RateLimiter\Tests\Support\Admission\EngineLab;
@@ -179,7 +182,11 @@ final class AdmissionEngineReserveTest extends TestCase
         self::assertSame(['cause' => 'permit_rejected'], $this->causeOf($lab, $lab->outcome($lab->context('acct-2', self::IP), false, $permit)));
     }
 
-    public function testALateOutcomeIsLateAndTheSettledFailureStays(): void
+    /**
+     * Replaces the 5-b2.1 settlement version of this test (PLAN §11.8, the Owner's decision of 2026-10-20): under the store default
+     * an expired permit is a tombstone, so a late outcome is `permit_late`, scores nothing and leaves no failure behind.
+     */
+    public function testALateOutcomeIsLateAndLeavesNoFailure(): void
     {
         $lab = new EngineLab(EngineLab::budgets(sourceFailureCap: 1));
         $ctx = $lab->context('acct-1', self::IP);
@@ -187,20 +194,26 @@ final class AdmissionEngineReserveTest extends TestCase
         $lab->at(31);
 
         self::assertSame(['cause' => 'permit_late'], $this->causeOf($lab, $lab->outcome($ctx, true, $permit)));
-        // The settled failure (no outcome by the deadline) still counts: the cap refuses a further account.
-        $this->assertRefusal($lab->check($lab->context('acct-2', self::IP)), 'source_failure_cap', 'source');
+        self::assertSame(RateLimitResultDTO::DECISION_ALLOW, $lab->check($lab->context('acct-2', self::IP))->decision);
     }
 
     // ---- outcome effects (D-OUT) ------------------------------------------------------------------------------------------
 
-    public function testADroppedOutcomeCountsAsAFailureFromTheDeadlineAndNotBefore(): void
+    /**
+     * Replaces the 5-b2.1 settlement version (PLAN §11.8): a dropped outcome is a tombstone (SF §2.3 I9) and never becomes a
+     * failure, before or after the deadline. A recorded failure is what the cap counts.
+     */
+    public function testADroppedOutcomeNeverBecomesAFailure(): void
     {
         $lab = new EngineLab(EngineLab::budgets(sourceFailureCap: 1));
         $lab->check($lab->context('acct-1', self::IP));
         $lab->at(29);
         self::assertSame(RateLimitResultDTO::DECISION_ALLOW, $lab->check($lab->context('acct-2', self::IP))->decision);
-        $lab->at(30);
-        $this->assertRefusal($lab->check($lab->context('acct-3', self::IP)), 'source_failure_cap', 'source');
+        $lab->at(631);
+        self::assertSame(RateLimitResultDTO::DECISION_ALLOW, $lab->check($lab->context('acct-3', self::IP))->decision);
+        $failed = $lab->context('acct-4', self::IP);
+        $lab->outcome($failed, false, (string) EngineLab::permit($lab->check($failed)));
+        $this->assertRefusal($lab->check($lab->context('acct-5', self::IP)), 'source_failure_cap', 'source');
     }
 
     public function testASuccessRemovesTheNetFailureAndRefundsTheBucket(): void
@@ -244,12 +257,33 @@ final class AdmissionEngineReserveTest extends TestCase
         $this->assertRefusal($lab->check($b), 'source_proof_failure_cap', 'source');
     }
 
-    public function testASuccessOnTheProvenDoorCancelsAPendingD8Member(): void
+    /**
+     * D-OUT as amended (PLAN §11.2): a success on the proven door never sends the D8 scope, so a recorded D8 failure of the
+     * account stays in the set after a later success of the same account (with the flag off a success on a set-size scope would
+     * remove it). Replaces the 5-b2.1 "cancels a pending D8 member" test (§11.8).
+     */
+    public function testASuccessOnTheProvenDoorNeverRemovesARecordedD8Failure(): void
     {
         $lab = new EngineLab(EngineLab::budgets(crossAccountFailureCap: 1));
         $a = $lab->context('acct-1', self::IP, 'inst-1', $lab->mint('acct-1', 'inst-1'));
-        $permit = (string) EngineLab::permit($lab->check($a));
-        $lab->outcome($a, true, $permit);
+        $lab->outcome($a, false, (string) EngineLab::permit($lab->check($a)));
+        $lab->outcome($a, true, (string) EngineLab::permit($lab->check($a)));
+
+        $b = $lab->context('acct-2', self::IP, 'inst-2', $lab->mint('acct-2', 'inst-2'));
+        $this->assertRefusal($lab->check($b), 'source_proof_failure_cap', 'source');
+        self::assertSame([], array_values(array_filter(
+            $lab->admissionStore->outcomes,
+            static fn(AdmissionOutcomeDTO $o): bool => $o->outcome === AdmissionOutcomeKindEnum::SUCCESS
+                && in_array('source_proof_failure_cap', array_map(static fn(AdmissionScopeDTO $s): string => $s->name, $o->scopes), true),
+        )), 'no success outcome carries the D8 scope');
+    }
+
+    /** A success on the proven door with no recorded failure leaves the D8 set empty. */
+    public function testASuccessOnTheProvenDoorIsNoD8Failure(): void
+    {
+        $lab = new EngineLab(EngineLab::budgets(crossAccountFailureCap: 1));
+        $a = $lab->context('acct-1', self::IP, 'inst-1', $lab->mint('acct-1', 'inst-1'));
+        $lab->outcome($a, true, (string) EngineLab::permit($lab->check($a)));
         $lab->at(31);
 
         $b = $lab->context('acct-2', self::IP, 'inst-2', $lab->mint('acct-2', 'inst-2'));

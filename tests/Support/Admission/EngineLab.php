@@ -55,11 +55,17 @@ final class EngineLab
     /** A `RateLimiterEngine` or a mutation of it (detectors). */
     public RateLimiterRuntimeInterface&AdmissionBindingControlInterface&AdmissionBindingEpochInterface $engine;
     public RecordingFailureSignalEmitter $emitter;
+    public EvaluationPipeline $pipeline;
+
+    /** The pipeline's score store when the lab records hard-block cycles (`$recordCycles`); the admission store stays separate. */
+    public ?RecordingCycleStore $cycles = null;
 
     /**
      * @param list<BlockPolicyInterface> $policies registered besides the opted Login policy
      * @param class-string $runtimeClass
      * @param class-string $engineClass
+     * @param class-string<EvaluationPipeline> $pipelineClass the real pipeline or a 5-b3a seam mutation of it (`PipelineMutant`)
+     * @param bool $recordCycles the pipeline runs on a cycle-recording score store (`$cycles`) and its own correlation store
      */
     public function __construct(
         ?AdmissionBudgetsDTO $budgets = null,
@@ -69,6 +75,8 @@ final class EngineLab
         string $engineClass = RateLimiterEngine::class,
         bool $registerOptedPolicy = true,
         ?AdmissionPermitStoreInterface $admissionInner = null,
+        string $pipelineClass = EvaluationPipeline::class,
+        bool $recordCycles = false,
     ) {
         if ($runtimeClass !== AdmissionRuntime::class && $engineClass === RateLimiterEngine::class) {
             // A mutation of the runtime is not an `AdmissionRuntime`: the engine under test accepts any object in its place.
@@ -91,17 +99,24 @@ final class EngineLab
             self::KEY_SECRET,
             self::ENV,
         );
-        $pipeline = new EvaluationPipeline(
-            $this->store,
-            $this->store->correlationStore(),
-            new BudgetTracker($this->store, $this->clock),
-            new AntiEquilibriumGate($this->store->correlationStore()),
+        $scores = $this->store;
+        $correlation = $this->store->correlationStore();
+        if ($recordCycles) {
+            $scores = $this->cycles = new RecordingCycleStore($this->clock);
+            $correlation = new RecordingCorrelationStore($this->clock);
+        }
+        $pipeline = new $pipelineClass(
+            $scores,
+            $correlation,
+            new BudgetTracker($scores, $this->clock),
+            new AntiEquilibriumGate($correlation),
             new DecayCalculator($this->clock),
-            new EphemeralBucket($this->store->correlationStore()),
+            new EphemeralBucket($correlation),
             self::KEY_SECRET,
             self::ENV,
             $this->clock,
         );
+        $this->pipeline = $pipeline;
         $all = $registerOptedPolicy ? [new OptedEngineLoginPolicy(self::GROUP), ...$policies] : $policies;
         $engine = new $engineClass(
             new DeviceIdentityResolver(new FingerprintHasher(self::FINGERPRINT_SECRET)),

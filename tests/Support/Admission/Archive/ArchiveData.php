@@ -5,7 +5,7 @@ declare(strict_types=1);
 namespace Maatify\RateLimiter\Tests\Support\Admission\Archive;
 
 /**
- * @phpstan-type Effect array{issue?: array{holder: string, inst: string, acct: string, ttl: int, bindOffset: int}, revoke?: array{acct: string, times: int}}
+ * @phpstan-type Effect array{issue?: array{holder: string, inst: string, acct: string, ttl: int, bindOffset: int}, revoke?: array{acct: string, times: int}, copy?: array{from: string, to: string}, password?: array{holder: string, acct: string, inst: string}}
  * @phpstan-type Ctx array{ip: string, ua: string, accountId: ?string, clientFingerprint: ?array<string, mixed>, sessionDeviceId: ?string, isSessionTrusted: bool, headers: array<string, array<string>|string>, isDevicePreviouslyVerifiedForAccount: bool, correlationId: ?string}
  * @phpstan-type DumpRow array{t: int, effects?: list<Effect>, kind?: string, own?: bool, who?: string, outcome?: string, inst?: ?string, holder?: string, proof?: ?string, ctx?: Ctx}
  * @phpstan-type Tuple array{stream: string, cls: string, strategy: string, ids: string, rows: list<DumpRow>}
@@ -94,6 +94,86 @@ final class ArchiveData
                 /** @var Tuple $tuple */
                 $tuple = json_decode($line, true, 64, JSON_THROW_ON_ERROR);
                 yield $tuple;
+            }
+        } finally {
+            fclose($handle);
+        }
+    }
+
+    /**
+     * The G7 office and multi-session streams (`N12T`, `TPAIRT`, `TMS`, `TMSd`, `TMX`), one tuple at a time.
+     *
+     * @return \Generator<int, Tuple>
+     */
+    public function g7Streams(): \Generator
+    {
+        foreach ($this->lines('g7streams.jsonl') as $line) {
+            /** @var Tuple $line */
+            yield $line;
+        }
+    }
+
+    /**
+     * A fixture of `fixtures.jsonl` by name (LT-23): its `source` (the archive lines it transcribes) and its row parts.
+     *
+     * @return array<string, mixed>
+     */
+    public function fixture(string $name): array
+    {
+        foreach ($this->lines('fixtures.jsonl') as $fixture) {
+            if ($fixture['fixture'] === $name) {
+                return $fixture;
+            }
+        }
+
+        throw new \OutOfBoundsException("No dumped fixture {$name}.");
+    }
+
+    /**
+     * The dumped rows of a fixture part (`rows`, `pre`, `after`).
+     *
+     * @return list<DumpRow>
+     */
+    public function fixtureRows(string $name, string $part = 'rows'): array
+    {
+        $rows = $this->fixture($name)[$part] ?? null;
+        if (! is_array($rows) || ! array_is_list($rows)) {
+            throw new \UnexpectedValueException("Fixture {$name} has no row list {$part}.");
+        }
+        /** @var list<DumpRow> $rows */
+        return $rows;
+    }
+
+    /**
+     * One dumped row of a fixture (`owner`, `change`).
+     *
+     * @return DumpRow
+     */
+    public function fixtureRow(string $name, string $part): array
+    {
+        $row = $this->fixture($name)[$part] ?? null;
+        if (! is_array($row) || ! is_int($row['t'] ?? null)) {
+            throw new \UnexpectedValueException("Fixture {$name} has no row {$part}.");
+        }
+        /** @var DumpRow $row */
+        return $row;
+    }
+
+    /** @return \Generator<int, array<string, mixed>> */
+    private function lines(string $file): \Generator
+    {
+        $handle = fopen($this->dir . '/' . $file, 'rb');
+        if ($handle === false) {
+            throw new \RuntimeException("Cannot read {$file}.");
+        }
+        try {
+            while (($line = fgets($handle)) !== false) {
+                if (trim($line) === '') {
+                    continue;
+                }
+                /** @var array<string, mixed> $row */
+                $row = json_decode($line, true, 64, JSON_THROW_ON_ERROR);
+                yield $row;
             }
         } finally {
             fclose($handle);
