@@ -131,7 +131,7 @@ Account-level keys (K4) are authoritative.
 | 8 – 11        | HARD_BLOCK (L2)  |
 | ≥ 12          | HARD_BLOCK (L3+) |
 
-### Known-Device Bound (DEC-021)
+### Known-Device Bound (DEC-026, carrying DEC-021)
 
 | Known-device K5 score | Decision (that account + device only) |
 | --------------------- | ------------------------------------- |
@@ -201,7 +201,7 @@ Account-level keys (K4) are authoritative.
 
 ### Anti-Equilibrium Gate
 
-Soft events are kept per source scope (`DECISION_MATRIX.md` §2.5.3, DEC-021). On the
+Soft events are kept per source scope (`DECISION_MATRIX.md` §2.5.3, DEC-026). On the
 current `recordFailure`, read only **prior** actually-issued `SOFT_BLOCK` events **before
 budget cooldown acquisition**:
 
@@ -301,7 +301,7 @@ IP-only signals are advisory only.
 | 7 – 9 | HARD_BLOCK (L2)  |
 | ≥ 10  | HARD_BLOCK (L3+) |
 
-### Known-Device Bound (DEC-021)
+### Known-Device Bound (DEC-026, carrying DEC-021)
 
 * Known-device K5 thresholds `8 / 12 / 16` (L1 at the 2nd known-device OTP failure, L2 at
   the 3rd, L3 at the 4th), persisted on K5 only.
@@ -431,11 +431,13 @@ Correlation rules are mandatory and enforced per `DECISION_MATRIX.md`, including
 * Near-threshold WATCH flags (anti N-1 gaming)
 * Confidence constraints for DeviceFP dilution blocks
 
-These rules remain the shipped behavior under the Owner-approved interim Security-first
-posture recorded in
-[DEC-019](decisions/DEC-019_INTERIM_SECURITY_FIRST_CORRELATION_POSTURE.md). That posture is
-not a fix: issues #97, #100, and #106 remain OPEN, and shared-NAT false positives are
-unresolved. No rule or threshold changes.
+For every policy that does not opt into the admission reservation (§7.2), and for an opted policy
+while its fleet fence is closed, these rules remain the shipped behavior under the Owner-approved
+interim Security-first posture, recorded in
+[DEC-027](decisions/DEC-027_RETAINED_CORRELATION_POSTURE_FOR_POLICIES_THAT_DO_NOT_OPT_INTO_ADMISSION.md) (the successor of DEC-019).
+That posture is not a fix: issues #97, #100, and #106 remain OPEN for those policies, and
+shared-NAT false positives are unresolved. No rule or threshold changes. A policy that opts in
+follows `DECISION_MATRIX.md` §12 and DEC-022.
 
 ---
 
@@ -484,12 +486,21 @@ lifecycle; a custom name alone is not sufficient.
 
 ---
 
-## 7.2 Admission-Reservation Opt-In (DEC-023, DEC-024, DEC-025) — dormant
+## 7.2 Admission-Reservation Opt-In (DEC-022, DEC-023, DEC-024, DEC-025, DEC-026, DEC-028)
 
-**Status: shipped dormant.** No official preset declares this capability, `RateLimiterBuilder::build()`
-does not construct the admission runtime, and a policy that declares it is rejected at registration
-by an engine that has none. Everything below describes the contract of the opt-in, not a behaviour
-any supported composition has today.
+**Status: active since 2026-10-20.** `RateLimiterBuilder::build()` constructs the admission runtime,
+with the package constants of DEC-028, when a registered policy declares the capability. No Host
+input sets a budget. No default preset declares it: `login_protection`, `otp_protection` and
+`api_heavy_protection` keep today's behaviour.
+
+* **The official opt-in variant: `LoginProtectionAdmissionPolicy` (Login only).** It is
+  `LoginProtectionPolicy` with the same name `login_protection`, the same values, thresholds,
+  deltas, budget, fallback and DEC-007 lifecycle, plus the capability, the `pre+out` mode and the
+  budget group `login`. A Host selects it explicitly (`withPolicy(new LoginProtectionAdmissionPolicy())`);
+  it replaces the default Login preset under the same name, so the account and device state written
+  before the switch is read on. There is no OTP variant: OTP was never measured under the admission
+  reservation. The measured costs a Host accepts with it are recorded in DEC-022 (Decision 4, at
+  activation), DEC-025 and DEC-026.
 
 * **S1.** `PolicyCapabilityEnum::ADMISSION_RESERVATION` is one capability for the whole measured
   assembly (source ceiling, failure cap, account bucket, proven-lane caps, new-device cap, the

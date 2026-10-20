@@ -162,7 +162,7 @@ MUST NOT create or read this marker.
 
 ---
 
-#### 2.2.2 Known-Device Verifier Bound (DEC-021)
+#### 2.2.2 Known-Device Verifier Bound (DEC-026, carrying DEC-021)
 
 A known device (`isKnownForAccount`) is scored on K5, and K5 is bounded:
 
@@ -379,7 +379,7 @@ WRITE / RECORD:
 
 This is deterministic, testable, and breaks stable decay arithmetic.
 
-#### 2.5.3 Source Scope (DEC-021)
+#### 2.5.3 Source Scope (DEC-026, carrying DEC-021)
 
 Each issued `SOFT_BLOCK` carries the scopes of its winning `SOFT_BLOCK` candidates:
 
@@ -435,7 +435,7 @@ Applies if:
 ---
 
 
-#### 3.1.2 Known-Device Verifier Bound (DEC-021)
+#### 3.1.2 Known-Device Verifier Bound (DEC-026, carrying DEC-021)
 
 OTP uses the §2.2.2 contract with the OTP deltas: K5 thresholds `8 / 12 / 16` (L1 at the
 2nd known-device failure, L2 at the 3rd, L3 at the 4th), K5 levels persisted on K5 only,
@@ -556,12 +556,15 @@ signal remains `HARD_BLOCK` L2 but is persisted against K2, never K3.
 
 ## 5. Correlation Rules (Attack Detection)
 
-> **Interim posture (DEC-019):** the correlation rules in this section remain the shipped
-> behavior under the Owner-approved interim Security-first posture recorded in
-> [DEC-019](decisions/DEC-019_INTERIM_SECURITY_FIRST_CORRELATION_POSTURE.md). That posture
+> **Interim posture (DEC-027, which superseded DEC-019 on 2026-10-20):** for every policy that
+> does not opt into the admission reservation, and for an opted policy while its fleet fence is
+> closed, the correlation rules in this section remain the shipped behavior under the
+> Owner-approved interim Security-first posture, recorded in
+> [DEC-027](decisions/DEC-027_RETAINED_CORRELATION_POSTURE_FOR_POLICIES_THAT_DO_NOT_OPT_INTO_ADMISSION.md). That posture
 > is not a fix: issues #97 (LOW passive-UA), #100 (K2 shared-NAT churn), and #106 (K1 spray
-> on shared NAT) remain OPEN, and legitimate shared-NAT users can still be denied. This note
-> changes no rule, threshold, or table.
+> on shared NAT) remain OPEN for those policies, and legitimate shared-NAT users can still be
+> denied. A policy that opts in follows §12 and DEC-022 instead. This note changes no rule,
+> threshold, or table.
 
 ### 5.0 Near-Threshold Watch (Mandatory Anti N-1 Gaming)
 
@@ -984,7 +987,9 @@ No new Anti-Equilibrium soft event recorded
 * Device rotation does not reset account memory
 * K4 budget / K5 micro-cap counters are never merged with `max(v1.count, v2.count)` across
   key rotation (`KEY_STRATEGY.md` §4.3.1)
-* IP-only blocking is never final
+* IP-only blocking is never final (a source capacity refusal of a policy that opts into the
+  admission reservation is a non-persisted capacity bound, not a block: §12, `KEY_STRATEGY.md` §2,
+  DEC-022)
 * Device awareness is mandatory
 * Progressive escalation with persistence
 * Deterministic and atomic behavior
@@ -1014,13 +1019,18 @@ exhaustion is an explicit transient HARD failure with
 
 ---
 
-## 12. Admission Stage (DEC-023, DEC-024, DEC-025) — dormant
+## 12. Admission Stage (DEC-022, DEC-023, DEC-024, DEC-025, DEC-026, DEC-028)
 
-Shipped dormant: no preset opts in and the builder cannot enable it. For a policy that declares
-`ADMISSION_RESERVATION` the evaluation order of §1 gains one stage:
+Active since 2026-10-20 for the policies that opt in: the official variant
+`LoginProtectionAdmissionPolicy` (name `login_protection`, budget group `login`) chosen explicitly by
+the Host, and custom policies that declare the capability. No default preset opts in. The builder
+constructs the admission runtime with the package constants (DEC-028) when a registered policy
+declares the capability. For such a policy, while its fleet fence is open, the evaluation order of
+§1 gains one stage:
 
 1. identity resolution, then the **lane** (a verified credential selects the proven lane `P`, anything
-   else the unproven lane `U`; a closed fleet fence means no admission at all);
+   else the unproven lane `U`; a closed fleet fence means no admission at all and the policy runs
+   the path of a policy that did not opt in);
 2. the pipeline decides `ALLOW` or a block with the lane as a parameter (penalties read first);
 3. **admission**, only on an allowed `checkOnly`: all-or-nothing reservation of the lane's scopes. A
    refusal is a non-persisted `SOFT_BLOCK` (`source_capacity`, `source_failure_cap`,
@@ -1034,19 +1044,24 @@ Shipped dormant: no preset opts in and the builder cannot enable it. For a polic
 
 Changes of meaning for opted policies, and only for them:
 
-* **K1 / K2 / K3 collective penalties are not written.** K2 stays an observation (its score is
-  written, DEC-022 Decision 2); on `P` the K1/K2/K3 blocks are not read and no K1/K2/K3 candidate
-  is formed; on `U` they are read until they expire (`DEC-026` draft, M3 as ruled in 5-b3a).
+* **K1 / K2 / K3 collective penalties are not written.** K2 stays an observation: its score is
+  written, including the missing-fingerprint deltas; K2 churn and LOW dilution are not observed on
+  this path (DEC-022 Decision 2 as amended at activation). On `P` the K1/K2/K3 blocks are not read
+  and no K1/K2/K3 candidate is formed; on `U` blocks written before are read until they expire.
+* **Observations of a refused pre-check.** A pre-check refused by the admission stage keeps the
+  observations the pipeline wrote before that stage; the refusal itself writes no admission state,
+  no score, budget, watcher or cycle.
 * **Allowance and device watcher by family.** The known-device allowance counter, K5 device state,
   micro-cap and device Anti-Equilibrium watcher are kept per lane (`known_device_allowance_p`,
   `K5p`, `k5p`, `anti_equilibrium_device_p` on `P`; the unsuffixed state on `U`).
 * **A known device on `U` is bounded by the account bucket only.** No account-scoped candidate
-  persists on `U`; the DEC-021 allowance and K4 overflow enforce nothing there (declared cost,
-  DEC-025 5.1).
+  persists on `U`; the known-device allowance and K4 overflow enforce nothing there (declared cost
+  of DEC-025 5.1 and DEC-026).
 * **K4P.** The account key on `P` is a separate key from K4 (rule A: account-wide, not cleared at a
   password change); cycles, pauses and DEC-007 lifecycles of K4 and K4P are independent.
 * **Source capacity.** An IP prefix stays an advisory key for identity; as a **source capacity
-  ceiling for unproven traffic only** it may refuse (amendment of §10 and of `KEY_STRATEGY.md` §2,
-  to be ratified with DEC-022 at activation).
+  ceiling for unproven traffic only** it may refuse (the amendment of §10 and of `KEY_STRATEGY.md`
+  §2 under DEC-022). The source is an IPv4 address or an IPv6 `/64`; a `/48` holder has 65,536 such
+  sources (the hierarchy is `UNPROVEN`).
 * Degraded mode and `FAIL_OPEN` run no admission stage (`FAILURE_SEMANTICS.md` §4.5).
 

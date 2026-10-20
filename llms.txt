@@ -13,7 +13,7 @@ Use the consumer-facing documentation below to understand the supported package 
 
 ## Release and support
 
-- [CHANGELOG.md](CHANGELOG.md) — Release history and documented change deltas, including the dormant admission-reservation shapes, the Redis store operations behind them (including the opt-in, default-off settlement of expired permits), the dormant admission runtime and its engine integration and the pipeline's internal lane split, which are not selectable through the builder.
+- [CHANGELOG.md](CHANGELOG.md) — Release history and documented change deltas, including the admission-reservation layer (shapes, the Redis store operations behind them with the opt-in, default-off settlement of expired permits, the admission runtime and its engine integration, the pipeline's lane split) and its activation: the builder constructs the runtime for the Login opt-in variant `LoginProtectionAdmissionPolicy` and custom policies that declare the capability (DEC-026).
 - [SECURITY.md](SECURITY.md) — Pre-release security reporting route and scope.
 
 ## Optional

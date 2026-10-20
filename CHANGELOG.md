@@ -7,6 +7,26 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Changed (DEC-022, DEC-026, DEC-027, DEC-028) — the admission reservation is active
+- `RateLimiterBuilder::build()` constructs the admission runtime when a registered policy declares
+  `PolicyCapabilityEnum::ADMISSION_RESERVATION`, with the package constants
+  `AdmissionBudgetsDTO::packageDefaults()` (the DEC-025 values; permit deadline 30 s and grace 600 s,
+  DEC-028) and the configured key and binding secrets. No Host input sets a budget. A composition
+  without such a policy is unchanged byte for byte and has no admission runtime.
+- New official opt-in variant `LoginProtectionAdmissionPolicy`: `LoginProtectionPolicy` under the same
+  name `login_protection`, plus the capability, the `pre+out` mode and the budget group `login`. A Host
+  selects it explicitly with `withPolicy()`. `login_protection`, `otp_protection` and
+  `api_heavy_protection` do not opt in.
+- New `AdmissionFenceControlInterface::openAdmissionFence()` on the engine and the composite runtime;
+  the fleet fence is read under the current key secret, else the previous one, so a key rotation does
+  not close it. No package operation closes it (`docs/guides/USAGE_GUIDE.md`).
+- Decision records: DEC-026 `ACTIVE` (supersedes DEC-021 entirely), DEC-022 `ACTIVE` for the policies
+  that opt in, DEC-027 `ACTIVE` (supersedes DEC-019; its posture is kept for every policy that does not
+  opt in), DEC-028 `ACTIVE`. LOCKED amendments of `docs/KEY_STRATEGY.md` §2, §3.4, §3.5 and §4.6.
+- The entries below that call the admission shapes, the store operations, the runtime or the
+  pipeline's lane split "dormant, not selectable through the builder" describe the state before this
+  activation.
+
 ### Changed (DEC-021)
 - Login and OTP bound known devices (trusted session or previously verified device):
   K5 thresholds `8 / 12 / 16`, and a fingerprint-independent known-device account

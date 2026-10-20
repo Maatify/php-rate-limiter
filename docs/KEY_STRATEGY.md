@@ -32,6 +32,12 @@ Keys are **security primitives**, not implementation details.
 
 * No single-signal key may determine a final decision
 * IP-only keys are advisory, never final
+  * Amendment under DEC-022 (2026-10-20), for a policy that opts into the admission reservation
+    (DEC-024) only: the **source** (an IPv4 address or an IPv6 `/64`) may bound unproven traffic as a
+    per-window **capacity** (the source capacity, the net failure cap and the cross-account
+    proven-door cap of DEC-025, `DECISION_MATRIX.md` §12). It never identifies anyone, never persists,
+    never escalates and never blocks: a refusal is a non-persisted `SOFT_BLOCK`. For identity the
+    source stays advisory, as above
 * Device-aware keys are preferred whenever available
 * Account-scoped keys are mandatory for authentication flows
 * Keys must be deterministic and stable
@@ -153,7 +159,7 @@ K4 = AccountID
 * AccountID MUST be a blind index or internal ID
 * Raw usernames/emails MUST NOT be used
 
-**Admission family K4P (reserved, dormant; DEC-024, DEC-025 4.A).** For a policy that declares
+**Admission family K4P (DEC-026, DEC-025 4.A; LOCKED amendment, active since 2026-10-20).** For a policy that declares
 the admission capability, a request carrying the proven lane derives the account key from the key
 type `k4p` instead of `k4`:
 
@@ -164,8 +170,8 @@ K4P = AccountID          // {policy}:rate_limiter:k4p:v2:{env}:{accountId}
 Rule A only: account-wide and **not** cleared at a password change; there is no scope suffix
 (rules B and C are not implemented). The slot of the pipeline's key map stays `k4`, so the DEC-007
 lifecycle primitives and the DEC-003 cycle history apply to K4P with no change, as a distinct
-logical identity from K4. The unproven lane and every policy that did not opt in keep `k4`. No
-policy can opt in yet; the change of this section's LOCKED status rides with DEC-026.
+logical identity from K4. The unproven lane and every policy that did not opt in keep `k4`. This
+amendment of a LOCKED section is made under DEC-026.
 
 ---
 
@@ -188,7 +194,7 @@ K5 = AccountID + DeviceFP
 * K5 presence alone does NOT prove a device was previously verified for the account
   (see `DEVICE_FINGERPRINT.md` §4.3)
 
-**Admission family K5p and the K5 material (reserved, dormant; DEC-025 9.1).** For a policy that
+**Admission family K5p and the K5 material (DEC-026, DEC-025 9.1; LOCKED amendment, active since 2026-10-20).** For a policy that
 declares the admission capability: (1) the proven lane derives the device key from the key type
 `k5p` (`{policy}:rate_limiter:k5p:v2:{env}:{accountId}:{material}`) and keeps the unsuffixed
 `k5` for the unproven lane; (2) `{material}` is the instance-id component `deviceIdHash` when the
@@ -198,7 +204,9 @@ component and never re-hashes it (`DEVICE_FINGERPRINT.md` §5.1.1). The micro-ca
 (`anti_equilibrium_device` / `anti_equilibrium_device_p`) follow the same family and material.
 K3, K2, churn, dilution, the device caps and the distributed-account snapshots (whose member is
 the K5 enforcement key itself) are not re-derived. A request without a lane, and every policy
-that did not opt in, ignore any instance id and derive today's keys. No policy can opt in yet.
+that did not opt in, ignore any instance id and derive today's keys. A device that starts sending
+an instance id therefore restarts its K5 once (a declared cost of DEC-026); there is no transition
+window that reads the fingerprint-derived key as a previous derivation.
 
 ---
 
@@ -756,10 +764,10 @@ HMAC-SHA256(preimage, active-or-generation-key-secret)
 ```
 
 The locked purposes are `last_missing_fp`, `anti_equilibrium`, `flood_stage`, and
-`known_device_allowance` (DEC-021).
+`known_device_allowance` (DEC-021, now DEC-026).
 
-Two additions ship with the admission store operations (DEC-024, DEC-025; stage 5-b2). They are
-dormant: no code in this change derives a key with any of them.
+The admission layer adds the following purposes (LOCKED amendment under DEC-026, active since
+2026-10-20). They are derived only for a policy that opts into the admission reservation.
 
 * `binding_epoch` — one integer per account, the per-account epoch of the admission binding
   credential. The preimage is the same, `{policy}:rate_limiter:aux:binding_epoch:v1:{env}:{accountId}`,
@@ -770,20 +778,23 @@ dormant: no code in this change derives a key with any of them.
   secret (with the previous-generation key read-only); the store operations (`readBindingEpoch`,
   `bumpBindingEpoch`) receive opaque, already-derived keys; see §4.8.
 * `admission_fence` — the fleet fence of the admission runtime (contract §6, M2): one integer per
-  budget group in the epoch namespace, `HMAC-SHA256({env}\0admission_fence\0{budget group}, active
-  key secret)`, no previous-generation key. The new path is enabled for a budget group only when the
-  integer is at least 1; below 1 the request is processed as if no admission runtime existed. It is
-  written by an operator through the store's `bumpBindingEpoch`; the package has no public operator
-  method (5-b3b). Reserved/dormant; its LOCKED status is amended at activation with the other
-  purposes.
+  budget group in the epoch namespace, `HMAC-SHA256({env}\0admission_fence\0{budget group}, key
+  secret)`. It is read under the active key secret and, when a previous key secret is configured,
+  under the previous one (current, else previous), so a key-secret rotation does not close it. The new
+  path is enabled for a budget group only when the value read is at least 1; below 1 the request is
+  processed as if no admission runtime existed. It is opened through
+  `AdmissionFenceControlInterface::openAdmissionFence()`, which writes the current key as the larger of
+  the current and previous values plus one. No package operation closes it; the operator procedure is
+  in `docs/guides/USAGE_GUIDE.md` ("Operating the admission fence").
 * The `_p` purposes of the proven (P) lane: `known_device_allowance_p`, `anti_equilibrium_device_p`,
   `anti_equilibrium_p` and `budget_cooldown_p`, each the unsuffixed purpose with `_p` appended
   (same preimage shape, same rotation rules), and the key types `K4P` and `K5p` of §3.4 / §3.5.
-  They are reserved here so the P family cannot collide with the unsuffixed family. The evaluation
-  pipeline derives them (stage 5-b3a) only for a call that carries the proven lane, which no
-  production code passes yet; a policy that did not opt in never reads or writes them.
+  They are distinct names so the P family cannot collide with the unsuffixed family. The evaluation
+  pipeline derives them only for a call that carries the proven lane, which the engine passes for a
+  policy that opts in while its fence is open; a policy that did not opt in never reads or writes
+  them.
 
-The device Anti-Equilibrium watcher (DEC-021) extends this preimage with the
+The device Anti-Equilibrium watcher (DEC-021, now DEC-026) extends this preimage with the
 fingerprint hash:
 
 ```
@@ -913,7 +924,7 @@ set) and `b` (bucket); one logical key never changes family.
 | `d` device members | sorted set | member scored by its expiry (caller time + member lifetime); a member is live when its score is above the caller's `now`; the key is pruned only by an admitted write to the current set, and `EXPIRE` is refreshed only by that write |
 | `s` set | set | accounts of the net-failure set (U) or the D8 set (P); `EXPIRE` set when the first failure creates it; removed members never prune other members |
 | `b` bucket | hash `credit`, `last` | credit-seconds, refilled 1 per second of caller time up to `C x T`; absent means full; `EXPIRE` is the time to full, so an expired bucket and an absent bucket are the same state |
-| `p` pending (reserved, dormant; 5-b2.1; **written only when a scope settles on expiry, 5-b2.2: the default writes and reads nothing here**) | sorted set | pending members of the failure set with the same logical key: member scored by its permit `deadline` (an earlier deadline wins on a second reservation). A member counts toward the set only when its score is `<= now` and it is not already in the set; a success removes a pending member only while its score is `> now`. `EXPIRE` equals the scope `ttlSeconds`, set when the key is created and never renewed; a reservation without a permit never writes it; a refusal never writes it |
+| `p` pending (5-b2.1; **written only when a scope settles on expiry, 5-b2.2; the admission runtime builds no settling scope, so nothing writes or reads it**) | sorted set | pending members of the failure set with the same logical key: member scored by its permit `deadline` (an earlier deadline wins on a second reservation). A member counts toward the set only when its score is `<= now` and it is not already in the set; a success removes a pending member only while its score is `> now`. `EXPIRE` equals the scope `ttlSeconds`, set when the key is created and never renewed; a reservation without a permit never writes it; a refusal never writes it |
 | permit | hash `state`, `lane`, `subject`, `operation`, `deadline`, `grace`, `outcome` | created by the admitting reservation in the same script, lifetime `deadline + grace - now`; `ISSUED` then `CLAIMED`; a claim is one compare-and-set |
 | epoch | string | a canonical non-negative integer **with no TTL**: the interface carries no lifetime and a lapsed epoch would revive voided credentials; retention of the key is the Host operator's concern until a decision fixes a lifetime |
 
@@ -921,8 +932,12 @@ Rotation. A counter or a device-member scope may name one previous-generation ke
 current and previous values; the device-member gate counts the live members of both sets and treats a
 member of either as existing; **a previous-generation key is never written** (not on admit, not on
 refuse, not pruned, not refreshed). A set-size or bucket scope has no previous generation in this
-contract (the store rejects one): a binding-secret rotation restarts them, which is the capacity
-re-issue the rotation interval rule (at least the window) already prices.
+contract (the store rejects one): a key-secret rotation restarts them, which is the capacity
+re-issue the rotation interval rule (at least the window) already prices. Measured on the admission
+runtime (stage 5-c, LT-27): one rotation keeps the spent source capacity (0 further admissions from an
+exhausted source); a second rotation inside the same window re-issues it in full (24); at one
+rotation the net failure set and the account bucket restart in full (4 further failing accounts,
+4 further bucket takes).
 
 Validation. Every scope key of a request is read and validated (type, fields, an existing key without
 a TTL) **before the first write**, because Redis does not roll back the writes of a failed script. A
