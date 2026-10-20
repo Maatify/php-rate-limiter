@@ -243,8 +243,13 @@ final class AdmissionRuntime
         $subject = $this->subject($context);
         $scopes = [$this->counter('source_capacity', $group, 'src', $source, $window, $b->sourceCapacity, 2 * $b->windowSeconds)];
         if ($subject !== null) {
-            $scopes[] = $this->failureSet('source_failure_cap', $group, 'ufail', $source, $window, $b->sourceFailureCap, $subject);
-            $scopes[] = new AdmissionScopeDTO('account_bucket', AdmissionScopeKindEnum::BUCKET, $this->key($group, 'acct', $subject, ''), $b->accountBucketTakes, $b->accountBucketSeconds);
+            // The study's order (LT-25): the net failure set, then the account bucket, then the source counter. The first
+            // refusing scope names the cause.
+            $scopes = [
+                $this->failureSet('source_failure_cap', $group, 'ufail', $source, $window, $b->sourceFailureCap, $subject),
+                new AdmissionScopeDTO('account_bucket', AdmissionScopeKindEnum::BUCKET, $this->key($group, 'acct', $subject, ''), $b->accountBucketTakes, $b->accountBucketSeconds),
+                ...$scopes,
+            ];
         }
 
         return $scopes;
