@@ -6,6 +6,7 @@ namespace Maatify\RateLimiter\Tests\System;
 
 use Maatify\RateLimiter\Tests\Support\Admission\Archive\ArchiveData;
 use Maatify\RateLimiter\Tests\Support\Admission\Archive\FixtureReplays;
+use Maatify\RateLimiter\Tests\Support\Admission\Archive\GateReport;
 use Maatify\RateLimiter\Tests\Support\Admission\Archive\InputViolation;
 use Maatify\RateLimiter\Tests\Support\Admission\Archive\NpAudit;
 use Maatify\RateLimiter\Tests\Support\Admission\Archive\ReplaySession;
@@ -144,6 +145,7 @@ final class AdmissionArchiveFixturesTest extends TestCase
     public function testTheDumpCountsOfTheFixturesAndTheG7Streams(): void
     {
         $data = ArchiveData::get();
+        GateReport::emit('dump-manifest', $data->manifest);
         self::assertSame(14, $data->manifest['g7streams.jsonl']['lines'], 'N12T, TPAIRT, TMS, TMSd, TMX by strategy and id policy');
         self::assertSame(25, $data->manifest['fixtures.jsonl']['lines']);
         $plain = static fn(string $n): int => count(array_filter($data->fixtureRows($n), static fn(array $r): bool => ! isset($r['effects'])));

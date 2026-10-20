@@ -300,3 +300,4 @@ In `AdmissionEngineReserveTest` (added in this PR at 2a): `testALateOutcomeIsLat
 ### 12.6 Amendments after the 2b-3 tests were committed (`335f9f7`; each with its reason, no gate or detector weakened)
 
 1. `AdmissionArchiveG7Test::testDetectorDPxallRefusesTheOffice`: the archive read guards the `flow` and `ids` keys (`?? null`), because the archive's `np` rows of the `D-PXALL` arm carry neither and PHP raised an undefined-key warning. The values read and the assertion are unchanged.
+2. `AdmissionArchiveFixturesTest::testTheDumpCountsOfTheFixturesAndTheG7Streams` also emits the dump manifest (sha-256 and line count of every dumped file) as a `REPORT dump-manifest` line, so the values of LT-20 condition 3 are in the suite logs. Reporting only; no assertion changed.
