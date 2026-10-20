@@ -11,7 +11,7 @@ use Maatify\RateLimiter\Enum\AdmissionPermitClaimEnum;
  * Permit capability (tier T1): one outcome is bound to one admission. The permit record is created by
  * `reserveAdmission` and claimed here by compare-and-set; at most one outcome is accepted per permit.
  *
- * Dormant: no implementation ships in this change.
+ * `RedisFullCapabilityStore` implements it; a policy that opts in requires it (OD-1).
  */
 interface AdmissionPermitStoreInterface extends AdmissionReservationStoreInterface
 {

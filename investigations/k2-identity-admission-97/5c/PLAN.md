@@ -390,3 +390,38 @@ The executor asks the Lead to accept both.
 **Red state before commit 5:**
 - `LoginProtectionAdmissionPolicy`, `AdmissionFenceControlInterface` and `AdmissionBudgetsDTO::packageDefaults()` do not exist, and the builder constructs no runtime.
 - PHPStan and the CI jobs that run these tests (and CVH) are red by design until commit 5, as in 5-b3b 2a.
+
+### 7.8 Commit 5 — the implementation, and the amendments after the tests (each with its reason; no gate or detector weakened)
+
+**Implementation:**
+- `AdmissionBudgetsDTO::packageDefaults()` (LT-32, DEC-028).
+- `Config\LoginProtectionAdmissionPolicy`: OD-5 / OD-5.1 (§7.5).
+- `Service\AdmissionFenceControlInterface::openAdmissionFence()`, implemented by `RateLimiterEngine` and `CompositeRateLimiterRuntime`, which delegate to `AdmissionRuntime::openFence()`.
+- The fence read reads the current key, else the previous one, and the open writes the current key (LT-27 (3)).
+- The builder line `RateLimiterBuilder::admissionRuntime()`: a runtime only when a registered policy declares the capability (LT-31), with `AdmissionBudgetsDTO::packageDefaults()`, the anchor that occurs exactly once.
+- `EvaluationPipeline`: the three DEC-021 references now name DEC-026 (DEC-024 point 4).
+- The docblocks that said the admission surfaces were dormant now describe what ships: `AdmissionBudgetsDTO`, `AdmissionReservationStoreInterface`, `AdmissionPermitStoreInterface`, `AdmissionReservationPolicyInterface`, `PolicyCapabilityEnum::ADMISSION_RESERVATION`, `AdmissionBindingControlInterface`, `AdmissionBindingEpochInterface`, `AdmissionRuntime`, the builder's capability assertion.
+
+**Amendments after the tests (commit 4):**
+1. `EngineLab::throughBuilder()`: the check `! $runtime instanceof AdmissionFenceControlInterface` was removed. PHPStan max proves it always true once the composite implements the interface, and its unused import went with it. No assertion is involved.
+2. CVH (`consumer-verification/verify.php`): the admission compositions use the builder's default system clock instead of a frozen `FixedClock`, and CVH-1 no longer advances any clock.
+   - **Reason, measured locally:** the bounded correlation snapshots of `RedisFullCapabilityStore` take their expiry from Redis `TIME` (DEC-016 allows this). `BoundedCorrelationResultValidator::snapshot()` compares it with the caller's clock with no tolerance.
+   - Once real time moved past the frozen clock, every `checkOnly` that reaches a bounded snapshot threw "invalid snapshot". The plain `login_protection` preset threw as well, so this is not the admission path.
+   - The scattered `X`s that made CVH-1 differ came from this.
+   - The CVH-1 failure message now carries both decision strings.
+   - The PASS conditions and the controls are unchanged.
+3. `AdmissionBuilderActivationTest::fields()` reads the thirteen fields by name instead of through a dynamic property, because PHPStan 2.0.0 (lowest dependencies) types the dynamic read as `mixed`. The count check against the registered fields stays, and no assertion changed.
+
+**N-5c-01 (observation for the Lead; existing behaviour on `main`, not introduced here).** The validator rejects a Redis-time snapshot whose expiry exceeds caller-now + TTL. A production Host whose application clock is behind the Redis clock by one second or more, or a request that crosses a second boundary between the caller's `now()` and the script's `TIME`, could get a `RateLimiterException` from any policy that observes a bounded correlation, S0 included. It is outside 5-c. A separate issue is recommended, with a measurement of the boundary case before any change (`DEC-016`, `BoundedCorrelationResultValidator`).
+
+**Local results at commit 5 (normal dependencies, PHPStan 2.3.1):**
+- PHPStan max: no errors. `composer format:check`: clean.
+- `tests/Unit/Admission`: 262 tests, all pass.
+- The builder reruns and LT-26: 4 tests, 235 assertions, all pass.
+- LT-27 reported values:
+  - `REPORT lt-27-rotation-capacity {"afterFirstRotation":0,"afterSecondRotation":24}`.
+  - `REPORT lt-27-set-and-bucket-restart {"failingAccountsAfterRotation":4,"bucketTakesAfterRotation":4}`.
+- CVH: two clean runs, PASS.
+- The complete suite, normal dependencies, with Redis: `OK (1932 tests, 25263 assertions)` in 18:50 (the 1,892 of 5-b3b plus the 40 tests of commits 2 and 4).
+- Lowest dependencies (PHPStan 2.0.0, PHPUnit 11.5.50): PHPStan max has no errors after amendment 3; `tests/Unit/Admission` (262), the builder reruns and LT-26 pass.
+- The complete lowest suite, with full logs at the exact tested tree, belongs to `5c/RESULTS.md`.

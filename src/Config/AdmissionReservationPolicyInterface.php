@@ -12,7 +12,7 @@ use Maatify\RateLimiter\Enum\AdmissionHostModeEnum;
  * It is a separate additive interface: `BlockPolicyInterface` does not gain a method. It carries no
  * budget, threshold or window value; those are package-owned.
  *
- * Dormant: no official preset implements it and the builder cannot compose a runtime that accepts it.
+ * `LoginProtectionAdmissionPolicy` is the official policy that implements it; no default preset does.
  */
 interface AdmissionReservationPolicyInterface
 {

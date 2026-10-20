@@ -65,12 +65,22 @@ final class AdmissionBuilderActivationTest extends TestCase
     private static function fields(AdmissionBudgetsDTO $budgets): array
     {
         self::assertCount(count(self::PACKAGE_CONSTANTS), get_object_vars($budgets), 'no field beyond the registered ones');
-        $fields = [];
-        foreach (array_keys(self::PACKAGE_CONSTANTS) as $name) {
-            $fields[$name] = $budgets->{$name};
-        }
 
-        return $fields;
+        return [
+            'windowSeconds' => $budgets->windowSeconds,
+            'sourceCapacity' => $budgets->sourceCapacity,
+            'sourceFailureCap' => $budgets->sourceFailureCap,
+            'accountBucketTakes' => $budgets->accountBucketTakes,
+            'accountBucketSeconds' => $budgets->accountBucketSeconds,
+            'proofAccountWindow' => $budgets->proofAccountWindow,
+            'proofAccountDay' => $budgets->proofAccountDay,
+            'proofProofWindow' => $budgets->proofProofWindow,
+            'proofProofDay' => $budgets->proofProofDay,
+            'newDevicesPerDay' => $budgets->newDevicesPerDay,
+            'crossAccountFailureCap' => $budgets->crossAccountFailureCap,
+            'permitDeadlineSeconds' => $budgets->permitDeadlineSeconds,
+            'permitGraceSeconds' => $budgets->permitGraceSeconds,
+        ];
     }
 
     private static function config(bool $withBindingKey = true): RateLimiterConfig

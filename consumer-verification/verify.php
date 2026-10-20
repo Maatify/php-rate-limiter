@@ -1103,10 +1103,10 @@ $phpRedis->close();
 
 // ---- Admission layer (stage 5-c, 5c/PLAN.md §7.6.5): the Login opt-in variant through the public builder on real Redis ----
 $admissionStore = new RedisFullCapabilityStore($executor, 'consumer-admission');
-$admissionClock = new FixedClock(new DateTimeImmutable('now', new DateTimeZone('UTC')));
-$admissionBuild = static function (string $env, BlockPolicyInterface $policy) use ($admissionStore, $admissionClock): CompositeRateLimiterRuntimeInterface {
+// The admission compositions use the builder's default system clock, as a production Host does: the bounded correlation
+// snapshots carry a Redis-time expiry (DEC-016), which a frozen caller clock falls behind as soon as real time passes.
+$admissionBuild = static function (string $env, BlockPolicyInterface $policy) use ($admissionStore): CompositeRateLimiterRuntimeInterface {
     return RateLimiterBuilder::fromFullCapabilityStore(new RateLimiterConfig('admission-key', 'admission-fingerprint', $env, bindingKeySecret: 'admission-binding'), $admissionStore, new RecordingFailureSignalEmitter())
-        ->withClock($admissionClock)
         ->withPolicy($policy)
         ->build();
 };
@@ -1117,8 +1117,7 @@ $admissionContext = static function (string $account, string $ip, ?string $insta
 $admissionDecision = static fn(RateLimitResultDTO $r): string => $r->decision === RateLimitResultDTO::DECISION_ALLOW ? 'A' : ($r->decision === RateLimitResultDTO::DECISION_HARD_BLOCK ? 'H' : 'S');
 
 // CVH-1: the variant with its fence never opened decides as login_protection; no admission key is written. Control: fence open.
-$cvh1Play = static function (CompositeRateLimiterRuntimeInterface $runtime) use ($admissionContext, $admissionDecision, $admissionClock): string {
-    $start = $admissionClock->now();
+$cvh1Play = static function (CompositeRateLimiterRuntimeInterface $runtime) use ($admissionContext, $admissionDecision): string {
     $decisions = '';
     for ($step = 0; $step < 40; $step++) {
         $command = match ($step % 5) {
@@ -1131,15 +1130,13 @@ $cvh1Play = static function (CompositeRateLimiterRuntimeInterface $runtime) use 
         } catch (RateLimiterException) {
             $decisions .= 'X';
         }
-        $admissionClock->setNow($admissionClock->now()->modify('+45 seconds'));
     }
-    $admissionClock->setNow($start);
 
     return $decisions;
 };
 $cvh1Variant = $cvh1Play($admissionBuild('cvh1-variant', new LoginProtectionAdmissionPolicy()));
 $cvh1Preset = $cvh1Play($admissionBuild('cvh1-preset', new LoginProtectionPolicy()));
-requireCondition($cvh1Variant === $cvh1Preset, 'CVH-1: the variant behind a closed fence did not decide as login_protection.');
+requireCondition($cvh1Variant === $cvh1Preset, "CVH-1: the variant behind a closed fence did not decide as login_protection: variant {$cvh1Variant}, preset {$cvh1Preset}.");
 requireCondition(array_values(array_filter(redisKeys($raw), static fn(string $k): bool => str_contains($k, ':adm:'))) === [], 'CVH-1: a closed fence wrote admission state.');
 $cvh1Open = $admissionBuild('cvh1-open', new LoginProtectionAdmissionPolicy());
 requireCondition($cvh1Open instanceof AdmissionFenceControlInterface, 'CVH-1: the composite runtime has no fence control.');
@@ -1165,7 +1162,7 @@ requireCondition($admission->limit($admissionContext('cvh2-24', '203.0.113.121')
 
 // CVH-3: a Host-minted credential is admitted from the exhausted source; the same with a changed MAC is not.
 $codec = new AdmissionCredentialCodec('admission-binding');
-$mint = static fn(int $epoch): string => $codec->encode(new AdmissionCredentialDTO('cvh-owner', ['login'], 'inst-owner', 'jti-owner-' . $epoch, $admissionClock->now()->getTimestamp() + 86400, $admissionClock->now()->getTimestamp(), $epoch));
+$mint = static fn(int $epoch): string => $codec->encode(new AdmissionCredentialDTO('cvh-owner', ['login'], 'inst-owner', 'jti-owner-' . $epoch, time() + 86400, time(), $epoch));
 $credential = $mint($admission->bindingEpoch('cvh-owner'));
 $tampered = substr($credential, 0, -2) . (str_ends_with($credential, 'AA') ? 'BB' : 'AA');
 $cvh3 = $admission->limit($admissionContext('cvh-owner', $exhausted, 'inst-owner', $credential), RateLimitCommand::checkOnly('login_protection'));

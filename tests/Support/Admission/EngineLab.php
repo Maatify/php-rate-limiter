@@ -27,7 +27,6 @@ use Maatify\RateLimiter\Service\FailureModeResolver;
 use Maatify\RateLimiter\Service\FingerprintHasher;
 use Maatify\RateLimiter\Service\AdmissionBindingControlInterface;
 use Maatify\RateLimiter\Service\AdmissionBindingEpochInterface;
-use Maatify\RateLimiter\Service\AdmissionFenceControlInterface;
 use Maatify\RateLimiter\Service\CompositeRateLimiterRuntime;
 use Maatify\RateLimiter\Service\RateLimiterEngine;
 use Maatify\RateLimiter\Service\RateLimiterRuntimeInterface;
@@ -167,8 +166,8 @@ final class EngineLab
             ->withClock($lab->clock)
             ->withPolicy(new LoginProtectionAdmissionPolicy())
             ->build();
-        if (! $runtime instanceof CompositeRateLimiterRuntime || ! $runtime instanceof AdmissionFenceControlInterface) {
-            throw new \LogicException('The builder must return the composite runtime with the fence control.');
+        if (! $runtime instanceof CompositeRateLimiterRuntime) {
+            throw new \LogicException('The builder must return the composite runtime.');
         }
         $lab->engine = $runtime;
         $engine = (new \ReflectionProperty(CompositeRateLimiterRuntime::class, 'scoreRuntime'))->getValue($runtime);

@@ -33,7 +33,8 @@ use Maatify\SharedCommon\Contracts\ClockInterface;
  * Anti-Equilibrium, budgets or cycles. A failed credential check is the unproven lane, never a refusal and never an
  * exception. Availability failures of the store are the typed `BackendFailureException` and propagate to the engine.
  *
- * @internal Not part of the supported composition: the builder never constructs it, so no policy can opt in.
+ * @internal Constructed by `RateLimiterBuilder` with `AdmissionBudgetsDTO::packageDefaults()` when a registered policy
+ * declares the capability; not part of the supported public surface.
  */
 final class AdmissionRuntime
 {
@@ -78,9 +79,21 @@ final class AdmissionRuntime
         return hash_hmac('sha256', implode("\0", [$envScope, 'admission_fence', $budgetGroup]), $keySecret);
     }
 
+    /** The fence reads the current key, else the previous one, so a key-secret rotation does not close it (LT-27 (3)). */
     public function fenceOpen(string $budgetGroup): bool
     {
-        return $this->store->readBindingEpoch(self::fenceKey($this->envScope, $budgetGroup, $this->keySecret), null) >= 1;
+        return $this->store->readBindingEpoch(self::fenceKey($this->envScope, $budgetGroup, $this->keySecret), $this->previousFenceKey($budgetGroup)) >= 1;
+    }
+
+    /** Open the fence of a budget group: the current key becomes the larger of the current and previous values plus one. */
+    public function openFence(string $budgetGroup): int
+    {
+        return $this->store->bumpBindingEpoch(self::fenceKey($this->envScope, $budgetGroup, $this->keySecret), $this->previousFenceKey($budgetGroup));
+    }
+
+    private function previousFenceKey(string $budgetGroup): ?string
+    {
+        return $this->previousKeySecret === null ? null : self::fenceKey($this->envScope, $budgetGroup, $this->previousKeySecret);
     }
 
     public function bindingEpoch(string $accountId): int
