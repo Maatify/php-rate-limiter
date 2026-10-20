@@ -1,0 +1,733 @@
+{
+    "plan": "PLAN.md v1",
+    "valid": true,
+    "validity": {
+        "V1": {
+            "FULL2": {
+                "archiveArm": "NOUA2",
+                "compared": 210,
+                "rowsProduced": 210,
+                "differences": [],
+                "pass": true
+            },
+            "PX4": {
+                "archiveArm": "PX4",
+                "compared": 210,
+                "rowsProduced": 210,
+                "differences": [],
+                "pass": true
+            }
+        },
+        "V2": {
+            "FULL2": {
+                "compared": 19,
+                "differences": [],
+                "pass": true
+            },
+            "PX4": {
+                "compared": 19,
+                "differences": [],
+                "pass": true
+            }
+        },
+        "V3": {
+            "compared": 57,
+            "differences": {
+                "UAC|none|fresh|pre+out": "dec,reach,m"
+            },
+            "pass": true
+        }
+    },
+    "detector": {
+        "D-NOTB": {
+            "FULL2": {
+                "bru24": 5760,
+                "bru24Recount": 5760,
+                "bru24HV": 5760,
+                "boundAtC4": 52,
+                "L1pre": 72,
+                "D2pre": 24,
+                "X1/BRU/BRD pre+out": [
+                    25,
+                    100,
+                    100
+                ],
+                "X1/BRU/BRD pre": [
+                    25,
+                    100,
+                    100
+                ],
+                "fires": true
+            },
+            "PX4": {
+                "bru24": 5760,
+                "bru24Recount": 5760,
+                "bru24HV": 5760,
+                "boundAtC4": 52,
+                "L1pre": 72,
+                "D2pre": 24,
+                "X1/BRU/BRD pre+out": [
+                    25,
+                    100,
+                    100
+                ],
+                "X1/BRU/BRD pre": [
+                    25,
+                    100,
+                    100
+                ],
+                "fires": true
+            }
+        },
+        "R-NO-TB (G4 v2 study arm, context)": {
+            "BRU24": 2304,
+            "BRU24-HV": 2304,
+            "pre+out": {
+                "L1": 72,
+                "D2": 24,
+                "X1/BRU/BRD": [
+                    17,
+                    80,
+                    80
+                ]
+            },
+            "pre": {
+                "L1": 72,
+                "D2": 24,
+                "X1/BRU/BRD": [
+                    17,
+                    80,
+                    80
+                ]
+            }
+        }
+    },
+    "gates": {
+        "FULL2": {
+            "2": {
+                "B1": {
+                    "pass": true,
+                    "values": {
+                        "BRU24": {
+                            "admitted": 49,
+                            "recount": 49,
+                            "bound": 50
+                        },
+                        "BRU24-HV": {
+                            "admitted": 49,
+                            "recount": 49,
+                            "bound": 50
+                        }
+                    }
+                },
+                "B2": {
+                    "pass": true,
+                    "values": {
+                        "0": {
+                            "wait": 60,
+                            "limit": 1860
+                        },
+                        "60": {
+                            "wait": 0,
+                            "limit": 1800
+                        },
+                        "300": {
+                            "wait": 0,
+                            "limit": 1560
+                        },
+                        "900": {
+                            "wait": 0,
+                            "limit": 960
+                        },
+                        "1800": {
+                            "wait": 0,
+                            "limit": 60
+                        },
+                        "3600": {
+                            "wait": 0,
+                            "limit": 0
+                        }
+                    }
+                },
+                "A1": {
+                    "pass": true,
+                    "failing": []
+                },
+                "A3": {
+                    "pass": true,
+                    "failing": []
+                },
+                "PG": {
+                    "gated": false,
+                    "pass": false,
+                    "rows": 210,
+                    "identical": 113,
+                    "uFirst": 97,
+                    "otherFirst": [],
+                    "PG-2": {
+                        "TMS reach pre+out": [
+                            61,
+                            61
+                        ],
+                        "TMSd reach pre+out": [
+                            120,
+                            120
+                        ],
+                        "TPAIRT reach pre+out": [
+                            120,
+                            120
+                        ],
+                        "TPAIRT legit pre+out": [
+                            21,
+                            21
+                        ],
+                        "TMS reach pre": [
+                            61,
+                            61
+                        ],
+                        "TMSd reach pre": [
+                            120,
+                            120
+                        ],
+                        "TPAIRT reach pre": [
+                            144,
+                            144
+                        ],
+                        "TPAIRT legit pre": [
+                            28,
+                            19
+                        ]
+                    },
+                    "PG-2 pass": false
+                }
+            },
+            "3": {
+                "B1": {
+                    "pass": true,
+                    "values": {
+                        "BRU24": {
+                            "admitted": 50,
+                            "recount": 50,
+                            "bound": 51
+                        },
+                        "BRU24-HV": {
+                            "admitted": 50,
+                            "recount": 50,
+                            "bound": 51
+                        }
+                    }
+                },
+                "B2": {
+                    "pass": true,
+                    "values": {
+                        "0": {
+                            "wait": 60,
+                            "limit": 1860
+                        },
+                        "60": {
+                            "wait": 0,
+                            "limit": 1800
+                        },
+                        "300": {
+                            "wait": 0,
+                            "limit": 1560
+                        },
+                        "900": {
+                            "wait": 0,
+                            "limit": 960
+                        },
+                        "1800": {
+                            "wait": 0,
+                            "limit": 60
+                        },
+                        "3600": {
+                            "wait": 0,
+                            "limit": 0
+                        }
+                    }
+                },
+                "A1": {
+                    "pass": true,
+                    "failing": []
+                },
+                "A3": {
+                    "pass": true,
+                    "failing": []
+                },
+                "PG": {
+                    "gated": false,
+                    "pass": false,
+                    "rows": 210,
+                    "identical": 122,
+                    "uFirst": 88,
+                    "otherFirst": [],
+                    "PG-2": {
+                        "TMS reach pre+out": [
+                            61,
+                            61
+                        ],
+                        "TMSd reach pre+out": [
+                            120,
+                            120
+                        ],
+                        "TPAIRT reach pre+out": [
+                            120,
+                            120
+                        ],
+                        "TPAIRT legit pre+out": [
+                            21,
+                            21
+                        ],
+                        "TMS reach pre": [
+                            61,
+                            61
+                        ],
+                        "TMSd reach pre": [
+                            120,
+                            120
+                        ],
+                        "TPAIRT reach pre": [
+                            144,
+                            144
+                        ],
+                        "TPAIRT legit pre": [
+                            18,
+                            19
+                        ]
+                    },
+                    "PG-2 pass": false
+                }
+            },
+            "4": {
+                "B1": {
+                    "pass": true,
+                    "values": {
+                        "BRU24": {
+                            "admitted": 51,
+                            "recount": 51,
+                            "bound": 52
+                        },
+                        "BRU24-HV": {
+                            "admitted": 51,
+                            "recount": 51,
+                            "bound": 52
+                        }
+                    }
+                },
+                "B2": {
+                    "pass": true,
+                    "values": {
+                        "0": {
+                            "wait": 60,
+                            "limit": 1860
+                        },
+                        "60": {
+                            "wait": 0,
+                            "limit": 1800
+                        },
+                        "300": {
+                            "wait": 0,
+                            "limit": 1560
+                        },
+                        "900": {
+                            "wait": 0,
+                            "limit": 960
+                        },
+                        "1800": {
+                            "wait": 0,
+                            "limit": 60
+                        },
+                        "3600": {
+                            "wait": 0,
+                            "limit": 0
+                        }
+                    }
+                },
+                "A1": {
+                    "pass": true,
+                    "failing": []
+                },
+                "A3": {
+                    "pass": true,
+                    "failing": []
+                }
+            }
+        },
+        "PX4": {
+            "2": {
+                "B1": {
+                    "pass": true,
+                    "values": {
+                        "BRU24": {
+                            "admitted": 49,
+                            "recount": 49,
+                            "bound": 50
+                        },
+                        "BRU24-HV": {
+                            "admitted": 49,
+                            "recount": 49,
+                            "bound": 50
+                        }
+                    }
+                },
+                "B2": {
+                    "pass": true,
+                    "values": {
+                        "0": {
+                            "wait": 60,
+                            "limit": 1860
+                        },
+                        "60": {
+                            "wait": 0,
+                            "limit": 1800
+                        },
+                        "300": {
+                            "wait": 0,
+                            "limit": 1560
+                        },
+                        "900": {
+                            "wait": 0,
+                            "limit": 960
+                        },
+                        "1800": {
+                            "wait": 0,
+                            "limit": 60
+                        },
+                        "3600": {
+                            "wait": 0,
+                            "limit": 0
+                        }
+                    }
+                },
+                "A1": {
+                    "pass": true,
+                    "failing": []
+                },
+                "A3": {
+                    "pass": true,
+                    "failing": []
+                },
+                "PG": {
+                    "gated": true,
+                    "pass": false,
+                    "rows": 210,
+                    "identical": 113,
+                    "uFirst": 97,
+                    "otherFirst": [],
+                    "PG-2": {
+                        "TMS reach pre+out": [
+                            29,
+                            29
+                        ],
+                        "TMSd reach pre+out": [
+                            40,
+                            40
+                        ],
+                        "TPAIRT reach pre+out": [
+                            72,
+                            72
+                        ],
+                        "TPAIRT legit pre+out": [
+                            21,
+                            21
+                        ],
+                        "TMS reach pre": [
+                            61,
+                            61
+                        ],
+                        "TMSd reach pre": [
+                            120,
+                            120
+                        ],
+                        "TPAIRT reach pre": [
+                            144,
+                            144
+                        ],
+                        "TPAIRT legit pre": [
+                            28,
+                            19
+                        ]
+                    },
+                    "PG-2 pass": false
+                }
+            },
+            "3": {
+                "B1": {
+                    "pass": true,
+                    "values": {
+                        "BRU24": {
+                            "admitted": 50,
+                            "recount": 50,
+                            "bound": 51
+                        },
+                        "BRU24-HV": {
+                            "admitted": 50,
+                            "recount": 50,
+                            "bound": 51
+                        }
+                    }
+                },
+                "B2": {
+                    "pass": true,
+                    "values": {
+                        "0": {
+                            "wait": 60,
+                            "limit": 1860
+                        },
+                        "60": {
+                            "wait": 0,
+                            "limit": 1800
+                        },
+                        "300": {
+                            "wait": 0,
+                            "limit": 1560
+                        },
+                        "900": {
+                            "wait": 0,
+                            "limit": 960
+                        },
+                        "1800": {
+                            "wait": 0,
+                            "limit": 60
+                        },
+                        "3600": {
+                            "wait": 0,
+                            "limit": 0
+                        }
+                    }
+                },
+                "A1": {
+                    "pass": true,
+                    "failing": []
+                },
+                "A3": {
+                    "pass": true,
+                    "failing": []
+                },
+                "PG": {
+                    "gated": true,
+                    "pass": false,
+                    "rows": 210,
+                    "identical": 122,
+                    "uFirst": 88,
+                    "otherFirst": [],
+                    "PG-2": {
+                        "TMS reach pre+out": [
+                            29,
+                            29
+                        ],
+                        "TMSd reach pre+out": [
+                            40,
+                            40
+                        ],
+                        "TPAIRT reach pre+out": [
+                            72,
+                            72
+                        ],
+                        "TPAIRT legit pre+out": [
+                            21,
+                            21
+                        ],
+                        "TMS reach pre": [
+                            61,
+                            61
+                        ],
+                        "TMSd reach pre": [
+                            120,
+                            120
+                        ],
+                        "TPAIRT reach pre": [
+                            144,
+                            144
+                        ],
+                        "TPAIRT legit pre": [
+                            18,
+                            19
+                        ]
+                    },
+                    "PG-2 pass": false
+                }
+            },
+            "4": {
+                "B1": {
+                    "pass": true,
+                    "values": {
+                        "BRU24": {
+                            "admitted": 51,
+                            "recount": 51,
+                            "bound": 52
+                        },
+                        "BRU24-HV": {
+                            "admitted": 51,
+                            "recount": 51,
+                            "bound": 52
+                        }
+                    }
+                },
+                "B2": {
+                    "pass": true,
+                    "values": {
+                        "0": {
+                            "wait": 60,
+                            "limit": 1860
+                        },
+                        "60": {
+                            "wait": 0,
+                            "limit": 1800
+                        },
+                        "300": {
+                            "wait": 0,
+                            "limit": 1560
+                        },
+                        "900": {
+                            "wait": 0,
+                            "limit": 960
+                        },
+                        "1800": {
+                            "wait": 0,
+                            "limit": 60
+                        },
+                        "3600": {
+                            "wait": 0,
+                            "limit": 0
+                        }
+                    }
+                },
+                "A1": {
+                    "pass": true,
+                    "failing": []
+                },
+                "A3": {
+                    "pass": true,
+                    "failing": []
+                }
+            }
+        }
+    },
+    "budgets": {
+        "FULL2": {
+            "2": {
+                "windowSeconds": 600,
+                "sourceCapacity": 24,
+                "sourceFailureCap": 4,
+                "accountBucketTakes": 2,
+                "accountBucketSeconds": 1800,
+                "proofAccountWindow": 10,
+                "proofAccountDay": 60,
+                "proofProofWindow": 6,
+                "proofProofDay": 30,
+                "newDevicesPerDay": 10,
+                "crossAccountFailureCap": 1000000,
+                "permitDeadlineSeconds": 30,
+                "permitGraceSeconds": 600
+            },
+            "3": {
+                "windowSeconds": 600,
+                "sourceCapacity": 24,
+                "sourceFailureCap": 4,
+                "accountBucketTakes": 3,
+                "accountBucketSeconds": 1800,
+                "proofAccountWindow": 10,
+                "proofAccountDay": 60,
+                "proofProofWindow": 6,
+                "proofProofDay": 30,
+                "newDevicesPerDay": 10,
+                "crossAccountFailureCap": 1000000,
+                "permitDeadlineSeconds": 30,
+                "permitGraceSeconds": 600
+            },
+            "4": {
+                "windowSeconds": 600,
+                "sourceCapacity": 24,
+                "sourceFailureCap": 4,
+                "accountBucketTakes": 4,
+                "accountBucketSeconds": 1800,
+                "proofAccountWindow": 10,
+                "proofAccountDay": 60,
+                "proofProofWindow": 6,
+                "proofProofDay": 30,
+                "newDevicesPerDay": 10,
+                "crossAccountFailureCap": 1000000,
+                "permitDeadlineSeconds": 30,
+                "permitGraceSeconds": 600
+            },
+            "1000000": {
+                "windowSeconds": 600,
+                "sourceCapacity": 24,
+                "sourceFailureCap": 4,
+                "accountBucketTakes": 1000000,
+                "accountBucketSeconds": 1800,
+                "proofAccountWindow": 10,
+                "proofAccountDay": 60,
+                "proofProofWindow": 6,
+                "proofProofDay": 30,
+                "newDevicesPerDay": 10,
+                "crossAccountFailureCap": 1000000,
+                "permitDeadlineSeconds": 30,
+                "permitGraceSeconds": 600
+            }
+        },
+        "PX4": {
+            "2": {
+                "windowSeconds": 600,
+                "sourceCapacity": 24,
+                "sourceFailureCap": 4,
+                "accountBucketTakes": 2,
+                "accountBucketSeconds": 1800,
+                "proofAccountWindow": 10,
+                "proofAccountDay": 60,
+                "proofProofWindow": 6,
+                "proofProofDay": 30,
+                "newDevicesPerDay": 10,
+                "crossAccountFailureCap": 4,
+                "permitDeadlineSeconds": 30,
+                "permitGraceSeconds": 600
+            },
+            "3": {
+                "windowSeconds": 600,
+                "sourceCapacity": 24,
+                "sourceFailureCap": 4,
+                "accountBucketTakes": 3,
+                "accountBucketSeconds": 1800,
+                "proofAccountWindow": 10,
+                "proofAccountDay": 60,
+                "proofProofWindow": 6,
+                "proofProofDay": 30,
+                "newDevicesPerDay": 10,
+                "crossAccountFailureCap": 4,
+                "permitDeadlineSeconds": 30,
+                "permitGraceSeconds": 600
+            },
+            "4": {
+                "windowSeconds": 600,
+                "sourceCapacity": 24,
+                "sourceFailureCap": 4,
+                "accountBucketTakes": 4,
+                "accountBucketSeconds": 1800,
+                "proofAccountWindow": 10,
+                "proofAccountDay": 60,
+                "proofProofWindow": 6,
+                "proofProofDay": 30,
+                "newDevicesPerDay": 10,
+                "crossAccountFailureCap": 4,
+                "permitDeadlineSeconds": 30,
+                "permitGraceSeconds": 600
+            },
+            "1000000": {
+                "windowSeconds": 600,
+                "sourceCapacity": 24,
+                "sourceFailureCap": 4,
+                "accountBucketTakes": 1000000,
+                "accountBucketSeconds": 1800,
+                "proofAccountWindow": 10,
+                "proofAccountDay": 60,
+                "proofProofWindow": 6,
+                "proofProofDay": 30,
+                "newDevicesPerDay": 10,
+                "crossAccountFailureCap": 4,
+                "permitDeadlineSeconds": 30,
+                "permitGraceSeconds": 600
+            }
+        }
+    }
+}
