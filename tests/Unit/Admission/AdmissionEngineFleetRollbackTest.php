@@ -212,8 +212,8 @@ final class AdmissionEngineFleetRollbackTest extends TestCase
             $oldOnCopy->limit($u, RateLimitCommand::checkOnly(EngineLab::POLICY))->decision,
             $old->limit($u, RateLimitCommand::checkOnly(EngineLab::POLICY))->decision,
         );
-        GateReport::emit('nm7-m6', ['oldBuildDecisions' => $onStore, 'lost' => ['K4P', 'K5p', 'k5p', 'anti_equilibrium_device_p', 'known_device_allowance_p', 'anti_equilibrium_p', 'budget_cooldown_p'],
-            'k4pPresentAndUnreadByTheOldBuild' => $lab->store->get(self::k4Key('k4p', 'acct-p')) !== null]);
+        self::assertNotNull($lab->store->get(self::k4Key('k4p', 'acct-p')), 'K4P is still in the store after the rollback; the old build has no reader of it');
+        GateReport::emit('nm7-m6', ['oldBuildDecisions' => $onStore, 'lost' => ['K4P', 'K5p', 'k5p', 'anti_equilibrium_device_p', 'known_device_allowance_p', 'anti_equilibrium_p', 'budget_cooldown_p']]);
 
         // Roll-forward within the same window: the new build finds its counter (20 of 24 used before the rollback; the three
         // old-build admissions from that source were not counted: the bound of the window is c_x + old-build admissions), so
