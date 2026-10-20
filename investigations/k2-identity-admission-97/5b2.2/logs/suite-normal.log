@@ -2,16 +2,16 @@ PHP 8.5.9 (cli) (built: Jul 28 2026 13:06:52) (NTS)
 PHPStan - PHP Static Analysis Tool 2.3.1
 PHPUnit 11.5.57 by Sebastian Bergmann and contributors.
 
- Network maatify-rate-limiter-5416-17682-73751_default Creating 
- Network maatify-rate-limiter-5416-17682-73751_default Creating 
- Network maatify-rate-limiter-5416-17682-73751_default Created 
- Network maatify-rate-limiter-5416-17682-73751_default Created 
- Container maatify-rate-limiter-5416-17682-73751-redis-1 Creating 
- Container maatify-rate-limiter-5416-17682-73751-redis-1 Created 
- Container maatify-rate-limiter-5416-17682-73751-redis-1 Starting 
- Container maatify-rate-limiter-5416-17682-73751-redis-1 Started 
- Container maatify-rate-limiter-5416-17682-73751-redis-1 Waiting 
- Container maatify-rate-limiter-5416-17682-73751-redis-1 Healthy 
+ Network maatify-rate-limiter-5416-17682-73751_default Creating
+ Network maatify-rate-limiter-5416-17682-73751_default Creating
+ Network maatify-rate-limiter-5416-17682-73751_default Created
+ Network maatify-rate-limiter-5416-17682-73751_default Created
+ Container maatify-rate-limiter-5416-17682-73751-redis-1 Creating
+ Container maatify-rate-limiter-5416-17682-73751-redis-1 Created
+ Container maatify-rate-limiter-5416-17682-73751-redis-1 Starting
+ Container maatify-rate-limiter-5416-17682-73751-redis-1 Started
+ Container maatify-rate-limiter-5416-17682-73751-redis-1 Waiting
+ Container maatify-rate-limiter-5416-17682-73751-redis-1 Healthy
 PHPUnit 11.5.57 by Sebastian Bergmann and contributors.
 
 Runtime:       PHP 8.5.9

@@ -130,6 +130,25 @@ final class AdmissionSettlementOptInRedisTest extends AdmissionRedisGateTestCase
         self::assertStringContainsString('throw:' . RateLimiterException::class, $records);
     }
 
+    public function testOffParityTheFiveSeedsTogetherPractiseEveryClaimKind(): void
+    {
+        // Each seed alone only has to claim (the loosened per-seed check); together the seeds must exercise an accepted claim, a
+        // late one, an unknown one, and the duplicate and conflict reasons, so the OFF-PARITY sequences are not vacuous.
+        $counts = [];
+        foreach ([1, 7, 42, 2026, 90210] as $seed) {
+            $this->resetRedis();
+            foreach (OptInParityRunner::run($this->production(), $this->executor, $seed, 300) as $step) {
+                if (str_starts_with($step['record'], 'claim:')) {
+                    $kind = substr($step['record'], 6);
+                    $counts[$kind] = ($counts[$kind] ?? 0) + 1;
+                }
+            }
+        }
+        foreach (['accepted', 'late', 'unknown', 'duplicate', 'conflict'] as $kind) {
+            self::assertGreaterThanOrEqual(1, $counts[$kind] ?? 0, "claim kind $kind over the five seeds: " . json_encode($counts));
+        }
+    }
+
     public function testTheDefaultWritesNoPendingKeyAndAppliesNoLifetimeGuard(): void
     {
         $port = $this->port($this->production());
