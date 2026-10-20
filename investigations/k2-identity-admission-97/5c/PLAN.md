@@ -345,3 +345,48 @@ Values are DEC-025 values, not archive rows typed by hand. Each scenario uses it
 #### 7.6.6 Records gate (gate 7)
 
 Every DEC-021 section DEC-026 carries is byte-identical to `docs/decisions/DEC-021_KNOWN_DEVICE_VERIFIER_BOUND.md` at `main@13870bb`, except the Decision 3 clause narrowed by Delta 1 (a script compares them and prints the differing lines). The same check applies to the DEC-019 sections DEC-027 restates verbatim. The diff of DEC-021 and DEC-019 themselves is limited to `Status` and `Superseded By` (precedent DEC-009 → DEC-013).
+
+### 7.7 Commit 4 — the red tests: what they are, what changed in existing test code, and two questions raised
+
+**Tests added** (each fails, errors or is not yet runnable before commit 5, except where stated):
+
+| File | Gates |
+| --- | --- |
+| `tests/Unit/Admission/AdmissionBuilderActivationTest.php` | DORMANT (§7.6.2: package constants by field, no runtime without an opted policy, no public budget input, detector = a builder mutant whose line `AdmissionBudgetsDTO::packageDefaults()` is replaced, the anchor registered to occur exactly once in the builder); REG through the builder (store capability, binding key); the variant (OD-5, OD-5.1); the fence method (OD-7); a closed fence = the `login_protection` golden decisions of scenario A (control: open fence); SC-1, LANE, the permit and the rollback through the builder at the package constants |
+| `tests/System/AdmissionBuilderRerunTest.php` (group `archive`) | LT-28 reruns: the 210 G7 `PX4` rows and the `PX4` fixtures on builder labs, judged by the existing tests' own comparison code invoked by reflection, unchanged |
+| `tests/Unit/Admission/AdmissionRotationTest.php` | LT-27 (1), (2), (3) and their detectors |
+| `tests/System/AdmissionIpv6SourceEquivalenceTest.php` (group `archive`) | LT-26. **Passes on the current code**: it tests the existing `SourcePrefix`; its detector fires |
+| `consumer-verification/verify.php` | CVH-1 … CVH-6 (§7.6.5), added before the summary; the summary gains an `admission` entry |
+
+**Existing test code changed (declared):**
+
+1. `AdmissionRegistrationRulesTest::testBuilderRejectsAFullyEquippedAdmissionPolicyBecauseItNeverBuildsTheRuntime` → `testBuilderBuildsTheRuntimeForAFullyEquippedAdmissionPolicy` (LT-30, ruled): same composition, the assertion is now that the builder constructed the runtime. The engine test without a runtime (L100) is unchanged.
+2. `tests/Support/Admission/EngineLab.php`: one **additive** static factory `throughBuilder()` (and its imports). The constructor and every existing method are unchanged; every existing test builds its lab exactly as before. Precedent for support-file changes: LT-24.
+
+**Amendment of a registration before its gate ran on the implementation (LT-26, §7.6.3).** The dumped `X2` tuples carry study labels (`atk1` …) as their sources, not IPv4 addresses (the `BRD` tuples carry addresses). The mapping is therefore over every distinct dumped source, address or label, each to its own `/64` inside `2001:db8:aaaa::/48`. The PASS condition and the detector are unchanged.
+
+**LT-33 (raised; rerun scope, LT-28).** LT-28 lists CYCLES / LIFECYCLE, FAIL and NM-7 engine among the gates re-run through the builder. They cannot run through it unchanged:
+- CYCLES / LIFECYCLE need the cycle-recording store as the pipeline's score store, separate from the admission store.
+- FAIL needs the fault-injecting admission store on the engine's path.
+- NM-7's mixed fleet uses an old-worker engine mutant.
+- The other unit gates (SC-2 … SC-6, the LANE and permit cases) shrink capacities to 1 or 2.
+
+None of that is possible through a builder with package constants and no budget input. The B1 recount and NP-IN read the direct lab's admission log.
+
+**Built through the builder:**
+- the G7 `PX4` rows;
+- the `PX4` fixtures (BRU24 without its recount);
+- SC-1, LANE, the permit, the fence, the rollback;
+- the closed-fence S0 check and the builder goldens.
+
+**Direct only, unchanged:** the rest. The executor asks the Lead to accept this split.
+
+**LT-34 (raised; LT-27 detectors).** The ruling names T1-N5 as the detector of LT-27 (1) and (2). The T1-N5 detector exists only as the study's original Redis reserve script (`StudyOriginalReserve`), and it writes the previous **device set**, not the counters and sets these tests measure. Used instead:
+- **(1):** a build without the previous generation, which re-issues the full 24 at the first rotation.
+- **(2):** reported with no detector. Set-size and bucket scopes have no previous generation by contract (KS §4.8), so there is no previous write to detect.
+
+The executor asks the Lead to accept both.
+
+**Red state before commit 5:**
+- `LoginProtectionAdmissionPolicy`, `AdmissionFenceControlInterface` and `AdmissionBudgetsDTO::packageDefaults()` do not exist, and the builder constructs no runtime.
+- PHPStan and the CI jobs that run these tests (and CVH) are red by design until commit 5, as in 5-b3b 2a.

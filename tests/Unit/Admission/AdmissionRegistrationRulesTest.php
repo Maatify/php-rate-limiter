@@ -113,18 +113,18 @@ final class AdmissionRegistrationRulesTest extends TestCase
         $this->engine(null, [new DeclaresCapabilityWithoutInterfacePolicy('no-interface', true)]);
     }
 
-    public function testBuilderRejectsAFullyEquippedAdmissionPolicyBecauseItNeverBuildsTheRuntime(): void
+    /** Stage 5-c, LT-30 (declared, ruled): the 5-b1 dormancy statement of the builder becomes "the builder builds the runtime". */
+    public function testBuilderBuildsTheRuntimeForAFullyEquippedAdmissionPolicy(): void
     {
-        $builder = RateLimiterBuilder::fromFullCapabilityStore(
+        $runtime = RateLimiterBuilder::fromFullCapabilityStore(
             $this->config(withBindingKey: true),
             new AdmissionStubStore(new FixedClock()),
             new RecordingFailureSignalEmitter(),
-        )->withPolicy(new AdmissionTestPolicy('builder-dormant'));
+        )->withPolicy(new AdmissionTestPolicy('builder-dormant'))->build();
 
-        $this->expectException(RateLimiterException::class);
-        $this->expectExceptionMessage('ADMISSION_RESERVATION is not available: no admission runtime is configured');
-
-        $builder->build();
+        $engine = (new \ReflectionProperty(\Maatify\RateLimiter\Service\CompositeRateLimiterRuntime::class, 'scoreRuntime'))->getValue($runtime);
+        self::assertInstanceOf(RateLimiterEngine::class, $engine);
+        self::assertInstanceOf(AdmissionRuntime::class, (new \ReflectionProperty(RateLimiterEngine::class, 'admission'))->getValue($engine));
     }
 
     public function testBuilderWithoutAnAdmissionPolicyBuildsExactlyAsBefore(): void

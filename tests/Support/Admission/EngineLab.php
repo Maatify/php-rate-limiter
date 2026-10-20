@@ -4,8 +4,11 @@ declare(strict_types=1);
 
 namespace Maatify\RateLimiter\Tests\Support\Admission;
 
+use Maatify\RateLimiter\Builder\RateLimiterBuilder;
 use Maatify\RateLimiter\Command\RateLimitCommand;
 use Maatify\RateLimiter\Config\BlockPolicyInterface;
+use Maatify\RateLimiter\Config\LoginProtectionAdmissionPolicy;
+use Maatify\RateLimiter\Config\RateLimiterConfig;
 use Maatify\RateLimiter\DTO\AdmissionBudgetsDTO;
 use Maatify\RateLimiter\DTO\AdmissionCredentialDTO;
 use Maatify\RateLimiter\DTO\RateLimitContextDTO;
@@ -24,6 +27,8 @@ use Maatify\RateLimiter\Service\FailureModeResolver;
 use Maatify\RateLimiter\Service\FingerprintHasher;
 use Maatify\RateLimiter\Service\AdmissionBindingControlInterface;
 use Maatify\RateLimiter\Service\AdmissionBindingEpochInterface;
+use Maatify\RateLimiter\Service\AdmissionFenceControlInterface;
+use Maatify\RateLimiter\Service\CompositeRateLimiterRuntime;
 use Maatify\RateLimiter\Service\RateLimiterEngine;
 use Maatify\RateLimiter\Service\RateLimiterRuntimeInterface;
 use Maatify\RateLimiter\Tests\Support\CircuitBreaker\InMemoryCircuitBreakerStore;
@@ -135,6 +140,53 @@ final class EngineLab
         if ($openFence) {
             $this->openFence();
         }
+    }
+
+    /**
+     * The same lab composed through the public builder (stage 5-c, LT-28): `RateLimiterBuilder` with the Login opt-in variant
+     * over the reference store, so the runtime, its budgets (the package constants) and the codec are the ones the builder
+     * constructs; the fence is opened with the package method. `admissionStore` wraps the same store but is not on the
+     * engine's path, so its `admitted` log stays empty in a builder lab: the B1 recount and NP-IN stay on the direct lab.
+     * A shared `$store` and `$clock` give several builds over one state (a key rotation, a rollback).
+     */
+    public static function throughBuilder(
+        bool $openFence = true,
+        ?AdmissionInMemoryReferenceStore $store = null,
+        ?FixedClock $clock = null,
+        string $keySecret = self::KEY_SECRET,
+        ?string $previousKeySecret = null,
+    ): self {
+        $lab = (new \ReflectionClass(self::class))->newInstanceWithoutConstructor();
+        $lab->clock = $clock ?? new FixedClock('@' . self::T0);
+        $lab->store = $store ?? new AdmissionInMemoryReferenceStore($lab->clock);
+        $lab->admissionStore = new FaultInjectingAdmissionStore($lab->store);
+        $lab->codec = new AdmissionCredentialCodec(self::BINDING_SECRET);
+        $lab->emitter = new RecordingFailureSignalEmitter();
+        $config = new RateLimiterConfig($keySecret, self::FINGERPRINT_SECRET, self::ENV, $previousKeySecret, bindingKeySecret: self::BINDING_SECRET);
+        $runtime = (new RateLimiterBuilder($config, $lab->store, $lab->store->correlationStore(), new InMemoryCircuitBreakerStore(), $lab->emitter))
+            ->withClock($lab->clock)
+            ->withPolicy(new LoginProtectionAdmissionPolicy())
+            ->build();
+        if (! $runtime instanceof CompositeRateLimiterRuntime || ! $runtime instanceof AdmissionFenceControlInterface) {
+            throw new \LogicException('The builder must return the composite runtime with the fence control.');
+        }
+        $lab->engine = $runtime;
+        $engine = (new \ReflectionProperty(CompositeRateLimiterRuntime::class, 'scoreRuntime'))->getValue($runtime);
+        if (! $engine instanceof RateLimiterEngine) {
+            throw new \LogicException('The composite runtime must wrap the engine.');
+        }
+        $admission = (new \ReflectionProperty(RateLimiterEngine::class, 'admission'))->getValue($engine);
+        $pipeline = (new \ReflectionProperty(RateLimiterEngine::class, 'pipeline'))->getValue($engine);
+        if (! $admission instanceof AdmissionRuntime || ! $pipeline instanceof EvaluationPipeline) {
+            throw new \LogicException('The builder constructed no admission runtime for the opted policy.');
+        }
+        $lab->runtime = $admission;
+        $lab->pipeline = $pipeline;
+        if ($openFence) {
+            $runtime->openAdmissionFence(self::GROUP);
+        }
+
+        return $lab;
     }
 
     /** Study values of the contract §0.1 table (DEC-025), as the tests' arguments; `D` / `G` from G1 M05. */
