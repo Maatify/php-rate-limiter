@@ -151,7 +151,7 @@ final class AdmissionRuntime
             'id' => $id,
             'lane' => $lane->lane->value,
             't0' => $t,
-            'j' => $lane->claims?->jti,
+            'j' => $lane->claims === null ? null : $this->proofRef($lane->claims->jti),
         ], JSON_THROW_ON_ERROR));
         $meta = $allowed->metadata;
 
@@ -253,7 +253,7 @@ final class AdmissionRuntime
         $window = 'w' . intdiv($t, $b->windowSeconds);
         $day = 'd' . intdiv($t, self::DAY);
         $subject = $this->subject($context) ?? self::NO_SUBJECT;
-        $proof = $lane->claims->jti ?? $subject;
+        $proof = $this->proofRef($lane->claims->jti ?? $subject);
         $scopes = [
             $this->counter('proof_account_window', $group, 'pacct', $subject, $window, $b->proofAccountWindow, 2 * $b->windowSeconds),
             $this->counter('proof_account_day', $group, 'pacctd', $subject, $day, $b->proofAccountDay, 2 * self::DAY),
@@ -351,6 +351,12 @@ final class AdmissionRuntime
             $this->key($group, 'dev', (string) $device->fingerprintHash, ''),
             $previousMember,
         );
+    }
+
+    /** A bounded, opaque reference of the credential id: the permit token stays short whatever the Host puts in `jti`. */
+    private function proofRef(string $jti): string
+    {
+        return substr(hash('sha256', $jti), 0, 32);
     }
 
     private function key(string $group, string $purpose, string $value, string $label, ?string $secret = null): string

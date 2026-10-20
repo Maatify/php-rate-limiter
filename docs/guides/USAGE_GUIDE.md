@@ -305,6 +305,53 @@ fingerprint-only, and both-rotated inputs never form Cartesian generation pairs.
 | Inspect persisted simple fixed-window state | <code>CompositeRateLimitOperationalReaderInterface::readSimpleThrottle()</code> | [Operational read](#walkthrough-operational-read) | [simple-fixed-window.php](../../examples/simple-fixed-window.php) |
 | Apply simple fixed-window throttling | <code>SimpleRateLimiterInterface::consume(policyName, subject, cost = 1)</code> | [Simple fixed-window consume](#walkthrough-simple-fixed-window-consume) | [simple-fixed-window.php](../../examples/simple-fixed-window.php) |
 
+## Admission-Reservation Policies (dormant until activation)
+
+A policy that declares `ADMISSION_RESERVATION` changes what `checkOnly` means. **For every enabled
+policy, one `checkOnly` is one admission**: it reserves capacity (source, failure set, account
+bucket, or the proven-lane counters) all-or-nothing, and it is **not read-only**. A Host that
+probes with `checkOnly` before the real attempt spends one admission per probe. Policies that did
+not opt in keep today's read-only pre-check.
+
+This is shipped dormant: the builder cannot enable it yet. The contract below is what a Host
+integrates against.
+
+Inputs (all optional on `RateLimitContextDTO`; ignored by every policy that did not opt in):
+
+* `clientInstanceId`: an untrusted continuity hint, separate from `sessionDeviceId` (trust) and
+  `clientFingerprint`. It never selects the proven lane by itself.
+* `admissionCredential`: the opaque credential the Host minted with `AdmissionCredentialCodec`.
+  The library verifies integrity, subject, budget group, instance, expiry and the account's
+  binding epoch. **Any failed check is the unproven lane**, never an error or a refusal by itself.
+  Nothing else selects the proven lane: not `isDevicePreviouslyVerifiedForAccount`, not a trusted
+  session, not an instance id.
+
+Outputs and duties:
+
+* An admitted `checkOnly` carries an opaque `permit` (`RateLimitMetadataDTO::$permit`, at most 512
+  characters). **The Host must send it back on the outcome command**
+  (`new RateLimitCommand($policy, 1, false, $isFailure, $isSuccess, $permit)`). An outcome with no
+  permit for an opted policy is a Host contract violation and raises `RateLimiterException`; it is
+  never re-sent as an unbound outcome.
+* The outcome must be sent with **the same context** as the admission (same source address, account
+  and credential): the failure set an outcome touches is keyed by the outcome's source.
+* A permit is claimed once. `permit_duplicate`, `permit_conflict`, `permit_rejected`, `permit_late`
+  and `permit_unknown` come back as an `ALLOW` result with `blockLevel` 0 and `scope` `permit`;
+  nothing is scored. An admission whose outcome never arrives by its deadline counts as one failure
+  in the failure sets it reserved.
+* A capacity refusal is a `SOFT_BLOCK` with `blockLevel` 1 and a `retryAfter` to the end of the
+  refusing window or refill; the causes are `source_capacity`, `source_failure_cap`,
+  `account_bucket`, `proof_capacity`, `new_device_cap` and `source_proof_failure_cap`.
+* **Password change or recovery**: call `revokeAccountBinding($accountId)` (it bumps the account's
+  epoch; every older credential stops verifying), read the new epoch with `bindingEpoch($accountId)`
+  and issue a credential to the device that performed the change. Both are reached through
+  `instanceof AdmissionBindingControlInterface` / `AdmissionBindingEpochInterface`.
+* **The subject** is `correlationId ?? accountId` and must exist whether or not the account exists,
+  so that a refusal never reveals whether an account exists.
+* **Issuing credentials is the Host's job** (lifetime, renewal, who gets one). The package ships the
+  verifier and the codec, not an issuance policy.
+* Degraded and `FAIL_OPEN` paths admit nothing and read no credential, epoch or fence.
+
 ## Walkthrough: Pre-Check
 
     Input → RateLimitContextDTO + RateLimitCommand::checkOnly('login_protection')

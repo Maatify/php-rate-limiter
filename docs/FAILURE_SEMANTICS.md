@@ -369,6 +369,21 @@ checked package-side against every `SimpleThrottlePolicyInterface` implementatio
 `BudgetSeedStoreInterface` all raise `RateLimiterException` rather than becoming a typed
 FAIL_CLOSED result or a normal quota decision; see `docs/SIMPLE_THROTTLING.md`.
 
+### 4.5 Admission-Reservation Policies (DEC-015, DEC-024) — dormant
+
+* The reservation, the outcome claim and application, the binding-epoch read and the fleet-fence
+  read are store operations. A typed outage of any of them is a `BackendFailureException` for the
+  **whole request** and takes the existing path: `FAIL_CLOSED` `HARD_BLOCK`, then the open circuit's
+  bounded fallback, then `fallback_limit_exceeded`. There is no partial allow and no state written
+  by the failed operation.
+* A malformed stored value is a `RateLimiterException`, never a backend failure and never a fallback
+  allowance. An unclassified throwable keeps escaping; it never enters the circuit.
+* In degraded mode and on a `FAIL_OPEN` path **no admission, no lane resolution and no epoch or
+  fence read happens**: the admission bounds are absent there. `LocalFallbackLimiter` is unchanged:
+  no new dimension, no new bound, no new tracked subject.
+* A `pre+out` attempt uses two fallback units, a `pre` attempt one; a permit claim counts as an
+  outcome call.
+
 ---
 
 ## 5. Circuit Breaker Rules (Mandatory)

@@ -169,6 +169,11 @@ derivation.
 * Advisory only
 * NOT proof of device ownership
 
+**Client instance id (admission layer, dormant).** `RateLimitContextDTO::$clientInstanceId` is a
+separate input from this session-bound identifier. It is an untrusted continuity hint: it does not
+establish trust, is not part of the trusted-session definition and is ignored by every policy that
+did not opt into `ADMISSION_RESERVATION`.
+
 ---
 
 ## 4. Device Identity Resolution
@@ -204,6 +209,11 @@ bound to the correct account.
 
 **Rule:**
 Confidence affects **scoring weight** and certain correlation enforcement constraints; never authorization.
+
+**The instance id never raises confidence.** For an opted policy the resolver adds the id as a
+device component (hashed `"id1|" + id` by the current and previous generation, no user agent and no
+`clientFingerprint` in the material); it selects the K5 material and nothing else. Confidence is
+computed from the other components exactly as before.
 
 ---
 
@@ -246,6 +256,10 @@ Rules:
   of device ownership.
 * `DeviceConfidence = HIGH` alone is **not** a substitute for “previously verified”: HIGH
   confidence describes signal strength, not a verified account association.
+
+**On an opted policy, `isDevicePreviouslyVerifiedForAccount` never selects a lane.** The proven
+lane is entered only through a verified admission credential. On the unproven lane a known device
+is bounded by the account bucket only (DEC-025 5.1).
 
 ---
 
@@ -461,6 +475,13 @@ while an earlier previous generation still needs enforcement continuity.
   micro-cap, whose cumulative budget state cannot be merged safely across multiple
   generations (never `max(v1, v2)`; `docs/KEY_STRATEGY.md` §4.3.1 / §4.5.2).
 * Overlapping or multi-generation rotation is outside the supported model.
+
+**K5-material migration is a generation event (admission layer, dormant).** The step from the
+fingerprint material to the instance-id material changes the K5 key of a device (a one-time K5
+restart for that device). It must not start while a fingerprint-secret or outer-secret rotation still
+needs its previous generation, and a rotation must not start during it: the pipeline would otherwise
+read the Cartesian combination (old material by old secret, new material by old secret, new material
+by new secret) that this section forbids. The old material is never `max()`-combined with the new.
 
 ---
 

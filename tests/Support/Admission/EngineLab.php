@@ -165,13 +165,13 @@ final class EngineLab
     }
 
     /** Host model: a credential for `$account` on `$instance`, bound to the account's current epoch unless given. */
-    public function mint(string $account, string $instance, int $lifetime = 86400, ?int $epoch = null, string $group = self::GROUP, ?string $subject = null, ?AdmissionCredentialCodec $codec = null): string
+    public function mint(string $account, string $instance, int $lifetime = 86400, ?int $epoch = null, string $group = self::GROUP, ?string $subject = null, ?AdmissionCredentialCodec $codec = null, ?string $jti = null): string
     {
         $claims = new AdmissionCredentialDTO(
             $subject ?? $account,
             [$group],
             $instance,
-            'jti-' . $account . '-' . $instance,
+            $jti ?? 'jti-' . $account . '-' . $instance,
             $this->now() + $lifetime,
             $this->now(),
             $epoch ?? $this->engine->bindingEpoch($account),
