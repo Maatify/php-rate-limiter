@@ -447,3 +447,5 @@ thresholds swept as parameters:
   Host context), reporting which K5 scores, blocks, micro-caps and device watcher events are read on each side.
 * Source capacity ceiling: SC-1 … SC-6 of `P§6.7`.
 * T0 integration: probe factor `ρ`, abandoned admissions and retries of real Host flows on the opt-in variants.
+
+> **Second note, 2026-10-20 (5-b2.2, history not rewritten).** The settlement of the note above is now **optional per scope and off by default**: the default is again the tombstone semantics this section describes (I9). Measured on the engine (#147, F-5b3b-NM10 / NM5) it feeds the failure sets only, does not compensate lost outcome scores and harms benign traffic under outcome drops and probes. See `RUNTIME_IMPLEMENTATION_CONTRACT.md` §2.4 and §3 row (b).

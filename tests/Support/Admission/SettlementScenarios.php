@@ -25,7 +25,7 @@ final class SettlementScenarios
 
     public static function member(string $key, string $account, int $capacity, bool $keepsSettled = false): AdmissionScopeDTO
     {
-        return new AdmissionScopeDTO('fail_src', AdmissionScopeKindEnum::SET_SIZE, $key, $capacity, self::TTL, null, $account, null, $keepsSettled);
+        return new AdmissionScopeDTO('fail_src', AdmissionScopeKindEnum::SET_SIZE, $key, $capacity, self::TTL, null, $account, null, $keepsSettled, settlesOnExpiry: true);
     }
 
     public static function permit(string $id, int $deadlineAt): AdmissionPermitDTO
