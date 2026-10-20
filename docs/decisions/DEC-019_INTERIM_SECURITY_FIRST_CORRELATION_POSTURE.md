@@ -6,7 +6,7 @@
 
 ## Status
 
-`ACTIVE` — for the **interim preserve-default posture only**, on the Owner's explicit 2026-10-13 authorization.
+`SUPERSEDED` by DEC-027 on 2026-10-20 (PR #150). It was `ACTIVE` — for the **interim preserve-default posture only**, on the Owner's explicit 2026-10-13 authorization.
 
 ## Date
 
@@ -140,4 +140,4 @@ None
 
 ## Superseded By
 
-None
+`DEC-027`

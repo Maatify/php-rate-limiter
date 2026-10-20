@@ -9,18 +9,15 @@ reserved label: it proposes only the UA-similarity part of a DEC-019 replacement
 
 ## Status
 
-`PROPOSED`
-
-This is a proposal. It has not been approved. Under Decision Governance §5 a `PROPOSED`
-decision is **not implementation authority**: no Runtime, contract, preset, threshold, test,
-study gate or review verdict may rely on it as an approved rule. It may be cited as
-non-binding research context, provided the citation states that the change has not been
-approved. It does not change the status, text or effect of DEC-019 or DEC-021, which remain
-`ACTIVE` and unchanged. The current runtime authorities are the ones DEC-019 names.
+`ACTIVE` — for the policies that opt into the admission reservation under DEC-024 (OD-9), on the
+Owner's decisions of 2026-10-20, delivered atomically in PR #150 with DEC-026, DEC-027 and
+DEC-028. It was `PROPOSED` from 2026-10-18 (PR #133). The text below is the proposal with the
+amendments made at activation; each is marked "amended at activation" and listed, with the
+status text of the proposal, under [Amendments at activation](#amendments-at-activation).
 
 ## Date
 
-2026-10-18
+Proposed 2026-10-18; `ACTIVE` 2026-10-20.
 
 ## Decision Authority / Deciders
 
@@ -29,8 +26,18 @@ in this record is the Owner's decision. This record was prepared as step 1 of th
 five-step plan for #97, set out after the merge of PR #132, and is documentation only. It
 records no Owner approval of its content.
 
+**Activation (amended at activation).** The Owner decided OD-4, OD-9 and OD-10 on 2026-10-20 in
+[PR #150 comment 6299051848](https://github.com/Maatify/php-rate-limiter/pull/150#issuecomment-6299051848),
+after the study G8 (#151), and authorised the atomic activation in PR #150. Lead rulings for the
+activation: [PR #150 comment 6298046892](https://github.com/Maatify/php-rate-limiter/pull/150#issuecomment-6298046892).
+Technical acceptance: the Lead's review of PR #150 on its exact HEAD.
+
 ## Scope / Concern
 
+- **Policies (amended at activation, OD-9):** the policies that declare
+  `PolicyCapabilityEnum::ADMISSION_RESERVATION` under DEC-024, while their budget group's fleet
+  fence is open. Every other policy, and an opted policy while its fence is closed, keeps
+  DEC-019's posture under DEC-027. Within that scope:
 - Where a persisted penalty may be written when correlation is based on client identity:
   K2 (`IP_PREFIX + UA`) and LOW-confidence K3 (passive, UA-only fingerprint) in Login, OTP,
   API Heavy, and custom policies that declare the DEC-008 capabilities.
@@ -82,10 +89,10 @@ The Owner stated the positions this record relies on on 2026-10-17. They are rec
 
 ## Decision
 
-**Proposed, not approved.** If it becomes `ACTIVE` under the
-[conditions](#conditions-to-become-active) below, this record would establish the
-following principles. It sets no value, threshold, key name, store contract or Runtime
-mechanism.
+**Decided for the policies in scope (amended at activation; the proposal read "Proposed, not
+approved. If it becomes `ACTIVE` under the conditions below, this record would establish the
+following principles").** This record establishes the following principles. It sets no value,
+threshold, key name, store contract or Runtime mechanism.
 
 1. **Attribution rule.** A persisted penalty is written only on one of two scopes:
    - the relationship between one Actor and one Subject (for example account + device, K5);
@@ -102,7 +109,8 @@ mechanism.
    may have only two roles: observation, or a per-window capacity bound that neither
    escalates nor persists. No one is penalised for *resembling* someone else.
 
-   **Where the rule applies on activation:** UA-similarity penalties (Decision 2) only.
+   **Where the rule applies on activation:** UA-similarity penalties (Decision 2) only, and only
+   for the policies in scope (amended at activation, OD-9).
    Several existing contracts do not conform to the rule today. Applying it to any of them
    changes how much protection it gives, so it takes effect only through the later
    decision named below. Until that decision exists, each contract stays as it is, owned by
@@ -120,6 +128,18 @@ mechanism.
 
    The FAIL_OPEN per-node K1/K2 throttles already conform: they are non-persisted capacity
    bounds.
+
+   **At activation (amended at activation).** For the policies in scope the later decisions
+   exist and the rows above are owned as follows; for every other policy each row stays as it
+   is under DEC-027.
+
+   | Row | Owner for the policies in scope |
+   | --- | --- |
+   | K1 credential spray | Not evaluated on the admission path; replaced by the source capacity `U_src` 24 and the net failure cap `F` 4 (DEC-025 1.4) |
+   | API Heavy rows | Not applicable: `API_OVERUSE` cannot opt in (DEC-025 8.4) |
+   | Distributed-account and new-device-flood punishment | Not persisted: on the proven lane the observations are not made; on the unproven lane their account-scoped candidates are dropped (DEC-026; `5b3a/PLAN.md` D4–D6) |
+   | MEDIUM/HIGH dilution on K3 | Not evaluated on the admission path (the dilution observation is not made) |
+   | Account-wide K4 without a door split | Replaced by the door split: K4U and K4P, rule A (DEC-025 4.A, DEC-026) |
 2. **K2 is an observation key for correlation and UA similarity.** No `HARD_BLOCK` and no
    persisted penalty is derived from UA similarity at LOW confidence:
    - K2 churn;
@@ -127,7 +147,12 @@ mechanism.
    - the API Heavy LOW moderate K3 signal persisted on K2;
    - missing-fingerprint deltas scored on K2.
 
-   These signals stay observable. K2 penalties are not moved to K1 or to any other shared
+   Of these signals (amended at activation, OD-4; the proposal read "These signals stay
+   observable"), the K2 score stays observable for the policies in scope, including the
+   missing-fingerprint deltas scored on K2; K2 churn and LOW dilution are not observed on the
+   admission path (the bounded churn and dilution observations are not made, as in every
+   measured study); the API Heavy item does not apply, because `API_OVERUSE` cannot opt in
+   (DEC-025 8.4). K2 penalties are not moved to K1 or to any other shared
    key. Two K2 uses are not UA-similarity attribution and are not changed by this decision:
    K2 as the API Heavy minor-limit rate scope (Decision 1 table, Level 2), and the FAIL_OPEN
    K2 throttle.
@@ -141,7 +166,7 @@ mechanism.
    - Attacker-owned accounts are a declared count N in the threat model, neither free nor
      expensive.
    - Success never earns credit on a shared scope.
-4. **Change of security acceptance criteria** (part of the proposed policy, not approved).
+4. **Change of security acceptance criteria.**
    - Cells in which the attacker keeps a constant UA become **observations**: they are
      recorded and published, and they are not gates. These are the naive X2 and X7
      constant-UA variants.
@@ -157,16 +182,34 @@ mechanism.
    constant-UA cells. The other costs of Decision 2 are declared under
    [Consequences](#consequences) and stay gates.
 
+   **Declared costs at activation (amended at activation, OD-10 (a) with `C` = 4).** The
+   gates of this decision are judged against the bounds the Level-2 decision chose (DEC-025).
+   The cells above S0 on the production code, each with the mechanism that governs it
+   (`pre+out`; production = the archive values, reproduced in
+   `investigations/k2-identity-admission-97/5b3b/RESULTS.md`):
+
+   | Cell | S0 | Production | Governing mechanism |
+   | --- | --- | --- | --- |
+   | `X1` / `BRU` / `BRD` reach | 2 / 3 / 3 | 4 / 5 / 5 | The account bucket: `C` / `C`+1 / `C`+1 (DEC-025 2.2). `C` = 2 returns them to S0 at the price of an owner lockout in the `K5U` fixture (an owner whose credential expires during a burst of typing errors: 26 refusals against 0), D2 85 in `pre` (61 at `C` 4), and KD 10 in `pre+out` without ids (9 at `C` 4, S0 9) (G8, #151, F-G8-03 / 04 / 06) |
+   | MIX attack, ABA_A, SP3 | 0, 3, 7 | 8, 8, 8 | The net failure cap `F` and `U_src` (DEC-025 1.4); unchanged by any `C` (G8); A3 holds at S12 |
+   | SP6 (SP1n 4, equal to S0) | 20 | 24 | `U_src` / `F` (DEC-025 1.4) |
+   | TMS, TMSd | 7/61, 2/200 | 29/61, 40/200 | The cross-account proven-door failure cap (DEC-025 8, declared cost X2) |
+
+   G8 ran on the reference store, not on Redis; its store logic is the one NM-6 proved
+   identical on Redis (N-151-01). Sources: one IPv4 address or one IPv6 `/64`; the `/64`
+   equivalence is a registered gate of PR #150 (`5c/PLAN.md` §7.6.3, result in
+   `5c/RESULTS.md`); the IPv6 `/48` hierarchy is `UNPROVEN` (security feasibility §5 row 6).
+
 ## Three decision levels
 
-The #97 work has produced three different kinds of decision. This record proposes only the
-first.
+The #97 work has produced three different kinds of decision. This record proposed only the
+first; the status column is amended at activation.
 
 | Level | What it is | Status in this record |
 | --- | --- | --- |
-| **1. Architectural principle** | The attribution rule, K2 as observation, the reference threat model, and the change of acceptance criteria (Decision 1–4). The evidence for it is consistent across the merged studies | **Proposed here** |
-| **2. Security decision on cost** | Any relaxation of a source's protection against credential spray (K1 role, source capacity `U_src`, failure cap `F`). The per-account guessing budget (`T`, `C`). The disposition of the distributed-account and new-device-flood punishments. Any replacement of the bounds K2 enforcement gives today against multi-session and API rotation attackers. Each needs the Owner to approve its measured cost | **Not proposed.** Named as separate later decision(s). No value is stated or implied |
-| **3. Experimental design with limited scope** | The FULL2 assembly (#132): client instance id, device binding, U/P lanes, P-lane refund budget, sliding renewal, password-change binding, K5 separation. Status: EXPERIMENTALLY SUPPORTED — LIMITED SCOPE, for Hosts that record outcomes only | **Not proposed.** Named as separate later decision(s). Several of its components would amend DEC-021 or LOCKED contracts |
+| **1. Architectural principle** | The attribution rule, K2 as observation, the reference threat model, and the change of acceptance criteria (Decision 1–4). The evidence for it is consistent across the merged studies | **`ACTIVE` (this record), for the policies in scope** |
+| **2. Security decision on cost** | Any relaxation of a source's protection against credential spray (K1 role, source capacity `U_src`, failure cap `F`). The per-account guessing budget (`T`, `C`). The disposition of the distributed-account and new-device-flood punishments. Any replacement of the bounds K2 enforcement gives today against multi-session and API rotation attackers. Each needs the Owner to approve its measured cost | Decided by DEC-025 (and DEC-028 for the permit timing) |
+| **3. Experimental design with limited scope** | The FULL2 assembly (#132): client instance id, device binding, U/P lanes, P-lane refund budget, sliding renewal, password-change binding, K5 separation. Status: EXPERIMENTALLY SUPPORTED — LIMITED SCOPE, for Hosts that record outcomes only | Decided for opted policies by DEC-023, DEC-024 and DEC-026; implemented and measured in stages 5-b1 … 5-b3b |
 
 Level 1 does not imply Level 2 or Level 3, and approving Level 1 approves neither. Level 1
 cannot become `ACTIVE` alone, because Decision 2 removes bounds that only a Level 2
@@ -175,7 +218,9 @@ decision can replace (Condition 3).
 ## What this proposes to replace
 
 This is a map of references only. It amends nothing. It lists what would change if DEC-022
-became `ACTIVE`, and separates three kinds of effect:
+became `ACTIVE`, and separates three kinds of effect. At activation these effects apply to the
+policies in scope only (amended at activation, OD-9); for every other policy each row stays as
+it is under DEC-027:
 
 - **#97:** a direct consequence of the UA-similarity remedy.
 - **Not #97:** touched by the general principle but outside the #97 remedy. Any change
@@ -244,6 +289,28 @@ record (status change, the disposition of DEC-019 and the index), the canonical 
 updates listed above, and the implementation may be delivered atomically in one later
 bounded scope, as DEC-021 was in #117.
 
+### Proof at activation (amended at activation)
+
+1. **Condition 1:** DEC-023 and DEC-024 (`ACTIVE`).
+2. **Condition 2:** UA-free K5 with DEC-021 parity, G5 v2 (#138, `SUPPORTED — LIMITED SCOPE`),
+   reproduced on the production code: `5b3a/RESULTS.md` (RP-G5, 28 rows; `STABLE-600 / 300 / 60`
+   45 / 44 / 45 on the proven lane) and `5b3b/RESULTS.md` (RP-G5 fixtures; NP-IN 932 / 932 / 0).
+3. **Condition 3:** DEC-025 (`ACTIVE`); the permit timing DEC-028.
+4. **Condition 4**, by gate (records under `investigations/k2-identity-admission-97/`):
+
+   | Item | Evidence |
+   | --- | --- |
+   | `checkOnly`-only and record-only guarantees (DEC-019 D5) | Only `pre+out` is representable (REG, 5-b1); an outcome without a permit is refused (LT-16, 5-b3b); a declared Host that drops outcomes runs as `pre` (NM-10 reported at share 1.00 = the archived `pre` rows), the A-2 residual, NM-10 NO-GO as a store mechanism (Owner, #147) |
+   | K1 + K2 overlap | Both collective paths off on the admission path (GUARDS, 5-b3a); D2 24 (S0 117), SP1n / SP3 / SP6 4 / 8 / 24 (RP-G4, 5-b3b) |
+   | IPv6 macro scopes | The `/64` equivalence gate of PR #150 (`5c/PLAN.md` §7.6.3); the `/48` hierarchy `UNPROVEN` |
+   | Current / Previous rotation | ROT and NM-6 T1-N5 (5-b2); pipeline and reader across a rotation (5-b3a); the second-rotation re-issue, the set and bucket restart and the fence across a rotation (PR #150, `5c/PLAN.md` §7.6.4) |
+   | Trusted / nontrusted collateral | RP-G7: `N12T` 0/61; TPAIRT office 21/61 (declared, DEC-025 8) |
+   | Block renewal | A1 `ABA_B` 0 (S0 118); `REC` reproduced; SC-2, SC-3, CYCLES (5-b3b) |
+   | cap / N−1 | N−1 WATCH paths not run on the admission path (GUARDS); caps exact under concurrency (NM-6, NM-7, 5-b2) and at the best response (`BRU24` 51 ≤ 52, NM-10 (c)) |
+   | Best-response cells | Measured and declared above (Decision 4, OD-10) |
+   | Paid identifiers | TMS family (RP-G6, RP-G7); `X1/API`, `Y7/API` unchanged (API not in scope) |
+   | Independent Lead review on the exact HEAD | #144, #145, #146, #148, #149, #147; PR #150 on its exact HEAD |
+
 ## Rationale
 
 - **Why attribution, not a new identity.** Every candidate that kept penalties on a shared
@@ -262,11 +329,12 @@ bounded scope, as DEC-021 was in #117.
 
 ## Consequences
 
-**While `PROPOSED` (now):** no Runtime, contract, preset, threshold or test changes.
+**While `PROPOSED` (2026-10-18 to 2026-10-20):** no Runtime, contract, preset, threshold or test changes.
 DEC-019 and DEC-021 stay `ACTIVE` and unchanged. #97, #100 and #106 stay open. S0 remains
 the deliberate interim posture under DEC-019, and its exit follows DEC-019 Decision 6.
 
-**If activated (declared costs of Level 1, independent of Levels 2 and 3):**
+**At activation (declared costs of Level 1, independent of Levels 2 and 3; the proposal read
+"If activated"). For the policies in scope only:**
 
 - The naive attacker who keeps one UA is no longer stopped by LOW dilution. On S0 that
   stop is X2 6/121, and the best response already reaches 121/121 (#125).
@@ -278,6 +346,12 @@ the deliberate interim posture under DEC-019, and its exit follows DEC-019 Decis
 - An owner without proof under a sustained attack is not protected by Level 1. G1 HAR:
   14/15 refused at every parameter set; owner with proof (HARp): 0/15. Only proof or
   binding (Level 3) changes that.
+
+**Measured at activation (amended at activation).** On the production code, with the Level-2
+and Level-3 decisions: TMS 29/61 and TMSd 40/200 in `pre+out` (the cross-account proven-door
+failure cap, DEC-025 8; 61/61 and 120/200 in `pre`, where it is inert); API unchanged (not in
+scope); an owner with a bound credential is admitted at once after a password change (STEAL,
+5-b3b). Every other policy keeps S0 and its measured harm under DEC-027.
 
 ## Evidence
 
@@ -316,11 +390,43 @@ evidence, and is unchanged by this record.
 
 ## Relationship to Other Decisions
 
-- **DEC-019 and DEC-021:** unchanged, and remain `ACTIVE`. As a `PROPOSED` record, DEC-022
-  does not conflict with either. How DEC-019 exits is set out in
+- **At activation (amended at activation):** DEC-019 is superseded by DEC-027, which keeps its
+  posture for every policy outside this record's scope; this record and DEC-027 divide DEC-019's
+  former scope by the opt-in. DEC-021 is superseded by DEC-026. DEC-023 and DEC-024 (Condition
+  1), DEC-025 (Condition 3) and DEC-028 are inputs and are unchanged.
+- **While `PROPOSED` (as published):** DEC-019 and DEC-021 unchanged, and remain `ACTIVE`. As a
+  `PROPOSED` record, DEC-022 does not conflict with either. How DEC-019 exits is set out in
   [What this proposes to replace](#what-this-proposes-to-replace).
 - **DEC-003, DEC-007, DEC-008, DEC-015:** preserved unchanged.
 - **Other `ACTIVE` decisions:** not affected.
+
+## Canonical Contract / Current Owner
+
+`docs/KEY_STRATEGY.md` §2 (the source-capacity class, LOCKED, amended under this record), §3.2
+and §6.1 (K2 as observation on the admission path); `docs/DECISION_MATRIX.md` §10 and §12;
+`docs/POLICIES.md` §7.2; `EvaluationPipeline` (the explicit lane rules) and `AdmissionRuntime`.
+
+## Amendments at activation
+
+Made on 2026-10-20 in PR #150, each marked in the text above:
+
+1. Status, Date and Decision Authority (activation).
+2. Scope / Concern and Decision 1: the policies in scope (OD-9).
+3. Decision 1: the owner of each non-conforming row for the policies in scope.
+4. Decision 2: what stays observable (OD-4).
+5. Decision 4: the declared costs by cell and mechanism (OD-10), N-151-01, the source granularity.
+6. Three decision levels and the replacement map: status at activation.
+7. Conditions: the proof at activation.
+8. Consequences, Relationship to Other Decisions, and the new Canonical Contract section.
+
+The status text of the proposal, as published (2026-10-18):
+
+> This is a proposal. It has not been approved. Under Decision Governance §5 a `PROPOSED`
+> decision is **not implementation authority**: no Runtime, contract, preset, threshold, test,
+> study gate or review verdict may rely on it as an approved rule. It may be cited as
+> non-binding research context, provided the citation states that the change has not been
+> approved. It does not change the status, text or effect of DEC-019 or DEC-021, which remain
+> `ACTIVE` and unchanged. The current runtime authorities are the ones DEC-019 names.
 
 ## Supersedes
 
