@@ -2,16 +2,16 @@ PHP 8.5.9 (cli) (built: Jul 28 2026 13:06:52) (NTS)
 PHPStan - PHP Static Analysis Tool 2.0.0
 PHPUnit 11.5.50 by Sebastian Bergmann and contributors.
 
- Network maatify-rate-limiter-21454-22351-30878_default Creating
- Network maatify-rate-limiter-21454-22351-30878_default Creating
- Network maatify-rate-limiter-21454-22351-30878_default Created
- Network maatify-rate-limiter-21454-22351-30878_default Created
- Container maatify-rate-limiter-21454-22351-30878-redis-1 Creating
- Container maatify-rate-limiter-21454-22351-30878-redis-1 Created
- Container maatify-rate-limiter-21454-22351-30878-redis-1 Starting
- Container maatify-rate-limiter-21454-22351-30878-redis-1 Started
- Container maatify-rate-limiter-21454-22351-30878-redis-1 Waiting
- Container maatify-rate-limiter-21454-22351-30878-redis-1 Healthy
+ Network maatify-rate-limiter-31267-29430-38451_default Creating
+ Network maatify-rate-limiter-31267-29430-38451_default Creating
+ Network maatify-rate-limiter-31267-29430-38451_default Created
+ Network maatify-rate-limiter-31267-29430-38451_default Created
+ Container maatify-rate-limiter-31267-29430-38451-redis-1 Creating
+ Container maatify-rate-limiter-31267-29430-38451-redis-1 Created
+ Container maatify-rate-limiter-31267-29430-38451-redis-1 Starting
+ Container maatify-rate-limiter-31267-29430-38451-redis-1 Started
+ Container maatify-rate-limiter-31267-29430-38451-redis-1 Waiting
+ Container maatify-rate-limiter-31267-29430-38451-redis-1 Healthy
 PHPUnit 11.5.50 by Sebastian Bergmann and contributors.
 
 Runtime:       PHP 8.5.9
@@ -47,76 +47,34 @@ Configuration: /Users/mohamedabdulalim/MEGA/Libraries/2026/php-rate-limiter/.cla
 ............................................................. 1525 / 1892 ( 80%)
 ............................................................. 1586 / 1892 ( 83%)
 ....REPORT dump-manifest {"streams.jsonl":{"lines":91,"sha256":"932767ad3299c994c209ae01dee937ff865ab4897050b36dabf0b33759b366ab"},"bru.jsonl":{"lines":2,"sha256":"c27486c4adbe557d970bf14e24b9ec77763ed88da92e33b1838a63ecd90f7204"},"g7streams.jsonl":{"lines":14,"sha256":"ac56a122acc820cd25353b7d06cd56b3a942c575ab1252368f36c346c2477a39"},"fixtures.jsonl":{"lines":25,"sha256":"fd5d76e63bb383aca7599fe06355861374b8ca18af2c75b1c774cf0e451c9420"},"constants.json":{"lines":1,"sha256":"dfcc3d7f8ef17c22d4a682d0513954f1dc0697034d1b386abcd2b3f690ccffa0"}}
-.......FF.................REPORT nm10-a1-a3 {"share":1,"A1":["L1 72 (S0 0, S24 0)","ABA_B 94 (S0 118, S24 72)","D2 61 (S0 117, S24 39)","Y6b 10 (S0 28, S24 0)"],"A3":["SP1n 24 (S12 12)","SP3 48 (S12 24)","SP6 144 (S12 72)","ABA_A 48 (S12 24)"]}
-.REPORT nm10-a1-a3 {"share":0.5,"A1":["L1 31 (S0 0, S24 0)"],"A3":[]}
+..........................REPORT nm10-a1-a3 {"share":0.1,"A1":[],"A3":[]}
 .REPORT nm10-a1-a3 {"share":0.25,"A1":["L1 7 (S0 0, S24 0)"],"A3":[]}
-.REPORT nm10-a1-a3 {"share":0.1,"A1":[],"A3":[]}
+.REPORT nm10-a1-a3 {"share":1,"A1":["L1 72 (S0 0, S24 0)","ABA_B 94 (S0 118, S24 72)","D2 61 (S0 117, S24 39)","Y6b 10 (S0 28, S24 0)"],"A3":["SP1n 24 (S12 12)","SP3 48 (S12 24)","SP6 144 (S12 72)","ABA_A 48 (S12 24)"]}
+.REPORT nm10-a1-a3 {"share":0.5,"A1":["L1 31 (S0 0, S24 0)"],"A3":[]}
+.REPORT nm5 {"rho":1,"abandon":0.25,"streams":{"ABA_B":{"legit":36,"delta":36,"causes":{"proof_capacity":36}},"D1":{"legit":0,"delta":0,"causes":[]},"D2":{"legit":25,"delta":1,"causes":{"account_bucket":14,"source_capacity":11}},"KD":{"legit":8,"delta":-1,"causes":{"penalty":2,"soft":6}},"L1":{"legit":7,"delta":7,"causes":{"proof_capacity":7}},"L3":{"legit":0,"delta":0,"causes":[]},"N12":{"legit":0,"delta":0,"causes":[]},"Nu4":{"legit":10,"delta":10,"causes":{"account_bucket":10}},"OFF12":{"legit":0,"delta":0,"causes":[]},"UAC":{"legit":8,"delta":-1,"causes":{"penalty":2,"soft":6}},"Y6b":{"legit":0,"delta":0,"causes":[]}}}
+.REPORT nm5 {"rho":3,"abandon":0.25,"streams":{"ABA_B":{"legit":110,"delta":110,"causes":{"proof_capacity":110}},"D1":{"legit":0,"delta":0,"causes":[]},"D2":{"legit":109,"delta":85,"causes":{"account_bucket":77,"source_capacity":32}},"KD":{"legit":8,"delta":-1,"causes":{"proof_capacity":8}},"L1":{"legit":112,"delta":112,"causes":{"proof_capacity":112}},"L3":{"legit":0,"delta":0,"causes":[]},"N12":{"legit":15,"delta":15,"causes":{"account_bucket":11,"source_capacity":4}},"Nu4":{"legit":32,"delta":32,"causes":{"account_bucket":14,"proof_capacity":18}},"OFF12":{"legit":6,"delta":6,"causes":{"account_bucket":1,"source_capacity":5}},"UAC":{"legit":8,"delta":-1,"causes":{"proof_capacity":8}},"Y6b":{"legit":22,"delta":22,"causes":{"proof_capacity":22}}}}
 .REPORT nm5 {"rho":1,"abandon":0.1,"streams":{"ABA_B":{"legit":0,"delta":0,"causes":[]},"D1":{"legit":0,"delta":0,"causes":[]},"D2":{"legit":24,"delta":0,"causes":{"source_capacity":22,"source_failure_cap":2}},"KD":{"legit":9,"delta":0,"causes":{"penalty":2,"soft":7}},"L1":{"legit":0,"delta":0,"causes":[]},"L3":{"legit":0,"delta":0,"causes":[]},"N12":{"legit":0,"delta":0,"causes":[]},"Nu4":{"legit":0,"delta":0,"causes":[]},"OFF12":{"legit":0,"delta":0,"causes":[]},"UAC":{"legit":9,"delta":0,"causes":{"penalty":2,"soft":7}},"Y6b":{"legit":0,"delta":0,"causes":[]}}}
-.REPORT nm5 {"rho":1,"abandon":0.25,"streams":{"ABA_B":{"legit":36,"delta":36,"causes":{"proof_capacity":36}},"D1":{"legit":0,"delta":0,"causes":[]},"D2":{"legit":25,"delta":1,"causes":{"account_bucket":11,"source_capacity":14}},"KD":{"legit":8,"delta":-1,"causes":{"penalty":2,"soft":6}},"L1":{"legit":7,"delta":7,"causes":{"proof_capacity":7}},"L3":{"legit":0,"delta":0,"causes":[]},"N12":{"legit":0,"delta":0,"causes":[]},"Nu4":{"legit":10,"delta":10,"causes":{"account_bucket":10}},"OFF12":{"legit":0,"delta":0,"causes":[]},"UAC":{"legit":8,"delta":-1,"causes":{"penalty":2,"soft":6}},"Y6b":{"legit":0,"delta":0,"causes":[]}}}
-.REPORT nm5 {"rho":2,"abandon":0,"streams":{"ABA_B":{"legit":98,"delta":98,"causes":{"proof_capacity":98}},"D1":{"legit":0,"delta":0,"causes":[]},"D2":{"legit":85,"delta":61,"causes":{"account_bucket":32,"source_capacity":53}},"KD":{"legit":8,"delta":-1,"causes":{"penalty":1,"proof_capacity":7}},"L1":{"legit":82,"delta":82,"causes":{"proof_capacity":82}},"L3":{"legit":0,"delta":0,"causes":[]},"N12":{"legit":0,"delta":0,"causes":[]},"Nu4":{"legit":0,"delta":0,"causes":[]},"OFF12":{"legit":1,"delta":1,"causes":{"source_capacity":1}},"UAC":{"legit":8,"delta":-1,"causes":{"penalty":1,"proof_capacity":7}},"Y6b":{"legit":13,"delta":13,"causes":{"proof_capacity":13}}}}
-.REPORT nm5 {"rho":3,"abandon":0.25,"streams":{"ABA_B":{"legit":110,"delta":110,"causes":{"proof_capacity":110}},"D1":{"legit":0,"delta":0,"causes":[]},"D2":{"legit":109,"delta":85,"causes":{"account_bucket":68,"source_capacity":41}},"KD":{"legit":8,"delta":-1,"causes":{"proof_capacity":8}},"L1":{"legit":112,"delta":112,"causes":{"proof_capacity":112}},"L3":{"legit":0,"delta":0,"causes":[]},"N12":{"legit":15,"delta":15,"causes":{"account_bucket":11,"source_capacity":4}},"Nu4":{"legit":32,"delta":32,"causes":{"account_bucket":14,"proof_capacity":18}},"OFF12":{"legit":6,"delta":6,"causes":{"account_bucket":1,"source_capacity":5}},"UAC":{"legit":8,"delta":-1,"causes":{"proof_capacity":8}},"Y6b":{"legit":22,"delta":22,"causes":{"proof_capacity":22}}}}
-.REPORT nm5 {"rho":3,"abandon":0,"streams":{"ABA_B":{"legit":110,"delta":110,"causes":{"proof_capacity":110}},"D1":{"legit":0,"delta":0,"causes":[]},"D2":{"legit":109,"delta":85,"causes":{"account_bucket":67,"source_capacity":42}},"KD":{"legit":8,"delta":-1,"causes":{"proof_capacity":8}},"L1":{"legit":112,"delta":112,"causes":{"proof_capacity":112}},"L3":{"legit":0,"delta":0,"causes":[]},"N12":{"legit":4,"delta":4,"causes":{"source_capacity":4}},"Nu4":{"legit":32,"delta":32,"causes":{"account_bucket":14,"proof_capacity":18}},"OFF12":{"legit":6,"delta":6,"causes":{"account_bucket":1,"source_capacity":5}},"UAC":{"legit":8,"delta":-1,"causes":{"proof_capacity":8}},"Y6b":{"legit":22,"delta":22,"causes":{"proof_capacity":22}}}}
+.REPORT nm5 {"rho":2,"abandon":0,"streams":{"ABA_B":{"legit":98,"delta":98,"causes":{"proof_capacity":98}},"D1":{"legit":0,"delta":0,"causes":[]},"D2":{"legit":85,"delta":61,"causes":{"account_bucket":39,"source_capacity":46}},"KD":{"legit":8,"delta":-1,"causes":{"penalty":1,"proof_capacity":7}},"L1":{"legit":82,"delta":82,"causes":{"proof_capacity":82}},"L3":{"legit":0,"delta":0,"causes":[]},"N12":{"legit":0,"delta":0,"causes":[]},"Nu4":{"legit":0,"delta":0,"causes":[]},"OFF12":{"legit":1,"delta":1,"causes":{"source_capacity":1}},"UAC":{"legit":8,"delta":-1,"causes":{"penalty":1,"proof_capacity":7}},"Y6b":{"legit":13,"delta":13,"causes":{"proof_capacity":13}}}}
+.REPORT nm5 {"rho":3,"abandon":0,"streams":{"ABA_B":{"legit":110,"delta":110,"causes":{"proof_capacity":110}},"D1":{"legit":0,"delta":0,"causes":[]},"D2":{"legit":109,"delta":85,"causes":{"account_bucket":75,"source_capacity":34}},"KD":{"legit":8,"delta":-1,"causes":{"proof_capacity":8}},"L1":{"legit":112,"delta":112,"causes":{"proof_capacity":112}},"L3":{"legit":0,"delta":0,"causes":[]},"N12":{"legit":4,"delta":4,"causes":{"source_capacity":4}},"Nu4":{"legit":32,"delta":32,"causes":{"account_bucket":14,"proof_capacity":18}},"OFF12":{"legit":6,"delta":6,"causes":{"account_bucket":1,"source_capacity":5}},"UAC":{"legit":8,"delta":-1,"causes":{"proof_capacity":8}},"Y6b":{"legit":22,"delta":22,"causes":{"proof_capacity":22}}}}
 .......REPORT gate-p {"L1":72,"D2":61,"SP6":144}
-..........REPORT sc3 {"preCheckObservationWritesBeforeTheRefusal":true}
-.....REPORT sc6 {"legitSourceCapacityRefusals":{"ABA_B|none|none":72,"D2|none|fresh":22,"D2|none|none":22,"MIX|none|fresh":12,"MIX|none|const":12,"MIX|none|none":12,"TPAIRT|none|none":4}}
+........REPORT sc3 {"preCheckObservationWritesBeforeTheRefusal":true}
+.......REPORT sc6 {"legitSourceCapacityRefusals":{"ABA_B|none|none":72,"D2|none|fresh":22,"D2|none|none":22,"MIX|none|fresh":12,"MIX|none|const":12,"MIX|none|none":12}}
 . 1647 / 1892 ( 87%)
-REPORT nm10-b {"stream":"BRU24","share":1,"scored":0,"accepted":0,"cases":{"missing":51,"unknown":51,"rejected":51,"late":51}}
-.REPORT nm10-b {"stream":"BRU24","share":0.5,"scored":26,"accepted":26,"cases":{"missing":51,"unknown":51,"rejected":51,"duplicate":26,"conflict":26,"late":25}}
+REPORT nm10-b {"stream":"BRU24","share":0.5,"scored":26,"accepted":26,"cases":{"missing":51,"unknown":51,"rejected":51,"duplicate":26,"conflict":26,"late":25}}
 .REPORT nm10-b {"stream":"BRU24","share":0.1,"scored":46,"accepted":46,"cases":{"missing":51,"unknown":51,"rejected":51,"duplicate":46,"conflict":46,"late":5}}
+.REPORT nm10-b {"stream":"BRU24","share":1,"scored":0,"accepted":0,"cases":{"missing":51,"unknown":51,"rejected":51,"late":51}}
 .REPORT nm10-b {"stream":"BRU24","share":0.25,"scored":39,"accepted":39,"cases":{"missing":51,"unknown":51,"rejected":51,"duplicate":39,"conflict":39,"late":12}}
-.REPORT nm10-b {"stream":"STEAL","share":1,"scored":0,"cases":{"missing":43,"unknown":43,"rejected":43,"late":43}}
-.REPORT nm10-b {"stream":"STEAL","share":0.1,"scored":37,"cases":{"missing":41,"unknown":41,"rejected":41,"duplicate":37,"conflict":37,"late":4}}
 .REPORT nm10-b {"stream":"STEAL","share":0.5,"scored":22,"cases":{"missing":43,"unknown":43,"rejected":43,"duplicate":22,"conflict":22,"late":21}}
+.REPORT nm10-b {"stream":"STEAL","share":0.1,"scored":37,"cases":{"missing":41,"unknown":41,"rejected":41,"duplicate":37,"conflict":37,"late":4}}
 .REPORT nm10-b {"stream":"STEAL","share":0.25,"scored":32,"cases":{"missing":42,"unknown":42,"rejected":42,"duplicate":32,"conflict":32,"late":10}}
+.REPORT nm10-b {"stream":"STEAL","share":1,"scored":0,"cases":{"missing":43,"unknown":43,"rejected":43,"late":43}}
 ...................................................... 1708 / 1892 ( 90%)
 ............................................................. 1769 / 1892 ( 93%)
 ............................................................. 1830 / 1892 ( 96%)
 ............................................................. 1891 / 1892 ( 99%)
 .                                                             1892 / 1892 (100%)
 
-Time: 19:30.968, Memory: 422.00 MB
+Time: 21:13.017, Memory: 426.00 MB
 
-There were 2 failures:
-
-1) Maatify\RateLimiter\Tests\System\AdmissionArchiveG7Test::testEveryArchivedG7RowIsReproducedFieldForField with data set "PX4" ('PX4')
-measured differences against the G7 archive
-Failed asserting that two arrays are identical.
---- Expected
-+++ Actual
-@@ @@
--Array &0 []
-+Array &0 [
-+    0 => 'TPAIRT|none|none|pre+out: legitDeniedByCause,attackDeniedByCause',
-+    1 => 'D2|none|fresh|pre: legitDeniedByCause',
-+    2 => 'D2|none|none|pre: legitDeniedByCause',
-+    3 => 'MIX|none|fresh|pre: legitDeniedByCause',
-+    4 => 'MIX|none|const|pre: legitDeniedByCause',
-+    5 => 'MIX|none|none|pre: legitDeniedByCause',
-+    6 => 'TPAIRT|none|none|pre: attackDeniedByCause',
-+]
-
-/Users/mohamedabdulalim/MEGA/Libraries/2026/php-rate-limiter/.claude/worktrees/workstream-b-correlation-security-56a5bc/tests/System/AdmissionArchiveG7Test.php:219
-
-2) Maatify\RateLimiter\Tests\System\AdmissionArchiveG7Test::testEveryArchivedG7RowIsReproducedFieldForField with data set "NOUA2" ('NOUA2')
-measured differences against the G7 archive
-Failed asserting that two arrays are identical.
---- Expected
-+++ Actual
-@@ @@
--Array &0 []
-+Array &0 [
-+    0 => 'TPAIRT|none|none|pre+out: legitDeniedByCause,attackDeniedByCause',
-+    1 => 'D2|none|fresh|pre: legitDeniedByCause',
-+    2 => 'D2|none|none|pre: legitDeniedByCause',
-+    3 => 'MIX|none|fresh|pre: legitDeniedByCause',
-+    4 => 'MIX|none|const|pre: legitDeniedByCause',
-+    5 => 'MIX|none|none|pre: legitDeniedByCause',
-+    6 => 'TPAIRT|none|none|pre: attackDeniedByCause',
-+]
-
-/Users/mohamedabdulalim/MEGA/Libraries/2026/php-rate-limiter/.claude/worktrees/workstream-b-correlation-security-56a5bc/tests/System/AdmissionArchiveG7Test.php:219
-
-FAILURES!
-Tests: 1892, Assertions: 25356, Failures: 2.
-Script bash scripts/ci/run-phpunit-with-redis.sh handling the test event returned with error code 1
-exit: 1
+OK (1892 tests, 24740 assertions)
+exit: 0
