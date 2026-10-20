@@ -1,0 +1,29 @@
+ Network maatify-rate-limiter-14012-5201-89841_default Creating
+ Network maatify-rate-limiter-14012-5201-89841_default Creating
+ Network maatify-rate-limiter-14012-5201-89841_default Created
+ Network maatify-rate-limiter-14012-5201-89841_default Created
+ Container maatify-rate-limiter-14012-5201-89841-redis-1 Creating
+ Container maatify-rate-limiter-14012-5201-89841-redis-1 Created
+ Container maatify-rate-limiter-14012-5201-89841-redis-1 Starting
+ Container maatify-rate-limiter-14012-5201-89841-redis-1 Started
+ Container maatify-rate-limiter-14012-5201-89841-redis-1 Waiting
+ Container maatify-rate-limiter-14012-5201-89841-redis-1 Healthy
+PHPUnit 11.5.57 by Sebastian Bergmann and contributors.
+
+Runtime:       PHP 8.5.9
+Configuration: /Users/mohamedabdulalim/MEGA/Libraries/2026/php-rate-limiter/.claude/worktrees/admission-runtime-outcome-permit-6329cf/phpunit.xml
+
+...............................................................  63 / 512 ( 12%)
+............................................................... 126 / 512 ( 24%)
+............................................................... 189 / 512 ( 36%)
+............................................................... 252 / 512 ( 49%)
+............................................................... 315 / 512 ( 61%)
+............................................................... 378 / 512 ( 73%)
+............................................................... 441 / 512 ( 86%)
+............................................................... 504 / 512 ( 98%)
+........                                                        512 / 512 (100%)
+
+Time: 13:16.858, Memory: 56.00 MB
+
+OK (512 tests, 9714 assertions)
+exit 0 seconds 802

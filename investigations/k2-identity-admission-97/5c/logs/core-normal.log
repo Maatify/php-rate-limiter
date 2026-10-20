@@ -1,0 +1,61 @@
+ Network maatify-rate-limiter-30128-5353-55742_default Creating
+ Network maatify-rate-limiter-30128-5353-55742_default Creating
+ Network maatify-rate-limiter-30128-5353-55742_default Created
+ Network maatify-rate-limiter-30128-5353-55742_default Created
+ Container maatify-rate-limiter-30128-5353-55742-redis-1 Creating
+ Container maatify-rate-limiter-30128-5353-55742-redis-1 Created
+ Container maatify-rate-limiter-30128-5353-55742-redis-1 Starting
+ Container maatify-rate-limiter-30128-5353-55742-redis-1 Started
+ Container maatify-rate-limiter-30128-5353-55742-redis-1 Waiting
+ Container maatify-rate-limiter-30128-5353-55742-redis-1 Healthy
+PHPUnit 11.5.57 by Sebastian Bergmann and contributors.
+
+Runtime:       PHP 8.5.9
+Configuration: /Users/mohamedabdulalim/MEGA/Libraries/2026/php-rate-limiter/.claude/worktrees/admission-runtime-outcome-permit-6329cf/phpunit.xml
+
+.............................................................   61 / 1832 (  3%)
+...........................REPORT lt-27-set-and-bucket-restart {"failingAccountsAfterRotation":4,"bucketTakesAfterRotation":4}
+..REPORT lt-27-rotation-capacity {"afterFirstRotation":0,"afterSecondRotation":24}
+................................  122 / 1832 (  6%)
+........................REPORT nm7-fleet {"oldWorkers":2,"cx":24,"perWindow":[{"admitted":8,"oldCalls":60},{"admitted":5,"oldCalls":60},{"admitted":7,"oldCalls":60}]}
+.REPORT nm7-fleet {"oldWorkers":1,"cx":24,"perWindow":[{"admitted":8,"oldCalls":30},{"admitted":7,"oldCalls":30},{"admitted":7,"oldCalls":30}]}
+.REPORT nm7-m6 {"oldBuildDecisions":"AAAAAAAHHHHHHHHHHHHHH","lost":["K4P","K5p","k5p","anti_equilibrium_device_p","known_device_allowance_p","anti_equilibrium_p","budget_cooldown_p"]}
+...................................  183 / 1832 (  9%)
+.............................................................  244 / 1832 ( 13%)
+.............................................................  305 / 1832 ( 16%)
+.............................................................  366 / 1832 ( 19%)
+.............................................................  427 / 1832 ( 23%)
+.............................................................  488 / 1832 ( 26%)
+.............................................................  549 / 1832 ( 29%)
+.............................................................  610 / 1832 ( 33%)
+.............................................................  671 / 1832 ( 36%)
+.............................................................  732 / 1832 ( 39%)
+.............................................................  793 / 1832 ( 43%)
+.............................................................  854 / 1832 ( 46%)
+.............................................................  915 / 1832 ( 49%)
+.............................................................  976 / 1832 ( 53%)
+............................................................. 1037 / 1832 ( 56%)
+..................REPORT records-verbatim-dec026 {"source":"DEC-021_KNOWN_DEVICE_VERIFIER_BOUND.md","target":"DEC-026_KNOWN_DEVICE_VERIFIER_BOUND_FOR_THE_ADMISSION_LAYER.md","bytesBySection":{"Decision Authority / Deciders":1423,"Context":1029,"Decision":3554,"Rationale":1995,"Consequences":4419,"Alternatives Not Adopted":1168}}
+..REPORT records-verbatim-dec027 {"source":"DEC-019_INTERIM_SECURITY_FIRST_CORRELATION_POSTURE.md","target":"DEC-027_RETAINED_CORRELATION_POSTURE_FOR_POLICIES_THAT_DO_NOT_OPT_INTO_ADMISSION.md","bytesBySection":{"Decision Authority":612,"Scope / Concern":419,"Context":1958,"Decision":2594,"Rationale":345,"Consequences":652,"Relationship to Other Decisions":271}}
+.REPORT records-verbatim-appendix-a {"paragraphs":11,"sha256":"5642bd4dfa6df3d6d5d6fec6821a913e083c68a0d9a4d41404e6ce5bb2607cfd"}
+........................................ 1098 / 1832 ( 59%)
+............................................................. 1159 / 1832 ( 63%)
+............................................................. 1220 / 1832 ( 66%)
+............................................................. 1281 / 1832 ( 69%)
+............................................................. 1342 / 1832 ( 73%)
+............................................................. 1403 / 1832 ( 76%)
+............................................................. 1464 / 1832 ( 79%)
+............................................................. 1525 / 1832 ( 83%)
+............................................................. 1586 / 1832 ( 86%)
+.....REPORT sc3 {"preCheckObservationWritesBeforeTheRefusal":true}
+.....REPORT sc6 {"legitSourceCapacityRefusals":{"ABA_B|none|none":72,"D2|none|fresh":22,"D2|none|none":22,"MIX|none|fresh":12,"MIX|none|const":12,"MIX|none|none":12}}
+................................................... 1647 / 1832 ( 89%)
+............................................................. 1708 / 1832 ( 93%)
+............................................................. 1769 / 1832 ( 96%)
+............................................................. 1830 / 1832 ( 99%)
+..                                                            1832 / 1832 (100%)
+
+Time: 10:25.031, Memory: 82.00 MB
+
+OK (1832 tests, 24423 assertions)
+exit 0 seconds 630
