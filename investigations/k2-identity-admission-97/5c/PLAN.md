@@ -4,6 +4,7 @@
 > **Binding inputs:** `RUNTIME_IMPLEMENTATION_CONTRACT.md` (RIC) §0.1, §1.1, §5, §6, §7, §8, §9.3 and Appendix A; DEC-019 Decisions 5 and 6; DEC-021; DEC-022 (`PROPOSED`) Decisions 1–4 and "Conditions to become ACTIVE"; DEC-023; DEC-024 points 1–4 and C-c1…C-c7; DEC-025; Decision Governance §3, §5, §6, §9; the stage records `5b2/`, `5b2.1/`, `5b2.2/`, `5b3a/`, `5b3b/` and the Lead reviews of #144–#149 (the 5-b3b review is [#147 comment 6297302409](https://github.com/Maatify/php-rate-limiter/pull/147#issuecomment-6297302409), notes N-147-01…04).
 > **Rules kept from every earlier stage:** plan before code; red tests before the implementation; no registered condition is changed after it has run; a contract question is raised as an LT before the build; no existing test is edited without a ruling; a confirmed finding blocks Ready and merge.
 > **Line citations** are `main@05922dd`.
+> **Since commit 1 of the atomic stage (§7, base `main@13870bb`)** this PR carries the atomic 5-c change itself, as #147 grew from its plan commit. §1–§6 are kept as written when the Owner and the Lead ruled on them; what their rulings change is stated in §7, not by editing §1–§6.
 
 ## 0. What 5-c is, in one paragraph
 
@@ -239,3 +240,108 @@ Any test changed after commit 4 is disclosed in an "Amendments after the tests" 
 ## 6. Limits
 
 This plan reads the code and the records at `main@05922dd`; every number is quoted from a merged archive or a merged 5-b RESULTS file, and the four new findings (F-5c0-01 scope, F-5c0-02 best-response, F-5c0-05 fence at rotation and no close, and the D8-disabled stream gates of LT-28) come from reading the records and the code, not from a new run. Nothing is decided here; the atomic PR starts only after the Owner decisions OD-3 … OD-10 and the Lead rulings LT-26 … LT-32 are posted and recorded in commit 1.
+
+## 7. Owner decisions and Lead rulings, recorded (commit 1 of the atomic stage; base `main@13870bb`)
+
+Recorded before any test or line of the implementation. Nothing in this section was run against anything.
+
+### 7.1 Sources
+
+| What | Where |
+| --- | --- |
+| Lead rulings LT-26 … LT-32 and verification of F-5c0-01 / 02 / 05 | [#150 comment 6298046892](https://github.com/Maatify/php-rate-limiter/pull/150#issuecomment-6298046892) |
+| Owner: OD-10 deferred to the study G8 | [#150 comment 6298114042](https://github.com/Maatify/php-rate-limiter/pull/150#issuecomment-6298114042) |
+| G8 (bucket capacity `C` ∈ {2, 3, 4} at `T` 1800 on the production code), merged as evidence | #151, `main@8f8ecc3`; notes N-151-01 / N-151-02 in its Lead review |
+| Owner decisions OD-3 … OD-10 and the authorisation of the operations PR, then of this PR | [#150 comment 6299051848](https://github.com/Maatify/php-rate-limiter/pull/150#issuecomment-6299051848) |
+| Operations PR for N-147-02 (archive suite on PHP 8.4 and 8.5, Lowest 20 min with the archive split) | #152, `main@13870bb` |
+| Base of the atomic PR and the timeout item | [#150 comment 6300269333](https://github.com/Maatify/php-rate-limiter/pull/150#issuecomment-6300269333) |
+
+### 7.2 Owner decisions (2026-10-20, comment 6299051848)
+
+| OD | Decision as posted | What it fixes in this PR |
+| --- | --- | --- |
+| OD-3 | (a) | The one-time K5 restart is a declared cost of DEC-026 (Appendix A text unchanged); M4 sentence 2 and ILD §6.2 get a dated correction note; reading B is not built |
+| OD-4 | (a) | DEC-022 Decision 2's "stay observable" list narrowed to what the opted path observes (the K2 score, including missing-fingerprint deltas); churn and LOW dilution not observed for opted policies; the API item does not apply |
+| OD-5 | (a), OD-5.1 same name | An official Login-only variant chosen explicitly by the Host; budget group `login`; mode `PRE_AND_OUT`; policy name `login_protection` (the migration and rollback measured by NM-7 / M6) |
+| OD-6 | (a) | A successor record supersedes DEC-019 and restates its posture verbatim for policies that do not opt in; DEC-019 `SUPERSEDED`; #97, #100, #106 stay open for them |
+| OD-7 | (a′) | A package method that **opens** the fence only, on an additive interface reached by `instanceof`; a runbook in `docs/` (order, re-opening after a secret rotation, closing by deleting the key); the fence reads the current key, else the previous one (LT-27 (3)) |
+| OD-8 | (b) | A small separate record: `D` 30 s and `G` 600 s are package constants, and with them the DEC-025 values become the package constants of the builder line |
+| OD-9 | (a) | DEC-022's scope at activation = policies that opt in under DEC-024; the others stay under the OD-6 record |
+| OD-10 | (a) with `C` = 4 (G8) | DEC-022's activation text names each cell by number **and by its governing mechanism**: `X1` / `BRU` / `BRD` 4 / 5 / 5 (the bucket: `C` / `C`+1 / `C`+1; `C` = 2 returns them to S0 at the price of an owner lockout on K5U, 26 refusals, `pre` D2 85 and KD 10, G8); MIX attack 8, ABA_A 8, SP3 8 (`F` / `U_src`, unchanged by any `C`; A3 holds at S12); TMS 29/61, TMSd 40/200 (D8, declared cost X2) |
+
+### 7.3 Lead rulings (comment 6298046892)
+
+| LT | Ruling | Consequence for this PR |
+| --- | --- | --- |
+| LT-26 | As recommended | One registered gate (§7.6.3); DEC-022's text names the IPv6 hierarchy `UNPROVEN` (SF §5 row 6); the gate proves `/64` equivalence only |
+| LT-27 | (1), (2) one registered test each, reported values, detector T1-N5; **(3) the fence reads the current key, else the previous one**, as `binding_epoch`, with a test and the runbook line "re-open under the new secret before the previous one is withdrawn"; no close operation in 5-c | §7.6.4; a change of `AdmissionRuntime::fenceOpen()` (amends part of LT-13 on measured grounds) |
+| LT-28 | As recommended | Through the builder: the G7 `PX4` arm (210 rows), the fixtures on `PX4`, SC-1…6, CYCLES / LIFECYCLE, LANE, FAIL, the fence, the permit cases, NM-7 engine, the S0 goldens. On the direct engine, unchanged: the `FULL2` arms without D8, every ablation, every mutant detector. A rerun is not a re-registration |
+| LT-29 | As recommended | Index columns only for DEC-023 / 024 / 025, each change listed in RESULTS; the records' texts stay historical |
+| LT-30 | As recommended, **and the test method is renamed** to match the new statement | A declared, ruled change of `AdmissionRegistrationRulesTest::testBuilderRejectsAFullyEquippedAdmissionPolicyBecauseItNeverBuildsTheRuntime` (5-b1, L116); the engine test without a runtime (L100) is unchanged |
+| LT-31 | As recommended | The runtime is constructed only when a registered policy declares S1; any other composition is today's, byte for byte, with no runtime object and no fence read |
+| LT-32 | As recommended | One `@internal` factory `AdmissionBudgetsDTO::packageDefaults()`, the only place in `src/` holding the numbers, with a docblock citing DEC-025 item by item and the OD-8 record; no setter in `RateLimiterConfig` or the builder; grep gate "the numbers appear in the factory only" |
+
+### 7.4 Operational items and notes carried into this PR
+
+* **N-147-02** is closed by #152 (not part of this diff).
+* **Timeouts** (comment 6300269333): `Test Suite` (7:57 of 10 min) and `Integration Test Suite` (9:33 of 15) are re-checked in `5c/RESULTS.md` after measuring `composer test:core` and the integration suite at the atomic HEAD; any change is proposed there, not made in this PR.
+* **N-151-01:** DEC-022's activation text states that G8 ran on the reference store, not on Redis (accepted for a budget study: the store logic is the one NM-6 proved identical).
+* **N-151-02** (F-G8-06): `USAGE_GUIDE.md` gains a Host recommendation: re-issue the credential before its absolute expiry (sliding renewal) even at `C` = 4, because an owner whose credential expires in the middle of a typing-error burst falls to the U door.
+
+### 7.5 What these rulings change in §1–§4 (named here; §1–§4 are not edited)
+
+| Item | Now |
+| --- | --- |
+| Record numbers (proposed; the Owner may renumber) | **DEC-026** replaces DEC-021 (RIC Appendix A); **DEC-027** succeeds DEC-019 (OD-6), proposed title "Retained Correlation Posture for Policies That Do Not Opt Into Admission"; **DEC-028** permit timing and package constants (OD-8), proposed title "Admission Permit Timing and the Package Constants of the Admission Runtime". DEC-022 becomes `ACTIVE` under its own number |
+| The variant (OD-5) | `Config\LoginProtectionAdmissionPolicy`, extending `LoginProtectionPolicy` (not final, `LoginProtectionPolicy.php:25`): same name, values, thresholds, deltas, fallback and DEC-007 lifecycle; adds `ADMISSION_RESERVATION` to the inherited capabilities and implements `AdmissionReservationPolicyInterface` (`PRE_AND_OUT`, `login`). Class name proposed; the Lead may rename |
+| The fence method (OD-7) | `Service\AdmissionFenceControlInterface::openAdmissionFence(string $budgetGroup): int` (returns the fence value after the bump), implemented by `RateLimiterEngine` and `CompositeRateLimiterRuntime` exactly as S8; a `RateLimiterException` when no admission runtime is configured. The bump writes the current key and reads the previous one (`bumpBindingEpoch(current, previous)`). Name proposed |
+| Runbook (OD-7) | A section of `docs/guides/USAGE_GUIDE.md` ("Operating the admission fence"): roll the whole fleet to this version, then open per budget group; one store read per opted request even while closed (N-147-01); after a key-secret rotation re-open under the new secret before the previous secret is withdrawn; closing = deleting the fence key in Redis (no package operation); a closed fence = the opted policy runs the S0 path and outcomes need no permit |
+| §4.2 row 5 (CVH detectors) | The CVH installs the package as a consumer and cannot load mutants (`scripts/ci/check-consumer-verification-boundary.sh`); each scenario carries its own **control** instead (§7.6.5). The mutant detectors stay in PHPUnit (§4.2 row 4) |
+| §2 map, IPv6 row | Becomes "`/64` equivalence proven by LT-26's gate; the `/48` hierarchy `UNPROVEN`" once the gate passes |
+| §2 map, rotation row | Becomes covered once LT-27 (1)–(3) pass, with the re-issued sizes reported |
+
+### 7.6 Registrations (before any test is written)
+
+#### 7.6.1 S0-PARITY — builder goldens (gate 1; recorded in commit 2 on the unmodified base)
+
+* **Composition.** `RateLimiterBuilder::fromFullCapabilityStore($config, new FullCapabilityInMemoryStore($clock), new RecordingFailureSignalEmitter())->withClock($clock)->withPolicy($policy)->build()`, with `$config` = `new RateLimiterConfig('lab-secret', 'lab-fp-secret', 'prod')` and the same with `bindingKeySecret` set. Clock `FixedClock('2026-01-01 12:00:00')`.
+* **Policies.** `LoginProtectionPolicy`, `OtpProtectionPolicy`, `ApiHeavyProtectionPolicy`, and the custom non-opted authentication policy of the 5-b1 tests (`DeclaresCapabilityWithoutInterfacePolicy('custom_auth')`, capability `TRUSTED_AUTHENTICATION`).
+* **Scenario A** = the 160-step scenario of `FamilyS0ParityTest` / `AdmissionEngineS0GoldensTest` (same contexts, commands and clock, the Host sending `clientInstanceId` and a credential minted by `AdmissionCredentialCodec`), played through the composite runtime.
+* **Scenario B (collective rules)** = 60 steps from one IPv4 source `203.0.113.7`: account `acct-(step % 8)`, a user agent whose browser major is `100 + step` (a new K2 per step), no instance id, commands `checkOnly` then `recordFailure` alternating, clock +20 s per step. It exercises the K1 spray and K2 churn / dilution paths that scenario A does not reach; the reason is the one of the assignment: a builder line that routed a non-opted policy into the opted path would turn those collective rules off.
+* **Golden** per policy and scenario: the decision string (`A` / `S` / `H`) and the sha-256 of `serialize($store)` with every 32-hex random id replaced by `ID` (the masking of the 5-b3a goldens). **Both configurations (with and without `bindingKeySecret`) must give the same golden.**
+* **Where.** `tests/Unit/Admission/AdmissionBuilderS0GoldensTest.php`, the goldens a constant of the class, group `s0`. Commit 2 adds this test and nothing else; it passes on `main@13870bb` (`git diff 13870bb -- src` empty at commit 2) and must pass unchanged at HEAD.
+* **Detector (commit 4).** A builder whose engine treats every policy as opted (the engine's opt-in check mutated to return the budget group for every policy, fence open) changes at least one golden.
+
+#### 7.6.2 DORMANT, new meaning (gate 2)
+
+The runtime constructed by `build()` for a composition with the variant carries an `AdmissionBudgetsDTO` equal, field by field, to: `windowSeconds` 600, `sourceCapacity` 24, `sourceFailureCap` 4, `accountBucketTakes` 4, `accountBucketSeconds` 1800, `proofAccountWindow` 10, `proofAccountDay` 60, `proofProofWindow` 6, `proofProofDay` 30, `newDevicesPerDay` 10, `crossAccountFailureCap` 4 (DEC-025 1.4, 2.2, 3.1, 8 / RIC §0.1), `permitDeadlineSeconds` 30, `permitGraceSeconds` 600 (DEC-028). The test types these values with their citations; it is the only place outside the factory that does. Read by reflection through the engine. Also: a composition without an opted policy has no runtime object (LT-31); the public API of `RateLimiterConfig` and `RateLimiterBuilder` has no budget input (reflection over public methods and constructor parameters). Detector: a builder that takes one budget from configuration fails the field comparison.
+
+#### 7.6.3 LT-26 — IPv6 `/64` equivalence
+
+The archived G4 v2 `BRD` and `X2` tuples (all variants in `streams.jsonl`, `pre+out`), replayed on the `FULL2` lab as RP-G4 does, twice: with the dumped IPv4 sources, and with each distinct IPv4 source mapped injectively to its own `/64` inside `2001:db8:aaaa::/48` (`2001:db8:aaaa:{n}::1`, `n` the index of first appearance). **PASS:** the two replays are equal row by row on `dec`, `reach`, `kinds`, `lanes` and `m`. **Detector:** an `AdmissionRuntime` mutant whose source is the `/48` (`SourcePrefix::of($context->ip)` → `SourcePrefix::of($context->ip, 48)`, exact-line mutation by `ServiceMutant`) makes at least one row differ.
+
+#### 7.6.4 LT-27 — rotation
+
+On the `PX4` lab (reference store), one source and one budget group:
+1. **Second rotation in one window.** Spend `U_src` (24 `checkOnly` of distinct unknown accounts, each followed by a success outcome) at `t` 0…; rotate the key secret once (current = s2, previous = s1) at `t` 100 and count admissions until the first refusal; rotate again (current = s3, previous = s2) at `t` 200 and count again. **Registered:** after the first rotation 0 further admissions (counters sum current + previous, C-c3); after the second the number re-issued is **reported** (expected by the contract: 24, the capacity re-issue RIC §8.3 asks to show).
+2. **Set-size and bucket scopes at one rotation.** Fill the U net failure set (4 failed accounts) and one account bucket (4 takes); rotate once; **report** how many further distinct failing accounts are admitted before `source_failure_cap` and how many takes before `account_bucket` (KS §4.8: they restart).
+3. **Fence across a rotation.** Open under s1; rotate to (s2, s1): the fence reads open; rotate to (s3, s2) without re-opening: closed; open under s3: open. **Detector:** the 5-b3b `fenceOpen()` (current key only) reads closed right after the first rotation.
+
+Detector of (1) and (2): T1-N5 (a store that writes the previous key) changes the count after the first rotation.
+
+#### 7.6.5 CVH scenarios (gate 5; `consumer-verification/verify.php`, real Redis, `FixedClock`, the variant through `RateLimiterBuilder::fromFullCapabilityStore`)
+
+Values are DEC-025 values, not archive rows typed by hand. Each scenario uses its own source address and accounts.
+
+| # | Scenario | PASS | Control |
+| --- | --- | --- | --- |
+| CVH-1 | Variant, fence never opened, scenario A without credentials | the decision string equals the same scenario on `LoginProtectionPolicy` in a second environment scope; no key containing `:adm:` exists afterwards | the same comparison with the fence open differs |
+| CVH-2 | Open the fence with `openAdmissionFence('login')`; 24 `checkOnly` from one IPv4 for 24 distinct unknown accounts, each followed by `recordSuccess` with its permit | 24 `ALLOW`, each with a permit; the 25th `checkOnly` is `SOFT_BLOCK`, `blockLevel` 1, cause `source_capacity`, scope `source`, `0 < retryAfter ≤ 600` | the 25th from a second source is `ALLOW` |
+| CVH-3 | After CVH-2, a credential minted with `AdmissionCredentialCodec` (subject, group `login`, instance, `exp` in the future, epoch 0) from the exhausted source | `ALLOW` (P is not bounded by `U_src`) | the same credential with one byte of the MAC changed: `source_capacity` |
+| CVH-4 | `revokeAccountBinding()` on the composite runtime, then `bindingEpoch()` | epoch 1; the epoch-0 credential is refused `source_capacity` from the exhausted source; a credential re-issued with epoch 1 is `ALLOW` | the epoch-0 credential before the revocation is `ALLOW` |
+| CVH-5 | Permits | `recordFailure` without a permit throws `RateLimiterException`; a permit claimed twice: the second result is `ALLOW`, `blockLevel` 0, cause `permit_duplicate`, scope `permit` | the first claim is accepted (no `permit_*` cause) |
+| CVH-6 | The A-2 residual, shown | a Host that reports failures: after 4 distinct failed accounts from one source, the 5th account's `checkOnly` is `source_failure_cap`; a Host that drops every outcome: 24 distinct accounts admitted and the 25th `source_capacity` (the `pre` bound) | — (the two arms are each other's control) |
+
+#### 7.6.6 Records gate (gate 7)
+
+Every DEC-021 section DEC-026 carries is byte-identical to `docs/decisions/DEC-021_KNOWN_DEVICE_VERIFIER_BOUND.md` at `main@13870bb`, except the Decision 3 clause narrowed by Delta 1 (a script compares them and prints the differing lines). The same check applies to the DEC-019 sections DEC-027 restates verbatim. The diff of DEC-021 and DEC-019 themselves is limited to `Status` and `Superseded By` (precedent DEC-009 → DEC-013).
