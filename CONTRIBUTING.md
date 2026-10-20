@@ -67,6 +67,8 @@ composer analyse
 composer test
 composer test:unit
 composer test:integration
+composer test:core
+composer test:archive
 composer audit --no-interaction --abandoned=fail
 bash scripts/ci/run-consumer-verification.sh
 bash scripts/ci/check-php-syntax.sh
@@ -94,6 +96,14 @@ forked PHP workers, but `ext-pcntl` is not a package runtime dependency.
 System tests are included
 in the full `composer test` run and protect end-to-end engine workflows and
 behavioral contracts.
+
+`composer test` is the union of two disjoint parts that use the same Redis
+lifecycle: `composer test:core` runs every suite except the PHPUnit group
+`archive`, and `composer test:archive` runs that group alone. The `archive` group
+holds the replays of the `investigations/k2-identity-admission-97` archive through
+the real engine (stream, fixture, CGN-B model, G7 and NM-10 replays, including the
+NM-10 real-Redis parity test of the Integration suite); it is long-running and
+deterministic. `composer test:archive` fails when the group contains no test.
 
 Run the consumer verification harness twice from clean consumer directories:
 
@@ -128,8 +138,10 @@ composer dump-autoload --optimize --strict-psr
 
 The CI verification mapping is intentionally split across its gates:
 
-- The complete `composer test` matrix runs on PHP 8.4 and 8.5, representing the full Unit, Integration, and System suite on both versions.
+- The `composer test:core` matrix runs on PHP 8.4 and 8.5: the full Unit, Integration, and System suite except the `archive` group, on both versions.
+- The `composer test:archive` job (Archive Replay Suite) runs the `archive` group on PHP 8.4; the Final Gate requires it, so `composer test:core` and `composer test:archive` together are the complete `composer test` in CI.
 - The focused `composer test:integration` job runs independently on PHP 8.4.
+- The lowest-supported dependency job runs the complete `composer test`, the `archive` group included.
 - PHP syntax, PHPStan, Composer audit, Consumer Verification, and lowest-supported dependency verification run on PHP 8.4.
 - The PHP coding-style gate runs on PHP 8.5.
 - Workflow lint and whitespace are repository-level gates, not PHP compatibility-matrix jobs.

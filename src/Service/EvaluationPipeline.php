@@ -2971,17 +2971,7 @@ class EvaluationPipeline
 
     private function getIpPrefix(string $ip, int $cidr = 64): string
     {
-        if (filter_var($ip, FILTER_VALIDATE_IP, FILTER_FLAG_IPV6)) {
-            $packed = inet_pton($ip);
-            if ($packed !== false) {
-                $hex = bin2hex($packed);
-                $length = (int) ceil($cidr / 4);
-
-                return substr($hex, 0, $length);
-            }
-        }
-
-        return $ip;
+        return SourcePrefix::of($ip, $cidr);
     }
 
     private function createBlockedResult(int $level, int $retryAfter, string $decision): RateLimitResultDTO

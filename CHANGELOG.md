@@ -23,6 +23,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   included) keeps the account-wide escalation on K4.
 
 ### Added
+- The admission runtime and the engine integration (DEC-023, DEC-024, DEC-025), **dormant, not selectable through
+  the builder**: lane resolution from a verified credential (any failed check is the unproven lane), the
+  all-or-nothing reservation at an allowed `checkOnly`, the capacity refusal (`SOFT_BLOCK`, `blockLevel` 1, six
+  causes), a permit on every admission (opaque, at most 512 characters) that the outcome commands must carry (each
+  outcome is scored once and only with its permit; an admission whose outcome never arrives changes no bound, a Host
+  duty of DEC-023 A-2; a success on the proven door never removes a cross-account failure), the
+  fleet fence, `revokeAccountBinding()` and the new read side `AdmissionBindingEpochInterface::bindingEpoch()` on the
+  engine and the composite runtime. New internal shapes: `AdmissionBudgetsDTO`, `AdmissionLaneDTO`,
+  `SourcePrefix`; two additive methods on `AdmissionCredentialCodec` (`signPermitToken`, `verifyPermitToken`).
+  `EvaluationPipeline` delegates its source derivation to `SourcePrefix` with no behaviour change.
 - Settlement of expired admission permits in the admission store is **optional per set-size scope and off by default** (optional trailing `AdmissionScopeDTO::$settlesOnExpiry`, default `false`; without it the store keeps the tombstone semantics of 5-b2 and the pending key family `p` is neither written nor read). When enabled (dormant, no policy can opt in): a reservation that carries a permit records a pending member in each failure set it names, and the member counts as one failure from the permit `deadline` (never before, never twice); an explicit failure counts at once, a success cancels a not-yet-due member, counters and buckets are untouched. New optional trailing `AdmissionScopeDTO::$successKeepsSettled` (default `false`, set-size scopes only) and a reserved `p` key family. No interface method was added or changed.
 - `KnownDeviceAccountAllowancePolicyInterface` (opt-in, authentication capability) for
   custom authentication policies. An active allowance requires positive K5 failure delta
