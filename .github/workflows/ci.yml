@@ -143,16 +143,20 @@ jobs:
         run: composer test:core
 
   archive-replays:
-    name: Archive Replay Suite
+    name: Archive Replay Suite (PHP ${{ matrix.php }})
     timeout-minutes: 25
     runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        php: ['8.4', '8.5']
     steps:
       - name: Checkout Code
         uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
       - name: Setup PHP
         uses: shivammathur/setup-php@f3e473d116dcccaddc5834248c87452386958240 # v2
         with:
-          php-version: '8.4'
+          php-version: ${{ matrix.php }}
           coverage: none
           extensions: redis
       - name: Install Dependencies
@@ -190,7 +194,7 @@ jobs:
 
   lowest-dependencies:
     name: Lowest Supported Dependencies
-    timeout-minutes: 15
+    timeout-minutes: 20
     runs-on: ubuntu-latest
     steps:
       - name: Checkout Code
@@ -208,11 +212,12 @@ jobs:
           set -euo pipefail
           composer dump-autoload --optimize --strict-psr
           composer check-platform-reqs
-      - name: Run PHPStan and PHPUnit
-        run: |
-          set -euo pipefail
-          composer analyse
-          composer test
+      - name: Run PHPStan
+        run: composer analyse
+      - name: Run PHPUnit (all suites except the archive replays)
+        run: composer test:core
+      - name: Run the Archive Replay Group
+        run: composer test:archive
 
   composer-audit:
     name: Composer Security Audit
