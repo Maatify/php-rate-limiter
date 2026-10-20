@@ -1,13 +1,13 @@
 # Stage 5-b2.2 results — settlement is optional per scope and off by default
 
-Tested tree: `13fe07e` (the implementation, the documents and the LT-24 edit; this file and the two logs are the only later change). PHP 8.5.9, Redis 7.0.15 (`docker/redis-integration`) via `scripts/ci/run-with-redis-service.sh`.
+Tested tree: `9cee597` (the implementation, the documents, the LT-24 edit and the review corrections F149-01…03; this file and the two logs are the only later change). PHP 8.5.9, Redis 7.0.15 (`docker/redis-integration`) via `scripts/ci/run-with-redis-service.sh`.
 
 ## Suites (full logs, not tails: `5b2.2/logs/suite-normal.log`, `5b2.2/logs/suite-lowest.log`, run with `composer test -- --display-errors`, `COMPOSER_PROCESS_TIMEOUT=0`)
 
 | Run | Result |
 | --- | --- |
-| Full suite, normal dependencies (phpunit 11.5.57, PHPStan 2.3.1), Redis | `OK (1703 tests, 23749 assertions)`, 9 min 7 s (baseline at `7057abc`: 1674; +29 new) |
-| Full suite, `composer update --prefer-lowest --prefer-stable` (phpunit 11.5.50, PHPStan 2.0.0), Redis | `OK (1703 tests, 23201 assertions)`, 9 min 2 s |
+| Full suite, normal dependencies (phpunit 11.5.57, PHPStan 2.3.1), Redis | `OK (1704 tests, 23247 assertions)`, 9 min 47 s (baseline at `7057abc`: 1674; +30 new) |
+| Full suite, `composer update --prefer-lowest --prefer-stable` (phpunit 11.5.50, PHPStan 2.0.0), Redis | `OK (1704 tests, 23441 assertions)`, 10 min 20 s |
 | PHPStan max, normal and lowest | `[OK] No errors` (`--memory-limit=1G`) |
 | `composer format:check` | clean |
 
@@ -68,7 +68,7 @@ Seed 42 has no accepted claim, which is why the per-seed check is `claim:`; the 
 
 ## Corrections after review (F149-01, F149-02, F149-03)
 
-1. **F149-01:** trailing whitespace removed from the two logs (`suite-normal.log` 10 lines, `suite-lowest.log` 11 lines; nothing else changed).
+1. **F149-01:** trailing whitespace removed from the two logs (`suite-normal.log` 10 lines, `suite-lowest.log` 11 lines; nothing else changed). The logs were regenerated on `9cee597` (F149-04) and the same removal applied again (10 and 11 lines).
 2. **F149-02:** the incorrect sentence about §3 row (b) under "Documents" is replaced (above).
 3. **F149-03:** the relaxation of `claim:accepted` to `claim:` in `testOffParityASeededSequence…` (amendment 2) is kept per seed and compensated by `testOffParityTheFiveSeedsTogetherPractiseEveryClaimKind` and the table above. Amendment 2 is amended to say so: the per-seed check was loosened because seed 42 has no accepted claim, and the aggregate test restores the guarantee.
 
@@ -76,3 +76,5 @@ Seed 42 has no accepted claim, which is why the per-seed check is `claim:`; the 
 
 1. After the merge, `#147` is re-founded on this PR and its plan is amended (the Owner's decision, items 1–6): the runtime passes `F` and D8 without the flag; NM-10 and NM-5 are re-registered; `UAC` leaves A1 as a declared cost; the USAGE_GUIDE duty is stated.
 2. The runtime of `#147` sends the D8 scope on a success with `successKeepsSettled = true`; under the default that flag is inert and the store would `SREM` a settled D8 failure, so the amended runtime must not send the D8 scope on a success when the flag is off (the `d6aea4d` contract). Stated here for the amendment.
+
+**F149-04:** the suites were re-run in full on `9cee597` (a fresh install for each mode, `composer test -- --display-errors`) and the two logs replaced; the counts above are those of that run.
