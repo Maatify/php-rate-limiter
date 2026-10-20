@@ -36,7 +36,7 @@ $executor = new RespRedisCommandExecutor($host, intval($port));
 $store = new RedisFullCapabilityStore($executor, $spec['namespace']);
 $operations = new RedisAdmissionOperations($executor, $spec['namespace']);
 $now = $spec['now'];
-$scope = new AdmissionScopeDTO('fail_src', AdmissionScopeKindEnum::SET_SIZE, $spec['key'], $spec['capacity'], 1200, null, 'new-' . $index);
+$scope = new AdmissionScopeDTO('fail_src', AdmissionScopeKindEnum::SET_SIZE, $spec['key'], $spec['capacity'], 1200, null, 'new-' . $index, settlesOnExpiry: true);
 $request = new AdmissionReservationRequestDTO('login', [$scope], new AdmissionPermitDTO('permit-' . $index, 'U', 'acctT', 'login', $now, 600));
 
 while (microtime(true) < (float) $barrier) {

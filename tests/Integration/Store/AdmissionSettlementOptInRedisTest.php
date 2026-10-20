@@ -11,8 +11,8 @@ use Maatify\RateLimiter\Tests\Support\Admission\MergedAdmissionOperations;
 use Maatify\RateLimiter\Tests\Support\Admission\OperationsMutant;
 use Maatify\RateLimiter\Tests\Support\Admission\OptInParityRunner;
 use Maatify\RateLimiter\Tests\Support\Admission\SettlementPort;
-use Maatify\RateLimiter\Tests\Support\Admission\SettlementScenarios as Off;
-use Maatify\RateLimiter\Tests\Support\Admission\SettlementScenariosOn as On;
+use Maatify\RateLimiter\Tests\Support\Admission\SettlementScenariosOff as Off;
+use Maatify\RateLimiter\Tests\Support\Admission\SettlementScenarios as On;
 use PHPUnit\Framework\Attributes\DataProvider;
 use PHPUnit\Framework\Attributes\Group;
 

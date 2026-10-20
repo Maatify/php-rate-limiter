@@ -12,10 +12,10 @@ use Maatify\RateLimiter\Enum\AdmissionScopeKindEnum;
 use Maatify\RateLimiter\Tests\Support\Admission\AdmissionScenarioBuilder as S;
 
 /**
- * The settlement scenarios of 5b2.1/PLAN.md §5 (SETTLE-1 … SETTLE-4) with the set scopes built WITH `settlesOnExpiry` (5b2.2 ON-PARITY fixtures; the 5-b2.1 originals are unchanged).
+ * The settlement scenarios of 5b2.1/PLAN.md §5 (SETTLE-1 … SETTLE-4) with the set scopes built WITHOUT `settlesOnExpiry` (5b2.2 OFF-PARITY fixtures: the default, the tombstone semantics). Verbatim copy of the 5-b2.1 builder.
  * D = 30 s and G = 600 s are the archive values (`g1/scenarios/m05_host_modes.php:55-56`); set lifetime 1200 s.
  */
-final class SettlementScenariosOn
+final class SettlementScenariosOff
 {
     public const N = S::NOW;
 
@@ -25,7 +25,7 @@ final class SettlementScenariosOn
 
     public static function member(string $key, string $account, int $capacity, bool $keepsSettled = false): AdmissionScopeDTO
     {
-        return new AdmissionScopeDTO('fail_src', AdmissionScopeKindEnum::SET_SIZE, $key, $capacity, self::TTL, null, $account, null, $keepsSettled, true);
+        return new AdmissionScopeDTO('fail_src', AdmissionScopeKindEnum::SET_SIZE, $key, $capacity, self::TTL, null, $account, null, $keepsSettled);
     }
 
     public static function permit(string $id, int $deadlineAt): AdmissionPermitDTO

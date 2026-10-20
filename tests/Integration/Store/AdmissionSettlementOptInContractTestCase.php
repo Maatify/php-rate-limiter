@@ -8,8 +8,8 @@ use Maatify\RateLimiter\Enum\AdmissionOutcomeKindEnum;
 use Maatify\RateLimiter\Repository\AdmissionCapableFullStoreInterface;
 use Maatify\RateLimiter\Repository\AdmissionPermitStoreInterface;
 use Maatify\RateLimiter\Tests\Support\Admission\SettlementPort;
-use Maatify\RateLimiter\Tests\Support\Admission\SettlementScenarios as Off;
-use Maatify\RateLimiter\Tests\Support\Admission\SettlementScenariosOn as On;
+use Maatify\RateLimiter\Tests\Support\Admission\SettlementScenariosOff as Off;
+use Maatify\RateLimiter\Tests\Support\Admission\SettlementScenarios as On;
 use PHPUnit\Framework\TestCase;
 
 /**
