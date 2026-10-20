@@ -1,0 +1,19 @@
+baseline_identical                   PASS (src/, tests/, composer.json = 05922dd9ebff00d770397af124db789bc12c1607)
+php                                  8.5.9, memory_limit 1G, scanned ini: none
+replays FULL2 C2                     ran (210 stream rows, 21 fixture rows)
+replays PX4 C2                       ran (210 stream rows, 21 fixture rows)
+replays FULL2 C3                     ran (210 stream rows, 21 fixture rows)
+replays PX4 C3                       ran (210 stream rows, 21 fixture rows)
+replays FULL2 C4                     ran (210 stream rows, 21 fixture rows)
+replays PX4 C4                       ran (210 stream rows, 21 fixture rows)
+replays FULL2 C1000000               ran (210 stream rows, 21 fixture rows)
+replays PX4 C1000000                 ran (210 stream rows, 21 fixture rows)
+study valid: yes
+FULL2 C 2  B1 PASS  B2 PASS  A1 PASS  A3 PASS  PG FAIL (reported)
+FULL2 C 3  B1 PASS  B2 PASS  A1 PASS  A3 PASS  PG FAIL (reported)
+FULL2 C 4  B1 PASS  B2 PASS  A1 PASS  A3 PASS  PG reference
+PX4   C 2  B1 PASS  B2 PASS  A1 PASS  A3 PASS  PG FAIL
+PX4   C 3  B1 PASS  B2 PASS  A1 PASS  A3 PASS  PG FAIL
+PX4   C 4  B1 PASS  B2 PASS  A1 PASS  A3 PASS  PG reference
+expected                             every output byte-identical to expected/
+exit 0
