@@ -502,6 +502,12 @@ any supported composition has today.
   (record only) are not representable. The budget group names the verifier class shared by login,
   re-authentication and password change; admission counters are keyed by it, never by the policy
   name.
+* **The `pre+out` declaration is a Host duty (DEC-023 A-2).** Every `checkOnly` of an opted policy
+  is followed by exactly one outcome that carries the admission's permit. The library binds every
+  outcome it receives to one admission (no outcome is scored twice or without its permit), but it
+  cannot recover an outcome that never arrives: an admission without an outcome changes no bound,
+  and a Host that drops outcomes runs those attempts with the bounds of a `pre` Host only. The
+  library does not compensate for it (`USAGE_GUIDE.md`).
 * **Custom policies.** Validation rejects, with a typed exception at registration: the capability
   without the interface (and the interface without the capability), an empty budget group,
   `API_OVERUSE` combined, `FAIL_OPEN`, a missing `BudgetConfig`, missing `ACCOUNT` / `IP_PREFIX`

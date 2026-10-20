@@ -1025,7 +1025,12 @@ Shipped dormant: no preset opts in and the builder cannot enable it. For a polic
 3. **admission**, only on an allowed `checkOnly`: all-or-nothing reservation of the lane's scopes. A
    refusal is a non-persisted `SOFT_BLOCK` (`source_capacity`, `source_failure_cap`,
    `account_bucket`, `proof_capacity`, `new_device_cap`, `source_proof_failure_cap`);
-4. outcomes (`recordFailure` / `recordSuccess`) claim the permit, then score once.
+4. outcomes (`recordFailure` / `recordSuccess`) claim the permit, then score once. On `U` a failure
+   enters the source's net failure set and a success leaves it and refunds the account bucket; on
+   `P` a success refunds the proof counters and a failure enters the cross-account failure set
+   (D8), which a success never reduces. An outcome without a valid claim scores nothing. An
+   admission whose outcome never arrives changes no bound: the Host that drops outcomes is held
+   only by the bounds of a `pre` Host (DEC-023 A-2, a Host duty; the library does not compensate).
 
 Changes of meaning for opted policies, and only for them:
 

@@ -335,10 +335,17 @@ Outputs and duties:
   never re-sent as an unbound outcome.
 * The outcome must be sent with **the same context** as the admission (same source address, account
   and credential): the failure set an outcome touches is keyed by the outcome's source.
+* **Every `checkOnly` on an opted policy is followed by exactly one outcome command carrying its
+  permit** (`recordFailure` or `recordSuccess`), sent within the permit's deadline. This is a Host
+  duty (`DEC-023` A-2) and the library does not compensate for it: an admission whose outcome never
+  arrives is a tombstone and changes no bound (the success refund never happens and the failure is
+  never recorded). A Host that drops outcomes runs those attempts as a `pre` Host does, within the
+  bounds of `pre` only, which are wider than those of `pre+out` for attackers that spread failures
+  over accounts; a Host that probes with extra `checkOnly` calls spends a reservation per probe that
+  no success refunds.
 * A permit is claimed once. `permit_duplicate`, `permit_conflict`, `permit_rejected`, `permit_late`
   and `permit_unknown` come back as an `ALLOW` result with `blockLevel` 0 and `scope` `permit`;
-  nothing is scored. An admission whose outcome never arrives by its deadline counts as one failure
-  in the failure sets it reserved.
+  nothing is scored and nothing is applied. A late outcome (after the deadline) is not scored.
 * A capacity refusal is a `SOFT_BLOCK` with `blockLevel` 1 and a `retryAfter` to the end of the
   refusing window or refill; the causes are `source_capacity`, `source_failure_cap`,
   `account_bucket`, `proof_capacity`, `new_device_cap` and `source_proof_failure_cap`.

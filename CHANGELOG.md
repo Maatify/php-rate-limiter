@@ -26,7 +26,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - The admission runtime and the engine integration (DEC-023, DEC-024, DEC-025), **dormant, not selectable through
   the builder**: lane resolution from a verified credential (any failed check is the unproven lane), the
   all-or-nothing reservation at an allowed `checkOnly`, the capacity refusal (`SOFT_BLOCK`, `blockLevel` 1, six
-  causes), a permit on every admission (opaque, at most 512 characters) that the outcome commands must carry, the
+  causes), a permit on every admission (opaque, at most 512 characters) that the outcome commands must carry (each
+  outcome is scored once and only with its permit; an admission whose outcome never arrives changes no bound, a Host
+  duty of DEC-023 A-2; a success on the proven door never removes a cross-account failure), the
   fleet fence, `revokeAccountBinding()` and the new read side `AdmissionBindingEpochInterface::bindingEpoch()` on the
   engine and the composite runtime. New internal shapes: `AdmissionBudgetsDTO`, `AdmissionLaneDTO`,
   `SourcePrefix`; two additive methods on `AdmissionCredentialCodec` (`signPermitToken`, `verifyPermitToken`).
