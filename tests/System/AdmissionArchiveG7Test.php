@@ -314,7 +314,7 @@ final class AdmissionArchiveG7Test extends TestCase
         }
         $archived = [];
         foreach (ArchiveData::expected(self::G7) as $row) {
-            if (($row['arm'] ?? null) === 'D-PXALL' && $row['flow'] === 'pre+out' && $row['ids'] === 'fresh') {
+            if (($row['arm'] ?? null) === 'D-PXALL' && ($row['flow'] ?? null) === 'pre+out' && ($row['ids'] ?? null) === 'fresh') {
                 $archived[self::text($row, 'stream')] = self::metric($row, 'legitDenied');
             }
         }

@@ -189,6 +189,10 @@ final class AdmissionRuntime
         if ($scopes !== []) {
             $this->store->applyAdmissionOutcome(new AdmissionOutcomeDTO($budgetGroup, $kind, $scopes, $payload['id']), $this->now());
         }
+        $crossAccount = $this->crossAccountFailure($budgetGroup, $context, $payload, $success);
+        if ($crossAccount !== null) {
+            $this->store->applyAdmissionOutcome(new AdmissionOutcomeDTO($budgetGroup, AdmissionOutcomeKindEnum::FAILURE, [$crossAccount], $payload['id']), $this->now());
+        }
 
         return $payload['lane'];
     }
@@ -239,7 +243,7 @@ final class AdmissionRuntime
         $subject = $this->subject($context);
         $scopes = [$this->counter('source_capacity', $group, 'src', $source, $window, $b->sourceCapacity, 2 * $b->windowSeconds)];
         if ($subject !== null) {
-            $scopes[] = $this->failureSet('source_failure_cap', $group, 'ufail', $source, $window, $b->sourceFailureCap, $subject, false);
+            $scopes[] = $this->failureSet('source_failure_cap', $group, 'ufail', $source, $window, $b->sourceFailureCap, $subject);
             $scopes[] = new AdmissionScopeDTO('account_bucket', AdmissionScopeKindEnum::BUCKET, $this->key($group, 'acct', $subject, ''), $b->accountBucketTakes, $b->accountBucketSeconds);
         }
 
@@ -263,12 +267,16 @@ final class AdmissionRuntime
         if ($device->fingerprintHash !== null) {
             $scopes[] = $this->deviceMember($group, $subject, $device);
         }
-        $scopes[] = $this->failureSet('source_proof_failure_cap', $group, 'pfail', SourcePrefix::of($context->ip), $window, $b->crossAccountFailureCap, $subject, false);
+        $scopes[] = $this->failureSet('source_proof_failure_cap', $group, 'pfail', SourcePrefix::of($context->ip), $window, $b->crossAccountFailureCap, $subject);
 
         return $scopes;
     }
 
     /**
+     * The scopes an accepted outcome applies with its own kind, on the window and day of the admission (`t0`, LT-14). U: the net
+     * failure set (a failure adds the subject, a success removes it) and, on a success, the bucket refund. P: on a success the
+     * refund of the proof counters; a failure refunds nothing (its D8 entry is `crossAccountFailure()`).
+     *
      * @param array{id: string, lane: AdmissionLaneEnum, t0: int, j: ?string} $payload
      * @return list<AdmissionScopeDTO>
      */
@@ -277,34 +285,60 @@ final class AdmissionRuntime
         $b = $this->budgets;
         $t = $payload['t0'];
         $window = 'w' . intdiv($t, $b->windowSeconds);
-        $day = 'd' . intdiv($t, self::DAY);
         $subject = $this->subject($context);
         if ($subject === null) {
             return [];
         }
-        $source = SourcePrefix::of($context->ip);
         if ($payload['lane'] === AdmissionLaneEnum::P) {
-            // D8 neither adds on success nor removes a settled failure: the flag keeps it, and cancels only a pending member.
-            $d8 = $this->failureSet('source_proof_failure_cap', $group, 'pfail', $source, $window, $b->crossAccountFailureCap, $subject, true);
-            if (! $success) {
-                return [$d8];
-            }
-            $proof = $payload['j'] ?? $subject;
-
-            return [
-                $this->counter('proof_account_window', $group, 'pacct', $subject, $window, $b->proofAccountWindow, 2 * $b->windowSeconds),
-                $this->counter('proof_account_day', $group, 'pacctd', $subject, $day, $b->proofAccountDay, 2 * self::DAY),
-                $this->counter('proof_proof_window', $group, 'pproof', $proof, $window, $b->proofProofWindow, 2 * $b->windowSeconds),
-                $this->counter('proof_proof_day', $group, 'pproofd', $proof, $day, $b->proofProofDay, 2 * self::DAY),
-                $d8,
-            ];
+            return $success ? $this->proofRefund($group, $subject, $payload['j'] ?? $subject, $window, 'd' . intdiv($t, self::DAY)) : [];
         }
-        $scopes = [$this->failureSet('source_failure_cap', $group, 'ufail', $source, $window, $b->sourceFailureCap, $subject, false)];
+        $scopes = [$this->failureSet('source_failure_cap', $group, 'ufail', SourcePrefix::of($context->ip), $window, $b->sourceFailureCap, $subject)];
         if ($success) {
             $scopes[] = new AdmissionScopeDTO('account_bucket', AdmissionScopeKindEnum::BUCKET, $this->key($group, 'acct', $subject, ''), $b->accountBucketTakes, $b->accountBucketSeconds);
         }
 
         return $scopes;
+    }
+
+    /**
+     * The four proof counters of the admission's window and day that a success on the proven door refunds (the reservation's).
+     *
+     * @return list<AdmissionScopeDTO>
+     */
+    private function proofRefund(string $group, string $subject, string $proof, string $window, string $day): array
+    {
+        $b = $this->budgets;
+
+        return [
+            $this->counter('proof_account_window', $group, 'pacct', $subject, $window, $b->proofAccountWindow, 2 * $b->windowSeconds),
+            $this->counter('proof_account_day', $group, 'pacctd', $subject, $day, $b->proofAccountDay, 2 * self::DAY),
+            $this->counter('proof_proof_window', $group, 'pproof', $proof, $window, $b->proofProofWindow, 2 * $b->windowSeconds),
+            $this->counter('proof_proof_day', $group, 'pproofd', $proof, $day, $b->proofProofDay, 2 * self::DAY),
+        ];
+    }
+
+    /**
+     * The D8 set an accepted outcome on the proven door enters, applied as a failure, else null. A success never sends it: with
+     * the store default a success on a set-size scope removes the member, which would erase a recorded D8 failure; D8 is never
+     * refunded and never reduced by a success.
+     *
+     * @param array{id: string, lane: AdmissionLaneEnum, t0: int, j: ?string} $payload
+     */
+    private function crossAccountFailure(string $group, RateLimitContextDTO $context, array $payload, bool $success): ?AdmissionScopeDTO
+    {
+        $subject = $this->subject($context);
+        if ($payload['lane'] !== AdmissionLaneEnum::P || $subject === null || ! $this->entersCrossAccountSet($success)) {
+            return null;
+        }
+        $window = 'w' . intdiv($payload['t0'], $this->budgets->windowSeconds);
+
+        return $this->failureSet('source_proof_failure_cap', $group, 'pfail', SourcePrefix::of($context->ip), $window, $this->budgets->crossAccountFailureCap, $subject);
+    }
+
+    /** Whether an accepted outcome on the proven door enters the D8 set: a failure does, a success never (DEC-025 8.2). */
+    private function entersCrossAccountSet(bool $success): bool
+    {
+        return ! $success;
     }
 
     private function counter(string $name, string $group, string $purpose, string $value, string $label, int $capacity, int $ttl): AdmissionScopeDTO
@@ -319,7 +353,8 @@ final class AdmissionRuntime
         );
     }
 
-    private function failureSet(string $name, string $group, string $purpose, string $source, string $label, int $capacity, string $subject, bool $keepsSettled): AdmissionScopeDTO
+    /** A failure set (U `F`, P D8) at the store default: no settlement, no `successKeepsSettled` (PLAN §11.2). */
+    private function failureSet(string $name, string $group, string $purpose, string $source, string $label, int $capacity, string $subject): AdmissionScopeDTO
     {
         return new AdmissionScopeDTO(
             $name,
@@ -329,8 +364,6 @@ final class AdmissionRuntime
             2 * $this->budgets->windowSeconds,
             null,
             $this->key($group, 'member', $subject, ''),
-            null,
-            $keepsSettled,
         );
     }
 
