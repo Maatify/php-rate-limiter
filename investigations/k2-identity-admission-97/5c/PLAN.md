@@ -387,6 +387,19 @@ None of that is possible through a builder with package constants and no budget 
 
 The executor asks the Lead to accept both.
 
+**Process note (Lead, [#150 comment 6302851557](https://github.com/Maatify/php-rate-limiter/pull/150#issuecomment-6302851557)):** commit 5 proceeded before the LT-33/LT-34 rulings; both were later accepted unchanged. From here on:
+- a commit that carries an open LT is the last commit pushed until its ruling is posted on the PR;
+- every step of §4.3 is pushed as it is made, for the Lead to see, never several commits at once.
+
+**Ruled (same comment):**
+- **LT-33 accepted as proposed.** Condition: `5c/RESULTS.md` has a table naming, for every gate, the mode it ran in (builder or direct).
+- **LT-34 accepted.** (1)'s detector is the build without the previous generation. (2) is reported with no detector. Its measured values (`failingAccountsAfterRotation` 4, `bucketTakesAfterRotation` 4) are written into `KEY_STRATEGY.md` §4.8 as the measured cost of a rotation.
+
+**Also required by the same comment:**
+- **The records gate (§4.2 row 7, §7.6.6) gets a mechanical check** before RESULTS: a script under `tests/Support` or a test that compares every section DEC-026 carries from DEC-021 byte for byte with `main@13870bb` (except the Delta 1 clause), its output shown in RESULTS.
+- **N-5c-01 is opened as issue [#153](https://github.com/Maatify/php-rate-limiter/issues/153)** ("Bounded correlation snapshot rejects Redis-time expiry under caller clock skew"), with a local reproduction: the plain `login_protection` preset on real Redis gives `ALLOW` at 0 s and the invalid-snapshot exception at 1 s and 2 s of skew. It is outside 5-c, for the Owner as a priority after it.
+- **DEC-021 / DEC-019 status lines:** the historical sentence kept in the status line is accepted. RESULTS states that it reads the DEC-009 precedent while keeping the historical text.
+
 **Red state before commit 5:**
 - `LoginProtectionAdmissionPolicy`, `AdmissionFenceControlInterface` and `AdmissionBudgetsDTO::packageDefaults()` do not exist, and the builder constructs no runtime.
 - PHPStan and the CI jobs that run these tests (and CVH) are red by design until commit 5, as in 5-b3b 2a.
