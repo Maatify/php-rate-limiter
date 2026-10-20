@@ -481,3 +481,36 @@ the builder fails fast when the capability is absent. `api_heavy_protection`
 does not opt in. A custom policy must explicitly implement the marker and pass
 the same validated authentication-policy requirements before using this
 lifecycle; a custom name alone is not sufficient.
+
+---
+
+## 7.2 Admission-Reservation Opt-In (DEC-023, DEC-024, DEC-025) — dormant
+
+**Status: shipped dormant.** No official preset declares this capability, `RateLimiterBuilder::build()`
+does not construct the admission runtime, and a policy that declares it is rejected at registration
+by an engine that has none. Everything below describes the contract of the opt-in, not a behaviour
+any supported composition has today.
+
+* **S1.** `PolicyCapabilityEnum::ADMISSION_RESERVATION` is one capability for the whole measured
+  assembly (source ceiling, failure cap, account bucket, proven-lane caps, new-device cap, the
+  cross-account failure rule, the K5 family split). There are no sub-capabilities: only the whole
+  assembly was measured. It is authentication-related, so every authentication prerequisite of §1
+  and §6 applies, and it cannot be combined with `API_OVERUSE`.
+* **S2.** A policy that declares it also implements `AdmissionReservationPolicyInterface`
+  (`getAdmissionHostMode()`, `getAdmissionBudgetGroup()`). The only eligible Host mode is `pre+out`
+  (DEC-023): a Host that calls `checkOnly` and then records the outcome. `pre` (check only) and `out`
+  (record only) are not representable. The budget group names the verifier class shared by login,
+  re-authentication and password change; admission counters are keyed by it, never by the policy
+  name.
+* **Custom policies.** Validation rejects, with a typed exception at registration: the capability
+  without the interface (and the interface without the capability), an empty budget group,
+  `API_OVERUSE` combined, `FAIL_OPEN`, a missing `BudgetConfig`, missing `ACCOUNT` / `IP_PREFIX`
+  fallback dimensions, a store without the admission capability, a missing binding key, and an
+  engine with no admission runtime.
+* **Owner safety (replaces the unproven-owner caveat of §1 for opted policies).** A request is
+  proven only through a verified account-bound credential; every other request, including an
+  owner without one, is unproven and is bounded by the source ceiling, the net failure cap and the
+  account bucket. A proven owner is never refused by a stranger's source budget. A capacity refusal
+  is a non-persisted `SOFT_BLOCK`; it is never a block, never a cycle and never an escalation.
+  The package does not issue credentials: the Host does (`USAGE_GUIDE.md`).
+

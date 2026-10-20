@@ -1011,3 +1011,37 @@ is writable, previous is read-only, and a newer mutation
 invalidates older evidence. Generation conflicts retry at most three times;
 exhaustion is an explicit transient HARD failure with
 `RateLimitConcurrencyException` provenance.
+
+---
+
+## 12. Admission Stage (DEC-023, DEC-024, DEC-025) — dormant
+
+Shipped dormant: no preset opts in and the builder cannot enable it. For a policy that declares
+`ADMISSION_RESERVATION` the evaluation order of §1 gains one stage:
+
+1. identity resolution, then the **lane** (a verified credential selects the proven lane `P`, anything
+   else the unproven lane `U`; a closed fleet fence means no admission at all);
+2. the pipeline decides `ALLOW` or a block with the lane as a parameter (penalties read first);
+3. **admission**, only on an allowed `checkOnly`: all-or-nothing reservation of the lane's scopes. A
+   refusal is a non-persisted `SOFT_BLOCK` (`source_capacity`, `source_failure_cap`,
+   `account_bucket`, `proof_capacity`, `new_device_cap`, `source_proof_failure_cap`);
+4. outcomes (`recordFailure` / `recordSuccess`) claim the permit, then score once.
+
+Changes of meaning for opted policies, and only for them:
+
+* **K1 / K2 / K3 collective penalties are not written.** K2 stays an observation (its score is
+  written, DEC-022 Decision 2); on `P` the K1/K2/K3 blocks are not read and no K1/K2/K3 candidate
+  is formed; on `U` they are read until they expire (`DEC-026` draft, M3 as ruled in 5-b3a).
+* **Allowance and device watcher by family.** The known-device allowance counter, K5 device state,
+  micro-cap and device Anti-Equilibrium watcher are kept per lane (`known_device_allowance_p`,
+  `K5p`, `k5p`, `anti_equilibrium_device_p` on `P`; the unsuffixed state on `U`).
+* **A known device on `U` is bounded by the account bucket only.** No account-scoped candidate
+  persists on `U`; the DEC-021 allowance and K4 overflow enforce nothing there (declared cost,
+  DEC-025 5.1).
+* **K4P.** The account key on `P` is a separate key from K4 (rule A: account-wide, not cleared at a
+  password change); cycles, pauses and DEC-007 lifecycles of K4 and K4P are independent.
+* **Source capacity.** An IP prefix stays an advisory key for identity; as a **source capacity
+  ceiling for unproven traffic only** it may refuse (amendment of §10 and of `KEY_STRATEGY.md` §2,
+  to be ratified with DEC-022 at activation).
+* Degraded mode and `FAIL_OPEN` run no admission stage (`FAILURE_SEMANTICS.md` §4.5).
+

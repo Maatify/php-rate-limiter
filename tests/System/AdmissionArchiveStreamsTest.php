@@ -24,6 +24,13 @@ use PHPUnit\Framework\TestCase;
 #[Group('archive')]
 final class AdmissionArchiveStreamsTest extends TestCase
 {
+    public static function setUpBeforeClass(): void
+    {
+        // The archive's own runner uses 1G for the same replays (run.sh, PHP_MEMORY_LIMIT); the default 128M is not enough
+        // for the replay sets of this class next to the rest of the suite.
+        ini_set('memory_limit', '1G');
+    }
+
     private const FULL2 = 'g4/integrated_v2/expected/v2_streams.G4.jsonl';
     private const G5V2 = 'g5/identity_layer_v2/expected/g5v2_streams.G5V2.jsonl';
 

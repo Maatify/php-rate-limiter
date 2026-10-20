@@ -766,9 +766,16 @@ dormant: no code in this change derives a key with any of them.
   with the **budget group** of the verifier class in place of `{policy}` so that login,
   re-authentication and password change share one epoch (DEC-025 6.1). It is **not** a §10.1
   generation-bound namespace. Current key is written; the previous-generation key is read-only
-  and read only when the current key is absent. The derivation itself lands with the engine stage
-  (5-b3b); the store operations (`readBindingEpoch`, `bumpBindingEpoch`) already receive opaque,
-  already-derived keys; see §4.8.
+  and read only when the current key is absent. The derivation is in `AdmissionRuntime` (stage 5-b3b), keyed by `accountId` and the active key
+  secret (with the previous-generation key read-only); the store operations (`readBindingEpoch`,
+  `bumpBindingEpoch`) receive opaque, already-derived keys; see §4.8.
+* `admission_fence` — the fleet fence of the admission runtime (contract §6, M2): one integer per
+  budget group in the epoch namespace, `HMAC-SHA256({env}\0admission_fence\0{budget group}, active
+  key secret)`, no previous-generation key. The new path is enabled for a budget group only when the
+  integer is at least 1; below 1 the request is processed as if no admission runtime existed. It is
+  written by an operator through the store's `bumpBindingEpoch`; the package has no public operator
+  method (5-b3b). Reserved/dormant; its LOCKED status is amended at activation with the other
+  purposes.
 * The `_p` purposes of the proven (P) lane: `known_device_allowance_p`, `anti_equilibrium_device_p`,
   `anti_equilibrium_p` and `budget_cooldown_p`, each the unsuffixed purpose with `_p` appended
   (same preimage shape, same rotation rules), and the key types `K4P` and `K5p` of §3.4 / §3.5.

@@ -127,7 +127,12 @@ final class StreamReplay
         ksort($causes);
         ksort($attackCauses);
 
-        return ['dec' => $dec, 'reach' => $reach, 'kinds' => $kinds, 'lanes' => $lanes, 'm' => ArchiveMetrics::of($kinds, $lanes, $reach, $dec, $ts),
+        $result = ['dec' => $dec, 'reach' => $reach, 'kinds' => $kinds, 'lanes' => $lanes, 'm' => ArchiveMetrics::of($kinds, $lanes, $reach, $dec, $ts),
             'issued' => $host->issued, 'tainted' => $host->tainted, 'causes' => $causes, 'attackCauses' => $attackCauses];
+        // The lab (engine, circuit, stores) is a graph of cycles: free it now, a replay set holds hundreds of them.
+        unset($host, $lab);
+        gc_collect_cycles();
+
+        return $result;
     }
 }

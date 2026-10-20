@@ -117,6 +117,18 @@ final class AdmissionEngineReserveTest extends TestCase
         self::assertMatchesRegularExpression('/\A[A-Za-z0-9_.-]{20,512}\z/', $permit);
     }
 
+    public function testThePermitTokenStaysBoundedWhateverTheHostPutsInTheCredentialId(): void
+    {
+        $lab = new EngineLab();
+        $credential = $lab->mint('acct-1', 'inst-1', jti: str_repeat('j', 3000));
+        $permit = (string) EngineLab::permit($lab->check($lab->context('acct-1', self::IP, 'inst-1', $credential)));
+
+        self::assertLessThanOrEqual(512, strlen($permit));
+        // The bounded reference still binds the outcome to its proof: the success is accepted and refunds.
+        $result = $lab->outcome($lab->context('acct-1', self::IP, 'inst-1', $credential), true, $permit);
+        self::assertStringStartsNotWith('permit_', (string) EngineLab::cause($result));
+    }
+
     public function testANonOptedPolicyIsUntouchedByTheRuntime(): void
     {
         $lab = new EngineLab(EngineLab::budgets(sourceCapacity: 1), policies: [new \Maatify\RateLimiter\Config\OtpProtectionPolicy()]);
