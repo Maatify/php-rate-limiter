@@ -426,3 +426,36 @@ Source: [PR #158 comment 6323629474](https://github.com/Maatify/php-rate-limiter
 | List C | **A declared text-only edit** (docblocks and names), listed in RESULTS | — |
 | §9.1 points (virtual clock, RED-1c in the acceptance, the mirror policy, RED-8's form) | **All four accepted**, on condition that the real probes (#154 in full, #156's probes, RED-1c) stay in the acceptance as registered, and their result is a **PASS condition, not a report** | §4.6 |
 | `WATCH_GET` outside the inventory | Accepted; stated in RESULTS | — |
+
+## 11. Build-time note (2026-10-21, before the implementation commit)
+
+Two corrections made while building, recorded with their measured cause. They depart from the **text** of §2 and §8–§10, not from their principle.
+
+### 11.1 Milliseconds for the rotation and lifecycle operations (§2.1)
+
+* **What the text said.** §2.1: "integer seconds, plus integer milliseconds where the script works in milliseconds (rows 11, 14–17)". The first build passed whole seconds to every operation.
+* **Measured cause.** `testBridgeUsesExactPreviousRemainingLifetimeAndNeverRefreshesIt` (`RedisFullCapabilityStoreIntegrationTest` L104) failed: "Failed asserting that 1999 is equal to 1974 or is less than 1974".
+  * The bridge's lifetime is the previous window's remaining time in milliseconds (`planBridgePttl`).
+  * From whole seconds, it overshoots the previous window's logical end by the sub-second part of the caller's time.
+  * Seconds would also have changed a generated K4 expiry from ⌈(now ms + TTL) / 1 s⌉ to `now + TTL`, i.e. up to one second shorter.
+* **Correction.** These methods take the caller's time in milliseconds (`$nowMilliseconds`): `…AcrossRotationAt` for the three operations that run `ROTATED_SNAPSHOT`, and `readGenerationBoundScoreStateAt`, `mutateGenerationBoundScoreAt`, `claimPostPunishmentReentryAt`.
+  * The scripts derive the second as ⌊ms / 1000⌋.
+  * A generated expiry is ⌈(now ms + TTL) / 1 s⌉, as today.
+  * `blockWithPunishmentLifecycleTrackingAt` takes seconds, like `blockWithCycleTracking` on the same script: with the invariants removed (LT-P2-02) `HARD_BLOCK` needs no milliseconds.
+  * The physical remainder of a mutated or claimed key is `expiresAt · 1000 − now ms`, relative (`PEXPIRE`), uncapped.
+* **Result.** L104 passes unchanged.
+
+### 11.2 `SET … EX` is not used as Redis's judge of an expiry (§10, LT-P2-12)
+
+* **What the text said.** §10: `redis.pcall` on every `EXPIRE` / `PEXPIRE` / `SET … EX`.
+* **Measured cause.** The same script was run on both versions: `pcall` of `SET k v EX <ttl>` and of `EXPIRE k <ttl>`, with `ttl` = one second past Redis's bound for the current Redis second.
+
+  | Redis | `SET … EX` past the bound | `EXPIRE` past the bound |
+  | --- | --- | --- |
+  | 7.0.15 (the CI image) | error `invalid expire time in 'set' command` | error `invalid expire time in 'expire' command` |
+  | 8.10.0 (E-SAME) | **`OK`, and nothing is stored** (`EXISTS` 0) | error `invalid expire time in 'expire' command` |
+
+  On 8.10.0, `testRelativeExpiryPreflightIsMillisecondAccurateAtTheRealRedisBoundary` (L3137) failed for the probe lease ("Malformed persisted Redis state was accepted"): its `SET … EX` past the bound returned `OK`, wrote nothing and raised no error.
+* **Correction.** Every `SET … EX` in the scripts becomes `SET` followed by `redis.pcall('EXPIRE', …)` / `PEXPIRE`, with the same all-or-nothing undo. This covers the watch flag (create), the rotated watch flag (create), the probe lease and the claim marker. A lease key that already exists takes the expiry first and is then written with `KEEPTTL`.
+* **Result.** L3137 passes unchanged on 8.10.0, and RED-10 passes on all eight families.
+* **For FAILURE_SEMANTICS (documents commit):** Redis does not judge an expiry given through `SET … EX` the same way on every version, so the store never relies on it as the judge; it uses only `EXPIRE` / `PEXPIRE`.
