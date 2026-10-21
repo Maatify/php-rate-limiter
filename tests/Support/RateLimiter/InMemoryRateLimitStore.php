@@ -591,22 +591,34 @@ class InMemoryRateLimitStore implements BudgetSeedStoreInterface, PunishmentLife
      */
     private function atCallerTime(int $now, callable $operation): mixed
     {
-        self::$callerTimes ??= new \WeakMap();
-        $previous = self::$callerTimes[$this] ?? null;
-        self::$callerTimes[$this] = $now;
+        $callerTimes = self::callerTimes();
+        $previous = $callerTimes[$this] ?? null;
+        $callerTimes[$this] = $now;
         try {
             return $operation();
         } finally {
             if ($previous === null) {
-                unset(self::$callerTimes[$this]);
+                unset($callerTimes[$this]);
             } else {
-                self::$callerTimes[$this] = $previous;
+                $callerTimes[$this] = $previous;
             }
         }
     }
 
+    /** @return \WeakMap<self, int> */
+    private static function callerTimes(): \WeakMap
+    {
+        if (self::$callerTimes === null) {
+            /** @var \WeakMap<self, int> $callerTimes */
+            $callerTimes = new \WeakMap();
+            self::$callerTimes = $callerTimes;
+        }
+
+        return self::$callerTimes;
+    }
+
     private function currentTime(): int
     {
-        return self::$callerTimes[$this] ?? $this->clock->now()->getTimestamp();
+        return self::callerTimes()[$this] ?? $this->clock->now()->getTimestamp();
     }
 }
