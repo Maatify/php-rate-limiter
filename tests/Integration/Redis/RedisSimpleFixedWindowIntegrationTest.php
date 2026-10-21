@@ -21,10 +21,10 @@ use RuntimeException;
  * non-mocked Redis server: persistence, stable expiry, the allowed/denied
  * boundary, rotation migration, and raw-subject key privacy.
  *
- * RedisFullCapabilityStore resolves budget-epoch validity from the Redis
- * server's own real-time clock (Lua TIME), not from an injected
- * ClockInterface, so this suite uses a real SystemClock and short real waits
- * for the boundary/expiry scenarios instead of a FixedClock.
+ * RedisFullCapabilityStore judges budget-epoch validity at the caller's time
+ * (#153 phase 2), while key lifetimes stay relative on the Redis clock, so
+ * this suite uses a real SystemClock and short real waits for the
+ * boundary/expiry scenarios instead of a FixedClock.
  */
 final class RedisSimpleFixedWindowIntegrationTest extends TestCase
 {

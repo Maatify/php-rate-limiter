@@ -31,8 +31,8 @@ use PHPUnit\Framework\TestCase;
  * DEC-021). The old worker is the pinned S0 pipeline
  * (S0EvaluationPipeline, provenance-checked) with the S0 Login preset; the new
  * worker is the current pipeline. Both share one real Redis namespace owned by
- * the test. Redis owns time for its primitives (DEC-016), so the workers'
- * clock reads Redis TIME; cases that need time to pass (rollback after decay,
+ * the test. The workers' clock reads Redis TIME, so the workers and the store
+ * judge at one time source (#153 phase 2); cases that need time to pass (rollback after decay,
  * previous generation) run in KnownDeviceMixedVersionSystemTest. Each case
  * states whether it asserts an invariant or an expected semantic difference.
  */
@@ -225,7 +225,7 @@ final class CustomK5Policy implements BlockPolicyInterface
 }
 
 /**
- * Clock that follows Redis TIME on every read, as the Redis primitives do.
+ * Clock that follows Redis TIME on every read, so the caller's time and the Redis clock agree.
  */
 final class RedisTimeClock implements ClockInterface
 {
