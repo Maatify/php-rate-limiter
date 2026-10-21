@@ -1,0 +1,52 @@
+env=E-DOCKER baseline=1e951ee3c3b29ecc49ce08ceff809869bccf139d head=31bca3468eb02cd5c7ccd892ee6cabb62285dd29 started=2026-10-21T08:18:22Z
+php=8.5.9 os=Darwin 27.0.0
+ Network maatify-rate-limiter-6657-20083-18735_default Creating
+ Network maatify-rate-limiter-6657-20083-18735_default Creating
+ Network maatify-rate-limiter-6657-20083-18735_default Created
+ Network maatify-rate-limiter-6657-20083-18735_default Created
+ Container maatify-rate-limiter-6657-20083-18735-redis-1 Creating
+ Container maatify-rate-limiter-6657-20083-18735-redis-1 Created
+ Container maatify-rate-limiter-6657-20083-18735-redis-1 Starting
+ Container maatify-rate-limiter-6657-20083-18735-redis-1 Started
+ Container maatify-rate-limiter-6657-20083-18735-redis-1 Waiting
+ Container maatify-rate-limiter-6657-20083-18735-redis-1 Healthy
+redis=redis_version:7.0.15
+E-DOCKER SYS_F_LOGIN rows=10000 79.3s
+E-DOCKER SYS_F_OTP rows=10000 79.1s
+E-DOCKER SYS_F_CUSTOM rows=10000 70.7s
+E-DOCKER SYS_R_LOGIN rows=12122 100.1s
+E-DOCKER SYS_Q_LOGIN rows=1000 7.7s
+E-DOCKER SYS_ROT-F_LOGIN rows=2000 23.9s
+E-DOCKER SYS_ROT-R_LOGIN rows=7899 100.1s
+E-DOCKER SYS_ROT-P_LOGIN rows=7733 100.3s
+E-DOCKER BEHIND0.25_F_LOGIN rows=2000 14.2s
+E-DOCKER BEHIND0.25_F_OTP rows=2000 14.3s
+E-DOCKER BEHIND0.25_F_CUSTOM rows=2000 13.1s
+E-DOCKER BEHIND0.50_F_LOGIN rows=2000 13.6s
+E-DOCKER BEHIND0.50_F_OTP rows=2000 13.5s
+E-DOCKER BEHIND0.50_F_CUSTOM rows=2000 12.0s
+E-DOCKER BEHIND0.75_F_LOGIN rows=2000 11.1s
+E-DOCKER BEHIND0.75_F_OTP rows=2000 11.5s
+E-DOCKER BEHIND0.75_F_CUSTOM rows=2000 11.1s
+E-DOCKER BEHIND1.00_F_LOGIN rows=2000 11.0s
+E-DOCKER BEHIND1.00_F_OTP rows=2000 10.7s
+E-DOCKER BEHIND1.00_F_CUSTOM rows=2000 10.3s
+E-DOCKER BEHIND2.00_F_LOGIN rows=2000 10.5s
+E-DOCKER BEHIND2.00_F_OTP rows=2000 11.2s
+E-DOCKER BEHIND2.00_F_CUSTOM rows=2000 10.5s
+E-DOCKER ALIGN-GATED_F_LOGIN rows=2000 39.3s
+E-DOCKER ALIGN_F_LOGIN rows=2000 18.8s
+E-DOCKER ALIGN-BEHIND1_F_LOGIN rows=2000 13.9s
+PASS E-DOCKER login_protection H-1 100/100 threw exactly Maatify\RateLimiter\Exception\RateLimiterException: Bounded correlation store returned an invalid snapshot.
+PASS E-DOCKER login_protection H-2 failure signals emitted: 0
+PASS E-DOCKER login_protection H-3 circuit state unchanged: null
+PASS E-DOCKER login_protection H-4 limit() returned a result: 0/100
+PASS E-DOCKER otp_protection H-1 100/100 threw exactly Maatify\RateLimiter\Exception\RateLimiterException: Bounded correlation store returned an invalid snapshot.
+PASS E-DOCKER otp_protection H-2 failure signals emitted: 0
+PASS E-DOCKER otp_protection H-3 circuit state unchanged: null
+PASS E-DOCKER otp_protection H-4 limit() returned a result: 0/100
+PASS E-DOCKER custom_distributed H-1 100/100 threw exactly Maatify\RateLimiter\Exception\RateLimiterException: Bounded correlation store returned an invalid snapshot.
+PASS E-DOCKER custom_distributed H-2 failure signals emitted: 0
+PASS E-DOCKER custom_distributed H-3 circuit state unchanged: null
+PASS E-DOCKER custom_distributed H-4 limit() returned a result: 0/100
+finished=2026-10-21T08:32:05Z

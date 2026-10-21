@@ -1,0 +1,67 @@
+env=E-SAME baseline=1e951ee3c3b29ecc49ce08ceff809869bccf139d head=31bca3468eb02cd5c7ccd892ee6cabb62285dd29 started=2026-10-21T07:33:06Z
+php=8.5.9 os=Darwin 27.0.0
+redis=redis_version:8.10.0
+E-SAME SYS_F_LOGIN rows=10000 31.5s
+E-SAME SYS_F_OTP rows=10000 29.2s
+E-SAME SYS_F_CUSTOM rows=10000 26.3s
+E-SAME SYS_R_LOGIN rows=32920 100.0s
+E-SAME SYS_Q_LOGIN rows=1000 3.1s
+E-SAME SYS_ROT-F_LOGIN rows=2000 10.3s
+E-SAME SYS_ROT-R_LOGIN rows=20516 100.1s
+E-SAME SYS_ROT-P_LOGIN rows=20180 100.1s
+E-SAME BEHIND0.25_F_LOGIN rows=2000 5.5s
+E-SAME BEHIND0.25_F_OTP rows=2000 5.4s
+E-SAME BEHIND0.25_F_CUSTOM rows=2000 5.1s
+E-SAME BEHIND0.50_F_LOGIN rows=2000 5.3s
+E-SAME BEHIND0.50_F_OTP rows=2000 5.3s
+E-SAME BEHIND0.50_F_CUSTOM rows=2000 4.7s
+E-SAME BEHIND0.75_F_LOGIN rows=2000 4.7s
+E-SAME BEHIND0.75_F_OTP rows=2000 4.5s
+E-SAME BEHIND0.75_F_CUSTOM rows=2000 4.5s
+E-SAME BEHIND1.00_F_LOGIN rows=2000 4.7s
+E-SAME BEHIND1.00_F_OTP rows=2000 4.9s
+E-SAME BEHIND1.00_F_CUSTOM rows=2000 4.5s
+E-SAME BEHIND2.00_F_LOGIN rows=2000 4.3s
+E-SAME BEHIND2.00_F_OTP rows=2000 5.7s
+E-SAME BEHIND2.00_F_CUSTOM rows=2000 4.7s
+E-SAME BEHIND0.25_R_LOGIN rows=31593 100.0s
+E-SAME BEHIND0.25_Q_LOGIN rows=1000 2.7s
+E-SAME BEHIND0.25_ROT-F_LOGIN rows=2000 8.6s
+E-SAME BEHIND0.25_ROT-R_LOGIN rows=20265 100.0s
+E-SAME BEHIND0.25_ROT-P_LOGIN rows=20720 100.1s
+E-SAME BEHIND0.50_R_LOGIN rows=34354 100.0s
+E-SAME BEHIND0.50_Q_LOGIN rows=1000 2.4s
+E-SAME BEHIND0.50_ROT-F_LOGIN rows=2000 7.3s
+E-SAME BEHIND0.50_ROT-R_LOGIN rows=22043 100.0s
+E-SAME BEHIND0.50_ROT-P_LOGIN rows=21001 100.1s
+E-SAME BEHIND0.75_R_LOGIN rows=35107 100.0s
+E-SAME BEHIND0.75_Q_LOGIN rows=1000 2.1s
+E-SAME BEHIND0.75_ROT-F_LOGIN rows=2000 7.1s
+E-SAME BEHIND0.75_ROT-R_LOGIN rows=21546 100.0s
+E-SAME BEHIND0.75_ROT-P_LOGIN rows=21322 100.1s
+E-SAME BEHIND1.00_R_LOGIN rows=34642 100.0s
+E-SAME BEHIND1.00_Q_LOGIN rows=1000 2.0s
+E-SAME BEHIND1.00_ROT-F_LOGIN rows=2000 6.4s
+E-SAME BEHIND1.00_ROT-R_LOGIN rows=23222 100.0s
+E-SAME BEHIND1.00_ROT-P_LOGIN rows=21905 100.1s
+E-SAME BEHIND2.00_R_LOGIN rows=40547 100.0s
+E-SAME BEHIND2.00_Q_LOGIN rows=1000 2.0s
+E-SAME BEHIND2.00_ROT-F_LOGIN rows=2000 6.3s
+E-SAME BEHIND2.00_ROT-R_LOGIN rows=24518 100.1s
+E-SAME BEHIND2.00_ROT-P_LOGIN rows=24294 100.1s
+E-SAME ALIGN-GATED_F_LOGIN rows=2000 15.5s
+E-SAME ALIGN_F_LOGIN rows=2000 7.2s
+E-SAME ALIGN-BEHIND1_F_LOGIN rows=2000 5.4s
+PASS E-SAME login_protection H-1 100/100 threw exactly Maatify\RateLimiter\Exception\RateLimiterException: Bounded correlation store returned an invalid snapshot.
+PASS E-SAME login_protection H-2 failure signals emitted: 0
+PASS E-SAME login_protection H-3 circuit state unchanged: null
+PASS E-SAME login_protection H-4 limit() returned a result: 0/100
+PASS E-SAME otp_protection H-1 100/100 threw exactly Maatify\RateLimiter\Exception\RateLimiterException: Bounded correlation store returned an invalid snapshot.
+PASS E-SAME otp_protection H-2 failure signals emitted: 0
+PASS E-SAME otp_protection H-3 circuit state unchanged: null
+PASS E-SAME otp_protection H-4 limit() returned a result: 0/100
+PASS E-SAME custom_distributed H-1 100/100 threw exactly Maatify\RateLimiter\Exception\RateLimiterException: Bounded correlation store returned an invalid snapshot.
+PASS E-SAME custom_distributed H-2 failure signals emitted: 0
+PASS E-SAME custom_distributed H-3 circuit state unchanged: null
+PASS E-SAME custom_distributed H-4 limit() returned a result: 0/100
+finished=2026-10-21T08:17:19Z
