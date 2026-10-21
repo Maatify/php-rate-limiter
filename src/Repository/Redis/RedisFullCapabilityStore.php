@@ -1866,7 +1866,9 @@ LUA;
      * duration/window/threshold/pause/retention parameter are validated as
      * explicit contract preconditions before any Redis access.
      *
-     * Redis server time owns the publication timestamps. Source-race
+     * The caller's time owns the publication timestamps (#153 phase 2): this
+     * method uses the store's fallback clock, the caller-time variant the
+     * request's own time. Source-race
      * semantics distinguish ordinary optimistic conflict from structural
      * corruption: structural validation of the persisted state always runs
      * first. When a Current score exists, its generation, core fields,
