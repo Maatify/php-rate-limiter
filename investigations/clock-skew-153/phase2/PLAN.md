@@ -413,3 +413,16 @@ Each awaits a ruling on whether to edit the comment or name. Their assertions ar
 ### 9.6 Observation (no change)
 
 `WATCH_GET` (L755–L760) reads only the physical watch key and has no `TIME`, so it is outside the inventory and unchanged. A watch whose logical expiry has passed stays readable for its physical remainder, as today.
+
+## 10. Rulings on §9 (2026-10-21, recorded before the implementation)
+
+Source: [PR #158 comment 6323629474](https://github.com/Maatify/php-rate-limiter/pull/158#issuecomment-6323629474) (Lead; the Owner accepted both recommendations).
+
+| Item | Ruling | Gate |
+| --- | --- | --- |
+| LT-P2-11 | **Accepted.** MUTATE applies the same positive-integer rule to the observed generation (non-positive = `malformed generation-bound score state`), so the four operations agree | L1530's three cases (`'0'`, `'-1'`, `'not-a-number'`) pass **unmodified** on all four paths after the invariants are removed |
+| LT-P2-12 | **Accepted.** The preflight on the caller's value stays as a cheap check. Redis itself is the final judge through `redis.pcall` on every `EXPIRE` / `PEXPIRE` / `SET … EX`. On an error the script deletes **everything this call created** (all or nothing, as the admission rule) and returns an error reply named for the cause (`expiry not representable`), which surfaces as `RateLimiterException`, never `BackendFailureException` | L3137 passes unmodified; an added test proves the atomic deletion (keyspace dump before = after when Redis rejects) |
+| List B | **A declared edit limited to the invariant / cap lines, no test deleted.** L1465, L1477, L1660 (third case): "physically inconsistent = rejected" becomes "the logical deadline governs; `PTTL` is checked as alive only", every other structural check unchanged. L1530: no edit (LT-P2-11 covers it). L1825, L1748: the assertion is restated as "the physical life is relative ≤ the requested one, and the logical deadline = the caller's `now` + ttl". Each edit is shown in RESULTS with a before / after diff and its reason (precedent LT-22 / LT-30) | — |
+| List C | **A declared text-only edit** (docblocks and names), listed in RESULTS | — |
+| §9.1 points (virtual clock, RED-1c in the acceptance, the mirror policy, RED-8's form) | **All four accepted**, on condition that the real probes (#154 in full, #156's probes, RED-1c) stay in the acceptance as registered, and their result is a **PASS condition, not a report** | §4.6 |
+| `WATCH_GET` outside the inventory | Accepted; stated in RESULTS | — |
