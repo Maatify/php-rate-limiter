@@ -415,3 +415,83 @@ Notation as §1. Every quantity is an integer second, and `σ` is constant over 
 The laws are measured at `D` = 60 and 300 (P-E2, P-E3). The L6 (and L5, 21,600 s) instances are `DERIVED` from them. Exposure share: `|σ|` / `D` = 2.3 × 10⁻⁵ per second of skew at L6.
 
 Each of these three is reported in REPORT under `DERIVED`, never with a measured interval.
+
+## 13. Harness-time note (2026-10-21, before the recorded run)
+
+Written after the harness was built and **before** any recorded run. Each item says what changed against §1–§12 and why. No registered value changes: N, skews, policies, families, detectors and thresholds stay as registered.
+
+1. **Phase 1's `lib.php` is required as it is** (LT-M-08).
+   * Blob `6c8297a093ea413c0c230e4a2a7c227c33ba782f` at `main@39dfbf8`, recorded in the harness commit `0c09d0b`; the runner logs the blob it loads.
+   * Used from it: `EventLog`, `RedisTime`, `scriptNames()`, `dt()`, `context()`, `ip()`, `baseConfig()`, `writeRow()`.
+   * Added beside it in `harness/mixlib.php`:
+     * `OffsetClock`: one host reading per `now()`, with the call site and the scalar arguments of the calling frame;
+     * `MixExecutor`: every `EVAL` with `KEYS`, `ARGV`, reply, the writer clock of each block key and pause member, the read-only pre-reads for L-1 … L-5 and the `PAUSE_READ` rerun;
+     * `LoginNaPolicy`, `CycleNaPolicy`, `Twin`, `comparisons()`.
+   * Nothing in phase 1's directory changed, and no class was copied.
+2. **Smoke and dry runs, disclosed.** None of their counts is a result; none of their outputs is committed.
+   * **Scratch cells.** Before the runner existed, single cells ran on a throwaway Redis 8.10.0 (scratch directory) with 4–12 pairs:
+     * P-B, P-E2, P-E3, P-SAT, P-I, P-RA1, P-RA2;
+     * S-ATK, S-BEN and S-RA with a 180 s duration cap.
+
+     P-B, P-I and P-RA1 were stopped before their probes, when the scratch server was shut down.
+   * **`run.sh` dry runs at 5 % scale.** Run with the dry-run controls `MIX_SCALE`, `MIX_GROUPS`, `MIX_OUT` and `MIX_SMOKE_CAP`; the scale and cap are written into every cell's meta, and `report.php` refuses such a cell.
+     * E-SAME: `probes-a` and `probes-b`, 101 cells;
+     * E-SAME: `streams-atk` and `streams-ben-ra`, 64 cells, streams capped at 120 s;
+     * E-DOCKER: 12 cells.
+   * **What they showed:** the wiring and the setups of §5.3. They also exposed five defects, all fixed before the harness commit `0c09d0b`:
+     1. the L1780 caller reading was looked up as the event just before L84, but `currentBlockLevel()` (L2740) runs between them; it is now the latest L1780 reading (item 4);
+     2. the P-RA2 observable now uses the flip of item 3 (item 6);
+     3. the detectors are now reported per environment;
+     4. every stream of a cell started at the cell's sub-second phase, which split the twins systematically when that phase was near a second boundary (dry P-B at −60 s: 6 / 10 setups split); each stream now starts with a seeded sub-second jitter (item 7);
+     5. P-RA2's ambiguity rule now flags an edge lying between the predicted and the actual return, instead of any lateness above 50 ms (item 6).
+   * After those fixes no detector failed in the dry runs. No dry-run count is reported anywhere as a result.
+3. **The flip, made precise (§4.3, §6.1).**
+   * A comparison event flips when its stored operand's **writer clock** differs from the clock the comparison reads, and the outcome with the reading clock (`⌊h + σ⌋` for PHP and for a cycle-path `now`, `⌊h⌋` for Redis `TIME`) differs from the outcome with the writer's clock at the same instant.
+   * Writer clocks: `BLOCK_SET` and the lifecycle `HARD_BLOCK` write Redis time; the cycle `HARD_BLOCK` writes caller time.
+   * B, C and F always read a Redis-written operand, so their flip is `outcome(⌊h + σ⌋) ≠ outcome(⌊h⌋)`.
+   * E and E′ use the block's writer: a cycle-written block read by PHP is consistent, and its mix is counted at L-3 instead.
+   * I is the `PAUSE_READ` rerun at `⌊h⌋`; it flips when the elapsed paused seconds differ. It is reported with the interval writers, and with whether `from` came from the caller (L1776, the `retryAfter` path, secondary).
+   * `B84` (the L84 `retryAfter`) is secondary. When its `lastUpdateTimestamp` is the L1780 caller reading, the counterfactual uses that reading's `⌊h⌋`.
+4. **Operand recovery (§4.2).**
+
+   | Site | Operand recovered from |
+   | --- | --- |
+   | L44, L84 | the calling frame's arguments; for L84 also the latest L1780 reading, which L1778 evaluates before `currentBlockLevel()` (L2740) |
+   | L280 | the `LIFECYCLE_READ` reply immediately before |
+   | L531 | the `BLOCK_GET` replies that follow, up to the next other command |
+   | L2740 | the `BLOCK_GET` reply immediately before |
+   | L55 | the `BUDGET_GET` reply immediately before |
+   | L2765 | the `PAUSE_READ` that follows, with its rerun |
+
+5. **Twins** are labelled `S` (carries `σ`) and `Z` (`σ = 0`), with namespaces `m153-<run>-<cell>-S|Z` (`+` written as `p`).
+6. **The law as evaluated by `report.php` (D-LAW).** Host times are moved to Redis time with the `θ` that `run.php` measures at the start of each cell (median of 51 `TIME` round trips).
+   * **P-B.** The `S` twin reaches the 6 → 4 step when `h + θ ≥ uS + 1,200 − σ`; `Z` when `h + θ ≥ u0 + 1,200`. Observed: the K4 (`account`-scope) decay amounts at L44 differ.
+   * **P-E2, P-E3, P-SAT.** Honoured at `h` iff `h < min(phys, E, E − σ)`, where `phys` = the `HARD_BLOCK` midpoint + `θ` + `D`. Observed: the K4 block honoured at L550 differs between the twins.
+   * **P-RA1.** Predicted refused iff `⌊C⌋ < u′` at the failure (the L1780 reading against the `LIFECYCLE_MUTATE` `updatedAt`). Observed: the `S` twin's decision on return is not `ALLOW`.
+   * **P-RA2.** Predicted landed iff the K4 block is Redis-written and the predicted return (poll receipt + its `retryAfter`) lies in `[E − σ, min(E, phys))`. Observed: the L550 event for the K4 block flips (item 3) at the `S` twin's return. A caller-written block cannot flip at L550 by item 3; its mix is L-3. This matches §5.3's "CY: 0 %".
+   * **Exclusions and ambiguity.**
+     * Setups that did not produce the registered state are excluded (§5.3): P-B K4 ≠ 6, or `uS ≠ u0`; P-E a missing or wrong-level block.
+     * A setup **split** (the twins' block written in different Redis seconds) is counted in its own column.
+     * Ambiguous: within 2 ms of an edge (`phys` also ± half the `HARD_BLOCK` round trip). For P-RA2, ambiguous when an edge lies between the predicted and the actual return (± the same bands), and only where a window exists.
+7. **Placement.**
+   * Probes are placed in Redis time (`θ`).
+   * Setups are spread over 300 s per cell, not ≈ 60 s, to bound the load with many cells running at once.
+   * Each stream adds a sub-second jitter (`U[0, 1)`, from its own seeded PRNG) to its start. All later times of the stream keep that phase.
+   * Bands: `j` even → in-window; `j ≡ 1 (mod 4)` → before; `j ≡ 3 (mod 4)` → after.
+   * An in-window band shorter than 1 ms (for example LC behind, or CY behind at a sub-second `σ`, §1.2) is placed in `[lo − |σ|, lo)` and named `in-empty`; its prediction is evaluated per probe like any other.
+   * P-SAT probes are uniform over the block's life. P-I probes are uniform in `[cycle-2 block write, pause finish + 1,200 s]`.
+8. **Order and concurrency (§5.6).** Each cell is one process. The cells of a group run concurrently, and the groups run in a fixed order:
+   1. `probes-a`: P-E2, P-E3, P-SAT, P-RA2;
+   2. `probes-b`: P-B, P-I, P-RA1;
+   3. `streams-atk`;
+   4. `streams-ben-ra`: S-BEN and S-RA with the `LOGIN` reference.
+
+   This replaces "one family per invocation" in §5.6 to fit the wall time. Load lateness is recorded per step (`due`, `h0`); predictions use executed times.
+9. **Streams.**
+   * In S-BEN and S-ATK, a failure is recorded only after an `ALLOW` pre-check, because the Host refuses the attempt otherwise.
+   * S-RA waits the `retryAfter` of its last response: that of its `recordFailure` if it made one, else that of its pre-check. It waits 1 s when that value is 0 or absent, or after an exception (LT-M-11).
+   * S-RA twins are paired by attempt (the n-th pre-check), not by step index.
+   * Per-stream PRNG: `Mt19937` seeded with `crc32(family | policy | stream)`, so the schedules are identical for every `σ` and for both twins.
+10. **Split (§4.4) as computed.** The twins' Redis-written seconds in the step differ, or the union of their spans (`θ`-adjusted) crosses a second boundary.
+11. **State divergence (§6.4).** Compared fields: `value`, `level`, `count`, `generation`, `reentryId` present, and `ZCARD` of the cycle and pause sets, per key written during the stream. Time fields are left out.
+12. **Redis `maxclients` 4,096** in E-SAME. A cell holds seven connections, and up to 65 cells run at once (`probes-a`).
