@@ -1,0 +1,1 @@
+FAIL E-DOCKER login_protection H-1 returned=100 other=[]
