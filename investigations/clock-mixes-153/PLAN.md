@@ -357,3 +357,61 @@ Every rate is reported with a Wilson 95 % interval. With the N of §5.6:
 5. REPORT.md.
 
 Each commit alone. The plan is not edited after commit 2 except by a dated note that says what changed and why.
+
+## 12. Lead rulings and Owner authorisation (2026-10-21, recorded before the harness)
+
+Sources:
+* the Lead's rulings, [PR #156 comment 6312297146](https://github.com/Maatify/php-rate-limiter/pull/156#issuecomment-6312297146);
+* the Lead's harness permission, [comment 6314681728](https://github.com/Maatify/php-rate-limiter/pull/156#issuecomment-6314681728);
+* the Owner's authorisation of the harness, relayed by the #153 session.
+
+§1–§11 above are kept as written and are read together with this section. Where they differ, this section governs.
+
+**Base.** #154 is squash-merged as `main@39dfbf8`, and this branch is rebased onto it. `src/`, `tests/` and `composer.json` are byte-identical between `1e951ee` and `39dfbf8` (`git diff --stat 1e951ee 39dfbf8 -- src tests composer.json` is empty). So V-1 keeps the baseline `1e951ee3c3b29ecc49ce08ceff809869bccf139d`, and every line citation stays valid.
+
+| LT | Ruling | Effect on the plan |
+| --- | --- | --- |
+| M-01 | As proposed, **plus** | B, C, E, F, I, E′ measured; G recorded; H inventoried; L-1 … L-5 observed with no arm of their own. **Added:** if L-1 appears in P-E or P-I with a non-zero count, REPORT gives the count and the context of each occurrence, so a targeted arm can be decided later. |
+| M-02 | As §5.2 | ±0.25 / 0.5 / 1 / 2 s for every family; ±10 / ±60 s for P-B and P-E; 60 s accepted as the saturation test. |
+| M-03 | **`DERIVED` now; P-LONG deferred** | C, F and L6 are reported as `DERIVED`, with the explicit derivation below. P-LONG stays registered (§5.5) as an optional arm, to be run only if the Owner chooses phase 2 option (b), because option (a) removes the comparison itself. |
+| M-04 | As proposed | E-SAME for everything; E-DOCKER for P-B, P-E2 and P-RA at `σ = ±1 s`, twins only; no new image; the environments are never pooled. |
+| M-05 | As proposed, **plus** | `LOGIN-NA`, `CYCLE-NA`, and the preset as a reference at ±1 / ±2 s with A counted separately. **Added:** REPORT states that the opt-in variant (`LoginProtectionAdmissionPolicy`) is not measured here, and why. |
+| M-06 | As proposed | S-RA claims right after a pre-check `ALLOW` carrying re-entry metadata, and before its `recordFailure`. |
+| M-07 | As proposed | Primary: the decision, re-entry metadata present or not, and an exception. Secondary, reported: level, `retryAfter`, claim result. |
+| M-08 | **The alternative: wait for #154, then `require` its `lib.php`** | No class is copied. The harness `require`s `investigations/clock-skew-153/harness/lib.php` from `main` as it is. The harness commit records its blob SHA: `git rev-parse main:investigations/clock-skew-153/harness/lib.php` = `6c8297a093ea413c0c230e4a2a7c227c33ba782f`. Where §4.1 / §4.2 need behaviour that `lib.php` does not have (one reading per `now()`, operands, more scripts' replies), the harness adds its own classes beside it and changes nothing in phase 1's directory. |
+| M-09 | As proposed | 100 + 100, 200, 20, with Wilson intervals. |
+| M-10 | As proposed, **plus** | **Added:** REPORT gives, per cell, the number of probes that fell in the 2 ms band. |
+| M-11 | As proposed, **plus** | **Added:** REPORT gives the number of exceptions per stream. |
+
+### 12.1 The `DERIVED` derivations for C, F and L6 (LT-M-03)
+
+Notation as §1. Every quantity is an integer second, and `σ` is constant over the life of the state.
+
+**C (re-entry, `EvaluationPipeline` L280–L283).**
+
+* The store returns evidence at Redis time `R` only if `E_s > ⌊R⌋` and no L2+ block is active by Redis time (`LIFECYCLE_READ` L403, L419). Here `E_s` = the K4 generation-bound score's `expiresAt` = `validUntil` (`HARD_BLOCK` L1197); it is set once at the generation's first write (`LIFECYCLE_MUTATE` L276–L278) and carried unchanged (L319–L325).
+* PHP then serves re-entry iff `E_s > ⌊R + σ⌋`.
+* `served_σ(R) = served_0(R) ∧ [E_s > ⌊R + σ⌋]`.
+* Behind (`σ = −s`): `⌊R − s⌋ ≤ ⌊R⌋ < E_s` whenever `served_0(R)`, so `served_σ = served_0` at every `R`. **No change.**
+* Ahead (`σ = +a`): the outcomes differ iff `E_s > ⌊R⌋ ∧ E_s ≤ ⌊R + a⌋ ⟺ R ∈ [E_s − a, E_s)`, by the identity of §1 (and only while `served_0` holds).
+* **Exposure:** `a` seconds once per K4 generation, at 86,400 s after its first write.
+* **Changed decision there:** re-entry not served, so the K4 score is not zeroed (L288), and a pre-check `ALLOW` carries no re-entry metadata (L502–L512).
+* Share of a uniformly timed pre-check inside the evidence's life: at most `a` / 86,400 = 1.16 × 10⁻⁵ per second of skew.
+
+**F (budget, `BudgetTracker` L54–L56).**
+
+* The store returns the epoch only if `end > ⌊R⌋`, where `end = epochStart + 86,400` (`BUDGET_GET` L643–L645); `epochStart` is a Redis second (`BUDGET_INCREMENT` L613).
+* PHP: `active_σ(R) = [count ≥ limit] ∧ [end > ⌊R + σ⌋]`.
+* Behind: no change, by the same argument as C.
+* Ahead: differs iff `R ∈ [end − a, end)`.
+* **Exposure:** `a` seconds per epoch whose count reached the limit.
+* **Changed decision there:** budget not active (L2226–L2229), so no budget cooldown path (L2231–).
+
+**L6 (block of 86,400 s, `PenaltyLadder` L17).** DV-E1 and DV-E2 hold for any `D`, since `D` enters only as the additive constant in `E`:
+
+* lifecycle-written: ahead, not honoured in `[E − a, E)`; behind, no change;
+* cycle-written: behind, deleted `⌊R0⌋ − ⌊R0 − s⌋` seconds early; ahead (whole seconds), no change.
+
+The laws are measured at `D` = 60 and 300 (P-E2, P-E3). The L6 (and L5, 21,600 s) instances are `DERIVED` from them. Exposure share: `|σ|` / `D` = 2.3 × 10⁻⁵ per second of skew at L6.
+
+Each of these three is reported in REPORT under `DERIVED`, never with a measured interval.
