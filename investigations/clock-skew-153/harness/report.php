@@ -38,6 +38,11 @@ foreach (['E-SAME', 'E-DOCKER'] as $env) {
             $rtt[] = ($row['recv'] - $row['send']) * 1000;
         }
         $md[] = sprintf('* `%s` (1,000 `TIME` round trips): `θ` ms %s; rtt ms %s', $probe, dist($theta), dist($rtt));
+        if ($env === 'E-SAME') {
+            $medianTheta = median($theta);
+            $medianRtt = median($rtt);
+            $md[] = sprintf('  * V-2: |median `θ`| %.3f ms ≤ median rtt / 2 %.3f ms → %s', abs($medianTheta), $medianRtt / 2, abs($medianTheta) <= $medianRtt / 2 ? 'PASS' : 'FAIL');
+        }
     }
     $md[] = '';
     $md[] = '### Cells';
@@ -80,10 +85,10 @@ foreach (['E-SAME', 'E-DOCKER'] as $env) {
     $md[] = sprintf('* **D-100** `ALIGN-BEHIND1_F_LOGIN`: %d / %d → %s.', $d100['validator'], $d100['requests'], $d100['validator'] === $d100['requests'] && $d100['requests'] === 2000 ? 'PASS' : 'FAIL');
 
     $md[] = '';
-    $md[] = '### Timing and boundary detail (F cells with `SYS` or `ALIGN` clocks)';
+    $md[] = '### Timing and boundary detail (F cells with `SYS`, `ALIGN` or `BEHIND` clocks; the decile line was added after the run, descriptive)';
     $md[] = '';
     foreach ($details as $cell => [$clock, $population, $stats]) {
-        if ($population !== 'F' || ! in_array($clock, ['SYS', 'ALIGN', 'ALIGN-GATED'], true)) {
+        if ($population !== 'F' || ! in_array($clock, ['SYS', 'ALIGN', 'ALIGN-GATED', 'BEHIND'], true)) {
             continue;
         }
         $md[] = sprintf('* `%s`: gap L867 → EVAL sent ms %s; EVAL rtt ms %s; `M − N` %s', $cell, dist($stats['gap']), dist($stats['rtt']), kvInt(countValues($stats['mMinusN'])));
@@ -95,6 +100,8 @@ foreach (['E-SAME', 'E-DOCKER'] as $env) {
 
     $md[] = '';
     $md[] = '### Reuse populations: exceptions by time since the first request of the repetition (100 ms buckets with any request; `exceptions/requests`)';
+    $md[] = '';
+    $md[] = 'Per repetition (added after the run, descriptive): `M0` = the Redis second in which the returned `expiresAt` was written (creation for R / ROT-R, the previous key for ROT-P); the caller is behind by `s`, so a request throws while its L867 host time is below `M0 + s`. `f0` = sub-second fraction of the first request\'s L867 time; predicted throwing period from the first request = `max(0, M0 + s − t_first)`; observed = from the first request to the last throwing request.';
     $md[] = '';
     foreach ($details as $cell => [$clock, $population, $stats]) {
         if (! in_array($population, ['R', 'ROT-R', 'ROT-P'], true)) {
@@ -112,6 +119,7 @@ foreach (['E-SAME', 'E-DOCKER'] as $env) {
             $line .= sprintf('; previous expiry returned %d/%d; setup requests %d (exceptions %d)', $stats['prevHit'], $stats['prevTotal'], $stats['setup'], $stats['setupExceptions']);
         }
         $md[] = $line;
+        $md[] = '  * ' . repSummary($stats['reps'], $stats['offset']);
     }
 
     $md[] = '';
@@ -189,9 +197,10 @@ function cellStats(iterable $rows, string $population): array
     $s = ['requests' => 0, 'reached' => 0, 'validator' => 0, 'other' => 0, 'agree' => 0, 'snaps' => 0, 'l867' => 0,
         'gap' => [], 'rtt' => [], 'gapTotal' => [], 'startToReply' => [], 'mMinusN' => [], 'deciles' => array_fill(0, 10, [0, 0]),
         'buckets' => [], 'bucketTotal' => [0, 0], 'site' => ['device' => [0, 0], 'occurrence' => [0, 0]], 'outcomes' => [],
-        'prevHit' => 0, 'prevTotal' => 0, 'setup' => 0, 'setupExceptions' => 0];
+        'prevHit' => 0, 'prevTotal' => 0, 'setup' => 0, 'setupExceptions' => 0, 'reps' => [], 'offset' => 0.0];
     foreach ($rows as $row) {
         if (isset($row['meta'])) {
+            $s['offset'] = (float) $row['meta']['offset'];
             if (($row['meta']['scale'] ?? null) !== 1.0 && getenv('C153_DRY_RUN') !== '1') {
                 throw new \RuntimeException('cell ' . $row['meta']['cell'] . ' was run with scale ' . json_encode($row['meta']['scale']));
             }
@@ -245,6 +254,16 @@ function cellStats(iterable $rows, string $population): array
             $s['buckets'][$bucket][1] += $validatorThrew ? 1 : 0;
             $s['bucketTotal'][0]++;
             $s['bucketTotal'][1] += $validatorThrew ? 1 : 0;
+        }
+        if (isset($row['rep'], $row['k'], $first['M'])) {
+            $rep = $row['rep'];
+            $s['reps'][$rep] ??= ['M0' => $first['M'], 'first' => $first['ch'], 'lastThrow' => null, 'n' => 0, 'x' => 0, 'mixedM' => false];
+            $s['reps'][$rep]['mixedM'] = $s['reps'][$rep]['mixedM'] || $s['reps'][$rep]['M0'] !== $first['M'];
+            $s['reps'][$rep]['n']++;
+            if ($validatorThrew) {
+                $s['reps'][$rep]['x']++;
+                $s['reps'][$rep]['lastThrow'] = $first['ch'];
+            }
         }
         if (array_key_exists('prevHit', $row)) {
             $s['prevTotal']++;
@@ -306,4 +325,43 @@ function kv(array $map): string
 function kvInt(array $map): string
 {
     return '{' . implode(', ', array_map(static fn (int $k, int $v): string => $k . ': ' . $v, array_keys($map), $map)) . '}';
+}
+
+/** @param list<float> $values */
+function median(array $values): float
+{
+    sort($values);
+
+    return $values[intdiv(count($values) - 1, 2)];
+}
+
+/** @param array<int, array<string, mixed>> $reps */
+function repSummary(array $reps, float $offset): string
+{
+    if ($reps === []) {
+        return 'no repetition data';
+    }
+    $f0 = [];
+    $pred = [];
+    $obs = [];
+    $withThrow = 0;
+    $mixed = 0;
+    foreach ($reps as $rep) {
+        $f0[] = fmod($rep['first'], 1.0);
+        $pred[] = max(0.0, $rep['M0'] + $offset - $rep['first']) * 1000;
+        $obs[] = $rep['lastThrow'] === null ? 0.0 : ($rep['lastThrow'] - $rep['first']) * 1000;
+        $withThrow += $rep['x'] > 0 ? 1 : 0;
+        $mixed += $rep['mixedM'] ? 1 : 0;
+    }
+
+    return sprintf(
+        'repetitions %d (with a throw %d; returned M0 changed within a repetition %d); `f0` min %.3f max %.3f; predicted throwing period ms %s; observed ms %s',
+        count($reps),
+        $withThrow,
+        $mixed,
+        min($f0),
+        max($f0),
+        dist($pred),
+        dist($obs),
+    );
 }
