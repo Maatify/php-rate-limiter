@@ -1,0 +1,28 @@
+env=E-DOCKER baseline=1e951ee3c3b29ecc49ce08ceff809869bccf139d head=87665820545cae08c45bd139a1817cab01353412 lib.php=6c8297a093ea413c0c230e4a2a7c227c33ba782f started=2026-10-21T15:10:41Z
+php=8.5.9 os=Darwin 27.0.0
+ Network maatify-rate-limiter-8781-3690-42254_default Creating
+ Network maatify-rate-limiter-8781-3690-42254_default Creating
+ Network maatify-rate-limiter-8781-3690-42254_default Created
+ Network maatify-rate-limiter-8781-3690-42254_default Created
+ Container maatify-rate-limiter-8781-3690-42254-redis-1 Creating
+ Container maatify-rate-limiter-8781-3690-42254-redis-1 Created
+ Container maatify-rate-limiter-8781-3690-42254-redis-1 Starting
+ Container maatify-rate-limiter-8781-3690-42254-redis-1 Started
+ Container maatify-rate-limiter-8781-3690-42254-redis-1 Waiting
+ Container maatify-rate-limiter-8781-3690-42254-redis-1 Healthy
+redis=redis_version:7.0.15
+group docker: 12 cells started=2026-10-21T15:10:49Z
+E-DOCKER P-RA2_LOGIN-NA_+1.00 pairs=100 380.4s
+E-DOCKER P-RA2_CYCLE-NA_-1.00 pairs=100 381.0s
+E-DOCKER P-RA2_CYCLE-NA_+1.00 pairs=100 380.9s
+E-DOCKER P-RA2_LOGIN-NA_-1.00 pairs=100 381.5s
+E-DOCKER P-E2_LOGIN-NA_-1.00 pairs=200 381.9s
+E-DOCKER P-E2_LOGIN-NA_+1.00 pairs=200 381.9s
+E-DOCKER P-E2_CYCLE-NA_-1.00 pairs=200 382.4s
+E-DOCKER P-E2_CYCLE-NA_+1.00 pairs=200 382.4s
+E-DOCKER P-RA1_LOGIN-NA_+1.00 pairs=100 1510.8s
+E-DOCKER P-RA1_LOGIN-NA_-1.00 pairs=100 1510.8s
+E-DOCKER P-B_LOGIN-NA_+1.00 pairs=200 1511.5s
+E-DOCKER P-B_LOGIN-NA_-1.00 pairs=200 1512.5s
+group docker: finished=2026-10-21T15:36:02Z failed=0
+finished=2026-10-21T15:36:03Z
