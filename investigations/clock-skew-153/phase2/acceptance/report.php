@@ -229,6 +229,23 @@ foreach (['E-SAME', 'E-DOCKER'] as $env) {
         $md[] = '* unregistered cells present: ' . implode(', ', $extra);
     }
 
+    // Added after the run, descriptive: it changes no verdict above.
+    $md[] = '';
+    $md[] = '### Whole-second quantization of each twin\'s own clock (added after the run, descriptive; no verdict changes)';
+    $md[] = '';
+    $md[] = 'Each twin stores and judges with its own clock (host + σ for S, host for Z), in whole seconds. In host time, S\'s state ends at `end_S` = (S\'s stored second) − σ and Z\'s at `end_Z` = (Z\'s stored second): P-E `E − σ` vs `E` from the probe\'s `block`; P-B `uS + 1200 − σ` vs `u0 + 1200`. Prediction: a twin refuses while its request starts before its end; a change is predicted when the two predictions differ. Ambiguous = an end within the request\'s own span ± 2 ms. `Δ = end_S − end_Z` in seconds. Where the block hands over to a cycle pause (CYCLE-NA), both twins stay refused and a predicted difference shows in `lv` / `retryAfter` only.';
+    $md[] = '';
+    $md[] = '| Cell | probe steps | changed, predicted | changed, not predicted | same, predicted (of which `lv` or `retryAfter` differ) | same, not predicted | ambiguous (changed / same) | Δ distribution |';
+    $md[] = '| --- | ---: | ---: | ---: | ---: | ---: | --- | --- |';
+    foreach ($seen as $cell) {
+        $family = explode('_', $cell)[0];
+        if (! in_array($family, ['P-B', 'P-E2', 'P-E3'], true)) {
+            continue;
+        }
+        $q = quantization($dir . '/p156/' . $cell . '.jsonl', $family);
+        $md[] = sprintf('| `%s` | %d | %d | %d | %d (%d) | %d | %d / %d | %s |', $cell, $q['n'], $q['obsPred'], $q['obsNoPred'], $q['samePred'], $q['samePredSecondary'], $q['sameNoPred'], $q['ambObs'], $q['ambSame'], kv($q['delta']));
+    }
+
     // The two-clock arm.
     $twoClock = $dir . '/two-clock.jsonl';
     if ($env === 'E-SAME') {
@@ -410,6 +427,54 @@ function p156Stats(string $file): array
     }
 
     return $s;
+}
+
+/** @return array<string, mixed> */
+function quantization(string $file, string $family): array
+{
+    $sigma = 0.0;
+    $bands = [];
+    foreach (rows($file) as $row) {
+        if (isset($row['meta'])) {
+            $sigma = (float) $row['meta']['sigma'];
+            continue;
+        }
+        if (isset($row['probe'], $row['j'], $row['t'])) {
+            $bands[$row['j'] . '|' . ($row['probe']['band'] ?? '?')][$row['t']] = $row;
+        }
+    }
+    $q = ['n' => 0, 'obsPred' => 0, 'obsNoPred' => 0, 'samePred' => 0, 'samePredSecondary' => 0, 'sameNoPred' => 0, 'ambObs' => 0, 'ambSame' => 0, 'delta' => []];
+    foreach ($bands as $pair) {
+        if (! isset($pair['S'], $pair['Z'])) {
+            continue;
+        }
+        [$s, $z] = [$pair['S'], $pair['Z']];
+        if ($family === 'P-B') {
+            $endS = $s['probe']['uS'] + 1200 - $sigma;
+            $endZ = $s['probe']['u0'] + 1200;
+        } elseif (isset($s['block']['S']['E'], $s['block']['Z']['E'])) {
+            $endS = $s['block']['S']['E'] - $sigma;
+            $endZ = (float) $s['block']['Z']['E'];
+        } else {
+            continue;
+        }
+        $q['n']++;
+        $delta = sprintf('%+.2f', $endS - $endZ);
+        $q['delta'][$delta] = ($q['delta'][$delta] ?? 0) + 1;
+        $changed = primary($s) !== primary($z);
+        $predicted = ($s['h0'] < $endS) !== ($z['h0'] < $endZ);
+        $ambiguous = ($endS >= $s['h0'] - 0.002 && $endS <= $s['h1'] + 0.002) || ($endZ >= $z['h0'] - 0.002 && $endZ <= $z['h1'] + 0.002);
+        if ($ambiguous) {
+            $q[$changed ? 'ambObs' : 'ambSame']++;
+            continue;
+        }
+        $q[($changed ? 'obs' : 'same') . ($predicted ? 'Pred' : 'NoPred')]++;
+        if (! $changed && $predicted && (($s['lv'] ?? null) !== ($z['lv'] ?? null) || ($s['ra'] ?? null) !== ($z['ra'] ?? null))) {
+            $q['samePredSecondary']++;
+        }
+    }
+
+    return $q;
 }
 
 /** @return array<string, mixed> */
