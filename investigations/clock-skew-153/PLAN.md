@@ -218,3 +218,21 @@ Timing values are not reproducible run to run (they depend on the machine); `rep
 4. REPORT.md.
 
 Each commit alone; the plan is not edited after commit 2 except by a dated note that says what changed and why.
+
+## 11. Lead rulings (2026-10-21, recorded before the harness)
+
+Source: [PR #154 comment 6310105647](https://github.com/Maatify/php-rate-limiter/pull/154#issuecomment-6310105647). All seven LTs accepted; §1–§10 above are kept as written and are read together with this section. Where they differ, this section governs.
+
+| LT | Ruling | Effect on the plan |
+| --- | --- | --- |
+| 153-01 | Accepted | D-0 = `ALIGN-GATED`. The measured gap (L867 reading → snapshot `EVAL` sent, and the `EVAL` round trip) is reported, and the validity condition is stated with its value: the gate is valid only while the largest measured gap of the cell is **below 50 ms** (one tenth of the 500 ms gated half-second); otherwise D-0 is reported as invalid, not as passed. `ALIGN` (ungated) is reported. D-100 unchanged. |
+| 153-02 | Accepted | P-TAIL added in E-SAME: `a` ∈ {0.5, 1, 2} s ahead, 20 accounts, one 600 s window wait, no state seeding, no change to `src/`. |
+| 153-03 | Accepted as a reported observation in this PR, and ruled an **independent defect** | P-HT runs in the same wait as P-TAIL. A separate issue is opened now ("Bounded metadata expiry floors Redis seconds while EXPIRE uses milliseconds: malformed state at the key's last fraction of a second") citing P-HT and L721, L745, L781, L834, L874. Its fix is decided outside #153. |
+| 153-04 | Accepted | E-DOCKER + E-SAME, no new PHP image. REPORT.md states that the two Redis versions differ (7.0.15 / 8.10.0) and **compares** the environments; it never merges their numbers into one figure. |
+| 153-05 | Accepted | The question 4 check stays in the harness; phase 2's red tests are written new. |
+| 153-06 | Accepted | 10,000 per `SYS` × F cell, 2,000 for the other F cells, Wilson 95 % intervals. |
+| 153-07 | Accepted for phase 1 **with a later condition** | Inventory only in this PR. A registered measurement of the size of the non-throwing mixes (B, C, E, F, I) is required **before the phase 2 decision**, as a separate PR after this one (option (a) of phase 2 would cover them together; option (b) would not). |
+
+The Lead's verification recorded with the rulings: `limit()` catches only `RateLimitConcurrencyException` (L336) and `BackendFailureException` (L348; and L438 in `claimPostPunishmentReentry`), and the Lua lines L475 and L1138 compare an `expiresAt` with a time from either clock, as inventoried.
+
+**Executor's value for 153-01.** The ruling asks for the "gap ≪ 500 ms" condition with its value; the 50 ms figure above is the executor's, registered here before any run. The Lead may change it before the harness commit; after that commit it is not changed.
