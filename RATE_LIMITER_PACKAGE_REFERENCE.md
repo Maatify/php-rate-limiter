@@ -404,7 +404,7 @@ logical history, with Current writable and Previous read-only.
 `PunishmentLifecycleStoreInterface` is the DEC-007 capability for generation-bound
 authentication K4 state. Its Redis implementation uses one atomic lifecycle
 publication primitive for the score generation, L2+ block, and exact score-expiry
-evidence; coherent reads use Redis server time and suppress evidence while the
+evidence; coherent reads are judged at the request's time (the Host clock, read once per call) and suppress evidence while the
 selected K4 block is active. Public runtime consumers receive metadata only from
 an unblocked `checkOnly` ALLOW and claim it through an independent Current-only
 marker. A replay is an expected false result and does not consume evidence.

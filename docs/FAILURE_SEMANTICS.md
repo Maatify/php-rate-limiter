@@ -147,6 +147,64 @@ raises the package exception path instead of silently treating corruption as
 missing evidence. Legacy generation-less state may use its backend TTL during
 compatibility reads and is upgraded on a real mutation.
 
+A generated score is judged by its logical `expiresAt` alone; its physical
+backend lifetime only says whether the key is alive (#153 phase 2, LT-P2-02).
+A logical expiry that differs from the physical lifetime is therefore not
+corruption.
+
+### 2.5 Time authority and clock skew (#153 phase 2)
+
+**One time authority.** Every timestamp the runtime stores or compares is the
+Host's `ClockInterface` time, read **once per runtime call** (`limit()`,
+`claimPostPunishmentReentry()`) and passed to every store operation (DEC-016
+application note). The built-in Redis store reads no Redis `TIME`. Physical key
+lifetimes stay relative on the Redis clock and only bound memory; logical
+deadlines are the caller's time plus a TTL.
+
+**Host duty: a fleet that shares one Redis shares one time source.** The Host
+owns its clock (PACKAGE_BUILDING_STANDARD §2, §25). One Host is consistent with
+itself. Across Hosts, a value written by Host W and read by Host R carries the
+offset between their clocks. Let δ = W − R, or the size of a backward clock step
+on one Host. Then:
+
+* **The bounded correlation snapshot (Login, OTP, every `DISTRIBUTED_ACCOUNT`
+  policy).** A window that W created makes R's pre-check fail with
+  `RateLimiterException('Bounded correlation store returned an invalid snapshot.')`
+  until R's clock reaches the second of the window's creation. That is at most
+  δ after the write. The validator has no tolerance, by decision. An exception
+  of this kind reaches the Host unchanged: there is no circuit report and no
+  fallback (§5).
+* **Decay, an L2+ block honoured, the account budget, re-entry, and the decay
+  pause.** Each decision taken against a stored boundary moves by δ, in R's time.
+  For example, a block ends up to δ early or late.
+* **Bound.** Every effect is bounded by δ: by the largest clock offset between
+  the Hosts that share the store, or by the largest backward step. With one time
+  source for the fleet, δ is the synchronisation error of that source. The
+  measured size is in `investigations/clock-skew-153/phase2/RESULTS.md` (the
+  two-clock arm).
+
+A Host store that does not implement the additive `CallerTime*` capability
+interfaces keeps its own time source. For that store, the difference between its
+time and the Host clock has the same effects, with δ = that difference.
+
+**Expired, not corrupt (LT-P2-03).** A correlation window, watch flag, or bridge
+whose logical `expiresAt` has been reached while its key is still physically
+present is **expired**: the operation treats it as absent and starts a new
+window. This covers a Host clock ahead of the Redis clock and the last fraction
+of a second of every key's life (#155). The documented cost is that a stored
+deadline in the past on a live key is no longer detected as corruption. Every
+other structural check (format, missing field, missing TTL, capacity, overlap)
+still fails explicitly.
+
+**Expiries Redis cannot represent (LT-P2-12).** The store checks an expiry
+against the caller's time first. Redis itself is the final judge, through
+`EXPIRE` / `PEXPIRE` run under `redis.pcall`. When Redis rejects an expiry, the
+operation deletes every key that call created and fails with
+`RateLimiterException('expiry not representable')`, never with
+`BackendFailureException`. `SET … EX` is never used as the judge: past Redis's
+bound, Redis 7.0.15 rejects it, while Redis 8.10.0 replies `OK` and stores
+nothing.
+
 ---
 
 ## 3. Failure Modes

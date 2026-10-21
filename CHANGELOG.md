@@ -7,6 +7,30 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed (#153, #155; DEC-016 application note) — one time authority: the caller's clock
+- `RedisFullCapabilityStore` reads no Redis `TIME`. Every timestamp it stores or compares is the
+  caller's time; physical key lifetimes stay relative on the Redis clock. This removes the
+  `RateLimiterException('Bounded correlation store returned an invalid snapshot.')` that reached
+  the Host when the application clock was behind Redis, or when a request crossed a second boundary
+  (#153). It also removes the silent decision shifts measured in #156 (decay, L2+ block, budget,
+  re-entry) and the `malformed … metadata` error in a key's last fraction of a second (#155).
+- Nine additive capability interfaces `CallerTime*` in `Maatify\RateLimiter\Repository`, one per
+  existing storage contract without a time parameter. The runtime calls them when a store implements
+  them, else the existing methods. No existing interface or signature changes. A Host store that does
+  not implement them keeps its own time source.
+- The runtime reads the Host `ClockInterface` once per `limit()` and per
+  `claimPostPunishmentReentry()`, and passes that value to every store operation.
+- A logically expired window that is still physically present is expired, not malformed (#155). A
+  generated score is judged by its logical `expiresAt` alone; the five physical-deadline consistency
+  checks and the four physical caps are removed. `LIFECYCLE_MUTATE` rejects a non-positive stored
+  generation, as the other lifecycle operations already did.
+- An expiry Redis cannot represent fails with `RateLimiterException('expiry not representable')`
+  and leaves no state behind. Redis judges it through `EXPIRE` / `PEXPIRE`, never `SET … EX`.
+- `RedisFullCapabilityStore` takes an optional trailing `?ClockInterface $clock` (default
+  `SystemClock(UTC)`), used only when an existing method is called directly without a caller time.
+- Host duty, documented in `docs/FAILURE_SEMANTICS.md` §2.5 and `docs/guides/USAGE_GUIDE.md`: a fleet
+  that shares one store shares one time source; the offset between Hosts bounds the residual effects.
+
 ### Changed (DEC-022, DEC-026, DEC-027, DEC-028) — the admission reservation is active
 - `RateLimiterBuilder::build()` constructs the admission runtime when a registered policy declares
   `PolicyCapabilityEnum::ADMISSION_RESERVATION`, with the package constants

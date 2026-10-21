@@ -159,7 +159,7 @@ The public runtime surface also includes the `login_protection`, `otp_protection
 
 For DEC-007, the Redis lifecycle primitive atomically couples the generation-bound
 K4 score, L2+ block, score-expiry evidence, and generation fence. Reads use a
-coherent current/previous snapshot and Redis server time; active blocks suppress
+coherent current/previous snapshot at the request's time (the Host clock, read once per call); active blocks suppress
 evidence for every command. The claim does not consume punishment satisfaction
 or evidence; it consumes only the one-shot application handoff marker, so replay
 is safe. Custom opt-in authentication policies
