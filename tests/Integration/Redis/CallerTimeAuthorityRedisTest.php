@@ -32,7 +32,7 @@ use Throwable;
 /**
  * #153 phase 2 red tests (investigations/clock-skew-153/phase2/PLAN.md §4.1,
  * §8): one time authority, the caller's clock, on the official Redis store.
- * RED-1a, RED-1b, RED-2, RED-3, RED-4, RED-5, RED-8 and RED-9 fail on
+ * RED-1a, RED-1b, RED-2, RED-3, RED-4, RED-5, RED-8, RED-9 and RED-10 fail on
  * `main@f5897b0`; RED-6 and RED-7 are regression guards that pass before and
  * after. Virtual clock advances stand in for real waits: today the Redis side
  * does not see them, after the fix every comparison follows the caller.
@@ -298,6 +298,68 @@ final class CallerTimeAuthorityRedisTest extends TestCase
         self::assertSame(60, $refused->retryAfter);
     }
 
+    /**
+     * RED-10 (LT-P2-12): when the caller's preflight passes but Redis itself
+     * rejects a relative expiry (the caller is behind Redis at Redis's own
+     * millisecond boundary), the script deletes everything the call created,
+     * so the keyspace dump before equals the dump after, and the error is the
+     * named `expiry not representable` as a `RateLimiterException`.
+     *
+     * @param callable(RedisFullCapabilityStore, int): mixed $operation
+     */
+    #[DataProvider('expiryFamilies')]
+    public function testRedisRejectedExpiryDeletesEverythingTheCallCreated(string $family, callable $operation): void
+    {
+        $this->executor->execute(['SET', 'unrelated-key', 'kept']);
+        $store = new RedisFullCapabilityStore(
+            $this->executor,
+            'integration:caller-time',
+            new RedisAnchoredClock($this->clockConnection, -1.0),
+        );
+        $rejected = false;
+        $error = null;
+        for ($attempt = 0; $attempt < 5 && ! $rejected; $attempt++) {
+            $second = $this->waitForRedisSubsecond(870_000, 930_000);
+            $before = $this->dumpKeyspace();
+            try {
+                $operation($store, 9_223_372_036_854_775 - $second);
+            } catch (\Maatify\RateLimiter\Exception\RateLimiterException $exception) {
+                $error = $exception;
+            }
+            self::assertSame($before, $this->dumpKeyspace(), $family . ' left residue');
+            $rejected = $error !== null && str_contains($error->getMessage(), 'expiry not representable');
+        }
+
+        self::assertTrue($rejected, $family . ': Redis did not reject, or the error was not the named one: ' . ($error?->getMessage() ?? 'none'));
+    }
+
+    /**
+     * The T:3137 families. Budgets are absent: a duration this close to the
+     * Redis bound already fails the budget script's exact-integer check (L611)
+     * before any expiry is written, so Redis's own boundary is unreachable.
+     *
+     * @return iterable<string, array{string, callable(RedisFullCapabilityStore, int): mixed}>
+     */
+    public static function expiryFamilies(): iterable
+    {
+        yield 'score increment' => ['score increment', static fn(RedisFullCapabilityStore $s, int $ttl): mixed => $s->increment('r10-score', $ttl, 1)];
+        yield 'score set' => ['score set', static function (RedisFullCapabilityStore $s, int $ttl): mixed {
+            $s->set('r10-set', 5, $ttl);
+
+            return null;
+        }];
+        yield 'block' => ['block', static function (RedisFullCapabilityStore $s, int $ttl): mixed {
+            $s->block('r10-block', 1, $ttl);
+
+            return null;
+        }];
+        yield 'distinct' => ['distinct', static fn(RedisFullCapabilityStore $s, int $ttl): mixed => $s->addDistinct('r10-distinct', 'member', $ttl)];
+        yield 'watch' => ['watch', static fn(RedisFullCapabilityStore $s, int $ttl): mixed => $s->incrementWatchFlag('r10-watch', $ttl)];
+        yield 'bounded' => ['bounded', static fn(RedisFullCapabilityStore $s, int $ttl): mixed => $s->addDistinctBoundedWithSnapshot('r10-bounded', 'member', $ttl, 5)];
+        yield 'rotated' => ['rotated', static fn(RedisFullCapabilityStore $s, int $ttl): mixed => $s->addDistinctBoundedWithSnapshotAcrossRotation('r10-current', 'r10-bridge', 'r10-previous', 'member', 'other', $ttl, 5)];
+        yield 'watch rotated' => ['watch rotated', static fn(RedisFullCapabilityStore $s, int $ttl): mixed => $s->incrementWatchFlagAcrossRotation('r10-watch-current', 'r10-watch-previous', $ttl)];
+    }
+
     /** @return list<string> */
     private function freshPreCheckFailures(CompositeRateLimiterRuntimeInterface $runtime, string $prefix, int $count): array
     {
@@ -380,6 +442,38 @@ final class CallerTimeAuthorityRedisTest extends TestCase
         }
         $this->executor->execute(['HSET', $meta, 'expiresAt', $expiresAt]);
         $this->executor->execute(['PEXPIRE', $meta, '900']);
+    }
+
+    /** Waits until the Redis sub-second part is inside the window and returns the Redis second. */
+    private function waitForRedisSubsecond(int $fromMicroseconds, int $toMicroseconds): int
+    {
+        for ($i = 0; $i < 2_000; $i++) {
+            $time = $this->executor->execute(['TIME']);
+            self::assertIsArray($time);
+            self::assertTrue(isset($time[0], $time[1]) && is_numeric($time[0]) && is_numeric($time[1]));
+            $microseconds = (int) $time[1];
+            if ($microseconds >= $fromMicroseconds && $microseconds <= $toMicroseconds) {
+                return (int) $time[0];
+            }
+            usleep(2_000);
+        }
+        self::fail('Redis sub-second window was not reached.');
+    }
+
+    /** @return array<string, string> key => DUMP payload, sorted by key */
+    private function dumpKeyspace(): array
+    {
+        $keys = $this->executor->execute(['KEYS', '*']);
+        self::assertIsArray($keys);
+        $dump = [];
+        foreach ($keys as $key) {
+            self::assertIsString($key);
+            $value = $this->executor->execute(['DUMP', $key]);
+            $dump[$key] = is_string($value) ? bin2hex($value) : '';
+        }
+        ksort($dump);
+
+        return $dump;
     }
 
     private function key(string $family, string $logical): string
