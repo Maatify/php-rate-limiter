@@ -10,6 +10,7 @@ Generated from `expected/<env>/*.jsonl.gz`. Rates carry Wilson 95 % intervals. E
 * E-DOCKER offset-after: median θ -1.446 ms, median rtt 0.262 ms
 * cells: 177; cells with scale ≠ 1 or a smoke cap: 0
 * V-SITE: 13 distinct `now()` sites observed; outside the registered list: none — PASS
+* V-PAIR (partial, descriptive): 385805 paired steps on the shared schedule; op or due time differs between the twins in 0. The context and command arguments are not in the JSONL: they are equal by construction only (one object passed to both twins).
 
 ## Comparison level: skew flips in the σ twin (PLAN §6.1)
 

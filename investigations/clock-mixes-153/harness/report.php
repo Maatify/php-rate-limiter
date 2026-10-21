@@ -166,8 +166,41 @@ foreach ($offsets as $env => $probes) {
 }
 $bad = array_filter($cells, static fn (array $c): bool => ($c['meta']['scale'] ?? 1) != 1 || ($c['meta']['cap'] ?? 0) > 0);
 $md[] = sprintf('* cells: %d; cells with scale ≠ 1 or a smoke cap: %d%s', count($cells), count($bad), $bad === [] ? '' : ' — **refused**');
+// V-PAIR, partial (LT ruling M-04, added after the run): the JSONL logs each step's op, index and due
+// time, not the context or command arguments. For every step both twins ran on the shared schedule
+// (S-RA and the P-RA returns follow per-twin timing; a recordFailure after a pre-check depends on that
+// pre-check's decision), the twins' op and due time must be equal.
+$pairChecked = 0;
+$pairMismatch = 0;
+foreach ($cells as $cell) {
+    if ($cell['meta']['family'] === 'S-RA') {
+        continue;
+    }
+    foreach ($cell['steps'] as $twins) {
+        $byK = [];
+        foreach (['S', 'Z'] as $t) {
+            foreach ($twins[$t] ?? [] as $row) {
+                if ($row['op'] === 'fail' && in_array($cell['meta']['family'], ['S-ATK', 'S-BEN'], true)) {
+                    continue;
+                }
+                if (($row['probe']['band'] ?? '') === 'return' || $row['op'] === 'success') {
+                    continue;
+                }
+                $byK[$row['k']][$t] = $row;
+            }
+        }
+        foreach ($byK as $pair) {
+            if (! isset($pair['S'], $pair['Z'])) {
+                continue;
+            }
+            $pairChecked++;
+            $pairMismatch += ($pair['S']['op'] !== $pair['Z']['op'] || $pair['S']['due'] !== $pair['Z']['due']) ? 1 : 0;
+        }
+    }
+}
 $unknown = array_diff(array_keys($sites), SITES);
 $md[] = sprintf('* V-SITE: %d distinct `now()` sites observed; outside the registered list: %s', count($sites), $unknown === [] ? 'none — PASS' : '**' . implode(', ', $unknown) . '**');
+$md[] = sprintf('* V-PAIR (partial, descriptive): %d paired steps on the shared schedule; op or due time differs between the twins in %d. The context and command arguments are not in the JSONL: they are equal by construction only (one object passed to both twins).', $pairChecked, $pairMismatch);
 $md[] = '';
 
 // Comparison-level skew flips (§6.1), per family × sigma, all environments separately.
