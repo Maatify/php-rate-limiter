@@ -33,6 +33,13 @@ use Maatify\RateLimiter\Service\RateLimiterRuntimeInterface;
 use Maatify\RateLimiter\Service\CompositeRateLimiterRuntimeInterface;
 use Maatify\RateLimiter\Service\SimpleRateLimiterInterface;
 use Maatify\RateLimiter\Config\PostPunishmentReentryPolicyInterface;
+use Maatify\RateLimiter\Config\LoginProtectionAdmissionPolicy;
+use Maatify\RateLimiter\Config\LoginProtectionPolicy;
+use Maatify\RateLimiter\DTO\AdmissionCredentialDTO;
+use Maatify\RateLimiter\Service\AdmissionBindingControlInterface;
+use Maatify\RateLimiter\Service\AdmissionBindingEpochInterface;
+use Maatify\RateLimiter\Service\AdmissionCredentialCodec;
+use Maatify\RateLimiter\Service\AdmissionFenceControlInterface;
 use Maatify\RateLimiter\Exception\RateLimiterException;
 use Maatify\RateLimiter\Exception\BackendFailureException;
 
@@ -1094,6 +1101,121 @@ requireCondition($wrongTypeFailure === 'explicit-package-failure', 'WRONGTYPE ci
 requireCondition(count($phpRedisSignals->signals()) === $phpRedisSignalCountBeforeWrongType, 'WRONGTYPE circuit state emitted failure signals.');
 $phpRedis->close();
 
+// ---- Admission layer (stage 5-c, 5c/PLAN.md §7.6.5): the Login opt-in variant through the public builder on real Redis ----
+$admissionStore = new RedisFullCapabilityStore($executor, 'consumer-admission');
+// The admission compositions use the builder's default system clock, as a production Host does: the bounded correlation
+// snapshots carry a Redis-time expiry (DEC-016), which a frozen caller clock falls behind as soon as real time passes.
+$admissionBuild = static function (string $env, BlockPolicyInterface $policy) use ($admissionStore): CompositeRateLimiterRuntimeInterface {
+    return RateLimiterBuilder::fromFullCapabilityStore(new RateLimiterConfig('admission-key', 'admission-fingerprint', $env, bindingKeySecret: 'admission-binding'), $admissionStore, new RecordingFailureSignalEmitter())
+        ->withPolicy($policy)
+        ->build();
+};
+$admissionCommand = static fn(bool $success, ?string $permit): RateLimitCommand => new RateLimitCommand('login_protection', 1, false, ! $success, $success, $permit);
+$admissionContext = static function (string $account, string $ip, ?string $instance = null, ?string $credential = null): RateLimitContextDTO {
+    return new RateLimitContextDTO($ip, 'Mozilla/5.0 consumer-admission', $account, ['device' => 'device-' . $account], null, false, [], false, null, clientInstanceId: $instance, admissionCredential: $credential);
+};
+$admissionDecision = static fn(RateLimitResultDTO $r): string => $r->decision === RateLimitResultDTO::DECISION_ALLOW ? 'A' : ($r->decision === RateLimitResultDTO::DECISION_HARD_BLOCK ? 'H' : 'S');
+
+// CVH-1: the variant with its fence never opened decides as login_protection; no admission key is written. Control: fence open.
+$cvh1Play = static function (CompositeRateLimiterRuntimeInterface $runtime) use ($admissionContext, $admissionDecision): string {
+    $decisions = '';
+    for ($step = 0; $step < 40; $step++) {
+        $command = match ($step % 5) {
+            0, 3 => RateLimitCommand::checkOnly('login_protection'),
+            1, 2 => RateLimitCommand::recordFailure('login_protection'),
+            default => RateLimitCommand::recordSuccess('login_protection'),
+        };
+        try {
+            $decisions .= $admissionDecision($runtime->limit($admissionContext('cvh1-' . ($step % 4), '198.51.100.' . (20 + $step % 4)), $command));
+        } catch (RateLimiterException) {
+            $decisions .= 'X';
+        }
+    }
+
+    return $decisions;
+};
+$cvh1Variant = $cvh1Play($admissionBuild('cvh1-variant', new LoginProtectionAdmissionPolicy()));
+$cvh1Preset = $cvh1Play($admissionBuild('cvh1-preset', new LoginProtectionPolicy()));
+requireCondition($cvh1Variant === $cvh1Preset, "CVH-1: the variant behind a closed fence did not decide as login_protection: variant {$cvh1Variant}, preset {$cvh1Preset}.");
+requireCondition(array_values(array_filter(redisKeys($raw), static fn(string $k): bool => str_contains($k, ':adm:'))) === [], 'CVH-1: a closed fence wrote admission state.');
+$cvh1Open = $admissionBuild('cvh1-open', new LoginProtectionAdmissionPolicy());
+requireCondition($cvh1Open instanceof AdmissionFenceControlInterface, 'CVH-1: the composite runtime has no fence control.');
+$cvh1Open->openAdmissionFence('login');
+requireCondition($cvh1Play($cvh1Open) !== $cvh1Preset, 'CVH-1 control: an open fence did not change the decisions.');
+
+// CVH-2: open the fence; 24 admissions from one source, the 25th is a source_capacity refusal. Control: another source.
+$admission = $admissionBuild('cvh', new LoginProtectionAdmissionPolicy());
+requireCondition($admission instanceof AdmissionFenceControlInterface && $admission instanceof AdmissionBindingControlInterface && $admission instanceof AdmissionBindingEpochInterface, 'The composite runtime lacks the admission control interfaces.');
+requireCondition($admission->openAdmissionFence('login') === 1, 'CVH-2: the first fence opening did not return 1.');
+$exhausted = '203.0.113.120';
+for ($i = 0; $i < 24; $i++) {
+    $c = $admissionContext('cvh2-' . $i, $exhausted);
+    $r = $admission->limit($c, RateLimitCommand::checkOnly('login_protection'));
+    requireCondition($r->decision === RateLimitResultDTO::DECISION_ALLOW && is_string($r->metadata?->permit), "CVH-2: admission {$i} was not allowed with a permit.");
+    $admission->limit($c, $admissionCommand(true, $r->metadata?->permit));
+}
+$cvh2Refused = $admission->limit($admissionContext('cvh2-24', $exhausted), RateLimitCommand::checkOnly('login_protection'));
+requireCondition($cvh2Refused->decision === RateLimitResultDTO::DECISION_SOFT_BLOCK && $cvh2Refused->blockLevel === 1, 'CVH-2: the 25th admission was not a level-1 SOFT_BLOCK.');
+requireCondition($cvh2Refused->metadata?->cause === 'source_capacity' && $cvh2Refused->metadata?->context?->scope === 'source', 'CVH-2: the refusal is not source_capacity / source.');
+requireCondition($cvh2Refused->retryAfter > 0 && $cvh2Refused->retryAfter <= 600, 'CVH-2: retryAfter is outside the window.');
+requireCondition($admission->limit($admissionContext('cvh2-24', '203.0.113.121'), RateLimitCommand::checkOnly('login_protection'))->decision === RateLimitResultDTO::DECISION_ALLOW, 'CVH-2 control: another source was refused.');
+
+// CVH-3: a Host-minted credential is admitted from the exhausted source; the same with a changed MAC is not.
+$codec = new AdmissionCredentialCodec('admission-binding');
+$mint = static fn(int $epoch): string => $codec->encode(new AdmissionCredentialDTO('cvh-owner', ['login'], 'inst-owner', 'jti-owner-' . $epoch, time() + 86400, time(), $epoch));
+$credential = $mint($admission->bindingEpoch('cvh-owner'));
+$tampered = substr($credential, 0, -2) . (str_ends_with($credential, 'AA') ? 'BB' : 'AA');
+$cvh3 = $admission->limit($admissionContext('cvh-owner', $exhausted, 'inst-owner', $credential), RateLimitCommand::checkOnly('login_protection'));
+requireCondition($cvh3->decision === RateLimitResultDTO::DECISION_ALLOW, 'CVH-3: a verified credential was refused from the exhausted source.');
+$admission->limit($admissionContext('cvh-owner', $exhausted, 'inst-owner', $credential), $admissionCommand(true, $cvh3->metadata?->permit));
+$cvh3Tampered = $admission->limit($admissionContext('cvh-owner', $exhausted, 'inst-owner', $tampered), RateLimitCommand::checkOnly('login_protection'));
+requireCondition($cvh3Tampered->metadata?->cause === 'source_capacity', 'CVH-3 control: a tampered credential was not on the unproven lane.');
+
+// CVH-4: the password-change revocation voids the epoch-0 credential; a re-issued one is admitted.
+$admission->revokeAccountBinding('cvh-owner');
+requireCondition($admission->bindingEpoch('cvh-owner') === 1, 'CVH-4: the binding epoch is not 1 after the revocation.');
+requireCondition($admission->limit($admissionContext('cvh-owner', $exhausted, 'inst-owner', $credential), RateLimitCommand::checkOnly('login_protection'))->metadata?->cause === 'source_capacity', 'CVH-4: the voided credential still selects the proven lane.');
+$reissued = $mint(1);
+$cvh4 = $admission->limit($admissionContext('cvh-owner', $exhausted, 'inst-owner', $reissued), RateLimitCommand::checkOnly('login_protection'));
+requireCondition($cvh4->decision === RateLimitResultDTO::DECISION_ALLOW, 'CVH-4: the re-issued credential was refused.');
+$admission->limit($admissionContext('cvh-owner', $exhausted, 'inst-owner', $reissued), $admissionCommand(true, $cvh4->metadata?->permit));
+
+// CVH-5: an outcome needs its permit; a permit is claimed once.
+$cvh5Missing = false;
+try {
+    $admission->limit($admissionContext('cvh5', '203.0.113.125'), RateLimitCommand::recordFailure('login_protection'));
+} catch (RateLimiterException) {
+    $cvh5Missing = true;
+}
+requireCondition($cvh5Missing, 'CVH-5: an outcome without a permit was accepted.');
+$cvh5Context = $admissionContext('cvh5', '203.0.113.125');
+$cvh5Permit = $admission->limit($cvh5Context, RateLimitCommand::checkOnly('login_protection'))->metadata?->permit;
+$cvh5First = $admission->limit($cvh5Context, $admissionCommand(true, $cvh5Permit));
+requireCondition(! str_starts_with((string) $cvh5First->metadata?->cause, 'permit_'), 'CVH-5: the first claim was not accepted.');
+$cvh5Second = $admission->limit($cvh5Context, $admissionCommand(true, $cvh5Permit));
+requireCondition($cvh5Second->decision === RateLimitResultDTO::DECISION_ALLOW && $cvh5Second->blockLevel === 0, 'CVH-5: a duplicate claim was not an ALLOW at level 0.');
+requireCondition($cvh5Second->metadata?->cause === 'permit_duplicate' && $cvh5Second->metadata?->context?->scope === 'permit', 'CVH-5: a duplicate claim is not permit_duplicate / permit.');
+
+// CVH-6: the A-2 residual shown. A reporting Host meets the net failure cap at the 5th failed account; a Host that drops
+// every outcome is held only by the source capacity (the pre bound).
+for ($i = 0; $i < 4; $i++) {
+    $c = $admissionContext('cvh6r-' . $i, '203.0.113.130');
+    $admission->limit($c, $admissionCommand(false, $admission->limit($c, RateLimitCommand::checkOnly('login_protection'))->metadata?->permit));
+}
+$cvh6Reporting = $admission->limit($admissionContext('cvh6r-4', '203.0.113.130'), RateLimitCommand::checkOnly('login_protection'));
+requireCondition($cvh6Reporting->metadata?->cause === 'source_failure_cap', 'CVH-6: a reporting Host did not meet the net failure cap.');
+$cvh6Dropped = 0;
+for ($i = 0; $i < 25; $i++) {
+    $r = $admission->limit($admissionContext('cvh6d-' . $i, '203.0.113.131'), RateLimitCommand::checkOnly('login_protection'));
+    if ($r->decision !== RateLimitResultDTO::DECISION_ALLOW) {
+        requireCondition($r->metadata?->cause === 'source_capacity', 'CVH-6: a dropping Host was refused by another scope.');
+        break;
+    }
+    $cvh6Dropped++;
+}
+requireCondition($cvh6Dropped === 24, 'CVH-6: a dropping Host was not held at the source capacity 24.');
+$admissionSummary = ['cvh1' => ['variantFenceClosed' => $cvh1Variant, 'preset' => $cvh1Preset], 'cvh2' => resultShape($cvh2Refused), 'cvh3' => resultShape($cvh3), 'cvh4' => resultShape($cvh4), 'cvh5' => resultShape($cvh5Second), 'cvh6' => ['reporting' => resultShape($cvh6Reporting), 'droppingAdmitted' => $cvh6Dropped]];
+
 $keys = redisKeys($raw);
 requireCondition(count($keys) > 0, 'No Redis persistence was observable.');
-echo json_encode(['status' => 'PASS', 'packageInstallPath' => $installPath, 'productionAutoload' => true, 'packageTestNamespaceAvailable' => false, 'reentryTiming' => ['loginLevel' => $reentryLoginHard->blockLevel, 'otpLevel' => $reentryOtpHard->blockLevel, 'customLevel' => $customHard->blockLevel, 'sharedWaitSeconds' => $sharedWaitSeconds], 'login' => ['checkOnly' => resultShape($loginCheck), 'recordFailure' => resultShape($loginFailure), 'recordSuccess' => resultShape($loginSuccess), 'progression' => array_map('resultShape', $loginProgression), 'persistenceProof' => true, 'postPunishmentReentry' => ['checkOnly' => resultShape($reentryLoginCheck), 'claim' => $reentryLoginClaim, 'secondClaim' => $reentryLoginSecondClaim]], 'otp' => resultShape($otp), 'otpPostPunishmentReentry' => ['checkOnly' => resultShape($reentryOtpCheck), 'claim' => $reentryOtpClaim, 'secondClaim' => $reentryOtpSecondClaim], 'customOptIn' => ['checkOnly' => resultShape($customCheck), 'claim' => $customClaim, 'secondClaim' => $customSecondClaim], 'apiHeavy' => resultShape($api), 'credentialSpray' => array_map('resultShape', $spray), 'sprayLifecycle' => ['recordSuccess' => resultShape($spraySuccess), 'subjectFourCheckOnly' => resultShape($spraySubjectFour)], 'trustedSession' => resultShape($trusted), 'untrustedFollowUp' => resultShape($untrustedFollowUp), 'trustedNonK1' => resultShape($trustedNonK1), 'rotations' => $rotationCases, 'budgetMigration' => ['previousCount' => (int) $previousBudgetMap['count'], 'currentCount' => (int) $currentBudgetMap['count'], 'epochStartPreserved' => true, 'previousReadOnly' => true], 'simpleThrottle' => ['consume1' => simpleResultShape($simpleFirst), 'consume2' => simpleResultShape($simpleSecond), 'consume3Denied' => simpleResultShape($simpleThird), 'newRedisKeys' => count($simpleNewKeys), 'rawSubjectHiddenFromKeys' => true, 'unknownPolicyRejected' => $unknownSimplePolicyRejected, 'weighted' => ['cost2' => simpleResultShape($weightedFirst), 'cost3' => simpleResultShape($weightedSecond), 'cost6Denied' => simpleResultShape($weightedDenied), 'persistedCount' => $weightedSnapshot->count, 'operationalRemaining' => $weightedSnapshot->remaining, 'stableResetAt' => $weightedFirst->resetAt === $weightedDenied->resetAt], 'rotation' => ['oldGeneration' => simpleResultShape($simpleOldResult), 'migratedIntoCurrent' => simpleResultShape($simpleMigrated), 'previousReadOnly' => $simplePreviousStateAfter === $simplePreviousStateBefore], 'backendFailure' => simpleResultShape($simpleFailureResult), 'backendFailureFromRateLimiterException' => simpleResultShape($simpleFailureResultFromRateLimiterException)], 'failureSemantics' => ['login' => resultShape($loginFailureMode), 'otp' => resultShape($otpFailureMode), 'apiHeavy' => resultShape($apiFailureMode)], 'customFallbackConfiguration' => ['auth' => ['enteredFallback' => resultShape($customSemanticAuthFallback[2]), 'accountCapAllowed' => resultShape($customSemanticAuthFallback[6]), 'accountCapExceeded' => resultShape($customSemanticAuthFallback[7])], 'api' => ['ipUaCapAllowed' => resultShape($customApiFallback[79]), 'ipUaCapExceeded' => resultShape($customApiFallback[80])]], 'circuit' => ['openGuard' => resultShape($openGuardResult), 'halfOpenProbe' => resultShape($halfOpenResult), 'closedRecovery' => resultShape($closedResult), 'normalWorkloadSuppressedWhileOpen' => true, 'signalCount' => count($circuitSignals->signals()), 'signalTypes' => array_values(array_unique(array_map(static fn($signal): string => $signal->type, $circuitSignals->signals())))], 'extRedisCompatibility' => ['pingRepresentation' => get_debug_type($phpRedisPing), 'healthy' => true, 'emptyRedisFirstRequest' => true, 'circuitRecovered' => true, 'wrongTypeCircuitState' => $wrongTypeFailure], 'redisPersistence' => ['keyCount' => count($keys)], 'failureSignals' => count($signals->signals())], JSON_THROW_ON_ERROR) . PHP_EOL;
+echo json_encode(['status' => 'PASS', 'packageInstallPath' => $installPath, 'productionAutoload' => true, 'packageTestNamespaceAvailable' => false, 'reentryTiming' => ['loginLevel' => $reentryLoginHard->blockLevel, 'otpLevel' => $reentryOtpHard->blockLevel, 'customLevel' => $customHard->blockLevel, 'sharedWaitSeconds' => $sharedWaitSeconds], 'login' => ['checkOnly' => resultShape($loginCheck), 'recordFailure' => resultShape($loginFailure), 'recordSuccess' => resultShape($loginSuccess), 'progression' => array_map('resultShape', $loginProgression), 'persistenceProof' => true, 'postPunishmentReentry' => ['checkOnly' => resultShape($reentryLoginCheck), 'claim' => $reentryLoginClaim, 'secondClaim' => $reentryLoginSecondClaim]], 'otp' => resultShape($otp), 'otpPostPunishmentReentry' => ['checkOnly' => resultShape($reentryOtpCheck), 'claim' => $reentryOtpClaim, 'secondClaim' => $reentryOtpSecondClaim], 'customOptIn' => ['checkOnly' => resultShape($customCheck), 'claim' => $customClaim, 'secondClaim' => $customSecondClaim], 'apiHeavy' => resultShape($api), 'credentialSpray' => array_map('resultShape', $spray), 'sprayLifecycle' => ['recordSuccess' => resultShape($spraySuccess), 'subjectFourCheckOnly' => resultShape($spraySubjectFour)], 'trustedSession' => resultShape($trusted), 'untrustedFollowUp' => resultShape($untrustedFollowUp), 'trustedNonK1' => resultShape($trustedNonK1), 'rotations' => $rotationCases, 'budgetMigration' => ['previousCount' => (int) $previousBudgetMap['count'], 'currentCount' => (int) $currentBudgetMap['count'], 'epochStartPreserved' => true, 'previousReadOnly' => true], 'simpleThrottle' => ['consume1' => simpleResultShape($simpleFirst), 'consume2' => simpleResultShape($simpleSecond), 'consume3Denied' => simpleResultShape($simpleThird), 'newRedisKeys' => count($simpleNewKeys), 'rawSubjectHiddenFromKeys' => true, 'unknownPolicyRejected' => $unknownSimplePolicyRejected, 'weighted' => ['cost2' => simpleResultShape($weightedFirst), 'cost3' => simpleResultShape($weightedSecond), 'cost6Denied' => simpleResultShape($weightedDenied), 'persistedCount' => $weightedSnapshot->count, 'operationalRemaining' => $weightedSnapshot->remaining, 'stableResetAt' => $weightedFirst->resetAt === $weightedDenied->resetAt], 'rotation' => ['oldGeneration' => simpleResultShape($simpleOldResult), 'migratedIntoCurrent' => simpleResultShape($simpleMigrated), 'previousReadOnly' => $simplePreviousStateAfter === $simplePreviousStateBefore], 'backendFailure' => simpleResultShape($simpleFailureResult), 'backendFailureFromRateLimiterException' => simpleResultShape($simpleFailureResultFromRateLimiterException)], 'failureSemantics' => ['login' => resultShape($loginFailureMode), 'otp' => resultShape($otpFailureMode), 'apiHeavy' => resultShape($apiFailureMode)], 'customFallbackConfiguration' => ['auth' => ['enteredFallback' => resultShape($customSemanticAuthFallback[2]), 'accountCapAllowed' => resultShape($customSemanticAuthFallback[6]), 'accountCapExceeded' => resultShape($customSemanticAuthFallback[7])], 'api' => ['ipUaCapAllowed' => resultShape($customApiFallback[79]), 'ipUaCapExceeded' => resultShape($customApiFallback[80])]], 'circuit' => ['openGuard' => resultShape($openGuardResult), 'halfOpenProbe' => resultShape($halfOpenResult), 'closedRecovery' => resultShape($closedResult), 'normalWorkloadSuppressedWhileOpen' => true, 'signalCount' => count($circuitSignals->signals()), 'signalTypes' => array_values(array_unique(array_map(static fn($signal): string => $signal->type, $circuitSignals->signals())))], 'extRedisCompatibility' => ['pingRepresentation' => get_debug_type($phpRedisPing), 'healthy' => true, 'emptyRedisFirstRequest' => true, 'circuitRecovered' => true, 'wrongTypeCircuitState' => $wrongTypeFailure], 'admission' => $admissionSummary, 'redisPersistence' => ['keyCount' => count($keys)], 'failureSignals' => count($signals->signals())], JSON_THROW_ON_ERROR) . PHP_EOL;

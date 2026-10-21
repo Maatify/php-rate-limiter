@@ -305,7 +305,7 @@ fingerprint-only, and both-rotated inputs never form Cartesian generation pairs.
 | Inspect persisted simple fixed-window state | <code>CompositeRateLimitOperationalReaderInterface::readSimpleThrottle()</code> | [Operational read](#walkthrough-operational-read) | [simple-fixed-window.php](../../examples/simple-fixed-window.php) |
 | Apply simple fixed-window throttling | <code>SimpleRateLimiterInterface::consume(policyName, subject, cost = 1)</code> | [Simple fixed-window consume](#walkthrough-simple-fixed-window-consume) | [simple-fixed-window.php](../../examples/simple-fixed-window.php) |
 
-## Admission-Reservation Policies (dormant until activation)
+## Admission-Reservation Policies
 
 A policy that declares `ADMISSION_RESERVATION` changes what `checkOnly` means. **For every enabled
 policy, one `checkOnly` is one admission**: it reserves capacity (source, failure set, account
@@ -313,8 +313,13 @@ bucket, or the proven-lane counters) all-or-nothing, and it is **not read-only**
 probes with `checkOnly` before the real attempt spends one admission per probe. Policies that did
 not opt in keep today's read-only pre-check.
 
-This is shipped dormant: the builder cannot enable it yet. The contract below is what a Host
-integrates against.
+**Opting in** (DEC-024, DEC-026; `POLICIES.md` §7.2): register `LoginProtectionAdmissionPolicy`
+with `withPolicy()` (it replaces `login_protection` under the same name, so the account and device
+state written before the switch is read on), set `bindingKeySecret` on `RateLimiterConfig`, use a
+store with the admission capability (`RedisFullCapabilityStore`), and open the fleet fence once
+every worker runs this version ("Operating the admission fence" below). The budgets are package
+constants (DEC-025, DEC-028): there is nothing to configure. Only a Host that calls `checkOnly`
+and then records every outcome (`pre+out`) may opt in (DEC-023).
 
 Inputs (all optional on `RateLimitContextDTO`; ignored by every policy that did not opt in):
 
@@ -336,7 +341,9 @@ Outputs and duties:
 * The outcome must be sent with **the same context** as the admission (same source address, account
   and credential): the failure set an outcome touches is keyed by the outcome's source.
 * **Every `checkOnly` on an opted policy is followed by exactly one outcome command carrying its
-  permit** (`recordFailure` or `recordSuccess`), sent within the permit's deadline. This is a Host
+  permit** (`recordFailure` or `recordSuccess`), sent within the permit's deadline: 30 s after the
+  `checkOnly` (`D`, DEC-028). From 30 s to 630 s the claim is `permit_late`, after that
+  `permit_unknown`; neither is scored, so a late outcome costs what a dropped one costs. This is a Host
   duty (`DEC-023` A-2) and the library does not compensate for it: an admission whose outcome never
   arrives is a tombstone and changes no bound (the success refund never happens and the failure is
   never recorded). A Host that drops outcomes runs those attempts as a `pre` Host does, within the
@@ -357,7 +364,37 @@ Outputs and duties:
   so that a refusal never reveals whether an account exists.
 * **Issuing credentials is the Host's job** (lifetime, renewal, who gets one). The package ships the
   verifier and the codec, not an issuance policy.
+* **Renew a credential before its absolute expiry** (for example on every verified success, a sliding
+  renewal). An owner whose credential expires in the middle of a burst of typing errors falls to the
+  unproven door, where the account bucket (4 takes, one take refilled every 30 minutes) can refuse the success
+  that would have re-issued it, and keep refusing until the bucket refills (study G8, F-G8-06).
 * Degraded and `FAIL_OPEN` paths admit nothing and read no credential, epoch or fence.
+* A pre-check refused by the admission stage keeps the observations the pipeline wrote before that
+  stage (`DECISION_MATRIX.md` §12).
+
+### Operating the admission fence
+
+The fleet fence (contract M2; `KEY_STRATEGY.md` §4.6) keeps the admission path off for a budget group
+until every worker can reserve. While it is closed, an opted policy runs exactly the path of a policy
+that did not opt in (no admission, no lane, no permit needed).
+
+1. **Roll the whole fleet** to a version that contains the admission runtime. While old and new
+   workers serve the same budget group, the old workers reserve nothing, so the bound is the
+   admitted count plus every call through an old worker (`UNPROVEN` as a bound; measured by NM-7).
+2. **Open the fence once per budget group** through the composite runtime:
+   `if ($runtime instanceof AdmissionFenceControlInterface) { $runtime->openAdmissionFence('login'); }`.
+   It returns the fence value (at least 1 means open).
+3. **Cost.** Every request of an opted policy reads the fence from the store, also while it is closed;
+   an outage of that read takes the typed backend-failure path (`FAILURE_SEMANTICS.md` §4.5).
+4. **Key-secret rotation.** The fence is read under the active key secret and, when configured, the
+   previous one, so a rotation does not close it. Re-open it under the new secret (step 2) **before**
+   the previous secret is withdrawn; otherwise the next rotation closes it and opted policies fall
+   back to the path without admission.
+5. **Closing.** No package operation closes the fence. To close it, delete its key in Redis (the key
+   is derived as `KEY_STRATEGY.md` §4.6 states), or let two key-secret rotations pass without re-opening
+   it (it is then read under neither secret it was opened under). After it
+   closes, the counters, sets, buckets and permits expire by their TTLs; the binding epochs and the
+   fence have no TTL (`KEY_STRATEGY.md` §4.8).
 
 ## Walkthrough: Pre-Check
 

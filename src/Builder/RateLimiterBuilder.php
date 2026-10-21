@@ -14,6 +14,7 @@ use Maatify\RateLimiter\Config\PostPunishmentReentryPolicyInterface;
 use Maatify\RateLimiter\Config\RateLimiterConfig;
 use Maatify\RateLimiter\Config\SimpleThrottlePolicyInterface;
 use Maatify\RateLimiter\Contract\FailureSignalEmitterInterface;
+use Maatify\RateLimiter\DTO\AdmissionBudgetsDTO;
 use Maatify\RateLimiter\Enum\PolicyCapabilityEnum;
 use Maatify\RateLimiter\Repository\BoundedCorrelationRotationStoreInterface;
 use Maatify\RateLimiter\Repository\BoundedCorrelationSnapshotRotationStoreInterface;
@@ -29,6 +30,8 @@ use Maatify\RateLimiter\Repository\AdmissionPermitStoreInterface;
 use Maatify\RateLimiter\Repository\AdmissionReservationStoreInterface;
 use Maatify\RateLimiter\Repository\PunishmentLifecycleStoreInterface;
 use Maatify\RateLimiter\Repository\RateLimitStoreInterface;
+use Maatify\RateLimiter\Service\AdmissionCredentialCodec;
+use Maatify\RateLimiter\Service\AdmissionRuntime;
 use Maatify\RateLimiter\Service\AntiEquilibriumGate;
 use Maatify\RateLimiter\Service\BudgetTracker;
 use Maatify\RateLimiter\Service\CircuitBreaker;
@@ -203,6 +206,7 @@ final class RateLimiterBuilder
             $this->failureSignalEmitter,
             $clock,
             array_values($this->policies),
+            $this->admissionRuntime($clock),
         );
 
         $simpleRuntime = new FixedWindowSimpleRateLimiter(
@@ -296,8 +300,7 @@ final class RateLimiterBuilder
     /**
      * A policy declaring PolicyCapabilityEnum::ADMISSION_RESERVATION needs a store with both admission
      * capabilities (reservation and permit) and a configured binding key. This runs before the runtime is
-     * composed; the builder never composes an admission runtime in this release, so a fully equipped policy
-     * is then rejected as unavailable by the engine.
+     * composed; the admission runtime is then constructed with the package constants.
      */
     private function assertAdmissionReservationCapability(): void
     {
@@ -325,6 +328,42 @@ final class RateLimiterBuilder
                 );
             }
         }
+    }
+
+    /**
+     * The admission runtime (DEC-024 point 4, DEC-026, DEC-028): constructed only when a registered policy declares
+     * `PolicyCapabilityEnum::ADMISSION_RESERVATION`, with the package constants and the configured key and binding secrets.
+     * Any other composition has no admission runtime and behaves exactly as before. The capability assertion has already
+     * required the permit store and the binding key.
+     */
+    private function admissionRuntime(ClockInterface $clock): ?AdmissionRuntime
+    {
+        $bindingKey = $this->config->bindingKeySecret();
+        if (! $this->hasAdmissionPolicy() || ! $this->rateLimitStore instanceof AdmissionPermitStoreInterface || $bindingKey === null) {
+            return null;
+        }
+
+        return new AdmissionRuntime(
+            $this->rateLimitStore,
+            new AdmissionCredentialCodec($bindingKey, $this->config->previousBindingKeySecret()),
+            AdmissionBudgetsDTO::packageDefaults(),
+            $clock,
+            $this->config->keySecret(),
+            $this->config->environmentScope(),
+            $this->config->previousKeySecret(),
+        );
+    }
+
+    private function hasAdmissionPolicy(): bool
+    {
+        foreach ($this->policies as $policy) {
+            if ($policy instanceof PolicyCapabilityProviderInterface
+                && in_array(PolicyCapabilityEnum::ADMISSION_RESERVATION, $policy->getCapabilities(), true)) {
+                return true;
+            }
+        }
+
+        return false;
     }
 
     private function assertPunishmentLifecycleCapability(): void

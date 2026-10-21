@@ -369,7 +369,7 @@ checked package-side against every `SimpleThrottlePolicyInterface` implementatio
 `BudgetSeedStoreInterface` all raise `RateLimiterException` rather than becoming a typed
 FAIL_CLOSED result or a normal quota decision; see `docs/SIMPLE_THROTTLING.md`.
 
-### 4.5 Admission-Reservation Policies (DEC-015, DEC-024) — dormant
+### 4.5 Admission-Reservation Policies (DEC-015, DEC-024)
 
 * The reservation, the outcome claim and application, the binding-epoch read and the fleet-fence
   read are store operations. A typed outage of any of them is a `BackendFailureException` for the
@@ -383,6 +383,8 @@ FAIL_CLOSED result or a normal quota decision; see `docs/SIMPLE_THROTTLING.md`.
   no new dimension, no new bound, no new tracked subject.
 * A `pre+out` attempt uses two fallback units, a `pre` attempt one; a permit claim counts as an
   outcome call.
+* The fleet fence is read on every request of an opted policy, while it is open and while it is
+  closed (current key, else previous); its outage takes the same typed path.
 
 ---
 

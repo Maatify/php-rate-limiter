@@ -16,7 +16,7 @@ enum PolicyCapabilityEnum: string
 
     /**
      * Opt-in to the atomic admission reservation (DEC-024) for `pre+out` Hosts (DEC-023). Authentication-related.
-     * Dormant: no preset declares it and the builder cannot compose a runtime that accepts it.
+     * Declared by `LoginProtectionAdmissionPolicy` and by custom policies that opt in; no default preset declares it.
      */
     case ADMISSION_RESERVATION = 'admission_reservation';
 }

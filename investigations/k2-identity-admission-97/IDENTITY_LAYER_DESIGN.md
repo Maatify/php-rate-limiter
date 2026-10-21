@@ -245,6 +245,11 @@ For a bounded **transition window** the library reads the K5 family under the le
 "previous" derivation, and writes only the id-derived key — the existing current-writable / previous-read-only rule
 (`KS` §4.3.3), never `max(v1, v2)` (`DFP` §5.1.6). The window is at least the longest K5-family lifetime.
 
+**Correction (stage 5-c, PR #150, 2026-10-20; F-5b3a-LT9, Owner OD-3 (a)).** This section is withdrawn as a mechanism: no
+transition window is implemented, because no input opens or closes it and no decision gives its length. The "previous" K5
+derivation is the same material under the previous secret (reading A, ruled in 5-b3a), and a device that starts sending an id
+restarts its K5 once (§6.1), a cost declared by DEC-026. The text above is kept as the design that was proposed.
+
 ### 6.3 Relation to `DFP` §5.1.6 — never concurrent with a secret rotation (`DESIGN`)
 
 The architecture holds **one** previous generation. A change of K5 material is a change of the fingerprint component's

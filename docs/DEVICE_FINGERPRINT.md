@@ -169,7 +169,7 @@ derivation.
 * Advisory only
 * NOT proof of device ownership
 
-**Client instance id (admission layer, dormant).** `RateLimitContextDTO::$clientInstanceId` is a
+**Client instance id (admission layer).** `RateLimitContextDTO::$clientInstanceId` is a
 separate input from this session-bound identifier. It is an untrusted continuity hint: it does not
 establish trust, is not part of the trusted-session definition and is ignored by every policy that
 did not opt into `ADMISSION_RESERVATION`.
@@ -348,18 +348,19 @@ is consumed as one member of the previous generation (`docs/KEY_STRATEGY.md` §4
 with the previous-generation outer secret (`previousKeySecret ?? currentKeySecret`) — never
 recombined across generations.
 
-**Instance-id component (reserved, dormant).** `DeviceIdentityDTO` also carries the optional
+**Instance-id component (admission layer).** `DeviceIdentityDTO` also carries the optional
 `deviceIdHash` and `previousDeviceIdHash`: the resolver hashes `"id1|" + clientInstanceId` once by
 the current and (when configured) the previous hasher, exactly like the fingerprint. The id is an
 untrusted continuity hint: the component **never raises `confidence`** and never sets
 `isTrustedSession` or `isDevicePreviouslyVerifiedForAccount`. Only an evaluation call that carries
-an admission lane (a policy that declared the admission capability, none yet in production)
+an admission lane (a policy that declared the admission capability, such as
+`LoginProtectionAdmissionPolicy`, while its fleet fence is open)
 consumes it, and only for the K5 family (K5 score, K5 micro-cap, device Anti-Equilibrium watcher):
 the pipeline **selects** `deviceIdHash` when present and `fingerprintHash` otherwise, and never
 re-hashes either. The previous generation of the id material is the same material hashed by the
 previous hasher and keyed by the previous outer secret; a device that starts sending an id changes
-its K5 material and therefore restarts its K5 (a one-time cost, `RUNTIME_IMPLEMENTATION_CONTRACT.md`
-§6 M4). `FingerprintHasher` is unchanged. A call without a lane ignores the id entirely.
+its K5 material and therefore restarts its K5 (a one-time cost declared by DEC-026; no
+transition window reads the fingerprint-derived key). `FingerprintHasher` is unchanged. A call without a lane ignores the id entirely.
 
 #### 5.1.2 Resolver Responsibility
 
@@ -476,7 +477,7 @@ while an earlier previous generation still needs enforcement continuity.
   generations (never `max(v1, v2)`; `docs/KEY_STRATEGY.md` §4.3.1 / §4.5.2).
 * Overlapping or multi-generation rotation is outside the supported model.
 
-**K5-material migration is a generation event (admission layer, dormant).** The step from the
+**K5-material migration is a generation event (admission layer).** The step from the
 fingerprint material to the instance-id material changes the K5 key of a device (a one-time K5
 restart for that device). It must not start while a fingerprint-secret or outer-secret rotation still
 needs its previous generation, and a rotation must not start during it: the pipeline would otherwise

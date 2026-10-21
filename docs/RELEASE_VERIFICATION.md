@@ -51,6 +51,12 @@ Three separate verification mechanisms exist and none substitutes for another:
   └─────────────────────────────────────────────────────────────┘
 ```
 
+Stage C also exercises the admission opt-in through the public composition on real Redis
+(`consumer-verification/verify.php`, scenarios CVH-1 … CVH-6: the variant behind a closed fence
+decides as `login_protection`, the fence opened with the package method, the source capacity, a
+Host-minted credential and its revocation, the permit, and a Host that drops outcomes). Its result
+is the `admission` entry of the harness summary.
+
 > **Meaning of PASS.** A qualifying RAV PASS means the exact candidate SHA is release-qualified under the complete applicable contract. A qualifying PAV PASS means the artifact actually delivered for the exact published version has been independently verified against that qualified evidence. Inspection and test fixtures can never produce a qualifying PASS (they report `INSPECTION_ONLY`). A caller-supplied command-line value is never evidence by itself. Everything is fail-closed.
 
 ---

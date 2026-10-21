@@ -9,8 +9,8 @@ uses that label for the pending shared-NAT replacement decision.
 
 ## Status
 
-`ACTIVE` — on the Owner's explicit approval of 2026-10-14. Activation is delivered
-atomically with its canonical contracts and Runtime in PR #117.
+`SUPERSEDED` by DEC-026 on 2026-10-20 (PR #150). It was `ACTIVE` from the Owner's explicit approval of
+2026-10-14, delivered atomically with its canonical contracts and Runtime in PR #117.
 
 ## Date
 
@@ -245,4 +245,4 @@ None
 
 ## Superseded By
 
-None
+`DEC-026`
