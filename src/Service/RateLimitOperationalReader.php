@@ -165,13 +165,13 @@ final class RateLimitOperationalReader implements RateLimitOperationalReaderInte
         // Use the active logical block level across Current/Previous, matching
         // the pipeline's rotation-aware decay semantics.
         $now = $this->clock->now()->getTimestamp();
-        $currentBlock = $this->store->checkBlock($currentKey);
+        $currentBlock = CallerTimeStore::checkBlock($this->store, $currentKey, $this->clock->now());
         $activeHardBlock = $this->activeHardBlock($currentBlock, $now);
         $blockFromPreviousGeneration = false;
         $previousBlock = null;
 
         if ($activeHardBlock === null && $previousKey !== null) {
-            $previousBlock = $this->store->checkBlock($previousKey);
+            $previousBlock = CallerTimeStore::checkBlock($this->store, $previousKey, $this->clock->now());
             $activeHardBlock = $this->activeHardBlock($previousBlock, $now);
             $blockFromPreviousGeneration = $activeHardBlock !== null;
         }
@@ -296,14 +296,14 @@ final class RateLimitOperationalReader implements RateLimitOperationalReaderInte
     private function resolveBudgetState(?string $currentKey, ?string $previousKey): array
     {
         if ($currentKey !== null) {
-            $current = $this->store->getBudget($currentKey);
+            $current = CallerTimeStore::getBudget($this->store, $currentKey, $this->clock->now());
             if ($current !== null) {
                 return [$current, false];
             }
         }
 
         if ($previousKey !== null) {
-            $previous = $this->store->getBudget($previousKey);
+            $previous = CallerTimeStore::getBudget($this->store, $previousKey, $this->clock->now());
             if ($previous !== null) {
                 return [$previous, true];
             }

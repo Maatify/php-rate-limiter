@@ -18,8 +18,10 @@ use Maatify\RateLimiter\DTO\BudgetStateDTO;
 use Maatify\RateLimiter\DTO\RateLimitStateDTO;
 use Maatify\RateLimiter\Exception\BackendFailureException;
 use Maatify\SharedCommon\Contracts\ClockInterface;
+use Maatify\RateLimiter\Repository\CallerTimeBudgetSeedStoreInterface;
+use Maatify\RateLimiter\Repository\CallerTimePunishmentLifecycleStoreInterface;
 
-class InMemoryRateLimitStore implements BudgetSeedStoreInterface, PunishmentLifecycleStoreInterface
+class InMemoryRateLimitStore implements BudgetSeedStoreInterface, PunishmentLifecycleStoreInterface, CallerTimeBudgetSeedStoreInterface, CallerTimePunishmentLifecycleStoreInterface
 {
     public bool $available = true;
     private const PAUSE_HISTORY_RETENTION_SECONDS = 86400;
@@ -44,13 +46,21 @@ class InMemoryRateLimitStore implements BudgetSeedStoreInterface, PunishmentLife
     /** @var array<string, string> */
     private array $claimMarkers = [];
 
+    /**
+     * The caller's time held by a caller-time call, per store instance. It is
+     * static (a WeakMap) so it is not part of the store's serialized state.
+     *
+     * @var \WeakMap<self, int>|null
+     */
+    private static ?\WeakMap $callerTimes = null;
+
     public function __construct(private readonly ClockInterface $clock) {}
 
     public function increment(string $key, int $ttlSeconds, int $amount = 1): int
     {
         $this->assertAvailable();
         $this->writes++;
-        $now = $this->clock->now()->getTimestamp();
+        $now = $this->currentTime();
 
         if (!isset($this->data[$key]) || $this->data[$key]['expiresAt'] < $now) {
             $this->data[$key] = [
@@ -69,7 +79,7 @@ class InMemoryRateLimitStore implements BudgetSeedStoreInterface, PunishmentLife
     public function get(string $key): ?RateLimitStateDTO
     {
         $this->assertAvailable();
-        $now = $this->clock->now()->getTimestamp();
+        $now = $this->currentTime();
         if (!isset($this->data[$key]) || $this->data[$key]['expiresAt'] < $now) {
             return null;
         }
@@ -89,7 +99,7 @@ class InMemoryRateLimitStore implements BudgetSeedStoreInterface, PunishmentLife
     {
         $this->assertAvailable();
         $this->writes++;
-        $now = $this->clock->now()->getTimestamp();
+        $now = $this->currentTime();
         $this->data[$key] = [
             'value' => $value,
             'updatedAt' => $now,
@@ -101,7 +111,7 @@ class InMemoryRateLimitStore implements BudgetSeedStoreInterface, PunishmentLife
     {
         $this->assertAvailable();
         $this->writes++;
-        $now = $this->clock->now()->getTimestamp();
+        $now = $this->currentTime();
         $this->blocks[$key] = [
             'level' => $level,
             'expiresAt' => $now + $durationSeconds,
@@ -165,7 +175,7 @@ class InMemoryRateLimitStore implements BudgetSeedStoreInterface, PunishmentLife
 
     public function readGenerationBoundScoreState(string $currentKey, ?string $previousKey): ?GenerationBoundScoreStateDTO
     {
-        $now = $this->clock->now()->getTimestamp();
+        $now = $this->currentTime();
         $source = isset($this->data[$currentKey]) && $this->data[$currentKey]['expiresAt'] > $now
             ? GenerationBoundScoreStateDTO::SOURCE_CURRENT : GenerationBoundScoreStateDTO::SOURCE_PREVIOUS;
         $key = $source === GenerationBoundScoreStateDTO::SOURCE_CURRENT ? $currentKey : $previousKey;
@@ -190,7 +200,7 @@ class InMemoryRateLimitStore implements BudgetSeedStoreInterface, PunishmentLife
         if ($expectedState !== null && ($observed === null || $observed->source !== $expectedState->source || $observed->generation !== $expectedState->generation || $observed->value !== $expectedState->value || $observed->updatedAt !== $expectedState->updatedAt || $observed->expiresAt !== $expectedState->expiresAt)) {
             return new GenerationBoundScoreMutationDTO(false, null);
         }
-        $now = $this->clock->now()->getTimestamp();
+        $now = $this->currentTime();
         $generation = $observed === null ? 1 : ($observed->generation ?? 0) + 1;
         $expires = $observed === null ? $now + $ttlSeconds : $observed->expiresAt;
         $this->data[$currentKey] = ['value' => $newValue, 'updatedAt' => $now, 'expiresAt' => $expires];
@@ -209,8 +219,8 @@ class InMemoryRateLimitStore implements BudgetSeedStoreInterface, PunishmentLife
             // historical Previous are all ordinary optimistic conflicts.
             return new PunishmentLifecycleTransitionDTO(false, null, null, null);
         }
-        $cycle = $this->blockWithCycleTracking($currentKey, $previousKey, $level, $durationSeconds, $this->clock->now()->getTimestamp(), $cycleWindowSeconds, $cycleThreshold, $pauseSeconds, $pauseHistoryRetentionSeconds);
-        $now = $this->clock->now()->getTimestamp();
+        $cycle = $this->blockWithCycleTracking($currentKey, $previousKey, $level, $durationSeconds, $this->currentTime(), $cycleWindowSeconds, $cycleThreshold, $pauseSeconds, $pauseHistoryRetentionSeconds);
+        $now = $this->currentTime();
         $existingLifecycle = $this->generation[$currentKey]['lifecycle'] ?? null;
         if ($existingLifecycle !== null && $existingLifecycle->validUntil === $state->expiresAt) {
             // Same generation, same authoritative expiry: preserve the
@@ -235,12 +245,12 @@ class InMemoryRateLimitStore implements BudgetSeedStoreInterface, PunishmentLife
     {
         $currentBlock = $this->checkBlock($currentKey);
         $previousBlock = $previousKey === null ? null : $this->checkBlock($previousKey);
-        if (($currentBlock === null ? 0 : $currentBlock->expiresAt) > $this->clock->now()->getTimestamp()
-            || ($previousBlock !== null && $previousBlock->expiresAt > $this->clock->now()->getTimestamp())) {
+        if (($currentBlock === null ? 0 : $currentBlock->expiresAt) > $this->currentTime()
+            || ($previousBlock !== null && $previousBlock->expiresAt > $this->currentTime())) {
             return false;
         }
         $state = $this->readGenerationBoundScoreState($currentKey, $previousKey);
-        if ($state?->postPunishmentReentry?->id !== $lifecycleId || $state->postPunishmentReentry->validUntil <= $this->clock->now()->getTimestamp()) {
+        if ($state?->postPunishmentReentry?->id !== $lifecycleId || $state->postPunishmentReentry->validUntil <= $this->currentTime()) {
             return false;
         }
         if (isset($this->claimMarkers[$currentKey])) {
@@ -315,7 +325,7 @@ class InMemoryRateLimitStore implements BudgetSeedStoreInterface, PunishmentLife
     public function checkBlock(string $key): ?BlockStateDTO
     {
         $this->assertAvailable();
-        $now = $this->clock->now()->getTimestamp();
+        $now = $this->currentTime();
         if (!isset($this->blocks[$key]) || $this->blocks[$key]['expiresAt'] <= $now) {
             return null;
         }
@@ -329,7 +339,7 @@ class InMemoryRateLimitStore implements BudgetSeedStoreInterface, PunishmentLife
     public function getBudget(string $key): ?BudgetStateDTO
     {
         $this->assertAvailable();
-        $now = $this->clock->now()->getTimestamp();
+        $now = $this->currentTime();
         if (!isset($this->budgets[$key])) {
             return null;
         }
@@ -351,7 +361,7 @@ class InMemoryRateLimitStore implements BudgetSeedStoreInterface, PunishmentLife
     {
         $this->assertAvailable();
         $this->writes++;
-        $now = $this->clock->now()->getTimestamp();
+        $now = $this->currentTime();
 
         if (!isset($this->budgets[$key]) || $now >= $this->budgets[$key]['epochStart'] + $this->budgets[$key]['epochDuration']) {
             $this->budgets[$key] = [
@@ -376,7 +386,7 @@ class InMemoryRateLimitStore implements BudgetSeedStoreInterface, PunishmentLife
         int $amount = 1,
     ): BudgetStateDTO {
         $this->writes++;
-        $now = $this->clock->now()->getTimestamp();
+        $now = $this->currentTime();
         $current = $this->budgets[$key] ?? null;
 
         if ($current !== null && $now < $current['epochStart'] + $current['epochDuration']) {
@@ -509,5 +519,94 @@ class InMemoryRateLimitStore implements BudgetSeedStoreInterface, PunishmentLife
             'cycles' => $cycles,
             'pauses' => array_values($mergedPauses),
         ];
+    }
+
+    public function incrementAt(string $key, int $ttlSeconds, int $amount, int $now): int
+    {
+        return $this->atCallerTime($now, fn(): int => $this->increment($key, $ttlSeconds, $amount));
+    }
+
+    public function setAt(string $key, int $value, int $ttlSeconds, int $now): void
+    {
+        $this->atCallerTime($now, function () use ($key, $value, $ttlSeconds): void {
+            $this->set($key, $value, $ttlSeconds);
+        });
+    }
+
+    public function blockAt(string $key, int $level, int $durationSeconds, int $now): void
+    {
+        $this->atCallerTime($now, function () use ($key, $level, $durationSeconds): void {
+            $this->block($key, $level, $durationSeconds);
+        });
+    }
+
+    public function checkBlockAt(string $key, int $now): ?BlockStateDTO
+    {
+        return $this->atCallerTime($now, fn(): ?BlockStateDTO => $this->checkBlock($key));
+    }
+
+    public function getBudgetAt(string $key, int $now): ?BudgetStateDTO
+    {
+        return $this->atCallerTime($now, fn(): ?BudgetStateDTO => $this->getBudget($key));
+    }
+
+    public function incrementBudgetAt(string $key, int $epochDurationSeconds, int $amount, int $now): BudgetStateDTO
+    {
+        return $this->atCallerTime($now, fn(): BudgetStateDTO => $this->incrementBudget($key, $epochDurationSeconds, $amount));
+    }
+
+    public function incrementBudgetWithSeedAt(string $key, int $epochDurationSeconds, BudgetStateDTO $seed, int $amount, int $now): BudgetStateDTO
+    {
+        return $this->atCallerTime($now, fn(): BudgetStateDTO => $this->incrementBudgetWithSeed($key, $epochDurationSeconds, $seed, $amount));
+    }
+
+    public function readGenerationBoundScoreStateAt(string $currentKey, ?string $previousKey, int $nowMilliseconds): ?GenerationBoundScoreStateDTO
+    {
+        return $this->atCallerTime(intdiv($nowMilliseconds, 1000), fn(): ?GenerationBoundScoreStateDTO => $this->readGenerationBoundScoreState($currentKey, $previousKey));
+    }
+
+    public function mutateGenerationBoundScoreAt(string $currentKey, ?string $previousKey, ?GenerationBoundScoreStateDTO $expectedState, int $ttlSeconds, int $newValue, int $nowMilliseconds): GenerationBoundScoreMutationDTO
+    {
+        return $this->atCallerTime(intdiv($nowMilliseconds, 1000), fn(): GenerationBoundScoreMutationDTO => $this->mutateGenerationBoundScore($currentKey, $previousKey, $expectedState, $ttlSeconds, $newValue));
+    }
+
+    public function blockWithPunishmentLifecycleTrackingAt(string $currentKey, ?string $previousKey, int $expectedGeneration, string $proposedLifecycleId, int $level, int $durationSeconds, int $cycleWindowSeconds, int $cycleThreshold, int $pauseSeconds, int $pauseHistoryRetentionSeconds, int $now): PunishmentLifecycleTransitionDTO
+    {
+        return $this->atCallerTime($now, fn(): PunishmentLifecycleTransitionDTO => $this->blockWithPunishmentLifecycleTracking($currentKey, $previousKey, $expectedGeneration, $proposedLifecycleId, $level, $durationSeconds, $cycleWindowSeconds, $cycleThreshold, $pauseSeconds, $pauseHistoryRetentionSeconds));
+    }
+
+    public function claimPostPunishmentReentryAt(string $currentKey, ?string $previousKey, string $lifecycleId, int $nowMilliseconds): bool
+    {
+        return $this->atCallerTime(intdiv($nowMilliseconds, 1000), fn(): bool => $this->claimPostPunishmentReentry($currentKey, $previousKey, $lifecycleId));
+    }
+
+    /**
+     * #153 phase 2: run an existing method with the caller's time held, so a
+     * caller-time call and its existing counterpart share one implementation
+     * (and every subclass override). Outside it, the injected clock applies.
+     *
+     * @template T
+     * @param callable(): T $operation
+     * @return T
+     */
+    private function atCallerTime(int $now, callable $operation): mixed
+    {
+        self::$callerTimes ??= new \WeakMap();
+        $previous = self::$callerTimes[$this] ?? null;
+        self::$callerTimes[$this] = $now;
+        try {
+            return $operation();
+        } finally {
+            if ($previous === null) {
+                unset(self::$callerTimes[$this]);
+            } else {
+                self::$callerTimes[$this] = $previous;
+            }
+        }
+    }
+
+    private function currentTime(): int
+    {
+        return self::$callerTimes[$this] ?? $this->clock->now()->getTimestamp();
     }
 }

@@ -12,11 +12,12 @@ use Maatify\RateLimiter\Tests\Support\CircuitBreaker\InMemoryCircuitBreakerStore
 use Maatify\RateLimiter\Tests\Support\Correlation\StatefulInMemoryCorrelationStore;
 use Maatify\RateLimiter\Tests\Support\RateLimiter\InMemoryRateLimitStore;
 use Maatify\SharedCommon\Contracts\ClockInterface;
+use Maatify\RateLimiter\Repository\CallerTimeBoundedCorrelationSnapshotRotationStoreInterface;
 
 /**
  * Delegating aggregate fixture that exposes all storage capabilities through one object.
  */
-class FullCapabilityInMemoryStore extends InMemoryRateLimitStore implements FullCapabilityStoreInterface
+class FullCapabilityInMemoryStore extends InMemoryRateLimitStore implements FullCapabilityStoreInterface, CallerTimeBoundedCorrelationSnapshotRotationStoreInterface
 {
     private StatefulInMemoryCorrelationStore $correlationStore;
 
@@ -160,5 +161,53 @@ class FullCapabilityInMemoryStore extends InMemoryRateLimitStore implements Full
     public function circuitBreakerStore(): InMemoryCircuitBreakerStore
     {
         return $this->circuitBreakerStore;
+    }
+
+    public function addDistinctAt(string $key, string $item, int $ttlSeconds, int $now): int
+    {
+        // Held on the delegate, through this instance's own method, so a subclass override applies.
+        return $this->correlationStore->atCallerTime($now, fn(): int => $this->addDistinct($key, $item, $ttlSeconds));
+    }
+
+    public function incrementWatchFlagAt(string $key, int $ttlSeconds, int $now): int
+    {
+        // Held on the delegate, through this instance's own method, so a subclass override applies.
+        return $this->correlationStore->atCallerTime($now, fn(): int => $this->incrementWatchFlag($key, $ttlSeconds));
+    }
+
+    public function addDistinctBoundedAt(string $key, string $item, int $ttlSeconds, int $maxDistinct, int $now): BoundedDistinctResultDTO
+    {
+        // Held on the delegate, through this instance's own method, so a subclass override applies.
+        return $this->correlationStore->atCallerTime($now, fn(): BoundedDistinctResultDTO => $this->addDistinctBounded($key, $item, $ttlSeconds, $maxDistinct));
+    }
+
+    public function addDistinctBoundedWithSnapshotAt(string $key, string $item, int $ttlSeconds, int $maxDistinct, int $now): BoundedDistinctSnapshotDTO
+    {
+        // Held on the delegate, through this instance's own method, so a subclass override applies.
+        return $this->correlationStore->atCallerTime($now, fn(): BoundedDistinctSnapshotDTO => $this->addDistinctBoundedWithSnapshot($key, $item, $ttlSeconds, $maxDistinct));
+    }
+
+    public function addDistinctAcrossRotationAt(string $currentKey, string $bridgeKey, string $previousKey, string $currentMember, string $previousMember, int $ttlSeconds, int $nowMilliseconds): int
+    {
+        // Held on the delegate, through this instance's own method, so a subclass override applies.
+        return $this->correlationStore->atCallerTime(intdiv($nowMilliseconds, 1000), fn(): int => $this->addDistinctAcrossRotation($currentKey, $bridgeKey, $previousKey, $currentMember, $previousMember, $ttlSeconds));
+    }
+
+    public function incrementWatchFlagAcrossRotationAt(string $currentKey, string $previousKey, int $ttlSeconds, int $now): int
+    {
+        // Held on the delegate, through this instance's own method, so a subclass override applies.
+        return $this->correlationStore->atCallerTime($now, fn(): int => $this->incrementWatchFlagAcrossRotation($currentKey, $previousKey, $ttlSeconds));
+    }
+
+    public function addDistinctBoundedAcrossRotationAt(string $currentKey, string $bridgeKey, string $previousKey, string $currentMember, string $previousMember, int $ttlSeconds, int $maxDistinct, int $nowMilliseconds): BoundedDistinctResultDTO
+    {
+        // Held on the delegate, through this instance's own method, so a subclass override applies.
+        return $this->correlationStore->atCallerTime(intdiv($nowMilliseconds, 1000), fn(): BoundedDistinctResultDTO => $this->addDistinctBoundedAcrossRotation($currentKey, $bridgeKey, $previousKey, $currentMember, $previousMember, $ttlSeconds, $maxDistinct));
+    }
+
+    public function addDistinctBoundedWithSnapshotAcrossRotationAt(string $currentKey, string $bridgeKey, string $previousKey, string $currentMember, string $previousMember, int $ttlSeconds, int $maxDistinct, int $nowMilliseconds): BoundedDistinctSnapshotDTO
+    {
+        // Held on the delegate, through this instance's own method, so a subclass override applies.
+        return $this->correlationStore->atCallerTime(intdiv($nowMilliseconds, 1000), fn(): BoundedDistinctSnapshotDTO => $this->addDistinctBoundedWithSnapshotAcrossRotation($currentKey, $bridgeKey, $previousKey, $currentMember, $previousMember, $ttlSeconds, $maxDistinct));
     }
 }
