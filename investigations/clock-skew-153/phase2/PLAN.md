@@ -279,3 +279,31 @@ Each commit alone. Any contract question that appears during the build is raised
 * **LT-P2-08 — DEC-016's text.** Its Consequences (L57–L59) say the score, budget, bounded-state, watch and persistence primitives "may continue to use Redis `TIME`". After the change none does. The assignment asks for a dated note. Is a dated note enough under the Decision Governance standard, or is a superseding record needed? The executor reads the change as an application of DEC-016's own rule 1 once the contracts receive `now`, so a dated note.
 * **LT-P2-09 — the simple runtime.** `FixedWindowSimpleRateLimiter` (L135, L148–L154) and `SimpleRateLimitOperationalReader` (L130–L135) read budget epochs written by rows 5–7. **Recommendation:** in scope; the same scripts and the same fix, with S0-PARITY covering their tests.
 * **LT-P2-10 — `TIME` used only for representability** (prelude L94–L97 for relative `EXPIRE`, `LEASE` L977, S L1913). After the change no script has Redis time. **Recommendation:** check representability against the caller's value. The int64-millisecond limit is far from any real clock, and with a fixed past clock the relative `EXPIRE` stays representable by construction.
+
+## 8. Lead rulings and Owner decision (2026-10-21, recorded before any test or code)
+
+Sources:
+* Lead rulings: [PR #158 comment 6323172871](https://github.com/Maatify/php-rate-limiter/pull/158#issuecomment-6323172871).
+* Owner decision on LT-P2-04 and the authorisation to build: [comment 6323267208](https://github.com/Maatify/php-rate-limiter/pull/158#issuecomment-6323267208).
+
+§0–§7 are kept as written and read together with this section. Where they differ, this section governs. The inventory (§1) and the transition (§3) were accepted as written.
+
+| LT | Ruling | Effect on the plan |
+| --- | --- | --- |
+| P2-01 | **(ii).** Additive capability interfaces that take `now`, **one per existing time-less interface (a 1:1 mirror of today's boundaries)**, not one aggregate. The pipeline takes the new path on `instanceof`, else the existing method. The official store and every support store implement them. USAGE_GUIDE states that a Host store that does not implement them keeps the phase 1 / #156 behaviour, for that store only. Form (i) rejected (BC1/BC2, DEC-016 L42) | §2.4 option (ii); nine new interfaces |
+| P2-02 | **(a).** Logical deadlines only. `PTTL` means "alive" only (> 0). The five invariants (L310, L393, L502, L1079, L1091) and the four caps (L309, L325, L501, L521) are removed. The tests asserting failure of those states are listed by name in the tests commit, each awaiting its own ruling | §2.5 option (a) |
+| P2-03 | **Accepted.** The physical lifetime stays relative. "Logically expired, physically present" = expired, not malformed; this is the #155 fix. Its cost (a stored past deadline is no longer detected as corruption) is stated explicitly in FAILURE_SEMANTICS | §2.3 |
+| P2-04 | **Owner decision.** The residual across servers (writer ahead of reader, or a backward clock step) is accepted and **documented as a Host duty**: "a fleet that shares one Redis shares one time source", in USAGE_GUIDE (Integration Boundaries) and FAILURE_SEMANTICS, with the law and its bound. It is **measured once** with the two-clock arm (§4.7: writer ahead by 1 s, reader at 0, one Redis) before RESULTS, so it is written with its numbers. No tolerance in the validator. Standards reference: PACKAGE_BUILDING_STANDARD §2 and §25 (`ClockInterface` from shared-common is the only time abstraction; the Host owns its policy) | §2.7; §4.7 becomes **required**, not optional |
+| P2-05 | **Accepted.** One clock reading per `limit()` and per `claimPostPunishmentReentry()`, passed to every store call and every comparison | §2.2; RED-8 |
+| P2-06 | **Accepted.** An optional trailing `?ClockInterface $clock = null` constructor parameter on the official store, defaulting to `SystemClock(UTC)`, never `TIME` | §2.6 |
+| P2-07 | **Accepted.** An acceptance runner under `phase2/acceptance/` that `require`s the two archived `lib.php` files unchanged (blob SHAs recorded), with V-1 on the fix head. No archived file is touched | §4.6 |
+| P2-08 | **A dated "Application note"** in DEC-016 Consequences (L57–L59): the primitives now receive `now`, so rule 1 applies to them. DEC-016's decision itself is unchanged, so there is no superseding record (Governance §9: no rewriting; dated appending is the established pattern). The index description of DEC-016 is re-checked | §6 docs |
+| P2-09 | **In scope.** `FixedWindowSimpleRateLimiter` and `SimpleRateLimitOperationalReader` use the same scripts. S0-PARITY covers their tests | §1 rows 5–7 |
+| P2-10 | **Accepted.** Representability is checked on the caller's value. No `TIME` remains in any script | prelude, `LEASE`, S L1913 |
+
+**Binding additions to the gates (Lead):**
+* RED-6 runs after LT-P2-02 (a).
+* The Redis + `FixedClock` tests that will store the frozen time are disclosed by name before any edit.
+* The final acceptance is as in §4.6: a full rerun of #154 and of the #156 probes on the fix head, with 0 exceptions and 0 flips.
+
+**Order (Owner):** this amendment → red tests RED-1…8, with the named lists of affected `FixedClock` / Redis tests and malformed-state tests, before any edit → implementation → documents (DEC-016 application note, FAILURE_SEMANTICS, USAGE_GUIDE, KS) → two-clock arm and acceptance runner (#154 and #156 probes rerun) → RESULTS with both full logs. Each commit alone. Any contract question is raised as an LT before the build.
