@@ -1,0 +1,12 @@
+PASS E-SAME login_protection H-1 100/100 threw exactly Maatify\RateLimiter\Exception\RateLimiterException: Bounded correlation store returned an invalid snapshot.
+PASS E-SAME login_protection H-2 failure signals emitted: 0
+PASS E-SAME login_protection H-3 circuit state unchanged: null
+PASS E-SAME login_protection H-4 limit() returned a result: 0/100
+PASS E-SAME otp_protection H-1 100/100 threw exactly Maatify\RateLimiter\Exception\RateLimiterException: Bounded correlation store returned an invalid snapshot.
+PASS E-SAME otp_protection H-2 failure signals emitted: 0
+PASS E-SAME otp_protection H-3 circuit state unchanged: null
+PASS E-SAME otp_protection H-4 limit() returned a result: 0/100
+PASS E-SAME custom_distributed H-1 100/100 threw exactly Maatify\RateLimiter\Exception\RateLimiterException: Bounded correlation store returned an invalid snapshot.
+PASS E-SAME custom_distributed H-2 failure signals emitted: 0
+PASS E-SAME custom_distributed H-3 circuit state unchanged: null
+PASS E-SAME custom_distributed H-4 limit() returned a result: 0/100
