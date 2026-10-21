@@ -212,6 +212,7 @@ $md[] = '';
 $md[] = '| env | family | policy | σ | in: obs / pred | out: obs / pred | ambiguous | setup excluded | setup split | decision changed (primary) | secondary only | D-LAW |';
 $md[] = '| --- | --- | --- | --- | --- | --- | ---: | ---: | ---: | --- | ---: | --- |';
 $detectors = [];
+$misses = [];
 $probeDetail = [];
 foreach ($cells as $cell) {
     $family = $cell['meta']['family'];
@@ -284,6 +285,14 @@ foreach ($cells as $cell) {
             $pred = $lawS['hon'] !== $lawZ['hon'];
             $near = $lawS['near'] || $lawZ['near'];
             $obs = $hon($s, $setupS) !== $hon($z, $setupZ);
+            // Post-run diagnosis (REPORT §8): a twin whose observation differs from the law, and whether a
+            // Redis second boundary lies between its L531 reading and the end of its step.
+            $diag = [];
+            foreach (['S' => [$s, $setupS, $lawS], 'Z' => [$z, $setupZ, $lawZ]] as $t => [$row, $setup, $law]) {
+                if ($law['hon'] !== $hon($row, $setup)) {
+                    $diag[] = sprintf('%s L531 %.4f → end %.4f, boundary between: %s', $t, $row['h531'] + $th, $row['h1'] + $th, floor($row['h531'] + $th) !== floor($row['h1'] + $th) ? 'yes' : 'no');
+                }
+            }
         } elseif ($family === 'P-RA1') {
             $setup = $s['setup'] ?? [];
             $ok = isset($setup['S']['callerLast'], $setup['Z']['callerLast']) && ($setup['S']['v'] ?? -1) === 6 && ($setup['Z']['v'] ?? -1) === 6;
@@ -294,6 +303,13 @@ foreach ($cells as $cell) {
             $pred = $setup['S']['callerLast'] < $setup['S']['u'];
             $obs = ($s['d'] ?? '') !== 'ALLOW';
             $near = false;
+            $fail = array_values(array_filter($twins['S'] ?? [], static fn (array $r): bool => $r['op'] === 'fail' && $r['k'] === 1))[0] ?? null;
+            $planned = $fail === null ? 0.0 : $fail['h1'] + (int) ($fail['ra'] ?? 0);
+            $l44 = (float) (array_values(array_filter($s['c'] ?? [], static fn (array $c): bool => $c['s'] === 'B' && $c['scope'] === 'account'))[0]['h'] ?? $s['h0']);
+            $diag = $fail === null ? [] : [
+                sprintf('S L1780 second %d, receipt %.4f (caller %.4f): caller boundary between: %s', $setup['S']['callerLast'], $fail['h1'] + $th, $fail['h1'] + $th + $sigma, floor($fail['h1'] + $sigma) > $setup['S']['callerLast'] ? 'yes' : 'no'),
+                sprintf('planned return %.4f, L44 reading on return %.4f (caller): caller boundary between: %s', $planned + $sigma, $l44 + $sigma, floor($planned + $sigma) !== floor($l44 + $sigma) ? 'yes' : 'no'),
+            ];
         } elseif ($family === 'P-RA2') {
             $setupS = $s['block']['S'] ?? null;
             if ($setupS === null || $s['h531'] === null) {
@@ -318,6 +334,7 @@ foreach ($cells as $cell) {
                 }
             }
             $obs = array_filter($s['c'] ?? [], static fn (array $c): bool => $c['s'] === 'E' && $c['k'] === $setupS['k'] && $c['flip']) !== [];
+            $diag = [sprintf('S L531 %.4f → end %.4f, boundary between: %s', $actual, $s['h1'] + $th, floor($actual) !== floor($s['h1'] + $th) ? 'yes' : 'no')];
         }
         $total++;
         if (primary($s) !== primary($z)) {
@@ -336,6 +353,10 @@ foreach ($cells as $cell) {
             $outc[1]++;
             $outc[0] += $obs ? 1 : 0;
         }
+        if ($pred !== $obs) {
+            $misses[] = sprintf('%s %s %s σ=%+.2f j=%d pred=%d obs=%d — %s', $cell['env'], $family, $cell['meta']['policy'], $sigma, $j, $pred ? 1 : 0, $obs ? 1 : 0, implode('; ', $diag ?? []));
+        }
+        $diag = [];
     }
     $lawIn = $in[1] === 0 || $in[0] === $in[1];
     $lawOut = $outc[0] === 0;
@@ -360,13 +381,23 @@ foreach ($detectors as $env => $d) {
         : sprintf('* %s **D-SAT:** %d / %d not honoured — %s', $env, $d['D-SAT'][0], $d['D-SAT'][1], $d['D-SAT'][0] === $d['D-SAT'][1] ? 'PASS' : '**FAIL**');
 }
 $md[] = '';
+// Post-run descriptive addition (REPORT §8): every D-LAW miss, with the boundary check of §8.
+$md[] = '### D-LAW misses (post-run diagnosis; not a gate)';
+$md[] = '';
+foreach ($misses as $line) {
+    $md[] = '* ' . $line;
+}
+if ($misses === []) {
+    $md[] = '* none';
+}
+$md[] = '';
 
 // P-I (no detector) and streams (§6.2-§6.5).
 $md[] = '## P-I and streams (PLAN §5.3 P-I, §5.4, §6.2–§6.5)';
 $md[] = '';
-$md[] = '| env | family | policy | σ | pairs | streams with ≥ 1 changed decision | changed / paired steps | first divergence: skew / A / split / unexplained | outcome Δ ≠ 0 (S − Z) | exceptions (S, Z) | state diverged |';
-$md[] = '| --- | --- | --- | --- | ---: | --- | --- | --- | --- | --- | ---: |';
-$aa = [0, 0];
+$md[] = '| env | family | policy | σ | pairs | streams with ≥ 1 changed decision | changed / paired steps | first divergence: skew / A / split / unexplained | outcome Δ ≠ 0 (S − Z) | exceptions (S, Z) | of which #155 | state diverged |';
+$md[] = '| --- | --- | --- | --- | ---: | --- | --- | --- | --- | --- | ---: | ---: |';
+$aa = [];
 foreach ($cells as $cell) {
     $family = $cell['meta']['family'];
     if (! in_array($family, ['P-I', 'S-BEN', 'S-ATK', 'S-RA'], true)) {
@@ -381,6 +412,7 @@ foreach ($cells as $cell) {
     $outcomeDiff = 0;
     $exS = 0;
     $exZ = 0;
+    $x155 = 0;
     $diverged = 0;
     $pairs = 0;
     foreach ($cell['steps'] as $j => $twins) {
@@ -444,6 +476,7 @@ foreach ($cells as $cell) {
                 $refused[$t] += $row['op'] === 'check' && ($row['d'] ?? '') !== 'ALLOW' ? 1 : 0;
                 if (isset($row['x'])) {
                     $t === 'S' ? $exS++ : $exZ++;
+                    $x155 += str_contains((string) $row['x'], 'malformed bounded metadata') ? 1 : 0;
                 }
             }
         }
@@ -454,13 +487,15 @@ foreach ($cells as $cell) {
         }
     }
     if ($sigma === 'AA') {
-        $aa[0] += $causes['skew'] + $causes['A'] + $causes['none'];
-        $aa[1] += $pairs;
+        $aaKey = $cell['env'] . ' ' . $family . ' ' . $cell['meta']['policy'];
+        $aa[$aaKey] = [$causes['skew'] + $causes['A'] + $causes['none'], $pairs];
     }
-    $md[] = sprintf('| %s | %s | %s | %s | %d | %s | %d / %d | %d / %d / %d / %d | %d | %d, %d | %d |', $cell['env'], $family, $cell['meta']['policy'], is_string($sigma) ? $sigma : sprintf('%+.2f', $sigma), $pairs, wilson($withChange, $pairs), $changedSteps, $paired, $causes['skew'], $causes['A'], $causes['split'], $causes['none'], $outcomeDiff, $exS, $exZ, $diverged);
+    $md[] = sprintf('| %s | %s | %s | %s | %d | %s | %d / %d | %d / %d / %d / %d | %d | %d, %d | %d | %d |', $cell['env'], $family, $cell['meta']['policy'], is_string($sigma) ? $sigma : sprintf('%+.2f', $sigma), $pairs, wilson($withChange, $pairs), $changedSteps, $paired, $causes['skew'], $causes['A'], $causes['split'], $causes['none'], $outcomeDiff, $exS, $exZ, $x155, $diverged);
 }
 $md[] = '';
-$md[] = sprintf('* **D-AA:** %d first divergences not attributed to a split, over %d A/A pairs — %s', $aa[0], $aa[1], $aa[0] === 0 ? 'PASS' : '**FAIL**');
+foreach ($aa as $key => [$bad, $n]) {
+    $md[] = sprintf('* **D-AA** %s: %d first divergences not attributed to a split, over %d A/A pairs — %s', $key, $bad, $n, $bad === 0 ? 'PASS' : '**FAIL**');
+}
 $md[] = '* **V-ATTR:** the "unexplained" column must be 0 in every row.';
 $md[] = '';
 
