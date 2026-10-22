@@ -6,9 +6,16 @@
 # unchanged; then the two-clock arm (§4.7, E-SAME only). V-1: src/, tests/ and
 # composer.json are committed and clean (the tested tree is the fix head), and
 # every archived script used here is byte-identical to `main` (blob SHAs logged).
+# ACCEPT_ONLY=p154 (PLAN §12, LT-P2-14) reruns #154 alone: only <out>/p154 is
+# replaced and the log is logs/<env>-p154.log; #156 and the two-clock outputs stay.
 set -euo pipefail
 
 env_id="${1:?usage: run.sh E-SAME|E-DOCKER}"
+only="${ACCEPT_ONLY:-all}"
+if [[ "$only" != all && "$only" != p154 ]]; then
+    echo "ACCEPT_ONLY must be all or p154" >&2
+    exit 2
+fi
 here="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)"
 root="$(cd -- "$here/../../../.." && pwd)"
 p1="$root/investigations/clock-skew-153/harness"
@@ -37,13 +44,18 @@ for path in "${archived[@]}"; do
 done
 
 out="${ACCEPT_OUT:-$here/expected}/$env_id"
-rm -rf "$out"
+if [[ "$only" == p154 ]]; then
+    rm -rf "$out/p154"
+    log="$here/logs/$env_id-p154.log"
+else
+    rm -rf "$out"
+    log="$here/logs/$env_id.log"
+fi
 mkdir -p "$out/p154" "$out/p156" "$here/logs"
-log="$here/logs/$env_id.log"
 php=(env XDEBUG_MODE=off php -d memory_limit=1G)
 
 {
-    echo "env=$env_id head=$(git -C "$root" rev-parse HEAD) main=$main_ref started=$(date -u +%FT%TZ)"
+    echo "env=$env_id only=$only head=$(git -C "$root" rev-parse HEAD) main=$main_ref started=$(date -u +%FT%TZ)"
     for path in "${archived[@]}"; do echo "blob $path $(git -C "$root" rev-parse "HEAD:$path")"; done
     echo "php=$("${php[@]}" -r 'echo PHP_VERSION;') os=$(uname -sr)"
 } | tee "$log"
@@ -78,6 +90,9 @@ matrix() {
     "${php[@]}" "$p1/host_surface.php" "$root" "$env_id" "$host" "$port" "$out/p154/host-surface.txt" || echo "host_surface.php exit $? (expected after the fix)"
     if [[ "$env_id" == E-SAME ]]; then
         "${php[@]}" "$p1/tail.php" "$root" "$env_id" "$host" "$port" "$out/p154/tail.jsonl"
+    fi
+    if [[ "$only" == p154 ]]; then
+        return 0
     fi
     # #156 probe groups (as registered in its run.sh).
     "${php[@]}" "$p156/offset.php" "$root" "$host" "$port" "$out/p156/offset-before.jsonl"
@@ -125,7 +140,7 @@ case "$env_id" in
         ;;
     E-DOCKER)
         export -f group matrix
-        export env_id here root p1 p156 out
+        export env_id here root p1 p156 out only
         export both_list="${both[*]}" small_list="${small[*]}"
         bash "$root/scripts/ci/run-with-redis-service.sh" bash -c '
             set -euo pipefail
