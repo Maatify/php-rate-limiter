@@ -196,7 +196,7 @@ foreach (['E-SAME', 'E-DOCKER'] as $env) {
                 }
                 $f = $row['full'];
                 $key = $row['probe'] . '|' . ($row['a'] ?? '—') . '|' . $row['phase'];
-                $label = implode(' · ', [$row['x'] !== null && $row['x'] !== '' ? 'EXCEPTION' : $row['o'], $f['level'] ?? '—', $f['ra'] ?? '—', $f['meta']['signal'] ?? '—', $f['meta']['cause'] ?? '—', $f['meta']['context']['reason'] ?? '—', $f['meta']['context']['scope'] ?? '—']);
+                $label = implode(' · ', [($row['x'] ?? null) !== null && $row['x'] !== '' ? 'EXCEPTION' : $row['o'], $f['level'] ?? '—', $f['ra'] ?? '—', $f['meta']['signal'] ?? '—', $f['meta']['cause'] ?? '—', $f['meta']['context']['reason'] ?? '—', $f['meta']['context']['scope'] ?? '—']);
                 $causes[$key]['n'] = ($causes[$key]['n'] ?? 0) + 1;
                 $causes[$key]['o'][$label] = ($causes[$key]['o'][$label] ?? 0) + 1;
                 $causes[$key]['ip'][implode('.', array_slice(explode('.', (string) $f['ip']), 0, 3))] = true;
