@@ -459,3 +459,71 @@ Two corrections made while building, recorded with their measured cause. They de
 * **Correction.** Every `SET … EX` in the scripts becomes `SET` followed by `redis.pcall('EXPIRE', …)` / `PEXPIRE`, with the same all-or-nothing undo. This covers the watch flag (create), the rotated watch flag (create), the probe lease and the claim marker. A lease key that already exists takes the expiry first and is then written with `KEEPTTL`.
 * **Result.** L3137 passes unchanged on 8.10.0, and RED-10 passes on all eight families.
 * **For FAILURE_SEMANTICS (documents commit):** Redis does not judge an expiry given through `SET … EX` the same way on every version, so the store never relies on it as the judge; it uses only `EXPIRE` / `PEXPIRE`.
+
+## 12. Rulings on RESULTS `38c5ce7` (2026-10-22, recorded before the F-P2-03 test)
+
+**Sources:**
+* Lead rulings: [PR #158 comment 6334226943](https://github.com/Maatify/php-rate-limiter/pull/158#issuecomment-6334226943).
+* Record of the questions: [comment 6334270939](https://github.com/Maatify/php-rate-limiter/pull/158#issuecomment-6334270939).
+
+| Item | Ruling | Effect |
+| --- | --- | --- |
+| LT-P2-13 | **(a).** The registered #156 condition stays **FAIL as written**; it is not redefined after the run. A new registered acceptance condition is added (text below, §12.1). The one-second resolution is documented in FAILURE_SEMANTICS §2.5 under the fleet duty. Millisecond deadlines are out of scope (a state-shape change) | §12.1; documents |
+| LT-P2-14 (F-P2-03) | **Fixed in this PR.** First, a red test on real Redis: at the logical deadline the rotation path returns `[1, 1]`, as the plain path does. Then the fix, in the rotation script only: for the current window and its metadata, the same `expires ≤ now ⇒ DEL` before counting; the previous generation stays read-only. The fix is a declared, dated edit. Afterwards, on the new head: the full suites in both modes, PHPStan, CVH, gate §4.5 and #154 E-SAME. The #156 probes and the two-clock arm are rerun only for a cell that a grep shows exercises secret rotation | §12.2 |
+| LT-P2-15 (new) | The P-TAIL / P-HT `HARD_BLOCK` cause is to be extracted from the logs (the `cause` chain and the rule that issued the block). It is a descriptive addition to `report.php`, with no verdict change, written into RESULTS §3. Expected reading (Lead): the probe accounts' own failures accumulating on the Login policy; to be confirmed or refuted by the log | §12.3 (LT-P2-17) |
+
+Also accepted as declared: F-P2-02, and the omission of gate §4.5 with its addition before its run.
+
+### 12.1 The new registered condition (LT-P2-13), and a contradiction found before registering it (LT-P2-16)
+
+**The ruled text:** «after one time authority, every remaining twin difference is explained by whole-second quantization of each twin's own clock: 0 unexplained, |Δ| of the end time ≤ 1 s, 0 exceptions, **0 `retryAfter` difference**».
+
+**Measured on the current outputs (`acceptance/expected/`), before registering:**
+* 19,500 probe steps where both twins have a probe row. Of those with an equal primary decision, `retryAfter` differs in 1,373.
+* **713 steps differ by exactly 1 s.** No step differs by 2–⌈|σ|⌉ s. These occur in nearly every family, including P-I, P-RA1, P-RA2 and P-SAT, which have 0 decision changes.
+  * The remaining wait is rounded up to whole seconds on two second grids, so two twins of the same state can be told waits 1 s apart.
+* **660 steps differ by more, up to 3,299 s.** All are in CYCLE-NA (P-E2, P-E3) and in E-DOCKER P-E2 CYCLE-NA.
+  * In each, one twin has passed its end and has been handed to the cycle pause, while the other is still inside the block.
+  * By the end-time prediction of RESULTS §4: 633 predicted, 27 within ± 2 ms of an end, **0 unexplained**.
+* **So the clause "0 `retryAfter` difference" fails on the current numbers:** 20 CYCLE-NA cells on E-SAME and 2 on E-DOCKER through the second class, and most cells through the first. That contradicts the ruling's premise ("this condition passes on the current numbers").
+
+**LT-P2-16. Options:**
+* **(a) Recommendation.** Replace the clause with "0 unexplained `retryAfter` difference". Every `retryAfter` difference between twins with an equal decision is either:
+  * exactly 1 s (the remaining wait rounded on two second grids); or
+  * a quantization-predicted (or ± 2 ms ambiguous) handover in which one twin has passed its end.
+
+  The other clauses stay as ruled.
+* (b) Keep the clause literal. The new condition then also fails, in the cells above.
+
+Nothing is registered or implemented for §12.1 before this ruling.
+
+### 12.2 Grep for secret rotation (LT-P2-14, which cells are rerun)
+
+* **The watch-rotation path is reached only with a distinct previous key.** `EvaluationPipeline::incrementWatchAcrossRotation` (L1434–L1448) falls back to the plain path when `$previousKey === null || $previousKey === $currentKey`. A previous key exists only when `RateLimiterConfig` has a previous secret.
+* **#156:** every twin is built with `P1\baseConfig()` (`investigations/clock-mixes-153/harness/mixlib.php` L388), i.e. `new RateLimiterConfig('k153-active', 'f153-active', 'prod')` with no previous secret (`clock-skew-153/harness/lib.php` L404–L407). `rotatedConfig` is not referenced in `clock-mixes-153/harness/`.
+* **Two-clock arm:** `new RateLimiterConfig('two-clock-key', 'two-clock-fp', 'prod')` (`phase2/acceptance/two_clock.php` L68), with no previous secret.
+* **Conclusion:** no #156 probe cell and no two-clock cell exercises the rotation path, so neither is rerun. #154 has rotation cells (`ROT-F`, `ROT-R`, `ROT-P` use `rotatedConfig()`, its `run.php` L45–L48) and is rerun on E-SAME as ruled.
+
+### 12.3 LT-P2-15: the logs do not carry the cause (LT-P2-17)
+
+**What the archived records hold.** The archived `tail.php` writes, per target:
+* the decision string (`o`);
+* the exception (`x`);
+* script errors (`err`);
+* the snapshot calls (`s`).
+
+`Lab::request` (`lib.php` L296–L310) keeps only `$result->decision`. Neither `blockLevel`, `retryAfter` nor `metadata` (`signal`, `cause`) is written, and the Redis command log is not kept per target. The cause therefore cannot be extracted from the existing logs.
+
+**What the records do show** (E-SAME, `tail.jsonl.gz`):
+* Each probe is a `checkOnly`. No failure is recorded for these accounts.
+* In each burst of targets due within milliseconds of each other, the first targets are `ALLOW` and the following ones `HARD_BLOCK`. Example: P-TAIL a = 2, accounts T2.0-0…3 `ALLOW`, then T2.0-4… `HARD_BLOCK`.
+* All 80 accounts come from one /24 of the benchmark range.
+
+That pattern is consistent with a per-source admission limit on `checkOnly` (DEC-024 / DEC-026, capacity 4). It is not consistent with failure accumulation, since there are no failures. Neither reading is measured.
+
+**LT-P2-17. Options:**
+* **(a) Recommendation.** A descriptive instrument, `phase2/acceptance/tail_cause.php`, that `require`s the archived `lib.php` unchanged.
+  * It replays `tail.php`'s targets: same accounts, contexts, schedule and clock arms, in a fresh namespace.
+  * It records each result's `decision`, `blockLevel`, `retryAfter` and `metadata` (`signal`, `cause`), plus the Redis script names of the call.
+  * It runs on E-SAME after the #154 rerun, on the same head. It is reported in RESULTS §3, with no verdict change.
+* (b) Leave the cause unattributed.
