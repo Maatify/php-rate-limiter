@@ -36,6 +36,7 @@ use Throwable;
  * `main@f5897b0`; RED-6 and RED-7 are regression guards that pass before and
  * after. Virtual clock advances stand in for real waits: today the Redis side
  * does not see them, after the fix every comparison follows the caller.
+ * RED-11 (F-P2-03, PLAN §12) fails on `38c5ce7`, the first RESULTS head.
  */
 final class CallerTimeAuthorityRedisTest extends TestCase
 {
@@ -358,6 +359,43 @@ final class CallerTimeAuthorityRedisTest extends TestCase
         yield 'bounded' => ['bounded', static fn(RedisFullCapabilityStore $s, int $ttl): mixed => $s->addDistinctBoundedWithSnapshot('r10-bounded', 'member', $ttl, 5)];
         yield 'rotated' => ['rotated', static fn(RedisFullCapabilityStore $s, int $ttl): mixed => $s->addDistinctBoundedWithSnapshotAcrossRotation('r10-current', 'r10-bridge', 'r10-previous', 'member', 'other', $ttl, 5)];
         yield 'watch rotated' => ['watch rotated', static fn(RedisFullCapabilityStore $s, int $ttl): mixed => $s->incrementWatchFlagAcrossRotation('r10-watch-current', 'r10-watch-previous', $ttl)];
+    }
+
+    /**
+     * RED-11 (F-P2-03, PLAN §12, LT-P2-14): at its logical deadline a watch
+     * window whose keys are still physically present is expired on the
+     * rotation path as on the plain path (LT-P2-03); one second earlier it
+     * still counts; a live previous generation is read, never written.
+     */
+    public function testRotatedWatchWindowRestartsAtItsLogicalDeadlineLikeThePlainWatch(): void
+    {
+        $now = $this->secondWithRoom();
+        $previous = 'red11-previous-live';
+        $this->executor->execute(['SET', $this->key('watch', $previous), '3']);
+        $this->executor->execute(['EXPIRE', $this->key('watch', $previous), '300']);
+        $this->executor->execute(['HSET', $this->key('watch-meta', $previous), 'expiresAt', (string) ($now + 300)]);
+        $this->executor->execute(['EXPIRE', $this->key('watch-meta', $previous), '300']);
+        $previousBefore = [$this->executor->execute(['DUMP', $this->key('watch', $previous)]), $this->executor->execute(['DUMP', $this->key('watch-meta', $previous)])];
+
+        $plain = [$this->store->incrementWatchFlagAt('red11-plain', 30, $now), $this->store->incrementWatchFlagAt('red11-plain', 30, $now + 30)];
+        $rotated = [
+            $this->store->incrementWatchFlagAcrossRotationAt('red11-current', 'red11-previous-absent', 30, $now),
+            $this->store->incrementWatchFlagAcrossRotationAt('red11-current', 'red11-previous-absent', 30, $now + 30),
+        ];
+        $beforeDeadline = [
+            $this->store->incrementWatchFlagAcrossRotationAt('red11-control', 'red11-previous-absent', 30, $now),
+            $this->store->incrementWatchFlagAcrossRotationAt('red11-control', 'red11-previous-absent', 30, $now + 29),
+        ];
+        $withPrevious = [
+            $this->store->incrementWatchFlagAcrossRotationAt('red11-current-with-previous', $previous, 30, $now),
+            $this->store->incrementWatchFlagAcrossRotationAt('red11-current-with-previous', $previous, 30, $now + 30),
+        ];
+
+        self::assertSame([1, 1], $plain);
+        self::assertSame([1, 1], $rotated, 'The rotated watch window must restart at its logical deadline.');
+        self::assertSame([1, 2], $beforeDeadline);
+        self::assertSame([4, 4], $withPrevious, 'The current window restarts; the live previous count (3) is still added.');
+        self::assertSame($previousBefore, [$this->executor->execute(['DUMP', $this->key('watch', $previous)]), $this->executor->execute(['DUMP', $this->key('watch-meta', $previous)])]);
     }
 
     /** @return list<string> */
