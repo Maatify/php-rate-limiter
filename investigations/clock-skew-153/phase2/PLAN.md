@@ -527,3 +527,27 @@ That pattern is consistent with a per-source admission limit on `checkOnly` (DEC
   * It records each result's `decision`, `blockLevel`, `retryAfter` and `metadata` (`signal`, `cause`), plus the Redis script names of the call.
   * It runs on E-SAME after the #154 rerun, on the same head. It is reported in RESULTS §3, with no verdict change.
 * (b) Leave the cause unattributed.
+
+### 12.4 Rulings on LT-P2-16 and LT-P2-17, and the registered condition (2026-10-22, recorded before its implementation)
+
+Source: [PR #158 comment 6337114762](https://github.com/Maatify/php-rate-limiter/pull/158#issuecomment-6337114762) (Lead). The comment also corrects the Lead's own LT-P2-13 wording: "0 `retryAfter` difference" was written without reading the `retryAfter` column. The rule is the same for everyone: no condition is registered before it has been checked against the data.
+
+| Item | Ruling |
+| --- | --- |
+| LT-P2-16 | "0 unexplained `retryAfter` difference" replaces the literal clause. The two explained classes are named in the condition with their bounds (below). Any difference outside both is unexplained, and the cell fails. The originally registered #156 condition stays **FAIL as written**; this one is registered with its date |
+| FAILURE_SEMANTICS §2.5 | Sentence, verbatim from the ruling: «المواعيد المخزَّنة بدقة ثانية كاملة. مضيفان يختلفان بكسر ثانية قد يختلفان بقرار واحد عند حدّ موعد، وبـ `retryAfter` بثانية واحدة؛ وعند تسليم كتلة إلى إيقاف دورة قد يختلف `retryAfter` المُبلَّغ بطول الإيقاف. الحد الأقصى لفرق زمن النهاية ثانية واحدة.» It is written in the document's language (English) with that content, under the fleet duty |
+| LT-P2-17 | **Accepted.** A descriptive rerun script, `tail_cause.php`, on the same head, records each P-TAIL / P-HT target's full result: decision, `cause`, level, `retryAfter` and scope. No verdict changes. The Lead's expected reading, to be confirmed or refuted by the measurement: the probes run on `login_protection`, the preset and not the opt-in variant, so the admission source capacity does not apply. "4 `ALLOW` then `HARD_BLOCK` from one /24" matches S0's collective source rules (K1 credential spray / distributed account), because the probe accounts share one source. It is not a time effect. If confirmed, RESULTS §3 notes that the probe design (many accounts from one /24) triggers S0 rules, which does not touch the gate condition (exceptions only) |
+
+**Registered condition C-156-Q (LT-P2-13 as amended by LT-P2-16), evaluated by `acceptance/report.php` over each registered #156 probe cell. These are the cells of `report.php`'s existing table, E-SAME and E-DOCKER, with no rerun (§12.2).** A cell passes when all of the following hold:
+1. **0 exceptions** in either twin, on any row.
+2. **0 unexplained primary changes.** A probe step whose primary decision (decision | re-entry | exception) differs between the twins counts as explained only in P-B or P-E (P-E2, P-E3). There, the end-time rule of RESULTS §4 must predict it, or an end must lie within ± 2 ms of a twin's request span (ambiguous):
+   * the ends are `uS + 1200 − σ` vs `u0 + 1200` for P-B, and `E_S − σ` vs `E_Z` for P-E;
+   * the prediction is that a twin refuses while its request starts before its own end.
+
+   In every other family (P-RA1, P-RA2, P-I, P-SAT), any primary change is unexplained. For P-I this includes every paired step, as in the original condition.
+3. **|Δ end| ≤ 1 s** on every P-B / P-E probe step that has both ends.
+4. **0 unexplained `retryAfter` differences.** A probe step with equal primary decision and different `retryAfter` is explained only as:
+   * **(i)** |`retryAfter`_S − `retryAfter`_Z| = **exactly 1 s**: the remaining time rounded up on two second grids (713 steps on the outputs at `8a8082a`); or
+   * **(ii)** a **CYCLE-NA** (P-E2, P-E3) step where the L3 block hands over to the cycle pause in one twin. This is identified as a step that the end-time rule predicts or that is ambiguous (± 2 ms). Its `retryAfter` difference is then bounded by the pause length (660 steps at `8a8082a`: 633 predicted, 27 ambiguous).
+
+   Any other `retryAfter` difference is unexplained and fails the cell. `lv` differences are reported, not gated.
