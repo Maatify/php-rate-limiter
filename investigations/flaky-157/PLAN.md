@@ -246,3 +246,10 @@ The E-LOCAL and E-CI reference runs give the same `k_ref` (1329 of 1855) and the
 ### 10.6 Not run
 
 No N run: L (3,300), D (20 per case on E-CI and E-LOCAL), H (100,000 + 10,000) and the registered overhead measurement (K = 2,000) wait for the Lead / Owner after this report. The E-CI H tiny run's spans (min 1,199 µs over 2,030 sequences) are a demonstration, not a result.
+
+### 10.7 Conditions before L (Lead review 6352135135, Owner decision 6352156115, 2026-10-22)
+
+The Owner approved arm L at **N = 3,300** and the measured ≈ 31 runner-hours; order `pre` (K = 2,000) → `d` (20 per case, E-CI and E-LOCAL) → `h` (100,000 + 10,000) → `l` (20 × 165), no early stop. The two conditions, met in the harness before any N run (no change to `src/`, `tests/`, or to any registered condition):
+
+* **C-1, resolved set per job.** Every workflow job runs `harness/env.sh <out> <job>` after `composer update`; its artifact keeps `env/<job>/composer.lock`, `phpunit-version`, `php-version` (and the `fe8775c` tree's lock and PHPUnit version for H). `harness/envset.php` compares the resolved sets (name, version, source reference of every package) and PHPUnit versions across jobs; the REPORT states whether the 20 L shards and the reference ran the same set, and names any job that did not; such a job is reported, not silently pooled.
+* **C-2, expected N and shortfall.** `summarize.php --expect=<arm>:<first>-<last>[:<per shard>]` (L: `--expect=l:1-3300:165`; D: `--expect=d<case>:1-20`) and `h_report.php --expect=<mode>:<shards>x<M>` (`probe:4x25000`, `forced:10x1000`) give the expected count, the shortfall, the missing ids and the per-shard shortfall, because a shard where V-HEAD refuses or a job is killed writes no verdict line.

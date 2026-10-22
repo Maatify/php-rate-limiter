@@ -5,7 +5,12 @@ declare(strict_types=1);
 // #157 arm H classifier (PLAN.md §9.3). Reads h_probe.php JSONL files and
 // judges H-1, H-2, H-3. Prints one JSON document.
 //
-// Usage: php h_report.php <h.jsonl> [...]
+// Usage: php h_report.php [--expect=<probe|forced>:<shards>x<M>] <h-<mode>-<shard>/h.jsonl> [...]
+//
+// --expect (Lead condition 2 before arm L, applied to H as well): shards 1..n of
+// that mode must each hold M sequence lines; a shard whose file is missing or
+// cut short (no summary line) is a counted shortfall. E-CI: --expect=probe:4x25000
+// --expect=forced:10x1000, one call per mode.
 //        php h_report.php --selftest   (synthetic rows: each registered violation must be caught)
 
 namespace Flaky157;
@@ -114,15 +119,46 @@ if (($argv[1] ?? '') === '--selftest') {
 
 $rows = [];
 $summaries = [];
-foreach (array_slice($argv, 1) as $path) {
-    foreach (readJsonl($path) as $row) {
+$expect = [];
+$files = [];
+foreach (array_slice($argv, 1) as $argument) {
+    if (str_starts_with($argument, '--expect=')) {
+        if (preg_match('/^--expect=(probe|forced):(\d+)x(\d+)$/', $argument, $match) !== 1) {
+            fwrite(STDERR, "bad $argument\n");
+            exit(2);
+        }
+        $expect[$match[1]] = ['shards' => (int) $match[2], 'm' => (int) $match[3]];
+        continue;
+    }
+    $file = ['rows' => 0, 'summary_m' => null];
+    foreach (readJsonl($argument) as $row) {
         if (isset($row['summary'])) {
             $summaries[] = $row;
+            $file['summary_m'] = $row['m'];
         } else {
             $rows[] = $row;
+            $file['rows']++;
         }
     }
+    $files[basename(dirname($argument))] = $file;
 }
 $result = classify($rows);
 $result['probe_summaries'] = $summaries;
+$result['files'] = $files;
+foreach ($expect as $mode => $spec) {
+    $shards = [];
+    $shortfall = 0;
+    for ($shard = 1; $shard <= $spec['shards']; $shard++) {
+        $file = $files["h-$mode-$shard"] ?? null;
+        $have = $file['rows'] ?? 0;
+        $shards[$shard] = [
+            'expected' => $spec['m'],
+            'sequences' => $have,
+            'shortfall' => $spec['m'] - $have,
+            'file' => $file === null ? 'missing' : ($file['summary_m'] === null ? 'no summary line' : 'complete'),
+        ];
+        $shortfall += $spec['m'] - $have;
+    }
+    $result['expected'][$mode] = ['expected' => $spec['shards'] * $spec['m'], 'shortfall' => $shortfall, 'shards' => $shards];
+}
 echo json_encode($result, JSON_PRETTY_PRINT | JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNICODE), "\n";
