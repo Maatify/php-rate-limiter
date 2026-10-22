@@ -246,6 +246,28 @@ foreach (['E-SAME', 'E-DOCKER'] as $env) {
         $md[] = sprintf('| `%s` | %d | %d | %d | %d (%d) | %d | %d / %d | %s |', $cell, $q['n'], $q['obsPred'], $q['obsNoPred'], $q['samePred'], $q['samePredSecondary'], $q['sameNoPred'], $q['ambObs'], $q['ambSame'], kv($q['delta']));
     }
 
+    // Registered condition C-156-Q (PLAN §12.4, LT-P2-13 as amended by LT-P2-16, 2026-10-22),
+    // evaluated over the same cells; the original #156 verdict above stays as it is.
+    $md[] = '';
+    $md[] = '### C-156-Q (registered 2026-10-22, PLAN §12.4): every remaining twin difference explained by whole-second quantization';
+    $md[] = '';
+    $md[] = 'PASS per cell: 0 exceptions; 0 unexplained primary changes (explained only in P-B / P-E, predicted by the end-time rule or within ± 2 ms; in P-I also on every paired step); |Δ end| ≤ 1 s; 0 unexplained `retryAfter` differences (explained: (i) exactly 1 s, (ii) CYCLE-NA L3 → pause handover, predicted or within ± 2 ms). `lv` differences are reported, not gated.';
+    $md[] = '';
+    $md[] = '| Cell | probe steps | primary changes: explained / unexplained | max \|Δ end\| s | `retryAfter` differences: (i) 1 s / (ii) handover / unexplained | `lv` differences | exceptions | verdict |';
+    $md[] = '| --- | ---: | --- | ---: | --- | ---: | ---: | --- |';
+    $passQ = 0;
+    foreach ($registered156[$env] as $cell) {
+        if (! exists($dir . '/p156/' . $cell . '.jsonl')) {
+            $md[] = sprintf('| `%s` | — | — | — | — | — | — | **FAIL (missing)** |', $cell);
+            continue;
+        }
+        $q = c156q($dir . '/p156/' . $cell . '.jsonl', $cell);
+        $pass = $q['n'] > 0 && $q['exceptions'] === 0 && $q['primaryUnexplained'] === 0 && $q['maxDelta'] <= 1.0 && $q['raUnexplained'] === 0;
+        $passQ += $pass ? 1 : 0;
+        $md[] = sprintf('| `%s` | %d | %d / %d | %s | %d / %d / %d | %d | %d | %s |', $cell, $q['n'], $q['primaryExplained'], $q['primaryUnexplained'], $q['maxDelta'] < 0 ? '—' : sprintf('%.2f', $q['maxDelta']), $q['raOne'], $q['raHandover'], $q['raUnexplained'], $q['lv'], $q['exceptions'], $pass ? 'PASS' : '**FAIL**');
+    }
+    $verdicts[] = [$env . ' C-156-Q (§12.4)', $passQ === count($registered156[$env]), sprintf('%d / %d cells PASS', $passQ, count($registered156[$env]))];
+
     // The two-clock arm.
     $twoClock = $dir . '/two-clock.jsonl';
     if ($env === 'E-SAME') {
@@ -471,6 +493,85 @@ function quantization(string $file, string $family): array
         $q[($changed ? 'obs' : 'same') . ($predicted ? 'Pred' : 'NoPred')]++;
         if (! $changed && $predicted && (($s['lv'] ?? null) !== ($z['lv'] ?? null) || ($s['ra'] ?? null) !== ($z['ra'] ?? null))) {
             $q['samePredSecondary']++;
+        }
+    }
+
+    return $q;
+}
+
+/**
+ * C-156-Q (PLAN §12.4) for one #156 probe cell.
+ *
+ * @return array<string, int|float>
+ */
+function c156q(string $file, string $cell): array
+{
+    [$family, $policy] = explode('_', $cell);
+    $sigma = 0.0;
+    $bands = [];
+    $byK = [];
+    $q = ['n' => 0, 'exceptions' => 0, 'primaryExplained' => 0, 'primaryUnexplained' => 0, 'maxDelta' => -1.0, 'raOne' => 0, 'raHandover' => 0, 'raUnexplained' => 0, 'lv' => 0];
+    foreach (rows($file) as $row) {
+        if (isset($row['meta'])) {
+            $sigma = (float) $row['meta']['sigma'];
+            continue;
+        }
+        if (! isset($row['j'], $row['t'])) {
+            continue;
+        }
+        $q['exceptions'] += isset($row['x']) ? 1 : 0;
+        if (isset($row['probe'])) {
+            $bands[$row['j'] . '|' . ($row['probe']['band'] ?? '?')][$row['t']] = $row;
+        }
+        if (isset($row['k'], $row['op'])) {
+            $byK[$row['j'] . '|' . $row['k']][$row['t']] ??= $row;
+        }
+    }
+    $endModel = in_array($family, ['P-B', 'P-E2', 'P-E3'], true);
+    foreach ($bands as $pair) {
+        if (! isset($pair['S'], $pair['Z'])) {
+            continue;
+        }
+        [$s, $z] = [$pair['S'], $pair['Z']];
+        $q['n']++;
+        $explainedByEnd = false;
+        if ($endModel) {
+            if ($family === 'P-B') {
+                $endS = $s['probe']['uS'] + 1200 - $sigma;
+                $endZ = $s['probe']['u0'] + 1200;
+            } elseif (isset($s['block']['S']['E'], $s['block']['Z']['E'])) {
+                $endS = $s['block']['S']['E'] - $sigma;
+                $endZ = (float) $s['block']['Z']['E'];
+            }
+            if (isset($endS, $endZ)) {
+                $q['maxDelta'] = max($q['maxDelta'], abs($endS - $endZ));
+                $predicted = ($s['h0'] < $endS) !== ($z['h0'] < $endZ);
+                $ambiguous = ($endS >= $s['h0'] - 0.002 && $endS <= $s['h1'] + 0.002) || ($endZ >= $z['h0'] - 0.002 && $endZ <= $z['h1'] + 0.002);
+                $explainedByEnd = $predicted || $ambiguous;
+            }
+            unset($endS, $endZ);
+        }
+        if (primary($s) !== primary($z)) {
+            $q[$explainedByEnd ? 'primaryExplained' : 'primaryUnexplained']++;
+            continue;
+        }
+        $q['lv'] += ($s['lv'] ?? null) !== ($z['lv'] ?? null) ? 1 : 0;
+        if (($s['ra'] ?? null) === ($z['ra'] ?? null)) {
+            continue;
+        }
+        if (abs((int) ($s['ra'] ?? 0) - (int) ($z['ra'] ?? 0)) === 1) {
+            $q['raOne']++;
+        } elseif ($policy === 'CYCLE-NA' && in_array($family, ['P-E2', 'P-E3'], true) && $explainedByEnd) {
+            $q['raHandover']++;
+        } else {
+            $q['raUnexplained']++;
+        }
+    }
+    if ($family === 'P-I') {
+        foreach ($byK as $pair) {
+            if (isset($pair['S'], $pair['Z']) && $pair['S']['op'] === $pair['Z']['op'] && primary($pair['S']) !== primary($pair['Z'])) {
+                $q['primaryUnexplained']++;
+            }
         }
     }
 
