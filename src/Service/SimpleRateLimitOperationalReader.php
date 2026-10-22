@@ -114,12 +114,12 @@ final class SimpleRateLimitOperationalReader implements SimpleRateLimitOperation
         $intervalSeconds = $policy->getIntervalSeconds();
 
         $currentKey = $this->deriveKey($policyName, $limit, $intervalSeconds, $subject, $this->keySecret);
-        $state = $this->store->getBudget($currentKey);
+        $state = CallerTimeStore::getBudget($this->store, $currentKey, $this->clock->now());
         $fromPreviousGeneration = false;
 
         if ($state === null && $this->previousKeySecret !== null) {
             $previousKey = $this->deriveKey($policyName, $limit, $intervalSeconds, $subject, $this->previousKeySecret);
-            $previousState = $this->store->getBudget($previousKey);
+            $previousState = CallerTimeStore::getBudget($this->store, $previousKey, $this->clock->now());
             if ($previousState !== null) {
                 $state = $previousState;
                 $fromPreviousGeneration = true;

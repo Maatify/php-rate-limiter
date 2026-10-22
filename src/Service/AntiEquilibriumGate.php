@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace Maatify\RateLimiter\Service;
 
 use Maatify\RateLimiter\Repository\CorrelationStoreInterface;
+use Maatify\SharedCommon\Contracts\ClockInterface;
 
 /**
  * Tracks repeated soft blocks and escalates persistent account-level patterns.
@@ -16,9 +17,12 @@ class AntiEquilibriumGate
 
     /**
      * @param CorrelationStoreInterface $store Store for the six-hour watch flag.
+     * @param ?ClockInterface $clock The runtime's clock; with it, a store with the
+     *        caller-time capability stores the request's time (#153 phase 2).
      */
     public function __construct(
         private readonly CorrelationStoreInterface $store,
+        private readonly ?ClockInterface $clock = null,
     ) {}
 
     /**
@@ -29,7 +33,12 @@ class AntiEquilibriumGate
      */
     public function recordSoftBlock(string $currentStateKey): void
     {
-        $this->store->incrementWatchFlag($currentStateKey, self::WINDOW);
+        if ($this->clock === null) {
+            $this->store->incrementWatchFlag($currentStateKey, self::WINDOW);
+
+            return;
+        }
+        CallerTimeStore::incrementWatchFlag($this->store, $currentStateKey, self::WINDOW, $this->clock->now());
     }
 
     /**

@@ -35,6 +35,13 @@ final class RedisFullCapabilityStoreIntegrationTest extends TestCase
 
     private string $namespace = 'integration:test';
 
+    /**
+     * #153 phase 2: the store's fallback clock (the host) and this test's
+     * `redisNow()` (Redis) are different clocks; a physical-life bound computed
+     * from `redisNow()` allows this much clock disagreement and rounding.
+     */
+    private const PHYSICAL_LIFE_TOLERANCE_MS = 1_000;
+
     protected function setUp(): void
     {
         $host = getenv('REDIS_INTEGRATION_HOST');
@@ -239,17 +246,12 @@ final class RedisFullCapabilityStoreIntegrationTest extends TestCase
     }
 
     /**
-     * The PHP-side ensureGenerationTtlRepresentable() preflight reads Redis
-     * TIME once and can go stale before the EVAL that performs the actual
-     * mutation reads Redis TIME again. Proving the boundary is genuinely
-     * atomic requires showing that the LIFECYCLE_MUTATE script itself
-     * rejects an unrepresentable deadline using its own same-script TIME
-     * read, independent of whatever the PHP preflight decided. A decorator
-     * that fabricates the bare ['TIME'] reply consumed only by the PHP
-     * preflight (never the EVAL's internal redis.call('TIME')) makes the
-     * preflight accept a TTL that the real, current Redis TIME inside the
-     * script cannot represent: if the in-script guard were ever removed,
-     * this test would fail because the write would go through.
+     * An unrepresentable generation-bound deadline fails before any write.
+     * Since #153 phase 2 neither the PHP-side ensureGenerationTtlRepresentable()
+     * preflight nor the LIFECYCLE_MUTATE script reads Redis TIME: both judge
+     * the same caller time, and the script repeats the check atomically. The
+     * decorator still fabricates any bare ['TIME'] reply, which the store no
+     * longer sends, so a reintroduced Redis-time read would be caught here.
      */
     public function testGenerationBoundScoreCreationEnforcesAtomicInScriptTtlGuard(): void
     {
@@ -433,14 +435,13 @@ final class RedisFullCapabilityStoreIntegrationTest extends TestCase
 
     /**
      * G12-R03-B: `durationSeconds` is a large-but-ordinarily-valid
-     * positive PHP int. The punishment-lifecycle path uses real Redis
-     * TIME (DEC-016), not caller time, so this cannot be preflighted from
-     * PHP — the rejection must happen inside HARD_BLOCK itself, using the
-     * very Redis TIME read it performs, before any write, leaving a
-     * pre-existing valid generated score, its generation, and its
-     * lifecycle evidence completely untouched.
+     * positive PHP int. The punishment-lifecycle path judges at the caller's
+     * time (#153 phase 2) and PHP does not preflight `now + duration`, so the
+     * rejection must happen inside HARD_BLOCK itself, on the caller time it
+     * receives, before any write, leaving a pre-existing valid generated
+     * score, its generation, and its lifecycle evidence completely untouched.
      */
-    public function testPunishmentLifecycleRedisTimeDerivedBoundaryFailsBeforeAnyRedisMutation(): void
+    public function testPunishmentLifecycleCallerTimeDerivedBoundaryFailsBeforeAnyRedisMutation(): void
     {
         $mutation = $this->store->mutateGenerationBoundScore('g12-lifecycle-redis-time-overflow', null, null, 600, 8);
         self::assertTrue($mutation->applied);
@@ -1100,7 +1101,7 @@ final class RedisFullCapabilityStoreIntegrationTest extends TestCase
         self::assertNotNull($this->store->readGenerationBoundScoreState('lifecycle-current', null)?->postPunishmentReentry);
     }
 
-    public function testLifecycleCyclesUseRedisTimeExactlyOnceAndPauseIsNotRenewed(): void
+    public function testLifecycleCyclesUseTheCallerTimeExactlyOnceAndPauseIsNotRenewed(): void
     {
         $mutation = $this->store->mutateGenerationBoundScore('redis-time-cycle', null, null, 600, 8);
         self::assertTrue($mutation->applied);
@@ -1469,7 +1470,9 @@ final class RedisFullCapabilityStoreIntegrationTest extends TestCase
         $this->raw(['HSET', $score, 'value', '8', 'updatedAt', (string) $now, 'generation', '1', 'expiresAt', (string) ($now + 1)]);
         $this->raw(['EXPIRE', $score, '600']);
 
-        $this->assertOperationFails(fn(): mixed => $this->store->blockWithPunishmentLifecycleTracking('publication-inconsistent', null, 1, str_repeat('a', 32), 2, 60, 21600, 2, 600, 86400));
+        // #153 phase 2 (LT-P2-02): the logical deadline governs; PTTL is checked as alive only.
+        // At the logical deadline the publication is an ordinary unapplied conflict.
+        self::assertFalse($this->store->blockWithPunishmentLifecycleTrackingAt('publication-inconsistent', null, 1, str_repeat('a', 32), 2, 60, 21600, 2, 600, 86400, $now + 1)->applied);
         self::assertSame(-2, $this->integer($this->raw(['PTTL', $this->key('block', 'publication-inconsistent')])));
         self::assertSame([], $this->raw(['ZRANGE', $this->key('cycle', 'publication-inconsistent'), '0', '-1']));
     }
@@ -1486,12 +1489,15 @@ final class RedisFullCapabilityStoreIntegrationTest extends TestCase
             }
             $this->raw(array_merge(['HSET', $score], $fields));
             $this->raw(['EXPIRE', $score, '600']);
-            $this->assertOperationFails(match ($operation) {
-                'read' => fn(): mixed => $this->store->readGenerationBoundScoreState($logical, null),
-                'mutate' => fn(): mixed => $this->store->mutateGenerationBoundScore($logical, null, new GenerationBoundScoreStateDTO(GenerationBoundScoreStateDTO::SOURCE_CURRENT, 8, $now, $now + 1, 1), 600, 9),
-                'claim' => fn(): mixed => $this->store->claimPostPunishmentReentry($logical, null, str_repeat('a', 32)),
-                default => fn(): mixed => $this->store->blockWithPunishmentLifecycleTracking($logical, null, 1, str_repeat('a', 32), 2, 60, 600, 2, 600, 86400),
-            });
+            // #153 phase 2 (LT-P2-02): the logical deadline governs; PTTL is checked as alive only.
+            // At the logical deadline every operation sees expired state, not corruption.
+            $deadlineMs = ($now + 1) * 1000;
+            match ($operation) {
+                'read' => self::assertNull($this->store->readGenerationBoundScoreStateAt($logical, null, $deadlineMs)),
+                'mutate' => self::assertFalse($this->store->mutateGenerationBoundScoreAt($logical, null, new GenerationBoundScoreStateDTO(GenerationBoundScoreStateDTO::SOURCE_CURRENT, 8, $now, $now + 1, 1), 600, 9, $deadlineMs)->applied),
+                'claim' => self::assertFalse($this->store->claimPostPunishmentReentryAt($logical, null, str_repeat('a', 32), $deadlineMs)),
+                default => self::assertFalse($this->store->blockWithPunishmentLifecycleTrackingAt($logical, null, 1, str_repeat('a', 32), 2, 60, 600, 2, 600, 86400, $now + 1)->applied),
+            };
         }
     }
 
@@ -1681,7 +1687,9 @@ final class RedisFullCapabilityStoreIntegrationTest extends TestCase
         $this->raw(['HSET', $physicallyInconsistentPrevious, 'value', '8', 'updatedAt', (string) $now, 'generation', '1', 'expiresAt', (string) ($now + 10)]);
         $this->raw(['EXPIRE', $physicallyInconsistentPrevious, '600']);
         $physicallyInconsistentBefore = $this->hashMap($physicallyInconsistentPrevious);
-        $this->assertOperationFails(fn(): mixed => $this->store->blockWithPunishmentLifecycleTracking('r5-physical-inconsistent-current', 'r5-physical-inconsistent-previous', 1, str_repeat('c', 32), 2, 60, 600, 2, 600, 86400));
+        // #153 phase 2 (LT-P2-02): the logical deadline governs; PTTL is checked as alive only,
+        // so this structurally valid Previous is an ordinary unapplied conflict.
+        self::assertFalse($this->store->blockWithPunishmentLifecycleTracking('r5-physical-inconsistent-current', 'r5-physical-inconsistent-previous', 1, str_repeat('c', 32), 2, 60, 600, 2, 600, 86400)->applied);
         self::assertSame($physicallyInconsistentBefore, $this->hashMap($physicallyInconsistentPrevious));
         self::assertSame(-2, $this->integer($this->raw(['PTTL', $this->key('score', 'r5-physical-inconsistent-current')])));
     }
@@ -1754,13 +1762,15 @@ final class RedisFullCapabilityStoreIntegrationTest extends TestCase
         $this->raw(['EXPIRE', $previous, '600']);
         $before = $this->hashMap($previous);
 
-        self::assertTrue($this->store->claimPostPunishmentReentry('claim-previous-only-current', 'claim-previous-only', $id));
+        self::assertTrue($this->store->claimPostPunishmentReentryAt('claim-previous-only-current', 'claim-previous-only', $id, $now * 1000));
 
         self::assertSame($before, $this->hashMap($previous));
         self::assertSame($id, $this->raw(['GET', $this->key('reentry-claim', 'claim-previous-only-current')]));
-        $markerTtl = $this->integer($this->raw(['TTL', $this->key('reentry-claim', 'claim-previous-only-current')]));
-        self::assertGreaterThan(0, $markerTtl);
-        self::assertLessThanOrEqual(600, $markerTtl);
+        // #153 phase 2 (LT-P2-02): the marker's physical life is relative and at most the
+        // evidence's logical remainder at the caller's time (601 s at `$now`).
+        $markerPttl = $this->integer($this->raw(['PTTL', $this->key('reentry-claim', 'claim-previous-only-current')]));
+        self::assertGreaterThan(0, $markerPttl);
+        self::assertLessThanOrEqual(601_000, $markerPttl);
         self::assertFalse($this->store->claimPostPunishmentReentry('claim-previous-only-current', 'claim-previous-only', $id));
     }
 
@@ -1836,7 +1846,8 @@ final class RedisFullCapabilityStoreIntegrationTest extends TestCase
         $legacyHandoff = $this->store->mutateGenerationBoundScore('ttl-contract-legacy-current', 'ttl-contract-legacy-previous', $legacyPreviousState, 86400, 5);
         self::assertTrue($legacyHandoff->applied);
         self::assertSame(1, $legacyHandoff->state?->generation);
-        self::assertLessThanOrEqual($legacyPreviousPttl + 25, $this->integer($this->raw(['PTTL', $this->key('score', 'ttl-contract-legacy-current')])));
+        // #153 phase 2 (LT-P2-02): the physical life is relative and at most the logical remainder.
+        self::assertLessThanOrEqual(($legacyHandoff->state->expiresAt - $now) * 1000 + self::PHYSICAL_LIFE_TOLERANCE_MS, $this->integer($this->raw(['PTTL', $this->key('score', 'ttl-contract-legacy-current')])));
         self::assertSame($legacyPreviousBefore, $this->hashMap($legacyPreviousKey));
 
         $generatedPrevious = $this->store->mutateGenerationBoundScore('ttl-contract-generated-previous', null, null, 600, 6);
@@ -1857,7 +1868,7 @@ final class RedisFullCapabilityStoreIntegrationTest extends TestCase
         self::assertTrue($generatedHandoff->applied);
         self::assertSame(4, $generatedHandoff->state?->generation);
         self::assertSame($generatedExpiry, $generatedHandoff->state->expiresAt);
-        self::assertLessThanOrEqual($generatedPreviousPttl + 25, $this->integer($this->raw(['PTTL', $this->key('score', 'ttl-contract-generated-current')])));
+        self::assertLessThanOrEqual(($generatedExpiry - $now) * 1000 + self::PHYSICAL_LIFE_TOLERANCE_MS, $this->integer($this->raw(['PTTL', $this->key('score', 'ttl-contract-generated-current')])));
         self::assertSame($generatedPreviousBefore, $this->hashMap($generatedPreviousKey));
 
         $current = $this->store->mutateGenerationBoundScore('ttl-contract-current', null, null, 600, 8);
@@ -1870,7 +1881,7 @@ final class RedisFullCapabilityStoreIntegrationTest extends TestCase
         self::assertTrue($currentMutation->applied);
         self::assertSame(2, $currentMutation->state?->generation);
         self::assertSame($currentExpiry, $currentMutation->state->expiresAt);
-        self::assertLessThanOrEqual($currentBeforePttl + 25, $this->integer($this->raw(['PTTL', $currentKey])));
+        self::assertLessThanOrEqual(($currentExpiry - $now) * 1000 + self::PHYSICAL_LIFE_TOLERANCE_MS, $this->integer($this->raw(['PTTL', $currentKey])));
 
         $subSecond = $this->store->mutateGenerationBoundScore('ttl-contract-sub-second', null, null, 600, 1);
         self::assertTrue($subSecond->applied);
@@ -1884,7 +1895,7 @@ final class RedisFullCapabilityStoreIntegrationTest extends TestCase
         $subSecondMutation = $this->store->mutateGenerationBoundScore('ttl-contract-sub-second', null, $subSecondState, 86400, 2);
         self::assertTrue($subSecondMutation->applied);
         self::assertSame(2, $subSecondMutation->state?->generation);
-        self::assertLessThanOrEqual($subSecondPttl + 25, $this->integer($this->raw(['PTTL', $subSecondKey])));
+        self::assertLessThanOrEqual(($subSecondMutation->state->expiresAt - $now) * 1000 + self::PHYSICAL_LIFE_TOLERANCE_MS, $this->integer($this->raw(['PTTL', $subSecondKey])));
 
         $noExpiryKey = $this->key('score', 'ttl-contract-no-expiry');
         $noExpiryNow = $this->redisNow();
@@ -2229,7 +2240,9 @@ final class RedisFullCapabilityStoreIntegrationTest extends TestCase
 
         $first = $limiter->limit($context, RateLimitCommand::recordFailure('public_hard_cycle'));
         self::assertSame(RateLimitResultDTO::DECISION_HARD_BLOCK, $first->decision);
-        $clock->setNow($clock->now()->modify('+61 seconds'));
+        // #153 phase 2 (F-P2-01): past the first L3 block (300 s), so the second failure reaches
+        // cycle tracking; +61 s passed only while Redis time expired a block dated in the past.
+        $clock->setNow($clock->now()->modify('+301 seconds'));
         $second = $limiter->limit($context, RateLimitCommand::recordFailure('public_hard_cycle'));
         self::assertSame(RateLimitResultDTO::DECISION_HARD_BLOCK, $second->decision);
 

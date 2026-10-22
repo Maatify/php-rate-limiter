@@ -11,6 +11,7 @@ use Maatify\RateLimiter\Exception\RateLimiterException;
 use Maatify\RateLimiter\Repository\BoundedCorrelationRotationStoreInterface;
 use Maatify\RateLimiter\Repository\BoundedCorrelationStoreInterface;
 use Maatify\RateLimiter\Repository\CorrelationStoreInterface;
+use Maatify\SharedCommon\Contracts\ClockInterface;
 
 /**
  * Classifies new device-cap overflows without owning raw identity material.
@@ -23,9 +24,12 @@ class EphemeralBucket
 
     /**
      * @param CorrelationStoreInterface $store Distinct-device correlation store.
+     * @param ?ClockInterface $clock The runtime's clock; with it, a store with the
+     *        caller-time capability judges windows at the request's time (#153 phase 2).
      */
     public function __construct(
         private readonly CorrelationStoreInterface $store,
+        private readonly ?ClockInterface $clock = null,
     ) {}
 
     /**
@@ -90,12 +94,9 @@ class EphemeralBucket
                 );
             }
 
-            $result = $this->store->addDistinctBounded(
-                $observation->currentKey,
-                $observation->currentMember,
-                self::CAP_WINDOW,
-                $maxDistinct,
-            );
+            $result = $this->clock === null
+                ? $this->store->addDistinctBounded($observation->currentKey, $observation->currentMember, self::CAP_WINDOW, $maxDistinct)
+                : CallerTimeStore::addDistinctBounded($this->store, $observation->currentKey, $observation->currentMember, self::CAP_WINDOW, $maxDistinct, $this->clock->now());
 
             BoundedCorrelationResultValidator::count($result, $maxDistinct);
 
@@ -112,15 +113,9 @@ class EphemeralBucket
         $previousMember = $observation->previousMember;
         assert($bridgeKey !== null && $previousMember !== null);
 
-        $result = $this->store->addDistinctBoundedAcrossRotation(
-            $observation->currentKey,
-            $bridgeKey,
-            $observation->previousKey,
-            $observation->currentMember,
-            $previousMember,
-            self::CAP_WINDOW,
-            $maxDistinct,
-        );
+        $result = $this->clock === null
+            ? $this->store->addDistinctBoundedAcrossRotation($observation->currentKey, $bridgeKey, $observation->previousKey, $observation->currentMember, $previousMember, self::CAP_WINDOW, $maxDistinct)
+            : CallerTimeStore::addDistinctBoundedAcrossRotation($this->store, $observation->currentKey, $bridgeKey, $observation->previousKey, $observation->currentMember, $previousMember, self::CAP_WINDOW, $maxDistinct, $this->clock->now());
 
         BoundedCorrelationResultValidator::count($result, $maxDistinct);
 

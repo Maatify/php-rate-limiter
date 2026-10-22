@@ -545,6 +545,16 @@ the overflow request, continues K4/flood handling, and retains bounded churn det
 overflow request may receive the active flood decision, but it cannot persist new K5 score or
 block state. It does not create per-request keys or durable overflow identities.
 
+**Time authority (#153 phase 2, DEC-016 application note).** Bounded, distinct,
+watch, and bridge state record a logical `expiresAt` equal to the caller's time
+plus the TTL, and the store judges them at the caller's time: the request's
+single reading of the Host clock, passed through the additive `CallerTime*`
+capabilities. Physical key lifetimes stay relative on the Redis clock. A window
+whose logical `expiresAt` has been reached while its key is still physically
+present is expired, not malformed, and restarts (LT-P2-03). The previous
+generation stays read-only: an expired previous window is ignored, never
+deleted.
+
 #### 4.3.6 Distributed Account Attack Snapshots
 
 Login and OTP `checkOnly()` requests with an account, a device fingerprint, and real K4/K5
@@ -570,7 +580,8 @@ interface BoundedCorrelationSnapshotRotationStoreInterface
 ```
 
 `BoundedDistinctSnapshotDTO` returns `count`, `accepted`, `added`, the complete bounded
-logical `members` set, and its fixed `expiresAt`. A duplicate is accepted without being
+logical `members` set, and its fixed `expiresAt` (the caller's time plus the TTL when the
+window was created, §4.3.5). A duplicate is accepted without being
 added; a new member at the cap is rejected without set growth. Snapshot validation is
 fail-closed for malformed counts, duplicate or unknown members, inconsistent flags, and
 invalid expiry. Snapshot members are the canonical opaque K5 enforcement keys, so no extra

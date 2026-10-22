@@ -289,6 +289,14 @@ class RateLimiterEngine implements RateLimiterRuntimeInterface, AdmissionBinding
      */
     public function limit(RateLimitContextDTO $context, RateLimitCommand $request): RateLimitResultDTO
     {
+        // One reading of the Host clock for the whole call (#153 phase 2, LT-P2-05).
+        return $this->clock instanceof RequestScopedClock
+            ? $this->clock->holding(fn(): RateLimitResultDTO => $this->evaluate($context, $request))
+            : $this->evaluate($context, $request);
+    }
+
+    private function evaluate(RateLimitContextDTO $context, RateLimitCommand $request): RateLimitResultDTO
+    {
         $policy = $this->policies[$request->policyName] ?? null;
         if (!$policy) {
             throw new RateLimiterException("Policy not found: {$request->policyName}");
@@ -410,6 +418,14 @@ class RateLimiterEngine implements RateLimiterRuntimeInterface, AdmissionBinding
         string $policyName,
         string $reentryId,
     ): bool {
+        // One reading of the Host clock for the whole call (#153 phase 2, LT-P2-05).
+        return $this->clock instanceof RequestScopedClock
+            ? $this->clock->holding(fn(): bool => $this->claim($context, $policyName, $reentryId))
+            : $this->claim($context, $policyName, $reentryId);
+    }
+
+    private function claim(RateLimitContextDTO $context, string $policyName, string $reentryId): bool
+    {
         $policy = $this->policies[$policyName] ?? null;
         if (! $policy || ! $policy instanceof PostPunishmentReentryPolicyInterface) {
             throw new RateLimiterException("Policy is not eligible for post-punishment re-entry: {$policyName}");

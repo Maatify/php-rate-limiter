@@ -21,14 +21,15 @@ use Maatify\RateLimiter\Exception\RateLimiterException;
 use Maatify\RateLimiter\Repository\CircuitBreakerStoreInterface;
 use Maatify\RateLimiter\Repository\CorrelationStoreInterface;
 use Maatify\RateLimiter\Repository\RateLimitStoreInterface;
-use Maatify\RateLimiter\Service\DeviceIdentityResolverInterface;
-use Maatify\RateLimiter\Service\DeviceIdentityResolver;
 use Maatify\RateLimiter\Service\BudgetTracker;
 use Maatify\RateLimiter\Service\CircuitBreaker;
 use Maatify\RateLimiter\Service\DecayCalculator;
+use Maatify\RateLimiter\Service\DeviceIdentityResolver;
+use Maatify\RateLimiter\Service\DeviceIdentityResolverInterface;
 use Maatify\RateLimiter\Service\EvaluationPipeline;
 use Maatify\RateLimiter\Service\FingerprintHasher;
 use Maatify\RateLimiter\Service\RateLimiterInterface;
+use Maatify\RateLimiter\Service\RequestScopedClock;
 use Maatify\RateLimiter\Builder\RateLimiterBuilder;
 use Maatify\RateLimiter\Tests\Support\CircuitBreaker\InMemoryCircuitBreakerStore;
 use Maatify\RateLimiter\Tests\Support\Clock\FixedClock;
@@ -99,17 +100,23 @@ final class RateLimiterBuilderTest extends TestCase
         /** @var DecayCalculator $decayCalculator */
         $decayCalculator = $this->privateProperty($pipeline, 'decayCalculator');
 
-        self::assertSame($clock, $this->privateProperty($scoreEngine, 'clock'));
-        self::assertSame($clock, $this->privateProperty($pipeline, 'clock'));
-        self::assertSame($clock, $this->privateProperty($circuitBreaker, 'clock'));
-        self::assertSame($clock, $this->privateProperty($budgetTracker, 'clock'));
-        self::assertSame($clock, $this->privateProperty($decayCalculator, 'clock'));
+        // #153 phase 2 (LT-P2-05): the five nodes share one RequestScopedClock that wraps the Host clock.
+        $shared = $this->privateProperty($scoreEngine, 'clock');
+        self::assertInstanceOf(RequestScopedClock::class, $shared);
+        self::assertSame($clock, $this->privateProperty($shared, 'hostClock'));
+        self::assertSame($shared, $this->privateProperty($pipeline, 'clock'));
+        self::assertSame($shared, $this->privateProperty($circuitBreaker, 'clock'));
+        self::assertSame($shared, $this->privateProperty($budgetTracker, 'clock'));
+        self::assertSame($shared, $this->privateProperty($decayCalculator, 'clock'));
     }
 
     public function testDefaultClockIsUtcSystemClock(): void
     {
         $engine = $this->builder()->build();
-        $clock = $this->privateProperty($this->scoreEngine($engine), 'clock');
+        // #153 phase 2 (LT-P2-05): the shared RequestScopedClock wraps the default Host clock.
+        $shared = $this->privateProperty($this->scoreEngine($engine), 'clock');
+        self::assertInstanceOf(RequestScopedClock::class, $shared);
+        $clock = $this->privateProperty($shared, 'hostClock');
 
         self::assertInstanceOf(SystemClock::class, $clock);
         self::assertSame('UTC', $clock->getTimezone()->getName());

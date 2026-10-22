@@ -170,7 +170,7 @@ class EvaluationPipeline
             return false;
         }
 
-        return $this->store->claimPostPunishmentReentry($currentKey, $previous['k4'] ?? null, $lifecycleId);
+        return CallerTimeStore::claimPostPunishmentReentry($this->store, $currentKey, $previous['k4'] ?? null, $lifecycleId, $this->clock->now());
     }
 
     /**
@@ -276,7 +276,7 @@ class EvaluationPipeline
         if ($policy instanceof PostPunishmentReentryPolicyInterface
             && $this->store instanceof PunishmentLifecycleStoreInterface
             && ($k4 = $realKeysV2['k4'] ?? null) !== null) {
-            $state = $this->store->readGenerationBoundScoreState($k4, $realKeysV1['k4'] ?? null);
+            $state = CallerTimeStore::readGenerationBoundScoreState($this->store, $k4, $realKeysV1['k4'] ?? null, $this->clock->now());
             $now = $this->clock->now()->getTimestamp();
             if ($state?->generation !== null && $state->postPunishmentReentry !== null
                 && $state->postPunishmentReentry->validUntil > $now
@@ -391,7 +391,7 @@ class EvaluationPipeline
                         'duration' => $duration,
                     ]]
                     : [];
-                $this->correlationStore->incrementWatchFlag($floodKey, 900);
+                CallerTimeStore::incrementWatchFlag($this->correlationStore, $floodKey, 900, $this->clock->now());
                 $candidates[] = $this->candidate(RateLimitResultDTO::DECISION_SOFT_BLOCK, 1, $duration, 'flood', $persistence);
             }
         }
@@ -546,7 +546,7 @@ class EvaluationPipeline
 
             $effective = null;
             if ($currentKey) {
-                $block = $this->store->checkBlock($currentKey);
+                $block = CallerTimeStore::checkBlock($this->store, $currentKey, $this->clock->now());
                 if ($block && $block->level >= 2 && $block->expiresAt > $now) {
                     $effective = $block;
                 }
@@ -555,7 +555,7 @@ class EvaluationPipeline
             if ($effective === null) {
                 $previousKey = $keysV1[$keyType] ?? null;
                 if ($previousKey && $previousKey !== $currentKey) {
-                    $block = $this->store->checkBlock($previousKey);
+                    $block = CallerTimeStore::checkBlock($this->store, $previousKey, $this->clock->now());
                     if ($block && $block->level >= 2 && $block->expiresAt > $now) {
                         $effective = $block;
                     }
@@ -872,11 +872,13 @@ class EvaluationPipeline
                 );
             }
 
-            $result = $this->correlationStore->addDistinctBoundedWithSnapshot(
+            $result = CallerTimeStore::addDistinctBoundedWithSnapshot(
+                $this->correlationStore,
                 $observation->currentKey,
                 $observation->currentMember,
                 $ttlSeconds,
                 $maxDistinct,
+                $this->clock->now(),
             );
 
             return BoundedCorrelationResultValidator::snapshot(
@@ -897,7 +899,8 @@ class EvaluationPipeline
             throw new RateLimiterException('Malformed bounded correlation snapshot rotation tuple.');
         }
 
-        $result = $this->correlationStore->addDistinctBoundedWithSnapshotAcrossRotation(
+        $result = CallerTimeStore::addDistinctBoundedWithSnapshotAcrossRotation(
+            $this->correlationStore,
             $observation->currentKey,
             $observation->bridgeKey,
             $observation->previousKey,
@@ -905,6 +908,7 @@ class EvaluationPipeline
             $observation->previousMember,
             $ttlSeconds,
             $maxDistinct,
+            $this->clock->now(),
         );
 
         return BoundedCorrelationResultValidator::snapshot(
@@ -1313,9 +1317,11 @@ class EvaluationPipeline
         }
 
         $windowId = (int) floor($this->clock->now()->getTimestamp() / 600);
-        $this->correlationStore->incrementWatchFlag(
+        CallerTimeStore::incrementWatchFlag(
+            $this->correlationStore,
             $this->correlationStateKey($policyName, 'dilution_confirmation', $dilution->currentKey . ':' . $windowId, $this->secret),
             1200,
+            $this->clock->now(),
         );
         $previousWindowId = $windowId - 1;
         $previousWindowCount = $this->correlationStore->getWatchFlag(
@@ -1389,11 +1395,13 @@ class EvaluationPipeline
                 );
             }
 
-            $result = $this->correlationStore->addDistinctBounded(
+            $result = CallerTimeStore::addDistinctBounded(
+                $this->correlationStore,
                 $observation->currentKey,
                 $observation->currentMember,
                 $ttlSeconds,
                 $maxDistinct,
+                $this->clock->now(),
             );
 
             return BoundedCorrelationResultValidator::count($result, $maxDistinct);
@@ -1408,7 +1416,8 @@ class EvaluationPipeline
             throw new RateLimiterException('Malformed bounded correlation observation rotation tuple.');
         }
 
-        $result = $this->correlationStore->addDistinctBoundedAcrossRotation(
+        $result = CallerTimeStore::addDistinctBoundedAcrossRotation(
+            $this->correlationStore,
             $observation->currentKey,
             $observation->bridgeKey,
             $observation->previousKey,
@@ -1416,6 +1425,7 @@ class EvaluationPipeline
             $observation->previousMember,
             $ttlSeconds,
             $maxDistinct,
+            $this->clock->now(),
         );
 
         return BoundedCorrelationResultValidator::count($result, $maxDistinct);
@@ -1427,7 +1437,7 @@ class EvaluationPipeline
         int $ttlSeconds,
     ): int {
         if ($previousKey === null || $previousKey === $currentKey) {
-            return $this->correlationStore->incrementWatchFlag($currentKey, $ttlSeconds);
+            return CallerTimeStore::incrementWatchFlag($this->correlationStore, $currentKey, $ttlSeconds, $this->clock->now());
         }
         if (! $this->correlationStore instanceof CorrelationRotationStoreInterface) {
             throw new RateLimiterException(
@@ -1435,7 +1445,7 @@ class EvaluationPipeline
             );
         }
 
-        return $this->correlationStore->incrementWatchFlagAcrossRotation($currentKey, $previousKey, $ttlSeconds);
+        return CallerTimeStore::incrementWatchFlagAcrossRotation($this->correlationStore, $currentKey, $previousKey, $ttlSeconds, $this->clock->now());
     }
 
     private function buildCorrelationObservation(
@@ -1672,7 +1682,7 @@ class EvaluationPipeline
             if ($last && ($this->clock->now()->getTimestamp() - $last->value) <= 1800) {
                 $deltas['k4'] += $k4Repeated;
             }
-            $this->store->set($key, $this->clock->now()->getTimestamp(), 3600);
+            CallerTimeStore::set($this->store, $key, $this->clock->now()->getTimestamp(), 3600, $this->clock->now());
         }
 
         $newMaxLevel = 0;
@@ -1707,11 +1717,11 @@ class EvaluationPipeline
                 if ($keyType === 'k4' && $policy instanceof PostPunishmentReentryPolicyInterface
                     && $this->store instanceof PunishmentLifecycleStoreInterface) {
                     for ($attempt = 0; $attempt < 3; $attempt++) {
-                        $expected = $this->store->readGenerationBoundScoreState($key, $keysV1[$keyType] ?? null);
+                        $expected = CallerTimeStore::readGenerationBoundScoreState($this->store, $key, $keysV1[$keyType] ?? null, $this->clock->now());
                         $observedValue = $expected === null ? $rawVal : $expected->value;
                         $observedAt = $expected === null ? $updatedAt : $expected->updatedAt;
                         $decayed = $this->calculateDecayedScore($observedValue, $observedAt, $keyType, $key, $keysV1[$keyType] ?? null);
-                        $mutation = $this->store->mutateGenerationBoundScore($key, $keysV1[$keyType] ?? null, $expected, 86400, (int) ($decayed + $delta));
+                        $mutation = CallerTimeStore::mutateGenerationBoundScore($this->store, $key, $keysV1[$keyType] ?? null, $expected, 86400, (int) ($decayed + $delta), $this->clock->now());
                         if ($mutation->applied) {
                             $newScore = $mutation->state?->value;
                             break;
@@ -1721,7 +1731,7 @@ class EvaluationPipeline
                         throw new RateLimitConcurrencyException('K4 generation mutation conflict budget exhausted.');
                     }
                 } else {
-                    $newScore = $this->store->increment($key, 86400, (int) $netChange);
+                    $newScore = CallerTimeStore::increment($this->store, $key, 86400, (int) $netChange, $this->clock->now());
                 }
                 if ($this->ignoresCollectiveKeyType($lane, $keyType)) {
                     // The collective score is written (the observation stays); no level,
@@ -1746,7 +1756,7 @@ class EvaluationPipeline
                     foreach ($this->normalizedWatchThresholds($thresholdsDto) as $thresh => $impliedLevel) {
                         if ($newScore == $thresh - 1) {
                             $wKey = "watch:{$key}";
-                            $flags = $this->correlationStore->incrementWatchFlag($wKey, 1800);
+                            $flags = CallerTimeStore::incrementWatchFlag($this->correlationStore, $wKey, 1800, $this->clock->now());
                             // If watched twice, upgrade level effectively
                             if ($flags >= 2) {
                                 if ($impliedLevel > $level) {
@@ -2103,7 +2113,8 @@ class EvaluationPipeline
                 $publicationLevel = $block['level'];
                 $publicationDuration = $block['duration'];
                 for ($attempt = 0; $attempt < 3; $attempt++) {
-                    $transition = $this->store->blockWithPunishmentLifecycleTracking(
+                    $transition = CallerTimeStore::blockWithPunishmentLifecycleTracking(
+                        $this->store,
                         $key,
                         $block['previousKey'],
                         $expectedGeneration,
@@ -2114,6 +2125,7 @@ class EvaluationPipeline
                         self::CYCLE_THRESHOLD,
                         self::DECAY_PAUSE_SECONDS,
                         self::PAUSE_HISTORY_RETENTION_SECONDS,
+                        $this->clock->now(),
                     );
                     if ($transition->applied) {
                         $applied = true;
@@ -2123,7 +2135,7 @@ class EvaluationPipeline
                     // A failed publication is a generation race, not a reason
                     // to replay the stale block tuple. Re-read the coherent
                     // lifecycle snapshot and recompute the current K4 level.
-                    $latest = $this->store->readGenerationBoundScoreState($key, $block['previousKey']);
+                    $latest = CallerTimeStore::readGenerationBoundScoreState($this->store, $key, $block['previousKey'], $this->clock->now());
                     if ($latest?->generation === null) {
                         break;
                     }
@@ -2167,7 +2179,7 @@ class EvaluationPipeline
                 continue;
             }
 
-            $this->store->block($key, $block['level'], $block['duration']);
+            CallerTimeStore::block($this->store, $key, $block['level'], $block['duration'], $this->clock->now());
         }
     }
 
@@ -2345,7 +2357,7 @@ class EvaluationPipeline
 
         // This is the issuance gate. It must stay atomic and must not be
         // replaced with get()+set().
-        $value = $this->store->increment($currentKey, $cooldownSeconds);
+        $value = CallerTimeStore::increment($this->store, $currentKey, $cooldownSeconds, 1, $this->clock->now());
         if ($value !== 1) {
             return ['issued' => false, 'retryAfter' => 0];
         }
@@ -2621,14 +2633,14 @@ class EvaluationPipeline
     private function resolveActiveBudgetState(?string $keyV2, ?string $keyV1): ?BudgetStateDTO
     {
         if ($keyV2 !== null) {
-            $current = $this->store->getBudget($keyV2);
+            $current = CallerTimeStore::getBudget($this->store, $keyV2, $this->clock->now());
             if ($current !== null) {
                 return $current;
             }
         }
 
         if ($keyV1 !== null) {
-            return $this->store->getBudget($keyV1);
+            return CallerTimeStore::getBudget($this->store, $keyV1, $this->clock->now());
         }
 
         return null;
@@ -2636,11 +2648,11 @@ class EvaluationPipeline
 
     private function resolveActiveBudgetKeyV2ThenV1(?string $keyV2, ?string $keyV1): ?string
     {
-        if ($keyV2 !== null && $this->store->getBudget($keyV2) !== null) {
+        if ($keyV2 !== null && CallerTimeStore::getBudget($this->store, $keyV2, $this->clock->now()) !== null) {
             return $keyV2;
         }
 
-        if ($keyV1 !== null && $this->store->getBudget($keyV1) !== null) {
+        if ($keyV1 !== null && CallerTimeStore::getBudget($this->store, $keyV1, $this->clock->now()) !== null) {
             return $keyV1;
         }
 
@@ -2662,13 +2674,13 @@ class EvaluationPipeline
      */
     private function incrementBudgetAcrossRotation(string $keyV2, ?string $keyV1, int $amount = 1): BudgetStateDTO
     {
-        $v2State = $this->store->getBudget($keyV2);
+        $v2State = CallerTimeStore::getBudget($this->store, $keyV2, $this->clock->now());
         if ($v2State !== null) {
-            return $this->store->incrementBudget($keyV2, self::BUDGET_EPOCH_SECONDS, $amount);
+            return CallerTimeStore::incrementBudget($this->store, $keyV2, self::BUDGET_EPOCH_SECONDS, $amount, $this->clock->now());
         }
 
         if ($keyV1 !== null) {
-            $v1State = $this->store->getBudget($keyV1);
+            $v1State = CallerTimeStore::getBudget($this->store, $keyV1, $this->clock->now());
             if ($v1State !== null) {
                 if (! $this->store instanceof BudgetSeedStoreInterface) {
                     throw new RateLimiterException(
@@ -2677,11 +2689,11 @@ class EvaluationPipeline
                     );
                 }
 
-                return $this->store->incrementBudgetWithSeed($keyV2, self::BUDGET_EPOCH_SECONDS, $v1State, $amount);
+                return CallerTimeStore::incrementBudgetWithSeed($this->store, $keyV2, self::BUDGET_EPOCH_SECONDS, $v1State, $amount, $this->clock->now());
             }
         }
 
-        return $this->store->incrementBudget($keyV2, self::BUDGET_EPOCH_SECONDS, $amount);
+        return CallerTimeStore::incrementBudget($this->store, $keyV2, self::BUDGET_EPOCH_SECONDS, $amount, $this->clock->now());
     }
 
     private function hasPreviousGeneration(DeviceIdentityDTO $device): bool
@@ -2736,14 +2748,14 @@ class EvaluationPipeline
 
     private function currentBlockLevel(string $key, ?string $previousKey = null): int
     {
-        $block = $this->store->checkBlock($key);
+        $block = CallerTimeStore::checkBlock($this->store, $key, $this->clock->now());
         $now = $this->clock->now()->getTimestamp();
         if ($block !== null && $block->expiresAt > $now) {
             return $block->level;
         }
 
         if ($previousKey !== null && $previousKey !== $key) {
-            $block = $this->store->checkBlock($previousKey);
+            $block = CallerTimeStore::checkBlock($this->store, $previousKey, $this->clock->now());
             if ($block !== null && $block->expiresAt > $now) {
                 return $block->level;
             }

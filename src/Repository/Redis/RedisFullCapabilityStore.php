@@ -25,20 +25,34 @@ use Maatify\RateLimiter\Enum\AdmissionOutcomeKindEnum;
 use Maatify\RateLimiter\Enum\AdmissionPermitClaimEnum;
 use Maatify\RateLimiter\Repository\AdmissionCapableFullStoreInterface;
 use Maatify\RateLimiter\Repository\AdmissionPermitStoreInterface;
+use Maatify\RateLimiter\Repository\CallerTimeBoundedCorrelationSnapshotRotationStoreInterface;
+use Maatify\RateLimiter\Repository\CallerTimeBudgetSeedStoreInterface;
+use Maatify\RateLimiter\Repository\CallerTimePunishmentLifecycleStoreInterface;
+use Maatify\SharedCommon\Contracts\ClockInterface;
+use Maatify\SharedCommon\Infrastructure\SystemClock;
+use DateTimeZone;
 
 /**
  * Official Redis-backed aggregate store.
  *
  * The Host supplies the raw-command executor. This adapter supports one
  * logical non-clustered Redis server and deliberately has no Redis-client
- * dependency. Redis-owned-time primitives use Redis server time, while
- * capabilities receiving caller-supplied semantic time preserve that value;
+ * dependency. Every timestamp it stores or compares is the caller's semantic
+ * time (#153 phase 2, DEC-016 rule 1): the caller-time methods receive it, and
+ * the existing methods without a time parameter use the store's own clock,
+ * never Redis `TIME`. Physical key lifetimes stay relative on the Redis clock;
+ * Redis judges every expiry and a rejected one leaves no state behind;
  * current-first/previous-read-only rotation semantics, and fail explicitly on
  * structurally malformed generated lifecycle state. The Host executor owns
  * operational failure classification; this adapter does not reinterpret
  * arbitrary throwables as backend outages.
  */
-final class RedisFullCapabilityStore implements AdmissionCapableFullStoreInterface, AdmissionPermitStoreInterface
+final class RedisFullCapabilityStore implements
+    AdmissionCapableFullStoreInterface,
+    AdmissionPermitStoreInterface,
+    CallerTimeBudgetSeedStoreInterface,
+    CallerTimeBoundedCorrelationSnapshotRotationStoreInterface,
+    CallerTimePunishmentLifecycleStoreInterface
 {
     private const PREFIX = 'maatify:rate-limiter:v1';
 
@@ -46,12 +60,17 @@ final class RedisFullCapabilityStore implements AdmissionCapableFullStoreInterfa
 
     private const LUA_EXACT_INTEGER_MAX = 9007199254740991;
 
+    /**
+     * #153 phase 2 (DEC-016 rule 1): the caller's semantic time is the last
+     * ARGV, a canonical non-negative Lua-exact integer (DEC-017). No script
+     * reads Redis `TIME`. Physical lifetimes stay relative (Redis clock);
+     * logical deadlines are the caller's `now` plus a TTL.
+     */
     private const LUA_TIME_PRELUDE = <<<'LUA'
-local redisTime = redis.call('TIME')
-local now = tonumber(redisTime[1])
-local nowStr = tostring(now)
-local nowMsStr = redisTime[1] .. string.format('%03d', math.floor(tonumber(redisTime[2]) / 1000))
-local nowMs = (now * 1000) + math.floor(tonumber(redisTime[2]) / 1000)
+local nowStr = ARGV[#ARGV]
+if nowStr == nil or string.match(nowStr, '^%d+$') == nil or (#nowStr > 1 and string.sub(nowStr, 1, 1) == '0') or #nowStr > 16 or (#nowStr == 16 and nowStr > '9007199254740991') then return redis.error_reply('caller time is not representable') end
+local now = tonumber(nowStr)
+local nowMsStr = nowStr == '0' and '0' or (nowStr .. '000')
 local function compareDecimalStrings(a, b)
   if #a ~= #b then return (#a < #b) and -1 or 1 end
   if a == b then return 0 end
@@ -89,11 +108,24 @@ local function subtractDecimalStrings(a, b)
   return result
 end
 -- Redis validates a relative EXPIRE / SET EX as `ttl * 1000 + command-time ms
--- <= 9223372036854775807`, in milliseconds. Both operands stay decimal strings
--- (never a Lua number), so a TTL above 2^53 is judged exactly.
+-- <= 9223372036854775807`, in milliseconds. This preflight judges it on the
+-- caller's time (cheap, no state touched); Redis stays the final judge through
+-- `expiryApplied()`. Both operands stay decimal strings, so a TTL above 2^53
+-- is judged exactly.
 local function ttlBackendRepresentable(rawTtl)
   if rawTtl == nil or string.match(rawTtl, '^[1-9]%d*$') == nil or string.len(rawTtl) > 16 then return false end
   return compareDecimalStrings(addDecimalStrings(rawTtl .. '000', nowMsStr), '9223372036854775807') <= 0
+end
+-- LT-P2-12: an expiry command is run through redis.pcall. When Redis rejects
+-- it, every key this call created is deleted (all or nothing) and the caller
+-- returns `expiry not representable`. Only EXPIRE / PEXPIRE are used as the
+-- judge: `SET ... EX` past Redis's bound replies OK and stores nothing.
+local function expiryApplied(reply, createdKeys)
+  if type(reply) == 'table' and reply.err then
+    for _, createdKey in ipairs(createdKeys) do redis.call('DEL', createdKey) end
+    return false
+  end
+  return true
 end
 LUA;
 
@@ -115,7 +147,7 @@ if exists == 0 then
   if not validPhpInteger(ARGV[2]) then return redis.error_reply('malformed score state') end
   if not ttlBackendRepresentable(ARGV[1]) then return redis.error_reply('score TTL exceeds Redis backend expiry representability') end
   redis.call('HSET', KEYS[1], 'value', ARGV[2], 'updatedAt', now)
-  redis.call('EXPIRE', KEYS[1], ARGV[1])
+  if not expiryApplied(redis.pcall('EXPIRE', KEYS[1], ARGV[1]), {KEYS[1]}) then return redis.error_reply('expiry not representable') end
   return {ARGV[2], now}
 end
 if redis.call('TTL', KEYS[1]) < 0 then return redis.error_reply('malformed score state') end
@@ -169,15 +201,24 @@ LUA;
 
     private const SCORE_SET = self::LUA_TIME_PRELUDE . "\n" . <<<'LUA'
 if not ttlBackendRepresentable(ARGV[1]) then return redis.error_reply('score TTL exceeds Redis backend expiry representability') end
-redis.call('HSET', KEYS[1], 'value', ARGV[2], 'updatedAt', now)
-redis.call('EXPIRE', KEYS[1], ARGV[1])
+if redis.call('EXISTS', KEYS[1]) == 1 then
+  if not expiryApplied(redis.pcall('EXPIRE', KEYS[1], ARGV[1]), {}) then return redis.error_reply('expiry not representable') end
+  redis.call('HSET', KEYS[1], 'value', ARGV[2], 'updatedAt', now)
+else
+  redis.call('HSET', KEYS[1], 'value', ARGV[2], 'updatedAt', now)
+  if not expiryApplied(redis.pcall('EXPIRE', KEYS[1], ARGV[1]), {KEYS[1]}) then return redis.error_reply('expiry not representable') end
+end
 return now
 LUA;
 
     private const LIFECYCLE_MUTATE = <<<'LUA'
-local redisTime = redis.call('TIME')
-local nowSeconds = tonumber(redisTime[1])
-local nowMs = (nowSeconds * 1000) + math.floor(tonumber(redisTime[2]) / 1000)
+-- #153 phase 2: the caller's time in milliseconds is the last ARGV, a
+-- canonical non-negative Lua-exact integer (DEC-016 rule 1, DEC-017).
+local nowMsStr = ARGV[#ARGV]
+if nowMsStr == nil or string.match(nowMsStr, '^%d+$') == nil or (#nowMsStr > 1 and string.sub(nowMsStr, 1, 1) == '0') or #nowMsStr > 16 or (#nowMsStr == 16 and nowMsStr > '9007199254740991') then return redis.error_reply('caller time is not representable') end
+local nowMs = tonumber(nowMsStr)
+local nowSeconds = math.floor(nowMs / 1000)
+local nowSecondsStr = tostring(nowSeconds)
 local exactIntegerMax = 9007199254740991
 local exactIntegerMaxTtlSeconds = '9007199254740'
 local function ttlMillisecondsRepresentable(rawTtl, baseMs)
@@ -224,26 +265,32 @@ local function compareDecimalStrings(a, b)
   if a == b then return 0 end
   return (a < b) and -1 or 1
 end
--- Physical PTTL-derived milliseconds (nowMs/physicalDeadlineMs) are, by
--- construction, always <= 2^53: Redis hands PTTL to Lua as a native
--- number (a real, provable RESP-Integer-to-Lua-number boundary, not a
--- narrowing this adapter introduces), and the generation-bound score's
--- own absolute deadline is capped at creation time (below) specifically
--- so every later PTTL read of it stays exact. `expiresAt * 1000`,
--- compared against such a bounded number, is therefore exact without
--- ever computing a lossy `tonumber()` on a huge string: once the
--- seconds-string is provably too large to keep `*1000` <= 2^53, the
--- comparison side is already decided.
-local function compareExpiryMsToBoundedNumber(expirySecondsStr, boundedMs)
-  if string.len(expirySecondsStr) > 13 or (string.len(expirySecondsStr) == 13 and expirySecondsStr > '9007199254740') then return 1 end
-  local ms = tonumber(expirySecondsStr) * 1000
-  if ms < boundedMs then return -1 elseif ms > boundedMs then return 1 else return 0 end
+-- LT-P2-02: the logical `expiresAt` alone decides expiry; `PTTL` only says
+-- whether a key is alive. Both are decimal strings here, so a 16+ digit
+-- expiry is compared and subtracted exactly.
+-- Requires a >= b, both canonical non-negative decimal strings.
+local function subtractDecimalStrings(a, b)
+  local ra, rb = a:reverse(), b:reverse()
+  local out, borrow = {}, 0
+  for i = 1, #ra do
+    local d = tonumber(ra:sub(i, i)) - borrow - (tonumber(rb:sub(i, i)) or 0)
+    if d < 0 then d = d + 10; borrow = 1 else borrow = 0 end
+    out[i] = tostring(d)
+  end
+  local rev = {}
+  for i = #out, 1, -1 do rev[#rev + 1] = out[i] end
+  local result = string.gsub(table.concat(rev), '^0+', '')
+  if result == '' then result = '0' end
+  return result
 end
-local function cappedExpiryMs(expirySecondsStr, capMs)
-  if string.len(expirySecondsStr) > 13 or (string.len(expirySecondsStr) == 13 and expirySecondsStr > '9007199254740') then return capMs end
-  local ms = tonumber(expirySecondsStr) * 1000
-  if ms > capMs then return capMs end
-  return ms
+-- LT-P2-12: Redis judges every expiry; on rejection the keys this call
+-- created are deleted (all or nothing).
+local function expiryApplied(reply, createdKeys)
+  if type(reply) == 'table' and reply.err then
+    for _, createdKey in ipairs(createdKeys) do redis.call('DEL', createdKey) end
+    return false
+  end
+  return true
 end
 local function incrementInteger(value)
   local digits = {}; for digit in string.gmatch(value, '%d') do digits[#digits + 1] = tonumber(digit) end
@@ -273,10 +320,9 @@ if source == '' then
   local rawTtl = ARGV[6]
   local ttl = tonumber(rawTtl); if ttl <= 0 then return redis.error_reply('invalid score TTL') end
   if not ttlMillisecondsRepresentable(rawTtl, nowMs) then return redis.error_reply('generation-bound score expiry exceeds Redis Lua exact integer range') end
-  local requestedDeadlineMs = nowMs + (ttl * 1000)
-  local expiry = math.floor((requestedDeadlineMs + 999) / 1000)
+  local expiry = math.floor((nowMs + (ttl * 1000) + 999) / 1000)
   redis.call('HSET', current, 'value', ARGV[7], 'updatedAt', nowSeconds, 'generation', 1, 'expiresAt', expiry)
-  redis.call('PEXPIREAT', current, requestedDeadlineMs)
+  if not expiryApplied(redis.pcall('EXPIRE', current, rawTtl), {current}) then return redis.error_reply('expiry not representable') end
   return {1, ARGV[7], nowSeconds, expiry, 1}
 end
 local observedGeneration = redis.call('HGET', source, 'generation')
@@ -288,7 +334,8 @@ end
 if not validPhpInteger(observedValue) or not validPhpInteger(ARGV[7]) or not validNonNegativeInteger(observedUpdated) then return redis.error_reply('malformed generation-bound score state') end
 local observedExpiry = redis.call('HGET', source, 'expiresAt')
 if observedGeneration then
-  if not validInteger(observedGeneration, false) then return redis.error_reply('malformed generation') end
+  -- LT-P2-11: the same positive-integer rule as READ, CLAIM and PUBLICATION.
+  if not validPositiveInteger(observedGeneration) then return redis.error_reply('malformed generation-bound score state') end
   if not observedExpiry then return redis.error_reply('malformed generation-bound score expiry') end
 end
 if observedExpiry then
@@ -305,9 +352,8 @@ if evidenceCount == 3 then
   if not validNonNegativeInteger(evidenceUntil) or evidenceUntil == '0' or not validInteger(evidenceGeneration, false) then return redis.error_reply('malformed lifecycle evidence') end
 end
 local effectiveObservedExpiry = observedExpiry
+-- A legacy score (no `expiresAt`) is mapped onto the caller's timeline by its remaining life.
 if not effectiveObservedExpiry then effectiveObservedExpiry = tostring(math.floor((nowMs + sourcePttl + 999) / 1000)) end
-local physicalDeadlineMs = nowMs + sourcePttl
-if observedGeneration and compareExpiryMsToBoundedNumber(effectiveObservedExpiry, physicalDeadlineMs) < 0 then return redis.error_reply('inconsistent generated score expiry') end
 if expectedSource == '' or expectedSource ~= source then return {0} end
 if observedValue ~= ARGV[2] or observedUpdated ~= ARGV[3] or effectiveObservedExpiry ~= ARGV[5] then return {0} end
 if ARGV[4] == '' then
@@ -316,26 +362,31 @@ elseif not observedGeneration or observedGeneration ~= ARGV[4] then return {0} e
 local requestedTtl = tonumber(ARGV[6]); if requestedTtl <= 0 then return redis.error_reply('invalid score TTL') end
 local generation = observedGeneration and incrementInteger(observedGeneration) or '1'
 if string.len(generation) > 19 or (string.len(generation) == 19 and generation > '9223372036854775807') then return redis.error_reply('generation integer overflow') end
-local expiry = observedExpiry
-if expiry then
-  if compareExpiryMsToBoundedNumber(expiry, nowMs) <= 0 then return {0} end
+local expiry = effectiveObservedExpiry
+local expiryMsStr = expiry .. '000'
+if compareDecimalStrings(expiryMsStr, nowMsStr) <= 0 then return {0} end
+-- The physical life stays relative: the logical remainder, never capped (LT-P2-02).
+local remaining = subtractDecimalStrings(expiryMsStr, nowMsStr)
+if redis.call('EXISTS', current) == 1 then
+  if not expiryApplied(redis.pcall('PEXPIRE', current, remaining), {}) then return redis.error_reply('expiry not representable') end
+  redis.call('HSET', current, 'value', ARGV[7], 'updatedAt', nowSeconds, 'generation', generation, 'expiresAt', expiry)
 else
-  expiry = tostring(math.floor((nowMs + sourcePttl + 999) / 1000))
+  redis.call('HSET', current, 'value', ARGV[7], 'updatedAt', nowSeconds, 'generation', generation, 'expiresAt', expiry)
+  if not expiryApplied(redis.pcall('PEXPIRE', current, remaining), {current}) then return redis.error_reply('expiry not representable') end
 end
-local destinationDeadlineMs = cappedExpiryMs(expiry, physicalDeadlineMs)
-if destinationDeadlineMs <= nowMs then return {0} end
-redis.call('HSET', current, 'value', ARGV[7], 'updatedAt', nowSeconds, 'generation', generation, 'expiresAt', expiry)
-redis.call('PEXPIREAT', current, destinationDeadlineMs)
 redis.call('HDEL', current, 'reentryId', 'reentryValidUntil', 'reentryGeneration')
 if KEYS[3] ~= '' then redis.call('DEL', KEYS[3]) end
 return {1, ARGV[7], nowSeconds, expiry, generation}
 LUA;
 
     private const LIFECYCLE_READ = <<<'LUA'
-local redisTime = redis.call('TIME')
-local nowSeconds = tonumber(redisTime[1])
+-- #153 phase 2: the caller's time in milliseconds is the last ARGV, a
+-- canonical non-negative Lua-exact integer (DEC-016 rule 1, DEC-017).
+local nowMsStr = ARGV[#ARGV]
+if nowMsStr == nil or string.match(nowMsStr, '^%d+$') == nil or (#nowMsStr > 1 and string.sub(nowMsStr, 1, 1) == '0') or #nowMsStr > 16 or (#nowMsStr == 16 and nowMsStr > '9007199254740991') then return redis.error_reply('caller time is not representable') end
+local nowMs = tonumber(nowMsStr)
+local nowSeconds = math.floor(nowMs / 1000)
 local nowSecondsStr = tostring(nowSeconds)
-local nowMs = (nowSeconds * 1000) + math.floor(tonumber(redisTime[2]) / 1000)
 local function validPositiveInteger(value)
   return value ~= nil and string.match(value, '^[1-9]%d*$') ~= nil and string.len(value) <= 19 and (string.len(value) < 19 or value <= '9223372036854775807')
 end
@@ -362,11 +413,6 @@ local function compareDecimalStrings(a, b)
   if a == b then return 0 end
   return (a < b) and -1 or 1
 end
-local function compareExpiryMsToBoundedNumber(expirySecondsStr, boundedMs)
-  if string.len(expirySecondsStr) > 13 or (string.len(expirySecondsStr) == 13 and expirySecondsStr > '9007199254740') then return 1 end
-  local ms = tonumber(expirySecondsStr) * 1000
-  if ms < boundedMs then return -1 elseif ms > boundedMs then return 1 else return 0 end
-end
 local source = KEYS[1]
 local currentPttl = redis.call('PTTL', source)
 if currentPttl == -1 then return redis.error_reply('malformed generation-bound score state') end
@@ -385,13 +431,14 @@ local expiry = redis.call('HGET', source, 'expiresAt')
 if generation == '' and not expiry then
   local pttl = redis.call('PTTL', source)
   if pttl <= 0 then return {} end
+  -- A legacy score (no `expiresAt`) is mapped onto the caller's timeline by its remaining life.
   expiry = tostring(math.floor((nowMs + pttl + 999) / 1000))
 end
 if not expiry or not validNonNegativeInteger(expiry) or expiry == '0' or compareDecimalStrings(expiry, updated) < 0 then return redis.error_reply('malformed generation-bound score expiry') end
 local sourcePttl = redis.call('PTTL', source)
 if sourcePttl <= 0 then return {} end
-if generation and compareExpiryMsToBoundedNumber(expiry, nowMs + sourcePttl) < 0 then return redis.error_reply('inconsistent generated score expiry') end
-if compareExpiryMsToBoundedNumber(expiry, nowMs) <= 0 then return {} end
+-- LT-P2-02: the logical deadline alone decides; PTTL only says the key is alive.
+if compareDecimalStrings(expiry .. '000', nowMsStr) <= 0 then return {} end
 local active = false
 for _, blockKey in ipairs({KEYS[3], KEYS[4]}) do
   if blockKey ~= '' and redis.call('EXISTS', blockKey) == 1 then
@@ -422,10 +469,13 @@ return {source == KEYS[1] and 1 or 2, value, updated, expiry, generation, eviden
 LUA;
 
     private const LIFECYCLE_CLAIM = <<<'LUA'
-local redisTime = redis.call('TIME')
-local nowSeconds = tonumber(redisTime[1])
+-- #153 phase 2: the caller's time in milliseconds is the last ARGV, a
+-- canonical non-negative Lua-exact integer (DEC-016 rule 1, DEC-017).
+local nowMsStr = ARGV[#ARGV]
+if nowMsStr == nil or string.match(nowMsStr, '^%d+$') == nil or (#nowMsStr > 1 and string.sub(nowMsStr, 1, 1) == '0') or #nowMsStr > 16 or (#nowMsStr == 16 and nowMsStr > '9007199254740991') then return redis.error_reply('caller time is not representable') end
+local nowMs = tonumber(nowMsStr)
+local nowSeconds = math.floor(nowMs / 1000)
 local nowSecondsStr = tostring(nowSeconds)
-local nowMs = (nowSeconds * 1000) + math.floor(tonumber(redisTime[2]) / 1000)
 local function validPositiveInteger(value)
   return value ~= nil and string.match(value, '^[1-9]%d*$') ~= nil and string.len(value) <= 19 and (string.len(value) < 19 or value <= '9223372036854775807')
 end
@@ -452,16 +502,20 @@ local function compareDecimalStrings(a, b)
   if a == b then return 0 end
   return (a < b) and -1 or 1
 end
-local function compareExpiryMsToBoundedNumber(expirySecondsStr, boundedMs)
-  if string.len(expirySecondsStr) > 13 or (string.len(expirySecondsStr) == 13 and expirySecondsStr > '9007199254740') then return 1 end
-  local ms = tonumber(expirySecondsStr) * 1000
-  if ms < boundedMs then return -1 elseif ms > boundedMs then return 1 else return 0 end
-end
-local function cappedExpiryMs(expirySecondsStr, capMs)
-  if string.len(expirySecondsStr) > 13 or (string.len(expirySecondsStr) == 13 and expirySecondsStr > '9007199254740') then return capMs end
-  local ms = tonumber(expirySecondsStr) * 1000
-  if ms > capMs then return capMs end
-  return ms
+-- Requires a >= b, both canonical non-negative decimal strings.
+local function subtractDecimalStrings(a, b)
+  local ra, rb = a:reverse(), b:reverse()
+  local out, borrow = {}, 0
+  for i = 1, #ra do
+    local d = tonumber(ra:sub(i, i)) - borrow - (tonumber(rb:sub(i, i)) or 0)
+    if d < 0 then d = d + 10; borrow = 1 else borrow = 0 end
+    out[i] = tostring(d)
+  end
+  local rev = {}
+  for i = #out, 1, -1 do rev[#rev + 1] = out[i] end
+  local result = string.gsub(table.concat(rev), '^0+', '')
+  if result == '' then result = '0' end
+  return result
 end
 for _, blockKey in ipairs({KEYS[3], KEYS[4]}) do
   if blockKey ~= '' then
@@ -498,8 +552,7 @@ if source ~= '' then
   if generation then
     if string.match(generation, '^[1-9]%d*$') == nil or string.len(generation) > 19 or (string.len(generation) == 19 and generation > '9223372036854775807') then return redis.error_reply('malformed generation') end
   end
-  local physicalDeadlineMs = nowMs + sourcePttl
-  if generation and compareExpiryMsToBoundedNumber(expiry, physicalDeadlineMs) < 0 then return redis.error_reply('inconsistent generated score expiry') end
+  -- LT-P2-02: the logical deadline alone decides; PTTL only says the key is alive.
   if expiry ~= nil and compareDecimalStrings(expiry, nowSecondsStr) <= 0 then return 0 end
   local evidenceCount = redis.call('HEXISTS', source, 'reentryId') + redis.call('HEXISTS', source, 'reentryValidUntil') + redis.call('HEXISTS', source, 'reentryGeneration')
   if evidenceCount ~= 0 and evidenceCount ~= 3 then return redis.error_reply('malformed lifecycle evidence') end
@@ -518,8 +571,9 @@ if source ~= '' then
       if marker == id then return 0 end
       return redis.error_reply('inconsistent lifecycle claim marker')
     end
-    local markerDeadlineMs = cappedExpiryMs(validUntil, physicalDeadlineMs)
-    if markerDeadlineMs <= nowMs then return 0 end
+    -- The marker lives for the evidence's logical remainder, relative and uncapped (LT-P2-02).
+    local markerRemaining = subtractDecimalStrings(validUntil .. '000', nowMsStr)
+    if markerRemaining == '0' then return 0 end
     local created = redis.call('SET', KEYS[5], id, 'NX')
     if not created then
       local existingPttl = redis.call('PTTL', KEYS[5])
@@ -531,7 +585,9 @@ if source ~= '' then
       end
       return 0
     end
-    redis.call('PEXPIREAT', KEYS[5], markerDeadlineMs)
+    -- Redis judges the expiry (LT-P2-12); a rejected one removes the marker this call created.
+    local reply = redis.pcall('PEXPIRE', KEYS[5], markerRemaining)
+    if type(reply) == 'table' and reply.err then redis.call('DEL', KEYS[5]); return redis.error_reply('expiry not representable') end
     return 1
   end
 end
@@ -539,10 +595,15 @@ return 0
 LUA;
 
     private const BLOCK_SET = self::LUA_TIME_PRELUDE . "\n" . <<<'LUA'
-if not ttlBackendRepresentable(ARGV[2], tostring(now)) then return redis.error_reply('block duration exceeds Redis backend expiry representability') end
-local expires = addDecimalStrings(tostring(now), ARGV[2])
-redis.call('HSET', KEYS[1], 'level', ARGV[1], 'expiresAt', expires)
-redis.call('EXPIRE', KEYS[1], ARGV[2])
+if not ttlBackendRepresentable(ARGV[2]) then return redis.error_reply('block duration exceeds Redis backend expiry representability') end
+local expires = addDecimalStrings(nowStr, ARGV[2])
+if redis.call('EXISTS', KEYS[1]) == 1 then
+  if not expiryApplied(redis.pcall('EXPIRE', KEYS[1], ARGV[2]), {}) then return redis.error_reply('expiry not representable') end
+  redis.call('HSET', KEYS[1], 'level', ARGV[1], 'expiresAt', expires)
+else
+  redis.call('HSET', KEYS[1], 'level', ARGV[1], 'expiresAt', expires)
+  if not expiryApplied(redis.pcall('EXPIRE', KEYS[1], ARGV[2]), {KEYS[1]}) then return redis.error_reply('expiry not representable') end
+end
 return expires
 LUA;
 
@@ -559,6 +620,7 @@ local function compareDecimalStrings(a, b)
   if a == b then return 0 end
   return (a < b) and -1 or 1
 end
+if ARGV[1] == nil or string.match(ARGV[1], '^%d+$') == nil or (#ARGV[1] > 1 and string.sub(ARGV[1], 1, 1) == '0') or #ARGV[1] > 16 or (#ARGV[1] == 16 and ARGV[1] > '9007199254740991') then return redis.error_reply('caller time is not representable') end
 if redis.call('EXISTS', KEYS[1]) == 0 then return {} end
 if redis.call('TTL', KEYS[1]) < 0 then return redis.error_reply('malformed block state') end
 local level = redis.call('HGET', KEYS[1], 'level')
@@ -566,7 +628,7 @@ local expires = redis.call('HGET', KEYS[1], 'expiresAt')
 if not level or not validBackendExpiry(expires) then return redis.error_reply('malformed block state') end
 level = tonumber(level)
 if not level or level ~= math.floor(level) or level < 1 or level > 6 then return redis.error_reply('malformed block state') end
-if compareDecimalStrings(expires, tostring(tonumber(redis.call('TIME')[1]))) <= 0 then
+if compareDecimalStrings(expires, ARGV[1]) <= 0 then
   redis.call('DEL', KEYS[1])
   return {}
 end
@@ -609,9 +671,12 @@ if exists == 1 and compareDecimalStrings(nowStr, storedEnd) < 0 then
 end
 if not requestedDuration or requestedDuration <= 0 or requestedDuration ~= math.floor(requestedDuration) then return redis.error_reply('malformed budget state') end
 if requestedDuration > exactIntegerMax - now then return redis.error_reply('budget expiry exceeds Redis Lua exact integer range') end
-if exists == 1 then redis.call('DEL', KEYS[1]) end
+if exists == 1 then
+  if not expiryApplied(redis.pcall('EXPIRE', KEYS[1], ARGV[1]), {}) then return redis.error_reply('expiry not representable') end
+  redis.call('DEL', KEYS[1])
+end
 redis.call('HSET', KEYS[1], 'count', ARGV[2], 'epochStart', now, 'epochDuration', ARGV[1])
-redis.call('EXPIRE', KEYS[1], ARGV[1])
+if not expiryApplied(redis.pcall('EXPIRE', KEYS[1], ARGV[1]), {KEYS[1]}) then return redis.error_reply('expiry not representable') end
 return {redis.call('HGET', KEYS[1], 'count'), now}
 LUA;
 
@@ -690,15 +755,21 @@ if compareDecimalStrings(nowStr, seedEnd) < 0 then
   if ARGV[6] == '1' then return redis.error_reply('seeded budget count overflow') end
   local remaining = subtractDecimalStrings(seedEnd, nowStr)
   if not ttlBackendRepresentable(remaining) then return redis.error_reply('seed expiry exceeds Redis backend expiry representability') end
-  if exists == 1 then redis.call('DEL', KEYS[1]) end
+  if exists == 1 then
+    if not expiryApplied(redis.pcall('EXPIRE', KEYS[1], remaining), {}) then return redis.error_reply('expiry not representable') end
+    redis.call('DEL', KEYS[1])
+  end
   redis.call('HSET', KEYS[1], 'count', ARGV[5], 'epochStart', ARGV[2], 'epochDuration', ARGV[1])
-  redis.call('EXPIRE', KEYS[1], remaining)
+  if not expiryApplied(redis.pcall('EXPIRE', KEYS[1], remaining), {KEYS[1]}) then return redis.error_reply('expiry not representable') end
   return {redis.call('HGET', KEYS[1], 'count'), ARGV[2]}
 end
 if epochDuration > exactIntegerMax - now then return redis.error_reply('budget expiry exceeds Redis Lua exact integer range') end
-if exists == 1 then redis.call('DEL', KEYS[1]) end
+if exists == 1 then
+  if not expiryApplied(redis.pcall('EXPIRE', KEYS[1], ARGV[1]), {}) then return redis.error_reply('expiry not representable') end
+  redis.call('DEL', KEYS[1])
+end
 redis.call('HSET', KEYS[1], 'count', ARGV[4], 'epochStart', now, 'epochDuration', ARGV[1])
-redis.call('EXPIRE', KEYS[1], ARGV[1])
+if not expiryApplied(redis.pcall('EXPIRE', KEYS[1], ARGV[1]), {KEYS[1]}) then return redis.error_reply('expiry not representable') end
 return {redis.call('HGET', KEYS[1], 'count'), now}
 LUA;
 
@@ -718,11 +789,16 @@ if exists == 1 and redis.call('SCARD', KEYS[1]) == 0 then return redis.error_rep
 if exists == 1 then
   local rawExpires = redis.call('HGET', KEYS[2], 'expiresAt')
   if not validBackendExpiry(rawExpires) then return redis.error_reply('malformed distinct metadata') end
-  if compareDecimalStrings(rawExpires, nowStr) <= 0 or redis.call('TTL', KEYS[2]) < 0 then return redis.error_reply('malformed distinct metadata') end
+  if redis.call('TTL', KEYS[2]) < 0 then return redis.error_reply('malformed distinct metadata') end
+  -- LT-P2-03: logically expired while physically present is expired, not malformed.
+  if compareDecimalStrings(rawExpires, nowStr) <= 0 then redis.call('DEL', KEYS[1], KEYS[2]); exists = 0 end
 end
 if exists == 0 then
   if not ttlBackendRepresentable(ARGV[1]) then return redis.error_reply('correlation TTL exceeds Redis backend expiry representability') end
-  redis.call('SADD', KEYS[1], ARGV[2]); redis.call('EXPIRE', KEYS[1], ARGV[1]); redis.call('HSET', KEYS[2], 'expiresAt', addDecimalStrings(nowStr, ARGV[1])); redis.call('EXPIRE', KEYS[2], ARGV[1])
+  redis.call('SADD', KEYS[1], ARGV[2])
+  if not expiryApplied(redis.pcall('EXPIRE', KEYS[1], ARGV[1]), {KEYS[1]}) then return redis.error_reply('expiry not representable') end
+  redis.call('HSET', KEYS[2], 'expiresAt', addDecimalStrings(nowStr, ARGV[1]))
+  if not expiryApplied(redis.pcall('EXPIRE', KEYS[2], ARGV[1]), {KEYS[1], KEYS[2]}) then return redis.error_reply('expiry not representable') end
 else redis.call('SADD', KEYS[1], ARGV[2]) end
 return redis.call('SCARD', KEYS[1])
 LUA;
@@ -742,12 +818,18 @@ if exists == 0 and metaExists == 1 then return redis.error_reply('malformed watc
 if exists == 1 then
   local rawExpires = redis.call('HGET', KEYS[2], 'expiresAt')
   if not validBackendExpiry(rawExpires) then return redis.error_reply('malformed watch metadata') end
-  if compareDecimalStrings(rawExpires, nowStr) <= 0 or redis.call('TTL', KEYS[2]) < 0 then return redis.error_reply('malformed watch metadata') end
+  if redis.call('TTL', KEYS[2]) < 0 then return redis.error_reply('malformed watch metadata') end
+  -- LT-P2-03: logically expired while physically present is expired, not malformed.
+  if compareDecimalStrings(rawExpires, nowStr) <= 0 then redis.call('DEL', KEYS[1], KEYS[2]); exists = 0 end
 end
 local value
 if exists == 0 then
   if not ttlBackendRepresentable(ARGV[1]) then return redis.error_reply('correlation TTL exceeds Redis backend expiry representability') end
-  value = 1; redis.call('SET', KEYS[1], value, 'EX', ARGV[1]); redis.call('HSET', KEYS[2], 'expiresAt', addDecimalStrings(nowStr, ARGV[1])); redis.call('EXPIRE', KEYS[2], ARGV[1])
+  value = 1
+  redis.call('SET', KEYS[1], value)
+  if not expiryApplied(redis.pcall('EXPIRE', KEYS[1], ARGV[1]), {KEYS[1]}) then return redis.error_reply('expiry not representable') end
+  redis.call('HSET', KEYS[2], 'expiresAt', addDecimalStrings(nowStr, ARGV[1]))
+  if not expiryApplied(redis.pcall('EXPIRE', KEYS[2], ARGV[1]), {KEYS[1], KEYS[2]}) then return redis.error_reply('expiry not representable') end
 else value = redis.call('INCR', KEYS[1]) end
 return value
 LUA;
@@ -778,7 +860,9 @@ if exists == 1 then
   local rawExpires = redis.call('HGET', KEYS[2], 'expiresAt')
   if not validBackendExpiry(rawExpires) then return redis.error_reply('malformed bounded metadata') end
   expires = rawExpires
-  if compareDecimalStrings(expires, nowStr) <= 0 or redis.call('TTL', KEYS[2]) < 0 then return redis.error_reply('malformed bounded metadata') end
+  if redis.call('TTL', KEYS[2]) < 0 then return redis.error_reply('malformed bounded metadata') end
+  -- LT-P2-03: logically expired while physically present is expired, not malformed.
+  if compareDecimalStrings(expires, nowStr) <= 0 then redis.call('DEL', KEYS[1], KEYS[2]); exists = 0; expires = nil end
 end
 local count = exists == 1 and redis.call('SCARD', KEYS[1]) or 0
 if count > tonumber(ARGV[3]) then return redis.error_reply('malformed bounded state') end
@@ -792,7 +876,10 @@ if count >= tonumber(ARGV[3]) then
 end
 if exists == 0 then
   if not ttlBackendRepresentable(ARGV[1]) then return redis.error_reply('correlation TTL exceeds Redis backend expiry representability') end
-  redis.call('SADD', KEYS[1], ARGV[2]); redis.call('EXPIRE', KEYS[1], ARGV[1]); redis.call('HSET', KEYS[2], 'expiresAt', addDecimalStrings(nowStr, ARGV[1])); redis.call('EXPIRE', KEYS[2], ARGV[1])
+  redis.call('SADD', KEYS[1], ARGV[2])
+  if not expiryApplied(redis.pcall('EXPIRE', KEYS[1], ARGV[1]), {KEYS[1]}) then return redis.error_reply('expiry not representable') end
+  redis.call('HSET', KEYS[2], 'expiresAt', addDecimalStrings(nowStr, ARGV[1]))
+  if not expiryApplied(redis.pcall('EXPIRE', KEYS[2], ARGV[1]), {KEYS[1], KEYS[2]}) then return redis.error_reply('expiry not representable') end
 else redis.call('SADD', KEYS[1], ARGV[2]) end
 local members = redis.call('SMEMBERS', KEYS[1]); table.sort(members)
 return {#members, 1, 1, exists == 0 and addDecimalStrings(nowStr, ARGV[1]) or expires, unpack(members)}
@@ -806,6 +893,10 @@ local function validBackendExpiry(value)
   if #value == 16 and value > '9223372036854775' then return false end
   return true
 end
+-- The bridge lifetime is derived in milliseconds: ARGV[6] is the caller's
+-- time in milliseconds, consistent with the seconds the prelude read.
+if ARGV[6] == nil or string.match(ARGV[6], '^%d+$') == nil or (#ARGV[6] > 1 and string.sub(ARGV[6], 1, 1) == '0') or #ARGV[6] > 19 or compareDecimalStrings(ARGV[6], nowMsStr) < 0 or compareDecimalStrings(subtractDecimalStrings(ARGV[6], nowMsStr), '999') > 0 then return redis.error_reply('caller time is not representable') end
+nowMsStr = ARGV[6]
 if not ttlBackendRepresentable(ARGV[2]) then return redis.error_reply('correlation TTL exceeds Redis backend expiry representability') end
 local alias = KEYS[1] == KEYS[5]
 local prevExists = redis.call('EXISTS', KEYS[5])
@@ -831,7 +922,9 @@ if prevExists == 0 then
     local rawCurrentExpiry = redis.call('HGET', KEYS[2], 'expiresAt')
     if not validBackendExpiry(rawCurrentExpiry) then return redis.error_reply('malformed current bounded state') end
     currentExpiry = rawCurrentExpiry
-    if compareDecimalStrings(currentExpiry, nowStr) <= 0 or redis.call('TTL', KEYS[2]) < 0 then return redis.error_reply('malformed current bounded state') end
+    if redis.call('TTL', KEYS[2]) < 0 then return redis.error_reply('malformed current bounded state') end
+    -- LT-P2-03: a logically expired current window is expired, not malformed.
+    if compareDecimalStrings(currentExpiry, nowStr) <= 0 then redis.call('DEL', KEYS[1], KEYS[2]); exists = 0; currentExpiry = nil end
   end
   local count = exists == 1 and redis.call('SCARD', KEYS[1]) or 0
   if count > tonumber(ARGV[5]) then return redis.error_reply('malformed bounded state') end
@@ -844,7 +937,12 @@ if prevExists == 0 then
     return {count, 0, 0, currentExpiry, unpack(members)}
   end
   local newExpiry = addDecimalStrings(nowStr, ARGV[2])
-  if exists == 0 then redis.call('SADD', KEYS[1], ARGV[3]); redis.call('EXPIRE', KEYS[1], ARGV[2]); redis.call('HSET', KEYS[2], 'expiresAt', newExpiry); redis.call('EXPIRE', KEYS[2], ARGV[2]) else redis.call('SADD', KEYS[1], ARGV[3]) end
+  if exists == 0 then
+    redis.call('SADD', KEYS[1], ARGV[3])
+    if not expiryApplied(redis.pcall('EXPIRE', KEYS[1], ARGV[2]), {KEYS[1]}) then return redis.error_reply('expiry not representable') end
+    redis.call('HSET', KEYS[2], 'expiresAt', newExpiry)
+    if not expiryApplied(redis.pcall('EXPIRE', KEYS[2], ARGV[2]), {KEYS[1], KEYS[2]}) then return redis.error_reply('expiry not representable') end
+  else redis.call('SADD', KEYS[1], ARGV[3]) end
   local members = redis.call('SMEMBERS', KEYS[1]); table.sort(members)
   return {#members, 1, 1, exists == 0 and newExpiry or currentExpiry, unpack(members)}
 end
@@ -871,15 +969,19 @@ if currentExists == 1 then
   local rawCurrentExpiry = redis.call('HGET', KEYS[2], 'expiresAt')
   if not validBackendExpiry(rawCurrentExpiry) then return redis.error_reply('malformed current bounded state') end
   currentExpiry = rawCurrentExpiry
-  if compareDecimalStrings(currentExpiry, nowStr) <= 0 or redis.call('TTL', KEYS[2]) < 0 then return redis.error_reply('malformed current bounded state') end
+  if redis.call('TTL', KEYS[2]) < 0 then return redis.error_reply('malformed current bounded state') end
 end
 local bridgeExpiry = nil
 if bridgeExists == 1 then
   local rawBridgeExpiry = redis.call('HGET', KEYS[4], 'expiresAt')
   if not validBackendExpiry(rawBridgeExpiry) then return redis.error_reply('malformed bridge state') end
   bridgeExpiry = rawBridgeExpiry
-  if compareDecimalStrings(bridgeExpiry, nowStr) <= 0 or redis.call('TTL', KEYS[4]) < 0 or compareDecimalStrings(bridgeExpiry, prevExpiry) > 0 then return redis.error_reply('malformed bridge state') end
+  if redis.call('TTL', KEYS[4]) < 0 or compareDecimalStrings(bridgeExpiry, prevExpiry) > 0 then return redis.error_reply('malformed bridge state') end
 end
+-- LT-P2-03: a logically expired current window or bridge is expired, not
+-- malformed. Both are writable state; the previous generation stays read-only.
+if currentExists == 1 and compareDecimalStrings(currentExpiry, nowStr) <= 0 then redis.call('DEL', KEYS[1], KEYS[2]); currentExists = 0; currentExpiry = nil end
+if bridgeExists == 1 and compareDecimalStrings(bridgeExpiry, nowStr) <= 0 then redis.call('DEL', KEYS[3], KEYS[4]); bridgeExists = 0; bridgeExpiry = nil end
 local bridge = bridgeExists == 1 and redis.call('SMEMBERS', KEYS[3]) or {}
 table.sort(bridge)
 local members = {}
@@ -892,16 +994,18 @@ local previousKnown = false
 for _, member in ipairs(previous) do if member == ARGV[4] then previousKnown = true end end
 local known = bridgeKnown or previousKnown
 local added = false
+local created = {}
 local function ensureCurrent()
   if currentExists == 0 then
-    redis.call('SADD', KEYS[1], ARGV[3])
-    redis.call('EXPIRE', KEYS[1], ARGV[2])
-    redis.call('HSET', KEYS[2], 'expiresAt', addDecimalStrings(nowStr, ARGV[2]))
-    redis.call('EXPIRE', KEYS[2], ARGV[2])
+    redis.call('SADD', KEYS[1], ARGV[3]); created[#created + 1] = KEYS[1]
+    if not expiryApplied(redis.pcall('EXPIRE', KEYS[1], ARGV[2]), created) then return false end
+    redis.call('HSET', KEYS[2], 'expiresAt', addDecimalStrings(nowStr, ARGV[2])); created[#created + 1] = KEYS[2]
+    if not expiryApplied(redis.pcall('EXPIRE', KEYS[2], ARGV[2]), created) then return false end
     currentExists = 1
   else
     redis.call('SADD', KEYS[1], ARGV[3])
   end
+  return true
 end
 -- The bridge's physical lifetime is min(Previous PTTL, Previous-metadata
 -- PTTL, Previous authoritative remaining ms, requested ms), never rounded
@@ -938,17 +1042,18 @@ end
 local function ensureBridge(bridgePttl)
   if bridgeExists == 0 then
     bridgeExpiry = prevExpiry
-    redis.call('SADD', KEYS[3], ARGV[3])
-    redis.call('PEXPIRE', KEYS[3], bridgePttl)
-    redis.call('HSET', KEYS[4], 'expiresAt', bridgeExpiry)
-    redis.call('PEXPIRE', KEYS[4], bridgePttl)
+    redis.call('SADD', KEYS[3], ARGV[3]); created[#created + 1] = KEYS[3]
+    if not expiryApplied(redis.pcall('PEXPIRE', KEYS[3], bridgePttl), created) then return false end
+    redis.call('HSET', KEYS[4], 'expiresAt', bridgeExpiry); created[#created + 1] = KEYS[4]
+    if not expiryApplied(redis.pcall('PEXPIRE', KEYS[4], bridgePttl), created) then return false end
     bridgeExists = 1
   else
     redis.call('SADD', KEYS[3], ARGV[3])
   end
+  return true
 end
 if known then
-  ensureCurrent()
+  if not ensureCurrent() then return redis.error_reply('expiry not representable') end
 elseif #members < tonumber(ARGV[5]) then
   local bridgePttl = nil
   if bridgeExists == 0 then
@@ -956,8 +1061,7 @@ elseif #members < tonumber(ARGV[5]) then
     bridgePttl, planError = planBridgePttl()
     if bridgePttl == nil then return redis.error_reply(planError) end
   end
-  ensureCurrent()
-  ensureBridge(bridgePttl)
+  if not ensureCurrent() or not ensureBridge(bridgePttl) then return redis.error_reply('expiry not representable') end
   added = true
   members[#members + 1] = ARGV[3]
 end
@@ -975,14 +1079,19 @@ if current then
   if compareDecimalStrings(current, ARGV[1]) > 0 then return 0 end
 end
 if not ttlBackendRepresentable(ARGV[2]) then return redis.error_reply('probe lease duration exceeds Redis backend expiry representability') end
-redis.call('SET', KEYS[1], addDecimalStrings(ARGV[1], ARGV[2]), 'EX', ARGV[2])
+if current then
+  if not expiryApplied(redis.pcall('EXPIRE', KEYS[1], ARGV[2]), {}) then return redis.error_reply('expiry not representable') end
+  redis.call('SET', KEYS[1], addDecimalStrings(ARGV[1], ARGV[2]), 'KEEPTTL')
+else
+  redis.call('SET', KEYS[1], addDecimalStrings(ARGV[1], ARGV[2]))
+  if not expiryApplied(redis.pcall('EXPIRE', KEYS[1], ARGV[2]), {KEYS[1]}) then return redis.error_reply('expiry not representable') end
+end
 return 1
 LUA;
 
     private const HARD_BLOCK = <<<'LUA'
 local lifecycleGeneration = ARGV[10] or ''
 local lifecycleId = ARGV[11] or ''
-local lifecycleTime = redis.call('TIME')
 local function validPositiveInteger(value)
   return value ~= nil and string.match(value, '^[1-9]%d*$') ~= nil and string.len(value) <= 19 and (string.len(value) < 19 or value <= '9223372036854775807')
 end
@@ -1019,11 +1128,6 @@ local function compareDecimalStrings(a, b)
   if a == b then return 0 end
   return (a < b) and -1 or 1
 end
-local function compareExpiryMsToBoundedNumber(expirySecondsStr, boundedMs)
-  if string.len(expirySecondsStr) > 13 or (string.len(expirySecondsStr) == 13 and expirySecondsStr > '9007199254740') then return 1 end
-  local ms = tonumber(expirySecondsStr) * 1000
-  if ms < boundedMs then return -1 elseif ms > boundedMs then return 1 else return 0 end
-end
 if not validExactPositiveInteger(ARGV[2]) then return redis.error_reply('hard-block expiry is not representable') end
 if not validExactPositiveInteger(ARGV[6]) then return redis.error_reply('cycle boundary is not representable') end
 if not validExactPositiveInteger(ARGV[8]) then return redis.error_reply('pause boundary is not representable') end
@@ -1032,14 +1136,10 @@ local durationSeconds = tonumber(ARGV[2])
 local cycleWindow = tonumber(ARGV[6])
 local pauseSeconds = tonumber(ARGV[8])
 local retention = tonumber(ARGV[9])
-local now
-if lifecycleGeneration ~= '' then
-  now = tonumber(lifecycleTime[1])
-else
-  if not validExactNonNegativeInteger(ARGV[5]) then return redis.error_reply('hard-block caller time is not representable') end
-  now = tonumber(ARGV[5])
-end
-local nowMs = lifecycleGeneration ~= '' and ((tonumber(lifecycleTime[1]) * 1000) + math.floor(tonumber(lifecycleTime[2]) / 1000)) or (now * 1000)
+-- #153 phase 2: both the cycle path and the lifecycle path take the caller's
+-- semantic time from ARGV[5] (DEC-016 rule 1); no Redis TIME.
+if not validExactNonNegativeInteger(ARGV[5]) then return redis.error_reply('hard-block caller time is not representable') end
+local now = tonumber(ARGV[5])
 if now > exactIntegerMax - durationSeconds then return redis.error_reply('hard-block expiry is not representable') end
 if now < -exactIntegerMax + cycleWindow then return redis.error_reply('cycle boundary is not representable') end
 if now < -exactIntegerMax + retention then return redis.error_reply('pause retention boundary is not representable') end
@@ -1076,7 +1176,6 @@ if lifecycleGeneration ~= '' then
           if not previousEvidenceId or string.len(previousEvidenceId) ~= 32 or string.match(previousEvidenceId, '^[a-f0-9]+$') == nil then return redis.error_reply('malformed lifecycle previous evidence id') end
           if not validNonNegativeInteger(previousEvidenceUntil) or previousEvidenceUntil == '0' or not validPositiveInteger(previousEvidenceGeneration) then return redis.error_reply('malformed lifecycle previous evidence') end
         end
-        if previousGeneration and compareExpiryMsToBoundedNumber(previousExpiry, nowMs + previousScorePttl) < 0 then return redis.error_reply('inconsistent lifecycle previous score expiry') end
       end
     end
     -- Current is absent; a structurally valid Previous is historical/read-only,
@@ -1088,9 +1187,9 @@ if lifecycleGeneration ~= '' then
   if not generation or not value or not updated or not scoreExpiry then return redis.error_reply('malformed lifecycle score state') end
   if not validPositiveInteger(generation) then return redis.error_reply('malformed lifecycle score generation') end
   if not validPhpInteger(value) or not validNonNegativeInteger(updated) or not validNonNegativeInteger(scoreExpiry) or scoreExpiry == '0' or compareDecimalStrings(scoreExpiry, updated) < 0 then return redis.error_reply('malformed lifecycle score state') end
-  if compareExpiryMsToBoundedNumber(scoreExpiry, nowMs + scorePttl) < 0 then return redis.error_reply('inconsistent lifecycle score expiry') end
   if generation ~= lifecycleGeneration then return {0} end
-  if compareExpiryMsToBoundedNumber(scoreExpiry, nowMs) <= 0 then return {0} end
+  -- LT-P2-02: the logical deadline alone decides; PTTL only says the score is alive.
+  if compareDecimalStrings(scoreExpiry, ARGV[5]) <= 0 then return {0} end
   if lifecycleId == '' or string.len(lifecycleId) ~= 32 then return redis.error_reply('malformed lifecycle id') end
   local evidenceCount = redis.call('HEXISTS', scoreKey, 'reentryId') + redis.call('HEXISTS', scoreKey, 'reentryValidUntil') + redis.call('HEXISTS', scoreKey, 'reentryGeneration')
   if evidenceCount ~= 0 and evidenceCount ~= 3 then return redis.error_reply('malformed lifecycle evidence') end
@@ -1100,11 +1199,18 @@ if lifecycleGeneration ~= '' then
     if not validNonNegativeInteger(evidenceUntil) or evidenceUntil == '0' or not validPositiveInteger(evidenceGeneration) then return redis.error_reply('malformed lifecycle evidence') end
   end
 end
+-- `needed` is at most the cycle window or the pause plus its retention, so
+-- Redis cannot reject it once `now` passed the exact-range checks above; the
+-- pcall keeps Redis the judge all the same (LT-P2-12).
 local function extendUntil(key, target)
-  if key == '' or redis.call('EXISTS', key) == 0 then return end
+  if key == '' or redis.call('EXISTS', key) == 0 then return true end
   local ttl = redis.call('TTL', key)
   local needed = math.max(1, target - now)
-  if ttl < needed then redis.call('EXPIRE', key, needed) end
+  if ttl < needed then
+    local reply = redis.pcall('EXPIRE', key, needed)
+    if type(reply) == 'table' and reply.err then return false end
+  end
+  return true
 end
 
 -- Phase A: validate every existing structure and compute merged state without writes.
@@ -1175,6 +1281,19 @@ end
 if #pauseMembers > 0 and latestPauseUntil > exactIntegerMax - retention then return redis.error_reply('pause retention boundary is not representable') end
 
 -- Phase B is complete. Phase C contains writes only and uses prevalidated values.
+-- The block is written first, so Redis judges its expiry (LT-P2-12) before any
+-- other state changes: an existing block takes the expiry before its fields
+-- change; a new block is deleted again when Redis rejects it.
+local expires = now + durationSeconds
+if redis.call('EXISTS', KEYS[3]) == 1 then
+  local reply = redis.pcall('EXPIRE', KEYS[3], ARGV[2])
+  if type(reply) == 'table' and reply.err then return redis.error_reply('expiry not representable') end
+  redis.call('HSET', KEYS[3], 'level', ARGV[1], 'expiresAt', expires)
+else
+  redis.call('HSET', KEYS[3], 'level', ARGV[1], 'expiresAt', expires)
+  local reply = redis.pcall('EXPIRE', KEYS[3], ARGV[2])
+  if type(reply) == 'table' and reply.err then redis.call('DEL', KEYS[3]); return redis.error_reply('expiry not representable') end
+end
 for _, member in ipairs(cycleMembers) do redis.call('ZADD', KEYS[1], cyclesByMember[member], member) end
 redis.call('ZREMRANGEBYSCORE', KEYS[1], '-inf', '(' .. (now - cycleWindow))
 if redis.call('EXISTS', KEYS[5]) == 1 then
@@ -1183,10 +1302,8 @@ if redis.call('EXISTS', KEYS[5]) == 1 then
   end
 end
 for _, member in ipairs(pauseMembers) do redis.call('ZADD', KEYS[5], pausesByMember[member][1], member) end
-if #pauseMembers > 0 then extendUntil(KEYS[5], latestPauseUntil + retention) end
-if cycleCount > 0 then extendUntil(KEYS[1], latestCycle + cycleWindow) end
-local expires = now + durationSeconds
-redis.call('HSET', KEYS[3], 'level', ARGV[1], 'expiresAt', expires); redis.call('EXPIRE', KEYS[3], ARGV[2])
+if #pauseMembers > 0 and not extendUntil(KEYS[5], latestPauseUntil + retention) then return redis.error_reply('expiry not representable') end
+if cycleCount > 0 and not extendUntil(KEYS[1], latestCycle + cycleWindow) then return redis.error_reply('expiry not representable') end
 if lifecycleGeneration ~= '' then
   local scoreKey = KEYS[7]
   local storedId = redis.call('HGET', scoreKey, 'reentryId')
@@ -1248,25 +1365,39 @@ if mergedStart ~= nil then elapsed = elapsed + mergedEnd - mergedStart end
 return {elapsed, active}
 LUA;
 
+    private readonly ClockInterface $fallbackClock;
+
     /**
      * The Host supplies the raw-command executor; this adapter owns the
      * namespace used for its keys. The namespace must match
      * [A-Za-z0-9._:-]{1,128}; an invalid namespace throws
      * RateLimiterException before the store can be used.
+     *
+     * The optional clock serves only the methods that receive no caller time
+     * (a direct Host call of an existing contract method): it defaults to
+     * `SystemClock(UTC)`, never Redis `TIME` (#153 phase 2, LT-P2-06). The
+     * runtime always passes its own `now` through the caller-time methods.
      */
     public function __construct(
         private readonly RedisCommandExecutorInterface $redis,
         private readonly string $namespace,
+        ?ClockInterface $clock = null,
     ) {
         if (! preg_match('/\A[A-Za-z0-9._:-]{1,128}\z/D', $namespace)) {
             throw new RateLimiterException('Redis namespace contains invalid characters or length.');
         }
+        $this->fallbackClock = $clock ?? new SystemClock(new DateTimeZone('UTC'));
     }
 
     public function increment(string $key, int $ttlSeconds, int $amount = 1): int
     {
+        return $this->incrementAt($key, $ttlSeconds, $amount, $this->fallbackNow());
+    }
+
+    public function incrementAt(string $key, int $ttlSeconds, int $amount, int $now): int
+    {
         $this->positive($ttlSeconds, 'Score TTL');
-        $result = $this->eval(self::SCORE_INCREMENT, [$this->key('score', $key)], [$ttlSeconds, $amount]);
+        $result = $this->eval(self::SCORE_INCREMENT, [$this->key('score', $key)], [$ttlSeconds, $amount, $this->callerTime($now)]);
         return $this->integerValue($this->tuple($result, 2, 'score increment')[0], 'score value');
     }
 
@@ -1285,20 +1416,35 @@ LUA;
 
     public function set(string $key, int $value, int $ttlSeconds): void
     {
+        $this->setAt($key, $value, $ttlSeconds, $this->fallbackNow());
+    }
+
+    public function setAt(string $key, int $value, int $ttlSeconds, int $now): void
+    {
         $this->positive($ttlSeconds, 'Score TTL');
-        $this->eval(self::SCORE_SET, [$this->key('score', $key)], [$ttlSeconds, $value]);
+        $this->eval(self::SCORE_SET, [$this->key('score', $key)], [$ttlSeconds, $value, $this->callerTime($now)]);
     }
 
     public function block(string $key, int $level, int $durationSeconds): void
     {
+        $this->blockAt($key, $level, $durationSeconds, $this->fallbackNow());
+    }
+
+    public function blockAt(string $key, int $level, int $durationSeconds, int $now): void
+    {
         $this->positive($durationSeconds, 'Block duration');
         $this->validateBaseBlockLevel($level);
-        $this->eval(self::BLOCK_SET, [$this->key('block', $key)], [$level, $durationSeconds]);
+        $this->eval(self::BLOCK_SET, [$this->key('block', $key)], [$level, $durationSeconds, $this->callerTime($now)]);
     }
 
     public function checkBlock(string $key): ?BlockStateDTO
     {
-        $result = $this->eval(self::BLOCK_GET, [$this->key('block', $key)], []);
+        return $this->checkBlockAt($key, $this->fallbackNow());
+    }
+
+    public function checkBlockAt(string $key, int $now): ?BlockStateDTO
+    {
+        $result = $this->eval(self::BLOCK_GET, [$this->key('block', $key)], [$this->callerTime($now)]);
         if ($result === []) {
             return null;
         }
@@ -1311,7 +1457,12 @@ LUA;
 
     public function getBudget(string $key): ?BudgetStateDTO
     {
-        $result = $this->eval(self::BUDGET_GET, [$this->key('budget', $key)], []);
+        return $this->getBudgetAt($key, $this->fallbackNow());
+    }
+
+    public function getBudgetAt(string $key, int $now): ?BudgetStateDTO
+    {
+        $result = $this->eval(self::BUDGET_GET, [$this->key('budget', $key)], [$this->callerTime($now)]);
         if ($result === []) {
             return null;
         }
@@ -1324,8 +1475,13 @@ LUA;
 
     public function incrementBudget(string $key, int $epochDurationSeconds, int $amount = 1): BudgetStateDTO
     {
+        return $this->incrementBudgetAt($key, $epochDurationSeconds, $amount, $this->fallbackNow());
+    }
+
+    public function incrementBudgetAt(string $key, int $epochDurationSeconds, int $amount, int $now): BudgetStateDTO
+    {
         $this->positive($epochDurationSeconds, 'Budget epoch duration');
-        $result = $this->eval(self::BUDGET_INCREMENT, [$this->key('budget', $key)], [$epochDurationSeconds, $amount]);
+        $result = $this->eval(self::BUDGET_INCREMENT, [$this->key('budget', $key)], [$epochDurationSeconds, $amount, $this->callerTime($now)]);
         $tuple = $this->tuple($result, 2, 'budget increment');
         return new BudgetStateDTO(
             $this->integerValue($tuple[0], 'budget count'),
@@ -1335,9 +1491,14 @@ LUA;
 
     public function incrementBudgetWithSeed(string $key, int $epochDurationSeconds, BudgetStateDTO $seed, int $amount = 1): BudgetStateDTO
     {
+        return $this->incrementBudgetWithSeedAt($key, $epochDurationSeconds, $seed, $amount, $this->fallbackNow());
+    }
+
+    public function incrementBudgetWithSeedAt(string $key, int $epochDurationSeconds, BudgetStateDTO $seed, int $amount, int $now): BudgetStateDTO
+    {
         $this->positive($epochDurationSeconds, 'Budget epoch duration');
         $seededCount = $this->tryIntegerAddition($seed->count, $amount);
-        $result = $this->eval(self::BUDGET_SEED, [$this->key('budget', $key)], [$epochDurationSeconds, $seed->epochStart, $seed->count, $amount, $seededCount ?? 0, $seededCount === null ? 1 : 0]);
+        $result = $this->eval(self::BUDGET_SEED, [$this->key('budget', $key)], [$epochDurationSeconds, $seed->epochStart, $seed->count, $amount, $seededCount ?? 0, $seededCount === null ? 1 : 0, $this->callerTime($now)]);
         $tuple = $this->tuple($result, 2, 'seeded budget');
         return new BudgetStateDTO(
             $this->integerValue($tuple[0], 'budget count'),
@@ -1347,14 +1508,24 @@ LUA;
 
     public function addDistinct(string $key, string $item, int $ttlSeconds): int
     {
+        return $this->addDistinctAt($key, $item, $ttlSeconds, $this->fallbackNow());
+    }
+
+    public function addDistinctAt(string $key, string $item, int $ttlSeconds, int $now): int
+    {
         $this->positive($ttlSeconds, 'Correlation TTL');
-        return $this->integerResult($this->eval(self::DISTINCT_ADD, [$this->key('distinct', $key), $this->key('distinct-meta', $key)], [$ttlSeconds, $item]), 'distinct count');
+        return $this->integerResult($this->eval(self::DISTINCT_ADD, [$this->key('distinct', $key), $this->key('distinct-meta', $key)], [$ttlSeconds, $item, $this->callerTime($now)]), 'distinct count');
     }
 
     public function incrementWatchFlag(string $key, int $ttlSeconds): int
     {
+        return $this->incrementWatchFlagAt($key, $ttlSeconds, $this->fallbackNow());
+    }
+
+    public function incrementWatchFlagAt(string $key, int $ttlSeconds, int $now): int
+    {
         $this->positive($ttlSeconds, 'Correlation TTL');
-        return $this->integerResult($this->eval(self::WATCH_INCREMENT, [$this->key('watch', $key), $this->key('watch-meta', $key)], [$ttlSeconds]), 'watch count');
+        return $this->integerResult($this->eval(self::WATCH_INCREMENT, [$this->key('watch', $key), $this->key('watch-meta', $key)], [$ttlSeconds, $this->callerTime($now)]), 'watch count');
     }
 
     public function getWatchFlag(string $key): int
@@ -1364,40 +1535,71 @@ LUA;
 
     public function addDistinctBounded(string $key, string $item, int $ttlSeconds, int $maxDistinct): BoundedDistinctResultDTO
     {
-        $snapshot = $this->addDistinctBoundedWithSnapshot($key, $item, $ttlSeconds, $maxDistinct);
+        return $this->addDistinctBoundedAt($key, $item, $ttlSeconds, $maxDistinct, $this->fallbackNow());
+    }
+
+    public function addDistinctBoundedAt(string $key, string $item, int $ttlSeconds, int $maxDistinct, int $now): BoundedDistinctResultDTO
+    {
+        $snapshot = $this->addDistinctBoundedWithSnapshotAt($key, $item, $ttlSeconds, $maxDistinct, $now);
         return new BoundedDistinctResultDTO($snapshot->count, $snapshot->accepted);
     }
 
     public function addDistinctBoundedWithSnapshot(string $key, string $item, int $ttlSeconds, int $maxDistinct): BoundedDistinctSnapshotDTO
     {
+        return $this->addDistinctBoundedWithSnapshotAt($key, $item, $ttlSeconds, $maxDistinct, $this->fallbackNow());
+    }
+
+    public function addDistinctBoundedWithSnapshotAt(string $key, string $item, int $ttlSeconds, int $maxDistinct, int $now): BoundedDistinctSnapshotDTO
+    {
         $this->positive($ttlSeconds, 'Correlation TTL');
         $this->positive($maxDistinct, 'Correlation capacity');
-        $result = $this->eval(self::BOUNDED_SNAPSHOT, [$this->key('distinct', $key), $this->key('distinct-meta', $key)], [$ttlSeconds, $item, $maxDistinct]);
+        $result = $this->eval(self::BOUNDED_SNAPSHOT, [$this->key('distinct', $key), $this->key('distinct-meta', $key)], [$ttlSeconds, $item, $maxDistinct, $this->callerTime($now)]);
         return $this->snapshot($result, $item, 'bounded snapshot');
     }
 
     public function addDistinctAcrossRotation(string $currentKey, string $bridgeKey, string $previousKey, string $currentMember, string $previousMember, int $ttlSeconds): int
     {
-        $snapshot = $this->addDistinctBoundedWithSnapshotAcrossRotation($currentKey, $bridgeKey, $previousKey, $currentMember, $previousMember, $ttlSeconds, PHP_INT_MAX);
+        return $this->addDistinctAcrossRotationAt($currentKey, $bridgeKey, $previousKey, $currentMember, $previousMember, $ttlSeconds, $this->fallbackNowMilliseconds());
+    }
+
+    public function addDistinctAcrossRotationAt(string $currentKey, string $bridgeKey, string $previousKey, string $currentMember, string $previousMember, int $ttlSeconds, int $nowMilliseconds): int
+    {
+        $snapshot = $this->addDistinctBoundedWithSnapshotAcrossRotationAt($currentKey, $bridgeKey, $previousKey, $currentMember, $previousMember, $ttlSeconds, PHP_INT_MAX, $nowMilliseconds);
         return $snapshot->count;
     }
 
     public function addDistinctBoundedAcrossRotation(string $currentKey, string $bridgeKey, string $previousKey, string $currentMember, string $previousMember, int $ttlSeconds, int $maxDistinct): BoundedDistinctResultDTO
     {
-        $snapshot = $this->addDistinctBoundedWithSnapshotAcrossRotation($currentKey, $bridgeKey, $previousKey, $currentMember, $previousMember, $ttlSeconds, $maxDistinct);
+        return $this->addDistinctBoundedAcrossRotationAt($currentKey, $bridgeKey, $previousKey, $currentMember, $previousMember, $ttlSeconds, $maxDistinct, $this->fallbackNowMilliseconds());
+    }
+
+    public function addDistinctBoundedAcrossRotationAt(string $currentKey, string $bridgeKey, string $previousKey, string $currentMember, string $previousMember, int $ttlSeconds, int $maxDistinct, int $nowMilliseconds): BoundedDistinctResultDTO
+    {
+        $snapshot = $this->addDistinctBoundedWithSnapshotAcrossRotationAt($currentKey, $bridgeKey, $previousKey, $currentMember, $previousMember, $ttlSeconds, $maxDistinct, $nowMilliseconds);
         return new BoundedDistinctResultDTO($snapshot->count, $snapshot->accepted);
     }
 
     public function addDistinctBoundedWithSnapshotAcrossRotation(string $currentKey, string $bridgeKey, string $previousKey, string $currentMember, string $previousMember, int $ttlSeconds, int $maxDistinct): BoundedDistinctSnapshotDTO
     {
+        return $this->addDistinctBoundedWithSnapshotAcrossRotationAt($currentKey, $bridgeKey, $previousKey, $currentMember, $previousMember, $ttlSeconds, $maxDistinct, $this->fallbackNowMilliseconds());
+    }
+
+    public function addDistinctBoundedWithSnapshotAcrossRotationAt(string $currentKey, string $bridgeKey, string $previousKey, string $currentMember, string $previousMember, int $ttlSeconds, int $maxDistinct, int $nowMilliseconds): BoundedDistinctSnapshotDTO
+    {
+        $nowMilliseconds = $this->callerTime($nowMilliseconds);
         $this->positive($ttlSeconds, 'Correlation TTL');
         $this->positive($maxDistinct, 'Correlation capacity');
         $keys = [$this->key('distinct', $currentKey), $this->key('distinct-meta', $currentKey), $this->key('distinct', $bridgeKey), $this->key('distinct-meta', $bridgeKey), $this->key('distinct', $previousKey), $this->key('distinct-meta', $previousKey)];
-        $result = $this->eval(self::ROTATED_SNAPSHOT, $keys, [self::BOUNDED_SNAPSHOT, $ttlSeconds, $currentMember, $previousMember, $maxDistinct]);
+        $result = $this->eval(self::ROTATED_SNAPSHOT, $keys, [self::BOUNDED_SNAPSHOT, $ttlSeconds, $currentMember, $previousMember, $maxDistinct, $nowMilliseconds, intdiv($nowMilliseconds, 1000)]);
         return $this->snapshot($result, $currentMember, 'rotated bounded snapshot');
     }
 
     public function incrementWatchFlagAcrossRotation(string $currentKey, string $previousKey, int $ttlSeconds): int
+    {
+        return $this->incrementWatchFlagAcrossRotationAt($currentKey, $previousKey, $ttlSeconds, $this->fallbackNow());
+    }
+
+    public function incrementWatchFlagAcrossRotationAt(string $currentKey, string $previousKey, int $ttlSeconds, int $now): int
     {
         $this->positive($ttlSeconds, 'Correlation TTL');
         $script = self::LUA_TIME_PRELUDE . "\n" . <<<'LUA'
@@ -1429,15 +1631,21 @@ if exists == 1 then
   if not validBackendExpiry(rawExpiry) then return redis.error_reply('malformed current watch state') end
   local value = tonumber(redis.call('GET', KEYS[1]))
   if not value or value ~= math.floor(value) then return redis.error_reply('malformed current watch state') end
+  -- LT-P2-03 (F-P2-03): logically expired while physically present is expired, not counted.
+  if compareDecimalStrings(rawExpiry, nowStr) <= 0 then redis.call('DEL', KEYS[1], KEYS[4]); exists = 0 end
 end
 local value
 if exists == 0 then
   if not ttlBackendRepresentable(ARGV[1]) then return redis.error_reply('correlation TTL exceeds Redis backend expiry representability') end
-  value = 1; redis.call('SET', KEYS[1], value, 'EX', ARGV[1]); redis.call('HSET', KEYS[4], 'expiresAt', addDecimalStrings(nowStr, ARGV[1])); redis.call('EXPIRE', KEYS[4], ARGV[1])
+  value = 1
+  redis.call('SET', KEYS[1], value)
+  if not expiryApplied(redis.pcall('EXPIRE', KEYS[1], ARGV[1]), {KEYS[1]}) then return redis.error_reply('expiry not representable') end
+  redis.call('HSET', KEYS[4], 'expiresAt', addDecimalStrings(nowStr, ARGV[1]))
+  if not expiryApplied(redis.pcall('EXPIRE', KEYS[4], ARGV[1]), {KEYS[1], KEYS[4]}) then return redis.error_reply('expiry not representable') end
 else value = redis.call('INCR', KEYS[1]) end
 return value + previous
 LUA;
-        return $this->integerResult($this->eval($script, [$this->key('watch', $currentKey), $this->key('watch', $previousKey), $this->key('watch-meta', $previousKey), $this->key('watch-meta', $currentKey)], [$ttlSeconds]), 'rotated watch count');
+        return $this->integerResult($this->eval($script, [$this->key('watch', $currentKey), $this->key('watch', $previousKey), $this->key('watch-meta', $previousKey), $this->key('watch-meta', $currentKey)], [$ttlSeconds, $this->callerTime($now)]), 'rotated watch count');
     }
 
     public function load(string $policyName): ?CircuitBreakerStateDTO
@@ -1497,7 +1705,7 @@ LUA;
         if ($leaseSeconds > intdiv(PHP_INT_MAX, 1000)) {
             throw new RateLimiterException('Probe lease duration exceeds Redis backend expiry representability.');
         }
-        $result = $this->eval(self::LEASE, [$this->key('probe', $policyName)], [$now, $leaseSeconds]);
+        $result = $this->eval(self::LEASE, [$this->key('probe', $policyName)], [$now, $leaseSeconds, $now]);
         if (! is_int($result) && ! is_string($result)) {
             throw new RateLimiterException('Malformed probe lease response.');
         }
@@ -1574,13 +1782,18 @@ LUA;
      */
     public function readGenerationBoundScoreState(string $currentKey, ?string $previousKey): ?GenerationBoundScoreStateDTO
     {
+        return $this->readGenerationBoundScoreStateAt($currentKey, $previousKey, $this->fallbackNowMilliseconds());
+    }
+
+    public function readGenerationBoundScoreStateAt(string $currentKey, ?string $previousKey, int $nowMilliseconds): ?GenerationBoundScoreStateDTO
+    {
         $keys = [
             $this->key('score', $currentKey),
             $previousKey === null ? '' : $this->key('score', $previousKey),
             $this->key('block', $currentKey),
             $previousKey === null ? '' : $this->key('block', $previousKey),
         ];
-        $result = $this->eval(self::LIFECYCLE_READ, $keys, []);
+        $result = $this->eval(self::LIFECYCLE_READ, $keys, [$this->callerTime($nowMilliseconds)]);
         if ($result === []) {
             return null;
         }
@@ -1624,13 +1837,19 @@ LUA;
      */
     public function mutateGenerationBoundScore(string $currentKey, ?string $previousKey, ?GenerationBoundScoreStateDTO $expectedState, int $ttlSeconds, int $newValue): GenerationBoundScoreMutationDTO
     {
+        return $this->mutateGenerationBoundScoreAt($currentKey, $previousKey, $expectedState, $ttlSeconds, $newValue, $this->fallbackNowMilliseconds());
+    }
+
+    public function mutateGenerationBoundScoreAt(string $currentKey, ?string $previousKey, ?GenerationBoundScoreStateDTO $expectedState, int $ttlSeconds, int $newValue, int $nowMilliseconds): GenerationBoundScoreMutationDTO
+    {
         $this->positive($ttlSeconds, 'Generation-bound score TTL');
-        $this->ensureGenerationTtlRepresentable($ttlSeconds);
+        $nowMilliseconds = $this->callerTime($nowMilliseconds);
+        $this->ensureGenerationTtlRepresentable($ttlSeconds, $nowMilliseconds);
         $expectedSource = $expectedState === null ? '' : ($expectedState->source === GenerationBoundScoreStateDTO::SOURCE_CURRENT ? $this->key('score', $currentKey) : $this->key('score', $previousKey ?? ''));
         $result = $this->eval(
             self::LIFECYCLE_MUTATE,
             [$this->key('score', $currentKey), $previousKey === null ? '' : $this->key('score', $previousKey), $this->key('reentry-claim', $currentKey)],
-            [$expectedSource, $expectedState === null ? '' : $expectedState->value, $expectedState === null ? '' : $expectedState->updatedAt, $expectedState === null || $expectedState->generation === null ? '' : $expectedState->generation, $expectedState === null ? '' : $expectedState->expiresAt, $ttlSeconds, $newValue],
+            [$expectedSource, $expectedState === null ? '' : $expectedState->value, $expectedState === null ? '' : $expectedState->updatedAt, $expectedState === null || $expectedState->generation === null ? '' : $expectedState->generation, $expectedState === null ? '' : $expectedState->expiresAt, $ttlSeconds, $newValue, $nowMilliseconds],
         );
         $tuple = $this->tuple($result, 1, 'generation-bound mutation');
         if ($this->integerValue($tuple[0], 'generation-bound mutation flag') === 0) {
@@ -1649,7 +1868,9 @@ LUA;
      * duration/window/threshold/pause/retention parameter are validated as
      * explicit contract preconditions before any Redis access.
      *
-     * Redis server time owns the publication timestamps. Source-race
+     * The caller's time owns the publication timestamps (#153 phase 2): this
+     * method uses the store's fallback clock, the caller-time variant the
+     * request's own time. Source-race
      * semantics distinguish ordinary optimistic conflict from structural
      * corruption: structural validation of the persisted state always runs
      * first. When a Current score exists, its generation, core fields,
@@ -1685,6 +1906,12 @@ LUA;
      */
     public function blockWithPunishmentLifecycleTracking(string $currentKey, ?string $previousKey, int $expectedGeneration, string $proposedLifecycleId, int $level, int $durationSeconds, int $cycleWindowSeconds, int $cycleThreshold, int $pauseSeconds, int $pauseHistoryRetentionSeconds): PunishmentLifecycleTransitionDTO
     {
+        return $this->blockWithPunishmentLifecycleTrackingAt($currentKey, $previousKey, $expectedGeneration, $proposedLifecycleId, $level, $durationSeconds, $cycleWindowSeconds, $cycleThreshold, $pauseSeconds, $pauseHistoryRetentionSeconds, $this->fallbackNow());
+    }
+
+    public function blockWithPunishmentLifecycleTrackingAt(string $currentKey, ?string $previousKey, int $expectedGeneration, string $proposedLifecycleId, int $level, int $durationSeconds, int $cycleWindowSeconds, int $cycleThreshold, int $pauseSeconds, int $pauseHistoryRetentionSeconds, int $now): PunishmentLifecycleTransitionDTO
+    {
+        $now = $this->callerTime($now);
         $this->validatePunishmentLifecycleParameters($expectedGeneration, $level, $durationSeconds, $cycleWindowSeconds, $cycleThreshold, $pauseSeconds, $pauseHistoryRetentionSeconds);
         $id = preg_match('/\A[a-f0-9]{32}\z/D', $proposedLifecycleId) === 1 ? $proposedLifecycleId : bin2hex(random_bytes(16));
         $previousKey = $previousKey === $currentKey ? null : $previousKey;
@@ -1694,7 +1921,7 @@ LUA;
             $this->key('pause', $currentKey), $previousKey === null ? '' : $this->key('pause', $previousKey),
             $this->key('score', $currentKey), $previousKey === null ? '' : $this->key('score', $previousKey),
         ];
-        $result = $this->eval(self::HARD_BLOCK, $keys, [$level, $durationSeconds, $currentKey, $previousKey ?? '', 0, $cycleWindowSeconds, $cycleThreshold, $pauseSeconds, $pauseHistoryRetentionSeconds, $expectedGeneration, $id]);
+        $result = $this->eval(self::HARD_BLOCK, $keys, [$level, $durationSeconds, $currentKey, $previousKey ?? '', $now, $cycleWindowSeconds, $cycleThreshold, $pauseSeconds, $pauseHistoryRetentionSeconds, $expectedGeneration, $id]);
         $tuple = $this->tuple($result, 1, 'punishment lifecycle transition');
         if (count($tuple) < 9 || $this->integerValue($tuple[5], 'punishment lifecycle transition flag') !== 1) {
             return new PunishmentLifecycleTransitionDTO(false, null, null, null);
@@ -1725,8 +1952,13 @@ LUA;
      */
     public function claimPostPunishmentReentry(string $currentKey, ?string $previousKey, string $lifecycleId): bool
     {
+        return $this->claimPostPunishmentReentryAt($currentKey, $previousKey, $lifecycleId, $this->fallbackNowMilliseconds());
+    }
+
+    public function claimPostPunishmentReentryAt(string $currentKey, ?string $previousKey, string $lifecycleId, int $nowMilliseconds): bool
+    {
         $keys = [$this->key('score', $currentKey), $previousKey === null ? '' : $this->key('score', $previousKey), $this->key('block', $currentKey), $previousKey === null ? '' : $this->key('block', $previousKey), $this->key('reentry-claim', $currentKey)];
-        return $this->integerValue($this->eval(self::LIFECYCLE_CLAIM, $keys, [$lifecycleId]), 're-entry claim') === 1;
+        return $this->integerValue($this->eval(self::LIFECYCLE_CLAIM, $keys, [$lifecycleId, $this->callerTime($nowMilliseconds)]), 're-entry claim') === 1;
     }
 
     public function reserveAdmission(AdmissionReservationRequestDTO $request, int $now): AdmissionReservationResultDTO
@@ -1846,6 +2078,26 @@ LUA;
         }
     }
 
+    /** DEC-017: the caller's semantic time is a non-negative Unix timestamp. */
+    private function callerTime(int $now): int
+    {
+        $this->nonNegativeSemanticTimestamp($now, 'Caller time');
+
+        return $now;
+    }
+
+    /** The time of an existing contract method called directly: the store's clock, never Redis `TIME`. */
+    private function fallbackNow(): int
+    {
+        return $this->fallbackClock->now()->getTimestamp();
+    }
+
+    /** The same fallback time, in milliseconds, for the operations that derive millisecond lifetimes. */
+    private function fallbackNowMilliseconds(): int
+    {
+        return (int) $this->fallbackClock->now()->format('Uv');
+    }
+
     private function positive(int $value, string $label): void
     {
         if ($value <= 0) {
@@ -1905,25 +2157,17 @@ LUA;
         }
     }
 
-    private function ensureGenerationTtlRepresentable(int $ttlSeconds): void
+    /**
+     * The generation-bound score's expiry stays inside Lua's exact integer
+     * range, judged on the caller's time (#153 phase 2, LT-P2-10); the script
+     * repeats the same check atomically on the same value.
+     */
+    private function ensureGenerationTtlRepresentable(int $ttlSeconds, int $nowMilliseconds): void
     {
         if ($ttlSeconds > intdiv(PHP_INT_MAX, 1000)) {
             throw new RateLimiterException('Generation-bound score expiry is not representable.');
         }
-        $time = $this->command(['TIME']);
-        if (! is_array($time) || ! array_key_exists(0, $time) || ! array_key_exists(1, $time)) {
-            throw new RateLimiterException('Redis time response is malformed.');
-        }
-        $seconds = $this->integerValue($time[0], 'Redis time seconds');
-        $microseconds = $this->integerValue($time[1], 'Redis time microseconds');
-        if ($seconds < 0 || $microseconds < 0 || $microseconds > 999999) {
-            throw new RateLimiterException('Redis time response is malformed.');
-        }
-        if ($seconds > intdiv(PHP_INT_MAX, 1000)) {
-            throw new RateLimiterException('Redis time response is malformed.');
-        }
-        $nowMs = $this->tryIntegerAddition($seconds * 1000, intdiv($microseconds, 1000));
-        if ($nowMs === null || $nowMs > self::LUA_EXACT_INTEGER_MAX || $ttlSeconds > intdiv(self::LUA_EXACT_INTEGER_MAX - $nowMs, 1000)) {
+        if ($nowMilliseconds > self::LUA_EXACT_INTEGER_MAX || $ttlSeconds > intdiv(self::LUA_EXACT_INTEGER_MAX - $nowMilliseconds, 1000)) {
             throw new RateLimiterException('Generation-bound score expiry is not representable.');
         }
     }

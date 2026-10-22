@@ -9,8 +9,9 @@ use Maatify\RateLimiter\DTO\BoundedDistinctSnapshotDTO;
 use Maatify\RateLimiter\Exception\RateLimiterException;
 use Maatify\RateLimiter\Repository\BoundedCorrelationSnapshotRotationStoreInterface;
 use Maatify\SharedCommon\Contracts\ClockInterface;
+use Maatify\RateLimiter\Repository\CallerTimeBoundedCorrelationSnapshotRotationStoreInterface;
 
-class StatefulInMemoryCorrelationStore implements BoundedCorrelationSnapshotRotationStoreInterface
+class StatefulInMemoryCorrelationStore implements BoundedCorrelationSnapshotRotationStoreInterface, CallerTimeBoundedCorrelationSnapshotRotationStoreInterface
 {
     /** @var array<string, array{items: array<string, bool>, expiresAt: int|null}> */
     private array $sets = [];
@@ -20,12 +21,20 @@ class StatefulInMemoryCorrelationStore implements BoundedCorrelationSnapshotRota
 
     private int $operations = 0;
 
+    /**
+     * The caller's time held by a caller-time call, per store instance. It is
+     * static (a WeakMap) so it is not part of the store's serialized state.
+     *
+     * @var \WeakMap<self, int>|null
+     */
+    private static ?\WeakMap $callerTimes = null;
+
     public function __construct(private readonly ClockInterface $clock) {}
 
     public function addDistinct(string $key, string $item, int $ttlSeconds): int
     {
         $this->assertTtl($ttlSeconds);
-        $now = $this->clock->now()->getTimestamp();
+        $now = $this->currentTime();
         $state = $this->sets[$key] ?? null;
 
         if ($state !== null && $state['expiresAt'] === null) {
@@ -53,7 +62,7 @@ class StatefulInMemoryCorrelationStore implements BoundedCorrelationSnapshotRota
     ): BoundedDistinctResultDTO {
         $this->assertTtl($ttlSeconds);
         $this->assertMaxDistinct($maxDistinct);
-        $now = $this->clock->now()->getTimestamp();
+        $now = $this->currentTime();
         $state = $this->prepareSet($this->sets[$key] ?? null, $now, $ttlSeconds);
         $this->assertWithinCapacity($state, $maxDistinct, 'bounded distinct state');
 
@@ -81,7 +90,7 @@ class StatefulInMemoryCorrelationStore implements BoundedCorrelationSnapshotRota
         $this->assertTtl($ttlSeconds);
         $this->assertMaxDistinct($maxDistinct);
         $this->operations++;
-        $now = $this->clock->now()->getTimestamp();
+        $now = $this->currentTime();
         $state = $this->prepareSet($this->sets[$key] ?? null, $now, $ttlSeconds);
         $this->assertWithinCapacity($state, $maxDistinct, 'bounded distinct state');
 
@@ -102,7 +111,7 @@ class StatefulInMemoryCorrelationStore implements BoundedCorrelationSnapshotRota
     public function incrementWatchFlag(string $key, int $ttlSeconds): int
     {
         $this->assertTtl($ttlSeconds);
-        $now = $this->clock->now()->getTimestamp();
+        $now = $this->currentTime();
         $state = $this->flags[$key] ?? null;
 
         if ($state !== null && $state['expiresAt'] === null) {
@@ -124,7 +133,7 @@ class StatefulInMemoryCorrelationStore implements BoundedCorrelationSnapshotRota
 
     public function getWatchFlag(string $key): int
     {
-        $now = $this->clock->now()->getTimestamp();
+        $now = $this->currentTime();
         $state = $this->flags[$key] ?? null;
 
         if ($state === null) {
@@ -151,7 +160,7 @@ class StatefulInMemoryCorrelationStore implements BoundedCorrelationSnapshotRota
         int $ttlSeconds,
     ): int {
         $this->assertTtl($ttlSeconds);
-        $now = $this->clock->now()->getTimestamp();
+        $now = $this->currentTime();
         $previous = $this->activeSet($previousKey, $now);
         $current = $this->prepareSet($this->sets[$currentKey] ?? null, $now, $ttlSeconds);
         $bridge = null;
@@ -189,7 +198,7 @@ class StatefulInMemoryCorrelationStore implements BoundedCorrelationSnapshotRota
     ): BoundedDistinctResultDTO {
         $this->assertTtl($ttlSeconds);
         $this->assertMaxDistinct($maxDistinct);
-        $now = $this->clock->now()->getTimestamp();
+        $now = $this->currentTime();
         $previous = $this->activeSet($previousKey, $now);
 
         if ($previous === null) {
@@ -278,7 +287,7 @@ class StatefulInMemoryCorrelationStore implements BoundedCorrelationSnapshotRota
     ): BoundedDistinctSnapshotDTO {
         $this->assertTtl($ttlSeconds);
         $this->assertMaxDistinct($maxDistinct);
-        $now = $this->clock->now()->getTimestamp();
+        $now = $this->currentTime();
         $previous = $this->activeSet($previousKey, $now);
 
         if ($previous === null) {
@@ -363,7 +372,7 @@ class StatefulInMemoryCorrelationStore implements BoundedCorrelationSnapshotRota
         int $ttlSeconds,
     ): int {
         $this->assertTtl($ttlSeconds);
-        $now = $this->clock->now()->getTimestamp();
+        $now = $this->currentTime();
         $previous = $this->activeFlag($previousKey, $now);
         $current = $this->prepareFlag($this->flags[$currentKey] ?? null, $now, $ttlSeconds);
         $current['count']++;
@@ -580,5 +589,88 @@ class StatefulInMemoryCorrelationStore implements BoundedCorrelationSnapshotRota
         if (count($state['items']) > $maxDistinct) {
             throw new RateLimiterException("{$label} exceeds its configured capacity.");
         }
+    }
+
+    public function addDistinctAt(string $key, string $item, int $ttlSeconds, int $now): int
+    {
+        return $this->atCallerTime($now, fn(): int => $this->addDistinct($key, $item, $ttlSeconds));
+    }
+
+    public function incrementWatchFlagAt(string $key, int $ttlSeconds, int $now): int
+    {
+        return $this->atCallerTime($now, fn(): int => $this->incrementWatchFlag($key, $ttlSeconds));
+    }
+
+    public function addDistinctBoundedAt(string $key, string $item, int $ttlSeconds, int $maxDistinct, int $now): BoundedDistinctResultDTO
+    {
+        return $this->atCallerTime($now, fn(): BoundedDistinctResultDTO => $this->addDistinctBounded($key, $item, $ttlSeconds, $maxDistinct));
+    }
+
+    public function addDistinctBoundedWithSnapshotAt(string $key, string $item, int $ttlSeconds, int $maxDistinct, int $now): BoundedDistinctSnapshotDTO
+    {
+        return $this->atCallerTime($now, fn(): BoundedDistinctSnapshotDTO => $this->addDistinctBoundedWithSnapshot($key, $item, $ttlSeconds, $maxDistinct));
+    }
+
+    public function addDistinctAcrossRotationAt(string $currentKey, string $bridgeKey, string $previousKey, string $currentMember, string $previousMember, int $ttlSeconds, int $nowMilliseconds): int
+    {
+        return $this->atCallerTime(intdiv($nowMilliseconds, 1000), fn(): int => $this->addDistinctAcrossRotation($currentKey, $bridgeKey, $previousKey, $currentMember, $previousMember, $ttlSeconds));
+    }
+
+    public function incrementWatchFlagAcrossRotationAt(string $currentKey, string $previousKey, int $ttlSeconds, int $now): int
+    {
+        return $this->atCallerTime($now, fn(): int => $this->incrementWatchFlagAcrossRotation($currentKey, $previousKey, $ttlSeconds));
+    }
+
+    public function addDistinctBoundedAcrossRotationAt(string $currentKey, string $bridgeKey, string $previousKey, string $currentMember, string $previousMember, int $ttlSeconds, int $maxDistinct, int $nowMilliseconds): BoundedDistinctResultDTO
+    {
+        return $this->atCallerTime(intdiv($nowMilliseconds, 1000), fn(): BoundedDistinctResultDTO => $this->addDistinctBoundedAcrossRotation($currentKey, $bridgeKey, $previousKey, $currentMember, $previousMember, $ttlSeconds, $maxDistinct));
+    }
+
+    public function addDistinctBoundedWithSnapshotAcrossRotationAt(string $currentKey, string $bridgeKey, string $previousKey, string $currentMember, string $previousMember, int $ttlSeconds, int $maxDistinct, int $nowMilliseconds): BoundedDistinctSnapshotDTO
+    {
+        return $this->atCallerTime(intdiv($nowMilliseconds, 1000), fn(): BoundedDistinctSnapshotDTO => $this->addDistinctBoundedWithSnapshotAcrossRotation($currentKey, $bridgeKey, $previousKey, $currentMember, $previousMember, $ttlSeconds, $maxDistinct));
+    }
+
+    /**
+     * #153 phase 2: run an existing method with the caller's time held, so a
+     * caller-time call and its existing counterpart share one implementation
+     * (and every subclass override). Outside it, the injected clock applies.
+     * Public so an aggregate fixture that delegates here can hold the time too.
+     *
+     * @template T
+     * @param callable(): T $operation
+     * @return T
+     */
+    public function atCallerTime(int $now, callable $operation): mixed
+    {
+        $callerTimes = self::callerTimes();
+        $previous = $callerTimes[$this] ?? null;
+        $callerTimes[$this] = $now;
+        try {
+            return $operation();
+        } finally {
+            if ($previous === null) {
+                unset($callerTimes[$this]);
+            } else {
+                $callerTimes[$this] = $previous;
+            }
+        }
+    }
+
+    /** @return \WeakMap<self, int> */
+    private static function callerTimes(): \WeakMap
+    {
+        if (self::$callerTimes === null) {
+            /** @var \WeakMap<self, int> $callerTimes */
+            $callerTimes = new \WeakMap();
+            self::$callerTimes = $callerTimes;
+        }
+
+        return self::$callerTimes;
+    }
+
+    private function currentTime(): int
+    {
+        return self::callerTimes()[$this] ?? $this->clock->now()->getTimestamp();
     }
 }

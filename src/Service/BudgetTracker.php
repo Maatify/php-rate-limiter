@@ -29,7 +29,7 @@ class BudgetTracker
      */
     public function increment(string $key): void
     {
-        $this->store->incrementBudget($key, self::EPOCH_DURATION);
+        CallerTimeStore::incrementBudget($this->store, $key, self::EPOCH_DURATION, 1, $this->clock->now());
     }
 
     /**
@@ -37,7 +37,7 @@ class BudgetTracker
      */
     public function getStatus(string $key): BudgetStatusDTO
     {
-        $dto = $this->store->getBudget($key);
+        $dto = CallerTimeStore::getBudget($this->store, $key, $this->clock->now());
         if ($dto) {
             return new BudgetStatusDTO($dto->count, $dto->epochStart);
         }

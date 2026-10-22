@@ -35,10 +35,10 @@ use Maatify\RateLimiter\Service\AdmissionRuntime;
 use Maatify\RateLimiter\Service\AntiEquilibriumGate;
 use Maatify\RateLimiter\Service\BudgetTracker;
 use Maatify\RateLimiter\Service\CircuitBreaker;
-use Maatify\RateLimiter\Service\CompositeRateLimiterRuntime;
-use Maatify\RateLimiter\Service\CompositeRateLimiterRuntimeInterface;
 use Maatify\RateLimiter\Service\CompositeRateLimitOperationalReader;
 use Maatify\RateLimiter\Service\CompositeRateLimitOperationalReaderInterface;
+use Maatify\RateLimiter\Service\CompositeRateLimiterRuntime;
+use Maatify\RateLimiter\Service\CompositeRateLimiterRuntimeInterface;
 use Maatify\RateLimiter\Service\DecayCalculator;
 use Maatify\RateLimiter\Service\DeviceIdentityResolver;
 use Maatify\RateLimiter\Service\DeviceIdentityResolverInterface;
@@ -50,6 +50,7 @@ use Maatify\RateLimiter\Service\FixedWindowSimpleRateLimiter;
 use Maatify\RateLimiter\Service\RateLimitOperationalReader;
 use Maatify\RateLimiter\Service\RateLimiterEngine;
 use Maatify\RateLimiter\Service\RateLimiterInterface;
+use Maatify\RateLimiter\Service\RequestScopedClock;
 use Maatify\RateLimiter\Service\SimpleRateLimitOperationalReader;
 use Maatify\RateLimiter\Exception\RateLimiterException;
 use Maatify\SharedCommon\Contracts\ClockInterface;
@@ -173,13 +174,15 @@ final class RateLimiterBuilder
     {
         $this->assertCapabilitiesSatisfied();
 
-        $clock = $this->clock ?? new SystemClock(new DateTimeZone('UTC'));
+        // One reading of the Host clock per runtime call, shared by every
+        // component of the graph (#153 phase 2, LT-P2-05).
+        $clock = new RequestScopedClock($this->clock ?? new SystemClock(new DateTimeZone('UTC')));
         $deviceIdentityResolver = $this->deviceIdentityResolver ?? $this->defaultDeviceIdentityResolver();
 
         $budgetTracker = new BudgetTracker($this->rateLimitStore, $clock);
-        $antiEquilibriumGate = new AntiEquilibriumGate($this->correlationStore);
+        $antiEquilibriumGate = new AntiEquilibriumGate($this->correlationStore, $clock);
         $decayCalculator = new DecayCalculator($clock);
-        $ephemeralBucket = new EphemeralBucket($this->correlationStore);
+        $ephemeralBucket = new EphemeralBucket($this->correlationStore, $clock);
         $evaluationPipeline = new EvaluationPipeline(
             $this->rateLimitStore,
             $this->correlationStore,

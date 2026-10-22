@@ -183,7 +183,7 @@ final class FixedWindowSimpleRateLimiter implements SimpleRateLimiterInterface
     {
         $currentReadFailed = false;
         try {
-            $currentState = $this->store->getBudget($currentKey);
+            $currentState = CallerTimeStore::getBudget($this->store, $currentKey, $this->clock->now());
         } catch (\Throwable) {
             $currentReadFailed = true;
             $currentState = null;
@@ -200,7 +200,7 @@ final class FixedWindowSimpleRateLimiter implements SimpleRateLimiterInterface
         if ($previousKey !== null) {
             $previousReadFailed = false;
             try {
-                $previousState = $this->store->getBudget($previousKey);
+                $previousState = CallerTimeStore::getBudget($this->store, $previousKey, $this->clock->now());
             } catch (\Throwable) {
                 $previousReadFailed = true;
                 $previousState = null;
@@ -220,7 +220,7 @@ final class FixedWindowSimpleRateLimiter implements SimpleRateLimiterInterface
                 }
 
                 try {
-                    return $this->store->incrementBudgetWithSeed($currentKey, $intervalSeconds, $previousState, $cost);
+                    return CallerTimeStore::incrementBudgetWithSeed($this->store, $currentKey, $intervalSeconds, $previousState, $cost, $this->clock->now());
                 } catch (\Throwable) {
                     return null;
                 }
@@ -239,7 +239,7 @@ final class FixedWindowSimpleRateLimiter implements SimpleRateLimiterInterface
     private function incrementBudget(string $key, int $intervalSeconds, int $cost): ?BudgetStateDTO
     {
         try {
-            return $this->store->incrementBudget($key, $intervalSeconds, $cost);
+            return CallerTimeStore::incrementBudget($this->store, $key, $intervalSeconds, $cost, $this->clock->now());
         } catch (\Throwable) {
             return null;
         }
