@@ -1,0 +1,436 @@
+{
+    "sequences": 10000,
+    "m1_nonthrow": 1387,
+    "m1_nonthrow_values": {
+        "R:applied=0": 1387
+    },
+    "c1_true": 2306,
+    "c1_true_nonthrow": 1382,
+    "d_unavailable": 0,
+    "d_band": {
+        "le_minus3": 0,
+        "band": 9973,
+        "ge_3": 27
+    },
+    "d_band_nonthrow": 1387,
+    "d_c1_outcome": {
+        "D=0 C1 nonthrow": 1382,
+        "D=1 C1 throw": 924,
+        "D=1 notC1 nonthrow": 5,
+        "D=1 notC1 throw": 7044,
+        "D=2 notC1 throw": 618,
+        "D>=3 notC1 throw": 27
+    },
+    "h1_violations": [
+        {
+            "i": 162,
+            "t0s": 1792707564,
+            "u0": 27,
+            "polls": 7695,
+            "span": 1377,
+            "span_m": 1687,
+            "m1": "R:applied=0",
+            "D": 1,
+            "intact": true,
+            "x": []
+        },
+        {
+            "i": 118,
+            "t0s": 1792707521,
+            "u0": 99,
+            "polls": 11758,
+            "span": 1330,
+            "span_m": 1580,
+            "m1": "R:applied=0",
+            "D": 1,
+            "intact": true,
+            "x": []
+        },
+        {
+            "i": 705,
+            "t0s": 1792708108,
+            "u0": 32,
+            "polls": 12845,
+            "span": 1364,
+            "span_m": 1667,
+            "m1": "R:applied=0",
+            "D": 1,
+            "intact": true,
+            "x": []
+        },
+        {
+            "i": 780,
+            "t0s": 1792708183,
+            "u0": 28,
+            "polls": 11824,
+            "span": 1371,
+            "span_m": 1675,
+            "m1": "R:applied=0",
+            "D": 1,
+            "intact": true,
+            "x": []
+        },
+        {
+            "i": 856,
+            "t0s": 1792708262,
+            "u0": 68,
+            "polls": 7560,
+            "span": 1369,
+            "span_m": 1656,
+            "m1": "R:applied=0",
+            "D": 1,
+            "intact": true,
+            "x": []
+        }
+    ],
+    "h2_violations": [],
+    "h3_findings": [],
+    "span_us": {
+        "min": 720,
+        "p01": 805,
+        "p50": 1440,
+        "p99": 2066,
+        "max": 4357
+    },
+    "u0_lt_1000": 10000,
+    "m1_nonthrow_wilson95": [
+        0.13206433230526918,
+        0.14561314491738173
+    ],
+    "verdict": {
+        "H-1": "FINDING",
+        "H-2": "holds",
+        "H-3": "holds"
+    },
+    "h1_violations_count": 5,
+    "h2_violations_count": 0,
+    "h3_findings_count": 0,
+    "probe_summaries": [
+        {
+            "summary": true,
+            "mode": "forced",
+            "m": 1000,
+            "seconds": 1000.504,
+            "php": "8.5.12",
+            "outcomes": {
+                "0:claim:T:malformed generation": 1000,
+                "0:mutate:T:malformed generation": 1000,
+                "0:publication:T:malformed lifecycle score generation": 1000,
+                "0:read:T:malformed generation": 1000,
+                "1:claim:T:malformed generation": 1000,
+                "1:mutate:T:inconsistent generated score expiry": 1000,
+                "1:publication:T:malformed lifecycle score generation": 1000,
+                "1:read:T:malformed generation": 1000,
+                "2:claim:T:malformed generation": 1000,
+                "2:mutate:T:malformed generation": 1000,
+                "2:publication:T:malformed lifecycle score generation": 1000,
+                "2:read:T:malformed generation": 1000
+            }
+        },
+        {
+            "summary": true,
+            "mode": "forced",
+            "m": 1000,
+            "seconds": 1006.998,
+            "php": "8.5.12",
+            "outcomes": {
+                "0:claim:T:malformed generation": 1000,
+                "0:mutate:T:malformed generation": 1000,
+                "0:publication:T:malformed lifecycle score generation": 1000,
+                "0:read:T:malformed generation": 1000,
+                "1:claim:T:malformed generation": 1000,
+                "1:mutate:R:applied=0": 543,
+                "1:mutate:T:inconsistent generated score expiry": 457,
+                "1:publication:T:malformed lifecycle score generation": 1000,
+                "1:read:T:malformed generation": 1000,
+                "2:claim:T:malformed generation": 1000,
+                "2:mutate:T:malformed generation": 1000,
+                "2:publication:T:malformed lifecycle score generation": 1000,
+                "2:read:T:malformed generation": 1000
+            }
+        },
+        {
+            "summary": true,
+            "mode": "forced",
+            "m": 1000,
+            "seconds": 1003.288,
+            "php": "8.5.12",
+            "outcomes": {
+                "0:claim:T:malformed generation": 1000,
+                "0:mutate:T:malformed generation": 1000,
+                "0:publication:T:malformed lifecycle score generation": 1000,
+                "0:read:T:malformed generation": 1000,
+                "1:claim:T:malformed generation": 1000,
+                "1:mutate:R:applied=0": 1,
+                "1:mutate:T:inconsistent generated score expiry": 999,
+                "1:publication:T:malformed lifecycle score generation": 1000,
+                "1:read:T:malformed generation": 1000,
+                "2:claim:T:malformed generation": 1000,
+                "2:mutate:T:malformed generation": 1000,
+                "2:publication:T:malformed lifecycle score generation": 1000,
+                "2:read:T:malformed generation": 1000
+            }
+        },
+        {
+            "summary": true,
+            "mode": "forced",
+            "m": 1000,
+            "seconds": 1003.196,
+            "php": "8.5.12",
+            "outcomes": {
+                "0:claim:T:malformed generation": 1000,
+                "0:mutate:T:malformed generation": 1000,
+                "0:publication:T:malformed lifecycle score generation": 1000,
+                "0:read:T:malformed generation": 1000,
+                "1:claim:T:malformed generation": 1000,
+                "1:mutate:T:inconsistent generated score expiry": 1000,
+                "1:publication:T:malformed lifecycle score generation": 1000,
+                "1:read:T:malformed generation": 1000,
+                "2:claim:T:malformed generation": 1000,
+                "2:mutate:T:malformed generation": 1000,
+                "2:publication:T:malformed lifecycle score generation": 1000,
+                "2:read:T:malformed generation": 1000
+            }
+        },
+        {
+            "summary": true,
+            "mode": "forced",
+            "m": 1000,
+            "seconds": 1004.162,
+            "php": "8.5.12",
+            "outcomes": {
+                "0:claim:T:malformed generation": 1000,
+                "0:mutate:T:malformed generation": 1000,
+                "0:publication:T:malformed lifecycle score generation": 1000,
+                "0:read:T:malformed generation": 1000,
+                "1:claim:T:malformed generation": 1000,
+                "1:mutate:R:applied=0": 625,
+                "1:mutate:T:inconsistent generated score expiry": 375,
+                "1:publication:T:malformed lifecycle score generation": 1000,
+                "1:read:T:malformed generation": 1000,
+                "2:claim:T:malformed generation": 1000,
+                "2:mutate:T:malformed generation": 1000,
+                "2:publication:T:malformed lifecycle score generation": 1000,
+                "2:read:T:malformed generation": 1000
+            }
+        },
+        {
+            "summary": true,
+            "mode": "forced",
+            "m": 1000,
+            "seconds": 1000.909,
+            "php": "8.5.12",
+            "outcomes": {
+                "0:claim:T:malformed generation": 1000,
+                "0:mutate:T:malformed generation": 1000,
+                "0:publication:T:malformed lifecycle score generation": 1000,
+                "0:read:T:malformed generation": 1000,
+                "1:claim:T:malformed generation": 1000,
+                "1:mutate:R:applied=0": 84,
+                "1:mutate:T:inconsistent generated score expiry": 916,
+                "1:publication:T:malformed lifecycle score generation": 1000,
+                "1:read:T:malformed generation": 1000,
+                "2:claim:T:malformed generation": 1000,
+                "2:mutate:T:malformed generation": 1000,
+                "2:publication:T:malformed lifecycle score generation": 1000,
+                "2:read:T:malformed generation": 1000
+            }
+        },
+        {
+            "summary": true,
+            "mode": "forced",
+            "m": 1000,
+            "seconds": 1001.328,
+            "php": "8.5.12",
+            "outcomes": {
+                "0:claim:T:malformed generation": 1000,
+                "0:mutate:T:malformed generation": 1000,
+                "0:publication:T:malformed lifecycle score generation": 1000,
+                "0:read:T:malformed generation": 1000,
+                "1:claim:T:malformed generation": 1000,
+                "1:mutate:R:applied=0": 1,
+                "1:mutate:T:inconsistent generated score expiry": 999,
+                "1:publication:T:malformed lifecycle score generation": 1000,
+                "1:read:T:malformed generation": 1000,
+                "2:claim:T:malformed generation": 1000,
+                "2:mutate:T:malformed generation": 1000,
+                "2:publication:T:malformed lifecycle score generation": 1000,
+                "2:read:T:malformed generation": 1000
+            }
+        },
+        {
+            "summary": true,
+            "mode": "forced",
+            "m": 1000,
+            "seconds": 1001.253,
+            "php": "8.5.12",
+            "outcomes": {
+                "0:claim:T:malformed generation": 1000,
+                "0:mutate:T:malformed generation": 1000,
+                "0:publication:T:malformed lifecycle score generation": 1000,
+                "0:read:T:malformed generation": 1000,
+                "1:claim:T:malformed generation": 1000,
+                "1:mutate:R:applied=0": 133,
+                "1:mutate:T:inconsistent generated score expiry": 867,
+                "1:publication:T:malformed lifecycle score generation": 1000,
+                "1:read:T:malformed generation": 1000,
+                "2:claim:T:malformed generation": 1000,
+                "2:mutate:T:malformed generation": 1000,
+                "2:publication:T:malformed lifecycle score generation": 1000,
+                "2:read:T:malformed generation": 1000
+            }
+        },
+        {
+            "summary": true,
+            "mode": "forced",
+            "m": 1000,
+            "seconds": 1003.207,
+            "php": "8.5.12",
+            "outcomes": {
+                "0:claim:T:malformed generation": 1000,
+                "0:mutate:T:malformed generation": 1000,
+                "0:publication:T:malformed lifecycle score generation": 1000,
+                "0:read:T:malformed generation": 1000,
+                "1:claim:T:malformed generation": 1000,
+                "1:mutate:T:inconsistent generated score expiry": 1000,
+                "1:publication:T:malformed lifecycle score generation": 1000,
+                "1:read:T:malformed generation": 1000,
+                "2:claim:T:malformed generation": 1000,
+                "2:mutate:T:malformed generation": 1000,
+                "2:publication:T:malformed lifecycle score generation": 1000,
+                "2:read:T:malformed generation": 1000
+            }
+        },
+        {
+            "summary": true,
+            "mode": "forced",
+            "m": 1000,
+            "seconds": 1000.935,
+            "php": "8.5.12",
+            "outcomes": {
+                "0:claim:T:malformed generation": 1000,
+                "0:mutate:T:malformed generation": 1000,
+                "0:publication:T:malformed lifecycle score generation": 1000,
+                "0:read:T:malformed generation": 1000,
+                "1:claim:T:malformed generation": 1000,
+                "1:mutate:T:inconsistent generated score expiry": 1000,
+                "1:publication:T:malformed lifecycle score generation": 1000,
+                "1:read:T:malformed generation": 1000,
+                "2:claim:T:malformed generation": 1000,
+                "2:mutate:T:malformed generation": 1000,
+                "2:publication:T:malformed lifecycle score generation": 1000,
+                "2:read:T:malformed generation": 1000
+            }
+        }
+    ],
+    "files": {
+        "h-forced-1": {
+            "rows": 1000,
+            "summary_m": 1000
+        },
+        "h-forced-10": {
+            "rows": 1000,
+            "summary_m": 1000
+        },
+        "h-forced-2": {
+            "rows": 1000,
+            "summary_m": 1000
+        },
+        "h-forced-3": {
+            "rows": 1000,
+            "summary_m": 1000
+        },
+        "h-forced-4": {
+            "rows": 1000,
+            "summary_m": 1000
+        },
+        "h-forced-5": {
+            "rows": 1000,
+            "summary_m": 1000
+        },
+        "h-forced-6": {
+            "rows": 1000,
+            "summary_m": 1000
+        },
+        "h-forced-7": {
+            "rows": 1000,
+            "summary_m": 1000
+        },
+        "h-forced-8": {
+            "rows": 1000,
+            "summary_m": 1000
+        },
+        "h-forced-9": {
+            "rows": 1000,
+            "summary_m": 1000
+        }
+    },
+    "expected": {
+        "forced": {
+            "expected": 10000,
+            "shortfall": 0,
+            "shards": {
+                "1": {
+                    "expected": 1000,
+                    "sequences": 1000,
+                    "shortfall": 0,
+                    "file": "complete"
+                },
+                "2": {
+                    "expected": 1000,
+                    "sequences": 1000,
+                    "shortfall": 0,
+                    "file": "complete"
+                },
+                "3": {
+                    "expected": 1000,
+                    "sequences": 1000,
+                    "shortfall": 0,
+                    "file": "complete"
+                },
+                "4": {
+                    "expected": 1000,
+                    "sequences": 1000,
+                    "shortfall": 0,
+                    "file": "complete"
+                },
+                "5": {
+                    "expected": 1000,
+                    "sequences": 1000,
+                    "shortfall": 0,
+                    "file": "complete"
+                },
+                "6": {
+                    "expected": 1000,
+                    "sequences": 1000,
+                    "shortfall": 0,
+                    "file": "complete"
+                },
+                "7": {
+                    "expected": 1000,
+                    "sequences": 1000,
+                    "shortfall": 0,
+                    "file": "complete"
+                },
+                "8": {
+                    "expected": 1000,
+                    "sequences": 1000,
+                    "shortfall": 0,
+                    "file": "complete"
+                },
+                "9": {
+                    "expected": 1000,
+                    "sequences": 1000,
+                    "shortfall": 0,
+                    "file": "complete"
+                },
+                "10": {
+                    "expected": 1000,
+                    "sequences": 1000,
+                    "shortfall": 0,
+                    "file": "complete"
+                }
+            }
+        }
+    }
+}

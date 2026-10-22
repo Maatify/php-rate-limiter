@@ -1,0 +1,9 @@
+5afecc8cfd3fdb2c8bcd01303f8ae9d357a085227df74af2ce9c7a3d750f9e40  ./E-CI/config.jsonl
+a136a8bb5b471b0708d31071523899c660e2f230dbb80bea65025cae2396e4e2  ./E-CI/envset.json
+b1770c2c9f495502cf9455fa854d19b48d3775e2ba7a1ad17d4ee61ace32bd9d  ./E-CI/summary.json
+a1e196b360cc4d3be5fd22aa07321b08ddfc24a16984fc203b3bda0f922e11ec  ./E-CI/verdicts.jsonl
+08c6127a20ec67565babd61fae8b2923f79b085c1c5978737ca5e60ea3f5e378  ./E-LOCAL/config.jsonl
+9a4d20ffc4f2742206086cafe6912fe7144ccb43d8ee96d826a06ebfed56da4a  ./E-LOCAL/envset.json
+e4ce4803930539ea80c8a5c90de1acde565db9e1c098c383571306046a52ad56  ./E-LOCAL/harness-head
+b1770c2c9f495502cf9455fa854d19b48d3775e2ba7a1ad17d4ee61ace32bd9d  ./E-LOCAL/summary.json
+0beaac21c1faff39a4ac8a4bf3319fc7a1c0dfafe652b34c8c110b2b0dbabc83  ./E-LOCAL/verdicts.jsonl

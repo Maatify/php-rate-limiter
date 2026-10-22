@@ -29,6 +29,7 @@ function classify(iterable $rows): array
         'd_unavailable' => 0,
         'd_band' => ['le_minus3' => 0, 'band' => 0, 'ge_3' => 0],
         'd_band_nonthrow' => 0,
+        'd_c1_outcome' => [],
         'h1_violations' => [],
         'h2_violations' => [],
         'h3_findings' => [],
@@ -70,11 +71,16 @@ function classify(iterable $rows): array
             $result['d_band']['band']++;
             $result['d_band_nonthrow'] += $nonThrow ? 1 : 0;
         }
+        // Descriptive: exact D inside the band, D x C1 x outcome (reported, not judged).
+        $cell = ($row['D'] === null ? 'D=n/a' : ($row['D'] <= -3 ? 'D<=-3' : ($row['D'] >= 3 ? 'D>=3' : 'D=' . $row['D'])))
+            . ' ' . ($c1 ? 'C1' : 'notC1') . ' ' . ($nonThrow ? 'nonthrow' : 'throw');
+        $result['d_c1_outcome'][$cell] = ($result['d_c1_outcome'][$cell] ?? 0) + 1;
         // H-3: every other call throws RateLimiterException.
         if ($row['x'] !== []) {
             $result['h3_findings'][] = $row;
         }
     }
+    ksort($result['d_c1_outcome']);
     $spans = $result['span_us'];
     sort($spans);
     $count = count($spans);

@@ -1,0 +1,50 @@
+{
+    "d0": {
+        "expected": 20,
+        "runs": 20,
+        "valid": 20,
+        "invalid": 0,
+        "invalid_reasons": [],
+        "reproduced": 20,
+        "target_other": 0,
+        "other_failures_runs": 0,
+        "findings": [],
+        "d_ok": 20,
+        "shortfall": 0,
+        "missing_ids": [],
+        "duplicated_ids": [],
+        "outside_ids": []
+    },
+    "d1": {
+        "expected": 20,
+        "runs": 20,
+        "valid": 20,
+        "invalid": 0,
+        "invalid_reasons": [],
+        "reproduced": 20,
+        "target_other": 0,
+        "other_failures_runs": 0,
+        "findings": [],
+        "d_ok": 20,
+        "shortfall": 0,
+        "missing_ids": [],
+        "duplicated_ids": [],
+        "outside_ids": []
+    },
+    "d2": {
+        "expected": 20,
+        "runs": 20,
+        "valid": 20,
+        "invalid": 0,
+        "invalid_reasons": [],
+        "reproduced": 20,
+        "target_other": 0,
+        "other_failures_runs": 0,
+        "findings": [],
+        "d_ok": 20,
+        "shortfall": 0,
+        "missing_ids": [],
+        "duplicated_ids": [],
+        "outside_ids": []
+    }
+}
