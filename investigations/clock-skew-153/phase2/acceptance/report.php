@@ -175,6 +175,39 @@ foreach (['E-SAME', 'E-DOCKER'] as $env) {
             [$targets, $x, $err] = $totals[$probe];
             $verdicts[] = [$env . ' ' . $probe, $targets === $n && $x === 0 && $err === 0, sprintf('%d targets, %d exceptions, %d script errors', $targets, $x, $err)];
         }
+
+        // LT-P2-15 / LT-P2-17 (PLAN §12.3, §12.4): descriptive only, no verdict.
+        $cause = $dir . '/tail-cause.jsonl';
+        if (exists($cause)) {
+            $md[] = '';
+            $md[] = '### P-TAIL / P-HT outcome causes (`tail_cause.php`, a replay of `tail.php` with the full result; descriptive, no verdict)';
+            $md[] = '';
+            $md[] = '| Probe | a | phase | n | decision · level · retryAfter · signal · cause · reason · scope | IPs (/24) |';
+            $md[] = '| --- | --- | --- | ---: | --- | --- |';
+            $causes = [];
+            $head = null;
+            foreach (rows($cause) as $row) {
+                if (isset($row['meta'])) {
+                    $head = $row['meta']['head'] ?? null;
+                    continue;
+                }
+                if (! isset($row['probe'], $row['full'])) {
+                    continue;
+                }
+                $f = $row['full'];
+                $key = $row['probe'] . '|' . ($row['a'] ?? '—') . '|' . $row['phase'];
+                $label = implode(' · ', [$row['x'] !== null && $row['x'] !== '' ? 'EXCEPTION' : $row['o'], $f['level'] ?? '—', $f['ra'] ?? '—', $f['meta']['signal'] ?? '—', $f['meta']['cause'] ?? '—', $f['meta']['context']['reason'] ?? '—', $f['meta']['context']['scope'] ?? '—']);
+                $causes[$key]['n'] = ($causes[$key]['n'] ?? 0) + 1;
+                $causes[$key]['o'][$label] = ($causes[$key]['o'][$label] ?? 0) + 1;
+                $causes[$key]['ip'][implode('.', array_slice(explode('.', (string) $f['ip']), 0, 3))] = true;
+            }
+            foreach ($causes as $key => $c) {
+                [$probe, $a, $phase] = explode('|', $key);
+                $md[] = sprintf('| %s | %s | %s | %d | %s | %s |', $probe, $a, $phase, $c['n'], kv($c['o']), implode(', ', array_keys($c['ip'])));
+            }
+            $md[] = '';
+            $md[] = '* replay head: `' . ($head ?? '—') . '`';
+        }
     }
 
     // #156 probe groups.
