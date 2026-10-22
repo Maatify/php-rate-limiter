@@ -84,6 +84,21 @@ PASS conditions are those of PLAN.md §4.6 and §10, listed in the header of `re
 
 * {"targets":80,"htCreationRetries":0}
 
+### P-TAIL / P-HT outcome causes (`tail_cause.php`, a replay of `tail.php` with the full result; descriptive, no verdict)
+
+| Probe | a | phase | n | decision · level · retryAfter · signal · cause · reason · scope | IPs (/24) |
+| --- | --- | --- | ---: | --- | --- |
+| P-TAIL | 0.5 | create | 20 | `ALLOW · 0 · 0 · — · — · — · —` 20 | 198.19.56 |
+| P-TAIL | 1 | create | 20 | `ALLOW · 0 · 0 · — · — · — · —` 20 | 198.19.56 |
+| P-TAIL | 2 | create | 20 | `ALLOW · 0 · 0 · — · — · — · —` 20 | 198.19.56 |
+| P-HT | — | create | 20 | `ALLOW · 0 · 0 · — · — · — · —` 20 | 198.19.76 |
+| P-TAIL | 2 | target | 20 | `ALLOW · 0 · 0 · — · — · — · —` 4; `HARD_BLOCK · 2 · 60 · — · — · — · —` 16 | 198.19.56 |
+| P-TAIL | 1 | target | 20 | `HARD_BLOCK · 2 · 60 · — · — · — · —` 20 | 198.19.56 |
+| P-TAIL | 0.5 | target | 20 | `HARD_BLOCK · 2 · 60 · — · — · — · —` 20 | 198.19.56 |
+| P-HT | — | target | 20 | `HARD_BLOCK · 2 · 60 · — · — · — · —` 20 | 198.19.76 |
+
+* replay head: `e76e9a83629e55d1dadf8202758c678a9b9218c1`
+
 ### #156 probe groups (twin S at σ, twin Z at σ = 0)
 
 `primary` = decision | re-entry | exception, as #156. Probe steps are compared per stream and per band (the last row of each band in each twin). Paired steps = every step whose index and operation match in both twins. `secondary` = primary equal, `lv` differs or `retryAfter` differs by more than ⌈|σ|⌉ (descriptive).
@@ -359,6 +374,114 @@ Each twin stores and judges with its own clock (host + σ for S, host for Z), in
 | `P-B_LOGIN-NA_+10.00` | 200 | 1 | 0 | 0 (0) | 198 | 0 / 1 | `+0.00` 197; `+1.00` 3 |
 | `P-B_LOGIN-NA_+60.00` | 200 | 1 | 0 | 0 (0) | 199 | 0 / 0 | `+0.00` 196; `+1.00` 4 |
 
+### C-156-Q (registered 2026-10-22, PLAN §12.4): every remaining twin difference explained by whole-second quantization
+
+PASS per cell: 0 exceptions; 0 unexplained primary changes (explained only in P-B / P-E, predicted by the end-time rule or within ± 2 ms; in P-I also on every paired step); |Δ end| ≤ 1 s; 0 unexplained `retryAfter` differences (explained: (i) exactly 1 s, (ii) CYCLE-NA L3 → pause handover, predicted or within ± 2 ms). `lv` differences are reported, not gated.
+
+| Cell | probe steps | primary changes: explained / unexplained | max \|Δ end\| s | `retryAfter` differences: (i) 1 s / (ii) handover / unexplained | `lv` differences | exceptions | verdict |
+| --- | ---: | --- | ---: | --- | ---: | ---: | --- |
+| `P-E2_LOGIN-NA_-60.00` | 200 | 0 / 0 | 1.00 | 1 / 0 / 0 | 0 | 0 | PASS |
+| `P-E2_LOGIN-NA_-10.00` | 200 | 0 / 0 | 1.00 | 3 / 0 / 0 | 0 | 0 | PASS |
+| `P-E2_LOGIN-NA_-2.00` | 200 | 2 / 0 | 1.00 | 4 / 0 / 0 | 0 | 0 | PASS |
+| `P-E2_LOGIN-NA_-1.00` | 200 | 0 / 0 | 1.00 | 2 / 0 / 0 | 0 | 0 | PASS |
+| `P-E2_LOGIN-NA_-0.50` | 200 | 50 / 0 | 0.50 | 27 / 0 / 0 | 0 | 0 | PASS |
+| `P-E2_LOGIN-NA_-0.25` | 200 | 52 / 0 | 0.75 | 13 / 0 / 0 | 0 | 0 | PASS |
+| `P-E2_LOGIN-NA_+0.25` | 200 | 95 / 0 | 0.75 | 0 / 0 / 0 | 0 | 0 | PASS |
+| `P-E2_LOGIN-NA_+0.50` | 200 | 95 / 0 | 0.50 | 0 / 0 / 0 | 0 | 0 | PASS |
+| `P-E2_LOGIN-NA_+1.00` | 200 | 3 / 0 | 1.00 | 0 / 0 / 0 | 0 | 0 | PASS |
+| `P-E2_LOGIN-NA_+2.00` | 200 | 2 / 0 | 1.00 | 1 / 0 / 0 | 0 | 0 | PASS |
+| `P-E2_LOGIN-NA_+10.00` | 200 | 3 / 0 | 1.00 | 2 / 0 / 0 | 0 | 0 | PASS |
+| `P-E2_LOGIN-NA_+60.00` | 200 | 2 / 0 | 1.00 | 2 / 0 / 0 | 0 | 0 | PASS |
+| `P-E2_CYCLE-NA_-60.00` | 200 | 0 / 0 | 1.00 | 4 / 0 / 0 | 0 | 0 | PASS |
+| `P-E2_CYCLE-NA_-10.00` | 200 | 0 / 0 | 1.00 | 3 / 0 / 0 | 0 | 0 | PASS |
+| `P-E2_CYCLE-NA_-2.00` | 200 | 0 / 0 | 0.00 | 1 / 1 / 0 | 0 | 0 | PASS |
+| `P-E2_CYCLE-NA_-1.00` | 200 | 0 / 0 | 1.00 | 5 / 2 / 0 | 0 | 0 | PASS |
+| `P-E2_CYCLE-NA_-0.50` | 200 | 0 / 0 | 0.50 | 27 / 56 / 0 | 0 | 0 | PASS |
+| `P-E2_CYCLE-NA_-0.25` | 200 | 0 / 0 | 0.75 | 21 / 62 / 0 | 0 | 0 | PASS |
+| `P-E2_CYCLE-NA_+0.25` | 200 | 0 / 0 | 0.75 | 1 / 101 / 0 | 0 | 0 | PASS |
+| `P-E2_CYCLE-NA_+0.50` | 200 | 0 / 0 | 0.50 | 4 / 98 / 0 | 0 | 0 | PASS |
+| `P-E2_CYCLE-NA_+1.00` | 200 | 0 / 0 | 1.00 | 4 / 2 / 0 | 0 | 0 | PASS |
+| `P-E2_CYCLE-NA_+2.00` | 200 | 0 / 0 | 1.00 | 2 / 6 / 0 | 0 | 0 | PASS |
+| `P-E2_CYCLE-NA_+10.00` | 200 | 0 / 0 | 1.00 | 3 / 3 / 0 | 0 | 0 | PASS |
+| `P-E2_CYCLE-NA_+60.00` | 200 | 0 / 0 | 1.00 | 0 / 4 / 0 | 0 | 0 | PASS |
+| `P-E3_LOGIN-NA_-60.00` | 200 | 0 / 0 | 1.00 | 7 / 0 / 0 | 0 | 0 | PASS |
+| `P-E3_LOGIN-NA_-10.00` | 200 | 0 / 0 | 1.00 | 10 / 0 / 0 | 0 | 0 | PASS |
+| `P-E3_LOGIN-NA_-2.00` | 200 | 0 / 0 | 1.00 | 8 / 0 / 0 | 0 | 0 | PASS |
+| `P-E3_LOGIN-NA_-1.00` | 200 | 1 / 0 | 1.00 | 1 / 0 / 0 | 0 | 0 | PASS |
+| `P-E3_LOGIN-NA_-0.50` | 200 | 59 / 0 | 0.50 | 26 / 0 / 0 | 0 | 0 | PASS |
+| `P-E3_LOGIN-NA_-0.25` | 200 | 57 / 0 | 0.75 | 12 / 0 / 0 | 0 | 0 | PASS |
+| `P-E3_LOGIN-NA_+0.25` | 200 | 100 / 0 | 0.75 | 0 / 0 / 0 | 0 | 0 | PASS |
+| `P-E3_LOGIN-NA_+0.50` | 200 | 101 / 0 | 0.50 | 0 / 0 / 0 | 0 | 0 | PASS |
+| `P-E3_LOGIN-NA_+1.00` | 200 | 2 / 0 | 1.00 | 0 / 0 / 0 | 0 | 0 | PASS |
+| `P-E3_LOGIN-NA_+2.00` | 200 | 4 / 0 | 1.00 | 4 / 0 / 0 | 0 | 0 | PASS |
+| `P-E3_LOGIN-NA_+10.00` | 200 | 1 / 0 | 1.00 | 2 / 0 / 0 | 0 | 0 | PASS |
+| `P-E3_LOGIN-NA_+60.00` | 200 | 3 / 0 | 1.00 | 3 / 0 / 0 | 0 | 0 | PASS |
+| `P-E3_CYCLE-NA_-60.00` | 200 | 0 / 0 | 1.00 | 4 / 0 / 0 | 0 | 0 | PASS |
+| `P-E3_CYCLE-NA_-10.00` | 200 | 0 / 0 | 1.00 | 6 / 0 / 0 | 0 | 0 | PASS |
+| `P-E3_CYCLE-NA_-2.00` | 200 | 0 / 0 | 1.00 | 3 / 1 / 0 | 0 | 0 | PASS |
+| `P-E3_CYCLE-NA_-1.00` | 200 | 0 / 0 | 1.00 | 2 / 2 / 0 | 0 | 0 | PASS |
+| `P-E3_CYCLE-NA_-0.50` | 200 | 0 / 0 | 0.50 | 19 / 42 / 0 | 0 | 0 | PASS |
+| `P-E3_CYCLE-NA_-0.25` | 200 | 0 / 0 | 0.75 | 6 / 68 / 0 | 0 | 0 | PASS |
+| `P-E3_CYCLE-NA_+0.25` | 200 | 0 / 0 | 0.75 | 2 / 97 / 0 | 0 | 0 | PASS |
+| `P-E3_CYCLE-NA_+0.50` | 200 | 0 / 0 | 0.50 | 0 / 97 / 0 | 0 | 0 | PASS |
+| `P-E3_CYCLE-NA_+1.00` | 200 | 0 / 0 | 1.00 | 2 / 4 / 0 | 0 | 0 | PASS |
+| `P-E3_CYCLE-NA_+2.00` | 200 | 0 / 0 | 1.00 | 0 / 4 / 0 | 0 | 0 | PASS |
+| `P-E3_CYCLE-NA_+10.00` | 200 | 0 / 0 | 1.00 | 7 / 2 / 0 | 0 | 0 | PASS |
+| `P-E3_CYCLE-NA_+60.00` | 200 | 0 / 0 | 1.00 | 4 / 2 / 0 | 0 | 0 | PASS |
+| `P-SAT_LOGIN-NA_+60.00` | 100 | 0 / 0 | — | 3 / 0 / 0 | 0 | 0 | PASS |
+| `P-RA2_LOGIN-NA_-2.00` | 100 | 0 / 0 | — | 0 / 0 / 0 | 0 | 0 | PASS |
+| `P-RA2_LOGIN-NA_-1.00` | 100 | 0 / 0 | — | 0 / 0 / 0 | 0 | 0 | PASS |
+| `P-RA2_LOGIN-NA_-0.50` | 100 | 0 / 0 | — | 0 / 0 / 0 | 0 | 0 | PASS |
+| `P-RA2_LOGIN-NA_-0.25` | 100 | 0 / 0 | — | 0 / 0 / 0 | 0 | 0 | PASS |
+| `P-RA2_LOGIN-NA_+0.25` | 100 | 0 / 0 | — | 0 / 0 / 0 | 0 | 0 | PASS |
+| `P-RA2_LOGIN-NA_+0.50` | 100 | 0 / 0 | — | 0 / 0 / 0 | 0 | 0 | PASS |
+| `P-RA2_LOGIN-NA_+1.00` | 100 | 0 / 0 | — | 0 / 0 / 0 | 0 | 0 | PASS |
+| `P-RA2_LOGIN-NA_+2.00` | 100 | 0 / 0 | — | 0 / 0 / 0 | 0 | 0 | PASS |
+| `P-RA2_CYCLE-NA_-2.00` | 100 | 0 / 0 | — | 1 / 0 / 0 | 0 | 0 | PASS |
+| `P-RA2_CYCLE-NA_-1.00` | 100 | 0 / 0 | — | 3 / 0 / 0 | 0 | 0 | PASS |
+| `P-RA2_CYCLE-NA_-0.50` | 100 | 0 / 0 | — | 2 / 0 / 0 | 0 | 0 | PASS |
+| `P-RA2_CYCLE-NA_-0.25` | 100 | 0 / 0 | — | 3 / 0 / 0 | 0 | 0 | PASS |
+| `P-RA2_CYCLE-NA_+0.25` | 100 | 0 / 0 | — | 3 / 0 / 0 | 0 | 0 | PASS |
+| `P-RA2_CYCLE-NA_+0.50` | 100 | 0 / 0 | — | 3 / 0 / 0 | 0 | 0 | PASS |
+| `P-RA2_CYCLE-NA_+1.00` | 100 | 0 / 0 | — | 4 / 0 / 0 | 0 | 0 | PASS |
+| `P-RA2_CYCLE-NA_+2.00` | 100 | 0 / 0 | — | 1 / 0 / 0 | 0 | 0 | PASS |
+| `P-B_LOGIN-NA_-60.00` | 200 | 0 / 0 | 1.00 | 4 / 0 / 0 | 0 | 0 | PASS |
+| `P-B_LOGIN-NA_-10.00` | 200 | 2 / 0 | 1.00 | 3 / 0 / 0 | 0 | 0 | PASS |
+| `P-B_LOGIN-NA_-2.00` | 200 | 2 / 0 | 1.00 | 5 / 0 / 0 | 0 | 0 | PASS |
+| `P-B_LOGIN-NA_-1.00` | 200 | 7 / 0 | 1.00 | 0 / 0 / 0 | 0 | 0 | PASS |
+| `P-B_LOGIN-NA_-0.50` | 200 | 97 / 0 | 0.50 | 0 / 0 / 0 | 0 | 0 | PASS |
+| `P-B_LOGIN-NA_-0.25` | 200 | 98 / 0 | 0.75 | 0 / 0 / 0 | 0 | 0 | PASS |
+| `P-B_LOGIN-NA_+0.25` | 200 | 92 / 0 | 0.75 | 0 / 0 / 0 | 0 | 0 | PASS |
+| `P-B_LOGIN-NA_+0.50` | 200 | 96 / 0 | 0.50 | 0 / 0 / 0 | 0 | 0 | PASS |
+| `P-B_LOGIN-NA_+1.00` | 200 | 4 / 0 | 1.00 | 2 / 0 / 0 | 0 | 0 | PASS |
+| `P-B_LOGIN-NA_+2.00` | 200 | 2 / 0 | 1.00 | 5 / 0 / 0 | 0 | 0 | PASS |
+| `P-B_LOGIN-NA_+10.00` | 200 | 1 / 0 | 1.00 | 3 / 0 / 0 | 0 | 0 | PASS |
+| `P-B_LOGIN-NA_+60.00` | 200 | 1 / 0 | 1.00 | 6 / 0 / 0 | 0 | 0 | PASS |
+| `P-I_LOGIN-NA_-2.00` | 200 | 0 / 0 | — | 0 / 0 / 0 | 0 | 0 | PASS |
+| `P-I_LOGIN-NA_-1.00` | 200 | 0 / 0 | — | 0 / 0 / 0 | 0 | 0 | PASS |
+| `P-I_LOGIN-NA_-0.50` | 200 | 0 / 0 | — | 8 / 0 / 0 | 0 | 0 | PASS |
+| `P-I_LOGIN-NA_-0.25` | 200 | 0 / 0 | — | 6 / 0 / 0 | 0 | 0 | PASS |
+| `P-I_LOGIN-NA_+0.25` | 200 | 0 / 0 | — | 6 / 0 / 0 | 0 | 0 | PASS |
+| `P-I_LOGIN-NA_+0.50` | 200 | 0 / 0 | — | 8 / 0 / 0 | 0 | 0 | PASS |
+| `P-I_LOGIN-NA_+1.00` | 200 | 0 / 0 | — | 0 / 0 / 0 | 0 | 0 | PASS |
+| `P-I_LOGIN-NA_+2.00` | 200 | 0 / 0 | — | 1 / 0 / 0 | 0 | 0 | PASS |
+| `P-I_CYCLE-NA_-2.00` | 200 | 0 / 0 | — | 4 / 0 / 0 | 0 | 0 | PASS |
+| `P-I_CYCLE-NA_-1.00` | 200 | 0 / 0 | — | 9 / 0 / 0 | 0 | 0 | PASS |
+| `P-I_CYCLE-NA_-0.50` | 200 | 0 / 0 | — | 94 / 0 / 0 | 0 | 0 | PASS |
+| `P-I_CYCLE-NA_-0.25` | 200 | 0 / 0 | — | 72 / 0 / 0 | 0 | 0 | PASS |
+| `P-I_CYCLE-NA_+0.25` | 200 | 0 / 0 | — | 63 / 0 / 0 | 0 | 0 | PASS |
+| `P-I_CYCLE-NA_+0.50` | 200 | 0 / 0 | — | 100 / 0 / 0 | 0 | 0 | PASS |
+| `P-I_CYCLE-NA_+1.00` | 200 | 0 / 0 | — | 8 / 0 / 0 | 0 | 0 | PASS |
+| `P-I_CYCLE-NA_+2.00` | 200 | 0 / 0 | — | 7 / 0 / 0 | 0 | 0 | PASS |
+| `P-RA1_LOGIN-NA_-2.00` | 100 | 0 / 0 | — | 0 / 0 / 0 | 0 | 0 | PASS |
+| `P-RA1_LOGIN-NA_-1.00` | 100 | 0 / 0 | — | 0 / 0 / 0 | 0 | 0 | PASS |
+| `P-RA1_LOGIN-NA_-0.50` | 100 | 0 / 0 | — | 0 / 0 / 0 | 0 | 0 | PASS |
+| `P-RA1_LOGIN-NA_-0.25` | 100 | 0 / 0 | — | 0 / 0 / 0 | 0 | 0 | PASS |
+| `P-RA1_LOGIN-NA_+0.25` | 100 | 0 / 0 | — | 0 / 0 / 0 | 0 | 0 | PASS |
+| `P-RA1_LOGIN-NA_+0.50` | 100 | 0 / 0 | — | 0 / 0 / 0 | 0 | 0 | PASS |
+| `P-RA1_LOGIN-NA_+1.00` | 100 | 0 / 0 | — | 0 / 0 / 0 | 0 | 0 | PASS |
+| `P-RA1_LOGIN-NA_+2.00` | 100 | 0 / 0 | — | 0 / 0 / 0 | 0 | 0 | PASS |
+
 ### Two-clock arm (§4.7, LT-P2-04): writer ahead by δ, reader at 0, one Redis
 
 | Cell | arm | δ s | n | validator exceptions | other exceptions | refused (decision ≠ ALLOW) | outcomes |
@@ -468,6 +591,25 @@ Each twin stores and judges with its own clock (host + σ for S, host for Z), in
 | `P-E2_CYCLE-NA_-1.00` | 200 | 0 | 0 | 1 (1) | 199 | 0 / 0 | `-1.00` 6; `+0.00` 194 |
 | `P-E2_CYCLE-NA_+1.00` | 200 | 0 | 0 | 5 (5) | 195 | 0 / 0 | `-1.00` 9; `+0.00` 191 |
 
+### C-156-Q (registered 2026-10-22, PLAN §12.4): every remaining twin difference explained by whole-second quantization
+
+PASS per cell: 0 exceptions; 0 unexplained primary changes (explained only in P-B / P-E, predicted by the end-time rule or within ± 2 ms; in P-I also on every paired step); |Δ end| ≤ 1 s; 0 unexplained `retryAfter` differences (explained: (i) exactly 1 s, (ii) CYCLE-NA L3 → pause handover, predicted or within ± 2 ms). `lv` differences are reported, not gated.
+
+| Cell | probe steps | primary changes: explained / unexplained | max \|Δ end\| s | `retryAfter` differences: (i) 1 s / (ii) handover / unexplained | `lv` differences | exceptions | verdict |
+| --- | ---: | --- | ---: | --- | ---: | ---: | --- |
+| `P-B_LOGIN-NA_-1.00` | 200 | 9 / 0 | 1.00 | 0 / 0 / 0 | 0 | 0 | PASS |
+| `P-B_LOGIN-NA_+1.00` | 200 | 9 / 0 | 1.00 | 0 / 0 / 0 | 0 | 0 | PASS |
+| `P-RA1_LOGIN-NA_-1.00` | 100 | 0 / 0 | — | 0 / 0 / 0 | 0 | 0 | PASS |
+| `P-RA1_LOGIN-NA_+1.00` | 100 | 0 / 0 | — | 0 / 0 / 0 | 0 | 0 | PASS |
+| `P-E2_LOGIN-NA_-1.00` | 200 | 4 / 0 | 1.00 | 2 / 0 / 0 | 0 | 0 | PASS |
+| `P-E2_LOGIN-NA_+1.00` | 200 | 3 / 0 | 1.00 | 3 / 0 / 0 | 0 | 0 | PASS |
+| `P-E2_CYCLE-NA_-1.00` | 200 | 0 / 0 | 1.00 | 7 / 1 / 0 | 0 | 0 | PASS |
+| `P-E2_CYCLE-NA_+1.00` | 200 | 0 / 0 | 1.00 | 6 / 5 / 0 | 0 | 0 | PASS |
+| `P-RA2_LOGIN-NA_-1.00` | 100 | 0 / 0 | — | 0 / 0 / 0 | 0 | 0 | PASS |
+| `P-RA2_LOGIN-NA_+1.00` | 100 | 0 / 0 | — | 0 / 0 / 0 | 0 | 0 | PASS |
+| `P-RA2_CYCLE-NA_-1.00` | 100 | 0 / 0 | — | 0 / 0 / 0 | 0 | 0 | PASS |
+| `P-RA2_CYCLE-NA_+1.00` | 100 | 0 / 0 | — | 0 / 0 / 0 | 0 | 0 | PASS |
+
 ## Verdicts
 
 | Condition | result | detail |
@@ -477,7 +619,9 @@ Each twin stores and judges with its own clock (host + σ for S, host for Z), in
 | E-SAME P-TAIL | PASS | 60 targets, 0 exceptions, 0 script errors |
 | E-SAME P-HT | PASS | 20 targets, 0 exceptions, 0 script errors |
 | E-SAME #156 probes | **FAIL** | 72 / 101 cells PASS |
+| E-SAME C-156-Q (§12.4) | PASS | 101 / 101 cells PASS |
 | E-SAME two-clock control | PASS | 2420 rows, 0 exceptions, 0 refused returns |
 | E-DOCKER #154 cells | PASS | 26 / 26 cells PASS |
 | E-DOCKER D-100 inverted | PASS | 0 / 2000 |
 | E-DOCKER #156 probes | **FAIL** | 8 / 12 cells PASS |
+| E-DOCKER C-156-Q (§12.4) | PASS | 12 / 12 cells PASS |
