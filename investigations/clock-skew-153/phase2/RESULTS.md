@@ -1,21 +1,37 @@
 # #153 phase 2 — one time authority: RESULTS
 
-**Status: self-review only (executor), Draft.** Two items block Ready under the Owner's rule (every confirmed finding blocks):
+**v2 (2026-10-22), at the tested tree `3ead16a`. Status: self-review only (executor), Draft.** No open finding remains:
+* **The original #156 probe condition of §4.6 stays FAIL as written** (LT-P2-13: no redefinition after the run): 29 E-SAME cells and 4 E-DOCKER cells.
+* **The condition registered in its place, C-156-Q (PLAN §12.4, 2026-10-22), PASSES:** 101 / 101 E-SAME cells and 12 / 12 E-DOCKER cells (§4).
+* **F-P2-03 is fixed in this PR:** red test `ea9a7c2`, fix `5d7debd` (§8).
+* **The P-TAIL / P-HT `HARD_BLOCK` is attributed** (LT-P2-15, §3).
 
-1. The #156 probe condition of §4.6 (registered as "0 flips at every σ", applied as "0 primary decision changes between the twins") **FAILS** in 29 E-SAME cells and 4 E-DOCKER cells (§4).
-   * Every change is predicted by whole-second quantization of each twin's own clock, and none is unexplained.
-   * The cause is not caller-versus-Redis skew. Ruling requested: **LT-P2-13** (§9).
-2. **F-P2-03** (open): the inline watch-rotation script does not apply LT-P2-03 to its current window, contrary to FAILURE_SEMANTICS §2.5 (§8). Ruling requested: **LT-P2-14**.
-
-Everything else registered passes:
-* #154 in full, P-TAIL and P-HT, RED-1c, and the two-clock controls;
+Everything registered passes on `3ead16a`:
+* #154 E-SAME in full, P-TAIL and P-HT, RED-1c;
 * §4.5 S0 non-regression;
-* the suites in both modes and PHPStan in both modes;
-* CVH twice, NM-6, and RED-1…10.
+* the suites in both modes (1960 tests) and PHPStan in both modes;
+* CVH twice, NM-6, and RED-1…11;
+* C-156-Q, and the two-clock controls (on the outputs that §12.2 keeps).
+
+What remains before the Owner's decision: the Lead's own acceptance rerun on the final head, and his review.
 
 ## 1. Tested tree
 
-* **Code tested by the suites, PHPStan and CVH:** `src/`, `tests/` and `composer.json` at `0773b8a` (base `main@f5897b0`). The later commits `defdba2` (logs and outputs) and this file touch `investigations/` only.
+* **v2 tested tree:** `src/`, `tests/` and `composer.json` at **`3ead16a`** (base `main@f5897b0`).
+  * The suites, PHPStan, CVH, gate §4.5 and #154 E-SAME ran on it.
+  * Every later commit touches `investigations/` or `docs/` only: `562030f`, `18ff84b`, `25f673a`, `6ee1741` (`docs/FAILURE_SEMANTICS.md`), `0e8756b`, `e76e9a8`, the replay outputs, and this file.
+  * `git diff 3ead16a HEAD -- src tests composer.json` is empty.
+* **v2 commits after `38c5ce7`:**
+  * the §12 rulings `07c81b9`;
+  * RED-11 `ea9a7c2`;
+  * F-P2-03 fix `5d7debd`;
+  * runner mode `3ead16a`;
+  * rerun outputs `562030f`;
+  * §12.4 rulings and C-156-Q text `18ff84b`;
+  * C-156-Q evaluation `25f673a`;
+  * FAILURE_SEMANTICS sentence `6ee1741`;
+  * cause instrument `0e8756b` and `e76e9a8`.
+* **v1:** the first tested tree was `0773b8a` (logs in `logs/0773b8a/`).
 * **Phase 2 commits, in order:**
   * the plan `68b73df`;
   * Lead / Owner rulings `373ee36`;
@@ -33,11 +49,15 @@ Everything else registered passes:
   * F-P2-02 fix `f4aec1c`;
   * §4.5 harness `0773b8a`;
   * §4.5 outputs and logs `defdba2`.
-* **The #154 / #156 / two-clock acceptance ran on `5201632`.**
-  * `src/` is byte-identical to `0773b8a` (`git diff 5201632 0773b8a -- src` is empty).
-  * `tests/` differs only by `f4aec1c`: the held-time `WeakMap` accessor in `tests/Support/RateLimiter/InMemoryRateLimitStore.php` and `tests/Support/Correlation/StatefulInMemoryCorrelationStore.php`.
-  * No acceptance harness loads either file (searched: `investigations/clock-skew-153/harness`, `investigations/clock-mixes-153/harness`, `phase2/acceptance`).
-* **§4.5 ran on `0773b8a`.**
+* **Which head each acceptance output comes from (v2):**
+  * **#154 E-SAME and gate §4.5** reran on `3ead16a` (LT-P2-14). Logs: `acceptance/logs/E-SAME-p154.log.gz`, `E-SAME-s0.log.gz`.
+  * **#156 probes (both environments), the two-clock arm and #154 E-DOCKER** are the outputs of `5201632`. They were not rerun:
+    * the #156 cells and the two-clock cells never reach the rotation path (PLAN §12.2);
+    * the ruling ordered #154 on E-SAME only.
+  * **`src/` difference between `5201632` and `3ead16a`:** the F-P2-03 fix only, two Lua lines in the watch-rotation script (`5d7debd`).
+  * **`tests/` difference:** `f4aec1c` (the support stores' `WeakMap` accessor) and RED-11. No acceptance harness loads either.
+  * **What is not established:** whether a #154 E-DOCKER cell reaches the watch-rotation path. Its rows do not record command names.
+  * **P-TAIL / P-HT cause replay:** `0e8756b` / `e76e9a8`, whose `src/` and `tests/` are identical to `3ead16a`.
 * **Environment:** PHP 8.5.9, Darwin 27.0.0.
   * E-SAME: Redis 8.10.0 local, `redis-server` started fresh by the runner.
   * E-DOCKER and every suite: Redis 7.0.15 (`docker/redis-integration`, `scripts/ci/run-with-redis-service.sh`).
@@ -59,15 +79,17 @@ Everything else registered passes:
 | RED-8 | one `now` per call | 5–12 Host-clock reads per call | 1 per `limit()` and per claim — pass | `…TheHostClockIsReadOncePerLimitAndPerClaim` |
 | RED-9 (added, LT-P2-09) | `retryAfter` = 60 | 62 | 60 — pass | `…SimpleFixedWindowRetryAfterIsTheWindowWhenTheApplicationIsBehind` |
 | RED-10 (LT-P2-12) | dump before = after, `expiry not representable` | 8 / 8 red | 8 / 8 pass | `…RedisRejectedExpiryDeletesEverythingTheCallCreated` |
-| S0-PARITY §4.2 | existing tests unchanged, or a ruling | — | 1959 tests OK in both modes. The only changed existing tests are those ruled (§5); goldens pass byte-identical | `logs/suite-*.log` |
-| §4.3 suites | both modes, full logs | — | normal: PHPUnit 11.5.57, `OK (1959 tests, 26227 assertions)`, 14:55. Lowest: PHPUnit 11.5.50, `OK (1959 tests, 26139 assertions)`, 14:59. No error, warning, risky, skipped or incomplete test | `logs/suite-normal.log`, `logs/suite-lowest.log` |
-| §4.3 PHPStan max | normal and lowest | — | 2.3.1 `[OK] No errors`; 2.0.0 `[OK] No errors` (after F-P2-02) | `logs/phpstan-*.log`; first run in `logs/8a8082a/` |
-| §4.3 CVH twice | PASS | — | clean run #1 PASS, clean run #2 PASS (verification and cleanup) | `logs/cvh.log` |
-| §4.3 NM-6 | admission contracts unchanged | — | `git diff f5897b0 0773b8a` on every `src/` file with "Admission" in its path: 0 lines. `RedisFullCapabilityStore` changes only the layout of its `implements` list there. `AdmissionStoreNm6RedisTest` (unchanged) passes in both suites | git, suites |
+| RED-11 (F-P2-03, LT-P2-14) | rotated watch `[1, 1]` at the logical deadline, as the plain path | red on `38c5ce7`: `[1, 2]` | pass (with control `[1, 2]` before the deadline, and live previous unchanged) | `…RotatedWatchWindowRestartsAtItsLogicalDeadlineLikeThePlainWatch` |
+| S0-PARITY §4.2 | existing tests unchanged, or a ruling | — | 1960 tests OK in both modes (on `3ead16a`). The only changed existing tests are those ruled (§5); goldens pass byte-identical | `logs/suite-*.log` |
+| §4.3 suites | both modes, full logs | — | `3ead16a`: normal PHPUnit 11.5.57, `OK (1960 tests, 26452 assertions)`, 15:06; lowest PHPUnit 11.5.50, `OK (1960 tests, 26576 assertions)`, 15:14. No error, warning, risky, skipped or incomplete test. v1 (`0773b8a`): 1959 OK in both | `logs/suite-normal.log`, `logs/suite-lowest.log`; v1 in `logs/0773b8a/` |
+| §4.3 PHPStan max | normal and lowest | — | `3ead16a`: 2.3.1 `[OK] No errors`; 2.0.0 `[OK] No errors` (after F-P2-02) | `logs/phpstan-*.log`; the F-P2-02 run in `logs/8a8082a/` |
+| §4.3 CVH twice | PASS | — | `3ead16a`: clean run #1 PASS, clean run #2 PASS (verification and cleanup) | `logs/cvh.log` |
+| §4.3 NM-6 | admission contracts unchanged | — | `git diff f5897b0 3ead16a` on every `src/` file with "Admission" in its path: 0 lines. `RedisFullCapabilityStore` changes only the layout of its `implements` list there. `AdmissionStoreNm6RedisTest` (unchanged) passes in both suites | git, suites |
 | §4.4 detectors | red tests red on `f5897b0` | 12 / 14 cases red (RED-6, RED-7 guards), RED-10 8 / 8 red | — | commits `7938249`, `c653e7a` |
-| §4.5 S0 non-regression | equal except defect-attributed | — | **PASS**: 6 cells, 2,400 stream-twins; 0 unattributed differences, 0 exceptions after the fix; 2 differences attributed (S-BEN_LOGIN-NA_AA, pre-fix exceptions) | §6 |
-| §4.6 #154 rerun | 0 validator exceptions every cell; P-HT 0 / 20; P-TAIL 0 / 60; D-100 0 / 2,000; V-3 = 0 exceptions, 0 UP / LO | — | **PASS** in every condition, both environments | §3 |
-| §4.6 #156 probes | 0 flips at every σ | — | **FAIL** (33 cells): §4 | §4 |
+| §4.5 S0 non-regression | equal except defect-attributed | — | **PASS** on `3ead16a` (and on `0773b8a`): 6 cells, 2,400 stream-twins; 0 unattributed differences, 0 exceptions after the fix; 2 differences attributed (S-BEN_LOGIN-NA_AA, pre-fix exceptions) | §6 |
+| §4.6 #154 rerun | 0 validator exceptions every cell; P-HT 0 / 20; P-TAIL 0 / 60; D-100 0 / 2,000; V-3 = 0 exceptions, 0 UP / LO | — | **PASS** in every condition: E-SAME on `3ead16a` (and `5201632`), E-DOCKER on `5201632` | §3 |
+| §4.6 #156 probes | 0 flips at every σ | — | **FAIL as written** (33 cells; kept, LT-P2-13): §4 | §4 |
+| C-156-Q (PLAN §12.4, registered 2026-10-22) | every remaining twin difference explained by whole-second quantization | — | **PASS**: E-SAME 101 / 101, E-DOCKER 12 / 12; 1,059 primary changes all explained, 0 unexplained; max \|Δ end\| 1.0 s; `retryAfter` differences 713 (i) + 660 (ii), 0 unexplained; 0 exceptions | §4 |
 | §4.7 two-clock arm | measured; controls clean | — | controls 0 / 2,420; δ = 1 s measured (§7) | §7 |
 
 **List A** (Redis + `FixedClock` tests that now store the frozen time, PLAN §9.2): all twelve pass in both suites.
@@ -95,16 +117,25 @@ Everything else registered passes:
 
 **Read with the table:**
 * **Pre-fix values, same cells.** BEHIND 1.00 / 2.00 2,000 / 2,000, D-100 2,000 / 2,000, P-TAIL 60 / 60 validator, P-HT 20 / 20 `malformed bounded metadata`. The parser was checked against the archived pre-fix outputs before the run and reproduces these.
-* **P-TAIL / P-HT outcomes are mostly `HARD_BLOCK`** (P-TAIL a = 2: 4 `ALLOW`, 16 `HARD_BLOCK`; the rest `HARD_BLOCK`).
-  * The registered condition covers exceptions and script errors only. Pre-fix, the exception came before any decision.
-  * The 80 probe accounts share one /24 of the benchmark range, and each was created with `ALLOW`.
-  * The decision's cause was not measured in this run. It is reported as not attributed, not as a time effect.
+* **P-TAIL / P-HT outcomes are mostly `HARD_BLOCK`** (first burst: 4 `ALLOW`, 16 `HARD_BLOCK`; every other target `HARD_BLOCK`). The registered condition covers exceptions and script errors only, and is unaffected.
+  * **Cause (LT-P2-15, LT-P2-17), measured by `tail_cause.php`.** It replays the archived `tail.php` flow with the full result; the output is in `expected/E-SAME/tail-cause.jsonl.gz` and the table in `expected/summary.md`. Run on `e76e9a8`, whose `src/` and `tests/` equal `3ead16a`, on Redis 8.10.0.
+  * **It is S0's fingerprint dilution rule** (`EvaluationPipeline::checkCorrelationRules`, `BOUNDED_SNAPSHOT(ttl 600, max 6)`: distinct K1 values per device fingerprint; watch at 5, confirmed in a second window, DECISION_MATRIX L704; KEY_STRATEGY "Same DeviceFP across many K1 prefixes → fingerprint dilution").
+    * The probe design gives every account the same device (`d1`) and UA (`Mozilla/5.0`) with a distinct IP. So all 80 contexts share one fingerprint across many K1 values.
+    * **Creation window:** the dilution count reached 5–6 and the watch was incremented once. Every creation stayed `ALLOW`, because the watch was not yet confirmed.
+    * **Targets' window, 600 s later:** a fresh dilution window counts 1, 2, 3, 4 (`ALLOW`). At 5 the watch is incremented again and `HARD_BLOCK` follows (level 2, `retryAfter` 60). From 6 on, every target is `HARD_BLOCK`.
+  * **What the other collective snapshots show.** At every target:
+    * credential spray `(600, 5)`, distributed account `(600, 4)` and churn `(600, 3)` stay at count 1;
+    * no admission script differs between `ALLOW` and `HARD_BLOCK` calls;
+    * the P-HT accounts, on another /24, are blocked the same way.
+  * **Result `metadata` is empty** for these blocks (no `signal`, `cause`, `reason` or `scope`). The rule is identified from the script sequence and its `(ttl, max, count)`.
+  * **Against the Lead's expected reading:** confirmed that it is a collective S0 rule, not admission and not time. Refined on the shared factor: the device fingerprint, not the /24.
+  * **The probe design** (many accounts on one device fingerprint) triggers S0's dilution rule. That does not touch the gate condition (exceptions only).
 * **Host surface (§7.4).** The archived `host_surface.php` asserts the pre-fix behaviour and stops at its first failure.
   * Its record in both environments: `FAIL … login_protection H-1 returned=100 other=[]`, i.e. `limit()` returned 100 / 100 instead of throwing.
   * `otp_protection` and `custom_distributed` are not reached by that script. Their cells above cover them.
 * **V-4′ is not a condition.** After LT-P2-05 every read is `RequestScopedClock.php:40`, the single Host read per call.
 
-## 4. Acceptance: #156 probe groups — FAIL, and what it is
+## 4. Acceptance: #156 probe groups — the original condition FAILS as written; C-156-Q PASSES
 
 **Registered condition (`report.php`, before the run):**
 * 0 exceptions in either twin;
@@ -163,7 +194,21 @@ Everything else registered passes:
   * Pre-fix, both twins' blocks were judged on Redis's single second grid. The twins disagreed on `retryAfter` (90–149 / 200 at σ > 0) but rarely on the decision (0–5).
   * After the fix, `retryAfter` agrees (0 secondary differences). At fractional σ the decision differs within that ≤ 1 s band (50–101 / 200).
   * At integer σ, P-E primary changes are 0–5 before and 0–4 after.
-* This is inherent to whole-second timestamps (DEC-017). It still fails the condition as registered. The executor does not reinterpret it. It is put to the Lead as **LT-P2-13**.
+* This is inherent to whole-second timestamps (DEC-017). It fails the condition as registered, and that verdict stays (LT-P2-13: no redefinition after the run).
+
+**C-156-Q, the condition registered in its place.** PLAN §12.4 records it with its date, 2026-10-22, after LT-P2-16 corrected one clause. It is evaluated by `report.php` (`25f673a`) over the same outputs, and the table is in `expected/summary.md`.
+
+| C-156-Q clause | E-SAME (101 cells) | E-DOCKER (12 cells) |
+| --- | --- | --- |
+| 0 exceptions, either twin | 0 | 0 |
+| primary changes: explained (P-B / P-E end-time rule or ± 2 ms) / unexplained (all families; P-I also paired steps) | 1,059 explained in total over both environments / **0** | (included) / **0** |
+| max \|Δ end\| | 1.0 s | 1.0 s |
+| `retryAfter` differences, equal decision: (i) exactly 1 s / (ii) CYCLE-NA L3 → pause handover / unexplained | 713 / 660 in total over both environments / **0** | (included) / **0** |
+| cells PASS | **101 / 101** | **12 / 12** |
+
+* The totals equal the counts written into PLAN §12.4 before the implementation.
+* No `lv` difference occurs with an equal decision; `lv` is reported, not gated.
+* FAILURE_SEMANTICS §2.5 now states the one-second resolution between Hosts, as ruled (`6ee1741`).
 
 **Logs.** `mixlib.php:228` warned "Undefined array key \"h\"" 1,207,232 times on E-SAME and 100,884 times on E-DOCKER (each warning is printed twice). Cause:
 * #156's descriptive PAUSE_READ rerun (its PLAN §4.3, for family I) expects a `now()` event immediately before each PAUSE_READ.
@@ -199,18 +244,18 @@ Rulings: PR #158 comment 6323629474 (lists B, C) and the Owner's ruling on lists
 
 The comparator was checked against the pre-fix archive compared with itself: every sequence is equal.
 
-The six cells registered for S-BEN and S-RA at σ = AA by #156's `run.sh` ran on E-SAME, 2026-10-21 22:41–23:45 UTC, concurrently. In #156 they ran within the 46-cell `streams-ben-ra` group.
+The six cells registered for S-BEN and S-RA at σ = AA by #156's `run.sh` ran on E-SAME, concurrently. In #156 they ran within the 46-cell `streams-ben-ra` group. v1 ran on `0773b8a` (2026-10-21 22:41–23:45 UTC). v2 ran on `3ead16a` (2026-10-22), and its numbers are shown with v1's in brackets where they differ.
 
 | Cell | stream-twins | equal | differ, attributed | differ, unattributed | `lv` / `retryAfter` only | exceptions before (S, Z) | after |
 | --- | ---: | ---: | ---: | ---: | ---: | --- | ---: |
-| S-BEN_LOGIN-NA_AA | 400 | 398 | 2 | 0 | 15 | 1, 1 | 0 |
-| S-RA_LOGIN-NA_AA | 400 | 400 | 0 | 0 | 1 | 0, 0 | 0 |
-| S-BEN_CYCLE-NA_AA | 400 | 400 | 0 | 0 | 139 | 0, 0 | 0 |
-| S-RA_CYCLE-NA_AA | 400 | 400 | 0 | 0 | 0 | 0, 0 | 0 |
-| S-BEN_LOGIN_AA | 400 | 400 | 0 | 0 | 127 | 0, 0 | 0 |
-| S-RA_LOGIN_AA | 400 | 400 | 0 | 0 | 0 | 0, 0 | 0 |
+| S-BEN_LOGIN-NA_AA | 400 | 398 | 2 | 0 | 133 (v1: 15) | 1, 1 | 0 |
+| S-RA_LOGIN-NA_AA | 400 | 400 | 0 | 0 | 1 (v1: 1) | 0, 0 | 0 |
+| S-BEN_CYCLE-NA_AA | 400 | 400 | 0 | 0 | 130 (v1: 139) | 0, 0 | 0 |
+| S-RA_CYCLE-NA_AA | 400 | 400 | 0 | 0 | 0 (v1: 0) | 0, 0 | 0 |
+| S-BEN_LOGIN_AA | 400 | 400 | 0 | 0 | 148 (v1: 127) | 0, 0 | 0 |
+| S-RA_LOGIN_AA | 400 | 400 | 0 | 0 | 0 (v1: 0) | 0, 0 | 0 |
 
-**Gate §4.5: PASS.** The `lv` / `retryAfter`-only column is descriptive and not gated. The two runs are separate in time, so a remaining wait computed from a stored second differs run to run by the second's phase. Not analysed further.
+**Gate §4.5: PASS** (v1 and v2). The `lv` / `retryAfter`-only column is descriptive and not gated. The two runs are separate in time, so a remaining wait computed from a stored second differs run to run by the second's phase. Not analysed further.
 
 ## 7. Two-clock arm (§4.7, LT-P2-04) — the measured residual of the Host duty
 
@@ -234,9 +279,9 @@ The Host duty, "a fleet that shares one Redis shares one time source", is the do
 | ID | Finding | State |
 | --- | --- | --- |
 | F-P2-01 | L2189 passed pre-fix only through Redis time expiring a block dated in the `FixedClock`'s past | ruled (Owner), edited in `b933da6` |
-| F-P2-02 | My held-time `WeakMap` in the two in-memory support stores wrote static-property offsets that PHPStan 2.0.0 rejects (8 × `assign.propertyType`; 2.3.1 accepts). The lowest CI job would have failed | **fixed** in `f4aec1c` (typed accessor, local writes, no behaviour change); evidence `logs/8a8082a/phpstan-lowest.log`; suites, PHPStan and CVH rerun on `0773b8a` |
-| F-P2-03 | The inline watch-rotation script (`incrementWatchFlagAcrossRotationAt`, PLAN row 12) checks a present current window's metadata, but not its logical `expiresAt` against the caller's time: it keeps counting. `WATCH_INCREMENT` and every other window, flag and bridge reset at the logical deadline (LT-P2-03), and FAILURE_SEMANTICS §2.5 states the reset for every watch flag | **open**; LT-P2-14 |
-| A-P2-01 | The #156 probe condition fails by whole-second quantization of each twin's clock (§4) | **open**; LT-P2-13 |
+| F-P2-02 | My held-time `WeakMap` in the two in-memory support stores wrote static-property offsets that PHPStan 2.0.0 rejects (8 × `assign.propertyType`; 2.3.1 accepts). The lowest CI job would have failed | **fixed** in `f4aec1c` (typed accessor, local writes, no behaviour change); evidence `logs/8a8082a/phpstan-lowest.log`; suites, PHPStan and CVH rerun on `0773b8a` and on `3ead16a` |
+| F-P2-03 | The inline watch-rotation script (`incrementWatchFlagAcrossRotationAt`, PLAN row 12) checks a present current window's metadata, but not its logical `expiresAt` against the caller's time: it keeps counting. `WATCH_INCREMENT` and every other window, flag and bridge reset at the logical deadline (LT-P2-03), and FAILURE_SEMANTICS §2.5 states the reset for every watch flag | **fixed** (LT-P2-14): RED-11 `ea9a7c2` red on `38c5ce7` (`[1, 2]`); fix `5d7debd` in the rotation script only (`expires ≤ now ⇒ DEL` of the current value and metadata before counting; the previous generation stays read-only); RED-11 passes; reruns on `3ead16a` all PASS |
+| A-P2-01 | The #156 probe condition fails by whole-second quantization of each twin's clock (§4) | **ruled** (LT-P2-13 (a), LT-P2-16): the original condition stays FAIL as written; C-156-Q registered in its place PASSES (§4); FAILURE_SEMANTICS §2.5 states the bound |
 
 **F-P2-03 evidence** (scratch probe on a temporary `redis-server` 8.10.0, disclosed; not committed):
 * Setup: TTL 30 s, the second call at caller time T + 30 while both keys are still physically alive (a Host ahead of Redis).
@@ -245,18 +290,17 @@ The Host duty, "a fleet that shares one Redis shares one time source", is the do
 * Pre-fix the same script had no such check either. There, logical and physical life were both Redis time and coincided. After the fix they differ by the Host–Redis offset, so the window counts on for up to that offset past its logical end.
 * The PLAN §9.3 correction addressed only row 12's malformed checks. The current-window reset was not raised then.
 
-## 9. Questions for the Lead (LT)
+## 9. Rulings (Lead) on the questions of v1 and after
 
-* **LT-P2-13 — the #156 probe condition after one authority.**
-  * Options:
-    * (a) Rule that the condition is met when every remaining twin difference is explained by whole-second quantization of each twin's own clock, with the law and bound of §4 (|Δ| ≤ 1 s; 0 unexplained). FAILURE_SEMANTICS §2.5 then adds one sentence on the one-second resolution between Hosts.
-    * (b) Keep the condition literal: whole-second state would need millisecond deadlines for blocks and decay steps. That is a state-shape change, which §5 of the plan places out of scope.
-  * **Executor's recommendation:** (a). Its evidence is in §4, and the condition is reported as FAIL until ruled.
-* **LT-P2-14 — F-P2-03.**
-  * Options:
-    * (a) Apply LT-P2-03 to row 12's current window: if present and `expiresAt` ≤ caller now, delete current value and metadata and start a new window, as `WATCH_INCREMENT` does. A red test first, then the fix, each commit alone.
-    * (b) Keep the code and narrow FAILURE_SEMANTICS §2.5.
-  * **Executor's recommendation:** (a).
+Sources: PR #158 comments [6334226943](https://github.com/Maatify/php-rate-limiter/pull/158#issuecomment-6334226943) and [6337114762](https://github.com/Maatify/php-rate-limiter/pull/158#issuecomment-6337114762), recorded in PLAN §12.
+
+| LT | Ruling | Done |
+| --- | --- | --- |
+| LT-P2-13 | (a). The original condition stays FAIL as written; a new registered condition; FAILURE_SEMANTICS sentence | C-156-Q registered (§12.4), evaluated (`25f673a`): PASS; sentence `6ee1741` |
+| LT-P2-14 | Fix F-P2-03 in this PR. Red test, then fix, then reruns (suites both modes, PHPStan, CVH, §4.5, #154 E-SAME). #156 and the two-clock arm only for a cell that exercises secret rotation (grep) | `ea9a7c2`, `5d7debd`; reruns on `3ead16a` PASS; grep in PLAN §12.2: no such cell |
+| LT-P2-15 | Attribute the P-TAIL / P-HT `HARD_BLOCK` from the logs, descriptively | The logs lack the cause (PLAN §12.3), so it went to LT-P2-17 |
+| LT-P2-16 | "0 unexplained `retryAfter` difference", with the two explained classes named and bounded. Raised because the ruled literal clause fails on the data | C-156-Q clause 4 |
+| LT-P2-17 | Descriptive replay `tail_cause.php` | §3 |
 
 ## 10. New shapes and DEC-008 (BC1 no signature change, BC2 no implementer break, BC3 defaults preserve behaviour, BC4 additive documentation; defined in `investigations/k2-identity-admission-97/5b2.1/PLAN.md` L33)
 
@@ -305,11 +349,21 @@ All of their tests pass in both suites. RED-7 runs on the same fallback path: `L
 * **`report.php` checked before the run** against the pre-fix archives and the dry-run output, with no fix-head data.
 * **Added after the run, descriptive only:** the quantization section of `report.php` (`1939c09`). No verdict changed.
 * **Added after the run, registered:** gate §4.5 was added after the first acceptance run, which omitted it. Its rule was committed before its run.
+* **v2 additions:**
+  * C-156-Q was registered (PLAN §12.4) before its evaluation code. It re-reads the existing #156 outputs: nothing was rerun for it.
+  * `run.sh` gained `ACCEPT_ONLY=p154` (`3ead16a`), so that the #154 rerun replaces only `p154/`.
+  * Suite logs of `0773b8a` were moved to `logs/0773b8a/`.
+* **`tail_cause.php` ran twice.**
+  * The first replay (`0e8756b`) recorded script names only. It showed empty `metadata` and could not separate the collective rules.
+  * `e76e9a8` adds `(ttl, max, count)` per bounded script, and the replay was run again. Only the second run's output is kept; the first's table is quoted in §3.
+  * The second run was started with a shell `&`, not the tool's background mode. It ran to completion, checked by process and log.
+* **`report.php` cause section fix.** In its first form it read `$row['x']` without a default. The archived P-HT creation rows have no `x`, so the regeneration printed 20 PHP warnings, with the table unaffected. Fixed in `9f97b06`; the final `summary.md` was regenerated with no warning.
 * **Logs:**
   * Acceptance logs are committed gzip-compressed (`gzip -n -9`). Their sha256 before compression:
     * `E-SAME.log` `1491b560…7b86`;
     * `E-DOCKER.log` `87cc9a85…7a2d`;
-    * `E-SAME-s0.log` `f186fb56…6076`.
+    * `E-SAME-s0.log` `f186fb56…6076` (v1);
+    * v2: `E-SAME-p154.log` `cff0b47f…04c2`, `E-SAME-s0.log` `1c785bfe…ca5f`, `E-SAME-tail-cause.log` `7476ddab…84d1`.
   * Trailing blanks were stripped from the plain suite logs. Originals' sha256 are in `logs/ORIGINAL_SHA256`.
   * `acceptance/expected/SHA256SUMS` covers every output.
 * **Review status:** this is the executor's self-review. The Lead reruns the acceptance (#154 in full, the #156 probes, RED-1c) before the final review.
