@@ -7,7 +7,9 @@ declare(strict_types=1);
  * the archived tail.php (P-TAIL and P-HT) on the same head, recording each
  * request's full result instead of the decision alone: decision, blockLevel,
  * retryAfter, failureMode, metadata (signal, cause, context reason / scope) and
- * the names of the Redis scripts the call ran. The flow below is tail.php's,
+ * the names of the Redis scripts the call ran, with (ttl, max, count) for the
+ * bounded scripts (added after the first replay, 2026-10-22, which kept names only
+ * and could not tell the collective rules apart). The flow below is tail.php's,
  * unchanged except `Lab::request` -> `fullRequest()` and the extra fields; it
  * requires the archived lib.php unchanged. No verdict depends on it.
  * argv: package root, env, host, port, output file.
@@ -43,7 +45,11 @@ function fullRequest(Lab $lab, CompositeRateLimiterRuntimeInterface $runtime, st
         $outcome = 'EXCEPTION';
         $exception = get_class($error) . ': ' . $error->getMessage();
     }
-    $full['cmds'] = array_values(array_map(static fn (array $e): string => (string) $e['name'], array_filter($lab->log->events, static fn (array $e): bool => $e['e'] === 'cmd')));
+    // Script name, with (ttl, max) for the bounded scripts as the archived RecordingExecutor logs them.
+    $full['cmds'] = array_values(array_map(
+        static fn (array $e): string => (string) $e['name'] . (isset($e['ttl']) ? '(' . $e['ttl'] . ',' . ($e['max'] ?? '?') . (isset($e['count']) ? ',c=' . $e['count'] : '') . ')' : ''),
+        array_filter($lab->log->events, static fn (array $e): bool => $e['e'] === 'cmd'),
+    ));
 
     return ['start' => $start, 'outcome' => $outcome, 'exception' => $exception, 'full' => $full] + analyse($lab->log->events);
 }
