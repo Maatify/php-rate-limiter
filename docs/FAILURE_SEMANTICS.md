@@ -182,6 +182,11 @@ on one Host. Then:
   source for the fleet, δ is the synchronisation error of that source. The
   measured size is in `investigations/clock-skew-153/phase2/RESULTS.md` (the
   two-clock arm).
+* **Whole-second resolution.** Stored deadlines have whole-second resolution.
+  Two Hosts whose clocks differ by a fraction of a second can differ by one
+  decision at a deadline boundary, and by one second in `retryAfter`. When a
+  block hands over to a cycle pause, the reported `retryAfter` can differ by the
+  length of the pause. The difference in end time is at most one second.
 
 A Host store that does not implement the additive `CallerTime*` capability
 interfaces keeps its own time source. For that store, the difference between its
