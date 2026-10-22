@@ -68,7 +68,7 @@ Package operations: 31 installs, 0 updates, 0 removals
   - Installing myclabs/deep-copy (1.13.4): Extracting archive
   - Installing phpunit/phpunit (11.5.50): Extracting archive
   0/31 [>---------------------------]   0%
- 22/31 [===================>--------]  70%
+ 24/31 [=====================>------]  77%
  30/31 [===========================>]  96%
  31/31 [============================] 100%
 1 package suggestions were added by new dependencies, use `composer suggest` to see details.

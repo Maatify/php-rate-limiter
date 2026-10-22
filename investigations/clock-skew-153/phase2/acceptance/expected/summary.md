@@ -4,8 +4,8 @@ PASS conditions are those of PLAN.md §4.6 and §10, listed in the header of `re
 
 ## E-SAME
 
-* `p154/offset-before` (1000 `TIME` round trips): θ ms median +0.041, rtt ms median 0.116
-* `p154/offset-after` (1000 `TIME` round trips): θ ms median +0.039, rtt ms median 0.101
+* `p154/offset-before` (1000 `TIME` round trips): θ ms median +0.040, rtt ms median 0.108
+* `p154/offset-after` (1000 `TIME` round trips): θ ms median +0.040, rtt ms median 0.106
 * `p156/offset-before` (1000 `TIME` round trips): θ ms median +0.039, rtt ms median 0.103
 * `p156/offset-after` (1000 `TIME` round trips): θ ms median +0.039, rtt ms median 0.103
 
@@ -16,11 +16,11 @@ PASS conditions are those of PLAN.md §4.6 and §10, listed in the header of `re
 | `SYS_F_LOGIN` | 10000 | 10000 | 0 | 0 | 0 (0) | 10000 | 0 | 0 | PASS |
 | `SYS_F_OTP` | 10000 | 10000 | 0 | 0 | 0 (0) | 10000 | 0 | 0 | PASS |
 | `SYS_F_CUSTOM` | 10000 | 10000 | 0 | 0 | 0 (0) | 10000 | 0 | 0 | PASS |
-| `SYS_R_LOGIN` | 31892 | 31892 | 0 | 0 | 0 (0) | 31892 | 0 | 0 | PASS |
+| `SYS_R_LOGIN` | 29457 | 29457 | 0 | 0 | 0 (0) | 29457 | 0 | 0 | PASS |
 | `SYS_Q_LOGIN` | 1000 | 800 | 0 | 0 | 0 (0) | 1000 | 0 | 0 | PASS |
 | `SYS_ROT-F_LOGIN` | 2000 | 2000 | 0 | 0 | 0 (0) | 2000 | 0 | 0 | PASS |
-| `SYS_ROT-R_LOGIN` | 20293 | 20293 | 0 | 0 | 0 (0) | 20293 | 0 | 0 | PASS |
-| `SYS_ROT-P_LOGIN` | 49579 | 6917 | 0 | 0 | 20 (0) | 6917 | 0 | 0 | PASS |
+| `SYS_ROT-R_LOGIN` | 19750 | 19750 | 0 | 0 | 0 (0) | 19750 | 0 | 0 | PASS |
+| `SYS_ROT-P_LOGIN` | 19082 | 19082 | 0 | 0 | 20 (0) | 19082 | 0 | 0 | PASS |
 | `BEHIND0.25_F_LOGIN` | 2000 | 2000 | 0 | 0 | 0 (0) | 2000 | 0 | 0 | PASS |
 | `BEHIND0.25_F_OTP` | 2000 | 2000 | 0 | 0 | 0 (0) | 2000 | 0 | 0 | PASS |
 | `BEHIND0.25_F_CUSTOM` | 2000 | 2000 | 0 | 0 | 0 (0) | 2000 | 0 | 0 | PASS |
@@ -36,31 +36,31 @@ PASS conditions are those of PLAN.md §4.6 and §10, listed in the header of `re
 | `BEHIND2.00_F_LOGIN` | 2000 | 2000 | 0 | 0 | 0 (0) | 2000 | 0 | 0 | PASS |
 | `BEHIND2.00_F_OTP` | 2000 | 2000 | 0 | 0 | 0 (0) | 2000 | 0 | 0 | PASS |
 | `BEHIND2.00_F_CUSTOM` | 2000 | 2000 | 0 | 0 | 0 (0) | 2000 | 0 | 0 | PASS |
-| `BEHIND0.25_R_LOGIN` | 33945 | 33945 | 0 | 0 | 0 (0) | 33945 | 0 | 0 | PASS |
+| `BEHIND0.25_R_LOGIN` | 33949 | 27211 | 0 | 0 | 0 (0) | 27211 | 0 | 0 | PASS |
 | `BEHIND0.25_Q_LOGIN` | 1000 | 800 | 0 | 0 | 0 (0) | 1000 | 0 | 0 | PASS |
 | `BEHIND0.25_ROT-F_LOGIN` | 2000 | 2000 | 0 | 0 | 0 (0) | 2000 | 0 | 0 | PASS |
-| `BEHIND0.25_ROT-R_LOGIN` | 20534 | 20534 | 0 | 0 | 0 (0) | 20534 | 0 | 0 | PASS |
-| `BEHIND0.25_ROT-P_LOGIN` | 19905 | 19905 | 0 | 0 | 20 (0) | 19905 | 0 | 0 | PASS |
-| `BEHIND0.50_R_LOGIN` | 32634 | 32634 | 0 | 0 | 0 (0) | 32634 | 0 | 0 | PASS |
+| `BEHIND0.25_ROT-R_LOGIN` | 18984 | 18984 | 0 | 0 | 0 (0) | 18984 | 0 | 0 | PASS |
+| `BEHIND0.25_ROT-P_LOGIN` | 19060 | 19060 | 0 | 0 | 20 (0) | 19060 | 0 | 0 | PASS |
+| `BEHIND0.50_R_LOGIN` | 31853 | 31853 | 0 | 0 | 0 (0) | 31853 | 0 | 0 | PASS |
 | `BEHIND0.50_Q_LOGIN` | 1000 | 800 | 0 | 0 | 0 (0) | 1000 | 0 | 0 | PASS |
 | `BEHIND0.50_ROT-F_LOGIN` | 2000 | 2000 | 0 | 0 | 0 (0) | 2000 | 0 | 0 | PASS |
-| `BEHIND0.50_ROT-R_LOGIN` | 58234 | 5448 | 0 | 0 | 0 (0) | 5448 | 0 | 0 | PASS |
-| `BEHIND0.50_ROT-P_LOGIN` | 20356 | 20356 | 0 | 0 | 20 (0) | 20356 | 0 | 0 | PASS |
-| `BEHIND0.75_R_LOGIN` | 34283 | 34283 | 0 | 0 | 0 (0) | 34283 | 0 | 0 | PASS |
+| `BEHIND0.50_ROT-R_LOGIN` | 19705 | 19705 | 0 | 0 | 0 (0) | 19705 | 0 | 0 | PASS |
+| `BEHIND0.50_ROT-P_LOGIN` | 19717 | 19717 | 0 | 0 | 20 (0) | 19717 | 0 | 0 | PASS |
+| `BEHIND0.75_R_LOGIN` | 54511 | 22323 | 0 | 0 | 0 (0) | 22323 | 0 | 0 | PASS |
 | `BEHIND0.75_Q_LOGIN` | 1000 | 800 | 0 | 0 | 0 (0) | 1000 | 0 | 0 | PASS |
 | `BEHIND0.75_ROT-F_LOGIN` | 2000 | 2000 | 0 | 0 | 0 (0) | 2000 | 0 | 0 | PASS |
-| `BEHIND0.75_ROT-R_LOGIN` | 21417 | 21417 | 0 | 0 | 0 (0) | 21417 | 0 | 0 | PASS |
-| `BEHIND0.75_ROT-P_LOGIN` | 21233 | 21233 | 0 | 0 | 20 (0) | 21233 | 0 | 0 | PASS |
-| `BEHIND1.00_R_LOGIN` | 34705 | 34705 | 0 | 0 | 0 (0) | 34705 | 0 | 0 | PASS |
+| `BEHIND0.75_ROT-R_LOGIN` | 20173 | 20173 | 0 | 0 | 0 (0) | 20173 | 0 | 0 | PASS |
+| `BEHIND0.75_ROT-P_LOGIN` | 20079 | 20079 | 0 | 0 | 20 (0) | 20079 | 0 | 0 | PASS |
+| `BEHIND1.00_R_LOGIN` | 32941 | 32941 | 0 | 0 | 0 (0) | 32941 | 0 | 0 | PASS |
 | `BEHIND1.00_Q_LOGIN` | 1000 | 800 | 0 | 0 | 0 (0) | 1000 | 0 | 0 | PASS |
 | `BEHIND1.00_ROT-F_LOGIN` | 2000 | 2000 | 0 | 0 | 0 (0) | 2000 | 0 | 0 | PASS |
-| `BEHIND1.00_ROT-R_LOGIN` | 21453 | 21453 | 0 | 0 | 0 (0) | 21453 | 0 | 0 | PASS |
-| `BEHIND1.00_ROT-P_LOGIN` | 21298 | 21298 | 0 | 0 | 20 (0) | 21298 | 0 | 0 | PASS |
-| `BEHIND2.00_R_LOGIN` | 34726 | 34726 | 0 | 0 | 0 (0) | 34726 | 0 | 0 | PASS |
+| `BEHIND1.00_ROT-R_LOGIN` | 17213 | 17213 | 0 | 0 | 0 (0) | 17213 | 0 | 0 | PASS |
+| `BEHIND1.00_ROT-P_LOGIN` | 20455 | 20455 | 0 | 0 | 20 (0) | 20455 | 0 | 0 | PASS |
+| `BEHIND2.00_R_LOGIN` | 79079 | 10223 | 0 | 0 | 0 (0) | 10223 | 0 | 0 | PASS |
 | `BEHIND2.00_Q_LOGIN` | 1000 | 800 | 0 | 0 | 0 (0) | 1000 | 0 | 0 | PASS |
 | `BEHIND2.00_ROT-F_LOGIN` | 2000 | 2000 | 0 | 0 | 0 (0) | 2000 | 0 | 0 | PASS |
-| `BEHIND2.00_ROT-R_LOGIN` | 21456 | 21456 | 0 | 0 | 0 (0) | 21456 | 0 | 0 | PASS |
-| `BEHIND2.00_ROT-P_LOGIN` | 21283 | 21283 | 0 | 0 | 20 (0) | 21283 | 0 | 0 | PASS |
+| `BEHIND2.00_ROT-R_LOGIN` | 19574 | 19574 | 0 | 0 | 0 (0) | 19574 | 0 | 0 | PASS |
+| `BEHIND2.00_ROT-P_LOGIN` | 19666 | 19666 | 0 | 0 | 20 (0) | 19666 | 0 | 0 | PASS |
 | `ALIGN-GATED_F_LOGIN` | 2000 | 2000 | 0 | 0 | 0 (0) | 2000 | 0 | 0 | PASS |
 | `ALIGN_F_LOGIN` | 2000 | 2000 | 0 | 0 | 0 (0) | 2000 | 0 | 0 | PASS |
 | `ALIGN-BEHIND1_F_LOGIN` | 2000 | 2000 | 0 | 0 | 0 (0) | 2000 | 0 | 0 | PASS |
@@ -77,9 +77,9 @@ PASS conditions are those of PLAN.md §4.6 and §10, listed in the header of `re
 
 | Probe | a | targets | in window | outcomes | exceptions | script errors |
 | --- | --- | ---: | ---: | --- | ---: | ---: |
-| P-TAIL | 2 | 20 | 20 | `ALLOW` 4; `HARD_BLOCK` 16 | 0 | 0 |
+| P-TAIL | 0.5 | 20 | 20 | `ALLOW` 4; `HARD_BLOCK` 16 | 0 | 0 |
+| P-TAIL | 2 | 20 | 20 | `HARD_BLOCK` 20 | 0 | 0 |
 | P-TAIL | 1 | 20 | 20 | `HARD_BLOCK` 20 | 0 | 0 |
-| P-TAIL | 0.5 | 20 | 20 | `HARD_BLOCK` 20 | 0 | 0 |
 | P-HT | — | 20 | 20 | `HARD_BLOCK` 20 | 0 | 0 |
 
 * {"targets":80,"htCreationRetries":0}

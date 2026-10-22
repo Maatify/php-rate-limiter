@@ -4,11 +4,11 @@ Pre-fix: `investigations/clock-mixes-153/expected/E-SAME/` (#156, base `1e951ee`
 
 | Cell | stream-twins | equal | differ, attributed | differ, unattributed | lv / retryAfter only | exceptions before (S, Z) | exceptions after | verdict |
 | --- | ---: | ---: | ---: | ---: | ---: | --- | ---: | --- |
-| `S-BEN_LOGIN-NA_AA` | 400 | 398 | 2 | 0 | 15 | 1, 1 | 0 | PASS |
+| `S-BEN_LOGIN-NA_AA` | 400 | 398 | 2 | 0 | 133 | 1, 1 | 0 | PASS |
 | `S-RA_LOGIN-NA_AA` | 400 | 400 | 0 | 0 | 1 | 0, 0 | 0 | PASS |
-| `S-BEN_CYCLE-NA_AA` | 400 | 400 | 0 | 0 | 139 | 0, 0 | 0 | PASS |
+| `S-BEN_CYCLE-NA_AA` | 400 | 400 | 0 | 0 | 130 | 0, 0 | 0 | PASS |
 | `S-RA_CYCLE-NA_AA` | 400 | 400 | 0 | 0 | 0 | 0, 0 | 0 | PASS |
-| `S-BEN_LOGIN_AA` | 400 | 400 | 0 | 0 | 127 | 0, 0 | 0 | PASS |
+| `S-BEN_LOGIN_AA` | 400 | 400 | 0 | 0 | 148 | 0, 0 | 0 | PASS |
 | `S-RA_LOGIN_AA` | 400 | 400 | 0 | 0 | 0 | 0, 0 | 0 | PASS |
 
 **Gate §4.5: PASS**
