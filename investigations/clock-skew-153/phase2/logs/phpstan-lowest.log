@@ -1,0 +1,7 @@
+== phpstan-lowest head=0773b8a048d4a5950c38d985a8ed0c5245ab76ea 2026-10-22T00:21:01Z
+PHPStan - PHP Static Analysis Tool 2.0.0
+Note: Using configuration file /Users/mohamedabdulalim/MEGA/Libraries/2026/php-rate-limiter/.claude/worktrees/clock-skew-bounded-snapshot-a0900b/phpstan.neon.
+
+ [OK] No errors
+
+exit 0

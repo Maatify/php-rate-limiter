@@ -1,0 +1,72 @@
+== phpstan-lowest head=8a8082ae803231ed6e96667772ea7517f8d9df71 2026-10-21T22:38:15Z
+PHPStan - PHP Static Analysis Tool 2.0.0
+Note: Using configuration file /Users/mohamedabdulalim/MEGA/Libraries/2026/php-rate-limiter/.claude/worktrees/clock-skew-bounded-snapshot-a0900b/phpstan.neon.
+ ------ ------------------------------------------------------------------------------------------------
+  Line   tests/Support/Correlation/StatefulInMemoryCorrelationStore.php
+ ------ ------------------------------------------------------------------------------------------------
+  646    Static property
+         Maatify\RateLimiter\Tests\Support\Correlation\StatefulInMemoryCorrelationStore::$callerTimes
+         (WeakMap<Maatify\RateLimiter\Tests\Support\Correlation\StatefulInMemoryCorrelationStore,
+         int>|null) does not accept
+         WeakMap<Maatify\RateLimiter\Tests\Support\Correlation\StatefulInMemoryCorrelationStore,
+         int>|WeakMap<object, mixed>.
+         🪪  assign.propertyType
+  648    Static property
+         Maatify\RateLimiter\Tests\Support\Correlation\StatefulInMemoryCorrelationStore::$callerTimes
+         (WeakMap<Maatify\RateLimiter\Tests\Support\Correlation\StatefulInMemoryCorrelationStore,
+         int>|null) does not accept non-empty-array<mixed,
+         int>|WeakMap<Maatify\RateLimiter\Tests\Support\Correlation\StatefulInMemoryCorrelationStore,
+         int>.
+         🪪  assign.propertyType
+  653    Static property
+         Maatify\RateLimiter\Tests\Support\Correlation\StatefulInMemoryCorrelationStore::$callerTimes
+         (WeakMap<Maatify\RateLimiter\Tests\Support\Correlation\StatefulInMemoryCorrelationStore,
+         int>|null) does not accept
+         WeakMap<Maatify\RateLimiter\Tests\Support\Correlation\StatefulInMemoryCorrelationStore,
+         int>|WeakMap<object, mixed>.
+         🪪  assign.propertyType
+  655    Static property
+         Maatify\RateLimiter\Tests\Support\Correlation\StatefulInMemoryCorrelationStore::$callerTimes
+         (WeakMap<Maatify\RateLimiter\Tests\Support\Correlation\StatefulInMemoryCorrelationStore,
+         int>|null) does not accept non-empty-array<mixed,
+         mixed>|WeakMap<Maatify\RateLimiter\Tests\Support\Correlation\StatefulInMemoryCorrelationStore,
+         int>.
+         🪪  assign.propertyType
+ ------ ------------------------------------------------------------------------------------------------
+
+ ------ --------------------------------------------------------------------------------------
+  Line   tests/Support/RateLimiter/InMemoryRateLimitStore.php
+ ------ --------------------------------------------------------------------------------------
+  594    Static property
+         Maatify\RateLimiter\Tests\Support\RateLimiter\InMemoryRateLimitStore::$callerTimes
+         (WeakMap<Maatify\RateLimiter\Tests\Support\RateLimiter\InMemoryRateLimitStore,
+         int>|null) does not accept
+         WeakMap<Maatify\RateLimiter\Tests\Support\RateLimiter\InMemoryRateLimitStore,
+         int>|WeakMap<object, mixed>.
+         🪪  assign.propertyType
+  596    Static property
+         Maatify\RateLimiter\Tests\Support\RateLimiter\InMemoryRateLimitStore::$callerTimes
+         (WeakMap<Maatify\RateLimiter\Tests\Support\RateLimiter\InMemoryRateLimitStore,
+         int>|null) does not accept non-empty-array<mixed,
+         int>|WeakMap<Maatify\RateLimiter\Tests\Support\RateLimiter\InMemoryRateLimitStore,
+         int>.
+         🪪  assign.propertyType
+  601    Static property
+         Maatify\RateLimiter\Tests\Support\RateLimiter\InMemoryRateLimitStore::$callerTimes
+         (WeakMap<Maatify\RateLimiter\Tests\Support\RateLimiter\InMemoryRateLimitStore,
+         int>|null) does not accept
+         WeakMap<Maatify\RateLimiter\Tests\Support\RateLimiter\InMemoryRateLimitStore,
+         int>|WeakMap<object, mixed>.
+         🪪  assign.propertyType
+  603    Static property
+         Maatify\RateLimiter\Tests\Support\RateLimiter\InMemoryRateLimitStore::$callerTimes
+         (WeakMap<Maatify\RateLimiter\Tests\Support\RateLimiter\InMemoryRateLimitStore,
+         int>|null) does not accept non-empty-array<mixed,
+         mixed>|WeakMap<Maatify\RateLimiter\Tests\Support\RateLimiter\InMemoryRateLimitStore,
+         int>.
+         🪪  assign.propertyType
+ ------ --------------------------------------------------------------------------------------
+
+ [ERROR] Found 8 errors
+
+exit 1

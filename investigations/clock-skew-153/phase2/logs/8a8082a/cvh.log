@@ -1,0 +1,161 @@
+== cvh head=8a8082ae803231ed6e96667772ea7517f8d9df71 2026-10-21T22:18:05Z
+=== Consumer Verification Harness clean run #1 log ===
+Consumer Verification Harness clean run #1 starting at 2026-10-21T22:18:05Z
+ Network maatify-rate-limiter-10916-16397-2081_default Creating
+ Network maatify-rate-limiter-10916-16397-2081_default Creating
+ Network maatify-rate-limiter-10916-16397-2081_default Created
+ Network maatify-rate-limiter-10916-16397-2081_default Created
+ Container maatify-rate-limiter-10916-16397-2081-redis-1 Creating
+ Container maatify-rate-limiter-10916-16397-2081-redis-1 Created
+ Container maatify-rate-limiter-10916-16397-2081-redis-1 Starting
+ Container maatify-rate-limiter-10916-16397-2081-redis-1 Started
+ Container maatify-rate-limiter-10916-16397-2081-redis-1 Waiting
+ Container maatify-rate-limiter-10916-16397-2081-redis-1 Healthy
+Consumer Verification Harness clean run #1
+./composer.json is valid
+Loading composer repositories with package information
+Updating dependencies
+Lock file operations: 3 installs, 0 updates, 0 removals
+  - Locking maatify/exceptions (v1.1.0)
+  - Locking maatify/php-rate-limiter (dev-claude/clock-authority-153-phase2-plan fdbbb5c)
+  - Locking maatify/shared-common (v1.0.2)
+Writing lock file
+Installing dependencies from lock file (including require-dev)
+Package operations: 3 installs, 0 updates, 0 removals
+  - Installing maatify/shared-common (v1.0.2): Extracting archive
+  - Installing maatify/exceptions (v1.1.0): Extracting archive
+  - Installing maatify/php-rate-limiter (dev-claude/clock-authority-153-phase2-plan fdbbb5c): Mirroring from /Users/mohamedabdulalim/MEGA/Libraries/2026/php-rate-limiter/.claude/worktrees/clock-skew-bounded-snapshot-a0900b
+Generating autoload files
+No security vulnerability advisories found.
+Generating optimized autoload files
+Generated optimized autoload files containing 189 classes
+Checking platform requirements for packages in the vendor dir
+ext-date   8.5.9   success
+ext-filter 8.5.9   success
+ext-hash   8.5.9   success
+ext-json   8.5.9   success
+ext-pcre   8.5.9   success
+ext-random 8.5.9   success
+ext-redis  6.3.0   success
+php        8.5.9   success
+name     : maatify/php-rate-limiter
+descrip. : PHP library for deterministic, multi-signal rate-limit decisions.
+keywords : maatify, php, rate-limiter
+versions : * dev-claude/clock-authority-153-phase2-plan
+type     : library
+license  : proprietary
+homepage : https://github.com/Maatify/php-rate-limiter
+source   : []
+dist     : [path] /Users/mohamedabdulalim/MEGA/Libraries/2026/php-rate-limiter/.claude/worktrees/clock-skew-bounded-snapshot-a0900b fdbbb5c4b8226e9817184c29dddc2849a5f1d0db
+path     : /private/var/folders/j4/j5nsw11d4r370wb024gkp9f40000gn/T/maatify-rate-limiter-consumer.MnZt4l/vendor/maatify/php-rate-limiter
+names    : maatify/php-rate-limiter
+
+support
+issues : https://github.com/Maatify/php-rate-limiter/issues
+source : https://github.com/Maatify/php-rate-limiter
+security : https://github.com/Maatify/php-rate-limiter/blob/main/SECURITY.md
+
+autoload
+psr-4
+Maatify\RateLimiter\ => src/
+
+requires
+ext-date *
+ext-filter *
+ext-hash *
+ext-json *
+ext-pcre *
+ext-random *
+maatify/exceptions ^1.0
+maatify/shared-common ^1.0
+php ^8.4
+
+requires (dev)
+php-cs-fixer/shim ^3.95
+phpstan/phpstan ^2.0
+phpunit/phpunit ^11.5
+{"status":"PASS","packageInstallPath":"\/private\/var\/folders\/j4\/j5nsw11d4r370wb024gkp9f40000gn\/T\/maatify-rate-limiter-consumer.MnZt4l\/vendor\/composer\/..\/maatify\/php-rate-limiter","productionAutoload":true,"packageTestNamespaceAvailable":false,"reentryTiming":{"loginLevel":2,"otpLevel":3,"customLevel":2,"sharedWaitSeconds":301},"login":{"checkOnly":{"decision":"ALLOW","blockLevel":0,"retryAfter":0,"failureMode":"NORMAL"},"recordFailure":{"decision":"ALLOW","blockLevel":0,"retryAfter":0,"failureMode":"NORMAL"},"recordSuccess":{"decision":"ALLOW","blockLevel":0,"retryAfter":0,"failureMode":"NORMAL"},"progression":[{"decision":"ALLOW","blockLevel":0,"retryAfter":0,"failureMode":"NORMAL"},{"decision":"SOFT_BLOCK","blockLevel":1,"retryAfter":1200,"failureMode":"NORMAL"},{"decision":"HARD_BLOCK","blockLevel":2,"retryAfter":60,"failureMode":"NORMAL"}],"persistenceProof":true,"postPunishmentReentry":{"checkOnly":{"decision":"ALLOW","blockLevel":0,"retryAfter":0,"failureMode":"NORMAL"},"claim":true,"secondClaim":false}},"otp":{"decision":"SOFT_BLOCK","blockLevel":1,"retryAfter":1200,"failureMode":"NORMAL"},"otpPostPunishmentReentry":{"checkOnly":{"decision":"ALLOW","blockLevel":0,"retryAfter":0,"failureMode":"NORMAL"},"claim":true,"secondClaim":false},"customOptIn":{"checkOnly":{"decision":"ALLOW","blockLevel":0,"retryAfter":0,"failureMode":"NORMAL"},"claim":true,"secondClaim":false},"apiHeavy":{"decision":"ALLOW","blockLevel":0,"retryAfter":0,"failureMode":"NORMAL"},"credentialSpray":[{"decision":"ALLOW","blockLevel":0,"retryAfter":0,"failureMode":"NORMAL"},{"decision":"ALLOW","blockLevel":0,"retryAfter":0,"failureMode":"NORMAL"},{"decision":"ALLOW","blockLevel":0,"retryAfter":0,"failureMode":"NORMAL"},{"decision":"ALLOW","blockLevel":0,"retryAfter":0,"failureMode":"NORMAL"},{"decision":"HARD_BLOCK","blockLevel":2,"retryAfter":60,"failureMode":"NORMAL"}],"sprayLifecycle":{"recordSuccess":{"decision":"ALLOW","blockLevel":0,"retryAfter":0,"failureMode":"NORMAL"},"subjectFourCheckOnly":{"decision":"ALLOW","blockLevel":0,"retryAfter":0,"failureMode":"NORMAL"}},"trustedSession":{"decision":"ALLOW","blockLevel":0,"retryAfter":0,"failureMode":"NORMAL"},"untrustedFollowUp":{"decision":"HARD_BLOCK","blockLevel":2,"retryAfter":60,"failureMode":"NORMAL"},"trustedNonK1":{"decision":"HARD_BLOCK","blockLevel":2,"retryAfter":60,"failureMode":"NORMAL"},"rotations":{"outer-only":{"decision":"ALLOW","blockLevel":0,"retryAfter":0,"failureMode":"NORMAL"},"fingerprint-only":{"decision":"ALLOW","blockLevel":0,"retryAfter":0,"failureMode":"NORMAL"},"both":{"decision":"ALLOW","blockLevel":0,"retryAfter":0,"failureMode":"NORMAL"}},"budgetMigration":{"previousCount":1,"currentCount":3,"epochStartPreserved":true,"previousReadOnly":true},"simpleThrottle":{"consume1":{"allowed":true,"limit":2,"remaining":1,"retryAfter":0,"resetAt":1792621457,"failureMode":"NORMAL"},"consume2":{"allowed":true,"limit":2,"remaining":0,"retryAfter":0,"resetAt":1792621457,"failureMode":"NORMAL"},"consume3Denied":{"allowed":false,"limit":2,"remaining":0,"retryAfter":60,"resetAt":1792621457,"failureMode":"NORMAL"},"newRedisKeys":1,"rawSubjectHiddenFromKeys":true,"unknownPolicyRejected":true,"weighted":{"cost2":{"allowed":true,"limit":10,"remaining":8,"retryAfter":0,"resetAt":1792621457,"failureMode":"NORMAL"},"cost3":{"allowed":true,"limit":10,"remaining":5,"retryAfter":0,"resetAt":1792621457,"failureMode":"NORMAL"},"cost6Denied":{"allowed":false,"limit":10,"remaining":0,"retryAfter":60,"resetAt":1792621457,"failureMode":"NORMAL"},"persistedCount":11,"operationalRemaining":0,"stableResetAt":true},"rotation":{"oldGeneration":{"allowed":true,"limit":2,"remaining":1,"retryAfter":0,"resetAt":1792621457,"failureMode":"NORMAL"},"migratedIntoCurrent":{"allowed":true,"limit":2,"remaining":0,"retryAfter":0,"resetAt":1792621457,"failureMode":"NORMAL"},"previousReadOnly":true},"backendFailure":{"allowed":false,"limit":2,"remaining":0,"retryAfter":null,"resetAt":null,"failureMode":"FAIL_CLOSED"},"backendFailureFromRateLimiterException":{"allowed":false,"limit":2,"remaining":0,"retryAfter":null,"resetAt":null,"failureMode":"FAIL_CLOSED"}},"failureSemantics":{"login":{"decision":"HARD_BLOCK","blockLevel":2,"retryAfter":600,"failureMode":"FAIL_CLOSED"},"otp":{"decision":"HARD_BLOCK","blockLevel":2,"retryAfter":600,"failureMode":"FAIL_CLOSED"},"apiHeavy":{"decision":"ALLOW","blockLevel":0,"retryAfter":0,"failureMode":"FAIL_OPEN"}},"customFallbackConfiguration":{"auth":{"enteredFallback":{"decision":"ALLOW","blockLevel":0,"retryAfter":0,"failureMode":"DEGRADED_MODE"},"accountCapAllowed":{"decision":"ALLOW","blockLevel":0,"retryAfter":0,"failureMode":"DEGRADED_MODE"},"accountCapExceeded":{"decision":"HARD_BLOCK","blockLevel":2,"retryAfter":103,"failureMode":"DEGRADED_MODE"}},"api":{"ipUaCapAllowed":{"decision":"ALLOW","blockLevel":0,"retryAfter":0,"failureMode":"DEGRADED_MODE"},"ipUaCapExceeded":{"decision":"HARD_BLOCK","blockLevel":2,"retryAfter":13,"failureMode":"DEGRADED_MODE"}}},"circuit":{"openGuard":{"decision":"ALLOW","blockLevel":0,"retryAfter":0,"failureMode":"DEGRADED_MODE"},"halfOpenProbe":{"decision":"ALLOW","blockLevel":0,"retryAfter":0,"failureMode":"DEGRADED_MODE"},"closedRecovery":{"decision":"ALLOW","blockLevel":0,"retryAfter":0,"failureMode":"NORMAL"},"normalWorkloadSuppressedWhileOpen":true,"signalCount":2,"signalTypes":["CB_OPENED","CB_RECOVERED"]},"extRedisCompatibility":{"pingRepresentation":"bool","healthy":true,"emptyRedisFirstRequest":true,"circuitRecovered":true,"wrongTypeCircuitState":"explicit-package-failure"},"admission":{"cvh1":{"variantFenceClosed":"AAAAAASAAASSAASSSSSSSHHSSHHHSHHHHHHHHHHH","preset":"AAAAAASAAASSAASSSSSSSHHSSHHHSHHHHHHHHHHH"},"cvh2":{"decision":"SOFT_BLOCK","blockLevel":1,"retryAfter":402,"failureMode":"NORMAL"},"cvh3":{"decision":"ALLOW","blockLevel":0,"retryAfter":0,"failureMode":"NORMAL"},"cvh4":{"decision":"ALLOW","blockLevel":0,"retryAfter":0,"failureMode":"NORMAL"},"cvh5":{"decision":"ALLOW","blockLevel":0,"retryAfter":0,"failureMode":"NORMAL"},"cvh6":{"reporting":{"decision":"SOFT_BLOCK","blockLevel":1,"retryAfter":401,"failureMode":"NORMAL"},"droppingAdmitted":24}},"redisPersistence":{"keyCount":560},"failureSignals":0}
+Consumer Verification Harness clean run #1 finished at 2026-10-21T22:23:19Z
+Consumer Verification Harness clean run #1 verification: PASS
+Consumer Verification Harness clean run #1 cleanup: PASS
+=== Consumer Verification Harness clean run #2 log ===
+Consumer Verification Harness clean run #2 starting at 2026-10-21T22:18:05Z
+ Network maatify-rate-limiter-27754-688-2082_default Creating
+ Network maatify-rate-limiter-27754-688-2082_default Creating
+ Network maatify-rate-limiter-27754-688-2082_default Created
+ Network maatify-rate-limiter-27754-688-2082_default Created
+ Container maatify-rate-limiter-27754-688-2082-redis-1 Creating
+ Container maatify-rate-limiter-27754-688-2082-redis-1 Created
+ Container maatify-rate-limiter-27754-688-2082-redis-1 Starting
+ Container maatify-rate-limiter-27754-688-2082-redis-1 Started
+ Container maatify-rate-limiter-27754-688-2082-redis-1 Waiting
+ Container maatify-rate-limiter-27754-688-2082-redis-1 Healthy
+Consumer Verification Harness clean run #2
+./composer.json is valid
+Loading composer repositories with package information
+Updating dependencies
+Lock file operations: 3 installs, 0 updates, 0 removals
+  - Locking maatify/exceptions (v1.1.0)
+  - Locking maatify/php-rate-limiter (dev-claude/clock-authority-153-phase2-plan fdbbb5c)
+  - Locking maatify/shared-common (v1.0.2)
+Writing lock file
+Installing dependencies from lock file (including require-dev)
+Package operations: 3 installs, 0 updates, 0 removals
+  - Installing maatify/shared-common (v1.0.2): Extracting archive
+  - Installing maatify/exceptions (v1.1.0): Extracting archive
+  - Installing maatify/php-rate-limiter (dev-claude/clock-authority-153-phase2-plan fdbbb5c): Mirroring from /Users/mohamedabdulalim/MEGA/Libraries/2026/php-rate-limiter/.claude/worktrees/clock-skew-bounded-snapshot-a0900b
+Generating autoload files
+No security vulnerability advisories found.
+Generating optimized autoload files
+Generated optimized autoload files containing 189 classes
+Checking platform requirements for packages in the vendor dir
+ext-date   8.5.9   success
+ext-filter 8.5.9   success
+ext-hash   8.5.9   success
+ext-json   8.5.9   success
+ext-pcre   8.5.9   success
+ext-random 8.5.9   success
+ext-redis  6.3.0   success
+php        8.5.9   success
+name     : maatify/php-rate-limiter
+descrip. : PHP library for deterministic, multi-signal rate-limit decisions.
+keywords : maatify, php, rate-limiter
+versions : * dev-claude/clock-authority-153-phase2-plan
+type     : library
+license  : proprietary
+homepage : https://github.com/Maatify/php-rate-limiter
+source   : []
+dist     : [path] /Users/mohamedabdulalim/MEGA/Libraries/2026/php-rate-limiter/.claude/worktrees/clock-skew-bounded-snapshot-a0900b fdbbb5c4b8226e9817184c29dddc2849a5f1d0db
+path     : /private/var/folders/j4/j5nsw11d4r370wb024gkp9f40000gn/T/maatify-rate-limiter-consumer.GO35oD/vendor/maatify/php-rate-limiter
+names    : maatify/php-rate-limiter
+
+support
+issues : https://github.com/Maatify/php-rate-limiter/issues
+source : https://github.com/Maatify/php-rate-limiter
+security : https://github.com/Maatify/php-rate-limiter/blob/main/SECURITY.md
+
+autoload
+psr-4
+Maatify\RateLimiter\ => src/
+
+requires
+ext-date *
+ext-filter *
+ext-hash *
+ext-json *
+ext-pcre *
+ext-random *
+maatify/exceptions ^1.0
+maatify/shared-common ^1.0
+php ^8.4
+
+requires (dev)
+php-cs-fixer/shim ^3.95
+phpstan/phpstan ^2.0
+phpunit/phpunit ^11.5
+{"status":"PASS","packageInstallPath":"\/private\/var\/folders\/j4\/j5nsw11d4r370wb024gkp9f40000gn\/T\/maatify-rate-limiter-consumer.GO35oD\/vendor\/composer\/..\/maatify\/php-rate-limiter","productionAutoload":true,"packageTestNamespaceAvailable":false,"reentryTiming":{"loginLevel":2,"otpLevel":3,"customLevel":2,"sharedWaitSeconds":301},"login":{"checkOnly":{"decision":"ALLOW","blockLevel":0,"retryAfter":0,"failureMode":"NORMAL"},"recordFailure":{"decision":"ALLOW","blockLevel":0,"retryAfter":0,"failureMode":"NORMAL"},"recordSuccess":{"decision":"ALLOW","blockLevel":0,"retryAfter":0,"failureMode":"NORMAL"},"progression":[{"decision":"ALLOW","blockLevel":0,"retryAfter":0,"failureMode":"NORMAL"},{"decision":"SOFT_BLOCK","blockLevel":1,"retryAfter":1200,"failureMode":"NORMAL"},{"decision":"HARD_BLOCK","blockLevel":2,"retryAfter":60,"failureMode":"NORMAL"}],"persistenceProof":true,"postPunishmentReentry":{"checkOnly":{"decision":"ALLOW","blockLevel":0,"retryAfter":0,"failureMode":"NORMAL"},"claim":true,"secondClaim":false}},"otp":{"decision":"SOFT_BLOCK","blockLevel":1,"retryAfter":1200,"failureMode":"NORMAL"},"otpPostPunishmentReentry":{"checkOnly":{"decision":"ALLOW","blockLevel":0,"retryAfter":0,"failureMode":"NORMAL"},"claim":true,"secondClaim":false},"customOptIn":{"checkOnly":{"decision":"ALLOW","blockLevel":0,"retryAfter":0,"failureMode":"NORMAL"},"claim":true,"secondClaim":false},"apiHeavy":{"decision":"ALLOW","blockLevel":0,"retryAfter":0,"failureMode":"NORMAL"},"credentialSpray":[{"decision":"ALLOW","blockLevel":0,"retryAfter":0,"failureMode":"NORMAL"},{"decision":"ALLOW","blockLevel":0,"retryAfter":0,"failureMode":"NORMAL"},{"decision":"ALLOW","blockLevel":0,"retryAfter":0,"failureMode":"NORMAL"},{"decision":"ALLOW","blockLevel":0,"retryAfter":0,"failureMode":"NORMAL"},{"decision":"HARD_BLOCK","blockLevel":2,"retryAfter":60,"failureMode":"NORMAL"}],"sprayLifecycle":{"recordSuccess":{"decision":"ALLOW","blockLevel":0,"retryAfter":0,"failureMode":"NORMAL"},"subjectFourCheckOnly":{"decision":"ALLOW","blockLevel":0,"retryAfter":0,"failureMode":"NORMAL"}},"trustedSession":{"decision":"ALLOW","blockLevel":0,"retryAfter":0,"failureMode":"NORMAL"},"untrustedFollowUp":{"decision":"HARD_BLOCK","blockLevel":2,"retryAfter":60,"failureMode":"NORMAL"},"trustedNonK1":{"decision":"HARD_BLOCK","blockLevel":2,"retryAfter":60,"failureMode":"NORMAL"},"rotations":{"outer-only":{"decision":"ALLOW","blockLevel":0,"retryAfter":0,"failureMode":"NORMAL"},"fingerprint-only":{"decision":"ALLOW","blockLevel":0,"retryAfter":0,"failureMode":"NORMAL"},"both":{"decision":"ALLOW","blockLevel":0,"retryAfter":0,"failureMode":"NORMAL"}},"budgetMigration":{"previousCount":1,"currentCount":3,"epochStartPreserved":true,"previousReadOnly":true},"simpleThrottle":{"consume1":{"allowed":true,"limit":2,"remaining":1,"retryAfter":0,"resetAt":1792621457,"failureMode":"NORMAL"},"consume2":{"allowed":true,"limit":2,"remaining":0,"retryAfter":0,"resetAt":1792621457,"failureMode":"NORMAL"},"consume3Denied":{"allowed":false,"limit":2,"remaining":0,"retryAfter":60,"resetAt":1792621457,"failureMode":"NORMAL"},"newRedisKeys":1,"rawSubjectHiddenFromKeys":true,"unknownPolicyRejected":true,"weighted":{"cost2":{"allowed":true,"limit":10,"remaining":8,"retryAfter":0,"resetAt":1792621457,"failureMode":"NORMAL"},"cost3":{"allowed":true,"limit":10,"remaining":5,"retryAfter":0,"resetAt":1792621457,"failureMode":"NORMAL"},"cost6Denied":{"allowed":false,"limit":10,"remaining":0,"retryAfter":60,"resetAt":1792621457,"failureMode":"NORMAL"},"persistedCount":11,"operationalRemaining":0,"stableResetAt":true},"rotation":{"oldGeneration":{"allowed":true,"limit":2,"remaining":1,"retryAfter":0,"resetAt":1792621457,"failureMode":"NORMAL"},"migratedIntoCurrent":{"allowed":true,"limit":2,"remaining":0,"retryAfter":0,"resetAt":1792621457,"failureMode":"NORMAL"},"previousReadOnly":true},"backendFailure":{"allowed":false,"limit":2,"remaining":0,"retryAfter":null,"resetAt":null,"failureMode":"FAIL_CLOSED"},"backendFailureFromRateLimiterException":{"allowed":false,"limit":2,"remaining":0,"retryAfter":null,"resetAt":null,"failureMode":"FAIL_CLOSED"}},"failureSemantics":{"login":{"decision":"HARD_BLOCK","blockLevel":2,"retryAfter":600,"failureMode":"FAIL_CLOSED"},"otp":{"decision":"HARD_BLOCK","blockLevel":2,"retryAfter":600,"failureMode":"FAIL_CLOSED"},"apiHeavy":{"decision":"ALLOW","blockLevel":0,"retryAfter":0,"failureMode":"FAIL_OPEN"}},"customFallbackConfiguration":{"auth":{"enteredFallback":{"decision":"ALLOW","blockLevel":0,"retryAfter":0,"failureMode":"DEGRADED_MODE"},"accountCapAllowed":{"decision":"ALLOW","blockLevel":0,"retryAfter":0,"failureMode":"DEGRADED_MODE"},"accountCapExceeded":{"decision":"HARD_BLOCK","blockLevel":2,"retryAfter":103,"failureMode":"DEGRADED_MODE"}},"api":{"ipUaCapAllowed":{"decision":"ALLOW","blockLevel":0,"retryAfter":0,"failureMode":"DEGRADED_MODE"},"ipUaCapExceeded":{"decision":"HARD_BLOCK","blockLevel":2,"retryAfter":13,"failureMode":"DEGRADED_MODE"}}},"circuit":{"openGuard":{"decision":"ALLOW","blockLevel":0,"retryAfter":0,"failureMode":"DEGRADED_MODE"},"halfOpenProbe":{"decision":"ALLOW","blockLevel":0,"retryAfter":0,"failureMode":"DEGRADED_MODE"},"closedRecovery":{"decision":"ALLOW","blockLevel":0,"retryAfter":0,"failureMode":"NORMAL"},"normalWorkloadSuppressedWhileOpen":true,"signalCount":2,"signalTypes":["CB_OPENED","CB_RECOVERED"]},"extRedisCompatibility":{"pingRepresentation":"bool","healthy":true,"emptyRedisFirstRequest":true,"circuitRecovered":true,"wrongTypeCircuitState":"explicit-package-failure"},"admission":{"cvh1":{"variantFenceClosed":"AAAAAASAAASSAASSSSSSSHHSSHHHSHHHHHHHHHHH","preset":"AAAAAASAAASSAASSSSSSSHHSSHHHSHHHHHHHHHHH"},"cvh2":{"decision":"SOFT_BLOCK","blockLevel":1,"retryAfter":402,"failureMode":"NORMAL"},"cvh3":{"decision":"ALLOW","blockLevel":0,"retryAfter":0,"failureMode":"NORMAL"},"cvh4":{"decision":"ALLOW","blockLevel":0,"retryAfter":0,"failureMode":"NORMAL"},"cvh5":{"decision":"ALLOW","blockLevel":0,"retryAfter":0,"failureMode":"NORMAL"},"cvh6":{"reporting":{"decision":"SOFT_BLOCK","blockLevel":1,"retryAfter":401,"failureMode":"NORMAL"},"droppingAdmitted":24}},"redisPersistence":{"keyCount":560},"failureSignals":0}
+Consumer Verification Harness clean run #2 finished at 2026-10-21T22:23:19Z
+Consumer Verification Harness clean run #2 verification: PASS
+Consumer Verification Harness clean run #2 cleanup: PASS
+Consumer Verification Harness passed twice from clean consumer states.
+exit 0
