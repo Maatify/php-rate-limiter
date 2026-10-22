@@ -1,0 +1,32 @@
+{
+    "P2 inside C1 and band: no violation": {
+        "H-1": "holds",
+        "H-2": "holds",
+        "H-3": "holds"
+    },
+    "throw outside C1, D>=3: no violation": {
+        "H-1": "holds",
+        "H-2": "holds",
+        "H-3": "holds"
+    },
+    "non-throw outside C1: H-1 violation": {
+        "H-1": "FINDING",
+        "H-2": "holds",
+        "H-3": "holds"
+    },
+    "non-throw with D>=3: H-2 violation": {
+        "H-1": "holds",
+        "H-2": "FINDING",
+        "H-3": "holds"
+    },
+    "throw with D<=-3: H-2 violation": {
+        "H-1": "holds",
+        "H-2": "FINDING",
+        "H-3": "holds"
+    },
+    "other call accepted: H-3 finding": {
+        "H-1": "holds",
+        "H-2": "holds",
+        "H-3": "FINDING"
+    }
+}

@@ -1,0 +1,224 @@
+{
+    "all_fire_as_expected": true,
+    "detectors": [
+        {
+            "detector": "V-HEAD (against 1e951ee)",
+            "expected": "refused, non-zero exit",
+            "observed": {
+                "exit": 1,
+                "message": true
+            },
+            "fires_as_expected": true
+        },
+        {
+            "detector": "L clean run",
+            "expected": "valid, target pass, no finding, every MUTATE probe PTTL > 0",
+            "observed": {
+                "valid": true,
+                "target": "pass",
+                "ordinal": 1329,
+                "k_ref": 1329,
+                "pttl": [
+                    599999,
+                    599999,
+                    599998
+                ],
+                "findings": 0
+            },
+            "fires_as_expected": true
+        },
+        {
+            "detector": "V-FRAME (drop in the tap log)",
+            "expected": "v_frame false, run invalid",
+            "observed": {
+                "v_frame": false,
+                "valid": false,
+                "problems": [
+                    "sequence_not_prefix:0"
+                ]
+            },
+            "fires_as_expected": true
+        },
+        {
+            "detector": "V-FRAME (reorder in the tap log)",
+            "expected": "v_frame false, run invalid",
+            "observed": {
+                "v_frame": false,
+                "valid": false,
+                "problems": [
+                    "sequence_not_prefix:0"
+                ]
+            },
+            "fires_as_expected": true
+        },
+        {
+            "detector": "V-ORD (first prefix file dropped)",
+            "expected": "ordinal ≠ k_ref, run invalid",
+            "observed": {
+                "ordinal": 1316,
+                "k_ref": 1329,
+                "v_ord": false,
+                "valid": false
+            },
+            "fires_as_expected": true
+        },
+        {
+            "detector": "D signature, case 0",
+            "expected": "accepted at L3749/L1546, PTTL −2 after DEL, reply {1,\"9\",…,1}",
+            "observed": {
+                "accepted_message": true,
+                "lines_3749_1546": true,
+                "pttl_after_del": -2,
+                "reply_new_generation": true,
+                "accepted_case": 0,
+                "d_ok": true,
+                "valid": true
+            },
+            "fires_as_expected": true
+        },
+        {
+            "detector": "D signature, case 1",
+            "expected": "accepted at L3749/L1546, PTTL −2 after DEL, reply {1,\"9\",…,1}",
+            "observed": {
+                "accepted_message": true,
+                "lines_3749_1546": true,
+                "pttl_after_del": -2,
+                "reply_new_generation": true,
+                "accepted_case": 1,
+                "d_ok": true,
+                "valid": true
+            },
+            "fires_as_expected": true
+        },
+        {
+            "detector": "D signature, case 2",
+            "expected": "accepted at L3749/L1546, PTTL −2 after DEL, reply {1,\"9\",…,1}",
+            "observed": {
+                "accepted_message": true,
+                "lines_3749_1546": true,
+                "pttl_after_del": -2,
+                "reply_new_generation": true,
+                "accepted_case": 2,
+                "d_ok": true,
+                "valid": true
+            },
+            "fires_as_expected": true
+        },
+        {
+            "detector": "H classifier: P2 inside C1 and band: no violation",
+            "expected": "holds/holds/holds",
+            "observed": "holds/holds/holds",
+            "fires_as_expected": true
+        },
+        {
+            "detector": "H classifier: throw outside C1, D>=3: no violation",
+            "expected": "holds/holds/holds",
+            "observed": "holds/holds/holds",
+            "fires_as_expected": true
+        },
+        {
+            "detector": "H classifier: non-throw outside C1: H-1 violation",
+            "expected": "FINDING/holds/holds",
+            "observed": "FINDING/holds/holds",
+            "fires_as_expected": true
+        },
+        {
+            "detector": "H classifier: non-throw with D>=3: H-2 violation",
+            "expected": "holds/FINDING/holds",
+            "observed": "holds/FINDING/holds",
+            "fires_as_expected": true
+        },
+        {
+            "detector": "H classifier: throw with D<=-3: H-2 violation",
+            "expected": "holds/FINDING/holds",
+            "observed": "holds/FINDING/holds",
+            "fires_as_expected": true
+        },
+        {
+            "detector": "H classifier: other call accepted: H-3 finding",
+            "expected": "holds/holds/FINDING",
+            "observed": "holds/holds/FINDING",
+            "fires_as_expected": true
+        },
+        {
+            "detector": "Tap overhead measured (small K)",
+            "expected": "present",
+            "observed": {
+                "k": 100,
+                "ping": {
+                    "direct": {
+                        "p50": 266,
+                        "p99": 667,
+                        "min": 201
+                    },
+                    "tap": {
+                        "p50": 362,
+                        "p99": 510,
+                        "min": 281
+                    },
+                    "added_p50": 96,
+                    "added_p99": -157
+                },
+                "span": {
+                    "direct": {
+                        "p50": 2295,
+                        "p99": 4913,
+                        "min": 2008
+                    },
+                    "tap": {
+                        "p50": 5008,
+                        "p99": 7167,
+                        "min": 4364
+                    },
+                    "added_p50": 2713,
+                    "added_p99": 2254
+                }
+            },
+            "fires_as_expected": true
+        },
+        {
+            "detector": "H probe tiny run at fe8775c",
+            "expected": "H-1/H-2/H-3 hold; seconds recorded",
+            "observed": {
+                "sequences": 2000,
+                "verdict": {
+                    "H-1": "holds",
+                    "H-2": "holds",
+                    "H-3": "holds"
+                },
+                "m1_nonthrow": 0,
+                "span_us": {
+                    "min": 1986,
+                    "p01": 2114,
+                    "p50": 2739,
+                    "p99": 5923,
+                    "max": 9641
+                },
+                "seconds": 19.974
+            },
+            "fires_as_expected": true
+        },
+        {
+            "detector": "H forced tiny run at fe8775c",
+            "expected": "H-1/H-2/H-3 hold; seconds recorded",
+            "observed": {
+                "sequences": 30,
+                "verdict": {
+                    "H-1": "holds",
+                    "H-2": "holds",
+                    "H-3": "holds"
+                },
+                "m1_nonthrow": 0,
+                "span_us": {
+                    "min": 2492,
+                    "p01": 2492,
+                    "p50": 3078,
+                    "p99": 4960,
+                    "max": 7369
+                },
+                "seconds": 40.077
+            },
+            "fires_as_expected": true
+        }
+    ]
+}

@@ -1,0 +1,50 @@
+PHPUnit 11.5.57 by Sebastian Bergmann and contributors.
+
+Runtime:       PHP 8.5.9
+Configuration: /Users/mohamedabdulalim/MEGA/Libraries/2026/php-rate-limiter/.claude/worktrees/clock-skew-bounded-snapshot-a0900b/phpunit.xml
+
+.............................................................   61 / 1855 (  3%)
+.............................REPORT nm7-fleet {"oldWorkers":1,"cx":24,"perWindow":[{"admitted":8,"oldCalls":30},{"admitted":7,"oldCalls":30},{"admitted":7,"oldCalls":30}]}
+.REPORT nm7-fleet {"oldWorkers":2,"cx":24,"perWindow":[{"admitted":8,"oldCalls":60},{"admitted":5,"oldCalls":60},{"admitted":7,"oldCalls":60}]}
+..REPORT nm7-m6 {"oldBuildDecisions":"AAAAAAAHHHHHHHHHHHHHH","lost":["K4P","K5p","k5p","anti_equilibrium_device_p","known_device_allowance_p","anti_equilibrium_p","budget_cooldown_p"]}
+.............................  122 / 1855 (  6%)
+.........................REPORT lt-27-rotation-capacity {"afterFirstRotation":0,"afterSecondRotation":24}
+..REPORT lt-27-set-and-bucket-restart {"failingAccountsAfterRotation":4,"bucketTakesAfterRotation":4}
+..................................  183 / 1855 (  9%)
+.............................................................  244 / 1855 ( 13%)
+.............................................................  305 / 1855 ( 16%)
+.............................................................  366 / 1855 ( 19%)
+.............................................................  427 / 1855 ( 23%)
+.............................................................  488 / 1855 ( 26%)
+.............................................................  549 / 1855 ( 29%)
+.............................................................  610 / 1855 ( 32%)
+.............................................................  671 / 1855 ( 36%)
+.............................................................  732 / 1855 ( 39%)
+.............................................................  793 / 1855 ( 42%)
+.............................................................  854 / 1855 ( 46%)
+.............................................................  915 / 1855 ( 49%)
+.............................................................  976 / 1855 ( 52%)
+............................................................. 1037 / 1855 ( 55%)
+..................REPORT records-verbatim-dec026 {"source":"DEC-021_KNOWN_DEVICE_VERIFIER_BOUND.md","target":"DEC-026_KNOWN_DEVICE_VERIFIER_BOUND_FOR_THE_ADMISSION_LAYER.md","bytesBySection":{"Decision Authority / Deciders":1423,"Context":1029,"Decision":3554,"Rationale":1995,"Consequences":4419,"Alternatives Not Adopted":1168}}
+.REPORT records-verbatim-dec027 {"source":"DEC-019_INTERIM_SECURITY_FIRST_CORRELATION_POSTURE.md","target":"DEC-027_RETAINED_CORRELATION_POSTURE_FOR_POLICIES_THAT_DO_NOT_OPT_INTO_ADMISSION.md","bytesBySection":{"Decision Authority":612,"Scope / Concern":419,"Context":1958,"Decision":2594,"Rationale":345,"Consequences":652,"Relationship to Other Decisions":271}}
+.REPORT records-verbatim-appendix-a {"paragraphs":11,"sha256":"5642bd4dfa6df3d6d5d6fec6821a913e083c68a0d9a4d41404e6ce5bb2607cfd"}
+......................................... 1098 / 1855 ( 59%)
+............................................................. 1159 / 1855 ( 62%)
+............................................................. 1220 / 1855 ( 65%)
+............................................................. 1281 / 1855 ( 69%)
+............................................................. 1342 / 1855 ( 72%)
+............................................................. 1403 / 1855 ( 75%)
+............................................................. 1464 / 1855 ( 78%)
+............................................................. 1525 / 1855 ( 82%)
+............................................................. 1586 / 1855 ( 85%)
+..........................REPORT sc3 {"preCheckObservationWritesBeforeTheRefusal":true}
+......REPORT sc6 {"legitSourceCapacityRefusals":{"ABA_B|none|none":72,"D2|none|fresh":22,"D2|none|none":22,"MIX|none|fresh":12,"MIX|none|const":12,"MIX|none|none":12}}
+............................. 1647 / 1855 ( 88%)
+............................................................. 1708 / 1855 ( 92%)
+............................................................. 1769 / 1855 ( 95%)
+............................................................. 1830 / 1855 ( 98%)
+.........................                                     1855 / 1855 (100%)
+
+Time: 10:03.152, Memory: 76.00 MB
+
+OK (1855 tests, 25182 assertions)

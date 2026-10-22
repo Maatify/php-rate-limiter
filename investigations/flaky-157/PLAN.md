@@ -193,3 +193,56 @@ If §1.3 holds:
 * Why H-2 is added: `span` is measured by the client, so the Redis-side interval is longer by two one-way latencies. H-1 can therefore only be a necessary condition; the Lead's "exactly when" needs the Redis-side quantity, which `D` provides without adding a command inside the timed part.
 
 H's runner-hour estimate is recorded in §10 from the local detector run, before any H run on E-CI.
+
+## 10. Harness-time notes (2026-10-22/23, before any N run)
+
+Harness commit `462447c`. Detector evidence: `logs/detectors/E-LOCAL/` and `logs/detectors/E-CI/` (`SHA256SUMS`); the E-CI run is [run 39852408513](https://github.com/Maatify/php-rate-limiter/actions/runs/39852408513) at `462447c`.
+
+### 10.1 Dispatch mechanism (LT-157-02 (b))
+
+`workflow_dispatch` **is** offered for this branch-only file through the API / `gh workflow run --ref <branch>`, once a push has registered the file: the push of `462447c` produced run 39852330684 with every job skipped (no marker), and `gh workflow run flaky-157.yml --ref claude/flaky-test-157-investigation-3df788 -f mode=detectors` then started run 39852408513. Whether the web UI lists it was not checked. Dispatch is the mechanism; the guarded `push` marker stays as a fallback.
+
+### 10.2 What the workflow runs (LT-157-02 (a))
+
+Per job: `actions/checkout` (the `ci.yml` pin, `fetch-depth: 0` so V-HEAD can diff against `c8b8fd7`, `persist-credentials: false`), for H a second checkout of `fe8775c` into `h-head/`; `shivammathur/setup-php` (the `ci.yml` pin, PHP 8.5, `extensions: redis`); `composer update` exactly as `ci.yml`; then only `investigations/flaky-157/harness/*`; `actions/upload-artifact` / `download-artifact` (pinned by SHA) for outputs. The harness starts Redis with `docker compose -f docker/redis-integration/compose.yaml` (the CI compose file read as data: same image, command, healthcheck); it does **not** execute `scripts/ci/`. The only test command is `vendor/bin/phpunit` (11.5.57 on both environments). `permissions: contents: read`, no secrets.
+
+### 10.3 Build-time corrections (none changes a registered condition)
+
+* **BC-1, H's `D` readout.** Reading `TIME` and then `PTTL` in two round trips understates `D` by one round trip: the first local H-FORCED smoke put 4/20 sequences in the band with spans ≥ 2.4 ms. `h_probe.php` now reads both in one `MULTI/EXEC`, still after the timed part; afterwards `D` = ⌊(u0 + span)/1000⌋ to within 1 on every local sequence. §9.3's ±1 ms for the estimate refers to this implementation.
+* **BC-2, runner deadlock.** The tap was started inside a command substitution with stdout attached, so `$(…)` waited for it. Its stdout now goes to `tap.out`. No run was recorded before the fix.
+* **BC-3, reading of H-2 (no change).** `EXPIRE` follows `t0`, so without a backward Redis clock `D ≥ 0`; a P2 event is expected **inside** the band (`D` ≈ 0). H-2 therefore judges the throw side (`D ≥ 3`) and `D ≤ −3` (only reachable with a backward clock); P2 itself is judged by H-1 and reported by band.
+
+### 10.4 Detectors (17/17 fire as expected in both environments)
+
+| Detector | Expected | E-LOCAL | E-CI |
+| --- | --- | --- | --- |
+| V-HEAD against `1e951ee` | refused | exit 1, `V-HEAD FAIL` | same |
+| L clean run | valid, target passes, no finding | ordinal 1329 = k_ref 1329; PTTL before MUTATE 599,999 / 599,999 / 599,998 ms | ordinal 1329 = k_ref; 599,999 ×3; 418 connections, 48,048 commands, 0 unmatched, 0 parse errors |
+| V-FRAME, tap log drops case-0 READ | invalid | `sequence_not_prefix:0` | same |
+| V-FRAME, tap log swaps case-0 READ/MUTATE | invalid | `sequence_not_prefix:0` | same |
+| V-ORD, first prefix file dropped | invalid | ordinal 1316 ≠ 1329 | same |
+| D, cases 0 / 1 / 2 | "accepted" at L3749 / L1546, PTTL −2 after DEL, reply `{1,"9",…,1}` for the deleted case | 3/3 | 3/3 |
+| H classifier self-test (6 synthetic rows) | each registered violation caught, clean rows pass | 6/6 | 6/6 |
+| H tiny runs at `fe8775c` | H-1/H-2/H-3 hold | probe 2,000, forced 30: hold | probe 2,000, forced 30: hold |
+
+The E-LOCAL and E-CI reference runs give the same `k_ref` (1329 of 1855) and the same `sequence_sha256` (`fccd09eb…`): the sorted order is identical on both. V-PORT: E-LOCAL ports 52902–62418, E-CI 32768–32777, never 6379. V-CONFIG on both: `redis_version` 7.0.15, `maxmemory` 0, `maxmemory-policy` noeviction.
+
+### 10.5 Measured costs and the tap's overhead (demonstration sizes; descriptive)
+
+| Quantity | E-LOCAL | E-CI |
+| --- | --- | --- |
+| Reference full core suite | 10:03.2, OK 1855 | 7:47.9, OK 1855 |
+| One tapped prefix run (container to container) | ≈ 88 s | **≈ 34 s** |
+| PING round trip p50 / p99, direct → tapped (K = 100) | 266 / 667 → 362 / 510 µs | 123 / 161 → 210 / 244 µs (+87 / +83) |
+| Test span `t0` → `'-1'` EXPIRE p50 / p99, direct → tapped | 2,295 / 4,913 → 5,008 / 7,167 µs | 1,292 / 2,030 → 2,902 / 3,454 µs (+1,610 / +1,424) |
+| H probe at `fe8775c`, per sequence | 10.0 ms (2,000 in 19.97 s) | 4.9 ms (2,000 in 9.82 s) |
+| H forced, per sequence | 1.34 s (30 in 40.1 s) | 0.98 s (30 in 29.4 s) |
+
+* **The tap's span overhead is mostly its own probe:** before case 0's MUTATE it runs eight side commands synchronously; per forwarded command it adds ≈ 0.09 ms on E-CI. In arm L the tap therefore lengthens the span by ≈ 1.6 ms, so **P2-scale timing is not observable in L**. On `main` this costs nothing (P2 was closed by #158, §1.2), and P1 (absence) is not timing-dependent. P2 is measured by H, without the tap. The registered overhead measurement (`run.sh overhead 2000`, mode `pre`) has not run yet.
+* **Arm L cost differs from the approved figure.** At ≈ 34 s per run on E-CI, N = 3,300 is ≈ **31 runner-hours** (20 shards × 165 runs ≈ 94 min each), against ≈ 18 runner-hours in §7 / §9.1, which assumed 20 s per run. The difference is the target class's remaining 65 tests (the prefix ends with the whole class: 1,394 tests, target at 1,329), the tap's per-command hop over ≈ 48,000 commands, and one container per run. **Not started; needs the Owner's word on the cost** (or a smaller N, with its power stated).
+* **Arm H estimate (registered before running, LT-157-01):** probe 100,000 × 4.9 ms ≈ 8 min of compute; forced 10,000 × 0.98 s ≈ 2.7 h; plus ≈ 1 min of setup for each of 14 jobs: **≈ 3.1 runner-hours**, ≈ 20 min wall.
+* Arm D: ≈ 3 s per run; 60 runs per environment.
+
+### 10.6 Not run
+
+No N run: L (3,300), D (20 per case on E-CI and E-LOCAL), H (100,000 + 10,000) and the registered overhead measurement (K = 2,000) wait for the Lead / Owner after this report. The E-CI H tiny run's spans (min 1,199 µs over 2,030 sequences) are a demonstration, not a result.
