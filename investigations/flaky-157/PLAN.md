@@ -153,3 +153,43 @@ At **`@fe8775c`** (src/tests = `1e951ee`), on E-CI, **without** the tap:
 4. Outputs (logs, summaries, `SHA256SUMS`).
 5. `REPORT.md`.
 6. Removal of the temporary workflow file (if added), before Ready.
+
+## 9. Lead rulings and Owner decision (2026-10-22, recorded before the harness)
+
+Source: the two comments on PR #159 (Lead rulings, 19:21Z; Owner decision relayed by the Lead, 20:04Z). Recorded as ruled; where this section adds a definition the rulings leave open, it says so.
+
+### 9.1 Rulings
+
+| LT | Ruling |
+| --- | --- |
+| 01 | **Accepted.** Arm H at `fe8775c206d7209fc62cefe0b6a94beb8c0206ce` on E-CI: H-PROBE M = 100,000, H-FORCED M = 10,000. **H-SUITE out.** Prediction registered before running (§9.3). |
+| 02 | **Accepted, Owner approved the cost.** `.github/workflows/flaky-157.yml` on this branch only, `workflow_dispatch` + `push` guarded to this branch, removed in its own commit before Ready, nothing on `main`. It runs **nothing** outside `investigations/flaky-157/` and the pinned `vendor/bin/phpunit`; no secrets; `permissions: contents: read` only. Whether `workflow_dispatch` is offered for a branch-only file is checked at build time; if not, the guarded `push` is the mechanism (recorded in §10). |
+| 03 | **Accepted, Owner approved the cost.** L = prefix suite, **N = 3,300** (≈ 18 runner-hours, 20 jobs × 165 runs). Full-suite N = 500 **rejected**. Result cache disabled. Validity **V-ORD** (§9.2). |
+| 04 | **Accepted.** The tap only records (plus D's deletion); no change under `src/` or `tests/`; MUTATE identified by SHA-1 of the script body read by reflection; per call: timestamp, key, arguments, reply; every command touching the target key between READ and MUTATE. A dropped or reordered frame makes the run invalid, counted and reported (**V-FRAME**, §9.2). Tap overhead (p50/p99 added latency) measured once before L. |
+| 05 | **Accepted.** Fixed N, no early stop, every failure logged with its tap record, Wilson 95 % and the power statement. |
+| 06 | **Accepted.** D with `--filter`, 20 runs per case on E-CI and on E-LOCAL; counted in no rate. |
+| 07 | **Accepted.** D's detector uses `main@c8b8fd7` lines L1546 / L3749; the REPORT cites both heads' lines with their commits (`fe8775c`: L1540 / L3736). |
+
+Process: stop after the harness commit with the detectors shown firing; report before any N run. The PR stays Draft.
+
+Assignment conditions added with the build go (Owner/Lead message): local work in this separate worktree only, Redis on a port other than 6379, nothing run from the `main` checkout; if E-CI fails for any reason the measurement is **not** moved to E-LOCAL: stop and return to the Owner.
+
+### 9.2 Validity definitions (registered)
+
+* **V-ORD (LT-157-03).** A reference run of the **full** core suite (`--exclude-group archive`, no tap, empty result cache) is executed once on E-CI at `c8b8fd7`; its junit gives the reference ordinal `k_ref` of the target test (1-based index among all `<testcase>` elements in document order). The prefix file list is taken from the same junit: the distinct `file` attributes, in first-appearance order, up to and including `RedisFullCapabilityStoreIntegrationTest.php`. An L run is valid for L only if its junit shows the target test at ordinal `k_ref`. Invalid runs are counted and reported with their ordinal. (Descriptive, not a criterion: whether the whole testcase sequence up to the target equals the reference.)
+* **V-FRAME (LT-157-04).** The tap parses every command and every reply on every connection. A run is invalid if (a) any connection ends with a command that has no reply, or a reply with no command; (b) the tap meets bytes it cannot parse as RESP; or (c) for any R1 key, the commands naming that key (in tap arrival order, all connections) are not a prefix of `HSET, EXPIRE, EVAL(READ), EVAL(MUTATE), EVAL(CLAIM), EVAL(PUBLICATION)` that is complete for every case the test passed and ends at the failing call for the case it failed. A command from another connection, or a keyspace-wide command (`FLUSHDB`, `FLUSHALL`, `SWAPDB`, `SELECT`, `DEBUG`, `CONFIG`, `SHUTDOWN`, `SCRIPT`), between that key's READ and MUTATE is **not** an invalidity: it is a recorded finding.
+* **V-HEAD**, **V-CACHE**, **V-CONFIG** as §5.3. V-CACHE is implemented with `--do-not-cache-result` plus an empty `--cache-directory` per invocation.
+* **V-PORT (E-LOCAL).** Every local Redis container's published port is recorded and must not be 6379.
+
+### 9.3 H prediction (LT-157-01, registered before any H run)
+
+Per H sequence the probe records `t0` = the `TIME` reply exactly as `redisNow()` reads it, with its microseconds `u0`; `span` = hrtime from receiving that reply to just before sending the `'-1'` case's `EXPIRE`, in µs; and, **after** the whole sequence (so the timed part is the test's sequence unchanged), `TIME` and `PTTL` of the `'-1'` key, giving the key's absolute expiry `X` in Redis milliseconds (±1 ms) and `D = X − (t0s + 600) × 1000`. If that key's hash differs from what the probe wrote, `D` is marked unavailable for that sequence.
+
+If §1.3 holds:
+
+* **H-1 (necessary, the Lead's wording).** The `'-1'` MUTATE returns without an exception **only if** `u0 + span < 1000 µs`. Any non-throwing `'-1'` MUTATE with `u0 + span ≥ 1000 µs` is a **finding against §1.3**.
+* **H-2 (Redis side).** `D ≤ −3` ⇒ the `'-1'` MUTATE returns `{0}`; `D ≥ 3` ⇒ it throws `inconsistent generated score expiry`. `|D| ≤ 2` is the rounding band (the script's `TIME` vs its `PTTL` time base, and the ±1 ms of the after-the-fact estimate) and is reported, not judged. Any sequence outside the band that contradicts H-2 is a **finding against §1.3**.
+* **H-3.** For `'0'` and `'not-a-number'` every MUTATE throws, and READ, CLAIM and PUBLICATION throw for all three cases. Any non-throwing call there is a finding.
+* Why H-2 is added: `span` is measured by the client, so the Redis-side interval is longer by two one-way latencies. H-1 can therefore only be a necessary condition; the Lead's "exactly when" needs the Redis-side quantity, which `D` provides without adding a command inside the timed part.
+
+H's runner-hour estimate is recorded in §10 from the local detector run, before any H run on E-CI.
