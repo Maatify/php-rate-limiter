@@ -1,8 +1,17 @@
 # #153 phase 2 — one time authority: RESULTS
 
-**v2 (2026-10-22), at the tested tree `3ead16a`. Status: self-review only (executor), Draft.** No open finding remains:
+**v3 (2026-10-22), at the tested tree `3ead16a`, unchanged since v2. Status: Draft.**
+* v1 and v2 were the executor's self-review.
+* The Lead reviewed v2: PASS on condition of LT-P2-18 (V-GAP and this v3), [comment 6343997106](https://github.com/Maatify/php-rate-limiter/pull/158#issuecomment-6343997106).
+* v3 adds the validity condition V-GAP and evaluates C-156-Q on the Lead's run (§4).
+
+No open finding remains:
 * **The original #156 probe condition of §4.6 stays FAIL as written** (LT-P2-13: no redefinition after the run): 29 E-SAME cells and 4 E-DOCKER cells.
 * **The condition registered in its place, C-156-Q (PLAN §12.4, 2026-10-22), PASSES:** 101 / 101 E-SAME cells and 12 / 12 E-DOCKER cells (§4).
+* **V-GAP, its validity condition (PLAN §12.5; LT-P2-18, LT-P2-19, LT-P2-20):**
+  * The executor's run: PASS 101 / 101 and 12 / 12. 8 of its 35,500 compared steps are unpaired, at most 0.5 % in any cell. That run is the valid evidence for C-156-Q.
+  * The Lead's four solo cells: PASS.
+  * The Lead's concurrent run: UNPROVEN 101, FAIL 0. It is invalid as a twin measurement because of load: no evidence against the fix and none for it.
 * **F-P2-03 is fixed in this PR:** red test `ea9a7c2`, fix `5d7debd` (§8).
 * **The P-TAIL / P-HT `HARD_BLOCK` is attributed** (LT-P2-15, §3).
 
@@ -13,7 +22,13 @@ Everything registered passes on `3ead16a`:
 * CVH twice, NM-6, and RED-1…11;
 * C-156-Q, and the two-clock controls (on the outputs that §12.2 keeps).
 
-What remains before the Owner's decision: the Lead's own acceptance rerun on the final head, and his review.
+What remains before the Owner's decision: the Lead marks Ready.
+
+The Lead's own rerun on `2f5bc1c` (code `3ead16a`) confirmed independently, on his machine:
+* #154 E-SAME 51 / 51, P-TAIL 0 / 60, P-HT 0 / 20;
+* the two-clock arm, matching the numbers in §7;
+* the suites, 1960 OK in both modes;
+* PHPStan in both modes, and CVH twice.
 
 ## 1. Tested tree
 
@@ -90,6 +105,7 @@ What remains before the Owner's decision: the Lead's own acceptance rerun on the
 | §4.6 #154 rerun | 0 validator exceptions every cell; P-HT 0 / 20; P-TAIL 0 / 60; D-100 0 / 2,000; V-3 = 0 exceptions, 0 UP / LO | — | **PASS** in every condition: E-SAME on `3ead16a` (and `5201632`), E-DOCKER on `5201632` | §3 |
 | §4.6 #156 probes | 0 flips at every σ | — | **FAIL as written** (33 cells; kept, LT-P2-13): §4 | §4 |
 | C-156-Q (PLAN §12.4, registered 2026-10-22) | every remaining twin difference explained by whole-second quantization | — | **PASS**: E-SAME 101 / 101, E-DOCKER 12 / 12; 1,059 primary changes all explained, 0 unexplained; max \|Δ end\| 1.0 s; `retryAfter` differences 713 (i) + 660 (ii), 0 unexplained; 0 exceptions | §4 |
+| V-GAP on C-156-Q (PLAN §12.5, registered 2026-10-22) | unpaired steps (> 100 ms, stream-level) left out; > 1 % unpaired = UNPROVEN | — | executor's run **PASS 101 / 101 and 12 / 12** (8 / 35,500 steps unpaired, ≤ 0.5 % per cell); Lead's solo cells PASS 4 / 4; Lead's concurrent run UNPROVEN 101, FAIL 0 | §4 |
 | §4.7 two-clock arm | measured; controls clean | — | controls 0 / 2,420; δ = 1 s measured (§7) | §7 |
 
 **List A** (Redis + `FixedClock` tests that now store the frozen time, PLAN §9.2): all twelve pass in both suites.
@@ -210,6 +226,49 @@ What remains before the Owner's decision: the Lead's own acceptance rerun on the
 * No `lv` difference occurs with an equal decision; `lv` is reported, not gated.
 * FAILURE_SEMANTICS §2.5 now states the one-second resolution between Hosts, as ruled (`6ee1741`).
 
+**V-GAP, the validity condition of C-156-Q (v3; PLAN §12.5; LT-P2-18, LT-P2-19, LT-P2-20).** C-156-Q compares twins that should run a step at nearly the same instant.
+* **The Lead's run.** The Lead ran the acceptance on an Apple M1, 8 cores. There, the 65 concurrent cells of `probes-a` pushed the twin pairing gap to p99 400–650 ms, with a maximum of 921 ms, and C-156-Q gave 76 / 101.
+* **The rule, applied per compared step:**
+  * the gap is |h0_S − h0_Z|;
+  * for P-RA's `return` steps, which `run.php` schedules for each twin alone at its own predicted time, it is each twin's lateness against that time;
+  * a probe step also takes the largest gap of the earlier steps of its stream that both twins ran, because a late write moves the stream's stored end;
+  * a step over 100 ms is unpaired and left out of every clause except exceptions;
+  * a cell with more than 1 % unpaired steps is UNPROVEN, not FAIL.
+
+| Run | Source | C-156-Q (§12.4) | C-156-Q + V-GAP (§12.5) |
+| --- | --- | --- | --- |
+| Executor, E-SAME | `acceptance/expected/E-SAME/p156` (`5201632`) | 101 / 101 | **PASS 101, UNPROVEN 0, FAIL 0**; 8 unpaired steps, one in each of 8 cells (0.5 %): P-E2 LOGIN-NA −10, −2, −0.5, +0.5, +10; P-E2 CYCLE-NA +0.25, +2; P-E3 CYCLE-NA +0.25. Each comes from an earlier write at 101.8–122.5 ms |
+| Executor, E-DOCKER | `acceptance/expected/E-DOCKER/p156` (`5201632`) | 12 / 12 | **PASS 12, UNPROVEN 0, FAIL 0**; 0 unpaired steps |
+| Lead, E-SAME, concurrent (`run.sh`, 65 + 36 cells) | outside the repo (below) | 76 / 101 | **PASS 0, UNPROVEN 101, FAIL 0** |
+| Lead, four cells rerun alone, sequentially, private `redis-server` | outside the repo (below) | 4 / 4 | **PASS 4, UNPROVEN 0, FAIL 0** |
+
+**How the rule was settled, on the data:**
+* **Probe-step gap only.** The Lead's concurrent run gave PASS 39, UNPROVEN 57, FAIL 5.
+  * The five FAILs (`P-B_LOGIN-NA_-0.25`, `P-E3_LOGIN-NA_-0.25`, `P-E3_CYCLE-NA_-0.25`, `P-E3_LOGIN-NA_+60.00`, `P-E3_CYCLE-NA_-10.00`) had probe gaps of 3–31 ms.
+  * Each failing step traces back to an earlier write in its stream that ran 248–728 ms apart (|Δ end| 1.25 s, or a 2 s `retryAfter` difference). That led to LT-P2-20.
+* **Before LT-P2-19.** Using |h0_S − h0_Z| for `return` steps made 13 E-SAME and 2 E-DOCKER P-RA2 cells of the executor's unloaded run UNPROVEN by design. Their 6,000 `return` rows are within 100 ms of their own schedule.
+
+**A correction to the record.**
+* The Lead's LT-P2-20 ruling records the executor's run as "PASS 101 / 101 and 12 / 12 with 0 unpaired".
+* The verdicts are as recorded. The count is not: under the stream-level rule, 8 steps are unpaired, as above.
+* The source of the mismatch is the executor's LT-P2-20 comment. It reported the stream-level verdicts as "unchanged" without the unpaired count; with the probe-step rule the count was 0.
+* No verdict depends on it.
+
+**Reading (Lead, LT-P2-20):**
+* The executor's run is the valid evidence for C-156-Q.
+* The Lead's concurrent run is invalid as a twin measurement because of load: no evidence against the fix and none for it.
+
+**Independent re-implementation.** Every V-GAP number above was also computed by a separate Python re-implementation, written from the rule rather than from `report.php`. Under the probe-step rule it reproduced `report.php`'s counts on all three runs exactly. It is a scratch check, not committed.
+
+**The Lead's files.**
+* Read from `/private/tmp/claude-501/-Users-mohamedabdulalim-MEGA-Libraries-2026-php-rate-limiter/e3ef716a-b392-4fc7-bf93-830742fe8079/scratchpad/lead-acceptance-2f5bc1c/`, outside the repository, by the Lead's decision.
+* Contents: 103 files in `p156/` (101 cells and two offset files), 4 in `solo/`, and `two-clock.jsonl.gz`.
+* All 108 match his `SHA256SUMS`, whose own sha256 is `69112d973a0107acb31b51c5c6c3a8538cec2829dd950b6da26b20fa698aea7c`.
+* His `README.txt`: run on 2026-10-22 at head `2f5bc1c` (code `3ead16a`); Apple M1, 8 cores, macOS; PHP 8.5.9; Redis 8.10.0.
+* Evaluated with `report.php <root> <dir> p156`, through read-only symlinks in the executor's scratchpad.
+
+**N-158-01 (not blocking).** `acceptance/README.md` states that twin results require a pairing gap of at most 100 ms, and that load invalidates the cell, not the fix.
+
 **Logs.** `mixlib.php:228` warned "Undefined array key \"h\"" 1,207,232 times on E-SAME and 100,884 times on E-DOCKER (each warning is printed twice). Cause:
 * #156's descriptive PAUSE_READ rerun (its PLAN §4.3, for family I) expects a `now()` event immediately before each PAUSE_READ.
 * After LT-P2-05 there is none: the clock is read once, at the start of the call.
@@ -301,6 +360,9 @@ Sources: PR #158 comments [6334226943](https://github.com/Maatify/php-rate-limit
 | LT-P2-15 | Attribute the P-TAIL / P-HT `HARD_BLOCK` from the logs, descriptively | The logs lack the cause (PLAN §12.3), so it went to LT-P2-17 |
 | LT-P2-16 | "0 unexplained `retryAfter` difference", with the two explained classes named and bounded. Raised because the ruled literal clause fails on the data | C-156-Q clause 4 |
 | LT-P2-17 | Descriptive replay `tail_cause.php` | §3 |
+| LT-P2-18 | V-GAP: the validity condition of C-156-Q, evaluated on both runs; RESULTS v3; no code ([6343074571](https://github.com/Maatify/php-rate-limiter/pull/158#issuecomment-6343074571), [6343997106](https://github.com/Maatify/php-rate-limiter/pull/158#issuecomment-6343997106)) | PLAN §12.5, `report.php`, this v3 |
+| LT-P2-19 | `return` steps: lateness against each twin's own schedule ([6344441006](https://github.com/Maatify/php-rate-limiter/pull/158#issuecomment-6344441006)) | §12.5, `report.php` |
+| LT-P2-20 | Stream-level V-GAP ([6345705953](https://github.com/Maatify/php-rate-limiter/pull/158#issuecomment-6345705953)) | §12.5, `report.php` |
 
 ## 10. New shapes and DEC-008 (BC1 no signature change, BC2 no implementer break, BC3 defaults preserve behaviour, BC4 additive documentation; defined in `investigations/k2-identity-admission-97/5b2.1/PLAN.md` L33)
 
@@ -366,7 +428,13 @@ All of their tests pass in both suites. RED-7 runs on the same fallback path: `L
     * v2: `E-SAME-p154.log` `cff0b47f…04c2`, `E-SAME-s0.log` `1c785bfe…ca5f`, `E-SAME-tail-cause.log` `7476ddab…84d1`.
   * Trailing blanks were stripped from the plain suite logs. Originals' sha256 are in `logs/ORIGINAL_SHA256`.
   * `acceptance/expected/SHA256SUMS` covers every output.
-* **Review status:** this is the executor's self-review. The Lead reruns the acceptance (#154 in full, the #156 probes, RED-1c) before the final review.
+* **Review status:**
+  * v1 and v2 were the executor's self-review.
+  * The Lead reran the acceptance on `2f5bc1c` and reviewed: PASS on condition of LT-P2-18, which this v3 meets.
+  * The V-GAP rule was refined twice on the data before registration (LT-P2-19, LT-P2-20); each time the question was raised and nothing was registered until it was ruled.
+* **Not blocking (Lead):**
+  * N-158-01, the acceptance README;
+  * N-158-02, the N-154-01 flaky-test issue, still open outside this PR.
 
 ## Appendix A — declared test edits (`git show --format= b933da6 -- tests`; blank context lines are written without their leading space)
 

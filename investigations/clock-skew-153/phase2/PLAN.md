@@ -551,3 +551,35 @@ Source: [PR #158 comment 6337114762](https://github.com/Maatify/php-rate-limiter
    * **(ii)** a **CYCLE-NA** (P-E2, P-E3) step where the L3 block hands over to the cycle pause in one twin. This is identified as a step that the end-time rule predicts or that is ambiguous (± 2 ms). Its `retryAfter` difference is then bounded by the pause length (660 steps at `8a8082a`: 633 predicted, 27 ambiguous).
 
    Any other `retryAfter` difference is unexplained and fails the cell. `lv` differences are reported, not gated.
+
+### 12.5 V-GAP: the validity condition of C-156-Q (LT-P2-18, 2026-10-22)
+
+**Source:** PR #158, Lead comments:
+* [6343074571](https://github.com/Maatify/php-rate-limiter/pull/158#issuecomment-6343074571): the Lead's rerun and the ruling;
+* [6343077419](https://github.com/Maatify/php-rate-limiter/pull/158#issuecomment-6343077419): the pairing-gap tables;
+* [6343997106](https://github.com/Maatify/php-rate-limiter/pull/158#issuecomment-6343997106): the review, PASS on condition of this amendment and RESULTS v3.
+
+**Why.**
+* On the Lead's machine (M1, 8 cores), `probes-a` ran 65 cells concurrently. The pairing gap |h0_S − h0_Z| between the twins reached p99 400–650 ms, with a maximum of 921 ms.
+* C-156-Q gave 76 / 101 there, against 101 / 101 on the executor's run (p99 27–36 ms, maximum 121 ms).
+* Four failing cells, rerun alone on a private Redis (maximum gap 35–87 ms), pass C-156-Q.
+* So C-156-Q depends on a property of the harness that was not registered as a validity condition. No code changes. The tested tree stays `3ead16a`.
+
+**The condition, as evaluated by `acceptance/report.php` beside the §12.4 table, which is kept:**
+* **Compared step:** a probe band of a stream (the last row of the band in each twin) and, in P-I, also every step paired by index and operation.
+* **Pairing gap:** |h0_S − h0_Z| of the two rows compared.
+  * Exception: a `return` step of P-RA. The archived `run.php` (L269, L322) runs it for each twin alone at its own predicted time `pred`, the twin's own `retryAfter`. For it, the gap is each twin's lateness against its own schedule, max(|h0_S − pred_S|, |h0_Z − pred_Z|).
+  * Source: LT-P2-19, [comment 6344441006](https://github.com/Maatify/php-rate-limiter/pull/158#issuecomment-6344441006), accepted by the Lead, 2026-10-22.
+  * The cause: by |h0_S − h0_Z|, the executor's unloaded run had 51 `return` steps at 1–2 s, all in P-RA2, making 13 E-SAME and 2 E-DOCKER cells UNPROVEN by design. By own-schedule lateness, the same run's 6,000 `return` rows are within 100 ms.
+* **Stream (LT-P2-20, [comment 6345705953](https://github.com/Maatify/php-rate-limiter/pull/158#issuecomment-6345705953), accepted by the Lead, 2026-10-22).** A probe step also takes the largest gap of the earlier steps of its stream that both twins ran with the same operation. Reason: a write of a deadline with a large gap moves the stream's stored end, so validity must hold over the stream.
+  * The measured cause: five cells of the Lead's concurrent run failed with probe-step gaps of 3–31 ms, while an earlier write in the same stream ran 248–728 ms apart.
+  * P-I's paired steps use their own gap.
+* **Unpaired step:** gap > **100 ms**. It is counted, and left out of every C-156-Q clause except the exceptions clause. That clause still counts every row of the cell, because an exception is not a pairing effect.
+* **Cell verdict:**
+  * any exception → FAIL;
+  * else unpaired steps > **1 %** of the compared steps → **UNPROVEN** (not FAIL);
+  * else C-156-Q on the paired steps → PASS or FAIL.
+* **Evaluated on:**
+  * the executor's outputs (`acceptance/expected/`; expected: 0 unpaired, PASS as before);
+  * the Lead's 103 p156 outputs and his four solo cells, as provided by him (RESULTS v3 states their source and checksums).
+* **Note, checked on the data rather than assumed.** |Δ end| comes from earlier write steps of the stream, not from the probe step. A probe step with a small gap can therefore carry an end-time difference made under load. If such a case decides a cell of the Lead's run, RESULTS v3 shows it with its numbers, and it is raised before anything else is registered.

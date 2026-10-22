@@ -482,6 +482,114 @@ PASS per cell: 0 exceptions; 0 unexplained primary changes (explained only in P-
 | `P-RA1_LOGIN-NA_+1.00` | 100 | 0 / 0 | — | 0 / 0 / 0 | 0 | 0 | PASS |
 | `P-RA1_LOGIN-NA_+2.00` | 100 | 0 / 0 | — | 0 / 0 / 0 | 0 | 0 | PASS |
 
+### C-156-Q with V-GAP (registered 2026-10-22, PLAN §12.5)
+
+A compared step (a probe band of a stream; in P-I also a paired step) is unpaired when its pairing gap exceeds 100 ms: |h0_S − h0_Z|, or for a `return` step (each twin alone at its own predicted time) max(|h0_S − pred_S|, |h0_Z − pred_Z|) (LT-P2-19); a probe step also takes the largest gap of the earlier steps of its stream run by both twins (LT-P2-20). An unpaired step is counted and left out of every clause except exceptions (all rows). A cell with more than 1 % unpaired steps is UNPROVEN, not FAIL; otherwise C-156-Q is applied to its paired steps.
+
+| Cell | compared steps | unpaired (> 100 ms) | gap p99 / max ms | primary unexplained | max \|Δ end\| s | `retryAfter` unexplained | exceptions | verdict |
+| --- | ---: | --- | --- | ---: | ---: | ---: | ---: | --- |
+| `P-E2_LOGIN-NA_-60.00` | 200 | 0 (0.0 %) | 34.2 / 93.6 | 0 | 1.00 | 0 | 0 | PASS |
+| `P-E2_LOGIN-NA_-10.00` | 200 | 1 (0.5 %) | 39.7 / 122.5 | 0 | 1.00 | 0 | 0 | PASS |
+| `P-E2_LOGIN-NA_-2.00` | 200 | 1 (0.5 %) | 51.3 / 110.7 | 0 | 1.00 | 0 | 0 | PASS |
+| `P-E2_LOGIN-NA_-1.00` | 200 | 0 (0.0 %) | 34.3 / 51.4 | 0 | 1.00 | 0 | 0 | PASS |
+| `P-E2_LOGIN-NA_-0.50` | 200 | 1 (0.5 %) | 34.5 / 121.2 | 0 | 0.50 | 0 | 0 | PASS |
+| `P-E2_LOGIN-NA_-0.25` | 200 | 0 (0.0 %) | 33.9 / 95.9 | 0 | 0.75 | 0 | 0 | PASS |
+| `P-E2_LOGIN-NA_+0.25` | 200 | 0 (0.0 %) | 39.7 / 86.4 | 0 | 0.75 | 0 | 0 | PASS |
+| `P-E2_LOGIN-NA_+0.50` | 200 | 1 (0.5 %) | 51.0 / 107.5 | 0 | 0.50 | 0 | 0 | PASS |
+| `P-E2_LOGIN-NA_+1.00` | 200 | 0 (0.0 %) | 44.2 / 75.4 | 0 | 1.00 | 0 | 0 | PASS |
+| `P-E2_LOGIN-NA_+2.00` | 200 | 0 (0.0 %) | 43.9 / 76.6 | 0 | 1.00 | 0 | 0 | PASS |
+| `P-E2_LOGIN-NA_+10.00` | 200 | 1 (0.5 %) | 50.6 / 106.6 | 0 | 1.00 | 0 | 0 | PASS |
+| `P-E2_LOGIN-NA_+60.00` | 200 | 0 (0.0 %) | 31.2 / 40.1 | 0 | 1.00 | 0 | 0 | PASS |
+| `P-E2_CYCLE-NA_-60.00` | 200 | 0 (0.0 %) | 30.9 / 43.7 | 0 | 1.00 | 0 | 0 | PASS |
+| `P-E2_CYCLE-NA_-10.00` | 200 | 0 (0.0 %) | 31.6 / 46.3 | 0 | 1.00 | 0 | 0 | PASS |
+| `P-E2_CYCLE-NA_-2.00` | 200 | 0 (0.0 %) | 34.5 / 37.9 | 0 | 0.00 | 0 | 0 | PASS |
+| `P-E2_CYCLE-NA_-1.00` | 200 | 0 (0.0 %) | 29.3 / 65.3 | 0 | 1.00 | 0 | 0 | PASS |
+| `P-E2_CYCLE-NA_-0.50` | 200 | 0 (0.0 %) | 29.2 / 67.1 | 0 | 0.50 | 0 | 0 | PASS |
+| `P-E2_CYCLE-NA_-0.25` | 200 | 0 (0.0 %) | 33.2 / 39.6 | 0 | 0.75 | 0 | 0 | PASS |
+| `P-E2_CYCLE-NA_+0.25` | 200 | 1 (0.5 %) | 33.1 / 101.8 | 0 | 0.75 | 0 | 0 | PASS |
+| `P-E2_CYCLE-NA_+0.50` | 200 | 0 (0.0 %) | 37.0 / 72.9 | 0 | 0.50 | 0 | 0 | PASS |
+| `P-E2_CYCLE-NA_+1.00` | 200 | 0 (0.0 %) | 35.8 / 63.8 | 0 | 1.00 | 0 | 0 | PASS |
+| `P-E2_CYCLE-NA_+2.00` | 200 | 1 (0.5 %) | 33.2 / 106.4 | 0 | 1.00 | 0 | 0 | PASS |
+| `P-E2_CYCLE-NA_+10.00` | 200 | 0 (0.0 %) | 36.8 / 92.2 | 0 | 1.00 | 0 | 0 | PASS |
+| `P-E2_CYCLE-NA_+60.00` | 200 | 0 (0.0 %) | 34.6 / 88.6 | 0 | 1.00 | 0 | 0 | PASS |
+| `P-E3_LOGIN-NA_-60.00` | 200 | 0 (0.0 %) | 43.6 / 76.5 | 0 | 1.00 | 0 | 0 | PASS |
+| `P-E3_LOGIN-NA_-10.00` | 200 | 0 (0.0 %) | 46.4 / 55.7 | 0 | 1.00 | 0 | 0 | PASS |
+| `P-E3_LOGIN-NA_-2.00` | 200 | 0 (0.0 %) | 45.3 / 56.9 | 0 | 1.00 | 0 | 0 | PASS |
+| `P-E3_LOGIN-NA_-1.00` | 200 | 0 (0.0 %) | 45.5 / 86.6 | 0 | 1.00 | 0 | 0 | PASS |
+| `P-E3_LOGIN-NA_-0.50` | 200 | 0 (0.0 %) | 41.1 / 75.9 | 0 | 0.50 | 0 | 0 | PASS |
+| `P-E3_LOGIN-NA_-0.25` | 200 | 0 (0.0 %) | 43.8 / 74.1 | 0 | 0.75 | 0 | 0 | PASS |
+| `P-E3_LOGIN-NA_+0.25` | 200 | 0 (0.0 %) | 37.7 / 56.8 | 0 | 0.75 | 0 | 0 | PASS |
+| `P-E3_LOGIN-NA_+0.50` | 200 | 0 (0.0 %) | 45.7 / 87.5 | 0 | 0.50 | 0 | 0 | PASS |
+| `P-E3_LOGIN-NA_+1.00` | 200 | 0 (0.0 %) | 38.6 / 55.8 | 0 | 1.00 | 0 | 0 | PASS |
+| `P-E3_LOGIN-NA_+2.00` | 200 | 0 (0.0 %) | 40.3 / 56.6 | 0 | 1.00 | 0 | 0 | PASS |
+| `P-E3_LOGIN-NA_+10.00` | 200 | 0 (0.0 %) | 39.8 / 56.0 | 0 | 1.00 | 0 | 0 | PASS |
+| `P-E3_LOGIN-NA_+60.00` | 200 | 0 (0.0 %) | 47.9 / 49.3 | 0 | 1.00 | 0 | 0 | PASS |
+| `P-E3_CYCLE-NA_-60.00` | 200 | 0 (0.0 %) | 39.4 / 70.7 | 0 | 1.00 | 0 | 0 | PASS |
+| `P-E3_CYCLE-NA_-10.00` | 200 | 0 (0.0 %) | 45.6 / 66.6 | 0 | 1.00 | 0 | 0 | PASS |
+| `P-E3_CYCLE-NA_-2.00` | 200 | 0 (0.0 %) | 46.0 / 68.2 | 0 | 1.00 | 0 | 0 | PASS |
+| `P-E3_CYCLE-NA_-1.00` | 200 | 0 (0.0 %) | 41.7 / 60.3 | 0 | 1.00 | 0 | 0 | PASS |
+| `P-E3_CYCLE-NA_-0.50` | 200 | 0 (0.0 %) | 41.9 / 54.8 | 0 | 0.50 | 0 | 0 | PASS |
+| `P-E3_CYCLE-NA_-0.25` | 200 | 0 (0.0 %) | 39.0 / 52.7 | 0 | 0.75 | 0 | 0 | PASS |
+| `P-E3_CYCLE-NA_+0.25` | 200 | 1 (0.5 %) | 31.2 / 106.2 | 0 | 0.75 | 0 | 0 | PASS |
+| `P-E3_CYCLE-NA_+0.50` | 200 | 0 (0.0 %) | 42.9 / 50.1 | 0 | 0.50 | 0 | 0 | PASS |
+| `P-E3_CYCLE-NA_+1.00` | 200 | 0 (0.0 %) | 38.5 / 56.6 | 0 | 1.00 | 0 | 0 | PASS |
+| `P-E3_CYCLE-NA_+2.00` | 200 | 0 (0.0 %) | 47.0 / 63.2 | 0 | 1.00 | 0 | 0 | PASS |
+| `P-E3_CYCLE-NA_+10.00` | 200 | 0 (0.0 %) | 43.7 / 51.1 | 0 | 1.00 | 0 | 0 | PASS |
+| `P-E3_CYCLE-NA_+60.00` | 200 | 0 (0.0 %) | 43.8 / 51.0 | 0 | 1.00 | 0 | 0 | PASS |
+| `P-SAT_LOGIN-NA_+60.00` | 100 | 0 (0.0 %) | 38.5 / 51.6 | 0 | — | 0 | 0 | PASS |
+| `P-RA2_LOGIN-NA_-2.00` | 100 | 0 (0.0 %) | 56.7 / 66.9 | 0 | — | 0 | 0 | PASS |
+| `P-RA2_LOGIN-NA_-1.00` | 100 | 0 (0.0 %) | 45.3 / 74.3 | 0 | — | 0 | 0 | PASS |
+| `P-RA2_LOGIN-NA_-0.50` | 100 | 0 (0.0 %) | 54.2 / 56.7 | 0 | — | 0 | 0 | PASS |
+| `P-RA2_LOGIN-NA_-0.25` | 100 | 0 (0.0 %) | 50.6 / 51.5 | 0 | — | 0 | 0 | PASS |
+| `P-RA2_LOGIN-NA_+0.25` | 100 | 0 (0.0 %) | 60.4 / 66.5 | 0 | — | 0 | 0 | PASS |
+| `P-RA2_LOGIN-NA_+0.50` | 100 | 0 (0.0 %) | 54.3 / 67.7 | 0 | — | 0 | 0 | PASS |
+| `P-RA2_LOGIN-NA_+1.00` | 100 | 0 (0.0 %) | 55.0 / 58.0 | 0 | — | 0 | 0 | PASS |
+| `P-RA2_LOGIN-NA_+2.00` | 100 | 0 (0.0 %) | 49.0 / 55.0 | 0 | — | 0 | 0 | PASS |
+| `P-RA2_CYCLE-NA_-2.00` | 100 | 0 (0.0 %) | 67.2 / 72.6 | 0 | — | 0 | 0 | PASS |
+| `P-RA2_CYCLE-NA_-1.00` | 100 | 0 (0.0 %) | 33.0 / 40.2 | 0 | — | 0 | 0 | PASS |
+| `P-RA2_CYCLE-NA_-0.50` | 100 | 0 (0.0 %) | 54.7 / 76.4 | 0 | — | 0 | 0 | PASS |
+| `P-RA2_CYCLE-NA_-0.25` | 100 | 0 (0.0 %) | 49.9 / 56.4 | 0 | — | 0 | 0 | PASS |
+| `P-RA2_CYCLE-NA_+0.25` | 100 | 0 (0.0 %) | 49.8 / 58.4 | 0 | — | 0 | 0 | PASS |
+| `P-RA2_CYCLE-NA_+0.50` | 100 | 0 (0.0 %) | 35.6 / 64.3 | 0 | — | 0 | 0 | PASS |
+| `P-RA2_CYCLE-NA_+1.00` | 100 | 0 (0.0 %) | 46.6 / 71.9 | 0 | — | 0 | 0 | PASS |
+| `P-RA2_CYCLE-NA_+2.00` | 100 | 0 (0.0 %) | 63.6 / 72.5 | 0 | — | 0 | 0 | PASS |
+| `P-B_LOGIN-NA_-60.00` | 200 | 0 (0.0 %) | 38.7 / 39.0 | 0 | 1.00 | 0 | 0 | PASS |
+| `P-B_LOGIN-NA_-10.00` | 200 | 0 (0.0 %) | 30.4 / 31.6 | 0 | 1.00 | 0 | 0 | PASS |
+| `P-B_LOGIN-NA_-2.00` | 200 | 0 (0.0 %) | 37.7 / 38.8 | 0 | 1.00 | 0 | 0 | PASS |
+| `P-B_LOGIN-NA_-1.00` | 200 | 0 (0.0 %) | 30.0 / 30.7 | 0 | 1.00 | 0 | 0 | PASS |
+| `P-B_LOGIN-NA_-0.50` | 200 | 0 (0.0 %) | 28.7 / 29.9 | 0 | 0.50 | 0 | 0 | PASS |
+| `P-B_LOGIN-NA_-0.25` | 200 | 0 (0.0 %) | 35.5 / 38.4 | 0 | 0.75 | 0 | 0 | PASS |
+| `P-B_LOGIN-NA_+0.25` | 200 | 0 (0.0 %) | 33.6 / 35.6 | 0 | 0.75 | 0 | 0 | PASS |
+| `P-B_LOGIN-NA_+0.50` | 200 | 0 (0.0 %) | 28.4 / 29.1 | 0 | 0.50 | 0 | 0 | PASS |
+| `P-B_LOGIN-NA_+1.00` | 200 | 0 (0.0 %) | 29.9 / 31.1 | 0 | 1.00 | 0 | 0 | PASS |
+| `P-B_LOGIN-NA_+2.00` | 200 | 0 (0.0 %) | 28.5 / 30.8 | 0 | 1.00 | 0 | 0 | PASS |
+| `P-B_LOGIN-NA_+10.00` | 200 | 0 (0.0 %) | 30.6 / 31.4 | 0 | 1.00 | 0 | 0 | PASS |
+| `P-B_LOGIN-NA_+60.00` | 200 | 0 (0.0 %) | 29.2 / 33.0 | 0 | 1.00 | 0 | 0 | PASS |
+| `P-I_LOGIN-NA_-2.00` | 1200 | 0 (0.0 %) | 28.9 / 31.0 | 0 | — | 0 | 0 | PASS |
+| `P-I_LOGIN-NA_-1.00` | 1200 | 0 (0.0 %) | 28.5 / 30.9 | 0 | — | 0 | 0 | PASS |
+| `P-I_LOGIN-NA_-0.50` | 1200 | 0 (0.0 %) | 37.3 / 41.4 | 0 | — | 0 | 0 | PASS |
+| `P-I_LOGIN-NA_-0.25` | 1200 | 0 (0.0 %) | 29.2 / 30.9 | 0 | — | 0 | 0 | PASS |
+| `P-I_LOGIN-NA_+0.25` | 1200 | 0 (0.0 %) | 28.7 / 31.0 | 0 | — | 0 | 0 | PASS |
+| `P-I_LOGIN-NA_+0.50` | 1200 | 0 (0.0 %) | 28.1 / 30.7 | 0 | — | 0 | 0 | PASS |
+| `P-I_LOGIN-NA_+1.00` | 1200 | 0 (0.0 %) | 26.8 / 28.4 | 0 | — | 0 | 0 | PASS |
+| `P-I_LOGIN-NA_+2.00` | 1200 | 0 (0.0 %) | 32.4 / 36.2 | 0 | — | 0 | 0 | PASS |
+| `P-I_CYCLE-NA_-2.00` | 1200 | 0 (0.0 %) | 28.7 / 32.4 | 0 | — | 0 | 0 | PASS |
+| `P-I_CYCLE-NA_-1.00` | 1200 | 0 (0.0 %) | 33.9 / 37.6 | 0 | — | 0 | 0 | PASS |
+| `P-I_CYCLE-NA_-0.50` | 1200 | 0 (0.0 %) | 29.5 / 32.4 | 0 | — | 0 | 0 | PASS |
+| `P-I_CYCLE-NA_-0.25` | 1200 | 0 (0.0 %) | 28.6 / 32.1 | 0 | — | 0 | 0 | PASS |
+| `P-I_CYCLE-NA_+0.25` | 1200 | 0 (0.0 %) | 29.5 / 31.8 | 0 | — | 0 | 0 | PASS |
+| `P-I_CYCLE-NA_+0.50` | 1200 | 0 (0.0 %) | 28.6 / 31.2 | 0 | — | 0 | 0 | PASS |
+| `P-I_CYCLE-NA_+1.00` | 1200 | 0 (0.0 %) | 27.3 / 29.3 | 0 | — | 0 | 0 | PASS |
+| `P-I_CYCLE-NA_+2.00` | 1200 | 0 (0.0 %) | 23.4 / 26.4 | 0 | — | 0 | 0 | PASS |
+| `P-RA1_LOGIN-NA_-2.00` | 100 | 0 (0.0 %) | 23.2 / 27.6 | 0 | — | 0 | 0 | PASS |
+| `P-RA1_LOGIN-NA_-1.00` | 100 | 0 (0.0 %) | 22.7 / 22.9 | 0 | — | 0 | 0 | PASS |
+| `P-RA1_LOGIN-NA_-0.50` | 100 | 0 (0.0 %) | 25.5 / 27.1 | 0 | — | 0 | 0 | PASS |
+| `P-RA1_LOGIN-NA_-0.25` | 100 | 0 (0.0 %) | 25.9 / 26.0 | 0 | — | 0 | 0 | PASS |
+| `P-RA1_LOGIN-NA_+0.25` | 100 | 0 (0.0 %) | 22.6 / 26.0 | 0 | — | 0 | 0 | PASS |
+| `P-RA1_LOGIN-NA_+0.50` | 100 | 0 (0.0 %) | 22.7 / 22.7 | 0 | — | 0 | 0 | PASS |
+| `P-RA1_LOGIN-NA_+1.00` | 100 | 0 (0.0 %) | 29.6 / 32.2 | 0 | — | 0 | 0 | PASS |
+| `P-RA1_LOGIN-NA_+2.00` | 100 | 0 (0.0 %) | 26.2 / 26.6 | 0 | — | 0 | 0 | PASS |
+
 ### Two-clock arm (§4.7, LT-P2-04): writer ahead by δ, reader at 0, one Redis
 
 | Cell | arm | δ s | n | validator exceptions | other exceptions | refused (decision ≠ ALLOW) | outcomes |
@@ -610,6 +718,25 @@ PASS per cell: 0 exceptions; 0 unexplained primary changes (explained only in P-
 | `P-RA2_CYCLE-NA_-1.00` | 100 | 0 / 0 | — | 0 / 0 / 0 | 0 | 0 | PASS |
 | `P-RA2_CYCLE-NA_+1.00` | 100 | 0 / 0 | — | 0 / 0 / 0 | 0 | 0 | PASS |
 
+### C-156-Q with V-GAP (registered 2026-10-22, PLAN §12.5)
+
+A compared step (a probe band of a stream; in P-I also a paired step) is unpaired when its pairing gap exceeds 100 ms: |h0_S − h0_Z|, or for a `return` step (each twin alone at its own predicted time) max(|h0_S − pred_S|, |h0_Z − pred_Z|) (LT-P2-19); a probe step also takes the largest gap of the earlier steps of its stream run by both twins (LT-P2-20). An unpaired step is counted and left out of every clause except exceptions (all rows). A cell with more than 1 % unpaired steps is UNPROVEN, not FAIL; otherwise C-156-Q is applied to its paired steps.
+
+| Cell | compared steps | unpaired (> 100 ms) | gap p99 / max ms | primary unexplained | max \|Δ end\| s | `retryAfter` unexplained | exceptions | verdict |
+| --- | ---: | --- | --- | ---: | ---: | ---: | ---: | --- |
+| `P-B_LOGIN-NA_-1.00` | 200 | 0 (0.0 %) | 53.7 / 54.9 | 0 | 1.00 | 0 | 0 | PASS |
+| `P-B_LOGIN-NA_+1.00` | 200 | 0 (0.0 %) | 46.9 / 48.8 | 0 | 1.00 | 0 | 0 | PASS |
+| `P-RA1_LOGIN-NA_-1.00` | 100 | 0 (0.0 %) | 50.0 / 54.0 | 0 | — | 0 | 0 | PASS |
+| `P-RA1_LOGIN-NA_+1.00` | 100 | 0 (0.0 %) | 36.6 / 37.4 | 0 | — | 0 | 0 | PASS |
+| `P-E2_LOGIN-NA_-1.00` | 200 | 0 (0.0 %) | 54.4 / 65.3 | 0 | 1.00 | 0 | 0 | PASS |
+| `P-E2_LOGIN-NA_+1.00` | 200 | 0 (0.0 %) | 42.5 / 51.2 | 0 | 1.00 | 0 | 0 | PASS |
+| `P-E2_CYCLE-NA_-1.00` | 200 | 0 (0.0 %) | 56.7 / 57.8 | 0 | 1.00 | 0 | 0 | PASS |
+| `P-E2_CYCLE-NA_+1.00` | 200 | 0 (0.0 %) | 51.1 / 51.9 | 0 | 1.00 | 0 | 0 | PASS |
+| `P-RA2_LOGIN-NA_-1.00` | 100 | 0 (0.0 %) | 57.4 / 60.1 | 0 | — | 0 | 0 | PASS |
+| `P-RA2_LOGIN-NA_+1.00` | 100 | 0 (0.0 %) | 66.4 / 79.7 | 0 | — | 0 | 0 | PASS |
+| `P-RA2_CYCLE-NA_-1.00` | 100 | 0 (0.0 %) | 68.9 / 99.6 | 0 | — | 0 | 0 | PASS |
+| `P-RA2_CYCLE-NA_+1.00` | 100 | 0 (0.0 %) | 70.3 / 74.7 | 0 | — | 0 | 0 | PASS |
+
 ## Verdicts
 
 | Condition | result | detail |
@@ -620,8 +747,10 @@ PASS per cell: 0 exceptions; 0 unexplained primary changes (explained only in P-
 | E-SAME P-HT | PASS | 20 targets, 0 exceptions, 0 script errors |
 | E-SAME #156 probes | **FAIL** | 72 / 101 cells PASS |
 | E-SAME C-156-Q (§12.4) | PASS | 101 / 101 cells PASS |
+| E-SAME C-156-Q + V-GAP (§12.5) | PASS | PASS 101, UNPROVEN 0, FAIL 0 of 101 |
 | E-SAME two-clock control | PASS | 2420 rows, 0 exceptions, 0 refused returns |
 | E-DOCKER #154 cells | PASS | 26 / 26 cells PASS |
 | E-DOCKER D-100 inverted | PASS | 0 / 2000 |
 | E-DOCKER #156 probes | **FAIL** | 8 / 12 cells PASS |
 | E-DOCKER C-156-Q (§12.4) | PASS | 12 / 12 cells PASS |
+| E-DOCKER C-156-Q + V-GAP (§12.5) | PASS | PASS 12, UNPROVEN 0, FAIL 0 of 12 |

@@ -31,7 +31,8 @@ use function Maatify\RateLimiter\Investigations\ClockSkew153\cells;
 
 use const Maatify\RateLimiter\Investigations\ClockSkew153\VALIDATOR_MESSAGE;
 
-[$self, $root, $expected] = $argv + [null, null, null];
+// argv[3] = 'p156': only the #156 sections (an outputs directory that holds p156/ alone).
+[$self, $root, $expected, $only] = $argv + [null, null, null, 'all'];
 require $root . '/vendor/autoload.php';
 require $root . '/investigations/clock-skew-153/harness/lib.php';
 
@@ -67,7 +68,7 @@ foreach (['E-SAME', 'E-DOCKER'] as $env) {
     $md[] = '';
     $md[] = '## ' . $env;
     $md[] = '';
-    foreach (['p154/offset-before', 'p154/offset-after', 'p156/offset-before', 'p156/offset-after'] as $probe) {
+    foreach ($only === 'p156' ? ['p156/offset-before', 'p156/offset-after'] : ['p154/offset-before', 'p154/offset-after', 'p156/offset-before', 'p156/offset-after'] as $probe) {
         if (! exists($dir . '/' . $probe . '.jsonl')) {
             $md[] = sprintf('* `%s`: missing', $probe);
             continue;
@@ -81,132 +82,135 @@ foreach (['E-SAME', 'E-DOCKER'] as $env) {
         $md[] = sprintf('* `%s` (%d `TIME` round trips): θ ms median %+.3f, rtt ms median %.3f', $probe, count($theta), median($theta), median($rtt));
     }
 
-    // #154 in full.
-    $md[] = '';
-    $md[] = '### #154 rerun (every registered cell)';
-    $md[] = '';
-    $md[] = '| Cell | requests | reached | validator exceptions | other exceptions | setup requests (exceptions) | snapshot calls | UP / LO | script errors | verdict |';
-    $md[] = '| --- | ---: | ---: | ---: | ---: | --- | ---: | ---: | ---: | --- |';
-    $cellPass = 0;
-    $cellTotal = 0;
-    $d100 = null;
-    foreach (cells($env) as [$clock, $offset, $population, $policyId]) {
-        $cell = cellName($clock, $offset, $population, $policyId);
-        $cellTotal++;
-        $file = $dir . '/p154/' . $cell . '.jsonl';
-        if (! exists($file)) {
-            $md[] = sprintf('| `%s` | — | — | — | — | — | — | — | — | **FAIL (missing)** |', $cell);
-            continue;
-        }
-        $s = p154Stats($file);
-        $pass = $s['reached'] > 0 && $s['validator'] === 0 && $s['other'] === 0 && $s['setupExceptions'] === 0 && $s['upLo'] === 0 && $s['errors'] === 0;
-        $cellPass += $pass ? 1 : 0;
-        if ($cell === 'ALIGN-BEHIND1_F_LOGIN') {
-            $d100 = $s;
-        }
-        $md[] = sprintf(
-            '| `%s` | %d | %d | %d | %d | %d (%d) | %d | %d | %d | %s |',
-            $cell,
-            $s['requests'],
-            $s['reached'],
-            $s['validator'],
-            $s['other'],
-            $s['setup'],
-            $s['setupExceptions'],
-            $s['snaps'],
-            $s['upLo'],
-            $s['errors'],
-            $pass ? 'PASS' : '**FAIL**',
-        );
-    }
-    $verdicts[] = [$env . ' #154 cells', $cellPass === $cellTotal, sprintf('%d / %d cells PASS', $cellPass, $cellTotal)];
-    $d100Pass = $d100 !== null && $d100['validator'] === 0 && $d100['requests'] === 2000;
-    $verdicts[] = [$env . ' D-100 inverted', $d100Pass, $d100 === null ? 'missing' : sprintf('%d / %d', $d100['validator'], $d100['requests'])];
-    $md[] = '';
-    $md[] = sprintf('* D-100 read inverted (`ALIGN-BEHIND1_F_LOGIN`): validator exceptions %s → %s.', $d100 === null ? 'missing' : sprintf('%d / %d', $d100['validator'], $d100['requests']), $d100Pass ? 'PASS' : '**FAIL**');
-    $md[] = '* RED-1c = the `SYS_F_*` cells above (10,000 requests each).';
-    $md[] = '* The phase 1 V-4′ column (the last `now()` before a snapshot read at `EvaluationPipeline.php:867`) is not a condition here: after the fix every read is `RequestScopedClock::now()` holding the one value read at the start of the call (LT-P2-05).';
-
-    $md[] = '';
-    $md[] = '### #154 host surface (§7.4), as written by the archived script';
-    $md[] = '';
-    $surface = $dir . '/p154/host-surface.txt';
-    foreach (is_file($surface) ? (file($surface, FILE_IGNORE_NEW_LINES) ?: []) : ['missing'] as $line) {
-        $md[] = '* `' . $line . '`';
-    }
-
-    if ($env === 'E-SAME') {
+    // #154 in full, P-TAIL / P-HT and their causes (not in the p156-only mode).
+    if ($only !== 'p156') {
+        // #154 in full.
         $md[] = '';
-        $md[] = '### P-TAIL and P-HT';
+        $md[] = '### #154 rerun (every registered cell)';
         $md[] = '';
-        $md[] = '| Probe | a | targets | in window | outcomes | exceptions | script errors |';
-        $md[] = '| --- | --- | ---: | ---: | --- | ---: | ---: |';
-        $tail = $dir . '/p154/tail.jsonl';
-        $groups = [];
-        $totals = ['P-TAIL' => [0, 0, 0], 'P-HT' => [0, 0, 0]];
-        $summary = null;
-        if (exists($tail)) {
-            foreach (rows($tail) as $row) {
-                if (isset($row['summary'])) {
-                    $summary = $row['summary'];
-                }
-                if (($row['phase'] ?? null) !== 'target') {
-                    continue;
-                }
-                $key = $row['probe'] . '|' . ($row['a'] ?? '—');
-                $groups[$key] ??= ['n' => 0, 'in' => 0, 'o' => [], 'x' => 0, 'err' => 0];
-                $groups[$key]['n']++;
-                $groups[$key]['in'] += $row['inWindow'] ? 1 : 0;
-                $groups[$key]['o'][$row['o']] = ($groups[$key]['o'][$row['o']] ?? 0) + 1;
-                $groups[$key]['x'] += $row['x'] !== null ? 1 : 0;
-                $groups[$key]['err'] += count($row['err']);
-                $totals[$row['probe']][0]++;
-                $totals[$row['probe']][1] += $row['x'] !== null ? 1 : 0;
-                $totals[$row['probe']][2] += count($row['err']);
+        $md[] = '| Cell | requests | reached | validator exceptions | other exceptions | setup requests (exceptions) | snapshot calls | UP / LO | script errors | verdict |';
+        $md[] = '| --- | ---: | ---: | ---: | ---: | --- | ---: | ---: | ---: | --- |';
+        $cellPass = 0;
+        $cellTotal = 0;
+        $d100 = null;
+        foreach (cells($env) as [$clock, $offset, $population, $policyId]) {
+            $cell = cellName($clock, $offset, $population, $policyId);
+            $cellTotal++;
+            $file = $dir . '/p154/' . $cell . '.jsonl';
+            if (! exists($file)) {
+                $md[] = sprintf('| `%s` | — | — | — | — | — | — | — | — | **FAIL (missing)** |', $cell);
+                continue;
             }
+            $s = p154Stats($file);
+            $pass = $s['reached'] > 0 && $s['validator'] === 0 && $s['other'] === 0 && $s['setupExceptions'] === 0 && $s['upLo'] === 0 && $s['errors'] === 0;
+            $cellPass += $pass ? 1 : 0;
+            if ($cell === 'ALIGN-BEHIND1_F_LOGIN') {
+                $d100 = $s;
+            }
+            $md[] = sprintf(
+                '| `%s` | %d | %d | %d | %d | %d (%d) | %d | %d | %d | %s |',
+                $cell,
+                $s['requests'],
+                $s['reached'],
+                $s['validator'],
+                $s['other'],
+                $s['setup'],
+                $s['setupExceptions'],
+                $s['snaps'],
+                $s['upLo'],
+                $s['errors'],
+                $pass ? 'PASS' : '**FAIL**',
+            );
         }
-        foreach ($groups as $key => $g) {
-            [$probe, $a] = explode('|', $key);
-            $md[] = sprintf('| %s | %s | %d | %d | %s | %d | %d |', $probe, $a, $g['n'], $g['in'], kv($g['o']), $g['x'], $g['err']);
-        }
+        $verdicts[] = [$env . ' #154 cells', $cellPass === $cellTotal, sprintf('%d / %d cells PASS', $cellPass, $cellTotal)];
+        $d100Pass = $d100 !== null && $d100['validator'] === 0 && $d100['requests'] === 2000;
+        $verdicts[] = [$env . ' D-100 inverted', $d100Pass, $d100 === null ? 'missing' : sprintf('%d / %d', $d100['validator'], $d100['requests'])];
         $md[] = '';
-        $md[] = '* ' . ($summary === null ? 'no summary row' : json_encode($summary));
-        foreach (['P-TAIL' => 60, 'P-HT' => 20] as $probe => $n) {
-            [$targets, $x, $err] = $totals[$probe];
-            $verdicts[] = [$env . ' ' . $probe, $targets === $n && $x === 0 && $err === 0, sprintf('%d targets, %d exceptions, %d script errors', $targets, $x, $err)];
+        $md[] = sprintf('* D-100 read inverted (`ALIGN-BEHIND1_F_LOGIN`): validator exceptions %s → %s.', $d100 === null ? 'missing' : sprintf('%d / %d', $d100['validator'], $d100['requests']), $d100Pass ? 'PASS' : '**FAIL**');
+        $md[] = '* RED-1c = the `SYS_F_*` cells above (10,000 requests each).';
+        $md[] = '* The phase 1 V-4′ column (the last `now()` before a snapshot read at `EvaluationPipeline.php:867`) is not a condition here: after the fix every read is `RequestScopedClock::now()` holding the one value read at the start of the call (LT-P2-05).';
+
+        $md[] = '';
+        $md[] = '### #154 host surface (§7.4), as written by the archived script';
+        $md[] = '';
+        $surface = $dir . '/p154/host-surface.txt';
+        foreach (is_file($surface) ? (file($surface, FILE_IGNORE_NEW_LINES) ?: []) : ['missing'] as $line) {
+            $md[] = '* `' . $line . '`';
         }
 
-        // LT-P2-15 / LT-P2-17 (PLAN §12.3, §12.4): descriptive only, no verdict.
-        $cause = $dir . '/tail-cause.jsonl';
-        if (exists($cause)) {
+        if ($env === 'E-SAME') {
             $md[] = '';
-            $md[] = '### P-TAIL / P-HT outcome causes (`tail_cause.php`, a replay of `tail.php` with the full result; descriptive, no verdict)';
+            $md[] = '### P-TAIL and P-HT';
             $md[] = '';
-            $md[] = '| Probe | a | phase | n | decision · level · retryAfter · signal · cause · reason · scope | IPs (/24) |';
-            $md[] = '| --- | --- | --- | ---: | --- | --- |';
-            $causes = [];
-            $head = null;
-            foreach (rows($cause) as $row) {
-                if (isset($row['meta'])) {
-                    $head = $row['meta']['head'] ?? null;
-                    continue;
+            $md[] = '| Probe | a | targets | in window | outcomes | exceptions | script errors |';
+            $md[] = '| --- | --- | ---: | ---: | --- | ---: | ---: |';
+            $tail = $dir . '/p154/tail.jsonl';
+            $groups = [];
+            $totals = ['P-TAIL' => [0, 0, 0], 'P-HT' => [0, 0, 0]];
+            $summary = null;
+            if (exists($tail)) {
+                foreach (rows($tail) as $row) {
+                    if (isset($row['summary'])) {
+                        $summary = $row['summary'];
+                    }
+                    if (($row['phase'] ?? null) !== 'target') {
+                        continue;
+                    }
+                    $key = $row['probe'] . '|' . ($row['a'] ?? '—');
+                    $groups[$key] ??= ['n' => 0, 'in' => 0, 'o' => [], 'x' => 0, 'err' => 0];
+                    $groups[$key]['n']++;
+                    $groups[$key]['in'] += $row['inWindow'] ? 1 : 0;
+                    $groups[$key]['o'][$row['o']] = ($groups[$key]['o'][$row['o']] ?? 0) + 1;
+                    $groups[$key]['x'] += $row['x'] !== null ? 1 : 0;
+                    $groups[$key]['err'] += count($row['err']);
+                    $totals[$row['probe']][0]++;
+                    $totals[$row['probe']][1] += $row['x'] !== null ? 1 : 0;
+                    $totals[$row['probe']][2] += count($row['err']);
                 }
-                if (! isset($row['probe'], $row['full'])) {
-                    continue;
-                }
-                $f = $row['full'];
-                $key = $row['probe'] . '|' . ($row['a'] ?? '—') . '|' . $row['phase'];
-                $label = implode(' · ', [($row['x'] ?? null) !== null && $row['x'] !== '' ? 'EXCEPTION' : $row['o'], $f['level'] ?? '—', $f['ra'] ?? '—', $f['meta']['signal'] ?? '—', $f['meta']['cause'] ?? '—', $f['meta']['context']['reason'] ?? '—', $f['meta']['context']['scope'] ?? '—']);
-                $causes[$key]['n'] = ($causes[$key]['n'] ?? 0) + 1;
-                $causes[$key]['o'][$label] = ($causes[$key]['o'][$label] ?? 0) + 1;
-                $causes[$key]['ip'][implode('.', array_slice(explode('.', (string) $f['ip']), 0, 3))] = true;
             }
-            foreach ($causes as $key => $c) {
-                [$probe, $a, $phase] = explode('|', $key);
-                $md[] = sprintf('| %s | %s | %s | %d | %s | %s |', $probe, $a, $phase, $c['n'], kv($c['o']), implode(', ', array_keys($c['ip'])));
+            foreach ($groups as $key => $g) {
+                [$probe, $a] = explode('|', $key);
+                $md[] = sprintf('| %s | %s | %d | %d | %s | %d | %d |', $probe, $a, $g['n'], $g['in'], kv($g['o']), $g['x'], $g['err']);
             }
             $md[] = '';
-            $md[] = '* replay head: `' . ($head ?? '—') . '`';
+            $md[] = '* ' . ($summary === null ? 'no summary row' : json_encode($summary));
+            foreach (['P-TAIL' => 60, 'P-HT' => 20] as $probe => $n) {
+                [$targets, $x, $err] = $totals[$probe];
+                $verdicts[] = [$env . ' ' . $probe, $targets === $n && $x === 0 && $err === 0, sprintf('%d targets, %d exceptions, %d script errors', $targets, $x, $err)];
+            }
+
+            // LT-P2-15 / LT-P2-17 (PLAN §12.3, §12.4): descriptive only, no verdict.
+            $cause = $dir . '/tail-cause.jsonl';
+            if (exists($cause)) {
+                $md[] = '';
+                $md[] = '### P-TAIL / P-HT outcome causes (`tail_cause.php`, a replay of `tail.php` with the full result; descriptive, no verdict)';
+                $md[] = '';
+                $md[] = '| Probe | a | phase | n | decision · level · retryAfter · signal · cause · reason · scope | IPs (/24) |';
+                $md[] = '| --- | --- | --- | ---: | --- | --- |';
+                $causes = [];
+                $head = null;
+                foreach (rows($cause) as $row) {
+                    if (isset($row['meta'])) {
+                        $head = $row['meta']['head'] ?? null;
+                        continue;
+                    }
+                    if (! isset($row['probe'], $row['full'])) {
+                        continue;
+                    }
+                    $f = $row['full'];
+                    $key = $row['probe'] . '|' . ($row['a'] ?? '—') . '|' . $row['phase'];
+                    $label = implode(' · ', [($row['x'] ?? null) !== null && $row['x'] !== '' ? 'EXCEPTION' : $row['o'], $f['level'] ?? '—', $f['ra'] ?? '—', $f['meta']['signal'] ?? '—', $f['meta']['cause'] ?? '—', $f['meta']['context']['reason'] ?? '—', $f['meta']['context']['scope'] ?? '—']);
+                    $causes[$key]['n'] = ($causes[$key]['n'] ?? 0) + 1;
+                    $causes[$key]['o'][$label] = ($causes[$key]['o'][$label] ?? 0) + 1;
+                    $causes[$key]['ip'][implode('.', array_slice(explode('.', (string) $f['ip']), 0, 3))] = true;
+                }
+                foreach ($causes as $key => $c) {
+                    [$probe, $a, $phase] = explode('|', $key);
+                    $md[] = sprintf('| %s | %s | %s | %d | %s | %s |', $probe, $a, $phase, $c['n'], kv($c['o']), implode(', ', array_keys($c['ip'])));
+                }
+                $md[] = '';
+                $md[] = '* replay head: `' . ($head ?? '—') . '`';
+            }
         }
     }
 
@@ -301,9 +305,33 @@ foreach (['E-SAME', 'E-DOCKER'] as $env) {
     }
     $verdicts[] = [$env . ' C-156-Q (§12.4)', $passQ === count($registered156[$env]), sprintf('%d / %d cells PASS', $passQ, count($registered156[$env]))];
 
+    // V-GAP (PLAN §12.5, LT-P2-18, 2026-10-22): the validity condition of C-156-Q.
+    $md[] = '';
+    $md[] = '### C-156-Q with V-GAP (registered 2026-10-22, PLAN §12.5)';
+    $md[] = '';
+    $md[] = 'A compared step (a probe band of a stream; in P-I also a paired step) is unpaired when its pairing gap exceeds 100 ms: |h0_S − h0_Z|, or for a `return` step (each twin alone at its own predicted time) max(|h0_S − pred_S|, |h0_Z − pred_Z|) (LT-P2-19); a probe step also takes the largest gap of the earlier steps of its stream run by both twins (LT-P2-20). An unpaired step is counted and left out of every clause except exceptions (all rows). A cell with more than 1 % unpaired steps is UNPROVEN, not FAIL; otherwise C-156-Q is applied to its paired steps.';
+    $md[] = '';
+    $md[] = '| Cell | compared steps | unpaired (> 100 ms) | gap p99 / max ms | primary unexplained | max \\|Δ end\\| s | `retryAfter` unexplained | exceptions | verdict |';
+    $md[] = '| --- | ---: | --- | --- | ---: | ---: | ---: | ---: | --- |';
+    $gapCounts = ['PASS' => 0, 'FAIL' => 0, 'UNPROVEN' => 0];
+    foreach ($registered156[$env] as $cell) {
+        if (! exists($dir . '/p156/' . $cell . '.jsonl')) {
+            $md[] = sprintf('| `%s` | — | — | — | — | — | — | — | **FAIL (missing)** |', $cell);
+            $gapCounts['FAIL']++;
+            continue;
+        }
+        $q = c156q($dir . '/p156/' . $cell . '.jsonl', $cell, 0.100);
+        $unprovenCell = $q['steps'] > 0 && $q['unpaired'] / $q['steps'] > 0.01;
+        $passCell = $q['n'] > 0 && $q['exceptions'] === 0 && $q['primaryUnexplained'] === 0 && $q['maxDelta'] <= 1.0 && $q['raUnexplained'] === 0;
+        $status = $q['exceptions'] > 0 ? 'FAIL' : ($unprovenCell ? 'UNPROVEN' : ($passCell ? 'PASS' : 'FAIL'));
+        $gapCounts[$status]++;
+        $md[] = sprintf('| `%s` | %d | %d (%.1f %%) | %.1f / %.1f | %d | %s | %d | %d | %s |', $cell, $q['steps'], $q['unpaired'], $q['steps'] > 0 ? 100 * $q['unpaired'] / $q['steps'] : 0.0, $q['gapP99'], $q['gapMax'], $q['primaryUnexplained'], $q['maxDelta'] < 0 ? '—' : sprintf('%.2f', $q['maxDelta']), $q['raUnexplained'], $q['exceptions'], $status === 'PASS' ? 'PASS' : '**' . $status . '**');
+    }
+    $verdicts[] = [$env . ' C-156-Q + V-GAP (§12.5)', $gapCounts['FAIL'] === 0, sprintf('PASS %d, UNPROVEN %d, FAIL %d of %d', $gapCounts['PASS'], $gapCounts['UNPROVEN'], $gapCounts['FAIL'], count($registered156[$env]))];
+
     // The two-clock arm.
     $twoClock = $dir . '/two-clock.jsonl';
-    if ($env === 'E-SAME') {
+    if ($env === 'E-SAME' && $only !== 'p156') {
         $md[] = '';
         $md[] = '### Two-clock arm (§4.7, LT-P2-04): writer ahead by δ, reader at 0, one Redis';
         $md[] = '';
@@ -533,17 +561,42 @@ function quantization(string $file, string $family): array
 }
 
 /**
- * C-156-Q (PLAN §12.4) for one #156 probe cell.
+ * C-156-Q (PLAN §12.4) for one #156 probe cell. With `$gapLimit` (V-GAP, PLAN
+ * §12.5) a compared step whose pairing gap exceeds it is unpaired: counted, and
+ * left out of every clause except the exceptions clause. The gap is
+ * |h0_S − h0_Z|, except for a `return` step, which each twin runs alone at its
+ * own predicted time: there it is max(|h0_S − pred_S|, |h0_Z − pred_Z|) (LT-P2-19).
+ * A probe step also takes the largest gap of the earlier steps of its stream run
+ * by both twins (LT-P2-20): a late write moves the stream's stored end. P-I's
+ * paired steps use their own gap.
  *
  * @return array<string, int|float>
  */
-function c156q(string $file, string $cell): array
+function c156q(string $file, string $cell, ?float $gapLimit = null): array
 {
     [$family, $policy] = explode('_', $cell);
     $sigma = 0.0;
     $bands = [];
     $byK = [];
-    $q = ['n' => 0, 'exceptions' => 0, 'primaryExplained' => 0, 'primaryUnexplained' => 0, 'maxDelta' => -1.0, 'raOne' => 0, 'raHandover' => 0, 'raUnexplained' => 0, 'lv' => 0];
+    $steps = [];
+    $q = ['n' => 0, 'exceptions' => 0, 'primaryExplained' => 0, 'primaryUnexplained' => 0, 'maxDelta' => -1.0, 'raOne' => 0, 'raHandover' => 0, 'raUnexplained' => 0, 'lv' => 0,
+        'steps' => 0, 'unpaired' => 0, 'gapP99' => 0.0, 'gapMax' => 0.0];
+    $gaps = [];
+    $unpaired = static function (array $s, array $z, float $earlier = 0.0) use ($gapLimit, &$gaps, &$q): bool {
+        $gap = ($s['probe']['band'] ?? null) === 'return' && isset($s['probe']['pred'], $z['probe']['pred'])
+            ? max(abs($s['h0'] - $s['probe']['pred']), abs($z['h0'] - $z['probe']['pred']))
+            : abs($s['h0'] - $z['h0']);
+        $gap = max($gap, $earlier);
+        $gaps[] = $gap;
+        $q['steps']++;
+        if ($gapLimit !== null && $gap > $gapLimit) {
+            $q['unpaired']++;
+
+            return true;
+        }
+
+        return false;
+    };
     foreach (rows($file) as $row) {
         if (isset($row['meta'])) {
             $sigma = (float) $row['meta']['sigma'];
@@ -558,6 +611,18 @@ function c156q(string $file, string $cell): array
         }
         if (isset($row['k'], $row['op'])) {
             $byK[$row['j'] . '|' . $row['k']][$row['t']] ??= $row;
+            if (! isset($row['probe'])) {
+                $steps[$row['j']][$row['k']][$row['t']] ??= $row;
+            }
+        }
+    }
+    // LT-P2-20: per stream, the gap of each earlier step run by both twins (same operation).
+    $streamGaps = [];
+    foreach ($steps as $j => $byStep) {
+        foreach ($byStep as $k => $pair) {
+            if (isset($pair['S'], $pair['Z']) && $pair['S']['op'] === $pair['Z']['op']) {
+                $streamGaps[$j][$k] = abs($pair['S']['h0'] - $pair['Z']['h0']);
+            }
         }
     }
     $endModel = in_array($family, ['P-B', 'P-E2', 'P-E3'], true);
@@ -566,6 +631,17 @@ function c156q(string $file, string $cell): array
             continue;
         }
         [$s, $z] = [$pair['S'], $pair['Z']];
+        $earlier = 0.0;
+        if ($gapLimit !== null) {
+            foreach ($streamGaps[$s['j']] ?? [] as $k => $gap) {
+                if ($k < ($s['k'] ?? PHP_INT_MAX)) {
+                    $earlier = max($earlier, $gap);
+                }
+            }
+        }
+        if ($unpaired($s, $z, $earlier)) {
+            continue;
+        }
         $q['n']++;
         $explainedByEnd = false;
         if ($endModel) {
@@ -602,10 +678,18 @@ function c156q(string $file, string $cell): array
     }
     if ($family === 'P-I') {
         foreach ($byK as $pair) {
-            if (isset($pair['S'], $pair['Z']) && $pair['S']['op'] === $pair['Z']['op'] && primary($pair['S']) !== primary($pair['Z'])) {
+            if (! isset($pair['S'], $pair['Z']) || $pair['S']['op'] !== $pair['Z']['op'] || $unpaired($pair['S'], $pair['Z'])) {
+                continue;
+            }
+            if (primary($pair['S']) !== primary($pair['Z'])) {
                 $q['primaryUnexplained']++;
             }
         }
+    }
+    if ($gaps !== []) {
+        sort($gaps);
+        $q['gapP99'] = 1000 * $gaps[max(0, (int) ceil(0.99 * count($gaps)) - 1)];
+        $q['gapMax'] = 1000 * $gaps[count($gaps) - 1];
     }
 
     return $q;
