@@ -1631,6 +1631,8 @@ if exists == 1 then
   if not validBackendExpiry(rawExpiry) then return redis.error_reply('malformed current watch state') end
   local value = tonumber(redis.call('GET', KEYS[1]))
   if not value or value ~= math.floor(value) then return redis.error_reply('malformed current watch state') end
+  -- LT-P2-03 (F-P2-03): logically expired while physically present is expired, not counted.
+  if compareDecimalStrings(rawExpiry, nowStr) <= 0 then redis.call('DEL', KEYS[1], KEYS[4]); exists = 0 end
 end
 local value
 if exists == 0 then
