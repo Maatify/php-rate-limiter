@@ -1,0 +1,16 @@
+{"name":"D0 untouched record valid","ok":true,"problems":[]}
+{"name":"D1 remove first line","ok":true,"problems":["rec-3565.jsonl:record_count_mismatch","rec-3565.jsonl:seq_gap"]}
+{"name":"D1 remove middle line","ok":true,"problems":["rec-3565.jsonl:record_count_mismatch","rec-3565.jsonl:seq_gap"]}
+{"name":"D1 remove last_record line","ok":true,"problems":["rec-3565.jsonl:record_count_mismatch"]}
+{"name":"D1 remove trailer line","ok":true,"problems":["rec-3565.jsonl:no_trailer"]}
+{"name":"D1 remove a worker file","ok":true,"problems":["workers:31"]}
+{"name":"D2 synthetic L2168 trace (3 attempts) is r3","ok":true,"u":1,"k":1,"max_count":9,"conflict":true,"conflict_site":"publication","route":"r3","pubs":3,"pub_non_applied":3,"muts":1,"obs_first":null,"obs_last":null,"exit":[]}
+{"name":"D3 one attempt then a read is b2","ok":true,"u":1,"k":1,"max_count":9,"conflict":true,"conflict_site":"publication","route":"b2","pubs":1,"pub_non_applied":1,"muts":1,"obs_first":null,"obs_last":null,"exit":[]}
+{"name":"D3b one attempt then a null read is b1","ok":true,"u":1,"k":1,"max_count":9,"conflict":true,"conflict_site":"publication","route":"b1","pubs":1,"pub_non_applied":1,"muts":1,"obs_first":null,"obs_last":null,"exit":[]}
+{"name":"D4 an applied publication is not a conflict","ok":true,"u":1,"k":1,"max_count":9,"conflict":false,"conflict_site":null,"route":null,"pubs":1,"pub_non_applied":0,"muts":1,"obs_first":null,"obs_last":null,"exit":[]}
+{"name":"D5 a unit with no K5 and no conflict is visible","ok":true,"u":1,"k":0,"max_count":3,"conflict":false,"conflict_site":null,"route":null,"pubs":0,"pub_non_applied":0,"muts":0,"obs_first":null,"obs_last":null,"exit":[]}
+{"name":"D6a untampered V-TRANSFORM passes","ok":true}
+{"name":"D6b one byte appended to the evaluated text fails V-TRANSFORM","ok":true}
+{"name":"D6c a changed subclass body fails V-TRANSFORM","ok":true}
+{"name":"D7 a moved pin makes the bootstrap exit 3","ok":true,"exit":3}
+{"detectors":15,"failed":0}
