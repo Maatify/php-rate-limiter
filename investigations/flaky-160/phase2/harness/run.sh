@@ -1,0 +1,172 @@
+#!/usr/bin/env bash
+# #160 phase 2 runner (PLAN.md §3, §4, §8). PHPUnit runs only through the pinned
+# vendor/bin/phpunit, one fresh Redis container per run. redis.sh and lib.php are
+# the phase-1 copies (investigations/flaky-160/harness/), used unchanged.
+#
+#   run.sh ref      <out>                          V-REF: the A test through no tap, must pass
+#   run.sh arec     <out> <shard> <per> [fault]    A-REC shard: runs (shard-1)*per+1 .. shard*per through the full tap
+#   run.sh arate    <out> <shard> <per>            A-RATE shard: the same runs, no tap, no proxy
+#   run.sh cdet     <out> <n>                      C-DET: 3 variants x n trials
+#   run.sh cnat     <out> <k>                      C-NAT: k repetitions, pass-through recorder
+#   run.sh overhead <out> <k> <spans>              full-tap overhead: k PING + <spans> test runs each way
+#
+# V-HEAD: refuses a run unless src/, tests/, composer.json and phpunit.xml are
+# byte-identical to main@d0739a5 and clean.
+set -euo pipefail
+
+here="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)"
+p1="$here/../../harness"
+root="$(cd -- "$here/../../../.." && pwd)"
+head_ref="${V_HEAD_REF:-d0739a5}"
+php=(env XDEBUG_MODE=off php -d memory_limit=1G)
+phpunit=(env XDEBUG_MODE=off php -d memory_limit=1G "$root/vendor/bin/phpunit")
+test_file='tests/Integration/Redis/KnownDeviceAllowanceConcurrencyIntegrationTest.php'
+test_filter='/::testLoginOverlapSplitsIntoRecordedConflictAndEarlyBlockExactly$/'
+
+arm="${1:?usage: see header}"
+out="${2:?usage: see header}"
+mkdir -p "$out/runs"
+out="$(cd -- "$out" && pwd)"
+
+v_head() {
+    if ! git -C "$root" diff --quiet "$head_ref" -- src tests composer.json phpunit.xml \
+        || [[ -n "$(git -C "$root" status --porcelain -- src tests composer.json phpunit.xml)" ]]; then
+        echo "V-HEAD FAIL: $root differs from $head_ref under src/ tests/ composer.json phpunit.xml, or is not clean" >&2
+        return 1
+    fi
+}
+
+redis_up() { # $1 state file -> prints port, records V-CONFIG
+    local port
+    port="$(bash "$p1/redis.sh" start "$1")"
+    "${php[@]}" -r '
+        require $argv[1];
+        $c = new Flaky157\Client("127.0.0.1", (int) $argv[2]);
+        $server = $c->info("server");
+        echo json_encode(["port" => (int) $argv[2], "redis_version" => $server["redis_version"] ?? null,
+            "maxmemory" => $c->call("CONFIG", "GET", "maxmemory"), "maxmemory_policy" => $c->call("CONFIG", "GET", "maxmemory-policy"),
+            "wall" => microtime(true)]), "\n";' "$p1/lib.php" "$port" >> "$out/config.jsonl"
+    echo "$port"
+}
+
+tap_up() { # $1 run dir, $2 upstream port, $3 fault -> prints tap port
+    local dir="$1" waited=0
+    rm -f "$dir/tap.port"
+    "${php[@]}" "$here/tap_full.php" --autoload="$root/vendor/autoload.php" --upstream-port="$2" \
+        --port-file="$dir/tap.port" --log="$dir/tap.jsonl" --mode=full ${3:+--fault="$3"} > "$dir/tap.out" 2> "$dir/tap.err" &
+    echo $! > "$dir/tap.pid"
+    until [[ -s "$dir/tap.port" ]]; do
+        sleep 0.05
+        waited=$((waited + 1))
+        if (( waited > 200 )); then echo "tap did not start" >&2; return 1; fi
+    done
+    cat "$dir/tap.port"
+}
+
+tap_down() {
+    local pid
+    pid="$(cat "$1/tap.pid")"
+    kill -TERM "$pid" 2>/dev/null || true
+    wait "$pid" 2>/dev/null || true
+}
+
+# One A run. $1 label (arec|arate), $2 id, $3 tapped(1/0), $4 fault.
+a_run() {
+    local label="$1" id="$2" tapped="$3" fault="${4:-}"
+    local dir="$out/runs/$label-$id" port tport status=0 cache started ended
+    rm -rf "$dir"
+    mkdir -p "$dir"
+    v_head || return 1
+    if ! port="$(redis_up "$dir/redis.state")"; then
+        printf '{"arm":"%s","id":%d,"valid":false,"problems":["harness_error"]}\n' "$label" "$id" | tee -a "$out/verdicts.jsonl"
+        return 0
+    fi
+    tport="$port"
+    if [[ "$tapped" == 1 ]] && ! tport="$(tap_up "$dir" "$port" "$fault")"; then
+        [[ -s "$dir/tap.pid" ]] && tap_down "$dir"
+        bash "$p1/redis.sh" stop "$dir/redis.state"
+        printf '{"arm":"%s","id":%d,"valid":false,"problems":["harness_error"]}\n' "$label" "$id" | tee -a "$out/verdicts.jsonl"
+        return 0
+    fi
+    cache="$(mktemp -d)"
+    started="$(perl -MTime::HiRes=time -e "printf q(%.6f), time")"
+    REDIS_INTEGRATION_HOST=127.0.0.1 REDIS_INTEGRATION_PORT="$tport" \
+        "${phpunit[@]}" -c "$root/phpunit.xml" --do-not-cache-result --cache-directory "$cache" --log-junit "$dir/junit.xml" \
+        --filter "$test_filter" "$root/$test_file" > "$dir/phpunit.out" 2>&1 || status=$?
+    ended="$(perl -MTime::HiRes=time -e "printf q(%.6f), time")"
+    rm -rf "$cache"
+    [[ "$tapped" == 1 ]] && tap_down "$dir"
+    bash "$p1/redis.sh" stop "$dir/redis.state"
+    local line
+    line="$("${php[@]}" "$here/a_check.php" --arm="$label" --id="$id" --dir="$dir" --exit="$status" --redis-port="$port" \
+        --tapped="$tapped" --wall="$(awk -v a="$started" -v b="$ended" 'BEGIN{printf "%.3f", b-a}')")"
+    printf '%s\n' "$line" | tee -a "$out/verdicts.jsonl"
+    # A valid passing run keeps its verdict line (per-worker U/K/outcome inside); a failing or invalid run keeps everything.
+    if [[ "$line" == *'"valid":true'* && "$line" == *'"test":"pass"'* && -z "${KEEP_ALL:-}" ]]; then
+        rm -rf "$dir"
+    fi
+}
+
+case "$arm" in
+    ref)
+        v_head
+        dir="$out/ref"
+        rm -rf "$dir"; mkdir -p "$dir"
+        a_run ref 1 0
+        ;;
+    arec)
+        shard="${3:?shard}" per="${4:?per}" fault="${5:-}"
+        for ((i = (shard - 1) * per + 1; i <= shard * per; i++)); do
+            a_run arec "$i" 1 "$fault" || echo "run $i: harness error $?" >&2
+        done
+        ;;
+    arate)
+        shard="${3:?shard}" per="${4:?per}"
+        for ((i = (shard - 1) * per + 1; i <= shard * per; i++)); do
+            a_run arate "$i" 0 || echo "run $i: harness error $?" >&2
+        done
+        ;;
+    cdet|cnat)
+        n="${3:?n}"
+        v_head
+        dir="$out/$arm"
+        rm -rf "$dir"; mkdir -p "$dir"
+        port="$(redis_up "$dir/redis.state")"
+        "${php[@]}" "$here/c.php" --root="$root" --port="$port" --arm="$arm" --n="$n" --out="$out/$arm.rows.jsonl"
+        bash "$p1/redis.sh" stop "$dir/redis.state"
+        ;;
+    overhead)
+        k="${3:?k}" spans="${4:?spans}"
+        v_head
+        dir="$out/overhead"
+        rm -rf "$dir"; mkdir -p "$dir"
+        port="$(redis_up "$dir/redis.state")"
+        tport="$(tap_up "$dir" "$port" "")"
+        "${php[@]}" "$here/overhead.php" --autoload="$root/vendor/autoload.php" --direct-port="$port" --tap-port="$tport" --k="$k" --out="$out/overhead-ping.json"
+        for ((s = 1; s <= spans; s++)); do
+            for mode in direct tap; do
+                p="$port"; [[ "$mode" == tap ]] && p="$tport"
+                cache="$(mktemp -d)"
+                t0="$(perl -MTime::HiRes=time -e "printf q(%.6f), time")"
+                REDIS_INTEGRATION_HOST=127.0.0.1 REDIS_INTEGRATION_PORT="$p" "${phpunit[@]}" -c "$root/phpunit.xml" --do-not-cache-result --cache-directory "$cache" \
+                    --filter "$test_filter" "$root/$test_file" > "$dir/span-$mode-$s.out" 2>&1 || true
+                t1="$(perl -MTime::HiRes=time -e "printf q(%.6f), time")"
+                rm -rf "$cache"
+                awk -v m="$mode" -v s="$s" -v a="$t0" -v b="$t1" 'BEGIN{printf "{\"mode\":\"%s\",\"span\":%d,\"wall_seconds\":%.3f}\n", m, s, b-a}' >> "$out/overhead-spans.jsonl"
+            done
+        done
+        tap_down "$dir"
+        bash "$p1/redis.sh" stop "$dir/redis.state"
+        "${php[@]}" -r '
+            $s = ["direct" => [], "tap" => []];
+            foreach (file($argv[1], FILE_IGNORE_NEW_LINES) as $l) { $r = json_decode($l, true); $s[$r["mode"]][] = $r["wall_seconds"]; }
+            $ping = json_decode(file_get_contents($argv[2]), true);
+            echo json_encode(["spans_wall_seconds" => $s, "tap_log_bytes" => filesize($argv[3]), "ping" => $ping], JSON_PRETTY_PRINT), "\n";' \
+            "$out/overhead-spans.jsonl" "$out/overhead-ping.json" "$dir/tap.jsonl" > "$out/overhead.json"
+        cat "$out/overhead.json"
+        ;;
+    *)
+        echo "unknown arm $arm" >&2
+        exit 2
+        ;;
+esac
