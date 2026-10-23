@@ -127,3 +127,12 @@ Where §8 and an earlier section differ, **§8 governs**. No `src/` or `tests/` 
 | 08 | accepted | `git revert fa3bbce` literally, then the adaptation commit |
 
 **Order (Lead):** push + Draft PR -> harness with the detectors (a record line removed invalidates the run; a synthetic L2168 trace is classified r3) -> V-TRANSFORM, V-CLOCK-2 and overhead on E-CI -> the measured cost on the PR -> the Owner's word -> A-DET -> A-NAT -> REPORT. The closing of the REPORT (two paths, no choice) is accepted as registered.
+
+## 9. Recorded deviations and build changes (harness build, 2026-10-23)
+
+Appended after the build and before any E-CI run; nothing above it is amended.
+
+* **D-1 — pre-state for A-DET and V-CLOCK-2 (accepted by the Lead).** A sequential single-process run of the test's command cannot reach the K4 publication branch: the first failures block, and from the third command on every command is answered early (probe on E-LOCAL, not a counted number). A-DET and V-CLOCK-2 therefore build a pre-state through the store's own public methods (`Fixture::preState`, `harness/fixture.php`): the known-device allowance at its limit (8) and the K4 score at 6, so the next failure scores K4 to 9 (>= l2 = 8) and reaches the publication. Policy, keys, device, pipeline construction and the `FixedClock` are the test's. A-NAT is unaffected: it runs the test itself.
+* **BC-1 — class loading before the fork (build correction, found by the detectors).** In the first E-LOCAL smoke some workers made no recorded call. Cause, shown by logging the loaded class in those workers: the recording subclass file was generated and `require`d by each worker on first use; workers raced on the file and, when it was not yet complete, the autoloader returned without defining the class, so Composer served the original `src/` class unrecorded and the run still passed. Fix: the class is loaded once in the bootstrap, before any fork, and the loader fails the process (exit 3) if it did not define the recording class. The detector that found it stays: a worker whose record file is missing makes the run invalid (`workers:<n>`, D1 "remove a worker file").
+* **D-2 — the recording class is not `final`.** Needed so `ArmedStore` (A-DET alone) can extend it (LT-160C-01 (b)). It is a property of the harness-generated text, not of `src/`; V-TRANSFORM checks the generated text against the template.
+* **D-3 — V-REF line.** `run.sh anat` writes the V-REF verdict to `vref.line` and stops the shard on any V-REF failure that is not at L136, as registered (§4.2).
