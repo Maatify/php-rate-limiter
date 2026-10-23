@@ -1,0 +1,95 @@
+{
+    "det": {
+        "C-DET-1": {
+            "trials": 20,
+            "valid": 20,
+            "invalid": 0,
+            "prediction_holds": 20,
+            "complete": true,
+            "claim_true": 20,
+            "read_reentry_not_null": 0,
+            "wilson95_prediction": [
+                0.8388748419471806,
+                1
+            ],
+            "holds": true
+        },
+        "C-DET-0": {
+            "trials": 20,
+            "valid": 20,
+            "invalid": 0,
+            "prediction_holds": 20,
+            "complete": true,
+            "claim_true": 0,
+            "read_reentry_not_null": 0,
+            "wilson95_prediction": [
+                0.8388748419471806,
+                1
+            ],
+            "holds": true
+        },
+        "C-DET-2": {
+            "trials": 20,
+            "valid": 20,
+            "invalid": 0,
+            "prediction_holds": 20,
+            "complete": true,
+            "claim_true": 20,
+            "read_reentry_not_null": 20,
+            "wilson95_prediction": [
+                0.8388748419471806,
+                1
+            ],
+            "holds": true
+        }
+    },
+    "nat": {
+        "k": 100000,
+        "valid": 100000,
+        "bad_read_shape": 0,
+        "invalid_not_applied": 0,
+        "n_c1_discordant": 0,
+        "n_c1_holds": true,
+        "discordant_examples": [],
+        "straddles": 46,
+        "straddle_rate": 0.00046,
+        "wilson95_straddle_rate": [
+            0.0003449126153498476,
+            0.0006134651571696158
+        ],
+        "n_c2": {
+            "expected_sum_gap_seconds": 45.56237506866455,
+            "poisson95_band": [
+                33,
+                59
+            ],
+            "observed": 46,
+            "inside": true
+        },
+        "split": {
+            "observed_L1095": 23,
+            "observed_L1097": 23,
+            "expected_L1095_sum_gap_block_to_read": 26.4483540058136,
+            "band_L1095": [
+                17,
+                37
+            ],
+            "expected_L1097_sum_gap_read_to_claim": 19.114021062850952,
+            "band_L1097": [
+                11,
+                28
+            ],
+            "inside_L1095": true,
+            "inside_L1097": true,
+            "by_reading_only_L1095": 23,
+            "by_reading_only_L1097": 23
+        },
+        "gap_block_to_claim_us": {
+            "min": 370.97930908203125,
+            "p50": 451.08795166015625,
+            "p99": 635.8623504638672,
+            "max": 2454.996109008789
+        },
+        "complete": true
+    }
+}

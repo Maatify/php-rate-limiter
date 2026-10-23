@@ -1,0 +1,70 @@
+@@ -20 +20 @@
+-require __DIR__ . '/lib.php';
++require __DIR__ . '/../../harness/lib.php';
+@@ -34 +34,2 @@
+-if ($mode !== 'record' && $deleteCase === null) {
++$full = $mode === 'full';
++if ($mode !== 'record' && $mode !== 'full' && $deleteCase === null) {
+@@ -93,0 +95,47 @@
++/**
++ * #160 phase 2 (LT-160B-01/03): the pid(s) holding the client end of a connection
++ * accepted from 127.0.0.1:$clientPort. Linux: /proc/net/tcp inode, then /proc/<pid>/fd.
++ * Elsewhere (local smoke only): lsof, own pid excluded.
++ *
++ * @return list<int>
++ */
++function resolvePids(int $clientPort, int $listenPort): array
++{
++    $pids = [];
++    if (is_readable('/proc/net/tcp')) {
++        $inode = null;
++        foreach (['/proc/net/tcp', '/proc/net/tcp6'] as $table) {
++            foreach (@file($table, FILE_IGNORE_NEW_LINES) ?: [] as $line) {
++                $fields = preg_split('/\s+/', trim($line));
++                if (count($fields) < 10 || ! str_contains($fields[1], ':') || ! str_contains($fields[2], ':')) {
++                    continue;
++                }
++                if (hexdec(explode(':', $fields[1])[1]) === $clientPort && hexdec(explode(':', $fields[2])[1]) === $listenPort) {
++                    $inode = $fields[9];
++                    break 2;
++                }
++            }
++        }
++        if ($inode === null || $inode === '0') {
++            return [];
++        }
++        foreach (glob('/proc/[0-9]*/fd/*') ?: [] as $fd) {
++            if (@readlink($fd) === 'socket:[' . $inode . ']') {
++                $pids[(int) explode('/', $fd)[2]] = true;
++            }
++        }
++        return array_keys($pids);
++    }
++    $output = [];
++    @exec('lsof -nP -iTCP@127.0.0.1:' . $clientPort . ' -sTCP:ESTABLISHED -Fpn 2>/dev/null', $output);
++    $current = null;
++    foreach ($output as $line) {
++        if (isset($line[0]) && $line[0] === 'p') {
++            $current = (int) substr($line, 1);
++        } elseif (isset($line[0]) && $line[0] === 'n' && $current !== null && $current !== getmypid() && str_starts_with(substr($line, 1), '127.0.0.1:' . $clientPort . '->')) {
++            $pids[$current] = true;
++        }
++    }
++    return array_keys($pids);
++}
++
+@@ -149 +197 @@
+-$handleCommand = static function (int $id, array $argv, string $raw) use (&$connections, &$sequence, &$counters, &$side, $keyIndex, $keys, $shas, $deleteCase, $upstreamPort, $emit): bool {
++$handleCommand = static function (int $id, array $argv, string $raw) use (&$connections, &$sequence, &$counters, &$side, $keyIndex, $keys, $shas, $deleteCase, $upstreamPort, $emit, $full): bool {
+@@ -170 +218 @@
+-    if ($case !== null || $keyspace) {
++    if ($case !== null || $keyspace || $full) {
+@@ -174,0 +223 @@
++            'pid' => $connections[$id]['pid'],
+@@ -261 +310,5 @@
+-            $connections[$id] = ['client' => $client, 'up' => $up, 'cbuf' => '', 'sbuf' => '', 'pending' => [], 'last_time' => null, 'raw_in' => false, 'raw_out' => false];
++            $peer = (string) stream_socket_get_name($client, true);
++            $holders = resolvePids((int) substr($peer, (int) strrpos($peer, ':') + 1), $listenPort);
++            $pid = count($holders) === 1 ? $holders[0] : null;
++            writeJsonl($log, ['t' => 'conn', 'conn' => $id, 'pid' => $pid, 'holders' => $holders, 'peer' => $peer, 'wall' => microtime(true)]);
++            $connections[$id] = ['client' => $client, 'up' => $up, 'cbuf' => '', 'sbuf' => '', 'pending' => [], 'pid' => $pid, 'last_time' => null, 'raw_in' => false, 'raw_out' => false];

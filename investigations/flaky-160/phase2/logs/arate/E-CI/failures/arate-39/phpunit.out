@@ -1,0 +1,18 @@
+PHPUnit 11.5.57 by Sebastian Bergmann and contributors.
+
+Runtime:       PHP 8.5.12
+Configuration: /home/runner/work/php-rate-limiter/php-rate-limiter/phpunit.xml
+
+F                                                                   1 / 1 (100%)
+
+Time: 00:00.355, Memory: 10.00 MB
+
+There was 1 failure:
+
+1) Maatify\RateLimiter\Tests\Integration\Redis\KnownDeviceAllowanceConcurrencyIntegrationTest::testLoginOverlapSplitsIntoRecordedConflictAndEarlyBlockExactly
+Failed asserting that 30 is identical to 28.
+
+/home/runner/work/php-rate-limiter/php-rate-limiter/tests/Integration/Redis/KnownDeviceAllowanceConcurrencyIntegrationTest.php:136
+
+FAILURES!
+Tests: 1, Assertions: 209, Failures: 1.

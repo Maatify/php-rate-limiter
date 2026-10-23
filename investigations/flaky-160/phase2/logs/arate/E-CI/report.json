@@ -1,0 +1,29 @@
+{
+    "arate": {
+        "rows": 1000,
+        "duplicates": 0,
+        "valid": 1000,
+        "invalid": 0,
+        "invalid_by_problem": [],
+        "failing_valid": 4,
+        "wilson95_failure_rate": [
+            0.0015565881404084308,
+            0.010239556277262253
+        ],
+        "failure_rate": 0.004,
+        "failing_ids": [
+            39,
+            230,
+            321,
+            878
+        ],
+        "failure_messages": {
+            "30 is identical to 28 @136": 2,
+            "32 is identical to 30 @136": 1,
+            "32 is identical to 28 @136": 1
+        },
+        "expected": 1000,
+        "missing_ids": [],
+        "complete": true
+    }
+}
