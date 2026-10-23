@@ -15,8 +15,10 @@ recorded in the `src/` PR, after the measurement step, on the Owner's decision.
 
 ## Decision Authority
 
-**Owner** (selection of Path B for #160, by way of a decision record first, then a measurement, then `src/`); the principles
-are proposed by the Lead's assignment and become binding only on the Owner's acceptance. The options B-1, B-2 and B-3 are
+**Owner** (selection of Path B for #160, by way of a decision record first, then a measurement, then `src/`): the Owner's
+decision on [PR #165 comment 6375378458](https://github.com/Maatify/php-rate-limiter/pull/165#issuecomment-6375378458), answering
+the Lead's recommendation in [PR #165 comment 6375214721](https://github.com/Maatify/php-rate-limiter/pull/165#issuecomment-6375214721).
+The principles become binding only on the Owner's acceptance at activation. The options B-1, B-2 and B-3 are
 those of `investigations/flaky-160/phase2b/REPORT.md` §5.
 
 ## Scope / Concern
@@ -35,7 +37,9 @@ L2168), and the general rule that follows for any exception of this kind raised 
   committed). A-RATE (no tap) 4 / 1,000 = 0.40 %, Wilson [0.156 %, 1.024 %].
 - **Phase 2b** (`investigations/flaky-160/phase2b/REPORT.md`, merged `dddea39`): the throw site is L2168, reached when the loop
   `for ($attempt = 0; $attempt < 3; …)` over `blockWithPunishmentLifecycleTracking` ends without an applied publication
-  (budget 3). A-DET 20 / 20: exception from L2168, K4 applied, K5 `+2`, no K4 block, three publication calls; control 0 / 20.
+  (budget 3). The loop has two exits without an applied publication, both followed by the same throw: **r3**, three attempts
+  all not applied; and **b2**, the re-read K4 level falls below 2 (`if ($latestLevel < 2) break;`) before the budget is used.
+  A-DET 20 / 20: exception from L2168, K4 applied, K5 `+2`, no K4 block, three publication calls; control 0 / 20.
   A-NAT 2 / 2,000 = 0.10 %, both on the three-attempt route; with the phase-2 instance, 3 / 3 natural instances recorded. In
   the two instances recorded with PHP-side calls the K4 block did **not** exist at the throw (prediction (ii) refuted, 0 / 2,
   §3.3); it appeared 1–10 ms later through another worker.
@@ -56,7 +60,9 @@ L2168), and the general rule that follows for any exception of this kind raised 
    the generation (DEC-007 is not touched). When the publication budget is exhausted after a committed write:
    1. one final attempt is made with a generation read afresh (B-1);
    2. if it also loses, the request returns the decision computed from the last consistent K4 snapshot (level ≥ 2 ⇒ the
-      block decision) and leaves the persistence of the block to the first later publisher that succeeds (B-3).
+      block decision) and leaves the persistence of the block to the first later publisher that succeeds (B-3);
+   3. if the level of the last consistent snapshot is below 2 (route b2), the request returns the decision of that state
+      with no block and no exception (P3 applied to b2; A-DET-b showed this route throwing 20 / 20 after committed writes).
    B-2 (acknowledge an existing block and return its decision) is **rejected on evidence**: no K4 block existed at the
    moment of the throw in 2 / 2 instances (REPORT 2b §3.3), so it would have changed none of the observed cases.
 3. **P3 — The decision follows the state.** The decision of a request is derived from the state written, not from the success
@@ -91,6 +97,9 @@ L2168), and the general rule that follows for any exception of this kind raised 
      stated for the rule, the measured site is L2168).
 - **Test.** Under this path the equation `k5 = 2 × (consumed − conflicts)` holds without relaxation, because every remaining
   conflict is a K = 0 conflict. This is a claim to be checked in the measurement, not a result.
+- **Activation gate.** `docs/FAILURE_SEMANTICS.md` states that it MUST NOT be altered without explicit versioning and
+  security approval, and activation changes its §10.1. The `src/` PR therefore needs that document's versioning step and the
+  explicit security approval, in addition to the Owner's decision.
 - **State.** No new key and no new capability is proposed.
 
 ## Relationship to Other Decisions
