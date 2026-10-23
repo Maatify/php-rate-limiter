@@ -1,0 +1,4 @@
+17c17
+<     env XDEBUG_MODE=off php "$1/vendor/bin/phpunit" --version > "$dir/$2phpunit-version"
+---
+>     env XDEBUG_MODE=off php "$1/vendor/bin/phpunit" --version | sed '/^$/d' > "$dir/$2phpunit-version"

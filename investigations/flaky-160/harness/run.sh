@@ -98,7 +98,7 @@ case "$arm" in
             --log-junit "$out/reference.junit.xml" > "$dir/phpunit.out" 2>&1 || status=$?
         rm -rf "$cache"
         bash "$here/redis.sh" stop "$dir/redis.state"
-        echo "reference exit=$status wall=$(since "$started") $(tail -n 3 "$dir/phpunit.out" | tr '\n' ' ')"
+        echo "reference exit=$status wall=$(since "$started") $(tail -n 3 "$dir/phpunit.out" | tr '\n' ' ' | sed 's/ $//')"
         (( status == 0 )) || { echo 'reference run did not pass; no prefix is written' >&2; exit 1; }
         "${php[@]}" "$here/prefix.php" --root="$root" --junit="$out/reference.junit.xml" --out-dir="$out"
         "${php[@]}" "$here/vref.php" --root="$root" --out-dir="$out"

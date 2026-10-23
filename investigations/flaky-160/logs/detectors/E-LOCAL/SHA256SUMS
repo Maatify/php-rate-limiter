@@ -31,12 +31,12 @@ a9d18235afc5521bd83244b118f371bcd9ff2b59bdefd144ac519d6ca8dbc8c3  ./d7-m/m-ep-bu
 47396dcc80775a0cd9323cc79450a9a3a3a022ffb009bff6345e2cde93867e2b  ./detectors.out.txt
 99b482d197340c3c4761c613144d2b7d4faabb3bd1d1900d9f805e6e8d9cb8af  ./env/e-local/composer.lock
 608cc406b4f3a9baf818a72f71bdfdb4a3c6263d0f2370592f6ddb09a955da23  ./env/e-local/php-version
-c97835d24c08a4944c4ca8ef8faebf4b4af52ef1a482fec8cc4c47bc3339b26b  ./env/e-local/phpunit-version
+35bde73b4442e48dae242f78b9ec73aa8419da3e3052f2419a8f7d929562e642  ./env/e-local/phpunit-version
 1f83f9e47c75503cf46a2f8dcbea7bce7e424791167ee043e0d3c21daa00ac0f  ./kref.json
 339edf57f39e0e68c319b9a475c3ef2240000b2f8682a30513b8b24910ce262b  ./prefix-perturbed.xml
 e9ca535bd29875698ddcd72d973732ac08bba8150bbf67d08859b4f98bccc992  ./prefix.xml
 94698dced7e1dcb742fd108c185d60e71f8e697dc4c9485175fa068b851d9a0a  ./reference.junit.xml
-6188c82c480119c24471b5d123e0aa748bb2f2f7cb65692128d0b93a6c93a121  ./reference.out.txt
+e3d15adab2a9fd5c920d476169e520d4e4512ab5cdf575611f54802e3da9ba9c  ./reference.out.txt
 933a065b1db7004d0204703a2eb73fb99109c0905a0165d449e5357beb7ebe1e  ./reference/phpunit.out
 4c957fe6c47fae032fb2a721cad12c65e951383c855d190e38518dbc6b20eefb  ./runs/uconfig-1/phpunit.out
 1d9fc9cabf084e38d0482e959ead80162cfb7077fae115cc4899c499b53e63fd  ./verdicts.jsonl

@@ -30,10 +30,10 @@ be0278cf5588f3b62c46e9033f007043e6832cf4897adad0085de1c90f6b32e9  ./d7-m/m-nat/m
 a3d50d0edc12b27556c9bc424caf09d605c94f835beb3ca40a7b43ab150a713f  ./detectors.jsonl
 99b482d197340c3c4761c613144d2b7d4faabb3bd1d1900d9f805e6e8d9cb8af  ./env/detectors/composer.lock
 c89e9b0c1d6a12cf68e124518c6795769c73013422e928645e0cb6464fd9697c  ./env/detectors/php-version
-c97835d24c08a4944c4ca8ef8faebf4b4af52ef1a482fec8cc4c47bc3339b26b  ./env/detectors/phpunit-version
+35bde73b4442e48dae242f78b9ec73aa8419da3e3052f2419a8f7d929562e642  ./env/detectors/phpunit-version
 99b482d197340c3c4761c613144d2b7d4faabb3bd1d1900d9f805e6e8d9cb8af  ./env/reference/composer.lock
 c89e9b0c1d6a12cf68e124518c6795769c73013422e928645e0cb6464fd9697c  ./env/reference/php-version
-c97835d24c08a4944c4ca8ef8faebf4b4af52ef1a482fec8cc4c47bc3339b26b  ./env/reference/phpunit-version
+35bde73b4442e48dae242f78b9ec73aa8419da3e3052f2419a8f7d929562e642  ./env/reference/phpunit-version
 97e225e87c5786a599f12a1291804f2db2bea7462a09740662a310d5b2c89fb9  ./kref.json
 50d0454c64258263d5add7531e2ceb6147058d7a426e4417e84327c518e9b49c  ./prefix-perturbed.xml
 f15a75bd3cd305e46c4fc49f858ffc85938378afe36e9d310080f22c72377d1e  ./prefix.xml
