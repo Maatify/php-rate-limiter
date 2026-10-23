@@ -46,7 +46,9 @@ Unchanged from `PLAN.md` §2 (I-1…I-13, READ + LOG): no actor that could remov
 | `KnownDeviceAllowanceConcurrencyIntegrationTest::testLoginOverlapSplitsIntoRecordedConflictAndEarlyBlockExactly` | L136 "30 is identical to 28" | 2086, 2758 |
 | `RedisFullCapabilityStoreIntegrationTest::testConcurrentPreviousHandoffHasNoDoubleSeedAndGenerationMutationsHaveNoLostUpdates` | L1956 "0 is identical to 1" | 3233 |
 
-These ran **under the tap**, which lengthens every command by ≈ 0.06–0.09 ms; whether they also fail without it was not measured. Their cause is not investigated here (outside #157). The "invalid snapshot" message is #153's symptom, seen here on `main` after #158.
+These ran **under the tap**, which lengthens every command by ≈ 0.06–0.09 ms; whether they also fail without it was not measured. They are outside #157 and are carried by **Issue #160**.
+
+**Runs 1500 and 1935 (invalid snapshot), confirmed mechanism:** the S0 fixture reads the clock twice on one host. `S0EvaluationPipeline` (`tests/Fixtures/S0Baseline/`) takes `$now` at L785, then calls the older `addDistinctBoundedWithSnapshot` without a `now` at L793, so the store reads the time a second time from its `fallbackClock` (`RedisFullCapabilityStore` L1549 → `fallbackNow()` L2090). When a second boundary falls between the two reads, the snapshot carries `expiresAt = now + 601` against the pipeline's `$now`, and `BoundedCorrelationResultValidator` rejects it (`expiresAt > now + ttl`, L59; thrown at L62). The other nine runs are not diagnosed (#160).
 
 ## 5. Arm D — mechanism proof (question 3)
 
@@ -73,7 +75,12 @@ Every run (120 / 120): the test fails with exactly `Malformed persisted Redis st
 
 D × outcome, both modes (`d_c1_outcome` in the reports): **D = 0: 1,388 / 1,388 returned `{0}`; D = 1: 5 / 8,030 returned `{0}`; D ≥ 2: 0 / 100,582.** No `D ≤ −3` (no backward Redis clock) in 110,000 sequences.
 
-**H-1 finding (registered, against §1.3 as worded by the Lead).** Five H-FORCED sequences (`h1_violations` in `logs/h/E-CI/h-forced.report.json`; with their shard in `h-forced.rows.jsonl`) returned `{0}` with u0 + span = 1,396–1,437 µs (u0 27–99 µs, span 1,330–1,377 µs); all five have **D = 1**, inside the ±2 band H-2 does not judge. By §1.3, MUTATE returns `{0}` only if the key's expiry `X` ≤ `(t0s + 600) × 1000` as the script sees it; the client measured more than 1 ms from `t0` to the EXPIRE, and the Redis-side interval is at least that long. So either the expiry the script sees is up to 1 ms earlier than the client-side timing implies (a Redis time base, e.g. a cached millisecond for `EXPIRE` or `PTTL`, that this study did not read), or the estimate of D is off by one in these rows. **Not decided here; for the Lead's ruling.** It does not touch H-2 or H-3, and it widens rather than narrows the window in which P2 is reachable.
+**H-1 finding (registered, against §1.3 as worded by the Lead).** Five H-FORCED sequences (`h1_violations` in `logs/h/E-CI/h-forced.report.json`; with their shard in `h-forced.rows.jsonl`) returned `{0}` with u0 + span = 1,396–1,437 µs (u0 27–99 µs, span 1,330–1,377 µs); all five have **D = 1**, inside the ±2 band H-2 does not judge. By §1.3, MUTATE returns `{0}` only if the key's expiry `X` ≤ `(t0s + 600) × 1000` as the script sees it; the client measured more than 1 ms from `t0` to the EXPIRE, and the Redis-side interval is at least that long. The mechanism, read from the Redis 7.0.15 source: `expireCommand` passes `mstime()` (`expire.c` L679–681), `ttlGenericCommand` computes `expire − mstime()` (`expire.c` L712), and `timeCommand` is a direct `gettimeofday` (`server.c` L4386–4394); none of them uses a command-time snapshot. Each command therefore floors the current wall-clock millisecond on its own, and the two reads of each side straddle a millisecond:
+
+* the MUTATE script at `fe8775c` reads `TIME` first (`nowMs`) and `PTTL` later, so `nowMs + PTTL` is `expireAt` or `expireAt − 1`; when it is `expireAt − 1` and `expireAt = (t0s + 600) × 1000 + 1`, the check `expiresAt × 1000 < nowMs + PTTL` does not fire and MUTATE returns `{0}`;
+* the probe reads `PTTL` and then `TIME` inside one `EXEC`, so its estimate is `expireAt` or `expireAt + 1`, i.e. D is exact or one too high.
+
+The client measured more than 1 ms from `t0` to the EXPIRE, so the true D of these rows is at least 1; with the two floors, a true D of 1 is enough for `{0}`. The five rows lie inside the registered ±2 band; no row is reclassified, and H-1 stays recorded as above. It does not touch H-2 or H-3.
 
 **P2 is reachable on a CI runner without a clock fault**: 6 / 100,000 natural sequences, and 1,387 / 10,000 when `t0` falls at the start of its second.
 
@@ -90,8 +97,7 @@ D × outcome, both modes (`d_c1_outcome` in the reports): **D = 0: 1,388 / 1,388
 ## 8. Not proven
 
 * Which path the single CI failure (run 39570493869) took.
-* The mechanism of the five H-1 rows (§6).
-* Whether the 11 other failures in L (§4) happen without the tap, and their cause.
+* Whether the 11 other failures in L (§4) happen without the tap, and the cause of the nine not diagnosed (#160).
 * The untapped in-suite `t0` phase at either head; P1 below 0.116 %.
 
 ## 9. Files
