@@ -7,6 +7,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed (#160, test only)
+- `RedisFullCapabilityStoreIntegrationTest::testGenerationBoundLifecycleIsAtomicAndClaimDoesNotConsumeEvidence` blocks for 60 seconds, not 1:
+  a one-second block can end between the block call and the claim call. No change under `src/`.
+
 ### Fixed (#160)
 - `EvaluationPipeline::addBoundedSnapshot()` reads the clock once and passes the same reading to the
   store and to the snapshot validator. A pipeline built directly, with a clock that is read per call,

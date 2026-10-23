@@ -1,0 +1,4 @@
+97c97
+<     $transition = $store->blockWithPunishmentLifecycleTracking($logical, null, 1, $id, 2, 1, 21600, 2, 600, 86400);
+---
+>     $transition = $store->blockWithPunishmentLifecycleTracking($logical, null, 1, $id, 2, 60, 21600, 2, 600, 86400);

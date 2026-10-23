@@ -1,0 +1,10 @@
+diff --git a/a/tests/Integration/Redis/RedisFullCapabilityStoreIntegrationTest.php b/b/tests/Integration/Redis/RedisFullCapabilityStoreIntegrationTest.php
+index 4c683f7..47c4ccb 100644
+--- a/a/tests/Integration/Redis/RedisFullCapabilityStoreIntegrationTest.php
++++ b/b/tests/Integration/Redis/RedisFullCapabilityStoreIntegrationTest.php
+@@ -1070,0 +1071,3 @@ final class RedisFullCapabilityStoreIntegrationTest extends TestCase
++        $t = time();
++        $injected = new FixedClock('@' . $t);
++        $this->store = new RedisFullCapabilityStore($this->executor, $this->namespace, $injected);
+@@ -1096,0 +1100 @@ final class RedisFullCapabilityStoreIntegrationTest extends TestCase
++        $injected->setNow(new \DateTimeImmutable('@' . ($t + 1)));
