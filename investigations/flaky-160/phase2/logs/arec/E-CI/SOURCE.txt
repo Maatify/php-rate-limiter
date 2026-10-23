@@ -1,0 +1,2 @@
+run 39994700397, head b29dbdb, mode=a kind=arec, 20 shards x 250; env of shards 1 and 20 kept; all 20 resolved sets compared by envset below
+  20 99b482d197340c3c4761c613144d2b7d4faabb3bd1d1900d9f805e6e8d9cb8af

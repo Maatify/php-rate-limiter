@@ -1,0 +1,85 @@
+{
+    "arec": {
+        "rows": 5000,
+        "duplicates": 0,
+        "valid": 5000,
+        "invalid": 0,
+        "invalid_by_problem": [],
+        "failing_valid": 1,
+        "wilson95_failure_rate": [
+            3.530578343936526e-5,
+            0.0011320890808397363
+        ],
+        "failure_rate": 0.0002,
+        "failing_ids": [
+            787
+        ],
+        "failure_messages": {
+            "28 is identical to 26 @136": 1
+        },
+        "expected": 5000,
+        "missing_ids": [],
+        "complete": true,
+        "invalid_pid_unresolved": 0,
+        "invalid_pid_share": 0,
+        "arm_stops_per_LT_160B_03": false,
+        "P_FAIL": {
+            "holds": false,
+            "exceptions": [
+                {
+                    "id": 787,
+                    "anomaly_classes": [
+                        "k5_without_unit"
+                    ]
+                }
+            ]
+        },
+        "P_PASS": {
+            "holds": true,
+            "exceptions": []
+        },
+        "naming_target_reached": false,
+        "anomaly_signatures_of_failing": {
+            "787": [
+                {
+                    "class": "k5_without_unit",
+                    "wave": 1,
+                    "outcome": "conflict",
+                    "u": 1,
+                    "k": 1,
+                    "signature": [
+                        "BLOCK_GET:BLK4",
+                        "BLOCK_GET:BLK5",
+                        "SCORE_GET:K4",
+                        "SCORE_GET:K5",
+                        "LIFECYCLE_READ:K4+BLK4",
+                        "BUDGET_GET:AUX",
+                        "BUDGET_INCREMENT:AUX",
+                        "BLOCK_GET:BLK4",
+                        "LIFECYCLE_READ:K4+BLK4",
+                        "BLOCK_GET:BLK4",
+                        "LIFECYCLE_MUTATE:K4",
+                        "LIFECYCLE_READ:K4+BLK4",
+                        "BLOCK_GET:BLK4",
+                        "LIFECYCLE_MUTATE:K4",
+                        "LIFECYCLE_READ:K4+BLK4",
+                        "BLOCK_GET:BLK4",
+                        "LIFECYCLE_MUTATE:K4",
+                        "BLOCK_GET:BLK5",
+                        "SCORE_INCREMENT:K5",
+                        "BLOCK_GET:BLK5",
+                        "HARD_BLOCK:BLK4+K4",
+                        "LIFECYCLE_READ:K4+BLK4",
+                        "BLOCK_GET:BLK4",
+                        "HARD_BLOCK:BLK4+K4",
+                        "LIFECYCLE_READ:K4+BLK4",
+                        "BLOCK_GET:BLK4",
+                        "HARD_BLOCK:BLK4+K4",
+                        "LIFECYCLE_READ:K4+BLK4",
+                        "BLOCK_GET:BLK4"
+                    ]
+                }
+            ]
+        }
+    }
+}
