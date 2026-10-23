@@ -1,6 +1,6 @@
 # #160 — phase 2: the mechanisms of T-CLAIM and T-ALLOW (pre-registered measurement, no fix)
 
-> **Status:** PRE-REGISTRATION, plan **v1**. Committed alone, **before** any harness code, workflow or result. Evidence only: no change to `src/`, `tests/`, `composer.json`, `phpunit.xml`, `ci.yml`; `investigations/flaky-160/` phase-1 files and `investigations/flaky-157/` are read, never edited.
+> **Status:** PRE-REGISTRATION, plan **v2** (v1 = `156c6d5`; v2 only appends §8, the Lead's rulings of 2026-10-23 on LT-160B-01..08, and amends nothing above it that already ran). v1 was committed alone, **before** any harness code, workflow or result. Evidence only: no change to `src/`, `tests/`, `composer.json`, `phpunit.xml`, `ci.yml`; `investigations/flaky-160/` phase-1 files and `investigations/flaky-157/` are read, never edited.
 > **Head:** the branch is cut from `main@d0739a5` (PR #162 merged). V-HEAD (per run, per arm): `src/`, `tests/`, `composer.json`, `phpunit.xml` byte-identical to `d0739a5` and a clean tree. Note `d0739a5` changed `EvaluationPipeline::addBoundedSnapshot` and the two mixed-version tests; the two tests of this phase do not go through that method's set-creating path in a way that matters (not relied on; V-HEAD pins the bytes).
 > **Assignment:** the Lead's #160 phase-2 assignment (2026-10-23); the Owner's decision that T-CLAIM and T-ALLOW go first (REPORT #161 §6 (b)); T-K4 and T-HAND are a separate assignment.
 > **Rules kept:** plan before harness; every LT ruled before the build; no registered condition changes after it has run; one commit per step; the PR stays Draft; my own checks are a self-review, never a Lead review; the Owner approves the measured cost on the PR before any dispatch.
@@ -110,3 +110,20 @@ If N-C1 holds with no discordant repetition, the behaviour is the **store's corr
 5. REPORT: for each arm the prediction and the result with Wilson 95 %, the branch named for T-ALLOW from the record, and a per-test preliminary decision (defect or test assumption) with what must still be measured before any fix.
 
 Outputs: `investigations/flaky-160/phase2/{PLAN,REPORT}.md`, `harness/`, `logs/` with `SHA256SUMS`. The PR is opened Draft and stays Draft until the Lead's review and the Owner's decision; any confirmed finding blocks Ready; a failure of any of the six methods on the normal CI is reported before any re-run.
+
+## 8. Rulings (Lead, 2026-10-23, on #160) and what they change
+
+Where §8 and an earlier section differ, **§8 governs**.
+
+| LT | Ruling | Consequence |
+| --- | --- | --- |
+| 01 | accepted | copy of #157's tap under `phase2/harness/` in `full` mode, with a provenance header, a recorded diff and a checker as in phase 1 (extension of the instrument, never of the stream). **Overhead of the copy measured once** (K = 2,000 `PING` plus the span of the test), because every command is now written to disk |
+| 02 | accepted | the pass-through recorder is not value injection (as LT-160-06); V-CLOCK as registered |
+| 03 | accepted with a recorded precaution | worker attribution by pid via `/proc`; a run where a pid cannot be resolved is **invalid, counted and reported**, never attributed by the weaker barrier rule; if invalid runs for this reason exceed **2 %** the arm stops and is reported |
+| 04 | accepted | C-DET-2 is a third row of 20 with the shared control C-DET-0 |
+| 05 | assumption accepted; second pass authorised on a condition | the branch is named **first from the Redis command sequence**. If two candidates remain that the sequence cannot separate, a second A-REC pass with a PHP-side recorder (a decorating store wired only from the harness bootstrap, never in `tests/`) may run **without a new ruling round**, on the condition that its **prediction is written into this PLAN before it runs** and its cost is shown to the Owner |
+| 06 | amended | **A-REC: N fixed at 5,000, no early stop** (shards do not coordinate); "≥ 5 failing runs" is the **target for naming the branch**, not a stop rule. **A-RATE is cut to N = 1,000, descriptive** (the tap-effect question was settled in phase 1). Estimated total ≈ 6 runner-hours; the **measured** per-run numbers go on the PR before any dispatch |
+| 07 | accepted | `git revert 469505d` literally as its own commit, then the adaptation commit |
+| 08 | accepted | K = 100,000 for C-NAT |
+
+Changes to §4.2 implied by LT-160B-06: the stop rule there ("first of ≥ 5 failing runs or the cap") is **withdrawn**; A-REC runs all 5,000. The power paragraph of §4.2 stands for A-REC (5,000); for A-RATE at N = 1,000 the Poisson P(≥ 1 failure) is 69.9 % at 0.12 % per run, 45.1 % at 0.06 %, 90.9 % at 0.24 %; A-RATE is descriptive and is reported with its Wilson 95 %, not as a criterion.
