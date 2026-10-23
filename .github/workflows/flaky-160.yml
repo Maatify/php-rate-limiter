@@ -1,0 +1,137 @@
+# TEMPORARY — #160 phase 2 (investigations/flaky-160/phase2/PLAN.md §2, §8 LT-160B-07).
+# Restored from phase 1 by `git revert 469505d` (own commit), then adapted in the next
+# commit. Exists only on branch claude/phase2-t-claim-t-allow-9a777e and is removed in
+# its own commit before Ready. Runs nothing but the setup steps of ci.yml (checkout,
+# setup-php, composer update) and investigations/flaky-160/phase2/harness/, whose only
+# test command is the pinned vendor/bin/phpunit. No secrets, contents: read.
+# Every job keeps its resolved composer.lock and the PHPUnit / PHP versions in its
+# artifact under env/<job>/ (phase-1 harness/env.sh, used unchanged).
+#
+# Modes: detectors  PLAN §5 detectors + the measured cost (full-tap overhead, wall per run)
+#        c          arm C: C-DET (20 per variant) and C-NAT (K = 100,000)
+#        a          arm A shards: kind = arec (full tap, N = 5,000) or arate (no tap, N = 1,000);
+#                   layout from inputs, fixed from the measured cost and the Owner's word
+# Trigger: workflow_dispatch with `mode`, or a push to this branch whose head commit
+#          message contains "[flaky-160b:detectors]".
+name: flaky-160b (temporary)
+
+on:
+  workflow_dispatch:
+    inputs:
+      mode:
+        description: 'detectors | c | a'
+        required: true
+        type: choice
+        options: [detectors, c, a]
+      a_kind:
+        description: 'arm A: arec | arate'
+        required: false
+        default: 'arec'
+      a_shards:
+        description: 'arm A: JSON list of shard numbers'
+        required: false
+        default: '[1]'
+      a_per:
+        description: 'arm A: runs per shard'
+        required: false
+        default: '10'
+      a_timeout:
+        description: 'arm A: timeout-minutes per shard'
+        required: false
+        default: '115'
+  push:
+    branches: [claude/phase2-t-claim-t-allow-9a777e]
+
+permissions:
+  contents: read
+
+jobs:
+  detectors:
+    name: Detectors and cost (PLAN §5, §2)
+    if: inputs.mode == 'detectors' || contains(github.event.head_commit.message, '[flaky-160b:detectors]')
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+      - uses: shivammathur/setup-php@f3e473d116dcccaddc5834248c87452386958240 # v2
+        with:
+          php-version: '8.5'
+          coverage: none
+          extensions: redis
+      - run: composer update --no-interaction --prefer-dist --no-progress
+      - run: bash investigations/flaky-160/harness/env.sh "$RUNNER_TEMP/f160b" detectors
+      - run: bash investigations/flaky-160/phase2/harness/detectors.sh "$RUNNER_TEMP/f160b"
+      - run: bash investigations/flaky-160/phase2/harness/run.sh overhead "$RUNNER_TEMP/f160b" 2000 5
+      - if: always()
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: f160b-detectors
+          path: ${{ runner.temp }}/f160b
+          retention-days: 30
+
+  c:
+    name: Arm C ${{ matrix.part }}
+    if: inputs.mode == 'c'
+    runs-on: ubuntu-latest
+    timeout-minutes: 90
+    strategy:
+      fail-fast: false
+      matrix:
+        part: [cdet, cnat]
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+      - uses: shivammathur/setup-php@f3e473d116dcccaddc5834248c87452386958240 # v2
+        with:
+          php-version: '8.5'
+          coverage: none
+          extensions: redis
+      - run: composer update --no-interaction --prefer-dist --no-progress
+      - run: bash investigations/flaky-160/harness/env.sh "$RUNNER_TEMP/f160b" "c-${{ matrix.part }}"
+      - run: |
+          if [ "${{ matrix.part }}" = cdet ]; then
+            bash investigations/flaky-160/phase2/harness/run.sh cdet "$RUNNER_TEMP/f160b" 20
+          else
+            bash investigations/flaky-160/phase2/harness/run.sh cnat "$RUNNER_TEMP/f160b" 100000
+          fi
+      - if: always()
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: f160b-c-${{ matrix.part }}
+          path: ${{ runner.temp }}/f160b
+          retention-days: 30
+
+  a:
+    name: Arm A ${{ inputs.a_kind }} shard ${{ matrix.shard }} (${{ inputs.a_per }} runs)
+    if: inputs.mode == 'a'
+    runs-on: ubuntu-latest
+    timeout-minutes: ${{ fromJSON(inputs.a_timeout || '115') }}
+    strategy:
+      fail-fast: false
+      matrix:
+        shard: ${{ fromJSON(inputs.a_shards || '[1]') }}
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+      - uses: shivammathur/setup-php@f3e473d116dcccaddc5834248c87452386958240 # v2
+        with:
+          php-version: '8.5'
+          coverage: none
+          extensions: redis
+      - run: composer update --no-interaction --prefer-dist --no-progress
+      - run: bash investigations/flaky-160/harness/env.sh "$RUNNER_TEMP/f160b" "a-${{ inputs.a_kind }}-${{ matrix.shard }}"
+      - run: bash investigations/flaky-160/phase2/harness/run.sh ref "$RUNNER_TEMP/f160b"
+      - run: bash investigations/flaky-160/phase2/harness/run.sh "${{ inputs.a_kind }}" "$RUNNER_TEMP/f160b" "${{ matrix.shard }}" "${{ inputs.a_per }}"
+      - if: always()
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: f160b-a-${{ inputs.a_kind }}-${{ matrix.shard }}
+          path: ${{ runner.temp }}/f160b
+          retention-days: 30
