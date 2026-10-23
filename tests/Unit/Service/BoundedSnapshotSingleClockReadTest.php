@@ -10,6 +10,7 @@ use Maatify\RateLimiter\Builder\RateLimiterBuilder;
 use Maatify\RateLimiter\Command\RateLimitCommand;
 use Maatify\RateLimiter\Config\RateLimiterConfig;
 use Maatify\RateLimiter\DTO\BoundedCorrelationObservationDTO;
+use Maatify\RateLimiter\DTO\BoundedDistinctSnapshotDTO;
 use Maatify\RateLimiter\DTO\DeviceIdentityDTO;
 use Maatify\RateLimiter\DTO\RateLimitContextDTO;
 use Maatify\RateLimiter\DTO\RateLimitResultDTO;
@@ -110,10 +111,13 @@ final class BoundedSnapshotSingleClockReadTest extends TestCase
             ->invoke($worker, new BoundedCorrelationObservationDTO('m160-window', 'm160-member'), 600, 4);
     }
 
-    private function addBoundedSnapshot(EvaluationPipeline $pipeline): \Maatify\RateLimiter\DTO\BoundedDistinctSnapshotDTO
+    private function addBoundedSnapshot(EvaluationPipeline $pipeline): BoundedDistinctSnapshotDTO
     {
-        return (new \ReflectionMethod(EvaluationPipeline::class, 'addBoundedSnapshot'))
+        $snapshot = (new \ReflectionMethod(EvaluationPipeline::class, 'addBoundedSnapshot'))
             ->invoke($pipeline, new BoundedCorrelationObservationDTO('m160-window', 'm160-member'), 600, 4);
+        self::assertInstanceOf(BoundedDistinctSnapshotDTO::class, $snapshot);
+
+        return $snapshot;
     }
 
     private function newWorker(FullCapabilityInMemoryStore $store, ClockInterface $clock): EvaluationPipeline
