@@ -281,12 +281,12 @@ D7 numbers are demonstrations, not results: on E-CI, NAT `g` p50 82 µs (min 56,
 | Quantity (E-CI, run 39929369241) | Measured |
 | --- | --- |
 | One untapped prefix run, container to container (C1) | **31.04 s** (PHPUnit 28.6 s); the perturbed-prefix run (D5, 1,381 tests) 31.31 s |
-| Job set-up (set up, checkout, setup-php, composer, env.sh) | ≈ 16 s |
+| Job set-up (set up, checkout, setup-php, composer, env.sh) | 14 s in each of the two jobs |
 | `download-artifact` of the 956 KB reference artifact | 191 s in this job (counted as measured) |
 | Reference job | 8.2 min (PHPUnit 7:47.7) |
 | M, per call | NAT 4.16 ms, EP-NAT 5.71 ms (2,000 each); DET-type sub-arms < 0.1 s per 3 trials |
 
-**U at N = 3,300 as 20 shards × 165 runs:** per shard ≈ 0.27 + 3.2 + 165 × 31.04 / 60 = **88.8 min** (97.0 min at 34 s per run); total **≈ 29.7 runner-hours** (20 shards + the reference), wall ≈ 97 min (the reference first, then 20 shards = the account's whole concurrency). Proposed `timeout-minutes` **110** per shard (≥ 13 min above the 34 s-per-run case, under 2 h); upload runs with `if: always()`, so a shard stopped by its timeout still uploads the verdicts it wrote. Alternative under the same limits: 30 × 110 runs (≈ 60 min per shard) holds 20 jobs then 10, wall ≈ 2 h, same runner-hours plus 10 more set-ups and downloads.
+**U at N = 3,300 as 20 shards × 165 runs:** per shard ≈ 0.23 + 3.18 + 165 × 31.04 / 60 = **88.8 min** (96.9 min at 34 s per run); total **≈ 29.6 runner-hours** (20 shards + the reference), wall ≈ 97 min (the reference first, then 20 shards = the account's whole concurrency). Proposed `timeout-minutes` **110** per shard (≥ 13 min above the 34 s-per-run case, under 2 h); upload runs with `if: always()`, so a shard stopped by its timeout still uploads the verdicts it wrote. Alternative under the same limits: 30 × 110 runs (≈ 60 min per shard) holds 20 jobs then 10, wall ≈ 2 h, same runner-hours plus 10 more set-ups and downloads.
 
 **M at registered sizes:** three jobs (DET-type 20 each; NAT K = 100,000 ≈ 7 min; EP-NAT K = 100,000 ≈ 9.5 min), ≈ 0.4 runner-hours. Proposed order, after the Owner's word: **M first, then U**, so that nothing else of mine runs while U holds the queue; no push to this branch from U's dispatch until its last shard ends.
 
