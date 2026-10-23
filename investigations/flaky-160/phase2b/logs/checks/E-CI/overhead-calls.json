@@ -1,0 +1,1 @@
+{"calls":100000,"redis_call_unrecorded_us":158.02,"redis_call_recorded_us":164.33,"recorder_added_us_per_call":6.31,"ratio_recorded_to_unrecorded":1.04,"recorder_only_us_per_call_no_redis":1.11}

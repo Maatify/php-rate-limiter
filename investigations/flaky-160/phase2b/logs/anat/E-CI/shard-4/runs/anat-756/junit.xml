@@ -1,0 +1,11 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<testsuites>
+  <testsuite name="Maatify\RateLimiter\Tests\Integration\Redis\KnownDeviceAllowanceConcurrencyIntegrationTest" file="/home/runner/work/php-rate-limiter/php-rate-limiter/tests/Integration/Redis/KnownDeviceAllowanceConcurrencyIntegrationTest.php" tests="1" assertions="209" errors="0" failures="1" skipped="0" time="0.438586">
+    <testcase name="testLoginOverlapSplitsIntoRecordedConflictAndEarlyBlockExactly" file="/home/runner/work/php-rate-limiter/php-rate-limiter/tests/Integration/Redis/KnownDeviceAllowanceConcurrencyIntegrationTest.php" line="112" class="Maatify\RateLimiter\Tests\Integration\Redis\KnownDeviceAllowanceConcurrencyIntegrationTest" classname="Maatify.RateLimiter.Tests.Integration.Redis.KnownDeviceAllowanceConcurrencyIntegrationTest" assertions="209" time="0.438586">
+      <failure type="PHPUnit\Framework\ExpectationFailedException">Maatify\RateLimiter\Tests\Integration\Redis\KnownDeviceAllowanceConcurrencyIntegrationTest::testLoginOverlapSplitsIntoRecordedConflictAndEarlyBlockExactly
+Failed asserting that 28 is identical to 26.
+
+/home/runner/work/php-rate-limiter/php-rate-limiter/tests/Integration/Redis/KnownDeviceAllowanceConcurrencyIntegrationTest.php:136</failure>
+    </testcase>
+  </testsuite>
+</testsuites>

@@ -1,0 +1,10 @@
+PHPUnit 11.5.57 by Sebastian Bergmann and contributors.
+
+Runtime:       PHP 8.5.12
+Configuration: /home/runner/work/php-rate-limiter/php-rate-limiter/phpunit.xml
+
+.                                                                   1 / 1 (100%)
+
+Time: 00:00.539, Memory: 10.00 MB
+
+OK (1 test, 212 assertions)
