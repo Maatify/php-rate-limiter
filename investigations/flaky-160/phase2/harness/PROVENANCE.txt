@@ -1,6 +1,6 @@
 # #160 phase 2 harness provenance (PLAN.md §8 LT-160B-01).
 # tap_full.php is a copy of the #157 tap at main@8b79e9b with ONE provenance line inserted as line 2,
-# ADAPTED: it differs from the original only by the recorded diff (`diff <original> <copy without line 2>`).
+# ADAPTED: it differs from the original only by the recorded diff (`diff -U0 <original> <copy without line 2>` without its two file-header lines, so the recorded diff has no trailing whitespace).
 # lib.php, redis.sh, env.sh, envset.php are NOT copied again: phase 2 uses the phase-1 copies in
 # investigations/flaky-160/harness/ (themselves provenance-checked there) and never edits them.
 # format: <copy> <original path at 8b79e9b> <sha256 of the original> adapted:<diff file>

@@ -15,7 +15,7 @@ while read -r copy original sha adapted; do
     at_head="$(git -C "$root" show "8b79e9b:$original" | shasum -a 256 | cut -d' ' -f1)"
     if [[ -n "${adapted:-}" ]]; then
         recorded="$here/${adapted#adapted:}"
-        if [[ "$at_head" == "$sha" ]] && cmp -s <(diff <(git -C "$root" show "8b79e9b:$original") <(sed '2d' "$here/$copy")) "$recorded"; then
+        if [[ "$at_head" == "$sha" ]] && cmp -s <(diff -U0 <(git -C "$root" show "8b79e9b:$original") <(sed '2d' "$here/$copy") | sed '1,2d') "$recorded"; then
             echo "OK   $copy = $original ($sha) + exactly ${adapted#adapted:}"
         else
             echo "FAIL $copy: not the original ($at_head, recorded $sha) plus exactly ${adapted#adapted:}"
