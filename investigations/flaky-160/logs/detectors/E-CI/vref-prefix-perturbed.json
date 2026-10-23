@@ -1,0 +1,26 @@
+{
+    "files_equal_157": false,
+    "files_count": 74,
+    "files_count_157": 75,
+    "k_ref": 1329,
+    "k_ref_ok": true,
+    "sequence_sha256": "fccd09eb496600e55e6c642c9c2693d1d6c9f5c8776dfd7f3d8024a4df39f3b3",
+    "sequence_ok": true,
+    "reference_cases": 1855,
+    "reference_failures": 0,
+    "ordinals": {
+        "T-K4": 1340,
+        "T-CLAIM": 1311,
+        "T-S0A": 1272,
+        "T-S0B": 1271,
+        "T-ALLOW": 1268,
+        "T-HAND": 1341,
+        "TARGET-157": 1329
+    },
+    "all_six_in_prefix": true,
+    "files_only_here": [],
+    "files_only_157": [
+        "tests/Unit/Admission/AdmissionBudgetsAndSourceTest.php"
+    ],
+    "ok": false
+}

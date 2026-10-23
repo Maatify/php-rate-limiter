@@ -1,0 +1,3 @@
+reference exit=0 wall=603.151 Time: 10:01.580, Memory: 76.00 MB  OK (1855 tests, 25518 assertions) 
+k_ref=1329 files=75 out=/private/tmp/claude-501/-Users-mohamedabdulalim-MEGA-Libraries-2026-php-rate-limiter--claude-worktrees-clock-skew-bounded-snapshot-a0900b/ba5fafb9-c26d-45e1-a7fd-78b2d5bc39de/scratchpad/f160-out/local/prefix.xml
+V-REF OK files=75 equal_157=true k_ref=1329 sequence_ok=true out=/private/tmp/claude-501/-Users-mohamedabdulalim-MEGA-Libraries-2026-php-rate-limiter--claude-worktrees-clock-skew-bounded-snapshot-a0900b/ba5fafb9-c26d-45e1-a7fd-78b2d5bc39de/scratchpad/f160-out/local/vref.json

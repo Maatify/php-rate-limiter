@@ -1,0 +1,1 @@
+V-HEAD FAIL: /private/tmp/claude-501/-Users-mohamedabdulalim-MEGA-Libraries-2026-php-rate-limiter--claude-worktrees-clock-skew-bounded-snapshot-a0900b/ba5fafb9-c26d-45e1-a7fd-78b2d5bc39de/scratchpad/f160 differs from 1e951ee under src/ tests/ composer.json phpunit.xml, or is not clean

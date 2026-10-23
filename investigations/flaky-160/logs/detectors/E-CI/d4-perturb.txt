@@ -1,0 +1,2 @@
+perturbed: dropped the first file; files=74 out=/home/runner/work/_temp/f160/prefix-perturbed.xml
+V-REF FAIL files=74 equal_157=false k_ref=1329 sequence_ok=true out=/home/runner/work/_temp/f160/vref-prefix-perturbed.json

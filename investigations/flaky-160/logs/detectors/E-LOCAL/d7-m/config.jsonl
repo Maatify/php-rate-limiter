@@ -1,0 +1,8 @@
+{"port":50239,"redis_version":"7.0.15","maxmemory":["maxmemory","0"],"maxmemory_policy":["maxmemory-policy","noeviction"],"wall":1792746457.00975}
+{"port":50244,"redis_version":"7.0.15","maxmemory":["maxmemory","0"],"maxmemory_policy":["maxmemory-policy","noeviction"],"wall":1792746460.03712}
+{"port":50248,"redis_version":"7.0.15","maxmemory":["maxmemory","0"],"maxmemory_policy":["maxmemory-policy","noeviction"],"wall":1792746463.097189}
+{"port":50252,"redis_version":"7.0.15","maxmemory":["maxmemory","0"],"maxmemory_policy":["maxmemory-policy","noeviction"],"wall":1792746466.176019}
+{"port":50256,"redis_version":"7.0.15","maxmemory":["maxmemory","0"],"maxmemory_policy":["maxmemory-policy","noeviction"],"wall":1792746469.2036}
+{"port":50260,"redis_version":"7.0.15","maxmemory":["maxmemory","0"],"maxmemory_policy":["maxmemory-policy","noeviction"],"wall":1792746472.317764}
+{"port":50265,"redis_version":"7.0.15","maxmemory":["maxmemory","0"],"maxmemory_policy":["maxmemory-policy","noeviction"],"wall":1792746475.316184}
+{"port":50271,"redis_version":"7.0.15","maxmemory":["maxmemory","0"],"maxmemory_policy":["maxmemory-policy","noeviction"],"wall":1792746493.530925}

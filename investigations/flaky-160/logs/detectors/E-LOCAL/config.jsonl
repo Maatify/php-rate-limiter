@@ -1,0 +1,3 @@
+{"port":61994,"redis_version":"7.0.15","maxmemory":["maxmemory","0"],"maxmemory_policy":["maxmemory-policy","noeviction"],"wall":1792745413.750117}
+{"port":49786,"redis_version":"7.0.15","maxmemory":["maxmemory","0"],"maxmemory_policy":["maxmemory-policy","noeviction"],"wall":1792746369.855433}
+{"port":50277,"redis_version":"7.0.15","maxmemory":["maxmemory","0"],"maxmemory_policy":["maxmemory-policy","noeviction"],"wall":1792746519.582826}

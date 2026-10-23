@@ -243,3 +243,51 @@ Process: PLAN §12 → revert `1e1283b` → harness + detectors → measured cos
 * **M-EP-NAT:** `newWorker()`'s construction with a harness copy of `RedisTimeClock` that keeps the microseconds; a pair is the reading made at L867 and the next one at L881 (or L911), identified by the backtrace frame. `g` = second `TIME` − first `TIME`.
 * Each call uses a fresh account and fresh device fingerprint so the device window is set-creating. Every 1,000 calls the harness runs `FLUSHDB` outside the timed part, to bound memory.
 * N-1 per pair: `invalid snapshot` iff the second reading's whole second is later than the first's. N-2: straddles within the Poisson 95 % band around `Σ g_i / 10⁶`.
+
+## 13. Harness-time notes (2026-10-23, before any counted run)
+
+Commits: rulings `9385b9f` (§12); `git revert 1e1283b` verbatim `aad4484`; workflow adaptation + harness `b9090cd`. Detector evidence: `logs/detectors/E-CI/` ([run 39929369241](https://github.com/Maatify/php-rate-limiter/actions/runs/39929369241), `workflow_dispatch` mode `detectors` at `b9090cd`) and `logs/detectors/E-LOCAL/` (scratch worktree detached at `b9090cd`, Redis on published ports chosen by Docker, never 6379), each with `SHA256SUMS`. Nothing under `src/` or `tests/` changed; no counted run (U, M at registered sizes) has been made.
+
+### 13.1 Dispatch and what the workflow runs
+
+The push of `b9090cd` registered `flaky-160.yml` and produced run 39929358073 with every job skipped (no marker); `gh workflow run flaky-160.yml --ref claude/measure-tests-no-tap-a58f7a -f mode=detectors` then started run 39929369241. Per job: `actions/checkout` (the `ci.yml` pin, `fetch-depth: 0`, `persist-credentials: false`), `shivammathur/setup-php` (the `ci.yml` pin, PHP 8.5, `extensions: redis`), `composer update` as `ci.yml`, `harness/env.sh`, then only `investigations/flaky-160/harness/*`; `actions/upload-artifact` / `download-artifact` pinned by SHA. Redis from `docker/redis-integration/compose.yaml` read as data; `scripts/ci/` is not executed; the only test command is `vendor/bin/phpunit` (11.5.57 on both environments). `permissions: contents: read`, no secrets, no tap. Resolved set (`envset.php` over both E-CI jobs): lockset `4fc648b3…` (the same as #157's L), PHPUnit 11.5.57, PHP 8.5.12; no job differs.
+
+### 13.2 Build-time corrections (none changes a registered condition)
+
+* **BC-1, self-test pair.** The first `selftest_u.php` swapped testcases 11 and 12, which are not siblings in the reference junit (fatal; D6 0 / 5 in the first local detector pass). It now swaps the first adjacent sibling pair. Fixed before `b9090cd`; both evidence passes ran at `b9090cd`.
+* **BC-2, NAT calls must not share state.** With one store namespace for all calls, the shared context IP (`198.51.100.80`, as the test) collected an IP-scoped block after a few calls and `process()` returned `HARD_BLOCK` before the device window (local smoke: 197 / 200 calls with no snapshot pair). Each NAT / EP-NAT call now has its own namespace as well as its own account and fingerprint (§12.5), so every call creates its device window; a call without a complete pair is invalid and counted (`invalid_calls` in `m_report.php`).
+* **BC-3, several bounded snapshots per call.** The executor recorder sees more than one `BOUNDED_SNAPSHOT` per `process()` (TTL 900 twice and TTL 600 one to four times in the smoke rows); validity stays as §12.4 ("a TTL-600 snapshot ran"), and every snapshot's TTL, caller time and `expiresAt` is kept in the rows.
+* **BC-4, E-LOCAL clocks.** On E-LOCAL the S0 NAT gap includes the Docker Desktop VM's clock offset (smoke `g` p50 ≈ 1.7 ms against ≈ 0.08 ms on E-CI); as §3 says, no counted number comes from E-LOCAL.
+
+### 13.3 Detectors (8 / 8 hold in both environments)
+
+| Detector | Expected | E-LOCAL | E-CI |
+| --- | --- | --- | --- |
+| D1 provenance | every copy = original at `8b79e9b` without line 2 | 5 OK, 0 FAIL | 5 OK, 0 FAIL |
+| D2 V-HEAD against `1e951ee` | refused | exit 1, `V-HEAD FAIL` | same |
+| D3 V-REF (fresh reference) | 75 files = #157's, `k_ref` 1329, `fccd09eb…` | ok | ok |
+| D4 V-REF, first prefix file dropped | refused | exit 1, `V-REF FAIL` (74 files) | same |
+| D5 V-ORD, run of the perturbed prefix | invalid | `v_ord` false, 1,381 tests, every ordinal shifted by 13 | same |
+| D6 classifier self-test | six failure / six error / seventh / clean / order as registered | 5 / 5 | 5 / 5 |
+| D7 M tiny | DET-type 3 each as §5.2 / §5.3 / §12.4; N-1 on every NAT call | all hold; N-1 on 4,000 calls | all hold; N-1 on 4,000 calls |
+| C1 one untapped prefix run | valid | valid, 80.7 s | valid, **31.0 s** |
+
+Reference ordinals of the six (both environments, used by V-ORD): T-ALLOW 1268, T-S0B 1271, T-S0A 1272, T-CLAIM 1311, T-K4 1340, T-HAND 1341; the #157 target 1329. E-CI reference: `OK (1855 tests)`, PHPUnit 7:47.7.
+
+D7 numbers are demonstrations, not results: on E-CI, NAT `g` p50 82 µs (min 56, p99 111), EP-NAT `g` p50 150 µs (min 103, p99 195); one straddle in 2,000 calls in each, each with its `invalid snapshot`, N-1 concordant.
+
+### 13.4 Measured cost and the proposed U layout (for the Owner's word; nothing dispatched)
+
+| Quantity (E-CI, run 39929369241) | Measured |
+| --- | --- |
+| One untapped prefix run, container to container (C1) | **31.04 s** (PHPUnit 28.6 s); the perturbed-prefix run (D5, 1,381 tests) 31.31 s |
+| Job set-up (set up, checkout, setup-php, composer, env.sh) | ≈ 16 s |
+| `download-artifact` of the 956 KB reference artifact | 191 s in this job (counted as measured) |
+| Reference job | 8.2 min (PHPUnit 7:47.7) |
+| M, per call | NAT 4.16 ms, EP-NAT 5.71 ms (2,000 each); DET-type sub-arms < 0.1 s per 3 trials |
+
+**U at N = 3,300 as 20 shards × 165 runs:** per shard ≈ 0.27 + 3.2 + 165 × 31.04 / 60 = **88.8 min** (97.0 min at 34 s per run); total **≈ 29.7 runner-hours** (20 shards + the reference), wall ≈ 97 min (the reference first, then 20 shards = the account's whole concurrency). Proposed `timeout-minutes` **110** per shard (≥ 13 min above the 34 s-per-run case, under 2 h); upload runs with `if: always()`, so a shard stopped by its timeout still uploads the verdicts it wrote. Alternative under the same limits: 30 × 110 runs (≈ 60 min per shard) holds 20 jobs then 10, wall ≈ 2 h, same runner-hours plus 10 more set-ups and downloads.
+
+**M at registered sizes:** three jobs (DET-type 20 each; NAT K = 100,000 ≈ 7 min; EP-NAT K = 100,000 ≈ 9.5 min), ≈ 0.4 runner-hours. Proposed order, after the Owner's word: **M first, then U**, so that nothing else of mine runs while U holds the queue; no push to this branch from U's dispatch until its last shard ends.
+
+Dispatch commands (not run): `gh workflow run flaky-160.yml --ref claude/measure-tests-no-tap-a58f7a -f mode=m`, then `… -f mode=u -f u_per=165 -f u_timeout=110` (default shard list 1–20).

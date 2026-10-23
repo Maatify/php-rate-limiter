@@ -1,0 +1,1 @@
+E-LOCAL: scratch worktree detached at b9090cd (reference run with the same run.sh/prefix.php/vref.php before the selftest fix); macOS, Docker Desktop 29.8.2, PHP 8.5.9

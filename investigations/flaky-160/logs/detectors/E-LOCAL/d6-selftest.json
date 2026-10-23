@@ -1,0 +1,221 @@
+{
+    "all_hold": true,
+    "cases": {
+        "six-failure": {
+            "holds": true,
+            "expected": {
+                "valid": true,
+                "pooled": true,
+                "seventh": 0,
+                "kept_files": true,
+                "method": "T-K4"
+            },
+            "got": {
+                "valid": true,
+                "pooled": true,
+                "seventh": 0,
+                "kept_files": true,
+                "method": "T-K4"
+            },
+            "six": {
+                "T-K4": {
+                    "status": "fail",
+                    "kind": "failure",
+                    "first_line": "Failed asserting that false is true.",
+                    "lines": [
+                        1847
+                    ]
+                },
+                "T-CLAIM": {
+                    "status": "pass"
+                },
+                "T-S0A": {
+                    "status": "pass"
+                },
+                "T-S0B": {
+                    "status": "pass"
+                },
+                "T-ALLOW": {
+                    "status": "pass"
+                },
+                "T-HAND": {
+                    "status": "pass"
+                }
+            },
+            "seventh_findings": [],
+            "problems": []
+        },
+        "six-error": {
+            "holds": true,
+            "expected": {
+                "valid": true,
+                "pooled": true,
+                "seventh": 0,
+                "kept_files": true,
+                "method": "T-S0A"
+            },
+            "got": {
+                "valid": true,
+                "pooled": true,
+                "seventh": 0,
+                "kept_files": true,
+                "method": "T-S0A"
+            },
+            "six": {
+                "T-K4": {
+                    "status": "pass"
+                },
+                "T-CLAIM": {
+                    "status": "pass"
+                },
+                "T-S0A": {
+                    "status": "fail",
+                    "kind": "error",
+                    "first_line": "Maatify\\RateLimiter\\Exception\\RateLimiterException: Bounded correlation store returned an invalid snapshot.",
+                    "lines": [
+                        160
+                    ]
+                },
+                "T-S0B": {
+                    "status": "pass"
+                },
+                "T-ALLOW": {
+                    "status": "pass"
+                },
+                "T-HAND": {
+                    "status": "pass"
+                }
+            },
+            "seventh_findings": [],
+            "problems": []
+        },
+        "seventh-failure": {
+            "holds": true,
+            "expected": {
+                "valid": true,
+                "pooled": false,
+                "seventh": 1,
+                "kept_files": true,
+                "method": null
+            },
+            "got": {
+                "valid": true,
+                "pooled": false,
+                "seventh": 1,
+                "kept_files": true,
+                "method": null
+            },
+            "six": {
+                "T-K4": {
+                    "status": "pass"
+                },
+                "T-CLAIM": {
+                    "status": "pass"
+                },
+                "T-S0A": {
+                    "status": "pass"
+                },
+                "T-S0B": {
+                    "status": "pass"
+                },
+                "T-ALLOW": {
+                    "status": "pass"
+                },
+                "T-HAND": {
+                    "status": "pass"
+                }
+            },
+            "seventh_findings": [
+                {
+                    "ordinal": 1329,
+                    "test": "Maatify\\RateLimiter\\Tests\\Integration\\Redis\\RedisFullCapabilityStoreIntegrationTest::testMalformedStoredGenerationFailsAcrossReadMutateClaimAndPublication",
+                    "kind": "failure",
+                    "first_line": "Malformed persisted Redis state was accepted.",
+                    "lines": [
+                        3749,
+                        1546
+                    ]
+                }
+            ],
+            "problems": []
+        },
+        "clean": {
+            "holds": true,
+            "expected": {
+                "valid": true,
+                "pooled": false,
+                "seventh": 0,
+                "kept_files": false,
+                "method": null
+            },
+            "got": {
+                "valid": true,
+                "pooled": false,
+                "seventh": 0,
+                "kept_files": false,
+                "method": null
+            },
+            "six": {
+                "T-K4": {
+                    "status": "pass"
+                },
+                "T-CLAIM": {
+                    "status": "pass"
+                },
+                "T-S0A": {
+                    "status": "pass"
+                },
+                "T-S0B": {
+                    "status": "pass"
+                },
+                "T-ALLOW": {
+                    "status": "pass"
+                },
+                "T-HAND": {
+                    "status": "pass"
+                }
+            },
+            "seventh_findings": [],
+            "problems": []
+        },
+        "order-swapped": {
+            "holds": true,
+            "expected": {
+                "valid": false,
+                "pooled": false,
+                "seventh": 0,
+                "kept_files": true,
+                "method": null
+            },
+            "got": {
+                "valid": false,
+                "pooled": false,
+                "seventh": 0,
+                "kept_files": true,
+                "method": null
+            },
+            "six": {
+                "T-K4": {
+                    "status": "pass"
+                },
+                "T-CLAIM": {
+                    "status": "pass"
+                },
+                "T-S0A": {
+                    "status": "pass"
+                },
+                "T-S0B": {
+                    "status": "pass"
+                },
+                "T-ALLOW": {
+                    "status": "pass"
+                },
+                "T-HAND": {
+                    "status": "pass"
+                }
+            },
+            "seventh_findings": [],
+            "problems": []
+        }
+    }
+}
