@@ -1,0 +1,1 @@
+run 39948046268 (workflow_dispatch mode=u, u_per=165, u_timeout=110, shards 1-20) at b14b30d; verdicts from the 20 shard artifacts, sorted by id; summary.json = harness/summarize_u.php --expect=u:1-3300:165; failing runs keep phpunit.out and junit.xml (gzip -9 -n); config.jsonl has 3,320 lines (each shard artifact repeats the reference container's line).

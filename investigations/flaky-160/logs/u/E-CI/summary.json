@@ -1,0 +1,240 @@
+{
+    "u": {
+        "runs": 3300,
+        "valid": 3300,
+        "invalid": 0,
+        "invalid_reasons": [],
+        "pooled_runs": 7,
+        "any_failure_runs": 7,
+        "per_method": {
+            "T-K4": 0,
+            "T-CLAIM": 3,
+            "T-S0A": 0,
+            "T-S0B": 0,
+            "T-ALLOW": 4,
+            "T-HAND": 0
+        },
+        "pooled_failures": [
+            {
+                "id": 1616,
+                "method": "T-CLAIM",
+                "kind": "failure",
+                "first_line": "Failed asserting that true is false.",
+                "lines": [
+                    1097
+                ]
+            },
+            {
+                "id": 2068,
+                "method": "T-CLAIM",
+                "kind": "failure",
+                "first_line": "Failed asserting that true is false.",
+                "lines": [
+                    1097
+                ]
+            },
+            {
+                "id": 2729,
+                "method": "T-ALLOW",
+                "kind": "failure",
+                "first_line": "Failed asserting that 30 is identical to 28.",
+                "lines": [
+                    136
+                ]
+            },
+            {
+                "id": 2799,
+                "method": "T-ALLOW",
+                "kind": "failure",
+                "first_line": "Failed asserting that 32 is identical to 30.",
+                "lines": [
+                    136
+                ]
+            },
+            {
+                "id": 335,
+                "method": "T-CLAIM",
+                "kind": "failure",
+                "first_line": "Failed asserting that true is false.",
+                "lines": [
+                    1097
+                ]
+            },
+            {
+                "id": 455,
+                "method": "T-ALLOW",
+                "kind": "failure",
+                "first_line": "Failed asserting that 30 is identical to 28.",
+                "lines": [
+                    136
+                ]
+            },
+            {
+                "id": 551,
+                "method": "T-ALLOW",
+                "kind": "failure",
+                "first_line": "Failed asserting that 30 is identical to 28.",
+                "lines": [
+                    136
+                ]
+            }
+        ],
+        "seventh_findings": [],
+        "wall_seconds": {
+            "n": 3300,
+            "min": 19.806,
+            "p50": 28.854,
+            "max": 51.953,
+            "sum": 87700
+        },
+        "pooled_rate": 0.0021212121212121214,
+        "pooled_wilson95": [
+            0.0010279015278767168,
+            0.004372314869632452
+        ],
+        "l_interval": [
+            0.0018623275534852598,
+            0.005959312541169352
+        ],
+        "position": "inside",
+        "any_failure_rate": 0.0021212121212121214,
+        "any_failure_wilson95": [
+            0.0010279015278767168,
+            0.004372314869632452
+        ],
+        "per_method_wilson95": {
+            "T-K4": [
+                0,
+                0.001162724927504643
+            ],
+            "T-CLAIM": [
+                0.00030922003427162094,
+                0.0026695726660921045
+            ],
+            "T-S0A": [
+                0,
+                0.001162724927504643
+            ],
+            "T-S0B": [
+                0,
+                0.001162724927504643
+            ],
+            "T-ALLOW": [
+                0.00047146807749431376,
+                0.0031126805471557726
+            ],
+            "T-HAND": [
+                0,
+                0.001162724927504643
+            ]
+        },
+        "fisher_two_sided_vs_L": 0.48007436488037264,
+        "expected": 3300,
+        "shortfall": 0,
+        "missing_ids": [],
+        "duplicated_ids": [],
+        "outside_ids": [],
+        "shards": {
+            "1": {
+                "expected": 165,
+                "verdicts": 165,
+                "shortfall": 0
+            },
+            "2": {
+                "expected": 165,
+                "verdicts": 165,
+                "shortfall": 0
+            },
+            "3": {
+                "expected": 165,
+                "verdicts": 165,
+                "shortfall": 0
+            },
+            "4": {
+                "expected": 165,
+                "verdicts": 165,
+                "shortfall": 0
+            },
+            "5": {
+                "expected": 165,
+                "verdicts": 165,
+                "shortfall": 0
+            },
+            "6": {
+                "expected": 165,
+                "verdicts": 165,
+                "shortfall": 0
+            },
+            "7": {
+                "expected": 165,
+                "verdicts": 165,
+                "shortfall": 0
+            },
+            "8": {
+                "expected": 165,
+                "verdicts": 165,
+                "shortfall": 0
+            },
+            "9": {
+                "expected": 165,
+                "verdicts": 165,
+                "shortfall": 0
+            },
+            "10": {
+                "expected": 165,
+                "verdicts": 165,
+                "shortfall": 0
+            },
+            "11": {
+                "expected": 165,
+                "verdicts": 165,
+                "shortfall": 0
+            },
+            "12": {
+                "expected": 165,
+                "verdicts": 165,
+                "shortfall": 0
+            },
+            "13": {
+                "expected": 165,
+                "verdicts": 165,
+                "shortfall": 0
+            },
+            "14": {
+                "expected": 165,
+                "verdicts": 165,
+                "shortfall": 0
+            },
+            "15": {
+                "expected": 165,
+                "verdicts": 165,
+                "shortfall": 0
+            },
+            "16": {
+                "expected": 165,
+                "verdicts": 165,
+                "shortfall": 0
+            },
+            "17": {
+                "expected": 165,
+                "verdicts": 165,
+                "shortfall": 0
+            },
+            "18": {
+                "expected": 165,
+                "verdicts": 165,
+                "shortfall": 0
+            },
+            "19": {
+                "expected": 165,
+                "verdicts": 165,
+                "shortfall": 0
+            },
+            "20": {
+                "expected": 165,
+                "verdicts": 165,
+                "shortfall": 0
+            }
+        }
+    }
+}
