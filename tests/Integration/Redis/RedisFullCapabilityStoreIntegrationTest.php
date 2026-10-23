@@ -1101,6 +1101,41 @@ final class RedisFullCapabilityStoreIntegrationTest extends TestCase
         self::assertNotNull($this->store->readGenerationBoundScoreState('lifecycle-current', null)?->postPunishmentReentry);
     }
 
+    /**
+     * #160 phase 2 (T-CLAIM): `LIFECYCLE_CLAIM` judges the block by `expiresAt > nowSeconds`. A one-second block
+     * therefore no longer holds once the claim's clock reading is one second after the block's. This pins that
+     * contract with an injected clock, so the outcome does not depend on where a second boundary falls.
+     */
+    public function testClaimAfterOneSecondBlockSucceedsOnceTheClaimClockPassesTheBlockExpiry(): void
+    {
+        self::assertTrue($this->claimOneSecondAfterBlockedAt(1));
+    }
+
+    /**
+     * The recurrence test: a block longer than the span between the calls still holds at T + 1, so the claim
+     * is refused until the block key is gone.
+     */
+    public function testClaimStaysRefusedWhileTheBlockOutlivesTheClaimClockStep(): void
+    {
+        self::assertFalse($this->claimOneSecondAfterBlockedAt(60));
+    }
+
+    private function claimOneSecondAfterBlockedAt(int $blockSeconds): bool
+    {
+        $t = time();
+        $clock = new FixedClock('@' . $t);
+        $store = new RedisFullCapabilityStore($this->executor, $this->namespace, $clock);
+        $id = str_repeat('a', 32);
+
+        self::assertTrue($store->mutateGenerationBoundScore('claim-step', null, null, 600, 8)->applied);
+        self::assertTrue($store->blockWithPunishmentLifecycleTracking('claim-step', null, 1, $id, 2, $blockSeconds, 21600, 2, 600, 86400)->applied);
+        self::assertNull($store->readGenerationBoundScoreState('claim-step', null)?->postPunishmentReentry);
+
+        $clock->setNow(new \DateTimeImmutable('@' . ($t + 1)));
+
+        return $store->claimPostPunishmentReentry('claim-step', null, $id);
+    }
+
     public function testLifecycleCyclesUseTheCallerTimeExactlyOnceAndPauseIsNotRenewed(): void
     {
         $mutation = $this->store->mutateGenerationBoundScore('redis-time-cycle', null, null, 600, 8);
