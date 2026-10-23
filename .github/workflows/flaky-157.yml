@@ -1,0 +1,234 @@
+# TEMPORARY — #157 phase 1 (investigations/flaky-157/PLAN.md §9.1 LT-157-02).
+# Exists only on branch claude/flaky-test-157-investigation-3df788 and is removed
+# in its own commit before Ready. Runs nothing but the setup steps of ci.yml
+# (checkout, setup-php, composer update) and investigations/flaky-157/harness/,
+# whose only test command is the pinned vendor/bin/phpunit. No secrets.
+# Every job keeps its resolved composer.lock and the PHPUnit / PHP versions in
+# its artifact under env/<job>/ (harness/env.sh; Lead condition 1 before L).
+#
+# Modes: detectors (detector demonstration), pre (tap overhead, once before L),
+#        l (arm L, N = 3,300), d (arm D), h (arm H at fe8775c).
+# Trigger: workflow_dispatch with `mode`, or a push to this branch whose head
+#          commit message contains "[flaky-157:<mode>]".
+name: flaky-157 (temporary)
+
+on:
+  workflow_dispatch:
+    inputs:
+      mode:
+        description: 'detectors | pre | l | d | h'
+        required: true
+        type: choice
+        options: [detectors, pre, l, d, h]
+  push:
+    branches: [claude/flaky-test-157-investigation-3df788]
+
+permissions:
+  contents: read
+
+jobs:
+  reference:
+    name: Reference full core suite (V-ORD)
+    if: inputs.mode == 'detectors' || inputs.mode == 'l' || contains(github.event.head_commit.message, '[flaky-157:detectors]') || contains(github.event.head_commit.message, '[flaky-157:l]')
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+      - uses: shivammathur/setup-php@f3e473d116dcccaddc5834248c87452386958240 # v2
+        with:
+          php-version: '8.5'
+          coverage: none
+          extensions: redis
+      - run: composer update --no-interaction --prefer-dist --no-progress
+      - run: bash investigations/flaky-157/harness/env.sh "$RUNNER_TEMP/f157" reference
+      - run: bash investigations/flaky-157/harness/run.sh reference "$RUNNER_TEMP/f157"
+      - if: always()
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: f157-reference
+          path: ${{ runner.temp }}/f157
+          retention-days: 30
+
+  detectors:
+    name: Detectors (demonstration)
+    needs: reference
+    if: inputs.mode == 'detectors' || contains(github.event.head_commit.message, '[flaky-157:detectors]')
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    env:
+      H_ROOT: ${{ github.workspace }}/h-head
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          ref: fe8775c206d7209fc62cefe0b6a94beb8c0206ce
+          path: h-head
+          persist-credentials: false
+      - uses: shivammathur/setup-php@f3e473d116dcccaddc5834248c87452386958240 # v2
+        with:
+          php-version: '8.5'
+          coverage: none
+          extensions: redis
+      - run: composer update --no-interaction --prefer-dist --no-progress
+      - run: composer update --no-interaction --prefer-dist --no-progress
+        working-directory: h-head
+      - run: bash investigations/flaky-157/harness/env.sh "$RUNNER_TEMP/f157" detectors
+      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
+        with:
+          name: f157-reference
+          path: ${{ runner.temp }}/f157
+      - run: php investigations/flaky-157/harness/prefix.php --root="$GITHUB_WORKSPACE" --junit="$RUNNER_TEMP/f157/reference.junit.xml" --out-dir="$RUNNER_TEMP/f157"
+      - run: bash investigations/flaky-157/harness/detectors.sh "$RUNNER_TEMP/f157"
+      - if: always()
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: f157-detectors
+          path: ${{ runner.temp }}/f157
+          retention-days: 30
+
+  pre:
+    name: Tap overhead (once, before L)
+    if: inputs.mode == 'pre' || contains(github.event.head_commit.message, '[flaky-157:pre]')
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+      - uses: shivammathur/setup-php@f3e473d116dcccaddc5834248c87452386958240 # v2
+        with:
+          php-version: '8.5'
+          coverage: none
+          extensions: redis
+      - run: composer update --no-interaction --prefer-dist --no-progress
+      - run: bash investigations/flaky-157/harness/env.sh "$RUNNER_TEMP/f157" pre
+      - run: bash investigations/flaky-157/harness/run.sh overhead "$RUNNER_TEMP/f157" 2000
+      - if: always()
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: f157-pre
+          path: ${{ runner.temp }}/f157
+          retention-days: 30
+
+  l:
+    name: Arm L shard ${{ matrix.shard }} / 20 (165 runs)
+    needs: reference
+    if: inputs.mode == 'l' || contains(github.event.head_commit.message, '[flaky-157:l]')
+    runs-on: ubuntu-latest
+    timeout-minutes: 300
+    strategy:
+      fail-fast: false
+      matrix:
+        shard: [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20]
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+      - uses: shivammathur/setup-php@f3e473d116dcccaddc5834248c87452386958240 # v2
+        with:
+          php-version: '8.5'
+          coverage: none
+          extensions: redis
+      - run: composer update --no-interaction --prefer-dist --no-progress
+      - run: bash investigations/flaky-157/harness/env.sh "$RUNNER_TEMP/f157" "l-${{ matrix.shard }}"
+      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
+        with:
+          name: f157-reference
+          path: ${{ runner.temp }}/f157
+      - run: php investigations/flaky-157/harness/prefix.php --root="$GITHUB_WORKSPACE" --junit="$RUNNER_TEMP/f157/reference.junit.xml" --out-dir="$RUNNER_TEMP/f157"
+      - run: bash investigations/flaky-157/harness/run.sh lshard "$RUNNER_TEMP/f157" "${{ matrix.shard }}" 165
+      - if: always()
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: f157-l-${{ matrix.shard }}
+          path: ${{ runner.temp }}/f157
+          retention-days: 30
+
+  d:
+    name: Arm D case ${{ matrix.case }} (20 runs)
+    if: inputs.mode == 'd' || contains(github.event.head_commit.message, '[flaky-157:d]')
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    strategy:
+      fail-fast: false
+      matrix:
+        case: [0, 1, 2]
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+      - uses: shivammathur/setup-php@f3e473d116dcccaddc5834248c87452386958240 # v2
+        with:
+          php-version: '8.5'
+          coverage: none
+          extensions: redis
+      - run: composer update --no-interaction --prefer-dist --no-progress
+      - run: bash investigations/flaky-157/harness/env.sh "$RUNNER_TEMP/f157" "d-${{ matrix.case }}"
+      - run: bash investigations/flaky-157/harness/run.sh d "$RUNNER_TEMP/f157" "${{ matrix.case }}" 1 20
+      - if: always()
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: f157-d-${{ matrix.case }}
+          path: ${{ runner.temp }}/f157
+          retention-days: 30
+
+  h:
+    name: Arm H ${{ matrix.mode }} shard ${{ matrix.shard }} (M = ${{ matrix.m }})
+    if: inputs.mode == 'h' || contains(github.event.head_commit.message, '[flaky-157:h]')
+    runs-on: ubuntu-latest
+    timeout-minutes: 120
+    env:
+      H_ROOT: ${{ github.workspace }}/h-head
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - {mode: probe, m: 25000, shard: 1}
+          - {mode: probe, m: 25000, shard: 2}
+          - {mode: probe, m: 25000, shard: 3}
+          - {mode: probe, m: 25000, shard: 4}
+          - {mode: forced, m: 1000, shard: 1}
+          - {mode: forced, m: 1000, shard: 2}
+          - {mode: forced, m: 1000, shard: 3}
+          - {mode: forced, m: 1000, shard: 4}
+          - {mode: forced, m: 1000, shard: 5}
+          - {mode: forced, m: 1000, shard: 6}
+          - {mode: forced, m: 1000, shard: 7}
+          - {mode: forced, m: 1000, shard: 8}
+          - {mode: forced, m: 1000, shard: 9}
+          - {mode: forced, m: 1000, shard: 10}
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          ref: fe8775c206d7209fc62cefe0b6a94beb8c0206ce
+          path: h-head
+          persist-credentials: false
+      - uses: shivammathur/setup-php@f3e473d116dcccaddc5834248c87452386958240 # v2
+        with:
+          php-version: '8.5'
+          coverage: none
+          extensions: redis
+      - run: composer update --no-interaction --prefer-dist --no-progress
+      - run: composer update --no-interaction --prefer-dist --no-progress
+        working-directory: h-head
+      - run: bash investigations/flaky-157/harness/env.sh "$RUNNER_TEMP/f157" "h-${{ matrix.mode }}-${{ matrix.shard }}"
+      - run: bash investigations/flaky-157/harness/run.sh h "$RUNNER_TEMP/f157" "${{ matrix.mode }}" "${{ matrix.m }}" "${{ matrix.shard }}"
+      - if: always()
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: f157-h-${{ matrix.mode }}-${{ matrix.shard }}
+          path: ${{ runner.temp }}/f157
+          retention-days: 30
