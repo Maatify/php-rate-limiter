@@ -9,5 +9,8 @@ c89e9b0c1d6a12cf68e124518c6795769c73013422e928645e0cb6464fd9697c  ./env/shard-20
 8f945b01fde21adf4ac99772ce3f92289d21a0d7ff272dff5b579d488e3ba101  ./failures/arec-787/junit.xml
 8a5544dea39c2a593ecac0026b576c5ff80a6cc7e72a9eb7b3587ad909909de3  ./failures/arec-787/phpunit.out
 8c20cd36fc8128ab4d8c5160691ce4a7cd9818c8899745153625ab14da905a32  ./failures/arec-787/tap.jsonl.gz
+f10a8788d7f118f92a8fbb16bc2b4bd2b309d1d6f4164f8bc6ce95ed8a97ef43  ./ref-failure/junit.xml
+1808199cb913e0ceca36843231c342f2eed4b6e96ec9b87640b93eaa2a96bad7  ./ref-failure/phpunit.out
+edddde1a320d6cab2daf8cf545b1a4cfd0f7888b7ae3a7ab088e0738f15a91de  ./ref-failure/shard-19-verdicts.jsonl
 72edd19d8b544a6f04bc35f5238d5c43cab959eb46ab5b2c016c38d20c4c3a9f  ./report.json
 ccfa08e23860ac1f5b508645471fb20149ca99d8d70c13646a12043847372ebe  ./verdicts.jsonl.gz

@@ -1,0 +1,1 @@
+run 39997592270, head b29dbdb, mode=a kind=arate, 4 shards x 250; all 4 composer.lock identical (99b482d19734…), same as the 20 arec shards and both c jobs
