@@ -1,0 +1,60 @@
+{
+    "sequences": 2000,
+    "m1_nonthrow": 0,
+    "m1_nonthrow_values": [],
+    "c1_true": 0,
+    "c1_true_nonthrow": 0,
+    "d_unavailable": 0,
+    "d_band": {
+        "le_minus3": 0,
+        "band": 0,
+        "ge_3": 2000
+    },
+    "d_band_nonthrow": 0,
+    "h1_violations": [],
+    "h2_violations": [],
+    "h3_findings": [],
+    "span_us": {
+        "min": 1986,
+        "p01": 2114,
+        "p50": 2739,
+        "p99": 5923,
+        "max": 9641
+    },
+    "u0_lt_1000": 1,
+    "m1_nonthrow_wilson95": [
+        1.0842021724855044e-19,
+        0.001917047281252934
+    ],
+    "verdict": {
+        "H-1": "holds",
+        "H-2": "holds",
+        "H-3": "holds"
+    },
+    "h1_violations_count": 0,
+    "h2_violations_count": 0,
+    "h3_findings_count": 0,
+    "probe_summaries": [
+        {
+            "summary": true,
+            "mode": "probe",
+            "m": 2000,
+            "seconds": 19.974,
+            "php": "8.5.9",
+            "outcomes": {
+                "0:claim:T:malformed generation": 2000,
+                "0:mutate:T:malformed generation": 2000,
+                "0:publication:T:malformed lifecycle score generation": 2000,
+                "0:read:T:malformed generation": 2000,
+                "1:claim:T:malformed generation": 2000,
+                "1:mutate:T:inconsistent generated score expiry": 2000,
+                "1:publication:T:malformed lifecycle score generation": 2000,
+                "1:read:T:malformed generation": 2000,
+                "2:claim:T:malformed generation": 2000,
+                "2:mutate:T:malformed generation": 2000,
+                "2:publication:T:malformed lifecycle score generation": 2000,
+                "2:read:T:malformed generation": 2000
+            }
+        }
+    ]
+}

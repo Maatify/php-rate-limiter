@@ -1,0 +1,183 @@
+{
+    "sequences": 100000,
+    "m1_nonthrow": 6,
+    "m1_nonthrow_values": {
+        "R:applied=0": 6
+    },
+    "c1_true": 8,
+    "c1_true_nonthrow": 6,
+    "d_unavailable": 0,
+    "d_band": {
+        "le_minus3": 0,
+        "band": 166,
+        "ge_3": 99834
+    },
+    "d_band_nonthrow": 6,
+    "d_c1_outcome": {
+        "D=0 C1 nonthrow": 6,
+        "D=1 C1 throw": 2,
+        "D=1 notC1 throw": 55,
+        "D=2 notC1 throw": 103,
+        "D>=3 notC1 throw": 99834
+    },
+    "h1_violations": [],
+    "h2_violations": [],
+    "h3_findings": [],
+    "span_us": {
+        "min": 512,
+        "p01": 549,
+        "p50": 1358,
+        "p99": 1795,
+        "max": 8829
+    },
+    "u0_lt_1000": 96,
+    "m1_nonthrow_wilson95": [
+        2.74988190664287e-5,
+        0.00013090968394310096
+    ],
+    "verdict": {
+        "H-1": "holds",
+        "H-2": "holds",
+        "H-3": "holds"
+    },
+    "h1_violations_count": 0,
+    "h2_violations_count": 0,
+    "h3_findings_count": 0,
+    "probe_summaries": [
+        {
+            "summary": true,
+            "mode": "probe",
+            "m": 25000,
+            "seconds": 122.129,
+            "php": "8.5.12",
+            "outcomes": {
+                "0:claim:T:malformed generation": 25000,
+                "0:mutate:T:malformed generation": 25000,
+                "0:publication:T:malformed lifecycle score generation": 25000,
+                "0:read:T:malformed generation": 25000,
+                "1:claim:T:malformed generation": 25000,
+                "1:mutate:T:inconsistent generated score expiry": 25000,
+                "1:publication:T:malformed lifecycle score generation": 25000,
+                "1:read:T:malformed generation": 25000,
+                "2:claim:T:malformed generation": 25000,
+                "2:mutate:T:malformed generation": 25000,
+                "2:publication:T:malformed lifecycle score generation": 25000,
+                "2:read:T:malformed generation": 25000
+            }
+        },
+        {
+            "summary": true,
+            "mode": "probe",
+            "m": 25000,
+            "seconds": 50.733,
+            "php": "8.5.12",
+            "outcomes": {
+                "0:claim:T:malformed generation": 25000,
+                "0:mutate:T:malformed generation": 25000,
+                "0:publication:T:malformed lifecycle score generation": 25000,
+                "0:read:T:malformed generation": 25000,
+                "1:claim:T:malformed generation": 25000,
+                "1:mutate:R:applied=0": 6,
+                "1:mutate:T:inconsistent generated score expiry": 24994,
+                "1:publication:T:malformed lifecycle score generation": 25000,
+                "1:read:T:malformed generation": 25000,
+                "2:claim:T:malformed generation": 25000,
+                "2:mutate:T:malformed generation": 25000,
+                "2:publication:T:malformed lifecycle score generation": 25000,
+                "2:read:T:malformed generation": 25000
+            }
+        },
+        {
+            "summary": true,
+            "mode": "probe",
+            "m": 25000,
+            "seconds": 119.607,
+            "php": "8.5.12",
+            "outcomes": {
+                "0:claim:T:malformed generation": 25000,
+                "0:mutate:T:malformed generation": 25000,
+                "0:publication:T:malformed lifecycle score generation": 25000,
+                "0:read:T:malformed generation": 25000,
+                "1:claim:T:malformed generation": 25000,
+                "1:mutate:T:inconsistent generated score expiry": 25000,
+                "1:publication:T:malformed lifecycle score generation": 25000,
+                "1:read:T:malformed generation": 25000,
+                "2:claim:T:malformed generation": 25000,
+                "2:mutate:T:malformed generation": 25000,
+                "2:publication:T:malformed lifecycle score generation": 25000,
+                "2:read:T:malformed generation": 25000
+            }
+        },
+        {
+            "summary": true,
+            "mode": "probe",
+            "m": 25000,
+            "seconds": 117.935,
+            "php": "8.5.12",
+            "outcomes": {
+                "0:claim:T:malformed generation": 25000,
+                "0:mutate:T:malformed generation": 25000,
+                "0:publication:T:malformed lifecycle score generation": 25000,
+                "0:read:T:malformed generation": 25000,
+                "1:claim:T:malformed generation": 25000,
+                "1:mutate:T:inconsistent generated score expiry": 25000,
+                "1:publication:T:malformed lifecycle score generation": 25000,
+                "1:read:T:malformed generation": 25000,
+                "2:claim:T:malformed generation": 25000,
+                "2:mutate:T:malformed generation": 25000,
+                "2:publication:T:malformed lifecycle score generation": 25000,
+                "2:read:T:malformed generation": 25000
+            }
+        }
+    ],
+    "files": {
+        "h-probe-1": {
+            "rows": 25000,
+            "summary_m": 25000
+        },
+        "h-probe-2": {
+            "rows": 25000,
+            "summary_m": 25000
+        },
+        "h-probe-3": {
+            "rows": 25000,
+            "summary_m": 25000
+        },
+        "h-probe-4": {
+            "rows": 25000,
+            "summary_m": 25000
+        }
+    },
+    "expected": {
+        "probe": {
+            "expected": 100000,
+            "shortfall": 0,
+            "shards": {
+                "1": {
+                    "expected": 25000,
+                    "sequences": 25000,
+                    "shortfall": 0,
+                    "file": "complete"
+                },
+                "2": {
+                    "expected": 25000,
+                    "sequences": 25000,
+                    "shortfall": 0,
+                    "file": "complete"
+                },
+                "3": {
+                    "expected": 25000,
+                    "sequences": 25000,
+                    "shortfall": 0,
+                    "file": "complete"
+                },
+                "4": {
+                    "expected": 25000,
+                    "sequences": 25000,
+                    "shortfall": 0,
+                    "file": "complete"
+                }
+            }
+        }
+    }
+}

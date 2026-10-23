@@ -1,0 +1,180 @@
+{
+    "jobs": 14,
+    "reference": null,
+    "differs_from_reference": "no reference job in these artifacts",
+    "groups": {
+        "4fc648b350cd7f4681adc03b1582dbecd1f727ba6ed0c034957bb2704b261b6a | PHPUnit 11.5.57 by Sebastian Bergmann and contributors.": [
+            "h-forced-1",
+            "h-forced-2",
+            "h-forced-3",
+            "h-forced-4",
+            "h-forced-5",
+            "h-forced-6",
+            "h-forced-7",
+            "h-forced-8",
+            "h-forced-9",
+            "h-forced-10",
+            "h-probe-1",
+            "h-probe-2",
+            "h-probe-3",
+            "h-probe-4"
+        ]
+    },
+    "conflicts": [],
+    "labels": {
+        "h-forced-1": {
+            "lockset_sha256": "4fc648b350cd7f4681adc03b1582dbecd1f727ba6ed0c034957bb2704b261b6a",
+            "packages": 31,
+            "phpunit": "PHPUnit 11.5.57 by Sebastian Bergmann and contributors.",
+            "php": "PHP 8.5.12 (cli) (built: Oct 19 2026 17:51:02) (NTS)",
+            "h_head": {
+                "lockset_sha256": "4fc648b350cd7f4681adc03b1582dbecd1f727ba6ed0c034957bb2704b261b6a",
+                "packages": 31,
+                "phpunit": "PHPUnit 11.5.57 by Sebastian Bergmann and contributors."
+            }
+        },
+        "h-forced-2": {
+            "lockset_sha256": "4fc648b350cd7f4681adc03b1582dbecd1f727ba6ed0c034957bb2704b261b6a",
+            "packages": 31,
+            "phpunit": "PHPUnit 11.5.57 by Sebastian Bergmann and contributors.",
+            "php": "PHP 8.5.12 (cli) (built: Oct 19 2026 17:51:02) (NTS)",
+            "h_head": {
+                "lockset_sha256": "4fc648b350cd7f4681adc03b1582dbecd1f727ba6ed0c034957bb2704b261b6a",
+                "packages": 31,
+                "phpunit": "PHPUnit 11.5.57 by Sebastian Bergmann and contributors."
+            }
+        },
+        "h-forced-3": {
+            "lockset_sha256": "4fc648b350cd7f4681adc03b1582dbecd1f727ba6ed0c034957bb2704b261b6a",
+            "packages": 31,
+            "phpunit": "PHPUnit 11.5.57 by Sebastian Bergmann and contributors.",
+            "php": "PHP 8.5.12 (cli) (built: Oct 19 2026 17:51:02) (NTS)",
+            "h_head": {
+                "lockset_sha256": "4fc648b350cd7f4681adc03b1582dbecd1f727ba6ed0c034957bb2704b261b6a",
+                "packages": 31,
+                "phpunit": "PHPUnit 11.5.57 by Sebastian Bergmann and contributors."
+            }
+        },
+        "h-forced-4": {
+            "lockset_sha256": "4fc648b350cd7f4681adc03b1582dbecd1f727ba6ed0c034957bb2704b261b6a",
+            "packages": 31,
+            "phpunit": "PHPUnit 11.5.57 by Sebastian Bergmann and contributors.",
+            "php": "PHP 8.5.12 (cli) (built: Oct 19 2026 17:51:02) (NTS)",
+            "h_head": {
+                "lockset_sha256": "4fc648b350cd7f4681adc03b1582dbecd1f727ba6ed0c034957bb2704b261b6a",
+                "packages": 31,
+                "phpunit": "PHPUnit 11.5.57 by Sebastian Bergmann and contributors."
+            }
+        },
+        "h-forced-5": {
+            "lockset_sha256": "4fc648b350cd7f4681adc03b1582dbecd1f727ba6ed0c034957bb2704b261b6a",
+            "packages": 31,
+            "phpunit": "PHPUnit 11.5.57 by Sebastian Bergmann and contributors.",
+            "php": "PHP 8.5.12 (cli) (built: Oct 19 2026 17:51:02) (NTS)",
+            "h_head": {
+                "lockset_sha256": "4fc648b350cd7f4681adc03b1582dbecd1f727ba6ed0c034957bb2704b261b6a",
+                "packages": 31,
+                "phpunit": "PHPUnit 11.5.57 by Sebastian Bergmann and contributors."
+            }
+        },
+        "h-forced-6": {
+            "lockset_sha256": "4fc648b350cd7f4681adc03b1582dbecd1f727ba6ed0c034957bb2704b261b6a",
+            "packages": 31,
+            "phpunit": "PHPUnit 11.5.57 by Sebastian Bergmann and contributors.",
+            "php": "PHP 8.5.12 (cli) (built: Oct 19 2026 17:51:02) (NTS)",
+            "h_head": {
+                "lockset_sha256": "4fc648b350cd7f4681adc03b1582dbecd1f727ba6ed0c034957bb2704b261b6a",
+                "packages": 31,
+                "phpunit": "PHPUnit 11.5.57 by Sebastian Bergmann and contributors."
+            }
+        },
+        "h-forced-7": {
+            "lockset_sha256": "4fc648b350cd7f4681adc03b1582dbecd1f727ba6ed0c034957bb2704b261b6a",
+            "packages": 31,
+            "phpunit": "PHPUnit 11.5.57 by Sebastian Bergmann and contributors.",
+            "php": "PHP 8.5.12 (cli) (built: Oct 19 2026 17:51:02) (NTS)",
+            "h_head": {
+                "lockset_sha256": "4fc648b350cd7f4681adc03b1582dbecd1f727ba6ed0c034957bb2704b261b6a",
+                "packages": 31,
+                "phpunit": "PHPUnit 11.5.57 by Sebastian Bergmann and contributors."
+            }
+        },
+        "h-forced-8": {
+            "lockset_sha256": "4fc648b350cd7f4681adc03b1582dbecd1f727ba6ed0c034957bb2704b261b6a",
+            "packages": 31,
+            "phpunit": "PHPUnit 11.5.57 by Sebastian Bergmann and contributors.",
+            "php": "PHP 8.5.12 (cli) (built: Oct 19 2026 17:51:02) (NTS)",
+            "h_head": {
+                "lockset_sha256": "4fc648b350cd7f4681adc03b1582dbecd1f727ba6ed0c034957bb2704b261b6a",
+                "packages": 31,
+                "phpunit": "PHPUnit 11.5.57 by Sebastian Bergmann and contributors."
+            }
+        },
+        "h-forced-9": {
+            "lockset_sha256": "4fc648b350cd7f4681adc03b1582dbecd1f727ba6ed0c034957bb2704b261b6a",
+            "packages": 31,
+            "phpunit": "PHPUnit 11.5.57 by Sebastian Bergmann and contributors.",
+            "php": "PHP 8.5.12 (cli) (built: Oct 19 2026 17:51:02) (NTS)",
+            "h_head": {
+                "lockset_sha256": "4fc648b350cd7f4681adc03b1582dbecd1f727ba6ed0c034957bb2704b261b6a",
+                "packages": 31,
+                "phpunit": "PHPUnit 11.5.57 by Sebastian Bergmann and contributors."
+            }
+        },
+        "h-forced-10": {
+            "lockset_sha256": "4fc648b350cd7f4681adc03b1582dbecd1f727ba6ed0c034957bb2704b261b6a",
+            "packages": 31,
+            "phpunit": "PHPUnit 11.5.57 by Sebastian Bergmann and contributors.",
+            "php": "PHP 8.5.12 (cli) (built: Oct 19 2026 17:51:02) (NTS)",
+            "h_head": {
+                "lockset_sha256": "4fc648b350cd7f4681adc03b1582dbecd1f727ba6ed0c034957bb2704b261b6a",
+                "packages": 31,
+                "phpunit": "PHPUnit 11.5.57 by Sebastian Bergmann and contributors."
+            }
+        },
+        "h-probe-1": {
+            "lockset_sha256": "4fc648b350cd7f4681adc03b1582dbecd1f727ba6ed0c034957bb2704b261b6a",
+            "packages": 31,
+            "phpunit": "PHPUnit 11.5.57 by Sebastian Bergmann and contributors.",
+            "php": "PHP 8.5.12 (cli) (built: Oct 19 2026 17:51:02) (NTS)",
+            "h_head": {
+                "lockset_sha256": "4fc648b350cd7f4681adc03b1582dbecd1f727ba6ed0c034957bb2704b261b6a",
+                "packages": 31,
+                "phpunit": "PHPUnit 11.5.57 by Sebastian Bergmann and contributors."
+            }
+        },
+        "h-probe-2": {
+            "lockset_sha256": "4fc648b350cd7f4681adc03b1582dbecd1f727ba6ed0c034957bb2704b261b6a",
+            "packages": 31,
+            "phpunit": "PHPUnit 11.5.57 by Sebastian Bergmann and contributors.",
+            "php": "PHP 8.5.12 (cli) (built: Oct 19 2026 17:51:02) (NTS)",
+            "h_head": {
+                "lockset_sha256": "4fc648b350cd7f4681adc03b1582dbecd1f727ba6ed0c034957bb2704b261b6a",
+                "packages": 31,
+                "phpunit": "PHPUnit 11.5.57 by Sebastian Bergmann and contributors."
+            }
+        },
+        "h-probe-3": {
+            "lockset_sha256": "4fc648b350cd7f4681adc03b1582dbecd1f727ba6ed0c034957bb2704b261b6a",
+            "packages": 31,
+            "phpunit": "PHPUnit 11.5.57 by Sebastian Bergmann and contributors.",
+            "php": "PHP 8.5.12 (cli) (built: Oct 19 2026 17:51:02) (NTS)",
+            "h_head": {
+                "lockset_sha256": "4fc648b350cd7f4681adc03b1582dbecd1f727ba6ed0c034957bb2704b261b6a",
+                "packages": 31,
+                "phpunit": "PHPUnit 11.5.57 by Sebastian Bergmann and contributors."
+            }
+        },
+        "h-probe-4": {
+            "lockset_sha256": "4fc648b350cd7f4681adc03b1582dbecd1f727ba6ed0c034957bb2704b261b6a",
+            "packages": 31,
+            "phpunit": "PHPUnit 11.5.57 by Sebastian Bergmann and contributors.",
+            "php": "PHP 8.5.12 (cli) (built: Oct 19 2026 17:51:02) (NTS)",
+            "h_head": {
+                "lockset_sha256": "4fc648b350cd7f4681adc03b1582dbecd1f727ba6ed0c034957bb2704b261b6a",
+                "packages": 31,
+                "phpunit": "PHPUnit 11.5.57 by Sebastian Bergmann and contributors."
+            }
+        }
+    }
+}

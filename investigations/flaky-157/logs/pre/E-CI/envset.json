@@ -1,0 +1,19 @@
+{
+    "jobs": 1,
+    "reference": null,
+    "differs_from_reference": "no reference job in these artifacts",
+    "groups": {
+        "4fc648b350cd7f4681adc03b1582dbecd1f727ba6ed0c034957bb2704b261b6a | PHPUnit 11.5.57 by Sebastian Bergmann and contributors.": [
+            "pre"
+        ]
+    },
+    "conflicts": [],
+    "labels": {
+        "pre": {
+            "lockset_sha256": "4fc648b350cd7f4681adc03b1582dbecd1f727ba6ed0c034957bb2704b261b6a",
+            "packages": 31,
+            "phpunit": "PHPUnit 11.5.57 by Sebastian Bergmann and contributors.",
+            "php": "PHP 8.5.12 (cli) (built: Oct 19 2026 17:51:02) (NTS)"
+        }
+    }
+}
