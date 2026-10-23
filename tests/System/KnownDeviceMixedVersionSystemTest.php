@@ -17,6 +17,7 @@ use Maatify\RateLimiter\Service\EphemeralBucket;
 use Maatify\RateLimiter\Service\EvaluationPipeline;
 use Maatify\RateLimiter\Tests\Fixtures\S0Baseline\S0EvaluationPipeline;
 use Maatify\RateLimiter\Tests\Fixtures\S0Baseline\S0LoginProtectionPolicy;
+use Maatify\RateLimiter\Service\RequestScopedClock;
 use Maatify\RateLimiter\Tests\Support\Clock\FixedClock;
 use Maatify\RateLimiter\Tests\Support\FullCapability\FullCapabilityInMemoryStore;
 use PHPUnit\Framework\TestCase;
@@ -31,13 +32,16 @@ use PHPUnit\Framework\TestCase;
 final class KnownDeviceMixedVersionSystemTest extends TestCase
 {
     private FixedClock $clock;
+    private RequestScopedClock $scoped;
     private FullCapabilityInMemoryStore $store;
 
     protected function setUp(): void
     {
         parent::setUp();
         $this->clock = new FixedClock('2025-01-01 12:00:00');
-        $this->store = new FullCapabilityInMemoryStore($this->clock);
+        // #160 fix (a): store and workers share one held reading per process() call; time still advances on $this->clock.
+        $this->scoped = new RequestScopedClock($this->clock);
+        $this->store = new FullCapabilityInMemoryStore($this->scoped);
     }
 
     /**
@@ -166,22 +170,22 @@ final class KnownDeviceMixedVersionSystemTest extends TestCase
 
     private function check(EvaluationPipeline|S0EvaluationPipeline $worker, BlockPolicyInterface $policy, string $account, DeviceIdentityDTO $device): RateLimitResultDTO
     {
-        return $worker->process($policy, $this->context($account), RateLimitCommand::checkOnly($policy->getName()), $device);
+        return $this->scoped->holding(fn(): RateLimitResultDTO => $worker->process($policy, $this->context($account), RateLimitCommand::checkOnly($policy->getName()), $device));
     }
 
     private function failure(EvaluationPipeline|S0EvaluationPipeline $worker, BlockPolicyInterface $policy, string $account, DeviceIdentityDTO $device): RateLimitResultDTO
     {
-        return $worker->process($policy, $this->context($account), RateLimitCommand::recordFailure($policy->getName()), $device);
+        return $this->scoped->holding(fn(): RateLimitResultDTO => $worker->process($policy, $this->context($account), RateLimitCommand::recordFailure($policy->getName()), $device));
     }
 
     private function newWorker(string $secret = 'test_secret', ?string $previousSecret = null): EvaluationPipeline
     {
-        return new EvaluationPipeline($this->store, $this->store, new BudgetTracker($this->store, $this->clock), new AntiEquilibriumGate($this->store), new DecayCalculator($this->clock), new EphemeralBucket($this->store), $secret, 'prod', $this->clock, $previousSecret);
+        return new EvaluationPipeline($this->store, $this->store, new BudgetTracker($this->store, $this->scoped), new AntiEquilibriumGate($this->store), new DecayCalculator($this->scoped), new EphemeralBucket($this->store), $secret, 'prod', $this->scoped, $previousSecret);
     }
 
     private function s0Worker(string $secret = 'test_secret', ?string $previousSecret = null): S0EvaluationPipeline
     {
-        return new S0EvaluationPipeline($this->store, $this->store, new BudgetTracker($this->store, $this->clock), new AntiEquilibriumGate($this->store), new DecayCalculator($this->clock), new EphemeralBucket($this->store), $secret, 'prod', $this->clock, $previousSecret);
+        return new S0EvaluationPipeline($this->store, $this->store, new BudgetTracker($this->store, $this->scoped), new AntiEquilibriumGate($this->store), new DecayCalculator($this->scoped), new EphemeralBucket($this->store), $secret, 'prod', $this->scoped, $previousSecret);
     }
 
     /**

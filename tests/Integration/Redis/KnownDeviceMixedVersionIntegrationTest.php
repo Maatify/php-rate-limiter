@@ -20,6 +20,7 @@ use Maatify\RateLimiter\Service\BudgetTracker;
 use Maatify\RateLimiter\Service\DecayCalculator;
 use Maatify\RateLimiter\Service\EphemeralBucket;
 use Maatify\RateLimiter\Service\EvaluationPipeline;
+use Maatify\RateLimiter\Service\RequestScopedClock;
 use Maatify\RateLimiter\Tests\Fixtures\S0Baseline\S0EvaluationPipeline;
 use Maatify\RateLimiter\Tests\Fixtures\S0Baseline\S0LoginProtectionPolicy;
 use Maatify\RateLimiter\Tests\Support\Redis\RespRedisCommandExecutor;
@@ -42,7 +43,7 @@ final class KnownDeviceMixedVersionIntegrationTest extends TestCase
 
     private RespRedisCommandExecutor $executor;
     private RedisFullCapabilityStore $store;
-    private ClockInterface $clock;
+    private RequestScopedClock $clock;
     private string $namespace;
     private string $sentinel;
 
@@ -58,8 +59,9 @@ final class KnownDeviceMixedVersionIntegrationTest extends TestCase
         $this->namespace = 'it-known-device-mixed-' . $run;
         $this->sentinel = 'test:known-device-mixed-foreign:' . $run;
         $this->executor->execute(['SET', $this->sentinel, 'untouched', 'EX', '600']);
-        $this->store = new RedisFullCapabilityStore($this->executor, $this->namespace);
-        $this->clock = new RedisTimeClock($this->executor);
+        // #160 fix (a): store and workers share one held Redis TIME reading per process() call (the S0 fixture reads twice).
+        $this->clock = new RequestScopedClock(new RedisTimeClock($this->executor));
+        $this->store = new RedisFullCapabilityStore($this->executor, $this->namespace, $this->clock);
     }
 
     protected function tearDown(): void
@@ -157,12 +159,12 @@ final class KnownDeviceMixedVersionIntegrationTest extends TestCase
 
     private function check(EvaluationPipeline|S0EvaluationPipeline $worker, BlockPolicyInterface $policy, string $account, DeviceIdentityDTO $device): RateLimitResultDTO
     {
-        return $worker->process($policy, $this->context($account), RateLimitCommand::checkOnly($policy->getName()), $device);
+        return $this->clock->holding(fn(): RateLimitResultDTO => $worker->process($policy, $this->context($account), RateLimitCommand::checkOnly($policy->getName()), $device));
     }
 
     private function failure(EvaluationPipeline|S0EvaluationPipeline $worker, BlockPolicyInterface $policy, string $account, DeviceIdentityDTO $device): RateLimitResultDTO
     {
-        return $worker->process($policy, $this->context($account), RateLimitCommand::recordFailure($policy->getName()), $device);
+        return $this->clock->holding(fn(): RateLimitResultDTO => $worker->process($policy, $this->context($account), RateLimitCommand::recordFailure($policy->getName()), $device));
     }
 
     private function newWorker(string $secret = 'test_secret', ?string $previousSecret = null): EvaluationPipeline
