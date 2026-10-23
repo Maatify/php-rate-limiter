@@ -11,7 +11,7 @@ Assignment and ruling LT-160A-01 (option b: the S0 fixture is not touched; S0 wi
 
 ## Measurement
 
-Local, no runners: Redis 8 on 127.0.0.1:6391 (`redis-server`, no persistence), `php investigations/flaky-160/harness/m_fixa.php --subarm=<arm> --n=20`, run at commit `149966ad047a95d40d19a3b6b6c9e7f5a6e05f7c` (HEAD after the fix `73dfa2e`, the wiring `1f967be` and the harness copy). Count = trials whose outcome was an exception `Bounded correlation store returned an invalid snapshot.`.
+Local, no runners: Redis 8.10.0 on 127.0.0.1:6391 (`redis-server`, no persistence), `php investigations/flaky-160/harness/m_fixa.php --subarm=<arm> --n=20`, run at commit `149966ad047a95d40d19a3b6b6c9e7f5a6e05f7c` (HEAD after the fix `73dfa2e`, the wiring `1f967be` and the harness copy). Count = trials whose outcome was an exception `Bounded correlation store returned an invalid snapshot.`.
 
 | arm | prediction | before (#161) | measured |
 |---|---|---|---|
