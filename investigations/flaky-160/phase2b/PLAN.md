@@ -1,6 +1,6 @@
 # #160 — phase 2b: the branch behind T-ALLOW, and whether the block already exists (pre-registration, no fix)
 
-> **Status:** PRE-REGISTRATION, plan **v1**. Committed alone, **before** any harness code, workflow or result. Evidence only: no change to `src/`, `tests/`, `composer.json`, `phpunit.xml`, `ci.yml`; `investigations/flaky-160/` phases 1 and 2 and `investigations/flaky-157/` are read, never edited.
+> **Status:** PRE-REGISTRATION, plan **v2** (v1 = `ff7bb6d`; v2 only appends §8, the Lead's rulings on LT-160C-01..08, and amends nothing above it that already ran). v1 committed alone, **before** any harness code, workflow or result. Evidence only: no change to `src/`, `tests/`, `composer.json`, `phpunit.xml`, `ci.yml`; `investigations/flaky-160/` phases 1 and 2 and `investigations/flaky-157/` are read, never edited.
 > **Head:** the branch is cut from `main@2cf8565` (phase 2 merged, PR #163). `git diff d0739a5 2cf8565 -- src tests composer.json phpunit.xml` is empty, so the code under test is the one phase 2 measured. V-HEAD (per run, per arm): `src/`, `tests/`, `composer.json`, `phpunit.xml` byte-identical to `2cf8565` and a clean tree.
 > **Assignment:** the Lead's #160 phase-2b assignment (2026-10-23): "تسمية فرع T-ALLOW وسؤال الحجب موجود أصلًا".
 > **Rules kept:** plan before harness; every LT ruled before the build; no registered condition changes after it has run; one commit per step; the PR stays Draft; my own checks are a self-review, never a Lead review; the Owner approves the measured cost on the PR before any dispatch; **the REPORT presents the contract question and does not choose.**
@@ -110,3 +110,20 @@ A trial is invalid (reported, not counted as hit or miss) if the pre-state did n
 6. REPORT: the branch named with the commands and calls that decide it; (ii) with Wilson 95 %; the contract question as the Owner's decision with, for each path, the change it needs and the measurement it needs (see below); no choice.
 
 **REPORT shape for §0.3 (registered now so it cannot drift):** path **A, the exception after committed writes is intended** — the test's formula is relaxed (to count `conflict` workers by what they committed, which the recorder shows, or to assert inequalities); needs: a test-only change and a measurement that the relaxed formula still detects the double-count failures it was written for (a fault-injection of its own). Path **B, it is a defect** — the pipeline re-asks or recognises the existing block instead of throwing; needs: a change in `EvaluationPipeline` (a src change, DEC-gated), the decision what a publication that loses to an existing block returns (the block's decision), and a measured check that no admission test changes (the 5-b2 lesson: measure user cost before store/pipeline changes). Outputs: `investigations/flaky-160/phase2b/{PLAN,REPORT}.md`, `harness/`, `logs/` with `SHA256SUMS`. The PR is opened Draft and stays Draft until the Lead's review and the Owner's decision; any confirmed finding blocks Ready.
+
+## 8. Rulings (Lead, 2026-10-23, on #160) and what they change
+
+Where §8 and an earlier section differ, **§8 governs**. No `src/` or `tests/` change; the free-account limits stand; the T-CLAIM fix branch is not touched.
+
+| LT | Ruling | Consequence |
+| --- | --- | --- |
+| 01 | W1 accepted as a harness-only instrument, **four conditions** | (a) the two mechanical edits (remove `final`; rename to `…Inner`) are recorded as a **diff in `harness/`**, and V-TRANSFORM proves **at run time** that the on-disk `src/` file hashes equal its hash at `main@2cf8565` and that the evaluated text equals the original **plus exactly that diff**; (b) the subclass has **no logic**: every override calls `parent::` and records only; the armed A-DET switch lives in a **separate** subclass used in A-DET alone; (c) the bootstrap is passed on the **command line** (`--bootstrap`) and is never written into `phpunit.xml`, `tests/` or `composer.json`; (d) **V-CLOCK-2** (fixed clock with and without the recorder: same end state, same decisions) passes **before any counted run**. W2 and W3 rejected |
+| 02 | accepted | (ii) read at the last non-applied publication plus a read at worker exit, gap stated; **added: a descriptive read at the first non-applied publication** |
+| 03 | accepted | V-CLOCK in this phase = V-CLOCK-2 |
+| 04 | accepted | median with recorder <= 1.25 x without (20 + 20 alternating on E-CI, plus the 100,000-call cost). **If exceeded: the dispatch is the Owner's decision, and the REPORT says the number of instances is low and the rate comes from phase 2's A-RATE only; naming from caught instances stays valid** |
+| 05 | accepted | A-DET-b (route b2) is the third row; **b1 only if it can be built without changing what the pipeline reads**; r3 is the registered route for natural cases; b1/b2 in A-NAT are findings |
+| 06 | accepted, descriptive | prediction (iv) is descriptive |
+| 07 | accepted | N = 2,000, 8 x 250, fixed, no early stop, target >= 5 |
+| 08 | accepted | `git revert fa3bbce` literally, then the adaptation commit |
+
+**Order (Lead):** push + Draft PR -> harness with the detectors (a record line removed invalidates the run; a synthetic L2168 trace is classified r3) -> V-TRANSFORM, V-CLOCK-2 and overhead on E-CI -> the measured cost on the PR -> the Owner's word -> A-DET -> A-NAT -> REPORT. The closing of the REPORT (two paths, no choice) is accepted as registered.
