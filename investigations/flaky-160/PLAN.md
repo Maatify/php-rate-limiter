@@ -194,3 +194,52 @@ A harness-side PHP script (not a PHPUnit test; nothing under `tests/` changes) t
 4. After the Owner's word on the cost: U (and M), outputs with `SHA256SUMS`.
 5. `REPORT.md`.
 6. Deletion of the temporary workflow (own commit), before Ready.
+
+## 12. Lead rulings and Owner decision (2026-10-23, recorded before the harness)
+
+Source: PR #161 comments 6360702048 (Lead rulings, 08:23Z) and 6360930849 (Owner decision relayed by the Lead, 08:36Z). Recorded as ruled; where this section adds a definition the rulings leave open, it says so ("build definition").
+
+### 12.1 Correction to §1.3 (Lead, verified before ruling)
+
+`EvaluationPipeline::addBoundedSnapshot()` does read the clock at L867 and again at L881 (non-rotation) and L911 (rotation), and the validator judges with the first reading. The plan did not state the qualifier: `RateLimiterBuilder::build()` wraps the Host clock in `RequestScopedClock` (L179) and `RateLimiterEngine::limit()` runs the whole call under `RequestScopedClock::holding()` (L293), so **built the documented way, both reads return one held reading and the double read is inert**. It is live only for a pipeline constructed directly: the tests' `newWorker()` with `RedisTimeClock`, or a Host that bypasses the builder. The finding is **"latent in `EvaluationPipeline`, guarded by the builder"**; M-EP measures both sides. The Lead corrects Issue #160's sentence ("the real `EvaluationPipeline` passes its single `now`") on #160. Routing of the confirmed finding stays the Owner's.
+
+### 12.2 Rulings
+
+| LT | Ruling |
+| --- | --- |
+| 01 | **Accepted, one sub-arm added.** M-EP-DET (20 + 20) and M-EP-NAT as §5.3, no `src/` change. **M-EP-BUILDER-DET** added (§12.4). |
+| 02 | **Accepted.** Pooled rate over the six methods of §1.1; per-method descriptive; a seventh method (the #157 target included) is an individually reported finding and enters only the second, all-failures rate. |
+| 03 | **(b) N = 3,300**, conditional on the Owner's word on the measured cost. Rule as registered: **inside iff k ∈ {7, …, 19}**; the REPORT states P(outside \| unchanged) = 8.7 % and P(inside \| half) = 31.4 % and adds a two-sample exact comparison against L (11 / 3,300), descriptive only. One untapped prefix run is measured on E-CI at the detector stage; the projected runner-hours go on the PR; U is not dispatched before the Owner's word. |
+| 04 | **Accepted.** Fresh reference; U starts only if the 75 files, `k_ref` 1329 and `sequence_sha256` `fccd09eb…` match; a mismatch is reported, not worked around. |
+| 05 | **Accepted**, the exact frames are the prediction: L62 / L800 / L608 / L278, 20 / 20; control 0 / 20. |
+| 06 | **Accepted: recorders are not injection** (they return the real readings unchanged; the REPORT says so and the recorder code stays in the harness). **K = 100,000.** N-1 is checked on every call; any discordant call is a finding against §1.2. |
+| 07 | **Accepted.** `git revert 1e1283b` verbatim in its own commit, then a commit renaming it to `.github/workflows/flaky-160.yml` with modes `ref | detectors | u | m`, the push guard on **this** branch (`claude/measure-tests-no-tap-a58f7a`), the same pins, `permissions: contents: read`, no secrets, `harness/env.sh` in every job; removed in its own commit before Ready. |
+| 08 | **Accepted with provenance:** each copied file carries the source path and the SHA-256 of the original at `8b79e9b` in its header, and `harness/PROVENANCE.txt` lists them so each copy is checkable byte for byte. |
+
+§6 (phase-2 predictions for T-K4, T-HAND, T-CLAIM, T-ALLOW) stays registered and **not run** in this phase.
+
+### 12.3 Owner decision and free-account limits
+
+N = 3,300 for U is approved **in principle**; the measured per-run cost and the projected runner-hours go on the PR after the detector stage, and U is dispatched only after the Owner's word on that number. The repository runs on a **free GitHub account** (public, so unbilled; account-wide job concurrency 20; 6 h job limit; a job that dies mid-run costs its whole shard again). Therefore:
+
+* every U shard is sized to stay **under ≈ 2 h with margin**, with `timeout-minutes` set accordingly (the shard layout is fixed from the measured run, before dispatch);
+* **no re-dispatch** of any arm without the Owner's word;
+* **no other CI run** started by the executor while U holds the queue (no push to this branch during U: a push runs `ci.yml` on the PR);
+* if E-CI fails, the measurement is not moved to E-LOCAL; work stops and returns to the Owner.
+
+Process: PLAN §12 → revert `1e1283b` → harness + detectors → measured cost on the PR → **stop**. The PR stays Draft until Lead review and Owner decision.
+
+### 12.4 M-EP-BUILDER-DET (registered prediction; build definitions marked)
+
+* **Clock (ruled):** the same harness step clock as M-EP-DET — it returns second T on its first read and T + 1 on every later read; a fresh instance per trial.
+* **Through the engine (ruled):** `RateLimiterBuilder::fromFullCapabilityStore(new RateLimiterConfig(…), $store, new RecordingFailureSignalEmitter())->withClock($stepClock)->build()`, then `limit($context, RateLimitCommand::checkOnly('login_protection'))` on a fresh account and namespace. **Prediction: 0 / 20** `invalid snapshot`, because `holding()` takes the one reading T and every read inside the call returns it.
+* **Outside `holding()` (ruled):** the same builder-wired pipeline (taken from the built runtime by reflection), its private `addBoundedSnapshot()` called by reflection outside `holding()`, as in M-EP-DET: `RequestScopedClock` passes both reads through to the step clock (L867 → T, L881 → T + 1). **Prediction: 20 / 20** `invalid snapshot` from validator L62 with `EvaluationPipeline.php:884` in the trace.
+* **Validity of the 0 / 20 (build definition):** a trial through `limit()` counts only if the call actually reached the device-window snapshot. The store's executor is wrapped in a pass-through recorder (it forwards every command and returns every reply unchanged) that recognises `EVAL` of the store's `BOUNDED_SNAPSHOT` body (read by reflection) and records its TTL argument, its caller-time argument and the returned `expiresAt`. A trial is valid iff a `BOUNDED_SNAPSHOT` with TTL 600 ran; the record also shows whether its caller time was T (held) or T + 1. A trial that never reached it is invalid, counted and reported, never counted as a 0.
+* The same executor recorder is used in M-DET and M-EP-DET (timing does not matter there); M-NAT and M-EP-NAT do **not** wrap the executor (§12.5).
+
+### 12.5 M-NAT / M-EP-NAT recorders (build definitions under LT-160-06)
+
+* **M-NAT:** the S0 clock is a harness copy of the test's `RedisTimeClock` that also keeps the `TIME` reply's microseconds; the store gets a pass-through wrapper around `SystemClock(UTC)`. After taking its reading, each recorder appends the reading and one bounded `debug_backtrace` frame (caller class, function, line) to an in-memory list (≈ 1–2 µs per read, disclosed). A pair is the store's fallback reading made from `addDistinctBoundedWithSnapshot` and the last S0-clock reading before it (L785; no other S0 read lies between L785 and L793). `g` = store reading − `TIME` reply, in µs, one kernel clock on E-CI.
+* **M-EP-NAT:** `newWorker()`'s construction with a harness copy of `RedisTimeClock` that keeps the microseconds; a pair is the reading made at L867 and the next one at L881 (or L911), identified by the backtrace frame. `g` = second `TIME` − first `TIME`.
+* Each call uses a fresh account and fresh device fingerprint so the device window is set-creating. Every 1,000 calls the harness runs `FLUSHDB` outside the timed part, to bound memory.
+* N-1 per pair: `invalid snapshot` iff the second reading's whole second is later than the first's. N-2: straddles within the Poisson 95 % band around `Σ g_i / 10⁶`.
