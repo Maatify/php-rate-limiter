@@ -1,0 +1,12 @@
+# #160 harness provenance (PLAN.md §8, §12.2 LT-160-08).
+# Each file below is a copy of the #157 harness file at main@8b79e9b with ONE line
+# inserted as line 2 (a provenance comment). Removing line 2 gives the original
+# byte for byte; provenance_check.sh verifies every entry.
+# format: <copy> <original path at 8b79e9b> <sha256 of the original> [adapted:<diff file>]
+# An adapted copy (BC-5) differs from the original only by the recorded diff
+# (`diff <original> <copy without line 2>`); provenance_check.sh verifies that too.
+lib.php investigations/flaky-157/harness/lib.php 058d1e28ec4db421ec1de44283182ec2f3c2aef4faa4df0e98065e48b5014628
+prefix.php investigations/flaky-157/harness/prefix.php c58bf52028895b69cb85111d4e632735c19852ef2b24af56f27e11d4f8058be7
+redis.sh investigations/flaky-157/harness/redis.sh f71afb0946ea17a31bb6b45eade1e6678652262dfb88cff7d415e17d02edbb1f
+env.sh investigations/flaky-157/harness/env.sh d378ee14a0e2b76d34cefda8fbae9d7eb060abebd597239b22646c4d200fc0b6 adapted:PROVENANCE-env.sh.diff
+envset.php investigations/flaky-157/harness/envset.php 7bae9faa98e1b0b23fc848f6f15f261d375ad0c3bd5860ba5c2b60e082ee6ca5

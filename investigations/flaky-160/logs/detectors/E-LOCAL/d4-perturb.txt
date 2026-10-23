@@ -1,0 +1,2 @@
+perturbed: dropped the first file; files=74 out=/private/tmp/claude-501/-Users-mohamedabdulalim-MEGA-Libraries-2026-php-rate-limiter--claude-worktrees-clock-skew-bounded-snapshot-a0900b/ba5fafb9-c26d-45e1-a7fd-78b2d5bc39de/scratchpad/f160-out/local-det/prefix-perturbed.xml
+V-REF FAIL files=74 equal_157=false k_ref=1329 sequence_ok=true out=/private/tmp/claude-501/-Users-mohamedabdulalim-MEGA-Libraries-2026-php-rate-limiter--claude-worktrees-clock-skew-bounded-snapshot-a0900b/ba5fafb9-c26d-45e1-a7fd-78b2d5bc39de/scratchpad/f160-out/local-det/vref-prefix-perturbed.json

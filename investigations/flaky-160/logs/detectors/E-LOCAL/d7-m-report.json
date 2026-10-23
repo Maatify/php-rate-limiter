@@ -1,0 +1,246 @@
+{
+    "det": {
+        "rows": 3,
+        "expected": 3,
+        "shortfall": 0,
+        "exceptions": 3,
+        "snapshot_exceptions": 3,
+        "other_outcomes": [],
+        "valid": 3,
+        "prediction": "invalid snapshot at validator L62 with frames S0EvaluationPipeline.php:800, S0EvaluationPipeline.php:608, S0EvaluationPipeline.php:278 in every trial",
+        "matching": 3,
+        "holds": true
+    },
+    "det-control": {
+        "rows": 3,
+        "expected": 3,
+        "shortfall": 0,
+        "exceptions": 0,
+        "snapshot_exceptions": 0,
+        "other_outcomes": [],
+        "valid": 3,
+        "prediction": "no exception in any trial",
+        "matching": 3,
+        "holds": true
+    },
+    "ep-builder-limit": {
+        "rows": 3,
+        "expected": 3,
+        "shortfall": 0,
+        "exceptions": 0,
+        "snapshot_exceptions": 0,
+        "other_outcomes": [],
+        "valid": 3,
+        "prediction": "no exception in any trial",
+        "matching": 3,
+        "holds": true,
+        "snapshot_caller_time_is_t": 3,
+        "clock_reads_per_call": {
+            "1": 3
+        }
+    },
+    "ep-builder-outside": {
+        "rows": 3,
+        "expected": 3,
+        "shortfall": 0,
+        "exceptions": 3,
+        "snapshot_exceptions": 3,
+        "other_outcomes": [],
+        "valid": 3,
+        "prediction": "invalid snapshot at validator L62 with frames EvaluationPipeline.php:884 in every trial",
+        "matching": 3,
+        "holds": true,
+        "pipeline_found": 3,
+        "pipeline_clock_is_request_scoped": 3
+    },
+    "ep-det": {
+        "rows": 3,
+        "expected": 3,
+        "shortfall": 0,
+        "exceptions": 3,
+        "snapshot_exceptions": 3,
+        "other_outcomes": [],
+        "valid": 3,
+        "prediction": "invalid snapshot at validator L62 with frames EvaluationPipeline.php:884 in every trial",
+        "matching": 3,
+        "holds": true
+    },
+    "ep-det-control": {
+        "rows": 3,
+        "expected": 3,
+        "shortfall": 0,
+        "exceptions": 0,
+        "snapshot_exceptions": 0,
+        "other_outcomes": [],
+        "valid": 3,
+        "prediction": "no exception in any trial",
+        "matching": 3,
+        "holds": true
+    },
+    "ep-nat": {
+        "rows": 2000,
+        "expected": null,
+        "shortfall": null,
+        "exceptions": 0,
+        "snapshot_exceptions": 0,
+        "other_outcomes": [],
+        "valid_calls": 2000,
+        "pairs": 2000,
+        "straddles": 0,
+        "straddle_rate": 0,
+        "straddle_wilson95": [
+            1.0842021724855044e-19,
+            0.001917047281252934
+        ],
+        "g_us": {
+            "n": 2000,
+            "min": 169,
+            "p01": 203,
+            "p50": 275,
+            "p99": 516,
+            "max": 1058
+        },
+        "g_mean_us": 290.2665,
+        "n1_discordant_findings": [],
+        "n1_holds": true,
+        "n2_expected_straddles": 0.580533,
+        "n2_poisson95_band": [
+            0,
+            2
+        ],
+        "n2_holds": true,
+        "by_first_reading_phase_100ms": [
+            {
+                "pairs": 205,
+                "straddles": 0
+            },
+            {
+                "pairs": 202,
+                "straddles": 0
+            },
+            {
+                "pairs": 205,
+                "straddles": 0
+            },
+            {
+                "pairs": 196,
+                "straddles": 0
+            },
+            {
+                "pairs": 200,
+                "straddles": 0
+            },
+            {
+                "pairs": 199,
+                "straddles": 0
+            },
+            {
+                "pairs": 201,
+                "straddles": 0
+            },
+            {
+                "pairs": 198,
+                "straddles": 0
+            },
+            {
+                "pairs": 197,
+                "straddles": 0
+            },
+            {
+                "pairs": 197,
+                "straddles": 0
+            }
+        ],
+        "call_us": {
+            "n": 2000,
+            "min": 6578,
+            "p01": 7723,
+            "p50": 10340,
+            "p99": 15059,
+            "max": 29978
+        }
+    },
+    "nat": {
+        "rows": 2000,
+        "expected": null,
+        "shortfall": null,
+        "exceptions": 1,
+        "snapshot_exceptions": 1,
+        "other_outcomes": [],
+        "valid_calls": 2000,
+        "pairs": 2000,
+        "straddles": 1,
+        "straddle_rate": 0.0005,
+        "straddle_wilson95": [
+            8.826773070546787e-5,
+            0.0028268625032662133
+        ],
+        "g_us": {
+            "n": 2000,
+            "min": 384,
+            "p01": 407,
+            "p50": 523,
+            "p99": 1637,
+            "max": 2473
+        },
+        "g_mean_us": 681.691,
+        "n1_discordant_findings": [],
+        "n1_holds": true,
+        "n2_expected_straddles": 1.363382,
+        "n2_poisson95_band": [
+            0,
+            4
+        ],
+        "n2_holds": true,
+        "by_first_reading_phase_100ms": [
+            {
+                "pairs": 209,
+                "straddles": 0
+            },
+            {
+                "pairs": 200,
+                "straddles": 0
+            },
+            {
+                "pairs": 200,
+                "straddles": 0
+            },
+            {
+                "pairs": 195,
+                "straddles": 0
+            },
+            {
+                "pairs": 200,
+                "straddles": 0
+            },
+            {
+                "pairs": 201,
+                "straddles": 0
+            },
+            {
+                "pairs": 194,
+                "straddles": 0
+            },
+            {
+                "pairs": 197,
+                "straddles": 0
+            },
+            {
+                "pairs": 198,
+                "straddles": 0
+            },
+            {
+                "pairs": 206,
+                "straddles": 1
+            }
+        ],
+        "call_us": {
+            "n": 2000,
+            "min": 5369,
+            "p01": 5530,
+            "p50": 7227,
+            "p99": 10105,
+            "max": 17299
+        }
+    }
+}

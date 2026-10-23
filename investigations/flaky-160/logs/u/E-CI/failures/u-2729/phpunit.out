@@ -1,0 +1,48 @@
+PHPUnit 11.5.57 by Sebastian Bergmann and contributors.
+
+Runtime:       PHP 8.5.12
+Configuration: /home/runner/work/_temp/f160/prefix.xml
+
+.............................................................   61 / 1394 (  4%)
+.............................REPORT nm7-fleet {"oldWorkers":1,"cx":24,"perWindow":[{"admitted":8,"oldCalls":30},{"admitted":7,"oldCalls":30},{"admitted":7,"oldCalls":30}]}
+.REPORT nm7-fleet {"oldWorkers":2,"cx":24,"perWindow":[{"admitted":8,"oldCalls":60},{"admitted":5,"oldCalls":60},{"admitted":7,"oldCalls":60}]}
+..REPORT nm7-m6 {"oldBuildDecisions":"AAAAAAAHHHHHHHHHHHHHH","lost":["K4P","K5p","k5p","anti_equilibrium_device_p","known_device_allowance_p","anti_equilibrium_p","budget_cooldown_p"]}
+.............................  122 / 1394 (  8%)
+.........................REPORT lt-27-rotation-capacity {"afterFirstRotation":0,"afterSecondRotation":24}
+..REPORT lt-27-set-and-bucket-restart {"failingAccountsAfterRotation":4,"bucketTakesAfterRotation":4}
+..................................  183 / 1394 ( 13%)
+.............................................................  244 / 1394 ( 17%)
+.............................................................  305 / 1394 ( 21%)
+.............................................................  366 / 1394 ( 26%)
+.............................................................  427 / 1394 ( 30%)
+.............................................................  488 / 1394 ( 35%)
+.............................................................  549 / 1394 ( 39%)
+.............................................................  610 / 1394 ( 43%)
+.............................................................  671 / 1394 ( 48%)
+.............................................................  732 / 1394 ( 52%)
+.............................................................  793 / 1394 ( 56%)
+.............................................................  854 / 1394 ( 61%)
+.............................................................  915 / 1394 ( 65%)
+.............................................................  976 / 1394 ( 70%)
+............................................................. 1037 / 1394 ( 74%)
+..................REPORT records-verbatim-dec026 {"source":"DEC-021_KNOWN_DEVICE_VERIFIER_BOUND.md","target":"DEC-026_KNOWN_DEVICE_VERIFIER_BOUND_FOR_THE_ADMISSION_LAYER.md","bytesBySection":{"Decision Authority / Deciders":1423,"Context":1029,"Decision":3554,"Rationale":1995,"Consequences":4419,"Alternatives Not Adopted":1168}}
+.REPORT records-verbatim-dec027 {"source":"DEC-019_INTERIM_SECURITY_FIRST_CORRELATION_POSTURE.md","target":"DEC-027_RETAINED_CORRELATION_POSTURE_FOR_POLICIES_THAT_DO_NOT_OPT_INTO_ADMISSION.md","bytesBySection":{"Decision Authority":612,"Scope / Concern":419,"Context":1958,"Decision":2594,"Rationale":345,"Consequences":652,"Relationship to Other Decisions":271}}
+.REPORT records-verbatim-appendix-a {"paragraphs":11,"sha256":"5642bd4dfa6df3d6d5d6fec6821a913e083c68a0d9a4d41404e6ce5bb2607cfd"}
+......................................... 1098 / 1394 ( 78%)
+............................................................. 1159 / 1394 ( 83%)
+............................................................. 1220 / 1394 ( 87%)
+...............................................F............. 1281 / 1394 ( 91%)
+............................................................. 1342 / 1394 ( 96%)
+....................................................          1394 / 1394 (100%)
+
+Time: 00:19.505, Memory: 42.00 MB
+
+There was 1 failure:
+
+1) Maatify\RateLimiter\Tests\Integration\Redis\KnownDeviceAllowanceConcurrencyIntegrationTest::testLoginOverlapSplitsIntoRecordedConflictAndEarlyBlockExactly
+Failed asserting that 30 is identical to 28.
+
+/home/runner/work/php-rate-limiter/php-rate-limiter/tests/Integration/Redis/KnownDeviceAllowanceConcurrencyIntegrationTest.php:136
+
+FAILURES!
+Tests: 1394, Assertions: 14871, Failures: 1.

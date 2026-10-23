@@ -1,0 +1,8 @@
+{"subarm":"det","n":3,"rows":3,"exceptions":3,"seconds":0.012}
+{"subarm":"det-control","n":3,"rows":3,"exceptions":0,"seconds":0.016}
+{"subarm":"ep-det","n":3,"rows":3,"exceptions":3,"seconds":0.005}
+{"subarm":"ep-det-control","n":3,"rows":3,"exceptions":0,"seconds":0.006}
+{"subarm":"ep-builder-limit","n":3,"rows":3,"exceptions":0,"seconds":0.023}
+{"subarm":"ep-builder-outside","n":3,"rows":3,"exceptions":3,"seconds":0.008}
+{"subarm":"nat","n":2000,"rows":2000,"exceptions":1,"seconds":8.313}
+{"subarm":"ep-nat","n":2000,"rows":2000,"exceptions":1,"seconds":11.42}
