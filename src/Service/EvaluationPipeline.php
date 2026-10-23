@@ -864,7 +864,8 @@ class EvaluationPipeline
         int $ttlSeconds,
         int $maxDistinct,
     ): BoundedDistinctSnapshotDTO {
-        $now = $this->clock->now()->getTimestamp();
+        $nowAt = $this->clock->now();
+        $now = $nowAt->getTimestamp();
         if ($observation->previousKey === null) {
             if (! $this->correlationStore instanceof BoundedCorrelationSnapshotStoreInterface) {
                 throw new RateLimiterException(
@@ -878,7 +879,7 @@ class EvaluationPipeline
                 $observation->currentMember,
                 $ttlSeconds,
                 $maxDistinct,
-                $this->clock->now(),
+                $nowAt,
             );
 
             return BoundedCorrelationResultValidator::snapshot(
@@ -908,7 +909,7 @@ class EvaluationPipeline
             $observation->previousMember,
             $ttlSeconds,
             $maxDistinct,
-            $this->clock->now(),
+            $nowAt,
         );
 
         return BoundedCorrelationResultValidator::snapshot(
