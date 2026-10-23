@@ -5,7 +5,7 @@ Configuration: /Users/mohamedabdulalim/MEGA/Libraries/2026/php-rate-limiter/.cla
 
 F                                                                   1 / 1 (100%)
 
-Time: 00:00.020, Memory: 12.00 MB
+Time: 00:00.032, Memory: 12.00 MB
 
 There was 1 failure:
 

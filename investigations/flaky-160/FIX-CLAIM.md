@@ -9,7 +9,7 @@ Assignment 2. Basis: phase 2 C-NAT 100,000 / 100,000 compatible, C-DET-1 20 / 20
 
 ## "Red" — the original test under T → T + 1 with an injected clock
 
-`fix-claim/inject-clock.py` (diff recorded in `fix-claim/inject-clock.diff`) gives the **original** test a `FixedClock` at `time()` for the store and moves it to T + 1 immediately before the first claim; nothing else changes. Local Redis 7.0.15 (CI compose image), real executor.
+`fix-claim/inject-clock.py` (the four inserted lines recorded in `fix-claim/inject-clock.diff`, generated with `git diff --no-index -U0` between the test at `47eb45f` and the injected copy: no context lines, so no whitespace-only context) gives the **original** test a `FixedClock` at `time()` for the store and moves it to T + 1 immediately before the first claim; nothing else changes. Local Redis 7.0.15 (CI compose image), real executor.
 
 | tree | result | log |
 |---|---|---|
@@ -31,3 +31,5 @@ No prediction was contradicted. Not measured: the natural-rate flake rate of thi
 ## Other checks, same tree
 
 `RedisFullCapabilityStoreIntegrationTest` whole file on real Redis 118 tests, 3,748 assertions, green; PHPStan level max on the file clean; `php-cs-fixer check` 0 of 361 files.
+
+The red-proof logs were regenerated once with the `-U0` diff's script (F-164-01): pre-fix tree + injection fails at L1101, fixed tree + injection passes (12 assertions); both logs replace the earlier ones.
