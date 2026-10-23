@@ -859,6 +859,15 @@ class EvaluationPipeline
         );
     }
 
+    /**
+     * Adds the observation and returns the validated bounded snapshot.
+     *
+     * The clock is read once. That reading goes to the store as the caller's
+     * time and to the validator as the instant it judges `expiresAt` against.
+     * Two readings could straddle a second boundary and make the validator
+     * reject the store's own snapshot (#160, M-EP-DET); do not reintroduce a
+     * second `$this->clock->now()` in this method.
+     */
     private function addBoundedSnapshot(
         BoundedCorrelationObservationDTO $observation,
         int $ttlSeconds,
