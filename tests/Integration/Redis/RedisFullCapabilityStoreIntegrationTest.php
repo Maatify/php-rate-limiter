@@ -1074,13 +1074,14 @@ final class RedisFullCapabilityStoreIntegrationTest extends TestCase
         self::assertSame(1, $mutation->state->generation);
 
         $id = str_repeat('a', 32);
+        // The block outlives the span between these calls: a one-second block can end between the block and the claim.
         $transition = $this->store->blockWithPunishmentLifecycleTracking(
             'lifecycle-current',
             null,
             1,
             $id,
             2,
-            1,
+            60,
             21600,
             2,
             600,
