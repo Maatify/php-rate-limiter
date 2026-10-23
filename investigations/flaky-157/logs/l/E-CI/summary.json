@@ -1,0 +1,128 @@
+{
+    "l": {
+        "expected": 3300,
+        "runs": 3300,
+        "valid": 3300,
+        "invalid": 0,
+        "invalid_reasons": [],
+        "reproduced": 0,
+        "target_other": 0,
+        "other_failures_runs": 11,
+        "findings": [],
+        "rate_wilson95": [
+            0,
+            0.001162724927504643
+        ],
+        "power_at_historical_rate": {
+            "point": 0.9527034456008361,
+            "wilson_low": 0.41637055097509956,
+            "wilson_high": 0.9999999680627283
+        },
+        "shortfall": 0,
+        "missing_ids": [],
+        "duplicated_ids": [],
+        "outside_ids": [],
+        "shards": {
+            "1": {
+                "expected": 165,
+                "verdicts": 165,
+                "shortfall": 0
+            },
+            "2": {
+                "expected": 165,
+                "verdicts": 165,
+                "shortfall": 0
+            },
+            "3": {
+                "expected": 165,
+                "verdicts": 165,
+                "shortfall": 0
+            },
+            "4": {
+                "expected": 165,
+                "verdicts": 165,
+                "shortfall": 0
+            },
+            "5": {
+                "expected": 165,
+                "verdicts": 165,
+                "shortfall": 0
+            },
+            "6": {
+                "expected": 165,
+                "verdicts": 165,
+                "shortfall": 0
+            },
+            "7": {
+                "expected": 165,
+                "verdicts": 165,
+                "shortfall": 0
+            },
+            "8": {
+                "expected": 165,
+                "verdicts": 165,
+                "shortfall": 0
+            },
+            "9": {
+                "expected": 165,
+                "verdicts": 165,
+                "shortfall": 0
+            },
+            "10": {
+                "expected": 165,
+                "verdicts": 165,
+                "shortfall": 0
+            },
+            "11": {
+                "expected": 165,
+                "verdicts": 165,
+                "shortfall": 0
+            },
+            "12": {
+                "expected": 165,
+                "verdicts": 165,
+                "shortfall": 0
+            },
+            "13": {
+                "expected": 165,
+                "verdicts": 165,
+                "shortfall": 0
+            },
+            "14": {
+                "expected": 165,
+                "verdicts": 165,
+                "shortfall": 0
+            },
+            "15": {
+                "expected": 165,
+                "verdicts": 165,
+                "shortfall": 0
+            },
+            "16": {
+                "expected": 165,
+                "verdicts": 165,
+                "shortfall": 0
+            },
+            "17": {
+                "expected": 165,
+                "verdicts": 165,
+                "shortfall": 0
+            },
+            "18": {
+                "expected": 165,
+                "verdicts": 165,
+                "shortfall": 0
+            },
+            "19": {
+                "expected": 165,
+                "verdicts": 165,
+                "shortfall": 0
+            },
+            "20": {
+                "expected": 165,
+                "verdicts": 165,
+                "shortfall": 0
+            }
+        }
+    }
+}
