@@ -7,6 +7,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed (#160)
+- `EvaluationPipeline::addBoundedSnapshot()` reads the clock once and passes the same reading to the
+  store and to the snapshot validator. A pipeline built directly, with a clock that is read per call,
+  could reject its own snapshot when a second boundary fell between the two readings (measured at
+  8 per 100,000 set-creating calls on a directly built pipeline). A pipeline built by `RateLimiterBuilder` was already protected by
+  `RequestScopedClock`.
+
 ### Fixed (#153, #155; DEC-016 application note) — one time authority: the caller's clock
 - `RedisFullCapabilityStore` reads no Redis `TIME`. Every timestamp it stores or compares is the
   caller's time; physical key lifetimes stay relative on the Redis clock. This removes the

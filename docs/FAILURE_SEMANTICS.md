@@ -161,6 +161,13 @@ application note). The built-in Redis store reads no Redis `TIME`. Physical key
 lifetimes stay relative on the Redis clock and only bound memory; logical
 deadlines are the caller's time plus a TTL.
 
+`EvaluationPipeline::addBoundedSnapshot()` takes one reading and passes that
+same reading to the store and to the snapshot validator (#160); it no longer
+reads the clock twice. This does not make the rest of a call single-read: a
+pipeline built outside `RateLimiterBuilder` must be given a clock that holds one
+reading per call, as the builder does with its `RequestScopedClock`, or the
+other readings inside the same call can still differ across a second boundary.
+
 **Host duty: a fleet that shares one Redis shares one time source.** The Host
 owns its clock (PACKAGE_BUILDING_STANDARD §2, §25). One Host is consistent with
 itself. Across Hosts, a value written by Host W and read by Host R carries the
