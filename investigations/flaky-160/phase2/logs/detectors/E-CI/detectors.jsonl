@@ -1,0 +1,13 @@
+{"detector":"D1-provenance","expected":"tap copy OK","observed":"1 OK, 0 FAIL","holds":true}
+{"detector":"D2-v-head","expected":"refused (exit != 0, V-HEAD FAIL)","observed":"exit 1, V-HEAD FAIL: /home/runner/work/php-rate-limiter/php-rate-limiter differs from 1e951ee under src/ tests/ composer.json phpunit.xml, or is not clean","holds":true}
+{"detector":"D3-v-ref","expected":"the A test passes, one test, no tap","observed":"{\"arm\":\"ref\",\"id\":1,\"exit\":0,\"redis_port\":32768,\"v_port\":true,\"tapped\":false,\"wall_seconds\":0.511,\"tests\":1,\"test\":\"pass\",\"problems\":[],\"valid\":true}","holds":true}
+{"detector":"D4-base","expected":"valid; 32 workers by pid, none unresolved; V-KEY holds; no anomaly","observed":"{\"valid\":true,\"test\":\"pass\",\"workers\":32,\"unresolved_pids\":0,\"v_key\":{\"consumed_read\":16,\"sum_u\":16,\"k5_read\":26,\"sum_2k\":26},\"anomalies\":0}","holds":true}
+{"detector":"D5-v-frame-drop-line","expected":"invalid (v_frame problem)","observed":"{\"valid\":false,\"problems\":[\"v_frame:counts\",\"v_frame:seq_gap\"]}","holds":true}
+{"detector":"D5-v-frame-drop-conn","expected":"invalid (v_frame problem)","observed":"{\"valid\":false,\"problems\":[\"v_frame:counts\"]}","holds":true}
+{"detector":"D5-v-frame-dup-seq","expected":"invalid (v_frame problem)","observed":"{\"valid\":false,\"problems\":[\"v_frame:seq_gap\"]}","holds":true}
+{"detector":"D6-v-worker","expected":"invalid (v_worker:pid_unresolved), counted","observed":"{\"valid\":false,\"problems\":[\"v_worker:pid_unresolved\"],\"unresolved_pids\":2}","holds":true}
+{"detector":"D7-v-key","expected":"invalid (v_key:consumed)","observed":"{\"valid\":false,\"problems\":[\"v_key:consumed\"],\"v_key\":{\"consumed_read\":16,\"sum_u\":17,\"k5_read\":26,\"sum_2k\":26}}","holds":true}
+{"detector":"D8-anomaly","expected":"valid run, one anomaly of class unit_without_k5_no_conflict","observed":"{\"valid\":true,\"anomalies\":[\"unit_without_k5_no_conflict\"]}","holds":true}
+{"detector":"D8b-p-fail","expected":"P-FAIL holds for the synthetic failing run","observed":"{\"holds\":true,\"exceptions\":[]}","holds":true}
+{"detector":"D9-c-det-tiny","expected":"all three variants hold at 3 trials","observed":"{\"C-DET-1\":true,\"C-DET-0\":true,\"C-DET-2\":true}","holds":true}
+{"detector":"D10-c-nat-tiny","expected":"N-C1 holds on every repetition (no rate drawn)","observed":"{\"k\":2000,\"valid\":2000,\"discordant\":0,\"straddles\":1}","holds":true}

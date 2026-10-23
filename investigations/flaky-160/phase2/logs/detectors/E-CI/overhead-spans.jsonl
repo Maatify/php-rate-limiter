@@ -1,0 +1,10 @@
+{"mode":"direct","span":1,"wall_seconds":0.410}
+{"mode":"tap","span":1,"wall_seconds":1.194}
+{"mode":"direct","span":2,"wall_seconds":0.401}
+{"mode":"tap","span":2,"wall_seconds":1.199}
+{"mode":"direct","span":3,"wall_seconds":0.427}
+{"mode":"tap","span":3,"wall_seconds":1.262}
+{"mode":"direct","span":4,"wall_seconds":0.426}
+{"mode":"tap","span":4,"wall_seconds":1.269}
+{"mode":"direct","span":5,"wall_seconds":0.431}
+{"mode":"tap","span":5,"wall_seconds":1.367}
