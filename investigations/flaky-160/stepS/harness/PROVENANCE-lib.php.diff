@@ -1,0 +1,26 @@
+--- ../../stepM/harness/lib.php	2026-10-24 20:49:38
++++ lib.php	2026-10-25 00:47:58
+@@ -81 +81 @@
+-    public static function worker(array $records): array
++    public static function worker(array $records, bool $change = false): array
+@@ -90,0 +91 @@
++        $pubTimes = [];
+@@ -122,0 +124 @@
++                $pubTimes[] = [(int) $r['t0'], (int) $r['t1'], (bool) ($r['r']['applied'] ?? false)];
+@@ -128,0 +131,13 @@
++        // Step S (DEC-029): after the change a non-applied last publication is not an exception but a deferral (or a
++        // dropped K4, when the re-read level fell below 2); the only remaining exception site is the K4 mutation.
++        $outcome = 'none';
++        if ($pubs !== []) {
++            if (end($pubs) === true) {
++                $outcome = 'applied_' . count($pubs);
++            } else {
++                $outcome = count($pubs) === 4 ? 'deferred_r3' : ($lastRead === 'null' ? 'deferred_b1' : 'dropped_b2');
++            }
++        }
++        if ($change) {
++            $conflictPub = false;
++        }
+@@ -139 +154 @@
+-            'route' => $route, 'pubs' => count($pubs), 'pub_non_applied' => count($nonApplied), 'muts' => count($muts),
++            'route' => $route, 'pub_outcome' => $outcome, 'pub_times' => $pubTimes, 'pubs' => count($pubs), 'pub_non_applied' => count($nonApplied), 'muts' => count($muts),

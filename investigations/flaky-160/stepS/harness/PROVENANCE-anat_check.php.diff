@@ -1,0 +1,42 @@
+--- ../../phase2b/harness/anat_check.php	2026-10-24 00:50:00
++++ anat_check.php	2026-10-25 00:47:58
+@@ -13 +13,2 @@
+-$o = getopt('', ['arm:', 'id:', 'dir:', 'exit:', 'wall::', 'workers::']);
++$o = getopt('', ['arm:', 'id:', 'dir:', 'exit:', 'wall::', 'workers::', 'mode::', 'rows::']);
++$change = (($o['mode'] ?? 'base') === 'change');
+@@ -41 +42 @@
+-    $workers[basename($f)] = Analysis::worker($records);
++    $workers[basename($f)] = Analysis::worker($records, $change);
+@@ -85,0 +87,30 @@
++// Step S: the publication-attempt distribution of the run, and for every deferred worker the lag until another
++// worker's applied K4 publication (hrtime, same host): null = no later applied publication in this run.
++$dist = [];
++$deferred = [];
++foreach ($workers as $name => $w) {
++    $dist[$w['pub_outcome']] = ($dist[$w['pub_outcome']] ?? 0) + 1;
++    if (str_starts_with($w['pub_outcome'], 'deferred_')) {
++        $lastEnd = $w['pub_times'] === [] ? 0 : end($w['pub_times'])[1];
++        $lag = null;
++        foreach ($workers as $other => $ow) {
++            if ($other === $name) {
++                continue;
++            }
++            foreach ($ow['pub_times'] as [$t0, $t1, $applied]) {
++                if ($applied && $t1 >= $lastEnd && ($lag === null || $t1 - $lastEnd < $lag)) {
++                    $lag = $t1 - $lastEnd;
++                }
++            }
++        }
++        $deferred[] = ['worker' => $name, 'outcome' => $w['pub_outcome'], 'pubs' => $w['pubs'], 'later_applied_lag_ns' => $lag];
++    }
++}
++if (isset($o['rows'])) {
++    $rows = '';
++    foreach ($workers as $name => $w) {
++        unset($w['pub_times']);
++        $rows .= json_encode(['arm' => (string) $o['arm'], 'id' => (int) $o['id'], 'worker' => $name] + $w, JSON_UNESCAPED_SLASHES) . "\n";
++    }
++    file_put_contents((string) $o['rows'], $rows, FILE_APPEND | LOCK_EX);
++}
+@@ -90,0 +122 @@
++    'pub_outcomes' => $dist, 'deferred' => $deferred,

@@ -1,0 +1,5 @@
+--- ../../stepM/harness/m2b_summarize.php	2026-10-24 20:49:38
++++ m2b_summarize.php	2026-10-25 00:48:33
+@@ -16 +16 @@
+-    'Maatify\RateLimiter\Tests\System\PostPunishmentReentryLifecycleTest::testThreePublicationConflictsReturnTransientHardWithoutCircuitFailure',
++    'Maatify\RateLimiter\Tests\System\PostPunishmentReentryLifecycleTest::testThreePublicationConflictsReturnTransientHardWithoutCircuitFailure', // base only: renamed by DEC-029

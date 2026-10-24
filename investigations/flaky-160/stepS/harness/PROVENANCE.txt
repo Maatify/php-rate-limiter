@@ -1,0 +1,26 @@
+#160 step S — provenance of harness/ (sources: investigations/flaky-160/stepM/harness at main@d71c0af, and phase2b/harness for anat_check.php).
+
+Identical copies from stepM/harness (sha256):
+d98c3f8af92d34ce886f22e5c09f8ebdf1038f265e45b7c44f1964f76cfe92ce  w1_bootstrap.php
+a4b47ed29d7d03f9bd8ec8f394af393a24b470c5cc55aa505c1c6d97d96357a9  w1_bootstrap_lib.php
+c5f7815804237772e5c2750917cab99522ba15dbb0ff5038ff0d4db1a3a0e0d1  store-transform.diff
+40ed8e37d660d9c7bcf8c9c1279b0f266a8036116c0ebb34dd9075147312e7c4  store.sha256
+4117f7e65fbd80f2f19dbdd62422f4e188b59954a472353566c4a943bc6e27f3  fixture.php
+da0fed926d6e6b4f8e26006a0e324262fb1c120bb196bb7717e7ccb80c409cc4  vtransform.php
+d7ad46d1adf1980c335ae504f04d03688934aea404b2700044eb75d1b17dda92  vclock2.php
+09fbfa0108db2b682039b75c1c903e0b7ddff464d1db270cf6284b868b4eb009  adet1741.php
+4a42a98b5df3d314ac41af212bb7f1acf2a9680f5bc73241b6e671c17d090054  m2b_lib.php
+4103c1f3e28c71f2736386f3154cf77cb900cea24c834e0254394d52174e8bbf  m2b_bootstrap.php
+
+Adapted (the full difference is the PROVENANCE-<file>.diff (diff -U0) next to this file; reverse it to get the original byte for byte):
+  run.sh          V-HEAD ref from pins.json (change_ref) and ROOT-aware base tree (detached worktree of base_ref with a COPY of vendor/),
+                  arms w3check, decision, timing added; the anat arm calls anat_check.php in change mode and keeps all workers' rows.
+  lib.php         Analysis::worker takes $change; pub_outcome and pub_times are added; with $change an unapplied last publication is no
+                  longer an exception (conflict = K4 mutation only).
+  anat_check.php  (from phase2b) --mode/--rows: publication-attempt distribution, deferred workers with the lag to the next applied
+                  K4 publication by another worker, and one row per worker per run.
+  m2b_summarize.php  one comment on the base-only test name.
+
+New in step S: pins.json (refs and sha256 pins), w3_lib.php, w3_bootstrap.php, w3_check.php, w3_scenario.php, w3_compare.php,
+w3_timing_row.php, w3_timing_summary.php; w3-transform-{engine,pipeline-base,pipeline-change}.diff record the two mechanical edits (diff -U0).
+The phase-1 harness (investigations/flaky-160/harness: redis.sh, lib.php, env.sh) is used in place, unchanged.

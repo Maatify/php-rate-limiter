@@ -1,0 +1,77 @@
+--- ../../stepM/harness/run.sh	2026-10-24 20:49:38
++++ run.sh	2026-10-25 00:48:33
+@@ -2 +2 @@
+-# #160 step M runner: phase 2b's run.sh (PROVENANCE-run.sh.diff), V-HEAD pinned to main@b6f4e22, three arms added.
++# #160 step S runner: step M's run.sh (PROVENANCE-run.sh.diff), V-HEAD pinned per arm (V_HEAD_REF, ROOT_OVERRIDE), arms decision/timing/w3check added.
+@@ -19,2 +19,6 @@
+-# V-HEAD: refuses a run unless src/, tests/, composer.json and phpunit.xml are byte-identical to
+-# main@b6f4e22 (V_HEAD_REF) and clean.
++#   run.sh w3check    <out>               (step S) V-TRANSFORM of W3 on base and change, V-CLOCK-2-style decision identity, synthetic detectors
++#   run.sh decision   <out> <base|change> (step S) V-DECISION: Unit,Integration,System once under W3 on that tree
++#   run.sh timing     <out> <runs>        (step S) the A test under W3 (no tap), base and change alternating
++#
++# V-HEAD: refuses a run unless src/, tests/, composer.json and phpunit.xml of the tree under test are byte-identical to
++# V_HEAD_REF (default: change_ref of pins.json) and clean. The base tree is a detached worktree of base_ref (pins.json).
+@@ -26 +30,3 @@
+-head_ref="${V_HEAD_REF:-b6f4e22}"
++pins="$here/pins.json"
++pin() { php -r 'echo json_decode(file_get_contents($argv[1]), true)[$argv[2]];' "$pins" "$1"; }
++head_ref="${V_HEAD_REF:-$(pin change_ref)}"
+@@ -44,0 +51,11 @@
++# The base tree: a detached worktree of base_ref (src/, tests/, composer.json, phpunit.xml of main@d71c0af) with a copy of this
++# checkout's vendor/. Prints its path; created once per output directory.
++base_tree() {
++    local t="$1/base-tree"
++    if [[ ! -e "$t/.git" ]]; then
++        git -C "$root" worktree add --detach "$t" "$(pin base_ref)" > /dev/null
++        cp -a "$root/vendor" "$t/vendor" # a copy, not a symlink: the autoloader derives its base dir from its own real path
++    fi
++    echo "$t"
++}
++
+@@ -93 +110 @@
+-        line="$("${php[@]}" "$here/anat_check.php" --arm="$label" --id="$id" --dir="$dir/rec" --exit="$status" --wall="$wall" )"
++        line="$("${php[@]}" "$here/anat_check.php" --arm="$label" --id="$id" --dir="$dir/rec" --exit="$status" --wall="$wall" --mode=change --rows="$out/worker-rows.jsonl")"
+@@ -151,0 +169,42 @@
++    w3check)
++        d="$out/w3check"; rm -rf "$d"; mkdir -p "$d"
++        base="$(base_tree "$out")"
++        "${php[@]}" "$here/w3_check.php" --change="$root" --base="$base" --dir="$d" --change-ref="$(pin change_ref)" --base-ref="$(pin base_ref)" | tee "$out/w3check.jsonl"
++        ;;
++    decision)
++        which="${3:?base|change}"
++        d="$out/decision-$which"; rm -rf "$d"; mkdir -p "$d/rec"
++        if [[ "$which" == base ]]; then tree="$(base_tree "$out")"; ref="$(pin base_ref)"; else tree="$root"; ref="$(pin change_ref)"; fi
++        ( root="$tree"; head_ref="$ref"; v_head )
++        port="$(redis_up "$d/redis.state")"
++        cache="$(mktemp -d)"
++        status=0
++        FLAKY160_ROOT="$tree" REDIS_INTEGRATION_HOST=127.0.0.1 REDIS_INTEGRATION_PORT="$port" FLAKY160M_DIR="$d/rec" \
++            env XDEBUG_MODE=off php -d memory_limit=1G "$tree/vendor/bin/phpunit" --bootstrap "$here/w3_bootstrap.php" -c "$tree/phpunit.xml" \
++            --do-not-cache-result --cache-directory "$cache" --log-junit "$d/junit.xml" --testsuite Unit,Integration,System > "$d/phpunit.out" 2>&1 || status=$?
++        rm -rf "$cache"
++        redis_down "$d/redis.state"
++        "${php[@]}" "$here/m2b_summarize.php" --dir="$d/rec" --suite="decision-$which" --exit="$status" | tee "$out/m2b-summary-$which.json"
++        ;;
++    timing)
++        runs="${3:?runs}"
++        base="$(base_tree "$out")"
++        for ((i = 1; i <= runs; i++)); do
++            if ((i % 2)); then order=(base change); else order=(change base); fi
++            for which in "${order[@]}"; do
++                if [[ "$which" == base ]]; then tree="$base"; ref="$(pin base_ref)"; else tree="$root"; ref="$(pin change_ref)"; fi
++                ( root="$tree"; head_ref="$ref"; v_head )
++                d="$out/timing/$which-$i"; rm -rf "$d"; mkdir -p "$d/rec"
++                port="$(redis_up "$d/redis.state")"
++                cache="$(mktemp -d)"; status=0
++                FLAKY160_ROOT="$tree" REDIS_INTEGRATION_HOST=127.0.0.1 REDIS_INTEGRATION_PORT="$port" FLAKY160M_DIR="$d/rec" \
++                    env XDEBUG_MODE=off php -d memory_limit=1G "$tree/vendor/bin/phpunit" --bootstrap "$here/w3_bootstrap.php" -c "$tree/phpunit.xml" \
++                    --do-not-cache-result --cache-directory "$cache" --filter "$test_filter" "$tree/$test_file" > "$d/phpunit.out" 2>&1 || status=$?
++                rm -rf "$cache"
++                redis_down "$d/redis.state"
++                "${php[@]}" "$here/w3_timing_row.php" --dir="$d/rec" --arm="$which" --run="$i" --exit="$status" >> "$out/timing.rows.jsonl"
++                rm -rf "$d"
++            done
++        done
++        "${php[@]}" "$here/w3_timing_summary.php" --rows="$out/timing.rows.jsonl" | tee "$out/timing-summary.json"
++        ;;
