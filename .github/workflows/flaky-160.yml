@@ -1,78 +1,34 @@
-# TEMPORARY — #160 phase 2b (investigations/flaky-160/phase2b/PLAN.md §5.2, §8 LT-160C-08).
-# Restored from phase 2 by `git revert fa3bbce` (own commit), then adapted in the next commit.
-# Exists only on branch claude/phase-2b-t-allow-blocking-3870f6 and is removed in its own commit
-# before Ready. Runs nothing but the setup steps of ci.yml (checkout, setup-php, composer update)
-# and investigations/flaky-160/phase2b/harness/, whose only test command is the pinned
-# vendor/bin/phpunit with the W1 bootstrap given on the command line. No secrets, contents: read.
+# TEMPORARY — #160 step M (investigations/flaky-160/stepM/PLAN.md §7, §8).
+# Restored from phase 2b by `git revert 8f3d29c` (own commit), then adapted in the next commit.
+# Exists only on branch claude/measurement-p1-dec-029-3e6294 and is removed in its own commit before Ready.
+# Runs nothing but the setup steps of ci.yml (checkout, setup-php, composer update) and
+# investigations/flaky-160/stepM/harness/, whose only test command is the pinned vendor/bin/phpunit with a
+# harness bootstrap given on the command line. No secrets, contents: read. No push trigger: a push never starts it.
 # Every job keeps its resolved composer.lock and the PHPUnit / PHP versions in its artifact
 # (phase-1 harness/env.sh, used unchanged).
 #
-# Modes: checks  V-TRANSFORM, V-CLOCK-2, the detectors and the measured overhead (PLAN §2, §5.3)
-#        adet    A-DET: 20 trials per variant (PLAN §3)
-#        anat    A-NAT shards: layout from inputs (fixed by PLAN §8 LT-160C-07: 8 x 250), only after
-#                the measured cost is on the PR and the Owner has given the word
-# Trigger: workflow_dispatch with `mode`, or a push to this branch whose head commit message
-#          contains "[flaky-160c:checks]".
-name: flaky-160c (temporary)
+# Modes (one dispatch with `all`, by the Owner's word and only after the measured cost is on the PR):
+#   checks  V-TRANSFORM (W1), V-CLOCK-2, V-TRANSFORM and detectors of W2 (m2b_check.php)
+#   adet    A-DET-1741 (20 per variant) and A-DET-2168 re-run on b6f4e22 (20 per variant)
+#   suite   M2b: Integration + System once under W2
+name: flaky-160m (temporary)
 
 on:
   workflow_dispatch:
     inputs:
       mode:
-        description: 'checks | adet | anat'
+        description: 'all | checks | adet | suite'
         required: true
         type: choice
-        options: [checks, adet, anat]
-      shards:
-        description: 'anat: JSON list of shard numbers'
-        required: false
-        default: '[1]'
-      per:
-        description: 'anat: runs per shard'
-        required: false
-        default: '10'
-      timeout:
-        description: 'anat: timeout-minutes per shard'
-        required: false
-        default: '115'
-  push:
-    branches: [claude/phase-2b-t-allow-blocking-3870f6]
+        options: [all, checks, adet, suite]
 
 permissions:
   contents: read
 
 jobs:
   checks:
-    name: V-TRANSFORM, V-CLOCK-2, detectors, overhead
-    if: inputs.mode == 'checks' || contains(github.event.head_commit.message, '[flaky-160c:checks]')
-    runs-on: ubuntu-latest
-    timeout-minutes: 60
-    steps:
-      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
-        with:
-          fetch-depth: 0
-          persist-credentials: false
-      - uses: shivammathur/setup-php@f3e473d116dcccaddc5834248c87452386958240 # v2
-        with:
-          php-version: '8.5'
-          coverage: none
-          extensions: redis
-      - run: composer update --no-interaction --prefer-dist --no-progress
-      - run: bash investigations/flaky-160/harness/env.sh "$RUNNER_TEMP/f160c" checks
-      - run: bash investigations/flaky-160/phase2b/harness/run.sh vtransform "$RUNNER_TEMP/f160c"
-      - run: bash investigations/flaky-160/phase2b/harness/run.sh vclock2 "$RUNNER_TEMP/f160c"
-      - run: bash investigations/flaky-160/phase2b/harness/run.sh detectors "$RUNNER_TEMP/f160c"
-      - run: bash investigations/flaky-160/phase2b/harness/run.sh overhead "$RUNNER_TEMP/f160c" 20 100000
-      - if: always()
-        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
-        with:
-          name: f160c-checks
-          path: ${{ runner.temp }}/f160c
-          retention-days: 30
-
-  adet:
-    name: A-DET
-    if: inputs.mode == 'adet'
+    name: V-TRANSFORM, V-CLOCK-2, W2 checks
+    if: inputs.mode == 'all' || inputs.mode == 'checks'
     runs-on: ubuntu-latest
     timeout-minutes: 30
     steps:
@@ -86,26 +42,22 @@ jobs:
           coverage: none
           extensions: redis
       - run: composer update --no-interaction --prefer-dist --no-progress
-      - run: bash investigations/flaky-160/harness/env.sh "$RUNNER_TEMP/f160c" adet
-      - run: bash investigations/flaky-160/phase2b/harness/run.sh vtransform "$RUNNER_TEMP/f160c"
-      - run: bash investigations/flaky-160/phase2b/harness/run.sh vclock2 "$RUNNER_TEMP/f160c"
-      - run: bash investigations/flaky-160/phase2b/harness/run.sh adet "$RUNNER_TEMP/f160c" 20
+      - run: bash investigations/flaky-160/harness/env.sh "$RUNNER_TEMP/f160m" checks
+      - run: bash investigations/flaky-160/stepM/harness/run.sh vtransform "$RUNNER_TEMP/f160m"
+      - run: bash investigations/flaky-160/stepM/harness/run.sh vclock2 "$RUNNER_TEMP/f160m"
+      - run: bash investigations/flaky-160/stepM/harness/run.sh m2bcheck "$RUNNER_TEMP/f160m"
       - if: always()
         uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
-          name: f160c-adet
-          path: ${{ runner.temp }}/f160c
+          name: f160m-checks
+          path: ${{ runner.temp }}/f160m
           retention-days: 30
 
-  anat:
-    name: A-NAT shard ${{ matrix.shard }} (${{ inputs.per }} runs)
-    if: inputs.mode == 'anat'
+  adet:
+    name: A-DET-1741 and A-DET-2168
+    if: inputs.mode == 'all' || inputs.mode == 'adet'
     runs-on: ubuntu-latest
-    timeout-minutes: ${{ fromJSON(inputs.timeout || '115') }}
-    strategy:
-      fail-fast: false
-      matrix:
-        shard: ${{ fromJSON(inputs.shards || '[1]') }}
+    timeout-minutes: 30
     steps:
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
         with:
@@ -117,12 +69,40 @@ jobs:
           coverage: none
           extensions: redis
       - run: composer update --no-interaction --prefer-dist --no-progress
-      - run: bash investigations/flaky-160/harness/env.sh "$RUNNER_TEMP/f160c" "anat-${{ matrix.shard }}"
-      - run: bash investigations/flaky-160/phase2b/harness/run.sh vtransform "$RUNNER_TEMP/f160c"
-      - run: bash investigations/flaky-160/phase2b/harness/run.sh anat "$RUNNER_TEMP/f160c" "${{ matrix.shard }}" "${{ inputs.per }}"
+      - run: bash investigations/flaky-160/harness/env.sh "$RUNNER_TEMP/f160m" adet
+      - run: bash investigations/flaky-160/stepM/harness/run.sh vtransform "$RUNNER_TEMP/f160m"
+      - run: bash investigations/flaky-160/stepM/harness/run.sh vclock2 "$RUNNER_TEMP/f160m"
+      - run: bash investigations/flaky-160/stepM/harness/run.sh a1741 "$RUNNER_TEMP/f160m" 20
+      - run: bash investigations/flaky-160/stepM/harness/run.sh adet "$RUNNER_TEMP/f160m" 20
       - if: always()
         uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
-          name: f160c-anat-${{ matrix.shard }}
-          path: ${{ runner.temp }}/f160c
+          name: f160m-adet
+          path: ${{ runner.temp }}/f160m
+          retention-days: 30
+
+  suite:
+    name: M2b Integration + System under W2
+    if: inputs.mode == 'all' || inputs.mode == 'suite'
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+      - uses: shivammathur/setup-php@f3e473d116dcccaddc5834248c87452386958240 # v2
+        with:
+          php-version: '8.5'
+          coverage: none
+          extensions: redis
+      - run: composer update --no-interaction --prefer-dist --no-progress
+      - run: bash investigations/flaky-160/harness/env.sh "$RUNNER_TEMP/f160m" suite
+      - run: bash investigations/flaky-160/stepM/harness/run.sh m2bcheck "$RUNNER_TEMP/f160m"
+      - run: bash investigations/flaky-160/stepM/harness/run.sh suite "$RUNNER_TEMP/f160m" Integration,System
+      - if: always()
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: f160m-suite
+          path: ${{ runner.temp }}/f160m
           retention-days: 30
