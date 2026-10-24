@@ -1,0 +1,45 @@
+2c2,3
+< # #160 phase 2b runner (PLAN.md §3-§5, §8). PHPUnit runs only through the pinned vendor/bin/phpunit with
+---
+> # #160 step M runner: phase 2b's run.sh (PROVENANCE-run.sh.diff), V-HEAD pinned to main@b6f4e22, three arms added.
+> # Original header: #160 phase 2b runner (PLAN.md §3-§5, §8). PHPUnit runs only through the pinned vendor/bin/phpunit with
+13a15,17
+> #   run.sh a1741      <out> <n>           (step M) A-DET-style row for L1741, n trials each of inject / control
+> #   run.sh m2bcheck   <out>               (step M) V-TRANSFORM of the W2 instrument and its synthetic detectors
+> #   run.sh suite      <out> <testsuites>  (step M) M2b: the named PHPUnit testsuites (comma list) once under W2, no tap
+16c20
+< # main@2cf8565 and clean.
+---
+> # main@b6f4e22 (V_HEAD_REF) and clean.
+22c26
+< head_ref="${V_HEAD_REF:-2cf8565}"
+---
+> head_ref="${V_HEAD_REF:-b6f4e22}"
+119a124,150
+>         ;;
+>     a1741)
+>         n="${3:?n}"
+>         v_head
+>         d="$out/a1741"; rm -rf "$d"; mkdir -p "$d"
+>         port="$(redis_up "$d/redis.state")"
+>         FLAKY160B_DIR="$d" "${php[@]}" "$here/adet1741.php" --root="$root" --port="$port" --n="$n" --out="$out/a1741.rows.jsonl"
+>         redis_down "$d/redis.state"
+>         ;;
+>     m2bcheck)
+>         v_head
+>         d="$out/m2bcheck"; rm -rf "$d"; mkdir -p "$d"
+>         "${php[@]}" "$here/m2b_check.php" --root="$root" --dir="$d" | tee "$out/m2bcheck.jsonl"
+>         ;;
+>     suite)
+>         suites="${3:?testsuites (comma list)}"
+>         v_head
+>         d="$out/suite"; rm -rf "$d"; mkdir -p "$d/rec"
+>         port="$(redis_up "$d/redis.state")"
+>         cache="$(mktemp -d)"
+>         status=0
+>         REDIS_INTEGRATION_HOST=127.0.0.1 REDIS_INTEGRATION_PORT="$port" FLAKY160M_DIR="$d/rec" \
+>             "${phpunit[@]}" --bootstrap "$here/m2b_bootstrap.php" -c "$root/phpunit.xml" --do-not-cache-result --cache-directory "$cache" \
+>             --log-junit "$d/junit.xml" --testsuite "$suites" > "$d/phpunit.out" 2>&1 || status=$?
+>         rm -rf "$cache"
+>         redis_down "$d/redis.state"
+>         "${php[@]}" "$here/m2b_summarize.php" --dir="$d/rec" --suite="$suites" --exit="$status" | tee "$out/m2b-summary.json"

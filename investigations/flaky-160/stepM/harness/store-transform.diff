@@ -1,0 +1,5 @@
+--- a/src/Repository/Redis/RedisFullCapabilityStore.php
++++ b/src/Repository/Redis/RedisFullCapabilityStore.php
+@@ -50 +50 @@
+-final class RedisFullCapabilityStore implements
++class RedisFullCapabilityStoreInner implements

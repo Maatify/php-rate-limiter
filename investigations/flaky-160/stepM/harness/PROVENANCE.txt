@@ -1,0 +1,19 @@
+#160 step M — provenance of harness/ (copies are byte-identical unless stated; source: investigations/flaky-160/phase2b/harness at main@b6f4e22).
+
+Identical copies (sha256):
+d98c3f8af92d34ce886f22e5c09f8ebdf1038f265e45b7c44f1964f76cfe92ce  w1_bootstrap.php
+a4b47ed29d7d03f9bd8ec8f394af393a24b470c5cc55aa505c1c6d97d96357a9  w1_bootstrap_lib.php
+c5f7815804237772e5c2750917cab99522ba15dbb0ff5038ff0d4db1a3a0e0d1  store-transform.diff
+40ed8e37d660d9c7bcf8c9c1279b0f266a8036116c0ebb34dd9075147312e7c4  store.sha256
+e9a1ea8f8693acd53b749b110e32665fc7e53c63264296ddb951e75c8d24a4a5  lib.php
+4117f7e65fbd80f2f19dbdd62422f4e188b59954a472353566c4a943bc6e27f3  fixture.php
+da0fed926d6e6b4f8e26006a0e324262fb1c120bb196bb7717e7ccb80c409cc4  vtransform.php
+d7ad46d1adf1980c335ae504f04d03688934aea404b2700044eb75d1b17dda92  vclock2.php
+66693374437cea0ff459ddbe17f028154923f7cbcabed9b2075b4e110bc46dd1  adet.php
+
+Adapted: run.sh (phase2b/harness/run.sh + V_HEAD_REF default b6f4e22 + three arms a1741, m2bcheck, suite); the full difference is PROVENANCE-run.sh.diff
+(reverse it to get the original byte for byte).
+
+New in step M: adet1741.php, m2a.php, m2b_lib.php, m2b_bootstrap.php, m2b_check.php, m2b_summarize.php, m2b-transform.diff.
+
+Not copied (not used by step M): anat_check.php, detectors.php, detectors.sh, overhead.php. The phase-1 harness (investigations/flaky-160/harness: redis.sh, lib.php, env.sh) is used in place by run.sh, unchanged.

@@ -1,0 +1,59 @@
+{
+    "verdict_runs": 2000,
+    "failing_runs": 2,
+    "conflict_workers_by_site": {
+        "mutation": 6342,
+        "publication": 2
+    },
+    "publication_conflict_attempts": {
+        "3": 2
+    },
+    "runs_by_number_of_mutation_conflict_workers": [
+        13,
+        67,
+        348,
+        784,
+        713,
+        75
+    ],
+    "retained_runs_worker_attempts": {
+        "anat-362": {
+            "muts": [
+                24,
+                3,
+                4,
+                1
+            ],
+            "pubs": [
+                26,
+                1,
+                3,
+                2
+            ],
+            "workers": 32,
+            "publication_reached": 6,
+            "first_attempt_applied": 1,
+            "later_attempt_applied": 4,
+            "not_applied": 1
+        },
+        "anat-756": {
+            "muts": [
+                24,
+                1,
+                3,
+                4
+            ],
+            "pubs": [
+                28,
+                1,
+                2,
+                1
+            ],
+            "workers": 32,
+            "publication_reached": 4,
+            "first_attempt_applied": 1,
+            "later_attempt_applied": 2,
+            "not_applied": 1
+        }
+    }
+}
