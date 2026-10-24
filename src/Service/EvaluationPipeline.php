@@ -1730,7 +1730,6 @@ class EvaluationPipeline
                 $mutation = null;
                 if ($keyType === 'k4' && $policy instanceof PostPunishmentReentryPolicyInterface
                     && $this->store instanceof PunishmentLifecycleStoreInterface) {
-                    $outcome = self::PUBLICATION_DEFERRED;
                     for ($attempt = 0; $attempt < 3; $attempt++) {
                         $expected = CallerTimeStore::readGenerationBoundScoreState($this->store, $key, $keysV1[$keyType] ?? null, $this->clock->now());
                         $observedValue = $expected === null ? $rawVal : $expected->value;
