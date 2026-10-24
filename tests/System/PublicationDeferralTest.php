@@ -124,7 +124,7 @@ final class PublicationDeferralTest extends TestCase
         );
 
         $blocks = $this->blocks($store);
-        self::assertArrayNotHasKey($k4Key, $blocks, 'the K4 block is deferred');
+        self::assertSame(1, $blocks[$k4Key] ?? null, 'the L2 K4 block is deferred; only the earlier L1 block remains');
         self::assertSame(2, $blocks[$k5Key] ?? null, 'the K5 block is published after the deferred K4');
     }
 
@@ -152,11 +152,14 @@ final class PublicationDeferralTest extends TestCase
 
         $result = $this->failure($pipeline);
 
-        // The K4 contribution is dropped; no K4 block, no exception, and the
-        // request is not reported as a K4 hard block of level 2 / 60 s.
+        // The only candidate of this request was the K4 one (K5 is not a
+        // candidate for an unverified device), so the state decides ALLOW.
+        self::assertSame(RateLimitResultDTO::DECISION_ALLOW, $result->decision);
+        self::assertSame(0, $result->blockLevel);
+        self::assertSame(0, $result->retryAfter);
         self::assertNull($result->metadata?->cause, 'a dropped K4 is not a deferred publication');
         self::assertSame(1, $store->publicationCalls);
-        self::assertSame([], $this->blocksOfKey($store, $this->controlRun()['k4Key']));
+        self::assertLessThan(2, $this->blocksOfKey($store, $this->controlRun()['k4Key'])[$this->controlRun()['k4Key']] ?? 0, 'no L2 K4 block');
     }
 
     public function testNoReadableSnapshotIsDeferredLikeAnExhaustedBudget(): void
