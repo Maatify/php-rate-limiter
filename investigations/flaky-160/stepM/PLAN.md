@@ -90,3 +90,20 @@
 ## 7. المخرجات والترتيب
 
 1. هذه الـ PLAN (commit مستقل). 2. `harness/` بنسخ موثّقة بـ provenance (`PROVENANCE.txt` بـ SHA-256 لكل نسخة عن `phase2b/harness` عند `b6f4e22`، و`PROVENANCE-run.sh.diff` لتعديلات `run.sh`) والكواشف. 3. `REPORT.md` بما يمكن من غير dispatch: الجرد (M1 قراءة)، M2a، M2c، التنبؤات 1–5 مكتوبة، مسودة تعديل DEC-029 (M4)، وبيان ما لم يُقس. 4. بعد حكم LT-M وكلمة الـ Owner: workflow مؤقت (`git revert 8f3d29c` ثم تكييف: `contents: read`، بلا secrets، حارس push على الفرع، `env.sh`، وحدات `checks | adet | suite`) ثم dispatch واحد ثم أرقام E-CI في REPORT و`logs/` بـ SHA256SUMS؛ يُحذف الـ workflow قبل Ready في commit مستقل. 5. PR Draft بالعربية.
+
+## 8. الأحكام (الـ Lead على #160، وقرار الـ Owner بعدها) وما تغيّره
+
+حيث يختلف §8 عن قسم سابق **يحكم §8**. لا تغيير في `src/` ولا `tests/` ولا `docs/decisions/`. المسار B يبقى بتبرير مصحَّح، ونطاق P1 مؤكَّد.
+
+| البند | الحكم | النتيجة |
+| --- | --- | --- |
+| F-M-01 (LT-M-01) | تنبؤ M2a «≥ 95 %» **مسحوب لا مدحوض** | M2a وصفي من التشغيلين المحفوظين فقط (الخيار أ، بلا إعادة A-NAT). يُضاف إلى **تنبؤ 2 للخطوة S**: الـ harness يحتفظ بصفوف **كل** العمّال في **كل** تشغيل (الناجح أيضًا) ليُقاس توزيع محاولات النشر والـ mutation هناك |
+| F-M-02 + F-M-04 | يدخلان مسودة تعديل DEC-029 (REPORT §9) | قبل L1741 يُلتزم allowance وK1 لا K4/K5؛ والـ Engine L344 يحوّل الاستثناء إلى `HARD_BLOCK` مستوى 2 و`retryAfter 1` وcause `k4_concurrency_conflict`، فالـ Host المبني بالـ builder لا يرى الاستثناء بل نتيجة بسبب ومدة لا يطابقان الحالة المكتوبة. **Rationale P1 يُعاد كتابته**: السبب مطابقة النتيجة للحالة (P3)، لا «إعادة محاولة الـ Host تسجّل مرتين» |
+| F-M-03 (LT-M-02، قرار الـ Owner) | نطاق P1 = درجتا الحساب/الجهاز **K4 وK5 فقط** | K1–K3 درجات مجمَّعة والـ allowance مستهلك محدود: كلاهما **خارج P1** ويُذكر صراحةً في التعديل مع أثره (بعد L1741: K1 والـ allowance مسجَّلان، K4/K5 لا). L1741 يبقى كما هو ويُقاس. (الاختيار «أ» من LT-M-02) |
+| F-M-05 | `PostPunishmentReentryLifecycleTest` L441 اختبار عقد يتغير في الخطوة S | يُدرج في REPORT؛ لا يُمسّ الآن |
+| F-M-06 (LT-M-03) | عدّ M2b يُنسب إلى frames الـ pipeline فقط | العدّ على مستوى المتجر يُسجَّل فقط حين يكون في الـ backtrace frame من `Maatify\RateLimiter\Service\EvaluationPipeline`؛ اختبارات المتجر نفسه (`RedisFullCapabilityStoreIntegrationTest` كله) **مستثناة بالبناء ومسمّاة**؛ معنى P-M2b-2 كما هو (0 نشرة/mutation غير مطبَّقة في تدفق حميد عبر الـ pipeline) |
+| التكلفة (LT-M-04) | `Integration,System` بما فيها مجموعة `archive` (الافتراض) | A-DET-1741 وإعادة A-DET-2168 وفحوص W2 وM2b على E-CI بـ workflow مؤقت (استعادة ثم تكييف بنفس القيود)؛ **الرقم المقاس على الـ PR قبل الـ dispatch وكلمة الـ Owner** |
+
+**ما يتغير في الـ harness بهذا الحكم (قبل أي شيء معدود؛ لم يُشغَّل شيء على E-CI):** `m2b_lib.php` يضيف نسبة الاستدعاء إلى الـ pipeline للعدّ على مستوى المتجر؛ و`m2b_summarize.php` يسمّي `RedisFullCapabilityStoreIntegrationTest` كله مستثنًى. العدّ على مستوى **الاستثناء** (من أي متجر) لا يتغير. هذا تعديل أداة لا تعديل لتنبؤ.
+
+**القيود كما هي:** لا push ولا CI آخر أثناء الـ dispatch؛ لا إعادة dispatch بلا كلمة الـ Owner؛ لا رقم معدود من E-LOCAL؛ تعليم Ready والدمج بيد الـ Lead على كلمة الـ Owner.
