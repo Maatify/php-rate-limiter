@@ -71,7 +71,16 @@ namespace Flaky160M {
             self::own();
             self::$calls[$kind]++;
             if (! $applied) {
-                self::$nonApplied[] = ['kind' => $kind, 'test' => self::test()];
+                // PLAN §8 (F-M-06): a store-level non-applied answer counts for the pipeline only when an
+                // EvaluationPipeline frame is on the stack; the rest is `direct` (store tests), reported apart.
+                $via = 'direct';
+                foreach (debug_backtrace(DEBUG_BACKTRACE_IGNORE_ARGS) as $f) {
+                    if (($f['class'] ?? '') === 'Maatify\\RateLimiter\\Service\\EvaluationPipeline') {
+                        $via = 'pipeline';
+                        break;
+                    }
+                }
+                self::$nonApplied[] = ['kind' => $kind, 'test' => self::test(), 'via' => $via];
             }
         }
 

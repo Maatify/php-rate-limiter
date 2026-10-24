@@ -17,6 +17,7 @@ const EXCLUDED_EXACT = [
     'Maatify\RateLimiter\Tests\Integration\Redis\RedisFullCapabilityStoreIntegrationTest::testWidenedHardBlockExpiryIsValidForCycleTrackingLifecycleAndPreviousReads',
 ];
 const EXCLUDED_CLASS = [
+    'Maatify\RateLimiter\Tests\Integration\Redis\RedisFullCapabilityStoreIntegrationTest', // PLAN §8: store tests, excluded by construction
     'Maatify\RateLimiter\Tests\Integration\Redis\KnownDeviceAllowanceConcurrencyIntegrationTest',
 ];
 
@@ -59,7 +60,7 @@ foreach ($thrown as $t) {
 }
 $nonBy = [];
 foreach ($non as $n) {
-    $k = $n['kind'];
+    $k = $n['kind'] . (($n['via'] ?? 'pipeline') === 'pipeline' ? '' : '_direct');
     $nonBy[$k] ??= ['total' => 0, 'intended' => 0, 'unexpected' => 0, 'unexpected_tests' => []];
     $nonBy[$k]['total']++;
     if ($excluded($n['test'])) {
