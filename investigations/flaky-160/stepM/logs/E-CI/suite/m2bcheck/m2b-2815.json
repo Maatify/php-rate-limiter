@@ -1,0 +1,1 @@
+{"pid":2815,"root":true,"calls":{"mutate":0,"publish":0},"nonApplied":[],"thrown":[{"site":"m2b_check.php:59","test":"DetectorTest::testSyntheticThrow","message":""},{"site":"m2b_check.php:69","test":"?","message":""},{"site":"m2b_check.php:84","test":"?","message":""}]}

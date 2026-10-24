@@ -1,6 +1,35 @@
 # #160 — الخطوة M REPORT: الجرد وخطوط الأساس قبل أي تغيير في `src/` (DEC-029، المسار B) — أدلة فقط
 
-> **الخطة:** `PLAN.md` (commit `918b769`، قبل أي harness مُلتزَم أو نتيجة). **الرأس:** `main@b6f4e22`؛ `src/` متطابق البايتات مع `2cf8565`. **لا تغيير في `src/` ولا `tests/`.** **حالة الأرقام:** ما هو **قراءة** (M1 جرد) و**سجلات مُلتزَمة** (M2a، M2c) معروض بأرقامه. ما يحتاج E-CI (**A-DET-1741، A-DET-2168 على b6f4e22، فحوص W2، M2b**) **لم يُشغَّل**: ينتظر حكم LT-M-01..04 وكلمة الـ Owner على التكلفة (§7). لا رقم معدود من E-LOCAL في هذا التقرير؛ ما جُرّب محليًا مذكور في §8 كسلامة أداة فقط.
+> **الخطة:** `PLAN.md` (commit `918b769`، قبل أي harness مُلتزَم أو نتيجة). **الرأس:** `main@b6f4e22`؛ `src/` متطابق البايتات مع `2cf8565`. **لا تغيير في `src/` ولا `tests/`.** **حالة الأرقام:** ما هو **قراءة** (M1 جرد) و**سجلات مُلتزَمة** (M2a، M2c) معروض بأرقامه. ما يحتاج E-CI (**A-DET-1741، A-DET-2168 على b6f4e22، فحوص W2، M2b**) **شُغِّل** في dispatch واحد وأرقامه في §0. لا رقم معدود من E-LOCAL في هذا التقرير؛ ما جُرّب محليًا مذكور في §8 كسلامة أداة فقط.
+
+## 0. نتائج E-CI (dispatch واحد `mode=all`، run [40100378024](https://github.com/Maatify/php-rate-limiter/actions/runs/40100378024)، الرأس `0fb2df5`)
+
+**البيئة:** `ubuntu-latest`، Redis `7.0.15` بحاوية جديدة، `noeviction`، PHP 8.5 (الإصدارات الدقيقة و`composer.lock` في `logs/E-CI/*/env`). dispatch واحد، لا push ولا CI آخر أثناءه (CI العادي على `0fb2df5` نجح قبله). الـ jobs الثلاثة نجحت. أي فشل لم يظهر في الطرق الست؛ لا إعادة تشغيل.
+
+**Runner-hours الفعلية (من `startedAt/completedAt`):** `checks` 30 ث، `adet` 30 ث، `suite` 12 د 52 ث (PHPUnit نفسه 12:32)؛ المجموع ≈ **13.9 runner-minute** (≈ 15 دقيقة بتقريب الفوترة لكل job). التقدير في §7 كان 25–45.
+
+| البند | التنبؤ المسجَّل | النتيجة | يصمد |
+| --- | --- | --- | --- |
+| V-TRANSFORM (W1) وV-CLOCK-2، قبل أي عدّ في الـ job نفسه | تنجحان | `ok` في `checks` وفي `adet`؛ V-CLOCK-2: نفس القرارات ونفس الحالة مع المسجّل وبدونه | نعم |
+| V1–V4 وD1–D4 للأداة W2 | 8/8 | 8/8 في `checks` وفي `suite` | نعم |
+| **A-DET-1741** inject | استثناء من L1741 في 20/20؛ allowance وK1 مُلتزمان؛ K2/K3/K4/K5 كما كانت؛ لا حجب | **20/20**، كل الصفوف `line = 1741`، 0 غير صالح | نعم |
+| A-DET-1741 الضابط | 0 استثناء | **20/20 بلا استثناء** (HARD_BLOCK) | نعم |
+| **A-DET-2168** على `b6f4e22`: inject / control / b2 | 20/20 / 20/20 / 20/20 | **20/20 / 20/20 / 20/20**، صفوف inject وb2 `line = 2168` | نعم |
+| **M2b P-M2b-1:** استثناءات L1741 وL2168 خارج المقصودة | 0 | **0 / 0**؛ المجموع L1741 = 7 وL2168 = 1، كلها في اختبارات مسمّاة مقصودة (الجدول أدناه) | نعم |
+| **M2b P-M2b-2:** mutation/نشرة غير مطبَّقة عبر الـ pipeline خارج المقصودة | 0 | **0**؛ عبر الـ pipeline: 15 mutation و1 نشرة غير مطبَّقة، كلها في `KnownDeviceAllowanceConcurrencyIntegrationTest` (مقصود) | نعم |
+| نتيجة PHPUnit تحت W2 | خضراء | **885/885، 18,996 assertion**، 0 فاشل | — |
+
+**M2b — الرميات بحسب الاختبار (كلها مقصودة، `unexpected = 0`):**
+
+| الموضع | الاختبار | العدد |
+| --- | --- | --- |
+| L1741 | `KnownDeviceAllowanceConcurrencyIntegrationTest::testLoginOverlapSplitsIntoRecordedConflictAndEarlyBlockExactly` | 4 |
+| L1741 | `PostPunishmentReentryLifecycleTest::testThreeMutationConflictsReturnTransientHardWithoutCircuitFailure` | 3 |
+| L2168 | `PostPunishmentReentryLifecycleTest::testThreePublicationConflictsReturnTransientHardWithoutCircuitFailure` | 1 |
+
+**المستثنى بالبناء ومسمّى (PLAN §8):** `RedisFullCapabilityStoreIntegrationTest` كله (اختبارات المتجر نفسه): 9 mutation و8 نشرات غير مطبَّقة «direct» (بلا frame للـ pipeline)، موزَّعة على 11 اختبارًا (القائمة الكاملة في `logs/E-CI/suite/m2b-summary.json` وملفات `rec/`). والمقصودة المسمّاة الأخرى: `KnownDeviceAllowanceConcurrencyIntegrationTest` كله، واختبارات L351/L411/L441 في `PostPunishmentReentryLifecycleTest`.
+
+**ما تقوله النتيجة:** لا تدفق حميد عبر الـ pipeline في مجموعتي Integration وSystem وصل إلى L1741 ولا L2168، ولا سجّل متجر Redis تحت الـ pipeline «غير مطبَّق» خارج اختبارات التزاحم المقصودة؛ فلا رقم غير صفري يعيد فتح سؤال النطاق. **حدود:** تدفق واحد من كل اختبار (لا تكرار)؛ متاجر الذاكرة لا تُعدّ على مستوى المتجر (رميها يُرى على مستوى الاستثناء فقط)؛ PHP 8.5 فقط؛ حالة وحيدة لتشغيل المجموعة (n = 1)، فلا نسب ولا فواصل ثقة.
 
 ## الأحكام المطبَّقة (PLAN §8)
 
@@ -15,9 +44,9 @@
 | السؤال | الحالة | النتيجة |
 | --- | --- | --- |
 | M1 جرد المواضع | **منجز (قراءة)** | موضعان في `src/` (L1741، L2168)، لا ثالث؛ نسخة S0 المجمَّدة في `tests/Fixtures` تحمل الموضعين؛ الجدول §2 |
-| M1 صف A-DET لكل موضع | L2168 موجود (2b، 20/20)؛ **L1741 harness جاهز، E-CI لم يُشغَّل** | ينتظر الـ dispatch |
+| M1 صف A-DET لكل موضع | **L1741: 20/20 على E-CI (الضابط 20/20)؛ L2168 أُعيد على b6f4e22: 20/20 ×3** | §0 |
 | M2a توزيع محاولات النشر والـ mutation | **جزئي: البيانات المطلوبة غير محفوظة** (F-M-01) | §4: عمّال التعارض على الـ 2,000 + 64 عاملًا من تشغيلين محفوظين؛ التنبؤ «≥ 95 %» **مسحوب** (حكم الـ Lead) ولا يُحسب من السجلات |
-| M2b استثناءات L1741/L2168 والنشرات غير المطبَّقة في تدفقات حميدة | **لم يُقس** (E-CI) | الأداة W2 جاهزة؛ التنبؤ P-M2b-1 مسجَّل (0)؛ §5 |
+| M2b استثناءات L1741/L2168 والنشرات غير المطبَّقة في تدفقات حميدة | **مُقاس على E-CI** | **0 / 0 خارج المقصودة**؛ 7 و1 داخلها؛ 885/885؛ §0 |
 | M2c A-NAT | **مسجَّل** | 2/2,000 (0.10 %، Wilson [0.027 %, 0.364 %])؛ 4/1,000؛ 1/5,000 |
 | M3 التنبؤات 1–5 | **مكتوبة** | §6، تُقاس في الخطوة S |
 | M4 مسودة تعديل DEC-029 | **مكتوبة** | §9، لا commit على السجل |
@@ -77,7 +106,7 @@
 
 **القراءة (وصف، لا اختبار):** من 10 عمّال بلغوا فرع النشر في التشغيلين المحفوظين نشر 2 فقط من المحاولة الأولى؛ العيّنة صغيرة ومتحيزة (تشغيلان فاشلان، أي كثيفا التعارض)، لكنها لا تدعم تنبؤ «≥ 95 % من العمّال ينشرون من المحاولة الأولى» حتى لو كان المقام «من بلغوا فرع النشر». وبصيغته الأصلية (كل العمّال) المقام 32 والبسط يحتوي عمّالًا لا ينشرون أصلًا (26–28 من 32 بلا نشر): النسبة المقصودة غير معرَّفة. **ما يقوله الأساس عن «محاولة أخيرة إضافية» عدديًا:** عامل التعارض-نشر بلغ الحد 3 في 2/2؛ عامل التعارض-mutation يستهلك 3 mutation (6,342 مرة في 2,000 تشغيل ≈ 3.17 لكل تشغيل). صياغة بديلة للتنبؤ تُعرض في LT-M-01.
 
-## 5. M2b — الأداة والتنبؤ (لم يُشغَّل)
+## 5. M2b — الأداة والتنبؤ (النتيجة في §0)
 
 * **الأداة W2** (`harness/m2b_lib.php`، `m2b_bootstrap.php`): تحويل ميكانيكي hash-pinned لـ `RateLimitConcurrencyException` (constructor يسجل موضع `new` والاختبار الجاري) + متجر Redis مسجِّل لدالتين فقط. التحويلان محفوظان كـ diff (`m2b-transform.diff`، و`store-transform.diff` الأصلي) وV-TRANSFORM وكواشف D1–D4 في `m2b_check.php` (PLAN §3.2). `src/` على القرص لا يتغير (V-HEAD).
 * **الاختبارات المقصودة المستثناة** (سُمّيت من القراءة قبل أي تشغيل): `PostPunishmentReentryLifecycleTest` الثلاثة (L351، L411، L441)، `KnownDeviceAllowanceConcurrencyIntegrationTest` كله، `RedisFullCapabilityStoreIntegrationTest::testWidenedHardBlockExpiry…` (fork). الباقي «تدفق حميد غير مصطنع».
@@ -95,7 +124,7 @@
 | 4 | admission suites والأرشيف لا تتغير نتيجة؛ زمن `persistWinningCandidates` تحت 16 عاملًا ≤ 1.25× الوسيط الحالي | تغيّرت نتيجة، أو تجاوز 1.25× |
 | 5 | L1741 يبقى يرمي (A-DET 20/20) ولا يصل إليه تدفق حميد (M2b = 0) | أقل من 20/20، أو M2b ≠ 0 |
 
-## 7. تكلفة الـ dispatch (تقدير، لا قياس على E-CI — يُعرض قبل كلمة الـ Owner)
+## 7. تكلفة الـ dispatch (التقدير قبل التشغيل؛ الفعلي ≈ 13.9 runner-minute، §0)
 
 | الوحدة | المحتوى | التقدير |
 | --- | --- | --- |
@@ -130,15 +159,15 @@
 5. **وحدة الـ allowance مستهلك محدود (جديد):**
    > «وحدة allowance الجهاز المعروف مستهلك محدود: إعادة المحاولة بعد استثناء L1741 قد تستهلك وحدة ثانية للفشل نفسه، والمستهلك محدود بحدّ الـ allowance (`getKnownDeviceAccountAllowance()`، 8 في `LoginProtectionPolicy`) فلا يتراكم بلا حدّ. هو خارج P1 ولا يُعدّ خرقًا لـ P4.»
 6. **L1741 موضع مقيس غير مغيَّر (جديد):**
-   > «L1741 (`K4 generation mutation conflict budget exhausted.`) يبقى يرمي كما هو. قِيس في الخطوة M: A-DET-1741 [20/20 على E-CI — يُملأ]، وفي تدفقات حميدة غير مصطنعة عبر الـ pipeline [0 — M2b — يُملأ]. إن ظهر رقم غير صفري في تدفق حميد يُعاد فتح سؤال النطاق بدليل.»
+   > «L1741 (`K4 generation mutation conflict budget exhausted.`) يبقى يرمي كما هو. قِيس في الخطوة M: A-DET-1741 [20/20 على E-CI، الضابط 20/20]، وفي تدفقات حميدة غير مصطنعة عبر الـ pipeline [0 — M2b على E-CI، 885/885]. إن ظهر رقم غير صفري في تدفق حميد يُعاد فتح سؤال النطاق بدليل.»
 7. **Consequences، بند القياس 4 (الجرد):** يُستبدل بـ«أُنجز في الخطوة M: موضعان في `src/`»، مع الإحالة إلى REPORT الخطوة M §2. وبند Test يضيف: `PostPunishmentReentryLifecycleTest::testThreePublicationConflictsReturnTransientHardWithoutCircuitFailure` (L441) اختبار عقد يتغير في الخطوة S (F-M-05)، ولا يُمسّ الآن.
 
 ## 10. ما لم يُقس
 
-* A-DET-1741 وA-DET-2168 على `b6f4e22`، فحوص W2، M2b: لم تُشغَّل على E-CI (E-LOCAL smoke فقط، §8).
+* لا تكرار لـ M2b (تشغيل واحد، n = 1)؛ لا قياس على PHP غير 8.5؛ لا قياس لأثر `archive` منفردًا.
 * M2a على الـ 2,000: غير ممكن من السجلات (F-M-01).
 * لا قياس لأي تعديل مقترح (التنبؤات 1–5 للخطوة S). لا PHP غير 8.5. لا مقارنة معدل بين M2c وأي arm جديد.
 
 ## 11. الملفات
 
-`PLAN.md`؛ `harness/` (`PROVENANCE.txt` وبه SHA-256 للنسخ المطابقة، `PROVENANCE-run.sh.diff`، `adet1741.php`، `m2a.php`، `m2b_lib.php`، `m2b_bootstrap.php`، `m2b_check.php`، `m2b_summarize.php`، `m2b-transform.diff`، وبقية نسخ phase2b)؛ `logs/` (SHA256SUMS لمخرجات `m2a.php`). مخرجات E-CI تُضاف بعد الـ dispatch.
+`PLAN.md`؛ `harness/` (`PROVENANCE.txt` وبه SHA-256 للنسخ المطابقة، `PROVENANCE-run.sh.diff`، `adet1741.php`، `m2a.php`، `m2b_lib.php`، `m2b_bootstrap.php`، `m2b_check.php`، `m2b_summarize.php`، `m2b-transform.diff`، وبقية نسخ phase2b)؛ `logs/m2a.json` و`logs/E-CI/{checks,adet,suite}/` (artifacts الـ run 40100378024: صفوف A-DET، V-TRANSFORM وV-CLOCK-2، `m2b-summary.json`، ملفات `rec/` لكل عملية، `phpunit.out` و`junit.xml`، `env/`)، كل منهما بـ `SHA256SUMS`.

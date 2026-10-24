@@ -1,0 +1,1 @@
+{"pid":3407,"root":false,"calls":{"mutate":1,"publish":0},"nonApplied":[{"kind":"mutate","test":"Maatify\\RateLimiter\\Tests\\Integration\\Redis\\RedisFullCapabilityStoreIntegrationTest::testConcurrentPreviousHandoffHasNoDoubleSeedAndGenerationMutationsHaveNoLostUpdates","via":"direct"}],"thrown":[]}
