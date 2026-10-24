@@ -1,0 +1,9 @@
+{"name":"V1 exception file matches the pin","ok":true,"git_b6f4e22_matches":true}
+{"name":"V2 evaluated exception = original + diff","ok":true,"patch_status":0}
+{"name":"V3 evaluated store = original + W1 diff","ok":true,"patch_status":0}
+{"name":"V4 subclass = two overrides, each one parent:: call","ok":true,"methods":["mutateGenerationBoundScoreAt","blockWithPunishmentLifecycleTrackingAt"]}
+{"name":"D1 throw attributed to its new-site line and the test method","ok":true,"recorded":{"site":"m2b_check.php:59","test":"DetectorTest::testSyntheticThrow","message":""},"expected_line":59}
+{"name":"D2 throw without a test frame is attributed to ?","ok":true,"recorded":{"site":"m2b_check.php:69","test":"?","message":""}}
+{"name":"D3 fork child counts only its own throws","ok":true,"child":1,"parent":2,"parent_before":2}
+{"name":"D4 served class keeps message and parent type","ok":true}
+{"all_ok":true}

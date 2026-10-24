@@ -1,0 +1,5 @@
+--- a/src/Exception/RateLimitConcurrencyException.php
++++ b/src/Exception/RateLimitConcurrencyException.php
+@@ -13 +13 @@
+-final class RateLimitConcurrencyException extends RateLimiterException {}
++final class RateLimitConcurrencyException extends RateLimiterException { public function __construct(mixed ...$args) { parent::__construct(...$args); \Flaky160M\M2b::thrown(); } }
