@@ -29,6 +29,7 @@ use Maatify\RateLimiter\Tests\Support\Clock\FixedClock;
 use Maatify\RateLimiter\Tests\Support\Correlation\StatefulInMemoryCorrelationStore;
 use Maatify\RateLimiter\Tests\Support\FailureSignal\RecordingFailureSignalEmitter;
 use Maatify\RateLimiter\Tests\Support\RateLimiter\InMemoryRateLimitStore;
+use Maatify\RateLimiter\Tests\Support\RateLimiter\ScriptedPublicationRateLimitStore;
 use PHPUnit\Framework\TestCase;
 
 final class PostPunishmentReentryLifecycleTest extends TestCase
@@ -438,34 +439,34 @@ final class PostPunishmentReentryLifecycleTest extends TestCase
         self::assertSame(0, $circuitStore->saveCount());
     }
 
-    public function testThreePublicationConflictsReturnTransientHardWithoutCircuitFailure(): void
+    /**
+     * Contract change under DEC-029 (#160 step S): the K4 publication budget no
+     * longer ends in RateLimitConcurrencyException (transient HARD, retryAfter 1,
+     * cause k4_concurrency_conflict) after the request's K4 and K5 writes are
+     * committed. Three lost publications are followed by one final attempt (four
+     * calls at most); if that is also lost, the decision of the written state is
+     * returned with cause k4_publication_deferred and the block is left to the
+     * next successful publisher.
+     */
+    public function testExhaustedPublicationIsDeferredWithoutCircuitFailure(): void
     {
         $clock = new FixedClock();
-        $store = new class ($clock) extends InMemoryRateLimitStore {
-            public int $publicationCalls = 0;
-
-            public function blockWithPunishmentLifecycleTracking(string $currentKey, ?string $previousKey, int $expectedGeneration, string $proposedLifecycleId, int $level, int $durationSeconds, int $cycleWindowSeconds, int $cycleThreshold, int $pauseSeconds, int $pauseHistoryRetentionSeconds): PunishmentLifecycleTransitionDTO
-            {
-                $this->publicationCalls++;
-
-                return new PunishmentLifecycleTransitionDTO(false, null, null, null);
-            }
-        };
+        $store = new ScriptedPublicationRateLimitStore($clock);
         $circuitStore = new InMemoryCircuitBreakerStore();
         $engine = $this->engine($clock, [], $store, $circuitStore);
         $context = $this->context('publication-exhaustion-account', 'publication-exhaustion-device');
 
         $engine->limit($context, RateLimitCommand::recordFailure('login_protection'));
         $engine->limit($context, RateLimitCommand::recordFailure('login_protection'));
-        $store->publicationCalls = 0;
+        $store->arm(PHP_INT_MAX);
         $result = $engine->limit($context, RateLimitCommand::recordFailure('login_protection'));
 
         self::assertSame(RateLimitResultDTO::DECISION_HARD_BLOCK, $result->decision);
         self::assertSame(2, $result->blockLevel);
-        self::assertSame(1, $result->retryAfter);
+        self::assertSame(60, $result->retryAfter);
         self::assertSame('NORMAL', $result->failureMode);
-        self::assertSame('k4_concurrency_conflict', $result->metadata?->cause);
-        self::assertSame(3, $store->publicationCalls);
+        self::assertSame('k4_publication_deferred', $result->metadata?->cause);
+        self::assertSame(4, $store->publicationCalls);
         self::assertSame(0, $circuitStore->saveCount());
     }
 
