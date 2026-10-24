@@ -2233,7 +2233,7 @@ class EvaluationPipeline
      * DEC-029: the candidates of a request whose K4 block was dropped, without
      * the K4 contribution. A candidate that persisted only a dropped key is
      * removed; one that also persisted another key keeps that key and takes
-     * its level and ladder duration; every other candidate is unchanged.
+     * its level and duration; every other candidate is unchanged.
      *
      * @param list<array{decision: string, level: int, retryAfter: int, source: string, persistence: list<array{key: string, previousKey: ?string, level: int, duration: int}>, scopes: list<string>}> $candidates
      * @param list<string> $droppedKeys
@@ -2258,7 +2258,7 @@ class EvaluationPipeline
             $level = max(array_column($kept, 'level'));
             $candidate['persistence'] = $kept;
             $candidate['level'] = $level;
-            $candidate['retryAfter'] = PenaltyLadder::getDuration($level);
+            $candidate['retryAfter'] = max(array_column($kept, 'duration'));
             $candidate['decision'] = $level >= 2
                 ? RateLimitResultDTO::DECISION_HARD_BLOCK
                 : RateLimitResultDTO::DECISION_SOFT_BLOCK;
