@@ -1,0 +1,22 @@
+{"case":"pair not applied, phase 3","expected":"not_applied_in_window","observed":"not_applied_in_window","holds":true}
+{"case":"pair not applied, phase 500","expected":"finding_outside_window","observed":"finding_outside_window","holds":true}
+{"case":"pair applied","expected":"applied","observed":"applied","holds":true}
+{"case":"pair not applied, key gone (E-EXP)","expected":"not_applied_expired","observed":"not_applied_expired","holds":true}
+{"case":"pair READ null (E-EXP before READ)","expected":"read_null","observed":"read_null","holds":true}
+{"case":"pair with an exception","expected":"invalid","observed":"invalid","holds":true}
+{"case":"pair without an error field","expected":"invalid","observed":"invalid","holds":true}
+{"case":"forced X not as targeted","expected":"invalid_x","observed":"invalid_x","holds":true}
+{"case":"held, W = 3, phase 2","expected":"not_applied_in_window","observed":"not_applied_in_window","holds":true}
+{"case":"held, W = 3, phase 5","expected":"finding_outside_window","observed":"finding_outside_window","holds":true}
+{"case":"hand one winner","expected":"one_winner","observed":"one_winner","holds":true}
+{"case":"hand two winners","expected":"finding_two_or_more","observed":"finding_two_or_more","holds":true}
+{"case":"hand zero winners, phase 3","expected":"zero_in_window","observed":"zero_in_window","holds":true}
+{"case":"hand zero winners, phase 700","expected":"finding_zero_outside_window","observed":"finding_zero_outside_window","holds":true}
+{"case":"hand worker exited 1","expected":"invalid","observed":"invalid","holds":true}
+{"case":"hand worker error","expected":"invalid","observed":"invalid","holds":true}
+{"case":"forced rho=1 e_R = ceil(X/1000) - 2","expected":"rejected","observed":"rejected","holds":true}
+{"case":"forced rho=1 e_R = ceil(X/1000)","expected":"ok","observed":"ok","holds":true}
+{"case":"vclock differing outcomes","expected":"different","observed":"different","holds":true}
+{"case":"fisher 0/100 vs 10/100 < 0.01","expected":"refuted","observed":"refuted","holds":true}
+{"case":"fisher 3/1000 vs 4/1000","expected":"not distinguished","observed":"not distinguished","holds":true}
+{"case":"poisson band 9.15 = [4, 16] (phase-1 REPORT \u00a73.2)","expected":"[4,16]","observed":"[4,16]","holds":true}
