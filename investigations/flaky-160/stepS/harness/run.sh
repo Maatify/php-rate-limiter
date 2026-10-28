@@ -203,7 +203,8 @@ case "$arm" in
                 rm -rf "$cache"
                 redis_down "$d/redis.state"
                 "${php[@]}" "$here/w3_timing_row.php" --dir="$d/rec" --arm="$which" --run="$i" --exit="$status" >> "$out/timing.rows.jsonl"
-                rm -rf "$d"
+                # A run that exited non-zero keeps its whole folder (phpunit.out, junit, rec/) for classification; only a zero exit is dropped.
+                [[ "$status" -ne 0 ]] || rm -rf "$d"
             done
         done
         "${php[@]}" "$here/w3_timing_summary.php" --rows="$out/timing.rows.jsonl" | tee "$out/timing-summary.json"

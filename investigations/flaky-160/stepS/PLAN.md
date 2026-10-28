@@ -124,3 +124,10 @@ Normal Engineering Task (Adoption Standard §10.1): قُرئ `STANDARDS_MANIFEST
 ### 6.4 القواعد التشغيلية
 
 workflow مؤقت `.github/workflows/flaky-160s.yml` (`workflow_dispatch` فقط، `contents: read`، بلا secrets، بلا push trigger، `env.sh` من harness المرحلة 1 في كل job)، يُحذف بـ commit مستقل قبل Ready. لا dispatch إلا بكلمة الـ Owner بعد وضع التكلفة المقاسة على الـ PR؛ لا push ولا CI آخر أثناءه؛ لا إعادة dispatch بلا كلمة الـ Owner؛ `check-whitespace.sh` قبل كل push.
+
+## 9. بعد dispatch الأول (run 40604715123): إعادة `mode=decision` وحده — بكلمة الـ Owner
+
+* **F-S-01:** ذراعا decision انتهيا بـ exit 255 لنفاد ذاكرة W3 (صفوف قرارات في الذاكرة)؛ التنبؤ 3 لم يُقَس. الإصلاح: digest تراكمي لكل اختبار (`ce8159c`). إعادة التشغيل ذراعا decision فقط (base وchange)، لا ذراع آخر. التنبؤ 3 كما في §6.2 بلا تغيير؛ فروع الـ fork تُعدّ جانبًا. يُحكم بالفروق عبر `w3_compare.php` وبمقارنة نتائج الاختبارات (junit) وعدّها في الذراعين؛ الاختباران المعاد تسميتهما (L441) يُعرضان في `only_base`/`only_change`.
+* **ذراع timing، تشغيل base الذي خرج بـ `exit 1` (1 من 200):** حُذف مجلده قبل تصنيفه (الـ harness كان يحذف كل مجلد بعد استخراج صفه)، فلا `phpunit.out` ولا تصنيف. **لا يدخل في النسبة** (التنبؤ 4: 1.051 من 626 و642 استدعاء). الـ harness يحتفظ منذ الآن بمجلد أي تشغيل خرج بغير صفر (`run.sh`، ذراع timing؛ ذراعا decision وanat لا تحذفان أصلًا التشغيل الفاشل).
+* **الرأس:** الإذن ذكر `2523912`؛ تعديل `run.sh` (شرط الاحتفاظ) يغيّر الرأس إلى commit لاحق فيه الفرق الوحيد في `harness/run.sh` و`PROVENANCE-run.sh.diff` وهذا القسم. `src/` و`tests/` بلا تغيير (V-HEAD على `change_ref 9037372`).
+* القواعد: لا push ولا CI آخر أثناء التشغيل؛ لا إعادة dispatch بعده بلا كلمة جديدة؛ S4 لا تبدأ إلا إن صمد التنبؤ 3.

@@ -1,5 +1,5 @@
---- ../../stepM/harness/run.sh	2026-10-24 20:49:38
-+++ run.sh	2026-10-25 00:48:33
+--- ../stepM/harness/run.sh	2026-10-24 20:49:38
++++ harness/run.sh	2026-10-28 13:30:46
 @@ -2 +2 @@
 -# #160 step M runner: phase 2b's run.sh (PROVENANCE-run.sh.diff), V-HEAD pinned to main@b6f4e22, three arms added.
 +# #160 step S runner: step M's run.sh (PROVENANCE-run.sh.diff), V-HEAD pinned per arm (V_HEAD_REF, ROOT_OVERRIDE), arms decision/timing/w3check added.
@@ -32,7 +32,7 @@
 @@ -93 +110 @@
 -        line="$("${php[@]}" "$here/anat_check.php" --arm="$label" --id="$id" --dir="$dir/rec" --exit="$status" --wall="$wall" )"
 +        line="$("${php[@]}" "$here/anat_check.php" --arm="$label" --id="$id" --dir="$dir/rec" --exit="$status" --wall="$wall" --mode=change --rows="$out/worker-rows.jsonl")"
-@@ -151,0 +169,42 @@
+@@ -151,0 +169,43 @@
 +    w3check)
 +        d="$out/w3check"; rm -rf "$d"; mkdir -p "$d"
 +        base="$(base_tree "$out")"
@@ -64,13 +64,14 @@
 +                d="$out/timing/$which-$i"; rm -rf "$d"; mkdir -p "$d/rec"
 +                port="$(redis_up "$d/redis.state")"
 +                cache="$(mktemp -d)"; status=0
-+                FLAKY160_ROOT="$tree" REDIS_INTEGRATION_HOST=127.0.0.1 REDIS_INTEGRATION_PORT="$port" FLAKY160M_DIR="$d/rec" \
++                FLAKY160_TIMING=1 FLAKY160_ROOT="$tree" REDIS_INTEGRATION_HOST=127.0.0.1 REDIS_INTEGRATION_PORT="$port" FLAKY160M_DIR="$d/rec" \
 +                    env XDEBUG_MODE=off php -d memory_limit=1G "$tree/vendor/bin/phpunit" --bootstrap "$here/w3_bootstrap.php" -c "$tree/phpunit.xml" \
 +                    --do-not-cache-result --cache-directory "$cache" --filter "$test_filter" "$tree/$test_file" > "$d/phpunit.out" 2>&1 || status=$?
 +                rm -rf "$cache"
 +                redis_down "$d/redis.state"
 +                "${php[@]}" "$here/w3_timing_row.php" --dir="$d/rec" --arm="$which" --run="$i" --exit="$status" >> "$out/timing.rows.jsonl"
-+                rm -rf "$d"
++                # A run that exited non-zero keeps its whole folder (phpunit.out, junit, rec/) for classification; only a zero exit is dropped.
++                [[ "$status" -ne 0 ]] || rm -rf "$d"
 +            done
 +        done
 +        "${php[@]}" "$here/w3_timing_summary.php" --rows="$out/timing.rows.jsonl" | tee "$out/timing-summary.json"
