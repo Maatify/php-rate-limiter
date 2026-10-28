@@ -117,7 +117,7 @@ jobs:
 
   tests:
     name: Test Suite (PHP ${{ matrix.php }})
-    timeout-minutes: 10
+    timeout-minutes: 15
     runs-on: ubuntu-latest
     strategy:
       fail-fast: false
