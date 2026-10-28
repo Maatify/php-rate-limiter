@@ -1,0 +1,6 @@
+E-CI (PLAN §3): GitHub-hosted ubuntu-latest (image ubuntu-24.04, version 20261025.353.1), PHP 8.5.12, Redis 7.0.15 on a published port != 6379.
+Run 40751031130 (https://github.com/Maatify/php-rate-limiter/actions/runs/40751031130): workflow_dispatch flaky-160.yml, mode=detectors,
+head 735eafb (BC-13), the second detectors dispatch, by the Owner's decision after run 40740785530 (E-CI/); harness/detectors.sh <out> 2000.
+Files: the artifact f160d-detectors as downloaded (detectors/ at this folder's root, env/ unchanged), run.log.gz (gh run view --log, gzip -n -9), run.json.
+Result: job success; D1..D6 hold (D1 under GNU patch 2.7.6); every cost arm exit 0, 0 invalid rows.
+No counted number comes from this folder: the arms ran at the detector size K = 2,000.

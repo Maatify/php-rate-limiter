@@ -1,0 +1,7 @@
+E-CI (PLAN §3): GitHub-hosted ubuntu-latest (image ubuntu-24.04, version 20261025.353.1), PHP 8.5.12, PHPUnit 11.5.57,
+one composer.lock for all three jobs (sha256 d7e9237d92dce9a0...), Redis 7.0.15 (maxmemory 0, noeviction) on published ports != 6379.
+Run 40752149322 (https://github.com/Maatify/php-rate-limiter/actions/runs/40752149322): workflow_dispatch flaky-160.yml, mode=all,
+head 735eafb, the one counted dispatch, by the Owner's decision after D1..D6 held on E-CI (detectors/E-CI-2/).
+Jobs (all success): k 19:12:14-19:24:27Z, h 19:12:13-19:58:57Z, det 19:12:13-19:12:44Z.
+Files: k/, h/, det/ = the artifacts f160d-k, f160d-h, f160d-det as downloaded (<job>/ at the job folder's root, env/ unchanged);
+run.log.gz (gh run view --log, gzip -n -9), run.json. Every counted number in REPORT.md comes from this folder.

@@ -1,0 +1,7 @@
+{"unit":"vclock","n":20,"rows":80,"exit":0,"seconds":7.680}
+{"unit":"overhead","n":2000,"rows":4000,"exit":0,"seconds":7.624}
+{"unit":"kcal","n":100000,"rows":100000,"exit":0,"seconds":29.653}
+{"unit":"knat","n":100000,"rows":300000,"exit":0,"seconds":360.994}
+{"unit":"kheld","n":100000,"rows":200000,"exit":0,"seconds":252.772}
+{"unit":"kforced","n":10000,"rows":20000,"exit":0,"seconds":28.724}
+{"unit":"kforcedm","n":10000,"rows":10000,"exit":0,"seconds":15.534}
