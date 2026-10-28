@@ -1,0 +1,43 @@
+{
+    "suite": "decision-base",
+    "phpunit_exit": 255,
+    "process_files": 21,
+    "redis_store_calls": {
+        "mutate": 583,
+        "publish": 128
+    },
+    "exceptions_by_site": {
+        "EvaluationPipeline.evaluated.php:1741": {
+            "total": 4,
+            "intended": 4,
+            "unexpected": 0,
+            "unexpected_tests": []
+        }
+    },
+    "redis_store_non_applied_by_kind": {
+        "mutate_direct": {
+            "total": 9,
+            "intended": 9,
+            "unexpected": 0,
+            "unexpected_tests": []
+        },
+        "publish_direct": {
+            "total": 8,
+            "intended": 8,
+            "unexpected": 0,
+            "unexpected_tests": []
+        },
+        "mutate": {
+            "total": 16,
+            "intended": 16,
+            "unexpected": 0,
+            "unexpected_tests": []
+        },
+        "publish": {
+            "total": 1,
+            "intended": 1,
+            "unexpected": 0,
+            "unexpected_tests": []
+        }
+    }
+}
