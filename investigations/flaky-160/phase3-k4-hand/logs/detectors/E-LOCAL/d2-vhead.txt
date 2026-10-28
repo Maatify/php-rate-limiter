@@ -1,0 +1,1 @@
+V-HEAD FAIL: /Users/mohamedabdulalim/MEGA/Libraries/2026/php-rate-limiter/.claude/worktrees/dec-022-architecture-proposal-3ed6c7 differs from d71c0af under src/ tests/ composer.json phpunit.xml, or is not clean

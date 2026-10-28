@@ -1,0 +1,49 @@
+{
+    "ddet": {
+        "K-injected": {
+            "classes": {
+                "finding_outside_window": 20
+            },
+            "expected": "not_applied_in_window|finding_outside_window",
+            "hits": 20,
+            "total": 20,
+            "holds": true
+        },
+        "K-control": {
+            "classes": {
+                "applied": 20
+            },
+            "expected": "applied",
+            "hits": 20,
+            "total": 20,
+            "holds": true
+        },
+        "H-injected": {
+            "classes": {
+                "finding_zero_outside_window": 20
+            },
+            "expected": "zero_in_window|finding_zero_outside_window",
+            "hits": 20,
+            "total": 20,
+            "holds": true
+        },
+        "H-control": {
+            "classes": {
+                "one_winner": 20
+            },
+            "expected": "one_winner",
+            "hits": 20,
+            "total": 20,
+            "holds": true
+        }
+    },
+    "timings": {
+        "ddet": {
+            "unit": "ddet",
+            "n": 20,
+            "rows": 80,
+            "exit": 0,
+            "seconds": 7.398
+        }
+    }
+}

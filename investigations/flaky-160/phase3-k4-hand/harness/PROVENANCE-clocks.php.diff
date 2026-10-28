@@ -1,0 +1,151 @@
+@@ -5,4 +5,3 @@
+-// #160 phase 2 arm C — T-CLAIM mechanism (PLAN.md §3, §8). Nothing under src/ or
+-// tests/ changes: the store and RespRedisCommandExecutor are used as they are;
+-// the clocks below live only here. The four calls and their arguments are the
+-// test's own (RedisFullCapabilityStoreIntegrationTest L1070–L1097).
++// #160 phase 3 clocks (PLAN.md §4, §13 LT-160D-01). Nothing under src/ or
++// tests/ changes: the store takes these through its existing third constructor
++// parameter (RedisFullCapabilityStore L1381–L1389).
+@@ -10,4 +9,3 @@
+-//   cdet   C-DET-1 (claim at T+1), C-DET-0 (control, all at T), C-DET-2 (T+1 from READ on): n trials each
+-//   cnat   C-NAT: n repetitions, the store's clock is a pass-through recorder of SystemClock(UTC)
+-//
+-// Usage: php c.php --root=<repo> --port=<redis port> --arm=<cdet|cnat> --n=<n> --out=<rows.jsonl>
++//   SettableClock   a fixed reading in milliseconds, set by the harness (V-CLOCK only)
++//   RecordingClock  pass-through: returns the inner reading (SystemClock by default) and records it;
++//                   offsetMs is 0 everywhere except D-DET's injected MUTATE (+1,000 ms)
+@@ -15 +13 @@
+-namespace Flaky160\C;
++namespace Flaky160D;
+@@ -19,2 +16,0 @@
+-use Maatify\RateLimiter\Repository\Redis\RedisFullCapabilityStore;
+-use Maatify\RateLimiter\Tests\Support\Redis\RespRedisCommandExecutor;
+@@ -24,4 +20,8 @@
+-$options = getopt('', ['root:', 'port:', 'arm:', 'n:', 'out:']);
+-require (string) $options['root'] . '/vendor/autoload.php';
+-$n = (int) $options['n'];
+-$out = fopen((string) $options['out'], 'wb');
++function fromMicroseconds(int $microseconds): DateTimeImmutable
++{
++    $value = DateTimeImmutable::createFromFormat('U.u', sprintf('%d.%06d', intdiv($microseconds, 1_000_000), $microseconds % 1_000_000), new DateTimeZone('UTC'));
++    if ($value === false) {
++        throw new \RuntimeException('unrepresentable clock value');
++    }
++    return $value;
++}
+@@ -29 +29 @@
+-/** Value set by the harness between calls; used only in cdet. */
++/** Value set by the harness between calls; used only in vclock. */
+@@ -35 +35 @@
+-    public function __construct(int $seconds)
++    public function __construct(int $milliseconds)
+@@ -37 +37 @@
+-        $this->set($seconds);
++        $this->set($milliseconds);
+@@ -40 +40 @@
+-    public function set(int $seconds): void
++    public function set(int $milliseconds): void
+@@ -42 +42 @@
+-        $this->value = new DateTimeImmutable('@' . $seconds, new DateTimeZone('UTC'));
++        $this->value = fromMicroseconds($milliseconds * 1000);
+@@ -57 +57 @@
+-/** Pass-through recorder: returns the real reading unchanged and records it (LT-160B-02). */
++/** Pass-through recorder: returns the real reading unchanged and records it (LT-160B-02, LT-160D-01). */
+@@ -62,0 +63 @@
++    public int $offsetMs = 0;
+@@ -65 +66 @@
+-    public function __construct()
++    public function __construct(?ClockInterface $inner = null)
+@@ -67 +68 @@
+-        $this->inner = new SystemClock(new DateTimeZone('UTC'));
++        $this->inner = $inner ?? new SystemClock(new DateTimeZone('UTC'));
+@@ -72,0 +74,3 @@
++        if ($this->offsetMs !== 0) {
++            $reading = fromMicroseconds((int) $reading->format('Uu') + $this->offsetMs * 1000);
++        }
+@@ -82,85 +85,0 @@
+-
+-function row($handle, array $row): void
+-{
+-    fwrite($handle, json_encode($row, JSON_UNESCAPED_SLASHES | JSON_THROW_ON_ERROR) . "\n");
+-}
+-
+-$executor = new RespRedisCommandExecutor('127.0.0.1', (int) $options['port']);
+-$id = str_repeat('a', 32);
+-$logical = 'lifecycle-current';
+-
+-/** The test's four calls; $between(label) runs before each call (set the clock / label the recorder). */
+-$sequence = static function (RedisFullCapabilityStore $store, callable $before) use ($id, $logical): array {
+-    $before('MUTATE');
+-    $mutation = $store->mutateGenerationBoundScore($logical, null, null, 600, 8);
+-    $before('BLOCK');
+-    $transition = $store->blockWithPunishmentLifecycleTracking($logical, null, 1, $id, 2, 1, 21600, 2, 600, 86400);
+-    $before('READ');
+-    $during = $store->readGenerationBoundScoreState($logical, null);
+-    $before('PTTL');
+-    $before('CLAIM');
+-    $claim = $store->claimPostPunishmentReentry($logical, null, $id);
+-
+-    return [
+-        'mutate_applied' => $mutation->applied,
+-        'block_applied' => $transition->applied,
+-        'reentry_in_block_result' => $transition->postPunishmentReentry?->id === $id,
+-        'read_present' => $during !== null,
+-        'read_reentry_null' => $during !== null && $during->postPunishmentReentry === null,
+-        'claim' => $claim,
+-    ];
+-};
+-
+-if ($options['arm'] === 'cdet') {
+-    // variant => [seconds offset for MUTATE+BLOCK, for READ, for CLAIM]
+-    $variants = ['C-DET-1' => [0, 0, 1], 'C-DET-0' => [0, 0, 0], 'C-DET-2' => [0, 1, 1]];
+-    foreach ($variants as $variant => [$offsetBlock, $offsetRead, $offsetClaim]) {
+-        for ($i = 0; $i < $n; $i++) {
+-            $executor->execute(['FLUSHDB']);
+-            $time = $executor->execute(['TIME']);
+-            $t = (int) $time[0];
+-            $clock = new SettableClock($t);
+-            $store = new RedisFullCapabilityStore($executor, 'c-det-' . $variant . '-' . $i, $clock);
+-            $blockKey = 'maatify:rate-limiter:v1:' . hash('sha256', 'c-det-' . $variant . '-' . $i) . ':block:' . hash('sha256', $logical);
+-            $pttl = null;
+-            $result = $sequence($store, static function (string $label) use ($clock, $t, $offsetBlock, $offsetRead, $offsetClaim, $executor, $blockKey, &$pttl): void {
+-                match ($label) {
+-                    'MUTATE', 'BLOCK' => $clock->set($t + $offsetBlock),
+-                    'READ' => $clock->set($t + $offsetRead),
+-                    'PTTL' => $pttl = $executor->execute(['PTTL', $blockKey]),
+-                    'CLAIM' => $clock->set($t + $offsetClaim),
+-                };
+-            });
+-            $result += ['variant' => $variant, 'i' => $i, 't' => $t, 'pttl_before_claim' => $pttl, 'clock_reads' => $clock->reads];
+-            // a trial counts only if the block applied and the physical key was alive before the claim
+-            $result['valid'] = $result['mutate_applied'] && $result['block_applied'] && is_int($pttl) && $pttl > 0;
+-            row($out, $result);
+-        }
+-    }
+-} elseif ($options['arm'] === 'cnat') {
+-    for ($i = 0; $i < $n; $i++) {
+-        $executor->execute(['FLUSHDB']);
+-        $clock = new RecordingClock();
+-        $store = new RedisFullCapabilityStore($executor, 'c-nat', $clock);
+-        $result = $sequence($store, static function (string $label) use ($clock): void {
+-            $clock->label = $label;
+-        });
+-        // one read per call (PLAN §1.1); the PTTL pseudo-label is never read
+-        $times = [];
+-        foreach ($clock->reads as [$label, $reading]) {
+-            $times[$label][] = $reading;
+-        }
+-        row($out, [
+-            'i' => $i,
+-            't' => array_map(static fn(string $label): array => $times[$label] ?? [], ['MUTATE', 'BLOCK', 'READ', 'CLAIM']),
+-            'reads' => count($clock->reads),
+-            'applied' => $result['mutate_applied'] && $result['block_applied'],
+-            'read_reentry_null' => $result['read_reentry_null'],
+-            'claim' => $result['claim'],
+-        ]);
+-    }
+-} else {
+-    fwrite(STDERR, "unknown arm\n");
+-    exit(2);
+-}
+-fclose($out);

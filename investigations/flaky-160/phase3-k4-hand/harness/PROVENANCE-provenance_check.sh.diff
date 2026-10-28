@@ -1,0 +1,27 @@
+@@ -2,5 +2,7 @@
+-# #160 provenance check (PLAN.md §12.2 LT-160-08, §13.2 BC-5): the original at
+-# 8b79e9b must hash to the recorded SHA-256, and every copy listed in
+-# PROVENANCE.txt, without its line 2, must equal it byte for byte; an entry
+-# marked adapted:<diff> must instead differ from it by exactly that recorded
+-# diff. Prints one line per file; exit 1 on any mismatch.
++# #160 phase 3 provenance check (PLAN.md §7, §13 LT-160D-07): the original at
++# d37f9a3 must hash to the recorded SHA-256, and every copy listed in
++# PROVENANCE.txt, without its line 2, must equal it byte for byte; for an entry
++# marked adapted:<diff>, that recorded diff applied to it with patch must give
++# the copy without its line 2 byte for byte (BC-13: the diff text itself is not
++# compared, GNU and BSD diff align hunks differently). Prints the patch version,
++# then one line per file; exit 1 on any mismatch.
+@@ -11,0 +14,3 @@
++work="$(mktemp -d)"
++trap 'rm -rf "$work"' EXIT
++echo "# patch: $(patch --version 2>&1 | head -1)"
+@@ -15 +20 @@
+-    at_head="$(git -C "$root" show "8b79e9b:$original" | shasum -a 256 | cut -d' ' -f1)"
++    at_head="$(git -C "$root" show "d37f9a3:$original" | shasum -a 256 | cut -d' ' -f1)"
+@@ -18 +23,5 @@
+-        if [[ "$at_head" == "$sha" ]] && cmp -s <(diff -U0 <(git -C "$root" show "8b79e9b:$original") <(sed '2d' "$here/$copy") | sed '1,2d') "$recorded"; then
++        git -C "$root" show "d37f9a3:$original" > "$work/original"
++        rm -f "$work/applied"
++        if [[ "$at_head" == "$sha" ]] \
++            && patch -f -s -u -o "$work/applied" "$work/original" < "$recorded" > "$work/patch.log" 2>&1 \
++            && cmp -s "$work/applied" <(sed '2d' "$here/$copy"); then

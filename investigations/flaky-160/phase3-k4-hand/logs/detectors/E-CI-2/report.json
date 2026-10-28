@@ -1,0 +1,1059 @@
+{
+    "kcal": {
+        "validity": {
+            "invalid": 0,
+            "total": 2000,
+            "share": 0,
+            "holds_le_2pct": true
+        },
+        "n_ms": {
+            "min": 0,
+            "p01": 0,
+            "p50": 0,
+            "p99": 1,
+            "max": 1,
+            "mean": 0.04275,
+            "count": 4000
+        },
+        "p_n_zero": {
+            "k": 3829,
+            "n": 4000,
+            "rate": 0.95725,
+            "wilson95": [
+                0.9505299554848226,
+                0.9630926336267456
+            ]
+        },
+        "e_abs_delta_n_ms": 0.0855,
+        "delta_n_nonzero": {
+            "k": 171,
+            "n": 2000,
+            "rate": 0.0855,
+            "wilson95": [
+                0.07402575867765614,
+                0.09856347351850255
+            ]
+        },
+        "limit": "n of a tiny harness EVAL approximates n of the longer store scripts (LT-160D-03)"
+    },
+    "knat": {
+        "P-CUR": {
+            "classes": {
+                "applied": 2000
+            },
+            "validity": {
+                "invalid": 0,
+                "total": 2000,
+                "share": 0,
+                "holds_le_2pct": true
+            },
+            "not_applied": {
+                "k": 0,
+                "n": 2000,
+                "rate": 0,
+                "wilson95": [
+                    1.0842021724855044e-19,
+                    0.001917047281252934
+                ]
+            },
+            "mapping_not_applied": 0,
+            "findings_outside_window": 0,
+            "phases_of_not_applied": [],
+            "n_k1_holds": true,
+            "n_k2": {
+                "lambda": 0.171,
+                "band95": [
+                    0,
+                    1
+                ],
+                "count": 0,
+                "holds": true
+            }
+        },
+        "P-K4": {
+            "classes": {
+                "applied": 2000
+            },
+            "validity": {
+                "invalid": 0,
+                "total": 2000,
+                "share": 0,
+                "holds_le_2pct": true
+            },
+            "not_applied": {
+                "k": 0,
+                "n": 2000,
+                "rate": 0,
+                "wilson95": [
+                    1.0842021724855044e-19,
+                    0.001917047281252934
+                ]
+            },
+            "mapping_not_applied": 0,
+            "findings_outside_window": 0,
+            "phases_of_not_applied": [],
+            "n_k1_holds": true,
+            "n_k2": {
+                "lambda": 0.171,
+                "band95": [
+                    0,
+                    1
+                ],
+                "count": 0,
+                "holds": true
+            }
+        },
+        "P-PREV": {
+            "classes": {
+                "applied": 2000
+            },
+            "validity": {
+                "invalid": 0,
+                "total": 2000,
+                "share": 0,
+                "holds_le_2pct": true
+            },
+            "not_applied": {
+                "k": 0,
+                "n": 2000,
+                "rate": 0,
+                "wilson95": [
+                    1.0842021724855044e-19,
+                    0.001917047281252934
+                ]
+            },
+            "mapping_not_applied": 0,
+            "findings_outside_window": 0,
+            "phases_of_not_applied": [],
+            "n_k1_holds": true,
+            "n_k2": {
+                "lambda": 0.171,
+                "band95": [
+                    0,
+                    1
+                ],
+                "count": 0,
+                "holds": true
+            }
+        },
+        "fisher": {
+            "P-K4 vs P-CUR": {
+                "p": 1,
+                "verdict": "not distinguished"
+            },
+            "P-K4 vs P-PREV": {
+                "p": 1,
+                "verdict": "not distinguished"
+            }
+        }
+    },
+    "kheld": {
+        "P-K4": {
+            "classes": {
+                "applied": 2000
+            },
+            "validity": {
+                "invalid": 0,
+                "total": 2000,
+                "share": 0,
+                "holds_le_2pct": true
+            },
+            "not_applied": {
+                "k": 0,
+                "n": 2000,
+                "rate": 0,
+                "wilson95": [
+                    1.0842021724855044e-19,
+                    0.001917047281252934
+                ]
+            },
+            "mapping_not_applied": 0,
+            "findings_outside_window": 0,
+            "phases_of_not_applied": [],
+            "n_k1_holds": true
+        },
+        "P-PREV": {
+            "classes": {
+                "applied": 2000
+            },
+            "validity": {
+                "invalid": 0,
+                "total": 2000,
+                "share": 0,
+                "holds_le_2pct": true
+            },
+            "not_applied": {
+                "k": 0,
+                "n": 2000,
+                "rate": 0,
+                "wilson95": [
+                    1.0842021724855044e-19,
+                    0.001917047281252934
+                ]
+            },
+            "mapping_not_applied": 0,
+            "findings_outside_window": 0,
+            "phases_of_not_applied": [],
+            "n_k1_holds": true
+        },
+        "fisher": {
+            "P-K4 vs P-PREV": {
+                "p": 1,
+                "verdict": "not distinguished"
+            }
+        },
+        "against_knat": {
+            "P-K4": {
+                "knat": 0,
+                "kheld": 0,
+                "ratio": null
+            },
+            "P-PREV": {
+                "knat": 0,
+                "kheld": 0,
+                "ratio": null
+            }
+        }
+    },
+    "kforced": {
+        "rho=1": {
+            "classes": {
+                "not_applied_in_window": 352,
+                "applied": 1648
+            },
+            "validity": {
+                "invalid": 0,
+                "total": 2000,
+                "share": 0,
+                "holds_le_2pct": true
+            },
+            "not_applied": {
+                "k": 352,
+                "n": 2000,
+                "rate": 0.176,
+                "wilson95": [
+                    0.1599356907777146,
+                    0.19330655586053722
+                ]
+            },
+            "mapping_not_applied": 352,
+            "findings_outside_window": 0,
+            "phases_of_not_applied": [
+                0,
+                0,
+                0,
+                0,
+                0,
+                0,
+                0,
+                0,
+                0,
+                0,
+                0,
+                0,
+                0,
+                0,
+                0,
+                0,
+                0,
+                0,
+                0,
+                0,
+                0,
+                0,
+                0,
+                0,
+                0,
+                0,
+                0,
+                0,
+                0,
+                0,
+                0,
+                0,
+                0,
+                0,
+                0,
+                0,
+                0,
+                0,
+                0,
+                0,
+                0,
+                0,
+                0,
+                0,
+                0,
+                0,
+                0,
+                0,
+                0,
+                0,
+                0,
+                0,
+                0,
+                0,
+                0,
+                0,
+                0,
+                0,
+                0,
+                0,
+                0,
+                0,
+                0,
+                0,
+                0,
+                0,
+                0,
+                0,
+                0,
+                0,
+                0,
+                0,
+                0,
+                0,
+                0,
+                0,
+                0,
+                0,
+                0,
+                0,
+                0,
+                0,
+                0,
+                0,
+                0,
+                0,
+                0,
+                0,
+                0,
+                0,
+                0,
+                0,
+                0,
+                0,
+                0,
+                0,
+                0,
+                0,
+                0,
+                0,
+                0,
+                0,
+                0,
+                0,
+                0,
+                0,
+                0,
+                0,
+                0,
+                0,
+                0,
+                0,
+                0,
+                0,
+                0,
+                0,
+                0,
+                0,
+                0,
+                0,
+                0,
+                0,
+                0,
+                0,
+                0,
+                0,
+                0,
+                0,
+                0,
+                0,
+                0,
+                0,
+                0,
+                0,
+                0,
+                0,
+                0,
+                0,
+                0,
+                0,
+                0,
+                0,
+                0,
+                0,
+                0,
+                0,
+                0,
+                0,
+                0,
+                0,
+                0,
+                0,
+                0,
+                0,
+                0,
+                0,
+                0,
+                0,
+                0,
+                0,
+                0,
+                0,
+                0,
+                0,
+                0,
+                0,
+                0,
+                0,
+                0,
+                0,
+                0,
+                0,
+                0,
+                0,
+                0,
+                0,
+                0,
+                0,
+                0,
+                0,
+                0,
+                0,
+                0,
+                0,
+                0,
+                0,
+                0,
+                0,
+                0,
+                0,
+                0,
+                0,
+                0,
+                0,
+                0,
+                0,
+                0,
+                0,
+                0,
+                0,
+                0,
+                0,
+                0,
+                0,
+                0,
+                0,
+                0,
+                0,
+                0,
+                0,
+                0,
+                0,
+                0,
+                0,
+                0,
+                0,
+                0,
+                0,
+                0,
+                0,
+                0,
+                0,
+                0,
+                0,
+                0,
+                0,
+                0,
+                0,
+                0,
+                0,
+                0,
+                0,
+                0,
+                0,
+                0,
+                0,
+                0,
+                0,
+                0,
+                0,
+                0,
+                0,
+                0,
+                0,
+                0,
+                0,
+                0,
+                0,
+                0,
+                0,
+                0,
+                0,
+                0,
+                0,
+                0,
+                0,
+                0,
+                0,
+                0,
+                0,
+                0,
+                0,
+                0,
+                0,
+                0,
+                0,
+                0,
+                0,
+                0,
+                0,
+                0,
+                0,
+                0,
+                0,
+                0,
+                0,
+                0,
+                0,
+                0,
+                0,
+                0,
+                0,
+                0,
+                0,
+                0,
+                0,
+                0,
+                0,
+                0,
+                0,
+                0,
+                0,
+                0,
+                0,
+                0,
+                0,
+                0,
+                0,
+                0,
+                0,
+                0,
+                0,
+                0,
+                0,
+                0,
+                0,
+                0,
+                0,
+                0,
+                0,
+                0,
+                0,
+                0,
+                0,
+                0,
+                0,
+                0,
+                0,
+                0,
+                0,
+                0,
+                0,
+                0,
+                0,
+                0,
+                0,
+                0,
+                0,
+                0,
+                0,
+                0,
+                0,
+                0,
+                0,
+                0,
+                0,
+                0,
+                0,
+                0,
+                0,
+                0,
+                0,
+                0,
+                0,
+                0,
+                0,
+                0,
+                0,
+                0,
+                0,
+                0,
+                0
+            ],
+            "p_r_n_zero": {
+                "k": 1811,
+                "n": 2000,
+                "rate": 0.9055,
+                "wilson95": [
+                    0.8918912091403923,
+                    0.9175540655145114
+                ]
+            },
+            "minimum_criterion": {
+                "positive": true,
+                "e_r_in_set_on_every_not_applied": true,
+                "holds": true
+            }
+        },
+        "rho=500": {
+            "classes": {
+                "applied": 2000
+            },
+            "validity": {
+                "invalid": 0,
+                "total": 2000,
+                "share": 0,
+                "holds_le_2pct": true
+            },
+            "not_applied": {
+                "k": 0,
+                "n": 2000,
+                "rate": 0,
+                "wilson95": [
+                    1.0842021724855044e-19,
+                    0.001917047281252934
+                ]
+            },
+            "mapping_not_applied": 0,
+            "findings_outside_window": 0,
+            "phases_of_not_applied": [],
+            "p_r_n_zero": {
+                "k": 2000,
+                "n": 2000,
+                "rate": 1,
+                "wilson95": [
+                    0.9980829527187469,
+                    0.9999999999999998
+                ]
+            },
+            "minimum_criterion": {
+                "positive": false,
+                "e_r_in_set_on_every_not_applied": true,
+                "holds": false
+            }
+        }
+    },
+    "kforcedm": {
+        "classes": {
+            "applied": 1821,
+            "not_applied_in_window": 179
+        },
+        "validity": {
+            "invalid": 0,
+            "total": 2000,
+            "share": 0,
+            "holds_le_2pct": true
+        },
+        "not_applied": {
+            "k": 179,
+            "n": 2000,
+            "rate": 0.0895,
+            "wilson95": [
+                0.07776341044149375,
+                0.10281048537641489
+            ]
+        },
+        "mapping_not_applied": 179,
+        "findings_outside_window": 0,
+        "phases_of_not_applied": [
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0
+        ],
+        "p_m_n_zero": {
+            "k": 1821,
+            "n": 2000,
+            "rate": 0.9105,
+            "wilson95": [
+                0.897189514623585,
+                0.9222365895585062
+            ]
+        },
+        "independence": {
+            "predicted": 0.16708450000000005,
+            "predicted_band": [
+                0.14738679084172734,
+                0.18868984171255548
+            ],
+            "observed_rho1": {
+                "k": 352,
+                "n": 2000,
+                "rate": 0.176,
+                "wilson95": [
+                    0.1599356907777146,
+                    0.19330655586053722
+                ]
+            },
+            "overlap": true
+        }
+    },
+    "hnat": {
+        "classes": {
+            "one_winner": 2000
+        },
+        "validity": {
+            "invalid": 0,
+            "total": 2000,
+            "share": 0,
+            "holds_le_2pct": true
+        },
+        "zero_winners": {
+            "k": 0,
+            "n": 2000,
+            "rate": 0,
+            "wilson95": [
+                1.0842021724855044e-19,
+                0.001917047281252934
+            ]
+        },
+        "n_h1_holds": true,
+        "n_h2_holds": true,
+        "phases": [],
+        "limit": "the mixed case (some workers matching) is not separable (LT-160D-05)"
+    },
+    "ddet": {
+        "K-injected": {
+            "classes": {
+                "finding_outside_window": 3
+            },
+            "expected": "not_applied_in_window|finding_outside_window",
+            "hits": 3,
+            "total": 3,
+            "holds": true
+        },
+        "K-control": {
+            "classes": {
+                "applied": 3
+            },
+            "expected": "applied",
+            "hits": 3,
+            "total": 3,
+            "holds": true
+        },
+        "H-injected": {
+            "classes": {
+                "finding_zero_outside_window": 3
+            },
+            "expected": "zero_in_window|finding_zero_outside_window",
+            "hits": 3,
+            "total": 3,
+            "holds": true
+        },
+        "H-control": {
+            "classes": {
+                "one_winner": 3
+            },
+            "expected": "one_winner",
+            "hits": 3,
+            "total": 3,
+            "holds": true
+        }
+    },
+    "vclock": {
+        "K": {
+            "with": {
+                "[\"K\",null,true,3,3,[5,0,3,1]]": 20
+            },
+            "without": {
+                "[\"K\",null,true,3,3,[5,0,3,1]]": 20
+            },
+            "identical": true
+        },
+        "H": {
+            "with": {
+                "[\"H\",null,1,601,[0,0,0,0,0,0]]": 20
+            },
+            "without": {
+                "[\"H\",null,1,601,[0,0,0,0,0,0]]": 20
+            },
+            "identical": true
+        }
+    },
+    "overhead": {
+        "recorder_us": {
+            "min": 513,
+            "p01": 608,
+            "p50": 736,
+            "p99": 1163,
+            "max": 3474,
+            "mean": 764.698,
+            "count": 2000
+        },
+        "direct_us": {
+            "min": 523,
+            "p01": 602,
+            "p50": 736,
+            "p99": 1162,
+            "max": 2574,
+            "mean": 761.9115,
+            "count": 2000
+        },
+        "median_ratio": 1,
+        "holds_le_1_25": true
+    },
+    "xread": {
+        "equal": 30,
+        "total": 30,
+        "holds": true
+    },
+    "timings": {
+        "ddet": {
+            "unit": "ddet",
+            "n": 3,
+            "rows": 12,
+            "exit": 0,
+            "seconds": 8.75
+        },
+        "xread": {
+            "unit": "xread",
+            "n": 30,
+            "rows": 30,
+            "exit": 0,
+            "seconds": 2.328
+        },
+        "vclock": {
+            "unit": "vclock",
+            "n": 20,
+            "rows": 80,
+            "exit": 0,
+            "seconds": 4.049
+        },
+        "overhead": {
+            "unit": "overhead",
+            "n": 2000,
+            "rows": 4000,
+            "exit": 0,
+            "seconds": 6.153
+        },
+        "knat": {
+            "unit": "knat",
+            "n": 2000,
+            "rows": 6000,
+            "exit": 0,
+            "seconds": 7.563
+        },
+        "kheld": {
+            "unit": "kheld",
+            "n": 2000,
+            "rows": 4000,
+            "exit": 0,
+            "seconds": 6.027
+        },
+        "kforced": {
+            "unit": "kforced",
+            "n": 2000,
+            "rows": 4000,
+            "exit": 0,
+            "seconds": 6.228
+        },
+        "kforcedm": {
+            "unit": "kforcedm",
+            "n": 2000,
+            "rows": 2000,
+            "exit": 0,
+            "seconds": 4.302
+        },
+        "kcal": {
+            "unit": "kcal",
+            "n": 2000,
+            "rows": 2000,
+            "exit": 0,
+            "seconds": 2.727
+        },
+        "hnat": {
+            "unit": "hnat",
+            "n": 2000,
+            "rows": 2000,
+            "exit": 0,
+            "seconds": 292.545
+        }
+    }
+}

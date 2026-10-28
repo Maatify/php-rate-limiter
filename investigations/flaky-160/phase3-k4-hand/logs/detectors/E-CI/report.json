@@ -1,0 +1,1116 @@
+{
+    "kcal": {
+        "validity": {
+            "invalid": 0,
+            "total": 2000,
+            "share": 0,
+            "holds_le_2pct": true
+        },
+        "n_ms": {
+            "min": 0,
+            "p01": 0,
+            "p50": 0,
+            "p99": 1,
+            "max": 2,
+            "mean": 0.05025,
+            "count": 4000
+        },
+        "p_n_zero": {
+            "k": 3800,
+            "n": 4000,
+            "rate": 0.95,
+            "wilson95": [
+                0.9428036393796931,
+                0.9563328616595755
+            ]
+        },
+        "e_abs_delta_n_ms": 0.1005,
+        "delta_n_nonzero": {
+            "k": 200,
+            "n": 2000,
+            "rate": 0.1,
+            "wilson95": [
+                0.08760922541834984,
+                0.11392441240665252
+            ]
+        },
+        "limit": "n of a tiny harness EVAL approximates n of the longer store scripts (LT-160D-03)"
+    },
+    "knat": {
+        "P-CUR": {
+            "classes": {
+                "applied": 2000
+            },
+            "validity": {
+                "invalid": 0,
+                "total": 2000,
+                "share": 0,
+                "holds_le_2pct": true
+            },
+            "not_applied": {
+                "k": 0,
+                "n": 2000,
+                "rate": 0,
+                "wilson95": [
+                    1.0842021724855044e-19,
+                    0.001917047281252934
+                ]
+            },
+            "mapping_not_applied": 0,
+            "findings_outside_window": 0,
+            "phases_of_not_applied": [],
+            "n_k1_holds": true,
+            "n_k2": {
+                "lambda": 0.201,
+                "band95": [
+                    0,
+                    1
+                ],
+                "count": 0,
+                "holds": true
+            }
+        },
+        "P-K4": {
+            "classes": {
+                "applied": 1999,
+                "not_applied_in_window": 1
+            },
+            "validity": {
+                "invalid": 0,
+                "total": 2000,
+                "share": 0,
+                "holds_le_2pct": true
+            },
+            "not_applied": {
+                "k": 1,
+                "n": 2000,
+                "rate": 0.0005,
+                "wilson95": [
+                    8.826773070546787e-5,
+                    0.0028268625032662133
+                ]
+            },
+            "mapping_not_applied": 1,
+            "findings_outside_window": 0,
+            "phases_of_not_applied": [
+                0
+            ],
+            "n_k1_holds": true,
+            "n_k2": {
+                "lambda": 0.201,
+                "band95": [
+                    0,
+                    1
+                ],
+                "count": 1,
+                "holds": true
+            }
+        },
+        "P-PREV": {
+            "classes": {
+                "applied": 2000
+            },
+            "validity": {
+                "invalid": 0,
+                "total": 2000,
+                "share": 0,
+                "holds_le_2pct": true
+            },
+            "not_applied": {
+                "k": 0,
+                "n": 2000,
+                "rate": 0,
+                "wilson95": [
+                    1.0842021724855044e-19,
+                    0.001917047281252934
+                ]
+            },
+            "mapping_not_applied": 0,
+            "findings_outside_window": 0,
+            "phases_of_not_applied": [],
+            "n_k1_holds": true,
+            "n_k2": {
+                "lambda": 0.201,
+                "band95": [
+                    0,
+                    1
+                ],
+                "count": 0,
+                "holds": true
+            }
+        },
+        "fisher": {
+            "P-K4 vs P-CUR": {
+                "p": 0.9999999999998276,
+                "verdict": "not distinguished"
+            },
+            "P-K4 vs P-PREV": {
+                "p": 0.9999999999998276,
+                "verdict": "not distinguished"
+            }
+        }
+    },
+    "kheld": {
+        "P-K4": {
+            "classes": {
+                "applied": 2000
+            },
+            "validity": {
+                "invalid": 0,
+                "total": 2000,
+                "share": 0,
+                "holds_le_2pct": true
+            },
+            "not_applied": {
+                "k": 0,
+                "n": 2000,
+                "rate": 0,
+                "wilson95": [
+                    1.0842021724855044e-19,
+                    0.001917047281252934
+                ]
+            },
+            "mapping_not_applied": 0,
+            "findings_outside_window": 0,
+            "phases_of_not_applied": [],
+            "n_k1_holds": true
+        },
+        "P-PREV": {
+            "classes": {
+                "applied": 2000
+            },
+            "validity": {
+                "invalid": 0,
+                "total": 2000,
+                "share": 0,
+                "holds_le_2pct": true
+            },
+            "not_applied": {
+                "k": 0,
+                "n": 2000,
+                "rate": 0,
+                "wilson95": [
+                    1.0842021724855044e-19,
+                    0.001917047281252934
+                ]
+            },
+            "mapping_not_applied": 0,
+            "findings_outside_window": 0,
+            "phases_of_not_applied": [],
+            "n_k1_holds": true
+        },
+        "fisher": {
+            "P-K4 vs P-PREV": {
+                "p": 1,
+                "verdict": "not distinguished"
+            }
+        },
+        "against_knat": {
+            "P-K4": {
+                "knat": 0.0005,
+                "kheld": 0,
+                "ratio": 0
+            },
+            "P-PREV": {
+                "knat": 0,
+                "kheld": 0,
+                "ratio": null
+            }
+        }
+    },
+    "kforced": {
+        "rho=1": {
+            "classes": {
+                "not_applied_in_window": 400,
+                "applied": 1600
+            },
+            "validity": {
+                "invalid": 0,
+                "total": 2000,
+                "share": 0,
+                "holds_le_2pct": true
+            },
+            "not_applied": {
+                "k": 400,
+                "n": 2000,
+                "rate": 0.2,
+                "wilson95": [
+                    0.18305203450854435,
+                    0.2180981938602074
+                ]
+            },
+            "mapping_not_applied": 400,
+            "findings_outside_window": 0,
+            "phases_of_not_applied": [
+                0,
+                0,
+                0,
+                0,
+                0,
+                0,
+                0,
+                0,
+                0,
+                0,
+                0,
+                0,
+                0,
+                0,
+                0,
+                0,
+                0,
+                0,
+                0,
+                0,
+                0,
+                0,
+                0,
+                0,
+                0,
+                0,
+                0,
+                0,
+                0,
+                0,
+                0,
+                0,
+                0,
+                0,
+                0,
+                0,
+                0,
+                0,
+                0,
+                0,
+                0,
+                0,
+                0,
+                0,
+                0,
+                0,
+                0,
+                0,
+                0,
+                0,
+                0,
+                0,
+                0,
+                0,
+                0,
+                0,
+                0,
+                0,
+                0,
+                0,
+                0,
+                0,
+                0,
+                0,
+                0,
+                0,
+                0,
+                0,
+                0,
+                0,
+                0,
+                0,
+                0,
+                0,
+                0,
+                0,
+                0,
+                0,
+                0,
+                0,
+                0,
+                0,
+                0,
+                0,
+                0,
+                0,
+                0,
+                0,
+                0,
+                0,
+                0,
+                0,
+                0,
+                0,
+                0,
+                0,
+                0,
+                0,
+                0,
+                0,
+                0,
+                0,
+                0,
+                0,
+                0,
+                0,
+                0,
+                0,
+                0,
+                0,
+                0,
+                0,
+                0,
+                0,
+                0,
+                0,
+                0,
+                0,
+                0,
+                0,
+                0,
+                0,
+                0,
+                0,
+                0,
+                0,
+                0,
+                0,
+                0,
+                0,
+                0,
+                0,
+                0,
+                0,
+                0,
+                0,
+                0,
+                0,
+                0,
+                0,
+                0,
+                0,
+                0,
+                0,
+                0,
+                0,
+                0,
+                0,
+                0,
+                0,
+                0,
+                0,
+                0,
+                0,
+                0,
+                0,
+                0,
+                0,
+                0,
+                0,
+                0,
+                0,
+                0,
+                0,
+                0,
+                0,
+                0,
+                0,
+                0,
+                0,
+                0,
+                0,
+                0,
+                0,
+                0,
+                0,
+                0,
+                0,
+                0,
+                0,
+                0,
+                0,
+                0,
+                0,
+                0,
+                0,
+                0,
+                0,
+                0,
+                0,
+                0,
+                0,
+                0,
+                0,
+                0,
+                0,
+                0,
+                0,
+                0,
+                0,
+                0,
+                0,
+                0,
+                0,
+                0,
+                0,
+                0,
+                0,
+                0,
+                0,
+                0,
+                0,
+                0,
+                0,
+                0,
+                0,
+                0,
+                0,
+                0,
+                0,
+                0,
+                0,
+                0,
+                0,
+                0,
+                0,
+                0,
+                0,
+                0,
+                0,
+                0,
+                0,
+                0,
+                0,
+                0,
+                0,
+                0,
+                0,
+                0,
+                0,
+                0,
+                0,
+                0,
+                0,
+                0,
+                0,
+                0,
+                0,
+                0,
+                0,
+                0,
+                0,
+                0,
+                0,
+                0,
+                0,
+                0,
+                0,
+                0,
+                0,
+                0,
+                0,
+                0,
+                0,
+                0,
+                0,
+                0,
+                0,
+                0,
+                0,
+                0,
+                0,
+                0,
+                0,
+                0,
+                0,
+                0,
+                0,
+                0,
+                0,
+                0,
+                0,
+                0,
+                0,
+                0,
+                0,
+                0,
+                0,
+                0,
+                0,
+                0,
+                0,
+                0,
+                0,
+                0,
+                0,
+                0,
+                0,
+                0,
+                0,
+                0,
+                0,
+                0,
+                0,
+                0,
+                0,
+                0,
+                0,
+                0,
+                0,
+                0,
+                0,
+                0,
+                0,
+                0,
+                0,
+                0,
+                0,
+                0,
+                0,
+                0,
+                0,
+                0,
+                0,
+                0,
+                0,
+                0,
+                0,
+                0,
+                0,
+                0,
+                0,
+                0,
+                0,
+                0,
+                0,
+                0,
+                0,
+                0,
+                0,
+                0,
+                0,
+                0,
+                0,
+                0,
+                0,
+                0,
+                0,
+                0,
+                0,
+                0,
+                0,
+                0,
+                0,
+                0,
+                0,
+                0,
+                0,
+                0,
+                0,
+                0,
+                0,
+                0,
+                0,
+                0,
+                0,
+                0,
+                0,
+                0,
+                0,
+                0,
+                0,
+                0,
+                0,
+                0,
+                0,
+                0,
+                0,
+                0,
+                0,
+                0,
+                0,
+                0,
+                0,
+                0,
+                0,
+                0,
+                0,
+                0,
+                0,
+                0,
+                0,
+                0,
+                0,
+                0,
+                0,
+                0,
+                0,
+                0,
+                0
+            ],
+            "p_r_n_zero": {
+                "k": 1812,
+                "n": 2000,
+                "rate": 0.906,
+                "wilson95": [
+                    0.8924205382864566,
+                    0.918022819321166
+                ]
+            },
+            "minimum_criterion": {
+                "positive": true,
+                "e_r_in_set_on_every_not_applied": true,
+                "holds": true
+            }
+        },
+        "rho=500": {
+            "classes": {
+                "applied": 2000
+            },
+            "validity": {
+                "invalid": 0,
+                "total": 2000,
+                "share": 0,
+                "holds_le_2pct": true
+            },
+            "not_applied": {
+                "k": 0,
+                "n": 2000,
+                "rate": 0,
+                "wilson95": [
+                    1.0842021724855044e-19,
+                    0.001917047281252934
+                ]
+            },
+            "mapping_not_applied": 0,
+            "findings_outside_window": 0,
+            "phases_of_not_applied": [],
+            "p_r_n_zero": {
+                "k": 2000,
+                "n": 2000,
+                "rate": 1,
+                "wilson95": [
+                    0.9980829527187469,
+                    0.9999999999999998
+                ]
+            },
+            "minimum_criterion": {
+                "positive": false,
+                "e_r_in_set_on_every_not_applied": true,
+                "holds": false
+            }
+        }
+    },
+    "kforcedm": {
+        "classes": {
+            "not_applied_in_window": 185,
+            "applied": 1815
+        },
+        "validity": {
+            "invalid": 0,
+            "total": 2000,
+            "share": 0,
+            "holds_le_2pct": true
+        },
+        "not_applied": {
+            "k": 185,
+            "n": 2000,
+            "rate": 0.0925,
+            "wilson95": [
+                0.08057157812198121,
+                0.10599081541223992
+            ]
+        },
+        "mapping_not_applied": 185,
+        "findings_outside_window": 0,
+        "phases_of_not_applied": [
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0
+        ],
+        "p_m_n_zero": {
+            "k": 1815,
+            "n": 2000,
+            "rate": 0.9075,
+            "wilson95": [
+                0.89400918458776,
+                0.9194284218780187
+            ]
+        },
+        "independence": {
+            "predicted": 0.16911,
+            "predicted_band": [
+                0.14933869716624643,
+                0.19076540738852674
+            ],
+            "observed_rho1": {
+                "k": 400,
+                "n": 2000,
+                "rate": 0.2,
+                "wilson95": [
+                    0.18305203450854435,
+                    0.2180981938602074
+                ]
+            },
+            "overlap": true
+        }
+    },
+    "hnat": {
+        "classes": {
+            "one_winner": 2000
+        },
+        "validity": {
+            "invalid": 0,
+            "total": 2000,
+            "share": 0,
+            "holds_le_2pct": true
+        },
+        "zero_winners": {
+            "k": 0,
+            "n": 2000,
+            "rate": 0,
+            "wilson95": [
+                1.0842021724855044e-19,
+                0.001917047281252934
+            ]
+        },
+        "n_h1_holds": true,
+        "n_h2_holds": true,
+        "phases": [],
+        "limit": "the mixed case (some workers matching) is not separable (LT-160D-05)"
+    },
+    "ddet": {
+        "K-injected": {
+            "classes": {
+                "finding_outside_window": 3
+            },
+            "expected": "not_applied_in_window|finding_outside_window",
+            "hits": 3,
+            "total": 3,
+            "holds": true
+        },
+        "K-control": {
+            "classes": {
+                "applied": 3
+            },
+            "expected": "applied",
+            "hits": 3,
+            "total": 3,
+            "holds": true
+        },
+        "H-injected": {
+            "classes": {
+                "finding_zero_outside_window": 3
+            },
+            "expected": "zero_in_window|finding_zero_outside_window",
+            "hits": 3,
+            "total": 3,
+            "holds": true
+        },
+        "H-control": {
+            "classes": {
+                "one_winner": 3
+            },
+            "expected": "one_winner",
+            "hits": 3,
+            "total": 3,
+            "holds": true
+        }
+    },
+    "vclock": {
+        "K": {
+            "with": {
+                "[\"K\",null,true,3,3,[5,0,3,1]]": 20
+            },
+            "without": {
+                "[\"K\",null,true,3,3,[5,0,3,1]]": 20
+            },
+            "identical": true
+        },
+        "H": {
+            "with": {
+                "[\"H\",null,1,601,[0,0,0,0,0,0]]": 20
+            },
+            "without": {
+                "[\"H\",null,1,601,[0,0,0,0,0,0]]": 20
+            },
+            "identical": true
+        }
+    },
+    "overhead": {
+        "recorder_us": {
+            "min": 646,
+            "p01": 673,
+            "p50": 788,
+            "p99": 1835,
+            "max": 6220,
+            "mean": 847.812,
+            "count": 2000
+        },
+        "direct_us": {
+            "min": 643,
+            "p01": 673,
+            "p50": 787,
+            "p99": 1691,
+            "max": 17683,
+            "mean": 847.3095,
+            "count": 2000
+        },
+        "median_ratio": 1.0012706480304956,
+        "holds_le_1_25": true
+    },
+    "xread": {
+        "equal": 30,
+        "total": 30,
+        "holds": true
+    },
+    "timings": {
+        "ddet": {
+            "unit": "ddet",
+            "n": 3,
+            "rows": 12,
+            "exit": 0,
+            "seconds": 10.929
+        },
+        "xread": {
+            "unit": "xread",
+            "n": 30,
+            "rows": 30,
+            "exit": 0,
+            "seconds": 2.223
+        },
+        "vclock": {
+            "unit": "vclock",
+            "n": 20,
+            "rows": 80,
+            "exit": 0,
+            "seconds": 3.856
+        },
+        "overhead": {
+            "unit": "overhead",
+            "n": 2000,
+            "rows": 4000,
+            "exit": 0,
+            "seconds": 6.46
+        },
+        "knat": {
+            "unit": "knat",
+            "n": 2000,
+            "rows": 6000,
+            "exit": 0,
+            "seconds": 8.031
+        },
+        "kheld": {
+            "unit": "kheld",
+            "n": 2000,
+            "rows": 4000,
+            "exit": 0,
+            "seconds": 6.269
+        },
+        "kforced": {
+            "unit": "kforced",
+            "n": 2000,
+            "rows": 4000,
+            "exit": 0,
+            "seconds": 6.544
+        },
+        "kforcedm": {
+            "unit": "kforcedm",
+            "n": 2000,
+            "rows": 2000,
+            "exit": 0,
+            "seconds": 4.341
+        },
+        "kcal": {
+            "unit": "kcal",
+            "n": 2000,
+            "rows": 2000,
+            "exit": 0,
+            "seconds": 2.632
+        },
+        "hnat": {
+            "unit": "hnat",
+            "n": 2000,
+            "rows": 2000,
+            "exit": 0,
+            "seconds": 284.072
+        }
+    }
+}

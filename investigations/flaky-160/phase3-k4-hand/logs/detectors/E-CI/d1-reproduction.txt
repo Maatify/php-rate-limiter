@@ -1,0 +1,32 @@
+D1 on E-CI: reproduction on E-LOCAL (macOS host; docker ubuntu:24.04 for the GNU tools), 2026-10-28T18:07:51Z.
+orig = git show d37f9a3:<original>; copy = sed 2d <copy>; rec = PROVENANCE-<copy>.diff
+
+1. diff -U0 orig copy | sed 1,2d, compared with rec:
+   Apple diff (based on FreeBSD diff):
+     run.sh = rec
+     clocks.php = rec
+     provenance_check.sh = rec
+   diff (GNU diffutils) 3.10:
+     run.sh != rec
+     clocks.php = rec
+     provenance_check.sh = rec
+
+   diff rec gnu for run.sh (same change, a different hunk alignment):
+     8c8
+     < @@ -6,6 +6,3 @@
+     ---
+     > @@ -6,6 +6,6 @@
+     18c18
+     < @@ -12,0 +10,3 @@
+     ---
+     > +#
+     21d20
+     < +#
+
+2. patch -u -o out orig < rec, then cmp out copy:
+   BSD patch: run.sh out = copy
+   BSD patch: clocks.php out = copy
+   BSD patch: provenance_check.sh out = copy
+   GNU patch 2.7.6: run.sh out = copy
+   GNU patch 2.7.6: clocks.php out = copy
+   GNU patch 2.7.6: provenance_check.sh out = copy

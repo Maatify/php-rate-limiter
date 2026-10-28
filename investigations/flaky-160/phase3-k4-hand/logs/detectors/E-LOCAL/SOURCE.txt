@@ -1,0 +1,3 @@
+E-LOCAL (tool sanity only, PLAN §3, BC-10): macOS host, Docker Desktop, Redis on a published port != 6379.
+harness at the tree of the commit that adds this folder; detectors.sh <out> 2000.
+No counted number comes from this folder.

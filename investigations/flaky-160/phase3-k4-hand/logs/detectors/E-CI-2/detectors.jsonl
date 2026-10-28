@@ -1,0 +1,7 @@
+{"detector":"D1-provenance","expected":"every copy OK; a tampered stats.php copy FAILs","observed":"4 OK, 0 FAIL; tampered: exit 1, 1 FAIL","holds":true}
+{"detector":"D2-v-head","expected":"refused (exit != 0, V-HEAD FAIL)","observed":"exit 1, V-HEAD FAIL: /home/runner/work/php-rate-limiter/php-rate-limiter differs from d71c0af under src/ tests/ composer.json phpunit.xml, or is not clean","holds":true}
+{"detector":"D3-classifier","expected":"every synthetic case classified as registered","observed":"22 holds, 0 not, exit 0","holds":true}
+{"detector":"D4-ddet","expected":"K-injected 3/3 not applied, K-control 3/3 applied, H-injected 3/3 zero winners, H-control 3/3 one winner","observed":"{\"K-injected\":\"3/3\",\"K-control\":\"3/3\",\"H-injected\":\"3/3\",\"H-control\":\"3/3\"}","holds":true}
+{"detector":"D5-x-readback","expected":"30/30 PEXPIRETIME = the PEXPIREAT value","observed":"\"30/30\"","holds":true}
+{"detector":"D6-v-clock","expected":"identical outcomes with and without the recorder, K and H","observed":"{\"K\":true,\"H\":true}","holds":true}
+{"detector":"D6-overhead","expected":"recorder / SystemClock median sequence time <= 1.25","observed":"1","holds":true}

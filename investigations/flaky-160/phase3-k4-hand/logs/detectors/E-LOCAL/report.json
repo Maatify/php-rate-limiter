@@ -1,0 +1,545 @@
+{
+    "kcal": {
+        "validity": {
+            "invalid": 0,
+            "total": 2000,
+            "share": 0,
+            "holds_le_2pct": true
+        },
+        "n_ms": {
+            "min": -2,
+            "p01": -2,
+            "p50": -2,
+            "p99": -1,
+            "max": -1,
+            "mean": -1.5965,
+            "count": 4000
+        },
+        "p_n_zero": {
+            "k": 0,
+            "n": 4000,
+            "rate": 0,
+            "wilson95": [
+                5.421010862427522e-20,
+                0.0009594432897014865
+            ]
+        },
+        "e_abs_delta_n_ms": 0.577,
+        "delta_n_nonzero": {
+            "k": 1154,
+            "n": 2000,
+            "rate": 0.577,
+            "wilson95": [
+                0.5552209880408906,
+                0.5984837866777964
+            ]
+        },
+        "limit": "n of a tiny harness EVAL approximates n of the longer store scripts (LT-160D-03)"
+    },
+    "knat": {
+        "P-CUR": {
+            "classes": {
+                "applied": 1999,
+                "finding_outside_window": 1
+            },
+            "validity": {
+                "invalid": 0,
+                "total": 2000,
+                "share": 0,
+                "holds_le_2pct": true
+            },
+            "not_applied": {
+                "k": 1,
+                "n": 2000,
+                "rate": 0.0005,
+                "wilson95": [
+                    8.826773070546787e-5,
+                    0.0028268625032662133
+                ]
+            },
+            "mapping_not_applied": 1,
+            "findings_outside_window": 1,
+            "phases_of_not_applied": [
+                998
+            ],
+            "n_k1_holds": false,
+            "n_k2": {
+                "lambda": 1.154,
+                "band95": [
+                    0,
+                    4
+                ],
+                "count": 1,
+                "holds": true
+            }
+        },
+        "P-K4": {
+            "classes": {
+                "applied": 2000
+            },
+            "validity": {
+                "invalid": 0,
+                "total": 2000,
+                "share": 0,
+                "holds_le_2pct": true
+            },
+            "not_applied": {
+                "k": 0,
+                "n": 2000,
+                "rate": 0,
+                "wilson95": [
+                    1.0842021724855044e-19,
+                    0.001917047281252934
+                ]
+            },
+            "mapping_not_applied": 0,
+            "findings_outside_window": 0,
+            "phases_of_not_applied": [],
+            "n_k1_holds": true,
+            "n_k2": {
+                "lambda": 1.154,
+                "band95": [
+                    0,
+                    4
+                ],
+                "count": 0,
+                "holds": true
+            }
+        },
+        "P-PREV": {
+            "classes": {
+                "applied": 2000
+            },
+            "validity": {
+                "invalid": 0,
+                "total": 2000,
+                "share": 0,
+                "holds_le_2pct": true
+            },
+            "not_applied": {
+                "k": 0,
+                "n": 2000,
+                "rate": 0,
+                "wilson95": [
+                    1.0842021724855044e-19,
+                    0.001917047281252934
+                ]
+            },
+            "mapping_not_applied": 0,
+            "findings_outside_window": 0,
+            "phases_of_not_applied": [],
+            "n_k1_holds": true,
+            "n_k2": {
+                "lambda": 1.154,
+                "band95": [
+                    0,
+                    4
+                ],
+                "count": 0,
+                "holds": true
+            }
+        },
+        "fisher": {
+            "P-K4 vs P-CUR": {
+                "p": 0.9999999999998276,
+                "verdict": "not distinguished"
+            },
+            "P-K4 vs P-PREV": {
+                "p": 1,
+                "verdict": "not distinguished"
+            }
+        }
+    },
+    "kheld": {
+        "P-K4": {
+            "classes": {
+                "applied": 2000
+            },
+            "validity": {
+                "invalid": 0,
+                "total": 2000,
+                "share": 0,
+                "holds_le_2pct": true
+            },
+            "not_applied": {
+                "k": 0,
+                "n": 2000,
+                "rate": 0,
+                "wilson95": [
+                    1.0842021724855044e-19,
+                    0.001917047281252934
+                ]
+            },
+            "mapping_not_applied": 0,
+            "findings_outside_window": 0,
+            "phases_of_not_applied": [],
+            "n_k1_holds": true
+        },
+        "P-PREV": {
+            "classes": {
+                "applied": 1998,
+                "not_applied_in_window": 2
+            },
+            "validity": {
+                "invalid": 0,
+                "total": 2000,
+                "share": 0,
+                "holds_le_2pct": true
+            },
+            "not_applied": {
+                "k": 2,
+                "n": 2000,
+                "rate": 0.001,
+                "wilson95": [
+                    0.0002742789176520342,
+                    0.003638934269038394
+                ]
+            },
+            "mapping_not_applied": 2,
+            "findings_outside_window": 0,
+            "phases_of_not_applied": [
+                1,
+                27
+            ],
+            "n_k1_holds": true
+        },
+        "fisher": {
+            "P-K4 vs P-PREV": {
+                "p": 0.4998749687398589,
+                "verdict": "not distinguished"
+            }
+        },
+        "against_knat": {
+            "P-K4": {
+                "knat": 0,
+                "kheld": 0,
+                "ratio": null
+            },
+            "P-PREV": {
+                "knat": 0,
+                "kheld": 0.001,
+                "ratio": null
+            }
+        }
+    },
+    "kforced": {
+        "rho=1": {
+            "classes": {
+                "applied": 1991,
+                "not_applied_in_window": 9
+            },
+            "validity": {
+                "invalid": 0,
+                "total": 2000,
+                "share": 0,
+                "holds_le_2pct": true
+            },
+            "not_applied": {
+                "k": 9,
+                "n": 2000,
+                "rate": 0.0045,
+                "wilson95": [
+                    0.0023692806369618345,
+                    0.008530513218759823
+                ]
+            },
+            "mapping_not_applied": 9,
+            "findings_outside_window": 0,
+            "phases_of_not_applied": [
+                0,
+                0,
+                0,
+                0,
+                0,
+                0,
+                0,
+                0,
+                0
+            ],
+            "p_r_n_zero": {
+                "k": 1997,
+                "n": 2000,
+                "rate": 0.9985,
+                "wilson95": [
+                    0.9955989674442294,
+                    0.9994897364163615
+                ]
+            },
+            "minimum_criterion": {
+                "positive": true,
+                "e_r_in_set_on_every_not_applied": true,
+                "holds": true
+            }
+        },
+        "rho=500": {
+            "classes": {
+                "applied": 2000
+            },
+            "validity": {
+                "invalid": 0,
+                "total": 2000,
+                "share": 0,
+                "holds_le_2pct": true
+            },
+            "not_applied": {
+                "k": 0,
+                "n": 2000,
+                "rate": 0,
+                "wilson95": [
+                    1.0842021724855044e-19,
+                    0.001917047281252934
+                ]
+            },
+            "mapping_not_applied": 0,
+            "findings_outside_window": 0,
+            "phases_of_not_applied": [],
+            "p_r_n_zero": {
+                "k": 2000,
+                "n": 2000,
+                "rate": 1,
+                "wilson95": [
+                    0.9980829527187469,
+                    0.9999999999999998
+                ]
+            },
+            "minimum_criterion": {
+                "positive": false,
+                "e_r_in_set_on_every_not_applied": true,
+                "holds": false
+            }
+        }
+    },
+    "kforcedm": {
+        "classes": {
+            "applied": 2000
+        },
+        "validity": {
+            "invalid": 0,
+            "total": 2000,
+            "share": 0,
+            "holds_le_2pct": true
+        },
+        "not_applied": {
+            "k": 0,
+            "n": 2000,
+            "rate": 0,
+            "wilson95": [
+                1.0842021724855044e-19,
+                0.001917047281252934
+            ]
+        },
+        "mapping_not_applied": 0,
+        "findings_outside_window": 0,
+        "phases_of_not_applied": [],
+        "p_m_n_zero": {
+            "k": 2000,
+            "n": 2000,
+            "rate": 1,
+            "wilson95": [
+                0.9980829527187469,
+                0.9999999999999998
+            ]
+        },
+        "independence": {
+            "predicted": 0.0014999999999999458,
+            "predicted_band": [
+                0.0005102635836387035,
+                0.006301205862032212
+            ],
+            "observed_rho1": {
+                "k": 9,
+                "n": 2000,
+                "rate": 0.0045,
+                "wilson95": [
+                    0.0023692806369618345,
+                    0.008530513218759823
+                ]
+            },
+            "overlap": true
+        }
+    },
+    "hnat": {
+        "classes": {
+            "one_winner": 1999,
+            "finding_zero_outside_window": 1
+        },
+        "validity": {
+            "invalid": 0,
+            "total": 2000,
+            "share": 0,
+            "holds_le_2pct": true
+        },
+        "zero_winners": {
+            "k": 1,
+            "n": 2000,
+            "rate": 0.0005,
+            "wilson95": [
+                8.826773070546787e-5,
+                0.0028268625032662133
+            ]
+        },
+        "n_h1_holds": true,
+        "n_h2_holds": false,
+        "phases": [
+            998
+        ],
+        "limit": "the mixed case (some workers matching) is not separable (LT-160D-05)"
+    },
+    "ddet": {
+        "K-injected": {
+            "classes": {
+                "finding_outside_window": 3
+            },
+            "expected": "not_applied_in_window|finding_outside_window",
+            "hits": 3,
+            "total": 3,
+            "holds": true
+        },
+        "K-control": {
+            "classes": {
+                "applied": 3
+            },
+            "expected": "applied",
+            "hits": 3,
+            "total": 3,
+            "holds": true
+        },
+        "H-injected": {
+            "classes": {
+                "finding_zero_outside_window": 3
+            },
+            "expected": "zero_in_window|finding_zero_outside_window",
+            "hits": 3,
+            "total": 3,
+            "holds": true
+        },
+        "H-control": {
+            "classes": {
+                "one_winner": 3
+            },
+            "expected": "one_winner",
+            "hits": 3,
+            "total": 3,
+            "holds": true
+        }
+    },
+    "vclock": {
+        "K": {
+            "with": {
+                "[\"K\",null,true,3,3,[5,0,3,1]]": 20
+            },
+            "without": {
+                "[\"K\",null,true,3,3,[5,0,3,1]]": 20
+            },
+            "identical": true
+        },
+        "H": {
+            "with": {
+                "[\"H\",null,1,601,[0,0,0,0,0,0]]": 20
+            },
+            "without": {
+                "[\"H\",null,1,601,[0,0,0,0,0,0]]": 20
+            },
+            "identical": true
+        }
+    },
+    "overhead": {
+        "recorder_us": {
+            "min": 1551,
+            "p01": 1949,
+            "p50": 2184,
+            "p99": 3422,
+            "max": 7811,
+            "mean": 2241.25,
+            "count": 2000
+        },
+        "direct_us": {
+            "min": 1645,
+            "p01": 1936,
+            "p50": 2173,
+            "p99": 3591,
+            "max": 9525,
+            "mean": 2232.467,
+            "count": 2000
+        },
+        "median_ratio": 1.005062126092959,
+        "holds_le_1_25": true
+    },
+    "xread": {
+        "equal": 30,
+        "total": 30,
+        "holds": true
+    },
+    "timings": {
+        "ddet": {
+            "unit": "ddet",
+            "n": 3,
+            "rows": 12,
+            "exit": 0,
+            "seconds": 2.9
+        },
+        "xread": {
+            "unit": "xread",
+            "n": 30,
+            "rows": 30,
+            "exit": 0,
+            "seconds": 2.692
+        },
+        "vclock": {
+            "unit": "vclock",
+            "n": 20,
+            "rows": 80,
+            "exit": 0,
+            "seconds": 4.815
+        },
+        "overhead": {
+            "unit": "overhead",
+            "n": 2000,
+            "rows": 4000,
+            "exit": 0,
+            "seconds": 14.202
+        },
+        "knat": {
+            "unit": "knat",
+            "n": 2000,
+            "rows": 6000,
+            "exit": 0,
+            "seconds": 18.135
+        },
+        "kheld": {
+            "unit": "kheld",
+            "n": 2000,
+            "rows": 4000,
+            "exit": 0,
+            "seconds": 13.533
+        },
+        "kforced": {
+            "unit": "kforced",
+            "n": 2000,
+            "rows": 4000,
+            "exit": 0,
+            "seconds": 14.104
+        },
+        "kforcedm": {
+            "unit": "kforcedm",
+            "n": 2000,
+            "rows": 2000,
+            "exit": 0,
+            "seconds": 8.279
+        },
+        "kcal": {
+            "unit": "kcal",
+            "n": 2000,
+            "rows": 2000,
+            "exit": 0,
+            "seconds": 3.772
+        },
+        "hnat": {
+            "unit": "hnat",
+            "n": 2000,
+            "rows": 2000,
+            "exit": 0,
+            "seconds": 358.501
+        }
+    }
+}

@@ -1,0 +1,5 @@
+# patch: GNU patch 2.7.6
+OK   stats.php = investigations/flaky-160/phase2/harness/stats.php (35bf5f7755583f6d198436526818736afbca7590fdd5cad044fd93ca298fa577)
+OK   clocks.php = investigations/flaky-160/phase2/harness/c.php (ec603e0da196d726287abc04733173debc0d48b44a3b8c8d5c429ffad9836f9d) + exactly PROVENANCE-clocks.php.diff
+OK   run.sh = investigations/flaky-160/phase2/harness/run.sh (7fce1c0221aa7d5f65fc8e9741a6c2ed19ad04eb9c1a29cd501c718d8dc0dbd0) + exactly PROVENANCE-run.sh.diff
+OK   provenance_check.sh = investigations/flaky-160/phase2/harness/provenance_check.sh (f948b156b93e2bf690bf17afd2f6ae9ea28dffc39c9a3d279d33845350ba6c21) + exactly PROVENANCE-provenance_check.sh.diff

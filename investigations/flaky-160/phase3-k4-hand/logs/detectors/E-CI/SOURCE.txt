@@ -1,0 +1,7 @@
+E-CI (PLAN §3): GitHub-hosted ubuntu-latest (image ubuntu-24.04, version 20261025.353.1), PHP 8.5.12, Redis 7.0.15 on a published port != 6379.
+Run 40740785530 (https://github.com/Maatify/php-rate-limiter/actions/runs/40740785530): workflow_dispatch flaky-160.yml, mode=detectors,
+head 32e7f5ea586d17d728806de653d9ded977161182, the only dispatch of this mode; harness/detectors.sh <out> 2000.
+Files: the artifact f160d-detectors as downloaded (detectors/ at this folder's root, env/ unchanged), run.log.gz (gh run view --log, gzip -n -9, bytes unchanged inside), run.json.
+Result: job failure. D1-provenance did not hold (run.sh), D2..D6 held. Every cost arm ran (exit 0, 0 invalid rows).
+d1-reproduction.txt: the D1 cause, reproduced afterwards on E-LOCAL; it is not part of the run.
+No counted number comes from this folder: the arms ran at the detector size K = 2,000 for the cost measurement (LT-160D-07).

@@ -1,0 +1,10 @@
+{"unit":"ddet","n":3,"rows":12,"exit":0,"seconds":10.929}
+{"unit":"xread","n":30,"rows":30,"exit":0,"seconds":2.223}
+{"unit":"vclock","n":20,"rows":80,"exit":0,"seconds":3.856}
+{"unit":"overhead","n":2000,"rows":4000,"exit":0,"seconds":6.460}
+{"unit":"knat","n":2000,"rows":6000,"exit":0,"seconds":8.031}
+{"unit":"kheld","n":2000,"rows":4000,"exit":0,"seconds":6.269}
+{"unit":"kforced","n":2000,"rows":4000,"exit":0,"seconds":6.544}
+{"unit":"kforcedm","n":2000,"rows":2000,"exit":0,"seconds":4.341}
+{"unit":"kcal","n":2000,"rows":2000,"exit":0,"seconds":2.632}
+{"unit":"hnat","n":2000,"rows":2000,"exit":0,"seconds":284.072}
