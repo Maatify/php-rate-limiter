@@ -408,8 +408,12 @@ evidence; coherent reads are judged at the request's time (the Host clock, read 
 selected K4 block is active. Public runtime consumers receive metadata only from
 an unblocked `checkOnly` ALLOW and claim it through an independent Current-only
 marker. A replay is an expected false result and does not consume evidence.
-Generation conflicts are retried at most three times before the transient HARD
-concurrency failure is returned. API Heavy does not opt in; custom policies must
+Generation conflicts on the K4 score mutation are retried at most three times before
+the transient HARD concurrency failure is returned (no K4 or K5 write of the request
+exists at that point). The publication of the L2+ block makes at most four calls and
+three reads and never throws after the request's K4 and K5 writes (DEC-029): when it
+is still not applied, the decision of the written state is returned with the cause
+`k4_publication_deferred` and the block is left to the next successful publisher. API Heavy does not opt in; custom policies must
 explicitly implement the validated opt-in marker.
 
 The public lifecycle workflow is:

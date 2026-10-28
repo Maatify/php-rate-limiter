@@ -1013,9 +1013,13 @@ The public `checkOnly` ALLOW may expose metadata. Claiming does not consume
 punishment satisfaction or evidence; it consumes only an independent
 current-generation application handoff marker, so replay returns false. Current
 is writable, previous is read-only, and a newer mutation
-invalidates older evidence. Generation conflicts retry at most three times;
-exhaustion is an explicit transient HARD failure with
-`RateLimitConcurrencyException` provenance.
+invalidates older evidence. Generation conflicts on the K4 score mutation retry at
+most three times; exhaustion, before any K4 or K5 write of the request, is an
+explicit transient HARD failure with `RateLimitConcurrencyException` provenance
+(unchanged). The publication of the L2+ block makes at most four calls and three
+reads and never throws after the request's K4 and K5 writes (DEC-029): when it is
+still not applied the decision of the written state is returned with the cause
+`k4_publication_deferred` and the block is left to the next successful publisher.
 
 ---
 
