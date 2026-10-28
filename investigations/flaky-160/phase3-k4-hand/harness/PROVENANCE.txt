@@ -1,7 +1,8 @@
 # #160 phase 3 harness provenance (PLAN.md §7, §13 LT-160D-07).
 # Each copy carries ONE provenance line inserted as line 2. A plain copy, without that line, equals the original at d37f9a3
-# byte for byte; an ADAPTED copy differs from it by exactly the recorded diff
-# (`diff -U0 <original> <copy without line 2>` without its two file-header lines). provenance_check.sh verifies both.
+# byte for byte; for an ADAPTED copy, the recorded diff (`diff -U0 <original> <copy without line 2>` without its two
+# file-header lines) applied to the original with patch gives the copy without line 2 byte for byte (BC-13: the diff text
+# itself is not compared, GNU and BSD diff align hunks differently). provenance_check.sh verifies both.
 # redis.sh, lib.php, env.sh and envset.php are NOT copied: phase 3 uses the phase-1 copies in investigations/flaky-160/harness/
 # (provenance-checked there) and never edits them. k.php, k_lib.php, k_report.php, synthetic.php and detectors.sh are new.
 # format: <copy> <original path at d37f9a3> <sha256 of the original> [adapted:<diff file>]
