@@ -1,8 +1,8 @@
 # #160 — الخطوة S REPORT: قياسات S3 على E-CI (DEC-029، المسار B)
 
 > **الخطة:** `PLAN.md` §6 (commit `5416c2a`، قبل أي harness). **الرأس المشغَّل:** `fc313fb` (= `bbe065f` + إعادة تسمية الـ workflow فقط؛ `src/` و`tests/` و`investigations/` متطابقة بايتيًا، V-HEAD مثبَّت على `change_ref 9037372`). **الأساس (base):** `main@d71c0af`.
-> **الحالة:** dispatch واحد `mode=all`، run [40604715123](https://github.com/Maatify/php-rate-limiter/actions/runs/40604715123)، 2026-10-27T23:49Z، المدخلات الافتراضية. **الـ jobs الـ13 كلها `success`** (وهذا لا يعني أن ذراع V-DECISION أنتج بيانات: انظر §3). ubuntu-latest، PHP 8.5، Redis بحاوية جديدة لكل تشغيل. لا push ولا CI آخر أثناءه (CI العادي على `fc313fb` نجح قبله). لا إعادة تشغيل.
-> **ساعات الـ runner الفعلية (`startedAt/completedAt`، `logs/E-CI/jobs.tsv`):** 8,499 ث = **141.7 runner-minute** (A-NAT 5,885 ث، timing 1,210، V-DECISION 706 + 662، checks 30، adet 27). التقدير على الـ PR كان ≈ 151.
+> **الحالة:** dispatch أول `mode=all`، run [40604715123](https://github.com/Maatify/php-rate-limiter/actions/runs/40604715123)، 2026-10-27T23:49Z، المدخلات الافتراضية. **الـ jobs الـ13 كلها `success`** (وهذا لا يعني أن ذراع V-DECISION أنتج بيانات: انظر §3)، **ثم إعادة واحدة لـ `mode=decision` وحده** بكلمة الـ Owner: run [40674416967](https://github.com/Maatify/php-rate-limiter/actions/runs/40674416967)، 2026-10-28T10:43Z، الرأس `7d9d07d` (CI العادي عليه أخضر، لا run آخر؛ الفرق عن `2523912` commit واحد: شرط الاحتفاظ بمجلد التشغيل الفاشل في `run.sh` + PLAN §9)، jobان نجحا (`logs/E-CI/decision-rerun-40674416967/`). ubuntu-latest، PHP 8.5، Redis بحاوية جديدة لكل تشغيل. لا push ولا CI آخر أثناءه (CI العادي على `fc313fb` نجح قبله). لا إعادة تشغيل.
+> **ساعات الـ runner الفعلية (`startedAt/completedAt`، `logs/E-CI/jobs.tsv`):** 8,499 ث = **141.7 runner-minute** للـ dispatch الأول (A-NAT 5,885 ث، timing 1,210، V-DECISION 706 + 662 [لم تنتجا بيانات]، checks 30، adet 27) + 1,422 ث = **23.7 runner-minute** للإعادة (V-DECISION 751 + 671) = **9,921 ث = 165.4 runner-minute** المجموع. التقدير على الـ PR كان ≈ 151 للأول.
 > **لا رقم من E-LOCAL في هذا التقرير.** ما جُرّب محليًا (سلامة أداة فقط) مذكور في §7.
 
 ## 0. الحكم بنظرة
@@ -13,11 +13,11 @@
 | 1b | مؤجَّلون ≤ 5 من 2,000 | **صمد** | **0 مؤجَّل** (Wilson 95 %: حد أعلى 0.19 % من التشغيلات) |
 | 2 | كل مؤجَّل يتبعه نشر مطبَّق لاحق | **غير قابل للحكم** | 0 مؤجَّل: لا حالة لقياس الزمن؛ التنبؤ لم يُختبر طبيعيًا |
 | 2b | وصول للنشر الرابع ≤ سابقًا + 3 للمؤجَّل | **صمد** | 5 عمّال وصلوا للرابعة ونجحت كلها؛ مؤجَّل 0 |
-| 3 | V-DECISION متطابق | **لم يُقَس (عيب في الأداة)** | ذراعا decision انتهيا بـ exit 255 بنفاد الذاكرة (1 GiB) قبل نهاية الـ System؛ لا ملف W3 للعملية الجذرية، ولا junit. **finding F-S-01** |
+| 3 | V-DECISION متطابق | **صمد (في الإعادة)** | الـ dispatch الأول: عيب أداة (F-S-01، نفاد ذاكرة). الإعادة: base 1,966 اختبارًا و27,044 تأكيدًا وchange 1,973 و27,104، كلاهما `OK` بلا فشل أو تخطٍّ؛ 248 اختبارًا مشتركًا بـ **1,388,697** ناتج `limit` في العملية الجذرية: **0 اختلاف** بالـ digest؛ الفروق في المجموعة = إعادة تسمية L441 + 7 اختبارات جديدة فقط |
 | 4 | وسيط زمن `persistWinningCandidates` ≤ 1.25× | **صمد** | 1.051 (6.346 مقابل 6.010 ms) |
-| 5 | A-DET-1741 20/20 وM2b عند L1741 = 0 | **A-DET صمد؛ M2b غير مكتمل** | 20/20 والضابط 20/20؛ M2b: 4 رميات مقصودة، 0 غير مقصود في كل ذراع لكن المجموعة لم تكتمل (F-S-01) |
+| 5 | A-DET-1741 20/20 وM2b عند L1741 = 0 | **صمد** | A-DET 20/20 والضابط 20/20؛ M2b في الإعادة (مجموعة كاملة): رميات L1741 = **7 في كل ذراع، 0 غير مقصود** (كما في #167)؛ رمية L2168: 1 في base (اختبار L441 المقصود) و**0 في change** |
 
-**الخلاصة:** التنبؤات 1 و4 و5 (A-DET) صمدت؛ 2 لا يُحكم فيه لغياب مؤجَّلين؛ **3 لم يُقَس وبه يتوقف الحكم الكامل**. لا أرى أن أي رقم هنا يدحض DEC-029، لكن «القرارات والنتائج متطابقة في الاختبارات الأحادية العامل» (الركن الذي يحمي من تغيّر سلوك حميد) **ليس عليه دليل من هذا التشغيل**؛ وعليه لم أرفع DEC-029 إلى ACTIVE (S4 لم يبدأ) حتى يُعاد ذراع decision بكلمة الـ Owner.
+**الخلاصة:** التنبؤات 1 و3 و4 و5 صمدت؛ 2 بلا حالات طبيعية (لا مؤجَّل في 2,000 تشغيل) فلا يُحكم فيه. لا رقم يدحض DEC-029. حدود الدليل في §6.
 
 ## 1. الصحة قبل العدّ (كلها `ok` في الـ jobs نفسها قبل أي عدّ)
 
@@ -50,14 +50,25 @@
 **التنبؤ 2b:** الأساس كان تشغيلين وصلا إلى الرمي بعد ثلاث (2/2,000)؛ هنا وصل 5 عمّال في 5 تشغيلات إلى المحاولة الرابعة (الأعداد الصغيرة لا تسمح بحكم على الفرق 2 مقابل 5)، ونجحت الرابعة في الخمسة، فلم تُرمَ أي استثناءات. المحاولة الإضافية حوّلت 5 رميات محتملة إلى نجاح مباشر.
 **حدود:** ملف W1 يسجّل النشر عند الـ store فقط؛ عامل مؤجَّل كان سيظهر بأربع نشرات غير مطبَّقة، وهو غير موجود هنا. n = 2,000 تشغيل، PHP 8.5 فقط.
 
-## 3. التنبؤ 3 — V-DECISION: لم يُقَس (F-S-01)
+## 3. التنبؤ 3 — V-DECISION
 
-كلا الذراعين (`decision-base`، `decision-change`) أنهيا PHPUnit بـ `phpunit_exit = 255`:
-`PHP Fatal error: Allowed memory size of 1073741824 bytes exhausted` عند `tests/Support/Admission/Archive/ArchiveData.php:90` ثم عند `w3_lib.php:76` (`json_encode` في `flush`) — **السبب: W3 كان يحتفظ بكل صف قرار في الذاكرة** (استدعاءات `limit` بالملايين في اختبارات الأرشيف)، وبلغ الـ 1 GiB قبل نهاية مجموعة System في الذراعين. النتيجة: لا ملف `w3-*.json` للعملية الجذرية، ولا `junit.xml`، فلا مقارنة قرارات ولا عدّ نجاح/فشل. ما بقي: `m2b-summary` (يُكتب قبل W3) وهو **جزئي** (المجموعة لم تكتمل).
+### 3.1 الـ dispatch الأول: لم يُقَس (F-S-01)
+ذراعا decision انتهيا بـ `phpunit_exit = 255`: `Allowed memory size of 1073741824 bytes exhausted` عند `ArchiveData.php:90` ثم `w3_lib.php:76` (`json_encode` في `flush`)؛ W3 كان يحتفظ بصف لكل استدعاء `limit` في الذاكرة. عيب في أداتي، مطابق في الذراعين، فلا حكم منه (`logs/E-CI/decision-base|change/`). الإصلاح: digest تراكمي لكل اختبار (`ce8159c`) وتسجيل التوقيت عند `FLAKY160_TIMING=1` فقط.
 
-* هذا **عيب في أداتي** وليس نتيجة عن الـ change (انهيار مطابق في الذراعين في الموضع نفسه). لا أستنتج منه شيئًا عن DEC-029.
-* ما جرى: M2b على الـ 21 عملية المنتهية: رميات L1741 = 4 مقصودة في كل ذراع (0 غير مقصود؛ يظهر الموضع `:1741` في base و`:1745` في change لأن ثوابت S2 أضافت أربعة أسطر قبله، وهو الـ `throw` نفسه)؛ لا رمية من L2168 في change؛ لكنه لا يغطي ذيل System، فلا أحسبه تغطية لـ «M2b = 0» كاملة.
-* **المعالجة (غير مدفوعة للتشغيل، تنتظر كلمة الـ Owner):** صفوف القرارات صارت digest تراكمي sha256 + عدّ + أول 8 صفوف لكل اختبار؛ وصفوف التوقيت تُسجَّل فقط عند `FLAKY160_TIMING=1`؛ التعديل في `w3_lib.php` و`w3_compare.php` و`w3_check.php` و`run.sh` (commit مستقل بعد هذا التقرير). جُرّب محليًا كسلامة أداة (§7). إعادة التشغيل = `mode=decision` وحده (≈ 24 runner-minute).
+### 3.2 الإعادة (`mode=decision`، run 40674416967، الرأس `7d9d07d`)
+| | base (`main@d71c0af`) | change |
+| --- | --- | --- |
+| PHPUnit (Unit + Integration + System) | `OK (1966 tests, 27044 assertions)`، exit 0 | `OK (1973 tests, 27104 assertions)`، exit 0 |
+| زمن PHPUnit | 10:35 | 11:54 |
+| نتائج الاختبارات (junit) | كلها نجاح | كلها نجاح |
+| ملفات العمليات | 21 | 21 |
+| رميات `RateLimitConcurrencyException` (M2b) | L1741: 7 (0 غير مقصود)؛ L2168: 1 (اختبار L441 المقصود) | L1741: 7 (0 غير مقصود)؛ **L2168: 0** |
+
+**مقارنة القرارات (`w3_compare.php`، `logs/E-CI/decision-rerun-40674416967/w3-compare.json`):** 248 اختبارًا موجودًا في الذراعين، **1,388,697** ناتج `RateLimiterEngine::limit` مسجَّل في العملية الجذرية (قرار، مستوى، retryAfter، failureMode، cause، reason، أو صنف الاستثناء) بعدٍّ وsha256 تراكمي لكل اختبار: **0 اختلاف**. الفرق في مجموعتَي الاختبارات هو فقط:
+* `only_base`: `PostPunishmentReentryLifecycleTest::testThreePublicationConflictsReturnTransientHardWithoutCircuitFailure` (L441 القديم) — `only_change`: `…::testExhaustedPublicationIsDeferredWithoutCircuitFailure` (L441 بالعقد الجديد، تغيير عقد معلن) و`PublicationDeferralTest::testDeferredRequestThroughTheEngineDoesNotReachTheConcurrencyCatch` (الوحيد من الاختبارات الجديدة الذي يمر عبر `limit`)؛
+* باقي اختبارات `PublicationDeferralTest` (6 من 7) تستدعي الـ pipeline مباشرة فلا تظهر في مقارنة `limit`؛ وبذلك فرق العدّ 1973 − 1966 = 7 = اختبارات `PublicationDeferralTest` (إعادة تسمية L441 بدل 1:1).
+
+**حدود:** (أ) المقارنة على قرارات `limit` ونتائج الاختبارات، لا على حالة المتجر النهائية (تأكيدات الاختبارات تحمل الحالة)؛ (ب) فروع الـ fork: لم يُسجَّل منها شيء (`worker_tests = 0`، العمليات الأبناء تنتهي بلا دالة shutdown)؛ هي تُعدّ جانبًا كما سُجّل في PLAN، وتغطيتها الوحيدة هي تأكيدات اختباراتها وA-NAT؛ (ج) n = 1 لكل ذراع، PHP 8.5.
 
 ## 4. التنبؤ 4 — زمن `persistWinningCandidates` (timing، 200 تشغيل لكل ذراع بالتناوب، wrapper `hrtime`)
 
@@ -77,9 +88,10 @@
 
 ## 6. ما لم يُقس وfindings
 
-* **F-S-01 (عيب أداة، يوقف S4):** ذراع decision لم يكتمل (§3). أي حكم على التنبؤ 3 ينتظر إعادة `mode=decision`، بكلمة الـ Owner.
+* **F-S-01 (عيب أداة، مُغلَق):** ذراع decision لم يكتمل في الـ dispatch الأول (§3.1)؛ أُصلح وأُعيد (§3.2) ونجح.
 * **غير موثَّق بعد:** سلوك المؤجَّل الطبيعي (0 حالات)، والمرشَّح المختلط في b2 (حد معروف على الـ PR).
-* **ذراع timing:** لا تصنيف لفشل base الوحيد (حذف المجلد): تحسين لاحق للأداة، لا يمس النسبة.
+* **ذراع timing:** لا تصنيف لفشل base الوحيد (1/200: حُذف مجلده قبل التصنيف، PLAN §9، لا يدخل في النسبة)؛ الـ harness يحتفظ منذ `7d9d07d` بمجلد أي تشغيل خرج بغير صفر.
+* **التنبؤ 2 بلا دليل طبيعي** على الفرع المؤجَّل (0 حالات من 2,000)، فعقده («الحجب يظهر لاحقًا») مبني على الاختبارات المحاكاة وعلى DEC-029 لا على قياس؛ ويُذكر هذا في DEC-029 ACTIVE.
 * لا PHP غير 8.5؛ n = 1 لذراع decision؛ A-NAT n = 2,000.
 
 ## 7. ما جُرّب محليًا (E-LOCAL، سلامة أداة فقط، لا رقم معدود)
@@ -88,4 +100,4 @@
 
 ## 8. الملفات
 
-`logs/E-CI/`: `jobs.tsv` (أزمنة الـ jobs)، `anat/shard-1..8/` (`verdicts.jsonl` لكل التشغيلات، `vref.line`، `vtransform.json`، `config.jsonl`، `worker-rows.jsonl.gz`)، `checks/`، `adet/`، `timing/` (`timing-summary.json`، `timing.rows.jsonl`)، `decision-{base,change}/` (`phpunit.out` وفيه الفشل، `m2b-summary-*.json`، `w3check.jsonl`)؛ `SHA256SUMS`. artifacts الـ run الكاملة (≈ 1 GB، منها شجرة base وrec/) على Actions لـ 30 يومًا.
+`logs/E-CI/`: `jobs.tsv` (أزمنة الـ jobs)، `anat/shard-1..8/` (`verdicts.jsonl` لكل التشغيلات، `vref.line`، `vtransform.json`، `config.jsonl`، `worker-rows.jsonl.gz`)، `checks/`، `adet/`، `timing/` (`timing-summary.json`، `timing.rows.jsonl`)، `decision-{base,change}/` (الـ dispatch الأول: `phpunit.out` وفيه الفشل، `m2b-summary-*.json`، `w3check.jsonl`)؛ `decision-rerun-40674416967/` (الإعادة: `phpunit.out`، `junit.xml`، `m2b-summary`، `w3check`، `w3-compare.json`، `w3-digests.json` لكل اختبار)؛ `SHA256SUMS`. artifacts الـ run الكاملة (≈ 1 GB، منها شجرة base وrec/) على Actions لـ 30 يومًا.

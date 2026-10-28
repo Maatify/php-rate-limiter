@@ -1,0 +1,18 @@
+{
+    "shared_tests": 248,
+    "shared_rows": 1388697,
+    "only_base": [
+        "Maatify\\RateLimiter\\Tests\\System\\PostPunishmentReentryLifecycleTest::testThreePublicationConflictsReturnTransientHardWithoutCircuitFailure"
+    ],
+    "only_change": [
+        "Maatify\\RateLimiter\\Tests\\System\\PostPunishmentReentryLifecycleTest::testExhaustedPublicationIsDeferredWithoutCircuitFailure",
+        "Maatify\\RateLimiter\\Tests\\System\\PublicationDeferralTest::testDeferredRequestThroughTheEngineDoesNotReachTheConcurrencyCatch"
+    ],
+    "different": [],
+    "unexpected_differences": 0,
+    "worker_tests": {
+        "base": 0,
+        "change": 0
+    },
+    "ok": true
+}
