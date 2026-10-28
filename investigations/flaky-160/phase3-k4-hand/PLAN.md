@@ -196,3 +196,20 @@ E-LOCAL أولًا لسلامة الأداة، ثم على E-CI ضمن dispatch 
 ## 14. مسار AGENTS.md
 
 Normal Engineering Task (Adoption Standard §10.1): قُرئ `docs/php-engineering-standards/STANDARDS_MANIFEST.md`؛ الـ Scope هو `/` (الـ activations `composer-package` 4.0.0 و`repository-governance` 3.0.0)؛ الملفات المتأثرة في هذا الـ commit `investigations/flaky-160/phase3-k4-hand/PLAN.md` فقط (مستند تحقيق، لا `src/` ولا `tests/`). المنطبق من Final Resolved Applicable Standards Set: `TESTING_STANDARD.md` 2.0.0 (القياس على اختبارات التكامل)، `AI_COLLABORATION_WORKFLOW_AR.md` 12.0.0 و`GITHUB_PHASE_STACK_WORKFLOW_AR.md` 4.0.0 (Draft، خطوة لكل commit، الدمج بيد الـ Lead)، `DOCUMENTATION_LIFECYCLE_STANDARD_AR.md` 3.1.0، `DECISION_GOVERNANCE_STANDARD_AR.md` 1.0.0 (لا قرار هنا؛ القرار للـ Owner)، و`CI_WORKFLOW_STANDARD.md` 5.0.0 للـ workflow المؤقت في الخطوة 3.
+
+## 15. ملاحظات وقت البناء (قبل أي تشغيل معدود؛ لا شيء منها يغيّر شرطًا مسجَّلًا)
+
+الـ harness في `harness/` (`PROVENANCE.txt`: أربع نسخ عند `d37f9a3`، واحدة حرفية وثلاث مكيَّفة بـ diff مسجَّل، و`provenance_check.sh` يتحقق منها؛ `k.php` و`k_lib.php` و`k_report.php` و`synthetic.php` و`detectors.sh` جديدة). أدلة الكواشف المحلية في `logs/detectors/E-LOCAL/` بـ `SHA256SUMS`؛ لا رقم معدود منها.
+
+* **BC-1 — إيقاع H-NAT.** كل تسلسل T-HAND يفتح 12 اتصالًا كما الاختبار (executor لكل عامل وآخر لـ `SET`). على E-LOCAL، بعد ≈ 10,000 اتصال تقريبًا، فشل عمّال بـ `Redis reply ended unexpectedly` في دفعة واحدة (394/2,000 تسلسلًا غير صالح، ثم 353/2,000 في الإعادة)، و`rejected_connections` في Redis بقي 0: الاتصالات لم تصل إلى Redis، فالنفاد في منافذ المضيف أو وسيط منفذ Docker، لا في المتجر. التصحيح: توقف عشوائي منتظم بين 0 و2·pace ms بين التسلسلات (`FLAKY160_HAND_PACE_MS`، الافتراضي 100)، **خارج كل جزء موقوت**. عشوائي لا ثابت، لئلا يوضع طور `X` على شبكة منتظمة. بعده: 0/2,000 غير صالح على E-LOCAL. ترتيب أوامر التسلسل لم يتغير.
+* **BC-2 — Fisher.** `phase2/harness/stats.php` المنسوخ حرفيًا فيه Wilson وPoisson فقط؛ Fisher في `k_lib.php` بتعريف `investigations/flaky-160/harness/u_lib.php` `fisherTwoSided` (L81) نفسه.
+* **BC-3 — `X` في P-CUR.** MUTATE المطبَّق في P-CUR يعيد `PEXPIRE` للمفتاح نفسه، فـ `PEXPIRETIME` بعده ليس `X` الأصلي (`x_after_mutation`). N-K1 يحتاج `X` لغير المطبَّق فقط، والمفتاح فيه لم يُمسّ، فـ `X` صحيح حيث يلزم.
+* **BC-4 — `TIME` في أول كل تسلسل.** كل نوع يبدأ بـ `TIME` الاختبار (`redisNow()`) قبل HSET. في الاختبار يعيد P-PREV استعمال `$now` الطريقة، وهذا خارج نافذة READ→MUTATE.
+* **BC-5 — وحدة K-CAL.** K = 100,000 **زوج** (نداءا معايرة متتاليان لكل زوج، 200,000 `EVAL`)؛ `E|Δn|` على الأزواج.
+* **BC-6 — نافذة K-HELD العملية.** `r_M − h` لا يُرى؛ حدّه الأعلى على ساعة نواة واحدة `W = mutate_end_ms − h + 1` (قراءة المضيف بعد عودة MUTATE مباشرة). غير مطبَّق مع `(X − 1) mod 1000 ≥ W` finding.
+* **BC-7 — تصنيف D-DET.** `X ≡ 500` يضع غير المطبَّق المحقون عند الطور 499، خارج `WINDOW_MS` بالبناء؛ هناك صنف «خارج النافذة» هو الناتج المحقون المسجَّل لا finding (`k_report.php`).
+* **BC-8 — التقرير يقرأ الصفوف تدفقًا** ويجمع لكل مجموعة، ولا يحمل ذراعًا كاملًا في الذاكرة (درس F-S-01 في الخطوة S).
+* **BC-9 — أحجام الكواشف.** D4 بـ 3 + 3 لكل اختبار (الـ 20 + 20 المسجَّلة في الـ dispatch المعدود فقط)، وتكلفة D-DET تُسقط منها؛ أذرع التكلفة بـ K = 2,000 لكل منها (لكل نوع في K-NAT وK-HELD، لكل ρ في K-FORCED).
+* **BC-10 — E-LOCAL.** K-CAL المحلي يعطي `n ∈ {−1, 0, 1}` (ساعة VM في Docker Desktop متأخرة عن المضيف)، فيكسر `n ≥ 0` وتظهر محليًا صفوف «خارج النافذة» في K-NAT. سلامة أداة فقط، كما §3.
+* **BC-11 — الـ workflow.** الوحدات `detectors | k | h | det`، ومعها `all` (= k وh وdet في dispatch معدود واحد، كما معنى `all` في القالب `fc313fb`). بوابتا V-CLOCK وoverhead تُعادان في رأس job ‏k (وV-CLOCK في h)، لأن §5 يمنع بدء الأذرع الطبيعية إن فشلت، والبوابة تحتاج قياسًا في الـ job نفسه. قياس الكواشف هو «المرة الواحدة» المسجَّلة.
+* **BC-12 — خطأ بناء صُحّح قبل أي دليل ملتزم.** النسخة الأولى من المصنّف عاملت `error: null` كأنه مفقود (`?? 'missing'`)، فخرج كل صف «غير صالح» في أول smoke محلي. صُحّح بـ `array_key_exists`، وأضيفت إلى D3 حالة «صف بلا حقل error».
