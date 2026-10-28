@@ -1,0 +1,11 @@
+59edb1ace24126614088c374d9c21881d9edd3b7f69edebd1c461635d535eb79  ./base/junit.xml
+e03e8c2d03961a10d5a867c3d32259e113ee2bf837db254f656c2bb6420b66df  ./base/m2b-summary-base.json
+e3e60d89291e5836687f4c364071aad901337943ad3a0a686d78218a986de2f9  ./base/phpunit.out
+8ed2faa00dbb122cc1cff2df8ab6c2cb318f547e171a8c73cff3774799a7ba35  ./base/w3check.jsonl
+08bdb43f22a1ee94bad0ba96f00ffa43cba4f4e7ef1b7881e86923e029b01ea2  ./change/junit.xml
+2be886c0ea8ba8e03c64bf852b8157eab3ea3d107774b8625608d4f4db51b64f  ./change/m2b-summary-change.json
+e5b4c68c98ca8444d349c647942d07e5dbb135c68106fff58d6894606da992fb  ./change/phpunit.out
+8ed2faa00dbb122cc1cff2df8ab6c2cb318f547e171a8c73cff3774799a7ba35  ./change/w3check.jsonl
+7753e882cd68ce7c8f3ff450b504555b0b8f016cd2c5186da432fce75ace5a4b  ./jobs.tsv
+3c38c6999b155299af6a0d7afbd8eb3de037028cbcfaa1453e020b77fdafb23f  ./w3-compare.json
+9d876d229fd1d5a7250de91debf2e41a7890c8c5e711085fb9c387f52988f009  ./w3-digests.json

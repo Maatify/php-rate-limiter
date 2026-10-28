@@ -1,0 +1,6 @@
+{"check":"tree","arm":"change","tree":"/home/runner/work/php-rate-limiter/php-rate-limiter","src_tests_equal_ref":true,"engine_pin":true,"pipeline_pin":true,"scenario_ran":true,"neutral":true,"w3_arm":"change","recorded_equals_returned":true,"scenario_results":12,"w3_arm_matches":true,"scenario_reaches_l2":true,"class_under_tree":true,"ok":true}
+{"check":"tree","arm":"base","tree":"/home/runner/work/_temp/f160s/base-tree","src_tests_equal_ref":true,"engine_pin":true,"pipeline_pin":true,"scenario_ran":true,"neutral":true,"w3_arm":"base","recorded_equals_returned":true,"scenario_results":12,"w3_arm_matches":true,"scenario_reaches_l2":true,"class_under_tree":true,"ok":true}
+{"check":"edit","arm":"change","engine_edit_once":true,"pipeline_edit_once":true,"pipeline_return_type":"array","engine_added_lines":13,"pipeline_added_lines":11,"ok":true}
+{"check":"edit","arm":"base","engine_edit_once":true,"pipeline_edit_once":true,"pipeline_return_type":"void","engine_added_lines":13,"pipeline_added_lines":11,"ok":true}
+{"check":"detector_compare","identical_ok":true,"injected_detected":true,"named_difference_excused":true,"ok":true}
+{"check":"detector_timing","slow_flagged":true,"fast_passes":true,"arm_mismatch_counted":true,"ok":true}

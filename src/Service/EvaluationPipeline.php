@@ -55,6 +55,10 @@ class EvaluationPipeline
     private const SCOPE_ACCOUNT = 'account';
     private const SCOPE_DEVICE = 'device';
     private const CYCLE_WINDOW_SECONDS = 21600;
+    /** DEC-029: three attempts plus one final attempt on the re-read generation. */
+    private const PUBLICATION_ATTEMPTS = 4;
+    private const PUBLICATION_DEFERRED = 'deferred';
+    private const PUBLICATION_DROPPED = 'dropped';
     private const CYCLE_THRESHOLD = 2;
     private const DECAY_PAUSE_SECONDS = 600;
     private const PAUSE_HISTORY_RETENTION_SECONDS = 86400;
@@ -2083,10 +2087,34 @@ class EvaluationPipeline
     }
 
     /**
+     * Persists the blocks of the winning candidates.
+     *
+     * DEC-029: the K4 punishment publication behind the DEC-007 generation
+     * fence makes at most PUBLICATION_ATTEMPTS calls and reads the coherent
+     * snapshot between calls (so at most one read fewer than calls). It never
+     * throws RateLimitConcurrencyException: by then the request's K4 mutation
+     * and K5 increment are committed, so the failure must not be reported as
+     * "nothing recorded". A publication that is still not applied is reported
+     * per key in the return value and the block is left to the first later
+     * publisher that succeeds; no committed write is rolled back.
+     *
+     * - PUBLICATION_DEFERRED: the budget is exhausted, or no snapshot is
+     *   readable. The caller keeps the decision it computed from the state
+     *   this request wrote.
+     * - PUBLICATION_DROPPED: the re-read K4 level is below 2, so the state no
+     *   longer carries a K4 block. The caller recomputes its decision without
+     *   the K4 contribution.
+     *
+     * The remaining blocks are always persisted. The K4 mutation exhaustion
+     * (RateLimitConcurrencyException before any K4 or K5 write) is not here.
+     *
      * @param list<array{decision: string, level: int, retryAfter: int, source: string, persistence: list<array{key: string, previousKey: ?string, level: int, duration: int}>, scopes: list<string>}> $candidates
-    */
-    private function persistWinningCandidates(BlockPolicyInterface $policy, array $candidates, ?string $winningClass, bool $persistAllCandidates = false): void
+     * @return array<string, string> key => PUBLICATION_DEFERRED|PUBLICATION_DROPPED, only for unpublished K4 keys
+     */
+    private function persistWinningCandidates(BlockPolicyInterface $policy, array $candidates, ?string $winningClass, bool $persistAllCandidates = false): array
     {
+        /** @var array<string, string> $unpublished */
+        $unpublished = [];
         /** @var array<string, array{previousKey: ?string, level: int, duration: int}> $blocks */
         $blocks = [];
         foreach ($candidates as $candidate) {
@@ -2122,7 +2150,8 @@ class EvaluationPipeline
                 $expectedGeneration = $this->lifecycleEligibleKeys[$key];
                 $publicationLevel = $block['level'];
                 $publicationDuration = $block['duration'];
-                for ($attempt = 0; $attempt < 3; $attempt++) {
+                $outcome = self::PUBLICATION_DEFERRED;
+                for ($attempt = 0; $attempt < self::PUBLICATION_ATTEMPTS; $attempt++) {
                     $transition = CallerTimeStore::blockWithPunishmentLifecycleTracking(
                         $this->store,
                         $key,
@@ -2142,6 +2171,10 @@ class EvaluationPipeline
                         break;
                     }
 
+                    if ($attempt === self::PUBLICATION_ATTEMPTS - 1) {
+                        break;
+                    }
+
                     // A failed publication is a generation race, not a reason
                     // to replay the stale block tuple. Re-read the coherent
                     // lifecycle snapshot and recompute the current K4 level.
@@ -2158,6 +2191,7 @@ class EvaluationPipeline
                     );
                     $latestLevel = $this->determineLevel($latestScore, 'k4', $policy);
                     if ($latestLevel < 2) {
+                        $outcome = self::PUBLICATION_DROPPED;
                         break;
                     }
                     $expectedGeneration = $latest->generation;
@@ -2165,7 +2199,7 @@ class EvaluationPipeline
                     $publicationDuration = PenaltyLadder::getDuration($latestLevel);
                 }
                 if (! $applied) {
-                    throw new RateLimitConcurrencyException('K4 punishment publication conflict budget exhausted.');
+                    $unpublished[$key] = $outcome;
                 }
                 continue;
             }
@@ -2191,6 +2225,47 @@ class EvaluationPipeline
 
             CallerTimeStore::block($this->store, $key, $block['level'], $block['duration'], $this->clock->now());
         }
+
+        return $unpublished;
+    }
+
+    /**
+     * DEC-029: the candidates of a request whose K4 block was dropped, without
+     * the K4 contribution. A candidate that persisted only a dropped key is
+     * removed; one that also persisted another key keeps that key and takes
+     * its level and duration; every other candidate is unchanged.
+     *
+     * @param list<array{decision: string, level: int, retryAfter: int, source: string, persistence: list<array{key: string, previousKey: ?string, level: int, duration: int}>, scopes: list<string>}> $candidates
+     * @param list<string> $droppedKeys
+     * @return list<array{decision: string, level: int, retryAfter: int, source: string, persistence: list<array{key: string, previousKey: ?string, level: int, duration: int}>, scopes: list<string>}>
+     */
+    private function withoutDroppedK4Contribution(array $candidates, array $droppedKeys): array
+    {
+        $remaining = [];
+        foreach ($candidates as $candidate) {
+            $kept = array_values(array_filter(
+                $candidate['persistence'],
+                static fn(array $block): bool => ! in_array($block['key'], $droppedKeys, true),
+            ));
+            if (count($kept) === count($candidate['persistence'])) {
+                $remaining[] = $candidate;
+                continue;
+            }
+            if ($kept === []) {
+                continue;
+            }
+
+            $level = max(array_column($kept, 'level'));
+            $candidate['persistence'] = $kept;
+            $candidate['level'] = $level;
+            $candidate['retryAfter'] = max(array_column($kept, 'duration'));
+            $candidate['decision'] = $level >= 2
+                ? RateLimitResultDTO::DECISION_HARD_BLOCK
+                : RateLimitResultDTO::DECISION_SOFT_BLOCK;
+            $remaining[] = $candidate;
+        }
+
+        return $remaining;
     }
 
     /**
@@ -2278,26 +2353,14 @@ class EvaluationPipeline
         }
 
         $final = $this->aggregateCandidates($candidates);
-        if ($final !== null && $final['decision'] === RateLimitResultDTO::DECISION_SOFT_BLOCK) {
-            // Provenance of the issued SOFT_BLOCK: the union of the winning
-            // SOFT candidates' scopes. It is only collected here; process()
-            // then records exactly one event on one watcher: the account
-            // watcher for any account scope (mixed K4 + K5 included), the
-            // device watcher only for a K5-only SOFT with an eligible device,
-            // and the account watcher otherwise.
-            foreach ($candidates as $candidate) {
-                if ($candidate['decision'] === RateLimitResultDTO::DECISION_SOFT_BLOCK) {
-                    $this->issuedSoftScopes = array_values(array_unique(array_merge($this->issuedSoftScopes, $candidate['scopes'])));
-                }
-            }
-        }
+        $this->collectIssuedSoftScopes($final, $candidates);
         if ($final === null) {
             $this->persistWinningCandidates($policy, $advisoryCandidates, null);
 
             return $this->createAllowResult();
         }
 
-        $this->persistWinningCandidates(
+        $unpublished = $this->persistWinningCandidates(
             $policy,
             $candidates,
             $final['decision'],
@@ -2305,7 +2368,60 @@ class EvaluationPipeline
         );
         $this->persistWinningCandidates($policy, $advisoryCandidates, null);
 
-        return $this->createBlockedResult($final['level'], $final['retryAfter'], $final['decision']);
+        // DEC-029: a K4 block dropped because the re-read K4 level is below 2
+        // is not part of the decision of the written state; recompute it
+        // through the same aggregation without that contribution.
+        $dropped = array_keys(array_filter(
+            $unpublished,
+            static fn(string $outcome): bool => $outcome === self::PUBLICATION_DROPPED,
+        ));
+        if ($dropped !== []) {
+            $candidates = $this->withoutDroppedK4Contribution($candidates, $dropped);
+            $final = $this->aggregateCandidates($candidates);
+            $this->collectIssuedSoftScopes($final, $candidates);
+            if ($final === null) {
+                return $this->createAllowResult();
+            }
+        }
+
+        $result = $this->createBlockedResult($final['level'], $final['retryAfter'], $final['decision']);
+        if (in_array(self::PUBLICATION_DEFERRED, $unpublished, true)) {
+            return new RateLimitResultDTO(
+                $result->decision,
+                $result->blockLevel,
+                $result->retryAfter,
+                $result->failureMode,
+                new \Maatify\RateLimiter\DTO\RateLimitMetadataDTO(
+                    null,
+                    'k4_publication_deferred',
+                    new \Maatify\RateLimiter\DTO\RateLimitContextMetadataDTO('k4_publication_deferred', 'k4'),
+                ),
+            );
+        }
+
+        return $result;
+    }
+
+    /**
+     * Provenance of the issued SOFT_BLOCK: the union of the winning SOFT
+     * candidates' scopes. It is only collected here; process() then records
+     * exactly one event on one watcher: the account watcher for any account
+     * scope (mixed K4 + K5 included), the device watcher only for a K5-only
+     * SOFT with an eligible device, and the account watcher otherwise.
+     *
+     * @param array{decision: string, level: int, retryAfter: int, source: string, persistence: list<array{key: string, previousKey: ?string, level: int, duration: int}>, scopes: list<string>}|null $final
+     * @param list<array{decision: string, level: int, retryAfter: int, source: string, persistence: list<array{key: string, previousKey: ?string, level: int, duration: int}>, scopes: list<string>}> $candidates
+     */
+    private function collectIssuedSoftScopes(?array $final, array $candidates): void
+    {
+        if ($final === null || $final['decision'] !== RateLimitResultDTO::DECISION_SOFT_BLOCK) {
+            return;
+        }
+        foreach ($candidates as $candidate) {
+            if ($candidate['decision'] === RateLimitResultDTO::DECISION_SOFT_BLOCK) {
+                $this->issuedSoftScopes = array_values(array_unique(array_merge($this->issuedSoftScopes, $candidate['scopes'])));
+            }
+        }
     }
 
     private function isBudgetCommandEligible(

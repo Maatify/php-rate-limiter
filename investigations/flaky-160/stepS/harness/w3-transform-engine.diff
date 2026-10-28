@@ -1,0 +1,16 @@
+--- /tmp/w3o	2026-10-25 00:51:06
++++ /tmp/w3e	2026-10-25 00:51:06
+@@ -291,0 +292,13 @@
++        try {
++            $__r = $this->limitFlaky160s($context, $request);
++        } catch (\Throwable $__e) {
++            \Flaky160S\W3::decision(null, $__e);
++            throw $__e;
++        }
++        \Flaky160S\W3::decision($__r, null);
++
++        return $__r;
++    }
++
++    public function limitFlaky160s(RateLimitContextDTO $context, RateLimitCommand $request): RateLimitResultDTO
++    {

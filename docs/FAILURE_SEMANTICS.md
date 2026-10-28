@@ -616,9 +616,17 @@ Failure semantics MUST NOT be altered without explicit versioning and security a
 
 ## 10.1 Generation-Bound Lifecycle Failures
 
-Generation conflicts during L2+ publication retry at most three times; exhaustion
-returns the Login/OTP transient HARD failure with
-`RateLimitConcurrencyException` provenance. A false one-shot claim is an
+Generation conflicts on the K4 score mutation retry at most three times; exhaustion
+(before any K4 or K5 write of the request) returns the Login/OTP transient HARD failure
+with `RateLimitConcurrencyException` provenance, as before (DEC-029 leaves this site
+unchanged). Generation conflicts during L2+ publication make at most four publication
+calls and three snapshot reads; because the request's K4 mutation and K5 increment are
+committed by then (DEC-029), exhaustion does not throw: the request returns the decision
+of the state it wrote with the cause `k4_publication_deferred` (reason
+`k4_publication_deferred`, scope `k4`) and the block is left to the first later publisher
+that succeeds; a re-read K4 level below 2 drops the K4 contribution and the decision is
+recomputed without it (no block, no exception). No write is rolled back and none is
+recorded twice. A false one-shot claim is an
 expected non-error result: it does not consume evidence, create a backend
 failure, or trip the circuit. Missing lifecycle capability, malformed state,
 and atomic Redis failures are explicit integration failures and must not fall

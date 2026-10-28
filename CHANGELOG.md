@@ -7,6 +7,21 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Changed (#160, DEC-029) — no concurrency exception after a committed K4/K5 write
+- `EvaluationPipeline`: the K4 punishment publication behind the generation fence no longer throws
+  `RateLimitConcurrencyException('K4 punishment publication conflict budget exhausted.')` once the request's K4 mutation
+  and K5 increment are committed. It makes at most four publication calls and three snapshot reads (one final attempt on the
+  generation read after the third failure). If the publication is still not applied, the request returns the decision of the
+  state it wrote (same level and duration) with `RateLimitMetadataDTO::cause = 'k4_publication_deferred'` (context reason
+  `k4_publication_deferred`, scope `k4`; no DTO shape changes) and the block is persisted by the first later publisher that
+  succeeds; if the re-read K4 level is below 2, the K4 contribution is dropped and the decision is recomputed without it.
+  The remaining blocks of the request are always persisted. A Host built with `RateLimiterBuilder` previously saw
+  `HARD_BLOCK`, level 2, `retryAfter 1`, cause `k4_concurrency_conflict` for this case; it now sees the written state's decision.
+- Unchanged: the K4 mutation budget at L1741 (`K4 generation mutation conflict budget exhausted.`) still throws, and is still
+  reported by the Engine as `k4_concurrency_conflict`; no write of that request to K4/K5 exists at that point. The DEC-007
+  fence is untouched. `docs/FAILURE_SEMANTICS.md` §10.1, `docs/DECISION_MATRIX.md` and `RATE_LIMITER_PACKAGE_REFERENCE.md` state
+  the contract; the decision is `docs/decisions/DEC-029_NO_CONCURRENCY_EXCEPTION_AFTER_A_COMMITTED_WRITE.md` (ACTIVE).
+
 ### Fixed (#160, test only)
 - `RedisFullCapabilityStoreIntegrationTest::testGenerationBoundLifecycleIsAtomicAndClaimDoesNotConsumeEvidence` blocks for 60 seconds, not 1:
   a one-second block can end between the block call and the claim call. No change under `src/`.

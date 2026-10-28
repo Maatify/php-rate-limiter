@@ -1,0 +1,2002 @@
+{
+"base": {
+"Maatify\\RateLimiter\\Tests\\Unit\\Admission\\AdmissionBuilderActivationTest::testWithTheFenceClosedTheVariantDecidesAsTheGoldenOfLoginProtection": {
+"n": 320,
+"sha256": "04dded45ec0a81ead5273d4b19bdb82495fa37a7d8947741d90eacb3f95e3a31"
+},
+"Maatify\\RateLimiter\\Tests\\Unit\\Admission\\AdmissionBuilderActivationTest::testSc1TheTwentyFifthAdmissionFromOneSourceIsASourceCapacityRefusal": {
+"n": 50,
+"sha256": "baef925102c406a427eb0526f8ff8927efd427df053a8855874851cf7dabe11e"
+},
+"Maatify\\RateLimiter\\Tests\\Unit\\Admission\\AdmissionBuilderActivationTest::testLaneAVerifiedCredentialIsAdmittedFromAnExhaustedSourceAndATamperedOneIsNot": {
+"n": 50,
+"sha256": "baef925102c406a427eb0526f8ff8927efd427df053a8855874851cf7dabe11e"
+},
+"Maatify\\RateLimiter\\Tests\\Unit\\Admission\\AdmissionBuilderActivationTest::testThePermitIsRequiredAndClaimedOnce": {
+"n": 4,
+"sha256": "335f32e6ee82f7e3b12232441368a5217abe32eb404e2fa0c3dfe94dadce6446"
+},
+"Maatify\\RateLimiter\\Tests\\Unit\\Admission\\AdmissionBuilderActivationTest::testRollbackABuildWithoutTheVariantIgnoresTheAdmissionState": {
+"n": 50,
+"sha256": "baef925102c406a427eb0526f8ff8927efd427df053a8855874851cf7dabe11e"
+},
+"Maatify\\RateLimiter\\Tests\\Unit\\Admission\\AdmissionBuilderS0GoldensTest::testTheBuilderCompositionReproducesTheGoldenRecordedOnTheBase": {
+"n": 1760,
+"sha256": "0191e52860a49529d6d1a255c1a4ce41a9be5f40bb039de9df36a04698ede2a8"
+},
+"Maatify\\RateLimiter\\Tests\\Unit\\Admission\\AdmissionEngineCyclesLifecycleTest::testK4AndK4PKeepIndependentCycleHistoriesWithTheLaneFromTheEngine": {
+"n": 20,
+"sha256": "20df5d18dce8bb05af2c1f4a655ca1df61ff4b09b189f9940229bbd68db856f5"
+},
+"Maatify\\RateLimiter\\Tests\\Unit\\Admission\\AdmissionEngineCyclesLifecycleTest::testK5AndK5pKeepIndependentCycleHistoriesWithTheLaneFromTheEngine": {
+"n": 28,
+"sha256": "146eaea58d9d34b9960cb19fefaef37ada5290c352334dc28c7313e4b01ca5f4"
+},
+"Maatify\\RateLimiter\\Tests\\Unit\\Admission\\AdmissionEngineCyclesLifecycleTest::testDetectorK4KeyTypeSharedAcrossLanes": {
+"n": 16,
+"sha256": "a03f5eaed0dcc180b1374bdffa91b0beb6d0962395867fa56ea0d86d7fdcfc30"
+},
+"Maatify\\RateLimiter\\Tests\\Unit\\Admission\\AdmissionEngineCyclesLifecycleTest::testDetectorK5KeyTypeSharedAcrossLanes": {
+"n": 20,
+"sha256": "a27dad4171da8ad00f2ce3ddc972828d65344ae38979cf43875e9099d436b13d"
+},
+"Maatify\\RateLimiter\\Tests\\Unit\\Admission\\AdmissionEngineCyclesLifecycleTest::testACapacityRefusalCreatesNoCycle": {
+"n": 44,
+"sha256": "a32b75d72b38e03caebd0a8238e060eccdf9cedab9a1e8a37b1bd6ac1cac882f"
+},
+"Maatify\\RateLimiter\\Tests\\Unit\\Admission\\AdmissionEngineCyclesLifecycleTest::testReentryEvidenceIsServedAndClaimedOnTheProvenLaneFromTheEngineOnly": {
+"n": 8,
+"sha256": "74d4cb37004180b5ea76bdb245e35ca2804a41339a2691fb553505c18a5e1a54"
+},
+"Maatify\\RateLimiter\\Tests\\Unit\\Admission\\AdmissionEngineCyclesLifecycleTest::testDetectorK4PMergedIntoK4ExposesTheEvidenceOnUThroughTheEngine": {
+"n": 7,
+"sha256": "c2c7ef7291e91ecae02272e1554a7de05070e9774baf40cb76163e35991ae2ba"
+},
+"Maatify\\RateLimiter\\Tests\\Unit\\Admission\\AdmissionEngineFenceFailTest::testAClosedFenceIsTheEngineWithoutAdmissionByteForByte": {
+"n": 4,
+"sha256": "c31ea581cc0d03442a8d4b1d62a08f577d7b30ef3ac0e4d08e88cae3c244f8b6"
+},
+"Maatify\\RateLimiter\\Tests\\Unit\\Admission\\AdmissionEngineFenceFailTest::testAnOpenFenceEnablesTheAdmissionPath": {
+"n": 3,
+"sha256": "dc4d4040c78537d449feeeb3a1de427f5b4f2dbb4d0f1c62936e849a5f7e42a2"
+},
+"Maatify\\RateLimiter\\Tests\\Unit\\Admission\\AdmissionEngineFenceFailTest::testATypedOutageInTheReserveTakesTheExistingTypedPathWithNoPartialWrite": {
+"n": 2,
+"sha256": "a14389e0ee374da0b8c8d668501fc178cfa0784e7ca3d0a35c42bf377b98cdc1"
+},
+"Maatify\\RateLimiter\\Tests\\Unit\\Admission\\AdmissionEngineFenceFailTest::testATypedOutageInTheEpochReadIsTheSamePath": {
+"n": 1,
+"sha256": "b4afddac2e7521ee16aaad32d2f2ae1387d88563dfe1b2118dafbf09ecd3b3d2"
+},
+"Maatify\\RateLimiter\\Tests\\Unit\\Admission\\AdmissionEngineFenceFailTest::testATypedOutageInTheOutcomeAndTheClaimIsTheSamePath": {
+"n": 4,
+"sha256": "14d24a4bbdab577f68eca2154c95befceb3a16b43f90e5a77e466c12e794a7bd"
+},
+"Maatify\\RateLimiter\\Tests\\Unit\\Admission\\AdmissionEngineFenceFailTest::testMalformedStoredStateIsARateLimiterExceptionAndNeverFallback": {
+"n": 1,
+"sha256": "93d097d3b56a0ca690a7c97b555fc01ee48205bb9be19bd2032c862ef72371be"
+},
+"Maatify\\RateLimiter\\Tests\\Unit\\Admission\\AdmissionEngineFenceFailTest::testAnUnclassifiedThrowableEscapesAndNeverEntersTheCircuitOrTheFallback": {
+"n": 2,
+"sha256": "ec24587e49e62358012326351da44be31c9a62f9395b562fe639a1d33f6a405b"
+},
+"Maatify\\RateLimiter\\Tests\\Unit\\Admission\\AdmissionEngineFenceFailTest::testDegradedModeAdmitsNothingAndReadsNoLaneEpochOrFence": {
+"n": 13,
+"sha256": "735919dc672fc20b5667923694514852307e120a23441146cfd18bcede30a6b9"
+},
+"Maatify\\RateLimiter\\Tests\\Unit\\Admission\\AdmissionEngineFenceFailTest::testReportedAnOutcomeFromAnotherSourceIsScoredAndLeavesTheAdmissionSourceUnchanged": {
+"n": 3,
+"sha256": "fc05a454085151bc4f377965299664de237ca95b4ce639323c7cfde0479b2291"
+},
+"Maatify\\RateLimiter\\Tests\\Unit\\Admission\\AdmissionEngineFleetRollbackTest::testBehindTheFenceTheMixedFleetIsS0": {
+"n": 1480,
+"sha256": "aa134c176bb84d81c7b01f6a4f7a294242f69e12fee851f713f8d33a6d949d95"
+},
+"Maatify\\RateLimiter\\Tests\\Unit\\Admission\\AdmissionEngineFleetRollbackTest::testWithTheFenceOpenWhileMixedAdmissionsStayWithinTheReportedBound": {
+"n": 762,
+"sha256": "128cc4a789746d03a7ee0f7f7ff8bacaa77b60115c71b72d0347d840f52c6bf4"
+},
+"Maatify\\RateLimiter\\Tests\\Unit\\Admission\\AdmissionEngineFleetRollbackTest::testDetectorAnIgnoredFenceMakesTheNewWorkersReserveBehindIt": {
+"n": 560,
+"sha256": "4d1f3348cc5fd965d72bd53f6e249f03e836c4da05cf5d0ff2b9993db5868bd1"
+},
+"Maatify\\RateLimiter\\Tests\\Unit\\Admission\\AdmissionEngineFleetRollbackTest::testM6RollbackIgnoresTheAdmissionStateKeepsK4UAndRollForwardFindsTheOldCounters": {
+"n": 77,
+"sha256": "8c101f4b182568c532404ca8e8645d02a476046f2ed03bf7c3e535e9d2f6ff60"
+},
+"Maatify\\RateLimiter\\Tests\\Unit\\Admission\\AdmissionEngineLaneTest::testEveryFailedCheckIsTheUnprovenDoorAndNeverARefusalOrAnException": {
+"n": 16,
+"sha256": "5eec6cea78b09ce4ae167f60cbcc571313d2269eabbf65c2a8f62a7448e3aaa9"
+},
+"Maatify\\RateLimiter\\Tests\\Unit\\Admission\\AdmissionEngineLaneTest::testAVerifiedCredentialSelectsTheProvenDoor": {
+"n": 2,
+"sha256": "8d8d44d62c4dc107b4a6dab197cd88732c2c903fde1b56ebebee719ec3c80992"
+},
+"Maatify\\RateLimiter\\Tests\\Unit\\Admission\\AdmissionEngineLaneTest::testNoFlagHeaderOrInstanceIdSelectsTheProvenDoor": {
+"n": 6,
+"sha256": "35712228f66cf7d2912420fd0ae1c1ed34c05ed75163a5b22397a1c9839c814d"
+},
+"Maatify\\RateLimiter\\Tests\\Unit\\Admission\\AdmissionEngineLaneTest::testAnUnprovenRequestWritesNoProvenState": {
+"n": 5,
+"sha256": "b26ba958e11e09e6d707709c715790cd2baa32b1db4a2a0b38ed52c578886768"
+},
+"Maatify\\RateLimiter\\Tests\\Unit\\Admission\\AdmissionEngineReserveTest::testSourceCapacityRefusesToTheEndOfTheWindow": {
+"n": 4,
+"sha256": "fb4338b69c610c148d92405d15a144e17e7c5124165664c5baafda91dc38aaab"
+},
+"Maatify\\RateLimiter\\Tests\\Unit\\Admission\\AdmissionEngineReserveTest::testAccountBucketRefusesWithTheRefillWait": {
+"n": 2,
+"sha256": "d2902c3b9acd4a95fb0e3cf2dbe9ac960c1ad3aa3a91b57680e1b226b8bfb513"
+},
+"Maatify\\RateLimiter\\Tests\\Unit\\Admission\\AdmissionEngineReserveTest::testSourceFailureCapRefusesAFurtherAccountOfTheSameSource": {
+"n": 4,
+"sha256": "992a2a014d7fe29fee81dcd11afa8aa5803ac452667c41b49dac75acfc669b97"
+},
+"Maatify\\RateLimiter\\Tests\\Unit\\Admission\\AdmissionEngineReserveTest::testProofCapacityOnTheProvenDoor": {
+"n": 2,
+"sha256": "2c38f2cd4d5438650a66b5d1f95ec16535c68735b4907c8c64900638d379394d"
+},
+"Maatify\\RateLimiter\\Tests\\Unit\\Admission\\AdmissionEngineReserveTest::testNewDeviceCapIsOnTheFingerprintMember": {
+"n": 3,
+"sha256": "3821beed7d5258c98bfd665048cbe23ca9c1ae3c3afa62e9dc351294012b1880"
+},
+"Maatify\\RateLimiter\\Tests\\Unit\\Admission\\AdmissionEngineReserveTest::testSourceProofFailureCapOnTheProvenDoor": {
+"n": 3,
+"sha256": "17bb22f98e99cf26d210da9556d10759d61905e9bb22f913ef5f0fe0c80e64bc"
+},
+"Maatify\\RateLimiter\\Tests\\Unit\\Admission\\AdmissionEngineReserveTest::testAnAdmissionOfAnOptedPolicyCarriesAnOpaqueBoundedPermit": {
+"n": 1,
+"sha256": "c1b9febeb36392fb15dcb8abc0dd5e6c607032f9ff598a7aad8d02ff843a1f09"
+},
+"Maatify\\RateLimiter\\Tests\\Unit\\Admission\\AdmissionEngineReserveTest::testThePermitTokenStaysBoundedWhateverTheHostPutsInTheCredentialId": {
+"n": 2,
+"sha256": "8d8d44d62c4dc107b4a6dab197cd88732c2c903fde1b56ebebee719ec3c80992"
+},
+"Maatify\\RateLimiter\\Tests\\Unit\\Admission\\AdmissionEngineReserveTest::testANonOptedPolicyIsUntouchedByTheRuntime": {
+"n": 4,
+"sha256": "74fd1a2688772fb64056350b6d09602d03ca80aeabc2409b94ca593fe7880dce"
+},
+"Maatify\\RateLimiter\\Tests\\Unit\\Admission\\AdmissionEngineReserveTest::testAnOutcomeWithNoPermitIsAContractViolationForAnOptedPolicy": {
+"n": 1,
+"sha256": "93d097d3b56a0ca690a7c97b555fc01ee48205bb9be19bd2032c862ef72371be"
+},
+"Maatify\\RateLimiter\\Tests\\Unit\\Admission\\AdmissionEngineReserveTest::testEveryNonAcceptedClaimIsAnAllowResultWithItsCauseAndNoScoring": {
+"n": 7,
+"sha256": "7994e778f4320e7da88894c6ae1bf55e4ff4e81411cb27d009be8ad2abdf51ca"
+},
+"Maatify\\RateLimiter\\Tests\\Unit\\Admission\\AdmissionEngineReserveTest::testALateOutcomeIsLateAndLeavesNoFailure": {
+"n": 3,
+"sha256": "29915b491e17b5154c0fad9b541185873302a2de0535ca02c66ed26fe0992ceb"
+},
+"Maatify\\RateLimiter\\Tests\\Unit\\Admission\\AdmissionEngineReserveTest::testADroppedOutcomeNeverBecomesAFailure": {
+"n": 6,
+"sha256": "2b331d27086590528b043b0ed0d0f37d12a17bed39155dc8b0bfac725f567c3e"
+},
+"Maatify\\RateLimiter\\Tests\\Unit\\Admission\\AdmissionEngineReserveTest::testASuccessRemovesTheNetFailureAndRefundsTheBucket": {
+"n": 5,
+"sha256": "8c2cd67cbcfd89bc2e34268a7388bfeffb4226e41a9a6207751e6d2c40fc5193"
+},
+"Maatify\\RateLimiter\\Tests\\Unit\\Admission\\AdmissionEngineReserveTest::testAFailureIsNeverRefunded": {
+"n": 3,
+"sha256": "e53881372d7808b8c7f6ab91df0b1e930f7646b8867dec75d7ec744001d485bc"
+},
+"Maatify\\RateLimiter\\Tests\\Unit\\Admission\\AdmissionEngineReserveTest::testASuccessOnTheProvenDoorRefundsTheCountersAndALaterFailureEntersD8": {
+"n": 5,
+"sha256": "44e181b8be260fb3481d4d1e5e0c122b240006f4c6caf3762d8fd532e4b04f5e"
+},
+"Maatify\\RateLimiter\\Tests\\Unit\\Admission\\AdmissionEngineReserveTest::testASuccessOnTheProvenDoorNeverRemovesARecordedD8Failure": {
+"n": 5,
+"sha256": "44e181b8be260fb3481d4d1e5e0c122b240006f4c6caf3762d8fd532e4b04f5e"
+},
+"Maatify\\RateLimiter\\Tests\\Unit\\Admission\\AdmissionEngineReserveTest::testASuccessOnTheProvenDoorIsNoD8Failure": {
+"n": 3,
+"sha256": "0e883f71ca2ab970d0b15e49d74c7891efadb29baf54b48b3d41868b0de2692e"
+},
+"Maatify\\RateLimiter\\Tests\\Unit\\Admission\\AdmissionEngineS0GoldensTest::testTheEngineReproducesThe5b3aGoldens": {
+"n": 960,
+"sha256": "7dabad79723f94312271e92ddde0344932f083f8c4bc61d5eafe2dc35153e705"
+},
+"Maatify\\RateLimiter\\Tests\\Unit\\Admission\\AdmissionEngineS0GoldensTest::testDetectorAK5MaterialSeamThatIgnoresTheLaneBreaksTheGoldenThroughTheEngine": {
+"n": 160,
+"sha256": "a230d564174ffe6079f98210a0f0e8da497d2182b92015fecaf61e5bf98bebf6"
+},
+"Maatify\\RateLimiter\\Tests\\Unit\\Admission\\AdmissionRotationTest::testOneRotationKeepsTheSpentCapacityAndASecondOneReissuesIt": {
+"n": 99,
+"sha256": "e71a6c2e281ba015e0bab4106b52f109d20b9917e355c59674cd89dd3ddf265a"
+},
+"Maatify\\RateLimiter\\Tests\\Unit\\Admission\\AdmissionRotationTest::testDetectorABuildWithoutThePreviousGenerationReissuesAtTheFirstRotation": {
+"n": 98,
+"sha256": "0aa7fd72535de59b5fa8388b7ab41724bbb0b2b17aeea1095419a10c3f5b653d"
+},
+"Maatify\\RateLimiter\\Tests\\Unit\\Admission\\AdmissionRotationTest::testTheFailureSetAndTheBucketRestartAtOneRotation": {
+"n": 36,
+"sha256": "45048ffd52a99e03639f05bc1e1bf64e64b18dc4a36145c214f605e51d02da27"
+},
+"Maatify\\RateLimiter\\Tests\\Unit\\Admission\\AdmissionS0ParityTest::testNewContextInputsChangeNoDecisionAndNoStateForPoliciesThatDidNotOptIn": {
+"n": 112,
+"sha256": "98ef869040f0bce36925271e311435aa937e36a401ad3efb557f0e6b9ac5f1db"
+},
+"Maatify\\RateLimiter\\Tests\\Unit\\Admission\\AdmissionS0ParityTest::testTheComparisonCanTellTwoDifferentRunsApart": {
+"n": 28,
+"sha256": "0fbc7431decbd497e8d5d4eebb481893542b06e113a151f0466b17c20ceadf02"
+},
+"Maatify\\RateLimiter\\Tests\\Unit\\Admission\\AdmissionS0ParityTest::testRunsExerciseEveryCommandKindAndReachAnEnforcingDecision": {
+"n": 14,
+"sha256": "9bb3019cdb7d089aa6cf96ee1a437421e6a6241be121d01b30ce3fa25298661a"
+},
+"Maatify\\RateLimiter\\Tests\\Unit\\Builder\\RateLimiterBuilderSimpleThrottleTest::testNoSimplePolicyRegisteredLeavesTheScoreRuntimeFullyFunctional": {
+"n": 1,
+"sha256": "c1b9febeb36392fb15dcb8abc0dd5e6c607032f9ff598a7aad8d02ff843a1f09"
+},
+"Maatify\\RateLimiter\\Tests\\Unit\\Builder\\RateLimiterBuilderSimpleThrottleTest::testSimpleThrottleStateIsIndependentFromScoreRuntimeState": {
+"n": 1,
+"sha256": "c1b9febeb36392fb15dcb8abc0dd5e6c607032f9ff598a7aad8d02ff843a1f09"
+},
+"Maatify\\RateLimiter\\Tests\\Unit\\Builder\\RateLimiterBuilderTest::testBuildReturnsInterfaceAndProvidesAllDefaultPolicies": {
+"n": 3,
+"sha256": "0e883f71ca2ab970d0b15e49d74c7891efadb29baf54b48b3d41868b0de2692e"
+},
+"Maatify\\RateLimiter\\Tests\\Unit\\Builder\\RateLimiterBuilderTest::testCustomDeviceIdentityResolverIsUsedByTheComposedEngine": {
+"n": 1,
+"sha256": "c1b9febeb36392fb15dcb8abc0dd5e6c607032f9ff598a7aad8d02ff843a1f09"
+},
+"Maatify\\RateLimiter\\Tests\\Unit\\Service\\BoundedSnapshotSingleClockReadTest::testBuiltRuntimeLimitKeepsTheBuilderProtection": {
+"n": 1,
+"sha256": "c1b9febeb36392fb15dcb8abc0dd5e6c607032f9ff598a7aad8d02ff843a1f09"
+},
+"Maatify\\RateLimiter\\Tests\\Integration\\Correlation\\CredentialSprayRotationTest::testRotationCapabilityFailureUsesLoginFailureSemanticsAtTheEngineBoundary": {
+"n": 1,
+"sha256": "93d097d3b56a0ca690a7c97b555fc01ee48205bb9be19bd2032c862ef72371be"
+},
+"?": {
+"n": 7,
+"sha256": "c642a2909c15550a5d40ec6b744d8f430fd2fa1dbeede8f79ba253dac0b80cd4"
+},
+"Maatify\\RateLimiter\\Tests\\Integration\\Redis\\CallerTimeAuthorityRedisTest::testFreshPreChecksDoNotThrowWhenTheApplicationIsOneSecondBehindRedis": {
+"n": 100,
+"sha256": "a31dd84fb485a3b8d77c048057b46471de44f8becf7d41961dfe24ac1d17321c"
+},
+"Maatify\\RateLimiter\\Tests\\Integration\\Redis\\CallerTimeAuthorityRedisTest::testFreshPreChecksDoNotThrowWhenTheCallerReadsTheClockJustBeforeARedisSecondBoundary": {
+"n": 100,
+"sha256": "a31dd84fb485a3b8d77c048057b46471de44f8becf7d41961dfe24ac1d17321c"
+},
+"Maatify\\RateLimiter\\Tests\\Integration\\Redis\\CallerTimeAuthorityRedisTest::testRetryAfterHonouringClientIsAdmittedOnTimeWhenTheApplicationIsBehind": {
+"n": 300,
+"sha256": "f70111f1fefe0d9796ce7a827c0252173ffedd3335ebb171ccaab81fa2b74695"
+},
+"Maatify\\RateLimiter\\Tests\\Integration\\Redis\\CallerTimeAuthorityRedisTest::testPolledReturnAfterALifecycleBlockGetsReentryWhenTheApplicationIsAhead": {
+"n": 500,
+"sha256": "6d4c323502258b20047254d0ed1d6729c96b08d0bb28868c3eafe533943be2fe"
+},
+"Maatify\\RateLimiter\\Tests\\Integration\\Redis\\CallerTimeAuthorityRedisTest::testPreCheckInTheLastSecondsOfAWindowDoesNotThrowWhenTheApplicationIsAhead": {
+"n": 120,
+"sha256": "69b4a58f53fa0bac8e1f556b79e0605b982c787fcb20e868576b491c43f4977b"
+},
+"Maatify\\RateLimiter\\Tests\\Integration\\Redis\\CallerTimeAuthorityRedisTest::testLifecycleStateWrittenBehindAndUsedAheadRaisesNoConsistencyError": {
+"n": 5,
+"sha256": "362a4dae81a593f067b501ac2506a04abe558676ad48289e074ae78ddf69b1cf"
+},
+"Maatify\\RateLimiter\\Tests\\Integration\\Redis\\CallerTimeAuthorityRedisTest::testStoreImplementingOnlyTheExistingContractsStillLoadsAndRuns": {
+"n": 3,
+"sha256": "0e883f71ca2ab970d0b15e49d74c7891efadb29baf54b48b3d41868b0de2692e"
+},
+"Maatify\\RateLimiter\\Tests\\Integration\\Redis\\CallerTimeAuthorityRedisTest::testTheHostClockIsReadOncePerLimitAndPerClaim": {
+"n": 6,
+"sha256": "6e7a4eb66dce23f2c501d929d78d55ed6a3a7a6699ef9b06e7c6aadc86225b92"
+},
+"Maatify\\RateLimiter\\Tests\\Integration\\Redis\\RedisFullCapabilityStoreExtRedisIntegrationTest::testFirstRuntimeRequestOnEmptyRedisWorksWithoutSeedingOrHostNormalization": {
+"n": 1,
+"sha256": "c1b9febeb36392fb15dcb8abc0dd5e6c607032f9ff598a7aad8d02ff843a1f09"
+},
+"Maatify\\RateLimiter\\Tests\\Integration\\Redis\\RedisFullCapabilityStoreExtRedisIntegrationTest::testWrongTypeCircuitStateEscapesPublicRuntimeWithoutFallbackOrSignals": {
+"n": 2,
+"sha256": "ed935eabe100d029d3a8fb1d503c345bb1e37231584a42f1cf7e772c5eb87c7a"
+},
+"Maatify\\RateLimiter\\Tests\\Integration\\Redis\\RedisFullCapabilityStoreExtRedisIntegrationTest::testRealRedisCircuitRecoversThroughHealthyPhpRedisPing": {
+"n": 2,
+"sha256": "b2a43169ed68fa6ace2d87f41f5188182d3458cf3649c947e5a532ed2f9a07e0"
+},
+"Maatify\\RateLimiter\\Tests\\Integration\\Redis\\RedisFullCapabilityStoreIntegrationTest::testPublicBuilderRejectsBrokenPersistedCircuitWithoutFallback": {
+"n": 1,
+"sha256": "93d097d3b56a0ca690a7c97b555fc01ee48205bb9be19bd2032c862ef72371be"
+},
+"Maatify\\RateLimiter\\Tests\\Integration\\Redis\\RedisFullCapabilityStoreIntegrationTest::testPublicBuilderWorkflowUsesTheOfficialRedisAggregateStore": {
+"n": 3,
+"sha256": "34d9ad15eba2a24fb6c3c5bb7a16c64adc468cb18a0ebc54b31912d794c8d1a0"
+},
+"Maatify\\RateLimiter\\Tests\\Integration\\Redis\\RedisFullCapabilityStoreIntegrationTest::testPublicBuilderWorkflowUsesOfficialRedisRotationShapes": {
+"n": 12,
+"sha256": "0fe6188ad6d1876969193414043b77addc5dc0f7cfab930e7bdf5cc35bab211b"
+},
+"Maatify\\RateLimiter\\Tests\\Integration\\Redis\\RedisFullCapabilityStoreIntegrationTest::testPublicBuilderRotationWritesCurrentStateAndLeavesPreviousRedisStateReadOnly": {
+"n": 4,
+"sha256": "8309c9e78d35fd396805ad7356170fa35844ab6a1a71e9e1d4702fd210ea81b0"
+},
+"Maatify\\RateLimiter\\Tests\\Integration\\Redis\\RedisFullCapabilityStoreIntegrationTest::testPublicBuilderFingerprintOnlyRotationLeavesPreviousRedisStateReadOnly": {
+"n": 4,
+"sha256": "8309c9e78d35fd396805ad7356170fa35844ab6a1a71e9e1d4702fd210ea81b0"
+},
+"Maatify\\RateLimiter\\Tests\\Integration\\Redis\\RedisFullCapabilityStoreIntegrationTest::testPublicBuilderMigratesPreviousBudgetIntoCurrentGeneration": {
+"n": 2,
+"sha256": "602948763c38098ce3c9ec8a886e81bc3d2c072cd444b2c0d4c98a03c73e80b0"
+},
+"Maatify\\RateLimiter\\Tests\\Integration\\Redis\\RedisFullCapabilityStoreIntegrationTest::testPublicBuilderPersistsHardBlockCycleAndPauseThroughLimitWorkflow": {
+"n": 2,
+"sha256": "5e75d7bc201426c50462824a1642f32d54443458d23c7a458b3fe3bc15acea51"
+},
+"Maatify\\RateLimiter\\Tests\\Integration\\Redis\\RedisFullCapabilityStoreIntegrationTest::testPublicBuilderWorkflowUsesOfficialRedisBudgetAndCircuitProbePaths": {
+"n": 3,
+"sha256": "49a8d8adee0cd47b87564129171713d8ed29cd27eb06a6a5583b0d3371fce965"
+},
+"Maatify\\RateLimiter\\Tests\\Integration\\Store\\AdmissionNm10RedisParityTest::testTheTwoArmsOnRedisAndTheReferenceStoreGiveTheSameRows": {
+"n": 246579,
+"sha256": "ed88f49eda781b90dd706eb1a0cc8bd499ea92da1b2d2f7d43c1821e70603b75"
+},
+"Maatify\\RateLimiter\\Tests\\System\\AdmissionArchiveFixturesTest::testHarBAndHarN": {
+"n": 856,
+"sha256": "527e8ebee825ff725a6f3574f05b694e2e6788589c42b040f97d78b5f8ff72ad"
+},
+"Maatify\\RateLimiter\\Tests\\System\\AdmissionArchiveFixturesTest::testBru24AndBru24Hv": {
+"n": 23244,
+"sha256": "61a0117710816f54e926dd9234bc76d491c3a1dea3473b0b59947ead441c0402"
+},
+"Maatify\\RateLimiter\\Tests\\System\\AdmissionArchiveFixturesTest::testRec": {
+"n": 1514,
+"sha256": "9327e7069e0b3d79972ec491e00d6652f45ab66291010a96a2a0737697a9a219"
+},
+"Maatify\\RateLimiter\\Tests\\System\\AdmissionArchiveFixturesTest::testCross": {
+"n": 408,
+"sha256": "8b74512c8fe6fc7cc3fc92952232b5cdb9dfe839ed719e4e51596706cc10c443"
+},
+"Maatify\\RateLimiter\\Tests\\System\\AdmissionArchiveFixturesTest::testClear": {
+"n": 60,
+"sha256": "9d66deeedc8886402dd4fa34df116f8a0db414df7f9ae31d0a1ad81af7f8791f"
+},
+"Maatify\\RateLimiter\\Tests\\System\\AdmissionArchiveFixturesTest::testE2": {
+"n": 598,
+"sha256": "b7254b249dc68c72a83aa48a535e7085706fadee375ed00d619a516998a66c6d"
+},
+"Maatify\\RateLimiter\\Tests\\System\\AdmissionArchiveFixturesTest::testK5u": {
+"n": 292,
+"sha256": "99fedb8b651212a1b4bfb82dd314a879703dacda14fb8589d4919662c95e4aee"
+},
+"Maatify\\RateLimiter\\Tests\\System\\AdmissionArchiveFixturesTest::testBootAndBootX": {
+"n": 18088,
+"sha256": "b5030e44614ab7c8ee9d5895ac72b28f81301baa5a4e830123f96ab8a64696a4"
+},
+"Maatify\\RateLimiter\\Tests\\System\\AdmissionArchiveFixturesTest::testSteal": {
+"n": 11532,
+"sha256": "e4a0ae18c5e3346268916b5a16863103918a44cbc911e5b54b92861c5fa0d4e1"
+},
+"Maatify\\RateLimiter\\Tests\\System\\AdmissionArchiveFixturesTest::testUaxNp": {
+"n": 44,
+"sha256": "6520b3fa344c0dbb129866b3ec41f82b49505d6b2a8d497a441caeb7088676e6"
+},
+"Maatify\\RateLimiter\\Tests\\System\\AdmissionArchiveFixturesTest::testForgeAndMint": {
+"n": 8716,
+"sha256": "68f13145610d7285f43aa614873f0fb38ba82714767090ab0c73d2b4c9619833"
+},
+"Maatify\\RateLimiter\\Tests\\System\\AdmissionArchiveFixturesTest::testLostAndToken": {
+"n": 8062,
+"sha256": "6269acbb8cf8e56f7b07c3e688fbb2380df7bd193ed5b4d66770c75049e42919"
+},
+"Maatify\\RateLimiter\\Tests\\System\\AdmissionArchiveFixturesTest::testUaxAsmAndMixpresAsm": {
+"n": 96,
+"sha256": "f8570d4abfae0f319cec248efb29492b4a6eba69ee2e8c844ab22855cf540ca6"
+},
+"Maatify\\RateLimiter\\Tests\\System\\AdmissionArchiveFixturesTest::testNpInEveryProvenAdmissionCarriesTheFingerprintMember": {
+"n": 36755,
+"sha256": "52808b3df76f8ba99fe662a93069f4b6c502a1b29fac4e37adf19cc3e449ea9f"
+},
+"Maatify\\RateLimiter\\Tests\\System\\AdmissionArchiveFixturesTest::testTheArchivedDIdmintValueIsShown": {
+"n": 5811,
+"sha256": "e6be1d03d964157b0c3dac8f2f38f30cefb3cf0571bdf95a01f93cd74081b2bd"
+},
+"Maatify\\RateLimiter\\Tests\\System\\AdmissionArchiveFixturesTest::testDetectorNoRenewalMakesE2Diverge": {
+"n": 289,
+"sha256": "84bfdbe12d1772b2fbb58516daf3f898e5900cdf370310cf4317c3c7e0ad6817"
+},
+"Maatify\\RateLimiter\\Tests\\System\\AdmissionArchiveFixturesTest::testDetectorNoPasswordBindingLeavesTheStealOwnerOut": {
+"n": 6483,
+"sha256": "b2c45e933350def42331fb8f32b69ab9ac868eadc9225e940fde4c1d40405ce8"
+},
+"Maatify\\RateLimiter\\Tests\\System\\AdmissionArchiveFixturesTest::testDetectorNoK5SeparationMakesK5uDiverge": {
+"n": 137,
+"sha256": "86f86f310a8ebda8dcced540020c161371c5ee7338b8d334a098fc11ecca6142"
+},
+"Maatify\\RateLimiter\\Tests\\System\\AdmissionArchiveG7Test::testEveryArchivedG7RowIsReproducedFieldForField": {
+"n": 92474,
+"sha256": "04d3470eb53c114ea4617d8ae9253dd7a7546bdce510f8a41efccc2a1571a74a"
+},
+"Maatify\\RateLimiter\\Tests\\System\\AdmissionArchiveStreamsTest::testNm10aTheTwoArmsAreIdenticalRowByRowInMemory": {
+"n": 164386,
+"sha256": "fc6c527f5692a81997affa6eca6bf3aad60a167353e53e5ef77252c0c049a248"
+},
+"Maatify\\RateLimiter\\Tests\\System\\AdmissionArchiveStreamsTest::testNm10ReportedA1AndA3AtTheShare": {
+"n": 52362,
+"sha256": "add060394e526414527dbc41e8a23cb0cf5f3beaf031436621bcf08698cca19b"
+},
+"Maatify\\RateLimiter\\Tests\\System\\AdmissionArchiveStreamsTest::testNm5ReportedTheEffectOfTheUnrefundedReservationsPerBenignStream": {
+"n": 199220,
+"sha256": "deb2bb0c4e990ac91f24de581360e67389836ff36225892f92668d5dbbd5096c"
+},
+"Maatify\\RateLimiter\\Tests\\System\\AdmissionArchiveStreamsTest::testRpG4Full2StreamRowsReproduceTheArchiveExceptTheDeclaredUacCost": {
+"n": 14791,
+"sha256": "e448d44f730f4ade896c991e839caf154ffb18ed802e49b0e0aba0a3f6e38d32"
+},
+"Maatify\\RateLimiter\\Tests\\System\\AdmissionArchiveStreamsTest::testRpG4GatesA1A2A3HoldWithUacTheDeclaredCost": {
+"n": 14774,
+"sha256": "6abbf983eb9f9e0f1378a8f55382de06ecaed435e8f253ec8532b7338793a243"
+},
+"Maatify\\RateLimiter\\Tests\\System\\AdmissionArchiveStreamsTest::testRpG5EveryNoua2StreamRowOfG5V2IsReproducedFieldForFieldWithTheHostCounts": {
+"n": 23459,
+"sha256": "3c110908694bc8c5f03b5d6fea5bde88690108651635eb796e67c0901de5779c"
+},
+"Maatify\\RateLimiter\\Tests\\System\\AdmissionArchiveStreamsTest::testTheArmWithoutTheMechanismReproducesEveryArchivedPreRow": {
+"n": 17447,
+"sha256": "e46b0be24092a46a100f10a98ba6173471fb1698b14f5290ee80808c80447b71"
+},
+"Maatify\\RateLimiter\\Tests\\System\\AdmissionArchiveStreamsTest::testGatePReportedTheProductionPreRowsAreTheArchivedPreRows": {
+"n": 28638,
+"sha256": "02d723bc19c99f3e31eab525d9189c6a832c1724dd8548c128540afe3f455fb2"
+},
+"Maatify\\RateLimiter\\Tests\\System\\AdmissionArchiveStreamsTest::testNm10ReportedAtShareOneADroppingHostIsThePreFlowOnBothArms": {
+"n": 22382,
+"sha256": "06d44e0131c9085b23cbca57ed187b5545e68f8df26565f95321239e21e75056"
+},
+"Maatify\\RateLimiter\\Tests\\System\\AdmissionArchiveStreamsTest::testNm10B1Bru24HoldsAtEveryShareAndEqualsTheIndependentRecount": {
+"n": 34773,
+"sha256": "1893fc60595551bcfc148e2a574c8c5fb534fdf387ac77c0d12df3d7b7c34346"
+},
+"Maatify\\RateLimiter\\Tests\\System\\AdmissionArchiveStreamsTest::testNm5HarnessValidityRhoOneNoAbandonmentIsTheRpG4Values": {
+"n": 29548,
+"sha256": "085b3ade397404ef4d49c8ad7ef172f196b264062d845041461fb732db16638f"
+},
+"Maatify\\RateLimiter\\Tests\\System\\AdmissionArchiveStreamsTest::testNm5DetectorTheHighestRhoRefusesABenignStreamMoreThanRhoOne": {
+"n": 50965,
+"sha256": "4dbb43fc51f981b2c96cb2e04a5688d529a96ee0f11d310c36a118c1fb78e06c"
+},
+"Maatify\\RateLimiter\\Tests\\System\\AdmissionBuilderRerunTest::testEveryArchivedG7Px4RowIsReproducedThroughTheBuilder": {
+"n": 46086,
+"sha256": "5a1a1fe248e5030ef465f518eabe5e317965c5ee3236a27db5625299950409c2"
+},
+"Maatify\\RateLimiter\\Tests\\System\\AdmissionBuilderRerunTest::testThePx4FixturesAreReproducedThroughTheBuilder": {
+"n": 36755,
+"sha256": "8db43f0f2fce0f984d7aca2a9fb005b08d4537f8a50ae0b0ab2b474fbe0c954e"
+},
+"Maatify\\RateLimiter\\Tests\\System\\AdmissionEngineSourceCapacityTest::testSc1ASourceRefusalCarriesItsOwnCause": {
+"n": 25,
+"sha256": "d5a66528a1b0b6221e11e120a18e2dca5ff88a7c65c18c2348e830cfd445fca3"
+},
+"Maatify\\RateLimiter\\Tests\\System\\AdmissionEngineSourceCapacityTest::testSc2ARefusalWritesNothingAndTheNextWindowIsAdmittedWithNoCarriedState": {
+"n": 26,
+"sha256": "b13e92515c1df8223e338576e8525aa338404e7c8d44042cb1718d87da587f32"
+},
+"Maatify\\RateLimiter\\Tests\\System\\AdmissionEngineSourceCapacityTest::testSc3ACapacityRefusalChangesNoScoreBudgetWatcherOrCycle": {
+"n": 50,
+"sha256": "baef925102c406a427eb0526f8ff8927efd427df053a8855874851cf7dabe11e"
+},
+"Maatify\\RateLimiter\\Tests\\System\\AdmissionEngineSourceCapacityTest::testSc4ProvenAndOtherPolicyRequestsFromTheExhaustedSourceAreAdmitted": {
+"n": 26,
+"sha256": "a3fb3e515c2036e78869e3272283794d957543e0b450ffb441c67c2e79bc95e6"
+},
+"Maatify\\RateLimiter\\Tests\\System\\AdmissionEngineSourceCapacityTest::testSc5UaIdAndFingerprintRotationGainNothingBeyondTheCeiling": {
+"n": 100,
+"sha256": "86f285abf52619b5c5349b4015a33c58978a7ca7df2c0fd12515ee9a6b4588b4"
+},
+"Maatify\\RateLimiter\\Tests\\System\\AdmissionEngineSourceCapacityTest::testSc6CoTenantHarmIsAttributedToTheSourceAndReportedPerStream": {
+"n": 26351,
+"sha256": "4426c89de018c8c167e6b6e78b477a5a5822353dd90ee5585bee05c023160db3"
+},
+"Maatify\\RateLimiter\\Tests\\System\\AdmissionIpv6SourceEquivalenceTest::testBrdAndX2GiveTheSameRowsFromIpv6Slash64SourcesAsFromIpv4Sources": {
+"n": 6246,
+"sha256": "d6aaf2bb9fc763c32d8a39a3ecc59a27ec8ed5181b840541ed60aa19a6b8b10c"
+},
+"Maatify\\RateLimiter\\Tests\\System\\AdmissionIpv6SourceEquivalenceTest::testDetectorASourceOnTheSlash48ChangesAtLeastOneRow": {
+"n": 3123,
+"sha256": "d92d97d8b7fb67ec41d086fb8d1f47abe7a673ddb8116c06499a6c9e1801006f"
+},
+"Maatify\\RateLimiter\\Tests\\System\\AdmissionNm10BindingTest::testBru24NoAdmissionIsScoredTwiceOrWithoutItsPermit": {
+"n": 47229,
+"sha256": "ad83fe205a3ea7f0127314a5adb206706883444554ae31d204b4aeab44184cb5"
+},
+"Maatify\\RateLimiter\\Tests\\System\\AdmissionNm10BindingTest::testStealNoAdmissionIsScoredTwiceOrWithoutItsPermit": {
+"n": 46749,
+"sha256": "cd6ab6f5ca178e6772d54d4553a588efe2d1699106365641630a475de9865e34"
+},
+"Maatify\\RateLimiter\\Tests\\System\\AdmissionNm10BindingTest::testEveryCaseOccursOnBothStreams": {
+"n": 47836,
+"sha256": "bf7ef0cdecccdfb01c18f1a9f6ac29ba8843e502b0a75e8565ed7a0f3139b4e8"
+},
+"Maatify\\RateLimiter\\Tests\\System\\CircuitBreakerStateMachineTest::testEngineShortCircuitsBeforeDeviceResolutionAndResumesAfterRecovery": {
+"n": 2,
+"sha256": "b2a43169ed68fa6ace2d87f41f5188182d3458cf3649c947e5a532ed2f9a07e0"
+},
+"Maatify\\RateLimiter\\Tests\\System\\CircuitBreakerStateMachineTest::testSubsequentOpenApiRequestsDoNotTouchNormalBackend": {
+"n": 2,
+"sha256": "489d1f4c4eecf7066d1bfe0031e0cb691868f8a5aa7f79ea47091eecba4151af"
+},
+"Maatify\\RateLimiter\\Tests\\System\\CircuitBreakerStateMachineTest::testEngineGuardPreflightSkipsProbeDeviceAndBackendAndUsesRemainingRetryAfter": {
+"n": 2,
+"sha256": "2f7409f7706034e5a6ceaf4c3c37afdb5a95a792b017abe24d42b85a5996bf55"
+},
+"Maatify\\RateLimiter\\Tests\\System\\KnownDeviceAllowancePublicApiTest::testTrustedSessionOnOwnAccountReachesVerifierFourTimesThroughPublicApi": {
+"n": 29,
+"sha256": "6ab2e180d24ce4965ef2ed33a94be9c282dd508d9f85c382e6aea2235d9da769"
+},
+"Maatify\\RateLimiter\\Tests\\System\\KnownDeviceAllowancePublicApiTest::testValidCustomAllowancePolicyScoresK4AfterItsAllowance": {
+"n": 4,
+"sha256": "74fd1a2688772fb64056350b6d09602d03ca80aeabc2409b94ca593fe7880dce"
+},
+"Maatify\\RateLimiter\\Tests\\System\\KnownDeviceAllowancePublicApiTest::testPresetSubclassWithoutK5ThresholdsKeepsS0KnownDeviceBehavior": {
+"n": 12,
+"sha256": "d8d3ed02107aaeab8747179e33f8a18ce9197f994d12c91807ad271137e1f452"
+},
+"Maatify\\RateLimiter\\Tests\\System\\KnownDeviceAllowancePublicApiTest::testAllowanceBackendFailureUsesTheExistingDec015PathThroughPublicApi": {
+"n": 6,
+"sha256": "31253b3e34fe5a8e0a5e6faae62387c6288e165f453a9191b26f49c4d2e64b39"
+},
+"Maatify\\RateLimiter\\Tests\\System\\KnownDeviceAntiEquilibriumBoundaryTest::testMixedSoftWriteFaultThroughPublicApiLeavesNoWatcherEvent": {
+"n": 5,
+"sha256": "ee7000850ef6128782415c773cb84c583bc3d88dbbd78a4453c752fc4ece2297"
+},
+"Maatify\\RateLimiter\\Tests\\System\\PostPunishmentReentryLifecycleTest::testLoginLifecycleAllowsResidualGenerationAndClaimsOnce": {
+"n": 7,
+"sha256": "42cb61e5734dd8fbd6affe3f132c37b3d70796d9f9d04c73ad3f5b6536a39749"
+},
+"Maatify\\RateLimiter\\Tests\\System\\PostPunishmentReentryLifecycleTest::testOtpUsesSameUnverifiedDeviceForK4Lifecycle": {
+"n": 3,
+"sha256": "cd41ed0b8ee855cfea7732f4e423da41074b84b0ef7a4e1dd35d55027e8f37f2"
+},
+"Maatify\\RateLimiter\\Tests\\System\\PostPunishmentReentryLifecycleTest::testLifecycleClaimIdentityBoundariesRejectCrossAccountPolicyTamperedAndAnonymousClaims": {
+"n": 4,
+"sha256": "13242c23cb504f45cbc5b2bac54cfb22b4ce996732f3ffd9f2b2ecd90aa6370e"
+},
+"Maatify\\RateLimiter\\Tests\\System\\PostPunishmentReentryLifecycleTest::testActiveK4BlockUsesRemainingPunishmentTtl": {
+"n": 4,
+"sha256": "8e65c454a26c1abe5a827680e7235e7c108a212d3776521ff5cbcdd2b376c738"
+},
+"Maatify\\RateLimiter\\Tests\\System\\PostPunishmentReentryLifecycleTest::testFirstGenerationHardFromEmptyStatePublishesLifecycle": {
+"n": 1,
+"sha256": "2bd2a69d786e0ed36b0847af7d6b688ef3d97a889fc1195aa6fdcb3cd8ba4b32"
+},
+"Maatify\\RateLimiter\\Tests\\System\\PostPunishmentReentryLifecycleTest::testLegacyCurrentFirstHardMutationPublishesFreshLifecycle": {
+"n": 1,
+"sha256": "2bd2a69d786e0ed36b0847af7d6b688ef3d97a889fc1195aa6fdcb3cd8ba4b32"
+},
+"Maatify\\RateLimiter\\Tests\\System\\PostPunishmentReentryLifecycleTest::testLegacyPreviousFirstHardMutationHandsOffAndPublishesLifecycle": {
+"n": 1,
+"sha256": "2bd2a69d786e0ed36b0847af7d6b688ef3d97a889fc1195aa6fdcb3cd8ba4b32"
+},
+"Maatify\\RateLimiter\\Tests\\System\\PostPunishmentReentryLifecycleTest::testKnownDeviceK5OnlyFailureDoesNotAdvanceServedK4Generation": {
+"n": 6,
+"sha256": "4e17c257025f6315bf0785c8a3f257602adb8f862ac725d0866bf524f0419765"
+},
+"Maatify\\RateLimiter\\Tests\\System\\PostPunishmentReentryLifecycleTest::testNewK4GenerationInvalidatesOldLifecycleAndPublishesFreshIdentity": {
+"n": 5,
+"sha256": "185c31704ee10d53e35d8c1ee8b6ca70eea951abed946ff69f4a9ecabd5b5026"
+},
+"Maatify\\RateLimiter\\Tests\\System\\PostPunishmentReentryLifecycleTest::testCustomOptInHasFullLifecycleAndNonOptInDoesNotNeedLifecycle": {
+"n": 4,
+"sha256": "13242c23cb504f45cbc5b2bac54cfb22b4ce996732f3ffd9f2b2ecd90aa6370e"
+},
+"Maatify\\RateLimiter\\Tests\\System\\PostPunishmentReentryLifecycleTest::testMutationAndPublicationConflictsRefreshAndRetryWithFreshState": {
+"n": 3,
+"sha256": "f4815d13474660a8bf6fd1381a27383dda7af6d3f6e5ea99be3d985330ccb3b1"
+},
+"Maatify\\RateLimiter\\Tests\\System\\PostPunishmentReentryLifecycleTest::testThreeMutationConflictsReturnTransientHardWithoutCircuitFailure": {
+"n": 3,
+"sha256": "69c530bb19337c84d2aafb7c6ca031bc7998fbc5b1dfa0e251b07284ce4a1138"
+},
+"Maatify\\RateLimiter\\Tests\\System\\PostPunishmentReentryLifecycleTest::testThreePublicationConflictsReturnTransientHardWithoutCircuitFailure": {
+"n": 3,
+"sha256": "bf4ab7e349e7785ca0b478522f778720a9aab1d23e11c90d83ac93422493e724"
+},
+"Maatify\\RateLimiter\\Tests\\System\\RateLimitOperationalReaderTest::testReadExposesEngineStateAndDoesNotMutateRuntimeStores": {
+"n": 1,
+"sha256": "c1b9febeb36392fb15dcb8abc0dd5e6c607032f9ff598a7aad8d02ff843a1f09"
+},
+"Maatify\\RateLimiter\\Tests\\System\\RateLimiterBudgetRotationContinuityTest::testK4BudgetRotatesWithAtomicSeedMigrationOnFailureUpdate": {
+"n": 1,
+"sha256": "e77e595b2db4aaef4e83a629fbe496fd3c935fb984b1d4f86b350b1384d0a8f6"
+},
+"Maatify\\RateLimiter\\Tests\\System\\RateLimiterBudgetRotationContinuityTest::testBudgetV2IsAuthoritativeAndNeverMergedWithV1": {
+"n": 1,
+"sha256": "c1b9febeb36392fb15dcb8abc0dd5e6c607032f9ff598a7aad8d02ff843a1f09"
+},
+"Maatify\\RateLimiter\\Tests\\System\\RateLimiterBudgetRotationContinuityTest::testMissingBudgetSeedCapabilityFailsExplicitlyWhenMigrationRequired": {
+"n": 1,
+"sha256": "93d097d3b56a0ca690a7c97b555fc01ee48205bb9be19bd2032c862ef72371be"
+},
+"Maatify\\RateLimiter\\Tests\\System\\RateLimiterBudgetRotationContinuityTest::testBaseOnlyStoreWithoutV1BudgetContinuesNormalPathWithoutCapability": {
+"n": 1,
+"sha256": "c1b9febeb36392fb15dcb8abc0dd5e6c607032f9ff598a7aad8d02ff843a1f09"
+},
+"Maatify\\RateLimiter\\Tests\\System\\RateLimiterBuilderWorkflowTest::testBuilderReadsPreviousK5BlockThroughPublicApiWithoutCrossPairing": {
+"n": 3,
+"sha256": "4bb7e9bb99a8c220e35a3a933bf8ae4a5c1e42a59f052aa6929f7c13252f3b93"
+},
+"Maatify\\RateLimiter\\Tests\\System\\RateLimiterBuilderWorkflowTest::testBuilderWritesCurrentK5AndLeavesPreviousK5ReadOnly": {
+"n": 3,
+"sha256": "0e883f71ca2ab970d0b15e49d74c7891efadb29baf54b48b3d41868b0de2692e"
+},
+"Maatify\\RateLimiter\\Tests\\System\\RateLimiterBuilderWorkflowTest::testDefaultBuilderExecutesEveryDefaultPolicyThroughPublicInterface": {
+"n": 3,
+"sha256": "34d9ad15eba2a24fb6c3c5bb7a16c64adc468cb18a0ebc54b31912d794c8d1a0"
+},
+"Maatify\\RateLimiter\\Tests\\System\\RateLimiterBuilderWorkflowTest::testBuilderWithoutRotationDoesNotReadForeignGeneration": {
+"n": 1,
+"sha256": "c1b9febeb36392fb15dcb8abc0dd5e6c607032f9ff598a7aad8d02ff843a1f09"
+},
+"Maatify\\RateLimiter\\Tests\\System\\RateLimiterDeviceGenerationRotationTest::testK5MicroCapMigratesThePreviousEpochAtomicallyAcrossRotationShapes": {
+"n": 3,
+"sha256": "0e883f71ca2ab970d0b15e49d74c7891efadb29baf54b48b3d41868b0de2692e"
+},
+"Maatify\\RateLimiter\\Tests\\System\\RateLimiterDeviceGenerationRotationTest::testOuterOnlyRotationReadsPreviousGenerationK5ActiveBlock": {
+"n": 1,
+"sha256": "08367e6b13fe6ed1704157fdddd59c191625089c4365cc6281fe90bdf76fb134"
+},
+"Maatify\\RateLimiter\\Tests\\System\\RateLimiterDeviceGenerationRotationTest::testFingerprintOnlyRotationReadsPreviousGenerationK3ActiveBlock": {
+"n": 1,
+"sha256": "08367e6b13fe6ed1704157fdddd59c191625089c4365cc6281fe90bdf76fb134"
+},
+"Maatify\\RateLimiter\\Tests\\System\\RateLimiterDeviceGenerationRotationTest::testBothRotatedReadsPreviousGenerationK5ActiveBlockWithoutCrossPairing": {
+"n": 1,
+"sha256": "08367e6b13fe6ed1704157fdddd59c191625089c4365cc6281fe90bdf76fb134"
+},
+"Maatify\\RateLimiter\\Tests\\System\\RateLimiterDeviceGenerationRotationTest::testNoRotationKeepsCurrentK5ScoreWriteBehavior": {
+"n": 1,
+"sha256": "c1b9febeb36392fb15dcb8abc0dd5e6c607032f9ff598a7aad8d02ff843a1f09"
+},
+"Maatify\\RateLimiter\\Tests\\System\\RateLimiterDeviceGenerationRotationTest::testFingerprintOnlyRotationFallsBackToPreviousK3Score": {
+"n": 1,
+"sha256": "01b9715a77352861f2f9956f5d4e4af38972fe6d4bef43c117e1006f94164adc"
+},
+"Maatify\\RateLimiter\\Tests\\System\\RateLimiterDeviceGenerationRotationTest::testBothRotatedPreviousK5ScoreIsReadButOnlyCurrentK5IsUpdated": {
+"n": 1,
+"sha256": "c1b9febeb36392fb15dcb8abc0dd5e6c607032f9ff598a7aad8d02ff843a1f09"
+},
+"Maatify\\RateLimiter\\Tests\\System\\RateLimiterDeviceGenerationRotationTest::testCurrentK5MicroCapIsAuthoritativeAndPreviousIsIgnored": {
+"n": 1,
+"sha256": "c1b9febeb36392fb15dcb8abc0dd5e6c607032f9ff598a7aad8d02ff843a1f09"
+},
+"Maatify\\RateLimiter\\Tests\\System\\RateLimiterDeviceGenerationRotationTest::testK5MicroCapMigrationWithoutCapabilityFailsClosedThroughEngine": {
+"n": 1,
+"sha256": "93d097d3b56a0ca690a7c97b555fc01ee48205bb9be19bd2032c862ef72371be"
+},
+"Maatify\\RateLimiter\\Tests\\System\\RateLimiterDeviceGenerationRotationTest::testPreviousFingerprintUsesBoundedRotationWithoutCreatingRawPreviousMembers": {
+"n": 102,
+"sha256": "1069f6871030e7d0c3d08ff0db4fe2f215004dcee721ce680a5e2cc9c687acb2"
+},
+"Maatify\\RateLimiter\\Tests\\System\\RateLimiterEngineClaimFailureTest::testStaleLifecycleMissReturnsFalseWithoutCircuitFailure": {
+"n": 3,
+"sha256": "f4815d13474660a8bf6fd1381a27383dda7af6d3f6e5ea99be3d985330ccb3b1"
+},
+"Maatify\\RateLimiter\\Tests\\System\\RateLimiterEngineClaimFailureTest::testIndependentK2HardBlockSuppressesPostPunishmentMetadata": {
+"n": 4,
+"sha256": "b4208000f34ed9e2b618e00932433abe6f155b14ed16b4352f42197bbe1e317e"
+},
+"Maatify\\RateLimiter\\Tests\\System\\RateLimiterEngineCurrentRuntimeCharacterizationTest::testEphemeralLoginOverflowRoutesKnownAuthenticationFailureToK4": {
+"n": 22,
+"sha256": "7024ad36806d1ae7e59770b3da9c292d03692f780cc3973d36901316efbb9f34"
+},
+"Maatify\\RateLimiter\\Tests\\System\\RateLimiterEngineCurrentRuntimeCharacterizationTest::testLoginL1DoesNotStallLaterFailureUpdates": {
+"n": 4,
+"sha256": "952f0aea281b73c0b40b42e03683651c78be93ff67de65bab33ff9e9eab93996"
+},
+"Maatify\\RateLimiter\\Tests\\System\\RateLimiterEngineCurrentRuntimeCharacterizationTest::testLoginBudgetOnlyCrossingRemainsSoftAndStoresNonHardBlock": {
+"n": 2,
+"sha256": "213419d5e1b46f27939dd92d0cc1d53ca6d3d8914b8e86c53c7162f36ebce789"
+},
+"Maatify\\RateLimiter\\Tests\\System\\RateLimiterEngineCurrentRuntimeCharacterizationTest::testLoginBudgetWithMissingSessionIdentifierDoesNotReceiveTrustedDowngrade": {
+"n": 1,
+"sha256": "e77e595b2db4aaef4e83a629fbe496fd3c935fb984b1d4f86b350b1384d0a8f6"
+},
+"Maatify\\RateLimiter\\Tests\\System\\RateLimiterEngineCurrentRuntimeCharacterizationTest::testLoginBudgetWithValidTrustedSessionKeepsTrustedDowngrade": {
+"n": 1,
+"sha256": "605341c7427f165b6d5c907af4c2bb0754faf46920f1434f066487831860060f"
+},
+"Maatify\\RateLimiter\\Tests\\System\\RateLimiterEngineCurrentRuntimeCharacterizationTest::testLoginBudgetRotationReadsPreviousSecretBudgetAsV2Fallback": {
+"n": 1,
+"sha256": "e77e595b2db4aaef4e83a629fbe496fd3c935fb984b1d4f86b350b1384d0a8f6"
+},
+"Maatify\\RateLimiter\\Tests\\System\\RateLimiterEngineCurrentRuntimeCharacterizationTest::testLoginActiveBudgetDoesNotMaskStrongerK4ScoreThreshold": {
+"n": 1,
+"sha256": "08367e6b13fe6ed1704157fdddd59c191625089c4365cc6281fe90bdf76fb134"
+},
+"Maatify\\RateLimiter\\Tests\\System\\RateLimiterEngineCurrentRuntimeCharacterizationTest::testLoginActiveBudgetDoesNotShortCircuitFailureUpdates": {
+"n": 1,
+"sha256": "e77e595b2db4aaef4e83a629fbe496fd3c935fb984b1d4f86b350b1384d0a8f6"
+},
+"Maatify\\RateLimiter\\Tests\\System\\RateLimiterEngineCurrentRuntimeCharacterizationTest::testKnownTrustedLoginDeviceBuildsMicroCapBeforeAccountBudget": {
+"n": 1,
+"sha256": "c1b9febeb36392fb15dcb8abc0dd5e6c607032f9ff598a7aad8d02ff843a1f09"
+},
+"Maatify\\RateLimiter\\Tests\\System\\RateLimiterEngineCurrentRuntimeCharacterizationTest::testEphemeralOtpOverflowKeepsAccountSignalsWithoutPerDevicePersistence": {
+"n": 11,
+"sha256": "6dcc576766b6466d6deffdc989753efbb085060cd4e35827ea3217df67548f2c"
+},
+"Maatify\\RateLimiter\\Tests\\System\\RateLimiterEngineCurrentRuntimeCharacterizationTest::testCurrentCharacterizationLoginBudgetKeepsFixedEpochStartWithinTwentyFourHours": {
+"n": 2,
+"sha256": "602948763c38098ce3c9ec8a886e81bc3d2c072cd444b2c0d4c98a03c73e80b0"
+},
+"Maatify\\RateLimiter\\Tests\\System\\RateLimiterEngineCurrentRuntimeCharacterizationTest::testLoginBudgetUsesIndependentCooldownWithoutEpochRetryAfter": {
+"n": 2,
+"sha256": "213419d5e1b46f27939dd92d0cc1d53ca6d3d8914b8e86c53c7162f36ebce789"
+},
+"Maatify\\RateLimiter\\Tests\\System\\RateLimiterEngineCurrentRuntimeCharacterizationTest::testOtpRecoveryCollisionGuardSuppressesBudgetActivationAtNineToTen": {
+"n": 1,
+"sha256": "ef998838199cd596c5efd15edacce19399995c16f35a98190981a882e842a702"
+},
+"Maatify\\RateLimiter\\Tests\\System\\RateLimiterEngineCurrentRuntimeCharacterizationTest::testApiK2CrossingMapsToSoftBlockL1AndOnlyK2Persistence": {
+"n": 1,
+"sha256": "738cda880904f01ac1556114b7169b34af002266a56528676385cb482ad4f0a7"
+},
+"Maatify\\RateLimiter\\Tests\\System\\RateLimiterEngineCurrentRuntimeCharacterizationTest::testApiThresholdPathDoesNotPersistAccountOrDeviceAccountBlocks": {
+"n": 1,
+"sha256": "738cda880904f01ac1556114b7169b34af002266a56528676385cb482ad4f0a7"
+},
+"Maatify\\RateLimiter\\Tests\\System\\RateLimiterEngineCurrentRuntimeCharacterizationTest::testApiExistingScoresMapToK2L1K3L2AndK1L3Independently": {
+"n": 1,
+"sha256": "7678f3b4c3d60344360a88576599898e5885cb4a521f1609e89ce08fcea79534"
+},
+"Maatify\\RateLimiter\\Tests\\System\\RateLimiterEngineCurrentRuntimeCharacterizationTest::testApiK2AndK3CandidatesKeepTheirOwnLevelsWhenTheyWinTogether": {
+"n": 1,
+"sha256": "01b9715a77352861f2f9956f5d4e4af38972fe6d4bef43c117e1006f94164adc"
+},
+"Maatify\\RateLimiter\\Tests\\System\\RateLimiterEngineCurrentRuntimeCharacterizationTest::testApiK1K2AndK3CandidatesPersistOnlyTheirOwnScopeLevels": {
+"n": 1,
+"sha256": "7678f3b4c3d60344360a88576599898e5885cb4a521f1609e89ce08fcea79534"
+},
+"Maatify\\RateLimiter\\Tests\\System\\RateLimiterEngineCurrentRuntimeCharacterizationTest::testCredentialSprayBlocksTheFifthDistinctSubjectDuringPrecheck": {
+"n": 5,
+"sha256": "8b63db3320861b1d5a4fee7ab97208709a80d13124b3bae0ef1a8bdde559705d"
+},
+"Maatify\\RateLimiter\\Tests\\System\\RateLimiterEngineCurrentRuntimeCharacterizationTest::testDistributedAccountAttackBlocksInvolvedK5sAtFourthDevice": {
+"n": 4,
+"sha256": "8309c9e78d35fd396805ad7356170fa35844ab6a1a71e9e1d4702fd210ea81b0"
+},
+"Maatify\\RateLimiter\\Tests\\System\\RateLimiterEngineCurrentRuntimeCharacterizationTest::testDifferentlyNamedCustomPoliciesActivateEachTypedSemanticBranch": {
+"n": 11,
+"sha256": "43a4e33473a543656ed5795e5a3e8d68b05f3f1571d3a764a866bf38b1664caf"
+},
+"Maatify\\RateLimiter\\Tests\\System\\RateLimiterEngineCurrentRuntimeCharacterizationTest::testPolicyWithoutCapabilitiesDoesNotReceiveTypedSemanticBehavior": {
+"n": 5,
+"sha256": "8c2cd67cbcfd89bc2e34268a7388bfeffb4226e41a9a6207751e6d2c40fc5193"
+},
+"Maatify\\RateLimiter\\Tests\\System\\RateLimiterEngineCurrentRuntimeCharacterizationTest::testDirectCustomPoliciesImplementingPublicContractsActivateTypedSemantics": {
+"n": 6,
+"sha256": "bfd4496851784b0acae622cc8f4130c43559e6f499810fd154a2078e85cd25a1"
+},
+"Maatify\\RateLimiter\\Tests\\System\\RateLimiterEngineFallbackBlastRadiusTest::testHealthyBackendUsesNormalEnginePipelineForChromeAndFirefox": {
+"n": 62,
+"sha256": "446ac5b54d6360a95584e797489e12f824b4721f34deb6857b3cb66c250935a1"
+},
+"Maatify\\RateLimiter\\Tests\\System\\RateLimiterEngineFallbackBlastRadiusTest::testLoginFallbackAccountCapIsIndependentOfUa": {
+"n": 6,
+"sha256": "31253b3e34fe5a8e0a5e6faae62387c6288e165f453a9191b26f49c4d2e64b39"
+},
+"Maatify\\RateLimiter\\Tests\\System\\RateLimiterEngineFallbackBlastRadiusTest::testLoginFallbackIpCapIsIndependentOfUa": {
+"n": 23,
+"sha256": "5b0a4aad28e3a725e77164cb1366636b0484d76e28cbfd4b538b0df6d6e481e5"
+},
+"Maatify\\RateLimiter\\Tests\\System\\RateLimiterEngineFallbackBlastRadiusTest::testOtpFallbackAccountCapIsIndependentOfUa": {
+"n": 5,
+"sha256": "1cd0a8d423cde676ffd0c1195bf20ea3128a9fc4948772dd455dba27fb33e872"
+},
+"Maatify\\RateLimiter\\Tests\\System\\RateLimiterEngineFallbackBlastRadiusTest::testHourlyGcPreservesActiveOtpFallbackBucketThroughEngine": {
+"n": 6,
+"sha256": "64e988f3261293cd2d64a891e87f41e25448b78f20634a161eb82e99c37dd2ff"
+},
+"Maatify\\RateLimiter\\Tests\\System\\RateLimiterEngineFallbackBlastRadiusTest::testOtpFallbackNaturallyResetsOnlyWhenFixedWindowRollsOver": {
+"n": 7,
+"sha256": "4761e8f57e24f47ac74ea26dec54e12afd925d3603fa8021dc876decef4e2627"
+},
+"Maatify\\RateLimiter\\Tests\\System\\RateLimiterEngineFallbackBlastRadiusTest::testOtpFallbackIpCapIsIndependentOfUa": {
+"n": 13,
+"sha256": "b1a6fc2d7d1410ad2c8002e462a5686ba4e60235e60b25c71c76b1e2d57fff97"
+},
+"Maatify\\RateLimiter\\Tests\\System\\RateLimiterEngineFallbackBlastRadiusTest::testApiCrossUaFallbackUsesDistinctK2BucketsThroughEngine": {
+"n": 61,
+"sha256": "ee2ac281946b266b63f26a88aef3199c5a1390db06f0f51ad64145b5fe6e0769"
+},
+"Maatify\\RateLimiter\\Tests\\System\\RateLimiterEngineFallbackBlastRadiusTest::testDirectCustomApiPolicyEnforcesTypedIpAggregateCapIndependentOfUa": {
+"n": 201,
+"sha256": "c06bee605234c5e6867847e663908bb3bf2fe2b472f99f93a34a7b36f82edf79"
+},
+"Maatify\\RateLimiter\\Tests\\System\\RateLimiterEngineFallbackBlastRadiusTest::testDirectCustomApiPolicyEnforcesTypedIpUserAgentCap": {
+"n": 81,
+"sha256": "f639efcc753a5244d93fe9728a9fbdba90c9788d776d77270f06b7f329991c8b"
+},
+"Maatify\\RateLimiter\\Tests\\System\\RateLimiterEngineFallbackBlastRadiusTest::testDirectCustomApiPolicyFallbackWindowRollsOverAtItsOwnDuration": {
+"n": 82,
+"sha256": "cdf231b3e4241d6e20f282c05f409b2bde27cab08afebb98566ca4ca4c6de259"
+},
+"Maatify\\RateLimiter\\Tests\\System\\RateLimiterEngineFallbackBlastRadiusTest::testDirectCustomAuthPolicyEnforcesTypedAccountCap": {
+"n": 8,
+"sha256": "c3b8d99f45eb9e2af7de178232a7026f1117dc97a5bfbbe1dbee628035f09b08"
+},
+"Maatify\\RateLimiter\\Tests\\System\\RateLimiterEngineFallbackBlastRadiusTest::testDirectCustomAuthPolicyEnforcesTypedIpCap": {
+"n": 33,
+"sha256": "08237ac81f0b9599611e9e9878463d00b6f6412e614bbe110649e3ccf803fb63"
+},
+"Maatify\\RateLimiter\\Tests\\System\\RateLimiterEngineFallbackBlastRadiusTest::testDirectCustomAuthPolicyFallbackWindowRollsOverAtItsOwnDuration": {
+"n": 9,
+"sha256": "7b38cc8dac463c2fd00eb2e8f1483a9050759cc7d2fa164ceda18edb7dbfc2ed"
+},
+"Maatify\\RateLimiter\\Tests\\System\\RateLimiterEngineFallbackBlastRadiusTest::testCustomPolicyAndOfficialLoginPolicyWithIdenticalFallbackValuesDoNotShareCounters": {
+"n": 11,
+"sha256": "13c296d2aed9243a94631c3c258ea9d63029f3dd9b78292602a517e1eefe86f6"
+},
+"Maatify\\RateLimiter\\Tests\\System\\RateLimiterEngineFallbackBlastRadiusTest::testPolicyWithoutFallbackProfileFailsClosedDuringDegradedCircuit": {
+"n": 3,
+"sha256": "b2f409b4ade42cbbcff9b589c50db04ca40e3cbd16e2b17ded1b8803e6955330"
+},
+"Maatify\\RateLimiter\\Tests\\System\\RateLimiterEngineFallbackRetryAfterTest::testBackendFailurePathReportsRemainingWindowLongerThanSixtySeconds": {
+"n": 2,
+"sha256": "902740692aa7203d9ecaeacc59f29977a514c12cb65edfcff01ab1f8562c25dc"
+},
+"Maatify\\RateLimiter\\Tests\\System\\RateLimiterEngineFallbackRetryAfterTest::testBackendFailurePathReportsRemainingWindowShorterThanSixtySeconds": {
+"n": 2,
+"sha256": "00549e33413895d145b158e9e92bbe56bcd3739702ff72cdbc81356c42ec2065"
+},
+"Maatify\\RateLimiter\\Tests\\System\\RateLimiterEngineFallbackRetryAfterTest::testOpenCircuitPathReportsRemainingWindowLongerThanSixtySeconds": {
+"n": 5,
+"sha256": "0173b9fb28e63e6d86d6a89b61ece5aebdf8fbb4313c66da561467320e20f718"
+},
+"Maatify\\RateLimiter\\Tests\\System\\RateLimiterEngineFallbackRetryAfterTest::testOpenCircuitPathReportsRemainingWindowShorterThanSixtySeconds": {
+"n": 5,
+"sha256": "903b4560e4302369b30605adb1ef87c45a992e0283b30ac1970178872fc5b362"
+},
+"Maatify\\RateLimiter\\Tests\\System\\RateLimiterEngineFallbackRetryAfterTest::testRetryAfterIsOneSecondBeforeBoundaryAndFullWindowAtBoundary": {
+"n": 7,
+"sha256": "594235a836ce106f3d1348dd6aa64171d3b8ef88fb8f83c51d4d1dd6ec6b0940"
+},
+"Maatify\\RateLimiter\\Tests\\System\\RateLimiterEngineFallbackRetryAfterTest::testMultipleDenyingDimensionsReportTheLongestRemainingWindowOnBothPaths": {
+"n": 7,
+"sha256": "d082d5fdd03159a2f7424e433b8fd9bca6dd390ea0227a0b31455f3dbab88d1b"
+},
+"Maatify\\RateLimiter\\Tests\\System\\RateLimiterEngineFallbackRetryAfterTest::testOnlyTheShorterDimensionDenyingReportsItsOwnRemainingWindow": {
+"n": 2,
+"sha256": "00549e33413895d145b158e9e92bbe56bcd3739702ff72cdbc81356c42ec2065"
+},
+"Maatify\\RateLimiter\\Tests\\System\\RateLimiterEngineFallbackRetryAfterTest::testOnlyTheLongerDimensionDenyingReportsItsOwnRemainingWindow": {
+"n": 2,
+"sha256": "902740692aa7203d9ecaeacc59f29977a514c12cb65edfcff01ab1f8562c25dc"
+},
+"Maatify\\RateLimiter\\Tests\\System\\RateLimiterEngineFallbackRetryAfterTest::testHardBlockL2AndPositiveRetryAfterForOfficialPolicies": {
+"n": 7,
+"sha256": "1a0c8680a206754bf36ad95e249b6eda313ddac031595583e6089dcb24adbcdc"
+},
+"Maatify\\RateLimiter\\Tests\\System\\RateLimiterEngineFallbackRetryAfterTest::testOneEvaluationConsumesEachFallbackCounterExactlyOnce": {
+"n": 7,
+"sha256": "d082d5fdd03159a2f7424e433b8fd9bca6dd390ea0227a0b31455f3dbab88d1b"
+},
+"Maatify\\RateLimiter\\Tests\\System\\RateLimiterEngineFallbackRetryAfterTest::testAllowedAndOverflowAndWindowRolloverRegressions": {
+"n": 4109,
+"sha256": "b32cc4a56c51698523ffeb0bc087d58df96ed47bd357d250d1fbbd917194d0af"
+},
+"Maatify\\RateLimiter\\Tests\\System\\RateLimiterEngineFallbackRetryAfterTest::testFailClosedAndPolicyWithoutFallbackKeepTheirExistingBehavior": {
+"n": 5,
+"sha256": "d36ac66bf3093b7d8b465303b2375582861c3f53b9326b5943e702f7a95ca6c5"
+},
+"Maatify\\RateLimiter\\Tests\\System\\RateLimiterEngineWorkflowTest::testOtpLoginPreCheckBehavior": {
+"n": 2,
+"sha256": "8d8d44d62c4dc107b4a6dab197cd88732c2c903fde1b56ebebee719ec3c80992"
+},
+"Maatify\\RateLimiter\\Tests\\System\\RateLimiterEngineWorkflowTest::testCleanAllowedRequest": {
+"n": 1,
+"sha256": "c1b9febeb36392fb15dcb8abc0dd5e6c607032f9ff598a7aad8d02ff843a1f09"
+},
+"Maatify\\RateLimiter\\Tests\\System\\RateLimiterEngineWorkflowTest::testApiHeavyNormalAccessBehavior": {
+"n": 1,
+"sha256": "c1b9febeb36392fb15dcb8abc0dd5e6c607032f9ff598a7aad8d02ff843a1f09"
+},
+"Maatify\\RateLimiter\\Tests\\System\\RateLimiterEngineWorkflowTest::testFailureRecording": {
+"n": 1,
+"sha256": "d3a4ea2cff2583f6b60e7f5e44171f10cbd757405c7e8d8036b5738b9bd2d197"
+},
+"Maatify\\RateLimiter\\Tests\\System\\RateLimiterEngineWorkflowTest::testSuccessRecording": {
+"n": 1,
+"sha256": "c1b9febeb36392fb15dcb8abc0dd5e6c607032f9ff598a7aad8d02ff843a1f09"
+},
+"Maatify\\RateLimiter\\Tests\\System\\RateLimiterEngineWorkflowTest::testExistingBlockingOutcome": {
+"n": 1,
+"sha256": "0cd1fb04e269914158ef26cb911793c39640bf7109857619bd088a2403650170"
+},
+"Maatify\\RateLimiter\\Tests\\System\\RateLimiterEngineWorkflowTest::testUnknownPolicyExceptionContract": {
+"n": 1,
+"sha256": "93d097d3b56a0ca690a7c97b555fc01ee48205bb9be19bd2032c862ef72371be"
+},
+"Maatify\\RateLimiter\\Tests\\System\\RateLimiterEngineWorkflowTest::testOtpAndLoginStoreFailuresFailClosed": {
+"n": 2,
+"sha256": "ad650bdf9b28c49d72404469d35d39ed6bd83652461e00ce80eb455ff85fe65e"
+},
+"Maatify\\RateLimiter\\Tests\\System\\RateLimiterEngineWorkflowTest::testApiHeavyStoreFailureMovesFromFailOpenToDegradedModeAfterCircuitTrip": {
+"n": 3,
+"sha256": "9d4723db8727b8aaca8e31586da6aac46075c046e01921638ae73ff96f3f1fa2"
+},
+"Maatify\\RateLimiter\\Tests\\System\\RateLimiterEngineWorkflowTest::testFullCircuitOutageKeepsEmergencyStateProcessLocalAfterPersistenceRestoration": {
+"n": 4,
+"sha256": "0b472306ca6b0c365ba35075a8d811caf2b767234d9a10c5eabf88d94c2f1af5"
+},
+"Maatify\\RateLimiter\\Tests\\System\\RateLimiterEngineWorkflowTest::testUntypedStoreExceptionDoesNotBecomeCircuitFailureOrFallbackAllowance": {
+"n": 1,
+"sha256": "269c508fdcfb4e3080d9024c1a1761b9ae9b329e979d31beacb3cfa5a7ad789b"
+},
+"Maatify\\RateLimiter\\Tests\\System\\RateLimiterEngineWorkflowTest::testInvalidDeviceIdentityInputDoesNotBecomeBackendFailure": {
+"n": 1,
+"sha256": "93d097d3b56a0ca690a7c97b555fc01ee48205bb9be19bd2032c862ef72371be"
+},
+"Maatify\\RateLimiter\\Tests\\System\\RateLimiterEngineWorkflowTest::testApiHeavyFallbackK2CapThroughEngine": {
+"n": 61,
+"sha256": "e9043a03cc6452257f5a6f4d77ed493977dca24adac84d22971683a691b4ad89"
+},
+"Maatify\\RateLimiter\\Tests\\System\\RateLimiterEngineWorkflowTest::testDualSecretRotationBehavior": {
+"n": 1,
+"sha256": "c1b9febeb36392fb15dcb8abc0dd5e6c607032f9ff598a7aad8d02ff843a1f09"
+},
+"Maatify\\RateLimiter\\Tests\\System\\RateLimiterEngineWorkflowTest::testIPv6UsesCanonical64EnforcementKeyOnly": {
+"n": 1,
+"sha256": "c1b9febeb36392fb15dcb8abc0dd5e6c607032f9ff598a7aad8d02ff843a1f09"
+},
+"Maatify\\RateLimiter\\Tests\\System\\RateLimiterEngineWorkflowTest::testLegacyIpv6MacroBlocksAreIgnored": {
+"n": 1,
+"sha256": "c1b9febeb36392fb15dcb8abc0dd5e6c607032f9ff598a7aad8d02ff843a1f09"
+},
+"Maatify\\RateLimiter\\Tests\\System\\RateLimiterEngineWorkflowTest::testApiHeavyIgnoresLegacyIpv6MacroHierarchyState": {
+"n": 1,
+"sha256": "cbb65eb9c38a14a9d827345f5f523d10e7e4a9529a1116f3cec1d6651fcfb6ae"
+},
+"Maatify\\RateLimiter\\Tests\\System\\RateLimiterEngineWorkflowTest::testApiHeavyDoesNotPersistLegacyIpv6MacroBlocksAfterScoreUpdate": {
+"n": 1,
+"sha256": "cbb65eb9c38a14a9d827345f5f523d10e7e4a9529a1116f3cec1d6651fcfb6ae"
+},
+"Maatify\\RateLimiter\\Tests\\System\\RateLimiterFullCapabilityBuilderWorkflowTest::testFullCapabilityPathCoversEveryRotationShapeThroughPublicApi": {
+"n": 16,
+"sha256": "bc6bb4ef6c08ce83d4fe3626061a0db519b6bd70c3b114fa9300335ad683ebac"
+},
+"Maatify\\RateLimiter\\Tests\\System\\RateLimiterFullCapabilityBuilderWorkflowTest::testFullCapabilityPathWritesCurrentAndLeavesPreviousK5ReadOnly": {
+"n": 4,
+"sha256": "c31ea581cc0d03442a8d4b1d62a08f577d7b30ef3ac0e4d08e88cae3c244f8b6"
+},
+"Maatify\\RateLimiter\\Tests\\System\\RateLimiterFullCapabilityBuilderWorkflowTest::testProductionDefaultFullCapabilityOutageUsesLockedProcessLocalEmergencyCircuit": {
+"n": 21,
+"sha256": "868f83252a1a6cbd36ade74acaa3fa362cc2909fccfb0546d2feb9105a89cd50"
+},
+"Maatify\\RateLimiter\\Tests\\System\\RateLimiterFullCapabilityBuilderWorkflowTest::testOneFullCapabilityStoreRunsAllDefaultPoliciesThroughPublicApi": {
+"n": 3,
+"sha256": "34d9ad15eba2a24fb6c3c5bb7a16c64adc468cb18a0ebc54b31912d794c8d1a0"
+},
+"Maatify\\RateLimiter\\Tests\\System\\RateLimiterFullCapabilityBuilderWorkflowTest::testPublicWorkflowUsesBoundedSnapshotRotationAndPreviousReadOnlyState": {
+"n": 4,
+"sha256": "8309c9e78d35fd396805ad7356170fa35844ab6a1a71e9e1d4702fd210ea81b0"
+},
+"Maatify\\RateLimiter\\Tests\\System\\RateLimiterFullCapabilityBuilderWorkflowTest::testPublicWorkflowMigratesBudgetSeedIntoCurrentGeneration": {
+"n": 2,
+"sha256": "8d8d44d62c4dc107b4a6dab197cd88732c2c903fde1b56ebebee719ec3c80992"
+},
+"Maatify\\RateLimiter\\Tests\\System\\RateLimiterFullCapabilityBuilderWorkflowTest::testOperationalReaderSurfacesTheSameKnownDeviceMicroCapStateThePipelineWrote": {
+"n": 1,
+"sha256": "c1b9febeb36392fb15dcb8abc0dd5e6c607032f9ff598a7aad8d02ff843a1f09"
+},
+"Maatify\\RateLimiter\\Tests\\System\\RateLimiterFullCapabilityBuilderWorkflowTest::testPublicWorkflowPersistsHardBlockCycleState": {
+"n": 3,
+"sha256": "f4815d13474660a8bf6fd1381a27383dda7af6d3f6e5ea99be3d985330ccb3b1"
+},
+"Maatify\\RateLimiter\\Tests\\System\\RateLimiterFullCapabilityBuilderWorkflowTest::testPublicWorkflowUsesCircuitBreakerProbeLeaseCapability": {
+"n": 1,
+"sha256": "7a323dae27755508e27becc8f01f150eb981dfda005bb3c7afd5652a83b5242b"
+},
+"Maatify\\RateLimiter\\Tests\\System\\RateLimiterFullCapabilityBuilderWorkflowTest::testExistingMultiStoreBuilderConstructorStillRunsPublicWorkflow": {
+"n": 1,
+"sha256": "c1b9febeb36392fb15dcb8abc0dd5e6c607032f9ff598a7aad8d02ff843a1f09"
+},
+"Maatify\\RateLimiter\\Tests\\System\\RedisHealthStatusReplyRegressionTest::testCircuitRecoversThroughBooleanTruePingWithoutWallClockWaiting": {
+"n": 2,
+"sha256": "b2a43169ed68fa6ace2d87f41f5188182d3458cf3649c947e5a532ed2f9a07e0"
+}
+},
+"change": {
+"Maatify\\RateLimiter\\Tests\\Unit\\Admission\\AdmissionBuilderActivationTest::testWithTheFenceClosedTheVariantDecidesAsTheGoldenOfLoginProtection": {
+"n": 320,
+"sha256": "04dded45ec0a81ead5273d4b19bdb82495fa37a7d8947741d90eacb3f95e3a31"
+},
+"Maatify\\RateLimiter\\Tests\\Unit\\Admission\\AdmissionBuilderActivationTest::testSc1TheTwentyFifthAdmissionFromOneSourceIsASourceCapacityRefusal": {
+"n": 50,
+"sha256": "baef925102c406a427eb0526f8ff8927efd427df053a8855874851cf7dabe11e"
+},
+"Maatify\\RateLimiter\\Tests\\Unit\\Admission\\AdmissionBuilderActivationTest::testLaneAVerifiedCredentialIsAdmittedFromAnExhaustedSourceAndATamperedOneIsNot": {
+"n": 50,
+"sha256": "baef925102c406a427eb0526f8ff8927efd427df053a8855874851cf7dabe11e"
+},
+"Maatify\\RateLimiter\\Tests\\Unit\\Admission\\AdmissionBuilderActivationTest::testThePermitIsRequiredAndClaimedOnce": {
+"n": 4,
+"sha256": "335f32e6ee82f7e3b12232441368a5217abe32eb404e2fa0c3dfe94dadce6446"
+},
+"Maatify\\RateLimiter\\Tests\\Unit\\Admission\\AdmissionBuilderActivationTest::testRollbackABuildWithoutTheVariantIgnoresTheAdmissionState": {
+"n": 50,
+"sha256": "baef925102c406a427eb0526f8ff8927efd427df053a8855874851cf7dabe11e"
+},
+"Maatify\\RateLimiter\\Tests\\Unit\\Admission\\AdmissionBuilderS0GoldensTest::testTheBuilderCompositionReproducesTheGoldenRecordedOnTheBase": {
+"n": 1760,
+"sha256": "0191e52860a49529d6d1a255c1a4ce41a9be5f40bb039de9df36a04698ede2a8"
+},
+"Maatify\\RateLimiter\\Tests\\Unit\\Admission\\AdmissionEngineCyclesLifecycleTest::testK4AndK4PKeepIndependentCycleHistoriesWithTheLaneFromTheEngine": {
+"n": 20,
+"sha256": "20df5d18dce8bb05af2c1f4a655ca1df61ff4b09b189f9940229bbd68db856f5"
+},
+"Maatify\\RateLimiter\\Tests\\Unit\\Admission\\AdmissionEngineCyclesLifecycleTest::testK5AndK5pKeepIndependentCycleHistoriesWithTheLaneFromTheEngine": {
+"n": 28,
+"sha256": "146eaea58d9d34b9960cb19fefaef37ada5290c352334dc28c7313e4b01ca5f4"
+},
+"Maatify\\RateLimiter\\Tests\\Unit\\Admission\\AdmissionEngineCyclesLifecycleTest::testDetectorK4KeyTypeSharedAcrossLanes": {
+"n": 16,
+"sha256": "a03f5eaed0dcc180b1374bdffa91b0beb6d0962395867fa56ea0d86d7fdcfc30"
+},
+"Maatify\\RateLimiter\\Tests\\Unit\\Admission\\AdmissionEngineCyclesLifecycleTest::testDetectorK5KeyTypeSharedAcrossLanes": {
+"n": 20,
+"sha256": "a27dad4171da8ad00f2ce3ddc972828d65344ae38979cf43875e9099d436b13d"
+},
+"Maatify\\RateLimiter\\Tests\\Unit\\Admission\\AdmissionEngineCyclesLifecycleTest::testACapacityRefusalCreatesNoCycle": {
+"n": 44,
+"sha256": "a32b75d72b38e03caebd0a8238e060eccdf9cedab9a1e8a37b1bd6ac1cac882f"
+},
+"Maatify\\RateLimiter\\Tests\\Unit\\Admission\\AdmissionEngineCyclesLifecycleTest::testReentryEvidenceIsServedAndClaimedOnTheProvenLaneFromTheEngineOnly": {
+"n": 8,
+"sha256": "74d4cb37004180b5ea76bdb245e35ca2804a41339a2691fb553505c18a5e1a54"
+},
+"Maatify\\RateLimiter\\Tests\\Unit\\Admission\\AdmissionEngineCyclesLifecycleTest::testDetectorK4PMergedIntoK4ExposesTheEvidenceOnUThroughTheEngine": {
+"n": 7,
+"sha256": "c2c7ef7291e91ecae02272e1554a7de05070e9774baf40cb76163e35991ae2ba"
+},
+"Maatify\\RateLimiter\\Tests\\Unit\\Admission\\AdmissionEngineFenceFailTest::testAClosedFenceIsTheEngineWithoutAdmissionByteForByte": {
+"n": 4,
+"sha256": "c31ea581cc0d03442a8d4b1d62a08f577d7b30ef3ac0e4d08e88cae3c244f8b6"
+},
+"Maatify\\RateLimiter\\Tests\\Unit\\Admission\\AdmissionEngineFenceFailTest::testAnOpenFenceEnablesTheAdmissionPath": {
+"n": 3,
+"sha256": "dc4d4040c78537d449feeeb3a1de427f5b4f2dbb4d0f1c62936e849a5f7e42a2"
+},
+"Maatify\\RateLimiter\\Tests\\Unit\\Admission\\AdmissionEngineFenceFailTest::testATypedOutageInTheReserveTakesTheExistingTypedPathWithNoPartialWrite": {
+"n": 2,
+"sha256": "a14389e0ee374da0b8c8d668501fc178cfa0784e7ca3d0a35c42bf377b98cdc1"
+},
+"Maatify\\RateLimiter\\Tests\\Unit\\Admission\\AdmissionEngineFenceFailTest::testATypedOutageInTheEpochReadIsTheSamePath": {
+"n": 1,
+"sha256": "b4afddac2e7521ee16aaad32d2f2ae1387d88563dfe1b2118dafbf09ecd3b3d2"
+},
+"Maatify\\RateLimiter\\Tests\\Unit\\Admission\\AdmissionEngineFenceFailTest::testATypedOutageInTheOutcomeAndTheClaimIsTheSamePath": {
+"n": 4,
+"sha256": "14d24a4bbdab577f68eca2154c95befceb3a16b43f90e5a77e466c12e794a7bd"
+},
+"Maatify\\RateLimiter\\Tests\\Unit\\Admission\\AdmissionEngineFenceFailTest::testMalformedStoredStateIsARateLimiterExceptionAndNeverFallback": {
+"n": 1,
+"sha256": "93d097d3b56a0ca690a7c97b555fc01ee48205bb9be19bd2032c862ef72371be"
+},
+"Maatify\\RateLimiter\\Tests\\Unit\\Admission\\AdmissionEngineFenceFailTest::testAnUnclassifiedThrowableEscapesAndNeverEntersTheCircuitOrTheFallback": {
+"n": 2,
+"sha256": "ec24587e49e62358012326351da44be31c9a62f9395b562fe639a1d33f6a405b"
+},
+"Maatify\\RateLimiter\\Tests\\Unit\\Admission\\AdmissionEngineFenceFailTest::testDegradedModeAdmitsNothingAndReadsNoLaneEpochOrFence": {
+"n": 13,
+"sha256": "735919dc672fc20b5667923694514852307e120a23441146cfd18bcede30a6b9"
+},
+"Maatify\\RateLimiter\\Tests\\Unit\\Admission\\AdmissionEngineFenceFailTest::testReportedAnOutcomeFromAnotherSourceIsScoredAndLeavesTheAdmissionSourceUnchanged": {
+"n": 3,
+"sha256": "fc05a454085151bc4f377965299664de237ca95b4ce639323c7cfde0479b2291"
+},
+"Maatify\\RateLimiter\\Tests\\Unit\\Admission\\AdmissionEngineFleetRollbackTest::testBehindTheFenceTheMixedFleetIsS0": {
+"n": 1480,
+"sha256": "aa134c176bb84d81c7b01f6a4f7a294242f69e12fee851f713f8d33a6d949d95"
+},
+"Maatify\\RateLimiter\\Tests\\Unit\\Admission\\AdmissionEngineFleetRollbackTest::testWithTheFenceOpenWhileMixedAdmissionsStayWithinTheReportedBound": {
+"n": 762,
+"sha256": "128cc4a789746d03a7ee0f7f7ff8bacaa77b60115c71b72d0347d840f52c6bf4"
+},
+"Maatify\\RateLimiter\\Tests\\Unit\\Admission\\AdmissionEngineFleetRollbackTest::testDetectorAnIgnoredFenceMakesTheNewWorkersReserveBehindIt": {
+"n": 560,
+"sha256": "4d1f3348cc5fd965d72bd53f6e249f03e836c4da05cf5d0ff2b9993db5868bd1"
+},
+"Maatify\\RateLimiter\\Tests\\Unit\\Admission\\AdmissionEngineFleetRollbackTest::testM6RollbackIgnoresTheAdmissionStateKeepsK4UAndRollForwardFindsTheOldCounters": {
+"n": 77,
+"sha256": "8c101f4b182568c532404ca8e8645d02a476046f2ed03bf7c3e535e9d2f6ff60"
+},
+"Maatify\\RateLimiter\\Tests\\Unit\\Admission\\AdmissionEngineLaneTest::testEveryFailedCheckIsTheUnprovenDoorAndNeverARefusalOrAnException": {
+"n": 16,
+"sha256": "5eec6cea78b09ce4ae167f60cbcc571313d2269eabbf65c2a8f62a7448e3aaa9"
+},
+"Maatify\\RateLimiter\\Tests\\Unit\\Admission\\AdmissionEngineLaneTest::testAVerifiedCredentialSelectsTheProvenDoor": {
+"n": 2,
+"sha256": "8d8d44d62c4dc107b4a6dab197cd88732c2c903fde1b56ebebee719ec3c80992"
+},
+"Maatify\\RateLimiter\\Tests\\Unit\\Admission\\AdmissionEngineLaneTest::testNoFlagHeaderOrInstanceIdSelectsTheProvenDoor": {
+"n": 6,
+"sha256": "35712228f66cf7d2912420fd0ae1c1ed34c05ed75163a5b22397a1c9839c814d"
+},
+"Maatify\\RateLimiter\\Tests\\Unit\\Admission\\AdmissionEngineLaneTest::testAnUnprovenRequestWritesNoProvenState": {
+"n": 5,
+"sha256": "b26ba958e11e09e6d707709c715790cd2baa32b1db4a2a0b38ed52c578886768"
+},
+"Maatify\\RateLimiter\\Tests\\Unit\\Admission\\AdmissionEngineReserveTest::testSourceCapacityRefusesToTheEndOfTheWindow": {
+"n": 4,
+"sha256": "fb4338b69c610c148d92405d15a144e17e7c5124165664c5baafda91dc38aaab"
+},
+"Maatify\\RateLimiter\\Tests\\Unit\\Admission\\AdmissionEngineReserveTest::testAccountBucketRefusesWithTheRefillWait": {
+"n": 2,
+"sha256": "d2902c3b9acd4a95fb0e3cf2dbe9ac960c1ad3aa3a91b57680e1b226b8bfb513"
+},
+"Maatify\\RateLimiter\\Tests\\Unit\\Admission\\AdmissionEngineReserveTest::testSourceFailureCapRefusesAFurtherAccountOfTheSameSource": {
+"n": 4,
+"sha256": "992a2a014d7fe29fee81dcd11afa8aa5803ac452667c41b49dac75acfc669b97"
+},
+"Maatify\\RateLimiter\\Tests\\Unit\\Admission\\AdmissionEngineReserveTest::testProofCapacityOnTheProvenDoor": {
+"n": 2,
+"sha256": "2c38f2cd4d5438650a66b5d1f95ec16535c68735b4907c8c64900638d379394d"
+},
+"Maatify\\RateLimiter\\Tests\\Unit\\Admission\\AdmissionEngineReserveTest::testNewDeviceCapIsOnTheFingerprintMember": {
+"n": 3,
+"sha256": "3821beed7d5258c98bfd665048cbe23ca9c1ae3c3afa62e9dc351294012b1880"
+},
+"Maatify\\RateLimiter\\Tests\\Unit\\Admission\\AdmissionEngineReserveTest::testSourceProofFailureCapOnTheProvenDoor": {
+"n": 3,
+"sha256": "17bb22f98e99cf26d210da9556d10759d61905e9bb22f913ef5f0fe0c80e64bc"
+},
+"Maatify\\RateLimiter\\Tests\\Unit\\Admission\\AdmissionEngineReserveTest::testAnAdmissionOfAnOptedPolicyCarriesAnOpaqueBoundedPermit": {
+"n": 1,
+"sha256": "c1b9febeb36392fb15dcb8abc0dd5e6c607032f9ff598a7aad8d02ff843a1f09"
+},
+"Maatify\\RateLimiter\\Tests\\Unit\\Admission\\AdmissionEngineReserveTest::testThePermitTokenStaysBoundedWhateverTheHostPutsInTheCredentialId": {
+"n": 2,
+"sha256": "8d8d44d62c4dc107b4a6dab197cd88732c2c903fde1b56ebebee719ec3c80992"
+},
+"Maatify\\RateLimiter\\Tests\\Unit\\Admission\\AdmissionEngineReserveTest::testANonOptedPolicyIsUntouchedByTheRuntime": {
+"n": 4,
+"sha256": "74fd1a2688772fb64056350b6d09602d03ca80aeabc2409b94ca593fe7880dce"
+},
+"Maatify\\RateLimiter\\Tests\\Unit\\Admission\\AdmissionEngineReserveTest::testAnOutcomeWithNoPermitIsAContractViolationForAnOptedPolicy": {
+"n": 1,
+"sha256": "93d097d3b56a0ca690a7c97b555fc01ee48205bb9be19bd2032c862ef72371be"
+},
+"Maatify\\RateLimiter\\Tests\\Unit\\Admission\\AdmissionEngineReserveTest::testEveryNonAcceptedClaimIsAnAllowResultWithItsCauseAndNoScoring": {
+"n": 7,
+"sha256": "7994e778f4320e7da88894c6ae1bf55e4ff4e81411cb27d009be8ad2abdf51ca"
+},
+"Maatify\\RateLimiter\\Tests\\Unit\\Admission\\AdmissionEngineReserveTest::testALateOutcomeIsLateAndLeavesNoFailure": {
+"n": 3,
+"sha256": "29915b491e17b5154c0fad9b541185873302a2de0535ca02c66ed26fe0992ceb"
+},
+"Maatify\\RateLimiter\\Tests\\Unit\\Admission\\AdmissionEngineReserveTest::testADroppedOutcomeNeverBecomesAFailure": {
+"n": 6,
+"sha256": "2b331d27086590528b043b0ed0d0f37d12a17bed39155dc8b0bfac725f567c3e"
+},
+"Maatify\\RateLimiter\\Tests\\Unit\\Admission\\AdmissionEngineReserveTest::testASuccessRemovesTheNetFailureAndRefundsTheBucket": {
+"n": 5,
+"sha256": "8c2cd67cbcfd89bc2e34268a7388bfeffb4226e41a9a6207751e6d2c40fc5193"
+},
+"Maatify\\RateLimiter\\Tests\\Unit\\Admission\\AdmissionEngineReserveTest::testAFailureIsNeverRefunded": {
+"n": 3,
+"sha256": "e53881372d7808b8c7f6ab91df0b1e930f7646b8867dec75d7ec744001d485bc"
+},
+"Maatify\\RateLimiter\\Tests\\Unit\\Admission\\AdmissionEngineReserveTest::testASuccessOnTheProvenDoorRefundsTheCountersAndALaterFailureEntersD8": {
+"n": 5,
+"sha256": "44e181b8be260fb3481d4d1e5e0c122b240006f4c6caf3762d8fd532e4b04f5e"
+},
+"Maatify\\RateLimiter\\Tests\\Unit\\Admission\\AdmissionEngineReserveTest::testASuccessOnTheProvenDoorNeverRemovesARecordedD8Failure": {
+"n": 5,
+"sha256": "44e181b8be260fb3481d4d1e5e0c122b240006f4c6caf3762d8fd532e4b04f5e"
+},
+"Maatify\\RateLimiter\\Tests\\Unit\\Admission\\AdmissionEngineReserveTest::testASuccessOnTheProvenDoorIsNoD8Failure": {
+"n": 3,
+"sha256": "0e883f71ca2ab970d0b15e49d74c7891efadb29baf54b48b3d41868b0de2692e"
+},
+"Maatify\\RateLimiter\\Tests\\Unit\\Admission\\AdmissionEngineS0GoldensTest::testTheEngineReproducesThe5b3aGoldens": {
+"n": 960,
+"sha256": "7dabad79723f94312271e92ddde0344932f083f8c4bc61d5eafe2dc35153e705"
+},
+"Maatify\\RateLimiter\\Tests\\Unit\\Admission\\AdmissionEngineS0GoldensTest::testDetectorAK5MaterialSeamThatIgnoresTheLaneBreaksTheGoldenThroughTheEngine": {
+"n": 160,
+"sha256": "a230d564174ffe6079f98210a0f0e8da497d2182b92015fecaf61e5bf98bebf6"
+},
+"Maatify\\RateLimiter\\Tests\\Unit\\Admission\\AdmissionRotationTest::testOneRotationKeepsTheSpentCapacityAndASecondOneReissuesIt": {
+"n": 99,
+"sha256": "e71a6c2e281ba015e0bab4106b52f109d20b9917e355c59674cd89dd3ddf265a"
+},
+"Maatify\\RateLimiter\\Tests\\Unit\\Admission\\AdmissionRotationTest::testDetectorABuildWithoutThePreviousGenerationReissuesAtTheFirstRotation": {
+"n": 98,
+"sha256": "0aa7fd72535de59b5fa8388b7ab41724bbb0b2b17aeea1095419a10c3f5b653d"
+},
+"Maatify\\RateLimiter\\Tests\\Unit\\Admission\\AdmissionRotationTest::testTheFailureSetAndTheBucketRestartAtOneRotation": {
+"n": 36,
+"sha256": "45048ffd52a99e03639f05bc1e1bf64e64b18dc4a36145c214f605e51d02da27"
+},
+"Maatify\\RateLimiter\\Tests\\Unit\\Admission\\AdmissionS0ParityTest::testNewContextInputsChangeNoDecisionAndNoStateForPoliciesThatDidNotOptIn": {
+"n": 112,
+"sha256": "98ef869040f0bce36925271e311435aa937e36a401ad3efb557f0e6b9ac5f1db"
+},
+"Maatify\\RateLimiter\\Tests\\Unit\\Admission\\AdmissionS0ParityTest::testTheComparisonCanTellTwoDifferentRunsApart": {
+"n": 28,
+"sha256": "0fbc7431decbd497e8d5d4eebb481893542b06e113a151f0466b17c20ceadf02"
+},
+"Maatify\\RateLimiter\\Tests\\Unit\\Admission\\AdmissionS0ParityTest::testRunsExerciseEveryCommandKindAndReachAnEnforcingDecision": {
+"n": 14,
+"sha256": "9bb3019cdb7d089aa6cf96ee1a437421e6a6241be121d01b30ce3fa25298661a"
+},
+"Maatify\\RateLimiter\\Tests\\Unit\\Builder\\RateLimiterBuilderSimpleThrottleTest::testNoSimplePolicyRegisteredLeavesTheScoreRuntimeFullyFunctional": {
+"n": 1,
+"sha256": "c1b9febeb36392fb15dcb8abc0dd5e6c607032f9ff598a7aad8d02ff843a1f09"
+},
+"Maatify\\RateLimiter\\Tests\\Unit\\Builder\\RateLimiterBuilderSimpleThrottleTest::testSimpleThrottleStateIsIndependentFromScoreRuntimeState": {
+"n": 1,
+"sha256": "c1b9febeb36392fb15dcb8abc0dd5e6c607032f9ff598a7aad8d02ff843a1f09"
+},
+"Maatify\\RateLimiter\\Tests\\Unit\\Builder\\RateLimiterBuilderTest::testBuildReturnsInterfaceAndProvidesAllDefaultPolicies": {
+"n": 3,
+"sha256": "0e883f71ca2ab970d0b15e49d74c7891efadb29baf54b48b3d41868b0de2692e"
+},
+"Maatify\\RateLimiter\\Tests\\Unit\\Builder\\RateLimiterBuilderTest::testCustomDeviceIdentityResolverIsUsedByTheComposedEngine": {
+"n": 1,
+"sha256": "c1b9febeb36392fb15dcb8abc0dd5e6c607032f9ff598a7aad8d02ff843a1f09"
+},
+"Maatify\\RateLimiter\\Tests\\Unit\\Service\\BoundedSnapshotSingleClockReadTest::testBuiltRuntimeLimitKeepsTheBuilderProtection": {
+"n": 1,
+"sha256": "c1b9febeb36392fb15dcb8abc0dd5e6c607032f9ff598a7aad8d02ff843a1f09"
+},
+"Maatify\\RateLimiter\\Tests\\Integration\\Correlation\\CredentialSprayRotationTest::testRotationCapabilityFailureUsesLoginFailureSemanticsAtTheEngineBoundary": {
+"n": 1,
+"sha256": "93d097d3b56a0ca690a7c97b555fc01ee48205bb9be19bd2032c862ef72371be"
+},
+"?": {
+"n": 7,
+"sha256": "c642a2909c15550a5d40ec6b744d8f430fd2fa1dbeede8f79ba253dac0b80cd4"
+},
+"Maatify\\RateLimiter\\Tests\\Integration\\Redis\\CallerTimeAuthorityRedisTest::testFreshPreChecksDoNotThrowWhenTheApplicationIsOneSecondBehindRedis": {
+"n": 100,
+"sha256": "a31dd84fb485a3b8d77c048057b46471de44f8becf7d41961dfe24ac1d17321c"
+},
+"Maatify\\RateLimiter\\Tests\\Integration\\Redis\\CallerTimeAuthorityRedisTest::testFreshPreChecksDoNotThrowWhenTheCallerReadsTheClockJustBeforeARedisSecondBoundary": {
+"n": 100,
+"sha256": "a31dd84fb485a3b8d77c048057b46471de44f8becf7d41961dfe24ac1d17321c"
+},
+"Maatify\\RateLimiter\\Tests\\Integration\\Redis\\CallerTimeAuthorityRedisTest::testRetryAfterHonouringClientIsAdmittedOnTimeWhenTheApplicationIsBehind": {
+"n": 300,
+"sha256": "f70111f1fefe0d9796ce7a827c0252173ffedd3335ebb171ccaab81fa2b74695"
+},
+"Maatify\\RateLimiter\\Tests\\Integration\\Redis\\CallerTimeAuthorityRedisTest::testPolledReturnAfterALifecycleBlockGetsReentryWhenTheApplicationIsAhead": {
+"n": 500,
+"sha256": "6d4c323502258b20047254d0ed1d6729c96b08d0bb28868c3eafe533943be2fe"
+},
+"Maatify\\RateLimiter\\Tests\\Integration\\Redis\\CallerTimeAuthorityRedisTest::testPreCheckInTheLastSecondsOfAWindowDoesNotThrowWhenTheApplicationIsAhead": {
+"n": 120,
+"sha256": "69b4a58f53fa0bac8e1f556b79e0605b982c787fcb20e868576b491c43f4977b"
+},
+"Maatify\\RateLimiter\\Tests\\Integration\\Redis\\CallerTimeAuthorityRedisTest::testLifecycleStateWrittenBehindAndUsedAheadRaisesNoConsistencyError": {
+"n": 5,
+"sha256": "362a4dae81a593f067b501ac2506a04abe558676ad48289e074ae78ddf69b1cf"
+},
+"Maatify\\RateLimiter\\Tests\\Integration\\Redis\\CallerTimeAuthorityRedisTest::testStoreImplementingOnlyTheExistingContractsStillLoadsAndRuns": {
+"n": 3,
+"sha256": "0e883f71ca2ab970d0b15e49d74c7891efadb29baf54b48b3d41868b0de2692e"
+},
+"Maatify\\RateLimiter\\Tests\\Integration\\Redis\\CallerTimeAuthorityRedisTest::testTheHostClockIsReadOncePerLimitAndPerClaim": {
+"n": 6,
+"sha256": "6e7a4eb66dce23f2c501d929d78d55ed6a3a7a6699ef9b06e7c6aadc86225b92"
+},
+"Maatify\\RateLimiter\\Tests\\Integration\\Redis\\RedisFullCapabilityStoreExtRedisIntegrationTest::testFirstRuntimeRequestOnEmptyRedisWorksWithoutSeedingOrHostNormalization": {
+"n": 1,
+"sha256": "c1b9febeb36392fb15dcb8abc0dd5e6c607032f9ff598a7aad8d02ff843a1f09"
+},
+"Maatify\\RateLimiter\\Tests\\Integration\\Redis\\RedisFullCapabilityStoreExtRedisIntegrationTest::testWrongTypeCircuitStateEscapesPublicRuntimeWithoutFallbackOrSignals": {
+"n": 2,
+"sha256": "ed935eabe100d029d3a8fb1d503c345bb1e37231584a42f1cf7e772c5eb87c7a"
+},
+"Maatify\\RateLimiter\\Tests\\Integration\\Redis\\RedisFullCapabilityStoreExtRedisIntegrationTest::testRealRedisCircuitRecoversThroughHealthyPhpRedisPing": {
+"n": 2,
+"sha256": "b2a43169ed68fa6ace2d87f41f5188182d3458cf3649c947e5a532ed2f9a07e0"
+},
+"Maatify\\RateLimiter\\Tests\\Integration\\Redis\\RedisFullCapabilityStoreIntegrationTest::testPublicBuilderRejectsBrokenPersistedCircuitWithoutFallback": {
+"n": 1,
+"sha256": "93d097d3b56a0ca690a7c97b555fc01ee48205bb9be19bd2032c862ef72371be"
+},
+"Maatify\\RateLimiter\\Tests\\Integration\\Redis\\RedisFullCapabilityStoreIntegrationTest::testPublicBuilderWorkflowUsesTheOfficialRedisAggregateStore": {
+"n": 3,
+"sha256": "34d9ad15eba2a24fb6c3c5bb7a16c64adc468cb18a0ebc54b31912d794c8d1a0"
+},
+"Maatify\\RateLimiter\\Tests\\Integration\\Redis\\RedisFullCapabilityStoreIntegrationTest::testPublicBuilderWorkflowUsesOfficialRedisRotationShapes": {
+"n": 12,
+"sha256": "0fe6188ad6d1876969193414043b77addc5dc0f7cfab930e7bdf5cc35bab211b"
+},
+"Maatify\\RateLimiter\\Tests\\Integration\\Redis\\RedisFullCapabilityStoreIntegrationTest::testPublicBuilderRotationWritesCurrentStateAndLeavesPreviousRedisStateReadOnly": {
+"n": 4,
+"sha256": "8309c9e78d35fd396805ad7356170fa35844ab6a1a71e9e1d4702fd210ea81b0"
+},
+"Maatify\\RateLimiter\\Tests\\Integration\\Redis\\RedisFullCapabilityStoreIntegrationTest::testPublicBuilderFingerprintOnlyRotationLeavesPreviousRedisStateReadOnly": {
+"n": 4,
+"sha256": "8309c9e78d35fd396805ad7356170fa35844ab6a1a71e9e1d4702fd210ea81b0"
+},
+"Maatify\\RateLimiter\\Tests\\Integration\\Redis\\RedisFullCapabilityStoreIntegrationTest::testPublicBuilderMigratesPreviousBudgetIntoCurrentGeneration": {
+"n": 2,
+"sha256": "602948763c38098ce3c9ec8a886e81bc3d2c072cd444b2c0d4c98a03c73e80b0"
+},
+"Maatify\\RateLimiter\\Tests\\Integration\\Redis\\RedisFullCapabilityStoreIntegrationTest::testPublicBuilderPersistsHardBlockCycleAndPauseThroughLimitWorkflow": {
+"n": 2,
+"sha256": "5e75d7bc201426c50462824a1642f32d54443458d23c7a458b3fe3bc15acea51"
+},
+"Maatify\\RateLimiter\\Tests\\Integration\\Redis\\RedisFullCapabilityStoreIntegrationTest::testPublicBuilderWorkflowUsesOfficialRedisBudgetAndCircuitProbePaths": {
+"n": 3,
+"sha256": "49a8d8adee0cd47b87564129171713d8ed29cd27eb06a6a5583b0d3371fce965"
+},
+"Maatify\\RateLimiter\\Tests\\Integration\\Store\\AdmissionNm10RedisParityTest::testTheTwoArmsOnRedisAndTheReferenceStoreGiveTheSameRows": {
+"n": 246579,
+"sha256": "ed88f49eda781b90dd706eb1a0cc8bd499ea92da1b2d2f7d43c1821e70603b75"
+},
+"Maatify\\RateLimiter\\Tests\\System\\AdmissionArchiveFixturesTest::testHarBAndHarN": {
+"n": 856,
+"sha256": "527e8ebee825ff725a6f3574f05b694e2e6788589c42b040f97d78b5f8ff72ad"
+},
+"Maatify\\RateLimiter\\Tests\\System\\AdmissionArchiveFixturesTest::testBru24AndBru24Hv": {
+"n": 23244,
+"sha256": "61a0117710816f54e926dd9234bc76d491c3a1dea3473b0b59947ead441c0402"
+},
+"Maatify\\RateLimiter\\Tests\\System\\AdmissionArchiveFixturesTest::testRec": {
+"n": 1514,
+"sha256": "9327e7069e0b3d79972ec491e00d6652f45ab66291010a96a2a0737697a9a219"
+},
+"Maatify\\RateLimiter\\Tests\\System\\AdmissionArchiveFixturesTest::testCross": {
+"n": 408,
+"sha256": "8b74512c8fe6fc7cc3fc92952232b5cdb9dfe839ed719e4e51596706cc10c443"
+},
+"Maatify\\RateLimiter\\Tests\\System\\AdmissionArchiveFixturesTest::testClear": {
+"n": 60,
+"sha256": "9d66deeedc8886402dd4fa34df116f8a0db414df7f9ae31d0a1ad81af7f8791f"
+},
+"Maatify\\RateLimiter\\Tests\\System\\AdmissionArchiveFixturesTest::testE2": {
+"n": 598,
+"sha256": "b7254b249dc68c72a83aa48a535e7085706fadee375ed00d619a516998a66c6d"
+},
+"Maatify\\RateLimiter\\Tests\\System\\AdmissionArchiveFixturesTest::testK5u": {
+"n": 292,
+"sha256": "99fedb8b651212a1b4bfb82dd314a879703dacda14fb8589d4919662c95e4aee"
+},
+"Maatify\\RateLimiter\\Tests\\System\\AdmissionArchiveFixturesTest::testBootAndBootX": {
+"n": 18088,
+"sha256": "b5030e44614ab7c8ee9d5895ac72b28f81301baa5a4e830123f96ab8a64696a4"
+},
+"Maatify\\RateLimiter\\Tests\\System\\AdmissionArchiveFixturesTest::testSteal": {
+"n": 11532,
+"sha256": "e4a0ae18c5e3346268916b5a16863103918a44cbc911e5b54b92861c5fa0d4e1"
+},
+"Maatify\\RateLimiter\\Tests\\System\\AdmissionArchiveFixturesTest::testUaxNp": {
+"n": 44,
+"sha256": "6520b3fa344c0dbb129866b3ec41f82b49505d6b2a8d497a441caeb7088676e6"
+},
+"Maatify\\RateLimiter\\Tests\\System\\AdmissionArchiveFixturesTest::testForgeAndMint": {
+"n": 8716,
+"sha256": "68f13145610d7285f43aa614873f0fb38ba82714767090ab0c73d2b4c9619833"
+},
+"Maatify\\RateLimiter\\Tests\\System\\AdmissionArchiveFixturesTest::testLostAndToken": {
+"n": 8062,
+"sha256": "6269acbb8cf8e56f7b07c3e688fbb2380df7bd193ed5b4d66770c75049e42919"
+},
+"Maatify\\RateLimiter\\Tests\\System\\AdmissionArchiveFixturesTest::testUaxAsmAndMixpresAsm": {
+"n": 96,
+"sha256": "f8570d4abfae0f319cec248efb29492b4a6eba69ee2e8c844ab22855cf540ca6"
+},
+"Maatify\\RateLimiter\\Tests\\System\\AdmissionArchiveFixturesTest::testNpInEveryProvenAdmissionCarriesTheFingerprintMember": {
+"n": 36755,
+"sha256": "52808b3df76f8ba99fe662a93069f4b6c502a1b29fac4e37adf19cc3e449ea9f"
+},
+"Maatify\\RateLimiter\\Tests\\System\\AdmissionArchiveFixturesTest::testTheArchivedDIdmintValueIsShown": {
+"n": 5811,
+"sha256": "e6be1d03d964157b0c3dac8f2f38f30cefb3cf0571bdf95a01f93cd74081b2bd"
+},
+"Maatify\\RateLimiter\\Tests\\System\\AdmissionArchiveFixturesTest::testDetectorNoRenewalMakesE2Diverge": {
+"n": 289,
+"sha256": "84bfdbe12d1772b2fbb58516daf3f898e5900cdf370310cf4317c3c7e0ad6817"
+},
+"Maatify\\RateLimiter\\Tests\\System\\AdmissionArchiveFixturesTest::testDetectorNoPasswordBindingLeavesTheStealOwnerOut": {
+"n": 6483,
+"sha256": "b2c45e933350def42331fb8f32b69ab9ac868eadc9225e940fde4c1d40405ce8"
+},
+"Maatify\\RateLimiter\\Tests\\System\\AdmissionArchiveFixturesTest::testDetectorNoK5SeparationMakesK5uDiverge": {
+"n": 137,
+"sha256": "86f86f310a8ebda8dcced540020c161371c5ee7338b8d334a098fc11ecca6142"
+},
+"Maatify\\RateLimiter\\Tests\\System\\AdmissionArchiveG7Test::testEveryArchivedG7RowIsReproducedFieldForField": {
+"n": 92474,
+"sha256": "04d3470eb53c114ea4617d8ae9253dd7a7546bdce510f8a41efccc2a1571a74a"
+},
+"Maatify\\RateLimiter\\Tests\\System\\AdmissionArchiveStreamsTest::testNm10aTheTwoArmsAreIdenticalRowByRowInMemory": {
+"n": 164386,
+"sha256": "fc6c527f5692a81997affa6eca6bf3aad60a167353e53e5ef77252c0c049a248"
+},
+"Maatify\\RateLimiter\\Tests\\System\\AdmissionArchiveStreamsTest::testNm10ReportedA1AndA3AtTheShare": {
+"n": 52362,
+"sha256": "add060394e526414527dbc41e8a23cb0cf5f3beaf031436621bcf08698cca19b"
+},
+"Maatify\\RateLimiter\\Tests\\System\\AdmissionArchiveStreamsTest::testNm5ReportedTheEffectOfTheUnrefundedReservationsPerBenignStream": {
+"n": 199220,
+"sha256": "deb2bb0c4e990ac91f24de581360e67389836ff36225892f92668d5dbbd5096c"
+},
+"Maatify\\RateLimiter\\Tests\\System\\AdmissionArchiveStreamsTest::testRpG4Full2StreamRowsReproduceTheArchiveExceptTheDeclaredUacCost": {
+"n": 14791,
+"sha256": "e448d44f730f4ade896c991e839caf154ffb18ed802e49b0e0aba0a3f6e38d32"
+},
+"Maatify\\RateLimiter\\Tests\\System\\AdmissionArchiveStreamsTest::testRpG4GatesA1A2A3HoldWithUacTheDeclaredCost": {
+"n": 14774,
+"sha256": "6abbf983eb9f9e0f1378a8f55382de06ecaed435e8f253ec8532b7338793a243"
+},
+"Maatify\\RateLimiter\\Tests\\System\\AdmissionArchiveStreamsTest::testRpG5EveryNoua2StreamRowOfG5V2IsReproducedFieldForFieldWithTheHostCounts": {
+"n": 23459,
+"sha256": "3c110908694bc8c5f03b5d6fea5bde88690108651635eb796e67c0901de5779c"
+},
+"Maatify\\RateLimiter\\Tests\\System\\AdmissionArchiveStreamsTest::testTheArmWithoutTheMechanismReproducesEveryArchivedPreRow": {
+"n": 17447,
+"sha256": "e46b0be24092a46a100f10a98ba6173471fb1698b14f5290ee80808c80447b71"
+},
+"Maatify\\RateLimiter\\Tests\\System\\AdmissionArchiveStreamsTest::testGatePReportedTheProductionPreRowsAreTheArchivedPreRows": {
+"n": 28638,
+"sha256": "02d723bc19c99f3e31eab525d9189c6a832c1724dd8548c128540afe3f455fb2"
+},
+"Maatify\\RateLimiter\\Tests\\System\\AdmissionArchiveStreamsTest::testNm10ReportedAtShareOneADroppingHostIsThePreFlowOnBothArms": {
+"n": 22382,
+"sha256": "06d44e0131c9085b23cbca57ed187b5545e68f8df26565f95321239e21e75056"
+},
+"Maatify\\RateLimiter\\Tests\\System\\AdmissionArchiveStreamsTest::testNm10B1Bru24HoldsAtEveryShareAndEqualsTheIndependentRecount": {
+"n": 34773,
+"sha256": "1893fc60595551bcfc148e2a574c8c5fb534fdf387ac77c0d12df3d7b7c34346"
+},
+"Maatify\\RateLimiter\\Tests\\System\\AdmissionArchiveStreamsTest::testNm5HarnessValidityRhoOneNoAbandonmentIsTheRpG4Values": {
+"n": 29548,
+"sha256": "085b3ade397404ef4d49c8ad7ef172f196b264062d845041461fb732db16638f"
+},
+"Maatify\\RateLimiter\\Tests\\System\\AdmissionArchiveStreamsTest::testNm5DetectorTheHighestRhoRefusesABenignStreamMoreThanRhoOne": {
+"n": 50965,
+"sha256": "4dbb43fc51f981b2c96cb2e04a5688d529a96ee0f11d310c36a118c1fb78e06c"
+},
+"Maatify\\RateLimiter\\Tests\\System\\AdmissionBuilderRerunTest::testEveryArchivedG7Px4RowIsReproducedThroughTheBuilder": {
+"n": 46086,
+"sha256": "5a1a1fe248e5030ef465f518eabe5e317965c5ee3236a27db5625299950409c2"
+},
+"Maatify\\RateLimiter\\Tests\\System\\AdmissionBuilderRerunTest::testThePx4FixturesAreReproducedThroughTheBuilder": {
+"n": 36755,
+"sha256": "8db43f0f2fce0f984d7aca2a9fb005b08d4537f8a50ae0b0ab2b474fbe0c954e"
+},
+"Maatify\\RateLimiter\\Tests\\System\\AdmissionEngineSourceCapacityTest::testSc1ASourceRefusalCarriesItsOwnCause": {
+"n": 25,
+"sha256": "d5a66528a1b0b6221e11e120a18e2dca5ff88a7c65c18c2348e830cfd445fca3"
+},
+"Maatify\\RateLimiter\\Tests\\System\\AdmissionEngineSourceCapacityTest::testSc2ARefusalWritesNothingAndTheNextWindowIsAdmittedWithNoCarriedState": {
+"n": 26,
+"sha256": "b13e92515c1df8223e338576e8525aa338404e7c8d44042cb1718d87da587f32"
+},
+"Maatify\\RateLimiter\\Tests\\System\\AdmissionEngineSourceCapacityTest::testSc3ACapacityRefusalChangesNoScoreBudgetWatcherOrCycle": {
+"n": 50,
+"sha256": "baef925102c406a427eb0526f8ff8927efd427df053a8855874851cf7dabe11e"
+},
+"Maatify\\RateLimiter\\Tests\\System\\AdmissionEngineSourceCapacityTest::testSc4ProvenAndOtherPolicyRequestsFromTheExhaustedSourceAreAdmitted": {
+"n": 26,
+"sha256": "a3fb3e515c2036e78869e3272283794d957543e0b450ffb441c67c2e79bc95e6"
+},
+"Maatify\\RateLimiter\\Tests\\System\\AdmissionEngineSourceCapacityTest::testSc5UaIdAndFingerprintRotationGainNothingBeyondTheCeiling": {
+"n": 100,
+"sha256": "86f285abf52619b5c5349b4015a33c58978a7ca7df2c0fd12515ee9a6b4588b4"
+},
+"Maatify\\RateLimiter\\Tests\\System\\AdmissionEngineSourceCapacityTest::testSc6CoTenantHarmIsAttributedToTheSourceAndReportedPerStream": {
+"n": 26351,
+"sha256": "4426c89de018c8c167e6b6e78b477a5a5822353dd90ee5585bee05c023160db3"
+},
+"Maatify\\RateLimiter\\Tests\\System\\AdmissionIpv6SourceEquivalenceTest::testBrdAndX2GiveTheSameRowsFromIpv6Slash64SourcesAsFromIpv4Sources": {
+"n": 6246,
+"sha256": "d6aaf2bb9fc763c32d8a39a3ecc59a27ec8ed5181b840541ed60aa19a6b8b10c"
+},
+"Maatify\\RateLimiter\\Tests\\System\\AdmissionIpv6SourceEquivalenceTest::testDetectorASourceOnTheSlash48ChangesAtLeastOneRow": {
+"n": 3123,
+"sha256": "d92d97d8b7fb67ec41d086fb8d1f47abe7a673ddb8116c06499a6c9e1801006f"
+},
+"Maatify\\RateLimiter\\Tests\\System\\AdmissionNm10BindingTest::testBru24NoAdmissionIsScoredTwiceOrWithoutItsPermit": {
+"n": 47229,
+"sha256": "ad83fe205a3ea7f0127314a5adb206706883444554ae31d204b4aeab44184cb5"
+},
+"Maatify\\RateLimiter\\Tests\\System\\AdmissionNm10BindingTest::testStealNoAdmissionIsScoredTwiceOrWithoutItsPermit": {
+"n": 46749,
+"sha256": "cd6ab6f5ca178e6772d54d4553a588efe2d1699106365641630a475de9865e34"
+},
+"Maatify\\RateLimiter\\Tests\\System\\AdmissionNm10BindingTest::testEveryCaseOccursOnBothStreams": {
+"n": 47836,
+"sha256": "bf7ef0cdecccdfb01c18f1a9f6ac29ba8843e502b0a75e8565ed7a0f3139b4e8"
+},
+"Maatify\\RateLimiter\\Tests\\System\\CircuitBreakerStateMachineTest::testEngineShortCircuitsBeforeDeviceResolutionAndResumesAfterRecovery": {
+"n": 2,
+"sha256": "b2a43169ed68fa6ace2d87f41f5188182d3458cf3649c947e5a532ed2f9a07e0"
+},
+"Maatify\\RateLimiter\\Tests\\System\\CircuitBreakerStateMachineTest::testSubsequentOpenApiRequestsDoNotTouchNormalBackend": {
+"n": 2,
+"sha256": "489d1f4c4eecf7066d1bfe0031e0cb691868f8a5aa7f79ea47091eecba4151af"
+},
+"Maatify\\RateLimiter\\Tests\\System\\CircuitBreakerStateMachineTest::testEngineGuardPreflightSkipsProbeDeviceAndBackendAndUsesRemainingRetryAfter": {
+"n": 2,
+"sha256": "2f7409f7706034e5a6ceaf4c3c37afdb5a95a792b017abe24d42b85a5996bf55"
+},
+"Maatify\\RateLimiter\\Tests\\System\\KnownDeviceAllowancePublicApiTest::testTrustedSessionOnOwnAccountReachesVerifierFourTimesThroughPublicApi": {
+"n": 29,
+"sha256": "6ab2e180d24ce4965ef2ed33a94be9c282dd508d9f85c382e6aea2235d9da769"
+},
+"Maatify\\RateLimiter\\Tests\\System\\KnownDeviceAllowancePublicApiTest::testValidCustomAllowancePolicyScoresK4AfterItsAllowance": {
+"n": 4,
+"sha256": "74fd1a2688772fb64056350b6d09602d03ca80aeabc2409b94ca593fe7880dce"
+},
+"Maatify\\RateLimiter\\Tests\\System\\KnownDeviceAllowancePublicApiTest::testPresetSubclassWithoutK5ThresholdsKeepsS0KnownDeviceBehavior": {
+"n": 12,
+"sha256": "d8d3ed02107aaeab8747179e33f8a18ce9197f994d12c91807ad271137e1f452"
+},
+"Maatify\\RateLimiter\\Tests\\System\\KnownDeviceAllowancePublicApiTest::testAllowanceBackendFailureUsesTheExistingDec015PathThroughPublicApi": {
+"n": 6,
+"sha256": "31253b3e34fe5a8e0a5e6faae62387c6288e165f453a9191b26f49c4d2e64b39"
+},
+"Maatify\\RateLimiter\\Tests\\System\\KnownDeviceAntiEquilibriumBoundaryTest::testMixedSoftWriteFaultThroughPublicApiLeavesNoWatcherEvent": {
+"n": 5,
+"sha256": "ee7000850ef6128782415c773cb84c583bc3d88dbbd78a4453c752fc4ece2297"
+},
+"Maatify\\RateLimiter\\Tests\\System\\PostPunishmentReentryLifecycleTest::testLoginLifecycleAllowsResidualGenerationAndClaimsOnce": {
+"n": 7,
+"sha256": "42cb61e5734dd8fbd6affe3f132c37b3d70796d9f9d04c73ad3f5b6536a39749"
+},
+"Maatify\\RateLimiter\\Tests\\System\\PostPunishmentReentryLifecycleTest::testOtpUsesSameUnverifiedDeviceForK4Lifecycle": {
+"n": 3,
+"sha256": "cd41ed0b8ee855cfea7732f4e423da41074b84b0ef7a4e1dd35d55027e8f37f2"
+},
+"Maatify\\RateLimiter\\Tests\\System\\PostPunishmentReentryLifecycleTest::testLifecycleClaimIdentityBoundariesRejectCrossAccountPolicyTamperedAndAnonymousClaims": {
+"n": 4,
+"sha256": "13242c23cb504f45cbc5b2bac54cfb22b4ce996732f3ffd9f2b2ecd90aa6370e"
+},
+"Maatify\\RateLimiter\\Tests\\System\\PostPunishmentReentryLifecycleTest::testActiveK4BlockUsesRemainingPunishmentTtl": {
+"n": 4,
+"sha256": "8e65c454a26c1abe5a827680e7235e7c108a212d3776521ff5cbcdd2b376c738"
+},
+"Maatify\\RateLimiter\\Tests\\System\\PostPunishmentReentryLifecycleTest::testFirstGenerationHardFromEmptyStatePublishesLifecycle": {
+"n": 1,
+"sha256": "2bd2a69d786e0ed36b0847af7d6b688ef3d97a889fc1195aa6fdcb3cd8ba4b32"
+},
+"Maatify\\RateLimiter\\Tests\\System\\PostPunishmentReentryLifecycleTest::testLegacyCurrentFirstHardMutationPublishesFreshLifecycle": {
+"n": 1,
+"sha256": "2bd2a69d786e0ed36b0847af7d6b688ef3d97a889fc1195aa6fdcb3cd8ba4b32"
+},
+"Maatify\\RateLimiter\\Tests\\System\\PostPunishmentReentryLifecycleTest::testLegacyPreviousFirstHardMutationHandsOffAndPublishesLifecycle": {
+"n": 1,
+"sha256": "2bd2a69d786e0ed36b0847af7d6b688ef3d97a889fc1195aa6fdcb3cd8ba4b32"
+},
+"Maatify\\RateLimiter\\Tests\\System\\PostPunishmentReentryLifecycleTest::testKnownDeviceK5OnlyFailureDoesNotAdvanceServedK4Generation": {
+"n": 6,
+"sha256": "4e17c257025f6315bf0785c8a3f257602adb8f862ac725d0866bf524f0419765"
+},
+"Maatify\\RateLimiter\\Tests\\System\\PostPunishmentReentryLifecycleTest::testNewK4GenerationInvalidatesOldLifecycleAndPublishesFreshIdentity": {
+"n": 5,
+"sha256": "185c31704ee10d53e35d8c1ee8b6ca70eea951abed946ff69f4a9ecabd5b5026"
+},
+"Maatify\\RateLimiter\\Tests\\System\\PostPunishmentReentryLifecycleTest::testCustomOptInHasFullLifecycleAndNonOptInDoesNotNeedLifecycle": {
+"n": 4,
+"sha256": "13242c23cb504f45cbc5b2bac54cfb22b4ce996732f3ffd9f2b2ecd90aa6370e"
+},
+"Maatify\\RateLimiter\\Tests\\System\\PostPunishmentReentryLifecycleTest::testMutationAndPublicationConflictsRefreshAndRetryWithFreshState": {
+"n": 3,
+"sha256": "f4815d13474660a8bf6fd1381a27383dda7af6d3f6e5ea99be3d985330ccb3b1"
+},
+"Maatify\\RateLimiter\\Tests\\System\\PostPunishmentReentryLifecycleTest::testThreeMutationConflictsReturnTransientHardWithoutCircuitFailure": {
+"n": 3,
+"sha256": "69c530bb19337c84d2aafb7c6ca031bc7998fbc5b1dfa0e251b07284ce4a1138"
+},
+"Maatify\\RateLimiter\\Tests\\System\\PostPunishmentReentryLifecycleTest::testExhaustedPublicationIsDeferredWithoutCircuitFailure": {
+"n": 3,
+"sha256": "794af37528da38bec0d14f9dffeef69269092e81dd4c1a044e257cdfffa26764"
+},
+"Maatify\\RateLimiter\\Tests\\System\\PublicationDeferralTest::testDeferredRequestThroughTheEngineDoesNotReachTheConcurrencyCatch": {
+"n": 3,
+"sha256": "794af37528da38bec0d14f9dffeef69269092e81dd4c1a044e257cdfffa26764"
+},
+"Maatify\\RateLimiter\\Tests\\System\\RateLimitOperationalReaderTest::testReadExposesEngineStateAndDoesNotMutateRuntimeStores": {
+"n": 1,
+"sha256": "c1b9febeb36392fb15dcb8abc0dd5e6c607032f9ff598a7aad8d02ff843a1f09"
+},
+"Maatify\\RateLimiter\\Tests\\System\\RateLimiterBudgetRotationContinuityTest::testK4BudgetRotatesWithAtomicSeedMigrationOnFailureUpdate": {
+"n": 1,
+"sha256": "e77e595b2db4aaef4e83a629fbe496fd3c935fb984b1d4f86b350b1384d0a8f6"
+},
+"Maatify\\RateLimiter\\Tests\\System\\RateLimiterBudgetRotationContinuityTest::testBudgetV2IsAuthoritativeAndNeverMergedWithV1": {
+"n": 1,
+"sha256": "c1b9febeb36392fb15dcb8abc0dd5e6c607032f9ff598a7aad8d02ff843a1f09"
+},
+"Maatify\\RateLimiter\\Tests\\System\\RateLimiterBudgetRotationContinuityTest::testMissingBudgetSeedCapabilityFailsExplicitlyWhenMigrationRequired": {
+"n": 1,
+"sha256": "93d097d3b56a0ca690a7c97b555fc01ee48205bb9be19bd2032c862ef72371be"
+},
+"Maatify\\RateLimiter\\Tests\\System\\RateLimiterBudgetRotationContinuityTest::testBaseOnlyStoreWithoutV1BudgetContinuesNormalPathWithoutCapability": {
+"n": 1,
+"sha256": "c1b9febeb36392fb15dcb8abc0dd5e6c607032f9ff598a7aad8d02ff843a1f09"
+},
+"Maatify\\RateLimiter\\Tests\\System\\RateLimiterBuilderWorkflowTest::testBuilderReadsPreviousK5BlockThroughPublicApiWithoutCrossPairing": {
+"n": 3,
+"sha256": "4bb7e9bb99a8c220e35a3a933bf8ae4a5c1e42a59f052aa6929f7c13252f3b93"
+},
+"Maatify\\RateLimiter\\Tests\\System\\RateLimiterBuilderWorkflowTest::testBuilderWritesCurrentK5AndLeavesPreviousK5ReadOnly": {
+"n": 3,
+"sha256": "0e883f71ca2ab970d0b15e49d74c7891efadb29baf54b48b3d41868b0de2692e"
+},
+"Maatify\\RateLimiter\\Tests\\System\\RateLimiterBuilderWorkflowTest::testDefaultBuilderExecutesEveryDefaultPolicyThroughPublicInterface": {
+"n": 3,
+"sha256": "34d9ad15eba2a24fb6c3c5bb7a16c64adc468cb18a0ebc54b31912d794c8d1a0"
+},
+"Maatify\\RateLimiter\\Tests\\System\\RateLimiterBuilderWorkflowTest::testBuilderWithoutRotationDoesNotReadForeignGeneration": {
+"n": 1,
+"sha256": "c1b9febeb36392fb15dcb8abc0dd5e6c607032f9ff598a7aad8d02ff843a1f09"
+},
+"Maatify\\RateLimiter\\Tests\\System\\RateLimiterDeviceGenerationRotationTest::testK5MicroCapMigratesThePreviousEpochAtomicallyAcrossRotationShapes": {
+"n": 3,
+"sha256": "0e883f71ca2ab970d0b15e49d74c7891efadb29baf54b48b3d41868b0de2692e"
+},
+"Maatify\\RateLimiter\\Tests\\System\\RateLimiterDeviceGenerationRotationTest::testOuterOnlyRotationReadsPreviousGenerationK5ActiveBlock": {
+"n": 1,
+"sha256": "08367e6b13fe6ed1704157fdddd59c191625089c4365cc6281fe90bdf76fb134"
+},
+"Maatify\\RateLimiter\\Tests\\System\\RateLimiterDeviceGenerationRotationTest::testFingerprintOnlyRotationReadsPreviousGenerationK3ActiveBlock": {
+"n": 1,
+"sha256": "08367e6b13fe6ed1704157fdddd59c191625089c4365cc6281fe90bdf76fb134"
+},
+"Maatify\\RateLimiter\\Tests\\System\\RateLimiterDeviceGenerationRotationTest::testBothRotatedReadsPreviousGenerationK5ActiveBlockWithoutCrossPairing": {
+"n": 1,
+"sha256": "08367e6b13fe6ed1704157fdddd59c191625089c4365cc6281fe90bdf76fb134"
+},
+"Maatify\\RateLimiter\\Tests\\System\\RateLimiterDeviceGenerationRotationTest::testNoRotationKeepsCurrentK5ScoreWriteBehavior": {
+"n": 1,
+"sha256": "c1b9febeb36392fb15dcb8abc0dd5e6c607032f9ff598a7aad8d02ff843a1f09"
+},
+"Maatify\\RateLimiter\\Tests\\System\\RateLimiterDeviceGenerationRotationTest::testFingerprintOnlyRotationFallsBackToPreviousK3Score": {
+"n": 1,
+"sha256": "01b9715a77352861f2f9956f5d4e4af38972fe6d4bef43c117e1006f94164adc"
+},
+"Maatify\\RateLimiter\\Tests\\System\\RateLimiterDeviceGenerationRotationTest::testBothRotatedPreviousK5ScoreIsReadButOnlyCurrentK5IsUpdated": {
+"n": 1,
+"sha256": "c1b9febeb36392fb15dcb8abc0dd5e6c607032f9ff598a7aad8d02ff843a1f09"
+},
+"Maatify\\RateLimiter\\Tests\\System\\RateLimiterDeviceGenerationRotationTest::testCurrentK5MicroCapIsAuthoritativeAndPreviousIsIgnored": {
+"n": 1,
+"sha256": "c1b9febeb36392fb15dcb8abc0dd5e6c607032f9ff598a7aad8d02ff843a1f09"
+},
+"Maatify\\RateLimiter\\Tests\\System\\RateLimiterDeviceGenerationRotationTest::testK5MicroCapMigrationWithoutCapabilityFailsClosedThroughEngine": {
+"n": 1,
+"sha256": "93d097d3b56a0ca690a7c97b555fc01ee48205bb9be19bd2032c862ef72371be"
+},
+"Maatify\\RateLimiter\\Tests\\System\\RateLimiterDeviceGenerationRotationTest::testPreviousFingerprintUsesBoundedRotationWithoutCreatingRawPreviousMembers": {
+"n": 102,
+"sha256": "1069f6871030e7d0c3d08ff0db4fe2f215004dcee721ce680a5e2cc9c687acb2"
+},
+"Maatify\\RateLimiter\\Tests\\System\\RateLimiterEngineClaimFailureTest::testStaleLifecycleMissReturnsFalseWithoutCircuitFailure": {
+"n": 3,
+"sha256": "f4815d13474660a8bf6fd1381a27383dda7af6d3f6e5ea99be3d985330ccb3b1"
+},
+"Maatify\\RateLimiter\\Tests\\System\\RateLimiterEngineClaimFailureTest::testIndependentK2HardBlockSuppressesPostPunishmentMetadata": {
+"n": 4,
+"sha256": "b4208000f34ed9e2b618e00932433abe6f155b14ed16b4352f42197bbe1e317e"
+},
+"Maatify\\RateLimiter\\Tests\\System\\RateLimiterEngineCurrentRuntimeCharacterizationTest::testEphemeralLoginOverflowRoutesKnownAuthenticationFailureToK4": {
+"n": 22,
+"sha256": "7024ad36806d1ae7e59770b3da9c292d03692f780cc3973d36901316efbb9f34"
+},
+"Maatify\\RateLimiter\\Tests\\System\\RateLimiterEngineCurrentRuntimeCharacterizationTest::testLoginL1DoesNotStallLaterFailureUpdates": {
+"n": 4,
+"sha256": "952f0aea281b73c0b40b42e03683651c78be93ff67de65bab33ff9e9eab93996"
+},
+"Maatify\\RateLimiter\\Tests\\System\\RateLimiterEngineCurrentRuntimeCharacterizationTest::testLoginBudgetOnlyCrossingRemainsSoftAndStoresNonHardBlock": {
+"n": 2,
+"sha256": "213419d5e1b46f27939dd92d0cc1d53ca6d3d8914b8e86c53c7162f36ebce789"
+},
+"Maatify\\RateLimiter\\Tests\\System\\RateLimiterEngineCurrentRuntimeCharacterizationTest::testLoginBudgetWithMissingSessionIdentifierDoesNotReceiveTrustedDowngrade": {
+"n": 1,
+"sha256": "e77e595b2db4aaef4e83a629fbe496fd3c935fb984b1d4f86b350b1384d0a8f6"
+},
+"Maatify\\RateLimiter\\Tests\\System\\RateLimiterEngineCurrentRuntimeCharacterizationTest::testLoginBudgetWithValidTrustedSessionKeepsTrustedDowngrade": {
+"n": 1,
+"sha256": "605341c7427f165b6d5c907af4c2bb0754faf46920f1434f066487831860060f"
+},
+"Maatify\\RateLimiter\\Tests\\System\\RateLimiterEngineCurrentRuntimeCharacterizationTest::testLoginBudgetRotationReadsPreviousSecretBudgetAsV2Fallback": {
+"n": 1,
+"sha256": "e77e595b2db4aaef4e83a629fbe496fd3c935fb984b1d4f86b350b1384d0a8f6"
+},
+"Maatify\\RateLimiter\\Tests\\System\\RateLimiterEngineCurrentRuntimeCharacterizationTest::testLoginActiveBudgetDoesNotMaskStrongerK4ScoreThreshold": {
+"n": 1,
+"sha256": "08367e6b13fe6ed1704157fdddd59c191625089c4365cc6281fe90bdf76fb134"
+},
+"Maatify\\RateLimiter\\Tests\\System\\RateLimiterEngineCurrentRuntimeCharacterizationTest::testLoginActiveBudgetDoesNotShortCircuitFailureUpdates": {
+"n": 1,
+"sha256": "e77e595b2db4aaef4e83a629fbe496fd3c935fb984b1d4f86b350b1384d0a8f6"
+},
+"Maatify\\RateLimiter\\Tests\\System\\RateLimiterEngineCurrentRuntimeCharacterizationTest::testKnownTrustedLoginDeviceBuildsMicroCapBeforeAccountBudget": {
+"n": 1,
+"sha256": "c1b9febeb36392fb15dcb8abc0dd5e6c607032f9ff598a7aad8d02ff843a1f09"
+},
+"Maatify\\RateLimiter\\Tests\\System\\RateLimiterEngineCurrentRuntimeCharacterizationTest::testEphemeralOtpOverflowKeepsAccountSignalsWithoutPerDevicePersistence": {
+"n": 11,
+"sha256": "6dcc576766b6466d6deffdc989753efbb085060cd4e35827ea3217df67548f2c"
+},
+"Maatify\\RateLimiter\\Tests\\System\\RateLimiterEngineCurrentRuntimeCharacterizationTest::testCurrentCharacterizationLoginBudgetKeepsFixedEpochStartWithinTwentyFourHours": {
+"n": 2,
+"sha256": "602948763c38098ce3c9ec8a886e81bc3d2c072cd444b2c0d4c98a03c73e80b0"
+},
+"Maatify\\RateLimiter\\Tests\\System\\RateLimiterEngineCurrentRuntimeCharacterizationTest::testLoginBudgetUsesIndependentCooldownWithoutEpochRetryAfter": {
+"n": 2,
+"sha256": "213419d5e1b46f27939dd92d0cc1d53ca6d3d8914b8e86c53c7162f36ebce789"
+},
+"Maatify\\RateLimiter\\Tests\\System\\RateLimiterEngineCurrentRuntimeCharacterizationTest::testOtpRecoveryCollisionGuardSuppressesBudgetActivationAtNineToTen": {
+"n": 1,
+"sha256": "ef998838199cd596c5efd15edacce19399995c16f35a98190981a882e842a702"
+},
+"Maatify\\RateLimiter\\Tests\\System\\RateLimiterEngineCurrentRuntimeCharacterizationTest::testApiK2CrossingMapsToSoftBlockL1AndOnlyK2Persistence": {
+"n": 1,
+"sha256": "738cda880904f01ac1556114b7169b34af002266a56528676385cb482ad4f0a7"
+},
+"Maatify\\RateLimiter\\Tests\\System\\RateLimiterEngineCurrentRuntimeCharacterizationTest::testApiThresholdPathDoesNotPersistAccountOrDeviceAccountBlocks": {
+"n": 1,
+"sha256": "738cda880904f01ac1556114b7169b34af002266a56528676385cb482ad4f0a7"
+},
+"Maatify\\RateLimiter\\Tests\\System\\RateLimiterEngineCurrentRuntimeCharacterizationTest::testApiExistingScoresMapToK2L1K3L2AndK1L3Independently": {
+"n": 1,
+"sha256": "7678f3b4c3d60344360a88576599898e5885cb4a521f1609e89ce08fcea79534"
+},
+"Maatify\\RateLimiter\\Tests\\System\\RateLimiterEngineCurrentRuntimeCharacterizationTest::testApiK2AndK3CandidatesKeepTheirOwnLevelsWhenTheyWinTogether": {
+"n": 1,
+"sha256": "01b9715a77352861f2f9956f5d4e4af38972fe6d4bef43c117e1006f94164adc"
+},
+"Maatify\\RateLimiter\\Tests\\System\\RateLimiterEngineCurrentRuntimeCharacterizationTest::testApiK1K2AndK3CandidatesPersistOnlyTheirOwnScopeLevels": {
+"n": 1,
+"sha256": "7678f3b4c3d60344360a88576599898e5885cb4a521f1609e89ce08fcea79534"
+},
+"Maatify\\RateLimiter\\Tests\\System\\RateLimiterEngineCurrentRuntimeCharacterizationTest::testCredentialSprayBlocksTheFifthDistinctSubjectDuringPrecheck": {
+"n": 5,
+"sha256": "8b63db3320861b1d5a4fee7ab97208709a80d13124b3bae0ef1a8bdde559705d"
+},
+"Maatify\\RateLimiter\\Tests\\System\\RateLimiterEngineCurrentRuntimeCharacterizationTest::testDistributedAccountAttackBlocksInvolvedK5sAtFourthDevice": {
+"n": 4,
+"sha256": "8309c9e78d35fd396805ad7356170fa35844ab6a1a71e9e1d4702fd210ea81b0"
+},
+"Maatify\\RateLimiter\\Tests\\System\\RateLimiterEngineCurrentRuntimeCharacterizationTest::testDifferentlyNamedCustomPoliciesActivateEachTypedSemanticBranch": {
+"n": 11,
+"sha256": "43a4e33473a543656ed5795e5a3e8d68b05f3f1571d3a764a866bf38b1664caf"
+},
+"Maatify\\RateLimiter\\Tests\\System\\RateLimiterEngineCurrentRuntimeCharacterizationTest::testPolicyWithoutCapabilitiesDoesNotReceiveTypedSemanticBehavior": {
+"n": 5,
+"sha256": "8c2cd67cbcfd89bc2e34268a7388bfeffb4226e41a9a6207751e6d2c40fc5193"
+},
+"Maatify\\RateLimiter\\Tests\\System\\RateLimiterEngineCurrentRuntimeCharacterizationTest::testDirectCustomPoliciesImplementingPublicContractsActivateTypedSemantics": {
+"n": 6,
+"sha256": "bfd4496851784b0acae622cc8f4130c43559e6f499810fd154a2078e85cd25a1"
+},
+"Maatify\\RateLimiter\\Tests\\System\\RateLimiterEngineFallbackBlastRadiusTest::testHealthyBackendUsesNormalEnginePipelineForChromeAndFirefox": {
+"n": 62,
+"sha256": "446ac5b54d6360a95584e797489e12f824b4721f34deb6857b3cb66c250935a1"
+},
+"Maatify\\RateLimiter\\Tests\\System\\RateLimiterEngineFallbackBlastRadiusTest::testLoginFallbackAccountCapIsIndependentOfUa": {
+"n": 6,
+"sha256": "31253b3e34fe5a8e0a5e6faae62387c6288e165f453a9191b26f49c4d2e64b39"
+},
+"Maatify\\RateLimiter\\Tests\\System\\RateLimiterEngineFallbackBlastRadiusTest::testLoginFallbackIpCapIsIndependentOfUa": {
+"n": 23,
+"sha256": "5b0a4aad28e3a725e77164cb1366636b0484d76e28cbfd4b538b0df6d6e481e5"
+},
+"Maatify\\RateLimiter\\Tests\\System\\RateLimiterEngineFallbackBlastRadiusTest::testOtpFallbackAccountCapIsIndependentOfUa": {
+"n": 5,
+"sha256": "1cd0a8d423cde676ffd0c1195bf20ea3128a9fc4948772dd455dba27fb33e872"
+},
+"Maatify\\RateLimiter\\Tests\\System\\RateLimiterEngineFallbackBlastRadiusTest::testHourlyGcPreservesActiveOtpFallbackBucketThroughEngine": {
+"n": 6,
+"sha256": "64e988f3261293cd2d64a891e87f41e25448b78f20634a161eb82e99c37dd2ff"
+},
+"Maatify\\RateLimiter\\Tests\\System\\RateLimiterEngineFallbackBlastRadiusTest::testOtpFallbackNaturallyResetsOnlyWhenFixedWindowRollsOver": {
+"n": 7,
+"sha256": "4761e8f57e24f47ac74ea26dec54e12afd925d3603fa8021dc876decef4e2627"
+},
+"Maatify\\RateLimiter\\Tests\\System\\RateLimiterEngineFallbackBlastRadiusTest::testOtpFallbackIpCapIsIndependentOfUa": {
+"n": 13,
+"sha256": "b1a6fc2d7d1410ad2c8002e462a5686ba4e60235e60b25c71c76b1e2d57fff97"
+},
+"Maatify\\RateLimiter\\Tests\\System\\RateLimiterEngineFallbackBlastRadiusTest::testApiCrossUaFallbackUsesDistinctK2BucketsThroughEngine": {
+"n": 61,
+"sha256": "ee2ac281946b266b63f26a88aef3199c5a1390db06f0f51ad64145b5fe6e0769"
+},
+"Maatify\\RateLimiter\\Tests\\System\\RateLimiterEngineFallbackBlastRadiusTest::testDirectCustomApiPolicyEnforcesTypedIpAggregateCapIndependentOfUa": {
+"n": 201,
+"sha256": "c06bee605234c5e6867847e663908bb3bf2fe2b472f99f93a34a7b36f82edf79"
+},
+"Maatify\\RateLimiter\\Tests\\System\\RateLimiterEngineFallbackBlastRadiusTest::testDirectCustomApiPolicyEnforcesTypedIpUserAgentCap": {
+"n": 81,
+"sha256": "f639efcc753a5244d93fe9728a9fbdba90c9788d776d77270f06b7f329991c8b"
+},
+"Maatify\\RateLimiter\\Tests\\System\\RateLimiterEngineFallbackBlastRadiusTest::testDirectCustomApiPolicyFallbackWindowRollsOverAtItsOwnDuration": {
+"n": 82,
+"sha256": "cdf231b3e4241d6e20f282c05f409b2bde27cab08afebb98566ca4ca4c6de259"
+},
+"Maatify\\RateLimiter\\Tests\\System\\RateLimiterEngineFallbackBlastRadiusTest::testDirectCustomAuthPolicyEnforcesTypedAccountCap": {
+"n": 8,
+"sha256": "c3b8d99f45eb9e2af7de178232a7026f1117dc97a5bfbbe1dbee628035f09b08"
+},
+"Maatify\\RateLimiter\\Tests\\System\\RateLimiterEngineFallbackBlastRadiusTest::testDirectCustomAuthPolicyEnforcesTypedIpCap": {
+"n": 33,
+"sha256": "08237ac81f0b9599611e9e9878463d00b6f6412e614bbe110649e3ccf803fb63"
+},
+"Maatify\\RateLimiter\\Tests\\System\\RateLimiterEngineFallbackBlastRadiusTest::testDirectCustomAuthPolicyFallbackWindowRollsOverAtItsOwnDuration": {
+"n": 9,
+"sha256": "7b38cc8dac463c2fd00eb2e8f1483a9050759cc7d2fa164ceda18edb7dbfc2ed"
+},
+"Maatify\\RateLimiter\\Tests\\System\\RateLimiterEngineFallbackBlastRadiusTest::testCustomPolicyAndOfficialLoginPolicyWithIdenticalFallbackValuesDoNotShareCounters": {
+"n": 11,
+"sha256": "13c296d2aed9243a94631c3c258ea9d63029f3dd9b78292602a517e1eefe86f6"
+},
+"Maatify\\RateLimiter\\Tests\\System\\RateLimiterEngineFallbackBlastRadiusTest::testPolicyWithoutFallbackProfileFailsClosedDuringDegradedCircuit": {
+"n": 3,
+"sha256": "b2f409b4ade42cbbcff9b589c50db04ca40e3cbd16e2b17ded1b8803e6955330"
+},
+"Maatify\\RateLimiter\\Tests\\System\\RateLimiterEngineFallbackRetryAfterTest::testBackendFailurePathReportsRemainingWindowLongerThanSixtySeconds": {
+"n": 2,
+"sha256": "902740692aa7203d9ecaeacc59f29977a514c12cb65edfcff01ab1f8562c25dc"
+},
+"Maatify\\RateLimiter\\Tests\\System\\RateLimiterEngineFallbackRetryAfterTest::testBackendFailurePathReportsRemainingWindowShorterThanSixtySeconds": {
+"n": 2,
+"sha256": "00549e33413895d145b158e9e92bbe56bcd3739702ff72cdbc81356c42ec2065"
+},
+"Maatify\\RateLimiter\\Tests\\System\\RateLimiterEngineFallbackRetryAfterTest::testOpenCircuitPathReportsRemainingWindowLongerThanSixtySeconds": {
+"n": 5,
+"sha256": "0173b9fb28e63e6d86d6a89b61ece5aebdf8fbb4313c66da561467320e20f718"
+},
+"Maatify\\RateLimiter\\Tests\\System\\RateLimiterEngineFallbackRetryAfterTest::testOpenCircuitPathReportsRemainingWindowShorterThanSixtySeconds": {
+"n": 5,
+"sha256": "903b4560e4302369b30605adb1ef87c45a992e0283b30ac1970178872fc5b362"
+},
+"Maatify\\RateLimiter\\Tests\\System\\RateLimiterEngineFallbackRetryAfterTest::testRetryAfterIsOneSecondBeforeBoundaryAndFullWindowAtBoundary": {
+"n": 7,
+"sha256": "594235a836ce106f3d1348dd6aa64171d3b8ef88fb8f83c51d4d1dd6ec6b0940"
+},
+"Maatify\\RateLimiter\\Tests\\System\\RateLimiterEngineFallbackRetryAfterTest::testMultipleDenyingDimensionsReportTheLongestRemainingWindowOnBothPaths": {
+"n": 7,
+"sha256": "d082d5fdd03159a2f7424e433b8fd9bca6dd390ea0227a0b31455f3dbab88d1b"
+},
+"Maatify\\RateLimiter\\Tests\\System\\RateLimiterEngineFallbackRetryAfterTest::testOnlyTheShorterDimensionDenyingReportsItsOwnRemainingWindow": {
+"n": 2,
+"sha256": "00549e33413895d145b158e9e92bbe56bcd3739702ff72cdbc81356c42ec2065"
+},
+"Maatify\\RateLimiter\\Tests\\System\\RateLimiterEngineFallbackRetryAfterTest::testOnlyTheLongerDimensionDenyingReportsItsOwnRemainingWindow": {
+"n": 2,
+"sha256": "902740692aa7203d9ecaeacc59f29977a514c12cb65edfcff01ab1f8562c25dc"
+},
+"Maatify\\RateLimiter\\Tests\\System\\RateLimiterEngineFallbackRetryAfterTest::testHardBlockL2AndPositiveRetryAfterForOfficialPolicies": {
+"n": 7,
+"sha256": "1a0c8680a206754bf36ad95e249b6eda313ddac031595583e6089dcb24adbcdc"
+},
+"Maatify\\RateLimiter\\Tests\\System\\RateLimiterEngineFallbackRetryAfterTest::testOneEvaluationConsumesEachFallbackCounterExactlyOnce": {
+"n": 7,
+"sha256": "d082d5fdd03159a2f7424e433b8fd9bca6dd390ea0227a0b31455f3dbab88d1b"
+},
+"Maatify\\RateLimiter\\Tests\\System\\RateLimiterEngineFallbackRetryAfterTest::testAllowedAndOverflowAndWindowRolloverRegressions": {
+"n": 4109,
+"sha256": "b32cc4a56c51698523ffeb0bc087d58df96ed47bd357d250d1fbbd917194d0af"
+},
+"Maatify\\RateLimiter\\Tests\\System\\RateLimiterEngineFallbackRetryAfterTest::testFailClosedAndPolicyWithoutFallbackKeepTheirExistingBehavior": {
+"n": 5,
+"sha256": "d36ac66bf3093b7d8b465303b2375582861c3f53b9326b5943e702f7a95ca6c5"
+},
+"Maatify\\RateLimiter\\Tests\\System\\RateLimiterEngineWorkflowTest::testOtpLoginPreCheckBehavior": {
+"n": 2,
+"sha256": "8d8d44d62c4dc107b4a6dab197cd88732c2c903fde1b56ebebee719ec3c80992"
+},
+"Maatify\\RateLimiter\\Tests\\System\\RateLimiterEngineWorkflowTest::testCleanAllowedRequest": {
+"n": 1,
+"sha256": "c1b9febeb36392fb15dcb8abc0dd5e6c607032f9ff598a7aad8d02ff843a1f09"
+},
+"Maatify\\RateLimiter\\Tests\\System\\RateLimiterEngineWorkflowTest::testApiHeavyNormalAccessBehavior": {
+"n": 1,
+"sha256": "c1b9febeb36392fb15dcb8abc0dd5e6c607032f9ff598a7aad8d02ff843a1f09"
+},
+"Maatify\\RateLimiter\\Tests\\System\\RateLimiterEngineWorkflowTest::testFailureRecording": {
+"n": 1,
+"sha256": "d3a4ea2cff2583f6b60e7f5e44171f10cbd757405c7e8d8036b5738b9bd2d197"
+},
+"Maatify\\RateLimiter\\Tests\\System\\RateLimiterEngineWorkflowTest::testSuccessRecording": {
+"n": 1,
+"sha256": "c1b9febeb36392fb15dcb8abc0dd5e6c607032f9ff598a7aad8d02ff843a1f09"
+},
+"Maatify\\RateLimiter\\Tests\\System\\RateLimiterEngineWorkflowTest::testExistingBlockingOutcome": {
+"n": 1,
+"sha256": "0cd1fb04e269914158ef26cb911793c39640bf7109857619bd088a2403650170"
+},
+"Maatify\\RateLimiter\\Tests\\System\\RateLimiterEngineWorkflowTest::testUnknownPolicyExceptionContract": {
+"n": 1,
+"sha256": "93d097d3b56a0ca690a7c97b555fc01ee48205bb9be19bd2032c862ef72371be"
+},
+"Maatify\\RateLimiter\\Tests\\System\\RateLimiterEngineWorkflowTest::testOtpAndLoginStoreFailuresFailClosed": {
+"n": 2,
+"sha256": "ad650bdf9b28c49d72404469d35d39ed6bd83652461e00ce80eb455ff85fe65e"
+},
+"Maatify\\RateLimiter\\Tests\\System\\RateLimiterEngineWorkflowTest::testApiHeavyStoreFailureMovesFromFailOpenToDegradedModeAfterCircuitTrip": {
+"n": 3,
+"sha256": "9d4723db8727b8aaca8e31586da6aac46075c046e01921638ae73ff96f3f1fa2"
+},
+"Maatify\\RateLimiter\\Tests\\System\\RateLimiterEngineWorkflowTest::testFullCircuitOutageKeepsEmergencyStateProcessLocalAfterPersistenceRestoration": {
+"n": 4,
+"sha256": "0b472306ca6b0c365ba35075a8d811caf2b767234d9a10c5eabf88d94c2f1af5"
+},
+"Maatify\\RateLimiter\\Tests\\System\\RateLimiterEngineWorkflowTest::testUntypedStoreExceptionDoesNotBecomeCircuitFailureOrFallbackAllowance": {
+"n": 1,
+"sha256": "269c508fdcfb4e3080d9024c1a1761b9ae9b329e979d31beacb3cfa5a7ad789b"
+},
+"Maatify\\RateLimiter\\Tests\\System\\RateLimiterEngineWorkflowTest::testInvalidDeviceIdentityInputDoesNotBecomeBackendFailure": {
+"n": 1,
+"sha256": "93d097d3b56a0ca690a7c97b555fc01ee48205bb9be19bd2032c862ef72371be"
+},
+"Maatify\\RateLimiter\\Tests\\System\\RateLimiterEngineWorkflowTest::testApiHeavyFallbackK2CapThroughEngine": {
+"n": 61,
+"sha256": "e9043a03cc6452257f5a6f4d77ed493977dca24adac84d22971683a691b4ad89"
+},
+"Maatify\\RateLimiter\\Tests\\System\\RateLimiterEngineWorkflowTest::testDualSecretRotationBehavior": {
+"n": 1,
+"sha256": "c1b9febeb36392fb15dcb8abc0dd5e6c607032f9ff598a7aad8d02ff843a1f09"
+},
+"Maatify\\RateLimiter\\Tests\\System\\RateLimiterEngineWorkflowTest::testIPv6UsesCanonical64EnforcementKeyOnly": {
+"n": 1,
+"sha256": "c1b9febeb36392fb15dcb8abc0dd5e6c607032f9ff598a7aad8d02ff843a1f09"
+},
+"Maatify\\RateLimiter\\Tests\\System\\RateLimiterEngineWorkflowTest::testLegacyIpv6MacroBlocksAreIgnored": {
+"n": 1,
+"sha256": "c1b9febeb36392fb15dcb8abc0dd5e6c607032f9ff598a7aad8d02ff843a1f09"
+},
+"Maatify\\RateLimiter\\Tests\\System\\RateLimiterEngineWorkflowTest::testApiHeavyIgnoresLegacyIpv6MacroHierarchyState": {
+"n": 1,
+"sha256": "cbb65eb9c38a14a9d827345f5f523d10e7e4a9529a1116f3cec1d6651fcfb6ae"
+},
+"Maatify\\RateLimiter\\Tests\\System\\RateLimiterEngineWorkflowTest::testApiHeavyDoesNotPersistLegacyIpv6MacroBlocksAfterScoreUpdate": {
+"n": 1,
+"sha256": "cbb65eb9c38a14a9d827345f5f523d10e7e4a9529a1116f3cec1d6651fcfb6ae"
+},
+"Maatify\\RateLimiter\\Tests\\System\\RateLimiterFullCapabilityBuilderWorkflowTest::testFullCapabilityPathCoversEveryRotationShapeThroughPublicApi": {
+"n": 16,
+"sha256": "bc6bb4ef6c08ce83d4fe3626061a0db519b6bd70c3b114fa9300335ad683ebac"
+},
+"Maatify\\RateLimiter\\Tests\\System\\RateLimiterFullCapabilityBuilderWorkflowTest::testFullCapabilityPathWritesCurrentAndLeavesPreviousK5ReadOnly": {
+"n": 4,
+"sha256": "c31ea581cc0d03442a8d4b1d62a08f577d7b30ef3ac0e4d08e88cae3c244f8b6"
+},
+"Maatify\\RateLimiter\\Tests\\System\\RateLimiterFullCapabilityBuilderWorkflowTest::testProductionDefaultFullCapabilityOutageUsesLockedProcessLocalEmergencyCircuit": {
+"n": 21,
+"sha256": "868f83252a1a6cbd36ade74acaa3fa362cc2909fccfb0546d2feb9105a89cd50"
+},
+"Maatify\\RateLimiter\\Tests\\System\\RateLimiterFullCapabilityBuilderWorkflowTest::testOneFullCapabilityStoreRunsAllDefaultPoliciesThroughPublicApi": {
+"n": 3,
+"sha256": "34d9ad15eba2a24fb6c3c5bb7a16c64adc468cb18a0ebc54b31912d794c8d1a0"
+},
+"Maatify\\RateLimiter\\Tests\\System\\RateLimiterFullCapabilityBuilderWorkflowTest::testPublicWorkflowUsesBoundedSnapshotRotationAndPreviousReadOnlyState": {
+"n": 4,
+"sha256": "8309c9e78d35fd396805ad7356170fa35844ab6a1a71e9e1d4702fd210ea81b0"
+},
+"Maatify\\RateLimiter\\Tests\\System\\RateLimiterFullCapabilityBuilderWorkflowTest::testPublicWorkflowMigratesBudgetSeedIntoCurrentGeneration": {
+"n": 2,
+"sha256": "8d8d44d62c4dc107b4a6dab197cd88732c2c903fde1b56ebebee719ec3c80992"
+},
+"Maatify\\RateLimiter\\Tests\\System\\RateLimiterFullCapabilityBuilderWorkflowTest::testOperationalReaderSurfacesTheSameKnownDeviceMicroCapStateThePipelineWrote": {
+"n": 1,
+"sha256": "c1b9febeb36392fb15dcb8abc0dd5e6c607032f9ff598a7aad8d02ff843a1f09"
+},
+"Maatify\\RateLimiter\\Tests\\System\\RateLimiterFullCapabilityBuilderWorkflowTest::testPublicWorkflowPersistsHardBlockCycleState": {
+"n": 3,
+"sha256": "f4815d13474660a8bf6fd1381a27383dda7af6d3f6e5ea99be3d985330ccb3b1"
+},
+"Maatify\\RateLimiter\\Tests\\System\\RateLimiterFullCapabilityBuilderWorkflowTest::testPublicWorkflowUsesCircuitBreakerProbeLeaseCapability": {
+"n": 1,
+"sha256": "7a323dae27755508e27becc8f01f150eb981dfda005bb3c7afd5652a83b5242b"
+},
+"Maatify\\RateLimiter\\Tests\\System\\RateLimiterFullCapabilityBuilderWorkflowTest::testExistingMultiStoreBuilderConstructorStillRunsPublicWorkflow": {
+"n": 1,
+"sha256": "c1b9febeb36392fb15dcb8abc0dd5e6c607032f9ff598a7aad8d02ff843a1f09"
+},
+"Maatify\\RateLimiter\\Tests\\System\\RedisHealthStatusReplyRegressionTest::testCircuitRecoversThroughBooleanTruePingWithoutWallClockWaiting": {
+"n": 2,
+"sha256": "b2a43169ed68fa6ace2d87f41f5188182d3458cf3649c947e5a532ed2f9a07e0"
+}
+}
+}

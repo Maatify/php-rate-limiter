@@ -1,0 +1,17 @@
+--- /tmp/w3o	2026-10-25 00:51:06
++++ /tmp/w3e	2026-10-25 00:51:06
+@@ -2114 +2114 @@
+-    private function persistWinningCandidates(BlockPolicyInterface $policy, array $candidates, ?string $winningClass, bool $persistAllCandidates = false): array
++    private function persistWinningCandidates(BlockPolicyInterface $policy, array $candidates, ?string $winningClass, bool $persistAllCandidates = false)
+@@ -2115,0 +2116,11 @@
++        $__p = \Flaky160M\M2b::$calls['publish'];
++        $__t = hrtime(true);
++        try {
++            return $this->persistWinningCandidatesFlaky160s($policy, $candidates, $winningClass, $persistAllCandidates);
++        } finally {
++            \Flaky160S\W3::persisted(hrtime(true) - $__t, $__p);
++        }
++    }
++
++    private function persistWinningCandidatesFlaky160s(BlockPolicyInterface $policy, array $candidates, ?string $winningClass, bool $persistAllCandidates = false): array
++    {

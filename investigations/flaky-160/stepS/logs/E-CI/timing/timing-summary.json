@@ -1,0 +1,22 @@
+{
+    "runs": {
+        "base": 200,
+        "change": 200
+    },
+    "harness_errors": 0,
+    "calls_with_k4_publication": {
+        "base": 642,
+        "change": 626
+    },
+    "median_ns_with_k4_publication": {
+        "base": 6004139,
+        "change": 6312149.5
+    },
+    "median_ns_all_calls": {
+        "base": 9104,
+        "change": 9243.5
+    },
+    "ratio_change_over_base": 1.051,
+    "bound": 1.25,
+    "within": true
+}
