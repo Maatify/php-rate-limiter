@@ -3,8 +3,8 @@
 declare(strict_types=1);
 
 // #160 step S — V-DECISION comparison. Reads the w3-*.json files of two suite runs (base, change) and compares, for
-// every test present in both, the sequence of `RateLimiterEngine::limit` results recorded in the root process.
-// Rows from forked worker processes are counted apart (their interleaving is non-deterministic by construction).
+// every test present in both, the sequence of `RateLimiterEngine::limit` results recorded in the root process, as a count and a sha256 over the canonical
+// row sequence (rows themselves are kept only for the first 8 of each test). Forked worker processes are counted apart (their interleaving is non-deterministic by construction).
 //   php w3_compare.php --base=<rec dir> --change=<rec dir> [--expected-diff=<Class::test>,...]
 // Prints one JSON object; exit 1 when a shared test differs outside --expected-diff.
 
@@ -12,34 +12,29 @@ namespace Flaky160S;
 
 final class Compare
 {
-    /** @return array{root: array<string, list<array<int,mixed>>>, worker_rows: int} */
+    /** @return array{root: array<string, array{n: int, sha256: string, head: list<mixed>}>, worker_tests: int} */
     public static function load(string $dir): array
     {
         $root = [];
-        $workerRows = 0;
+        $workerTests = 0;
         foreach (glob("$dir/w3-*.json") ?: [] as $f) {
             $j = json_decode((string) file_get_contents($f), true);
             if (! is_array($j)) {
                 continue;
             }
             if (! $j['root']) {
-                $workerRows += count($j['decisions']);
+                $workerTests += count($j['tests']);
                 continue;
             }
-            foreach ($j['decisions'] as $d) {
-                $root[$d[0]][] = array_slice($d, 1);
-            }
-        }
-        foreach ($root as &$rows) {
-            usort($rows, static fn(array $a, array $b): int => $a[0] <=> $b[0]);
+            $root = $j['tests'];
         }
 
-        return ['root' => $root, 'worker_rows' => $workerRows];
+        return ['root' => $root, 'worker_tests' => $workerTests];
     }
 
     /**
-     * @param array{root: array<string, list<array<int,mixed>>>, worker_rows: int} $base
-     * @param array{root: array<string, list<array<int,mixed>>>, worker_rows: int} $change
+     * @param array{root: array<string, array{n: int, sha256: string, head: list<mixed>}>, worker_tests: int} $base
+     * @param array{root: array<string, array{n: int, sha256: string, head: list<mixed>}>, worker_tests: int} $change
      * @param list<string> $expected
      * @return array<string, mixed>
      */
@@ -49,8 +44,8 @@ final class Compare
         $different = [];
         $rows = 0;
         foreach ($shared as $t) {
-            $rows += count($base['root'][$t]);
-            if ($base['root'][$t] !== $change['root'][$t]) {
+            $rows += $base['root'][$t]['n'];
+            if ($base['root'][$t]['n'] !== $change['root'][$t]['n'] || $base['root'][$t]['sha256'] !== $change['root'][$t]['sha256']) {
                 $different[] = ['test' => $t, 'expected' => in_array($t, $expected, true), 'base' => $base['root'][$t], 'change' => $change['root'][$t]];
             }
         }
@@ -61,7 +56,7 @@ final class Compare
             'only_base' => array_values(array_diff(array_keys($base['root']), array_keys($change['root']))),
             'only_change' => array_values(array_diff(array_keys($change['root']), array_keys($base['root']))),
             'different' => $different, 'unexpected_differences' => count($unexpected),
-            'worker_rows' => ['base' => $base['worker_rows'], 'change' => $change['worker_rows']],
+            'worker_tests' => ['base' => $base['worker_tests'], 'change' => $change['worker_tests']],
             'ok' => $unexpected === [],
         ];
     }

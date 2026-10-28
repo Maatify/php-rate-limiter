@@ -27,10 +27,12 @@ namespace Flaky160S {
             . "    public function limitFlaky160s(RateLimitContextDTO \$context, RateLimitCommand \$request): RateLimitResultDTO\n    {\n";
         public const PERSIST_PARAMS = 'BlockPolicyInterface $policy, array $candidates, ?string $winningClass, bool $persistAllCandidates = false';
 
-        /** @var list<array<int,mixed>> */
+        /**
+         * Per test: the number of results, an incremental sha256 over the canonical row sequence, and the first rows.
+         * (The first dispatch kept every row in memory and died on the archive tests: 1 GiB exhausted, both arms.)
+         * @var array<string, array{n: int, ctx: \HashContext, head: list<array<int,mixed>>}>
+         */
         public static array $decisions = [];
-        /** @var array<string,int> */
-        public static array $ordinal = [];
         /** @var list<array{string,int,bool}> */
         public static array $persist = [];
         public static string $arm = '?';
@@ -41,7 +43,6 @@ namespace Flaky160S {
             if (self::$ownerPid !== getmypid()) {
                 self::$ownerPid = getmypid();
                 self::$decisions = [];
-                self::$ordinal = [];
                 self::$persist = [];
             }
         }
@@ -50,18 +51,23 @@ namespace Flaky160S {
         {
             self::own();
             $test = \Flaky160M\M2b::test();
-            $n = self::$ordinal[$test] = (self::$ordinal[$test] ?? -1) + 1;
-            if ($r === null) {
-                self::$decisions[] = [$test, $n, 'EXC', get_class($e), null, null, null, null];
-
-                return;
+            $row = $r === null
+                ? ['EXC', get_class($e), null, null, null, null]
+                : [$r->decision, $r->blockLevel, $r->retryAfter, $r->failureMode, $r->metadata?->cause, $r->metadata?->context?->reason];
+            self::$decisions[$test] ??= ['n' => 0, 'ctx' => hash_init('sha256'), 'head' => []];
+            self::$decisions[$test]['n']++;
+            hash_update(self::$decisions[$test]['ctx'], json_encode($row, JSON_UNESCAPED_SLASHES | JSON_INVALID_UTF8_SUBSTITUTE) . "\n");
+            if (count(self::$decisions[$test]['head']) < 8) {
+                self::$decisions[$test]['head'][] = $row;
             }
-            self::$decisions[] = [$test, $n, $r->decision, $r->blockLevel, $r->retryAfter, $r->failureMode, $r->metadata?->cause, $r->metadata?->context?->reason];
         }
 
         public static function persisted(int $ns, int $pubBefore): void
         {
             self::own();
+            if (getenv('FLAKY160_TIMING') !== '1') {
+                return;
+            }
             self::$persist[] = [\Flaky160M\M2b::test(), $ns, \Flaky160M\M2b::$calls['publish'] > $pubBefore];
         }
 
@@ -71,10 +77,14 @@ namespace Flaky160S {
             if ($dir === null || self::$ownerPid !== getmypid()) {
                 return;
             }
+            $tests = [];
+            foreach (self::$decisions as $test => $d) {
+                $tests[$test] = ['n' => $d['n'], 'sha256' => hash_final($d['ctx']), 'head' => $d['head']];
+            }
             file_put_contents(
                 $dir . '/w3-' . getmypid() . '.json',
                 json_encode(['pid' => getmypid(), 'root' => getmypid() === \Flaky160M\M2b::$rootPid, 'arm' => self::$arm,
-                    'decisions' => self::$decisions, 'persist' => self::$persist], JSON_UNESCAPED_SLASHES) . "\n",
+                    'tests' => $tests, 'persist' => self::$persist], JSON_UNESCAPED_SLASHES | JSON_INVALID_UTF8_SUBSTITUTE) . "\n",
             );
         }
 

@@ -197,7 +197,7 @@ case "$arm" in
                 d="$out/timing/$which-$i"; rm -rf "$d"; mkdir -p "$d/rec"
                 port="$(redis_up "$d/redis.state")"
                 cache="$(mktemp -d)"; status=0
-                FLAKY160_ROOT="$tree" REDIS_INTEGRATION_HOST=127.0.0.1 REDIS_INTEGRATION_PORT="$port" FLAKY160M_DIR="$d/rec" \
+                FLAKY160_TIMING=1 FLAKY160_ROOT="$tree" REDIS_INTEGRATION_HOST=127.0.0.1 REDIS_INTEGRATION_PORT="$port" FLAKY160M_DIR="$d/rec" \
                     env XDEBUG_MODE=off php -d memory_limit=1G "$tree/vendor/bin/phpunit" --bootstrap "$here/w3_bootstrap.php" -c "$tree/phpunit.xml" \
                     --do-not-cache-result --cache-directory "$cache" --filter "$test_filter" "$tree/$test_file" > "$d/phpunit.out" 2>&1 || status=$?
                 rm -rf "$cache"

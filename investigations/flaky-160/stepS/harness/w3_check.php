@@ -45,17 +45,22 @@ foreach (['change' => [(string) $o['change'], (string) $o['change-ref']], 'base'
     [$c2, $inst, $err2] = $child($tree, true, "$tmp/inst");
     $row['scenario_ran'] = $c1 === 0 && $c2 === 0 && is_array($plain) && is_array($inst);
     $row['neutral'] = $row['scenario_ran'] && $plain === $inst;
-    $recorded = [];
+    $recordedN = null;
+    $recordedHash = null;
     foreach (glob("$tmp/inst/w3-*.json") ?: [] as $f) {
         $j = json_decode((string) file_get_contents($f), true);
         if ($j['root'] ?? false) {
             $row['w3_arm'] = $j['arm'];
-            foreach ($j['decisions'] as $d) {
-                $recorded[] = [$d[2], $d[3], $d[4], $d[5], $d[6], $d[7]];
-            }
+            $recordedN = array_sum(array_column($j['tests'], 'n'));
+            $recordedHash = array_map(static fn(array $t): string => $t['sha256'], $j['tests']);
         }
     }
-    $row['recorded_equals_returned'] = $row['scenario_ran'] && $recorded === $inst;
+    // The scenario runs outside PHPUnit, so every row is filed under the test name "?".
+    $ctx = hash_init('sha256');
+    foreach (is_array($inst) ? $inst : [] as $r) {
+        hash_update($ctx, json_encode($r, JSON_UNESCAPED_SLASHES | JSON_INVALID_UTF8_SUBSTITUTE) . "\n");
+    }
+    $row['recorded_equals_returned'] = $row['scenario_ran'] && $recordedN === count($inst) && ($recordedHash['?'] ?? null) === hash_final($ctx);
     $row['scenario_results'] = is_array($inst) ? count($inst) : null;
     $row['w3_arm_matches'] = ($row['w3_arm'] ?? null) === $arm;
     // The scenario must hit the K4 lifecycle path at least once (a HARD_BLOCK of level 2), or it proves nothing.
@@ -81,10 +86,10 @@ foreach (['change' => (string) $o['change'], 'base' => (string) $o['base']] as $
 
 // Synthetic detectors: the comparison must see an injected difference and excuse only a named one; the timing summary
 // must flag a ratio above the bound and pass one below it.
-$a = ['root' => ['T::a' => [[0, 'ALLOW', 0, 0, 'NORMAL', null, null]], 'T::b' => [[0, 'HARD_BLOCK', 2, 60, 'NORMAL', null, null]]], 'worker_rows' => 0];
+$a = ['root' => ['T::a' => ['n' => 1, 'sha256' => hash('sha256', 'a'), 'head' => []], 'T::b' => ['n' => 1, 'sha256' => hash('sha256', 'b'), 'head' => []]], 'worker_tests' => 0];
 $b = $a;
 $same = Compare::diff($a, $b, []);
-$b['root']['T::b'][0][3] = 1;
+$b['root']['T::b']['sha256'] = hash('sha256', 'b-changed');
 $injected = Compare::diff($a, $b, []);
 $excused = Compare::diff($a, $b, ['T::b']);
 $emit(['check' => 'detector_compare', 'identical_ok' => $same['ok'], 'injected_detected' => ! $injected['ok'] && $injected['unexpected_differences'] === 1,
