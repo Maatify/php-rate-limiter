@@ -21,6 +21,8 @@ run_number="$1"
 consumer_root="$2"
 fixture_root="$3"
 package_root="$4"
+# #173: an optional fixture script instead of verify.php (reproduce-cvh2-window.php only; CI never sets it).
+verification_script="${CONSUMER_VERIFICATION_SCRIPT:-verify.php}"
 
 echo "Consumer Verification Harness clean run #$run_number starting at $(date -u +%FT%TZ)"
 
@@ -37,7 +39,7 @@ bash "$package_root/scripts/ci/run-with-redis-service.sh" bash -c '
     composer dump-autoload --optimize --strict-psr
     composer check-platform-reqs
     composer show maatify/php-rate-limiter
-    php verify.php
-' _ "$consumer_root" "$run_number"
+    php "$3"
+' _ "$consumer_root" "$run_number" "$verification_script"
 
 echo "Consumer Verification Harness clean run #$run_number finished at $(date -u +%FT%TZ)"
