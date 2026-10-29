@@ -1,0 +1,93 @@
+@@ -7,0 +8,6 @@
++#   run.sh ufilter <out> <n>   n untapped PHPUnit runs of T-K4, T-HAND and the comparator (--filter), a fresh
++#                              container each -> <out>/ufilter.jsonl (fix-a3 PLAN §11 LT-a3-07)
++#   run.sh decision <out> <label> <tree> <ref> [phpunit args]
++#                              the Integration and System suites of <tree> (V-HEAD against <ref>) once, a fresh
++#                              container -> <out>/decision-<label>.junit.xml (fix-a3 PLAN §11 LT-a3-06)
++#   run.sh decide <out>        junit.php decide over decision-main and decision-head -> <out>/decision.json
+@@ -15 +21 @@
+-# byte-identical to main@d37f9a3 and clean.
++# byte-identical to the fix-a3 S2 commit (V_HEAD_REF) and clean (fix-a3 PLAN §11 LT-a3-08).
+@@ -21 +27 @@
+-head_ref="${V_HEAD_REF:-d37f9a3}"
++head_ref="${V_HEAD_REF:-a45066a}"
+@@ -29,4 +35,5 @@
+-v_head() {
+-    if ! git -C "$root" diff --quiet "$head_ref" -- src tests composer.json phpunit.xml \
+-        || [[ -n "$(git -C "$root" status --porcelain -- src tests composer.json phpunit.xml)" ]]; then
+-        echo "V-HEAD FAIL: $root differs from $head_ref under src/ tests/ composer.json phpunit.xml, or is not clean" >&2
++v_head() { # [$1 tree, $2 ref] (default: this checkout, V_HEAD_REF)
++    local tree="${1:-$root}" ref="${2:-$head_ref}"
++    if ! git -C "$tree" diff --quiet "$ref" -- src tests composer.json phpunit.xml \
++        || [[ -n "$(git -C "$tree" status --porcelain -- src tests composer.json phpunit.xml)" ]]; then
++        echo "V-HEAD FAIL: $tree differs from $ref under src/ tests/ composer.json phpunit.xml, or is not clean" >&2
+@@ -36,0 +44,11 @@
++seconds() { perl -MTime::HiRes=time -e "printf q(%.6f), time"; }
++timing() { # $1 unit, $2 n, $3 rows, $4 exit, $5 started, $6 ended
++    awk -v u="$1" -v n="$2" -v r="$3" -v s="$4" -v a="$5" -v b="$6" \
++        'BEGIN{printf "{\"unit\":\"%s\",\"n\":%d,\"rows\":%d,\"exit\":%d,\"seconds\":%.3f}\n", u, n, r, s, b-a}' | tee -a "$out/timings.jsonl"
++}
++
++# fix-a3 PLAN §11 LT-a3-07: the three tests the probe copies (RedisFullCapabilityStoreIntegrationTest L1833, L1871, L1963 at 5202bf3)
++ufilter_tests='testLifecycleMutationPreservesPhysicalAndAuthoritativeExpiryAcrossAllK4Boundaries|testConcurrentPreviousHandoffHasNoDoubleSeedAndGenerationMutationsHaveNoLostUpdates|testLegacyHandoffAndSameValueMutationAdvanceGenerationExactlyOnce'
++# fix-a3 S1 (5d31685, a7f5aec): the test methods V-DECISION expects at the head only
++s1_methods='testLegacyHandoffAppliesAndWritesTheReadExpiryAcrossCallerGaps,testConcurrentLegacyHandoffHasExactlyOneWinnerAcrossCallerGaps,testLegacyCurrentMutationWritesTheExpiryReadObserved,testLegacyTtlOnlyChangeBetweenReadAndMutateIsNotStaleAndKeepsTheReadExpiry,testLegacyMutationRejectsAMalformedSnapshotExpiryWithoutWriting'
++
+@@ -67,0 +86,57 @@
++    ufilter)
++        # FLAKY160_UFILTER overrides the filter (D9 only: a filter that matches nothing must be invalid)
++        n="${3:?n}"
++        filter="${FLAKY160_UFILTER:-RedisFullCapabilityStoreIntegrationTest::($ufilter_tests)}"
++        v_head
++        started="$(seconds)"
++        for ((i = 1; i <= n; i++)); do
++            dir="$out/ufilter/$i"
++            mkdir -p "$dir"
++            run_started="$(seconds)"
++            status=0
++            port="$(redis_up "$dir/redis.state")" || status=$?
++            if (( status == 0 )); then
++                cache="$(mktemp -d)"
++                REDIS_INTEGRATION_HOST=127.0.0.1 REDIS_INTEGRATION_PORT="$port" \
++                    "${php[@]}" "$root/vendor/bin/phpunit" -c "$root/phpunit.xml" --do-not-cache-result --cache-directory "$cache" \
++                    --log-junit "$dir/junit.xml" --filter "$filter" "$root/tests/Integration/Redis/RedisFullCapabilityStoreIntegrationTest.php" \
++                    > "$dir/phpunit.out" 2>&1 || status=$?
++                rm -rf "$cache"
++                bash "$p1/redis.sh" stop "$dir/redis.state"
++            fi
++            "${php[@]}" -r '
++                require $argv[1];
++                $suite = Flaky160D\junitSuite($argv[2]);
++                echo json_encode(["id" => (int) $argv[3], "exit" => (int) $argv[4], "seconds" => round(microtime(true) - (float) $argv[5], 3), "suite" => $suite]
++                    + Flaky160D\ufilterVerdict($suite, (int) $argv[4], 3)), "\n";' "$here/junit.php" "$dir/junit.xml" "$i" "$status" "$run_started" >> "$out/ufilter.jsonl"
++            gzip -f -9 "$dir/phpunit.out"
++            rm -f "$dir/redis.state"
++        done
++        timing ufilter "$n" "$(wc -l < "$out/ufilter.jsonl" | tr -d ' ')" 0 "$started" "$(seconds)"
++        ;;
++    decision)
++        label="${3:?label}" tree="${4:?tree}" ref="${5:?ref}"
++        shift 5
++        v_head "$tree" "$ref"
++        state="$out/decision-$label.redis.state"
++        started="$(seconds)"
++        port="$(redis_up "$state")"
++        cache="$(mktemp -d)"
++        status=0
++        REDIS_INTEGRATION_HOST=127.0.0.1 REDIS_INTEGRATION_PORT="$port" \
++            "${php[@]}" "$tree/vendor/bin/phpunit" -c "$tree/phpunit.xml" --testsuite Integration,System --exclude-group archive \
++            --do-not-cache-result --cache-directory "$cache" --log-junit "$out/decision-$label.junit.xml" "$@" \
++            > "$out/decision-$label.phpunit.out" 2>&1 || status=$?
++        rm -rf "$cache"
++        bash "$p1/redis.sh" stop "$state"
++        rm -f "$state"
++        echo "decision $label exit=$status: $(tail -n 3 "$out/decision-$label.phpunit.out" | tr '\n' ' ')"
++        gzip -f -9 "$out/decision-$label.phpunit.out"
++        timing "decision-$label" 1 1 "$status" "$started" "$(seconds)"
++        ;;
++    decide)
++        status=0
++        "${php[@]}" "$here/junit.php" decide "$out/decision-main.junit.xml" "$out/decision-head.junit.xml" "$s1_methods" > "$out/decision.json" || status=$?
++        cat "$out/decision.json"
++        exit "$status"
++        ;;

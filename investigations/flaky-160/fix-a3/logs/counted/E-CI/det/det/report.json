@@ -1,0 +1,85 @@
+{
+    "ddet": {
+        "K-injected": {
+            "classes": {
+                "applied": 20
+            },
+            "expected": "applied",
+            "hits": 20,
+            "total": 20,
+            "holds": true
+        },
+        "H-injected": {
+            "classes": {
+                "one_winner": 20
+            },
+            "expected": "one_winner",
+            "hits": 20,
+            "total": 20,
+            "holds": true
+        },
+        "K-control": {
+            "classes": {
+                "applied": 20
+            },
+            "expected": "applied",
+            "hits": 20,
+            "total": 20,
+            "holds": true
+        },
+        "H-control": {
+            "classes": {
+                "one_winner": 20
+            },
+            "expected": "one_winner",
+            "hits": 20,
+            "total": 20,
+            "holds": true
+        },
+        "K-offset2500": {
+            "classes": {
+                "applied": 20
+            },
+            "expected": "applied",
+            "hits": 20,
+            "total": 20,
+            "holds": true
+        },
+        "H-offset2500": {
+            "classes": {
+                "one_winner": 20
+            },
+            "expected": "one_winner",
+            "hits": 20,
+            "total": 20,
+            "holds": true
+        },
+        "K-held2500": {
+            "classes": {
+                "applied": 20
+            },
+            "expected": "applied",
+            "hits": 20,
+            "total": 20,
+            "holds": true
+        },
+        "H-held2500": {
+            "classes": {
+                "one_winner": 20
+            },
+            "expected": "one_winner",
+            "hits": 20,
+            "total": 20,
+            "holds": true
+        }
+    },
+    "timings": {
+        "ddet": {
+            "unit": "ddet",
+            "n": 20,
+            "rows": 160,
+            "exit": 0,
+            "seconds": 113.925
+        }
+    }
+}

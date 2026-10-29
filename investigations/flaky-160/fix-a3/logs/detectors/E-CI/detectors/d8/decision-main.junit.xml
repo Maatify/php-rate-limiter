@@ -1,0 +1,21 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<testsuites>
+  <testsuite name="/home/runner/work/_temp/main/phpunit.xml" tests="6" assertions="59" errors="0" failures="0" skipped="0" time="0.023750">
+    <testsuite name="Integration" tests="3" assertions="45" errors="0" failures="0" skipped="0" time="0.015869">
+      <testsuite name="Maatify\RateLimiter\Tests\Integration\Redis\RedisFullCapabilityStoreIntegrationTest" file="/home/runner/work/_temp/main/tests/Integration/Redis/RedisFullCapabilityStoreIntegrationTest.php" tests="3" assertions="45" errors="0" failures="0" skipped="0" time="0.015869">
+        <testcase name="testLegacyGenerationlessMutationConflictsWhenWriterAddsGeneration" file="/home/runner/work/_temp/main/tests/Integration/Redis/RedisFullCapabilityStoreIntegrationTest.php" line="1284" class="Maatify\RateLimiter\Tests\Integration\Redis\RedisFullCapabilityStoreIntegrationTest" classname="Maatify.RateLimiter.Tests.Integration.Redis.RedisFullCapabilityStoreIntegrationTest" assertions="3" time="0.007048"/>
+        <testcase name="testLegacyScoreWithCompleteLifecycleEvidenceFailsAcrossReadMutateClaimAndPublication" file="/home/runner/work/_temp/main/tests/Integration/Redis/RedisFullCapabilityStoreIntegrationTest.php" line="1615" class="Maatify\RateLimiter\Tests\Integration\Redis\RedisFullCapabilityStoreIntegrationTest" classname="Maatify.RateLimiter.Tests.Integration.Redis.RedisFullCapabilityStoreIntegrationTest" assertions="7" time="0.004530"/>
+        <testcase name="testLegacyHandoffAndSameValueMutationAdvanceGenerationExactlyOnce" file="/home/runner/work/_temp/main/tests/Integration/Redis/RedisFullCapabilityStoreIntegrationTest.php" line="1833" class="Maatify\RateLimiter\Tests\Integration\Redis\RedisFullCapabilityStoreIntegrationTest" classname="Maatify.RateLimiter.Tests.Integration.Redis.RedisFullCapabilityStoreIntegrationTest" assertions="35" time="0.004292"/>
+      </testsuite>
+    </testsuite>
+    <testsuite name="System" tests="3" assertions="14" errors="0" failures="0" skipped="0" time="0.007881">
+      <testsuite name="Maatify\RateLimiter\Tests\System\PostPunishmentReentryLifecycleTest" file="/home/runner/work/_temp/main/tests/System/PostPunishmentReentryLifecycleTest.php" tests="2" assertions="13" errors="0" failures="0" skipped="0" time="0.007259">
+        <testcase name="testLegacyCurrentFirstHardMutationPublishesFreshLifecycle" file="/home/runner/work/_temp/main/tests/System/PostPunishmentReentryLifecycleTest.php" line="163" class="Maatify\RateLimiter\Tests\System\PostPunishmentReentryLifecycleTest" classname="Maatify.RateLimiter.Tests.System.PostPunishmentReentryLifecycleTest" assertions="5" time="0.006853"/>
+        <testcase name="testLegacyPreviousFirstHardMutationHandsOffAndPublishesLifecycle" file="/home/runner/work/_temp/main/tests/System/PostPunishmentReentryLifecycleTest.php" line="181" class="Maatify\RateLimiter\Tests\System\PostPunishmentReentryLifecycleTest" classname="Maatify.RateLimiter.Tests.System.PostPunishmentReentryLifecycleTest" assertions="8" time="0.000407"/>
+      </testsuite>
+      <testsuite name="Maatify\RateLimiter\Tests\System\RateLimiterEngineWorkflowTest" file="/home/runner/work/_temp/main/tests/System/RateLimiterEngineWorkflowTest.php" tests="1" assertions="1" errors="0" failures="0" skipped="0" time="0.000622">
+        <testcase name="testLegacyIpv6MacroBlocksAreIgnored" file="/home/runner/work/_temp/main/tests/System/RateLimiterEngineWorkflowTest.php" line="510" class="Maatify\RateLimiter\Tests\System\RateLimiterEngineWorkflowTest" classname="Maatify.RateLimiter.Tests.System.RateLimiterEngineWorkflowTest" assertions="1" time="0.000622"/>
+      </testsuite>
+    </testsuite>
+  </testsuite>
+</testsuites>

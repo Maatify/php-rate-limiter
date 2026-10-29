@@ -1,0 +1,3 @@
+@@ -12 +12 @@
+-//                   offsetMs is 0 everywhere except D-DET's injected MUTATE (+1,000 ms)
++//                   offsetMs is 0 everywhere except D-DET's injected MUTATE (+1,000 ms; fix-a3 also +2,500 ms)

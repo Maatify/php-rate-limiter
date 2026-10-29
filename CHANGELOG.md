@@ -7,6 +7,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed (#160, DEC-016 application note) — one authority for a legacy score's expiry
+- `RedisFullCapabilityStore::mutateGenerationBoundScore()`: a legacy generation-bound score (no stored `expiresAt`) is fenced by
+  its value and `updatedAt` alone. The expiry is no longer derived a second time from the key's remaining life with the
+  mutation's caller time and compared with the snapshot's. The first applied mutation writes the snapshot's `expiresAt` — the
+  one the read observed — as the logical expiry. A valid legacy snapshot is no longer rejected when a second boundary falls
+  between the read and the mutation. Measured on E-CI: 0 not applied in 300,000 natural legacy mutations (78 before), 0 in
+  200,000 with a held caller reading (41 before), 0 in 10,000 at a deadline 1 ms into a second (24.29 % before).
+- Contract: a change of a legacy key's TTL alone between the read and the mutation is not staleness. A legacy snapshot
+  expiry that is not a canonical positive integer, or is before the observed `updatedAt`, fails before any write; it has no
+  upper bound. Read, claim, hard-block publication, interfaces and DTOs are unchanged, and so are `InMemoryRateLimitStore` and
+  the example store. `docs/FAILURE_SEMANTICS.md`, `RATE_LIMITER_PACKAGE_REFERENCE.md` and the DEC-016 application note state it.
+
 ### Changed (#160, DEC-029) — no concurrency exception after a committed K4/K5 write
 - `EvaluationPipeline`: the K4 punishment publication behind the generation fence no longer throws
   `RateLimitConcurrencyException('K4 punishment publication conflict budget exhausted.')` once the request's K4 mutation

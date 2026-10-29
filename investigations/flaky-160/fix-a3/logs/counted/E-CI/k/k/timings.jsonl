@@ -1,0 +1,5 @@
+{"unit":"vclock","n":20,"rows":80,"exit":0,"seconds":7.195}
+{"unit":"overhead","n":2000,"rows":4000,"exit":0,"seconds":8.295}
+{"unit":"knat","n":100000,"rows":300000,"exit":0,"seconds":410.556}
+{"unit":"kheld","n":100000,"rows":200000,"exit":0,"seconds":282.847}
+{"unit":"kforced","n":10000,"rows":20000,"exit":0,"seconds":32.022}

@@ -145,7 +145,15 @@ missing authoritative `expiresAt`, malformed expiry, partial evidence, or
 structural corruption, is an explicit storage/contract failure. The operation
 raises the package exception path instead of silently treating corruption as
 missing evidence. Legacy generation-less state may use its backend TTL during
-compatibility reads and is upgraded on a real mutation.
+compatibility reads and is upgraded on a real mutation. Each snapshot reads that
+TTL once: the expiry a compatibility read derives from it travels in the snapshot,
+and the first real mutation writes it as the logical `expiresAt`. The mutation
+fences a legacy source by its value, its `updatedAt` and the absence of a
+generation alone and never derives the expiry a second time (#160, DEC-016
+application note), so a change of a legacy key's TTL
+alone between the read and the mutation is not staleness. A malformed snapshot
+expiry (not a canonical positive integer, or before the observed `updatedAt`) is
+an explicit contract failure before any write.
 
 A generated score is judged by its logical `expiresAt` alone; its physical
 backend lifetime only says whether the key is alive (#153 phase 2, LT-P2-02).

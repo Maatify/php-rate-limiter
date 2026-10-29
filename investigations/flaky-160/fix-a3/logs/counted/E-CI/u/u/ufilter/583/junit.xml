@@ -1,0 +1,8 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<testsuites>
+  <testsuite name="Maatify\RateLimiter\Tests\Integration\Redis\RedisFullCapabilityStoreIntegrationTest" file="/home/runner/work/php-rate-limiter/php-rate-limiter/tests/Integration/Redis/RedisFullCapabilityStoreIntegrationTest.php" tests="3" assertions="204" errors="0" failures="0" skipped="0" time="0.093377">
+    <testcase name="testLegacyHandoffAndSameValueMutationAdvanceGenerationExactlyOnce" file="/home/runner/work/php-rate-limiter/php-rate-limiter/tests/Integration/Redis/RedisFullCapabilityStoreIntegrationTest.php" line="1834" class="Maatify\RateLimiter\Tests\Integration\Redis\RedisFullCapabilityStoreIntegrationTest" classname="Maatify.RateLimiter.Tests.Integration.Redis.RedisFullCapabilityStoreIntegrationTest" assertions="35" time="0.009079"/>
+    <testcase name="testLifecycleMutationPreservesPhysicalAndAuthoritativeExpiryAcrossAllK4Boundaries" file="/home/runner/work/php-rate-limiter/php-rate-limiter/tests/Integration/Redis/RedisFullCapabilityStoreIntegrationTest.php" line="1872" class="Maatify\RateLimiter\Tests\Integration\Redis\RedisFullCapabilityStoreIntegrationTest" classname="Maatify.RateLimiter.Tests.Integration.Redis.RedisFullCapabilityStoreIntegrationTest" assertions="115" time="0.006680"/>
+    <testcase name="testConcurrentPreviousHandoffHasNoDoubleSeedAndGenerationMutationsHaveNoLostUpdates" file="/home/runner/work/php-rate-limiter/php-rate-limiter/tests/Integration/Redis/RedisFullCapabilityStoreIntegrationTest.php" line="1964" class="Maatify\RateLimiter\Tests\Integration\Redis\RedisFullCapabilityStoreIntegrationTest" classname="Maatify.RateLimiter.Tests.Integration.Redis.RedisFullCapabilityStoreIntegrationTest" assertions="54" time="0.077618"/>
+  </testsuite>
+</testsuites>

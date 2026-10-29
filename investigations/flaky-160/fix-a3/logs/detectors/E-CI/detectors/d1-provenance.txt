@@ -1,0 +1,10 @@
+# patch: GNU patch 2.7.6
+OK   stats.php = investigations/flaky-160/phase3-k4-hand/harness/stats.php (635e26faf2b13b6b1fbd6dcc67233aa6283cc06261fb075066bfe28d4c77911f)
+OK   clocks.php = investigations/flaky-160/phase3-k4-hand/harness/clocks.php (4df2a9769165f1aeefa850149d033e7667e180fd32c6b53f367921d0f3935eb9) + exactly PROVENANCE-clocks.php.diff
+OK   k.php = investigations/flaky-160/phase3-k4-hand/harness/k.php (f650e9e53ab884112ccc52ae8d8a05eed6582053358179bf83d053564bfb8d2d) + exactly PROVENANCE-k.php.diff
+OK   k_lib.php = investigations/flaky-160/phase3-k4-hand/harness/k_lib.php (6463ccbb43dd11e842db1284e120f2cad139a965e01fd506c5ac55fce98d3562) + exactly PROVENANCE-k_lib.php.diff
+OK   k_report.php = investigations/flaky-160/phase3-k4-hand/harness/k_report.php (9412ec64cfdb89371fd399ed04d99d7547acdd6ccc30f97f8ccd5e1d09e4235e) + exactly PROVENANCE-k_report.php.diff
+OK   synthetic.php = investigations/flaky-160/phase3-k4-hand/harness/synthetic.php (bf5f0187ac05639fde514f15606103764c5937cfd133986fa2be540e743ef904) + exactly PROVENANCE-synthetic.php.diff
+OK   detectors.sh = investigations/flaky-160/phase3-k4-hand/harness/detectors.sh (b90c375abc4fc9336dd47d21addcdbc60b27951409fe8b87da371c51a1d0d2a6) + exactly PROVENANCE-detectors.sh.diff
+OK   run.sh = investigations/flaky-160/phase3-k4-hand/harness/run.sh (ad14bc1a2f18a163327d858fe8e5516769366624a57ff4ff8f8298b8e390da54) + exactly PROVENANCE-run.sh.diff
+OK   provenance_check.sh = investigations/flaky-160/phase3-k4-hand/harness/provenance_check.sh (c648d564e8edbea45b75276adebea41acb5cdc849b1b2cd29ffd8ef36b91361b) + exactly PROVENANCE-provenance_check.sh.diff

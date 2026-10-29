@@ -1,0 +1,44 @@
+{
+    "ufilter": {
+        "valid": 1000,
+        "invalid": 0,
+        "failed": 0,
+        "total": 1000,
+        "seconds": {
+            "min": 2.364,
+            "p01": 2.377,
+            "p50": 2.427,
+            "p99": 2.527,
+            "max": 8.133,
+            "mean": 2.4329740000000064,
+            "count": 1000
+        },
+        "validity": {
+            "invalid": 0,
+            "total": 1000,
+            "share": 0,
+            "holds_le_2pct": true
+        },
+        "failure_rate": {
+            "k": 0,
+            "n": 1000,
+            "rate": 0,
+            "wilson95": [
+                2.168404344971009e-19,
+                0.0038267584855551234
+            ]
+        },
+        "prediction": "0 failed",
+        "holds": true,
+        "limit": "consistency check, not a discriminating test (P(0 | main) \u2248 0.76 at N = 1,000)"
+    },
+    "timings": {
+        "ufilter": {
+            "unit": "ufilter",
+            "n": 1000,
+            "rows": 1000,
+            "exit": 0,
+            "seconds": 2448.017
+        }
+    }
+}

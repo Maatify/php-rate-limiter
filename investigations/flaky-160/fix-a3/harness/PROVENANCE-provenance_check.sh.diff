@@ -1,0 +1,11 @@
+@@ -3,2 +3,2 @@
+-# #160 phase 3 provenance check (PLAN.md §7, §13 LT-160D-07): the original at
+-# d37f9a3 must hash to the recorded SHA-256, and every copy listed in
++# #160 fix (a3) provenance check (PLAN.md §5.1, §11 LT-a3-08): the original at
++# 5202bf3 must hash to the recorded SHA-256, and every copy listed in
+@@ -21 +21 @@
+-    at_head="$(git -C "$root" show "d37f9a3:$original" | shasum -a 256 | cut -d' ' -f1)"
++    at_head="$(git -C "$root" show "5202bf3:$original" | shasum -a 256 | cut -d' ' -f1)"
+@@ -24 +24 @@
+-        git -C "$root" show "d37f9a3:$original" > "$work/original"
++        git -C "$root" show "5202bf3:$original" > "$work/original"

@@ -25,6 +25,7 @@ use Maatify\RateLimiter\Repository\Redis\RedisFullCapabilityStore;
 use Maatify\RateLimiter\Tests\Support\Clock\FixedClock;
 use Maatify\RateLimiter\Tests\Support\FailureSignal\RecordingFailureSignalEmitter;
 use Maatify\RateLimiter\Tests\Support\Redis\RespRedisCommandExecutor;
+use PHPUnit\Framework\Attributes\DataProvider;
 use PHPUnit\Framework\TestCase;
 
 final class RedisFullCapabilityStoreIntegrationTest extends TestCase
@@ -2014,6 +2015,181 @@ final class RedisFullCapabilityStoreIntegrationTest extends TestCase
         self::assertSame($workers + 1, $final->generation);
     }
 
+    /**
+     * #160 (a3, DEC-016 application note): the READ and MUTATE caller
+     * readings of one legacy snapshot differ by these amounts. K1/H1 and
+     * K3A/K3B/H3A/H3B put a second boundary between them that the derived
+     * legacy expiry used to fence on; K2/H2 are the control.
+     *
+     * @return array<string, array{int, int}> MUTATE caller offset (ms), real wait under one held caller reading (ms)
+     */
+    public static function legacyCallerGaps(): array
+    {
+        return [
+            'K1/H1 MUTATE caller +1,000 ms' => [1_000, 0],
+            'K2/H2 control' => [0, 0],
+            'K3A/H3A MUTATE caller +2,500 ms' => [2_500, 0],
+            'K3B/H3B held caller reading, real 2,500 ms wait' => [0, 2_500],
+        ];
+    }
+
+    #[DataProvider('legacyCallerGaps')]
+    public function testLegacyHandoffAppliesAndWritesTheReadExpiryAcrossCallerGaps(int $offsetMs, int $heldWaitMs): void
+    {
+        $previousKey = $this->key('score', 'a3-legacy-previous');
+        $deadline = $this->legacyScoreAtHalfSecond($previousKey, 4, 6_000);
+        $previousBefore = $this->hashMap($previousKey);
+        $readNow = $this->redisNowMilliseconds();
+        $observed = $this->store->readGenerationBoundScoreStateAt('a3-legacy-current', 'a3-legacy-previous', $readNow);
+        self::assertNotNull($observed);
+        self::assertSame(GenerationBoundScoreStateDTO::SOURCE_PREVIOUS, $observed->source);
+        self::assertNull($observed->generation);
+        self::assertSame(intdiv($deadline, 1000) + 1, $observed->expiresAt);
+        usleep($heldWaitMs * 1000);
+        $mutateNow = $heldWaitMs > 0 ? $readNow : $this->redisNowMilliseconds() + $offsetMs;
+
+        $mutation = $this->store->mutateGenerationBoundScoreAt('a3-legacy-current', 'a3-legacy-previous', $observed, 600, 5, $mutateNow);
+
+        self::assertTrue($mutation->applied);
+        self::assertNotNull($mutation->state);
+        self::assertSame(1, $mutation->state->generation);
+        self::assertSame($observed->expiresAt, $mutation->state->expiresAt);
+        $currentKey = $this->key('score', 'a3-legacy-current');
+        self::assertSame((string) $observed->expiresAt, $this->hashMap($currentKey)['expiresAt'] ?? null);
+        $this->assertRelativePhysicalLife($currentKey, $observed->expiresAt, $mutateNow);
+        self::assertSame($previousBefore, $this->hashMap($previousKey));
+    }
+
+    #[DataProvider('legacyCallerGaps')]
+    public function testConcurrentLegacyHandoffHasExactlyOneWinnerAcrossCallerGaps(int $offsetMs, int $heldWaitMs): void
+    {
+        $previousKey = $this->key('score', 'a3-concurrent-previous');
+        $deadline = $this->legacyScoreAtHalfSecond($previousKey, 5, 6_000);
+        $previousBefore = $this->hashMap($previousKey);
+        $readNow = $this->redisNowMilliseconds();
+        $observed = $this->store->readGenerationBoundScoreStateAt('a3-concurrent-current', 'a3-concurrent-previous', $readNow);
+        self::assertNotNull($observed);
+        self::assertSame(intdiv($deadline, 1000) + 1, $observed->expiresAt);
+        usleep($heldWaitMs * 1000);
+
+        $workers = 6;
+        $this->runConcurrentWorkers($workers, function (int $index) use ($observed, $offsetMs, $heldWaitMs, $readNow): void {
+            $executor = $this->workerExecutor();
+            $mutateNow = $heldWaitMs > 0 ? $readNow : $this->workerRedisNowMilliseconds($executor) + $offsetMs;
+            $mutation = $this->workerStore()->mutateGenerationBoundScoreAt('a3-concurrent-current', 'a3-concurrent-previous', $observed, 600, 6, $mutateNow);
+            $executor->execute(['SET', $this->key('handoff-result', (string) $index), $mutation->applied ? '1' : '0', 'EX', '60']);
+        });
+
+        $winners = 0;
+        for ($index = 0; $index < $workers; $index++) {
+            $winners += $this->integer($this->raw(['GET', $this->key('handoff-result', (string) $index)]));
+        }
+        self::assertSame(1, $winners);
+        $state = $this->store->readGenerationBoundScoreStateAt('a3-concurrent-current', 'a3-concurrent-previous', $this->redisNowMilliseconds());
+        self::assertNotNull($state);
+        self::assertSame(GenerationBoundScoreStateDTO::SOURCE_CURRENT, $state->source);
+        self::assertSame(6, $state->value);
+        self::assertSame(1, $state->generation);
+        self::assertSame($observed->expiresAt, $state->expiresAt);
+        self::assertSame($previousBefore, $this->hashMap($previousKey));
+    }
+
+    /**
+     * #160 (a3): a legacy Current score rewritten in place keeps, as its
+     * logical expiry, exactly the one READ observed — not one MUTATE derives
+     * again from its own caller reading.
+     */
+    public function testLegacyCurrentMutationWritesTheExpiryReadObserved(): void
+    {
+        $currentKey = $this->key('score', 'a3-legacy-in-place');
+        $deadline = $this->legacyScoreAtHalfSecond($currentKey, 4, 6_000);
+        $observed = $this->store->readGenerationBoundScoreStateAt('a3-legacy-in-place', null, $this->redisNowMilliseconds());
+        self::assertNotNull($observed);
+        self::assertSame(GenerationBoundScoreStateDTO::SOURCE_CURRENT, $observed->source);
+        self::assertNull($observed->generation);
+        self::assertSame(intdiv($deadline, 1000) + 1, $observed->expiresAt);
+        $mutateNow = $this->redisNowMilliseconds() + 1_000;
+
+        $mutation = $this->store->mutateGenerationBoundScoreAt('a3-legacy-in-place', null, $observed, 600, 5, $mutateNow);
+
+        self::assertTrue($mutation->applied);
+        self::assertNotNull($mutation->state);
+        self::assertSame($observed->expiresAt, $mutation->state->expiresAt);
+        $stored = $this->hashMap($currentKey);
+        self::assertSame('5', $stored['value'] ?? null);
+        self::assertSame('1', $stored['generation'] ?? null);
+        self::assertSame((string) $observed->expiresAt, $stored['expiresAt'] ?? null);
+        $this->assertRelativePhysicalLife($currentKey, $observed->expiresAt, $mutateNow);
+    }
+
+    /**
+     * LT-a3-02 (documented contract, DEC-016 application note): a TTL-only
+     * change to a legacy score between READ and MUTATE — same value and
+     * updatedAt — is not staleness. The mutation applies and writes the
+     * expiry READ observed, not the changed TTL.
+     */
+    public function testLegacyTtlOnlyChangeBetweenReadAndMutateIsNotStaleAndKeepsTheReadExpiry(): void
+    {
+        $currentKey = $this->key('score', 'a3-legacy-ttl-only');
+        $deadline = $this->legacyScoreAtHalfSecond($currentKey, 4, 6_000);
+        $observed = $this->store->readGenerationBoundScoreStateAt('a3-legacy-ttl-only', null, $this->redisNowMilliseconds());
+        self::assertNotNull($observed);
+        self::assertSame(intdiv($deadline, 1000) + 1, $observed->expiresAt);
+        $this->raw(['PEXPIREAT', $currentKey, (string) ($deadline + 60_000)]);
+        $mutateNow = $this->redisNowMilliseconds();
+
+        $mutation = $this->store->mutateGenerationBoundScoreAt('a3-legacy-ttl-only', null, $observed, 600, 5, $mutateNow);
+
+        self::assertTrue($mutation->applied);
+        self::assertNotNull($mutation->state);
+        self::assertSame($observed->expiresAt, $mutation->state->expiresAt);
+        self::assertSame((string) $observed->expiresAt, $this->hashMap($currentKey)['expiresAt'] ?? null);
+        $this->assertRelativePhysicalLife($currentKey, $observed->expiresAt, $mutateNow);
+    }
+
+    /**
+     * LT-a3-03: with the derived expiry out of the fence, a legacy source
+     * checks the snapshot's expiry instead — a canonical non-negative
+     * integer, not 0, not before the observed updatedAt — and anything else
+     * is an explicit contract failure that writes nothing. The DTO cannot
+     * carry such values, so the MUTATE call is rewritten on the wire.
+     */
+    public function testLegacyMutationRejectsAMalformedSnapshotExpiryWithoutWriting(): void
+    {
+        $currentKey = $this->key('score', 'a3-legacy-argv-expiry');
+        $this->legacyScoreAtHalfSecond($currentKey, 4, 6_000);
+        $observed = $this->store->readGenerationBoundScoreStateAt('a3-legacy-argv-expiry', null, $this->redisNowMilliseconds());
+        self::assertNotNull($observed);
+        $before = $this->hashMap($currentKey);
+        $claimKey = $this->key('reentry-claim', 'a3-legacy-argv-expiry');
+
+        foreach (['0', '-1', '01', '1.5', (string) ($observed->updatedAt - 1)] as $expiry) {
+            $rewriting = new class ($this->executor, $claimKey, $expiry) implements RedisCommandExecutorInterface {
+                public int $rewrites = 0;
+
+                public function __construct(
+                    private readonly RedisCommandExecutorInterface $inner,
+                    private readonly string $claimKey,
+                    private readonly string $expiry,
+                ) {}
+
+                public function execute(array $command): mixed
+                {
+                    if ($command[0] === 'EVAL' && ($command[5] ?? null) === $this->claimKey) {
+                        $command = array_merge(array_slice($command, 0, 10), [$this->expiry], array_slice($command, 11));
+                        $this->rewrites++;
+                    }
+
+                    return $this->inner->execute($command);
+                }
+            };
+            $store = new RedisFullCapabilityStore($rewriting, $this->namespace);
+            $this->assertOperationFails(fn(): mixed => $store->mutateGenerationBoundScoreAt('a3-legacy-argv-expiry', null, $observed, 600, 5, $this->redisNowMilliseconds()));
+            self::assertSame(1, $rewriting->rewrites);
+            self::assertSame($before, $this->hashMap($currentKey));
+        }
+    }
+
     public function testPublicBuilderWorkflowUsesTheOfficialRedisAggregateStore(): void
     {
         $clock = new FixedClock('2025-01-01 12:00:00');
@@ -3718,6 +3894,53 @@ final class RedisFullCapabilityStoreIntegrationTest extends TestCase
             self::assertTrue(pcntl_wifexited($status));
             self::assertSame(0, pcntl_wexitstatus($status));
         }
+    }
+
+    /**
+     * #160 (a3): a legacy (generation-less, `expiresAt`-less) score whose
+     * absolute Redis deadline sits 500 ms into a second, at least `$lifeMs`
+     * after Redis now, so a caller reading taken just before a script maps it
+     * to ⌊deadline/1000⌋ + 1. Returns the deadline in milliseconds.
+     */
+    private function legacyScoreAtHalfSecond(string $redisKey, int $value, int $lifeMs): int
+    {
+        $now = $this->redisNowMilliseconds();
+        $deadline = intdiv($now + $lifeMs, 1000) * 1000 + 1_500;
+        $this->raw(['HSET', $redisKey, 'value', (string) $value, 'updatedAt', (string) intdiv($now, 1000)]);
+        $this->raw(['PEXPIREAT', $redisKey, (string) $deadline]);
+
+        return $deadline;
+    }
+
+    /** LT-P2-02: the physical life written is the logical remainder from the MUTATE caller's reading. */
+    private function assertRelativePhysicalLife(string $redisKey, int $expiresAt, int $mutateNowMilliseconds): void
+    {
+        $remaining = $expiresAt * 1000 - $mutateNowMilliseconds;
+        $pttl = $this->integer($this->raw(['PTTL', $redisKey]));
+        self::assertLessThanOrEqual($remaining, $pttl);
+        self::assertGreaterThan($remaining - self::PHYSICAL_LIFE_TOLERANCE_MS, $pttl);
+    }
+
+    private function workerExecutor(): RespRedisCommandExecutor
+    {
+        $host = getenv('REDIS_INTEGRATION_HOST');
+        $portValue = getenv('REDIS_INTEGRATION_PORT');
+        if ($host === false || $portValue === false) {
+            throw new \RuntimeException('Redis integration environment is missing.');
+        }
+
+        return new RespRedisCommandExecutor($host, (int) $portValue);
+    }
+
+    /** Redis `TIME` in milliseconds inside a forked worker, where a failed assertion cannot report. */
+    private function workerRedisNowMilliseconds(RespRedisCommandExecutor $executor): int
+    {
+        $time = $executor->execute(['TIME']);
+        if (! is_array($time) || ! isset($time[0], $time[1]) || ! is_numeric($time[0]) || ! is_numeric($time[1])) {
+            throw new \RuntimeException('Redis TIME reply is malformed.');
+        }
+
+        return (int) $time[0] * 1000 + intdiv((int) $time[1], 1000);
     }
 
     private function workerStore(): RedisFullCapabilityStore
