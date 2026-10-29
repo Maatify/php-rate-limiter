@@ -1,5 +1,5 @@
 <?php
-// PROVENANCE: copy of investigations/flaky-160/phase3-k4-hand/harness/k.php at 5202bf3, sha256 f650e9e53ab884112ccc52ae8d8a05eed6582053358179bf83d053564bfb8d2d; delete this line to get the original byte for byte.
+// PROVENANCE: copy of investigations/flaky-160/phase3-k4-hand/harness/k.php at 5202bf3, sha256 f650e9e53ab884112ccc52ae8d8a05eed6582053358179bf83d053564bfb8d2d, ADAPTED: D-DET gets the four fix-a3 rows (+1,000 ms, control, +2,500 ms, held reading + real 2,500 ms wait), pair() and hand() take a held reading and a wait and record e_written, and V-CLOCK takes X from its fixed reading (BC-a3-11); the difference is recorded in PROVENANCE-k.php.diff. Delete this line and reverse that diff to get the original byte for byte.
 
 declare(strict_types=1);
 
@@ -16,7 +16,8 @@ declare(strict_types=1);
 //   kforcedm  n: rho = 1, MUTATE with READ's DTO and expiresAt = ceil(X/1000) forced (§13 LT-160D-04)
 //   kcal      n pairs: host reading, then a harness EVAL returning TIME (§13 LT-160D-03)
 //   hnat      n T-HAND sequences: parent READ, six forked workers' MUTATE (§4.4)
-//   ddet      n injected + n control for K and for H, X ≡ 500, MUTATE offset +1,000 ms (§4.5, LT-160D-01)
+//   ddet      n per row for K and for H, X ≡ 500: MUTATE caller +1,000 ms, control, +2,500 ms, and READ's held
+//             reading after a real 2,500 ms wait (fix-a3 PLAN §4.2, §11 LT-a3-05)
 //   vclock    n with + n without the recorder on a fixed clock, X ≡ 500, K and H (§5)
 //   overhead  n with the recorder + n with SystemClock directly, alternated, P-K4 (§5)
 //   xread     n: PEXPIREAT a known X, PEXPIRETIME must return it (D5)
@@ -103,9 +104,11 @@ const KINDS = [
  * $held null = the public methods (one fallback reading per call); otherwise both calls get that millisecond reading.
  * $forceExpiry null = MUTATE with READ's DTO; otherwise READ's DTO with that expiresAt.
  * $mutateOffset: RecordingClock offset set just before MUTATE (D-DET only).
+ * $waitMs: a real wait between READ and MUTATE (D-DET's held row only).
+ * e_written: the logical expiry stored in current after MUTATE (read outside the timed part).
  */
 function pair(RespRedisCommandExecutor $executor, string $kind, string $namespace, ?ClockInterface $clock, ?int $expireAt = null,
-    ?int $held = null, ?int $forceExpiry = null, int $mutateOffset = 0): array
+    ?int $held = null, ?int $forceExpiry = null, int $mutateOffset = 0, int $waitMs = 0): array
 {
     $k = KINDS[$kind];
     $store = new RedisFullCapabilityStore($executor, $namespace, $clock);
@@ -134,6 +137,7 @@ function pair(RespRedisCommandExecutor $executor, string $kind, string $namespac
     } else {
         $expected = $forceExpiry === null ? $state
             : new GenerationBoundScoreStateDTO($state->source, $state->value, $state->updatedAt, $forceExpiry, $state->generation);
+        usleep($waitMs * 1000);
         if ($clock instanceof RecordingClock) {
             $clock->label = 'MUTATE';
             $clock->offsetMs = $mutateOffset;
@@ -146,6 +150,7 @@ function pair(RespRedisCommandExecutor $executor, string $kind, string $namespac
         if ($clock instanceof RecordingClock) {
             $clock->offsetMs = 0;
         }
+        $row['e_written'] = $executor->execute(['HGET', key($namespace, 'score', $k['current']), 'expiresAt']);
         $row += ['read_null' => false, 'wall_us' => $wall, 'mutate_end_ms' => $mutateEndMs, 'e_r' => $state->expiresAt,
             'applied' => $mutation->applied, 'e_m' => $mutation->state?->expiresAt, 'forced_expiry' => $forceExpiry,
             'state' => $mutation->state === null ? null : [$mutation->state->value, $mutation->state->updatedAt, $mutation->state->expiresAt, $mutation->state->generation]];
@@ -168,8 +173,11 @@ function pair(RespRedisCommandExecutor $executor, string $kind, string $namespac
 /**
  * One T-HAND sequence (L1965–L1992): parent READ, six forked workers' MUTATE, winners.
  * $clockFor(string $who): ?ClockInterface gives each store its clock; $workerOffset is set on a worker's RecordingClock.
+ * $held null = the public methods; otherwise READ and every worker's MUTATE get that millisecond reading, with a real
+ * wait of $waitMs between READ and the fork (D-DET's held row only). e_written: current's stored logical expiry after the workers.
  */
-function hand(RespRedisCommandExecutor $executor, string $namespace, callable $clockFor, ?int $expireAt, int $workerOffset, int $port, $out, string $tmp): array
+function hand(RespRedisCommandExecutor $executor, string $namespace, callable $clockFor, ?int $expireAt, int $workerOffset, int $port, $out, string $tmp,
+    ?int $held = null, int $waitMs = 0): array
 {
     $previousKey = key($namespace, 'score', 'concurrent-previous');
     $row = ['kind' => 'T-HAND', 'ns' => $namespace];
@@ -182,10 +190,13 @@ function hand(RespRedisCommandExecutor $executor, string $namespace, callable $c
     if ($parentClock instanceof RecordingClock) {
         $parentClock->label = 'READ';
     }
-    $observed = $store->readGenerationBoundScoreState('concurrent-current', 'concurrent-previous');
+    $observed = $held === null
+        ? $store->readGenerationBoundScoreState('concurrent-current', 'concurrent-previous')
+        : $store->readGenerationBoundScoreStateAt('concurrent-current', 'concurrent-previous', $held);
     if ($observed === null) {
         return $row + ['read_null' => true];
     }
+    usleep($waitMs * 1000);
     fflush($out);
     $pids = [];
     for ($index = 0; $index < WORKERS; $index++) {
@@ -203,7 +214,9 @@ function hand(RespRedisCommandExecutor $executor, string $namespace, callable $c
             $error = null;
             try {
                 $workerStore = new RedisFullCapabilityStore(new RespRedisCommandExecutor('127.0.0.1', $port), $namespace, $clock);
-                $applied = $workerStore->mutateGenerationBoundScore('concurrent-current', 'concurrent-previous', $observed, 600, 6)->applied;
+                $applied = $held === null
+                    ? $workerStore->mutateGenerationBoundScore('concurrent-current', 'concurrent-previous', $observed, 600, 6)->applied
+                    : $workerStore->mutateGenerationBoundScoreAt('concurrent-current', 'concurrent-previous', $observed, 600, 6, $held)->applied;
                 (new RespRedisCommandExecutor('127.0.0.1', $port))->execute(['SET', key($namespace, 'handoff-result', (string) $index), $applied ? '1' : '0', 'EX', '60']);
             } catch (\Throwable $e) {
                 $error = get_class($e) . ': ' . $e->getMessage();
@@ -230,6 +243,7 @@ function hand(RespRedisCommandExecutor $executor, string $namespace, callable $c
         @unlink($file);
     }
     return $row + ['read_null' => false, 'x' => $executor->execute(['PEXPIRETIME', $previousKey]), 'e_r' => $observed->expiresAt,
+        'e_written' => $executor->execute(['HGET', key($namespace, 'score', 'concurrent-current'), 'expiresAt']), 'held' => $held,
         'winners' => $winners, 'results' => $results, 'exits' => $exits, 'workers' => $workers, 'h_r' => readsOf($parentClock, 'READ'),
         'expire_at' => $expireAt, 'updated_at' => $now];
 }
@@ -319,16 +333,20 @@ switch ($arm) {
         }
         break;
     case 'ddet':
-        foreach (['injected' => 1000, 'control' => 0] as $variant => $offset) {
+        // fix-a3 (PLAN §4.2, §11 LT-a3-05): K's X has at least 6.5 s of life, so READ's expiry stays ahead of MUTATE's
+        // reading at +2,500 ms; the held row passes one host reading to READ and MUTATE with a real wait between.
+        $variants = ['injected' => [1000, 0], 'control' => [0, 0], 'offset2500' => [2500, 0], 'held2500' => [0, 2500]];
+        foreach ($variants as $variant => [$offset, $wait]) {
             for ($i = 0; $i < $n; $i++) {
-                $safe(static function () use ($executor, $variant, $offset, $i): array {
-                    $target = forcedX(2000, 500);
-                    return pair($executor, 'P-K4', "f160d-ddet-k-$variant-$i", new RecordingClock(), $target, null, null, $offset) + ['x_target' => $target];
+                $safe(static function () use ($executor, $variant, $offset, $wait, $i): array {
+                    $target = forcedX(7000, 500);
+                    return pair($executor, 'P-K4', "f160d-ddet-k-$variant-$i", $wait > 0 ? null : new RecordingClock(), $target,
+                        $wait > 0 ? hostMs() : null, null, $offset, $wait) + ['x_target' => $target];
                 }, ['arm' => $arm, 'test' => 'K', 'variant' => $variant, 'i' => $i]);
-                $safe(static function () use ($executor, $variant, $offset, $i, $port, $out, $tmp): array {
+                $safe(static function () use ($executor, $variant, $offset, $wait, $i, $port, $out, $tmp): array {
                     $target = forcedX(600_000, 500);
-                    return hand($executor, "f160d-ddet-h-$variant-$i", static fn(string $who): ClockInterface => new RecordingClock(), $target, $offset, $port, $out, $tmp)
-                        + ['x_target' => $target];
+                    return hand($executor, "f160d-ddet-h-$variant-$i", static fn(string $who): ClockInterface => new RecordingClock(), $target, $offset, $port, $out, $tmp,
+                        $wait > 0 ? hostMs() : null, $wait) + ['x_target' => $target];
                 }, ['arm' => $arm, 'test' => 'H', 'variant' => $variant, 'i' => $i]);
             }
         }
@@ -338,12 +356,13 @@ switch ($arm) {
             foreach (['with', 'without'] as $mode) {
                 $fixed = hostMs();
                 $make = static fn(): ClockInterface => $mode === 'with' ? new RecordingClock(new SettableClock($fixed)) : new SettableClock($fixed);
+                // BC-a3-11: X from the fixed reading itself, so no second boundary falls between the two (fix-a3 PLAN §12)
                 $safe(static function () use ($executor, $mode, $i, $make, $fixed): array {
-                    $target = forcedX(2000, 500);
+                    $target = intdiv($fixed, 1000) * 1000 + 2000 + 500;
                     return pair($executor, 'P-K4', "f160d-vclock-k-$mode-$i", $make(), $target) + ['x_target' => $target, 'fixed_ms' => $fixed];
                 }, ['arm' => $arm, 'test' => 'K', 'mode' => $mode, 'i' => $i]);
                 $safe(static function () use ($executor, $mode, $i, $make, $fixed, $port, $out, $tmp): array {
-                    $target = forcedX(600_000, 500);
+                    $target = intdiv($fixed, 1000) * 1000 + 600_000 + 500;
                     return hand($executor, "f160d-vclock-h-$mode-$i", static fn(string $who): ClockInterface => $make(), $target, 0, $port, $out, $tmp)
                         + ['x_target' => $target, 'fixed_ms' => $fixed];
                 }, ['arm' => $arm, 'test' => 'H', 'mode' => $mode, 'i' => $i]);

@@ -1,5 +1,5 @@
 <?php
-// PROVENANCE: copy of investigations/flaky-160/phase3-k4-hand/harness/clocks.php at 5202bf3, sha256 4df2a9769165f1aeefa850149d033e7667e180fd32c6b53f367921d0f3935eb9; delete this line to get the original byte for byte.
+// PROVENANCE: copy of investigations/flaky-160/phase3-k4-hand/harness/clocks.php at 5202bf3, sha256 4df2a9769165f1aeefa850149d033e7667e180fd32c6b53f367921d0f3935eb9, ADAPTED: one comment line names the +2,500 ms offset fix-a3 adds; the difference is recorded in PROVENANCE-clocks.php.diff. Delete this line and reverse that diff to get the original byte for byte.
 // PROVENANCE: copy of investigations/flaky-160/phase2/harness/c.php at d37f9a3, sha256 ec603e0da196d726287abc04733173debc0d48b44a3b8c8d5c429ffad9836f9d, ADAPTED: only the two clock classes are kept (milliseconds, a pass-through offset for D-DET); the difference is recorded in PROVENANCE-clocks.php.diff. Delete this line and reverse that diff to get the original byte for byte.
 
 declare(strict_types=1);
@@ -10,7 +10,7 @@ declare(strict_types=1);
 //
 //   SettableClock   a fixed reading in milliseconds, set by the harness (V-CLOCK only)
 //   RecordingClock  pass-through: returns the inner reading (SystemClock by default) and records it;
-//                   offsetMs is 0 everywhere except D-DET's injected MUTATE (+1,000 ms)
+//                   offsetMs is 0 everywhere except D-DET's injected MUTATE (+1,000 ms; fix-a3 also +2,500 ms)
 
 namespace Flaky160D;
 

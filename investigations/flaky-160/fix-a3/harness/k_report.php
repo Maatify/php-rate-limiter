@@ -1,5 +1,5 @@
 <?php
-// PROVENANCE: copy of investigations/flaky-160/phase3-k4-hand/harness/k_report.php at 5202bf3, sha256 9412ec64cfdb89371fd399ed04d99d7547acdd6ccc30f97f8ccd5e1d09e4235e; delete this line to get the original byte for byte.
+// PROVENANCE: copy of investigations/flaky-160/phase3-k4-hand/harness/k_report.php at 5202bf3, sha256 9412ec64cfdb89371fd399ed04d99d7547acdd6ccc30f97f8ccd5e1d09e4235e, ADAPTED: D-DET expects the a3 outcome in eight cells, and an a3 section and the --filter runs are reported; the difference is recorded in PROVENANCE-k_report.php.diff. Delete this line and reverse that diff to get the original byte for byte.
 
 declare(strict_types=1);
 
@@ -201,14 +201,16 @@ if ($total > 0) {
 $cells = [];
 foreach ($rows('ddet') as $row) {
     $cell = $row['test'] . '-' . $row['variant'];
-    $class = $row['test'] === 'K' ? classifyPair($row) : classifyHand($row);
+    $class = $row['test'] === 'K' ? classifyA3Pair($row) : classifyA3Hand($row);
     $cells[$cell][$class] = ($cells[$cell][$class] ?? 0) + 1;
 }
 if ($cells !== []) {
-    // D-DET's X ≡ 500 puts the injected not-applied at phase 499, outside WINDOW_MS by construction: there the
-    // "finding_*outside*" class is the registered injected outcome, not a finding.
-    $expect = ['K-injected' => 'not_applied_in_window|finding_outside_window', 'K-control' => 'applied',
-        'H-injected' => 'zero_in_window|finding_zero_outside_window', 'H-control' => 'one_winner'];
+    // fix-a3 (PLAN §4.3, §11 LT-a3-05): every row applies with READ's expiry written / has exactly one winner.
+    $expect = [];
+    foreach (['injected', 'control', 'offset2500', 'held2500'] as $variant) {
+        $expect["K-$variant"] = 'applied';
+        $expect["H-$variant"] = 'one_winner';
+    }
     foreach ($expect as $cell => $wanted) {
         $total = array_sum($cells[$cell] ?? []);
         $hits = 0;
@@ -252,6 +254,54 @@ foreach ($rows('xread') as $row) {
 }
 if ($total > 0) {
     $report['xread'] = ['equal' => $equal, 'total' => $total, 'holds' => $equal === $total];
+}
+
+// fix-a3 (PLAN §4.3): the a3 predictions over the same rows. Not-applied rates are over the rows where an outcome is
+// defined (valid, READ not null, source alive); every not-applied or differing expiry there is a finding.
+foreach (['knat' => 'kind', 'kheld' => 'kind', 'kforced' => 'rho'] as $arm => $field) {
+    $groups = [];
+    foreach ($rows($arm) as $row) {
+        $group = (string) ($row[$field] ?? '');
+        $class = classifyA3Pair($row);
+        $groups[$group][$class] = ($groups[$group][$class] ?? 0) + 1;
+    }
+    ksort($groups);
+    foreach ($groups as $group => $classes) {
+        $total = array_sum($classes);
+        $invalid = ($classes['invalid'] ?? 0) + ($classes['invalid_x'] ?? 0);
+        $defined = $total - $invalid - ($classes['read_null'] ?? 0) - ($classes['not_applied_expired'] ?? 0);
+        $report['a3'][$arm][$group] = ['classes' => $classes, 'validity' => $invalidShare($invalid, $total),
+            'not_applied' => $rate($classes['finding_not_applied'] ?? 0, $defined), 'expiry_differs' => $classes['finding_expiry_differs'] ?? 0,
+            'prediction' => '0 not applied, 0 expiry differs', 'holds' => ($classes['finding_not_applied'] ?? 0) === 0 && ($classes['finding_expiry_differs'] ?? 0) === 0];
+    }
+}
+$classes = [];
+foreach ($rows('hnat') as $row) {
+    $class = classifyA3Hand($row);
+    $classes[$class] = ($classes[$class] ?? 0) + 1;
+}
+if ($classes !== []) {
+    $total = array_sum($classes);
+    $invalid = ($classes['invalid'] ?? 0) + ($classes['invalid_x'] ?? 0);
+    $defined = $total - $invalid - ($classes['read_null'] ?? 0);
+    $report['a3']['hnat'] = ['classes' => $classes, 'validity' => $invalidShare($invalid, $total),
+        'zero_winners' => $rate($classes['finding_zero_winners'] ?? 0, $defined), 'two_or_more' => $rate($classes['finding_two_or_more'] ?? 0, $defined),
+        'expiry_differs' => $classes['finding_expiry_differs'] ?? 0, 'prediction' => '0 zero, 0 two or more, 0 expiry differs',
+        'holds' => ($classes['finding_zero_winners'] ?? 0) === 0 && ($classes['finding_two_or_more'] ?? 0) === 0 && ($classes['finding_expiry_differs'] ?? 0) === 0];
+}
+
+// fix-a3 (PLAN §11 LT-a3-07): untapped --filter runs, a consistency check only (P(0 | main) ≈ 0.76 at N = 1,000).
+$runs = ['valid' => 0, 'invalid' => 0, 'failed' => 0, 'total' => 0, 'seconds' => []];
+foreach (is_file("$dir/ufilter.jsonl") ? readRows("$dir/ufilter.jsonl") : [] as $run) {
+    $runs['total']++;
+    $runs[$run['valid'] ? 'valid' : 'invalid']++;
+    $runs['failed'] += (int) ($run['valid'] && ! $run['passed']);
+    $runs['seconds'][] = $run['seconds'];
+}
+if ($runs['total'] > 0) {
+    $runs['seconds'] = quantiles($runs['seconds']);
+    $report['ufilter'] = $runs + ['validity' => $invalidShare($runs['invalid'], $runs['total']), 'failure_rate' => $rate($runs['failed'], $runs['valid']),
+        'prediction' => '0 failed', 'holds' => $runs['failed'] === 0, 'limit' => 'consistency check, not a discriminating test (P(0 | main) ≈ 0.76 at N = 1,000)'];
 }
 
 if (is_file("$dir/timings.jsonl")) {

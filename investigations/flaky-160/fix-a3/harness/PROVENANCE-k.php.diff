@@ -1,0 +1,65 @@
+@@ -18 +18,2 @@
+-//   ddet      n injected + n control for K and for H, X ≡ 500, MUTATE offset +1,000 ms (§4.5, LT-160D-01)
++//   ddet      n per row for K and for H, X ≡ 500: MUTATE caller +1,000 ms, control, +2,500 ms, and READ's held
++//             reading after a real 2,500 ms wait (fix-a3 PLAN §4.2, §11 LT-a3-05)
+@@ -104,0 +106,2 @@
++ * $waitMs: a real wait between READ and MUTATE (D-DET's held row only).
++ * e_written: the logical expiry stored in current after MUTATE (read outside the timed part).
+@@ -107 +110 @@
+-    ?int $held = null, ?int $forceExpiry = null, int $mutateOffset = 0): array
++    ?int $held = null, ?int $forceExpiry = null, int $mutateOffset = 0, int $waitMs = 0): array
+@@ -135,0 +139 @@
++        usleep($waitMs * 1000);
+@@ -147,0 +152 @@
++        $row['e_written'] = $executor->execute(['HGET', key($namespace, 'score', $k['current']), 'expiresAt']);
+@@ -169,0 +175,2 @@
++ * $held null = the public methods; otherwise READ and every worker's MUTATE get that millisecond reading, with a real
++ * wait of $waitMs between READ and the fork (D-DET's held row only). e_written: current's stored logical expiry after the workers.
+@@ -171 +178,2 @@
+-function hand(RespRedisCommandExecutor $executor, string $namespace, callable $clockFor, ?int $expireAt, int $workerOffset, int $port, $out, string $tmp): array
++function hand(RespRedisCommandExecutor $executor, string $namespace, callable $clockFor, ?int $expireAt, int $workerOffset, int $port, $out, string $tmp,
++    ?int $held = null, int $waitMs = 0): array
+@@ -184 +192,3 @@
+-    $observed = $store->readGenerationBoundScoreState('concurrent-current', 'concurrent-previous');
++    $observed = $held === null
++        ? $store->readGenerationBoundScoreState('concurrent-current', 'concurrent-previous')
++        : $store->readGenerationBoundScoreStateAt('concurrent-current', 'concurrent-previous', $held);
+@@ -187,0 +198 @@
++    usleep($waitMs * 1000);
+@@ -205 +216,3 @@
+-                $applied = $workerStore->mutateGenerationBoundScore('concurrent-current', 'concurrent-previous', $observed, 600, 6)->applied;
++                $applied = $held === null
++                    ? $workerStore->mutateGenerationBoundScore('concurrent-current', 'concurrent-previous', $observed, 600, 6)->applied
++                    : $workerStore->mutateGenerationBoundScoreAt('concurrent-current', 'concurrent-previous', $observed, 600, 6, $held)->applied;
+@@ -231,0 +245 @@
++        'e_written' => $executor->execute(['HGET', key($namespace, 'score', 'concurrent-current'), 'expiresAt']), 'held' => $held,
+@@ -321 +335,4 @@
+-        foreach (['injected' => 1000, 'control' => 0] as $variant => $offset) {
++        // fix-a3 (PLAN §4.2, §11 LT-a3-05): K's X has at least 6.5 s of life, so READ's expiry stays ahead of MUTATE's
++        // reading at +2,500 ms; the held row passes one host reading to READ and MUTATE with a real wait between.
++        $variants = ['injected' => [1000, 0], 'control' => [0, 0], 'offset2500' => [2500, 0], 'held2500' => [0, 2500]];
++        foreach ($variants as $variant => [$offset, $wait]) {
+@@ -323,3 +340,4 @@
+-                $safe(static function () use ($executor, $variant, $offset, $i): array {
+-                    $target = forcedX(2000, 500);
+-                    return pair($executor, 'P-K4', "f160d-ddet-k-$variant-$i", new RecordingClock(), $target, null, null, $offset) + ['x_target' => $target];
++                $safe(static function () use ($executor, $variant, $offset, $wait, $i): array {
++                    $target = forcedX(7000, 500);
++                    return pair($executor, 'P-K4', "f160d-ddet-k-$variant-$i", $wait > 0 ? null : new RecordingClock(), $target,
++                        $wait > 0 ? hostMs() : null, null, $offset, $wait) + ['x_target' => $target];
+@@ -327 +345 @@
+-                $safe(static function () use ($executor, $variant, $offset, $i, $port, $out, $tmp): array {
++                $safe(static function () use ($executor, $variant, $offset, $wait, $i, $port, $out, $tmp): array {
+@@ -329,2 +347,2 @@
+-                    return hand($executor, "f160d-ddet-h-$variant-$i", static fn(string $who): ClockInterface => new RecordingClock(), $target, $offset, $port, $out, $tmp)
+-                        + ['x_target' => $target];
++                    return hand($executor, "f160d-ddet-h-$variant-$i", static fn(string $who): ClockInterface => new RecordingClock(), $target, $offset, $port, $out, $tmp,
++                        $wait > 0 ? hostMs() : null, $wait) + ['x_target' => $target];
+@@ -339,0 +358 @@
++                // BC-a3-11: X from the fixed reading itself, so no second boundary falls between the two (fix-a3 PLAN §12)
+@@ -341 +360 @@
+-                    $target = forcedX(2000, 500);
++                    $target = intdiv($fixed, 1000) * 1000 + 2000 + 500;
+@@ -345 +364 @@
+-                    $target = forcedX(600_000, 500);
++                    $target = intdiv($fixed, 1000) * 1000 + 600_000 + 500;
