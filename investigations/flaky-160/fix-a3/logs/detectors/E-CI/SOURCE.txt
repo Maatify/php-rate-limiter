@@ -1,0 +1,9 @@
+E-CI (fix-a3 PLAN §5): GitHub-hosted ubuntu-latest (image ubuntu-24.04, version 20261025.353.1), PHP 8.5.12, PHPUnit 11.5.57,
+one composer.lock for the head and the main@5202bf3 worktree (env/detectors/composer.lock = h-head.composer.lock), Redis 7.0.15
+on published ports != 6379 (18 containers, config.jsonl).
+Run 40889576100 (https://github.com/Maatify/php-rate-limiter/actions/runs/40889576100): workflow_dispatch flaky-160.yml,
+mode=detectors, head 235fcea, by the Owner's decision on PR #171; CI Quality Gate 16/16 on the same head (run 40883068424) and
+no other run active. Job "D1–D9 and cost arms": success, 14:15:00-14:22:08Z.
+Files: detectors/ and env/ = the artifact f160d-detectors as downloaded, except detectors/d8-main.txt and d8-head.txt, gzipped
+(gzip -n -9) because the PHPUnit summary lines they hold end in a space; run.log.gz (gh run view --log, gzip -n -9), run.json.
+The cost arms ran at K = 2,000 and 10 --filter runs: they measure cost and tool validity, they are not counted numbers.

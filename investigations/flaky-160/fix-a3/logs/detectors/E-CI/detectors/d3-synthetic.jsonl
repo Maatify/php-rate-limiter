@@ -1,0 +1,46 @@
+{"case":"pair not applied, phase 3","expected":"not_applied_in_window","observed":"not_applied_in_window","holds":true}
+{"case":"pair not applied, phase 500","expected":"finding_outside_window","observed":"finding_outside_window","holds":true}
+{"case":"pair applied","expected":"applied","observed":"applied","holds":true}
+{"case":"pair not applied, key gone (E-EXP)","expected":"not_applied_expired","observed":"not_applied_expired","holds":true}
+{"case":"pair READ null (E-EXP before READ)","expected":"read_null","observed":"read_null","holds":true}
+{"case":"pair with an exception","expected":"invalid","observed":"invalid","holds":true}
+{"case":"pair without an error field","expected":"invalid","observed":"invalid","holds":true}
+{"case":"forced X not as targeted","expected":"invalid_x","observed":"invalid_x","holds":true}
+{"case":"held, W = 3, phase 2","expected":"not_applied_in_window","observed":"not_applied_in_window","holds":true}
+{"case":"held, W = 3, phase 5","expected":"finding_outside_window","observed":"finding_outside_window","holds":true}
+{"case":"hand one winner","expected":"one_winner","observed":"one_winner","holds":true}
+{"case":"hand two winners","expected":"finding_two_or_more","observed":"finding_two_or_more","holds":true}
+{"case":"hand zero winners, phase 3","expected":"zero_in_window","observed":"zero_in_window","holds":true}
+{"case":"hand zero winners, phase 700","expected":"finding_zero_outside_window","observed":"finding_zero_outside_window","holds":true}
+{"case":"hand worker exited 1","expected":"invalid","observed":"invalid","holds":true}
+{"case":"hand worker error","expected":"invalid","observed":"invalid","holds":true}
+{"case":"forced rho=1 e_R = ceil(X/1000) - 2","expected":"rejected","observed":"rejected","holds":true}
+{"case":"forced rho=1 e_R = ceil(X/1000)","expected":"ok","observed":"ok","holds":true}
+{"case":"vclock differing outcomes","expected":"different","observed":"different","holds":true}
+{"case":"fisher 0/100 vs 10/100 < 0.01","expected":"refuted","observed":"refuted","holds":true}
+{"case":"fisher 3/1000 vs 4/1000","expected":"not distinguished","observed":"not distinguished","holds":true}
+{"case":"poisson band 9.15 = [4, 16] (phase-1 REPORT \u00a73.2)","expected":"[4,16]","observed":"[4,16]","holds":true}
+{"case":"a3 pair applied, READ expiry written","expected":"applied","observed":"applied","holds":true}
+{"case":"a3 pair applied, e_M differs","expected":"finding_expiry_differs","observed":"finding_expiry_differs","holds":true}
+{"case":"a3 pair applied, stored expiry differs","expected":"finding_expiry_differs","observed":"finding_expiry_differs","holds":true}
+{"case":"a3 pair not applied, phase 3","expected":"finding_not_applied","observed":"finding_not_applied","holds":true}
+{"case":"a3 pair not applied, phase 500","expected":"finding_not_applied","observed":"finding_not_applied","holds":true}
+{"case":"a3 pair not applied, key gone (E-EXP)","expected":"not_applied_expired","observed":"not_applied_expired","holds":true}
+{"case":"a3 pair READ null","expected":"read_null","observed":"read_null","holds":true}
+{"case":"a3 pair with an exception","expected":"invalid","observed":"invalid","holds":true}
+{"case":"a3 hand one winner, READ expiry written","expected":"one_winner","observed":"one_winner","holds":true}
+{"case":"a3 hand one winner, stored expiry differs","expected":"finding_expiry_differs","observed":"finding_expiry_differs","holds":true}
+{"case":"a3 hand zero winners, phase 3","expected":"finding_zero_winners","observed":"finding_zero_winners","holds":true}
+{"case":"a3 hand two winners","expected":"finding_two_or_more","observed":"finding_two_or_more","holds":true}
+{"case":"decision identical plus S1 passed","expected":"holds","observed":"holds","holds":true}
+{"case":"decision one outcome differs","expected":"not","observed":"not","holds":true}
+{"case":"decision extra test not S1","expected":"not","observed":"not","holds":true}
+{"case":"decision S1 missing","expected":"not","observed":"not","holds":true}
+{"case":"decision S1 failed","expected":"not","observed":"not","holds":true}
+{"case":"decision test missing at head","expected":"not","observed":"not","holds":true}
+{"case":"decision empty main","expected":"not","observed":"not","holds":true}
+{"case":"ufilter 3 passed","expected":"{\"valid\":true,\"passed\":true}","observed":"{\"valid\":true,\"passed\":true}","holds":true}
+{"case":"ufilter 3 with a failure","expected":"{\"valid\":true,\"passed\":false}","observed":"{\"valid\":true,\"passed\":false}","holds":true}
+{"case":"ufilter 0 tests (filter matched nothing)","expected":"{\"valid\":false,\"passed\":false}","observed":"{\"valid\":false,\"passed\":false}","holds":true}
+{"case":"ufilter 3 skipped (no Redis)","expected":"{\"valid\":false,\"passed\":false}","observed":"{\"valid\":false,\"passed\":false}","holds":true}
+{"case":"ufilter no junit","expected":"{\"valid\":false,\"passed\":false}","observed":"{\"valid\":false,\"passed\":false}","holds":true}

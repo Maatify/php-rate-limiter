@@ -1,0 +1,11 @@
+{"unit":"ddet","n":3,"rows":24,"exit":0,"seconds":22.535}
+{"unit":"xread","n":30,"rows":30,"exit":0,"seconds":2.314}
+{"unit":"vclock","n":20,"rows":80,"exit":0,"seconds":4.228}
+{"unit":"overhead","n":2000,"rows":4000,"exit":0,"seconds":8.518}
+{"unit":"knat","n":2000,"rows":6000,"exit":0,"seconds":10.914}
+{"unit":"kheld","n":2000,"rows":4000,"exit":0,"seconds":8.216}
+{"unit":"kforced","n":2000,"rows":4000,"exit":0,"seconds":8.518}
+{"unit":"hnat","n":2000,"rows":2000,"exit":0,"seconds":299.241}
+{"unit":"ufilter","n":10,"rows":10,"exit":0,"seconds":26.402}
+{"unit":"decision-main","n":1,"rows":1,"exit":0,"seconds":2.586}
+{"unit":"decision-head","n":1,"rows":1,"exit":0,"seconds":7.894}

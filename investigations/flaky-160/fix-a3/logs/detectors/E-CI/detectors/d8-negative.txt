@@ -1,0 +1,18 @@
+{
+    "main_tests": 17,
+    "head_tests": 17,
+    "common": 17,
+    "differing": [],
+    "only_main": [],
+    "only_head": 0,
+    "only_head_not_s1": [],
+    "s1_not_passed": [],
+    "s1_missing": [
+        "testLegacyHandoffAppliesAndWritesTheReadExpiryAcrossCallerGaps",
+        "testConcurrentLegacyHandoffHasExactlyOneWinnerAcrossCallerGaps",
+        "testLegacyCurrentMutationWritesTheExpiryReadObserved",
+        "testLegacyTtlOnlyChangeBetweenReadAndMutateIsNotStaleAndKeepsTheReadExpiry",
+        "testLegacyMutationRejectsAMalformedSnapshotExpiryWithoutWriting"
+    ],
+    "holds": false
+}
