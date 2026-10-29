@@ -159,3 +159,18 @@ Normal Engineering Task: قُرئ `docs/php-engineering-standards/STANDARDS_MANI
 2. S2: `verify.php` فقط.
 3. S3: إعادة الإنتاج أخضر عند كل المواضع، والـ harness مرتين متوازيتين محليًا كما في CI.
 4. وصف الـ PR بالـ Standards.
+
+## 10. النتائج (E-LOCAL، مقاسة)
+
+| التنبؤ | المرصود | يتحقق |
+| --- | --- | --- |
+| **(أ)** إعادة الإنتاج: `CVH2_REPRO_MODE=crossing`، البدء عند `boundary − 1 s` (boundary 1793311800)، وتقدّم 2 ث بعد الإجازة الثانية عشرة | الخامس والعشرون **مقبول** ALLOW **20/20**، وكل تسلسل على نافذتين | نعم (S1، `b92a0b4`) |
+| **(ب)** `CVH2_REPRO_MODE=positions`، الساعة ثابتة بلا تقدّم | رفض SOFT_BLOCK مستوى 1 `source_capacity` / `source` **20/20 لكل موضع**: `boundary − 1`، و`boundary`، و`boundary + 1`، و`boundary + 599`، و`boundary + 579` (عشوائي)؛ 100/100 على نافذة واحدة | نعم |
+| **(د)** `verify.php` بكتلة الـ admission على `$admissionClock` الثابتة | لا `invalid snapshot` ولا استثناء؛ CVH-1 متطابق (المتغير بسياج مغلق = الـ preset) | نعم |
+| **(ج)** `scripts/ci/run-consumer-verification.sh` كاملًا، تشغيلان متوازيان كما في CI | run #1 وrun #2: `verification: PASS` و`cleanup: PASS` (22:02:29Z–22:07:44Z، 2026-10-29) | نعم محليًا؛ E-CI بعد الـ push |
+
+* `check-consumer-verification-boundary.sh` أخضر بعد S1 وبعد S2.
+* سكربت إعادة الإنتاج لا يختبر `verify.php` نفسه، فهو يبني runtime خاصًّا به:
+  * (أ) يثبت الآلية: العبور يقسم العدّ؛
+  * (ب) يثبت أن الساعة الثابتة تزيلها عند أي موضع، وهو الشكل الذي طُبِّق في S2؛
+  * (ج) يثبت الإصلاح في `verify.php` نفسه.
