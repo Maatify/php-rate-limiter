@@ -380,6 +380,7 @@ class EvaluationPipeline
                         'previousKey' => $realKeysV1['k5'] ?? null,
                         'level' => 2,
                         'duration' => $duration,
+                        'retryAfter' => $duration,
                     ];
                 }
 
@@ -393,6 +394,7 @@ class EvaluationPipeline
                         'previousKey' => $realKeysV1['k4'] ?? null,
                         'level' => 1,
                         'duration' => $duration,
+                        'retryAfter' => $duration,
                     ]]
                     : [];
                 CallerTimeStore::incrementWatchFlag($this->correlationStore, $floodKey, 900, $this->clock->now());
@@ -440,6 +442,7 @@ class EvaluationPipeline
                     'previousKey' => $realKeysV1['k4'] ?? null,
                     'level' => 2,
                     'duration' => PenaltyLadder::getDuration(2),
+                    'retryAfter' => PenaltyLadder::getDuration(2),
                 ]]
                 : [];
             $candidates[] = $this->candidate(
@@ -458,6 +461,7 @@ class EvaluationPipeline
                 'previousKey' => $realKeysV1['k5'] ?? null,
                 'level' => 2,
                 'duration' => PenaltyLadder::getDuration(2),
+                'retryAfter' => PenaltyLadder::getDuration(2),
             ]];
             $candidates[] = $this->candidate(
                 RateLimitResultDTO::DECISION_HARD_BLOCK,
@@ -587,7 +591,7 @@ class EvaluationPipeline
      * @param array<string, int> $scores
      * @param array<string, string|null> $keys
      * @param array<string, string|null> $keysV1
-     * @return list<array{decision: string, level: int, retryAfter: int, source: string, persistence: list<array{key: string, previousKey: ?string, level: int, duration: int}>, scopes: list<string>}>
+     * @return list<array{decision: string, level: int, retryAfter: int, source: string, persistence: list<array{key: string, previousKey: ?string, level: int, duration: int, retryAfter: int}>, scopes: list<string>}>
      */
     private function checkThresholds(
         BlockPolicyInterface $policy,
@@ -649,6 +653,7 @@ class EvaluationPipeline
                             'previousKey' => $keysV1[$candidateKeyType] ?? null,
                             'level' => $candidateLevel,
                             'duration' => PenaltyLadder::getDuration($candidateLevel),
+                            'retryAfter' => $retryAfter,
                         ];
                     }
                 }
@@ -673,7 +678,7 @@ class EvaluationPipeline
      *
      * @param array<string, string|null> $keysV2
      * @param array<string, string|null> $keysV1
-     * @return array{decision: string, level: int, retryAfter: int, source: string, persistence: list<array{key: string, previousKey: ?string, level: int, duration: int}>, scopes: list<string>}|null
+     * @return array{decision: string, level: int, retryAfter: int, source: string, persistence: list<array{key: string, previousKey: ?string, level: int, duration: int, retryAfter: int}>, scopes: list<string>}|null
      */
     private function checkDistributedAccountAttack(
         RateLimitContextDTO $context,
@@ -734,6 +739,7 @@ class EvaluationPipeline
                     'previousKey' => null,
                     'level' => 2,
                     'duration' => $duration,
+                    'retryAfter' => $duration,
                 ];
             }
         }
@@ -750,6 +756,7 @@ class EvaluationPipeline
                 'previousKey' => $keysV1['k5'] ?? null,
                 'level' => 2,
                 'duration' => $duration,
+                'retryAfter' => $duration,
             ];
         }
 
@@ -763,6 +770,7 @@ class EvaluationPipeline
                 'previousKey' => $keysV1['k4'] ?? null,
                 'level' => 4,
                 'duration' => PenaltyLadder::getDuration(4),
+                'retryAfter' => PenaltyLadder::getDuration(4),
             ];
         }
 
@@ -1209,7 +1217,7 @@ class EvaluationPipeline
      * @param array<string, string|null> $keysV2
      * @param array<string, string|null> $keysV1
      * @param list<array{cidr: int, currentScope: string, previousScope: ?string}> $adaptiveIpv6Scopes
-     * @return array{decision: string, level: int, retryAfter: int, source: string, persistence: list<array{key: string, previousKey: ?string, level: int, duration: int}>, scopes: list<string>}|null
+     * @return array{decision: string, level: int, retryAfter: int, source: string, persistence: list<array{key: string, previousKey: ?string, level: int, duration: int, retryAfter: int}>, scopes: list<string>}|null
      */
     private function checkCorrelationRules(
         DeviceIdentityDTO $device,
@@ -1268,6 +1276,7 @@ class EvaluationPipeline
                         'previousKey' => $keysV1['k2'] ?? null,
                         'level' => 2,
                         'duration' => 60,
+                        'retryAfter' => 60,
                     ]]
                     : [],
             );
@@ -1325,6 +1334,7 @@ class EvaluationPipeline
                         'previousKey' => $keysV1['k2'] ?? null,
                         'level' => 2,
                         'duration' => 60,
+                        'retryAfter' => 60,
                     ]]
                     : [],
             );
@@ -1369,6 +1379,7 @@ class EvaluationPipeline
             'previousKey' => $keysV1['k3'] ?? null,
             'level' => 2,
             'duration' => 60,
+            'retryAfter' => 60,
         ]];
 
         return $this->candidate(
@@ -1526,7 +1537,7 @@ class EvaluationPipeline
      * correlation identities never cross the correlation-store boundary.
      *
      * @param list<array{cidr: int, currentScope: string, previousScope: ?string}> $adaptiveIpv6Scopes
-     * @return array{decision: string, level: int, retryAfter: int, source: string, persistence: list<array{key: string, previousKey: ?string, level: int, duration: int}>, scopes: list<string>}|null
+     * @return array{decision: string, level: int, retryAfter: int, source: string, persistence: list<array{key: string, previousKey: ?string, level: int, duration: int, retryAfter: int}>, scopes: list<string>}|null
      */
     private function checkCredentialSpray(
         RateLimitContextDTO $context,
@@ -1573,6 +1584,7 @@ class EvaluationPipeline
             'previousKey' => $previousK1Key,
             'level' => 2,
             'duration' => PenaltyLadder::getDuration(2),
+            'retryAfter' => PenaltyLadder::getDuration(2),
         ]];
 
         return $this->candidate(
@@ -1633,7 +1645,7 @@ class EvaluationPipeline
      * @param array<string, string|null> $keysV1
      * @param array<string, ?PipelineScoreDTO> $rawScores
      * @return array{
-     *     candidates: list<array{decision: string, level: int, retryAfter: int, source: string, persistence: list<array{key: string, previousKey: ?string, level: int, duration: int}>, scopes: list<string>}>,
+     *     candidates: list<array{decision: string, level: int, retryAfter: int, source: string, persistence: list<array{key: string, previousKey: ?string, level: int, duration: int, retryAfter: int}>, scopes: list<string>}>,
      *     budgetState: ?BudgetStateDTO,
      *     budgetRequestEligible: bool,
      *     budgetSuppressed: bool
@@ -1912,6 +1924,7 @@ class EvaluationPipeline
                             'previousKey' => $keysV1[$candidateKeyType] ?? null,
                             'level' => $candidateLevel,
                             'duration' => $duration,
+                            'retryAfter' => $retryAfterByKeyType[$keyType] ?? $duration,
                         ]];
 
                     $candidates[] = $this->candidate(
@@ -1942,6 +1955,7 @@ class EvaluationPipeline
                             'previousKey' => $keysV1[$persistenceKeyType] ?? null,
                             'level' => $level,
                             'duration' => $duration,
+                            'retryAfter' => $retryAfter,
                         ];
                     }
                     $candidates[] = $this->candidate(
@@ -1974,9 +1988,13 @@ class EvaluationPipeline
                 // scored level keeps its account-wide K4 persistence.
                 $k5Level = $levelsByKeyType['k5'] ?? 0;
                 $accountLevel = 0;
+                // F-172-02: each persisted key carries the retryAfter of its own
+                // contribution, so a dropped K4 leaves the others' values intact.
+                $accountRetryAfter = 0;
                 foreach ($levelsByKeyType as $keyType => $level) {
                     if ($keyType !== 'k5') {
                         $accountLevel = max($accountLevel, $level);
+                        $accountRetryAfter = max($accountRetryAfter, $retryAfterByKeyType[$keyType] ?? PenaltyLadder::getDuration($level));
                     }
                 }
 
@@ -1991,6 +2009,7 @@ class EvaluationPipeline
                         'previousKey' => $keysV1['k4'] ?? null,
                         'level' => $persistenceLevel,
                         'duration' => PenaltyLadder::getDuration($persistenceLevel),
+                        'retryAfter' => $accountRetryAfter,
                     ];
                 }
 
@@ -2000,6 +2019,7 @@ class EvaluationPipeline
                         'previousKey' => $keysV1['k5'] ?? null,
                         'level' => $k5Level,
                         'duration' => PenaltyLadder::getDuration($k5Level),
+                        'retryAfter' => $retryAfterByKeyType['k5'] ?? PenaltyLadder::getDuration($k5Level),
                     ];
                 }
 
@@ -2028,11 +2048,11 @@ class EvaluationPipeline
     }
 
     /**
-     * @param list<array{key: string, previousKey: ?string, level: int, duration: int}> $persistence
+     * @param list<array{key: string, previousKey: ?string, level: int, duration: int, retryAfter: int}> $persistence
      * @param list<string> $scopes Anti-Equilibrium scopes of an issued SOFT_BLOCK
      *     from this candidate: SCOPE_DEVICE only when the level comes from K5
      *     alone; SCOPE_ACCOUNT is the conservative §2.5 default.
-     * @return array{decision: string, level: int, retryAfter: int, source: string, persistence: list<array{key: string, previousKey: ?string, level: int, duration: int}>, scopes: list<string>}
+     * @return array{decision: string, level: int, retryAfter: int, source: string, persistence: list<array{key: string, previousKey: ?string, level: int, duration: int, retryAfter: int}>, scopes: list<string>}
      */
     private function candidate(string $decision, int $level, int $retryAfter, string $source, array $persistence = [], array $scopes = [self::SCOPE_ACCOUNT]): array
     {
@@ -2047,8 +2067,8 @@ class EvaluationPipeline
     }
 
     /**
-     * @param list<array{decision: string, level: int, retryAfter: int, source: string, persistence: list<array{key: string, previousKey: ?string, level: int, duration: int}>, scopes: list<string>}> $candidates
-     * @return array{decision: string, level: int, retryAfter: int, source: string, persistence: list<array{key: string, previousKey: ?string, level: int, duration: int}>, scopes: list<string>}|null
+     * @param list<array{decision: string, level: int, retryAfter: int, source: string, persistence: list<array{key: string, previousKey: ?string, level: int, duration: int, retryAfter: int}>, scopes: list<string>}> $candidates
+     * @return array{decision: string, level: int, retryAfter: int, source: string, persistence: list<array{key: string, previousKey: ?string, level: int, duration: int, retryAfter: int}>, scopes: list<string>}|null
      */
     private function aggregateCandidates(array $candidates): ?array
     {
@@ -2108,7 +2128,7 @@ class EvaluationPipeline
      * The remaining blocks are always persisted. The K4 mutation exhaustion
      * (RateLimitConcurrencyException before any K4 or K5 write) is not here.
      *
-     * @param list<array{decision: string, level: int, retryAfter: int, source: string, persistence: list<array{key: string, previousKey: ?string, level: int, duration: int}>, scopes: list<string>}> $candidates
+     * @param list<array{decision: string, level: int, retryAfter: int, source: string, persistence: list<array{key: string, previousKey: ?string, level: int, duration: int, retryAfter: int}>, scopes: list<string>}> $candidates
      * @return array<string, string> key => PUBLICATION_DEFERRED|PUBLICATION_DROPPED, only for unpublished K4 keys
      */
     private function persistWinningCandidates(BlockPolicyInterface $policy, array $candidates, ?string $winningClass, bool $persistAllCandidates = false): array
@@ -2233,11 +2253,19 @@ class EvaluationPipeline
      * DEC-029: the candidates of a request whose K4 block was dropped, without
      * the K4 contribution. A candidate that persisted only a dropped key is
      * removed; one that also persisted another key keeps that key and takes
-     * its level and duration; every other candidate is unchanged.
+     * the highest level and the longest retryAfter of the kept entries; every
+     * other candidate is unchanged.
      *
-     * @param list<array{decision: string, level: int, retryAfter: int, source: string, persistence: list<array{key: string, previousKey: ?string, level: int, duration: int}>, scopes: list<string>}> $candidates
+     * P3 (the decision follows the state): the result must be the decision the
+     * same request makes without any K4 contribution, so each persistence
+     * entry carries the retryAfter of its own key's contribution, set when the
+     * candidate is built. Taking the kept block's ladder duration instead
+     * replaced a K5 retryAfter derived from its decay by the shorter ladder
+     * value (F-172-02, #160: 599 against 1,199 for the same K5 state alone).
+     *
+     * @param list<array{decision: string, level: int, retryAfter: int, source: string, persistence: list<array{key: string, previousKey: ?string, level: int, duration: int, retryAfter: int}>, scopes: list<string>}> $candidates
      * @param list<string> $droppedKeys
-     * @return list<array{decision: string, level: int, retryAfter: int, source: string, persistence: list<array{key: string, previousKey: ?string, level: int, duration: int}>, scopes: list<string>}>
+     * @return list<array{decision: string, level: int, retryAfter: int, source: string, persistence: list<array{key: string, previousKey: ?string, level: int, duration: int, retryAfter: int}>, scopes: list<string>}>
      */
     private function withoutDroppedK4Contribution(array $candidates, array $droppedKeys): array
     {
@@ -2258,7 +2286,7 @@ class EvaluationPipeline
             $level = max(array_column($kept, 'level'));
             $candidate['persistence'] = $kept;
             $candidate['level'] = $level;
-            $candidate['retryAfter'] = max(array_column($kept, 'duration'));
+            $candidate['retryAfter'] = max(array_column($kept, 'retryAfter'));
             $candidate['decision'] = $level >= 2
                 ? RateLimitResultDTO::DECISION_HARD_BLOCK
                 : RateLimitResultDTO::DECISION_SOFT_BLOCK;
@@ -2271,7 +2299,7 @@ class EvaluationPipeline
     /**
      * @param array<string, string|null> $keysV2
      * @param array<string, string|null> $keysV1
-     * @param list<array{decision: string, level: int, retryAfter: int, source: string, persistence: list<array{key: string, previousKey: ?string, level: int, duration: int}>, scopes: list<string>}> $candidates
+     * @param list<array{decision: string, level: int, retryAfter: int, source: string, persistence: list<array{key: string, previousKey: ?string, level: int, duration: int, retryAfter: int}>, scopes: list<string>}> $candidates
      */
     private function finalizeDecision(
         BlockPolicyInterface $policy,
@@ -2409,8 +2437,8 @@ class EvaluationPipeline
      * scope (mixed K4 + K5 included), the device watcher only for a K5-only
      * SOFT with an eligible device, and the account watcher otherwise.
      *
-     * @param array{decision: string, level: int, retryAfter: int, source: string, persistence: list<array{key: string, previousKey: ?string, level: int, duration: int}>, scopes: list<string>}|null $final
-     * @param list<array{decision: string, level: int, retryAfter: int, source: string, persistence: list<array{key: string, previousKey: ?string, level: int, duration: int}>, scopes: list<string>}> $candidates
+     * @param array{decision: string, level: int, retryAfter: int, source: string, persistence: list<array{key: string, previousKey: ?string, level: int, duration: int, retryAfter: int}>, scopes: list<string>}|null $final
+     * @param list<array{decision: string, level: int, retryAfter: int, source: string, persistence: list<array{key: string, previousKey: ?string, level: int, duration: int, retryAfter: int}>, scopes: list<string>}> $candidates
      */
     private function collectIssuedSoftScopes(?array $final, array $candidates): void
     {
@@ -2700,10 +2728,10 @@ class EvaluationPipeline
      * Keeps device-scoped candidates, rebuilds mixed account + device candidates from their K5 persistence only,
      * and drops purely account-scoped candidates.
      *
-     * @param list<array{decision: string, level: int, retryAfter: int, source: string, persistence: list<array{key: string, previousKey: ?string, level: int, duration: int}>, scopes: list<string>}> $candidates
+     * @param list<array{decision: string, level: int, retryAfter: int, source: string, persistence: list<array{key: string, previousKey: ?string, level: int, duration: int, retryAfter: int}>, scopes: list<string>}> $candidates
      * @param array<string, string|null> $keysV2
      * @param array<string, string|null> $keysV1
-     * @return list<array{decision: string, level: int, retryAfter: int, source: string, persistence: list<array{key: string, previousKey: ?string, level: int, duration: int}>, scopes: list<string>}>
+     * @return list<array{decision: string, level: int, retryAfter: int, source: string, persistence: list<array{key: string, previousKey: ?string, level: int, duration: int, retryAfter: int}>, scopes: list<string>}>
      */
     private function deviceScopedOnly(array $candidates, array $keysV2, array $keysV1): array
     {
