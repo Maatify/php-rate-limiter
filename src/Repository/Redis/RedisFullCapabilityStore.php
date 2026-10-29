@@ -306,14 +306,12 @@ end
 local currentPttl = redis.call('PTTL', current)
 if currentPttl == -1 then return redis.error_reply('malformed generation-bound score state') end
 local source = ''
-local sourcePttl = 0
 if currentPttl > 0 then
   source = current
-  sourcePttl = currentPttl
 elseif previous ~= '' then
   local previousPttl = redis.call('PTTL', previous)
   if previousPttl == -1 then return redis.error_reply('malformed generation-bound score state') end
-  if previousPttl > 0 then source = previous; sourcePttl = previousPttl end
+  if previousPttl > 0 then source = previous end
 end
 if source == '' then
   if expectedSource ~= '' then return {0} end
@@ -351,18 +349,27 @@ if evidenceCount == 3 then
   if not evidenceId or string.len(evidenceId) ~= 32 or string.match(evidenceId, '^[a-f0-9]+$') == nil then return redis.error_reply('malformed lifecycle id') end
   if not validNonNegativeInteger(evidenceUntil) or evidenceUntil == '0' or not validInteger(evidenceGeneration, false) then return redis.error_reply('malformed lifecycle evidence') end
 end
-local effectiveObservedExpiry = observedExpiry
--- A legacy score (no `expiresAt`) is mapped onto the caller's timeline by its remaining life.
-if not effectiveObservedExpiry then effectiveObservedExpiry = tostring(math.floor((nowMs + sourcePttl + 999) / 1000)) end
 if expectedSource == '' or expectedSource ~= source then return {0} end
-if observedValue ~= ARGV[2] or observedUpdated ~= ARGV[3] or effectiveObservedExpiry ~= ARGV[5] then return {0} end
+-- #160 (a3, DEC-016 application note): a legacy score (no stored `expiresAt`,
+-- hence no generation) is fenced by value and updatedAt alone. The expiry READ
+-- derived from its remaining life is a caller-clock reading, not state: it is
+-- never derived again here, and the first applied mutation writes the one the
+-- snapshot carries (ARGV[5]).
+local expiry = observedExpiry
+if observedExpiry then
+  if observedValue ~= ARGV[2] or observedUpdated ~= ARGV[3] or observedExpiry ~= ARGV[5] then return {0} end
+else
+  if not validNonNegativeInteger(ARGV[5]) or ARGV[5] == '0' then return redis.error_reply('invalid expected generation-bound score expiry') end
+  if observedValue ~= ARGV[2] or observedUpdated ~= ARGV[3] then return {0} end
+  if compareDecimalStrings(ARGV[5], observedUpdated) < 0 then return redis.error_reply('invalid expected generation-bound score expiry') end
+  expiry = ARGV[5]
+end
 if ARGV[4] == '' then
   if observedGeneration then return {0} end
 elseif not observedGeneration or observedGeneration ~= ARGV[4] then return {0} end
 local requestedTtl = tonumber(ARGV[6]); if requestedTtl <= 0 then return redis.error_reply('invalid score TTL') end
 local generation = observedGeneration and incrementInteger(observedGeneration) or '1'
 if string.len(generation) > 19 or (string.len(generation) == 19 and generation > '9223372036854775807') then return redis.error_reply('generation integer overflow') end
-local expiry = effectiveObservedExpiry
 local expiryMsStr = expiry .. '000'
 if compareDecimalStrings(expiryMsStr, nowMsStr) <= 0 then return {0} end
 -- The physical life stays relative: the logical remainder, never capped (LT-P2-02).
@@ -1831,9 +1838,21 @@ LUA;
      * partial lifecycle
      * evidence, and complete lifecycle evidence attached to a
      * generation-less score are all explicit package/state failures. Legacy state keeps
-     * its remaining TTL; applied mutations write only current state, advance
+     * the remaining TTL its snapshot observed; applied mutations write only current state, advance
      * generation, and invalidate lifecycle evidence. Absent or complete
      * structurally valid evidence follows the normal mutation path.
+     *
+     * A legacy source (no stored `expiresAt`, hence no generation) is fenced
+     * by its value and `updatedAt` alone (#160, DEC-016 application note).
+     * The expiry the read derived from its remaining life is a reading of the
+     * caller's clock, not state: it is neither derived again nor compared
+     * here, so a change of that key's TTL alone is not staleness, and the
+     * first applied mutation writes the snapshot's `expiresAt` as the score's
+     * logical expiry. That snapshot expiry must be a canonical positive
+     * integer not before the observed `updatedAt`, or the call fails as a
+     * contract violation before any write. It has no upper bound: bounding it
+     * would need Redis `TIME`, which DEC-016 rules out, so the snapshot is the
+     * authority here exactly as it is for a generated score.
      */
     public function mutateGenerationBoundScore(string $currentKey, ?string $previousKey, ?GenerationBoundScoreStateDTO $expectedState, int $ttlSeconds, int $newValue): GenerationBoundScoreMutationDTO
     {
