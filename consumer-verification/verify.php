@@ -403,7 +403,6 @@ $executor = new CallableRedisCommandExecutor(static function (array $command) us
     return $result;
 });
 $store = new RedisFullCapabilityStore($executor, 'consumer-verification');
-$clock = new FixedClock(new DateTimeImmutable('now', new DateTimeZone('UTC')));
 $signals = new RecordingFailureSignalEmitter();
 $limiter = RateLimiterBuilder::fromFullCapabilityStore(new RateLimiterConfig('consumer-key', 'consumer-fingerprint', 'prod'), $store, $signals)
     ->withSimpleThrottlePolicy(new FixedWindowThrottlePolicy('consumer_simple_fixed_window', limit: 2, intervalSeconds: 60))
@@ -1103,11 +1102,17 @@ $phpRedis->close();
 
 // ---- Admission layer (stage 5-c, 5c/PLAN.md §7.6.5): the Login opt-in variant through the public builder on real Redis ----
 $admissionStore = new RedisFullCapabilityStore($executor, 'consumer-admission');
-// The admission compositions use the builder's default system clock, as a production Host does: the bounded correlation
-// snapshots carry a Redis-time expiry (DEC-016), which a frozen caller clock falls behind as soon as real time passes.
-$admissionBuild = static function (string $env, BlockPolicyInterface $policy) use ($admissionStore): CompositeRateLimiterRuntimeInterface {
+// The admission compositions run on one controlled clock (#173). The admission scopes count in fixed windows of
+// intdiv(now, 600) and of the UTC day, so on the system clock a check whose admissions straddle a wall-clock boundary
+// split their count over two windows. On this clock CVH-1 … CVH-6 run at one instant, independent of when the run
+// starts; no check here needs time to pass, so the clock never moves (any future step is an explicit setNow with its
+// reason). A frozen caller clock is safe here since #153 phase 2 (#158): the bounded correlation snapshots take their
+// expiry from the caller's clock, not Redis TIME, so real time passing no longer invalidates them.
+$admissionClock = new FixedClock(new DateTimeImmutable('now', new DateTimeZone('UTC')));
+$admissionBuild = static function (string $env, BlockPolicyInterface $policy) use ($admissionStore, $admissionClock): CompositeRateLimiterRuntimeInterface {
     return RateLimiterBuilder::fromFullCapabilityStore(new RateLimiterConfig('admission-key', 'admission-fingerprint', $env, bindingKeySecret: 'admission-binding'), $admissionStore, new RecordingFailureSignalEmitter())
         ->withPolicy($policy)
+        ->withClock($admissionClock)
         ->build();
 };
 $admissionCommand = static fn(bool $success, ?string $permit): RateLimitCommand => new RateLimitCommand('login_protection', 1, false, ! $success, $success, $permit);
@@ -1162,7 +1167,8 @@ requireCondition($admission->limit($admissionContext('cvh2-24', '203.0.113.121')
 
 // CVH-3: a Host-minted credential is admitted from the exhausted source; the same with a changed MAC is not.
 $codec = new AdmissionCredentialCodec('admission-binding');
-$mint = static fn(int $epoch): string => $codec->encode(new AdmissionCredentialDTO('cvh-owner', ['login'], 'inst-owner', 'jti-owner-' . $epoch, time() + 86400, time(), $epoch));
+// The credential's issue and expiry times come from the admission clock, so they agree with the runtime's `now`.
+$mint = static fn(int $epoch): string => $codec->encode(new AdmissionCredentialDTO('cvh-owner', ['login'], 'inst-owner', 'jti-owner-' . $epoch, $admissionClock->now()->getTimestamp() + 86400, $admissionClock->now()->getTimestamp(), $epoch));
 $credential = $mint($admission->bindingEpoch('cvh-owner'));
 $tampered = substr($credential, 0, -2) . (str_ends_with($credential, 'AA') ? 'BB' : 'AA');
 $cvh3 = $admission->limit($admissionContext('cvh-owner', $exhausted, 'inst-owner', $credential), RateLimitCommand::checkOnly('login_protection'));
