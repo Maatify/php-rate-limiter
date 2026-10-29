@@ -1,0 +1,144 @@
+# TEMPORARY — #160 phase 3, T-K4 and T-HAND (investigations/flaky-160/phase3-k4-hand/PLAN.md §4–§9, §13).
+# Exists only on branch claude/flaky-160-phase3-k4-hand and is removed in its own commit before Ready.
+# Runs nothing but the setup steps of ci.yml (checkout, setup-php, composer update) and
+# investigations/flaky-160/phase3-k4-hand/harness/, whose probe drives RedisFullCapabilityStore directly (no PHPUnit).
+# No secrets, contents: read. No push trigger: a push never starts it.
+# Every job keeps its resolved composer.lock and the PHPUnit / PHP versions in its artifact (phase-1 env.sh, unchanged).
+#
+# Modes (each dispatch only by the Owner's word, after the measured cost is on the PR):
+#   detectors  D1–D6, then every arm at K = 2,000: the cost measurement (LT-160D-07)
+#   k          V-CLOCK and overhead gates, then K-NAT 3 x 100,000, K-HELD 2 x 100,000, K-FORCED 2 x 10,000, K-FORCED-M 10,000, K-CAL 100,000
+#   h          V-CLOCK gate, then H-NAT 20,000
+#   det        D-DET 20 + 20 for K and for H
+#   all        k, h and det in one dispatch (the counted run)
+name: flaky-160 phase 3 (temporary)
+
+on:
+  workflow_dispatch:
+    inputs:
+      mode:
+        description: 'detectors | k | h | det | all'
+        required: true
+        type: choice
+        options: [detectors, k, h, det, all]
+
+permissions:
+  contents: read
+
+jobs:
+  detectors:
+    name: D1–D6 and cost arms
+    if: inputs.mode == 'detectors'
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+      - uses: shivammathur/setup-php@f3e473d116dcccaddc5834248c87452386958240 # v2
+        with:
+          php-version: '8.5'
+          coverage: none
+          extensions: redis
+      - run: composer update --no-interaction --prefer-dist --no-progress
+      - run: bash investigations/flaky-160/harness/env.sh "$RUNNER_TEMP/f160d" detectors
+      - run: bash investigations/flaky-160/phase3-k4-hand/harness/detectors.sh "$RUNNER_TEMP/f160d/detectors" 2000
+      - if: always()
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: f160d-detectors
+          path: ${{ runner.temp }}/f160d
+          retention-days: 30
+
+  k:
+    name: K-NAT, K-HELD, K-FORCED, K-FORCED-M, K-CAL
+    if: inputs.mode == 'k' || inputs.mode == 'all'
+    runs-on: ubuntu-latest
+    timeout-minutes: 110
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+      - uses: shivammathur/setup-php@f3e473d116dcccaddc5834248c87452386958240 # v2
+        with:
+          php-version: '8.5'
+          coverage: none
+          extensions: redis
+      - run: composer update --no-interaction --prefer-dist --no-progress
+      - run: bash investigations/flaky-160/harness/env.sh "$RUNNER_TEMP/f160d" k
+      - run: bash investigations/flaky-160/phase3-k4-hand/harness/run.sh vclock "$RUNNER_TEMP/f160d/k" 20
+      - run: bash investigations/flaky-160/phase3-k4-hand/harness/run.sh overhead "$RUNNER_TEMP/f160d/k" 2000
+      - run: bash investigations/flaky-160/phase3-k4-hand/harness/run.sh report "$RUNNER_TEMP/f160d/k"
+      - run: bash investigations/flaky-160/phase3-k4-hand/harness/run.sh gate "$RUNNER_TEMP/f160d/k" k
+      - run: bash investigations/flaky-160/phase3-k4-hand/harness/run.sh kcal "$RUNNER_TEMP/f160d/k" 100000
+      - run: bash investigations/flaky-160/phase3-k4-hand/harness/run.sh knat "$RUNNER_TEMP/f160d/k" 100000
+      - run: bash investigations/flaky-160/phase3-k4-hand/harness/run.sh kheld "$RUNNER_TEMP/f160d/k" 100000
+      - run: bash investigations/flaky-160/phase3-k4-hand/harness/run.sh kforced "$RUNNER_TEMP/f160d/k" 10000
+      - run: bash investigations/flaky-160/phase3-k4-hand/harness/run.sh kforcedm "$RUNNER_TEMP/f160d/k" 10000
+      - if: always()
+        run: bash investigations/flaky-160/phase3-k4-hand/harness/run.sh report "$RUNNER_TEMP/f160d/k"
+      - if: always()
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: f160d-k
+          path: ${{ runner.temp }}/f160d
+          retention-days: 30
+
+  h:
+    name: H-NAT
+    if: inputs.mode == 'h' || inputs.mode == 'all'
+    runs-on: ubuntu-latest
+    timeout-minutes: 110
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+      - uses: shivammathur/setup-php@f3e473d116dcccaddc5834248c87452386958240 # v2
+        with:
+          php-version: '8.5'
+          coverage: none
+          extensions: redis
+      - run: composer update --no-interaction --prefer-dist --no-progress
+      - run: bash investigations/flaky-160/harness/env.sh "$RUNNER_TEMP/f160d" h
+      - run: bash investigations/flaky-160/phase3-k4-hand/harness/run.sh vclock "$RUNNER_TEMP/f160d/h" 20
+      - run: bash investigations/flaky-160/phase3-k4-hand/harness/run.sh report "$RUNNER_TEMP/f160d/h"
+      - run: bash investigations/flaky-160/phase3-k4-hand/harness/run.sh gate "$RUNNER_TEMP/f160d/h" h
+      - run: bash investigations/flaky-160/phase3-k4-hand/harness/run.sh hnat "$RUNNER_TEMP/f160d/h" 20000
+      - if: always()
+        run: bash investigations/flaky-160/phase3-k4-hand/harness/run.sh report "$RUNNER_TEMP/f160d/h"
+      - if: always()
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: f160d-h
+          path: ${{ runner.temp }}/f160d
+          retention-days: 30
+
+  det:
+    name: D-DET
+    if: inputs.mode == 'det' || inputs.mode == 'all'
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+      - uses: shivammathur/setup-php@f3e473d116dcccaddc5834248c87452386958240 # v2
+        with:
+          php-version: '8.5'
+          coverage: none
+          extensions: redis
+      - run: composer update --no-interaction --prefer-dist --no-progress
+      - run: bash investigations/flaky-160/harness/env.sh "$RUNNER_TEMP/f160d" det
+      - run: bash investigations/flaky-160/phase3-k4-hand/harness/run.sh ddet "$RUNNER_TEMP/f160d/det" 20
+      - if: always()
+        run: bash investigations/flaky-160/phase3-k4-hand/harness/run.sh report "$RUNNER_TEMP/f160d/det"
+      - if: always()
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: f160d-det
+          path: ${{ runner.temp }}/f160d
+          retention-days: 30
