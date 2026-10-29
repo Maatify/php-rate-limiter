@@ -43,6 +43,9 @@ final class PublicationDeferralTest extends TestCase
 {
     private const ACCOUNT = 'deferral-account';
     private const DEVICE = 'deferral-device';
+    private const MIXED_ACCOUNT = 'deferral-mixed-account';
+    /** Between two failures of the mixed scenario every block it wrote (at most L3, 300 s) has expired. */
+    private const MIXED_STEP_SECONDS = 301;
 
     public function testExhaustedPublicationIsDeferredWithoutExceptionAndKeepsTheBlockDecision(): void
     {
@@ -191,6 +194,49 @@ final class PublicationDeferralTest extends TestCase
         self::assertCount(1, $eligible);
     }
 
+    /**
+     * The mixed shape: one candidate persisting both K4 and K5 (EvaluationPipeline
+     * L1983–L2003). A known device on an untrusted session that has spent the
+     * known-device allowance scores K5 and K4 in the same failure; the twelfth
+     * failure of mixedScenario() carries K4 at lifecycle L3 and K5 at L2.
+     */
+    public function testMixedCandidateWithoutLossBlocksAtTheK4LevelAndPublishesBoth(): void
+    {
+        $control = $this->mixedControlRun();
+        [$pipeline, $store] = $this->mixedScenario();
+
+        $result = $this->mixedFailure($pipeline);
+
+        self::assertSame(RateLimitResultDTO::DECISION_HARD_BLOCK, $result->decision);
+        self::assertSame(3, $result->blockLevel, 'the K4 level, the higher of the two');
+        self::assertSame($control['result']->retryAfter, $result->retryAfter);
+        self::assertNull($result->metadata?->cause);
+        self::assertSame(3, $store->checkBlock($control['k4Key'])?->level);
+        self::assertSame(2, $store->checkBlock($control['k5Key'])?->level);
+        self::assertSame($control['scores'], $this->scores($store));
+    }
+
+    public function testDeferredK4InAMixedCandidateKeepsTheDecisionAndPublishesK5(): void
+    {
+        $control = $this->mixedControlRun();
+        [$pipeline, $store] = $this->mixedScenario();
+        $store->arm(PHP_INT_MAX);
+
+        $result = $this->mixedFailure($pipeline);
+
+        self::assertSame(RateLimitResultDTO::DECISION_HARD_BLOCK, $result->decision);
+        self::assertSame(3, $result->blockLevel);
+        self::assertSame($control['result']->retryAfter, $result->retryAfter);
+        self::assertSame('k4_publication_deferred', $result->metadata?->cause);
+        self::assertSame('k4_publication_deferred', $result->metadata->context?->reason);
+        self::assertSame('k4', $result->metadata->context->scope);
+        self::assertSame(4, $store->publicationCalls);
+        self::assertSame(3, $store->snapshotReadsAfterLoss);
+        self::assertSame(2, $store->checkBlock($control['k5Key'])?->level, 'LT-S-06: the remaining blocks are published');
+        self::assertNull($store->checkBlock($control['k4Key']), 'the K4 block is deferred');
+        self::assertSame($control['scores'], $this->scores($store));
+    }
+
     /** @return array{0: EvaluationPipeline, 1: ScriptedPublicationRateLimitStore, 2: FixedClock} */
     private function pipelineScenario(): array
     {
@@ -219,6 +265,73 @@ final class PublicationDeferralTest extends TestCase
             'blocks' => $this->blocks($store),
             'k4Key' => hash_hmac('sha256', 'login_protection:rate_limiter:k4:v2:prod:' . self::ACCOUNT, 'test_secret'),
         ];
+    }
+
+    /**
+     * The first eleven failures of the mixed scenario (PLAN §1.3), the clock
+     * advanced past every block after each.
+     *
+     * @return array{0: EvaluationPipeline, 1: ScriptedPublicationRateLimitStore, 2: FixedClock}
+     */
+    private function mixedScenario(): array
+    {
+        $clock = new FixedClock();
+        $store = new ScriptedPublicationRateLimitStore($clock);
+        $pipeline = $this->pipeline($clock, $store);
+        for ($failure = 1; $failure <= 11; $failure++) {
+            $this->mixedFailure($pipeline);
+            $clock->setNow($clock->now()->modify('+' . self::MIXED_STEP_SECONDS . ' seconds'));
+        }
+
+        return [$pipeline, $store, $clock];
+    }
+
+    /**
+     * The twelve failures of the mixed scenario on an unscripted store. The
+     * scores pin the mixed shape of the twelfth: K4 12 (L3), K5 14 (L2).
+     *
+     * @return array{result: RateLimitResultDTO, scores: array<string, int>, k4Key: string, k5Key: string}
+     */
+    private function mixedControlRun(): array
+    {
+        $clock = new FixedClock();
+        $store = new InMemoryRateLimitStore($clock);
+        $pipeline = $this->pipeline($clock, $store);
+        for ($failure = 1; $failure <= 11; $failure++) {
+            $this->mixedFailure($pipeline);
+            $clock->setNow($clock->now()->modify('+' . self::MIXED_STEP_SECONDS . ' seconds'));
+        }
+        $result = $this->mixedFailure($pipeline);
+        $fingerprint = (new DeviceIdentityResolver(new FingerprintHasher('test_secret')))->resolve($this->mixedContext())->fingerprintHash;
+        $k4Key = hash_hmac('sha256', 'login_protection:rate_limiter:k4:v2:prod:' . self::MIXED_ACCOUNT, 'test_secret');
+        $k5Key = hash_hmac('sha256', 'login_protection:rate_limiter:k5:v2:prod:' . self::MIXED_ACCOUNT . ':' . $fingerprint, 'test_secret');
+        $scores = $this->scores($store);
+        self::assertSame(12, $scores[$k4Key] ?? null, 'K4 at L3 in the twelfth failure');
+        self::assertSame(14, $scores[$k5Key] ?? null, 'K5 at L2 in the twelfth failure');
+        self::assertSame(3, $store->checkBlock($k4Key)?->level);
+        self::assertSame(2, $store->checkBlock($k5Key)?->level);
+
+        return ['result' => $result, 'scores' => $scores, 'k4Key' => $k4Key, 'k5Key' => $k5Key];
+    }
+
+    private function mixedFailure(EvaluationPipeline $pipeline): RateLimitResultDTO
+    {
+        $context = $this->mixedContext();
+        $device = (new DeviceIdentityResolver(new FingerprintHasher('test_secret')))->resolve($context);
+
+        return $pipeline->process(new LoginProtectionPolicy(), $context, RateLimitCommand::recordFailure('login_protection'), $device);
+    }
+
+    /** A device verified for the account, on an untrusted session: the generic candidate branch. */
+    private function mixedContext(): RateLimitContextDTO
+    {
+        return new RateLimitContextDTO(
+            '198.51.100.10',
+            'Mozilla/5.0 lifecycle',
+            self::MIXED_ACCOUNT,
+            ['device' => self::DEVICE],
+            isDevicePreviouslyVerifiedForAccount: true,
+        );
     }
 
     private function failure(EvaluationPipeline $pipeline): RateLimitResultDTO
