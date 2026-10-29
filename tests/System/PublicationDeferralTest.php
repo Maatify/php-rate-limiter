@@ -195,6 +195,67 @@ final class PublicationDeferralTest extends TestCase
     }
 
     /**
+     * F-172-02 (DEC-029 P3): after a lost publication the re-read K4 level is 0
+     * (b2), K4 is dropped, and the decision is the one the same request makes
+     * without any K4 contribution — the twelve failures of k5OnlyControlRun().
+     * The mixed candidate keeps K5's own retryAfter, not the kept block's
+     * ladder duration.
+     */
+    public function testDroppedK4InAMixedCandidateDecidesAsTheSameRequestWithoutK4(): void
+    {
+        $control = $this->mixedControlRun();
+        $k5Only = $this->k5OnlyControlRun();
+        [$pipeline, $store] = $this->mixedScenario();
+        $store->arm(PHP_INT_MAX, ScriptedPublicationRateLimitStore::AFTER_LOSS_LEVEL_DROP);
+
+        $result = $this->mixedFailure($pipeline);
+
+        self::assertSame(RateLimitResultDTO::DECISION_HARD_BLOCK, $result->decision);
+        self::assertSame(2, $result->blockLevel, 'the K5 level');
+        self::assertSame($k5Only->decision, $result->decision);
+        self::assertSame($k5Only->blockLevel, $result->blockLevel);
+        self::assertSame($k5Only->retryAfter, $result->retryAfter, 'the decision of the same request without K4');
+        self::assertNull($result->metadata?->cause, 'a dropped K4 is not a deferred publication');
+        self::assertSame(1, $store->publicationCalls);
+        self::assertSame(2, $store->checkBlock($control['k5Key'])?->level, 'the K5 block is published');
+        self::assertNull($store->checkBlock($control['k4Key']), 'no K4 block is published');
+        $scores = $this->scores($store);
+        self::assertSame(0, $scores[$control['k4Key']] ?? null, 'K4 is what the scripted concurrent writer left');
+        unset($scores[$control['k4Key']], $control['scores'][$control['k4Key']]);
+        self::assertSame($control['scores'], $scores, 'nothing else written after the loss');
+    }
+
+    /**
+     * F-172-02, the other direction: when the mixed candidate's retryAfter came
+     * from K4 (longer than K5's), dropping K4 drops it too. The candidate ends
+     * with K5's own retryAfter — neither K4's nor the ladder duration.
+     */
+    public function testDroppingK4FromAMixedCandidateKeepsK5sOwnRetryAfter(): void
+    {
+        [$pipeline] = $this->pipelineScenario();
+        $candidate = [
+            'decision' => RateLimitResultDTO::DECISION_HARD_BLOCK,
+            'level' => 3,
+            'retryAfter' => 1800,
+            'source' => 'score_update',
+            'persistence' => [
+                ['key' => 'k4-key', 'previousKey' => null, 'level' => 3, 'duration' => 300, 'retryAfter' => 1800],
+                ['key' => 'k5-key', 'previousKey' => null, 'level' => 2, 'duration' => 60, 'retryAfter' => 900],
+            ],
+            'scopes' => ['account', 'device'],
+        ];
+
+        $remaining = (new \ReflectionMethod($pipeline, 'withoutDroppedK4Contribution'))->invoke($pipeline, [$candidate], ['k4-key']);
+
+        self::assertIsArray($remaining);
+        self::assertCount(1, $remaining);
+        self::assertIsArray($remaining[0]);
+        self::assertSame(RateLimitResultDTO::DECISION_HARD_BLOCK, $remaining[0]['decision']);
+        self::assertSame(2, $remaining[0]['level'], 'the level of the kept K5 entry');
+        self::assertSame(900, $remaining[0]['retryAfter'], "K5's own retryAfter, not K4's 1800 nor the ladder's 60");
+    }
+
+    /**
      * The mixed shape: one candidate persisting both K4 and K5 (EvaluationPipeline
      * L1983–L2003). A known device on an untrusted session that has spent the
      * known-device allowance scores K5 and K4 in the same failure; the twelfth
@@ -314,12 +375,43 @@ final class PublicationDeferralTest extends TestCase
         return ['result' => $result, 'scores' => $scores, 'k4Key' => $k4Key, 'k5Key' => $k5Key];
     }
 
-    private function mixedFailure(EvaluationPipeline $pipeline): RateLimitResultDTO
+    /**
+     * F-172-02: the twelfth failure of the same sequence when K4 never scores —
+     * `login_protection` without the known-device allowance, so only K5 is
+     * written, with the same keys, deltas and thresholds.
+     */
+    private function k5OnlyControlRun(): RateLimitResultDTO
+    {
+        $policy = new class extends LoginProtectionPolicy {
+            public function getKnownDeviceAccountAllowance(): ?int
+            {
+                return null;
+            }
+        };
+        $clock = new FixedClock();
+        $store = new InMemoryRateLimitStore($clock);
+        $pipeline = $this->pipeline($clock, $store);
+        for ($failure = 1; $failure <= 11; $failure++) {
+            $this->mixedFailure($pipeline, $policy);
+            $clock->setNow($clock->now()->modify('+' . self::MIXED_STEP_SECONDS . ' seconds'));
+        }
+        $result = $this->mixedFailure($pipeline, $policy);
+        $fingerprint = (new DeviceIdentityResolver(new FingerprintHasher('test_secret')))->resolve($this->mixedContext())->fingerprintHash;
+        $k4Key = hash_hmac('sha256', 'login_protection:rate_limiter:k4:v2:prod:' . self::MIXED_ACCOUNT, 'test_secret');
+        $k5Key = hash_hmac('sha256', 'login_protection:rate_limiter:k5:v2:prod:' . self::MIXED_ACCOUNT . ':' . $fingerprint, 'test_secret');
+        $scores = $this->scores($store);
+        self::assertArrayNotHasKey($k4Key, $scores, 'K4 is never written in the K5-only control');
+        self::assertSame(14, $scores[$k5Key] ?? null, 'K5 as in the mixed scenario');
+
+        return $result;
+    }
+
+    private function mixedFailure(EvaluationPipeline $pipeline, ?LoginProtectionPolicy $policy = null): RateLimitResultDTO
     {
         $context = $this->mixedContext();
         $device = (new DeviceIdentityResolver(new FingerprintHasher('test_secret')))->resolve($context);
 
-        return $pipeline->process(new LoginProtectionPolicy(), $context, RateLimitCommand::recordFailure('login_protection'), $device);
+        return $pipeline->process($policy ?? new LoginProtectionPolicy(), $context, RateLimitCommand::recordFailure('login_protection'), $device);
     }
 
     /** A device verified for the account, on an untrusted session: the generic candidate branch. */
