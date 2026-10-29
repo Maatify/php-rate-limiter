@@ -425,6 +425,8 @@ The public lifecycle workflow is:
 
 Legacy generation-less Current or Previous state remains compatible for reads and
 is upgraded on its first real mutation without resetting score or remaining TTL.
+That mutation fixes the legacy expiry from the observed snapshot; it is never
+derived a second time (#160, DEC-016 application note).
 Generated state must carry authoritative `expiresAt`; malformed generated
 backend state raises the package failure path rather than becoming ordinary
 missing evidence. Previous-generation state is read-only for lifecycle claims.
