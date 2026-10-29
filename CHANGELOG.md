@@ -7,6 +7,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed (#160, F-172-02, DEC-029 implementation fix, PR #174) — a dropped K4 keeps the other keys' own retryAfter
+- `EvaluationPipeline`: when the K4 punishment publication is dropped because the re-read K4 level is below 2 (DEC-029 b2), the
+  decision is recomputed without the K4 contribution. A candidate that also persisted another key (the mixed K4 + K5 shape: a
+  known device on an untrusted session after the known-device allowance is spent) took the kept block's ladder duration as its
+  `retryAfter`, dropping that key's own decay-derived value: 599 against 1,199 for the same K5 state without K4. Each persistence
+  entry now carries the `retryAfter` of its own key's contribution, and the recomputation takes the longest among the kept entries,
+  so the result equals the same request without K4 (DEC-029 P3). The level is unchanged. No DTO, interface or contract shape
+  changes; the b2 path had no natural case in the 2,000 runs of step S. Tests: two in `PublicationDeferralTest`.
+
 ### Fixed (#160, DEC-016 application note) — one authority for a legacy score's expiry
 - `RedisFullCapabilityStore::mutateGenerationBoundScore()`: a legacy generation-bound score (no stored `expiresAt`) is fenced by
   its value and `updatedAt` alone. The expiry is no longer derived a second time from the key's remaining life with the
