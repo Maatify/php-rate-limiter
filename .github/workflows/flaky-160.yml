@@ -1,33 +1,36 @@
-# TEMPORARY — #160 phase 3, T-K4 and T-HAND (investigations/flaky-160/phase3-k4-hand/PLAN.md §4–§9, §13).
-# Exists only on branch claude/flaky-160-phase3-k4-hand and is removed in its own commit before Ready.
+# TEMPORARY — #160 fix (a3), one authority for the legacy expiry (investigations/flaky-160/fix-a3/PLAN.md §4, §5, §11).
+# Exists only on branch claude/legacy-expiry-a3 and is removed in its own commit before Ready.
 # Runs nothing but the setup steps of ci.yml (checkout, setup-php, composer update) and
-# investigations/flaky-160/phase3-k4-hand/harness/, whose probe drives RedisFullCapabilityStore directly (no PHPUnit).
+# investigations/flaky-160/fix-a3/harness/: its probe drives RedisFullCapabilityStore directly, and only the decision
+# and u jobs run PHPUnit (V-DECISION on main@5202bf3 and on the head; untapped --filter runs).
 # No secrets, contents: read. No push trigger: a push never starts it.
 # Every job keeps its resolved composer.lock and the PHPUnit / PHP versions in its artifact (phase-1 env.sh, unchanged).
 #
 # Modes (each dispatch only by the Owner's word, after the measured cost is on the PR):
-#   detectors  D1–D6, then every arm at K = 2,000: the cost measurement (LT-160D-07)
-#   k          V-CLOCK and overhead gates, then K-NAT 3 x 100,000, K-HELD 2 x 100,000, K-FORCED 2 x 10,000, K-FORCED-M 10,000, K-CAL 100,000
+#   detectors  D1–D9, then every arm at K = 2,000 and 10 --filter runs: the cost measurement (LT-a3-07, LT-a3-08)
+#   k          V-CLOCK and overhead gates, then K-NAT 3 x 100,000, K-HELD 2 x 100,000, K-FORCED 2 x 10,000
 #   h          V-CLOCK gate, then H-NAT 20,000
-#   det        D-DET 20 + 20 for K and for H
-#   all        k, h and det in one dispatch (the counted run)
-name: flaky-160 phase 3 (temporary)
+#   det        D-DET 20 per row for K and for H (+1,000 ms, control, +2,500 ms, held reading + real 2,500 ms wait)
+#   decision   V-DECISION: Integration + System once on main@5202bf3 and once on the head, a fresh Redis each (LT-a3-06)
+#   u          1,000 untapped --filter runs of T-K4, T-HAND and the comparator, a fresh Redis each (LT-a3-07)
+#   all        k, h, det, decision and u in one dispatch (the counted run)
+name: flaky-160 fix a3 (temporary)
 
 on:
   workflow_dispatch:
     inputs:
       mode:
-        description: 'detectors | k | h | det | all'
+        description: 'detectors | k | h | det | decision | u | all'
         required: true
         type: choice
-        options: [detectors, k, h, det, all]
+        options: [detectors, k, h, det, decision, u, all]
 
 permissions:
   contents: read
 
 jobs:
   detectors:
-    name: D1–D6 and cost arms
+    name: D1–D9 and cost arms
     if: inputs.mode == 'detectors'
     runs-on: ubuntu-latest
     timeout-minutes: 60
@@ -42,8 +45,10 @@ jobs:
           coverage: none
           extensions: redis
       - run: composer update --no-interaction --prefer-dist --no-progress
-      - run: bash investigations/flaky-160/harness/env.sh "$RUNNER_TEMP/f160d" detectors
-      - run: bash investigations/flaky-160/phase3-k4-hand/harness/detectors.sh "$RUNNER_TEMP/f160d/detectors" 2000
+      - run: git worktree add --detach "$RUNNER_TEMP/main" 5202bf3
+      - run: composer update --working-dir "$RUNNER_TEMP/main" --no-interaction --prefer-dist --no-progress
+      - run: H_ROOT="$RUNNER_TEMP/main" bash investigations/flaky-160/harness/env.sh "$RUNNER_TEMP/f160d" detectors
+      - run: MAIN_TREE="$RUNNER_TEMP/main" bash investigations/flaky-160/fix-a3/harness/detectors.sh "$RUNNER_TEMP/f160d/detectors" 2000 10
       - if: always()
         uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
@@ -52,7 +57,7 @@ jobs:
           retention-days: 30
 
   k:
-    name: K-NAT, K-HELD, K-FORCED, K-FORCED-M, K-CAL
+    name: K-NAT, K-HELD, K-FORCED
     if: inputs.mode == 'k' || inputs.mode == 'all'
     runs-on: ubuntu-latest
     timeout-minutes: 110
@@ -68,17 +73,15 @@ jobs:
           extensions: redis
       - run: composer update --no-interaction --prefer-dist --no-progress
       - run: bash investigations/flaky-160/harness/env.sh "$RUNNER_TEMP/f160d" k
-      - run: bash investigations/flaky-160/phase3-k4-hand/harness/run.sh vclock "$RUNNER_TEMP/f160d/k" 20
-      - run: bash investigations/flaky-160/phase3-k4-hand/harness/run.sh overhead "$RUNNER_TEMP/f160d/k" 2000
-      - run: bash investigations/flaky-160/phase3-k4-hand/harness/run.sh report "$RUNNER_TEMP/f160d/k"
-      - run: bash investigations/flaky-160/phase3-k4-hand/harness/run.sh gate "$RUNNER_TEMP/f160d/k" k
-      - run: bash investigations/flaky-160/phase3-k4-hand/harness/run.sh kcal "$RUNNER_TEMP/f160d/k" 100000
-      - run: bash investigations/flaky-160/phase3-k4-hand/harness/run.sh knat "$RUNNER_TEMP/f160d/k" 100000
-      - run: bash investigations/flaky-160/phase3-k4-hand/harness/run.sh kheld "$RUNNER_TEMP/f160d/k" 100000
-      - run: bash investigations/flaky-160/phase3-k4-hand/harness/run.sh kforced "$RUNNER_TEMP/f160d/k" 10000
-      - run: bash investigations/flaky-160/phase3-k4-hand/harness/run.sh kforcedm "$RUNNER_TEMP/f160d/k" 10000
+      - run: bash investigations/flaky-160/fix-a3/harness/run.sh vclock "$RUNNER_TEMP/f160d/k" 20
+      - run: bash investigations/flaky-160/fix-a3/harness/run.sh overhead "$RUNNER_TEMP/f160d/k" 2000
+      - run: bash investigations/flaky-160/fix-a3/harness/run.sh report "$RUNNER_TEMP/f160d/k"
+      - run: bash investigations/flaky-160/fix-a3/harness/run.sh gate "$RUNNER_TEMP/f160d/k" k
+      - run: bash investigations/flaky-160/fix-a3/harness/run.sh knat "$RUNNER_TEMP/f160d/k" 100000
+      - run: bash investigations/flaky-160/fix-a3/harness/run.sh kheld "$RUNNER_TEMP/f160d/k" 100000
+      - run: bash investigations/flaky-160/fix-a3/harness/run.sh kforced "$RUNNER_TEMP/f160d/k" 10000
       - if: always()
-        run: bash investigations/flaky-160/phase3-k4-hand/harness/run.sh report "$RUNNER_TEMP/f160d/k"
+        run: bash investigations/flaky-160/fix-a3/harness/run.sh report "$RUNNER_TEMP/f160d/k"
       - if: always()
         uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
@@ -103,12 +106,12 @@ jobs:
           extensions: redis
       - run: composer update --no-interaction --prefer-dist --no-progress
       - run: bash investigations/flaky-160/harness/env.sh "$RUNNER_TEMP/f160d" h
-      - run: bash investigations/flaky-160/phase3-k4-hand/harness/run.sh vclock "$RUNNER_TEMP/f160d/h" 20
-      - run: bash investigations/flaky-160/phase3-k4-hand/harness/run.sh report "$RUNNER_TEMP/f160d/h"
-      - run: bash investigations/flaky-160/phase3-k4-hand/harness/run.sh gate "$RUNNER_TEMP/f160d/h" h
-      - run: bash investigations/flaky-160/phase3-k4-hand/harness/run.sh hnat "$RUNNER_TEMP/f160d/h" 20000
+      - run: bash investigations/flaky-160/fix-a3/harness/run.sh vclock "$RUNNER_TEMP/f160d/h" 20
+      - run: bash investigations/flaky-160/fix-a3/harness/run.sh report "$RUNNER_TEMP/f160d/h"
+      - run: bash investigations/flaky-160/fix-a3/harness/run.sh gate "$RUNNER_TEMP/f160d/h" h
+      - run: bash investigations/flaky-160/fix-a3/harness/run.sh hnat "$RUNNER_TEMP/f160d/h" 20000
       - if: always()
-        run: bash investigations/flaky-160/phase3-k4-hand/harness/run.sh report "$RUNNER_TEMP/f160d/h"
+        run: bash investigations/flaky-160/fix-a3/harness/run.sh report "$RUNNER_TEMP/f160d/h"
       - if: always()
         uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
@@ -133,12 +136,68 @@ jobs:
           extensions: redis
       - run: composer update --no-interaction --prefer-dist --no-progress
       - run: bash investigations/flaky-160/harness/env.sh "$RUNNER_TEMP/f160d" det
-      - run: bash investigations/flaky-160/phase3-k4-hand/harness/run.sh ddet "$RUNNER_TEMP/f160d/det" 20
+      - run: bash investigations/flaky-160/fix-a3/harness/run.sh ddet "$RUNNER_TEMP/f160d/det" 20
       - if: always()
-        run: bash investigations/flaky-160/phase3-k4-hand/harness/run.sh report "$RUNNER_TEMP/f160d/det"
+        run: bash investigations/flaky-160/fix-a3/harness/run.sh report "$RUNNER_TEMP/f160d/det"
       - if: always()
         uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
           name: f160d-det
+          path: ${{ runner.temp }}/f160d
+          retention-days: 30
+
+  decision:
+    name: V-DECISION (main@5202bf3 and head)
+    if: inputs.mode == 'decision' || inputs.mode == 'all'
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+      - uses: shivammathur/setup-php@f3e473d116dcccaddc5834248c87452386958240 # v2
+        with:
+          php-version: '8.5'
+          coverage: none
+          extensions: redis
+      - run: composer update --no-interaction --prefer-dist --no-progress
+      - run: git worktree add --detach "$RUNNER_TEMP/main" 5202bf3
+      - run: composer update --working-dir "$RUNNER_TEMP/main" --no-interaction --prefer-dist --no-progress
+      - run: H_ROOT="$RUNNER_TEMP/main" bash investigations/flaky-160/harness/env.sh "$RUNNER_TEMP/f160d" decision
+      - run: bash investigations/flaky-160/fix-a3/harness/run.sh decision "$RUNNER_TEMP/f160d/decision" main "$RUNNER_TEMP/main" 5202bf3
+      - run: bash investigations/flaky-160/fix-a3/harness/run.sh decision "$RUNNER_TEMP/f160d/decision" head "$GITHUB_WORKSPACE" a45066a
+      - run: bash investigations/flaky-160/fix-a3/harness/run.sh decide "$RUNNER_TEMP/f160d/decision"
+      - if: always()
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: f160d-decision
+          path: ${{ runner.temp }}/f160d
+          retention-days: 30
+
+  u:
+    name: Untapped --filter runs
+    if: inputs.mode == 'u' || inputs.mode == 'all'
+    runs-on: ubuntu-latest
+    timeout-minutes: 110
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+      - uses: shivammathur/setup-php@f3e473d116dcccaddc5834248c87452386958240 # v2
+        with:
+          php-version: '8.5'
+          coverage: none
+          extensions: redis
+      - run: composer update --no-interaction --prefer-dist --no-progress
+      - run: bash investigations/flaky-160/harness/env.sh "$RUNNER_TEMP/f160d" u
+      - run: bash investigations/flaky-160/fix-a3/harness/run.sh ufilter "$RUNNER_TEMP/f160d/u" 1000
+      - if: always()
+        run: bash investigations/flaky-160/fix-a3/harness/run.sh report "$RUNNER_TEMP/f160d/u"
+      - if: always()
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: f160d-u
           path: ${{ runner.temp }}/f160d
           retention-days: 30
