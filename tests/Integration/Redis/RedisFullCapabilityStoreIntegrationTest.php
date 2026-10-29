@@ -2147,6 +2147,49 @@ final class RedisFullCapabilityStoreIntegrationTest extends TestCase
         $this->assertRelativePhysicalLife($currentKey, $observed->expiresAt, $mutateNow);
     }
 
+    /**
+     * LT-a3-03: with the derived expiry out of the fence, a legacy source
+     * checks the snapshot's expiry instead — a canonical non-negative
+     * integer, not 0, not before the observed updatedAt — and anything else
+     * is an explicit contract failure that writes nothing. The DTO cannot
+     * carry such values, so the MUTATE call is rewritten on the wire.
+     */
+    public function testLegacyMutationRejectsAMalformedSnapshotExpiryWithoutWriting(): void
+    {
+        $currentKey = $this->key('score', 'a3-legacy-argv-expiry');
+        $this->legacyScoreAtHalfSecond($currentKey, 4, 6_000);
+        $observed = $this->store->readGenerationBoundScoreStateAt('a3-legacy-argv-expiry', null, $this->redisNowMilliseconds());
+        self::assertNotNull($observed);
+        $before = $this->hashMap($currentKey);
+        $claimKey = $this->key('reentry-claim', 'a3-legacy-argv-expiry');
+
+        foreach (['0', '-1', '01', '1.5', (string) ($observed->updatedAt - 1)] as $expiry) {
+            $rewriting = new class ($this->executor, $claimKey, $expiry) implements RedisCommandExecutorInterface {
+                public int $rewrites = 0;
+
+                public function __construct(
+                    private readonly RedisCommandExecutorInterface $inner,
+                    private readonly string $claimKey,
+                    private readonly string $expiry,
+                ) {}
+
+                public function execute(array $command): mixed
+                {
+                    if ($command[0] === 'EVAL' && ($command[5] ?? null) === $this->claimKey) {
+                        $command = array_merge(array_slice($command, 0, 10), [$this->expiry], array_slice($command, 11));
+                        $this->rewrites++;
+                    }
+
+                    return $this->inner->execute($command);
+                }
+            };
+            $store = new RedisFullCapabilityStore($rewriting, $this->namespace);
+            $this->assertOperationFails(fn(): mixed => $store->mutateGenerationBoundScoreAt('a3-legacy-argv-expiry', null, $observed, 600, 5, $this->redisNowMilliseconds()));
+            self::assertSame(1, $rewriting->rewrites);
+            self::assertSame($before, $this->hashMap($currentKey));
+        }
+    }
+
     public function testPublicBuilderWorkflowUsesTheOfficialRedisAggregateStore(): void
     {
         $clock = new FixedClock('2025-01-01 12:00:00');
