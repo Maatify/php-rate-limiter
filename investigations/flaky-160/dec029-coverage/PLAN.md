@@ -101,3 +101,44 @@ Normal Engineering Task: قُرئ `docs/php-engineering-standards/STANDARDS_MANI
 | `DECISION_GOVERNANCE_STANDARD_AR.md` | 1.0.0 | تعديل Consequences لا Decision |
 | `AI_COLLABORATION_WORKFLOW_AR.md` | 12.0.0 | |
 | `GITHUB_PHASE_STACK_WORKFLOW_AR.md` | 4.0.0 | Draft، والدمج بيد الـ Lead |
+
+## 6. الـ findings (أحكام الـ Lead وقرار الـ Owner على PR #172)
+
+**الحالة النهائية لهذا الـ PR:** (ii) و(iii) كما نجحا على `main`. اختبار (i) **حُذف من هنا** ونُقل إلى PR إصلاح F-172-02، أحمرَ في commit مستقل.
+
+### F-172-01 — تنبؤي (i) خاطئ: مدة الحجب ≠ `retryAfter` القرار
+
+* **التنبؤ §2 (i)** «`retryAfter` = مدة مدخل K5 المحتفَظ به (60)» خطأ في النموذج. افترض أن المرشَّح المختلط وحده في الطلب.
+* **القاعدة القائمة:** `aggregateCandidates` (L2053) يأخذ أطول `retryAfter` في الفئة الفائزة. وفي الطلب 12 مرشَّحان آخران لـ K5:
+  * **درجة K5 المخزَّنة** من `checkThresholds` (L592 وما بعدها): 12، أي L2؛ المصدر `score` (L622–L626)؛ و`retryAfter` = `scoreDecayRetryAfter` = 599؛
+  * و`anti_equilibrium:device` (60).
+* **الـ trace الأول** (أول تشغيل لـ (i)، `Failed asserting that 599 is identical to 60`؛ نسخة scratch من `src/` فيها `fwrite` فقط، حُذفت):
+
+  | المصدر | قبل `withoutDroppedK4Contribution` | بعده |
+  | --- | --- | --- |
+  | `score` (K5 المخزَّن) | HARD / 2 / 599، بلا persistence | كما هو |
+  | `score_update` (المختلط) | HARD / 3 / 1199؛ K4 L3 (300) + K5 L2 (60) | HARD / 2 / 60؛ K5 وحده |
+  | `anti_equilibrium:device` | HARD / 2 / 60؛ K5 L2 | كما هو |
+
+  التجميع على b2: HARD / 2 / **599**.
+
+### F-172-02 — عيب في تنفيذ DEC-029 P3: إسقاط K4 يُسقط `retryAfter` مساهمة K5 الذاتية
+
+* **الضابط بعد حكم (أ):** ضابط K5 منفرد بالحالة نفسها: تسلسل الاثني عشر فشلًا نفسه، بـ `login_protection` نفسها لكن `getKnownDeviceAccountAllowance() = null`، فلا يُكتب K4 أبدًا، وK5 = 14 كالمختلط. النتيجة `Failed asserting that 599 is identical to 1199`.
+* **الـ trace الثاني** (الطلب 12، نسخة scratch بـ `fwrite` فقط، حُذفت):
+
+  | التشغيل | `score` (K5 المخزَّن) | `score_update` | `anti_equilibrium:device` | التجميع |
+  | --- | --- | --- | --- | --- |
+  | ضابط K5 منفرد | HARD / 2 / 599 | HARD / 2 / **1199**؛ K5 L2 (60) | HARD / 2 / 60 | HARD / 2 / **1199** |
+  | b2 المختلط قبل الإسقاط | HARD / 2 / 599 | HARD / 3 / 1199؛ K4 L3 (300) + K5 L2 (60) | HARD / 2 / 60 | — |
+  | b2 المختلط بعده | HARD / 2 / 599 | HARD / 2 / **60**؛ K5 L2 (60) | HARD / 2 / 60 | HARD / 2 / **599** |
+
+* **السبب:**
+  * عند البناء، `retryAfter` المرشَّح العام = max على المفاتيح التي قرارها قرار المرشَّح من `$retryAfterByKeyType[$keyType] ?? $duration` (L1960–L1970). وقيمة K5 الذاتية هنا 1199، مبنية على الاضمحلال.
+  * `withoutDroppedK4Contribution` يستبدلها عند الإسقاط بـ `max(array_column($kept, 'duration'))` (L2261)، أي مدة السلّم 60.
+  * فالنتيجة على b2 (599) أقصر مما تعطيه حالة K5 نفسها بلا K4 (1199). **هذا خرق لـ P3** («two requests in the same state get the same decision»): المبدأ صحيح والتنفيذ خاطئ.
+* **مسار b2 لم يُرصد طبيعيًا** (0/2,000 في الخطوة S).
+* **الإصلاح:** PR مستقل من `main` بعد دمج هذا الـ PR، بقرار الـ Owner. خطواته:
+  * **S1:** اختبار (i) أحمر، ونسخة يكون فيها أصل `retryAfter` من K4؛
+  * **S2:** `retryAfter` لكل مفتاح داخل مدخل الـ persistence؛
+  * **S3:** V-DECISION على مستوى junit.
