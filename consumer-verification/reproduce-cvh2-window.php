@@ -46,7 +46,15 @@ $at = static function (int $unix) use ($clock): void {
     $clock->setNow((new DateTimeImmutable('@' . $unix))->setTimezone(new DateTimeZone('UTC')));
 };
 $context = static fn(string $account, string $ip): RateLimitContextDTO => new RateLimitContextDTO(
-    $ip, 'Mozilla/5.0 consumer-admission', $account, ['device' => 'device-' . $account], null, false, [], false, null,
+    $ip,
+    'Mozilla/5.0 consumer-admission',
+    $account,
+    ['device' => 'device-' . $account],
+    null,
+    false,
+    [],
+    false,
+    null,
 );
 $outcome = static fn(?string $permit): RateLimitCommand => new RateLimitCommand('login_protection', 1, false, false, true, $permit);
 
