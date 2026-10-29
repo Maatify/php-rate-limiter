@@ -140,9 +140,12 @@ follows for any exception of this kind raised after a committed K4 or K5 write.
   `testMixedCandidateWithoutLossBlocksAtTheK4LevelAndPublishesBoth` (K4 level, both blocks published) and
   `testDeferredK4InAMixedCandidateKeepsTheDecisionAndPublishesK5` (`k4_publication_deferred`, K5 published). On a dropped K4
   (b2) the decision is, by P3, the aggregation of the same request without the K4 contribution (its longest `retryAfter`, not
-  the duration of the kept block). F-172-02 (`investigations/flaky-160/dec029-coverage/PLAN.md` §6) records an implementation
-  defect against it: the mixed candidate's `retryAfter` is replaced by the kept block's ladder duration (599 against 1,199 for
-  the same K5 state alone). The fix and its test follow in their own pull request.
+  the duration of the kept block). F-172-02 (`investigations/flaky-160/dec029-coverage/PLAN.md` §6) recorded an implementation
+  defect against it: the mixed candidate's `retryAfter` was replaced by the kept block's ladder duration (599 against 1,199 for
+  the same K5 state alone). It is fixed by PR #174: each persistence entry carries the `retryAfter`
+  of its own key's contribution, and `withoutDroppedK4Contribution` takes the longest among the kept entries.
+  `testDroppedK4InAMixedCandidateDecidesAsTheSameRequestWithoutK4` (b2 equals the same twelve failures without K4: 1,199) and
+  `testDroppingK4FromAMixedCandidateKeepsK5sOwnRetryAfter` (a retryAfter that came from K4 is dropped with it) cover it.
 - **Contract documents.** `docs/FAILURE_SEMANTICS.md` §10.1, `docs/DECISION_MATRIX.md` and `RATE_LIMITER_PACKAGE_REFERENCE.md` state
   the new contract and keep L1741 as it was. The versioning of `FAILURE_SEMANTICS.md` is this record and the CHANGELOG entry
   (the document has no version header); the explicit security approval is the Owner's comment on PR #168.
