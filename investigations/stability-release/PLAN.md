@@ -280,3 +280,65 @@ Normal Engineering Task: قُرئ `docs/php-engineering-standards/STANDARDS_MANI
 * **actionlint 1.7.12** (الإصدار المثبَّت في `scripts/ci/install-actionlint.sh`): `bash scripts/ci/lint-workflows.sh` نظيف على كل الـ workflows، ومنها `stability-evidence.yml`.
 * **فقرة CONTRIBUTING.md** وُضعت بعد قائمة الـ CI مباشرة (بعد L147)، لا داخلها عند L142، لئلا تنقسم القائمة.
 * **CI العادي 16/16:** يُنشر على الـ PR بعد الـ push.
+
+## 11. S2 — smoke `repeats=2` (مقاس، 2026-10-30)
+
+### 11.1 التشغيل
+
+* **الـ run:** [41050345964](https://github.com/Maatify/php-rate-limiter/actions/runs/41050345964). `workflow_dispatch` لـ `stability-evidence.yml` على فرع `main`، بـ `repeats=2` و`ref=5563e06b2f1950c4a04f624e58ff928ad8dac402`.
+* **قبله:** اكتمل CI الدفع على `main@5563e06` (run 41048606580، success)، ولم يكن أي run آخر يعمل.
+* **التوقيت:** 11:45:18Z إلى 12:00:18Z. المحاولة 1، و`success`.
+* **الجمع:** `scripts/collect.sh 41050345964`، ثم `scripts/analyze.php --ref=… --repeats=2 --baseline=data/baseline-40975978888.jobs.json 41050345964` إلى `data/s2-smoke.analysis.json`.
+
+### 11.2 الفحوص (§3.4، §8)
+
+| الفحص | المرصود | يتحقق |
+| --- | --- | --- |
+| **V-REF** | `head_sha` = `5563e06b…` في الوظائف الثلاث والثلاثين؛ ووظيفة `plan` نجحت بمقارنتها `ref` بـ `$GITHUB_SHA` | نعم |
+| **V-NAMES** | `Plan (repeats and V-REF)` مرة واحدة، والباقي `ci (1) / …` و`ci (2) / …`، ولكل تكرار أسماء الأساس الستة عشر بالضبط | نعم |
+| **V-COUNT** | 33 = 1 + 2 × 16 | نعم |
+| **V-PARALLEL، كما سُجِّل** («فترات الوظائف المتناظرة متداخلة») | 13 من 16 متداخلة. **غير متداخلة:** Workflow Lint، وComposer Security Audit، وFinal Gate. ولا وظيفة cancelled أو skipped | **لا. F-176-01** |
+| **V-DEPS** | سطور `Locking …` (31 لكل وظيفة) وسطور PHP/PHPUnit متطابقة بين التكرارين في الوظائف الإحدى عشرة التي تحلّ الاعتماديات | نعم |
+| **V-ENV** (مضاف، سلامة المدخلات) | كل ملفات البيئة الاثنين والعشرين فيها `Locking` و`Installed PHP x.y.z`، وفي وظائف PHPUnit سطر `PHPUnit x.y.z by` | نعم |
+| **V-SRC** | `git diff 62599c9..5563e06 -- src tests` يعطي 0 بايت | نعم |
+| **النتيجة** | التكرار 1: 16 success؛ التكرار 2: 16 success | — |
+
+**البيئة المسجَّلة:**
+* Test Suite 8.5: `Installed PHP 8.5.12`، و`PHPUnit 11.5.57`؛
+* Lowest Supported Dependencies: `Installed PHP 8.4.27`، و`PHPUnit 11.5.50`.
+
+### 11.3 F-176-01 — V-PARALLEL كما سُجِّل لا يتحقق، والسبب سعة الـ runners لا الـ concurrency (يحتاج حكمًا)
+
+* **ما يحميه V-PARALLEL** (§2، §3.4): ألّا تتسلسل التكرارات أو تُلغى بمجموعة concurrency مشتركة. لا شيء من ذلك حدث:
+  * **كل الوظائف غير الـ gate في التكرارين وُضعت في الطابور معًا:** آخر `created_at` لها بعد ثانية واحدة من انتهاء `plan` (`queued_after_plan_s = 1`)؛
+  * ولا وظيفة cancelled أو skipped.
+* **لماذا لم تتداخل الثلاث:**
+  * **الذروة 20 وظيفة متزامنة** (`peak_concurrent_jobs`)، أي حدّ خطة Free لـ standard runners (§2). فالوظائف القصيرة انتظرت runner: `ci (1) / Workflow Lint` وُضعت عند +6 ث وبدأت عند +21 ث، و`ci (2) / Workflow Lint` انتهت عند +17 ث.
+  * **Final Gate لكل تكرار** يُوضع حين تنتهي وظائف تكراره (`needs`): عند +765 ث و+893 ث، ويدوم 3 ث.
+* **الاقتراح، والحكم للـ Lead:** يُستبدل V-PARALLEL بـ:
+  * (أ) كل وظيفة غير Final Gate في كل تكرار وُضعت في الطابور خلال **60 ث** من انتهاء `plan`؛
+  * (ب) ولا وظيفة cancelled أو skipped.
+
+  الـ smoke يحققه: 1 ث، و0 cancelled. وأُبقي الفحص المسجَّل في `analyze.php` كما هو، وأُضيف الحقلان `queued_after_plan_s` و`peak_concurrent_jobs` للتقرير فقط.
+
+### 11.4 الكلفة المقاسة
+
+| | المرصود | الأساس (run 40975978888، `main@62599c9`) |
+| --- | --- | --- |
+| مجموع مدد الوظائف، التكرار 1 | **55.1 دقيقة** | 56.4 |
+| مجموع مدد الوظائف، التكرار 2 | **52.3 دقيقة** | 56.4 |
+| الجدار (أول بدء ← آخر انتهاء) | **14.9 دقيقة** | 13.7 (تكرار واحد) |
+| الذروة | 20 وظيفة | — |
+
+**إسقاط للمعدود (حساب على الأرقام أعلاه، غير مقاس):**
+* تكرار ≈ 53.7 دقيقة (متوسط التكرارين)؛
+* dispatch × 25 ≈ 22.4 ساعة runner، وجدار ≈ 25 × 53.7 / 20 ≈ 67 دقيقة عند الذروة 20؛
+* العشرة ≈ 224 ساعة runner، و≈ 11.2 ساعة جدار متتابعة.
+* أول dispatch معدود يتحقق من V-COUNT = 401 (LT-176-05).
+
+### 11.5 تعديلات الأدوات بعد الـ smoke (قبل أي عدّ)
+
+* **`collect.sh`:** سطر PHP من setup-php ملوَّن بـ ANSI، فلم يُلتقط في الجمع الأول. صارت الإزالة قبل المطابقة، وأُضيف `Runtime: PHP`، وأُعيد الجمع.
+* **`analyze.php`:** أُضيف **V-ENV**، ورُئي يفشل على نسخة scratch حُذف منها سطر PHPUnit من ملف واحد: `incomplete: ["41050345964/2/Integration Test Suite"]`، وV-DEPS = false. وأُضيف الحقلان المذكوران في §11.3.
+
+**التالي:** حكم الـ Lead على F-176-01، ثم كلمة الـ Owner قبل الـ dispatches العشرة المعدودة.

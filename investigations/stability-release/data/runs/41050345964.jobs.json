@@ -1,0 +1,2774 @@
+[
+    {
+        "check_run_url": "https://api.github.com/repos/Maatify/php-rate-limiter/check-runs/124044547573",
+        "completed_at": "2026-10-30T11:45:24Z",
+        "conclusion": "success",
+        "created_at": "2026-10-30T11:45:19Z",
+        "head_branch": "main",
+        "head_sha": "5563e06b2f1950c4a04f624e58ff928ad8dac402",
+        "html_url": "https://github.com/Maatify/php-rate-limiter/actions/runs/41050345964/job/124044547573",
+        "id": 124044547573,
+        "labels": [
+            "ubuntu-latest"
+        ],
+        "name": "Plan (repeats and V-REF)",
+        "node_id": "CR_kwDOUdWLvM8AAAAc4aGV9Q",
+        "run_attempt": 1,
+        "run_id": 41050345964,
+        "run_url": "https://api.github.com/repos/Maatify/php-rate-limiter/actions/runs/41050345964",
+        "runner_group_id": 0,
+        "runner_group_name": "GitHub Actions",
+        "runner_id": 1000040181,
+        "runner_name": "GitHub Actions 1000040181",
+        "started_at": "2026-10-30T11:45:22Z",
+        "status": "completed",
+        "steps": [
+            {
+                "completed_at": "2026-10-30T11:45:23Z",
+                "conclusion": "success",
+                "name": "Set up job",
+                "number": 1,
+                "started_at": "2026-10-30T11:45:22Z",
+                "status": "completed"
+            },
+            {
+                "completed_at": "2026-10-30T11:45:23Z",
+                "conclusion": "success",
+                "name": "Check inputs and build the repeat list",
+                "number": 2,
+                "started_at": "2026-10-30T11:45:23Z",
+                "status": "completed"
+            },
+            {
+                "completed_at": "2026-10-30T11:45:23Z",
+                "conclusion": "success",
+                "name": "Complete job",
+                "number": 3,
+                "started_at": "2026-10-30T11:45:23Z",
+                "status": "completed"
+            }
+        ],
+        "url": "https://api.github.com/repos/Maatify/php-rate-limiter/actions/jobs/124044547573",
+        "workflow_name": "Stability Evidence"
+    },
+    {
+        "check_run_url": "https://api.github.com/repos/Maatify/php-rate-limiter/check-runs/124044584177",
+        "completed_at": "2026-10-30T11:45:49Z",
+        "conclusion": "success",
+        "created_at": "2026-10-30T11:45:24Z",
+        "head_branch": "main",
+        "head_sha": "5563e06b2f1950c4a04f624e58ff928ad8dac402",
+        "html_url": "https://github.com/Maatify/php-rate-limiter/actions/runs/41050345964/job/124044584177",
+        "id": 124044584177,
+        "labels": [
+            "ubuntu-latest"
+        ],
+        "name": "ci (2) / PHP Coding Style (PER 3.1)",
+        "node_id": "CR_kwDOUdWLvM8AAAAc4aIk8Q",
+        "run_attempt": 1,
+        "run_id": 41050345964,
+        "run_url": "https://api.github.com/repos/Maatify/php-rate-limiter/actions/runs/41050345964",
+        "runner_group_id": 0,
+        "runner_group_name": "GitHub Actions",
+        "runner_id": 1000040189,
+        "runner_name": "GitHub Actions 1000040189",
+        "started_at": "2026-10-30T11:45:27Z",
+        "status": "completed",
+        "steps": [
+            {
+                "completed_at": "2026-10-30T11:45:29Z",
+                "conclusion": "success",
+                "name": "Set up job",
+                "number": 1,
+                "started_at": "2026-10-30T11:45:28Z",
+                "status": "completed"
+            },
+            {
+                "completed_at": "2026-10-30T11:45:33Z",
+                "conclusion": "success",
+                "name": "Checkout Code",
+                "number": 2,
+                "started_at": "2026-10-30T11:45:29Z",
+                "status": "completed"
+            },
+            {
+                "completed_at": "2026-10-30T11:45:36Z",
+                "conclusion": "success",
+                "name": "Setup PHP",
+                "number": 3,
+                "started_at": "2026-10-30T11:45:33Z",
+                "status": "completed"
+            },
+            {
+                "completed_at": "2026-10-30T11:45:39Z",
+                "conclusion": "success",
+                "name": "Install Dependencies",
+                "number": 4,
+                "started_at": "2026-10-30T11:45:36Z",
+                "status": "completed"
+            },
+            {
+                "completed_at": "2026-10-30T11:45:39Z",
+                "conclusion": "success",
+                "name": "Verify Platform",
+                "number": 5,
+                "started_at": "2026-10-30T11:45:39Z",
+                "status": "completed"
+            },
+            {
+                "completed_at": "2026-10-30T11:45:47Z",
+                "conclusion": "success",
+                "name": "Check PHP Coding Style",
+                "number": 6,
+                "started_at": "2026-10-30T11:45:39Z",
+                "status": "completed"
+            },
+            {
+                "completed_at": "2026-10-30T11:45:48Z",
+                "conclusion": "success",
+                "name": "Post Checkout Code",
+                "number": 12,
+                "started_at": "2026-10-30T11:45:47Z",
+                "status": "completed"
+            },
+            {
+                "completed_at": "2026-10-30T11:45:48Z",
+                "conclusion": "success",
+                "name": "Complete job",
+                "number": 13,
+                "started_at": "2026-10-30T11:45:48Z",
+                "status": "completed"
+            }
+        ],
+        "url": "https://api.github.com/repos/Maatify/php-rate-limiter/actions/jobs/124044584177",
+        "workflow_name": "Stability Evidence"
+    },
+    {
+        "check_run_url": "https://api.github.com/repos/Maatify/php-rate-limiter/check-runs/124044584227",
+        "completed_at": "2026-10-30T11:45:52Z",
+        "conclusion": "success",
+        "created_at": "2026-10-30T11:45:24Z",
+        "head_branch": "main",
+        "head_sha": "5563e06b2f1950c4a04f624e58ff928ad8dac402",
+        "html_url": "https://github.com/Maatify/php-rate-limiter/actions/runs/41050345964/job/124044584227",
+        "id": 124044584227,
+        "labels": [
+            "ubuntu-latest"
+        ],
+        "name": "ci (2) / Static Analysis (PHPStan)",
+        "node_id": "CR_kwDOUdWLvM8AAAAc4aIlIw",
+        "run_attempt": 1,
+        "run_id": 41050345964,
+        "run_url": "https://api.github.com/repos/Maatify/php-rate-limiter/actions/runs/41050345964",
+        "runner_group_id": 0,
+        "runner_group_name": "GitHub Actions",
+        "runner_id": 1000040192,
+        "runner_name": "GitHub Actions 1000040192",
+        "started_at": "2026-10-30T11:45:28Z",
+        "status": "completed",
+        "steps": [
+            {
+                "completed_at": "2026-10-30T11:45:29Z",
+                "conclusion": "success",
+                "name": "Set up job",
+                "number": 1,
+                "started_at": "2026-10-30T11:45:28Z",
+                "status": "completed"
+            },
+            {
+                "completed_at": "2026-10-30T11:45:34Z",
+                "conclusion": "success",
+                "name": "Checkout Code",
+                "number": 2,
+                "started_at": "2026-10-30T11:45:29Z",
+                "status": "completed"
+            },
+            {
+                "completed_at": "2026-10-30T11:45:38Z",
+                "conclusion": "success",
+                "name": "Setup PHP",
+                "number": 3,
+                "started_at": "2026-10-30T11:45:34Z",
+                "status": "completed"
+            },
+            {
+                "completed_at": "2026-10-30T11:45:41Z",
+                "conclusion": "success",
+                "name": "Install Dependencies",
+                "number": 4,
+                "started_at": "2026-10-30T11:45:38Z",
+                "status": "completed"
+            },
+            {
+                "completed_at": "2026-10-30T11:45:42Z",
+                "conclusion": "success",
+                "name": "Verify Autoload and Platform",
+                "number": 5,
+                "started_at": "2026-10-30T11:45:41Z",
+                "status": "completed"
+            },
+            {
+                "completed_at": "2026-10-30T11:45:50Z",
+                "conclusion": "success",
+                "name": "Run PHPStan",
+                "number": 6,
+                "started_at": "2026-10-30T11:45:42Z",
+                "status": "completed"
+            },
+            {
+                "completed_at": "2026-10-30T11:45:50Z",
+                "conclusion": "success",
+                "name": "Post Checkout Code",
+                "number": 12,
+                "started_at": "2026-10-30T11:45:50Z",
+                "status": "completed"
+            },
+            {
+                "completed_at": "2026-10-30T11:45:50Z",
+                "conclusion": "success",
+                "name": "Complete job",
+                "number": 13,
+                "started_at": "2026-10-30T11:45:50Z",
+                "status": "completed"
+            }
+        ],
+        "url": "https://api.github.com/repos/Maatify/php-rate-limiter/actions/jobs/124044584227",
+        "workflow_name": "Stability Evidence"
+    },
+    {
+        "check_run_url": "https://api.github.com/repos/Maatify/php-rate-limiter/check-runs/124044584249",
+        "completed_at": "2026-10-30T11:54:15Z",
+        "conclusion": "success",
+        "created_at": "2026-10-30T11:45:24Z",
+        "head_branch": "main",
+        "head_sha": "5563e06b2f1950c4a04f624e58ff928ad8dac402",
+        "html_url": "https://github.com/Maatify/php-rate-limiter/actions/runs/41050345964/job/124044584249",
+        "id": 124044584249,
+        "labels": [
+            "ubuntu-latest"
+        ],
+        "name": "ci (2) / Integration Test Suite",
+        "node_id": "CR_kwDOUdWLvM8AAAAc4aIlOQ",
+        "run_attempt": 1,
+        "run_id": 41050345964,
+        "run_url": "https://api.github.com/repos/Maatify/php-rate-limiter/actions/runs/41050345964",
+        "runner_group_id": 0,
+        "runner_group_name": "GitHub Actions",
+        "runner_id": 1000040190,
+        "runner_name": "GitHub Actions 1000040190",
+        "started_at": "2026-10-30T11:45:27Z",
+        "status": "completed",
+        "steps": [
+            {
+                "completed_at": "2026-10-30T11:45:30Z",
+                "conclusion": "success",
+                "name": "Set up job",
+                "number": 1,
+                "started_at": "2026-10-30T11:45:28Z",
+                "status": "completed"
+            },
+            {
+                "completed_at": "2026-10-30T11:45:35Z",
+                "conclusion": "success",
+                "name": "Checkout Code",
+                "number": 2,
+                "started_at": "2026-10-30T11:45:30Z",
+                "status": "completed"
+            },
+            {
+                "completed_at": "2026-10-30T11:45:38Z",
+                "conclusion": "success",
+                "name": "Setup PHP",
+                "number": 3,
+                "started_at": "2026-10-30T11:45:35Z",
+                "status": "completed"
+            },
+            {
+                "completed_at": "2026-10-30T11:45:41Z",
+                "conclusion": "success",
+                "name": "Install Dependencies",
+                "number": 4,
+                "started_at": "2026-10-30T11:45:38Z",
+                "status": "completed"
+            },
+            {
+                "completed_at": "2026-10-30T11:45:42Z",
+                "conclusion": "success",
+                "name": "Verify Autoload and Platform",
+                "number": 5,
+                "started_at": "2026-10-30T11:45:41Z",
+                "status": "completed"
+            },
+            {
+                "completed_at": "2026-10-30T11:54:12Z",
+                "conclusion": "success",
+                "name": "Run Integration Tests",
+                "number": 6,
+                "started_at": "2026-10-30T11:45:42Z",
+                "status": "completed"
+            },
+            {
+                "completed_at": "2026-10-30T11:54:12Z",
+                "conclusion": "success",
+                "name": "Post Checkout Code",
+                "number": 12,
+                "started_at": "2026-10-30T11:54:12Z",
+                "status": "completed"
+            },
+            {
+                "completed_at": "2026-10-30T11:54:12Z",
+                "conclusion": "success",
+                "name": "Complete job",
+                "number": 13,
+                "started_at": "2026-10-30T11:54:12Z",
+                "status": "completed"
+            }
+        ],
+        "url": "https://api.github.com/repos/Maatify/php-rate-limiter/actions/jobs/124044584249",
+        "workflow_name": "Stability Evidence"
+    },
+    {
+        "check_run_url": "https://api.github.com/repos/Maatify/php-rate-limiter/check-runs/124044584264",
+        "completed_at": "2026-10-30T11:45:43Z",
+        "conclusion": "success",
+        "created_at": "2026-10-30T11:45:24Z",
+        "head_branch": "main",
+        "head_sha": "5563e06b2f1950c4a04f624e58ff928ad8dac402",
+        "html_url": "https://github.com/Maatify/php-rate-limiter/actions/runs/41050345964/job/124044584264",
+        "id": 124044584264,
+        "labels": [
+            "ubuntu-latest"
+        ],
+        "name": "ci (2) / PHP Examples",
+        "node_id": "CR_kwDOUdWLvM8AAAAc4aIlSA",
+        "run_attempt": 1,
+        "run_id": 41050345964,
+        "run_url": "https://api.github.com/repos/Maatify/php-rate-limiter/actions/runs/41050345964",
+        "runner_group_id": 0,
+        "runner_group_name": "GitHub Actions",
+        "runner_id": 1000040191,
+        "runner_name": "GitHub Actions 1000040191",
+        "started_at": "2026-10-30T11:45:27Z",
+        "status": "completed",
+        "steps": [
+            {
+                "completed_at": "2026-10-30T11:45:29Z",
+                "conclusion": "success",
+                "name": "Set up job",
+                "number": 1,
+                "started_at": "2026-10-30T11:45:28Z",
+                "status": "completed"
+            },
+            {
+                "completed_at": "2026-10-30T11:45:33Z",
+                "conclusion": "success",
+                "name": "Checkout Code",
+                "number": 2,
+                "started_at": "2026-10-30T11:45:29Z",
+                "status": "completed"
+            },
+            {
+                "completed_at": "2026-10-30T11:45:36Z",
+                "conclusion": "success",
+                "name": "Setup PHP",
+                "number": 3,
+                "started_at": "2026-10-30T11:45:33Z",
+                "status": "completed"
+            },
+            {
+                "completed_at": "2026-10-30T11:45:40Z",
+                "conclusion": "success",
+                "name": "Install Dependencies",
+                "number": 4,
+                "started_at": "2026-10-30T11:45:36Z",
+                "status": "completed"
+            },
+            {
+                "completed_at": "2026-10-30T11:45:41Z",
+                "conclusion": "success",
+                "name": "Verify Autoload",
+                "number": 5,
+                "started_at": "2026-10-30T11:45:40Z",
+                "status": "completed"
+            },
+            {
+                "completed_at": "2026-10-30T11:45:41Z",
+                "conclusion": "success",
+                "name": "Check README Examples",
+                "number": 6,
+                "started_at": "2026-10-30T11:45:41Z",
+                "status": "completed"
+            },
+            {
+                "completed_at": "2026-10-30T11:45:41Z",
+                "conclusion": "success",
+                "name": "Smoke Run Standalone Examples",
+                "number": 7,
+                "started_at": "2026-10-30T11:45:41Z",
+                "status": "completed"
+            },
+            {
+                "completed_at": "2026-10-30T11:45:41Z",
+                "conclusion": "success",
+                "name": "Post Checkout Code",
+                "number": 14,
+                "started_at": "2026-10-30T11:45:41Z",
+                "status": "completed"
+            },
+            {
+                "completed_at": "2026-10-30T11:45:41Z",
+                "conclusion": "success",
+                "name": "Complete job",
+                "number": 15,
+                "started_at": "2026-10-30T11:45:41Z",
+                "status": "completed"
+            }
+        ],
+        "url": "https://api.github.com/repos/Maatify/php-rate-limiter/actions/jobs/124044584264",
+        "workflow_name": "Stability Evidence"
+    },
+    {
+        "check_run_url": "https://api.github.com/repos/Maatify/php-rate-limiter/check-runs/124044584273",
+        "completed_at": "2026-10-30T11:46:18Z",
+        "conclusion": "success",
+        "created_at": "2026-10-30T11:45:24Z",
+        "head_branch": "main",
+        "head_sha": "5563e06b2f1950c4a04f624e58ff928ad8dac402",
+        "html_url": "https://github.com/Maatify/php-rate-limiter/actions/runs/41050345964/job/124044584273",
+        "id": 124044584273,
+        "labels": [
+            "ubuntu-latest"
+        ],
+        "name": "ci (2) / PHP Syntax Check",
+        "node_id": "CR_kwDOUdWLvM8AAAAc4aIlUQ",
+        "run_attempt": 1,
+        "run_id": 41050345964,
+        "run_url": "https://api.github.com/repos/Maatify/php-rate-limiter/actions/runs/41050345964",
+        "runner_group_id": 0,
+        "runner_group_name": "GitHub Actions",
+        "runner_id": 1000040194,
+        "runner_name": "GitHub Actions 1000040194",
+        "started_at": "2026-10-30T11:45:28Z",
+        "status": "completed",
+        "steps": [
+            {
+                "completed_at": "2026-10-30T11:45:29Z",
+                "conclusion": "success",
+                "name": "Set up job",
+                "number": 1,
+                "started_at": "2026-10-30T11:45:28Z",
+                "status": "completed"
+            },
+            {
+                "completed_at": "2026-10-30T11:45:34Z",
+                "conclusion": "success",
+                "name": "Checkout Code",
+                "number": 2,
+                "started_at": "2026-10-30T11:45:29Z",
+                "status": "completed"
+            },
+            {
+                "completed_at": "2026-10-30T11:45:38Z",
+                "conclusion": "success",
+                "name": "Setup PHP",
+                "number": 3,
+                "started_at": "2026-10-30T11:45:34Z",
+                "status": "completed"
+            },
+            {
+                "completed_at": "2026-10-30T11:46:16Z",
+                "conclusion": "success",
+                "name": "Check Syntax",
+                "number": 4,
+                "started_at": "2026-10-30T11:45:38Z",
+                "status": "completed"
+            },
+            {
+                "completed_at": "2026-10-30T11:46:16Z",
+                "conclusion": "success",
+                "name": "Post Checkout Code",
+                "number": 8,
+                "started_at": "2026-10-30T11:46:16Z",
+                "status": "completed"
+            },
+            {
+                "completed_at": "2026-10-30T11:46:16Z",
+                "conclusion": "success",
+                "name": "Complete job",
+                "number": 9,
+                "started_at": "2026-10-30T11:46:16Z",
+                "status": "completed"
+            }
+        ],
+        "url": "https://api.github.com/repos/Maatify/php-rate-limiter/actions/jobs/124044584273",
+        "workflow_name": "Stability Evidence"
+    },
+    {
+        "check_run_url": "https://api.github.com/repos/Maatify/php-rate-limiter/check-runs/124044584280",
+        "completed_at": "2026-10-30T11:45:52Z",
+        "conclusion": "success",
+        "created_at": "2026-10-30T11:45:24Z",
+        "head_branch": "main",
+        "head_sha": "5563e06b2f1950c4a04f624e58ff928ad8dac402",
+        "html_url": "https://github.com/Maatify/php-rate-limiter/actions/runs/41050345964/job/124044584280",
+        "id": 124044584280,
+        "labels": [
+            "ubuntu-latest"
+        ],
+        "name": "ci (1) / Static Analysis (PHPStan)",
+        "node_id": "CR_kwDOUdWLvM8AAAAc4aIlWA",
+        "run_attempt": 1,
+        "run_id": 41050345964,
+        "run_url": "https://api.github.com/repos/Maatify/php-rate-limiter/actions/runs/41050345964",
+        "runner_group_id": 0,
+        "runner_group_name": "GitHub Actions",
+        "runner_id": 1000040200,
+        "runner_name": "GitHub Actions 1000040200",
+        "started_at": "2026-10-30T11:45:28Z",
+        "status": "completed",
+        "steps": [
+            {
+                "completed_at": "2026-10-30T11:45:30Z",
+                "conclusion": "success",
+                "name": "Set up job",
+                "number": 1,
+                "started_at": "2026-10-30T11:45:29Z",
+                "status": "completed"
+            },
+            {
+                "completed_at": "2026-10-30T11:45:34Z",
+                "conclusion": "success",
+                "name": "Checkout Code",
+                "number": 2,
+                "started_at": "2026-10-30T11:45:30Z",
+                "status": "completed"
+            },
+            {
+                "completed_at": "2026-10-30T11:45:38Z",
+                "conclusion": "success",
+                "name": "Setup PHP",
+                "number": 3,
+                "started_at": "2026-10-30T11:45:34Z",
+                "status": "completed"
+            },
+            {
+                "completed_at": "2026-10-30T11:45:41Z",
+                "conclusion": "success",
+                "name": "Install Dependencies",
+                "number": 4,
+                "started_at": "2026-10-30T11:45:38Z",
+                "status": "completed"
+            },
+            {
+                "completed_at": "2026-10-30T11:45:42Z",
+                "conclusion": "success",
+                "name": "Verify Autoload and Platform",
+                "number": 5,
+                "started_at": "2026-10-30T11:45:41Z",
+                "status": "completed"
+            },
+            {
+                "completed_at": "2026-10-30T11:45:50Z",
+                "conclusion": "success",
+                "name": "Run PHPStan",
+                "number": 6,
+                "started_at": "2026-10-30T11:45:42Z",
+                "status": "completed"
+            },
+            {
+                "completed_at": "2026-10-30T11:45:50Z",
+                "conclusion": "success",
+                "name": "Post Checkout Code",
+                "number": 12,
+                "started_at": "2026-10-30T11:45:50Z",
+                "status": "completed"
+            },
+            {
+                "completed_at": "2026-10-30T11:45:50Z",
+                "conclusion": "success",
+                "name": "Complete job",
+                "number": 13,
+                "started_at": "2026-10-30T11:45:50Z",
+                "status": "completed"
+            }
+        ],
+        "url": "https://api.github.com/repos/Maatify/php-rate-limiter/actions/jobs/124044584280",
+        "workflow_name": "Stability Evidence"
+    },
+    {
+        "check_run_url": "https://api.github.com/repos/Maatify/php-rate-limiter/check-runs/124044584291",
+        "completed_at": "2026-10-30T11:45:42Z",
+        "conclusion": "success",
+        "created_at": "2026-10-30T11:45:24Z",
+        "head_branch": "main",
+        "head_sha": "5563e06b2f1950c4a04f624e58ff928ad8dac402",
+        "html_url": "https://github.com/Maatify/php-rate-limiter/actions/runs/41050345964/job/124044584291",
+        "id": 124044584291,
+        "labels": [
+            "ubuntu-latest"
+        ],
+        "name": "ci (2) / Composer Validate",
+        "node_id": "CR_kwDOUdWLvM8AAAAc4aIlYw",
+        "run_attempt": 1,
+        "run_id": 41050345964,
+        "run_url": "https://api.github.com/repos/Maatify/php-rate-limiter/actions/runs/41050345964",
+        "runner_group_id": 0,
+        "runner_group_name": "GitHub Actions",
+        "runner_id": 1000040197,
+        "runner_name": "GitHub Actions 1000040197",
+        "started_at": "2026-10-30T11:45:28Z",
+        "status": "completed",
+        "steps": [
+            {
+                "completed_at": "2026-10-30T11:45:29Z",
+                "conclusion": "success",
+                "name": "Set up job",
+                "number": 1,
+                "started_at": "2026-10-30T11:45:29Z",
+                "status": "completed"
+            },
+            {
+                "completed_at": "2026-10-30T11:45:37Z",
+                "conclusion": "success",
+                "name": "Checkout Code",
+                "number": 2,
+                "started_at": "2026-10-30T11:45:30Z",
+                "status": "completed"
+            },
+            {
+                "completed_at": "2026-10-30T11:45:39Z",
+                "conclusion": "success",
+                "name": "Setup PHP",
+                "number": 3,
+                "started_at": "2026-10-30T11:45:37Z",
+                "status": "completed"
+            },
+            {
+                "completed_at": "2026-10-30T11:45:39Z",
+                "conclusion": "success",
+                "name": "Composer Validate",
+                "number": 4,
+                "started_at": "2026-10-30T11:45:39Z",
+                "status": "completed"
+            },
+            {
+                "completed_at": "2026-10-30T11:45:40Z",
+                "conclusion": "success",
+                "name": "Post Checkout Code",
+                "number": 8,
+                "started_at": "2026-10-30T11:45:39Z",
+                "status": "completed"
+            },
+            {
+                "completed_at": "2026-10-30T11:45:40Z",
+                "conclusion": "success",
+                "name": "Complete job",
+                "number": 9,
+                "started_at": "2026-10-30T11:45:40Z",
+                "status": "completed"
+            }
+        ],
+        "url": "https://api.github.com/repos/Maatify/php-rate-limiter/actions/jobs/124044584291",
+        "workflow_name": "Stability Evidence"
+    },
+    {
+        "check_run_url": "https://api.github.com/repos/Maatify/php-rate-limiter/check-runs/124044584305",
+        "completed_at": "2026-10-30T11:53:36Z",
+        "conclusion": "success",
+        "created_at": "2026-10-30T11:45:24Z",
+        "head_branch": "main",
+        "head_sha": "5563e06b2f1950c4a04f624e58ff928ad8dac402",
+        "html_url": "https://github.com/Maatify/php-rate-limiter/actions/runs/41050345964/job/124044584305",
+        "id": 124044584305,
+        "labels": [
+            "ubuntu-latest"
+        ],
+        "name": "ci (2) / Test Suite (PHP 8.5)",
+        "node_id": "CR_kwDOUdWLvM8AAAAc4aIlcQ",
+        "run_attempt": 1,
+        "run_id": 41050345964,
+        "run_url": "https://api.github.com/repos/Maatify/php-rate-limiter/actions/runs/41050345964",
+        "runner_group_id": 0,
+        "runner_group_name": "GitHub Actions",
+        "runner_id": 1000040193,
+        "runner_name": "GitHub Actions 1000040193",
+        "started_at": "2026-10-30T11:45:28Z",
+        "status": "completed",
+        "steps": [
+            {
+                "completed_at": "2026-10-30T11:45:29Z",
+                "conclusion": "success",
+                "name": "Set up job",
+                "number": 1,
+                "started_at": "2026-10-30T11:45:29Z",
+                "status": "completed"
+            },
+            {
+                "completed_at": "2026-10-30T11:45:35Z",
+                "conclusion": "success",
+                "name": "Checkout Code",
+                "number": 2,
+                "started_at": "2026-10-30T11:45:29Z",
+                "status": "completed"
+            },
+            {
+                "completed_at": "2026-10-30T11:45:39Z",
+                "conclusion": "success",
+                "name": "Setup PHP",
+                "number": 3,
+                "started_at": "2026-10-30T11:45:35Z",
+                "status": "completed"
+            },
+            {
+                "completed_at": "2026-10-30T11:45:42Z",
+                "conclusion": "success",
+                "name": "Install Dependencies",
+                "number": 4,
+                "started_at": "2026-10-30T11:45:39Z",
+                "status": "completed"
+            },
+            {
+                "completed_at": "2026-10-30T11:45:42Z",
+                "conclusion": "success",
+                "name": "Verify Autoload and Platform",
+                "number": 5,
+                "started_at": "2026-10-30T11:45:42Z",
+                "status": "completed"
+            },
+            {
+                "completed_at": "2026-10-30T11:53:34Z",
+                "conclusion": "success",
+                "name": "Run PHPUnit (all suites except the archive replays)",
+                "number": 6,
+                "started_at": "2026-10-30T11:45:42Z",
+                "status": "completed"
+            },
+            {
+                "completed_at": "2026-10-30T11:53:34Z",
+                "conclusion": "success",
+                "name": "Post Checkout Code",
+                "number": 12,
+                "started_at": "2026-10-30T11:53:34Z",
+                "status": "completed"
+            },
+            {
+                "completed_at": "2026-10-30T11:53:34Z",
+                "conclusion": "success",
+                "name": "Complete job",
+                "number": 13,
+                "started_at": "2026-10-30T11:53:34Z",
+                "status": "completed"
+            }
+        ],
+        "url": "https://api.github.com/repos/Maatify/php-rate-limiter/actions/jobs/124044584305",
+        "workflow_name": "Stability Evidence"
+    },
+    {
+        "check_run_url": "https://api.github.com/repos/Maatify/php-rate-limiter/check-runs/124044584314",
+        "completed_at": "2026-10-30T11:58:04Z",
+        "conclusion": "success",
+        "created_at": "2026-10-30T11:45:24Z",
+        "head_branch": "main",
+        "head_sha": "5563e06b2f1950c4a04f624e58ff928ad8dac402",
+        "html_url": "https://github.com/Maatify/php-rate-limiter/actions/runs/41050345964/job/124044584314",
+        "id": 124044584314,
+        "labels": [
+            "ubuntu-latest"
+        ],
+        "name": "ci (2) / Lowest Supported Dependencies",
+        "node_id": "CR_kwDOUdWLvM8AAAAc4aIleg",
+        "run_attempt": 1,
+        "run_id": 41050345964,
+        "run_url": "https://api.github.com/repos/Maatify/php-rate-limiter/actions/runs/41050345964",
+        "runner_group_id": 0,
+        "runner_group_name": "GitHub Actions",
+        "runner_id": 1000040208,
+        "runner_name": "GitHub Actions 1000040208",
+        "started_at": "2026-10-30T11:45:28Z",
+        "status": "completed",
+        "steps": [
+            {
+                "completed_at": "2026-10-30T11:45:29Z",
+                "conclusion": "success",
+                "name": "Set up job",
+                "number": 1,
+                "started_at": "2026-10-30T11:45:29Z",
+                "status": "completed"
+            },
+            {
+                "completed_at": "2026-10-30T11:45:33Z",
+                "conclusion": "success",
+                "name": "Checkout Code",
+                "number": 2,
+                "started_at": "2026-10-30T11:45:29Z",
+                "status": "completed"
+            },
+            {
+                "completed_at": "2026-10-30T11:45:36Z",
+                "conclusion": "success",
+                "name": "Setup PHP",
+                "number": 3,
+                "started_at": "2026-10-30T11:45:33Z",
+                "status": "completed"
+            },
+            {
+                "completed_at": "2026-10-30T11:45:40Z",
+                "conclusion": "success",
+                "name": "Install Lowest Dependencies",
+                "number": 4,
+                "started_at": "2026-10-30T11:45:36Z",
+                "status": "completed"
+            },
+            {
+                "completed_at": "2026-10-30T11:45:40Z",
+                "conclusion": "success",
+                "name": "Verify Autoload and Platform",
+                "number": 5,
+                "started_at": "2026-10-30T11:45:40Z",
+                "status": "completed"
+            },
+            {
+                "completed_at": "2026-10-30T11:46:12Z",
+                "conclusion": "success",
+                "name": "Run PHPStan",
+                "number": 6,
+                "started_at": "2026-10-30T11:45:40Z",
+                "status": "completed"
+            },
+            {
+                "completed_at": "2026-10-30T11:53:47Z",
+                "conclusion": "success",
+                "name": "Run PHPUnit (all suites except the archive replays)",
+                "number": 7,
+                "started_at": "2026-10-30T11:46:12Z",
+                "status": "completed"
+            },
+            {
+                "completed_at": "2026-10-30T11:58:02Z",
+                "conclusion": "success",
+                "name": "Run the Archive Replay Group",
+                "number": 8,
+                "started_at": "2026-10-30T11:53:47Z",
+                "status": "completed"
+            },
+            {
+                "completed_at": "2026-10-30T11:58:03Z",
+                "conclusion": "success",
+                "name": "Post Checkout Code",
+                "number": 16,
+                "started_at": "2026-10-30T11:58:02Z",
+                "status": "completed"
+            },
+            {
+                "completed_at": "2026-10-30T11:58:03Z",
+                "conclusion": "success",
+                "name": "Complete job",
+                "number": 17,
+                "started_at": "2026-10-30T11:58:03Z",
+                "status": "completed"
+            }
+        ],
+        "url": "https://api.github.com/repos/Maatify/php-rate-limiter/actions/jobs/124044584314",
+        "workflow_name": "Stability Evidence"
+    },
+    {
+        "check_run_url": "https://api.github.com/repos/Maatify/php-rate-limiter/check-runs/124044584334",
+        "completed_at": "2026-10-30T11:45:36Z",
+        "conclusion": "success",
+        "created_at": "2026-10-30T11:45:24Z",
+        "head_branch": "main",
+        "head_sha": "5563e06b2f1950c4a04f624e58ff928ad8dac402",
+        "html_url": "https://github.com/Maatify/php-rate-limiter/actions/runs/41050345964/job/124044584334",
+        "id": 124044584334,
+        "labels": [
+            "ubuntu-latest"
+        ],
+        "name": "ci (2) / Workflow Lint",
+        "node_id": "CR_kwDOUdWLvM8AAAAc4aIljg",
+        "run_attempt": 1,
+        "run_id": 41050345964,
+        "run_url": "https://api.github.com/repos/Maatify/php-rate-limiter/actions/runs/41050345964",
+        "runner_group_id": 0,
+        "runner_group_name": "GitHub Actions",
+        "runner_id": 1000040196,
+        "runner_name": "GitHub Actions 1000040196",
+        "started_at": "2026-10-30T11:45:27Z",
+        "status": "completed",
+        "steps": [
+            {
+                "completed_at": "2026-10-30T11:45:28Z",
+                "conclusion": "success",
+                "name": "Set up job",
+                "number": 1,
+                "started_at": "2026-10-30T11:45:28Z",
+                "status": "completed"
+            },
+            {
+                "completed_at": "2026-10-30T11:45:33Z",
+                "conclusion": "success",
+                "name": "Checkout Code",
+                "number": 2,
+                "started_at": "2026-10-30T11:45:28Z",
+                "status": "completed"
+            },
+            {
+                "completed_at": "2026-10-30T11:45:33Z",
+                "conclusion": "success",
+                "name": "Install actionlint",
+                "number": 3,
+                "started_at": "2026-10-30T11:45:33Z",
+                "status": "completed"
+            },
+            {
+                "completed_at": "2026-10-30T11:45:35Z",
+                "conclusion": "success",
+                "name": "Lint Workflows",
+                "number": 4,
+                "started_at": "2026-10-30T11:45:33Z",
+                "status": "completed"
+            },
+            {
+                "completed_at": "2026-10-30T11:45:35Z",
+                "conclusion": "success",
+                "name": "Post Checkout Code",
+                "number": 8,
+                "started_at": "2026-10-30T11:45:35Z",
+                "status": "completed"
+            },
+            {
+                "completed_at": "2026-10-30T11:45:35Z",
+                "conclusion": "success",
+                "name": "Complete job",
+                "number": 9,
+                "started_at": "2026-10-30T11:45:35Z",
+                "status": "completed"
+            }
+        ],
+        "url": "https://api.github.com/repos/Maatify/php-rate-limiter/actions/jobs/124044584334",
+        "workflow_name": "Stability Evidence"
+    },
+    {
+        "check_run_url": "https://api.github.com/repos/Maatify/php-rate-limiter/check-runs/124044584379",
+        "completed_at": "2026-10-30T11:53:23Z",
+        "conclusion": "success",
+        "created_at": "2026-10-30T11:45:24Z",
+        "head_branch": "main",
+        "head_sha": "5563e06b2f1950c4a04f624e58ff928ad8dac402",
+        "html_url": "https://github.com/Maatify/php-rate-limiter/actions/runs/41050345964/job/124044584379",
+        "id": 124044584379,
+        "labels": [
+            "ubuntu-latest"
+        ],
+        "name": "ci (2) / Test Suite (PHP 8.4)",
+        "node_id": "CR_kwDOUdWLvM8AAAAc4aIluw",
+        "run_attempt": 1,
+        "run_id": 41050345964,
+        "run_url": "https://api.github.com/repos/Maatify/php-rate-limiter/actions/runs/41050345964",
+        "runner_group_id": 0,
+        "runner_group_name": "GitHub Actions",
+        "runner_id": 1000040213,
+        "runner_name": "GitHub Actions 1000040213",
+        "started_at": "2026-10-30T11:45:45Z",
+        "status": "completed",
+        "steps": [
+            {
+                "completed_at": "2026-10-30T11:45:46Z",
+                "conclusion": "success",
+                "name": "Set up job",
+                "number": 1,
+                "started_at": "2026-10-30T11:45:45Z",
+                "status": "completed"
+            },
+            {
+                "completed_at": "2026-10-30T11:45:50Z",
+                "conclusion": "success",
+                "name": "Checkout Code",
+                "number": 2,
+                "started_at": "2026-10-30T11:45:46Z",
+                "status": "completed"
+            },
+            {
+                "completed_at": "2026-10-30T11:45:52Z",
+                "conclusion": "success",
+                "name": "Setup PHP",
+                "number": 3,
+                "started_at": "2026-10-30T11:45:50Z",
+                "status": "completed"
+            },
+            {
+                "completed_at": "2026-10-30T11:45:55Z",
+                "conclusion": "success",
+                "name": "Install Dependencies",
+                "number": 4,
+                "started_at": "2026-10-30T11:45:52Z",
+                "status": "completed"
+            },
+            {
+                "completed_at": "2026-10-30T11:45:55Z",
+                "conclusion": "success",
+                "name": "Verify Autoload and Platform",
+                "number": 5,
+                "started_at": "2026-10-30T11:45:55Z",
+                "status": "completed"
+            },
+            {
+                "completed_at": "2026-10-30T11:53:21Z",
+                "conclusion": "success",
+                "name": "Run PHPUnit (all suites except the archive replays)",
+                "number": 6,
+                "started_at": "2026-10-30T11:45:55Z",
+                "status": "completed"
+            },
+            {
+                "completed_at": "2026-10-30T11:53:21Z",
+                "conclusion": "success",
+                "name": "Post Checkout Code",
+                "number": 12,
+                "started_at": "2026-10-30T11:53:21Z",
+                "status": "completed"
+            },
+            {
+                "completed_at": "2026-10-30T11:53:21Z",
+                "conclusion": "success",
+                "name": "Complete job",
+                "number": 13,
+                "started_at": "2026-10-30T11:53:21Z",
+                "status": "completed"
+            }
+        ],
+        "url": "https://api.github.com/repos/Maatify/php-rate-limiter/actions/jobs/124044584379",
+        "workflow_name": "Stability Evidence"
+    },
+    {
+        "check_run_url": "https://api.github.com/repos/Maatify/php-rate-limiter/check-runs/124044584396",
+        "completed_at": "2026-10-30T11:45:38Z",
+        "conclusion": "success",
+        "created_at": "2026-10-30T11:45:25Z",
+        "head_branch": "main",
+        "head_sha": "5563e06b2f1950c4a04f624e58ff928ad8dac402",
+        "html_url": "https://github.com/Maatify/php-rate-limiter/actions/runs/41050345964/job/124044584396",
+        "id": 124044584396,
+        "labels": [
+            "ubuntu-latest"
+        ],
+        "name": "ci (1) / Composer Validate",
+        "node_id": "CR_kwDOUdWLvM8AAAAc4aIlzA",
+        "run_attempt": 1,
+        "run_id": 41050345964,
+        "run_url": "https://api.github.com/repos/Maatify/php-rate-limiter/actions/runs/41050345964",
+        "runner_group_id": 0,
+        "runner_group_name": "GitHub Actions",
+        "runner_id": 1000040195,
+        "runner_name": "GitHub Actions 1000040195",
+        "started_at": "2026-10-30T11:45:27Z",
+        "status": "completed",
+        "steps": [
+            {
+                "completed_at": "2026-10-30T11:45:29Z",
+                "conclusion": "success",
+                "name": "Set up job",
+                "number": 1,
+                "started_at": "2026-10-30T11:45:28Z",
+                "status": "completed"
+            },
+            {
+                "completed_at": "2026-10-30T11:45:33Z",
+                "conclusion": "success",
+                "name": "Checkout Code",
+                "number": 2,
+                "started_at": "2026-10-30T11:45:29Z",
+                "status": "completed"
+            },
+            {
+                "completed_at": "2026-10-30T11:45:36Z",
+                "conclusion": "success",
+                "name": "Setup PHP",
+                "number": 3,
+                "started_at": "2026-10-30T11:45:33Z",
+                "status": "completed"
+            },
+            {
+                "completed_at": "2026-10-30T11:45:36Z",
+                "conclusion": "success",
+                "name": "Composer Validate",
+                "number": 4,
+                "started_at": "2026-10-30T11:45:36Z",
+                "status": "completed"
+            },
+            {
+                "completed_at": "2026-10-30T11:45:36Z",
+                "conclusion": "success",
+                "name": "Post Checkout Code",
+                "number": 8,
+                "started_at": "2026-10-30T11:45:36Z",
+                "status": "completed"
+            },
+            {
+                "completed_at": "2026-10-30T11:45:36Z",
+                "conclusion": "success",
+                "name": "Complete job",
+                "number": 9,
+                "started_at": "2026-10-30T11:45:36Z",
+                "status": "completed"
+            }
+        ],
+        "url": "https://api.github.com/repos/Maatify/php-rate-limiter/actions/jobs/124044584396",
+        "workflow_name": "Stability Evidence"
+    },
+    {
+        "check_run_url": "https://api.github.com/repos/Maatify/php-rate-limiter/check-runs/124044584403",
+        "completed_at": "2026-10-30T11:45:43Z",
+        "conclusion": "success",
+        "created_at": "2026-10-30T11:45:25Z",
+        "head_branch": "main",
+        "head_sha": "5563e06b2f1950c4a04f624e58ff928ad8dac402",
+        "html_url": "https://github.com/Maatify/php-rate-limiter/actions/runs/41050345964/job/124044584403",
+        "id": 124044584403,
+        "labels": [
+            "ubuntu-latest"
+        ],
+        "name": "ci (1) / PHP Examples",
+        "node_id": "CR_kwDOUdWLvM8AAAAc4aIl0w",
+        "run_attempt": 1,
+        "run_id": 41050345964,
+        "run_url": "https://api.github.com/repos/Maatify/php-rate-limiter/actions/runs/41050345964",
+        "runner_group_id": 0,
+        "runner_group_name": "GitHub Actions",
+        "runner_id": 1000040199,
+        "runner_name": "GitHub Actions 1000040199",
+        "started_at": "2026-10-30T11:45:27Z",
+        "status": "completed",
+        "steps": [
+            {
+                "completed_at": "2026-10-30T11:45:29Z",
+                "conclusion": "success",
+                "name": "Set up job",
+                "number": 1,
+                "started_at": "2026-10-30T11:45:28Z",
+                "status": "completed"
+            },
+            {
+                "completed_at": "2026-10-30T11:45:33Z",
+                "conclusion": "success",
+                "name": "Checkout Code",
+                "number": 2,
+                "started_at": "2026-10-30T11:45:29Z",
+                "status": "completed"
+            },
+            {
+                "completed_at": "2026-10-30T11:45:36Z",
+                "conclusion": "success",
+                "name": "Setup PHP",
+                "number": 3,
+                "started_at": "2026-10-30T11:45:33Z",
+                "status": "completed"
+            },
+            {
+                "completed_at": "2026-10-30T11:45:41Z",
+                "conclusion": "success",
+                "name": "Install Dependencies",
+                "number": 4,
+                "started_at": "2026-10-30T11:45:36Z",
+                "status": "completed"
+            },
+            {
+                "completed_at": "2026-10-30T11:45:41Z",
+                "conclusion": "success",
+                "name": "Verify Autoload",
+                "number": 5,
+                "started_at": "2026-10-30T11:45:41Z",
+                "status": "completed"
+            },
+            {
+                "completed_at": "2026-10-30T11:45:42Z",
+                "conclusion": "success",
+                "name": "Check README Examples",
+                "number": 6,
+                "started_at": "2026-10-30T11:45:41Z",
+                "status": "completed"
+            },
+            {
+                "completed_at": "2026-10-30T11:45:42Z",
+                "conclusion": "success",
+                "name": "Smoke Run Standalone Examples",
+                "number": 7,
+                "started_at": "2026-10-30T11:45:42Z",
+                "status": "completed"
+            },
+            {
+                "completed_at": "2026-10-30T11:45:42Z",
+                "conclusion": "success",
+                "name": "Post Checkout Code",
+                "number": 14,
+                "started_at": "2026-10-30T11:45:42Z",
+                "status": "completed"
+            },
+            {
+                "completed_at": "2026-10-30T11:45:42Z",
+                "conclusion": "success",
+                "name": "Complete job",
+                "number": 15,
+                "started_at": "2026-10-30T11:45:42Z",
+                "status": "completed"
+            }
+        ],
+        "url": "https://api.github.com/repos/Maatify/php-rate-limiter/actions/jobs/124044584403",
+        "workflow_name": "Stability Evidence"
+    },
+    {
+        "check_run_url": "https://api.github.com/repos/Maatify/php-rate-limiter/check-runs/124044584405",
+        "completed_at": "2026-10-30T11:49:29Z",
+        "conclusion": "success",
+        "created_at": "2026-10-30T11:45:25Z",
+        "head_branch": "main",
+        "head_sha": "5563e06b2f1950c4a04f624e58ff928ad8dac402",
+        "html_url": "https://github.com/Maatify/php-rate-limiter/actions/runs/41050345964/job/124044584405",
+        "id": 124044584405,
+        "labels": [
+            "ubuntu-latest"
+        ],
+        "name": "ci (2) / Archive Replay Suite (PHP 8.5)",
+        "node_id": "CR_kwDOUdWLvM8AAAAc4aIl1Q",
+        "run_attempt": 1,
+        "run_id": 41050345964,
+        "run_url": "https://api.github.com/repos/Maatify/php-rate-limiter/actions/runs/41050345964",
+        "runner_group_id": 0,
+        "runner_group_name": "GitHub Actions",
+        "runner_id": 1000040211,
+        "runner_name": "GitHub Actions 1000040211",
+        "started_at": "2026-10-30T11:45:42Z",
+        "status": "completed",
+        "steps": [
+            {
+                "completed_at": "2026-10-30T11:45:43Z",
+                "conclusion": "success",
+                "name": "Set up job",
+                "number": 1,
+                "started_at": "2026-10-30T11:45:42Z",
+                "status": "completed"
+            },
+            {
+                "completed_at": "2026-10-30T11:45:48Z",
+                "conclusion": "success",
+                "name": "Checkout Code",
+                "number": 2,
+                "started_at": "2026-10-30T11:45:43Z",
+                "status": "completed"
+            },
+            {
+                "completed_at": "2026-10-30T11:45:52Z",
+                "conclusion": "success",
+                "name": "Setup PHP",
+                "number": 3,
+                "started_at": "2026-10-30T11:45:48Z",
+                "status": "completed"
+            },
+            {
+                "completed_at": "2026-10-30T11:45:55Z",
+                "conclusion": "success",
+                "name": "Install Dependencies",
+                "number": 4,
+                "started_at": "2026-10-30T11:45:52Z",
+                "status": "completed"
+            },
+            {
+                "completed_at": "2026-10-30T11:45:55Z",
+                "conclusion": "success",
+                "name": "Verify Autoload and Platform",
+                "number": 5,
+                "started_at": "2026-10-30T11:45:55Z",
+                "status": "completed"
+            },
+            {
+                "completed_at": "2026-10-30T11:49:27Z",
+                "conclusion": "success",
+                "name": "Run the Archive Replay Group",
+                "number": 6,
+                "started_at": "2026-10-30T11:45:55Z",
+                "status": "completed"
+            },
+            {
+                "completed_at": "2026-10-30T11:49:27Z",
+                "conclusion": "success",
+                "name": "Post Checkout Code",
+                "number": 12,
+                "started_at": "2026-10-30T11:49:27Z",
+                "status": "completed"
+            },
+            {
+                "completed_at": "2026-10-30T11:49:27Z",
+                "conclusion": "success",
+                "name": "Complete job",
+                "number": 13,
+                "started_at": "2026-10-30T11:49:27Z",
+                "status": "completed"
+            }
+        ],
+        "url": "https://api.github.com/repos/Maatify/php-rate-limiter/actions/jobs/124044584405",
+        "workflow_name": "Stability Evidence"
+    },
+    {
+        "check_run_url": "https://api.github.com/repos/Maatify/php-rate-limiter/check-runs/124044584424",
+        "completed_at": "2026-10-30T11:48:59Z",
+        "conclusion": "success",
+        "created_at": "2026-10-30T11:45:25Z",
+        "head_branch": "main",
+        "head_sha": "5563e06b2f1950c4a04f624e58ff928ad8dac402",
+        "html_url": "https://github.com/Maatify/php-rate-limiter/actions/runs/41050345964/job/124044584424",
+        "id": 124044584424,
+        "labels": [
+            "ubuntu-latest"
+        ],
+        "name": "ci (2) / Archive Replay Suite (PHP 8.4)",
+        "node_id": "CR_kwDOUdWLvM8AAAAc4aIl6A",
+        "run_attempt": 1,
+        "run_id": 41050345964,
+        "run_url": "https://api.github.com/repos/Maatify/php-rate-limiter/actions/runs/41050345964",
+        "runner_group_id": 0,
+        "runner_group_name": "GitHub Actions",
+        "runner_id": 1000040212,
+        "runner_name": "GitHub Actions 1000040212",
+        "started_at": "2026-10-30T11:45:45Z",
+        "status": "completed",
+        "steps": [
+            {
+                "completed_at": "2026-10-30T11:45:46Z",
+                "conclusion": "success",
+                "name": "Set up job",
+                "number": 1,
+                "started_at": "2026-10-30T11:45:46Z",
+                "status": "completed"
+            },
+            {
+                "completed_at": "2026-10-30T11:45:50Z",
+                "conclusion": "success",
+                "name": "Checkout Code",
+                "number": 2,
+                "started_at": "2026-10-30T11:45:46Z",
+                "status": "completed"
+            },
+            {
+                "completed_at": "2026-10-30T11:45:52Z",
+                "conclusion": "success",
+                "name": "Setup PHP",
+                "number": 3,
+                "started_at": "2026-10-30T11:45:50Z",
+                "status": "completed"
+            },
+            {
+                "completed_at": "2026-10-30T11:45:55Z",
+                "conclusion": "success",
+                "name": "Install Dependencies",
+                "number": 4,
+                "started_at": "2026-10-30T11:45:52Z",
+                "status": "completed"
+            },
+            {
+                "completed_at": "2026-10-30T11:45:55Z",
+                "conclusion": "success",
+                "name": "Verify Autoload and Platform",
+                "number": 5,
+                "started_at": "2026-10-30T11:45:55Z",
+                "status": "completed"
+            },
+            {
+                "completed_at": "2026-10-30T11:48:56Z",
+                "conclusion": "success",
+                "name": "Run the Archive Replay Group",
+                "number": 6,
+                "started_at": "2026-10-30T11:45:55Z",
+                "status": "completed"
+            },
+            {
+                "completed_at": "2026-10-30T11:48:56Z",
+                "conclusion": "success",
+                "name": "Post Checkout Code",
+                "number": 12,
+                "started_at": "2026-10-30T11:48:56Z",
+                "status": "completed"
+            },
+            {
+                "completed_at": "2026-10-30T11:48:56Z",
+                "conclusion": "success",
+                "name": "Complete job",
+                "number": 13,
+                "started_at": "2026-10-30T11:48:56Z",
+                "status": "completed"
+            }
+        ],
+        "url": "https://api.github.com/repos/Maatify/php-rate-limiter/actions/jobs/124044584424",
+        "workflow_name": "Stability Evidence"
+    },
+    {
+        "check_run_url": "https://api.github.com/repos/Maatify/php-rate-limiter/check-runs/124044584436",
+        "completed_at": "2026-10-30T11:45:49Z",
+        "conclusion": "success",
+        "created_at": "2026-10-30T11:45:25Z",
+        "head_branch": "main",
+        "head_sha": "5563e06b2f1950c4a04f624e58ff928ad8dac402",
+        "html_url": "https://github.com/Maatify/php-rate-limiter/actions/runs/41050345964/job/124044584436",
+        "id": 124044584436,
+        "labels": [
+            "ubuntu-latest"
+        ],
+        "name": "ci (1) / PHP Coding Style (PER 3.1)",
+        "node_id": "CR_kwDOUdWLvM8AAAAc4aIl9A",
+        "run_attempt": 1,
+        "run_id": 41050345964,
+        "run_url": "https://api.github.com/repos/Maatify/php-rate-limiter/actions/runs/41050345964",
+        "runner_group_id": 0,
+        "runner_group_name": "GitHub Actions",
+        "runner_id": 1000040198,
+        "runner_name": "GitHub Actions 1000040198",
+        "started_at": "2026-10-30T11:45:27Z",
+        "status": "completed",
+        "steps": [
+            {
+                "completed_at": "2026-10-30T11:45:29Z",
+                "conclusion": "success",
+                "name": "Set up job",
+                "number": 1,
+                "started_at": "2026-10-30T11:45:28Z",
+                "status": "completed"
+            },
+            {
+                "completed_at": "2026-10-30T11:45:34Z",
+                "conclusion": "success",
+                "name": "Checkout Code",
+                "number": 2,
+                "started_at": "2026-10-30T11:45:29Z",
+                "status": "completed"
+            },
+            {
+                "completed_at": "2026-10-30T11:45:36Z",
+                "conclusion": "success",
+                "name": "Setup PHP",
+                "number": 3,
+                "started_at": "2026-10-30T11:45:34Z",
+                "status": "completed"
+            },
+            {
+                "completed_at": "2026-10-30T11:45:39Z",
+                "conclusion": "success",
+                "name": "Install Dependencies",
+                "number": 4,
+                "started_at": "2026-10-30T11:45:36Z",
+                "status": "completed"
+            },
+            {
+                "completed_at": "2026-10-30T11:45:39Z",
+                "conclusion": "success",
+                "name": "Verify Platform",
+                "number": 5,
+                "started_at": "2026-10-30T11:45:39Z",
+                "status": "completed"
+            },
+            {
+                "completed_at": "2026-10-30T11:45:48Z",
+                "conclusion": "success",
+                "name": "Check PHP Coding Style",
+                "number": 6,
+                "started_at": "2026-10-30T11:45:39Z",
+                "status": "completed"
+            },
+            {
+                "completed_at": "2026-10-30T11:45:48Z",
+                "conclusion": "success",
+                "name": "Post Checkout Code",
+                "number": 12,
+                "started_at": "2026-10-30T11:45:48Z",
+                "status": "completed"
+            },
+            {
+                "completed_at": "2026-10-30T11:45:48Z",
+                "conclusion": "success",
+                "name": "Complete job",
+                "number": 13,
+                "started_at": "2026-10-30T11:45:48Z",
+                "status": "completed"
+            }
+        ],
+        "url": "https://api.github.com/repos/Maatify/php-rate-limiter/actions/jobs/124044584436",
+        "workflow_name": "Stability Evidence"
+    },
+    {
+        "check_run_url": "https://api.github.com/repos/Maatify/php-rate-limiter/check-runs/124044584450",
+        "completed_at": "2026-10-30T11:46:14Z",
+        "conclusion": "success",
+        "created_at": "2026-10-30T11:45:25Z",
+        "head_branch": "main",
+        "head_sha": "5563e06b2f1950c4a04f624e58ff928ad8dac402",
+        "html_url": "https://github.com/Maatify/php-rate-limiter/actions/runs/41050345964/job/124044584450",
+        "id": 124044584450,
+        "labels": [
+            "ubuntu-latest"
+        ],
+        "name": "ci (1) / PHP Syntax Check",
+        "node_id": "CR_kwDOUdWLvM8AAAAc4aImAg",
+        "run_attempt": 1,
+        "run_id": 41050345964,
+        "run_url": "https://api.github.com/repos/Maatify/php-rate-limiter/actions/runs/41050345964",
+        "runner_group_id": 0,
+        "runner_group_name": "GitHub Actions",
+        "runner_id": 1000040207,
+        "runner_name": "GitHub Actions 1000040207",
+        "started_at": "2026-10-30T11:45:28Z",
+        "status": "completed",
+        "steps": [
+            {
+                "completed_at": "2026-10-30T11:45:29Z",
+                "conclusion": "success",
+                "name": "Set up job",
+                "number": 1,
+                "started_at": "2026-10-30T11:45:29Z",
+                "status": "completed"
+            },
+            {
+                "completed_at": "2026-10-30T11:45:33Z",
+                "conclusion": "success",
+                "name": "Checkout Code",
+                "number": 2,
+                "started_at": "2026-10-30T11:45:29Z",
+                "status": "completed"
+            },
+            {
+                "completed_at": "2026-10-30T11:45:36Z",
+                "conclusion": "success",
+                "name": "Setup PHP",
+                "number": 3,
+                "started_at": "2026-10-30T11:45:33Z",
+                "status": "completed"
+            },
+            {
+                "completed_at": "2026-10-30T11:46:12Z",
+                "conclusion": "success",
+                "name": "Check Syntax",
+                "number": 4,
+                "started_at": "2026-10-30T11:45:36Z",
+                "status": "completed"
+            },
+            {
+                "completed_at": "2026-10-30T11:46:13Z",
+                "conclusion": "success",
+                "name": "Post Checkout Code",
+                "number": 8,
+                "started_at": "2026-10-30T11:46:12Z",
+                "status": "completed"
+            },
+            {
+                "completed_at": "2026-10-30T11:46:13Z",
+                "conclusion": "success",
+                "name": "Complete job",
+                "number": 9,
+                "started_at": "2026-10-30T11:46:13Z",
+                "status": "completed"
+            }
+        ],
+        "url": "https://api.github.com/repos/Maatify/php-rate-limiter/actions/jobs/124044584450",
+        "workflow_name": "Stability Evidence"
+    },
+    {
+        "check_run_url": "https://api.github.com/repos/Maatify/php-rate-limiter/check-runs/124044584462",
+        "completed_at": "2026-10-30T11:54:27Z",
+        "conclusion": "success",
+        "created_at": "2026-10-30T11:45:25Z",
+        "head_branch": "main",
+        "head_sha": "5563e06b2f1950c4a04f624e58ff928ad8dac402",
+        "html_url": "https://github.com/Maatify/php-rate-limiter/actions/runs/41050345964/job/124044584462",
+        "id": 124044584462,
+        "labels": [
+            "ubuntu-latest"
+        ],
+        "name": "ci (1) / Integration Test Suite",
+        "node_id": "CR_kwDOUdWLvM8AAAAc4aImDg",
+        "run_attempt": 1,
+        "run_id": 41050345964,
+        "run_url": "https://api.github.com/repos/Maatify/php-rate-limiter/actions/runs/41050345964",
+        "runner_group_id": 0,
+        "runner_group_name": "GitHub Actions",
+        "runner_id": 1000040201,
+        "runner_name": "GitHub Actions 1000040201",
+        "started_at": "2026-10-30T11:45:33Z",
+        "status": "completed",
+        "steps": [
+            {
+                "completed_at": "2026-10-30T11:45:35Z",
+                "conclusion": "success",
+                "name": "Set up job",
+                "number": 1,
+                "started_at": "2026-10-30T11:45:34Z",
+                "status": "completed"
+            },
+            {
+                "completed_at": "2026-10-30T11:45:39Z",
+                "conclusion": "success",
+                "name": "Checkout Code",
+                "number": 2,
+                "started_at": "2026-10-30T11:45:35Z",
+                "status": "completed"
+            },
+            {
+                "completed_at": "2026-10-30T11:45:42Z",
+                "conclusion": "success",
+                "name": "Setup PHP",
+                "number": 3,
+                "started_at": "2026-10-30T11:45:39Z",
+                "status": "completed"
+            },
+            {
+                "completed_at": "2026-10-30T11:45:45Z",
+                "conclusion": "success",
+                "name": "Install Dependencies",
+                "number": 4,
+                "started_at": "2026-10-30T11:45:42Z",
+                "status": "completed"
+            },
+            {
+                "completed_at": "2026-10-30T11:45:46Z",
+                "conclusion": "success",
+                "name": "Verify Autoload and Platform",
+                "number": 5,
+                "started_at": "2026-10-30T11:45:45Z",
+                "status": "completed"
+            },
+            {
+                "completed_at": "2026-10-30T11:54:25Z",
+                "conclusion": "success",
+                "name": "Run Integration Tests",
+                "number": 6,
+                "started_at": "2026-10-30T11:45:46Z",
+                "status": "completed"
+            },
+            {
+                "completed_at": "2026-10-30T11:54:25Z",
+                "conclusion": "success",
+                "name": "Post Checkout Code",
+                "number": 12,
+                "started_at": "2026-10-30T11:54:25Z",
+                "status": "completed"
+            },
+            {
+                "completed_at": "2026-10-30T11:54:25Z",
+                "conclusion": "success",
+                "name": "Complete job",
+                "number": 13,
+                "started_at": "2026-10-30T11:54:25Z",
+                "status": "completed"
+            }
+        ],
+        "url": "https://api.github.com/repos/Maatify/php-rate-limiter/actions/jobs/124044584462",
+        "workflow_name": "Stability Evidence"
+    },
+    {
+        "check_run_url": "https://api.github.com/repos/Maatify/php-rate-limiter/check-runs/124044584485",
+        "completed_at": "2026-10-30T11:54:08Z",
+        "conclusion": "success",
+        "created_at": "2026-10-30T11:45:25Z",
+        "head_branch": "main",
+        "head_sha": "5563e06b2f1950c4a04f624e58ff928ad8dac402",
+        "html_url": "https://github.com/Maatify/php-rate-limiter/actions/runs/41050345964/job/124044584485",
+        "id": 124044584485,
+        "labels": [
+            "ubuntu-latest"
+        ],
+        "name": "ci (1) / Test Suite (PHP 8.4)",
+        "node_id": "CR_kwDOUdWLvM8AAAAc4aImJQ",
+        "run_attempt": 1,
+        "run_id": 41050345964,
+        "run_url": "https://api.github.com/repos/Maatify/php-rate-limiter/actions/runs/41050345964",
+        "runner_group_id": 0,
+        "runner_group_name": "GitHub Actions",
+        "runner_id": 1000040217,
+        "runner_name": "GitHub Actions 1000040217",
+        "started_at": "2026-10-30T11:45:52Z",
+        "status": "completed",
+        "steps": [
+            {
+                "completed_at": "2026-10-30T11:45:54Z",
+                "conclusion": "success",
+                "name": "Set up job",
+                "number": 1,
+                "started_at": "2026-10-30T11:45:53Z",
+                "status": "completed"
+            },
+            {
+                "completed_at": "2026-10-30T11:46:04Z",
+                "conclusion": "success",
+                "name": "Checkout Code",
+                "number": 2,
+                "started_at": "2026-10-30T11:45:54Z",
+                "status": "completed"
+            },
+            {
+                "completed_at": "2026-10-30T11:46:07Z",
+                "conclusion": "success",
+                "name": "Setup PHP",
+                "number": 3,
+                "started_at": "2026-10-30T11:46:04Z",
+                "status": "completed"
+            },
+            {
+                "completed_at": "2026-10-30T11:46:10Z",
+                "conclusion": "success",
+                "name": "Install Dependencies",
+                "number": 4,
+                "started_at": "2026-10-30T11:46:07Z",
+                "status": "completed"
+            },
+            {
+                "completed_at": "2026-10-30T11:46:11Z",
+                "conclusion": "success",
+                "name": "Verify Autoload and Platform",
+                "number": 5,
+                "started_at": "2026-10-30T11:46:10Z",
+                "status": "completed"
+            },
+            {
+                "completed_at": "2026-10-30T11:54:05Z",
+                "conclusion": "success",
+                "name": "Run PHPUnit (all suites except the archive replays)",
+                "number": 6,
+                "started_at": "2026-10-30T11:46:11Z",
+                "status": "completed"
+            },
+            {
+                "completed_at": "2026-10-30T11:54:05Z",
+                "conclusion": "success",
+                "name": "Post Checkout Code",
+                "number": 12,
+                "started_at": "2026-10-30T11:54:05Z",
+                "status": "completed"
+            },
+            {
+                "completed_at": "2026-10-30T11:54:05Z",
+                "conclusion": "success",
+                "name": "Complete job",
+                "number": 13,
+                "started_at": "2026-10-30T11:54:05Z",
+                "status": "completed"
+            }
+        ],
+        "url": "https://api.github.com/repos/Maatify/php-rate-limiter/actions/jobs/124044584485",
+        "workflow_name": "Stability Evidence"
+    },
+    {
+        "check_run_url": "https://api.github.com/repos/Maatify/php-rate-limiter/check-runs/124044584493",
+        "completed_at": "2026-10-30T11:50:54Z",
+        "conclusion": "success",
+        "created_at": "2026-10-30T11:45:25Z",
+        "head_branch": "main",
+        "head_sha": "5563e06b2f1950c4a04f624e58ff928ad8dac402",
+        "html_url": "https://github.com/Maatify/php-rate-limiter/actions/runs/41050345964/job/124044584493",
+        "id": 124044584493,
+        "labels": [
+            "ubuntu-latest"
+        ],
+        "name": "ci (2) / Consumer Verification Harness",
+        "node_id": "CR_kwDOUdWLvM8AAAAc4aImLQ",
+        "run_attempt": 1,
+        "run_id": 41050345964,
+        "run_url": "https://api.github.com/repos/Maatify/php-rate-limiter/actions/runs/41050345964",
+        "runner_group_id": 0,
+        "runner_group_name": "GitHub Actions",
+        "runner_id": 1000040202,
+        "runner_name": "GitHub Actions 1000040202",
+        "started_at": "2026-10-30T11:45:28Z",
+        "status": "completed",
+        "steps": [
+            {
+                "completed_at": "2026-10-30T11:45:30Z",
+                "conclusion": "success",
+                "name": "Set up job",
+                "number": 1,
+                "started_at": "2026-10-30T11:45:29Z",
+                "status": "completed"
+            },
+            {
+                "completed_at": "2026-10-30T11:45:35Z",
+                "conclusion": "success",
+                "name": "Checkout Code",
+                "number": 2,
+                "started_at": "2026-10-30T11:45:30Z",
+                "status": "completed"
+            },
+            {
+                "completed_at": "2026-10-30T11:45:39Z",
+                "conclusion": "success",
+                "name": "Setup PHP",
+                "number": 3,
+                "started_at": "2026-10-30T11:45:35Z",
+                "status": "completed"
+            },
+            {
+                "completed_at": "2026-10-30T11:50:51Z",
+                "conclusion": "success",
+                "name": "Run Consumer Verification Harness",
+                "number": 4,
+                "started_at": "2026-10-30T11:45:39Z",
+                "status": "completed"
+            },
+            {
+                "completed_at": "2026-10-30T11:50:52Z",
+                "conclusion": "success",
+                "name": "Post Checkout Code",
+                "number": 8,
+                "started_at": "2026-10-30T11:50:51Z",
+                "status": "completed"
+            },
+            {
+                "completed_at": "2026-10-30T11:50:52Z",
+                "conclusion": "success",
+                "name": "Complete job",
+                "number": 9,
+                "started_at": "2026-10-30T11:50:52Z",
+                "status": "completed"
+            }
+        ],
+        "url": "https://api.github.com/repos/Maatify/php-rate-limiter/actions/jobs/124044584493",
+        "workflow_name": "Stability Evidence"
+    },
+    {
+        "check_run_url": "https://api.github.com/repos/Maatify/php-rate-limiter/check-runs/124044584515",
+        "completed_at": "2026-10-30T11:50:56Z",
+        "conclusion": "success",
+        "created_at": "2026-10-30T11:45:25Z",
+        "head_branch": "main",
+        "head_sha": "5563e06b2f1950c4a04f624e58ff928ad8dac402",
+        "html_url": "https://github.com/Maatify/php-rate-limiter/actions/runs/41050345964/job/124044584515",
+        "id": 124044584515,
+        "labels": [
+            "ubuntu-latest"
+        ],
+        "name": "ci (1) / Consumer Verification Harness",
+        "node_id": "CR_kwDOUdWLvM8AAAAc4aImQw",
+        "run_attempt": 1,
+        "run_id": 41050345964,
+        "run_url": "https://api.github.com/repos/Maatify/php-rate-limiter/actions/runs/41050345964",
+        "runner_group_id": 0,
+        "runner_group_name": "GitHub Actions",
+        "runner_id": 1000040206,
+        "runner_name": "GitHub Actions 1000040206",
+        "started_at": "2026-10-30T11:45:28Z",
+        "status": "completed",
+        "steps": [
+            {
+                "completed_at": "2026-10-30T11:45:29Z",
+                "conclusion": "success",
+                "name": "Set up job",
+                "number": 1,
+                "started_at": "2026-10-30T11:45:28Z",
+                "status": "completed"
+            },
+            {
+                "completed_at": "2026-10-30T11:45:34Z",
+                "conclusion": "success",
+                "name": "Checkout Code",
+                "number": 2,
+                "started_at": "2026-10-30T11:45:29Z",
+                "status": "completed"
+            },
+            {
+                "completed_at": "2026-10-30T11:45:37Z",
+                "conclusion": "success",
+                "name": "Setup PHP",
+                "number": 3,
+                "started_at": "2026-10-30T11:45:34Z",
+                "status": "completed"
+            },
+            {
+                "completed_at": "2026-10-30T11:50:54Z",
+                "conclusion": "success",
+                "name": "Run Consumer Verification Harness",
+                "number": 4,
+                "started_at": "2026-10-30T11:45:37Z",
+                "status": "completed"
+            },
+            {
+                "completed_at": "2026-10-30T11:50:54Z",
+                "conclusion": "success",
+                "name": "Post Checkout Code",
+                "number": 8,
+                "started_at": "2026-10-30T11:50:54Z",
+                "status": "completed"
+            },
+            {
+                "completed_at": "2026-10-30T11:50:54Z",
+                "conclusion": "success",
+                "name": "Complete job",
+                "number": 9,
+                "started_at": "2026-10-30T11:50:54Z",
+                "status": "completed"
+            }
+        ],
+        "url": "https://api.github.com/repos/Maatify/php-rate-limiter/actions/jobs/124044584515",
+        "workflow_name": "Stability Evidence"
+    },
+    {
+        "check_run_url": "https://api.github.com/repos/Maatify/php-rate-limiter/check-runs/124044584521",
+        "completed_at": "2026-10-30T11:49:28Z",
+        "conclusion": "success",
+        "created_at": "2026-10-30T11:45:25Z",
+        "head_branch": "main",
+        "head_sha": "5563e06b2f1950c4a04f624e58ff928ad8dac402",
+        "html_url": "https://github.com/Maatify/php-rate-limiter/actions/runs/41050345964/job/124044584521",
+        "id": 124044584521,
+        "labels": [
+            "ubuntu-latest"
+        ],
+        "name": "ci (1) / Archive Replay Suite (PHP 8.4)",
+        "node_id": "CR_kwDOUdWLvM8AAAAc4aImSQ",
+        "run_attempt": 1,
+        "run_id": 41050345964,
+        "run_url": "https://api.github.com/repos/Maatify/php-rate-limiter/actions/runs/41050345964",
+        "runner_group_id": 0,
+        "runner_group_name": "GitHub Actions",
+        "runner_id": 1000040203,
+        "runner_name": "GitHub Actions 1000040203",
+        "started_at": "2026-10-30T11:45:28Z",
+        "status": "completed",
+        "steps": [
+            {
+                "completed_at": "2026-10-30T11:45:29Z",
+                "conclusion": "success",
+                "name": "Set up job",
+                "number": 1,
+                "started_at": "2026-10-30T11:45:28Z",
+                "status": "completed"
+            },
+            {
+                "completed_at": "2026-10-30T11:45:34Z",
+                "conclusion": "success",
+                "name": "Checkout Code",
+                "number": 2,
+                "started_at": "2026-10-30T11:45:29Z",
+                "status": "completed"
+            },
+            {
+                "completed_at": "2026-10-30T11:45:37Z",
+                "conclusion": "success",
+                "name": "Setup PHP",
+                "number": 3,
+                "started_at": "2026-10-30T11:45:34Z",
+                "status": "completed"
+            },
+            {
+                "completed_at": "2026-10-30T11:45:40Z",
+                "conclusion": "success",
+                "name": "Install Dependencies",
+                "number": 4,
+                "started_at": "2026-10-30T11:45:37Z",
+                "status": "completed"
+            },
+            {
+                "completed_at": "2026-10-30T11:45:40Z",
+                "conclusion": "success",
+                "name": "Verify Autoload and Platform",
+                "number": 5,
+                "started_at": "2026-10-30T11:45:40Z",
+                "status": "completed"
+            },
+            {
+                "completed_at": "2026-10-30T11:49:26Z",
+                "conclusion": "success",
+                "name": "Run the Archive Replay Group",
+                "number": 6,
+                "started_at": "2026-10-30T11:45:40Z",
+                "status": "completed"
+            },
+            {
+                "completed_at": "2026-10-30T11:49:26Z",
+                "conclusion": "success",
+                "name": "Post Checkout Code",
+                "number": 12,
+                "started_at": "2026-10-30T11:49:26Z",
+                "status": "completed"
+            },
+            {
+                "completed_at": "2026-10-30T11:49:26Z",
+                "conclusion": "success",
+                "name": "Complete job",
+                "number": 13,
+                "started_at": "2026-10-30T11:49:26Z",
+                "status": "completed"
+            }
+        ],
+        "url": "https://api.github.com/repos/Maatify/php-rate-limiter/actions/jobs/124044584521",
+        "workflow_name": "Stability Evidence"
+    },
+    {
+        "check_run_url": "https://api.github.com/repos/Maatify/php-rate-limiter/check-runs/124044584531",
+        "completed_at": "2026-10-30T11:53:32Z",
+        "conclusion": "success",
+        "created_at": "2026-10-30T11:45:25Z",
+        "head_branch": "main",
+        "head_sha": "5563e06b2f1950c4a04f624e58ff928ad8dac402",
+        "html_url": "https://github.com/Maatify/php-rate-limiter/actions/runs/41050345964/job/124044584531",
+        "id": 124044584531,
+        "labels": [
+            "ubuntu-latest"
+        ],
+        "name": "ci (1) / Test Suite (PHP 8.5)",
+        "node_id": "CR_kwDOUdWLvM8AAAAc4aImUw",
+        "run_attempt": 1,
+        "run_id": 41050345964,
+        "run_url": "https://api.github.com/repos/Maatify/php-rate-limiter/actions/runs/41050345964",
+        "runner_group_id": 0,
+        "runner_group_name": "GitHub Actions",
+        "runner_id": 1000040216,
+        "runner_name": "GitHub Actions 1000040216",
+        "started_at": "2026-10-30T11:45:50Z",
+        "status": "completed",
+        "steps": [
+            {
+                "completed_at": "2026-10-30T11:45:52Z",
+                "conclusion": "success",
+                "name": "Set up job",
+                "number": 1,
+                "started_at": "2026-10-30T11:45:51Z",
+                "status": "completed"
+            },
+            {
+                "completed_at": "2026-10-30T11:45:56Z",
+                "conclusion": "success",
+                "name": "Checkout Code",
+                "number": 2,
+                "started_at": "2026-10-30T11:45:52Z",
+                "status": "completed"
+            },
+            {
+                "completed_at": "2026-10-30T11:45:59Z",
+                "conclusion": "success",
+                "name": "Setup PHP",
+                "number": 3,
+                "started_at": "2026-10-30T11:45:56Z",
+                "status": "completed"
+            },
+            {
+                "completed_at": "2026-10-30T11:46:02Z",
+                "conclusion": "success",
+                "name": "Install Dependencies",
+                "number": 4,
+                "started_at": "2026-10-30T11:45:59Z",
+                "status": "completed"
+            },
+            {
+                "completed_at": "2026-10-30T11:46:03Z",
+                "conclusion": "success",
+                "name": "Verify Autoload and Platform",
+                "number": 5,
+                "started_at": "2026-10-30T11:46:02Z",
+                "status": "completed"
+            },
+            {
+                "completed_at": "2026-10-30T11:53:30Z",
+                "conclusion": "success",
+                "name": "Run PHPUnit (all suites except the archive replays)",
+                "number": 6,
+                "started_at": "2026-10-30T11:46:03Z",
+                "status": "completed"
+            },
+            {
+                "completed_at": "2026-10-30T11:53:30Z",
+                "conclusion": "success",
+                "name": "Post Checkout Code",
+                "number": 12,
+                "started_at": "2026-10-30T11:53:30Z",
+                "status": "completed"
+            },
+            {
+                "completed_at": "2026-10-30T11:53:30Z",
+                "conclusion": "success",
+                "name": "Complete job",
+                "number": 13,
+                "started_at": "2026-10-30T11:53:30Z",
+                "status": "completed"
+            }
+        ],
+        "url": "https://api.github.com/repos/Maatify/php-rate-limiter/actions/jobs/124044584531",
+        "workflow_name": "Stability Evidence"
+    },
+    {
+        "check_run_url": "https://api.github.com/repos/Maatify/php-rate-limiter/check-runs/124044584555",
+        "completed_at": "2026-10-30T11:49:11Z",
+        "conclusion": "success",
+        "created_at": "2026-10-30T11:45:25Z",
+        "head_branch": "main",
+        "head_sha": "5563e06b2f1950c4a04f624e58ff928ad8dac402",
+        "html_url": "https://github.com/Maatify/php-rate-limiter/actions/runs/41050345964/job/124044584555",
+        "id": 124044584555,
+        "labels": [
+            "ubuntu-latest"
+        ],
+        "name": "ci (1) / Archive Replay Suite (PHP 8.5)",
+        "node_id": "CR_kwDOUdWLvM8AAAAc4aImaw",
+        "run_attempt": 1,
+        "run_id": 41050345964,
+        "run_url": "https://api.github.com/repos/Maatify/php-rate-limiter/actions/runs/41050345964",
+        "runner_group_id": 0,
+        "runner_group_name": "GitHub Actions",
+        "runner_id": 1000040204,
+        "runner_name": "GitHub Actions 1000040204",
+        "started_at": "2026-10-30T11:45:28Z",
+        "status": "completed",
+        "steps": [
+            {
+                "completed_at": "2026-10-30T11:45:29Z",
+                "conclusion": "success",
+                "name": "Set up job",
+                "number": 1,
+                "started_at": "2026-10-30T11:45:28Z",
+                "status": "completed"
+            },
+            {
+                "completed_at": "2026-10-30T11:45:34Z",
+                "conclusion": "success",
+                "name": "Checkout Code",
+                "number": 2,
+                "started_at": "2026-10-30T11:45:29Z",
+                "status": "completed"
+            },
+            {
+                "completed_at": "2026-10-30T11:45:37Z",
+                "conclusion": "success",
+                "name": "Setup PHP",
+                "number": 3,
+                "started_at": "2026-10-30T11:45:34Z",
+                "status": "completed"
+            },
+            {
+                "completed_at": "2026-10-30T11:45:40Z",
+                "conclusion": "success",
+                "name": "Install Dependencies",
+                "number": 4,
+                "started_at": "2026-10-30T11:45:37Z",
+                "status": "completed"
+            },
+            {
+                "completed_at": "2026-10-30T11:45:40Z",
+                "conclusion": "success",
+                "name": "Verify Autoload and Platform",
+                "number": 5,
+                "started_at": "2026-10-30T11:45:40Z",
+                "status": "completed"
+            },
+            {
+                "completed_at": "2026-10-30T11:49:08Z",
+                "conclusion": "success",
+                "name": "Run the Archive Replay Group",
+                "number": 6,
+                "started_at": "2026-10-30T11:45:40Z",
+                "status": "completed"
+            },
+            {
+                "completed_at": "2026-10-30T11:49:08Z",
+                "conclusion": "success",
+                "name": "Post Checkout Code",
+                "number": 12,
+                "started_at": "2026-10-30T11:49:08Z",
+                "status": "completed"
+            },
+            {
+                "completed_at": "2026-10-30T11:49:08Z",
+                "conclusion": "success",
+                "name": "Complete job",
+                "number": 13,
+                "started_at": "2026-10-30T11:49:08Z",
+                "status": "completed"
+            }
+        ],
+        "url": "https://api.github.com/repos/Maatify/php-rate-limiter/actions/jobs/124044584555",
+        "workflow_name": "Stability Evidence"
+    },
+    {
+        "check_run_url": "https://api.github.com/repos/Maatify/php-rate-limiter/check-runs/124044584556",
+        "completed_at": "2026-10-30T12:00:11Z",
+        "conclusion": "success",
+        "created_at": "2026-10-30T11:45:25Z",
+        "head_branch": "main",
+        "head_sha": "5563e06b2f1950c4a04f624e58ff928ad8dac402",
+        "html_url": "https://github.com/Maatify/php-rate-limiter/actions/runs/41050345964/job/124044584556",
+        "id": 124044584556,
+        "labels": [
+            "ubuntu-latest"
+        ],
+        "name": "ci (1) / Lowest Supported Dependencies",
+        "node_id": "CR_kwDOUdWLvM8AAAAc4aImbA",
+        "run_attempt": 1,
+        "run_id": 41050345964,
+        "run_url": "https://api.github.com/repos/Maatify/php-rate-limiter/actions/runs/41050345964",
+        "runner_group_id": 0,
+        "runner_group_name": "GitHub Actions",
+        "runner_id": 1000040214,
+        "runner_name": "GitHub Actions 1000040214",
+        "started_at": "2026-10-30T11:45:45Z",
+        "status": "completed",
+        "steps": [
+            {
+                "completed_at": "2026-10-30T11:45:47Z",
+                "conclusion": "success",
+                "name": "Set up job",
+                "number": 1,
+                "started_at": "2026-10-30T11:45:46Z",
+                "status": "completed"
+            },
+            {
+                "completed_at": "2026-10-30T11:45:54Z",
+                "conclusion": "success",
+                "name": "Checkout Code",
+                "number": 2,
+                "started_at": "2026-10-30T11:45:47Z",
+                "status": "completed"
+            },
+            {
+                "completed_at": "2026-10-30T11:45:57Z",
+                "conclusion": "success",
+                "name": "Setup PHP",
+                "number": 3,
+                "started_at": "2026-10-30T11:45:54Z",
+                "status": "completed"
+            },
+            {
+                "completed_at": "2026-10-30T11:46:00Z",
+                "conclusion": "success",
+                "name": "Install Lowest Dependencies",
+                "number": 4,
+                "started_at": "2026-10-30T11:45:57Z",
+                "status": "completed"
+            },
+            {
+                "completed_at": "2026-10-30T11:46:01Z",
+                "conclusion": "success",
+                "name": "Verify Autoload and Platform",
+                "number": 5,
+                "started_at": "2026-10-30T11:46:00Z",
+                "status": "completed"
+            },
+            {
+                "completed_at": "2026-10-30T11:46:39Z",
+                "conclusion": "success",
+                "name": "Run PHPStan",
+                "number": 6,
+                "started_at": "2026-10-30T11:46:01Z",
+                "status": "completed"
+            },
+            {
+                "completed_at": "2026-10-30T11:54:32Z",
+                "conclusion": "success",
+                "name": "Run PHPUnit (all suites except the archive replays)",
+                "number": 7,
+                "started_at": "2026-10-30T11:46:39Z",
+                "status": "completed"
+            },
+            {
+                "completed_at": "2026-10-30T12:00:09Z",
+                "conclusion": "success",
+                "name": "Run the Archive Replay Group",
+                "number": 8,
+                "started_at": "2026-10-30T11:54:32Z",
+                "status": "completed"
+            },
+            {
+                "completed_at": "2026-10-30T12:00:09Z",
+                "conclusion": "success",
+                "name": "Post Checkout Code",
+                "number": 16,
+                "started_at": "2026-10-30T12:00:09Z",
+                "status": "completed"
+            },
+            {
+                "completed_at": "2026-10-30T12:00:09Z",
+                "conclusion": "success",
+                "name": "Complete job",
+                "number": 17,
+                "started_at": "2026-10-30T12:00:09Z",
+                "status": "completed"
+            }
+        ],
+        "url": "https://api.github.com/repos/Maatify/php-rate-limiter/actions/jobs/124044584556",
+        "workflow_name": "Stability Evidence"
+    },
+    {
+        "check_run_url": "https://api.github.com/repos/Maatify/php-rate-limiter/check-runs/124044584587",
+        "completed_at": "2026-10-30T11:45:42Z",
+        "conclusion": "success",
+        "created_at": "2026-10-30T11:45:25Z",
+        "head_branch": "main",
+        "head_sha": "5563e06b2f1950c4a04f624e58ff928ad8dac402",
+        "html_url": "https://github.com/Maatify/php-rate-limiter/actions/runs/41050345964/job/124044584587",
+        "id": 124044584587,
+        "labels": [
+            "ubuntu-latest"
+        ],
+        "name": "ci (2) / Composer Security Audit",
+        "node_id": "CR_kwDOUdWLvM8AAAAc4aImiw",
+        "run_attempt": 1,
+        "run_id": 41050345964,
+        "run_url": "https://api.github.com/repos/Maatify/php-rate-limiter/actions/runs/41050345964",
+        "runner_group_id": 0,
+        "runner_group_name": "GitHub Actions",
+        "runner_id": 1000040205,
+        "runner_name": "GitHub Actions 1000040205",
+        "started_at": "2026-10-30T11:45:28Z",
+        "status": "completed",
+        "steps": [
+            {
+                "completed_at": "2026-10-30T11:45:29Z",
+                "conclusion": "success",
+                "name": "Set up job",
+                "number": 1,
+                "started_at": "2026-10-30T11:45:28Z",
+                "status": "completed"
+            },
+            {
+                "completed_at": "2026-10-30T11:45:34Z",
+                "conclusion": "success",
+                "name": "Checkout Code",
+                "number": 2,
+                "started_at": "2026-10-30T11:45:29Z",
+                "status": "completed"
+            },
+            {
+                "completed_at": "2026-10-30T11:45:37Z",
+                "conclusion": "success",
+                "name": "Setup PHP",
+                "number": 3,
+                "started_at": "2026-10-30T11:45:34Z",
+                "status": "completed"
+            },
+            {
+                "completed_at": "2026-10-30T11:45:40Z",
+                "conclusion": "success",
+                "name": "Install Dependencies",
+                "number": 4,
+                "started_at": "2026-10-30T11:45:37Z",
+                "status": "completed"
+            },
+            {
+                "completed_at": "2026-10-30T11:45:40Z",
+                "conclusion": "success",
+                "name": "Verify Platform and Audit",
+                "number": 5,
+                "started_at": "2026-10-30T11:45:40Z",
+                "status": "completed"
+            },
+            {
+                "completed_at": "2026-10-30T11:45:41Z",
+                "conclusion": "success",
+                "name": "Post Checkout Code",
+                "number": 10,
+                "started_at": "2026-10-30T11:45:40Z",
+                "status": "completed"
+            },
+            {
+                "completed_at": "2026-10-30T11:45:41Z",
+                "conclusion": "success",
+                "name": "Complete job",
+                "number": 11,
+                "started_at": "2026-10-30T11:45:41Z",
+                "status": "completed"
+            }
+        ],
+        "url": "https://api.github.com/repos/Maatify/php-rate-limiter/actions/jobs/124044584587",
+        "workflow_name": "Stability Evidence"
+    },
+    {
+        "check_run_url": "https://api.github.com/repos/Maatify/php-rate-limiter/check-runs/124044584617",
+        "completed_at": "2026-10-30T11:45:48Z",
+        "conclusion": "success",
+        "created_at": "2026-10-30T11:45:25Z",
+        "head_branch": "main",
+        "head_sha": "5563e06b2f1950c4a04f624e58ff928ad8dac402",
+        "html_url": "https://github.com/Maatify/php-rate-limiter/actions/runs/41050345964/job/124044584617",
+        "id": 124044584617,
+        "labels": [
+            "ubuntu-latest"
+        ],
+        "name": "ci (1) / Workflow Lint",
+        "node_id": "CR_kwDOUdWLvM8AAAAc4aImqQ",
+        "run_attempt": 1,
+        "run_id": 41050345964,
+        "run_url": "https://api.github.com/repos/Maatify/php-rate-limiter/actions/runs/41050345964",
+        "runner_group_id": 0,
+        "runner_group_name": "GitHub Actions",
+        "runner_id": 1000040210,
+        "runner_name": "GitHub Actions 1000040210",
+        "started_at": "2026-10-30T11:45:40Z",
+        "status": "completed",
+        "steps": [
+            {
+                "completed_at": "2026-10-30T11:45:42Z",
+                "conclusion": "success",
+                "name": "Set up job",
+                "number": 1,
+                "started_at": "2026-10-30T11:45:41Z",
+                "status": "completed"
+            },
+            {
+                "completed_at": "2026-10-30T11:45:45Z",
+                "conclusion": "success",
+                "name": "Checkout Code",
+                "number": 2,
+                "started_at": "2026-10-30T11:45:42Z",
+                "status": "completed"
+            },
+            {
+                "completed_at": "2026-10-30T11:45:45Z",
+                "conclusion": "success",
+                "name": "Install actionlint",
+                "number": 3,
+                "started_at": "2026-10-30T11:45:45Z",
+                "status": "completed"
+            },
+            {
+                "completed_at": "2026-10-30T11:45:45Z",
+                "conclusion": "success",
+                "name": "Lint Workflows",
+                "number": 4,
+                "started_at": "2026-10-30T11:45:45Z",
+                "status": "completed"
+            },
+            {
+                "completed_at": "2026-10-30T11:45:46Z",
+                "conclusion": "success",
+                "name": "Post Checkout Code",
+                "number": 8,
+                "started_at": "2026-10-30T11:45:46Z",
+                "status": "completed"
+            },
+            {
+                "completed_at": "2026-10-30T11:45:46Z",
+                "conclusion": "success",
+                "name": "Complete job",
+                "number": 9,
+                "started_at": "2026-10-30T11:45:46Z",
+                "status": "completed"
+            }
+        ],
+        "url": "https://api.github.com/repos/Maatify/php-rate-limiter/actions/jobs/124044584617",
+        "workflow_name": "Stability Evidence"
+    },
+    {
+        "check_run_url": "https://api.github.com/repos/Maatify/php-rate-limiter/check-runs/124044584652",
+        "completed_at": "2026-10-30T11:46:01Z",
+        "conclusion": "success",
+        "created_at": "2026-10-30T11:45:25Z",
+        "head_branch": "main",
+        "head_sha": "5563e06b2f1950c4a04f624e58ff928ad8dac402",
+        "html_url": "https://github.com/Maatify/php-rate-limiter/actions/runs/41050345964/job/124044584652",
+        "id": 124044584652,
+        "labels": [
+            "ubuntu-latest"
+        ],
+        "name": "ci (1) / Whitespace Verification",
+        "node_id": "CR_kwDOUdWLvM8AAAAc4aImzA",
+        "run_attempt": 1,
+        "run_id": 41050345964,
+        "run_url": "https://api.github.com/repos/Maatify/php-rate-limiter/actions/runs/41050345964",
+        "runner_group_id": 0,
+        "runner_group_name": "GitHub Actions",
+        "runner_id": 1000040219,
+        "runner_name": "GitHub Actions 1000040219",
+        "started_at": "2026-10-30T11:45:54Z",
+        "status": "completed",
+        "steps": [
+            {
+                "completed_at": "2026-10-30T11:45:55Z",
+                "conclusion": "success",
+                "name": "Set up job",
+                "number": 1,
+                "started_at": "2026-10-30T11:45:55Z",
+                "status": "completed"
+            },
+            {
+                "completed_at": "2026-10-30T11:45:59Z",
+                "conclusion": "success",
+                "name": "Checkout Code",
+                "number": 2,
+                "started_at": "2026-10-30T11:45:55Z",
+                "status": "completed"
+            },
+            {
+                "completed_at": "2026-10-30T11:45:59Z",
+                "conclusion": "success",
+                "name": "Verify Whitespace",
+                "number": 3,
+                "started_at": "2026-10-30T11:45:59Z",
+                "status": "completed"
+            },
+            {
+                "completed_at": "2026-10-30T11:45:59Z",
+                "conclusion": "success",
+                "name": "Post Checkout Code",
+                "number": 6,
+                "started_at": "2026-10-30T11:45:59Z",
+                "status": "completed"
+            },
+            {
+                "completed_at": "2026-10-30T11:45:59Z",
+                "conclusion": "success",
+                "name": "Complete job",
+                "number": 7,
+                "started_at": "2026-10-30T11:45:59Z",
+                "status": "completed"
+            }
+        ],
+        "url": "https://api.github.com/repos/Maatify/php-rate-limiter/actions/jobs/124044584652",
+        "workflow_name": "Stability Evidence"
+    },
+    {
+        "check_run_url": "https://api.github.com/repos/Maatify/php-rate-limiter/check-runs/124044584699",
+        "completed_at": "2026-10-30T11:46:03Z",
+        "conclusion": "success",
+        "created_at": "2026-10-30T11:45:25Z",
+        "head_branch": "main",
+        "head_sha": "5563e06b2f1950c4a04f624e58ff928ad8dac402",
+        "html_url": "https://github.com/Maatify/php-rate-limiter/actions/runs/41050345964/job/124044584699",
+        "id": 124044584699,
+        "labels": [
+            "ubuntu-latest"
+        ],
+        "name": "ci (2) / Whitespace Verification",
+        "node_id": "CR_kwDOUdWLvM8AAAAc4aIm-w",
+        "run_attempt": 1,
+        "run_id": 41050345964,
+        "run_url": "https://api.github.com/repos/Maatify/php-rate-limiter/actions/runs/41050345964",
+        "runner_group_id": 0,
+        "runner_group_name": "GitHub Actions",
+        "runner_id": 1000040218,
+        "runner_name": "GitHub Actions 1000040218",
+        "started_at": "2026-10-30T11:45:52Z",
+        "status": "completed",
+        "steps": [
+            {
+                "completed_at": "2026-10-30T11:45:53Z",
+                "conclusion": "success",
+                "name": "Set up job",
+                "number": 1,
+                "started_at": "2026-10-30T11:45:53Z",
+                "status": "completed"
+            },
+            {
+                "completed_at": "2026-10-30T11:45:59Z",
+                "conclusion": "success",
+                "name": "Checkout Code",
+                "number": 2,
+                "started_at": "2026-10-30T11:45:53Z",
+                "status": "completed"
+            },
+            {
+                "completed_at": "2026-10-30T11:46:00Z",
+                "conclusion": "success",
+                "name": "Verify Whitespace",
+                "number": 3,
+                "started_at": "2026-10-30T11:45:59Z",
+                "status": "completed"
+            },
+            {
+                "completed_at": "2026-10-30T11:46:01Z",
+                "conclusion": "success",
+                "name": "Post Checkout Code",
+                "number": 6,
+                "started_at": "2026-10-30T11:46:00Z",
+                "status": "completed"
+            },
+            {
+                "completed_at": "2026-10-30T11:46:01Z",
+                "conclusion": "success",
+                "name": "Complete job",
+                "number": 7,
+                "started_at": "2026-10-30T11:46:01Z",
+                "status": "completed"
+            }
+        ],
+        "url": "https://api.github.com/repos/Maatify/php-rate-limiter/actions/jobs/124044584699",
+        "workflow_name": "Stability Evidence"
+    },
+    {
+        "check_run_url": "https://api.github.com/repos/Maatify/php-rate-limiter/check-runs/124044584701",
+        "completed_at": "2026-10-30T11:46:08Z",
+        "conclusion": "success",
+        "created_at": "2026-10-30T11:45:25Z",
+        "head_branch": "main",
+        "head_sha": "5563e06b2f1950c4a04f624e58ff928ad8dac402",
+        "html_url": "https://github.com/Maatify/php-rate-limiter/actions/runs/41050345964/job/124044584701",
+        "id": 124044584701,
+        "labels": [
+            "ubuntu-latest"
+        ],
+        "name": "ci (1) / Composer Security Audit",
+        "node_id": "CR_kwDOUdWLvM8AAAAc4aIm_Q",
+        "run_attempt": 1,
+        "run_id": 41050345964,
+        "run_url": "https://api.github.com/repos/Maatify/php-rate-limiter/actions/runs/41050345964",
+        "runner_group_id": 0,
+        "runner_group_name": "GitHub Actions",
+        "runner_id": 1000040215,
+        "runner_name": "GitHub Actions 1000040215",
+        "started_at": "2026-10-30T11:45:46Z",
+        "status": "completed",
+        "steps": [
+            {
+                "completed_at": "2026-10-30T11:45:49Z",
+                "conclusion": "success",
+                "name": "Set up job",
+                "number": 1,
+                "started_at": "2026-10-30T11:45:47Z",
+                "status": "completed"
+            },
+            {
+                "completed_at": "2026-10-30T11:45:58Z",
+                "conclusion": "success",
+                "name": "Checkout Code",
+                "number": 2,
+                "started_at": "2026-10-30T11:45:49Z",
+                "status": "completed"
+            },
+            {
+                "completed_at": "2026-10-30T11:46:01Z",
+                "conclusion": "success",
+                "name": "Setup PHP",
+                "number": 3,
+                "started_at": "2026-10-30T11:45:58Z",
+                "status": "completed"
+            },
+            {
+                "completed_at": "2026-10-30T11:46:05Z",
+                "conclusion": "success",
+                "name": "Install Dependencies",
+                "number": 4,
+                "started_at": "2026-10-30T11:46:01Z",
+                "status": "completed"
+            },
+            {
+                "completed_at": "2026-10-30T11:46:05Z",
+                "conclusion": "success",
+                "name": "Verify Platform and Audit",
+                "number": 5,
+                "started_at": "2026-10-30T11:46:05Z",
+                "status": "completed"
+            },
+            {
+                "completed_at": "2026-10-30T11:46:06Z",
+                "conclusion": "success",
+                "name": "Post Checkout Code",
+                "number": 10,
+                "started_at": "2026-10-30T11:46:05Z",
+                "status": "completed"
+            },
+            {
+                "completed_at": "2026-10-30T11:46:06Z",
+                "conclusion": "success",
+                "name": "Complete job",
+                "number": 11,
+                "started_at": "2026-10-30T11:46:06Z",
+                "status": "completed"
+            }
+        ],
+        "url": "https://api.github.com/repos/Maatify/php-rate-limiter/actions/jobs/124044584701",
+        "workflow_name": "Stability Evidence"
+    },
+    {
+        "check_run_url": "https://api.github.com/repos/Maatify/php-rate-limiter/check-runs/124049602004",
+        "completed_at": "2026-10-30T11:58:10Z",
+        "conclusion": "success",
+        "created_at": "2026-10-30T11:58:04Z",
+        "head_branch": "main",
+        "head_sha": "5563e06b2f1950c4a04f624e58ff928ad8dac402",
+        "html_url": "https://github.com/Maatify/php-rate-limiter/actions/runs/41050345964/job/124049602004",
+        "id": 124049602004,
+        "labels": [
+            "ubuntu-latest"
+        ],
+        "name": "ci (2) / Final Gate",
+        "node_id": "CR_kwDOUdWLvM8AAAAc4e611A",
+        "run_attempt": 1,
+        "run_id": 41050345964,
+        "run_url": "https://api.github.com/repos/Maatify/php-rate-limiter/actions/runs/41050345964",
+        "runner_group_id": 0,
+        "runner_group_name": "GitHub Actions",
+        "runner_id": 1000040220,
+        "runner_name": "GitHub Actions 1000040220",
+        "started_at": "2026-10-30T11:58:07Z",
+        "status": "completed",
+        "steps": [
+            {
+                "completed_at": "2026-10-30T11:58:08Z",
+                "conclusion": "success",
+                "name": "Set up job",
+                "number": 1,
+                "started_at": "2026-10-30T11:58:08Z",
+                "status": "completed"
+            },
+            {
+                "completed_at": "2026-10-30T11:58:08Z",
+                "conclusion": "success",
+                "name": "Verify Upstream Jobs",
+                "number": 2,
+                "started_at": "2026-10-30T11:58:08Z",
+                "status": "completed"
+            },
+            {
+                "completed_at": "2026-10-30T11:58:08Z",
+                "conclusion": "success",
+                "name": "Complete job",
+                "number": 3,
+                "started_at": "2026-10-30T11:58:08Z",
+                "status": "completed"
+            }
+        ],
+        "url": "https://api.github.com/repos/Maatify/php-rate-limiter/actions/jobs/124049602004",
+        "workflow_name": "Stability Evidence"
+    },
+    {
+        "check_run_url": "https://api.github.com/repos/Maatify/php-rate-limiter/check-runs/124050435254",
+        "completed_at": "2026-10-30T12:00:17Z",
+        "conclusion": "success",
+        "created_at": "2026-10-30T12:00:12Z",
+        "head_branch": "main",
+        "head_sha": "5563e06b2f1950c4a04f624e58ff928ad8dac402",
+        "html_url": "https://github.com/Maatify/php-rate-limiter/actions/runs/41050345964/job/124050435254",
+        "id": 124050435254,
+        "labels": [
+            "ubuntu-latest"
+        ],
+        "name": "ci (1) / Final Gate",
+        "node_id": "CR_kwDOUdWLvM8AAAAc4ftstg",
+        "run_attempt": 1,
+        "run_id": 41050345964,
+        "run_url": "https://api.github.com/repos/Maatify/php-rate-limiter/actions/runs/41050345964",
+        "runner_group_id": 0,
+        "runner_group_name": "GitHub Actions",
+        "runner_id": 1000040221,
+        "runner_name": "GitHub Actions 1000040221",
+        "started_at": "2026-10-30T12:00:14Z",
+        "status": "completed",
+        "steps": [
+            {
+                "completed_at": "2026-10-30T12:00:15Z",
+                "conclusion": "success",
+                "name": "Set up job",
+                "number": 1,
+                "started_at": "2026-10-30T12:00:15Z",
+                "status": "completed"
+            },
+            {
+                "completed_at": "2026-10-30T12:00:15Z",
+                "conclusion": "success",
+                "name": "Verify Upstream Jobs",
+                "number": 2,
+                "started_at": "2026-10-30T12:00:15Z",
+                "status": "completed"
+            },
+            {
+                "completed_at": "2026-10-30T12:00:15Z",
+                "conclusion": "success",
+                "name": "Complete job",
+                "number": 3,
+                "started_at": "2026-10-30T12:00:15Z",
+                "status": "completed"
+            }
+        ],
+        "url": "https://api.github.com/repos/Maatify/php-rate-limiter/actions/jobs/124050435254",
+        "workflow_name": "Stability Evidence"
+    }
+]

@@ -4,3 +4,6 @@ ci-history.summary.json  php ../scripts/summarize_history.php ci-history.raw.jso
 attempt1/<run>.jobs.json gh api repos/Maatify/php-rate-limiter/actions/runs/<run>/attempts/1/jobs?per_page=100, as written
 attempt1/job-<job>.log.gz gh api repos/Maatify/php-rate-limiter/actions/jobs/<job>/logs (attempt-1 failing job), gzip -n -9
 baseline-40975978888.jobs.json gh api repos/Maatify/php-rate-limiter/actions/runs/40975978888/jobs?per_page=100 (main@62599c9 push run)
+S2 smoke (PLAN §11), collected 2026-10-30 after run 41050345964 completed:
+runs/41050345964.run.json, runs/41050345964.jobs.json, runs/41050345964/env/<job_id>.txt   scripts/collect.sh 41050345964
+stability.jsonl, s2-smoke.analysis.json   php scripts/analyze.php --ref=5563e06b2f1950c4a04f624e58ff928ad8dac402 --repeats=2 --baseline=data/baseline-40975978888.jobs.json 41050345964
