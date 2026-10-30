@@ -420,3 +420,4 @@ Normal Engineering Task: قُرئ `docs/php-engineering-standards/STANDARDS_MANI
 | # | الـ run | الوظائف | النتيجة (التكرارات) | V-REF | V-NAMES | V-COUNT | V-PARALLEL | V-ENV | V-DEPS (تراكمي) | الجدار (د) | دقائق runner |
 | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |
 | 1 | [41084219452](https://github.com/Maatify/php-rate-limiter/actions/runs/41084219452) | 401 | 400 success، 0 غير success | نعم | نعم | نعم (401) | نعم | نعم | نعم | 74.9 | 1366.4 |
+| 2 | [41097286365](https://github.com/Maatify/php-rate-limiter/actions/runs/41097286365) | 401 | 400 success، 0 غير success | نعم | نعم | نعم (401) | نعم | نعم | نعم | 85.2 | 1496.0 |
