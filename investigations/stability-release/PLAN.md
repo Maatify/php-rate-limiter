@@ -273,3 +273,10 @@ Normal Engineering Task: قُرئ `docs/php-engineering-standards/STANDARDS_MANI
 | `DOCUMENTATION_LIFECYCLE_STANDARD_AR.md` | 3.1.0 | توثيق الـ workflow (LT-176-06) وREPORT |
 | `AI_COLLABORATION_WORKFLOW_AR.md` | 12.0.0 | |
 | `GITHUB_PHASE_STACK_WORKFLOW_AR.md` | 4.0.0 | Draft، والدمج بيد الـ Lead، والـ dispatch بكلمة الـ Owner |
+
+## 10. S1 — الفحوص المسجَّلة
+
+* **V-SRC:** `git diff 62599c9..de55ae7d -- src tests` يعطي 0 بايت، أي **فارغ**.
+* **actionlint 1.7.12** (الإصدار المثبَّت في `scripts/ci/install-actionlint.sh`): `bash scripts/ci/lint-workflows.sh` نظيف على كل الـ workflows، ومنها `stability-evidence.yml`.
+* **فقرة CONTRIBUTING.md** وُضعت بعد قائمة الـ CI مباشرة (بعد L147)، لا داخلها عند L142، لئلا تنقسم القائمة.
+* **CI العادي 16/16:** يُنشر على الـ PR بعد الـ push.
