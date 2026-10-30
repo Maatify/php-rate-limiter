@@ -1,0 +1,6 @@
+#176 S0 data (investigations/stability-release/PLAN.md §1). Captured 2026-10-30 from GitHub Actions at main@62599c9.
+ci-history.raw.json      the output of ci-history.command.txt, as written (400 rows, 2026-09-25T20:49:10Z .. 2026-10-29T23:52:01Z)
+ci-history.summary.json  php ../scripts/summarize_history.php ci-history.raw.json (runs created at or after the v1.0.0-rc.3 tag time)
+attempt1/<run>.jobs.json gh api repos/Maatify/php-rate-limiter/actions/runs/<run>/attempts/1/jobs?per_page=100, as written
+attempt1/job-<job>.log.gz gh api repos/Maatify/php-rate-limiter/actions/jobs/<job>/logs (attempt-1 failing job), gzip -n -9
+baseline-40975978888.jobs.json gh api repos/Maatify/php-rate-limiter/actions/runs/40975978888/jobs?per_page=100 (main@62599c9 push run)

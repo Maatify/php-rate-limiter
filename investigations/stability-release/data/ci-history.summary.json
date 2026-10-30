@@ -1,0 +1,52 @@
+{
+    "since": "2026-10-07T13:14:02Z",
+    "rows_in_file": 400,
+    "oldest_in_file": "2026-09-25T20:49:10Z",
+    "runs_since_rc3": 306,
+    "by_conclusion": {
+        "cancelled": 45,
+        "failure": 25,
+        "success": 236
+    },
+    "main_runs": 66,
+    "main_by_conclusion": {
+        "success": 66
+    },
+    "runs_with_attempt_gt_1": [
+        {
+            "headSha": "be283a9",
+            "createdAt": "2026-10-29T18:34:36Z",
+            "branch": "claude/dec029-coverage",
+            "attempt": 2,
+            "conclusion": "success"
+        },
+        {
+            "headSha": "b14b30d",
+            "createdAt": "2026-10-23T09:40:40Z",
+            "branch": "claude/measure-tests-no-tap-a58f7a",
+            "attempt": 2,
+            "conclusion": "success"
+        },
+        {
+            "headSha": "fe8775c",
+            "createdAt": "2026-10-21T08:36:00Z",
+            "branch": "claude/clock-skew-bounded-snapshot-a0900b",
+            "attempt": 2,
+            "conclusion": "success"
+        },
+        {
+            "headSha": "b75e7d6",
+            "createdAt": "2026-10-17T15:13:11Z",
+            "branch": "study/97-g2-proof-acquisition",
+            "attempt": 2,
+            "conclusion": "success"
+        },
+        {
+            "headSha": "08a6ce9",
+            "createdAt": "2026-10-15T06:17:56Z",
+            "branch": "fix/110-known-device-verifier-bound",
+            "attempt": 2,
+            "conclusion": "success"
+        }
+    ]
+}
