@@ -11,6 +11,12 @@
                 "v_count": true,
                 "v_parallel": false
             },
+            "v_parallel_conditions": {
+                "a_queued_within_60s": true,
+                "b_no_cancelled_or_skipped": true,
+                "c_every_repeat_overlaps_another": true,
+                "d_wall_below_bound": false
+            },
             "per_repeat": {
                 "1": {
                     "outcomes": {
@@ -25,7 +31,10 @@
                     "minutes": 52.3
                 }
             },
-            "wall_minutes": 14.9,
+            "wall_minutes": 14.92,
+            "wall_bound_minutes": 13.7,
+            "queued_after_plan_s": 1,
+            "peak_concurrent_jobs": 20,
             "overlap_per_job": {
                 "PHP Coding Style (PER 3.1)": true,
                 "Static Analysis (PHPStan)": true,
@@ -44,8 +53,7 @@
                 "Whitespace Verification": true,
                 "Final Gate": false
             },
-            "queued_after_plan_s": 1,
-            "peak_concurrent_jobs": 20
+            "non_overlapping_job_names": 3
         }
     },
     "v_deps": {

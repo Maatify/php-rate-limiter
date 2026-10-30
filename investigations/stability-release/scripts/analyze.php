@@ -11,14 +11,16 @@ declare(strict_types=1);
 //   V-NAMES     one "Plan (repeats and V-REF)" job; every other job is "ci (N) / <name>", N in 1..repeats, and
 //               each repeat has exactly the baseline's 16 job names
 //   V-COUNT     jobs = 1 + repeats × 16
-//   V-PARALLEL  for every job name, the repeats' [started, completed] intervals overlap (latest start < earliest end),
-//               and no job was cancelled or skipped
+//   V-PARALLEL  (Lead ruling on F-176-01, PLAN §11.3) all four hold:
+//               (a) every non-Final-Gate job of every repeat is queued (created_at) within 60 s of the plan job's completed_at
+//               (b) no job cancelled or skipped
+//               (c) every repeat has at least one job whose [started, completed] overlaps a job of another repeat
+//               (d) the dispatch wall time (first job start to last job end) < repeats × 13.7 min / 2
 //   V-DEPS      for every job name with environment lines, those lines are identical across all repeats of all runs
 //   V-ENV       every environment file has "Locking" lines and an "Installed PHP" line, and those of the PHPUnit jobs
 //               (Test Suite, Archive Replay Suite, Integration, Lowest) a "PHPUnit x.y.z by" line: the inputs reached the file
-//   queued_after_plan_s  reported only (F-176-01, a proposed V-PARALLEL criterion for the Lead): the latest
-//               created_at of a non-gate job minus the plan job's completed_at; Final Gate is queued by its own repeat's needs
-//   peak_concurrent_jobs reported only: the largest number of jobs running at one instant
+//   overlap_per_job, peak_concurrent_jobs  reported only: per job name whether the repeats' intervals overlap, and the
+//               largest number of jobs running at one instant (runner availability, not a gate)
 //   cost        per repeat: the sum of its jobs' durations; per run: the wall time from the first start to the last end
 
 $options = getopt('', ['ref:', 'repeats:', 'baseline:'], $rest);
@@ -91,15 +93,34 @@ foreach ($runs as $run) {
         $checks['v_names'] = $checks['v_names'] && $keys === $baselineNames;
     }
     $overlap = [];
+    $noCancelled = true;
     foreach ($byName as $name => $intervals) {
-        $latestStart = max(array_column($intervals, 0));
-        $earliestEnd = min(array_column($intervals, 1));
-        $overlap[$name] = $latestStart < $earliestEnd;
+        $overlap[$name] = max(array_column($intervals, 0)) < min(array_column($intervals, 1));
         foreach ($intervals as [, , $conclusion]) {
-            $checks['v_parallel'] = $checks['v_parallel'] && ! in_array($conclusion, ['cancelled', 'skipped'], true);
+            $noCancelled = $noCancelled && ! in_array($conclusion, ['cancelled', 'skipped'], true);
         }
-        $checks['v_parallel'] = $checks['v_parallel'] && $overlap[$name];
     }
+    $repeatOverlap = [];
+    foreach ($byName as $intervalsA) {
+        foreach ($intervalsA as $repeatA => [$startA, $endA]) {
+            foreach ($byName as $intervalsB) {
+                foreach ($intervalsB as $repeatB => [$startB, $endB]) {
+                    if ($repeatA !== $repeatB && $startA < $endB && $startB < $endA) {
+                        $repeatOverlap[$repeatA] = true;
+                    }
+                }
+            }
+        }
+    }
+    $wallMinutes = ($last - $first) / 60;
+    $queuedAfterPlan = $planDone === null ? null : $queuedLatest - $planDone;
+    $parallel = [
+        'a_queued_within_60s' => $queuedAfterPlan !== null && $queuedAfterPlan <= 60,
+        'b_no_cancelled_or_skipped' => $noCancelled,
+        'c_every_repeat_overlaps_another' => count($repeatOverlap) === $repeats,
+        'd_wall_below_bound' => $wallMinutes < $repeats * 13.7 / 2,
+    ];
+    $checks['v_parallel'] = ! in_array(false, $parallel, true);
     $perRepeat = [];
     foreach ($byRepeat as $repeat => $names) {
         $outcomes = array_count_values(array_column($names, 'conclusion'));
@@ -114,9 +135,10 @@ foreach ($runs as $run) {
         $running += $delta;
         $peak = max($peak, $running);
     }
-    $report['runs'][$run] = ['jobs' => count($jobs), 'checks' => $checks, 'per_repeat' => $perRepeat,
-        'wall_minutes' => round(($last - $first) / 60, 1), 'overlap_per_job' => $overlap,
-        'queued_after_plan_s' => $planDone === null ? null : $queuedLatest - $planDone, 'peak_concurrent_jobs' => $peak];
+    $report['runs'][$run] = ['jobs' => count($jobs), 'checks' => $checks, 'v_parallel_conditions' => $parallel,
+        'per_repeat' => $perRepeat, 'wall_minutes' => round($wallMinutes, 2), 'wall_bound_minutes' => round($repeats * 13.7 / 2, 2),
+        'queued_after_plan_s' => $queuedAfterPlan, 'peak_concurrent_jobs' => $peak,
+        'overlap_per_job' => $overlap, 'non_overlapping_job_names' => count(array_filter($overlap, static fn(bool $v): bool => ! $v))];
 }
 $deps = [];
 foreach ($envByName as $name => $hashes) {
