@@ -9,13 +9,13 @@
                 "v_ref": true,
                 "v_names": true,
                 "v_count": true,
-                "v_parallel": false
+                "v_parallel": true
             },
             "v_parallel_conditions": {
                 "a_queued_within_60s": true,
                 "b_no_cancelled_or_skipped": true,
                 "c_every_repeat_overlaps_another": true,
-                "d_wall_below_bound": false
+                "d_wall_below_bound": true
             },
             "per_repeat": {
                 "1": {
@@ -32,7 +32,7 @@
                 }
             },
             "wall_minutes": 14.92,
-            "wall_bound_minutes": 13.7,
+            "wall_bound_minutes": 20.55,
             "queued_after_plan_s": 1,
             "peak_concurrent_jobs": 20,
             "overlap_per_job": {

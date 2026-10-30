@@ -15,7 +15,8 @@ declare(strict_types=1);
 //               (a) every non-Final-Gate job of every repeat is queued (created_at) within 60 s of the plan job's completed_at
 //               (b) no job cancelled or skipped
 //               (c) every repeat has at least one job whose [started, completed] overlaps a job of another repeat
-//               (d) the dispatch wall time (first job start to last job end) < repeats × 13.7 min / 2
+//               (d) the dispatch wall time (first job start to last job end) < 13.7 × (1 + (repeats − 1) / 2) min, midway
+//                   between full parallelism (13.7) and strict serialisation (repeats × 13.7) (Lead ruling on F-176-02)
 //   V-DEPS      for every job name with environment lines, those lines are identical across all repeats of all runs
 //   V-ENV       every environment file has "Locking" lines and an "Installed PHP" line, and those of the PHPUnit jobs
 //               (Test Suite, Archive Replay Suite, Integration, Lowest) a "PHPUnit x.y.z by" line: the inputs reached the file
@@ -118,7 +119,7 @@ foreach ($runs as $run) {
         'a_queued_within_60s' => $queuedAfterPlan !== null && $queuedAfterPlan <= 60,
         'b_no_cancelled_or_skipped' => $noCancelled,
         'c_every_repeat_overlaps_another' => count($repeatOverlap) === $repeats,
-        'd_wall_below_bound' => $wallMinutes < $repeats * 13.7 / 2,
+        'd_wall_below_bound' => $wallMinutes < 13.7 * (1 + ($repeats - 1) / 2),
     ];
     $checks['v_parallel'] = ! in_array(false, $parallel, true);
     $perRepeat = [];
@@ -136,7 +137,7 @@ foreach ($runs as $run) {
         $peak = max($peak, $running);
     }
     $report['runs'][$run] = ['jobs' => count($jobs), 'checks' => $checks, 'v_parallel_conditions' => $parallel,
-        'per_repeat' => $perRepeat, 'wall_minutes' => round($wallMinutes, 2), 'wall_bound_minutes' => round($repeats * 13.7 / 2, 2),
+        'per_repeat' => $perRepeat, 'wall_minutes' => round($wallMinutes, 2), 'wall_bound_minutes' => round(13.7 * (1 + ($repeats - 1) / 2), 2),
         'queued_after_plan_s' => $queuedAfterPlan, 'peak_concurrent_jobs' => $peak,
         'overlap_per_job' => $overlap, 'non_overlapping_job_names' => count(array_filter($overlap, static fn(bool $v): bool => ! $v))];
 }
