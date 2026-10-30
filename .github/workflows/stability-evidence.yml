@@ -1,0 +1,65 @@
+name: Stability Evidence
+
+# Release gate (#176, investigations/stability-release/PLAN.md §3, §8). Runs the CI Quality Gate itself
+# (ci.yml through workflow_call) `repeats` times in parallel on one commit, so what is measured is the gate,
+# not a copy of it. ci.yml's jobs check out github.sha, which is the dispatched branch head; `ref` must name
+# that commit (V-REF), so a run can never measure a different SHA than the one recorded.
+# Dispatch only: no push or pull_request trigger, contents: read, no secrets.
+
+on:
+  workflow_dispatch:
+    inputs:
+      repeats:
+        description: 'Number of parallel CI Quality Gate repeats (1-25)'
+        required: true
+        type: number
+        default: 2
+      ref:
+        description: 'Full 40-character SHA under measurement; must be the head of the dispatched branch'
+        required: true
+        type: string
+
+permissions:
+  contents: read
+
+defaults:
+  run:
+    shell: bash
+
+jobs:
+  plan:
+    name: Plan (repeats and V-REF)
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    outputs:
+      repeats: ${{ steps.plan.outputs.repeats }}
+    steps:
+      - name: Check inputs and build the repeat list
+        id: plan
+        env:
+          REPEATS: ${{ inputs.repeats }}
+          REF: ${{ inputs.ref }}
+        run: |
+          if [[ ! "$REPEATS" =~ ^[0-9]+$ ]] || (( REPEATS < 1 || REPEATS > 25 )); then
+            echo "repeats must be an integer from 1 to 25, got '$REPEATS'" >&2
+            exit 1
+          fi
+          if [[ ! "$REF" =~ ^[0-9a-f]{40}$ || "$REF" != "$GITHUB_SHA" ]]; then
+            echo "V-REF: ref '$REF' is not the dispatched head $GITHUB_SHA" >&2
+            exit 1
+          fi
+          echo "repeats=[$(seq -s, 1 "$REPEATS")]" >> "$GITHUB_OUTPUT"
+
+  ci:
+    name: ci (${{ matrix.repeat }})
+    needs: plan
+    permissions:
+      contents: read
+    strategy:
+      # LT-176-03: one failed repeat lets the others finish; the sequence of dispatches stops afterwards.
+      fail-fast: false
+      matrix:
+        repeat: ${{ fromJSON(needs.plan.outputs.repeats) }}
+    uses: ./.github/workflows/ci.yml
+    with:
+      run_label: stability-${{ github.run_id }}-${{ matrix.repeat }}

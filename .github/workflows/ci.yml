@@ -2,6 +2,14 @@ name: CI Quality Gate
 
 on:
   workflow_dispatch:
+  # #176: called by stability-evidence.yml, once per repeat; run_label keeps each repeat in its own concurrency group.
+  workflow_call:
+    inputs:
+      run_label:
+        description: 'Concurrency label of one stability-evidence repeat; empty for every other trigger.'
+        type: string
+        required: false
+        default: ''
   push:
     branches:
       - main
@@ -15,7 +23,7 @@ permissions:
   contents: read
 
 concurrency:
-  group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}
+  group: ${{ github.workflow }}-${{ inputs.run_label || github.event.pull_request.number || github.ref }}
   cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 
 defaults:

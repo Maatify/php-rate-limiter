@@ -146,6 +146,12 @@ The CI verification mapping is intentionally split across its gates:
 - The PHP coding-style gate runs on PHP 8.5.
 - Workflow lint and whitespace are repository-level gates, not PHP compatibility-matrix jobs.
 
+Before a release, the `Stability Evidence` workflow (`.github/workflows/stability-evidence.yml`, dispatch only) is run on the
+candidate commit. It calls the CI Quality Gate itself (`ci.yml` through `workflow_call`) `repeats` times in parallel (input
+`repeats`, 1–25) on that commit (input `ref`, the full SHA, which must be the head of the dispatched branch). Every job of every
+repeat is the normal gate, unmodified, so it measures the per-run failure rate of the gate on the release candidate. Its
+results, the job outcomes and durations of each repeat, are recorded under `investigations/stability-release/`.
+
 Workflow linting uses actionlint v1.7.12 with a verified checksum; install that version locally or provide its path through `ACTIONLINT_BIN`.
 
 ## Pull requests and review expectations
