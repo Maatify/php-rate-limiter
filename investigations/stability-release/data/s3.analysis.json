@@ -768,54 +768,54 @@
         "holds": true,
         "per_job": {
             "Archive Replay Suite (PHP 8.4)": {
-                "samples": 86,
+                "samples": 100,
                 "distinct": 1
             },
             "Archive Replay Suite (PHP 8.5)": {
-                "samples": 84,
+                "samples": 100,
                 "distinct": 1
             },
             "Composer Security Audit": {
-                "samples": 85,
+                "samples": 100,
                 "distinct": 1
             },
             "Consumer Verification Harness": {
-                "samples": 85,
+                "samples": 100,
                 "distinct": 1
             },
             "Integration Test Suite": {
-                "samples": 86,
+                "samples": 100,
                 "distinct": 1
             },
             "Lowest Supported Dependencies": {
-                "samples": 86,
+                "samples": 100,
                 "distinct": 1
             },
             "PHP Coding Style (PER 3.1)": {
-                "samples": 87,
+                "samples": 100,
                 "distinct": 1
             },
             "PHP Examples": {
-                "samples": 87,
+                "samples": 100,
                 "distinct": 1
             },
             "Static Analysis (PHPStan)": {
-                "samples": 86,
+                "samples": 100,
                 "distinct": 1
             },
             "Test Suite (PHP 8.4)": {
-                "samples": 86,
+                "samples": 100,
                 "distinct": 1
             },
             "Test Suite (PHP 8.5)": {
-                "samples": 87,
+                "samples": 100,
                 "distinct": 1
             }
         }
     },
     "v_env": {
         "holds": true,
-        "files": 945,
+        "files": 1100,
         "incomplete": []
     }
 }
