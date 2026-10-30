@@ -1,0 +1,113 @@
+{
+    "ref": "5563e06b2f1950c4a04f624e58ff928ad8dac402",
+    "repeats": 2,
+    "baseline_minutes_per_repeat": 56.4,
+    "runs": {
+        "41050345964": {
+            "jobs": 33,
+            "checks": {
+                "v_ref": true,
+                "v_names": true,
+                "v_count": true,
+                "v_parallel": true
+            },
+            "v_parallel_conditions": {
+                "a_queued_within_60s": true,
+                "b_no_cancelled_or_skipped": true,
+                "c_every_repeat_overlaps_another": true,
+                "d_wall_below_bound": true
+            },
+            "per_repeat": {
+                "1": {
+                    "outcomes": {
+                        "success": 16
+                    },
+                    "minutes": 55.1
+                },
+                "2": {
+                    "outcomes": {
+                        "success": 16
+                    },
+                    "minutes": 52.3
+                }
+            },
+            "wall_minutes": 14.92,
+            "wall_bound_minutes": 20.55,
+            "queued_after_plan_s": 1,
+            "peak_concurrent_jobs": 20,
+            "overlap_per_job": {
+                "PHP Coding Style (PER 3.1)": true,
+                "Static Analysis (PHPStan)": true,
+                "Integration Test Suite": true,
+                "PHP Examples": true,
+                "PHP Syntax Check": true,
+                "Composer Validate": true,
+                "Test Suite (PHP 8.5)": true,
+                "Lowest Supported Dependencies": true,
+                "Workflow Lint": false,
+                "Test Suite (PHP 8.4)": true,
+                "Archive Replay Suite (PHP 8.5)": true,
+                "Archive Replay Suite (PHP 8.4)": true,
+                "Consumer Verification Harness": true,
+                "Composer Security Audit": false,
+                "Whitespace Verification": true,
+                "Final Gate": false
+            },
+            "non_overlapping_job_names": 3
+        }
+    },
+    "v_deps": {
+        "holds": true,
+        "per_job": {
+            "Archive Replay Suite (PHP 8.4)": {
+                "samples": 2,
+                "distinct": 1
+            },
+            "Archive Replay Suite (PHP 8.5)": {
+                "samples": 2,
+                "distinct": 1
+            },
+            "Composer Security Audit": {
+                "samples": 2,
+                "distinct": 1
+            },
+            "Consumer Verification Harness": {
+                "samples": 2,
+                "distinct": 1
+            },
+            "Integration Test Suite": {
+                "samples": 2,
+                "distinct": 1
+            },
+            "Lowest Supported Dependencies": {
+                "samples": 2,
+                "distinct": 1
+            },
+            "PHP Coding Style (PER 3.1)": {
+                "samples": 2,
+                "distinct": 1
+            },
+            "PHP Examples": {
+                "samples": 2,
+                "distinct": 1
+            },
+            "Static Analysis (PHPStan)": {
+                "samples": 2,
+                "distinct": 1
+            },
+            "Test Suite (PHP 8.4)": {
+                "samples": 2,
+                "distinct": 1
+            },
+            "Test Suite (PHP 8.5)": {
+                "samples": 2,
+                "distinct": 1
+            }
+        }
+    },
+    "v_env": {
+        "holds": true,
+        "files": 22,
+        "incomplete": []
+    }
+}
