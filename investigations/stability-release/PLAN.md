@@ -397,3 +397,26 @@ Normal Engineering Task: قُرئ `docs/php-engineering-standards/STANDARDS_MANI
   * (2) (د) كما هي للعدّ (`repeats = 25`)، ويُسجَّل الـ smoke بـ (أ)–(ج)، و(د) «غير منطبق عند repeats = 2» صراحة؛
   * (3) غير ذلك بحكمك.
 * **`analyze.php` في هذا الـ commit يطبّق (د) حرفيًا.** لم أغيّر التعريف ليمرّ الـ smoke.
+
+## 12. S3 — الـ dispatches المعدودة (10 × 25)
+
+* **الرأس:** `main@2bac701b1ab1034846d08592439e9f5ce933c4c9`، بعد دمج #178.
+* **V-SRC:** `git diff 62599c9..2bac701 -- src tests` يعطي 0 بايت.
+* **V-TOOLS:** الأداتان مجمَّدتان كما دُمجتا في `2bac701`، وأي تغيير بعده commit وحده مع إعادة التحليل على كل البيانات:
+  * `scripts/collect.sh` sha256 `451a8866…c96bac9b973f`؛
+  * `scripts/analyze.php` sha256 `d55e6ae1…e1019541691`.
+* **لكل dispatch:**
+  1. لا يبدأ وأي run آخر يعمل؛
+  2. `gh workflow run stability-evidence.yml --ref main -f repeats=25 -f ref=2bac701b…`؛
+  3. بعد الانتهاء: `collect.sh <run>`، ثم `analyze.php --ref=2bac701b… --repeats=25 --baseline=data/baseline-40975978888.jobs.json <كل الـ runs حتى الآن>` إلى `data/s3.analysis.json`؛
+  4. commit محلي.
+* **push** بعد الخامس وبعد العاشر فقط، وانتظار CI الـ PR قبل الـ dispatch التالي.
+* **يتوقف التسلسل** عند:
+  * run غير `success`، أو أي وظيفة غير `success`؛
+  * أو V-COUNT ≠ 401، أو V-REF أو V-NAMES أو V-PARALLEL أو V-ENV = false؛
+  * أو رفض أو قطع من GitHub.
+* **V-DEPS** إن انجرف يُسجَّل مُربِكًا ولا يوقف (LT-176-04).
+
+| # | الـ run | الوظائف | النتيجة (التكرارات) | V-REF | V-NAMES | V-COUNT | V-PARALLEL | V-ENV | V-DEPS (تراكمي) | الجدار (د) | دقائق runner |
+| --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |
+| 1 | [41084219452](https://github.com/Maatify/php-rate-limiter/actions/runs/41084219452) | 401 | 400 success، 0 غير success | نعم | نعم | نعم (401) | نعم | نعم | نعم | 74.9 | 1366.4 |
