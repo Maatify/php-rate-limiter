@@ -1712,60 +1712,250 @@
                 "Final Gate": false
             },
             "non_overlapping_job_names": 16
+        },
+        "41172600104": {
+            "jobs": 401,
+            "checks": {
+                "v_ref": true,
+                "v_names": true,
+                "v_count": true,
+                "v_parallel": true
+            },
+            "v_parallel_conditions": {
+                "a_queued_within_60s": true,
+                "b_no_cancelled_or_skipped": true,
+                "c_every_repeat_overlaps_another": true,
+                "d_wall_below_bound": true
+            },
+            "per_repeat": {
+                "1": {
+                    "outcomes": {
+                        "success": 16
+                    },
+                    "minutes": 53.7
+                },
+                "2": {
+                    "outcomes": {
+                        "success": 16
+                    },
+                    "minutes": 57.3
+                },
+                "3": {
+                    "outcomes": {
+                        "success": 16
+                    },
+                    "minutes": 51.5
+                },
+                "4": {
+                    "outcomes": {
+                        "success": 16
+                    },
+                    "minutes": 54.6
+                },
+                "5": {
+                    "outcomes": {
+                        "success": 16
+                    },
+                    "minutes": 54.4
+                },
+                "6": {
+                    "outcomes": {
+                        "success": 16
+                    },
+                    "minutes": 54.4
+                },
+                "7": {
+                    "outcomes": {
+                        "success": 16
+                    },
+                    "minutes": 55.4
+                },
+                "8": {
+                    "outcomes": {
+                        "success": 16
+                    },
+                    "minutes": 56.4
+                },
+                "9": {
+                    "outcomes": {
+                        "success": 16
+                    },
+                    "minutes": 51.2
+                },
+                "10": {
+                    "outcomes": {
+                        "success": 16
+                    },
+                    "minutes": 56.9
+                },
+                "11": {
+                    "outcomes": {
+                        "success": 16
+                    },
+                    "minutes": 55
+                },
+                "12": {
+                    "outcomes": {
+                        "success": 16
+                    },
+                    "minutes": 57.5
+                },
+                "13": {
+                    "outcomes": {
+                        "success": 16
+                    },
+                    "minutes": 52.1
+                },
+                "14": {
+                    "outcomes": {
+                        "success": 16
+                    },
+                    "minutes": 56.9
+                },
+                "15": {
+                    "outcomes": {
+                        "success": 16
+                    },
+                    "minutes": 54.8
+                },
+                "16": {
+                    "outcomes": {
+                        "success": 16
+                    },
+                    "minutes": 55
+                },
+                "17": {
+                    "outcomes": {
+                        "success": 16
+                    },
+                    "minutes": 56
+                },
+                "18": {
+                    "outcomes": {
+                        "success": 16
+                    },
+                    "minutes": 53.4
+                },
+                "19": {
+                    "outcomes": {
+                        "success": 16
+                    },
+                    "minutes": 55.7
+                },
+                "20": {
+                    "outcomes": {
+                        "success": 16
+                    },
+                    "minutes": 54.3
+                },
+                "21": {
+                    "outcomes": {
+                        "success": 16
+                    },
+                    "minutes": 54.1
+                },
+                "22": {
+                    "outcomes": {
+                        "success": 16
+                    },
+                    "minutes": 55.3
+                },
+                "23": {
+                    "outcomes": {
+                        "success": 16
+                    },
+                    "minutes": 56.9
+                },
+                "24": {
+                    "outcomes": {
+                        "success": 16
+                    },
+                    "minutes": 54.3
+                },
+                "25": {
+                    "outcomes": {
+                        "success": 16
+                    },
+                    "minutes": 53.8
+                }
+            },
+            "wall_minutes": 76.6,
+            "wall_bound_minutes": 178.1,
+            "queued_after_plan_s": 2,
+            "peak_concurrent_jobs": 20,
+            "overlap_per_job": {
+                "Composer Validate": false,
+                "PHP Examples": false,
+                "PHP Syntax Check": false,
+                "Static Analysis (PHPStan)": false,
+                "PHP Coding Style (PER 3.1)": false,
+                "Integration Test Suite": false,
+                "Test Suite (PHP 8.4)": false,
+                "Test Suite (PHP 8.5)": false,
+                "Archive Replay Suite (PHP 8.5)": false,
+                "Lowest Supported Dependencies": false,
+                "Consumer Verification Harness": false,
+                "Whitespace Verification": false,
+                "Workflow Lint": false,
+                "Archive Replay Suite (PHP 8.4)": false,
+                "Composer Security Audit": false,
+                "Final Gate": false
+            },
+            "non_overlapping_job_names": 16
         }
     },
     "v_deps": {
         "holds": true,
         "per_job": {
             "Archive Replay Suite (PHP 8.4)": {
-                "samples": 225,
+                "samples": 250,
                 "distinct": 1
             },
             "Archive Replay Suite (PHP 8.5)": {
-                "samples": 225,
+                "samples": 250,
                 "distinct": 1
             },
             "Composer Security Audit": {
-                "samples": 225,
+                "samples": 250,
                 "distinct": 1
             },
             "Consumer Verification Harness": {
-                "samples": 225,
+                "samples": 250,
                 "distinct": 1
             },
             "Integration Test Suite": {
-                "samples": 225,
+                "samples": 250,
                 "distinct": 1
             },
             "Lowest Supported Dependencies": {
-                "samples": 225,
+                "samples": 250,
                 "distinct": 1
             },
             "PHP Coding Style (PER 3.1)": {
-                "samples": 225,
+                "samples": 250,
                 "distinct": 1
             },
             "PHP Examples": {
-                "samples": 225,
+                "samples": 250,
                 "distinct": 1
             },
             "Static Analysis (PHPStan)": {
-                "samples": 225,
+                "samples": 250,
                 "distinct": 1
             },
             "Test Suite (PHP 8.4)": {
-                "samples": 225,
+                "samples": 250,
                 "distinct": 1
             },
             "Test Suite (PHP 8.5)": {
-                "samples": 225,
+                "samples": 250,
                 "distinct": 1
             }
         }
     },
     "v_env": {
         "holds": true,
-        "files": 2475,
+        "files": 2750,
         "incomplete": []
     }
 }
