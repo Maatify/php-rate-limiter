@@ -1,0 +1,6 @@
+{"file":"b01_bootstrap.jsonl","decision_rows_expected":252,"decision_rows_actual":252,"decision_rows_differing":0,"provenance_rows":"1\/1","provenance_equal_without_sha":true,"match":true}
+{"file":"o01_shared_nat.jsonl","decision_rows_expected":384,"decision_rows_actual":384,"decision_rows_differing":0,"provenance_rows":"1\/1","provenance_equal_without_sha":true,"match":true}
+{"file":"observations.jsonl","decision_rows_expected":19,"decision_rows_actual":19,"decision_rows_differing":0,"provenance_rows":"0\/0","provenance_equal_without_sha":true,"match":true}
+{"file":"summary.md","lines_expected":295,"lines_actual":295,"differing_lines":[5]}
+{"file":"v01_known_attackers.jsonl","decision_rows_expected":617,"decision_rows_actual":617,"decision_rows_differing":0,"provenance_rows":"1\/1","provenance_equal_without_sha":true,"match":true}
+{"files":5,"jsonl_match":true}

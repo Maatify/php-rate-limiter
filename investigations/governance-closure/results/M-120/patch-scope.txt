@@ -1,0 +1,18 @@
+worktree HEAD 0193b7905653140a42371c06a8443f870e8d371b (detached, temporary, outside the repository)
+## git diff --stat
+ .../account-scoped-known-device-relief-110/lib/akdr.php           | 8 ++++----
+ investigations/account-scoped-known-device-relief-110/run.sh      | 2 +-
+ 2 files changed, 5 insertions(+), 5 deletions(-)
+## git diff -U0 hunks
++++ b/investigations/account-scoped-known-device-relief-110/lib/akdr.php
+@@ -46 +46 @@ use Maatify\RateLimiter\Tests\Support\RateLimiter\InMemoryRateLimitStore;
+@@ -48,3 +48,3 @@ const AKDR_RUNTIME_SHA256 = [
++++ b/investigations/account-scoped-known-device-relief-110/run.sh
+@@ -24 +24 @@ expected="$here/expected"
+## git status --porcelain (untracked and ignored excluded: vendor/ from composer install, study results/)
+ M investigations/account-scoped-known-device-relief-110/lib/akdr.php
+ M investigations/account-scoped-known-device-relief-110/run.sh
+## recomputed constants (shasum -a 256 on the worktree at HEAD)
+src/Service/EvaluationPipeline.php 45f7e766d3ae0d2f6364268a7565acb90d526671c8853422c301728c8557d42e
+src/Service/DeviceIdentityResolver.php 6726aaef67f684f80c712296d6c588ff96a2a7447def878f0ebe961516fed4f3
+src/Service/EphemeralBucket.php 434fe4aa699358d914fbc29b67211a1dbe2572b468e6b4985e2e82052e297a04

@@ -413,3 +413,11 @@ Normal Engineering Task: قُرئ `docs/php-engineering-standards/STANDARDS_MANI
 * **الأوامر:** `php …/m98.php memory` و`bash scripts/ci/run-with-redis-service.sh php …/m98.php redis` (Redis 7.0.15، `FLUSHALL` قبل التشغيل)، exit 0 في الذراعين.
 * **المقيس (الذراعان متطابقان):** الطلبان 1–2 ALLOW، وأول حجب عند الطلب 3: `SOFT_BLOCK` L1 بـ `retryAfter` **180**، ثم الطلبات 4–13 كلها `SOFT_BLOCK` L1 بـ **360، 540، 720، 900، 1080، 1260، 1440، 1620، 1800، 1980**: زيادة 180 ث لكل طلب مرفوض بلا سقف. K2 المخزَّن 13، أي عدد الطلبات المرسلة كلها، فالمرفوض يُحتسب. NORMAL بلا إشارات فشل، و12 مفتاحًا في Redis.
 * **مطابق للتنبؤ.**
+
+### 11.5 M-120 — 2026-11-02، على `main@0193b79` (worktree مؤقت بـ patch للـ provenance وحده)
+
+* **كما هو:** `bash investigations/account-scoped-known-device-relief-110/run.sh` على الفرع → exit 4، `baseline_identical`. مطابق.
+* **بالـ patch (LT-181-01):** worktree منفصل عند `0193b79` في الـ scratchpad، و`composer install` من `composer.lock` نفسه. الـ patch: `run.sh` L24 و`lib/akdr.php` L46 وL48–L50 فقط، والبصمات الثلاث محسوبة على تلك الشجرة؛ ملفان و5 أسطر (`results/M-120/provenance.patch`، `patch-scope.txt`). الزمن 3:19 دقيقة. `.gitignore` في الجذر L20 يتجاهل `*.patch`، فأُضيف `provenance.patch` بـ `git add -f` دون تعديل `.gitignore`. وفي الـ patch سطر سياق فارغ (L8) بمسافة واحدة يرفضها `check-whitespace.sh`، فحُذفت؛ `git apply --check` على الـ worktree بعد إرجاعه يقبله، وناتج تطبيقه مطابق بايتًا لـ `git diff` الأصلي.
+* **المقيس:** exit 1 بسبب صفوف الـ provenance وحدها؛ `report.php` PASS وكل الملاحظات REPRODUCED؛ 27/27 self-test؛ `observations.jsonl` مطابق. `scripts/compare-provenance.php` (LT-181-02): صفوف القرار مطابقة بايتًا ببايت (V01 617، O01 384، B01 252، observations 19)، وصفوف الـ provenance متساوية بعد حذف حقول الـ SHA، و`summary.md` يختلف في السطر 5 وحده. self-test المقارنة يرفض صفًّا مبدَّلًا وحقل provenance غير الـ SHA، ويقبل تغيير الـ SHA وحده.
+* **MAIN:** TMSd **2/200** وTMUA **36/200** في `pre+out` و`pre`، وTMUA بحدّ 3 لكل حساب على 12 حسابًا.
+* **مطابق للتنبؤ** في الادعاءات الستة. الملحق المؤرَّخ: `investigations/account-scoped-known-device-relief-110/ADDENDUM_2026-11-02_181.md`.
