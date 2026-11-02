@@ -1,0 +1,1 @@
+gh issue view 180 --repo Maatify/php-rate-limiter --json state\,updatedAt\,comments --jq \"\\\(.state\)\ updatedAt\ \\\(.updatedAt\)\ comments\ \\\(.comments\|length\)\"

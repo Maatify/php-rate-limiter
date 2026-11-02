@@ -1,0 +1,1 @@
+git log -1 --format=%H\ %cI v1.0.0-rc.3

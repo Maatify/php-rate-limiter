@@ -385,3 +385,9 @@ Normal Engineering Task: قُرئ `docs/php-engineering-standards/STANDARDS_MANI
   1. الصفان يبقيان كما سُجِّلا، والتنبؤ لا يُعاد صوغه بعد الحدث؛ أُضيف لكلٍّ `"cause": "prediction_wording"` (القيمة الأخرى `data` للاختلاف الحقيقي)، وجملة في صف M-122 بالـ REPORT: التنبؤ نسب إلى `COMPARISON.md` حقولًا ليست فيه.
   2. **LT-181-10 موضَّحًا لبقية S1:** التسلسل يتوقف عند اختلاف `cause` فيه `data` وحده؛ اختلاف `prediction_wording` يُسجَّل بالطريقة نفسها ويستمر التسلسل، ويُذكر في التقرير التالي للـ Lead. `scripts/claim.php` يشترط السبب لكل `false`.
   3. مصالحة #122: الأرشيف سليم (11/11 حرفيًا، بلا تغيير منذ `4fde508`)؛ الإغلاق أو الإبقاء يُحسم مع #110 في البند 6.
+
+### 11.2 M-180 — 2026-11-02، على `main@0193b79`
+
+* **الأوامر:** `git fetch --tags origin`، ثم `git tag --contains` و`git merge-base --is-ancestor … origin/main` لكل من `c8b8fd7` (#158) و`eea9d1a` (#171)، و`git rev-list --count v1.0.0-rc.3..origin/main`، و`gh release list` (كلها exit 0، في `results/M-180/`).
+* **المقيس:** لا وسم يحوي أيًّا منهما، وكلاهما على `main`. الوسوم: `v1.0.0-rc.1..3` و`archive/5b3b-pre-refound-aad21af`. الفجوة **68** commit، وآخر إصدار على GitHub هو rc.3 (pre-release، 2026-10-07). #180 مفتوح بلا تعليقات.
+* **مطابق للتنبؤ** في الادعاءات الثلاثة.

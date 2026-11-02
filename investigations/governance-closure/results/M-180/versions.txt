@@ -1,0 +1,6 @@
+measured_sha 638ae04db5480e9af96f2fed04ed9d9142ff1c4d
+main_sha 0193b7905653140a42371c06a8443f870e8d371b
+src_diff_vs_main 0 files
+worktree_dirty 0 files
+php 8.4.4 Darwin arm64
+php_redis 6.2.0
