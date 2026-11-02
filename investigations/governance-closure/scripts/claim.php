@@ -9,8 +9,9 @@ declare(strict_types=1);
 // A mismatch carries its cause (Lead ruling on F-181-01, PLAN §11.1): `data` stops the sequence, `prediction_wording`
 // is recorded and the sequence continues.
 //
-// sha is origin/main (the measured tree; versions.txt shows src/tests/composer identical to it), command and exit are
-// read from results/<M-id>/<name>.command.txt and .exit.txt.
+// sha is origin/main (the measured tree; versions.txt shows src/tests/composer identical to it), or MEASURED_SHA when
+// the measurement ran at another sha (M-S0b at a6c79f4); command and exit are read from results/<M-id>/<name>.command.txt
+// and .exit.txt.
 
 [, $id, $run, $predicted, $observed, $matches, $cause] = $argv + array_fill(0, 7, null);
 if (($matches !== 'true' || $cause !== null) && ($matches !== 'false' || !in_array($cause, ['data', 'prediction_wording'], true))) {
@@ -20,7 +21,7 @@ if (($matches !== 'true' || $cause !== null) && ($matches !== 'false' || !in_arr
 $results = dirname(__DIR__) . '/results';
 $line = json_encode([
     'id' => $id,
-    'sha' => trim((string) shell_exec('git rev-parse origin/main')),
+    'sha' => getenv('MEASURED_SHA') ?: trim((string) shell_exec('git rev-parse origin/main')),
     'command' => trim(file_get_contents("$results/$run.command.txt")),
     'exit' => (int) trim(file_get_contents("$results/$run.exit.txt")),
     'predicted' => $predicted,

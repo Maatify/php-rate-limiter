@@ -1,0 +1,37 @@
+diff --git a/investigations/trusted-multi-session-s0/lib/tms.php b/investigations/trusted-multi-session-s0/lib/tms.php
+index e8ba4bb8..07d3389b 100644
+--- a/investigations/trusted-multi-session-s0/lib/tms.php
++++ b/investigations/trusted-multi-session-s0/lib/tms.php
+@@ -13,8 +13,8 @@ require_once dirname(__DIR__, 2) . '/k1-credential-spray-nat/lib/k1.php';
+
+ use Maatify\RateLimiter\Service\EvaluationPipeline;
+
+-const TMS_BASELINE_SHA = 'ce89cb26241a660d58e9d896ee2f9ae56f0239c8';
+-const TMS_PIPELINE_SHA256 = '4b259d3397adf492d9767572141c9bdf5efc5744886bce63592ae9f36b95f4fc';
++const TMS_BASELINE_SHA = 'a6c79f45e79171e26031fc720822428e09e6e36c';
++const TMS_PIPELINE_SHA256 = '402139452040cb319208ca7a441b2f70210bf1acee4bd4a0ad666e8101ef6eab';
+ const TMS_ACCOUNTS = 12;
+
+ /**
+diff --git a/investigations/trusted-multi-session-s0/run.sh b/investigations/trusted-multi-session-s0/run.sh
+index 8b4bf6b0..352c5444 100755
+--- a/investigations/trusted-multi-session-s0/run.sh
++++ b/investigations/trusted-multi-session-s0/run.sh
+@@ -22,7 +22,7 @@ here=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
+ repo=$(cd "$here/../.." && pwd)
+ actual="${here:?}/results/actual"
+ expected="${here:?}/expected"
+-BASE_SHA=ce89cb26241a660d58e9d896ee2f9ae56f0239c8
++BASE_SHA=a6c79f45e79171e26031fc720822428e09e6e36c
+ mkdir -p "$actual" "$expected"
+ find "${actual:?}" -maxdepth 1 -type f \( -name '*.jsonl' -o -name '*.diff' -o -name '*.stderr' -o -name '*.txt' -o -name 'summary.md' -o -name 'report.out' \) -delete
+ rm -rf "${actual:?}"/failclosed-*
+@@ -175,7 +175,7 @@ fc_check missing_trace 'rm -f "$dir/t02_trace.jsonl"'
+ fc_check one_matrix_cell_deleted 'grep -v "\"stream\":\"TMSd\",\"class\":\"attack\",\"shape\":\"login\",\"flow\":\"pre+out\"" "$dir/t01_matrix.jsonl" >"$dir/t" && mv "$dir/t" "$dir/t01_matrix.jsonl"'
+ fc_check matrix_field_removed 'sed -i.bak "s/\"attackReachedFirst600\"/\"zzz\"/g" "$dir/t01_matrix.jsonl" && rm -f "$dir/t01_matrix.jsonl.bak"'
+ fc_check assertion_row_deleted 'grep -v "\"assert\":\"S0 SP5 " "$dir/t01_matrix.jsonl" >"$dir/t" && mv "$dir/t" "$dir/t01_matrix.jsonl"'
+-fc_check forged_pipeline_sha256 'sed -i.bak "s/4b259d3397adf492d9767572141c9bdf5efc5744886bce63592ae9f36b95f4fc/0000000000000000000000000000000000000000000000000000000000000000/" "$dir/t01_matrix.jsonl" && rm -f "$dir/t01_matrix.jsonl.bak"'
++fc_check forged_pipeline_sha256 'sed -i.bak "s/402139452040cb319208ca7a441b2f70210bf1acee4bd4a0ad666e8101ef6eab/0000000000000000000000000000000000000000000000000000000000000000/" "$dir/t01_matrix.jsonl" && rm -f "$dir/t01_matrix.jsonl.bak"'
+ fc_check divergence_row_deleted 'grep -v "\"s\":\"T02.divergence\",\"flow\":\"pre\"," "$dir/t02_trace.jsonl" >"$dir/t" && mv "$dir/t" "$dir/t02_trace.jsonl"'
+ fc_check trace_deleted 'grep -v "\"s\":\"T02.trace\",\"stream\":\"TMX\",\"flow\":\"out\"" "$dir/t02_trace.jsonl" >"$dir/t" && mv "$dir/t" "$dir/t02_trace.jsonl"'
+

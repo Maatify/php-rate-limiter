@@ -1,0 +1,1 @@
+bash investigations/governance-closure/scripts/apply-check.sh /private/tmp/claude-501/-Users-mohamedabdulalim-MEGA-Libraries-2026-php-rate-limiter--claude-worktrees-dec-022-architecture-proposal-3ed6c7/bc0327c2-8eee-4c75-aafa-6ee2d6789d4a/scratchpad/wt-main-check investigations/governance-closure/results/M-120/provenance.patch

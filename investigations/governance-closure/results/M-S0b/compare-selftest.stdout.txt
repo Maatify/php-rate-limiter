@@ -1,0 +1,5 @@
+ok out_row: exit 1
+ok pre_row: exit 1
+ok pre_out_row: exit 0
+ok provenance_row: exit 0
+ok deleted_row: exit 3
