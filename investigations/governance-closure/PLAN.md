@@ -447,3 +447,7 @@ Normal Engineering Task: قُرئ `docs/php-engineering-standards/STANDARDS_MANI
 * **مطابق للتنبؤ.** **تصنيف F-181-02:** مفسَّر بـ DEC-021 (تدفق record-only يحتسب K5 الآن ويصدر عند العتبات؛ الوصول بلا تغيير)، غير متنبَّأ به في قراءة المنفّذ، ليس عيبًا. الصفّان `M-S0.out-unchanged` و`M-S0.t02` يبقيان `cause: data` كما سُجِّلا، ومعهما حقل `classification` بالنص والـ SHAين.
 * **`git apply --check` محفوظ** (حكم F-181-02): `scripts/apply-check.sh` يطبّق كل `provenance.patch` على worktree نظيف عند الـ SHA المقيس، ويقارن `git diff` بعد التطبيق، بعد حذف المسافة نفسها من أسطر السياق الفارغة، بالـ patch بايتًا ببايت. الناتج في `results/M-120/apply-check.*` و`results/M-S0/apply-check.*` (عند `0193b79`) و`results/M-S0b/apply-check.*` (عند `a6c79f4`)، exit 0 للثلاثة. تشغيل غير مسجَّل بـ patch معدَّل (رقم واحد في الـ SHA) أعطى exit 1.
 * `scripts/claim.php` يأخذ `MEASURED_SHA` لادعاء قيس عند SHA غير `origin/main`. الملحق: قسم مؤرَّخ 2026-11-03 في `investigations/trusted-multi-session-s0/ADDENDUM_2026-11-02_181.md`.
+
+## 12. S2 — 2026-11-03
+
+`REPORT.md`: جدول واحد (20 صفًّا: 6 مقيسة، و13 وثائقية لـ #110 و#97/#100/#106 وF-HMCI-01..04 وQ-P1..Q-P5، وصف لـ F-181-01/02)، ونصّا «Correction» لـ #110 و#120 (LT-181-09)، وذراع الـ admission خيارًا للبند 6 (LT-181-03)، وما لا يثبته الدليل، وسجل العملية.
