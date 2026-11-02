@@ -421,3 +421,19 @@ Normal Engineering Task: قُرئ `docs/php-engineering-standards/STANDARDS_MANI
 * **المقيس:** exit 1 بسبب صفوف الـ provenance وحدها؛ `report.php` PASS وكل الملاحظات REPRODUCED؛ 27/27 self-test؛ `observations.jsonl` مطابق. `scripts/compare-provenance.php` (LT-181-02): صفوف القرار مطابقة بايتًا ببايت (V01 617، O01 384، B01 252، observations 19)، وصفوف الـ provenance متساوية بعد حذف حقول الـ SHA، و`summary.md` يختلف في السطر 5 وحده. self-test المقارنة يرفض صفًّا مبدَّلًا وحقل provenance غير الـ SHA، ويقبل تغيير الـ SHA وحده.
 * **MAIN:** TMSd **2/200** وTMUA **36/200** في `pre+out` و`pre`، وTMUA بحدّ 3 لكل حساب على 12 حسابًا.
 * **مطابق للتنبؤ** في الادعاءات الستة. الملحق المؤرَّخ: `investigations/account-scoped-known-device-relief-110/ADDENDUM_2026-11-02_181.md`.
+
+### 11.6 M-S0 — 2026-11-02، على `main@0193b79` (worktree مؤقت بـ patch للـ provenance وحده)
+
+* **كما هو:** `bash investigations/trusted-multi-session-s0/run.sh` → exit 4، `baseline_src_identical`. مطابق.
+* **بالـ patch:** worktree منفصل عند `0193b79` و`composer install`؛ `run.sh` L25 وL178 و`lib/tms.php` L16–L17 فقط، ملفان و4 أسطر (`results/M-S0/provenance.patch`، `patch-scope.txt`). أربعة أسطر سياق فارغة بمسافة واحدة حُذفت مسافتها كما في M-120؛ `git apply --check` في worktree ثالث مؤقت يقبل الـ patch وناتجه مطابق بايتًا لـ diff الـ worktree. الزمن 8 ث.
+* **المقيس:** exit 1؛ `gates.jsonl` مطابق، والتأكيدات 11/11 صحيحة، وself-test 14/14. `scripts/s0-rows.php` يسرد الصفوف المختلفة وحقولها:
+  * Login `pre+out`: TMSs **5**/204، TMX **60**/200، TMXb **48**/300. مطابق.
+  * OTP `pre+out`: TMSs 18 → 3، TMX 200 → 36. لا stream OTP لـ TMXb في الأداة: `prediction_wording`.
+  * كل صفوف `pre` بلا تغيير، وN12T 56/61 وTMSd 2/200 وSP5 200/200 بلا تغيير. مطابق.
+  * شريحة `vic0`: 4 وصلت و22 رُفضت من 25، وأول رفض عند 9 ث. مطابق (≤ 5). المجموع 26 لـ 25 طلبًا كما تعدّها الأداة، ولم يُفحص هنا.
+  * مقابل AKDR [MAIN] (`scripts/s0-vs-akdr.php`): 15/15 خلية متفقة. أول تشغيل للسكربت قرأ أعمدة «S0 [PRIOR]» (الفهرس 2/4/6 بدل 3/5/7) فأعطى 12/15؛ صُحِّح الفهرس قبل أي استنتاج، والتشغيل المسجَّل هو المصحَّح، وما رفضه الأول يبيّن أن المقارنة تصل مدخلاتها.
+* **F-181-02 — اختلاف سببه البيانات (`cause: data`)، فيتوقف التسلسل قبل S2:**
+  * التنبؤ (§3 M-S0 (ج) و(د)، و§4 «يكذّبه: تغيّر صف `pre`/`out`»): كل صفوف `out` بلا تغيير، وصفوف t02 تتغير في `pre+out` فقط.
+  * المقيس: **8 صفوف `out` في t01** (Login TMX وTMXb وTMSs؛ OTP TMS وTMSd وTMSs وTMR وTMX) و**صفّان `out` في t02** (TMSs وTMX) تغيّرت. **الوصول (reach) فيها كلها بلا تغيير** (TMX `out` 200/200، TMXb 300/300، مطابق لـ AKDR main out)، والتغير في حقول الرفض والإصدار: Login TMX `out` رُفض 0 → 164 مع 36 إصدار K5، وTMXb 0 → 264 مع 12، وOTP TMX 24 → 188 مع 36 K5 و24 K4.
+  * التنبؤ افترض أن DEC-021 لا يظهر في `out` لأن الوصول فيه لا يتغير؛ والبيانات تُظهر أن الـ limiter يصدر الآن حجوزات K5 ورفضًا مسجَّلًا في تدفق record-only دون أن يمسّ الوصول. لا تفسير أبعد من ذلك هنا.
+* الملحق المؤرَّخ: `investigations/trusted-multi-session-s0/ADDENDUM_2026-11-02_181.md`.

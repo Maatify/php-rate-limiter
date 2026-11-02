@@ -1,0 +1,5 @@
+{"file":"gates.jsonl","decision_rows_expected":4,"decision_rows_actual":4,"decision_rows_differing":0,"provenance_rows":"0\/0","provenance_equal_without_sha":true,"match":true}
+{"file":"summary.md","lines_expected":339,"lines_actual":339,"differing_lines":[3,44,46,53,55,56,58,110,113,114,116,119,120,122,133,224,231,232,233,234,235,236,237,238,239,240,241,242,243,244,282]}
+{"file":"t01_matrix.jsonl","decision_rows_expected":85,"decision_rows_actual":85,"decision_rows_differing":14,"provenance_rows":"1\/1","provenance_equal_without_sha":true,"match":false}
+{"file":"t02_trace.jsonl","decision_rows_expected":24,"decision_rows_actual":24,"decision_rows_differing":4,"provenance_rows":"1\/1","provenance_equal_without_sha":true,"match":false}
+{"files":4,"jsonl_match":false}

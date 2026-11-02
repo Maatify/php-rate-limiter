@@ -1,0 +1,16 @@
+{"stream":"TMSs","flow":"pre+out","s0_main":"5\/204","akdr_main":"5\/204","agree":true}
+{"stream":"TMSs","flow":"pre","s0_main":"18\/204","akdr_main":"18\/204","agree":true}
+{"stream":"TMSs","flow":"out","s0_main":"204\/204","akdr_main":"204\/204","agree":true}
+{"stream":"TMX","flow":"pre+out","s0_main":"60\/200","akdr_main":"60\/200","agree":true}
+{"stream":"TMX","flow":"pre","s0_main":"200\/200","akdr_main":"200\/200","agree":true}
+{"stream":"TMX","flow":"out","s0_main":"200\/200","akdr_main":"200\/200","agree":true}
+{"stream":"TMXb","flow":"pre+out","s0_main":"48\/300","akdr_main":"48\/300","agree":true}
+{"stream":"TMXb","flow":"pre","s0_main":"300\/300","akdr_main":"300\/300","agree":true}
+{"stream":"TMXb","flow":"out","s0_main":"300\/300","akdr_main":"300\/300","agree":true}
+{"stream":"TMSd","flow":"pre+out","s0_main":"2\/200","akdr_main":"2\/200","agree":true}
+{"stream":"TMSd","flow":"pre","s0_main":"2\/200","akdr_main":"2\/200","agree":true}
+{"stream":"TMSd","flow":"out","s0_main":"200\/200","akdr_main":"200\/200","agree":true}
+{"stream":"N12T","flow":"pre+out","s0_main":"56\/61","akdr_main":"56\/61","agree":true}
+{"stream":"N12T","flow":"pre","s0_main":"55\/61","akdr_main":"55\/61","agree":true}
+{"stream":"N12T","flow":"out","s0_main":"55\/61","akdr_main":"55\/61","agree":true}
+{"cells":15,"agree":15}

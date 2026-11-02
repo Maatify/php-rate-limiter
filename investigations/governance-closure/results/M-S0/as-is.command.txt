@@ -1,0 +1,1 @@
+bash investigations/trusted-multi-session-s0/run.sh
