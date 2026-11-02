@@ -391,3 +391,18 @@ Normal Engineering Task: قُرئ `docs/php-engineering-standards/STANDARDS_MANI
 * **الأوامر:** `git fetch --tags origin`، ثم `git tag --contains` و`git merge-base --is-ancestor … origin/main` لكل من `c8b8fd7` (#158) و`eea9d1a` (#171)، و`git rev-list --count v1.0.0-rc.3..origin/main`، و`gh release list` (كلها exit 0، في `results/M-180/`).
 * **المقيس:** لا وسم يحوي أيًّا منهما، وكلاهما على `main`. الوسوم: `v1.0.0-rc.1..3` و`archive/5b3b-pre-refound-aad21af`. الفجوة **68** commit، وآخر إصدار على GitHub هو rc.3 (pre-release، 2026-10-07). #180 مفتوح بلا تعليقات.
 * **مطابق للتنبؤ** في الادعاءات الثلاثة.
+
+### 11.3 M-121 — 2026-11-02، على شجرة مطابقة لـ `main@0193b79` (`results/M-121/versions.txt`)
+
+* **الأداة:** `decay-121/m121.php` عبر `RateLimiterBuilder::fromFullCapabilityStore(...)->withClock()->withPolicy()` و`buildOperationalReader()->readScorePolicy()`، و`lib/arms.php` للذراعين. السياسة `new ApiHeavyProtectionPolicy(['k1' => 1000, 'k2' => 1000, 'k3' => 1000])` (الـ constructor العام يقبل العتبات، فلا حاجة إلى صنف فرعي)، وIP وUA ثابتان بلا بصمة عميل لأن K1 نطاق IP. الساعة `FixedClock` عند t0 = 2026-01-01T00:00:00Z.
+* **الأوامر:** `php …/m121.php memory` و`bash scripts/ci/run-with-redis-service.sh php …/m121.php redis` (Redis 7.0.15 من `docker/redis-integration/compose.yaml`، حاوية جديدة لكل تشغيل و`FLUSHALL` مع `DBSIZE = 0` قبل كل حالة). سبق التسجيلَ تشغيلُ تطوير واحد لذراع الذاكرة بالنتيجة نفسها.
+* **المقيس (الذراعان متطابقان):**
+
+  | الحالة | K1 المخزَّن | `updatedAt` | K1 الفعلي عند t0 + 500 | العقد الموثَّق |
+  | --- | ---: | ---: | ---: | ---: |
+  | التحكم (6 عند t0) | 6 | t0 | **4** | 4 |
+  | المختبَرة (كل 100 ث) | 6 | t0 + 500 | **6** | 4 |
+
+  exit 1 (أحمر) في الذراعين، وكل طلب ALLOW/NORMAL بلا إشارات فشل، وفي Redis 9 مفاتيح بعد كل حالة. K2 (نطاق IP أيضًا) بالقيم نفسها.
+* **مطابق للتنبؤ** (`cause` لا ينطبق).
+* **ملاحظة تسجيل:** `scripts/check-whitespace.sh` يفحص الملفات المتتبَّعة وحدها، فشُغِّل قبل `git add` ولم يرَ مسافات ذيلية في أسطر تقدّم docker compose داخل `redis.stdout.txt` (10 أسطر). من الآن `record.sh` يحذف المسافات الذيلية من الناتج المسجَّل، وطُبِّق الحذف نفسه على هذا الملف؛ أسطر JSON لم تتغير (`diff` لأسطر `{` فارغ)، والفحص يُشغَّل بعد `git add`.
