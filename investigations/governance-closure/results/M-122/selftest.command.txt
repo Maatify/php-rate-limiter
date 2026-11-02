@@ -1,0 +1,1 @@
+bash investigations/governance-closure/scripts/m122-selftest.sh

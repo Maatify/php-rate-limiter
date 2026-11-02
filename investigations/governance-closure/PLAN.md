@@ -372,3 +372,12 @@ Normal Engineering Task: قُرئ `docs/php-engineering-standards/STANDARDS_MANI
 | LT-181-10 | **مقبول:** M-122 وM-180 → M-121 وM-98 → M-120 وM-S0؛ commit لكل قياس بنتيجته؛ أي نتيجة تخالف تنبؤها توقف التسلسل وتُبلَّغ قبل التالي. |
 
 **الترتيب المحكوم:** هذا الـ commit → S1 بالترتيب أعلاه → S2 `REPORT.md` بجدول واحد (issue/finding، ما قيس، النتيجة، التوصية، نص المصالحة النهائي) مع صفوف وثائقية لـ #97/#100/#106 وF-HMCI-01..04 وQ-P1..Q-P5. `check-whitespace.sh` قبل كل push؛ أي فشل CI يُبلَّغ ثم كلمة الـ Owner قبل أي إعادة. Draft؛ الـ Lead يراجع، والـ Owner يقرر، والـ Lead يدمج وينشر المصالحات.
+
+## 11. سجل S1 (ملحق مؤرَّخ؛ لا يغيّر §1–§10)
+
+### 11.1 M-122 — 2026-11-02، على شجرة مطابقة لـ `main@0193b79` في `src`/`tests`/`composer.*` (`results/M-122/versions.txt`)
+
+* **الأمر:** `php investigations/governance-closure/scripts/m122.php results/M-122/issue-122-body.md` (نص #122 محفوظ كما جُلب، `updatedAt` 2026-10-16T13:59:42Z)، exit 0.
+* **المقيس:** الملفات الـ 11: البصمة مطابقة في المصادر الثلاثة (README 11 صفًا، COMPARISON 11، #122 11)؛ الأسطر والأحرف مطابقة في README و#122، وبايتات UTF-8 في README؛ الحالة `UNREVIEWED / VERBATIM` في README و#122 لكل الـ 11. `git log 4fde508..HEAD -- proposals` فارغ.
+* **self-test:** `m122-selftest.sh` يرفض بصمة مغيَّرة وصفًّا ناقصًا (exit 1 لكلٍّ)، فالمدخلات تصل المقارنة.
+* **F-181-01 — نتيجتان تخالفان نص التنبؤ (§3 M-122):** التنبؤ قال «الأسطر والأحرف … والحالة في المصادر الثلاثة»، و`COMPARISON.md` L8–L20 لا يحمل إلا الملف والبصمة والتحقق الأصلي؛ لا أعمدة أسطر ولا أحرف ولا حالة لكل ملف، وحالته هو «draft for engineering review» (L6). **البيانات لا تخالف شيئًا**؛ الخطأ في صياغة التنبؤ، إذ نسب إلى COMPARISON حقولًا ليست فيه. سُجِّل `matches_prediction: false` للادعاءين في `results.jsonl` كما هما، و**توقف التسلسل** وفق LT-181-10 قبل M-180، حتى حكم الـ Lead.
