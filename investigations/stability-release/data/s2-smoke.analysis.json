@@ -108,6 +108,8 @@
     "v_env": {
         "holds": true,
         "files": 22,
-        "incomplete": []
+        "incomplete": [],
+        "expected_files": 22,
+        "missing": []
     }
 }

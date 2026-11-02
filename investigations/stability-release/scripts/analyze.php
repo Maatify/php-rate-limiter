@@ -19,7 +19,9 @@ declare(strict_types=1);
 //                   between full parallelism (13.7) and strict serialisation (repeats × 13.7) (Lead ruling on F-176-02)
 //   V-DEPS      for every job name with environment lines, those lines are identical across all repeats of all runs
 //   V-ENV       every environment file has "Locking" lines and an "Installed PHP" line, and those of the PHPUnit jobs
-//               (Test Suite, Archive Replay Suite, Integration, Lowest) a "PHPUnit x.y.z by" line: the inputs reached the file
+//               (Test Suite, Archive Replay Suite, Integration, Lowest) a "PHPUnit x.y.z by" line: the inputs reached the file;
+//               and (Lead ruling on F-176-03, PLAN §12.1) each of the eleven jobs that resolve dependencies has an environment
+//               file in every repeat of every run, 11 × repeats per run; "missing" names each absent one as run/repeat/job
 //   overlap_per_job, peak_concurrent_jobs  reported only: per job name whether the repeats' intervals overlap, and the
 //               largest number of jobs running at one instant (runner availability, not a gate)
 //   cost        per repeat: the sum of its jobs' durations; per run: the wall time from the first start to the last end
@@ -30,6 +32,9 @@ $ref = (string) $options['ref'];
 $repeats = (int) $options['repeats'];
 $dir = __DIR__ . '/../data';
 $time = static fn(string $iso): int => (int) strtotime($iso);
+$envJobs = ['Archive Replay Suite (PHP 8.4)', 'Archive Replay Suite (PHP 8.5)', 'Composer Security Audit', 'Consumer Verification Harness',
+    'Integration Test Suite', 'Lowest Supported Dependencies', 'PHP Coding Style (PER 3.1)', 'PHP Examples', 'Static Analysis (PHPStan)',
+    'Test Suite (PHP 8.4)', 'Test Suite (PHP 8.5)'];
 $baselineNames = array_map(static fn(array $j): string => $j['name'], json_decode((string) file_get_contents((string) $options['baseline']), true)['jobs']);
 sort($baselineNames);
 $baselineSeconds = array_sum(array_map(static fn(array $j): int => $time($j['completed_at']) - $time($j['started_at']), json_decode((string) file_get_contents((string) $options['baseline']), true)['jobs']));
@@ -38,6 +43,7 @@ $report = ['ref' => $ref, 'repeats' => $repeats, 'baseline_minutes_per_repeat' =
 $lines = [];
 $envByName = [];
 $envProblems = [];
+$envMissing = [];
 foreach ($runs as $run) {
     $jobs = json_decode((string) file_get_contents("$dir/runs/$run.jobs.json"), true, flags: JSON_THROW_ON_ERROR);
     $checks = ['v_ref' => true, 'v_names' => true, 'v_count' => count($jobs) === 1 + $repeats * 16, 'v_parallel' => true];
@@ -86,6 +92,13 @@ foreach ($runs as $run) {
         }
         $lines[] = ['run' => (int) $run, 'repeat' => $repeat, 'job' => $name, 'job_id' => $job['id'], 'head_sha' => $job['head_sha'],
             'conclusion' => $job['conclusion'], 'started_at' => $job['started_at'], 'completed_at' => $job['completed_at'], 'seconds' => $seconds];
+    }
+    for ($repeat = 1; $repeat <= $repeats; $repeat++) {
+        foreach ($envJobs as $name) {
+            if (! isset($envByName[$name]["$run/$repeat"])) {
+                $envMissing[] = "$run/$repeat/$name";
+            }
+        }
     }
     $checks['v_names'] = $checks['v_names'] && $plan === 1 && count($byRepeat) === $repeats;
     foreach ($byRepeat as $names) {
@@ -147,6 +160,7 @@ foreach ($envByName as $name => $hashes) {
 }
 ksort($deps);
 $report['v_deps'] = ['holds' => $deps !== [] && max(array_column($deps, 'distinct')) === 1, 'per_job' => $deps];
-$report['v_env'] = ['holds' => $envByName !== [] && $envProblems === [], 'files' => array_sum(array_map('count', $envByName)), 'incomplete' => $envProblems];
+$report['v_env'] = ['holds' => $envByName !== [] && $envProblems === [] && $envMissing === [], 'files' => array_sum(array_map('count', $envByName)),
+    'incomplete' => $envProblems, 'expected_files' => count($runs) * $repeats * count($envJobs), 'missing' => $envMissing];
 file_put_contents("$dir/stability.jsonl", implode('', array_map(static fn(array $l): string => json_encode($l, JSON_UNESCAPED_SLASHES) . "\n", $lines)));
 echo json_encode($report, JSON_PRETTY_PRINT | JSON_UNESCAPED_SLASHES), "\n";

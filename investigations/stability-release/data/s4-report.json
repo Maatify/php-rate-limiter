@@ -1,0 +1,356 @@
+{
+    "repeats": 250,
+    "failed_repeats": 0,
+    "wilson95_pct": [
+        0,
+        1.513
+    ],
+    "fisher_two_sided_vs_history": {
+        "start_of_day_5_of_243": 0.0285,
+        "tag_time_5_of_237": 0.0267
+    },
+    "runner_hours": 230.2,
+    "dispatch_wall_minutes": {
+        "41084219452": 74.88,
+        "41097286365": 85.25,
+        "41110748185": 77.57,
+        "41123511868": 73.02,
+        "41134103014": 79.23,
+        "41145656048": 75.97,
+        "41153591660": 76.47,
+        "41160447884": 74.05,
+        "41166525371": 78,
+        "41172600104": 76.6
+    },
+    "dispatch_wall_minutes_quantiles": {
+        "min": 73.02,
+        "median": 76.54,
+        "max": 85.25
+    },
+    "v_env_files": 2750,
+    "v_deps_samples_per_job": [
+        250
+    ],
+    "per_job": {
+        "Archive Replay Suite (PHP 8.4)": {
+            "n": 250,
+            "failures": 0,
+            "wilson95_pct": [
+                0,
+                1.513
+            ],
+            "min_s": 169,
+            "median_s": 282,
+            "p95_s": 339.5,
+            "max_s": 434,
+            "timeout_s": 1500,
+            "margin_at_max_pct": 71.1,
+            "steps_n": 245,
+            "steps_median_s": 277,
+            "steps_p95_s": 336,
+            "steps_max_s": 396,
+            "steps_margin_at_max_pct": 73.6,
+            "post_steps_max_s": 156
+        },
+        "Archive Replay Suite (PHP 8.5)": {
+            "n": 250,
+            "failures": 0,
+            "wilson95_pct": [
+                0,
+                1.513
+            ],
+            "min_s": 167,
+            "median_s": 316,
+            "p95_s": 340,
+            "max_s": 365,
+            "timeout_s": 1500,
+            "margin_at_max_pct": 75.7,
+            "steps_n": 246,
+            "steps_median_s": 312,
+            "steps_p95_s": 338,
+            "steps_max_s": 362,
+            "steps_margin_at_max_pct": 75.9,
+            "post_steps_max_s": 25
+        },
+        "Composer Security Audit": {
+            "n": 250,
+            "failures": 0,
+            "wilson95_pct": [
+                0,
+                1.513
+            ],
+            "min_s": 12,
+            "median_s": 15,
+            "p95_s": 21,
+            "max_s": 599,
+            "timeout_s": 600,
+            "margin_at_max_pct": 0.2,
+            "steps_n": 247,
+            "steps_median_s": 13,
+            "steps_p95_s": 17,
+            "steps_max_s": 24,
+            "steps_margin_at_max_pct": 96,
+            "post_steps_max_s": 583
+        },
+        "Composer Validate": {
+            "n": 250,
+            "failures": 0,
+            "wilson95_pct": [
+                0,
+                1.513
+            ],
+            "min_s": 9,
+            "median_s": 11.5,
+            "p95_s": 18.5,
+            "max_s": 322,
+            "timeout_s": 600,
+            "margin_at_max_pct": 46.3,
+            "steps_n": 246,
+            "steps_median_s": 10,
+            "steps_p95_s": 13,
+            "steps_max_s": 21,
+            "steps_margin_at_max_pct": 96.5,
+            "post_steps_max_s": 314
+        },
+        "Consumer Verification Harness": {
+            "n": 250,
+            "failures": 0,
+            "wilson95_pct": [
+                0,
+                1.513
+            ],
+            "min_s": 320,
+            "median_s": 325.5,
+            "p95_s": 332.5,
+            "max_s": 742,
+            "timeout_s": 900,
+            "margin_at_max_pct": 17.6,
+            "steps_n": 246,
+            "steps_median_s": 323,
+            "steps_p95_s": 329,
+            "steps_max_s": 339,
+            "steps_margin_at_max_pct": 62.3,
+            "post_steps_max_s": 420
+        },
+        "Final Gate": {
+            "n": 250,
+            "failures": 0,
+            "wilson95_pct": [
+                0,
+                1.513
+            ],
+            "min_s": 2,
+            "median_s": 3,
+            "p95_s": 4,
+            "max_s": 13,
+            "timeout_s": 300,
+            "margin_at_max_pct": 95.7,
+            "steps_n": 225,
+            "steps_median_s": 1,
+            "steps_p95_s": 2,
+            "steps_max_s": 11,
+            "steps_margin_at_max_pct": 96.3,
+            "post_steps_max_s": 11
+        },
+        "Integration Test Suite": {
+            "n": 250,
+            "failures": 0,
+            "wilson95_pct": [
+                0,
+                1.513
+            ],
+            "min_s": 485,
+            "median_s": 569,
+            "p95_s": 581,
+            "max_s": 718,
+            "timeout_s": 900,
+            "margin_at_max_pct": 20.2,
+            "steps_n": 245,
+            "steps_median_s": 565,
+            "steps_p95_s": 578,
+            "steps_max_s": 589,
+            "steps_margin_at_max_pct": 34.6,
+            "post_steps_max_s": 172
+        },
+        "Lowest Supported Dependencies": {
+            "n": 250,
+            "failures": 0,
+            "wilson95_pct": [
+                0,
+                1.513
+            ],
+            "min_s": 615,
+            "median_s": 780,
+            "p95_s": 841,
+            "max_s": 879,
+            "timeout_s": 1200,
+            "margin_at_max_pct": 26.7,
+            "steps_n": 243,
+            "steps_median_s": 774,
+            "steps_p95_s": 838,
+            "steps_max_s": 864,
+            "steps_margin_at_max_pct": 28,
+            "post_steps_max_s": 56
+        },
+        "PHP Coding Style (PER 3.1)": {
+            "n": 250,
+            "failures": 0,
+            "wilson95_pct": [
+                0,
+                1.513
+            ],
+            "min_s": 15,
+            "median_s": 22,
+            "p95_s": 28.6,
+            "max_s": 129,
+            "timeout_s": 600,
+            "margin_at_max_pct": 78.5,
+            "steps_n": 246,
+            "steps_median_s": 20,
+            "steps_p95_s": 23,
+            "steps_max_s": 33,
+            "steps_margin_at_max_pct": 94.5,
+            "post_steps_max_s": 111
+        },
+        "PHP Examples": {
+            "n": 250,
+            "failures": 0,
+            "wilson95_pct": [
+                0,
+                1.513
+            ],
+            "min_s": 11,
+            "median_s": 15.5,
+            "p95_s": 23,
+            "max_s": 489,
+            "timeout_s": 600,
+            "margin_at_max_pct": 18.5,
+            "steps_n": 249,
+            "steps_median_s": 13,
+            "steps_p95_s": 16,
+            "steps_max_s": 54,
+            "steps_margin_at_max_pct": 91,
+            "post_steps_max_s": 476
+        },
+        "PHP Syntax Check": {
+            "n": 250,
+            "failures": 0,
+            "wilson95_pct": [
+                0,
+                1.513
+            ],
+            "min_s": 28,
+            "median_s": 45,
+            "p95_s": 52,
+            "max_s": 366,
+            "timeout_s": 600,
+            "margin_at_max_pct": 39,
+            "steps_n": 249,
+            "steps_median_s": 43,
+            "steps_p95_s": 49,
+            "steps_max_s": 56,
+            "steps_margin_at_max_pct": 90.7,
+            "post_steps_max_s": 323
+        },
+        "Static Analysis (PHPStan)": {
+            "n": 250,
+            "failures": 0,
+            "wilson95_pct": [
+                0,
+                1.513
+            ],
+            "min_s": 17,
+            "median_s": 22.5,
+            "p95_s": 28.5,
+            "max_s": 428,
+            "timeout_s": 600,
+            "margin_at_max_pct": 28.7,
+            "steps_n": 247,
+            "steps_median_s": 21,
+            "steps_p95_s": 24,
+            "steps_max_s": 37,
+            "steps_margin_at_max_pct": 93.8,
+            "post_steps_max_s": 411
+        },
+        "Test Suite (PHP 8.4)": {
+            "n": 250,
+            "failures": 0,
+            "wilson95_pct": [
+                0,
+                1.513
+            ],
+            "min_s": 444,
+            "median_s": 471.5,
+            "p95_s": 490.5,
+            "max_s": 498,
+            "timeout_s": 900,
+            "margin_at_max_pct": 44.7,
+            "steps_n": 246,
+            "steps_median_s": 469,
+            "steps_p95_s": 488,
+            "steps_max_s": 495,
+            "steps_margin_at_max_pct": 45,
+            "post_steps_max_s": 18
+        },
+        "Test Suite (PHP 8.5)": {
+            "n": 250,
+            "failures": 0,
+            "wilson95_pct": [
+                0,
+                1.513
+            ],
+            "min_s": 444,
+            "median_s": 483,
+            "p95_s": 494.5,
+            "max_s": 673,
+            "timeout_s": 900,
+            "margin_at_max_pct": 25.2,
+            "steps_n": 244,
+            "steps_median_s": 481,
+            "steps_p95_s": 489,
+            "steps_max_s": 495,
+            "steps_margin_at_max_pct": 45,
+            "post_steps_max_s": 209
+        },
+        "Whitespace Verification": {
+            "n": 250,
+            "failures": 0,
+            "wilson95_pct": [
+                0,
+                1.513
+            ],
+            "min_s": 6,
+            "median_s": 9,
+            "p95_s": 14,
+            "max_s": 157,
+            "timeout_s": 600,
+            "margin_at_max_pct": 73.8,
+            "steps_n": 249,
+            "steps_median_s": 7,
+            "steps_p95_s": 10,
+            "steps_max_s": 13,
+            "steps_margin_at_max_pct": 97.8,
+            "post_steps_max_s": 149
+        },
+        "Workflow Lint": {
+            "n": 250,
+            "failures": 0,
+            "wilson95_pct": [
+                0,
+                1.513
+            ],
+            "min_s": 6,
+            "median_s": 9,
+            "p95_s": 15,
+            "max_s": 271,
+            "timeout_s": 600,
+            "margin_at_max_pct": 54.8,
+            "steps_n": 247,
+            "steps_median_s": 7,
+            "steps_p95_s": 9,
+            "steps_max_s": 18,
+            "steps_margin_at_max_pct": 97,
+            "post_steps_max_s": 264
+        }
+    }
+}
