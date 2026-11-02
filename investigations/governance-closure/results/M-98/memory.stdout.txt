@@ -1,0 +1,14 @@
+{"arm":"memory","request":1,"t":0,"after_first_block":null,"decision":"ALLOW","blockLevel":0,"retryAfter":0}
+{"arm":"memory","request":2,"t":0,"after_first_block":null,"decision":"ALLOW","blockLevel":0,"retryAfter":0}
+{"arm":"memory","request":3,"t":0,"after_first_block":0,"decision":"SOFT_BLOCK","blockLevel":1,"retryAfter":180}
+{"arm":"memory","request":4,"t":0,"after_first_block":1,"decision":"SOFT_BLOCK","blockLevel":1,"retryAfter":360}
+{"arm":"memory","request":5,"t":0,"after_first_block":2,"decision":"SOFT_BLOCK","blockLevel":1,"retryAfter":540}
+{"arm":"memory","request":6,"t":0,"after_first_block":3,"decision":"SOFT_BLOCK","blockLevel":1,"retryAfter":720}
+{"arm":"memory","request":7,"t":0,"after_first_block":4,"decision":"SOFT_BLOCK","blockLevel":1,"retryAfter":900}
+{"arm":"memory","request":8,"t":0,"after_first_block":5,"decision":"SOFT_BLOCK","blockLevel":1,"retryAfter":1080}
+{"arm":"memory","request":9,"t":0,"after_first_block":6,"decision":"SOFT_BLOCK","blockLevel":1,"retryAfter":1260}
+{"arm":"memory","request":10,"t":0,"after_first_block":7,"decision":"SOFT_BLOCK","blockLevel":1,"retryAfter":1440}
+{"arm":"memory","request":11,"t":0,"after_first_block":8,"decision":"SOFT_BLOCK","blockLevel":1,"retryAfter":1620}
+{"arm":"memory","request":12,"t":0,"after_first_block":9,"decision":"SOFT_BLOCK","blockLevel":1,"retryAfter":1800}
+{"arm":"memory","request":13,"t":0,"after_first_block":10,"decision":"SOFT_BLOCK","blockLevel":1,"retryAfter":1980}
+{"arm":"memory","redis":null,"first_block":3,"requests":13,"k2_stored":13,"k2_effective":13,"signals":0,"redis_keys":null}
