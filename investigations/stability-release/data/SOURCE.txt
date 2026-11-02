@@ -7,3 +7,7 @@ baseline-40975978888.jobs.json gh api repos/Maatify/php-rate-limiter/actions/run
 S2 smoke (PLAN §11), collected 2026-10-30 after run 41050345964 completed:
 runs/41050345964.run.json, runs/41050345964.jobs.json, runs/41050345964/env/<job_id>.txt   scripts/collect.sh 41050345964
 stability.jsonl, s2-smoke.analysis.json   php scripts/analyze.php --ref=5563e06b2f1950c4a04f624e58ff928ad8dac402 --repeats=2 --baseline=data/baseline-40975978888.jobs.json 41050345964
+S3 counted dispatches (PLAN §12), ten runs listed in s3-runs.txt, 2026-10-30T15:49:16Z .. 2026-10-31T06:43:06Z, on main@2bac701:
+runs/<run>.run.json, runs/<run>.jobs.json, runs/<run>/env/<job_id>.txt   scripts/collect.sh <run> (frozen, V-TOOLS); run 41123511868 re-collected twice after an API outage (F-176-03)
+s3.analysis.json, stability.jsonl   php scripts/analyze.php --ref=2bac701b1ab1034846d08592439e9f5ce933c4c9 --repeats=25 --baseline=data/baseline-40975978888.jobs.json <the ten runs>
+S4 (REPORT.md): s4-report.json   php scripts/report.php (computes from the files above; not one of the two frozen tools)
