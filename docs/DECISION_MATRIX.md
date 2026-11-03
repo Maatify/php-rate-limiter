@@ -1003,6 +1003,29 @@ No new Anti-Equilibrium soft event recorded
 * Deterministic and atomic behavior
 * Fully testable and auditable
 
+### 10.1 Threat-Model Limits (Non-Guarantees)
+
+These limits are intended behavior approved by the Owner (#183, 2026-11-03) on the evidence of
+#181. They name what the decision model does not protect.
+
+1. **Collective harm behind shared NAT (policies that do not opt into admission).** K1 and K2
+   are shared-scope keys (IP prefix; IP prefix + normalized UA). Unrelated clients behind one
+   NAT share them, so one client's failures, churn or credential spray can block the others
+   (#100, #106). This is the DEC-027 posture (DEC-019 carried verbatim). The supported
+   alternative is the admission reservation (DEC-022..DEC-028), where K1 credential spray is
+   not evaluated and is replaced by the source capacity `U_src` and the net failure cap `F`
+   (DEC-022).
+2. **Trusted sessions on several accounts (policies that do not opt into admission).** The
+   known-device bound (DEC-026) holds per account: at most 3 verifier reaches per account in
+   `pre+out` in the measured stream (12 accounts). Across accounts it is weaker by design: an
+   attacker holding correctly bound trusted sessions on 12 accounts and rotating 20 browser
+   majors reached the verifier 36 times in 200 attempts (TMUA), against 2 in 200 with one
+   browser major (TMSd) (#120, measured on `main` in #181). For policies that opt into
+   admission, the declared cost is TMSd 40 in 200 (DEC-022).
+3. **What is not protected.** The library bounds attempts; it does not authenticate. No limit
+   here lets a request pass verification on an account without that account's proof: every
+   reach counted above is a verifier attempt that the Host still verifies.
+
 ---
 
 **This document is authoritative.
