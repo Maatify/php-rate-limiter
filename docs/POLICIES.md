@@ -402,7 +402,8 @@ The API Heavy maximum enforced block level is **L3**.
 
 ### Decay Rules
 
-* IP score: −1 every 3 minutes
+* IP score: −1 per full 3 minutes since the score's last write (intended behavior; see
+  DECISION_MATRIX.md §7)
 
 L2 and higher uses the package modifier of a doubled effective interval. The
 multiple-block-cycle pause is additive to this modifier and never changes

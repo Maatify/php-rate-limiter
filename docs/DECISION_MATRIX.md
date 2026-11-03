@@ -773,11 +773,19 @@ Levels decay **slower** as severity increases.
 
 ## 7. Decay Rules (Penalty Persistence)
 
-| Scope         | Base Decay          |
-| ------------- | ------------------- |
-| Account score | −1 every 10 minutes |
-| Device score  | −1 every 5 minutes  |
-| IP score      | −1 every 3 minutes  |
+| Scope         | Base Decay (whole intervals since the last write) |
+| ------------- | ------------------------------------------------- |
+| Account score | −1 per full 10 minutes                            |
+| Device score  | −1 per full 5 minutes                             |
+| IP score      | −1 per full 3 minutes                             |
+
+**How decay is applied (intended behavior, #121, #183).** Decay counts whole intervals since
+the score's last write: every write to a score (`updatedAt`) restarts its interval, and any
+remainder is dropped. Decay therefore happens during idle periods; steady traffic on a key at
+a spacing shorter than its interval does not decay it. Example (K1, IP, 180-second interval):
+six writes at t = 0 leave an effective score of 4 at t = 500; six writes at t = 0, 100, …, 500
+leave 6. A decay at a true rate (`updatedAt += n × interval`) is a post-1.0 roadmap candidate
+with its own decision record.
 
 ### 7.1 Deterministic Decay Modifiers
 
