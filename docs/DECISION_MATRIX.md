@@ -691,10 +691,10 @@ Operational contract:
 
 ### 5.3 Fingerprint Evasion / Churn
 
-| Rule                             | Condition                            | Decision              |
-| -------------------------------- | ------------------------------------ | --------------------- |
-| Rapid fingerprint changes        | `≥ 3 changes within 10 minutes`      | HARD_BLOCK (IP + UA)  |
-| Same fingerprint across many IPs | `distinct(IP) ≥ 6 within 10 minutes` | HARD_BLOCK (DeviceFP) |
+| Rule                             | Condition                                                                                                                                 | Decision                            |
+| -------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------- | ----------------------------------- |
+| Rapid fingerprint changes        | `≥ 3 distinct DeviceFP on one K2 (IP prefix + normalized UA) within 600 s, or a second observation of 2 distinct DeviceFP within 1,800 s` | HARD_BLOCK L2 on K2 (IP + UA), 60 s |
+| Same fingerprint across many IPs | `distinct(IP) ≥ 6 within 10 minutes`                                                                                                      | HARD_BLOCK (DeviceFP)               |
 
 **Confidence Constraint (Anti-Passive Poisoning):**
 
