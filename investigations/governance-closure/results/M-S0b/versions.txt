@@ -1,0 +1,6 @@
+measured_sha a6c79f45e79171e26031fc720822428e09e6e36c (temporary worktree)
+src_diff_vs_main 56 files (git diff --name-only a6c79f4 origin/main -- src)
+composer_lock_diff_vs_main 0 files
+src_commits_ce89cb2..ebeb0a3 a6c79f45
+php 8.4.4 Darwin arm64
+composer Composer version 2.8.6 2025-02-25 13:03:50

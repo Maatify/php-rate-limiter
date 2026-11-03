@@ -1,0 +1,24 @@
+ Network maatify-rate-limiter-23640-15810-16726_default Creating
+ Network maatify-rate-limiter-23640-15810-16726_default Creating
+ Network maatify-rate-limiter-23640-15810-16726_default Created
+ Network maatify-rate-limiter-23640-15810-16726_default Created
+ Container maatify-rate-limiter-23640-15810-16726-redis-1 Creating
+ Container maatify-rate-limiter-23640-15810-16726-redis-1 Created
+ Container maatify-rate-limiter-23640-15810-16726-redis-1 Starting
+ Container maatify-rate-limiter-23640-15810-16726-redis-1 Started
+ Container maatify-rate-limiter-23640-15810-16726-redis-1 Waiting
+ Container maatify-rate-limiter-23640-15810-16726-redis-1 Healthy
+{"arm":"redis","request":1,"t":0,"after_first_block":null,"decision":"ALLOW","blockLevel":0,"retryAfter":0}
+{"arm":"redis","request":2,"t":0,"after_first_block":null,"decision":"ALLOW","blockLevel":0,"retryAfter":0}
+{"arm":"redis","request":3,"t":0,"after_first_block":0,"decision":"SOFT_BLOCK","blockLevel":1,"retryAfter":180}
+{"arm":"redis","request":4,"t":0,"after_first_block":1,"decision":"SOFT_BLOCK","blockLevel":1,"retryAfter":360}
+{"arm":"redis","request":5,"t":0,"after_first_block":2,"decision":"SOFT_BLOCK","blockLevel":1,"retryAfter":540}
+{"arm":"redis","request":6,"t":0,"after_first_block":3,"decision":"SOFT_BLOCK","blockLevel":1,"retryAfter":720}
+{"arm":"redis","request":7,"t":0,"after_first_block":4,"decision":"SOFT_BLOCK","blockLevel":1,"retryAfter":900}
+{"arm":"redis","request":8,"t":0,"after_first_block":5,"decision":"SOFT_BLOCK","blockLevel":1,"retryAfter":1080}
+{"arm":"redis","request":9,"t":0,"after_first_block":6,"decision":"SOFT_BLOCK","blockLevel":1,"retryAfter":1260}
+{"arm":"redis","request":10,"t":0,"after_first_block":7,"decision":"SOFT_BLOCK","blockLevel":1,"retryAfter":1440}
+{"arm":"redis","request":11,"t":0,"after_first_block":8,"decision":"SOFT_BLOCK","blockLevel":1,"retryAfter":1620}
+{"arm":"redis","request":12,"t":0,"after_first_block":9,"decision":"SOFT_BLOCK","blockLevel":1,"retryAfter":1800}
+{"arm":"redis","request":13,"t":0,"after_first_block":10,"decision":"SOFT_BLOCK","blockLevel":1,"retryAfter":1980}
+{"arm":"redis","redis":"7.0.15","first_block":3,"requests":13,"k2_stored":13,"k2_effective":13,"signals":0,"redis_keys":12}

@@ -1,0 +1,1 @@
+bash scripts/ci/run-with-redis-service.sh php investigations/governance-closure/decay-121/m121.php redis

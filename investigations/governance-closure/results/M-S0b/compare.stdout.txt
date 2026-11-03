@@ -1,0 +1,8 @@
+t01_matrix.jsonl out                     identical  20  differ   0
+t01_matrix.jsonl outside:no-flow         identical  24  differ   0
+t01_matrix.jsonl outside:pre+out         identical  21  differ   0
+t01_matrix.jsonl pre                     identical  20  differ   0
+t02_trace.jsonl out                      identical   8  differ   0
+t02_trace.jsonl outside:pre+out          identical   8  differ   0
+t02_trace.jsonl pre                      identical   8  differ   0
+PREDICTION HOLDS: every out and pre row identical

@@ -1,0 +1,1 @@
+bash -c cd\ investigations/governance-closure/results\ \&\&\ for\ f\ in\ gates.jsonl\ summary.md\ report.out\;\ do\ echo\ \"==\ \$f\"\;\ diff\ M-S0/raw/\$f\ M-S0b/raw/\$f\ \&\&\ echo\ identical\;\ done\;\ true

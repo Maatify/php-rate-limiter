@@ -1,0 +1,33 @@
+diff --git a/investigations/account-scoped-known-device-relief-110/lib/akdr.php b/investigations/account-scoped-known-device-relief-110/lib/akdr.php
+index b653bbd9..89cf0d1d 100644
+--- a/investigations/account-scoped-known-device-relief-110/lib/akdr.php
++++ b/investigations/account-scoped-known-device-relief-110/lib/akdr.php
+@@ -43,11 +43,11 @@ use Maatify\RateLimiter\Service\PenaltyLadder;
+ use Maatify\RateLimiter\Tests\Support\Clock\FixedClock;
+ use Maatify\RateLimiter\Tests\Support\RateLimiter\InMemoryRateLimitStore;
+
+-const AKDR_BASELINE_SHA = 'ebeb0a32c8fd42e0d4eb4d2500f30ea14036ad92';
++const AKDR_BASELINE_SHA = '0193b7905653140a42371c06a8443f870e8d371b';
+ const AKDR_RUNTIME_SHA256 = [
+-    EvaluationPipeline::class => '402139452040cb319208ca7a441b2f70210bf1acee4bd4a0ad666e8101ef6eab',
+-    DeviceIdentityResolver::class => 'ee654fcfa5d069cef5cfa37950812747aab3801e8f35a430fa132d4dca3c0e6c',
+-    EphemeralBucket::class => '00531031ebb4e864b5361a0b31332388db56c0d9e5e3c2752cf9756ec8febd8a',
++    EvaluationPipeline::class => '45f7e766d3ae0d2f6364268a7565acb90d526671c8853422c301728c8557d42e',
++    DeviceIdentityResolver::class => '6726aaef67f684f80c712296d6c588ff96a2a7447def878f0ebe961516fed4f3',
++    EphemeralBucket::class => '434fe4aa699358d914fbc29b67211a1dbe2572b468e6b4985e2e82052e297a04',
+ ];
+ /** Candidate / arm labels of earlier studies and the K1 harness self-test switches. Any of them set is a provenance error. */
+ const AKDR_FOREIGN_ENV = ['WSB_CANDIDATE', 'OQC_ARM', 'GNH_ARM', 'OAAA_ARM', 'K1_SELFTEST_C_NOOP', 'K1_SELFTEST_TTL_SHIFT', 'TMS_SELFTEST_BREAK_SESS'];
+diff --git a/investigations/account-scoped-known-device-relief-110/run.sh b/investigations/account-scoped-known-device-relief-110/run.sh
+index 822d7ebd..49683784 100644
+--- a/investigations/account-scoped-known-device-relief-110/run.sh
++++ b/investigations/account-scoped-known-device-relief-110/run.sh
+@@ -21,7 +21,7 @@ here=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
+ repo=$(cd "$here/../.." && pwd)
+ actual="$here/results/actual"
+ expected="$here/expected"
+-BASE_SHA=ebeb0a32c8fd42e0d4eb4d2500f30ea14036ad92
++BASE_SHA=0193b7905653140a42371c06a8443f870e8d371b
+ SCENARIOS=(v01_known_attackers o01_shared_nat b01_bootstrap)
+ mkdir -p "$actual" "$expected"
+ find "${actual:?}" -mindepth 1 -delete

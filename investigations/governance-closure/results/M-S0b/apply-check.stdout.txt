@@ -1,0 +1,8 @@
+HEAD a6c79f45e79171e26031fc720822428e09e6e36c
+Checking patch investigations/trusted-multi-session-s0/lib/tms.php...
+Checking patch investigations/trusted-multi-session-s0/run.sh...
+git apply --check: exit 0
+ investigations/trusted-multi-session-s0/lib/tms.php | 4 ++--
+ investigations/trusted-multi-session-s0/run.sh      | 4 ++--
+ 2 files changed, 4 insertions(+), 4 deletions(-)
+git diff after apply, blank context lines stripped: byte-identical to the patch

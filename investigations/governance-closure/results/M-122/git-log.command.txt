@@ -1,0 +1,1 @@
+git log --oneline 4fde508..HEAD -- investigations/nat-architecture-proposals-110/proposals

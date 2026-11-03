@@ -1,0 +1,24 @@
+ Network maatify-rate-limiter-132-14660-16573_default Creating
+ Network maatify-rate-limiter-132-14660-16573_default Creating
+ Network maatify-rate-limiter-132-14660-16573_default Created
+ Network maatify-rate-limiter-132-14660-16573_default Created
+ Container maatify-rate-limiter-132-14660-16573-redis-1 Creating
+ Container maatify-rate-limiter-132-14660-16573-redis-1 Created
+ Container maatify-rate-limiter-132-14660-16573-redis-1 Starting
+ Container maatify-rate-limiter-132-14660-16573-redis-1 Started
+ Container maatify-rate-limiter-132-14660-16573-redis-1 Waiting
+ Container maatify-rate-limiter-132-14660-16573-redis-1 Healthy
+{"arm":"redis","case":"control","request":1,"t":0,"decision":"ALLOW","retryAfter":0,"failureMode":"NORMAL"}
+{"arm":"redis","case":"control","request":2,"t":0,"decision":"ALLOW","retryAfter":0,"failureMode":"NORMAL"}
+{"arm":"redis","case":"control","request":3,"t":0,"decision":"ALLOW","retryAfter":0,"failureMode":"NORMAL"}
+{"arm":"redis","case":"control","request":4,"t":0,"decision":"ALLOW","retryAfter":0,"failureMode":"NORMAL"}
+{"arm":"redis","case":"control","request":5,"t":0,"decision":"ALLOW","retryAfter":0,"failureMode":"NORMAL"}
+{"arm":"redis","case":"control","request":6,"t":0,"decision":"ALLOW","retryAfter":0,"failureMode":"NORMAL"}
+{"arm":"redis","case":"control","read_at":500,"redis":"7.0.15","backendHealthy":true,"k1_stored":6,"k1_updatedAt":0,"k1_effective":4,"k2_stored":6,"k2_effective":4,"signals":0,"redis_keys":9,"contract":4,"green":true}
+{"arm":"redis","case":"tested","request":1,"t":0,"decision":"ALLOW","retryAfter":0,"failureMode":"NORMAL"}
+{"arm":"redis","case":"tested","request":2,"t":100,"decision":"ALLOW","retryAfter":0,"failureMode":"NORMAL"}
+{"arm":"redis","case":"tested","request":3,"t":200,"decision":"ALLOW","retryAfter":0,"failureMode":"NORMAL"}
+{"arm":"redis","case":"tested","request":4,"t":300,"decision":"ALLOW","retryAfter":0,"failureMode":"NORMAL"}
+{"arm":"redis","case":"tested","request":5,"t":400,"decision":"ALLOW","retryAfter":0,"failureMode":"NORMAL"}
+{"arm":"redis","case":"tested","request":6,"t":500,"decision":"ALLOW","retryAfter":0,"failureMode":"NORMAL"}
+{"arm":"redis","case":"tested","read_at":500,"redis":"7.0.15","backendHealthy":true,"k1_stored":6,"k1_updatedAt":500,"k1_effective":6,"k2_stored":6,"k2_effective":6,"signals":0,"redis_keys":9,"contract":4,"green":false}

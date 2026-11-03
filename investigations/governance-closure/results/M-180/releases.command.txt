@@ -1,0 +1,1 @@
+gh release list --repo Maatify/php-rate-limiter --limit 50

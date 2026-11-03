@@ -1,0 +1,16 @@
+worktree HEAD a6c79f45e79171e26031fc720822428e09e6e36c (detached, temporary, outside the repository)
+## git diff --stat
+ investigations/trusted-multi-session-s0/lib/tms.php | 4 ++--
+ investigations/trusted-multi-session-s0/run.sh      | 4 ++--
+ 2 files changed, 4 insertions(+), 4 deletions(-)
+## git diff -U0 hunks
++++ b/investigations/trusted-multi-session-s0/lib/tms.php
+@@ -16,2 +16,2 @@ use Maatify\RateLimiter\Service\EvaluationPipeline;
++++ b/investigations/trusted-multi-session-s0/run.sh
+@@ -25 +25 @@ expected="${here:?}/expected"
+@@ -178 +178 @@ fc_check assertion_row_deleted 'grep -v "\"assert\":\"S0 SP5 " "$dir/t01_matrix.
+## git status --porcelain (vendor/ from composer install and study results/ are ignored)
+ M investigations/trusted-multi-session-s0/lib/tms.php
+ M investigations/trusted-multi-session-s0/run.sh
+## recomputed constant (shasum -a 256 on the worktree at HEAD)
+src/Service/EvaluationPipeline.php 402139452040cb319208ca7a441b2f70210bf1acee4bd4a0ad666e8101ef6eab

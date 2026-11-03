@@ -1,0 +1,14 @@
+{"arm":"memory","case":"control","request":1,"t":0,"decision":"ALLOW","retryAfter":0,"failureMode":"NORMAL"}
+{"arm":"memory","case":"control","request":2,"t":0,"decision":"ALLOW","retryAfter":0,"failureMode":"NORMAL"}
+{"arm":"memory","case":"control","request":3,"t":0,"decision":"ALLOW","retryAfter":0,"failureMode":"NORMAL"}
+{"arm":"memory","case":"control","request":4,"t":0,"decision":"ALLOW","retryAfter":0,"failureMode":"NORMAL"}
+{"arm":"memory","case":"control","request":5,"t":0,"decision":"ALLOW","retryAfter":0,"failureMode":"NORMAL"}
+{"arm":"memory","case":"control","request":6,"t":0,"decision":"ALLOW","retryAfter":0,"failureMode":"NORMAL"}
+{"arm":"memory","case":"control","read_at":500,"redis":null,"backendHealthy":true,"k1_stored":6,"k1_updatedAt":0,"k1_effective":4,"k2_stored":6,"k2_effective":4,"signals":0,"redis_keys":null,"contract":4,"green":true}
+{"arm":"memory","case":"tested","request":1,"t":0,"decision":"ALLOW","retryAfter":0,"failureMode":"NORMAL"}
+{"arm":"memory","case":"tested","request":2,"t":100,"decision":"ALLOW","retryAfter":0,"failureMode":"NORMAL"}
+{"arm":"memory","case":"tested","request":3,"t":200,"decision":"ALLOW","retryAfter":0,"failureMode":"NORMAL"}
+{"arm":"memory","case":"tested","request":4,"t":300,"decision":"ALLOW","retryAfter":0,"failureMode":"NORMAL"}
+{"arm":"memory","case":"tested","request":5,"t":400,"decision":"ALLOW","retryAfter":0,"failureMode":"NORMAL"}
+{"arm":"memory","case":"tested","request":6,"t":500,"decision":"ALLOW","retryAfter":0,"failureMode":"NORMAL"}
+{"arm":"memory","case":"tested","read_at":500,"redis":null,"backendHealthy":true,"k1_stored":6,"k1_updatedAt":500,"k1_effective":6,"k2_stored":6,"k2_effective":6,"signals":0,"redis_keys":null,"contract":4,"green":false}

@@ -1,0 +1,1 @@
+git rev-list --count v1.0.0-rc.3..origin/main

@@ -1,0 +1,6 @@
+recorded 2026-11-02T22:55:44Z, before any run at a6c79f4 (Lead ruling on F-181-02)
+measured sha: a6c79f45e79171e26031fc720822428e09e6e36c (DEC-021, #117; the only src commit in ce89cb2..ebeb0a3)
+prediction: the out and pre rows of t01_matrix.jsonl and t02_trace.jsonl, after dropping provenance rows, are byte-identical
+to the same rows of the S0 run on main@0193b79 (results/M-S0/raw/).
+rows in scope (counted on results/M-S0/raw): t01 T01.matrix out 20, pre 20; t02 T02.trace out 7, pre 7; T02.divergence out 1, pre 1 = 56 rows
+if it holds: F-181-02 classified "explained by DEC-021, not predicted, not a defect"; if not: stop and report.

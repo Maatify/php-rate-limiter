@@ -1,0 +1,7 @@
+measured_sha 58b424ea99f92a1497093916437374dbed72b2c4
+main_sha 0193b7905653140a42371c06a8443f870e8d371b
+src_diff_vs_main 0 files
+worktree_dirty 0 files
+php 8.4.4 Darwin arm64
+php_redis 6.2.0
+Redis server v=7.0.15 sha=00000000:0 malloc=jemalloc-5.2.1 bits=64 build=d6d81b7b50ab2e83

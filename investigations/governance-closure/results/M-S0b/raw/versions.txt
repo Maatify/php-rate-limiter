@@ -1,0 +1,5 @@
+baseline_expected: a6c79f45e79171e26031fc720822428e09e6e36c
+repo_head: a6c79f45e79171e26031fc720822428e09e6e36c
+pipeline_sha256_repo: 402139452040cb319208ca7a441b2f70210bf1acee4bd4a0ad666e8101ef6eab
+php: 8.4.4
+composer: Composer version 2.8.6 2025-02-25 13:03:50
