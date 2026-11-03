@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.0.0-rc.4]
+
 ### Documentation (#183, governance closure item 6) — measured behavior written as the contract
 - Decay contract: whole intervals since the score's last write; steady traffic at a spacing shorter than the interval does not
   decay a score (intended behavior, #121, #183). `docs/DECISION_MATRIX.md` §7 table and a paragraph with the measured K1
