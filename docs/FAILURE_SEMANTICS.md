@@ -454,10 +454,14 @@ FAIL_CLOSED result or a normal quota decision; see `docs/SIMPLE_THROTTLING.md`.
   **whole request** and takes the existing path: `FAIL_CLOSED` `HARD_BLOCK`, then the open circuit's
   bounded fallback, then `fallback_limit_exceeded`. There is no partial allow and no state written
   by the failed operation.
-* A malformed stored value is a `RateLimiterException`, never a backend failure and never a fallback
-  allowance. This includes a device-member or pending score that is not a canonical non-negative
-  integer (DEC-017, #185): it is detected before the first write, and nothing is pruned, repaired or
-  deleted. An unclassified throwable keeps escaping; it never enters the circuit.
+* In the built-in Redis store, malformed stored state is a Lua error reply `malformed admission
+  state: …`, returned before any write. The reference test executor (`RespRedisCommandExecutor`)
+  raises it as `RateLimiterException`; a Host executor whose client throws on an error reply
+  (phpredis: `RedisException`) propagates that exception unchanged, as
+  `RedisCommandExecutorInterface` requires. It is never a `BackendFailureException` and never a
+  fallback. This includes a device-member or pending score that is not a canonical non-negative
+  integer (DEC-017, #185): nothing is pruned, repaired or deleted. An unclassified throwable keeps
+  escaping; it never enters the circuit.
 * In degraded mode and on a `FAIL_OPEN` path **no admission, no lane resolution and no epoch or
   fence read happens**: the admission bounds are absent there. `LocalFallbackLimiter` is unchanged:
   no new dimension, no new bound, no new tracked subject.

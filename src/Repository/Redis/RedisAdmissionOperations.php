@@ -18,11 +18,14 @@ use Maatify\RateLimiter\Exception\RateLimiterException;
  * Redis implementation of the admission store operations (DEC-024, contract §2.4), used by `RedisFullCapabilityStore`.
  *
  * One Lua script per operation. Every script takes the caller's `now` and relative TTLs and never calls `TIME` (DEC-016).
- * Every script reads and validates the type and the fields (of a sorted set, every score) of every key it is going to touch
- * before its first write, because Redis does not roll back the writes of a script that fails half way; a malformed value is
- * a Lua error reply and surfaces as `RateLimiterException`. A refusal writes nothing, never prunes, and a previous generation is never written. Every key
- * carries the namespace hash tag, so all admission keys of a namespace (hence of every verifier class) share one hash slot
- * on the single, non-clustered Redis the store supports.
+ * Every script reads and validates the type and the fields (of a sorted set, every score) of every key it is going to
+ * touch before its first write, because Redis does not roll back the writes of a script that fails half way. Malformed
+ * stored state is a Lua error reply `malformed admission state: …`, returned before any write. The reference test executor
+ * (`RespRedisCommandExecutor`) raises it as `RateLimiterException`; a Host executor whose client throws on an error reply
+ * (phpredis: `RedisException`) propagates that exception unchanged, as `RedisCommandExecutorInterface` requires. It is
+ * never a `BackendFailureException` and never a fallback. A refusal writes nothing, never prunes, and a previous
+ * generation is never written. Every key carries the namespace hash tag, so all admission keys of a namespace (hence of
+ * every verifier class) share one hash slot on the single, non-clustered Redis the store supports.
  *
  * Failure classification stays with the Host executor: `BackendFailureException` and every other throwable propagate
  * unchanged; nothing is wrapped and there is no fallback.

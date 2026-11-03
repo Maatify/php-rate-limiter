@@ -14,10 +14,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   pending set of a settling failure set were read with `tonumber()` alone. A score of `-1` or `-inf` was left out of the gate and
   then deleted silently by the prune of the admitted write; `0.5`, a fractional deadline, `inf` and `1e21` counted as live. Every
   score the reservation reads, and the pending score of an outcome's own member, is now checked as a canonical non-negative
-  integer before any write; any other score is `RateLimiterException` (`malformed admission state: …`), with the member, its key,
-  its TTL, the other scopes, the counters and the permit unchanged. A canonical score behaves as before. No DTO, interface or
-  contract shape changes. Cost: the reservation now reads every member of the sets it validates, about 0.8 µs of Redis time per
-  member on Redis 7.0.15 (+23 µs per call at the default 10 new devices per day); the measurement is in
+  integer before any write; any other score is malformed state. Malformed stored state is a Lua error reply `malformed admission
+  state: …`, returned before any write. The reference test executor (`RespRedisCommandExecutor`) raises it as
+  `RateLimiterException`; a Host executor whose client throws on an error reply (phpredis: `RedisException`) propagates that
+  exception unchanged, as `RedisCommandExecutorInterface` requires. It is never a `BackendFailureException` and never a fallback.
+  The member, its key, its TTL, the other scopes, the counters and the permit stay unchanged. A canonical score behaves as before.
+  No DTO, interface or contract shape changes. Cost: the reservation now reads every member of the sets it validates, about 0.8 µs
+  of Redis time per member on Redis 7.0.15 (+23 µs per call at the default 10 new devices per day); the measurement is in
   `investigations/admission-score-validation-185/`. Tests: `AdmissionStoreScoreValidationRedisTest` (40 malformed arms, 7
   controls). DEC-017 application note, `docs/KEY_STRATEGY.md` §4.8, `docs/FAILURE_SEMANTICS.md` §4.5.
 

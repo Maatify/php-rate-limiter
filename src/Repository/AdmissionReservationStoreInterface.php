@@ -14,8 +14,12 @@ use Maatify\RateLimiter\DTO\AdmissionReservationResultDTO;
  * Contract for implementations (`RedisFullCapabilityStore` implements it):
  * - `reserveAdmission` validates every key and field before its first write and then writes all of the
  *   scopes or none; a refusal writes nothing, never prunes and never writes a previous generation.
- * - Availability failures are reported through the typed backend-failure contract; malformed stored state is
- *   a `RateLimiterException`, never a backend failure.
+ * - Availability failures are reported through the typed backend-failure contract. In
+ *   `RedisFullCapabilityStore`, malformed stored state is a Lua error reply `malformed admission state: …`,
+ *   returned before any write. The reference test executor (`RespRedisCommandExecutor`) raises it as
+ *   `RateLimiterException`; a Host executor whose client throws on an error reply (phpredis: `RedisException`)
+ *   propagates that exception unchanged, as `RedisCommandExecutorInterface` requires. It is never a
+ *   `BackendFailureException` and never a fallback.
  * - `readBindingEpoch` reads the current key, else the previous key, else 0; `bumpBindingEpoch` writes the
  *   current key only and returns the new epoch.
  *

@@ -113,17 +113,22 @@ admission store's sorted sets are persisted semantic timestamp fields and
 belong to the list above: the expiry score of every member of a device-member
 set, current and previous generation, and the permit-deadline score of every
 pending member of a failure set. The built-in `RedisFullCapabilityStore`
-validates them as canonical non-negative integers (at most
-`9007199254740991`) before the first write: the reservation script checks
-every score of the device-member sets and of the pending set it reads, and the
-outcome script the pending score of its own member. A score such as `-1`,
-`0.5`, `inf`, `-inf` or `1e21` is malformed state: the script fails with
-`RateLimiterException` (`malformed admission state: …`); the member, its key
-and its TTL are not pruned, repaired or refreshed, and no other scope, counter
-or permit of the request is written. Before this note such a score was read
-with `tonumber()` alone: a negative score was pruned silently by the next
-admitted write, and a fractional or infinite one counted as live. The Decision
-above is not changed by this note. Evidence: the external review of `5c8b785`
+validates them as canonical non-negative integers (at most `9007199254740991`)
+before the first write: the reservation script checks every score of the
+device-member sets and of the pending set it reads, and the outcome script the
+pending score of its own member. A score such as `-1`, `0.5`, `inf`, `-inf` or
+`1e21` is malformed state. Malformed stored state is a Lua error reply
+`malformed admission state: …`, returned before any write. The reference test
+executor (`RespRedisCommandExecutor`) raises it as `RateLimiterException`; a
+Host executor whose client throws on an error reply (phpredis:
+`RedisException`) propagates that exception unchanged, as
+`RedisCommandExecutorInterface` requires. It is never a
+`BackendFailureException` and never a fallback. The member, its key and its
+TTL are not pruned, repaired or refreshed, and no other scope, counter or
+permit of the request is written. Before this note such a score was read with
+`tonumber()` alone: a negative score was pruned silently by the next admitted
+write, and a fractional or infinite one counted as live. The Decision above is
+not changed by this note. Evidence: the external review of `5c8b785`
 (EX-RC4-F01), confirmed by the Lead on #185 (F-185-01); Owner permission on
 #185.
 

@@ -950,15 +950,19 @@ exhausted source); a second rotation inside the same window re-issues it in full
 rotation the net failure set and the account bucket restart in full (4 further failing accounts,
 4 further bucket takes).
 
-Validation. Every scope key of a request is read and validated (type, fields, an existing key without
-a TTL) **before the first write**, because Redis does not roll back the writes of a failed script.
-This includes every score of a sorted set the script reads: each member of the `d` sets (current and
-previous generation) and of the `p` set on a reservation, and the `p` score of its own member on an
-outcome. A score that is not a canonical non-negative integer is malformed (DEC-017, #185), so the
-prune of an admitted write removes only members that have really expired. A
-malformed value is a `RateLimiterException` and never a `BackendFailureException`; a refusal writes
-nothing and names the first refusing scope in request order. The scripts take the caller's time as a
-parameter and never call `TIME`.
+Validation. Every scope key of a request is read and validated (type, fields, an existing key
+without a TTL) **before the first write**, because Redis does not roll back the writes of a failed
+script. This includes every score of a sorted set the script reads: each member of the `d` sets
+(current and previous generation) and of the `p` set on a reservation, and the `p` score of its own
+member on an outcome. A score that is not a canonical non-negative integer is malformed (DEC-017,
+#185), so the prune of an admitted write removes only members that have really expired. Malformed
+stored state is a Lua error reply `malformed admission state: …`, returned before any write. The
+reference test executor (`RespRedisCommandExecutor`) raises it as `RateLimiterException`; a Host
+executor whose client throws on an error reply (phpredis: `RedisException`) propagates that
+exception unchanged, as `RedisCommandExecutorInterface` requires. It is never a
+`BackendFailureException` and never a fallback. A refusal writes nothing and names the first
+refusing scope in request order. The scripts take the caller's time as a parameter and never call
+`TIME`.
 
 ## 5. Key Usage by Context
 
