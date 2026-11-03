@@ -410,6 +410,11 @@ multiple-block-cycle pause is additive to this modifier and never changes
 block TTL, penalty duration, budget, correlation, fallback, or circuit-breaker
 timers.
 
+Each refused request is still counted on K2, so a score-derived Retry-After
+extends by one decay interval (180 seconds) per refused request with no cap
+while requests continue (#98, #183; USAGE_GUIDE.md Retry-After Semantics). The
+same scoring path for other score keys and policies was not measured in #181.
+
 ---
 
 ### Failure Semantics

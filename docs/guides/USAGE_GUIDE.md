@@ -209,6 +209,8 @@ The returned <code>retryAfter</code> has four distinct contracts:
 - A budget result returns the remaining budget cooldown. Correlation, flood, credential-spray, and other non-score decisions retain their own existing retry rules.
 - A bounded local-fallback denial (<code>fallback_limit_exceeded</code>) returns the largest remaining fixed-window time among the fallback dimensions that denied the same evaluation. It is a wait hint, not an acceptance guarantee.
 
+Refused requests still count on K2 (API Heavy). In the API Heavy policy (<code>API_OVERUSE</code>), a request refused by a score-derived <code>SOFT_BLOCK</code> is still scored on K2, so the score-derived <code>retryAfter</code> grows with each refused attempt and has no upper bound while attempts continue (measured with a K2 threshold of 3: 180 seconds at the first refusal, then +180 per refused request, 1,980 seconds at the eleventh). This is intended behavior (#98, #183): counting refused attempts prevents probing. Hosts and clients must honor <code>retryAfter</code> and not retry before it. The same scoring path for other score keys and policies was not measured in #181. For policies that do not opt into admission, shared-key exposure behind NAT is the DEC-027 posture.
+
 The response retry time is independent from persistence: score-derived results may use a decay wait while the persisted block continues to use the configured <code>PenaltyLadder</code> duration.
 
 ## Integration Boundaries
