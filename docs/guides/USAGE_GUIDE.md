@@ -200,6 +200,15 @@ For <code>api_heavy_protection</code>, K2 minor overuse returns at most <code>SO
 
 <code>RateLimitResultDTO</code> returns <code>ALLOW</code>, <code>SOFT_BLOCK</code>, or <code>HARD_BLOCK</code>. The host owns the final response, retry handling, logging, and user-facing presentation.
 
+### Identity inputs
+
+These fields apply to every policy. The admission section below adds `clientInstanceId` and `admissionCredential` for policies that opt in.
+
+* **`clientFingerprint`**: Host-normalized, bucketed, low-entropy fields that stay stable for one client. They enter the DeviceFP. Distinct DeviceFP values on one IP prefix + user agent count toward the churn rule (Decision Matrix §5.3), so values that vary per request make one client look like many. Do not pass per-request or high-entropy values.
+* **`sessionDeviceId`**: pass it only after authentication, bound to the authenticated account, and set `isSessionTrusted` only when the Host has verified that binding (Device Fingerprint §3.3). The default resolver folds a non-empty value into the DeviceFP without checking trust, so a value taken from an unauthenticated request lets the caller choose its DeviceFP.
+* **`correlationId`**: the stable, opaque subject of an attempt, typically the submitted login identifier. Credential-spray correlation uses `correlationId ?? accountId` (Key Strategy §6.1). Supply it whether or not the account exists, and keep it stable for the same submitted identifier.
+* **Missing DeviceFP.** The default `DeviceIdentityResolver` always produces a fingerprint, so the Decision Matrix rules for a missing DeviceFP (§2.2, §2.2.1, §2.4.1.2, §3.1, §3.1.1) apply only with a custom resolver that can return none.
+
 ### Retry-After Semantics
 
 The returned <code>retryAfter</code> has four distinct contracts:
@@ -208,6 +217,8 @@ The returned <code>retryAfter</code> has four distinct contracts:
 - A score-derived <code>SOFT_BLOCK</code> returns the time until the score is below L1. A score-derived <code>HARD_BLOCK</code>, including L3, returns the time until the score is below L2. <code>DecayCalculator</code> uses the package-owned account, device, and IP intervals together with the stored score timestamp and elapsed partial interval. Retained multiple-block-cycle pauses are subtracted from elapsed decay, and an active pause's remaining time is added to score-derived Retry-After.
 - A budget result returns the remaining budget cooldown. Correlation, flood, credential-spray, and other non-score decisions retain their own existing retry rules.
 - A bounded local-fallback denial (<code>fallback_limit_exceeded</code>) returns the largest remaining fixed-window time among the fallback dimensions that denied the same evaluation. It is a wait hint, not an acceptance guarantee.
+
+Refused requests still count on K2 (API Heavy). In the API Heavy policy (<code>API_OVERUSE</code>), a request refused by a score-derived <code>SOFT_BLOCK</code> is still scored on K2, so the score-derived <code>retryAfter</code> grows with each refused attempt and has no upper bound while attempts continue (measured with a K2 threshold of 3: 180 seconds at the first refusal, then +180 per refused request, 1,980 seconds at the eleventh). This is intended behavior (#98, #183): counting refused attempts prevents probing. Hosts and clients must honor <code>retryAfter</code> and not retry before it. The same scoring path for other score keys and policies was not measured in #181. For policies that do not opt into admission, shared-key exposure behind NAT is the DEC-027 posture.
 
 The response retry time is independent from persistence: score-derived results may use a decay wait while the persisted block continues to use the configured <code>PenaltyLadder</code> duration.
 

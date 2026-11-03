@@ -402,12 +402,18 @@ The API Heavy maximum enforced block level is **L3**.
 
 ### Decay Rules
 
-* IP score: −1 every 3 minutes
+* IP score: −1 per full 3 minutes since the score's last write (intended behavior; see
+  DECISION_MATRIX.md §7)
 
 L2 and higher uses the package modifier of a doubled effective interval. The
 multiple-block-cycle pause is additive to this modifier and never changes
 block TTL, penalty duration, budget, correlation, fallback, or circuit-breaker
 timers.
+
+Each refused request is still counted on K2, so a score-derived Retry-After
+extends by one decay interval (180 seconds) per refused request with no cap
+while requests continue (#98, #183; USAGE_GUIDE.md Retry-After Semantics). The
+same scoring path for other score keys and policies was not measured in #181.
 
 ---
 

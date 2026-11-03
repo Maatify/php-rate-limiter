@@ -149,6 +149,9 @@ short-circuit stages 4–6. Normative budget behavior is defined in §2.4, §2.5
 | Repeated missing fingerprint (same account) | K4  | +6          | Accelerated escalation |
 | IP attempts multiple accounts               | K1  | +5          | Credential spray       |
 
+The missing-fingerprint rows (and §2.2.1) are reachable only with a custom resolver that returns
+no fingerprint; the default resolver (`DeviceIdentityResolver`) always produces one.
+
 #### 2.2.1 “Repeated missing fingerprint” Rule (Deterministic)
 
 A “Repeated missing fingerprint (same account)” event applies if:
@@ -691,10 +694,10 @@ Operational contract:
 
 ### 5.3 Fingerprint Evasion / Churn
 
-| Rule                             | Condition                            | Decision              |
-| -------------------------------- | ------------------------------------ | --------------------- |
-| Rapid fingerprint changes        | `≥ 3 changes within 10 minutes`      | HARD_BLOCK (IP + UA)  |
-| Same fingerprint across many IPs | `distinct(IP) ≥ 6 within 10 minutes` | HARD_BLOCK (DeviceFP) |
+| Rule                             | Condition                                                                                                                                 | Decision                            |
+| -------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------- | ----------------------------------- |
+| Rapid fingerprint changes        | `≥ 3 distinct DeviceFP on one K2 (IP prefix + normalized UA) within 600 s, or a second observation of 2 distinct DeviceFP within 1,800 s` | HARD_BLOCK L2 on K2 (IP + UA), 60 s |
+| Same fingerprint across many IPs | `distinct(IP) ≥ 6 within 10 minutes`                                                                                                      | HARD_BLOCK (DeviceFP)               |
 
 **Confidence Constraint (Anti-Passive Poisoning):**
 
@@ -773,11 +776,19 @@ Levels decay **slower** as severity increases.
 
 ## 7. Decay Rules (Penalty Persistence)
 
-| Scope         | Base Decay          |
-| ------------- | ------------------- |
-| Account score | −1 every 10 minutes |
-| Device score  | −1 every 5 minutes  |
-| IP score      | −1 every 3 minutes  |
+| Scope         | Base Decay (whole intervals since the last write) |
+| ------------- | ------------------------------------------------- |
+| Account score | −1 per full 10 minutes                            |
+| Device score  | −1 per full 5 minutes                             |
+| IP score      | −1 per full 3 minutes                             |
+
+**How decay is applied (intended behavior, #121, #183).** Decay counts whole intervals since
+the score's last write: every write to a score (`updatedAt`) restarts its interval, and any
+remainder is dropped. Decay therefore happens during idle periods; steady traffic on a key at
+a spacing shorter than its interval does not decay it. Example (K1, IP, 180-second interval):
+six writes at t = 0 leave an effective score of 4 at t = 500; six writes at t = 0, 100, …, 500
+leave 6. A decay at a true rate (`updatedAt += n × interval`) is a post-1.0 roadmap candidate
+with its own decision record.
 
 ### 7.1 Deterministic Decay Modifiers
 
@@ -994,6 +1005,29 @@ No new Anti-Equilibrium soft event recorded
 * Progressive escalation with persistence
 * Deterministic and atomic behavior
 * Fully testable and auditable
+
+### 10.1 Threat-Model Limits (Non-Guarantees)
+
+These limits are intended behavior approved by the Owner (#183, 2026-11-03) on the evidence of
+#181. They name what the decision model does not protect.
+
+1. **Collective harm behind shared NAT (policies that do not opt into admission).** K1 and K2
+   are shared-scope keys (IP prefix; IP prefix + normalized UA). Unrelated clients behind one
+   NAT share them, so one client's failures, churn or credential spray can block the others
+   (#100, #106). This is the DEC-027 posture (DEC-019 carried verbatim). The supported
+   alternative is the admission reservation (DEC-022..DEC-028), where K1 credential spray is
+   not evaluated and is replaced by the source capacity `U_src` and the net failure cap `F`
+   (DEC-022).
+2. **Trusted sessions on several accounts (policies that do not opt into admission).** The
+   known-device bound (DEC-026) holds per account: at most 3 verifier reaches per account in
+   `pre+out` in the measured stream (12 accounts). Across accounts it is weaker by design: an
+   attacker holding correctly bound trusted sessions on 12 accounts and rotating 20 browser
+   majors reached the verifier 36 times in 200 attempts (TMUA), against 2 in 200 with one
+   browser major (TMSd) (#120, measured on `main` in #181). For policies that opt into
+   admission, the declared cost is TMSd 40 in 200 (DEC-022).
+3. **What is not protected.** The library bounds attempts; it does not authenticate. No limit
+   here lets a request pass verification on an account without that account's proof: every
+   reach counted above is a verifier attempt that the Host still verifies.
 
 ---
 

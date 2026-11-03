@@ -128,7 +128,9 @@ derivation.
 #### Properties
 
 * Medium confidence
-* Improves differentiation under NAT/VPN
+* Improves differentiation under NAT/VPN only while its values stay stable per client: values
+  that vary per request on one IP prefix + UA count toward the churn rule (see
+  `DECISION_MATRIX.md` 5.3 and the "Identity inputs" section of `guides/USAGE_GUIDE.md`)
 * Fully optional
 * Absence increases suspicion weight only
 

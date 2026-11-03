@@ -2,7 +2,7 @@
 
 **Status:** Planning only
 **Scope:** Post-first-RC capability and quality upgrades
-**Last reviewed:** 2026-09-27
+**Last reviewed:** 2026-11-03
 
 This roadmap preserves upgrade candidates that were deliberately deferred during the pre-release comparative review so they are not lost when branches and pull requests are closed.
 
@@ -162,6 +162,38 @@ This item is recorded here so future reviews do not re-propose it as deferred wo
 **Why deferred:** No package SLA has been defined yet, and pre-RC correctness/concurrency-sensitive paths already have focused integration evidence.
 
 **Before implementation:** Define reproducible scenarios, measurable thresholds, supported environments, and which results are release gates versus informational benchmarks.
+
+## Post-RC Security and Contract Candidates
+
+### Rate-Based Score Decay
+
+**Status:** POST-RC-CANDIDATE
+
+**Potential value:** Decay at the documented rate under steady traffic (`updatedAt += n × interval`), so a score falls one step per interval even while writes continue.
+
+**Why deferred:** The current whole-interval behavior is the approved contract (#121, #183) and is stricter; changing it is a security-relevant store change in Lua and every adapter.
+
+**Before implementation:** A dedicated decision record; red tests; a user-cost measurement before the store change; the stability gate and the S0/AKDR replays on the new head.
+
+### Admission-Path Measurement of Multi-Account Trusted Sessions
+
+**Status:** POST-RC-CANDIDATE
+
+**Potential value:** Measure TMUA (20 browser majors over 12 account-bound trusted sessions) on the admission policy, where only TMSd is declared (40 in 200).
+
+**Why deferred:** A new harness through `RateLimiterEngine`; the non-opt-in numbers are the approved limit (#120, #183).
+
+**Before implementation:** Pre-registered predictions; the same streams as AKDR; `pre+out` and `pre`.
+
+### New / Unknown Users and Day 0
+
+**Status:** POST-RC-CANDIDATE
+
+**Potential value:** A remedy for users with no known device, who gain nothing from the known-device bound (Q-P4).
+
+**Why deferred:** No decision text addresses it; the admission layer and DEC-026 cover known or proven clients.
+
+**Before implementation:** An Owner question set and a study with its own threat model.
 
 ## Rejected for Package Direction
 
