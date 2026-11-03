@@ -1,6 +1,6 @@
 # #183 — بند الإغلاق 6: PR وثائقي واحد (D-DOCS) — PLAN (S0)
 
-> **الحالة:** PLAN (S0)؛ لا كتابة في `docs/` أو `README.md` أو `CHANGELOG.md` قبل أحكام LT-183-xx.
+> **الحالة:** PLAN (S0)، ثم S1 بعد أحكام LT-183-01..09 (2026-11-03). ما كُتب في §5.
 > **الأساس:** `main@5dff37c45a83a7cccd1811142ca3e9a3215380c9`، بعد دمج #182. الفرع `claude/docs-closure-183-s0`.
 > **المصدر:** [وصف #183](https://github.com/Maatify/php-rate-limiter/issues/183)، و[اعتماد الـ Owner](https://github.com/Maatify/php-rate-limiter/issues/183#issuecomment-6591675251) (2026-11-03، «اعتمد»: التوصيات كلها كما هي)، و[تعليق التكليف](https://github.com/Maatify/php-rate-limiter/issues/183#issuecomment-6591687770).
 > **الدليل:** `investigations/governance-closure/REPORT.md` §1 (#181). كل رقم في النصوص المقترحة يُنقل من صفه.
@@ -133,3 +133,29 @@ Normal Engineering Task (documentation). قُرئ `docs/php-engineering-standard
 | `DECISION_GOVERNANCE_STANDARD_AR.md` | 1.0.0 | الإحالة إلى DEC-022..028 بلا تعديل أي DEC ACTIVE؛ بنود ROADMAP تشترط DEC مستقبليًا |
 | `AI_COLLABORATION_WORKFLOW_AR.md` | 12.0.0 | |
 | `GITHUB_PHASE_STACK_WORKFLOW_AR.md` | 4.0.0 | Draft، والدمج بيد الـ Lead |
+
+## 5. ما كُتب (S1)
+
+**الأحكام:** [تعليق الـ Lead 6594026198](https://github.com/Maatify/php-rate-limiter/pull/184#issuecomment-6594026198) (2026-11-03) على LT-183-01..09 وصياغة 4.1. كُتب كل بند في commit واحد بنصوص §1 مع تعديلات الحكم، ودُفع كل commit وحده بعد انتهاء CI الرأس السابق. `check-whitespace.sh` نجح بعد `git add` في كل commit.
+
+| البند | commit | ما كُتب (الموضع على الرأس `0f14809`) | CI |
+| --- | --- | --- | --- |
+| 1 | `ef1e77d` | `DECISION_MATRIX.md` §7: العمود والخلايا (1.1) L779–L784 والفقرة (1.2) L785–L791؛ `POLICIES.md` L405–L406 (1.3). `git grep -n -E '(−\|-)1 every' -- docs README.md` بعده فارغ (exit 1). | 41655920371، 16/16 |
+| 2 | `7988eea` | `USAGE_GUIDE.md` L221، فقرة بعد بنود Retry-After الأربعة (2.1)؛ `POLICIES.md` API Heavy L413–L416 (2.2). جملة «not measured» بالصيغة المحكومة في الموضعين. §7.2 بلا تغيير (LT-183-03، 04). | 41658318331، 16/16 |
+| 3 | `6727678` | `DECISION_MATRIX.md` §10.1 L1009–L1030 بعد Guarantees وقبل `---` التذييل، ونقطة 2 بالصيغة المحكومة؛ `README.md` فقرة «Threat-model limits» قبل «See …» (LT-183-02). `check-readme-examples.sh` exit 0 محليًّا. | 41660815891، 16/16 |
+| 4 | `5e44a22` | `DECISION_MATRIX.md` §5.3 صف «Rapid fingerprint changes» بالصياغة المحكومة؛ `DEVICE_FINGERPRINT.md` §3.2 Properties L131–L133 (LT-183-07). | 41663200882، 16/16 |
+| 5 | `c7e20ad` | `USAGE_GUIDE.md` `### Identity inputs` L203–L210 (5.1)؛ `DECISION_MATRIX.md` §2.2 L152–L153 جملة بعد الجدول (LT-183-08). | 41665203415، 16/16 |
+| 6 | `76cf9d6` | `ROADMAP.md` `## Post-RC Security and Contract Candidates` بعد «Post-RC Backend and Verification Candidates» بالبنود 6.1–6.3 (LT-183-06). | 41667482484، 16/16 |
+| 7 | `0f14809` | `CHANGELOG.md` `### Documentation (#183, governance closure item 6)` تحت `[Unreleased]` بسطر لكل بند 1–6. | 41669384473، 16/16 |
+
+**ما اختلف في الشكل عن §1، مع السبب (النص نفسه لم يتغيّر):**
+* **2.1** فقرة بعد قائمة Retry-After لا بند خامس فيها: القائمة تبدأ بـ «has four distinct contracts»، وبند خامس يناقضها. أُسقطت شرطة البند وحدها.
+* **5.1** القسم قبل `### Retry-After Semantics` لا بعد L193: هناك كان سيضمّ فقرتَي `RateLimitCommand` و`RateLimitResultDTO` تحت «Identity inputs». يبقى داخل §Inputs and Outputs.
+* **4.1** خلية القرار نص عادي («HARD_BLOCK L2 on K2 (IP + UA), 60 s») كبقية خلايا القرار في الجدول، والشرط بين backticks كبقية الشروط. أُعيدت محاذاة أعمدة الجدول.
+* **ROADMAP** «Last reviewed» من 2026-09-27 إلى 2026-11-03، لأن الملف رُوجع في هذا الـ Work Unit (Maintenance Rule).
+
+**سطر النسخة (حكم LT-183-02):** `DECISION_MATRIX.md` بلا سطر نسخة. `grep -n -i -E 'version|revision' docs/DECISION_MATRIX.md` يعطي على الرأس L20 (UA major version) وL595 (purpose/version) وتذييل L1035 فقط. وكذلك `DEVICE_FINGERPRINT.md`، و§11 فيه لنسخ خوارزمية الـ fingerprint. فلا رفع؛ سطر CHANGELOG يقول ذلك ويُعدّ سجلّ الـ changelog الذي يطلبه التذييلان.
+
+**النطاق:** `git diff --stat origin/main -- src tests docs/decisions` فارغ، و`origin/main` = `5dff37c`. الفرع المحلي `main` في هذا الـ checkout قديم (`1cc715e`) ولم أحدّثه، فشُغّل الأمر على `origin/main`. `git diff --stat origin/main` يعطي ثمانية ملفات: الستة في `docs/` و`README.md` و`CHANGELOG.md`، وهذا الـ PLAN.
+
+**ملاحظة خارج النطاق، لم تُكتب:** `DEVICE_FINGERPRINT.md` §7.1 L525 يقول «Rapid fingerprint changes under same IP + UA» بلا رقم، فلا يناقض §5.3 بعد البند 4.
