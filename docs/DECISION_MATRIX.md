@@ -149,6 +149,9 @@ short-circuit stages 4–6. Normative budget behavior is defined in §2.4, §2.5
 | Repeated missing fingerprint (same account) | K4  | +6          | Accelerated escalation |
 | IP attempts multiple accounts               | K1  | +5          | Credential spray       |
 
+The missing-fingerprint rows (and §2.2.1) are reachable only with a custom resolver that returns
+no fingerprint; the default resolver (`DeviceIdentityResolver`) always produces one.
+
 #### 2.2.1 “Repeated missing fingerprint” Rule (Deterministic)
 
 A “Repeated missing fingerprint (same account)” event applies if:

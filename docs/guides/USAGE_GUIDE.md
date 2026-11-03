@@ -200,6 +200,15 @@ For <code>api_heavy_protection</code>, K2 minor overuse returns at most <code>SO
 
 <code>RateLimitResultDTO</code> returns <code>ALLOW</code>, <code>SOFT_BLOCK</code>, or <code>HARD_BLOCK</code>. The host owns the final response, retry handling, logging, and user-facing presentation.
 
+### Identity inputs
+
+These fields apply to every policy. The admission section below adds `clientInstanceId` and `admissionCredential` for policies that opt in.
+
+* **`clientFingerprint`**: Host-normalized, bucketed, low-entropy fields that stay stable for one client. They enter the DeviceFP. Distinct DeviceFP values on one IP prefix + user agent count toward the churn rule (Decision Matrix §5.3), so values that vary per request make one client look like many. Do not pass per-request or high-entropy values.
+* **`sessionDeviceId`**: pass it only after authentication, bound to the authenticated account, and set `isSessionTrusted` only when the Host has verified that binding (Device Fingerprint §3.3). The default resolver folds a non-empty value into the DeviceFP without checking trust, so a value taken from an unauthenticated request lets the caller choose its DeviceFP.
+* **`correlationId`**: the stable, opaque subject of an attempt, typically the submitted login identifier. Credential-spray correlation uses `correlationId ?? accountId` (Key Strategy §6.1). Supply it whether or not the account exists, and keep it stable for the same submitted identifier.
+* **Missing DeviceFP.** The default `DeviceIdentityResolver` always produces a fingerprint, so the Decision Matrix rules for a missing DeviceFP (§2.2, §2.2.1, §2.4.1.2, §3.1, §3.1.1) apply only with a custom resolver that can return none.
+
 ### Retry-After Semantics
 
 The returned <code>retryAfter</code> has four distinct contracts:
