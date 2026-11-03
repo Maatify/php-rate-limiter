@@ -455,7 +455,9 @@ FAIL_CLOSED result or a normal quota decision; see `docs/SIMPLE_THROTTLING.md`.
   bounded fallback, then `fallback_limit_exceeded`. There is no partial allow and no state written
   by the failed operation.
 * A malformed stored value is a `RateLimiterException`, never a backend failure and never a fallback
-  allowance. An unclassified throwable keeps escaping; it never enters the circuit.
+  allowance. This includes a device-member or pending score that is not a canonical non-negative
+  integer (DEC-017, #185): it is detected before the first write, and nothing is pruned, repaired or
+  deleted. An unclassified throwable keeps escaping; it never enters the circuit.
 * In degraded mode and on a `FAIL_OPEN` path **no admission, no lane resolution and no epoch or
   fence read happens**: the admission bounds are absent there. `LocalFallbackLimiter` is unchanged:
   no new dimension, no new bound, no new tracked subject.

@@ -951,7 +951,11 @@ rotation the net failure set and the account bucket restart in full (4 further f
 4 further bucket takes).
 
 Validation. Every scope key of a request is read and validated (type, fields, an existing key without
-a TTL) **before the first write**, because Redis does not roll back the writes of a failed script. A
+a TTL) **before the first write**, because Redis does not roll back the writes of a failed script.
+This includes every score of a sorted set the script reads: each member of the `d` sets (current and
+previous generation) and of the `p` set on a reservation, and the `p` score of its own member on an
+outcome. A score that is not a canonical non-negative integer is malformed (DEC-017, #185), so the
+prune of an admitted write removes only members that have really expired. A
 malformed value is a `RateLimiterException` and never a `BackendFailureException`; a refusal writes
 nothing and names the first refusing scope in request order. The scripts take the caller's time as a
 parameter and never call `TIME`.
