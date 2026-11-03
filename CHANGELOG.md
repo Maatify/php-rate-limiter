@@ -7,6 +7,28 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Documentation (#183, governance closure item 6) — measured behavior written as the contract
+- Decay contract: whole intervals since the score's last write; steady traffic at a spacing shorter than the interval does not
+  decay a score (intended behavior, #121, #183). `docs/DECISION_MATRIX.md` §7 table and a paragraph with the measured K1
+  example (4 against 6 at t = 500), and `docs/POLICIES.md` API Heavy Decay Rules.
+- Retry-After on K2 (API Heavy): a request refused by a score-derived `SOFT_BLOCK` is still scored on K2, so `retryAfter` grows
+  by 180 seconds per refused request with no cap (1,980 at the eleventh refusal, measured in #181) (intended behavior, #98,
+  #183). `docs/guides/USAGE_GUIDE.md` Retry-After Semantics and `docs/POLICIES.md` API Heavy; the other score keys and policies
+  were not measured.
+- Threat-model limits: new `docs/DECISION_MATRIX.md` §10.1 (collective harm behind NAT under DEC-027; trusted sessions on several
+  accounts, TMUA 36 and TMSd 2 in 200 without admission, TMSd 40 in 200 declared with admission; what is not protected)
+  (#120, #100, #106, #97), with a pointer from `README.md` Security and Trust Boundaries.
+- Fingerprint churn rule (F-HMCI-02): `docs/DECISION_MATRIX.md` §5.3 states the implemented condition (≥ 3 distinct DeviceFP on
+  one K2 within 600 s, or a second observation of 2 distinct DeviceFP within 1,800 s → `HARD_BLOCK` L2 on K2, 60 s).
+  `docs/DEVICE_FINGERPRINT.md` §3.2 Properties: differentiation under NAT/VPN holds only while values stay stable per client.
+- Identity inputs (F-HMCI-01/03/04): new `docs/guides/USAGE_GUIDE.md` "Identity inputs" (`clientFingerprint`,
+  `sessionDeviceId`, `correlationId`, missing DeviceFP), and one sentence in `docs/DECISION_MATRIX.md` §2.2: the
+  missing-fingerprint rows are reachable only with a custom resolver.
+- `docs/ROADMAP.md`: new "Post-RC Security and Contract Candidates" (rate-based score decay, admission-path TMUA measurement,
+  new / unknown users and Day 0).
+- `docs/DECISION_MATRIX.md` and `docs/DEVICE_FINGERPRINT.md` carry no version line, so there is no version to bump; this entry is
+  the changelog record their footers require. No `src`, tests or decision record changes.
+
 ### Fixed (#160, F-172-02, DEC-029 implementation fix, PR #174) — a dropped K4 keeps the other keys' own retryAfter
 - `EvaluationPipeline`: when the K4 punishment publication is dropped because the re-read K4 level is below 2 (DEC-029 b2), the
   decision is recomputed without the K4 contribution. A candidate that also persisted another key (the mixed K4 + K5 shape: a
