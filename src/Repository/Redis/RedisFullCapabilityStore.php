@@ -1617,8 +1617,9 @@ LUA;
     {
         $this->positive($ttlSeconds, 'Correlation TTL');
         $script = self::LUA_TIME_PRELUDE . "\n" . <<<'LUA'
-local previous = 0
 local previousText = '0'
+-- #185 F-185-13: a watch count is a canonical non-negative integer ('0' or no leading zero); the store writes no other form.
+local function canonicalCount(text) return text == '0' or string.match(text, '^[1-9]%d*$') ~= nil end
 local function validBackendExpiry(value)
   if value == nil or value == '0' then return value == '0' end
   if string.match(value, '^[1-9]%d*$') == nil then return false end
@@ -1634,9 +1635,7 @@ if previousExists == 1 then
   if not validBackendExpiry(rawExpiry) then return redis.error_reply('malformed previous watch state') end
   if compareDecimalStrings(rawExpiry, nowStr) > 0 then
     local text = redis.call('GET', KEYS[2])
-    local value = tonumber(text)
-    if not value or value ~= math.floor(value) then return redis.error_reply('malformed previous watch value') end
-    previous = value
+    if not text or not canonicalCount(text) then return redis.error_reply('malformed previous watch value') end
     previousText = text
   end
 end
@@ -1646,8 +1645,8 @@ if exists == 1 then
   if redis.call('TTL', KEYS[1]) < 0 or redis.call('TTL', KEYS[4]) < 0 then return redis.error_reply('malformed current watch state') end
   local rawExpiry = redis.call('HGET', KEYS[4], 'expiresAt')
   if not validBackendExpiry(rawExpiry) then return redis.error_reply('malformed current watch state') end
-  local value = tonumber(redis.call('GET', KEYS[1]))
-  if not value or value ~= math.floor(value) then return redis.error_reply('malformed current watch state') end
+  local text = redis.call('GET', KEYS[1])
+  if not text or not canonicalCount(text) then return redis.error_reply('malformed current watch value') end
   -- LT-P2-03 (F-P2-03): logically expired while physically present is expired, not counted.
   if compareDecimalStrings(rawExpiry, nowStr) <= 0 then redis.call('DEL', KEYS[1], KEYS[4]); exists = 0 end
 end
@@ -1659,13 +1658,9 @@ if exists == 0 then
   if not expiryApplied(redis.pcall('EXPIRE', KEYS[1], ARGV[1]), {KEYS[1]}) then return redis.error_reply('expiry not representable') end
   redis.call('HSET', KEYS[4], 'expiresAt', addDecimalStrings(nowStr, ARGV[1]))
   if not expiryApplied(redis.pcall('EXPIRE', KEYS[4], ARGV[1]), {KEYS[1], KEYS[4]}) then return redis.error_reply('expiry not representable') end
-else value = redis.call('INCR', KEYS[1]) end
--- #185 F-185-12: the count is summed as decimal strings, not as Lua numbers (exact only up to 2^53). Counters this
--- store writes (SET 1, INCR) are canonical non-negative integers; any other accepted form keeps the numeric sum.
-local currentText = exists == 0 and '1' or redis.call('GET', KEYS[1])
-local function canonicalCount(text) return text == '0' or string.match(text, '^[1-9]%d*$') ~= nil end
-if canonicalCount(currentText) and canonicalCount(previousText) then return addDecimalStrings(currentText, previousText) end
-return value + previous
+else redis.call('INCR', KEYS[1]) end
+-- #185 F-185-12: the count is summed as decimal strings, not as Lua numbers (exact only up to 2^53).
+return addDecimalStrings(redis.call('GET', KEYS[1]), previousText)
 LUA;
         return $this->integerResult($this->eval($script, [$this->key('watch', $currentKey), $this->key('watch', $previousKey), $this->key('watch-meta', $previousKey), $this->key('watch-meta', $currentKey)], [$ttlSeconds, $this->callerTime($now)]), 'rotated watch count');
     }
