@@ -1030,7 +1030,7 @@ Correlation relies on **relationships between keys**, not single counters.
 * Rapid churn of K3 under one K2 → device evasion
 * Same DeviceFP across many K1 prefixes → fingerprint dilution
 
-Credential spray uses `correlationSubject = correlationId ?? accountId`, a fixed 600-second K1 window, and is observed during authentication `checkOnly()` only. A null subject is not observed. The threshold is five distinct subjects; at four subjects the same K1 scope uses the mandatory 1800-second WATCH flag, and a second qualifying observation escalates as if the threshold were met. Distinct state is capped at five and rejected new subjects do not grow the set. During outer-secret rotation, the additive bounded rotation capability preserves the previous spray window through current-only bridge members without merging differently-keyed HMAC members directly.
+Credential spray uses as `correlationSubject` the `correlationId` when present, else the `accountId` when present, else `null`, where an identity string is present when it is `!== null && !== ''` (`"0"` is present, `""` is absence; #185, F-185-04); it uses a fixed 600-second K1 window and is observed during authentication `checkOnly()` only. With no subject (each value `null` or `""`) there is no observation. The threshold is five distinct subjects; at four subjects the same K1 scope uses the mandatory 1800-second WATCH flag, and a second qualifying observation escalates as if the threshold were met. Distinct state is capped at five and rejected new subjects do not grow the set. During outer-secret rotation, the additive bounded rotation capability preserves the previous spray window through current-only bridge members without merging differently-keyed HMAC members directly.
 
 ---
 

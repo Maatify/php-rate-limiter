@@ -374,7 +374,8 @@ Outputs and duties:
   epoch; every older credential stops verifying), read the new epoch with `bindingEpoch($accountId)`
   and issue a credential to the device that performed the change. Both are reached through
   `instanceof AdmissionBindingControlInterface` / `AdmissionBindingEpochInterface`.
-* **The subject** is `correlationId ?? accountId` and must exist whether or not the account exists,
+* **The subject** is `correlationId` when present, else `accountId` when present, else `null`
+  (presence as in Identity inputs; #185, F-185-04), and must exist whether or not the account exists,
   so that a refusal never reveals whether an account exists.
 * **Issuing credentials is the Host's job** (lifetime, renewal, who gets one). The package ships the
   verifier and the codec, not an issuance policy.
