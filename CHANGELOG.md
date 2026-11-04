@@ -9,6 +9,19 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [1.0.0-rc.4]
 
+### Fixed (#185, F-185-03) — one definition of a present account; `"0"` is an account, `""` is none
+- `EvaluationPipeline`, `RateLimitOperationalReader`, `RateLimiterEngine`, `LocalFallbackLimiter` and `AdmissionRuntime` used four
+  definitions of a present account: truthiness, `!== null`, `=== null` and `!== null && !== ''`. An account id of `"0"` or `""`
+  therefore built no K4 / K5 key but still an account correlation observation, and the first `checkOnly` threw `Missing current
+  opaque anchor for device_cap_account correlation state.`. One internal helper, `AccountPresence`, now carries the single
+  definition `accountId !== null && accountId !== ''` and replaces every presence check (eight truthiness and seven null checks in
+  the pipeline, the reader's budget and K4 / K5 keys, the re-entry claim, the fallback account dimension, the admission lane, and
+  the three `correlationId ?? accountId` subjects). `"0"` is a present identifier and takes the path of `"1"` (4 of 25 failed
+  logins reach the verifier, then `SOFT_BLOCK`, K5 visible to the reader); `""` is absence and behaves as `null`. The keys derived
+  for a present identifier are unchanged; no DTO, interface or key shape changes. Tests: `AccountPresenceRedisTest` (Builder,
+  public runtime and reader on Redis; four of its eight tests fail on `b3e77e4`) and `AccountPresenceTest`. `RateLimitContextDTO`
+  docblock and `docs/guides/USAGE_GUIDE.md` Identity inputs state the definition.
+
 ### Fixed (#185, F-185-01, DEC-017) — admission sorted-set scores are validated before the first write
 - `RedisFullCapabilityStore` admission scripts: the scores of the device-member sets (current and previous generation) and of the
   pending set of a settling failure set were read with `tonumber()` alone. A score of `-1` or `-inf` was left out of the gate and

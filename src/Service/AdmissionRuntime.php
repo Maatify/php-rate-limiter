@@ -116,7 +116,7 @@ final class AdmissionRuntime
         $instance = $context->clientInstanceId;
         $account = $context->accountId;
         $subject = $this->subject($context);
-        if ($credential === null || $credential === '' || $instance === null || $instance === '' || $account === null || $subject === null) {
+        if ($credential === null || $credential === '' || $instance === null || $instance === '' || ! AccountPresence::isPresent($account) || $subject === null) {
             return new AdmissionLaneDTO(AdmissionLaneEnum::U);
         }
         $verdict = $this->codec->verify($credential, $subject, $budgetGroup, $instance, $this->now(), $this->bindingEpoch($account));
@@ -428,7 +428,7 @@ final class AdmissionRuntime
     /** `correlationId ?? accountId` (LT-4, LT-19). */
     private function subject(RateLimitContextDTO $context): ?string
     {
-        return $context->correlationId ?? $context->accountId;
+        return $context->correlationId ?? AccountPresence::idOf($context);
     }
 
     /** @return array{id: string, lane: AdmissionLaneEnum, t0: int, j: ?string}|null */

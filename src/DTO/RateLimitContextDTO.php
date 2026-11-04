@@ -12,7 +12,8 @@ final readonly class RateLimitContextDTO implements \JsonSerializable
     /**
      * @param string $ip Client IP address used for IP scopes.
      * @param string $ua Raw user-agent string used for normalization.
-     * @param ?string $accountId Optional account identifier for account scopes.
+     * @param ?string $accountId Optional account identifier for account scopes. An account is present when this is a
+     *     non-empty string, `"0"` included; `null` and `""` are both absence, and no account scope is derived for them.
      * @param ?array<string, mixed> $clientFingerprint Optional client fingerprint fields.
      * @param ?string $sessionDeviceId Optional trusted-session device identifier.
      * @param bool $isSessionTrusted Whether the session device identifier is trusted.

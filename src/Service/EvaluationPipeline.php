@@ -239,7 +239,7 @@ class EvaluationPipeline
                 $realKeysV1['k1'] ?? null,
                 $this->previousFingerprintHash($device),
             );
-            $accountObservation = $context->accountId !== null
+            $accountObservation = AccountPresence::of($context)
                 ? $this->buildCorrelationObservation(
                     $policy->getName(),
                     'device_cap_account',
@@ -353,7 +353,7 @@ class EvaluationPipeline
 
         // 9. New Device Flood (5.4). It needs the device-cap observation, which
         // the proven lane never makes ($ephemeralState stays null there).
-        if ($ephemeralState !== null && $context->accountId && ! $this->isApiHeavyPolicy($policy)
+        if ($ephemeralState !== null && AccountPresence::of($context) && ! $this->isApiHeavyPolicy($policy)
             && $ephemeralState->accountDeviceCount >= 6) {
             $floodKey = $this->auxiliaryAccountKey(
                 $policy->getName(),
@@ -431,7 +431,7 @@ class EvaluationPipeline
         // account watcher keeps the §2.5 account-wide escalation; the device
         // watcher (DEC-026) escalates SOFT_BLOCKs that came from K5
         // alone on that account + device only.
-        if ($request->isFailure && $context->accountId !== null && $policy->getBudgetConfig() !== null
+        if ($request->isFailure && AccountPresence::of($context) && $policy->getBudgetConfig() !== null
             && $this->antiEquilibriumGate->shouldEscalate(
                 $this->auxiliaryAccountKey($policy->getName(), $this->laneAuxiliaryPurpose($lane, 'anti_equilibrium'), $context->accountId, $this->secret),
                 $this->previousAuxiliaryAccountKey($policy->getName(), $this->laneAuxiliaryPurpose($lane, 'anti_equilibrium'), $context->accountId),
@@ -489,7 +489,7 @@ class EvaluationPipeline
 
         if ($final->decision === RateLimitResultDTO::DECISION_SOFT_BLOCK
             && ! $request->isSuccess
-            && $context->accountId !== null
+            && AccountPresence::of($context)
             && $policy->getBudgetConfig() !== null) {
             // Exactly one watcher write per issued SOFT_BLOCK: the account
             // watcher whenever any winning SOFT candidate has account scope
@@ -688,7 +688,7 @@ class EvaluationPipeline
         array $keysV2,
         array $keysV1,
     ): ?array {
-        if ($context->accountId === null
+        if (! AccountPresence::of($context)
             || $device->fingerprintHash === null
             || ($keysV2['k4'] ?? null) === null
             || ($keysV2['k5'] ?? null) === null) {
@@ -1069,7 +1069,7 @@ class EvaluationPipeline
         DeviceIdentityDTO $device,
         array $keysV2,
     ): bool {
-        $spraySubject = $context->correlationId ?? $context->accountId;
+        $spraySubject = $context->correlationId ?? AccountPresence::idOf($context);
         $sprayEligible = $request->isPreCheck
             && $this->isCredentialSprayPolicy($policy)
             && $spraySubject !== null
@@ -1547,7 +1547,7 @@ class EvaluationPipeline
         ?string $previousK1Key,
         array $adaptiveIpv6Scopes,
     ): ?array {
-        $subject = $context->correlationId ?? $context->accountId;
+        $subject = $context->correlationId ?? AccountPresence::idOf($context);
         if ($subject === null || $k1Key === null) {
             return null;
         }
@@ -1671,7 +1671,7 @@ class EvaluationPipeline
         if ($request->isFailure
             && $policy instanceof KnownDeviceAccountAllowancePolicyInterface
             && ! $isEphemeral
-            && $context->accountId !== null
+            && AccountPresence::of($context)
             && ($keys['k4'] ?? null) !== null
             && $deltas['k5'] > 0
             && $deltas['k4'] === 0
@@ -1687,7 +1687,7 @@ class EvaluationPipeline
         }
 
         $k4Repeated = $policy->getScoreDeltas()->k4_repeated_missing_fp;
-        if ($request->isFailure && empty($device->fingerprintHash) && $context->accountId && $k4Repeated > 0) {
+        if ($request->isFailure && empty($device->fingerprintHash) && AccountPresence::of($context) && $k4Repeated > 0) {
             $key = $this->auxiliaryAccountKey(
                 $policy->getName(),
                 'last_missing_fp',
@@ -1844,7 +1844,7 @@ class EvaluationPipeline
             // A policy-owned micro-cap gates known-device failures when
             // configured. A null cap means known-device failures are directly
             // budget-eligible; the engine does not identify policy presets.
-            if (! $isEphemeral && $deltas['k5'] > 0 && $context->accountId && $device->fingerprintHash
+            if (! $isEphemeral && $deltas['k5'] > 0 && AccountPresence::of($context) && $device->fingerprintHash
                 && $this->isKnownForAccount($device)) {
                 if ($config->known_device_micro_cap === null) {
                     $shouldCount = true;
@@ -1949,7 +1949,7 @@ class EvaluationPipeline
                     // A K5 level is device scoped and never locks the account.
                     $persistenceKeyType = $keyType === 'k5' ? 'k5' : 'k4';
                     $persistence = [];
-                    if (! $isAdvisory && $context->accountId && ($keys[$persistenceKeyType] ?? null) !== null) {
+                    if (! $isAdvisory && AccountPresence::of($context) && ($keys[$persistenceKeyType] ?? null) !== null) {
                         $persistence[] = [
                             'key' => $keys[$persistenceKeyType],
                             'previousKey' => $keysV1[$persistenceKeyType] ?? null,
@@ -1998,7 +1998,7 @@ class EvaluationPipeline
                     }
                 }
 
-                if ($accountLevel > 0 && $context->accountId && ($keys['k4'] ?? null) !== null) {
+                if ($accountLevel > 0 && AccountPresence::of($context) && ($keys['k4'] ?? null) !== null) {
                     $k4LifecycleLevel = $levelsByKeyType['k4'] ?? 0;
                     $k4IsLifecycleEligible = $policy instanceof PostPunishmentReentryPolicyInterface
                         && $k4LifecycleLevel >= 2
@@ -2013,7 +2013,7 @@ class EvaluationPipeline
                     ];
                 }
 
-                if ($k5Level > 0 && $context->accountId && ($keys['k5'] ?? null) !== null) {
+                if ($k5Level > 0 && AccountPresence::of($context) && ($keys['k5'] ?? null) !== null) {
                     $persistence[] = [
                         'key' => $keys['k5'],
                         'previousKey' => $keysV1['k5'] ?? null,
@@ -2478,7 +2478,7 @@ class EvaluationPipeline
         int $cooldownSeconds,
         ?AdmissionLaneEnum $lane,
     ): array {
-        if ($accountId === null) {
+        if (! AccountPresence::isPresent($accountId)) {
             return ['issued' => false, 'retryAfter' => 0];
         }
 
@@ -2558,7 +2558,7 @@ class EvaluationPipeline
             || $this->isApiHeavyPolicy($policy)
             || $policy->getScoreThresholds()->k5 === null
             || $isEphemeral
-            || $context->accountId === null
+            || ! AccountPresence::of($context)
             || $device->fingerprintHash === null
             || $device->fingerprintHash === '') {
             return null;
@@ -2963,8 +2963,8 @@ class EvaluationPipeline
         $k1 = $this->hashKey("{$base}:k1:{$ver}:{$env}:{$this->getIpPrefix($context->ip)}", $secret);
         $k2 = $this->hashKey("{$base}:k2:{$ver}:{$env}:{$this->getIpPrefix($context->ip)}:{$ua}", $secret);
         $k3 = $fpHash ? $this->hashKey("{$base}:k3:{$ver}:{$env}:{$this->getIpPrefix($context->ip)}:{$fpHash}", $secret) : null;
-        $k4 = $context->accountId ? $this->hashKey("{$base}:{$this->k4KeyType($lane)}:{$ver}:{$env}:{$context->accountId}", $secret) : null;
-        $k5 = $context->accountId && $fpHash ? $this->hashKey("{$base}:{$this->k5KeyType($lane)}:{$ver}:{$env}:{$context->accountId}:" . ($k5Material ?? $fpHash), $secret) : null;
+        $k4 = AccountPresence::of($context) ? $this->hashKey("{$base}:{$this->k4KeyType($lane)}:{$ver}:{$env}:{$context->accountId}", $secret) : null;
+        $k5 = AccountPresence::of($context) && $fpHash ? $this->hashKey("{$base}:{$this->k5KeyType($lane)}:{$ver}:{$env}:{$context->accountId}:" . ($k5Material ?? $fpHash), $secret) : null;
 
         return ['k1' => $k1, 'k2' => $k2, 'k3' => $k3, 'k4' => $k4, 'k5' => $k5];
     }

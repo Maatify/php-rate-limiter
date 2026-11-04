@@ -236,7 +236,7 @@ final class RateLimitOperationalReader implements RateLimitOperationalReaderInte
         ?AdmissionLaneEnum $lane,
     ): ?RateLimitOperationalBudgetDTO {
         $config = $policy->getBudgetConfig();
-        if ($config === null || $context->accountId === null) {
+        if ($config === null || ! AccountPresence::of($context)) {
             return null;
         }
 
@@ -433,10 +433,10 @@ final class RateLimitOperationalReader implements RateLimitOperationalReaderInte
             'k3' => $fingerprintHash === null
                 ? null
                 : $this->hashKey("{$base}:k3:{$version}:{$environment}:{$this->getIpPrefix($context->ip)}:{$fingerprintHash}", $secret),
-            'k4' => $context->accountId === null
+            'k4' => ! AccountPresence::of($context)
                 ? null
                 : $this->hashKey("{$base}:{$this->k4KeyType($lane)}:{$version}:{$environment}:{$context->accountId}", $secret),
-            'k5' => $context->accountId === null || $fingerprintHash === null
+            'k5' => ! AccountPresence::of($context) || $fingerprintHash === null
                 ? null
                 : $this->hashKey("{$base}:{$this->k5KeyType($lane)}:{$version}:{$environment}:{$context->accountId}:" . ($k5Material ?? $fingerprintHash), $secret),
         ];
