@@ -6,13 +6,14 @@
 
 ## Status
 
-`PROPOSED` — in the PR of F-185-08 (#185, PR-I), on the Owner's decision relayed on #185 (LT-185-08: conditional CAS,
-`increment(delta)` on exhaustion, capability option (a), this record). It becomes `ACTIVE` on the Owner's word after the
-second measurement this record names (Consequences) and the Lead's review.
+`ACTIVE` — Activated 2026-11-04 on the Owner’s decision (#185 comment 6639187479), in PR Maatify/php-rate-limiter#194 · #185 F-185-08 (P1): كتابة K1/K2…
+Earlier status: `PROPOSED` in the same PR, on the Owner's decision relayed on #185 (LT-185-08: conditional CAS,
+`increment(delta)` on exhaustion, capability option (a), this record), pending the second measurement this record names
+(Consequences) and the Lead's review.
 
 ## Date
 
-Proposed 2026-11-04.
+Proposed 2026-11-04; activated 2026-11-04.
 
 ## Decision Authority
 
