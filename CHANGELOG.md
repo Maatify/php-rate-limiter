@@ -23,7 +23,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **Upgrade note for a Host store:** `build()` now requires `SnapshotFencedScoreStoreInterface` whenever a registered policy writes
   a score (every package preset does) and fails with `Policy <name> writes scores and requires SnapshotFencedScoreStoreInterface
   (#185, DEC-030).`. It is not part of `FullCapabilityStoreInterface`; a Host store adds `incrementIfSnapshot()` (and
-  `incrementIfSnapshotAt()` for the caller's time). The operational reader does not require it.
+  `incrementIfSnapshotAt()` for the caller's time), as the two in-memory stores of `examples/basic-rate-limit.php` and
+  `examples/simple-fixed-window.php` now do. The operational reader does not require it.
 - Tests: `ScoreRaceRedisTest` (the two-process barrier, 50 rounds: K5 = −1 and K1 = 5 in every round on `4e90064`; K5 = 4 and
   K1 = 10 after; the sequential control 4 / 10 on both), `SnapshotFencedScoreWriteRedisTest`, `SnapshotFencedScoreCapabilityTest`.
   The second measurement (the credit scenario, N = 2 / 4 / 8) is in `investigations/fenced-score-write-185/`.
