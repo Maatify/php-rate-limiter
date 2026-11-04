@@ -44,10 +44,11 @@ Any implementation, policy, or test MUST comply with this matrix exactly.
 For credential-spray correlation only:
 
 ```text
-correlationSubject = CorrelationID ?? AccountID
+correlationSubject = CorrelationID if present, else AccountID if present, else null
+present(v) = v !== null && v !== ''
 ```
 
-The Host owns the stable opaque `CorrelationID`. When both values are null, the package does not create a spray observation. The package derives a domain-separated keyed-HMAC member from the subject before calling `CorrelationStoreInterface`; raw account, username, email, or correlation values are never stored as members. `AccountID` remains the enforcement identity for K4/K5.
+The Host owns the stable opaque `CorrelationID`. `"0"` is a present value and `""` is absence (#185, F-185-04). When neither value is present (each is `null` or `""`), the package does not create a spray observation. The package derives a domain-separated keyed-HMAC member from the subject before calling `CorrelationStoreInterface`; raw account, username, email, or correlation values are never stored as members. `AccountID` remains the enforcement identity for K4/K5.
 
 ### Trusted Session Device (Definition)
 
