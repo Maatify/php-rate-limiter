@@ -9,6 +9,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [1.0.0-rc.4]
 
+### Fixed (#185, F-185-19) — persisted block levels, watch counts and budget counts are used only when canonical
+- `BLOCK_GET`, `LIFECYCLE_READ`, `LIFECYCLE_CLAIM` and `HARD_BLOCK` read a block `level` through `tonumber()`, so `"02"`,
+  `"2.0"`, `"0x2"`, `" 2"`, `"2e0"` and `"+2"` were read as level 2. `WATCH_GET` and `WATCH_INCREMENT` accepted any
+  `tonumber()` integer or left the check to `INCR`, so a watch count of `"-5"` was returned and incremented to `-4`, and other
+  forms failed with a raw Redis error. The `BUDGET_*` scripts accepted a count matching `^%-?%d+$`, so `"-5"`, `"05"` and
+  `"-0"` were used. A level is now one canonical digit 1..6 (L1-L6, the store contract), and the watch and budget counts are
+  canonical non-negative integers (`0` or no leading zero), each checked before use; anything else is `malformed block state` /
+  `malformed hard-block state` / `malformed watch value` / `malformed budget state` from the script, and the state is left
+  unchanged (DEC-017: no delete, no repair). Test: `CanonicalStoredValueRedisTest` (18 of its 27 cases fail on `e513638`; the
+  others are forms it already rejected and the controls `"0"`, `"5"`, levels `"1"`, `"2"`, `"6"`).
+
 ### Fixed (#185, F-185-08, DEC-030) — a score write that carries a decay credit is fenced by its snapshot
 - `EvaluationPipeline::processUpdates()` computed each K1 / K2 / K3 / K5 net change (`decayed + delta − stored`) on a snapshot read
   outside any atomic operation and sent it to `increment()`. Two concurrent requests on the same decayed snapshot applied the same
