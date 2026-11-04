@@ -24,12 +24,14 @@ use Maatify\RateLimiter\Repository\CallerTimeBoundedCorrelationStoreInterface;
 use Maatify\RateLimiter\Repository\CallerTimeBudgetSeedStoreInterface;
 use Maatify\RateLimiter\Repository\CallerTimeCorrelationRotationStoreInterface;
 use Maatify\RateLimiter\Repository\CallerTimeCorrelationStoreInterface;
+use Maatify\RateLimiter\Repository\CallerTimeSnapshotFencedScoreStoreInterface;
 use Maatify\RateLimiter\Repository\CallerTimePunishmentLifecycleStoreInterface;
 use Maatify\RateLimiter\Repository\CallerTimeRateLimitStoreInterface;
 use Maatify\RateLimiter\Repository\CorrelationRotationStoreInterface;
 use Maatify\RateLimiter\Repository\CorrelationStoreInterface;
 use Maatify\RateLimiter\Repository\PunishmentLifecycleStoreInterface;
 use Maatify\RateLimiter\Repository\RateLimitStoreInterface;
+use Maatify\RateLimiter\Repository\SnapshotFencedScoreStoreInterface;
 
 /**
  * Dispatches a store call to its caller-time capability when the store
@@ -46,6 +48,14 @@ final class CallerTimeStore
         return $store instanceof CallerTimeRateLimitStoreInterface
             ? $store->incrementAt($key, $ttlSeconds, $amount, $now->getTimestamp())
             : $store->increment($key, $ttlSeconds, $amount);
+    }
+
+    /** #185 F-185-08 (DEC-030): the snapshot-fenced score write, at the caller's time when the store supports it. */
+    public static function incrementIfSnapshot(SnapshotFencedScoreStoreInterface $store, string $key, int $ttlSeconds, ?int $expectedValue, ?int $expectedUpdatedAt, int $newValue, DateTimeImmutable $now): ?int
+    {
+        return $store instanceof CallerTimeSnapshotFencedScoreStoreInterface
+            ? $store->incrementIfSnapshotAt($key, $ttlSeconds, $expectedValue, $expectedUpdatedAt, $newValue, $now->getTimestamp())
+            : $store->incrementIfSnapshot($key, $ttlSeconds, $expectedValue, $expectedUpdatedAt, $newValue);
     }
 
     public static function set(RateLimitStoreInterface $store, string $key, int $value, int $ttlSeconds, DateTimeImmutable $now): void

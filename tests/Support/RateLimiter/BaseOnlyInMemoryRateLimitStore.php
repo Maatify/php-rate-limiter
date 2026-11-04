@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace Maatify\RateLimiter\Tests\Support\RateLimiter;
 
 use Maatify\RateLimiter\Repository\RateLimitStoreInterface;
+use Maatify\RateLimiter\Repository\SnapshotFencedScoreStoreInterface;
 use Maatify\RateLimiter\DTO\BlockStateDTO;
 use Maatify\RateLimiter\DTO\BudgetStateDTO;
 use Maatify\RateLimiter\DTO\RateLimitStateDTO;
@@ -18,7 +19,7 @@ use Maatify\SharedCommon\Contracts\ClockInterface;
  * prove that paths requiring a V1→V2 migration fail explicitly instead of
  * silently resetting the previous-secret budget.
  */
-final class BaseOnlyInMemoryRateLimitStore implements RateLimitStoreInterface
+final class BaseOnlyInMemoryRateLimitStore implements RateLimitStoreInterface, SnapshotFencedScoreStoreInterface
 {
     private readonly InMemoryRateLimitStore $delegate;
 
@@ -30,6 +31,12 @@ final class BaseOnlyInMemoryRateLimitStore implements RateLimitStoreInterface
     public function increment(string $key, int $ttlSeconds, int $amount = 1): int
     {
         return $this->delegate->increment($key, $ttlSeconds, $amount);
+    }
+
+    /** #185 F-185-08 (DEC-030): the snapshot-fenced score write, required by build() for a policy that writes scores. */
+    public function incrementIfSnapshot(string $key, int $ttlSeconds, ?int $expectedValue, ?int $expectedUpdatedAt, int $newValue): ?int
+    {
+        return $this->delegate->incrementIfSnapshot($key, $ttlSeconds, $expectedValue, $expectedUpdatedAt, $newValue);
     }
 
     public function get(string $key): ?RateLimitStateDTO

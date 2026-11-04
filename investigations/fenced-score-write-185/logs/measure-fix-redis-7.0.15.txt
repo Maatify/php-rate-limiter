@@ -1,0 +1,4 @@
+# checkout: this PR's working tree (the change); Redis 7.0.15-alpine; PHP 8.4.4
+N=2 rounds=50  negative=0  K5!=2W=0  K1!=5V=0  K5 values={"4":50}  K5 writers per round={"2":50}  fenced applied=100 missed=92 exhausted=0
+N=4 rounds=50  negative=0  K5!=2W=0  K1!=5V=0  K5 values={"8":50}  K5 writers per round={"4":50}  fenced applied=100 missed=224 exhausted=0
+N=8 rounds=50  negative=0  K5!=2W=0  K1!=5V=0  K5 values={"14":8,"16":42}  K5 writers per round={"7":8,"8":42}  fenced applied=100 missed=515 exhausted=0

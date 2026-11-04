@@ -19,6 +19,7 @@ use Maatify\RateLimiter\Contract\FailureSignalEmitterInterface;
 use Maatify\RateLimiter\Repository\RateLimitStoreInterface;
 use Maatify\RateLimiter\Repository\HardBlockCycleStoreInterface;
 use Maatify\RateLimiter\Repository\PunishmentLifecycleStoreInterface;
+use Maatify\RateLimiter\Repository\SnapshotFencedScoreStoreInterface;
 use Maatify\RateLimiter\DTO\FailureSignalDTO;
 use Maatify\RateLimiter\DTO\BlockStateDTO;
 use Maatify\RateLimiter\DTO\BudgetStateDTO;
@@ -62,7 +63,7 @@ final class ExampleDeterministicClock implements ClockInterface
  * Replace these adapters with the host application's atomic storage and
  * observability integrations in production.
  */
-final class ExampleRateLimitStore implements PunishmentLifecycleStoreInterface
+final class ExampleRateLimitStore implements PunishmentLifecycleStoreInterface, SnapshotFencedScoreStoreInterface
 {
     private const PAUSE_HISTORY_RETENTION_SECONDS = 86400;
 
@@ -106,6 +107,30 @@ final class ExampleRateLimitStore implements PunishmentLifecycleStoreInterface
         $this->counters[$key] = $current;
 
         return $current['value'];
+    }
+
+    /**
+     * The score write fenced by its snapshot (DEC-030): set the score only while
+     * its stored value and updatedAt equal the snapshot (null: the score is
+     * absent), atomically in a real store. A miss returns null and writes nothing.
+     */
+    public function incrementIfSnapshot(string $key, int $ttlSeconds, ?int $expectedValue, ?int $expectedUpdatedAt, int $newValue): ?int
+    {
+        $current = $this->get($key);
+        $matches = $expectedValue === null
+            ? $current === null
+            : $current !== null && $current->value === $expectedValue && $current->updatedAt === $expectedUpdatedAt;
+        if (! $matches) {
+            return null;
+        }
+        $now = $this->clock->now()->getTimestamp();
+        $this->counters[$key] = [
+            'value' => $newValue,
+            'updatedAt' => $now,
+            'expiresAt' => $current === null ? $now + $ttlSeconds : $this->counters[$key]['expiresAt'],
+        ];
+
+        return $newValue;
     }
 
     public function get(string $key): ?RateLimitStateDTO

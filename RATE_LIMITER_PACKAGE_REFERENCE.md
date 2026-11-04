@@ -135,6 +135,7 @@ The following inventory describes the current public runtime types. Test and sup
 | `Maatify\RateLimiter\Repository\HardBlockCycleStoreInterface` | Additive atomic L2+ block, hard-cycle, and decay-pause capability; Previous is read-only. |
 | `Maatify\RateLimiter\Repository\PunishmentLifecycleStoreInterface` | Generation-bound K4 mutation, atomic punishment publication, and one-shot claim capability; stale conflicts are non-applied results and malformed generated state fails explicitly. |
 | `Maatify\RateLimiter\Repository\FullCapabilityStoreInterface` | Aggregate contract including the punishment lifecycle capability without declaring new methods. |
+| `Maatify\RateLimiter\Repository\SnapshotFencedScoreStoreInterface` | Additive snapshot-fenced score write (`incrementIfSnapshot()`, caller-time mirror `CallerTimeSnapshotFencedScoreStoreInterface`) for a K1/K2/K3/K5 write that carries a decay credit; required by `build()` for any policy that writes a score (DEC-030). |
 | `Maatify\RateLimiter\Repository\Redis\RedisCommandExecutorInterface` | Raw Redis command boundary supplied by the Host/client bridge for the optional official Redis store. |
 | `Maatify\RateLimiter\Contract\FailureSignalEmitterInterface` | Failure and circuit-breaker signal delivery boundary. |
 | `Maatify\RateLimiter\Service\DeviceIdentityResolverInterface` | Device identity resolution boundary. |
@@ -344,8 +345,9 @@ The existing multi-store constructor remains source-compatible.
 - A `PostPunishmentReentryPolicyInterface` policy still requires `PunishmentLifecycleStoreInterface` (DEC-007, unchanged).
 - `BudgetSeedStoreInterface` is required only when the configured graph can genuinely need a previous-generation budget/simple-window migration (DEC-013): a previous outer-key generation combined with an account-budget policy, a reachable previous fingerprint generation (a configured `previousFingerprintSecret` or a custom `DeviceIdentityResolverInterface`) combined with a known-device-micro-cap policy, or a previous outer-key generation combined with any registered simple throttle policy.
 - The circuit-breaker store must support `CircuitBreakerProbeStoreInterface` unconditionally, so a missing recovery-probe capability is never discovered only after the circuit has entered recovery.
+- The rate-limit store must support `SnapshotFencedScoreStoreInterface` whenever a registered policy writes a score (any positive score delta; every package preset does): a score write that carries a decay credit is fenced by its snapshot, so two concurrent requests cannot apply the same credit (#185, F-185-08, DEC-030). It is not part of `FullCapabilityStoreInterface`: `RedisFullCapabilityStore` implements it, and a Host store must add `incrementIfSnapshot()` (and `incrementIfSnapshotAt()` for the caller's time) or `build()` fails with `Policy <name> writes scores and requires SnapshotFencedScoreStoreInterface (#185, DEC-030).`. The operational reader does not require it.
 
-`FullCapabilityStoreInterface` always satisfies every check above; a Host composing separate stores for each boundary must supply one that implements the specific capability its configured policy graph requires. Each rejection is a `RateLimiterException` naming the missing typed capability.
+`FullCapabilityStoreInterface` satisfies every check above except the snapshot-fenced score write, which a Host store implements separately; a Host composing separate stores for each boundary must supply one that implements the specific capability its configured policy graph requires. Each rejection is a `RateLimiterException` naming the missing typed capability.
 
 ## Runtime Workflow
 

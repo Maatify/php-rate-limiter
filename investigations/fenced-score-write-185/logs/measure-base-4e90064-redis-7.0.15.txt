@@ -1,0 +1,4 @@
+# checkout 4e9006432d93ba80ac3c9517759420aaaf99154e; Redis 7.0.15-alpine; PHP 8.4.4
+N=2 rounds=50  negative=48  K5!=2W=48  K1!=5V=48  K5 values={"-1":48,"4":2}  K5 writers per round={"2":50}  fenced applied=0 missed=0 exhausted=0
+N=4 rounds=50  negative=19  K5!=2W=37  K1!=5V=37  K5 values={"-7":11,"-2":4,"-1":4,"2":6,"3":5,"4":4,"5":3,"8":13}  K5 writers per round={"4":50}  fenced applied=0 missed=0 exhausted=0
+N=8 rounds=50  negative=1  K5!=2W=22  K1!=5V=25  K5 values={"-19":1,"6":1,"11":3,"12":9,"13":5,"14":11,"15":1,"16":15,"20":2,"23":1,"26":1}  K5 writers per round={"6":3,"7":12,"8":35}  fenced applied=0 missed=0 exhausted=0

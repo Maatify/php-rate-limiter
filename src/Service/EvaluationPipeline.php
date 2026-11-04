@@ -24,6 +24,7 @@ use Maatify\RateLimiter\Repository\PunishmentLifecycleStoreInterface;
 use Maatify\RateLimiter\Exception\RateLimitConcurrencyException;
 use Maatify\RateLimiter\DTO\PostPunishmentReentryMetadataDTO;
 use Maatify\RateLimiter\Repository\RateLimitStoreInterface;
+use Maatify\RateLimiter\Repository\SnapshotFencedScoreStoreInterface;
 use Maatify\RateLimiter\DTO\DecayPauseStateDTO;
 use Maatify\RateLimiter\DTO\BudgetStateDTO;
 use Maatify\RateLimiter\Exception\RateLimiterException;
@@ -1757,7 +1758,7 @@ class EvaluationPipeline
                         throw new RateLimitConcurrencyException('K4 generation mutation conflict budget exhausted.');
                     }
                 } else {
-                    $newScore = CallerTimeStore::increment($this->store, $key, 86400, (int) $netChange, $this->clock->now());
+                    $newScore = $this->writeScore($key, $keyType, $keysV1[$keyType] ?? null, $scoreDto, $delta, (int) $netChange);
                 }
                 if ($this->ignoresCollectiveKeyType($lane, $keyType)) {
                     // The collective score is written (the observation stays); no level,
@@ -2860,6 +2861,44 @@ class EvaluationPipeline
     }
 
     // --- Helpers (Same as before) ---
+    /**
+     * #185 F-185-08 (DEC-030): one score write of K1, K2, K3 or K5. Without a decay credit (`$netChange >= $delta`) the
+     * write is the additive `increment()`, correct under any interleaving. A write that carries a decay credit is fenced
+     * by the snapshot it was computed from (`incrementIfSnapshot()`); on a miss the score is read again and the decay
+     * computed again, at most three attempts in all as on the K4 path. When the attempts are exhausted the request adds
+     * its own delta alone: no update is lost and no exception or block follows, the only cost being this write's decay
+     * credit (DEC-029 P1 forbids an exception after K4/K5 commit).
+     */
+    private function writeScore(string $key, string $keyType, ?string $previousKey, ?PipelineScoreDTO $snapshot, int $delta, int $netChange): int
+    {
+        $now = $this->clock->now();
+        // A decay credit exists only against the current-generation score itself: an absent score or a V1 fallback has
+        // no base value, so its net change is at least the delta.
+        if ($netChange >= $delta || $snapshot === null || $snapshot->isFromV1 || ! $this->store instanceof SnapshotFencedScoreStoreInterface) {
+            return CallerTimeStore::increment($this->store, $key, 86400, $netChange, $now);
+        }
+        $expectedValue = $snapshot->value;
+        $expectedUpdatedAt = $snapshot->updatedAt;
+        for ($attempt = 0; $attempt < 3; $attempt++) {
+            $written = CallerTimeStore::incrementIfSnapshot($this->store, $key, 86400, $expectedValue, $expectedUpdatedAt, $expectedValue + $netChange, $now);
+            if ($written !== null) {
+                return $written;
+            }
+            $fresh = $this->store->get($key);
+            if ($fresh === null) {
+                return CallerTimeStore::increment($this->store, $key, 86400, $delta, $now);
+            }
+            $netChange = ($this->calculateDecayedScore($fresh->value, $fresh->updatedAt, $keyType, $key, $previousKey) + $delta) - $fresh->value;
+            if ($netChange >= $delta) {
+                return CallerTimeStore::increment($this->store, $key, 86400, $netChange, $now);
+            }
+            $expectedValue = $fresh->value;
+            $expectedUpdatedAt = $fresh->updatedAt;
+        }
+
+        return CallerTimeStore::increment($this->store, $key, 86400, $delta, $now);
+    }
+
     private function calculateDecayedScore(
         int $value,
         int $updatedAt,

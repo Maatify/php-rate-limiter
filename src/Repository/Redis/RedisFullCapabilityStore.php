@@ -28,6 +28,7 @@ use Maatify\RateLimiter\Repository\AdmissionPermitStoreInterface;
 use Maatify\RateLimiter\Repository\CallerTimeBoundedCorrelationSnapshotRotationStoreInterface;
 use Maatify\RateLimiter\Repository\CallerTimeBudgetSeedStoreInterface;
 use Maatify\RateLimiter\Repository\CallerTimePunishmentLifecycleStoreInterface;
+use Maatify\RateLimiter\Repository\CallerTimeSnapshotFencedScoreStoreInterface;
 use Maatify\SharedCommon\Contracts\ClockInterface;
 use Maatify\SharedCommon\Infrastructure\SystemClock;
 use DateTimeZone;
@@ -52,7 +53,8 @@ final class RedisFullCapabilityStore implements
     AdmissionPermitStoreInterface,
     CallerTimeBudgetSeedStoreInterface,
     CallerTimeBoundedCorrelationSnapshotRotationStoreInterface,
-    CallerTimePunishmentLifecycleStoreInterface
+    CallerTimePunishmentLifecycleStoreInterface,
+    CallerTimeSnapshotFencedScoreStoreInterface
 {
     private const PREFIX = 'maatify:rate-limiter:v1';
 
@@ -161,6 +163,43 @@ local ok, result = pcall(redis.call, 'HINCRBY', KEYS[1], 'value', ARGV[2])
 if not ok then return redis.error_reply('score integer overflow') end
 redis.call('HSET', KEYS[1], 'updatedAt', now)
 return {result, now}
+LUA;
+
+    /**
+     * #185 F-185-08 (DEC-030): the score write fenced by its snapshot. ARGV: TTL, expected value and expected updatedAt
+     * (both '' for an absent score), new value, caller time. The structural checks of SCORE_INCREMENT run first, so
+     * malformed state is an error, never a miss. A miss returns {} and writes nothing; an applied write returns the stored
+     * value as a decimal string and the caller time. The TTL applies only when the score is created.
+     */
+    private const SCORE_SET_IF_SNAPSHOT = self::LUA_TIME_PRELUDE . "\n" . <<<'LUA'
+local function validPhpInteger(value)
+  if value == nil or string.match(value, '^%-?%d+$') == nil then return false end
+  local negative = string.sub(value, 1, 1) == '-'
+  local digits = negative and string.sub(value, 2) or value
+  if digits == '' or (string.len(digits) > 1 and string.sub(digits, 1, 1) == '0') or (negative and digits == '0') then return false end
+  local maximum = negative and '9223372036854775808' or '9223372036854775807'
+  return string.len(digits) < 19 or (string.len(digits) == 19 and digits <= maximum)
+end
+local function validNonNegativeInteger(value)
+  return value ~= nil and (value == '0' or (string.match(value, '^[1-9]%d*$') ~= nil and string.len(value) <= 19 and (string.len(value) < 19 or value <= '9223372036854775807')))
+end
+if not validPhpInteger(ARGV[4]) then return redis.error_reply('malformed score state') end
+local exists = redis.call('EXISTS', KEYS[1])
+if exists == 0 then
+  if ARGV[2] ~= '' then return {} end
+  if not ttlBackendRepresentable(ARGV[1]) then return redis.error_reply('score TTL exceeds Redis backend expiry representability') end
+  redis.call('HSET', KEYS[1], 'value', ARGV[4], 'updatedAt', now)
+  if not expiryApplied(redis.pcall('EXPIRE', KEYS[1], ARGV[1]), {KEYS[1]}) then return redis.error_reply('expiry not representable') end
+  return {ARGV[4], now}
+end
+if redis.call('TTL', KEYS[1]) < 0 then return redis.error_reply('malformed score state') end
+local value = redis.call('HGET', KEYS[1], 'value')
+local updated = redis.call('HGET', KEYS[1], 'updatedAt')
+if not value or not updated then return redis.error_reply('malformed score state') end
+if not validPhpInteger(value) or not validNonNegativeInteger(updated) then return redis.error_reply('malformed score state') end
+if ARGV[2] == '' or value ~= ARGV[2] or updated ~= ARGV[3] then return {} end
+redis.call('HSET', KEYS[1], 'value', ARGV[4], 'updatedAt', now)
+return {redis.call('HGET', KEYS[1], 'value'), now}
 LUA;
 
     /**
@@ -1406,6 +1445,31 @@ LUA;
         $this->positive($ttlSeconds, 'Score TTL');
         $result = $this->eval(self::SCORE_INCREMENT, [$this->key('score', $key)], [$ttlSeconds, $amount, $this->callerTime($now)]);
         return $this->integerValue($this->tuple($result, 2, 'score increment')[0], 'score value');
+    }
+
+    public function incrementIfSnapshot(string $key, int $ttlSeconds, ?int $expectedValue, ?int $expectedUpdatedAt, int $newValue): ?int
+    {
+        return $this->incrementIfSnapshotAt($key, $ttlSeconds, $expectedValue, $expectedUpdatedAt, $newValue, $this->fallbackNow());
+    }
+
+    public function incrementIfSnapshotAt(string $key, int $ttlSeconds, ?int $expectedValue, ?int $expectedUpdatedAt, int $newValue, int $now): ?int
+    {
+        $this->positive($ttlSeconds, 'Score TTL');
+        if (($expectedValue === null) !== ($expectedUpdatedAt === null)) {
+            throw new RateLimiterException('A score snapshot has both a value and an updatedAt, or neither.');
+        }
+        $result = $this->eval(self::SCORE_SET_IF_SNAPSHOT, [$this->key('score', $key)], [
+            $ttlSeconds,
+            $expectedValue === null ? '' : (string) $expectedValue,
+            $expectedUpdatedAt === null ? '' : (string) $expectedUpdatedAt,
+            $newValue,
+            $this->callerTime($now),
+        ]);
+        if ($result === []) {
+            return null;
+        }
+
+        return $this->integerValue($this->tuple($result, 2, 'fenced score write')[0], 'score value');
     }
 
     public function get(string $key): ?RateLimitStateDTO

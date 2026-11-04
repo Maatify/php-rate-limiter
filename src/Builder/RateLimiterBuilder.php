@@ -30,6 +30,7 @@ use Maatify\RateLimiter\Repository\AdmissionPermitStoreInterface;
 use Maatify\RateLimiter\Repository\AdmissionReservationStoreInterface;
 use Maatify\RateLimiter\Repository\PunishmentLifecycleStoreInterface;
 use Maatify\RateLimiter\Repository\RateLimitStoreInterface;
+use Maatify\RateLimiter\Repository\SnapshotFencedScoreStoreInterface;
 use Maatify\RateLimiter\Service\AdmissionCredentialCodec;
 use Maatify\RateLimiter\Service\AdmissionRuntime;
 use Maatify\RateLimiter\Service\AntiEquilibriumGate;
@@ -298,6 +299,7 @@ final class RateLimiterBuilder
         $this->assertBudgetSeedCapability();
         $this->assertCircuitBreakerProbeCapability();
         $this->assertAdmissionReservationCapability();
+        $this->assertSnapshotFencedScoreCapability();
     }
 
     /**
@@ -367,6 +369,25 @@ final class RateLimiterBuilder
         }
 
         return false;
+    }
+
+    /**
+     * #185 F-185-08 (DEC-030): a policy that writes a score (any positive score delta) needs the snapshot-fenced score
+     * write, so a decay credit is applied once per snapshot. A store without it fails here, before the runtime exists.
+     */
+    private function assertSnapshotFencedScoreCapability(): void
+    {
+        if ($this->rateLimitStore instanceof SnapshotFencedScoreStoreInterface) {
+            return;
+        }
+        foreach ($this->policies as $policy) {
+            $deltas = $policy->getScoreDeltas();
+            if (max($deltas->access, $deltas->k1_spray, $deltas->k2_missing_fp, $deltas->k4_failure, $deltas->k4_repeated_missing_fp, $deltas->k5_failure) > 0) {
+                throw new RateLimiterException(
+                    'Policy ' . $policy->getName() . ' writes scores and requires SnapshotFencedScoreStoreInterface (#185, DEC-030).',
+                );
+            }
+        }
     }
 
     private function assertPunishmentLifecycleCapability(): void
