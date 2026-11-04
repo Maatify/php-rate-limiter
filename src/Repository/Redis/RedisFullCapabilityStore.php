@@ -353,16 +353,30 @@ elseif previous ~= '' then
   if previousPttl == -1 then return redis.error_reply('malformed generation-bound score state') end
   if previousPttl > 0 then source = previous end
 end
-if source == '' then
+-- A new generation 1 on Current when no source is live. `overwrite` is set when Current is still physically present but
+-- logically expired (#185 F-185-09, LT-185-09): the key is not deleted (DEC-017); its TTL is set first, so a rejected
+-- expiry changes nothing, then its logically expired lifecycle evidence and claim marker are dropped, as an applied
+-- mutation drops them, and the score fields are written.
+local function createCurrent(overwrite)
   if expectedSource ~= '' then return {0} end
   local rawTtl = ARGV[6]
   local ttl = tonumber(rawTtl); if ttl <= 0 then return redis.error_reply('invalid score TTL') end
   if not ttlMillisecondsRepresentable(rawTtl, nowMs) then return redis.error_reply('generation-bound score expiry exceeds Redis Lua exact integer range') end
   local expiry = math.floor((nowMs + (ttl * 1000) + 999) / 1000)
-  redis.call('HSET', current, 'value', ARGV[7], 'updatedAt', nowSeconds, 'generation', 1, 'expiresAt', expiry)
-  if not expiryApplied(redis.pcall('EXPIRE', current, rawTtl), {current}) then return redis.error_reply('expiry not representable') end
+  if overwrite then
+    if not expiryApplied(redis.pcall('EXPIRE', current, rawTtl), {}) then return redis.error_reply('expiry not representable') end
+    redis.call('HDEL', current, 'reentryId', 'reentryValidUntil', 'reentryGeneration')
+    if KEYS[3] ~= '' then redis.call('DEL', KEYS[3]) end
+    redis.call('HSET', current, 'value', ARGV[7], 'updatedAt', nowSeconds, 'generation', 1, 'expiresAt', expiry)
+  else
+    redis.call('HSET', current, 'value', ARGV[7], 'updatedAt', nowSeconds, 'generation', 1, 'expiresAt', expiry)
+    if not expiryApplied(redis.pcall('EXPIRE', current, rawTtl), {current}) then return redis.error_reply('expiry not representable') end
+  end
   return {1, ARGV[7], nowSeconds, expiry, 1}
 end
+-- Source selection matches LIFECYCLE_READ: Previous is consulted only when Current is physically absent, and a source is
+-- live only while its logical `expiresAt` is ahead of the caller's time (checked below, after the structural validation).
+if source == '' then return createCurrent(false) end
 local observedGeneration = redis.call('HGET', source, 'generation')
 local observedUpdated = redis.call('HGET', source, 'updatedAt')
 local observedValue = redis.call('HGET', source, 'value')
@@ -389,6 +403,11 @@ if evidenceCount == 3 then
   if not evidenceId or string.len(evidenceId) ~= 32 or string.match(evidenceId, '^[a-f0-9]+$') == nil then return redis.error_reply('malformed lifecycle id') end
   if not validNonNegativeInteger(evidenceUntil) or evidenceUntil == '0' or not validInteger(evidenceGeneration, false) then return redis.error_reply('malformed lifecycle evidence') end
 end
+-- #185 F-185-09 (LT-P2-02): the logical deadline alone decides, as LIFECYCLE_READ decides it: a logically expired source
+-- is absent. It is judged after the structural validation above, so malformed state still fails (DEC-017) and is never
+-- overwritten. A logically expired Current is overwritten without looking at Previous; a logically expired Previous
+-- leaves Current to be created and Previous untouched. A legacy source (no `expiresAt`) is alive while its PTTL is.
+if observedExpiry and compareDecimalStrings(observedExpiry .. '000', nowMsStr) <= 0 then return createCurrent(source == current) end
 if expectedSource == '' or expectedSource ~= source then return {0} end
 -- #160 (a3, DEC-016 application note): a legacy score (no stored `expiresAt`,
 -- hence no generation) is fenced by value and updatedAt alone. The expiry READ
