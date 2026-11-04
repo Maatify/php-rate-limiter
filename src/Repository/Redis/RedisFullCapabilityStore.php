@@ -160,7 +160,8 @@ if not validPhpInteger(value) or not validNonNegativeInteger(updated) then retur
 local ok, result = pcall(redis.call, 'HINCRBY', KEYS[1], 'value', ARGV[2])
 if not ok then return redis.error_reply('score integer overflow') end
 redis.call('HSET', KEYS[1], 'updatedAt', now)
-return {result, now}
+-- #185 F-185-12: the stored decimal string, not `result` (a Lua number, exact only up to 2^53).
+return {redis.call('HGET', KEYS[1], 'value'), now}
 LUA;
 
     /**
@@ -856,7 +857,11 @@ if exists == 0 then
   if not expiryApplied(redis.pcall('EXPIRE', KEYS[1], ARGV[1]), {KEYS[1]}) then return redis.error_reply('expiry not representable') end
   redis.call('HSET', KEYS[2], 'expiresAt', addDecimalStrings(nowStr, ARGV[1]))
   if not expiryApplied(redis.pcall('EXPIRE', KEYS[2], ARGV[1]), {KEYS[1], KEYS[2]}) then return redis.error_reply('expiry not representable') end
-else value = redis.call('INCR', KEYS[1]) end
+else
+  redis.call('INCR', KEYS[1])
+  -- #185 F-185-12: the stored decimal string, not INCR's Lua number (exact only up to 2^53).
+  value = redis.call('GET', KEYS[1])
+end
 return value
 LUA;
 
@@ -1213,10 +1218,8 @@ if lifecycleGeneration ~= '' then
   if not generation or not value or not updated or not scoreExpiry then return redis.error_reply('malformed lifecycle score state') end
   if not validPositiveInteger(generation) then return redis.error_reply('malformed lifecycle score generation') end
   if not validPhpInteger(value) or not validNonNegativeInteger(updated) or not validNonNegativeInteger(scoreExpiry) or scoreExpiry == '0' or compareDecimalStrings(scoreExpiry, updated) < 0 then return redis.error_reply('malformed lifecycle score state') end
-  if generation ~= lifecycleGeneration then return {0} end
-  -- LT-P2-02: the logical deadline alone decides; PTTL only says the score is alive.
-  if compareDecimalStrings(scoreExpiry, ARGV[5]) <= 0 then return {0} end
-  if lifecycleId == '' or string.len(lifecycleId) ~= 32 then return redis.error_reply('malformed lifecycle id') end
+  -- #185 F-185-10: structural validation (the evidence included) runs before any optimistic comparison
+  -- (PunishmentLifecycleStoreInterface): malformed evidence fails whatever the expected generation or the expiry.
   local evidenceCount = redis.call('HEXISTS', scoreKey, 'reentryId') + redis.call('HEXISTS', scoreKey, 'reentryValidUntil') + redis.call('HEXISTS', scoreKey, 'reentryGeneration')
   if evidenceCount ~= 0 and evidenceCount ~= 3 then return redis.error_reply('malformed lifecycle evidence') end
   if evidenceCount == 3 then
@@ -1224,6 +1227,10 @@ if lifecycleGeneration ~= '' then
     if not evidenceId or string.len(evidenceId) ~= 32 or string.match(evidenceId, '^[a-f0-9]+$') == nil then return redis.error_reply('malformed lifecycle id') end
     if not validNonNegativeInteger(evidenceUntil) or evidenceUntil == '0' or not validPositiveInteger(evidenceGeneration) then return redis.error_reply('malformed lifecycle evidence') end
   end
+  if generation ~= lifecycleGeneration then return {0} end
+  -- LT-P2-02: the logical deadline alone decides; PTTL only says the score is alive.
+  if compareDecimalStrings(scoreExpiry, ARGV[5]) <= 0 then return {0} end
+  if lifecycleId == '' or string.len(lifecycleId) ~= 32 then return redis.error_reply('malformed lifecycle id') end
 end
 -- `needed` is at most the cycle window or the pause plus its retention, so
 -- Redis cannot reject it once `now` passed the exact-range checks above; the
@@ -1629,7 +1636,9 @@ LUA;
     {
         $this->positive($ttlSeconds, 'Correlation TTL');
         $script = self::LUA_TIME_PRELUDE . "\n" . <<<'LUA'
-local previous = 0
+local previousText = '0'
+-- #185 F-185-13: a watch count is a canonical non-negative integer ('0' or no leading zero); the store writes no other form.
+local function canonicalCount(text) return text == '0' or string.match(text, '^[1-9]%d*$') ~= nil end
 local function validBackendExpiry(value)
   if value == nil or value == '0' then return value == '0' end
   if string.match(value, '^[1-9]%d*$') == nil then return false end
@@ -1644,9 +1653,9 @@ if previousExists == 1 then
   local rawExpiry = redis.call('HGET', KEYS[3], 'expiresAt')
   if not validBackendExpiry(rawExpiry) then return redis.error_reply('malformed previous watch state') end
   if compareDecimalStrings(rawExpiry, nowStr) > 0 then
-    local value = tonumber(redis.call('GET', KEYS[2]))
-    if not value or value ~= math.floor(value) then return redis.error_reply('malformed previous watch value') end
-    previous = value
+    local text = redis.call('GET', KEYS[2])
+    if not text or not canonicalCount(text) then return redis.error_reply('malformed previous watch value') end
+    previousText = text
   end
 end
 local exists = redis.call('EXISTS', KEYS[1]); local currentMetaExists = redis.call('EXISTS', KEYS[4])
@@ -1655,8 +1664,8 @@ if exists == 1 then
   if redis.call('TTL', KEYS[1]) < 0 or redis.call('TTL', KEYS[4]) < 0 then return redis.error_reply('malformed current watch state') end
   local rawExpiry = redis.call('HGET', KEYS[4], 'expiresAt')
   if not validBackendExpiry(rawExpiry) then return redis.error_reply('malformed current watch state') end
-  local value = tonumber(redis.call('GET', KEYS[1]))
-  if not value or value ~= math.floor(value) then return redis.error_reply('malformed current watch state') end
+  local text = redis.call('GET', KEYS[1])
+  if not text or not canonicalCount(text) then return redis.error_reply('malformed current watch value') end
   -- LT-P2-03 (F-P2-03): logically expired while physically present is expired, not counted.
   if compareDecimalStrings(rawExpiry, nowStr) <= 0 then redis.call('DEL', KEYS[1], KEYS[4]); exists = 0 end
 end
@@ -1668,8 +1677,9 @@ if exists == 0 then
   if not expiryApplied(redis.pcall('EXPIRE', KEYS[1], ARGV[1]), {KEYS[1]}) then return redis.error_reply('expiry not representable') end
   redis.call('HSET', KEYS[4], 'expiresAt', addDecimalStrings(nowStr, ARGV[1]))
   if not expiryApplied(redis.pcall('EXPIRE', KEYS[4], ARGV[1]), {KEYS[1], KEYS[4]}) then return redis.error_reply('expiry not representable') end
-else value = redis.call('INCR', KEYS[1]) end
-return value + previous
+else redis.call('INCR', KEYS[1]) end
+-- #185 F-185-12: the count is summed as decimal strings, not as Lua numbers (exact only up to 2^53).
+return addDecimalStrings(redis.call('GET', KEYS[1]), previousText)
 LUA;
         return $this->integerResult($this->eval($script, [$this->key('watch', $currentKey), $this->key('watch', $previousKey), $this->key('watch-meta', $previousKey), $this->key('watch-meta', $currentKey)], [$ttlSeconds, $this->callerTime($now)]), 'rotated watch count');
     }
