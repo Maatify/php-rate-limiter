@@ -9,6 +9,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [1.0.0-rc.4]
 
+### Fixed (#185, F-185-09) — the generation-bound mutation chooses its source as the read does
+- `mutateGenerationBoundScore()` took Current as its source whenever its `PTTL` was positive, while
+  `readGenerationBoundScoreState()` treats a score whose logical `expiresAt` has passed as absent (LT-P2-02). With the caller's
+  clock ahead of Redis's, the read returned null, three `expected = null` mutations were unapplied, and `recordFailure` returned
+  `HARD_BLOCK` with cause `k4_concurrency_conflict` with no competing writer. The mutation now applies the read's rule
+  (LT-185-09): Previous is consulted only when Current is physically absent, and a structurally valid source whose logical
+  expiry has passed is absent. A logically expired Current is overwritten with generation 1, without deleting the key
+  (DEC-017) and without looking at Previous; its lifecycle evidence and claim marker are dropped, as an applied mutation drops
+  them. A logically expired Previous leaves Current to be created and Previous untouched. Malformed state still fails before
+  the expiry is judged. Test: `MutationSourceRedisTest` (four of its six cases fail on `4e90064`, including `recordFailure`
+  with the caller's clock ahead).
+
 ### Fixed (#185, F-185-05, F-185-06) — the correlation subject in the docs follows the presence rule
 - Three current documents still gave the correlation subject as `correlationId ?? accountId`, which treats `""` as a present
   value, and a fourth fell back to `accountId` without its presence (F-185-06). They now state the rule `IdentityPresence::subject()` applies since F-185-04: `correlationId` when present, else

@@ -58,6 +58,15 @@ interface PunishmentLifecycleStoreInterface extends HardBlockCycleStoreInterface
      * by an unapplied DTO. Applied mutations write only current state, advance
      * the generation, preserve legacy remaining TTL, and return the new state.
      *
+     * The source is chosen as `readGenerationBoundScoreState()` chooses it
+     * (#185, F-185-09): Previous only when Current is physically absent, and a
+     * source only while its logical `expiresAt` is ahead of the caller's time.
+     * A structurally valid source that is logically expired is absent: a null
+     * expected state then creates generation 1 on Current — over a Current
+     * still physically present, without deleting it and without looking at
+     * Previous, dropping its lifecycle evidence and claim marker — and leaves
+     * Previous untouched.
+     *
      * An ordinary stale optimistic snapshot — the observed state no longer
      * matches `$expectedState` — is reported as `applied=false`, never an
      * exception. That is distinct from structurally malformed persisted
