@@ -275,6 +275,9 @@ class EvaluationPipeline
         // 5. Fetch & Decay Scores (Using Effective Keys)
         $rawScores = $this->fetchScores($effectiveKeysV2, $effectiveKeysV1);
         $decayedScores = $this->applyDecay($rawScores, $effectiveKeysV2, $effectiveKeysV1);
+        if (! $request->isPreCheck && ($request->isFailure || $policy->getScoreDeltas()->access > 0)) {
+            $this->assertScoreUpdatesRepresentable($policy, $context, $request, $device, $isEphemeral, $effectiveKeysV2, $rawScores, $decayedScores);
+        }
 
         $servedReentry = null;
         if ($policy instanceof PostPunishmentReentryPolicyInterface
@@ -1706,7 +1709,7 @@ class EvaluationPipeline
                 }
             }
             if ($last && ($this->clock->now()->getTimestamp() - $last->value) <= 1800) {
-                $deltas['k4'] += $k4Repeated;
+                $deltas['k4'] = ScoreArithmetic::sum($deltas['k4'], $k4Repeated, 'K4 delta');
             }
             CallerTimeStore::set($this->store, $key, $this->clock->now()->getTimestamp(), 3600, $this->clock->now());
         }
@@ -1736,7 +1739,7 @@ class EvaluationPipeline
                     $keysV1[$keyType] ?? null,
                 );
                 $baseValue = ($scoreDto && ! $scoreDto->isFromV1) ? $rawVal : 0;
-                $netChange = ($decayed + $delta) - $baseValue;
+                $netChange = ScoreArithmetic::difference(ScoreArithmetic::sum($decayed, $delta, $keyType . ' decayed score + delta'), $baseValue, $keyType . ' net change');
 
                 $newScore = null;
                 $mutation = null;
@@ -1747,7 +1750,7 @@ class EvaluationPipeline
                         $observedValue = $expected === null ? $rawVal : $expected->value;
                         $observedAt = $expected === null ? $updatedAt : $expected->updatedAt;
                         $decayed = $this->calculateDecayedScore($observedValue, $observedAt, $keyType, $key, $keysV1[$keyType] ?? null);
-                        $mutation = CallerTimeStore::mutateGenerationBoundScore($this->store, $key, $keysV1[$keyType] ?? null, $expected, 86400, (int) ($decayed + $delta), $this->clock->now());
+                        $mutation = CallerTimeStore::mutateGenerationBoundScore($this->store, $key, $keysV1[$keyType] ?? null, $expected, 86400, ScoreArithmetic::sum($decayed, $delta, 'k4 decayed score + delta'), $this->clock->now());
                         if ($mutation->applied) {
                             $newScore = $mutation->state?->value;
                             break;
@@ -1757,7 +1760,7 @@ class EvaluationPipeline
                         throw new RateLimitConcurrencyException('K4 generation mutation conflict budget exhausted.');
                     }
                 } else {
-                    $newScore = CallerTimeStore::increment($this->store, $key, 86400, (int) $netChange, $this->clock->now());
+                    $newScore = CallerTimeStore::increment($this->store, $key, 86400, $netChange, $this->clock->now());
                 }
                 if ($this->ignoresCollectiveKeyType($lane, $keyType)) {
                     // The collective score is written (the observation stays); no level,
@@ -3021,6 +3024,43 @@ class EvaluationPipeline
     }
 
     /**
+     * #185 F-185-11: every score this request may write stays a PHP int. Run after the scores are read and decayed and
+     * before the first write of `processUpdates()` (the known-device allowance, the repeated-missing-fingerprint marker,
+     * the scores), on an upper bound of each key's delta: K4 may gain `k4_failure` through the known-device allowance
+     * and `k4_repeated_missing_fp` in `processUpdates()`, so both are added to the bound.
+     *
+     * @param array<string, string|null>       $keys
+     * @param array<string, ?PipelineScoreDTO> $rawScores
+     * @param array<string, int>               $decayedScores
+     */
+    private function assertScoreUpdatesRepresentable(
+        BlockPolicyInterface $policy,
+        RateLimitContextDTO $context,
+        RateLimitCommand $request,
+        DeviceIdentityDTO $device,
+        bool $isEphemeral,
+        array $keys,
+        array $rawScores,
+        array $decayedScores,
+    ): void {
+        $deltas = $this->calculateDeltas($policy, $context, $device, $request, $isEphemeral);
+        if ($request->isFailure) {
+            $dto = $policy->getScoreDeltas();
+            $deltas['k4'] = ScoreArithmetic::sum(max($deltas['k4'], $dto->k4_failure), $dto->k4_repeated_missing_fp, 'K4 delta bound');
+        }
+        foreach ($keys as $keyType => $key) {
+            $delta = $deltas[$keyType] ?? 0;
+            if (! $key || $delta <= 0) {
+                continue;
+            }
+            $score = $rawScores[$keyType] ?? null;
+            $baseValue = ($score && ! $score->isFromV1) ? $score->value : 0;
+            $next = ScoreArithmetic::sum($decayedScores[$keyType] ?? 0, $delta, $keyType . ' decayed score + delta');
+            ScoreArithmetic::difference($next, $baseValue, $keyType . ' net change');
+        }
+    }
+
+    /**
      * @return array{k1: int, k2: int, k3: int, k4: int, k5: int}
      */
     private function calculateDeltas(
@@ -3035,7 +3075,7 @@ class EvaluationPipeline
         $result = ['k1' => 0, 'k2' => 0, 'k3' => 0, 'k4' => 0, 'k5' => 0];
 
         if ($deltasDto->access > 0) {
-            $cost = $deltasDto->access * $request->cost;
+            $cost = ScoreArithmetic::product($deltasDto->access, $request->cost, 'access delta × command cost');
             $result['k1'] += $cost;
             $result['k2'] += $cost;
             $result['k3'] += $cost;

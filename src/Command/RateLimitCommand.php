@@ -12,7 +12,10 @@ use Maatify\RateLimiter\Exception\RateLimiterException;
  * Explicit execution-intent modes are mutually exclusive. When none of the
  * intent flags is enabled, the command represents the normal evaluation and
  * access-update path. The policy name must be non-blank and the cost must be
- * a positive integer; both are validated at construction.
+ * a positive integer; both are validated at construction. The cost has no
+ * other cap: the policy's access delta times the cost, and every score it
+ * produces, must be representable as a PHP int, or the limiter raises
+ * RateLimiterException before the write (#185, F-185-11).
  */
 final readonly class RateLimitCommand
 {

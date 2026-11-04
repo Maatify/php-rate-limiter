@@ -9,6 +9,19 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [1.0.0-rc.4]
 
+### Fixed (#185, F-185-11) — score arithmetic is checked for overflow before any score write
+- `access * cost` (`EvaluationPipeline` L3038), `decayed + delta` (L1739) and the net change sent to `increment()` (L1760)
+  were plain PHP arithmetic: an overflow became a `float` that the `(int)` cast at L1760 narrowed to an arbitrary value, which
+  was stored (a negative K1 / K2 / K3, with ALLOW). An internal helper, `ScoreArithmetic`, now checks each bound explicitly
+  (`cost > intdiv(PHP_INT_MAX, access)`, `delta > PHP_INT_MAX - decayed`, the difference in both signs) and raises
+  `RateLimiterException`, an input-contract failure and never `BackendFailureException`; the `(int)` casts are removed.
+  `access * cost` is rejected in `RateLimiterEngine::evaluate()` before any I/O. The decayed-score sums of every key are
+  checked after the scores are read and before the first write of the update step (the known-device allowance, the
+  repeated-missing-fingerprint marker, the scores), on a K4 bound that includes the allowance and repeated-missing-fingerprint
+  increments; the K4 generation retry checks its re-read result. `RateLimitCommand` keeps `cost >= 1` and gains no cap
+  (LT-185-11). `ScoreDeltasDTO` rejects a negative increment at construction. Tests: `ScoreOverflowRedisTest` (cases A-C fail
+  on `4e90064`, D is the control) and `ScoreArithmeticTest` (the six negative-delta cases fail on `4e90064`).
+
 ### Fixed (#185, F-185-05, F-185-06) — the correlation subject in the docs follows the presence rule
 - Three current documents still gave the correlation subject as `correlationId ?? accountId`, which treats `""` as a present
   value, and a fourth fell back to `accountId` without its presence (F-185-06). They now state the rule `IdentityPresence::subject()` applies since F-185-04: `correlationId` when present, else
