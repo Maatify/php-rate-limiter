@@ -109,7 +109,8 @@ final class MutationSourceRedisTest extends TestCase
             'The logically expired evidence is dropped; only the new generation remains.',
         );
         self::assertSame(0, $this->executor->execute(['EXISTS', $this->key('reentry-claim', 'current')]), 'The claim marker is dropped.');
-        $state = $this->store->readGenerationBoundScoreStateAt('current', null, self::NOW * 1000);
+        // A second store instance: the read after the write is a new observation, not the first read again.
+        $state = (new RedisFullCapabilityStore($this->executor, self::NAMESPACE))->readGenerationBoundScoreStateAt('current', null, self::NOW * 1000);
         self::assertNotNull($state);
         self::assertSame(GenerationBoundScoreStateDTO::SOURCE_CURRENT, $state->source);
         self::assertSame(1, $state->generation);
