@@ -9,6 +9,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [1.0.0-rc.4]
 
+### Fixed (#185, F-185-09) — the generation-bound mutation chooses its source as the read does
+- `mutateGenerationBoundScore()` took Current as its source whenever its `PTTL` was positive, while
+  `readGenerationBoundScoreState()` treats a score whose logical `expiresAt` has passed as absent (LT-P2-02). With the caller's
+  clock ahead of Redis's, the read returned null, three `expected = null` mutations were unapplied, and `recordFailure` returned
+  `HARD_BLOCK` with cause `k4_concurrency_conflict` with no competing writer. The mutation now applies the read's rule
+  (LT-185-09): Previous is consulted only when Current is physically absent, and a structurally valid source whose logical
+  expiry has passed is absent. A logically expired Current is overwritten with generation 1, without deleting the key
+  (DEC-017) and without looking at Previous; its lifecycle evidence and claim marker are dropped, as an applied mutation drops
+  them. A logically expired Previous leaves Current to be created and Previous untouched. Malformed state still fails before
+  the expiry is judged. Test: `MutationSourceRedisTest` (four of its six cases fail on `4e90064`, including `recordFailure`
+  with the caller's clock ahead).
+
 ### Fixed (#185, F-185-11, F-185-14) — score arithmetic is checked for overflow before any score write; the decay duration saturates
 - `access * cost` (`EvaluationPipeline` L3038), `decayed + delta` (L1739) and the net change sent to `increment()` (L1760)
   were plain PHP arithmetic: an overflow became a `float` that the `(int)` cast at L1760 narrowed to an arbitrary value, which
