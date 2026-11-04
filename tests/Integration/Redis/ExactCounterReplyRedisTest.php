@@ -113,8 +113,8 @@ final class ExactCounterReplyRedisTest extends TestCase
         $this->executor->execute(['SET', $this->key('watch', $slot), $raw, 'KEEPTTL']);
         $before = $this->dump();
 
-        self::assertMalformed(fn (): int => $this->store->getWatchFlag($slot), 'getWatchFlag');
-        self::assertMalformed(fn (): int => $this->store->incrementWatchFlagAcrossRotationAt('current', 'previous', 600, self::NOW), 'the rotated increment');
+        self::assertMalformed(fn(): int => $this->store->getWatchFlag($slot), 'getWatchFlag');
+        self::assertMalformed(fn(): int => $this->store->incrementWatchFlagAcrossRotationAt('current', 'previous', 600, self::NOW), 'the rotated increment');
         self::assertSame($before, $this->dump(), 'Malformed state is left byte-identical.');
     }
 
