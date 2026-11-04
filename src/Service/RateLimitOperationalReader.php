@@ -236,7 +236,7 @@ final class RateLimitOperationalReader implements RateLimitOperationalReaderInte
         ?AdmissionLaneEnum $lane,
     ): ?RateLimitOperationalBudgetDTO {
         $config = $policy->getBudgetConfig();
-        if ($config === null || ! AccountPresence::of($context)) {
+        if ($config === null || ! IdentityPresence::account($context)) {
             return null;
         }
 
@@ -430,13 +430,13 @@ final class RateLimitOperationalReader implements RateLimitOperationalReaderInte
         $keys = [
             'k1' => $this->hashKey("{$base}:k1:{$version}:{$environment}:{$this->getIpPrefix($context->ip)}", $secret),
             'k2' => $this->hashKey("{$base}:k2:{$version}:{$environment}:{$this->getIpPrefix($context->ip)}:{$ua}", $secret),
-            'k3' => $fingerprintHash === null
+            'k3' => ! IdentityPresence::isPresent($fingerprintHash)
                 ? null
                 : $this->hashKey("{$base}:k3:{$version}:{$environment}:{$this->getIpPrefix($context->ip)}:{$fingerprintHash}", $secret),
-            'k4' => ! AccountPresence::of($context)
+            'k4' => ! IdentityPresence::account($context)
                 ? null
                 : $this->hashKey("{$base}:{$this->k4KeyType($lane)}:{$version}:{$environment}:{$context->accountId}", $secret),
-            'k5' => ! AccountPresence::of($context) || $fingerprintHash === null
+            'k5' => ! IdentityPresence::account($context) || ! IdentityPresence::isPresent($fingerprintHash)
                 ? null
                 : $this->hashKey("{$base}:{$this->k5KeyType($lane)}:{$version}:{$environment}:{$context->accountId}:" . ($k5Material ?? $fingerprintHash), $secret),
         ];

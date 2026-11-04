@@ -91,7 +91,7 @@ class LocalFallbackLimiter
         $retryAfter = null;
         foreach ($configuration->rules as $rule) {
             $key = match ($rule->dimension) {
-                FailureFallbackDimensionEnum::ACCOUNT => AccountPresence::isPresent($accountId)
+                FailureFallbackDimensionEnum::ACCOUNT => IdentityPresence::isPresent($accountId)
                     ? "{$namespace}:account:{$accountId}"
                     : null,
                 FailureFallbackDimensionEnum::IP_PREFIX => "{$namespace}:ip_prefix:{$normalizedIp}",

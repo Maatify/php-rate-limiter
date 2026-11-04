@@ -10,7 +10,9 @@ namespace Maatify\RateLimiter\DTO;
 final readonly class DeviceIdentityDTO implements \JsonSerializable
 {
     /**
-     * @param ?string $fingerprintHash Current-generation fingerprint hash.
+     * @param ?string $fingerprintHash Current-generation fingerprint hash. A fingerprint is present when this is a
+     *     non-empty string, `"0"` included; `null` and `""` are both a missing fingerprint, and no K3 / K5 key or
+     *     fingerprint state is derived for them (#185, F-185-04). The default resolver always returns an HMAC hex string.
      * @param string $confidence Identity confidence: LOW, MEDIUM, or HIGH.
      * @param bool $isTrustedSession Whether the session supplies trusted identity.
      * @param bool $churnDetected Whether identity churn was detected for the request.

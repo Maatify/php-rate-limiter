@@ -19,7 +19,8 @@ final readonly class RateLimitContextDTO implements \JsonSerializable
      * @param bool $isSessionTrusted Whether the session device identifier is trusted.
      * @param array<string, string|string[]> $headers Request headers retained as context.
      * @param bool $isDevicePreviouslyVerifiedForAccount Whether the device is known to the account.
-     * @param ?string $correlationId Stable opaque subject identity used for bounded correlation.
+     * @param ?string $correlationId Stable opaque subject identity used for bounded correlation. Present when a non-empty
+     *     string; when absent (`null` or `""`) the correlation subject is the account identifier, if present.
      * @param ?string $clientInstanceId Optional untrusted client instance identifier. It is a continuity hint only and is ignored by every policy that has not opted into the admission capability.
      * @param ?string $admissionCredential Optional opaque admission credential, verified only for policies that have opted into the admission capability.
      */

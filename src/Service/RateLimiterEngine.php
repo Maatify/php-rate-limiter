@@ -430,7 +430,7 @@ class RateLimiterEngine implements RateLimiterRuntimeInterface, AdmissionBinding
         if (! $policy || ! $policy instanceof PostPunishmentReentryPolicyInterface) {
             throw new RateLimiterException("Policy is not eligible for post-punishment re-entry: {$policyName}");
         }
-        if (! AccountPresence::of($context)) {
+        if (! IdentityPresence::account($context)) {
             return false;
         }
         if ($this->circuitBreaker->isReEntryGuardViolated($policyName)) {
