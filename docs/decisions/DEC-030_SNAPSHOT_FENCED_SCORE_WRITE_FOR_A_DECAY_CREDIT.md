@@ -6,7 +6,7 @@
 
 ## Status
 
-`ACTIVE` — Activated 2026-11-04 on the Owner’s decision (#185 comment 6639187479), in PR Maatify/php-rate-limiter#194 · #185 F-185-08 (P1): كتابة K1/K2…
+`ACTIVE` — activated 2026-11-04 in [PR #194](https://github.com/Maatify/php-rate-limiter/pull/194) (F-185-08, #185) on the Owner's decision relayed on #185 ([comment 6639187479](https://github.com/Maatify/php-rate-limiter/issues/185#issuecomment-6639187479)), after the measurements of `investigations/fenced-score-write-185/RESULTS.md` and the Lead's review.
 Earlier status: `PROPOSED` in the same PR, on the Owner's decision relayed on #185 (LT-185-08: conditional CAS,
 `increment(delta)` on exhaustion, capability option (a), this record), pending the second measurement this record names
 (Consequences) and the Lead's review.
