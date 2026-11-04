@@ -18,11 +18,14 @@ use Maatify\RateLimiter\Exception\RateLimiterException;
  * Redis implementation of the admission store operations (DEC-024, contract §2.4), used by `RedisFullCapabilityStore`.
  *
  * One Lua script per operation. Every script takes the caller's `now` and relative TTLs and never calls `TIME` (DEC-016).
- * Every script reads and validates the type and the fields of every key it is going to touch before its first write, because
- * Redis does not roll back the writes of a script that fails half way; a malformed value is a Lua error reply and surfaces
- * as `RateLimiterException`. A refusal writes nothing, never prunes, and a previous generation is never written. Every key
- * carries the namespace hash tag, so all admission keys of a namespace (hence of every verifier class) share one hash slot
- * on the single, non-clustered Redis the store supports.
+ * Every script reads and validates the type and the fields (of a sorted set, every score) of every key it is going to
+ * touch before its first write, because Redis does not roll back the writes of a script that fails half way. Malformed
+ * stored state is a Lua error reply `malformed admission state: …`, returned before any write. The reference test executor
+ * (`RespRedisCommandExecutor`) raises it as `RateLimiterException`; a Host executor whose client throws on an error reply
+ * (phpredis: `RedisException`) propagates that exception unchanged, as `RedisCommandExecutorInterface` requires. It is
+ * never a `BackendFailureException` and never a fallback. A refusal writes nothing, never prunes, and a previous
+ * generation is never written. Every key carries the namespace hash tag, so all admission keys of a namespace (hence of
+ * every verifier class) share one hash slot on the single, non-clustered Redis the store supports.
  *
  * Failure classification stays with the Host executor: `BackendFailureException` and every other throwable propagate
  * unchanged; nothing is wrapped and there is no fallback.
@@ -92,6 +95,15 @@ local function checkType(k, expected, label)
   if t == expected and not hasExpiry(k) then return label .. ' key has no expiry' end
   return nil
 end
+-- Every score of a sorted set (absent included) is a canonical non-negative integer: true; any other score: false (DEC-017).
+local function canonicalScores(k)
+  if k == '' then return true end
+  local all = redis.call('ZRANGE', k, 0, -1, 'WITHSCORES')
+  for j = 2, #all, 2 do
+    if canonical(all[j]) == nil then return false end
+  end
+  return true
+end
 -- Settled size of a failure set: its members plus the pending members that are due (score <= now) and not yet in it.
 local function settledSize(setKey, pendingKey, now)
   local size = redis.call('SCARD', setKey)
@@ -143,6 +155,10 @@ for i = 1, n do
     if e1 then return bad(e1) end
     local e2 = checkType(prev, 'zset', 'previous device set')
     if e2 then return bad(e2) end
+    -- Every score enters the gate (ZSCORE, ZCOUNT) or the prune of phase 3, so every score of both sets is validated here.
+    if not canonicalScores(cur) or not canonicalScores(prev) then
+      return bad('device member score is not a canonical non-negative integer')
+    end
     local exists = false
     local score = redis.call('ZSCORE', cur, s.member)
     if score and tonumber(score) > now then exists = true end
@@ -161,6 +177,8 @@ for i = 1, n do
     if s.settles then
       local ep = checkType(prev, 'zset', 'pending set')
       if ep then return bad(ep) end
+      -- Every pending score enters the settled size and the membership test below.
+      if not canonicalScores(prev) then return bad('pending member score is not a canonical non-negative integer') end
       s.pending = prev
       s.deadline = hasPermit and tonumber(ARGV[7]) or 0
       local score = redis.call('ZSCORE', prev, s.member)
@@ -260,7 +278,10 @@ for i = 1, n do
       if ep then return bad(ep) end
       s.pending = KEYS[2 * i]
       local score = redis.call('ZSCORE', s.pending, s.member)
-      s.score = score and tonumber(score) or nil
+      if score then
+        s.score = canonical(score)
+        if s.score == nil then return bad('pending member score is not a canonical non-negative integer') end
+      end
     end
     s.fresh = redis.call('EXISTS', cur) == 0
   elseif kind == 'c' and success then
