@@ -21,6 +21,25 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   the expiry is judged. Test: `MutationSourceRedisTest` (four of its six cases fail on `4e90064`, including `recordFailure`
   with the caller's clock ahead).
 
+### Fixed (#185, F-185-11, F-185-14) — score arithmetic is checked for overflow before any score write; the decay duration saturates
+- `access * cost` (`EvaluationPipeline` L3038), `decayed + delta` (L1739) and the net change sent to `increment()` (L1760)
+  were plain PHP arithmetic: an overflow became a `float` that the `(int)` cast at L1760 narrowed to an arbitrary value, which
+  was stored (a negative K1 / K2 / K3, with ALLOW). An internal helper, `ScoreArithmetic`, now checks each bound explicitly
+  (`cost > intdiv(PHP_INT_MAX, access)`, `delta > PHP_INT_MAX - decayed`, the difference in both signs) and raises
+  `RateLimiterException`, an input-contract failure and never `BackendFailureException`; the `(int)` casts are removed.
+  `access * cost` is rejected in `RateLimiterEngine::evaluate()` before any I/O. The decayed-score sums of every key are
+  checked after the scores are read and before the first write of the update step (the known-device allowance, the
+  repeated-missing-fingerprint marker, the scores), on a K4 bound that includes the allowance and repeated-missing-fingerprint
+  increments; the K4 generation retry checks its re-read result. `RateLimitCommand` keeps `cost >= 1` and gains no cap
+  (LT-185-11). `ScoreDeltasDTO` rejects a negative increment at construction. Tests: `ScoreOverflowRedisTest` (cases A-C fail
+  on `4e90064`, D is the control) and `ScoreArithmeticTest` (the six negative-delta cases fail on `4e90064`).
+- `DecayCalculator::secondsUntilBelowThreshold()` computed `remainingPoints * interval`: a representable score above
+  `PHP_INT_MAX / interval` (about 5.1 × 10^16 for an IP scope) overflowed to a `float` and the `int` return type raised
+  `TypeError` after the request's write, and again on every later `checkOnly` of that scope. The product, the remainder and the
+  active-pause sum now use `ScoreArithmetic`, and the duration saturates at `PHP_INT_MAX` (LT-185-11a option (a)); no score is
+  capped and every representable duration is unchanged (F-185-14). Tests: `DecayRetryAfterSaturationTest` and
+  `DecayRetryAfterSaturationRedisTest` (five of their eleven cases raise `TypeError` on the first F-185-11 head).
+
 ### Fixed (#185, F-185-10, F-185-12, F-185-13) — lifecycle evidence is validated before the optimistic comparison; counters are returned exactly
 - `RedisFullCapabilityStore::blockWithPunishmentLifecycleTracking()` compared the stored generation and the logical expiry
   with the caller's expectation before it read the Current score's lifecycle evidence, so partial or malformed evidence came

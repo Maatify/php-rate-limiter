@@ -91,8 +91,20 @@ class DecayCalculator
             return 0;
         }
 
-        return (($remainingPoints * $interval) - ($elapsed % $interval))
-            + max(0, $activePauseUntil - $now);
+        // #185 F-185-14: a representable score can need more seconds than a PHP int holds (`remainingPoints * interval`
+        // above `PHP_INT_MAX`). The duration is computed with explicit bounds and saturates at `PHP_INT_MAX`; any
+        // representable result is unchanged.
+        try {
+            $remaining = ScoreArithmetic::difference(
+                ScoreArithmetic::product($remainingPoints, $interval, 'decay retry-after'),
+                $elapsed % $interval,
+                'decay retry-after',
+            );
+
+            return ScoreArithmetic::sum($remaining, max(0, $activePauseUntil - $now), 'decay retry-after');
+        } catch (RateLimiterException) {
+            return PHP_INT_MAX;
+        }
     }
 
     private function effectiveInterval(string $scope, int $currentBlockLevel): int

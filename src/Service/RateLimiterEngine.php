@@ -304,6 +304,9 @@ class RateLimiterEngine implements RateLimiterRuntimeInterface, AdmissionBinding
 
         $policyName = $policy->getName();
 
+        // #185 F-185-11: the access charge must be a PHP int; checked before any I/O.
+        ScoreArithmetic::product($policy->getScoreDeltas()->access, $request->cost, 'access delta × command cost');
+
         // Circuit-breaker preflight must happen before identity resolution and
         // normal evaluation so OPEN/HALF_OPEN requests cannot touch the shared
         // backend. An eligible probe without the additive lease capability is a
