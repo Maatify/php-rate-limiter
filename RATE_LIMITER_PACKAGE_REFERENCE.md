@@ -22,7 +22,7 @@ The [Usage Guide](docs/guides/USAGE_GUIDE.md) is the consumer-facing walkthrough
 
 `maatify/php-rate-limiter` is a standalone, framework-agnostic Composer package for deterministic, multi-signal rate-limit decisions. It protects host-selected operations such as login, OTP/step-up, and API-heavy access. The package owns enforcement evaluation, its bounded state semantics, and the optional official Redis full-capability persistence implementation. The Host owns account/session truth, transport behavior, the Redis client and connection lifecycle when using that implementation, custom storage implementations when selecting another backend, authorization, logging destinations, and cross-domain reporting.
 
-For authentication correlation, the package uses the opaque `correlationId` supplied by the Host when present and otherwise falls back to `accountId`. The package does not derive subjects from raw usernames or email addresses, and it stores only domain-separated keyed-HMAC correlation members.
+For authentication correlation, the package uses the opaque `correlationId` supplied by the Host when present, else `accountId` when present, else no subject and no observation (presence as defined in Maatify/php-rate-limiter#185, F-185-04). The package does not derive subjects from raw usernames or email addresses, and it stores only domain-separated keyed-HMAC correlation members.
 
 The package is currently proprietary and in pre-release development. It is not a published stable Packagist distribution.
 

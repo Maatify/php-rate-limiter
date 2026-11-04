@@ -9,12 +9,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [1.0.0-rc.4]
 
-### Fixed (#185, F-185-05) — the correlation subject in the docs follows the presence rule
+### Fixed (#185, F-185-05, F-185-06) — the correlation subject in the docs follows the presence rule
 - Three current documents still gave the correlation subject as `correlationId ?? accountId`, which treats `""` as a present
-  value. They now state the rule `IdentityPresence::subject()` applies since F-185-04: `correlationId` when present, else
+  value, and a fourth fell back to `accountId` without its presence (F-185-06). They now state the rule `IdentityPresence::subject()` applies since F-185-04: `correlationId` when present, else
   `accountId` when present, else `null`, where present means `!== null && !== ''` (`"0"` is present, `""` is absence), and no
   spray observation without a subject. `docs/guides/USAGE_GUIDE.md` (the admission subject), `docs/KEY_STRATEGY.md` §6.1 and
-  `docs/DECISION_MATRIX.md` (Correlation Subject). Docs only; no code, test or decision record changes.
+  `docs/DECISION_MATRIX.md` (Correlation Subject); `RATE_LIMITER_PACKAGE_REFERENCE.md` (Package Fit and Boundaries, F-185-06).
+  Docs only; no code, test or decision record changes.
 
 ### Fixed (#185, F-185-03, F-185-04) — one definition of a present identity string; `"0"` is present, `""` is absent
 - `EvaluationPipeline`, `RateLimitOperationalReader`, `RateLimiterEngine`, `LocalFallbackLimiter` and `AdmissionRuntime` used four
