@@ -22,6 +22,7 @@ use Maatify\RateLimiter\DTO\RateLimitStateDTO;
 use Maatify\RateLimiter\Repository\BoundedCorrelationSnapshotStoreInterface;
 use Maatify\RateLimiter\Repository\CircuitBreakerProbeStoreInterface;
 use Maatify\RateLimiter\Repository\PunishmentLifecycleStoreInterface;
+use Maatify\RateLimiter\Repository\SnapshotFencedScoreStoreInterface;
 
 require dirname(__DIR__) . '/vendor/autoload.php';
 
@@ -32,7 +33,7 @@ require dirname(__DIR__) . '/vendor/autoload.php';
  * host application's atomic storage integration in production; see
  * examples/basic-rate-limit.php for a fully annotated version.
  */
-final class SimpleThrottleExampleStore implements PunishmentLifecycleStoreInterface
+final class SimpleThrottleExampleStore implements PunishmentLifecycleStoreInterface, SnapshotFencedScoreStoreInterface
 {
     /** @var array<string, array{value: int, updatedAt: int, expiresAt: int}> */
     private array $counters = [];
@@ -55,6 +56,30 @@ final class SimpleThrottleExampleStore implements PunishmentLifecycleStoreInterf
         $this->counters[$key]['updatedAt'] = $now;
 
         return $this->counters[$key]['value'];
+    }
+
+    /**
+     * The score write fenced by its snapshot (DEC-030): set the score only while
+     * its stored value and updatedAt equal the snapshot (null: the score is
+     * absent), atomically in a real store. A miss returns null and writes nothing.
+     */
+    public function incrementIfSnapshot(string $key, int $ttlSeconds, ?int $expectedValue, ?int $expectedUpdatedAt, int $newValue): ?int
+    {
+        $current = $this->get($key);
+        $matches = $expectedValue === null
+            ? $current === null
+            : $current !== null && $current->value === $expectedValue && $current->updatedAt === $expectedUpdatedAt;
+        if (! $matches) {
+            return null;
+        }
+        $now = time();
+        $this->counters[$key] = [
+            'value' => $newValue,
+            'updatedAt' => $now,
+            'expiresAt' => $current === null ? $now + $ttlSeconds : $this->counters[$key]['expiresAt'],
+        ];
+
+        return $newValue;
     }
 
     public function get(string $key): ?RateLimitStateDTO

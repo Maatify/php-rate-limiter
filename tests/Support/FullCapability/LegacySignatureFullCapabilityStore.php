@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace Maatify\RateLimiter\Tests\Support\FullCapability;
 
 use Maatify\RateLimiter\Repository\FullCapabilityStoreInterface;
+use Maatify\RateLimiter\Repository\SnapshotFencedScoreStoreInterface;
 
 /**
  * A Host store written against the storage contracts as they stood before
@@ -12,9 +13,15 @@ use Maatify\RateLimiter\Repository\FullCapabilityStoreInterface;
  * none of the caller-time capability interfaces, by delegating to an inner
  * store. Proves that an old-signature Host store still loads and runs (BC2).
  */
-final class LegacySignatureFullCapabilityStore implements FullCapabilityStoreInterface
+final class LegacySignatureFullCapabilityStore implements FullCapabilityStoreInterface, SnapshotFencedScoreStoreInterface
 {
-    public function __construct(private readonly FullCapabilityStoreInterface $inner) {}
+    /** @param FullCapabilityStoreInterface&SnapshotFencedScoreStoreInterface $inner */
+    public function __construct(private readonly FullCapabilityStoreInterface&SnapshotFencedScoreStoreInterface $inner) {}
+
+    public function incrementIfSnapshot(string $key, int $ttlSeconds, ?int $expectedValue, ?int $expectedUpdatedAt, int $newValue): ?int
+    {
+        return $this->inner->incrementIfSnapshot($key, $ttlSeconds, $expectedValue, $expectedUpdatedAt, $newValue);
+    }
 
     public function acquireProbeLease(string $policyName, int $now, int $leaseSeconds): bool
     {

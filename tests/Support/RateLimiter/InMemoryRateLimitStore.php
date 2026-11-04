@@ -20,8 +20,9 @@ use Maatify\RateLimiter\Exception\BackendFailureException;
 use Maatify\SharedCommon\Contracts\ClockInterface;
 use Maatify\RateLimiter\Repository\CallerTimeBudgetSeedStoreInterface;
 use Maatify\RateLimiter\Repository\CallerTimePunishmentLifecycleStoreInterface;
+use Maatify\RateLimiter\Repository\CallerTimeSnapshotFencedScoreStoreInterface;
 
-class InMemoryRateLimitStore implements BudgetSeedStoreInterface, PunishmentLifecycleStoreInterface, CallerTimeBudgetSeedStoreInterface, CallerTimePunishmentLifecycleStoreInterface
+class InMemoryRateLimitStore implements BudgetSeedStoreInterface, PunishmentLifecycleStoreInterface, CallerTimeBudgetSeedStoreInterface, CallerTimePunishmentLifecycleStoreInterface, CallerTimeSnapshotFencedScoreStoreInterface
 {
     public bool $available = true;
     private const PAUSE_HISTORY_RETENTION_SECONDS = 86400;
@@ -74,6 +75,32 @@ class InMemoryRateLimitStore implements BudgetSeedStoreInterface, PunishmentLife
         $this->data[$key]['value'] += $amount;
         $this->data[$key]['updatedAt'] = $now;
         return $this->data[$key]['value'];
+    }
+
+    /** #185 F-185-08 (DEC-030): the snapshot-fenced score write. */
+    public function incrementIfSnapshot(string $key, int $ttlSeconds, ?int $expectedValue, ?int $expectedUpdatedAt, int $newValue): ?int
+    {
+        $current = $this->get($key);
+        if ($expectedValue === null
+            ? $current !== null
+            : ($current === null || $current->value !== $expectedValue || $current->updatedAt !== $expectedUpdatedAt)) {
+            return null;
+        }
+        $this->writes++;
+        $now = $this->currentTime();
+        if ($current === null) {
+            $this->data[$key] = ['value' => $newValue, 'updatedAt' => $now, 'expiresAt' => $now + $ttlSeconds];
+
+            return $newValue;
+        }
+        $this->data[$key] = ['value' => $newValue, 'updatedAt' => $now, 'expiresAt' => $this->data[$key]['expiresAt']];
+
+        return $newValue;
+    }
+
+    public function incrementIfSnapshotAt(string $key, int $ttlSeconds, ?int $expectedValue, ?int $expectedUpdatedAt, int $newValue, int $now): ?int
+    {
+        return $this->atCallerTime($now, fn(): ?int => $this->incrementIfSnapshot($key, $ttlSeconds, $expectedValue, $expectedUpdatedAt, $newValue));
     }
 
     public function get(string $key): ?RateLimitStateDTO

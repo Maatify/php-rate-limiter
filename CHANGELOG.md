@@ -9,6 +9,26 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [1.0.0-rc.4]
 
+### Fixed (#185, F-185-08, DEC-030) — a score write that carries a decay credit is fenced by its snapshot
+- `EvaluationPipeline::processUpdates()` computed each K1 / K2 / K3 / K5 net change (`decayed + delta − stored`) on a snapshot read
+  outside any atomic operation and sent it to `increment()`. Two concurrent requests on the same decayed snapshot applied the same
+  decay credit twice: K5 = 5, 1500 s old, and two concurrent failures (+2 each) gave −1 instead of 4. Only K4 was fenced (its
+  generation path). A write that carries a decay credit (`netChange < delta`) now goes through the new
+  `SnapshotFencedScoreStoreInterface::incrementIfSnapshot()` (caller-time mirror `CallerTimeSnapshotFencedScoreStoreInterface`),
+  which sets the score only while the stored `(value, updatedAt)` equals the snapshot; on a miss the score is read again and its
+  decay computed again, at most three attempts; when they are exhausted the request adds its delta alone, with no exception, no
+  block and no `FAIL_CLOSED` (DEC-029 P1). Every write without a credit stays `increment()`: before the change, 0 of 9,750 benign
+  concurrent writes carried a credit while up to 98.5 % found the snapshot changed (LT-185-08). `RedisFullCapabilityStore`
+  implements the capability (`SCORE_SET_IF_SNAPSHOT`, with the structural checks of `SCORE_INCREMENT`).
+- **Upgrade note for a Host store:** `build()` now requires `SnapshotFencedScoreStoreInterface` whenever a registered policy writes
+  a score (every package preset does) and fails with `Policy <name> writes scores and requires SnapshotFencedScoreStoreInterface
+  (#185, DEC-030).`. It is not part of `FullCapabilityStoreInterface`; a Host store adds `incrementIfSnapshot()` (and
+  `incrementIfSnapshotAt()` for the caller's time), as the two in-memory stores of `examples/basic-rate-limit.php` and
+  `examples/simple-fixed-window.php` now do. The operational reader does not require it.
+- Tests: `ScoreRaceRedisTest` (the two-process barrier, 50 rounds: K5 = −1 and K1 = 5 in every round on `4e90064`; K5 = 4 and
+  K1 = 10 after; the sequential control 4 / 10 on both), `SnapshotFencedScoreWriteRedisTest`, `SnapshotFencedScoreCapabilityTest`.
+  The second measurement (the credit scenario, N = 2 / 4 / 8) is in `investigations/fenced-score-write-185/`.
+
 ### Fixed (#185, F-185-09) — the generation-bound mutation chooses its source as the read does
 - `mutateGenerationBoundScore()` took Current as its source whenever its `PTTL` was positive, while
   `readGenerationBoundScoreState()` treats a score whose logical `expiresAt` has passed as absent (LT-P2-02). With the caller's
