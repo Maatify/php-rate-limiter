@@ -9,7 +9,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [1.0.0-rc.4]
 
-### Fixed (#185, F-185-08, DEC-030 PROPOSED) — a score write that carries a decay credit is fenced by its snapshot
+### Fixed (#185, F-185-08, DEC-030) — a score write that carries a decay credit is fenced by its snapshot
 - `EvaluationPipeline::processUpdates()` computed each K1 / K2 / K3 / K5 net change (`decayed + delta − stored`) on a snapshot read
   outside any atomic operation and sent it to `increment()`. Two concurrent requests on the same decayed snapshot applied the same
   decay credit twice: K5 = 5, 1500 s old, and two concurrent failures (+2 each) gave −1 instead of 4. Only K4 was fenced (its
