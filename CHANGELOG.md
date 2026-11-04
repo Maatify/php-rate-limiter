@@ -9,6 +9,24 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [1.0.0-rc.4]
 
+### Fixed (#185, F-185-03, F-185-04) — one definition of a present identity string; `"0"` is present, `""` is absent
+- `EvaluationPipeline`, `RateLimitOperationalReader`, `RateLimiterEngine`, `LocalFallbackLimiter` and `AdmissionRuntime` used four
+  definitions of a present account: truthiness, `!== null`, `=== null` and `!== null && !== ''`. An account id of `"0"` or `""`
+  therefore built no K4 / K5 key but still an account correlation observation, and the first `checkOnly` threw `Missing current
+  opaque anchor for device_cap_account correlation state.`. One internal helper, `IdentityPresence`, now carries the single
+  definition `accountId !== null && accountId !== ''` and replaces every presence check (eight truthiness and seven null checks in
+  the pipeline, the reader's budget and K4 / K5 keys, the re-entry claim, the fallback account dimension, the admission lane, and
+  the three `correlationId ?? accountId` subjects). `"0"` is a present identifier and takes the path of `"1"` (4 of 25 failed
+  logins reach the verifier, then `SOFT_BLOCK`, K5 visible to the reader); `""` is absence and behaves as `null`. The keys derived
+  for a present identifier are unchanged; no DTO, interface or key shape changes. The same rule now governs `fingerprintHash` and
+  `correlationId` (F-185-04): the six truthiness / `empty()` and seven strict fingerprint checks of the pipeline, the reader's K3
+  / K5 keys and the admission device-member scope go through the helper, so a Host resolver (`withDeviceIdentityResolver()`)
+  returning `"0"` gets K3 / K5 derived alike by enforcement and by the reader, and `""` is a missing fingerprint as `null` is; the
+  three correlation subjects are `correlationId` when present, else the account when present, so `correlationId` `""` falls back
+  to the account. Tests: `AccountPresenceRedisTest` (four of its eight tests fail on `b3e77e4`), `IdentityPresenceRedisTest` (all
+  four fail on the account-only fix) and `IdentityPresenceTest`. The `RateLimitContextDTO` and `DeviceIdentityDTO` docblocks and
+  `docs/guides/USAGE_GUIDE.md` Identity inputs state the definition.
+
 ### Fixed (#185, F-185-01, DEC-017) — admission sorted-set scores are validated before the first write
 - `RedisFullCapabilityStore` admission scripts: the scores of the device-member sets (current and previous generation) and of the
   pending set of a settling failure set were read with `tonumber()` alone. A score of `-1` or `-inf` was left out of the gate and

@@ -1,0 +1,6 @@
+accountId=owner   | admitted  4/25 | first denial SOFT_BLOCK@5     | k4 score 0, k5 score 8 | -
+accountId=00      | admitted  4/25 | first denial SOFT_BLOCK@5     | k4 score 0, k5 score 8 | -
+accountId=1       | admitted  4/25 | first denial SOFT_BLOCK@5     | k4 score 0, k5 score 8 | -
+accountId=0       | admitted  4/25 | first denial SOFT_BLOCK@5     | k4 score 0, k5 score 8 | -
+accountId=""      | admitted 25/25 | first denial -                | k4 absent, k5 absent | -
+accountId=null    | admitted 25/25 | first denial -                | k4 absent, k5 absent | -

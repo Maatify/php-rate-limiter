@@ -116,7 +116,7 @@ final class AdmissionRuntime
         $instance = $context->clientInstanceId;
         $account = $context->accountId;
         $subject = $this->subject($context);
-        if ($credential === null || $credential === '' || $instance === null || $instance === '' || $account === null || $subject === null) {
+        if ($credential === null || $credential === '' || $instance === null || $instance === '' || ! IdentityPresence::isPresent($account) || $subject === null) {
             return new AdmissionLaneDTO(AdmissionLaneEnum::U);
         }
         $verdict = $this->codec->verify($credential, $subject, $budgetGroup, $instance, $this->now(), $this->bindingEpoch($account));
@@ -282,7 +282,7 @@ final class AdmissionRuntime
             $this->counter('proof_proof_window', $group, 'pproof', $proof, $window, $b->proofProofWindow, 2 * $b->windowSeconds),
             $this->counter('proof_proof_day', $group, 'pproofd', $proof, $day, $b->proofProofDay, 2 * self::DAY),
         ];
-        if ($device->fingerprintHash !== null) {
+        if (IdentityPresence::fingerprint($device)) {
             $scopes[] = $this->deviceMember($group, $subject, $device);
         }
         $scopes[] = $this->failureSet('source_proof_failure_cap', $group, 'pfail', SourcePrefix::of($context->ip), $window, $b->crossAccountFailureCap, $subject);
@@ -425,10 +425,10 @@ final class AdmissionRuntime
         return $this->previousKeySecret === null ? null : $this->epochKey($accountId, $this->previousKeySecret);
     }
 
-    /** `correlationId ?? accountId` (LT-4, LT-19). */
+    /** `correlationId` when present, else the account identifier when present (LT-4, LT-19; #185 F-185-04). */
     private function subject(RateLimitContextDTO $context): ?string
     {
-        return $context->correlationId ?? $context->accountId;
+        return IdentityPresence::subject($context);
     }
 
     /** @return array{id: string, lane: AdmissionLaneEnum, t0: int, j: ?string}|null */

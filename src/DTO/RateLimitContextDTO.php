@@ -12,13 +12,15 @@ final readonly class RateLimitContextDTO implements \JsonSerializable
     /**
      * @param string $ip Client IP address used for IP scopes.
      * @param string $ua Raw user-agent string used for normalization.
-     * @param ?string $accountId Optional account identifier for account scopes.
+     * @param ?string $accountId Optional account identifier for account scopes. An account is present when this is a
+     *     non-empty string, `"0"` included; `null` and `""` are both absence, and no account scope is derived for them.
      * @param ?array<string, mixed> $clientFingerprint Optional client fingerprint fields.
      * @param ?string $sessionDeviceId Optional trusted-session device identifier.
      * @param bool $isSessionTrusted Whether the session device identifier is trusted.
      * @param array<string, string|string[]> $headers Request headers retained as context.
      * @param bool $isDevicePreviouslyVerifiedForAccount Whether the device is known to the account.
-     * @param ?string $correlationId Stable opaque subject identity used for bounded correlation.
+     * @param ?string $correlationId Stable opaque subject identity used for bounded correlation. Present when a non-empty
+     *     string; when absent (`null` or `""`) the correlation subject is the account identifier, if present.
      * @param ?string $clientInstanceId Optional untrusted client instance identifier. It is a continuity hint only and is ignored by every policy that has not opted into the admission capability.
      * @param ?string $admissionCredential Optional opaque admission credential, verified only for policies that have opted into the admission capability.
      */
