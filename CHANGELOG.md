@@ -9,6 +9,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [1.0.0-rc.4]
 
+### Fixed (#185, F-185-10, F-185-12) — lifecycle evidence is validated before the optimistic comparison; counters are returned exactly
+- `RedisFullCapabilityStore::blockWithPunishmentLifecycleTracking()` compared the stored generation and the logical expiry
+  with the caller's expectation before it read the Current score's lifecycle evidence, so partial or malformed evidence came
+  back as an ordinary unapplied conflict when the generation differed or the score had logically expired. The evidence is now
+  validated with the other structural checks, before either comparison, as `PunishmentLifecycleStoreInterface` states:
+  malformed evidence is a malformed-state failure in every branch and leaves every key byte-identical (F-185-10).
+- The score increment returned `HINCRBY`'s result, and the watch-flag increments `INCR`'s, through a Lua number, exact only
+  up to 2^53: a score of 2^53 incremented by 1 was stored as 2^53 + 1 and returned as 2^53. The score and the watch-flag
+  increments now return the stored decimal string, and the rotated watch flag sums the current and previous counts as
+  decimal strings (F-185-12). The keys, the stored values and every other reply are unchanged. Tests:
+  `LifecycleEvidenceValidationRedisTest` (8 of its 13 cases fail on `4e90064`) and `ExactCounterReplyRedisTest` (4 of 12).
+
 ### Fixed (#185, F-185-05, F-185-06) — the correlation subject in the docs follows the presence rule
 - Three current documents still gave the correlation subject as `correlationId ?? accountId`, which treats `""` as a present
   value, and a fourth fell back to `accountId` without its presence (F-185-06). They now state the rule `IdentityPresence::subject()` applies since F-185-04: `correlationId` when present, else
