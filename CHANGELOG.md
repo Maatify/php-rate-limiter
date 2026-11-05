@@ -23,6 +23,29 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   Previous) before any write, where a sum past the range created Current and then failed as a malformed reply (F-185-25).
 - Test: `NumericBoundsRedisTest` (the Lead's adv8/r4; 19 of its 22 cases fail on `78526b5`, the three controls pass on both).
 
+### Fixed (#185, F-185-23, LT-185-23) — a fingerprint-only rotation carries new correlation members through the bridge
+- With a previous fingerprint secret and no previous key secret, Current and Previous of a bounded correlation rotation are
+  one key. A special branch for that alias answered "accepted, added" for a new member and wrote it nowhere, so the set never
+  grew: a cap of 10 accepted every member, and the account correlation count of `login_protection` stayed at 2 where the
+  non-rotated and fully rotated configurations reach 3. The branch is removed (LT-185-23 (b)): the alias takes the general
+  rotation path, in which the aliased set is the previous generation and stays read-only (no write, no TTL refresh), a new
+  member is written to the bridge (lifetime no longer than Previous), and the logical count is Previous plus bridge. A member
+  known in either form, current or previous, in either set is not written again. The read-only previous-generation rule of the
+  rotation interfaces holds without exception; `docs/KEY_STRATEGY.md` states the aliased case.
+- Tests: `RotatedAliasBoundedRedisTest` (the Lead's adv8/r1, r1b, r1c, with the non-rotated and fully rotated controls; five
+  of its seven cases fail on `78526b5`); the alias cases of `RedisFullCapabilityStoreIntegrationTest`,
+  `BoundedCorrelationCoverageTest`, `Ipv6AdaptiveAggregationTest` and `RateLimiterFullCapabilityBuilderWorkflowTest`, and
+  the in-memory reference
+  (`StatefulInMemoryCorrelationStore`), now expect the bridge.
+
+### Fixed (#185, F-185-27) — the re-entry claim validates the score before a live block answers
+- `claimPostPunishmentReentryAt()` returned "no claim" on a live L2+ block before it read the score hash, so malformed score
+  state (a non-canonical value, partial or malformed lifecycle evidence, evidence on a legacy score) was hidden under the block
+  while the same state without it, and `readGenerationBoundScoreStateAt()` with it, raised `malformed …`. The score hash is now
+  validated first (the F-185-10 order); malformed state is the same error with or without the block and is left as it is
+  (DEC-017), and a live block over a valid score still answers false. Test: `ClaimValidatesBeforeLiveBlockRedisTest` (the
+  Lead's adv8/r2; its four malformed cases fail on `78526b5`).
+
 ### Fixed (#185, F-185-17, F-185-18, DEC-031) — the circuit-breaker failure report and the missing-fingerprint marker are fenced
 - `CircuitBreaker::reportFailure()` loaded the state, appended one failure and saved it with a plain `SET`: three concurrent
   backend failures that read the same state each saved one failure and the circuit stayed `CLOSED` (one after the other it

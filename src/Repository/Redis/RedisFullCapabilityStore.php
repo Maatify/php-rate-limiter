@@ -634,6 +634,9 @@ local function subtractDecimalStrings(a, b)
   if result == '' then result = '0' end
   return result
 end
+-- #185 F-185-27: a live block is noted, not returned on: the score hash below is validated first (the F-185-10
+-- pattern), so malformed state is an error with or without a live block (DEC-017). The block still answers 0.
+local liveBlock = false
 for _, blockKey in ipairs({KEYS[3], KEYS[4]}) do
   if blockKey ~= '' then
     local blockPttl = redis.call('PTTL', blockKey)
@@ -643,7 +646,7 @@ for _, blockKey in ipairs({KEYS[3], KEYS[4]}) do
     -- #185 F-185-19: a block level is canonical decimal text, one digit 1..6 (L1-L6), checked before tonumber().
     if not rawExpires or not validBackendExpiry(rawExpires) or not rawLevel or string.match(rawLevel, '^[1-6]$') == nil then return redis.error_reply('malformed hard-block state') end
     local level = tonumber(rawLevel)
-    if compareDecimalStrings(rawExpires, nowSecondsStr) > 0 then return 0 end
+    if compareDecimalStrings(rawExpires, nowSecondsStr) > 0 then liveBlock = true end
     end
   end
 end
@@ -678,6 +681,7 @@ if source ~= '' then
     if not id or #id ~= 32 or string.match(id, '^[a-f0-9]+$') == nil then return redis.error_reply('malformed lifecycle id') end
     if not validNonNegativeInteger(validUntil) or validUntil == '0' or not validPositiveInteger(evidenceGeneration) then return redis.error_reply('malformed lifecycle evidence') end
     if not generation then return redis.error_reply('legacy score cannot carry lifecycle evidence') end
+    if liveBlock then return 0 end
     if evidenceGeneration ~= generation then return 0 end
     if expiry ~= nil and validUntil ~= expiry then return 0 end
     if compareDecimalStrings(validUntil, nowSecondsStr) <= 0 or id ~= ARGV[1] then return 0 end
@@ -1098,15 +1102,10 @@ if prevExists == 0 then
   return {#members, 1, 1, exists == 0 and newExpiry or currentExpiry, unpack(members)}
 end
 local previous = redis.call('SMEMBERS', KEYS[5]); table.sort(previous)
-if alias then
-  local previousKnown = false
-  for _, member in ipairs(previous) do if member == ARGV[3] or member == ARGV[4] then previousKnown = true end end
-  if not previousKnown and #previous < tonumber(ARGV[5]) then
-    previous[#previous + 1] = ARGV[3]; table.sort(previous)
-    return {#previous, 1, 1, prevExpiry, unpack(previous)}
-  end
-  return {#previous, previousKnown and 1 or 0, 0, prevExpiry, unpack(previous)}
-end
+-- #185 F-185-23 (LT-185-23 (b)): Current and Previous may be one key (a fingerprint-secret rotation without a key-secret
+-- rotation). That case takes the general path: the live set is Previous and stays read-only; a new member is written to
+-- the bridge only, the count is Previous plus bridge, and a member present in either form (ARGV[3] or ARGV[4]) in either
+-- set is known (under the alias both forms carry the current key secret, so the previous form can be in the bridge).
 local currentExists = redis.call('EXISTS', KEYS[1])
 local bridgeExists = redis.call('EXISTS', KEYS[3])
 if (currentExists == 1 and redis.call('TTL', KEYS[1]) < 0) or (bridgeExists == 1 and redis.call('TTL', KEYS[3]) < 0) then return redis.error_reply('malformed rotated bounded state') end
@@ -1140,13 +1139,15 @@ for _, member in ipairs(previous) do members[#members + 1] = member end
 for _, member in ipairs(bridge) do members[#members + 1] = member end
 for _, member in ipairs(previous) do for _, other in ipairs(bridge) do if member == other then return redis.error_reply('bridge overlaps previous state') end end end
 if #members > tonumber(ARGV[5]) then return redis.error_reply('rotated bounded state exceeds capacity') end
-local bridgeKnown = redis.call('SISMEMBER', KEYS[3], ARGV[3]) == 1
+local bridgeKnown = redis.call('SISMEMBER', KEYS[3], ARGV[3]) == 1 or redis.call('SISMEMBER', KEYS[3], ARGV[4]) == 1
 local previousKnown = false
-for _, member in ipairs(previous) do if member == ARGV[4] then previousKnown = true end end
+for _, member in ipairs(previous) do if member == ARGV[4] or member == ARGV[3] then previousKnown = true end end
 local known = bridgeKnown or previousKnown
 local added = false
 local created = {}
 local function ensureCurrent()
+  -- Under the alias Current is the Previous set itself: read-only, never written (LT-185-23 (b)).
+  if alias then return true end
   if currentExists == 0 then
     redis.call('SADD', KEYS[1], ARGV[3]); created[#created + 1] = KEYS[1]
     if not expiryApplied(redis.pcall('EXPIRE', KEYS[1], ARGV[2]), created) then return false end
