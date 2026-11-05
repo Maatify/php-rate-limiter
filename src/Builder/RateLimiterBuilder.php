@@ -31,6 +31,8 @@ use Maatify\RateLimiter\Repository\AdmissionReservationStoreInterface;
 use Maatify\RateLimiter\Repository\PunishmentLifecycleStoreInterface;
 use Maatify\RateLimiter\Repository\RateLimitStoreInterface;
 use Maatify\RateLimiter\Repository\SnapshotFencedScoreStoreInterface;
+use Maatify\RateLimiter\Repository\CircuitBreakerStateCasStoreInterface;
+use Maatify\RateLimiter\Repository\ScoreReplaceStoreInterface;
 use Maatify\RateLimiter\Service\AdmissionCredentialCodec;
 use Maatify\RateLimiter\Service\AdmissionRuntime;
 use Maatify\RateLimiter\Service\AntiEquilibriumGate;
@@ -300,6 +302,29 @@ final class RateLimiterBuilder
         $this->assertCircuitBreakerProbeCapability();
         $this->assertAdmissionReservationCapability();
         $this->assertSnapshotFencedScoreCapability();
+        $this->assertFencedAuxiliaryWriteCapabilities();
+    }
+
+    /**
+     * #185 F-185-17 / F-185-18 (DEC-031): the circuit-breaker store fences its state save (it is always used), and a
+     * policy with a repeated-missing-fingerprint delta needs the atomic marker replace. A store without either fails
+     * here, before the runtime exists, with a message that names the capability.
+     */
+    private function assertFencedAuxiliaryWriteCapabilities(): void
+    {
+        if (! $this->circuitBreakerStore instanceof CircuitBreakerStateCasStoreInterface) {
+            throw new RateLimiterException('The circuit-breaker store requires CircuitBreakerStateCasStoreInterface (#185, DEC-031).');
+        }
+        if ($this->rateLimitStore instanceof ScoreReplaceStoreInterface) {
+            return;
+        }
+        foreach ($this->policies as $policy) {
+            if ($policy->getScoreDeltas()->k4_repeated_missing_fp > 0) {
+                throw new RateLimiterException(
+                    'Policy ' . $policy->getName() . ' records repeated missing fingerprints and requires ScoreReplaceStoreInterface (#185, DEC-031).',
+                );
+            }
+        }
     }
 
     /**

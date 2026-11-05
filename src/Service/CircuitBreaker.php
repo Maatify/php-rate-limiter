@@ -11,6 +11,7 @@ use Maatify\RateLimiter\DTO\FailureStateDTO;
 use Maatify\RateLimiter\Exception\RateLimiterException;
 use Maatify\RateLimiter\Exception\BackendFailureException;
 use Maatify\RateLimiter\Repository\CircuitBreakerProbeStoreInterface;
+use Maatify\RateLimiter\Repository\CircuitBreakerStateCasStoreInterface;
 use Maatify\RateLimiter\Repository\CircuitBreakerStoreInterface;
 use Maatify\SharedCommon\Contracts\ClockInterface;
 
@@ -62,8 +63,21 @@ class CircuitBreaker
      * Requests short-circuited by OPEN or HALF_OPEN are never sent here and are
      * deliberately ignored if a caller invokes this method directly.
      */
+    /** #185 F-185-18 (DEC-031): fenced attempts of one failure report before it is dropped. */
+    private const FAILURE_REPORT_ATTEMPTS = 3;
+
     public function reportFailure(string $policyName): void
     {
+        if ($this->store instanceof CircuitBreakerStateCasStoreInterface && ! isset($this->emergencyStates[$policyName])) {
+            try {
+                $this->reportFailureFenced($this->store, $policyName);
+
+                return;
+            } catch (BackendFailureException) {
+                // The store is down: the local emergency path below owns this failure, exactly as before.
+            }
+        }
+
         $state = $this->loadState($policyName);
         if ($state->status !== FailureStateDTO::STATE_CLOSED) {
             return;
@@ -104,6 +118,52 @@ class CircuitBreaker
      *
      * OPEN and HALF_OPEN can only recover through attemptRecoveryProbe().
      */
+    /**
+     * #185 F-185-18 (DEC-031): the failure is appended to the state that was read and saved only while that state is
+     * still the stored one, so concurrent failures are all counted and the circuit trips at the threshold. A miss reads
+     * again; after FAILURE_REPORT_ATTEMPTS misses this one failure is dropped without an exception (every miss means
+     * another process recorded a failure in the same window). The open signals are emitted after the save succeeded.
+     */
+    private function reportFailureFenced(CircuitBreakerStateCasStoreInterface $store, string $policyName): void
+    {
+        for ($attempt = 0; $attempt < self::FAILURE_REPORT_ATTEMPTS; $attempt++) {
+            [$persisted, $version] = $store->loadWithVersion($policyName);
+            // As loadState() does after a successful persistent read.
+            unset($this->emergencyProbeLeases[$policyName]);
+            $state = $persisted ?? $this->closedState();
+            if ($state->status !== FailureStateDTO::STATE_CLOSED) {
+                return;
+            }
+
+            $now = $this->clock->now()->getTimestamp();
+            $failures = array_values(array_filter(
+                [...$state->failures, $now],
+                static fn(int $timestamp): bool => $timestamp >= $now - self::TRIP_WINDOW,
+            ));
+            $status = FailureStateDTO::STATE_CLOSED;
+            $openSince = $state->openSince;
+            $lastSuccess = $state->lastSuccess;
+            $reEntries = $state->reEntries;
+            $failClosedUntil = $state->failClosedUntil;
+            $signals = [];
+            if (count($failures) >= self::TRIP_THRESHOLD) {
+                $status = FailureStateDTO::STATE_OPEN;
+                $openSince = $now;
+                $lastSuccess = 0;
+                [$reEntries, $failClosedUntil, $signals] = $this->openTransition($reEntries, $failClosedUntil, $now, false);
+            }
+
+            $next = new CircuitBreakerStateDTO($status, $failures, $now, $openSince, $lastSuccess, array_values($reEntries), $failClosedUntil);
+            if ($store->saveIfVersion($policyName, $version, $next)) {
+                foreach ($signals as $type) {
+                    $this->emitter->emit(new FailureSignalDTO($type, $policyName));
+                }
+
+                return;
+            }
+        }
+    }
+
     public function reportSuccess(string $policyName): void
     {
         $state = $this->loadState($policyName);
@@ -297,6 +357,24 @@ class CircuitBreaker
         int $now,
         bool $isReEntry,
     ): array {
+        [$reEntries, $failClosedUntil, $signals] = $this->openTransition($reEntries, $failClosedUntil, $now, $isReEntry);
+        foreach ($signals as $type) {
+            $this->emitter->emit(new FailureSignalDTO($type, $policyName));
+        }
+
+        return [$reEntries, $failClosedUntil];
+    }
+
+    /**
+     * The open transition without its side effects: the re-entry history, the fail-closed guard, and the signal types
+     * to emit, in order (#185, F-185-18).
+     *
+     * @param array<int, int> $reEntries
+     *
+     * @return array{0: list<int>, 1: int, 2: list<string>}
+     */
+    private function openTransition(array $reEntries, int $failClosedUntil, int $now, bool $isReEntry): array
+    {
         $reEntries = array_values(array_filter(
             $reEntries,
             static fn(int $timestamp): bool => $timestamp >= $now - self::RE_ENTRY_WINDOW,
@@ -305,14 +383,13 @@ class CircuitBreaker
             $reEntries[] = $now;
         }
 
-        $this->emitter->emit(new FailureSignalDTO(FailureSignalDTO::TYPE_CB_OPENED, $policyName));
-
+        $signals = [FailureSignalDTO::TYPE_CB_OPENED];
         if (count($reEntries) > self::RE_ENTRY_LIMIT && $failClosedUntil <= $now) {
             $failClosedUntil = $now + self::FAIL_CLOSED_DURATION;
-            $this->emitter->emit(new FailureSignalDTO(FailureSignalDTO::TYPE_CB_RE_ENTRY_VIOLATION, $policyName));
+            $signals[] = FailureSignalDTO::TYPE_CB_RE_ENTRY_VIOLATION;
         }
 
-        return [$reEntries, $failClosedUntil];
+        return [$reEntries, $failClosedUntil, $signals];
     }
 
     /**

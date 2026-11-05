@@ -25,6 +25,7 @@ use Maatify\RateLimiter\Exception\RateLimitConcurrencyException;
 use Maatify\RateLimiter\DTO\PostPunishmentReentryMetadataDTO;
 use Maatify\RateLimiter\Repository\RateLimitStoreInterface;
 use Maatify\RateLimiter\Repository\SnapshotFencedScoreStoreInterface;
+use Maatify\RateLimiter\Repository\ScoreReplaceStoreInterface;
 use Maatify\RateLimiter\DTO\DecayPauseStateDTO;
 use Maatify\RateLimiter\DTO\BudgetStateDTO;
 use Maatify\RateLimiter\Exception\RateLimiterException;
@@ -1698,7 +1699,12 @@ class EvaluationPipeline
                 $context->accountId,
                 $this->secret,
             );
-            $last = $this->store->get($key);
+            // #185 F-185-17 (DEC-031): the marker is read and written in one atomic step, so of two concurrent
+            // failures the second sees the first one's marker. The previous generation stays a read-only fallback.
+            $replaces = $this->store instanceof ScoreReplaceStoreInterface;
+            $last = $this->store instanceof ScoreReplaceStoreInterface
+                ? CallerTimeStore::replaceScore($this->store, $key, $this->clock->now()->getTimestamp(), 3600, $this->clock->now())
+                : $this->store->get($key);
             if ($last === null) {
                 $previousKey = $this->previousAuxiliaryAccountKey(
                     $policy->getName(),
@@ -1712,7 +1718,9 @@ class EvaluationPipeline
             if ($last && ($this->clock->now()->getTimestamp() - $last->value) <= 1800) {
                 $deltas['k4'] = ScoreArithmetic::sum($deltas['k4'], $k4Repeated, 'K4 delta');
             }
-            CallerTimeStore::set($this->store, $key, $this->clock->now()->getTimestamp(), 3600, $this->clock->now());
+            if (! $replaces) {
+                CallerTimeStore::set($this->store, $key, $this->clock->now()->getTimestamp(), 3600, $this->clock->now());
+            }
         }
 
         $newMaxLevel = 0;

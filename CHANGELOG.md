@@ -9,6 +9,36 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [1.0.0-rc.4]
 
+### Fixed (#185, F-185-17, F-185-18, DEC-031 PROPOSED) — the circuit-breaker failure report and the missing-fingerprint marker are fenced
+- `CircuitBreaker::reportFailure()` loaded the state, appended one failure and saved it with a plain `SET`: three concurrent
+  backend failures that read the same state each saved one failure and the circuit stayed `CLOSED` (one after the other it
+  opens). The save now goes through `CircuitBreakerStateCasStoreInterface::saveIfVersion()` on the version that was read; a
+  miss reads again, at most three attempts; the open signals are emitted after a save that applied; when every attempt misses,
+  this one failure is dropped without an exception (F-185-18).
+- The `last_missing_fp` marker was read (`get`) and written later (`set`), the delta decided between them: two concurrent
+  failures without a fingerprint both read "no marker" (K4 = 6, `SOFT_BLOCK` L1, against 12 and `HARD_BLOCK` L3). It is now
+  written and its previous value returned in one atomic step by `ScoreReplaceStoreInterface::replaceScore()` (caller-time
+  mirror `CallerTimeScoreReplaceStoreInterface`), with a fresh TTL on every write as `set()` gave (F-185-17).
+- **Upgrade note for a Host store:** `build()` now requires `CircuitBreakerStateCasStoreInterface` of the circuit-breaker store
+  and, while a policy with `k4_repeated_missing_fp > 0` is registered (`login_protection` and `otp_protection` are),
+  `ScoreReplaceStoreInterface` of the rate-limit store, with a message naming the missing interface. Neither is part of
+  `FullCapabilityStoreInterface`; `RedisFullCapabilityStore` implements both, as do the in-memory stores of
+  `examples/basic-rate-limit.php` and `examples/simple-fixed-window.php`.
+- Tests: `CircuitBreakerRaceRedisTest` (the Lead's adv6/r3; 20 / 20 rounds `CLOSED` with one failure on `e513638`, `OPEN` with
+  three after), `MissingFingerprintMarkerRedisTest` (adv6/r2; K4 = 6 on `e513638`, 12 after; and the TTL case),
+  `FencedAuxiliaryStoreRedisTest`, `FencedAuxiliaryWriteTest`. The exhaustion measurement (N = 2 / 4 / 8) is in
+  `investigations/fenced-auxiliary-writes-185/`.
+
+### Fixed (#185, F-185-16, LT-185-16) — a block write never downgrades a live block
+- `BLOCK_SET` and `HARD_BLOCK` (Phase C) wrote `level` / `expiresAt` unconditionally: a request paused before its L1 write while
+  another published L2 (60 s) replaced it with L1 (15 s); 20 s later the account was evaluated again (K5 12 to 14) and a second
+  DEC-003 cycle was counted. A block write now leaves a live block (`expiresAt` ahead of the caller's time) that is stronger —
+  a higher level, or the same level ending no earlier — as it is, fields and TTL; each request keeps its own computed decision
+  (DEC-029 P3, LT-185-16). The cycle logic is unchanged: with the live L2+ block kept, no new cycle is counted. `BLOCK_SET` now
+  validates the existing block first, so a malformed block is `malformed block state` instead of being overwritten (DEC-017).
+  Test: `BlockNoDowngradeRedisTest` (the Lead's adv6/r1, 50 rounds against the sequential control; L2 over a live L3 in
+  `HARD_BLOCK`; the same level never shortened; a logically expired block replaced; four of its six cases fail on `e513638`).
+
 ### Fixed (#185, F-185-08, DEC-030) — a score write that carries a decay credit is fenced by its snapshot
 - `EvaluationPipeline::processUpdates()` computed each K1 / K2 / K3 / K5 net change (`decayed + delta − stored`) on a snapshot read
   outside any atomic operation and sent it to `increment()`. Two concurrent requests on the same decayed snapshot applied the same

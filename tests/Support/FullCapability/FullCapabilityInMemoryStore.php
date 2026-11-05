@@ -8,6 +8,7 @@ use Maatify\RateLimiter\DTO\BoundedDistinctResultDTO;
 use Maatify\RateLimiter\DTO\BoundedDistinctSnapshotDTO;
 use Maatify\RateLimiter\DTO\CircuitBreakerStateDTO;
 use Maatify\RateLimiter\Repository\FullCapabilityStoreInterface;
+use Maatify\RateLimiter\Repository\CircuitBreakerStateCasStoreInterface;
 use Maatify\RateLimiter\Tests\Support\CircuitBreaker\InMemoryCircuitBreakerStore;
 use Maatify\RateLimiter\Tests\Support\Correlation\StatefulInMemoryCorrelationStore;
 use Maatify\RateLimiter\Tests\Support\RateLimiter\InMemoryRateLimitStore;
@@ -17,7 +18,7 @@ use Maatify\RateLimiter\Repository\CallerTimeBoundedCorrelationSnapshotRotationS
 /**
  * Delegating aggregate fixture that exposes all storage capabilities through one object.
  */
-class FullCapabilityInMemoryStore extends InMemoryRateLimitStore implements FullCapabilityStoreInterface, CallerTimeBoundedCorrelationSnapshotRotationStoreInterface
+class FullCapabilityInMemoryStore extends InMemoryRateLimitStore implements FullCapabilityStoreInterface, CallerTimeBoundedCorrelationSnapshotRotationStoreInterface, CircuitBreakerStateCasStoreInterface
 {
     private StatefulInMemoryCorrelationStore $correlationStore;
 
@@ -146,6 +147,17 @@ class FullCapabilityInMemoryStore extends InMemoryRateLimitStore implements Full
     public function save(string $policyName, CircuitBreakerStateDTO $state): void
     {
         $this->circuitBreakerStore->save($policyName, $state);
+    }
+
+    /** @return array{0: ?CircuitBreakerStateDTO, 1: string} */
+    public function loadWithVersion(string $policyName): array
+    {
+        return $this->circuitBreakerStore->loadWithVersion($policyName);
+    }
+
+    public function saveIfVersion(string $policyName, string $expectedVersion, CircuitBreakerStateDTO $state): bool
+    {
+        return $this->circuitBreakerStore->saveIfVersion($policyName, $expectedVersion, $state);
     }
 
     public function acquireProbeLease(string $policyName, int $now, int $leaseSeconds): bool

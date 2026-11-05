@@ -21,8 +21,9 @@ use Maatify\SharedCommon\Contracts\ClockInterface;
 use Maatify\RateLimiter\Repository\CallerTimeBudgetSeedStoreInterface;
 use Maatify\RateLimiter\Repository\CallerTimePunishmentLifecycleStoreInterface;
 use Maatify\RateLimiter\Repository\CallerTimeSnapshotFencedScoreStoreInterface;
+use Maatify\RateLimiter\Repository\CallerTimeScoreReplaceStoreInterface;
 
-class InMemoryRateLimitStore implements BudgetSeedStoreInterface, PunishmentLifecycleStoreInterface, CallerTimeBudgetSeedStoreInterface, CallerTimePunishmentLifecycleStoreInterface, CallerTimeSnapshotFencedScoreStoreInterface
+class InMemoryRateLimitStore implements BudgetSeedStoreInterface, PunishmentLifecycleStoreInterface, CallerTimeBudgetSeedStoreInterface, CallerTimePunishmentLifecycleStoreInterface, CallerTimeSnapshotFencedScoreStoreInterface, CallerTimeScoreReplaceStoreInterface
 {
     public bool $available = true;
     private const PAUSE_HISTORY_RETENTION_SECONDS = 86400;
@@ -96,6 +97,20 @@ class InMemoryRateLimitStore implements BudgetSeedStoreInterface, PunishmentLife
         $this->data[$key] = ['value' => $newValue, 'updatedAt' => $now, 'expiresAt' => $this->data[$key]['expiresAt']];
 
         return $newValue;
+    }
+
+    /** #185 F-185-17 (DEC-031): write a score and return the one it replaced. */
+    public function replaceScore(string $key, int $value, int $ttlSeconds): ?RateLimitStateDTO
+    {
+        $previous = $this->get($key);
+        $this->set($key, $value, $ttlSeconds);
+
+        return $previous;
+    }
+
+    public function replaceScoreAt(string $key, int $value, int $ttlSeconds, int $now): ?RateLimitStateDTO
+    {
+        return $this->atCallerTime($now, fn(): ?RateLimitStateDTO => $this->replaceScore($key, $value, $ttlSeconds));
     }
 
     public function incrementIfSnapshotAt(string $key, int $ttlSeconds, ?int $expectedValue, ?int $expectedUpdatedAt, int $newValue, int $now): ?int

@@ -3699,7 +3699,8 @@ final class RedisFullCapabilityStoreIntegrationTest extends TestCase
         self::assertFalse($result->newCycle);
         self::assertSame(0, $result->cycleCount);
         self::assertSame(0, $this->integer($this->raw(['EXISTS', $this->key('cycle', 'g12-wide-cur')])));
-        self::assertSame(2, $this->store->checkBlock('g12-wide-cur')?->level);
+        // #185 F-185-16 (LT-185-16): an L2 write never downgrades the live widened L3 block.
+        self::assertSame(3, $this->store->checkBlock('g12-wide-cur')?->level);
 
         // Previous: widened active block is read correctly and stays read-only.
         $this->store->block('g12-wide-prev', 3, $widened);
