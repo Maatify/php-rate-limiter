@@ -901,14 +901,14 @@ $rateLimiterExceptionFailureStore = new RedisFullCapabilityStore($rateLimiterExc
 $rateLimiterExceptionFailureLimiter = RateLimiterBuilder::fromFullCapabilityStore(new RateLimiterConfig('failure-rle-key', 'failure-rle-fingerprint', 'prod'), $rateLimiterExceptionFailureStore, $failureSignals)
     ->withSimpleThrottlePolicy(new FixedWindowThrottlePolicy('consumer_simple_failure_rle', limit: 2, intervalSeconds: 60))
     ->build();
-$simpleFailureResultFromRateLimiterException = $rateLimiterExceptionFailureLimiter->consume('consumer_simple_failure_rle', 'consumer-simple-failure-rle-subject');
-requireCondition(
-    ! $simpleFailureResultFromRateLimiterException->allowed
-    && $simpleFailureResultFromRateLimiterException->failureMode === SimpleRateLimitResultDTO::FAIL_CLOSED
-    && $simpleFailureResultFromRateLimiterException->retryAfter === null
-    && $simpleFailureResultFromRateLimiterException->resetAt === null,
-    'Simple throttle backend failure (RateLimiterException) did not fail closed.',
-);
+// #185 F-185-21 (LT-185-21): a store's RateLimiterException is not a backend failure; simple throttling propagates it.
+$simpleRateLimiterExceptionPropagated = false;
+try {
+    $rateLimiterExceptionFailureLimiter->consume('consumer_simple_failure_rle', 'consumer-simple-failure-rle-subject');
+} catch (RateLimiterException $exception) {
+    $simpleRateLimiterExceptionPropagated = $exception->getMessage() === 'simulated store-internal contract violation';
+}
+requireCondition($simpleRateLimiterExceptionPropagated, 'Simple throttle converted a store RateLimiterException into FAIL_CLOSED.');
 
 $untypedSignals = new RecordingFailureSignalEmitter();
 $untypedExecutor = new CallableRedisCommandExecutor(static function (array $command): mixed {
