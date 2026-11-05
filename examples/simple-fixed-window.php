@@ -23,6 +23,8 @@ use Maatify\RateLimiter\Repository\BoundedCorrelationSnapshotStoreInterface;
 use Maatify\RateLimiter\Repository\CircuitBreakerProbeStoreInterface;
 use Maatify\RateLimiter\Repository\PunishmentLifecycleStoreInterface;
 use Maatify\RateLimiter\Repository\SnapshotFencedScoreStoreInterface;
+use Maatify\RateLimiter\Repository\CircuitBreakerStateCasStoreInterface;
+use Maatify\RateLimiter\Repository\ScoreReplaceStoreInterface;
 
 require dirname(__DIR__) . '/vendor/autoload.php';
 
@@ -33,7 +35,7 @@ require dirname(__DIR__) . '/vendor/autoload.php';
  * host application's atomic storage integration in production; see
  * examples/basic-rate-limit.php for a fully annotated version.
  */
-final class SimpleThrottleExampleStore implements PunishmentLifecycleStoreInterface, SnapshotFencedScoreStoreInterface
+final class SimpleThrottleExampleStore implements PunishmentLifecycleStoreInterface, SnapshotFencedScoreStoreInterface, ScoreReplaceStoreInterface
 {
     /** @var array<string, array{value: int, updatedAt: int, expiresAt: int}> */
     private array $counters = [];
@@ -90,6 +92,18 @@ final class SimpleThrottleExampleStore implements PunishmentLifecycleStoreInterf
         }
 
         return new RateLimitStateDTO($this->counters[$key]['value'], $this->counters[$key]['updatedAt']);
+    }
+
+    /**
+     * Write a score and return the one it replaced, in one atomic step in a
+     * real store, with a fresh TTL (DEC-031).
+     */
+    public function replaceScore(string $key, int $value, int $ttlSeconds): ?RateLimitStateDTO
+    {
+        $previous = $this->get($key);
+        $this->set($key, $value, $ttlSeconds);
+
+        return $previous;
     }
 
     public function set(string $key, int $value, int $ttlSeconds): void
@@ -323,7 +337,7 @@ final class SimpleThrottleExampleCorrelationStore implements BoundedCorrelationS
     }
 }
 
-final class SimpleThrottleExampleCircuitBreakerStore implements CircuitBreakerProbeStoreInterface
+final class SimpleThrottleExampleCircuitBreakerStore implements CircuitBreakerProbeStoreInterface, CircuitBreakerStateCasStoreInterface
 {
     /** @var array<string, CircuitBreakerStateDTO> */
     private array $states = [];
@@ -339,6 +353,35 @@ final class SimpleThrottleExampleCircuitBreakerStore implements CircuitBreakerPr
     public function save(string $policyName, CircuitBreakerStateDTO $state): void
     {
         $this->states[$policyName] = $state;
+        $this->versions[$policyName] = ($this->versions[$policyName] ?? 0) + 1;
+    }
+
+    /** @var array<string, int> A write counter per policy is the version (DEC-031). */
+    private array $versions = [];
+
+    /**
+     * The state with an opaque version of what is stored ('' for nothing), so
+     * a save can be fenced by it (DEC-031).
+     *
+     * @return array{0: ?CircuitBreakerStateDTO, 1: string}
+     */
+    public function loadWithVersion(string $policyName): array
+    {
+        $state = $this->load($policyName);
+
+        return [$state, $state === null ? '' : (string) ($this->versions[$policyName] ?? 0)];
+    }
+
+    /** Save only while the stored version is still the expected one, atomically in a real store. */
+    public function saveIfVersion(string $policyName, string $expectedVersion, CircuitBreakerStateDTO $state): bool
+    {
+        $current = isset($this->states[$policyName]) ? (string) ($this->versions[$policyName] ?? 0) : '';
+        if ($current !== $expectedVersion) {
+            return false;
+        }
+        $this->save($policyName, $state);
+
+        return true;
     }
 
     public function acquireProbeLease(string $policyName, int $now, int $leaseSeconds): bool

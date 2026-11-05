@@ -20,6 +20,8 @@ use Maatify\RateLimiter\Repository\RateLimitStoreInterface;
 use Maatify\RateLimiter\Repository\HardBlockCycleStoreInterface;
 use Maatify\RateLimiter\Repository\PunishmentLifecycleStoreInterface;
 use Maatify\RateLimiter\Repository\SnapshotFencedScoreStoreInterface;
+use Maatify\RateLimiter\Repository\CircuitBreakerStateCasStoreInterface;
+use Maatify\RateLimiter\Repository\ScoreReplaceStoreInterface;
 use Maatify\RateLimiter\DTO\FailureSignalDTO;
 use Maatify\RateLimiter\DTO\BlockStateDTO;
 use Maatify\RateLimiter\DTO\BudgetStateDTO;
@@ -63,7 +65,7 @@ final class ExampleDeterministicClock implements ClockInterface
  * Replace these adapters with the host application's atomic storage and
  * observability integrations in production.
  */
-final class ExampleRateLimitStore implements PunishmentLifecycleStoreInterface, SnapshotFencedScoreStoreInterface
+final class ExampleRateLimitStore implements PunishmentLifecycleStoreInterface, SnapshotFencedScoreStoreInterface, ScoreReplaceStoreInterface
 {
     private const PAUSE_HISTORY_RETENTION_SECONDS = 86400;
 
@@ -143,6 +145,18 @@ final class ExampleRateLimitStore implements PunishmentLifecycleStoreInterface, 
         }
 
         return new RateLimitStateDTO($current['value'], $current['updatedAt']);
+    }
+
+    /**
+     * Write a score and return the one it replaced, in one atomic step in a
+     * real store, with a fresh TTL (DEC-031).
+     */
+    public function replaceScore(string $key, int $value, int $ttlSeconds): ?RateLimitStateDTO
+    {
+        $previous = $this->get($key);
+        $this->set($key, $value, $ttlSeconds);
+
+        return $previous;
     }
 
     public function set(string $key, int $value, int $ttlSeconds): void
@@ -652,7 +666,7 @@ final class ExampleCorrelationStore implements BoundedCorrelationSnapshotStoreIn
     }
 }
 
-final class ExampleCircuitBreakerStore implements CircuitBreakerProbeStoreInterface
+final class ExampleCircuitBreakerStore implements CircuitBreakerProbeStoreInterface, CircuitBreakerStateCasStoreInterface
 {
     /** @var array<string, CircuitBreakerStateDTO> */
     private array $states = [];
@@ -668,6 +682,35 @@ final class ExampleCircuitBreakerStore implements CircuitBreakerProbeStoreInterf
     public function save(string $policyName, CircuitBreakerStateDTO $state): void
     {
         $this->states[$policyName] = $state;
+        $this->versions[$policyName] = ($this->versions[$policyName] ?? 0) + 1;
+    }
+
+    /** @var array<string, int> A write counter per policy is the version (DEC-031). */
+    private array $versions = [];
+
+    /**
+     * The state with an opaque version of what is stored ('' for nothing), so
+     * a save can be fenced by it (DEC-031).
+     *
+     * @return array{0: ?CircuitBreakerStateDTO, 1: string}
+     */
+    public function loadWithVersion(string $policyName): array
+    {
+        $state = $this->load($policyName);
+
+        return [$state, $state === null ? '' : (string) ($this->versions[$policyName] ?? 0)];
+    }
+
+    /** Save only while the stored version is still the expected one, atomically in a real store. */
+    public function saveIfVersion(string $policyName, string $expectedVersion, CircuitBreakerStateDTO $state): bool
+    {
+        $current = isset($this->states[$policyName]) ? (string) ($this->versions[$policyName] ?? 0) : '';
+        if ($current !== $expectedVersion) {
+            return false;
+        }
+        $this->save($policyName, $state);
+
+        return true;
     }
 
     public function acquireProbeLease(string $policyName, int $now, int $leaseSeconds): bool

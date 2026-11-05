@@ -6,6 +6,8 @@ namespace Maatify\RateLimiter\Tests\Support\FullCapability;
 
 use Maatify\RateLimiter\Repository\FullCapabilityStoreInterface;
 use Maatify\RateLimiter\Repository\SnapshotFencedScoreStoreInterface;
+use Maatify\RateLimiter\Repository\CircuitBreakerStateCasStoreInterface;
+use Maatify\RateLimiter\Repository\ScoreReplaceStoreInterface;
 
 /**
  * A Host store written against the storage contracts as they stood before
@@ -13,10 +15,26 @@ use Maatify\RateLimiter\Repository\SnapshotFencedScoreStoreInterface;
  * none of the caller-time capability interfaces, by delegating to an inner
  * store. Proves that an old-signature Host store still loads and runs (BC2).
  */
-final class LegacySignatureFullCapabilityStore implements FullCapabilityStoreInterface, SnapshotFencedScoreStoreInterface
+final class LegacySignatureFullCapabilityStore implements FullCapabilityStoreInterface, SnapshotFencedScoreStoreInterface, CircuitBreakerStateCasStoreInterface, ScoreReplaceStoreInterface
 {
-    /** @param FullCapabilityStoreInterface&SnapshotFencedScoreStoreInterface $inner */
-    public function __construct(private readonly FullCapabilityStoreInterface&SnapshotFencedScoreStoreInterface $inner) {}
+    /** @param FullCapabilityStoreInterface&SnapshotFencedScoreStoreInterface&CircuitBreakerStateCasStoreInterface&ScoreReplaceStoreInterface $inner */
+    public function __construct(private readonly FullCapabilityStoreInterface&SnapshotFencedScoreStoreInterface&CircuitBreakerStateCasStoreInterface&ScoreReplaceStoreInterface $inner) {}
+
+    /** @return array{0: ?\Maatify\RateLimiter\DTO\CircuitBreakerStateDTO, 1: string} */
+    public function loadWithVersion(string $policyName): array
+    {
+        return $this->inner->loadWithVersion($policyName);
+    }
+
+    public function saveIfVersion(string $policyName, string $expectedVersion, \Maatify\RateLimiter\DTO\CircuitBreakerStateDTO $state): bool
+    {
+        return $this->inner->saveIfVersion($policyName, $expectedVersion, $state);
+    }
+
+    public function replaceScore(string $key, int $value, int $ttlSeconds): ?\Maatify\RateLimiter\DTO\RateLimitStateDTO
+    {
+        return $this->inner->replaceScore($key, $value, $ttlSeconds);
+    }
 
     public function incrementIfSnapshot(string $key, int $ttlSeconds, ?int $expectedValue, ?int $expectedUpdatedAt, int $newValue): ?int
     {

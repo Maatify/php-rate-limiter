@@ -32,6 +32,8 @@ use Maatify\RateLimiter\Repository\CorrelationStoreInterface;
 use Maatify\RateLimiter\Repository\PunishmentLifecycleStoreInterface;
 use Maatify\RateLimiter\Repository\RateLimitStoreInterface;
 use Maatify\RateLimiter\Repository\SnapshotFencedScoreStoreInterface;
+use Maatify\RateLimiter\Repository\CallerTimeScoreReplaceStoreInterface;
+use Maatify\RateLimiter\Repository\ScoreReplaceStoreInterface;
 
 /**
  * Dispatches a store call to its caller-time capability when the store
@@ -56,6 +58,14 @@ final class CallerTimeStore
         return $store instanceof CallerTimeSnapshotFencedScoreStoreInterface
             ? $store->incrementIfSnapshotAt($key, $ttlSeconds, $expectedValue, $expectedUpdatedAt, $newValue, $now->getTimestamp())
             : $store->incrementIfSnapshot($key, $ttlSeconds, $expectedValue, $expectedUpdatedAt, $newValue);
+    }
+
+    /** #185 F-185-17 (DEC-031): write a score and return the one it replaced, at the caller's time when supported. */
+    public static function replaceScore(ScoreReplaceStoreInterface $store, string $key, int $value, int $ttlSeconds, DateTimeImmutable $now): ?\Maatify\RateLimiter\DTO\RateLimitStateDTO
+    {
+        return $store instanceof CallerTimeScoreReplaceStoreInterface
+            ? $store->replaceScoreAt($key, $value, $ttlSeconds, $now->getTimestamp())
+            : $store->replaceScore($key, $value, $ttlSeconds);
     }
 
     public static function set(RateLimitStoreInterface $store, string $key, int $value, int $ttlSeconds, DateTimeImmutable $now): void

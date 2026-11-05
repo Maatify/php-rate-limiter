@@ -28,6 +28,8 @@ use Maatify\RateLimiter\Repository\AdmissionPermitStoreInterface;
 use Maatify\RateLimiter\Repository\CallerTimeBoundedCorrelationSnapshotRotationStoreInterface;
 use Maatify\RateLimiter\Repository\CallerTimeBudgetSeedStoreInterface;
 use Maatify\RateLimiter\Repository\CallerTimePunishmentLifecycleStoreInterface;
+use Maatify\RateLimiter\Repository\CircuitBreakerStateCasStoreInterface;
+use Maatify\RateLimiter\Repository\CallerTimeScoreReplaceStoreInterface;
 use Maatify\RateLimiter\Repository\CallerTimeSnapshotFencedScoreStoreInterface;
 use Maatify\SharedCommon\Contracts\ClockInterface;
 use Maatify\SharedCommon\Infrastructure\SystemClock;
@@ -54,7 +56,9 @@ final class RedisFullCapabilityStore implements
     CallerTimeBudgetSeedStoreInterface,
     CallerTimeBoundedCorrelationSnapshotRotationStoreInterface,
     CallerTimePunishmentLifecycleStoreInterface,
-    CallerTimeSnapshotFencedScoreStoreInterface
+    CallerTimeSnapshotFencedScoreStoreInterface,
+    CircuitBreakerStateCasStoreInterface,
+    CallerTimeScoreReplaceStoreInterface
 {
     private const PREFIX = 'maatify:rate-limiter:v1';
 
@@ -209,6 +213,52 @@ LUA;
      * missing key => {'absent'}; string => {'value', payload};
      * command error => {'error', text}.
      */
+    /**
+     * #185 F-185-17 (DEC-031): write a score and return the one it replaced, atomically. ARGV: TTL, value, caller time.
+     * The existing score is validated as SCORE_GET validates it (malformed state is an error and is not overwritten);
+     * the TTL is set on every write, as SCORE_SET sets it. Returns {previous value, previous updatedAt} or {}.
+     */
+    private const SCORE_REPLACE = self::LUA_TIME_PRELUDE . "\n" . <<<'LUA'
+local function validPhpInteger(value)
+  if value == nil or string.match(value, '^%-?%d+$') == nil then return false end
+  local negative = string.sub(value, 1, 1) == '-'
+  local digits = negative and string.sub(value, 2) or value
+  if digits == '' or (string.len(digits) > 1 and string.sub(digits, 1, 1) == '0') or (negative and digits == '0') then return false end
+  local maximum = negative and '9223372036854775808' or '9223372036854775807'
+  return string.len(digits) < 19 or (string.len(digits) == 19 and digits <= maximum)
+end
+local function validNonNegativeInteger(value)
+  return value ~= nil and (value == '0' or (string.match(value, '^[1-9]%d*$') ~= nil and string.len(value) <= 19 and (string.len(value) < 19 or value <= '9223372036854775807')))
+end
+if not validPhpInteger(ARGV[2]) then return redis.error_reply('malformed score state') end
+if not ttlBackendRepresentable(ARGV[1]) then return redis.error_reply('score TTL exceeds Redis backend expiry representability') end
+local previous = {}
+if redis.call('EXISTS', KEYS[1]) == 1 then
+  if redis.call('TTL', KEYS[1]) < 0 then return redis.error_reply('malformed score state') end
+  local value = redis.call('HGET', KEYS[1], 'value'); local updated = redis.call('HGET', KEYS[1], 'updatedAt')
+  if not value or not updated or not validPhpInteger(value) or not validNonNegativeInteger(updated) then return redis.error_reply('malformed score state') end
+  previous = {value, updated}
+  if not expiryApplied(redis.pcall('EXPIRE', KEYS[1], ARGV[1]), {}) then return redis.error_reply('expiry not representable') end
+  redis.call('HSET', KEYS[1], 'value', ARGV[2], 'updatedAt', now)
+else
+  redis.call('HSET', KEYS[1], 'value', ARGV[2], 'updatedAt', now)
+  if not expiryApplied(redis.pcall('EXPIRE', KEYS[1], ARGV[1]), {KEYS[1]}) then return redis.error_reply('expiry not representable') end
+end
+return previous
+LUA;
+
+    /**
+     * #185 F-185-18 (DEC-031): the circuit-breaker save fenced by the stored text it was computed from. ARGV: the expected
+     * stored text ('' for none) and the new state. 1 = written, 0 = the stored state changed (nothing written).
+     */
+    private const CIRCUIT_SAVE_IF_VERSION = <<<'LUA'
+local reply = redis.call('GET', KEYS[1])
+local current = reply or ''
+if current ~= ARGV[1] then return 0 end
+redis.call('SET', KEYS[1], ARGV[2])
+return 1
+LUA;
+
     private const CIRCUIT_READ = <<<'LUA'
 local reply = redis.pcall('GET', KEYS[1])
 if type(reply) == 'table' and reply.err then return {'error', reply.err} end
@@ -665,6 +715,19 @@ LUA;
 if not ttlBackendRepresentable(ARGV[2]) then return redis.error_reply('block duration exceeds Redis backend expiry representability') end
 local expires = addDecimalStrings(nowStr, ARGV[2])
 if redis.call('EXISTS', KEYS[1]) == 1 then
+  -- #185 F-185-16 (LT-185-16): no downgrade of a live block. A block that is still alive at the caller's time and is
+  -- stronger (a higher level, or the same level ending no earlier) keeps its fields and TTL; the request keeps its own
+  -- computed decision (DEC-029 P3). The existing block is validated first: malformed state is an error, never overwritten.
+  if redis.call('TTL', KEYS[1]) < 0 then return redis.error_reply('malformed block state') end
+  local currentLevel = redis.call('HGET', KEYS[1], 'level'); local currentExpires = redis.call('HGET', KEYS[1], 'expiresAt')
+  if not currentLevel or string.match(currentLevel, '^[1-6]$') == nil or not currentExpires
+    or (currentExpires ~= '0' and (string.match(currentExpires, '^[1-9]%d*$') == nil or #currentExpires > 16 or (#currentExpires == 16 and currentExpires > '9223372036854775'))) then
+    return redis.error_reply('malformed block state')
+  end
+  if compareDecimalStrings(currentExpires, nowStr) > 0 then
+    local stored, requested = tonumber(currentLevel), tonumber(ARGV[1])
+    if stored > requested or (stored == requested and compareDecimalStrings(currentExpires, expires) >= 0) then return currentExpires end
+  end
   if not expiryApplied(redis.pcall('EXPIRE', KEYS[1], ARGV[2]), {}) then return redis.error_reply('expiry not representable') end
   redis.call('HSET', KEYS[1], 'level', ARGV[1], 'expiresAt', expires)
 else
@@ -1312,6 +1375,7 @@ local function readCycles(key)
 end
 readCycles(KEYS[1]); readCycles(KEYS[2])
 local active = false
+local currentLiveLevel = nil; local currentLiveExpires = nil
 for _, blockKey in ipairs({KEYS[3], KEYS[4]}) do
   if blockKey ~= '' and redis.call('EXISTS', blockKey) == 1 then
     local blockPttl = redis.call('PTTL', blockKey)
@@ -1321,7 +1385,10 @@ for _, blockKey in ipairs({KEYS[3], KEYS[4]}) do
       -- #185 F-185-19: a block level is canonical decimal text, one digit 1..6 (L1-L6), checked before tonumber().
       if not validHardBlockExpiry(rawExpires) or not rawLevel or string.match(rawLevel, '^[1-6]$') == nil then return redis.error_reply('malformed hard-block state') end
       local level = tonumber(rawLevel)
-      if compareDecimalStrings(rawExpires, string.format('%.0f', now)) > 0 and level >= 2 then active = true end
+      if compareDecimalStrings(rawExpires, string.format('%.0f', now)) > 0 then
+        if level >= 2 then active = true end
+        if blockKey == KEYS[3] then currentLiveLevel = level; currentLiveExpires = rawExpires end
+      end
     end
   end
 end
@@ -1368,7 +1435,14 @@ if #pauseMembers > 0 and latestPauseUntil > exactIntegerMax - retention then ret
 -- other state changes: an existing block takes the expiry before its fields
 -- change; a new block is deleted again when Redis rejects it.
 local expires = now + durationSeconds
-if redis.call('EXISTS', KEYS[3]) == 1 then
+-- #185 F-185-16 (LT-185-16): no downgrade of a live Current block (L2 over L3, or a shorter block of the same level).
+-- The block fields and TTL are then left as they are; cycle, pause and lifecycle writes below are unchanged (with a live
+-- L2+ block `newCycle` is already false, DEC-003).
+local keepCurrentBlock = currentLiveLevel ~= nil and (currentLiveLevel > tonumber(ARGV[1])
+  or (currentLiveLevel == tonumber(ARGV[1]) and compareDecimalStrings(currentLiveExpires, string.format('%.0f', expires)) >= 0))
+if keepCurrentBlock then
+  -- the stronger live block stays
+elseif redis.call('EXISTS', KEYS[3]) == 1 then
   local reply = redis.pcall('EXPIRE', KEYS[3], ARGV[2])
   if type(reply) == 'table' and reply.err then return redis.error_reply('expiry not representable') end
   redis.call('HSET', KEYS[3], 'level', ARGV[1], 'expiresAt', expires)
@@ -1507,6 +1581,23 @@ LUA;
         }
 
         return $this->integerValue($this->tuple($result, 2, 'fenced score write')[0], 'score value');
+    }
+
+    public function replaceScore(string $key, int $value, int $ttlSeconds): ?RateLimitStateDTO
+    {
+        return $this->replaceScoreAt($key, $value, $ttlSeconds, $this->fallbackNow());
+    }
+
+    public function replaceScoreAt(string $key, int $value, int $ttlSeconds, int $now): ?RateLimitStateDTO
+    {
+        $this->positive($ttlSeconds, 'Score TTL');
+        $result = $this->eval(self::SCORE_REPLACE, [$this->key('score', $key)], [$ttlSeconds, $value, $this->callerTime($now)]);
+        if ($result === []) {
+            return null;
+        }
+        $tuple = $this->tuple($result, 2, 'replaced score');
+
+        return new RateLimitStateDTO($this->integerValue($tuple[0], 'score value'), $this->integerValue($tuple[1], 'score updatedAt'));
     }
 
     public function get(string $key): ?RateLimitStateDTO
@@ -1761,12 +1852,29 @@ LUA;
 
     public function load(string $policyName): ?CircuitBreakerStateDTO
     {
+        return $this->loadWithVersion($policyName)[0];
+    }
+
+    public function loadWithVersion(string $policyName): array
+    {
         $raw = $this->circuitReadResult(
             $this->eval(self::CIRCUIT_READ, [$this->key('circuit', $policyName)], []),
         );
-        if ($raw === null) {
-            return null;
+
+        return $raw === null ? [null, ''] : [$this->decodeCircuitState($raw), $raw];
+    }
+
+    public function saveIfVersion(string $policyName, string $expectedVersion, CircuitBreakerStateDTO $state): bool
+    {
+        if (! $this->circuitTimestampsNonNegative($state)) {
+            throw new RateLimiterException('Circuit-breaker timestamps must be non-negative Unix timestamps.');
         }
+
+        return $this->integerValue($this->eval(self::CIRCUIT_SAVE_IF_VERSION, [$this->key('circuit', $policyName)], [$expectedVersion, json_encode($state, JSON_THROW_ON_ERROR)]), 'circuit-breaker save') === 1;
+    }
+
+    private function decodeCircuitState(string $raw): CircuitBreakerStateDTO
+    {
         try {
             $data = json_decode($raw, true, 512, JSON_THROW_ON_ERROR);
         } catch (\JsonException $exception) {

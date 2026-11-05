@@ -1,0 +1,4 @@
+# checkout: this PR's working tree (the change); Redis 7.0.15-alpine; PHP 8.4.4
+N=2 rounds=50  status={"CLOSED":50}  failures recorded={"2":50}  fenced applied=100 missed=50  exhausted (dropped)=0  returned on OPEN after a miss=0
+N=4 rounds=50  status={"OPEN":50}  failures recorded={"3":50}  fenced applied=150 missed=282  exhausted (dropped)=43  returned on OPEN after a miss=7
+N=8 rounds=50  status={"OPEN":50}  failures recorded={"3":50}  fenced applied=150 missed=738  exhausted (dropped)=119  returned on OPEN after a miss=131

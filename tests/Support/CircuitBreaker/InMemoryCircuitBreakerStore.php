@@ -6,9 +6,10 @@ namespace Maatify\RateLimiter\Tests\Support\CircuitBreaker;
 
 use Maatify\RateLimiter\DTO\CircuitBreakerStateDTO;
 use Maatify\RateLimiter\Repository\CircuitBreakerProbeStoreInterface;
+use Maatify\RateLimiter\Repository\CircuitBreakerStateCasStoreInterface;
 use Maatify\RateLimiter\Exception\BackendFailureException;
 
-class InMemoryCircuitBreakerStore implements CircuitBreakerProbeStoreInterface
+class InMemoryCircuitBreakerStore implements CircuitBreakerProbeStoreInterface, CircuitBreakerStateCasStoreInterface
 {
     public function __construct(public bool $available = true) {}
 
@@ -38,6 +39,34 @@ class InMemoryCircuitBreakerStore implements CircuitBreakerProbeStoreInterface
 
         $this->store[$policyName] = $state;
         $this->saveCount++;
+    }
+
+    /**
+     * #185 F-185-18 (DEC-031): the version is the serialized stored state, as the Redis store uses its stored text; no
+     * extra property, so the serialized store (the S0 goldens) is unchanged.
+     */
+    private function versionOf(string $policyName): string
+    {
+        return isset($this->store[$policyName]) ? serialize($this->store[$policyName]) : '';
+    }
+
+    public function loadWithVersion(string $policyName): array
+    {
+        $state = $this->load($policyName);
+
+        return [$state, $this->versionOf($policyName)];
+    }
+
+    public function saveIfVersion(string $policyName, string $expectedVersion, CircuitBreakerStateDTO $state): bool
+    {
+        $this->assertAvailable();
+        $current = $this->versionOf($policyName);
+        if ($current !== $expectedVersion) {
+            return false;
+        }
+        $this->save($policyName, $state);
+
+        return true;
     }
 
     public function acquireProbeLease(string $policyName, int $now, int $leaseSeconds): bool
