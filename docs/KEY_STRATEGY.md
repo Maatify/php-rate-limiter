@@ -533,10 +533,12 @@ TTL/cap, missing TTL, malformed over-cap state, or bridge overlap.
 
 The rotation operation writes only current state, reads the previous set read-only, and uses
 current-secret bridge members for new logical members. The bridge TTL is capped by the
-remaining previous TTL. If current and previous physical keys alias, the store deduplicates
-through the previous member without writing an alias or bridge entry. The pipeline supports
-only one current and one previous generation and requires the additive rotation capability;
-current-only fallback is forbidden.
+remaining previous TTL. If current and previous physical keys alias (a fingerprint-secret rotation
+without a key-secret rotation), the aliased set is the previous set and stays read-only: a member
+known in either form (current or previous) is deduplicated without any write, and a new member is
+written to the bridge, never to the aliased set; the logical count is previous plus bridge.
+The pipeline supports only one current and one previous generation and requires the additive
+rotation capability; current-only fallback is forbidden.
 
 The fixed device-cap contract is 900 seconds, maximum 10 distinct members per account scope
 and 50 per IP scope. Ephemeral overflow is routing state, not a synthetic identity: the
