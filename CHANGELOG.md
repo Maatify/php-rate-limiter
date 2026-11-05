@@ -9,7 +9,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [1.0.0-rc.4]
 
-### Fixed (#185, F-185-17, F-185-18, DEC-031 PROPOSED) — the circuit-breaker failure report and the missing-fingerprint marker are fenced
+### Fixed (#185, F-185-17, F-185-18, DEC-031) — the circuit-breaker failure report and the missing-fingerprint marker are fenced
 - `CircuitBreaker::reportFailure()` loaded the state, appended one failure and saved it with a plain `SET`: three concurrent
   backend failures that read the same state each saved one failure and the circuit stayed `CLOSED` (one after the other it
   opens). The save now goes through `CircuitBreakerStateCasStoreInterface::saveIfVersion()` on the version that was read; a
