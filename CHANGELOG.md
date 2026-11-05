@@ -31,6 +31,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   unchanged (DEC-017: no delete, no repair). Test: `CanonicalStoredValueRedisTest` (18 of its 27 cases fail on `e513638`; the
   others are forms it already rejected and the controls `"0"`, `"5"`, levels `"1"`, `"2"`, `"6"`).
 
+### Fixed (#185, F-185-20) — hard-block cycle and pause members keep the caller time exact
+- `HARD_BLOCK` stored each cycle member as `tostring(now)` and each pause member as `tostring(now) .. ':' ..
+  tostring(pauseUntil)`. Lua formats those with `%.14g`, so a caller time of 10^14 or more, which the script accepts up to
+  2^53, was stored as `1e+14` (and a pause end of 10^14 or more likewise), and the next call read its own history as `malformed
+  cycle history`. The cycle member is now the caller time as it arrived (`ARGV[5]`, canonical decimal text) and the pause end is
+  formatted with `%.0f`, exact over the checked range. Test: `HardBlockCanonicalTimeRedisTest` (seven of its eight cases fail
+  on `e513638`; the 14-digit cycle member is the control).
+
 ### Fixed (#185, F-185-08, DEC-030) — a score write that carries a decay credit is fenced by its snapshot
 - `EvaluationPipeline::processUpdates()` computed each K1 / K2 / K3 / K5 net change (`decayed + delta − stored`) on a snapshot read
   outside any atomic operation and sent it to `increment()`. Two concurrent requests on the same decayed snapshot applied the same
