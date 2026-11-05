@@ -784,6 +784,8 @@ local function persistedEpochEnd(count, start, duration)
   if compareDecimalStrings(duration, '9007199254740991') > 0 then return nil, 'budget expiry exceeds Redis Lua exact integer range' end
   return addDecimalStrings(start, duration)
 end
+-- #185 F-185-24: the amount is a canonical positive PHP integer, checked before any write.
+if ARGV[2] == nil or string.match(ARGV[2], '^[1-9]%d*$') == nil or #ARGV[2] > 19 or (#ARGV[2] == 19 and ARGV[2] > '9223372036854775807') then return redis.error_reply('malformed budget amount') end
 local count = redis.call('HGET', KEYS[1], 'count')
 local start = redis.call('HGET', KEYS[1], 'epochStart')
 local storedDuration = redis.call('HGET', KEYS[1], 'epochDuration')
@@ -797,7 +799,9 @@ if exists == 1 then
   if storedEnd == nil then return redis.error_reply(endError) end
 end
 if exists == 1 and compareDecimalStrings(nowStr, storedEnd) < 0 then
-  redis.call('HINCRBY', KEYS[1], 'count', ARGV[2])
+  -- #185 F-185-25: an increment past the PHP integer range is a classified error and writes nothing, as SCORE_INCREMENT.
+  local ok = pcall(redis.call, 'HINCRBY', KEYS[1], 'count', ARGV[2])
+  if not ok then return redis.error_reply('budget count overflow') end
   return {redis.call('HGET', KEYS[1], 'count'), start}
 end
 if not requestedDuration or requestedDuration <= 0 or requestedDuration ~= math.floor(requestedDuration) then return redis.error_reply('malformed budget state') end
@@ -875,7 +879,9 @@ if exists == 1 then
   if storedEnd == nil then return redis.error_reply(endError) end
 end
 if exists == 1 and compareDecimalStrings(nowStr, storedEnd) < 0 then
-  redis.call('HINCRBY', KEYS[1], 'count', ARGV[4])
+  -- #185 F-185-25: the same classified overflow on the seeded path's active epoch.
+  local ok = pcall(redis.call, 'HINCRBY', KEYS[1], 'count', ARGV[4])
+  if not ok then return redis.error_reply('budget count overflow') end
   return {redis.call('HGET', KEYS[1], 'count'), start}
 end
 -- The seed is consulted only once no active Current epoch is authoritative;
@@ -967,7 +973,9 @@ if exists == 0 then
   redis.call('HSET', KEYS[2], 'expiresAt', addDecimalStrings(nowStr, ARGV[1]))
   if not expiryApplied(redis.pcall('EXPIRE', KEYS[2], ARGV[1]), {KEYS[1], KEYS[2]}) then return redis.error_reply('expiry not representable') end
 else
-  redis.call('INCR', KEYS[1])
+  -- #185 F-185-25: an increment past the PHP integer range is a classified error and writes nothing.
+  local ok = pcall(redis.call, 'INCR', KEYS[1])
+  if not ok then return redis.error_reply('watch count overflow') end
   -- #185 F-185-12: the stored decimal string, not INCR's Lua number (exact only up to 2^53).
   value = redis.call('GET', KEYS[1])
 end
@@ -1680,6 +1688,8 @@ LUA;
     public function incrementBudgetAt(string $key, int $epochDurationSeconds, int $amount, int $now): BudgetStateDTO
     {
         $this->positive($epochDurationSeconds, 'Budget epoch duration');
+        // #185 F-185-24: a budget only grows; an amount below 1 is rejected before any write.
+        $this->positive($amount, 'Budget amount');
         $result = $this->eval(self::BUDGET_INCREMENT, [$this->key('budget', $key)], [$epochDurationSeconds, $amount, $this->callerTime($now)]);
         $tuple = $this->tuple($result, 2, 'budget increment');
         return new BudgetStateDTO(
@@ -1835,6 +1845,11 @@ if exists == 1 then
   -- LT-P2-03 (F-P2-03): logically expired while physically present is expired, not counted.
   if compareDecimalStrings(rawExpiry, nowStr) <= 0 then redis.call('DEL', KEYS[1], KEYS[4]); exists = 0 end
 end
+-- #185 F-185-25: the count this call answers (Current after the increment plus Previous) must stay within the PHP
+-- integer range; past it the call is a classified error before any write.
+local nextCurrent = exists == 1 and addDecimalStrings(redis.call('GET', KEYS[1]), '1') or '1'
+local total = addDecimalStrings(nextCurrent, previousText)
+if #total > 19 or (#total == 19 and total > '9223372036854775807') then return redis.error_reply('watch count overflow') end
 local value
 if exists == 0 then
   if not ttlBackendRepresentable(ARGV[1]) then return redis.error_reply('correlation TTL exceeds Redis backend expiry representability') end
@@ -1843,7 +1858,10 @@ if exists == 0 then
   if not expiryApplied(redis.pcall('EXPIRE', KEYS[1], ARGV[1]), {KEYS[1]}) then return redis.error_reply('expiry not representable') end
   redis.call('HSET', KEYS[4], 'expiresAt', addDecimalStrings(nowStr, ARGV[1]))
   if not expiryApplied(redis.pcall('EXPIRE', KEYS[4], ARGV[1]), {KEYS[1], KEYS[4]}) then return redis.error_reply('expiry not representable') end
-else redis.call('INCR', KEYS[1]) end
+else
+  local ok = pcall(redis.call, 'INCR', KEYS[1])
+  if not ok then return redis.error_reply('watch count overflow') end
+end
 -- #185 F-185-12: the count is summed as decimal strings, not as Lua numbers (exact only up to 2^53).
 return addDecimalStrings(redis.call('GET', KEYS[1]), previousText)
 LUA;
