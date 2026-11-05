@@ -17,9 +17,11 @@ use ReflectionClass;
 /**
  * F-185-24 and F-185-25 (#185), the Lead's adv8 `r4_numeric_bounds.php` on a real Redis.
  *
- * - F-185-24: `incrementBudget()` / `incrementBudgetAt()` reject an amount below 1 with `RateLimiterException` before any
- *   write, and `BUDGET_INCREMENT` itself accepts only a canonical positive amount. On `78526b5` an amount of -5 created a
- *   budget with count -5 that every later read rejected as `malformed budget state`.
+ * - F-185-24: `incrementBudget()` / `incrementBudgetAt()` and the seeded `incrementBudgetWithSeed()` /
+ *   `incrementBudgetWithSeedAt()` reject an amount below 1 with `RateLimiterException` before any write, and
+ *   `BUDGET_INCREMENT` / `BUDGET_SEED` themselves accept only a canonical positive amount (one rule for every budget
+ *   increment). On `78526b5` an amount of -5 created a budget with count -5 that every later read rejected as
+ *   `malformed budget state`.
  * - F-185-25: an increment past the PHP integer range is a classified error that writes nothing: `budget count overflow`
  *   (`BUDGET_INCREMENT`, and the active epoch of `BUDGET_SEED`), `watch count overflow` (`WATCH_INCREMENT`, the rotated
  *   watch, including the answered sum of Current and Previous), as `SCORE_INCREMENT` answers `score integer overflow`. On
@@ -121,6 +123,21 @@ final class NumericBoundsRedisTest extends TestCase
         $this->assertRejectedWithoutWrite('Budget amount must be positive.', fn() => $this->store->incrementBudgetAt('active', 86400, $amount, self::NOW + 1));
     }
 
+    /** The seeded path follows the same rule: fresh, inside a live seed, and on an active Current epoch. */
+    #[DataProvider('amountsBelowOne')]
+    public function testASeededBudgetAmountBelowOneIsRejectedBeforeAnyWrite(int $amount): void
+    {
+        $liveSeed = new BudgetStateDTO(4, self::NOW);
+        $expiredSeed = new BudgetStateDTO(4, self::NOW - 90000);
+        $this->assertRejectedWithoutWrite('Budget amount must be positive.', fn() => $this->store->incrementBudgetWithSeedAt('fresh', 86400, $liveSeed, $amount, self::NOW + 1));
+        $this->assertRejectedWithoutWrite('Budget amount must be positive.', fn() => $this->store->incrementBudgetWithSeedAt('fresh', 86400, $expiredSeed, $amount, self::NOW + 1));
+        $this->assertRejectedWithoutWrite('Budget amount must be positive.', fn() => $this->store->incrementBudgetWithSeed('fresh', 86400, $liveSeed, $amount));
+        self::assertNull($this->store->getBudgetAt('fresh', self::NOW + 1));
+
+        $this->seedBudget('active', '3');
+        $this->assertRejectedWithoutWrite('Budget amount must be positive.', fn() => $this->store->incrementBudgetWithSeedAt('active', 86400, $liveSeed, $amount, self::NOW + 1));
+    }
+
     /** @return iterable<string, array{string}> */
     public static function nonCanonicalAmounts(): iterable
     {
@@ -139,6 +156,27 @@ final class NumericBoundsRedisTest extends TestCase
 
         $this->assertRejectedWithoutWrite('malformed budget amount', fn() => $this->executor->execute(['EVAL', $script, '1', $this->rawKey('budget', 'active'), '86400', $amount, (string) (self::NOW + 1)]));
         $this->assertRejectedWithoutWrite('malformed budget amount', fn() => $this->executor->execute(['EVAL', $script, '1', $this->rawKey('budget', 'fresh'), '86400', $amount, (string) (self::NOW + 1)]));
+    }
+
+    /** `BUDGET_SEED` checks the amount itself as well (ARGV: duration, seed start, seed count, amount, seeded, overflow, now). */
+    #[DataProvider('nonCanonicalAmounts')]
+    public function testTheSeedScriptRejectsANonCanonicalAmount(string $amount): void
+    {
+        $script = (new ReflectionClass(RedisFullCapabilityStore::class))->getConstant('BUDGET_SEED');
+        self::assertIsString($script);
+        $this->seedBudget('active', '3');
+
+        foreach (['active', 'fresh'] as $logical) {
+            $this->assertRejectedWithoutWrite('malformed budget amount', fn() => $this->executor->execute(['EVAL', $script, '1', $this->rawKey('budget', $logical), '86400', (string) self::NOW, '4', $amount, '5', '0', (string) (self::NOW + 1)]));
+        }
+    }
+
+    /** Control: a positive seeded amount keeps the seeded semantics (count = seed + amount inside the seed's epoch). */
+    public function testAPositiveSeededAmountStillApplies(): void
+    {
+        $state = $this->store->incrementBudgetWithSeedAt('seeded', 86400, new BudgetStateDTO(4, self::NOW), 2, self::NOW + 1);
+        self::assertSame([6, self::NOW], [$state->count, $state->epochStart]);
+        self::assertSame(7, $this->store->incrementBudgetWithSeedAt('seeded', 86400, new BudgetStateDTO(4, self::NOW), 1, self::NOW + 2)->count);
     }
 
     /** Control: positive amounts keep the fixed-window semantics. */

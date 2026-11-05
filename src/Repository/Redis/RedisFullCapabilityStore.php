@@ -867,6 +867,8 @@ local function persistedEpochEnd(count, start, duration)
   if compareDecimalStrings(duration, '9007199254740991') > 0 then return nil, 'budget expiry exceeds Redis Lua exact integer range' end
   return addDecimalStrings(start, duration)
 end
+-- #185 F-185-24: the amount is a canonical positive PHP integer, checked before any write, as in BUDGET_INCREMENT.
+if ARGV[4] == nil or string.match(ARGV[4], '^[1-9]%d*$') == nil or #ARGV[4] > 19 or (#ARGV[4] == 19 and ARGV[4] > '9223372036854775807') then return redis.error_reply('malformed budget amount') end
 local count = redis.call('HGET', KEYS[1], 'count')
 local start = redis.call('HGET', KEYS[1], 'epochStart')
 local duration = redis.call('HGET', KEYS[1], 'epochDuration')
@@ -1706,6 +1708,8 @@ LUA;
     public function incrementBudgetWithSeedAt(string $key, int $epochDurationSeconds, BudgetStateDTO $seed, int $amount, int $now): BudgetStateDTO
     {
         $this->positive($epochDurationSeconds, 'Budget epoch duration');
+        // #185 F-185-24: one rule for every budget increment; an amount below 1 is rejected before any write.
+        $this->positive($amount, 'Budget amount');
         $seededCount = $this->tryIntegerAddition($seed->count, $amount);
         $result = $this->eval(self::BUDGET_SEED, [$this->key('budget', $key)], [$epochDurationSeconds, $seed->epochStart, $seed->count, $amount, $seededCount ?? 0, $seededCount === null ? 1 : 0, $this->callerTime($now)]);
         $tuple = $this->tuple($result, 2, 'seeded budget');
