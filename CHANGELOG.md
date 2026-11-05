@@ -9,6 +9,20 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [1.0.0-rc.4]
 
+### Fixed (#185, F-185-24, F-185-25) — budget amounts and counter overflow are checked before any write
+- `RedisFullCapabilityStore::incrementBudget()` / `incrementBudgetAt()` accepted an amount below 1: an amount of -5 created a
+  budget with count -5 that every later read rejected as `malformed budget state`. An amount below 1 is now
+  `RateLimiterException` (`Budget amount must be positive.`) before any write, and `BUDGET_INCREMENT` itself accepts only a
+  canonical positive amount (`malformed budget amount`). The same rule holds on the seeded path
+  (`incrementBudgetWithSeed()` / `incrementBudgetWithSeedAt()`, `BUDGET_SEED`): one rule for every budget increment. No
+  package path passes less than 1 (F-185-24).
+- An increment past the PHP integer range surfaced Redis's raw `ERR increment or decrement would overflow` from
+  `BUDGET_INCREMENT`, `WATCH_INCREMENT` and the rotated watch. It is now a classified error that writes nothing —
+  `budget count overflow` (also on the active epoch of `BUDGET_SEED`) and `watch count overflow` — as `SCORE_INCREMENT`
+  answers `score integer overflow`. The rotated watch also checks the count it answers (Current after the increment plus
+  Previous) before any write, where a sum past the range created Current and then failed as a malformed reply (F-185-25).
+- Test: `NumericBoundsRedisTest` (the Lead's adv8/r4; 19 of its 22 cases fail on `78526b5`, the three controls pass on both).
+
 ### Fixed (#185, F-185-23, LT-185-23) — a fingerprint-only rotation carries new correlation members through the bridge
 - With a previous fingerprint secret and no previous key secret, Current and Previous of a bounded correlation rotation are
   one key. A special branch for that alias answered "accepted, added" for a new member and wrote it nowhere, so the set never
