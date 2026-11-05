@@ -7,6 +7,7 @@ namespace Maatify\RateLimiter\Service;
 use Maatify\RateLimiter\Config\SimpleThrottlePolicyInterface;
 use Maatify\RateLimiter\DTO\BudgetStateDTO;
 use Maatify\RateLimiter\DTO\SimpleRateLimitResultDTO;
+use Maatify\RateLimiter\Exception\BackendFailureException;
 use Maatify\RateLimiter\Exception\RateLimiterException;
 use Maatify\RateLimiter\Repository\BudgetSeedStoreInterface;
 use Maatify\RateLimiter\Repository\RateLimitStoreInterface;
@@ -22,7 +23,11 @@ use Maatify\SharedCommon\Contracts\ClockInterface;
  * budget-epoch persistence primitives; no new storage backend family is
  * introduced. It is FAIL_CLOSED only and does not create score state,
  * correlation observations, or authentication budgets: its key namespace is
- * package-owned and distinct from every score/budget namespace.
+ * package-owned and distinct from every score/budget namespace. FAIL_CLOSED
+ * answers an operational backend failure only, a store call that raises
+ * BackendFailureException (DEC-015 provenance); malformed persisted state
+ * (RateLimiterException, DEC-017) and any other throwable propagate as they
+ * are, as in the score runtime (#185, F-185-21).
  */
 final class FixedWindowSimpleRateLimiter implements SimpleRateLimiterInterface
 {
@@ -94,8 +99,10 @@ final class FixedWindowSimpleRateLimiter implements SimpleRateLimiterInterface
      *     fails: the policy is unregistered, the subject is blank, cost is not
      *     positive, a required previous-generation migration capability is
      *     missing, or the effective fixed reset boundary is not representable
-     *     as a PHP integer. Backend/runtime storage failures retain the typed
-     *     FAIL_CLOSED result behavior.
+     *     as a PHP integer, or a store call reports malformed persisted state
+     *     (#185, F-185-21). An operational backend failure
+     *     (BackendFailureException) is the typed FAIL_CLOSED result instead;
+     *     any other throwable from the store propagates unchanged.
      */
     public function consume(string $policyName, string $subject, int $cost = 1): SimpleRateLimitResultDTO
     {
@@ -168,10 +175,11 @@ final class FixedWindowSimpleRateLimiter implements SimpleRateLimiterInterface
      * (incrementBudget() or incrementBudgetWithSeed()) is the one atomic
      * store primitive, and the quota decision in consume() is derived from
      * its returned state. Every individual store call is wrapped here, at
-     * its own call site, so any failure it raises — regardless of exception
-     * class, including a RateLimiterException the store implementation
-     * itself throws — is treated as a storage/runtime failure and reported
-     * to the caller as null. The capability-missing check below is
+     * its own call site: an operational backend failure it raises
+     * (BackendFailureException) is reported to the caller as null, the typed
+     * FAIL_CLOSED result. Malformed persisted state (RateLimiterException) and
+     * any other throwable propagate unchanged (#185, F-185-21, DEC-015,
+     * DEC-017). The capability-missing check below is
      * deliberately outside any try/catch: it is this method's own explicit
      * configuration/contract failure and always propagates as
      * RateLimiterException, never becoming a typed FAIL_CLOSED result.
@@ -184,7 +192,7 @@ final class FixedWindowSimpleRateLimiter implements SimpleRateLimiterInterface
         $currentReadFailed = false;
         try {
             $currentState = CallerTimeStore::getBudget($this->store, $currentKey, $this->clock->now());
-        } catch (\Throwable) {
+        } catch (BackendFailureException) {
             $currentReadFailed = true;
             $currentState = null;
         }
@@ -201,7 +209,7 @@ final class FixedWindowSimpleRateLimiter implements SimpleRateLimiterInterface
             $previousReadFailed = false;
             try {
                 $previousState = CallerTimeStore::getBudget($this->store, $previousKey, $this->clock->now());
-            } catch (\Throwable) {
+            } catch (BackendFailureException) {
                 $previousReadFailed = true;
                 $previousState = null;
             }
@@ -221,7 +229,7 @@ final class FixedWindowSimpleRateLimiter implements SimpleRateLimiterInterface
 
                 try {
                     return CallerTimeStore::incrementBudgetWithSeed($this->store, $currentKey, $intervalSeconds, $previousState, $cost, $this->clock->now());
-                } catch (\Throwable) {
+                } catch (BackendFailureException) {
                     return null;
                 }
             }
@@ -234,13 +242,13 @@ final class FixedWindowSimpleRateLimiter implements SimpleRateLimiterInterface
 
     /**
      * incrementBudget() never legitimately returns null, so a null result
-     * here unambiguously means the store call itself failed.
+     * here unambiguously means the store call raised BackendFailureException.
      */
     private function incrementBudget(string $key, int $intervalSeconds, int $cost): ?BudgetStateDTO
     {
         try {
             return CallerTimeStore::incrementBudget($this->store, $key, $intervalSeconds, $cost, $this->clock->now());
-        } catch (\Throwable) {
+        } catch (BackendFailureException) {
             return null;
         }
     }

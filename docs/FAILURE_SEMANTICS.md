@@ -42,8 +42,9 @@ evaluation; there is no separate "official" or "custom" fallback code path.
 Simple fixed-window configuration/contract failures remain exceptions: an
 unrepresentable integer reset boundary under DEC-014 is rejected before
 enforcement mutation and is never converted into quota exhaustion or
-`FAIL_CLOSED`. Backend/runtime storage failures retain the existing simple
-throttle `FAIL_CLOSED` behavior, and Operational Read remains read-only.
+`FAIL_CLOSED`. An operational backend failure (`BackendFailureException`) keeps the simple
+throttle `FAIL_CLOSED` behavior; malformed persisted state and any other throwable propagate (#185,
+F-185-21), and Operational Read remains read-only.
 
 The package-owned zero-configuration presets and their locked caps, resolved
 internally by the official policies, are:
@@ -427,12 +428,15 @@ never conflated:
   typed `SimpleRateLimitResultDTO` with `allowed = false`, `failureMode =
   SimpleRateLimitResultDTO::NORMAL`, a positive `retryAfter`, and the stable `resetAt` of the
   current window.
-* **Backend/runtime storage failure** — any failure a store call raises at its own call site
-  while reading or incrementing the fixed window, regardless of its exception class, including a
-  `RateLimiterException` the store implementation itself throws — returns a typed FAIL_CLOSED
-  denial: `allowed = false`, `remaining = 0`, `retryAfter = null`, `resetAt = null`,
+* **Operational backend failure** — a store call that raises `BackendFailureException` at its own
+  call site while reading or incrementing the fixed window (DEC-015 provenance) — returns a typed
+  FAIL_CLOSED denial: `allowed = false`, `remaining = 0`, `retryAfter = null`, `resetAt = null`,
   `failureMode = SimpleRateLimitResultDTO::FAIL_CLOSED`. No fake window timing is invented when
   the backend state cannot be determined.
+* **Malformed persisted state and unclassified throwables** — a `RateLimiterException` the store
+  raises for malformed state (DEC-017), and any other throwable a store call raises, propagate
+  unchanged, exactly as in the score runtime; they are not converted into `FAIL_CLOSED` (#185,
+  F-185-21; before it, every throwable was).
 
 **Explicitly Forbidden:**
 

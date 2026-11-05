@@ -7,6 +7,7 @@ namespace Maatify\RateLimiter\Tests\Unit\Service;
 use Maatify\RateLimiter\Config\FixedWindowThrottlePolicy;
 use Maatify\RateLimiter\Config\SimpleThrottlePolicyInterface;
 use Maatify\RateLimiter\DTO\SimpleRateLimitResultDTO;
+use Maatify\RateLimiter\Exception\BackendFailureException;
 use Maatify\RateLimiter\Exception\RateLimiterException;
 use Maatify\RateLimiter\Repository\RateLimitStoreInterface;
 use Maatify\RateLimiter\Service\FixedWindowSimpleRateLimiter;
@@ -366,17 +367,14 @@ final class FixedWindowSimpleRateLimiterTest extends TestCase
         }
     }
 
-    // --- R1: storage-originated failures must become typed FAIL_CLOSED
-    // results regardless of the exception class the store raises, while the
-    // package's own configuration/contract failures must keep propagating
-    // as exceptions. Each pair below proves the same call site fails closed
-    // for both a plain RuntimeException and a RateLimiterException raised
-    // BY THE STORE ITSELF, which is otherwise indistinguishable by class
-    // from the package's own configuration-failure exception type.
+    // --- R1 (#185, F-185-21, LT-185-21): an operational backend failure a store call raises
+    // (BackendFailureException, DEC-015 provenance) is the typed FAIL_CLOSED result at every call
+    // site. Malformed persisted state the store reports (RateLimiterException, DEC-017) and any
+    // other throwable propagate unchanged, as in the score runtime; they are not outages.
 
-    public function testGetBudgetFailureFromRuntimeExceptionIsFailClosed(): void
+    public function testGetBudgetBackendFailureIsFailClosed(): void
     {
-        $store = new PartialFailureRateLimitStore($this->store, throwOnGetBudget: new \RuntimeException('backend unavailable'));
+        $store = new PartialFailureRateLimitStore($this->store, throwOnGetBudget: new BackendFailureException('backend unavailable'));
         $limiter = $this->limiterWithStore($store, [new FixedWindowThrottlePolicy('checkout', 3, 60)]);
 
         $result = $limiter->consume('checkout', 'subject-1');
@@ -388,33 +386,42 @@ final class FixedWindowSimpleRateLimiterTest extends TestCase
         self::assertSame(SimpleRateLimitResultDTO::FAIL_CLOSED, $result->failureMode);
     }
 
-    public function testGetBudgetFailureFromRateLimiterExceptionIsFailClosed(): void
+    public function testGetBudgetMalformedStateFromTheStorePropagates(): void
     {
-        $store = new PartialFailureRateLimitStore($this->store, throwOnGetBudget: new RateLimiterException('store-internal contract violation'));
+        $store = new PartialFailureRateLimitStore($this->store, throwOnGetBudget: new RateLimiterException('malformed budget state'));
+        $limiter = $this->limiterWithStore($store, [new FixedWindowThrottlePolicy('checkout', 3, 60)]);
+
+        $this->expectException(RateLimiterException::class);
+        $this->expectExceptionMessage('malformed budget state');
+
+        $limiter->consume('checkout', 'subject-1');
+    }
+
+    public function testGetBudgetUnclassifiedThrowablePropagates(): void
+    {
+        $store = new PartialFailureRateLimitStore($this->store, throwOnGetBudget: new \RuntimeException('untyped client error'));
+        $limiter = $this->limiterWithStore($store, [new FixedWindowThrottlePolicy('checkout', 3, 60)]);
+
+        $this->expectException(\RuntimeException::class);
+        $this->expectExceptionMessage('untyped client error');
+
+        $limiter->consume('checkout', 'subject-1');
+    }
+
+    public function testIncrementBudgetBackendFailureIsFailClosed(): void
+    {
+        $store = new PartialFailureRateLimitStore($this->store, throwOnIncrementBudget: new BackendFailureException('backend unavailable'));
         $limiter = $this->limiterWithStore($store, [new FixedWindowThrottlePolicy('checkout', 3, 60)]);
 
         $result = $limiter->consume('checkout', 'subject-1');
 
         self::assertFalse($result->allowed);
         self::assertSame(SimpleRateLimitResultDTO::FAIL_CLOSED, $result->failureMode);
-        self::assertNull($result->retryAfter);
-        self::assertNull($result->resetAt);
     }
 
-    public function testIncrementBudgetFailureFromRuntimeExceptionIsFailClosed(): void
+    public function testWeightedIncrementBudgetBackendFailureIsFailClosed(): void
     {
-        $store = new PartialFailureRateLimitStore($this->store, throwOnIncrementBudget: new \RuntimeException('backend unavailable'));
-        $limiter = $this->limiterWithStore($store, [new FixedWindowThrottlePolicy('checkout', 3, 60)]);
-
-        $result = $limiter->consume('checkout', 'subject-1');
-
-        self::assertFalse($result->allowed);
-        self::assertSame(SimpleRateLimitResultDTO::FAIL_CLOSED, $result->failureMode);
-    }
-
-    public function testWeightedIncrementBudgetFailureIsFailClosed(): void
-    {
-        $store = new PartialFailureRateLimitStore($this->store, throwOnIncrementBudget: new \RuntimeException('backend unavailable'));
+        $store = new PartialFailureRateLimitStore($this->store, throwOnIncrementBudget: new BackendFailureException('backend unavailable'));
         $limiter = $this->limiterWithStore($store, [new FixedWindowThrottlePolicy('checkout', 10, 60)]);
 
         $result = $limiter->consume('checkout', 'subject-1', 5);
@@ -425,23 +432,23 @@ final class FixedWindowSimpleRateLimiterTest extends TestCase
         self::assertNull($result->resetAt);
     }
 
-    public function testIncrementBudgetFailureFromRateLimiterExceptionIsFailClosed(): void
+    public function testIncrementBudgetMalformedStateFromTheStorePropagates(): void
     {
-        $store = new PartialFailureRateLimitStore($this->store, throwOnIncrementBudget: new RateLimiterException('store-internal contract violation'));
+        $store = new PartialFailureRateLimitStore($this->store, throwOnIncrementBudget: new RateLimiterException('malformed budget state'));
         $limiter = $this->limiterWithStore($store, [new FixedWindowThrottlePolicy('checkout', 3, 60)]);
 
-        $result = $limiter->consume('checkout', 'subject-1');
+        $this->expectException(RateLimiterException::class);
+        $this->expectExceptionMessage('malformed budget state');
 
-        self::assertFalse($result->allowed);
-        self::assertSame(SimpleRateLimitResultDTO::FAIL_CLOSED, $result->failureMode);
+        $limiter->consume('checkout', 'subject-1');
     }
 
-    public function testIncrementBudgetWithSeedFailureFromRateLimiterExceptionIsFailClosedDuringRotation(): void
+    public function testIncrementBudgetWithSeedBackendFailureIsFailClosedDuringRotation(): void
     {
         $previousKey = $this->keyFor('checkout', 3, 60, 'subject-1', 'previous-secret');
         $this->store->incrementBudget($previousKey, 60, 1);
 
-        $store = new PartialFailureRateLimitStore($this->store, throwOnIncrementBudgetWithSeed: new RateLimiterException('store-internal contract violation'));
+        $store = new PartialFailureRateLimitStore($this->store, throwOnIncrementBudgetWithSeed: new BackendFailureException('backend unavailable'));
         $limiter = $this->limiterWithStore(
             $store,
             [new FixedWindowThrottlePolicy('checkout', 3, 60)],
@@ -452,6 +459,23 @@ final class FixedWindowSimpleRateLimiterTest extends TestCase
 
         self::assertFalse($result->allowed);
         self::assertSame(SimpleRateLimitResultDTO::FAIL_CLOSED, $result->failureMode);
+    }
+
+    public function testIncrementBudgetWithSeedMalformedStateFromTheStorePropagatesDuringRotation(): void
+    {
+        $previousKey = $this->keyFor('checkout', 3, 60, 'subject-1', 'previous-secret');
+        $this->store->incrementBudget($previousKey, 60, 1);
+
+        $store = new PartialFailureRateLimitStore($this->store, throwOnIncrementBudgetWithSeed: new RateLimiterException('malformed budget state'));
+        $limiter = $this->limiterWithStore(
+            $store,
+            [new FixedWindowThrottlePolicy('checkout', 3, 60)],
+            previousKeySecret: 'previous-secret',
+        );
+
+        $this->expectException(RateLimiterException::class);
+
+        $limiter->consume('checkout', 'subject-1');
     }
 
     public function testMissingCapabilityConfigurationFailureStillPropagatesAsExceptionNotFailClosed(): void
