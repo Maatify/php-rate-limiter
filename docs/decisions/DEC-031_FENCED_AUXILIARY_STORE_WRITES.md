@@ -6,7 +6,7 @@
 
 ## Status
 
-`ACTIVE` — activated 2026-11-05 in [PR #197](https://github.com/Maatify/php-rate-limiter/pull/197) (F-185-16/17/18, [Maatify/php-rate-limiter#185](https://github.com/Maatify/php-rate-limiter/issues/185)) on the Owner's decision relayed on [Maatify/php-rate-limiter#185](https://github.com/Maatify/php-rate-limiter/issues/185) ([comment 6645757770](https://github.com/Maatify/php-rate-limiter/issues/185#issuecomment-6645757770)), after the measurements of `investigations/fenced-auxiliary-writes-185/` and the Lead's review.
+`ACTIVE` — activated 2026-11-05 in [PR #197](https://github.com/Maatify/php-rate-limiter/pull/197) (F-185-16/17/18, [#185](https://github.com/Maatify/php-rate-limiter/issues/185)) on the Owner's decision relayed on [#185](https://github.com/Maatify/php-rate-limiter/issues/185) ([comment 6645757770](https://github.com/Maatify/php-rate-limiter/issues/185#issuecomment-6645757770)), after the measurements of `investigations/fenced-auxiliary-writes-185/` and the Lead's review.
 Earlier status: `PROPOSED` in the same PR, on the Owner's decisions of 2026-11-05 relayed on #185 (LT-185-17,
 LT-185-18), pending the measurements this record names (Consequences) and the Lead's review.
 
