@@ -634,6 +634,9 @@ local function subtractDecimalStrings(a, b)
   if result == '' then result = '0' end
   return result
 end
+-- #185 F-185-27: a live block is noted, not returned on: the score hash below is validated first (the F-185-10
+-- pattern), so malformed state is an error with or without a live block (DEC-017). The block still answers 0.
+local liveBlock = false
 for _, blockKey in ipairs({KEYS[3], KEYS[4]}) do
   if blockKey ~= '' then
     local blockPttl = redis.call('PTTL', blockKey)
@@ -643,7 +646,7 @@ for _, blockKey in ipairs({KEYS[3], KEYS[4]}) do
     -- #185 F-185-19: a block level is canonical decimal text, one digit 1..6 (L1-L6), checked before tonumber().
     if not rawExpires or not validBackendExpiry(rawExpires) or not rawLevel or string.match(rawLevel, '^[1-6]$') == nil then return redis.error_reply('malformed hard-block state') end
     local level = tonumber(rawLevel)
-    if compareDecimalStrings(rawExpires, nowSecondsStr) > 0 then return 0 end
+    if compareDecimalStrings(rawExpires, nowSecondsStr) > 0 then liveBlock = true end
     end
   end
 end
@@ -678,6 +681,7 @@ if source ~= '' then
     if not id or #id ~= 32 or string.match(id, '^[a-f0-9]+$') == nil then return redis.error_reply('malformed lifecycle id') end
     if not validNonNegativeInteger(validUntil) or validUntil == '0' or not validPositiveInteger(evidenceGeneration) then return redis.error_reply('malformed lifecycle evidence') end
     if not generation then return redis.error_reply('legacy score cannot carry lifecycle evidence') end
+    if liveBlock then return 0 end
     if evidenceGeneration ~= generation then return 0 end
     if expiry ~= nil and validUntil ~= expiry then return 0 end
     if compareDecimalStrings(validUntil, nowSecondsStr) <= 0 or id ~= ARGV[1] then return 0 end

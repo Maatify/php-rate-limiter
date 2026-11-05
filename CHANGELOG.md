@@ -9,6 +9,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [1.0.0-rc.4]
 
+### Fixed (#185, F-185-27) — the re-entry claim validates the score before a live block answers
+- `claimPostPunishmentReentryAt()` returned "no claim" on a live L2+ block before it read the score hash, so malformed score
+  state (a non-canonical value, partial or malformed lifecycle evidence, evidence on a legacy score) was hidden under the block
+  while the same state without it, and `readGenerationBoundScoreStateAt()` with it, raised `malformed …`. The score hash is now
+  validated first (the F-185-10 order); malformed state is the same error with or without the block and is left as it is
+  (DEC-017), and a live block over a valid score still answers false. Test: `ClaimValidatesBeforeLiveBlockRedisTest` (the
+  Lead's adv8/r2; its four malformed cases fail on `78526b5`).
+
 ### Fixed (#185, F-185-17, F-185-18, DEC-031) — the circuit-breaker failure report and the missing-fingerprint marker are fenced
 - `CircuitBreaker::reportFailure()` loaded the state, appended one failure and saved it with a plain `SET`: three concurrent
   backend failures that read the same state each saved one failure and the circuit stayed `CLOSED` (one after the other it
