@@ -7,6 +7,7 @@ namespace Maatify\RateLimiter\Tests\Integration\Redis;
 use DateTimeZone;
 use Maatify\RateLimiter\Config\FixedWindowThrottlePolicy;
 use Maatify\RateLimiter\DTO\BudgetStateDTO;
+use Maatify\RateLimiter\Exception\RateLimiterException;
 use Maatify\RateLimiter\Repository\Redis\RedisFullCapabilityStore;
 use Maatify\RateLimiter\Service\FixedWindowSimpleRateLimiter;
 use Maatify\RateLimiter\Service\SimpleRateLimitOperationalReader;
@@ -123,10 +124,14 @@ final class RedisSimpleFixedWindowIntegrationTest extends TestCase
         $limiter = $this->limiter($this->clock, 'current-secret', null, $interval);
         $keysBefore = $this->executor->execute(['KEYS', '*']);
 
-        $result = $limiter->consume('checkout', 'subject-redis-lua-overflow');
-
-        self::assertFalse($result->allowed);
-        self::assertSame('FAIL_CLOSED', $result->failureMode);
+        // #185 F-185-21: an expiry the backend cannot represent is an input/contract failure the store reports
+        // (RateLimiterException), not an operational outage, so it propagates instead of becoming FAIL_CLOSED.
+        try {
+            $limiter->consume('checkout', 'subject-redis-lua-overflow');
+            self::fail('An unrepresentable expiry was not reported.');
+        } catch (RateLimiterException) {
+            self::addToAssertionCount(1);
+        }
         self::assertSame($keysBefore, $this->executor->execute(['KEYS', '*']));
     }
 
@@ -145,11 +150,13 @@ final class RedisSimpleFixedWindowIntegrationTest extends TestCase
         $this->executor->execute(['EXPIRE', $previousKey, 60]);
         $previousRawValueBefore = $this->executor->execute(['HGETALL', $previousKey]);
 
-        $result = $this->limiter($this->clock, 'current-secret', 'previous-secret', $interval)
-            ->consume('checkout', $subject);
-
-        self::assertFalse($result->allowed);
-        self::assertSame('FAIL_CLOSED', $result->failureMode);
+        // #185 F-185-21: the store's input/contract failure propagates (see the fresh-branch test above).
+        try {
+            $this->limiter($this->clock, 'current-secret', 'previous-secret', $interval)->consume('checkout', $subject);
+            self::fail('An unrepresentable expiry was not reported.');
+        } catch (RateLimiterException) {
+            self::addToAssertionCount(1);
+        }
         self::assertSame([], $this->executor->execute(['HGETALL', $this->redisBudgetKey('current-secret', 2, $interval, $subject)]));
         self::assertSame($previousRawValueBefore, $this->executor->execute(['HGETALL', $previousKey]));
     }

@@ -135,7 +135,7 @@ score metadata that do not exist for this capability.
 | --- | --- | --- | --- | --- | --- |
 | Normal allowed consume | `true` | `max(0, limit - count)` | `0` | fixed epoch end | `NORMAL` |
 | Normal quota denial | `false` | `0` | positive seconds until epoch end | same stable fixed epoch end | `NORMAL` |
-| Backend/runtime storage failure | `false` | `0` | `null` | `null` | `FAIL_CLOSED` |
+| Operational backend failure (`BackendFailureException`) | `false` | `0` | `null` | `null` | `FAIL_CLOSED` |
 
 No fake window timing is invented when the backend state cannot be
 determined: a `FAIL_CLOSED` result never guesses a `retryAfter` or `resetAt`.
@@ -183,16 +183,16 @@ Three outcomes are kept strictly separate:
 * **Normal quota exhaustion** is not a failure. It is a typed
   `SimpleRateLimitResultDTO` with `failureMode = NORMAL` and `allowed =
   false` (§4).
-* **Backend/runtime storage failure** — any failure a store call raises at
-  its own call site while reading or incrementing the window, regardless of
-  its exception class — is a typed `FAIL_CLOSED` denial (§4). This
-  explicitly includes a `RateLimiterException` the store implementation
-  itself throws from `getBudget()`, `incrementBudget()`, or
-  `incrementBudgetWithSeed()`: the distinction from a configuration/contract
-  failure below is structural (which call site raised it), never based on
-  the exception's class alone. There is no `FAIL_OPEN` mode and no
-  `DEGRADED_MODE` for simple throttling in the current simple-throttling
-  contract; see
+* **Operational backend failure** — a store call that raises
+  `BackendFailureException` (DEC-015 provenance) at its own call site while
+  reading or incrementing the window — is a typed `FAIL_CLOSED` denial (§4).
+  Malformed persisted state the store reports (`RateLimiterException`,
+  DEC-017) and any other throwable a store call raises are **not** backend
+  failures: they propagate unchanged, as in the score runtime (#185,
+  F-185-21). Before F-185-21 every throwable from a store call, including a
+  `RateLimiterException` for malformed state, was converted into
+  `FAIL_CLOSED`. There is no `FAIL_OPEN` mode and no `DEGRADED_MODE` for
+  simple throttling in the current simple-throttling contract; see
   `docs/FAILURE_SEMANTICS.md` §4.4.
 * **Configuration/contract failures** remain exceptions, not results:
 

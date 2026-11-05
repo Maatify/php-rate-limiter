@@ -39,6 +39,36 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   Test: `BlockNoDowngradeRedisTest` (the Lead's adv6/r1, 50 rounds against the sequential control; L2 over a live L3 in
   `HARD_BLOCK`; the same level never shortened; a logically expired block replaced; four of its six cases fail on `e513638`).
 
+### Changed (#185, F-185-21, LT-185-21) — simple throttling answers FAIL_CLOSED for a backend failure only
+- `FixedWindowSimpleRateLimiter::consume()` caught every `\Throwable` a store call raised and answered `FAIL_CLOSED`, so a
+  structurally malformed persisted window (`malformed budget state`, DEC-017) and any untyped error came back as a plain
+  denial, while the store itself raised them. It now catches `BackendFailureException` only (DEC-015 provenance), which keeps
+  the typed `FAIL_CLOSED` result; `RateLimiterException` for malformed state and every other throwable propagate unchanged,
+  as in the score runtime. An expiry the backend cannot represent is reported as `RateLimiterException` accordingly. This
+  changes `docs/FAILURE_SEMANTICS.md` §4.4 and `docs/SIMPLE_THROTTLING.md` (the Owner's decision on LT-185-21 is the security
+  approval §10 requires; this entry is its versioning). Test: `SimpleMalformedBudgetRedisTest` (the malformed case fails on
+  the F-185-19 head; a backend failure is the `FAIL_CLOSED` control); the six `FixedWindowSimpleRateLimiterTest` cases and
+  the two Redis expiry cases that asserted the old conversion now assert the new contract.
+
+### Fixed (#185, F-185-19) — persisted block levels, watch counts and budget counts are used only when canonical
+- `BLOCK_GET`, `LIFECYCLE_READ`, `LIFECYCLE_CLAIM` and `HARD_BLOCK` read a block `level` through `tonumber()`, so `"02"`,
+  `"2.0"`, `"0x2"`, `" 2"`, `"2e0"` and `"+2"` were read as level 2. `WATCH_GET` and `WATCH_INCREMENT` accepted any
+  `tonumber()` integer or left the check to `INCR`, so a watch count of `"-5"` was returned and incremented to `-4`, and other
+  forms failed with a raw Redis error. The `BUDGET_*` scripts accepted a count matching `^%-?%d+$`, so `"-5"`, `"05"` and
+  `"-0"` were used. A level is now one canonical digit 1..6 (L1-L6, the store contract), and the watch and budget counts are
+  canonical non-negative integers (`0` or no leading zero), each checked before use; anything else is `malformed block state` /
+  `malformed hard-block state` / `malformed watch value` / `malformed budget state` from the script, and the state is left
+  unchanged (DEC-017: no delete, no repair). Test: `CanonicalStoredValueRedisTest` (18 of its 27 cases fail on `e513638`; the
+  others are forms it already rejected and the controls `"0"`, `"5"`, levels `"1"`, `"2"`, `"6"`).
+
+### Fixed (#185, F-185-20) — hard-block cycle and pause members keep the caller time exact
+- `HARD_BLOCK` stored each cycle member as `tostring(now)` and each pause member as `tostring(now) .. ':' ..
+  tostring(pauseUntil)`. Lua formats those with `%.14g`, so a caller time of 10^14 or more, which the script accepts up to
+  2^53, was stored as `1e+14` (and a pause end of 10^14 or more likewise), and the next call read its own history as `malformed
+  cycle history`. The cycle member is now the caller time as it arrived (`ARGV[5]`, canonical decimal text) and the pause end is
+  formatted with `%.0f`, exact over the checked range. Test: `HardBlockCanonicalTimeRedisTest` (seven of its eight cases fail
+  on `e513638`; the 14-digit cycle member is the control).
+
 ### Fixed (#185, F-185-08, DEC-030) — a score write that carries a decay credit is fenced by its snapshot
 - `EvaluationPipeline::processUpdates()` computed each K1 / K2 / K3 / K5 net change (`decayed + delta − stored`) on a snapshot read
   outside any atomic operation and sent it to `increment()`. Two concurrent requests on the same decayed snapshot applied the same

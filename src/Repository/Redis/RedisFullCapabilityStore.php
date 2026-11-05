@@ -562,7 +562,8 @@ for _, blockKey in ipairs({KEYS[3], KEYS[4]}) do
     if blockPttl == -1 then return redis.error_reply('malformed hard-block state') end
     if blockPttl > 0 then
       local blockExpiry = redis.call('HGET', blockKey, 'expiresAt'); local level = redis.call('HGET', blockKey, 'level')
-      if not blockExpiry or not validBackendExpiry(blockExpiry) or not level or not tonumber(level) or tonumber(level) ~= math.floor(tonumber(level)) or tonumber(level) < 1 or tonumber(level) > 6 then return redis.error_reply('malformed hard-block state') end
+      -- #185 F-185-19: a block level is canonical decimal text, one digit 1..6 (L1-L6), checked before tonumber().
+      if not blockExpiry or not validBackendExpiry(blockExpiry) or not level or string.match(level, '^[1-6]$') == nil then return redis.error_reply('malformed hard-block state') end
       if compareDecimalStrings(blockExpiry, nowSecondsStr) > 0 and tonumber(level) >= 2 then active = true end
     end
   end
@@ -639,9 +640,9 @@ for _, blockKey in ipairs({KEYS[3], KEYS[4]}) do
     if blockPttl == -1 then return redis.error_reply('malformed hard-block state') end
     if blockPttl > 0 then
     local rawExpires = redis.call('HGET', blockKey, 'expiresAt'); local rawLevel = redis.call('HGET', blockKey, 'level')
-    if not rawExpires or not validBackendExpiry(rawExpires) or not rawLevel then return redis.error_reply('malformed hard-block state') end
+    -- #185 F-185-19: a block level is canonical decimal text, one digit 1..6 (L1-L6), checked before tonumber().
+    if not rawExpires or not validBackendExpiry(rawExpires) or not rawLevel or string.match(rawLevel, '^[1-6]$') == nil then return redis.error_reply('malformed hard-block state') end
     local level = tonumber(rawLevel)
-    if not level or level ~= math.floor(level) or level < 1 or level > 6 then return redis.error_reply('malformed hard-block state') end
     if compareDecimalStrings(rawExpires, nowSecondsStr) > 0 then return 0 end
     end
   end
@@ -754,9 +755,9 @@ if redis.call('EXISTS', KEYS[1]) == 0 then return {} end
 if redis.call('TTL', KEYS[1]) < 0 then return redis.error_reply('malformed block state') end
 local level = redis.call('HGET', KEYS[1], 'level')
 local expires = redis.call('HGET', KEYS[1], 'expiresAt')
-if not level or not validBackendExpiry(expires) then return redis.error_reply('malformed block state') end
+-- #185 F-185-19: a block level is canonical decimal text, one digit 1..6 (L1-L6), checked before tonumber().
+if not level or not validBackendExpiry(expires) or string.match(level, '^[1-6]$') == nil then return redis.error_reply('malformed block state') end
 level = tonumber(level)
-if not level or level ~= math.floor(level) or level < 1 or level > 6 then return redis.error_reply('malformed block state') end
 if compareDecimalStrings(expires, ARGV[1]) <= 0 then
   redis.call('DEL', KEYS[1])
   return {}
@@ -778,7 +779,8 @@ end
 -- Returns epoch-end as a decimal string, or nil plus an error for malformed state.
 local function persistedEpochEnd(count, start, duration)
   if not count or not start or not duration then return nil, 'malformed budget state' end
-  if string.match(count, '^%-?%d+$') == nil or not validNonNegativeInteger(start) or not validPositiveDuration(duration) then return nil, 'malformed budget state' end
+  -- #185 F-185-19: the count is a canonical non-negative integer, like every other persisted counter.
+  if not validNonNegativeInteger(count) or not validNonNegativeInteger(start) or not validPositiveDuration(duration) then return nil, 'malformed budget state' end
   if compareDecimalStrings(duration, '9007199254740991') > 0 then return nil, 'budget expiry exceeds Redis Lua exact integer range' end
   return addDecimalStrings(start, duration)
 end
@@ -823,7 +825,8 @@ end
 -- Returns epoch-end as a decimal string, or nil plus an error for malformed state.
 local function persistedEpochEnd(count, start, duration)
   if not count or not start or not duration then return nil, 'malformed budget state' end
-  if string.match(count, '^%-?%d+$') == nil or not validNonNegativeInteger(start) or not validPositiveDuration(duration) then return nil, 'malformed budget state' end
+  -- #185 F-185-19: the count is a canonical non-negative integer, like every other persisted counter.
+  if not validNonNegativeInteger(count) or not validNonNegativeInteger(start) or not validPositiveDuration(duration) then return nil, 'malformed budget state' end
   if compareDecimalStrings(duration, '9007199254740991') > 0 then return nil, 'budget expiry exceeds Redis Lua exact integer range' end
   return addDecimalStrings(start, duration)
 end
@@ -855,7 +858,8 @@ end
 -- Returns epoch-end as a decimal string, or nil plus an error for malformed state.
 local function persistedEpochEnd(count, start, duration)
   if not count or not start or not duration then return nil, 'malformed budget state' end
-  if string.match(count, '^%-?%d+$') == nil or not validNonNegativeInteger(start) or not validPositiveDuration(duration) then return nil, 'malformed budget state' end
+  -- #185 F-185-19: the count is a canonical non-negative integer, like every other persisted counter.
+  if not validNonNegativeInteger(count) or not validNonNegativeInteger(start) or not validPositiveDuration(duration) then return nil, 'malformed budget state' end
   if compareDecimalStrings(duration, '9007199254740991') > 0 then return nil, 'budget expiry exceeds Redis Lua exact integer range' end
   return addDecimalStrings(start, duration)
 end
@@ -948,6 +952,9 @@ if exists == 1 then
   local rawExpires = redis.call('HGET', KEYS[2], 'expiresAt')
   if not validBackendExpiry(rawExpires) then return redis.error_reply('malformed watch metadata') end
   if redis.call('TTL', KEYS[2]) < 0 then return redis.error_reply('malformed watch metadata') end
+  -- #185 F-185-19: the stored count is canonical ('0' or no leading zero) before INCR or the expiry judgement.
+  local stored = redis.call('GET', KEYS[1])
+  if not stored or (stored ~= '0' and string.match(stored, '^[1-9]%d*$') == nil) then return redis.error_reply('malformed watch value') end
   -- LT-P2-03: logically expired while physically present is expired, not malformed.
   if compareDecimalStrings(rawExpires, nowStr) <= 0 then redis.call('DEL', KEYS[1], KEYS[2]); exists = 0 end
 end
@@ -971,7 +978,8 @@ LUA;
 if redis.call('EXISTS', KEYS[1]) == 0 then return 0 end
 if redis.call('TTL', KEYS[1]) < 0 then return redis.error_reply('malformed watch state') end
 local value = redis.call('GET', KEYS[1])
-if not value or not tonumber(value) or tonumber(value) ~= math.floor(tonumber(value)) then return redis.error_reply('malformed watch value') end
+-- #185 F-185-19: a watch count is canonical ('0' or no leading zero), as the rotated increment requires (F-185-13).
+if not value or (value ~= '0' and string.match(value, '^[1-9]%d*$') == nil) then return redis.error_reply('malformed watch value') end
 return value
 LUA;
 
@@ -1374,9 +1382,9 @@ for _, blockKey in ipairs({KEYS[3], KEYS[4]}) do
     if blockPttl == -1 then return redis.error_reply('malformed hard-block state') end
     if blockPttl > 0 then
       local rawExpires = redis.call('HGET', blockKey, 'expiresAt'); local rawLevel = redis.call('HGET', blockKey, 'level')
-      if not validHardBlockExpiry(rawExpires) or not rawLevel then return redis.error_reply('malformed hard-block state') end
+      -- #185 F-185-19: a block level is canonical decimal text, one digit 1..6 (L1-L6), checked before tonumber().
+      if not validHardBlockExpiry(rawExpires) or not rawLevel or string.match(rawLevel, '^[1-6]$') == nil then return redis.error_reply('malformed hard-block state') end
       local level = tonumber(rawLevel)
-      if not level or level ~= math.floor(level) or level < 1 or level > 6 then return redis.error_reply('malformed hard-block state') end
       if compareDecimalStrings(rawExpires, string.format('%.0f', now)) > 0 then
         if level >= 2 then active = true end
         if blockKey == KEYS[3] then currentLiveLevel = level; currentLiveExpires = rawExpires end
@@ -1385,7 +1393,9 @@ for _, blockKey in ipairs({KEYS[3], KEYS[4]}) do
   end
 end
 local newCycle = not active
-if newCycle and cyclesByMember[tostring(now)] == nil then cyclesByMember[tostring(now)] = now; cycleMembers[#cycleMembers + 1] = tostring(now) end
+-- #185 F-185-20: a cycle member is the caller time as the canonical decimal text it arrived as (ARGV[5]); Lua's
+-- tostring() formats with %.14g, so a time of 1e14 or more became "1e+14" and the next call read it as malformed.
+if newCycle and cyclesByMember[ARGV[5]] == nil then cyclesByMember[ARGV[5]] = now; cycleMembers[#cycleMembers + 1] = ARGV[5] end
 local cycleCount = #cycleMembers; local latestCycle = 0
 for _, member in ipairs(cycleMembers) do latestCycle = math.max(latestCycle, cyclesByMember[member]) end
 if cycleCount > 0 and latestCycle > exactIntegerMax - cycleWindow then return redis.error_reply('cycle boundary is not representable') end
@@ -1414,7 +1424,8 @@ for _, member in ipairs(pauseMembers) do
 end
 local activated = false
 if newCycle and cycleCount >= tonumber(ARGV[7]) and pauseUntil == 0 then
-  pauseUntil = now + pauseSeconds; local member = tostring(now) .. ':' .. tostring(pauseUntil)
+  -- #185 F-185-20: the pause member is "start:finish" in canonical decimal text; %.0f is exact for the range checked above.
+  pauseUntil = now + pauseSeconds; local member = ARGV[5] .. ':' .. string.format('%.0f', pauseUntil)
   pausesByMember[member] = {now, pauseUntil}; pauseMembers[#pauseMembers + 1] = member; latestPauseUntil = math.max(latestPauseUntil, pauseUntil); activated = true
 end
 if #pauseMembers > 0 and latestPauseUntil > exactIntegerMax - retention then return redis.error_reply('pause retention boundary is not representable') end
