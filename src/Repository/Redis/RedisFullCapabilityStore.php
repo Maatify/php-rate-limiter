@@ -1318,7 +1318,9 @@ for _, blockKey in ipairs({KEYS[3], KEYS[4]}) do
   end
 end
 local newCycle = not active
-if newCycle and cyclesByMember[tostring(now)] == nil then cyclesByMember[tostring(now)] = now; cycleMembers[#cycleMembers + 1] = tostring(now) end
+-- #185 F-185-20: a cycle member is the caller time as the canonical decimal text it arrived as (ARGV[5]); Lua's
+-- tostring() formats with %.14g, so a time of 1e14 or more became "1e+14" and the next call read it as malformed.
+if newCycle and cyclesByMember[ARGV[5]] == nil then cyclesByMember[ARGV[5]] = now; cycleMembers[#cycleMembers + 1] = ARGV[5] end
 local cycleCount = #cycleMembers; local latestCycle = 0
 for _, member in ipairs(cycleMembers) do latestCycle = math.max(latestCycle, cyclesByMember[member]) end
 if cycleCount > 0 and latestCycle > exactIntegerMax - cycleWindow then return redis.error_reply('cycle boundary is not representable') end
@@ -1347,7 +1349,8 @@ for _, member in ipairs(pauseMembers) do
 end
 local activated = false
 if newCycle and cycleCount >= tonumber(ARGV[7]) and pauseUntil == 0 then
-  pauseUntil = now + pauseSeconds; local member = tostring(now) .. ':' .. tostring(pauseUntil)
+  -- #185 F-185-20: the pause member is "start:finish" in canonical decimal text; %.0f is exact for the range checked above.
+  pauseUntil = now + pauseSeconds; local member = ARGV[5] .. ':' .. string.format('%.0f', pauseUntil)
   pausesByMember[member] = {now, pauseUntil}; pauseMembers[#pauseMembers + 1] = member; latestPauseUntil = math.max(latestPauseUntil, pauseUntil); activated = true
 end
 if #pauseMembers > 0 and latestPauseUntil > exactIntegerMax - retention then return redis.error_reply('pause retention boundary is not representable') end
