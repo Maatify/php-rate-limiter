@@ -746,11 +746,18 @@ final class Ipv6AdaptiveAggregationTest extends TestCase
         self::assertSame(RateLimitResultDTO::DECISION_HARD_BLOCK, $result->decision);
         $scope48 = $this->hierarchyKey('api_heavy_protection', 48, $this->prefix($fourthIp, 48));
         $currentChurn = $this->adaptiveChurnKey('api_heavy_protection', 48, $scope48, 'chrome/123');
-        self::assertSame(2, $this->correlationStore->distinctCount($currentChurn));
-        self::assertSame(2, $this->correlationStore->watchValue($currentChurn . ':watch'));
-        self::assertNull($this->correlationStore->distinctExpiresAt(
-            $this->adaptiveBridgeKey('api_heavy_protection', 'churn', 48, $currentChurn),
-        ));
+        // #185 F-185-23 (LT-185-23 (b)): the aliased set is Previous and keeps its one member; the third fingerprint is
+        // carried by the bridge, alive no longer than Previous, and the fourth request names it as its previous form,
+        // so it is known: a logical count of 2.
+        $bridge = $this->adaptiveBridgeKey('api_heavy_protection', 'churn', 48, $currentChurn);
+        self::assertSame(1, $this->correlationStore->distinctCount($currentChurn), 'set');
+        self::assertSame(1, $this->correlationStore->distinctCount($bridge), 'bridge');
+        self::assertSame(2, $this->correlationStore->watchValue($currentChurn . ':watch'), 'watch');
+        self::assertNotNull($this->correlationStore->distinctExpiresAt($bridge));
+        self::assertLessThanOrEqual(
+            $this->correlationStore->distinctExpiresAt($currentChurn),
+            $this->correlationStore->distinctExpiresAt($bridge),
+        );
         self::assertSame(
             2,
             $this->rateLimitStore->checkBlock($this->enforcementKey('api_heavy_protection', 'k2', $fourthIp))?->level,

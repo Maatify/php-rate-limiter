@@ -874,6 +874,10 @@ final class RedisFullCapabilityStoreIntegrationTest extends TestCase
         self::assertSame(-2, $this->integer($this->raw(['PTTL', $this->key('distinct', 'g12-aliased-bridge')])));
     }
 
+    /**
+     * #185 F-185-23 (LT-185-23 (b)): under the alias the new member is written to the bridge, never to the physical
+     * Previous set. On `78526b5` the member was answered as added and written nowhere, so the cap never held.
+     */
     public function testAliasedRotationAcceptsNewLogicalRepresentationWithoutPhysicalPreviousMutation(): void
     {
         $logical = 'g12-aliased-rotation-new';
@@ -892,13 +896,18 @@ final class RedisFullCapabilityStoreIntegrationTest extends TestCase
         self::assertTrue($snapshot->accepted);
         self::assertTrue($snapshot->added);
         self::assertSame(2, $snapshot->count);
-        self::assertSame(['new', 'old'], $snapshot->members);
+        self::assertSame(['old', 'new'], $snapshot->members, 'Previous, then the bridge (the general rotation order).');
         self::assertSame($this->integer($this->raw(['HGET', $meta, 'expiresAt'])), $snapshot->expiresAt);
         self::assertSame($beforeMembers, $this->raw(['SMEMBERS', $physical]));
         self::assertSame($beforeMeta, $this->hashMap($meta));
         self::assertLessThanOrEqual($beforeDataPttl, $this->integer($this->raw(['PTTL', $physical])));
         self::assertLessThanOrEqual($beforeMetaPttl, $this->integer($this->raw(['PTTL', $meta])));
-        self::assertSame(-2, $this->integer($this->raw(['PTTL', $this->key('distinct', 'g12-aliased-rotation-new-bridge')])));
+        $bridge = $this->key('distinct', 'g12-aliased-rotation-new-bridge');
+        $bridgeMeta = $this->key('distinct-meta', 'g12-aliased-rotation-new-bridge');
+        self::assertSame(['new'], $this->raw(['SMEMBERS', $bridge]));
+        self::assertGreaterThan(0, $this->integer($this->raw(['PTTL', $bridge])));
+        self::assertLessThanOrEqual($this->integer($this->raw(['PTTL', $physical])), $this->integer($this->raw(['PTTL', $bridge])));
+        self::assertSame($this->hashMap($meta), $this->hashMap($bridgeMeta), 'The bridge ends with Previous.');
     }
 
     public function testInvalidCircuitStatusAndBlockLevelsFailExplicitly(): void
@@ -2335,6 +2344,23 @@ final class RedisFullCapabilityStoreIntegrationTest extends TestCase
             ];
         }
 
+        // #185 F-185-23 (LT-185-23 (b)): record the aliased rotations so the bridge they wrote can be checked.
+        $aliased = new class ($this->executor) implements RedisCommandExecutorInterface {
+            /** @var list<array{list<string>, mixed}> */
+            public array $calls = [];
+
+            public function __construct(private readonly RedisCommandExecutorInterface $inner) {}
+
+            public function execute(array $command): mixed
+            {
+                $reply = $this->inner->execute($command);
+                if ($command[0] === 'EVAL' && (string) ($command[2] ?? '') === '6' && ($command[3] ?? null) === ($command[7] ?? '')) {
+                    $this->calls[] = [array_map('strval', $command), $reply];
+                }
+
+                return $reply;
+            }
+        };
         $currentLimiter = RateLimiterBuilder::fromFullCapabilityStore(
             new RateLimiterConfig(
                 'public-fingerprint-only-outer',
@@ -2343,7 +2369,7 @@ final class RedisFullCapabilityStoreIntegrationTest extends TestCase
                 null,
                 'public-old-fingerprint',
             ),
-            $this->store,
+            new RedisFullCapabilityStore($aliased, $this->namespace),
             new RecordingFailureSignalEmitter(),
         )->build();
         $rotated = $currentLimiter->limit(
@@ -2361,6 +2387,34 @@ final class RedisFullCapabilityStoreIntegrationTest extends TestCase
             self::assertSame($metadata, $this->hashMap($metadataKey));
             self::assertLessThanOrEqual($metadataPttl, $this->integer($this->raw(['PTTL', $metadataKey])));
         }
+        // The new device was written to a bridge (KEYS[3]) of an aliased rotation, alive no longer than Previous.
+        self::assertNotEmpty($aliased->calls, 'A fingerprint-only rotation runs aliased rotations.');
+        $bridged = 0;
+        foreach ($aliased->calls as [$command, $reply]) {
+            self::assertIsArray($reply);
+            // A key with no live Previous takes the plain current path; only a live Previous is bridged.
+            if (($reply[2] ?? null) !== 1 || ! array_key_exists($command[7], $previousSnapshot)) {
+                continue;
+            }
+            $bridged++;
+            self::assertContains($command[11], $this->setMembers($command[5]));
+            self::assertLessThanOrEqual($this->integer($this->raw(['PTTL', $command[7]])), $this->integer($this->raw(['PTTL', $command[5]])));
+        }
+        self::assertGreaterThan(0, $bridged, 'The new device is carried by a bridge.');
+    }
+
+    /** @return list<string> */
+    private function setMembers(string $key): array
+    {
+        $members = $this->raw(['SMEMBERS', $key]);
+        self::assertIsArray($members);
+        $out = [];
+        foreach ($members as $member) {
+            self::assertIsString($member);
+            $out[] = $member;
+        }
+
+        return $out;
     }
 
     public function testPublicBuilderMigratesPreviousBudgetIntoCurrentGeneration(): void

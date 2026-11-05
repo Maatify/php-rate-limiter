@@ -136,13 +136,8 @@ final class BoundedCorrelationCoverageTest extends TestCase
         $currentScope = $this->churnScope($ip, $ua, $config['currentSecret']);
         $currentItems = $this->correlationStore->distinctItems($currentScope);
         self::assertSame(3, $this->logicalChurnCount($shape, $previousScope, $currentScope, $config['currentSecret'], $ip, $ua));
-        if ($shape === 'fingerprint-only') {
-            foreach ($previousItems as $previousItem) {
-                self::assertContains($previousItem, $currentItems, $shape);
-            }
-        } else {
-            self::assertSame($previousItems, $this->correlationStore->distinctItems($previousScope), $shape);
-        }
+        // #185 F-185-23 (LT-185-23 (b)): Previous is read-only in every shape, the aliased fingerprint-only one included.
+        self::assertSame($previousItems, $this->correlationStore->distinctItems($previousScope), $shape);
     }
 
     #[DataProvider('rotationShapes')]
@@ -577,10 +572,8 @@ final class BoundedCorrelationCoverageTest extends TestCase
         string $ip,
         string $ua,
     ): int {
-        if ($shape === 'fingerprint-only') {
-            return $this->correlationStore->distinctCount($currentScope);
-        }
-
+        // #185 F-185-23 (LT-185-23 (b)): the logical count is Previous plus the bridge in every shape; under the
+        // fingerprint-only alias Previous and Current are one read-only set and the new member is in the bridge.
         $bridgeScope = $this->correlationBridge(
             'otp_protection',
             'churn',

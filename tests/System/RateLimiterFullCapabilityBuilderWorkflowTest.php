@@ -176,16 +176,20 @@ final class RateLimiterFullCapabilityBuilderWorkflowTest extends TestCase
 
         $currentScope = $this->distributedDeviceScope('login_protection', $account, $currentOuter);
         $currentItems = $store->correlationStore()->distinctItems($currentScope);
-        self::assertCount($currentOuter === $stateOuter ? 4 : 1, $currentItems);
         self::assertSame($stateExpiry, $store->correlationStore()->distinctExpiresAt($stateScope));
-
-        if ($currentOuter !== $stateOuter) {
-            self::assertSame($stateItems, $store->correlationStore()->distinctItems($stateScope));
-        } else {
+        if ($previousOuter === null && $previousFingerprint === null) {
+            // No rotation: one generation, the fourth device joins the set.
+            self::assertCount(4, $currentItems);
             foreach ($stateItems as $stateItem) {
                 self::assertContains($stateItem, $currentItems);
             }
+
+            return;
         }
+        // #185 F-185-23 (LT-185-23 (b)): with a stable outer key (fingerprint-only) Current is the previous set itself and
+        // stays read-only; the fourth device is carried by the bridge. With a new outer key Current holds it.
+        self::assertCount($currentOuter === $stateOuter ? 3 : 1, $currentItems);
+        self::assertSame($stateItems, $store->correlationStore()->distinctItems($stateScope));
     }
 
     /**

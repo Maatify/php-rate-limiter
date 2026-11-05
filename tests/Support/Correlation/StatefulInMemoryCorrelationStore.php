@@ -207,30 +207,9 @@ class StatefulInMemoryCorrelationStore implements BoundedCorrelationSnapshotRota
 
         $this->assertWithinCapacity($previous, $maxDistinct, 'previous bounded distinct state');
 
-        if ($currentKey === $previousKey) {
-            $current = $this->prepareSet($this->sets[$currentKey] ?? null, $now, $ttlSeconds);
-            $this->assertWithinCapacity($current, $maxDistinct, 'aliased bounded distinct state');
-
-            if (isset($current['items'][$currentMember])) {
-                return new BoundedDistinctResultDTO(count($current['items']), true);
-            }
-
-            $knownPreviousMember = isset($current['items'][$previousMember]);
-            if (! $knownPreviousMember && count($current['items']) >= $maxDistinct) {
-                return new BoundedDistinctResultDTO($maxDistinct, false);
-            }
-
-            if ($knownPreviousMember) {
-                return new BoundedDistinctResultDTO(count($current['items']), true);
-            }
-
-            if (count($current['items']) < $maxDistinct) {
-                $current['items'][$currentMember] = true;
-                $this->sets[$currentKey] = $current;
-            }
-
-            return new BoundedDistinctResultDTO(count($current['items']), true);
-        }
+        // #185 F-185-23 (LT-185-23 (b)): an aliased Current/Previous takes the general path; the aliased set is
+        // Previous and is never written, the bridge carries the new member.
+        $alias = $currentKey === $previousKey;
 
         $current = $this->prepareSet($this->sets[$currentKey] ?? null, $now, $ttlSeconds);
         $bridge = $this->prepareBridgeSet(
@@ -251,12 +230,12 @@ class StatefulInMemoryCorrelationStore implements BoundedCorrelationSnapshotRota
             throw new RateLimiterException('Bounded distinct rotation state exceeds its logical capacity.');
         }
 
-        if (isset($current['items'][$currentMember]) || isset($bridge['items'][$currentMember])) {
+        if (isset($current['items'][$currentMember]) || isset($bridge['items'][$currentMember]) || isset($bridge['items'][$previousMember])) {
             return new BoundedDistinctResultDTO($effectiveCount, true);
         }
 
-        if (isset($previous['items'][$previousMember])) {
-            if (! isset($current['items'][$currentMember]) && count($current['items']) < $maxDistinct) {
+        if (isset($previous['items'][$previousMember]) || isset($previous['items'][$currentMember])) {
+            if (! $alias && ! isset($current['items'][$currentMember]) && count($current['items']) < $maxDistinct) {
                 $current['items'][$currentMember] = true;
                 $this->sets[$currentKey] = $current;
             }
@@ -268,9 +247,11 @@ class StatefulInMemoryCorrelationStore implements BoundedCorrelationSnapshotRota
             return new BoundedDistinctResultDTO($effectiveCount, false);
         }
 
-        $current['items'][$currentMember] = true;
         $bridge['items'][$currentMember] = true;
-        $this->sets[$currentKey] = $current;
+        if (! $alias) {
+            $current['items'][$currentMember] = true;
+            $this->sets[$currentKey] = $current;
+        }
         $this->sets[$bridgeKey] = $bridge;
 
         return new BoundedDistinctResultDTO($effectiveCount + 1, true);
@@ -297,20 +278,8 @@ class StatefulInMemoryCorrelationStore implements BoundedCorrelationSnapshotRota
         $this->operations++;
         $this->assertWithinCapacity($previous, $maxDistinct, 'previous bounded distinct state');
 
-        if ($currentKey === $previousKey) {
-            $current = $this->prepareSet($this->sets[$currentKey] ?? null, $now, $ttlSeconds);
-            $this->assertWithinCapacity($current, $maxDistinct, 'aliased bounded distinct state');
-            $known = isset($current['items'][$currentMember]) || isset($current['items'][$previousMember]);
-
-            if (! $known && count($current['items']) < $maxDistinct) {
-                $current['items'][$currentMember] = true;
-                $this->sets[$currentKey] = $current;
-                $known = true;
-                return $this->snapshot($current, true, true, $previous['expiresAt']);
-            }
-
-            return $this->snapshot($current, $known, false, $previous['expiresAt']);
-        }
+        // #185 F-185-23 (LT-185-23 (b)): an aliased Current/Previous takes the general path (see above).
+        $alias = $currentKey === $previousKey;
 
         $current = $this->prepareSet($this->sets[$currentKey] ?? null, $now, $ttlSeconds);
         $bridge = $this->prepareBridgeSet(
@@ -331,7 +300,7 @@ class StatefulInMemoryCorrelationStore implements BoundedCorrelationSnapshotRota
             throw new RateLimiterException('Bounded distinct rotation state exceeds its logical capacity.');
         }
 
-        if (isset($bridge['items'][$currentMember]) || isset($previous['items'][$previousMember])) {
+        if (isset($bridge['items'][$currentMember]) || isset($bridge['items'][$previousMember]) || isset($previous['items'][$previousMember]) || isset($previous['items'][$currentMember])) {
             return new BoundedDistinctSnapshotDTO(
                 count($members),
                 true,
@@ -351,9 +320,11 @@ class StatefulInMemoryCorrelationStore implements BoundedCorrelationSnapshotRota
             );
         }
 
-        $current['items'][$currentMember] = true;
         $bridge['items'][$currentMember] = true;
-        $this->sets[$currentKey] = $current;
+        if (! $alias) {
+            $current['items'][$currentMember] = true;
+            $this->sets[$currentKey] = $current;
+        }
         $this->sets[$bridgeKey] = $bridge;
         $members[] = $currentMember;
 
