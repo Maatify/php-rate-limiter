@@ -8,6 +8,7 @@ use Maatify\RateLimiter\Repository\FullCapabilityStoreInterface;
 use Maatify\RateLimiter\Repository\SnapshotFencedScoreStoreInterface;
 use Maatify\RateLimiter\Repository\CircuitBreakerStateCasStoreInterface;
 use Maatify\RateLimiter\Repository\ScoreReplaceStoreInterface;
+use Maatify\RateLimiter\Repository\OperationalReadOnlyStoreInterface;
 
 /**
  * A Host store written against the storage contracts as they stood before
@@ -15,7 +16,7 @@ use Maatify\RateLimiter\Repository\ScoreReplaceStoreInterface;
  * none of the caller-time capability interfaces, by delegating to an inner
  * store. Proves that an old-signature Host store still loads and runs (BC2).
  */
-final class LegacySignatureFullCapabilityStore implements FullCapabilityStoreInterface, SnapshotFencedScoreStoreInterface, CircuitBreakerStateCasStoreInterface, ScoreReplaceStoreInterface
+final class LegacySignatureFullCapabilityStore implements FullCapabilityStoreInterface, SnapshotFencedScoreStoreInterface, CircuitBreakerStateCasStoreInterface, ScoreReplaceStoreInterface, OperationalReadOnlyStoreInterface
 {
     /** @param FullCapabilityStoreInterface&SnapshotFencedScoreStoreInterface&CircuitBreakerStateCasStoreInterface&ScoreReplaceStoreInterface $inner */
     public function __construct(private readonly FullCapabilityStoreInterface&SnapshotFencedScoreStoreInterface&CircuitBreakerStateCasStoreInterface&ScoreReplaceStoreInterface $inner) {}
@@ -89,6 +90,18 @@ final class LegacySignatureFullCapabilityStore implements FullCapabilityStoreInt
     public function blockWithPunishmentLifecycleTracking(string $currentKey, ?string $previousKey, int $expectedGeneration, string $proposedLifecycleId, int $level, int $durationSeconds, int $cycleWindowSeconds, int $cycleThreshold, int $pauseSeconds, int $pauseHistoryRetentionSeconds): \Maatify\RateLimiter\DTO\PunishmentLifecycleTransitionDTO
     {
         return $this->inner->blockWithPunishmentLifecycleTracking($currentKey, $previousKey, $expectedGeneration, $proposedLifecycleId, $level, $durationSeconds, $cycleWindowSeconds, $cycleThreshold, $pauseSeconds, $pauseHistoryRetentionSeconds);
+    }
+
+    /** #185 F-185-26 (DEC-032): the wrapped store never deletes on read, so the read-only reads are its reads. */
+    public function peekBlock(string $key): ?\Maatify\RateLimiter\DTO\BlockStateDTO
+    {
+        return $this->inner->checkBlock($key);
+    }
+
+    /** #185 F-185-26 (DEC-032): the wrapped store never deletes on read, so the read-only reads are its reads. */
+    public function peekBudget(string $key): ?\Maatify\RateLimiter\DTO\BudgetStateDTO
+    {
+        return $this->inner->getBudget($key);
     }
 
     public function checkBlock(string $key): ?\Maatify\RateLimiter\DTO\BlockStateDTO

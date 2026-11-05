@@ -33,6 +33,7 @@ use Maatify\RateLimiter\Repository\RateLimitStoreInterface;
 use Maatify\RateLimiter\Repository\SnapshotFencedScoreStoreInterface;
 use Maatify\RateLimiter\Repository\CircuitBreakerStateCasStoreInterface;
 use Maatify\RateLimiter\Repository\ScoreReplaceStoreInterface;
+use Maatify\RateLimiter\Repository\OperationalReadOnlyStoreInterface;
 use Maatify\RateLimiter\Service\AdmissionCredentialCodec;
 use Maatify\RateLimiter\Service\AdmissionRuntime;
 use Maatify\RateLimiter\Service\AntiEquilibriumGate;
@@ -241,9 +242,22 @@ final class RateLimiterBuilder
      * punishment mutation — so construction must not fail on capabilities it
      * never uses. It also does not weaken or change build() or any of its
      * fail-fast behavior.
+     *
+     * It does require the one capability Operational Read uses: the read-only
+     * block and budget reads of OperationalReadOnlyStoreInterface, which leave an
+     * expired key where it is (#185, F-185-26, DEC-032). A store without it fails
+     * here, with a message that names the interface; there is no fallback to
+     * checkBlock()/getBudget(), which delete an expired key as they read it.
+     *
+     * @throws RateLimiterException When the rate-limit store does not implement
+     *     OperationalReadOnlyStoreInterface.
      */
     public function buildOperationalReader(): CompositeRateLimitOperationalReaderInterface
     {
+        if (! $this->rateLimitStore instanceof OperationalReadOnlyStoreInterface) {
+            throw new RateLimiterException('Operational Read requires a store implementing OperationalReadOnlyStoreInterface (#185, DEC-032).');
+        }
+
         $clock = $this->clock ?? new SystemClock(new DateTimeZone('UTC'));
         $deviceIdentityResolver = $this->deviceIdentityResolver ?? $this->defaultDeviceIdentityResolver();
 

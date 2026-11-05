@@ -9,6 +9,24 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [1.0.0-rc.4]
 
+### Fixed (#185, F-185-26, DEC-032 proposed) — Operational Read no longer deletes expired blocks and budgets
+- `RateLimitOperationalReader` and `SimpleRateLimitOperationalReader` are documented read-only, but read blocks and budgets
+  through `checkBlock()` / `getBudget()`, whose Redis scripts (`BLOCK_GET`, `BUDGET_GET`) delete a logically expired key as
+  they read it. Reading a snapshot at a block's expiry removed the block key; reading a simple throttle after its interval
+  removed the budget key. The readers now read through `OperationalReadOnlyStoreInterface` (`peekBlock()` / `peekBudget()`,
+  caller-time mirror `CallerTimeOperationalReadOnlyStoreInterface`): the same validation (malformed state is the same error),
+  an expired key is absent, and nothing is written. `RedisFullCapabilityStore` implements it with `BLOCK_PEEK` /
+  `BUDGET_PEEK`, which share their validation with the runtime scripts; the runtime reads keep deleting (LT-P2-03) and their
+  scripts are byte-identical.
+- **Upgrade note for a custom store:** `buildOperationalReader()` requires `OperationalReadOnlyStoreInterface` of the rate-limit
+  store and fails with `Operational Read requires a store implementing OperationalReadOnlyStoreInterface (#185, DEC-032).`
+  until it is implemented; there is no fallback to the deleting reads. A store that never deletes on read can return its
+  `checkBlock()` / `getBudget()`. `build()` does not require it, and a reader built through its own constructor over a store
+  without it keeps the previous reads (DEC-012 §4).
+- Tests: `OperationalReadOnlyReadsRedisTest` (the Lead's adv8/r5 through the score reader and the simple reader, the store-level
+  reads, the same-error validation, and the control that the runtime reads still delete; six of its seven cases fail on
+  `23501a2`) and `OperationalReadOnlyPreflightTest`.
+
 ### Fixed (#185, F-185-24, F-185-25) — budget amounts and counter overflow are checked before any write
 - `RedisFullCapabilityStore::incrementBudget()` / `incrementBudgetAt()` accepted an amount below 1: an amount of -5 created a
   budget with count -5 that every later read rejected as `malformed budget state`. An amount below 1 is now

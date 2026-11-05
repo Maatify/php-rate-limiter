@@ -33,6 +33,8 @@ use Maatify\RateLimiter\Repository\PunishmentLifecycleStoreInterface;
 use Maatify\RateLimiter\Repository\RateLimitStoreInterface;
 use Maatify\RateLimiter\Repository\SnapshotFencedScoreStoreInterface;
 use Maatify\RateLimiter\Repository\CallerTimeScoreReplaceStoreInterface;
+use Maatify\RateLimiter\Repository\CallerTimeOperationalReadOnlyStoreInterface;
+use Maatify\RateLimiter\Repository\OperationalReadOnlyStoreInterface;
 use Maatify\RateLimiter\Repository\ScoreReplaceStoreInterface;
 
 /**
@@ -100,6 +102,30 @@ final class CallerTimeStore
         return $store instanceof CallerTimeRateLimitStoreInterface
             ? $store->getBudgetAt($key, $now->getTimestamp())
             : $store->getBudget($key);
+    }
+
+    /**
+     * #185 F-185-26 (DEC-032): the block read of Operational Read. A store with the read-only reads is read without a write,
+     * at the caller's time when supported; `buildOperationalReader()` requires them. A reader built through its constructor
+     * over a store without them keeps the previous read (DEC-012 §4, the DEC-031 pattern).
+     */
+    public static function operationalBlock(RateLimitStoreInterface $store, string $key, DateTimeImmutable $now): ?BlockStateDTO
+    {
+        if ($store instanceof CallerTimeOperationalReadOnlyStoreInterface) {
+            return $store->peekBlockAt($key, $now->getTimestamp());
+        }
+
+        return $store instanceof OperationalReadOnlyStoreInterface ? $store->peekBlock($key) : self::checkBlock($store, $key, $now);
+    }
+
+    /** #185 F-185-26 (DEC-032): the budget read of Operational Read, as `operationalBlock()` reads a block. */
+    public static function operationalBudget(RateLimitStoreInterface $store, string $key, DateTimeImmutable $now): ?BudgetStateDTO
+    {
+        if ($store instanceof CallerTimeOperationalReadOnlyStoreInterface) {
+            return $store->peekBudgetAt($key, $now->getTimestamp());
+        }
+
+        return $store instanceof OperationalReadOnlyStoreInterface ? $store->peekBudget($key) : self::getBudget($store, $key, $now);
     }
 
     public static function incrementBudget(RateLimitStoreInterface $store, string $key, int $epochDurationSeconds, int $amount, DateTimeImmutable $now): BudgetStateDTO

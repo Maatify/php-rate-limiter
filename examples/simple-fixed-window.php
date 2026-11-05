@@ -25,6 +25,7 @@ use Maatify\RateLimiter\Repository\PunishmentLifecycleStoreInterface;
 use Maatify\RateLimiter\Repository\SnapshotFencedScoreStoreInterface;
 use Maatify\RateLimiter\Repository\CircuitBreakerStateCasStoreInterface;
 use Maatify\RateLimiter\Repository\ScoreReplaceStoreInterface;
+use Maatify\RateLimiter\Repository\OperationalReadOnlyStoreInterface;
 
 require dirname(__DIR__) . '/vendor/autoload.php';
 
@@ -35,7 +36,7 @@ require dirname(__DIR__) . '/vendor/autoload.php';
  * host application's atomic storage integration in production; see
  * examples/basic-rate-limit.php for a fully annotated version.
  */
-final class SimpleThrottleExampleStore implements PunishmentLifecycleStoreInterface, SnapshotFencedScoreStoreInterface, ScoreReplaceStoreInterface
+final class SimpleThrottleExampleStore implements PunishmentLifecycleStoreInterface, SnapshotFencedScoreStoreInterface, ScoreReplaceStoreInterface, OperationalReadOnlyStoreInterface
 {
     /** @var array<string, array{value: int, updatedAt: int, expiresAt: int}> */
     private array $counters = [];
@@ -115,6 +116,20 @@ final class SimpleThrottleExampleStore implements PunishmentLifecycleStoreInterf
     public function block(string $key, int $level, int $durationSeconds): void
     {
         $this->blocks[$key] = ['level' => $level, 'expiresAt' => time() + $durationSeconds];
+    }
+
+    /**
+     * #185 F-185-26 (DEC-032): Operational Read's block and budget reads. This store never deletes on read, so they
+     * are its reads; a store that removes an expired key as it reads it must leave it in place here.
+     */
+    public function peekBlock(string $key): ?BlockStateDTO
+    {
+        return $this->checkBlock($key);
+    }
+
+    public function peekBudget(string $key): ?BudgetStateDTO
+    {
+        return $this->getBudget($key);
     }
 
     public function checkBlock(string $key): ?BlockStateDTO

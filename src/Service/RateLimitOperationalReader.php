@@ -26,7 +26,11 @@ use Maatify\SharedCommon\Contracts\ClockInterface;
  * Reads current and previous-generation state for operational inspection.
  *
  * This reader is intentionally read-only: it derives keys and fetches state
- * without incrementing counters, issuing cooldowns, or persisting blocks.
+ * without incrementing counters, issuing cooldowns, or persisting blocks. Over a
+ * store implementing OperationalReadOnlyStoreInterface, blocks and budgets are
+ * read without a write: an expired key stays where it is (#185, F-185-26,
+ * DEC-032). buildOperationalReader() requires that store; constructed directly
+ * over a store without it, the reader keeps checkBlock()/getBudget() (DEC-012).
  */
 final class RateLimitOperationalReader implements RateLimitOperationalReaderInterface
 {
@@ -165,13 +169,13 @@ final class RateLimitOperationalReader implements RateLimitOperationalReaderInte
         // Use the active logical block level across Current/Previous, matching
         // the pipeline's rotation-aware decay semantics.
         $now = $this->clock->now()->getTimestamp();
-        $currentBlock = CallerTimeStore::checkBlock($this->store, $currentKey, $this->clock->now());
+        $currentBlock = CallerTimeStore::operationalBlock($this->store, $currentKey, $this->clock->now());
         $activeHardBlock = $this->activeHardBlock($currentBlock, $now);
         $blockFromPreviousGeneration = false;
         $previousBlock = null;
 
         if ($activeHardBlock === null && $previousKey !== null) {
-            $previousBlock = CallerTimeStore::checkBlock($this->store, $previousKey, $this->clock->now());
+            $previousBlock = CallerTimeStore::operationalBlock($this->store, $previousKey, $this->clock->now());
             $activeHardBlock = $this->activeHardBlock($previousBlock, $now);
             $blockFromPreviousGeneration = $activeHardBlock !== null;
         }
@@ -296,14 +300,14 @@ final class RateLimitOperationalReader implements RateLimitOperationalReaderInte
     private function resolveBudgetState(?string $currentKey, ?string $previousKey): array
     {
         if ($currentKey !== null) {
-            $current = CallerTimeStore::getBudget($this->store, $currentKey, $this->clock->now());
+            $current = CallerTimeStore::operationalBudget($this->store, $currentKey, $this->clock->now());
             if ($current !== null) {
                 return [$current, false];
             }
         }
 
         if ($previousKey !== null) {
-            $previous = CallerTimeStore::getBudget($this->store, $previousKey, $this->clock->now());
+            $previous = CallerTimeStore::operationalBudget($this->store, $previousKey, $this->clock->now());
             if ($previous !== null) {
                 return [$previous, true];
             }

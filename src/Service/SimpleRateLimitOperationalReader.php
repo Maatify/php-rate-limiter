@@ -16,9 +16,12 @@ use Maatify\SharedCommon\Contracts\ClockInterface;
  *
  * This reader derives the exact same DEC-013 state identity as
  * FixedWindowSimpleRateLimiter and uses only the read-only store operations
- * needed for inspection: getBudget() and isHealthy(). It never invokes
+ * needed for inspection: the budget read and isHealthy(). It never invokes
  * incrementBudget(), incrementBudgetWithSeed(), block(), set(), or another
- * mutation primitive.
+ * mutation primitive. Over a store implementing OperationalReadOnlyStoreInterface
+ * the budget is read with peekBudget(), which leaves an ended window where it is
+ * (#185, F-185-26, DEC-032); buildOperationalReader() requires that store.
+ * Constructed directly over a store without it, the reader keeps getBudget().
  */
 final class SimpleRateLimitOperationalReader implements SimpleRateLimitOperationalReaderInterface
 {
@@ -114,12 +117,12 @@ final class SimpleRateLimitOperationalReader implements SimpleRateLimitOperation
         $intervalSeconds = $policy->getIntervalSeconds();
 
         $currentKey = $this->deriveKey($policyName, $limit, $intervalSeconds, $subject, $this->keySecret);
-        $state = CallerTimeStore::getBudget($this->store, $currentKey, $this->clock->now());
+        $state = CallerTimeStore::operationalBudget($this->store, $currentKey, $this->clock->now());
         $fromPreviousGeneration = false;
 
         if ($state === null && $this->previousKeySecret !== null) {
             $previousKey = $this->deriveKey($policyName, $limit, $intervalSeconds, $subject, $this->previousKeySecret);
-            $previousState = CallerTimeStore::getBudget($this->store, $previousKey, $this->clock->now());
+            $previousState = CallerTimeStore::operationalBudget($this->store, $previousKey, $this->clock->now());
             if ($previousState !== null) {
                 $state = $previousState;
                 $fromPreviousGeneration = true;

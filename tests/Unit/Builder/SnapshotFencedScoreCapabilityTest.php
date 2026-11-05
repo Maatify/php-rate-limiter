@@ -8,6 +8,7 @@ use Maatify\RateLimiter\Builder\RateLimiterBuilder;
 use Maatify\RateLimiter\Config\RateLimiterConfig;
 use Maatify\RateLimiter\Exception\RateLimiterException;
 use Maatify\RateLimiter\Repository\FullCapabilityStoreInterface;
+use Maatify\RateLimiter\Tests\Support\RateLimiter\FullCapabilityReadOnlyReadsStoreInterface;
 use Maatify\RateLimiter\Tests\Support\Clock\FixedClock;
 use Maatify\RateLimiter\Tests\Support\FailureSignal\RecordingFailureSignalEmitter;
 use Maatify\RateLimiter\Tests\Support\FullCapability\FullCapabilityInMemoryStore;
@@ -40,7 +41,8 @@ final class SnapshotFencedScoreCapabilityTest extends TestCase
 
     public function testTheOperationalReaderDoesNotRequireTheCapability(): void
     {
-        $this->builder($this->createStub(FullCapabilityStoreInterface::class))->buildOperationalReader();
+        // The reader needs only its read-only reads (DEC-032), not the snapshot-fenced write.
+        $this->builder($this->createStub(FullCapabilityReadOnlyReadsStoreInterface::class))->buildOperationalReader();
 
         $this->addToAssertionCount(1);
     }

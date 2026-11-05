@@ -21,6 +21,7 @@ use Maatify\RateLimiter\Repository\CorrelationStoreInterface;
 use Maatify\RateLimiter\Repository\BoundedCorrelationStoreInterface;
 use Maatify\RateLimiter\Repository\RateLimitStoreInterface;
 use Maatify\RateLimiter\Repository\HardBlockCycleStoreInterface;
+use Maatify\RateLimiter\Repository\OperationalReadOnlyStoreInterface;
 use Maatify\RateLimiter\Service\AntiEquilibriumGate;
 use Maatify\RateLimiter\Service\BudgetTracker;
 use Maatify\RateLimiter\Service\CircuitBreaker;
@@ -37,7 +38,7 @@ use Maatify\SharedCommon\Infrastructure\SystemClock;
 require dirname(__DIR__) . '/vendor/autoload.php';
 
 /** Small host-owned adapters used only to make this example executable. */
-final class OperationalExampleRateLimitStore implements HardBlockCycleStoreInterface
+final class OperationalExampleRateLimitStore implements HardBlockCycleStoreInterface, OperationalReadOnlyStoreInterface
 {
     private const PAUSE_HISTORY_RETENTION_SECONDS = 86400;
 
@@ -190,6 +191,20 @@ final class OperationalExampleRateLimitStore implements HardBlockCycleStoreInter
         }
 
         return new DecayPauseStateDTO($elapsed, $activePauseUntil);
+    }
+
+    /**
+     * #185 F-185-26 (DEC-032): Operational Read's block and budget reads. This store never deletes on read, so they
+     * are its reads; a store that removes an expired key as it reads it must leave it in place here.
+     */
+    public function peekBlock(string $key): ?BlockStateDTO
+    {
+        return $this->checkBlock($key);
+    }
+
+    public function peekBudget(string $key): ?BudgetStateDTO
+    {
+        return $this->getBudget($key);
     }
 
     public function checkBlock(string $key): ?BlockStateDTO

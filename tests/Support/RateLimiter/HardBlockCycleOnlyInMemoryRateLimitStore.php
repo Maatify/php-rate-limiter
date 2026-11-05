@@ -7,6 +7,7 @@ namespace Maatify\RateLimiter\Tests\Support\RateLimiter;
 use Maatify\RateLimiter\Repository\HardBlockCycleStoreInterface;
 use Maatify\RateLimiter\Repository\SnapshotFencedScoreStoreInterface;
 use Maatify\RateLimiter\Repository\ScoreReplaceStoreInterface;
+use Maatify\RateLimiter\Repository\OperationalReadOnlyStoreInterface;
 use Maatify\RateLimiter\DTO\BlockStateDTO;
 use Maatify\RateLimiter\DTO\BudgetStateDTO;
 use Maatify\RateLimiter\DTO\DecayPauseStateDTO;
@@ -22,7 +23,7 @@ use Maatify\SharedCommon\Contracts\ClockInterface;
  * DEC-003 hard-block-cycle capability, not the full lifecycle/budget-seed
  * capabilities.
  */
-final class HardBlockCycleOnlyInMemoryRateLimitStore implements HardBlockCycleStoreInterface, SnapshotFencedScoreStoreInterface, ScoreReplaceStoreInterface
+final class HardBlockCycleOnlyInMemoryRateLimitStore implements HardBlockCycleStoreInterface, SnapshotFencedScoreStoreInterface, ScoreReplaceStoreInterface, OperationalReadOnlyStoreInterface
 {
     private readonly InMemoryRateLimitStore $delegate;
 
@@ -61,6 +62,18 @@ final class HardBlockCycleOnlyInMemoryRateLimitStore implements HardBlockCycleSt
     public function block(string $key, int $level, int $durationSeconds): void
     {
         $this->delegate->block($key, $level, $durationSeconds);
+    }
+
+    /** #185 F-185-26 (DEC-032): the wrapped store never deletes on read, so the read-only reads are its reads. */
+    public function peekBlock(string $key): ?BlockStateDTO
+    {
+        return $this->delegate->checkBlock($key);
+    }
+
+    /** #185 F-185-26 (DEC-032): the wrapped store never deletes on read, so the read-only reads are its reads. */
+    public function peekBudget(string $key): ?BudgetStateDTO
+    {
+        return $this->delegate->getBudget($key);
     }
 
     public function checkBlock(string $key): ?BlockStateDTO
