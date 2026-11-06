@@ -30,6 +30,7 @@ use Maatify\RateLimiter\Repository\CallerTimeBudgetSeedStoreInterface;
 use Maatify\RateLimiter\Repository\CallerTimePunishmentLifecycleStoreInterface;
 use Maatify\RateLimiter\Repository\CircuitBreakerStateCasStoreInterface;
 use Maatify\RateLimiter\Repository\CallerTimeScoreReplaceStoreInterface;
+use Maatify\RateLimiter\Repository\CallerTimeOperationalReadOnlyStoreInterface;
 use Maatify\RateLimiter\Repository\CallerTimeSnapshotFencedScoreStoreInterface;
 use Maatify\SharedCommon\Contracts\ClockInterface;
 use Maatify\SharedCommon\Infrastructure\SystemClock;
@@ -58,7 +59,8 @@ final class RedisFullCapabilityStore implements
     CallerTimePunishmentLifecycleStoreInterface,
     CallerTimeSnapshotFencedScoreStoreInterface,
     CircuitBreakerStateCasStoreInterface,
-    CallerTimeScoreReplaceStoreInterface
+    CallerTimeScoreReplaceStoreInterface,
+    CallerTimeOperationalReadOnlyStoreInterface
 {
     private const PREFIX = 'maatify:rate-limiter:v1';
 
@@ -741,7 +743,8 @@ end
 return expires
 LUA;
 
-    private const BLOCK_GET = <<<'LUA'
+    /** The block read's validation, shared by BLOCK_GET and BLOCK_PEEK; it ends with a live-or-expired block in `level`/`expires`. */
+    private const BLOCK_VALIDATE = <<<'LUA'
 local function validBackendExpiry(value)
   if value == nil or value == '0' then return value == '0' end
   if string.match(value, '^[1-9]%d*$') == nil then return false end
@@ -762,10 +765,22 @@ local expires = redis.call('HGET', KEYS[1], 'expiresAt')
 -- #185 F-185-19: a block level is canonical decimal text, one digit 1..6 (L1-L6), checked before tonumber().
 if not level or not validBackendExpiry(expires) or string.match(level, '^[1-6]$') == nil then return redis.error_reply('malformed block state') end
 level = tonumber(level)
+LUA;
+
+    private const BLOCK_GET = self::BLOCK_VALIDATE . "\n" . <<<'LUA'
 if compareDecimalStrings(expires, ARGV[1]) <= 0 then
   redis.call('DEL', KEYS[1])
   return {}
 end
+return {level, expires}
+LUA;
+
+    /**
+     * #185 F-185-26 (DEC-032): BLOCK_GET for Operational Read. The same validation (BLOCK_VALIDATE), and a logically
+     * expired block is absent, but nothing is deleted: the read writes nothing. The runtime keeps BLOCK_GET (LT-P2-03).
+     */
+    private const BLOCK_PEEK = self::BLOCK_VALIDATE . "\n" . <<<'LUA'
+if compareDecimalStrings(expires, ARGV[1]) <= 0 then return {} end
 return {level, expires}
 LUA;
 
@@ -819,7 +834,8 @@ if not expiryApplied(redis.pcall('EXPIRE', KEYS[1], ARGV[1]), {KEYS[1]}) then re
 return {redis.call('HGET', KEYS[1], 'count'), now}
 LUA;
 
-    private const BUDGET_GET = self::LUA_TIME_PRELUDE . "\n" . <<<'LUA'
+    /** The budget read's validation, shared by BUDGET_GET and BUDGET_PEEK; it ends with the epoch end in `storedEnd`. */
+    private const BUDGET_VALIDATE = self::LUA_TIME_PRELUDE . "\n" . <<<'LUA'
 local exactIntegerMax = 9007199254740991
 -- DEC-017: `epochStart` is a canonical non-negative PHP-int Unix timestamp. It
 -- is compared and added as a decimal string, so a value above 2^53 is handled
@@ -845,10 +861,22 @@ local duration = redis.call('HGET', KEYS[1], 'epochDuration')
 if redis.call('TTL', KEYS[1]) < 0 then return redis.error_reply('malformed budget state') end
 local storedEnd, endError = persistedEpochEnd(count, start, duration)
 if storedEnd == nil then return redis.error_reply(endError) end
+LUA;
+
+    private const BUDGET_GET = self::BUDGET_VALIDATE . "\n" . <<<'LUA'
 if compareDecimalStrings(nowStr, storedEnd) >= 0 then
   redis.call('DEL', KEYS[1])
   return {}
 end
+return {redis.call('HGET', KEYS[1], 'count'), start}
+LUA;
+
+    /**
+     * #185 F-185-26 (DEC-032): BUDGET_GET for Operational Read. The same validation (BUDGET_VALIDATE), and a budget past
+     * its epoch is absent, but nothing is deleted: the read writes nothing. The runtime keeps BUDGET_GET (LT-P2-03).
+     */
+    private const BUDGET_PEEK = self::BUDGET_VALIDATE . "\n" . <<<'LUA'
+if compareDecimalStrings(nowStr, storedEnd) >= 0 then return {} end
 return {redis.call('HGET', KEYS[1], 'count'), start}
 LUA;
 
@@ -1654,7 +1682,23 @@ LUA;
 
     public function checkBlockAt(string $key, int $now): ?BlockStateDTO
     {
-        $result = $this->eval(self::BLOCK_GET, [$this->key('block', $key)], [$this->callerTime($now)]);
+        return $this->blockState(self::BLOCK_GET, $key, $now);
+    }
+
+    public function peekBlock(string $key): ?BlockStateDTO
+    {
+        return $this->peekBlockAt($key, $this->fallbackNow());
+    }
+
+    /** #185 F-185-26 (DEC-032): BLOCK_PEEK validates as BLOCK_GET does and deletes nothing. */
+    public function peekBlockAt(string $key, int $now): ?BlockStateDTO
+    {
+        return $this->blockState(self::BLOCK_PEEK, $key, $now);
+    }
+
+    private function blockState(string $script, string $key, int $now): ?BlockStateDTO
+    {
+        $result = $this->eval($script, [$this->key('block', $key)], [$this->callerTime($now)]);
         if ($result === []) {
             return null;
         }
@@ -1672,7 +1716,23 @@ LUA;
 
     public function getBudgetAt(string $key, int $now): ?BudgetStateDTO
     {
-        $result = $this->eval(self::BUDGET_GET, [$this->key('budget', $key)], [$this->callerTime($now)]);
+        return $this->budgetState(self::BUDGET_GET, $key, $now);
+    }
+
+    public function peekBudget(string $key): ?BudgetStateDTO
+    {
+        return $this->peekBudgetAt($key, $this->fallbackNow());
+    }
+
+    /** #185 F-185-26 (DEC-032): BUDGET_PEEK validates as BUDGET_GET does and deletes nothing. */
+    public function peekBudgetAt(string $key, int $now): ?BudgetStateDTO
+    {
+        return $this->budgetState(self::BUDGET_PEEK, $key, $now);
+    }
+
+    private function budgetState(string $script, string $key, int $now): ?BudgetStateDTO
+    {
+        $result = $this->eval($script, [$this->key('budget', $key)], [$this->callerTime($now)]);
         if ($result === []) {
             return null;
         }

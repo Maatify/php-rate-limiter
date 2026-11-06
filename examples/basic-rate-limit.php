@@ -22,6 +22,7 @@ use Maatify\RateLimiter\Repository\PunishmentLifecycleStoreInterface;
 use Maatify\RateLimiter\Repository\SnapshotFencedScoreStoreInterface;
 use Maatify\RateLimiter\Repository\CircuitBreakerStateCasStoreInterface;
 use Maatify\RateLimiter\Repository\ScoreReplaceStoreInterface;
+use Maatify\RateLimiter\Repository\OperationalReadOnlyStoreInterface;
 use Maatify\RateLimiter\DTO\FailureSignalDTO;
 use Maatify\RateLimiter\DTO\BlockStateDTO;
 use Maatify\RateLimiter\DTO\BudgetStateDTO;
@@ -65,7 +66,7 @@ final class ExampleDeterministicClock implements ClockInterface
  * Replace these adapters with the host application's atomic storage and
  * observability integrations in production.
  */
-final class ExampleRateLimitStore implements PunishmentLifecycleStoreInterface, SnapshotFencedScoreStoreInterface, ScoreReplaceStoreInterface
+final class ExampleRateLimitStore implements PunishmentLifecycleStoreInterface, SnapshotFencedScoreStoreInterface, ScoreReplaceStoreInterface, OperationalReadOnlyStoreInterface
 {
     private const PAUSE_HISTORY_RETENTION_SECONDS = 86400;
 
@@ -406,6 +407,20 @@ final class ExampleRateLimitStore implements PunishmentLifecycleStoreInterface, 
         }
 
         return new DecayPauseStateDTO($elapsed, $activePauseUntil);
+    }
+
+    /**
+     * #185 F-185-26 (DEC-032): Operational Read's block and budget reads. This store never deletes on read, so they
+     * are its reads; a store that removes an expired key as it reads it must leave it in place here.
+     */
+    public function peekBlock(string $key): ?BlockStateDTO
+    {
+        return $this->checkBlock($key);
+    }
+
+    public function peekBudget(string $key): ?BudgetStateDTO
+    {
+        return $this->getBudget($key);
     }
 
     public function checkBlock(string $key): ?BlockStateDTO

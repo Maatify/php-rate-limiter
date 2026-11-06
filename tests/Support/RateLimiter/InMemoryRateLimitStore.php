@@ -22,8 +22,9 @@ use Maatify\RateLimiter\Repository\CallerTimeBudgetSeedStoreInterface;
 use Maatify\RateLimiter\Repository\CallerTimePunishmentLifecycleStoreInterface;
 use Maatify\RateLimiter\Repository\CallerTimeSnapshotFencedScoreStoreInterface;
 use Maatify\RateLimiter\Repository\CallerTimeScoreReplaceStoreInterface;
+use Maatify\RateLimiter\Repository\CallerTimeOperationalReadOnlyStoreInterface;
 
-class InMemoryRateLimitStore implements BudgetSeedStoreInterface, PunishmentLifecycleStoreInterface, CallerTimeBudgetSeedStoreInterface, CallerTimePunishmentLifecycleStoreInterface, CallerTimeSnapshotFencedScoreStoreInterface, CallerTimeScoreReplaceStoreInterface
+class InMemoryRateLimitStore implements BudgetSeedStoreInterface, PunishmentLifecycleStoreInterface, CallerTimeBudgetSeedStoreInterface, CallerTimePunishmentLifecycleStoreInterface, CallerTimeSnapshotFencedScoreStoreInterface, CallerTimeScoreReplaceStoreInterface, CallerTimeOperationalReadOnlyStoreInterface
 {
     public bool $available = true;
     private const PAUSE_HISTORY_RETENTION_SECONDS = 86400;
@@ -590,6 +591,27 @@ class InMemoryRateLimitStore implements BudgetSeedStoreInterface, PunishmentLife
     public function getBudgetAt(string $key, int $now): ?BudgetStateDTO
     {
         return $this->atCallerTime($now, fn(): ?BudgetStateDTO => $this->getBudget($key));
+    }
+
+    /** #185 F-185-26 (DEC-032): this store never deletes on read, so the read-only reads are its reads. */
+    public function peekBlock(string $key): ?BlockStateDTO
+    {
+        return $this->checkBlock($key);
+    }
+
+    public function peekBudget(string $key): ?BudgetStateDTO
+    {
+        return $this->getBudget($key);
+    }
+
+    public function peekBlockAt(string $key, int $now): ?BlockStateDTO
+    {
+        return $this->atCallerTime($now, fn(): ?BlockStateDTO => $this->peekBlock($key));
+    }
+
+    public function peekBudgetAt(string $key, int $now): ?BudgetStateDTO
+    {
+        return $this->atCallerTime($now, fn(): ?BudgetStateDTO => $this->peekBudget($key));
     }
 
     public function incrementBudgetAt(string $key, int $epochDurationSeconds, int $amount, int $now): BudgetStateDTO
