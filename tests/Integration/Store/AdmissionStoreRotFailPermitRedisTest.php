@@ -13,6 +13,7 @@ use Maatify\RateLimiter\Repository\Redis\RedisCommandExecutorInterface;
 use Maatify\RateLimiter\Tests\Support\Admission\AdmissionRaceRunner;
 use Maatify\RateLimiter\Tests\Support\Admission\AdmissionRaceSpec;
 use Maatify\RateLimiter\Tests\Support\Admission\AdmissionScenarioBuilder as S;
+use Maatify\RateLimiter\Tests\Support\Admission\ReplyValue;
 use Maatify\RateLimiter\Tests\Support\Admission\StudyOriginalReserve;
 use PHPUnit\Framework\Attributes\DataProvider;
 use PHPUnit\Framework\Attributes\Group;
@@ -30,7 +31,8 @@ final class AdmissionStoreRotFailPermitRedisTest extends AdmissionRedisGateTestC
         $prevCounter = $this->key(AdmissionScopeKindEnum::COUNTER, 'rot:old');
         $prevSet = $this->key(AdmissionScopeKindEnum::DEVICE_MEMBER, 'rot:dev-old');
         $curSet = $this->key(AdmissionScopeKindEnum::DEVICE_MEMBER, 'rot:dev-new');
-        $this->raw('SET', $prevCounter, '2', 'EX', '1200');
+        $this->raw('ZADD', $prevCounter, (string) (self::NOW + 1200), 'old-1', (string) (self::NOW + 1200), 'old-2');
+        $this->raw('EXPIRE', $prevCounter, '1200');
         $this->raw('ZADD', $prevSet, (string) (self::NOW + 3600), 'live-prev', (string) (self::NOW - 1), 'expired-prev');
         $this->raw('EXPIRE', $prevSet, '3600');
 
@@ -49,8 +51,8 @@ final class AdmissionStoreRotFailPermitRedisTest extends AdmissionRedisGateTestC
         self::assertTrue($this->store->reserveAdmission(S::request($scope()), self::NOW)->admitted);
         self::assertFalse($this->store->reserveAdmission(S::request($scope()), self::NOW)->admitted);
         self::assertSame($prevBefore, $this->dump()[$keys['prevCounter']]);
-        self::assertSame('2', $this->raw('GET', $keys['prevCounter']));
-        self::assertSame('2', $this->raw('GET', $this->key(AdmissionScopeKindEnum::COUNTER, 'rot:new')));
+        self::assertSame(2, ReplyValue::integer($this->raw('ZCOUNT', $keys['prevCounter'], '(' . self::NOW, '+inf')));
+        self::assertSame(2, ReplyValue::integer($this->raw('ZCOUNT', $this->key(AdmissionScopeKindEnum::COUNTER, 'rot:new'), '(' . self::NOW, '+inf')));
         self::assertTrue($this->noTtlRefreshed(array_intersect_key($pttl, [$keys['prevCounter'] => 1])));
     }
 
@@ -251,7 +253,7 @@ final class AdmissionStoreRotFailPermitRedisTest extends AdmissionRedisGateTestC
                 'p-single',
             ));
             self::assertSame(1, AdmissionRaceRunner::admitted($results));
-            self::assertSame('1', $this->raw('GET', $this->key(AdmissionScopeKindEnum::COUNTER, 'c:issue-race')));
+            self::assertSame(1, ReplyValue::integer($this->raw('ZCOUNT', $this->key(AdmissionScopeKindEnum::COUNTER, 'c:issue-race'), '(' . self::NOW, '+inf')));
             self::assertSame(['permit_exists'], array_values(array_unique(array_map(static fn(array $r): ?string => $r['refused'], array_filter($results, static fn(array $r): bool => ! $r['ok'])))));
         }
     }

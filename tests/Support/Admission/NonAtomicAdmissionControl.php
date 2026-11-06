@@ -27,8 +27,7 @@ final class NonAtomicAdmissionControl
         foreach ($request->scopes as $scope) {
             $key = $this->keys->scopeKey($request->verifierClass, $scope->kind, $scope->key);
             if ($scope->kind === AdmissionScopeKindEnum::COUNTER) {
-                $current = $this->redis->execute(['GET', $key]);
-                if (($current === null ? 0 : ReplyValue::integer($current)) >= $scope->capacity) {
+                if (ReplyValue::integer($this->redis->execute(['ZCOUNT', $key, '(' . $now, '+inf'])) >= $scope->capacity) {
                     return false;
                 }
             } elseif ($scope->kind === AdmissionScopeKindEnum::DEVICE_MEMBER) {
@@ -41,12 +40,13 @@ final class NonAtomicAdmissionControl
         foreach ($request->scopes as $scope) {
             $key = $this->keys->scopeKey($request->verifierClass, $scope->kind, $scope->key);
             if ($scope->kind === AdmissionScopeKindEnum::COUNTER) {
-                if (ReplyValue::integer($this->redis->execute(['INCR', $key])) === 1) {
-                    $this->redis->execute(['EXPIRE', $key, $scope->ttlSeconds]);
-                }
+                $member = $scope->member ?? ($request->permit !== null ? $request->permit->id : null) ?? hash('xxh128', $request->verifierClass . ':' . $scope->key . ':' . $now . ':' . getmypid() . ':' . hrtime(true));
+                $this->redis->execute(['ZREMRANGEBYSCORE', $key, '-inf', (string) $now]);
+                $this->redis->execute(['ZADD', $key, (string) ($now + $scope->ttlSeconds), $member]);
+                $this->redis->execute(['EXPIRE', $key, (string) $scope->ttlSeconds]);
             } elseif ($scope->kind === AdmissionScopeKindEnum::DEVICE_MEMBER) {
-                $this->redis->execute(['ZADD', $key, $now + $scope->ttlSeconds, (string) $scope->member]);
-                $this->redis->execute(['EXPIRE', $key, $scope->ttlSeconds]);
+                $this->redis->execute(['ZADD', $key, (string) ($now + $scope->ttlSeconds), (string) $scope->member]);
+                $this->redis->execute(['EXPIRE', $key, (string) $scope->ttlSeconds]);
             }
         }
 

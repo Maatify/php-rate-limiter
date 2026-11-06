@@ -69,8 +69,9 @@ final class AdmissionStoreScoreValidationRedisTest extends AdmissionRedisGateTes
         $this->raw('EXPIRE', $key, '3600');
         if (str_starts_with($location, 'pending-outcome')) {
             // State an outcome would change: a counter it would refund, a settled member a success would remove.
-            $this->raw('SET', $this->key(AdmissionScopeKindEnum::COUNTER, 'c:ok'), '1', 'EX', '1200');
-            $this->raw('SADD', $this->key(AdmissionScopeKindEnum::SET_SIZE, 's:fail'), 'acct-new');
+            $this->raw('ZADD', $this->key(AdmissionScopeKindEnum::COUNTER, 'c:ok'), (string) (self::NOW + 1200), 'p-185');
+            $this->raw('EXPIRE', $this->key(AdmissionScopeKindEnum::COUNTER, 'c:ok'), '1200');
+            $this->raw('ZADD', $this->key(AdmissionScopeKindEnum::SET_SIZE, 's:fail'), (string) (self::NOW + 1200), 'acct-new');
             $this->raw('EXPIRE', $this->key(AdmissionScopeKindEnum::SET_SIZE, 's:fail'), '1200');
         }
     }
@@ -144,7 +145,7 @@ final class AdmissionStoreScoreValidationRedisTest extends AdmissionRedisGateTes
         };
         if ($admitted !== null) {
             self::assertTrue($admitted);
-            self::assertSame('1', $after[$this->key(AdmissionScopeKindEnum::COUNTER, 'c:ok')]['value']);
+            self::assertSame(['p-185' => (string) (self::NOW + 1200)], $after[$this->key(AdmissionScopeKindEnum::COUNTER, 'c:ok')]['value']);
             self::assertArrayHasKey($this->keys->permitKey('p-185'), $after);
         }
     }

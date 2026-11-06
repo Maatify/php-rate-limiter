@@ -39,7 +39,8 @@ final class AdmissionStoreNm6RedisTest extends AdmissionRedisGateTestCase
         $this->raw('EXPIRE', $prev, '3600');
         $this->raw('ZADD', $cur, (string) (self::NOW - 1), 'expired-cur');
         $this->raw('EXPIRE', $cur, '3600');
-        $this->raw('SET', $counter, '2', 'EX', '1200');
+        $this->raw('ZADD', $counter, (string) (self::NOW + 1200), 'p1', (string) (self::NOW + 1200), 'p2');
+        $this->raw('EXPIRE', $counter, '1200');
 
         return ['cur' => $cur, 'prev' => $prev, 'counter' => $counter];
     }
@@ -118,6 +119,9 @@ final class AdmissionStoreNm6RedisTest extends AdmissionRedisGateTestCase
         foreach (['N4a', 'N4b', 'N5'] as $fixture) {
             $this->resetRedis();
             $keys = $this->seedDeviceSets();
+            if ($fixture === 'N4a') {
+                $this->raw('SET', $keys['counter'], '2', 'EX', '1200');
+            }
             $before = $this->dump();
             $result = $this->studyReserve($fixture, $keys);
             $verdicts[$fixture] = $this->fixturePasses($fixture, $keys, $before, $this->dump(), $result['admitted']);

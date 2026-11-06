@@ -8,6 +8,7 @@ use Maatify\RateLimiter\Enum\AdmissionScopeKindEnum;
 use Maatify\RateLimiter\Tests\Support\Admission\AdmissionRaceRunner;
 use Maatify\RateLimiter\Tests\Support\Admission\AdmissionRaceSpec;
 use Maatify\RateLimiter\Tests\Support\Admission\AdmissionScenarioBuilder as S;
+use Maatify\RateLimiter\Tests\Support\Admission\ReplyValue;
 use PHPUnit\Framework\Attributes\DataProvider;
 use PHPUnit\Framework\Attributes\Group;
 
@@ -57,7 +58,7 @@ final class AdmissionStoreNm7RedisTest extends AdmissionRedisGateTestCase
         };
         $spec = $this->spec([['name' => 'src', 'kind' => 'counter', 'key' => 'c:nm7', 'capacity' => 5, 'ttl' => 1200]]);
         self::assertSame([3, 3, 3], $this->rounds($processes, $seed, $spec));
-        self::assertSame('5', $this->raw('GET', $this->key(AdmissionScopeKindEnum::COUNTER, 'c:nm7')));
+        self::assertSame(5, ReplyValue::integer($this->raw('ZCOUNT', $this->key(AdmissionScopeKindEnum::COUNTER, 'c:nm7'), '(' . self::NOW, '+inf')));
     }
 
     #[DataProvider('levels')]
@@ -101,7 +102,7 @@ final class AdmissionStoreNm7RedisTest extends AdmissionRedisGateTestCase
             $n = AdmissionRaceRunner::admitted(AdmissionRaceRunner::run($this->host, $this->port, $processes, $spec));
             $admitted[] = $n;
             // Every scope advanced by exactly the number of admitted requests, none beyond its cap.
-            self::assertSame((string) (2 + $n), $this->raw('GET', $this->key(AdmissionScopeKindEnum::COUNTER, 'c:multi')));
+            self::assertSame(2 + $n, ReplyValue::integer($this->raw('ZCOUNT', $this->key(AdmissionScopeKindEnum::COUNTER, 'c:multi'), '(' . self::NOW, '+inf')));
             self::assertSame($n, $this->raw('ZCARD', $this->key(AdmissionScopeKindEnum::DEVICE_MEMBER, 'd:multi')));
             self::assertSame((string) (2 * 1800 - $n * 1800), $this->raw('HGET', $this->key(AdmissionScopeKindEnum::BUCKET, 'b:multi'), 'credit'));
         }
@@ -114,16 +115,16 @@ final class AdmissionStoreNm7RedisTest extends AdmissionRedisGateTestCase
         for ($round = 0; $round < 3; $round++) {
             $this->resetRedis();
             for ($i = 0; $i < 100; $i++) {
-                $this->store->reserveAdmission(S::request(S::counter('p_acct', 'c:refund', 1000)), self::NOW);
+                $this->store->reserveAdmission(S::request(S::counter('p_acct', 'c:refund', 1000, 1200, null, 'ref-' . $i)), self::NOW);
             }
             AdmissionRaceRunner::run($this->host, $this->port, $processes, $this->spec([
                 ['name' => 'fail_src', 'kind' => 'set_size', 'key' => 's:nm7', 'capacity' => 1000, 'ttl' => 1200, 'member' => 'acct-{i}'],
             ], 'store', 'outcome', 'failure'));
-            self::assertSame($processes, $this->raw('SCARD', $this->key(AdmissionScopeKindEnum::SET_SIZE, 's:nm7')));
+            self::assertSame($processes, $this->raw('ZCOUNT', $this->key(AdmissionScopeKindEnum::SET_SIZE, 's:nm7'), '(' . self::NOW, '+inf'));
             AdmissionRaceRunner::run($this->host, $this->port, $processes, $this->spec([
-                ['name' => 'p_acct', 'kind' => 'counter', 'key' => 'c:refund', 'capacity' => 1000, 'ttl' => 1200],
+                ['name' => 'p_acct', 'kind' => 'counter', 'key' => 'c:refund', 'capacity' => 1000, 'ttl' => 1200, 'member' => 'ref-{i}'],
             ], 'store', 'outcome', 'success'));
-            self::assertSame((string) (100 - $processes), $this->raw('GET', $this->key(AdmissionScopeKindEnum::COUNTER, 'c:refund')));
+            self::assertSame(100 - $processes, $this->raw('ZCOUNT', $this->key(AdmissionScopeKindEnum::COUNTER, 'c:refund'), '(' . self::NOW, '+inf'));
         }
     }
 
@@ -136,7 +137,7 @@ final class AdmissionStoreNm7RedisTest extends AdmissionRedisGateTestCase
         }
         $spec = $this->spec([['name' => 'fail_src', 'kind' => 'set_size', 'key' => 's:cap', 'capacity' => 4, 'ttl' => 1200, 'member' => 'new-{i}']]);
         self::assertSame(16, AdmissionRaceRunner::admitted(AdmissionRaceRunner::run($this->host, $this->port, 16, $spec)));
-        self::assertSame(3, $this->raw('SCARD', $this->key(AdmissionScopeKindEnum::SET_SIZE, 's:cap')));
+        self::assertSame(3, $this->raw('ZCOUNT', $this->key(AdmissionScopeKindEnum::SET_SIZE, 's:cap'), '(' . self::NOW, '+inf'));
         // With the set at F the gate refuses every new account.
         $this->store->applyAdmissionOutcome(S::outcome(\Maatify\RateLimiter\Enum\AdmissionOutcomeKindEnum::FAILURE, S::setSize('fail_src', 's:cap', 4, 'seed-3')), self::NOW);
         self::assertSame(0, AdmissionRaceRunner::admitted(AdmissionRaceRunner::run($this->host, $this->port, 16, $spec)));

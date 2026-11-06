@@ -156,18 +156,18 @@ abstract class AdmissionStoreContractTestCase extends TestCase
     public function testCounterRefundOnSuccessOnlyAndRepeatedOutcomesApplyTwice(): void
     {
         $store = $this->newStore();
-        $counter = static fn() => S::counter('p_acct', 'c:refund', 3);
+        $counter = static fn(string $id) => S::counter('p_acct', 'c:refund', 3, 1200, null, $id);
         for ($i = 0; $i < 3; $i++) {
-            self::assertTrue($this->admitted($store, S::request($counter())));
+            self::assertTrue($this->admitted($store, S::request($counter('p-' . $i))));
         }
-        $store->applyAdmissionOutcome(S::outcome(AdmissionOutcomeKindEnum::FAILURE, $counter()), self::NOW);
-        self::assertFalse($this->admitted($store, S::request($counter())));
-        // No idempotency for T0: two success outcomes refund two units.
-        $store->applyAdmissionOutcome(S::outcome(AdmissionOutcomeKindEnum::SUCCESS, $counter()), self::NOW);
-        $store->applyAdmissionOutcome(S::outcome(AdmissionOutcomeKindEnum::SUCCESS, $counter()), self::NOW);
-        self::assertTrue($this->admitted($store, S::request($counter())));
-        self::assertTrue($this->admitted($store, S::request($counter())));
-        self::assertFalse($this->admitted($store, S::request($counter())));
+        $store->applyAdmissionOutcome(S::outcome(AdmissionOutcomeKindEnum::FAILURE, $counter('p-0')), self::NOW);
+        self::assertFalse($this->admitted($store, S::request($counter('p-extra'))));
+        // Under DEC-033: each distinct permit/member refund frees its slot.
+        $store->applyAdmissionOutcome(S::outcome(AdmissionOutcomeKindEnum::SUCCESS, $counter('p-0')), self::NOW);
+        $store->applyAdmissionOutcome(S::outcome(AdmissionOutcomeKindEnum::SUCCESS, $counter('p-1')), self::NOW);
+        self::assertTrue($this->admitted($store, S::request($counter('p-new-1'))));
+        self::assertTrue($this->admitted($store, S::request($counter('p-new-2'))));
+        self::assertFalse($this->admitted($store, S::request($counter('p-new-3'))));
     }
 
     public function testRefundNeverGoesBelowZero(): void

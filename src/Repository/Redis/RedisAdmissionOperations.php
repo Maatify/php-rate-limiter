@@ -376,6 +376,8 @@ redis.call('SET', KEYS[1], string.format('%d', value))
 return value
 LUA;
 
+    private int $syntheticMemberSequence = 0;
+
     public function __construct(
         private readonly RedisCommandExecutorInterface $redis,
         private readonly string $namespace,
@@ -441,7 +443,9 @@ LUA;
                 : ($previous === null ? '' : $this->scopeKey($request->verifierClass, $scope->kind, $previous));
             $member = $scope->member;
             if ($scope->kind === AdmissionScopeKindEnum::COUNTER && ($member === null || $member === '')) {
-                $member = $permit !== null ? $permit->id : bin2hex(random_bytes(16));
+                $member = $permit !== null
+                    ? $permit->id
+                    : hash('xxh128', $request->verifierClass . ':' . $scope->key . ':' . $now . ':' . getmypid() . ':' . (++$this->syntheticMemberSequence));
             }
             array_push(
                 $args,

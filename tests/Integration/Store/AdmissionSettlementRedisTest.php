@@ -62,16 +62,23 @@ final class AdmissionSettlementRedisTest extends AdmissionRedisGateTestCase
         self::assertTrue($this->noTtlRefreshed($pttl));
     }
 
-    public function testThePendingKeyLivesForTheScopeLifetimeAndIsNeverRenewed(): void
+    /**
+     * DEC-033: a due pending member counts for the scope TTL from its deadline, so the pending key lives
+     * until its newest member's window ends (deadline - now + TTL); a later add extends it, and nothing shortens it.
+     */
+    public function testThePendingKeyLivesUntilItsNewestMembersWindowEndsAndIsNeverShortened(): void
     {
         $port = $this->portFor(new RedisAdmissionOperations($this->executor, self::NAMESPACE));
         Sc::reserve($port, Sc::N, Sc::member('s:life', 'acct-1', 9), Sc::permit('permit-l1', Sc::N + Sc::D));
         $first = ReplyValue::integer($this->raw('PTTL', $this->pending('s:life')));
-        self::assertGreaterThan((Sc::TTL - 30) * 1000, $first);
-        self::assertLessThanOrEqual(Sc::TTL * 1000, $first);
+        self::assertGreaterThan((Sc::D + Sc::TTL - 30) * 1000, $first);
+        self::assertLessThanOrEqual((Sc::D + Sc::TTL) * 1000, $first);
         usleep(1_200_000);
         Sc::reserve($port, Sc::N + 5, Sc::member('s:life', 'acct-2', 9), Sc::permit('permit-l2', Sc::N + Sc::D));
-        self::assertLessThan($first, ReplyValue::integer($this->raw('PTTL', $this->pending('s:life'))), 'a second pending member must not renew the lifetime');
+        $second = ReplyValue::integer($this->raw('PTTL', $this->pending('s:life')));
+        self::assertLessThan($first, $second, 'a member whose window ends earlier does not renew the lifetime');
+        Sc::reserve($port, Sc::N + 5, Sc::member('s:life', 'acct-3', 9), Sc::permit('permit-l3', Sc::N + 5 + Sc::D));
+        self::assertGreaterThan($second, ReplyValue::integer($this->raw('PTTL', $this->pending('s:life'))), 'a member whose window ends later extends it');
     }
 
     /** @return iterable<string, array{string}> */
@@ -149,15 +156,18 @@ final class AdmissionSettlementRedisTest extends AdmissionRedisGateTestCase
 
     public function testDetectorAnExclusiveBoundFailsSettle1(): void
     {
-        $port = $this->mutantPort([["redis.call('ZRANGEBYSCORE', pendingKey, '-inf', now)", "redis.call('ZRANGEBYSCORE', pendingKey, '-inf', '(' .. now)"]]);
+        $port = $this->mutantPort([[
+            "redis.call('ZRANGEBYSCORE', pendingKey, '(' .. string.format('%d', now - ttl), string.format('%d', now))",
+            "redis.call('ZRANGEBYSCORE', pendingKey, '(' .. string.format('%d', now - ttl), '(' .. string.format('%d', now))",
+        ]]);
         self::assertNotSame(['beforeDeadline' => true, 'atDeadlineNew' => false, 'atDeadlineOwn' => true], Sc::exactBound($port));
     }
 
     public function testDetectorIgnoringTheKeepsSettledFlagFailsSettle2(): void
     {
         $port = $this->mutantPort([[
-            "if not s.keepsSettled then redis.call('SREM', s.cur, s.member) end",
-            "redis.call('SREM', s.cur, s.member)",
+            "if not s.keepsSettled then redis.call('ZREM', s.cur, s.member) end",
+            "redis.call('ZREM', s.cur, s.member)",
         ]]);
         self::assertNotSame(['settledKeptThenNew' => false, 'pendingCancelledThenNew' => true], Sc::keepsSettledFlag($port));
     }
@@ -180,8 +190,8 @@ final class AdmissionSettlementRedisTest extends AdmissionRedisGateTestCase
     public function testDetectorAReadThatPrunesFailsSettle4(): void
     {
         $port = $this->mutantPort([[
-            "if redis.call('SISMEMBER', setKey, m) == 0 then size = size + 1 end",
-            "if redis.call('SISMEMBER', setKey, m) == 0 then size = size + 1 redis.call('ZREM', pendingKey, m) end",
+            "if not liveMember(setKey, m, now) then size = size + 1 end",
+            "if not liveMember(setKey, m, now) then size = size + 1 redis.call('ZREM', pendingKey, m) end",
         ]]);
         [$whole] = $this->readOnlyPass($port);
         self::assertFalse($whole, 'DETECTOR: a settlement that writes on a read must be seen by the dump comparison');
