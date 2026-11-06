@@ -1,0 +1,40 @@
+=======================================================================
+Sliding Admission Windows Measurement Harness (#185, DEC-033)
+Redis: 127.0.0.1:49346
+=======================================================================
+
+[1] Measuring NM-10 Store Parity (Redis vs In-Memory Reference)...
+  Stream L1|none|fresh: 100% PARITY (decisions, reach, causes match exactly)
+  Stream ABA_B|none|fresh: 100% PARITY (decisions, reach, causes match exactly)
+  Stream X2|none|const: 100% PARITY (decisions, reach, causes match exactly)
+  Stream BRD|rotate|fresh: 100% PARITY (decisions, reach, causes match exactly)
+  Evaluated Streams: 4
+  Parity Matches:    4
+  NM-10 Parity:      100%
+
+[2] Measuring G7 PX4 Archive Replay Metrics...
+  TPAIRT (PX4) co-located office cost: 26 / 61 (expected ~21, actual 26)
+  TPAIRT (PX4) attacker reach:         40 / 120 (reference: 120)
+  TMS (PX4) attacker reach:            21 / 61 (bound: <= 29)
+  TMSd (PX4) attacker reach:           40 / 200 (bound: <= 40)
+
+[3] Verifying DEC-025 Budgets & Sliding Windows...
+  sourceCapacity:            24 (W = 600s)
+  crossAccountFailureCap:    4 (W = 600s)
+  proofAccountWindow:        10 (W = 600s)
+  proofProofWindow:          6 (W = 600s)
+  proofAccountDay:           60 (Day = 86400s)
+  proofProofDay:             30 (Day = 86400s)
+
+[4] Measuring Runtime Boundary Bursts Across Boundaries...
+  ufail boundary burst (cap 4):  admitted = 4 (5th blocked: YES, cause: source_failure_cap)
+  pfail boundary burst (cap 4):  admitted = 4 (5th blocked: YES, cause: source_proof_failure_cap)
+  src boundary burst (cap 24):   admitted = 24 (25th blocked: YES, cause: source_capacity)
+  pacct boundary burst (cap 10): admitted = 10 (11th blocked: YES, cause: proof_capacity)
+  pproof boundary burst (cap 6): admitted = 6 (7th blocked: YES, cause: proof_capacity)
+  pacctd day burst (cap 60):     admitted = 60 (61st blocked: YES, cause: proof_capacity)
+  pproofd day burst (cap 30):    admitted = 30 (31st blocked: YES, cause: proof_capacity)
+
+=======================================================================
+All measurements completed successfully.
+=======================================================================
