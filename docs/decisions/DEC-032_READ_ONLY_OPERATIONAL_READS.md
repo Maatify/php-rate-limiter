@@ -68,6 +68,9 @@ requires of the Host's rate-limit store.
 - **For a Host store before 1.0:** `buildOperationalReader()` fails with the message above until the rate-limit store implements
   `peekBlock()` / `peekBudget()` (and `peekBlockAt()` / `peekBudgetAt()` for the caller's time). A store that never deletes on
   read can return its `checkBlock()` / `getBudget()`. This is the upgrade note of the CHANGELOG entry.
+- **For a reader built directly:** a `RateLimitOperationalReader` or `SimpleRateLimitOperationalReader` built through its own
+  constructor over a store without the interface stays on the previous reads, `checkBlock()` / `getBudget()`, and they still
+  delete an expired key. This is the pattern of DEC-031 §6 for low-level constructors; DEC-012 §4 is not amended.
 - **Measured before activation:** the regression of the Lead's adv8 `r5` through the public API (score reader and simple reader),
   the store-level reads, the same-error validation, and the control that the runtime reads still delete
   (`OperationalReadOnlyReadsRedisTest`, `OperationalReadOnlyPreflightTest`).
