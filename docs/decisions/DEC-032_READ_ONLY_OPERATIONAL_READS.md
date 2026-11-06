@@ -6,12 +6,12 @@
 
 ## Status
 
-`PROPOSED` — in the PR of F-185-26/28 (#185, PR-O), on the Owner's decisions relayed on #185 (LT-185-26 (a), LT-185-26a). It
-becomes `ACTIVE` on the Owner's word at merge, after the regression this record names (Consequences) and the Lead's review.
+`ACTIVE` — activated 2026-11-06 in [PR #200](https://github.com/Maatify/php-rate-limiter/pull/200) (F-185-26, #185) on the Owner's decision relayed on #185 ([comment 6645757770](https://github.com/Maatify/php-rate-limiter/issues/185#issuecomment-6645757770), LT-185-26a [comment 6668273476](https://github.com/Maatify/php-rate-limiter/issues/185#issuecomment-6668273476)), after the regression of adv8/r5 and the Lead's review.
+Earlier status: `PROPOSED` in the same PR (F-185-26), on the Owner's decisions relayed on #185 (LT-185-26 (a), LT-185-26a).
 
 ## Date
 
-Proposed 2026-11-05.
+Proposed 2026-11-05; activated 2026-11-06.
 
 ## Decision Authority
 

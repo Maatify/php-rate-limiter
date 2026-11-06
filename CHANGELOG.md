@@ -9,7 +9,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [1.0.0-rc.4]
 
-### Fixed (#185, F-185-26, DEC-032 proposed) — Operational Read no longer deletes expired blocks and budgets
+### Fixed (#185, F-185-26, DEC-032) — Operational Read no longer deletes expired blocks and budgets
 - `RateLimitOperationalReader` and `SimpleRateLimitOperationalReader` are documented read-only, but read blocks and budgets
   through `checkBlock()` / `getBudget()`, whose Redis scripts (`BLOCK_GET`, `BUDGET_GET`) delete a logically expired key as
   they read it. Reading a snapshot at a block's expiry removed the block key; reading a simple throttle after its interval
