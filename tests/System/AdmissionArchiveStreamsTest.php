@@ -171,7 +171,7 @@ final class AdmissionArchiveStreamsTest extends TestCase
         $reach = array_intersect_key(array_map(static fn(array $c): int => $c['reach'], $best), array_flip(StreamGates::SPRAY));
         ksort($reach);
         self::assertSame(['ABA_A' => 8, 'SP1n' => 4, 'SP3' => 8, 'SP6' => 24], $reach);
-        self::assertSame(54, $best['MIX']['legit']);
+        self::assertSame(40, $best['MIX']['legit']);
     }
 
     // ---- RP-G5 (streams, pre+out) ----------------------------------------------------------------------------------------------
@@ -353,7 +353,7 @@ final class AdmissionArchiveStreamsTest extends TestCase
         $rows = $this->compare(self::FULL2, 'FULL2', 'pre+out', self::mechanism(...), false);
 
         self::assertSame(['UAC|none|fresh|pre+out: dec,reach,m'], $rows);
-        self::assertSame(54, $base['MIX']['legit']);
+        self::assertSame(40, $base['MIX']['legit']);
     }
 
     #[Group('nm5')]

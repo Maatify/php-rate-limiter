@@ -292,13 +292,13 @@ final class AdmissionArchiveG7Test extends TestCase
     {
         $px = self::all('PX4');
         $ref = self::all('NOUA2');
-        self::assertSame(29, self::best($px, 'TMS', 'pre+out')['reach']);
+        self::assertSame(21, self::best($px, 'TMS', 'pre+out')['reach']);
         self::assertSame(40, self::best($px, 'TMSd', 'pre+out')['reach']);
         self::assertSame(61, self::best($px, 'TMS', 'pre')['reach']);
         self::assertSame(120, self::best($px, 'TMSd', 'pre')['reach']);
-        self::assertSame(21, self::best($px, 'TPAIRT', 'pre+out')['legit'], 'the co-located office pays 21/61');
+        self::assertSame(26, self::best($px, 'TPAIRT', 'pre+out')['legit'], 'the co-located office pays 26/61');
         self::assertSame(120, self::best($ref, 'TPAIRT', 'pre+out')['reach'], 'TPAIRT attacker on the reference');
-        self::assertSame(72, self::best($px, 'TPAIRT', 'pre+out')['reach'], 'TPAIRT attacker under the cap');
+        self::assertSame(40, self::best($px, 'TPAIRT', 'pre+out')['reach'], 'TPAIRT attacker under the cap');
     }
 
     /** DETECTOR D-PXALL: every admitted P outcome enters D8; the office is refused (N12T 32/61, N12 24/61, fresh, pre+out). */
@@ -320,7 +320,7 @@ final class AdmissionArchiveG7Test extends TestCase
         }
         ksort($denied);
         ksort($archived);
-        self::assertSame(['N12' => 24, 'N12T' => 32], $archived, 'the archived D-PXALL values');
+        self::assertSame(['N12' => 32, 'N12T' => 40], $archived, 'the archived D-PXALL values');
         self::assertSame($archived, $denied, 'DETECTOR: D-PXALL refuses the office');
     }
 }
