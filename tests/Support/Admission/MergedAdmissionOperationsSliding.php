@@ -304,8 +304,6 @@ redis.call('SET', KEYS[1], string.format('%d', value))
 return value
 LUA;
 
-    private int $syntheticMemberSequence = 0;
-
     public function __construct(
         private readonly RedisCommandExecutorInterface $redis,
         private readonly string $namespace,
@@ -339,6 +337,14 @@ LUA;
                 throw new RateLimiterException('Admission permit lifetime exceeds the representable expiry.');
             }
         }
+        foreach ($request->scopes as $scope) {
+            if ($scope->kind === AdmissionScopeKindEnum::COUNTER) {
+                $member = $scope->member;
+                if (($member === null || $member === '') && ($permit === null || $permit->id === '')) {
+                    throw new RateLimiterException('A counter admission scope requires a member.');
+                }
+            }
+        }
         $keys = [];
         $args = [
             (string) $now,
@@ -356,9 +362,7 @@ LUA;
             $keys[] = $previous === null ? '' : $this->scopeKey($request->verifierClass, $scope->kind, $previous);
             $member = $scope->member;
             if ($scope->kind === AdmissionScopeKindEnum::COUNTER && ($member === null || $member === '')) {
-                $member = $permit !== null
-                    ? $permit->id
-                    : hash('xxh128', $request->verifierClass . ':' . $scope->key . ':' . $now . ':' . getmypid() . ':' . (++$this->syntheticMemberSequence));
+                $member = $permit?->id;
             }
             array_push(
                 $args,

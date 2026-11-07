@@ -184,7 +184,7 @@ final class SettlementScenarios
         $later = self::N + self::D + 1;
 
         return [
-            'counter' => ($port->reserve)(S::request(S::counter('src', 'c:s4', 1)), $later)->admitted,
+            'counter' => ($port->reserve)(S::request(S::counter('src', 'c:s4', 1, 1200, null, 'm-s4-later')), $later)->admitted,
             'bucket' => ($port->reserve)(S::request(S::bucket('acct_tb', 'b:s4', 1, 1800)), $later)->admitted,
         ];
     }

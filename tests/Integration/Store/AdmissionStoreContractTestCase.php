@@ -6,6 +6,7 @@ namespace Maatify\RateLimiter\Tests\Integration\Store;
 
 use Maatify\RateLimiter\Enum\AdmissionOutcomeKindEnum;
 use Maatify\RateLimiter\Enum\AdmissionPermitClaimEnum;
+use Maatify\RateLimiter\Exception\RateLimiterException;
 use Maatify\RateLimiter\Repository\AdmissionCapableFullStoreInterface;
 use Maatify\RateLimiter\Repository\AdmissionPermitStoreInterface;
 use Maatify\RateLimiter\Tests\Support\Admission\AdmissionScenarioBuilder as S;
@@ -33,9 +34,9 @@ abstract class AdmissionStoreContractTestCase extends TestCase
     {
         $store = $this->newStore();
         for ($i = 0; $i < 3; $i++) {
-            self::assertTrue($this->admitted($store, S::request(S::counter('src', 'c:src', 3))));
+            self::assertTrue($this->admitted($store, S::request(S::counter('src', 'c:src', 3, 1200, null, 'm-' . $i))));
         }
-        $refused = $store->reserveAdmission(S::request(S::counter('src', 'c:src', 3)), self::NOW);
+        $refused = $store->reserveAdmission(S::request(S::counter('src', 'c:src', 3, 1200, null, 'm-refused')), self::NOW);
         self::assertFalse($refused->admitted);
         self::assertSame('src', $refused->refusedScope);
     }
@@ -43,13 +44,13 @@ abstract class AdmissionStoreContractTestCase extends TestCase
     public function testCounterRotationSumsPreviousAndNeverWritesIt(): void
     {
         $store = $this->newStore();
-        self::assertTrue($this->admitted($store, S::request(S::counter('src', 'c:old', 10))));
-        self::assertTrue($this->admitted($store, S::request(S::counter('src', 'c:old', 10))));
-        self::assertTrue($this->admitted($store, S::request(S::counter('src', 'c:new', 3, 1200, 'c:old'))));
-        self::assertFalse($this->admitted($store, S::request(S::counter('src', 'c:new', 3, 1200, 'c:old'))));
+        self::assertTrue($this->admitted($store, S::request(S::counter('src', 'c:old', 10, 1200, null, 'm-old-1'))));
+        self::assertTrue($this->admitted($store, S::request(S::counter('src', 'c:old', 10, 1200, null, 'm-old-2'))));
+        self::assertTrue($this->admitted($store, S::request(S::counter('src', 'c:new', 3, 1200, 'c:old', 'm-new-1'))));
+        self::assertFalse($this->admitted($store, S::request(S::counter('src', 'c:new', 3, 1200, 'c:old', 'm-new-2'))));
         // The previous key still holds exactly 2: one more admission up to 3, then a refusal.
-        self::assertTrue($this->admitted($store, S::request(S::counter('src', 'c:old', 3))));
-        self::assertFalse($this->admitted($store, S::request(S::counter('src', 'c:old', 3))));
+        self::assertTrue($this->admitted($store, S::request(S::counter('src', 'c:old', 3, 1200, null, 'm-old-3'))));
+        self::assertFalse($this->admitted($store, S::request(S::counter('src', 'c:old', 3, 1200, null, 'm-old-4'))));
     }
 
     public function testDeviceMemberGateAdmitsExistingMembersAtCapacityAndRefusesNewOnes(): void
@@ -173,35 +174,35 @@ abstract class AdmissionStoreContractTestCase extends TestCase
     public function testRefundNeverGoesBelowZero(): void
     {
         $store = $this->newStore();
-        $counter = static fn() => S::counter('p_acct', 'c:floor', 2);
-        $store->applyAdmissionOutcome(S::outcome(AdmissionOutcomeKindEnum::SUCCESS, $counter()), self::NOW);
-        self::assertTrue($this->admitted($store, S::request($counter())));
-        self::assertTrue($this->admitted($store, S::request($counter())));
-        self::assertFalse($this->admitted($store, S::request($counter())));
+        $counter = static fn(string $id) => S::counter('p_acct', 'c:floor', 2, 1200, null, $id);
+        $store->applyAdmissionOutcome(S::outcome(AdmissionOutcomeKindEnum::SUCCESS, $counter('p-0')), self::NOW);
+        self::assertTrue($this->admitted($store, S::request($counter('p-1'))));
+        self::assertTrue($this->admitted($store, S::request($counter('p-2'))));
+        self::assertFalse($this->admitted($store, S::request($counter('p-3'))));
     }
 
     public function testReservationIsAllOrNothingAcrossItsScopes(): void
     {
         $store = $this->newStore();
-        self::assertTrue($this->admitted($store, S::request(S::counter('a', 'c:a', 5), S::counter('b', 'c:b', 1))));
-        $refused = $store->reserveAdmission(S::request(S::counter('a', 'c:a', 5), S::counter('b', 'c:b', 1)), self::NOW);
+        self::assertTrue($this->admitted($store, S::request(S::counter('a', 'c:a', 5, 1200, null, 'm-a-1'), S::counter('b', 'c:b', 1, 1200, null, 'm-b-1'))));
+        $refused = $store->reserveAdmission(S::request(S::counter('a', 'c:a', 5, 1200, null, 'm-a-2'), S::counter('b', 'c:b', 1, 1200, null, 'm-b-2')), self::NOW);
         self::assertFalse($refused->admitted);
         self::assertSame('b', $refused->refusedScope);
         // 'a' holds 1, not 2: the refused request wrote nothing to it.
-        self::assertTrue($this->admitted($store, S::request(S::counter('a', 'c:a', 2))));
-        self::assertFalse($this->admitted($store, S::request(S::counter('a', 'c:a', 2))));
+        self::assertTrue($this->admitted($store, S::request(S::counter('a', 'c:a', 2, 1200, null, 'm-a-3'))));
+        self::assertFalse($this->admitted($store, S::request(S::counter('a', 'c:a', 2, 1200, null, 'm-a-4'))));
     }
 
     public function testBucketAndDeviceMemberAreNotWrittenWhenALaterScopeRefuses(): void
     {
         $store = $this->newStore();
-        self::assertTrue($this->admitted($store, S::request(S::counter('full', 'c:full', 1))));
-        $request = static fn() => S::request(
+        self::assertTrue($this->admitted($store, S::request(S::counter('full', 'c:full', 1, 1200, null, 'm-full-1'))));
+        $request = static fn(string $id) => S::request(
             S::bucket('acct_tb', 'b:aon', 1, 1800),
             S::device('np', 'd:aon', 1, 'dev-1'),
-            S::counter('full', 'c:full', 1),
+            S::counter('full', 'c:full', 1, 1200, null, $id),
         );
-        $refused = $store->reserveAdmission($request(), self::NOW);
+        $refused = $store->reserveAdmission($request('m-full-2'), self::NOW);
         self::assertFalse($refused->admitted);
         self::assertSame('full', $refused->refusedScope);
         // The bucket kept its credit and the device set stayed empty.
@@ -212,8 +213,8 @@ abstract class AdmissionStoreContractTestCase extends TestCase
     public function testFirstRefusingScopeInRequestOrderIsNamed(): void
     {
         $store = $this->newStore();
-        self::assertTrue($this->admitted($store, S::request(S::counter('x', 'c:x', 1), S::counter('y', 'c:y', 1))));
-        $refused = $store->reserveAdmission(S::request(S::counter('y', 'c:y', 1), S::counter('x', 'c:x', 1)), self::NOW);
+        self::assertTrue($this->admitted($store, S::request(S::counter('x', 'c:x', 1, 1200, null, 'm-x-1'), S::counter('y', 'c:y', 1, 1200, null, 'm-y-1'))));
+        $refused = $store->reserveAdmission(S::request(S::counter('y', 'c:y', 1, 1200, null, 'm-y-2'), S::counter('x', 'c:x', 1, 1200, null, 'm-x-2')), self::NOW);
         self::assertSame('y', $refused->refusedScope);
     }
 
@@ -251,17 +252,25 @@ abstract class AdmissionStoreContractTestCase extends TestCase
         // The original deadline stands: a claim after it is late, not accepted.
         self::assertSame(AdmissionPermitClaimEnum::LATE, $store->claimAdmissionPermit('p-1', 'U', 'acctT', 'login', AdmissionOutcomeKindEnum::FAILURE, self::NOW + 40));
         // The refused re-issue wrote nothing: the counter holds 1.
-        self::assertTrue($this->admitted($store, S::request(S::counter('src', 'c:pe', 2))));
-        self::assertFalse($this->admitted($store, S::request(S::counter('src', 'c:pe', 2))));
+        self::assertTrue($this->admitted($store, S::request(S::counter('src', 'c:pe', 2, 1200, null, 'm-pe-1'))));
+        self::assertFalse($this->admitted($store, S::request(S::counter('src', 'c:pe', 2, 1200, null, 'm-pe-2'))));
     }
 
     public function testRefusedReservationIssuesNoPermit(): void
     {
         $store = $this->newStore();
-        self::assertTrue($this->admitted($store, S::request(S::counter('src', 'c:np', 1))));
+        self::assertTrue($this->admitted($store, S::request(S::counter('src', 'c:np', 1, 1200, null, 'm-np-1'))));
         $refused = $store->reserveAdmission(S::withPermit(S::permit('p-none', self::NOW + 30), S::counter('src', 'c:np', 1)), self::NOW);
         self::assertFalse($refused->admitted);
         self::assertSame(AdmissionPermitClaimEnum::UNKNOWN, $store->claimAdmissionPermit('p-none', 'U', 'acctT', 'login', AdmissionOutcomeKindEnum::FAILURE, self::NOW + 1));
+    }
+
+    public function testCounterAdmissionWithoutPermitOrMemberThrowsAndWritesNothing(): void
+    {
+        $store = $this->newStore();
+        $this->expectException(RateLimiterException::class);
+        $this->expectExceptionMessage('A counter admission scope requires a member.');
+        $store->reserveAdmission(S::request(S::counter('src', 'c:no-member', 5)), self::NOW);
     }
 
     public function testBindingEpochReadsCurrentElsePreviousElseZeroAndBumpWritesCurrentOnly(): void

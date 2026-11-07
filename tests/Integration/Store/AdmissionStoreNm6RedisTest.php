@@ -53,7 +53,7 @@ final class AdmissionStoreNm6RedisTest extends AdmissionRedisGateTestCase
     private function productionReserve(string $fixture): array
     {
         $device = S::device('np', 'dev:cur', $fixture === 'N5' ? 3 : 2, 'new-member', 86400, 'dev:prev', null);
-        $scopes = $fixture === 'N4a' ? [S::counter('ctr', 'c:n4a', 2), $device] : [$device];
+        $scopes = $fixture === 'N4a' ? [S::counter('ctr', 'c:n4a', 2, 1200, null, 'm-n4a'), $device] : [$device];
         $result = $this->store->reserveAdmission(S::request(...$scopes), self::NOW);
 
         return ['admitted' => $result->admitted, 'refused' => $result->refusedScope];
@@ -136,15 +136,15 @@ final class AdmissionStoreNm6RedisTest extends AdmissionRedisGateTestCase
     {
         $fresh = $this->key(AdmissionScopeKindEnum::COUNTER, 'c:ok-' . $label);
         $request = match ($label) {
-            'counter-hash' => S::request(S::counter('ok', 'c:ok-' . $label, 5), S::counter('bad', 'c:bad', 5)),
-            'counter-previous-list' => S::request(S::counter('ok', 'c:ok-' . $label, 5), S::counter('bad', 'c:cur', 5, 1200, 'c:bad')),
-            'counter-non-numeric' => S::request(S::counter('ok', 'c:ok-' . $label, 5), S::counter('bad', 'c:bad', 5)),
-            'counter-no-ttl' => S::request(S::counter('ok', 'c:ok-' . $label, 5), S::counter('bad', 'c:bad', 5)),
-            'device-string' => S::request(S::counter('ok', 'c:ok-' . $label, 5), S::device('bad', 'd:bad', 5, 'm')),
-            'device-previous-string' => S::request(S::counter('ok', 'c:ok-' . $label, 5), S::device('bad', 'd:cur', 5, 'm', 86400, 'd:bad', 'p')),
-            'set-string' => S::request(S::counter('ok', 'c:ok-' . $label, 5), S::setSize('bad', 's:bad', 5, 'acct')),
-            'bucket-string' => S::request(S::counter('ok', 'c:ok-' . $label, 5), S::bucket('bad', 'b:bad', 4, 1800)),
-            'bucket-bad-field' => S::request(S::counter('ok', 'c:ok-' . $label, 5), S::bucket('bad', 'b:bad', 4, 1800)),
+            'counter-hash' => S::request(S::counter('ok', 'c:ok-' . $label, 5, 1200, null, 'm-ok'), S::counter('bad', 'c:bad', 5, 1200, null, 'm-bad')),
+            'counter-previous-list' => S::request(S::counter('ok', 'c:ok-' . $label, 5, 1200, null, 'm-ok'), S::counter('bad', 'c:cur', 5, 1200, 'c:bad', 'm-bad')),
+            'counter-non-numeric' => S::request(S::counter('ok', 'c:ok-' . $label, 5, 1200, null, 'm-ok'), S::counter('bad', 'c:bad', 5, 1200, null, 'm-bad')),
+            'counter-no-ttl' => S::request(S::counter('ok', 'c:ok-' . $label, 5, 1200, null, 'm-ok'), S::counter('bad', 'c:bad', 5, 1200, null, 'm-bad')),
+            'device-string' => S::request(S::counter('ok', 'c:ok-' . $label, 5, 1200, null, 'm-ok'), S::device('bad', 'd:bad', 5, 'm')),
+            'device-previous-string' => S::request(S::counter('ok', 'c:ok-' . $label, 5, 1200, null, 'm-ok'), S::device('bad', 'd:cur', 5, 'm', 86400, 'd:bad', 'p')),
+            'set-string' => S::request(S::counter('ok', 'c:ok-' . $label, 5, 1200, null, 'm-ok'), S::setSize('bad', 's:bad', 5, 'acct')),
+            'bucket-string' => S::request(S::counter('ok', 'c:ok-' . $label, 5, 1200, null, 'm-ok'), S::bucket('bad', 'b:bad', 4, 1800)),
+            'bucket-bad-field' => S::request(S::counter('ok', 'c:ok-' . $label, 5, 1200, null, 'm-ok'), S::bucket('bad', 'b:bad', 4, 1800)),
             default => S::withPermit(S::permit('p-bad', self::NOW + 30), S::counter('ok', 'c:ok-' . $label, 5)),
         };
         match ($label) {
@@ -186,7 +186,7 @@ final class AdmissionStoreNm6RedisTest extends AdmissionRedisGateTestCase
 
     public function testValueLevelAllOrNothingWhenTheLastScopeRefuses(): void
     {
-        self::assertTrue($this->store->reserveAdmission(S::request(S::counter('victim', 'c:victim', 1)), self::NOW)->admitted);
+        self::assertTrue($this->store->reserveAdmission(S::request(S::counter('victim', 'c:victim', 1, 1200, null, 'm-victim-init')), self::NOW)->admitted);
         $before = $this->dump();
         $pttl = $this->pttl();
         $result = $this->store->reserveAdmission(S::withPermit(
@@ -205,7 +205,7 @@ final class AdmissionStoreNm6RedisTest extends AdmissionRedisGateTestCase
     private function raceSpec(string $case, string $mode): AdmissionRaceSpec
     {
         $scopes = $case === 'counter'
-            ? [['name' => 'src', 'kind' => 'counter', 'key' => 'race:c', 'capacity' => 5, 'ttl' => 1200]]
+            ? [['name' => 'src', 'kind' => 'counter', 'key' => 'race:c', 'capacity' => 5, 'ttl' => 1200, 'member' => 'race-ctr-{i}']]
             : [['name' => 'np', 'kind' => 'device_member', 'key' => 'race:d', 'capacity' => 5, 'ttl' => 86400, 'member' => 'race-dev-{i}']];
 
         return new AdmissionRaceSpec(self::NAMESPACE, 'reserve', $mode, self::NOW, $scopes);
@@ -215,7 +215,7 @@ final class AdmissionStoreNm6RedisTest extends AdmissionRedisGateTestCase
     {
         if ($case === 'counter') {
             for ($i = 0; $i < 2; $i++) {
-                $this->store->reserveAdmission(S::request(S::counter('src', 'race:c', 5)), self::NOW);
+                $this->store->reserveAdmission(S::request(S::counter('src', 'race:c', 5, 1200, null, 'seed-' . $i)), self::NOW);
             }
 
             return;

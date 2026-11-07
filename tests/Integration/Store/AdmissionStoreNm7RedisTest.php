@@ -53,10 +53,10 @@ final class AdmissionStoreNm7RedisTest extends AdmissionRedisGateTestCase
     {
         $seed = function (): void {
             for ($i = 0; $i < 2; $i++) {
-                $this->store->reserveAdmission(S::request(S::counter('src', 'c:nm7', 5)), self::NOW);
+                $this->store->reserveAdmission(S::request(S::counter('src', 'c:nm7', 5, 1200, null, 'seed-' . $i)), self::NOW);
             }
         };
-        $spec = $this->spec([['name' => 'src', 'kind' => 'counter', 'key' => 'c:nm7', 'capacity' => 5, 'ttl' => 1200]]);
+        $spec = $this->spec([['name' => 'src', 'kind' => 'counter', 'key' => 'c:nm7', 'capacity' => 5, 'ttl' => 1200, 'member' => 'race-ctr-{i}']]);
         self::assertSame([3, 3, 3], $this->rounds($processes, $seed, $spec));
         self::assertSame(5, ReplyValue::integer($this->raw('ZCOUNT', $this->key(AdmissionScopeKindEnum::COUNTER, 'c:nm7'), '(' . self::NOW, '+inf')));
     }
@@ -87,11 +87,11 @@ final class AdmissionStoreNm7RedisTest extends AdmissionRedisGateTestCase
     {
         $seed = function (): void {
             for ($i = 0; $i < 2; $i++) {
-                $this->store->reserveAdmission(S::request(S::counter('src', 'c:multi', 6)), self::NOW);
+                $this->store->reserveAdmission(S::request(S::counter('src', 'c:multi', 6, 1200, null, 'seed-' . $i)), self::NOW);
             }
         };
         $spec = $this->spec([
-            ['name' => 'src', 'kind' => 'counter', 'key' => 'c:multi', 'capacity' => 6, 'ttl' => 1200],
+            ['name' => 'src', 'kind' => 'counter', 'key' => 'c:multi', 'capacity' => 6, 'ttl' => 1200, 'member' => 'race-multi-{i}'],
             ['name' => 'np', 'kind' => 'device_member', 'key' => 'd:multi', 'capacity' => 3, 'ttl' => 86400, 'member' => 'dev-{i}'],
             ['name' => 'acct_tb', 'kind' => 'bucket', 'key' => 'b:multi', 'capacity' => 2, 'ttl' => 1800],
         ]);
@@ -147,10 +147,10 @@ final class AdmissionStoreNm7RedisTest extends AdmissionRedisGateTestCase
     {
         $seed = function (): void {
             for ($i = 0; $i < 2; $i++) {
-                $this->store->reserveAdmission(S::request(S::counter('src', 'c:nm7', 5)), self::NOW);
+                $this->store->reserveAdmission(S::request(S::counter('src', 'c:nm7', 5, 1200, null, 'seed-' . $i)), self::NOW);
             }
         };
-        $spec = $this->spec([['name' => 'src', 'kind' => 'counter', 'key' => 'c:nm7', 'capacity' => 5, 'ttl' => 1200]], 'nonatomic');
+        $spec = $this->spec([['name' => 'src', 'kind' => 'counter', 'key' => 'c:nm7', 'capacity' => 5, 'ttl' => 1200, 'member' => 'race-ctr-{i}']], 'nonatomic');
         $at16 = $this->rounds(16, $seed, $spec);
         $at64 = $this->rounds(64, $seed, $spec);
         self::assertGreaterThan(3, max([...$at16, ...$at64, 0]), 'DETECTOR: the non-atomic control must exceed the ceiling: ' . json_encode([$at16, $at64]));

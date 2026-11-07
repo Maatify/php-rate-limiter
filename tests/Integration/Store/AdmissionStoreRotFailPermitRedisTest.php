@@ -45,11 +45,11 @@ final class AdmissionStoreRotFailPermitRedisTest extends AdmissionRedisGateTestC
         $keys = $this->seedPreviousGeneration();
         $prevBefore = $this->dump()[$keys['prevCounter']];
         $pttl = $this->pttl();
-        $scope = static fn() => S::counter('src', 'rot:new', 4, 1200, 'rot:old');
+        $scope = static fn(string $id) => S::counter('src', 'rot:new', 4, 1200, 'rot:old', $id);
         // Previous holds 2: two more fit under a cap of 4, then a refusal. The previous counter stays at 2 throughout.
-        self::assertTrue($this->store->reserveAdmission(S::request($scope()), self::NOW)->admitted);
-        self::assertTrue($this->store->reserveAdmission(S::request($scope()), self::NOW)->admitted);
-        self::assertFalse($this->store->reserveAdmission(S::request($scope()), self::NOW)->admitted);
+        self::assertTrue($this->store->reserveAdmission(S::request($scope('m-rot-1')), self::NOW)->admitted);
+        self::assertTrue($this->store->reserveAdmission(S::request($scope('m-rot-2')), self::NOW)->admitted);
+        self::assertFalse($this->store->reserveAdmission(S::request($scope('m-rot-3')), self::NOW)->admitted);
         self::assertSame($prevBefore, $this->dump()[$keys['prevCounter']]);
         self::assertSame(2, ReplyValue::integer($this->raw('ZCOUNT', $keys['prevCounter'], '(' . self::NOW, '+inf')));
         self::assertSame(2, ReplyValue::integer($this->raw('ZCOUNT', $this->key(AdmissionScopeKindEnum::COUNTER, 'rot:new'), '(' . self::NOW, '+inf')));
@@ -91,8 +91,8 @@ final class AdmissionStoreRotFailPermitRedisTest extends AdmissionRedisGateTestC
     {
         $store = $this->executorFor($executor);
         $calls = [
-            'reserve' => static fn() => $store->reserveAdmission(S::request(S::counter('src', 'f:c', 3)), self::NOW),
-            'outcome' => static fn() => $store->applyAdmissionOutcome(S::outcome(AdmissionOutcomeKindEnum::SUCCESS, S::counter('src', 'f:c', 3)), self::NOW),
+            'reserve' => static fn() => $store->reserveAdmission(S::request(S::counter('src', 'f:c', 3, 1200, null, 'm-fc')), self::NOW),
+            'outcome' => static fn() => $store->applyAdmissionOutcome(S::outcome(AdmissionOutcomeKindEnum::SUCCESS, S::counter('src', 'f:c', 3, 1200, null, 'm-fc')), self::NOW),
             'epochRead' => static fn() => $store->readBindingEpoch('f:e', null),
             'epochBump' => static fn() => $store->bumpBindingEpoch('f:e', null),
             'claim' => static fn() => $store->claimAdmissionPermit('f:p', 'U', 'acctT', 'login', AdmissionOutcomeKindEnum::FAILURE, self::NOW),

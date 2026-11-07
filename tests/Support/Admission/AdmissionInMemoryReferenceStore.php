@@ -66,6 +66,14 @@ final class AdmissionInMemoryReferenceStore extends FullCapabilityInMemoryStore 
             }
         }
         foreach ($request->scopes as $scope) {
+            if ($scope->kind === AdmissionScopeKindEnum::COUNTER) {
+                $member = $scope->member;
+                if (($member === null || $member === '') && ($request->permit === null || $request->permit->id === '')) {
+                    throw new RateLimiterException('A counter admission scope requires a member.');
+                }
+            }
+        }
+        foreach ($request->scopes as $scope) {
             $own = $class . "\0" . $scope->key;
             $previous = $scope->previousKey === null || $scope->previousKey === $scope->key ? null : $class . "\0" . $scope->previousKey;
             if ($scope->kind === AdmissionScopeKindEnum::COUNTER) {
@@ -97,7 +105,7 @@ final class AdmissionInMemoryReferenceStore extends FullCapabilityInMemoryStore 
             $own = $class . "\0" . $scope->key;
             $previous = $scope->previousKey === null || $scope->previousKey === $scope->key ? null : $class . "\0" . $scope->previousKey;
             if ($scope->kind === AdmissionScopeKindEnum::COUNTER) {
-                $member = $scope->member ?? ($permit !== null ? $permit->id : bin2hex(random_bytes(16)));
+                $member = $scope->member ?? $permit?->id;
                 $this->counters[$own] = array_filter($this->counters[$own] ?? [], static fn(int $expiry): bool => $expiry > $now);
                 $this->counters[$own][$member] = $now + $scope->ttlSeconds;
             } elseif ($scope->kind === AdmissionScopeKindEnum::DEVICE_MEMBER && ! $this->deviceExists($scope, $own, $previous, $now)) {
