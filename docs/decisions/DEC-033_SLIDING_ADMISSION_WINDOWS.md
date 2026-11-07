@@ -6,11 +6,12 @@
 
 ## Status
 
-`PROPOSED` — in the PR of PR-P (#185), on the Owner's decision relayed on #185 ([comment 6675589019](https://github.com/Maatify/php-rate-limiter/issues/185#issuecomment-6675589019), LT-185-30 decision (b)), amending DEC-025 and DEC-028 on the Lead's review LT-185-31b ([comment 6679420838](https://github.com/Maatify/php-rate-limiter/issues/185#issuecomment-6679420838)). It becomes `ACTIVE` upon Owner acceptance of the measured values at merge.
+`ACTIVE` — activated 2026-11-07 in [PR #201](https://github.com/Maatify/php-rate-limiter/pull/201) (#185) on the Owner's decisions relayed on #185 ([LT-185-30 (b), comment 6675589019](https://github.com/Maatify/php-rate-limiter/issues/185#issuecomment-6675589019); [draft approval, comment 6679435278](https://github.com/Maatify/php-rate-limiter/issues/185#issuecomment-6679435278); [acceptance of the measured values, comment 6700833731](https://github.com/Maatify/php-rate-limiter/issues/185#issuecomment-6700833731)), after the pre-registered measurements of `investigations/sliding-admission-windows-185/RESULTS.md` and the Lead's review.
+Earlier status: `PROPOSED` in the same PR.
 
 ## Date
 
-Proposed 2026-11-06.
+Proposed 2026-11-06; activated 2026-11-07.
 
 ## Decision Authority
 
@@ -76,10 +77,12 @@ two hours). The Owner decided (LT-185-30 (b)) that all admission window mechanis
 ## Consequences
 
 - **State:** Keys for sliding scopes become Redis `zset` with at most `cap` members per key.
-- **Pre-registered measurement plan:**
+- **Accepted measured values (`investigations/sliding-admission-windows-185/RESULTS.md`):**
   - `NM-10 parity`: 100% decision and state parity between `RedisAdmissionOperations` and `AdmissionInMemoryReferenceStore`.
-  - `G7 PX4`: Office shared cost (`TPAIRT`) expected 21/61 unchanged; attacker reach `TMS <= 29` and `TMSd <= 40`.
-  - `Runtime burst across boundaries`: Max allowed within any sliding interval equals cap: `ufail`/`pfail` 4 (not 8), `src` 24 (not 48), `pacct` 10 (not 20), `pproof` 6 (not 12), `pacctd` 60 (not 120), `pproofd` 30 (not 60).
+  - `G7 PX4 co-located office cost`: 26/61 (was 21/61 under tumbling).
+  - `Attacker reach under cap`: 40 (was 72 under tumbling).
+  - `Target Metric Score (TMS)`: 21/61; `TMSd`: 40/200.
+  - `Runtime bursts across boundaries`: strictly capped at capacity across any continuous sliding interval: `ufail`/`pfail` 4 (not 8), `src` 24 (not 48), `pacct` 10 (not 20), `pproof` 6 (not 12), and daily `pacctd` 60 (not 120), `pproofd` 30 (not 60).
 - **Goldens and archive streams:** Replayed archive scenarios crossing boundaries are updated to reflect the stronger sliding enforcement.
 
 ## Relationship to Other Decisions
