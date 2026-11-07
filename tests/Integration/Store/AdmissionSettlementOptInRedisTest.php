@@ -8,6 +8,7 @@ use Maatify\RateLimiter\Enum\AdmissionOutcomeKindEnum;
 use Maatify\RateLimiter\Exception\RateLimiterException;
 use Maatify\RateLimiter\Repository\Redis\RedisAdmissionOperations;
 use Maatify\RateLimiter\Tests\Support\Admission\MergedAdmissionOperations;
+use Maatify\RateLimiter\Tests\Support\Admission\MergedAdmissionOperationsSliding;
 use Maatify\RateLimiter\Tests\Support\Admission\OperationsMutant;
 use Maatify\RateLimiter\Tests\Support\Admission\OptInParityRunner;
 use Maatify\RateLimiter\Tests\Support\Admission\SettlementPort;
@@ -18,7 +19,8 @@ use PHPUnit\Framework\Attributes\Group;
 
 /**
  * 5b2.2 gates on real Redis: OFF-PARITY (without `settlesOnExpiry` the production operations equal the operations as merged at
- * d6aea4d, step by step, result and full dump), the default behaviour (tombstone), ON-PARITY (with the flag, the results of
+ * d6aea4d, step by step, result and full dump; since #185 DEC-033 the short scenarios compare a failure set by its members, and
+ * the seeded sequences, whose time passes the TTL, compare against d6aea4d plus DEC-033 sliding windows, LT-185-30), the default behaviour (tombstone), ON-PARITY (with the flag, the results of
  * 5-b2.1) and the detector that ignores the flag.
  */
 #[Group('settle-opt')]
@@ -26,7 +28,7 @@ final class AdmissionSettlementOptInRedisTest extends AdmissionRedisGateTestCase
 {
     private function port(object $ops): SettlementPort
     {
-        /** @var RedisAdmissionOperations|MergedAdmissionOperations $ops */
+        /** @var RedisAdmissionOperations|MergedAdmissionOperations|MergedAdmissionOperationsSliding $ops */
         return new SettlementPort(
             static fn($request, int $now) => $ops->reserve($request, $now),
             static fn($outcome, int $now) => $ops->applyOutcome($outcome, $now),
@@ -69,6 +71,30 @@ final class AdmissionSettlementOptInRedisTest extends AdmissionRedisGateTestCase
         return ['result' => $scenario($recording), 'dumps' => $dumps, 'trace' => $trace];
     }
 
+    /**
+     * #185 DEC-033: the production failure set is a sorted set scored by each failure's expiry, where
+     * d6aea4d stored a set. OFF-PARITY compares it by its members (the d6aea4d content); every other key, every result and
+     * every TTL presence is compared as it is.
+     *
+     * @param array<string, array{type: string, value: mixed, hasTtl: bool}> $dump
+     * @return array<string, array{type: string, value: mixed, hasTtl: bool}>
+     */
+    private static function membersOfFailureSets(array $dump): array
+    {
+        foreach ($dump as $key => $entry) {
+            if ($entry['type'] === 'zset' && str_contains($key, ':adm:s:') && is_array($entry['value'])) {
+                $members = array_map('strval', array_keys($entry['value']));
+                sort($members);
+                $dump[$key] = ['type' => 'set', 'value' => $members, 'hasTtl' => $entry['hasTtl']];
+            }
+            if ($entry['type'] === 'zset' && str_contains($key, ':adm:c:') && is_array($entry['value'])) {
+                $dump[$key] = ['type' => 'string', 'value' => (string) count($entry['value']), 'hasTtl' => $entry['hasTtl']];
+            }
+        }
+
+        return $dump;
+    }
+
     private function production(): RedisAdmissionOperations
     {
         return new RedisAdmissionOperations($this->executor, self::NAMESPACE);
@@ -77,6 +103,11 @@ final class AdmissionSettlementOptInRedisTest extends AdmissionRedisGateTestCase
     private function merged(): MergedAdmissionOperations
     {
         return new MergedAdmissionOperations($this->executor, self::NAMESPACE);
+    }
+
+    private function mergedSliding(): MergedAdmissionOperationsSliding
+    {
+        return new MergedAdmissionOperationsSliding($this->executor, self::NAMESPACE);
     }
 
     // ---- OFF-PARITY ---------------------------------------------------------------------------------------------------
@@ -98,7 +129,7 @@ final class AdmissionSettlementOptInRedisTest extends AdmissionRedisGateTestCase
 
         self::assertSame($merged['trace'], $production['trace']);
         self::assertSame($merged['result'], $production['result']);
-        self::assertSame($merged['dumps'], $production['dumps'], "the key dump after every step of $name");
+        self::assertSame($merged['dumps'], array_map(self::membersOfFailureSets(...), $production['dumps']), "the key dump after every step of $name");
     }
 
     /** @return iterable<string, array{int}> */
@@ -113,7 +144,7 @@ final class AdmissionSettlementOptInRedisTest extends AdmissionRedisGateTestCase
     public function testOffParityASeededSequenceOfEveryOperationKindIsIdenticalStepByStep(int $seed): void
     {
         $this->resetRedis();
-        $a = OptInParityRunner::run($this->merged(), $this->executor, $seed, 300);
+        $a = OptInParityRunner::run($this->mergedSliding(), $this->executor, $seed, 300);
         $this->resetRedis();
         $b = OptInParityRunner::run($this->production(), $this->executor, $seed, 300);
 
@@ -128,6 +159,21 @@ final class AdmissionSettlementOptInRedisTest extends AdmissionRedisGateTestCase
         self::assertStringContainsString('reserve:[false', $records);
         self::assertStringContainsString('claim:', $records);
         self::assertStringContainsString('throw:' . RateLimiterException::class, $records);
+    }
+
+    /**
+     * DEC-033: the seeded comparison is not vacuous about the sliding windows. Every seed runs past the TTL, so d6aea4d, which still
+     * counts members older than the TTL, and d6aea4d plus DEC-033 sliding windows give different results.
+     */
+    #[DataProvider('seeds')]
+    public function testOffParityEverySeedReachesTheWindow(int $seed): void
+    {
+        $this->resetRedis();
+        $fixed = OptInParityRunner::run($this->merged(), $this->executor, $seed, 300);
+        $this->resetRedis();
+        $sliding = OptInParityRunner::run($this->mergedSliding(), $this->executor, $seed, 300);
+
+        self::assertNotSame(array_column($fixed, 'record'), array_column($sliding, 'record'));
     }
 
     public function testOffParityTheFiveSeedsTogetherPractiseEveryClaimKind(): void
@@ -196,6 +242,18 @@ final class AdmissionSettlementOptInRedisTest extends AdmissionRedisGateTestCase
         $merged = $this->recorded($this->merged(), $run);
         $mutated = $this->recorded($mutant, $run);
 
-        self::assertNotSame($merged['dumps'], $mutated['dumps'], 'DETECTOR: a store that ignores the flag diverges from d6aea4d');
+        // By members, as OFF-PARITY compares: a raw dump differs from d6aea4d in any case (a sorted set against a set).
+        self::assertNotSame($merged['dumps'], array_map(self::membersOfFailureSets(...), $mutated['dumps']), 'DETECTOR: a store that ignores the flag diverges from d6aea4d');
+    }
+
+    public function testDetectorAStoreWithoutTheWindowBreaksTheSeededOffParity(): void
+    {
+        $class = OperationsMutant::load([["s.card = redis.call('ZCOUNT', cur, '(' .. nowStr, '+inf')", "s.card = redis.call('ZCARD', cur)"]]);
+        $this->resetRedis();
+        $sliding = OptInParityRunner::run($this->mergedSliding(), $this->executor, 42, 300);
+        $this->resetRedis();
+        $mutated = OptInParityRunner::run(new $class($this->executor, self::NAMESPACE), $this->executor, 42, 300);
+
+        self::assertNotSame(array_column($sliding, 'record'), array_column($mutated, 'record'), 'DETECTOR: counting aged members diverges from the sliding fixture');
     }
 }

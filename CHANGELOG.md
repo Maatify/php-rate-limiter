@@ -9,6 +9,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [1.0.0-rc.4]
 
+### Fixed (#185, DEC-033) — Sliding windows for the admission layer (counters and failure sets)
+- Under fixed tumbling windows (DEC-025, DEC-028), admission windowed counters and failure sets used epoch-bucketed keys (`w<intdiv(t,W)>` and `d<intdiv(t,DAY)>`) with TTLs of 2W / 2·DAY. An adversary crossing a boundary could double their burst allowance within a narrow burst window (e.g. 8 failures allowed within 14 seconds across a boundary instead of 4, 48 requests instead of 24, etc.).
+- Windowed counters (`source_capacity`, `proof_account_window`, `proof_account_day`, `proof_proof_window`, `proof_proof_day`) and failure sets (`source_failure_cap`, `source_proof_failure_cap`) now operate strictly as sliding windows (DEC-033).
+- Keys no longer contain nominal window tags (`:w` / `:d`), and elements are stored as Redis sorted sets (`zset`) scored by member expiration timestamp (`now + ttl`). For counters, each member is the permit ID; active count is evaluated as `ZCOUNT (now +inf)`. For failure sets, members are the failing subjects scored by `now + W`.
+- Bounded capacity enforcement across any continuous sliding interval: $U_{\text{src}} \le 24$, $U_{\text{fail}} \le 4$, $U_{\text{pfail}} \le 4$, $P_{\text{acct}} \le 10$, $P_{\text{proof}} \le 6$ across any sliding window of length $W = 600\text{ s}$, and $P_{\text{acct, day}} \le 60$, $P_{\text{proof, day}} \le 30$ across any sliding window of length $\text{Day} = 86400\text{ s}$.
+- Preserves the core admission contract: a refusal writes nothing, never prunes, and leaves key TTL untouched. Admitted reservations and failure outcomes prune expired elements (`score <= now`), write new elements, and refresh key TTL. Proof refunds (`ZREM <permit id>`) remove the member if present and are no-ops if absent. Account bucket and token bucket scopes (`account_bucket`) and non-persisted mechanisms ($N_P$) are unchanged.
+- Full 100% parity between `RedisAdmissionOperations` and `AdmissionInMemoryReferenceStore`. Pre-registered measurements and derivations documented in `investigations/sliding-admission-windows-185/RESULTS.md`.
+- Enforced counter admission scope contract (F-185-30): a counter scope requires either an explicit member on the scope DTO or a permit ID on the reservation request. Reserving a counter scope without both throws `RateLimiterException` ("A counter admission scope requires a member.") before any write across both Redis and in-memory reference stores, removing implicit synthetic member generation.
+- Preserved frozen detector fixture (F-185-31): restored `PreSettlementReferenceStore` byte-for-byte to its `d6aea4d` baseline, introducing `PreSettlementReferenceStoreSliding` as the dedicated DEC-033 sliding in-memory parity fixture following the twin pattern of `MergedAdmissionOperations` and `MergedAdmissionOperationsSliding` (LT-185-29).
+
 ### Fixed (#185, F-185-26, DEC-032) — Operational Read no longer deletes expired blocks and budgets
 - `RateLimitOperationalReader` and `SimpleRateLimitOperationalReader` are documented read-only, but read blocks and budgets
   through `checkBlock()` / `getBudget()`, whose Redis scripts (`BLOCK_GET`, `BUDGET_GET`) delete a logically expired key as

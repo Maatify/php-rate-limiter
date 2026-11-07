@@ -18,9 +18,9 @@ final class AdmissionScenarioBuilder
 
     public const NOW = 1767268800 + 900;
 
-    public static function counter(string $name, string $key, int $capacity, int $ttl = 1200, ?string $previousKey = null): AdmissionScopeDTO
+    public static function counter(string $name, string $key, int $capacity, int $ttl = 1200, ?string $previousKey = null, ?string $member = null): AdmissionScopeDTO
     {
-        return new AdmissionScopeDTO($name, AdmissionScopeKindEnum::COUNTER, $key, $capacity, $ttl, $previousKey);
+        return new AdmissionScopeDTO($name, AdmissionScopeKindEnum::COUNTER, $key, $capacity, $ttl, $previousKey, $member);
     }
 
     public static function device(string $name, string $key, int $capacity, string $member, int $ttl = 86400, ?string $previousKey = null, ?string $previousMember = null): AdmissionScopeDTO

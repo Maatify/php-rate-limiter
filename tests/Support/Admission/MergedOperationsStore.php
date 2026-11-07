@@ -22,7 +22,7 @@ use Maatify\RateLimiter\Repository\AdmissionPermitStoreInterface;
  */
 final class MergedOperationsStore implements AdmissionPermitStoreInterface
 {
-    public function __construct(private readonly MergedAdmissionOperations $ops) {}
+    public function __construct(private readonly MergedAdmissionOperations|MergedAdmissionOperationsSliding $ops) {}
 
     public function reserveAdmission(AdmissionReservationRequestDTO $request, int $now): AdmissionReservationResultDTO
     {

@@ -451,21 +451,26 @@ checked package-side against every `SimpleThrottlePolicyInterface` implementatio
 `BudgetSeedStoreInterface` all raise `RateLimiterException` rather than becoming a typed
 FAIL_CLOSED result or a normal quota decision; see `docs/SIMPLE_THROTTLING.md`.
 
-### 4.5 Admission-Reservation Policies (DEC-015, DEC-024)
+### 4.5 Admission-Reservation Policies (DEC-015, DEC-024, DEC-033)
 
 * The reservation, the outcome claim and application, the binding-epoch read and the fleet-fence
   read are store operations. A typed outage of any of them is a `BackendFailureException` for the
   **whole request** and takes the existing path: `FAIL_CLOSED` `HARD_BLOCK`, then the open circuit's
   bounded fallback, then `fallback_limit_exceeded`. There is no partial allow and no state written
   by the failed operation.
+* Under DEC-033, windowed counters and failure sets operate as sliding sorted sets scored by element
+  expiration (`now + ttl`). A refusal writes nothing and never prunes, leaving key TTL and state untouched.
+  Admitted reservations and failure outcomes prune expired elements (`score <= now`), write new elements
+  scored by expiry, and refresh key `EXPIRE` to `ttl`. A proof refund (`ZREM permitId`) removes the member
+  if present and is a no-op if absent.
 * In the built-in Redis store, malformed stored state is a Lua error reply `malformed admission
   state: …`, returned before any write. The reference test executor (`RespRedisCommandExecutor`)
   raises it as `RateLimiterException`; a Host executor whose client throws on an error reply
   (phpredis: `RedisException`) propagates that exception unchanged, as
   `RedisCommandExecutorInterface` requires. It is never a `BackendFailureException` and never a
-  fallback. This includes a device-member or pending score that is not a canonical non-negative
-  integer (DEC-017, #185): nothing is pruned, repaired or deleted. An unclassified throwable keeps
-  escaping; it never enters the circuit.
+  fallback. This includes a counter member score, failure-set score, device-member or pending score
+  that is not a canonical non-negative integer (DEC-017, #185): nothing is pruned, repaired or deleted.
+  An unclassified throwable keeps escaping; it never enters the circuit.
 * In degraded mode and on a `FAIL_OPEN` path **no admission, no lane resolution and no epoch or
   fence read happens**: the admission bounds are absent there. `LocalFallbackLimiter` is unchanged:
   no new dimension, no new bound, no new tracked subject.

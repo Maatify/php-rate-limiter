@@ -77,17 +77,6 @@ local function readPermit(k)
   if f[1] == 'CLAIMED' and f[7] ~= 'failure' and f[7] ~= 'success' then return nil, 'permit record outcome is malformed' end
   return {state = f[1], lane = f[2], subject = f[3], operation = f[4], deadline = deadline, grace = grace, outcome = f[7]}
 end
--- Counter: absent => 0; a valid counter => its value; anything else => nil, reason.
-local function readCounter(k)
-  if k == '' then return 0 end
-  local t = keyType(k)
-  if t == 'none' then return 0 end
-  if t ~= 'string' then return nil, 'counter key has type ' .. t end
-  if not hasExpiry(k) then return nil, 'counter key has no expiry' end
-  local v = canonical(redis.call('GET', k))
-  if v == nil then return nil, 'counter value is not a canonical non-negative integer' end
-  return v
-end
 local function checkType(k, expected, label)
   if k == '' then return nil end
   local t = keyType(k)
@@ -104,11 +93,18 @@ local function canonicalScores(k)
   end
   return true
 end
--- Settled size of a failure set: its members plus the pending members that are due (score <= now) and not yet in it.
-local function settledSize(setKey, pendingKey, now)
-  local size = redis.call('SCARD', setKey)
-  for _, m in ipairs(redis.call('ZRANGEBYSCORE', pendingKey, '-inf', now)) do
-    if redis.call('SISMEMBER', setKey, m) == 0 then size = size + 1 end
+local function liveMember(setKey, m, now)
+  local score = redis.call('ZSCORE', setKey, m)
+  return score ~= false and tonumber(score) > now
+end
+local function duePending(score, now, ttl)
+  return score ~= false and tonumber(score) <= now and tonumber(score) > now - ttl
+end
+-- Settled size of a failure set: its live members plus the due pending members inside the window not live in it.
+local function settledSize(setKey, pendingKey, now, ttl)
+  local size = redis.call('ZCOUNT', setKey, '(' .. string.format('%d', now), '+inf')
+  for _, m in ipairs(redis.call('ZRANGEBYSCORE', pendingKey, '(' .. string.format('%d', now - ttl), string.format('%d', now))) do
+    if not liveMember(setKey, m, now) then size = size + 1 end
   end
   return size
 end
@@ -145,11 +141,17 @@ for i = 1, n do
   local s = {kind = kind, cap = cap, ttl = ttl, cur = cur, prev = prev, member = ARGV[base + 3], prevMember = ARGV[base + 4]}
   s.settles = ARGV[base + 5] == '1'
   if kind == 'c' then
-    local a, ea = readCounter(cur)
-    if a == nil then return bad(ea) end
-    local b, eb = readCounter(prev)
-    if b == nil then return bad(eb) end
-    s.a, s.b, s.fresh = a, b, redis.call('EXISTS', cur) == 0
+    local e1 = checkType(cur, 'zset', 'counter')
+    if e1 then return bad(e1) end
+    local e2 = checkType(prev, 'zset', 'previous counter')
+    if e2 then return bad(e2) end
+    if not canonicalScores(cur) or not canonicalScores(prev) then
+      return bad('counter member score is not a canonical non-negative integer')
+    end
+    local a = redis.call('ZCOUNT', cur, '(' .. nowStr, '+inf')
+    local b = 0
+    if prev ~= '' then b = redis.call('ZCOUNT', prev, '(' .. nowStr, '+inf') end
+    s.a, s.b = a, b
   elseif kind == 'd' then
     local e1 = checkType(cur, 'zset', 'device set')
     if e1 then return bad(e1) end
@@ -171,9 +173,10 @@ for i = 1, n do
     s.exists, s.live = exists, live
   elseif kind == 's' then
     -- A set scope carries its pending key in the slot a previous generation would use.
-    local e = checkType(cur, 'set', 'set')
+    local e = checkType(cur, 'zset', 'set')
     if e then return bad(e) end
-    s.inSet = redis.call('SISMEMBER', cur, s.member) == 1
+    if not canonicalScores(cur) then return bad('set member score is not a canonical non-negative integer') end
+    s.inSet = liveMember(cur, s.member, now)
     if s.settles then
       local ep = checkType(prev, 'zset', 'pending set')
       if ep then return bad(ep) end
@@ -181,14 +184,12 @@ for i = 1, n do
       if not canonicalScores(prev) then return bad('pending member score is not a canonical non-negative integer') end
       s.pending = prev
       s.deadline = hasPermit and tonumber(ARGV[7]) or 0
-      local score = redis.call('ZSCORE', prev, s.member)
-      s.isMember = s.inSet or (score and tonumber(score) <= now)
-      s.card = settledSize(cur, prev, now)
-      s.freshPending = redis.call('EXISTS', prev) == 0
+      s.isMember = s.inSet or duePending(redis.call('ZSCORE', prev, s.member), now, ttl)
+      s.card = settledSize(cur, prev, now, ttl)
     else
       -- Tombstone semantics (the operations as merged at d6aea4d): the pending key is neither read nor written.
       s.isMember = s.inSet
-      s.card = redis.call('SCARD', cur)
+      s.card = redis.call('ZCOUNT', cur, '(' .. nowStr, '+inf')
     end
   elseif kind == 'b' then
     s.full = cap * ttl
@@ -225,8 +226,9 @@ if permitExists then return {0, 0, 0} end
 for i = 1, n do
   local s = sc[i]
   if s.kind == 'c' then
-    redis.call('INCR', s.cur)
-    if s.fresh then redis.call('EXPIRE', s.cur, s.ttl) end
+    redis.call('ZREMRANGEBYSCORE', s.cur, '-inf', nowStr)
+    redis.call('ZADD', s.cur, string.format('%d', now + s.ttl), s.member)
+    redis.call('EXPIRE', s.cur, s.ttl)
   elseif s.kind == 'd' then
     if not s.exists then
       redis.call('ZREMRANGEBYSCORE', s.cur, '-inf', nowStr)
@@ -235,8 +237,11 @@ for i = 1, n do
     end
   elseif s.kind == 's' then
     if hasPermit and s.settles and not s.inSet then
+      redis.call('ZREMRANGEBYSCORE', s.pending, '-inf', string.format('%d', now - s.ttl))
       redis.call('ZADD', s.pending, 'LT', string.format('%d', s.deadline), s.member)
-      if s.freshPending then redis.call('EXPIRE', s.pending, s.ttl) end
+      local life = s.deadline - now + s.ttl
+      if life < 1 then life = 1 end
+      if redis.call('TTL', s.pending) < life then redis.call('EXPIRE', s.pending, string.format('%d', life)) end
     end
   elseif s.kind == 'b' then
     local remaining = s.credit - s.ttl
@@ -271,8 +276,9 @@ for i = 1, n do
   local s = {kind = kind, cap = cap, ttl = ttl, cur = cur, member = ARGV[base + 3], keepsSettled = ARGV[base + 4] == '1'}
   s.settlesOut = ARGV[base + 5] == '1'
   if kind == 's' then
-    local e = checkType(cur, 'set', 'set')
+    local e = checkType(cur, 'zset', 'set')
     if e then return bad(e) end
+    if not canonicalScores(cur) then return bad('set member score is not a canonical non-negative integer') end
     if s.settlesOut then
       local ep = checkType(KEYS[2 * i], 'zset', 'pending set')
       if ep then return bad(ep) end
@@ -283,11 +289,10 @@ for i = 1, n do
         if s.score == nil then return bad('pending member score is not a canonical non-negative integer') end
       end
     end
-    s.fresh = redis.call('EXISTS', cur) == 0
   elseif kind == 'c' and success then
-    local v, e = readCounter(cur)
-    if v == nil then return bad(e) end
-    s.value = v
+    local e = checkType(cur, 'zset', 'counter')
+    if e then return bad(e) end
+    if not canonicalScores(cur) then return bad('counter member score is not a canonical non-negative integer') end
   elseif kind == 'b' and success then
     s.full = cap * ttl
     local credit, existsOrErr = readBucket(cur, s.full, now)
@@ -303,18 +308,19 @@ for i = 1, n do
   if s.kind == 's' then
     if success then
       if s.settlesOut then
-        if not s.keepsSettled then redis.call('SREM', s.cur, s.member) end
+        if not s.keepsSettled then redis.call('ZREM', s.cur, s.member) end
         if s.score ~= nil and s.score > now then redis.call('ZREM', s.pending, s.member) end
       else
-        redis.call('SREM', s.cur, s.member)
+        redis.call('ZREM', s.cur, s.member)
       end
     else
-      redis.call('SADD', s.cur, s.member)
-      if s.fresh then redis.call('EXPIRE', s.cur, s.ttl) end
+      redis.call('ZREMRANGEBYSCORE', s.cur, '-inf', nowStr)
+      redis.call('ZADD', s.cur, string.format('%d', now + s.ttl), s.member)
+      redis.call('EXPIRE', s.cur, s.ttl)
       if s.settlesOut then redis.call('ZREM', s.pending, s.member) end
     end
   elseif s.kind == 'c' and success then
-    if s.value > 0 then redis.call('DECR', s.cur) end
+    if s.member ~= '' then redis.call('ZREM', s.cur, s.member) end
   elseif s.kind == 'b' and success and s.present then
     local credit = s.credit + s.ttl
     if credit >= s.full then
@@ -416,6 +422,14 @@ LUA;
                 }
             }
         }
+        foreach ($request->scopes as $scope) {
+            if ($scope->kind === AdmissionScopeKindEnum::COUNTER) {
+                $member = $scope->member;
+                if (($member === null || $member === '') && ($permit === null || $permit->id === '')) {
+                    throw new RateLimiterException('A counter admission scope requires a member.');
+                }
+            }
+        }
         $keys = [];
         $args = [
             (string) $now,
@@ -433,12 +447,16 @@ LUA;
             $keys[] = $scope->kind === AdmissionScopeKindEnum::SET_SIZE
                 ? $this->pendingKey($request->verifierClass, $scope->key)
                 : ($previous === null ? '' : $this->scopeKey($request->verifierClass, $scope->kind, $previous));
+            $member = $scope->member;
+            if ($scope->kind === AdmissionScopeKindEnum::COUNTER && ($member === null || $member === '')) {
+                $member = $permit?->id;
+            }
             array_push(
                 $args,
                 self::KIND_CODE[$scope->kind->value],
                 (string) $scope->capacity,
                 (string) $scope->ttlSeconds,
-                $scope->member ?? '',
+                $member ?? '',
                 $scope->previousMember ?? '',
                 $scope->settlesOnExpiry ? '1' : '0',
             );
@@ -477,12 +495,16 @@ LUA;
         foreach ($outcome->scopes as $scope) {
             $keys[] = $this->scopeKey($outcome->verifierClass, $scope->kind, $scope->key);
             $keys[] = $scope->kind === AdmissionScopeKindEnum::SET_SIZE ? $this->pendingKey($outcome->verifierClass, $scope->key) : '';
+            $member = $scope->member;
+            if ($scope->kind === AdmissionScopeKindEnum::COUNTER && ($member === null || $member === '')) {
+                $member = $outcome->permitId ?? '';
+            }
             array_push(
                 $args,
                 self::KIND_CODE[$scope->kind->value],
                 (string) $scope->capacity,
                 (string) $scope->ttlSeconds,
-                $scope->member ?? '',
+                $member ?? '',
                 $scope->successKeepsSettled ? '1' : '0',
                 $scope->settlesOnExpiry ? '1' : '0',
             );
@@ -571,7 +593,7 @@ LUA;
             }
             $previous = $this->previousKeyOf($scope);
             $device = $scope->kind === AdmissionScopeKindEnum::DEVICE_MEMBER;
-            $keyed = $device || $scope->kind === AdmissionScopeKindEnum::SET_SIZE;
+            $keyed = $device || $scope->kind === AdmissionScopeKindEnum::SET_SIZE || $scope->kind === AdmissionScopeKindEnum::COUNTER;
             if ($previous !== null && ! ($device || $scope->kind === AdmissionScopeKindEnum::COUNTER)) {
                 throw new RateLimiterException('Only counter and device-member admission scopes can name a previous generation.');
             }
