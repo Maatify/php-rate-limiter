@@ -9,7 +9,7 @@ use Maatify\RateLimiter\Tests\Support\Admission\Archive\GateReport;
 use Maatify\RateLimiter\Tests\Support\Admission\Archive\StreamGates;
 use Maatify\RateLimiter\Tests\Support\Admission\Archive\StreamReplay;
 use Maatify\RateLimiter\Tests\Support\Admission\EngineLab;
-use Maatify\RateLimiter\Tests\Support\Admission\PreSettlementReferenceStore;
+use Maatify\RateLimiter\Tests\Support\Admission\PreSettlementReferenceStoreSliding;
 use Maatify\RateLimiter\Tests\Support\Clock\FixedClock;
 use PHPUnit\Framework\Attributes\DataProvider;
 use PHPUnit\Framework\Attributes\Group;
@@ -21,9 +21,9 @@ use PHPUnit\Framework\TestCase;
  * rows come from the archive's own functions through `archive-dump.php` (LT-20).
  *
  * NM-10 and NM-5 are registered as re-registered on 2026-10-20 (5b3b/PLAN.md §11.3, §11.4: the mechanism is the required permit
- * only; settlement is off by default). The arm without the permit mechanism of NM-10 (a) is the admission store exactly as merged
- * at d6aea4d: in memory `PreSettlementReferenceStore` here, and `MergedAdmissionOperations` on real Redis in
- * `AdmissionNm10RedisParityTest`. A1 excludes `UAC` as a declared cost (§11.5, `StreamGates::DECLARED_COSTS`).
+ * only; settlement is off by default). The arm without the permit mechanism of NM-10 (a) is the admission store of d6aea4d with
+ * DEC-033 sliding windows: in memory `PreSettlementReferenceStoreSliding` here, and `MergedAdmissionOperationsSliding` on real
+ * Redis in `AdmissionNm10RedisParityTest`. A1 excludes `UAC` as a declared cost (§11.5, `StreamGates::DECLARED_COSTS`).
  */
 #[Group('archive')]
 final class AdmissionArchiveStreamsTest extends TestCase
@@ -45,7 +45,7 @@ final class AdmissionArchiveStreamsTest extends TestCase
 
     private static function withoutMechanism(): EngineLab
     {
-        return new EngineLab(StreamReplay::fullBudgets(), admissionInner: new PreSettlementReferenceStore(new FixedClock('@' . EngineLab::T0)));
+        return new EngineLab(StreamReplay::fullBudgets(), admissionInner: new PreSettlementReferenceStoreSliding(new FixedClock('@' . EngineLab::T0)));
     }
 
     /** @return array<string, array<string, mixed>> archive rows keyed `stream|strategy|ids|flow` */

@@ -26,13 +26,13 @@ final class PreSettlementReferenceStore extends FullCapabilityInMemoryStore impl
     AdmissionCapableFullStoreInterface,
     AdmissionPermitStoreInterface
 {
-    /** @var array<string, array<string, int>> member => expiry score, per counter */
+    /** @var array<string, int> */
     private array $counters = [];
 
     /** @var array<string, array<string, int>> member => expiry score, per set */
     private array $devices = [];
 
-    /** @var array<string, array<string, int>> member => expiry score, per failure set */
+    /** @var array<string, array<string, true>> */
     private array $sets = [];
 
     /** @var array<string, array{credit: int, last: int}> */
@@ -58,7 +58,7 @@ final class PreSettlementReferenceStore extends FullCapabilityInMemoryStore impl
             $own = $class . "\0" . $scope->key;
             $previous = $scope->previousKey === null || $scope->previousKey === $scope->key ? null : $class . "\0" . $scope->previousKey;
             if ($scope->kind === AdmissionScopeKindEnum::COUNTER) {
-                if ($this->liveCounterCount($own, $now) + ($previous === null ? 0 : ($this->liveCounterCount($previous, $now))) >= $scope->capacity) {
+                if (($this->counters[$own] ?? 0) + ($previous === null ? 0 : ($this->counters[$previous] ?? 0)) >= $scope->capacity) {
                     return new AdmissionReservationResultDTO(false, $scope->name);
                 }
             } elseif ($scope->kind === AdmissionScopeKindEnum::DEVICE_MEMBER) {
@@ -67,7 +67,8 @@ final class PreSettlementReferenceStore extends FullCapabilityInMemoryStore impl
                     return new AdmissionReservationResultDTO(false, $scope->name);
                 }
             } elseif ($scope->kind === AdmissionScopeKindEnum::SET_SIZE) {
-                if (! $this->liveInSet($own, (string) $scope->member, $now) && $this->liveSetCount($own, $now) >= $scope->capacity) {
+                $members = $this->sets[$own] ?? [];
+                if (! isset($members[(string) $scope->member]) && count($members) >= $scope->capacity) {
                     return new AdmissionReservationResultDTO(false, $scope->name);
                 }
             } else {
@@ -86,9 +87,7 @@ final class PreSettlementReferenceStore extends FullCapabilityInMemoryStore impl
             $own = $class . "\0" . $scope->key;
             $previous = $scope->previousKey === null || $scope->previousKey === $scope->key ? null : $class . "\0" . $scope->previousKey;
             if ($scope->kind === AdmissionScopeKindEnum::COUNTER) {
-                $member = $scope->member ?? ($permit !== null ? $permit->id : bin2hex(random_bytes(16)));
-                $this->counters[$own] = array_filter($this->counters[$own] ?? [], static fn(int $expiry): bool => $expiry > $now);
-                $this->counters[$own][$member] = $now + $scope->ttlSeconds;
+                $this->counters[$own] = ($this->counters[$own] ?? 0) + 1;
             } elseif ($scope->kind === AdmissionScopeKindEnum::DEVICE_MEMBER && ! $this->deviceExists($scope, $own, $previous, $now)) {
                 $this->devices[$own] = array_filter($this->devices[$own] ?? [], static fn(int $expiry): bool => $expiry > $now);
                 $this->devices[$own][(string) $scope->member] = $now + $scope->ttlSeconds;
@@ -116,17 +115,14 @@ final class PreSettlementReferenceStore extends FullCapabilityInMemoryStore impl
         foreach ($outcome->scopes as $scope) {
             $own = $outcome->verifierClass . "\0" . $scope->key;
             if ($scope->kind === AdmissionScopeKindEnum::SET_SIZE) {
-                $member = (string) $scope->member;
                 if ($success) {
-                    unset($this->sets[$own][$member]);
+                    unset($this->sets[$own][(string) $scope->member]);
                 } else {
-                    $this->sets[$own] = array_filter($this->sets[$own] ?? [], static fn(int $expiry): bool => $expiry > $now);
-                    $this->sets[$own][$member] = $now + $scope->ttlSeconds;
+                    $this->sets[$own][(string) $scope->member] = true;
                 }
             } elseif ($success && $scope->kind === AdmissionScopeKindEnum::COUNTER) {
-                $member = $scope->member ?? ($outcome->permitId ?? '');
-                if ($member !== '') {
-                    unset($this->counters[$own][$member]);
+                if (($this->counters[$own] ?? 0) > 0) {
+                    $this->counters[$own]--;
                 }
             } elseif ($success && $scope->kind === AdmissionScopeKindEnum::BUCKET && isset($this->buckets[$own])) {
                 $credit = $this->bucketCredit($own, $scope, $now) + $scope->ttlSeconds;
@@ -189,21 +185,6 @@ final class PreSettlementReferenceStore extends FullCapabilityInMemoryStore impl
     private function liveCount(string $set, int $now): int
     {
         return count(array_filter($this->devices[$set] ?? [], static fn(int $expiry): bool => $expiry > $now));
-    }
-
-    private function liveCounterCount(string $counter, int $now): int
-    {
-        return count(array_filter($this->counters[$counter] ?? [], static fn(int $expiry): bool => $expiry > $now));
-    }
-
-    private function liveSetCount(string $set, int $now): int
-    {
-        return count(array_filter($this->sets[$set] ?? [], static fn(int $expiry): bool => $expiry > $now));
-    }
-
-    private function liveInSet(string $set, string $member, int $now): bool
-    {
-        return ($this->sets[$set][$member] ?? 0) > $now;
     }
 
     private function bucketCredit(string $own, AdmissionScopeDTO $scope, int $now): int

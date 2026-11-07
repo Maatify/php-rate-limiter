@@ -4,7 +4,7 @@
 
 This document details all differences between historical tumbling window baselines and the sliding admission window replays introduced by **DEC-033**.
 
-All golden files and expected replay outputs have been regenerated and verified against the true sliding window implementation (`RedisAdmissionOperations` sliding sorted sets and `PreSettlementReferenceStore` in-memory sliding sorted sets):
+All golden files and expected replay outputs have been regenerated and verified against the true sliding window implementation (`RedisAdmissionOperations` sliding sorted sets and `PreSettlementReferenceStoreSliding` in-memory sliding sorted sets):
 - `tests/System/AdmissionArchiveCgnModelTest.php`
 - `tests/System/AdmissionArchiveFixturesTest.php`
 - `tests/System/AdmissionArchiveG7Test.php`
@@ -15,6 +15,20 @@ All golden files and expected replay outputs have been regenerated and verified 
 - `tests/System/AdmissionNm10BindingTest.php`
 
 All 8 archive test suites pass with 0 failures, proving 100% equivalence between the sliding Redis store and the sliding reference model.
+
+### 1.1 Arm and Fixture Taxonomy (LT-185-29, F-185-31)
+
+To preserve the fidelity of historic detector fixtures while validating sliding window parity, the test suite strictly partitions arms into frozen `d6aea4d` fixtures and DEC-033 sliding fixtures:
+
+1. **Frozen Baseline Detector Fixtures (`d6aea4d` verbatim):**
+   - **In-Memory:** `PreSettlementReferenceStore` — frozen byte-for-byte at `d6aea4d` (unmodified from `eb4e740`). Evaluates tumbling window semantics without settlement or permit tracking.
+   - **Redis:** `MergedAdmissionOperations` — frozen byte-for-byte at `d6aea4d`. Used in short-run off-parity checks against baseline mutations.
+2. **Sliding Parity Fixtures (DEC-033 + F-185-30):**
+   - **In-Memory:** `PreSettlementReferenceStoreSliding` — derived from `PreSettlementReferenceStore` plus DEC-033 sliding sorted sets for counters and failure sets, enforcing explicit member requirements (F-185-30) without synthetic identifiers. Used as the mechanism-less arm in `AdmissionArchiveStreamsTest`.
+   - **Redis:** `MergedAdmissionOperationsSliding` — derived from `MergedAdmissionOperations` plus DEC-033 sliding sorted sets for counters and failure sets. Used as the mechanism-less arm in `AdmissionNm10RedisParityTest` and the long-run seeded parity runner in `AdmissionSettlementOptInRedisTest`.
+3. **Full Reference & Production Engine:**
+   - **In-Memory:** `AdmissionInMemoryReferenceStore` — reference store supporting full capability, sliding windows, permits, and optional settlement.
+   - **Redis:** `RedisFullCapabilityStore` / `RedisAdmissionOperations` — production engine implementation.
 
 ---
 
