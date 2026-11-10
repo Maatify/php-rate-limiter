@@ -47,7 +47,7 @@ if ($spec['mode'] === 'nonatomic') {
     // DETECTOR CONTROL: count in one round trip, write in another. Never production code.
     $set = $operations->scopeKey('login', AdmissionScopeKindEnum::SET_SIZE, $spec['key']);
     $pending = $operations->pendingKey('login', $spec['key']);
-    $size = ReplyValue::integer($executor->execute(['SCARD', $set])) + ReplyValue::integer($executor->execute(['ZCOUNT', $pending, '-inf', (string) $now]));
+    $size = ReplyValue::integer($executor->execute(['ZCOUNT', $set, '(' . $now, '+inf'])) + ReplyValue::integer($executor->execute(['ZCOUNT', $pending, '-inf', (string) $now]));
     if ($size >= $spec['capacity']) {
         echo json_encode(['ok' => false], JSON_THROW_ON_ERROR);
         exit(0);

@@ -335,7 +335,9 @@ with `withPolicy()` (it replaces `login_protection` under the same name, so the 
 state written before the switch is read on), set `bindingKeySecret` on `RateLimiterConfig`, use a
 store with the admission capability (`RedisFullCapabilityStore`), and open the fleet fence once
 every worker runs this version ("Operating the admission fence" below). The budgets are package
-constants (DEC-025, DEC-028): there is nothing to configure. Only a Host that calls `checkOnly`
+constants (DEC-025, DEC-028, DEC-033): there is nothing to configure. Under DEC-033, windowed counters
+and failure sets operate as sliding sorted sets scored by expiration, strictly bounding every continuous
+window of length W (600 s) or Day (86400 s) without tumbling bucket resets. Only a Host that calls `checkOnly`
 and then records every outcome (`pre+out`) may opt in (DEC-023).
 
 Inputs (all optional on `RateLimitContextDTO`; ignored by every policy that did not opt in):

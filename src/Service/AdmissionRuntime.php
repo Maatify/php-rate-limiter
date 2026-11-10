@@ -145,11 +145,11 @@ final class AdmissionRuntime
     ): RateLimitResultDTO {
         $t = $this->now();
         $subject = $this->subject($context);
-        $scopes = $lane->lane === AdmissionLaneEnum::P
-            ? $this->provenScopes($budgetGroup, $context, $device, $lane, $t)
-            : $this->unprovenScopes($budgetGroup, $context, $t);
         $id = bin2hex(random_bytes(16));
         $permit = new AdmissionPermitDTO($id, $lane->lane->value, $subject ?? self::NO_SUBJECT, $policyName, $t + $this->budgets->permitDeadlineSeconds, $this->budgets->permitGraceSeconds);
+        $scopes = $lane->lane === AdmissionLaneEnum::P
+            ? $this->provenScopes($budgetGroup, $context, $device, $lane, $id)
+            : $this->unprovenScopes($budgetGroup, $context, $id);
         $result = $this->store->reserveAdmission(new AdmissionReservationRequestDTO($budgetGroup, $scopes, $permit), $t);
         if (! $result->admitted) {
             $scope = (string) $result->refusedScope;
@@ -248,18 +248,17 @@ final class AdmissionRuntime
     }
 
     /** @return list<AdmissionScopeDTO> */
-    private function unprovenScopes(string $group, RateLimitContextDTO $context, int $t): array
+    private function unprovenScopes(string $group, RateLimitContextDTO $context, string $permitId): array
     {
         $b = $this->budgets;
-        $window = 'w' . intdiv($t, $b->windowSeconds);
         $source = SourcePrefix::of($context->ip);
         $subject = $this->subject($context);
-        $scopes = [$this->counter('source_capacity', $group, 'src', $source, $window, $b->sourceCapacity, 2 * $b->windowSeconds)];
+        $scopes = [$this->counter('source_capacity', $group, 'src', $source, $b->sourceCapacity, $b->windowSeconds, $permitId)];
         if ($subject !== null) {
             // The study's order (LT-25): the net failure set, then the account bucket, then the source counter. The first
             // refusing scope names the cause.
             $scopes = [
-                $this->failureSet('source_failure_cap', $group, 'ufail', $source, $window, $b->sourceFailureCap, $subject),
+                $this->failureSet('source_failure_cap', $group, 'ufail', $source, $b->sourceFailureCap, $subject),
                 new AdmissionScopeDTO('account_bucket', AdmissionScopeKindEnum::BUCKET, $this->key($group, 'acct', $subject, ''), $b->accountBucketTakes, $b->accountBucketSeconds),
                 ...$scopes,
             ];
@@ -269,31 +268,29 @@ final class AdmissionRuntime
     }
 
     /** @return list<AdmissionScopeDTO> */
-    private function provenScopes(string $group, RateLimitContextDTO $context, DeviceIdentityDTO $device, AdmissionLaneDTO $lane, int $t): array
+    private function provenScopes(string $group, RateLimitContextDTO $context, DeviceIdentityDTO $device, AdmissionLaneDTO $lane, string $permitId): array
     {
         $b = $this->budgets;
-        $window = 'w' . intdiv($t, $b->windowSeconds);
-        $day = 'd' . intdiv($t, self::DAY);
         $subject = $this->subject($context) ?? self::NO_SUBJECT;
         $proof = $this->proofRef($lane->claims->jti ?? $subject);
         $scopes = [
-            $this->counter('proof_account_window', $group, 'pacct', $subject, $window, $b->proofAccountWindow, 2 * $b->windowSeconds),
-            $this->counter('proof_account_day', $group, 'pacctd', $subject, $day, $b->proofAccountDay, 2 * self::DAY),
-            $this->counter('proof_proof_window', $group, 'pproof', $proof, $window, $b->proofProofWindow, 2 * $b->windowSeconds),
-            $this->counter('proof_proof_day', $group, 'pproofd', $proof, $day, $b->proofProofDay, 2 * self::DAY),
+            $this->counter('proof_account_window', $group, 'pacct', $subject, $b->proofAccountWindow, $b->windowSeconds, $permitId),
+            $this->counter('proof_account_day', $group, 'pacctd', $subject, $b->proofAccountDay, self::DAY, $permitId),
+            $this->counter('proof_proof_window', $group, 'pproof', $proof, $b->proofProofWindow, $b->windowSeconds, $permitId),
+            $this->counter('proof_proof_day', $group, 'pproofd', $proof, $b->proofProofDay, self::DAY, $permitId),
         ];
         if (IdentityPresence::fingerprint($device)) {
             $scopes[] = $this->deviceMember($group, $subject, $device);
         }
-        $scopes[] = $this->failureSet('source_proof_failure_cap', $group, 'pfail', SourcePrefix::of($context->ip), $window, $b->crossAccountFailureCap, $subject);
+        $scopes[] = $this->failureSet('source_proof_failure_cap', $group, 'pfail', SourcePrefix::of($context->ip), $b->crossAccountFailureCap, $subject);
 
         return $scopes;
     }
 
     /**
-     * The scopes an accepted outcome applies with its own kind, on the window and day of the admission (`t0`, LT-14). U: the net
-     * failure set (a failure adds the subject, a success removes it) and, on a success, the bucket refund. P: on a success the
-     * refund of the proof counters; a failure refunds nothing (its D8 entry is `crossAccountFailure()`).
+     * The scopes an accepted outcome applies with its own kind. U: the net failure set (a failure adds the subject,
+     * a success removes it) and, on a success, the bucket refund. P: on a success the refund of the proof counters;
+     * a failure refunds nothing (its D8 entry is `crossAccountFailure()`).
      *
      * @param array{id: string, lane: AdmissionLaneEnum, t0: int, j: ?string} $payload
      * @return list<AdmissionScopeDTO>
@@ -301,16 +298,14 @@ final class AdmissionRuntime
     private function outcomeScopes(string $group, RateLimitContextDTO $context, array $payload, bool $success): array
     {
         $b = $this->budgets;
-        $t = $payload['t0'];
-        $window = 'w' . intdiv($t, $b->windowSeconds);
         $subject = $this->subject($context);
         if ($subject === null) {
             return [];
         }
         if ($payload['lane'] === AdmissionLaneEnum::P) {
-            return $success ? $this->proofRefund($group, $subject, $payload['j'] ?? $subject, $window, 'd' . intdiv($t, self::DAY)) : [];
+            return $success ? $this->proofRefund($group, $subject, $payload['j'] ?? $subject, $payload['id']) : [];
         }
-        $scopes = [$this->failureSet('source_failure_cap', $group, 'ufail', SourcePrefix::of($context->ip), $window, $b->sourceFailureCap, $subject)];
+        $scopes = [$this->failureSet('source_failure_cap', $group, 'ufail', SourcePrefix::of($context->ip), $b->sourceFailureCap, $subject)];
         if ($success) {
             $scopes[] = new AdmissionScopeDTO('account_bucket', AdmissionScopeKindEnum::BUCKET, $this->key($group, 'acct', $subject, ''), $b->accountBucketTakes, $b->accountBucketSeconds);
         }
@@ -319,19 +314,19 @@ final class AdmissionRuntime
     }
 
     /**
-     * The four proof counters of the admission's window and day that a success on the proven door refunds (the reservation's).
+     * The four proof counters that a success on the proven door refunds (the reservation's).
      *
      * @return list<AdmissionScopeDTO>
      */
-    private function proofRefund(string $group, string $subject, string $proof, string $window, string $day): array
+    private function proofRefund(string $group, string $subject, string $proof, string $permitId): array
     {
         $b = $this->budgets;
 
         return [
-            $this->counter('proof_account_window', $group, 'pacct', $subject, $window, $b->proofAccountWindow, 2 * $b->windowSeconds),
-            $this->counter('proof_account_day', $group, 'pacctd', $subject, $day, $b->proofAccountDay, 2 * self::DAY),
-            $this->counter('proof_proof_window', $group, 'pproof', $proof, $window, $b->proofProofWindow, 2 * $b->windowSeconds),
-            $this->counter('proof_proof_day', $group, 'pproofd', $proof, $day, $b->proofProofDay, 2 * self::DAY),
+            $this->counter('proof_account_window', $group, 'pacct', $subject, $b->proofAccountWindow, $b->windowSeconds, $permitId),
+            $this->counter('proof_account_day', $group, 'pacctd', $subject, $b->proofAccountDay, self::DAY, $permitId),
+            $this->counter('proof_proof_window', $group, 'pproof', $proof, $b->proofProofWindow, $b->windowSeconds, $permitId),
+            $this->counter('proof_proof_day', $group, 'pproofd', $proof, $b->proofProofDay, self::DAY, $permitId),
         ];
     }
 
@@ -348,9 +343,8 @@ final class AdmissionRuntime
         if ($payload['lane'] !== AdmissionLaneEnum::P || $subject === null || ! $this->entersCrossAccountSet($success)) {
             return null;
         }
-        $window = 'w' . intdiv($payload['t0'], $this->budgets->windowSeconds);
 
-        return $this->failureSet('source_proof_failure_cap', $group, 'pfail', SourcePrefix::of($context->ip), $window, $this->budgets->crossAccountFailureCap, $subject);
+        return $this->failureSet('source_proof_failure_cap', $group, 'pfail', SourcePrefix::of($context->ip), $this->budgets->crossAccountFailureCap, $subject);
     }
 
     /** Whether an accepted outcome on the proven door enters the D8 set: a failure does, a success never (DEC-025 8.2). */
@@ -359,27 +353,28 @@ final class AdmissionRuntime
         return ! $success;
     }
 
-    private function counter(string $name, string $group, string $purpose, string $value, string $label, int $capacity, int $ttl): AdmissionScopeDTO
+    private function counter(string $name, string $group, string $purpose, string $value, int $capacity, int $ttl, ?string $permitId = null): AdmissionScopeDTO
     {
         return new AdmissionScopeDTO(
             $name,
             AdmissionScopeKindEnum::COUNTER,
-            $this->key($group, $purpose, $value, $label),
+            $this->key($group, $purpose, $value, ''),
             $capacity,
             $ttl,
-            $this->previousKeySecret === null ? null : $this->key($group, $purpose, $value, $label, $this->previousKeySecret),
+            $this->previousKeySecret === null ? null : $this->key($group, $purpose, $value, '', $this->previousKeySecret),
+            $permitId,
         );
     }
 
     /** A failure set (U `F`, P D8) at the store default: no settlement, no `successKeepsSettled` (PLAN §11.2). */
-    private function failureSet(string $name, string $group, string $purpose, string $source, string $label, int $capacity, string $subject): AdmissionScopeDTO
+    private function failureSet(string $name, string $group, string $purpose, string $source, int $capacity, string $subject): AdmissionScopeDTO
     {
         return new AdmissionScopeDTO(
             $name,
             AdmissionScopeKindEnum::SET_SIZE,
-            $this->key($group, $purpose, $source, $label),
+            $this->key($group, $purpose, $source, ''),
             $capacity,
-            2 * $this->budgets->windowSeconds,
+            $this->budgets->windowSeconds,
             null,
             $this->key($group, 'member', $subject, ''),
         );

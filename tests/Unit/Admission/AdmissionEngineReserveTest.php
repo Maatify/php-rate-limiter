@@ -48,8 +48,8 @@ final class AdmissionEngineReserveTest extends TestCase
         $this->assertRefusal($r, 'source_capacity', 'source');
         $windowEnd = (intdiv($lab->now(), 600) + 1) * 600;
         self::assertSame($windowEnd - $lab->now(), $r->retryAfter);
-        // Nothing is persisted: the refusal is not a block, so the next window admits again.
-        $lab->at(600);
+        // Under a sliding window of duration 600 s, the admissions recorded at t=125 expire after t=725.
+        $lab->at(125 + 600 + 1);
         self::assertSame(RateLimitResultDTO::DECISION_ALLOW, $lab->check($lab->context('acct-9', self::IP))->decision);
     }
 

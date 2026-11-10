@@ -69,8 +69,9 @@ final class AdmissionSettlementNm7RedisTest extends AdmissionRedisGateTestCase
 
     private function countedSize(): int
     {
-        return ReplyValue::integer($this->raw('SCARD', $this->key(AdmissionScopeKindEnum::SET_SIZE, self::KEY)))
-            + ReplyValue::integer($this->raw('ZCOUNT', $this->keys->pendingKey('login', self::KEY), '-inf', (string) Sc::N));
+        // Live failures plus due pending members inside the window (#185, DEC-033: the failure set is a sorted set).
+        return ReplyValue::integer($this->raw('ZCOUNT', $this->key(AdmissionScopeKindEnum::SET_SIZE, self::KEY), '(' . Sc::N, '+inf'))
+            + ReplyValue::integer($this->raw('ZCOUNT', $this->keys->pendingKey('login', self::KEY), '(' . (Sc::N - Sc::TTL), (string) Sc::N));
     }
 
     /** @return iterable<string, array{int}> */

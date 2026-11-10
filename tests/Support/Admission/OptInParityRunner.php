@@ -27,10 +27,12 @@ final class OptInParityRunner
     private const CLASS_NAME = 'login';
 
     /**
+     * @param RedisAdmissionOperations|MergedAdmissionOperations|MergedAdmissionOperationsSliding|object $ops
      * @return list<array{step: int, record: string, dump: array<string, array{type: string, value: mixed, hasTtl: bool}>}>
      */
-    public static function run(RedisAdmissionOperations|MergedAdmissionOperations $ops, RedisCommandExecutorInterface $redis, int $seed, int $steps): array
+    public static function run(object $ops, RedisCommandExecutorInterface $redis, int $seed, int $steps): array
     {
+        /** @var RedisAdmissionOperations|MergedAdmissionOperations|MergedAdmissionOperationsSliding $ops */
         mt_srand($seed);
         $now = 1767268800;
         $permits = [];
