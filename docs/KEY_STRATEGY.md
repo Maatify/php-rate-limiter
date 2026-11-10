@@ -35,7 +35,7 @@ Keys are **security primitives**, not implementation details.
   * Amendment under DEC-022 (2026-10-20), for a policy that opts into the admission reservation
     (DEC-024) only: the **source** (an IPv4 address or an IPv6 `/64`) may bound unproven traffic as a
     per-window **capacity** (the source capacity, the net failure cap and the cross-account
-    proven-door cap of DEC-034, `DECISION_MATRIX.md` §12). It never identifies anyone, never persists,
+    proven-door cap of DEC-025, with sliding restatement proposed in DEC-034, `DECISION_MATRIX.md` §12). It never identifies anyone, never persists,
     never escalates and never blocks: a refusal is a non-persisted `SOFT_BLOCK`. For identity the
     source stays advisory, as above
 * Device-aware keys are preferred whenever available
@@ -159,7 +159,7 @@ K4 = AccountID
 * AccountID MUST be a blind index or internal ID
 * Raw usernames/emails MUST NOT be used
 
-**Admission family K4P (DEC-026, DEC-034 4.A; LOCKED amendment, active since 2026-10-20).** For a policy that declares
+**Admission family K4P (DEC-026, DEC-025 4.A, noting proposed DEC-034 4.A; LOCKED amendment, active since 2026-10-20).** For a policy that declares
 the admission capability, a request carrying the proven lane derives the account key from the key
 type `k4p` instead of `k4`:
 
@@ -194,7 +194,7 @@ K5 = AccountID + DeviceFP
 * K5 presence alone does NOT prove a device was previously verified for the account
   (see `DEVICE_FINGERPRINT.md` §4.3)
 
-**Admission family K5p and the K5 material (DEC-026, DEC-034 9.1; LOCKED amendment, active since 2026-10-20).** For a policy that
+**Admission family K5p and the K5 material (DEC-026, DEC-025 9.1, noting proposed DEC-034 9.1; LOCKED amendment, active since 2026-10-20).** For a policy that
 declares the admission capability: (1) the proven lane derives the device key from the key type
 `k5p` (`{policy}:rate_limiter:k5p:v2:{env}:{accountId}:{material}`) and keeps the unsuffixed
 `k5` for the unproven lane; (2) `{material}` is the instance-id component `deviceIdHash` when the
@@ -785,7 +785,7 @@ The admission layer adds the following purposes (LOCKED amendment under DEC-026,
 * `binding_epoch` — one integer per account, the per-account epoch of the admission binding
   credential. The preimage is the same, `{policy}:rate_limiter:aux:binding_epoch:v1:{env}:{accountId}`,
   with the **budget group** of the verifier class in place of `{policy}` so that login,
-  re-authentication and password change share one epoch (DEC-034 6.1). It is **not** a §10.1
+  re-authentication and password change share one epoch (DEC-025 6.1, noting proposed DEC-034 6.1). It is **not** a §10.1
   generation-bound namespace. Current key is written; the previous-generation key is read-only
   and read only when the current key is absent. The derivation is in `AdmissionRuntime` (stage 5-b3b), keyed by `accountId` and the active key
   secret (with the previous-generation key read-only); the store operations (`readBindingEpoch`,
@@ -935,7 +935,7 @@ set) and `b` (bucket); one logical key never changes family.
 | --- | --- | --- |
 | `c` counter | sorted set | windowed counter elements (member = permit ID, DEC-033) scored by member expiration timestamp (`now + ttl`); active count is `ZCOUNT (now +inf)`; a refusal writes nothing and never prunes; an admitted write prunes expired entries (`score <= now`), adds the permit ID with score `now + ttl`, and refreshes `EXPIRE` to `ttl`; a refund (`ZREM permitId`) removes the member if present and leaves TTL untouched. The key carries no window tag (`:w` / `:d`), enforcing a continuous sliding window. |
 | `d` device members | sorted set | member scored by its expiry (caller time + member lifetime); a member is live when its score is above the caller's `now`; the key is pruned only by an admitted write to the current set, and `EXPIRE` is refreshed only by that write |
-| `s` set | sorted set | accounts of the net-failure set (U, `ufail`) or the cross-account proven failure set (P, `pfail`, DEC-033, DEC-034), member = failing subject scored by expiry (`now + W`, where W = 600 s); active count is `ZCOUNT (now +inf)`; a refusal writes nothing and never prunes; a failure outcome prunes expired entries, adds the subject with score `now + W`, and refreshes `EXPIRE` to `W`; on success the member is removed (`ZREM`). Enforces a continuous sliding window with no window tag (`:w`). Failure sets count recorded failure outcomes (`applyOutcome`), not in-flight reservations; cap `F = 4` governs subsequent reservations. Under concurrent in-flight requests, distinct account failures can reach the admission source capacity (`source_capacity = 24` for U-lane, measured 20/20 in Train 8; F-185-37). |
+| `s` set | sorted set | accounts of the net-failure set (U, `ufail`) or the cross-account proven failure set (P, `pfail`, DEC-033, noting proposed DEC-034), member = failing subject scored by expiry (`now + W`, where W = 600 s); active count is `ZCOUNT (now +inf)`; a refusal writes nothing and never prunes; a failure outcome prunes expired entries, adds the subject with score `now + W`, and refreshes `EXPIRE` to `W`; on success the member is removed (`ZREM`). Enforces a continuous sliding window with no window tag (`:w`). Failure sets count recorded failure outcomes (`applyOutcome`), not in-flight reservations; cap `F = 4` governs subsequent reservations. Empirical measurements (`investigations/admission-concurrency-185/RESULTS.md`, F-185-37, LT-185-37a) demonstrate that under concurrent in-flight requests, U-lane admissions are bounded by `source_capacity = 24`, with distinct account failures reaching up to 24. For P-lane, single-proof in-flight concurrency is bounded by `proof_proof_window = 6`, while distinct-proof requests from a single IP pass admission prior to outcome registration, after which subsequent requests are refused under `source_proof_failure_cap = 4` (declared cost accepted by the Owner). |
 | `b` bucket | hash `credit`, `last` | credit-seconds, refilled 1 per second of caller time up to `C x T`; absent means full; `EXPIRE` is the time to full, so an expired bucket and an absent bucket are the same state. This is the only admission family that retains a window/tag origin. |
 | `p` pending (5-b2.1; **written only when a scope settles on expiry, 5-b2.2; the admission runtime builds no settling scope, so nothing writes or reads it**) | sorted set | pending members of the failure set with the same logical key: member scored by its permit `deadline` (an earlier deadline wins on a second reservation). A member counts toward the set only when its score is `<= now` and it is not already in the set; a success removes a pending member only while its score is `> now`. `EXPIRE` equals the scope `ttlSeconds`, set when the key is created and never renewed; a reservation without a permit never writes it; a refusal never writes it |
 | permit | hash `state`, `lane`, `subject`, `operation`, `deadline`, `grace`, `outcome` | created by the admitting reservation in the same script, lifetime `deadline + grace - now`; `ISSUED` then `CLAIMED`; a claim is one compare-and-set |

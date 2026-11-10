@@ -49,7 +49,7 @@ The required permit (OD-1 (b); RIC = `investigations/k2-identity-admission-97/RU
 - **Late outcomes are dropped outcomes.** A Host whose verifier answer arrives more than 30 s after `checkOnly` loses the scoring of that attempt. The cost of drops on the production code (NM-10, `5b3b/RESULTS.md`): share 0.10, A1 and A3 hold; 0.25, A1 `L1 7`; 0.50, `L1 31`; 1.00, the `pre` values (L1 72, ABA_B 94, D2 61, SP6 144).
 - **State.** One permit record per admission for 630 s.
 - **No Host tuning.** A Host that needs other values has no supported path until a new decision.
-- **Supersedes DEC-028.** DEC-028 is marked `SUPERSEDED`.
+- **Supersedes DEC-028:** Replaces DEC-028 upon activation under Decision Governance Standard §9.
 
 ## Relationship to Other Decisions
 

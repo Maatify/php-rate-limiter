@@ -7,9 +7,9 @@ namespace Maatify\RateLimiter\DTO;
 use Maatify\RateLimiter\Exception\RateLimiterException;
 
 /**
- * The admission budgets and the permit timing the admission runtime applies (DEC-034, DEC-025 historically, LT-12).
+ * The admission budgets and the permit timing the admission runtime applies (DEC-025, with proposed DEC-034, LT-12).
  *
- * The values the supported composition applies are the package constants of `packageDefaults()` (DEC-035, DEC-028 historically): the builder
+ * The values the supported composition applies are the package constants of `packageDefaults()` (DEC-028, with proposed DEC-035): the builder
  * constructs the admission runtime with them, and no Host input sets any of them. The constructor stays open to the
  * package's own verification harness; it is not part of the supported public surface.
  *
@@ -63,11 +63,11 @@ final readonly class AdmissionBudgetsDTO
     }
 
     /**
-     * The package constants of the admission runtime (DEC-035, DEC-028 historically), the only place in the package that holds them:
-     * window `W` 600 s, `U_src` 24 and the net failure cap `F` 4 (DEC-034 decision 1.4); the account bucket, `C` 4 takes
+     * The package constants of the admission runtime (DEC-028, with proposed DEC-035), the only place in the package that holds them:
+     * window `W` 600 s, `U_src` 24 and the net failure cap `F` 4 (DEC-025 decision 1.4, noting proposed DEC-034); the account bucket, `C` 4 takes
      * refilled over `T` 1800 s (2.2); `P_acct` 10 per window and 60 per day, `P_proof` 6 and 30, `N_P` 10 per day (3.1);
      * the cross-account proven-door failure cap 4 per source and window (8, as rule 8.2); the permit deadline `D` 30 s and
-     * grace `G` 600 s (DEC-035). A different value is a new decision.
+     * grace `G` 600 s (DEC-028, noting proposed DEC-035). A different value is a new decision.
      */
     public static function packageDefaults(): self
     {

@@ -463,9 +463,13 @@ FAIL_CLOSED result or a normal quota decision; see `docs/SIMPLE_THROTTLING.md`.
   Admitted reservations and failure outcomes prune expired elements (`score <= now`), write new elements
   scored by expiry, and refresh key `EXPIRE` to `ttl`. A proof refund (`ZREM permitId`) removes the member
   if present and is a no-op if absent. Failure sets count recorded failure outcomes (`applyOutcome`), not
-  in-flight reservations; cap `F` (4) governs subsequent reservations. Under concurrent in-flight requests,
-  distinct account failures can reach the admission source capacity (`source_capacity = 24` for U-lane,
-  measured 20/20 in Train 8; F-185-37). Settling is opt-in and disabled by default (5-b2.2).
+  in-flight reservations; cap `F` (4) governs subsequent reservations. Empirical measurements
+  (`investigations/admission-concurrency-185/RESULTS.md`, F-185-37, LT-185-37a) confirm that under concurrent
+  in-flight requests, U-lane admissions are bounded by `source_capacity = 24`, with distinct account failures reaching
+  up to 24. For P-lane, single-proof in-flight concurrency is bounded by `proof_proof_window = 6`, while distinct-proof
+  requests from a single source IP pass admission prior to outcome registration, after which subsequent requests are
+  refused under `source_proof_failure_cap = 4` (declared cost accepted by the Owner). Settling is opt-in and disabled by
+  default (5-b2.2).
 * In the built-in Redis store, malformed stored state is a Lua error reply `malformed admission
   state: …`, returned before any write. The reference test executor (`RespRedisCommandExecutor`)
   raises it as `RateLimiterException`; a Host executor whose client throws on an error reply

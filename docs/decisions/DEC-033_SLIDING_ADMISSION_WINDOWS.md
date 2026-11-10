@@ -50,7 +50,7 @@ two hours). The Owner decided (LT-185-30 (b)) that all admission window mechanis
 2. **Storage and operations contract (`RedisAdmissionOperations`):**
    - **Counting (Gate Phase 1):** `ZCOUNT cur (nowStr +inf` counts live members whose score exceeds caller's `now`. Pure read; a refusal writes nothing and never prunes (L26 contract: *A refusal writes nothing, never prunes*).
    - **Admitted write / failure write (Phase 3):** Prunes expired members (`ZREMRANGEBYSCORE cur -inf nowStr`), writes the member (`ZADD cur (now + ttl) <member>`), and refreshes key expiry (`EXPIRE cur ttl`).
-   - **Maximum member count:** Bounded by the scope's capacity; since refusals do not write, the member count of any key never exceeds its cap. *(Qualified by Correction Note 2026-11-10: failure sets count recorded outcomes; concurrent in-flight permits can reach `source_capacity`).*
+   - **Maximum member count:** Bounded by the scope's capacity; since refusals do not write, the member count of any key never exceeds its cap.
    - **Success refund (`proofRefund`):** Removes the admitted reservation's member (`ZREM cur <permit_id>`) from `pacct`, `pacctd`, `pproof`, and `pproofd`. A missing or already-pruned member is a no-op, never an error. Success after pruning does not restore a slot from a previous window.
    - **Settlement of expired permits (pending set, family `p`):** Due members (`score <= now`) count as failures as long as `deadline > now - W`. The pending key's lifetime is extended to cover the newest deadline + W, never shortened.
    - **Structural validation (DEC-017):** `checkType(cur, 'zset', ...)` and `canonicalScores(cur)`. Any unexpected type or malformed score yields `malformed admission state` without write.
@@ -74,7 +74,11 @@ Under Decision Governance Standard §9, an ACTIVE decision changes only through 
 
 ### Correction Note on Failure Set Caps Under Concurrency (2026-11-10, F-185-37, PR-Q)
 
-Failure sets (`ufail`, `pfail`) count recorded failure outcomes (`applyOutcome`), not in-flight reservations. Cap `F` (4) governs admission decisions on subsequent requests; it does not retroactively cancel or bound in-flight permits issued prior to recording a failure. The statements in §2 ("the member count of any key never exceeds its cap") and §6 ("strictly capped at capacity across any continuous sliding interval: `ufail`/`pfail` 4") are qualified by this concurrency boundary: under concurrent in-flight requests, distinct account failures can reach the admission source capacity (`source_capacity = 24` for U-lane, measured 20/20 in Train 8 / `adm1.php`). Settling is opt-in and disabled by default (5-b2.2).
+Failure sets (`ufail`, `pfail`) count recorded failure outcomes (`applyOutcome`), not in-flight reservations. Cap `F` (4) governs admission decisions on subsequent requests; it does not retroactively cancel or bound in-flight permits issued prior to recording a failure. The statements in §2 ("the member count of any key never exceeds its cap") and in the Consequences section ("strictly capped at capacity across any continuous sliding interval: `ufail`/`pfail` 4") are qualified by this concurrency boundary: under concurrent in-flight requests, distinct account failures can reach the admission source capacity (`source_capacity = 24` for U-lane, measured in `investigations/admission-concurrency-185/RESULTS.md` and Train 8 / `adm1.php`). For P-lane, concurrent distinct proof requests from a single IP can reach the in-flight envelope before outcomes register, after which subsequent requests are refused under `source_proof_failure_cap = 4` (LT-185-37a). Settling is opt-in and disabled by default (5-b2.2).
+
+### Correction Note on TMS Acronym (2026-11-10, F-185-42, PR-Q)
+
+The expansion "Target Metric Score (TMS)" in the Consequences section is an erroneous expansion: `TMS` designates the `trusted-multi-session` study family from `#113` (`investigations/trusted-multi-session-s0/`), not "Target Metric Score".
 
 ## Rationale
 

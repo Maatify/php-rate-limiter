@@ -196,7 +196,7 @@ The host remains the authority for account, session, authentication, authorizati
 
 The package keeps transport behavior and host business identity outside its boundary, and its operational read API does not expose raw storage keys, raw fingerprint material, or host-owned records.
 
-**Threat-model limits.** Policies that do not opt into the admission reservation keep the DEC-027 posture: clients that share an IP prefix and user agent behind NAT can be blocked together, and trusted sessions on several accounts are bounded per account but not across accounts. The admission policy (DEC-022..DEC-028) is the supported alternative. The limits, with their measured numbers, are in [Decision Matrix §10.1](docs/DECISION_MATRIX.md#101-threat-model-limits-non-guarantees).
+**Threat-model limits.** Policies that do not opt into the admission reservation keep the DEC-027 posture: clients that share an IP prefix and user agent behind NAT can be blocked together, and trusted sessions on several accounts are bounded per account but not across accounts. The admission policy (DEC-022..DEC-028, with sliding restatements proposed in DEC-034/DEC-035) is the supported alternative. The limits, with their measured numbers, are in [Decision Matrix §10.1](docs/DECISION_MATRIX.md#101-threat-model-limits-non-guarantees).
 
 See [Device Fingerprint](docs/DEVICE_FINGERPRINT.md), [Failure Semantics](docs/FAILURE_SEMANTICS.md), and the [Package Reference](RATE_LIMITER_PACKAGE_REFERENCE.md) for the detailed contracts.
 

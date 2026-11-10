@@ -492,10 +492,10 @@ lifecycle; a custom name alone is not sufficient.
 
 ---
 
-## 7.2 Admission-Reservation Opt-In (DEC-022, DEC-023, DEC-024, DEC-025, DEC-026, DEC-028, DEC-033, DEC-034, DEC-035)
+## 7.2 Admission-Reservation Opt-In (DEC-022, DEC-023, DEC-024, DEC-025, DEC-026, DEC-028, DEC-033; proposed DEC-034, DEC-035)
 
 **Status: active since 2026-10-20.** `RateLimiterBuilder::build()` constructs the admission runtime,
-with the package constants of DEC-035 (DEC-028 historically), when a registered policy declares the capability. No Host
+with the package constants of DEC-028 (with sliding restatement proposed in DEC-035), when a registered policy declares the capability. No Host
 input sets a budget. No default preset declares it: `login_protection`, `otp_protection` and
 `api_heavy_protection` keep today's behaviour.
 
@@ -506,7 +506,7 @@ input sets a budget. No default preset declares it: `login_protection`, `otp_pro
   it replaces the default Login preset under the same name, so the account and device state written
   before the switch is read on. There is no OTP variant: OTP was never measured under the admission
   reservation. The measured costs a Host accepts with it are recorded in DEC-022 (Decision 4, at
-  activation), DEC-034 and DEC-026.
+  activation), DEC-025 (noting proposed DEC-034) and DEC-026.
 
 * **S1.** `PolicyCapabilityEnum::ADMISSION_RESERVATION` is one capability for the whole measured
   assembly (source ceiling, failure cap, account bucket, proven-lane caps, new-device cap, the

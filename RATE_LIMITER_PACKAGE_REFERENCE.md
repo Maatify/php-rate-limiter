@@ -167,9 +167,9 @@ The following inventory describes the current public runtime types. Test and sup
 | `Maatify\RateLimiter\Builder\RateLimiterBuilder` | Package-wide default composition surface for the engine graph, the three default policy presets, and the opt-in simple fixed-window throttle registry. `buildOperationalReader()` (DEC-012) additively returns the coordinated Production Default Read Path built from this same registered state. |
 | `Maatify\RateLimiter\Config\FixedWindowThrottlePolicy` | Package-owned immutable `SimpleThrottlePolicyInterface` convenience implementation; name, limit, and interval remain explicit caller inputs. |
 
-### Admission Reservation (DEC-022, DEC-023, DEC-024, DEC-025, DEC-026, DEC-028, DEC-033, DEC-034, DEC-035)
+### Admission Reservation (DEC-022, DEC-023, DEC-024, DEC-025, DEC-026, DEC-028, DEC-033; proposed DEC-034, DEC-035)
 
-Active since 2026-10-20 for the policies that opt in. `RateLimiterBuilder::build()` constructs the admission runtime with the package constants (`AdmissionBudgetsDTO::packageDefaults()`, DEC-035, DEC-028 historically) when a registered policy declares `PolicyCapabilityEnum::ADMISSION_RESERVATION`, and only then; a composition without such a policy is unchanged and has no admission runtime. No default preset declares the capability. All shapes are additive: no existing signature, default or result changes for a policy that does not opt in.
+Active since 2026-10-20 for the policies that opt in. `RateLimiterBuilder::build()` constructs the admission runtime with the package constants (`AdmissionBudgetsDTO::packageDefaults()`, DEC-028, with sliding restatement proposed in DEC-035) when a registered policy declares `PolicyCapabilityEnum::ADMISSION_RESERVATION`, and only then; a composition without such a policy is unchanged and has no admission runtime. No default preset declares the capability. All shapes are additive: no existing signature, default or result changes for a policy that does not opt in.
 
 | Type | Responsibility |
 | --- | --- |

@@ -26,7 +26,7 @@ use Maatify\SharedCommon\Contracts\ClockInterface;
 
 /**
  * The admission runtime that a policy declaring `PolicyCapabilityEnum::ADMISSION_RESERVATION` needs (DEC-023, DEC-024,
- * DEC-034): lane resolution from a verified credential, the all-or-nothing reservation at `checkOnly`, the permit, and the
+ * DEC-025, with proposed DEC-034): lane resolution from a verified credential, the all-or-nothing reservation at `checkOnly`, the permit, and the
  * outcome hooks. It holds no value of its own: every budget and the permit timing arrive in `AdmissionBudgetsDTO`.
  *
  * Nothing here persists penalties. A capacity refusal is a `SOFT_BLOCK` result that is never stored, never counted by
@@ -347,7 +347,7 @@ final class AdmissionRuntime
         return $this->failureSet('source_proof_failure_cap', $group, 'pfail', SourcePrefix::of($context->ip), $this->budgets->crossAccountFailureCap, $subject);
     }
 
-    /** Whether an accepted outcome on the proven door enters the D8 set: a failure does, a success never (DEC-034 8.2). */
+    /** Whether an accepted outcome on the proven door enters the D8 set: a failure does, a success never (DEC-025 8.2, noting proposed DEC-034 8.2). */
     private function entersCrossAccountSet(bool $success): bool
     {
         return ! $success;

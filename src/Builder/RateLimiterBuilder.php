@@ -375,7 +375,7 @@ final class RateLimiterBuilder
     }
 
     /**
-     * The admission runtime (DEC-024 point 4, DEC-026, DEC-035): constructed only when a registered policy declares
+     * The admission runtime (DEC-024 point 4, DEC-026, DEC-028, with proposed DEC-035): constructed only when a registered policy declares
      * `PolicyCapabilityEnum::ADMISSION_RESERVATION`, with the package constants and the configured key and binding secrets.
      * Any other composition has no admission runtime and behaves exactly as before. The capability assertion has already
      * required the permit store and the binding key.
