@@ -6,7 +6,7 @@
 
 ## Status
 
-`ACTIVE` — on the Owner's decision of 2026-10-20 (OD-8 (b)), delivered atomically in PR #150 with DEC-026.
+`SUPERSEDED` by DEC-035 on 2026-11-10 (PR-Q, #185). It was `ACTIVE` — on the Owner's decision of 2026-10-20 (OD-8 (b)), delivered atomically in PR #150 with DEC-026.
 
 ## Date
 
@@ -77,4 +77,4 @@ None
 
 ## Superseded By
 
-None
+`DEC-035`

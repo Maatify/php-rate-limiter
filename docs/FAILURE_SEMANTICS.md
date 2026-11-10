@@ -458,11 +458,14 @@ FAIL_CLOSED result or a normal quota decision; see `docs/SIMPLE_THROTTLING.md`.
   **whole request** and takes the existing path: `FAIL_CLOSED` `HARD_BLOCK`, then the open circuit's
   bounded fallback, then `fallback_limit_exceeded`. There is no partial allow and no state written
   by the failed operation.
-* Under DEC-033, windowed counters and failure sets operate as sliding sorted sets scored by element
+* Under DEC-033 and DEC-034, windowed counters and failure sets operate as sliding sorted sets scored by element
   expiration (`now + ttl`). A refusal writes nothing and never prunes, leaving key TTL and state untouched.
   Admitted reservations and failure outcomes prune expired elements (`score <= now`), write new elements
   scored by expiry, and refresh key `EXPIRE` to `ttl`. A proof refund (`ZREM permitId`) removes the member
-  if present and is a no-op if absent.
+  if present and is a no-op if absent. Failure sets count recorded failure outcomes (`applyOutcome`), not
+  in-flight reservations; cap `F` (4) governs subsequent reservations. Under concurrent in-flight requests,
+  distinct account failures can reach the admission source capacity (`source_capacity = 24` for U-lane,
+  measured 20/20 in Train 8; F-185-37). Settling is opt-in and disabled by default (5-b2.2).
 * In the built-in Redis store, malformed stored state is a Lua error reply `malformed admission
   state: …`, returned before any write. The reference test executor (`RespRedisCommandExecutor`)
   raises it as `RateLimiterException`; a Host executor whose client throws on an error reply
@@ -653,5 +656,8 @@ recorded twice. A false one-shot claim is an
 expected non-error result: it does not consume evidence, create a backend
 failure, or trip the circuit. Missing lifecycle capability, malformed state,
 and atomic Redis failures are explicit integration failures and must not fall
-back to non-atomic publication. Stale, mismatched, expired, or block-suppressed
+back to non-atomic publication. A malformed-state failure in a subsequent script
+(e.g. corrupted cycle history during hard-block tracking) throws after earlier
+request writes (score, budget, watch flag) have already committed without rollback,
+and a subsequent request records anew (F-185-40). Stale, mismatched, expired, or block-suppressed
 evidence is treated as absent.

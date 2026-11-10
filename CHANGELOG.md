@@ -9,6 +9,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [1.0.0-rc.4]
 
+### Documentation (#185, F-185-32, F-185-33, F-185-37, F-185-40, F-185-41) — Decisions and contract clarifications
+- Architectural Decisions: introduced DEC-034 (superseding DEC-025) and DEC-035 (superseding DEC-028) as PROPOSED, establishing formal supersession continuity for sliding admission budgets and permit timings while preserving DEC-033's amendment record (F-185-33).
+- Operational Read: updated RATE_LIMITER_PACKAGE_REFERENCE.md to reflect DEC-032 as active/approved (F-185-32), and clarified that the operational reader returns physical decayed score (`effectiveScore`) and does not enforce the post_punishment_reentry gate (F-185-41).
+- Concurrency bound: documented failure set in-flight concurrency envelope ($U_{\text{fail}} + \text{concurrency} \le 24$) under concurrent admits across KEY_STRATEGY.md, FAILURE_SEMANTICS.md, DEC-033, and DEC-034 (F-185-37).
+- Failure semantics: clarified in FAILURE_SEMANTICS.md §10.1 that mid-pipeline cycle key corruption errors do not roll back previously committed writes in accordance with DEC-029 P4 (F-185-40).
+
+
 ### Fixed (#185, DEC-033) — Sliding windows for the admission layer (counters and failure sets)
 - Under fixed tumbling windows (DEC-025, DEC-028), admission windowed counters and failure sets used epoch-bucketed keys (`w<intdiv(t,W)>` and `d<intdiv(t,DAY)>`) with TTLs of 2W / 2·DAY. An adversary crossing a boundary could double their burst allowance within a narrow burst window (e.g. 8 failures allowed within 14 seconds across a boundary instead of 4, 48 requests instead of 24, etc.).
 - Windowed counters (`source_capacity`, `proof_account_window`, `proof_account_day`, `proof_proof_window`, `proof_proof_day`) and failure sets (`source_failure_cap`, `source_proof_failure_cap`) now operate strictly as sliding windows (DEC-033).

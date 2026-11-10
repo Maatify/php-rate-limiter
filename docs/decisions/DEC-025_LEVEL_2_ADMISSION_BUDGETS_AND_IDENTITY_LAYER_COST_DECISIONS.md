@@ -6,7 +6,7 @@
 
 ## Status
 
-`ACTIVE` — as a record of **declared budgets with study values**, on the Owner's decision of 2026-10-19. Decision 8 is recorded as **rule 8.2 in the form measured in G7**, on the Owner's decision of the same date (see Decision Authority).
+`SUPERSEDED` by DEC-034 on 2026-11-10 (PR-Q, #185). It was `ACTIVE` as a record of **declared budgets with study values**, on the Owner's decision of 2026-10-19. Decision 8 is recorded as **rule 8.2 in the form measured in G7**, on the Owner's decision of the same date (see Decision Authority).
 
 It is **not** an Architecture GO, not an approval of `FULL2` as a product, not Runtime authority and not a Public API change. Every value below is a **study value** from a merged archive; it becomes a production value only through
 the Runtime authorisation of step 5. DEC-015, DEC-019 and DEC-021 stay `ACTIVE` and unchanged until step 5; DEC-022 stays `PROPOSED`; DEC-023 and DEC-024 stay `ACTIVE`.
@@ -130,4 +130,4 @@ None
 
 ## Superseded By
 
-None
+`DEC-034`

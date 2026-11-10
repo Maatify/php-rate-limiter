@@ -50,7 +50,7 @@ two hours). The Owner decided (LT-185-30 (b)) that all admission window mechanis
 2. **Storage and operations contract (`RedisAdmissionOperations`):**
    - **Counting (Gate Phase 1):** `ZCOUNT cur (nowStr +inf` counts live members whose score exceeds caller's `now`. Pure read; a refusal writes nothing and never prunes (L26 contract: *A refusal writes nothing, never prunes*).
    - **Admitted write / failure write (Phase 3):** Prunes expired members (`ZREMRANGEBYSCORE cur -inf nowStr`), writes the member (`ZADD cur (now + ttl) <member>`), and refreshes key expiry (`EXPIRE cur ttl`).
-   - **Maximum member count:** Bounded by the scope's capacity; since refusals do not write, the member count of any key never exceeds its cap.
+   - **Maximum member count:** Bounded by the scope's capacity; since refusals do not write, the member count of any key never exceeds its cap. *(Qualified by Correction Note 2026-11-10: failure sets count recorded outcomes; concurrent in-flight permits can reach `source_capacity`).*
    - **Success refund (`proofRefund`):** Removes the admitted reservation's member (`ZREM cur <permit_id>`) from `pacct`, `pacctd`, `pproof`, and `pproofd`. A missing or already-pruned member is a no-op, never an error. Success after pruning does not restore a slot from a previous window.
    - **Settlement of expired permits (pending set, family `p`):** Due members (`score <= now`) count as failures as long as `deadline > now - W`. The pending key's lifetime is extended to cover the newest deadline + W, never shortened.
    - **Structural validation (DEC-017):** `checkType(cur, 'zset', ...)` and `canonicalScores(cur)`. Any unexpected type or malformed score yields `malformed admission state` without write.
@@ -67,6 +67,14 @@ two hours). The Owner decided (LT-185-30 (b)) that all admission window mechanis
 5. **Amendments to DEC-025 and DEC-028:**
    - **DEC-025 Decisions 1.4, 3.1, 8.2:** The phrasing "per window" and "per day" is amended to continuous sliding windows of duration `W` (600 s) and `DAY` (86400 s). All numerical constants (`W=600`, `F=4`, `U_src=24`, `P_acct=10/60`, `P_proof=6/30`, `N_P=10`) remain unchanged.
    - **DEC-028 Clause 2:** The package constants are applied through sliding windows of duration `W` (600 s) and `DAY` (86400 s). Timing constants (`D=30`, `G=600`) remain unchanged.
+
+### Correction Note on Clause 5 and Relationship (2026-11-10, F-185-33, PR-Q)
+
+Under Decision Governance Standard §9, an ACTIVE decision changes only through a new durable decision record that supersedes it in full. Clause 5 above and the line "Amends DEC-025 and DEC-028" were procedural mischaracterizations: DEC-033 does not amend DEC-025 or DEC-028 directly. Instead, DEC-034 and DEC-035 supersede DEC-025 and DEC-028 in full, carrying the continuous sliding window semantics into the budget and timing authorities, while DEC-033 remains ACTIVE as the authority for the sliding window mechanism, key strategy, and ZSET accounting structures.
+
+### Correction Note on Failure Set Caps Under Concurrency (2026-11-10, F-185-37, PR-Q)
+
+Failure sets (`ufail`, `pfail`) count recorded failure outcomes (`applyOutcome`), not in-flight reservations. Cap `F` (4) governs admission decisions on subsequent requests; it does not retroactively cancel or bound in-flight permits issued prior to recording a failure. The statements in §2 ("the member count of any key never exceeds its cap") and §6 ("strictly capped at capacity across any continuous sliding interval: `ufail`/`pfail` 4") are qualified by this concurrency boundary: under concurrent in-flight requests, distinct account failures can reach the admission source capacity (`source_capacity = 24` for U-lane, measured 20/20 in Train 8 / `adm1.php`). Settling is opt-in and disabled by default (5-b2.2).
 
 ## Rationale
 

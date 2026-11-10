@@ -335,7 +335,7 @@ with `withPolicy()` (it replaces `login_protection` under the same name, so the 
 state written before the switch is read on), set `bindingKeySecret` on `RateLimiterConfig`, use a
 store with the admission capability (`RedisFullCapabilityStore`), and open the fleet fence once
 every worker runs this version ("Operating the admission fence" below). The budgets are package
-constants (DEC-025, DEC-028, DEC-033): there is nothing to configure. Under DEC-033, windowed counters
+constants (DEC-034, DEC-035, DEC-033): there is nothing to configure. Under DEC-033, windowed counters
 and failure sets operate as sliding sorted sets scored by expiration, strictly bounding every continuous
 window of length W (600 s) or Day (86400 s) without tumbling bucket resets. Only a Host that calls `checkOnly`
 and then records every outcome (`pre+out`) may opt in (DEC-023).
@@ -361,7 +361,7 @@ Outputs and duties:
   and credential): the failure set an outcome touches is keyed by the outcome's source.
 * **Every `checkOnly` on an opted policy is followed by exactly one outcome command carrying its
   permit** (`recordFailure` or `recordSuccess`), sent within the permit's deadline: 30 s after the
-  `checkOnly` (`D`, DEC-028). From 30 s to 630 s the claim is `permit_late`, after that
+  `checkOnly` (`D`, DEC-035). From 30 s to 630 s the claim is `permit_late`, after that
   `permit_unknown`; neither is scored, so a late outcome costs what a dropped one costs. This is a Host
   duty (`DEC-023` A-2) and the library does not compensate for it: an admission whose outcome never
   arrives is a tombstone and changes no bound (the success refund never happens and the failure is
