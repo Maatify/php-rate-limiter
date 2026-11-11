@@ -250,7 +250,7 @@ final class RedisLuaMissingMetadataTypeTest extends TestCase
     {
         $attempts = 0;
         $executor = new CallableRedisCommandExecutor(function (array $command) use (&$attempts): mixed {
-            if ($command[0] !== 'EVAL' || count($command) <= 7) {
+            if ($command[0] !== 'EVAL' || count($command) <= 10) {
                 return $this->executor->execute($command);
             }
 

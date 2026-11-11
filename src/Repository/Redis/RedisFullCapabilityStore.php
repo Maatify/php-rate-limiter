@@ -1035,30 +1035,37 @@ local function validBackendExpiry(value)
   if #value == 16 and value > '9223372036854775' then return false end
   return true
 end
--- Plan the new snapshot from validated state. No command in this phase writes.
-local function planBoundedSnapshot(setKey, metaKey, ttl, member, capacity)
+local function readBoundedSnapshot(setKey, metaKey, capacity)
   local exists = redis.call('EXISTS', setKey) == 1
   local metaExists = redis.call('EXISTS', metaKey) == 1
   if exists and redis.call('TTL', setKey) < 0 then return nil, 'malformed bounded state' end
   if not exists and metaExists then return nil, 'malformed bounded metadata' end
-  if exists and redis.call('SCARD', setKey) == 0 then return nil, 'malformed bounded state' end
+  if not exists then return {exists = false, members = {}} end
+  local expires = redis.call('HGET', metaKey, 'expiresAt')
+  if not validBackendExpiry(expires) or redis.call('TTL', metaKey) < 0 then return nil, 'malformed bounded metadata' end
+  local count = redis.call('SCARD', setKey)
+  if count == 0 then return nil, 'malformed bounded state' end
+  if compareDecimalStrings(expires, nowStr) <= 0 then return {exists = true, expires = expires, members = {}} end
+  if count > capacity then return nil, 'malformed bounded state' end
+  return {exists = true, expires = expires, members = redis.call('SMEMBERS', setKey)}
+end
 
-  local expires = nil
-  local replaceExpired = false
-  if exists then
-    expires = redis.call('HGET', metaKey, 'expiresAt')
-    if not validBackendExpiry(expires) or redis.call('TTL', metaKey) < 0 then return nil, 'malformed bounded metadata' end
-    replaceExpired = compareDecimalStrings(expires, nowStr) <= 0
-  end
+-- Plan the new snapshot from validated state. No command in this phase writes.
+local function planBoundedSnapshot(setKey, metaKey, ttl, member, capacity)
+  local state, reason = readBoundedSnapshot(setKey, metaKey, capacity)
+  if not state then return nil, reason end
+  local exists = state.exists
+  local expires = state.expires
+  local replaceExpired = exists and compareDecimalStrings(expires, nowStr) <= 0
 
   if not exists or replaceExpired then
     if not ttlBackendRepresentable(ttl) then return nil, 'correlation TTL exceeds Redis backend expiry representability' end
     return {members = {member}, accepted = 1, added = 1, expires = addDecimalStrings(nowStr, ttl), initialize = true, replaceExpired = replaceExpired}
   end
 
-  local count = redis.call('SCARD', setKey)
+  local count = #state.members
   if count > capacity then return nil, 'malformed bounded state' end
-  local members = redis.call('SMEMBERS', setKey)
+  local members = state.members
   if redis.call('SISMEMBER', setKey, member) == 1 then
     return {members = members, accepted = 1, added = 0, expires = expires}
   end
@@ -1102,22 +1109,34 @@ local function readPairState()
 end
 LUA;
 
-    private const DEVICE_CAP_PAIR_READ = self::DEVICE_CAP_PAIR_STATE . "\nreturn readPairState()";
+    private const DEVICE_CAP_PAIR_READ = self::BOUNDED_SNAPSHOT_PLAN . "\n" . self::DEVICE_CAP_PAIR_STATE . "\n" . <<<'LUA'
+local account, reason = readBoundedSnapshot(KEYS[1], KEYS[2], tonumber(ARGV[1]))
+if not account then return redis.error_reply(reason) end
+local source, sourceReason = readBoundedSnapshot(KEYS[3], KEYS[4], tonumber(ARGV[2]))
+if not source then return redis.error_reply(sourceReason) end
+return {readPairState(), {account.expires or '', unpack(account.members)}, {source.expires or '', unpack(source.members)}}
+LUA;
 
     private const BOUNDED_SNAPSHOT_PAIR = self::BOUNDED_SNAPSHOT_PLAN . "\n" . self::DEVICE_CAP_PAIR_STATE . "\n" . <<<'LUA'
 local current = readPairState()
 for i, value in ipairs(current) do
-  if value ~= ARGV[5 + i] then return {} end
+  if value ~= ARGV[7 + i] then return {} end
 end
-local first, reason = planBoundedSnapshot(KEYS[1], KEYS[2], ARGV[1], ARGV[2], tonumber(ARGV[3]))
-if not first then return redis.error_reply(reason) end
-local second, secondReason = planBoundedSnapshot(KEYS[3], KEYS[4], ARGV[1], ARGV[4], tonumber(ARGV[5]))
-if not second then return redis.error_reply(secondReason) end
-local firstResult = applyBoundedSnapshot(first, KEYS[1], KEYS[2], ARGV[1], ARGV[2])
-if firstResult.err then return firstResult end
-local secondResult = applyBoundedSnapshot(second, KEYS[3], KEYS[4], ARGV[1], ARGV[4])
-if secondResult.err then return secondResult end
-return {firstResult, secondResult}
+if (ARGV[3] == '1' or ARGV[6] == '1') and not ttlBackendRepresentable(ARGV[1]) then
+  return redis.error_reply('correlation TTL exceeds Redis backend expiry representability')
+end
+local function applyDeviceCap(setKey, metaKey, member, added, initialize)
+  local reset = initialize == '1'
+  return applyBoundedSnapshot({
+    members = {}, expires = addDecimalStrings(nowStr, ARGV[1]), accepted = 1,
+    added = tonumber(added), initialize = reset, replaceExpired = reset
+  }, setKey, metaKey, ARGV[1], member)
+end
+local first = applyDeviceCap(KEYS[1], KEYS[2], ARGV[2], ARGV[4], ARGV[3])
+if first.err then return first end
+local second = applyDeviceCap(KEYS[3], KEYS[4], ARGV[5], ARGV[7], ARGV[6])
+if second.err then return second end
+return {1}
 LUA;
 
     private const ROTATED_SNAPSHOT = self::LUA_TIME_PRELUDE . "\n" . <<<'LUA'
@@ -1916,27 +1935,63 @@ LUA;
         ];
         $now = $this->callerTime($now);
         for ($attempt = 0; $attempt < 3; $attempt++) {
-            $state = $this->tuple($this->eval(self::DEVICE_CAP_PAIR_READ, $keys, []), 8, 'device-cap pair state');
+            $read = $this->eval(self::DEVICE_CAP_PAIR_READ, $keys, [$accountCapacity, $sourceCapacity, $now]);
+            if (! is_array($read) || ! array_is_list($read) || count($read) !== 3) {
+                throw new RateLimiterException('Malformed device-cap pair state response.');
+            }
+            $state = $this->tuple($read[0], 8, 'device-cap pair state');
             if (count($state) !== 8) {
                 throw new RateLimiterException('Malformed device-cap pair state response.');
             }
+            [$account, $initializeAccount] = $this->planDeviceCapObservation($read[1], $accountMember, $accountCapacity, $ttl, $now);
+            [$source, $initializeSource] = $this->planDeviceCapObservation($read[2], $sourceMember, $sourceCapacity, $ttl, $now);
+
             $result = $this->eval(self::BOUNDED_SNAPSHOT_PAIR, $keys, [
-                $ttl, $accountMember, $accountCapacity, $sourceMember, $sourceCapacity, ...$state, $now,
+                $ttl, $accountMember, (int) $initializeAccount, (int) $account->added,
+                $sourceMember, (int) $initializeSource, (int) $source->added, ...$state, $now,
             ]);
             if ($result === []) {
                 continue;
             }
-            if (! is_array($result) || ! array_is_list($result) || count($result) !== 2) {
+            if ($result !== [1] && $result !== ['1']) {
                 throw new RateLimiterException('Malformed device-cap snapshot pair response.');
             }
 
-            return [
-                $this->snapshot($result[0], $accountMember, 'account device-cap snapshot'),
-                $this->snapshot($result[1], $sourceMember, 'source device-cap snapshot'),
-            ];
+            return [$account, $source];
         }
 
         throw new RateLimiterException('Device-cap observation state changed before commit.');
+    }
+
+    /** @return array{BoundedDistinctSnapshotDTO, bool} */
+    private function planDeviceCapObservation(mixed $reply, string $member, int $capacity, int $ttl, int $now): array
+    {
+        $state = $this->tuple($reply, 1, 'device-cap observation');
+        $expiresAt = $state[0] === '' ? null : $this->integerValue($state[0], 'device-cap expiry');
+        $initialize = $expiresAt === null || $expiresAt <= $now;
+        if ($initialize) {
+            $expiresAt = $this->tryIntegerAddition($now, $ttl);
+            if ($expiresAt === null) {
+                throw new RateLimiterException('Device-cap expiry is not representable.');
+            }
+
+            return [$this->snapshot([1, 1, 1, $expiresAt, $member], $member, 'device-cap snapshot'), true];
+        }
+
+        $members = array_map('strval', array_slice($state, 1));
+        if (count($members) > $capacity) {
+            throw new RateLimiterException('malformed bounded state');
+        }
+        $present = in_array($member, $members, true);
+        $added = ! $present && count($members) < $capacity;
+        if ($added) {
+            $members[] = $member;
+        }
+        sort($members, SORT_STRING);
+
+        return [$this->snapshot([
+            count($members), (int) ($present || $added), (int) $added, $expiresAt, ...$members,
+        ], $member, 'device-cap snapshot'), false];
     }
 
     public function addDistinctAcrossRotation(string $currentKey, string $bridgeKey, string $previousKey, string $currentMember, string $previousMember, int $ttlSeconds): int
