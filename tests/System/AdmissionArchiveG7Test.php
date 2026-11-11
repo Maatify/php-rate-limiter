@@ -306,9 +306,7 @@ final class AdmissionArchiveG7Test extends TestCase
     {
         // A SUCCESS now removes any supplied set member. Model the historical detector's
         // extra D8 failure event separately so the successful outcome still refunds its counters.
-        $runtime = ServiceMutant::load('AdmissionRuntime', ['entersCrossAccountSet' => 'return true;'], [
-            ['if ($crossAccount !== null) {', 'if ($crossAccount !== null && ! $success) {'],
-            ['        return $payload[\'lane\'];', <<<'PHP'
+        $recordHistoricalSuccess = <<<'PHP'
         if ($crossAccount !== null && $success) {
             $this->store->applyAdmissionOutcome(
                 new AdmissionOutcomeDTO($budgetGroup, AdmissionOutcomeKindEnum::FAILURE, [$crossAccount]),
@@ -317,7 +315,10 @@ final class AdmissionArchiveG7Test extends TestCase
         }
 
         return $payload['lane'];
-        PHP],
+        PHP;
+        $runtime = ServiceMutant::load('AdmissionRuntime', ['entersCrossAccountSet' => 'return true;'], [
+            ['if ($crossAccount !== null) {', 'if ($crossAccount !== null && ! $success) {'],
+            ['        return $payload[\'lane\'];', $recordHistoricalSuccess],
         ]);
         $denied = [];
         foreach (self::tuples() as $t) {
