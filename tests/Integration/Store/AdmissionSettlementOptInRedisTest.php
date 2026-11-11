@@ -20,7 +20,7 @@ use PHPUnit\Framework\Attributes\Group;
 /**
  * 5b2.2 gates on real Redis: OFF-PARITY (without `settlesOnExpiry` the production operations equal the operations as merged at
  * d6aea4d, step by step, result and full dump; since #185 DEC-033 the short scenarios compare a failure set by its members, and
- * the seeded sequences, whose time passes the TTL, compare against d6aea4d plus DEC-033 sliding windows, LT-185-30), the default behaviour (tombstone), ON-PARITY (with the flag, the results of
+ * the seeded sequences, whose time passes the TTL, compare against d6aea4d plus DEC-033 sliding windows and the current longest Retry-After contract), the default behaviour (tombstone), ON-PARITY (with the flag, the results of
  * 5-b2.1) and the detector that ignores the flag.
  */
 #[Group('settle-opt')]

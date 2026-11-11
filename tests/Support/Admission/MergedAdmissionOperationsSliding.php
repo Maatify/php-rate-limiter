@@ -189,7 +189,8 @@ if hasPermit then
   if record == nil then return bad(err) end
   permitExists = not record.absent
 end
--- Phase 2: gates, in the order of the request. The first refusing scope is named; nothing is written.
+-- Compare the current refusal contract with settlement disabled. Keep the first scope and the maximum wait.
+local refusals = {}
 for i = 1, n do
   local s = sc[i]
   if s.kind == 'c' then
@@ -197,25 +198,30 @@ for i = 1, n do
       local oldest = oldestLiveScore({s.cur, s.prev}, now, s.a + s.b - s.cap + 1)
       local retryAfter = 1
       if oldest ~= nil and oldest > now then retryAfter = oldest - now end
-      return {0, i, retryAfter}
+      table.insert(refusals, {i, retryAfter})
     end
   elseif s.kind == 'd' then
     if not s.exists and s.live >= s.cap then
       local oldest = oldestLiveScore({s.cur, s.prev}, now, s.live - s.cap + 1)
       local retryAfter = 1
       if oldest ~= nil and oldest > now then retryAfter = oldest - now end
-      return {0, i, retryAfter}
+      table.insert(refusals, {i, retryAfter})
     end
   elseif s.kind == 's' then
     if not s.isMember and s.card >= s.cap then
       local oldest = oldestLiveScore({s.cur}, now, s.card - s.cap + 1)
       local retryAfter = 1
       if oldest ~= nil and oldest > now then retryAfter = oldest - now end
-      return {0, i, retryAfter}
+      table.insert(refusals, {i, retryAfter})
     end
   else
-    if s.credit < s.ttl then return {0, i, s.ttl - s.credit} end
+    if s.credit < s.ttl then table.insert(refusals, {i, s.ttl - s.credit}) end
   end
+end
+if #refusals > 0 then
+  local wait = 0
+  for _, refusal in ipairs(refusals) do wait = math.max(wait, refusal[2]) end
+  return {0, refusals[1][1], wait}
 end
 if permitExists then return {0, 0, 0} end
 -- Phase 3: writes, only reached when every gate admitted.

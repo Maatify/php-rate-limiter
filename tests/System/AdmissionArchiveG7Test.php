@@ -23,8 +23,7 @@ use PHPUnit\Framework\TestCase;
  * streams and the office / multi-session cells `N12T`, `TPAIRT`, `TMS`, `TMSd`, `TMX`, every strategy and id policy (and the
  * no-id path), flows `pre+out` and `pre`, replayed through the REAL engine on the arm without the cross-account cap (`NOUA2`, the
  * FULL2 budgets) and on the production budgets with it (`PX4`). Every row is compared field for field with its archived row; the
- * gates are the archive's X1, X3, X4 and the RP-G6 reference values; the detector `D-PXALL` is a mutation of the registered seam
- * `entersCrossAccountSet` (every admitted P outcome enters D8).
+ * gates are the archive's X1, X3, X4 and the RP-G6 reference values; the detector `D-PXALL` replays the historical rule that every admitted P outcome enters D8.
  */
 #[Group('archive')]
 final class AdmissionArchiveG7Test extends TestCase
@@ -301,11 +300,25 @@ final class AdmissionArchiveG7Test extends TestCase
         self::assertSame(40, self::best($px, 'TPAIRT', 'pre+out')['reach'], 'TPAIRT attacker under the cap');
     }
 
-    /** DETECTOR D-PXALL: every admitted P outcome enters D8; the office is refused (N12T 32/61, N12 24/61, fresh, pre+out). */
+    /** DETECTOR D-PXALL: every admitted P outcome enters D8; compare the refusal counts with the archived office rows. */
     #[Group('rp-g7')]
     public function testDetectorDPxallRefusesTheOffice(): void
     {
-        $runtime = ServiceMutant::load('AdmissionRuntime', ['entersCrossAccountSet' => 'return true;']);
+        // A SUCCESS now removes any supplied set member. Model the historical detector's
+        // extra D8 failure event separately so the successful outcome still refunds its counters.
+        $runtime = ServiceMutant::load('AdmissionRuntime', ['entersCrossAccountSet' => 'return true;'], [
+            ['if ($crossAccount !== null) {', 'if ($crossAccount !== null && ! $success) {'],
+            ['        return $payload[\'lane\'];', <<<'PHP'
+        if ($crossAccount !== null && $success) {
+            $this->store->applyAdmissionOutcome(
+                new AdmissionOutcomeDTO($budgetGroup, AdmissionOutcomeKindEnum::FAILURE, [$crossAccount]),
+                $this->now(),
+            );
+        }
+
+        return $payload['lane'];
+        PHP],
+        ]);
         $denied = [];
         foreach (self::tuples() as $t) {
             if (in_array($t['stream'], ['N12T', 'N12'], true) && $t['ids'] === 'fresh') {
