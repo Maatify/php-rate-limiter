@@ -246,6 +246,36 @@ final class RedisLuaMissingMetadataTypeTest extends TestCase
         );
     }
 
+    public function testDeviceCapPairRetriesAfterConcurrentObservation(): void
+    {
+        $attempts = 0;
+        $executor = new CallableRedisCommandExecutor(function (array $command) use (&$attempts): mixed {
+            if ($command[0] !== 'EVAL' || count($command) <= 7) {
+                return $this->executor->execute($command);
+            }
+
+            if (++$attempts === 1) {
+                $this->store->addDistinctBoundedAt('shared-source', 'other-device', 60, 10, self::NOW);
+                $before = $this->dump();
+                $result = $this->executor->execute($command);
+                self::assertSame([], $result);
+                self::assertSame($before, $this->dump());
+
+                return $result;
+            }
+
+            return $this->executor->execute($command);
+        });
+        $store = new RedisFullCapabilityStore($executor, self::NAMESPACE);
+        [$account, $source] = $store->addDeviceCapPairAt(
+            'new-account', 'new-device', 10, 'shared-source', 'new-device', 10, 60, self::NOW,
+        );
+
+        self::assertSame(2, $attempts);
+        self::assertSame(['new-device'], $account->members);
+        self::assertSame(['new-device', 'other-device'], $source->members);
+    }
+
     public function testProductionExpiryValidatorsRejectInvalidValuesInReadOnlyLua(): void
     {
         $recording = new RecordingRedisCommandExecutor($this->executor);

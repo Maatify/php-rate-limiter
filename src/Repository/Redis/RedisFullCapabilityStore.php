@@ -1091,7 +1091,24 @@ if not plan then return redis.error_reply(reason) end
 return applyBoundedSnapshot(plan, KEYS[1], KEYS[2], ARGV[1], ARGV[2])
 LUA;
 
-    private const BOUNDED_SNAPSHOT_PAIR = self::BOUNDED_SNAPSHOT_PLAN . "\n" . <<<'LUA'
+    private const DEVICE_CAP_PAIR_STATE = <<<'LUA'
+local function readPairState()
+  local state = {}
+  for i, key in ipairs(KEYS) do
+    state[2 * i - 1] = redis.call('DUMP', key) or ''
+    state[2 * i] = string.format('%.0f', redis.call('PEXPIRETIME', key))
+  end
+  return state
+end
+LUA;
+
+    private const DEVICE_CAP_PAIR_READ = self::DEVICE_CAP_PAIR_STATE . "\nreturn readPairState()";
+
+    private const BOUNDED_SNAPSHOT_PAIR = self::BOUNDED_SNAPSHOT_PLAN . "\n" . self::DEVICE_CAP_PAIR_STATE . "\n" . <<<'LUA'
+local current = readPairState()
+for i, value in ipairs(current) do
+  if value ~= ARGV[5 + i] then return {} end
+end
 local first, reason = planBoundedSnapshot(KEYS[1], KEYS[2], ARGV[1], ARGV[2], tonumber(ARGV[3]))
 if not first then return redis.error_reply(reason) end
 local second, secondReason = planBoundedSnapshot(KEYS[3], KEYS[4], ARGV[1], ARGV[4], tonumber(ARGV[5]))
@@ -1891,20 +1908,35 @@ LUA;
             throw new RateLimiterException('Device-cap observation scopes must be distinct.');
         }
 
-        $result = $this->eval(self::BOUNDED_SNAPSHOT_PAIR, [
+        $keys = [
             $this->key('distinct', $accountKey),
             $this->key('distinct-meta', $accountKey),
             $this->key('distinct', $sourceKey),
             $this->key('distinct-meta', $sourceKey),
-        ], [$ttl, $accountMember, $accountCapacity, $sourceMember, $sourceCapacity, $this->callerTime($now)]);
-        if (! is_array($result) || ! array_is_list($result) || count($result) !== 2) {
-            throw new RateLimiterException('Malformed device-cap snapshot pair response.');
+        ];
+        $now = $this->callerTime($now);
+        for ($attempt = 0; $attempt < 3; $attempt++) {
+            $state = $this->tuple($this->eval(self::DEVICE_CAP_PAIR_READ, $keys, []), 8, 'device-cap pair state');
+            if (count($state) !== 8) {
+                throw new RateLimiterException('Malformed device-cap pair state response.');
+            }
+            $result = $this->eval(self::BOUNDED_SNAPSHOT_PAIR, $keys, [
+                $ttl, $accountMember, $accountCapacity, $sourceMember, $sourceCapacity, ...$state, $now,
+            ]);
+            if ($result === []) {
+                continue;
+            }
+            if (! is_array($result) || ! array_is_list($result) || count($result) !== 2) {
+                throw new RateLimiterException('Malformed device-cap snapshot pair response.');
+            }
+
+            return [
+                $this->snapshot($result[0], $accountMember, 'account device-cap snapshot'),
+                $this->snapshot($result[1], $sourceMember, 'source device-cap snapshot'),
+            ];
         }
 
-        return [
-            $this->snapshot($result[0], $accountMember, 'account device-cap snapshot'),
-            $this->snapshot($result[1], $sourceMember, 'source device-cap snapshot'),
-        ];
+        throw new RateLimiterException('Device-cap observation state changed before commit.');
     }
 
     public function addDistinctAcrossRotation(string $currentKey, string $bridgeKey, string $previousKey, string $currentMember, string $previousMember, int $ttlSeconds): int
