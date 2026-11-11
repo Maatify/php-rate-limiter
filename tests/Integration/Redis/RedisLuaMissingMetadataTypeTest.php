@@ -300,6 +300,31 @@ final class RedisLuaMissingMetadataTypeTest extends TestCase
         );
     }
 
+    public function testBoundedObservationGroupLeavesRedisUnchangedWhenEvaluationFails(): void
+    {
+        $this->store->addDistinctBoundedAt('existing-source', 'existing-device', 60, 10, self::NOW);
+        $before = $this->dump();
+        $rejection = new RateLimiterException('synthetic validation rejection');
+
+        try {
+            $this->store->commitBoundedObservationGroup(function () use ($rejection): array {
+                [$account, , $plan] = $this->store->readDeviceCapPairPlanAt(
+                    'fresh-account', 'new-device', 10, 'existing-source', 'new-device', 10, 60, self::NOW,
+                );
+                if ($account->added) {
+                    throw $rejection;
+                }
+
+                return [false, [$plan]];
+            });
+            self::fail('Expected the evaluation failure.');
+        } catch (RateLimiterException $exception) {
+            self::assertSame($rejection, $exception);
+        }
+
+        self::assertSame($before, $this->dump());
+    }
+
     public function testDeviceCapPairRetriesAfterConcurrentObservation(): void
     {
         $attempts = 0;

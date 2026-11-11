@@ -1931,16 +1931,15 @@ LUA;
         int $ttl,
         int $now,
     ): array {
-        for ($attempt = 0; $attempt < 3; $attempt++) {
-            [$account, $source, $commit] = $this->prepareDeviceCapPairAt(
+        return $this->commitBoundedObservationGroup(function () use (
+            $accountKey, $accountMember, $accountCapacity, $sourceKey, $sourceMember, $sourceCapacity, $ttl, $now,
+        ): array {
+            [$account, $source, $plan] = $this->readDeviceCapPairPlanAt(
                 $accountKey, $accountMember, $accountCapacity, $sourceKey, $sourceMember, $sourceCapacity, $ttl, $now,
             );
-            if ($commit()) {
-                return [$account, $source];
-            }
-        }
 
-        throw new RateLimiterException('Device-cap observation state changed before commit.');
+            return [[$account, $source], [$plan]];
+        });
     }
 
     /**
@@ -2046,6 +2045,27 @@ LUA;
             'state' => $state,
             'now' => $now,
         ]];
+    }
+
+    /**
+     * Evaluate a read-only group and commit the resulting bounded observation plans once.
+     * The callback must be safe to repeat and must not perform writes or emit signals.
+     *
+     * @internal
+     * @template T
+     * @param callable(): array{T, list<array{keys: list<string>, writes: list<int|string>, state: list<int|string|float>, now: int}>} $evaluate
+     * @return T
+     */
+    public function commitBoundedObservationGroup(callable $evaluate): mixed
+    {
+        for ($attempt = 0; $attempt < 3; $attempt++) {
+            [$result, $plans] = $evaluate();
+            if ($this->commitDeviceCapPlans($plans)) {
+                return $result;
+            }
+        }
+
+        throw new RateLimiterException('Bounded observation state changed before commit.');
     }
 
     /**
