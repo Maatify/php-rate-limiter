@@ -1041,17 +1041,22 @@ local metaExists = redis.call('EXISTS', KEYS[2])
 if exists == 0 and metaExists == 1 then return redis.error_reply('malformed bounded metadata') end
 if exists == 1 and redis.call('SCARD', KEYS[1]) == 0 then return redis.error_reply('malformed bounded state') end
 local expires = nil
+local replaceExpired = false
 if exists == 1 then
   local rawExpires = redis.call('HGET', KEYS[2], 'expiresAt')
   if not validBackendExpiry(rawExpires) then return redis.error_reply('malformed bounded metadata') end
   expires = rawExpires
   if redis.call('TTL', KEYS[2]) < 0 then return redis.error_reply('malformed bounded metadata') end
   -- LT-P2-03: logically expired while physically present is expired, not malformed.
-  if compareDecimalStrings(expires, nowStr) <= 0 then redis.call('DEL', KEYS[1], KEYS[2]); exists = 0; expires = nil end
+  if compareDecimalStrings(expires, nowStr) <= 0 then
+    replaceExpired = true
+    exists = 0
+    expires = nil
+  end
 end
 local count = exists == 1 and redis.call('SCARD', KEYS[1]) or 0
 if count > tonumber(ARGV[3]) then return redis.error_reply('malformed bounded state') end
-if redis.call('SISMEMBER', KEYS[1], ARGV[2]) == 1 then
+if exists == 1 and redis.call('SISMEMBER', KEYS[1], ARGV[2]) == 1 then
   local members = redis.call('SMEMBERS', KEYS[1]); table.sort(members)
   return {#members, 1, 0, expires, unpack(members)}
 end
@@ -1061,6 +1066,7 @@ if count >= tonumber(ARGV[3]) then
 end
 if exists == 0 then
   if not ttlBackendRepresentable(ARGV[1]) then return redis.error_reply('correlation TTL exceeds Redis backend expiry representability') end
+  if replaceExpired then redis.call('DEL', KEYS[1], KEYS[2]) end
   redis.call('SADD', KEYS[1], ARGV[2])
   if not expiryApplied(redis.pcall('EXPIRE', KEYS[1], ARGV[1]), {KEYS[1]}) then return redis.error_reply('expiry not representable') end
   redis.call('HSET', KEYS[2], 'expiresAt', addDecimalStrings(nowStr, ARGV[1]))
