@@ -9,7 +9,9 @@ use Maatify\RateLimiter\Command\RateLimitCommand;
 use Maatify\RateLimiter\Config\RateLimiterConfig;
 use Maatify\RateLimiter\DTO\RateLimitContextDTO;
 use Maatify\RateLimiter\Exception\RateLimiterException;
+use Maatify\RateLimiter\Repository\Redis\CallableRedisCommandExecutor;
 use Maatify\RateLimiter\Repository\Redis\RedisFullCapabilityStore;
+use Maatify\RateLimiter\Tests\Support\Clock\FixedClock;
 use Maatify\RateLimiter\Tests\Support\FailureSignal\RecordingFailureSignalEmitter;
 use Maatify\RateLimiter\Tests\Support\Redis\RespRedisCommandExecutor;
 use PHPUnit\Framework\Attributes\Group;
@@ -202,5 +204,38 @@ final class RedisLuaMissingMetadataTypeTest extends TestCase
         $this->expectException(RateLimiterException::class);
         $this->expectExceptionMessage('malformed bounded metadata');
         $limiter->limit(new RateLimitContextDTO('192.0.2.1', 'acct_test', 'ua'), RateLimitCommand::checkOnly('login_protection'));
+    }
+
+    public function testPublicRuntimePropagatesClassifiedStoreRejectionWithoutChangingState(): void
+    {
+        $probe = new class {
+            public bool $reject = false;
+            public int $rejections = 0;
+        };
+        $executor = new CallableRedisCommandExecutor(function (array $command) use ($probe): mixed {
+            $metadataKey = $command[4] ?? null;
+            if ($probe->reject && $command[0] === 'EVAL' && is_string($metadataKey) && str_contains($metadataKey, ':distinct-meta:')) {
+                $probe->rejections++;
+                throw new RateLimiterException('malformed bounded metadata');
+            }
+
+            return $this->executor->execute($command);
+        });
+        $emitter = new RecordingFailureSignalEmitter();
+        $limiter = RateLimiterBuilder::fromFullCapabilityStore(
+            new RateLimiterConfig('test_secret', 'test_fp', 'prod'),
+            new RedisFullCapabilityStore($executor, self::NAMESPACE),
+            $emitter,
+        )->withClock(new FixedClock('@' . self::NOW))->build();
+        $command = RateLimitCommand::checkOnly('login_protection');
+        $limiter->limit(new RateLimitContextDTO(ip: '192.0.2.1', ua: 'ua', accountId: 'account-one'), $command);
+        self::assertNotEmpty($this->dump());
+
+        $probe->reject = true;
+        $this->assertMalformedWithoutMutation(
+            static fn() => $limiter->limit(new RateLimitContextDTO(ip: '192.0.2.1', ua: 'ua', accountId: 'account-two'), $command),
+            'malformed bounded metadata',
+        );
+        self::assertSame(1, $probe->rejections);
     }
 }
