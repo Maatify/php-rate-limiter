@@ -6,15 +6,16 @@
 
 ## Status
 
-`PROPOSED` — proposed 2026-11-10 in PR-R (#185) under Lead ruling LT-185-36b ([#185 comment 6781728109](https://github.com/Maatify/php-rate-limiter/issues/185#issuecomment-6781728109)).
+`ACTIVE` — activated 2026-11-11 in [PR #203](https://github.com/Maatify/php-rate-limiter/pull/203) on the Owner’s explicit approval. The activation commit records the authorization.
+Earlier status: `PROPOSED` under Lead ruling LT-185-36b ([#185 comment 6781728109](https://github.com/Maatify/php-rate-limiter/issues/185#issuecomment-6781728109)).
 
 ## Date
 
-2026-11-10
+Proposed 2026-11-10. Activated 2026-11-11.
 
 ## Decision Authority
 
-**Lead**, on LT-185-36b ([#185 comment 6781728109](https://github.com/Maatify/php-rate-limiter/issues/185#issuecomment-6781728109)), selecting Option (A) for the proposal. Activation requires a separate Owner decision.
+**Owner**, approving the atomic outcome contract and authorizing activation on PR #203 on 2026-11-11. The Lead selected Option (A) in LT-185-36b ([#185 comment 6781728109](https://github.com/Maatify/php-rate-limiter/issues/185#issuecomment-6781728109)).
 
 ## Scope / Concern
 
@@ -24,7 +25,7 @@ Atomic outcome claim and admission state mutation; dedicated interface `AtomicAd
 
 In the initial admission layer design, recording an outcome involved a two-step sequence: first claiming the permit via `claimAdmissionPermit`, and then mutating admission scopes via `applyAdmissionOutcome`. If a backend failure or network interruption occurred after the permit was marked `CLAIMED` but before the scopes were updated, the permit was left in a claimed state without the corresponding state mutations (e.g. failure set additions or counter refunds). Any subsequent retry by the Host received `permit_duplicate`, preventing the intended state mutations from ever being applied (F-185-36).
 
-Under LT-185-36b, the proposed operation commits permit claim and admission outcome together. The score pipeline remains a separate stage under LT-185-36a.
+Under LT-185-36b, the atomic operation commits permit claim and admission outcome together. The score pipeline remains a separate stage under LT-185-36a.
 
 ## Decision
 
@@ -67,10 +68,10 @@ The permit records whether the store accepted an outcome. Applying that outcome 
 
 ## Relationship to Other Decisions
 
-- **DEC-024:** Keeps the atomic reservation boundary. This proposal adds an atomic operation for recording an outcome.
+- **DEC-024:** Keeps the atomic reservation boundary. This decision adds an atomic operation for recording an outcome.
 - **DEC-028:** Keeps the permit deadline and grace constants.
 - **DEC-029:** Preserves the no-double-recording rule for the separate score pipeline.
-- **DEC-033:** Uses the existing sliding scope representation. This proposal changes the outcome operation boundary.
+- **DEC-033:** Uses the existing sliding scope representation. This decision changes the outcome operation boundary.
 
 ## Canonical Contract / Current Owner
 

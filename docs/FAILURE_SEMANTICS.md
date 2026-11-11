@@ -461,7 +461,7 @@ FAIL_CLOSED result or a normal quota decision; see `docs/SIMPLE_THROTTLING.md`.
 * The opt-in outcome path calls `AtomicAdmissionPermitStoreInterface::claimAdmissionPermitWithOutcome()`.
   The permit claim and admission scope mutations share one Redis script, `CLAIM_WITH_OUTCOME`.
   The separate score pipeline starts only after the store returns an accepted claim.
-  The three interruption cases in the proposed DEC-036 integration are:
+  The three interruption cases in the DEC-036 integration are:
 
   | Point of interruption | State retained | Retry with the same outcome and permit |
   | --- | --- | --- |
