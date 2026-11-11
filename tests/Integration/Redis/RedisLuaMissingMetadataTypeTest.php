@@ -14,6 +14,7 @@ use Maatify\RateLimiter\Repository\Redis\RedisFullCapabilityStore;
 use Maatify\RateLimiter\Tests\Support\Clock\FixedClock;
 use Maatify\RateLimiter\Tests\Support\FailureSignal\RecordingFailureSignalEmitter;
 use Maatify\RateLimiter\Tests\Support\Redis\RespRedisCommandExecutor;
+use PHPUnit\Framework\Attributes\DataProvider;
 use PHPUnit\Framework\Attributes\Group;
 use PHPUnit\Framework\TestCase;
 
@@ -204,6 +205,48 @@ final class RedisLuaMissingMetadataTypeTest extends TestCase
         $this->expectException(RateLimiterException::class);
         $this->expectExceptionMessage('malformed bounded metadata');
         $limiter->limit(new RateLimitContextDTO('192.0.2.1', 'acct_test', 'ua'), RateLimitCommand::checkOnly('login_protection'));
+    }
+
+    /** @return iterable<string, array{string, int, string}> */
+    public static function classifiedStoreRejections(): iterable
+    {
+        yield 'runtime block read' => ['check', 1, 'malformed block state'];
+        yield 'operational block read' => ['peek', 1, 'malformed block state'];
+        yield 'hard-block publication' => ['publish', 6, 'malformed cycle history'];
+        yield 'rotated watch increment' => ['watch', 4, 'malformed previous watch state'];
+    }
+
+    #[DataProvider('classifiedStoreRejections')]
+    public function testClassifiedStoreRejectionHasNoFallbackWrite(string $operation, int $keys, string $message): void
+    {
+        $this->executor->execute(['SET', 'defensive-contract-sentinel', 'preserved']);
+        $before = $this->dump();
+        $rejection = new RateLimiterException($message);
+        $calls = 0;
+        $store = new RedisFullCapabilityStore(new CallableRedisCommandExecutor(
+            static function (array $command) use (&$calls, $keys, $rejection): never {
+                $calls++;
+                self::assertSame('EVAL', $command[0]);
+                self::assertSame($keys, $command[2] ?? null);
+                throw $rejection;
+            },
+        ), self::NAMESPACE);
+
+        try {
+            match ($operation) {
+                'check' => $store->checkBlockAt('current', self::NOW),
+                'peek' => $store->peekBlockAt('current', self::NOW),
+                'publish' => $store->blockWithCycleTracking('current', 'previous', 2, 30, self::NOW, 60, 2, 120, 300),
+                'watch' => $store->incrementWatchFlagAcrossRotationAt('current', 'previous', 60, self::NOW),
+                default => self::fail('Unknown store operation.'),
+            };
+            self::fail('Expected the classified rejection to reach the caller.');
+        } catch (RateLimiterException $caught) {
+            self::assertSame($rejection, $caught);
+        }
+
+        self::assertSame(1, $calls, 'The store must not retry or issue a fallback command.');
+        self::assertSame($before, $this->dump());
     }
 
     public function testPublicRuntimePropagatesClassifiedStoreRejectionWithoutChangingState(): void
