@@ -1402,6 +1402,22 @@ class EvaluationPipeline
         string $currentWatchKey,
         ?string $previousWatchKey,
     ): bool {
+        $store = $this->correlationStore;
+        if ($store instanceof RedisFullCapabilityStore && $observation->previousKey === null && $previousWatchKey === null) {
+            $now = $this->clock->now()->getTimestamp();
+
+            return $store->commitBoundedObservationGroup(static function () use ($store, $observation, $currentWatchKey, $now): array {
+                [$snapshot, $plan] = $store->readBoundedObservationPlanAt($observation->currentKey, $observation->currentMember, 3, 600, $now);
+                if ($snapshot->count !== 2) {
+                    return [$snapshot->count >= 3, [$plan]];
+                }
+
+                [$watch, $watchPlan] = $store->readWatchObservationPlanAt($currentWatchKey, 1800, $now);
+
+                return [$watch >= 2, [$plan, $watchPlan]];
+            });
+        }
+
         $count = $this->addBoundedCorrelation($observation, 600, 3);
         if ($count >= 3) {
             return true;
@@ -1558,14 +1574,11 @@ class EvaluationPipeline
             return null;
         }
 
-        $thresholdMet = $this->observeCredentialSpray(
-            $this->buildCredentialSprayObservation($subject, $k1Key, $previousK1Key),
-        );
+        $observations = [$this->buildCredentialSprayObservation($subject, $k1Key, $previousK1Key)];
 
-        // Observe every active macro scope before choosing the final spray
-        // candidate. The current canonical K1 remains the only persistence key.
+        // The current canonical K1 remains the only persistence key.
         foreach ($adaptiveIpv6Scopes as $scope) {
-            $macroObservation = $this->buildAdaptiveCorrelationObservation(
+            $observations[] = $this->buildAdaptiveCorrelationObservation(
                 $policy->getName(),
                 'spray',
                 $scope['cidr'],
@@ -1574,8 +1587,9 @@ class EvaluationPipeline
                 $scope['previousScope'],
                 $subject,
             );
-            $thresholdMet = $this->observeCredentialSpray($macroObservation) || $thresholdMet;
         }
+
+        $thresholdMet = $this->observeCredentialSprayScopes($observations);
 
         if (! $thresholdMet) {
             return null;
@@ -1602,24 +1616,46 @@ class EvaluationPipeline
         );
     }
 
-    private function observeCredentialSpray(BoundedCorrelationObservationDTO $observation): bool
+    /** @param non-empty-list<BoundedCorrelationObservationDTO> $observations */
+    private function observeCredentialSprayScopes(array $observations): bool
     {
         $store = $this->correlationStore;
-        if ($store instanceof RedisFullCapabilityStore && $observation->previousKey === null) {
+        $rotates = array_any($observations, static fn (BoundedCorrelationObservationDTO $observation): bool => $observation->previousKey !== null);
+        if ($store instanceof RedisFullCapabilityStore && ! $rotates) {
             $now = $this->clock->now()->getTimestamp();
 
-            return $store->commitBoundedObservationGroup(static function () use ($store, $observation, $now): array {
-                [$snapshot, $plan] = $store->readBoundedObservationPlanAt($observation->currentKey, $observation->currentMember, 5, 600, $now);
-                if ($snapshot->count !== 4) {
-                    return [$snapshot->count >= 5, [$plan]];
+            return $store->commitBoundedObservationGroup(static function () use ($store, $observations, $now): array {
+                $thresholdMet = false;
+                $plans = [];
+                foreach ($observations as $observation) {
+                    [$snapshot, $plan] = $store->readBoundedObservationPlanAt($observation->currentKey, $observation->currentMember, 5, 600, $now);
+                    $plans[] = $plan;
+                    if ($snapshot->count === 4) {
+                        [$watch, $watchPlan] = $store->readWatchObservationPlanAt($observation->currentKey . ':watch', 1800, $now);
+                        $plans[] = $watchPlan;
+                        $thresholdMet = $watch >= 2 || $thresholdMet;
+                    } else {
+                        $thresholdMet = $snapshot->count >= 5 || $thresholdMet;
+                    }
                 }
 
-                [$watch, $watchPlan] = $store->readWatchObservationPlanAt($observation->currentKey . ':watch', 1800, $now);
-
-                return [$watch >= 2, [$plan, $watchPlan]];
+                return [$thresholdMet, $plans];
             });
         }
 
+        $thresholdMet = false;
+        foreach ($observations as $observation) {
+            $observed = $store instanceof RedisFullCapabilityStore && $observation->previousKey === null
+                ? $this->observeCredentialSprayScopes([$observation])
+                : $this->observeCredentialSpray($observation);
+            $thresholdMet = $observed || $thresholdMet;
+        }
+
+        return $thresholdMet;
+    }
+
+    private function observeCredentialSpray(BoundedCorrelationObservationDTO $observation): bool
+    {
         $count = $this->addBoundedCorrelation($observation, 600, 5);
         if ($count >= 5) {
             return true;
