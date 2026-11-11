@@ -13,13 +13,14 @@ use Maatify\RateLimiter\DTO\RateLimitStateDTO;
 use Maatify\RateLimiter\Enum\AdmissionOutcomeKindEnum;
 use Maatify\RateLimiter\Enum\AdmissionPermitClaimEnum;
 use Maatify\RateLimiter\Repository\AdmissionPermitStoreInterface;
+use Maatify\RateLimiter\Repository\AtomicAdmissionPermitStoreInterface;
 
 /**
  * Admission store that delegates to the reference store and raises a configured throwable on a named operation
  * (`reserve`, `outcome`, `claim`, `readEpoch`, `bumpEpoch`) before any delegation, so nothing is written by the failed call.
  * Records every admission call it receives.
  */
-final class FaultInjectingAdmissionStore implements AdmissionPermitStoreInterface
+final class FaultInjectingAdmissionStore implements AtomicAdmissionPermitStoreInterface
 {
     /** @var array<string, \Throwable> */
     public array $fail = [];
@@ -85,6 +86,32 @@ final class FaultInjectingAdmissionStore implements AdmissionPermitStoreInterfac
         $this->enter('claim');
 
         return $this->inner->claimAdmissionPermit($permitId, $lane, $subject, $operation, $outcome, $now);
+    }
+
+    public function claimAdmissionPermitWithOutcome(
+        string $lane,
+        string $subject,
+        string $operation,
+        AdmissionOutcomeDTO $outcome,
+        int $now,
+    ): AdmissionPermitClaimEnum {
+        $this->enter('claimWithOutcome');
+        if (isset($this->fail['claim'])) {
+            throw $this->fail['claim'];
+        }
+        if (isset($this->fail['outcome'])) {
+            throw $this->fail['outcome'];
+        }
+        if (! $this->inner instanceof AtomicAdmissionPermitStoreInterface) {
+            throw new \LogicException('Inner store does not implement AtomicAdmissionPermitStoreInterface.');
+        }
+
+        $result = $this->inner->claimAdmissionPermitWithOutcome($lane, $subject, $operation, $outcome, $now);
+        if ($result === AdmissionPermitClaimEnum::ACCEPTED) {
+            $this->outcomes[] = $outcome;
+        }
+
+        return $result;
     }
 
     public function increment(string $key, int $ttlSeconds, int $amount = 1): int

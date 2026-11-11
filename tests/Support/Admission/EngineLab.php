@@ -14,6 +14,7 @@ use Maatify\RateLimiter\DTO\AdmissionCredentialDTO;
 use Maatify\RateLimiter\DTO\RateLimitContextDTO;
 use Maatify\RateLimiter\DTO\RateLimitResultDTO;
 use Maatify\RateLimiter\Repository\AdmissionPermitStoreInterface;
+use Maatify\RateLimiter\Repository\AtomicAdmissionPermitStoreInterface;
 use Maatify\RateLimiter\Service\AdmissionCredentialCodec;
 use Maatify\RateLimiter\Service\AdmissionRuntime;
 use Maatify\RateLimiter\Service\AntiEquilibriumGate;
@@ -78,7 +79,7 @@ final class EngineLab
         string $runtimeClass = AdmissionRuntime::class,
         string $engineClass = RateLimiterEngine::class,
         bool $registerOptedPolicy = true,
-        ?AdmissionPermitStoreInterface $admissionInner = null,
+        AtomicAdmissionPermitStoreInterface|AdmissionPermitStoreInterface|null $admissionInner = null,
         string $pipelineClass = EvaluationPipeline::class,
         bool $recordCycles = false,
     ) {

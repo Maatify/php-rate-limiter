@@ -25,6 +25,7 @@ use Maatify\RateLimiter\Enum\AdmissionOutcomeKindEnum;
 use Maatify\RateLimiter\Enum\AdmissionPermitClaimEnum;
 use Maatify\RateLimiter\Repository\AdmissionCapableFullStoreInterface;
 use Maatify\RateLimiter\Repository\AdmissionPermitStoreInterface;
+use Maatify\RateLimiter\Repository\AtomicAdmissionPermitStoreInterface;
 use Maatify\RateLimiter\Repository\CallerTimeBoundedCorrelationSnapshotRotationStoreInterface;
 use Maatify\RateLimiter\Repository\CallerTimeBudgetSeedStoreInterface;
 use Maatify\RateLimiter\Repository\CallerTimePunishmentLifecycleStoreInterface;
@@ -54,6 +55,7 @@ use DateTimeZone;
 final class RedisFullCapabilityStore implements
     AdmissionCapableFullStoreInterface,
     AdmissionPermitStoreInterface,
+    AtomicAdmissionPermitStoreInterface,
     CallerTimeBudgetSeedStoreInterface,
     CallerTimeBoundedCorrelationSnapshotRotationStoreInterface,
     CallerTimePunishmentLifecycleStoreInterface,
@@ -2304,6 +2306,16 @@ LUA;
         int $now,
     ): AdmissionPermitClaimEnum {
         return $this->admission()->claimPermit($permitId, $lane, $subject, $operation, $outcome, $now);
+    }
+
+    public function claimAdmissionPermitWithOutcome(
+        string $lane,
+        string $subject,
+        string $operation,
+        AdmissionOutcomeDTO $outcome,
+        int $now,
+    ): AdmissionPermitClaimEnum {
+        return $this->admission()->claimAdmissionPermitWithOutcome($lane, $subject, $operation, $outcome, $now);
     }
 
     private function admission(): RedisAdmissionOperations

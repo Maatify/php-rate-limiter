@@ -15,7 +15,13 @@ use Maatify\RateLimiter\Tests\Support\Clock\FixedClock;
 use Maatify\RateLimiter\Tests\Support\FailureSignal\RecordingFailureSignalEmitter;
 use Maatify\RateLimiter\Tests\Support\Redis\RespRedisCommandExecutor;
 
-[, $host, $port, $namespace, $barrier, $parties] = $argv;
+$rawArguments = $_SERVER['argv'] ?? null;
+$arguments = is_array($rawArguments) ? array_values(array_filter($rawArguments, is_string(...))) : [];
+if (! is_array($rawArguments) || count($rawArguments) !== count($arguments) || count($arguments) !== 6) {
+    fwrite(STDERR, "Expected 5 command-line arguments.\n");
+    exit(2);
+}
+[, $host, $port, $namespace, $barrier, $parties] = $arguments;
 $reflection = new ReflectionClass(RedisFullCapabilityStore::class);
 $fenced = $reflection->hasConstant('CIRCUIT_SAVE_IF_VERSION') ? $reflection->getConstant('CIRCUIT_SAVE_IF_VERSION') : null;
 $executor = new class (new RespRedisCommandExecutor($host, (int) $port), is_string($fenced) ? $fenced : null, $barrier, (int) $parties) implements RedisCommandExecutorInterface {
