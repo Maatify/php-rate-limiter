@@ -121,7 +121,7 @@ end
 -- `expiryApplied()`. Both operands stay decimal strings, so a TTL above 2^53
 -- is judged exactly.
 local function ttlBackendRepresentable(rawTtl)
-  if rawTtl == nil or string.match(rawTtl, '^[1-9]%d*$') == nil or string.len(rawTtl) > 16 then return false end
+  if type(rawTtl) ~= 'string' or string.match(rawTtl, '^[1-9]%d*$') == nil or string.len(rawTtl) > 16 then return false end
   return compareDecimalStrings(addDecimalStrings(rawTtl .. '000', nowMsStr), '9223372036854775807') <= 0
 end
 -- LT-P2-12: an expiry command is run through redis.pcall. When Redis rejects
@@ -139,7 +139,7 @@ LUA;
 
     private const SCORE_INCREMENT = self::LUA_TIME_PRELUDE . "\n" . <<<'LUA'
 local function validPhpInteger(value)
-  if value == nil or string.match(value, '^%-?%d+$') == nil then return false end
+  if type(value) ~= 'string' or string.match(value, '^%-?%d+$') == nil then return false end
   local negative = string.sub(value, 1, 1) == '-'
   local digits = negative and string.sub(value, 2) or value
   if digits == '' or (string.len(digits) > 1 and string.sub(digits, 1, 1) == '0') or (negative and digits == '0') then return false end
@@ -148,7 +148,7 @@ local function validPhpInteger(value)
 end
 -- DEC-017: `updatedAt` is a canonical non-negative PHP-int Unix timestamp.
 local function validNonNegativeInteger(value)
-  return value ~= nil and (value == '0' or (string.match(value, '^[1-9]%d*$') ~= nil and string.len(value) <= 19 and (string.len(value) < 19 or value <= '9223372036854775807')))
+  return type(value) == 'string' and (value == '0' or (string.match(value, '^[1-9]%d*$') ~= nil and string.len(value) <= 19 and (string.len(value) < 19 or value <= '9223372036854775807')))
 end
 local exists = redis.call('EXISTS', KEYS[1])
 if exists == 0 then
@@ -180,7 +180,7 @@ LUA;
      */
     private const SCORE_SET_IF_SNAPSHOT = self::LUA_TIME_PRELUDE . "\n" . <<<'LUA'
 local function validPhpInteger(value)
-  if value == nil or string.match(value, '^%-?%d+$') == nil then return false end
+  if type(value) ~= 'string' or string.match(value, '^%-?%d+$') == nil then return false end
   local negative = string.sub(value, 1, 1) == '-'
   local digits = negative and string.sub(value, 2) or value
   if digits == '' or (string.len(digits) > 1 and string.sub(digits, 1, 1) == '0') or (negative and digits == '0') then return false end
@@ -188,7 +188,7 @@ local function validPhpInteger(value)
   return string.len(digits) < 19 or (string.len(digits) == 19 and digits <= maximum)
 end
 local function validNonNegativeInteger(value)
-  return value ~= nil and (value == '0' or (string.match(value, '^[1-9]%d*$') ~= nil and string.len(value) <= 19 and (string.len(value) < 19 or value <= '9223372036854775807')))
+  return type(value) == 'string' and (value == '0' or (string.match(value, '^[1-9]%d*$') ~= nil and string.len(value) <= 19 and (string.len(value) < 19 or value <= '9223372036854775807')))
 end
 if not validPhpInteger(ARGV[4]) then return redis.error_reply('malformed score state') end
 local exists = redis.call('EXISTS', KEYS[1])
@@ -222,7 +222,7 @@ LUA;
      */
     private const SCORE_REPLACE = self::LUA_TIME_PRELUDE . "\n" . <<<'LUA'
 local function validPhpInteger(value)
-  if value == nil or string.match(value, '^%-?%d+$') == nil then return false end
+  if type(value) ~= 'string' or string.match(value, '^%-?%d+$') == nil then return false end
   local negative = string.sub(value, 1, 1) == '-'
   local digits = negative and string.sub(value, 2) or value
   if digits == '' or (string.len(digits) > 1 and string.sub(digits, 1, 1) == '0') or (negative and digits == '0') then return false end
@@ -230,7 +230,7 @@ local function validPhpInteger(value)
   return string.len(digits) < 19 or (string.len(digits) == 19 and digits <= maximum)
 end
 local function validNonNegativeInteger(value)
-  return value ~= nil and (value == '0' or (string.match(value, '^[1-9]%d*$') ~= nil and string.len(value) <= 19 and (string.len(value) < 19 or value <= '9223372036854775807')))
+  return type(value) == 'string' and (value == '0' or (string.match(value, '^[1-9]%d*$') ~= nil and string.len(value) <= 19 and (string.len(value) < 19 or value <= '9223372036854775807')))
 end
 if not validPhpInteger(ARGV[2]) then return redis.error_reply('malformed score state') end
 if not ttlBackendRepresentable(ARGV[1]) then return redis.error_reply('score TTL exceeds Redis backend expiry representability') end
@@ -271,7 +271,7 @@ LUA;
 
     private const SCORE_GET = <<<'LUA'
 local function validPhpInteger(value)
-  if value == nil or string.match(value, '^%-?%d+$') == nil then return false end
+  if type(value) ~= 'string' or string.match(value, '^%-?%d+$') == nil then return false end
   local negative = string.sub(value, 1, 1) == '-'
   local digits = negative and string.sub(value, 2) or value
   if digits == '' or (string.len(digits) > 1 and string.sub(digits, 1, 1) == '0') or (negative and digits == '0') then return false end
@@ -280,7 +280,7 @@ local function validPhpInteger(value)
 end
 -- DEC-017: `updatedAt` is a canonical non-negative PHP-int Unix timestamp.
 local function validNonNegativeInteger(value)
-  return value ~= nil and (value == '0' or (string.match(value, '^[1-9]%d*$') ~= nil and string.len(value) <= 19 and (string.len(value) < 19 or value <= '9223372036854775807')))
+  return type(value) == 'string' and (value == '0' or (string.match(value, '^[1-9]%d*$') ~= nil and string.len(value) <= 19 and (string.len(value) < 19 or value <= '9223372036854775807')))
 end
 if redis.call('EXISTS', KEYS[1]) == 0 then return {} end
 if redis.call('TTL', KEYS[1]) < 0 then return redis.error_reply('malformed score state') end
@@ -314,19 +314,19 @@ local nowSecondsStr = tostring(nowSeconds)
 local exactIntegerMax = 9007199254740991
 local exactIntegerMaxTtlSeconds = '9007199254740'
 local function ttlMillisecondsRepresentable(rawTtl, baseMs)
-  if rawTtl == nil or string.match(rawTtl, '^[1-9]%d*$') == nil then return false end
+  if type(rawTtl) ~= 'string' or string.match(rawTtl, '^[1-9]%d*$') == nil then return false end
   if string.len(rawTtl) > 13 or (string.len(rawTtl) == 13 and rawTtl > exactIntegerMaxTtlSeconds) then return false end
   if baseMs == nil or baseMs < 0 or baseMs > exactIntegerMax then return false end
   local ttlMs = tonumber(rawTtl) * 1000
   return ttlMs <= exactIntegerMax - baseMs
 end
 local function validPositiveInteger(value)
-  return value ~= nil and string.match(value, '^[1-9]%d*$') ~= nil and string.len(value) <= 19 and (string.len(value) < 19 or value <= '9223372036854775807')
+  return type(value) == 'string' and string.match(value, '^[1-9]%d*$') ~= nil and string.len(value) <= 19 and (string.len(value) < 19 or value <= '9223372036854775807')
 end
 local current = KEYS[1]; local previous = KEYS[2]
 local expectedSource = ARGV[1]
 local function validInteger(value, allowZero)
-  if value == nil or string.match(value, '^%-?%d+$') == nil then return false end
+  if type(value) ~= 'string' or string.match(value, '^%-?%d+$') == nil then return false end
   local negative = string.sub(value, 1, 1) == '-'
   local digits = negative and string.sub(value, 2) or value
   if not allowZero and digits == '0' then return false end
@@ -336,7 +336,7 @@ local function validInteger(value, allowZero)
   return string.len(normalized) < 19 or (string.len(normalized) == 19 and normalized <= maximum)
 end
 local function validPhpInteger(value)
-  if value == nil or string.match(value, '^%-?%d+$') == nil then return false end
+  if type(value) ~= 'string' or string.match(value, '^%-?%d+$') == nil then return false end
   local negative = string.sub(value, 1, 1) == '-'
   local digits = negative and string.sub(value, 2) or value
   if digits == '' or (string.len(digits) > 1 and string.sub(digits, 1, 1) == '0') or (negative and digits == '0') then return false end
@@ -350,7 +350,7 @@ end
 -- `tonumber()`; validation and ordering comparisons stay string-exact up
 -- to PHP_INT_MAX and are never rejected merely for exceeding 2^53.
 local function validNonNegativeInteger(value)
-  return value ~= nil and (value == '0' or (string.match(value, '^[1-9]%d*$') ~= nil and string.len(value) <= 19 and (string.len(value) < 19 or value <= '9223372036854775807')))
+  return type(value) == 'string' and (value == '0' or (string.match(value, '^[1-9]%d*$') ~= nil and string.len(value) <= 19 and (string.len(value) < 19 or value <= '9223372036854775807')))
 end
 local function compareDecimalStrings(a, b)
   if #a ~= #b then return (#a < #b) and -1 or 1 end
@@ -506,10 +506,10 @@ local nowMs = tonumber(nowMsStr)
 local nowSeconds = math.floor(nowMs / 1000)
 local nowSecondsStr = tostring(nowSeconds)
 local function validPositiveInteger(value)
-  return value ~= nil and string.match(value, '^[1-9]%d*$') ~= nil and string.len(value) <= 19 and (string.len(value) < 19 or value <= '9223372036854775807')
+  return type(value) == 'string' and string.match(value, '^[1-9]%d*$') ~= nil and string.len(value) <= 19 and (string.len(value) < 19 or value <= '9223372036854775807')
 end
 local function validPhpInteger(value)
-  if value == nil or string.match(value, '^%-?%d+$') == nil then return false end
+  if type(value) ~= 'string' or string.match(value, '^%-?%d+$') == nil then return false end
   local negative = string.sub(value, 1, 1) == '-'
   local digits = negative and string.sub(value, 2) or value
   if digits == '' or (string.len(digits) > 1 and string.sub(digits, 1, 1) == '0') or (negative and digits == '0') then return false end
@@ -517,10 +517,10 @@ local function validPhpInteger(value)
   return string.len(digits) < 19 or (string.len(digits) == 19 and digits <= maximum)
 end
 local function validNonNegativeInteger(value)
-  return value ~= nil and (value == '0' or (string.match(value, '^[1-9]%d*$') ~= nil and string.len(value) <= 19 and (string.len(value) < 19 or value <= '9223372036854775807')))
+  return type(value) == 'string' and (value == '0' or (string.match(value, '^[1-9]%d*$') ~= nil and string.len(value) <= 19 and (string.len(value) < 19 or value <= '9223372036854775807')))
 end
 local function validBackendExpiry(value)
-  if value == nil then return false end
+  if type(value) ~= 'string' then return false end
   if string.match(value, '^[1-9]%d*$') == nil then return false end
   if #value > 16 then return false end
   if #value == 16 and value > '9223372036854775' then return false end
@@ -596,10 +596,10 @@ local nowMs = tonumber(nowMsStr)
 local nowSeconds = math.floor(nowMs / 1000)
 local nowSecondsStr = tostring(nowSeconds)
 local function validPositiveInteger(value)
-  return value ~= nil and string.match(value, '^[1-9]%d*$') ~= nil and string.len(value) <= 19 and (string.len(value) < 19 or value <= '9223372036854775807')
+  return type(value) == 'string' and string.match(value, '^[1-9]%d*$') ~= nil and string.len(value) <= 19 and (string.len(value) < 19 or value <= '9223372036854775807')
 end
 local function validPhpInteger(value)
-  if value == nil or string.match(value, '^%-?%d+$') == nil then return false end
+  if type(value) ~= 'string' or string.match(value, '^%-?%d+$') == nil then return false end
   local negative = string.sub(value, 1, 1) == '-'
   local digits = negative and string.sub(value, 2) or value
   if digits == '' or (string.len(digits) > 1 and string.sub(digits, 1, 1) == '0') or (negative and digits == '0') then return false end
@@ -607,10 +607,10 @@ local function validPhpInteger(value)
   return string.len(digits) < 19 or (string.len(digits) == 19 and digits <= maximum)
 end
 local function validNonNegativeInteger(value)
-  return value ~= nil and (value == '0' or (string.match(value, '^[1-9]%d*$') ~= nil and string.len(value) <= 19 and (string.len(value) < 19 or value <= '9223372036854775807')))
+  return type(value) == 'string' and (value == '0' or (string.match(value, '^[1-9]%d*$') ~= nil and string.len(value) <= 19 and (string.len(value) < 19 or value <= '9223372036854775807')))
 end
 local function validBackendExpiry(value)
-  if value == nil then return false end
+  if type(value) ~= 'string' then return false end
   if string.match(value, '^[1-9]%d*$') == nil then return false end
   if #value > 16 then return false end
   if #value == 16 and value > '9223372036854775' then return false end
@@ -746,7 +746,7 @@ LUA;
     /** The block read's validation, shared by BLOCK_GET and BLOCK_PEEK; it ends with a live-or-expired block in `level`/`expires`. */
     private const BLOCK_VALIDATE = <<<'LUA'
 local function validBackendExpiry(value)
-  if value == nil or value == '0' then return value == '0' end
+  if type(value) ~= 'string' or value == '0' then return value == '0' end
   if string.match(value, '^[1-9]%d*$') == nil then return false end
   if #value > 16 then return false end
   if #value == 16 and value > '9223372036854775' then return false end
@@ -790,10 +790,10 @@ local exactIntegerMax = 9007199254740991
 -- is compared and added as a decimal string, so a value above 2^53 is handled
 -- exactly instead of being narrowed through `tonumber()`.
 local function validNonNegativeInteger(value)
-  return value ~= nil and (value == '0' or (string.match(value, '^[1-9]%d*$') ~= nil and string.len(value) <= 19 and (string.len(value) < 19 or value <= '9223372036854775807')))
+  return type(value) == 'string' and (value == '0' or (string.match(value, '^[1-9]%d*$') ~= nil and string.len(value) <= 19 and (string.len(value) < 19 or value <= '9223372036854775807')))
 end
 local function validPositiveDuration(value)
-  return value ~= nil and string.match(value, '^[1-9]%d*$') ~= nil and string.len(value) <= 19 and (string.len(value) < 19 or value <= '9223372036854775807')
+  return type(value) == 'string' and string.match(value, '^[1-9]%d*$') ~= nil and string.len(value) <= 19 and (string.len(value) < 19 or value <= '9223372036854775807')
 end
 -- Returns epoch-end as a decimal string, or nil plus an error for malformed state.
 local function persistedEpochEnd(count, start, duration)
@@ -841,10 +841,10 @@ local exactIntegerMax = 9007199254740991
 -- is compared and added as a decimal string, so a value above 2^53 is handled
 -- exactly instead of being narrowed through `tonumber()`.
 local function validNonNegativeInteger(value)
-  return value ~= nil and (value == '0' or (string.match(value, '^[1-9]%d*$') ~= nil and string.len(value) <= 19 and (string.len(value) < 19 or value <= '9223372036854775807')))
+  return type(value) == 'string' and (value == '0' or (string.match(value, '^[1-9]%d*$') ~= nil and string.len(value) <= 19 and (string.len(value) < 19 or value <= '9223372036854775807')))
 end
 local function validPositiveDuration(value)
-  return value ~= nil and string.match(value, '^[1-9]%d*$') ~= nil and string.len(value) <= 19 and (string.len(value) < 19 or value <= '9223372036854775807')
+  return type(value) == 'string' and string.match(value, '^[1-9]%d*$') ~= nil and string.len(value) <= 19 and (string.len(value) < 19 or value <= '9223372036854775807')
 end
 -- Returns epoch-end as a decimal string, or nil plus an error for malformed state.
 local function persistedEpochEnd(count, start, duration)
@@ -886,10 +886,10 @@ local exactIntegerMax = 9007199254740991
 -- is compared and added as a decimal string, so a value above 2^53 is handled
 -- exactly instead of being narrowed through `tonumber()`.
 local function validNonNegativeInteger(value)
-  return value ~= nil and (value == '0' or (string.match(value, '^[1-9]%d*$') ~= nil and string.len(value) <= 19 and (string.len(value) < 19 or value <= '9223372036854775807')))
+  return type(value) == 'string' and (value == '0' or (string.match(value, '^[1-9]%d*$') ~= nil and string.len(value) <= 19 and (string.len(value) < 19 or value <= '9223372036854775807')))
 end
 local function validPositiveDuration(value)
-  return value ~= nil and string.match(value, '^[1-9]%d*$') ~= nil and string.len(value) <= 19 and (string.len(value) < 19 or value <= '9223372036854775807')
+  return type(value) == 'string' and string.match(value, '^[1-9]%d*$') ~= nil and string.len(value) <= 19 and (string.len(value) < 19 or value <= '9223372036854775807')
 end
 -- Returns epoch-end as a decimal string, or nil plus an error for malformed state.
 local function persistedEpochEnd(count, start, duration)
@@ -948,7 +948,7 @@ LUA;
 
     private const DISTINCT_ADD = self::LUA_TIME_PRELUDE . "\n" . <<<'LUA'
 local function validBackendExpiry(value)
-  if value == nil or value == '0' then return value == '0' end
+  if type(value) ~= 'string' or value == '0' then return value == '0' end
   if string.match(value, '^[1-9]%d*$') == nil then return false end
   if #value > 16 then return false end
   if #value == 16 and value > '9223372036854775' then return false end
@@ -978,7 +978,7 @@ LUA;
 
     private const WATCH_INCREMENT = self::LUA_TIME_PRELUDE . "\n" . <<<'LUA'
 local function validBackendExpiry(value)
-  if value == nil or value == '0' then return value == '0' end
+  if type(value) ~= 'string' or value == '0' then return value == '0' end
   if string.match(value, '^[1-9]%d*$') == nil then return false end
   if #value > 16 then return false end
   if #value == 16 and value > '9223372036854775' then return false end
@@ -1027,7 +1027,7 @@ LUA;
 
     private const BOUNDED_SNAPSHOT = self::LUA_TIME_PRELUDE . "\n" . <<<'LUA'
 local function validBackendExpiry(value)
-  if value == nil or value == '0' then return value == '0' end
+  if type(value) ~= 'string' or value == '0' then return value == '0' end
   if string.match(value, '^[1-9]%d*$') == nil then return false end
   if #value > 16 then return false end
   if #value == 16 and value > '9223372036854775' then return false end
@@ -1070,7 +1070,7 @@ LUA;
 
     private const ROTATED_SNAPSHOT = self::LUA_TIME_PRELUDE . "\n" . <<<'LUA'
 local function validBackendExpiry(value)
-  if value == nil or value == '0' then return value == '0' end
+  if type(value) ~= 'string' or value == '0' then return value == '0' end
   if string.match(value, '^[1-9]%d*$') == nil then return false end
   if #value > 16 then return false end
   if #value == 16 and value > '9223372036854775' then return false end
@@ -1250,7 +1250,7 @@ LUA;
 
     private const LEASE = self::LUA_TIME_PRELUDE . "\n" . <<<'LUA'
 local function validBackendExpiry(value)
-  return value ~= nil and string.match(value, '^[1-9]%d*$') ~= nil and string.len(value) <= 19 and (string.len(value) < 19 or value <= '9223372036854775807')
+  return type(value) == 'string' and string.match(value, '^[1-9]%d*$') ~= nil and string.len(value) <= 19 and (string.len(value) < 19 or value <= '9223372036854775807')
 end
 local current = redis.call('GET', KEYS[1])
 if current then
@@ -1273,10 +1273,10 @@ LUA;
 local lifecycleGeneration = ARGV[10] or ''
 local lifecycleId = ARGV[11] or ''
 local function validPositiveInteger(value)
-  return value ~= nil and string.match(value, '^[1-9]%d*$') ~= nil and string.len(value) <= 19 and (string.len(value) < 19 or value <= '9223372036854775807')
+  return type(value) == 'string' and string.match(value, '^[1-9]%d*$') ~= nil and string.len(value) <= 19 and (string.len(value) < 19 or value <= '9223372036854775807')
 end
 local function validPhpInteger(value)
-  if value == nil or string.match(value, '^%-?%d+$') == nil then return false end
+  if type(value) ~= 'string' or string.match(value, '^%-?%d+$') == nil then return false end
   local negative = string.sub(value, 1, 1) == '-'
   local digits = negative and string.sub(value, 2) or value
   if digits == '' or (string.len(digits) > 1 and string.sub(digits, 1, 1) == '0') or (negative and digits == '0') then return false end
@@ -1288,20 +1288,20 @@ local exactIntegerMax = 9007199254740991
 -- start/finish/scores, hard-block `expiresAt`) are canonical non-negative
 -- decimals, exact within Lua's integer range where ZSET arithmetic needs it.
 local function validExactNonNegativeInteger(value)
-  return value ~= nil and (value == '0' or (string.match(value, '^[1-9]%d*$') ~= nil and string.len(value) <= 16 and (string.len(value) < 16 or value <= '9007199254740991')))
+  return type(value) == 'string' and (value == '0' or (string.match(value, '^[1-9]%d*$') ~= nil and string.len(value) <= 16 and (string.len(value) < 16 or value <= '9007199254740991')))
 end
 local function validExactPositiveInteger(value)
-  return value ~= nil and string.match(value, '^[1-9]%d*$') ~= nil and string.len(value) <= 16 and (string.len(value) < 16 or value <= '9007199254740991')
+  return type(value) == 'string' and string.match(value, '^[1-9]%d*$') ~= nil and string.len(value) <= 16 and (string.len(value) < 16 or value <= '9007199254740991')
 end
 -- DEC-017: hard-block `expiresAt` is a Hash decimal string, not a ZSET score.
 -- It is canonical, non-negative, within the backend expiry range BLOCK_SET can
 -- create, and is only ever compared as a decimal string, never via tonumber().
 local function validHardBlockExpiry(value)
-  if value == nil or value == '0' then return value == '0' end
+  if type(value) ~= 'string' or value == '0' then return value == '0' end
   return string.match(value, '^[1-9]%d*$') ~= nil and (#value < 16 or (#value == 16 and value <= '9223372036854775'))
 end
 local function validNonNegativeInteger(value)
-  return value ~= nil and (value == '0' or (string.match(value, '^[1-9]%d*$') ~= nil and string.len(value) <= 19 and (string.len(value) < 19 or value <= '9223372036854775807')))
+  return type(value) == 'string' and (value == '0' or (string.match(value, '^[1-9]%d*$') ~= nil and string.len(value) <= 19 and (string.len(value) < 19 or value <= '9223372036854775807')))
 end
 local function compareDecimalStrings(a, b)
   if #a ~= #b then return (#a < #b) and -1 or 1 end
@@ -1520,7 +1520,7 @@ local retention = 86400
 -- start/finish/scores, hard-block `expiresAt`) are canonical non-negative
 -- decimals, exact within Lua's integer range where ZSET arithmetic needs it.
 local function validExactNonNegativeInteger(value)
-  return value ~= nil and (value == '0' or (string.match(value, '^[1-9]%d*$') ~= nil and string.len(value) <= 16 and (string.len(value) < 16 or value <= '9007199254740991')))
+  return type(value) == 'string' and (value == '0' or (string.match(value, '^[1-9]%d*$') ~= nil and string.len(value) <= 16 and (string.len(value) < 16 or value <= '9007199254740991')))
 end
 if not validExactNonNegativeInteger(ARGV[2]) then return redis.error_reply('caller time is not representable') end
 if not validExactNonNegativeInteger(ARGV[1]) then return redis.error_reply('caller from-timestamp is not representable') end
@@ -1879,9 +1879,9 @@ LUA;
         $script = self::LUA_TIME_PRELUDE . "\n" . <<<'LUA'
 local previousText = '0'
 -- #185 F-185-13: a watch count is a canonical non-negative integer ('0' or no leading zero); the store writes no other form.
-local function canonicalCount(text) return text == '0' or string.match(text, '^[1-9]%d*$') ~= nil end
+local function canonicalCount(text) return type(text) == 'string' and (text == '0' or string.match(text, '^[1-9]%d*$') ~= nil) end
 local function validBackendExpiry(value)
-  if value == nil or value == '0' then return value == '0' end
+  if type(value) ~= 'string' or value == '0' then return value == '0' end
   if string.match(value, '^[1-9]%d*$') == nil then return false end
   if #value > 16 then return false end
   if #value == 16 and value > '9223372036854775' then return false end
