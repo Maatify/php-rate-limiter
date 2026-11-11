@@ -1920,6 +1920,35 @@ LUA;
         int $ttl,
         int $now,
     ): array {
+        for ($attempt = 0; $attempt < 3; $attempt++) {
+            [$account, $source, $commit] = $this->prepareDeviceCapPairAt(
+                $accountKey, $accountMember, $accountCapacity, $sourceKey, $sourceMember, $sourceCapacity, $ttl, $now,
+            );
+            if ($commit()) {
+                return [$account, $source];
+            }
+        }
+
+        throw new RateLimiterException('Device-cap observation state changed before commit.');
+    }
+
+    /**
+     * Read and plan the two device-cap observations without updating Redis.
+     * The returned commit operation applies both only if their observed state still matches.
+     *
+     * @internal
+     * @return array{BoundedDistinctSnapshotDTO, BoundedDistinctSnapshotDTO, \Closure(): bool}
+     */
+    public function prepareDeviceCapPairAt(
+        string $accountKey,
+        string $accountMember,
+        int $accountCapacity,
+        string $sourceKey,
+        string $sourceMember,
+        int $sourceCapacity,
+        int $ttl,
+        int $now,
+    ): array {
         $this->positive($ttl, 'Correlation TTL');
         $this->positive($accountCapacity, 'Account capacity');
         $this->positive($sourceCapacity, 'Source capacity');
@@ -1934,33 +1963,32 @@ LUA;
             $this->key('distinct-meta', $sourceKey),
         ];
         $now = $this->callerTime($now);
-        for ($attempt = 0; $attempt < 3; $attempt++) {
-            $read = $this->eval(self::DEVICE_CAP_PAIR_READ, $keys, [$accountCapacity, $sourceCapacity, $now]);
-            if (! is_array($read) || ! array_is_list($read) || count($read) !== 3) {
-                throw new RateLimiterException('Malformed device-cap pair state response.');
-            }
-            $state = $this->tuple($read[0], 8, 'device-cap pair state');
-            if (count($state) !== 8) {
-                throw new RateLimiterException('Malformed device-cap pair state response.');
-            }
-            [$account, $initializeAccount] = $this->planDeviceCapObservation($read[1], $accountMember, $accountCapacity, $ttl, $now);
-            [$source, $initializeSource] = $this->planDeviceCapObservation($read[2], $sourceMember, $sourceCapacity, $ttl, $now);
+        $read = $this->eval(self::DEVICE_CAP_PAIR_READ, $keys, [$accountCapacity, $sourceCapacity, $now]);
+        if (! is_array($read) || ! array_is_list($read) || count($read) !== 3) {
+            throw new RateLimiterException('Malformed device-cap pair state response.');
+        }
+        $state = $this->tuple($read[0], 8, 'device-cap pair state');
+        if (count($state) !== 8) {
+            throw new RateLimiterException('Malformed device-cap pair state response.');
+        }
+        [$account, $initializeAccount] = $this->planDeviceCapObservation($read[1], $accountMember, $accountCapacity, $ttl, $now);
+        [$source, $initializeSource] = $this->planDeviceCapObservation($read[2], $sourceMember, $sourceCapacity, $ttl, $now);
+        $arguments = [
+            $ttl, $accountMember, (int) $initializeAccount, (int) $account->added,
+            $sourceMember, (int) $initializeSource, (int) $source->added, ...$state, $now,
+        ];
 
-            $result = $this->eval(self::BOUNDED_SNAPSHOT_PAIR, $keys, [
-                $ttl, $accountMember, (int) $initializeAccount, (int) $account->added,
-                $sourceMember, (int) $initializeSource, (int) $source->added, ...$state, $now,
-            ]);
+        return [$account, $source, function () use ($keys, $arguments): bool {
+            $result = $this->eval(self::BOUNDED_SNAPSHOT_PAIR, $keys, $arguments);
             if ($result === []) {
-                continue;
+                return false;
             }
             if ($result !== [1] && $result !== ['1']) {
                 throw new RateLimiterException('Malformed device-cap snapshot pair response.');
             }
 
-            return [$account, $source];
-        }
-
-        throw new RateLimiterException('Device-cap observation state changed before commit.');
+            return true;
+        }];
     }
 
     /** @return array{BoundedDistinctSnapshotDTO, bool} */

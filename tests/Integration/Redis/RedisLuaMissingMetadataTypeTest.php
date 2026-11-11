@@ -246,6 +246,20 @@ final class RedisLuaMissingMetadataTypeTest extends TestCase
         );
     }
 
+    public function testDeviceCapPairCanBePlannedWithoutWriting(): void
+    {
+        $before = $this->dump();
+        [$account, $source, $commit] = $this->store->prepareDeviceCapPairAt(
+            'fresh-account', 'device', 10, 'fresh-source', 'device', 10, 60, self::NOW,
+        );
+
+        self::assertSame(['device'], $account->members);
+        self::assertSame(['device'], $source->members);
+        self::assertSame($before, $this->dump());
+        self::assertTrue($commit());
+        self::assertCount(4, $this->dump());
+    }
+
     public function testDeviceCapPairRetriesAfterConcurrentObservation(): void
     {
         $attempts = 0;
