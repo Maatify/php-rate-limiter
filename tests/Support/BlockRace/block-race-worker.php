@@ -9,6 +9,7 @@ require __DIR__ . '/../../../vendor/autoload.php';
 use Maatify\RateLimiter\Repository\Redis\RedisCommandExecutorInterface;
 use Maatify\RateLimiter\Repository\Redis\RedisFullCapabilityStore;
 use Maatify\RateLimiter\Tests\Support\BlockRace\BlockRaceSetup;
+use Maatify\RateLimiter\Tests\Support\Redis\OverlayWire;
 use Maatify\RateLimiter\Tests\Support\Redis\RespRedisCommandExecutor;
 
 $rawArguments = $_SERVER['argv'] ?? null;
@@ -33,7 +34,7 @@ $executor = new class (new RespRedisCommandExecutor($host, (int) $port), $writes
     /** @param non-empty-list<int|string|float> $command */
     public function execute(array $command): mixed
     {
-        if ($command[0] === 'EVAL' && in_array($command[1] ?? null, $this->writes, true) && ($command[3] ?? null) === $this->blockKey) {
+        if (array_filter($this->writes, static fn(string $script): bool => OverlayWire::isScript($command, $script)) !== [] && ($command[3] ?? null) === $this->blockKey) {
             $this->inner->execute(['SET', $this->flag . ':a-at-block', '1']);
             $deadline = microtime(true) + 10;
             while ($this->inner->execute(['GET', $this->flag . ':b-done']) === null) {

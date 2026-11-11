@@ -24,6 +24,20 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Invalid cycle or pause history returns a classified Redis error reply. Hard-block and punishment lifecycle writes
   validate the relevant history before changing persisted state (#185, F-185-43).
 
+### Fixed (#185, T-5) — One evaluation request is one atomic save on Redis
+- `EvaluationPipeline::process()` now runs the whole request through `RequestAtomicStoreInterface::transactRequest()`
+  when the store offers it (`RedisFullCapabilityStore`). Every store script of the request runs against a request
+  overlay in Lua that never writes to Redis; each step sees the results of the earlier steps, including key rotation,
+  expired-record cleanup and the writes of the policy decision. When the decision is final, one commit script compares
+  every key the request read with the state it was built on and, only if all of them still match, applies every change
+  in one batch. If another request changed a key in between, nothing is saved and the request is calculated again from
+  a fresh read (up to 8 attempts, then a classified `RateLimiterException`).
+- A classified validation failure anywhere in the request leaves Redis byte for byte unchanged, including the earlier
+  observations of the same request (measured before the change on `942d7cf`: a request rejected after its device-cap
+  observations were prepared left 4 keys changed).
+- Stores that do not implement `RequestAtomicStoreInterface`, or a runtime whose `store` and `correlationStore` differ,
+  keep the sequential writes. The circuit-breaker state is a separate operation and is not part of the request save.
+
 ### Fixed (#185, DEC-033) — Sliding windows for the admission layer (counters and failure sets)
 - Under fixed tumbling windows (DEC-025, DEC-028), admission windowed counters and failure sets used epoch-bucketed keys (`w<intdiv(t,W)>` and `d<intdiv(t,DAY)>`) with TTLs of 2W / 2·DAY. An adversary crossing a boundary could double their burst allowance within a narrow burst window (e.g. 8 failures allowed within 14 seconds across a boundary instead of 4, 48 requests instead of 24, etc.).
 - Windowed counters (`source_capacity`, `proof_account_window`, `proof_account_day`, `proof_proof_window`, `proof_proof_day`) and failure sets (`source_failure_cap`, `source_proof_failure_cap`) now operate strictly as sliding windows (DEC-033).

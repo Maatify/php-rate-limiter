@@ -250,7 +250,14 @@ final class RedisLuaMissingMetadataTypeTest extends TestCase
     {
         $before = $this->dump();
         [$account, $source, $commit] = $this->store->prepareDeviceCapPairAt(
-            'fresh-account', 'device', 10, 'fresh-source', 'device', 10, 60, self::NOW,
+            'fresh-account',
+            'device',
+            10,
+            'fresh-source',
+            'device',
+            10,
+            60,
+            self::NOW,
         );
 
         self::assertSame(['device'], $account->members);
@@ -263,10 +270,24 @@ final class RedisLuaMissingMetadataTypeTest extends TestCase
     public function testDeviceCapCommitChecksEveryPlanBeforeWriting(): void
     {
         [, , $first] = $this->store->readDeviceCapPairPlanAt(
-            'first-account', 'first-device', 10, 'first-source', 'first-device', 10, 60, self::NOW,
+            'first-account',
+            'first-device',
+            10,
+            'first-source',
+            'first-device',
+            10,
+            60,
+            self::NOW,
         );
         [, , $second] = $this->store->readDeviceCapPairPlanAt(
-            'second-account', 'second-device', 10, 'second-source', 'second-device', 10, 60, self::NOW,
+            'second-account',
+            'second-device',
+            10,
+            'second-source',
+            'second-device',
+            10,
+            60,
+            self::NOW,
         );
 
         $this->store->addDistinctBoundedAt('second-source', 'concurrent-device', 60, 10, self::NOW);
@@ -275,7 +296,14 @@ final class RedisLuaMissingMetadataTypeTest extends TestCase
         self::assertSame($before, $this->dump());
 
         [, $source, $updated] = $this->store->readDeviceCapPairPlanAt(
-            'second-account', 'second-device', 10, 'second-source', 'second-device', 10, 60, self::NOW,
+            'second-account',
+            'second-device',
+            10,
+            'second-source',
+            'second-device',
+            10,
+            60,
+            self::NOW,
         );
         self::assertSame(['concurrent-device', 'second-device'], $source->members);
         self::assertTrue($this->store->commitDeviceCapPlans([$first, $updated]));
@@ -286,7 +314,14 @@ final class RedisLuaMissingMetadataTypeTest extends TestCase
     {
         $before = $this->dump();
         [, , $deviceCap] = $this->store->readDeviceCapPairPlanAt(
-            'fresh-account', 'device', 10, 'fresh-source', 'device', 10, 60, self::NOW,
+            'fresh-account',
+            'device',
+            10,
+            'fresh-source',
+            'device',
+            10,
+            60,
+            self::NOW,
         );
         [$observation, $correlation] = $this->store->readBoundedObservationPlanAt('correlation', 'device', 5, 60, self::NOW);
         self::assertSame(['device'], $observation->members);
@@ -309,7 +344,14 @@ final class RedisLuaMissingMetadataTypeTest extends TestCase
         try {
             $this->store->commitBoundedObservationGroup(function () use ($rejection): array {
                 [$account, , $plan] = $this->store->readDeviceCapPairPlanAt(
-                    'fresh-account', 'new-device', 10, 'existing-source', 'new-device', 10, 60, self::NOW,
+                    'fresh-account',
+                    'new-device',
+                    10,
+                    'existing-source',
+                    'new-device',
+                    10,
+                    60,
+                    self::NOW,
                 );
                 if ($account->added) {
                     throw $rejection;
@@ -369,7 +411,14 @@ final class RedisLuaMissingMetadataTypeTest extends TestCase
         });
         $store = new RedisFullCapabilityStore($executor, self::NAMESPACE);
         [$account, $source] = $store->addDeviceCapPairAt(
-            'new-account', 'new-device', 10, 'shared-source', 'new-device', 10, 60, self::NOW,
+            'new-account',
+            'new-device',
+            10,
+            'shared-source',
+            'new-device',
+            10,
+            60,
+            self::NOW,
         );
 
         self::assertSame(2, $attempts);

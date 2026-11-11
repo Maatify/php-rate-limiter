@@ -12,6 +12,7 @@ use Maatify\RateLimiter\Exception\BackendFailureException;
 use Maatify\RateLimiter\Repository\Redis\CallableRedisCommandExecutor;
 use Maatify\RateLimiter\Service\AdmissionFenceControlInterface;
 use Maatify\RateLimiter\Tests\Support\Admission\AdmissionRaceRunner;
+use Maatify\RateLimiter\Tests\Support\Redis\OverlayWire;
 use Maatify\RateLimiter\Tests\Support\Admission\AdmissionRaceSpec;
 use Maatify\RateLimiter\Tests\Support\Admission\PublicRedisAdmissionFixture;
 use Maatify\RateLimiter\Tests\Support\Admission\ReplyValue;
@@ -25,16 +26,17 @@ final class AdmissionPublicRuntimeRedisTest extends AdmissionRedisGateTestCase
     private const NOW = 1000000;
     private const POLICY = 'login_protection';
 
-    /** @return iterable<string, array{string, int}> */
+    /** @return iterable<string, array{string, int, int}> */
     public static function interruptions(): iterable
     {
-        yield 'before admission commit' => ['before-admission', 0];
-        yield 'lost admission commit reply' => ['after-admission', 0];
-        yield 'lost first score write reply' => ['after-score', 1];
+        // T-5: one request is one atomic save, so an interrupted request leaves no score prefix: the keys saved are always 0.
+        yield 'before admission commit' => ['before-admission', 0, 0];
+        yield 'lost admission commit reply' => ['after-admission', 0, 0];
+        yield 'lost first score step reply' => ['after-score', 0, 1];
     }
 
     #[DataProvider('interruptions')]
-    public function testOutcomeRetryAfterRedisInterruption(string $phase, int $expectedScoreKeys): void
+    public function testOutcomeRetryAfterRedisInterruption(string $phase, int $expectedScoreKeys, int $expectedScoreSteps): void
     {
         $probe = new class {
             public bool $armed = false;
@@ -81,7 +83,7 @@ final class AdmissionPublicRuntimeRedisTest extends AdmissionRedisGateTestCase
         self::assertSame(1, $probe->faults);
         self::assertSame(RateLimitResultDTO::DECISION_HARD_BLOCK, $interrupted->decision);
         self::assertSame('FAIL_CLOSED', $interrupted->failureMode);
-        self::assertSame($expectedScoreKeys, $probe->scoreWrites);
+        self::assertSame($expectedScoreSteps, $probe->scoreWrites);
         self::assertSame($phase === 'before-admission' ? 'ISSUED' : 'CLAIMED', $this->permitState());
         $after = $this->outcomeState();
         self::assertCount($expectedScoreKeys, array_filter(array_keys($after), static fn(string $key): bool => str_contains($key, ':score:')));
@@ -99,7 +101,7 @@ final class AdmissionPublicRuntimeRedisTest extends AdmissionRedisGateTestCase
         } else {
             self::assertNotSame($before, $after);
             self::assertSame('permit_duplicate', $retry->metadata?->cause);
-            self::assertSame($expectedScoreKeys, $probe->scoreWrites);
+            self::assertSame($expectedScoreSteps, $probe->scoreWrites);
             self::assertSame($after, $this->outcomeState());
         }
     }

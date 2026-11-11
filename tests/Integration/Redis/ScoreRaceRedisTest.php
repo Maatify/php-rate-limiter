@@ -7,6 +7,7 @@ namespace Maatify\RateLimiter\Tests\Integration\Redis;
 use Maatify\RateLimiter\Repository\Redis\RedisCommandExecutorInterface;
 use Maatify\RateLimiter\Repository\Redis\RedisFullCapabilityStore;
 use Maatify\RateLimiter\Tests\Support\Redis\RespRedisCommandExecutor;
+use Maatify\RateLimiter\Tests\Support\Redis\OverlayWire;
 use Maatify\RateLimiter\Tests\Support\ScoreRace\ScoreRaceSetup;
 use PHPUnit\Framework\Attributes\Group;
 use PHPUnit\Framework\TestCase;
@@ -61,7 +62,7 @@ final class ScoreRaceRedisTest extends TestCase
             /** @param non-empty-list<int|string|float> $command */
             public function execute(array $command): mixed
             {
-                if ($command[0] === 'EVAL' && ($command[1] ?? null) === $this->increment && is_string($command[3] ?? null)) {
+                if ($command[0] === 'EVAL' && OverlayWire::isScript($command, $this->increment) && is_string($command[3] ?? null)) {
                     // SCORE_INCREMENT's ARGV: TTL, amount, caller time; K5 gains k5_failure (2), K1 k1_spray (5).
                     match ((string) ($command[5] ?? '')) {
                         '2' => $this->k5 = $command[3],

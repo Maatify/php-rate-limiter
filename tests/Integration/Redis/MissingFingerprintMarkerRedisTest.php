@@ -8,6 +8,7 @@ use Maatify\RateLimiter\DTO\RateLimitResultDTO;
 use Maatify\RateLimiter\Repository\Redis\RedisCommandExecutorInterface;
 use Maatify\RateLimiter\Repository\Redis\RedisFullCapabilityStore;
 use Maatify\RateLimiter\Tests\Support\MarkerRace\MarkerRaceSetup;
+use Maatify\RateLimiter\Tests\Support\Redis\OverlayWire;
 use Maatify\RateLimiter\Tests\Support\Redis\RespRedisCommandExecutor;
 use PHPUnit\Framework\Attributes\Group;
 use PHPUnit\Framework\TestCase;
@@ -68,10 +69,10 @@ final class MissingFingerprintMarkerRedisTest extends TestCase
             {
                 $key = $command[3] ?? null;
                 if ($command[0] === 'EVAL' && is_string($key)) {
-                    if (in_array($command[1] ?? null, $this->writes, true) && (string) ($command[5] ?? '') === (string) MarkerRaceSetup::NOW) {
+                    if (array_filter($this->writes, fn(string $write): bool => OverlayWire::isScript($command, $write)) !== [] && (string) ($command[5] ?? '') === (string) MarkerRaceSetup::NOW) {
                         $this->marker = $key;
                     }
-                    if (($command[1] ?? null) === $this->mutate) {
+                    if (OverlayWire::isScript($command, $this->mutate)) {
                         $this->k4 = $key;
                     }
                 }

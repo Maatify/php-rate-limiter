@@ -12,6 +12,7 @@ use Maatify\RateLimiter\DTO\RateLimitContextDTO;
 use Maatify\RateLimiter\Repository\Redis\RedisCommandExecutorInterface;
 use Maatify\RateLimiter\Repository\Redis\RedisFullCapabilityStore;
 use Maatify\RateLimiter\Tests\Support\Clock\FixedClock;
+use Maatify\RateLimiter\Tests\Support\Redis\OverlayWire;
 use Maatify\RateLimiter\Tests\Support\FailureSignal\RecordingFailureSignalEmitter;
 use Maatify\RateLimiter\Tests\Support\Redis\RespRedisCommandExecutor;
 use PHPUnit\Framework\Attributes\Group;
@@ -186,17 +187,34 @@ final class RotatedAliasBoundedRedisTest extends TestCase
     {
         $reflection = new ReflectionClass(RedisFullCapabilityStore::class);
         $scripts = [$reflection->getConstant('ROTATED_SNAPSHOT'), $reflection->getConstant('BOUNDED_SNAPSHOT')];
-        $spy = new class ($this->executor, $scripts) implements RedisCommandExecutorInterface {
+        $read = $reflection->getConstant('BOUNDED_OBSERVATION_READ');
+        $commit = $reflection->getConstant('DEVICE_CAP_COMMIT');
+        self::assertIsString($read);
+        self::assertIsString($commit);
+        $spy = new class ($this->executor, $scripts, $read, $commit) implements RedisCommandExecutorInterface {
             public int $largest = 0;
 
+            /** @var array<string, int> members a non-rotating observation read before it added its own */
+            private array $before = [];
+
             /** @param list<mixed> $scripts */
-            public function __construct(private readonly RedisCommandExecutorInterface $inner, private readonly array $scripts) {}
+            public function __construct(private readonly RedisCommandExecutorInterface $inner, private readonly array $scripts, private readonly string $read, private readonly string $commit) {}
 
             public function execute(array $command): mixed
             {
                 $reply = $this->inner->execute($command);
-                if ($command[0] === 'EVAL' && in_array($command[1] ?? null, $this->scripts, true) && is_array($reply) && is_int($reply[0] ?? null)) {
-                    $this->largest = max($this->largest, $reply[0]);
+                $result = OverlayWire::result($command, $reply);
+                if (array_filter($this->scripts, static fn(mixed $script): bool => is_string($script) && OverlayWire::isScript($command, $script)) !== [] && is_array($result) && is_int($result[0] ?? null)) {
+                    $this->largest = max($this->largest, $result[0]);
+                }
+                // A non-rotating bounded observation is read, then saved with its own member: the count it answers is
+                // the members read plus the one it added.
+                if (OverlayWire::isScript($command, $this->read) && is_array($result) && is_array($result[1] ?? null) && is_string($command[3] ?? null)) {
+                    $this->before[$command[3]] = max(0, count($result[1]) - 1);
+                }
+                if (OverlayWire::isScript($command, $this->commit) && (string) ($command[2] ?? '') === '2' && is_string($command[3] ?? null)) {
+                    $initialize = (string) ($command[7] ?? '') === '1';
+                    $this->largest = max($this->largest, $initialize ? 1 : ($this->before[$command[3]] ?? 0) + (int) ($command[8] ?? 0));
                 }
 
                 return $reply;

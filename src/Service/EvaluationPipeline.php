@@ -25,6 +25,7 @@ use Maatify\RateLimiter\Repository\PunishmentLifecycleStoreInterface;
 use Maatify\RateLimiter\Exception\RateLimitConcurrencyException;
 use Maatify\RateLimiter\DTO\PostPunishmentReentryMetadataDTO;
 use Maatify\RateLimiter\Repository\RateLimitStoreInterface;
+use Maatify\RateLimiter\Repository\RequestAtomicStoreInterface;
 use Maatify\RateLimiter\Repository\SnapshotFencedScoreStoreInterface;
 use Maatify\RateLimiter\Repository\ScoreReplaceStoreInterface;
 use Maatify\RateLimiter\DTO\DecayPauseStateDTO;
@@ -204,6 +205,26 @@ class EvaluationPipeline
         ?AdmissionLaneEnum $lane = null,
     ): RateLimitResultDTO {
         $this->assertLaneAllowed($policy, $lane);
+        // One request is one save: a store that can hold every write back until
+        // the decision is final saves them together, or not at all. The
+        // evaluation repeats from a fresh read when another request changed
+        // any state it read. Other stores keep the sequential writes.
+        if ($this->store instanceof RequestAtomicStoreInterface && $this->correlationStore === $this->store) {
+            return $this->store->transactRequest(
+                fn(): RateLimitResultDTO => $this->evaluate($policy, $context, $request, $device, $lane),
+            );
+        }
+
+        return $this->evaluate($policy, $context, $request, $device, $lane);
+    }
+
+    private function evaluate(
+        BlockPolicyInterface $policy,
+        RateLimitContextDTO $context,
+        RateLimitCommand $request,
+        DeviceIdentityDTO $device,
+        ?AdmissionLaneEnum $lane,
+    ): RateLimitResultDTO {
         $this->lifecycleEligibleKeys = [];
         $this->issuedSoftScopes = [];
         // 1. Build keys for the current generation, then the one previous
@@ -1620,7 +1641,7 @@ class EvaluationPipeline
     private function observeCredentialSprayScopes(array $observations): bool
     {
         $store = $this->correlationStore;
-        $rotates = array_any($observations, static fn (BoundedCorrelationObservationDTO $observation): bool => $observation->previousKey !== null);
+        $rotates = array_any($observations, static fn(BoundedCorrelationObservationDTO $observation): bool => $observation->previousKey !== null);
         if ($store instanceof RedisFullCapabilityStore && ! $rotates) {
             $now = $this->clock->now()->getTimestamp();
 

@@ -33,6 +33,7 @@ use Maatify\RateLimiter\Repository\CircuitBreakerStateCasStoreInterface;
 use Maatify\RateLimiter\Repository\CallerTimeScoreReplaceStoreInterface;
 use Maatify\RateLimiter\Repository\CallerTimeOperationalReadOnlyStoreInterface;
 use Maatify\RateLimiter\Repository\CallerTimeSnapshotFencedScoreStoreInterface;
+use Maatify\RateLimiter\Repository\RequestAtomicStoreInterface;
 use Maatify\SharedCommon\Contracts\ClockInterface;
 use Maatify\SharedCommon\Infrastructure\SystemClock;
 use DateTimeZone;
@@ -62,11 +63,23 @@ final class RedisFullCapabilityStore implements
     CallerTimeSnapshotFencedScoreStoreInterface,
     CircuitBreakerStateCasStoreInterface,
     CallerTimeScoreReplaceStoreInterface,
-    CallerTimeOperationalReadOnlyStoreInterface
+    CallerTimeOperationalReadOnlyStoreInterface,
+    RequestAtomicStoreInterface
 {
     private const PREFIX = 'maatify:rate-limiter:v1';
 
+    /** Maximum evaluations of one request before a persistent conflict is reported. */
+    private const REQUEST_ATTEMPTS = 32;
+
     private ?RedisAdmissionOperations $admission = null;
+
+    /**
+     * Held state of the request being evaluated, `key => JSON state`, or null
+     * outside `transactRequest()`.
+     *
+     * @var array<string, string>|null
+     */
+    private ?array $requestState = null;
 
     private const LUA_EXACT_INTEGER_MAX = 9007199254740991;
 
@@ -1961,10 +1974,24 @@ LUA;
         int $now,
     ): array {
         return $this->commitBoundedObservationGroup(function () use (
-            $accountKey, $accountMember, $accountCapacity, $sourceKey, $sourceMember, $sourceCapacity, $ttl, $now,
+            $accountKey,
+            $accountMember,
+            $accountCapacity,
+            $sourceKey,
+            $sourceMember,
+            $sourceCapacity,
+            $ttl,
+            $now,
         ): array {
             [$account, $source, $plan] = $this->readDeviceCapPairPlanAt(
-                $accountKey, $accountMember, $accountCapacity, $sourceKey, $sourceMember, $sourceCapacity, $ttl, $now,
+                $accountKey,
+                $accountMember,
+                $accountCapacity,
+                $sourceKey,
+                $sourceMember,
+                $sourceCapacity,
+                $ttl,
+                $now,
             );
 
             return [[$account, $source], [$plan]];
@@ -1989,10 +2016,17 @@ LUA;
         int $now,
     ): array {
         [$account, $source, $plan] = $this->readDeviceCapPairPlanAt(
-            $accountKey, $accountMember, $accountCapacity, $sourceKey, $sourceMember, $sourceCapacity, $ttl, $now,
+            $accountKey,
+            $accountMember,
+            $accountCapacity,
+            $sourceKey,
+            $sourceMember,
+            $sourceCapacity,
+            $ttl,
+            $now,
         );
 
-        return [$account, $source, fn (): bool => $this->commitDeviceCapPlans([$plan])];
+        return [$account, $source, fn(): bool => $this->commitDeviceCapPlans([$plan])];
     }
 
     /**
@@ -2752,9 +2786,155 @@ LUA;
      */
     private function eval(string $script, array $keys, array $args): mixed
     {
+        if ($this->requestState !== null) {
+            return $this->evalInRequest($script, $keys, $args);
+        }
         /** @var non-empty-list<int|string|float> $command */
         $command = array_merge(['EVAL', $script, count($keys)], $keys, $args);
         return $this->command($command);
+    }
+
+    public function transactRequest(callable $evaluate): mixed
+    {
+        if ($this->requestState !== null) {
+            return $evaluate();
+        }
+
+        for ($attempt = 0; $attempt < self::REQUEST_ATTEMPTS; $attempt++) {
+            $this->requestState = [];
+            try {
+                $result = $evaluate();
+                $state = $this->heldRequestState();
+            } catch (BackendFailureException $exception) {
+                throw $exception;
+            } catch (\Throwable $exception) {
+                $state = $this->heldRequestState();
+                $this->requestState = null;
+                // A step that read keys at different moments can see a combination no single moment held and
+                // report it as malformed. Only an error over state that is still current is the request's answer.
+                if ($state !== [] && ! $this->requestStateIsCurrent($state)) {
+                    $this->backOff($attempt);
+                    continue;
+                }
+
+                throw $exception;
+            } finally {
+                $this->requestState = null;
+            }
+            if ($this->commitRequest($state)) {
+                return $result;
+            }
+            $this->backOff($attempt);
+        }
+
+        throw new RateLimiterException('Request state kept changing; the request was not saved.');
+    }
+
+    /**
+     * Run one store script against the request overlay: no write reaches Redis,
+     * and the changed or newly read key states are kept for the next step.
+     *
+     * @param list<string> $keys
+     * @param list<int|string|float> $args
+     */
+    private function evalInRequest(string $script, array $keys, array $args): mixed
+    {
+        $held = [];
+        foreach (array_unique($keys) as $key) {
+            if (isset($this->requestState[$key])) {
+                $held[] = [$key, $this->requestState[$key]];
+            }
+        }
+        /** @var non-empty-list<int|string|float> $command */
+        $command = array_merge(
+            ['EVAL', RedisRequestOverlay::wrap($script), count($keys)],
+            $keys,
+            $args,
+            [json_encode($held, JSON_THROW_ON_ERROR)],
+        );
+        $reply = $this->command($command);
+        if (! is_array($reply) || ! array_is_list($reply) || $reply === [] || ! is_string($reply[0])) {
+            throw new RateLimiterException('Malformed request overlay response.');
+        }
+        $changes = json_decode($reply[0], true, 512, JSON_THROW_ON_ERROR);
+        if (! is_array($changes)) {
+            throw new RateLimiterException('Malformed request overlay changes.');
+        }
+        foreach ($changes as $change) {
+            if (! is_array($change) || ! isset($change[0], $change[1]) || ! is_string($change[0]) || ! is_string($change[1])) {
+                throw new RateLimiterException('Malformed request overlay change.');
+            }
+            $this->requestState[$change[0]] = $change[1];
+        }
+
+        return $reply[1] ?? null;
+    }
+
+    /** @return array<string, string> */
+    private function heldRequestState(): array
+    {
+        return $this->requestState ?? [];
+    }
+
+    /**
+     * Pause a random moment before a request is calculated again, so requests that conflicted do not conflict again
+     * in step. The pause grows with the attempt up to 16 ms.
+     */
+    private function backOff(int $attempt): void
+    {
+        usleep(random_int(0, 500 * (1 << min($attempt, 5))));
+    }
+
+    /**
+     * Whether every key the request read still matches the state it was read in. Writes nothing.
+     *
+     * @param array<string, string> $state
+     */
+    private function requestStateIsCurrent(array $state): bool
+    {
+        $held = [];
+        foreach ($state as $key => $json) {
+            $held[] = [$key, $json];
+        }
+        $result = $this->eval(RedisRequestOverlay::commitScript(), array_map('strval', array_keys($state)), [json_encode($held, JSON_THROW_ON_ERROR), 'verify']);
+
+        return $result === 1 || $result === '1';
+    }
+
+    /**
+     * Save a finished request. Nothing is sent when no key changed; otherwise
+     * one script compares every key the request read and applies every change
+     * only if none of them moved.
+     *
+     * @param array<string, string> $state
+     */
+    private function commitRequest(array $state): bool
+    {
+        $changed = false;
+        foreach ($state as $json) {
+            $entry = json_decode($json, true, 512, JSON_THROW_ON_ERROR);
+            if (is_array($entry) && ($entry['d'] ?? 0) === 1) {
+                $changed = true;
+                break;
+            }
+        }
+        if (! $changed) {
+            return true;
+        }
+
+        $held = [];
+        foreach ($state as $key => $json) {
+            $held[] = [$key, $json];
+        }
+        $result = $this->eval(RedisRequestOverlay::commitScript(), array_map('strval', array_keys($state)), [json_encode($held, JSON_THROW_ON_ERROR)]);
+        if ($result === 1 || $result === '1') {
+            return true;
+        }
+        if ($result === 0 || $result === '0') {
+            return false;
+        }
+
+        throw new RateLimiterException('Malformed request commit response.');
     }
 
     /**
