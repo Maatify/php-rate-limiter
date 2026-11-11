@@ -1400,21 +1400,22 @@ end
 -- Phase A: validate every existing structure and compute merged state without writes.
 local cyclesByMember = {}; local cycleMembers = {}
 local function readCycles(key)
-  if key == '' or redis.call('EXISTS', key) == 0 then return end
-  if redis.call('TTL', key) < 0 then error('malformed cycle history') end
-  if redis.call('ZCARD', key) == 0 then error('malformed cycle history') end
+  if key == '' or redis.call('EXISTS', key) == 0 then return true end
+  if redis.call('TTL', key) < 0 then return false end
+  if redis.call('ZCARD', key) == 0 then return false end
   for _, member in ipairs(redis.call('ZRANGE', key, 0, -1)) do
-    if not validExactNonNegativeInteger(member) then error('malformed cycle history') end
+    if not validExactNonNegativeInteger(member) then return false end
     local rawScore = redis.call('ZSCORE', key, member)
-    if not validExactNonNegativeInteger(rawScore) then error('malformed cycle history') end
+    if not validExactNonNegativeInteger(rawScore) then return false end
     local score = tonumber(rawScore); local timestamp = tonumber(member)
-    if score ~= timestamp then error('malformed cycle history') end
+    if score ~= timestamp then return false end
     if timestamp >= now - cycleWindow and cyclesByMember[member] == nil then
       cyclesByMember[member] = timestamp; cycleMembers[#cycleMembers + 1] = member
     end
   end
+  return true
 end
-readCycles(KEYS[1]); readCycles(KEYS[2])
+if not readCycles(KEYS[1]) or not readCycles(KEYS[2]) then return redis.error_reply('malformed cycle history') end
 local active = false
 local currentLiveLevel = nil; local currentLiveExpires = nil
 for _, blockKey in ipairs({KEYS[3], KEYS[4]}) do
@@ -1443,21 +1444,22 @@ if cycleCount > 0 and latestCycle > exactIntegerMax - cycleWindow then return re
 
 local pausesByMember = {}; local pauseMembers = {}
 local function readPauses(key)
-  if key == '' or redis.call('EXISTS', key) == 0 then return end
-  if redis.call('TTL', key) < 0 then error('malformed pause history') end
+  if key == '' or redis.call('EXISTS', key) == 0 then return true end
+  if redis.call('TTL', key) < 0 then return false end
   for _, member in ipairs(redis.call('ZRANGE', key, 0, -1)) do
     local sep = string.find(member, ':')
-    if not sep then error('malformed pause history') end
+    if not sep then return false end
     local startStr = string.sub(member, 1, sep - 1); local finishStr = string.sub(member, sep + 1)
-    if not validExactNonNegativeInteger(startStr) or not validExactNonNegativeInteger(finishStr) then error('malformed pause history') end
+    if not validExactNonNegativeInteger(startStr) or not validExactNonNegativeInteger(finishStr) then return false end
     local rawScore = redis.call('ZSCORE', key, member)
-    if not validExactNonNegativeInteger(rawScore) then error('malformed pause history') end
+    if not validExactNonNegativeInteger(rawScore) then return false end
     local start = tonumber(startStr); local finish = tonumber(finishStr); local score = tonumber(rawScore)
-    if finish < start or score ~= start then error('malformed pause history') end
+    if finish < start or score ~= start then return false end
     if finish > now - retention and pausesByMember[member] == nil then pausesByMember[member] = {start, finish}; pauseMembers[#pauseMembers + 1] = member end
   end
+  return true
 end
-readPauses(KEYS[5]); readPauses(KEYS[6])
+if not readPauses(KEYS[5]) or not readPauses(KEYS[6]) then return redis.error_reply('malformed pause history') end
 local pauseUntil = 0; local latestPauseUntil = 0
 for _, member in ipairs(pauseMembers) do
   local finish = pausesByMember[member][2]; latestPauseUntil = math.max(latestPauseUntil, finish)
@@ -1532,21 +1534,22 @@ if from > 0 and now < -exactIntegerMax + from then return redis.error_reply('ela
 if from < 0 and now > exactIntegerMax + from then return redis.error_reply('elapsed interval is not representable') end
 local intervals = {}
 local function read(source)
-  if source == '' or redis.call('EXISTS', source) == 0 then return end
-  if redis.call('TTL', source) < 0 then error('malformed pause history') end
+  if source == '' or redis.call('EXISTS', source) == 0 then return true end
+  if redis.call('TTL', source) < 0 then return false end
   for _, member in ipairs(redis.call('ZRANGE', source, 0, -1)) do
     local sep = string.find(member, ':')
-    if not sep then error('malformed pause history') end
+    if not sep then return false end
     local startStr = string.sub(member, 1, sep - 1); local finishStr = string.sub(member, sep + 1)
-    if not validExactNonNegativeInteger(startStr) or not validExactNonNegativeInteger(finishStr) then error('malformed pause history') end
+    if not validExactNonNegativeInteger(startStr) or not validExactNonNegativeInteger(finishStr) then return false end
     local rawScore = redis.call('ZSCORE', source, member)
-    if not validExactNonNegativeInteger(rawScore) then error('malformed pause history') end
+    if not validExactNonNegativeInteger(rawScore) then return false end
     local start = tonumber(startStr); local finish = tonumber(finishStr); local score = tonumber(rawScore)
-    if finish < start or score ~= start then error('malformed pause history') end
+    if finish < start or score ~= start then return false end
     if finish > now - retention then intervals[#intervals + 1] = {start, finish} end
   end
+  return true
 end
-read(KEYS[3]); read(KEYS[4])
+if not read(KEYS[3]) or not read(KEYS[4]) then return redis.error_reply('malformed pause history') end
 table.sort(intervals, function(left, right) return left[1] < right[1] or (left[1] == right[1] and left[2] < right[2]) end)
 local elapsed = 0; local active = 0; local mergedStart = nil; local mergedEnd = nil
 for _, interval in ipairs(intervals) do

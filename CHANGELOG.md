@@ -17,6 +17,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   that pipeline. The [failure semantics](docs/FAILURE_SEMANTICS.md#45-admission-reservation-policies-dec-015-dec-024-dec-033)
   and the [usage guide](docs/guides/USAGE_GUIDE.md) describe the three interruption cases.
 
+### Fixed (#185, F-185-39) — Redis Lua validation of missing metadata
+- Lua validators in `RedisFullCapabilityStore` check that a value is a string before applying string operations.
+  When Redis returns a non-string value for missing metadata, the affected operations report a classified
+  malformed-state error before writing.
+- Invalid cycle or pause history returns a classified Redis error reply. Hard-block and punishment lifecycle writes
+  validate the relevant history before changing persisted state (#185, F-185-43).
+
 ### Fixed (#185, DEC-033) — Sliding windows for the admission layer (counters and failure sets)
 - Under fixed tumbling windows (DEC-025, DEC-028), admission windowed counters and failure sets used epoch-bucketed keys (`w<intdiv(t,W)>` and `d<intdiv(t,DAY)>`) with TTLs of 2W / 2·DAY. An adversary crossing a boundary could double their burst allowance within a narrow burst window (e.g. 8 failures allowed within 14 seconds across a boundary instead of 4, 48 requests instead of 24, etc.).
 - Windowed counters (`source_capacity`, `proof_account_window`, `proof_account_day`, `proof_proof_window`, `proof_proof_day`) and failure sets (`source_failure_cap`, `source_proof_failure_cap`) now operate strictly as sliding windows (DEC-033).
