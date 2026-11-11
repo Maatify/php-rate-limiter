@@ -1117,25 +1117,30 @@ if not source then return redis.error_reply(sourceReason) end
 return {readPairState(), {account.expires or '', unpack(account.members)}, {source.expires or '', unpack(source.members)}}
 LUA;
 
-    private const BOUNDED_SNAPSHOT_PAIR = self::BOUNDED_SNAPSHOT_PLAN . "\n" . self::DEVICE_CAP_PAIR_STATE . "\n" . <<<'LUA'
+    private const DEVICE_CAP_COMMIT = self::BOUNDED_SNAPSHOT_PLAN . "\n" . self::DEVICE_CAP_PAIR_STATE . "\n" . <<<'LUA'
 local current = readPairState()
+local scopes = #KEYS / 2
+local argumentsPerScope = 4
+local expectedOffset = scopes * argumentsPerScope
 for i, value in ipairs(current) do
-  if value ~= ARGV[7 + i] then return {} end
+  if value ~= ARGV[expectedOffset + i] then return {} end
 end
-if (ARGV[3] == '1' or ARGV[6] == '1') and not ttlBackendRepresentable(ARGV[1]) then
-  return redis.error_reply('correlation TTL exceeds Redis backend expiry representability')
+for scope = 1, scopes do
+  local offset = (scope - 1) * argumentsPerScope
+  if ARGV[offset + 3] == '1' and not ttlBackendRepresentable(ARGV[offset + 1]) then
+    return redis.error_reply('correlation TTL exceeds Redis backend expiry representability')
+  end
 end
-local function applyDeviceCap(setKey, metaKey, member, added, initialize)
-  local reset = initialize == '1'
-  return applyBoundedSnapshot({
-    members = {}, expires = addDecimalStrings(nowStr, ARGV[1]), accepted = 1,
-    added = tonumber(added), initialize = reset, replaceExpired = reset
-  }, setKey, metaKey, ARGV[1], member)
+for scope = 1, scopes do
+  local offset = (scope - 1) * argumentsPerScope
+  local ttl = ARGV[offset + 1]
+  local reset = ARGV[offset + 3] == '1'
+  local result = applyBoundedSnapshot({
+    members = {}, expires = addDecimalStrings(nowStr, ttl), accepted = 1,
+    added = tonumber(ARGV[offset + 4]), initialize = reset, replaceExpired = reset
+  }, KEYS[2 * scope - 1], KEYS[2 * scope], ttl, ARGV[offset + 2])
+  if result.err then return result end
 end
-local first = applyDeviceCap(KEYS[1], KEYS[2], ARGV[2], ARGV[4], ARGV[3])
-if first.err then return first end
-local second = applyDeviceCap(KEYS[3], KEYS[4], ARGV[5], ARGV[7], ARGV[6])
-if second.err then return second end
 return {1}
 LUA;
 
@@ -1949,6 +1954,29 @@ LUA;
         int $ttl,
         int $now,
     ): array {
+        [$account, $source, $plan] = $this->readDeviceCapPairPlanAt(
+            $accountKey, $accountMember, $accountCapacity, $sourceKey, $sourceMember, $sourceCapacity, $ttl, $now,
+        );
+
+        return [$account, $source, fn (): bool => $this->commitDeviceCapPlans([$plan])];
+    }
+
+    /**
+     * Prepare a device-cap pair that can be committed together with other independent pairs.
+     *
+     * @internal
+     * @return array{BoundedDistinctSnapshotDTO, BoundedDistinctSnapshotDTO, array{keys: list<string>, writes: list<int|string>, state: list<int|string|float>, now: int}}
+     */
+    public function readDeviceCapPairPlanAt(
+        string $accountKey,
+        string $accountMember,
+        int $accountCapacity,
+        string $sourceKey,
+        string $sourceMember,
+        int $sourceCapacity,
+        int $ttl,
+        int $now,
+    ): array {
         $this->positive($ttl, 'Correlation TTL');
         $this->positive($accountCapacity, 'Account capacity');
         $this->positive($sourceCapacity, 'Source capacity');
@@ -1973,22 +2001,54 @@ LUA;
         }
         [$account, $initializeAccount] = $this->planDeviceCapObservation($read[1], $accountMember, $accountCapacity, $ttl, $now);
         [$source, $initializeSource] = $this->planDeviceCapObservation($read[2], $sourceMember, $sourceCapacity, $ttl, $now);
-        $arguments = [
-            $ttl, $accountMember, (int) $initializeAccount, (int) $account->added,
-            $sourceMember, (int) $initializeSource, (int) $source->added, ...$state, $now,
-        ];
+        return [$account, $source, [
+            'keys' => $keys,
+            'writes' => [
+                $ttl, $accountMember, (int) $initializeAccount, (int) $account->added,
+                $ttl, $sourceMember, (int) $initializeSource, (int) $source->added,
+            ],
+            'state' => $state,
+            'now' => $now,
+        ]];
+    }
 
-        return [$account, $source, function () use ($keys, $arguments): bool {
-            $result = $this->eval(self::BOUNDED_SNAPSHOT_PAIR, $keys, $arguments);
-            if ($result === []) {
-                return false;
-            }
-            if ($result !== [1] && $result !== ['1']) {
-                throw new RateLimiterException('Malformed device-cap snapshot pair response.');
-            }
-
+    /**
+     * Commit plans with disjoint keys and a shared request clock.
+     *
+     * @internal
+     * @param list<array{keys: list<string>, writes: list<int|string>, state: list<int|string|float>, now: int}> $plans
+     */
+    public function commitDeviceCapPlans(array $plans): bool
+    {
+        if ($plans === []) {
             return true;
-        }];
+        }
+
+        $now = $plans[0]['now'];
+        $keys = [];
+        $writes = [];
+        $state = [];
+        foreach ($plans as $plan) {
+            if ($plan['now'] !== $now) {
+                throw new RateLimiterException('Device-cap plans must share the same request time.');
+            }
+            array_push($keys, ...$plan['keys']);
+            array_push($writes, ...$plan['writes']);
+            array_push($state, ...$plan['state']);
+        }
+        if (count(array_unique($keys)) !== count($keys)) {
+            throw new RateLimiterException('Device-cap plans must use disjoint keys.');
+        }
+
+        $result = $this->eval(self::DEVICE_CAP_COMMIT, $keys, [...$writes, ...$state, $now]);
+        if ($result === []) {
+            return false;
+        }
+        if ($result !== [1] && $result !== ['1']) {
+            throw new RateLimiterException('Malformed device-cap snapshot pair response.');
+        }
+
+        return true;
     }
 
     /** @return array{BoundedDistinctSnapshotDTO, bool} */
