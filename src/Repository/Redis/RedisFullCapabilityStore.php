@@ -1123,10 +1123,26 @@ if not observation then return redis.error_reply(reason) end
 return {readPairState(), {observation.expires or '', unpack(observation.members)}}
 LUA;
 
+    private const WATCH_OBSERVATION_READ = self::BOUNDED_SNAPSHOT_PLAN . "\n" . self::DEVICE_CAP_PAIR_STATE . "\n" . <<<'LUA'
+local exists = redis.call('EXISTS', KEYS[1]) == 1
+if not exists then
+  if redis.call('EXISTS', KEYS[2]) == 1 then return redis.error_reply('malformed watch metadata') end
+  return {readPairState(), '', '0'}
+end
+if redis.call('TTL', KEYS[1]) < 0 then return redis.error_reply('malformed watch state') end
+local expires = redis.call('HGET', KEYS[2], 'expiresAt')
+if not validBackendExpiry(expires) or redis.call('TTL', KEYS[2]) < 0 then return redis.error_reply('malformed watch metadata') end
+local value = redis.call('GET', KEYS[1])
+if not value or (value ~= '0' and string.match(value, '^[1-9]%d*$') == nil) then
+  return redis.error_reply('malformed watch value')
+end
+return {readPairState(), expires, value}
+LUA;
+
     private const DEVICE_CAP_COMMIT = self::BOUNDED_SNAPSHOT_PLAN . "\n" . self::DEVICE_CAP_PAIR_STATE . "\n" . <<<'LUA'
 local current = readPairState()
 local scopes = #KEYS / 2
-local argumentsPerScope = 4
+local argumentsPerScope = 5
 local expectedOffset = scopes * argumentsPerScope
 for i, value in ipairs(current) do
   if value ~= ARGV[expectedOffset + i] then return {} end
@@ -1141,11 +1157,24 @@ for scope = 1, scopes do
   local offset = (scope - 1) * argumentsPerScope
   local ttl = ARGV[offset + 1]
   local reset = ARGV[offset + 3] == '1'
-  local result = applyBoundedSnapshot({
-    members = {}, expires = addDecimalStrings(nowStr, ttl), accepted = 1,
-    added = tonumber(ARGV[offset + 4]), initialize = reset, replaceExpired = reset
-  }, KEYS[2 * scope - 1], KEYS[2 * scope], ttl, ARGV[offset + 2])
-  if result.err then return result end
+  local setKey, metaKey = KEYS[2 * scope - 1], KEYS[2 * scope]
+  if ARGV[offset + 5] == 'watch' then
+    local value = ARGV[offset + 2]
+    if reset then
+      redis.call('SET', setKey, value, 'EX', ttl)
+      redis.call('DEL', metaKey)
+      redis.call('HSET', metaKey, 'expiresAt', addDecimalStrings(nowStr, ttl))
+      redis.call('EXPIRE', metaKey, ttl)
+    else
+      redis.call('SET', setKey, value, 'KEEPTTL')
+    end
+  else
+    local result = applyBoundedSnapshot({
+      members = {}, expires = addDecimalStrings(nowStr, ttl), accepted = 1,
+      added = tonumber(ARGV[offset + 4]), initialize = reset, replaceExpired = reset
+    }, setKey, metaKey, ttl, ARGV[offset + 2])
+    if result.err then return result end
+  end
 end
 return {1}
 LUA;
@@ -2009,8 +2038,8 @@ LUA;
         return [$account, $source, [
             'keys' => $keys,
             'writes' => [
-                $ttl, $accountMember, (int) $initializeAccount, (int) $account->added,
-                $ttl, $sourceMember, (int) $initializeSource, (int) $source->added,
+                $ttl, $accountMember, (int) $initializeAccount, (int) $account->added, 'bounded',
+                $ttl, $sourceMember, (int) $initializeSource, (int) $source->added, 'bounded',
             ],
             'state' => $state,
             'now' => $now,
@@ -2041,7 +2070,43 @@ LUA;
 
         return [$observation, [
             'keys' => $keys,
-            'writes' => [$ttl, $member, (int) $initialize, (int) $observation->added],
+            'writes' => [$ttl, $member, (int) $initialize, (int) $observation->added, 'bounded'],
+            'state' => $state,
+            'now' => $now,
+        ]];
+    }
+
+    /**
+     * Plan a non-rotating watch increment from a validated snapshot.
+     *
+     * @internal
+     * @return array{int, array{keys: list<string>, writes: list<int|string>, state: list<int|string|float>, now: int}}
+     */
+    public function readWatchObservationPlanAt(string $key, int $ttl, int $now): array
+    {
+        $this->positive($ttl, 'Watch TTL');
+        $now = $this->callerTime($now);
+        $keys = [$this->key('watch', $key), $this->key('watch-meta', $key)];
+        $read = $this->eval(self::WATCH_OBSERVATION_READ, $keys, [$now]);
+        if (! is_array($read) || ! array_is_list($read) || count($read) !== 3) {
+            throw new RateLimiterException('Malformed watch observation plan response.');
+        }
+        $state = $this->tuple($read[0], 4, 'watch observation state');
+        if (count($state) !== 4) {
+            throw new RateLimiterException('Malformed watch observation state response.');
+        }
+        $initialize = $read[1] === '' || $this->integerValue($read[1], 'watch expiry') <= $now;
+        $value = $initialize ? 1 : $this->tryIntegerAddition($this->integerValue($read[2], 'watch count'), 1);
+        if ($value === null) {
+            throw new RateLimiterException('watch count overflow');
+        }
+        if ($initialize && $this->tryIntegerAddition($now, $ttl) === null) {
+            throw new RateLimiterException('Watch expiry is not representable.');
+        }
+
+        return [$value, [
+            'keys' => $keys,
+            'writes' => [$ttl, (string) $value, (int) $initialize, 1, 'watch'],
             'state' => $state,
             'now' => $now,
         ]];

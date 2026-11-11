@@ -12,6 +12,7 @@ use Maatify\RateLimiter\Config\PolicyCapabilityProviderInterface;
 use Maatify\RateLimiter\Config\PostPunishmentReentryPolicyInterface;
 use Maatify\RateLimiter\DTO\BoundedCorrelationObservationDTO;
 use Maatify\RateLimiter\DTO\BoundedDistinctSnapshotDTO;
+use Maatify\RateLimiter\Repository\Redis\RedisFullCapabilityStore;
 use Maatify\RateLimiter\Repository\BudgetSeedStoreInterface;
 use Maatify\RateLimiter\Repository\BoundedCorrelationSnapshotRotationStoreInterface;
 use Maatify\RateLimiter\Repository\BoundedCorrelationSnapshotStoreInterface;
@@ -1603,6 +1604,22 @@ class EvaluationPipeline
 
     private function observeCredentialSpray(BoundedCorrelationObservationDTO $observation): bool
     {
+        $store = $this->correlationStore;
+        if ($store instanceof RedisFullCapabilityStore && $observation->previousKey === null) {
+            $now = $this->clock->now()->getTimestamp();
+
+            return $store->commitBoundedObservationGroup(static function () use ($store, $observation, $now): array {
+                [$snapshot, $plan] = $store->readBoundedObservationPlanAt($observation->currentKey, $observation->currentMember, 5, 600, $now);
+                if ($snapshot->count !== 4) {
+                    return [$snapshot->count >= 5, [$plan]];
+                }
+
+                [$watch, $watchPlan] = $store->readWatchObservationPlanAt($observation->currentKey . ':watch', 1800, $now);
+
+                return [$watch >= 2, [$plan, $watchPlan]];
+            });
+        }
+
         $count = $this->addBoundedCorrelation($observation, 600, 5);
         if ($count >= 5) {
             return true;

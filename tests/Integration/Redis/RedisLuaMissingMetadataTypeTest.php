@@ -325,6 +325,28 @@ final class RedisLuaMissingMetadataTypeTest extends TestCase
         self::assertSame($before, $this->dump());
     }
 
+    public function testBoundedAndWatchPlansCommitTogetherAndPreserveWatchExpiry(): void
+    {
+        $this->store->incrementWatchFlagAt('scope-watch', 60, self::NOW);
+        $keys = $this->executor->execute(['KEYS', '*:watch:*']);
+        self::assertIsArray($keys);
+        self::assertCount(1, $keys);
+        $watchKey = $keys[0] ?? null;
+        self::assertIsString($watchKey);
+        $expiry = $this->executor->execute(['PEXPIRETIME', $watchKey]);
+        $before = $this->dump();
+
+        [$snapshot, $bounded] = $this->store->readBoundedObservationPlanAt('scope', 'fresh-account', 5, 60, self::NOW);
+        [$value, $watch] = $this->store->readWatchObservationPlanAt('scope-watch', 60, self::NOW);
+        self::assertSame(['fresh-account'], $snapshot->members);
+        self::assertSame(2, $value);
+        self::assertSame($before, $this->dump());
+
+        self::assertTrue($this->store->commitDeviceCapPlans([$bounded, $watch]));
+        self::assertSame(2, $this->store->getWatchFlag('scope-watch'));
+        self::assertSame($expiry, $this->executor->execute(['PEXPIRETIME', $watchKey]));
+    }
+
     public function testDeviceCapPairRetriesAfterConcurrentObservation(): void
     {
         $attempts = 0;
