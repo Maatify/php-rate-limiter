@@ -11,7 +11,6 @@ use Maatify\RateLimiter\DTO\AdmissionScopeDTO;
 use Maatify\RateLimiter\Enum\AdmissionOutcomeKindEnum;
 use Maatify\RateLimiter\Enum\AdmissionPermitClaimEnum;
 use Maatify\RateLimiter\Enum\AdmissionScopeKindEnum;
-use Maatify\RateLimiter\Exception\RateLimiterException;
 use Maatify\RateLimiter\Repository\AdmissionCapableFullStoreInterface;
 use Maatify\RateLimiter\Repository\AdmissionPermitStoreInterface;
 use Maatify\RateLimiter\Repository\AtomicAdmissionPermitStoreInterface;
@@ -52,32 +51,15 @@ final class AdmissionInMemoryReferenceStore extends FullCapabilityInMemoryStore 
 
     public function reserveAdmission(AdmissionReservationRequestDTO $request, int $now): AdmissionReservationResultDTO
     {
+        AdmissionReferenceInput::reservation($request, $now, supportsSettlement: true);
         $class = $request->verifierClass;
         $credits = [];
-        foreach ($request->scopes as $scope) {
-            $previous = $scope->previousKey === $scope->key ? null : $scope->previousKey;
-            if ($previous !== null && ! in_array($scope->kind, [AdmissionScopeKindEnum::COUNTER, AdmissionScopeKindEnum::DEVICE_MEMBER], true)) {
-                throw new RateLimiterException('Only counter and device-member admission scopes can name a previous generation.');
-            }
-        }
-        if ($request->permit !== null) {
-            foreach ($request->scopes as $scope) {
-                if ($scope->kind === AdmissionScopeKindEnum::SET_SIZE && $scope->settlesOnExpiry && $request->permit->deadlineAt - $now > $scope->ttlSeconds) {
-                    throw new RateLimiterException('Admission permit deadline lies beyond the lifetime of a failure-set scope.');
-                }
-            }
-        }
-        foreach ($request->scopes as $scope) {
-            if ($scope->kind === AdmissionScopeKindEnum::COUNTER) {
-                $member = $scope->member;
-                if (($member === null || $member === '') && ($request->permit === null || $request->permit->id === '')) {
-                    throw new RateLimiterException('A counter admission scope requires a member.');
-                }
-            }
-        }
+        $firstRefusal = null;
+        $longestRetry = 0;
         foreach ($request->scopes as $scope) {
             $own = $class . "\0" . $scope->key;
             $previous = $scope->previousKey === null || $scope->previousKey === $scope->key ? null : $class . "\0" . $scope->previousKey;
+            $retry = null;
             if ($scope->kind === AdmissionScopeKindEnum::COUNTER) {
                 $total = $this->liveCounterCount($own, $now) + ($previous === null ? 0 : ($this->liveCounterCount($previous, $now)));
                 if ($total >= $scope->capacity) {
@@ -98,7 +80,7 @@ final class AdmissionInMemoryReferenceStore extends FullCapabilityInMemoryStore 
                     $excess = $total - $scope->capacity + 1;
                     $targetScore = $allLiveScores[$excess - 1] ?? $now + 1;
 
-                    return new AdmissionReservationResultDTO(false, $scope->name, max(1, $targetScore - $now));
+                    $retry = max(1, $targetScore - $now);
                 }
             } elseif ($scope->kind === AdmissionScopeKindEnum::DEVICE_MEMBER) {
                 $total = $this->liveCount($own, $now) + ($previous === null ? 0 : $this->liveCount($previous, $now));
@@ -120,30 +102,32 @@ final class AdmissionInMemoryReferenceStore extends FullCapabilityInMemoryStore 
                     $excess = $total - $scope->capacity + 1;
                     $targetScore = $allLiveScores[$excess - 1] ?? $now + 1;
 
-                    return new AdmissionReservationResultDTO(false, $scope->name, max(1, $targetScore - $now));
+                    $retry = max(1, $targetScore - $now);
                 }
             } elseif ($scope->kind === AdmissionScopeKindEnum::SET_SIZE) {
-                $size = $this->settledSize($own, $now, $scope);
+                $allLiveScores = $this->settledExpiries($own, $now, $scope);
+                $size = count($allLiveScores);
                 if (! $this->isSettledMember($own, (string) $scope->member, $now, $scope) && $size >= $scope->capacity) {
-                    $allLiveScores = [];
-                    foreach ($this->sets[$own] ?? [] as $exp) {
-                        if ($exp > $now) {
-                            $allLiveScores[] = $exp;
-                        }
-                    }
                     sort($allLiveScores);
                     $excess = $size - $scope->capacity + 1;
                     $targetScore = $allLiveScores[$excess - 1] ?? $now + 1;
 
-                    return new AdmissionReservationResultDTO(false, $scope->name, max(1, $targetScore - $now));
+                    $retry = max(1, $targetScore - $now);
                 }
             } else {
                 $credit = $this->bucketCredit($own, $scope, $now);
                 $credits[$own] = $credit;
                 if ($credit < $scope->ttlSeconds) {
-                    return new AdmissionReservationResultDTO(false, $scope->name, $scope->ttlSeconds - $credit);
+                    $retry = $scope->ttlSeconds - $credit;
                 }
             }
+            if ($retry !== null) {
+                $firstRefusal ??= $scope->name;
+                $longestRetry = max($longestRetry, $retry);
+            }
+        }
+        if ($firstRefusal !== null) {
+            return new AdmissionReservationResultDTO(false, $firstRefusal, $longestRetry);
         }
         $permit = $request->permit;
         if ($permit !== null && isset($this->permits[$permit->id])) {
@@ -183,12 +167,13 @@ final class AdmissionInMemoryReferenceStore extends FullCapabilityInMemoryStore 
 
     public function applyAdmissionOutcome(AdmissionOutcomeDTO $outcome, int $now): void
     {
+        AdmissionReferenceInput::outcome($outcome, $now);
         $success = $outcome->outcome === AdmissionOutcomeKindEnum::SUCCESS;
         foreach ($outcome->scopes as $scope) {
             $own = $outcome->verifierClass . "\0" . $scope->key;
             if ($scope->kind === AdmissionScopeKindEnum::SET_SIZE) {
                 $member = (string) $scope->member;
-                if ($success && $scope->name !== 'source_proof_failure_cap') {
+                if ($success) {
                     if (! $scope->settlesOnExpiry || ! $scope->successKeepsSettled) {
                         unset($this->sets[$own][$member]);
                     }
@@ -238,6 +223,7 @@ final class AdmissionInMemoryReferenceStore extends FullCapabilityInMemoryStore 
         AdmissionOutcomeKindEnum $outcome,
         int $now,
     ): AdmissionPermitClaimEnum {
+        AdmissionReferenceInput::claim($permitId, $lane, $subject, $operation, $now);
         $record = $this->permits[$permitId] ?? null;
         if ($record === null || $now >= $record['deadline'] + $record['grace']) {
             return AdmissionPermitClaimEnum::UNKNOWN;
@@ -279,19 +265,19 @@ final class AdmissionInMemoryReferenceStore extends FullCapabilityInMemoryStore 
         return $this->liveInSet($own, $member, $now) || ($scope->settlesOnExpiry && $this->duePending($own, $member, $now, $scope));
     }
 
-    private function settledSize(string $own, int $now, AdmissionScopeDTO $scope): int
+    /** @return list<int> One expiry per subject counted in the settled set. */
+    private function settledExpiries(string $own, int $now, AdmissionScopeDTO $scope): array
     {
-        $size = count(array_filter($this->sets[$own] ?? [], static fn(int $expiry): bool => $expiry > $now));
-        if (! $scope->settlesOnExpiry) {
-            return $size;
-        }
-        foreach (array_keys($this->pending[$own] ?? []) as $member) {
-            if ($this->duePending($own, (string) $member, $now, $scope) && ! $this->liveInSet($own, (string) $member, $now)) {
-                $size++;
+        $expiries = array_filter($this->sets[$own] ?? [], static fn(int $expiry): bool => $expiry > $now);
+        if ($scope->settlesOnExpiry) {
+            foreach ($this->pending[$own] ?? [] as $member => $deadline) {
+                if ($this->duePending($own, (string) $member, $now, $scope)) {
+                    $expiries[$member] = max($expiries[$member] ?? 0, $deadline + $scope->ttlSeconds);
+                }
             }
         }
 
-        return $size;
+        return array_values($expiries);
     }
 
     public function claimAdmissionPermitWithOutcome(
@@ -301,15 +287,7 @@ final class AdmissionInMemoryReferenceStore extends FullCapabilityInMemoryStore 
         AdmissionOutcomeDTO $outcome,
         int $now,
     ): AdmissionPermitClaimEnum {
-        $permitId = $outcome->permitId;
-        if ($permitId === null || trim($permitId) === '') {
-            throw new RateLimiterException('Admission permit id is required for atomic outcome claim.');
-        }
-        foreach (['permit id' => $permitId, 'lane' => $lane, 'subject' => $subject, 'operation' => $operation] as $label => $value) {
-            if (trim($value) === '') {
-                throw new RateLimiterException('Admission permit ' . $label . ' must not be empty.');
-            }
-        }
+        $permitId = AdmissionReferenceInput::atomicClaim($lane, $subject, $operation, $outcome, $now);
         if (! isset($this->permits[$permitId])) {
             return AdmissionPermitClaimEnum::UNKNOWN;
         }

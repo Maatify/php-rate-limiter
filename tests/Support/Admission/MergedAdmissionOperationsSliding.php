@@ -371,7 +371,7 @@ redis.call('HSET', permitKey, 'state', 'CLAIMED', 'outcome', outcomeKind)
 for i = 1, n do
   local s = sc[i]
   if s.kind == 's' then
-    if success and lane ~= 'P' then
+    if success then
       redis.call('ZREM', s.cur, s.member)
     else
       redis.call('ZREMRANGEBYSCORE', s.cur, '-inf', nowStr)
@@ -574,6 +574,7 @@ LUA;
             }
         }
 
+        $this->assertScopes($outcome->scopes, $now, false);
         $keys = [$this->permitKey($permitId)];
         $args = [
             (string) $now,

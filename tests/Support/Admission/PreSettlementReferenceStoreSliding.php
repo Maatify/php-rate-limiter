@@ -11,7 +11,6 @@ use Maatify\RateLimiter\DTO\AdmissionScopeDTO;
 use Maatify\RateLimiter\Enum\AdmissionOutcomeKindEnum;
 use Maatify\RateLimiter\Enum\AdmissionPermitClaimEnum;
 use Maatify\RateLimiter\Enum\AdmissionScopeKindEnum;
-use Maatify\RateLimiter\Exception\RateLimiterException;
 use Maatify\RateLimiter\Repository\AdmissionCapableFullStoreInterface;
 use Maatify\RateLimiter\Repository\AdmissionPermitStoreInterface;
 use Maatify\RateLimiter\Repository\AtomicAdmissionPermitStoreInterface;
@@ -52,22 +51,9 @@ final class PreSettlementReferenceStoreSliding extends FullCapabilityInMemorySto
 
     public function reserveAdmission(AdmissionReservationRequestDTO $request, int $now): AdmissionReservationResultDTO
     {
+        AdmissionReferenceInput::reservation($request, $now, supportsSettlement: false);
         $class = $request->verifierClass;
         $credits = [];
-        foreach ($request->scopes as $scope) {
-            $previous = $scope->previousKey === $scope->key ? null : $scope->previousKey;
-            if ($previous !== null && ! in_array($scope->kind, [AdmissionScopeKindEnum::COUNTER, AdmissionScopeKindEnum::DEVICE_MEMBER], true)) {
-                throw new RateLimiterException('Only counter and device-member admission scopes can name a previous generation.');
-            }
-        }
-        foreach ($request->scopes as $scope) {
-            if ($scope->kind === AdmissionScopeKindEnum::COUNTER) {
-                $member = $scope->member;
-                if (($member === null || $member === '') && ($request->permit === null || $request->permit->id === '')) {
-                    throw new RateLimiterException('A counter admission scope requires a member.');
-                }
-            }
-        }
         foreach ($request->scopes as $scope) {
             $own = $class . "\0" . $scope->key;
             $previous = $scope->previousKey === null || $scope->previousKey === $scope->key ? null : $class . "\0" . $scope->previousKey;
@@ -172,12 +158,13 @@ final class PreSettlementReferenceStoreSliding extends FullCapabilityInMemorySto
 
     public function applyAdmissionOutcome(AdmissionOutcomeDTO $outcome, int $now): void
     {
+        AdmissionReferenceInput::outcome($outcome, $now);
         $success = $outcome->outcome === AdmissionOutcomeKindEnum::SUCCESS;
         foreach ($outcome->scopes as $scope) {
             $own = $outcome->verifierClass . "\0" . $scope->key;
             if ($scope->kind === AdmissionScopeKindEnum::SET_SIZE) {
                 $member = (string) $scope->member;
-                if ($success && $scope->name !== 'source_proof_failure_cap') {
+                if ($success) {
                     unset($this->sets[$own][$member]);
                 } else {
                     $this->sets[$own] = array_filter($this->sets[$own] ?? [], static fn(int $expiry): bool => $expiry > $now);
@@ -219,6 +206,7 @@ final class PreSettlementReferenceStoreSliding extends FullCapabilityInMemorySto
         AdmissionOutcomeKindEnum $outcome,
         int $now,
     ): AdmissionPermitClaimEnum {
+        AdmissionReferenceInput::claim($permitId, $lane, $subject, $operation, $now);
         $record = $this->permits[$permitId] ?? null;
         if ($record === null || $now >= $record['deadline'] + $record['grace']) {
             return AdmissionPermitClaimEnum::UNKNOWN;
@@ -244,15 +232,7 @@ final class PreSettlementReferenceStoreSliding extends FullCapabilityInMemorySto
         AdmissionOutcomeDTO $outcome,
         int $now,
     ): AdmissionPermitClaimEnum {
-        $permitId = $outcome->permitId;
-        if ($permitId === null || trim($permitId) === '') {
-            throw new RateLimiterException('Admission permit id is required for atomic outcome claim.');
-        }
-        foreach (['permit id' => $permitId, 'lane' => $lane, 'subject' => $subject, 'operation' => $operation] as $label => $value) {
-            if (trim($value) === '') {
-                throw new RateLimiterException('Admission permit ' . $label . ' must not be empty.');
-            }
-        }
+        $permitId = AdmissionReferenceInput::atomicClaim($lane, $subject, $operation, $outcome, $now);
         if (! isset($this->permits[$permitId])) {
             return AdmissionPermitClaimEnum::UNKNOWN;
         }

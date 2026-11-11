@@ -456,8 +456,25 @@ FAIL_CLOSED result or a normal quota decision; see `docs/SIMPLE_THROTTLING.md`.
 * The reservation, the outcome claim and application, the binding-epoch read and the fleet-fence
   read are store operations. A typed outage of any of them is a `BackendFailureException` for the
   **whole request** and takes the existing path: `FAIL_CLOSED` `HARD_BLOCK`, then the open circuit's
-  bounded fallback, then `fallback_limit_exceeded`. There is no partial allow and no state written
-  by the failed operation.
+  bounded fallback, then `fallback_limit_exceeded`. A transport error by itself does not tell
+  the caller whether the backing store completed the operation.
+* The opt-in outcome path calls `AtomicAdmissionPermitStoreInterface::claimAdmissionPermitWithOutcome()`.
+  The permit claim and admission scope mutations share one Redis script, `CLAIM_WITH_OUTCOME`.
+  The separate score pipeline starts only after the store returns an accepted claim.
+  The three interruption cases in the proposed DEC-036 integration are:
+
+  | Point of interruption | State retained | Retry with the same outcome and permit |
+  | --- | --- | --- |
+  | Before the atomic operation reaches its write phase | The permit remains `ISSUED` and admission scope state is unchanged. | If the retry reaches admission before the permit deadline, it can claim and apply the outcome once. |
+  | After the atomic operation completes, before the score pipeline starts | Admission scope changes are applied and the permit is `CLAIMED`. No score-pipeline writes have started. | A matching retry that reaches the retained permit returns `permit_duplicate`. |
+  | Inside the score pipeline after the admission operation completes | Admission scope changes are applied. Score-pipeline writes that already completed may remain, and later writes may be missing. | A matching retry that reaches the retained permit returns `permit_duplicate`. The score pipeline is not replayed. |
+
+  These cases describe the code boundary under
+  [LT-185-36a](https://github.com/Maatify/php-rate-limiter/issues/185#issuecomment-6777464276).
+  A typed interruption follows the circuit and fallback rules above. The recorded-outcome
+  retry still needs the normal admission path to be available. Integration evidence for the
+  interruption cases is tracked in the
+  [#203 Lead review](https://github.com/Maatify/php-rate-limiter/pull/203#pullrequestreview-5855986519).
 * Under DEC-033, windowed counters and failure sets operate as sliding sorted sets scored by element
   expiration (`now + ttl`). A refusal writes nothing and never prunes, leaving key TTL and state untouched.
   Admitted reservations and failure outcomes prune expired elements (`score <= now`), write new elements

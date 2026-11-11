@@ -333,12 +333,13 @@ not opt in keep today's read-only pre-check.
 **Opting in** (DEC-024, DEC-026; `POLICIES.md` §7.2): register `LoginProtectionAdmissionPolicy`
 with `withPolicy()` (it replaces `login_protection` under the same name, so the account and device
 state written before the switch is read on), set `bindingKeySecret` on `RateLimiterConfig`, use a
-store with the admission capability (`RedisFullCapabilityStore`), and open the fleet fence once
-every worker runs this version ("Operating the admission fence" below). The budgets are package
-constants (DEC-025, DEC-028, DEC-033): there is nothing to configure. Under DEC-033, windowed counters
-and failure sets operate as sliding sorted sets scored by expiration, strictly bounding every continuous
-window of length W (600 s) or Day (86400 s) without tumbling bucket resets. Only a Host that calls `checkOnly`
-and then records every outcome (`pre+out`) may opt in (DEC-023).
+store implementing `AtomicAdmissionPermitStoreInterface` (provided by `RedisFullCapabilityStore`),
+and open the fleet fence once every worker runs this version ("Operating the admission fence" below).
+`RateLimiterBuilder::build()` requires this capability when an admission policy is registered.
+The budgets are package constants (DEC-025, DEC-028, DEC-033). Under DEC-033, windowed counters and
+failure sets use sliding sorted sets scored by expiration. Short windows run for W (600 s) and
+daily windows for Day (86400 s). Only a Host that calls `checkOnly` and then records every outcome
+(`pre+out`) may opt in (DEC-023).
 
 Inputs (all optional on `RateLimitContextDTO`; ignored by every policy that did not opt in):
 
@@ -354,13 +355,13 @@ Outputs and duties:
 
 * An admitted `checkOnly` carries an opaque `permit` (`RateLimitMetadataDTO::$permit`, at most 512
   characters). **The Host must send it back on the outcome command**
-  (`new RateLimitCommand($policy, 1, false, $isFailure, $isSuccess, $permit)`). An outcome with no
-  permit for an opted policy is a Host contract violation and raises `RateLimiterException`; it is
-  never re-sent as an unbound outcome.
+  (`new RateLimitCommand(policyName: $policy, isFailure: $isFailure, isSuccess: $isSuccess, permit: $permit)`).
+  An outcome without a permit for an opted policy violates the Host contract and raises
+  `RateLimiterException`.
 * The outcome must be sent with **the same context** as the admission (same source address, account
   and credential): the failure set an outcome touches is keyed by the outcome's source.
-* **Every `checkOnly` on an opted policy is followed by exactly one outcome command carrying its
-  permit** (`recordFailure` or `recordSuccess`), sent within the permit's deadline: 30 s after the
+* **Every admitted `checkOnly` on an opted policy is followed by an outcome command carrying its
+  permit**, using the outcome command above within the permit's deadline: 30 s after the
   `checkOnly` (`D`, DEC-028). From 30 s to 630 s the claim is `permit_late`, after that
   `permit_unknown`; neither is scored, so a late outcome costs what a dropped one costs. This is a Host
   duty (`DEC-023` A-2) and the library does not compensate for it: an admission whose outcome never
@@ -372,10 +373,16 @@ Outputs and duties:
 * A permit is claimed once. `permit_duplicate`, `permit_conflict`, `permit_rejected`, `permit_late`
   and `permit_unknown` come back as an `ALLOW` result with `blockLevel` 0 and `scope` `permit`;
   nothing is scored and nothing is applied. A late outcome (after the deadline) is not scored.
-* A capacity refusal is a `SOFT_BLOCK` with `blockLevel` 1 and a `retryAfter` to the expiry of the
-  oldest live admission reducing the count below capacity (exact sliding window, F-185-35) or bucket
-  refill; the causes are `source_capacity`, `source_failure_cap`, `account_bucket`, `proof_capacity`,
-  `new_device_cap` and `source_proof_failure_cap`.
+  If the atomic operation did not reach its write phase, an eligible retry with the same permit
+  and outcome before the deadline can complete. After the admission operation completes, a
+  matching retry that reaches the retained permit returns `permit_duplicate`. An interruption
+  before the score pipeline starts can leave no score recorded. An interruption during the pipeline
+  can leave partial score state. A duplicate does not replay either case. See
+  [admission outage handling](../FAILURE_SEMANTICS.md#45-admission-reservation-policies-dec-015-dec-024-dec-033).
+* A capacity refusal is a `SOFT_BLOCK` with `blockLevel` 1. The store reports the first refusing
+  scope in request order and the runtime exposes its `retryAfter` hint. The causes are
+  `source_capacity`, `source_failure_cap`, `account_bucket`, `proof_capacity`, `new_device_cap`
+  and `source_proof_failure_cap`.
 * **Password change or recovery**: call `revokeAccountBinding($accountId)` (it bumps the account's
   epoch; every older credential stops verifying), read the new epoch with `bindingEpoch($accountId)`
   and issue a credential to the device that performed the change. Both are reached through

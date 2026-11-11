@@ -108,6 +108,22 @@ local function settledSize(setKey, pendingKey, now, ttl)
   end
   return size
 end
+-- Rank the expiry of each subject counted at now. When both sources contain
+-- a subject, it occupies one slot until the later of the two expiries.
+local function settledExpiryAtRank(setKey, pendingKey, nowStr, now, ttl, rank)
+  local live = redis.call('ZRANGEBYSCORE', setKey, '(' .. nowStr, '+inf', 'WITHSCORES')
+  local pending = redis.call('ZRANGEBYSCORE', pendingKey, '(' .. string.format('%d', now - ttl), nowStr, 'WITHSCORES')
+  local byMember = {}
+  for j = 1, #live, 2 do byMember[live[j]] = tonumber(live[j + 1]) end
+  for j = 1, #pending, 2 do
+    local member = pending[j]
+    byMember[member] = math.max(byMember[member] or 0, tonumber(pending[j + 1]) + ttl)
+  end
+  local expiries = {}
+  for _, expiry in pairs(byMember) do table.insert(expiries, expiry) end
+  table.sort(expiries)
+  return expiries[rank]
+end
 -- Bucket: absent => full; a valid bucket => its refilled credit; anything else => nil, reason.
 local function readBucket(k, capacity, now)
   local t = keyType(k)
@@ -232,37 +248,44 @@ if hasPermit then
   if record == nil then return bad(err) end
   permitExists = not record.absent
 end
--- Phase 2: gates, in the order of the request. The first refusing scope is named; nothing is written.
+-- Phase 2: gates, in the order of the request. Keep the first refusal and the longest wait without writing.
+local firstRefusal = nil
+local longestRetry = 0
 for i = 1, n do
   local s = sc[i]
+  local retry = nil
   if s.kind == 'c' then
     if s.a + s.b >= s.cap then
       local excess = s.a + s.b - s.cap + 1
       local target = oldestLiveScore(s.cur, s.prev, nowStr, excess)
-      local retry = 1
-      if target then retry = math.max(1, target - now) end
-      return {0, i, retry}
+      retry = target and math.max(1, target - now) or 1
     end
   elseif s.kind == 'd' then
     if not s.exists and s.live >= s.cap then
       local excess = s.live - s.cap + 1
       local target = oldestLiveScore(s.cur, s.prev, nowStr, excess)
-      local retry = 1
-      if target then retry = math.max(1, target - now) end
-      return {0, i, retry}
+      retry = target and math.max(1, target - now) or 1
     end
   elseif s.kind == 's' then
     if not s.isMember and s.card >= s.cap then
       local excess = s.card - s.cap + 1
-      local target = oldestLiveScore(s.cur, '', nowStr, excess)
-      local retry = 1
-      if target then retry = math.max(1, target - now) end
-      return {0, i, retry}
+      local target
+      if s.settles then
+        target = settledExpiryAtRank(s.cur, s.pending, nowStr, now, s.ttl, excess)
+      else
+        target = oldestLiveScore(s.cur, '', nowStr, excess)
+      end
+      retry = target and math.max(1, target - now) or 1
     end
   else
-    if s.credit < s.ttl then return {0, i, s.ttl - s.credit} end
+    if s.credit < s.ttl then retry = s.ttl - s.credit end
+  end
+  if retry then
+    if not firstRefusal then firstRefusal = i end
+    longestRetry = math.max(longestRetry, retry)
   end
 end
+if firstRefusal then return {0, firstRefusal, longestRetry} end
 if permitExists then return {0, 0, 0} end
 -- Phase 3: writes, only reached when every gate admitted.
 for i = 1, n do
@@ -459,7 +482,7 @@ redis.call('HSET', permitKey, 'state', 'CLAIMED', 'outcome', outcomeKind)
 for i = 1, n do
   local s = sc[i]
   if s.kind == 's' then
-    if success and lane ~= 'P' then
+    if success then
       if s.settlesOut then
         if (not s.keepsSettled) then redis.call('ZREM', s.cur, s.member) end
         if (s.score ~= nil) and s.score > now then redis.call('ZREM', s.pending, s.member) end
