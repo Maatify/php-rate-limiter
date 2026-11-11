@@ -282,6 +282,24 @@ final class RedisLuaMissingMetadataTypeTest extends TestCase
         self::assertCount(8, $this->dump());
     }
 
+    public function testOneBoundedObservationCanCommitWithADeviceCapPair(): void
+    {
+        $before = $this->dump();
+        [, , $deviceCap] = $this->store->readDeviceCapPairPlanAt(
+            'fresh-account', 'device', 10, 'fresh-source', 'device', 10, 60, self::NOW,
+        );
+        [$observation, $correlation] = $this->store->readBoundedObservationPlanAt('correlation', 'device', 5, 60, self::NOW);
+        self::assertSame(['device'], $observation->members);
+        self::assertSame($before, $this->dump());
+
+        self::assertTrue($this->store->commitDeviceCapPlans([$deviceCap, $correlation]));
+        self::assertCount(6, $this->dump());
+        self::assertSame(
+            ['device'],
+            $this->store->addDistinctBoundedWithSnapshotAt('correlation', 'device', 60, 5, self::NOW)->members,
+        );
+    }
+
     public function testDeviceCapPairRetriesAfterConcurrentObservation(): void
     {
         $attempts = 0;

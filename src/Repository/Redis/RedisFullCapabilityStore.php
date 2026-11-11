@@ -1117,6 +1117,12 @@ if not source then return redis.error_reply(sourceReason) end
 return {readPairState(), {account.expires or '', unpack(account.members)}, {source.expires or '', unpack(source.members)}}
 LUA;
 
+    private const BOUNDED_OBSERVATION_READ = self::BOUNDED_SNAPSHOT_PLAN . "\n" . self::DEVICE_CAP_PAIR_STATE . "\n" . <<<'LUA'
+local observation, reason = readBoundedSnapshot(KEYS[1], KEYS[2], tonumber(ARGV[1]))
+if not observation then return redis.error_reply(reason) end
+return {readPairState(), {observation.expires or '', unpack(observation.members)}}
+LUA;
+
     private const DEVICE_CAP_COMMIT = self::BOUNDED_SNAPSHOT_PLAN . "\n" . self::DEVICE_CAP_PAIR_STATE . "\n" . <<<'LUA'
 local current = readPairState()
 local scopes = #KEYS / 2
@@ -2007,6 +2013,36 @@ LUA;
                 $ttl, $accountMember, (int) $initializeAccount, (int) $account->added,
                 $ttl, $sourceMember, (int) $initializeSource, (int) $source->added,
             ],
+            'state' => $state,
+            'now' => $now,
+        ]];
+    }
+
+    /**
+     * Prepare a non-rotating bounded observation using the same commit format as device-cap pairs.
+     *
+     * @internal
+     * @return array{BoundedDistinctSnapshotDTO, array{keys: list<string>, writes: list<int|string>, state: list<int|string|float>, now: int}}
+     */
+    public function readBoundedObservationPlanAt(string $key, string $member, int $capacity, int $ttl, int $now): array
+    {
+        $this->positive($ttl, 'Correlation TTL');
+        $this->positive($capacity, 'Correlation capacity');
+        $now = $this->callerTime($now);
+        $keys = [$this->key('distinct', $key), $this->key('distinct-meta', $key)];
+        $read = $this->eval(self::BOUNDED_OBSERVATION_READ, $keys, [$capacity, $now]);
+        if (! is_array($read) || ! array_is_list($read) || count($read) !== 2) {
+            throw new RateLimiterException('Malformed bounded observation plan response.');
+        }
+        $state = $this->tuple($read[0], 4, 'bounded observation state');
+        if (count($state) !== 4) {
+            throw new RateLimiterException('Malformed bounded observation state response.');
+        }
+        [$observation, $initialize] = $this->planDeviceCapObservation($read[1], $member, $capacity, $ttl, $now);
+
+        return [$observation, [
+            'keys' => $keys,
+            'writes' => [$ttl, $member, (int) $initialize, (int) $observation->added],
             'state' => $state,
             'now' => $now,
         ]];
