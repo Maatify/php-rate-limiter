@@ -59,6 +59,14 @@ K1 = IP_PREFIX
 **Definition:**
 
 * IPv4: exact IP address
+* IPv4-mapped IPv6 (`::ffff:0:0/96`, e.g. `::ffff:192.0.2.1`): treated as the embedded
+  IPv4 address (`192.0.2.1`). The canonical source prefix is the unwrapped dot-decimal IPv4
+  address. K1, K2, K3, local fallback, and admission source scopes share the exact same key
+  and state as the raw IPv4 address. IPv4-mapped addresses never participate in adaptive IPv6
+  hierarchical aggregation.
+* Other transition formats (e.g. deprecated IPv4-compatible IPv6 `::a.b.c.d` / `::0:0/96`)
+  are out of scope for unwrapping and are measured as leading `/64` hex (`0000000000000000`)
+  without substitution.
 * IPv6: canonical enforcement normalization is `/64`; adaptive aggregation is
   correlation-only:
 

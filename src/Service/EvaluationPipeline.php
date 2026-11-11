@@ -967,7 +967,7 @@ class EvaluationPipeline
         array $keysV2,
         array $keysV1,
     ): array {
-        if (! filter_var($context->ip, FILTER_VALIDATE_IP, FILTER_FLAG_IPV6)
+        if (! SourcePrefix::isPureIpv6($context->ip)
             || ! $this->isAdaptiveIpv6Participant($policy, $context, $request, $device, $keysV2)) {
             return [];
         }
