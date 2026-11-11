@@ -13,6 +13,7 @@ use Maatify\RateLimiter\Repository\Redis\CallableRedisCommandExecutor;
 use Maatify\RateLimiter\Repository\Redis\RedisFullCapabilityStore;
 use Maatify\RateLimiter\Tests\Support\Clock\FixedClock;
 use Maatify\RateLimiter\Tests\Support\FailureSignal\RecordingFailureSignalEmitter;
+use Maatify\RateLimiter\Tests\Support\Redis\RecordingRedisCommandExecutor;
 use Maatify\RateLimiter\Tests\Support\Redis\RespRedisCommandExecutor;
 use PHPUnit\Framework\Attributes\DataProvider;
 use PHPUnit\Framework\Attributes\Group;
@@ -205,6 +206,35 @@ final class RedisLuaMissingMetadataTypeTest extends TestCase
         $this->expectException(RateLimiterException::class);
         $this->expectExceptionMessage('malformed bounded metadata');
         $limiter->limit(new RateLimitContextDTO('192.0.2.1', 'acct_test', 'ua'), RateLimitCommand::checkOnly('login_protection'));
+    }
+
+    public function testProductionExpiryValidatorsRejectInvalidValuesInReadOnlyLua(): void
+    {
+        $recording = new RecordingRedisCommandExecutor($this->executor);
+        $store = new RedisFullCapabilityStore($recording, self::NAMESPACE);
+        $store->checkBlockAt('unused-block', self::NOW);
+        $store->blockWithCycleTracking('healthy-block', null, 2, 30, self::NOW, 60, 2, 120, 300);
+        $store->incrementWatchFlagAcrossRotationAt('current-watch', 'previous-watch', 60, self::NOW);
+
+        $before = $this->dump();
+        foreach (['validBackendExpiry', 'validHardBlockExpiry', 'validBackendExpiry'] as $index => $validator) {
+            $script = $recording->commands[$index][1] ?? null;
+            self::assertIsString($script);
+            self::assertSame(1, preg_match('/^local function ' . $validator . '\(value\)\n.*?^end$/ms', $script, $match));
+            $definition = $match[0] ?? null;
+            self::assertIsString($definition);
+            $exercise = $definition . "\n" . <<<LUA
+                return {
+                    {$validator}(true) and 1 or 0,
+                    {$validator}({}) and 1 or 0,
+                    {$validator}(ARGV[1]) and 1 or 0,
+                    {$validator}(ARGV[2]) and 1 or 0,
+                    {$validator}(ARGV[3]) and 1 or 0
+                }
+                LUA;
+            self::assertSame([0, 0, 0, 1, 1], $this->executor->execute(['EVAL_RO', $exercise, 0, '01', '0', '1793793600']));
+        }
+        self::assertSame($before, $this->dump());
     }
 
     /** @return iterable<string, array{string, int, string}> */
