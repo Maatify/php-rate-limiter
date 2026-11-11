@@ -6,16 +6,19 @@ declare(strict_types=1);
 //   race-worker.php <host> <port> <barrier-unix-float> <index> <base64-json-spec>
 // Prints one JSON object: {"ok": bool, "refused": ?string, "claim": ?string}.
 
+use Maatify\RateLimiter\Command\RateLimitCommand;
 use Maatify\RateLimiter\DTO\AdmissionOutcomeDTO;
 use Maatify\RateLimiter\DTO\AdmissionPermitDTO;
 use Maatify\RateLimiter\DTO\AdmissionReservationRequestDTO;
 use Maatify\RateLimiter\DTO\AdmissionScopeDTO;
+use Maatify\RateLimiter\DTO\RateLimitContextDTO;
 use Maatify\RateLimiter\Enum\AdmissionOutcomeKindEnum;
 use Maatify\RateLimiter\Enum\AdmissionScopeKindEnum;
 use Maatify\RateLimiter\Repository\Redis\RedisAdmissionOperations;
 use Maatify\RateLimiter\Repository\Redis\RedisFullCapabilityStore;
 use Maatify\RateLimiter\Tests\Support\Admission\AdmissionRaceSpec;
 use Maatify\RateLimiter\Tests\Support\Admission\NonAtomicAdmissionControl;
+use Maatify\RateLimiter\Tests\Support\Admission\PublicRedisAdmissionFixture;
 use Maatify\RateLimiter\Tests\Support\Redis\RespRedisCommandExecutor;
 
 require dirname(__DIR__, 3) . '/vendor/autoload.php';
@@ -59,8 +62,23 @@ foreach ($spec->scopes as $s) {
     );
 }
 
+$runtime = $spec->op === 'public_check' ? PublicRedisAdmissionFixture::build($executor, $spec->namespace, $spec->now) : null;
+
+if ($runtime !== null && microtime(true) >= (float) $barrier) {
+    fwrite(STDERR, "Public runtime worker missed the start barrier.\n");
+    exit(2);
+}
 while (microtime(true) < (float) $barrier) {
     usleep(200);
+}
+
+if ($runtime !== null) {
+    $result = $runtime->limit(
+        new RateLimitContextDTO(ip: '192.0.2.10', ua: 'redis-gate', accountId: 'redis-gate-' . $index),
+        RateLimitCommand::checkOnly('login_protection'),
+    );
+    echo $reply($result->isAllowed() && $result->metadata?->permit !== null, $result->metadata?->cause);
+    exit(0);
 }
 
 if ($spec->op === 'outcome') {
@@ -84,6 +102,19 @@ if ($spec->op === 'claim') {
         exit(0);
     }
     $claim = $store->claimAdmissionPermit($permitId, 'U', 'acctT', 'login', AdmissionOutcomeKindEnum::FAILURE, $spec->now);
+    echo $reply($claim->value === 'accepted', null, $claim->value);
+    exit(0);
+}
+
+if ($spec->op === 'claim_with_outcome') {
+    $permitId = $spec->permit;
+    if ($permitId === null) {
+        fwrite(STDERR, "claim_with_outcome op without a permit\n");
+        exit(2);
+    }
+    $outcome = AdmissionOutcomeKindEnum::from($spec->outcome ?? 'failure');
+    $outcomeDTO = new AdmissionOutcomeDTO('login', $outcome, $scopes, $permitId);
+    $claim = $store->claimAdmissionPermitWithOutcome('U', 'acctT', 'login', $outcomeDTO, $spec->now);
     echo $reply($claim->value === 'accepted', null, $claim->value);
     exit(0);
 }

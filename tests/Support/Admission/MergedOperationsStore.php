@@ -13,6 +13,7 @@ use Maatify\RateLimiter\DTO\RateLimitStateDTO;
 use Maatify\RateLimiter\Enum\AdmissionOutcomeKindEnum;
 use Maatify\RateLimiter\Enum\AdmissionPermitClaimEnum;
 use Maatify\RateLimiter\Repository\AdmissionPermitStoreInterface;
+use Maatify\RateLimiter\Repository\AtomicAdmissionPermitStoreInterface;
 
 /**
  * The store port of the engine over `MergedAdmissionOperations` (the Redis admission operations exactly as merged at d6aea4d):
@@ -20,7 +21,7 @@ use Maatify\RateLimiter\Repository\AdmissionPermitStoreInterface;
  * `RedisFullCapabilityStore`'s admission methods. The score-store methods the interface inherits are never called by the
  * admission runtime; they throw so that any such call is visible.
  */
-final class MergedOperationsStore implements AdmissionPermitStoreInterface
+final class MergedOperationsStore implements AdmissionPermitStoreInterface, AtomicAdmissionPermitStoreInterface
 {
     public function __construct(private readonly MergedAdmissionOperations|MergedAdmissionOperationsSliding $ops) {}
 
@@ -53,6 +54,20 @@ final class MergedOperationsStore implements AdmissionPermitStoreInterface
         int $now,
     ): AdmissionPermitClaimEnum {
         return $this->ops->claimPermit($permitId, $lane, $subject, $operation, $outcome, $now);
+    }
+
+    public function claimAdmissionPermitWithOutcome(
+        string $lane,
+        string $subject,
+        string $operation,
+        AdmissionOutcomeDTO $outcome,
+        int $now,
+    ): AdmissionPermitClaimEnum {
+        if (! $this->ops instanceof MergedAdmissionOperationsSliding) {
+            throw new \LogicException('Frozen MergedAdmissionOperations does not implement atomic claim.');
+        }
+
+        return $this->ops->claimPermitWithOutcome($lane, $subject, $operation, $outcome, $now);
     }
 
     public function increment(string $key, int $ttlSeconds, int $amount = 1): int

@@ -11,7 +11,13 @@ use Maatify\RateLimiter\Repository\Redis\RedisFullCapabilityStore;
 use Maatify\RateLimiter\Tests\Support\BlockRace\BlockRaceSetup;
 use Maatify\RateLimiter\Tests\Support\Redis\RespRedisCommandExecutor;
 
-[, $host, $port, $blockKey, $flag] = $argv;
+$rawArguments = $_SERVER['argv'] ?? null;
+$arguments = is_array($rawArguments) ? array_values(array_filter($rawArguments, is_string(...))) : [];
+if (! is_array($rawArguments) || count($rawArguments) !== count($arguments) || count($arguments) !== 5) {
+    fwrite(STDERR, "Expected 4 command-line arguments.\n");
+    exit(2);
+}
+[, $host, $port, $blockKey, $flag] = $arguments;
 $store = new ReflectionClass(RedisFullCapabilityStore::class);
 $writes = [];
 foreach (['BLOCK_SET', 'HARD_BLOCK'] as $name) {

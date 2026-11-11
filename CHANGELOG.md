@@ -9,6 +9,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [1.0.0-rc.4]
 
+### Changed (#185, F-185-36) — Atomic admission outcome recording
+- The opt-in admission runtime claims a permit and applies its admission outcome in one store
+  operation. `RateLimiterBuilder::build()` requires the additive
+  `AtomicAdmissionPermitStoreInterface` for opted-in policies. `RedisFullCapabilityStore` provides it.
+- The score pipeline runs after the admission outcome commits. A duplicate outcome does not replay
+  that pipeline. The [failure semantics](docs/FAILURE_SEMANTICS.md#45-admission-reservation-policies-dec-015-dec-024-dec-033)
+  and the [usage guide](docs/guides/USAGE_GUIDE.md) describe the three interruption cases.
+
 ### Fixed (#185, DEC-033) — Sliding windows for the admission layer (counters and failure sets)
 - Under fixed tumbling windows (DEC-025, DEC-028), admission windowed counters and failure sets used epoch-bucketed keys (`w<intdiv(t,W)>` and `d<intdiv(t,DAY)>`) with TTLs of 2W / 2·DAY. An adversary crossing a boundary could double their burst allowance within a narrow burst window (e.g. 8 failures allowed within 14 seconds across a boundary instead of 4, 48 requests instead of 24, etc.).
 - Windowed counters (`source_capacity`, `proof_account_window`, `proof_account_day`, `proof_proof_window`, `proof_proof_day`) and failure sets (`source_failure_cap`, `source_proof_failure_cap`) now operate strictly as sliding windows (DEC-033).
