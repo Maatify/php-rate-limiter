@@ -167,45 +167,67 @@ final class RedisLuaMissingMetadataTypeTest extends TestCase
         );
     }
 
-    public function testIncrementWatchFlagAcrossRotationAtClassifiedErrorWhenMetaFieldDeleted(): void
+    public function testRotatedWatchRejectsNoncanonicalExpiryBeforeWriting(): void
     {
-        $this->store->incrementWatchFlagAcrossRotationAt('cur_w', 'prev_w', 600, self::NOW);
-        $metaKeys = $this->executor->execute(['KEYS', '*watch-meta*']);
-        self::assertIsArray($metaKeys);
-        foreach ($metaKeys as $mk) {
-            assert(is_string($mk));
-            $this->executor->execute(['HDEL', $mk, 'expiresAt']);
-        }
+        $this->store->incrementWatchFlagAt('previous-watch', 600, self::NOW);
+        $keys = $this->executor->execute(['KEYS', '*watch-meta*']);
+        self::assertIsArray($keys);
+        self::assertCount(1, $keys);
+        $key = $keys[0] ?? null;
+        self::assertIsString($key);
+        $this->executor->execute(['HSET', $key, 'expiresAt', '01']);
 
         $this->assertMalformedWithoutMutation(
-            fn() => $this->store->incrementWatchFlagAcrossRotationAt('cur_w', 'prev_w', 600, self::NOW + 1),
-            'malformed',
+            fn() => $this->store->incrementWatchFlagAcrossRotationAt('current-watch', 'previous-watch', 600, self::NOW + 1),
+            'malformed previous watch state',
         );
     }
 
-    public function testGeneralRuntimeCheckOnlyClassifiedErrorWhenDistinctMetaCorrupted(): void
+    public function testPublicRuntimeRejectsNoncanonicalDistinctExpiryForPreviouslySeenAccountsWithoutWriting(): void
     {
         $config = new RateLimiterConfig('test_secret', 'test_fp', 'prod');
         $emitter = new RecordingFailureSignalEmitter();
-        $limiter = RateLimiterBuilder::fromFullCapabilityStore($config, $this->store, $emitter)->build();
+        $limiter = RateLimiterBuilder::fromFullCapabilityStore($config, $this->store, $emitter)
+            ->withClock(new FixedClock('@' . self::NOW))
+            ->build();
+        $check = RateLimitCommand::checkOnly('login_protection');
+        $limiter->limit(new RateLimitContextDTO(ip: '192.0.2.1', ua: 'ua', accountId: 'account-one'), $check);
 
-        // Distinct accounts trigger spray correlation on K1 (distinct-meta)
-        for ($i = 0; $i < 4; $i++) {
-            $limiter->limit(new RateLimitContextDTO('192.0.2.1', 'acct_' . $i, 'ua'), RateLimitCommand::checkOnly('login_protection'));
+        // Establish both account scopes before the rejection check. This does not assert
+        // request-wide rollback when an earlier independent scope writes before a later rejection.
+        $secondAccount = new RateLimitContextDTO(ip: '192.0.2.1', ua: 'ua', accountId: 'account-two');
+        $limiter->limit($secondAccount, $check);
+
+        $keys = $this->executor->execute(['KEYS', '*distinct-meta*']);
+        self::assertIsArray($keys);
+        self::assertNotEmpty($keys);
+        foreach ($keys as $key) {
+            self::assertIsString($key);
+            $this->executor->execute(['HSET', $key, 'expiresAt', '01']);
         }
 
-        $metas = $this->executor->execute(['KEYS', '*distinct-meta*']);
-        self::assertIsArray($metas);
-        self::assertNotEmpty($metas);
-        $k = $metas[0] ?? '';
-        assert(is_string($k));
-        $this->executor->execute(['HDEL', $k, 'expiresAt']);
+        $this->assertMalformedWithoutMutation(
+            static fn() => $limiter->limit($secondAccount, $check),
+            'malformed bounded metadata',
+        );
+    }
 
-        // Next checkOnly touches the corrupted distinct-meta.
-        // It must raise the classified RateLimiterException('malformed bounded metadata') rather than a raw Lua script error.
-        $this->expectException(RateLimiterException::class);
-        $this->expectExceptionMessage('malformed bounded metadata');
-        $limiter->limit(new RateLimitContextDTO('192.0.2.1', 'acct_test', 'ua'), RateLimitCommand::checkOnly('login_protection'));
+    public function testBlockReadAndPublicationRejectNoncanonicalExpiryBeforeWriting(): void
+    {
+        $this->store->blockWithCycleTracking('block', null, 2, 30, self::NOW, 60, 2, 120, 300);
+        $keys = $this->executor->execute(['KEYS', '*:block:*']);
+        self::assertIsArray($keys);
+        self::assertCount(1, $keys);
+        $key = $keys[0] ?? null;
+        self::assertIsString($key);
+        $this->executor->execute(['HSET', $key, 'expiresAt', '01']);
+
+        $this->assertMalformedWithoutMutation(fn() => $this->store->checkBlockAt('block', self::NOW), 'malformed block state');
+        $this->assertMalformedWithoutMutation(fn() => $this->store->peekBlockAt('block', self::NOW), 'malformed block state');
+        $this->assertMalformedWithoutMutation(
+            fn() => $this->store->blockWithCycleTracking('block', null, 2, 30, self::NOW, 60, 2, 120, 300),
+            'malformed hard-block state',
+        );
     }
 
     public function testProductionExpiryValidatorsRejectInvalidValuesInReadOnlyLua(): void
