@@ -1027,7 +1027,7 @@ if not value or (value ~= '0' and string.match(value, '^[1-9]%d*$') == nil) then
 return value
 LUA;
 
-    private const BOUNDED_SNAPSHOT = self::LUA_TIME_PRELUDE . "\n" . <<<'LUA'
+    private const BOUNDED_SNAPSHOT_PLAN = self::LUA_TIME_PRELUDE . "\n" . <<<'LUA'
 local function validBackendExpiry(value)
   if type(value) ~= 'string' or value == '0' then return value == '0' end
   if string.match(value, '^[1-9]%d*$') == nil then return false end
@@ -1070,20 +1070,37 @@ local function planBoundedSnapshot(setKey, metaKey, ttl, member, capacity)
   return {members = members, accepted = 1, added = 1, expires = expires}
 end
 
+local function applyBoundedSnapshot(plan, setKey, metaKey, ttl, member)
+  table.sort(plan.members)
+  if plan.added == 1 then
+    if plan.replaceExpired then redis.call('DEL', setKey, metaKey) end
+    redis.call('SADD', setKey, member)
+    if plan.initialize then
+      if not expiryApplied(redis.pcall('EXPIRE', setKey, ttl), {setKey}) then return redis.error_reply('expiry not representable') end
+      redis.call('HSET', metaKey, 'expiresAt', plan.expires)
+      if not expiryApplied(redis.pcall('EXPIRE', metaKey, ttl), {setKey, metaKey}) then return redis.error_reply('expiry not representable') end
+    end
+  end
+  return {#plan.members, plan.accepted, plan.added, plan.expires, unpack(plan.members)}
+end
+LUA;
+
+    private const BOUNDED_SNAPSHOT = self::BOUNDED_SNAPSHOT_PLAN . "\n" . <<<'LUA'
 local plan, reason = planBoundedSnapshot(KEYS[1], KEYS[2], ARGV[1], ARGV[2], tonumber(ARGV[3]))
 if not plan then return redis.error_reply(reason) end
-table.sort(plan.members)
+return applyBoundedSnapshot(plan, KEYS[1], KEYS[2], ARGV[1], ARGV[2])
+LUA;
 
-if plan.added == 1 then
-  if plan.replaceExpired then redis.call('DEL', KEYS[1], KEYS[2]) end
-  redis.call('SADD', KEYS[1], ARGV[2])
-  if plan.initialize then
-    if not expiryApplied(redis.pcall('EXPIRE', KEYS[1], ARGV[1]), {KEYS[1]}) then return redis.error_reply('expiry not representable') end
-    redis.call('HSET', KEYS[2], 'expiresAt', plan.expires)
-    if not expiryApplied(redis.pcall('EXPIRE', KEYS[2], ARGV[1]), {KEYS[1], KEYS[2]}) then return redis.error_reply('expiry not representable') end
-  end
-end
-return {#plan.members, plan.accepted, plan.added, plan.expires, unpack(plan.members)}
+    private const BOUNDED_SNAPSHOT_PAIR = self::BOUNDED_SNAPSHOT_PLAN . "\n" . <<<'LUA'
+local first, reason = planBoundedSnapshot(KEYS[1], KEYS[2], ARGV[1], ARGV[2], tonumber(ARGV[3]))
+if not first then return redis.error_reply(reason) end
+local second, secondReason = planBoundedSnapshot(KEYS[3], KEYS[4], ARGV[1], ARGV[4], tonumber(ARGV[5]))
+if not second then return redis.error_reply(secondReason) end
+local firstResult = applyBoundedSnapshot(first, KEYS[1], KEYS[2], ARGV[1], ARGV[2])
+if firstResult.err then return firstResult end
+local secondResult = applyBoundedSnapshot(second, KEYS[3], KEYS[4], ARGV[1], ARGV[4])
+if secondResult.err then return secondResult end
+return {firstResult, secondResult}
 LUA;
 
     private const ROTATED_SNAPSHOT = self::LUA_TIME_PRELUDE . "\n" . <<<'LUA'
@@ -1850,6 +1867,44 @@ LUA;
         $this->positive($maxDistinct, 'Correlation capacity');
         $result = $this->eval(self::BOUNDED_SNAPSHOT, [$this->key('distinct', $key), $this->key('distinct-meta', $key)], [$ttlSeconds, $item, $maxDistinct, $this->callerTime($now)]);
         return $this->snapshot($result, $item, 'bounded snapshot');
+    }
+
+    /**
+     * Observe two independent, non-rotating device-cap scopes after validating both.
+     *
+     * @return array{BoundedDistinctSnapshotDTO, BoundedDistinctSnapshotDTO}
+     */
+    public function addDeviceCapPairAt(
+        string $accountKey,
+        string $accountMember,
+        int $accountCapacity,
+        string $sourceKey,
+        string $sourceMember,
+        int $sourceCapacity,
+        int $ttl,
+        int $now,
+    ): array {
+        $this->positive($ttl, 'Correlation TTL');
+        $this->positive($accountCapacity, 'Account capacity');
+        $this->positive($sourceCapacity, 'Source capacity');
+        if ($accountKey === $sourceKey) {
+            throw new RateLimiterException('Device-cap observation scopes must be distinct.');
+        }
+
+        $result = $this->eval(self::BOUNDED_SNAPSHOT_PAIR, [
+            $this->key('distinct', $accountKey),
+            $this->key('distinct-meta', $accountKey),
+            $this->key('distinct', $sourceKey),
+            $this->key('distinct-meta', $sourceKey),
+        ], [$ttl, $accountMember, $accountCapacity, $sourceMember, $sourceCapacity, $this->callerTime($now)]);
+        if (! is_array($result) || ! array_is_list($result) || count($result) !== 2) {
+            throw new RateLimiterException('Malformed device-cap snapshot pair response.');
+        }
+
+        return [
+            $this->snapshot($result[0], $accountMember, 'account device-cap snapshot'),
+            $this->snapshot($result[1], $sourceMember, 'source device-cap snapshot'),
+        ];
     }
 
     public function addDistinctAcrossRotation(string $currentKey, string $bridgeKey, string $previousKey, string $currentMember, string $previousMember, int $ttlSeconds): int

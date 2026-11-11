@@ -230,6 +230,22 @@ final class RedisLuaMissingMetadataTypeTest extends TestCase
         );
     }
 
+    public function testDeviceCapPairValidatesBothScopesBeforeWriting(): void
+    {
+        $this->store->addDistinctBoundedAt('existing-source', 'known-device', 60, 10, self::NOW);
+        $keys = $this->executor->execute(['KEYS', '*:distinct-meta:*']);
+        self::assertIsArray($keys);
+        self::assertCount(1, $keys);
+        $key = $keys[0] ?? null;
+        self::assertIsString($key);
+        $this->executor->execute(['HSET', $key, 'expiresAt', '01']);
+
+        $this->assertMalformedWithoutMutation(
+            fn() => $this->store->addDeviceCapPairAt('new-account', 'new-device', 10, 'existing-source', 'new-device', 10, 60, self::NOW),
+            'malformed bounded metadata',
+        );
+    }
+
     public function testProductionExpiryValidatorsRejectInvalidValuesInReadOnlyLua(): void
     {
         $recording = new RecordingRedisCommandExecutor($this->executor);

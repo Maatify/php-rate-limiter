@@ -11,6 +11,7 @@ use Maatify\RateLimiter\Exception\RateLimiterException;
 use Maatify\RateLimiter\Repository\BoundedCorrelationRotationStoreInterface;
 use Maatify\RateLimiter\Repository\BoundedCorrelationStoreInterface;
 use Maatify\RateLimiter\Repository\CorrelationStoreInterface;
+use Maatify\RateLimiter\Repository\Redis\RedisFullCapabilityStore;
 use Maatify\SharedCommon\Contracts\ClockInterface;
 
 /**
@@ -40,6 +41,22 @@ class EphemeralBucket
         ?BoundedCorrelationObservationDTO $accountObservation = null,
     ): EphemeralStateDTO {
         $this->assertCapabilities($ipObservation, $accountObservation);
+
+        if ($this->store instanceof RedisFullCapabilityStore && $this->clock !== null
+            && $accountObservation !== null && $accountObservation->previousKey === null && $ipObservation->previousKey === null) {
+            [$account, $source] = $this->store->addDeviceCapPairAt(
+                $accountObservation->currentKey,
+                $accountObservation->currentMember,
+                self::MAX_DEVICES_PER_ACCOUNT,
+                $ipObservation->currentKey,
+                $ipObservation->currentMember,
+                self::MAX_DEVICES_PER_IP,
+                self::CAP_WINDOW,
+                $this->clock->now()->getTimestamp(),
+            );
+
+            return new EphemeralStateDTO(! $account->accepted || ! $source->accepted, $account->count, $source->count);
+        }
 
         $accountResult = $accountObservation === null
             ? null
