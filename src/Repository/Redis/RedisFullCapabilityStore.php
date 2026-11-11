@@ -1035,45 +1035,55 @@ local function validBackendExpiry(value)
   if #value == 16 and value > '9223372036854775' then return false end
   return true
 end
-local exists = redis.call('EXISTS', KEYS[1])
-if exists == 1 and redis.call('TTL', KEYS[1]) < 0 then return redis.error_reply('malformed bounded state') end
-local metaExists = redis.call('EXISTS', KEYS[2])
-if exists == 0 and metaExists == 1 then return redis.error_reply('malformed bounded metadata') end
-if exists == 1 and redis.call('SCARD', KEYS[1]) == 0 then return redis.error_reply('malformed bounded state') end
-local expires = nil
-local replaceExpired = false
-if exists == 1 then
-  local rawExpires = redis.call('HGET', KEYS[2], 'expiresAt')
-  if not validBackendExpiry(rawExpires) then return redis.error_reply('malformed bounded metadata') end
-  expires = rawExpires
-  if redis.call('TTL', KEYS[2]) < 0 then return redis.error_reply('malformed bounded metadata') end
-  -- LT-P2-03: logically expired while physically present is expired, not malformed.
-  if compareDecimalStrings(expires, nowStr) <= 0 then
-    replaceExpired = true
-    exists = 0
-    expires = nil
+-- Plan the new snapshot from validated state. No command in this phase writes.
+local function planBoundedSnapshot(setKey, metaKey, ttl, member, capacity)
+  local exists = redis.call('EXISTS', setKey) == 1
+  local metaExists = redis.call('EXISTS', metaKey) == 1
+  if exists and redis.call('TTL', setKey) < 0 then return nil, 'malformed bounded state' end
+  if not exists and metaExists then return nil, 'malformed bounded metadata' end
+  if exists and redis.call('SCARD', setKey) == 0 then return nil, 'malformed bounded state' end
+
+  local expires = nil
+  local replaceExpired = false
+  if exists then
+    expires = redis.call('HGET', metaKey, 'expiresAt')
+    if not validBackendExpiry(expires) or redis.call('TTL', metaKey) < 0 then return nil, 'malformed bounded metadata' end
+    replaceExpired = compareDecimalStrings(expires, nowStr) <= 0
+  end
+
+  if not exists or replaceExpired then
+    if not ttlBackendRepresentable(ttl) then return nil, 'correlation TTL exceeds Redis backend expiry representability' end
+    return {members = {member}, accepted = 1, added = 1, expires = addDecimalStrings(nowStr, ttl), initialize = true, replaceExpired = replaceExpired}
+  end
+
+  local count = redis.call('SCARD', setKey)
+  if count > capacity then return nil, 'malformed bounded state' end
+  local members = redis.call('SMEMBERS', setKey)
+  if redis.call('SISMEMBER', setKey, member) == 1 then
+    return {members = members, accepted = 1, added = 0, expires = expires}
+  end
+  if count >= capacity then
+    return {members = members, accepted = 0, added = 0, expires = expires}
+  end
+
+  table.insert(members, member)
+  return {members = members, accepted = 1, added = 1, expires = expires}
+end
+
+local plan, reason = planBoundedSnapshot(KEYS[1], KEYS[2], ARGV[1], ARGV[2], tonumber(ARGV[3]))
+if not plan then return redis.error_reply(reason) end
+table.sort(plan.members)
+
+if plan.added == 1 then
+  if plan.replaceExpired then redis.call('DEL', KEYS[1], KEYS[2]) end
+  redis.call('SADD', KEYS[1], ARGV[2])
+  if plan.initialize then
+    if not expiryApplied(redis.pcall('EXPIRE', KEYS[1], ARGV[1]), {KEYS[1]}) then return redis.error_reply('expiry not representable') end
+    redis.call('HSET', KEYS[2], 'expiresAt', plan.expires)
+    if not expiryApplied(redis.pcall('EXPIRE', KEYS[2], ARGV[1]), {KEYS[1], KEYS[2]}) then return redis.error_reply('expiry not representable') end
   end
 end
-local count = exists == 1 and redis.call('SCARD', KEYS[1]) or 0
-if count > tonumber(ARGV[3]) then return redis.error_reply('malformed bounded state') end
-if exists == 1 and redis.call('SISMEMBER', KEYS[1], ARGV[2]) == 1 then
-  local members = redis.call('SMEMBERS', KEYS[1]); table.sort(members)
-  return {#members, 1, 0, expires, unpack(members)}
-end
-if count >= tonumber(ARGV[3]) then
-  local members = redis.call('SMEMBERS', KEYS[1]); table.sort(members)
-  return {count, 0, 0, expires, unpack(members)}
-end
-if exists == 0 then
-  if not ttlBackendRepresentable(ARGV[1]) then return redis.error_reply('correlation TTL exceeds Redis backend expiry representability') end
-  if replaceExpired then redis.call('DEL', KEYS[1], KEYS[2]) end
-  redis.call('SADD', KEYS[1], ARGV[2])
-  if not expiryApplied(redis.pcall('EXPIRE', KEYS[1], ARGV[1]), {KEYS[1]}) then return redis.error_reply('expiry not representable') end
-  redis.call('HSET', KEYS[2], 'expiresAt', addDecimalStrings(nowStr, ARGV[1]))
-  if not expiryApplied(redis.pcall('EXPIRE', KEYS[2], ARGV[1]), {KEYS[1], KEYS[2]}) then return redis.error_reply('expiry not representable') end
-else redis.call('SADD', KEYS[1], ARGV[2]) end
-local members = redis.call('SMEMBERS', KEYS[1]); table.sort(members)
-return {#members, 1, 1, exists == 0 and addDecimalStrings(nowStr, ARGV[1]) or expires, unpack(members)}
+return {#plan.members, plan.accepted, plan.added, plan.expires, unpack(plan.members)}
 LUA;
 
     private const ROTATED_SNAPSHOT = self::LUA_TIME_PRELUDE . "\n" . <<<'LUA'
