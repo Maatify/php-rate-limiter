@@ -18,12 +18,8 @@ use PHPUnit\Framework\Attributes\Group;
 /**
  * Regression and resilience test for DEC-036: Atomic outcome claim and state mutation on real Redis (LT-185-36b).
  *
- * Verifies:
- * 1. Outage before commit: permit stays ISSUED, retry succeeds.
- * 2. Outage after commit: state applied once, retry returns permit_duplicate.
- * 3. Mid-pipeline outage dump comparison (FAIL_CLOSED, DUMP before == DUMP after retry).
- * 4. 8-way race on single permit: exactly 1 ACCEPTED, state applied once.
- * 5. Malformed scope: throws RateLimiterException while permit remains ISSUED.
+ * Store-level claim, duplicate, and validation checks. Transport fault injection
+ * through the public runtime is covered by AdmissionPublicRuntimeRedisTest.
  */
 #[Group('atomic-claim')]
 #[Group('integration')]
@@ -31,7 +27,7 @@ final class AdmissionAtomicClaimRedisTest extends AdmissionRedisGateTestCase
 {
     private const NOW = S::NOW;
 
-    public function testOutageBeforeCommitLeavesPermitIssuedAndRetrySucceeds(): void
+    public function testIssuedPermitCanBeClaimedWithAnOutcome(): void
     {
         $permit = S::permit('p-outage-before', self::NOW + 30);
         $scope = S::counter('src', 'c:outage-before', 10);
@@ -43,11 +39,11 @@ final class AdmissionAtomicClaimRedisTest extends AdmissionRedisGateTestCase
         $permitRecord = $this->executor->execute(['HGET', $permitKey, 'state']);
         self::assertSame('ISSUED', $permitRecord);
 
-        // Simulate outage before claim completes (network drop / failure) -> permit stays ISSUED
+        // Verify the reservation snapshot before claiming the permit.
         $dumpBefore = $this->dump();
         self::assertSame('ISSUED', $this->permitField($dumpBefore, $permitKey, 'state'));
 
-        // Host retries claim with outcome
+        // Claim the issued permit with its outcome.
         $failScope = S::setSize('ufail', 's:outage-before-fail', 4, 'acct-outage');
         $outcomeDTO = new AdmissionOutcomeDTO(S::CLASS_NAME, AdmissionOutcomeKindEnum::FAILURE, [$failScope], 'p-outage-before');
 
@@ -63,7 +59,7 @@ final class AdmissionAtomicClaimRedisTest extends AdmissionRedisGateTestCase
         self::assertSame(1, ReplyValue::integer($this->executor->execute(['ZCARD', $failKey])));
     }
 
-    public function testOutageAfterCommitCausesRetryToReturnDuplicateWithoutDoubleApplyingState(): void
+    public function testDuplicateDoesNotReapplyCommittedOutcome(): void
     {
         $permit = S::permit('p-outage-after', self::NOW + 30);
         $scope = S::counter('src', 'c:outage-after', 10);
@@ -80,7 +76,7 @@ final class AdmissionAtomicClaimRedisTest extends AdmissionRedisGateTestCase
         self::assertSame(1, ReplyValue::integer($this->executor->execute(['ZCARD', $failKey])));
         $dumpCommitted = $this->dump();
 
-        // Host retries (simulating reply was lost in network outage)
+        // Repeat the already committed claim.
         $claim2 = $this->store->claimAdmissionPermitWithOutcome('U', 'acctT', 'login', $outcomeDTO, self::NOW + 2);
         self::assertSame(AdmissionPermitClaimEnum::DUPLICATE, $claim2);
 
