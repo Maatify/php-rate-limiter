@@ -101,6 +101,21 @@ local function readBucket(k, capacity, now)
   if refilled > capacity then refilled = capacity end
   return refilled, true
 end
+local function oldestLiveScore(keys, now, excess)
+  if excess < 1 then return nil end
+  local live = {}
+  for _, k in ipairs(keys) do
+    if k ~= '' then
+      local membersWithScores = redis.call('ZRANGEBYSCORE', k, '(' .. tostring(now), '+inf', 'WITHSCORES')
+      for j = 2, #membersWithScores, 2 do
+        table.insert(live, tonumber(membersWithScores[j]))
+      end
+    end
+  end
+  if #live < excess then return nil end
+  table.sort(live)
+  return live[excess]
+end
 LUA;
 
     private const RESERVE = self::LUA_COMMON . "\n" . <<<'LUA'
@@ -134,9 +149,19 @@ for i = 1, n do
     local exists = false
     local score = redis.call('ZSCORE', cur, s.member)
     if score and tonumber(score) > now then exists = true end
-    if not exists and prev ~= '' and s.prevMember ~= '' then
-      local pscore = redis.call('ZSCORE', prev, s.prevMember)
+    if not exists and s.prevMember ~= '' then
+      local pscore = redis.call('ZSCORE', cur, s.prevMember)
       if pscore and tonumber(pscore) > now then exists = true end
+    end
+    if not exists and prev ~= '' then
+      if s.prevMember ~= '' then
+        local pscore = redis.call('ZSCORE', prev, s.prevMember)
+        if pscore and tonumber(pscore) > now then exists = true end
+      end
+      if not exists then
+        local pscore = redis.call('ZSCORE', prev, s.member)
+        if pscore and tonumber(pscore) > now then exists = true end
+      end
     end
     local live = redis.call('ZCOUNT', cur, '(' .. nowStr, '+inf')
     if prev ~= '' then live = live + redis.call('ZCOUNT', prev, '(' .. nowStr, '+inf') end
@@ -168,11 +193,26 @@ end
 for i = 1, n do
   local s = sc[i]
   if s.kind == 'c' then
-    if s.a + s.b >= s.cap then return {0, i, 0} end
+    if s.a + s.b >= s.cap then
+      local oldest = oldestLiveScore({s.cur, s.prev}, now, s.a + s.b - s.cap + 1)
+      local retryAfter = 1
+      if oldest ~= nil and oldest > now then retryAfter = oldest - now end
+      return {0, i, retryAfter}
+    end
   elseif s.kind == 'd' then
-    if not s.exists and s.live >= s.cap then return {0, i, 0} end
+    if not s.exists and s.live >= s.cap then
+      local oldest = oldestLiveScore({s.cur, s.prev}, now, s.live - s.cap + 1)
+      local retryAfter = 1
+      if oldest ~= nil and oldest > now then retryAfter = oldest - now end
+      return {0, i, retryAfter}
+    end
   elseif s.kind == 's' then
-    if not s.isMember and s.card >= s.cap then return {0, i, 0} end
+    if not s.isMember and s.card >= s.cap then
+      local oldest = oldestLiveScore({s.cur}, now, s.card - s.cap + 1)
+      local retryAfter = 1
+      if oldest ~= nil and oldest > now then retryAfter = oldest - now end
+      return {0, i, retryAfter}
+    end
   else
     if s.credit < s.ttl then return {0, i, s.ttl - s.credit} end
   end
@@ -275,6 +315,82 @@ if record.state == 'CLAIMED' then
 end
 if now >= record.deadline then return 'late' end
 redis.call('HSET', KEYS[1], 'state', 'CLAIMED', 'outcome', ARGV[5])
+return 'accepted'
+LUA;
+
+    private const CLAIM_WITH_OUTCOME = self::LUA_COMMON . "\n" . <<<'LUA'
+local nowStr = ARGV[1]
+local now = tonumber(nowStr)
+local lane = ARGV[2]
+local subject = ARGV[3]
+local operation = ARGV[4]
+local outcomeKind = ARGV[5]
+local n = tonumber(ARGV[6])
+
+-- Phase 1: validate permit record
+local permitKey = KEYS[1]
+local record, err = readPermit(permitKey)
+if record == nil then return bad(err) end
+if record.absent then return 'unknown' end
+if now >= record.deadline + record.grace then return 'unknown' end
+if record.lane ~= lane or record.subject ~= subject or record.operation ~= operation then return 'rejected' end
+if record.state == 'CLAIMED' then
+  if record.outcome == outcomeKind then return 'duplicate' end
+  return 'conflict'
+end
+if now >= record.deadline then return 'late' end
+
+-- Phase 2: validate every scope before any write. Malformed state throws while permit remains ISSUED.
+local success = outcomeKind == 'success'
+local sc = {}
+for i = 1, n do
+  local base = 7 + (i - 1) * 4
+  local kind = ARGV[base]
+  local cap = tonumber(ARGV[base + 1])
+  local ttl = tonumber(ARGV[base + 2])
+  local cur = KEYS[1 + i]
+  local s = {kind = kind, cap = cap, ttl = ttl, cur = cur, member = ARGV[base + 3]}
+  if kind == 's' then
+    local e = checkType(cur, 'zset', 'set')
+    if e then return bad(e) end
+  elseif kind == 'c' and success then
+    local e = checkType(cur, 'zset', 'counter')
+    if e then return bad(e) end
+  elseif kind == 'b' and success then
+    s.full = cap * ttl
+    local credit, existsOrErr = readBucket(cur, s.full, now)
+    if credit == nil then return bad(existsOrErr) end
+    s.credit, s.present = credit, existsOrErr
+  end
+  sc[i] = s
+end
+
+-- Phase 3: writes. Mark permit CLAIMED and apply all scopes atomically.
+redis.call('HSET', permitKey, 'state', 'CLAIMED', 'outcome', outcomeKind)
+
+for i = 1, n do
+  local s = sc[i]
+  if s.kind == 's' then
+    if success and lane ~= 'P' then
+      redis.call('ZREM', s.cur, s.member)
+    else
+      redis.call('ZREMRANGEBYSCORE', s.cur, '-inf', nowStr)
+      redis.call('ZADD', s.cur, string.format('%d', now + s.ttl), s.member)
+      redis.call('EXPIRE', s.cur, s.ttl)
+    end
+  elseif s.kind == 'c' and success then
+    if s.member ~= '' then redis.call('ZREM', s.cur, s.member) end
+  elseif s.kind == 'b' and success and s.present then
+    local credit = s.credit + s.ttl
+    if credit >= s.full then
+      redis.call('DEL', s.cur)
+    else
+      redis.call('HSET', s.cur, 'credit', string.format('%d', credit), 'last', nowStr)
+      redis.call('EXPIRE', s.cur, string.format('%d', s.full - credit))
+    end
+  end
+end
+
 return 'accepted'
 LUA;
 
@@ -432,6 +548,58 @@ LUA;
             }
         }
         $reply = $this->eval(self::CLAIM, [$this->permitKey($permitId)], [(string) $now, $lane, $subject, $operation, $outcome->value]);
+        $claim = is_string($reply) ? AdmissionPermitClaimEnum::tryFrom($reply) : null;
+        if ($claim === null) {
+            throw new RateLimiterException('Malformed admission permit claim response.');
+        }
+
+        return $claim;
+    }
+
+    public function claimPermitWithOutcome(
+        string $lane,
+        string $subject,
+        string $operation,
+        AdmissionOutcomeDTO $outcome,
+        int $now,
+    ): AdmissionPermitClaimEnum {
+        $this->assertTime($now);
+        $permitId = $outcome->permitId;
+        if ($permitId === null || trim($permitId) === '') {
+            throw new RateLimiterException('Admission permit id is required for atomic outcome claim.');
+        }
+        foreach (['permit id' => $permitId, 'lane' => $lane, 'subject' => $subject, 'operation' => $operation] as $label => $value) {
+            if (trim($value) === '') {
+                throw new RateLimiterException('Admission permit ' . $label . ' must not be empty.');
+            }
+        }
+
+        $keys = [$this->permitKey($permitId)];
+        $args = [
+            (string) $now,
+            $lane,
+            $subject,
+            $operation,
+            $outcome->outcome->value,
+            (string) count($outcome->scopes),
+        ];
+
+        foreach ($outcome->scopes as $scope) {
+            $keys[] = $this->scopeKey($outcome->verifierClass, $scope->kind, $scope->key);
+            $member = $scope->member;
+            if ($scope->kind === AdmissionScopeKindEnum::COUNTER && ($member === null || $member === '')) {
+                $member = $permitId;
+            }
+            array_push(
+                $args,
+                self::KIND_CODE[$scope->kind->value],
+                (string) $scope->capacity,
+                (string) $scope->ttlSeconds,
+                $member ?? '',
+            );
+        }
+
+        $reply = $this->eval(self::CLAIM_WITH_OUTCOME, $keys, $args);
         $claim = is_string($reply) ? AdmissionPermitClaimEnum::tryFrom($reply) : null;
         if ($claim === null) {
             throw new RateLimiterException('Malformed admission permit claim response.');

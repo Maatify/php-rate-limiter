@@ -14,6 +14,7 @@ use Maatify\RateLimiter\Enum\AdmissionScopeKindEnum;
 use Maatify\RateLimiter\Exception\RateLimiterException;
 use Maatify\RateLimiter\Repository\AdmissionCapableFullStoreInterface;
 use Maatify\RateLimiter\Repository\AdmissionPermitStoreInterface;
+use Maatify\RateLimiter\Repository\AtomicAdmissionPermitStoreInterface;
 use Maatify\RateLimiter\Tests\Support\FullCapability\FullCapabilityInMemoryStore;
 
 /**
@@ -25,7 +26,8 @@ use Maatify\RateLimiter\Tests\Support\FullCapability\FullCapabilityInMemoryStore
  */
 final class AdmissionInMemoryReferenceStore extends FullCapabilityInMemoryStore implements
     AdmissionCapableFullStoreInterface,
-    AdmissionPermitStoreInterface
+    AdmissionPermitStoreInterface,
+    AtomicAdmissionPermitStoreInterface
 {
     /** @var array<string, array<string, int>> member => expiry score, per counter */
     private array $counters = [];
@@ -77,17 +79,63 @@ final class AdmissionInMemoryReferenceStore extends FullCapabilityInMemoryStore 
             $own = $class . "\0" . $scope->key;
             $previous = $scope->previousKey === null || $scope->previousKey === $scope->key ? null : $class . "\0" . $scope->previousKey;
             if ($scope->kind === AdmissionScopeKindEnum::COUNTER) {
-                if ($this->liveCounterCount($own, $now) + ($previous === null ? 0 : ($this->liveCounterCount($previous, $now))) >= $scope->capacity) {
-                    return new AdmissionReservationResultDTO(false, $scope->name);
+                $total = $this->liveCounterCount($own, $now) + ($previous === null ? 0 : ($this->liveCounterCount($previous, $now)));
+                if ($total >= $scope->capacity) {
+                    $allLiveScores = [];
+                    foreach ($this->counters[$own] ?? [] as $exp) {
+                        if ($exp > $now) {
+                            $allLiveScores[] = $exp;
+                        }
+                    }
+                    if ($previous !== null) {
+                        foreach ($this->counters[$previous] ?? [] as $exp) {
+                            if ($exp > $now) {
+                                $allLiveScores[] = $exp;
+                            }
+                        }
+                    }
+                    sort($allLiveScores);
+                    $excess = $total - $scope->capacity + 1;
+                    $targetScore = $allLiveScores[$excess - 1] ?? $now + 1;
+
+                    return new AdmissionReservationResultDTO(false, $scope->name, max(1, $targetScore - $now));
                 }
             } elseif ($scope->kind === AdmissionScopeKindEnum::DEVICE_MEMBER) {
-                if (! $this->deviceExists($scope, $own, $previous, $now)
-                    && $this->liveCount($own, $now) + ($previous === null ? 0 : $this->liveCount($previous, $now)) >= $scope->capacity) {
-                    return new AdmissionReservationResultDTO(false, $scope->name);
+                $total = $this->liveCount($own, $now) + ($previous === null ? 0 : $this->liveCount($previous, $now));
+                if (! $this->deviceExists($scope, $own, $previous, $now) && $total >= $scope->capacity) {
+                    $allLiveScores = [];
+                    foreach ($this->devices[$own] ?? [] as $exp) {
+                        if ($exp > $now) {
+                            $allLiveScores[] = $exp;
+                        }
+                    }
+                    if ($previous !== null) {
+                        foreach ($this->devices[$previous] ?? [] as $exp) {
+                            if ($exp > $now) {
+                                $allLiveScores[] = $exp;
+                            }
+                        }
+                    }
+                    sort($allLiveScores);
+                    $excess = $total - $scope->capacity + 1;
+                    $targetScore = $allLiveScores[$excess - 1] ?? $now + 1;
+
+                    return new AdmissionReservationResultDTO(false, $scope->name, max(1, $targetScore - $now));
                 }
             } elseif ($scope->kind === AdmissionScopeKindEnum::SET_SIZE) {
-                if (! $this->isSettledMember($own, (string) $scope->member, $now, $scope) && $this->settledSize($own, $now, $scope) >= $scope->capacity) {
-                    return new AdmissionReservationResultDTO(false, $scope->name);
+                $size = $this->settledSize($own, $now, $scope);
+                if (! $this->isSettledMember($own, (string) $scope->member, $now, $scope) && $size >= $scope->capacity) {
+                    $allLiveScores = [];
+                    foreach ($this->sets[$own] ?? [] as $exp) {
+                        if ($exp > $now) {
+                            $allLiveScores[] = $exp;
+                        }
+                    }
+                    sort($allLiveScores);
+                    $excess = $size - $scope->capacity + 1;
+                    $targetScore = $allLiveScores[$excess - 1] ?? $now + 1;
+
+                    return new AdmissionReservationResultDTO(false, $scope->name, max(1, $targetScore - $now));
                 }
             } else {
                 $credit = $this->bucketCredit($own, $scope, $now);
@@ -140,7 +188,7 @@ final class AdmissionInMemoryReferenceStore extends FullCapabilityInMemoryStore 
             $own = $outcome->verifierClass . "\0" . $scope->key;
             if ($scope->kind === AdmissionScopeKindEnum::SET_SIZE) {
                 $member = (string) $scope->member;
-                if ($success) {
+                if ($success && $scope->name !== 'source_proof_failure_cap') {
                     if (! $scope->settlesOnExpiry || ! $scope->successKeepsSettled) {
                         unset($this->sets[$own][$member]);
                     }
@@ -246,13 +294,67 @@ final class AdmissionInMemoryReferenceStore extends FullCapabilityInMemoryStore 
         return $size;
     }
 
+    public function claimAdmissionPermitWithOutcome(
+        string $lane,
+        string $subject,
+        string $operation,
+        AdmissionOutcomeDTO $outcome,
+        int $now,
+    ): AdmissionPermitClaimEnum {
+        $permitId = $outcome->permitId;
+        if ($permitId === null || trim($permitId) === '') {
+            throw new RateLimiterException('Admission permit id is required for atomic outcome claim.');
+        }
+        foreach (['permit id' => $permitId, 'lane' => $lane, 'subject' => $subject, 'operation' => $operation] as $label => $value) {
+            if (trim($value) === '') {
+                throw new RateLimiterException('Admission permit ' . $label . ' must not be empty.');
+            }
+        }
+        if (! isset($this->permits[$permitId])) {
+            return AdmissionPermitClaimEnum::UNKNOWN;
+        }
+        $p = $this->permits[$permitId];
+        if ($now >= $p['deadline'] + $p['grace']) {
+            return AdmissionPermitClaimEnum::UNKNOWN;
+        }
+        if ($p['lane'] !== $lane || $p['subject'] !== $subject || $p['operation'] !== $operation) {
+            return AdmissionPermitClaimEnum::REJECTED;
+        }
+        if ($p['outcome'] !== null) {
+            return $p['outcome'] === $outcome->outcome->value
+                ? AdmissionPermitClaimEnum::DUPLICATE
+                : AdmissionPermitClaimEnum::CONFLICT;
+        }
+        if ($now >= $p['deadline']) {
+            return AdmissionPermitClaimEnum::LATE;
+        }
+
+        $this->applyAdmissionOutcome($outcome, $now);
+        $this->permits[$permitId]['outcome'] = $outcome->outcome->value;
+
+        return AdmissionPermitClaimEnum::ACCEPTED;
+    }
+
     private function deviceExists(AdmissionScopeDTO $scope, string $own, ?string $previous, int $now): bool
     {
         if (($this->devices[$own][(string) $scope->member] ?? 0) > $now) {
             return true;
         }
 
-        return $previous !== null && $scope->previousMember !== null && ($this->devices[$previous][$scope->previousMember] ?? 0) > $now;
+        if ($scope->previousMember !== null && ($this->devices[$own][$scope->previousMember] ?? 0) > $now) {
+            return true;
+        }
+
+        if ($previous !== null) {
+            if ($scope->previousMember !== null && ($this->devices[$previous][$scope->previousMember] ?? 0) > $now) {
+                return true;
+            }
+            if (($this->devices[$previous][(string) $scope->member] ?? 0) > $now) {
+                return true;
+            }
+        }
+
+        return false;
     }
 
     private function liveCount(string $set, int $now): int

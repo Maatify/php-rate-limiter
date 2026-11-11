@@ -372,9 +372,10 @@ Outputs and duties:
 * A permit is claimed once. `permit_duplicate`, `permit_conflict`, `permit_rejected`, `permit_late`
   and `permit_unknown` come back as an `ALLOW` result with `blockLevel` 0 and `scope` `permit`;
   nothing is scored and nothing is applied. A late outcome (after the deadline) is not scored.
-* A capacity refusal is a `SOFT_BLOCK` with `blockLevel` 1 and a `retryAfter` to the end of the
-  refusing window or refill; the causes are `source_capacity`, `source_failure_cap`,
-  `account_bucket`, `proof_capacity`, `new_device_cap` and `source_proof_failure_cap`.
+* A capacity refusal is a `SOFT_BLOCK` with `blockLevel` 1 and a `retryAfter` to the expiry of the
+  oldest live admission reducing the count below capacity (exact sliding window, F-185-35) or bucket
+  refill; the causes are `source_capacity`, `source_failure_cap`, `account_bucket`, `proof_capacity`,
+  `new_device_cap` and `source_proof_failure_cap`.
 * **Password change or recovery**: call `revokeAccountBinding($accountId)` (it bumps the account's
   epoch; every older credential stops verifying), read the new epoch with `bindingEpoch($accountId)`
   and issue a credential to the device that performed the change. Both are reached through

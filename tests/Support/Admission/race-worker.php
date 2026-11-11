@@ -88,6 +88,19 @@ if ($spec->op === 'claim') {
     exit(0);
 }
 
+if ($spec->op === 'claim_with_outcome') {
+    $permitId = $spec->permit;
+    if ($permitId === null) {
+        fwrite(STDERR, "claim_with_outcome op without a permit\n");
+        exit(2);
+    }
+    $outcome = AdmissionOutcomeKindEnum::from($spec->outcome ?? 'failure');
+    $outcomeDTO = new AdmissionOutcomeDTO('login', $outcome, $scopes, $permitId);
+    $claim = $store->claimAdmissionPermitWithOutcome('U', 'acctT', 'login', $outcomeDTO, $spec->now);
+    echo $reply($claim->value === 'accepted', null, $claim->value);
+    exit(0);
+}
+
 $issue = $at($spec->issuePermit);
 $permit = $issue === null ? null : new AdmissionPermitDTO($issue, 'U', 'acctT', 'login', $spec->now + 30, 600);
 $request = new AdmissionReservationRequestDTO('login', $scopes, $permit);

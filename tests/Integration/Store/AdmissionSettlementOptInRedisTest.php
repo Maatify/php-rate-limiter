@@ -127,7 +127,23 @@ final class AdmissionSettlementOptInRedisTest extends AdmissionRedisGateTestCase
         $merged = $this->recorded($this->merged(), $run);
         $production = $this->recorded($this->production(), $run);
 
-        self::assertSame($merged['trace'], $production['trace']);
+        // Under DEC-033 sliding windows (F-185-35), production returns the exact sliding retryAfterSeconds,
+        // whereas d6aea4d returned 0. The admission verdicts and refused scopes remain identical.
+        /** @var list<string> $mergedTrace */
+        $mergedTrace = $merged['trace'];
+        /** @var list<string> $productionTrace */
+        $productionTrace = $production['trace'];
+        /** @param list<string> $trace */
+        $stripRetry = static function (array $trace): array {
+            $out = [];
+            foreach ($trace as $entry) {
+                assert(is_string($entry));
+                $out[] = preg_replace('/(reserve:\[(?:true|false),(?:null|"[^"]+")),(\d+)(\])/', '$1$3', $entry) ?? $entry;
+            }
+
+            return $out;
+        };
+        self::assertSame($stripRetry($mergedTrace), $stripRetry($productionTrace));
         self::assertSame($merged['result'], $production['result']);
         self::assertSame($merged['dumps'], array_map(self::membersOfFailureSets(...), $production['dumps']), "the key dump after every step of $name");
     }
