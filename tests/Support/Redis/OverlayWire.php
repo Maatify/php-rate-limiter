@@ -56,4 +56,33 @@ final class OverlayWire
 
         return $reply;
     }
+
+    /**
+     * The KEYS of an EVAL command.
+     *
+     * @param list<int|string|float> $command
+     * @return list<string>
+     */
+    public static function keys(array $command): array
+    {
+        $count = $command[2] ?? 0;
+        $keys = [];
+        foreach (array_slice($command, 3, is_int($count) ? $count : 0) as $key) {
+            $keys[] = (string) $key;
+        }
+
+        return $keys;
+    }
+
+    /** @param list<int|string|float> $command */
+    public static function touchesFamily(array $command, string $family): bool
+    {
+        foreach (self::keys($command) as $key) {
+            if (str_contains($key, ':' . $family . ':')) {
+                return true;
+            }
+        }
+
+        return false;
+    }
 }

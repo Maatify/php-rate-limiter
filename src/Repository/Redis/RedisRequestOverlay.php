@@ -378,6 +378,11 @@ __commands.SISMEMBER = function(key, member)
 end
 __commands.ZADD = function(key, ...)
   local args = {...}
+  local onlyLess = false
+  if #args > 0 and type(args[1]) == 'string' and string.upper(args[1]) == 'LT' then
+    onlyLess = true
+    table.remove(args, 1)
+  end
   if #args == 0 or #args % 2 ~= 0 then error({err = "ERR syntax error"}) end
   local e = __ent(key); __need(e, 'z')
   __create(e, 'z')
@@ -386,10 +391,19 @@ __commands.ZADD = function(key, ...)
     local score = tonumber(__str(args[i]))
     if score == nil then error({err = 'ERR value is not a valid float'}) end
     local member = __str(args[i + 1])
-    if e.v[member] == nil then added = added + 1 end
-    e.v[member] = string.format('%.17g', score)
+    local current = e.v[member]
+    if current == nil then
+      added = added + 1
+      e.v[member] = string.format('%.17g', score)
+      __touch(e)
+    elseif not onlyLess or score < tonumber(current) then
+      if tonumber(current) ~= score then
+        e.v[member] = string.format('%.17g', score)
+        __touch(e)
+      end
+    end
   end
-  __touch(e)
+  __emptied(e)
   return added
 end
 __commands.ZSCORE = function(key, member)
@@ -406,11 +420,74 @@ __commands.ZCARD = function(key)
   for _ in pairs(e.v) do count = count + 1 end
   return count
 end
-__commands.ZRANGE = function(key, first, last)
+__commands.ZRANGE = function(key, first, last, withScores)
   local e = __ent(key); __need(e, 'z')
   if e.t == 'n' then return {} end
   if tonumber(__str(first)) ~= 0 or tonumber(__str(last)) ~= -1 then error({err = 'request overlay supports only ZRANGE key 0 -1'}) end
-  return __sortedMembers(e)
+  local members = __sortedMembers(e)
+  if withScores == nil then return members end
+  if string.upper(__str(withScores)) ~= 'WITHSCORES' then error({err = 'ERR syntax error'}) end
+  local flat = {}
+  for _, member in ipairs(members) do flat[#flat + 1] = member; flat[#flat + 1] = e.v[member] end
+  return flat
+end
+__commands.ZRANGEBYSCORE = function(key, min, max, ...)
+  local e = __ent(key); __need(e, 'z')
+  if e.t == 'n' then return {} end
+  local low, lowExclusive = __rangeBound(min, true)
+  local high, highExclusive = __rangeBound(max, false)
+  local withScores, offset, count = false, 0, -1
+  local opts = {...}
+  local i = 1
+  while i <= #opts do
+    local opt = string.upper(__str(opts[i]))
+    if opt == 'WITHSCORES' then withScores = true
+    elseif opt == 'LIMIT' then offset = tonumber(__str(opts[i + 1])); count = tonumber(__str(opts[i + 2])); i = i + 2
+    else error({err = 'ERR syntax error'}) end
+    i = i + 1
+  end
+  local out, seen = {}, 0
+  for _, member in ipairs(__sortedMembers(e)) do
+    local score = tonumber(e.v[member])
+    local aboveLow = lowExclusive and score > low or (not lowExclusive and score >= low)
+    local belowHigh = highExclusive and score < high or (not highExclusive and score <= high)
+    if aboveLow and belowHigh then
+      seen = seen + 1
+      if seen > offset and (count < 0 or #out / (withScores and 2 or 1) < count) then
+        out[#out + 1] = member
+        if withScores then out[#out + 1] = e.v[member] end
+      end
+    end
+  end
+  return out
+end
+__commands.ZCOUNT = function(key, min, max)
+  local e = __ent(key); __need(e, 'z')
+  if e.t == 'n' then return 0 end
+  local low, lowExclusive = __rangeBound(min, true)
+  local high, highExclusive = __rangeBound(max, false)
+  local total = 0
+  for _, raw in pairs(e.v) do
+    local score = tonumber(raw)
+    local aboveLow = lowExclusive and score > low or (not lowExclusive and score >= low)
+    local belowHigh = highExclusive and score < high or (not highExclusive and score <= high)
+    if aboveLow and belowHigh then total = total + 1 end
+  end
+  return total
+end
+__commands.HMGET = function(key, ...)
+  local e = __ent(key); __need(e, 'h')
+  local out = {}
+  for i, field in ipairs({...}) do
+    local value = (e.t ~= 'n') and e.v[__str(field)] or nil
+    out[i] = (value == nil) and false or value
+  end
+  return out
+end
+__commands.TYPE = function(key)
+  local e = __ent(key)
+  local names = {n = 'none', s = 'string', h = 'hash', e = 'set', z = 'zset'}
+  return {ok = names[e.t]}
 end
 __commands.ZREM = function(key, ...)
   local e = __ent(key); __need(e, 'z')

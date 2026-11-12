@@ -31,7 +31,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   expired-record cleanup and the writes of the policy decision. When the decision is final, one commit script compares
   every key the request read with the state it was built on and, only if all of them still match, applies every change
   in one batch. If another request changed a key in between, nothing is saved and the request is calculated again from
-  a fresh read (up to 8 attempts, then a classified `RateLimiterException`).
+  a fresh read (up to 32 evaluations or 500 ms of recalculating, a `RedisFullCapabilityStore` constructor argument,
+  then `RateLimitConcurrencyException`, which the engine answers with its existing concurrency block).
+- For a policy with an open admission fence the lane, the evaluation and the reservation of an allowed `checkOnly` are
+  one request (the admission scripts run through the same overlay). The circuit breaker's recovery-probe writes and the
+  permit claim of an outcome command remain separate operations, recorded in DEC-037.
 - A classified validation failure anywhere in the request leaves Redis byte for byte unchanged, including the earlier
   observations of the same request (measured before the change on `942d7cf`: a request rejected after its device-cap
   observations were prepared left 4 keys changed).

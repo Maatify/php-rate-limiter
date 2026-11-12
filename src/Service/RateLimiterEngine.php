@@ -516,13 +516,17 @@ class RateLimiterEngine implements RateLimiterRuntimeInterface, AdmissionBinding
             return $this->pipeline->process($policy, $context, $request, $device, $applied);
         }
 
-        $lane = $admission->resolveLane($group, $context);
-        $result = $this->pipeline->process($policy, $context, $request, $device, $lane->lane);
-        if ($request->isPreCheck && $result->decision === RateLimitResultDTO::DECISION_ALLOW) {
-            return $admission->reserve($policy->getName(), $group, $context, $device, $lane, $result);
-        }
+        // The lane, the evaluation and the reservation of an allowed pre-check are one request: nothing is saved
+        // unless the whole of it completes (DEC-037).
+        return $admission->atomically(function () use ($admission, $policy, $group, $context, $request, $device): RateLimitResultDTO {
+            $lane = $admission->resolveLane($group, $context);
+            $result = $this->pipeline->process($policy, $context, $request, $device, $lane->lane);
+            if ($request->isPreCheck && $result->decision === RateLimitResultDTO::DECISION_ALLOW) {
+                return $admission->reserve($policy->getName(), $group, $context, $device, $lane, $result);
+            }
 
-        return $result;
+            return $result;
+        });
     }
 
     /**

@@ -9,6 +9,7 @@ use Maatify\RateLimiter\Command\RateLimitCommand;
 use Maatify\RateLimiter\Config\RateLimiterConfig;
 use Maatify\RateLimiter\DTO\RateLimitContextDTO;
 use Maatify\RateLimiter\DTO\RateLimitResultDTO;
+use Maatify\RateLimiter\Exception\RateLimitConcurrencyException;
 use Maatify\RateLimiter\Exception\RateLimiterException;
 use Maatify\RateLimiter\Repository\Redis\CallableRedisCommandExecutor;
 use Maatify\RateLimiter\Repository\Redis\RedisFullCapabilityStore;
@@ -135,21 +136,6 @@ final class RequestAtomicityRedisTest extends TestCase
         return $map;
     }
 
-    /**
-     * @param list<int|string|float> $command
-     * @return list<string>
-     */
-    private static function keysOf(array $command): array
-    {
-        $count = $command[2] ?? 0;
-        $keys = [];
-        foreach (array_slice($command, 3, is_int($count) ? $count : 0) as $key) {
-            $keys[] = (string) $key;
-        }
-
-        return $keys;
-    }
-
     /** @param list<int|string|float> $command */
     private static function isOverlayEval(array $command): bool
     {
@@ -165,7 +151,7 @@ final class RequestAtomicityRedisTest extends TestCase
     /** @param list<int|string|float> $command */
     private static function touchesDistinctMeta(array $command): bool
     {
-        foreach (self::keysOf($command) as $key) {
+        foreach (OverlayWire::keys($command) as $key) {
             if (str_contains($key, ':distinct-meta:')) {
                 return true;
             }
@@ -192,7 +178,7 @@ final class RequestAtomicityRedisTest extends TestCase
             if (self::isCommit($command)) {
                 $probe->saves++;
             } elseif (! self::isOverlayEval($command) && end($command) !== 'verify') {
-                $probe->outside[] = implode(',', self::keysOf($command));
+                $probe->outside[] = implode(',', OverlayWire::keys($command));
             }
             if (self::isOverlayEval($command) && self::touchesDistinctMeta($command)) {
                 // The third bounded observation is rejected, after the earlier ones were prepared.
@@ -329,11 +315,11 @@ final class RequestAtomicityRedisTest extends TestCase
         try {
             $store->transactRequest(function () use ($store, $eval): void {
                 $store->incrementAt('first-write', 60, 1, self::NOW);
-                $eval->invoke($store, "return redis.call('HMGET', KEYS[1], 'a')", ['unsupported-command-key'], []);
+                $eval->invoke($store, "return redis.call('HINCRBYFLOAT', KEYS[1], 'a', '1.5')", ['unsupported-command-key'], []);
             });
             self::fail('The unsupported command must be rejected.');
         } catch (RateLimiterException $caught) {
-            self::assertStringContainsString('does not support command HMGET', $caught->getMessage());
+            self::assertStringContainsString('does not support command HINCRBYFLOAT', $caught->getMessage());
         }
 
         self::assertSame($before, $this->state(), 'The write held back before the rejection never reached Redis.');
@@ -353,5 +339,67 @@ final class RequestAtomicityRedisTest extends TestCase
         }
 
         self::assertSame([], $this->state(), 'The valid entry that precedes the malformed one was not written.');
+    }
+
+    /**
+     * An executor that refuses every save the way a competing request would: the commit finds the state moved.
+     *
+     * @return array{CallableRedisCommandExecutor, object{commits: int}}
+     */
+    private function alwaysConflicting(): array
+    {
+        $probe = new class {
+            public int $commits = 0;
+        };
+        $executor = new CallableRedisCommandExecutor(function (array $command) use ($probe): mixed {
+            if (OverlayWire::isCommit($command)) {
+                $probe->commits++;
+
+                return 0;
+            }
+            return $this->executor->execute($command);
+        });
+
+        return [$executor, $probe];
+    }
+
+    public function testARequestThatKeepsConflictingStopsWithinItsRetryBudgetAndSavesNothing(): void
+    {
+        [$executor, $probe] = $this->alwaysConflicting();
+        $limiter = RateLimiterBuilder::fromFullCapabilityStore(
+            new RateLimiterConfig('test_secret', 'test_fp', 'prod'),
+            new RedisFullCapabilityStore($executor, self::NAMESPACE, null, 1),
+            new RecordingFailureSignalEmitter(),
+        )->withClock(new FixedClock('@' . self::NOW))->build();
+
+        $result = $limiter->limit($this->context('account-one'), RateLimitCommand::checkOnly('login_protection'));
+
+        // DEC-029: exhausted retries are the engine's concurrency answer, never a half-saved request.
+        self::assertSame(RateLimitResultDTO::DECISION_HARD_BLOCK, $result->decision);
+        self::assertGreaterThanOrEqual(2, $probe->commits, 'A request always gets a second evaluation.');
+        self::assertLessThan(32, $probe->commits, 'A spent budget stops the retries before the attempt limit.');
+        self::assertSame([], $this->state(), 'Nothing was saved.');
+    }
+
+    public function testARequestThatKeepsConflictingStopsAtTheAttemptLimit(): void
+    {
+        [$executor, $probe] = $this->alwaysConflicting();
+        $store = new RedisFullCapabilityStore($executor, self::NAMESPACE, null, 600_000);
+
+        try {
+            $store->transactRequest(static function () use ($store): void {
+                $store->incrementAt('conflicting', 60, 1, self::NOW);
+            });
+            self::fail('The retries must be exhausted.');
+        } catch (RateLimitConcurrencyException) {
+            self::assertSame(32, $probe->commits);
+        }
+        self::assertSame([], $this->state());
+    }
+
+    public function testTheRetryBudgetMustBePositive(): void
+    {
+        $this->expectException(RateLimiterException::class);
+        new RedisFullCapabilityStore($this->executor, self::NAMESPACE, null, 0);
     }
 }

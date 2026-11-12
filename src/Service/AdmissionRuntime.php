@@ -22,6 +22,7 @@ use Maatify\RateLimiter\Enum\AdmissionPermitClaimEnum;
 use Maatify\RateLimiter\Enum\AdmissionScopeKindEnum;
 use Maatify\RateLimiter\Exception\RateLimiterException;
 use Maatify\RateLimiter\Repository\AtomicAdmissionPermitStoreInterface;
+use Maatify\RateLimiter\Repository\RequestAtomicStoreInterface;
 use Maatify\SharedCommon\Contracts\ClockInterface;
 
 /**
@@ -80,6 +81,19 @@ final class AdmissionRuntime
     }
 
     /** The fence reads the current key, else the previous one, so a key-secret rotation does not close it (LT-27 (3)). */
+    /**
+     * Run one request of an opted policy (lane, evaluation and reservation) as one atomic save when the store offers it
+     * (DEC-037); other stores run it as it is.
+     *
+     * @template T
+     * @param callable(): T $request
+     * @return T
+     */
+    public function atomically(callable $request): mixed
+    {
+        return $this->store instanceof RequestAtomicStoreInterface ? $this->store->transactRequest($request) : $request();
+    }
+
     public function fenceOpen(string $budgetGroup): bool
     {
         return $this->store->readBindingEpoch(self::fenceKey($this->envScope, $budgetGroup, $this->keySecret), $this->previousFenceKey($budgetGroup)) >= 1;

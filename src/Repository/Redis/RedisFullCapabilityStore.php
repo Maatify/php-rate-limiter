@@ -19,6 +19,7 @@ use Maatify\RateLimiter\DTO\GenerationBoundScoreStateDTO;
 use Maatify\RateLimiter\DTO\PostPunishmentReentryStateDTO;
 use Maatify\RateLimiter\DTO\PunishmentLifecycleTransitionDTO;
 use Maatify\RateLimiter\DTO\RateLimitStateDTO;
+use Maatify\RateLimiter\Exception\RateLimitConcurrencyException;
 use Maatify\RateLimiter\Exception\RateLimiterException;
 use Maatify\RateLimiter\Exception\BackendFailureException;
 use Maatify\RateLimiter\Enum\AdmissionOutcomeKindEnum;
@@ -70,6 +71,9 @@ final class RedisFullCapabilityStore implements
 
     /** Maximum evaluations of one request before a persistent conflict is reported. */
     private const REQUEST_ATTEMPTS = 32;
+
+    /** Time a request may spend recalculating after a conflict, from the first conflict (DEC-037). */
+    private const DEFAULT_REQUEST_RETRY_BUDGET_MILLISECONDS = 500;
 
     private ?RedisAdmissionOperations $admission = null;
 
@@ -1700,12 +1704,19 @@ LUA;
      * (a direct Host call of an existing contract method): it defaults to
      * `SystemClock(UTC)`, never Redis `TIME` (#153 phase 2, LT-P2-06). The
      * runtime always passes its own `now` through the caller-time methods.
+     *
+     * `$requestRetryBudgetMilliseconds` bounds the wall time a request evaluated through `transactRequest()` may spend
+     * recalculating after its first conflict (DEC-037); a request always gets a second evaluation.
      */
     public function __construct(
         private readonly RedisCommandExecutorInterface $redis,
         private readonly string $namespace,
         ?ClockInterface $clock = null,
+        private readonly int $requestRetryBudgetMilliseconds = self::DEFAULT_REQUEST_RETRY_BUDGET_MILLISECONDS,
     ) {
+        if ($requestRetryBudgetMilliseconds < 1) {
+            throw new RateLimiterException('The request retry budget must be at least one millisecond.');
+        }
         if (! preg_match('/\A[A-Za-z0-9._:-]{1,128}\z/D', $namespace)) {
             throw new RateLimiterException('Redis namespace contains invalid characters or length.');
         }
@@ -2724,7 +2735,25 @@ LUA;
 
     private function admission(): RedisAdmissionOperations
     {
-        return $this->admission ??= new RedisAdmissionOperations($this->redis, $this->namespace);
+        // The admission scripts go through the same request overlay as the store scripts while a request is held.
+        return $this->admission ??= new RedisAdmissionOperations(
+            new CallableRedisCommandExecutor(fn(array $command): mixed => $this->executeInRequestWhenHeld($command)),
+            $this->namespace,
+        );
+    }
+
+    /**
+     * @param non-empty-list<int|string|float> $command
+     */
+    private function executeInRequestWhenHeld(array $command): mixed
+    {
+        if ($this->requestState === null || $command[0] !== 'EVAL' || ! is_string($command[1] ?? null) || ! is_int($command[2] ?? null)) {
+            return $this->command($command);
+        }
+        $keys = array_map('strval', array_slice($command, 3, $command[2]));
+        $args = array_slice($command, 3 + $command[2]);
+
+        return $this->evalInRequest($command[1], $keys, $args);
     }
 
     /**
@@ -2800,7 +2829,11 @@ LUA;
             return $evaluate();
         }
 
+        $retryingSince = null;
         for ($attempt = 0; $attempt < self::REQUEST_ATTEMPTS; $attempt++) {
+            if ($retryingSince !== null && $attempt > 1 && $this->retryBudgetSpent($retryingSince)) {
+                break;
+            }
             $this->requestState = [];
             try {
                 $result = $evaluate();
@@ -2813,6 +2846,7 @@ LUA;
                 // A step that read keys at different moments can see a combination no single moment held and
                 // report it as malformed. Only an error over state that is still current is the request's answer.
                 if ($state !== [] && ! $this->requestStateIsCurrent($state)) {
+                    $retryingSince ??= hrtime(true);
                     $this->backOff($attempt);
                     continue;
                 }
@@ -2824,10 +2858,11 @@ LUA;
             if ($this->commitRequest($state)) {
                 return $result;
             }
+            $retryingSince ??= hrtime(true);
             $this->backOff($attempt);
         }
 
-        throw new RateLimiterException('Request state kept changing; the request was not saved.');
+        throw new RateLimitConcurrencyException('Request state kept changing; the request was not saved.');
     }
 
     /**
@@ -2883,6 +2918,11 @@ LUA;
     private function backOff(int $attempt): void
     {
         usleep(random_int(0, 500 * (1 << min($attempt, 5))));
+    }
+
+    private function retryBudgetSpent(int $startedAt): bool
+    {
+        return (hrtime(true) - $startedAt) / 1_000_000 >= $this->requestRetryBudgetMilliseconds;
     }
 
     /**
