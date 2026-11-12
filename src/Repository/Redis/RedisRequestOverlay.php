@@ -218,6 +218,15 @@ local function __setExpiry(e, raw, unitMs, name)
   __touch(e)
   return 1
 end
+-- PEXPIREAT: the expiry is the given absolute time in milliseconds; a time at or before now removes the key, as in Redis.
+local function __setExpiryAt(e, raw)
+  local negative, digits = __parseInt(raw)
+  if e.t == 'n' then return 0 end
+  if negative or __cmpDec(digits, __nowMsStr) <= 0 then __drop(e); return 1 end
+  e.x = digits
+  __touch(e)
+  return 1
+end
 local function __rangeBound(raw, isMin)
   raw = __str(raw)
   if raw == '-inf' then return -math.huge, false end
@@ -538,6 +547,7 @@ __commands.TTL = function(key)
 end
 __commands.EXPIRE = function(key, seconds) return __setExpiry(__ent(key), seconds, 1000, 'expire') end
 __commands.PEXPIRE = function(key, millis) return __setExpiry(__ent(key), millis, 1, 'pexpire') end
+__commands.PEXPIREAT = function(key, millis) return __setExpiryAt(__ent(key), millis) end
 __commands.DUMP = function(key)
   local e = __ent(key)
   if e.t == 'n' then return false end

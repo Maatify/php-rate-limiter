@@ -133,6 +133,32 @@ final class RotatedAliasBoundedRedisTest extends TestCase
         );
     }
 
+    /**
+     * The bridge ends with Previous, never after it: the absolute expiry (`PEXPIRETIME`) of the bridge's data key and of its
+     * metadata key is not later than that of any key of Previous, with no 1 ms tolerance. A relative lifetime applied at a
+     * later clock reading ended the bridge 1 ms after Previous in about one run in thirty on Redis 7.0.15.
+     */
+    public function testNoBridgeKeyOutlivesAnyPreviousKeyInAbsoluteTime(): void
+    {
+        for ($i = 0; $i < 400; $i++) {
+            $logical = 'scope-T' . $i;
+            $this->seedPrevious($logical, 'old');
+            $previous = [
+                $this->int($this->executor->execute(['PEXPIRETIME', $this->raw('distinct', $logical)])),
+                $this->int($this->executor->execute(['PEXPIRETIME', $this->raw('distinct-meta', $logical)])),
+            ];
+
+            $snapshot = $this->aliased($logical, 'new');
+            self::assertTrue($snapshot->added, 'The new member went to the bridge (iteration ' . $i . ').');
+
+            foreach (['distinct', 'distinct-meta'] as $family) {
+                $bridgeAt = $this->int($this->executor->execute(['PEXPIRETIME', $this->raw($family, $logical . '-bridge')]));
+                self::assertGreaterThan(0, $bridgeAt, 'The bridge key has an expiry.');
+                self::assertLessThanOrEqual(min($previous), $bridgeAt, 'The bridge ' . $family . ' key ends no later than Previous (iteration ' . $i . ').');
+            }
+        }
+    }
+
     /** adv8 r1 as the Lead ran it, from an empty key: the first member opens the set, the rest go to the bridge. */
     public function testFromAnEmptyKeyTheEffectiveCountStopsAtTheCap(): void
     {

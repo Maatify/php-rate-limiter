@@ -1318,45 +1318,66 @@ local function ensureCurrent()
   end
   return true
 end
--- The bridge's physical lifetime is min(Previous PTTL, Previous-metadata
--- PTTL, Previous authoritative remaining ms, requested ms), never rounded
--- upward. PTTL reaches Lua as a native number, which is exact only up to
--- 2^53 - 1: a value at or above that is treated as "at least 2^53" and a
--- candidate below it is exact. The authoritative-remaining and requested
--- candidates are derived from decimal strings, never from `tonumber()` of a
--- huge value. Any exact candidate is therefore provably <= every inexact
--- one, so the exact minimum is the true minimum; when every candidate is
--- inexact the lifetime cannot be bounded exactly and the whole rotation
--- fails before any Current or Bridge mutation.
+-- The bridge's physical expiry is one absolute time: the earliest of Previous's expiry, Previous-metadata's expiry, the
+-- authoritative Previous expiry and the requested lifetime, every candidate on the script's own clock (the clock that
+-- PEXPIRETIME and PTTL are both read against: `PEXPIRETIME - PTTL`). It is applied to the bridge's data and metadata keys
+-- with PEXPIREAT, so neither can end after any key of Previous: a relative lifetime applied at another clock reading
+-- ended the bridge 1 ms late on Redis 7.0.15. PEXPIRETIME and PTTL reach Lua as native numbers, exact only up to
+-- 2^53 - 1. When neither Previous key has an exact expiry the clock cannot be read exactly, and Previous outlives every
+-- exact candidate by orders of magnitude: the bridge then keeps its relative lifetime (the exact minimum of the
+-- candidates). The authoritative-remaining and requested candidates are decimal strings, never `tonumber()` of a huge
+-- value. Any exact candidate is provably <= every inexact one; when every candidate is inexact the lifetime cannot be
+-- bounded exactly and the whole rotation fails before any Current or Bridge mutation.
 local exactMsMax = '9007199254740991'
 local function exactCandidate(decimal)
   if compareDecimalStrings(decimal, exactMsMax) <= 0 then return tonumber(decimal) end
   return nil
 end
-local function planBridgePttl()
+local function planBridgeExpiry()
   local previousPttl = redis.call('PTTL', KEYS[5])
   local previousMetaPttl = redis.call('PTTL', KEYS[6])
   if previousPttl <= 0 or previousMetaPttl <= 0 then return nil, 'malformed previous bounded state' end
-  local candidates = {}
-  if previousPttl <= 9007199254740991 then candidates[#candidates + 1] = previousPttl end
-  if previousMetaPttl <= 9007199254740991 then candidates[#candidates + 1] = previousMetaPttl end
+  local previousAt = redis.call('PEXPIRETIME', KEYS[5])
+  local previousMetaAt = redis.call('PEXPIRETIME', KEYS[6])
+  local clock = nil
+  if previousAt > 0 and previousAt <= 9007199254740991 then clock = previousAt - previousPttl
+  elseif previousMetaAt > 0 and previousMetaAt <= 9007199254740991 then clock = previousMetaAt - previousMetaPttl end
   local remaining = exactCandidate(subtractDecimalStrings(prevExpiry .. '000', nowMsStr))
-  if remaining ~= nil then candidates[#candidates + 1] = remaining end
   local requested = exactCandidate(ARGV[2] .. '000')
-  if requested ~= nil then candidates[#candidates + 1] = requested end
-  if #candidates == 0 then return nil, 'rotated bridge lifetime exceeds Redis Lua exact integer range' end
-  local bridgePttl = candidates[1]
-  for _, candidate in ipairs(candidates) do if candidate < bridgePttl then bridgePttl = candidate end end
-  if bridgePttl <= 0 then return nil, 'malformed previous bounded state' end
-  return bridgePttl
+  if clock == nil then
+    local candidates = {}
+    if previousPttl <= 9007199254740991 then candidates[#candidates + 1] = previousPttl end
+    if previousMetaPttl <= 9007199254740991 then candidates[#candidates + 1] = previousMetaPttl end
+    if remaining ~= nil then candidates[#candidates + 1] = remaining end
+    if requested ~= nil then candidates[#candidates + 1] = requested end
+    if #candidates == 0 then return nil, 'rotated bridge lifetime exceeds Redis Lua exact integer range' end
+    local bridgePttl = candidates[1]
+    for _, candidate in ipairs(candidates) do if candidate < bridgePttl then bridgePttl = candidate end end
+    if bridgePttl <= 0 then return nil, 'malformed previous bounded state' end
+    return {pttl = bridgePttl}
+  end
+  local clockStr = string.format('%.0f', clock)
+  local candidates = {}
+  if previousAt <= 9007199254740991 then candidates[#candidates + 1] = string.format('%.0f', previousAt) end
+  if previousMetaAt > 0 and previousMetaAt <= 9007199254740991 then candidates[#candidates + 1] = string.format('%.0f', previousMetaAt) end
+  if remaining ~= nil then candidates[#candidates + 1] = addDecimalStrings(clockStr, string.format('%.0f', remaining)) end
+  if requested ~= nil then candidates[#candidates + 1] = addDecimalStrings(clockStr, string.format('%.0f', requested)) end
+  local bridgeAt = candidates[1]
+  for _, candidate in ipairs(candidates) do if compareDecimalStrings(candidate, bridgeAt) < 0 then bridgeAt = candidate end end
+  if compareDecimalStrings(bridgeAt, clockStr) <= 0 then return nil, 'malformed previous bounded state' end
+  return {at = bridgeAt}
 end
-local function ensureBridge(bridgePttl)
+local function expireBridgeKey(key, plan)
+  if plan.at ~= nil then return redis.pcall('PEXPIREAT', key, plan.at) end
+  return redis.pcall('PEXPIRE', key, plan.pttl)
+end
+local function ensureBridge(plan)
   if bridgeExists == 0 then
     bridgeExpiry = prevExpiry
     redis.call('SADD', KEYS[3], ARGV[3]); created[#created + 1] = KEYS[3]
-    if not expiryApplied(redis.pcall('PEXPIRE', KEYS[3], bridgePttl), created) then return false end
+    if not expiryApplied(expireBridgeKey(KEYS[3], plan), created) then return false end
     redis.call('HSET', KEYS[4], 'expiresAt', bridgeExpiry); created[#created + 1] = KEYS[4]
-    if not expiryApplied(redis.pcall('PEXPIRE', KEYS[4], bridgePttl), created) then return false end
+    if not expiryApplied(expireBridgeKey(KEYS[4], plan), created) then return false end
     bridgeExists = 1
   else
     redis.call('SADD', KEYS[3], ARGV[3])
@@ -1366,13 +1387,13 @@ end
 if known then
   if not ensureCurrent() then return redis.error_reply('expiry not representable') end
 elseif #members < tonumber(ARGV[5]) then
-  local bridgePttl = nil
+  local bridgePlan = nil
   if bridgeExists == 0 then
     local planError
-    bridgePttl, planError = planBridgePttl()
-    if bridgePttl == nil then return redis.error_reply(planError) end
+    bridgePlan, planError = planBridgeExpiry()
+    if bridgePlan == nil then return redis.error_reply(planError) end
   end
-  if not ensureCurrent() or not ensureBridge(bridgePttl) then return redis.error_reply('expiry not representable') end
+  if not ensureCurrent() or not ensureBridge(bridgePlan) then return redis.error_reply('expiry not representable') end
   added = true
   members[#members + 1] = ARGV[3]
 end
