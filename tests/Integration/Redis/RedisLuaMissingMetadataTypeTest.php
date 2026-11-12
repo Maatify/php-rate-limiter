@@ -183,6 +183,53 @@ final class RedisLuaMissingMetadataTypeTest extends TestCase
         );
     }
 
+    /**
+     * The key stays and only the field is missing: the Redis reply for the field is `false`, not a missing key. On `main`
+     * this reached string.match() and ended as a raw script error (BLOCK_VALIDATE, HARD_BLOCK, T-3).
+     */
+    public function testBlockOperationsRejectABlockWhoseExpiryFieldIsMissingButWhoseKeyRemains(): void
+    {
+        $this->store->blockWithCycleTracking('block', null, 2, 30, self::NOW, 60, 2, 120, 300);
+        $keys = $this->executor->execute(['KEYS', '*:block:*']);
+        self::assertIsArray($keys);
+        self::assertCount(1, $keys);
+        $key = $keys[0] ?? null;
+        self::assertIsString($key);
+        $this->executor->execute(['HDEL', $key, 'expiresAt']);
+        self::assertSame(1, $this->executor->execute(['EXISTS', $key]), 'The block key remains with its level field.');
+
+        $this->assertMalformedWithoutMutation(fn() => $this->store->checkBlockAt('block', self::NOW), 'malformed block state');
+        $this->assertMalformedWithoutMutation(fn() => $this->store->peekBlockAt('block', self::NOW), 'malformed block state');
+        $this->assertMalformedWithoutMutation(
+            fn() => $this->store->blockWithCycleTracking('block', null, 2, 30, self::NOW, 60, 2, 120, 300),
+            'malformed hard-block state',
+        );
+    }
+
+    /** The rotated watch script (previous and current scopes) with the expiry field missing and the key remaining (T-3). */
+    public function testRotatedWatchRejectsAMissingExpiryFieldWhoseKeyRemains(): void
+    {
+        foreach (['previous' => 'malformed previous watch state', 'current' => 'malformed current watch state'] as $scope => $message) {
+            $this->executor->execute(['FLUSHDB']);
+            $this->store->incrementWatchFlagAt($scope . '-watch', 600, self::NOW);
+            $keys = $this->executor->execute(['KEYS', '*watch-meta*']);
+            self::assertIsArray($keys);
+            self::assertCount(1, $keys);
+            $key = $keys[0] ?? null;
+            self::assertIsString($key);
+            $this->executor->execute(['HSET', $key, 'other', '1']);
+            $this->executor->execute(['HDEL', $key, 'expiresAt']);
+            self::assertSame(1, $this->executor->execute(['EXISTS', $key]), 'The metadata key remains with another field.');
+
+            $this->assertMalformedWithoutMutation(
+                fn() => $scope === 'previous'
+                    ? $this->store->incrementWatchFlagAcrossRotationAt('other-current', 'previous-watch', 600, self::NOW + 1)
+                    : $this->store->incrementWatchFlagAcrossRotationAt('current-watch', 'other-previous', 600, self::NOW + 1),
+                $message,
+            );
+        }
+    }
+
     public function testPublicRuntimeRejectsNoncanonicalDistinctExpiryForPreviouslySeenAccountsWithoutWriting(): void
     {
         $config = new RateLimiterConfig('test_secret', 'test_fp', 'prod');

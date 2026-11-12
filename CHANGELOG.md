@@ -45,7 +45,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   observations of the same request (measured before the change on `942d7cf`: a request rejected after its device-cap
   observations were prepared left 4 keys changed).
 - Stores that do not implement `RequestAtomicStoreInterface`, or a runtime whose `store` and `correlationStore` differ,
-  keep the sequential writes. The circuit-breaker state is a separate operation and is not part of the request save.
+  keep the sequential writes. The circuit-breaker state is part of the request save only for the recovery step of a circuit
+  that is not closed (above); a backend failure reported to the circuit breaker after the request, the success that closes
+  a circuit, and the permit claim of an outcome command are separate operations outside it (DEC-037, item 7).
 
 ### Fixed (#185, DEC-033) — Sliding windows for the admission layer (counters and failure sets)
 - Under fixed tumbling windows (DEC-025, DEC-028), admission windowed counters and failure sets used epoch-bucketed keys (`w<intdiv(t,W)>` and `d<intdiv(t,DAY)>`) with TTLs of 2W / 2·DAY. An adversary crossing a boundary could double their burst allowance within a narrow burst window (e.g. 8 failures allowed within 14 seconds across a boundary instead of 4, 48 requests instead of 24, etc.).
