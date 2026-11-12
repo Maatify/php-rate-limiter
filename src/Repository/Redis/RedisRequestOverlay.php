@@ -74,7 +74,10 @@ local function __loadLive(key)
     local flat = __real.call('ZRANGE', key, 0, -1, 'WITHSCORES')
     for i = 1, #flat, 2 do e.v[flat[i]] = flat[i + 1] end
   else
-    error({err = 'request overlay does not support key type ' .. tostring(kind)})
+    -- A type the overlay does not model is answered as Redis answers a script that reads a key of the wrong type: with the
+    -- WRONGTYPE code. A message without a Redis error code reaches phpredis as an untyped RedisException instead of the reply
+    -- the store classifies as a RateLimiterException.
+    error({err = 'WRONGTYPE Operation against a key holding the wrong kind of value'})
   end
   e.o = __real.sha1hex(__ser(e.t, e.v, e.x))
   return e
