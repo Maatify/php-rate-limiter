@@ -368,4 +368,38 @@ final class RequestAtomicityRecoveryOutageRedisTest extends TestCase
             self::assertStringContainsString('HALF_OPEN', (string) $this->storedCircuit(), 'The lease came with its circuit state.');
         }
     }
+
+    /**
+     * A failed health check (PING) is not a lost save: the store reports it as "unhealthy", the circuit breaker treats the
+     * probe as failed and renews the OPEN state (DEC-037, item 7). That renewal and the probe lease it needed are one save:
+     * both are stored, never the lease alone, and nothing is announced.
+     */
+    public function testAFailedHealthCheckRenewsTheOpenStateAndSavesItWithItsLease(): void
+    {
+        $this->circuitOpen();
+        $before = $this->keyspace();
+        $beforeCircuit = $this->storedCircuit();
+        $pings = 0;
+        $failing = new CallableRedisCommandExecutor(function (array $command) use (&$pings): mixed {
+            if ($command === ['PING']) {
+                $pings++;
+                throw new BackendFailureException('Test outage during PING.');
+            }
+
+            return $this->executor->execute($command);
+        });
+
+        $result = $this->limiter($failing, self::NOW + 400)->limit($this->context('account-ping'), RateLimitCommand::checkOnly('login_protection'));
+
+        self::assertInstanceOf(RateLimitResultDTO::class, $result);
+        self::assertSame(1, $pings, 'The probe ran its health check once.');
+        $after = $this->keyspace();
+        $leases = array_values(array_filter($after, static fn(string $entry): bool => str_contains($entry, ':probe:')));
+        self::assertCount(1, $leases, 'The lease is stored, and only because its circuit state is stored with it.');
+        self::assertNotSame($beforeCircuit, $this->storedCircuit(), 'The OPEN state was renewed by the failed probe.');
+        self::assertStringContainsString('OPEN', (string) $this->storedCircuit());
+        self::assertStringNotContainsString('HALF_OPEN', (string) $this->storedCircuit());
+        self::assertCount(0, $this->emittedSignals());
+        self::assertCount(count($before) + 1, $after, 'Exactly the lease was added; the circuit key was replaced, not duplicated.');
+    }
 }
