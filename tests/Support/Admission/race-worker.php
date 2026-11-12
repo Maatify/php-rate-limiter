@@ -42,7 +42,8 @@ if ($json === false) {
 }
 $spec = AdmissionRaceSpec::fromJson($json);
 $executor = new RespRedisCommandExecutor($host, intval($port));
-$store = new RedisFullCapabilityStore($executor, $spec->namespace);
+// These suites assert exactly-once effects under overlap, not latency: a CPU-starved runner must not turn a slow retry into a concurrency block.
+$store = new RedisFullCapabilityStore($executor, $spec->namespace, null, 60_000);
 $operations = new RedisAdmissionOperations($executor, $spec->namespace);
 $fill = static fn(string $value): string => str_replace('{i}', $index, $value);
 $at = static fn(?string $value): ?string => $value === null ? null : $fill($value);
@@ -62,7 +63,7 @@ foreach ($spec->scopes as $s) {
     );
 }
 
-$runtime = $spec->op === 'public_check' ? PublicRedisAdmissionFixture::build($executor, $spec->namespace, $spec->now) : null;
+$runtime = $spec->op === 'public_check' ? PublicRedisAdmissionFixture::build($executor, $spec->namespace, $spec->now, 60_000) : null;
 
 if ($runtime !== null && microtime(true) >= (float) $barrier) {
     fwrite(STDERR, "Public runtime worker missed the start barrier.\n");

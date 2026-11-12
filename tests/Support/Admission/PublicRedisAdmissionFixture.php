@@ -16,11 +16,11 @@ use Maatify\RateLimiter\Tests\Support\FailureSignal\RecordingFailureSignalEmitte
 /** Public runtime fixture shared by the Redis gate and its independent worker processes. */
 final class PublicRedisAdmissionFixture
 {
-    public static function build(RedisCommandExecutorInterface $executor, string $namespace, int $now): CompositeRateLimiterRuntimeInterface
+    public static function build(RedisCommandExecutorInterface $executor, string $namespace, int $now, int $retryBudgetMilliseconds = 500): CompositeRateLimiterRuntimeInterface
     {
         return RateLimiterBuilder::fromFullCapabilityStore(
             new RateLimiterConfig('redis-gate-key', 'redis-gate-fingerprint', 'test', bindingKeySecret: 'redis-gate-binding'),
-            new RedisFullCapabilityStore($executor, $namespace),
+            new RedisFullCapabilityStore($executor, $namespace, null, $retryBudgetMilliseconds),
             new RecordingFailureSignalEmitter(),
         )->withClock(new FixedClock('@' . $now))->withPolicy(new LoginProtectionAdmissionPolicy())->build();
     }
