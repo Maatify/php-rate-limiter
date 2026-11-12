@@ -6,15 +6,15 @@
 
 ## Status
 
-`PROPOSED` — recorded 2026-11-12 in [PR #205](https://github.com/Maatify/php-rate-limiter/pull/205) (T-5, #185) for the Owner's decision. It changes the mechanism of the T-5 design that was approved earlier (the calculation in PHP and the conditional save in Lua); the Lead and the Owner have not accepted it yet.
+`ACTIVE` — activated 2026-11-12 in [PR #205](https://github.com/Maatify/php-rate-limiter/pull/205) on the Owner’s explicit approval. The activation commit records the authorization. The [Lead accepted T-5 on `94d29c8`](https://github.com/Maatify/php-rate-limiter/pull/205#pullrequestreview-5879850196).
 
 ## Date
 
-Proposed 2026-11-12.
+Proposed and activated 2026-11-12.
 
 ## Decision Authority
 
-**Owner**, on the Lead's review of PR #205. The earlier T-5 design (PHP computes the changes in evaluation order, Lua compares the state it was built on and saves in one batch) was set by the Lead; this record asks for the Owner's decision on a different mechanism that keeps its contract.
+**Owner**, approving the Lua request overlay and authorizing activation on PR #205 on 2026-11-12. This adopts the Lua overlay in place of the earlier PHP planning and conditional Lua save design, with the same request atomicity contract.
 
 ## Scope / Concern
 
@@ -52,7 +52,7 @@ How one `EvaluationPipeline::process()` request (the whole `checkOnly` evaluatio
 
 - **Behaviour under concurrency.** Two requests that touch the same keys are serialised by the commit: the later one is calculated again after the earlier one and may return a different decision than it would have computed on the stale state (for example the second failure of a block race now returns the hard block). The set of decisions and the final state equal one sequential order of the requests. The block-race, score-race and marker-race suites assert exactly that.
 - **No partial prefix.** A request interrupted by a lost reply leaves no part of its writes (the admission interruption suite).
-- **Cost, measured** (isolated Redis 7, one process: a `checkOnly` of a new device, 25 `EVAL`s per request in both modes): p50 3.6 ms without the overlay, 5.6 ms with it; 88 KB sent per request without it, 498 KB with it (the overlay text travels with every `EVAL`). With a TCP proxy adding about 7 ms of round trip, p50 166 ms and 188 ms. Redis time per `EVAL` was the same (about 50 µs). Sending the wrapped scripts by `EVALSHA` would remove most of the extra bytes and is not part of this decision. A request that changes nothing sends no commit.
+- **Cost, measured** (isolated Redis 7, one process: a `checkOnly` of a new device, 25 `EVAL`s per request in both modes): p50 3.6 ms without the overlay, 5.6 ms with it; 88 KB sent per request without it, 498 KB with it (the overlay text travels with every `EVAL`). With a TCP proxy adding about 7 ms of round trip, p50 166 ms and 188 ms. Redis time per `EVAL` was the same (about 50 µs). Sending the wrapped scripts by `EVALSHA` would remove most of the extra bytes. The Owner kept `EVALSHA` as a separate performance follow-up outside this activation. A request that changes nothing sends no commit.
 - **Contention, measured** (forked PHP workers, one hot IP, a new device per request, 25 requests per worker): up to 16 simultaneous writers produced no concurrency block and a worst latency of 57-237 ms at 0-2 ms of added round trip; at about 7 ms of added round trip (an evaluation of about 175 ms) a 250 ms budget produced 1-3 % concurrency blocks (p99 about 570 ms), a 500 ms budget and a 1000 ms budget none (worst latency about 615 ms). A burst of 128-256 workers on 8 cores is limited by the clients' CPU, not by conflicts: one evaluation then takes longer than the budget and most requests end as the concurrency block; without the budget they all complete, after 1-3.5 s. Without the overlay the same burst failed 12 of 32, 62 of 128 and 24 of 256 requests with exceptions.
 - **Default budget, measured through the public API** (`RequestAtomicityDefaultBudgetRedisTest`: 8 processes, 12 requests each, one hot account, defaults 32 evaluations / 500 ms, isolated local Redis): no request failed, the slowest request stayed far below 2 s and no request ended as a concurrency block. The test bounds the slowest request by the budget plus one evaluation and the block share by 10 %; the figures over a network are the ones above.
 - **Redis.** Redis 7.0 or newer (`PEXPIRETIME`, `TIME` before a write in a script); the CI service image is `redis:7.0.15`.
