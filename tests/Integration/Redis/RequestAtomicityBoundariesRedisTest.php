@@ -216,52 +216,110 @@ final class RequestAtomicityBoundariesRedisTest extends TestCase
         }
     }
 
-    public function testACircuitRecoveryProbeWritesOnlyCircuitStateBeforeARejectedEvaluation(): void
+    /** Three failed requests during an outage open the circuit; returns the limiter factory used for the later requests. */
+    private function openCircuit(RecordingFailureSignalEmitter $signals): void
     {
-        $config = new RateLimiterConfig('test_secret', 'test_fp', 'prod');
-        $outage = new class {
-            public bool $active = true;
-        };
-        $executor = new CallableRedisCommandExecutor(function (array $command) use ($outage): mixed {
-            if ($outage->active && OverlayWire::isScript($command, '__ov_result')) {
+        $outage = new CallableRedisCommandExecutor(function (array $command): mixed {
+            if (OverlayWire::isScript($command, '__ov_result')) {
                 throw new BackendFailureException('Test outage.');
             }
 
             return $this->executor->execute($command);
         });
-        $limiter = static fn(int $now): RateLimiterInterface => RateLimiterBuilder::fromFullCapabilityStore(
-            $config,
-            new RedisFullCapabilityStore($executor, self::NAMESPACE),
-            new RecordingFailureSignalEmitter(),
-        )->withClock(new FixedClock('@' . $now))->build();
         $command = RateLimitCommand::checkOnly('login_protection');
         for ($i = 0; $i < 3; $i++) {
-            $limiter(self::NOW + $i)->limit($this->context('account-' . $i), $command);
+            $this->limiterAt($outage, self::NOW + $i, $signals)->limit($this->context('account-' . $i), $command);
         }
-        $outage->active = false;
-        $before = $this->state();
-        self::assertNotEmpty(array_filter(array_keys($before), static fn(string $key): bool => str_contains($key, ':circuit:')), 'The circuit recorded the outage.');
+        self::assertNotEmpty(array_filter(array_keys($this->state()), static fn(string $key): bool => str_contains($key, ':circuit:')), 'The circuit recorded the outage.');
+    }
 
+    private function limiterAt(CallableRedisCommandExecutor|RespRedisCommandExecutor $executor, int $now, RecordingFailureSignalEmitter $signals): RateLimiterInterface
+    {
+        return RateLimiterBuilder::fromFullCapabilityStore(
+            new RateLimiterConfig('test_secret', 'test_fp', 'prod'),
+            new RedisFullCapabilityStore($executor, self::NAMESPACE),
+            $signals,
+        )->withClock(new FixedClock('@' . $now))->build();
+    }
+
+    /** @return list<string> the types of the signals emitted so far */
+    private function signalTypes(RecordingFailureSignalEmitter $signals): array
+    {
+        return array_values(array_map(static fn($signal): string => $signal->type, $signals->getEmitted()));
+    }
+
+    public function testARejectedRequestLeavesTheRecoveryProbeUnsaved(): void
+    {
+        $signals = new RecordingFailureSignalEmitter();
+        $this->openCircuit($signals);
+        $this->limiterAt($this->executor, self::NOW + 400, $signals)->limit($this->context('account-step'), RateLimitCommand::checkOnly('login_protection'));
+        $signals->clear();
+        $before = $this->state();
         $rejection = new RateLimiterException('malformed bounded metadata');
-        $rejecting = new CallableRedisCommandExecutor(function (array $command) use ($rejection): mixed {
+        $saves = 0;
+        $rejecting = new CallableRedisCommandExecutor(function (array $command) use ($rejection, &$saves): mixed {
+            if (OverlayWire::isCommit($command)) {
+                $saves++;
+            }
             if (OverlayWire::isScript($command, '__ov_result') && OverlayWire::touchesFamily($command, 'distinct-meta')) {
                 throw $rejection;
             }
 
             return $this->executor->execute($command);
         });
+
+        // HALF_OPEN and healthy for the interval: the next request's probe would close the circuit.
         try {
-            RateLimiterBuilder::fromFullCapabilityStore($config, new RedisFullCapabilityStore($rejecting, self::NAMESPACE), new RecordingFailureSignalEmitter())
-                ->withClock(new FixedClock('@' . (self::NOW + 400)))->build()
-                ->limit($this->context('account-probe'), $command);
+            $this->limiterAt($rejecting, self::NOW + 400 + 121, $signals)->limit($this->context('account-probe'), RateLimitCommand::checkOnly('login_protection'));
+            self::fail('The classified rejection must reach the caller.');
         } catch (RateLimiterException $caught) {
             self::assertSame($rejection, $caught);
         }
 
-        $changed = array_keys(array_diff_assoc($this->state(), $before));
-        self::assertNotEmpty($changed, 'The recovery probe wrote its lease before the evaluation was rejected.');
-        foreach ($changed as $key) {
-            self::assertSame(1, preg_match('/:(circuit|probe):/', $key), 'Only circuit-breaker keys changed before the rejection: ' . $key);
-        }
+        self::assertSame(0, $saves);
+        self::assertSame($before, $this->state(), 'Neither the probe lease nor the circuit state was written.');
+        self::assertSame([], $this->signalTypes($signals), 'No transition was announced for a step that was not saved.');
+    }
+
+    public function testARecoveryProbeIsSavedWithItsRequestAndRecoversOnce(): void
+    {
+        $signals = new RecordingFailureSignalEmitter();
+        $this->openCircuit($signals);
+        $signals->clear();
+        $command = RateLimitCommand::checkOnly('login_protection');
+        $saves = 0;
+        $counting = new CallableRedisCommandExecutor(function (array $c) use (&$saves): mixed {
+            if (OverlayWire::isCommit($c)) {
+                $saves++;
+            }
+
+            return $this->executor->execute($c);
+        });
+
+        // First probe: OPEN -> HALF_OPEN, the request itself is still answered degraded; lease and state are one save.
+        $this->limiterAt($counting, self::NOW + 400, $signals)->limit($this->context('account-1'), $command);
+        self::assertSame(1, $saves);
+        self::assertNotEmpty(array_filter(array_keys($this->state()), static fn(string $key): bool => str_contains($key, ':probe:')), 'The lease is stored.');
+
+        // Two requests are eligible at once: the second one's evaluation starts while the first one saves.
+        $rival = null;
+        $racing = new CallableRedisCommandExecutor(function (array $c) use (&$rival, $signals, $command): mixed {
+            if ($rival === null && OverlayWire::isCommit($c)) {
+                $rival = true;
+                $inner = $this->limiterAt($this->executor, self::NOW + 400 + 121, $signals)->limit($this->context('account-rival'), $command);
+                self::assertSame(RateLimitResultDTO::DECISION_ALLOW, $inner->decision);
+            }
+
+            return $this->executor->execute($c);
+        });
+        $outer = $this->limiterAt($racing, self::NOW + 400 + 121, $signals)->limit($this->context('account-outer'), $command);
+
+        self::assertTrue($rival);
+        self::assertSame(RateLimitResultDTO::DECISION_ALLOW, $outer->decision, 'The loser recomputed against the recovered circuit.');
+        self::assertSame(
+            1,
+            count(array_filter($this->signalTypes($signals), static fn(string $type): bool => $type === \Maatify\RateLimiter\DTO\FailureSignalDTO::TYPE_CB_RECOVERED)),
+            'The circuit recovered once, announced once.',
+        );
     }
 }

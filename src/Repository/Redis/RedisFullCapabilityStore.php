@@ -2411,6 +2411,12 @@ LUA;
             throw new RateLimiterException('Circuit-breaker timestamps must be non-negative Unix timestamps.');
         }
         $raw = json_encode($state, JSON_THROW_ON_ERROR);
+        if ($this->requestState !== null) {
+            // T-5: inside a request the write is held back and saved with it.
+            $this->eval("redis.call('SET', KEYS[1], ARGV[1])\nreturn 1", [$this->key('circuit', $policyName)], [$raw]);
+
+            return;
+        }
         $this->command(['SET', $this->key('circuit', $policyName), $raw]);
     }
 

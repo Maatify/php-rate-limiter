@@ -34,8 +34,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   a fresh read (up to 32 evaluations or 500 ms of recalculating, a `RedisFullCapabilityStore` constructor argument,
   then `RateLimitConcurrencyException`, which the engine answers with its existing concurrency block).
 - For a policy with an open admission fence the lane, the evaluation and the reservation of an allowed `checkOnly` are
-  one request (the admission scripts run through the same overlay). The circuit breaker's recovery-probe writes and the
-  permit claim of an outcome command remain separate operations, recorded in DEC-037.
+  one request (the admission scripts run through the same overlay). The recovery step of a circuit that is not closed
+  (probe lease, half-open/closed transition) is saved with the request it belongs to, so a rejected request leaves it
+  unsaved and its transition signals are not emitted; two requests that probe at once recover the circuit once. The
+  permit claim of an outcome command stays its own atomic operation, recorded in DEC-037.
 - A classified validation failure anywhere in the request leaves Redis byte for byte unchanged, including the earlier
   observations of the same request (measured before the change on `942d7cf`: a request rejected after its device-cap
   observations were prepared left 4 keys changed).

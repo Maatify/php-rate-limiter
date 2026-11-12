@@ -45,6 +45,9 @@ class CircuitBreaker
     /** @var array<string, int> */
     private array $emergencyProbeLeases = [];
 
+    /** @var list<FailureSignalDTO>|null Signals held back while a recovery step is not yet saved (T-5), null when emitting at once. */
+    private ?array $heldSignals = null;
+
     /**
      * @param CircuitBreakerStoreInterface $store State persistence boundary.
      * @param FailureSignalEmitterInterface $emitter Transition notification sink.
@@ -260,7 +263,7 @@ class CircuitBreaker
         if (isset($this->emergencyStates[$policyName])) {
             unset($this->emergencyStates[$policyName], $this->emergencyProbeLeases[$policyName]);
         }
-        $this->emitter->emit(new FailureSignalDTO(FailureSignalDTO::TYPE_CB_RECOVERED, $policyName));
+        $this->signal(new FailureSignalDTO(FailureSignalDTO::TYPE_CB_RECOVERED, $policyName));
 
         return true;
     }
@@ -359,7 +362,7 @@ class CircuitBreaker
     ): array {
         [$reEntries, $failClosedUntil, $signals] = $this->openTransition($reEntries, $failClosedUntil, $now, $isReEntry);
         foreach ($signals as $type) {
-            $this->emitter->emit(new FailureSignalDTO($type, $policyName));
+            $this->signal(new FailureSignalDTO($type, $policyName));
         }
 
         return [$reEntries, $failClosedUntil];
@@ -491,6 +494,40 @@ class CircuitBreaker
 
             return true;
         }
+    }
+
+    /** T-5 (DEC-037): whether state is saved through this exact store object, so a request save can include the recovery step. */
+    public function usesStore(object $store): bool
+    {
+        return $this->store === $store;
+    }
+
+    /** T-5: start holding the transition signals of a recovery step that is saved with its request; drops earlier held ones. */
+    public function holdSignals(): void
+    {
+        $this->heldSignals = [];
+    }
+
+    /** T-5: emit the held signals once the request was saved, or drop them when it was not. */
+    public function releaseSignals(bool $saved): void
+    {
+        $held = $this->heldSignals ?? [];
+        $this->heldSignals = null;
+        if ($saved) {
+            foreach ($held as $signal) {
+                $this->emitter->emit($signal);
+            }
+        }
+    }
+
+    private function signal(FailureSignalDTO $signal): void
+    {
+        if ($this->heldSignals !== null) {
+            $this->heldSignals[] = $signal;
+
+            return;
+        }
+        $this->emitter->emit($signal);
     }
 
     private function closedState(): CircuitBreakerStateDTO

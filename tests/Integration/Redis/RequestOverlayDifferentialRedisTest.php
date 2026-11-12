@@ -20,6 +20,8 @@ use PHPUnit\Framework\TestCase;
 #[Group('t5-request-atomicity')]
 final class RequestOverlayDifferentialRedisTest extends TestCase
 {
+    private const EXPIRY_DELTA_MILLISECONDS = 400;
+
     private const NOW = 1_793_793_600;
 
     private const NOW_MS = self::NOW * 1000;
@@ -124,7 +126,8 @@ final class RequestOverlayDifferentialRedisTest extends TestCase
         foreach ($directState as $key => [$type, $content, $expiry]) {
             self::assertSame($type, $overlayState[$key][0], $name . ': type of ' . $key);
             self::assertSame($content, $overlayState[$key][1], $name . ': content of ' . $key);
-            self::assertEqualsWithDelta($expiry, $overlayState[$key][2], 3000, $name . ': expiry of ' . $key);
+            // The two runs are a few milliseconds apart, so a difference of a second in an expiry is a defect.
+            self::assertEqualsWithDelta($expiry, $overlayState[$key][2], self::EXPIRY_DELTA_MILLISECONDS, $name . ': expiry of ' . $key);
         }
     }
 

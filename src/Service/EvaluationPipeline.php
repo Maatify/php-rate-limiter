@@ -197,6 +197,12 @@ class EvaluationPipeline
      * the collective correlation rules and take the K5 material from the
      * instance id when the device carries one.
      */
+    /** T-5: the store that saves one request at once, or null when the store cannot (DEC-037). */
+    public function requestStore(): ?RequestAtomicStoreInterface
+    {
+        return $this->store instanceof RequestAtomicStoreInterface && $this->correlationStore === $this->store ? $this->store : null;
+    }
+
     public function process(
         BlockPolicyInterface $policy,
         RateLimitContextDTO $context,

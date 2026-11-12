@@ -295,6 +295,9 @@ class RateLimiterEngine implements RateLimiterRuntimeInterface, AdmissionBinding
             : $this->evaluate($context, $request);
     }
 
+    /** T-5: set while an outage during a saved-with-the-request recovery step is repeated with the sequential writes. */
+    private bool $sequentialRecovery = false;
+
     private function evaluate(RateLimitContextDTO $context, RateLimitCommand $request): RateLimitResultDTO
     {
         $policy = $this->policies[$request->policyName] ?? null;
@@ -316,7 +319,16 @@ class RateLimiterEngine implements RateLimiterRuntimeInterface, AdmissionBinding
         }
 
         $state = $this->circuitBreaker->getState($policyName);
-        if ($state->state !== \Maatify\RateLimiter\DTO\FailureStateDTO::STATE_CLOSED) {
+        $recovering = $state->state !== \Maatify\RateLimiter\DTO\FailureStateDTO::STATE_CLOSED;
+        // T-5 (DEC-037): a recovery step (lease, state change) is saved with the request it belongs to, so a request that is
+        // rejected leaves it unsaved. Stores that cannot hold a request back keep the sequential writes.
+        $requestStore = $recovering ? $this->pipeline->requestStore() : null;
+        $atomicRecovery = !$this->sequentialRecovery && $requestStore !== null && $this->circuitBreaker->usesStore($requestStore);
+        $phase = 'before';
+        $answered = false;
+
+        $recover = function () use ($policy, $context, $policyName, &$phase): ?RateLimitResultDTO {
+            $phase = 'probe';
             $mayProcessNormally = $this->circuitBreaker->attemptRecoveryProbe(
                 $policyName,
                 fn(): bool => $this->pipeline->isBackendHealthy(),
@@ -326,19 +338,56 @@ class RateLimiterEngine implements RateLimiterRuntimeInterface, AdmissionBinding
                 return $this->guardResult($policyName);
             }
 
-            if (! $mayProcessNormally) {
-                return $this->degradedResult($policy, $context);
+            return $mayProcessNormally ? null : $this->degradedResult($policy, $context);
+        };
+
+        if ($recovering && !$atomicRecovery) {
+            $early = $recover();
+            if ($early !== null) {
+                return $early;
             }
         }
 
         try {
-            $device = $this->deviceResolver->resolve($context);
-            $group = $this->admissionGroup($policy);
+            $process = function () use ($policy, $context, $request): RateLimitResultDTO {
+                $device = $this->deviceResolver->resolve($context);
+                $group = $this->admissionGroup($policy);
 
-            if ($group !== null && $this->admission !== null && $this->admission->fenceOpen($group)) {
-                $result = $this->limitWithAdmission($this->admission, $policy, $group, $context, $request, $device);
+                if ($group !== null && $this->admission !== null && $this->admission->fenceOpen($group)) {
+                    return $this->limitWithAdmission($this->admission, $policy, $group, $context, $request, $device);
+                }
+
+                return $this->pipeline->process($policy, $context, $request, $device);
+            };
+
+            if ($atomicRecovery) {
+                $this->circuitBreaker->holdSignals();
+                $saved = false;
+                try {
+                    $result = $requestStore->transactRequest(function () use ($recover, $process, &$phase, &$answered): RateLimitResultDTO {
+                        // A repeated evaluation starts again: nothing of the previous one is kept.
+                        $this->circuitBreaker->holdSignals();
+                        $phase = 'before';
+                        $answered = false;
+                        $early = $recover();
+                        if ($early !== null) {
+                            $answered = true;
+
+                            return $early;
+                        }
+                        $phase = 'process';
+
+                        return $process();
+                    });
+                    $saved = true;
+                } finally {
+                    $this->circuitBreaker->releaseSignals($saved);
+                }
+                if ($answered) {
+                    return $result;
+                }
             } else {
-                $result = $this->pipeline->process($policy, $context, $request, $device);
+                $result = $process();
             }
 
             $this->circuitBreaker->reportSuccess($policyName);
@@ -357,6 +406,15 @@ class RateLimiterEngine implements RateLimiterRuntimeInterface, AdmissionBinding
                 ),
             );
         } catch (BackendFailureException) {
+            if ($atomicRecovery && ($phase === 'probe' || $answered)) {
+                // The backend failed while recovering: the step runs as before, with its failures kept in the process.
+                $this->sequentialRecovery = true;
+                try {
+                    return $this->evaluate($context, $request);
+                } finally {
+                    $this->sequentialRecovery = false;
+                }
+            }
             $this->circuitBreaker->reportFailure($policyName);
 
             $mode = $this->failureResolver->resolve($policy, $this->circuitBreaker);
