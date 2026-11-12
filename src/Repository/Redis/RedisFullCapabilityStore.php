@@ -77,6 +77,9 @@ final class RedisFullCapabilityStore implements
 
     private ?RedisAdmissionOperations $admission = null;
 
+    /** T-5: the first backend failure a step of the held request met, even when the step handled it and went on. */
+    private ?BackendFailureException $requestBackendFailure = null;
+
     /**
      * Held state of the request being evaluated, `key => JSON state`, or null
      * outside `transactRequest()`.
@@ -2841,8 +2844,15 @@ LUA;
                 break;
             }
             $this->requestState = [];
+            $this->requestBackendFailure = null;
             try {
                 $result = $evaluate();
+                $lost = $this->lostBackend();
+                if ($lost !== null) {
+                    // A step lost the backend and went on without it (the circuit breaker keeps its own state in
+                    // memory then): what the request holds is incomplete, so none of it is saved.
+                    throw $lost;
+                }
                 $state = $this->heldRequestState();
             } catch (BackendFailureException $exception) {
                 throw $exception;
@@ -2852,7 +2862,7 @@ LUA;
                 // A step that read keys at different moments can see a combination no single moment held and
                 // report it as malformed. Only an error over state that is still current is the request's answer.
                 if ($state !== [] && ! $this->requestStateIsCurrent($state)) {
-                    $retryingSince ??= hrtime(true);
+                    $retryingSince ??= (int) hrtime(true);
                     $this->backOff($attempt);
                     continue;
                 }
@@ -2864,7 +2874,7 @@ LUA;
             if ($this->commitRequest($state)) {
                 return $result;
             }
-            $retryingSince ??= hrtime(true);
+            $retryingSince ??= (int) hrtime(true);
             $this->backOff($attempt);
         }
 
@@ -2893,7 +2903,13 @@ LUA;
             $args,
             [json_encode($held, JSON_THROW_ON_ERROR)],
         );
-        $reply = $this->command($command);
+        try {
+            $reply = $this->command($command);
+        } catch (BackendFailureException $exception) {
+            $this->requestBackendFailure ??= $exception;
+
+            throw $exception;
+        }
         if (! is_array($reply) || ! array_is_list($reply) || $reply === [] || ! is_string($reply[0])) {
             throw new RateLimiterException('Malformed request overlay response.');
         }
@@ -2909,6 +2925,12 @@ LUA;
         }
 
         return $reply[1] ?? null;
+    }
+
+    /** T-5: read through a method because steps of the evaluation set it behind the caller's back. */
+    private function lostBackend(): ?BackendFailureException
+    {
+        return $this->requestBackendFailure;
     }
 
     /** @return array<string, string> */

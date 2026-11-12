@@ -24,6 +24,7 @@ use Maatify\RateLimiter\DTO\RateLimitContextMetadataDTO;
 use Maatify\RateLimiter\DTO\RateLimitMetadataDTO;
 use Maatify\RateLimiter\DTO\RateLimitResultDTO;
 use Maatify\RateLimiter\Exception\RateLimiterException;
+use Maatify\RateLimiter\Repository\RequestAtomicStoreInterface;
 use Maatify\RateLimiter\Exception\BackendFailureException;
 use Maatify\SharedCommon\Contracts\ClockInterface;
 
@@ -295,6 +296,36 @@ class RateLimiterEngine implements RateLimiterRuntimeInterface, AdmissionBinding
             : $this->evaluate($context, $request);
     }
 
+    /**
+     * T-5: one recovery step saved on its own, lease and state in one save. If that save fails with a backend failure,
+     * nothing of it was stored; the step then runs again with its lease and state kept in this process only.
+     *
+     * @param callable(bool): ?RateLimitResultDTO $recover
+     */
+    private function recoverAllOrNothing(RequestAtomicStoreInterface $store, callable $recover): ?RateLimitResultDTO
+    {
+        $saved = false;
+        try {
+            $this->circuitBreaker->holdSignals();
+            try {
+                $result = $store->transactRequest(function () use ($recover): ?RateLimitResultDTO {
+                    $this->circuitBreaker->holdSignals();
+
+                    return $recover(false);
+                });
+            } catch (BackendFailureException $unsaved) {
+                // Nothing of the step was stored (the save is one script); it runs again in memory only.
+                $this->circuitBreaker->holdSignals();
+                $result = $recover(true);
+            }
+            $saved = true;
+
+            return $result;
+        } finally {
+            $this->circuitBreaker->releaseSignals($saved);
+        }
+    }
+
     /** T-5: set while an outage during a saved-with-the-request recovery step is repeated with the sequential writes. */
     private bool $sequentialRecovery = false;
 
@@ -327,12 +358,12 @@ class RateLimiterEngine implements RateLimiterRuntimeInterface, AdmissionBinding
         $phase = 'before';
         $answered = false;
 
-        $recover = function () use ($policy, $context, $policyName, &$phase): ?RateLimitResultDTO {
+        $recover = function (bool $inMemory = false) use ($policy, $context, $policyName, &$phase): ?RateLimitResultDTO {
             $phase = 'probe';
-            $mayProcessNormally = $this->circuitBreaker->attemptRecoveryProbe(
-                $policyName,
-                fn(): bool => $this->pipeline->isBackendHealthy(),
-            );
+            $health = fn(): bool => $this->pipeline->isBackendHealthy();
+            $mayProcessNormally = $inMemory
+                ? $this->circuitBreaker->attemptRecoveryProbeInMemory($policyName, $health)
+                : $this->circuitBreaker->attemptRecoveryProbe($policyName, $health);
 
             if ($this->circuitBreaker->getReEntryGuardRemaining($policyName) > 0) {
                 return $this->guardResult($policyName);
@@ -342,7 +373,11 @@ class RateLimiterEngine implements RateLimiterRuntimeInterface, AdmissionBinding
         };
 
         if ($recovering && !$atomicRecovery) {
-            $early = $recover();
+            // After a failed request save the step is still all or nothing: its lease and its state are saved together,
+            // or neither is (a lease stored without its state change would block other probes for nothing).
+            $early = $this->sequentialRecovery && $requestStore !== null && $this->circuitBreaker->usesStore($requestStore)
+                ? $this->recoverAllOrNothing($requestStore, $recover)
+                : $recover();
             if ($early !== null) {
                 return $early;
             }

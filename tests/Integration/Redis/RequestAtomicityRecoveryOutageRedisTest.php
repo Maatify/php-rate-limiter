@@ -44,8 +44,8 @@ final class RequestAtomicityRecoveryOutageRedisTest extends TestCase
 
     private RespRedisCommandExecutor $executor;
 
-    /** @var list<array{string, ?string}> signal type and the circuit state stored in Redis when it was emitted */
-    private array $emitted = [];
+    /** @var \ArrayObject<int, array{string, ?string}> signal type and the circuit state stored in Redis when it was emitted */
+    private \ArrayObject $emitted;
 
     protected function setUp(): void
     {
@@ -56,7 +56,7 @@ final class RequestAtomicityRecoveryOutageRedisTest extends TestCase
         }
         $this->executor = new RespRedisCommandExecutor($host, (int) $port);
         $this->executor->execute(['FLUSHDB']);
-        $this->emitted = [];
+        $this->emitted = new \ArrayObject();
     }
 
     private function circuitKey(): ?string
@@ -116,13 +116,13 @@ final class RequestAtomicityRecoveryOutageRedisTest extends TestCase
     /** @return list<array{string, ?string}> */
     private function emittedSignals(): array
     {
-        return $this->emitted;
+        return array_values($this->emitted->getArrayCopy());
     }
 
     /** @internal called by the test's emitter */
     public function recordSignal(string $type): void
     {
-        $this->emitted[] = [$type, $this->storedCircuit()];
+        $this->emitted->append([$type, $this->storedCircuit()]);
     }
 
     /**
@@ -137,8 +137,8 @@ final class RequestAtomicityRecoveryOutageRedisTest extends TestCase
     }
 
 
-    /** An outage opens the circuit (three failures); the first probe, past the open interval, makes it HALF_OPEN. */
-    private function circuitHalfOpen(): void
+    /** An outage opens the circuit: three failed requests. */
+    private function circuitOpen(): void
     {
         $outage = new CallableRedisCommandExecutor(function (array $command): mixed {
             if (OverlayWire::isScript($command, '__ov_result')) {
@@ -151,9 +151,16 @@ final class RequestAtomicityRecoveryOutageRedisTest extends TestCase
         for ($i = 0; $i < 3; $i++) {
             $this->limiter($outage, self::NOW + $i)->limit($this->context('account-' . $i), $command);
         }
-        $this->limiter($this->executor, self::NOW + 400)->limit($this->context('account-step'), $command);
         self::assertNotNull($this->circuitKey());
-        $this->emitted = [];
+        $this->emitted->exchangeArray([]);
+    }
+
+    /** The open circuit, then the first probe past the open interval makes it HALF_OPEN. */
+    private function circuitHalfOpen(): void
+    {
+        $this->circuitOpen();
+        $this->limiter($this->executor, self::NOW + 400)->limit($this->context('account-step'), RateLimitCommand::checkOnly('login_protection'));
+        $this->emitted->exchangeArray([]);
     }
 
     /** @return CallableRedisCommandExecutor an executor whose first save fails the given way */
@@ -181,7 +188,7 @@ final class RequestAtomicityRecoveryOutageRedisTest extends TestCase
 
     /**
      * The probe that makes the circuit HALF_OPEN is answered without processing the request. When its save fails the step
-     * is repeated with the sequential writes: the same answer, one lease, one state, nothing repeated or half saved.
+     * is repeated on its own, lease and state in one save: the same answer, one lease, one state, nothing repeated or half saved.
      */
     #[DataProvider('ways')]
     public function testARecoveryStepWhoseSaveFailsIsRepeatedWithoutRepeatingItsEffects(string $way): void
@@ -197,7 +204,7 @@ final class RequestAtomicityRecoveryOutageRedisTest extends TestCase
         for ($i = 0; $i < 3; $i++) {
             $this->limiter($outage, self::NOW + $i)->limit($this->context('account-' . $i), $command);
         }
-        $this->emitted = [];
+        $this->emitted->exchangeArray([]);
         $before = $this->keyspace();
 
         // Control: the same step without a fault, on a scratch copy of the keyspace.
@@ -211,7 +218,9 @@ final class RequestAtomicityRecoveryOutageRedisTest extends TestCase
         $failing = $this->failingFirstSave($way, $saves);
         $result = $this->limiter($failing, self::NOW + 400)->limit($this->context('account-step'), $command);
 
-        self::assertSame(1, $saves, 'The request save was attempted once; the repeat uses the sequential writes.');
+        // A lost request is saved by the repeated step on its own (one more save); after a lost reply the lease is held, the
+        // repeat changes nothing and sends no save.
+        self::assertSame($way === self::LOST_REQUEST ? 2 : 1, $saves, 'The request save, and for a lost request the repeated step save.');
         self::assertEquals($control, $result, 'The answer is the one of a request without a fault.');
         self::assertSame($controlCircuit, $this->storedCircuit(), 'The circuit state is the one saved once.');
         self::assertSame(
@@ -219,7 +228,7 @@ final class RequestAtomicityRecoveryOutageRedisTest extends TestCase
             array_map(static fn(string $entry): string => explode('=', $entry)[0], $this->keyspace()),
             'The same keys exist: one lease, one circuit state, nothing half saved.',
         );
-        self::assertSame([], $this->emittedSignals(), 'No transition signal for a step that only moved to HALF_OPEN.');
+        self::assertCount(0, $this->emittedSignals(), 'No transition signal for a step that only moved to HALF_OPEN.');
         $this->assertOneLease($way);
     }
 
@@ -265,7 +274,7 @@ final class RequestAtomicityRecoveryOutageRedisTest extends TestCase
         $first = $this->limiter($failing, self::NOW + 400 + 121)->limit($this->context('account-a'), $command);
 
         self::assertInstanceOf(RateLimitResultDTO::class, $first, 'The outage is answered by the failure mode, not thrown.');
-        self::assertSame([], $this->emittedSignals(), 'The failed save announced nothing.');
+        self::assertCount(0, $this->emittedSignals(), 'The failed save announced nothing.');
         if ($way === self::LOST_REQUEST) {
             self::assertSame($before, $this->keyspace(), 'A save that never reached Redis left nothing behind.');
             self::assertSame($halfOpen, $this->storedCircuit());
@@ -275,7 +284,13 @@ final class RequestAtomicityRecoveryOutageRedisTest extends TestCase
 
         // The next request: a lost request recovers now (announced once, after the state is saved); after a lost reply the circuit is closed already.
         $this->limiter($this->executor, self::NOW + 400 + 122)->limit($this->context('account-b'), $command);
-        $recoveries = array_values(array_filter($this->emittedSignals(), static fn(array $signal): bool => $signal[0] === FailureSignalDTO::TYPE_CB_RECOVERED));
+        $announced = $this->emittedSignals();
+        $recoveries = [];
+        foreach ($announced as $signal) {
+            if ($signal[0] === FailureSignalDTO::TYPE_CB_RECOVERED) {
+                $recoveries[] = $signal;
+            }
+        }
         if ($way === self::LOST_REQUEST) {
             self::assertCount(1, $recoveries, 'The recovery is announced once.');
             self::assertStringContainsString('CLOSED', (string) $recoveries[0][1], 'When it was announced the closed state was already stored.');
@@ -283,5 +298,74 @@ final class RequestAtomicityRecoveryOutageRedisTest extends TestCase
             self::assertCount(0, $recoveries, 'The recovery that was saved before the reply was lost is not announced a second time.');
         }
         self::assertStringContainsString('CLOSED', (string) $this->storedCircuit());
+    }
+
+    /** @return array<string, array{string}> */
+    public static function failuresInsideTheStep(): array
+    {
+        return [
+            'the circuit state save' => ["redis.call('SET', KEYS[1], ARGV[1])"],
+            'the probe lease' => ['malformed probe lease'],
+        ];
+    }
+
+    /**
+     * The probe lease and the circuit state change are saved together or not at all: a backend failure met by one of the
+     * two steps, which the circuit breaker handles and goes on from, must not leave the other one stored alone.
+     */
+    #[DataProvider('failuresInsideTheStep')]
+    public function testABackendFailureInsideTheRecoveryStepLeavesNoStandaloneLease(string $needle): void
+    {
+        $this->circuitOpen();
+        $before = $this->keyspace();
+        $failing = new CallableRedisCommandExecutor(function (array $command) use ($needle): mixed {
+            if (OverlayWire::isScript($command, $needle)) {
+                throw new BackendFailureException('Test outage inside the recovery step.');
+            }
+
+            return $this->executor->execute($command);
+        });
+
+        $result = $this->limiter($failing, self::NOW + 400)->limit($this->context('account-probe'), RateLimitCommand::checkOnly('login_protection'));
+
+        self::assertInstanceOf(RateLimitResultDTO::class, $result);
+        self::assertSame($before, $this->keyspace(), 'No probe lease and no circuit change was stored.');
+        self::assertCount(0, $this->emittedSignals());
+    }
+
+    /**
+     * The request save fails, the step is repeated on its own, and the save of that repeat fails too (before Redis, or
+     * after it applied and the reply was lost): either nothing is stored or lease and state are both stored.
+     */
+    #[DataProvider('ways')]
+    public function testAFailedSaveOfTheRepeatedStepStoresNothingOrBothParts(string $way): void
+    {
+        $this->circuitOpen();
+        $before = $this->keyspace();
+        $saves = 0;
+        $failing = new CallableRedisCommandExecutor(function (array $command) use ($way, &$saves): mixed {
+            if (OverlayWire::isCommit($command)) {
+                $saves++;
+                if ($saves === 1 || $way === self::LOST_REQUEST) {
+                    throw new BackendFailureException('Test outage during the save.');
+                }
+                $reply = $this->executor->execute($command);
+                throw new BackendFailureException('Test outage after the save: ' . json_encode($reply));
+            }
+
+            return $this->executor->execute($command);
+        });
+
+        $result = $this->limiter($failing, self::NOW + 400)->limit($this->context('account-probe'), RateLimitCommand::checkOnly('login_protection'));
+
+        self::assertInstanceOf(RateLimitResultDTO::class, $result);
+        self::assertSame(2, $saves, 'The request save, then the save of the repeated step.');
+        $leases = array_filter($this->keyspace(), static fn(string $entry): bool => str_contains($entry, ':probe:'));
+        if ($way === self::LOST_REQUEST) {
+            self::assertSame($before, $this->keyspace(), 'Nothing was stored, in particular no lease alone.');
+        } else {
+            self::assertCount(1, $leases);
+            self::assertStringContainsString('HALF_OPEN', (string) $this->storedCircuit(), 'The lease came with its circuit state.');
+        }
     }
 }

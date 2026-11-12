@@ -38,6 +38,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   (probe lease, half-open/closed transition) is saved with the request it belongs to, so a rejected request leaves it
   unsaved and its transition signals are not emitted; two requests that probe at once recover the circuit once. The
   permit claim of an outcome command stays its own atomic operation, recorded in DEC-037.
+- A request in which a step met a backend failure and went on without it is not saved (`transactRequest()` throws the
+  failure), and a recovery step whose request save failed is repeated as one save of probe lease and circuit state, or
+  kept in memory only: a probe lease is never stored without the state change it belongs to.
 - A classified validation failure anywhere in the request leaves Redis byte for byte unchanged, including the earlier
   observations of the same request (measured before the change on `942d7cf`: a request rejected after its device-cap
   observations were prepared left 4 keys changed).

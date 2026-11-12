@@ -57,18 +57,19 @@ final class RequestOverlayDifferentialRedisTest extends TestCase
         $state = [];
         foreach ($keys as $key) {
             self::assertIsString($key);
-            $type = $this->executor->execute(['TYPE', $key]);
-            $type = is_array($type) ? ($type['ok'] ?? '') : $type;
+            $reply = $this->executor->execute(['TYPE', $key]);
+            $type = is_array($reply) ? ($reply['ok'] ?? '') : $reply;
+            self::assertIsString($type);
             $content = match ($type) {
                 'string' => $this->executor->execute(['GET', $key]),
                 'hash' => $this->hash($this->executor->execute(['HGETALL', $key])),
                 'set' => $this->members($this->executor->execute(['SMEMBERS', $key])),
                 'zset' => $this->executor->execute(['ZRANGE', $key, 0, -1, 'WITHSCORES']),
-                default => self::fail('Unexpected key type ' . (is_string($type) ? $type : 'unknown')),
+                default => self::fail('Unexpected key type ' . $type),
             };
             $expiry = $this->executor->execute(['PEXPIRETIME', $key]);
             self::assertIsInt($expiry);
-            $state['NS:' . substr($key, strlen($prefix))] = [(string) $type, $content, $expiry];
+            $state['NS:' . substr($key, strlen($prefix))] = [$type, $content, $expiry];
         }
 
         return $state;

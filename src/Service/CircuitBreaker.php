@@ -45,6 +45,9 @@ class CircuitBreaker
     /** @var array<string, int> */
     private array $emergencyProbeLeases = [];
 
+    /** @var bool T-5: while set, a recovery step keeps its lease and state in this process only (nothing is written to the store). */
+    private bool $memoryOnly = false;
+
     /** @var list<FailureSignalDTO>|null Signals held back while a recovery step is not yet saved (T-5), null when emitting at once. */
     private ?array $heldSignals = null;
 
@@ -452,7 +455,7 @@ class CircuitBreaker
 
     private function saveState(string $policyName, CircuitBreakerStateDTO $state): void
     {
-        if (isset($this->emergencyStates[$policyName])) {
+        if ($this->memoryOnly || isset($this->emergencyStates[$policyName])) {
             $this->emergencyStates[$policyName] = $state;
 
             return;
@@ -468,7 +471,7 @@ class CircuitBreaker
 
     private function acquireProbeLease(string $policyName, int $now): bool
     {
-        if (isset($this->emergencyStates[$policyName])) {
+        if ($this->memoryOnly || isset($this->emergencyStates[$policyName])) {
             $expiresAt = $this->emergencyProbeLeases[$policyName] ?? 0;
             if ($expiresAt > $now) {
                 return false;
@@ -493,6 +496,22 @@ class CircuitBreaker
             $this->emergencyProbeLeases[$policyName] = $now + self::PROBE_LEASE;
 
             return true;
+        }
+    }
+
+    /**
+     * T-5: the recovery step with its lease and state kept in this process, the way an outage keeps them. Used when the
+     * all-or-nothing save of the step failed with a backend failure: a lease without its state change must not be stored.
+     *
+     * @param callable():bool $probe
+     */
+    public function attemptRecoveryProbeInMemory(string $policyName, callable $probe): bool
+    {
+        $this->memoryOnly = true;
+        try {
+            return $this->attemptRecoveryProbe($policyName, $probe);
+        } finally {
+            $this->memoryOnly = false;
         }
     }
 

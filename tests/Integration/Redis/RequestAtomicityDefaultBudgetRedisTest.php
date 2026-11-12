@@ -26,6 +26,22 @@ final class RequestAtomicityDefaultBudgetRedisTest extends TestCase
 
     private const CONFLICT_BLOCK_SHARE_LIMIT = 0.10;
 
+    /**
+     * The two output pipes of a started worker; the shape of what proc_open fills in is checked, not assumed.
+     *
+     * @return array{resource, resource}
+     */
+    private static function pipes(mixed $pipes): array
+    {
+        self::assertIsArray($pipes);
+        self::assertArrayHasKey(1, $pipes);
+        self::assertArrayHasKey(2, $pipes);
+        self::assertIsResource($pipes[1]);
+        self::assertIsResource($pipes[2]);
+
+        return [$pipes[1], $pipes[2]];
+    }
+
     /** @return array<string, array{string}> */
     public static function modes(): array
     {
@@ -43,26 +59,29 @@ final class RequestAtomicityDefaultBudgetRedisTest extends TestCase
         (new RespRedisCommandExecutor($host, (int) $port))->execute(['FLUSHDB']);
 
         $barrier = microtime(true) + 1.0;
+        /** @var list<array{resource, resource, resource}> $workers */
         $workers = [];
         for ($i = 0; $i < self::WORKERS; $i++) {
+            $pipes = [];
             $process = proc_open(
                 [PHP_BINARY, dirname(__DIR__, 2) . '/Support/Redis/default-budget-worker.php', $host, $port, sprintf('%.6F', $barrier), (string) self::REQUESTS_PER_WORKER, $mode],
                 [1 => ['pipe', 'w'], 2 => ['pipe', 'w']],
                 $pipes,
             );
             self::assertIsResource($process);
-            $workers[] = [$process, $pipes];
+            $opened = self::pipes($pipes);
+            $workers[] = [$process, $opened[0], $opened[1]];
         }
 
         $requests = 0;
         $conflicts = 0;
         $errors = 0;
         $milliseconds = [];
-        foreach ($workers as [$process, $pipes]) {
-            $output = stream_get_contents($pipes[1]);
-            $diagnostics = stream_get_contents($pipes[2]);
-            fclose($pipes[1]);
-            fclose($pipes[2]);
+        foreach ($workers as [$process, $stdout, $stderr]) {
+            $output = stream_get_contents($stdout);
+            $diagnostics = stream_get_contents($stderr);
+            fclose($stdout);
+            fclose($stderr);
             self::assertSame(0, proc_close($process), (string) $diagnostics);
             self::assertIsString($output);
             $report = json_decode($output, true, 512, JSON_THROW_ON_ERROR);
