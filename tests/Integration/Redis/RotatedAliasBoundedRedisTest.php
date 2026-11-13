@@ -15,6 +15,7 @@ use Maatify\RateLimiter\Tests\Support\Clock\FixedClock;
 use Maatify\RateLimiter\Tests\Support\Redis\OverlayWire;
 use Maatify\RateLimiter\Tests\Support\FailureSignal\RecordingFailureSignalEmitter;
 use Maatify\RateLimiter\Tests\Support\Redis\RespRedisCommandExecutor;
+use PHPUnit\Framework\Attributes\DataProvider;
 use PHPUnit\Framework\Attributes\Group;
 use PHPUnit\Framework\TestCase;
 use ReflectionClass;
@@ -157,6 +158,100 @@ final class RotatedAliasBoundedRedisTest extends TestCase
                 self::assertLessThanOrEqual(min($previous), $bridgeAt, 'The bridge ' . $family . ' key ends no later than Previous (iteration ' . $i . ').');
             }
         }
+    }
+
+    /** @return array<string, array{string}> */
+    public static function previousScopes(): array
+    {
+        return ['Current is Previous (aliased)' => ['aliased'], 'Current differs from Previous' => ['distinct']];
+    }
+
+    /**
+     * Previous ends at an absolute time just above 2^53 ms, which Lua reads as a rounded double, while its remaining
+     * lifetime is far inside the exact range. The requested lifetime and the authoritative expiry are both beyond the
+     * exact range, so the bridge is bounded by Previous alone. `PEXPIRETIME` is read from outside Lua, as exact integers:
+     * no bridge key ends after any Previous key (no 1 ms tolerance), and the bridge does not collapse far below them.
+     */
+    #[DataProvider('previousScopes')]
+    public function testTheBridgeEndsNoLaterThanPreviousWhenPreviousEndsAbovePrecisionButItsRemainingLifetimeIsExact(string $scope): void
+    {
+        $above = 2 ** 53;
+        $requestedSeconds = 9_100_000_000_000;
+        foreach ([1, 2, 3, 5, 1_001, 1_000_000_001, 1_000_000_000_001] as $offset) {
+            foreach ([0, 1, 2] as $metaOffset) {
+                $this->executor->execute(['FLUSHDB']);
+                $logical = 'scope-precision';
+                $previous = $this->raw('distinct', $logical);
+                $previousMeta = $this->raw('distinct-meta', $logical);
+                $this->executor->execute(['SADD', $previous, 'old']);
+                $this->executor->execute(['PEXPIREAT', $previous, (string) ($above + $offset)]);
+                $this->executor->execute(['HSET', $previousMeta, 'expiresAt', (string) $requestedSeconds]);
+                $this->executor->execute(['PEXPIREAT', $previousMeta, (string) ($above + $offset + $metaOffset)]);
+                self::assertLessThanOrEqual(9_007_199_254_740_991, $this->int($this->executor->execute(['PTTL', $previous])), 'The remaining lifetime is exact.');
+                $previousAt = [
+                    $this->int($this->executor->execute(['PEXPIRETIME', $previous])),
+                    $this->int($this->executor->execute(['PEXPIRETIME', $previousMeta])),
+                ];
+                $current = $scope === 'aliased' ? $logical : 'scope-precision-current';
+
+                $snapshot = $this->store()->addDistinctBoundedWithSnapshotAcrossRotationAt($current, $logical . '-bridge', $logical, 'new', 'unknown', $requestedSeconds, self::MAX, self::NOW_MS);
+                self::assertTrue($snapshot->added, 'The new member went to the bridge (' . $offset . '/' . $metaOffset . ').');
+
+                $label = $scope . ' offset ' . $offset . '/' . $metaOffset;
+                self::assertSame($previousAt, [
+                    $this->int($this->executor->execute(['PEXPIRETIME', $previous])),
+                    $this->int($this->executor->execute(['PEXPIRETIME', $previousMeta])),
+                ], 'Previous is untouched, ' . $label);
+                foreach (['distinct', 'distinct-meta'] as $family) {
+                    $bridgeAt = $this->int($this->executor->execute(['PEXPIRETIME', $this->raw($family, $logical . '-bridge')]));
+                    self::assertLessThanOrEqual(min($previousAt), $bridgeAt, 'The bridge ' . $family . ' key ends no later than Previous, ' . $label);
+                    self::assertGreaterThanOrEqual(min($previousAt) - 2, $bridgeAt, 'The bridge ' . $family . ' key is not shortened beyond the rounding bound, ' . $label);
+                }
+            }
+        }
+    }
+
+    /**
+     * A bridge that cannot be bounded safely is refused before any write: Previous ends above 2^54 ms (no bound can be derived
+     * from it) and the only exact lifetime is within a second of 2^53, where a clock reading could carry it past Previous.
+     */
+    public function testARotationWhoseBridgeCannotBeBoundedIsRefusedWithoutAnyWrite(): void
+    {
+        $logical = 'scope-refused';
+        $previous = $this->raw('distinct', $logical);
+        $previousMeta = $this->raw('distinct-meta', $logical);
+        $this->executor->execute(['SADD', $previous, 'old']);
+        $this->executor->execute(['PEXPIREAT', $previous, (string) (2 ** 54 + 4)]);
+        $this->executor->execute(['HSET', $previousMeta, 'expiresAt', '9100000000000']);
+        $this->executor->execute(['PEXPIREAT', $previousMeta, (string) (2 ** 54 + 4)]);
+        $keys = $this->executor->execute(['KEYS', '*']);
+        self::assertIsArray($keys);
+        $before = $this->snapshotWithExpiry();
+
+        try {
+            $this->store()->addDistinctBoundedWithSnapshotAcrossRotationAt($logical, $logical . '-bridge', $logical, 'new', 'unknown', 9_007_199_254_740, self::MAX, self::NOW_MS);
+            self::fail('The rotation was not refused.');
+        } catch (\Maatify\RateLimiter\Exception\RateLimiterException $exception) {
+            self::assertStringContainsString('exact integer range', $exception->getMessage());
+        }
+
+        self::assertSame($before, $this->snapshotWithExpiry(), 'Redis is unchanged: every key, its content and its expiry.');
+        self::assertSame(0, $this->executor->execute(['EXISTS', $this->raw('distinct', $logical . '-bridge')]));
+    }
+
+    /** @return array<string, array{mixed, mixed}> */
+    private function snapshotWithExpiry(): array
+    {
+        $keys = $this->executor->execute(['KEYS', '*']);
+        self::assertIsArray($keys);
+        $state = [];
+        foreach ($keys as $key) {
+            self::assertIsString($key);
+            $state[$key] = [$this->executor->execute(['DUMP', $key]), $this->executor->execute(['PEXPIRETIME', $key])];
+        }
+        ksort($state);
+
+        return $state;
     }
 
     /** adv8 r1 as the Lead ran it, from an empty key: the first member opens the set, the rest go to the bridge. */

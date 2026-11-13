@@ -1319,19 +1319,29 @@ local function ensureCurrent()
   return true
 end
 -- The bridge's physical expiry is one absolute time: the earliest of Previous's expiry, Previous-metadata's expiry, the
--- authoritative Previous expiry and the requested lifetime, every candidate on the script's own clock (the clock that
--- PEXPIRETIME and PTTL are both read against: `PEXPIRETIME - PTTL`). It is applied to the bridge's data and metadata keys
--- with PEXPIREAT, so neither can end after any key of Previous: a relative lifetime applied at another clock reading
--- ended the bridge 1 ms late on Redis 7.0.15. PEXPIRETIME and PTTL reach Lua as native numbers, exact only up to
--- 2^53 - 1. When neither Previous key has an exact expiry the clock cannot be read exactly, and Previous outlives every
--- exact candidate by orders of magnitude: the bridge then keeps its relative lifetime (the exact minimum of the
--- candidates). The authoritative-remaining and requested candidates are decimal strings, never `tonumber()` of a huge
--- value. Any exact candidate is provably <= every inexact one; when every candidate is inexact the lifetime cannot be
--- bounded exactly and the whole rotation fails before any Current or Bridge mutation.
+-- authoritative Previous expiry and the requested lifetime, applied to the bridge's data and metadata keys with PEXPIREAT,
+-- so neither can end after any key of Previous: a relative lifetime applied at another clock reading ended the bridge 1 ms
+-- late on Redis 7.0.15. PEXPIRETIME and PTTL reach Lua as doubles, exact only up to 2^53 - 1. A PEXPIRETIME above that is
+-- rounded to the nearest representable value, so the true expiry is at most 1 ms below it below 2^54: its LOWER bound is
+-- the double minus 1, and bounding the bridge by a lower bound can only end it earlier, never after Previous. Above 2^54
+-- no bound is derived. The script clock is a lower bound of `PEXPIRETIME - PTTL` taken from a key whose PTTL is exact; the
+-- remaining and requested candidates are added to it as decimal strings, never `tonumber()` of a huge value. Without such
+-- a clock (every PTTL above 2^53 - 1) Previous outlives every exact lifetime by at least 2^53 ms, and the bridge keeps its
+-- relative lifetime, which must then stay a second below 2^53 so that no clock reading can carry it past Previous; a
+-- lifetime that cannot be bounded (none exact, or too close to 2^53) fails the rotation before any Current or Bridge
+-- mutation.
 local exactMsMax = '9007199254740991'
+local exactMsMargin = 9007199254739991
+local twoPow54 = '18014398509481984'
 local function exactCandidate(decimal)
   if compareDecimalStrings(decimal, exactMsMax) <= 0 then return tonumber(decimal) end
   return nil
+end
+local function expiryLowerBound(at)
+  if at <= 9007199254740991 then return string.format('%.0f', at), false end
+  local text = string.format('%.0f', at)
+  if compareDecimalStrings(text, twoPow54) < 0 then return subtractDecimalStrings(text, '1'), true end
+  return nil, false
 end
 local function planBridgeExpiry()
   local previousPttl = redis.call('PTTL', KEYS[5])
@@ -1339,32 +1349,40 @@ local function planBridgeExpiry()
   if previousPttl <= 0 or previousMetaPttl <= 0 then return nil, 'malformed previous bounded state' end
   local previousAt = redis.call('PEXPIRETIME', KEYS[5])
   local previousMetaAt = redis.call('PEXPIRETIME', KEYS[6])
-  local clock = nil
-  if previousAt > 0 and previousAt <= 9007199254740991 then clock = previousAt - previousPttl
-  elseif previousMetaAt > 0 and previousMetaAt <= 9007199254740991 then clock = previousMetaAt - previousMetaPttl end
+  if previousAt <= 0 or previousMetaAt <= 0 then return nil, 'malformed previous bounded state' end
+  local previousBound, previousRounded = expiryLowerBound(previousAt)
+  local metaBound, metaRounded = expiryLowerBound(previousMetaAt)
+  local clock, clockRounded = nil, false
+  local function offer(bound, rounded, pttl)
+    if bound == nil or pttl > 9007199254740991 then return end
+    local candidate = subtractDecimalStrings(bound, string.format('%.0f', pttl))
+    if clock == nil or compareDecimalStrings(candidate, clock) > 0 then clock = candidate; clockRounded = rounded end
+  end
+  offer(previousBound, previousRounded, previousPttl)
+  offer(metaBound, metaRounded, previousMetaPttl)
   local remaining = exactCandidate(subtractDecimalStrings(prevExpiry .. '000', nowMsStr))
   local requested = exactCandidate(ARGV[2] .. '000')
   if clock == nil then
     local candidates = {}
-    if previousPttl <= 9007199254740991 then candidates[#candidates + 1] = previousPttl end
-    if previousMetaPttl <= 9007199254740991 then candidates[#candidates + 1] = previousMetaPttl end
     if remaining ~= nil then candidates[#candidates + 1] = remaining end
     if requested ~= nil then candidates[#candidates + 1] = requested end
     if #candidates == 0 then return nil, 'rotated bridge lifetime exceeds Redis Lua exact integer range' end
     local bridgePttl = candidates[1]
     for _, candidate in ipairs(candidates) do if candidate < bridgePttl then bridgePttl = candidate end end
     if bridgePttl <= 0 then return nil, 'malformed previous bounded state' end
+    if bridgePttl > exactMsMargin then return nil, 'rotated bridge lifetime exceeds Redis Lua exact integer range' end
     return {pttl = bridgePttl}
   end
-  local clockStr = string.format('%.0f', clock)
   local candidates = {}
-  if previousAt <= 9007199254740991 then candidates[#candidates + 1] = string.format('%.0f', previousAt) end
-  if previousMetaAt > 0 and previousMetaAt <= 9007199254740991 then candidates[#candidates + 1] = string.format('%.0f', previousMetaAt) end
-  if remaining ~= nil then candidates[#candidates + 1] = addDecimalStrings(clockStr, string.format('%.0f', remaining)) end
-  if requested ~= nil then candidates[#candidates + 1] = addDecimalStrings(clockStr, string.format('%.0f', requested)) end
+  if previousBound ~= nil then candidates[#candidates + 1] = previousBound end
+  if metaBound ~= nil then candidates[#candidates + 1] = metaBound end
+  if remaining ~= nil then candidates[#candidates + 1] = addDecimalStrings(clock, string.format('%.0f', remaining)) end
+  if requested ~= nil then candidates[#candidates + 1] = addDecimalStrings(clock, string.format('%.0f', requested)) end
   local bridgeAt = candidates[1]
   for _, candidate in ipairs(candidates) do if compareDecimalStrings(candidate, bridgeAt) < 0 then bridgeAt = candidate end end
-  if compareDecimalStrings(bridgeAt, clockStr) <= 0 then return nil, 'malformed previous bounded state' end
+  -- A clock taken from a rounded expiry is at most 1 ms below the true clock: require that margin before the bridge ends.
+  local earliest = clockRounded and addDecimalStrings(clock, '1') or clock
+  if compareDecimalStrings(bridgeAt, earliest) <= 0 then return nil, 'malformed previous bounded state' end
   return {at = bridgeAt}
 end
 local function expireBridgeKey(key, plan)

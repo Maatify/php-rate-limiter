@@ -44,8 +44,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - The expiry of a rotation bridge (`ROTATED_SNAPSHOT`) is one absolute time applied with `PEXPIREAT` to the bridge's data and
   metadata keys: the earliest of Previous's expiry, Previous-metadata's expiry, the authoritative Previous expiry and the
   requested lifetime, on the script's clock. A relative lifetime applied at another clock reading ended the bridge 1 ms
-  after Previous in about one run in thirty on Redis 7.0.15 (measured: 8 of 600 rotations). The existing bounds, including
-  the exact-integer-range rule, are unchanged.
+  after Previous in about one run in thirty on Redis 7.0.15 (measured: 8 of 600 rotations). A Previous that ends above 2^53 ms
+  (read by Lua as a rounded double) is bounded by its lower bound, so the bridge can only end earlier; a bridge that cannot be
+  bounded safely (no exact lifetime, or one within a second of 2^53) is refused before any write. The other bounds,
+  including the exact-integer-range rule, are unchanged.
 - A classified validation failure anywhere in the request leaves Redis byte for byte unchanged, including the earlier
   observations of the same request (measured before the change on `942d7cf`: a request rejected after its device-cap
   observations were prepared left 4 keys changed).
