@@ -6,7 +6,7 @@
 
 ## Status
 
-`PROPOSED` — drafted in PR [#207](https://github.com/Maatify/php-rate-limiter/pull/207) (#206) for review. Activation needs an explicit Owner authorisation on the PR and an activation commit. Nothing in this record is active.
+`ACTIVE` — approved by the Owner on 2026-11-13 after Lead acceptance of `01c24f7`. The activation commit is tracked in PR [#207](https://github.com/Maatify/php-rate-limiter/pull/207) (#206).
 
 ## Date
 
@@ -14,7 +14,7 @@
 
 ## Decision Authority / Deciders
 
-**Owner**, direction of the design for review, relayed in the [Lead's draft on #207](https://github.com/Maatify/php-rate-limiter/pull/207#pullrequestreview-5891142786) (review of `e06105c`: [CHANGES REQUIRED](https://github.com/Maatify/php-rate-limiter/pull/207#pullrequestreview-5891081272)). Scope split: [#185 comment 6805835020](https://github.com/Maatify/php-rate-limiter/issues/185#issuecomment-6805835020).
+**Owner**, explicit approval to activate DEC-038 on PR #207 on 2026-11-13. The original design direction was relayed in the [Lead's draft on #207](https://github.com/Maatify/php-rate-limiter/pull/207#pullrequestreview-5891142786) (review of `e06105c`: [CHANGES REQUIRED](https://github.com/Maatify/php-rate-limiter/pull/207#pullrequestreview-5891081272)). Scope split: [#185 comment 6805835020](https://github.com/Maatify/php-rate-limiter/issues/185#issuecomment-6805835020).
 
 ## Scope / Concern
 
@@ -33,7 +33,7 @@ DEC-036 makes the outcome claim atomic and DEC-033 bounds recorded failures; nei
 5. **One effective value per budget group.** All workers on one Redis hold the same effective value, `off` included. Every reservation, on either lane, carries the worker's value; the store compares it with the registered one in the same script, before any gate and before any write, and raises `AdmissionConfigurationException` when they differ. The first accepted reservation of a group registers its value. The registration is read under the current key secret, else the previous one, so a key rotation keeps it.
 6. **Workers never change the shared value.** A mismatched worker fails; it does not overwrite. The value changes only through the explicit operator call `AdmissionSharedConfigControlInterface::rebindAdmissionSharedConfig($budgetGroup)`, which registers the calling worker's value.
 7. **A store that cannot hold it.** `build()` refuses a limit on a store that does not implement `SharedAdmissionConfigStoreInterface` (the consistency of the workers could not be proven). A disabled worker on such a store is not checked.
-8. **Relationship to DEC-028.** The limit is the only admission bound a Host may set; every other budget and the permit timing stay package constants. If the Owner rules that this changes DEC-028's scope, the relationship is settled under Decision Governance Standard §9 before activation.
+8. **Relationship to DEC-028.** The limit is the only admission bound a Host may set; every other budget and the permit timing stay package constants. This exception applies solely to the optional pending-permit limit introduced here. DEC-028 remains authoritative for its existing budget values and permit timing.
 
 ## Rationale
 

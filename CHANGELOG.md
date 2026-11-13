@@ -13,7 +13,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   failure outcomes release the slot once; expiry releases it without an outcome. The limit is independent of the recorded-failure
   sets. Without the call there is no limit and behaviour is unchanged. The package supplies no default.
 - A slot reserved before a key-secret rotation is freed by the outcome recorded after it, in the atomic claim of DEC-036; a replay frees no second slot.
-- Shared configuration (DEC-038, proposed): every worker of a budget group on one Redis holds the same limit, "no limit" included.
+- Shared configuration (DEC-038): every worker of a budget group on one Redis holds the same limit, "no limit" included.
   A worker whose value differs raises `AdmissionConfigurationException` before reserving; the value changes only through
   `AdmissionSharedConfigControlInterface::rebindAdmissionSharedConfig()`. `build()` refuses a limit on a store that cannot hold it.
   The change procedure (pause, isolate, wait for permits issued under "no limit", rebind, resume) and when the limit starts to bound
