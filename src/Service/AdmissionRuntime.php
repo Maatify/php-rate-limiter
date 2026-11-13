@@ -21,12 +21,13 @@ use Maatify\RateLimiter\Enum\AdmissionOutcomeKindEnum;
 use Maatify\RateLimiter\Enum\AdmissionPermitClaimEnum;
 use Maatify\RateLimiter\Enum\AdmissionScopeKindEnum;
 use Maatify\RateLimiter\Exception\RateLimiterException;
-use Maatify\RateLimiter\Repository\AdmissionPermitStoreInterface;
+use Maatify\RateLimiter\Repository\AtomicAdmissionPermitStoreInterface;
+use Maatify\RateLimiter\Repository\RequestAtomicStoreInterface;
 use Maatify\SharedCommon\Contracts\ClockInterface;
 
 /**
  * The admission runtime that a policy declaring `PolicyCapabilityEnum::ADMISSION_RESERVATION` needs (DEC-023, DEC-024,
- * DEC-025): lane resolution from a verified credential, the all-or-nothing reservation at `checkOnly`, the permit, and the
+ * DEC-025, DEC-036): lane resolution from a verified credential, the all-or-nothing reservation at `checkOnly`, the permit, and the
  * outcome hooks. It holds no value of its own: every budget and the permit timing arrive in `AdmissionBudgetsDTO`.
  *
  * Nothing here persists penalties. A capacity refusal is a `SOFT_BLOCK` result that is never stored, never counted by
@@ -55,7 +56,7 @@ final class AdmissionRuntime
     ];
 
     public function __construct(
-        private readonly AdmissionPermitStoreInterface $store,
+        private readonly AtomicAdmissionPermitStoreInterface $store,
         private readonly AdmissionCredentialCodec $codec,
         private readonly AdmissionBudgetsDTO $budgets,
         private readonly ClockInterface $clock,
@@ -80,6 +81,19 @@ final class AdmissionRuntime
     }
 
     /** The fence reads the current key, else the previous one, so a key-secret rotation does not close it (LT-27 (3)). */
+    /**
+     * Run one request of an opted policy (lane, evaluation and reservation) as one atomic save when the store offers it
+     * (DEC-037); other stores run it as it is.
+     *
+     * @template T
+     * @param callable(): T $request
+     * @return T
+     */
+    public function atomically(callable $request): mixed
+    {
+        return $this->store instanceof RequestAtomicStoreInterface ? $this->store->transactRequest($request) : $request();
+    }
+
     public function fenceOpen(string $budgetGroup): bool
     {
         return $this->store->readBindingEpoch(self::fenceKey($this->envScope, $budgetGroup, $this->keySecret), $this->previousFenceKey($budgetGroup)) >= 1;
@@ -194,17 +208,24 @@ final class AdmissionRuntime
         }
         $kind = $success ? AdmissionOutcomeKindEnum::SUCCESS : AdmissionOutcomeKindEnum::FAILURE;
         $subject = $this->subject($context);
-        $claim = $this->store->claimAdmissionPermit($payload['id'], $payload['lane']->value, $subject ?? self::NO_SUBJECT, $policyName, $kind, $this->now());
-        if ($claim !== AdmissionPermitClaimEnum::ACCEPTED) {
-            return $this->permitResult($claim);
-        }
+
         $scopes = $this->outcomeScopes($budgetGroup, $context, $payload, $success);
-        if ($scopes !== []) {
-            $this->store->applyAdmissionOutcome(new AdmissionOutcomeDTO($budgetGroup, $kind, $scopes, $payload['id']), $this->now());
-        }
         $crossAccount = $this->crossAccountFailure($budgetGroup, $context, $payload, $success);
         if ($crossAccount !== null) {
-            $this->store->applyAdmissionOutcome(new AdmissionOutcomeDTO($budgetGroup, AdmissionOutcomeKindEnum::FAILURE, [$crossAccount], $payload['id']), $this->now());
+            $scopes[] = $crossAccount;
+        }
+
+        $outcome = new AdmissionOutcomeDTO($budgetGroup, $kind, $scopes, $payload['id']);
+        $claim = $this->store->claimAdmissionPermitWithOutcome(
+            $payload['lane']->value,
+            $subject ?? self::NO_SUBJECT,
+            $policyName,
+            $outcome,
+            $this->now(),
+        );
+
+        if ($claim !== AdmissionPermitClaimEnum::ACCEPTED) {
+            return $this->permitResult($claim);
         }
 
         return $payload['lane'];
@@ -238,13 +259,7 @@ final class AdmissionRuntime
 
     private function retryAfter(string $scope, int $t, int $storeRetry): int
     {
-        if ($scope === 'account_bucket') {
-            return $storeRetry;
-        }
-        $day = $scope === 'proof_account_day' || $scope === 'proof_proof_day' || $scope === 'new_device_cap';
-        $length = $day ? self::DAY : $this->budgets->windowSeconds;
-
-        return (intdiv($t, $length) + 1) * $length - $t;
+        return max(1, $storeRetry);
     }
 
     /** @return list<AdmissionScopeDTO> */
@@ -383,8 +398,18 @@ final class AdmissionRuntime
     /** The N_P member is the fingerprint (current and previous generation), never the instance id (NP-IN). */
     private function deviceMember(string $group, string $subject, DeviceIdentityDTO $device): AdmissionScopeDTO
     {
-        $previousMember = $this->previousKeySecret !== null && $device->previousFingerprintHash !== null
-            ? $this->key($group, 'dev', (string) $device->previousFingerprintHash, '', $this->previousKeySecret)
+        $hasPrevKey = $this->previousKeySecret !== null;
+        $hasPrevFp = $device->previousFingerprintHash !== null;
+
+        $previousMember = null;
+        if ($hasPrevKey || $hasPrevFp) {
+            $prevFpHash = $hasPrevFp ? (string) $device->previousFingerprintHash : (string) $device->fingerprintHash;
+            $prevSecret = $hasPrevKey ? $this->previousKeySecret : $this->keySecret;
+            $previousMember = $this->key($group, 'dev', $prevFpHash, '', $prevSecret);
+        }
+
+        $previousKey = $hasPrevKey
+            ? $this->key($group, 'pdev', $subject, 'set', $this->previousKeySecret)
             : null;
 
         return new AdmissionScopeDTO(
@@ -393,7 +418,7 @@ final class AdmissionRuntime
             $this->key($group, 'pdev', $subject, 'set'),
             $this->budgets->newDevicesPerDay,
             self::DAY,
-            $this->previousKeySecret === null ? null : $this->key($group, 'pdev', $subject, 'set', $this->previousKeySecret),
+            $previousKey,
             $this->key($group, 'dev', (string) $device->fingerprintHash, ''),
             $previousMember,
         );

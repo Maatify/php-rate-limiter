@@ -163,7 +163,7 @@ final class AdmissionRegistrationRulesTest extends TestCase
         )->withPolicy(new AdmissionTestPolicy('no-permit-capability'));
 
         $this->expectException(RateLimiterException::class);
-        $this->expectExceptionMessage('Policy no-permit-capability requires AdmissionPermitStoreInterface');
+        $this->expectExceptionMessage('Policy no-permit-capability requires AtomicAdmissionPermitStoreInterface');
 
         $builder->build();
     }

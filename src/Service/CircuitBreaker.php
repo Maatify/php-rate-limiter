@@ -45,6 +45,12 @@ class CircuitBreaker
     /** @var array<string, int> */
     private array $emergencyProbeLeases = [];
 
+    /** @var bool T-5: while set, a recovery step keeps its lease and state in this process only (nothing is written to the store). */
+    private bool $memoryOnly = false;
+
+    /** @var list<FailureSignalDTO>|null Signals held back while a recovery step is not yet saved (T-5), null when emitting at once. */
+    private ?array $heldSignals = null;
+
     /**
      * @param CircuitBreakerStoreInterface $store State persistence boundary.
      * @param FailureSignalEmitterInterface $emitter Transition notification sink.
@@ -260,7 +266,7 @@ class CircuitBreaker
         if (isset($this->emergencyStates[$policyName])) {
             unset($this->emergencyStates[$policyName], $this->emergencyProbeLeases[$policyName]);
         }
-        $this->emitter->emit(new FailureSignalDTO(FailureSignalDTO::TYPE_CB_RECOVERED, $policyName));
+        $this->signal(new FailureSignalDTO(FailureSignalDTO::TYPE_CB_RECOVERED, $policyName));
 
         return true;
     }
@@ -359,7 +365,7 @@ class CircuitBreaker
     ): array {
         [$reEntries, $failClosedUntil, $signals] = $this->openTransition($reEntries, $failClosedUntil, $now, $isReEntry);
         foreach ($signals as $type) {
-            $this->emitter->emit(new FailureSignalDTO($type, $policyName));
+            $this->signal(new FailureSignalDTO($type, $policyName));
         }
 
         return [$reEntries, $failClosedUntil];
@@ -449,7 +455,7 @@ class CircuitBreaker
 
     private function saveState(string $policyName, CircuitBreakerStateDTO $state): void
     {
-        if (isset($this->emergencyStates[$policyName])) {
+        if ($this->memoryOnly || isset($this->emergencyStates[$policyName])) {
             $this->emergencyStates[$policyName] = $state;
 
             return;
@@ -465,7 +471,7 @@ class CircuitBreaker
 
     private function acquireProbeLease(string $policyName, int $now): bool
     {
-        if (isset($this->emergencyStates[$policyName])) {
+        if ($this->memoryOnly || isset($this->emergencyStates[$policyName])) {
             $expiresAt = $this->emergencyProbeLeases[$policyName] ?? 0;
             if ($expiresAt > $now) {
                 return false;
@@ -491,6 +497,56 @@ class CircuitBreaker
 
             return true;
         }
+    }
+
+    /**
+     * T-5: the recovery step with its lease and state kept in this process, the way an outage keeps them. Used when the
+     * all-or-nothing save of the step failed with a backend failure: a lease without its state change must not be stored.
+     *
+     * @param callable():bool $probe
+     */
+    public function attemptRecoveryProbeInMemory(string $policyName, callable $probe): bool
+    {
+        $this->memoryOnly = true;
+        try {
+            return $this->attemptRecoveryProbe($policyName, $probe);
+        } finally {
+            $this->memoryOnly = false;
+        }
+    }
+
+    /** T-5 (DEC-037): whether state is saved through this exact store object, so a request save can include the recovery step. */
+    public function usesStore(object $store): bool
+    {
+        return $this->store === $store;
+    }
+
+    /** T-5: start holding the transition signals of a recovery step that is saved with its request; drops earlier held ones. */
+    public function holdSignals(): void
+    {
+        $this->heldSignals = [];
+    }
+
+    /** T-5: emit the held signals once the request was saved, or drop them when it was not. */
+    public function releaseSignals(bool $saved): void
+    {
+        $held = $this->heldSignals ?? [];
+        $this->heldSignals = null;
+        if ($saved) {
+            foreach ($held as $signal) {
+                $this->emitter->emit($signal);
+            }
+        }
+    }
+
+    private function signal(FailureSignalDTO $signal): void
+    {
+        if ($this->heldSignals !== null) {
+            $this->heldSignals[] = $signal;
+
+            return;
+        }
+        $this->emitter->emit($signal);
     }
 
     private function closedState(): CircuitBreakerStateDTO

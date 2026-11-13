@@ -919,7 +919,9 @@ resetting the window.
 ### 4.8 Admission Keys (Locked)
 
 The atomic admission reservation (DEC-024, stage 5-b2) is a store capability
-(`AdmissionReservationStoreInterface`, `AdmissionPermitStoreInterface`). The package derives opaque,
+(`AdmissionReservationStoreInterface`). Opt-in outcome recording uses
+`AtomicAdmissionPermitStoreInterface`, the additive extension of `AdmissionPermitStoreInterface`
+required by `RateLimiterBuilder::build()` for an admission policy. The package derives opaque,
 hash-based scope keys per Budget Group and hands them to the store; the store never receives a raw
 account identifier, IP address or fingerprint, and a request that carries one is the caller's error,
 not something the store can detect.
@@ -946,7 +948,7 @@ set) and `b` (bucket); one logical key never changes family.
 | `s` set | sorted set | accounts of the net-failure set (U, `ufail`) or the cross-account proven failure set (P, `pfail`, DEC-033), member = failing subject scored by expiry (`now + W`, where W = 600 s); active count is `ZCOUNT (now +inf)`; a refusal writes nothing and never prunes; a failure outcome prunes expired entries, adds the subject with score `now + W`, and refreshes `EXPIRE` to `W`; on success the member is removed (`ZREM`). Enforces a continuous sliding window with no window tag (`:w`). |
 | `b` bucket | hash `credit`, `last` | credit-seconds, refilled 1 per second of caller time up to `C x T`; absent means full; `EXPIRE` is the time to full, so an expired bucket and an absent bucket are the same state. This is the only admission family that retains a window/tag origin. |
 | `p` pending (5-b2.1; **written only when a scope settles on expiry, 5-b2.2; the admission runtime builds no settling scope, so nothing writes or reads it**) | sorted set | pending members of the failure set with the same logical key: member scored by its permit `deadline` (an earlier deadline wins on a second reservation). A member counts toward the set only when its score is `<= now` and it is not already in the set; a success removes a pending member only while its score is `> now`. `EXPIRE` equals the scope `ttlSeconds`, set when the key is created and never renewed; a reservation without a permit never writes it; a refusal never writes it |
-| permit | hash `state`, `lane`, `subject`, `operation`, `deadline`, `grace`, `outcome` | created by the admitting reservation in the same script, lifetime `deadline + grace - now`; `ISSUED` then `CLAIMED`; a claim is one compare-and-set |
+| permit | hash `state`, `lane`, `subject`, `operation`, `deadline`, `grace`, `outcome` | created by the admitting reservation in the same script, lifetime `deadline + grace - now`; `ISSUED` then `CLAIMED`; the runtime claims and applies the admission outcome in the same store operation |
 | epoch | string | a canonical non-negative integer **with no TTL**: the interface carries no lifetime and a lapsed epoch would revive voided credentials; retention of the key is the Host operator's concern until a decision fixes a lifetime |
 
 Rotation. A counter or a device-member scope may name one previous-generation key. Counters sum the
@@ -960,7 +962,16 @@ exhausted source); a second rotation inside the same window re-issues it in full
 rotation the net failure set and the account bucket restart in full (4 further failing accounts,
 4 further bucket takes).
 
-Validation. Every scope key of a request is read and validated (type, fields, an existing key
+For device-member recognition, the runtime supplies the current member and, when a previous
+outer-key or fingerprint generation is available, one previous member. The previous member uses
+the previous fingerprint and outer-key secret where present and the current value for either
+missing component. Redis checks both supplied members against each available device set. This
+follows the coordinated two-generation model in §4.3.3. Finish the previous enforcement window
+or migrate or expire the required state before starting another rotation. During fingerprint
+rotation, the Host provides the previous fingerprint component as described in
+[Device Fingerprint §5.1.3](DEVICE_FINGERPRINT.md#513-host-responsibility-during-fingerprint-secret-rotation).
+
+Validation. The scope keys a store operation touches are validated (type, fields, an existing key
 without a TTL) **before the first write**, because Redis does not roll back the writes of a failed
 script. This includes every score of a sorted set the script reads: each member of the `d` sets
 (current and previous generation) and of the `p` set on a reservation, and the `p` score of its own

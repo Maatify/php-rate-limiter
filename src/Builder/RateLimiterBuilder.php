@@ -28,6 +28,7 @@ use Maatify\RateLimiter\Repository\FullCapabilityStoreInterface;
 use Maatify\RateLimiter\Repository\HardBlockCycleStoreInterface;
 use Maatify\RateLimiter\Repository\AdmissionPermitStoreInterface;
 use Maatify\RateLimiter\Repository\AdmissionReservationStoreInterface;
+use Maatify\RateLimiter\Repository\AtomicAdmissionPermitStoreInterface;
 use Maatify\RateLimiter\Repository\PunishmentLifecycleStoreInterface;
 use Maatify\RateLimiter\Repository\RateLimitStoreInterface;
 use Maatify\RateLimiter\Repository\SnapshotFencedScoreStoreInterface;
@@ -360,9 +361,9 @@ final class RateLimiterBuilder
                 );
             }
 
-            if (! $this->rateLimitStore instanceof AdmissionPermitStoreInterface) {
+            if (! $this->rateLimitStore instanceof AtomicAdmissionPermitStoreInterface) {
                 throw new RateLimiterException(
-                    'Policy ' . $policy->getName() . ' requires AdmissionPermitStoreInterface.',
+                    'Policy ' . $policy->getName() . ' requires AtomicAdmissionPermitStoreInterface.',
                 );
             }
 
@@ -375,7 +376,7 @@ final class RateLimiterBuilder
     }
 
     /**
-     * The admission runtime (DEC-024 point 4, DEC-026, DEC-028): constructed only when a registered policy declares
+     * The admission runtime (DEC-024 point 4, DEC-026, DEC-028, DEC-036): constructed only when a registered policy declares
      * `PolicyCapabilityEnum::ADMISSION_RESERVATION`, with the package constants and the configured key and binding secrets.
      * Any other composition has no admission runtime and behaves exactly as before. The capability assertion has already
      * required the permit store and the binding key.
@@ -383,7 +384,7 @@ final class RateLimiterBuilder
     private function admissionRuntime(ClockInterface $clock): ?AdmissionRuntime
     {
         $bindingKey = $this->config->bindingKeySecret();
-        if (! $this->hasAdmissionPolicy() || ! $this->rateLimitStore instanceof AdmissionPermitStoreInterface || $bindingKey === null) {
+        if (! $this->hasAdmissionPolicy() || ! $this->rateLimitStore instanceof AtomicAdmissionPermitStoreInterface || $bindingKey === null) {
             return null;
         }
 

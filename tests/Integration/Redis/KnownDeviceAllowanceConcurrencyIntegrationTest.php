@@ -256,7 +256,8 @@ final class KnownDeviceAllowanceConcurrencyIntegrationTest extends TestCase
 
     private function store(): RedisFullCapabilityStore
     {
-        return new RedisFullCapabilityStore(new RespRedisCommandExecutor($this->host, $this->port), $this->namespace);
+        // The suite asserts exactly-once effects under overlap, not latency: a CPU-starved runner must not turn a slow retry into a concurrency block.
+        return new RedisFullCapabilityStore(new RespRedisCommandExecutor($this->host, $this->port), $this->namespace, null, 60_000);
     }
 
     private function context(string $account): RateLimitContextDTO

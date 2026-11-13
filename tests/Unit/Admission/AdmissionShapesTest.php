@@ -17,6 +17,7 @@ use Maatify\RateLimiter\Exception\RateLimiterException;
 use Maatify\RateLimiter\Repository\AdmissionCapableFullStoreInterface;
 use Maatify\RateLimiter\Repository\AdmissionPermitStoreInterface;
 use Maatify\RateLimiter\Repository\AdmissionReservationStoreInterface;
+use Maatify\RateLimiter\Repository\AtomicAdmissionPermitStoreInterface;
 use Maatify\RateLimiter\Repository\FullCapabilityStoreInterface;
 use Maatify\RateLimiter\Service\AdmissionBindingControlInterface;
 use Maatify\RateLimiter\Service\DeviceIdentityResolver;
@@ -63,12 +64,14 @@ final class AdmissionShapesTest extends TestCase
         self::assertTrue((new \ReflectionClass(AdmissionCapableFullStoreInterface::class))->implementsInterface(FullCapabilityStoreInterface::class));
         self::assertTrue((new \ReflectionClass(AdmissionCapableFullStoreInterface::class))->implementsInterface(AdmissionReservationStoreInterface::class));
         self::assertTrue((new \ReflectionClass(AdmissionPermitStoreInterface::class))->implementsInterface(AdmissionReservationStoreInterface::class));
+        self::assertTrue((new \ReflectionClass(AtomicAdmissionPermitStoreInterface::class))->implementsInterface(AdmissionPermitStoreInterface::class));
         self::assertFalse(is_subclass_of(AdmissionReservationStoreInterface::class, FullCapabilityStoreInterface::class));
         self::assertSame(
             ['applyAdmissionOutcome', 'bumpBindingEpoch', 'readBindingEpoch', 'reserveAdmission'],
             self::declaredMethodNames(AdmissionReservationStoreInterface::class),
         );
         self::assertSame(['claimAdmissionPermit'], self::declaredMethodNames(AdmissionPermitStoreInterface::class));
+        self::assertSame(['claimAdmissionPermitWithOutcome'], self::declaredMethodNames(AtomicAdmissionPermitStoreInterface::class));
         self::assertSame([], self::declaredMethodNames(AdmissionCapableFullStoreInterface::class));
     }
 
