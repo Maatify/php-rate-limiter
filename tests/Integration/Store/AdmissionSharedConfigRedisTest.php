@@ -17,6 +17,7 @@ use Maatify\RateLimiter\Service\CompositeRateLimiterRuntimeInterface;
 use Maatify\RateLimiter\Tests\Support\Admission\PublicRedisAdmissionFixture;
 use Maatify\RateLimiter\Tests\Support\Admission\ReplyValue;
 use Maatify\RateLimiter\Tests\Support\Clock\FixedClock;
+use PHPUnit\Framework\Attributes\DataProvider;
 use PHPUnit\Framework\Attributes\Group;
 
 /**
@@ -30,6 +31,7 @@ final class AdmissionSharedConfigRedisTest extends AdmissionRedisGateTestCase
     private const POLICY = 'login_protection';
     private const CAUSE = 'source_pending_permits';
     private const IP = '198.51.100.10';
+    private const OTHER_IP = '198.51.100.11';
 
     private FixedClock $clock;
 
@@ -140,6 +142,84 @@ final class AdmissionSharedConfigRedisTest extends AdmissionRedisGateTestCase
         self::assertSame(self::CAUSE, self::causeOf($this->check($two, 'c9')));
     }
 
+    /** @return iterable<string, array{string}> */
+    public static function offPermitsEnd(): iterable
+    {
+        yield 'settled by an outcome' => ['settled'];
+        yield 'expired at the deadline' => ['expired'];
+    }
+
+    #[DataProvider('offPermitsEnd')]
+    public function testTransitionFromOffCountsFromTheFirstReservationAfterResumeOnceOffPermitsEnded(string $ending): void
+    {
+        // 1. The fleet runs with no limit: permits issued while off hold no slot.
+        $off = $this->worker(null);
+        $stale = $this->worker(null);
+        $this->open($off);
+        $offPermits = [];
+        foreach (['o1', 'o2', 'o3', 'o4'] as $account) {
+            $offPermits[$account] = $this->check($off, $account);
+            self::assertTrue($offPermits[$account]->isAllowed());
+        }
+        self::assertSame(0, $this->pendingMembers(), 'permits issued while off are not counted');
+
+        // 2. Reservations are paused (nothing below reserves) and the old workers are isolated (`$stale` is used only at the end).
+        // 3. Wait for the permits issued while off: settle them, or let the last one reach its deadline D = 30 s.
+        if ($ending === 'settled') {
+            $this->clock->setNow(new \DateTimeImmutable('@' . (self::NOW + 5)));
+            foreach ($offPermits as $account => $result) {
+                self::assertNotSame('permit_late', self::causeOf($this->settle($off, $account, $result, true)));
+            }
+        } else {
+            $this->clock->setNow(new \DateTimeImmutable('@' . (self::NOW + 30)));
+            self::assertSame('permit_late', self::causeOf($this->settle($off, 'o1', $offPermits['o1'], true)), 'at the deadline no off permit can be claimed or free a slot');
+        }
+        self::assertSame(0, $this->pendingMembers());
+
+        // 4. Rebind to the agreed value from a worker that carries it, and 5. resume.
+        $first = $this->worker(2);
+        self::assertInstanceOf(AdmissionSharedConfigControlInterface::class, $first);
+        $first->rebindAdmissionSharedConfig('login');
+        $second = $this->worker(2);
+
+        self::assertTrue($this->check($first, 'n1')->isAllowed());
+        self::assertSame(1, $this->pendingMembers(), 'the first reservation after resume is counted');
+        self::assertTrue($this->check($second, 'n2')->isAllowed(), 'a second worker with the same value shares the count');
+        self::assertSame(self::CAUSE, self::causeOf($this->check($first, 'n3')), 'the surplus is refused by the pending limit');
+        self::assertSame(self::CAUSE, self::causeOf($this->check($second, 'n4')));
+        self::assertSame(2, $this->pendingMembers());
+
+        // Sources are isolated: another source has its own two slots.
+        self::assertTrue($this->check($first, 'm1', self::OTHER_IP)->isAllowed());
+        self::assertTrue($this->check($second, 'm2', self::OTHER_IP)->isAllowed());
+        self::assertSame(self::CAUSE, self::causeOf($this->check($first, 'm3', self::OTHER_IP)));
+
+        // A worker that kept the old value cannot reserve: it fails loudly instead of bypassing the limit.
+        $this->expectException(AdmissionConfigurationException::class);
+        $this->check($stale, 'x1');
+    }
+
+    public function testRebindingBeforeOffPermitsEndedLeavesThemUncounted(): void
+    {
+        $off = $this->worker(null);
+        $this->open($off);
+        $offPermits = [];
+        foreach (['o1', 'o2', 'o3', 'o4'] as $account) {
+            $offPermits[$account] = $this->check($off, $account);
+        }
+
+        // Skipping step 3: one second later the permits issued while off are still claimable and uncounted.
+        $this->clock->setNow(new \DateTimeImmutable('@' . (self::NOW + 1)));
+        $new = $this->worker(2);
+        self::assertInstanceOf(AdmissionSharedConfigControlInterface::class, $new);
+        $new->rebindAdmissionSharedConfig('login');
+        self::assertTrue($this->check($new, 'n1')->isAllowed());
+        self::assertTrue($this->check($new, 'n2')->isAllowed());
+        self::assertSame(self::CAUSE, self::causeOf($this->check($new, 'n3')));
+        self::assertSame(2, $this->pendingMembers(), 'the counter shows 2 while 4 more permits are still outstanding');
+        self::assertNotSame('permit_late', self::causeOf($this->settle($new, 'o1', $offPermits['o1'], true)), 'an off permit is still accepted: the limit does not yet bound the real pending count');
+    }
+
     public function testTheRegistrationSurvivesAKeyRotation(): void
     {
         $before = $this->worker(3);
@@ -177,18 +257,18 @@ final class AdmissionSharedConfigRedisTest extends AdmissionRedisGateTestCase
         $runtime->openAdmissionFence('login');
     }
 
-    private function context(string $account): RateLimitContextDTO
+    private function context(string $account, string $ip = self::IP): RateLimitContextDTO
     {
         $credential = (new AdmissionCredentialCodec(PublicRedisAdmissionFixture::BINDING_SECRET))->encode(
             new AdmissionCredentialDTO($account, ['login'], 'inst-' . $account, 'jti-' . $account, self::NOW + 3600, self::NOW, 0),
         );
 
-        return new RateLimitContextDTO(ip: self::IP, ua: 'redis-gate', accountId: $account, clientInstanceId: 'inst-' . $account, admissionCredential: $credential);
+        return new RateLimitContextDTO(ip: $ip, ua: 'redis-gate', accountId: $account, clientInstanceId: 'inst-' . $account, admissionCredential: $credential);
     }
 
-    private function check(CompositeRateLimiterRuntimeInterface $runtime, string $account): RateLimitResultDTO
+    private function check(CompositeRateLimiterRuntimeInterface $runtime, string $account, string $ip = self::IP): RateLimitResultDTO
     {
-        return $runtime->limit($this->context($account), RateLimitCommand::checkOnly(self::POLICY));
+        return $runtime->limit($this->context($account, $ip), RateLimitCommand::checkOnly(self::POLICY));
     }
 
     private function settle(CompositeRateLimiterRuntimeInterface $runtime, string $account, RateLimitResultDTO $check, bool $success): RateLimitResultDTO

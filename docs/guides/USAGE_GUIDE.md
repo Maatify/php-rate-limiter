@@ -399,12 +399,23 @@ Outputs and duties:
   `AdmissionConfigurationException` before it reserves anything, on either lane, and never changes the shared value itself. The first
   accepted reservation of a budget group registers its value. A limit needs a store that holds the shared configuration
   (`SharedAdmissionConfigStoreInterface`, which `RedisFullCapabilityStore` does); `build()` refuses a limit on any other store.
-  * **Changing the value**: deploy the new value to every worker of the group and drain the old ones (a mixed fleet fails loudly
-    on whichever side holds the other value until the last old worker is gone), then call
-    `rebindAdmissionSharedConfig($budgetGroup)` once from a new worker
-    (`instanceof AdmissionSharedConfigControlInterface`). Enabling and disabling are the same procedure, from and to "no limit".
-    Workers on a version that predates the option carry no value and are not checked: put the whole fleet on the new version
-    before setting the first limit.
+  * **Changing the value** (permits issued while the limit is `off` hold no slot, so the limit bounds the real pending count only
+    once they have ended). In this order:
+    1. **Pause** new reservations of the budget group on every worker (your maintenance or routing switch; the package has no
+       pause call, and closing the fence is not one). Note `T_pause`: the latest moment any worker still accepted a reservation.
+    2. **Isolate** every worker that can pass the check: remove from rotation or stop any worker on a version that predates the
+       option (it carries no value and is not compared, so it would keep reserving under the old value or under "no limit").
+       Workers of the current version holding another value fail with `AdmissionConfigurationException` and are replaced in the roll.
+    3. **Wait** until every permit issued before the pause has been claimed or has expired: the last ends by `T_pause + 30 s`
+       (add the clock skew between your workers). You can rely on the clock: a permit past its deadline answers `permit_late`
+       and applies nothing, so it neither holds nor frees a slot. The wait is required whenever permits were issued under "no
+       limit" (enabling, or a sequence that passed through "no limit"); a change between two limits needs none, but pause and
+       isolation still apply.
+    4. **Rebind**: from one worker that already carries the agreed value, call `rebindAdmissionSharedConfig($budgetGroup)`
+       (`instanceof AdmissionSharedConfigControlInterface`). Deploy the new value to every worker of the group first.
+    5. **Resume** reservations. From the first reservation after the resume, every pending permit of the group is counted, and
+       the surplus is refused with `source_pending_permits`. Before step 3 has ended, the real pending count can exceed the
+       limit by the permits still outstanding from "no limit".
   * **Existing permits**: the limit counts the permits that exist. Raising it makes room at once. Lowering it revokes nothing; new
     reservations are refused until the pending count is under the new limit (permits leave by outcome or at their 30 s
     deadline). Disabling ignores the counter, and permits reserved while it is off hold no slot, so enabling again counts only

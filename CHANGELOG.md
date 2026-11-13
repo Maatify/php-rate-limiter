@@ -16,6 +16,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Shared configuration (DEC-038, proposed): every worker of a budget group on one Redis holds the same limit, "no limit" included.
   A worker whose value differs raises `AdmissionConfigurationException` before reserving; the value changes only through
   `AdmissionSharedConfigControlInterface::rebindAdmissionSharedConfig()`. `build()` refuses a limit on a store that cannot hold it.
+  The change procedure (pause, isolate, wait for permits issued under "no limit", rebind, resume) and when the limit starts to bound
+  the real pending count are in the usage guide and DEC-038.
 
 ### Documentation (#185)
 - Clarified DEC-032 Operational Read authority, effective score, and the scope of request atomicity under DEC-036 and DEC-037.
