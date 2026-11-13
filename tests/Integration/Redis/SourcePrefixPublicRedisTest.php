@@ -6,8 +6,10 @@ namespace Maatify\RateLimiter\Tests\Integration\Redis;
 
 use Maatify\RateLimiter\Builder\RateLimiterBuilder;
 use Maatify\RateLimiter\Command\RateLimitCommand;
+use Maatify\RateLimiter\Config\ApiHeavyProtectionPolicy;
 use Maatify\RateLimiter\Config\RateLimiterConfig;
 use Maatify\RateLimiter\DTO\RateLimitContextDTO;
+use Maatify\RateLimiter\DTO\RateLimitResultDTO;
 use Maatify\RateLimiter\Exception\BackendFailureException;
 use Maatify\RateLimiter\Repository\Redis\CallableRedisCommandExecutor;
 use Maatify\RateLimiter\Repository\Redis\RedisCommandExecutorInterface;
@@ -121,6 +123,41 @@ final class SourcePrefixPublicRedisTest extends TestCase
                 $control = $state;
             } else {
                 self::assertSame($control, $state);
+            }
+        }
+    }
+
+    public function testApiSourceThresholdIsSharedAcrossFormatsAndIsolatedFromOtherSources(): void
+    {
+        $policy = new ApiHeavyProtectionPolicy(['k1' => 6]);
+        $access = new RateLimitCommand($policy->getName());
+        $check = RateLimitCommand::checkOnly($policy->getName());
+        $control = null;
+
+        foreach ([false, true] as $mixed) {
+            $this->redis->execute(['FLUSHDB']);
+            $runtime = $this->builder($this->redis)->withPolicy($policy)->build();
+            $plain = $this->context('192.0.2.51', 0);
+            $mapped = $this->context('::ffff:192.0.2.51', 0);
+            $other = $this->context($mixed ? '::ffff:192.0.2.52' : '192.0.2.52', 1);
+
+            for ($i = 0; $i < 5; $i++) {
+                self::assertTrue($runtime->limit($mixed && $i % 2 === 1 ? $mapped : $plain, $access)->isAllowed());
+            }
+            self::assertTrue($runtime->limit($mixed ? $mapped : $plain, $check)->isAllowed());
+
+            $crossing = $runtime->limit($mixed ? $mapped : $plain, $access);
+            $blocked = $runtime->limit($plain, $check);
+            self::assertSame(RateLimitResultDTO::DECISION_HARD_BLOCK, $blocked->decision);
+            self::assertGreaterThan(0, $blocked->retryAfter);
+            self::assertEquals($blocked, $runtime->limit($mixed ? $mapped : $plain, $check));
+            self::assertTrue($runtime->limit($other, $access)->isAllowed());
+            self::assertTrue($runtime->limit($other, $check)->isAllowed());
+
+            if ($mixed) {
+                self::assertEquals($control, [$crossing, $blocked, $this->state()]);
+            } else {
+                $control = [$crossing, $blocked, $this->state()];
             }
         }
     }
