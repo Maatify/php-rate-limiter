@@ -1,4 +1,4 @@
-# DEC-034 — Level-2 Sliding Admission Budgets and Identity-Layer Cost Decisions for #97 (replaces DEC-025)
+# DEC-034 — Level-2 Sliding Admission Budgets and Identity-Layer Cost Decisions for #97 (proposed replacement for DEC-025)
 
 ## Decision ID
 

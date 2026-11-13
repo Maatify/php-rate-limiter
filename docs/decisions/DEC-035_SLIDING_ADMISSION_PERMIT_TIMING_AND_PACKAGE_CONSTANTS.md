@@ -1,4 +1,4 @@
-# DEC-035 — Sliding Admission Permit Timing and the Package Constants of the Admission Runtime (replaces DEC-028)
+# DEC-035 — Sliding Admission Permit Timing and the Package Constants of the Admission Runtime (proposed replacement for DEC-028)
 
 ## Decision ID
 
@@ -53,7 +53,7 @@ The required permit (OD-1 (b); RIC = `investigations/k2-identity-admission-97/RU
 
 ## Relationship to Other Decisions
 
-- **Supersedes DEC-028** in full.
+- **Proposes to supersede DEC-028** in full on activation.
 - **DEC-034:** Its declared values become the package constants here.
 - **DEC-033:** Operates the sliding window mechanism and storage structure for the constants governed here.
 - **DEC-026:** Activated with DEC-028 historically.
