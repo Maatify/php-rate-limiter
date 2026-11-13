@@ -6,7 +6,7 @@ namespace Maatify\RateLimiter\Service;
 
 /**
  * The source of a request as the key strategy defines it: an IPv4 address as is, an IPv6 address by its leading hex digits
- * (a `/64` by default). One derivation for the pipeline (K1) and the admission runtime (source scopes).
+ * (a `/64` by default). Shared by enforcement, admission, local fallback, and Operational Read.
  *
  * An IPv4-mapped IPv6 address (::ffff:0:0/96) is unwrapped to its embedded IPv4 address so that both representations
  * share the same source key and rate-limiting state.
