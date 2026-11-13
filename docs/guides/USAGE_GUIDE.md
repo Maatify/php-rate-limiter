@@ -381,8 +381,18 @@ Outputs and duties:
   [admission outage handling](../FAILURE_SEMANTICS.md#45-admission-reservation-policies-dec-015-dec-024-dec-033).
 * A capacity refusal is a `SOFT_BLOCK` with `blockLevel` 1. The store reports the first refusing
   scope in request order and the runtime exposes its `retryAfter` hint. The causes are
-  `source_capacity`, `source_failure_cap`, `account_bucket`, `proof_capacity`, `new_device_cap`
-  and `source_proof_failure_cap`.
+  `source_capacity`, `source_failure_cap`, `account_bucket`, `proof_capacity`, `new_device_cap`,
+  `source_proof_failure_cap` and, only when the option below is set, `source_pending_permits`.
+* **Pending proven permits per source (optional, #206)**: `RateLimiterBuilder::withProvenPendingPermitLimit(int $limit)`
+  bounds how many proven-lane permits one source holds at once. A permit holds one slot from its reservation until its outcome
+  is claimed (success or failure) or its deadline (30 s) passes; a request that would exceed `$limit` is refused with the
+  cause `source_pending_permits` and writes nothing. The slot is released once: a repeated outcome of the same permit is
+  `permit_duplicate` and frees nothing. The limit counts permits, not recorded failures, so it is independent of
+  `source_proof_failure_cap`. **When the method is not called there is no limit**: the proven lane is bounded only by the
+  recorded-failure cap and the per-account and per-proof counters, as before the option existed. The package ships no
+  default value. Choose it above the number of legitimate verifications that overlap behind one source (an office or a
+  carrier-grade NAT) and below the number of simultaneous attempts you accept from one source; the measurements and the
+  trade-off are in [`investigations/proven-pending-permits-206/RESULTS.md`](../../investigations/proven-pending-permits-206/RESULTS.md).
 * **Password change or recovery**: call `revokeAccountBinding($accountId)` (it bumps the account's
   epoch; every older credential stops verifying), read the new epoch with `bindingEpoch($accountId)`
   and issue a credential to the device that performed the change. Both are reached through

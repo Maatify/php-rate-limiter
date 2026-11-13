@@ -7,6 +7,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added (#206) — Optional pending-permit limit on the proven admission lane
+- `RateLimiterBuilder::withProvenPendingPermitLimit(int $limit)` bounds the proven-lane permits one source holds between
+  reservation and outcome (or the 30 s deadline). The surplus is refused with the cause `source_pending_permits`. Success and
+  failure outcomes release the slot once; expiry releases it without an outcome. The limit is independent of the recorded-failure
+  sets. Without the call there is no limit and behaviour is unchanged. The package supplies no default.
+
 ### Documentation (#185)
 - Clarified DEC-032 Operational Read authority, effective score, and the scope of request atomicity under DEC-036 and DEC-037.
 - Recorded DEC-034 and DEC-035 as proposals. DEC-025 and DEC-028 remain active pending explicit activation.
