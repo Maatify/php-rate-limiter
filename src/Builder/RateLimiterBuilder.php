@@ -159,15 +159,17 @@ final class RateLimiterBuilder
      * (an office or carrier-grade NAT) against the number of simultaneous attempts one source may hold open.
      * Applies only when a registered policy declares the admission capability.
      *
-     * The supported range is 1 to `AdmissionBudgetsDTO::PROVEN_PENDING_PERMIT_LIMIT_MAX` (9007199254740991, the largest integer
-     * Lua and Redis represent exactly); a value outside it is rejected here, before `build()` and before any Redis access.
+     * The supported range is 1 to 9007199254740991 (`AdmissionBudgetsDTO::PROVEN_PENDING_PERMIT_LIMIT_MAX_DECIMAL`, the largest
+     * integer Lua and Redis represent exactly). On 32-bit PHP the largest value an `int` can carry is `PHP_INT_MAX`, so the range
+     * this method can accept there is 1 to `PHP_INT_MAX`; the shared configuration still accepts the full decimal range. A value
+     * outside the range is rejected here, before `build()` and before any Redis access.
      *
      * @throws RateLimiterException when `$limit` is outside the supported range.
      */
     public function withProvenPendingPermitLimit(int $limit): self
     {
-        if ($limit < 1 || $limit > AdmissionBudgetsDTO::PROVEN_PENDING_PERMIT_LIMIT_MAX) {
-            throw new RateLimiterException('Proven pending permit limit must be an integer from 1 to ' . AdmissionBudgetsDTO::PROVEN_PENDING_PERMIT_LIMIT_MAX . '.');
+        if (! AdmissionBudgetsDTO::isSupportedPendingPermitLimit($limit)) {
+            throw new RateLimiterException('Proven pending permit limit must be an integer from 1 to ' . AdmissionBudgetsDTO::PROVEN_PENDING_PERMIT_LIMIT_MAX_DECIMAL . '.');
         }
         $this->provenPendingPermitLimit = $limit;
 

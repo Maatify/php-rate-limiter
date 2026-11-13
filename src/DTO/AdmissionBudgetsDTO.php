@@ -26,11 +26,38 @@ use Maatify\RateLimiter\Exception\RateLimiterException;
 final readonly class AdmissionBudgetsDTO
 {
     /**
-     * The supported range of the proven pending-permit limit is 1 to this value (#206, DEC-038): the largest integer that Lua and
-     * Redis represent exactly (2^53 - 1), which is also the largest scope capacity the Redis admission store accepts and the
-     * largest value the registered shared configuration can hold. One constant for the builder, the DTOs and the store.
+     * The supported range of the proven pending-permit limit is 1 to this value (#206, DEC-038), as a decimal string: the largest
+     * integer that Lua and Redis represent exactly (2^53 - 1), which is also the largest scope capacity the Redis admission store
+     * accepts and the largest value the registered shared configuration can hold. It is a string so that no comparison depends on
+     * the width of the native PHP integer: 32-bit PHP cannot hold it in an `int`.
      */
-    public const PROVEN_PENDING_PERMIT_LIMIT_MAX = 9007199254740991;
+    public const PROVEN_PENDING_PERMIT_LIMIT_MAX_DECIMAL = '9007199254740991';
+
+    /**
+     * Whether a canonical positive decimal (no sign, no leading zero) is within the supported maximum. Compared by length and then
+     * lexicographically, never through a native integer or float conversion, so the result is the same on 32-bit and 64-bit PHP.
+     */
+    public static function isWithinPendingPermitLimitMaximum(string $canonicalDecimal): bool
+    {
+        $max = self::PROVEN_PENDING_PERMIT_LIMIT_MAX_DECIMAL;
+
+        return strlen($canonicalDecimal) < strlen($max)
+            || (strlen($canonicalDecimal) === strlen($max) && strcmp($canonicalDecimal, $max) <= 0);
+    }
+
+    /**
+     * The largest limit this PHP build can pass as a native `int`: the supported maximum on 64-bit PHP, `PHP_INT_MAX` on 32-bit PHP.
+     */
+    public static function nativePendingPermitLimitMaximum(): int
+    {
+        return PHP_INT_SIZE >= 8 ? 9007199254740991 : PHP_INT_MAX;
+    }
+
+    /** Whether a native integer is a supported limit: at least 1 and within the decimal maximum. */
+    public static function isSupportedPendingPermitLimit(int $limit): bool
+    {
+        return $limit >= 1 && self::isWithinPendingPermitLimitMaximum((string) $limit);
+    }
 
     public function __construct(
         public int $windowSeconds,
@@ -67,8 +94,8 @@ final readonly class AdmissionBudgetsDTO
                 throw new RateLimiterException("Admission budget {$label} must be a positive integer.");
             }
         }
-        if ($provenPendingPermitCap !== null && ($provenPendingPermitCap < 1 || $provenPendingPermitCap > self::PROVEN_PENDING_PERMIT_LIMIT_MAX)) {
-            throw new RateLimiterException('Admission proven-lane pending permit cap must be null or an integer from 1 to ' . self::PROVEN_PENDING_PERMIT_LIMIT_MAX . '.');
+        if ($provenPendingPermitCap !== null && ! self::isSupportedPendingPermitLimit($provenPendingPermitCap)) {
+            throw new RateLimiterException('Admission proven-lane pending permit cap must be null or an integer from 1 to ' . self::PROVEN_PENDING_PERMIT_LIMIT_MAX_DECIMAL . '.');
         }
         if ($permitGraceSeconds < 0) {
             throw new RateLimiterException('Admission permit grace must not be negative.');

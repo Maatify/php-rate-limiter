@@ -11,7 +11,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - `RateLimiterBuilder::withProvenPendingPermitLimit(int $limit)` bounds the proven-lane permits one source holds between
   reservation and outcome (or the 30 s deadline). The surplus is refused with the cause `source_pending_permits`. Success and
   failure outcomes release the slot once; expiry releases it without an outcome. The limit is independent of the recorded-failure
-  sets. The supported range is 1 to 9007199254740991 (2^53 − 1); other values are rejected by the method. Without the call there is no
+  sets. The supported range is 1 to 9007199254740991 (2^53 − 1; on 32-bit PHP the `int` argument reaches only `PHP_INT_MAX`); other values are rejected by the method. Without the call there is no
   limit and behaviour is unchanged. The package supplies no default.
 - A slot reserved before a key-secret rotation is freed by the outcome recorded after it, in the atomic claim of DEC-036; a replay frees no second slot.
 - Shared configuration (DEC-038): every worker of a budget group on one Redis holds the same limit, "no limit" included.

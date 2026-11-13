@@ -223,15 +223,77 @@ final class AdmissionBuilderActivationTest extends TestCase
         self::assertSame(3, self::budgetsOf($supportedAdmission)['provenPendingPermitCap']);
     }
 
-    /** @return iterable<string, array{int, bool}> */
+    /**
+     * Native `int` boundaries of the builder: derived from this PHP build, so the same test is correct on 32-bit and 64-bit PHP.
+     * The next value above the native maximum exists as an `int` only when the native maximum is below `PHP_INT_MAX`.
+     *
+     * @return iterable<string, array{int, bool}>
+     */
     public static function pendingLimitRange(): iterable
     {
+        $nativeMax = AdmissionBudgetsDTO::nativePendingPermitLimitMaximum();
         yield 'zero' => [0, false];
         yield 'negative' => [-1, false];
+        yield 'PHP_INT_MIN' => [PHP_INT_MIN, false];
         yield 'one' => [1, true];
-        yield 'supported maximum' => [AdmissionBudgetsDTO::PROVEN_PENDING_PERMIT_LIMIT_MAX, true];
-        yield 'first value above the maximum' => [AdmissionBudgetsDTO::PROVEN_PENDING_PERMIT_LIMIT_MAX + 1, false];
-        yield 'PHP_INT_MAX' => [PHP_INT_MAX, false];
+        yield 'largest supported native integer' => [$nativeMax, true];
+        if ($nativeMax < PHP_INT_MAX) {
+            yield 'next native integer above the maximum' => [$nativeMax + 1, false];
+            yield 'PHP_INT_MAX' => [PHP_INT_MAX, false];
+        }
+    }
+
+    public function testTheNativeMaximumIsTheSupportedMaximumOrPhpIntMaxWhicheverIsSmaller(): void
+    {
+        $nativeMax = AdmissionBudgetsDTO::nativePendingPermitLimitMaximum();
+        self::assertSame(PHP_INT_SIZE >= 8 ? '9007199254740991' : (string) PHP_INT_MAX, (string) $nativeMax);
+        self::assertTrue(AdmissionBudgetsDTO::isSupportedPendingPermitLimit($nativeMax));
+    }
+
+    /**
+     * The decimal boundaries of the shared configuration value, independent of the native integer width: the same strings are
+     * judged the same on 32-bit and 64-bit PHP (no int or float conversion is involved).
+     *
+     * @return iterable<string, array{string, bool}>
+     */
+    public static function sharedConfigDecimalRange(): iterable
+    {
+        yield 'off' => ['off', true];
+        yield 'one' => ['1', true];
+        yield 'nine digits' => ['999999999', true];
+        yield 'PHP 32-bit int maximum' => ['2147483647', true];
+        yield 'above the 32-bit int maximum' => ['2147483648', true];
+        yield 'supported maximum' => ['9007199254740991', true];
+        yield 'first value above the maximum' => ['9007199254740992', false];
+        yield 'same length, larger' => ['9999999999999999', false];
+        yield 'seventeen digits' => ['10000000000000000', false];
+        yield 'zero' => ['0', false];
+        yield 'leading zero' => ['01', false];
+        yield 'negative' => ['-1', false];
+        yield 'empty' => ['', false];
+        yield 'float notation' => ['9.007199254740991E+15', false];
+    }
+
+    #[DataProvider('sharedConfigDecimalRange')]
+    public function testTheSharedConfigurationValueBoundariesAreDecimalStrings(string $value, bool $supported): void
+    {
+        if ($supported) {
+            self::assertSame($value, (new AdmissionSharedConfigDTO('k', null, $value))->value);
+
+            return;
+        }
+        $this->expectException(RateLimiterException::class);
+        new AdmissionSharedConfigDTO('k', null, $value);
+    }
+
+    public function testTheDecimalMaximumComparisonNeverConvertsToANativeNumber(): void
+    {
+        self::assertTrue(AdmissionBudgetsDTO::isWithinPendingPermitLimitMaximum('9007199254740991'));
+        self::assertFalse(AdmissionBudgetsDTO::isWithinPendingPermitLimitMaximum('9007199254740992'));
+        self::assertTrue(AdmissionBudgetsDTO::isWithinPendingPermitLimitMaximum('9007199254740990'));
+        self::assertFalse(AdmissionBudgetsDTO::isWithinPendingPermitLimitMaximum('9007199254741000'));
+        self::assertTrue(AdmissionBudgetsDTO::isWithinPendingPermitLimitMaximum('999999999999999'));
+        self::assertFalse(AdmissionBudgetsDTO::isWithinPendingPermitLimitMaximum('10000000000000000'));
     }
 
     #[DataProvider('pendingLimitRange')]

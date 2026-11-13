@@ -221,9 +221,9 @@ final class AdmissionSharedConfigRedisTest extends AdmissionRedisGateTestCase
         self::assertNotSame('permit_late', self::causeOf($this->settle($new, 'o1', $offPermits['o1'], true)), 'an off permit is still accepted: the limit does not yet bound the real pending count');
     }
 
-    public function testTheSupportedMaximumRegistersTheSharedConfigurationAndTwoWorkersReserveAgainstIt(): void
+    public function testTheLargestNativeBuilderValueRegistersTheSharedConfigurationAndTwoWorkersReserveAgainstIt(): void
     {
-        $max = AdmissionBudgetsDTO::PROVEN_PENDING_PERMIT_LIMIT_MAX;
+        $max = AdmissionBudgetsDTO::nativePendingPermitLimitMaximum();
         $a = $this->worker($max);
         $b = $this->worker($max);
         $this->open($a);
