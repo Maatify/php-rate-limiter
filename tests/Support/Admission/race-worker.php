@@ -91,11 +91,12 @@ if ($runtime !== null) {
         $context,
         RateLimitCommand::checkOnly('login_protection'),
     );
-    $admitted = $result->isAllowed() && $result->metadata?->permit !== null;
-    if ($spec->op === 'public_proven_session' && $admitted) {
+    $permit = $result->metadata?->permit;
+    $admitted = $result->isAllowed() && $permit !== null;
+    if ($spec->op === 'public_proven_session' && $permit !== null) {
         // A legitimate user: the verifier takes `holdMs`, then the success is recorded with the permit.
         usleep($spec->holdMs * 1000);
-        $runtime->limit($context, new RateLimitCommand('login_protection', 1, false, false, true, (string) $result->metadata->permit));
+        $runtime->limit($context, new RateLimitCommand('login_protection', 1, false, false, true, $permit));
     }
     echo $reply($admitted, $result->metadata?->cause);
     exit(0);

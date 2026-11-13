@@ -336,6 +336,42 @@ final class AdmissionRuntime
     }
 
     /**
+     * The scopes that free the pending-permit slot of an accepted outcome, whichever outcome it is (#206). A permit reserved before
+     * a key-secret rotation holds its member under the previous secret's key, where the outcome's current-generation scope
+     * does not look: with a previous secret configured the same slot is also released under that key. The store removes a member
+     * only from the key of the scope it is given and a previous generation is never written, so the second scope is needed.
+     *
+     * @return list<AdmissionScopeDTO>
+     */
+    private function pendingPermitRelease(string $group, RateLimitContextDTO $context, string $permitId): array
+    {
+        $current = $this->pendingPermitScope($group, $context, $permitId);
+        if ($current === null) {
+            return [];
+        }
+        if ($this->previousKeySecret === null) {
+            return [$current];
+        }
+
+        return [
+            $current,
+            new AdmissionScopeDTO(
+                $current->name,
+                AdmissionScopeKindEnum::COUNTER,
+                $this->key($group, 'ppend', SourcePrefix::of($context->ip), '', $this->previousKeySecret),
+                $current->capacity,
+                $current->ttlSeconds,
+                null,
+                $permitId,
+                null,
+                false,
+                false,
+                true,
+            ),
+        ];
+    }
+
+    /**
      * The scopes an accepted outcome applies with its own kind. U: the net failure set (a failure adds the subject,
      * a success removes it) and, on a success, the bucket refund. P: on a success the refund of the proof counters;
      * a failure refunds nothing (its D8 entry is `crossAccountFailure()`).
@@ -352,9 +388,8 @@ final class AdmissionRuntime
         }
         if ($payload['lane'] === AdmissionLaneEnum::P) {
             $scopes = $success ? $this->proofRefund($group, $subject, $payload['j'] ?? $subject, $payload['id']) : [];
-            $pending = $this->pendingPermitScope($group, $context, $payload['id']);
 
-            return $pending === null ? $scopes : [...$scopes, $pending];
+            return [...$scopes, ...$this->pendingPermitRelease($group, $context, $payload['id'])];
         }
         $scopes = [$this->failureSet('source_failure_cap', $group, 'ufail', SourcePrefix::of($context->ip), $b->sourceFailureCap, $subject)];
         if ($success) {

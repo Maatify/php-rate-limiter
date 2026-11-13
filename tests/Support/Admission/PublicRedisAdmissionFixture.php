@@ -18,10 +18,10 @@ final class PublicRedisAdmissionFixture
 {
     public const BINDING_SECRET = 'redis-gate-binding';
 
-    public static function build(RedisCommandExecutorInterface $executor, string $namespace, int $now, int $retryBudgetMilliseconds = 500, ?int $pendingLimit = null, ?FixedClock $clock = null): CompositeRateLimiterRuntimeInterface
+    public static function build(RedisCommandExecutorInterface $executor, string $namespace, int $now, int $retryBudgetMilliseconds = 500, ?int $pendingLimit = null, ?FixedClock $clock = null, ?RateLimiterConfig $config = null): CompositeRateLimiterRuntimeInterface
     {
         $builder = RateLimiterBuilder::fromFullCapabilityStore(
-            new RateLimiterConfig('redis-gate-key', 'redis-gate-fingerprint', 'test', bindingKeySecret: self::BINDING_SECRET),
+            $config ?? new RateLimiterConfig('redis-gate-key', 'redis-gate-fingerprint', 'test', bindingKeySecret: self::BINDING_SECRET),
             new RedisFullCapabilityStore($executor, $namespace, null, $retryBudgetMilliseconds),
             new RecordingFailureSignalEmitter(),
         )->withClock($clock ?? new FixedClock('@' . $now))->withPolicy(new LoginProtectionAdmissionPolicy());

@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace Maatify\RateLimiter\Tests\Integration\Store;
 
 use Maatify\RateLimiter\Command\RateLimitCommand;
+use Maatify\RateLimiter\Config\RateLimiterConfig;
 use Maatify\RateLimiter\DTO\AdmissionCredentialDTO;
 use Maatify\RateLimiter\DTO\RateLimitContextDTO;
 use Maatify\RateLimiter\DTO\RateLimitResultDTO;
@@ -17,6 +18,7 @@ use Maatify\RateLimiter\Tests\Support\Admission\AdmissionRaceSpec;
 use Maatify\RateLimiter\Tests\Support\Admission\PublicRedisAdmissionFixture;
 use Maatify\RateLimiter\Tests\Support\Admission\ReplyValue;
 use Maatify\RateLimiter\Tests\Support\Clock\FixedClock;
+use PHPUnit\Framework\Attributes\DataProvider;
 use PHPUnit\Framework\Attributes\Group;
 
 /**
@@ -140,6 +142,38 @@ final class AdmissionProvenPendingPermitRedisTest extends AdmissionRedisGateTest
         self::assertSame(2, $this->pendingMembers());
     }
 
+    /** @return iterable<string, array{bool}> */
+    public static function outcomes(): iterable
+    {
+        yield 'success' => [true];
+        yield 'failure' => [false];
+    }
+
+    #[DataProvider('outcomes')]
+    public function testSlotReservedBeforeKeyRotationIsFreedByTheOutcomeRecordedAfterIt(bool $success): void
+    {
+        $before = $this->runtime(2);
+        $this->open($before);
+        $a = $this->check($before, 'acct-a');
+        self::assertTrue($a->isAllowed());
+        self::assertTrue($this->check($before, 'acct-b')->isAllowed());
+
+        // The key secret rotates: the permits above hold their slots under the previous secret's key.
+        $after = $this->rotatedRuntime(2);
+        self::assertSame(self::CAUSE, $this->check($after, 'acct-c')->metadata?->cause, 'the previous generation still counts');
+        self::assertSame(2, $this->pendingMembers());
+
+        $this->settle($after, 'acct-a', $a, $success);
+        self::assertSame(1, $this->pendingMembers(), 'the outcome removed its member from the previous generation');
+        self::assertTrue($this->check($after, 'acct-c')->isAllowed(), 'the freed slot is available to a new reservation');
+        self::assertSame(self::CAUSE, $this->check($after, 'acct-d')->metadata?->cause);
+
+        // A replay of the same outcome frees no second slot.
+        self::assertSame('permit_duplicate', $this->settle($after, 'acct-a', $a, $success)->metadata?->cause);
+        self::assertSame(2, $this->pendingMembers());
+        self::assertSame(self::CAUSE, $this->check($after, 'acct-d')->metadata?->cause, 'the replay did not free a slot');
+    }
+
     public function testSourcesDoNotShareSlotsAndTheLimitIsIndependentOfFailureCounters(): void
     {
         $runtime = $this->runtime(3);
@@ -169,6 +203,13 @@ final class AdmissionProvenPendingPermitRedisTest extends AdmissionRedisGateTest
     private function runtime(?int $limit): CompositeRateLimiterRuntimeInterface
     {
         return PublicRedisAdmissionFixture::build($this->executor, self::NAMESPACE, self::NOW, 500, $limit, $this->clock);
+    }
+
+    private function rotatedRuntime(int $limit): CompositeRateLimiterRuntimeInterface
+    {
+        $config = new RateLimiterConfig('redis-gate-key-2', 'redis-gate-fingerprint', 'test', 'redis-gate-key', bindingKeySecret: PublicRedisAdmissionFixture::BINDING_SECRET);
+
+        return PublicRedisAdmissionFixture::build($this->executor, self::NAMESPACE, self::NOW, 500, $limit, $this->clock, $config);
     }
 
     private function open(CompositeRateLimiterRuntimeInterface $runtime): void
