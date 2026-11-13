@@ -935,6 +935,7 @@ Redis it supports:
 {prefix}:{sha256(namespace)}:adm:p:{sha256(verifierClass \0 key)}              pending members of a failure set
 {prefix}:{sha256(namespace)}:adm:permit:{sha256(permitId)}                     permit records
 {prefix}:{sha256(namespace)}:adm:epoch:{sha256(key)}                           binding epochs
+{prefix}:{sha256(namespace)}:adm:cfg:{sha256(verifierClass \0 key)}               shared admission configuration (DEC-038)
 ```
 
 (the braces around the namespace hash are literal Redis hash-tag braces; `{prefix}` is
@@ -949,6 +950,7 @@ set) and `b` (bucket); one logical key never changes family.
 | `b` bucket | hash `credit`, `last` | credit-seconds, refilled 1 per second of caller time up to `C x T`; absent means full; `EXPIRE` is the time to full, so an expired bucket and an absent bucket are the same state. This is the only admission family that retains a window/tag origin. |
 | `p` pending (5-b2.1; **written only when a scope settles on expiry, 5-b2.2; the admission runtime builds no settling scope, so nothing writes or reads it**) | sorted set | pending members of the failure set with the same logical key: member scored by its permit `deadline` (an earlier deadline wins on a second reservation). A member counts toward the set only when its score is `<= now` and it is not already in the set; a success removes a pending member only while its score is `> now`. `EXPIRE` equals the scope `ttlSeconds`, set when the key is created and never renewed; a reservation without a permit never writes it; a refusal never writes it |
 | permit | hash `state`, `lane`, `subject`, `operation`, `deadline`, `grace`, `outcome` | created by the admitting reservation in the same script, lifetime `deadline + grace - now`; `ISSUED` then `CLAIMED`; the runtime claims and applies the admission outcome in the same store operation |
+| cfg (DEC-038, proposed) | string | the registered effective pending-permit limit of a budget group: `off` or a positive integer, **no TTL**, written by the first accepted reservation (read under the current key, else the previous one) and by an explicit rebind; every reservation compares its worker's value with it before any gate or write |
 | epoch | string | a canonical non-negative integer **with no TTL**: the interface carries no lifetime and a lapsed epoch would revive voided credentials; retention of the key is the Host operator's concern until a decision fixes a lifetime |
 
 Rotation. A counter or a device-member scope may name one previous-generation key. Counters sum the

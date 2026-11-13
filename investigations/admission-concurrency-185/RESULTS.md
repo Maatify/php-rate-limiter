@@ -11,3 +11,5 @@ The public Redis regression `AdmissionPublicRuntimeRedisTest::testUnknownLaneSou
 The older observations are recorded in the [Lead review of the previous PR-Q head](https://github.com/Maatify/php-rate-limiter/pull/202#pullrequestreview-5855399154). That historical run admitted all 60 distinct-account, distinct-proof reservations in its largest batch before outcomes. That measurement is historical and is separate from the acceptance of #206. This does not establish an unlimited capacity, a bound on the current head, or acceptance of the cost by the Owner.
 
 The [Owner's scope decision](https://github.com/Maatify/php-rate-limiter/issues/185#issuecomment-6805835020) leaves the implementation and public Redis evidence for the pending-permit limit to [#206](https://github.com/Maatify/php-rate-limiter/issues/206). The old measurement harness was retired in favor of the public-runtime tests and the separate #206 acceptance criteria.
+
+The implementation and its public Redis evidence are in [`proven-pending-permits-206/`](../proven-pending-permits-206/RESULTS.md).

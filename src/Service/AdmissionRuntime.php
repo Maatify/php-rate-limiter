@@ -11,6 +11,7 @@ use Maatify\RateLimiter\DTO\AdmissionOutcomeDTO;
 use Maatify\RateLimiter\DTO\AdmissionPermitDTO;
 use Maatify\RateLimiter\DTO\AdmissionReservationRequestDTO;
 use Maatify\RateLimiter\DTO\AdmissionScopeDTO;
+use Maatify\RateLimiter\DTO\AdmissionSharedConfigDTO;
 use Maatify\RateLimiter\DTO\DeviceIdentityDTO;
 use Maatify\RateLimiter\DTO\RateLimitContextDTO;
 use Maatify\RateLimiter\DTO\RateLimitContextMetadataDTO;
@@ -20,9 +21,11 @@ use Maatify\RateLimiter\Enum\AdmissionLaneEnum;
 use Maatify\RateLimiter\Enum\AdmissionOutcomeKindEnum;
 use Maatify\RateLimiter\Enum\AdmissionPermitClaimEnum;
 use Maatify\RateLimiter\Enum\AdmissionScopeKindEnum;
+use Maatify\RateLimiter\Exception\AdmissionConfigurationException;
 use Maatify\RateLimiter\Exception\RateLimiterException;
 use Maatify\RateLimiter\Repository\AtomicAdmissionPermitStoreInterface;
 use Maatify\RateLimiter\Repository\RequestAtomicStoreInterface;
+use Maatify\RateLimiter\Repository\SharedAdmissionConfigStoreInterface;
 use Maatify\SharedCommon\Contracts\ClockInterface;
 
 /**
@@ -53,6 +56,7 @@ final class AdmissionRuntime
         'proof_proof_day' => ['proof_capacity', 'proof'],
         'new_device_cap' => ['new_device_cap', 'device'],
         'source_proof_failure_cap' => ['source_proof_failure_cap', 'source'],
+        'source_pending_permits' => ['source_pending_permits', 'source'],
     ];
 
     public function __construct(
@@ -110,6 +114,30 @@ final class AdmissionRuntime
         return $this->previousKeySecret === null ? null : self::fenceKey($this->envScope, $budgetGroup, $this->previousKeySecret);
     }
 
+    /** The effective shared configuration of a budget group as this worker holds it (DEC-038), carried by every reservation. */
+    private function sharedConfig(string $budgetGroup): AdmissionSharedConfigDTO
+    {
+        return AdmissionSharedConfigDTO::forLimit(
+            $this->key($budgetGroup, 'pcfg', '', ''),
+            $this->previousKeySecret === null ? null : $this->key($budgetGroup, 'pcfg', '', '', $this->previousKeySecret),
+            $this->budgets->provenPendingPermitCap,
+        );
+    }
+
+    /**
+     * Register this worker's effective shared configuration for `$budgetGroup` as the value every worker must hold (DEC-038).
+     * An explicit operator action; no request path calls it.
+     *
+     * @throws AdmissionConfigurationException when the store cannot hold a shared configuration
+     */
+    public function rebindSharedConfig(string $budgetGroup): void
+    {
+        if (! $this->store instanceof SharedAdmissionConfigStoreInterface) {
+            throw new AdmissionConfigurationException('The configured store cannot hold a shared admission configuration.');
+        }
+        $this->store->rebindAdmissionConfig($budgetGroup, $this->sharedConfig($budgetGroup));
+    }
+
     public function bindingEpoch(string $accountId): int
     {
         return $this->store->readBindingEpoch($this->epochKey($accountId, $this->keySecret), $this->previousEpochKey($accountId));
@@ -164,7 +192,7 @@ final class AdmissionRuntime
         $scopes = $lane->lane === AdmissionLaneEnum::P
             ? $this->provenScopes($budgetGroup, $context, $device, $lane, $id)
             : $this->unprovenScopes($budgetGroup, $context, $id);
-        $result = $this->store->reserveAdmission(new AdmissionReservationRequestDTO($budgetGroup, $scopes, $permit), $t);
+        $result = $this->store->reserveAdmission(new AdmissionReservationRequestDTO($budgetGroup, $scopes, $permit, $this->sharedConfig($budgetGroup)), $t);
         if (! $result->admitted) {
             $scope = (string) $result->refusedScope;
             if (! isset(self::CAUSES[$scope])) {
@@ -298,8 +326,76 @@ final class AdmissionRuntime
             $scopes[] = $this->deviceMember($group, $subject, $device);
         }
         $scopes[] = $this->failureSet('source_proof_failure_cap', $group, 'pfail', SourcePrefix::of($context->ip), $b->crossAccountFailureCap, $subject);
+        $pending = $this->pendingPermitScope($group, $context, $permitId);
+        if ($pending !== null) {
+            $scopes[] = $pending;
+        }
 
         return $scopes;
+    }
+
+    /**
+     * The pending-permit slot of the source on the proven lane (#206), null when no cap is configured. A counter whose member is
+     * the permit id and whose lifetime is the permit deadline `D`, so an unclaimed permit frees its slot when it expires. Its
+     * key is its own purpose (`ppend`): it shares nothing with the failure sets, whose members are recorded outcomes.
+     */
+    private function pendingPermitScope(string $group, RateLimitContextDTO $context, string $permitId): ?AdmissionScopeDTO
+    {
+        $cap = $this->budgets->provenPendingPermitCap;
+        if ($cap === null) {
+            return null;
+        }
+        $sourceKey = SourcePrefix::of($context->ip);
+
+        return new AdmissionScopeDTO(
+            'source_pending_permits',
+            AdmissionScopeKindEnum::COUNTER,
+            $this->key($group, 'ppend', $sourceKey, ''),
+            $cap,
+            $this->budgets->permitDeadlineSeconds,
+            $this->previousKeySecret === null ? null : $this->key($group, 'ppend', $sourceKey, '', $this->previousKeySecret),
+            $permitId,
+            null,
+            false,
+            false,
+            true,
+        );
+    }
+
+    /**
+     * The scopes that free the pending-permit slot of an accepted outcome, whichever outcome it is (#206). A permit reserved before
+     * a key-secret rotation holds its member under the previous secret's key, where the outcome's current-generation scope
+     * does not look: with a previous secret configured the same slot is also released under that key. The store removes a member
+     * only from the key of the scope it is given and a previous generation is never written, so the second scope is needed.
+     *
+     * @return list<AdmissionScopeDTO>
+     */
+    private function pendingPermitRelease(string $group, RateLimitContextDTO $context, string $permitId): array
+    {
+        $current = $this->pendingPermitScope($group, $context, $permitId);
+        if ($current === null) {
+            return [];
+        }
+        if ($this->previousKeySecret === null) {
+            return [$current];
+        }
+
+        return [
+            $current,
+            new AdmissionScopeDTO(
+                $current->name,
+                AdmissionScopeKindEnum::COUNTER,
+                $this->key($group, 'ppend', SourcePrefix::of($context->ip), '', $this->previousKeySecret),
+                $current->capacity,
+                $current->ttlSeconds,
+                null,
+                $permitId,
+                null,
+                false,
+                false,
+                true,
+            ),
+        ];
     }
 
     /**
@@ -318,7 +414,9 @@ final class AdmissionRuntime
             return [];
         }
         if ($payload['lane'] === AdmissionLaneEnum::P) {
-            return $success ? $this->proofRefund($group, $subject, $payload['j'] ?? $subject, $payload['id']) : [];
+            $scopes = $success ? $this->proofRefund($group, $subject, $payload['j'] ?? $subject, $payload['id']) : [];
+
+            return [...$scopes, ...$this->pendingPermitRelease($group, $context, $payload['id'])];
         }
         $scopes = [$this->failureSet('source_failure_cap', $group, 'ufail', SourcePrefix::of($context->ip), $b->sourceFailureCap, $subject)];
         if ($success) {

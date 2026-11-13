@@ -27,6 +27,8 @@ use Maatify\RateLimiter\Enum\AdmissionPermitClaimEnum;
 use Maatify\RateLimiter\Repository\AdmissionCapableFullStoreInterface;
 use Maatify\RateLimiter\Repository\AdmissionPermitStoreInterface;
 use Maatify\RateLimiter\Repository\AtomicAdmissionPermitStoreInterface;
+use Maatify\RateLimiter\Repository\SharedAdmissionConfigStoreInterface;
+use Maatify\RateLimiter\DTO\AdmissionSharedConfigDTO;
 use Maatify\RateLimiter\Repository\CallerTimeBoundedCorrelationSnapshotRotationStoreInterface;
 use Maatify\RateLimiter\Repository\CallerTimeBudgetSeedStoreInterface;
 use Maatify\RateLimiter\Repository\CallerTimePunishmentLifecycleStoreInterface;
@@ -58,6 +60,7 @@ final class RedisFullCapabilityStore implements
     AdmissionCapableFullStoreInterface,
     AdmissionPermitStoreInterface,
     AtomicAdmissionPermitStoreInterface,
+    SharedAdmissionConfigStoreInterface,
     CallerTimeBudgetSeedStoreInterface,
     CallerTimeBoundedCorrelationSnapshotRotationStoreInterface,
     CallerTimePunishmentLifecycleStoreInterface,
@@ -2752,6 +2755,11 @@ LUA;
     public function applyAdmissionOutcome(AdmissionOutcomeDTO $outcome, int $now): void
     {
         $this->admission()->applyOutcome($outcome, $now);
+    }
+
+    public function rebindAdmissionConfig(string $budgetGroup, AdmissionSharedConfigDTO $config): void
+    {
+        $this->admission()->rebindConfig($budgetGroup, $config);
     }
 
     public function readBindingEpoch(string $key, ?string $previousKey): int

@@ -12,20 +12,25 @@ use Maatify\RateLimiter\Config\LoginProtectionPolicy;
 use Maatify\RateLimiter\Config\PostPunishmentReentryPolicyInterface;
 use Maatify\RateLimiter\Config\RateLimiterConfig;
 use Maatify\RateLimiter\DTO\AdmissionBudgetsDTO;
+use Maatify\RateLimiter\DTO\AdmissionSharedConfigDTO;
 use Maatify\RateLimiter\DTO\RateLimitResultDTO;
 use Maatify\RateLimiter\Enum\AdmissionHostModeEnum;
 use Maatify\RateLimiter\Enum\PolicyCapabilityEnum;
+use Maatify\RateLimiter\Exception\AdmissionConfigurationException;
 use Maatify\RateLimiter\Exception\RateLimiterException;
+use Maatify\RateLimiter\Repository\SharedAdmissionConfigStoreInterface;
 use Maatify\RateLimiter\Service\AdmissionFenceControlInterface;
 use Maatify\RateLimiter\Service\AdmissionRuntime;
 use Maatify\RateLimiter\Service\CompositeRateLimiterRuntime;
 use Maatify\RateLimiter\Service\CompositeRateLimiterRuntimeInterface;
 use Maatify\RateLimiter\Service\RateLimiterEngine;
 use Maatify\RateLimiter\Tests\Support\Admission\AdmissionInMemoryReferenceStore;
+use Maatify\RateLimiter\Tests\Support\Admission\AdmissionStoreWithoutSharedConfig;
 use Maatify\RateLimiter\Tests\Support\Admission\EngineLab;
 use Maatify\RateLimiter\Tests\Support\Clock\FixedClock;
 use Maatify\RateLimiter\Tests\Support\FailureSignal\RecordingFailureSignalEmitter;
 use Maatify\RateLimiter\Tests\Support\FullCapability\FullCapabilityInMemoryStore;
+use PHPUnit\Framework\Attributes\DataProvider;
 use PHPUnit\Framework\Attributes\Group;
 use PHPUnit\Framework\TestCase;
 
@@ -57,11 +62,12 @@ final class AdmissionBuilderActivationTest extends TestCase
         'crossAccountFailureCap' => 4,
         'permitDeadlineSeconds' => 30,
         'permitGraceSeconds' => 600,
+        'provenPendingPermitCap' => null,
     ];
 
     private const IP = '203.0.113.40';
 
-    /** @return array<string, int> */
+    /** @return array<string, int|null> */
     private static function fields(AdmissionBudgetsDTO $budgets): array
     {
         self::assertCount(count(self::PACKAGE_CONSTANTS), get_object_vars($budgets), 'no field beyond the registered ones');
@@ -80,6 +86,7 @@ final class AdmissionBuilderActivationTest extends TestCase
             'crossAccountFailureCap' => $budgets->crossAccountFailureCap,
             'permitDeadlineSeconds' => $budgets->permitDeadlineSeconds,
             'permitGraceSeconds' => $budgets->permitGraceSeconds,
+            'provenPendingPermitCap' => $budgets->provenPendingPermitCap,
         ];
     }
 
@@ -104,7 +111,7 @@ final class AdmissionBuilderActivationTest extends TestCase
         return $admission;
     }
 
-    /** @return array<string, int> */
+    /** @return array<string, int|null> */
     private static function budgetsOf(AdmissionRuntime $runtime): array
     {
         $budgets = (new \ReflectionProperty(AdmissionRuntime::class, 'budgets'))->getValue($runtime);
@@ -158,13 +165,175 @@ final class AdmissionBuilderActivationTest extends TestCase
             (new \ReflectionClass(RateLimiterBuilder::class))->getMethods(\ReflectionMethod::IS_PUBLIC),
         );
         sort($builderMethods);
-        self::assertSame(['__construct', 'build', 'buildOperationalReader', 'fromFullCapabilityStore', 'withClock', 'withDeviceIdentityResolver', 'withPolicy', 'withSimpleThrottlePolicy'], $builderMethods);
+        self::assertSame(['__construct', 'build', 'buildOperationalReader', 'fromFullCapabilityStore', 'withClock', 'withDeviceIdentityResolver', 'withPolicy', 'withProvenPendingPermitLimit', 'withSimpleThrottlePolicy'], $builderMethods);
+        // #206: `withProvenPendingPermitLimit(int)` is the one Host-set admission bound. It is opt-in (absent means no bound, the
+        // `provenPendingPermitCap` field stays null in `packageDefaults()`) and takes a plain integer, never an `AdmissionBudgetsDTO`.
 
         foreach ([RateLimiterConfig::class, RateLimiterBuilder::class] as $class) {
             foreach ((new \ReflectionClass($class))->getMethods(\ReflectionMethod::IS_PUBLIC) as $method) {
                 foreach ($method->getParameters() as $parameter) {
                     self::assertStringNotContainsString('AdmissionBudgetsDTO', (string) $parameter->getType(), "{$class}::{$method->getName()}");
                 }
+            }
+        }
+    }
+
+    public function testTheBuilderOptionSetsOnlyTheProvenPendingPermitCap(): void
+    {
+        $runtime = RateLimiterBuilder::fromFullCapabilityStore(self::config(), new AdmissionInMemoryReferenceStore(new FixedClock()), new RecordingFailureSignalEmitter())
+            ->withPolicy(new LoginProtectionAdmissionPolicy())
+            ->withProvenPendingPermitLimit(7)
+            ->build();
+        $admission = self::admissionOf($runtime);
+
+        self::assertNotNull($admission);
+        self::assertSame([...self::PACKAGE_CONSTANTS, 'provenPendingPermitCap' => 7], self::budgetsOf($admission));
+    }
+
+    public function testAnActiveLimitOnAStoreWithoutSharedConfigurationIsRefusedAndOffIsAccepted(): void
+    {
+        $store = new AdmissionStoreWithoutSharedConfig(new FixedClock());
+        self::assertNotContains(SharedAdmissionConfigStoreInterface::class, class_implements($store) ?: [], 'the fixture lacks the shared configuration capability');
+
+        // Control: the same store builds with the option unset ("off"): the refusal is tied to an effective limit.
+        $off = RateLimiterBuilder::fromFullCapabilityStore(self::config(), $store, new RecordingFailureSignalEmitter())
+            ->withPolicy(new LoginProtectionAdmissionPolicy())
+            ->build();
+        $offAdmission = self::admissionOf($off);
+        self::assertNotNull($offAdmission);
+        self::assertNull(self::budgetsOf($offAdmission)['provenPendingPermitCap']);
+
+        $builder = RateLimiterBuilder::fromFullCapabilityStore(self::config(), $store, new RecordingFailureSignalEmitter())
+            ->withPolicy(new LoginProtectionAdmissionPolicy())
+            ->withProvenPendingPermitLimit(3);
+        try {
+            $builder->build();
+            self::fail('build() must refuse an effective limit on a store that cannot hold the shared configuration.');
+        } catch (AdmissionConfigurationException $e) {
+            self::assertStringContainsString('SharedAdmissionConfigStoreInterface', $e->getMessage());
+        }
+
+        // The supporting store builds with the same limit: it is the missing capability that is refused, nothing else.
+        $supported = RateLimiterBuilder::fromFullCapabilityStore(self::config(), new AdmissionInMemoryReferenceStore(new FixedClock()), new RecordingFailureSignalEmitter())
+            ->withPolicy(new LoginProtectionAdmissionPolicy())
+            ->withProvenPendingPermitLimit(3)
+            ->build();
+        $supportedAdmission = self::admissionOf($supported);
+        self::assertNotNull($supportedAdmission);
+        self::assertSame(3, self::budgetsOf($supportedAdmission)['provenPendingPermitCap']);
+    }
+
+    /**
+     * Native `int` boundaries of the builder: derived from this PHP build, so the same test is correct on 32-bit and 64-bit PHP.
+     * The next value above the native maximum exists as an `int` only when the native maximum is below `PHP_INT_MAX`.
+     *
+     * @return iterable<string, array{int, bool}>
+     */
+    public static function pendingLimitRange(): iterable
+    {
+        $nativeMax = AdmissionBudgetsDTO::nativePendingPermitLimitMaximum();
+        yield 'zero' => [0, false];
+        yield 'negative' => [-1, false];
+        yield 'PHP_INT_MIN' => [PHP_INT_MIN, false];
+        yield 'one' => [1, true];
+        yield 'largest supported native integer' => [$nativeMax, true];
+        if ($nativeMax < PHP_INT_MAX) {
+            yield 'next native integer above the maximum' => [$nativeMax + 1, false];
+            yield 'PHP_INT_MAX' => [PHP_INT_MAX, false];
+        }
+    }
+
+    public function testTheNativeMaximumIsTheSupportedMaximumOrPhpIntMaxWhicheverIsSmaller(): void
+    {
+        $nativeMax = AdmissionBudgetsDTO::nativePendingPermitLimitMaximum();
+        self::assertSame(PHP_INT_SIZE >= 8 ? '9007199254740991' : (string) PHP_INT_MAX, (string) $nativeMax);
+        self::assertTrue(AdmissionBudgetsDTO::isSupportedPendingPermitLimit($nativeMax));
+    }
+
+    /**
+     * The decimal boundaries of the shared configuration value, independent of the native integer width: the same strings are
+     * judged the same on 32-bit and 64-bit PHP (no int or float conversion is involved).
+     *
+     * @return iterable<string, array{string, bool}>
+     */
+    public static function sharedConfigDecimalRange(): iterable
+    {
+        yield 'off' => ['off', true];
+        yield 'one' => ['1', true];
+        yield 'nine digits' => ['999999999', true];
+        yield 'PHP 32-bit int maximum' => ['2147483647', true];
+        yield 'above the 32-bit int maximum' => ['2147483648', true];
+        yield 'supported maximum' => ['9007199254740991', true];
+        yield 'first value above the maximum' => ['9007199254740992', false];
+        yield 'same length, larger' => ['9999999999999999', false];
+        yield 'seventeen digits' => ['10000000000000000', false];
+        yield 'zero' => ['0', false];
+        yield 'leading zero' => ['01', false];
+        yield 'negative' => ['-1', false];
+        yield 'empty' => ['', false];
+        yield 'float notation' => ['9.007199254740991E+15', false];
+    }
+
+    #[DataProvider('sharedConfigDecimalRange')]
+    public function testTheSharedConfigurationValueBoundariesAreDecimalStrings(string $value, bool $supported): void
+    {
+        if ($supported) {
+            self::assertSame($value, (new AdmissionSharedConfigDTO('k', null, $value))->value);
+
+            return;
+        }
+        $this->expectException(RateLimiterException::class);
+        new AdmissionSharedConfigDTO('k', null, $value);
+    }
+
+    public function testTheDecimalMaximumComparisonNeverConvertsToANativeNumber(): void
+    {
+        self::assertTrue(AdmissionBudgetsDTO::isWithinPendingPermitLimitMaximum('9007199254740991'));
+        self::assertFalse(AdmissionBudgetsDTO::isWithinPendingPermitLimitMaximum('9007199254740992'));
+        self::assertTrue(AdmissionBudgetsDTO::isWithinPendingPermitLimitMaximum('9007199254740990'));
+        self::assertFalse(AdmissionBudgetsDTO::isWithinPendingPermitLimitMaximum('9007199254741000'));
+        self::assertTrue(AdmissionBudgetsDTO::isWithinPendingPermitLimitMaximum('999999999999999'));
+        self::assertFalse(AdmissionBudgetsDTO::isWithinPendingPermitLimitMaximum('10000000000000000'));
+    }
+
+    #[DataProvider('pendingLimitRange')]
+    public function testThePendingPermitLimitRangeIsEnforcedWhereTheOptionIsSet(int $limit, bool $supported): void
+    {
+        $builder = RateLimiterBuilder::fromFullCapabilityStore(self::config(), new AdmissionInMemoryReferenceStore(new FixedClock()), new RecordingFailureSignalEmitter())
+            ->withPolicy(new LoginProtectionAdmissionPolicy());
+        if (! $supported) {
+            // Rejected by the option itself: no build() and no store access is involved.
+            $this->expectException(RateLimiterException::class);
+            $builder->withProvenPendingPermitLimit($limit);
+
+            return;
+        }
+        $admission = self::admissionOf($builder->withProvenPendingPermitLimit($limit)->build());
+        self::assertNotNull($admission);
+        self::assertSame($limit, self::budgetsOf($admission)['provenPendingPermitCap']);
+
+        // The DTOs agree with the builder on the same range.
+        self::assertSame($limit, AdmissionBudgetsDTO::packageDefaults()->withProvenPendingPermitCap($limit)->provenPendingPermitCap);
+        self::assertSame((string) $limit, (new AdmissionSharedConfigDTO('k', null, (string) $limit))->value);
+    }
+
+    #[DataProvider('pendingLimitRange')]
+    public function testTheDtosRejectWhatTheBuilderRejects(int $limit, bool $supported): void
+    {
+        if ($supported) {
+            self::addToAssertionCount(1);
+
+            return;
+        }
+        foreach ([
+            static fn() => AdmissionBudgetsDTO::packageDefaults()->withProvenPendingPermitCap($limit),
+            static fn() => new AdmissionSharedConfigDTO('k', null, (string) $limit),
+        ] as $make) {
+            try {
+                $make();
+                self::fail('A value outside the supported range must be rejected.');
+            } catch (RateLimiterException) {
+                self::addToAssertionCount(1);
             }
         }
     }

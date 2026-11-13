@@ -29,6 +29,8 @@ use Maatify\RateLimiter\Repository\HardBlockCycleStoreInterface;
 use Maatify\RateLimiter\Repository\AdmissionPermitStoreInterface;
 use Maatify\RateLimiter\Repository\AdmissionReservationStoreInterface;
 use Maatify\RateLimiter\Repository\AtomicAdmissionPermitStoreInterface;
+use Maatify\RateLimiter\Repository\SharedAdmissionConfigStoreInterface;
+use Maatify\RateLimiter\Exception\AdmissionConfigurationException;
 use Maatify\RateLimiter\Repository\PunishmentLifecycleStoreInterface;
 use Maatify\RateLimiter\Repository\RateLimitStoreInterface;
 use Maatify\RateLimiter\Repository\SnapshotFencedScoreStoreInterface;
@@ -74,6 +76,8 @@ final class RateLimiterBuilder
     private ?ClockInterface $clock = null;
 
     private ?DeviceIdentityResolverInterface $deviceIdentityResolver = null;
+
+    private ?int $provenPendingPermitLimit = null;
 
     /** @var array<string, BlockPolicyInterface> */
     private array $policies;
@@ -139,6 +143,35 @@ final class RateLimiterBuilder
         DeviceIdentityResolverInterface $deviceIdentityResolver,
     ): self {
         $this->deviceIdentityResolver = $deviceIdentityResolver;
+
+        return $this;
+    }
+
+    /**
+     * Bound the permits one source holds at once on the proven admission lane (#206).
+     *
+     * A permit is pending from its reservation until its outcome is claimed (success or failure) or its deadline passes; each
+     * pending permit holds one slot of the source. A request that would take a slot beyond `$limit` is refused with the cause
+     * `source_pending_permits`. The bound is independent of the recorded-failure caps: it counts permits, not outcomes.
+     *
+     * When this method is not called there is no bound: the proven lane behaves as it did before the option existed. The
+     * package supplies no default value; the choice is the Host's and trades legitimate concurrency behind one source
+     * (an office or carrier-grade NAT) against the number of simultaneous attempts one source may hold open.
+     * Applies only when a registered policy declares the admission capability.
+     *
+     * The supported range is 1 to 9007199254740991 (`AdmissionBudgetsDTO::PROVEN_PENDING_PERMIT_LIMIT_MAX_DECIMAL`, the largest
+     * integer Lua and Redis represent exactly). On 32-bit PHP the largest value an `int` can carry is `PHP_INT_MAX`, so the range
+     * this method can accept there is 1 to `PHP_INT_MAX`; the shared configuration still accepts the full decimal range. A value
+     * outside the range is rejected here, before `build()` and before any Redis access.
+     *
+     * @throws RateLimiterException when `$limit` is outside the supported range.
+     */
+    public function withProvenPendingPermitLimit(int $limit): self
+    {
+        if (! AdmissionBudgetsDTO::isSupportedPendingPermitLimit($limit)) {
+            throw new RateLimiterException('Proven pending permit limit must be an integer from 1 to ' . AdmissionBudgetsDTO::PROVEN_PENDING_PERMIT_LIMIT_MAX_DECIMAL . '.');
+        }
+        $this->provenPendingPermitLimit = $limit;
 
         return $this;
     }
@@ -388,10 +421,14 @@ final class RateLimiterBuilder
             return null;
         }
 
+        if ($this->provenPendingPermitLimit !== null && ! $this->rateLimitStore instanceof SharedAdmissionConfigStoreInterface) {
+            throw new AdmissionConfigurationException('A proven pending permit limit needs a store that holds the shared admission configuration (SharedAdmissionConfigStoreInterface), so that workers on one store can be proven to agree (DEC-038).');
+        }
+
         return new AdmissionRuntime(
             $this->rateLimitStore,
             new AdmissionCredentialCodec($bindingKey, $this->config->previousBindingKeySecret()),
-            AdmissionBudgetsDTO::packageDefaults(),
+            AdmissionBudgetsDTO::packageDefaults()->withProvenPendingPermitCap($this->provenPendingPermitLimit),
             $clock,
             $this->config->keySecret(),
             $this->config->environmentScope(),

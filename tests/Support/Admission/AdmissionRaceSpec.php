@@ -22,6 +22,10 @@ final readonly class AdmissionRaceSpec
         public ?string $permit = null,
         public ?string $issuePermit = null,
         public ?string $outcome = null,
+        public ?int $pendingLimit = null,
+        public string $ip = '192.0.2.10',
+        public int $holdMs = 0,
+        public int $jitterMs = 0,
     ) {}
 
     public function toJson(): string
@@ -35,6 +39,10 @@ final readonly class AdmissionRaceSpec
             'permit' => $this->permit,
             'issuePermit' => $this->issuePermit,
             'outcome' => $this->outcome,
+            'pendingLimit' => $this->pendingLimit,
+            'ip' => $this->ip,
+            'holdMs' => $this->holdMs,
+            'jitterMs' => $this->jitterMs,
         ], JSON_THROW_ON_ERROR);
     }
 
@@ -82,6 +90,6 @@ final readonly class AdmissionRaceSpec
             ];
         }
 
-        return new self($text('namespace'), $text('op'), $text('mode'), $now, $scopes, $optional('permit'), $optional('issuePermit'), $optional('outcome'));
+        return new self($text('namespace'), $text('op'), $text('mode'), $now, $scopes, $optional('permit'), $optional('issuePermit'), $optional('outcome'), is_int($data['pendingLimit'] ?? null) ? $data['pendingLimit'] : null, $optional('ip') ?? '192.0.2.10', is_int($data['holdMs'] ?? null) ? $data['holdMs'] : 0, is_int($data['jitterMs'] ?? null) ? $data['jitterMs'] : 0);
     }
 }

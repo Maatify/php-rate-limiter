@@ -7,6 +7,19 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added (#206) — Optional pending-permit limit on the proven admission lane
+- `RateLimiterBuilder::withProvenPendingPermitLimit(int $limit)` bounds the proven-lane permits one source holds between
+  reservation and outcome (or the 30 s deadline). The surplus is refused with the cause `source_pending_permits`. Success and
+  failure outcomes release the slot once; expiry releases it without an outcome. The limit is independent of the recorded-failure
+  sets. The supported range is 1 to 9007199254740991 (2^53 − 1; on 32-bit PHP the `int` argument reaches only `PHP_INT_MAX`); other values are rejected by the method. Without the call there is no
+  limit and behaviour is unchanged. The package supplies no default.
+- A slot reserved before a key-secret rotation is freed by the outcome recorded after it, in the atomic claim of DEC-036; a replay frees no second slot.
+- Shared configuration (DEC-038): every worker of a budget group on one Redis holds the same limit, "no limit" included.
+  A worker whose value differs raises `AdmissionConfigurationException` before reserving; the value changes only through
+  `AdmissionSharedConfigControlInterface::rebindAdmissionSharedConfig()`. `build()` refuses a limit on a store that cannot hold it.
+  The change procedure (pause, isolate, wait for permits issued under "no limit", rebind, resume) and when the limit starts to bound
+  the real pending count are in the usage guide and DEC-038.
+
 ### Documentation (#185)
 - Clarified DEC-032 Operational Read authority, effective score, and the scope of request atomicity under DEC-036 and DEC-037.
 - Recorded DEC-034 and DEC-035 as proposals. DEC-025 and DEC-028 remain active pending explicit activation.

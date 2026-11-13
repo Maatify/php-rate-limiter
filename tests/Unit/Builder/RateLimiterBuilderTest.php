@@ -195,6 +195,7 @@ final class RateLimiterBuilderTest extends TestCase
             'fromFullCapabilityStore',
             'withClock',
             'withDeviceIdentityResolver',
+            'withProvenPendingPermitLimit',
             'withPolicy',
             'withSimpleThrottlePolicy',
             'build',

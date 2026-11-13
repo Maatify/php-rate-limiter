@@ -16,12 +16,19 @@ use Maatify\RateLimiter\Tests\Support\FailureSignal\RecordingFailureSignalEmitte
 /** Public runtime fixture shared by the Redis gate and its independent worker processes. */
 final class PublicRedisAdmissionFixture
 {
-    public static function build(RedisCommandExecutorInterface $executor, string $namespace, int $now, int $retryBudgetMilliseconds = 500): CompositeRateLimiterRuntimeInterface
+    public const BINDING_SECRET = 'redis-gate-binding';
+
+    public static function build(RedisCommandExecutorInterface $executor, string $namespace, int $now, int $retryBudgetMilliseconds = 500, ?int $pendingLimit = null, ?FixedClock $clock = null, ?RateLimiterConfig $config = null): CompositeRateLimiterRuntimeInterface
     {
-        return RateLimiterBuilder::fromFullCapabilityStore(
-            new RateLimiterConfig('redis-gate-key', 'redis-gate-fingerprint', 'test', bindingKeySecret: 'redis-gate-binding'),
+        $builder = RateLimiterBuilder::fromFullCapabilityStore(
+            $config ?? new RateLimiterConfig('redis-gate-key', 'redis-gate-fingerprint', 'test', bindingKeySecret: self::BINDING_SECRET),
             new RedisFullCapabilityStore($executor, $namespace, null, $retryBudgetMilliseconds),
             new RecordingFailureSignalEmitter(),
-        )->withClock(new FixedClock('@' . $now))->withPolicy(new LoginProtectionAdmissionPolicy())->build();
+        )->withClock($clock ?? new FixedClock('@' . $now))->withPolicy(new LoginProtectionAdmissionPolicy());
+        if ($pendingLimit !== null) {
+            $builder->withProvenPendingPermitLimit($pendingLimit);
+        }
+
+        return $builder->build();
     }
 }
