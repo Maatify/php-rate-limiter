@@ -17,6 +17,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   that pipeline. The [failure semantics](docs/FAILURE_SEMANTICS.md#45-admission-reservation-policies-dec-015-dec-024-dec-033)
   and the [usage guide](docs/guides/USAGE_GUIDE.md) describe the three interruption cases.
 
+### Fixed (#185, F-185-38) — Canonical source for IPv4-mapped IPv6
+- IPv4-mapped IPv6 and its embedded IPv4 address now share source state across enforcement, admission, local fallback,
+  and Operational Read. Mapped addresses stay outside adaptive IPv6 aggregation.
+
 ### Fixed (#185, F-185-39) — Redis Lua validation of missing metadata
 - Lua validators in `RedisFullCapabilityStore` check that a value is a string before applying string operations.
   When Redis returns a non-string value for missing metadata, the affected operations report a classified

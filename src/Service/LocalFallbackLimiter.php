@@ -127,14 +127,7 @@ class LocalFallbackLimiter
 
     private static function getIpPrefix(string $ip): string
     {
-        if (filter_var($ip, FILTER_VALIDATE_IP, FILTER_FLAG_IPV6)) {
-            $packed = inet_pton($ip);
-            if ($packed !== false) {
-                $hex = bin2hex($packed);
-                return substr($hex, 0, 16); // /64
-            }
-        }
-        return $ip;
+        return SourcePrefix::of($ip);
     }
 
     /**
