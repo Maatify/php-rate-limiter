@@ -384,7 +384,8 @@ Outputs and duties:
   `source_capacity`, `source_failure_cap`, `account_bucket`, `proof_capacity`, `new_device_cap`,
   `source_proof_failure_cap` and, only when the option below is set, `source_pending_permits`.
 * **Pending proven permits per source (optional, #206)**: `RateLimiterBuilder::withProvenPendingPermitLimit(int $limit)`
-  bounds how many proven-lane permits one source holds at once. A permit holds one slot from its reservation until its outcome
+  bounds how many proven-lane permits each source holds at once. The limit applies to every source of the budget group
+  independently, not to the group as a whole: with a limit of two, two distinct sources may each hold two pending permits. A permit holds one slot from its reservation until its outcome
   is claimed (success or failure) or its deadline (30 s) passes; a request that would exceed `$limit` is refused with the
   cause `source_pending_permits` and writes nothing. The slot is released once: a repeated outcome of the same permit is
   `permit_duplicate` and frees nothing. The limit counts permits, not recorded failures, so it is independent of
@@ -413,9 +414,10 @@ Outputs and duties:
        (`instanceof AdmissionSharedConfigControlInterface`). Deploy the new value to every worker of the group first.
     5. **Resume** reservations.
     * **"No limit" to an effective limit**: permits issued while there is no limit hold no slot, so step 3 is required. When steps
-      1 to 3 completed before the rebind, the first reservation after the resume is counted, the real pending count of the group
-      is bounded by the limit from then on, and the surplus is refused with `source_pending_permits`. If you rebind before step 3
-      has ended, nothing is guaranteed: the real count can exceed the limit by the permits still outstanding.
+      1 to 3 completed before the rebind, the first reservation after the resume counts against the limit of its own
+      source, the real pending count of each source is bounded by the limit from then on, and a reservation above its source's
+      limit is refused with `source_pending_permits`. If you rebind before step 3 has ended, nothing is guaranteed: the real
+      count of a source can exceed the limit by that source's permits still outstanding.
     * **One effective limit to another**: both count the same counter, so step 3 is not needed for counting. Raising makes room at
       once. Lowering revokes no permit: the existing permits stay, the pending count may remain above the new limit, and new
       reservations are refused until it falls below the new limit (permits leave by outcome or at their 30 s deadline). No
