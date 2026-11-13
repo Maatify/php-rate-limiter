@@ -15,13 +15,16 @@ use Maatify\RateLimiter\DTO\AdmissionBudgetsDTO;
 use Maatify\RateLimiter\DTO\RateLimitResultDTO;
 use Maatify\RateLimiter\Enum\AdmissionHostModeEnum;
 use Maatify\RateLimiter\Enum\PolicyCapabilityEnum;
+use Maatify\RateLimiter\Exception\AdmissionConfigurationException;
 use Maatify\RateLimiter\Exception\RateLimiterException;
+use Maatify\RateLimiter\Repository\SharedAdmissionConfigStoreInterface;
 use Maatify\RateLimiter\Service\AdmissionFenceControlInterface;
 use Maatify\RateLimiter\Service\AdmissionRuntime;
 use Maatify\RateLimiter\Service\CompositeRateLimiterRuntime;
 use Maatify\RateLimiter\Service\CompositeRateLimiterRuntimeInterface;
 use Maatify\RateLimiter\Service\RateLimiterEngine;
 use Maatify\RateLimiter\Tests\Support\Admission\AdmissionInMemoryReferenceStore;
+use Maatify\RateLimiter\Tests\Support\Admission\AdmissionStoreWithoutSharedConfig;
 use Maatify\RateLimiter\Tests\Support\Admission\EngineLab;
 use Maatify\RateLimiter\Tests\Support\Clock\FixedClock;
 use Maatify\RateLimiter\Tests\Support\FailureSignal\RecordingFailureSignalEmitter;
@@ -183,6 +186,39 @@ final class AdmissionBuilderActivationTest extends TestCase
 
         self::assertNotNull($admission);
         self::assertSame([...self::PACKAGE_CONSTANTS, 'provenPendingPermitCap' => 7], self::budgetsOf($admission));
+    }
+
+    public function testAnActiveLimitOnAStoreWithoutSharedConfigurationIsRefusedAndOffIsAccepted(): void
+    {
+        $store = new AdmissionStoreWithoutSharedConfig(new FixedClock());
+        self::assertNotContains(SharedAdmissionConfigStoreInterface::class, class_implements($store) ?: [], 'the fixture lacks the shared configuration capability');
+
+        // Control: the same store builds with the option unset ("off"): the refusal is tied to an effective limit.
+        $off = RateLimiterBuilder::fromFullCapabilityStore(self::config(), $store, new RecordingFailureSignalEmitter())
+            ->withPolicy(new LoginProtectionAdmissionPolicy())
+            ->build();
+        $offAdmission = self::admissionOf($off);
+        self::assertNotNull($offAdmission);
+        self::assertNull(self::budgetsOf($offAdmission)['provenPendingPermitCap']);
+
+        $builder = RateLimiterBuilder::fromFullCapabilityStore(self::config(), $store, new RecordingFailureSignalEmitter())
+            ->withPolicy(new LoginProtectionAdmissionPolicy())
+            ->withProvenPendingPermitLimit(3);
+        try {
+            $builder->build();
+            self::fail('build() must refuse an effective limit on a store that cannot hold the shared configuration.');
+        } catch (AdmissionConfigurationException $e) {
+            self::assertStringContainsString('SharedAdmissionConfigStoreInterface', $e->getMessage());
+        }
+
+        // The supporting store builds with the same limit: it is the missing capability that is refused, nothing else.
+        $supported = RateLimiterBuilder::fromFullCapabilityStore(self::config(), new AdmissionInMemoryReferenceStore(new FixedClock()), new RecordingFailureSignalEmitter())
+            ->withPolicy(new LoginProtectionAdmissionPolicy())
+            ->withProvenPendingPermitLimit(3)
+            ->build();
+        $supportedAdmission = self::admissionOf($supported);
+        self::assertNotNull($supportedAdmission);
+        self::assertSame(3, self::budgetsOf($supportedAdmission)['provenPendingPermitCap']);
     }
 
     public function testThePendingPermitLimitMustBePositive(): void

@@ -399,8 +399,7 @@ Outputs and duties:
   `AdmissionConfigurationException` before it reserves anything, on either lane, and never changes the shared value itself. The first
   accepted reservation of a budget group registers its value. A limit needs a store that holds the shared configuration
   (`SharedAdmissionConfigStoreInterface`, which `RedisFullCapabilityStore` does); `build()` refuses a limit on any other store.
-  * **Changing the value** (permits issued while the limit is `off` hold no slot, so the limit bounds the real pending count only
-    once they have ended). In this order:
+  * **Changing the value**: every change follows the same steps; what each guarantees is stated per transition below.
     1. **Pause** new reservations of the budget group on every worker (your maintenance or routing switch; the package has no
        pause call, and closing the fence is not one). Note `T_pause`: the latest moment any worker still accepted a reservation.
     2. **Isolate** every worker that can pass the check: remove from rotation or stop any worker on a version that predates the
@@ -408,18 +407,21 @@ Outputs and duties:
        Workers of the current version holding another value fail with `AdmissionConfigurationException` and are replaced in the roll.
     3. **Wait** until every permit issued before the pause has been claimed or has expired: the last ends by `T_pause + 30 s`
        (add the clock skew between your workers). You can rely on the clock: a permit past its deadline answers `permit_late`
-       and applies nothing, so it neither holds nor frees a slot. The wait is required whenever permits were issued under "no
-       limit" (enabling, or a sequence that passed through "no limit"); a change between two limits needs none, but pause and
-       isolation still apply.
+       and applies nothing, so it neither holds nor frees a slot. The permits issued during "no limit" have ended when
+       `T_pause + 30 s` (plus skew) has passed or every one of them has been claimed.
     4. **Rebind**: from one worker that already carries the agreed value, call `rebindAdmissionSharedConfig($budgetGroup)`
        (`instanceof AdmissionSharedConfigControlInterface`). Deploy the new value to every worker of the group first.
-    5. **Resume** reservations. From the first reservation after the resume, every pending permit of the group is counted, and
-       the surplus is refused with `source_pending_permits`. Before step 3 has ended, the real pending count can exceed the
-       limit by the permits still outstanding from "no limit".
-  * **Existing permits**: the limit counts the permits that exist. Raising it makes room at once. Lowering it revokes nothing; new
-    reservations are refused until the pending count is under the new limit (permits leave by outcome or at their 30 s
-    deadline). Disabling ignores the counter, and permits reserved while it is off hold no slot, so enabling again counts only
-    the permits reserved while a limit was set and still pending.
+    5. **Resume** reservations.
+    * **"No limit" to an effective limit**: permits issued while there is no limit hold no slot, so step 3 is required. When steps
+      1 to 3 completed before the rebind, the first reservation after the resume is counted, the real pending count of the group
+      is bounded by the limit from then on, and the surplus is refused with `source_pending_permits`. If you rebind before step 3
+      has ended, nothing is guaranteed: the real count can exceed the limit by the permits still outstanding.
+    * **One effective limit to another**: both count the same counter, so step 3 is not needed for counting. Raising makes room at
+      once. Lowering revokes no permit: the existing permits stay, the pending count may remain above the new limit, and new
+      reservations are refused until it falls below the new limit (permits leave by outcome or at their 30 s deadline). No
+      guarantee is made that the count is under the new limit at the resume.
+    * **An effective limit to "no limit"**: disabling stops enforcing the limit. The counter is ignored, and permits reserved
+      while it is off hold no slot.
 * **Password change or recovery**: call `revokeAccountBinding($accountId)` (it bumps the account's
   epoch; every older credential stops verifying), read the new epoch with `bindingEpoch($accountId)`
   and issue a credential to the device that performed the change. Both are reached through
