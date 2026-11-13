@@ -13,6 +13,11 @@ use Maatify\RateLimiter\Exception\RateLimiterException;
  * constructs the admission runtime with them, and no Host input sets any of them. The constructor stays open to the
  * package's own verification harness; it is not part of the supported public surface.
  *
+ * `provenPendingPermitCap` (#206) bounds the permits a source holds at once on the proven lane, from the reservation until
+ * the outcome is claimed or the deadline `D` passes. `null` (the package default) sets no bound: that is the behaviour of the
+ * library before the option existed, where only the recorded-failure cap, the per-account and per-proof counters apply.
+ * It is independent of the failure sets: nothing recorded as a failure raises or lowers it, and it never counts as one.
+ *
  * `permitDeadlineSeconds` (`D`) must not exceed the window (`D <= W`, security feasibility §2.3); `permitGraceSeconds` (`G`)
  * may be zero.
  *
@@ -34,6 +39,7 @@ final readonly class AdmissionBudgetsDTO
         public int $crossAccountFailureCap,
         public int $permitDeadlineSeconds,
         public int $permitGraceSeconds,
+        public ?int $provenPendingPermitCap = null,
     ) {
         $positive = [
             'window' => $windowSeconds,
@@ -53,6 +59,9 @@ final readonly class AdmissionBudgetsDTO
             if ($value < 1) {
                 throw new RateLimiterException("Admission budget {$label} must be a positive integer.");
             }
+        }
+        if ($provenPendingPermitCap !== null && $provenPendingPermitCap < 1) {
+            throw new RateLimiterException('Admission proven-lane pending permit cap must be a positive integer or null.');
         }
         if ($permitGraceSeconds < 0) {
             throw new RateLimiterException('Admission permit grace must not be negative.');
@@ -85,6 +94,27 @@ final readonly class AdmissionBudgetsDTO
             crossAccountFailureCap: 4,
             permitDeadlineSeconds: 30,
             permitGraceSeconds: 600,
+        );
+    }
+
+    /** A copy with the proven-lane pending permit cap set (`null` removes it). */
+    public function withProvenPendingPermitCap(?int $cap): self
+    {
+        return new self(
+            $this->windowSeconds,
+            $this->sourceCapacity,
+            $this->sourceFailureCap,
+            $this->accountBucketTakes,
+            $this->accountBucketSeconds,
+            $this->proofAccountWindow,
+            $this->proofAccountDay,
+            $this->proofProofWindow,
+            $this->proofProofDay,
+            $this->newDevicesPerDay,
+            $this->crossAccountFailureCap,
+            $this->permitDeadlineSeconds,
+            $this->permitGraceSeconds,
+            $cap,
         );
     }
 }

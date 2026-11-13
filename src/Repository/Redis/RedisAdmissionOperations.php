@@ -354,7 +354,7 @@ for i = 1, n do
         if s.score == nil then return bad('pending member score is not a canonical non-negative integer') end
       end
     end
-  elseif kind == 'c' and success then
+  elseif kind == 'c' and (success or s.keepsSettled) then
     local e = checkType(cur, 'zset', 'counter')
     if e then return bad(e) end
     if not canonicalScores(cur) then return bad('counter member score is not a canonical non-negative integer') end
@@ -384,7 +384,8 @@ for i = 1, n do
       redis.call('EXPIRE', s.cur, s.ttl)
       if s.settlesOut then redis.call('ZREM', s.pending, s.member) end
     end
-  elseif s.kind == 'c' and success then
+  elseif s.kind == 'c' and (success or s.keepsSettled) then
+    -- For a counter the flag slot is `releasesOnFailure`: the pending-permit slot is freed by either outcome (#206).
     if s.member ~= '' then redis.call('ZREM', s.cur, s.member) end
   elseif s.kind == 'b' and success and s.present then
     local credit = s.credit + s.ttl
@@ -463,7 +464,7 @@ for i = 1, n do
         if s.score == nil then return bad('pending member score is not a canonical non-negative integer') end
       end
     end
-  elseif kind == 'c' and success then
+  elseif kind == 'c' and (success or s.keepsSettled) then
     local e = checkType(cur, 'zset', 'counter')
     if e then return bad(e) end
     if not canonicalScores(cur) then return bad('counter member score is not a canonical non-negative integer') end
@@ -495,7 +496,8 @@ for i = 1, n do
       redis.call('EXPIRE', s.cur, s.ttl)
       if s.settlesOut then redis.call('ZREM', s.pending, s.member) end
     end
-  elseif s.kind == 'c' and success then
+  elseif s.kind == 'c' and (success or s.keepsSettled) then
+    -- For a counter the flag slot is `releasesOnFailure`: the pending-permit slot is freed by either outcome (#206).
     if s.member ~= '' then redis.call('ZREM', s.cur, s.member) end
   elseif s.kind == 'b' and success and s.present then
     local credit = s.credit + s.ttl
@@ -666,7 +668,7 @@ LUA;
                 (string) $scope->capacity,
                 (string) $scope->ttlSeconds,
                 $member ?? '',
-                $scope->successKeepsSettled ? '1' : '0',
+                ($scope->successKeepsSettled || $scope->releasesOnFailure) ? '1' : '0',
                 $scope->settlesOnExpiry ? '1' : '0',
             );
         }
@@ -733,7 +735,7 @@ LUA;
                 (string) $scope->capacity,
                 (string) $scope->ttlSeconds,
                 $member ?? '',
-                $scope->successKeepsSettled ? '1' : '0',
+                ($scope->successKeepsSettled || $scope->releasesOnFailure) ? '1' : '0',
                 $scope->settlesOnExpiry ? '1' : '0',
             );
         }

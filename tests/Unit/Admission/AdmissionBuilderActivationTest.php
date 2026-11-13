@@ -57,11 +57,12 @@ final class AdmissionBuilderActivationTest extends TestCase
         'crossAccountFailureCap' => 4,
         'permitDeadlineSeconds' => 30,
         'permitGraceSeconds' => 600,
+        'provenPendingPermitCap' => null,
     ];
 
     private const IP = '203.0.113.40';
 
-    /** @return array<string, int> */
+    /** @return array<string, int|null> */
     private static function fields(AdmissionBudgetsDTO $budgets): array
     {
         self::assertCount(count(self::PACKAGE_CONSTANTS), get_object_vars($budgets), 'no field beyond the registered ones');
@@ -80,6 +81,7 @@ final class AdmissionBuilderActivationTest extends TestCase
             'crossAccountFailureCap' => $budgets->crossAccountFailureCap,
             'permitDeadlineSeconds' => $budgets->permitDeadlineSeconds,
             'permitGraceSeconds' => $budgets->permitGraceSeconds,
+            'provenPendingPermitCap' => $budgets->provenPendingPermitCap,
         ];
     }
 
@@ -104,7 +106,7 @@ final class AdmissionBuilderActivationTest extends TestCase
         return $admission;
     }
 
-    /** @return array<string, int> */
+    /** @return array<string, int|null> */
     private static function budgetsOf(AdmissionRuntime $runtime): array
     {
         $budgets = (new \ReflectionProperty(AdmissionRuntime::class, 'budgets'))->getValue($runtime);
@@ -158,7 +160,9 @@ final class AdmissionBuilderActivationTest extends TestCase
             (new \ReflectionClass(RateLimiterBuilder::class))->getMethods(\ReflectionMethod::IS_PUBLIC),
         );
         sort($builderMethods);
-        self::assertSame(['__construct', 'build', 'buildOperationalReader', 'fromFullCapabilityStore', 'withClock', 'withDeviceIdentityResolver', 'withPolicy', 'withSimpleThrottlePolicy'], $builderMethods);
+        self::assertSame(['__construct', 'build', 'buildOperationalReader', 'fromFullCapabilityStore', 'withClock', 'withDeviceIdentityResolver', 'withPolicy', 'withProvenPendingPermitLimit', 'withSimpleThrottlePolicy'], $builderMethods);
+        // #206: `withProvenPendingPermitLimit(int)` is the one Host-set admission bound. It is opt-in (absent means no bound, the
+        // `provenPendingPermitCap` field stays null in `packageDefaults()`) and takes a plain integer, never an `AdmissionBudgetsDTO`.
 
         foreach ([RateLimiterConfig::class, RateLimiterBuilder::class] as $class) {
             foreach ((new \ReflectionClass($class))->getMethods(\ReflectionMethod::IS_PUBLIC) as $method) {
@@ -167,6 +171,32 @@ final class AdmissionBuilderActivationTest extends TestCase
                 }
             }
         }
+    }
+
+    public function testTheBuilderOptionSetsOnlyTheProvenPendingPermitCap(): void
+    {
+        $runtime = RateLimiterBuilder::fromFullCapabilityStore(self::config(), new AdmissionInMemoryReferenceStore(new FixedClock()), new RecordingFailureSignalEmitter())
+            ->withPolicy(new LoginProtectionAdmissionPolicy())
+            ->withProvenPendingPermitLimit(7)
+            ->build();
+        $admission = self::admissionOf($runtime);
+
+        self::assertNotNull($admission);
+        self::assertSame([...self::PACKAGE_CONSTANTS, 'provenPendingPermitCap' => 7], self::budgetsOf($admission));
+    }
+
+    public function testThePendingPermitLimitMustBePositive(): void
+    {
+        foreach ([0, -1] as $limit) {
+            try {
+                RateLimiterBuilder::fromFullCapabilityStore(self::config(), new AdmissionInMemoryReferenceStore(new FixedClock()), new RecordingFailureSignalEmitter())->withProvenPendingPermitLimit($limit);
+                self::fail('A non-positive limit must be refused.');
+            } catch (\Maatify\RateLimiter\Exception\RateLimiterException) {
+                self::addToAssertionCount(1);
+            }
+        }
+        $this->expectException(\Maatify\RateLimiter\Exception\RateLimiterException::class);
+        AdmissionBudgetsDTO::packageDefaults()->withProvenPendingPermitCap(0);
     }
 
     public function testDetectorABuilderThatTakesOneBudgetFromElsewhereFailsTheFieldComparison(): void

@@ -75,6 +75,8 @@ final class RateLimiterBuilder
 
     private ?DeviceIdentityResolverInterface $deviceIdentityResolver = null;
 
+    private ?int $provenPendingPermitLimit = null;
+
     /** @var array<string, BlockPolicyInterface> */
     private array $policies;
 
@@ -139,6 +141,30 @@ final class RateLimiterBuilder
         DeviceIdentityResolverInterface $deviceIdentityResolver,
     ): self {
         $this->deviceIdentityResolver = $deviceIdentityResolver;
+
+        return $this;
+    }
+
+    /**
+     * Bound the permits one source holds at once on the proven admission lane (#206).
+     *
+     * A permit is pending from its reservation until its outcome is claimed (success or failure) or its deadline passes; each
+     * pending permit holds one slot of the source. A request that would take a slot beyond `$limit` is refused with the cause
+     * `source_pending_permits`. The bound is independent of the recorded-failure caps: it counts permits, not outcomes.
+     *
+     * When this method is not called there is no bound: the proven lane behaves as it did before the option existed. The
+     * package supplies no default value; the choice is the Host's and trades legitimate concurrency behind one source
+     * (an office or carrier-grade NAT) against the number of simultaneous attempts one source may hold open.
+     * Applies only when a registered policy declares the admission capability.
+     *
+     * @throws RateLimiterException when `$limit` is below 1.
+     */
+    public function withProvenPendingPermitLimit(int $limit): self
+    {
+        if ($limit < 1) {
+            throw new RateLimiterException('Proven pending permit limit must be a positive integer.');
+        }
+        $this->provenPendingPermitLimit = $limit;
 
         return $this;
     }
@@ -391,7 +417,7 @@ final class RateLimiterBuilder
         return new AdmissionRuntime(
             $this->rateLimitStore,
             new AdmissionCredentialCodec($bindingKey, $this->config->previousBindingKeySecret()),
-            AdmissionBudgetsDTO::packageDefaults(),
+            AdmissionBudgetsDTO::packageDefaults()->withProvenPendingPermitCap($this->provenPendingPermitLimit),
             $clock,
             $this->config->keySecret(),
             $this->config->environmentScope(),

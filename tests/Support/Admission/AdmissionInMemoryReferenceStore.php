@@ -187,7 +187,7 @@ final class AdmissionInMemoryReferenceStore extends FullCapabilityInMemoryStore 
                         unset($this->pending[$own][$member]);
                     }
                 }
-            } elseif ($success && $scope->kind === AdmissionScopeKindEnum::COUNTER) {
+            } elseif (($success || $scope->releasesOnFailure) && $scope->kind === AdmissionScopeKindEnum::COUNTER) {
                 $member = $scope->member ?? ($outcome->permitId ?? '');
                 if ($member !== '') {
                     unset($this->counters[$own][$member]);

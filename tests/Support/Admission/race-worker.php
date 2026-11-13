@@ -7,6 +7,7 @@ declare(strict_types=1);
 // Prints one JSON object: {"ok": bool, "refused": ?string, "claim": ?string}.
 
 use Maatify\RateLimiter\Command\RateLimitCommand;
+use Maatify\RateLimiter\DTO\AdmissionCredentialDTO;
 use Maatify\RateLimiter\DTO\AdmissionOutcomeDTO;
 use Maatify\RateLimiter\DTO\AdmissionPermitDTO;
 use Maatify\RateLimiter\DTO\AdmissionReservationRequestDTO;
@@ -15,6 +16,7 @@ use Maatify\RateLimiter\DTO\RateLimitContextDTO;
 use Maatify\RateLimiter\Enum\AdmissionOutcomeKindEnum;
 use Maatify\RateLimiter\Enum\AdmissionScopeKindEnum;
 use Maatify\RateLimiter\Repository\Redis\RedisAdmissionOperations;
+use Maatify\RateLimiter\Service\AdmissionCredentialCodec;
 use Maatify\RateLimiter\Repository\Redis\RedisFullCapabilityStore;
 use Maatify\RateLimiter\Tests\Support\Admission\AdmissionRaceSpec;
 use Maatify\RateLimiter\Tests\Support\Admission\NonAtomicAdmissionControl;
@@ -63,7 +65,9 @@ foreach ($spec->scopes as $s) {
     );
 }
 
-$runtime = $spec->op === 'public_check' ? PublicRedisAdmissionFixture::build($executor, $spec->namespace, $spec->now, 60_000) : null;
+$runtime = in_array($spec->op, ['public_check', 'public_proven', 'public_proven_session'], true)
+    ? PublicRedisAdmissionFixture::build($executor, $spec->namespace, $spec->now, 60_000, $spec->pendingLimit)
+    : null;
 
 if ($runtime !== null && microtime(true) >= (float) $barrier) {
     fwrite(STDERR, "Public runtime worker missed the start barrier.\n");
@@ -74,11 +78,26 @@ while (microtime(true) < (float) $barrier) {
 }
 
 if ($runtime !== null) {
+    // `public_proven`: an independent account, instance and proof per worker behind the spec's source, so that only the
+    // pending-permit slot (#206) can tie the workers together. The permit is left pending: no outcome is sent.
+    $credential = $spec->op !== 'public_check'
+        ? (new AdmissionCredentialCodec(PublicRedisAdmissionFixture::BINDING_SECRET))->encode(new AdmissionCredentialDTO('redis-gate-' . $index, ['login'], 'inst-' . $index, 'jti-' . $index, $spec->now + 3600, $spec->now, 0))
+        : null;
+    if ($spec->jitterMs > 0) {
+        usleep(random_int(0, $spec->jitterMs * 1000));
+    }
+    $context = new RateLimitContextDTO(ip: $fill($spec->ip), ua: 'redis-gate', accountId: 'redis-gate-' . $index, clientInstanceId: $credential === null ? null : 'inst-' . $index, admissionCredential: $credential);
     $result = $runtime->limit(
-        new RateLimitContextDTO(ip: '192.0.2.10', ua: 'redis-gate', accountId: 'redis-gate-' . $index),
+        $context,
         RateLimitCommand::checkOnly('login_protection'),
     );
-    echo $reply($result->isAllowed() && $result->metadata?->permit !== null, $result->metadata?->cause);
+    $admitted = $result->isAllowed() && $result->metadata?->permit !== null;
+    if ($spec->op === 'public_proven_session' && $admitted) {
+        // A legitimate user: the verifier takes `holdMs`, then the success is recorded with the permit.
+        usleep($spec->holdMs * 1000);
+        $runtime->limit($context, new RateLimitCommand('login_protection', 1, false, false, true, (string) $result->metadata->permit));
+    }
+    echo $reply($admitted, $result->metadata?->cause);
     exit(0);
 }
 

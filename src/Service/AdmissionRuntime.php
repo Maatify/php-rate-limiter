@@ -53,6 +53,7 @@ final class AdmissionRuntime
         'proof_proof_day' => ['proof_capacity', 'proof'],
         'new_device_cap' => ['new_device_cap', 'device'],
         'source_proof_failure_cap' => ['source_proof_failure_cap', 'source'],
+        'source_pending_permits' => ['source_pending_permits', 'source'],
     ];
 
     public function __construct(
@@ -298,8 +299,40 @@ final class AdmissionRuntime
             $scopes[] = $this->deviceMember($group, $subject, $device);
         }
         $scopes[] = $this->failureSet('source_proof_failure_cap', $group, 'pfail', SourcePrefix::of($context->ip), $b->crossAccountFailureCap, $subject);
+        $pending = $this->pendingPermitScope($group, $context, $permitId);
+        if ($pending !== null) {
+            $scopes[] = $pending;
+        }
 
         return $scopes;
+    }
+
+    /**
+     * The pending-permit slot of the source on the proven lane (#206), null when no cap is configured. A counter whose member is
+     * the permit id and whose lifetime is the permit deadline `D`, so an unclaimed permit frees its slot when it expires. Its
+     * key is its own purpose (`ppend`): it shares nothing with the failure sets, whose members are recorded outcomes.
+     */
+    private function pendingPermitScope(string $group, RateLimitContextDTO $context, string $permitId): ?AdmissionScopeDTO
+    {
+        $cap = $this->budgets->provenPendingPermitCap;
+        if ($cap === null) {
+            return null;
+        }
+        $sourceKey = SourcePrefix::of($context->ip);
+
+        return new AdmissionScopeDTO(
+            'source_pending_permits',
+            AdmissionScopeKindEnum::COUNTER,
+            $this->key($group, 'ppend', $sourceKey, ''),
+            $cap,
+            $this->budgets->permitDeadlineSeconds,
+            $this->previousKeySecret === null ? null : $this->key($group, 'ppend', $sourceKey, '', $this->previousKeySecret),
+            $permitId,
+            null,
+            false,
+            false,
+            true,
+        );
     }
 
     /**
@@ -318,7 +351,10 @@ final class AdmissionRuntime
             return [];
         }
         if ($payload['lane'] === AdmissionLaneEnum::P) {
-            return $success ? $this->proofRefund($group, $subject, $payload['j'] ?? $subject, $payload['id']) : [];
+            $scopes = $success ? $this->proofRefund($group, $subject, $payload['j'] ?? $subject, $payload['id']) : [];
+            $pending = $this->pendingPermitScope($group, $context, $payload['id']);
+
+            return $pending === null ? $scopes : [...$scopes, $pending];
         }
         $scopes = [$this->failureSet('source_failure_cap', $group, 'ufail', SourcePrefix::of($context->ip), $b->sourceFailureCap, $subject)];
         if ($success) {
