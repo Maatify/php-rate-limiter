@@ -1321,17 +1321,19 @@ end
 -- The bridge's physical expiry is one absolute time: the earliest of Previous's expiry, Previous-metadata's expiry, the
 -- authoritative Previous expiry and the requested lifetime, applied to the bridge's data and metadata keys with PEXPIREAT,
 -- so neither can end after any key of Previous: a relative lifetime applied at another clock reading ended the bridge 1 ms
--- late on Redis 7.0.15. PEXPIRETIME and PTTL reach Lua as doubles, exact only up to 2^53 - 1. A PEXPIRETIME above that is
--- rounded to the nearest representable value, so the true expiry is at most 1 ms below it below 2^54: its LOWER bound is
--- the double minus 1, and bounding the bridge by a lower bound can only end it earlier, never after Previous. Above 2^54
--- no bound is derived. The script clock is a lower bound of `PEXPIRETIME - PTTL` taken from a key whose PTTL is exact; the
--- remaining and requested candidates are added to it as decimal strings, never `tonumber()` of a huge value. Without such
--- a clock (every PTTL above 2^53 - 1) Previous outlives every exact lifetime by at least 2^53 ms, and the bridge keeps its
--- relative lifetime, which must then stay a second below 2^53 so that no clock reading can carry it past Previous; a
--- lifetime that cannot be bounded (none exact, or too close to 2^53) fails the rotation before any Current or Bridge
--- mutation.
+-- late on Redis 7.0.15. No relative expiry is ever applied to a bridge key. PEXPIRETIME and PTTL reach Lua as doubles,
+-- exact only up to 2^53 - 1. A PEXPIRETIME above that is rounded to the nearest representable value, so the true expiry
+-- is at most 1 ms below it below 2^54: its LOWER bound is the double minus 1, and bounding the bridge by a lower bound
+-- can only end it earlier, never after Previous. Above 2^54 no bound is derived. The script clock is a lower bound of
+-- `PEXPIRETIME - PTTL` taken from a key whose PTTL is exact; the remaining and requested candidates are added to it as
+-- decimal strings, never `tonumber()` of a huge value. When every PTTL is above 2^53 - 1 no exact clock exists; Previous
+-- then ends at least 2^53 ms after the clock, and the clock is read from TIME and checked against the rounded
+-- `PEXPIRETIME - PTTL` (their error is at most 1024 ms for any expiry Redis accepts): a TIME more than 5 s away from it is
+-- not trusted and the rotation is refused. The bridge's lifetime must then stay 10 s below 2^53 ms, which covers the check's
+-- tolerance, so no clock reading can carry the bridge past Previous. A bridge that cannot be bounded (no exact lifetime,
+-- one too close to 2^53, or an untrusted clock) fails the rotation before any Current or Bridge mutation.
 local exactMsMax = '9007199254740991'
-local exactMsMargin = 9007199254739991
+local exactMsMargin = 9007199254730991
 local twoPow54 = '18014398509481984'
 local function exactCandidate(decimal)
   if compareDecimalStrings(decimal, exactMsMax) <= 0 then return tonumber(decimal) end
@@ -1363,15 +1365,18 @@ local function planBridgeExpiry()
   local remaining = exactCandidate(subtractDecimalStrings(prevExpiry .. '000', nowMsStr))
   local requested = exactCandidate(ARGV[2] .. '000')
   if clock == nil then
-    local candidates = {}
-    if remaining ~= nil then candidates[#candidates + 1] = remaining end
-    if requested ~= nil then candidates[#candidates + 1] = requested end
-    if #candidates == 0 then return nil, 'rotated bridge lifetime exceeds Redis Lua exact integer range' end
-    local bridgePttl = candidates[1]
-    for _, candidate in ipairs(candidates) do if candidate < bridgePttl then bridgePttl = candidate end end
-    if bridgePttl <= 0 then return nil, 'malformed previous bounded state' end
-    if bridgePttl > exactMsMargin then return nil, 'rotated bridge lifetime exceeds Redis Lua exact integer range' end
-    return {pttl = bridgePttl}
+    local lifetimes = {}
+    if remaining ~= nil then lifetimes[#lifetimes + 1] = remaining end
+    if requested ~= nil then lifetimes[#lifetimes + 1] = requested end
+    if #lifetimes == 0 then return nil, 'rotated bridge lifetime exceeds Redis Lua exact integer range' end
+    local lifetime = lifetimes[1]
+    for _, candidate in ipairs(lifetimes) do if candidate < lifetime then lifetime = candidate end end
+    if lifetime <= 0 then return nil, 'malformed previous bounded state' end
+    if lifetime > exactMsMargin then return nil, 'rotated bridge lifetime exceeds Redis Lua exact integer range' end
+    local reading = redis.call('TIME')
+    local readingMs = tonumber(reading[1]) * 1000 + math.floor(tonumber(reading[2]) / 1000)
+    if math.abs(readingMs - (previousAt - previousPttl)) > 5000 then return nil, 'rotated bridge lifetime exceeds Redis Lua exact integer range' end
+    return {at = addDecimalStrings(string.format('%.0f', readingMs), string.format('%.0f', lifetime))}
   end
   local candidates = {}
   if previousBound ~= nil then candidates[#candidates + 1] = previousBound end
@@ -1386,8 +1391,7 @@ local function planBridgeExpiry()
   return {at = bridgeAt}
 end
 local function expireBridgeKey(key, plan)
-  if plan.at ~= nil then return redis.pcall('PEXPIREAT', key, plan.at) end
-  return redis.pcall('PEXPIRE', key, plan.pttl)
+  return redis.pcall('PEXPIREAT', key, plan.at)
 end
 local function ensureBridge(plan)
   if bridgeExists == 0 then

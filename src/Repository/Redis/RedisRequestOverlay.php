@@ -548,6 +548,7 @@ end
 __commands.EXPIRE = function(key, seconds) return __setExpiry(__ent(key), seconds, 1000, 'expire') end
 __commands.PEXPIRE = function(key, millis) return __setExpiry(__ent(key), millis, 1, 'pexpire') end
 __commands.PEXPIREAT = function(key, millis) return __setExpiryAt(__ent(key), millis) end
+__commands.TIME = function() return {__clock[1], __clock[2]} end
 __commands.DUMP = function(key)
   local e = __ent(key)
   if e.t == 'n' then return false end

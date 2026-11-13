@@ -239,6 +239,108 @@ final class RotatedAliasBoundedRedisTest extends TestCase
         self::assertSame(0, $this->executor->execute(['EXISTS', $this->raw('distinct', $logical . '-bridge')]));
     }
 
+    /** The bridge's expiry code of the rotation script (planning and applying) applies only PEXPIREAT, never a relative expiry. */
+    public function testTheRotationScriptAppliesOnlyAbsoluteExpiriesToTheBridge(): void
+    {
+        $constant = (new ReflectionClass(RedisFullCapabilityStore::class))->getReflectionConstant('ROTATED_SNAPSHOT');
+        self::assertNotFalse($constant);
+        $text = $constant->getValue();
+        self::assertIsString($text);
+        $from = strpos($text, 'local function planBridgeExpiry()');
+        $to = strpos($text, 'local function ensureBridge(plan)');
+        self::assertIsInt($from);
+        self::assertIsInt($to);
+        $end = strpos($text, "\nend\n", $to);
+        self::assertIsInt($end);
+        $bridge = substr($text, $from, $end - $from);
+        self::assertStringContainsString("redis.pcall('PEXPIREAT', key, plan.at)", $bridge);
+        self::assertSame(3, substr_count($bridge, 'expireBridgeKey('), 'The helper and its two calls, one per bridge key.');
+        foreach (['PEXPIRE', 'EXPIRE', 'PSETEX', 'SETEX'] as $relative) {
+            self::assertStringNotContainsString("'" . $relative . "'", $bridge, 'The bridge gets no relative expiry (' . $relative . ').');
+        }
+    }
+
+    /** @return array<string, array{string}> */
+    public static function inexactRemainingLifetimes(): array
+    {
+        return [
+            'Previous ends above 2^54 ms' => ['above-2-54'],
+            'Previous ends 5 s past 2^53 ms from now (remaining lifetime above the exact range)' => ['just-above-exact-remaining'],
+        ];
+    }
+
+    private function redisMilliseconds(): int
+    {
+        $time = $this->executor->execute(['TIME']);
+        self::assertIsArray($time);
+
+        self::assertIsString($time[0]);
+        self::assertIsString($time[1]);
+
+        return (int) $time[0] * 1000 + intdiv((int) $time[1], 1000);
+    }
+
+    private function seedPreviousEndingAt(string $logical, int $expiryAt): void
+    {
+        $this->executor->execute(['SADD', $this->raw('distinct', $logical), 'old']);
+        $this->executor->execute(['PEXPIREAT', $this->raw('distinct', $logical), (string) $expiryAt]);
+        $this->executor->execute(['HSET', $this->raw('distinct-meta', $logical), 'expiresAt', '9100000000000']);
+        $this->executor->execute(['PEXPIREAT', $this->raw('distinct-meta', $logical), (string) $expiryAt]);
+    }
+
+    /**
+     * Neither Previous key has an exact remaining lifetime, so no exact clock exists. The bridge is still given an absolute
+     * expiry (PEXPIREAT, never a relative one): it ends at the clock plus the requested lifetime, and never after Previous,
+     * with no 1 ms tolerance. The lifetime requested here is the longest the rotation accepts.
+     */
+    #[DataProvider('inexactRemainingLifetimes')]
+    public function testWithoutAnExactClockTheBridgeStillEndsAtAnAbsoluteTimeBeforePrevious(string $case): void
+    {
+        $longest = 9_007_199_254_730;
+        foreach (['aliased', 'distinct'] as $scope) {
+            $this->executor->execute(['FLUSHDB']);
+            $logical = 'scope-no-clock';
+            $this->seedPreviousEndingAt($logical, $case === 'above-2-54' ? 2 ** 54 + 4 : $this->redisMilliseconds() + 2 ** 53 + 5_000);
+            $previousAt = [
+                $this->int($this->executor->execute(['PEXPIRETIME', $this->raw('distinct', $logical)])),
+                $this->int($this->executor->execute(['PEXPIRETIME', $this->raw('distinct-meta', $logical)])),
+            ];
+            $current = $scope === 'aliased' ? $logical : 'scope-no-clock-current';
+
+            foreach ([60, $longest] as $seconds) {
+                $this->executor->execute(['DEL', $this->raw('distinct', $logical . '-bridge'), $this->raw('distinct-meta', $logical . '-bridge')]);
+                $before = $this->redisMilliseconds();
+                $snapshot = $this->store()->addDistinctBoundedWithSnapshotAcrossRotationAt($current, $logical . '-bridge', $logical, 'new', 'unknown', $seconds, self::MAX, self::NOW_MS);
+                $after = $this->redisMilliseconds();
+                self::assertTrue($snapshot->added, $case . ' / ' . $scope . ' / ' . $seconds);
+                foreach (['distinct', 'distinct-meta'] as $family) {
+                    $bridgeAt = $this->int($this->executor->execute(['PEXPIRETIME', $this->raw($family, $logical . '-bridge')]));
+                    self::assertLessThanOrEqual(min($previousAt), $bridgeAt, 'The bridge ' . $family . ' key ends no later than Previous: ' . $case . ' / ' . $scope . ' / ' . $seconds);
+                    self::assertGreaterThanOrEqual($before + $seconds * 1_000 - 2_000, $bridgeAt, 'The bridge lives its requested lifetime.');
+                    self::assertLessThanOrEqual($after + $seconds * 1_000 + 2_000, $bridgeAt, 'The bridge does not outlive its requested lifetime.');
+                }
+            }
+        }
+    }
+
+    /** One second more than the longest accepted lifetime: refused, with every key, its content and its expiry unchanged. */
+    #[DataProvider('inexactRemainingLifetimes')]
+    public function testWithoutAnExactClockALifetimeTooCloseToThePrecisionLimitIsRefusedWithoutAnyWrite(string $case): void
+    {
+        $logical = 'scope-no-clock-refused';
+        $this->seedPreviousEndingAt($logical, $case === 'above-2-54' ? 2 ** 54 + 4 : $this->redisMilliseconds() + 2 ** 53 + 5_000);
+        $before = $this->snapshotWithExpiry();
+
+        try {
+            $this->store()->addDistinctBoundedWithSnapshotAcrossRotationAt($logical, $logical . '-bridge', $logical, 'new', 'unknown', 9_007_199_254_740, self::MAX, self::NOW_MS);
+            self::fail('The rotation was not refused.');
+        } catch (\Maatify\RateLimiter\Exception\RateLimiterException $exception) {
+            self::assertStringContainsString('exact integer range', $exception->getMessage());
+        }
+
+        self::assertSame($before, $this->snapshotWithExpiry(), 'Redis is unchanged: every key, its content and its expiry.');
+    }
+
     /** @return array<string, array{mixed, mixed}> */
     private function snapshotWithExpiry(): array
     {

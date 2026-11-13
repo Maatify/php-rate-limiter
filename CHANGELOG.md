@@ -46,7 +46,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   requested lifetime, on the script's clock. A relative lifetime applied at another clock reading ended the bridge 1 ms
   after Previous in about one run in thirty on Redis 7.0.15 (measured: 8 of 600 rotations). A Previous that ends above 2^53 ms
   (read by Lua as a rounded double) is bounded by its lower bound, so the bridge can only end earlier; a bridge that cannot be
-  bounded safely (no exact lifetime, or one within a second of 2^53) is refused before any write. The other bounds,
+  bounded safely (no exact lifetime, one within 10 s of 2^53, or a clock that disagrees with Previous's rounded expiry) is refused
+  before any write; no relative expiry is ever applied to a bridge key. The other bounds,
   including the exact-integer-range rule, are unchanged.
 - A classified validation failure anywhere in the request leaves Redis byte for byte unchanged, including the earlier
   observations of the same request (measured before the change on `942d7cf`: a request rejected after its device-cap
