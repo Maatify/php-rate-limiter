@@ -35,7 +35,7 @@ Keys are **security primitives**, not implementation details.
   * Amendment under DEC-022 (2026-10-20), for a policy that opts into the admission reservation
     (DEC-024) only: the **source** (an IPv4 address or an IPv6 `/64`) may bound unproven traffic as a
     per-window **capacity** (the source capacity, the net failure cap and the cross-account
-    proven-door cap of DEC-025, with sliding restatement proposed in DEC-034, `DECISION_MATRIX.md` §12). It never identifies anyone, never persists,
+    proven-door cap of DEC-025, `DECISION_MATRIX.md` §12). It never identifies anyone, never persists,
     never escalates and never blocks: a refusal is a non-persisted `SOFT_BLOCK`. For identity the
     source stays advisory, as above
 * Device-aware keys are preferred whenever available
@@ -59,6 +59,14 @@ K1 = IP_PREFIX
 **Definition:**
 
 * IPv4: exact IP address
+* IPv4-mapped IPv6 (`::ffff:0:0/96`, e.g. `::ffff:192.0.2.1`): treated as the embedded
+  IPv4 address (`192.0.2.1`). The canonical source prefix is the unwrapped dot-decimal IPv4
+  address. Enforcement and Operational Read use the same K1, K2 and K3 keys as plain IPv4.
+  Local fallback and admission source scopes also share state with plain IPv4. IPv4-mapped addresses never participate in adaptive IPv6
+  hierarchical aggregation.
+* Other transition formats (e.g. deprecated IPv4-compatible IPv6 `::a.b.c.d` / `::0:0/96`)
+  are out of scope for unwrapping. Their IPv6 prefix comes from their own leading bits
+  (for example, `::192.0.2.1` has `/64` prefix `0000000000000000`).
 * IPv6: canonical enforcement normalization is `/64`; adaptive aggregation is
   correlation-only:
 
@@ -159,7 +167,7 @@ K4 = AccountID
 * AccountID MUST be a blind index or internal ID
 * Raw usernames/emails MUST NOT be used
 
-**Admission family K4P (DEC-026, DEC-025 4.A, noting proposed DEC-034 4.A; LOCKED amendment, active since 2026-10-20).** For a policy that declares
+**Admission family K4P (DEC-026, DEC-025 4.A; LOCKED amendment, active since 2026-10-20).** For a policy that declares
 the admission capability, a request carrying the proven lane derives the account key from the key
 type `k4p` instead of `k4`:
 
@@ -194,7 +202,7 @@ K5 = AccountID + DeviceFP
 * K5 presence alone does NOT prove a device was previously verified for the account
   (see `DEVICE_FINGERPRINT.md` §4.3)
 
-**Admission family K5p and the K5 material (DEC-026, DEC-025 9.1, noting proposed DEC-034 9.1; LOCKED amendment, active since 2026-10-20).** For a policy that
+**Admission family K5p and the K5 material (DEC-026, DEC-025 9.1; LOCKED amendment, active since 2026-10-20).** For a policy that
 declares the admission capability: (1) the proven lane derives the device key from the key type
 `k5p` (`{policy}:rate_limiter:k5p:v2:{env}:{accountId}:{material}`) and keeps the unsuffixed
 `k5` for the unproven lane; (2) `{material}` is the instance-id component `deviceIdHash` when the
@@ -785,7 +793,7 @@ The admission layer adds the following purposes (LOCKED amendment under DEC-026,
 * `binding_epoch` — one integer per account, the per-account epoch of the admission binding
   credential. The preimage is the same, `{policy}:rate_limiter:aux:binding_epoch:v1:{env}:{accountId}`,
   with the **budget group** of the verifier class in place of `{policy}` so that login,
-  re-authentication and password change share one epoch (DEC-025 6.1, noting proposed DEC-034 6.1). It is **not** a §10.1
+  re-authentication and password change share one epoch (DEC-025 6.1). It is **not** a §10.1
   generation-bound namespace. Current key is written; the previous-generation key is read-only
   and read only when the current key is absent. The derivation is in `AdmissionRuntime` (stage 5-b3b), keyed by `accountId` and the active key
   secret (with the previous-generation key read-only); the store operations (`readBindingEpoch`,
@@ -911,7 +919,9 @@ resetting the window.
 ### 4.8 Admission Keys (Locked)
 
 The atomic admission reservation (DEC-024, stage 5-b2) is a store capability
-(`AdmissionReservationStoreInterface`, `AdmissionPermitStoreInterface`). The package derives opaque,
+(`AdmissionReservationStoreInterface`). Opt-in outcome recording uses
+`AtomicAdmissionPermitStoreInterface`, the additive extension of `AdmissionPermitStoreInterface`
+required by `RateLimiterBuilder::build()` for an admission policy. The package derives opaque,
 hash-based scope keys per Budget Group and hands them to the store; the store never receives a raw
 account identifier, IP address or fingerprint, and a request that carries one is the caller's error,
 not something the store can detect.
@@ -935,10 +945,10 @@ set) and `b` (bucket); one logical key never changes family.
 | --- | --- | --- |
 | `c` counter | sorted set | windowed counter elements (member = permit ID, DEC-033) scored by member expiration timestamp (`now + ttl`); active count is `ZCOUNT (now +inf)`; a refusal writes nothing and never prunes; an admitted write prunes expired entries (`score <= now`), adds the permit ID with score `now + ttl`, and refreshes `EXPIRE` to `ttl`; a refund (`ZREM permitId`) removes the member if present and leaves TTL untouched. The key carries no window tag (`:w` / `:d`), enforcing a continuous sliding window. |
 | `d` device members | sorted set | member scored by its expiry (caller time + member lifetime); a member is live when its score is above the caller's `now`; the key is pruned only by an admitted write to the current set, and `EXPIRE` is refreshed only by that write |
-| `s` set | sorted set | accounts of the net-failure set (U, `ufail`) or the cross-account proven failure set (P, `pfail`, DEC-033, noting proposed DEC-034), member = failing subject scored by expiry (`now + W`, where W = 600 s); active count is `ZCOUNT (now +inf)`; a refusal writes nothing and never prunes; a failure outcome prunes expired entries, adds the subject with score `now + W`, and refreshes `EXPIRE` to `W`; on success the member is removed (`ZREM`). Enforces a continuous sliding window with no window tag (`:w`). Failure sets count recorded failure outcomes (`applyOutcome`), not in-flight reservations; cap `F = 4` governs subsequent reservations. Empirical measurements (`investigations/admission-concurrency-185/RESULTS.md`, F-185-37, LT-185-37a) demonstrate that under concurrent in-flight requests, U-lane admissions are bounded by `source_capacity = 24`, with distinct account failures reaching up to 24. For P-lane, single-proof in-flight concurrency is bounded by `proof_proof_window = 6`, while distinct-proof requests from a single IP pass admission prior to outcome registration, after which subsequent requests are refused under `source_proof_failure_cap = 4` (declared cost accepted by the Owner). |
+| `s` set | sorted set | accounts of the net-failure set (U, `ufail`) or the cross-account proven failure set (P, `pfail`, DEC-033), member = failing subject scored by expiry (`now + W`, where W = 600 s); active count is `ZCOUNT (now +inf)`; a refusal writes nothing and never prunes; a failure outcome prunes expired entries, adds the subject with score `now + W`, and refreshes `EXPIRE` to `W`; on success the member is removed (`ZREM`). Enforces a continuous sliding window with no window tag (`:w`). |
 | `b` bucket | hash `credit`, `last` | credit-seconds, refilled 1 per second of caller time up to `C x T`; absent means full; `EXPIRE` is the time to full, so an expired bucket and an absent bucket are the same state. This is the only admission family that retains a window/tag origin. |
 | `p` pending (5-b2.1; **written only when a scope settles on expiry, 5-b2.2; the admission runtime builds no settling scope, so nothing writes or reads it**) | sorted set | pending members of the failure set with the same logical key: member scored by its permit `deadline` (an earlier deadline wins on a second reservation). A member counts toward the set only when its score is `<= now` and it is not already in the set; a success removes a pending member only while its score is `> now`. `EXPIRE` equals the scope `ttlSeconds`, set when the key is created and never renewed; a reservation without a permit never writes it; a refusal never writes it |
-| permit | hash `state`, `lane`, `subject`, `operation`, `deadline`, `grace`, `outcome` | created by the admitting reservation in the same script, lifetime `deadline + grace - now`; `ISSUED` then `CLAIMED`; a claim is one compare-and-set |
+| permit | hash `state`, `lane`, `subject`, `operation`, `deadline`, `grace`, `outcome` | created by the admitting reservation in the same script, lifetime `deadline + grace - now`; `ISSUED` then `CLAIMED`; the runtime claims and applies the admission outcome in the same store operation |
 | epoch | string | a canonical non-negative integer **with no TTL**: the interface carries no lifetime and a lapsed epoch would revive voided credentials; retention of the key is the Host operator's concern until a decision fixes a lifetime |
 
 Rotation. A counter or a device-member scope may name one previous-generation key. Counters sum the
@@ -952,7 +962,16 @@ exhausted source); a second rotation inside the same window re-issues it in full
 rotation the net failure set and the account bucket restart in full (4 further failing accounts,
 4 further bucket takes).
 
-Validation. Every scope key of a request is read and validated (type, fields, an existing key
+For device-member recognition, the runtime supplies the current member and, when a previous
+outer-key or fingerprint generation is available, one previous member. The previous member uses
+the previous fingerprint and outer-key secret where present and the current value for either
+missing component. Redis checks both supplied members against each available device set. This
+follows the coordinated two-generation model in §4.3.3. Finish the previous enforcement window
+or migrate or expire the required state before starting another rotation. During fingerprint
+rotation, the Host provides the previous fingerprint component as described in
+[Device Fingerprint §5.1.3](DEVICE_FINGERPRINT.md#513-host-responsibility-during-fingerprint-secret-rotation).
+
+Validation. The scope keys a store operation touches are validated (type, fields, an existing key
 without a TTL) **before the first write**, because Redis does not roll back the writes of a failed
 script. This includes every score of a sorted set the script reads: each member of the `d` sets
 (current and previous generation) and of the `p` set on a reservation, and the `p` score of its own

@@ -44,18 +44,18 @@ Under DEC-033, all windowed admission scopes operate as continuous sliding windo
 
 ## Decision
 
-The Owner chose the following. Numbers are archive values from the studies cited; they are restated for continuous sliding windows of duration `W` (600 s) and `DAY` (86400 s):
+The choices recorded in DEC-025 are restated below as a proposal. Numbers are archive values from the studies cited; they are restated for continuous sliding windows of duration `W` (600 s) and `DAY` (86400 s):
 
 | # | Decision | Choice |
 | --- | --- | --- |
 | 1 | Source budget of the strangers' door [paper D1] | **1.4:** `U_src` 24 with a net failure cap `F` 4 enforced as a continuous sliding window of duration `W = 600 s`. `pre+out` Hosts only gain the cap; `pre` Hosts get the outer ceiling only (`SP6` 144). Concurrency boundary (F-185-37, [`investigations/admission-concurrency-185/RESULTS.md`](../../investigations/admission-concurrency-185/RESULTS.md)): failure sets count recorded failure outcomes (`applyOutcome`); the cap `F = 4` governs subsequent reservations, not in-flight permits issued prior to recording a failure. Under concurrent in-flight requests, Redis atomicity admits up to `source_capacity = 24`, and any excess is refused immediately with `source_capacity`. |
-| 2 | Per-account guessing budget [paper D2] | **2.2:** `T` 30 minutes (1,800 s), `C` 4; unchanged from the baseline; `BRU24` 4 |
+| 2 | Per-account bucket [paper D2] | **2.2:** `T` 30 minutes, `C` 4, refund on success (bound 52, 51 measured on `BRU24`) |
 | 3 | Proof door caps and new-device allowance [paper D3] | **3.1:** set R under continuous sliding windows: `P_acct` 10 per sliding window (600 s) and 60 per sliding day (86400 s), `P_proof` 6 per sliding window (600 s) and 30 per sliding day (86400 s), `N_P` 10 per sliding day; the `UAX-NP-K` curve is a declared cost |
 | 4 | `K4P` rule at a password change [paper D4] | **4.A:** account-wide, not cleared |
 | 5 | Known device on the strangers' door [paper D5] | **5.1:** the account bucket only. Option 5.4 is an open item (below) |
 | 6 | Re-issue at a password change [paper D6] | **6.1:** the changing device only; F-G5v2-05 is a declared cost |
 | 7 | Global ceiling and multi-IP spray [paper D7] | **7.1:** no global ceiling. P4 is an open item (below) |
-| 8 | Replacement bounds for what K2 gives [paper D8] | **8.2 as a rule, in the form measured in G7 and updated for continuous sliding windows** ([`investigations/sliding-admission-windows-185/RESULTS.md`](../../investigations/sliding-admission-windows-185/RESULTS.md) and [`investigations/admission-concurrency-185/RESULTS.md`](../../investigations/admission-concurrency-185/RESULTS.md)): a per-source, continuous sliding window capacity on the **proven door (P)** that counts the **different accounts that failed through P**; a P request for a further account is refused (`cap:pfail_src`) when the source's set already holds `F` such accounts. Enforced as a continuous sliding window of duration `W = 600 s`. Success is neither counted nor refunded. Nothing is persisted outside the window; no escalation and no block on the source. Concurrency boundary (F-185-37, LT-185-37a): failure sets count recorded failure outcomes; cap `F = 4` governs subsequent reservations. Concurrency envelope on P-lane: when concurrent requests reuse a single proof token, in-flight reservations are bounded by `proof_proof_window = 6`; when concurrent requests arrive carrying distinct proofs for distinct accounts from the same source IP before outcomes are registered, all pass admission (as each proof/account is fresh). Upon outcome registration, `pfail` accumulates all failures, and all subsequent requests from that source IP are strictly refused with `SOFT_BLOCK` (`source_proof_failure_cap`). As ruled under LT-185-37a, no new artificial in-flight bound is introduced for lane P, and this empirical behavior is formally documented as a declared design cost accepted by the Owner. **Values: `F` 4, continuous sliding window 600 s.** Declared costs accepted by the Owner: **`X2`** (sliding window metrics: office cost 26/61 after 21/61; attacker reach 40 after 72; `TMS` 21/61; `TMSd` 40/200; historical tumbling values were office cost 21/61, attacker reach 72, `TMS` 29/61, `TMSd` 40/200 on `pre+out`, G7 baseline S0 being 7/61 and 2/200; inert in `pre`) and **`TPAIRT`** (an office that shares its source with a `TMSd` attacker pays 26 of 61 requests refused instead of 0, and the attacker's reach falls to 40; the residual of being unable to tell them apart in a shared source, G3 §4.3). **API: 8.4**, today's enforcement unchanged |
+| 8 | Replacement bounds for what K2 gives [paper D8] | **8.2 as a rule, in the form measured in G7 and updated for continuous sliding windows** ([`investigations/sliding-admission-windows-185/RESULTS.md`](../../investigations/sliding-admission-windows-185/RESULTS.md) and [`investigations/admission-concurrency-185/RESULTS.md`](../../investigations/admission-concurrency-185/RESULTS.md)): a per-source, continuous sliding window capacity on the **proven door (P)** that counts the **different accounts that failed through P**; a P request for a further account is refused (`cap:pfail_src`) when the source's set already holds `F` such accounts. Enforced as a continuous sliding window of duration `W = 600 s`. Success is neither counted nor refunded. Nothing is persisted outside the window; no escalation and no block on the source. Failure sets count recorded outcomes. The cap applies to later reservations. The pending-permit limit for lane P is tracked separately in [#206](https://github.com/Maatify/php-rate-limiter/issues/206). **Values: `F` 4, sliding window 600 s.** Historical costs from DEC-025: **`X2`** (the rule does not return `TMS` and `TMSd` to S0's values: 61/61 and 120/200 on `FULL2` become 29/61 and 40/200 in `pre+out`, S0 being 7/61 and 2/200; inert in `pre`). Sliding-window measurement: `TMS` 21/61 and `TMSd` 40/200. and **`TPAIRT`** (an office that shares its source with a `TMSd` attacker has 21 of 61 requests refused instead of 0, and the attacker's reach falls 120 → 72; the residual of being unable to tell them apart in a shared source, G3 §4.3). Sliding-window measurement: 26 of 61 requests refused and reach 120 → 40. **API: 8.4**, enforcement unchanged |
 | 9 | K5 micro-cap and known-device allowance [paper D9] | **9.1:** the DEC-021 values unchanged (Login: K5 8 / 12 / 16, allowance 8, micro-cap 8; OTP: allowance 2) |
 
 ### Open items (gate-shaped, none is run or approved here)
@@ -65,7 +65,7 @@ The Owner chose the following. Numbers are archive values from the studies cited
 
 ### What this record does not approve
 
-`FULL2` or the identity layer as a product; any change to `src/`, `tests/`, a preset or a threshold; any API or Store shape; the supersession of DEC-021 (DEC-024 binds it to the first activation); any value other than those above; or the activation of DEC-022.
+`FULL2` or the identity layer as a product; any Runtime, change to `src/`, `tests/`, a preset or a threshold; any API or Store shape; the supersession of DEC-021 (DEC-024 binds it to the first activation); any value other than those above; or the activation of DEC-022.
 
 ## Rationale
 
@@ -76,7 +76,7 @@ The Owner chose the following. Numbers are archive values from the studies cited
 
 ## Consequences
 
-- **Values are study values.** They become production values through the step-5 Runtime authorisation (defined as package constants in DEC-028 and restated in DEC-035). No Runtime, API or Store shape follows from this record. DEC-015, DEC-019 and DEC-021 are unchanged until then.
+- **Values are study values.** They become production values only through the step-5 Runtime authorisation (defined as package constants in DEC-028 and restated in DEC-035). No Runtime, API or Store shape follows from this record. DEC-015, DEC-019 and DEC-021 are unchanged until then.
 - **Declared costs the Owner accepted** (decision paper): S0's collective spray denial is retired at `U_src` 24 / `F` 4 (`SP6` 24 in `pre+out`, 144 in `pre`; `POI` 96); owner recovery up to about 30 minutes on a continuing attack; a known device that lost its token is bounded by the bucket (51 against DEC-021's 45 / 44 / 45); `X2` and `TPAIRT` of decision 8 (under continuous sliding windows: the multi-session cells fall to 21/61 and 40/200 in `pre+out`; co-located office pays 26 of 61 beside a `TMSd` attacker; historical tumbling values were 29/61 and 40/200 with office cost 21/61; S0 baseline being 7/61 and 2/200); empirical P-lane in-flight concurrency with distinct proofs (LT-185-37a); a second credential holder is locked out after a password change (F-G5v2-05); no global ceiling (P4 open); the `UAX-NP-K` curve (refusals from the 11th distinct browser major in a day).
 - Every admission bound is absent in degraded mode (DEC-024 Consequences) and unavailable to `pre` / `out` Hosts as DEC-023 states; every new admission state family must state its DEC-003 cycles, DEC-007 lifecycle, DEC-008 capability and DEC-015 failure behaviour when implemented.
 
@@ -108,8 +108,8 @@ Every number is quoted from the merged study named, at that study's baseline (G6
 
 ## Relationship to Other Decisions
 
-- **DEC-025:** Superseded by this record under Decision Governance Standard §9.
-- **DEC-022:** `PROPOSED`, unchanged in status. Its Condition 3 is decided by this record.
+- **DEC-025:** Remains ACTIVE. This proposal would supersede it on activation under Decision Governance Standard §9.
+- **DEC-022:** `PROPOSED`, unchanged in status. Its historical Condition 3 choice remains recorded in DEC-025.
 - **DEC-023 and DEC-024:** `ACTIVE`, unchanged. They decide the mode contract and the reservation principle; this record decides no value of theirs.
 - **DEC-026:** Governs the known-device verifier bound.
 - **DEC-028 / DEC-035:** Governs the admission runtime constants and permit timing.

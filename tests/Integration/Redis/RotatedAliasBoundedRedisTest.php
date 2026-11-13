@@ -12,8 +12,10 @@ use Maatify\RateLimiter\DTO\RateLimitContextDTO;
 use Maatify\RateLimiter\Repository\Redis\RedisCommandExecutorInterface;
 use Maatify\RateLimiter\Repository\Redis\RedisFullCapabilityStore;
 use Maatify\RateLimiter\Tests\Support\Clock\FixedClock;
+use Maatify\RateLimiter\Tests\Support\Redis\OverlayWire;
 use Maatify\RateLimiter\Tests\Support\FailureSignal\RecordingFailureSignalEmitter;
 use Maatify\RateLimiter\Tests\Support\Redis\RespRedisCommandExecutor;
+use PHPUnit\Framework\Attributes\DataProvider;
 use PHPUnit\Framework\Attributes\Group;
 use PHPUnit\Framework\TestCase;
 use ReflectionClass;
@@ -132,6 +134,228 @@ final class RotatedAliasBoundedRedisTest extends TestCase
         );
     }
 
+    /**
+     * The bridge ends with Previous, never after it: the absolute expiry (`PEXPIRETIME`) of the bridge's data key and of its
+     * metadata key is not later than that of any key of Previous, with no 1 ms tolerance. A relative lifetime applied at a
+     * later clock reading ended the bridge 1 ms after Previous in about one run in thirty on Redis 7.0.15.
+     */
+    public function testNoBridgeKeyOutlivesAnyPreviousKeyInAbsoluteTime(): void
+    {
+        for ($i = 0; $i < 400; $i++) {
+            $logical = 'scope-T' . $i;
+            $this->seedPrevious($logical, 'old');
+            $previous = [
+                $this->int($this->executor->execute(['PEXPIRETIME', $this->raw('distinct', $logical)])),
+                $this->int($this->executor->execute(['PEXPIRETIME', $this->raw('distinct-meta', $logical)])),
+            ];
+
+            $snapshot = $this->aliased($logical, 'new');
+            self::assertTrue($snapshot->added, 'The new member went to the bridge (iteration ' . $i . ').');
+
+            foreach (['distinct', 'distinct-meta'] as $family) {
+                $bridgeAt = $this->int($this->executor->execute(['PEXPIRETIME', $this->raw($family, $logical . '-bridge')]));
+                self::assertGreaterThan(0, $bridgeAt, 'The bridge key has an expiry.');
+                self::assertLessThanOrEqual(min($previous), $bridgeAt, 'The bridge ' . $family . ' key ends no later than Previous (iteration ' . $i . ').');
+            }
+        }
+    }
+
+    /** @return array<string, array{string}> */
+    public static function previousScopes(): array
+    {
+        return ['Current is Previous (aliased)' => ['aliased'], 'Current differs from Previous' => ['distinct']];
+    }
+
+    /**
+     * Previous ends at an absolute time just above 2^53 ms, which Lua reads as a rounded double, while its remaining
+     * lifetime is far inside the exact range. The requested lifetime and the authoritative expiry are both beyond the
+     * exact range, so the bridge is bounded by Previous alone. `PEXPIRETIME` is read from outside Lua, as exact integers:
+     * no bridge key ends after any Previous key (no 1 ms tolerance), and the bridge does not collapse far below them.
+     */
+    #[DataProvider('previousScopes')]
+    public function testTheBridgeEndsNoLaterThanPreviousWhenPreviousEndsAbovePrecisionButItsRemainingLifetimeIsExact(string $scope): void
+    {
+        $above = 2 ** 53;
+        $requestedSeconds = 9_100_000_000_000;
+        foreach ([1, 2, 3, 5, 1_001, 1_000_000_001, 1_000_000_000_001] as $offset) {
+            foreach ([0, 1, 2] as $metaOffset) {
+                $this->executor->execute(['FLUSHDB']);
+                $logical = 'scope-precision';
+                $previous = $this->raw('distinct', $logical);
+                $previousMeta = $this->raw('distinct-meta', $logical);
+                $this->executor->execute(['SADD', $previous, 'old']);
+                $this->executor->execute(['PEXPIREAT', $previous, (string) ($above + $offset)]);
+                $this->executor->execute(['HSET', $previousMeta, 'expiresAt', (string) $requestedSeconds]);
+                $this->executor->execute(['PEXPIREAT', $previousMeta, (string) ($above + $offset + $metaOffset)]);
+                self::assertLessThanOrEqual(9_007_199_254_740_991, $this->int($this->executor->execute(['PTTL', $previous])), 'The remaining lifetime is exact.');
+                $previousAt = [
+                    $this->int($this->executor->execute(['PEXPIRETIME', $previous])),
+                    $this->int($this->executor->execute(['PEXPIRETIME', $previousMeta])),
+                ];
+                $current = $scope === 'aliased' ? $logical : 'scope-precision-current';
+
+                $snapshot = $this->store()->addDistinctBoundedWithSnapshotAcrossRotationAt($current, $logical . '-bridge', $logical, 'new', 'unknown', $requestedSeconds, self::MAX, self::NOW_MS);
+                self::assertTrue($snapshot->added, 'The new member went to the bridge (' . $offset . '/' . $metaOffset . ').');
+
+                $label = $scope . ' offset ' . $offset . '/' . $metaOffset;
+                self::assertSame($previousAt, [
+                    $this->int($this->executor->execute(['PEXPIRETIME', $previous])),
+                    $this->int($this->executor->execute(['PEXPIRETIME', $previousMeta])),
+                ], 'Previous is untouched, ' . $label);
+                foreach (['distinct', 'distinct-meta'] as $family) {
+                    $bridgeAt = $this->int($this->executor->execute(['PEXPIRETIME', $this->raw($family, $logical . '-bridge')]));
+                    self::assertLessThanOrEqual(min($previousAt), $bridgeAt, 'The bridge ' . $family . ' key ends no later than Previous, ' . $label);
+                    self::assertGreaterThanOrEqual(min($previousAt) - 2, $bridgeAt, 'The bridge ' . $family . ' key is not shortened beyond the rounding bound, ' . $label);
+                }
+            }
+        }
+    }
+
+    /**
+     * A bridge that cannot be bounded safely is refused before any write: Previous ends above 2^54 ms (no bound can be derived
+     * from it) and the only exact lifetime is within a second of 2^53, where a clock reading could carry it past Previous.
+     */
+    public function testARotationWhoseBridgeCannotBeBoundedIsRefusedWithoutAnyWrite(): void
+    {
+        $logical = 'scope-refused';
+        $previous = $this->raw('distinct', $logical);
+        $previousMeta = $this->raw('distinct-meta', $logical);
+        $this->executor->execute(['SADD', $previous, 'old']);
+        $this->executor->execute(['PEXPIREAT', $previous, (string) (2 ** 54 + 4)]);
+        $this->executor->execute(['HSET', $previousMeta, 'expiresAt', '9100000000000']);
+        $this->executor->execute(['PEXPIREAT', $previousMeta, (string) (2 ** 54 + 4)]);
+        $keys = $this->executor->execute(['KEYS', '*']);
+        self::assertIsArray($keys);
+        $before = $this->snapshotWithExpiry();
+
+        try {
+            $this->store()->addDistinctBoundedWithSnapshotAcrossRotationAt($logical, $logical . '-bridge', $logical, 'new', 'unknown', 9_007_199_254_740, self::MAX, self::NOW_MS);
+            self::fail('The rotation was not refused.');
+        } catch (\Maatify\RateLimiter\Exception\RateLimiterException $exception) {
+            self::assertStringContainsString('exact integer range', $exception->getMessage());
+        }
+
+        self::assertSame($before, $this->snapshotWithExpiry(), 'Redis is unchanged: every key, its content and its expiry.');
+        self::assertSame(0, $this->executor->execute(['EXISTS', $this->raw('distinct', $logical . '-bridge')]));
+    }
+
+    /** The bridge's expiry code of the rotation script (planning and applying) applies only PEXPIREAT, never a relative expiry. */
+    public function testTheRotationScriptAppliesOnlyAbsoluteExpiriesToTheBridge(): void
+    {
+        $constant = (new ReflectionClass(RedisFullCapabilityStore::class))->getReflectionConstant('ROTATED_SNAPSHOT');
+        self::assertNotFalse($constant);
+        $text = $constant->getValue();
+        self::assertIsString($text);
+        $from = strpos($text, 'local function planBridgeExpiry()');
+        $to = strpos($text, 'local function ensureBridge(plan)');
+        self::assertIsInt($from);
+        self::assertIsInt($to);
+        $end = strpos($text, "\nend\n", $to);
+        self::assertIsInt($end);
+        $bridge = substr($text, $from, $end - $from);
+        self::assertStringContainsString("redis.pcall('PEXPIREAT', key, plan.at)", $bridge);
+        self::assertSame(3, substr_count($bridge, 'expireBridgeKey('), 'The helper and its two calls, one per bridge key.');
+        foreach (['PEXPIRE', 'EXPIRE', 'PSETEX', 'SETEX'] as $relative) {
+            self::assertStringNotContainsString("'" . $relative . "'", $bridge, 'The bridge gets no relative expiry (' . $relative . ').');
+        }
+    }
+
+    /** @return array<string, array{string}> */
+    public static function inexactRemainingLifetimes(): array
+    {
+        return [
+            'Previous ends above 2^54 ms' => ['above-2-54'],
+            'Previous ends 5 s past 2^53 ms from now (remaining lifetime above the exact range)' => ['just-above-exact-remaining'],
+        ];
+    }
+
+    private function redisMilliseconds(): int
+    {
+        $time = $this->executor->execute(['TIME']);
+        self::assertIsArray($time);
+
+        self::assertIsString($time[0]);
+        self::assertIsString($time[1]);
+
+        return (int) $time[0] * 1000 + intdiv((int) $time[1], 1000);
+    }
+
+    private function seedPreviousEndingAt(string $logical, int $expiryAt): void
+    {
+        $this->executor->execute(['SADD', $this->raw('distinct', $logical), 'old']);
+        $this->executor->execute(['PEXPIREAT', $this->raw('distinct', $logical), (string) $expiryAt]);
+        $this->executor->execute(['HSET', $this->raw('distinct-meta', $logical), 'expiresAt', '9100000000000']);
+        $this->executor->execute(['PEXPIREAT', $this->raw('distinct-meta', $logical), (string) $expiryAt]);
+    }
+
+    /**
+     * Neither Previous key has an exact remaining lifetime, so no exact clock exists. The bridge is still given an absolute
+     * expiry (PEXPIREAT, never a relative one): it ends at the clock plus the requested lifetime, and never after Previous,
+     * with no 1 ms tolerance. The lifetime requested here is the longest the rotation accepts.
+     */
+    #[DataProvider('inexactRemainingLifetimes')]
+    public function testWithoutAnExactClockTheBridgeStillEndsAtAnAbsoluteTimeBeforePrevious(string $case): void
+    {
+        $longest = 9_007_199_254_730;
+        foreach (['aliased', 'distinct'] as $scope) {
+            $this->executor->execute(['FLUSHDB']);
+            $logical = 'scope-no-clock';
+            $this->seedPreviousEndingAt($logical, $case === 'above-2-54' ? 2 ** 54 + 4 : $this->redisMilliseconds() + 2 ** 53 + 5_000);
+            $previousAt = [
+                $this->int($this->executor->execute(['PEXPIRETIME', $this->raw('distinct', $logical)])),
+                $this->int($this->executor->execute(['PEXPIRETIME', $this->raw('distinct-meta', $logical)])),
+            ];
+            $current = $scope === 'aliased' ? $logical : 'scope-no-clock-current';
+
+            foreach ([60, $longest] as $seconds) {
+                $this->executor->execute(['DEL', $this->raw('distinct', $logical . '-bridge'), $this->raw('distinct-meta', $logical . '-bridge')]);
+                $before = $this->redisMilliseconds();
+                $snapshot = $this->store()->addDistinctBoundedWithSnapshotAcrossRotationAt($current, $logical . '-bridge', $logical, 'new', 'unknown', $seconds, self::MAX, self::NOW_MS);
+                $after = $this->redisMilliseconds();
+                self::assertTrue($snapshot->added, $case . ' / ' . $scope . ' / ' . $seconds);
+                foreach (['distinct', 'distinct-meta'] as $family) {
+                    $bridgeAt = $this->int($this->executor->execute(['PEXPIRETIME', $this->raw($family, $logical . '-bridge')]));
+                    self::assertLessThanOrEqual(min($previousAt), $bridgeAt, 'The bridge ' . $family . ' key ends no later than Previous: ' . $case . ' / ' . $scope . ' / ' . $seconds);
+                    self::assertGreaterThanOrEqual($before + $seconds * 1_000 - 2_000, $bridgeAt, 'The bridge lives its requested lifetime.');
+                    self::assertLessThanOrEqual($after + $seconds * 1_000 + 2_000, $bridgeAt, 'The bridge does not outlive its requested lifetime.');
+                }
+            }
+        }
+    }
+
+    /** One second more than the longest accepted lifetime: refused, with every key, its content and its expiry unchanged. */
+    #[DataProvider('inexactRemainingLifetimes')]
+    public function testWithoutAnExactClockALifetimeTooCloseToThePrecisionLimitIsRefusedWithoutAnyWrite(string $case): void
+    {
+        $logical = 'scope-no-clock-refused';
+        $this->seedPreviousEndingAt($logical, $case === 'above-2-54' ? 2 ** 54 + 4 : $this->redisMilliseconds() + 2 ** 53 + 5_000);
+        $before = $this->snapshotWithExpiry();
+
+        try {
+            $this->store()->addDistinctBoundedWithSnapshotAcrossRotationAt($logical, $logical . '-bridge', $logical, 'new', 'unknown', 9_007_199_254_740, self::MAX, self::NOW_MS);
+            self::fail('The rotation was not refused.');
+        } catch (\Maatify\RateLimiter\Exception\RateLimiterException $exception) {
+            self::assertStringContainsString('exact integer range', $exception->getMessage());
+        }
+
+        self::assertSame($before, $this->snapshotWithExpiry(), 'Redis is unchanged: every key, its content and its expiry.');
+    }
+
+    /** @return array<string, array{mixed, mixed}> */
+    private function snapshotWithExpiry(): array
+    {
+        $keys = $this->executor->execute(['KEYS', '*']);
+        self::assertIsArray($keys);
+        $state = [];
+        foreach ($keys as $key) {
+            self::assertIsString($key);
+            $state[$key] = [$this->executor->execute(['DUMP', $key]), $this->executor->execute(['PEXPIRETIME', $key])];
+        }
+        ksort($state);
+
+        return $state;
+    }
+
     /** adv8 r1 as the Lead ran it, from an empty key: the first member opens the set, the rest go to the bridge. */
     public function testFromAnEmptyKeyTheEffectiveCountStopsAtTheCap(): void
     {
@@ -186,17 +410,34 @@ final class RotatedAliasBoundedRedisTest extends TestCase
     {
         $reflection = new ReflectionClass(RedisFullCapabilityStore::class);
         $scripts = [$reflection->getConstant('ROTATED_SNAPSHOT'), $reflection->getConstant('BOUNDED_SNAPSHOT')];
-        $spy = new class ($this->executor, $scripts) implements RedisCommandExecutorInterface {
+        $read = $reflection->getConstant('BOUNDED_OBSERVATION_READ');
+        $commit = $reflection->getConstant('DEVICE_CAP_COMMIT');
+        self::assertIsString($read);
+        self::assertIsString($commit);
+        $spy = new class ($this->executor, $scripts, $read, $commit) implements RedisCommandExecutorInterface {
             public int $largest = 0;
 
+            /** @var array<string, int> members a non-rotating observation read before it added its own */
+            private array $before = [];
+
             /** @param list<mixed> $scripts */
-            public function __construct(private readonly RedisCommandExecutorInterface $inner, private readonly array $scripts) {}
+            public function __construct(private readonly RedisCommandExecutorInterface $inner, private readonly array $scripts, private readonly string $read, private readonly string $commit) {}
 
             public function execute(array $command): mixed
             {
                 $reply = $this->inner->execute($command);
-                if ($command[0] === 'EVAL' && in_array($command[1] ?? null, $this->scripts, true) && is_array($reply) && is_int($reply[0] ?? null)) {
-                    $this->largest = max($this->largest, $reply[0]);
+                $result = OverlayWire::result($command, $reply);
+                if (array_filter($this->scripts, static fn(mixed $script): bool => is_string($script) && OverlayWire::isScript($command, $script)) !== [] && is_array($result) && is_int($result[0] ?? null)) {
+                    $this->largest = max($this->largest, $result[0]);
+                }
+                // A non-rotating bounded observation is read, then saved with its own member: the count it answers is
+                // the members read plus the one it added.
+                if (OverlayWire::isScript($command, $this->read) && is_array($result) && is_array($result[1] ?? null) && is_string($command[3] ?? null)) {
+                    $this->before[$command[3]] = max(0, count($result[1]) - 1);
+                }
+                if (OverlayWire::isScript($command, $this->commit) && (string) ($command[2] ?? '') === '2' && is_string($command[3] ?? null)) {
+                    $initialize = (string) ($command[7] ?? '') === '1';
+                    $this->largest = max($this->largest, $initialize ? 1 : ($this->before[$command[3]] ?? 0) + (int) ($command[8] ?? 0));
                 }
 
                 return $reply;

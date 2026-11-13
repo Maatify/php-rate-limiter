@@ -10,9 +10,16 @@ require __DIR__ . '/../../../vendor/autoload.php';
 use Maatify\RateLimiter\Repository\Redis\RedisCommandExecutorInterface;
 use Maatify\RateLimiter\Repository\Redis\RedisFullCapabilityStore;
 use Maatify\RateLimiter\Tests\Support\Redis\RespRedisCommandExecutor;
+use Maatify\RateLimiter\Tests\Support\Redis\OverlayWire;
 use Maatify\RateLimiter\Tests\Support\ScoreRace\ScoreRaceSetup;
 
-[, $host, $port, $barrier, $parties] = $argv;
+$rawArguments = $_SERVER['argv'] ?? null;
+$arguments = is_array($rawArguments) ? array_values(array_filter($rawArguments, is_string(...))) : [];
+if (! is_array($rawArguments) || count($rawArguments) !== count($arguments) || count($arguments) !== 5) {
+    fwrite(STDERR, "Expected 4 command-line arguments.\n");
+    exit(2);
+}
+[, $host, $port, $barrier, $parties] = $arguments;
 // The store's scripts are private constants: `defined()` does not see them, reflection does.
 $scripts = [];
 $store = new ReflectionClass(RedisFullCapabilityStore::class);
@@ -35,7 +42,7 @@ $executor = new class (new RespRedisCommandExecutor($host, (int) $port), $script
     /** @param non-empty-list<int|string|float> $command */
     public function execute(array $command): mixed
     {
-        if (! $this->passed && $this->barrier !== '' && $command[0] === 'EVAL' && in_array($command[1] ?? null, $this->scripts, true)) {
+        if (! $this->passed && $this->barrier !== '' && array_filter($this->scripts, static fn(string $script): bool => OverlayWire::isScript($command, $script)) !== []) {
             $this->passed = true;
             $this->inner->execute(['INCR', $this->barrier]);
             $deadline = microtime(true) + 10;

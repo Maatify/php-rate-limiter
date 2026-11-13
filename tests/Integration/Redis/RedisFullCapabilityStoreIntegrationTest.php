@@ -23,6 +23,7 @@ use Maatify\RateLimiter\Exception\RateLimiterException;
 use Maatify\RateLimiter\Repository\Redis\RedisCommandExecutorInterface;
 use Maatify\RateLimiter\Repository\Redis\RedisFullCapabilityStore;
 use Maatify\RateLimiter\Tests\Support\Clock\FixedClock;
+use Maatify\RateLimiter\Tests\Support\Redis\OverlayWire;
 use Maatify\RateLimiter\Tests\Support\FailureSignal\RecordingFailureSignalEmitter;
 use Maatify\RateLimiter\Tests\Support\Redis\RespRedisCommandExecutor;
 use PHPUnit\Framework\Attributes\DataProvider;
@@ -2355,7 +2356,7 @@ final class RedisFullCapabilityStoreIntegrationTest extends TestCase
             {
                 $reply = $this->inner->execute($command);
                 if ($command[0] === 'EVAL' && (string) ($command[2] ?? '') === '6' && ($command[3] ?? null) === ($command[7] ?? '')) {
-                    $this->calls[] = [array_map('strval', $command), $reply];
+                    $this->calls[] = [array_map('strval', $command), OverlayWire::result($command, $reply)];
                 }
 
                 return $reply;

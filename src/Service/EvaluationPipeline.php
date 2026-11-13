@@ -12,6 +12,7 @@ use Maatify\RateLimiter\Config\PolicyCapabilityProviderInterface;
 use Maatify\RateLimiter\Config\PostPunishmentReentryPolicyInterface;
 use Maatify\RateLimiter\DTO\BoundedCorrelationObservationDTO;
 use Maatify\RateLimiter\DTO\BoundedDistinctSnapshotDTO;
+use Maatify\RateLimiter\Repository\Redis\RedisFullCapabilityStore;
 use Maatify\RateLimiter\Repository\BudgetSeedStoreInterface;
 use Maatify\RateLimiter\Repository\BoundedCorrelationSnapshotRotationStoreInterface;
 use Maatify\RateLimiter\Repository\BoundedCorrelationSnapshotStoreInterface;
@@ -24,6 +25,7 @@ use Maatify\RateLimiter\Repository\PunishmentLifecycleStoreInterface;
 use Maatify\RateLimiter\Exception\RateLimitConcurrencyException;
 use Maatify\RateLimiter\DTO\PostPunishmentReentryMetadataDTO;
 use Maatify\RateLimiter\Repository\RateLimitStoreInterface;
+use Maatify\RateLimiter\Repository\RequestAtomicStoreInterface;
 use Maatify\RateLimiter\Repository\SnapshotFencedScoreStoreInterface;
 use Maatify\RateLimiter\Repository\ScoreReplaceStoreInterface;
 use Maatify\RateLimiter\DTO\DecayPauseStateDTO;
@@ -195,6 +197,12 @@ class EvaluationPipeline
      * the collective correlation rules and take the K5 material from the
      * instance id when the device carries one.
      */
+    /** T-5: the store that saves one request at once, or null when the store cannot (DEC-037). */
+    public function requestStore(): ?RequestAtomicStoreInterface
+    {
+        return $this->store instanceof RequestAtomicStoreInterface && $this->correlationStore === $this->store ? $this->store : null;
+    }
+
     public function process(
         BlockPolicyInterface $policy,
         RateLimitContextDTO $context,
@@ -203,6 +211,26 @@ class EvaluationPipeline
         ?AdmissionLaneEnum $lane = null,
     ): RateLimitResultDTO {
         $this->assertLaneAllowed($policy, $lane);
+        // One request is one save: a store that can hold every write back until
+        // the decision is final saves them together, or not at all. The
+        // evaluation repeats from a fresh read when another request changed
+        // any state it read. Other stores keep the sequential writes.
+        if ($this->store instanceof RequestAtomicStoreInterface && $this->correlationStore === $this->store) {
+            return $this->store->transactRequest(
+                fn(): RateLimitResultDTO => $this->evaluate($policy, $context, $request, $device, $lane),
+            );
+        }
+
+        return $this->evaluate($policy, $context, $request, $device, $lane);
+    }
+
+    private function evaluate(
+        BlockPolicyInterface $policy,
+        RateLimitContextDTO $context,
+        RateLimitCommand $request,
+        DeviceIdentityDTO $device,
+        ?AdmissionLaneEnum $lane,
+    ): RateLimitResultDTO {
         $this->lifecycleEligibleKeys = [];
         $this->issuedSoftScopes = [];
         // 1. Build keys for the current generation, then the one previous
@@ -967,7 +995,7 @@ class EvaluationPipeline
         array $keysV2,
         array $keysV1,
     ): array {
-        if (! filter_var($context->ip, FILTER_VALIDATE_IP, FILTER_FLAG_IPV6)
+        if (! SourcePrefix::isPureIpv6($context->ip)
             || ! $this->isAdaptiveIpv6Participant($policy, $context, $request, $device, $keysV2)) {
             return [];
         }
@@ -1401,6 +1429,22 @@ class EvaluationPipeline
         string $currentWatchKey,
         ?string $previousWatchKey,
     ): bool {
+        $store = $this->correlationStore;
+        if ($store instanceof RedisFullCapabilityStore && $observation->previousKey === null && $previousWatchKey === null) {
+            $now = $this->clock->now()->getTimestamp();
+
+            return $store->commitBoundedObservationGroup(static function () use ($store, $observation, $currentWatchKey, $now): array {
+                [$snapshot, $plan] = $store->readBoundedObservationPlanAt($observation->currentKey, $observation->currentMember, 3, 600, $now);
+                if ($snapshot->count !== 2) {
+                    return [$snapshot->count >= 3, [$plan]];
+                }
+
+                [$watch, $watchPlan] = $store->readWatchObservationPlanAt($currentWatchKey, 1800, $now);
+
+                return [$watch >= 2, [$plan, $watchPlan]];
+            });
+        }
+
         $count = $this->addBoundedCorrelation($observation, 600, 3);
         if ($count >= 3) {
             return true;
@@ -1557,14 +1601,11 @@ class EvaluationPipeline
             return null;
         }
 
-        $thresholdMet = $this->observeCredentialSpray(
-            $this->buildCredentialSprayObservation($subject, $k1Key, $previousK1Key),
-        );
+        $observations = [$this->buildCredentialSprayObservation($subject, $k1Key, $previousK1Key)];
 
-        // Observe every active macro scope before choosing the final spray
-        // candidate. The current canonical K1 remains the only persistence key.
+        // The current canonical K1 remains the only persistence key.
         foreach ($adaptiveIpv6Scopes as $scope) {
-            $macroObservation = $this->buildAdaptiveCorrelationObservation(
+            $observations[] = $this->buildAdaptiveCorrelationObservation(
                 $policy->getName(),
                 'spray',
                 $scope['cidr'],
@@ -1573,8 +1614,9 @@ class EvaluationPipeline
                 $scope['previousScope'],
                 $subject,
             );
-            $thresholdMet = $this->observeCredentialSpray($macroObservation) || $thresholdMet;
         }
+
+        $thresholdMet = $this->observeCredentialSprayScopes($observations);
 
         if (! $thresholdMet) {
             return null;
@@ -1599,6 +1641,44 @@ class EvaluationPipeline
             $source,
             $persistence,
         );
+    }
+
+    /** @param non-empty-list<BoundedCorrelationObservationDTO> $observations */
+    private function observeCredentialSprayScopes(array $observations): bool
+    {
+        $store = $this->correlationStore;
+        $rotates = array_any($observations, static fn(BoundedCorrelationObservationDTO $observation): bool => $observation->previousKey !== null);
+        if ($store instanceof RedisFullCapabilityStore && ! $rotates) {
+            $now = $this->clock->now()->getTimestamp();
+
+            return $store->commitBoundedObservationGroup(static function () use ($store, $observations, $now): array {
+                $thresholdMet = false;
+                $plans = [];
+                foreach ($observations as $observation) {
+                    [$snapshot, $plan] = $store->readBoundedObservationPlanAt($observation->currentKey, $observation->currentMember, 5, 600, $now);
+                    $plans[] = $plan;
+                    if ($snapshot->count === 4) {
+                        [$watch, $watchPlan] = $store->readWatchObservationPlanAt($observation->currentKey . ':watch', 1800, $now);
+                        $plans[] = $watchPlan;
+                        $thresholdMet = $watch >= 2 || $thresholdMet;
+                    } else {
+                        $thresholdMet = $snapshot->count >= 5 || $thresholdMet;
+                    }
+                }
+
+                return [$thresholdMet, $plans];
+            });
+        }
+
+        $thresholdMet = false;
+        foreach ($observations as $observation) {
+            $observed = $store instanceof RedisFullCapabilityStore && $observation->previousKey === null
+                ? $this->observeCredentialSprayScopes([$observation])
+                : $this->observeCredentialSpray($observation);
+            $thresholdMet = $observed || $thresholdMet;
+        }
+
+        return $thresholdMet;
     }
 
     private function observeCredentialSpray(BoundedCorrelationObservationDTO $observation): bool

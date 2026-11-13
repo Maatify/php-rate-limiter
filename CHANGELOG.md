@@ -7,13 +7,63 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Documentation (#185)
+- Clarified DEC-032 Operational Read authority, effective score, and the scope of request atomicity under DEC-036 and DEC-037.
+- Recorded DEC-034 and DEC-035 as proposals. DEC-025 and DEC-028 remain active pending explicit activation.
+
 ## [1.0.0-rc.4]
 
-### Documentation (#185, F-185-32, F-185-33, F-185-37, F-185-40, F-185-41, F-185-42) — Decisions and contract clarifications
-- Architectural Decisions: introduced DEC-034 (superseding DEC-025) and DEC-035 (superseding DEC-028) as PROPOSED, establishing formal supersession continuity for sliding admission budgets and permit timings while preserving DEC-033's amendment record (F-185-33). Corrected TMS acronym to trusted-multi-session across DEC-033 and DEC-034 (F-185-42).
-- Operational Read: updated RATE_LIMITER_PACKAGE_REFERENCE.md to reflect DEC-032 as active/approved (F-185-32), and clarified that the operational reader returns physical decayed score (`effectiveScore`) and does not enforce the post_punishment_reentry gate (F-185-41).
-- Concurrency envelope: empirical measurements in `investigations/admission-concurrency-185/RESULTS.md` document in-flight concurrency behavior and subsequent request refusals for U-lane and P-lane under continuous sliding admission windows across KEY_STRATEGY.md, FAILURE_SEMANTICS.md, DEC-033, and DEC-034 (F-185-37, LT-185-37a).
-- Failure semantics: clarified in FAILURE_SEMANTICS.md §10.1 that mid-pipeline cycle key corruption errors do not roll back previously committed writes in accordance with DEC-029 P4 (F-185-40).
+### Changed (#185, F-185-36) — Atomic admission outcome recording
+- The opt-in admission runtime claims a permit and applies its admission outcome in one store
+  operation. `RateLimiterBuilder::build()` requires the additive
+  `AtomicAdmissionPermitStoreInterface` for opted-in policies. `RedisFullCapabilityStore` provides it.
+- The score pipeline runs after the admission outcome commits. A duplicate outcome does not replay
+  that pipeline. The [failure semantics](docs/FAILURE_SEMANTICS.md#45-admission-reservation-policies-dec-015-dec-024-dec-033)
+  and the [usage guide](docs/guides/USAGE_GUIDE.md) describe the three interruption cases.
+
+### Fixed (#185, F-185-38) — Canonical source for IPv4-mapped IPv6
+- IPv4-mapped IPv6 and its embedded IPv4 address now share source state across enforcement, admission, local fallback,
+  and Operational Read. Mapped addresses stay outside adaptive IPv6 aggregation.
+
+### Fixed (#185, F-185-39) — Redis Lua validation of missing metadata
+- Lua validators in `RedisFullCapabilityStore` check that a value is a string before applying string operations.
+  When Redis returns a non-string value for missing metadata, the affected operations report a classified
+  malformed-state error before writing.
+- Invalid cycle or pause history returns a classified Redis error reply. Hard-block and punishment lifecycle writes
+  validate the relevant history before changing persisted state (#185, F-185-43).
+
+### Fixed (#185, T-5) — One evaluation request is one atomic save on Redis
+- `EvaluationPipeline::process()` now runs the whole request through `RequestAtomicStoreInterface::transactRequest()`
+  when the store offers it (`RedisFullCapabilityStore`). Every store script of the request runs against a request
+  overlay in Lua that never writes to Redis; each step sees the results of the earlier steps, including key rotation,
+  expired-record cleanup and the writes of the policy decision. When the decision is final, one commit script compares
+  every key the request read with the state it was built on and, only if all of them still match, applies every change
+  in one batch. If another request changed a key in between, nothing is saved and the request is calculated again from
+  a fresh read (up to 32 evaluations or 500 ms of recalculating, a `RedisFullCapabilityStore` constructor argument,
+  then `RateLimitConcurrencyException`, which the engine answers with its existing concurrency block).
+- For a policy with an open admission fence the lane, the evaluation and the reservation of an allowed `checkOnly` are
+  one request (the admission scripts run through the same overlay). The recovery step of a circuit that is not closed
+  (probe lease, half-open/closed transition) is saved with the request it belongs to, so a rejected request leaves it
+  unsaved and its transition signals are not emitted; two requests that probe at once recover the circuit once. The
+  permit claim of an outcome command stays its own atomic operation, recorded in DEC-037.
+- A request in which a step met a backend failure and went on without it is not saved (`transactRequest()` throws the
+  failure), and a recovery step whose request save failed is repeated as one save of probe lease and circuit state, or
+  kept in memory only: a probe lease is never stored without the state change it belongs to.
+- The expiry of a rotation bridge (`ROTATED_SNAPSHOT`) is one absolute time applied with `PEXPIREAT` to the bridge's data and
+  metadata keys: the earliest of Previous's expiry, Previous-metadata's expiry, the authoritative Previous expiry and the
+  requested lifetime, on the script's clock. A relative lifetime applied at another clock reading ended the bridge 1 ms
+  after Previous in about one run in thirty on Redis 7.0.15 (measured: 8 of 600 rotations). A Previous that ends above 2^53 ms
+  (read by Lua as a rounded double) is bounded by its lower bound, so the bridge can only end earlier; a bridge that cannot be
+  bounded safely (no exact lifetime, one within 10 s of 2^53, or a clock that disagrees with Previous's rounded expiry) is refused
+  before any write; no relative expiry is ever applied to a bridge key. The other bounds,
+  including the exact-integer-range rule, are unchanged.
+- A classified validation failure anywhere in the request leaves Redis byte for byte unchanged, including the earlier
+  observations of the same request (measured before the change on `942d7cf`: a request rejected after its device-cap
+  observations were prepared left 4 keys changed).
+- Stores that do not implement `RequestAtomicStoreInterface`, or a runtime whose `store` and `correlationStore` differ,
+  keep the sequential writes. The circuit-breaker state is part of the request save only for the recovery step of a circuit
+  that is not closed (above); a backend failure reported to the circuit breaker after the request, the success that closes
+  a circuit, and the permit claim of an outcome command are separate operations outside it (DEC-037, item 7).
 
 ### Fixed (#185, DEC-033) — Sliding windows for the admission layer (counters and failure sets)
 - Under fixed tumbling windows (DEC-025, DEC-028), admission windowed counters and failure sets used epoch-bucketed keys (`w<intdiv(t,W)>` and `d<intdiv(t,DAY)>`) with TTLs of 2W / 2·DAY. An adversary crossing a boundary could double their burst allowance within a narrow burst window (e.g. 8 failures allowed within 14 seconds across a boundary instead of 4, 48 requests instead of 24, etc.).

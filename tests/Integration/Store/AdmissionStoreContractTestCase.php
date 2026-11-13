@@ -41,6 +41,30 @@ abstract class AdmissionStoreContractTestCase extends TestCase
         self::assertSame('src', $refused->refusedScope);
     }
 
+    public function testRefusalNamesFirstScopeAndWaitsForAllRefusingScopes(): void
+    {
+        $store = $this->newStore();
+        $short = S::counter('short', 'c:short', 1, 10, null, 'first');
+        $long = S::bucket('long', 'b:long', 1, 30);
+        self::assertTrue($this->admitted($store, S::request($short, $long)));
+
+        $next = S::counter('short', 'c:short', 1, 10, null, 'next');
+        $spare = S::counter('spare', 'c:spare', 1, 60, null, 'spare');
+        $request = S::request($next, $long, $spare);
+        $refused = $store->reserveAdmission($request, self::NOW + 1);
+        self::assertFalse($refused->admitted);
+        self::assertSame('short', $refused->refusedScope);
+        self::assertSame(29, $refused->retryAfterSeconds);
+
+        $reordered = $store->reserveAdmission(S::request($long, $next, $spare), self::NOW + 1);
+        self::assertFalse($reordered->admitted);
+        self::assertSame('long', $reordered->refusedScope);
+        self::assertSame(29, $reordered->retryAfterSeconds);
+
+        // Both refusals leave the unused quota available at the combined retry boundary.
+        self::assertTrue($this->admitted($store, $request, self::NOW + 1 + $refused->retryAfterSeconds));
+    }
+
     public function testCounterRotationSumsPreviousAndNeverWritesIt(): void
     {
         $store = $this->newStore();

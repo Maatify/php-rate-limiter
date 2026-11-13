@@ -11,6 +11,7 @@ use Maatify\RateLimiter\Enum\AdmissionOutcomeKindEnum;
 use Maatify\RateLimiter\Enum\AdmissionPermitClaimEnum;
 use Maatify\RateLimiter\Repository\AdmissionCapableFullStoreInterface;
 use Maatify\RateLimiter\Repository\AdmissionPermitStoreInterface;
+use Maatify\RateLimiter\Repository\AtomicAdmissionPermitStoreInterface;
 use Maatify\RateLimiter\Tests\Support\FullCapability\FullCapabilityInMemoryStore;
 
 /**
@@ -19,7 +20,8 @@ use Maatify\RateLimiter\Tests\Support\FullCapability\FullCapabilityInMemoryStore
  */
 final class AdmissionStubStore extends FullCapabilityInMemoryStore implements
     AdmissionCapableFullStoreInterface,
-    AdmissionPermitStoreInterface
+    AdmissionPermitStoreInterface,
+    AtomicAdmissionPermitStoreInterface
 {
     public function reserveAdmission(AdmissionReservationRequestDTO $request, int $now): AdmissionReservationResultDTO
     {
@@ -47,6 +49,16 @@ final class AdmissionStubStore extends FullCapabilityInMemoryStore implements
         string $subject,
         string $operation,
         AdmissionOutcomeKindEnum $outcome,
+        int $now,
+    ): AdmissionPermitClaimEnum {
+        throw new \LogicException('No admission store operation exists in 5-b1.');
+    }
+
+    public function claimAdmissionPermitWithOutcome(
+        string $lane,
+        string $subject,
+        string $operation,
+        AdmissionOutcomeDTO $outcome,
         int $now,
     ): AdmissionPermitClaimEnum {
         throw new \LogicException('No admission store operation exists in 5-b1.');

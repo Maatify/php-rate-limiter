@@ -108,6 +108,22 @@ local function settledSize(setKey, pendingKey, now, ttl)
   end
   return size
 end
+-- Rank the expiry of each subject counted at now. When both sources contain
+-- a subject, it occupies one slot until the later of the two expiries.
+local function settledExpiryAtRank(setKey, pendingKey, nowStr, now, ttl, rank)
+  local live = redis.call('ZRANGEBYSCORE', setKey, '(' .. nowStr, '+inf', 'WITHSCORES')
+  local pending = redis.call('ZRANGEBYSCORE', pendingKey, '(' .. string.format('%d', now - ttl), nowStr, 'WITHSCORES')
+  local byMember = {}
+  for j = 1, #live, 2 do byMember[live[j]] = tonumber(live[j + 1]) end
+  for j = 1, #pending, 2 do
+    local member = pending[j]
+    byMember[member] = math.max(byMember[member] or 0, tonumber(pending[j + 1]) + ttl)
+  end
+  local expiries = {}
+  for _, expiry in pairs(byMember) do table.insert(expiries, expiry) end
+  table.sort(expiries)
+  return expiries[rank]
+end
 -- Bucket: absent => full; a valid bucket => its refilled credit; anything else => nil, reason.
 local function readBucket(k, capacity, now)
   local t = keyType(k)
@@ -122,6 +138,20 @@ local function readBucket(k, capacity, now)
   local refilled = credit + elapsed
   if refilled > capacity then refilled = capacity end
   return refilled, true
+end
+local function oldestLiveScore(cur, prev, nowStr, excess)
+  if prev == '' or prev == nil then
+    local res = redis.call('ZRANGEBYSCORE', cur, '(' .. nowStr, '+inf', 'WITHSCORES', 'LIMIT', excess - 1, 1)
+    if #res >= 2 then return tonumber(res[2]) end
+    return nil
+  end
+  local r1 = redis.call('ZRANGEBYSCORE', cur, '(' .. nowStr, '+inf', 'WITHSCORES', 'LIMIT', 0, excess)
+  local r2 = redis.call('ZRANGEBYSCORE', prev, '(' .. nowStr, '+inf', 'WITHSCORES', 'LIMIT', 0, excess)
+  local scores = {}
+  for j = 2, #r1, 2 do table.insert(scores, tonumber(r1[j])) end
+  for j = 2, #r2, 2 do table.insert(scores, tonumber(r2[j])) end
+  table.sort(scores)
+  return scores[excess]
 end
 LUA;
 
@@ -164,9 +194,19 @@ for i = 1, n do
     local exists = false
     local score = redis.call('ZSCORE', cur, s.member)
     if score and tonumber(score) > now then exists = true end
-    if not exists and prev ~= '' and s.prevMember ~= '' then
-      local pscore = redis.call('ZSCORE', prev, s.prevMember)
-      if pscore and tonumber(pscore) > now then exists = true end
+    if not exists and s.prevMember ~= '' then
+      local pcur = redis.call('ZSCORE', cur, s.prevMember)
+      if pcur and tonumber(pcur) > now then exists = true end
+    end
+    if not exists and prev ~= '' then
+      if s.prevMember ~= '' then
+        local pscore = redis.call('ZSCORE', prev, s.prevMember)
+        if pscore and tonumber(pscore) > now then exists = true end
+      end
+      if not exists then
+        local cscore = redis.call('ZSCORE', prev, s.member)
+        if cscore and tonumber(cscore) > now then exists = true end
+      end
     end
     local live = redis.call('ZCOUNT', cur, '(' .. nowStr, '+inf')
     if prev ~= '' then live = live + redis.call('ZCOUNT', prev, '(' .. nowStr, '+inf') end
@@ -208,19 +248,44 @@ if hasPermit then
   if record == nil then return bad(err) end
   permitExists = not record.absent
 end
--- Phase 2: gates, in the order of the request. The first refusing scope is named; nothing is written.
+-- Phase 2: gates, in the order of the request. Keep the first refusal and the longest wait without writing.
+local firstRefusal = nil
+local longestRetry = 0
 for i = 1, n do
   local s = sc[i]
+  local retry = nil
   if s.kind == 'c' then
-    if s.a + s.b >= s.cap then return {0, i, 0} end
+    if s.a + s.b >= s.cap then
+      local excess = s.a + s.b - s.cap + 1
+      local target = oldestLiveScore(s.cur, s.prev, nowStr, excess)
+      retry = target and math.max(1, target - now) or 1
+    end
   elseif s.kind == 'd' then
-    if not s.exists and s.live >= s.cap then return {0, i, 0} end
+    if not s.exists and s.live >= s.cap then
+      local excess = s.live - s.cap + 1
+      local target = oldestLiveScore(s.cur, s.prev, nowStr, excess)
+      retry = target and math.max(1, target - now) or 1
+    end
   elseif s.kind == 's' then
-    if not s.isMember and s.card >= s.cap then return {0, i, 0} end
+    if not s.isMember and s.card >= s.cap then
+      local excess = s.card - s.cap + 1
+      local target
+      if s.settles then
+        target = settledExpiryAtRank(s.cur, s.pending, nowStr, now, s.ttl, excess)
+      else
+        target = oldestLiveScore(s.cur, '', nowStr, excess)
+      end
+      retry = target and math.max(1, target - now) or 1
+    end
   else
-    if s.credit < s.ttl then return {0, i, s.ttl - s.credit} end
+    if s.credit < s.ttl then retry = s.ttl - s.credit end
+  end
+  if retry then
+    if not firstRefusal then firstRefusal = i end
+    longestRetry = math.max(longestRetry, retry)
   end
 end
+if firstRefusal then return {0, firstRefusal, longestRetry} end
 if permitExists then return {0, 0, 0} end
 -- Phase 3: writes, only reached when every gate admitted.
 for i = 1, n do
@@ -347,6 +412,102 @@ if record.state == 'CLAIMED' then
 end
 if now >= record.deadline then return 'late' end
 redis.call('HSET', KEYS[1], 'state', 'CLAIMED', 'outcome', ARGV[5])
+return 'accepted'
+LUA;
+
+    private const CLAIM_WITH_OUTCOME = self::LUA_COMMON . "\n" . <<<'LUA'
+local nowStr = ARGV[1]
+local now = tonumber(nowStr)
+local lane = ARGV[2]
+local subject = ARGV[3]
+local operation = ARGV[4]
+local outcomeKind = ARGV[5]
+local n = tonumber(ARGV[6])
+
+-- Phase 1: validate permit record
+local permitKey = KEYS[1]
+local record, err = readPermit(permitKey)
+if record == nil then return bad(err) end
+if record.absent then return 'unknown' end
+if now >= record.deadline + record.grace then return 'unknown' end
+if record.lane ~= lane or record.subject ~= subject or record.operation ~= operation then return 'rejected' end
+if record.state == 'CLAIMED' then
+  if record.outcome == outcomeKind then return 'duplicate' end
+  return 'conflict'
+end
+if now >= record.deadline then return 'late' end
+
+-- Phase 2: validate every scope before any write. Malformed state throws while permit remains ISSUED.
+local success = outcomeKind == 'success'
+local sc = {}
+for i = 1, n do
+  local base = 7 + (i - 1) * 6
+  local kind = ARGV[base]
+  local cap = tonumber(ARGV[base + 1])
+  local ttl = tonumber(ARGV[base + 2])
+  local cur = KEYS[2 * i]
+  local prev = KEYS[2 * i + 1]
+  local s = {kind = kind, cap = cap, ttl = ttl, cur = cur, prev = prev, member = ARGV[base + 3], keepsSettled = ARGV[base + 4] == '1'}
+  s.settlesOut = ARGV[base + 5] == '1'
+  if kind == 's' then
+    local e = checkType(cur, 'zset', 'set')
+    if e then return bad(e) end
+    if not canonicalScores(cur) then return bad('set member score is not a canonical non-negative integer') end
+    if s.settlesOut then
+      local ep = checkType(prev, 'zset', 'pending set')
+      if ep then return bad(ep) end
+      s.pending = prev
+      local score = redis.call('ZSCORE', prev, s.member)
+      if score then
+        s.score = canonical(score)
+        if s.score == nil then return bad('pending member score is not a canonical non-negative integer') end
+      end
+    end
+  elseif kind == 'c' and success then
+    local e = checkType(cur, 'zset', 'counter')
+    if e then return bad(e) end
+    if not canonicalScores(cur) then return bad('counter member score is not a canonical non-negative integer') end
+  elseif kind == 'b' and success then
+    s.full = cap * ttl
+    local credit, existsOrErr = readBucket(cur, s.full, now)
+    if credit == nil then return bad(existsOrErr) end
+    s.credit, s.present = credit, existsOrErr
+  end
+  sc[i] = s
+end
+
+-- Phase 3: writes. Mark permit CLAIMED and apply all scopes atomically.
+redis.call('HSET', permitKey, 'state', 'CLAIMED', 'outcome', outcomeKind)
+
+for i = 1, n do
+  local s = sc[i]
+  if s.kind == 's' then
+    if success then
+      if s.settlesOut then
+        if (not s.keepsSettled) then redis.call('ZREM', s.cur, s.member) end
+        if (s.score ~= nil) and s.score > now then redis.call('ZREM', s.pending, s.member) end
+      else
+        redis.call('ZREM', s.cur, s.member)
+      end
+    else
+      redis.call('ZREMRANGEBYSCORE', s.cur, '-inf', nowStr)
+      redis.call('ZADD', s.cur, string.format('%d', now + s.ttl), s.member)
+      redis.call('EXPIRE', s.cur, s.ttl)
+      if s.settlesOut then redis.call('ZREM', s.pending, s.member) end
+    end
+  elseif s.kind == 'c' and success then
+    if s.member ~= '' then redis.call('ZREM', s.cur, s.member) end
+  elseif s.kind == 'b' and success and s.present then
+    local credit = s.credit + s.ttl
+    if credit >= s.full then
+      redis.call('DEL', s.cur)
+    else
+      redis.call('HSET', s.cur, 'credit', string.format('%d', credit), 'last', nowStr)
+      redis.call('EXPIRE', s.cur, string.format('%d', s.full - credit))
+    end
+  end
+end
+
 return 'accepted'
 LUA;
 
@@ -526,6 +687,60 @@ LUA;
         $claim = is_string($reply) ? AdmissionPermitClaimEnum::tryFrom($reply) : null;
         if ($claim === null) {
             throw new RateLimiterException('Malformed admission permit claim response.');
+        }
+
+        return $claim;
+    }
+
+    public function claimAdmissionPermitWithOutcome(
+        string $lane,
+        string $subject,
+        string $operation,
+        AdmissionOutcomeDTO $outcome,
+        int $now,
+    ): AdmissionPermitClaimEnum {
+        $this->assertTime($now);
+        $permitId = $outcome->permitId;
+        if ($permitId === null || trim($permitId) === '') {
+            throw new RateLimiterException('Admission permit id is required for atomic outcome claim.');
+        }
+        foreach (['permit id' => $permitId, 'lane' => $lane, 'subject' => $subject, 'operation' => $operation] as $label => $value) {
+            if (trim($value) === '') {
+                throw new RateLimiterException('Admission permit ' . $label . ' must not be empty.');
+            }
+        }
+        $this->assertScopes($outcome->scopes, $now, false);
+
+        $keys = [$this->permitKey($permitId)];
+        $args = [
+            (string) $now,
+            $lane,
+            $subject,
+            $operation,
+            $outcome->outcome->value,
+            (string) count($outcome->scopes),
+        ];
+        foreach ($outcome->scopes as $scope) {
+            $keys[] = $this->scopeKey($outcome->verifierClass, $scope->kind, $scope->key);
+            $keys[] = $scope->kind === AdmissionScopeKindEnum::SET_SIZE ? $this->pendingKey($outcome->verifierClass, $scope->key) : '';
+            $member = $scope->member;
+            if ($scope->kind === AdmissionScopeKindEnum::COUNTER && ($member === null || $member === '')) {
+                $member = $permitId;
+            }
+            array_push(
+                $args,
+                self::KIND_CODE[$scope->kind->value],
+                (string) $scope->capacity,
+                (string) $scope->ttlSeconds,
+                $member ?? '',
+                $scope->successKeepsSettled ? '1' : '0',
+                $scope->settlesOnExpiry ? '1' : '0',
+            );
+        }
+        $reply = $this->eval(self::CLAIM_WITH_OUTCOME, $keys, $args);
+        $claim = is_string($reply) ? AdmissionPermitClaimEnum::tryFrom($reply) : null;
+        if ($claim === null) {
+            throw new RateLimiterException('Malformed atomic admission permit claim response.');
         }
 
         return $claim;

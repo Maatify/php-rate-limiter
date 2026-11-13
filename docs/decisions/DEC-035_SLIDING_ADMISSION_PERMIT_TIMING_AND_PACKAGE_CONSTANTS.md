@@ -40,7 +40,7 @@ The required permit (OD-1 (b); RIC = `investigations/k2-identity-admission-97/RU
 ## Rationale
 
 - **Why 30 / 600.** They are the only values measured: NM-10 and NM-5 ran with them on the production code (`5b3b/RESULTS.md`). `D` 30 ≤ `W` 600, which `AdmissionBudgetsDTO` enforces.
-- **Why a separate record.** OD-2 accepted DEC-026 as written, and its concern is the verifier bound, not permit timing; amending DEC-034 would supersede all nine of its points for two values outside its scope (Decision Governance §4, §9).
+- **Why a separate record.** OD-2 accepted DEC-026 as written, and its concern is the verifier bound, not permit timing; amending DEC-025 would supersede all nine of its points for two values outside its scope (Decision Governance §4, §9).
 - **Why constants.** The DEC-015 precedent: a bound that protects every Host is package-owned (the 4096-subject fallback bound).
 - **Why continuous sliding windows:** As decided under LT-185-30 (b) and DEC-033, sliding windows prevent boundary double-bursting across both short (600 s) and daily (86400 s) horizons.
 

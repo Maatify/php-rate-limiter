@@ -9,9 +9,16 @@ require __DIR__ . '/../../../vendor/autoload.php';
 use Maatify\RateLimiter\Repository\Redis\RedisCommandExecutorInterface;
 use Maatify\RateLimiter\Repository\Redis\RedisFullCapabilityStore;
 use Maatify\RateLimiter\Tests\Support\BlockRace\BlockRaceSetup;
+use Maatify\RateLimiter\Tests\Support\Redis\OverlayWire;
 use Maatify\RateLimiter\Tests\Support\Redis\RespRedisCommandExecutor;
 
-[, $host, $port, $blockKey, $flag] = $argv;
+$rawArguments = $_SERVER['argv'] ?? null;
+$arguments = is_array($rawArguments) ? array_values(array_filter($rawArguments, is_string(...))) : [];
+if (! is_array($rawArguments) || count($rawArguments) !== count($arguments) || count($arguments) !== 5) {
+    fwrite(STDERR, "Expected 4 command-line arguments.\n");
+    exit(2);
+}
+[, $host, $port, $blockKey, $flag] = $arguments;
 $store = new ReflectionClass(RedisFullCapabilityStore::class);
 $writes = [];
 foreach (['BLOCK_SET', 'HARD_BLOCK'] as $name) {
@@ -27,7 +34,7 @@ $executor = new class (new RespRedisCommandExecutor($host, (int) $port), $writes
     /** @param non-empty-list<int|string|float> $command */
     public function execute(array $command): mixed
     {
-        if ($command[0] === 'EVAL' && in_array($command[1] ?? null, $this->writes, true) && ($command[3] ?? null) === $this->blockKey) {
+        if (array_filter($this->writes, static fn(string $script): bool => OverlayWire::isScript($command, $script)) !== [] && ($command[3] ?? null) === $this->blockKey) {
             $this->inner->execute(['SET', $this->flag . ':a-at-block', '1']);
             $deadline = microtime(true) + 10;
             while ($this->inner->execute(['GET', $this->flag . ':b-done']) === null) {

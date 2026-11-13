@@ -1016,7 +1016,7 @@ These limits are intended behavior approved by the Owner (#183, 2026-11-03) on t
    are shared-scope keys (IP prefix; IP prefix + normalized UA). Unrelated clients behind one
    NAT share them, so one client's failures, churn or credential spray can block the others
    (#100, #106). This is the DEC-027 posture (DEC-019 carried verbatim). The supported
-   alternative is the admission reservation (DEC-022, DEC-023, DEC-024, DEC-025, DEC-026, DEC-028, DEC-033; proposed DEC-034, DEC-035), where K1 credential spray is
+   alternative is the admission reservation (DEC-022..DEC-028), where K1 credential spray is
    not evaluated and is replaced by the source capacity `U_src` and the net failure cap `F`
    (DEC-022).
 2. **Trusted sessions on several accounts (policies that do not opt into admission).** The
@@ -1058,12 +1058,12 @@ still not applied the decision of the written state is returned with the cause
 
 ---
 
-## 12. Admission Stage (DEC-022, DEC-023, DEC-024, DEC-025, DEC-026, DEC-028, DEC-033; proposed DEC-034, DEC-035)
+## 12. Admission Stage (DEC-022, DEC-023, DEC-024, DEC-025, DEC-026, DEC-028)
 
 Active since 2026-10-20 for the policies that opt in: the official variant
 `LoginProtectionAdmissionPolicy` (name `login_protection`, budget group `login`) chosen explicitly by
 the Host, and custom policies that declare the capability. No default preset opts in. The builder
-constructs the admission runtime with the package constants (DEC-028, with sliding restatement proposed in DEC-035) when a registered policy
+constructs the admission runtime with the package constants (DEC-028) when a registered policy
 declares the capability. For such a policy, while its fleet fence is open, the evaluation order of
 §1 gains one stage:
 
@@ -1095,7 +1095,7 @@ Changes of meaning for opted policies, and only for them:
   `K5p`, `k5p`, `anti_equilibrium_device_p` on `P`; the unsuffixed state on `U`).
 * **A known device on `U` is bounded by the account bucket only.** No account-scoped candidate
   persists on `U`; the known-device allowance and K4 overflow enforce nothing there (declared cost
-  of DEC-025 5.1 and DEC-026, noting proposed DEC-034 5.1).
+  of DEC-025 5.1 and DEC-026).
 * **K4P.** The account key on `P` is a separate key from K4 (rule A: account-wide, not cleared at a
   password change); cycles, pauses and DEC-007 lifecycles of K4 and K4P are independent.
 * **Source capacity.** An IP prefix stays an advisory key for identity; as a **source capacity
