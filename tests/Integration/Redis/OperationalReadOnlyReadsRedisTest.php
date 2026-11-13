@@ -13,6 +13,7 @@ use Maatify\RateLimiter\Exception\RateLimiterException;
 use Maatify\RateLimiter\Repository\Redis\RedisCommandExecutorInterface;
 use Maatify\RateLimiter\Repository\Redis\RedisFullCapabilityStore;
 use Maatify\RateLimiter\Tests\Support\Clock\FixedClock;
+use Maatify\RateLimiter\Tests\Support\Redis\OverlayWire;
 use Maatify\RateLimiter\Tests\Support\FailureSignal\RecordingFailureSignalEmitter;
 use Maatify\RateLimiter\Tests\Support\Redis\RecordingRedisCommandExecutor;
 use Maatify\RateLimiter\Tests\Support\Redis\RespRedisCommandExecutor;
@@ -187,7 +188,7 @@ final class OperationalReadOnlyReadsRedisTest extends TestCase
         self::assertIsInt($result->retryAfter);
         $blockKeys = [];
         foreach ($spy->commands as $command) {
-            if ($command[0] === 'EVAL' && in_array($command[1], $blockScripts, true)) {
+            if (array_filter($blockScripts, static fn(mixed $script): bool => is_string($script) && OverlayWire::isScript($command, $script)) !== []) {
                 self::assertIsString($command[3]);
                 $blockKeys[$command[3]] = true;
             }

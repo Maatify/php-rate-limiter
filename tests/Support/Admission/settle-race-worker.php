@@ -33,7 +33,8 @@ if (! is_array($spec) || ! is_string($spec['namespace'] ?? null) || ! is_int($sp
     exit(2);
 }
 $executor = new RespRedisCommandExecutor($host, intval($port));
-$store = new RedisFullCapabilityStore($executor, $spec['namespace']);
+// These suites assert exactly-once effects under overlap, not latency: a CPU-starved runner must not turn a slow retry into a concurrency block.
+$store = new RedisFullCapabilityStore($executor, $spec['namespace'], null, 60_000);
 $operations = new RedisAdmissionOperations($executor, $spec['namespace']);
 $now = $spec['now'];
 $scope = new AdmissionScopeDTO('fail_src', AdmissionScopeKindEnum::SET_SIZE, $spec['key'], $spec['capacity'], 1200, null, 'new-' . $index, settlesOnExpiry: true);

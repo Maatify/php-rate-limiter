@@ -10,6 +10,7 @@ use Maatify\RateLimiter\Exception\RateLimiterException;
 use Maatify\RateLimiter\Repository\Redis\RedisCommandExecutorInterface;
 use Maatify\RateLimiter\Repository\Redis\RedisFullCapabilityStore;
 use Maatify\RateLimiter\Tests\Support\BlockRace\BlockRaceSetup;
+use Maatify\RateLimiter\Tests\Support\Redis\OverlayWire;
 use Maatify\RateLimiter\Tests\Support\Redis\RespRedisCommandExecutor;
 use PHPUnit\Framework\Attributes\Group;
 use PHPUnit\Framework\TestCase;
@@ -60,7 +61,7 @@ final class BlockNoDowngradeRedisTest extends TestCase
             /** @param non-empty-list<int|string|float> $command */
             public function execute(array $command): mixed
             {
-                if ($command[0] === 'EVAL' && ($command[1] ?? null) === $this->increment && (string) ($command[5] ?? '') === '2' && is_string($command[3] ?? null)) {
+                if ($command[0] === 'EVAL' && OverlayWire::isScript($command, $this->increment) && (string) ($command[5] ?? '') === '2' && is_string($command[3] ?? null)) {
                     $this->k5 = $command[3];
                 }
 
@@ -119,8 +120,11 @@ final class BlockNoDowngradeRedisTest extends TestCase
             self::assertSame(0, pclose($handle));
             $this->executor->execute(['DEL', $flag . ':a-at-block', $flag . ':b-done']);
 
-            self::assertSame(['decision' => 'SOFT_BLOCK', 'blockLevel' => 1, 'retryAfter' => 900], $a, 'Round ' . $round . ': A keeps its computed decision.');
-            self::assertSame([RateLimitResultDTO::DECISION_HARD_BLOCK, 2], [$b->decision, $b->blockLevel]);
+            // T-5: one request is one atomic save. B saved first, so A's plan was stale, was refused, and A was calculated
+            // again after B: the two decisions are the control's two decisions, in the order the saves happened.
+            self::assertSame([RateLimitResultDTO::DECISION_SOFT_BLOCK, 1, 900], [$b->decision, $b->blockLevel, $b->retryAfter], 'Round ' . $round . ': B, saved first, is the first failure.');
+            self::assertIsArray($a);
+            self::assertSame(['HARD_BLOCK', 2], [$a['decision'] ?? null, $a['blockLevel'] ?? null], 'Round ' . $round . ': A, calculated again after B, is the second failure.');
             self::assertTheSequentialResult($this->outcome($keys), 'Round ' . $round);
         }
     }

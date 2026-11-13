@@ -19,6 +19,7 @@ use Maatify\RateLimiter\DTO\GenerationBoundScoreStateDTO;
 use Maatify\RateLimiter\DTO\PostPunishmentReentryStateDTO;
 use Maatify\RateLimiter\DTO\PunishmentLifecycleTransitionDTO;
 use Maatify\RateLimiter\DTO\RateLimitStateDTO;
+use Maatify\RateLimiter\Exception\RateLimitConcurrencyException;
 use Maatify\RateLimiter\Exception\RateLimiterException;
 use Maatify\RateLimiter\Exception\BackendFailureException;
 use Maatify\RateLimiter\Enum\AdmissionOutcomeKindEnum;
@@ -33,6 +34,7 @@ use Maatify\RateLimiter\Repository\CircuitBreakerStateCasStoreInterface;
 use Maatify\RateLimiter\Repository\CallerTimeScoreReplaceStoreInterface;
 use Maatify\RateLimiter\Repository\CallerTimeOperationalReadOnlyStoreInterface;
 use Maatify\RateLimiter\Repository\CallerTimeSnapshotFencedScoreStoreInterface;
+use Maatify\RateLimiter\Repository\RequestAtomicStoreInterface;
 use Maatify\SharedCommon\Contracts\ClockInterface;
 use Maatify\SharedCommon\Infrastructure\SystemClock;
 use DateTimeZone;
@@ -62,11 +64,29 @@ final class RedisFullCapabilityStore implements
     CallerTimeSnapshotFencedScoreStoreInterface,
     CircuitBreakerStateCasStoreInterface,
     CallerTimeScoreReplaceStoreInterface,
-    CallerTimeOperationalReadOnlyStoreInterface
+    CallerTimeOperationalReadOnlyStoreInterface,
+    RequestAtomicStoreInterface
 {
     private const PREFIX = 'maatify:rate-limiter:v1';
 
+    /** Maximum evaluations of one request before a persistent conflict is reported. */
+    private const REQUEST_ATTEMPTS = 32;
+
+    /** Time a request may spend recalculating after a conflict, from the first conflict (DEC-037). */
+    private const DEFAULT_REQUEST_RETRY_BUDGET_MILLISECONDS = 500;
+
     private ?RedisAdmissionOperations $admission = null;
+
+    /** T-5: the first backend failure a step of the held request met, even when the step handled it and went on. */
+    private ?BackendFailureException $requestBackendFailure = null;
+
+    /**
+     * Held state of the request being evaluated, `key => JSON state`, or null
+     * outside `transactRequest()`.
+     *
+     * @var array<string, string>|null
+     */
+    private ?array $requestState = null;
 
     private const LUA_EXACT_INTEGER_MAX = 9007199254740991;
 
@@ -123,7 +143,7 @@ end
 -- `expiryApplied()`. Both operands stay decimal strings, so a TTL above 2^53
 -- is judged exactly.
 local function ttlBackendRepresentable(rawTtl)
-  if rawTtl == nil or string.match(rawTtl, '^[1-9]%d*$') == nil or string.len(rawTtl) > 16 then return false end
+  if type(rawTtl) ~= 'string' or string.match(rawTtl, '^[1-9]%d*$') == nil or string.len(rawTtl) > 16 then return false end
   return compareDecimalStrings(addDecimalStrings(rawTtl .. '000', nowMsStr), '9223372036854775807') <= 0
 end
 -- LT-P2-12: an expiry command is run through redis.pcall. When Redis rejects
@@ -141,7 +161,7 @@ LUA;
 
     private const SCORE_INCREMENT = self::LUA_TIME_PRELUDE . "\n" . <<<'LUA'
 local function validPhpInteger(value)
-  if value == nil or string.match(value, '^%-?%d+$') == nil then return false end
+  if type(value) ~= 'string' or string.match(value, '^%-?%d+$') == nil then return false end
   local negative = string.sub(value, 1, 1) == '-'
   local digits = negative and string.sub(value, 2) or value
   if digits == '' or (string.len(digits) > 1 and string.sub(digits, 1, 1) == '0') or (negative and digits == '0') then return false end
@@ -150,7 +170,7 @@ local function validPhpInteger(value)
 end
 -- DEC-017: `updatedAt` is a canonical non-negative PHP-int Unix timestamp.
 local function validNonNegativeInteger(value)
-  return value ~= nil and (value == '0' or (string.match(value, '^[1-9]%d*$') ~= nil and string.len(value) <= 19 and (string.len(value) < 19 or value <= '9223372036854775807')))
+  return type(value) == 'string' and (value == '0' or (string.match(value, '^[1-9]%d*$') ~= nil and string.len(value) <= 19 and (string.len(value) < 19 or value <= '9223372036854775807')))
 end
 local exists = redis.call('EXISTS', KEYS[1])
 if exists == 0 then
@@ -182,7 +202,7 @@ LUA;
      */
     private const SCORE_SET_IF_SNAPSHOT = self::LUA_TIME_PRELUDE . "\n" . <<<'LUA'
 local function validPhpInteger(value)
-  if value == nil or string.match(value, '^%-?%d+$') == nil then return false end
+  if type(value) ~= 'string' or string.match(value, '^%-?%d+$') == nil then return false end
   local negative = string.sub(value, 1, 1) == '-'
   local digits = negative and string.sub(value, 2) or value
   if digits == '' or (string.len(digits) > 1 and string.sub(digits, 1, 1) == '0') or (negative and digits == '0') then return false end
@@ -190,7 +210,7 @@ local function validPhpInteger(value)
   return string.len(digits) < 19 or (string.len(digits) == 19 and digits <= maximum)
 end
 local function validNonNegativeInteger(value)
-  return value ~= nil and (value == '0' or (string.match(value, '^[1-9]%d*$') ~= nil and string.len(value) <= 19 and (string.len(value) < 19 or value <= '9223372036854775807')))
+  return type(value) == 'string' and (value == '0' or (string.match(value, '^[1-9]%d*$') ~= nil and string.len(value) <= 19 and (string.len(value) < 19 or value <= '9223372036854775807')))
 end
 if not validPhpInteger(ARGV[4]) then return redis.error_reply('malformed score state') end
 local exists = redis.call('EXISTS', KEYS[1])
@@ -224,7 +244,7 @@ LUA;
      */
     private const SCORE_REPLACE = self::LUA_TIME_PRELUDE . "\n" . <<<'LUA'
 local function validPhpInteger(value)
-  if value == nil or string.match(value, '^%-?%d+$') == nil then return false end
+  if type(value) ~= 'string' or string.match(value, '^%-?%d+$') == nil then return false end
   local negative = string.sub(value, 1, 1) == '-'
   local digits = negative and string.sub(value, 2) or value
   if digits == '' or (string.len(digits) > 1 and string.sub(digits, 1, 1) == '0') or (negative and digits == '0') then return false end
@@ -232,7 +252,7 @@ local function validPhpInteger(value)
   return string.len(digits) < 19 or (string.len(digits) == 19 and digits <= maximum)
 end
 local function validNonNegativeInteger(value)
-  return value ~= nil and (value == '0' or (string.match(value, '^[1-9]%d*$') ~= nil and string.len(value) <= 19 and (string.len(value) < 19 or value <= '9223372036854775807')))
+  return type(value) == 'string' and (value == '0' or (string.match(value, '^[1-9]%d*$') ~= nil and string.len(value) <= 19 and (string.len(value) < 19 or value <= '9223372036854775807')))
 end
 if not validPhpInteger(ARGV[2]) then return redis.error_reply('malformed score state') end
 if not ttlBackendRepresentable(ARGV[1]) then return redis.error_reply('score TTL exceeds Redis backend expiry representability') end
@@ -273,7 +293,7 @@ LUA;
 
     private const SCORE_GET = <<<'LUA'
 local function validPhpInteger(value)
-  if value == nil or string.match(value, '^%-?%d+$') == nil then return false end
+  if type(value) ~= 'string' or string.match(value, '^%-?%d+$') == nil then return false end
   local negative = string.sub(value, 1, 1) == '-'
   local digits = negative and string.sub(value, 2) or value
   if digits == '' or (string.len(digits) > 1 and string.sub(digits, 1, 1) == '0') or (negative and digits == '0') then return false end
@@ -282,7 +302,7 @@ local function validPhpInteger(value)
 end
 -- DEC-017: `updatedAt` is a canonical non-negative PHP-int Unix timestamp.
 local function validNonNegativeInteger(value)
-  return value ~= nil and (value == '0' or (string.match(value, '^[1-9]%d*$') ~= nil and string.len(value) <= 19 and (string.len(value) < 19 or value <= '9223372036854775807')))
+  return type(value) == 'string' and (value == '0' or (string.match(value, '^[1-9]%d*$') ~= nil and string.len(value) <= 19 and (string.len(value) < 19 or value <= '9223372036854775807')))
 end
 if redis.call('EXISTS', KEYS[1]) == 0 then return {} end
 if redis.call('TTL', KEYS[1]) < 0 then return redis.error_reply('malformed score state') end
@@ -316,19 +336,19 @@ local nowSecondsStr = tostring(nowSeconds)
 local exactIntegerMax = 9007199254740991
 local exactIntegerMaxTtlSeconds = '9007199254740'
 local function ttlMillisecondsRepresentable(rawTtl, baseMs)
-  if rawTtl == nil or string.match(rawTtl, '^[1-9]%d*$') == nil then return false end
+  if type(rawTtl) ~= 'string' or string.match(rawTtl, '^[1-9]%d*$') == nil then return false end
   if string.len(rawTtl) > 13 or (string.len(rawTtl) == 13 and rawTtl > exactIntegerMaxTtlSeconds) then return false end
   if baseMs == nil or baseMs < 0 or baseMs > exactIntegerMax then return false end
   local ttlMs = tonumber(rawTtl) * 1000
   return ttlMs <= exactIntegerMax - baseMs
 end
 local function validPositiveInteger(value)
-  return value ~= nil and string.match(value, '^[1-9]%d*$') ~= nil and string.len(value) <= 19 and (string.len(value) < 19 or value <= '9223372036854775807')
+  return type(value) == 'string' and string.match(value, '^[1-9]%d*$') ~= nil and string.len(value) <= 19 and (string.len(value) < 19 or value <= '9223372036854775807')
 end
 local current = KEYS[1]; local previous = KEYS[2]
 local expectedSource = ARGV[1]
 local function validInteger(value, allowZero)
-  if value == nil or string.match(value, '^%-?%d+$') == nil then return false end
+  if type(value) ~= 'string' or string.match(value, '^%-?%d+$') == nil then return false end
   local negative = string.sub(value, 1, 1) == '-'
   local digits = negative and string.sub(value, 2) or value
   if not allowZero and digits == '0' then return false end
@@ -338,7 +358,7 @@ local function validInteger(value, allowZero)
   return string.len(normalized) < 19 or (string.len(normalized) == 19 and normalized <= maximum)
 end
 local function validPhpInteger(value)
-  if value == nil or string.match(value, '^%-?%d+$') == nil then return false end
+  if type(value) ~= 'string' or string.match(value, '^%-?%d+$') == nil then return false end
   local negative = string.sub(value, 1, 1) == '-'
   local digits = negative and string.sub(value, 2) or value
   if digits == '' or (string.len(digits) > 1 and string.sub(digits, 1, 1) == '0') or (negative and digits == '0') then return false end
@@ -352,7 +372,7 @@ end
 -- `tonumber()`; validation and ordering comparisons stay string-exact up
 -- to PHP_INT_MAX and are never rejected merely for exceeding 2^53.
 local function validNonNegativeInteger(value)
-  return value ~= nil and (value == '0' or (string.match(value, '^[1-9]%d*$') ~= nil and string.len(value) <= 19 and (string.len(value) < 19 or value <= '9223372036854775807')))
+  return type(value) == 'string' and (value == '0' or (string.match(value, '^[1-9]%d*$') ~= nil and string.len(value) <= 19 and (string.len(value) < 19 or value <= '9223372036854775807')))
 end
 local function compareDecimalStrings(a, b)
   if #a ~= #b then return (#a < #b) and -1 or 1 end
@@ -508,10 +528,10 @@ local nowMs = tonumber(nowMsStr)
 local nowSeconds = math.floor(nowMs / 1000)
 local nowSecondsStr = tostring(nowSeconds)
 local function validPositiveInteger(value)
-  return value ~= nil and string.match(value, '^[1-9]%d*$') ~= nil and string.len(value) <= 19 and (string.len(value) < 19 or value <= '9223372036854775807')
+  return type(value) == 'string' and string.match(value, '^[1-9]%d*$') ~= nil and string.len(value) <= 19 and (string.len(value) < 19 or value <= '9223372036854775807')
 end
 local function validPhpInteger(value)
-  if value == nil or string.match(value, '^%-?%d+$') == nil then return false end
+  if type(value) ~= 'string' or string.match(value, '^%-?%d+$') == nil then return false end
   local negative = string.sub(value, 1, 1) == '-'
   local digits = negative and string.sub(value, 2) or value
   if digits == '' or (string.len(digits) > 1 and string.sub(digits, 1, 1) == '0') or (negative and digits == '0') then return false end
@@ -519,10 +539,10 @@ local function validPhpInteger(value)
   return string.len(digits) < 19 or (string.len(digits) == 19 and digits <= maximum)
 end
 local function validNonNegativeInteger(value)
-  return value ~= nil and (value == '0' or (string.match(value, '^[1-9]%d*$') ~= nil and string.len(value) <= 19 and (string.len(value) < 19 or value <= '9223372036854775807')))
+  return type(value) == 'string' and (value == '0' or (string.match(value, '^[1-9]%d*$') ~= nil and string.len(value) <= 19 and (string.len(value) < 19 or value <= '9223372036854775807')))
 end
 local function validBackendExpiry(value)
-  if value == nil then return false end
+  if type(value) ~= 'string' then return false end
   if string.match(value, '^[1-9]%d*$') == nil then return false end
   if #value > 16 then return false end
   if #value == 16 and value > '9223372036854775' then return false end
@@ -598,10 +618,10 @@ local nowMs = tonumber(nowMsStr)
 local nowSeconds = math.floor(nowMs / 1000)
 local nowSecondsStr = tostring(nowSeconds)
 local function validPositiveInteger(value)
-  return value ~= nil and string.match(value, '^[1-9]%d*$') ~= nil and string.len(value) <= 19 and (string.len(value) < 19 or value <= '9223372036854775807')
+  return type(value) == 'string' and string.match(value, '^[1-9]%d*$') ~= nil and string.len(value) <= 19 and (string.len(value) < 19 or value <= '9223372036854775807')
 end
 local function validPhpInteger(value)
-  if value == nil or string.match(value, '^%-?%d+$') == nil then return false end
+  if type(value) ~= 'string' or string.match(value, '^%-?%d+$') == nil then return false end
   local negative = string.sub(value, 1, 1) == '-'
   local digits = negative and string.sub(value, 2) or value
   if digits == '' or (string.len(digits) > 1 and string.sub(digits, 1, 1) == '0') or (negative and digits == '0') then return false end
@@ -609,10 +629,10 @@ local function validPhpInteger(value)
   return string.len(digits) < 19 or (string.len(digits) == 19 and digits <= maximum)
 end
 local function validNonNegativeInteger(value)
-  return value ~= nil and (value == '0' or (string.match(value, '^[1-9]%d*$') ~= nil and string.len(value) <= 19 and (string.len(value) < 19 or value <= '9223372036854775807')))
+  return type(value) == 'string' and (value == '0' or (string.match(value, '^[1-9]%d*$') ~= nil and string.len(value) <= 19 and (string.len(value) < 19 or value <= '9223372036854775807')))
 end
 local function validBackendExpiry(value)
-  if value == nil then return false end
+  if type(value) ~= 'string' then return false end
   if string.match(value, '^[1-9]%d*$') == nil then return false end
   if #value > 16 then return false end
   if #value == 16 and value > '9223372036854775' then return false end
@@ -748,7 +768,7 @@ LUA;
     /** The block read's validation, shared by BLOCK_GET and BLOCK_PEEK; it ends with a live-or-expired block in `level`/`expires`. */
     private const BLOCK_VALIDATE = <<<'LUA'
 local function validBackendExpiry(value)
-  if value == nil or value == '0' then return value == '0' end
+  if type(value) ~= 'string' or value == '0' then return value == '0' end
   if string.match(value, '^[1-9]%d*$') == nil then return false end
   if #value > 16 then return false end
   if #value == 16 and value > '9223372036854775' then return false end
@@ -792,10 +812,10 @@ local exactIntegerMax = 9007199254740991
 -- is compared and added as a decimal string, so a value above 2^53 is handled
 -- exactly instead of being narrowed through `tonumber()`.
 local function validNonNegativeInteger(value)
-  return value ~= nil and (value == '0' or (string.match(value, '^[1-9]%d*$') ~= nil and string.len(value) <= 19 and (string.len(value) < 19 or value <= '9223372036854775807')))
+  return type(value) == 'string' and (value == '0' or (string.match(value, '^[1-9]%d*$') ~= nil and string.len(value) <= 19 and (string.len(value) < 19 or value <= '9223372036854775807')))
 end
 local function validPositiveDuration(value)
-  return value ~= nil and string.match(value, '^[1-9]%d*$') ~= nil and string.len(value) <= 19 and (string.len(value) < 19 or value <= '9223372036854775807')
+  return type(value) == 'string' and string.match(value, '^[1-9]%d*$') ~= nil and string.len(value) <= 19 and (string.len(value) < 19 or value <= '9223372036854775807')
 end
 -- Returns epoch-end as a decimal string, or nil plus an error for malformed state.
 local function persistedEpochEnd(count, start, duration)
@@ -843,10 +863,10 @@ local exactIntegerMax = 9007199254740991
 -- is compared and added as a decimal string, so a value above 2^53 is handled
 -- exactly instead of being narrowed through `tonumber()`.
 local function validNonNegativeInteger(value)
-  return value ~= nil and (value == '0' or (string.match(value, '^[1-9]%d*$') ~= nil and string.len(value) <= 19 and (string.len(value) < 19 or value <= '9223372036854775807')))
+  return type(value) == 'string' and (value == '0' or (string.match(value, '^[1-9]%d*$') ~= nil and string.len(value) <= 19 and (string.len(value) < 19 or value <= '9223372036854775807')))
 end
 local function validPositiveDuration(value)
-  return value ~= nil and string.match(value, '^[1-9]%d*$') ~= nil and string.len(value) <= 19 and (string.len(value) < 19 or value <= '9223372036854775807')
+  return type(value) == 'string' and string.match(value, '^[1-9]%d*$') ~= nil and string.len(value) <= 19 and (string.len(value) < 19 or value <= '9223372036854775807')
 end
 -- Returns epoch-end as a decimal string, or nil plus an error for malformed state.
 local function persistedEpochEnd(count, start, duration)
@@ -888,10 +908,10 @@ local exactIntegerMax = 9007199254740991
 -- is compared and added as a decimal string, so a value above 2^53 is handled
 -- exactly instead of being narrowed through `tonumber()`.
 local function validNonNegativeInteger(value)
-  return value ~= nil and (value == '0' or (string.match(value, '^[1-9]%d*$') ~= nil and string.len(value) <= 19 and (string.len(value) < 19 or value <= '9223372036854775807')))
+  return type(value) == 'string' and (value == '0' or (string.match(value, '^[1-9]%d*$') ~= nil and string.len(value) <= 19 and (string.len(value) < 19 or value <= '9223372036854775807')))
 end
 local function validPositiveDuration(value)
-  return value ~= nil and string.match(value, '^[1-9]%d*$') ~= nil and string.len(value) <= 19 and (string.len(value) < 19 or value <= '9223372036854775807')
+  return type(value) == 'string' and string.match(value, '^[1-9]%d*$') ~= nil and string.len(value) <= 19 and (string.len(value) < 19 or value <= '9223372036854775807')
 end
 -- Returns epoch-end as a decimal string, or nil plus an error for malformed state.
 local function persistedEpochEnd(count, start, duration)
@@ -950,7 +970,7 @@ LUA;
 
     private const DISTINCT_ADD = self::LUA_TIME_PRELUDE . "\n" . <<<'LUA'
 local function validBackendExpiry(value)
-  if value == nil or value == '0' then return value == '0' end
+  if type(value) ~= 'string' or value == '0' then return value == '0' end
   if string.match(value, '^[1-9]%d*$') == nil then return false end
   if #value > 16 then return false end
   if #value == 16 and value > '9223372036854775' then return false end
@@ -980,7 +1000,7 @@ LUA;
 
     private const WATCH_INCREMENT = self::LUA_TIME_PRELUDE . "\n" . <<<'LUA'
 local function validBackendExpiry(value)
-  if value == nil or value == '0' then return value == '0' end
+  if type(value) ~= 'string' or value == '0' then return value == '0' end
   if string.match(value, '^[1-9]%d*$') == nil then return false end
   if #value > 16 then return false end
   if #value == 16 and value > '9223372036854775' then return false end
@@ -1027,52 +1047,161 @@ if not value or (value ~= '0' and string.match(value, '^[1-9]%d*$') == nil) then
 return value
 LUA;
 
-    private const BOUNDED_SNAPSHOT = self::LUA_TIME_PRELUDE . "\n" . <<<'LUA'
+    private const BOUNDED_SNAPSHOT_PLAN = self::LUA_TIME_PRELUDE . "\n" . <<<'LUA'
 local function validBackendExpiry(value)
-  if value == nil or value == '0' then return value == '0' end
+  if type(value) ~= 'string' or value == '0' then return value == '0' end
   if string.match(value, '^[1-9]%d*$') == nil then return false end
   if #value > 16 then return false end
   if #value == 16 and value > '9223372036854775' then return false end
   return true
 end
-local exists = redis.call('EXISTS', KEYS[1])
-if exists == 1 and redis.call('TTL', KEYS[1]) < 0 then return redis.error_reply('malformed bounded state') end
-local metaExists = redis.call('EXISTS', KEYS[2])
-if exists == 0 and metaExists == 1 then return redis.error_reply('malformed bounded metadata') end
-if exists == 1 and redis.call('SCARD', KEYS[1]) == 0 then return redis.error_reply('malformed bounded state') end
-local expires = nil
-if exists == 1 then
-  local rawExpires = redis.call('HGET', KEYS[2], 'expiresAt')
-  if not validBackendExpiry(rawExpires) then return redis.error_reply('malformed bounded metadata') end
-  expires = rawExpires
-  if redis.call('TTL', KEYS[2]) < 0 then return redis.error_reply('malformed bounded metadata') end
-  -- LT-P2-03: logically expired while physically present is expired, not malformed.
-  if compareDecimalStrings(expires, nowStr) <= 0 then redis.call('DEL', KEYS[1], KEYS[2]); exists = 0; expires = nil end
+local function readBoundedSnapshot(setKey, metaKey, capacity)
+  local exists = redis.call('EXISTS', setKey) == 1
+  local metaExists = redis.call('EXISTS', metaKey) == 1
+  if exists and redis.call('TTL', setKey) < 0 then return nil, 'malformed bounded state' end
+  if not exists and metaExists then return nil, 'malformed bounded metadata' end
+  if not exists then return {exists = false, members = {}} end
+  local expires = redis.call('HGET', metaKey, 'expiresAt')
+  if not validBackendExpiry(expires) or redis.call('TTL', metaKey) < 0 then return nil, 'malformed bounded metadata' end
+  local count = redis.call('SCARD', setKey)
+  if count == 0 then return nil, 'malformed bounded state' end
+  if compareDecimalStrings(expires, nowStr) <= 0 then return {exists = true, expires = expires, members = {}} end
+  if count > capacity then return nil, 'malformed bounded state' end
+  return {exists = true, expires = expires, members = redis.call('SMEMBERS', setKey)}
 end
-local count = exists == 1 and redis.call('SCARD', KEYS[1]) or 0
-if count > tonumber(ARGV[3]) then return redis.error_reply('malformed bounded state') end
-if redis.call('SISMEMBER', KEYS[1], ARGV[2]) == 1 then
-  local members = redis.call('SMEMBERS', KEYS[1]); table.sort(members)
-  return {#members, 1, 0, expires, unpack(members)}
+
+-- Plan the new snapshot from validated state. No command in this phase writes.
+local function planBoundedSnapshot(setKey, metaKey, ttl, member, capacity)
+  local state, reason = readBoundedSnapshot(setKey, metaKey, capacity)
+  if not state then return nil, reason end
+  local exists = state.exists
+  local expires = state.expires
+  local replaceExpired = exists and compareDecimalStrings(expires, nowStr) <= 0
+
+  if not exists or replaceExpired then
+    if not ttlBackendRepresentable(ttl) then return nil, 'correlation TTL exceeds Redis backend expiry representability' end
+    return {members = {member}, accepted = 1, added = 1, expires = addDecimalStrings(nowStr, ttl), initialize = true, replaceExpired = replaceExpired}
+  end
+
+  local count = #state.members
+  if count > capacity then return nil, 'malformed bounded state' end
+  local members = state.members
+  if redis.call('SISMEMBER', setKey, member) == 1 then
+    return {members = members, accepted = 1, added = 0, expires = expires}
+  end
+  if count >= capacity then
+    return {members = members, accepted = 0, added = 0, expires = expires}
+  end
+
+  table.insert(members, member)
+  return {members = members, accepted = 1, added = 1, expires = expires}
 end
-if count >= tonumber(ARGV[3]) then
-  local members = redis.call('SMEMBERS', KEYS[1]); table.sort(members)
-  return {count, 0, 0, expires, unpack(members)}
+
+local function applyBoundedSnapshot(plan, setKey, metaKey, ttl, member)
+  table.sort(plan.members)
+  if plan.added == 1 then
+    if plan.replaceExpired then redis.call('DEL', setKey, metaKey) end
+    redis.call('SADD', setKey, member)
+    if plan.initialize then
+      if not expiryApplied(redis.pcall('EXPIRE', setKey, ttl), {setKey}) then return redis.error_reply('expiry not representable') end
+      redis.call('HSET', metaKey, 'expiresAt', plan.expires)
+      if not expiryApplied(redis.pcall('EXPIRE', metaKey, ttl), {setKey, metaKey}) then return redis.error_reply('expiry not representable') end
+    end
+  end
+  return {#plan.members, plan.accepted, plan.added, plan.expires, unpack(plan.members)}
 end
-if exists == 0 then
-  if not ttlBackendRepresentable(ARGV[1]) then return redis.error_reply('correlation TTL exceeds Redis backend expiry representability') end
-  redis.call('SADD', KEYS[1], ARGV[2])
-  if not expiryApplied(redis.pcall('EXPIRE', KEYS[1], ARGV[1]), {KEYS[1]}) then return redis.error_reply('expiry not representable') end
-  redis.call('HSET', KEYS[2], 'expiresAt', addDecimalStrings(nowStr, ARGV[1]))
-  if not expiryApplied(redis.pcall('EXPIRE', KEYS[2], ARGV[1]), {KEYS[1], KEYS[2]}) then return redis.error_reply('expiry not representable') end
-else redis.call('SADD', KEYS[1], ARGV[2]) end
-local members = redis.call('SMEMBERS', KEYS[1]); table.sort(members)
-return {#members, 1, 1, exists == 0 and addDecimalStrings(nowStr, ARGV[1]) or expires, unpack(members)}
+LUA;
+
+    private const BOUNDED_SNAPSHOT = self::BOUNDED_SNAPSHOT_PLAN . "\n" . <<<'LUA'
+local plan, reason = planBoundedSnapshot(KEYS[1], KEYS[2], ARGV[1], ARGV[2], tonumber(ARGV[3]))
+if not plan then return redis.error_reply(reason) end
+return applyBoundedSnapshot(plan, KEYS[1], KEYS[2], ARGV[1], ARGV[2])
+LUA;
+
+    private const DEVICE_CAP_PAIR_STATE = <<<'LUA'
+local function readPairState()
+  local state = {}
+  for i, key in ipairs(KEYS) do
+    state[2 * i - 1] = redis.call('DUMP', key) or ''
+    state[2 * i] = string.format('%.0f', redis.call('PEXPIRETIME', key))
+  end
+  return state
+end
+LUA;
+
+    private const DEVICE_CAP_PAIR_READ = self::BOUNDED_SNAPSHOT_PLAN . "\n" . self::DEVICE_CAP_PAIR_STATE . "\n" . <<<'LUA'
+local account, reason = readBoundedSnapshot(KEYS[1], KEYS[2], tonumber(ARGV[1]))
+if not account then return redis.error_reply(reason) end
+local source, sourceReason = readBoundedSnapshot(KEYS[3], KEYS[4], tonumber(ARGV[2]))
+if not source then return redis.error_reply(sourceReason) end
+return {readPairState(), {account.expires or '', unpack(account.members)}, {source.expires or '', unpack(source.members)}}
+LUA;
+
+    private const BOUNDED_OBSERVATION_READ = self::BOUNDED_SNAPSHOT_PLAN . "\n" . self::DEVICE_CAP_PAIR_STATE . "\n" . <<<'LUA'
+local observation, reason = readBoundedSnapshot(KEYS[1], KEYS[2], tonumber(ARGV[1]))
+if not observation then return redis.error_reply(reason) end
+return {readPairState(), {observation.expires or '', unpack(observation.members)}}
+LUA;
+
+    private const WATCH_OBSERVATION_READ = self::BOUNDED_SNAPSHOT_PLAN . "\n" . self::DEVICE_CAP_PAIR_STATE . "\n" . <<<'LUA'
+local exists = redis.call('EXISTS', KEYS[1]) == 1
+if not exists then
+  if redis.call('EXISTS', KEYS[2]) == 1 then return redis.error_reply('malformed watch metadata') end
+  return {readPairState(), '', '0'}
+end
+if redis.call('TTL', KEYS[1]) < 0 then return redis.error_reply('malformed watch state') end
+local expires = redis.call('HGET', KEYS[2], 'expiresAt')
+if not validBackendExpiry(expires) or redis.call('TTL', KEYS[2]) < 0 then return redis.error_reply('malformed watch metadata') end
+local value = redis.call('GET', KEYS[1])
+if not value or (value ~= '0' and string.match(value, '^[1-9]%d*$') == nil) then
+  return redis.error_reply('malformed watch value')
+end
+return {readPairState(), expires, value}
+LUA;
+
+    private const DEVICE_CAP_COMMIT = self::BOUNDED_SNAPSHOT_PLAN . "\n" . self::DEVICE_CAP_PAIR_STATE . "\n" . <<<'LUA'
+local current = readPairState()
+local scopes = #KEYS / 2
+local argumentsPerScope = 5
+local expectedOffset = scopes * argumentsPerScope
+for i, value in ipairs(current) do
+  if value ~= ARGV[expectedOffset + i] then return {} end
+end
+for scope = 1, scopes do
+  local offset = (scope - 1) * argumentsPerScope
+  if ARGV[offset + 3] == '1' and not ttlBackendRepresentable(ARGV[offset + 1]) then
+    return redis.error_reply('correlation TTL exceeds Redis backend expiry representability')
+  end
+end
+for scope = 1, scopes do
+  local offset = (scope - 1) * argumentsPerScope
+  local ttl = ARGV[offset + 1]
+  local reset = ARGV[offset + 3] == '1'
+  local setKey, metaKey = KEYS[2 * scope - 1], KEYS[2 * scope]
+  if ARGV[offset + 5] == 'watch' then
+    local value = ARGV[offset + 2]
+    if reset then
+      redis.call('SET', setKey, value, 'EX', ttl)
+      redis.call('DEL', metaKey)
+      redis.call('HSET', metaKey, 'expiresAt', addDecimalStrings(nowStr, ttl))
+      redis.call('EXPIRE', metaKey, ttl)
+    else
+      redis.call('SET', setKey, value, 'KEEPTTL')
+    end
+  else
+    local result = applyBoundedSnapshot({
+      members = {}, expires = addDecimalStrings(nowStr, ttl), accepted = 1,
+      added = tonumber(ARGV[offset + 4]), initialize = reset, replaceExpired = reset
+    }, setKey, metaKey, ttl, ARGV[offset + 2])
+    if result.err then return result end
+  end
+end
+return {1}
 LUA;
 
     private const ROTATED_SNAPSHOT = self::LUA_TIME_PRELUDE . "\n" . <<<'LUA'
 local function validBackendExpiry(value)
-  if value == nil or value == '0' then return value == '0' end
+  if type(value) ~= 'string' or value == '0' then return value == '0' end
   if string.match(value, '^[1-9]%d*$') == nil then return false end
   if #value > 16 then return false end
   if #value == 16 and value > '9223372036854775' then return false end
@@ -1189,45 +1318,88 @@ local function ensureCurrent()
   end
   return true
 end
--- The bridge's physical lifetime is min(Previous PTTL, Previous-metadata
--- PTTL, Previous authoritative remaining ms, requested ms), never rounded
--- upward. PTTL reaches Lua as a native number, which is exact only up to
--- 2^53 - 1: a value at or above that is treated as "at least 2^53" and a
--- candidate below it is exact. The authoritative-remaining and requested
--- candidates are derived from decimal strings, never from `tonumber()` of a
--- huge value. Any exact candidate is therefore provably <= every inexact
--- one, so the exact minimum is the true minimum; when every candidate is
--- inexact the lifetime cannot be bounded exactly and the whole rotation
--- fails before any Current or Bridge mutation.
+-- The bridge's physical expiry is one absolute time: the earliest of Previous's expiry, Previous-metadata's expiry, the
+-- authoritative Previous expiry and the requested lifetime, applied to the bridge's data and metadata keys with PEXPIREAT,
+-- so neither can end after any key of Previous: a relative lifetime applied at another clock reading ended the bridge 1 ms
+-- late on Redis 7.0.15. No relative expiry is ever applied to a bridge key. PEXPIRETIME and PTTL reach Lua as doubles,
+-- exact only up to 2^53 - 1. A PEXPIRETIME above that is rounded to the nearest representable value, so the true expiry
+-- is at most 1 ms below it below 2^54: its LOWER bound is the double minus 1, and bounding the bridge by a lower bound
+-- can only end it earlier, never after Previous. Above 2^54 no bound is derived. The script clock is a lower bound of
+-- `PEXPIRETIME - PTTL` taken from a key whose PTTL is exact; the remaining and requested candidates are added to it as
+-- decimal strings, never `tonumber()` of a huge value. When every PTTL is above 2^53 - 1 no exact clock exists; Previous
+-- then ends at least 2^53 ms after the clock, and the clock is read from TIME and checked against the rounded
+-- `PEXPIRETIME - PTTL` (their error is at most 1024 ms for any expiry Redis accepts): a TIME more than 5 s away from it is
+-- not trusted and the rotation is refused. The bridge's lifetime must then stay 10 s below 2^53 ms, which covers the check's
+-- tolerance, so no clock reading can carry the bridge past Previous. A bridge that cannot be bounded (no exact lifetime,
+-- one too close to 2^53, or an untrusted clock) fails the rotation before any Current or Bridge mutation.
 local exactMsMax = '9007199254740991'
+local exactMsMargin = 9007199254730991
+local twoPow54 = '18014398509481984'
 local function exactCandidate(decimal)
   if compareDecimalStrings(decimal, exactMsMax) <= 0 then return tonumber(decimal) end
   return nil
 end
-local function planBridgePttl()
+local function expiryLowerBound(at)
+  if at <= 9007199254740991 then return string.format('%.0f', at), false end
+  local text = string.format('%.0f', at)
+  if compareDecimalStrings(text, twoPow54) < 0 then return subtractDecimalStrings(text, '1'), true end
+  return nil, false
+end
+local function planBridgeExpiry()
   local previousPttl = redis.call('PTTL', KEYS[5])
   local previousMetaPttl = redis.call('PTTL', KEYS[6])
   if previousPttl <= 0 or previousMetaPttl <= 0 then return nil, 'malformed previous bounded state' end
-  local candidates = {}
-  if previousPttl <= 9007199254740991 then candidates[#candidates + 1] = previousPttl end
-  if previousMetaPttl <= 9007199254740991 then candidates[#candidates + 1] = previousMetaPttl end
+  local previousAt = redis.call('PEXPIRETIME', KEYS[5])
+  local previousMetaAt = redis.call('PEXPIRETIME', KEYS[6])
+  if previousAt <= 0 or previousMetaAt <= 0 then return nil, 'malformed previous bounded state' end
+  local previousBound, previousRounded = expiryLowerBound(previousAt)
+  local metaBound, metaRounded = expiryLowerBound(previousMetaAt)
+  local clock, clockRounded = nil, false
+  local function offer(bound, rounded, pttl)
+    if bound == nil or pttl > 9007199254740991 then return end
+    local candidate = subtractDecimalStrings(bound, string.format('%.0f', pttl))
+    if clock == nil or compareDecimalStrings(candidate, clock) > 0 then clock = candidate; clockRounded = rounded end
+  end
+  offer(previousBound, previousRounded, previousPttl)
+  offer(metaBound, metaRounded, previousMetaPttl)
   local remaining = exactCandidate(subtractDecimalStrings(prevExpiry .. '000', nowMsStr))
-  if remaining ~= nil then candidates[#candidates + 1] = remaining end
   local requested = exactCandidate(ARGV[2] .. '000')
-  if requested ~= nil then candidates[#candidates + 1] = requested end
-  if #candidates == 0 then return nil, 'rotated bridge lifetime exceeds Redis Lua exact integer range' end
-  local bridgePttl = candidates[1]
-  for _, candidate in ipairs(candidates) do if candidate < bridgePttl then bridgePttl = candidate end end
-  if bridgePttl <= 0 then return nil, 'malformed previous bounded state' end
-  return bridgePttl
+  if clock == nil then
+    local lifetimes = {}
+    if remaining ~= nil then lifetimes[#lifetimes + 1] = remaining end
+    if requested ~= nil then lifetimes[#lifetimes + 1] = requested end
+    if #lifetimes == 0 then return nil, 'rotated bridge lifetime exceeds Redis Lua exact integer range' end
+    local lifetime = lifetimes[1]
+    for _, candidate in ipairs(lifetimes) do if candidate < lifetime then lifetime = candidate end end
+    if lifetime <= 0 then return nil, 'malformed previous bounded state' end
+    if lifetime > exactMsMargin then return nil, 'rotated bridge lifetime exceeds Redis Lua exact integer range' end
+    local reading = redis.call('TIME')
+    local readingMs = tonumber(reading[1]) * 1000 + math.floor(tonumber(reading[2]) / 1000)
+    if math.abs(readingMs - (previousAt - previousPttl)) > 5000 then return nil, 'rotated bridge lifetime exceeds Redis Lua exact integer range' end
+    return {at = addDecimalStrings(string.format('%.0f', readingMs), string.format('%.0f', lifetime))}
+  end
+  local candidates = {}
+  if previousBound ~= nil then candidates[#candidates + 1] = previousBound end
+  if metaBound ~= nil then candidates[#candidates + 1] = metaBound end
+  if remaining ~= nil then candidates[#candidates + 1] = addDecimalStrings(clock, string.format('%.0f', remaining)) end
+  if requested ~= nil then candidates[#candidates + 1] = addDecimalStrings(clock, string.format('%.0f', requested)) end
+  local bridgeAt = candidates[1]
+  for _, candidate in ipairs(candidates) do if compareDecimalStrings(candidate, bridgeAt) < 0 then bridgeAt = candidate end end
+  -- A clock taken from a rounded expiry is at most 1 ms below the true clock: require that margin before the bridge ends.
+  local earliest = clockRounded and addDecimalStrings(clock, '1') or clock
+  if compareDecimalStrings(bridgeAt, earliest) <= 0 then return nil, 'malformed previous bounded state' end
+  return {at = bridgeAt}
 end
-local function ensureBridge(bridgePttl)
+local function expireBridgeKey(key, plan)
+  return redis.pcall('PEXPIREAT', key, plan.at)
+end
+local function ensureBridge(plan)
   if bridgeExists == 0 then
     bridgeExpiry = prevExpiry
     redis.call('SADD', KEYS[3], ARGV[3]); created[#created + 1] = KEYS[3]
-    if not expiryApplied(redis.pcall('PEXPIRE', KEYS[3], bridgePttl), created) then return false end
+    if not expiryApplied(expireBridgeKey(KEYS[3], plan), created) then return false end
     redis.call('HSET', KEYS[4], 'expiresAt', bridgeExpiry); created[#created + 1] = KEYS[4]
-    if not expiryApplied(redis.pcall('PEXPIRE', KEYS[4], bridgePttl), created) then return false end
+    if not expiryApplied(expireBridgeKey(KEYS[4], plan), created) then return false end
     bridgeExists = 1
   else
     redis.call('SADD', KEYS[3], ARGV[3])
@@ -1237,13 +1409,13 @@ end
 if known then
   if not ensureCurrent() then return redis.error_reply('expiry not representable') end
 elseif #members < tonumber(ARGV[5]) then
-  local bridgePttl = nil
+  local bridgePlan = nil
   if bridgeExists == 0 then
     local planError
-    bridgePttl, planError = planBridgePttl()
-    if bridgePttl == nil then return redis.error_reply(planError) end
+    bridgePlan, planError = planBridgeExpiry()
+    if bridgePlan == nil then return redis.error_reply(planError) end
   end
-  if not ensureCurrent() or not ensureBridge(bridgePttl) then return redis.error_reply('expiry not representable') end
+  if not ensureCurrent() or not ensureBridge(bridgePlan) then return redis.error_reply('expiry not representable') end
   added = true
   members[#members + 1] = ARGV[3]
 end
@@ -1252,7 +1424,7 @@ LUA;
 
     private const LEASE = self::LUA_TIME_PRELUDE . "\n" . <<<'LUA'
 local function validBackendExpiry(value)
-  return value ~= nil and string.match(value, '^[1-9]%d*$') ~= nil and string.len(value) <= 19 and (string.len(value) < 19 or value <= '9223372036854775807')
+  return type(value) == 'string' and string.match(value, '^[1-9]%d*$') ~= nil and string.len(value) <= 19 and (string.len(value) < 19 or value <= '9223372036854775807')
 end
 local current = redis.call('GET', KEYS[1])
 if current then
@@ -1275,10 +1447,10 @@ LUA;
 local lifecycleGeneration = ARGV[10] or ''
 local lifecycleId = ARGV[11] or ''
 local function validPositiveInteger(value)
-  return value ~= nil and string.match(value, '^[1-9]%d*$') ~= nil and string.len(value) <= 19 and (string.len(value) < 19 or value <= '9223372036854775807')
+  return type(value) == 'string' and string.match(value, '^[1-9]%d*$') ~= nil and string.len(value) <= 19 and (string.len(value) < 19 or value <= '9223372036854775807')
 end
 local function validPhpInteger(value)
-  if value == nil or string.match(value, '^%-?%d+$') == nil then return false end
+  if type(value) ~= 'string' or string.match(value, '^%-?%d+$') == nil then return false end
   local negative = string.sub(value, 1, 1) == '-'
   local digits = negative and string.sub(value, 2) or value
   if digits == '' or (string.len(digits) > 1 and string.sub(digits, 1, 1) == '0') or (negative and digits == '0') then return false end
@@ -1290,20 +1462,20 @@ local exactIntegerMax = 9007199254740991
 -- start/finish/scores, hard-block `expiresAt`) are canonical non-negative
 -- decimals, exact within Lua's integer range where ZSET arithmetic needs it.
 local function validExactNonNegativeInteger(value)
-  return value ~= nil and (value == '0' or (string.match(value, '^[1-9]%d*$') ~= nil and string.len(value) <= 16 and (string.len(value) < 16 or value <= '9007199254740991')))
+  return type(value) == 'string' and (value == '0' or (string.match(value, '^[1-9]%d*$') ~= nil and string.len(value) <= 16 and (string.len(value) < 16 or value <= '9007199254740991')))
 end
 local function validExactPositiveInteger(value)
-  return value ~= nil and string.match(value, '^[1-9]%d*$') ~= nil and string.len(value) <= 16 and (string.len(value) < 16 or value <= '9007199254740991')
+  return type(value) == 'string' and string.match(value, '^[1-9]%d*$') ~= nil and string.len(value) <= 16 and (string.len(value) < 16 or value <= '9007199254740991')
 end
 -- DEC-017: hard-block `expiresAt` is a Hash decimal string, not a ZSET score.
 -- It is canonical, non-negative, within the backend expiry range BLOCK_SET can
 -- create, and is only ever compared as a decimal string, never via tonumber().
 local function validHardBlockExpiry(value)
-  if value == nil or value == '0' then return value == '0' end
+  if type(value) ~= 'string' or value == '0' then return value == '0' end
   return string.match(value, '^[1-9]%d*$') ~= nil and (#value < 16 or (#value == 16 and value <= '9223372036854775'))
 end
 local function validNonNegativeInteger(value)
-  return value ~= nil and (value == '0' or (string.match(value, '^[1-9]%d*$') ~= nil and string.len(value) <= 19 and (string.len(value) < 19 or value <= '9223372036854775807')))
+  return type(value) == 'string' and (value == '0' or (string.match(value, '^[1-9]%d*$') ~= nil and string.len(value) <= 19 and (string.len(value) < 19 or value <= '9223372036854775807')))
 end
 local function compareDecimalStrings(a, b)
   if #a ~= #b then return (#a < #b) and -1 or 1 end
@@ -1400,21 +1572,22 @@ end
 -- Phase A: validate every existing structure and compute merged state without writes.
 local cyclesByMember = {}; local cycleMembers = {}
 local function readCycles(key)
-  if key == '' or redis.call('EXISTS', key) == 0 then return end
-  if redis.call('TTL', key) < 0 then error('malformed cycle history') end
-  if redis.call('ZCARD', key) == 0 then error('malformed cycle history') end
+  if key == '' or redis.call('EXISTS', key) == 0 then return true end
+  if redis.call('TTL', key) < 0 then return false end
+  if redis.call('ZCARD', key) == 0 then return false end
   for _, member in ipairs(redis.call('ZRANGE', key, 0, -1)) do
-    if not validExactNonNegativeInteger(member) then error('malformed cycle history') end
+    if not validExactNonNegativeInteger(member) then return false end
     local rawScore = redis.call('ZSCORE', key, member)
-    if not validExactNonNegativeInteger(rawScore) then error('malformed cycle history') end
+    if not validExactNonNegativeInteger(rawScore) then return false end
     local score = tonumber(rawScore); local timestamp = tonumber(member)
-    if score ~= timestamp then error('malformed cycle history') end
+    if score ~= timestamp then return false end
     if timestamp >= now - cycleWindow and cyclesByMember[member] == nil then
       cyclesByMember[member] = timestamp; cycleMembers[#cycleMembers + 1] = member
     end
   end
+  return true
 end
-readCycles(KEYS[1]); readCycles(KEYS[2])
+if not readCycles(KEYS[1]) or not readCycles(KEYS[2]) then return redis.error_reply('malformed cycle history') end
 local active = false
 local currentLiveLevel = nil; local currentLiveExpires = nil
 for _, blockKey in ipairs({KEYS[3], KEYS[4]}) do
@@ -1443,21 +1616,22 @@ if cycleCount > 0 and latestCycle > exactIntegerMax - cycleWindow then return re
 
 local pausesByMember = {}; local pauseMembers = {}
 local function readPauses(key)
-  if key == '' or redis.call('EXISTS', key) == 0 then return end
-  if redis.call('TTL', key) < 0 then error('malformed pause history') end
+  if key == '' or redis.call('EXISTS', key) == 0 then return true end
+  if redis.call('TTL', key) < 0 then return false end
   for _, member in ipairs(redis.call('ZRANGE', key, 0, -1)) do
     local sep = string.find(member, ':')
-    if not sep then error('malformed pause history') end
+    if not sep then return false end
     local startStr = string.sub(member, 1, sep - 1); local finishStr = string.sub(member, sep + 1)
-    if not validExactNonNegativeInteger(startStr) or not validExactNonNegativeInteger(finishStr) then error('malformed pause history') end
+    if not validExactNonNegativeInteger(startStr) or not validExactNonNegativeInteger(finishStr) then return false end
     local rawScore = redis.call('ZSCORE', key, member)
-    if not validExactNonNegativeInteger(rawScore) then error('malformed pause history') end
+    if not validExactNonNegativeInteger(rawScore) then return false end
     local start = tonumber(startStr); local finish = tonumber(finishStr); local score = tonumber(rawScore)
-    if finish < start or score ~= start then error('malformed pause history') end
+    if finish < start or score ~= start then return false end
     if finish > now - retention and pausesByMember[member] == nil then pausesByMember[member] = {start, finish}; pauseMembers[#pauseMembers + 1] = member end
   end
+  return true
 end
-readPauses(KEYS[5]); readPauses(KEYS[6])
+if not readPauses(KEYS[5]) or not readPauses(KEYS[6]) then return redis.error_reply('malformed pause history') end
 local pauseUntil = 0; local latestPauseUntil = 0
 for _, member in ipairs(pauseMembers) do
   local finish = pausesByMember[member][2]; latestPauseUntil = math.max(latestPauseUntil, finish)
@@ -1522,7 +1696,7 @@ local retention = 86400
 -- start/finish/scores, hard-block `expiresAt`) are canonical non-negative
 -- decimals, exact within Lua's integer range where ZSET arithmetic needs it.
 local function validExactNonNegativeInteger(value)
-  return value ~= nil and (value == '0' or (string.match(value, '^[1-9]%d*$') ~= nil and string.len(value) <= 16 and (string.len(value) < 16 or value <= '9007199254740991')))
+  return type(value) == 'string' and (value == '0' or (string.match(value, '^[1-9]%d*$') ~= nil and string.len(value) <= 16 and (string.len(value) < 16 or value <= '9007199254740991')))
 end
 if not validExactNonNegativeInteger(ARGV[2]) then return redis.error_reply('caller time is not representable') end
 if not validExactNonNegativeInteger(ARGV[1]) then return redis.error_reply('caller from-timestamp is not representable') end
@@ -1532,21 +1706,22 @@ if from > 0 and now < -exactIntegerMax + from then return redis.error_reply('ela
 if from < 0 and now > exactIntegerMax + from then return redis.error_reply('elapsed interval is not representable') end
 local intervals = {}
 local function read(source)
-  if source == '' or redis.call('EXISTS', source) == 0 then return end
-  if redis.call('TTL', source) < 0 then error('malformed pause history') end
+  if source == '' or redis.call('EXISTS', source) == 0 then return true end
+  if redis.call('TTL', source) < 0 then return false end
   for _, member in ipairs(redis.call('ZRANGE', source, 0, -1)) do
     local sep = string.find(member, ':')
-    if not sep then error('malformed pause history') end
+    if not sep then return false end
     local startStr = string.sub(member, 1, sep - 1); local finishStr = string.sub(member, sep + 1)
-    if not validExactNonNegativeInteger(startStr) or not validExactNonNegativeInteger(finishStr) then error('malformed pause history') end
+    if not validExactNonNegativeInteger(startStr) or not validExactNonNegativeInteger(finishStr) then return false end
     local rawScore = redis.call('ZSCORE', source, member)
-    if not validExactNonNegativeInteger(rawScore) then error('malformed pause history') end
+    if not validExactNonNegativeInteger(rawScore) then return false end
     local start = tonumber(startStr); local finish = tonumber(finishStr); local score = tonumber(rawScore)
-    if finish < start or score ~= start then error('malformed pause history') end
+    if finish < start or score ~= start then return false end
     if finish > now - retention then intervals[#intervals + 1] = {start, finish} end
   end
+  return true
 end
-read(KEYS[3]); read(KEYS[4])
+if not read(KEYS[3]) or not read(KEYS[4]) then return redis.error_reply('malformed pause history') end
 table.sort(intervals, function(left, right) return left[1] < right[1] or (left[1] == right[1] and left[2] < right[2]) end)
 local elapsed = 0; local active = 0; local mergedStart = nil; local mergedEnd = nil
 for _, interval in ipairs(intervals) do
@@ -1575,12 +1750,19 @@ LUA;
      * (a direct Host call of an existing contract method): it defaults to
      * `SystemClock(UTC)`, never Redis `TIME` (#153 phase 2, LT-P2-06). The
      * runtime always passes its own `now` through the caller-time methods.
+     *
+     * `$requestRetryBudgetMilliseconds` bounds the wall time a request evaluated through `transactRequest()` may spend
+     * recalculating after its first conflict (DEC-037); a request always gets a second evaluation.
      */
     public function __construct(
         private readonly RedisCommandExecutorInterface $redis,
         private readonly string $namespace,
         ?ClockInterface $clock = null,
+        private readonly int $requestRetryBudgetMilliseconds = self::DEFAULT_REQUEST_RETRY_BUDGET_MILLISECONDS,
     ) {
+        if ($requestRetryBudgetMilliseconds < 1) {
+            throw new RateLimiterException('The request retry budget must be at least one millisecond.');
+        }
         if (! preg_match('/\A[A-Za-z0-9._:-]{1,128}\z/D', $namespace)) {
             throw new RateLimiterException('Redis namespace contains invalid characters or length.');
         }
@@ -1833,6 +2015,285 @@ LUA;
         return $this->snapshot($result, $item, 'bounded snapshot');
     }
 
+    /**
+     * Observe two independent, non-rotating device-cap scopes after validating both.
+     *
+     * @return array{BoundedDistinctSnapshotDTO, BoundedDistinctSnapshotDTO}
+     */
+    public function addDeviceCapPairAt(
+        string $accountKey,
+        string $accountMember,
+        int $accountCapacity,
+        string $sourceKey,
+        string $sourceMember,
+        int $sourceCapacity,
+        int $ttl,
+        int $now,
+    ): array {
+        return $this->commitBoundedObservationGroup(function () use (
+            $accountKey,
+            $accountMember,
+            $accountCapacity,
+            $sourceKey,
+            $sourceMember,
+            $sourceCapacity,
+            $ttl,
+            $now,
+        ): array {
+            [$account, $source, $plan] = $this->readDeviceCapPairPlanAt(
+                $accountKey,
+                $accountMember,
+                $accountCapacity,
+                $sourceKey,
+                $sourceMember,
+                $sourceCapacity,
+                $ttl,
+                $now,
+            );
+
+            return [[$account, $source], [$plan]];
+        });
+    }
+
+    /**
+     * Read and plan the two device-cap observations without updating Redis.
+     * The returned commit operation applies both only if their observed state still matches.
+     *
+     * @internal
+     * @return array{BoundedDistinctSnapshotDTO, BoundedDistinctSnapshotDTO, \Closure(): bool}
+     */
+    public function prepareDeviceCapPairAt(
+        string $accountKey,
+        string $accountMember,
+        int $accountCapacity,
+        string $sourceKey,
+        string $sourceMember,
+        int $sourceCapacity,
+        int $ttl,
+        int $now,
+    ): array {
+        [$account, $source, $plan] = $this->readDeviceCapPairPlanAt(
+            $accountKey,
+            $accountMember,
+            $accountCapacity,
+            $sourceKey,
+            $sourceMember,
+            $sourceCapacity,
+            $ttl,
+            $now,
+        );
+
+        return [$account, $source, fn(): bool => $this->commitDeviceCapPlans([$plan])];
+    }
+
+    /**
+     * Prepare a device-cap pair that can be committed together with other independent pairs.
+     *
+     * @internal
+     * @return array{BoundedDistinctSnapshotDTO, BoundedDistinctSnapshotDTO, array{keys: list<string>, writes: list<int|string>, state: list<int|string|float>, now: int}}
+     */
+    public function readDeviceCapPairPlanAt(
+        string $accountKey,
+        string $accountMember,
+        int $accountCapacity,
+        string $sourceKey,
+        string $sourceMember,
+        int $sourceCapacity,
+        int $ttl,
+        int $now,
+    ): array {
+        $this->positive($ttl, 'Correlation TTL');
+        $this->positive($accountCapacity, 'Account capacity');
+        $this->positive($sourceCapacity, 'Source capacity');
+        if ($accountKey === $sourceKey) {
+            throw new RateLimiterException('Device-cap observation scopes must be distinct.');
+        }
+
+        $keys = [
+            $this->key('distinct', $accountKey),
+            $this->key('distinct-meta', $accountKey),
+            $this->key('distinct', $sourceKey),
+            $this->key('distinct-meta', $sourceKey),
+        ];
+        $now = $this->callerTime($now);
+        $read = $this->eval(self::DEVICE_CAP_PAIR_READ, $keys, [$accountCapacity, $sourceCapacity, $now]);
+        if (! is_array($read) || ! array_is_list($read) || count($read) !== 3) {
+            throw new RateLimiterException('Malformed device-cap pair state response.');
+        }
+        $state = $this->tuple($read[0], 8, 'device-cap pair state');
+        if (count($state) !== 8) {
+            throw new RateLimiterException('Malformed device-cap pair state response.');
+        }
+        [$account, $initializeAccount] = $this->planDeviceCapObservation($read[1], $accountMember, $accountCapacity, $ttl, $now);
+        [$source, $initializeSource] = $this->planDeviceCapObservation($read[2], $sourceMember, $sourceCapacity, $ttl, $now);
+        return [$account, $source, [
+            'keys' => $keys,
+            'writes' => [
+                $ttl, $accountMember, (int) $initializeAccount, (int) $account->added, 'bounded',
+                $ttl, $sourceMember, (int) $initializeSource, (int) $source->added, 'bounded',
+            ],
+            'state' => $state,
+            'now' => $now,
+        ]];
+    }
+
+    /**
+     * Prepare a non-rotating bounded observation using the same commit format as device-cap pairs.
+     *
+     * @internal
+     * @return array{BoundedDistinctSnapshotDTO, array{keys: list<string>, writes: list<int|string>, state: list<int|string|float>, now: int}}
+     */
+    public function readBoundedObservationPlanAt(string $key, string $member, int $capacity, int $ttl, int $now): array
+    {
+        $this->positive($ttl, 'Correlation TTL');
+        $this->positive($capacity, 'Correlation capacity');
+        $now = $this->callerTime($now);
+        $keys = [$this->key('distinct', $key), $this->key('distinct-meta', $key)];
+        $read = $this->eval(self::BOUNDED_OBSERVATION_READ, $keys, [$capacity, $now]);
+        if (! is_array($read) || ! array_is_list($read) || count($read) !== 2) {
+            throw new RateLimiterException('Malformed bounded observation plan response.');
+        }
+        $state = $this->tuple($read[0], 4, 'bounded observation state');
+        if (count($state) !== 4) {
+            throw new RateLimiterException('Malformed bounded observation state response.');
+        }
+        [$observation, $initialize] = $this->planDeviceCapObservation($read[1], $member, $capacity, $ttl, $now);
+
+        return [$observation, [
+            'keys' => $keys,
+            'writes' => [$ttl, $member, (int) $initialize, (int) $observation->added, 'bounded'],
+            'state' => $state,
+            'now' => $now,
+        ]];
+    }
+
+    /**
+     * Plan a non-rotating watch increment from a validated snapshot.
+     *
+     * @internal
+     * @return array{int, array{keys: list<string>, writes: list<int|string>, state: list<int|string|float>, now: int}}
+     */
+    public function readWatchObservationPlanAt(string $key, int $ttl, int $now): array
+    {
+        $this->positive($ttl, 'Watch TTL');
+        $now = $this->callerTime($now);
+        $keys = [$this->key('watch', $key), $this->key('watch-meta', $key)];
+        $read = $this->eval(self::WATCH_OBSERVATION_READ, $keys, [$now]);
+        if (! is_array($read) || ! array_is_list($read) || count($read) !== 3) {
+            throw new RateLimiterException('Malformed watch observation plan response.');
+        }
+        $state = $this->tuple($read[0], 4, 'watch observation state');
+        if (count($state) !== 4) {
+            throw new RateLimiterException('Malformed watch observation state response.');
+        }
+        $initialize = $read[1] === '' || $this->integerValue($read[1], 'watch expiry') <= $now;
+        $value = $initialize ? 1 : $this->tryIntegerAddition($this->integerValue($read[2], 'watch count'), 1);
+        if ($value === null) {
+            throw new RateLimiterException('watch count overflow');
+        }
+        if ($initialize && $this->tryIntegerAddition($now, $ttl) === null) {
+            throw new RateLimiterException('Watch expiry is not representable.');
+        }
+
+        return [$value, [
+            'keys' => $keys,
+            'writes' => [$ttl, (string) $value, (int) $initialize, 1, 'watch'],
+            'state' => $state,
+            'now' => $now,
+        ]];
+    }
+
+    /**
+     * Evaluate a read-only group and commit the resulting bounded observation plans once.
+     * The callback must be safe to repeat and must not perform writes or emit signals.
+     *
+     * @internal
+     * @template T
+     * @param callable(): array{T, list<array{keys: list<string>, writes: list<int|string>, state: list<int|string|float>, now: int}>} $evaluate
+     * @return T
+     */
+    public function commitBoundedObservationGroup(callable $evaluate): mixed
+    {
+        for ($attempt = 0; $attempt < 3; $attempt++) {
+            [$result, $plans] = $evaluate();
+            if ($this->commitDeviceCapPlans($plans)) {
+                return $result;
+            }
+        }
+
+        throw new RateLimiterException('Bounded observation state changed before commit.');
+    }
+
+    /**
+     * Commit plans with disjoint keys and a shared request clock.
+     *
+     * @internal
+     * @param list<array{keys: list<string>, writes: list<int|string>, state: list<int|string|float>, now: int}> $plans
+     */
+    public function commitDeviceCapPlans(array $plans): bool
+    {
+        if ($plans === []) {
+            return true;
+        }
+
+        $now = $plans[0]['now'];
+        $keys = [];
+        $writes = [];
+        $state = [];
+        foreach ($plans as $plan) {
+            if ($plan['now'] !== $now) {
+                throw new RateLimiterException('Device-cap plans must share the same request time.');
+            }
+            array_push($keys, ...$plan['keys']);
+            array_push($writes, ...$plan['writes']);
+            array_push($state, ...$plan['state']);
+        }
+        if (count(array_unique($keys)) !== count($keys)) {
+            throw new RateLimiterException('Device-cap plans must use disjoint keys.');
+        }
+
+        $result = $this->eval(self::DEVICE_CAP_COMMIT, $keys, [...$writes, ...$state, $now]);
+        if ($result === []) {
+            return false;
+        }
+        if ($result !== [1] && $result !== ['1']) {
+            throw new RateLimiterException('Malformed device-cap snapshot pair response.');
+        }
+
+        return true;
+    }
+
+    /** @return array{BoundedDistinctSnapshotDTO, bool} */
+    private function planDeviceCapObservation(mixed $reply, string $member, int $capacity, int $ttl, int $now): array
+    {
+        $state = $this->tuple($reply, 1, 'device-cap observation');
+        $expiresAt = $state[0] === '' ? null : $this->integerValue($state[0], 'device-cap expiry');
+        $initialize = $expiresAt === null || $expiresAt <= $now;
+        if ($initialize) {
+            $expiresAt = $this->tryIntegerAddition($now, $ttl);
+            if ($expiresAt === null) {
+                throw new RateLimiterException('Device-cap expiry is not representable.');
+            }
+
+            return [$this->snapshot([1, 1, 1, $expiresAt, $member], $member, 'device-cap snapshot'), true];
+        }
+
+        $members = array_map('strval', array_slice($state, 1));
+        if (count($members) > $capacity) {
+            throw new RateLimiterException('malformed bounded state');
+        }
+        $present = in_array($member, $members, true);
+        $added = ! $present && count($members) < $capacity;
+        if ($added) {
+            $members[] = $member;
+        }
+        sort($members, SORT_STRING);
+
+        return [$this->snapshot([
+            count($members), (int) ($present || $added), (int) $added, $expiresAt, ...$members,
+        ], $member, 'device-cap snapshot'), false];
+    }
+
     public function addDistinctAcrossRotation(string $currentKey, string $bridgeKey, string $previousKey, string $currentMember, string $previousMember, int $ttlSeconds): int
     {
         return $this->addDistinctAcrossRotationAt($currentKey, $bridgeKey, $previousKey, $currentMember, $previousMember, $ttlSeconds, $this->fallbackNowMilliseconds());
@@ -1881,9 +2342,9 @@ LUA;
         $script = self::LUA_TIME_PRELUDE . "\n" . <<<'LUA'
 local previousText = '0'
 -- #185 F-185-13: a watch count is a canonical non-negative integer ('0' or no leading zero); the store writes no other form.
-local function canonicalCount(text) return text == '0' or string.match(text, '^[1-9]%d*$') ~= nil end
+local function canonicalCount(text) return type(text) == 'string' and (text == '0' or string.match(text, '^[1-9]%d*$') ~= nil) end
 local function validBackendExpiry(value)
-  if value == nil or value == '0' then return value == '0' end
+  if type(value) ~= 'string' or value == '0' then return value == '0' end
   if string.match(value, '^[1-9]%d*$') == nil then return false end
   if #value > 16 then return false end
   if #value == 16 and value > '9223372036854775' then return false end
@@ -1996,6 +2457,12 @@ LUA;
             throw new RateLimiterException('Circuit-breaker timestamps must be non-negative Unix timestamps.');
         }
         $raw = json_encode($state, JSON_THROW_ON_ERROR);
+        if ($this->requestState !== null) {
+            // T-5: inside a request the write is held back and saved with it.
+            $this->eval("redis.call('SET', KEYS[1], ARGV[1])\nreturn 1", [$this->key('circuit', $policyName)], [$raw]);
+
+            return;
+        }
         $this->command(['SET', $this->key('circuit', $policyName), $raw]);
     }
 
@@ -2320,7 +2787,25 @@ LUA;
 
     private function admission(): RedisAdmissionOperations
     {
-        return $this->admission ??= new RedisAdmissionOperations($this->redis, $this->namespace);
+        // The admission scripts go through the same request overlay as the store scripts while a request is held.
+        return $this->admission ??= new RedisAdmissionOperations(
+            new CallableRedisCommandExecutor(fn(array $command): mixed => $this->executeInRequestWhenHeld($command)),
+            $this->namespace,
+        );
+    }
+
+    /**
+     * @param non-empty-list<int|string|float> $command
+     */
+    private function executeInRequestWhenHeld(array $command): mixed
+    {
+        if ($this->requestState === null || $command[0] !== 'EVAL' || ! is_string($command[1] ?? null) || ! is_int($command[2] ?? null)) {
+            return $this->command($command);
+        }
+        $keys = array_map('strval', array_slice($command, 3, $command[2]));
+        $args = array_slice($command, 3 + $command[2]);
+
+        return $this->evalInRequest($command[1], $keys, $args);
     }
 
     /**
@@ -2382,9 +2867,185 @@ LUA;
      */
     private function eval(string $script, array $keys, array $args): mixed
     {
+        if ($this->requestState !== null) {
+            return $this->evalInRequest($script, $keys, $args);
+        }
         /** @var non-empty-list<int|string|float> $command */
         $command = array_merge(['EVAL', $script, count($keys)], $keys, $args);
         return $this->command($command);
+    }
+
+    public function transactRequest(callable $evaluate): mixed
+    {
+        if ($this->requestState !== null) {
+            return $evaluate();
+        }
+
+        $retryingSince = null;
+        for ($attempt = 0; $attempt < self::REQUEST_ATTEMPTS; $attempt++) {
+            if ($retryingSince !== null && $attempt > 1 && $this->retryBudgetSpent($retryingSince)) {
+                break;
+            }
+            $this->requestState = [];
+            $this->requestBackendFailure = null;
+            try {
+                $result = $evaluate();
+                $lost = $this->lostBackend();
+                if ($lost !== null) {
+                    // A step lost the backend and went on without it (the circuit breaker keeps its own state in
+                    // memory then): what the request holds is incomplete, so none of it is saved.
+                    throw $lost;
+                }
+                $state = $this->heldRequestState();
+            } catch (BackendFailureException $exception) {
+                throw $exception;
+            } catch (\Throwable $exception) {
+                $state = $this->heldRequestState();
+                $this->requestState = null;
+                // A step that read keys at different moments can see a combination no single moment held and
+                // report it as malformed. Only an error over state that is still current is the request's answer.
+                if ($state !== [] && ! $this->requestStateIsCurrent($state)) {
+                    $retryingSince ??= (int) hrtime(true);
+                    $this->backOff($attempt);
+                    continue;
+                }
+
+                throw $exception;
+            } finally {
+                $this->requestState = null;
+            }
+            if ($this->commitRequest($state)) {
+                return $result;
+            }
+            $retryingSince ??= (int) hrtime(true);
+            $this->backOff($attempt);
+        }
+
+        throw new RateLimitConcurrencyException('Request state kept changing; the request was not saved.');
+    }
+
+    /**
+     * Run one store script against the request overlay: no write reaches Redis,
+     * and the changed or newly read key states are kept for the next step.
+     *
+     * @param list<string> $keys
+     * @param list<int|string|float> $args
+     */
+    private function evalInRequest(string $script, array $keys, array $args): mixed
+    {
+        $held = [];
+        foreach (array_unique($keys) as $key) {
+            if (isset($this->requestState[$key])) {
+                $held[] = [$key, $this->requestState[$key]];
+            }
+        }
+        /** @var non-empty-list<int|string|float> $command */
+        $command = array_merge(
+            ['EVAL', RedisRequestOverlay::wrap($script), count($keys)],
+            $keys,
+            $args,
+            [json_encode($held, JSON_THROW_ON_ERROR)],
+        );
+        try {
+            $reply = $this->command($command);
+        } catch (BackendFailureException $exception) {
+            $this->requestBackendFailure ??= $exception;
+
+            throw $exception;
+        }
+        if (! is_array($reply) || ! array_is_list($reply) || $reply === [] || ! is_string($reply[0])) {
+            throw new RateLimiterException('Malformed request overlay response.');
+        }
+        $changes = json_decode($reply[0], true, 512, JSON_THROW_ON_ERROR);
+        if (! is_array($changes)) {
+            throw new RateLimiterException('Malformed request overlay changes.');
+        }
+        foreach ($changes as $change) {
+            if (! is_array($change) || ! isset($change[0], $change[1]) || ! is_string($change[0]) || ! is_string($change[1])) {
+                throw new RateLimiterException('Malformed request overlay change.');
+            }
+            $this->requestState[$change[0]] = $change[1];
+        }
+
+        return $reply[1] ?? null;
+    }
+
+    /** T-5: read through a method because steps of the evaluation set it behind the caller's back. */
+    private function lostBackend(): ?BackendFailureException
+    {
+        return $this->requestBackendFailure;
+    }
+
+    /** @return array<string, string> */
+    private function heldRequestState(): array
+    {
+        return $this->requestState ?? [];
+    }
+
+    /**
+     * Pause a random moment before a request is calculated again, so requests that conflicted do not conflict again
+     * in step. The pause grows with the attempt up to 16 ms.
+     */
+    private function backOff(int $attempt): void
+    {
+        usleep(random_int(0, 500 * (1 << min($attempt, 5))));
+    }
+
+    private function retryBudgetSpent(int $startedAt): bool
+    {
+        return (hrtime(true) - $startedAt) / 1_000_000 >= $this->requestRetryBudgetMilliseconds;
+    }
+
+    /**
+     * Whether every key the request read still matches the state it was read in. Writes nothing.
+     *
+     * @param array<string, string> $state
+     */
+    private function requestStateIsCurrent(array $state): bool
+    {
+        $held = [];
+        foreach ($state as $key => $json) {
+            $held[] = [$key, $json];
+        }
+        $result = $this->eval(RedisRequestOverlay::commitScript(), array_map('strval', array_keys($state)), [json_encode($held, JSON_THROW_ON_ERROR), 'verify']);
+
+        return $result === 1 || $result === '1';
+    }
+
+    /**
+     * Save a finished request. Nothing is sent when no key changed; otherwise
+     * one script compares every key the request read and applies every change
+     * only if none of them moved.
+     *
+     * @param array<string, string> $state
+     */
+    private function commitRequest(array $state): bool
+    {
+        $changed = false;
+        foreach ($state as $json) {
+            $entry = json_decode($json, true, 512, JSON_THROW_ON_ERROR);
+            if (is_array($entry) && ($entry['d'] ?? 0) === 1) {
+                $changed = true;
+                break;
+            }
+        }
+        if (! $changed) {
+            return true;
+        }
+
+        $held = [];
+        foreach ($state as $key => $json) {
+            $held[] = [$key, $json];
+        }
+        $result = $this->eval(RedisRequestOverlay::commitScript(), array_map('strval', array_keys($state)), [json_encode($held, JSON_THROW_ON_ERROR)]);
+        if ($result === 1 || $result === '1') {
+            return true;
+        }
+        if ($result === 0 || $result === '0') {
+            return false;
+        }
+
+        throw new RateLimiterException('Malformed request commit response.');
     }
 
     /**
