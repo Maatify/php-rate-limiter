@@ -670,5 +670,5 @@ recorded twice. A false one-shot claim is an
 expected non-error result: it does not consume evidence, create a backend
 failure, or trip the circuit. Missing lifecycle capability, malformed state,
 and atomic Redis failures are explicit integration failures and must not fall
-back to non-atomic publication. Stale, mismatched, expired, or block-suppressed
+back to non-atomic publication. Under DEC-037, a classified cycle-history error in the Redis request evaluation discards its held writes. An independent admission outcome claim already saved under DEC-036 is retained. Stores that do not support request atomicity retain their sequential behavior (F-185-40). Stale, mismatched, expired, or block-suppressed
 evidence is treated as absent.

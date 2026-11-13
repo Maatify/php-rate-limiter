@@ -68,6 +68,18 @@ two hours). The Owner decided (LT-185-30 (b)) that all admission window mechanis
    - **DEC-025 Decisions 1.4, 3.1, 8.2:** The phrasing "per window" and "per day" is amended to continuous sliding windows of duration `W` (600 s) and `DAY` (86400 s). All numerical constants (`W=600`, `F=4`, `U_src=24`, `P_acct=10/60`, `P_proof=6/30`, `N_P=10`) remain unchanged.
    - **DEC-028 Clause 2:** The package constants are applied through sliding windows of duration `W` (600 s) and `DAY` (86400 s). Timing constants (`D=30`, `G=600`) remain unchanged.
 
+### Correction Note on Clause 5 and Relationship (2026-11-10, F-185-33, PR-Q)
+
+Under Decision Governance Standard §9, an ACTIVE decision changes only through a new durable decision record that supersedes it in full. Clause 5 above and the line "Amends DEC-025 and DEC-028" were procedural mischaracterizations: DEC-033 does not amend DEC-025 or DEC-028 directly. DEC-034 and DEC-035 propose full replacements. DEC-025 and DEC-028 remain ACTIVE until an authorized activation. DEC-033 remains ACTIVE as the authority for the sliding window mechanism, key strategy, and ZSET accounting structures.
+
+### Correction Note on Failure Set Caps Under Concurrency (2026-11-10, F-185-37, PR-Q)
+
+Failure sets (`ufail`, `pfail`) count recorded failure outcomes (`applyOutcome`), not in-flight reservations. Cap `F` (4) governs admission decisions on subsequent requests; it does not retroactively cancel or bound in-flight permits issued prior to recording a failure. The statements in §2 ("the member count of any key never exceeds its cap") and in the Consequences section ("strictly capped at capacity across any continuous sliding interval: `ufail`/`pfail` 4") are qualified by this concurrency boundary: under concurrent in-flight requests the U-lane admits at most `source_capacity = 24` reservations and refuses the rest with `source_capacity` (public Redis test `AdmissionPublicRuntimeRedisTest::testUnknownLaneSourceCapacityUnderParallelPublicChecks`: 24 admitted, 36 refused of 60, at `18fec12`; see `investigations/admission-concurrency-185/RESULTS.md`). That test does not measure how many accounts accumulate in `ufail` after outcomes are recorded, so no `ufail` accumulation figure is claimed here. The failure cap for lane P applies after outcomes are recorded. The pending-permit limit and its verification are tracked separately in [#206](https://github.com/Maatify/php-rate-limiter/issues/206). Settling is opt-in and disabled by default (5-b2.2).
+
+### Correction Note on TMS Acronym (2026-11-10, F-185-42, PR-Q)
+
+The expansion "Target Metric Score (TMS)" in the Consequences section is an erroneous expansion: `TMS` designates the `trusted-multi-session` study family from `#113` (`investigations/trusted-multi-session-s0/`), not "Target Metric Score".
+
 ## Rationale
 
 - **Uniform sliding behavior:** Prevents boundary double-bursting across both short (600 s) and daily (86400 s) horizons.
