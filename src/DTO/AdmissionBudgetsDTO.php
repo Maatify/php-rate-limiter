@@ -25,6 +25,13 @@ use Maatify\RateLimiter\Exception\RateLimiterException;
  */
 final readonly class AdmissionBudgetsDTO
 {
+    /**
+     * The supported range of the proven pending-permit limit is 1 to this value (#206, DEC-038): the largest integer that Lua and
+     * Redis represent exactly (2^53 - 1), which is also the largest scope capacity the Redis admission store accepts and the
+     * largest value the registered shared configuration can hold. One constant for the builder, the DTOs and the store.
+     */
+    public const PROVEN_PENDING_PERMIT_LIMIT_MAX = 9007199254740991;
+
     public function __construct(
         public int $windowSeconds,
         public int $sourceCapacity,
@@ -60,8 +67,8 @@ final readonly class AdmissionBudgetsDTO
                 throw new RateLimiterException("Admission budget {$label} must be a positive integer.");
             }
         }
-        if ($provenPendingPermitCap !== null && $provenPendingPermitCap < 1) {
-            throw new RateLimiterException('Admission proven-lane pending permit cap must be a positive integer or null.');
+        if ($provenPendingPermitCap !== null && ($provenPendingPermitCap < 1 || $provenPendingPermitCap > self::PROVEN_PENDING_PERMIT_LIMIT_MAX)) {
+            throw new RateLimiterException('Admission proven-lane pending permit cap must be null or an integer from 1 to ' . self::PROVEN_PENDING_PERMIT_LIMIT_MAX . '.');
         }
         if ($permitGraceSeconds < 0) {
             throw new RateLimiterException('Admission permit grace must not be negative.');

@@ -6,6 +6,7 @@ namespace Maatify\RateLimiter\Tests\Integration\Store;
 
 use Maatify\RateLimiter\Command\RateLimitCommand;
 use Maatify\RateLimiter\Config\RateLimiterConfig;
+use Maatify\RateLimiter\DTO\AdmissionBudgetsDTO;
 use Maatify\RateLimiter\DTO\AdmissionCredentialDTO;
 use Maatify\RateLimiter\DTO\RateLimitContextDTO;
 use Maatify\RateLimiter\DTO\RateLimitResultDTO;
@@ -218,6 +219,29 @@ final class AdmissionSharedConfigRedisTest extends AdmissionRedisGateTestCase
         self::assertSame(self::CAUSE, self::causeOf($this->check($new, 'n3')));
         self::assertSame(2, $this->pendingMembers(), 'the counter shows 2 while 4 more permits are still outstanding');
         self::assertNotSame('permit_late', self::causeOf($this->settle($new, 'o1', $offPermits['o1'], true)), 'an off permit is still accepted: the limit does not yet bound the real pending count');
+    }
+
+    public function testTheSupportedMaximumRegistersTheSharedConfigurationAndTwoWorkersReserveAgainstIt(): void
+    {
+        $max = AdmissionBudgetsDTO::PROVEN_PENDING_PERMIT_LIMIT_MAX;
+        $a = $this->worker($max);
+        $b = $this->worker($max);
+        $this->open($a);
+
+        self::assertTrue($this->check($a, 'max-1')->isAllowed(), 'the maximum registers the shared configuration and reserves');
+        $keys = $this->raw('KEYS', '*:cfg:*');
+        self::assertIsArray($keys);
+        self::assertCount(1, $keys);
+        $key = array_values($keys)[0];
+        self::assertIsString($key);
+        self::assertSame((string) $max, $this->raw('GET', $key), 'the registered value is the exact maximum');
+
+        self::assertTrue($this->check($b, 'max-2')->isAllowed(), 'a second worker with the same value reserves against the same configuration');
+        self::assertSame(2, $this->pendingMembers(), 'both reservations are counted against the one source counter');
+
+        // The comparison is exact at this magnitude: one below the maximum is a different value.
+        $this->expectException(AdmissionConfigurationException::class);
+        $this->check($this->worker($max - 1), 'max-3');
     }
 
     public function testTheRegistrationSurvivesAKeyRotation(): void

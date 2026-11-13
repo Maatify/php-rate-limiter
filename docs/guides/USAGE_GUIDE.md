@@ -384,7 +384,9 @@ Outputs and duties:
   `source_capacity`, `source_failure_cap`, `account_bucket`, `proof_capacity`, `new_device_cap`,
   `source_proof_failure_cap` and, only when the option below is set, `source_pending_permits`.
 * **Pending proven permits per source (optional, #206)**: `RateLimiterBuilder::withProvenPendingPermitLimit(int $limit)`
-  bounds how many proven-lane permits each source holds at once. The limit applies to every source of the budget group
+  bounds how many proven-lane permits each source holds at once. The supported range is 1 to 9007199254740991 (2^53 − 1,
+  the largest integer Lua and Redis represent exactly); the method rejects any other value (0, a negative, or above the maximum, `PHP_INT_MAX`
+  included) before `build()` and before any Redis access. The limit applies to every source of the budget group
   independently, not to the group as a whole: with a limit of two, two distinct sources may each hold two pending permits. A permit holds one slot from its reservation until its outcome
   is claimed (success or failure) or its deadline (30 s) passes; a request that would exceed `$limit` is refused with the
   cause `source_pending_permits` and writes nothing. The slot is released once: a repeated outcome of the same permit is

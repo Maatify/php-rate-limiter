@@ -23,8 +23,8 @@ final readonly class AdmissionSharedConfigDTO
         if (trim($key) === '' || ($previousKey !== null && trim($previousKey) === '')) {
             throw new RateLimiterException('Admission shared configuration keys must not be blank.');
         }
-        if ($value !== self::OFF && preg_match('/\A[1-9][0-9]{0,15}\z/', $value) !== 1) {
-            throw new RateLimiterException('Admission shared configuration value must be "off" or a positive integer.');
+        if ($value !== self::OFF && (preg_match('/\A[1-9][0-9]{0,15}\z/', $value) !== 1 || (int) $value > AdmissionBudgetsDTO::PROVEN_PENDING_PERMIT_LIMIT_MAX)) {
+            throw new RateLimiterException('Admission shared configuration value must be "off" or an integer from 1 to ' . AdmissionBudgetsDTO::PROVEN_PENDING_PERMIT_LIMIT_MAX . '.');
         }
     }
 

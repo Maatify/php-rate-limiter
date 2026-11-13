@@ -12,6 +12,7 @@ use Maatify\RateLimiter\Config\LoginProtectionPolicy;
 use Maatify\RateLimiter\Config\PostPunishmentReentryPolicyInterface;
 use Maatify\RateLimiter\Config\RateLimiterConfig;
 use Maatify\RateLimiter\DTO\AdmissionBudgetsDTO;
+use Maatify\RateLimiter\DTO\AdmissionSharedConfigDTO;
 use Maatify\RateLimiter\DTO\RateLimitResultDTO;
 use Maatify\RateLimiter\Enum\AdmissionHostModeEnum;
 use Maatify\RateLimiter\Enum\PolicyCapabilityEnum;
@@ -29,6 +30,7 @@ use Maatify\RateLimiter\Tests\Support\Admission\EngineLab;
 use Maatify\RateLimiter\Tests\Support\Clock\FixedClock;
 use Maatify\RateLimiter\Tests\Support\FailureSignal\RecordingFailureSignalEmitter;
 use Maatify\RateLimiter\Tests\Support\FullCapability\FullCapabilityInMemoryStore;
+use PHPUnit\Framework\Attributes\DataProvider;
 use PHPUnit\Framework\Attributes\Group;
 use PHPUnit\Framework\TestCase;
 
@@ -221,18 +223,57 @@ final class AdmissionBuilderActivationTest extends TestCase
         self::assertSame(3, self::budgetsOf($supportedAdmission)['provenPendingPermitCap']);
     }
 
-    public function testThePendingPermitLimitMustBePositive(): void
+    /** @return iterable<string, array{int, bool}> */
+    public static function pendingLimitRange(): iterable
     {
-        foreach ([0, -1] as $limit) {
+        yield 'zero' => [0, false];
+        yield 'negative' => [-1, false];
+        yield 'one' => [1, true];
+        yield 'supported maximum' => [AdmissionBudgetsDTO::PROVEN_PENDING_PERMIT_LIMIT_MAX, true];
+        yield 'first value above the maximum' => [AdmissionBudgetsDTO::PROVEN_PENDING_PERMIT_LIMIT_MAX + 1, false];
+        yield 'PHP_INT_MAX' => [PHP_INT_MAX, false];
+    }
+
+    #[DataProvider('pendingLimitRange')]
+    public function testThePendingPermitLimitRangeIsEnforcedWhereTheOptionIsSet(int $limit, bool $supported): void
+    {
+        $builder = RateLimiterBuilder::fromFullCapabilityStore(self::config(), new AdmissionInMemoryReferenceStore(new FixedClock()), new RecordingFailureSignalEmitter())
+            ->withPolicy(new LoginProtectionAdmissionPolicy());
+        if (! $supported) {
+            // Rejected by the option itself: no build() and no store access is involved.
+            $this->expectException(RateLimiterException::class);
+            $builder->withProvenPendingPermitLimit($limit);
+
+            return;
+        }
+        $admission = self::admissionOf($builder->withProvenPendingPermitLimit($limit)->build());
+        self::assertNotNull($admission);
+        self::assertSame($limit, self::budgetsOf($admission)['provenPendingPermitCap']);
+
+        // The DTOs agree with the builder on the same range.
+        self::assertSame($limit, AdmissionBudgetsDTO::packageDefaults()->withProvenPendingPermitCap($limit)->provenPendingPermitCap);
+        self::assertSame((string) $limit, (new AdmissionSharedConfigDTO('k', null, (string) $limit))->value);
+    }
+
+    #[DataProvider('pendingLimitRange')]
+    public function testTheDtosRejectWhatTheBuilderRejects(int $limit, bool $supported): void
+    {
+        if ($supported) {
+            self::addToAssertionCount(1);
+
+            return;
+        }
+        foreach ([
+            static fn() => AdmissionBudgetsDTO::packageDefaults()->withProvenPendingPermitCap($limit),
+            static fn() => new AdmissionSharedConfigDTO('k', null, (string) $limit),
+        ] as $make) {
             try {
-                RateLimiterBuilder::fromFullCapabilityStore(self::config(), new AdmissionInMemoryReferenceStore(new FixedClock()), new RecordingFailureSignalEmitter())->withProvenPendingPermitLimit($limit);
-                self::fail('A non-positive limit must be refused.');
-            } catch (\Maatify\RateLimiter\Exception\RateLimiterException) {
+                $make();
+                self::fail('A value outside the supported range must be rejected.');
+            } catch (RateLimiterException) {
                 self::addToAssertionCount(1);
             }
         }
-        $this->expectException(\Maatify\RateLimiter\Exception\RateLimiterException::class);
-        AdmissionBudgetsDTO::packageDefaults()->withProvenPendingPermitCap(0);
     }
 
     public function testDetectorABuilderThatTakesOneBudgetFromElsewhereFailsTheFieldComparison(): void
