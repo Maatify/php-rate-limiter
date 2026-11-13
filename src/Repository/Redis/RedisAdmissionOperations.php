@@ -8,9 +8,11 @@ use Maatify\RateLimiter\DTO\AdmissionOutcomeDTO;
 use Maatify\RateLimiter\DTO\AdmissionReservationRequestDTO;
 use Maatify\RateLimiter\DTO\AdmissionReservationResultDTO;
 use Maatify\RateLimiter\DTO\AdmissionScopeDTO;
+use Maatify\RateLimiter\DTO\AdmissionSharedConfigDTO;
 use Maatify\RateLimiter\Enum\AdmissionOutcomeKindEnum;
 use Maatify\RateLimiter\Enum\AdmissionPermitClaimEnum;
 use Maatify\RateLimiter\Enum\AdmissionScopeKindEnum;
+use Maatify\RateLimiter\Exception\AdmissionConfigurationException;
 use Maatify\RateLimiter\Exception\BackendFailureException;
 use Maatify\RateLimiter\Exception\RateLimiterException;
 
@@ -248,6 +250,30 @@ if hasPermit then
   if record == nil then return bad(err) end
   permitExists = not record.absent
 end
+-- Shared configuration (DEC-038): compare before any gate and any write; the registration is written in phase 3.
+local cfgKey, cfgPrev, cfgValue = KEYS[2 * n + 2], KEYS[2 * n + 3], ARGV[9 + 6 * n]
+local cfgRegister = nil
+if cfgValue ~= '' then
+  local function cfgRead(k)
+    if k == '' then return nil end
+    local t = keyType(k)
+    if t == 'none' then return nil end
+    if t ~= 'string' then return false, 'shared configuration key has type ' .. t end
+    local v = redis.call('GET', k)
+    if v ~= 'off' and canonical(v) == nil then return false, 'shared configuration value is malformed' end
+    return v
+  end
+  local cur, e1 = cfgRead(cfgKey)
+  if cur == false then return bad(e1) end
+  local stored = cur
+  if cur == nil then
+    local prev, e2 = cfgRead(cfgPrev)
+    if prev == false then return bad(e2) end
+    stored = prev
+  end
+  if stored ~= nil and stored ~= cfgValue then return {2, 0, 0} end
+  if cur == nil then cfgRegister = cfgValue end
+end
 -- Phase 2: gates, in the order of the request. Keep the first refusal and the longest wait without writing.
 local firstRefusal = nil
 local longestRetry = 0
@@ -288,6 +314,7 @@ end
 if firstRefusal then return {0, firstRefusal, longestRetry} end
 if permitExists then return {0, 0, 0} end
 -- Phase 3: writes, only reached when every gate admitted.
+if cfgRegister ~= nil then redis.call('SET', cfgKey, cfgRegister) end
 for i = 1, n do
   local s = sc[i]
   if s.kind == 'c' then
@@ -513,6 +540,13 @@ end
 return 'accepted'
 LUA;
 
+    private const CONFIG_REBIND = self::LUA_COMMON . "\n" . <<<'LUA'
+local t = keyType(KEYS[1])
+if t ~= 'none' and t ~= 'string' then return bad('shared configuration key has type ' .. t) end
+redis.call('SET', KEYS[1], ARGV[1])
+return 1
+LUA;
+
     private const EPOCH_READ = self::LUA_COMMON . "\n" . <<<'LUA'
 local function epoch(k)
   if k == '' then return 0, false end
@@ -553,6 +587,20 @@ LUA;
     public function pendingKey(string $verifierClass, string $key): string
     {
         return $this->base() . ':p:' . hash('sha256', $verifierClass . "\0" . $key);
+    }
+
+    /** The registered shared configuration of a budget group (DEC-038): a plain string, no expiry, like the epoch and fence keys. */
+    public function configKey(string $verifierClass, string $key): string
+    {
+        return $this->base() . ':cfg:' . hash('sha256', $verifierClass . "\0" . $key);
+    }
+
+    public function rebindConfig(string $verifierClass, AdmissionSharedConfigDTO $config): void
+    {
+        $reply = $this->eval(self::CONFIG_REBIND, [$this->configKey($verifierClass, $config->key)], [$config->value]);
+        if ($this->integer($reply, 'admission configuration rebind') !== 1) {
+            throw new RateLimiterException('Malformed admission configuration rebind response.');
+        }
     }
 
     public function permitKey(string $permitId): string
@@ -625,9 +673,16 @@ LUA;
             );
         }
         $keys[] = $permit === null ? '' : $this->permitKey($permit->id);
+        $config = $request->sharedConfig;
+        $keys[] = $config === null ? '' : $this->configKey($request->verifierClass, $config->key);
+        $keys[] = $config?->previousKey === null ? '' : $this->configKey($request->verifierClass, $config->previousKey);
+        $args[] = $config === null ? '' : $config->value;
 
         $tuple = $this->tuple($this->eval(self::RESERVE, $keys, $args), 3, 'admission reservation');
         $verdict = $this->integer($tuple[0], 'admission reservation verdict');
+        if ($verdict === 2) {
+            throw new AdmissionConfigurationException('The admission shared configuration of this worker (proven pending permit limit ' . ($config->value ?? '') . ') differs from the one registered for budget group "' . $request->verifierClass . '". No reservation was made. Align every worker, or rebind the shared value explicitly (DEC-038).');
+        }
         $index = $this->integer($tuple[1], 'admission reservation scope');
         $retry = $this->integer($tuple[2], 'admission reservation retry-after');
         if ($verdict === 1 && $index === 0 && $retry === 0) {

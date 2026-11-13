@@ -11,6 +11,7 @@ use Maatify\RateLimiter\DTO\AdmissionOutcomeDTO;
 use Maatify\RateLimiter\DTO\AdmissionPermitDTO;
 use Maatify\RateLimiter\DTO\AdmissionReservationRequestDTO;
 use Maatify\RateLimiter\DTO\AdmissionScopeDTO;
+use Maatify\RateLimiter\DTO\AdmissionSharedConfigDTO;
 use Maatify\RateLimiter\DTO\DeviceIdentityDTO;
 use Maatify\RateLimiter\DTO\RateLimitContextDTO;
 use Maatify\RateLimiter\DTO\RateLimitContextMetadataDTO;
@@ -20,9 +21,11 @@ use Maatify\RateLimiter\Enum\AdmissionLaneEnum;
 use Maatify\RateLimiter\Enum\AdmissionOutcomeKindEnum;
 use Maatify\RateLimiter\Enum\AdmissionPermitClaimEnum;
 use Maatify\RateLimiter\Enum\AdmissionScopeKindEnum;
+use Maatify\RateLimiter\Exception\AdmissionConfigurationException;
 use Maatify\RateLimiter\Exception\RateLimiterException;
 use Maatify\RateLimiter\Repository\AtomicAdmissionPermitStoreInterface;
 use Maatify\RateLimiter\Repository\RequestAtomicStoreInterface;
+use Maatify\RateLimiter\Repository\SharedAdmissionConfigStoreInterface;
 use Maatify\SharedCommon\Contracts\ClockInterface;
 
 /**
@@ -111,6 +114,30 @@ final class AdmissionRuntime
         return $this->previousKeySecret === null ? null : self::fenceKey($this->envScope, $budgetGroup, $this->previousKeySecret);
     }
 
+    /** The effective shared configuration of a budget group as this worker holds it (DEC-038), carried by every reservation. */
+    private function sharedConfig(string $budgetGroup): AdmissionSharedConfigDTO
+    {
+        return AdmissionSharedConfigDTO::forLimit(
+            $this->key($budgetGroup, 'pcfg', '', ''),
+            $this->previousKeySecret === null ? null : $this->key($budgetGroup, 'pcfg', '', '', $this->previousKeySecret),
+            $this->budgets->provenPendingPermitCap,
+        );
+    }
+
+    /**
+     * Register this worker's effective shared configuration for `$budgetGroup` as the value every worker must hold (DEC-038).
+     * An explicit operator action; no request path calls it.
+     *
+     * @throws AdmissionConfigurationException when the store cannot hold a shared configuration
+     */
+    public function rebindSharedConfig(string $budgetGroup): void
+    {
+        if (! $this->store instanceof SharedAdmissionConfigStoreInterface) {
+            throw new AdmissionConfigurationException('The configured store cannot hold a shared admission configuration.');
+        }
+        $this->store->rebindAdmissionConfig($budgetGroup, $this->sharedConfig($budgetGroup));
+    }
+
     public function bindingEpoch(string $accountId): int
     {
         return $this->store->readBindingEpoch($this->epochKey($accountId, $this->keySecret), $this->previousEpochKey($accountId));
@@ -165,7 +192,7 @@ final class AdmissionRuntime
         $scopes = $lane->lane === AdmissionLaneEnum::P
             ? $this->provenScopes($budgetGroup, $context, $device, $lane, $id)
             : $this->unprovenScopes($budgetGroup, $context, $id);
-        $result = $this->store->reserveAdmission(new AdmissionReservationRequestDTO($budgetGroup, $scopes, $permit), $t);
+        $result = $this->store->reserveAdmission(new AdmissionReservationRequestDTO($budgetGroup, $scopes, $permit, $this->sharedConfig($budgetGroup)), $t);
         if (! $result->admitted) {
             $scope = (string) $result->refusedScope;
             if (! isset(self::CAUSES[$scope])) {

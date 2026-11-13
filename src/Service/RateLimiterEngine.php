@@ -35,7 +35,7 @@ use Maatify\SharedCommon\Contracts\ClockInterface;
  * failure-mode fallback, and the circuit-boundary orchestration of the public
  * one-shot post-punishment lifecycle claim.
  */
-class RateLimiterEngine implements RateLimiterRuntimeInterface, AdmissionBindingControlInterface, AdmissionBindingEpochInterface, AdmissionFenceControlInterface
+class RateLimiterEngine implements RateLimiterRuntimeInterface, AdmissionBindingControlInterface, AdmissionBindingEpochInterface, AdmissionFenceControlInterface, AdmissionSharedConfigControlInterface
 {
     /** @var array<string, BlockPolicyInterface> */
     private array $policies = [];
@@ -569,6 +569,12 @@ class RateLimiterEngine implements RateLimiterRuntimeInterface, AdmissionBinding
     public function openAdmissionFence(string $budgetGroup): int
     {
         return $this->requireAdmission()->openFence($budgetGroup);
+    }
+
+    /** @throws RateLimiterException when no admission runtime is configured */
+    public function rebindAdmissionSharedConfig(string $budgetGroup): void
+    {
+        $this->requireAdmission()->rebindSharedConfig($budgetGroup);
     }
 
     private function requireAdmission(): AdmissionRuntime

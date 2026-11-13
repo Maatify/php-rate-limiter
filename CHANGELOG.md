@@ -12,6 +12,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   reservation and outcome (or the 30 s deadline). The surplus is refused with the cause `source_pending_permits`. Success and
   failure outcomes release the slot once; expiry releases it without an outcome. The limit is independent of the recorded-failure
   sets. Without the call there is no limit and behaviour is unchanged. The package supplies no default.
+- A slot reserved before a key-secret rotation is freed by the outcome recorded after it, in the atomic claim of DEC-036; a replay frees no second slot.
+- Shared configuration (DEC-038, proposed): every worker of a budget group on one Redis holds the same limit, "no limit" included.
+  A worker whose value differs raises `AdmissionConfigurationException` before reserving; the value changes only through
+  `AdmissionSharedConfigControlInterface::rebindAdmissionSharedConfig()`. `build()` refuses a limit on a store that cannot hold it.
 
 ### Documentation (#185)
 - Clarified DEC-032 Operational Read authority, effective score, and the scope of request atomicity under DEC-036 and DEC-037.

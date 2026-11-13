@@ -6,6 +6,9 @@ namespace Maatify\RateLimiter\Tests\Support\Admission;
 
 use Maatify\RateLimiter\DTO\AdmissionOutcomeDTO;
 use Maatify\RateLimiter\DTO\AdmissionReservationRequestDTO;
+use Maatify\RateLimiter\DTO\AdmissionSharedConfigDTO;
+use Maatify\RateLimiter\Exception\AdmissionConfigurationException;
+use Maatify\RateLimiter\Repository\SharedAdmissionConfigStoreInterface;
 use Maatify\RateLimiter\DTO\AdmissionReservationResultDTO;
 use Maatify\RateLimiter\DTO\AdmissionScopeDTO;
 use Maatify\RateLimiter\Enum\AdmissionOutcomeKindEnum;
@@ -26,8 +29,12 @@ use Maatify\RateLimiter\Tests\Support\FullCapability\FullCapabilityInMemoryStore
 final class AdmissionInMemoryReferenceStore extends FullCapabilityInMemoryStore implements
     AdmissionCapableFullStoreInterface,
     AdmissionPermitStoreInterface,
-    AtomicAdmissionPermitStoreInterface
+    AtomicAdmissionPermitStoreInterface,
+    SharedAdmissionConfigStoreInterface
 {
+    /** @var array<string, string> registered shared admission configuration (DEC-038), per budget group and key */
+    private array $configs = [];
+
     /** @var array<string, array<string, int>> member => expiry score, per counter */
     private array $counters = [];
 
@@ -53,6 +60,13 @@ final class AdmissionInMemoryReferenceStore extends FullCapabilityInMemoryStore 
     {
         AdmissionReferenceInput::reservation($request, $now, supportsSettlement: true);
         $class = $request->verifierClass;
+        $config = $request->sharedConfig;
+        if ($config !== null) {
+            $stored = $this->configs[$class . "\0" . $config->key] ?? ($config->previousKey === null ? null : ($this->configs[$class . "\0" . $config->previousKey] ?? null));
+            if ($stored !== null && $stored !== $config->value) {
+                throw new AdmissionConfigurationException('The admission shared configuration differs from the registered one.');
+            }
+        }
         $credits = [];
         $firstRefusal = null;
         $longestRetry = 0;
@@ -162,7 +176,16 @@ final class AdmissionInMemoryReferenceStore extends FullCapabilityInMemoryStore 
             ];
         }
 
+        if ($config !== null) {
+            $this->configs[$class . "\0" . $config->key] ??= $config->value;
+        }
+
         return new AdmissionReservationResultDTO(true);
+    }
+
+    public function rebindAdmissionConfig(string $budgetGroup, AdmissionSharedConfigDTO $config): void
+    {
+        $this->configs[$budgetGroup . "\0" . $config->key] = $config->value;
     }
 
     public function applyAdmissionOutcome(AdmissionOutcomeDTO $outcome, int $now): void

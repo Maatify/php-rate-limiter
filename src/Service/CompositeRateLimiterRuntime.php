@@ -18,7 +18,7 @@ use Maatify\RateLimiter\Exception\RateLimiterException;
  * RateLimiterBuilder::build() call. It does not re-implement either
  * collaborator's behavior.
  */
-final class CompositeRateLimiterRuntime implements CompositeRateLimiterRuntimeInterface, AdmissionBindingControlInterface, AdmissionBindingEpochInterface, AdmissionFenceControlInterface
+final class CompositeRateLimiterRuntime implements CompositeRateLimiterRuntimeInterface, AdmissionBindingControlInterface, AdmissionBindingEpochInterface, AdmissionFenceControlInterface, AdmissionSharedConfigControlInterface
 {
     public function __construct(
         private readonly RateLimiterRuntimeInterface $scoreRuntime,
@@ -62,6 +62,16 @@ final class CompositeRateLimiterRuntime implements CompositeRateLimiterRuntimeIn
         }
 
         return $this->scoreRuntime->openAdmissionFence($budgetGroup);
+    }
+
+    /** Reaches the score runtime's shared admission configuration control (DEC-038). */
+    public function rebindAdmissionSharedConfig(string $budgetGroup): void
+    {
+        if (! $this->scoreRuntime instanceof AdmissionSharedConfigControlInterface) {
+            throw new RateLimiterException('The configured score runtime has no shared admission configuration control.');
+        }
+
+        $this->scoreRuntime->rebindAdmissionSharedConfig($budgetGroup);
     }
 
     public function consume(string $policyName, string $subject, int $cost = 1): SimpleRateLimitResultDTO

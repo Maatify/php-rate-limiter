@@ -82,5 +82,5 @@ largest shared source, and the table gives the Lead the curve to choose from.
 - Process start-up and scheduling add noise: repetitions differ by a few users at the same cell.
 - Key-secret rotation: a permit reserved before the rotation holds its slot under the previous secret's key. The first version released only under the current key, so such a slot stayed held until the 30 s deadline; fixed in the follow-up commit named in #207 (the outcome now also releases under the previous key), with a public Redis test for success, failure and replay.
 - The U lane has no equivalent limit; this change does not touch it.
-- DEC-028 states that no Host input sets the admission budgets. The option is a Host-set bound, so the locked-surface tests were changed
-  for the one added method, and whether it needs its own decision record is left to the Lead. DEC-034 and DEC-035 remain `PROPOSED`.
+- DEC-028 states that no Host input sets the admission budgets. The option is a Host-set bound: the locked-surface tests were changed for the added methods, and the relationship is drafted in DEC-038 (`PROPOSED`). DEC-034 and DEC-035 remain `PROPOSED`.
+- Workers that predate the shared-configuration check carry no value and are not checked.

@@ -393,6 +393,22 @@ Outputs and duties:
   default value. Choose it above the number of legitimate verifications that overlap behind one source (an office or a
   carrier-grade NAT) and below the number of simultaneous attempts you accept from one source; the measurements and the
   trade-off are in [`investigations/proven-pending-permits-206/RESULTS.md`](../../investigations/proven-pending-permits-206/RESULTS.md).
+* **One value for the whole fleet (DEC-038, proposed)**: every worker on one Redis must hold the same pending-permit limit,
+  "no limit" included. The store compares the worker's value with the registered one in the same script as the reservation: a
+  worker whose value differs (two different limits, or one worker with a limit and one without) raises
+  `AdmissionConfigurationException` before it reserves anything, on either lane, and never changes the shared value itself. The first
+  accepted reservation of a budget group registers its value. A limit needs a store that holds the shared configuration
+  (`SharedAdmissionConfigStoreInterface`, which `RedisFullCapabilityStore` does); `build()` refuses a limit on any other store.
+  * **Changing the value**: deploy the new value to every worker of the group and drain the old ones (a mixed fleet fails loudly
+    on whichever side holds the other value until the last old worker is gone), then call
+    `rebindAdmissionSharedConfig($budgetGroup)` once from a new worker
+    (`instanceof AdmissionSharedConfigControlInterface`). Enabling and disabling are the same procedure, from and to "no limit".
+    Workers on a version that predates the option carry no value and are not checked: put the whole fleet on the new version
+    before setting the first limit.
+  * **Existing permits**: the limit counts the permits that exist. Raising it makes room at once. Lowering it revokes nothing; new
+    reservations are refused until the pending count is under the new limit (permits leave by outcome or at their 30 s
+    deadline). Disabling ignores the counter, and permits reserved while it is off hold no slot, so enabling again counts only
+    the permits reserved while a limit was set and still pending.
 * **Password change or recovery**: call `revokeAccountBinding($accountId)` (it bumps the account's
   epoch; every older credential stops verifying), read the new epoch with `bindingEpoch($accountId)`
   and issue a credential to the device that performed the change. Both are reached through

@@ -29,6 +29,8 @@ use Maatify\RateLimiter\Repository\HardBlockCycleStoreInterface;
 use Maatify\RateLimiter\Repository\AdmissionPermitStoreInterface;
 use Maatify\RateLimiter\Repository\AdmissionReservationStoreInterface;
 use Maatify\RateLimiter\Repository\AtomicAdmissionPermitStoreInterface;
+use Maatify\RateLimiter\Repository\SharedAdmissionConfigStoreInterface;
+use Maatify\RateLimiter\Exception\AdmissionConfigurationException;
 use Maatify\RateLimiter\Repository\PunishmentLifecycleStoreInterface;
 use Maatify\RateLimiter\Repository\RateLimitStoreInterface;
 use Maatify\RateLimiter\Repository\SnapshotFencedScoreStoreInterface;
@@ -412,6 +414,10 @@ final class RateLimiterBuilder
         $bindingKey = $this->config->bindingKeySecret();
         if (! $this->hasAdmissionPolicy() || ! $this->rateLimitStore instanceof AtomicAdmissionPermitStoreInterface || $bindingKey === null) {
             return null;
+        }
+
+        if ($this->provenPendingPermitLimit !== null && ! $this->rateLimitStore instanceof SharedAdmissionConfigStoreInterface) {
+            throw new AdmissionConfigurationException('A proven pending permit limit needs a store that holds the shared admission configuration (SharedAdmissionConfigStoreInterface), so that workers on one store can be proven to agree (DEC-038).');
         }
 
         return new AdmissionRuntime(
