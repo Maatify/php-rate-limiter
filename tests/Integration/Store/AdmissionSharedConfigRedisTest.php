@@ -47,8 +47,8 @@ final class AdmissionSharedConfigRedisTest extends AdmissionRedisGateTestCase
         self::assertTrue($this->check($a, 'acct-1')->isAllowed());
         self::assertTrue($this->check($b, 'acct-2')->isAllowed());
         self::assertTrue($this->check($a, 'acct-3')->isAllowed());
-        self::assertSame(self::CAUSE, $this->check($b, 'acct-4')->metadata?->cause, 'three pending permits across both workers reach the one limit');
-        self::assertSame(self::CAUSE, $this->check($a, 'acct-4')->metadata?->cause);
+        self::assertSame(self::CAUSE, self::causeOf($this->check($b, 'acct-4')), 'three pending permits across both workers reach the one limit');
+        self::assertSame(self::CAUSE, self::causeOf($this->check($a, 'acct-4')));
         self::assertSame(3, $this->pendingMembers());
     }
 
@@ -113,7 +113,7 @@ final class AdmissionSharedConfigRedisTest extends AdmissionRedisGateTestCase
         // Lowering: the operator rebinds. The four existing permits are not revoked, they govern new reservations.
         self::assertInstanceOf(AdmissionSharedConfigControlInterface::class, $two);
         $two->rebindAdmissionSharedConfig('login');
-        self::assertSame(self::CAUSE, $this->check($two, 'b1')->metadata?->cause, 'five permits are pending against a limit of 2');
+        self::assertSame(self::CAUSE, self::causeOf($this->check($two, 'b1')), 'five permits are pending against a limit of 2');
         try {
             $this->check($five, 'b2');
             self::fail('The old worker now disagrees.');
@@ -125,7 +125,7 @@ final class AdmissionSharedConfigRedisTest extends AdmissionRedisGateTestCase
         }
         self::assertSame(1, $this->pendingMembers());
         self::assertTrue($this->check($two, 'b1')->isAllowed(), 'only once the pending count is under the new limit');
-        self::assertSame(self::CAUSE, $this->check($two, 'b3')->metadata?->cause);
+        self::assertSame(self::CAUSE, self::causeOf($this->check($two, 'b3')));
 
         // Disabling: the pending slots are ignored, and they still hold members until their deadline.
         $off = $this->worker(null);
@@ -137,7 +137,7 @@ final class AdmissionSharedConfigRedisTest extends AdmissionRedisGateTestCase
         // Permits reserved while disabled hold no slot (nothing is written to the counter); the two reserved before still do.
         self::assertSame(2, $this->pendingMembers());
         $two->rebindAdmissionSharedConfig('login');
-        self::assertSame(self::CAUSE, $this->check($two, 'c9')->metadata?->cause);
+        self::assertSame(self::CAUSE, self::causeOf($this->check($two, 'c9')));
     }
 
     public function testTheRegistrationSurvivesAKeyRotation(): void
@@ -151,6 +151,12 @@ final class AdmissionSharedConfigRedisTest extends AdmissionRedisGateTestCase
         $rotatedOther = $this->rotatedWorker(4);
         $this->expectException(AdmissionConfigurationException::class);
         $this->check($rotatedOther, 'acct-3');
+    }
+
+    /** The refusal or permit cause of a result; read through one helper so the nullability is the declared one on every PHPStan version. */
+    private static function causeOf(RateLimitResultDTO $result): ?string
+    {
+        return $result->metadata?->cause;
     }
 
     private function worker(?int $limit): CompositeRateLimiterRuntimeInterface

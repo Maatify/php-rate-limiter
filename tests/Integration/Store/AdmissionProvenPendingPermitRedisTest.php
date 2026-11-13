@@ -93,7 +93,7 @@ final class AdmissionProvenPendingPermitRedisTest extends AdmissionRedisGateTest
         $b = $this->check($runtime, 'acct-b');
         self::assertTrue($a->isAllowed());
         self::assertTrue($b->isAllowed());
-        self::assertSame(self::CAUSE, $this->check($runtime, 'acct-c')->metadata?->cause, 'the third pending permit is over the limit');
+        self::assertSame(self::CAUSE, self::causeOf($this->check($runtime, 'acct-c')), 'the third pending permit is over the limit');
         self::assertSame(2, $this->pendingMembers(), 'a refusal writes nothing');
 
         // A recorded success frees the slot of its permit.
@@ -105,11 +105,11 @@ final class AdmissionProvenPendingPermitRedisTest extends AdmissionRedisGateTest
 
         // Replaying the outcome of the same permit is not applied and frees nothing.
         $replay = $this->settle($runtime, 'acct-a', $a, true);
-        self::assertSame('permit_duplicate', $replay->metadata?->cause);
+        self::assertSame('permit_duplicate', self::causeOf($replay));
         self::assertSame(2, $this->pendingMembers());
-        self::assertSame(self::CAUSE, $this->check($runtime, 'acct-e')->metadata?->cause, 'the replay did not free a slot for another permit');
+        self::assertSame(self::CAUSE, self::causeOf($this->check($runtime, 'acct-e')), 'the replay did not free a slot for another permit');
         // A replay that flips the outcome is a conflict and frees nothing either.
-        self::assertSame('permit_conflict', $this->settle($runtime, 'acct-a', $a, false)->metadata?->cause);
+        self::assertSame('permit_conflict', self::causeOf($this->settle($runtime, 'acct-a', $a, false)));
         self::assertSame(2, $this->pendingMembers());
 
         // A recorded failure frees the slot as well.
@@ -126,19 +126,19 @@ final class AdmissionProvenPendingPermitRedisTest extends AdmissionRedisGateTest
         $first = $this->check($runtime, 'acct-a');
         self::assertTrue($first->isAllowed());
         self::assertTrue($this->check($runtime, 'acct-b')->isAllowed());
-        self::assertSame(self::CAUSE, $this->check($runtime, 'acct-c')->metadata?->cause);
+        self::assertSame(self::CAUSE, self::causeOf($this->check($runtime, 'acct-c')));
 
         $this->clock->setNow(new \DateTimeImmutable('@' . (self::NOW + 29)));
-        self::assertSame(self::CAUSE, $this->check($runtime, 'acct-c')->metadata->cause, 'one second before the deadline D = 30 s the permits still hold');
+        self::assertSame(self::CAUSE, self::causeOf($this->check($runtime, 'acct-c')), 'one second before the deadline D = 30 s the permits still hold');
 
         $this->clock->setNow(new \DateTimeImmutable('@' . (self::NOW + 30)));
         self::assertTrue($this->check($runtime, 'acct-c')->isAllowed(), 'at the deadline the unclaimed permits no longer hold a slot');
         self::assertTrue($this->check($runtime, 'acct-d')->isAllowed());
-        self::assertSame(self::CAUSE, $this->check($runtime, 'acct-e')->metadata?->cause);
+        self::assertSame(self::CAUSE, self::causeOf($this->check($runtime, 'acct-e')));
 
         // An outcome after the deadline is late: it frees nothing, and the slot was already free.
         $late = $this->settle($runtime, 'acct-a', $first, true);
-        self::assertSame('permit_late', $late->metadata?->cause);
+        self::assertSame('permit_late', self::causeOf($late));
         self::assertSame(2, $this->pendingMembers());
     }
 
@@ -160,18 +160,18 @@ final class AdmissionProvenPendingPermitRedisTest extends AdmissionRedisGateTest
 
         // The key secret rotates: the permits above hold their slots under the previous secret's key.
         $after = $this->rotatedRuntime(2);
-        self::assertSame(self::CAUSE, $this->check($after, 'acct-c')->metadata?->cause, 'the previous generation still counts');
+        self::assertSame(self::CAUSE, self::causeOf($this->check($after, 'acct-c')), 'the previous generation still counts');
         self::assertSame(2, $this->pendingMembers());
 
         $this->settle($after, 'acct-a', $a, $success);
         self::assertSame(1, $this->pendingMembers(), 'the outcome removed its member from the previous generation');
         self::assertTrue($this->check($after, 'acct-c')->isAllowed(), 'the freed slot is available to a new reservation');
-        self::assertSame(self::CAUSE, $this->check($after, 'acct-d')->metadata?->cause);
+        self::assertSame(self::CAUSE, self::causeOf($this->check($after, 'acct-d')));
 
         // A replay of the same outcome frees no second slot.
-        self::assertSame('permit_duplicate', $this->settle($after, 'acct-a', $a, $success)->metadata?->cause);
+        self::assertSame('permit_duplicate', self::causeOf($this->settle($after, 'acct-a', $a, $success)));
         self::assertSame(2, $this->pendingMembers());
-        self::assertSame(self::CAUSE, $this->check($after, 'acct-d')->metadata?->cause, 'the replay did not free a slot');
+        self::assertSame(self::CAUSE, self::causeOf($this->check($after, 'acct-d')), 'the replay did not free a slot');
     }
 
     public function testSourcesDoNotShareSlotsAndTheLimitIsIndependentOfFailureCounters(): void
@@ -183,13 +183,13 @@ final class AdmissionProvenPendingPermitRedisTest extends AdmissionRedisGateTest
             $held[$account] = $this->check($runtime, $account, self::SOURCE_A);
             self::assertTrue($held[$account]->isAllowed());
         }
-        self::assertSame(self::CAUSE, $this->check($runtime, 'a4', self::SOURCE_A)->metadata?->cause);
+        self::assertSame(self::CAUSE, self::causeOf($this->check($runtime, 'a4', self::SOURCE_A)));
 
         // A full source costs another source nothing.
         foreach (['b1', 'b2', 'b3'] as $account) {
             self::assertTrue($this->check($runtime, $account, self::SOURCE_B)->isAllowed());
         }
-        self::assertSame(self::CAUSE, $this->check($runtime, 'b4', self::SOURCE_B)->metadata?->cause);
+        self::assertSame(self::CAUSE, self::causeOf($this->check($runtime, 'b4', self::SOURCE_B)));
 
         // Refusals by the pending limit never entered the recorded-failure set of the source (limit 4): after the three held
         // permits settle as failures, three accounts are recorded, and a fourth reservation still fits under that cap.
@@ -198,6 +198,12 @@ final class AdmissionProvenPendingPermitRedisTest extends AdmissionRedisGateTest
         }
         self::assertSame(3, $this->pendingMembers(), 'source A holds nothing, source B still holds its three');
         self::assertTrue($this->check($runtime, 'a4', self::SOURCE_A)->isAllowed(), 'three recorded failures + the refused a4 attempt do not exhaust the cap of 4');
+    }
+
+    /** The refusal or permit cause of a result; read through one helper so the nullability is the declared one on every PHPStan version. */
+    private static function causeOf(RateLimitResultDTO $result): ?string
+    {
+        return $result->metadata?->cause;
     }
 
     private function runtime(?int $limit): CompositeRateLimiterRuntimeInterface
