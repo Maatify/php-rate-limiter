@@ -964,13 +964,15 @@ exhausted source); a second rotation inside the same window re-issues it in full
 rotation the net failure set and the account bucket restart in full (4 further failing accounts,
 4 further bucket takes).
 
-Refund after a rotation (#209). The success refund of the four proven-lane counters (`pacct`, `pacctd`,
-`pproof`, `pproofd`) is `ZREM` on the **current** key only (DEC-033). A permit reserved before a rotation holds
-its member in the previous-generation key; that key stays read-only, so the success outcome neither removes the
-member nor changes the key's contents or expiry. The member keeps counting toward capacity until its own window
-or day lapses, and no slot is freed in the meantime; in the same generation the refund frees it at once. This is
-the documented effect of the read-only rule, not a refund defect, and it is bounded by the rotation interval rule
-(at least the window). It is verified on a real Redis by `AdmissionProofCounterRotationRedisTest`.
+Refund after a rotation (#209). This concerns the capacity of the account and proof counters (`pacct`, `pacctd`,
+`pproof`, `pproofd`) only. Their success refund is `ZREM` on the **current** key (DEC-033). In the same generation a
+successful outcome removes the reservation's member from all four, which restores that capacity at once. A permit
+reserved before a rotation holds its member in the previous-generation key; that key is read-only, so the member is
+neither removed nor changed, its key's expiry is untouched, and it continues to consume account/proof counter capacity
+until its own score lapses, as for every counter member (the counter contract). The public test shows the refusal
+that follows a success after the rotation; it does not wait out the expiry. This capacity is independent of the
+pending-permit slot of DEC-038, which is a separate counter released by either outcome and is not affected by this rule.
+Verified on a real Redis by `AdmissionProofCounterRotationRedisTest`.
 
 For device-member recognition, the runtime supplies the current member and, when a previous
 outer-key or fingerprint generation is available, one previous member. The previous member uses
