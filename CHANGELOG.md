@@ -5,7 +5,7 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
-## [Unreleased]
+## [1.0.0-rc.4]
 
 ### Added (#206) — Optional pending-permit limit on the proven admission lane
 - `RateLimiterBuilder::withProvenPendingPermitLimit(int $limit)` bounds the proven-lane permits one source holds between
@@ -23,8 +23,6 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Documentation (#185)
 - Clarified DEC-032 Operational Read authority, effective score, and the scope of request atomicity under DEC-036 and DEC-037.
 - Recorded DEC-034 and DEC-035 as proposals. DEC-025 and DEC-028 remain active pending explicit activation.
-
-## [1.0.0-rc.4]
 
 ### Changed (#185, F-185-36) — Atomic admission outcome recording
 - The opt-in admission runtime claims a permit and applies its admission outcome in one store
@@ -782,7 +780,6 @@ The public runtime API and runtime behavior of the package are unchanged from
 - Package licensing established as proprietary by Owner Decision before first release
 - Expanded `BudgetConfigDTO` to the full policy-owned contract (threshold, block level, cooldown seconds, trusted-session floor, pre-check enforcement, known-device micro-cap, Recovery Collision Guard toggle) with defaults preserving current runtime semantics (`cooldown_seconds = 0`, `trusted_session_floor_level = 2`, `precheck_enforcement = true`, `known_device_micro_cap = 8`, `recovery_collision_guard_enabled = false`); locked Login/OTP preset values live in the policy objects, with the full contract in `docs/POLICIES.md`. Normative Budget Owner-Safety behavior is implemented in the runtime and covered by regression tests. Normative behavior lives in `docs/DECISION_MATRIX.md`.
 
-[Unreleased]: https://github.com/Maatify/php-rate-limiter/compare/v1.0.0-rc.3...HEAD
 [1.0.0-rc.3]: https://github.com/Maatify/php-rate-limiter/releases/tag/v1.0.0-rc.3
 [1.0.0-rc.2]: https://github.com/Maatify/php-rate-limiter/compare/v1.0.0-rc.1...v1.0.0-rc.2
 [1.0.0-rc.1]: https://github.com/Maatify/php-rate-limiter/releases/tag/v1.0.0-rc.1
