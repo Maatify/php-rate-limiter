@@ -396,7 +396,7 @@ Outputs and duties:
   default value. Choose it above the number of legitimate verifications that overlap behind one source (an office or a
   carrier-grade NAT) and below the number of simultaneous attempts you accept from one source; the measurements and the
   trade-off are in [`investigations/proven-pending-permits-206/RESULTS.md`](../../investigations/proven-pending-permits-206/RESULTS.md).
-* **One value for the whole fleet (DEC-038, proposed)**: every worker on one Redis must hold the same pending-permit limit,
+* **One value for the whole fleet (DEC-038)**: every worker on one Redis must hold the same pending-permit limit,
   "no limit" included. The store compares the worker's value with the registered one in the same script as the reservation: a
   worker whose value differs (two different limits, or one worker with a limit and one without) raises
   `AdmissionConfigurationException` before it reserves anything, on either lane, and never changes the shared value itself. The first

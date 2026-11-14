@@ -950,7 +950,7 @@ set) and `b` (bucket); one logical key never changes family.
 | `b` bucket | hash `credit`, `last` | credit-seconds, refilled 1 per second of caller time up to `C x T`; absent means full; `EXPIRE` is the time to full, so an expired bucket and an absent bucket are the same state. This is the only admission family that retains a window/tag origin. |
 | `p` pending (5-b2.1; **written only when a scope settles on expiry, 5-b2.2; the admission runtime builds no settling scope, so nothing writes or reads it**) | sorted set | pending members of the failure set with the same logical key: member scored by its permit `deadline` (an earlier deadline wins on a second reservation). A member counts toward the set only when its score is `<= now` and it is not already in the set; a success removes a pending member only while its score is `> now`. `EXPIRE` equals the scope `ttlSeconds`, set when the key is created and never renewed; a reservation without a permit never writes it; a refusal never writes it |
 | permit | hash `state`, `lane`, `subject`, `operation`, `deadline`, `grace`, `outcome` | created by the admitting reservation in the same script, lifetime `deadline + grace - now`; `ISSUED` then `CLAIMED`; the runtime claims and applies the admission outcome in the same store operation |
-| cfg (DEC-038, proposed) | string | the registered effective pending-permit limit of a budget group: `off` or a positive integer, **no TTL**, written by the first accepted reservation (read under the current key, else the previous one) and by an explicit rebind; every reservation compares its worker's value with it before any gate or write |
+| cfg (DEC-038) | string | the registered effective pending-permit limit of a budget group: `off` or a positive integer, **no TTL**, written by the first accepted reservation (read under the current key, else the previous one) and by an explicit rebind; every reservation compares its worker's value with it before any gate or write |
 | epoch | string | a canonical non-negative integer **with no TTL**: the interface carries no lifetime and a lapsed epoch would revive voided credentials; retention of the key is the Host operator's concern until a decision fixes a lifetime |
 
 Rotation. A counter or a device-member scope may name one previous-generation key. Counters sum the
@@ -963,6 +963,16 @@ runtime (stage 5-c, LT-27): one rotation keeps the spent source capacity (0 furt
 exhausted source); a second rotation inside the same window re-issues it in full (24); at one
 rotation the net failure set and the account bucket restart in full (4 further failing accounts,
 4 further bucket takes).
+
+Refund after a rotation (#209). This concerns the capacity of the account and proof counters (`pacct`, `pacctd`,
+`pproof`, `pproofd`) only. Their success refund is `ZREM` on the **current** key (DEC-033). In the same generation a
+successful outcome removes the reservation's member from all four, which restores that capacity at once. A permit
+reserved before a rotation holds its member in the previous-generation key; that key is read-only, so the member is
+neither removed nor changed, its key's expiry is untouched, and it continues to consume account/proof counter capacity
+until its own score lapses, as for every counter member (the counter contract). The public test shows the refusal
+that follows a success after the rotation; it does not wait out the expiry. This capacity is independent of the
+pending-permit slot of DEC-038, which is a separate counter released by either outcome and is not affected by this rule.
+Verified on a real Redis by `AdmissionProofCounterRotationRedisTest`.
 
 For device-member recognition, the runtime supplies the current member and, when a previous
 outer-key or fingerprint generation is available, one previous member. The previous member uses
