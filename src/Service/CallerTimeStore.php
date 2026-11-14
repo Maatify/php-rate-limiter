@@ -17,6 +17,11 @@ use Maatify\RateLimiter\Repository\BoundedCorrelationSnapshotRotationStoreInterf
 use Maatify\RateLimiter\Repository\BoundedCorrelationSnapshotStoreInterface;
 use Maatify\RateLimiter\Repository\BoundedCorrelationStoreInterface;
 use Maatify\RateLimiter\Repository\BudgetSeedStoreInterface;
+use Maatify\RateLimiter\Repository\CallerTimeDecimalMillisecondsBoundedCorrelationRotationStoreInterface;
+use Maatify\RateLimiter\Repository\CallerTimeDecimalMillisecondsBoundedCorrelationSnapshotRotationStoreInterface;
+use Maatify\RateLimiter\Repository\CallerTimeDecimalMillisecondsCorrelationRotationStoreInterface;
+use Maatify\RateLimiter\Repository\CallerTimeDecimalMillisecondsPunishmentLifecycleStoreInterface;
+use Maatify\RateLimiter\Repository\CallerTimeMilliseconds;
 use Maatify\RateLimiter\Repository\CallerTimeBoundedCorrelationRotationStoreInterface;
 use Maatify\RateLimiter\Repository\CallerTimeBoundedCorrelationSnapshotRotationStoreInterface;
 use Maatify\RateLimiter\Repository\CallerTimeBoundedCorrelationSnapshotStoreInterface;
@@ -172,8 +177,12 @@ final class CallerTimeStore
 
     public static function addDistinctAcrossRotation(CorrelationRotationStoreInterface $store, string $currentKey, string $bridgeKey, string $previousKey, string $currentMember, string $previousMember, int $ttlSeconds, DateTimeImmutable $now): int
     {
+        if ($store instanceof CallerTimeDecimalMillisecondsCorrelationRotationStoreInterface) {
+            return $store->addDistinctAcrossRotationAtMilliseconds($currentKey, $bridgeKey, $previousKey, $currentMember, $previousMember, $ttlSeconds, CallerTimeMilliseconds::fromInstant($now));
+        }
+
         return $store instanceof CallerTimeCorrelationRotationStoreInterface
-            ? $store->addDistinctAcrossRotationAt($currentKey, $bridgeKey, $previousKey, $currentMember, $previousMember, $ttlSeconds, (int) $now->format('Uv'))
+            ? $store->addDistinctAcrossRotationAt($currentKey, $bridgeKey, $previousKey, $currentMember, $previousMember, $ttlSeconds, CallerTimeMilliseconds::nativeInteger(CallerTimeMilliseconds::fromInstant($now)))
             : $store->addDistinctAcrossRotation($currentKey, $bridgeKey, $previousKey, $currentMember, $previousMember, $ttlSeconds);
     }
 
@@ -186,29 +195,45 @@ final class CallerTimeStore
 
     public static function addDistinctBoundedAcrossRotation(BoundedCorrelationRotationStoreInterface $store, string $currentKey, string $bridgeKey, string $previousKey, string $currentMember, string $previousMember, int $ttlSeconds, int $maxDistinct, DateTimeImmutable $now): BoundedDistinctResultDTO
     {
+        if ($store instanceof CallerTimeDecimalMillisecondsBoundedCorrelationRotationStoreInterface) {
+            return $store->addDistinctBoundedAcrossRotationAtMilliseconds($currentKey, $bridgeKey, $previousKey, $currentMember, $previousMember, $ttlSeconds, $maxDistinct, CallerTimeMilliseconds::fromInstant($now));
+        }
+
         return $store instanceof CallerTimeBoundedCorrelationRotationStoreInterface
-            ? $store->addDistinctBoundedAcrossRotationAt($currentKey, $bridgeKey, $previousKey, $currentMember, $previousMember, $ttlSeconds, $maxDistinct, (int) $now->format('Uv'))
+            ? $store->addDistinctBoundedAcrossRotationAt($currentKey, $bridgeKey, $previousKey, $currentMember, $previousMember, $ttlSeconds, $maxDistinct, CallerTimeMilliseconds::nativeInteger(CallerTimeMilliseconds::fromInstant($now)))
             : $store->addDistinctBoundedAcrossRotation($currentKey, $bridgeKey, $previousKey, $currentMember, $previousMember, $ttlSeconds, $maxDistinct);
     }
 
     public static function addDistinctBoundedWithSnapshotAcrossRotation(BoundedCorrelationSnapshotRotationStoreInterface $store, string $currentKey, string $bridgeKey, string $previousKey, string $currentMember, string $previousMember, int $ttlSeconds, int $maxDistinct, DateTimeImmutable $now): BoundedDistinctSnapshotDTO
     {
+        if ($store instanceof CallerTimeDecimalMillisecondsBoundedCorrelationSnapshotRotationStoreInterface) {
+            return $store->addDistinctBoundedWithSnapshotAcrossRotationAtMilliseconds($currentKey, $bridgeKey, $previousKey, $currentMember, $previousMember, $ttlSeconds, $maxDistinct, CallerTimeMilliseconds::fromInstant($now));
+        }
+
         return $store instanceof CallerTimeBoundedCorrelationSnapshotRotationStoreInterface
-            ? $store->addDistinctBoundedWithSnapshotAcrossRotationAt($currentKey, $bridgeKey, $previousKey, $currentMember, $previousMember, $ttlSeconds, $maxDistinct, (int) $now->format('Uv'))
+            ? $store->addDistinctBoundedWithSnapshotAcrossRotationAt($currentKey, $bridgeKey, $previousKey, $currentMember, $previousMember, $ttlSeconds, $maxDistinct, CallerTimeMilliseconds::nativeInteger(CallerTimeMilliseconds::fromInstant($now)))
             : $store->addDistinctBoundedWithSnapshotAcrossRotation($currentKey, $bridgeKey, $previousKey, $currentMember, $previousMember, $ttlSeconds, $maxDistinct);
     }
 
     public static function readGenerationBoundScoreState(PunishmentLifecycleStoreInterface $store, string $currentKey, ?string $previousKey, DateTimeImmutable $now): ?GenerationBoundScoreStateDTO
     {
+        if ($store instanceof CallerTimeDecimalMillisecondsPunishmentLifecycleStoreInterface) {
+            return $store->readGenerationBoundScoreStateAtMilliseconds($currentKey, $previousKey, CallerTimeMilliseconds::fromInstant($now));
+        }
+
         return $store instanceof CallerTimePunishmentLifecycleStoreInterface
-            ? $store->readGenerationBoundScoreStateAt($currentKey, $previousKey, (int) $now->format('Uv'))
+            ? $store->readGenerationBoundScoreStateAt($currentKey, $previousKey, CallerTimeMilliseconds::nativeInteger(CallerTimeMilliseconds::fromInstant($now)))
             : $store->readGenerationBoundScoreState($currentKey, $previousKey);
     }
 
     public static function mutateGenerationBoundScore(PunishmentLifecycleStoreInterface $store, string $currentKey, ?string $previousKey, ?GenerationBoundScoreStateDTO $expectedState, int $ttlSeconds, int $newValue, DateTimeImmutable $now): GenerationBoundScoreMutationDTO
     {
+        if ($store instanceof CallerTimeDecimalMillisecondsPunishmentLifecycleStoreInterface) {
+            return $store->mutateGenerationBoundScoreAtMilliseconds($currentKey, $previousKey, $expectedState, $ttlSeconds, $newValue, CallerTimeMilliseconds::fromInstant($now));
+        }
+
         return $store instanceof CallerTimePunishmentLifecycleStoreInterface
-            ? $store->mutateGenerationBoundScoreAt($currentKey, $previousKey, $expectedState, $ttlSeconds, $newValue, (int) $now->format('Uv'))
+            ? $store->mutateGenerationBoundScoreAt($currentKey, $previousKey, $expectedState, $ttlSeconds, $newValue, CallerTimeMilliseconds::nativeInteger(CallerTimeMilliseconds::fromInstant($now)))
             : $store->mutateGenerationBoundScore($currentKey, $previousKey, $expectedState, $ttlSeconds, $newValue);
     }
 
@@ -221,8 +246,12 @@ final class CallerTimeStore
 
     public static function claimPostPunishmentReentry(PunishmentLifecycleStoreInterface $store, string $currentKey, ?string $previousKey, string $lifecycleId, DateTimeImmutable $now): bool
     {
+        if ($store instanceof CallerTimeDecimalMillisecondsPunishmentLifecycleStoreInterface) {
+            return $store->claimPostPunishmentReentryAtMilliseconds($currentKey, $previousKey, $lifecycleId, CallerTimeMilliseconds::fromInstant($now));
+        }
+
         return $store instanceof CallerTimePunishmentLifecycleStoreInterface
-            ? $store->claimPostPunishmentReentryAt($currentKey, $previousKey, $lifecycleId, (int) $now->format('Uv'))
+            ? $store->claimPostPunishmentReentryAt($currentKey, $previousKey, $lifecycleId, CallerTimeMilliseconds::nativeInteger(CallerTimeMilliseconds::fromInstant($now)))
             : $store->claimPostPunishmentReentry($currentKey, $previousKey, $lifecycleId);
     }
 }
