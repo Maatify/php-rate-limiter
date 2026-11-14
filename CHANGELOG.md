@@ -20,6 +20,21 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   The change procedure (pause, isolate, wait for permits issued under "no limit", rebind, resume) and when the limit starts to bound
   the real pending count are in the usage guide and DEC-038.
 
+### Fixed (#213) — Redis Admission arithmetic on 32-bit PHP
+- The account-bucket bound `capacity × take cost ≤ 2^53 − 1` no longer divides the `2^53 − 1` literal with `intdiv()`. On 32-bit PHP that
+  literal is a `float`, so every reservation with a bucket scope raised a `TypeError`. The bound is now decided exactly on both widths
+  and a request outside it is still rejected with `RateLimiterException` before any Redis command. 64-bit behaviour is unchanged.
+- A Redis integer reply that a native `int` cannot hold (a 64-bit value on 32-bit PHP) is rejected as malformed instead of being
+  saturated by a cast.
+- `AdmissionRuntime::reserve()` rejects a permit deadline `now + D` that overflows a native `int` with `RateLimiterException`, not a `TypeError`.
+- `scripts/ci/run-phpunit-32bit.sh` runs PHPUnit on an actual 32-bit PHP (`PHP_INT_SIZE === 4`, `linux/386`) against an isolated Redis;
+  CI runs the `php32` test group there (bucket reservation and settlement, the exact bucket bound, the shared configuration at the
+  highest native Builder limit, native-integer replies and permit deadline).
+- Known limitation, tracked outside this fix: the caller-time store operations take the clock in milliseconds as a native `int`
+  (`CallerTimeStore`, `...At(…, int $nowMilliseconds)`). A current Unix time in milliseconds does not fit a 32-bit `int`, so the engine's
+  generation-bound score path (K4/K4P) is not yet correct on 32-bit PHP. The Redis admission reservation, settlement and shared-configuration
+  paths, which use seconds, are covered by this fix.
+
 ### Documentation (#185)
 - Clarified DEC-032 Operational Read authority, effective score, and the scope of request atomicity under DEC-036 and DEC-037.
 - Recorded DEC-034 and DEC-035 as proposals. DEC-025 and DEC-028 remain active pending explicit activation.
