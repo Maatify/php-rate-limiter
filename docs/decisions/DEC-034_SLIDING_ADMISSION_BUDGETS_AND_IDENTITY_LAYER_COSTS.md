@@ -50,7 +50,7 @@ Under DEC-033, all windowed admission scopes operate as continuous sliding windo
 
 ## Decision
 
-The choices recorded in DEC-025 are restated below as a proposal. Numbers are archive values from the studies cited; they are restated for continuous sliding windows of duration `W` (600 s) and `DAY` (86400 s):
+The table records the budgets approved by this record for continuous sliding windows of duration `W` (600 s) and `DAY` (86400 s), the choices of DEC-025 restated for them (Owner approval on #220, see the Activation Note). The study figures in it and in the sections below are archive values attributed to the historical studies cited under Evidence, taken at those studies' baselines; the sliding-window figures are those of `investigations/sliding-admission-windows-185/RESULTS.md`.
 
 | # | Decision | Choice |
 | --- | --- | --- |
