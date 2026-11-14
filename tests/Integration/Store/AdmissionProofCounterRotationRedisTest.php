@@ -57,7 +57,7 @@ final class AdmissionProofCounterRotationRedisTest extends AdmissionRedisGateTes
         $this->assertDecisionsAfterRefund($runtime, 'acct-a');
 
         $afterRefund = $this->counterState($bId);
-        self::assertSame('permit_duplicate', $this->settle($runtime, 'acct-a', $a, true)->metadata?->cause);
+        self::assertSame('permit_duplicate', self::causeOf($this->settle($runtime, 'acct-a', $a, true)));
         self::assertSame($afterRefund, $this->counterState($bId), 'a repeated outcome does not touch the control');
     }
 
@@ -83,7 +83,7 @@ final class AdmissionProofCounterRotationRedisTest extends AdmissionRedisGateTes
         self::assertSame($snapshotB, $this->counterState($bId), 'the control permit is untouched');
 
         // A repeated outcome neither changes anything nor frees anything.
-        self::assertSame('permit_duplicate', $this->settle($after, 'acct-a', $a, true)->metadata?->cause);
+        self::assertSame('permit_duplicate', self::causeOf($this->settle($after, 'acct-a', $a, true)));
         self::assertSame($snapshotA, $this->counterState($aId));
         self::assertSame($snapshotB, $this->counterState($bId));
         self::assertSame($expiryA, $this->expiries($aKeys));
@@ -95,7 +95,7 @@ final class AdmissionProofCounterRotationRedisTest extends AdmissionRedisGateTes
         $same = $this->runtime();
         $this->open($same);
         $held = $this->fillProof($same);
-        self::assertSame('proof_capacity', $this->check($same, 'acct-a')->metadata?->cause, 'full');
+        self::assertSame('proof_capacity', self::causeOf($this->check($same, 'acct-a')), 'full');
         $this->settle($same, 'acct-a', $held[0], true);
         self::assertTrue($this->check($same, 'acct-a')->isAllowed(), 'same generation: the refunded slot is reusable');
 
@@ -104,9 +104,15 @@ final class AdmissionProofCounterRotationRedisTest extends AdmissionRedisGateTes
         $this->open($before);
         $held = $this->fillProof($before);
         $after = $this->rotatedRuntime();
-        self::assertSame('proof_capacity', $this->check($after, 'acct-a')->metadata?->cause, 'the previous generation counts');
+        self::assertSame('proof_capacity', self::causeOf($this->check($after, 'acct-a')), 'the previous generation counts');
         self::assertTrue($this->settle($after, 'acct-a', $held[0], true)->isAllowed());
-        self::assertSame('proof_capacity', $this->check($after, 'acct-a')->metadata?->cause, 'the member in the previous generation is not refunded; it lapses with its own window');
+        self::assertSame('proof_capacity', self::causeOf($this->check($after, 'acct-a')), 'the member in the previous generation is not refunded; it lapses with its own window');
+    }
+
+    /** The refusal or permit cause of a result; one helper so the nullability is the declared one on every PHPStan version. */
+    private static function causeOf(RateLimitResultDTO $result): ?string
+    {
+        return $result->metadata?->cause;
     }
 
     private function assertDecisionsAfterRefund(CompositeRateLimiterRuntimeInterface $runtime, string $account): void
