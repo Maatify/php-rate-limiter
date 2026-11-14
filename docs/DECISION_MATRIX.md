@@ -1016,7 +1016,7 @@ These limits are intended behavior approved by the Owner (#183, 2026-11-03) on t
    are shared-scope keys (IP prefix; IP prefix + normalized UA). Unrelated clients behind one
    NAT share them, so one client's failures, churn or credential spray can block the others
    (#100, #106). This is the DEC-027 posture (DEC-019 carried verbatim). The supported
-   alternative is the admission reservation (DEC-022..DEC-028, DEC-033..DEC-035), where K1 credential spray is
+   alternative is the admission reservation (the active decisions DEC-022, DEC-023, DEC-024, DEC-026, DEC-033, DEC-034 and DEC-035, §12), where K1 credential spray is
    not evaluated and is replaced by the source capacity `U_src` and the net failure cap `F`
    (DEC-022).
 2. **Trusted sessions on several accounts (policies that do not opt into admission).** The
