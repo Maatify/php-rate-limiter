@@ -6,7 +6,14 @@ namespace Maatify\RateLimiter\DTO;
 
 use Maatify\RateLimiter\Exception\RateLimiterException;
 
-/** Result of a reservation: admitted, or refused by the first refusing scope with nothing written. */
+/**
+ * Result of a reservation: admitted, or refused by the first refusing scope with nothing written.
+ *
+ * `$refusedScope` is the name of the refusing scope (or `permit_exists` for a permit id that already exists) and is
+ * `null` exactly when `$admitted`; `$retryAfterSeconds` is the non-negative wait until that scope can admit. The
+ * constructor throws `RateLimiterException` for an admitted result that names a scope, a refusal that names none, or
+ * a negative wait.
+ */
 final readonly class AdmissionReservationResultDTO
 {
     public function __construct(

@@ -61,6 +61,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   paths through the store entry point and the public builder: a commit whose state comparison fails, and an evaluation error over state
   that changed before the error was returned.
 
+### Documentation (#221) — Public store contracts
+- `RequestAtomicStoreInterface::transactRequest()` now states the DEC-037 contract at the interface: held-back writes, an all-or-none save over unchanged read state, a repeatable evaluation run again after a conflict, a bounded recalculation that ends in `RateLimitConcurrencyException` with nothing saved, an error over current state thrown unchanged, and an error over changed state that an implementation may retry. A `BackendFailureException` leaves nothing saved when raised before the save is applied, but raised while awaiting the save's reply the save may have been applied in full (unknown outcome, never partial). The 32-evaluation, 16 ms and `requestRetryBudgetMilliseconds` limits are documented as those of `RedisFullCapabilityStore`.
+- DEC-039's rationale for separately named decimal-millisecond methods no longer conflates an implementation widening its own parameter (allowed by PHP) with widening the published interface (which breaks existing int-only implementations). The decision is unchanged.
+- The six decimal-millisecond methods reference the contracts they extend and document the validation failure raised before any backend command; the package reference lists them with their input domain, together with `RequestAtomicStoreInterface`, the nine caller-time mirrors, the shared admission configuration types and `KnownDeviceAccountAllowancePolicyInterface`.
+- The admission store methods (`reserveAdmission`, `applyAdmissionOutcome`, the binding epoch pair, `claimAdmissionPermit`, `claimAdmissionPermitWithOutcome`) and `AdmissionPermitClaimEnum` document their semantics. No behaviour change.
+- Five DocBlocks that had been separated from their declaration by a later insertion are attached again: `EvaluationPipeline::process()` (which also states the DEC-037 request-atomic path), `AdmissionRuntime::fenceOpen()`, `CircuitBreaker::reportFailure()` and `reportSuccess()`, and the `CIRCUIT_READ` script constant. Comments only; the PHP token stream of every changed file is identical to `main`.
+
 ### Documentation (#185)
 - Clarified DEC-032 Operational Read authority, effective score, and the scope of request atomicity under DEC-036 and DEC-037.
 - Recorded DEC-034 and DEC-035 as proposals. DEC-025 and DEC-028 remain active pending explicit activation.

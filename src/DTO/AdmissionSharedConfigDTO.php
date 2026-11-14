@@ -28,6 +28,10 @@ final readonly class AdmissionSharedConfigDTO
         }
     }
 
+    /**
+     * The configuration of a worker whose proven-lane pending-permit limit is `$limit`; `null` means none is
+     * configured and gives the value `off`.
+     */
     public static function forLimit(string $key, ?string $previousKey, ?int $limit): self
     {
         return new self($key, $previousKey, $limit === null ? self::OFF : (string) $limit);

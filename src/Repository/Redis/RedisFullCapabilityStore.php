@@ -244,12 +244,6 @@ return {redis.call('HGET', KEYS[1], 'value'), now}
 LUA;
 
     /**
-     * Atomic, read-only circuit-state read (DEC-018). redis.pcall keeps a Redis
-     * ERROR distinguishable from a Redis NIL before any client representation:
-     * missing key => {'absent'}; string => {'value', payload};
-     * command error => {'error', text}.
-     */
-    /**
      * #185 F-185-17 (DEC-031): write a score and return the one it replaced, atomically. ARGV: TTL, value, caller time.
      * The existing score is validated as SCORE_GET validates it (malformed state is an error and is not overwritten);
      * the TTL is set on every write, as SCORE_SET sets it. Returns {previous value, previous updatedAt} or {}.
@@ -295,6 +289,12 @@ redis.call('SET', KEYS[1], ARGV[2])
 return 1
 LUA;
 
+    /**
+     * Atomic, read-only circuit-state read (DEC-018). redis.pcall keeps a Redis
+     * ERROR distinguishable from a Redis NIL before any client representation:
+     * missing key => {'absent'}; string => {'value', payload};
+     * command error => {'error', text}.
+     */
     private const CIRCUIT_READ = <<<'LUA'
 local reply = redis.pcall('GET', KEYS[1])
 if type(reply) == 'table' and reply.err then return {'error', reply.err} end
@@ -2922,6 +2922,32 @@ LUA;
         return $this->command($command);
     }
 
+    /**
+     * Implements `RequestAtomicStoreInterface::transactRequest()`; the guarantees stated there all apply.
+     *
+     * Limits of this store, which belong to it and not to the interface (DEC-037):
+     *
+     * - At most 32 evaluations of `$evaluate`.
+     * - A random pause between evaluations that grows to 16 milliseconds.
+     * - At most `requestRetryBudgetMilliseconds` (constructor argument, default 500) of recalculating, measured on a
+     *   monotonic clock from the first conflict. A request always gets a second evaluation, even when the budget is
+     *   already spent, and the budget is checked only before a further evaluation: an evaluation that has started
+     *   runs to its end.
+     *
+     * A conflict is a commit that finds a read state changed, or an error from `$evaluate` over state that is no
+     * longer current. When either bound is reached nothing is saved and `RateLimitConcurrencyException` is thrown.
+     * An error over current state, and any `BackendFailureException`, ends the call at once and is thrown as it
+     * was raised. Whether anything was saved depends on when a `BackendFailureException` occurred: during the
+     * evaluation the scripts only read, so nothing is saved, and a save that never reached Redis saves nothing; but
+     * the commit is one script that Redis applies atomically, so a failure while awaiting its reply can follow a
+     * save that was applied in full. The outcome is then unknown to the caller; it is never a partial save
+     * (`RequestAtomicityRecoveryOutageRedisTest` covers both cases).
+     *
+     * @template T
+     * @param callable(): T $evaluate
+     * @return T
+     * @throws RateLimitConcurrencyException when 32 evaluations or the time budget were used without a save
+     */
     public function transactRequest(callable $evaluate): mixed
     {
         if ($this->requestState !== null) {
