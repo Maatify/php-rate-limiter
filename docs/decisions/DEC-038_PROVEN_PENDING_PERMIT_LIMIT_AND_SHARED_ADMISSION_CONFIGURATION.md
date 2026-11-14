@@ -74,6 +74,10 @@ DEC-036 makes the outcome claim atomic and DEC-033 bounds recorded failures; nei
 - **DEC-037:** request preservation, unchanged.
 - **DEC-015:** unchanged (no admission in degraded mode).
 
+### Correction Note on Activation of DEC-034 and DEC-035 (2026-11-14, #220)
+
+DEC-035 is `ACTIVE` and supersedes DEC-028; DEC-034 is `ACTIVE` and supersedes DEC-025 ([#220, comment 6884422850](https://github.com/Maatify/php-rate-limiter/issues/220#issuecomment-6884422850)). The statements above that DEC-028 "remains authoritative" and "Not superseded", and that DEC-034 and DEC-035 are `PROPOSED`, describe the state when this record was activated. The exception is unchanged: the optional Host-set pending-permit limit is the only admission bound a Host may set, and every other budget and the permit timing are package constants, now those of DEC-034 and DEC-035. This record changes none of their values and they change none of its.
+
 ## Canonical Contract / Current Owner
 
 `RateLimiterBuilder::withProvenPendingPermitLimit()`, `AdmissionBudgetsDTO::$provenPendingPermitCap`, `AdmissionRuntime` (scope and release), `RedisAdmissionOperations` (comparison and registration), `AdmissionSharedConfigControlInterface`, `docs/guides/USAGE_GUIDE.md`.

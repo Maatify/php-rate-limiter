@@ -6,7 +6,7 @@
 
 ## Status
 
-`ACTIVE` — on the Owner's decision of 2026-10-20 (OD-8 (b)), delivered atomically in PR #150 with DEC-026.
+`SUPERSEDED` by DEC-035 on 2026-11-14, on the Owner's explicit approval on #220 ([comment 6884422850](https://github.com/Maatify/php-rate-limiter/issues/220#issuecomment-6884422850)), under Decision Governance Standard §9. It was `ACTIVE` on the Owner's decision of 2026-10-20 (OD-8 (b)), delivered atomically in PR #150 with DEC-026. Nothing below this Status section and above `Superseded By` is edited, and no rationale is removed. DEC-035 restates this record in full for continuous sliding windows (DEC-033).
 
 ## Date
 
@@ -77,4 +77,4 @@ None
 
 ## Superseded By
 
-None
+`DEC-035`

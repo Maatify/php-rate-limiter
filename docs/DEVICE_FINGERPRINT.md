@@ -261,7 +261,7 @@ Rules:
 
 **On an opted policy, `isDevicePreviouslyVerifiedForAccount` never selects a lane.** The proven
 lane is entered only through a verified admission credential. On the unproven lane a known device
-is bounded by the account bucket only (DEC-025 5.1).
+is bounded by the account bucket only (DEC-034 5.1).
 
 ---
 

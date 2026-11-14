@@ -35,7 +35,7 @@ Keys are **security primitives**, not implementation details.
   * Amendment under DEC-022 (2026-10-20), for a policy that opts into the admission reservation
     (DEC-024) only: the **source** (an IPv4 address or an IPv6 `/64`) may bound unproven traffic as a
     per-window **capacity** (the source capacity, the net failure cap and the cross-account
-    proven-door cap of DEC-025, `DECISION_MATRIX.md` §12). It never identifies anyone, never persists,
+    proven-door cap of DEC-034, `DECISION_MATRIX.md` §12). It never identifies anyone, never persists,
     never escalates and never blocks: a refusal is a non-persisted `SOFT_BLOCK`. For identity the
     source stays advisory, as above
 * Device-aware keys are preferred whenever available
@@ -167,7 +167,7 @@ K4 = AccountID
 * AccountID MUST be a blind index or internal ID
 * Raw usernames/emails MUST NOT be used
 
-**Admission family K4P (DEC-026, DEC-025 4.A; LOCKED amendment, active since 2026-10-20).** For a policy that declares
+**Admission family K4P (DEC-026, DEC-034 4.A; LOCKED amendment, active since 2026-10-20).** For a policy that declares
 the admission capability, a request carrying the proven lane derives the account key from the key
 type `k4p` instead of `k4`:
 
@@ -202,7 +202,7 @@ K5 = AccountID + DeviceFP
 * K5 presence alone does NOT prove a device was previously verified for the account
   (see `DEVICE_FINGERPRINT.md` §4.3)
 
-**Admission family K5p and the K5 material (DEC-026, DEC-025 9.1; LOCKED amendment, active since 2026-10-20).** For a policy that
+**Admission family K5p and the K5 material (DEC-026, DEC-034 9.1; LOCKED amendment, active since 2026-10-20).** For a policy that
 declares the admission capability: (1) the proven lane derives the device key from the key type
 `k5p` (`{policy}:rate_limiter:k5p:v2:{env}:{accountId}:{material}`) and keeps the unsuffixed
 `k5` for the unproven lane; (2) `{material}` is the instance-id component `deviceIdHash` when the
@@ -793,7 +793,7 @@ The admission layer adds the following purposes (LOCKED amendment under DEC-026,
 * `binding_epoch` — one integer per account, the per-account epoch of the admission binding
   credential. The preimage is the same, `{policy}:rate_limiter:aux:binding_epoch:v1:{env}:{accountId}`,
   with the **budget group** of the verifier class in place of `{policy}` so that login,
-  re-authentication and password change share one epoch (DEC-025 6.1). It is **not** a §10.1
+  re-authentication and password change share one epoch (DEC-034 6.1). It is **not** a §10.1
   generation-bound namespace. Current key is written; the previous-generation key is read-only
   and read only when the current key is absent. The derivation is in `AdmissionRuntime` (stage 5-b3b), keyed by `accountId` and the active key
   secret (with the previous-generation key read-only); the store operations (`readBindingEpoch`,
