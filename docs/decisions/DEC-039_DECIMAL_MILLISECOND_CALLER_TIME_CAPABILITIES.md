@@ -35,7 +35,7 @@ The six caller-time operations that take `int $nowMilliseconds` (`addDistinctAcr
 ## Rationale
 
 - **Why a decimal string:** it is exact on every build, it is what the Lua scripts already accept and validate, and it matches DEC-038's decimal contract for values a native integer cannot carry. A clock value object would be a larger new public type for the same guarantee.
-- **Why a separate method name rather than a wider parameter:** PHP forbids widening an interface parameter in place for implementers, and a Host's existing class would stop loading. A separately named method keeps every existing store source- and behaviour-compatible.
+- **Why a separate method name rather than a wider parameter:** two different widenings must be kept apart. PHP allows an implementation to accept a wider parameter type than the interface declares (parameter contravariance), so a Host store may already accept `int|string` in its own method. That is not the decision here. Widening the published interface itself, `int $nowMilliseconds` to `int|string`, would require every existing int-only implementation to accept the new type, and one whose parameter stays `int` is no longer compatible with the interface and fails to load. Changing the signature in place is therefore a source-compatibility break for existing Hosts, while a separately named method on a new interface that extends the existing one changes nothing for them. See the [PHP variance contract](https://www.php.net/manual/en/language.oop5.variance.php).
 - **Why reject rather than fall back:** switching a legacy store to its own clock, or to a truncated value, would silently change which time the decision uses (the situation DEC-016 exists to prevent).
 
 ## Consequences

@@ -84,7 +84,6 @@ final class AdmissionRuntime
         return hash_hmac('sha256', implode("\0", [$envScope, 'admission_fence', $budgetGroup]), $keySecret);
     }
 
-    /** The fence reads the current key, else the previous one, so a key-secret rotation does not close it (LT-27 (3)). */
     /**
      * Run one request of an opted policy (lane, evaluation and reservation) as one atomic save when the store offers it
      * (DEC-037); other stores run it as it is.
@@ -98,6 +97,7 @@ final class AdmissionRuntime
         return $this->store instanceof RequestAtomicStoreInterface ? $this->store->transactRequest($request) : $request();
     }
 
+    /** The fence reads the current key, else the previous one, so a key-secret rotation does not close it (LT-27 (3)). */
     public function fenceOpen(string $budgetGroup): bool
     {
         return $this->store->readBindingEpoch(self::fenceKey($this->envScope, $budgetGroup, $this->keySecret), $this->previousFenceKey($budgetGroup)) >= 1;

@@ -62,6 +62,9 @@ class CircuitBreaker
         private readonly ClockInterface $clock,
     ) {}
 
+    /** #185 F-185-18 (DEC-031): fenced attempts of one failure report before it is dropped. */
+    private const FAILURE_REPORT_ATTEMPTS = 3;
+
     /**
      * Record a normal backend failure while CLOSED and trip after the locked
      * three-failures-in-ten-seconds threshold.
@@ -69,9 +72,6 @@ class CircuitBreaker
      * Requests short-circuited by OPEN or HALF_OPEN are never sent here and are
      * deliberately ignored if a caller invokes this method directly.
      */
-    /** #185 F-185-18 (DEC-031): fenced attempts of one failure report before it is dropped. */
-    private const FAILURE_REPORT_ATTEMPTS = 3;
-
     public function reportFailure(string $policyName): void
     {
         if ($this->store instanceof CircuitBreakerStateCasStoreInterface && ! isset($this->emergencyStates[$policyName])) {
@@ -120,11 +120,6 @@ class CircuitBreaker
     }
 
     /**
-     * Normal CLOSED success is intentionally not a recovery mechanism.
-     *
-     * OPEN and HALF_OPEN can only recover through attemptRecoveryProbe().
-     */
-    /**
      * #185 F-185-18 (DEC-031): the failure is appended to the state that was read and saved only while that state is
      * still the stored one, so concurrent failures are all counted and the circuit trips at the threshold. A miss reads
      * again; after FAILURE_REPORT_ATTEMPTS misses this one failure is dropped without an exception (every miss means
@@ -170,6 +165,11 @@ class CircuitBreaker
         }
     }
 
+    /**
+     * Normal CLOSED success is intentionally not a recovery mechanism.
+     *
+     * OPEN and HALF_OPEN can only recover through attemptRecoveryProbe().
+     */
     public function reportSuccess(string $policyName): void
     {
         $state = $this->loadState($policyName);

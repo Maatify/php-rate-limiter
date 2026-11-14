@@ -4,7 +4,7 @@ declare(strict_types=1);
 
 namespace Maatify\RateLimiter\Enum;
 
-/** Kind of one scope inside an atomic admission reservation (shape only; the store operations arrive later). */
+/** Kind of one scope inside an atomic admission reservation; the store reserves and settles each kind in `AdmissionReservationStoreInterface`. */
 enum AdmissionScopeKindEnum: string
 {
     /** A window or day counter with a capacity, optionally summed with a read-only previous generation. */

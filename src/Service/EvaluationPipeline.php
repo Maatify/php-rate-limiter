@@ -181,6 +181,12 @@ class EvaluationPipeline
         return CallerTimeStore::claimPostPunishmentReentry($this->store, $currentKey, $previous['k4'] ?? null, $lifecycleId, $this->clock->now());
     }
 
+    /** T-5: the store that saves one request at once, or null when the store cannot (DEC-037). */
+    public function requestStore(): ?RequestAtomicStoreInterface
+    {
+        return $this->store instanceof RequestAtomicStoreInterface && $this->correlationStore === $this->store ? $this->store : null;
+    }
+
     /**
      * Evaluate a command and return the winning allow or block decision.
      *
@@ -196,13 +202,14 @@ class EvaluationPipeline
      * K1/K2/K3 penalties, no device-cap observation, no flood). Both lanes drop
      * the collective correlation rules and take the K5 material from the
      * instance id when the device carries one.
+     *
+     * When the store implements `RequestAtomicStoreInterface` and is also the correlation store (`requestStore()`),
+     * the whole evaluation runs through `transactRequest()`: every write is held back and saved together, or not at
+     * all, and the evaluation is repeated from a fresh read when another request changed state it read (DEC-037).
+     * Any other store keeps the sequential writes. A lane given for a policy without the admission capability is
+     * refused with `RateLimiterException` before any store access. When the store's recalculation bound is reached,
+     * `RateLimitConcurrencyException` is thrown with nothing saved; the engine answers it with its concurrency block.
      */
-    /** T-5: the store that saves one request at once, or null when the store cannot (DEC-037). */
-    public function requestStore(): ?RequestAtomicStoreInterface
-    {
-        return $this->store instanceof RequestAtomicStoreInterface && $this->correlationStore === $this->store ? $this->store : null;
-    }
-
     public function process(
         BlockPolicyInterface $policy,
         RateLimitContextDTO $context,
