@@ -492,12 +492,12 @@ lifecycle; a custom name alone is not sufficient.
 
 ---
 
-## 7.2 Admission-Reservation Opt-In (DEC-022, DEC-023, DEC-024, DEC-025, DEC-026, DEC-028)
+## 7.2 Admission-Reservation Opt-In (DEC-022, DEC-023, DEC-024, DEC-026, DEC-033, DEC-034, DEC-035)
 
 **Status: active since 2026-10-20.** `RateLimiterBuilder::build()` constructs the admission runtime,
-with the package constants of DEC-028, when a registered policy declares the capability. No Host
+with the package constants of DEC-035, when a registered policy declares the capability. No Host
 input sets a budget. No default preset declares it: `login_protection`, `otp_protection` and
-`api_heavy_protection` keep today's behaviour.
+`api_heavy_protection` keep today's behaviour. The figures recorded in DEC-034 (for example the co-located office replay, legitimate refusals 26/61 and capped attacker reach 40 under sliding windows, against 21/61 and 72 under the fixed windows of DEC-025) are measured trade-offs of registered replays that the Owner accepted (#220). They are not production guarantees: the bounds a deployment gets are the package constants, and its own traffic can measure differently.
 
 * **The official opt-in variant: `LoginProtectionAdmissionPolicy` (Login only).** It is
   `LoginProtectionPolicy` with the same name `login_protection`, the same values, thresholds,
@@ -506,7 +506,7 @@ input sets a budget. No default preset declares it: `login_protection`, `otp_pro
   it replaces the default Login preset under the same name, so the account and device state written
   before the switch is read on. There is no OTP variant: OTP was never measured under the admission
   reservation. The measured costs a Host accepts with it are recorded in DEC-022 (Decision 4, at
-  activation), DEC-025 and DEC-026.
+  activation), DEC-034 and DEC-026.
 
 * **S1.** `PolicyCapabilityEnum::ADMISSION_RESERVATION` is one capability for the whole measured
   assembly (source ceiling, failure cap, account bucket, proven-lane caps, new-device cap, the

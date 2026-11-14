@@ -46,7 +46,7 @@ final class AdmissionBuilderActivationTest extends TestCase
 {
     /**
      * The package constants, typed here with their sources (the only place outside `AdmissionBudgetsDTO::packageDefaults()`):
-     * DEC-025 1.4 (`W`, `U_src`, `F`), 2.2 (`C`, `T`), 3.1 (`P_acct`, `P_proof`, `N_P`), 8 as 8.2 (D8 `F`); DEC-028 (`D`, `G`).
+     * DEC-034 1.4 (`W`, `U_src`, `F`), 2.2 (`C`, `T`), 3.1 (`P_acct`, `P_proof`, `N_P`), 8 as 8.2 (D8 `F`); DEC-035 (`D`, `G`).
      */
     private const PACKAGE_CONSTANTS = [
         'windowSeconds' => 600,

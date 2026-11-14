@@ -1,4 +1,4 @@
-# DEC-034 — Level-2 Sliding Admission Budgets and Identity-Layer Cost Decisions for #97 (proposed replacement for DEC-025)
+# DEC-034 — Level-2 Sliding Admission Budgets and Identity-Layer Cost Decisions for #97 (replaces DEC-025)
 
 ## Decision ID
 
@@ -6,11 +6,13 @@
 
 ## Status
 
-`PROPOSED` — proposed in PR-Q (#185) to supersede DEC-025 under Decision Governance Standard §9. Activation on Owner approval on the PR, followed by activation commit.
+`ACTIVE` — activated 2026-11-14 on the Owner's explicit approval on #220 ([comment 6884422850](https://github.com/Maatify/php-rate-limiter/issues/220#issuecomment-6884422850)) of the measured sliding-window trade-off (office legitimate refusals 26/61 where DEC-025 recorded 21/61; capped attacker reach 40 where it recorded 72), under Decision Governance Standard §9. DEC-025 is `SUPERSEDED` by this record in the same change.
+
+Earlier status: `PROPOSED` in PR-Q (#185).
 
 ## Date
 
-2026-11-10
+Proposed 2026-11-10; activated 2026-11-14.
 
 ## Decision Authority / Deciders
 
@@ -34,9 +36,13 @@ The Level-2 decisions of DEC-022 (security decisions on cost) for the admission 
 - the replacement bounds for what K2 gives against the multi-session and API families;
 - the K5 micro-cap and known-device allowance under the new K5 material.
 
+> **Historical passage, carried from DEC-025 as decided on 2026-10-19.** It describes that date, not the current contract: at the activation of this record on 2026-11-14 DEC-022 is `ACTIVE` (since 2026-10-20), DEC-019 is `SUPERSEDED` by DEC-027, DEC-021 by DEC-026, and the values below have been the package constants of the builder since 2026-10-20 (PR #150, DEC-035). See the Activation Note.
+
 Out of scope: DEC-022 Levels 1 and 3 (the principle, the FULL2 assembly); the Host mode contract and the `checkOnly` reservation (DEC-023, DEC-024); the supersession of DEC-021 (DEC-026); any API or Store shape; Runtime (step 5).
 
 ## Context
+
+> **Historical passage, carried from DEC-025 as decided on 2026-10-19.** It describes that date, not the current contract: at the activation of this record on 2026-11-14 DEC-022 is `ACTIVE` (since 2026-10-20), DEC-019 is `SUPERSEDED` by DEC-027, DEC-021 by DEC-026, and the values below have been the package constants of the builder since 2026-10-20 (PR #150, DEC-035). See the Activation Note.
 
 DEC-022 (`PROPOSED`) names, in its Condition 3, an Owner choice of the budgets, "Each is a Level 2 security decision with its measured cost stated, including where the single-IP spray gate is set", and assumes no value. Steps 1 to 3 are closed: DEC-022 `PROPOSED`; DEC-023 and DEC-024 `ACTIVE` (the mode contract and the opt-in reservation, as principles); the identity layer `SUPPORTED — LIMITED SCOPE` (G5 v2). The measured cost of every option, per decision, on the legitimate user (`L1`, `D2`, `ABA_B`, MIX legitimate, HAR, UAC, KD) and on the attacker's reach (`SP6` / `SP3` / `SP1n`, `POI`, `BRU24`, `X1` / `BRU` / `BRD`, STEAL, `MULTITOK`), with its effect on DEC-021, DEC-015 and DEC-008 and its sources, is in the decision paper [`investigations/k2-identity-admission-97/BUDGETS_DECISION.md`](../../investigations/k2-identity-admission-97/BUDGETS_DECISION.md). The one registered measurement of this step is [`G6_BUDGETS_MEASUREMENT.md`](../../investigations/k2-identity-admission-97/G6_BUDGETS_MEASUREMENT.md).
 
@@ -44,7 +50,7 @@ Under DEC-033, all windowed admission scopes operate as continuous sliding windo
 
 ## Decision
 
-The choices recorded in DEC-025 are restated below as a proposal. Numbers are archive values from the studies cited; they are restated for continuous sliding windows of duration `W` (600 s) and `DAY` (86400 s):
+The table records the budgets approved by this record for continuous sliding windows of duration `W` (600 s) and `DAY` (86400 s), the choices of DEC-025 restated for them (Owner approval on #220, see the Activation Note). The study figures in it and in the sections below are archive values attributed to the historical studies cited under Evidence, taken at those studies' baselines; the sliding-window figures are those of `investigations/sliding-admission-windows-185/RESULTS.md`.
 
 | # | Decision | Choice |
 | --- | --- | --- |
@@ -65,22 +71,26 @@ The choices recorded in DEC-025 are restated below as a proposal. Numbers are ar
 
 ### What this record does not approve
 
+> **Historical passage, carried from DEC-025 as decided on 2026-10-19.** It describes that date, not the current contract: at the activation of this record on 2026-11-14 DEC-022 is `ACTIVE` (since 2026-10-20), DEC-019 is `SUPERSEDED` by DEC-027, DEC-021 by DEC-026, and the values below have been the package constants of the builder since 2026-10-20 (PR #150, DEC-035). See the Activation Note.
+
 `FULL2` or the identity layer as a product; any Runtime, change to `src/`, `tests/`, a preset or a threshold; any API or Store shape; the supersession of DEC-021 (DEC-024 binds it to the first activation); any value other than those above; or the activation of DEC-022.
 
 ## Rationale
 
-- **Why study values.** DEC-022 assumes no value; the values are the Owner's. The numbers are measured; the Owner accepted their measured cost on 2026-10-19 as declared budgets, and they become production values only in step 5 (package constants under DEC-028 / DEC-035).
+- **[Historical, 2026-10-19; see the Activation Note]** **Why study values.** DEC-022 assumes no value; the values are the Owner's. The numbers are measured; the Owner accepted their measured cost on 2026-10-19 as declared budgets, and they become production values only in step 5 (package constants under DEC-028 / DEC-035).
 - **Why nine points in one record.** DEC-022 Condition 3 names decisions 1, 2 and 8, G5 v2 §8 names 3 (the `N_P` cost), 4, 5 and 6, and the Owner's step-4 assignment adds the P caps, 7 and 9; one record shows the interactions (paper §10). Decision Governance's default is one material decision per record; the nine are recorded together as one budget declaration, and a later change to one of them supersedes this record under §9.
 - **Why some points are open items.** A gate with no evidence is not a gate that passed. 5.4 and P4 are written as gates, not decided.
 - **Why sliding windows.** As established under LT-185-30 (b) and DEC-033, fixed tumbling buckets allowed boundary double-bursting (up to 2x capacity across a bucket boundary). Continuous sliding windows enforce the decided caps strictly across any interval of length `W` (600 s) or `DAY` (86400 s).
 
 ## Consequences
 
-- **Values are study values.** They become production values only through the step-5 Runtime authorisation (defined as package constants in DEC-028 and restated in DEC-035). No Runtime, API or Store shape follows from this record. DEC-015, DEC-019 and DEC-021 are unchanged until then.
+- **[Historical, 2026-10-19; see the Activation Note]** **Values are study values.** They become production values only through the step-5 Runtime authorisation (defined as package constants in DEC-028 and restated in DEC-035). No Runtime, API or Store shape follows from this record. DEC-015, DEC-019 and DEC-021 are unchanged until then.
 - **Declared costs the Owner accepted** (decision paper): S0's collective spray denial is retired at `U_src` 24 / `F` 4 (`SP6` 24 in `pre+out`, 144 in `pre`; `POI` 96); owner recovery up to about 30 minutes on a continuing attack; a known device that lost its token is bounded by the bucket (51 against DEC-021's 45 / 44 / 45); `X2` and `TPAIRT` of decision 8 (under continuous sliding windows: the multi-session cells fall to 21/61 and 40/200 in `pre+out`; co-located office pays 26 of 61 beside a `TMSd` attacker; historical tumbling values were 29/61 and 40/200 with office cost 21/61; S0 baseline being 7/61 and 2/200); a second credential holder is locked out after a password change (F-G5v2-05); no global ceiling (P4 open); the `UAX-NP-K` curve (refusals from the 11th distinct browser major in a day).
 - **P-lane pending-permit concurrency is not an approved cost.** A historical run (the [Lead review of the previous PR-Q head](https://github.com/Maatify/php-rate-limiter/pull/202#pullrequestreview-5855399154)) admitted all 60 distinct-account, distinct-proof reservations of its largest batch before outcomes were recorded. This is a historical observation, not a figure the Owner accepted, not a bound on the current head, and not part of the declared-cost list above. Per the Owner's [scope decision](https://github.com/Maatify/php-rate-limiter/issues/185#issuecomment-6805835020), implementation and public Redis verification of the pending-permit limit are split out to [#206](https://github.com/Maatify/php-rate-limiter/issues/206); its acceptance criteria are not set by this record.
-- **Status unchanged.** DEC-034 and DEC-035 remain `PROPOSED`; nothing here activates either.
+- **Activation.** DEC-034 and DEC-035 are `ACTIVE` from 2026-11-14 and supersede DEC-025 and DEC-028; no value, constant or Runtime behaviour changes with the activation (see the Activation Note).
 - Every admission bound is absent in degraded mode (DEC-024 Consequences) and unavailable to `pre` / `out` Hosts as DEC-023 states; every new admission state family must state its DEC-003 cycles, DEC-007 lifecycle, DEC-008 capability and DEC-015 failure behaviour when implemented.
+
+> **Historical passage, carried from DEC-025 as decided on 2026-10-19.** It describes that date, not the current contract: at the activation of this record on 2026-11-14 DEC-022 is `ACTIVE` (since 2026-10-20), DEC-019 is `SUPERSEDED` by DEC-027, DEC-021 by DEC-026, and the values below have been the package constants of the builder since 2026-10-20 (PR #150, DEC-035). See the Activation Note.
 
 | Record | Effect |
 | --- | --- |
@@ -110,15 +120,25 @@ Every number is quoted from the merged study named, at that study's baseline (G6
 
 ## Relationship to Other Decisions
 
-- **DEC-025:** Remains ACTIVE. This proposal would supersede it on activation under Decision Governance Standard §9.
-- **DEC-022:** `PROPOSED`, unchanged in status. Its historical Condition 3 choice remains recorded in DEC-025.
+- **DEC-025:** `SUPERSEDED` by this record on 2026-11-14 under Decision Governance Standard §9; its text and rationale stay as the historical record.
+- **DEC-022:** `ACTIVE` (activated 2026-10-20), unchanged. Its Condition 3 choice was recorded in DEC-025 and is restated here.
 - **DEC-023 and DEC-024:** `ACTIVE`, unchanged. They decide the mode contract and the reservation principle; this record decides no value of theirs.
 - **DEC-026:** Governs the known-device verifier bound.
-- **DEC-028 / DEC-035:** Governs the admission runtime constants and permit timing.
+- **DEC-035:** `ACTIVE`; supersedes DEC-028 and governs the admission runtime constants and permit timing (`D` 30 s, `G` 600 s).
+- **DEC-038:** `ACTIVE`; its optional Host-set proven-lane pending-permit limit is the one admission bound a Host may set. It adds no budget to this record and changes none of its values.
 - **DEC-033:** Operates the sliding window mechanism and storage structure for the budgets declared here.
-- **DEC-021, DEC-019, DEC-015:** `ACTIVE`, unchanged; effects as stated above.
+- **DEC-015:** `ACTIVE`, unchanged. **DEC-021 and DEC-019:** `ACTIVE` when DEC-025 was decided (2026-10-19, effects as stated above); now `SUPERSEDED` by DEC-026 and DEC-027.
 - **DEC-003, DEC-007, DEC-008:** unchanged; any new key or door states its effects when implemented.
-- **Index:** `DECISIONS_INDEX.md` lists this record as `PROPOSED`.
+- **Index:** `DECISIONS_INDEX.md` lists this record as `ACTIVE`.
+
+## Activation Note (2026-11-14, #220)
+
+Authority: the Owner's explicit approval and the executor assignment on #220 ([comment 6884422850](https://github.com/Maatify/php-rate-limiter/issues/220#issuecomment-6884422850)), on the Lead's reconciliation of `main@676c0e5` ([comment 6883058587](https://github.com/Maatify/php-rate-limiter/issues/220#issuecomment-6883058587)) and the Lead's direct replay of the registered archive on that candidate ([comment 6883092234](https://github.com/Maatify/php-rate-limiter/issues/220#issuecomment-6883092234)).
+
+- **What is accepted.** The measured sliding-window trade-off of `investigations/sliding-admission-windows-185/RESULTS.md`: in the registered co-located office replay (G7), legitimate refusals 26/61 (21/61 under fixed windows), capped attacker reach 40 (72 under fixed windows); `TMS` 21/61 and `TMSd` 40/200. These are **measured trade-offs of that replay**, accepted by the Owner. They are not production guarantees: the production bounds are the package constants of DEC-035, and a different deployment can measure different numbers.
+- **What does not change.** Every numeric budget (`W` 600 s, `DAY` 86400 s, `U_src` 24, `F` 4, bucket `C` 4 over `T` 1800 s, `P_acct` 10 and 60, `P_proof` 6 and 30, `N_P` 10) and the permit timing (`D` 30 s, `G` 600 s) are the values of DEC-025 and DEC-028; `AdmissionBudgetsDTO::packageDefaults()` is unchanged. DEC-033 keeps its authority over the sliding mechanism.
+- **Statements carried from DEC-025.** The sections above restate DEC-025 as it was decided on 2026-10-19, so sentences such as "DEC-022 `PROPOSED`", "DEC-019 and DEC-021 stay `ACTIVE` until step 5" and "they become production values only through the step-5 Runtime authorisation" describe that date. At this activation DEC-022 is `ACTIVE`, DEC-019 is `SUPERSEDED` by DEC-027, DEC-021 by DEC-026, and the values have been the package constants of the builder since the admission activation of 2026-10-20 (PR #150).
+- **DEC-038 exception.** The optional Host-set proven-lane pending-permit limit of DEC-038 is not a budget of this record and is not a Host-tunable value of it; "no Host input sets a budget" applies to every other value.
 
 ## Canonical Contract / Current Owner
 

@@ -338,10 +338,10 @@ state written before the switch is read on), set `bindingKeySecret` on `RateLimi
 store implementing `AtomicAdmissionPermitStoreInterface` (provided by `RedisFullCapabilityStore`),
 and open the fleet fence once every worker runs this version ("Operating the admission fence" below).
 `RateLimiterBuilder::build()` requires this capability when an admission policy is registered.
-The budgets are package constants (DEC-025, DEC-028, DEC-033). Under DEC-033, windowed counters and
+The budgets are package constants (DEC-033, DEC-034, DEC-035). Under DEC-033, windowed counters and
 failure sets use sliding sorted sets scored by expiration. Short windows run for W (600 s) and
 daily windows for Day (86400 s). Only a Host that calls `checkOnly` and then records every outcome
-(`pre+out`) may opt in (DEC-023).
+(`pre+out`) may opt in (DEC-023). The figures recorded in DEC-034 (for example the co-located office replay, legitimate refusals 26/61 and capped attacker reach 40 under sliding windows, against 21/61 and 72 under the fixed windows of DEC-025) are measured trade-offs of registered replays that the Owner accepted (#220). They are not production guarantees: the bounds a deployment gets are the package constants, and its own traffic can measure differently.
 
 Inputs (all optional on `RateLimitContextDTO`; ignored by every policy that did not opt in):
 
@@ -364,7 +364,7 @@ Outputs and duties:
   and credential): the failure set an outcome touches is keyed by the outcome's source.
 * **Every admitted `checkOnly` on an opted policy is followed by an outcome command carrying its
   permit**, using the outcome command above within the permit's deadline: 30 s after the
-  `checkOnly` (`D`, DEC-028). From 30 s to 630 s the claim is `permit_late`, after that
+  `checkOnly` (`D`, DEC-035). From 30 s to 630 s the claim is `permit_late`, after that
   `permit_unknown`; neither is scored, so a late outcome costs what a dropped one costs. This is a Host
   duty (`DEC-023` A-2) and the library does not compensate for it: an admission whose outcome never
   arrives is a tombstone and changes no bound (the success refund never happens and the failure is

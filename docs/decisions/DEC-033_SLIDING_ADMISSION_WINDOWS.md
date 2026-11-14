@@ -80,6 +80,10 @@ Failure sets (`ufail`, `pfail`) count recorded failure outcomes (`applyOutcome`)
 
 The expansion "Target Metric Score (TMS)" in the Consequences section is an erroneous expansion: `TMS` designates the `trusted-multi-session` study family from `#113` (`investigations/trusted-multi-session-s0/`), not "Target Metric Score".
 
+### Correction Note on Activation of DEC-034 and DEC-035 (2026-11-14, #220)
+
+The Owner approved the measured sliding-window trade-off on #220 ([comment 6884422850](https://github.com/Maatify/php-rate-limiter/issues/220#issuecomment-6884422850)). DEC-034 and DEC-035 are `ACTIVE` and supersede DEC-025 and DEC-028 in full under Decision Governance Standard §9, so the two earlier notes above that say DEC-025 and DEC-028 "remain ACTIVE until an authorized activation" describe 2026-11-10 only. Clause 5 and the line "Amends DEC-025 and DEC-028" remain procedural mischaracterizations as corrected on 2026-11-10: the change to sliding windows is carried by DEC-034 (budgets) and DEC-035 (permit timing and package constants), not by this record. DEC-033 remains `ACTIVE` as the authority for the sliding window mechanism, key strategy and ZSET accounting structures.
+
 ## Rationale
 
 - **Uniform sliding behavior:** Prevents boundary double-bursting across both short (600 s) and daily (86400 s) horizons.

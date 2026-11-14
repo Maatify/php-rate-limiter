@@ -1,4 +1,4 @@
-# DEC-035 — Sliding Admission Permit Timing and the Package Constants of the Admission Runtime (proposed replacement for DEC-028)
+# DEC-035 — Sliding Admission Permit Timing and the Package Constants of the Admission Runtime (replaces DEC-028)
 
 ## Decision ID
 
@@ -6,12 +6,13 @@
 
 ## Status
 
-`PROPOSED` — proposed in PR-Q (#185) to supersede DEC-028 under Decision Governance Standard §9.
-Activation on Owner approval on the PR, followed by activation commit.
+`ACTIVE` — activated 2026-11-14 on the Owner's explicit approval on #220 ([comment 6884422850](https://github.com/Maatify/php-rate-limiter/issues/220#issuecomment-6884422850)), under Decision Governance Standard §9. DEC-028 is `SUPERSEDED` by this record in the same change.
+
+Earlier status: `PROPOSED` in PR-Q (#185).
 
 ## Date
 
-2026-11-10
+Proposed 2026-11-10; activated 2026-11-14.
 
 ## Decision Authority
 
@@ -48,18 +49,23 @@ The required permit (OD-1 (b); RIC = `investigations/k2-identity-admission-97/RU
 
 - **Late outcomes are dropped outcomes.** A Host whose verifier answer arrives more than 30 s after `checkOnly` loses the scoring of that attempt. The cost of drops on the production code (NM-10, `5b3b/RESULTS.md`): share 0.10, A1 and A3 hold; 0.25, A1 `L1 7`; 0.50, `L1 31`; 1.00, the `pre` values (L1 72, ABA_B 94, D2 61, SP6 144).
 - **State.** One permit record per admission for 630 s.
-- **No Host tuning.** A Host that needs other values has no supported path until a new decision.
-- **Supersedes DEC-028:** Replaces DEC-028 upon activation under Decision Governance Standard §9.
+- **No Host tuning.** A Host that needs other values has no supported path until a new decision. The one exception is the optional Host-set proven-lane pending-permit limit of DEC-038, which is not one of these constants.
+- **Supersedes DEC-028:** replaces DEC-028 in full under Decision Governance Standard §9, from 2026-11-14.
 
 ## Relationship to Other Decisions
 
-- **Proposes to supersede DEC-028** in full on activation.
-- **DEC-034:** Its declared values become the package constants here.
+- **DEC-028:** `SUPERSEDED` by this record on 2026-11-14; its text and rationale stay as the historical record.
+- **DEC-034:** `ACTIVE`; supersedes DEC-025. Its declared values are the package constants here.
+- **DEC-038:** `ACTIVE`; the optional Host-set proven-lane pending-permit limit is an exception to "no Host tuning" for that one bound. DEC-038 remains authoritative for it and this record does not change it.
 - **DEC-033:** Operates the sliding window mechanism and storage structure for the constants governed here.
 - **DEC-026:** Activated with DEC-028 historically.
 - **DEC-024:** The reservation this timing serves.
 - **DEC-023:** `pre+out` only.
 - **DEC-015:** Unchanged (no admission in degraded mode).
+
+## Activation Note (2026-11-14, #220)
+
+Authority: the Owner's explicit approval on #220 ([comment 6884422850](https://github.com/Maatify/php-rate-limiter/issues/220#issuecomment-6884422850)); the accepted sliding-window trade-off and its measured numbers are recorded in DEC-034, Activation Note. This record changes only item 2 of DEC-028 (the windows are sliding, DEC-033); `D` 30 s and `G` 600 s, and every package constant, are unchanged. The measured trade-off (office 26/61, capped attacker reach 40) is a result of the registered replay, not a production guarantee.
 
 ## Canonical Contract / Current Owner
 
