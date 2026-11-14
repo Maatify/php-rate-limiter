@@ -31,6 +31,11 @@ use Maatify\RateLimiter\Repository\SharedAdmissionConfigStoreInterface;
 use Maatify\RateLimiter\DTO\AdmissionSharedConfigDTO;
 use Maatify\RateLimiter\Repository\CallerTimeBoundedCorrelationSnapshotRotationStoreInterface;
 use Maatify\RateLimiter\Repository\CallerTimeBudgetSeedStoreInterface;
+use Maatify\RateLimiter\Repository\CallerTimeDecimalMillisecondsBoundedCorrelationRotationStoreInterface;
+use Maatify\RateLimiter\Repository\CallerTimeDecimalMillisecondsBoundedCorrelationSnapshotRotationStoreInterface;
+use Maatify\RateLimiter\Repository\CallerTimeDecimalMillisecondsCorrelationRotationStoreInterface;
+use Maatify\RateLimiter\Repository\CallerTimeDecimalMillisecondsPunishmentLifecycleStoreInterface;
+use Maatify\RateLimiter\Repository\CallerTimeMilliseconds;
 use Maatify\RateLimiter\Repository\CallerTimePunishmentLifecycleStoreInterface;
 use Maatify\RateLimiter\Repository\CircuitBreakerStateCasStoreInterface;
 use Maatify\RateLimiter\Repository\CallerTimeScoreReplaceStoreInterface;
@@ -64,6 +69,10 @@ final class RedisFullCapabilityStore implements
     CallerTimeBudgetSeedStoreInterface,
     CallerTimeBoundedCorrelationSnapshotRotationStoreInterface,
     CallerTimePunishmentLifecycleStoreInterface,
+    CallerTimeDecimalMillisecondsCorrelationRotationStoreInterface,
+    CallerTimeDecimalMillisecondsBoundedCorrelationRotationStoreInterface,
+    CallerTimeDecimalMillisecondsBoundedCorrelationSnapshotRotationStoreInterface,
+    CallerTimeDecimalMillisecondsPunishmentLifecycleStoreInterface,
     CallerTimeSnapshotFencedScoreStoreInterface,
     CircuitBreakerStateCasStoreInterface,
     CallerTimeScoreReplaceStoreInterface,
@@ -2299,38 +2308,53 @@ LUA;
 
     public function addDistinctAcrossRotation(string $currentKey, string $bridgeKey, string $previousKey, string $currentMember, string $previousMember, int $ttlSeconds): int
     {
-        return $this->addDistinctAcrossRotationAt($currentKey, $bridgeKey, $previousKey, $currentMember, $previousMember, $ttlSeconds, $this->fallbackNowMilliseconds());
+        return $this->addDistinctAcrossRotationAtMilliseconds($currentKey, $bridgeKey, $previousKey, $currentMember, $previousMember, $ttlSeconds, $this->fallbackNowMilliseconds());
     }
 
     public function addDistinctAcrossRotationAt(string $currentKey, string $bridgeKey, string $previousKey, string $currentMember, string $previousMember, int $ttlSeconds, int $nowMilliseconds): int
     {
-        $snapshot = $this->addDistinctBoundedWithSnapshotAcrossRotationAt($currentKey, $bridgeKey, $previousKey, $currentMember, $previousMember, $ttlSeconds, PHP_INT_MAX, $nowMilliseconds);
+        return $this->addDistinctAcrossRotationAtMilliseconds($currentKey, $bridgeKey, $previousKey, $currentMember, $previousMember, $ttlSeconds, (string) $nowMilliseconds);
+    }
+
+    public function addDistinctAcrossRotationAtMilliseconds(string $currentKey, string $bridgeKey, string $previousKey, string $currentMember, string $previousMember, int $ttlSeconds, string $nowMilliseconds): int
+    {
+        $snapshot = $this->addDistinctBoundedWithSnapshotAcrossRotationAtMilliseconds($currentKey, $bridgeKey, $previousKey, $currentMember, $previousMember, $ttlSeconds, PHP_INT_MAX, $nowMilliseconds);
         return $snapshot->count;
     }
 
     public function addDistinctBoundedAcrossRotation(string $currentKey, string $bridgeKey, string $previousKey, string $currentMember, string $previousMember, int $ttlSeconds, int $maxDistinct): BoundedDistinctResultDTO
     {
-        return $this->addDistinctBoundedAcrossRotationAt($currentKey, $bridgeKey, $previousKey, $currentMember, $previousMember, $ttlSeconds, $maxDistinct, $this->fallbackNowMilliseconds());
+        return $this->addDistinctBoundedAcrossRotationAtMilliseconds($currentKey, $bridgeKey, $previousKey, $currentMember, $previousMember, $ttlSeconds, $maxDistinct, $this->fallbackNowMilliseconds());
     }
 
     public function addDistinctBoundedAcrossRotationAt(string $currentKey, string $bridgeKey, string $previousKey, string $currentMember, string $previousMember, int $ttlSeconds, int $maxDistinct, int $nowMilliseconds): BoundedDistinctResultDTO
     {
-        $snapshot = $this->addDistinctBoundedWithSnapshotAcrossRotationAt($currentKey, $bridgeKey, $previousKey, $currentMember, $previousMember, $ttlSeconds, $maxDistinct, $nowMilliseconds);
+        return $this->addDistinctBoundedAcrossRotationAtMilliseconds($currentKey, $bridgeKey, $previousKey, $currentMember, $previousMember, $ttlSeconds, $maxDistinct, (string) $nowMilliseconds);
+    }
+
+    public function addDistinctBoundedAcrossRotationAtMilliseconds(string $currentKey, string $bridgeKey, string $previousKey, string $currentMember, string $previousMember, int $ttlSeconds, int $maxDistinct, string $nowMilliseconds): BoundedDistinctResultDTO
+    {
+        $snapshot = $this->addDistinctBoundedWithSnapshotAcrossRotationAtMilliseconds($currentKey, $bridgeKey, $previousKey, $currentMember, $previousMember, $ttlSeconds, $maxDistinct, $nowMilliseconds);
         return new BoundedDistinctResultDTO($snapshot->count, $snapshot->accepted);
     }
 
     public function addDistinctBoundedWithSnapshotAcrossRotation(string $currentKey, string $bridgeKey, string $previousKey, string $currentMember, string $previousMember, int $ttlSeconds, int $maxDistinct): BoundedDistinctSnapshotDTO
     {
-        return $this->addDistinctBoundedWithSnapshotAcrossRotationAt($currentKey, $bridgeKey, $previousKey, $currentMember, $previousMember, $ttlSeconds, $maxDistinct, $this->fallbackNowMilliseconds());
+        return $this->addDistinctBoundedWithSnapshotAcrossRotationAtMilliseconds($currentKey, $bridgeKey, $previousKey, $currentMember, $previousMember, $ttlSeconds, $maxDistinct, $this->fallbackNowMilliseconds());
     }
 
     public function addDistinctBoundedWithSnapshotAcrossRotationAt(string $currentKey, string $bridgeKey, string $previousKey, string $currentMember, string $previousMember, int $ttlSeconds, int $maxDistinct, int $nowMilliseconds): BoundedDistinctSnapshotDTO
     {
-        $nowMilliseconds = $this->callerTime($nowMilliseconds);
+        return $this->addDistinctBoundedWithSnapshotAcrossRotationAtMilliseconds($currentKey, $bridgeKey, $previousKey, $currentMember, $previousMember, $ttlSeconds, $maxDistinct, (string) $nowMilliseconds);
+    }
+
+    public function addDistinctBoundedWithSnapshotAcrossRotationAtMilliseconds(string $currentKey, string $bridgeKey, string $previousKey, string $currentMember, string $previousMember, int $ttlSeconds, int $maxDistinct, string $nowMilliseconds): BoundedDistinctSnapshotDTO
+    {
+        $nowMilliseconds = $this->callerTimeMilliseconds($nowMilliseconds);
         $this->positive($ttlSeconds, 'Correlation TTL');
         $this->positive($maxDistinct, 'Correlation capacity');
         $keys = [$this->key('distinct', $currentKey), $this->key('distinct-meta', $currentKey), $this->key('distinct', $bridgeKey), $this->key('distinct-meta', $bridgeKey), $this->key('distinct', $previousKey), $this->key('distinct-meta', $previousKey)];
-        $result = $this->eval(self::ROTATED_SNAPSHOT, $keys, [self::BOUNDED_SNAPSHOT, $ttlSeconds, $currentMember, $previousMember, $maxDistinct, $nowMilliseconds, intdiv($nowMilliseconds, 1000)]);
+        $result = $this->eval(self::ROTATED_SNAPSHOT, $keys, [self::BOUNDED_SNAPSHOT, $ttlSeconds, $currentMember, $previousMember, $maxDistinct, $nowMilliseconds, CallerTimeMilliseconds::seconds($nowMilliseconds)]);
         return $this->snapshot($result, $currentMember, 'rotated bounded snapshot');
     }
 
@@ -2556,10 +2580,15 @@ LUA;
      */
     public function readGenerationBoundScoreState(string $currentKey, ?string $previousKey): ?GenerationBoundScoreStateDTO
     {
-        return $this->readGenerationBoundScoreStateAt($currentKey, $previousKey, $this->fallbackNowMilliseconds());
+        return $this->readGenerationBoundScoreStateAtMilliseconds($currentKey, $previousKey, $this->fallbackNowMilliseconds());
     }
 
     public function readGenerationBoundScoreStateAt(string $currentKey, ?string $previousKey, int $nowMilliseconds): ?GenerationBoundScoreStateDTO
+    {
+        return $this->readGenerationBoundScoreStateAtMilliseconds($currentKey, $previousKey, (string) $nowMilliseconds);
+    }
+
+    public function readGenerationBoundScoreStateAtMilliseconds(string $currentKey, ?string $previousKey, string $nowMilliseconds): ?GenerationBoundScoreStateDTO
     {
         $keys = [
             $this->key('score', $currentKey),
@@ -2567,7 +2596,7 @@ LUA;
             $this->key('block', $currentKey),
             $previousKey === null ? '' : $this->key('block', $previousKey),
         ];
-        $result = $this->eval(self::LIFECYCLE_READ, $keys, [$this->callerTime($nowMilliseconds)]);
+        $result = $this->eval(self::LIFECYCLE_READ, $keys, [$this->callerTimeMilliseconds($nowMilliseconds)]);
         if ($result === []) {
             return null;
         }
@@ -2623,13 +2652,18 @@ LUA;
      */
     public function mutateGenerationBoundScore(string $currentKey, ?string $previousKey, ?GenerationBoundScoreStateDTO $expectedState, int $ttlSeconds, int $newValue): GenerationBoundScoreMutationDTO
     {
-        return $this->mutateGenerationBoundScoreAt($currentKey, $previousKey, $expectedState, $ttlSeconds, $newValue, $this->fallbackNowMilliseconds());
+        return $this->mutateGenerationBoundScoreAtMilliseconds($currentKey, $previousKey, $expectedState, $ttlSeconds, $newValue, $this->fallbackNowMilliseconds());
     }
 
     public function mutateGenerationBoundScoreAt(string $currentKey, ?string $previousKey, ?GenerationBoundScoreStateDTO $expectedState, int $ttlSeconds, int $newValue, int $nowMilliseconds): GenerationBoundScoreMutationDTO
     {
+        return $this->mutateGenerationBoundScoreAtMilliseconds($currentKey, $previousKey, $expectedState, $ttlSeconds, $newValue, (string) $nowMilliseconds);
+    }
+
+    public function mutateGenerationBoundScoreAtMilliseconds(string $currentKey, ?string $previousKey, ?GenerationBoundScoreStateDTO $expectedState, int $ttlSeconds, int $newValue, string $nowMilliseconds): GenerationBoundScoreMutationDTO
+    {
         $this->positive($ttlSeconds, 'Generation-bound score TTL');
-        $nowMilliseconds = $this->callerTime($nowMilliseconds);
+        $nowMilliseconds = $this->callerTimeMilliseconds($nowMilliseconds);
         $this->ensureGenerationTtlRepresentable($ttlSeconds, $nowMilliseconds);
         $expectedSource = $expectedState === null ? '' : ($expectedState->source === GenerationBoundScoreStateDTO::SOURCE_CURRENT ? $this->key('score', $currentKey) : $this->key('score', $previousKey ?? ''));
         $result = $this->eval(
@@ -2738,13 +2772,18 @@ LUA;
      */
     public function claimPostPunishmentReentry(string $currentKey, ?string $previousKey, string $lifecycleId): bool
     {
-        return $this->claimPostPunishmentReentryAt($currentKey, $previousKey, $lifecycleId, $this->fallbackNowMilliseconds());
+        return $this->claimPostPunishmentReentryAtMilliseconds($currentKey, $previousKey, $lifecycleId, $this->fallbackNowMilliseconds());
     }
 
     public function claimPostPunishmentReentryAt(string $currentKey, ?string $previousKey, string $lifecycleId, int $nowMilliseconds): bool
     {
+        return $this->claimPostPunishmentReentryAtMilliseconds($currentKey, $previousKey, $lifecycleId, (string) $nowMilliseconds);
+    }
+
+    public function claimPostPunishmentReentryAtMilliseconds(string $currentKey, ?string $previousKey, string $lifecycleId, string $nowMilliseconds): bool
+    {
         $keys = [$this->key('score', $currentKey), $previousKey === null ? '' : $this->key('score', $previousKey), $this->key('block', $currentKey), $previousKey === null ? '' : $this->key('block', $previousKey), $this->key('reentry-claim', $currentKey)];
-        return $this->integerValue($this->eval(self::LIFECYCLE_CLAIM, $keys, [$lifecycleId, $this->callerTime($nowMilliseconds)]), 're-entry claim') === 1;
+        return $this->integerValue($this->eval(self::LIFECYCLE_CLAIM, $keys, [$lifecycleId, $this->callerTimeMilliseconds($nowMilliseconds)]), 're-entry claim') === 1;
     }
 
     public function reserveAdmission(AdmissionReservationRequestDTO $request, int $now): AdmissionReservationResultDTO
@@ -3073,6 +3112,12 @@ LUA;
         }
     }
 
+    /** DEC-017 and #215: the caller's time in milliseconds is a canonical non-negative decimal within Lua's exact range. */
+    private function callerTimeMilliseconds(string $milliseconds): string
+    {
+        return CallerTimeMilliseconds::validate($milliseconds);
+    }
+
     /** DEC-017: the caller's semantic time is a non-negative Unix timestamp. */
     private function callerTime(int $now): int
     {
@@ -3088,9 +3133,9 @@ LUA;
     }
 
     /** The same fallback time, in milliseconds, for the operations that derive millisecond lifetimes. */
-    private function fallbackNowMilliseconds(): int
+    private function fallbackNowMilliseconds(): string
     {
-        return (int) $this->fallbackClock->now()->format('Uv');
+        return CallerTimeMilliseconds::fromInstant($this->fallbackClock->now());
     }
 
     private function positive(int $value, string $label): void
@@ -3157,12 +3202,15 @@ LUA;
      * range, judged on the caller's time (#153 phase 2, LT-P2-10); the script
      * repeats the same check atomically on the same value.
      */
-    private function ensureGenerationTtlRepresentable(int $ttlSeconds, int $nowMilliseconds): void
+    private function ensureGenerationTtlRepresentable(int $ttlSeconds, string $nowMilliseconds): void
     {
         if ($ttlSeconds > intdiv(PHP_INT_MAX, 1000)) {
             throw new RateLimiterException('Generation-bound score expiry is not representable.');
         }
-        if ($nowMilliseconds > self::LUA_EXACT_INTEGER_MAX || $ttlSeconds > intdiv(self::LUA_EXACT_INTEGER_MAX - $nowMilliseconds, 1000)) {
+        // `$nowMilliseconds` is validated (at most 2^53 − 1), so its float is exact and so is the headroom; for an integer
+        // TTL, `ttl > floor(headroom / 1000)` is `ttl * 1000 > headroom`, and a product above 2^53 rounds to at least 2^53.
+        $headroom = (float) self::LUA_EXACT_INTEGER_MAX - (float) $nowMilliseconds;
+        if ((float) $ttlSeconds * 1000.0 > $headroom) {
             throw new RateLimiterException('Generation-bound score expiry is not representable.');
         }
     }

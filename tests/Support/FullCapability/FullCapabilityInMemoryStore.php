@@ -4,6 +4,10 @@ declare(strict_types=1);
 
 namespace Maatify\RateLimiter\Tests\Support\FullCapability;
 
+use Maatify\RateLimiter\Repository\CallerTimeDecimalMillisecondsCorrelationRotationStoreInterface;
+use Maatify\RateLimiter\Repository\CallerTimeDecimalMillisecondsBoundedCorrelationRotationStoreInterface;
+use Maatify\RateLimiter\Repository\CallerTimeDecimalMillisecondsBoundedCorrelationSnapshotRotationStoreInterface;
+use Maatify\RateLimiter\Repository\CallerTimeMilliseconds;
 use Maatify\RateLimiter\DTO\BoundedDistinctResultDTO;
 use Maatify\RateLimiter\DTO\BoundedDistinctSnapshotDTO;
 use Maatify\RateLimiter\DTO\CircuitBreakerStateDTO;
@@ -18,7 +22,7 @@ use Maatify\RateLimiter\Repository\CallerTimeBoundedCorrelationSnapshotRotationS
 /**
  * Delegating aggregate fixture that exposes all storage capabilities through one object.
  */
-class FullCapabilityInMemoryStore extends InMemoryRateLimitStore implements FullCapabilityStoreInterface, CallerTimeBoundedCorrelationSnapshotRotationStoreInterface, CircuitBreakerStateCasStoreInterface
+class FullCapabilityInMemoryStore extends InMemoryRateLimitStore implements FullCapabilityStoreInterface, CallerTimeBoundedCorrelationSnapshotRotationStoreInterface, CallerTimeDecimalMillisecondsCorrelationRotationStoreInterface, CallerTimeDecimalMillisecondsBoundedCorrelationRotationStoreInterface, CallerTimeDecimalMillisecondsBoundedCorrelationSnapshotRotationStoreInterface, CircuitBreakerStateCasStoreInterface
 {
     private StatefulInMemoryCorrelationStore $correlationStore;
 
@@ -221,5 +225,20 @@ class FullCapabilityInMemoryStore extends InMemoryRateLimitStore implements Full
     {
         // Held on the delegate, through this instance's own method, so a subclass override applies.
         return $this->correlationStore->atCallerTime(intdiv($nowMilliseconds, 1000), fn(): BoundedDistinctSnapshotDTO => $this->addDistinctBoundedWithSnapshotAcrossRotation($currentKey, $bridgeKey, $previousKey, $currentMember, $previousMember, $ttlSeconds, $maxDistinct));
+    }
+
+    public function addDistinctAcrossRotationAtMilliseconds(string $currentKey, string $bridgeKey, string $previousKey, string $currentMember, string $previousMember, int $ttlSeconds, string $nowMilliseconds): int
+    {
+        return $this->correlationStore->atCallerTime((int) CallerTimeMilliseconds::seconds(CallerTimeMilliseconds::validate($nowMilliseconds)), fn(): int => $this->addDistinctAcrossRotation($currentKey, $bridgeKey, $previousKey, $currentMember, $previousMember, $ttlSeconds));
+    }
+
+    public function addDistinctBoundedAcrossRotationAtMilliseconds(string $currentKey, string $bridgeKey, string $previousKey, string $currentMember, string $previousMember, int $ttlSeconds, int $maxDistinct, string $nowMilliseconds): BoundedDistinctResultDTO
+    {
+        return $this->correlationStore->atCallerTime((int) CallerTimeMilliseconds::seconds(CallerTimeMilliseconds::validate($nowMilliseconds)), fn(): BoundedDistinctResultDTO => $this->addDistinctBoundedAcrossRotation($currentKey, $bridgeKey, $previousKey, $currentMember, $previousMember, $ttlSeconds, $maxDistinct));
+    }
+
+    public function addDistinctBoundedWithSnapshotAcrossRotationAtMilliseconds(string $currentKey, string $bridgeKey, string $previousKey, string $currentMember, string $previousMember, int $ttlSeconds, int $maxDistinct, string $nowMilliseconds): BoundedDistinctSnapshotDTO
+    {
+        return $this->correlationStore->atCallerTime((int) CallerTimeMilliseconds::seconds(CallerTimeMilliseconds::validate($nowMilliseconds)), fn(): BoundedDistinctSnapshotDTO => $this->addDistinctBoundedWithSnapshotAcrossRotation($currentKey, $bridgeKey, $previousKey, $currentMember, $previousMember, $ttlSeconds, $maxDistinct));
     }
 }

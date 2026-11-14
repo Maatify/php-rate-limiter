@@ -4,6 +4,10 @@ declare(strict_types=1);
 
 namespace Maatify\RateLimiter\Tests\Support\Correlation;
 
+use Maatify\RateLimiter\Repository\CallerTimeDecimalMillisecondsCorrelationRotationStoreInterface;
+use Maatify\RateLimiter\Repository\CallerTimeDecimalMillisecondsBoundedCorrelationRotationStoreInterface;
+use Maatify\RateLimiter\Repository\CallerTimeDecimalMillisecondsBoundedCorrelationSnapshotRotationStoreInterface;
+use Maatify\RateLimiter\Repository\CallerTimeMilliseconds;
 use Maatify\RateLimiter\DTO\BoundedDistinctResultDTO;
 use Maatify\RateLimiter\DTO\BoundedDistinctSnapshotDTO;
 use Maatify\RateLimiter\Exception\RateLimiterException;
@@ -11,7 +15,7 @@ use Maatify\RateLimiter\Repository\BoundedCorrelationSnapshotRotationStoreInterf
 use Maatify\SharedCommon\Contracts\ClockInterface;
 use Maatify\RateLimiter\Repository\CallerTimeBoundedCorrelationSnapshotRotationStoreInterface;
 
-class StatefulInMemoryCorrelationStore implements BoundedCorrelationSnapshotRotationStoreInterface, CallerTimeBoundedCorrelationSnapshotRotationStoreInterface
+class StatefulInMemoryCorrelationStore implements BoundedCorrelationSnapshotRotationStoreInterface, CallerTimeBoundedCorrelationSnapshotRotationStoreInterface, CallerTimeDecimalMillisecondsCorrelationRotationStoreInterface, CallerTimeDecimalMillisecondsBoundedCorrelationRotationStoreInterface, CallerTimeDecimalMillisecondsBoundedCorrelationSnapshotRotationStoreInterface
 {
     /** @var array<string, array{items: array<string, bool>, expiresAt: int|null}> */
     private array $sets = [];
@@ -643,5 +647,20 @@ class StatefulInMemoryCorrelationStore implements BoundedCorrelationSnapshotRota
     private function currentTime(): int
     {
         return self::callerTimes()[$this] ?? $this->clock->now()->getTimestamp();
+    }
+
+    public function addDistinctAcrossRotationAtMilliseconds(string $currentKey, string $bridgeKey, string $previousKey, string $currentMember, string $previousMember, int $ttlSeconds, string $nowMilliseconds): int
+    {
+        return $this->atCallerTime((int) CallerTimeMilliseconds::seconds(CallerTimeMilliseconds::validate($nowMilliseconds)), fn(): int => $this->addDistinctAcrossRotation($currentKey, $bridgeKey, $previousKey, $currentMember, $previousMember, $ttlSeconds));
+    }
+
+    public function addDistinctBoundedAcrossRotationAtMilliseconds(string $currentKey, string $bridgeKey, string $previousKey, string $currentMember, string $previousMember, int $ttlSeconds, int $maxDistinct, string $nowMilliseconds): BoundedDistinctResultDTO
+    {
+        return $this->atCallerTime((int) CallerTimeMilliseconds::seconds(CallerTimeMilliseconds::validate($nowMilliseconds)), fn(): BoundedDistinctResultDTO => $this->addDistinctBoundedAcrossRotation($currentKey, $bridgeKey, $previousKey, $currentMember, $previousMember, $ttlSeconds, $maxDistinct));
+    }
+
+    public function addDistinctBoundedWithSnapshotAcrossRotationAtMilliseconds(string $currentKey, string $bridgeKey, string $previousKey, string $currentMember, string $previousMember, int $ttlSeconds, int $maxDistinct, string $nowMilliseconds): BoundedDistinctSnapshotDTO
+    {
+        return $this->atCallerTime((int) CallerTimeMilliseconds::seconds(CallerTimeMilliseconds::validate($nowMilliseconds)), fn(): BoundedDistinctSnapshotDTO => $this->addDistinctBoundedWithSnapshotAcrossRotation($currentKey, $bridgeKey, $previousKey, $currentMember, $previousMember, $ttlSeconds, $maxDistinct));
     }
 }

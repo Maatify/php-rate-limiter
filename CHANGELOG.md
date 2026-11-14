@@ -30,10 +30,25 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - `scripts/ci/run-phpunit-32bit.sh` runs PHPUnit on an actual 32-bit PHP (`PHP_INT_SIZE === 4`, `linux/386`) against an isolated Redis;
   CI runs the `php32` test group there (bucket reservation and settlement, the exact bucket bound, the shared configuration at the
   highest native Builder limit, native-integer replies and permit deadline).
-- Known limitation, tracked outside this fix: the caller-time store operations take the clock in milliseconds as a native `int`
-  (`CallerTimeStore`, `...At(…, int $nowMilliseconds)`). A current Unix time in milliseconds does not fit a 32-bit `int`, so the engine's
-  generation-bound score path (K4/K4P) is not yet correct on 32-bit PHP. The Redis admission reservation, settlement and shared-configuration
-  paths, which use seconds, are covered by this fix.
+- The millisecond caller-time limitation noted when this fix was made is addressed by #215 below.
+
+### Fixed (#215) — Caller time in milliseconds on 32-bit PHP (K4, K4P and the rotation bridge)
+- The runtime no longer builds the caller's time with `(int) $now->format('Uv')`. On 32-bit PHP that cast saturated a current epoch
+  millisecond value at `PHP_INT_MAX` without an error, so the K4/K4P generation-bound score path and the correlation-rotation bridge
+  judged a frozen clock (`ALLOW, ALLOW, ALLOW, ALLOW` where 64-bit gives `ALLOW, SOFT_BLOCK, HARD_BLOCK, HARD_BLOCK`).
+- Added (additive, optional; DEC-039): `CallerTimeDecimalMillisecondsCorrelationRotationStoreInterface`,
+  `CallerTimeDecimalMillisecondsBoundedCorrelationRotationStoreInterface`,
+  `CallerTimeDecimalMillisecondsBoundedCorrelationSnapshotRotationStoreInterface` and
+  `CallerTimeDecimalMillisecondsPunishmentLifecycleStoreInterface`. Each adds the same operation under a separately named method
+  (`…AtMilliseconds`) that takes the time as a canonical decimal string (0 to 9007199254740991). No existing interface, method or
+  signature changes.
+- The runtime prefers the decimal method. A store that implements only the existing caller-time interface is called exactly as before
+  when the value fits a native integer (always, on 64-bit PHP); on 32-bit PHP, when it does not, `RateLimiterException` is raised
+  before the store is called, instead of a truncated or substituted clock. A store with its own clock is unchanged.
+- `RedisFullCapabilityStore` implements the four interfaces; its existing methods, and the methods that use the store's own clock, now
+  pass the exact value. Custom stores that support 32-bit PHP should implement the decimal capability (see the usage guide).
+- `scripts/ci/run-phpunit-32bit.sh --group php32` (job `php-32bit`) now also runs the K4, K4P and rotation regressions through the
+  public Builder on an actual 32-bit PHP and an isolated Redis.
 
 ### Documentation (#185)
 - Clarified DEC-032 Operational Read authority, effective score, and the scope of request atomicity under DEC-036 and DEC-037.

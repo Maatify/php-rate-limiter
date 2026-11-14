@@ -4,6 +4,8 @@ declare(strict_types=1);
 
 namespace Maatify\RateLimiter\Tests\Support\RateLimiter;
 
+use Maatify\RateLimiter\Repository\CallerTimeDecimalMillisecondsPunishmentLifecycleStoreInterface;
+use Maatify\RateLimiter\Repository\CallerTimeMilliseconds;
 use Maatify\RateLimiter\DTO\DecayPauseStateDTO;
 use Maatify\RateLimiter\DTO\HardBlockCycleResultDTO;
 use Maatify\RateLimiter\Repository\BudgetSeedStoreInterface;
@@ -24,7 +26,7 @@ use Maatify\RateLimiter\Repository\CallerTimeSnapshotFencedScoreStoreInterface;
 use Maatify\RateLimiter\Repository\CallerTimeScoreReplaceStoreInterface;
 use Maatify\RateLimiter\Repository\CallerTimeOperationalReadOnlyStoreInterface;
 
-class InMemoryRateLimitStore implements BudgetSeedStoreInterface, PunishmentLifecycleStoreInterface, CallerTimeBudgetSeedStoreInterface, CallerTimePunishmentLifecycleStoreInterface, CallerTimeSnapshotFencedScoreStoreInterface, CallerTimeScoreReplaceStoreInterface, CallerTimeOperationalReadOnlyStoreInterface
+class InMemoryRateLimitStore implements BudgetSeedStoreInterface, PunishmentLifecycleStoreInterface, CallerTimeBudgetSeedStoreInterface, CallerTimePunishmentLifecycleStoreInterface, CallerTimeDecimalMillisecondsPunishmentLifecycleStoreInterface, CallerTimeSnapshotFencedScoreStoreInterface, CallerTimeScoreReplaceStoreInterface, CallerTimeOperationalReadOnlyStoreInterface
 {
     public bool $available = true;
     private const PAUSE_HISTORY_RETENTION_SECONDS = 86400;
@@ -642,6 +644,21 @@ class InMemoryRateLimitStore implements BudgetSeedStoreInterface, PunishmentLife
     public function claimPostPunishmentReentryAt(string $currentKey, ?string $previousKey, string $lifecycleId, int $nowMilliseconds): bool
     {
         return $this->atCallerTime(intdiv($nowMilliseconds, 1000), fn(): bool => $this->claimPostPunishmentReentry($currentKey, $previousKey, $lifecycleId));
+    }
+
+    public function readGenerationBoundScoreStateAtMilliseconds(string $currentKey, ?string $previousKey, string $nowMilliseconds): ?GenerationBoundScoreStateDTO
+    {
+        return $this->atCallerTime((int) CallerTimeMilliseconds::seconds(CallerTimeMilliseconds::validate($nowMilliseconds)), fn(): ?GenerationBoundScoreStateDTO => $this->readGenerationBoundScoreState($currentKey, $previousKey));
+    }
+
+    public function mutateGenerationBoundScoreAtMilliseconds(string $currentKey, ?string $previousKey, ?GenerationBoundScoreStateDTO $expectedState, int $ttlSeconds, int $newValue, string $nowMilliseconds): GenerationBoundScoreMutationDTO
+    {
+        return $this->atCallerTime((int) CallerTimeMilliseconds::seconds(CallerTimeMilliseconds::validate($nowMilliseconds)), fn(): GenerationBoundScoreMutationDTO => $this->mutateGenerationBoundScore($currentKey, $previousKey, $expectedState, $ttlSeconds, $newValue));
+    }
+
+    public function claimPostPunishmentReentryAtMilliseconds(string $currentKey, ?string $previousKey, string $lifecycleId, string $nowMilliseconds): bool
+    {
+        return $this->atCallerTime((int) CallerTimeMilliseconds::seconds(CallerTimeMilliseconds::validate($nowMilliseconds)), fn(): bool => $this->claimPostPunishmentReentry($currentKey, $previousKey, $lifecycleId));
     }
 
     /**
