@@ -53,6 +53,12 @@ final class CallerTimeMillisecondsTest extends TestCase
         yield 'plus sign' => ['+1794650400123', 'Caller time in milliseconds must be a canonical decimal integer.'];
         yield 'fraction' => ['1794650400123.0', 'Caller time in milliseconds must be a canonical decimal integer.'];
         yield 'exponent' => ['1e12', 'Caller time in milliseconds must be a canonical decimal integer.'];
+        yield 'trailing newline' => ["1794650400123\n", 'Caller time in milliseconds must be a canonical decimal integer.'];
+        yield 'trailing newline on zero' => ["0\n", 'Caller time in milliseconds must be a canonical decimal integer.'];
+        yield 'only a newline' => ["\n", 'Caller time in milliseconds must be a canonical decimal integer.'];
+        yield 'leading newline' => ["\n1794650400123", 'Caller time in milliseconds must be a canonical decimal integer.'];
+        yield 'trailing carriage return' => ["1\r", 'Caller time in milliseconds must be a canonical decimal integer.'];
+        yield 'trailing NUL' => ["1\0", 'Caller time in milliseconds must be a canonical decimal integer.'];
         yield 'padding space' => [' 1794650400123', 'Caller time in milliseconds must be a canonical decimal integer.'];
         yield 'one above the exact range' => ['9007199254740992', 'Caller time in milliseconds is not representable.'];
         yield 'seventeen digits' => ['10000000000000000', 'Caller time in milliseconds is not representable.'];
@@ -64,6 +70,13 @@ final class CallerTimeMillisecondsTest extends TestCase
         $this->expectException(RateLimiterException::class);
         $this->expectExceptionMessage($message);
         CallerTimeMilliseconds::validate($value);
+    }
+
+    public function testTheCanonicalZeroAndPositiveValuesAreAccepted(): void
+    {
+        self::assertSame('0', CallerTimeMilliseconds::validate('0'));
+        self::assertSame('1', CallerTimeMilliseconds::validate('1'));
+        self::assertSame('1794650400123', CallerTimeMilliseconds::validate('1794650400123'));
     }
 
     public function testTheExactRangeBoundaryIsAccepted(): void

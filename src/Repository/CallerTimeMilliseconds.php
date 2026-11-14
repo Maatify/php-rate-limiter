@@ -64,7 +64,7 @@ final class CallerTimeMilliseconds
         if ($milliseconds !== '' && $milliseconds[0] === '-') {
             throw new RateLimiterException($label . ' must be a non-negative Unix timestamp.');
         }
-        if (preg_match('/^(0|[1-9][0-9]*)$/', $milliseconds) !== 1) {
+        if (preg_match('/\A(0|[1-9][0-9]*)\z/', $milliseconds) !== 1) {
             throw new RateLimiterException($label . ' in milliseconds must be a canonical decimal integer.');
         }
         if (strlen($milliseconds) > 16 || (strlen($milliseconds) === 16 && $milliseconds > self::MAXIMUM)) {

@@ -181,6 +181,8 @@ final class CallerTimeDecimalMillisecondsRedisTest extends TestCase
         yield 'negative' => ['-1', 'Caller time must be a non-negative Unix timestamp.'];
         yield 'leading zero' => ['01794650400123', 'canonical decimal integer'];
         yield 'fraction' => ['1794650400123.5', 'canonical decimal integer'];
+        yield 'trailing newline' => ["1794650400123\n", 'canonical decimal integer'];
+        yield 'zero with a trailing newline' => ["0\n", 'canonical decimal integer'];
         yield 'above the exact range' => ['9007199254740992', 'is not representable'];
     }
 
@@ -205,6 +207,30 @@ final class CallerTimeDecimalMillisecondsRedisTest extends TestCase
             }
         }
         self::assertSame(0, $this->executor->execute(['DBSIZE']));
+    }
+
+    #[DataProvider('unacceptableTimes')]
+    public function testAnUnacceptableTimeNeverReachesTheRedisExecutor(string $time, string $message): void
+    {
+        $recording = new RecordingRedisCommandExecutor($this->executor);
+        $store = new RedisFullCapabilityStore($recording, self::NAMESPACE);
+
+        foreach ([
+            static fn() => $store->readGenerationBoundScoreStateAtMilliseconds('k4', null, $time),
+            static fn() => $store->mutateGenerationBoundScoreAtMilliseconds('k4', null, null, 100, 5, $time),
+            static fn() => $store->claimPostPunishmentReentryAtMilliseconds('k4', null, 'life', $time),
+            static fn() => $store->addDistinctAcrossRotationAtMilliseconds('c', 'b', 'p', 'm1', 'm0', 60, $time),
+            static fn() => $store->addDistinctBoundedAcrossRotationAtMilliseconds('c', 'b', 'p', 'm1', 'm0', 60, 3, $time),
+            static fn() => $store->addDistinctBoundedWithSnapshotAcrossRotationAtMilliseconds('c', 'b', 'p', 'm1', 'm0', 60, 3, $time),
+        ] as $call) {
+            try {
+                $call();
+                self::fail('An unacceptable caller time must be rejected.');
+            } catch (RateLimiterException $exception) {
+                self::assertStringContainsString($message, $exception->getMessage());
+            }
+        }
+        self::assertSame([], $recording->commands, 'The executor must not be called for an unacceptable caller time.');
     }
 
     /** @return iterable<string, array{string, int}> */
