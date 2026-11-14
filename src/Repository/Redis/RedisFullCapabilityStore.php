@@ -2928,6 +2928,8 @@ LUA;
             return $evaluate();
         }
 
+        // The monotonic sample stays as hrtime() returns it: where PHP_INT_SIZE is 4 it is a float, and a native-integer
+        // cast of it wraps, so the elapsed time against a later uncast sample would be meaningless (#217).
         $retryingSince = null;
         for ($attempt = 0; $attempt < self::REQUEST_ATTEMPTS; $attempt++) {
             if ($retryingSince !== null && $attempt > 1 && $this->retryBudgetSpent($retryingSince)) {
@@ -2952,7 +2954,7 @@ LUA;
                 // A step that read keys at different moments can see a combination no single moment held and
                 // report it as malformed. Only an error over state that is still current is the request's answer.
                 if ($state !== [] && ! $this->requestStateIsCurrent($state)) {
-                    $retryingSince ??= (int) hrtime(true);
+                    $retryingSince ??= hrtime(true);
                     $this->backOff($attempt);
                     continue;
                 }
@@ -2964,7 +2966,7 @@ LUA;
             if ($this->commitRequest($state)) {
                 return $result;
             }
-            $retryingSince ??= (int) hrtime(true);
+            $retryingSince ??= hrtime(true);
             $this->backOff($attempt);
         }
 
@@ -3038,7 +3040,7 @@ LUA;
         usleep(random_int(0, 500 * (1 << min($attempt, 5))));
     }
 
-    private function retryBudgetSpent(int $startedAt): bool
+    private function retryBudgetSpent(int|float $startedAt): bool
     {
         return (hrtime(true) - $startedAt) / 1_000_000 >= $this->requestRetryBudgetMilliseconds;
     }
