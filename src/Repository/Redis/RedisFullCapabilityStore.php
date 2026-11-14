@@ -2936,7 +2936,12 @@ LUA;
      *
      * A conflict is a commit that finds a read state changed, or an error from `$evaluate` over state that is no
      * longer current. When either bound is reached nothing is saved and `RateLimitConcurrencyException` is thrown.
-     * An error over current state, and any `BackendFailureException`, ends the call at once.
+     * An error over current state, and any `BackendFailureException`, ends the call at once and is thrown as it
+     * was raised. Whether anything was saved depends on when a `BackendFailureException` occurred: during the
+     * evaluation the scripts only read, so nothing is saved, and a save that never reached Redis saves nothing; but
+     * the commit is one script that Redis applies atomically, so a failure while awaiting its reply can follow a
+     * save that was applied in full. The outcome is then unknown to the caller; it is never a partial save
+     * (`RequestAtomicityRecoveryOutageRedisTest` covers both cases).
      *
      * @template T
      * @param callable(): T $evaluate

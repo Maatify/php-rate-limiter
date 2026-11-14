@@ -27,8 +27,11 @@ namespace Maatify\RateLimiter\Repository;
  *   An error over state that changed since it was read may come from a combination of reads that no single moment
  *   held, so an implementation may treat it as a conflict and run `$evaluate` again within its bound; the bundled
  *   Redis store does.
- * - A `BackendFailureException` is not retried: it is thrown with nothing saved, so that the engine's failure
- *   handling applies (DEC-015).
+ * - A `BackendFailureException` is not retried; it is thrown so that the engine's failure handling applies (DEC-015).
+ *   What it says about the save depends on when it was raised. A failure while `$evaluate` runs, or a save the
+ *   backend never received, leaves nothing saved. A failure while the implementation waits for the reply to the save
+ *   can follow a save the backend did apply: the save is atomic, so it is then complete and never partial, but the
+ *   caller cannot know which. Treat the outcome of that failure as unknown, not as "nothing saved".
  * - Called while one of its own requests is already being evaluated, it runs `$evaluate` inside that request and
  *   does not start another save.
  */
@@ -42,7 +45,9 @@ interface RequestAtomicStoreInterface
      *
      * Failure: when the state kept changing until the implementation's recalculation bound was reached, it throws
      * `RateLimitConcurrencyException` with nothing saved. An error that `$evaluate` throws over state that was still
-     * current, and a `BackendFailureException`, are thrown with nothing saved and are not retried.
+     * current is thrown unchanged, with nothing saved, and is not retried. A `BackendFailureException` is not retried
+     * either: raised before the save was applied it leaves nothing saved, but raised while awaiting the reply to the
+     * save it leaves the outcome unknown, because the save may have been applied completely (never in part).
      *
      * @template T
      * @param callable(): T $evaluate repeatable evaluation of the whole request; it may run several times and must
