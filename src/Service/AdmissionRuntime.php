@@ -188,6 +188,11 @@ final class AdmissionRuntime
         $t = $this->now();
         $subject = $this->subject($context);
         $id = bin2hex(random_bytes(16));
+        // `$t + D` is the permit deadline, a native `int`: a sum that overflows (on 32-bit PHP after 2^31 - 1) would become a
+        // float and reach the strict-typed DTO as a TypeError, so an unrepresentable deadline is rejected as a typed input failure.
+        if ($this->budgets->permitDeadlineSeconds > PHP_INT_MAX - $t) {
+            throw new RateLimiterException('Admission permit deadline is not representable as a native integer.');
+        }
         $permit = new AdmissionPermitDTO($id, $lane->lane->value, $subject ?? self::NO_SUBJECT, $policyName, $t + $this->budgets->permitDeadlineSeconds, $this->budgets->permitGraceSeconds);
         $scopes = $lane->lane === AdmissionLaneEnum::P
             ? $this->provenScopes($budgetGroup, $context, $device, $lane, $id)

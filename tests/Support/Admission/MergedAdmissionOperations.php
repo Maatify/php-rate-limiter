@@ -499,7 +499,7 @@ LUA;
             if ($scope->ttlSeconds > self::TTL_MAX || $scope->capacity > self::EXACT_MAX || $now > self::EXACT_MAX - $scope->ttlSeconds) {
                 throw new RateLimiterException('Admission scope capacity or lifetime is not representable.');
             }
-            if ($scope->kind === AdmissionScopeKindEnum::BUCKET && $scope->capacity > intdiv(self::EXACT_MAX, $scope->ttlSeconds)) {
+            if ($scope->kind === AdmissionScopeKindEnum::BUCKET && (float) $scope->capacity * (float) $scope->ttlSeconds > (float) self::EXACT_MAX) {
                 throw new RateLimiterException('Admission bucket capacity times its take cost is not representable.');
             }
             $identity = $scope->kind->value . "\0" . $scope->key;

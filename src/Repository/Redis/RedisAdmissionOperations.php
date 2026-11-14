@@ -38,6 +38,12 @@ final class RedisAdmissionOperations
 {
     private const PREFIX = 'maatify:rate-limiter:v1';
 
+    /**
+     * The largest integer Lua doubles and Redis represent exactly (2^53 - 1). On 32-bit PHP this literal is a `float` (it does not
+     * fit a native `int`), so no PHP-side check may pass it where an `int` is required (`intdiv`, strict-typed parameters): the
+     * comparisons below only compare a native `int` with it, which is exact on both widths because every native `int` it is
+     * compared with is below 2^53 and therefore exactly representable as a double.
+     */
     private const EXACT_MAX = 9007199254740991;
 
     /** A relative TTL in seconds that Redis can represent when added to a millisecond clock. */
@@ -881,7 +887,7 @@ LUA;
             if ($scope->ttlSeconds > self::TTL_MAX || $scope->capacity > self::EXACT_MAX || $now > self::EXACT_MAX - $scope->ttlSeconds) {
                 throw new RateLimiterException('Admission scope capacity or lifetime is not representable.');
             }
-            if ($scope->kind === AdmissionScopeKindEnum::BUCKET && $scope->capacity > intdiv(self::EXACT_MAX, $scope->ttlSeconds)) {
+            if ($scope->kind === AdmissionScopeKindEnum::BUCKET && self::productExceedsExactMax($scope->capacity, $scope->ttlSeconds)) {
                 throw new RateLimiterException('Admission bucket capacity times its take cost is not representable.');
             }
             $identity = $scope->kind->value . "\0" . $scope->key;
@@ -924,13 +930,32 @@ LUA;
         return $tuple;
     }
 
+    /**
+     * Whether `$a * $b` (two non-negative native integers) exceeds {@see self::EXACT_MAX}, decided exactly on 32-bit and 64-bit PHP.
+     * Both operands are below 2^53 here (they were range-checked before), so each converts to a double without loss, and the
+     * correctly rounded double product is monotone with 2^53 - 1 and 2^53 both representable: it is above 2^53 - 1 exactly when
+     * the true product is. No native integer overflow and no `float` is passed where an `int` is required.
+     */
+    private static function productExceedsExactMax(int $a, int $b): bool
+    {
+        return (float) $a * (float) $b > (float) self::EXACT_MAX;
+    }
+
+    /**
+     * A Redis integer reply as a native `int`. A value that does not fit a native `int` (a 64-bit reply on 32-bit PHP) is
+     * rejected as malformed, never saturated or wrapped by a cast, so no caller acts on a silently changed number.
+     */
     private function integer(mixed $value, string $label): int
     {
         if (is_int($value)) {
             return $value;
         }
         if (is_string($value) && preg_match('/\A-?(0|[1-9]\d{0,17})\z/D', $value) === 1) {
-            return (int) $value;
+            $integer = filter_var($value, FILTER_VALIDATE_INT);
+            if (is_int($integer)) {
+                return $integer;
+            }
+            throw new RateLimiterException('Malformed ' . $label . ': the value is not representable as a native integer on this PHP build.');
         }
         throw new RateLimiterException('Malformed ' . $label . '.');
     }
