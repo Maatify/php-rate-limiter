@@ -50,6 +50,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - `scripts/ci/run-phpunit-32bit.sh --group php32` (job `php-32bit`) now also runs the K4, K4P and rotation regressions through the
   public Builder on an actual 32-bit PHP and an isolated Redis.
 
+### Fixed (#217) — Request retry budget on 32-bit PHP (DEC-037)
+- `RedisFullCapabilityStore::transactRequest()` saved the first-conflict monotonic sample as `(int) hrtime(true)` and subtracted it from a
+  later uncast sample. Where `PHP_INT_SIZE` is 4, `hrtime(true)` is a float of about 7 × 10^14 ns after eight days of uptime and the cast
+  wraps it (measured: `-1152606418` for `693610295893806`), so the elapsed time was meaningless: the budget looked spent at once (retries
+  ended after the guaranteed second evaluation) or never. The sample is now kept as `hrtime()` returns it. The monotonic clock, the
+  first-conflict origin, the guaranteed second evaluation, the 32-evaluation ceiling, the budget, the atomic commit and the classified
+  `RateLimitConcurrencyException` are unchanged; 64-bit behaviour is unchanged.
+- New regression `RequestRetryBudgetRedisTest` (groups `integration` and `php32`, so the `php-32bit` job keeps it) covers both conflict
+  paths through the store entry point and the public builder: a commit whose state comparison fails, and an evaluation error over state
+  that changed before the error was returned.
+
 ### Documentation (#185)
 - Clarified DEC-032 Operational Read authority, effective score, and the scope of request atomicity under DEC-036 and DEC-037.
 - Recorded DEC-034 and DEC-035 as proposals. DEC-025 and DEC-028 remain active pending explicit activation.
