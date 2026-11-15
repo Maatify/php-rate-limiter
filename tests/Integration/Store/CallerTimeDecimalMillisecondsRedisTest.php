@@ -89,9 +89,26 @@ final class CallerTimeDecimalMillisecondsRedisTest extends TestCase
         ], $observed);
 
         // The instants at which the K4 state was read, claimed or mutated reached the store as their exact decimal, never the saturated native maximum.
-        // The score increment sends the caller's integer range as two arguments (#227): the native maximum, then the minimum. That pair is the range,
-        // not a clock; a saturated clock is a lone "2147483647", so only the pair is set aside before the detector looks.
-        $sent = str_replace('"' . PHP_INT_MAX . '","' . PHP_INT_MIN . '"', '"native-range"', json_encode($recording->commands, JSON_THROW_ON_ERROR));
+        // The score, budget and watch increments send the caller's native integer range before the caller time (#227, #230): the maximum, and for the
+        // score also the minimum. That is a range, not a clock. The caller time is the last argument of a script, or the one before the held request
+        // state that the request overlay appends (a JSON list), so only the argument or the pair just before that time is set aside; a saturated
+        // clock is the time argument itself, and a lone "2147483647" anywhere else is still found.
+        $sent = json_encode(array_map(static function (array $command): array {
+            $range = [(string) PHP_INT_MAX, (string) PHP_INT_MIN];
+            $held = [];
+            $last = $command[count($command) - 1];
+            if (is_string($last) && str_starts_with($last, '[')) {
+                $held = [array_pop($command)];
+            }
+            $count = count($command);
+            if ($count >= 4 && $command[$count - 3] === $range[0] && $command[$count - 2] === $range[1]) {
+                unset($command[$count - 3], $command[$count - 2]);
+            } elseif ($count >= 3 && $command[$count - 2] === $range[0]) {
+                unset($command[$count - 2]);
+            }
+
+            return [...array_values($command), ...$held];
+        }, $recording->commands), JSON_THROW_ON_ERROR);
         $reached = array_values(array_filter($instants, static fn(string $milliseconds): bool => str_contains($sent, '"' . $milliseconds . '"')));
         self::assertContains(self::START_MILLISECONDS, $reached);
         self::assertGreaterThanOrEqual(5, count($reached), 'At least the first decisions and the post-expiry re-entry decisions forward the exact clock.');

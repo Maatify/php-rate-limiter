@@ -30,13 +30,13 @@ use ReflectionClass;
  */
 #[Group('f-185-24')]
 #[Group('f-185-25')]
+#[Group('php32')]
 final class NumericBoundsRedisTest extends TestCase
 {
     private const NOW = 1_800_000_000;
 
     private const NAMESPACE = 'f185-24';
 
-    private const MAX = '9223372036854775807';
 
     private RespRedisCommandExecutor $executor;
 
@@ -52,6 +52,12 @@ final class NumericBoundsRedisTest extends TestCase
         $this->executor = new RespRedisCommandExecutor($host, (int) $port);
         $this->executor->execute(['FLUSHDB']);
         $this->store = new RedisFullCapabilityStore($this->executor, self::NAMESPACE);
+    }
+
+    /** The caller's native maximum as a decimal: the range these counters are judged against (#230), so a seed at it is readable on every build. */
+    private static function max(): string
+    {
+        return (string) PHP_INT_MAX;
     }
 
     private function rawKey(string $family, string $logical): string
@@ -188,7 +194,7 @@ final class NumericBoundsRedisTest extends TestCase
 
     public function testABudgetCountOverflowIsClassifiedAndWritesNothing(): void
     {
-        $this->seedBudget('full', self::MAX);
+        $this->seedBudget('full', self::max());
         $this->assertRejectedWithoutWrite('budget count overflow', fn() => $this->store->incrementBudgetAt('full', 86400, 1, self::NOW + 1));
         $this->assertRejectedWithoutWrite('budget count overflow', fn() => $this->store->incrementBudgetWithSeedAt('full', 86400, new BudgetStateDTO(1, self::NOW), 1, self::NOW + 1));
         self::assertSame(PHP_INT_MAX, $this->store->getBudgetAt('full', self::NOW + 1)?->count);
@@ -196,7 +202,7 @@ final class NumericBoundsRedisTest extends TestCase
 
     public function testAWatchCountOverflowIsClassifiedAndWritesNothing(): void
     {
-        $this->seedWatch('full', self::MAX);
+        $this->seedWatch('full', self::max());
         $this->assertRejectedWithoutWrite('watch count overflow', fn() => $this->store->incrementWatchFlagAt('full', 1800, self::NOW));
         $this->assertRejectedWithoutWrite('watch count overflow', fn() => $this->store->incrementWatchFlagAcrossRotationAt('full', 'absent-previous', 1800, self::NOW));
         self::assertSame(PHP_INT_MAX, $this->store->getWatchFlag('full'));
@@ -205,7 +211,7 @@ final class NumericBoundsRedisTest extends TestCase
     /** The rotated watch answers Current plus Previous; a sum past the range is rejected before Current is written. */
     public function testARotatedWatchSumPastTheRangeIsClassifiedBeforeCurrentIsWritten(): void
     {
-        $this->seedWatch('previous', self::MAX);
+        $this->seedWatch('previous', self::max());
         $this->assertRejectedWithoutWrite('watch count overflow', fn() => $this->store->incrementWatchFlagAcrossRotationAt('current', 'previous', 1800, self::NOW));
         self::assertSame(0, $this->executor->execute(['EXISTS', $this->rawKey('watch', 'current')]));
     }
@@ -220,7 +226,7 @@ final class NumericBoundsRedisTest extends TestCase
         self::assertSame(PHP_INT_MAX, $this->store->incrementWatchFlagAt('near', 1800, self::NOW));
 
         $score = 'maatify:rate-limiter:v1:' . hash('sha256', self::NAMESPACE) . ':score:' . hash('sha256', 's');
-        $this->executor->execute(['HSET', $score, 'value', self::MAX, 'updatedAt', (string) self::NOW]);
+        $this->executor->execute(['HSET', $score, 'value', self::max(), 'updatedAt', (string) self::NOW]);
         $this->executor->execute(['EXPIRE', $score, '600']);
         $this->assertRejectedWithoutWrite('score integer overflow', fn() => $this->store->incrementAt('s', 600, 1, self::NOW));
     }
