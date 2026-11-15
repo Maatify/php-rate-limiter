@@ -42,6 +42,16 @@ function kb(float $bytes): string
     return number_format($bytes / 1024, 1);
 }
 
+/** The network of a cell, from its file name: `local_…`, `rtt_…`, `repeat-local_…`, `repeat-rtt_…`. */
+function network(string $name): string
+{
+    if (preg_match('/^(?:repeat-)?(local|rtt)_/', $name, $m) !== 1) {
+        return 'other';
+    }
+
+    return $m[1] === 'rtt' ? 'about 7 ms RTT' : 'loopback';
+}
+
 $workloads = ['read', 'newdevice', 'failure', 'admission-reserve', 'admission-outcome', 'recovery'];
 
 echo "### Per-request cost, local loopback (median of the measured requests)\n\n";
@@ -114,13 +124,13 @@ foreach ($workloads as $w) {
 
 echo "\n### Hot-key contention (one account, recordFailure, default retry budget)\n\n| Network | Workers x requests | Mode | requests | concurrency blocks | errors | NOSCRIPT | p50 ms | p95 ms | p99 ms | max ms | total sent MB |\n| --- | --- | --- | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: |\n";
 foreach ($cells as $name => $cell) {
-    if (! str_contains($name, '_hot-')) {
+    if (! str_contains($name, '_hot-') || str_starts_with($name, 'repeat-')) {
         continue;
     }
     $s = $cell['samples'];
     printf(
         "| %s | %d x %d | %s | %d | %d | %d | %d | %.1f | %.1f | %.1f | %.1f | %.2f |\n",
-        str_starts_with($name, 'rtt') ? 'about 7 ms RTT' : 'loopback',
+        network($name),
         $cell['workers'],
         $cell['requestsPerWorker'],
         $cell['mode'],
@@ -155,8 +165,8 @@ foreach ($cells as $name => $cell) {
     }
     $s = $cell['samples'];
     $row = [med(col($s, 'ms')), pct(col($s, 'ms'), 95), pct(col($s, 'ms'), 99), max(col($s, 'ms')), count(array_filter($s, static fn(array $x): bool => $x['conflict'])), count(array_filter($s, static fn(array $x): bool => $x['error'] !== null))];
-    $byCell[$m[1] . '-' . $m[2]][$m[4]][(int) $m[3]] = $row;
-    printf("| %s-%s | %s | %d | %.1f | %.1f | %.1f | %.1f | %d | %d |\n", $m[1], $m[2], $m[4], (int) $m[3], ...$row);
+    $byCell[network($name) . ', ' . $m[2]][$m[4]][(int) $m[3]] = $row;
+    printf("| %s, %s | %s | %d | %.1f | %.1f | %.1f | %.1f | %d | %d |\n", network($name), $m[2], $m[4], (int) $m[3], ...$row);
 }
 echo "\n| Cell | Mode | runs | median of p50 | median of p99 | min p99 | max p99 | total concurrency blocks |\n| --- | --- | ---: | ---: | ---: | ---: | ---: | ---: |\n";
 foreach ($byCell as $cellName => $modes) {

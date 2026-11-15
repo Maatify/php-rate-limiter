@@ -115,8 +115,10 @@ final class RespRedisCommandExecutor implements RedisCommandExecutorInterface
         try {
             return $this->send(['EVALSHA', $hash, ...array_slice($command, 2)]);
         } catch (RateLimiterException $error) {
-            // An error reply is a reply: Redis answered and the script did not run. Only a NOSCRIPT reply is a cache miss.
-            if (! str_starts_with($error->getMessage(), 'NOSCRIPT')) {
+            // An error reply is a reply: Redis answered. Only the error code NOSCRIPT is a cache miss, which proves the script did
+            // not run. The code is the first token of the error text (RESP: `-CODE text`), compared whole: a code that merely
+            // starts with it (`NOSCRIPTISH`) came from a script that ran, and replaying it would repeat its effects.
+            if (explode(' ', $error->getMessage(), 2)[0] !== 'NOSCRIPT') {
                 throw $error;
             }
             $this->noscriptMisses++;

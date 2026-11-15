@@ -111,6 +111,25 @@ final class EvalshaStudyRedisTest extends TestCase
         self::assertSame('1', $raw->execute(['GET', 'effects']), 'The script that answered with an error ran once and was not replayed.');
     }
 
+    public function testAnErrorCodeThatOnlyStartsLikeNoscriptIsNotACacheMissAndIsNeverReplayed(): void
+    {
+        $raw = $this->raw();
+        $client = $this->client('evalsha');
+        $script = "redis.call('INCR', KEYS[1]) return redis.error_reply('NOSCRIPTISH deliberate')";
+        $raw->execute(['SCRIPT', 'LOAD', $script]);
+
+        try {
+            $client->execute(['EVAL', $script, 1, 'lookalike']);
+            self::fail('The error reply must reach the caller.');
+        } catch (RateLimiterException $error) {
+            self::assertStringContainsString('NOSCRIPTISH deliberate', $error->getMessage());
+        }
+
+        self::assertSame(0, $client->noscriptMisses, 'A different error code is not a cache miss.');
+        self::assertSame(0, $client->fallbackEvals);
+        self::assertSame('1', $raw->execute(['GET', 'lookalike']), 'The loaded script ran once and was not replayed.');
+    }
+
     /** @return array<string, array{string, string}> */
     public static function lostTransport(): array
     {
