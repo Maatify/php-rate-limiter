@@ -891,6 +891,9 @@ if exists == 1 then
 end
 if exists == 1 and compareDecimalStrings(nowStr, storedEnd) < 0 then
   -- #185 F-185-25: an increment past the PHP integer range is a classified error and writes nothing, as SCORE_INCREMENT.
+  -- #230: the range is the caller's native `int` (ARGV[3], a canonical decimal; 2147483647 on a 32-bit build), judged on the exact
+  -- decimal sum before the write, so a count the caller could not read back is never stored; a stored count already past it is rejected too.
+  if compareDecimalStrings(count, ARGV[3]) > 0 or compareDecimalStrings(addDecimalStrings(count, ARGV[2]), ARGV[3]) > 0 then return redis.error_reply('budget count overflow') end
   local ok = pcall(redis.call, 'HINCRBY', KEYS[1], 'count', ARGV[2])
   if not ok then return redis.error_reply('budget count overflow') end
   return {redis.call('HGET', KEYS[1], 'count'), start}
@@ -985,7 +988,8 @@ if exists == 1 then
   if storedEnd == nil then return redis.error_reply(endError) end
 end
 if exists == 1 and compareDecimalStrings(nowStr, storedEnd) < 0 then
-  -- #185 F-185-25: the same classified overflow on the seeded path's active epoch.
+  -- #185 F-185-25: the same classified overflow on the seeded path's active epoch; #230: judged against the caller's native `int` (ARGV[7]) before the write.
+  if compareDecimalStrings(count, ARGV[7]) > 0 or compareDecimalStrings(addDecimalStrings(count, ARGV[4]), ARGV[7]) > 0 then return redis.error_reply('budget count overflow') end
   local ok = pcall(redis.call, 'HINCRBY', KEYS[1], 'count', ARGV[4])
   if not ok then return redis.error_reply('budget count overflow') end
   return {redis.call('HGET', KEYS[1], 'count'), start}
@@ -1080,6 +1084,8 @@ if exists == 0 then
   if not expiryApplied(redis.pcall('EXPIRE', KEYS[2], ARGV[1]), {KEYS[1], KEYS[2]}) then return redis.error_reply('expiry not representable') end
 else
   -- #185 F-185-25: an increment past the PHP integer range is a classified error and writes nothing.
+  -- #230: the range is the caller's native `int` (ARGV[2]); a stored count at it, or already past it, is rejected before INCR.
+  if compareDecimalStrings(redis.call('GET', KEYS[1]), ARGV[2]) >= 0 then return redis.error_reply('watch count overflow') end
   local ok = pcall(redis.call, 'INCR', KEYS[1])
   if not ok then return redis.error_reply('watch count overflow') end
   -- #185 F-185-12: the stored decimal string, not INCR's Lua number (exact only up to 2^53).
@@ -1994,7 +2000,7 @@ LUA;
         $this->positive($epochDurationSeconds, 'Budget epoch duration');
         // #185 F-185-24: a budget only grows; an amount below 1 is rejected before any write.
         $this->positive($amount, 'Budget amount');
-        $result = $this->eval(self::BUDGET_INCREMENT, [$this->key('budget', $key)], [$epochDurationSeconds, $amount, $this->callerTime($now)]);
+        $result = $this->eval(self::BUDGET_INCREMENT, [$this->key('budget', $key)], [$epochDurationSeconds, $amount, (string) PHP_INT_MAX, $this->callerTime($now)]);
         $tuple = $this->tuple($result, 2, 'budget increment');
         return new BudgetStateDTO(
             $this->integerValue($tuple[0], 'budget count'),
@@ -2013,7 +2019,7 @@ LUA;
         // #185 F-185-24: one rule for every budget increment; an amount below 1 is rejected before any write.
         $this->positive($amount, 'Budget amount');
         $seededCount = $this->tryIntegerAddition($seed->count, $amount);
-        $result = $this->eval(self::BUDGET_SEED, [$this->key('budget', $key)], [$epochDurationSeconds, $seed->epochStart, $seed->count, $amount, $seededCount ?? 0, $seededCount === null ? 1 : 0, $this->callerTime($now)]);
+        $result = $this->eval(self::BUDGET_SEED, [$this->key('budget', $key)], [$epochDurationSeconds, $seed->epochStart, $seed->count, $amount, $seededCount ?? 0, $seededCount === null ? 1 : 0, (string) PHP_INT_MAX, $this->callerTime($now)]);
         $tuple = $this->tuple($result, 2, 'seeded budget');
         return new BudgetStateDTO(
             $this->integerValue($tuple[0], 'budget count'),
@@ -2040,7 +2046,7 @@ LUA;
     public function incrementWatchFlagAt(string $key, int $ttlSeconds, int $now): int
     {
         $this->positive($ttlSeconds, 'Correlation TTL');
-        return $this->integerResult($this->eval(self::WATCH_INCREMENT, [$this->key('watch', $key), $this->key('watch-meta', $key)], [$ttlSeconds, $this->callerTime($now)]), 'watch count');
+        return $this->integerResult($this->eval(self::WATCH_INCREMENT, [$this->key('watch', $key), $this->key('watch-meta', $key)], [$ttlSeconds, (string) PHP_INT_MAX, $this->callerTime($now)]), 'watch count');
     }
 
     public function getWatchFlag(string $key): int
@@ -2449,7 +2455,8 @@ end
 -- integer range; past it the call is a classified error before any write.
 local nextCurrent = exists == 1 and addDecimalStrings(redis.call('GET', KEYS[1]), '1') or '1'
 local total = addDecimalStrings(nextCurrent, previousText)
-if #total > 19 or (#total == 19 and total > '9223372036854775807') then return redis.error_reply('watch count overflow') end
+-- #230: the range is the caller's native `int` (ARGV[2], a canonical decimal), not the 64-bit range.
+if compareDecimalStrings(total, ARGV[2]) > 0 then return redis.error_reply('watch count overflow') end
 local value
 if exists == 0 then
   if not ttlBackendRepresentable(ARGV[1]) then return redis.error_reply('correlation TTL exceeds Redis backend expiry representability') end
@@ -2465,7 +2472,7 @@ end
 -- #185 F-185-12: the count is summed as decimal strings, not as Lua numbers (exact only up to 2^53).
 return addDecimalStrings(redis.call('GET', KEYS[1]), previousText)
 LUA;
-        return $this->integerResult($this->eval($script, [$this->key('watch', $currentKey), $this->key('watch', $previousKey), $this->key('watch-meta', $previousKey), $this->key('watch-meta', $currentKey)], [$ttlSeconds, $this->callerTime($now)]), 'rotated watch count');
+        return $this->integerResult($this->eval($script, [$this->key('watch', $currentKey), $this->key('watch', $previousKey), $this->key('watch-meta', $previousKey), $this->key('watch-meta', $currentKey)], [$ttlSeconds, (string) PHP_INT_MAX, $this->callerTime($now)]), 'rotated watch count');
     }
 
     public function load(string $policyName): ?CircuitBreakerStateDTO
