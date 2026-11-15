@@ -64,9 +64,15 @@ final class AdmissionRaceRunner
                 if (! is_resource($process)) {
                     throw new \RuntimeException('Unable to start race worker ' . $index . '.');
                 }
-                stream_set_blocking($pipes[1], false);
-                stream_set_blocking($pipes[2], false);
-                $workers[$index] = new RaceWorkerProcess($index, $process, $pipes[0], $pipes[1], $pipes[2]);
+                [$stdin, $stdout, $stderr] = [self::pipe($pipes, 0), self::pipe($pipes, 1), self::pipe($pipes, 2)];
+                if (! is_resource($stdin) || ! is_resource($stdout) || ! is_resource($stderr)) {
+                    proc_terminate($process, 9);
+                    proc_close($process);
+                    throw new \RuntimeException('Race worker ' . $index . ' has no pipes.');
+                }
+                stream_set_blocking($stdout, false);
+                stream_set_blocking($stderr, false);
+                $workers[$index] = new RaceWorkerProcess($index, $process, $stdin, $stdout, $stderr);
             }
 
             // Phase 1: every worker ready, before any measured operation can start.
@@ -144,6 +150,12 @@ final class AdmissionRaceRunner
         } finally {
             self::reap($workers);
         }
+    }
+
+    /** One pipe handed back by `proc_open()`: its declared type differs between the PHPStan versions the repository is checked with. */
+    private static function pipe(mixed $pipes, int $index): mixed
+    {
+        return is_array($pipes) ? ($pipes[$index] ?? null) : null;
     }
 
     /** @param list<array{ok: bool, refused: ?string, claim: ?string}> $results */
