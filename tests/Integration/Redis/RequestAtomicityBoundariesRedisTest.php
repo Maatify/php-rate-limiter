@@ -60,7 +60,7 @@ final class RequestAtomicityBoundariesRedisTest extends TestCase
             $dump = $this->executor->execute(['DUMP', $key]);
             self::assertIsString($dump);
             $expiry = $this->executor->execute(['PEXPIRETIME', $key]);
-            self::assertIsInt($expiry);
+            self::assertTrue(is_int($expiry) || is_string($expiry), 'PEXPIRETIME replies with an exact integer (a decimal string where it exceeds the native integer).');
             $state[$key] = bin2hex($dump) . '@' . $expiry;
         }
 

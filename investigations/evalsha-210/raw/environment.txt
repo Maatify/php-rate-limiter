@@ -1,0 +1,18 @@
+git: 6e846dee601315944529c1a610b53b09cf5fcc0c
+date: 2026-11-15T01:33:56Z
+uname: Darwin mohameds-MacBook-Pro.local 25.5.0 Darwin Kernel Version 25.5.0: Tue Jun  9 22:26:46 PDT 2026; root:xnu-12377.121.10~1/RELEASE_ARM64_T8103 arm64
+cpu: Apple M1
+cores: 8
+PHP 8.4.27 (cli) (built: Oct 19 2026 14:38:59) (NTS)
+PHP_INT_SIZE: 8
+ext-redis: 6.2.0
+Redis server v=7.0.15 sha=00000000:0 malloc=jemalloc-5.2.1 bits=64 build=d6d81b7b50ab2e83
+redis config (maxmemory, lua-time-limit/busy-reply-threshold, tcp-keepalive):
+maxmemory
+0
+busy-reply-threshold
+5000
+tcp-keepalive
+300
+docker: Docker version 29.8.2, build 7fc2dff
+network: loopback (6391) and a delay proxy (3.5 ms each way) on 6392
