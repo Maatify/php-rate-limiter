@@ -72,7 +72,7 @@ final class AdmissionRaceRunner
                 }
                 stream_set_blocking($stdout, false);
                 stream_set_blocking($stderr, false);
-                $workers[$index] = new RaceWorkerProcess($index, $process, $stdin, $stdout, $stderr);
+                $workers[$index] = new RaceWorkerProcess($index, proc_get_status($process)['pid'], $process, $stdin, $stdout, $stderr);
             }
 
             // Phase 1: every worker ready, before any measured operation can start.
@@ -143,6 +143,11 @@ final class AdmissionRaceRunner
             }
 
             return $replies;
+        } catch (RaceRunFailure $failure) {
+            throw $failure;
+        } catch (\RuntimeException $failure) {
+            // The pids are those the runner took at the spawn: the cleanup in `finally` has run for exactly these children when the caller sees this.
+            throw new RaceRunFailure($failure->getMessage(), array_values(array_map(static fn(RaceWorkerProcess $w): int => $w->pid, $workers)), $failure);
         } finally {
             self::reap($workers);
         }

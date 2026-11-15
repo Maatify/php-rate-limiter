@@ -4,7 +4,10 @@ declare(strict_types=1);
 
 namespace Maatify\RateLimiter\Tests\Support\Admission;
 
-/** One child process of `AdmissionRaceRunner`: its pipes, what it has written so far and its state (#228). */
+/**
+ * One child process of `AdmissionRaceRunner`: its pid (taken by the runner from `proc_open()` at the spawn, never published by the child),
+ * its pipes, what it has written so far and its state (#228).
+ */
 final class RaceWorkerProcess
 {
     public string $out = '';
@@ -23,6 +26,7 @@ final class RaceWorkerProcess
      */
     public function __construct(
         public readonly int $index,
+        public readonly int $pid,
         public $process,
         public $stdin,
         public $stdout,
