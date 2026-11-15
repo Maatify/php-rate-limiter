@@ -528,6 +528,16 @@ Additionally, the design MUST include:
 
 Ladder, decay modifiers, budgets, and gates are locked in `docs/DECISION_MATRIX.md`.
 
+The anti-equilibrium gate is fixed: three prior actually-issued `SOFT_BLOCK` events within six hours
+escalate the next eligible `recordFailure` (the third event itself stays `SOFT_BLOCK`), and a `checkOnly`
+whose final decision is `SOFT_BLOCK` records an event like any non-success command. The account
+watcher and the K5-only device watcher are separate (DEC-026). Policy thresholds are one source of
+decisions: changing them does not disable the gate, the budget or the correlation rules, and does not
+give an exact attempt count before `HARD_BLOCK`. Details, the worked example and the customization
+guidance: [`docs/POLICIES.md`](docs/POLICIES.md#anti-equilibrium-gate) and
+[`docs/POLICIES.md` §6](docs/POLICIES.md#changing-thresholds-and-what-they-do-not-control); the
+canonical contract is `docs/DECISION_MATRIX.md` §2.5.
+
 Score-threshold `retryAfter` is the package-owned time until the current score
 decays below the threshold that ends the current decision class. `SOFT_BLOCK`
 uses L1, while every score-derived `HARD_BLOCK` level uses L2; an L3 score does
@@ -673,7 +683,10 @@ Policies define:
 - thresholds
 - failure semantics mode (including degraded behavior)
 
-Policies MUST remain compliant with `docs/POLICIES.md`.
+Policies MUST remain compliant with `docs/POLICIES.md`. Thresholds set only the score-derived
+candidate: they do not disable the budget, the correlation rules or the anti-equilibrium gate, and they
+do not fix the number of attempts before `HARD_BLOCK` (see §3.3 and
+[`docs/POLICIES.md` §6](docs/POLICIES.md#changing-thresholds-and-what-they-do-not-control)).
 
 The `api_heavy_protection` preset enforces API score scopes independently: K2
 produces at most `SOFT_BLOCK` L1, K3 produces at most `HARD_BLOCK` L2, and K1
