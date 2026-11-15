@@ -30,6 +30,7 @@ use PHPUnit\Framework\TestCase;
  * Everything runs through the public builder on an isolated Redis.
  */
 #[Group('t5-request-atomicity')]
+#[Group('php32')]
 final class RequestAtomicityRedisTest extends TestCase
 {
     private const NOW = 1_793_793_600;
@@ -70,7 +71,9 @@ final class RequestAtomicityRedisTest extends TestCase
     /**
      * Type, canonical content and absolute expiry of every key.
      *
-     * @return array<string, array{string, mixed, int}>
+     * The expiry is the exact `PEXPIRETIME` reply: an `int` when it fits the native integer, else its decimal string (32-bit PHP).
+     *
+     * @return array<string, array{string, mixed, int|string}>
      */
     private function state(): array
     {
@@ -91,11 +94,22 @@ final class RequestAtomicityRedisTest extends TestCase
                 default => self::fail('Unexpected key type ' . $type),
             };
             $expiry = $this->executor->execute(['PEXPIRETIME', $key]);
-            self::assertIsInt($expiry);
+            self::assertTrue(is_int($expiry) || is_string($expiry), 'PEXPIRETIME replies with an exact integer.');
             $state[$key] = [$type, $content, $expiry];
         }
 
         return $state;
+    }
+
+    /**
+     * An exact expiry reply as a float for arithmetic: a millisecond epoch value (below 2^53) is exact in a double on every width,
+     * so a one-millisecond difference is preserved; the digits are checked so that no larger value is silently rounded.
+     */
+    private static function milliseconds(int|string $expiry): float
+    {
+        self::assertMatchesRegularExpression('/\A-?\d{1,15}\z/', (string) $expiry, 'An expiry in milliseconds is exact in a double.');
+
+        return (float) $expiry;
     }
 
     private function redisNow(): int
@@ -235,13 +249,13 @@ final class RequestAtomicityRedisTest extends TestCase
         foreach ($state as $key => [$type, $content, $expiry]) {
             $family = explode(':', $key)[4] ?? '';
             $families[$family] = ($families[$family] ?? 0) + 1;
-            self::assertGreaterThan($this->redisNow() * 1000, $expiry, $key . ' has an expiry in the future.');
+            self::assertGreaterThan($this->redisNow() * 1000.0, self::milliseconds($expiry), $key . ' has an expiry in the future.');
             if ($family === 'distinct-meta') {
                 self::assertIsArray($content);
                 self::assertIsString($content['expiresAt']);
                 // The key lives for its TTL from the Redis clock; the metadata records the same span on the request clock.
                 self::assertEqualsWithDelta(
-                    intdiv($expiry, 1000) - $this->redisNow(),
+                    floor(self::milliseconds($expiry) / 1000.0) - $this->redisNow(),
                     ((int) $content['expiresAt']) - self::NOW,
                     2,
                     'The metadata expiry matches the key expiry.',
@@ -301,7 +315,7 @@ final class RequestAtomicityRedisTest extends TestCase
         foreach ($expected as $key => [$type, $content, $expiry]) {
             self::assertSame($type, $actual[$key][0], $key);
             self::assertSame($content, $actual[$key][1], 'No update was lost and none was applied twice: ' . $key);
-            self::assertEqualsWithDelta($expiry, $actual[$key][2], 5000, 'Expiry of ' . $key);
+            self::assertEqualsWithDelta(self::milliseconds($expiry), self::milliseconds($actual[$key][2]), 5000.0, 'Expiry of ' . $key);
         }
     }
 
