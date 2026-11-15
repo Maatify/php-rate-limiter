@@ -90,10 +90,16 @@ final class CallerTimeDecimalMillisecondsRedisTest extends TestCase
 
         // The instants at which the K4 state was read, claimed or mutated reached the store as their exact decimal, never the saturated native maximum.
         // The score, budget and watch increments send the caller's native integer range before the caller time (#227, #230): the maximum, and for the
-        // score also the minimum. That is a range, not a clock. The caller time is always the last argument, so only the argument or the pair
-        // just before it is set aside; a saturated clock is the last argument, and a lone "2147483647" anywhere else is still found.
+        // score also the minimum. That is a range, not a clock. The caller time is the last argument of a script, or the one before the held request
+        // state that the request overlay appends (a JSON list), so only the argument or the pair just before that time is set aside; a saturated
+        // clock is the time argument itself, and a lone "2147483647" anywhere else is still found.
         $sent = json_encode(array_map(static function (array $command): array {
             $range = [(string) PHP_INT_MAX, (string) PHP_INT_MIN];
+            $held = [];
+            $last = $command[count($command) - 1];
+            if (is_string($last) && str_starts_with($last, '[')) {
+                $held = [array_pop($command)];
+            }
             $count = count($command);
             if ($count >= 4 && $command[$count - 3] === $range[0] && $command[$count - 2] === $range[1]) {
                 unset($command[$count - 3], $command[$count - 2]);
@@ -101,7 +107,7 @@ final class CallerTimeDecimalMillisecondsRedisTest extends TestCase
                 unset($command[$count - 2]);
             }
 
-            return array_values($command);
+            return [...array_values($command), ...$held];
         }, $recording->commands), JSON_THROW_ON_ERROR);
         $reached = array_values(array_filter($instants, static fn(string $milliseconds): bool => str_contains($sent, '"' . $milliseconds . '"')));
         self::assertContains(self::START_MILLISECONDS, $reached);
