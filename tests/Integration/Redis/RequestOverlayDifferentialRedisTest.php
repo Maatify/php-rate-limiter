@@ -46,7 +46,7 @@ final class RequestOverlayDifferentialRedisTest extends TestCase
     }
 
     /**
-     * @return array<string, array{string, mixed, int}> keyed by the key with its namespace replaced
+     * @return array<string, array{string, mixed, int|string}> keyed by the key with its namespace replaced
      */
     private function state(string $namespace): array
     {
@@ -68,7 +68,7 @@ final class RequestOverlayDifferentialRedisTest extends TestCase
                 default => self::fail('Unexpected key type ' . $type),
             };
             $expiry = $this->executor->execute(['PEXPIRETIME', $key]);
-            self::assertIsInt($expiry);
+            self::assertTrue(is_int($expiry) || is_string($expiry), 'PEXPIRETIME replies with an exact integer (a decimal string where it exceeds the native integer).');
             $state['NS:' . substr($key, strlen($prefix))] = [$type, $content, $expiry];
         }
 
@@ -128,7 +128,7 @@ final class RequestOverlayDifferentialRedisTest extends TestCase
             self::assertSame($type, $overlayState[$key][0], $name . ': type of ' . $key);
             self::assertSame($content, $overlayState[$key][1], $name . ': content of ' . $key);
             // The two runs are a few milliseconds apart, so a difference of a second in an expiry is a defect.
-            self::assertEqualsWithDelta($expiry, $overlayState[$key][2], self::EXPIRY_DELTA_MILLISECONDS, $name . ': expiry of ' . $key);
+            self::assertEqualsWithDelta((float) $expiry, (float) $overlayState[$key][2], (float) self::EXPIRY_DELTA_MILLISECONDS, $name . ': expiry of ' . $key);
         }
     }
 

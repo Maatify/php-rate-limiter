@@ -128,7 +128,8 @@ final class EvalshaStudyRedisTest extends TestCase
         $raw->execute(['SCRIPT', 'LOAD', $script]);
         [$process, $proxyPort] = $this->proxy($fault);
         try {
-            $client = $this->client('evalsha', $proxyPort);
+            // The proxy listens on loopback of the machine that runs the tests, whatever host the server has.
+            $client = new RespRedisCommandExecutor('127.0.0.1', $proxyPort, 'evalsha');
             try {
                 $client->execute(['EVAL', $script, 1, 'lost']);
                 self::fail('The transport failure must reach the caller.');

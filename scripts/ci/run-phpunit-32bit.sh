@@ -33,7 +33,7 @@ trap 'exit 143' TERM
 until [[ "$("$docker_bin" exec "$redis_name" redis-cli ping 2>/dev/null || true)" == PONG ]]; do sleep 0.5; done
 
 php_run=("$docker_bin" run --rm --platform linux/386 --network "$network" -v "$package_root:/app" -w /app
-    -e REDIS_INTEGRATION_HOST="$redis_name" -e REDIS_INTEGRATION_PORT=6379 "$image")
+    -e REDIS_INTEGRATION_HOST="$redis_name" -e REDIS_INTEGRATION_PORT=6379 -e REDIS_INTEGRATION_SCRIPT_MODE="${REDIS_INTEGRATION_SCRIPT_MODE:-}" "$image")
 
 "${php_run[@]}" php -r 'if (PHP_INT_SIZE !== 4) { fwrite(STDERR, "Not a 32-bit PHP build.\n"); exit(1); } echo "PHP ", PHP_VERSION, " PHP_INT_SIZE=", PHP_INT_SIZE, PHP_EOL;'
 "$docker_bin" exec "$redis_name" redis-server --version

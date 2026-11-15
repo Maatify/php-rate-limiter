@@ -146,3 +146,23 @@ foreach (['warmup-before-restart_newdevice_evalsha' => 'before', 'after-restart_
         printf("| %s #%d | %d | %d | %s | %.2f |\n", $when, $i, $x['commands'], $x['noscript'], kb((float) $x['sent']), $x['ms']);
     }
 }
+
+echo "\n### Repeated contention runs (alternating eval / evalsha; per-run p50, p95, p99 and concurrency blocks)\n\n| Cell | Mode | Run | p50 ms | p95 ms | p99 ms | max ms | concurrency blocks | errors |\n| --- | --- | ---: | ---: | ---: | ---: | ---: | ---: | ---: |\n";
+$byCell = [];
+foreach ($cells as $name => $cell) {
+    if (preg_match('/^repeat-(local|rtt)_hot-(w\d+)-r(\d+)_(eval|evalsha)$/', $name, $m) !== 1) {
+        continue;
+    }
+    $s = $cell['samples'];
+    $row = [med(col($s, 'ms')), pct(col($s, 'ms'), 95), pct(col($s, 'ms'), 99), max(col($s, 'ms')), count(array_filter($s, static fn(array $x): bool => $x['conflict'])), count(array_filter($s, static fn(array $x): bool => $x['error'] !== null))];
+    $byCell[$m[1] . '-' . $m[2]][$m[4]][(int) $m[3]] = $row;
+    printf("| %s-%s | %s | %d | %.1f | %.1f | %.1f | %.1f | %d | %d |\n", $m[1], $m[2], $m[4], (int) $m[3], ...$row);
+}
+echo "\n| Cell | Mode | runs | median of p50 | median of p99 | min p99 | max p99 | total concurrency blocks |\n| --- | --- | ---: | ---: | ---: | ---: | ---: | ---: |\n";
+foreach ($byCell as $cellName => $modes) {
+    foreach ($modes as $mode => $runs) {
+        $p50 = array_column($runs, 0);
+        $p99 = array_column($runs, 2);
+        printf("| %s | %s | %d | %.1f | %.1f | %.1f | %.1f | %d |\n", $cellName, $mode, count($runs), med($p50), med($p99), min($p99), max($p99), array_sum(array_column($runs, 4)));
+    }
+}
