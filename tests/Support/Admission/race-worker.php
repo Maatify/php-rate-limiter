@@ -2,9 +2,11 @@
 
 declare(strict_types=1);
 
-// Race worker for the store gates (NM-6 R-1 / R-2, NM-7, PERMIT): one operation released at a shared barrier instant.
-//   race-worker.php <host> <port> <barrier-unix-float> <index> <base64-json-spec>
-// Prints one JSON object: {"ok": bool, "refused": ?string, "claim": ?string}.
+// Race worker for the store gates (NM-6 R-1 / R-2, NM-7, PERMIT): one operation released together with the other workers.
+//   race-worker.php <host> <port> <ready-timeout-seconds> <index> <base64-json-spec>
+// Protocol (#228): after its setup (connection, store, public runtime) the worker prints `READY` on stdout and blocks on stdin until
+// the runner, which waits for every worker, writes `GO`; only then does it run the operation. It exits 3 when no `GO` arrives in
+// time. It then prints one JSON object: {"ok": bool, "refused": ?string, "claim": ?string}.
 
 use Maatify\RateLimiter\Command\RateLimitCommand;
 use Maatify\RateLimiter\DTO\AdmissionCredentialDTO;
@@ -33,10 +35,10 @@ foreach (is_array($raw) ? $raw : [] as $argument) {
     }
 }
 if (count($args) !== 6) {
-    fwrite(STDERR, "usage: race-worker.php <host> <port> <barrier> <index> <spec>\n");
+    fwrite(STDERR, "usage: race-worker.php <host> <port> <ready-timeout> <index> <spec>\n");
     exit(2);
 }
-[, $host, $port, $barrier, $index, $encoded] = $args;
+[, $host, $port, $readyTimeout, $index, $encoded] = $args;
 $json = base64_decode($encoded, true);
 if ($json === false) {
     fwrite(STDERR, "malformed spec\n");
@@ -69,12 +71,13 @@ $runtime = in_array($spec->op, ['public_check', 'public_proven', 'public_proven_
     ? PublicRedisAdmissionFixture::build($executor, $spec->namespace, $spec->now, 60_000, $spec->pendingLimit)
     : null;
 
-if ($runtime !== null && microtime(true) >= (float) $barrier) {
-    fwrite(STDERR, "Public runtime worker missed the start barrier.\n");
-    exit(2);
-}
-while (microtime(true) < (float) $barrier) {
-    usleep(200);
+// Setup is complete: report ready and wait, bounded, for the release of all workers together.
+fwrite(STDOUT, "READY\n");
+fflush(STDOUT);
+stream_set_timeout(STDIN, max(1, (int) ceil((float) $readyTimeout)));
+if (fgets(STDIN) !== "GO\n") {
+    fwrite(STDERR, "Race worker {$index} was not released (no GO within the readiness bound).\n");
+    exit(3);
 }
 
 if ($runtime !== null) {
