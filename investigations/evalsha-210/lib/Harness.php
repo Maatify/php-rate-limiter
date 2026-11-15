@@ -98,9 +98,21 @@ final class Harness
         $runtime->limit($this->context('seed'), RateLimitCommand::checkOnly('login_protection'));
     }
 
+    /** @var array<string, string> account => the source address the account always comes from */
+    private array $sources = [];
+
+    /**
+     * Every account has its own source (its own /24): a workload must not measure the per-source budgets, the credential-spray
+     * correlation or the source capacity of the admission lane (the clock is fixed, so no window ever slides).
+     */
     public function context(string $account, ?string $device = null): RateLimitContextDTO
     {
-        return new RateLimitContextDTO('192.0.2.' . (1 + (crc32($account) % 200)), 'Mozilla/5.0 study', $account, null, $device ?? 'device-' . $account, false);
+        if (! isset($this->sources[$account])) {
+            $n = count($this->sources);
+            $this->sources[$account] = '10.' . (intdiv($n, 250) % 250) . '.' . ($n % 250) . '.' . (1 + intdiv($n, 62500) % 250);
+        }
+
+        return new RateLimitContextDTO($this->sources[$account], 'Mozilla/5.0 study', $account, null, $device ?? 'device-' . $account, false);
     }
 
     /** An outage of the backend on the evaluation scripts, as in the recovery regression: three failed requests open the circuit. */
