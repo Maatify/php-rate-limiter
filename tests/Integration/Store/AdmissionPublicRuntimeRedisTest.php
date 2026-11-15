@@ -106,6 +106,7 @@ final class AdmissionPublicRuntimeRedisTest extends AdmissionRedisGateTestCase
         }
     }
 
+    #[Group('php32')]
     public function testUnknownLaneSourceCapacityUnderParallelPublicChecks(): void
     {
         $runtime = PublicRedisAdmissionFixture::build($this->executor, self::NAMESPACE, self::NOW);

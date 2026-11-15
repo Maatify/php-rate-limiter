@@ -221,6 +221,51 @@ event affects future requests only. The third soft event remains a `SOFT_BLOCK`,
 recording it MUST NOT turn that same request into `HARD_BLOCK`. `ALLOW` and `HARD_BLOCK`
 final decisions record no soft event.
 
+How to read the gate (the detailed owner is [`DECISION_MATRIX.md` §2.5](DECISION_MATRIX.md#25-anti-equilibrium-gate-deterministic);
+this section restates nothing it does not state):
+
+* **Fixed values.** Three prior events within six hours (`AntiEquilibriumGate`: window 21600 s,
+  threshold 3). The policy contract has no setting for them, and no setting disables the gate.
+* **Applicability (the source conditions).** The account watcher reads and records only when the request
+  carries an account and the policy's budget configuration is not `null`; no authentication capability is
+  checked there. It reads on `recordFailure` only (a `checkOnly` never reads it) and records on a
+  non-success command whose final decision is `SOFT_BLOCK`. The device watcher has more conditions: the same
+  account and budget configuration, a K5 level in `getScoreThresholds()`, a policy that is not
+  `API_OVERUSE`, a non-ephemeral request and a durable device fingerprint
+  ([`DECISION_MATRIX.md` §2.5.3](DECISION_MATRIX.md#25-anti-equilibrium-gate-deterministic)).
+* **Recording includes `checkOnly`.** Any non-success command whose final issued decision is
+  `SOFT_BLOCK` records one event, so a pre-check that the Host answers with `SOFT_BLOCK` counts. An
+  `ALLOW` or `HARD_BLOCK` final decision records nothing.
+* **Escalation happens later.** The recorded events affect the next eligible `recordFailure`,
+  not the request that recorded the third one.
+* **Two watchers.** A `SOFT_BLOCK` with any account-scoped source (K4, budget, flood, Recovery
+  Guard, a K5 level mixed with one of them) is recorded on the account watcher and escalates to
+  `HARD_BLOCK(Account)` L2. A `SOFT_BLOCK` whose every winning candidate is a K5 level of a known
+  device (K5-only), with a durable device identity, is recorded on the device watcher and
+  escalates to a `HARD_BLOCK` L2 on that account + device only (DEC-026).
+
+Changing a threshold does not change any of this: see [Changing thresholds](#changing-thresholds-and-what-they-do-not-control).
+
+**Worked example** (the `login_protection` preset: K4 thresholds 5 / 8 / 12, a new-device
+failure adds 3; one account, one new device) as in the system test
+`RateLimiterBudgetOwnerSafetyTest::testAntiEquilibriumThirdSoftStaysSoftAndNextFailureBecomesHard`.
+The K4 scores in the table are **test fixture state**: the test writes 5 into the store before the
+first command and writes 0 before the fourth; decay is not modelled and the example does not claim that
+a score decays that fast. It counts commands and events, not user attempts: four of the five commands
+are pre-checks and only one failure is reported.
+
+| # | Command | K4 score before | Final decision | Soft event recorded |
+| - | ------- | --------------- | -------------- | ------------------- |
+| 1 | `checkOnly` | 5 | `SOFT_BLOCK` L1 | 1st |
+| 2 | `checkOnly` | 5 | `SOFT_BLOCK` L1 | 2nd |
+| 3 | `checkOnly` | 5 | `SOFT_BLOCK` L1 (the third event is recorded; this request stays soft) | 3rd |
+| 4 | `checkOnly`, after the test sets the K4 score to 0 (fixture state, not decay) | 0 | `ALLOW` | none |
+| 5 | `recordFailure` from a new device (K4 would become 3, below the L1 threshold 5) | 0 | `HARD_BLOCK` L2 from the Anti-Equilibrium candidate (the test asserts that no budget cooldown is stored) | none |
+
+Command 5 reads the three prior events (all within six hours) before budget acquisition, so a
+failure whose score alone is `ALLOW` is already a `HARD_BLOCK`. The block is below the K4 `HARD_BLOCK`
+threshold of 8, which is why a K4 threshold is not a cap on the attempts before `HARD_BLOCK`.
+
 ---
 
 ### Progressive Blocking
@@ -462,6 +507,31 @@ Custom policies MAY exist, but:
 * MUST NOT introduce renewable denial-of-owner vectors
 
 Invalid policies MUST be rejected at runtime.
+
+### Changing thresholds and what they do not control
+
+`BlockPolicyInterface::getScoreThresholds()` (`PolicyThresholdsDTO`, which maps the K1 to K5 scopes and a
+default; for an authentication policy such as Login the K4 account and K5 known-device levels are the ones
+this section is about) sets the **score-derived** candidates. It is one source of decisions among several, and the final
+decision is the aggregation of all eligible candidates (`DECISION_MATRIX.md` §8): the budget, the
+correlation rules, Recovery Guard and the Anti-Equilibrium gate are separate mechanisms with their
+own state and are not read from the thresholds. Therefore:
+
+* **Changing a K4 or K5 threshold does not disable any other protection.** Raising it leaves the
+  budget, the correlation rules, the penalty ladder and the Anti-Equilibrium gate in force, and
+  lowering it does not replace them.
+* **It does not give an exact number of attempts before `HARD_BLOCK`.** Either an eligible score
+  level or an eligible Anti-Equilibrium history can produce a `HARD_BLOCK`, and the count depends on
+  which commands were pre-checks, which were failures, the account's earlier state and its decay.
+  No single formula (for example "the lower of the K4 threshold and the gate") describes the
+  decision.
+* **The Anti-Equilibrium gate is fixed.** Three prior `SOFT_BLOCK` events within six hours, as stated
+  under [Anti-Equilibrium Gate](#anti-equilibrium-gate); a custom policy must include it, and the
+  contract offers no setting that disables or retunes it. A request for one is a design change for the
+  Owner, not a policy option.
+
+A `SOFT_BLOCK` that the Host answers to a `checkOnly` counts toward the gate exactly as one answered
+to a `recordFailure` does; see the worked example in the Anti-Equilibrium section.
 
 ---
 

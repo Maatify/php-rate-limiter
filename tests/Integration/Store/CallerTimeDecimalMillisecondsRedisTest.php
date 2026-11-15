@@ -89,7 +89,9 @@ final class CallerTimeDecimalMillisecondsRedisTest extends TestCase
         ], $observed);
 
         // The instants at which the K4 state was read, claimed or mutated reached the store as their exact decimal, never the saturated native maximum.
-        $sent = json_encode($recording->commands, JSON_THROW_ON_ERROR);
+        // The score increment sends the caller's integer range as two arguments (#227): the native maximum, then the minimum. That pair is the range,
+        // not a clock; a saturated clock is a lone "2147483647", so only the pair is set aside before the detector looks.
+        $sent = str_replace('"' . PHP_INT_MAX . '","' . PHP_INT_MIN . '"', '"native-range"', json_encode($recording->commands, JSON_THROW_ON_ERROR));
         $reached = array_values(array_filter($instants, static fn(string $milliseconds): bool => str_contains($sent, '"' . $milliseconds . '"')));
         self::assertContains(self::START_MILLISECONDS, $reached);
         self::assertGreaterThanOrEqual(5, count($reached), 'At least the first decisions and the post-expiry re-entry decisions forward the exact clock.');
