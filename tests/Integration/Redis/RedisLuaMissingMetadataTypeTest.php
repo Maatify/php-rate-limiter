@@ -23,6 +23,7 @@ use PHPUnit\Framework\TestCase;
  * F-185-39 / LT-185-39 regression suite: Missing metadata key or field returns classified malformed error without raw Lua crash, leaving store unmutated.
  */
 #[Group('f-185-39')]
+#[Group('php32')]
 final class RedisLuaMissingMetadataTypeTest extends TestCase
 {
     private const NOW = 1_793_793_600;
@@ -45,7 +46,7 @@ final class RedisLuaMissingMetadataTypeTest extends TestCase
         $this->store = new RedisFullCapabilityStore($this->executor, self::NAMESPACE);
     }
 
-    /** @return array<string, string> `DUMP` of every key. */
+    /** @return array<string, array{string, int|string}> byte-exact `DUMP` and exact `PEXPIRETIME` (read outside Lua; a string past a 32-bit `int`) of every key. */
     private function dump(): array
     {
         $keys = $this->executor->execute(['KEYS', '*']);
@@ -55,7 +56,9 @@ final class RedisLuaMissingMetadataTypeTest extends TestCase
             self::assertIsString($key);
             $bytes = $this->executor->execute(['DUMP', $key]);
             self::assertIsString($bytes);
-            $out[$key] = $bytes;
+            $expiry = $this->executor->execute(['PEXPIRETIME', $key]);
+            self::assertTrue(is_int($expiry) || is_string($expiry));
+            $out[$key] = [$bytes, $expiry];
         }
         ksort($out);
 
@@ -151,20 +154,60 @@ final class RedisLuaMissingMetadataTypeTest extends TestCase
         );
     }
 
-    public function testAddDistinctBoundedAcrossRotationAtClassifiedErrorWhenMetaFieldDeleted(): void
+    /** @return array<string, array{bool}> */
+    public static function millisecondInterfaces(): array
     {
-        $this->store->addDistinctBoundedAcrossRotationAt('cur', 'br', 'prev', 'm1', 'm0', 600, 10, self::NOW * 1000);
+        return [
+            'decimal-millisecond capability (DEC-039)' => [false],
+            'native-int millisecond interface' => [true],
+        ];
+    }
+
+    /**
+     * #238: the instant is built as an exact decimal (`NOW` seconds followed by `000`), never `NOW * 1000`, which is a float on a 32-bit build and
+     * ended the test in a `TypeError` during its setup. Both calls go through the same interface: the decimal-millisecond capability on every width, and
+     * the native-int one where the instant fits (64-bit; skipped on 32-bit because 1.79e12 is outside that width's `int`).
+     *
+     * The test is only meaningful if the state was really created, the field was really deleted and the second call really reached the script: each
+     * step is asserted, and only a `RateLimiterException` is accepted (a `TypeError` from a fixture is not caught and fails the test).
+     */
+    #[DataProvider('millisecondInterfaces')]
+    public function testAddDistinctBoundedAcrossRotationAtClassifiedErrorWhenMetaFieldDeleted(bool $nativeInt): void
+    {
+        if ($nativeInt && PHP_INT_SIZE < 8) {
+            self::markTestSkipped('Outside the 32-bit public input domain: the int-millisecond method cannot receive 1.793e12. The decimal-millisecond data set covers 32-bit.');
+        }
+        $rotate = fn(string $member, int $seconds) => $nativeInt
+            ? $this->store->addDistinctBoundedAcrossRotationAt('cur', 'br', 'prev', $member, 'm0', 600, 10, (int) ($seconds . '000'))
+            : $this->store->addDistinctBoundedAcrossRotationAtMilliseconds('cur', 'br', 'prev', $member, 'm0', 600, 10, $seconds . '000');
+        $this->executor->execute(['SET', 'unrelated-control', 'kept']);
+        $this->executor->execute(['EXPIRE', 'unrelated-control', '5000']);
+
+        $first = $rotate('m1', self::NOW);
+        self::assertSame([1, true], [$first->count, $first->accepted], 'The setup call stored its member.');
+        $sets = $this->executor->execute(['KEYS', '*:distinct:*']);
+        self::assertIsArray($sets);
+        self::assertCount(1, $sets, 'The setup created Current\'s set (Previous is absent, so no bridge is needed).');
         $metaKeys = $this->executor->execute(['KEYS', '*distinct-meta*']);
         self::assertIsArray($metaKeys);
-        foreach ($metaKeys as $mk) {
-            assert(is_string($mk));
-            $this->executor->execute(['HDEL', $mk, 'expiresAt']);
-        }
+        self::assertCount(1, $metaKeys, 'and its metadata.');
+        $setKey = $sets[0];
+        $metaKey = $metaKeys[0];
+        self::assertIsString($setKey);
+        self::assertIsString($metaKey);
+        self::assertSame(1, $this->executor->execute(['SISMEMBER', $setKey, 'm1']));
+        self::assertSame(1, $this->executor->execute(['HEXISTS', $metaKey, 'expiresAt']), 'The metadata carries its expiry before the deletion.');
+
+        self::assertSame(1, $this->executor->execute(['HDEL', $metaKey, 'expiresAt']), 'The expiry field was really deleted.');
+        self::assertSame(0, $this->executor->execute(['HEXISTS', $metaKey, 'expiresAt']));
+        self::assertSame(1, $this->executor->execute(['EXISTS', $setKey]), 'The set remains: only its metadata is damaged.');
 
         $this->assertMalformedWithoutMutation(
-            fn() => $this->store->addDistinctBoundedAcrossRotationAt('cur', 'br', 'prev', 'm2', 'm0', 600, 10, (self::NOW + 1) * 1000),
-            'malformed',
+            fn() => $rotate('m2', self::NOW + 1),
+            'malformed current bounded',
         );
+        self::assertSame(['m1'], $this->executor->execute(['SMEMBERS', $setKey]), 'The rejected call did not add its member.');
+        self::assertSame('kept', $this->executor->execute(['GET', 'unrelated-control']));
     }
 
     public function testRotatedWatchRejectsNoncanonicalExpiryBeforeWriting(): void
