@@ -20,12 +20,14 @@ use Maatify\RateLimiter\Tests\Support\Clock\CountingClock;
 use Maatify\RateLimiter\Tests\Support\Clock\FixedClock;
 use Maatify\RateLimiter\Tests\Support\Clock\RedisAnchoredClock;
 use Maatify\RateLimiter\Tests\Support\FailureSignal\RecordingFailureSignalEmitter;
+use Maatify\RateLimiter\Tests\Support\Redis\ExactDecimal;
 use Maatify\RateLimiter\Tests\Support\FullCapability\FullCapabilityInMemoryStore;
 use Maatify\RateLimiter\Tests\Support\FullCapability\LegacySignatureFullCapabilityStore;
 use Maatify\RateLimiter\Tests\Support\Redis\RespRedisCommandExecutor;
 use Maatify\SharedCommon\Contracts\ClockInterface;
 use Maatify\SharedCommon\Infrastructure\SystemClock;
 use PHPUnit\Framework\Attributes\DataProvider;
+use PHPUnit\Framework\Attributes\Group;
 use PHPUnit\Framework\TestCase;
 use Throwable;
 
@@ -38,6 +40,7 @@ use Throwable;
  * does not see them, after the fix every comparison follows the caller.
  * RED-11 (F-P2-03, PLAN §12) fails on `38c5ce7`, the first RESULTS head.
  */
+#[Group('php32')]
 final class CallerTimeAuthorityRedisTest extends TestCase
 {
     private const VALIDATOR_MESSAGE = 'Bounded correlation store returned an invalid snapshot.';
@@ -311,6 +314,11 @@ final class CallerTimeAuthorityRedisTest extends TestCase
     #[DataProvider('expiryFamilies')]
     public function testRedisRejectedExpiryDeletesEverythingTheCallCreated(string $family, callable $operation): void
     {
+        if (PHP_INT_SIZE < 8) {
+            // #234: the boundary needs a native-int lifetime of 9,223,372,036,854,775 s minus the current second, far above a 32-bit
+            // int (2^31 - 1 s). The lifetime is not clamped: a smaller one would not reach Redis's own expiry ceiling.
+            self::markTestSkipped('Outside the 32-bit public input domain (' . $family . '): the lifetime that reaches Redis\'s expiry ceiling is above 2^31 - 1 s. 32-bit equivalent: testOnA32BitALargeNativeLifetimeIsAcceptedAndExpiresAtTheExactInstant.');
+        }
         $this->executor->execute(['SET', 'unrelated-key', 'kept']);
         $store = new RedisFullCapabilityStore(
             $this->executor,
@@ -332,6 +340,50 @@ final class CallerTimeAuthorityRedisTest extends TestCase
         }
 
         self::assertTrue($rejected, $family . ': Redis did not reject, or the error was not the named one: ' . ($error?->getMessage() ?? 'none'));
+    }
+
+    /**
+     * #234, the 32-bit-reachable expiry coverage of the same eight families. A 32-bit lifetime is at most 2^31 - 1 s (about 2.1e12 ms), nowhere
+     * near Redis's expiry ceiling, so this is NOT the ceiling boundary (the test above, 64-bit only). It checks what that lifetime does reach: the
+     * call is accepted, nothing is rejected as "expiry not representable", and every key it created ends at exactly Redis's clock plus the lifetime
+     * (the exact `PEXPIRETIME`, read outside Lua as a decimal).
+     *
+     * @param callable(RedisFullCapabilityStore, int): mixed $operation
+     */
+    #[DataProvider('expiryFamilies')]
+    public function testOnA32BitALargeNativeLifetimeIsAcceptedAndExpiresAtTheExactInstant(string $family, callable $operation): void
+    {
+        if (PHP_INT_SIZE >= 8) {
+            self::markTestSkipped('64-bit: a 2e9 s lifetime is nowhere near the ceiling of that width; its boundary is testRedisRejectedExpiryDeletesEverythingTheCallCreated.');
+        }
+        // The largest lifetime whose expiry second (Redis's now plus the lifetime) is still a native int, less an hour of margin. A longer one
+        // makes the bounded snapshots write and then fail to read `expiresAt` back as an int (tracked separately, #234); it is not used here.
+        $seconds = 2_147_483_647 - (int) substr($this->redisMilliseconds(), 0, -3) - 3_600;
+        $before = $this->redisMilliseconds();
+        $operation($this->store, $seconds);
+        $after = $this->redisMilliseconds();
+
+        $keys = $this->executor->execute(['KEYS', '*']);
+        self::assertIsArray($keys);
+        self::assertNotSame([], $keys, $family . ': the call created its keys.');
+        $lifetime = ExactDecimal::thousand((string) $seconds);
+        foreach ($keys as $key) {
+            self::assertIsString($key);
+            $expiresAt = ExactDecimal::fromReply($this->executor->execute(['PEXPIRETIME', $key]));
+            self::assertGreaterThanOrEqual(0, ExactDecimal::compare($expiresAt, ExactDecimal::subtract(ExactDecimal::add($before, $lifetime), '2000')), $family . ': ' . $key . ' lives the whole lifetime.');
+            self::assertLessThanOrEqual(0, ExactDecimal::compare($expiresAt, ExactDecimal::add(ExactDecimal::add($after, $lifetime), '2000')), $family . ': ' . $key . ' does not outlive it.');
+        }
+    }
+
+    /** Redis's own clock in epoch milliseconds, exact, as a decimal (a 32-bit `int` cannot hold it). */
+    private function redisMilliseconds(): string
+    {
+        $time = $this->executor->execute(['TIME']);
+        self::assertIsArray($time);
+        self::assertIsString($time[0]);
+        self::assertIsString($time[1]);
+
+        return $time[0] . sprintf('%03d', intdiv((int) $time[1], 1000));
     }
 
     /**
