@@ -532,6 +532,12 @@ is a separate DEC-007 lifecycle capability; it requires K4, monotonic positive
 K4 thresholds, fail-closed semantics, and lifecycle-capable storage regardless
 of the policy's name.
 
+A custom policy's thresholds set only its score-derived decision. They do not disable the budget, the
+correlation rules or the fixed anti-equilibrium gate (three prior `SOFT_BLOCK` events within six hours), and
+they do not give an exact number of attempts before `HARD_BLOCK`; a `checkOnly` answered with `SOFT_BLOCK`
+counts toward the gate. See [Policies §6](../POLICIES.md#changing-thresholds-and-what-they-do-not-control)
+and the worked example in [Policies, Anti-Equilibrium Gate](../POLICIES.md#anti-equilibrium-gate).
+
 Backend-failure fallback is a separate typed DEC-011 concern from normal-runtime
 capabilities, declared through `FailureFallbackConfigurationProviderInterface`.
 

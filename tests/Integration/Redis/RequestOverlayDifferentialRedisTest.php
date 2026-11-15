@@ -18,13 +18,12 @@ use PHPUnit\Framework\TestCase;
  * (type, content, expiry) must be equal.
  */
 #[Group('t5-request-atomicity')]
+#[Group('php32')]
 final class RequestOverlayDifferentialRedisTest extends TestCase
 {
     private const EXPIRY_DELTA_MILLISECONDS = 400;
 
     private const NOW = 1_793_793_600;
-
-    private const NOW_MS = self::NOW * 1000;
 
     private RespRedisCommandExecutor $executor;
 
@@ -104,6 +103,17 @@ final class RequestOverlayDifferentialRedisTest extends TestCase
         return $map;
     }
 
+    /**
+     * `NOW` in epoch milliseconds plus `$offsetMilliseconds`, as the exact canonical decimal the DEC-039 capabilities take: a current epoch
+     * value in milliseconds is above a 32-bit native integer, so it is built from the seconds and a three-digit remainder, never as an `int`.
+     */
+    private static function ms(int $offsetMilliseconds = 0): string
+    {
+        self::assertGreaterThanOrEqual(0, $offsetMilliseconds);
+
+        return (string) (self::NOW + intdiv($offsetMilliseconds, 1000)) . str_pad((string) ($offsetMilliseconds % 1000), 3, '0', STR_PAD_LEFT);
+    }
+
     /** @return array{mixed, ?string} the value, or the exception class and message */
     private function outcome(callable $run): array
     {
@@ -181,7 +191,6 @@ final class RequestOverlayDifferentialRedisTest extends TestCase
     public function testDistinctSetsSnapshotsAndRotationBehaveAsTheScripts(): void
     {
         $now = self::NOW;
-        $nowMs = self::NOW_MS;
         foreach (['a', 'b', 'a', 'c'] as $i => $member) {
             $this->both('distinct ' . $i, fn($s) => $s->addDistinctAt('distinct', $member, 600, $now + $i));
         }
@@ -193,7 +202,7 @@ final class RequestOverlayDifferentialRedisTest extends TestCase
         }
         $this->both('bounded expired', fn($s) => $s->addDistinctBoundedAt('bounded', 'z', 600, 2, $now + 700));
         foreach (['a', 'b', 'c'] as $i => $member) {
-            $this->both('rotated ' . $i, fn($s) => $s->addDistinctBoundedWithSnapshotAcrossRotationAt('rot-cur', 'rot-bridge', 'rot-prev', $member, 'p' . $member, 600, 5, $nowMs + $i));
+            $this->both('rotated ' . $i, fn($s) => $s->addDistinctBoundedWithSnapshotAcrossRotationAtMilliseconds('rot-cur', 'rot-bridge', 'rot-prev', $member, 'p' . $member, 600, 5, self::ms($i)));
         }
         $this->surgery(function (\Closure $key): void {
             $this->executor->execute(['SADD', $key('distinct', 'rot-prev'), 'pa', 'pz']);
@@ -201,10 +210,10 @@ final class RequestOverlayDifferentialRedisTest extends TestCase
             $this->executor->execute(['HSET', $key('distinct-meta', 'rot-prev'), 'expiresAt', (string) (self::NOW + 500)]);
             $this->executor->execute(['EXPIRE', $key('distinct-meta', 'rot-prev'), '500']);
         });
-        $this->both('rotated over a live previous', fn($s) => $s->addDistinctBoundedWithSnapshotAcrossRotationAt('rot-cur', 'rot-bridge', 'rot-prev', 'new', 'pnew', 600, 5, $nowMs + 9));
-        $this->both('rotated bounded', fn($s) => $s->addDistinctBoundedAcrossRotationAt('rot2-cur', 'rot2-bridge', 'rot-prev', 'q', 'pq', 600, 3, $nowMs + 10));
-        $this->both('rotated alias', fn($s) => $s->addDistinctBoundedWithSnapshotAcrossRotationAt('rot-prev', 'alias-bridge', 'rot-prev', 'fresh', 'pfresh', 600, 5, $nowMs + 11));
-        $this->both('rotated distinct', fn($s) => $s->addDistinctAcrossRotationAt('rot3-cur', 'rot3-bridge', 'rot-prev', 'x', 'px', 600, $nowMs + 12));
+        $this->both('rotated over a live previous', fn($s) => $s->addDistinctBoundedWithSnapshotAcrossRotationAtMilliseconds('rot-cur', 'rot-bridge', 'rot-prev', 'new', 'pnew', 600, 5, self::ms(9)));
+        $this->both('rotated bounded', fn($s) => $s->addDistinctBoundedAcrossRotationAtMilliseconds('rot2-cur', 'rot2-bridge', 'rot-prev', 'q', 'pq', 600, 3, self::ms(10)));
+        $this->both('rotated alias', fn($s) => $s->addDistinctBoundedWithSnapshotAcrossRotationAtMilliseconds('rot-prev', 'alias-bridge', 'rot-prev', 'fresh', 'pfresh', 600, 5, self::ms(11)));
+        $this->both('rotated distinct', fn($s) => $s->addDistinctAcrossRotationAtMilliseconds('rot3-cur', 'rot3-bridge', 'rot-prev', 'x', 'px', 600, self::ms(12)));
         $this->both('rotated watch', fn($s) => $s->incrementWatchFlagAcrossRotationAt('watch-cur', 'watch-prev', 600, $now));
         $this->both('device-cap pair', fn($s) => $s->addDeviceCapPairAt('cap-account', 'device-1', 10, 'cap-source', 'device-1', 10, 60, $now));
         $this->both('device-cap pair again', fn($s) => $s->addDeviceCapPairAt('cap-account', 'device-2', 10, 'cap-source', 'device-1', 10, 60, $now + 1));
@@ -219,22 +228,35 @@ final class RequestOverlayDifferentialRedisTest extends TestCase
     public function testHardBlocksLifecycleAndGenerationScoresBehaveAsTheScripts(): void
     {
         $now = self::NOW;
-        $nowMs = self::NOW_MS;
         for ($i = 0; $i < 3; $i++) {
             $this->both('hard block ' . $i, fn($s) => $s->blockWithCycleTracking('hard', 'hard-prev', 2, 60, $now + $i * 70, 600, 2, 300, 900));
         }
         $this->both('decay pause', fn($s) => $s->readDecayPauseState('hard', 'hard-prev', $now, $now + 200));
-        $this->both('generation read (absent)', fn($s) => $s->readGenerationBoundScoreStateAt('k4', null, $nowMs));
-        $this->both('generation mutate (create)', fn($s) => $s->mutateGenerationBoundScoreAt('k4', null, null, 86400, 3, $nowMs));
-        $state = $this->direct->readGenerationBoundScoreStateAt('k4', null, $nowMs);
-        $this->both('generation read', fn($s) => $s->readGenerationBoundScoreStateAt('k4', null, $nowMs + 1000));
-        $this->both('generation mutate (fenced)', fn($s) => $s->mutateGenerationBoundScoreAt('k4', null, $state, 86400, 6, $nowMs + 1000));
-        $this->both('generation mutate (stale)', fn($s) => $s->mutateGenerationBoundScoreAt('k4', null, $state, 86400, 9, $nowMs + 2000));
+        $this->both('generation read (absent)', fn($s) => $s->readGenerationBoundScoreStateAtMilliseconds('k4', null, self::ms()));
+        $this->both('generation mutate (create)', fn($s) => $s->mutateGenerationBoundScoreAtMilliseconds('k4', null, null, 86400, 3, self::ms()));
+        $state = $this->direct->readGenerationBoundScoreStateAtMilliseconds('k4', null, self::ms());
+        $this->both('generation read', fn($s) => $s->readGenerationBoundScoreStateAtMilliseconds('k4', null, self::ms(1000)));
+        $this->both('generation mutate (fenced)', fn($s) => $s->mutateGenerationBoundScoreAtMilliseconds('k4', null, $state, 86400, 6, self::ms(1000)));
+        $this->both('generation mutate (stale)', fn($s) => $s->mutateGenerationBoundScoreAtMilliseconds('k4', null, $state, 86400, 9, self::ms(2000)));
         $id = str_repeat('a1', 16);
-        $this->both('lifecycle block', fn($s) => $s->blockWithPunishmentLifecycleTrackingAt('k4', null, 1, $id, 2, 60, 600, 2, 300, 900, $nowMs + 3000));
-        $this->both('lifecycle block again', fn($s) => $s->blockWithPunishmentLifecycleTrackingAt('k4', null, 2, str_repeat('b2', 16), 2, 60, 600, 2, 300, 900, $nowMs + 90_000));
-        $this->both('claim', fn($s) => $s->claimPostPunishmentReentryAt('k4', null, $id, $nowMs + 91_000));
-        $this->both('claim replay', fn($s) => $s->claimPostPunishmentReentryAt('k4', null, $id, $nowMs + 92_000));
+        $this->both('lifecycle block', fn($s) => $s->blockWithPunishmentLifecycleTrackingAt('k4', null, 1, $id, 2, 60, 600, 2, 300, 900, $now + 3));
+        $this->both('lifecycle block again', fn($s) => $s->blockWithPunishmentLifecycleTrackingAt('k4', null, 2, str_repeat('b2', 16), 2, 60, 600, 2, 300, 900, $now + 90));
+        $this->both('claim', fn($s) => $s->claimPostPunishmentReentryAtMilliseconds('k4', null, $id, self::ms(91_000)));
+        $this->both('claim replay', fn($s) => $s->claimPostPunishmentReentryAtMilliseconds('k4', null, $id, self::ms(92_000)));
+    }
+
+    /**
+     * The legacy native-integer millisecond methods stay for the values a native integer holds on every build: here a time that fits
+     * 32 bits, in its own test and not in place of the exact fixtures above. A current epoch value does not fit, and on a 32-bit build the
+     * runtime refuses to hand it to such a store (`CallerTimeStoreDecimalMillisecondsDispatchTest`, `CallerTimeDecimalMillisecondsRedisTest`).
+     */
+    public function testTheLegacyIntegerMillisecondMethodsStillBehaveTheSameForAValueThatFitsEveryBuild(): void
+    {
+        $fits = 1_700_000_000;
+        $this->both('legacy generation read (absent)', fn($s) => $s->readGenerationBoundScoreStateAt('legacy', null, $fits));
+        $this->both('legacy generation mutate (create)', fn($s) => $s->mutateGenerationBoundScoreAt('legacy', null, null, 86400, 3, $fits));
+        $this->both('legacy claim', fn($s) => $s->claimPostPunishmentReentryAt('legacy', null, str_repeat('c3', 16), $fits + 1000));
+        $this->both('legacy rotation', fn($s) => $s->addDistinctAcrossRotationAt('legacy-cur', 'legacy-bridge', 'legacy-prev', 'm', 'pm', 600, $fits));
     }
 
     public function testClassifiedRejectionsOfMalformedStateAreTheSameAndWriteNothing(): void
