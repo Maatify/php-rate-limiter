@@ -13,8 +13,6 @@ final class RaceWorkerProcess
 
     public bool $ready = false;
 
-    public bool $closed = false;
-
     public ?int $exit = null;
 
     /**

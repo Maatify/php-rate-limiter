@@ -130,9 +130,31 @@ final class AdmissionRaceRunnerReadinessTest extends TestCase
             $this->launch('hang-after-go', 6, 30.0, 2.0);
             self::fail('The run must fail.');
         } catch (\RuntimeException $exception) {
-            self::assertStringContainsString('did not answer within 2', $exception->getMessage());
+            self::assertStringContainsString('did not exit within 2', $exception->getMessage());
         }
         self::assertLessThan(15.0, microtime(true) - $started, 'The collection is bounded by the result timeout.');
+        $this->assertNoChildSurvives(6, 1);
+    }
+
+    public function testAWorkerThatClosesItsOutputButStaysAliveIsBoundedKilledAndReaped(): void
+    {
+        $started = microtime(true);
+        try {
+            $this->launch('close-output-then-hang', 6, 30.0, 1.0);
+            self::fail('The run must fail: end of output is not the end of the process.');
+        } catch (\RuntimeException $exception) {
+            self::assertStringContainsString('did not exit within 1', $exception->getMessage());
+            self::assertStringContainsString('\\"ok\\":true', $exception->getMessage(), 'The output it had already written is kept in the diagnostics (JSON-escaped).');
+        }
+        self::assertLessThan(15.0, microtime(true) - $started, 'The deadline holds for a live child after its output ended.');
+        $this->assertNoChildSurvives(6, 1);
+    }
+
+    public function testAWorkerThatClosesItsOutputAndThenExitsInTimeStillSucceeds(): void
+    {
+        $replies = $this->launch('close-output-then-exit', 6, 30.0, 10.0);
+
+        self::assertCount(6, $replies);
         $this->assertNoChildSurvives(6, 1);
     }
 

@@ -109,29 +109,25 @@ final class AdmissionRaceRunner
                 fclose($worker->stdin);
             }
 
-            // Phase 3: bounded collection until every worker has closed its output.
+            // Phase 3: bounded wait until every worker has EXITED. Output reaching EOF is not an exit: a worker may close its
+            // streams and stay alive, so the deadline also applies to a live child after its output ended (it is then killed and
+            // reaped below, with the output and the status collected so far).
             $deadline = microtime(true) + $resultTimeout;
             while (true) {
                 self::pump($workers, 0.2);
-                $open = array_filter($workers, static fn(RaceWorkerProcess $w): bool => ! $w->closed);
-                if ($open === []) {
+                $alive = array_filter($workers, static fn(RaceWorkerProcess $w): bool => ! $w->exited());
+                if ($alive === []) {
+                    self::pump($workers, 0.05);
                     break;
                 }
-                foreach ($open as $worker) {
-                    if (feof($worker->stdout) || $worker->exited()) {
-                        self::pump($workers, 0.05);
-                        $worker->closed = true;
-                    }
-                }
-                $late = array_filter($workers, static fn(RaceWorkerProcess $w): bool => ! $w->closed);
-                if ($late !== [] && microtime(true) >= $deadline) {
-                    throw new \RuntimeException('Race workers did not answer within ' . $resultTimeout . ' s: ' . implode(', ', array_keys($late)) . '. ' . array_values($late)[0]->diagnostics());
+                if (microtime(true) >= $deadline) {
+                    throw new \RuntimeException('Race workers did not exit within ' . $resultTimeout . ' s: ' . implode(', ', array_keys($alive)) . '. ' . array_values($alive)[0]->diagnostics());
                 }
             }
 
             $replies = [];
             foreach ($workers as $worker) {
-                $status = $worker->exited() ? $worker->exit : proc_close($worker->process);
+                $status = $worker->exit;
                 if ($status !== 0 || trim($worker->out) === '') {
                     throw new \RuntimeException('Race worker ' . $worker->index . ' failed (exit ' . var_export($status, true) . '). ' . $worker->diagnostics());
                 }
@@ -165,7 +161,8 @@ final class AdmissionRaceRunner
     }
 
     /**
-     * Read what the workers wrote since the last call (stdout and stderr), waiting up to `$seconds` for something.
+     * Read what the workers wrote since the last call (stdout and stderr), waiting up to `$seconds` for something. A pipe at EOF is no
+     * longer waited on; when nothing is left to wait on the call sleeps for the same time instead of spinning.
      *
      * @param array<int, RaceWorkerProcess> $workers
      */
@@ -173,14 +170,17 @@ final class AdmissionRaceRunner
     {
         $read = [];
         foreach ($workers as $worker) {
-            if (! $worker->closed) {
-                $read[] = $worker->stdout;
-                $read[] = $worker->stderr;
+            foreach ([$worker->stdout, $worker->stderr] as $pipe) {
+                if (is_resource($pipe) && ! feof($pipe)) {
+                    $read[] = $pipe;
+                }
             }
         }
         if ($read !== []) {
             $write = $except = null;
             @stream_select($read, $write, $except, (int) $seconds, (int) (($seconds - (int) $seconds) * 1_000_000));
+        } else {
+            usleep((int) (min($seconds, 0.05) * 1_000_000));
         }
         foreach ($workers as $worker) {
             $worker->out .= (string) stream_get_contents($worker->stdout);

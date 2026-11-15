@@ -6,6 +6,7 @@ declare(strict_types=1);
 // when it was released, so a test can prove that nobody ran before everybody was ready.
 //   race-stub-worker.php <mode> <index> <directory>
 //   modes: ok | slow-first | die-before-ready | never-ready | hang-after-go | exit-after-go
+//          | close-output-then-hang (prints its reply, closes stdout and stderr, stays alive) | close-output-then-exit (the same, then exits after 0.4 s)
 // It writes its pid to <directory>/pid-<index> so that a test can check that it was reaped.
 
 $argv = $_SERVER['argv'] ?? [];
@@ -44,3 +45,11 @@ if ($mode === 'exit-after-go' && $index === 1) {
 }
 
 echo json_encode(['index' => $index, 'readyAt' => $readyAt, 'releasedAt' => $releasedAt, 'ok' => true], JSON_THROW_ON_ERROR);
+
+if ($index === 1 && in_array($mode, ['close-output-then-hang', 'close-output-then-exit'], true)) {
+    // The output reaches EOF, the process does not end: EOF must not be taken for an exit.
+    fflush(STDOUT);
+    fclose(STDOUT);
+    fclose(STDERR);
+    $mode === 'close-output-then-hang' ? sleep(300) : usleep(400_000);
+}
