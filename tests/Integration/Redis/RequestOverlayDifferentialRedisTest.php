@@ -46,7 +46,7 @@ final class RequestOverlayDifferentialRedisTest extends TestCase
     }
 
     /**
-     * @return array<string, array{string, mixed, int}> keyed by the key with its namespace replaced
+     * @return array<string, array{string, mixed, int|string}> keyed by the key with its namespace replaced
      */
     private function state(string $namespace): array
     {
@@ -68,7 +68,7 @@ final class RequestOverlayDifferentialRedisTest extends TestCase
                 default => self::fail('Unexpected key type ' . $type),
             };
             $expiry = $this->executor->execute(['PEXPIRETIME', $key]);
-            self::assertIsInt($expiry);
+            self::assertTrue(is_int($expiry) || is_string($expiry), 'PEXPIRETIME replies with an exact integer (a decimal string where it exceeds the native integer).');
             $state['NS:' . substr($key, strlen($prefix))] = [$type, $content, $expiry];
         }
 
@@ -128,7 +128,7 @@ final class RequestOverlayDifferentialRedisTest extends TestCase
             self::assertSame($type, $overlayState[$key][0], $name . ': type of ' . $key);
             self::assertSame($content, $overlayState[$key][1], $name . ': content of ' . $key);
             // The two runs are a few milliseconds apart, so a difference of a second in an expiry is a defect.
-            self::assertEqualsWithDelta($expiry, $overlayState[$key][2], self::EXPIRY_DELTA_MILLISECONDS, $name . ': expiry of ' . $key);
+            self::assertEqualsWithDelta((float) $expiry, (float) $overlayState[$key][2], (float) self::EXPIRY_DELTA_MILLISECONDS, $name . ': expiry of ' . $key);
         }
     }
 
@@ -154,6 +154,13 @@ final class RequestOverlayDifferentialRedisTest extends TestCase
         $this->both('replace', fn($s) => $s->replaceScoreAt('replaced', 9, 3600, $now));
         $this->both('set', fn($s) => $s->setAt('set', 5, 3600, $now));
         $this->both('overflow', fn($s) => $s->incrementAt('score', 3600, PHP_INT_MAX, $now + 11));
+        // #227: the intended result is a rejection before any write for the direct store and for the overlay alike, at the caller's native width
+        // (not a copy of one into the other): both keep the score the snapshot write left, with its updatedAt.
+        foreach (['diff-direct', 'diff-overlay'] as $namespace) {
+            $stored = $this->hash($this->executor->execute(['HGETALL', 'maatify:rate-limiter:v1:' . hash('sha256', $namespace) . ':score:' . hash('sha256', 'score')]));
+            self::assertSame('7', $stored['value'], $namespace . ': the rejected increment left the score unchanged');
+            self::assertSame((string) ($now + 9), $stored['updatedAt'], $namespace . ': ... and its updatedAt');
+        }
         $this->both('block', fn($s) => $s->blockAt('block', 2, 60, $now));
         $this->both('block read', fn($s) => $s->checkBlockAt('block', $now + 10));
         $this->both('block peek expired', fn($s) => $s->peekBlockAt('block', $now + 100));
