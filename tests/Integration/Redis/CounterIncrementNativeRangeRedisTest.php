@@ -276,6 +276,71 @@ final class CounterIncrementNativeRangeRedisTest extends TestCase
         }
     }
 
+    /** A watch/metadata pair with an explicit logical expiry and a 3600 s physical TTL (physically present, logically expired when `$expiresAt <= NOW`). */
+    private function seedRotatedPair(string $logical, string $count, int $expiresAt): void
+    {
+        $this->executor->execute(['SET', $this->rawKey('watch', $logical), $count]);
+        $this->executor->execute(['EXPIRE', $this->rawKey('watch', $logical), '3600']);
+        $this->executor->execute(['HSET', $this->rawKey('watch-meta', $logical), 'expiresAt', (string) $expiresAt]);
+        $this->executor->execute(['EXPIRE', $this->rawKey('watch-meta', $logical), '3600']);
+    }
+
+    /** @return array<string, array{bool, int}> every path crossed with the two boundaries of "logically expired" (expiresAt = NOW - 1 and expiresAt = NOW) */
+    public static function expiredCurrent(): array
+    {
+        $cases = [];
+        foreach (['direct store' => false, 'inside transactRequest()' => true] as $path => $overlay) {
+            foreach (['one second past' => self::NOW - 1, 'exactly at NOW' => self::NOW] as $boundary => $expiresAt) {
+                $cases[$path . ', Current expired ' . $boundary] = [$overlay, $expiresAt];
+            }
+        }
+
+        return $cases;
+    }
+
+    /**
+     * #230 (F-232-01): a logically expired Current that is still physically present is not deleted by a call that is then rejected. Previous
+     * is active at the caller's maximum, so the fresh Current (1) plus Previous overflows; all four keys must be byte- and millisecond-identical.
+     */
+    #[DataProvider('expiredCurrent')]
+    public function testARotatedWatchWithAnExpiredButPresentCurrentRejectsOverflowWithoutDeletingIt(bool $overlay, int $currentExpiresAt): void
+    {
+        $this->seedRotatedPair('cur', '7', $currentExpiresAt);
+        $this->seedRotatedPair('prev', (string) PHP_INT_MAX, self::NOW + 300);
+        self::assertCount(4, $this->everything());
+
+        $this->assertRejected('watch count overflow', fn() => $this->through($overlay, fn(): int => $this->store->incrementWatchFlagAcrossRotationAt('cur', 'prev', 1800, self::NOW)));
+        self::assertCount(4, $this->everything(), 'All four physical keys are still there.');
+    }
+
+    /** The success control of the same state: Previous at max - 1, so the fresh Current (1) reaches the maximum exactly. */
+    #[DataProvider('expiredCurrent')]
+    public function testARotatedWatchRenewsAnExpiredCurrentAsAFreshEpochAndLeavesPreviousUntouched(bool $overlay, int $currentExpiresAt): void
+    {
+        $this->seedRotatedPair('cur', '7', $currentExpiresAt);
+        $this->seedRotatedPair('prev', (string) (PHP_INT_MAX - 1), self::NOW + 300);
+        $previousBefore = [];
+        foreach (['watch', 'watch-meta'] as $family) {
+            $previousBefore[$this->rawKey($family, 'prev')] = $this->everything()[$this->rawKey($family, 'prev')];
+        }
+
+        self::assertSame(PHP_INT_MAX, $this->through($overlay, fn(): int => $this->store->incrementWatchFlagAcrossRotationAt('cur', 'prev', 1800, self::NOW)));
+
+        self::assertSame('1', $this->executor->execute(['GET', $this->rawKey('watch', 'cur')]), 'The expired count (7) was replaced, not incremented.');
+        self::assertSame((string) (self::NOW + 1800), $this->executor->execute(['HGET', $this->rawKey('watch-meta', 'cur'), 'expiresAt']), 'The metadata carries the fresh epoch expiry.');
+        foreach (['watch', 'watch-meta'] as $family) {
+            // Redis counts the physical TTL on its own clock, not the caller's NOW: seeded at 3600 s, a renewal leaves at most 1800 s.
+            $remaining = $this->executor->execute(['PTTL', $this->rawKey($family, 'cur')]);
+            self::assertIsInt($remaining);
+            self::assertGreaterThan(1_700_000, $remaining, 'The physical expiry was renewed for the fresh epoch, not dropped (' . $family . ').');
+            self::assertLessThanOrEqual(1_800_000, $remaining, 'The physical expiry is the fresh 1800 s, not the seeded 3600 s (' . $family . ').');
+        }
+        $after = $this->everything();
+        foreach ($previousBefore as $key => $state) {
+            self::assertSame($state, $after[$key], 'Previous is read-only: ' . $key);
+        }
+    }
+
     // ---- simple fixed-window throttle (a budget consumer) -------------------------------------------------------------------
 
     public function testTheSimpleThrottleRejectsAConsumptionThatWouldPassTheRangeAndWritesNothing(): void

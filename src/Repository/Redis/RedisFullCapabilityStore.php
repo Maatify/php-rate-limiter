@@ -2440,6 +2440,7 @@ if previousExists == 1 then
     previousText = text
   end
 end
+local staleCurrent = false
 local exists = redis.call('EXISTS', KEYS[1]); local currentMetaExists = redis.call('EXISTS', KEYS[4])
 if exists == 0 and currentMetaExists == 1 then return redis.error_reply('malformed current watch metadata') end
 if exists == 1 then
@@ -2448,8 +2449,9 @@ if exists == 1 then
   if not validBackendExpiry(rawExpiry) then return redis.error_reply('malformed current watch state') end
   local text = redis.call('GET', KEYS[1])
   if not text or not canonicalCount(text) then return redis.error_reply('malformed current watch value') end
-  -- LT-P2-03 (F-P2-03): logically expired while physically present is expired, not counted.
-  if compareDecimalStrings(rawExpiry, nowStr) <= 0 then redis.call('DEL', KEYS[1], KEYS[4]); exists = 0 end
+  -- LT-P2-03 (F-P2-03): logically expired while physically present is expired, not counted. #230 (F-232-01): it is only
+  -- decided here, never deleted here; the stale pair is removed below, after every rejection check, together with the fresh write.
+  if compareDecimalStrings(rawExpiry, nowStr) <= 0 then staleCurrent = true; exists = 0 end
 end
 -- #185 F-185-25: the count this call answers (Current after the increment plus Previous) must stay within the PHP
 -- integer range; past it the call is a classified error before any write.
@@ -2461,6 +2463,7 @@ local value
 if exists == 0 then
   if not ttlBackendRepresentable(ARGV[1]) then return redis.error_reply('correlation TTL exceeds Redis backend expiry representability') end
   value = 1
+  if staleCurrent then redis.call('DEL', KEYS[1], KEYS[4]) end
   redis.call('SET', KEYS[1], value)
   if not expiryApplied(redis.pcall('EXPIRE', KEYS[1], ARGV[1]), {KEYS[1]}) then return redis.error_reply('expiry not representable') end
   redis.call('HSET', KEYS[4], 'expiresAt', addDecimalStrings(nowStr, ARGV[1]))
