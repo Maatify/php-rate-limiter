@@ -51,7 +51,7 @@ final class RespRedisCommandExecutor implements RedisCommandExecutorInterface
         return match ($prefix) {
             '+' => $this->readLine(),
             '-' => throw new RateLimiterException((string) $this->readLine()),
-            ':' => $this->readIntegerLine(),
+            ':' => $this->readIntegerReply(),
             '$' => $this->readBulk(),
             '*' => $this->readArray(),
             default => throw new RuntimeException('Unsupported Redis RESP reply.'),
@@ -115,6 +115,25 @@ final class RespRedisCommandExecutor implements RedisCommandExecutorInterface
         return $result;
     }
 
+    /**
+     * A RESP integer reply, signed, exactly as Redis sent it: a native `int` when it fits `PHP_INT_SIZE`, otherwise its canonical
+     * decimal string. Redis integers are 64-bit, so on a 32-bit PHP a reply such as `PEXPIRETIME` (about 1.8 × 10^12) must not
+     * be saturated, wrapped or turned into a float: a string keeps every digit, and a one-millisecond difference stays visible (#219).
+     *
+     * @return int|string
+     */
+    private function readIntegerReply(): int|string
+    {
+        $line = $this->readLine();
+        if (preg_match('/^-?(0|[1-9][0-9]*)$/D', $line) !== 1) {
+            throw new RuntimeException('Malformed Redis RESP integer.');
+        }
+        $value = filter_var($line, FILTER_VALIDATE_INT);
+
+        return $value === false ? $line : $value;
+    }
+
+    /** A RESP length line (bulk or array): always a native integer, never an exact-width reply. */
     private function readIntegerLine(): int
     {
         $line = $this->readLine();
