@@ -7,6 +7,7 @@ namespace Maatify\RateLimiter\Tests\Integration\Redis;
 use Maatify\RateLimiter\Exception\BackendFailureException;
 use Maatify\RateLimiter\Exception\RateLimiterException;
 use Maatify\RateLimiter\Repository\Redis\RedisFullCapabilityStore;
+use Maatify\RateLimiter\Tests\Support\Redis\NativeDomain;
 use Maatify\RateLimiter\Tests\Support\Redis\RespRedisCommandExecutor;
 use PHPUnit\Framework\Attributes\DataProvider;
 use PHPUnit\Framework\Attributes\Group;
@@ -18,6 +19,7 @@ use PHPUnit\Framework\TestCase;
  * returns null; malformed state is an error, never a miss; the TTL applies only on creation.
  */
 #[Group('f-185-08')]
+#[Group('php32')]
 final class SnapshotFencedScoreWriteRedisTest extends TestCase
 {
     private const NOW = 1_800_000_000;
@@ -101,10 +103,21 @@ final class SnapshotFencedScoreWriteRedisTest extends TestCase
 
     public function testTheWrittenValueIsExactAbove2Pow53(): void
     {
+        $expected = NativeDomain::int('9007199254740993', 'testTheWrittenValueIsExactAtTheLargestNativeInteger (the same fenced write at the caller\'s own largest integer).');
         $this->seed('9007199254740993', (string) self::NOW);
 
-        self::assertSame(9007199254740995, $this->store->incrementIfSnapshotAt('score', 600, 9007199254740993, self::NOW, 9007199254740995, self::NOW));
+        self::assertSame($expected + 2, $this->store->incrementIfSnapshotAt('score', 600, $expected, self::NOW, $expected + 2, self::NOW));
         self::assertSame('9007199254740995', $this->executor->execute(['HGET', $this->key(), 'value']));
+    }
+
+    /** The same fenced write at the largest integer every width holds: the written value is exact and the stored text is its decimal. */
+    public function testTheWrittenValueIsExactAtTheLargestNativeInteger(): void
+    {
+        $largest = PHP_INT_MAX;
+        $this->seed((string) ($largest - 2), (string) self::NOW);
+
+        self::assertSame($largest, $this->store->incrementIfSnapshotAt('score', 600, $largest - 2, self::NOW, $largest, self::NOW));
+        self::assertSame((string) $largest, $this->executor->execute(['HGET', $this->key(), 'value']));
     }
 
     /** @return iterable<string, array{string, string}> */

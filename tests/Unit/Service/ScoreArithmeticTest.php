@@ -7,21 +7,26 @@ namespace Maatify\RateLimiter\Tests\Unit\Service;
 use Maatify\RateLimiter\DTO\ScoreDeltasDTO;
 use Maatify\RateLimiter\Exception\RateLimiterException;
 use Maatify\RateLimiter\Service\ScoreArithmetic;
+use Maatify\RateLimiter\Tests\Support\Redis\NativeDomain;
 use PHPUnit\Framework\Attributes\DataProvider;
 use PHPUnit\Framework\Attributes\Group;
 use PHPUnit\Framework\TestCase;
 
 /** F-185-11 (#185): explicit overflow checks, no `(int)` cast, and non-negative score deltas. */
 #[Group('f-185-11')]
+#[Group('php32')]
 final class ScoreArithmeticTest extends TestCase
 {
-    /** @return iterable<string, array{string, int, int, ?int}> operation, a, b, exact result or null for overflow */
+    /** @return iterable<string, array{string, int|string, int, ?int}> operation, a (text when it needs a 64-bit int), b, exact result or null for overflow */
     public static function operations(): iterable
     {
         yield 'product at the bound' => ['product', 1, PHP_INT_MAX, PHP_INT_MAX];
         yield 'product of intdiv' => ['product', 2, intdiv(PHP_INT_MAX, 2), intdiv(PHP_INT_MAX, 2) * 2];
         yield 'product past the bound' => ['product', 2, intdiv(PHP_INT_MAX, 2) + 1, null];
-        yield 'product 2^33 x (2^31 - 1)' => ['product', 2 ** 33, 2 ** 31 - 1, null];
+        // Past a 64-bit int only: 2^33 is not an int on a 32-bit build (the operand is carried as text and skipped there, per case, in the test).
+        yield 'product 2^33 x (2^31 - 1)' => ['product', '8589934592', 2_147_483_647, null];
+        // Past a 32-bit int and exact on 64-bit: 2^16 x (2^31 - 1) = 140737488289792.
+        yield 'product 2^16 x (2^31 - 1)' => ['product', 65_536, 2_147_483_647, PHP_INT_SIZE >= 8 ? 140_737_488_289_792 : null];
         yield 'product with zero' => ['product', 0, PHP_INT_MAX, 0];
         yield 'sum at the bound' => ['sum', PHP_INT_MAX - 1, 1, PHP_INT_MAX];
         yield 'sum past the bound' => ['sum', PHP_INT_MAX, 1, null];
@@ -34,8 +39,12 @@ final class ScoreArithmeticTest extends TestCase
     }
 
     #[DataProvider('operations')]
-    public function testTheResultIsExactOrRejected(string $operation, int $a, int $b, ?int $expected): void
+    public function testTheResultIsExactOrRejected(string $operation, int|string $a, int $b, ?int $expected): void
     {
+        if (is_string($a)) {
+            $a = NativeDomain::int($a, 'the "product 2^16 x (2^31 - 1)" data set (a product past the caller\'s own maximum).');
+        }
+
         if ($expected === null) {
             $this->expectException(RateLimiterException::class);
             $this->expectExceptionMessage('not representable as a PHP integer');

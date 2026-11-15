@@ -21,9 +21,13 @@ use PHPUnit\Framework\TestCase;
  * leaves every key byte-identical (DEC-017); a live block over a valid score still answers false and writes no marker.
  */
 #[Group('f-185-27')]
+#[Group('php32')]
 final class ClaimValidatesBeforeLiveBlockRedisTest extends TestCase
 {
     private const NOW = 1_800_000_000;
+
+    /** The same instant as the decimal epoch milliseconds the DEC-039 capability takes; `NOW * 1000` is a float on a 32-bit build (#240). */
+    private const NOW_MS = self::NOW . '000';
 
     private const NAMESPACE = 'f185-27';
 
@@ -94,7 +98,7 @@ final class ClaimValidatesBeforeLiveBlockRedisTest extends TestCase
 
     private function claim(): bool
     {
-        return $this->store->claimPostPunishmentReentryAt(self::KEY, null, self::id(), self::NOW * 1000);
+        return $this->store->claimPostPunishmentReentryAtMilliseconds(self::KEY, null, self::id(), self::NOW_MS);
     }
 
     /** The claim's error message for the seeded state, failing on any other outcome. */

@@ -11,10 +11,12 @@ use Maatify\RateLimiter\Exception\RateLimiterException;
 use Maatify\RateLimiter\Repository\Redis\RedisFullCapabilityStore;
 use Maatify\RateLimiter\Service\FixedWindowSimpleRateLimiter;
 use Maatify\RateLimiter\Service\SimpleRateLimitOperationalReader;
+use Maatify\RateLimiter\Tests\Support\Redis\NativeDomain;
 use Maatify\RateLimiter\Tests\Support\Redis\RespRedisCommandExecutor;
 use Maatify\SharedCommon\Contracts\ClockInterface;
 use Maatify\SharedCommon\Infrastructure\SystemClock;
 use PHPUnit\Framework\TestCase;
+use PHPUnit\Framework\Attributes\Group;
 use RuntimeException;
 
 /**
@@ -27,6 +29,7 @@ use RuntimeException;
  * this suite uses a real SystemClock and short real waits for the
  * boundary/expiry scenarios instead of a FixedClock.
  */
+#[Group('php32')]
 final class RedisSimpleFixedWindowIntegrationTest extends TestCase
 {
     private RedisFullCapabilityStore $store;
@@ -119,8 +122,7 @@ final class RedisSimpleFixedWindowIntegrationTest extends TestCase
 
     public function testRedisLuaImpossibleExpiryFailsBeforeFreshBranchCreatesPartialState(): void
     {
-        $redisLuaExactIntegerLimit = 9007199254740991;
-        $interval = $redisLuaExactIntegerLimit + 1;
+        $interval = NativeDomain::int('9007199254740992', 'none: no native interval on a 32-bit build reaches the Lua exact-integer limit; the budget native-range rejections before any write are covered by CounterIncrementNativeRangeRedisTest.');
         $limiter = $this->limiter($this->clock, 'current-secret', null, $interval);
         $keysBefore = $this->executor->execute(['KEYS', '*']);
 
@@ -137,8 +139,7 @@ final class RedisSimpleFixedWindowIntegrationTest extends TestCase
 
     public function testRedisLuaImpossibleExpiryFailsBeforeSeedBranchCreatesCurrentAndPreservesPrevious(): void
     {
-        $redisLuaExactIntegerLimit = 9007199254740991;
-        $interval = $redisLuaExactIntegerLimit + 1;
+        $interval = NativeDomain::int('9007199254740992', 'none: no native interval on a 32-bit build reaches the Lua exact-integer limit; the budget native-range rejections before any write are covered by CounterIncrementNativeRangeRedisTest.');
         $subject = 'subject-redis-lua-seed-overflow';
         $previousKey = $this->redisBudgetKey('previous-secret', 2, $interval, $subject);
         $previousState = [
@@ -164,7 +165,7 @@ final class RedisSimpleFixedWindowIntegrationTest extends TestCase
     public function testLargeCurrentCountRemainsExactPastLuaDoublePrecision(): void
     {
         if (PHP_INT_SIZE < 8) {
-            self::markTestSkipped('This exactness proof requires 64-bit PHP integers.');
+            self::markTestSkipped('Outside the 32-bit public input domain: this exactness proof needs counts above 2^53, which a 32-bit int cannot hold. Covered on this width by: CounterIncrementNativeRangeRedisTest::testTheSimpleThrottleRejectsAConsumptionThatWouldPassTheRangeAndWritesNothing (the native-range rejection of the same consumer).');
         }
 
         $largeCost = 9007199254740993;
@@ -189,7 +190,7 @@ final class RedisSimpleFixedWindowIntegrationTest extends TestCase
     public function testLargePreviousCountMigratesExactlyAndPreviousRemainsUnchanged(): void
     {
         if (PHP_INT_SIZE < 8) {
-            self::markTestSkipped('This exactness proof requires 64-bit PHP integers.');
+            self::markTestSkipped('Outside the 32-bit public input domain: this exactness proof needs counts above 2^53, which a 32-bit int cannot hold. Covered on this width by: CounterIncrementNativeRangeRedisTest::testTheSimpleThrottleRejectsAConsumptionThatWouldPassTheRangeAndWritesNothing (the native-range rejection of the same consumer).');
         }
 
         $largeCost = 9007199254740993;
@@ -228,7 +229,7 @@ final class RedisSimpleFixedWindowIntegrationTest extends TestCase
     public function testActiveCurrentIgnoresOverflowingSeed(): void
     {
         if (PHP_INT_SIZE < 8) {
-            self::markTestSkipped('This exactness proof requires 64-bit PHP integers.');
+            self::markTestSkipped('Outside the 32-bit public input domain: this exactness proof needs counts above 2^53, which a 32-bit int cannot hold. Covered on this width by: CounterIncrementNativeRangeRedisTest::testTheSimpleThrottleRejectsAConsumptionThatWouldPassTheRangeAndWritesNothing (the native-range rejection of the same consumer).');
         }
 
         $current = $this->store->incrementBudget('seed-overflow-current', 60, 1);
@@ -247,7 +248,7 @@ final class RedisSimpleFixedWindowIntegrationTest extends TestCase
     public function testExpiredSeedIgnoresOverflowingSumAndStartsFreshEpoch(): void
     {
         if (PHP_INT_SIZE < 8) {
-            self::markTestSkipped('This exactness proof requires 64-bit PHP integers.');
+            self::markTestSkipped('Outside the 32-bit public input domain: this exactness proof needs counts above 2^53, which a 32-bit int cannot hold. Covered on this width by: CounterIncrementNativeRangeRedisTest::testTheSimpleThrottleRejectsAConsumptionThatWouldPassTheRangeAndWritesNothing (the native-range rejection of the same consumer).');
         }
 
         $before = time();
@@ -265,7 +266,7 @@ final class RedisSimpleFixedWindowIntegrationTest extends TestCase
     public function testActiveSeedOverflowFailsOnlyWhenActiveSeedBranchWinsWithoutPartialMutation(): void
     {
         if (PHP_INT_SIZE < 8) {
-            self::markTestSkipped('This exactness proof requires 64-bit PHP integers.');
+            self::markTestSkipped('Outside the 32-bit public input domain: this exactness proof needs counts above 2^53, which a 32-bit int cannot hold. Covered on this width by: CounterIncrementNativeRangeRedisTest::testTheSimpleThrottleRejectsAConsumptionThatWouldPassTheRangeAndWritesNothing (the native-range rejection of the same consumer).');
         }
 
         $this->expectException(RuntimeException::class);

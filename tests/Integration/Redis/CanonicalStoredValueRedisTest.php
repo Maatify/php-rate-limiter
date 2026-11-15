@@ -20,9 +20,13 @@ use PHPUnit\Framework\TestCase;
  * script itself (not a raw Redis error), and the state is left byte-identical: no delete, no repair (DEC-017).
  */
 #[Group('f-185-19')]
+#[Group('php32')]
 final class CanonicalStoredValueRedisTest extends TestCase
 {
     private const NOW = 1_793_793_600;
+
+    /** The same instant as the decimal epoch milliseconds the DEC-039 capability takes; `NOW * 1000` is a float on a 32-bit build (#240). */
+    private const NOW_MS = self::NOW . '000';
 
     private const NAMESPACE = 'f185-19';
 
@@ -89,13 +93,13 @@ final class CanonicalStoredValueRedisTest extends TestCase
     #[DataProvider('nonCanonicalLevels')]
     public function testANonCanonicalBlockLevelIsMalformedOnEveryReader(string $level): void
     {
-        $this->store->mutateGenerationBoundScoreAt('k', null, null, 600, 5, self::NOW * 1000);
+        $this->store->mutateGenerationBoundScoreAtMilliseconds('k', null, null, 600, 5, self::NOW_MS);
         $this->store->blockAt('k', 2, 600, self::NOW);
         $this->executor->execute(['HSET', $this->key('block', 'k'), 'level', $level]);
 
         $this->assertMalformed(fn() => $this->store->checkBlockAt('k', self::NOW), 'malformed block state');
-        $this->assertMalformed(fn() => $this->store->readGenerationBoundScoreStateAt('k', null, self::NOW * 1000), 'malformed hard-block state');
-        $this->assertMalformed(fn() => $this->store->claimPostPunishmentReentryAt('k', null, str_repeat('a', 32), self::NOW * 1000), 'malformed hard-block state');
+        $this->assertMalformed(fn() => $this->store->readGenerationBoundScoreStateAtMilliseconds('k', null, self::NOW_MS), 'malformed hard-block state');
+        $this->assertMalformed(fn() => $this->store->claimPostPunishmentReentryAtMilliseconds('k', null, str_repeat('a', 32), self::NOW_MS), 'malformed hard-block state');
         $this->assertMalformed(fn() => $this->store->blockWithCycleTracking('k', null, 2, 60, self::NOW, 600, 3, 300, 86400), 'malformed hard-block state');
     }
 

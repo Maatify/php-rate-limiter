@@ -16,6 +16,7 @@ use Maatify\RateLimiter\Repository\Redis\RedisFullCapabilityStore;
 use Maatify\RateLimiter\Tests\Support\Clock\FixedClock;
 use Maatify\RateLimiter\Tests\Support\FailureSignal\RecordingFailureSignalEmitter;
 use PHPUnit\Framework\TestCase;
+use PHPUnit\Framework\Attributes\Group;
 
 /**
  * Issue #91 / DEC-018: real Redis + real ext-redis (phpredis) rawCommand()
@@ -26,6 +27,7 @@ use PHPUnit\Framework\TestCase;
  * are absent (same as the sibling integration suite). Once orchestrated, a
  * missing ext-redis is a hard failure, never a skip.
  */
+#[Group('php32')]
 final class RedisFullCapabilityStoreExtRedisIntegrationTest extends TestCase
 {
     private \Redis $redis;
