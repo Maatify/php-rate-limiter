@@ -1126,8 +1126,14 @@ local function readBoundedSnapshot(setKey, metaKey, capacity)
   return {exists = true, expires = expires, members = redis.call('SMEMBERS', setKey)}
 end
 
+-- #236: the snapshot this call answers carries an `expiresAt` second the caller's PHP must hold as a native `int`; `nativeMax` is that
+-- caller's `PHP_INT_MAX` (a canonical decimal). A plan whose answer is above it is a classified rejection BEFORE any write.
+local function snapshotExpiryRepresentable(expires, nativeMax)
+  return compareDecimalStrings(expires, nativeMax) <= 0
+end
+
 -- Plan the new snapshot from validated state. No command in this phase writes.
-local function planBoundedSnapshot(setKey, metaKey, ttl, member, capacity)
+local function planBoundedSnapshot(setKey, metaKey, ttl, member, capacity, nativeMax)
   local state, reason = readBoundedSnapshot(setKey, metaKey, capacity)
   if not state then return nil, reason end
   local exists = state.exists
@@ -1136,8 +1142,13 @@ local function planBoundedSnapshot(setKey, metaKey, ttl, member, capacity)
 
   if not exists or replaceExpired then
     if not ttlBackendRepresentable(ttl) then return nil, 'correlation TTL exceeds Redis backend expiry representability' end
-    return {members = {member}, accepted = 1, added = 1, expires = addDecimalStrings(nowStr, ttl), initialize = true, replaceExpired = replaceExpired}
+    local fresh = addDecimalStrings(nowStr, ttl)
+    if not snapshotExpiryRepresentable(fresh, nativeMax) then return nil, 'snapshot expiry exceeds the caller native integer range' end
+    return {members = {member}, accepted = 1, added = 1, expires = fresh, initialize = true, replaceExpired = replaceExpired}
   end
+
+  -- An active epoch is retained, not renewed: the requested TTL is not used, and the answer is the stored `expiresAt`.
+  if not snapshotExpiryRepresentable(expires, nativeMax) then return nil, 'snapshot expiry exceeds the caller native integer range' end
 
   local count = #state.members
   if count > capacity then return nil, 'malformed bounded state' end
@@ -1169,7 +1180,7 @@ end
 LUA;
 
     private const BOUNDED_SNAPSHOT = self::BOUNDED_SNAPSHOT_PLAN . "\n" . <<<'LUA'
-local plan, reason = planBoundedSnapshot(KEYS[1], KEYS[2], ARGV[1], ARGV[2], tonumber(ARGV[3]))
+local plan, reason = planBoundedSnapshot(KEYS[1], KEYS[2], ARGV[1], ARGV[2], tonumber(ARGV[3]), ARGV[4])
 if not plan then return redis.error_reply(reason) end
 return applyBoundedSnapshot(plan, KEYS[1], KEYS[2], ARGV[1], ARGV[2])
 LUA;
@@ -1268,6 +1279,10 @@ end
 if ARGV[6] == nil or string.match(ARGV[6], '^%d+$') == nil or (#ARGV[6] > 1 and string.sub(ARGV[6], 1, 1) == '0') or #ARGV[6] > 19 or compareDecimalStrings(ARGV[6], nowMsStr) < 0 or compareDecimalStrings(subtractDecimalStrings(ARGV[6], nowMsStr), '999') > 0 then return redis.error_reply('caller time is not representable') end
 nowMsStr = ARGV[6]
 if not ttlBackendRepresentable(ARGV[2]) then return redis.error_reply('correlation TTL exceeds Redis backend expiry representability') end
+-- #236: ARGV[7] is the caller PHP's `PHP_INT_MAX`. The `expiresAt` this call answers must not exceed it; checked below, before the
+-- first write AND before any logically expired Current or bridge is deleted (deletions are deferred until every rejection has passed).
+local nativeMax = ARGV[7]
+local function snapshotExpiryRepresentable(expires) return compareDecimalStrings(expires, nativeMax) <= 0 end
 local alias = KEYS[1] == KEYS[5]
 local prevExists = redis.call('EXISTS', KEYS[5])
 local prevMetaExists = redis.call('EXISTS', KEYS[6])
@@ -1288,17 +1303,23 @@ if prevExists == 0 then
   if exists == 1 and redis.call('TTL', KEYS[1]) < 0 then return redis.error_reply('malformed bounded state') end
   if exists == 0 and metaExists == 1 then return redis.error_reply('malformed current bounded metadata') end
   local currentExpiry = nil
+  local staleCurrent = false
   if exists == 1 then
     local rawCurrentExpiry = redis.call('HGET', KEYS[2], 'expiresAt')
     if not validBackendExpiry(rawCurrentExpiry) then return redis.error_reply('malformed current bounded state') end
     currentExpiry = rawCurrentExpiry
     if redis.call('TTL', KEYS[2]) < 0 then return redis.error_reply('malformed current bounded state') end
-    -- LT-P2-03: a logically expired current window is expired, not malformed.
-    if compareDecimalStrings(currentExpiry, nowStr) <= 0 then redis.call('DEL', KEYS[1], KEYS[2]); exists = 0; currentExpiry = nil end
+    -- LT-P2-03: a logically expired current window is expired, not malformed. #236: it is only decided here; the stale pair is
+    -- deleted below, after the range rejection, together with the fresh write.
+    if compareDecimalStrings(currentExpiry, nowStr) <= 0 then staleCurrent = true; exists = 0; currentExpiry = nil end
   end
   local count = exists == 1 and redis.call('SCARD', KEYS[1]) or 0
   if count > tonumber(ARGV[5]) then return redis.error_reply('malformed bounded state') end
-  if redis.call('SISMEMBER', KEYS[1], ARGV[3]) == 1 then
+  local newExpiry = addDecimalStrings(nowStr, ARGV[2])
+  local isKnown = exists == 1 and redis.call('SISMEMBER', KEYS[1], ARGV[3]) == 1
+  -- The expiry this call answers: the retained Current's, or the fresh epoch's when Current is absent.
+  if not snapshotExpiryRepresentable(exists == 1 and currentExpiry or newExpiry) then return redis.error_reply('snapshot expiry exceeds the caller native integer range') end
+  if isKnown then
     local members = redis.call('SMEMBERS', KEYS[1]); table.sort(members)
     return {#members, 1, 0, currentExpiry, unpack(members)}
   end
@@ -1306,8 +1327,8 @@ if prevExists == 0 then
     local members = redis.call('SMEMBERS', KEYS[1]); table.sort(members)
     return {count, 0, 0, currentExpiry, unpack(members)}
   end
-  local newExpiry = addDecimalStrings(nowStr, ARGV[2])
   if exists == 0 then
+    if staleCurrent then redis.call('DEL', KEYS[1], KEYS[2]) end
     redis.call('SADD', KEYS[1], ARGV[3])
     if not expiryApplied(redis.pcall('EXPIRE', KEYS[1], ARGV[2]), {KEYS[1]}) then return redis.error_reply('expiry not representable') end
     redis.call('HSET', KEYS[2], 'expiresAt', newExpiry)
@@ -1343,10 +1364,15 @@ if bridgeExists == 1 then
   bridgeExpiry = rawBridgeExpiry
   if redis.call('TTL', KEYS[4]) < 0 or compareDecimalStrings(bridgeExpiry, prevExpiry) > 0 then return redis.error_reply('malformed bridge state') end
 end
+-- #236: Previous is live here and its `expiresAt` is what this call answers, whatever it writes: it must be representable by the caller's
+-- `int` before anything is written or deleted. (Current's and the bridge's metadata are not answered; they are not restricted.)
+if not snapshotExpiryRepresentable(prevExpiry) then return redis.error_reply('snapshot expiry exceeds the caller native integer range') end
 -- LT-P2-03: a logically expired current window or bridge is expired, not
--- malformed. Both are writable state; the previous generation stays read-only.
-if currentExists == 1 and compareDecimalStrings(currentExpiry, nowStr) <= 0 then redis.call('DEL', KEYS[1], KEYS[2]); currentExists = 0; currentExpiry = nil end
-if bridgeExists == 1 and compareDecimalStrings(bridgeExpiry, nowStr) <= 0 then redis.call('DEL', KEYS[3], KEYS[4]); bridgeExists = 0; bridgeExpiry = nil end
+-- malformed. Both are writable state; the previous generation stays read-only. #236: it is only decided here. The stale pairs are
+-- deleted by ensureCurrent / ensureBridge, after every rejection below has passed, so a rejected call deletes nothing.
+local staleCurrent, staleBridge = false, false
+if currentExists == 1 and compareDecimalStrings(currentExpiry, nowStr) <= 0 then staleCurrent = true; currentExists = 0; currentExpiry = nil end
+if bridgeExists == 1 and compareDecimalStrings(bridgeExpiry, nowStr) <= 0 then staleBridge = true; bridgeExists = 0; bridgeExpiry = nil end
 local bridge = bridgeExists == 1 and redis.call('SMEMBERS', KEYS[3]) or {}
 table.sort(bridge)
 local members = {}
@@ -1354,7 +1380,7 @@ for _, member in ipairs(previous) do members[#members + 1] = member end
 for _, member in ipairs(bridge) do members[#members + 1] = member end
 for _, member in ipairs(previous) do for _, other in ipairs(bridge) do if member == other then return redis.error_reply('bridge overlaps previous state') end end end
 if #members > tonumber(ARGV[5]) then return redis.error_reply('rotated bounded state exceeds capacity') end
-local bridgeKnown = redis.call('SISMEMBER', KEYS[3], ARGV[3]) == 1 or redis.call('SISMEMBER', KEYS[3], ARGV[4]) == 1
+local bridgeKnown = bridgeExists == 1 and (redis.call('SISMEMBER', KEYS[3], ARGV[3]) == 1 or redis.call('SISMEMBER', KEYS[3], ARGV[4]) == 1)
 local previousKnown = false
 for _, member in ipairs(previous) do if member == ARGV[4] or member == ARGV[3] then previousKnown = true end end
 local known = bridgeKnown or previousKnown
@@ -1364,6 +1390,7 @@ local function ensureCurrent()
   -- Under the alias Current is the Previous set itself: read-only, never written (LT-185-23 (b)).
   if alias then return true end
   if currentExists == 0 then
+    if staleCurrent then redis.call('DEL', KEYS[1], KEYS[2]); staleCurrent = false end
     redis.call('SADD', KEYS[1], ARGV[3]); created[#created + 1] = KEYS[1]
     if not expiryApplied(redis.pcall('EXPIRE', KEYS[1], ARGV[2]), created) then return false end
     redis.call('HSET', KEYS[2], 'expiresAt', addDecimalStrings(nowStr, ARGV[2])); created[#created + 1] = KEYS[2]
@@ -1452,6 +1479,7 @@ end
 local function ensureBridge(plan)
   if bridgeExists == 0 then
     bridgeExpiry = prevExpiry
+    if staleBridge then redis.call('DEL', KEYS[3], KEYS[4]); staleBridge = false end
     redis.call('SADD', KEYS[3], ARGV[3]); created[#created + 1] = KEYS[3]
     if not expiryApplied(expireBridgeKey(KEYS[3], plan), created) then return false end
     redis.call('HSET', KEYS[4], 'expiresAt', bridgeExpiry); created[#created + 1] = KEYS[4]
@@ -2074,7 +2102,7 @@ LUA;
     {
         $this->positive($ttlSeconds, 'Correlation TTL');
         $this->positive($maxDistinct, 'Correlation capacity');
-        $result = $this->eval(self::BOUNDED_SNAPSHOT, [$this->key('distinct', $key), $this->key('distinct-meta', $key)], [$ttlSeconds, $item, $maxDistinct, $this->callerTime($now)]);
+        $result = $this->eval(self::BOUNDED_SNAPSHOT, [$this->key('distinct', $key), $this->key('distinct-meta', $key)], [$ttlSeconds, $item, $maxDistinct, (string) PHP_INT_MAX, $this->callerTime($now)]);
         return $this->snapshot($result, $item, 'bounded snapshot');
     }
 
@@ -2405,7 +2433,7 @@ LUA;
         $this->positive($ttlSeconds, 'Correlation TTL');
         $this->positive($maxDistinct, 'Correlation capacity');
         $keys = [$this->key('distinct', $currentKey), $this->key('distinct-meta', $currentKey), $this->key('distinct', $bridgeKey), $this->key('distinct-meta', $bridgeKey), $this->key('distinct', $previousKey), $this->key('distinct-meta', $previousKey)];
-        $result = $this->eval(self::ROTATED_SNAPSHOT, $keys, [self::BOUNDED_SNAPSHOT, $ttlSeconds, $currentMember, $previousMember, $maxDistinct, $nowMilliseconds, CallerTimeMilliseconds::seconds($nowMilliseconds)]);
+        $result = $this->eval(self::ROTATED_SNAPSHOT, $keys, [self::BOUNDED_SNAPSHOT, $ttlSeconds, $currentMember, $previousMember, $maxDistinct, $nowMilliseconds, (string) PHP_INT_MAX, CallerTimeMilliseconds::seconds($nowMilliseconds)]);
         return $this->snapshot($result, $currentMember, 'rotated bounded snapshot');
     }
 
