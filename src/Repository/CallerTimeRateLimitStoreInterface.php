@@ -20,6 +20,10 @@ interface CallerTimeRateLimitStoreInterface extends RateLimitStoreInterface
 {
     /**
      * Increment a score; on creation `updatedAt` is `$now` and the TTL starts.
+     *
+     * Same range rule as `increment()`: a result outside the caller's native `int` range is rejected with
+     * `RateLimiterException` before anything is written. On success `updatedAt` is `$now` and the expiry of an existing
+     * score is unchanged.
      */
     public function incrementAt(string $key, int $ttlSeconds, int $amount, int $now): int;
 

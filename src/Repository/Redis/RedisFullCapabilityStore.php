@@ -171,7 +171,42 @@ local function expiryApplied(reply, createdKeys)
 end
 LUA;
 
+    /**
+     * ARGV: TTL, amount, the caller PHP's `PHP_INT_MAX`, its `PHP_INT_MIN` (both canonical signed decimals), caller time.
+     *
+     * #227: the stored score is a 64-bit decimal in Redis but the caller reads it as a native PHP `int`, which on a
+     * 32-bit build ends at 2147483647. The new value is judged against the caller's range as an exact signed decimal
+     * sum (no Lua number: it is exact only to 2^53) before anything is written, so a score that the caller could not
+     * read back is never stored. A stored value already outside the caller's range is rejected the same way.
+     */
     private const SCORE_INCREMENT = self::LUA_TIME_PRELUDE . "\n" . <<<'LUA'
+local function splitSigned(value)
+  if string.sub(value, 1, 1) == '-' then return true, string.sub(value, 2) end
+  return false, value
+end
+-- Exact sum of two canonical signed decimals.
+local function signedSum(a, b)
+  local aNegative, aDigits = splitSigned(a)
+  local bNegative, bDigits = splitSigned(b)
+  if aNegative == bNegative then
+    local magnitude = addDecimalStrings(aDigits, bDigits)
+    if aNegative and magnitude ~= '0' then return '-' .. magnitude end
+    return magnitude
+  end
+  local order = compareDecimalStrings(aDigits, bDigits)
+  if order == 0 then return '0' end
+  if order > 0 then
+    local magnitude = subtractDecimalStrings(aDigits, bDigits)
+    return aNegative and ('-' .. magnitude) or magnitude
+  end
+  local magnitude = subtractDecimalStrings(bDigits, aDigits)
+  return bNegative and ('-' .. magnitude) or magnitude
+end
+local function withinCallerRange(value)
+  local negative, digits = splitSigned(value)
+  if negative then return compareDecimalStrings(digits, string.sub(ARGV[4], 2)) <= 0 end
+  return compareDecimalStrings(digits, ARGV[3]) <= 0
+end
 local function validPhpInteger(value)
   if type(value) ~= 'string' or string.match(value, '^%-?%d+$') == nil then return false end
   local negative = string.sub(value, 1, 1) == '-'
@@ -187,6 +222,7 @@ end
 local exists = redis.call('EXISTS', KEYS[1])
 if exists == 0 then
   if not validPhpInteger(ARGV[2]) then return redis.error_reply('malformed score state') end
+  if not withinCallerRange(ARGV[2]) then return redis.error_reply('score integer overflow') end
   if not ttlBackendRepresentable(ARGV[1]) then return redis.error_reply('score TTL exceeds Redis backend expiry representability') end
   redis.call('HSET', KEYS[1], 'value', ARGV[2], 'updatedAt', now)
   if not expiryApplied(redis.pcall('EXPIRE', KEYS[1], ARGV[1]), {KEYS[1]}) then return redis.error_reply('expiry not representable') end
@@ -199,6 +235,8 @@ if not value or not updated then
   return redis.error_reply('malformed score state')
 end
 if not validPhpInteger(value) or not validNonNegativeInteger(updated) then return redis.error_reply('malformed score state') end
+-- #227: judged before any write, on the exact sum, against the caller's native range.
+if not withinCallerRange(value) or not withinCallerRange(signedSum(value, ARGV[2])) then return redis.error_reply('score integer overflow') end
 local ok, result = pcall(redis.call, 'HINCRBY', KEYS[1], 'value', ARGV[2])
 if not ok then return redis.error_reply('score integer overflow') end
 redis.call('HSET', KEYS[1], 'updatedAt', now)
@@ -1781,6 +1819,13 @@ LUA;
         $this->fallbackClock = $clock ?? new SystemClock(new DateTimeZone('UTC'));
     }
 
+    /**
+     * Implements `RateLimitStoreInterface::increment()`; the native-range rule stated there applies (#227). The script compares the
+     * exact signed decimal sum with this PHP's `PHP_INT_MAX` and `PHP_INT_MIN` before it writes, so a worker whose `int` is narrower than
+     * another worker's on the same Redis (a 32-bit and a 64-bit worker) rejects a score it could not read back instead of storing it. A
+     * score stored by a wider worker that is outside this PHP's range is also rejected, unchanged. The message is `score integer
+     * overflow` for all of these cases.
+     */
     public function increment(string $key, int $ttlSeconds, int $amount = 1): int
     {
         return $this->incrementAt($key, $ttlSeconds, $amount, $this->fallbackNow());
@@ -1789,7 +1834,7 @@ LUA;
     public function incrementAt(string $key, int $ttlSeconds, int $amount, int $now): int
     {
         $this->positive($ttlSeconds, 'Score TTL');
-        $result = $this->eval(self::SCORE_INCREMENT, [$this->key('score', $key)], [$ttlSeconds, $amount, $this->callerTime($now)]);
+        $result = $this->eval(self::SCORE_INCREMENT, [$this->key('score', $key)], [$ttlSeconds, $amount, (string) PHP_INT_MAX, (string) PHP_INT_MIN, $this->callerTime($now)]);
         return $this->integerValue($this->tuple($result, 2, 'score increment')[0], 'score value');
     }
 

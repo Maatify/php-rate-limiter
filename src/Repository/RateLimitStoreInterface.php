@@ -18,6 +18,13 @@ interface RateLimitStoreInterface
      * If the key does not exist, it is created with the given TTL.
      * If it exists, the TTL is NOT updated.
      *
+     * The new value is returned as a native `int`, so it must be representable by the PHP build of the caller (on a build
+     * with `PHP_INT_SIZE` 4 that ends at 2147483647 and -2147483648, on 64-bit builds at the 64-bit limits). When the
+     * resulting value is outside that range, or a stored value already is, the call fails with `RateLimiterException`
+     * before any stored value, timestamp or expiry changes; an implementation must not clamp, wrap or write a value its
+     * caller cannot read back, and the check and the change are one atomic operation. It is not a backend failure and is
+     * not retried by the package.
+     *
      * @param string $key
      * @param int $ttlSeconds
      * @param int $amount
