@@ -226,9 +226,13 @@ this section restates nothing it does not state):
 
 * **Fixed values.** Three prior events within six hours (`AntiEquilibriumGate`: window 21600 s,
   threshold 3). The policy contract has no setting for them, and no setting disables the gate.
-* **Applicability.** The gate reads and records only for an authentication request that carries an
-  account and a policy with a budget configuration. It reads on `recordFailure` only; a
-  `checkOnly` never reads it.
+* **Applicability (the source conditions).** The account watcher reads and records only when the request
+  carries an account and the policy's budget configuration is not `null`; no authentication capability is
+  checked there. It reads on `recordFailure` only (a `checkOnly` never reads it) and records on a
+  non-success command whose final decision is `SOFT_BLOCK`. The device watcher has more conditions: the same
+  account and budget configuration, a K5 level in `getScoreThresholds()`, a policy that is not
+  `API_OVERUSE`, a non-ephemeral request and a durable device fingerprint
+  ([`DECISION_MATRIX.md` §2.5.3](DECISION_MATRIX.md#25-anti-equilibrium-gate-deterministic)).
 * **Recording includes `checkOnly`.** Any non-success command whose final issued decision is
   `SOFT_BLOCK` records one event, so a pre-check that the Host answers with `SOFT_BLOCK` counts. An
   `ALLOW` or `HARD_BLOCK` final decision records nothing.
@@ -243,17 +247,19 @@ this section restates nothing it does not state):
 Changing a threshold does not change any of this: see [Changing thresholds](#changing-thresholds-and-what-they-do-not-control).
 
 **Worked example** (the `login_protection` preset: K4 thresholds 5 / 8 / 12, a new-device
-failure adds 3; one account, one new device; decay is not modelled, as in the system test
-`RateLimiterBudgetOwnerSafetyTest::testAntiEquilibriumThirdSoftStaysSoftAndNextFailureBecomesHard`).
-It counts commands and events, not user attempts: four of the five commands are pre-checks and only
-one failure is reported.
+failure adds 3; one account, one new device) as in the system test
+`RateLimiterBudgetOwnerSafetyTest::testAntiEquilibriumThirdSoftStaysSoftAndNextFailureBecomesHard`.
+The K4 scores in the table are **test fixture state**: the test writes 5 into the store before the
+first command and writes 0 before the fourth; decay is not modelled and the example does not claim that
+a score decays that fast. It counts commands and events, not user attempts: four of the five commands
+are pre-checks and only one failure is reported.
 
 | # | Command | K4 score before | Final decision | Soft event recorded |
 | - | ------- | --------------- | -------------- | ------------------- |
 | 1 | `checkOnly` | 5 | `SOFT_BLOCK` L1 | 1st |
 | 2 | `checkOnly` | 5 | `SOFT_BLOCK` L1 | 2nd |
 | 3 | `checkOnly` | 5 | `SOFT_BLOCK` L1 (the third event is recorded; this request stays soft) | 3rd |
-| 4 | `checkOnly`, after the K4 score fell to 0 | 0 | `ALLOW` | none |
+| 4 | `checkOnly`, after the test sets the K4 score to 0 (fixture state, not decay) | 0 | `ALLOW` | none |
 | 5 | `recordFailure` from a new device (K4 would become 3, below the L1 threshold 5) | 0 | `HARD_BLOCK` L2 from the Anti-Equilibrium candidate (the test asserts that no budget cooldown is stored) | none |
 
 Command 5 reads the three prior events (all within six hours) before budget acquisition, so a
@@ -504,8 +510,9 @@ Invalid policies MUST be rejected at runtime.
 
 ### Changing thresholds and what they do not control
 
-`getThresholds()` (`PolicyThresholdsDTO`: the K4 account and K5 known-device score levels) sets
-the **score-derived** candidate. It is one source of decisions among several, and the final
+`BlockPolicyInterface::getScoreThresholds()` (`PolicyThresholdsDTO`, which maps the K1 to K5 scopes and a
+default; for an authentication policy such as Login the K4 account and K5 known-device levels are the ones
+this section is about) sets the **score-derived** candidates. It is one source of decisions among several, and the final
 decision is the aggregation of all eligible candidates (`DECISION_MATRIX.md` §8): the budget, the
 correlation rules, Recovery Guard and the Anti-Equilibrium gate are separate mechanisms with their
 own state and are not read from the thresholds. Therefore:
