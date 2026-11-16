@@ -639,7 +639,21 @@ if generation == '' and not expiry then
   local pttl = redis.call('PTTL', source)
   if pttl <= 0 then return {} end
   -- A legacy score (no `expiresAt`) is mapped onto the caller's timeline by its remaining life.
-  expiry = tostring(math.floor((nowMs + pttl + 999) / 1000))
+  -- #248: expiry = ceil((nowMs + pttl) / 1000). While `pttl` is a Lua-exact integer (at most 2^53 - 1; `nowMs` is a canonical value of at most 2^53 - 1) the
+  -- ceil is taken apart so no intermediate leaves the exact range: the remainders of each by 1000 are exact (math.fmod), so are the divisions of what is left,
+  -- and the carry is ceil(remainders / 1000). The old combined sum plus the rounding offset 999 could pass 2^53 near the top of the clock domain and round up
+  -- by a whole second.
+  -- A PTTL above 2^53 - 1 reaches Lua as an already rounded double (a Redis integer reply is not an exact input there), so no arithmetic here can make that case
+  -- exact. It keeps the historical computation unchanged (compatibility, not exactness; an exact treatment is #250), so a state accepted before is answered as before.
+  if pttl <= 9007199254740991 then
+    local nowRemainderMs = math.fmod(nowMs, 1000)
+    local pttlRemainderMs = math.fmod(pttl, 1000)
+    local remainderMs = nowRemainderMs + pttlRemainderMs
+    local carrySeconds = (remainderMs > 1000) and 2 or ((remainderMs > 0) and 1 or 0)
+    expiry = tostring((nowMs - nowRemainderMs) / 1000 + (pttl - pttlRemainderMs) / 1000 + carrySeconds)
+  else
+    expiry = tostring(math.floor((nowMs + pttl + 999) / 1000))
+  end
 end
 if not expiry or not validNonNegativeInteger(expiry) or expiry == '0' or compareDecimalStrings(expiry, updated) < 0 then return redis.error_reply('malformed generation-bound score expiry') end
 local sourcePttl = redis.call('PTTL', source)
