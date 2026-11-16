@@ -383,6 +383,16 @@ if nowMsStr == nil or string.match(nowMsStr, '^%d+$') == nil or (#nowMsStr > 1 a
 local nowMs = tonumber(nowMsStr)
 local nowSeconds = math.floor(nowMs / 1000)
 local nowSecondsStr = tostring(nowSeconds)
+-- #242: the caller's native integer maximum (the PHP_INT_MAX of the calling build) is the ARGV before the caller time. Every integer this
+-- script returns becomes a native-int DTO field, so each is judged against it, as an exact decimal string, before the first write.
+local nativeMax = ARGV[#ARGV - 1]
+local function fitsNative(decimal)
+  if #decimal ~= #nativeMax then return #decimal < #nativeMax end
+  return decimal <= nativeMax
+end
+local function resultFitsNative(updatedAt, expiresAt, generation)
+  return fitsNative(string.format('%.0f', updatedAt)) and fitsNative(string.format('%.0f', expiresAt)) and fitsNative(generation)
+end
 local exactIntegerMax = 9007199254740991
 local exactIntegerMaxTtlSeconds = '9007199254740'
 local function ttlMillisecondsRepresentable(rawTtl, baseMs)
@@ -487,6 +497,7 @@ local function createCurrent(overwrite)
   local ttl = tonumber(rawTtl); if ttl <= 0 then return redis.error_reply('invalid score TTL') end
   if not ttlMillisecondsRepresentable(rawTtl, nowMs) then return redis.error_reply('generation-bound score expiry exceeds Redis Lua exact integer range') end
   local expiry = math.floor((nowMs + (ttl * 1000) + 999) / 1000)
+  if not resultFitsNative(nowSeconds, expiry, '1') then return redis.error_reply('generation-bound result exceeds the caller native integer range') end
   if overwrite then
     if not expiryApplied(redis.pcall('EXPIRE', current, rawTtl), {}) then return redis.error_reply('expiry not representable') end
     redis.call('HDEL', current, 'reentryId', 'reentryValidUntil', 'reentryGeneration')
@@ -555,6 +566,7 @@ local generation = observedGeneration and incrementInteger(observedGeneration) o
 if string.len(generation) > 19 or (string.len(generation) == 19 and generation > '9223372036854775807') then return redis.error_reply('generation integer overflow') end
 local expiryMsStr = expiry .. '000'
 if compareDecimalStrings(expiryMsStr, nowMsStr) <= 0 then return {0} end
+if not resultFitsNative(nowSeconds, expiry, generation) then return redis.error_reply('generation-bound result exceeds the caller native integer range') end
 -- The physical life stays relative: the logical remainder, never capped (LT-P2-02).
 local remaining = subtractDecimalStrings(expiryMsStr, nowMsStr)
 if redis.call('EXISTS', current) == 1 then
@@ -1530,6 +1542,13 @@ LUA;
     private const HARD_BLOCK = <<<'LUA'
 local lifecycleGeneration = ARGV[10] or ''
 local lifecycleId = ARGV[11] or ''
+-- #242: ARGV[12] is the caller's native integer maximum. The integers this script returns become native-int DTO fields, so they are
+-- judged against it as exact decimals before the first write (Phase C).
+local nativeMax = ARGV[12]
+local function fitsNative(decimal)
+  if #decimal ~= #nativeMax then return #decimal < #nativeMax end
+  return decimal <= nativeMax
+end
 local function validPositiveInteger(value)
   return type(value) == 'string' and string.match(value, '^[1-9]%d*$') ~= nil and string.len(value) <= 19 and (string.len(value) < 19 or value <= '9223372036854775807')
 end
@@ -1728,6 +1747,10 @@ if newCycle and cycleCount >= tonumber(ARGV[7]) and pauseUntil == 0 then
   pausesByMember[member] = {now, pauseUntil}; pauseMembers[#pauseMembers + 1] = member; latestPauseUntil = math.max(latestPauseUntil, pauseUntil); activated = true
 end
 if #pauseMembers > 0 and latestPauseUntil > exactIntegerMax - retention then return redis.error_reply('pause retention boundary is not representable') end
+if not fitsNative(string.format('%.0f', pauseUntil)) then return redis.error_reply('hard-block result exceeds the caller native integer range') end
+if lifecycleGeneration ~= '' then
+  if not fitsNative(string.format('%.0f', now + durationSeconds)) or not fitsNative(redis.call('HGET', KEYS[7], 'expiresAt')) then return redis.error_reply('hard-block result exceeds the caller native integer range') end
+end
 
 -- Phase B is complete. Phase C contains writes only and uses prevalidated values.
 -- The block is written first, so Redis judges its expiry (LT-P2-12) before any
@@ -2615,7 +2638,7 @@ LUA;
             $this->key('pause', $currentKey),
             $previousKey === null ? '' : $this->key('pause', $previousKey),
         ];
-        $result = $this->eval(self::HARD_BLOCK, $keys, [$level, $durationSeconds, $currentKey, $previousKey ?? '', $now, $cycleWindowSeconds, $cycleThreshold, $pauseSeconds, $pauseHistoryRetentionSeconds]);
+        $result = $this->eval(self::HARD_BLOCK, $keys, [$level, $durationSeconds, $currentKey, $previousKey ?? '', $now, $cycleWindowSeconds, $cycleThreshold, $pauseSeconds, $pauseHistoryRetentionSeconds, '', '', (string) PHP_INT_MAX]);
         $tuple = $this->tuple($result, 4, 'hard-block cycle result');
         return new HardBlockCycleResultDTO(
             $this->integerValue($tuple[0], 'hard-block cycle flag') === 1,
@@ -2752,7 +2775,7 @@ LUA;
         $result = $this->eval(
             self::LIFECYCLE_MUTATE,
             [$this->key('score', $currentKey), $previousKey === null ? '' : $this->key('score', $previousKey), $this->key('reentry-claim', $currentKey)],
-            [$expectedSource, $expectedState === null ? '' : $expectedState->value, $expectedState === null ? '' : $expectedState->updatedAt, $expectedState === null || $expectedState->generation === null ? '' : $expectedState->generation, $expectedState === null ? '' : $expectedState->expiresAt, $ttlSeconds, $newValue, $nowMilliseconds],
+            [$expectedSource, $expectedState === null ? '' : $expectedState->value, $expectedState === null ? '' : $expectedState->updatedAt, $expectedState === null || $expectedState->generation === null ? '' : $expectedState->generation, $expectedState === null ? '' : $expectedState->expiresAt, $ttlSeconds, $newValue, (string) PHP_INT_MAX, $nowMilliseconds],
         );
         $tuple = $this->tuple($result, 1, 'generation-bound mutation');
         if ($this->integerValue($tuple[0], 'generation-bound mutation flag') === 0) {
@@ -2824,7 +2847,7 @@ LUA;
             $this->key('pause', $currentKey), $previousKey === null ? '' : $this->key('pause', $previousKey),
             $this->key('score', $currentKey), $previousKey === null ? '' : $this->key('score', $previousKey),
         ];
-        $result = $this->eval(self::HARD_BLOCK, $keys, [$level, $durationSeconds, $currentKey, $previousKey ?? '', $now, $cycleWindowSeconds, $cycleThreshold, $pauseSeconds, $pauseHistoryRetentionSeconds, $expectedGeneration, $id]);
+        $result = $this->eval(self::HARD_BLOCK, $keys, [$level, $durationSeconds, $currentKey, $previousKey ?? '', $now, $cycleWindowSeconds, $cycleThreshold, $pauseSeconds, $pauseHistoryRetentionSeconds, $expectedGeneration, $id, (string) PHP_INT_MAX]);
         $tuple = $this->tuple($result, 1, 'punishment lifecycle transition');
         if (count($tuple) < 9 || $this->integerValue($tuple[5], 'punishment lifecycle transition flag') !== 1) {
             return new PunishmentLifecycleTransitionDTO(false, null, null, null);
