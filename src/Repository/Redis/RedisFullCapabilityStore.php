@@ -496,7 +496,12 @@ local function createCurrent(overwrite)
   local rawTtl = ARGV[6]
   local ttl = tonumber(rawTtl); if ttl <= 0 then return redis.error_reply('invalid score TTL') end
   if not ttlMillisecondsRepresentable(rawTtl, nowMs) then return redis.error_reply('Generation-bound score expiry is not representable.') end
-  local expiry = math.floor((nowMs + (ttl * 1000) + 999) / 1000)
+  -- #246: expiry = ceil((nowMs + ttl * 1000) / 1000), computed on the exact sum (ttlMillisecondsRepresentable keeps it at or below 2^53 - 1). Adding the
+  -- rounding offset 999 to it would leave the exact range near its upper end and round the numerator up by one whole second; the remainder of an exact integer by
+  -- 1000 is exact (math.fmod), and so is the division of what is left.
+  local sumMs = nowMs + (ttl * 1000)
+  local remainderMs = math.fmod(sumMs, 1000)
+  local expiry = (sumMs - remainderMs) / 1000 + (remainderMs > 0 and 1 or 0)
   if not resultFitsNative(nowSeconds, expiry, '1') then return redis.error_reply('generation-bound result exceeds the caller native integer range') end
   if overwrite then
     if not expiryApplied(redis.pcall('EXPIRE', current, rawTtl), {}) then return redis.error_reply('expiry not representable') end
