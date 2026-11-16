@@ -293,8 +293,9 @@ final class PinnedPttlExecutor implements RedisCommandExecutorInterface
     public function execute(array $command): mixed
     {
         if ($command[0] === 'EVAL' && is_string($command[1] ?? null) && str_contains($command[1], $this->statement)) {
-            $command[1] = str_replace($this->statement, 'local pttl = ' . $this->pttl, $command[1], $count);
+            $script = str_replace($this->statement, 'local pttl = ' . $this->pttl, $command[1], $count);
             $this->replaced += $count;
+            $command = [$command[0], $script, ...array_slice($command, 2)];
         }
 
         return $this->inner->execute($command);
