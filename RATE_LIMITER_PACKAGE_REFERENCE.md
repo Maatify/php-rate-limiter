@@ -441,20 +441,24 @@ Legacy generation-less Current or Previous state remains compatible for reads an
 is upgraded on its first real mutation without resetting score or remaining TTL.
 That mutation fixes the legacy expiry from the observed snapshot; it is never
 derived a second time (#160, DEC-016 application note).
-The read derives a legacy expiry as `ceil((callerNowMs + remainingPTTL) / 1000)`. It is
-exact when the remaining life and the caller time reach the Redis script without loss;
-`2^53 − 1` milliseconds is the exact computation bound for that arithmetic, not a
-rejection limit. Beyond it (a remaining life of about 285,000 years), and inside
-`transactRequest()` when the overlay cannot hold the absolute expiry exactly (so a true
-remaining life below `2^53 − 1` is not enough there), the read keeps its historical
-behavior: it may answer an approximate expiry, or be refused by the existing
-validation (for a very large value, for example, the expiry is formatted in exponent
-notation and rejected as malformed even where a 64-bit `int` would hold it). On a 32-bit
-build an expiry that does not fit the native `int` is refused with a classified
-`RateLimiterException`. There is no new cap or refusal, and no guarantee that every
-legacy read succeeds or is exact; the read writes nothing and does not apply to
-generated state. The default K4 lifetime never creates such lifetimes, but the read may
-meet legacy state that already exists. Owner of the decision:
+The read derives a legacy expiry as `ceil((callerNowMs + remainingPTTL) / 1000)`. A read
+that returns a validated expiry is exact when the remaining life the script sees is
+positive and at most `2^53 − 1` milliseconds (with a valid caller clock and an accurate
+remaining life) and the lifetime was captured without loss; inside `transactRequest()` the
+overlay can round the absolute expiry before it subtracts, so a true remaining life below
+that bound does not by itself make the overlay exact. `2^53 − 1` is the bound of the exact
+calculation, not a rejection limit: above it (a remaining life of about 285,000 years) the
+original arithmetic remains, even for a remaining life that Lua represents exactly, and
+outside the proven-exact conditions the read keeps its existing replies or failures, with
+no fixed error bound: it may answer an expiry that is not exact, or be refused by the
+existing validation (for a very large value, for example, the answer is formatted in
+exponent notation and rejected as malformed even where a 64-bit `int` would hold the
+seconds). On a 32-bit build an expiry that does not fit the native `int` is refused with a
+classified `RateLimiterException`. There is no new cap or refusal; no guarantee that every
+legacy read succeeds or is exact, that bounded arithmetic yields valid state, or that the
+native `int` holds the result; the read writes nothing and does not apply to generated
+state. The default K4 lifetime never creates such lifetimes, but the read may meet legacy
+state that already exists. Owner of the decision:
 [DEC-040](docs/decisions/DEC-040_LEGACY_LIFECYCLE_READ_EXPIRY_BEYOND_THE_EXACT_REPRESENTATION_RANGE.md).
 Generated state must carry authoritative `expiresAt`; malformed generated
 backend state raises the package failure path rather than becoming ordinary
