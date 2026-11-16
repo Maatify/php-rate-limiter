@@ -19,6 +19,7 @@ use Maatify\RateLimiter\DTO\HardBlockCycleResultDTO;
 use Maatify\RateLimiter\DTO\PostPunishmentReentryStateDTO;
 use Maatify\RateLimiter\DTO\PunishmentLifecycleTransitionDTO;
 use Maatify\RateLimiter\DTO\RateLimitStateDTO;
+use Maatify\RateLimiter\Exception\RateLimiterException;
 use Maatify\RateLimiter\Repository\BoundedCorrelationSnapshotStoreInterface;
 use Maatify\RateLimiter\Repository\CircuitBreakerProbeStoreInterface;
 use Maatify\RateLimiter\Repository\PunishmentLifecycleStoreInterface;
@@ -54,6 +55,11 @@ final class SimpleThrottleExampleStore implements PunishmentLifecycleStoreInterf
             $this->counters[$key] = ['value' => $amount, 'updatedAt' => $now, 'expiresAt' => $now + $ttlSeconds];
 
             return $amount;
+        }
+        // The contract of `RateLimitStoreInterface::increment()`: a result outside the caller's native `int` range is refused with `RateLimiterException`
+        // before anything is changed. The bound is compared first, so no sum is formed, no float is produced and nothing is clamped or wrapped.
+        if (($amount > 0 && $this->counters[$key]['value'] > PHP_INT_MAX - $amount) || ($amount < 0 && $this->counters[$key]['value'] < PHP_INT_MIN - $amount)) {
+            throw new RateLimiterException('Score integer overflow.');
         }
         $this->counters[$key]['value'] += $amount;
         $this->counters[$key]['updatedAt'] = $now;

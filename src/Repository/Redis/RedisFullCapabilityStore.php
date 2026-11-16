@@ -1899,8 +1899,12 @@ LUA;
      * Implements `RateLimitStoreInterface::increment()`; the native-range rule stated there applies (#227). The script compares the
      * exact signed decimal sum with this PHP's `PHP_INT_MAX` and `PHP_INT_MIN` before it writes, so a worker whose `int` is narrower than
      * another worker's on the same Redis (a 32-bit and a 64-bit worker) rejects a score it could not read back instead of storing it. A
-     * score stored by a wider worker that is outside this PHP's range is also rejected, unchanged. The message is `score integer
-     * overflow` for all of these cases.
+     * score stored by a wider worker that is outside this PHP's range is also rejected, unchanged. The script's error reply carries the
+     * message `score integer overflow` for all of these cases; the reply is the part this store owns. The exception the caller receives
+     * is the one its Host `RedisCommandExecutorInterface` raises for a server error reply (DEC-018: error replies propagate unchanged and
+     * are not wrapped here): a `RateLimiterException` through an executor that raises it, and the client's own exception, for example
+     * phpredis `RedisException`, through a native bridge. In both the rejection happens before any write, in the direct call and inside
+     * `transactRequest()`, and it is not a backend outage.
      */
     public function increment(string $key, int $ttlSeconds, int $amount = 1): int
     {

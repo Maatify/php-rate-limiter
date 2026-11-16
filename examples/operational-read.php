@@ -16,6 +16,7 @@ use Maatify\RateLimiter\DTO\CircuitBreakerStateDTO;
 use Maatify\RateLimiter\DTO\FailureSignalDTO;
 use Maatify\RateLimiter\DTO\RateLimitContextDTO;
 use Maatify\RateLimiter\DTO\RateLimitStateDTO;
+use Maatify\RateLimiter\Exception\RateLimiterException;
 use Maatify\RateLimiter\Repository\CircuitBreakerProbeStoreInterface;
 use Maatify\RateLimiter\Repository\CorrelationStoreInterface;
 use Maatify\RateLimiter\Repository\BoundedCorrelationStoreInterface;
@@ -60,12 +61,19 @@ final class OperationalExampleRateLimitStore implements HardBlockCycleStoreInter
 
     public function increment(string $key, int $ttlSeconds, int $amount = 1): int
     {
-        $this->writes++;
         $now = $this->clock->now()->getTimestamp();
         $current = $this->counters[$key] ?? null;
         if ($current === null || $current['expiresAt'] <= $now) {
+            $this->writes++;
             $this->counters[$key] = ['value' => $amount, 'updatedAt' => $now, 'expiresAt' => $now + $ttlSeconds];
         } else {
+            // The contract of `RateLimitStoreInterface::increment()`: a result outside the caller's native `int` range is refused with
+            // `RateLimiterException` before anything is changed (the write count included). The bound is compared first, so no sum is formed,
+            // no float is produced and nothing is clamped or wrapped.
+            if (($amount > 0 && $current['value'] > PHP_INT_MAX - $amount) || ($amount < 0 && $current['value'] < PHP_INT_MIN - $amount)) {
+                throw new RateLimiterException('Score integer overflow.');
+            }
+            $this->writes++;
             $current['value'] += $amount;
             $current['updatedAt'] = $now;
             $this->counters[$key] = $current;
