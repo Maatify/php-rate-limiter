@@ -25,6 +25,9 @@ use PHPUnit\Framework\TestCase;
  * independent decimal constant (never recomputed with the formula under test). A separate test runs the unmodified script on a real PTTL and bounds it with
  * outside PTTL readings: the answer is then fixed for the whole window, with no sleep.
  *
+ * Beyond the exact range (a PTTL above 2^53 - 1 reaches Lua as an already rounded double) the historical computation is kept unchanged: the `compat` cases pin
+ * what a state accepted before has always been answered, as compatibility, not as an exactness claim (an exact treatment of that range is #250).
+ *
  * Far-future clocks are outside the 32-bit native `int` range: a 32-bit worker must keep refusing them (the DTO cannot hold the answer) without touching
  * Redis, never skip; contemporary clocks succeed on both widths. Every read, success or refusal, is judged on the byte-exact DUMP and exact PEXPIRETIME of
  * EVERY key (a foreign control included), directly and inside `transactRequest()`.
@@ -73,9 +76,9 @@ final class LifecycleLegacyReadExpiryRedisTest extends TestCase
     }
 
     /**
-     * Clock (decimal ms), pinned PTTL (ms), the exact answer (decimal seconds), whether a 32-bit `int` holds it, and whether Previous is exercised too.
+     * Clock (decimal ms), pinned PTTL (ms; a decimal string where it is above a 32-bit int), the exact answer (decimal seconds), whether a 32-bit `int` holds it, and whether Previous is exercised too.
      *
-     * @return array<string, array{string, int, string, bool, bool}>
+     * @return array<string, array{string, int|string, string, bool, bool}>
      */
     public static function cases(): array
     {
@@ -94,6 +97,12 @@ final class LifecycleLegacyReadExpiryRedisTest extends TestCase
             'the clock maximum, PTTL 1: sum is 2^53' => ['9007199254740991', 1, '9007199254741', false, true],
             'the clock maximum, PTTL 9: sum is a whole second' => ['9007199254740991', 9, '9007199254741', false, false],
             'the clock maximum, PTTL 10: one ms past the second' => ['9007199254740991', 10, '9007199254742', false, false],
+            // The largest Lua-exact PTTL (2^53 - 1) and the first one above it, which reaches Lua as a rounded double: the exact answer is the same second.
+            'clock 0, the largest exact PTTL' => ['0', '9007199254740991', '9007199254741', false, false],
+            'clock 0, the first PTTL above the exact range' => ['0', '9007199254740992', '9007199254741', false, false],
+            // Historical compatibility beyond the exact range (#250 owns exactness): a real PTTL of 9007199254742001 ms is rounded to ...742000 on its way into Lua;
+            // the answer a state like this always got (and is still given) is 9007199254743.
+            'compat: a PTTL above the exact range keeps its historical answer' => ['0', '9007199254742001', '9007199254743', false, true],
             // Contemporary clocks: held by every width.
             'contemporary, whole second, PTTL 1000' => ['1800000000000', 1000, '1800000001', true, true],
             'contemporary, 1 ms in, PTTL 1000' => ['1800000000001', 1000, '1800000002', true, false],
@@ -103,7 +112,7 @@ final class LifecycleLegacyReadExpiryRedisTest extends TestCase
         ];
     }
 
-    /** @return array<string, array{string, int, string, bool, string, bool}> case x source x path */
+    /** @return array<string, array{string, int|string, string, bool, string, bool}> case x source x path */
     public static function casesBySourceAndPath(): array
     {
         $rows = [];
@@ -126,7 +135,7 @@ final class LifecycleLegacyReadExpiryRedisTest extends TestCase
 
     /** The exact answer is the ceil of the sum, wherever the sum falls; Redis is never written, directly or inside a request. */
     #[DataProvider('casesBySourceAndPath')]
-    public function testTheLegacyExpiryIsTheExactCeilOfClockPlusRemainingLife(string $clock, int $pttl, string $expected, bool $native, string $source, bool $overlay): void
+    public function testTheLegacyExpiryIsTheExactCeilOfClockPlusRemainingLife(string $clock, int|string $pttl, string $expected, bool $native, string $source, bool $overlay): void
     {
         $this->seedLegacy($source === 'current' ? 'k' : 'prev', 5000);
         $this->pinned->pin($pttl);
@@ -280,11 +289,11 @@ final class PinnedPttlExecutor implements RedisCommandExecutorInterface
 {
     public int $replaced = 0;
 
-    private int $pttl = 1;
+    private int|string $pttl = 1;
 
     public function __construct(private readonly RedisCommandExecutorInterface $inner, private readonly string $statement) {}
 
-    public function pin(int $pttl): void
+    public function pin(int|string $pttl): void
     {
         $this->pttl = $pttl;
         $this->replaced = 0;
