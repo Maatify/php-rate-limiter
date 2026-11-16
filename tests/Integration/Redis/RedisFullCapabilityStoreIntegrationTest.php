@@ -231,7 +231,7 @@ final class RedisFullCapabilityStoreIntegrationTest extends TestCase
     {
         $this->requiresNative64(
             'a stored generation of 2^53 + 1 is above a 32-bit int.',
-            'testOnA32BitLifecycleStateAboveTheCallersIntIsRejectedWithoutAnyWrite (a 64-bit-written state a 32-bit worker cannot hold) and testGenerationAtTheCallersMaximumRejectsIncrementWithoutAWrite.',
+            'testOnA32BitLifecycleStateAboveTheCallersIntIsRejectedWithoutAnyWrite (a 64-bit-written state a 32-bit worker cannot hold) and testGenerationAtTheCallersMaximumRejectsIncrementWithoutAWrite and LifecycleNativeRangeRedisTest.',
         );
         $now = $this->redisNow();
         $generation = 9007199254740993;
@@ -247,23 +247,20 @@ final class RedisFullCapabilityStoreIntegrationTest extends TestCase
         self::assertSame($generation + 1, $mutation->state?->generation);
     }
 
-    /** The caller's own maximum generation cannot be incremented: rejected, nothing written, on every width. */
+    /**
+     * The caller's own maximum generation cannot be incremented: rejected, nothing written, on every width. On a 32-bit build this is generation 2147483647
+     * (the #242 defect: it used to write generation 2147483648 and only then fail to read it back); the fixed-input 32/64 matrix is LifecycleNativeRangeRedisTest.
+     */
     public function testGenerationAtTheCallersMaximumRejectsIncrementWithoutAWrite(): void
     {
-        if (PHP_INT_SIZE < 8) {
-            // A runtime gap, not a fixture: on a 32-bit build the direct mutation writes generation 2147483648 and only then fails to read it back
-            // (the transactRequest() control keeps the state). Tracked as https://github.com/Maatify/php-rate-limiter/issues/242 (reproducer and closure criteria there); skipped here, per
-            // case, so that it stays visible instead of becoming a pass, and not widened into a production change by this test unit.
-            self::markTestSkipped('KNOWN RUNTIME GAP, not a test portability issue: the 32-bit direct mutation at generation 2147483647 writes before it rejects. Open runtime defect, not covered here: https://github.com/Maatify/php-rate-limiter/issues/242');
-        }
         $now = $this->redisNow();
         $maxKey = $this->key('score', 'g12-generation-max');
         $this->raw(['HSET', $maxKey, 'value', '8', 'updatedAt', (string) $now, 'generation', (string) PHP_INT_MAX, 'expiresAt', (string) ($now + 601)]);
         $this->raw(['EXPIRE', $maxKey, 600]);
-        $before = $this->hashMap($maxKey);
+        $before = $this->stateFingerprint();
         $maxState = new GenerationBoundScoreStateDTO(GenerationBoundScoreStateDTO::SOURCE_CURRENT, 8, $now, $now + 601, PHP_INT_MAX);
         $this->assertOperationFails(fn(): mixed => $this->store->mutateGenerationBoundScore('g12-generation-max', null, $maxState, 600, 9));
-        self::assertSame($before, $this->hashMap($maxKey));
+        self::assertSame($before, $this->stateFingerprint(), 'Every key, its bytes and its exact expiry are unchanged.');
     }
 
     /**

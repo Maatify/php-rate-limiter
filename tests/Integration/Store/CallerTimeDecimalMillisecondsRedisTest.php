@@ -105,6 +105,9 @@ final class CallerTimeDecimalMillisecondsRedisTest extends TestCase
                 unset($command[$count - 3], $command[$count - 2]);
             } elseif ($count >= 3 && $command[$count - 2] === $range[0]) {
                 unset($command[$count - 2]);
+            } elseif (is_string($command[1] ?? null) && str_contains($command[1], 'local nativeMax = ARGV[12]') && $command[$count - 1] === $range[0]) {
+                // The hard-block script takes its caller time at a fixed index (ARGV[5]) and the native maximum as its last argument (#242).
+                unset($command[$count - 1]);
             }
 
             return [...array_values($command), ...$held];
