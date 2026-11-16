@@ -260,7 +260,11 @@ final class CallerTimeDecimalMillisecondsRedisTest extends TestCase
     {
         // 1 s of TTL needs 1000 ms of headroom below 2^53 - 1; this clock leaves 991.
         yield 'one second of TTL past the exact range' => ['9007199254740000', 1];
-        yield 'a TTL whose milliseconds exceed a native integer' => [self::START_MILLISECONDS, intdiv(PHP_INT_MAX, 1000) + 1];
+        // 9007199254741 s is above a 32-bit int: this input exists only where the caller's PHP can hold it (#244 removed the native-millisecond ceiling, so no
+        // smaller TTL is refused on the width that cannot hold this one; the clock-based case above is the same script bound on every width).
+        if (PHP_INT_SIZE >= 8) {
+            yield 'a TTL whose milliseconds exceed the exact range' => [self::START_MILLISECONDS, 9_007_199_254_741];
+        }
     }
 
     #[DataProvider('unrepresentableExpiries')]
