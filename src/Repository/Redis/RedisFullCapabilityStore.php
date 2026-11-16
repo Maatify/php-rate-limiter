@@ -495,7 +495,7 @@ local function createCurrent(overwrite)
   if expectedSource ~= '' then return {0} end
   local rawTtl = ARGV[6]
   local ttl = tonumber(rawTtl); if ttl <= 0 then return redis.error_reply('invalid score TTL') end
-  if not ttlMillisecondsRepresentable(rawTtl, nowMs) then return redis.error_reply('generation-bound score expiry exceeds Redis Lua exact integer range') end
+  if not ttlMillisecondsRepresentable(rawTtl, nowMs) then return redis.error_reply('Generation-bound score expiry is not representable.') end
   local expiry = math.floor((nowMs + (ttl * 1000) + 999) / 1000)
   if not resultFitsNative(nowSeconds, expiry, '1') then return redis.error_reply('generation-bound result exceeds the caller native integer range') end
   if overwrite then
@@ -2770,7 +2770,6 @@ LUA;
     {
         $this->positive($ttlSeconds, 'Generation-bound score TTL');
         $nowMilliseconds = $this->callerTimeMilliseconds($nowMilliseconds);
-        $this->ensureGenerationTtlRepresentable($ttlSeconds, $nowMilliseconds);
         $expectedSource = $expectedState === null ? '' : ($expectedState->source === GenerationBoundScoreStateDTO::SOURCE_CURRENT ? $this->key('score', $currentKey) : $this->key('score', $previousKey ?? ''));
         $result = $this->eval(
             self::LIFECYCLE_MUTATE,
@@ -3328,24 +3327,6 @@ LUA;
             || ($right < 0 && $left > self::LUA_EXACT_INTEGER_MAX + $right)
         ) {
             throw new RateLimiterException($label . ' is not representable.');
-        }
-    }
-
-    /**
-     * The generation-bound score's expiry stays inside Lua's exact integer
-     * range, judged on the caller's time (#153 phase 2, LT-P2-10); the script
-     * repeats the same check atomically on the same value.
-     */
-    private function ensureGenerationTtlRepresentable(int $ttlSeconds, string $nowMilliseconds): void
-    {
-        if ($ttlSeconds > intdiv(PHP_INT_MAX, 1000)) {
-            throw new RateLimiterException('Generation-bound score expiry is not representable.');
-        }
-        // `$nowMilliseconds` is validated (at most 2^53 − 1), so its float is exact and so is the headroom; for an integer
-        // TTL, `ttl > floor(headroom / 1000)` is `ttl * 1000 > headroom`, and a product above 2^53 rounds to at least 2^53.
-        $headroom = (float) self::LUA_EXACT_INTEGER_MAX - (float) $nowMilliseconds;
-        if ((float) $ttlSeconds * 1000.0 > $headroom) {
-            throw new RateLimiterException('Generation-bound score expiry is not representable.');
         }
     }
 
