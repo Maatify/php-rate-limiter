@@ -252,9 +252,9 @@ final class RedisFullCapabilityStoreIntegrationTest extends TestCase
     {
         if (PHP_INT_SIZE < 8) {
             // A runtime gap, not a fixture: on a 32-bit build the direct mutation writes generation 2147483648 and only then fails to read it back
-            // (the transactRequest() control keeps the state). Tracked with a minimal reproducer on #240, issuecomment-6902773615; skipped here, per
+            // (the transactRequest() control keeps the state). Tracked as https://github.com/Maatify/php-rate-limiter/issues/242 (reproducer and closure criteria there); skipped here, per
             // case, so that it stays visible instead of becoming a pass, and not widened into a production change by this test unit.
-            self::markTestSkipped('KNOWN RUNTIME GAP, not a test portability issue: the 32-bit direct mutation at generation 2147483647 writes before it rejects. Tracked: https://github.com/Maatify/php-rate-limiter/issues/240#issuecomment-6902773615');
+            self::markTestSkipped('KNOWN RUNTIME GAP, not a test portability issue: the 32-bit direct mutation at generation 2147483647 writes before it rejects. Open runtime defect, not covered here: https://github.com/Maatify/php-rate-limiter/issues/242');
         }
         $now = $this->redisNow();
         $maxKey = $this->key('score', 'g12-generation-max');
@@ -278,7 +278,7 @@ final class RedisFullCapabilityStoreIntegrationTest extends TestCase
     {
         $this->requiresNative64(
             'the lifetime that trips the guard of the script (9007199254740 s) is above 2^31 - 1 s.',
-            'none needed: on a 32-bit build no native lifetime reaches that guard; testOnA32BitALargeNativeLifetimeIsAcceptedAndExpiresAtTheExactInstant covers the largest reachable one.',
+            'none needed: on a 32-bit build no native lifetime reaches that guard; CallerTimeAuthorityRedisTest::testOnA32BitALargeNativeLifetimeIsAcceptedAndExpiresAtTheExactInstant (a caller-native, expiry-limited lifetime checked inside a before/after timing interval; not the ceiling and not a tolerance-free physical-instant check) covers the largest reachable one.',
         );
 
         $key = 'g12-atomic-generation-ttl-guard';
@@ -536,7 +536,7 @@ final class RedisFullCapabilityStoreIntegrationTest extends TestCase
     {
         $this->requiresNative64(
             'PHP_INT_MAX is backend-impossible as a relative lifetime only where it is 2^63 - 1 (64-bit); on 32-bit 2147483647 s is representable by Redis.',
-            'testOnA32BitALargeNativeLifetimeIsAcceptedAndExpiresAtTheExactInstant (the plain families accept the largest lifetime that fits) and SnapshotExpiryNativeRangeRedisTest (the bounded/rotated snapshot is rejected before any write when its expiry exceeds the caller int).',
+            'CallerTimeAuthorityRedisTest::testOnA32BitALargeNativeLifetimeIsAcceptedAndExpiresAtTheExactInstant (a caller-native, expiry-limited lifetime checked inside a before/after timing interval; not the ceiling and not a tolerance-free physical-instant check) (the plain families accept the largest lifetime that fits) and SnapshotExpiryNativeRangeRedisTest (the bounded/rotated snapshot is rejected before any write when its expiry exceeds the caller int).',
         );
 
         $hugeTtl = PHP_INT_MAX;
@@ -808,7 +808,7 @@ final class RedisFullCapabilityStoreIntegrationTest extends TestCase
     {
         $this->requiresNative64(
             'a lifetime of 2^53 s is above 2^31 - 1 s.',
-            'testOnA32BitALargeNativeLifetimeIsAcceptedAndExpiresAtTheExactInstant.',
+            'CallerTimeAuthorityRedisTest::testOnA32BitALargeNativeLifetimeIsAcceptedAndExpiresAtTheExactInstant (a caller-native, expiry-limited lifetime checked inside a before/after timing interval; not the ceiling and not a tolerance-free physical-instant check).',
         );
 
         $ttl = 9007199254740992;
@@ -3524,7 +3524,7 @@ final class RedisFullCapabilityStoreIntegrationTest extends TestCase
     {
         $this->requiresNative64(
             'the lifetime that meets Redis\'s own expiry ceiling (9223372036854775 s minus the second) is above 2^31 - 1 s.',
-            'testOnA32BitALargeNativeLifetimeIsAcceptedAndExpiresAtTheExactInstant.',
+            'CallerTimeAuthorityRedisTest::testOnA32BitALargeNativeLifetimeIsAcceptedAndExpiresAtTheExactInstant (a caller-native, expiry-limited lifetime checked inside a before/after timing interval; not the ceiling and not a tolerance-free physical-instant check).',
         );
 
         $operations = [
@@ -3873,7 +3873,7 @@ final class RedisFullCapabilityStoreIntegrationTest extends TestCase
     {
         $this->requiresNative64(
             'a widened block lifetime (9.1e15 s) is above 2^31 - 1 s.',
-            'testOnA32BitALargeNativeLifetimeIsAcceptedAndExpiresAtTheExactInstant.',
+            'CallerTimeAuthorityRedisTest::testOnA32BitALargeNativeLifetimeIsAcceptedAndExpiresAtTheExactInstant (a caller-native, expiry-limited lifetime checked inside a before/after timing interval; not the ceiling and not a tolerance-free physical-instant check).',
         );
 
         $widened = 9_100_000_000_000_000;

@@ -8,6 +8,7 @@ use Maatify\RateLimiter\Exception\BackendFailureException;
 use Maatify\RateLimiter\Exception\RateLimiterException;
 use Maatify\RateLimiter\Repository\Redis\RedisFullCapabilityStore;
 use Maatify\RateLimiter\Tests\Support\Redis\RespRedisCommandExecutor;
+use Maatify\RateLimiter\Tests\Support\Redis\StateSnapshot;
 use PHPUnit\Framework\Attributes\DataProvider;
 use PHPUnit\Framework\Attributes\Group;
 use PHPUnit\Framework\TestCase;
@@ -114,21 +115,10 @@ final class ClaimValidatesBeforeLiveBlockRedisTest extends TestCase
         }
     }
 
-    /** @return array<string, string> `DUMP` of every key, so "unchanged" is byte-exact. */
+    /** @return array<string, string> every key's byte-exact `DUMP` and exact `PEXPIRETIME` (F241-01: DUMP alone misses an expiry-only write). */
     private function dump(): array
     {
-        $keys = $this->executor->execute(['KEYS', '*']);
-        self::assertIsArray($keys);
-        $out = [];
-        foreach ($keys as $key) {
-            self::assertIsString($key);
-            $bytes = $this->executor->execute(['DUMP', $key]);
-            self::assertIsString($bytes);
-            $out[$key] = $bytes;
-        }
-        ksort($out);
-
-        return $out;
+        return StateSnapshot::all($this->executor);
     }
 
     #[DataProvider('malformed')]
@@ -142,10 +132,29 @@ final class ClaimValidatesBeforeLiveBlockRedisTest extends TestCase
         $withBlock = $this->claimError($score . ' under a live L3 block');
 
         self::assertSame($withoutBlock, $withBlock, 'A live block must not change how malformed state is reported.');
-        self::assertSame($before, $this->dump(), 'Malformed state must be left byte-identical.');
+        self::assertSame($before, $this->dump(), 'Malformed state must be left unchanged: every key, its bytes and its exact expiry.');
     }
 
     /** Control: a live block over a valid score still answers false and writes no claim marker. */
+    /** F241-01 detector: an expiry-only +1 ms move, with the bytes untouched, is visible to this class's no-mutation snapshot, on the score and on a control key. */
+    public function testTheSnapshotRejectsAnExpiryOnlyOneMillisecondMove(): void
+    {
+        foreach (['score', 'block'] as $moved) {
+            $this->seed('valid', true);
+            $this->executor->execute(['SET', 'unrelated-control', 'x', 'EX', '600']);
+            $before = $this->dump();
+
+            StateSnapshot::perturbExpiryByOneMillisecond($this->executor, $this->rawKey($moved));
+
+            self::assertNotSame($before, $this->dump(), 'A +1 ms expiry-only change on ' . $moved . ' is detected.');
+        }
+        $this->seed('valid', true);
+        $this->executor->execute(['SET', 'unrelated-control', 'x', 'EX', '600']);
+        $before = $this->dump();
+        StateSnapshot::perturbExpiryByOneMillisecond($this->executor, 'unrelated-control');
+        self::assertNotSame($before, $this->dump(), 'A +1 ms expiry-only change on an unrelated control key is detected.');
+    }
+
     public function testALiveBlockOverAValidScoreStillAnswersNoClaim(): void
     {
         $this->seed('valid', true);

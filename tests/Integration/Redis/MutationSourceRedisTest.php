@@ -15,6 +15,7 @@ use Maatify\RateLimiter\Repository\Redis\RedisFullCapabilityStore;
 use Maatify\RateLimiter\Tests\Support\Clock\FixedClock;
 use Maatify\RateLimiter\Tests\Support\FailureSignal\RecordingFailureSignalEmitter;
 use Maatify\RateLimiter\Tests\Support\Redis\RespRedisCommandExecutor;
+use Maatify\RateLimiter\Tests\Support\Redis\StateSnapshot;
 use PHPUnit\Framework\Attributes\Group;
 use PHPUnit\Framework\TestCase;
 
@@ -86,12 +87,16 @@ final class MutationSourceRedisTest extends TestCase
         return $out;
     }
 
+    /** One score key's byte-exact `DUMP` and exact `PEXPIRETIME` (F241-01: DUMP alone misses an expiry-only write). */
     private function dump(string $logical): string
     {
-        $bytes = $this->executor->execute(['DUMP', $this->key('score', $logical)]);
-        self::assertIsString($bytes);
+        return StateSnapshot::of($this->executor, $this->key('score', $logical));
+    }
 
-        return $bytes;
+    /** @return array<string, string> every key's byte-exact `DUMP` and exact `PEXPIRETIME`. */
+    private function allState(): array
+    {
+        return StateSnapshot::all($this->executor);
     }
 
     public function testALogicallyExpiredCurrentWithALiveTtlIsAbsentAndANewGenerationIsWrittenOverIt(): void
@@ -150,7 +155,7 @@ final class MutationSourceRedisTest extends TestCase
     {
         $this->seed('current', 3, 7, self::NOW - 10);
         $this->executor->execute(['HSET', $this->key('score', 'current'), 'reentryId', str_repeat('c', 32)]);
-        $before = $this->dump('current');
+        $before = $this->allState();
 
         try {
             $this->store->mutateGenerationBoundScoreAtMilliseconds('current', null, null, 600, 2, self::NOW_MS);
@@ -160,7 +165,29 @@ final class MutationSourceRedisTest extends TestCase
             // interface documents only RateLimiterException as thrown, which is why a catch for the other type is dead code to the analyser.
             self::assertStringContainsString('malformed lifecycle evidence', $exception->getMessage());
         }
-        self::assertSame($before, $this->dump('current'), 'Malformed state is not repaired (DEC-017).');
+        self::assertSame($before, $this->allState(), 'Malformed state is not repaired (DEC-017): every key, its bytes and its exact expiry are unchanged.');
+    }
+
+    /** F241-01 detector: an expiry-only +1 ms move, with the bytes untouched, is visible to both snapshots this class uses, and to the all-key one on a control key. */
+    public function testTheSnapshotsRejectAnExpiryOnlyOneMillisecondMove(): void
+    {
+        $this->seed('current', 3, 7, self::NOW + 300);
+        $this->seed('previous', 5, 9, self::NOW + 300);
+        $this->executor->execute(['SET', 'unrelated-control', 'x', 'EX', '600']);
+
+        foreach (['current', 'previous'] as $moved) {
+            $key = $this->key('score', $moved);
+            $entry = $this->dump($moved);
+            $all = $this->allState();
+
+            StateSnapshot::perturbExpiryByOneMillisecond($this->executor, $key);
+
+            self::assertNotSame($entry, $this->dump($moved), 'The per-key snapshot detects +1 ms on ' . $moved . '.');
+            self::assertNotSame($all, $this->allState(), 'The all-key snapshot detects +1 ms on ' . $moved . '.');
+        }
+        $all = $this->allState();
+        StateSnapshot::perturbExpiryByOneMillisecond($this->executor, 'unrelated-control');
+        self::assertNotSame($all, $this->allState(), 'The all-key snapshot detects +1 ms on an unrelated control key.');
     }
 
     public function testControlALiveCurrentAndALivePreviousKeepTheirSources(): void

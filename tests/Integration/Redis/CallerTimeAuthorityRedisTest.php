@@ -317,7 +317,7 @@ final class CallerTimeAuthorityRedisTest extends TestCase
         if (PHP_INT_SIZE < 8) {
             // #234: the boundary needs a native-int lifetime of 9,223,372,036,854,775 s minus the current second, far above a 32-bit
             // int (2^31 - 1 s). The lifetime is not clamped: a smaller one would not reach Redis's own expiry ceiling.
-            self::markTestSkipped('Outside the 32-bit public input domain (' . $family . '): the lifetime that reaches Redis\'s expiry ceiling is above 2^31 - 1 s. 32-bit equivalent: testOnA32BitALargeNativeLifetimeIsAcceptedAndExpiresAtTheExactInstant.');
+            self::markTestSkipped('Outside the 32-bit public input domain (' . $family . '): the lifetime that reaches Redis\'s expiry ceiling is above 2^31 - 1 s. 32-bit counterpart (a caller-native, expiry-limited lifetime within a before/after timing interval; not the ceiling): testOnA32BitALargeNativeLifetimeIsAcceptedAndExpiresAtTheExactInstant.');
         }
         $this->executor->execute(['SET', 'unrelated-key', 'kept']);
         $store = new RedisFullCapabilityStore(
@@ -345,8 +345,9 @@ final class CallerTimeAuthorityRedisTest extends TestCase
     /**
      * #234, the 32-bit-reachable expiry coverage of the same eight families. A 32-bit lifetime is at most 2^31 - 1 s (about 2.1e12 ms), nowhere
      * near Redis's expiry ceiling, so this is NOT the ceiling boundary (the test above, 64-bit only). It checks what that lifetime does reach: the
-     * call is accepted, nothing is rejected as "expiry not representable", and every key it created ends at exactly Redis's clock plus the lifetime
-     * (the exact `PEXPIRETIME`, read outside Lua as a decimal).
+     * call is accepted, nothing is rejected as "expiry not representable", and every key it created ends inside a timing interval around Redis's
+     * clock plus the lifetime (the exact `PEXPIRETIME`, read outside Lua as a decimal, bounded by Redis TIME before and after, with a 2 s margin). The
+     * lifetime is the caller-native, expiry-limited one (not a literal PHP_INT_MAX), and this is not a tolerance-free physical-instant assertion.
      *
      * @param callable(RedisFullCapabilityStore, int): mixed $operation
      */
