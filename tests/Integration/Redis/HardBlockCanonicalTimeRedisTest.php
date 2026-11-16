@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace Maatify\RateLimiter\Tests\Integration\Redis;
 
 use Maatify\RateLimiter\Repository\Redis\RedisFullCapabilityStore;
+use Maatify\RateLimiter\Tests\Support\Redis\NativeDomain;
 use Maatify\RateLimiter\Tests\Support\Redis\RespRedisCommandExecutor;
 use PHPUnit\Framework\Attributes\DataProvider;
 use PHPUnit\Framework\Attributes\Group;
@@ -16,6 +17,7 @@ use PHPUnit\Framework\TestCase;
  * script accepts (up to 2^53), was stored as "1e+14", and the next call read its own history as malformed.
  */
 #[Group('f-185-20')]
+#[Group('php32')]
 final class HardBlockCanonicalTimeRedisTest extends TestCase
 {
     private const NAMESPACE = 'f185-20';
@@ -50,18 +52,32 @@ final class HardBlockCanonicalTimeRedisTest extends TestCase
         return array_values(array_map(static fn(mixed $member): string => is_string($member) ? $member : '', $members));
     }
 
-    /** @return iterable<string, array{int}> */
+    /**
+     * Caller times as exact decimals. The first four are the 14-to-16-digit values where Lua's `%.14g` once wrote "1e+14"; they are above a 32-bit
+     * `int` and are skipped there, per case (see `time()`). The last is a control a 32-bit caller can give (2147000000: `now + 300 + 86400` — the pause and its retention — and
+     * `now + 400` stay native): it runs on every width and keeps the canonical-text and next-call-reads-it contract covered on 32-bit, where no
+     * native time reaches the 1e14 range at which the defect lived.
+     *
+     * @return iterable<string, array{string}>
+     */
     public static function times(): iterable
     {
-        yield 'control 99999999999999 (14 digits)' => [99_999_999_999_999];
-        yield '1e14' => [100_000_000_000_000];
-        yield 'about 1.2e15' => [1_234_567_890_123_456];
-        yield '2^53 - 100000 (the retention window still fits)' => [9_007_199_254_640_992];
+        yield 'control 99999999999999 (14 digits)' => ['99999999999999'];
+        yield '1e14' => ['100000000000000'];
+        yield 'about 1.2e15' => ['1234567890123456'];
+        yield '2^53 - 100000 (the retention window still fits)' => ['9007199254640992'];
+        yield 'a 32-bit-native control (10 digits)' => ['2147000000'];
+    }
+
+    private static function time(string $decimal): int
+    {
+        return NativeDomain::int($decimal, 'the "a 32-bit-native control" data set of this class (canonical member text and the next call reading it).');
     }
 
     #[DataProvider('times')]
-    public function testTheCycleMemberIsCanonicalAndTheNextCallReadsIt(int $now): void
+    public function testTheCycleMemberIsCanonicalAndTheNextCallReadsIt(string $nowText): void
     {
+        $now = self::time($nowText);
         $first = $this->store->blockWithCycleTracking('hb', null, 2, 60, $now, 600, 3, 300, 86400);
 
         self::assertTrue($first->newCycle);
@@ -73,8 +89,9 @@ final class HardBlockCanonicalTimeRedisTest extends TestCase
     }
 
     #[DataProvider('times')]
-    public function testThePauseMemberIsCanonical(int $now): void
+    public function testThePauseMemberIsCanonical(string $nowText): void
     {
+        $now = self::time($nowText);
         // A threshold of one cycle activates the pause on the first block.
         $first = $this->store->blockWithCycleTracking('hb', null, 2, 60, $now, 600, 1, 300, 86400);
 

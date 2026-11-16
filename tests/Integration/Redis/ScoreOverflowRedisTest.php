@@ -34,6 +34,7 @@ use PHPUnit\Framework\TestCase;
  * - D (control): access 1 and cost 2^31 - 1 twice gives 4294967294 on K1, K2 and K3.
  */
 #[Group('f-185-11')]
+#[Group('php32')]
 final class ScoreOverflowRedisTest extends TestCase
 {
     private RespRedisCommandExecutor $executor;
@@ -138,11 +139,24 @@ final class ScoreOverflowRedisTest extends TestCase
         self::assertSame([$max, $max, $max], $this->scores(), 'The rejected request wrote no score.');
     }
 
+    /**
+     * The access and cost whose product exceeds the CALLER's own `PHP_INT_MAX`, on every width: 2^33 x (2^31 - 1) is 2^64 (past a 64-bit int); 2^16 x
+     * (2^31 - 1) is about 1.4e14 (past a 32-bit int, where 2^33 is not an int at all). Width-relative by construction, and named so: the property is "the
+     * product is past the caller's maximum", not an identical numeric input (#240).
+     *
+     * @return array{int, int}
+     */
+    private static function overflowingProduct(): array
+    {
+        return PHP_INT_SIZE >= 8 ? [8_589_934_592, 2_147_483_647] : [65_536, 2_147_483_647];
+    }
+
     public function testCaseBACostCapDoesNotHelpAndTheProductIsRejectedBeforeAnyWrite(): void
     {
-        $limiter = $this->limiter(self::policy(2 ** 33));
+        [$access, $cost] = self::overflowingProduct();
+        $limiter = $this->limiter(self::policy($access));
 
-        self::assertRejected(fn() => $limiter->limit(self::context(), RateLimitCommand::recordFailure('overflow_probe', 2 ** 31 - 1)));
+        self::assertRejected(fn() => $limiter->limit(self::context(), RateLimitCommand::recordFailure('overflow_probe', $cost)));
 
         self::assertSame([], $this->scores(), 'K1, K2 and K3 are absent after the rejection.');
         self::assertSame(0, $this->executor->execute(['DBSIZE']), 'access x cost is rejected before any I/O.');
@@ -160,12 +174,18 @@ final class ScoreOverflowRedisTest extends TestCase
         self::assertSame([$max, $max, $max], $this->scores(), 'The rejected request wrote no score.');
     }
 
+    /**
+     * Two charges whose sum is representable are exact: 2 x (2^31 - 1) = 4294967294 on a 64-bit build; on a 32-bit build that sum is not an int, so each
+     * charge is 2^30 - 1 and the sum 2147483646 is the largest even value the caller holds. The 32-bit overflow of the first shape is Case A's.
+     */
     public function testCaseDControlARepresentableChargeIsExact(): void
     {
+        $cost = PHP_INT_SIZE >= 8 ? 2_147_483_647 : 1_073_741_823;
         $limiter = $this->limiter(self::policy(1));
-        $limiter->limit(self::context(), RateLimitCommand::recordFailure('overflow_probe', 2 ** 31 - 1));
-        $limiter->limit(self::context(), RateLimitCommand::recordFailure('overflow_probe', 2 ** 31 - 1));
+        $limiter->limit(self::context(), RateLimitCommand::recordFailure('overflow_probe', $cost));
+        $limiter->limit(self::context(), RateLimitCommand::recordFailure('overflow_probe', $cost));
 
-        self::assertSame(['4294967294', '4294967294', '4294967294'], $this->scores());
+        $sum = PHP_INT_SIZE >= 8 ? '4294967294' : '2147483646';
+        self::assertSame([$sum, $sum, $sum], $this->scores());
     }
 }

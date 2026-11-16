@@ -27,6 +27,7 @@ use PHPUnit\Framework\TestCase;
  * rejection is not a backend failure: no circuit-breaker state, no signal and no fallback result.
  */
 #[Group('t5-request-atomicity')]
+#[Group('php32')]
 final class RequestOverlayUnsupportedKeyTypeRedisTest extends TestCase
 {
     private const NAMESPACE = 't5-key-type';

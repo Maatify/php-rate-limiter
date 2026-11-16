@@ -7,6 +7,7 @@ namespace Maatify\RateLimiter\Tests\Integration\Redis;
 use Maatify\RateLimiter\Exception\BackendFailureException;
 use Maatify\RateLimiter\Exception\RateLimiterException;
 use Maatify\RateLimiter\Repository\Redis\RedisFullCapabilityStore;
+use Maatify\RateLimiter\Tests\Support\Redis\NativeDomain;
 use Maatify\RateLimiter\Tests\Support\Redis\RespRedisCommandExecutor;
 use PHPUnit\Framework\Attributes\DataProvider;
 use PHPUnit\Framework\Attributes\Group;
@@ -23,6 +24,7 @@ use PHPUnit\Framework\TestCase;
  */
 #[Group('f-185-12')]
 #[Group('f-185-13')]
+#[Group('php32')]
 final class ExactCounterReplyRedisTest extends TestCase
 {
     private const NOW = 1_800_000_000;
@@ -50,18 +52,30 @@ final class ExactCounterReplyRedisTest extends TestCase
         return 'maatify:rate-limiter:v1:' . hash('sha256', self::NAMESPACE) . ':' . $family . ':' . hash('sha256', $logical);
     }
 
-    /** @return iterable<string, array{int}> Stored values incremented by 1; 2^53 - 1 is the control. */
+    /**
+     * Stored values incremented by 1, as exact decimals; 2^53 - 1 is the control. The three 2^53 values are above a 32-bit `int` and are skipped there
+     * (per case, in `start()`); `PHP_INT_MAX - 1` is the largest start whose increment fits the caller's own `int` on every width, and is the data set
+     * that runs on 32-bit (its Lua doubles are exact there: 2^31 is far below 2^53).
+     *
+     * @return iterable<string, array{string}>
+     */
     public static function starts(): iterable
     {
-        yield 'control 2^53 - 1' => [9007199254740991];
-        yield '2^53' => [9007199254740992];
-        yield '2^53 + 1' => [9007199254740993];
-        yield 'PHP_INT_MAX - 1' => [PHP_INT_MAX - 1];
+        yield 'control 2^53 - 1' => ['9007199254740991'];
+        yield '2^53' => ['9007199254740992'];
+        yield '2^53 + 1' => ['9007199254740993'];
+        yield 'PHP_INT_MAX - 1' => [(string) (PHP_INT_MAX - 1)];
+    }
+
+    private static function start(string $decimal): int
+    {
+        return NativeDomain::int($decimal, 'the "PHP_INT_MAX - 1" data set (the largest native start), and ScoreIncrementNativeRangeRedisTest / CounterIncrementNativeRangeRedisTest for the rejection of a count the caller cannot hold.');
     }
 
     #[DataProvider('starts')]
-    public function testScoreIncrementReturnsTheStoredValue(int $start): void
+    public function testScoreIncrementReturnsTheStoredValue(string $startText): void
     {
+        $start = self::start($startText);
         $score = $this->key('score', 'counter');
         $this->executor->execute(['HSET', $score, 'value', (string) $start, 'updatedAt', (string) self::NOW]);
         $this->executor->execute(['EXPIRE', $score, '600']);
@@ -73,8 +87,9 @@ final class ExactCounterReplyRedisTest extends TestCase
     }
 
     #[DataProvider('starts')]
-    public function testWatchFlagIncrementReturnsTheStoredCount(int $start): void
+    public function testWatchFlagIncrementReturnsTheStoredCount(string $startText): void
     {
+        $start = self::start($startText);
         $this->seedWatch('watch', $start);
 
         $returned = $this->store->incrementWatchFlagAt('watch', 600, self::NOW);
@@ -84,8 +99,9 @@ final class ExactCounterReplyRedisTest extends TestCase
     }
 
     #[DataProvider('starts')]
-    public function testRotatedWatchFlagIncrementReturnsTheExactSum(int $start): void
+    public function testRotatedWatchFlagIncrementReturnsTheExactSum(string $startText): void
     {
+        $start = self::start($startText);
         $this->seedWatch('current', $start - 1);
         $this->seedWatch('previous', 1);
 

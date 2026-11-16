@@ -10,12 +10,12 @@ use Maatify\RateLimiter\Config\RateLimiterConfig;
 use Maatify\RateLimiter\DTO\GenerationBoundScoreStateDTO;
 use Maatify\RateLimiter\DTO\RateLimitContextDTO;
 use Maatify\RateLimiter\DTO\RateLimitResultDTO;
-use Maatify\RateLimiter\Exception\BackendFailureException;
 use Maatify\RateLimiter\Exception\RateLimiterException;
 use Maatify\RateLimiter\Repository\Redis\RedisFullCapabilityStore;
 use Maatify\RateLimiter\Tests\Support\Clock\FixedClock;
 use Maatify\RateLimiter\Tests\Support\FailureSignal\RecordingFailureSignalEmitter;
 use Maatify\RateLimiter\Tests\Support\Redis\RespRedisCommandExecutor;
+use Maatify\RateLimiter\Tests\Support\Redis\StateSnapshot;
 use PHPUnit\Framework\Attributes\Group;
 use PHPUnit\Framework\TestCase;
 
@@ -28,9 +28,13 @@ use PHPUnit\Framework\TestCase;
  * unapplied mutations and, from the public API, `HARD_BLOCK` with cause `k4_concurrency_conflict`.
  */
 #[Group('f-185-09')]
+#[Group('php32')]
 final class MutationSourceRedisTest extends TestCase
 {
     private const NOW = 1_800_000_000;
+
+    /** The same instant as the decimal epoch milliseconds the DEC-039 capability takes; `NOW * 1000` is a float on a 32-bit build (#240). */
+    private const NOW_MS = self::NOW . '000';
 
     private const NAMESPACE = 'f185-09';
 
@@ -83,12 +87,16 @@ final class MutationSourceRedisTest extends TestCase
         return $out;
     }
 
+    /** One score key's byte-exact `DUMP` and exact `PEXPIRETIME` (F241-01: DUMP alone misses an expiry-only write). */
     private function dump(string $logical): string
     {
-        $bytes = $this->executor->execute(['DUMP', $this->key('score', $logical)]);
-        self::assertIsString($bytes);
+        return StateSnapshot::of($this->executor, $this->key('score', $logical));
+    }
 
-        return $bytes;
+    /** @return array<string, string> every key's byte-exact `DUMP` and exact `PEXPIRETIME`. */
+    private function allState(): array
+    {
+        return StateSnapshot::all($this->executor);
     }
 
     public function testALogicallyExpiredCurrentWithALiveTtlIsAbsentAndANewGenerationIsWrittenOverIt(): void
@@ -96,8 +104,8 @@ final class MutationSourceRedisTest extends TestCase
         $this->seed('current', 3, 7, self::NOW - 10, evidence: true);
         $this->executor->execute(['SET', $this->key('reentry-claim', 'current'), str_repeat('c', 32), 'EX', '600']);
 
-        self::assertNull($this->store->readGenerationBoundScoreStateAt('current', null, self::NOW * 1000), 'read = null');
-        $mutation = $this->store->mutateGenerationBoundScoreAt('current', null, null, 600, 2, self::NOW * 1000);
+        self::assertNull($this->store->readGenerationBoundScoreStateAtMilliseconds('current', null, self::NOW_MS), 'read = null');
+        $mutation = $this->store->mutateGenerationBoundScoreAtMilliseconds('current', null, null, 600, 2, self::NOW_MS);
 
         self::assertTrue($mutation->applied, 'mutate(expected = null) is applied.');
         self::assertNotNull($mutation->state);
@@ -110,7 +118,7 @@ final class MutationSourceRedisTest extends TestCase
         );
         self::assertSame(0, $this->executor->execute(['EXISTS', $this->key('reentry-claim', 'current')]), 'The claim marker is dropped.');
         // A second store instance: the read after the write is a new observation, not the first read again.
-        $state = (new RedisFullCapabilityStore($this->executor, self::NAMESPACE))->readGenerationBoundScoreStateAt('current', null, self::NOW * 1000);
+        $state = (new RedisFullCapabilityStore($this->executor, self::NAMESPACE))->readGenerationBoundScoreStateAtMilliseconds('current', null, self::NOW_MS);
         self::assertNotNull($state);
         self::assertSame(GenerationBoundScoreStateDTO::SOURCE_CURRENT, $state->source);
         self::assertSame(1, $state->generation);
@@ -122,8 +130,8 @@ final class MutationSourceRedisTest extends TestCase
         $this->seed('previous', 5, 9, self::NOW + 300);
         $previous = $this->dump('previous');
 
-        self::assertNull($this->store->readGenerationBoundScoreStateAt('current', 'previous', self::NOW * 1000), 'The read does not fall back to Previous.');
-        $mutation = $this->store->mutateGenerationBoundScoreAt('current', 'previous', null, 600, 2, self::NOW * 1000);
+        self::assertNull($this->store->readGenerationBoundScoreStateAtMilliseconds('current', 'previous', self::NOW_MS), 'The read does not fall back to Previous.');
+        $mutation = $this->store->mutateGenerationBoundScoreAtMilliseconds('current', 'previous', null, 600, 2, self::NOW_MS);
 
         self::assertTrue($mutation->applied);
         self::assertSame('1', $this->hash('current')['generation']);
@@ -135,8 +143,8 @@ final class MutationSourceRedisTest extends TestCase
         $this->seed('previous', 5, 9, self::NOW - 10);
         $previous = $this->dump('previous');
 
-        self::assertNull($this->store->readGenerationBoundScoreStateAt('current', 'previous', self::NOW * 1000));
-        $mutation = $this->store->mutateGenerationBoundScoreAt('current', 'previous', null, 600, 2, self::NOW * 1000);
+        self::assertNull($this->store->readGenerationBoundScoreStateAtMilliseconds('current', 'previous', self::NOW_MS));
+        $mutation = $this->store->mutateGenerationBoundScoreAtMilliseconds('current', 'previous', null, 600, 2, self::NOW_MS);
 
         self::assertTrue($mutation->applied);
         self::assertSame('1', $this->hash('current')['generation']);
@@ -147,34 +155,56 @@ final class MutationSourceRedisTest extends TestCase
     {
         $this->seed('current', 3, 7, self::NOW - 10);
         $this->executor->execute(['HSET', $this->key('score', 'current'), 'reentryId', str_repeat('c', 32)]);
-        $before = $this->dump('current');
+        $before = $this->allState();
 
         try {
-            $this->store->mutateGenerationBoundScoreAt('current', null, null, 600, 2, self::NOW * 1000);
+            $this->store->mutateGenerationBoundScoreAtMilliseconds('current', null, null, 600, 2, self::NOW_MS);
             self::fail('Partial lifecycle evidence on a logically expired Current was overwritten.');
-        } catch (BackendFailureException $exception) {
-            self::fail('Malformed state raised BackendFailureException: ' . $exception->getMessage());
         } catch (RateLimiterException $exception) {
+            // A BackendFailureException is not caught: it propagates and fails the test, as the removed explicit branch did. The decimal-millisecond
+            // interface documents only RateLimiterException as thrown, which is why a catch for the other type is dead code to the analyser.
             self::assertStringContainsString('malformed lifecycle evidence', $exception->getMessage());
         }
-        self::assertSame($before, $this->dump('current'), 'Malformed state is not repaired (DEC-017).');
+        self::assertSame($before, $this->allState(), 'Malformed state is not repaired (DEC-017): every key, its bytes and its exact expiry are unchanged.');
+    }
+
+    /** F241-01 detector: an expiry-only +1 ms move, with the bytes untouched, is visible to both snapshots this class uses, and to the all-key one on a control key. */
+    public function testTheSnapshotsRejectAnExpiryOnlyOneMillisecondMove(): void
+    {
+        $this->seed('current', 3, 7, self::NOW + 300);
+        $this->seed('previous', 5, 9, self::NOW + 300);
+        $this->executor->execute(['SET', 'unrelated-control', 'x', 'EX', '600']);
+
+        foreach (['current', 'previous'] as $moved) {
+            $key = $this->key('score', $moved);
+            $entry = $this->dump($moved);
+            $all = $this->allState();
+
+            StateSnapshot::perturbExpiryByOneMillisecond($this->executor, $key);
+
+            self::assertNotSame($entry, $this->dump($moved), 'The per-key snapshot detects +1 ms on ' . $moved . '.');
+            self::assertNotSame($all, $this->allState(), 'The all-key snapshot detects +1 ms on ' . $moved . '.');
+        }
+        $all = $this->allState();
+        StateSnapshot::perturbExpiryByOneMillisecond($this->executor, 'unrelated-control');
+        self::assertNotSame($all, $this->allState(), 'The all-key snapshot detects +1 ms on an unrelated control key.');
     }
 
     public function testControlALiveCurrentAndALivePreviousKeepTheirSources(): void
     {
         $this->seed('previous', 5, 9, self::NOW + 300);
-        $fromPrevious = $this->store->readGenerationBoundScoreStateAt('current', 'previous', self::NOW * 1000);
+        $fromPrevious = $this->store->readGenerationBoundScoreStateAtMilliseconds('current', 'previous', self::NOW_MS);
         self::assertNotNull($fromPrevious);
         self::assertSame(GenerationBoundScoreStateDTO::SOURCE_PREVIOUS, $fromPrevious->source);
-        self::assertFalse($this->store->mutateGenerationBoundScoreAt('current', 'previous', null, 600, 2, self::NOW * 1000)->applied, 'A live Previous is a source: expected = null is a conflict.');
-        self::assertTrue($this->store->mutateGenerationBoundScoreAt('current', 'previous', $fromPrevious, 600, 2, self::NOW * 1000)->applied);
+        self::assertFalse($this->store->mutateGenerationBoundScoreAtMilliseconds('current', 'previous', null, 600, 2, self::NOW_MS)->applied, 'A live Previous is a source: expected = null is a conflict.');
+        self::assertTrue($this->store->mutateGenerationBoundScoreAtMilliseconds('current', 'previous', $fromPrevious, 600, 2, self::NOW_MS)->applied);
 
         $this->executor->execute(['FLUSHDB']);
         $this->seed('current', 3, 7, self::NOW + 300);
-        $current = $this->store->readGenerationBoundScoreStateAt('current', null, self::NOW * 1000);
+        $current = $this->store->readGenerationBoundScoreStateAtMilliseconds('current', null, self::NOW_MS);
         self::assertNotNull($current);
-        self::assertFalse($this->store->mutateGenerationBoundScoreAt('current', null, null, 600, 2, self::NOW * 1000)->applied, 'A live Current is a source: expected = null is a conflict.');
-        $mutation = $this->store->mutateGenerationBoundScoreAt('current', null, $current, 600, 2, self::NOW * 1000);
+        self::assertFalse($this->store->mutateGenerationBoundScoreAtMilliseconds('current', null, null, 600, 2, self::NOW_MS)->applied, 'A live Current is a source: expected = null is a conflict.');
+        $mutation = $this->store->mutateGenerationBoundScoreAtMilliseconds('current', null, $current, 600, 2, self::NOW_MS);
         self::assertTrue($mutation->applied);
         self::assertSame(4, $mutation->state?->generation);
     }

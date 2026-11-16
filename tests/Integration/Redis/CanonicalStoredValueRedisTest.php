@@ -8,6 +8,7 @@ use Maatify\RateLimiter\Exception\BackendFailureException;
 use Maatify\RateLimiter\Exception\RateLimiterException;
 use Maatify\RateLimiter\Repository\Redis\RedisFullCapabilityStore;
 use Maatify\RateLimiter\Tests\Support\Redis\RespRedisCommandExecutor;
+use Maatify\RateLimiter\Tests\Support\Redis\StateSnapshot;
 use PHPUnit\Framework\Attributes\DataProvider;
 use PHPUnit\Framework\Attributes\Group;
 use PHPUnit\Framework\TestCase;
@@ -20,9 +21,13 @@ use PHPUnit\Framework\TestCase;
  * script itself (not a raw Redis error), and the state is left byte-identical: no delete, no repair (DEC-017).
  */
 #[Group('f-185-19')]
+#[Group('php32')]
 final class CanonicalStoredValueRedisTest extends TestCase
 {
     private const NOW = 1_793_793_600;
+
+    /** The same instant as the decimal epoch milliseconds the DEC-039 capability takes; `NOW * 1000` is a float on a 32-bit build (#240). */
+    private const NOW_MS = self::NOW . '000';
 
     private const NAMESPACE = 'f185-19';
 
@@ -47,21 +52,10 @@ final class CanonicalStoredValueRedisTest extends TestCase
         return 'maatify:rate-limiter:v1:' . hash('sha256', self::NAMESPACE) . ':' . $family . ':' . hash('sha256', $logical);
     }
 
-    /** @return array<string, string> `DUMP` of every key. */
+    /** @return array<string, string> every key's byte-exact `DUMP` and exact `PEXPIRETIME` (F241-01: DUMP alone misses an expiry-only write). */
     private function dump(): array
     {
-        $keys = $this->executor->execute(['KEYS', '*']);
-        self::assertIsArray($keys);
-        $out = [];
-        foreach ($keys as $key) {
-            self::assertIsString($key);
-            $bytes = $this->executor->execute(['DUMP', $key]);
-            self::assertIsString($bytes);
-            $out[$key] = $bytes;
-        }
-        ksort($out);
-
-        return $out;
+        return StateSnapshot::all($this->executor);
     }
 
     private function assertMalformed(callable $operation, string $message): void
@@ -75,7 +69,7 @@ final class CanonicalStoredValueRedisTest extends TestCase
         } catch (RateLimiterException $exception) {
             self::assertStringContainsString($message, $exception->getMessage());
         }
-        self::assertSame($before, $this->dump(), 'Malformed state is left byte-identical.');
+        self::assertSame($before, $this->dump(), 'Malformed state is left unchanged: every key, its bytes and its exact expiry.');
     }
 
     /** @return iterable<string, array{string}> */
@@ -89,13 +83,13 @@ final class CanonicalStoredValueRedisTest extends TestCase
     #[DataProvider('nonCanonicalLevels')]
     public function testANonCanonicalBlockLevelIsMalformedOnEveryReader(string $level): void
     {
-        $this->store->mutateGenerationBoundScoreAt('k', null, null, 600, 5, self::NOW * 1000);
+        $this->store->mutateGenerationBoundScoreAtMilliseconds('k', null, null, 600, 5, self::NOW_MS);
         $this->store->blockAt('k', 2, 600, self::NOW);
         $this->executor->execute(['HSET', $this->key('block', 'k'), 'level', $level]);
 
         $this->assertMalformed(fn() => $this->store->checkBlockAt('k', self::NOW), 'malformed block state');
-        $this->assertMalformed(fn() => $this->store->readGenerationBoundScoreStateAt('k', null, self::NOW * 1000), 'malformed hard-block state');
-        $this->assertMalformed(fn() => $this->store->claimPostPunishmentReentryAt('k', null, str_repeat('a', 32), self::NOW * 1000), 'malformed hard-block state');
+        $this->assertMalformed(fn() => $this->store->readGenerationBoundScoreStateAtMilliseconds('k', null, self::NOW_MS), 'malformed hard-block state');
+        $this->assertMalformed(fn() => $this->store->claimPostPunishmentReentryAtMilliseconds('k', null, str_repeat('a', 32), self::NOW_MS), 'malformed hard-block state');
         $this->assertMalformed(fn() => $this->store->blockWithCycleTracking('k', null, 2, 60, self::NOW, 600, 3, 300, 86400), 'malformed hard-block state');
     }
 
@@ -106,6 +100,22 @@ final class CanonicalStoredValueRedisTest extends TestCase
             $this->executor->execute(['HSET', $this->key('block', 'k'), 'level', $level]);
 
             self::assertSame((int) $level, $this->store->checkBlockAt('k', self::NOW)?->level);
+        }
+    }
+
+    /** F241-01 detector: an expiry-only +1 ms move, with the bytes untouched, is visible to this class's no-mutation snapshot, on a state key and on a control key. */
+    public function testTheSnapshotRejectsAnExpiryOnlyOneMillisecondMove(): void
+    {
+        foreach ([$this->key('block', 'k'), 'unrelated-control'] as $moved) {
+            $this->executor->execute(['FLUSHDB']);
+            $this->executor->execute(['HSET', $this->key('block', 'k'), 'level', '03']);
+            $this->executor->execute(['EXPIRE', $this->key('block', 'k'), '600']);
+            $this->executor->execute(['SET', 'unrelated-control', 'x', 'EX', '600']);
+            $before = $this->dump();
+
+            StateSnapshot::perturbExpiryByOneMillisecond($this->executor, $moved);
+
+            self::assertNotSame($before, $this->dump(), 'A +1 ms expiry-only change on ' . $moved . ' is detected.');
         }
     }
 
