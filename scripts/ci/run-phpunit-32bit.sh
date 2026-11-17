@@ -28,7 +28,7 @@ trap 'exit 130' INT
 trap 'exit 143' TERM
 
 echo "Runner: ${ImageOS:-unknown} ${ImageVersion:-unknown}; $(uname -srm); $("$docker_bin" --version)"
-"$docker_bin" build --progress=plain --network host --platform linux/386 -t "$image" "$package_root/docker/php32"
+"$docker_bin" build --progress=plain --platform linux/386 -t "$image" "$package_root/docker/php32"
 "$docker_bin" network create "$network" >/dev/null
 "$docker_bin" run -d --name "$redis_name" --network "$network" redis:7.0.15-alpine redis-server --save "" --appendonly no >/dev/null
 until [[ "$("$docker_bin" exec "$redis_name" redis-cli ping 2>/dev/null || true)" == PONG ]]; do sleep 0.5; done
