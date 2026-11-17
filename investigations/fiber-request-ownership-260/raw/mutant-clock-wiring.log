@@ -1,6 +1,0 @@
-== clock-wiring mutant on 64
-Failed asserting that two arrays are identical.
-Tests: 14, Assertions: 751, Failures: 1.
-== clock-wiring mutant on 32
-Failed asserting that two arrays are identical.
-Tests: 14, Assertions: 751, Failures: 1.

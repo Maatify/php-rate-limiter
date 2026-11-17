@@ -46,17 +46,20 @@ if ! valid_identity "$out/source-identity.log"; then
 fi
 sha=$(sed -n 1p "$out/source-identity.log"); tree=$(sed -n 2p "$out/source-identity.log")
 # The suites run on the working tree: it must be the committed source (only this runner's own output may differ).
-step working-tree-clean bash -c 'test -z "$("$1" -C "$2" status --porcelain -- . ":!investigations/fiber-request-ownership-260/raw*")"' _ "$git_bin" "$root"
+# The status command's own failure is kept: an empty output proves a clean tree only when the command succeeded.
+step working-tree-clean bash -c 'changes=$("$1" -C "$2" status --porcelain -- . ":!investigations/fiber-request-ownership-260/raw*") || exit $?; test -z "$changes"' _ "$git_bin" "$root"
 step clone "$git_bin" clone -q "$root" "$tmp/clone"
 step checkout "$git_bin" -C "$tmp/clone" checkout -q "$sha"
 step clone-identity "$git_bin" -C "$tmp/clone" rev-parse HEAD 'HEAD^{tree}'
 if ! cmp -s "$out/source-identity.log" "$out/clone-identity.log" || ! valid_identity "$out/clone-identity.log"; then
     printf '%s\t%s\n' clone-matches-source 1 >> "$out/result.txt"; failed=1
 fi
+provenance_failed=$failed
 step governance-helper docker run --rm -v "$tmp/clone:/repo" -w /repo maatify-rl-php64:local php .agents/helpers/maatify-governance-context.php
 step suite-php64 suite 64 --testdox "${FIBER260_TEST:-tests/Integration/Redis/FiberRequestOwnershipRedisTest.php}"
 step suite-php32 suite 32 --testdox "${FIBER260_TEST:-tests/Integration/Redis/FiberRequestOwnershipRedisTest.php}"
-if valid_identity "$out/source-identity.log"; then cp "$out/source-identity.log" "$out/source.txt"; else : > "$out/source.txt"; fi
+# The tested source is recorded only when it was identified AND proven to be the committed source (clean tree, clone identical).
+if [ "$provenance_failed" = 0 ] && valid_identity "$out/source-identity.log"; then cp "$out/source-identity.log" "$out/source.txt"; else : > "$out/source.txt"; fi
 if [ ! -s "$out/source.txt" ]; then printf '%s\t%s\n' source-recorded 1 >> "$out/result.txt"; failed=1; fi
 cat "$out/result.txt"
 exit "$failed"

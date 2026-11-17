@@ -92,9 +92,17 @@ Either way a remediation must prove that an unrelated call can neither consume a
 
 ## 7. Evidence
 
-`run.sh` (this folder) runs the governance helper (on an isolated temporary clone) and the suite on actual PHP_INT_SIZE 8 and 4 (`maatify-rl-php64:local` sha256:d4f5a573…, `maatify-rl-php32:local` sha256:e7016865…, ext-redis 6.3.0, PHP 8.4.27, isolated `redis:7.0.15-alpine` sha256:75510523…). Source identification (HEAD and tree, clean working tree, clone and checkout, identity of the clone equal to the tested source, a valid non-empty `source.txt`) is made of required, tracked steps: each keeps its output and exit status in `raw*/`, and any failure of one of them ends the runner with exit 1 even when both suites pass.
-Controls, with their runner exit codes and retained logs: `raw-failure-demo/` (a missing test path: both suites exit 2, runner exit 1) and `raw-provenance-failure-demo/` (`provenance-failure-control.sh`: a git shim that fails only the `rev-parse HEAD 'HEAD^{tree}'` identification with exit 71: both suites **pass**, the runner exits **1**, `source.txt` stays empty). Results of the committed-source run are in `raw/` (`result.txt`, `source.txt`, both suites, the helper).
-PHPStan max, cs-fixer and whitespace are clean for the new files.
-Provenance of the committed evidence: the later commits change only the investigation evidence (logs, this report and the corrections to it) and the new test and runner of the corrections; production source is untouched since the baseline.
+`run.sh` (this folder) runs the governance helper (on an isolated temporary clone) and the suite on actual PHP_INT_SIZE 8 and 4 (`maatify-rl-php64:local` sha256:d4f5a573…, `maatify-rl-php32:local` sha256:e7016865…, ext-redis 6.3.0, PHP 8.4.27, isolated `redis:7.0.15-alpine` sha256:75510523…). Source identification is made of required, tracked steps (HEAD and tree, a clean working tree with the status command's own failure kept, an isolated `mktemp` clone, checkout, the clone's identity equal to the tested source); each keeps its output and exit status, any failure of one of them ends the runner with exit 1 even when both suites pass, and `source.txt` is written **only** when the source was identified and proven to be the committed source (an empty file otherwise).
 
-Verification commit of the corrected run: `32b225c80e6a4a242527ea33682ef971a46def1a` (`raw/source.txt`); 14 tests, 751 assertions, OK on PHP_INT_SIZE 8 and 4, no skips. Clock-wiring detector (B's runtime clock left at T0): 1 failure of 14 on both widths.
+Controls, each run on the verification commit with its runner exit code and logs retained:
+
+| Control | Directory | Suites | Runner | `source.txt` |
+| --- | --- | --- | --- | --- |
+| normal, clean committed source | `raw/` | pass (14 tests, 751 assertions) | **0** | the verification commit and tree |
+| missing test path | `raw-failure-demo/` | exit 2 | **1** | recorded for the source, suites not run |
+| source identification fails (`rev-parse HEAD 'HEAD^{tree}'` exits 71) | `raw-identity-failure-demo/` | pass | **1** | empty |
+| `git status` fails (exit 71, a message on stderr, no output) | `raw-status-failure-demo/` | pass | **1**; `working-tree-clean` is 71 and its log keeps the message | empty |
+| an uncommitted change to a tracked file | `raw-dirty-source-demo/` | pass | **1**; `working-tree-clean` is 1 | empty: a dirty tree is not reported as verified committed source |
+
+`provenance-failure-control.sh <identity|status|dirty> <output-dir>` produces the last three. PHPStan max, cs-fixer and whitespace are clean for the new files.
+Provenance of the committed evidence: the commit that carries the logs changes only the investigation evidence (the logs and the verification paragraph of this report); tests, runner and production source are unchanged from the verification commit named below, and production source is untouched since the baseline.
