@@ -1,0 +1,16 @@
+{"label":"loopback-start","endpoint":"127.0.0.1:6379","n":300,"minMs":0.038,"p50Ms":0.075,"p95Ms":0.087,"p99Ms":0.098,"maxMs":0.259}
+{"label":"proxy7-start","endpoint":"127.0.0.1:6403","n":300,"minMs":5.348,"p50Ms":6.331,"p95Ms":6.826,"p99Ms":7.256,"maxMs":8.084}
+{"label":"proxy9-start","endpoint":"127.0.0.1:6404","n":300,"minMs":7.459,"p50Ms":8.885,"p95Ms":9.382,"p99Ms":9.905,"maxMs":16.128}
+{"label":"before-rtt7-w8x10","endpoint":"127.0.0.1:6403","n":300,"minMs":5.379,"p50Ms":6.396,"p95Ms":6.907,"p99Ms":7.304,"maxMs":16.182}
+{"label":"after-rtt7-w8x10","endpoint":"127.0.0.1:6403","n":300,"minMs":5.362,"p50Ms":6.345,"p95Ms":6.804,"p99Ms":7.755,"maxMs":8.333}
+{"label":"before-loop-w8x10","endpoint":"127.0.0.1:6379","n":300,"minMs":0.034,"p50Ms":0.047,"p95Ms":0.057,"p99Ms":0.068,"maxMs":0.099}
+{"label":"after-loop-w8x10","endpoint":"127.0.0.1:6379","n":300,"minMs":0.056,"p50Ms":0.08,"p95Ms":0.1,"p99Ms":0.12,"maxMs":0.199}
+{"label":"before-rtt7-w8x40","endpoint":"127.0.0.1:6403","n":300,"minMs":5.446,"p50Ms":6.337,"p95Ms":6.798,"p99Ms":7.3,"maxMs":9.11}
+{"label":"after-rtt7-w8x40","endpoint":"127.0.0.1:6403","n":300,"minMs":5.47,"p50Ms":6.344,"p95Ms":6.817,"p99Ms":7.399,"maxMs":26.052}
+{"label":"before-rtt9-w8x10","endpoint":"127.0.0.1:6404","n":300,"minMs":7.442,"p50Ms":8.867,"p95Ms":9.301,"p99Ms":9.697,"maxMs":10.141}
+{"label":"after-rtt9-w8x10","endpoint":"127.0.0.1:6404","n":300,"minMs":7.313,"p50Ms":8.86,"p95Ms":9.392,"p99Ms":9.841,"maxMs":21.717}
+{"label":"before-loop-w16x25","endpoint":"127.0.0.1:6379","n":300,"minMs":0.048,"p50Ms":0.07,"p95Ms":0.095,"p99Ms":0.139,"maxMs":0.203}
+{"label":"after-loop-w16x25","endpoint":"127.0.0.1:6379","n":300,"minMs":0.045,"p50Ms":0.052,"p95Ms":0.066,"p99Ms":0.077,"maxMs":0.083}
+{"label":"loopback-end","endpoint":"127.0.0.1:6379","n":300,"minMs":0.023,"p50Ms":0.042,"p95Ms":0.055,"p99Ms":0.083,"maxMs":0.279}
+{"label":"proxy7-end","endpoint":"127.0.0.1:6403","n":300,"minMs":5.363,"p50Ms":6.323,"p95Ms":6.841,"p99Ms":8.108,"maxMs":17.289}
+{"label":"proxy9-end","endpoint":"127.0.0.1:6404","n":300,"minMs":7.406,"p50Ms":8.864,"p95Ms":9.33,"p99Ms":9.534,"maxMs":10.737}
