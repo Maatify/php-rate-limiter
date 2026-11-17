@@ -362,8 +362,14 @@ class RateLimiterEngine implements RateLimiterRuntimeInterface, AdmissionBinding
         // item 7), so a recalculated evaluation of the same request must not claim again (the permit would answer `duplicate`).
         $settled = null;
 
-        $recover = function (bool $inMemory = false) use ($policy, $context, $policyName, &$phase): ?RateLimitResultDTO {
+        // #259: the process-local fallback allowance is memory, not Redis state: no overlay holds it back and no conflict undoes it. A
+        // recovery step may be evaluated again (a conflict, a failed save), so it never charges; it only reports that its answer is the
+        // degraded one, and the final answer of the public call is charged once, after the evaluation has ended.
+        $degraded = false;
+
+        $recover = function (bool $inMemory = false) use ($policy, $context, $policyName, &$phase, &$degraded): ?RateLimitResultDTO {
             $phase = 'probe';
+            $degraded = false;
             $health = fn(): bool => $this->pipeline->isBackendHealthy();
             $mayProcessNormally = $inMemory
                 ? $this->circuitBreaker->attemptRecoveryProbeInMemory($policyName, $health)
@@ -373,7 +379,12 @@ class RateLimiterEngine implements RateLimiterRuntimeInterface, AdmissionBinding
                 return $this->guardResult($policyName);
             }
 
-            return $mayProcessNormally ? null : $this->degradedResult($policy, $context);
+            if ($mayProcessNormally) {
+                return null;
+            }
+            $degraded = true;
+
+            return $this->degradedResult($policy, $context, false);
         };
 
         if ($recovering && !$atomicRecovery) {
@@ -383,7 +394,7 @@ class RateLimiterEngine implements RateLimiterRuntimeInterface, AdmissionBinding
                 ? $this->recoverAllOrNothing($requestStore, $recover)
                 : $recover();
             if ($early !== null) {
-                return $early;
+                return $degraded ? $this->degradedResult($policy, $context) : $early;
             }
         }
 
@@ -423,7 +434,7 @@ class RateLimiterEngine implements RateLimiterRuntimeInterface, AdmissionBinding
                     $this->circuitBreaker->releaseSignals($saved);
                 }
                 if ($answered) {
-                    return $result;
+                    return $degraded ? $this->degradedResult($policy, $context) : $result;
                 }
             } else {
                 $result = $process();
@@ -654,7 +665,11 @@ class RateLimiterEngine implements RateLimiterRuntimeInterface, AdmissionBinding
     /**
      * Serve an OPEN/HALF_OPEN request through the existing bounded fallback.
      */
-    private function degradedResult(BlockPolicyInterface $policy, RateLimitContextDTO $context): RateLimitResultDTO
+    /**
+     * The degraded answer of a call that met an open or half-open circuit. `$charge` false builds the answer without consuming the
+     * local fallback allowance (an evaluation that may be repeated); the final answer is built with `$charge` true, once per call.
+     */
+    private function degradedResult(BlockPolicyInterface $policy, RateLimitContextDTO $context, bool $charge = true): RateLimitResultDTO
     {
         $mode = $this->failureResolver->resolve($policy, $this->circuitBreaker);
         if ($mode === 'FAIL_CLOSED' && $this->circuitBreaker->isReEntryGuardViolated($policy->getName())) {
@@ -662,14 +677,14 @@ class RateLimiterEngine implements RateLimiterRuntimeInterface, AdmissionBinding
         }
 
         if ($mode !== 'FAIL_CLOSED') {
-            $fallbackRetryAfter = LocalFallbackLimiter::evaluate(
+            $fallbackRetryAfter = $charge ? LocalFallbackLimiter::evaluate(
                 $this->clock,
                 $policy,
                 $mode,
                 $context->ip,
                 $context->accountId,
                 $context->ua,
-            );
+            ) : null;
             if ($fallbackRetryAfter !== null) {
                 $contextMeta = new RateLimitContextMetadataDTO('fallback_limit_exceeded');
                 $meta = new RateLimitMetadataDTO(null, 'fallback_limit_exceeded', $contextMeta);

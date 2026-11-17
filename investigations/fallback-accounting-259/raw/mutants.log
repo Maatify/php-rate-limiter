@@ -1,0 +1,8 @@
+== never-charge on 64
+Tests: 14, Assertions: 325, Failures: 11.
+== never-charge on 32
+Tests: 14, Assertions: 325, Failures: 11.
+== double-charge-final on 64
+Tests: 14, Assertions: 357, Failures: 11.
+== double-charge-final on 32
+Tests: 14, Assertions: 357, Failures: 11.
