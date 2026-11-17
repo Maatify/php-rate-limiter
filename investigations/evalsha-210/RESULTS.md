@@ -1,5 +1,7 @@
 # #210 — EVALSHA measurement study: results
 
+> **Second round** (NOSCRIPT classification for a native client, and the p99 under contention repeated on `main@8b3dd27c`): [`noscript/RESULTS.md`](noscript/RESULTS.md). This first-round report is kept as accepted. The first round's delay proxy stalls requests above about 8 KB by about 40 ms on Linux (not observed on the macOS host it ran on); see the second-round report.
+
 Baseline `main@743de0435fea70ab4a3292ad9ca4e9743c198354`. Plan and acceptance criteria: [`PLAN.md`](PLAN.md), committed before the first measurement. Lead brief: [#210 comment 6887007913](https://github.com/Maatify/php-rate-limiter/issues/210#issuecomment-6887007913).
 Raw results: [`raw/`](raw/) (one JSON file per cell, every request is a record; `raw/environment.txt`; `raw/summary.md` is the output of `php summarize.php`; `raw/rerun/` is a rerun of the repeated contention cells from a committed head). Commands: `run.sh` and `repeat-contention.sh`. **Provenance** has its own section below: the 51 main cells and the original 24 repeated cells all record head `6e846dee601315944529c1a610b53b09cf5fcc0c`, but the repeated cells were run on an uncommitted tree; the rerun records `ef853d7cc0e42d8e75e5f51173bfed5eff70f0f7`. The exact head of the pull request is on #210.
 
