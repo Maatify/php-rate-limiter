@@ -55,6 +55,8 @@ Shared objects: runtime graph (engine, pipeline, `RequestScopedClock`, `CircuitB
 - **Not examined here** (stated, not claimed): the process-wide `LocalFallbackLimiter` counters, `RateLimiterEngine::$sequentialRecovery` under overlap, and any multi-process behaviour (unchanged by this unit). No performance measurement was run.
 - No separate defect outside #260 was found; the effects above are one ownership gap and are tracked by #260.
 
+> **Update (2026-11-18).** The Owner has since **approved direction B** (principle only), recorded as [DEC-041](../../docs/decisions/DEC-041_EXCLUSIVE_REQUEST_OWNERSHIP_AND_EXPLICIT_OVERLAP_REFUSAL.md); the design proposal for B is `EXCLUSIVITY_DESIGN.md` (unapproved details, nothing implemented). The section below is the **historical comparison** that preceded that decision; it is kept unchanged, and the evidence, logs and their attribution above are untouched. The current approved direction is B, and the baseline behaviour still does not enforce it.
+
 ## 6. Decision for the Owner (no choice made here)
 
 Two directions are compared. Neither is approved or selected, no exception type or ownership mechanism is chosen, and everything about cost and size below is an **estimate**: no design exists and nothing was measured.
