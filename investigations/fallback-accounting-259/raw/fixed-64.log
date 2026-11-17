@@ -4,9 +4,9 @@ PHPUnit 11.5.57 by Sebastian Bergmann and contributors.
 Runtime:       PHP 8.4.27
 Configuration: /app/phpunit.xml
 
-..............                                                    14 / 14 (100%)
+.................                                                 17 / 17 (100%)
 
-Time: 00:00.614, Memory: 14.00 MB
+Time: 00:00.526, Memory: 14.00 MB
 
 Local Fallback Recovery Accounting Redis (Maatify\RateLimiter\Tests\Integration\Redis\LocalFallbackRecoveryAccountingRedis)
  ✔ A call without a conflict consumes the allowance once
@@ -23,5 +23,8 @@ Local Fallback Recovery Accounting Redis (Maatify\RateLimiter\Tests\Integration\
  ✔ An active re entry guard answers without the fallback allowance
  ✔ A fail open policy on a closed circuit consumes the allowance once
  ✔ A degraded policy on an open circuit that cannot probe yet consumes the allowance once
+ ✔ An applied recovery save keeps the selected fallback answer when later circuit reads fail with data set "the recovery step is saved with the request"
+ ✔ An applied recovery save keeps the selected fallback answer when later circuit reads fail with data set "the first save failed and the step is repeated on its own (sequential recovery)"
+ ✔ The chosen answer is refused with the denial metadata when the allowance is spent
 
-OK (14 tests, 416 assertions)
+OK (17 tests, 480 assertions)

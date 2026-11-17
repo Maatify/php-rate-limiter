@@ -1,0 +1,11 @@
+PHP 8.4.27 INT=8 redis=6.3.0
+PHPUnit 11.5.57 by Sebastian Bergmann and contributors.
+
+Runtime:       PHP 8.4.27
+Configuration: /app/phpunit.xml
+
+.................................                                 33 / 33 (100%)
+
+Time: 00:00.802, Memory: 16.00 MB
+
+OK (33 tests, 5991 assertions)

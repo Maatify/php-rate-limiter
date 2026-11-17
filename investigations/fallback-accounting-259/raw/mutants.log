@@ -1,8 +1,6 @@
-== never-charge on 64
-Tests: 14, Assertions: 325, Failures: 11.
-== never-charge on 32
-Tests: 14, Assertions: 325, Failures: 11.
-== double-charge-final on 64
-Tests: 14, Assertions: 357, Failures: 11.
-== double-charge-final on 32
-Tests: 14, Assertions: 357, Failures: 11.
+== never-charge (the required deduction is removed entirely) on 64 and 32
+Tests: 17, Assertions: 371, Failures: 14.   (both widths)
+== double-charge-final (the final answer is charged twice) on 64 and 32
+Tests: 17, Assertions: 401, Failures: 14.   (both widths)
+== re-resolve-after-save (F265-01: the mode is resolved again for the charge) on 64 and 32
+Tests: 17, Assertions: 472, Failures: 2.   (both widths)

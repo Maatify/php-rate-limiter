@@ -483,4 +483,67 @@ final class LocalFallbackRecoveryAccountingRedisTest extends TestCase
         self::assertSame('DEGRADED_MODE', $result->failureMode);
         self::assertSame(1, $this->consumed('acct'));
     }
+
+    /** @return array<string, array{bool}> */
+    public static function recoveryReturnPaths(): array
+    {
+        return [
+            'the recovery step is saved with the request' => [false],
+            'the first save failed and the step is repeated on its own (sequential recovery)' => [true],
+        ];
+    }
+
+    #[DataProvider('recoveryReturnPaths')]
+    public function testAnAppliedRecoverySaveKeepsTheSelectedFallbackAnswerWhenLaterCircuitReadsFail(bool $firstSaveFails): void
+    {
+        $this->tripTheCircuit();
+        $saved = false;
+        $failedOnce = false;
+        $circuitReadsAfterTheSave = 0;
+        $executor = new CallableRedisCommandExecutor(function (array $command) use (&$saved, &$failedOnce, &$circuitReadsAfterTheSave, $firstSaveFails): mixed {
+            if ($saved && OverlayWire::touchesFamily($command, 'circuit')) {
+                $circuitReadsAfterTheSave++;
+                throw new BackendFailureException('Connection unavailable after the recovery save.');
+            }
+            if ($firstSaveFails && ! $failedOnce && OverlayWire::isCommit($command)) {
+                $failedOnce = true;
+                throw new BackendFailureException('The first save did not reach Redis.');
+            }
+            $reply = $this->raw->execute($command);
+            if (OverlayWire::isCommit($command) && ($reply === 1 || $reply === '1')) {
+                $saved = true;
+            }
+
+            return $reply;
+        });
+
+        $result = $this->limiterAt($executor, self::PROBE)->limit($this->context('acct'), RateLimitCommand::checkOnly('login_protection'));
+
+        self::assertTrue($saved, 'A recovery save was applied.');
+        self::assertSame('HALF_OPEN', $this->circuitStatus());
+        self::assertNotSame([], $this->raw->execute(['KEYS', '*:probe:*']), 'The probe lease was saved with the state.');
+        self::assertSame(RateLimitResultDTO::DECISION_ALLOW, $result->decision, 'The answer chosen before the save stands.');
+        self::assertSame('DEGRADED_MODE', $result->failureMode);
+        self::assertSame(0, $result->retryAfter);
+        self::assertSame(1, $this->consumed('acct'), 'Charged once, from the chosen answer.');
+        self::assertSame(0, $circuitReadsAfterTheSave, 'Nothing is resolved or read again after the recovery save: the charge uses the chosen answer.');
+        self::assertSame([], $this->signalTypes());
+    }
+
+    public function testTheChosenAnswerIsRefusedWithTheDenialMetadataWhenTheAllowanceIsSpent(): void
+    {
+        $this->tripTheCircuit();
+        foreach ([1, 2, 3] as $units) {
+            $this->limiterAt($this->raw, self::PROBE + $units)->limit($this->context('acct'), RateLimitCommand::checkOnly('login_protection'));
+        }
+        self::assertSame(3, $this->consumed('acct'));
+
+        $refused = $this->limiterAt($this->raw, self::PROBE + 4)->limit($this->context('acct'), RateLimitCommand::checkOnly('login_protection'));
+
+        self::assertSame(RateLimitResultDTO::DECISION_HARD_BLOCK, $refused->decision);
+        self::assertSame('DEGRADED_MODE', $refused->failureMode);
+        self::assertSame('fallback_limit_exceeded', self::cause($refused));
+        self::assertSame(600 - (self::PROBE + 4) % 600, $refused->retryAfter);
+        self::assertSame(4, $this->consumed('acct'));
+    }
 }

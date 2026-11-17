@@ -4,20 +4,20 @@ PHPUnit 11.5.57 by Sebastian Bergmann and contributors.
 Runtime:       PHP 8.4.27
 Configuration: /app/phpunit.xml
 
-.............................................................   61 / 2802 (  2%)
-.......REPORT nm7-fleet {"oldWorkers":2,"cx":24,"perWindow":[{"admitted":8,"oldCalls":60},{"admitted":5,"oldCalls":60},{"admitted":7,"oldCalls":60}]}
-.REPORT nm7-fleet {"oldWorkers":1,"cx":24,"perWindow":[{"admitted":8,"oldCalls":30},{"admitted":7,"oldCalls":30},{"admitted":7,"oldCalls":30}]}
+.............................................................   61 / 2805 (  2%)
+.......REPORT nm7-fleet {"oldWorkers":1,"cx":24,"perWindow":[{"admitted":8,"oldCalls":30},{"admitted":7,"oldCalls":30},{"admitted":7,"oldCalls":30}]}
+.REPORT nm7-fleet {"oldWorkers":2,"cx":24,"perWindow":[{"admitted":8,"oldCalls":60},{"admitted":5,"oldCalls":60},{"admitted":7,"oldCalls":60}]}
 .REPORT nm7-m6 {"oldBuildDecisions":"AAAAAAAHHHHHHHHHHHHHH","lost":["K4P","K5p","k5p","anti_equilibrium_device_p","known_device_allowance_p","anti_equilibrium_p","budget_cooldown_p"]}
-.................................................REPORT lt-27-set-and-bucket-restart {"failingAccountsAfterRotation":4,"bucketTakesAfterRotation":4}
-.REPORT lt-27-rotation-capacity {"afterFirstRotation":0,"afterSecondRotation":24}
-..  122 / 2802 (  4%)
-.............................................................  183 / 2802 (  6%)
-................................EEEEEEEEEEEEEEE............EE  244 / 2802 (  8%)
-EEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEE  305 / 2802 ( 10%)
-EEEEEEEEEEEEEEEEEEEE........................................E  366 / 2802 ( 13%)
-E............................................................  427 / 2802 ( 15%)
-.............................................................  488 / 2802 ( 17%)
-.............................................................  549 / 2802 ( 19%)
+................................................REPORT lt-27-set-and-bucket-restart {"failingAccountsAfterRotation":4,"bucketTakesAfterRotation":4}
+..REPORT lt-27-rotation-capacity {"afterFirstRotation":0,"afterSecondRotation":24}
+..  122 / 2805 (  4%)
+.............................................................  183 / 2805 (  6%)
+................................EEEEEEEEEEEEEEE............EE  244 / 2805 (  8%)
+EEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEE  305 / 2805 ( 10%)
+EEEEEEEEEEEEEEEEEEEE........................................E  366 / 2805 ( 13%)
+E............................................................  427 / 2805 ( 15%)
+.............................................................  488 / 2805 ( 17%)
+.............................................................  549 / 2805 ( 19%)
 ...............sh: 1: git: not found
 sh: 1: git: not found
 sh: 1: git: not found
@@ -186,15 +186,7 @@ sh: 1: git: not found
 sh: 1: git: not found
 sh: 1: git: not found
 sh: 1: git: not found
-.sh: 1: git: not found
-sh: 1: git: not found
-sh: 1: git: not found
-sh: 1: git: not found
-sh: 1: git: not found
-sh: 1: git: not found
-sh: 1: git: not found
-.sh: 1: git: not found
-sh: 1: git: not found
+sh: 1: .git: not found
 sh: 1: git: not found
 sh: 1: git: not found
 sh: 1: git: not found
@@ -207,87 +199,62 @@ sh: 1: git: not found
 sh: 1: git: not found
 sh: 1: git: not found
 sh: 1: git: not found
-....................  610 / 2802 ( 21%)
-.............................................................  671 / 2802 ( 23%)
-.............................................................  732 / 2802 ( 26%)
-.............................................................  793 / 2802 ( 28%)
-.............................................................  854 / 2802 ( 30%)
-.............................................................  915 / 2802 ( 32%)
-.............................................................  976 / 2802 ( 34%)
-............................................................. 1037 / 2802 ( 37%)
-............................................................. 1098 / 2802 ( 39%)
-............................................................. 1159 / 2802 ( 41%)
-............................................................. 1220 / 2802 ( 43%)
-.................REPORT records-verbatim-appendix-a {"paragraphs":11,"sha256":"5642bd4dfa6df3d6d5d6fec6821a913e083c68a0d9a4d41404e6ce5bb2607cfd"}
-..REPORT records-verbatim-dec027 {"source":"DEC-019_INTERIM_SECURITY_FIRST_CORRELATION_POSTURE.md","target":"DEC-027_RETAINED_CORRELATION_POSTURE_FOR_POLICIES_THAT_DO_NOT_OPT_INTO_ADMISSION.md","bytesBySection":{"Decision Authority":612,"Scope / Concern":419,"Context":1958,"Decision":2594,"Rationale":345,"Consequences":652,"Relationship to Other Decisions":271}}
-..REPORT records-verbatim-dec026 {"source":"DEC-021_KNOWN_DEVICE_VERIFIER_BOUND.md","target":"DEC-026_KNOWN_DEVICE_VERIFIER_BOUND_FOR_THE_ADMISSION_LAYER.md","bytesBySection":{"Decision Authority / Deciders":1423,"Context":1029,"Decision":3554,"Rationale":1995,"Consequences":4419,"Alternatives Not Adopted":1168}}
-.....................................SSS 1281 / 2802 ( 45%)
-SSSSS........................................................ 1342 / 2802 ( 47%)
-............................................................. 1403 / 2802 ( 50%)
-...................S......................................... 1464 / 2802 ( 52%)
-............................................................. 1525 / 2802 ( 54%)
-............................................................. 1586 / 2802 ( 56%)
-............................................................. 1647 / 2802 ( 58%)
-..........S.........................S........................ 1708 / 2802 ( 60%)
-................................SSS.......................... 1769 / 2802 ( 63%)
-............................................................. 1830 / 2802 ( 65%)
-............................................................. 1891 / 2802 ( 67%)
-............................................................. 1952 / 2802 ( 69%)
-............................................................. 2013 / 2802 ( 71%)
-............................................................. 2074 / 2802 ( 74%)
-............................................................. 2135 / 2802 ( 76%)
-............................................................. 2196 / 2802 ( 78%)
-............................................................. 2257 / 2802 ( 80%)
-............................................................. 2318 / 2802 ( 82%)
-............................................................. 2379 / 2802 ( 84%)
-............................................................. 2440 / 2802 ( 87%)
-............................................................. 2501 / 2802 ( 89%)
-..................................................REPORT sc3 {"preCheckObservationWritesBeforeTheRefusal":true}
-....REPORT sc6 {"legitSourceCapacityRefusals":{"ABA_B|none|none":72,"D2|none|fresh":22,"D2|none|none":22,"MIX|none|fresh":12,"MIX|none|const":12,"MIX|none|none":12}}
-....... 2562 / 2802 ( 91%)
-............................................................. 2623 / 2802 ( 93%)
-............................................................. 2684 / 2802 ( 95%)
-............................................................. 2745 / 2802 ( 97%)
-.........................................................     2802 / 2802 (100%)
+sh: 1: git: not found
+.sh: 1: git: not found
+sh: 1: git: not found
+sh: 1: git: not found
+sh: 1: git: not found
+sh: 1: git: not found
+sh: 1: git: not found
+sh: 1: git: not found
+....................  610 / 2805 ( 21%)
+.............................................................  671 / 2805 ( 23%)
+.............................................................  732 / 2805 ( 26%)
+.............................................................  793 / 2805 ( 28%)
+.............................................................  854 / 2805 ( 30%)
+.............................................................  915 / 2805 ( 32%)
+.............................................................  976 / 2805 ( 34%)
+............................................................. 1037 / 2805 ( 36%)
+............................................................. 1098 / 2805 ( 39%)
+............................................................. 1159 / 2805 ( 41%)
+............................................................. 1220 / 2805 ( 43%)
+.................REPORT records-verbatim-dec026 {"source":"DEC-021_KNOWN_DEVICE_VERIFIER_BOUND.md","target":"DEC-026_KNOWN_DEVICE_VERIFIER_BOUND_FOR_THE_ADMISSION_LAYER.md","bytesBySection":{"Decision Authority / Deciders":1423,"Context":1029,"Decision":3554,"Rationale":1995,"Consequences":4419,"Alternatives Not Adopted":1168}}
+...REPORT records-verbatim-dec027 {"source":"DEC-019_INTERIM_SECURITY_FIRST_CORRELATION_POSTURE.md","target":"DEC-027_RETAINED_CORRELATION_POSTURE_FOR_POLICIES_THAT_DO_NOT_OPT_INTO_ADMISSION.md","bytesBySection":{"Decision Authority":612,"Scope / Concern":419,"Context":1958,"Decision":2594,"Rationale":345,"Consequences":652,"Relationship to Other Decisions":271}}
+.REPORT records-verbatim-appendix-a {"paragraphs":11,"sha256":"5642bd4dfa6df3d6d5d6fec6821a913e083c68a0d9a4d41404e6ce5bb2607cfd"}
+.....................................SSS 1281 / 2805 ( 45%)
+SSSSS........................................................ 1342 / 2805 ( 47%)
+............................................................. 1403 / 2805 ( 50%)
+....................S........................................ 1464 / 2805 ( 52%)
+............................................................. 1525 / 2805 ( 54%)
+............................................................. 1586 / 2805 ( 56%)
+............................................................. 1647 / 2805 ( 58%)
+.............S.........................S..................... 1708 / 2805 ( 60%)
+...................................SSS....................... 1769 / 2805 ( 63%)
+............................................................. 1830 / 2805 ( 65%)
+............................................................. 1891 / 2805 ( 67%)
+............................................................. 1952 / 2805 ( 69%)
+............................................................. 2013 / 2805 ( 71%)
+............................................................. 2074 / 2805 ( 73%)
+............................................................. 2135 / 2805 ( 76%)
+............................................................. 2196 / 2805 ( 78%)
+............................................................. 2257 / 2805 ( 80%)
+............................................................. 2318 / 2805 ( 82%)
+............................................................. 2379 / 2805 ( 84%)
+............................................................. 2440 / 2805 ( 86%)
+............................................................. 2501 / 2805 ( 89%)
+....................................................REPORT sc3 {"preCheckObservationWritesBeforeTheRefusal":true}
+.....REPORT sc6 {"legitSourceCapacityRefusals":{"ABA_B|none|none":72,"D2|none|fresh":22,"D2|none|none":22,"MIX|none|fresh":12,"MIX|none|const":12,"MIX|none|none":12}}
+.... 2562 / 2805 ( 91%)
+............................................................. 2623 / 2805 ( 93%)
+............................................................. 2684 / 2805 ( 95%)
+............................................................. 2745 / 2805 ( 97%)
+............................................................  2805 / 2805 (100%)
 
-Time: 03:16.112, Memory: 98.00 MB
+Time: 03:26.686, Memory: 98.00 MB
 
 There were 100 errors:
 
-1) Maatify\RateLimiter\Tests\Unit\ReleaseVerification\PublishedArtifactEvidenceTest::testHistoricalChainFailsWhenSuccessorIsMissingFromTheIndex
-RuntimeException: Unable to start process: git
-
-/app/tests/Support/ReleaseVerification/ProcessRunner.php:49
-/app/tests/Support/ReleaseVerification/GitRepository.php:30
-/app/tests/Support/ReleaseVerification/ReleaseRepositoryFixture.php:40
-/app/tests/Support/ReleaseVerification/ReleaseRepositoryFixture.php:23
-/app/tests/Unit/ReleaseVerification/PublishedArtifactEvidenceTest.php:459
-/app/tests/Unit/ReleaseVerification/PublishedArtifactEvidenceTest.php:471
-/app/tests/Unit/ReleaseVerification/PublishedArtifactEvidenceTest.php:370
-
-2) Maatify\RateLimiter\Tests\Unit\ReleaseVerification\PublishedArtifactEvidenceTest::testHistoricalChainFailsOnAsymmetricSupersession
-RuntimeException: Unable to start process: git
-
-/app/tests/Support/ReleaseVerification/ProcessRunner.php:49
-/app/tests/Support/ReleaseVerification/GitRepository.php:30
-/app/tests/Support/ReleaseVerification/ReleaseRepositoryFixture.php:40
-/app/tests/Support/ReleaseVerification/ReleaseRepositoryFixture.php:23
-/app/tests/Unit/ReleaseVerification/PublishedArtifactEvidenceTest.php:459
-/app/tests/Unit/ReleaseVerification/PublishedArtifactEvidenceTest.php:471
-/app/tests/Unit/ReleaseVerification/PublishedArtifactEvidenceTest.php:381
-
-3) Maatify\RateLimiter\Tests\Unit\ReleaseVerification\PublishedArtifactEvidenceTest::testHistoricalChainFailsWhenRecordAndIndexDisagreeOnSuccessor
-RuntimeException: Unable to start process: git
-
-/app/tests/Support/ReleaseVerification/ProcessRunner.php:49
-/app/tests/Support/ReleaseVerification/GitRepository.php:30
-/app/tests/Support/ReleaseVerification/ReleaseRepositoryFixture.php:40
-/app/tests/Support/ReleaseVerification/ReleaseRepositoryFixture.php:23
-/app/tests/Unit/ReleaseVerification/PublishedArtifactEvidenceTest.php:459
-/app/tests/Unit/ReleaseVerification/PublishedArtifactEvidenceTest.php:471
-/app/tests/Unit/ReleaseVerification/PublishedArtifactEvidenceTest.php:405
-
-4) Maatify\RateLimiter\Tests\Unit\ReleaseVerification\PublishedArtifactEvidenceTest::testHistoricalChainPassesWhenDecisionRemainsActive
+1) Maatify\RateLimiter\Tests\Unit\ReleaseVerification\PublishedArtifactEvidenceTest::testHistoricalChainPassesWhenDecisionRemainsActive
 RuntimeException: Unable to start process: git
 
 /app/tests/Support/ReleaseVerification/ProcessRunner.php:49
@@ -298,7 +265,7 @@ RuntimeException: Unable to start process: git
 /app/tests/Unit/ReleaseVerification/PublishedArtifactEvidenceTest.php:471
 /app/tests/Unit/ReleaseVerification/PublishedArtifactEvidenceTest.php:260
 
-5) Maatify\RateLimiter\Tests\Unit\ReleaseVerification\PublishedArtifactEvidenceTest::testHistoricalChainFailsWhenRepositoryHistoryIsUnavailable
+2) Maatify\RateLimiter\Tests\Unit\ReleaseVerification\PublishedArtifactEvidenceTest::testHistoricalChainFailsWhenRepositoryHistoryIsUnavailable
 RuntimeException: Unable to start process: git
 
 /app/tests/Support/ReleaseVerification/ProcessRunner.php:49
@@ -309,7 +276,7 @@ RuntimeException: Unable to start process: git
 /app/tests/Unit/ReleaseVerification/PublishedArtifactEvidenceTest.php:471
 /app/tests/Unit/ReleaseVerification/PublishedArtifactEvidenceTest.php:271
 
-6) Maatify\RateLimiter\Tests\Unit\ReleaseVerification\PublishedArtifactEvidenceTest::testHistoricalChainFailsWhenRetainedEvidenceDiffersFromImmutableHistory
+3) Maatify\RateLimiter\Tests\Unit\ReleaseVerification\PublishedArtifactEvidenceTest::testHistoricalChainFailsWhenRetainedEvidenceDiffersFromImmutableHistory
 RuntimeException: Unable to start process: git
 
 /app/tests/Support/ReleaseVerification/ProcessRunner.php:49
@@ -320,7 +287,7 @@ RuntimeException: Unable to start process: git
 /app/tests/Unit/ReleaseVerification/PublishedArtifactEvidenceTest.php:471
 /app/tests/Unit/ReleaseVerification/PublishedArtifactEvidenceTest.php:281
 
-7) Maatify\RateLimiter\Tests\Unit\ReleaseVerification\PublishedArtifactEvidenceTest::testHistoricalChainFailsWhenActiveRecordIsRewrittenAfterQualification
+4) Maatify\RateLimiter\Tests\Unit\ReleaseVerification\PublishedArtifactEvidenceTest::testHistoricalChainFailsWhenActiveRecordIsRewrittenAfterQualification
 RuntimeException: Unable to start process: git
 
 /app/tests/Support/ReleaseVerification/ProcessRunner.php:49
@@ -331,7 +298,18 @@ RuntimeException: Unable to start process: git
 /app/tests/Unit/ReleaseVerification/PublishedArtifactEvidenceTest.php:471
 /app/tests/Unit/ReleaseVerification/PublishedArtifactEvidenceTest.php:298
 
-8) Maatify\RateLimiter\Tests\Unit\ReleaseVerification\PublishedArtifactEvidenceTest::testHistoricalChainFailsWhenRecordFileIsRemovedFromCurrentHistory
+5) Maatify\RateLimiter\Tests\Unit\ReleaseVerification\PublishedArtifactEvidenceTest::testHistoricalChainFailsWhenDecisionIsNoLongerDiscoverable
+RuntimeException: Unable to start process: git
+
+/app/tests/Support/ReleaseVerification/ProcessRunner.php:49
+/app/tests/Support/ReleaseVerification/GitRepository.php:30
+/app/tests/Support/ReleaseVerification/ReleaseRepositoryFixture.php:40
+/app/tests/Support/ReleaseVerification/ReleaseRepositoryFixture.php:23
+/app/tests/Unit/ReleaseVerification/PublishedArtifactEvidenceTest.php:459
+/app/tests/Unit/ReleaseVerification/PublishedArtifactEvidenceTest.php:471
+/app/tests/Unit/ReleaseVerification/PublishedArtifactEvidenceTest.php:310
+
+6) Maatify\RateLimiter\Tests\Unit\ReleaseVerification\PublishedArtifactEvidenceTest::testHistoricalChainFailsWhenRecordFileIsRemovedFromCurrentHistory
 RuntimeException: Unable to start process: git
 
 /app/tests/Support/ReleaseVerification/ProcessRunner.php:49
@@ -342,7 +320,7 @@ RuntimeException: Unable to start process: git
 /app/tests/Unit/ReleaseVerification/PublishedArtifactEvidenceTest.php:471
 /app/tests/Unit/ReleaseVerification/PublishedArtifactEvidenceTest.php:322
 
-9) Maatify\RateLimiter\Tests\Unit\ReleaseVerification\PublishedArtifactEvidenceTest::testHistoricalChainAcceptsLegitimateSupersessionWithCoherentSuccessor
+7) Maatify\RateLimiter\Tests\Unit\ReleaseVerification\PublishedArtifactEvidenceTest::testHistoricalChainAcceptsLegitimateSupersessionWithCoherentSuccessor
 RuntimeException: Unable to start process: git
 
 /app/tests/Support/ReleaseVerification/ProcessRunner.php:49
@@ -353,7 +331,7 @@ RuntimeException: Unable to start process: git
 /app/tests/Unit/ReleaseVerification/PublishedArtifactEvidenceTest.php:471
 /app/tests/Unit/ReleaseVerification/PublishedArtifactEvidenceTest.php:334
 
-10) Maatify\RateLimiter\Tests\Unit\ReleaseVerification\PublishedArtifactEvidenceTest::testHistoricalChainFollowsMultiHopSupersessionToAnActiveDecision
+8) Maatify\RateLimiter\Tests\Unit\ReleaseVerification\PublishedArtifactEvidenceTest::testHistoricalChainFollowsMultiHopSupersessionToAnActiveDecision
 RuntimeException: Unable to start process: git
 
 /app/tests/Support/ReleaseVerification/ProcessRunner.php:49
@@ -364,7 +342,7 @@ RuntimeException: Unable to start process: git
 /app/tests/Unit/ReleaseVerification/PublishedArtifactEvidenceTest.php:471
 /app/tests/Unit/ReleaseVerification/PublishedArtifactEvidenceTest.php:346
 
-11) Maatify\RateLimiter\Tests\Unit\ReleaseVerification\PublishedArtifactEvidenceTest::testHistoricalChainFailsWhenSupersededButSuccessorRecordIsMissing
+9) Maatify\RateLimiter\Tests\Unit\ReleaseVerification\PublishedArtifactEvidenceTest::testHistoricalChainFailsWhenSupersededButSuccessorRecordIsMissing
 RuntimeException: Unable to start process: git
 
 /app/tests/Support/ReleaseVerification/ProcessRunner.php:49
@@ -375,7 +353,18 @@ RuntimeException: Unable to start process: git
 /app/tests/Unit/ReleaseVerification/PublishedArtifactEvidenceTest.php:471
 /app/tests/Unit/ReleaseVerification/PublishedArtifactEvidenceTest.php:357
 
-12) Maatify\RateLimiter\Tests\Unit\ReleaseVerification\PublishedArtifactEvidenceTest::testHistoricalChainFailsWhenSupersededWithoutNamedSuccessor
+10) Maatify\RateLimiter\Tests\Unit\ReleaseVerification\PublishedArtifactEvidenceTest::testHistoricalChainFailsOnAsymmetricSupersession
+RuntimeException: Unable to start process: git
+
+/app/tests/Support/ReleaseVerification/ProcessRunner.php:49
+/app/tests/Support/ReleaseVerification/GitRepository.php:30
+/app/tests/Support/ReleaseVerification/ReleaseRepositoryFixture.php:40
+/app/tests/Support/ReleaseVerification/ReleaseRepositoryFixture.php:23
+/app/tests/Unit/ReleaseVerification/PublishedArtifactEvidenceTest.php:459
+/app/tests/Unit/ReleaseVerification/PublishedArtifactEvidenceTest.php:471
+/app/tests/Unit/ReleaseVerification/PublishedArtifactEvidenceTest.php:381
+
+11) Maatify\RateLimiter\Tests\Unit\ReleaseVerification\PublishedArtifactEvidenceTest::testHistoricalChainFailsWhenSupersededWithoutNamedSuccessor
 RuntimeException: Unable to start process: git
 
 /app/tests/Support/ReleaseVerification/ProcessRunner.php:49
@@ -385,6 +374,17 @@ RuntimeException: Unable to start process: git
 /app/tests/Unit/ReleaseVerification/PublishedArtifactEvidenceTest.php:459
 /app/tests/Unit/ReleaseVerification/PublishedArtifactEvidenceTest.php:471
 /app/tests/Unit/ReleaseVerification/PublishedArtifactEvidenceTest.php:392
+
+12) Maatify\RateLimiter\Tests\Unit\ReleaseVerification\PublishedArtifactEvidenceTest::testHistoricalChainFailsWhenRecordAndIndexDisagreeOnSuccessor
+RuntimeException: Unable to start process: git
+
+/app/tests/Support/ReleaseVerification/ProcessRunner.php:49
+/app/tests/Support/ReleaseVerification/GitRepository.php:30
+/app/tests/Support/ReleaseVerification/ReleaseRepositoryFixture.php:40
+/app/tests/Support/ReleaseVerification/ReleaseRepositoryFixture.php:23
+/app/tests/Unit/ReleaseVerification/PublishedArtifactEvidenceTest.php:459
+/app/tests/Unit/ReleaseVerification/PublishedArtifactEvidenceTest.php:471
+/app/tests/Unit/ReleaseVerification/PublishedArtifactEvidenceTest.php:405
 
 13) Maatify\RateLimiter\Tests\Unit\ReleaseVerification\PublishedArtifactEvidenceTest::testHistoricalChainFailsOnSupersessionCycle
 RuntimeException: Unable to start process: git
@@ -408,7 +408,7 @@ RuntimeException: Unable to start process: git
 /app/tests/Unit/ReleaseVerification/PublishedArtifactEvidenceTest.php:471
 /app/tests/Unit/ReleaseVerification/PublishedArtifactEvidenceTest.php:439
 
-15) Maatify\RateLimiter\Tests\Unit\ReleaseVerification\PublishedArtifactEvidenceTest::testHistoricalChainFailsWhenDecisionIsNoLongerDiscoverable
+15) Maatify\RateLimiter\Tests\Unit\ReleaseVerification\PublishedArtifactEvidenceTest::testHistoricalChainFailsWhenSuccessorIsMissingFromTheIndex
 RuntimeException: Unable to start process: git
 
 /app/tests/Support/ReleaseVerification/ProcessRunner.php:49
@@ -417,7 +417,7 @@ RuntimeException: Unable to start process: git
 /app/tests/Support/ReleaseVerification/ReleaseRepositoryFixture.php:23
 /app/tests/Unit/ReleaseVerification/PublishedArtifactEvidenceTest.php:459
 /app/tests/Unit/ReleaseVerification/PublishedArtifactEvidenceTest.php:471
-/app/tests/Unit/ReleaseVerification/PublishedArtifactEvidenceTest.php:310
+/app/tests/Unit/ReleaseVerification/PublishedArtifactEvidenceTest.php:370
 
 16) Maatify\RateLimiter\Tests\Unit\ReleaseVerification\QualifyingPersistenceTest::testRavSemanticReviewChronologyIsBoundToQualificationStart with data set "before the boundary" ('2026-10-06T19:59:59Z', true)
 RuntimeException: Unable to start process: git
@@ -1190,16 +1190,7 @@ RuntimeException: Unable to start process: git
 /app/tests/Unit/ReleaseVerification/SourceOnlyAuthorityTest.php:264
 /app/tests/Unit/ReleaseVerification/SourceOnlyAuthorityTest.php:204
 
-99) Maatify\RateLimiter\Tests\Unit\ReleaseVerification\StrictTemporalAndSemVerTest::testRavSemanticReviewRejectsImpossibleReviewedAt
-RuntimeException: Unable to start process: git
-
-/app/tests/Support/ReleaseVerification/ProcessRunner.php:49
-/app/tests/Support/ReleaseVerification/GitRepository.php:30
-/app/tests/Support/ReleaseVerification/ReleaseRepositoryFixture.php:40
-/app/tests/Support/ReleaseVerification/ReleaseRepositoryFixture.php:23
-/app/tests/Unit/ReleaseVerification/StrictTemporalAndSemVerTest.php:149
-
-100) Maatify\RateLimiter\Tests\Unit\ReleaseVerification\StrictTemporalAndSemVerTest::testSourceOnlyDecisionRejectsImpossibleOwnerDates
+99) Maatify\RateLimiter\Tests\Unit\ReleaseVerification\StrictTemporalAndSemVerTest::testSourceOnlyDecisionRejectsImpossibleOwnerDates
 RuntimeException: Unable to start process: git
 
 /app/tests/Support/ReleaseVerification/ProcessRunner.php:49
@@ -1208,24 +1199,33 @@ RuntimeException: Unable to start process: git
 /app/tests/Support/ReleaseVerification/ReleaseRepositoryFixture.php:23
 /app/tests/Unit/ReleaseVerification/StrictTemporalAndSemVerTest.php:166
 
+100) Maatify\RateLimiter\Tests\Unit\ReleaseVerification\StrictTemporalAndSemVerTest::testRavSemanticReviewRejectsImpossibleReviewedAt
+RuntimeException: Unable to start process: git
+
+/app/tests/Support/ReleaseVerification/ProcessRunner.php:49
+/app/tests/Support/ReleaseVerification/GitRepository.php:30
+/app/tests/Support/ReleaseVerification/ReleaseRepositoryFixture.php:40
+/app/tests/Support/ReleaseVerification/ReleaseRepositoryFixture.php:23
+/app/tests/Unit/ReleaseVerification/StrictTemporalAndSemVerTest.php:149
+
 --
 
 There were 4 failures:
 
-1) Maatify\RateLimiter\Tests\Unit\ReleaseVerification\ReleaseArtifactVerifierTest::testFailsWhenCandidateShaDoesNotExistInRepo
-Failed asserting that 'Repository path is not inside a valid Git work tree. Qualifying RAV requires a real Git repository.' [ASCII](length: 99) contains "does not exist as a commit object" [ASCII](length: 33).
-
-/app/tests/Unit/ReleaseVerification/ReleaseArtifactVerifierTest.php:97
-
-2) Maatify\RateLimiter\Tests\Unit\ReleaseVerification\ReleaseArtifactVerifierTest::testFailsWhenCandidateCommitExistsButNotCheckedOutHead
+1) Maatify\RateLimiter\Tests\Unit\ReleaseVerification\ReleaseArtifactVerifierTest::testFailsWhenCandidateCommitExistsButNotCheckedOutHead
 Failed asserting that 'Repository path is not inside a valid Git work tree. Qualifying RAV requires a real Git repository.' [ASCII](length: 99) contains "does not match candidate SHA" [ASCII](length: 28).
 
 /app/tests/Unit/ReleaseVerification/ReleaseArtifactVerifierTest.php:106
 
-3) Maatify\RateLimiter\Tests\Unit\ReleaseVerification\ReleaseArtifactVerifierTest::testFailsOnMalformedCandidateSha
+2) Maatify\RateLimiter\Tests\Unit\ReleaseVerification\ReleaseArtifactVerifierTest::testFailsOnMalformedCandidateSha
 Failed asserting that 'Repository path is not inside a valid Git work tree. Qualifying RAV requires a real Git repository.' [ASCII](length: 99) contains "40-character hexadecimal commit hash" [ASCII](length: 36).
 
 /app/tests/Unit/ReleaseVerification/ReleaseArtifactVerifierTest.php:86
+
+3) Maatify\RateLimiter\Tests\Unit\ReleaseVerification\ReleaseArtifactVerifierTest::testFailsWhenCandidateShaDoesNotExistInRepo
+Failed asserting that 'Repository path is not inside a valid Git work tree. Qualifying RAV requires a real Git repository.' [ASCII](length: 99) contains "does not exist as a commit object" [ASCII](length: 33).
+
+/app/tests/Unit/ReleaseVerification/ReleaseArtifactVerifierTest.php:97
 
 4) Maatify\RateLimiter\Tests\Unit\ReleaseVerification\ReleaseArtifactVerifierTest::testPassesWhenCandidateCommitMatchesCheckedOutHeadAndCleanTree
 Failed asserting that two strings are identical.
@@ -1238,4 +1238,4 @@ Failed asserting that two strings are identical.
 /app/tests/Unit/ReleaseVerification/ReleaseArtifactVerifierTest.php:114
 
 ERRORS!
-Tests: 2802, Assertions: 76727, Errors: 100, Failures: 4, Skipped: 14.
+Tests: 2805, Assertions: 77243, Errors: 100, Failures: 4, Skipped: 14.

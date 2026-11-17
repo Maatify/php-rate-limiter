@@ -90,7 +90,7 @@ historical `retryAfter` of 60.
 One public call consumes each applicable dimension once, and only when its final answer is the fallback answer. During a circuit
 recovery the evaluation can run again (a Redis conflict at the save of the recovery step, a failed save repeated in this process,
 DEC-037), and the fallback counters are process memory that no request overlay holds back; so the recovery evaluation never charges
-them, and the call is charged once after its evaluation has ended (#259). An attempt that is abandoned or repeated consumes nothing;
+them, and the call is charged once after its evaluation has ended, from the answer that evaluation chose (the mode it carries is used; nothing is resolved or read again after the recovery save, #259). An attempt that is abandoned or repeated consumes nothing;
 a call that ends in the concurrency block (`k4_concurrency_conflict`, retries exhausted) or in a normal evaluation after the circuit
 recovered consumes none of the fallback allowance; a `FAIL_CLOSED` answer never does. A `pre+out` attempt remains two public calls and
 two units.

@@ -1,0 +1,6 @@
+== previous delivery engine 2bcbdb58 on 64
+   2  ✘ An applied recovery save keeps the selected fallback answer when later circuit reads fail
+   1 Tests: 17, Assertions: 464, Failures: 2.
+== previous delivery engine 2bcbdb58 on 32
+   2  ✘ An applied recovery save keeps the selected fallback answer when later circuit reads fail
+   1 Tests: 17, Assertions: 464, Failures: 2.
