@@ -29,6 +29,7 @@ use Maatify\RateLimiter\DTO\BudgetStateDTO;
 use Maatify\RateLimiter\DTO\CircuitBreakerStateDTO;
 use Maatify\RateLimiter\DTO\RateLimitStateDTO;
 use Maatify\RateLimiter\DTO\RateLimitContextDTO;
+use Maatify\RateLimiter\Exception\RateLimiterException;
 use Maatify\SharedCommon\Contracts\ClockInterface;
 
 require dirname(__DIR__) . '/vendor/autoload.php';
@@ -105,6 +106,11 @@ final class ExampleRateLimitStore implements PunishmentLifecycleStoreInterface, 
             return $amount;
         }
 
+        // The contract of `RateLimitStoreInterface::increment()`: a result outside the caller's native `int` range is refused with `RateLimiterException`
+        // before anything is changed. The bound is compared first (no sum is formed), so no float is ever produced and nothing is clamped or wrapped.
+        if (($amount > 0 && $current['value'] > PHP_INT_MAX - $amount) || ($amount < 0 && $current['value'] < PHP_INT_MIN - $amount)) {
+            throw new RateLimiterException('Score integer overflow.');
+        }
         $current['value'] += $amount;
         $current['updatedAt'] = $now;
         $this->counters[$key] = $current;

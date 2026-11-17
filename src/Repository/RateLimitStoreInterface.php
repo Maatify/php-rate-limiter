@@ -20,10 +20,21 @@ interface RateLimitStoreInterface
      *
      * The new value is returned as a native `int`, so it must be representable by the PHP build of the caller (on a build
      * with `PHP_INT_SIZE` 4 that ends at 2147483647 and -2147483648, on 64-bit builds at the 64-bit limits). When the
-     * resulting value is outside that range, or a stored value already is, the call fails with `RateLimiterException`
-     * before any stored value, timestamp or expiry changes; an implementation must not clamp, wrap or write a value its
-     * caller cannot read back, and the check and the change are one atomic operation. It is not a backend failure and is
-     * not retried by the package.
+     * resulting value is outside that range, or a stored value already is, the call fails explicitly before any stored
+     * value, timestamp or expiry changes; an implementation must not clamp, wrap or write a value its caller cannot read
+     * back, and the check and the change are one atomic operation. It is a failure of the score calculation, not a backend
+     * outage: it is not classified as a `BackendFailureException` and starts no fallback. A direct call is not retried by the
+     * package, and a refusal over state that is still current inside `transactRequest()` is thrown unchanged and not retried
+     * (DEC-037). Inside `transactRequest()` the evaluation runs again, within its bound, when the state it read changed
+     * before the save, so a refusal raised over state that has since changed is not final: the recalculation can succeed or
+     * refuse again on the newer state, and nothing of a refused evaluation is saved.
+     *
+     * The type that carries the failure belongs to the component that detects it. A calculation made by the implementation
+     * itself (a custom store, the runnable example stores) fails with `RateLimiterException`. An error reply of a backend
+     * script reaches the caller as the Host's `RedisCommandExecutorInterface` surfaces it and is not normalized (DEC-018):
+     * the official Redis store rejects the result inside its script with the message `score integer overflow`, and through
+     * a native client bridge that error can arrive as the client's own exception (for example phpredis `RedisException`)
+     * rather than as `RateLimiterException`. A caller must therefore not rely on one exception class for every backend.
      *
      * @param string $key
      * @param int $ttlSeconds
