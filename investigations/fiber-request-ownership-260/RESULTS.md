@@ -73,3 +73,5 @@ Either way a remediation must prove that an unrelated call can neither consume a
 
 `run.sh` (this folder) runs the governance helper and the suite on actual PHP_INT_SIZE 8 and 4 (`maatify-rl-php64:local` sha256:d4f5a573…, `maatify-rl-php32:local` sha256:e7016865…, ext-redis 6.3.0, PHP 8.4.27, isolated `redis:7.0.15-alpine` sha256:75510523…), keeps every output under `raw/`, and exits 1 if a required step failed.
 `raw/result.txt` lists each step's exit status; `raw-failure-demo/` is the same runner pointed at a missing test file (exit 1, outputs kept). Results are in `raw/`. PHPStan max, cs-fixer and whitespace are clean for the new files.
+
+Run on the committed source named in `raw/source.txt` (the verification commit; the commit that follows adds only these logs): governance helper exit 0, suite on PHP_INT_SIZE 8: 13 tests, 700 assertions, OK; on PHP_INT_SIZE 4: 13 tests, 700 assertions, OK; no skips.
