@@ -20,7 +20,7 @@ until [[ "$(docker exec "$name" redis-cli ping 2>/dev/null || true)" == PONG ]];
     echo "php-image: $php_image $(docker image inspect "$php_image" --format '{{.Id}} {{.Architecture}}')"
     echo "php: $(docker run --rm "$php_image" php -r 'echo PHP_VERSION, " INT_SIZE=", PHP_INT_SIZE, " ext-redis=", phpversion("redis");')"
     echo "redis: $(docker exec "$name" redis-server --version)"
-} > "$out/environment.txt"
+} | sed 's/[[:space:]]*$//' > "$out/environment.txt"
 run() { docker run --rm --network "container:$name" -v "$root:/app" -w /app -e REDIS_INTEGRATION_HOST=127.0.0.1 -e REDIS_INTEGRATION_PORT=6379 "$php_image" "$@"; }
 run php investigations/evalsha-210/noscript/shape-probe.php 127.0.0.1 6379 > "$out/shape-probe.txt"
 run php -d memory_limit=1G vendor/bin/phpunit --testdox tests/Integration/Redis/NativeNoscriptStudyRedisTest.php > "$out/native-noscript-testdox.txt" || true

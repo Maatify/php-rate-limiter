@@ -37,7 +37,7 @@ sha="$(git -C "$root" rev-parse HEAD)"
     for key in maxmemory busy-reply-threshold tcp-keepalive save appendonly; do docker exec "$name" redis-cli config get "$key" | tr '\n' ' '; echo; done
     echo "client: stream-socket RESP client without pipelining (tests/Support/Redis/RespRedisCommandExecutor), one connection per worker"
     echo "pairs: diag-w1x40-rtt7=${PAIRS_D1:-6} diag-w8x10-proxy0=${PAIRS_D2:-6}; settle=${STUDY_SETTLE_SECONDS:-2}s"
-} > "$out/environment.txt"
+} | sed 's/[[:space:]]*$//' > "$out/environment.txt"
 
 docker run --rm --network "container:$name" -v "$root:/app" -w /app -e "STUDY_GIT_SHA=$sha" -e PAIRS_D1 -e PAIRS_D2 -e STUDY_SETTLE_SECONDS -e STUDY_ONE_WAY_MS_7 -e STUDY_ONE_WAY_MS_9 "$php_image" \
     bash "investigations/evalsha-210/noscript/diag-inner.sh" "/app/$out_rel"

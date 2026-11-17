@@ -80,4 +80,3 @@ Where the tail comes from: median latency of a concurrency-blocked request EVAL 
 p99 in ms, EVALSHA above EVAL in **0 of 6** pairs; median EVAL 161.6 ms (range 113.0 to 177.4), median EVALSHA 81.9 ms (range 78.8 to 140.7); median of the per-pair deltas **-49.7 %** (min -54.9 %, max -6.7 %).
 
 Where the tail comes from: median latency of a concurrency-blocked request EVAL - ms against EVALSHA - ms; p99 of the requests that were not blocked EVAL 161.6 ms against EVALSHA 81.9 ms (medians over the pairs).
-

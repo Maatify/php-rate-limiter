@@ -103,6 +103,10 @@ Pairs above the 10 % bound of the study's criterion A4: 3 of 22 RTT pairs (pair 
 
 What remains is an interaction of contention and added delay in the request flow, not shown to belong to the command, the client, the proxy's size handling or extra retries. The cause is not established by this study; candidate explanations (scheduling in the Docker VM, the user-space proxy under eight connections, how the retry budget interacts with a shorter evaluation) were not tested.
 
+## Whitespace normalisation of the raw text files
+
+The first push failed the repository's whitespace check (`scripts/ci/check-whitespace.sh`) on the generated text files (`environment.txt`, `mutants.txt`, `summary.md`). Trailing whitespace and final blank lines were removed from those files in the next commit; nothing else in them changed, and the JSON cells are untouched. The run scripts now trim the environment file themselves (that edit changes the hashes of `run-paired.sh`, `run-diagnostics.sh` and `run-native.sh` after the runs; the table above is for `3253a3b3`).
+
 ## Rerun commands
 
 ```bash
