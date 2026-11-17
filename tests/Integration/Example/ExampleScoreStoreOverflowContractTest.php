@@ -14,7 +14,7 @@ use ReflectionProperty;
 
 /**
  * #252: the runnable score stores of the three maintained examples are copied by consumers as implementations of `RateLimitStoreInterface::increment()`,
- * whose contract is: a result outside the native `int` range of the caller's PHP build fails with `RateLimiterException` BEFORE any stored value, timestamp
+ * whose contract is: a result outside the native `int` range of the caller's PHP build fails with `RateLimiterException` (the failure of the examples' own calculation, as exercised here; a backend script error reaches a caller as its Host executor surfaces it, DEC-018) BEFORE any stored value, timestamp
  * or expiry changes (no clamp, no wrap, no value the caller cannot read back). They used to add unchecked, store the PHP float and only then fail with a
  * `TypeError` on their `int` return type.
  *
@@ -167,23 +167,59 @@ final class ExampleScoreStoreOverflowContractTest extends TestCase
         self::assertSame(PHP_INT_MIN + 1, $store->increment('other-key', 600, PHP_INT_MIN + 1));
     }
 
-    /** An expired record is replaced by a valid amount even where its old value sat at the boundary (it is not an overflow): examples whose clock can be driven. */
+    /**
+     * An expired existing record sitting at the boundary is replaced by a valid amount (it is not an overflow). The expired record is seeded by reflection with
+     * a positive old `updatedAt` and `expiresAt`, so the expiry predicate of a PRESENT key is exercised on every example, `SimpleThrottleExampleStore` included
+     * (it reads `time()`, so its new lifetime is bounded by the real clock around the call).
+     */
     #[DataProvider('examples')]
     public function testAnExpiredRecordAtTheBoundaryIsReplacedByAValidAmount(string $example, bool $drivable): void
     {
-        if (! $drivable) {
-            self::markTestSkipped('SimpleThrottleExampleStore reads time() itself, so no record can be expired without a sleep; the replace branch is the one shared with creation and is covered by testCreationAndInRangeIncrementsAreUnchanged.');
-        }
         $clock = new FixedClock();
         $store = $this->store($example, $clock);
-        $store->increment(self::KEY, 600, PHP_INT_MAX);
-        $this->advance($clock, 601);
+        $reference = $example === 'simple' ? time() : $clock->now()->getTimestamp();
+        (new ReflectionProperty($store, 'counters'))->setValue($store, [
+            self::KEY => ['value' => PHP_INT_MAX, 'updatedAt' => $reference - 2000, 'expiresAt' => $reference - 1000],
+        ]);
 
-        self::assertSame(3, $store->increment(self::KEY, 600, 3));
+        $before = time();
+        self::assertSame(3, $store->increment(self::KEY, 600, 3), 'An expired MAX is replaced, not incremented into an overflow.');
+        $after = time();
         $record = $this->record($store);
         self::assertSame(3, $record['value']);
-        self::assertSame($clock->now()->getTimestamp(), $record['updatedAt']);
-        self::assertSame($clock->now()->getTimestamp() + 600, $record['expiresAt']);
+        if ($drivable) {
+            self::assertSame($clock->now()->getTimestamp(), $record['updatedAt']);
+            self::assertSame($clock->now()->getTimestamp() + 600, $record['expiresAt']);
+        } else {
+            self::assertIsInt($record['updatedAt']);
+            self::assertIsInt($record['expiresAt']);
+            self::assertGreaterThanOrEqual($before, $record['updatedAt']);
+            self::assertLessThanOrEqual($after, $record['updatedAt']);
+            self::assertGreaterThanOrEqual($before + 600, $record['expiresAt']);
+            self::assertLessThanOrEqual($after + 600, $record['expiresAt']);
+        }
+    }
+
+    /** The Operational Read example counts every score write: creation and a successful update add one each, a refusal and a zero-write read add none. */
+    public function testTheOperationalWriteCountRisesOnEachSuccessfulScoreWrite(): void
+    {
+        $clock = new FixedClock();
+        $store = new \OperationalExampleRateLimitStore($clock);
+        self::assertSame(0, $store->writeCount());
+
+        $store->increment(self::KEY, 600, PHP_INT_MAX - 1);
+        self::assertSame(1, $store->writeCount(), 'Creation is one write.');
+        $store->increment(self::KEY, 600, 1);
+        self::assertSame(2, $store->writeCount(), 'A successful update of a live record is one write.');
+        $store->increment(self::KEY, 600, 0);
+        self::assertSame(3, $store->writeCount(), 'An in-range zero increment is a successful update.');
+
+        try {
+            $store->increment(self::KEY, 600, 1);
+            self::fail('MAX + 1 must be refused.');
+        } catch (RateLimiterException) {
+        }
+        self::assertSame(3, $store->writeCount(), 'The refusal adds no write.');
     }
 
     /** A live record's TTL is not renewed by a successful increment, and the refusal is a different path from this one. */
