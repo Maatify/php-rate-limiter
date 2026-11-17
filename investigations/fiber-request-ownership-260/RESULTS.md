@@ -96,3 +96,5 @@ Either way a remediation must prove that an unrelated call can neither consume a
 Controls, with their runner exit codes and retained logs: `raw-failure-demo/` (a missing test path: both suites exit 2, runner exit 1) and `raw-provenance-failure-demo/` (`provenance-failure-control.sh`: a git shim that fails only the `rev-parse HEAD 'HEAD^{tree}'` identification with exit 71: both suites **pass**, the runner exits **1**, `source.txt` stays empty). Results of the committed-source run are in `raw/` (`result.txt`, `source.txt`, both suites, the helper).
 PHPStan max, cs-fixer and whitespace are clean for the new files.
 Provenance of the committed evidence: the later commits change only the investigation evidence (logs, this report and the corrections to it) and the new test and runner of the corrections; production source is untouched since the baseline.
+
+Verification commit of the corrected run: `32b225c80e6a4a242527ea33682ef971a46def1a` (`raw/source.txt`); 14 tests, 751 assertions, OK on PHP_INT_SIZE 8 and 4, no skips. Clock-wiring detector (B's runtime clock left at T0): 1 failure of 14 on both widths.
