@@ -1,0 +1,12 @@
+== no-memo on 64
+Tests: 18, Assertions: 4691, Failures: 2.
+== no-memo on 32
+Tests: 18, Assertions: 4691, Failures: 2.
+== skip-score-on-reevaluation on 64
+Tests: 18, Assertions: 4910, Failures: 2.
+== skip-score-on-reevaluation on 32
+Tests: 18, Assertions: 4910, Failures: 2.
+== duplicate-score on 64
+Tests: 18, Assertions: 5028, Failures: 4.
+== duplicate-score on 32
+Tests: 18, Assertions: 5028, Failures: 4.

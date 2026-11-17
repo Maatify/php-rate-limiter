@@ -1,0 +1,1241 @@
+PHP 8.4.27 INT=8 redis=6.3.0
+PHPUnit 11.5.57 by Sebastian Bergmann and contributors.
+
+Runtime:       PHP 8.4.27
+Configuration: /app/phpunit.xml
+
+.............................................................   61 / 2787 (  2%)
+.......REPORT nm7-fleet {"oldWorkers":2,"cx":24,"perWindow":[{"admitted":8,"oldCalls":60},{"admitted":5,"oldCalls":60},{"admitted":7,"oldCalls":60}]}
+.REPORT nm7-fleet {"oldWorkers":1,"cx":24,"perWindow":[{"admitted":8,"oldCalls":30},{"admitted":7,"oldCalls":30},{"admitted":7,"oldCalls":30}]}
+.REPORT nm7-m6 {"oldBuildDecisions":"AAAAAAAHHHHHHHHHHHHHH","lost":["K4P","K5p","k5p","anti_equilibrium_device_p","known_device_allowance_p","anti_equilibrium_p","budget_cooldown_p"]}
+.................................................REPORT lt-27-set-and-bucket-restart {"failingAccountsAfterRotation":4,"bucketTakesAfterRotation":4}
+.REPORT lt-27-rotation-capacity {"afterFirstRotation":0,"afterSecondRotation":24}
+..  122 / 2787 (  4%)
+.............................................................  183 / 2787 (  6%)
+................................EEEEEEEEEEEEEEE............EE  244 / 2787 (  8%)
+EEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEE  305 / 2787 ( 10%)
+EEEEEEEEEEEEEEEEEEEE........................................E  366 / 2787 ( 13%)
+E............................................................  427 / 2787 ( 15%)
+.............................................................  488 / 2787 ( 17%)
+.............................................................  549 / 2787 ( 19%)
+...............sh: 1: git: not found
+sh: 1: git: not found
+sh: 1: git: not found
+sh: 1: git: not found
+sh: 1: git: not found
+sh: 1: git: not found
+sh: 1: git: not found
+Fsh: 1: git: not found
+sh: 1: git: not found
+sh: 1: git: not found
+sh: 1: git: not found
+sh: 1: git: not found
+sh: 1: git: not found
+sh: 1: git: not found
+Fsh: 1: git: not found
+sh: 1: git: not found
+sh: 1: git: not found
+sh: 1: git: not found
+sh: 1: git: not found
+sh: 1: git: not found
+sh: 1: git: not found
+Fsh: 1: git: not found
+sh: 1: git: not found
+sh: 1: git: not found
+sh: 1: git: not found
+sh: 1: git: not found
+sh: 1: git: not found
+sh: 1: git: not found
+Fsh: 1: git: not found
+sh: 1: git: not found
+sh: 1: git: not found
+sh: 1: git: not found
+sh: 1: git: not found
+sh: 1: git: not found
+sh: 1: git: not found
+.sh: 1: git: not found
+sh: 1: git: not found
+sh: 1: git: not found
+sh: 1: git: not found
+sh: 1: git: not found
+sh: 1: git: not found
+sh: 1: git: not found
+.sh: 1: git: not found
+sh: 1: git: not found
+sh: 1: git: not found
+sh: 1: git: not found
+sh: 1: git: not found
+sh: 1: git: not found
+sh: 1: git: not found
+.sh: 1: git: not found
+sh: 1: git: not found
+sh: 1: git: not found
+sh: 1: git: not found
+sh: 1: git: not found
+sh: 1: git: not found
+sh: 1: git: not found
+.sh: 1: git: not found
+sh: 1: git: not found
+sh: 1: git: not found
+sh: 1: git: not found
+sh: 1: git: not found
+sh: 1: git: not found
+sh: 1: git: not found
+.sh: 1: git: not found
+sh: 1: git: not found
+sh: 1: git: not found
+sh: 1: git: not found
+sh: 1: git: not found
+sh: 1: git: not found
+sh: 1: git: not found
+.sh: 1: git: not found
+sh: 1: git: not found
+sh: 1: git: not found
+sh: 1: git: not found
+sh: 1: git: not found
+sh: 1: git: not found
+sh: 1: git: not found
+.sh: 1: git: not found
+sh: 1: git: not found
+sh: 1: git: not found
+sh: 1: git: not found
+sh: 1: git: not found
+sh: 1: git: not found
+sh: 1: git: not found
+.sh: 1: git: not found
+sh: 1: git: not found
+sh: 1: git: not found
+sh: 1: git: not found
+sh: 1: git: not found
+sh: 1: git: not found
+sh: 1: git: not found
+.sh: 1: git: not found
+sh: 1: git: not found
+sh: 1: git: not found
+sh: 1: git: not found
+sh: 1: git: not found
+sh: 1: git: not found
+sh: 1: git: not found
+.sh: 1: git: not found
+sh: 1: git: not found
+sh: 1: git: not found
+sh: 1: git: not found
+sh: 1: git: not found
+sh: 1: git: not found
+sh: 1: git: not found
+.sh: 1: git: not found
+sh: 1: git: not found
+sh: 1: git: not found
+sh: 1: git: not found
+sh: 1: git: not found
+sh: 1: git: not found
+sh: 1: git: not found
+.sh: 1: git: not found
+sh: 1: git: not found
+sh: 1: git: not found
+sh: 1: git: not found
+sh: 1: git: not found
+sh: 1: git: not found
+sh: 1: git: not found
+.sh: 1: git: not found
+sh: 1: git: not found
+sh: 1: git: not found
+sh: 1: git: not found
+sh: 1: git: not found
+sh: 1: git: not found
+sh: 1: git: not found
+.sh: 1: git: not found
+sh: 1: git: not found
+sh: 1: git: not found
+sh: 1: git: not found
+sh: 1: git: not found
+sh: 1: git: not found
+sh: 1: git: not found
+.sh: 1: git: not found
+sh: 1: git: not found
+sh: 1: git: not found
+sh: 1: git: not found
+sh: 1: git: not found
+sh: 1: git: not found
+sh: 1: git: not found
+.sh: 1: git: not found
+sh: 1: git: not found
+sh: 1: git: not found
+sh: 1: git: not found
+sh: 1: git: not found
+sh: 1: git: not found
+sh: 1: git: not found
+.sh: 1: git: not found
+sh: 1: git: not found
+sh: 1: git: not found
+sh: 1: git: not found
+sh: 1: git: not found
+sh: 1: git: not found
+sh: 1: git: not found
+.sh: 1: git: not found
+sh: 1: git: not found
+sh: 1: git: not found
+sh: 1: git: not found
+sh: 1: git: not found
+sh: 1: git: not found
+sh: 1: git: not found
+sh: 1: git: not found
+.sh: 1: git: not found
+sh: 1: git: not found
+sh: 1: git: not found
+sh: 1: git: not found
+sh: 1: git: not found
+sh: 1: git: not found
+sh: 1: git: not found
+sh: 1: git: not found
+.sh: 1: git: not found
+sh: 1: git: not found
+sh: 1: git: not found
+sh: 1: git: not found
+sh: 1: git: not found
+.sh: 1: git: not found
+sh: 1: git: not found
+sh: 1: git: not found
+sh: 1: git: not found
+sh: 1: git: not found
+sh: 1: git: not found
+sh: 1: git: not found
+.sh: 1: git: not found
+sh: 1: git: not found
+sh: 1: git: not found
+sh: 1: git: not found
+sh: 1: git: not found
+sh: 1: git: not found
+sh: 1: git: not found
+....................  610 / 2787 ( 21%)
+.............................................................  671 / 2787 ( 24%)
+.............................................................  732 / 2787 ( 26%)
+.............................................................  793 / 2787 ( 28%)
+.............................................................  854 / 2787 ( 30%)
+.............................................................  915 / 2787 ( 32%)
+.............................................................  976 / 2787 ( 35%)
+............................................................. 1037 / 2787 ( 37%)
+............................................................. 1098 / 2787 ( 39%)
+............................................................. 1159 / 2787 ( 41%)
+............................................................. 1220 / 2787 ( 43%)
+.................REPORT records-verbatim-dec026 {"source":"DEC-021_KNOWN_DEVICE_VERIFIER_BOUND.md","target":"DEC-026_KNOWN_DEVICE_VERIFIER_BOUND_FOR_THE_ADMISSION_LAYER.md","bytesBySection":{"Decision Authority / Deciders":1423,"Context":1029,"Decision":3554,"Rationale":1995,"Consequences":4419,"Alternatives Not Adopted":1168}}
+....REPORT records-verbatim-dec027 {"source":"DEC-019_INTERIM_SECURITY_FIRST_CORRELATION_POSTURE.md","target":"DEC-027_RETAINED_CORRELATION_POSTURE_FOR_POLICIES_THAT_DO_NOT_OPT_INTO_ADMISSION.md","bytesBySection":{"Decision Authority":612,"Scope / Concern":419,"Context":1958,"Decision":2594,"Rationale":345,"Consequences":652,"Relationship to Other Decisions":271}}
+REPORT records-verbatim-appendix-a {"paragraphs":11,"sha256":"5642bd4dfa6df3d6d5d6fec6821a913e083c68a0d9a4d41404e6ce5bb2607cfd"}
+.....................................SSS 1281 / 2787 ( 45%)
+SSSSS........................................................ 1342 / 2787 ( 48%)
+...............S............................................. 1403 / 2787 ( 50%)
+............................................................. 1464 / 2787 ( 52%)
+............................................................. 1525 / 2787 ( 54%)
+............................................................. 1586 / 2787 ( 56%)
+............................................................. 1647 / 2787 ( 59%)
+......................S................S..................... 1708 / 2787 ( 61%)
+...................................SSS....................... 1769 / 2787 ( 63%)
+............................................................. 1830 / 2787 ( 65%)
+............................................................. 1891 / 2787 ( 67%)
+............................................................. 1952 / 2787 ( 70%)
+............................................................. 2013 / 2787 ( 72%)
+............................................................. 2074 / 2787 ( 74%)
+............................................................. 2135 / 2787 ( 76%)
+............................................................. 2196 / 2787 ( 78%)
+............................................................. 2257 / 2787 ( 80%)
+............................................................. 2318 / 2787 ( 83%)
+............................................................. 2379 / 2787 ( 85%)
+............................................................. 2440 / 2787 ( 87%)
+............................................................. 2501 / 2787 ( 89%)
+.................................REPORT sc3 {"preCheckObservationWritesBeforeTheRefusal":true}
+......REPORT sc6 {"legitSourceCapacityRefusals":{"ABA_B|none|none":72,"D2|none|fresh":22,"D2|none|none":22,"MIX|none|fresh":12,"MIX|none|const":12,"MIX|none|none":12}}
+...................... 2562 / 2787 ( 91%)
+............................................................. 2623 / 2787 ( 94%)
+............................................................. 2684 / 2787 ( 96%)
+............................................................. 2745 / 2787 ( 98%)
+..........................................                    2787 / 2787 (100%)
+
+Time: 03:39.602, Memory: 96.00 MB
+
+There were 100 errors:
+
+1) Maatify\RateLimiter\Tests\Unit\ReleaseVerification\PublishedArtifactEvidenceTest::testHistoricalChainPassesWhenDecisionRemainsActive
+RuntimeException: Unable to start process: git
+
+/app/tests/Support/ReleaseVerification/ProcessRunner.php:49
+/app/tests/Support/ReleaseVerification/GitRepository.php:30
+/app/tests/Support/ReleaseVerification/ReleaseRepositoryFixture.php:40
+/app/tests/Support/ReleaseVerification/ReleaseRepositoryFixture.php:23
+/app/tests/Unit/ReleaseVerification/PublishedArtifactEvidenceTest.php:459
+/app/tests/Unit/ReleaseVerification/PublishedArtifactEvidenceTest.php:471
+/app/tests/Unit/ReleaseVerification/PublishedArtifactEvidenceTest.php:260
+
+2) Maatify\RateLimiter\Tests\Unit\ReleaseVerification\PublishedArtifactEvidenceTest::testHistoricalChainFailsWhenRetainedEvidenceDiffersFromImmutableHistory
+RuntimeException: Unable to start process: git
+
+/app/tests/Support/ReleaseVerification/ProcessRunner.php:49
+/app/tests/Support/ReleaseVerification/GitRepository.php:30
+/app/tests/Support/ReleaseVerification/ReleaseRepositoryFixture.php:40
+/app/tests/Support/ReleaseVerification/ReleaseRepositoryFixture.php:23
+/app/tests/Unit/ReleaseVerification/PublishedArtifactEvidenceTest.php:459
+/app/tests/Unit/ReleaseVerification/PublishedArtifactEvidenceTest.php:471
+/app/tests/Unit/ReleaseVerification/PublishedArtifactEvidenceTest.php:281
+
+3) Maatify\RateLimiter\Tests\Unit\ReleaseVerification\PublishedArtifactEvidenceTest::testHistoricalChainFailsWhenActiveRecordIsRewrittenAfterQualification
+RuntimeException: Unable to start process: git
+
+/app/tests/Support/ReleaseVerification/ProcessRunner.php:49
+/app/tests/Support/ReleaseVerification/GitRepository.php:30
+/app/tests/Support/ReleaseVerification/ReleaseRepositoryFixture.php:40
+/app/tests/Support/ReleaseVerification/ReleaseRepositoryFixture.php:23
+/app/tests/Unit/ReleaseVerification/PublishedArtifactEvidenceTest.php:459
+/app/tests/Unit/ReleaseVerification/PublishedArtifactEvidenceTest.php:471
+/app/tests/Unit/ReleaseVerification/PublishedArtifactEvidenceTest.php:298
+
+4) Maatify\RateLimiter\Tests\Unit\ReleaseVerification\PublishedArtifactEvidenceTest::testHistoricalChainFailsWhenDecisionIsNoLongerDiscoverable
+RuntimeException: Unable to start process: git
+
+/app/tests/Support/ReleaseVerification/ProcessRunner.php:49
+/app/tests/Support/ReleaseVerification/GitRepository.php:30
+/app/tests/Support/ReleaseVerification/ReleaseRepositoryFixture.php:40
+/app/tests/Support/ReleaseVerification/ReleaseRepositoryFixture.php:23
+/app/tests/Unit/ReleaseVerification/PublishedArtifactEvidenceTest.php:459
+/app/tests/Unit/ReleaseVerification/PublishedArtifactEvidenceTest.php:471
+/app/tests/Unit/ReleaseVerification/PublishedArtifactEvidenceTest.php:310
+
+5) Maatify\RateLimiter\Tests\Unit\ReleaseVerification\PublishedArtifactEvidenceTest::testHistoricalChainFailsWhenRecordFileIsRemovedFromCurrentHistory
+RuntimeException: Unable to start process: git
+
+/app/tests/Support/ReleaseVerification/ProcessRunner.php:49
+/app/tests/Support/ReleaseVerification/GitRepository.php:30
+/app/tests/Support/ReleaseVerification/ReleaseRepositoryFixture.php:40
+/app/tests/Support/ReleaseVerification/ReleaseRepositoryFixture.php:23
+/app/tests/Unit/ReleaseVerification/PublishedArtifactEvidenceTest.php:459
+/app/tests/Unit/ReleaseVerification/PublishedArtifactEvidenceTest.php:471
+/app/tests/Unit/ReleaseVerification/PublishedArtifactEvidenceTest.php:322
+
+6) Maatify\RateLimiter\Tests\Unit\ReleaseVerification\PublishedArtifactEvidenceTest::testHistoricalChainAcceptsLegitimateSupersessionWithCoherentSuccessor
+RuntimeException: Unable to start process: git
+
+/app/tests/Support/ReleaseVerification/ProcessRunner.php:49
+/app/tests/Support/ReleaseVerification/GitRepository.php:30
+/app/tests/Support/ReleaseVerification/ReleaseRepositoryFixture.php:40
+/app/tests/Support/ReleaseVerification/ReleaseRepositoryFixture.php:23
+/app/tests/Unit/ReleaseVerification/PublishedArtifactEvidenceTest.php:459
+/app/tests/Unit/ReleaseVerification/PublishedArtifactEvidenceTest.php:471
+/app/tests/Unit/ReleaseVerification/PublishedArtifactEvidenceTest.php:334
+
+7) Maatify\RateLimiter\Tests\Unit\ReleaseVerification\PublishedArtifactEvidenceTest::testHistoricalChainFollowsMultiHopSupersessionToAnActiveDecision
+RuntimeException: Unable to start process: git
+
+/app/tests/Support/ReleaseVerification/ProcessRunner.php:49
+/app/tests/Support/ReleaseVerification/GitRepository.php:30
+/app/tests/Support/ReleaseVerification/ReleaseRepositoryFixture.php:40
+/app/tests/Support/ReleaseVerification/ReleaseRepositoryFixture.php:23
+/app/tests/Unit/ReleaseVerification/PublishedArtifactEvidenceTest.php:459
+/app/tests/Unit/ReleaseVerification/PublishedArtifactEvidenceTest.php:471
+/app/tests/Unit/ReleaseVerification/PublishedArtifactEvidenceTest.php:346
+
+8) Maatify\RateLimiter\Tests\Unit\ReleaseVerification\PublishedArtifactEvidenceTest::testHistoricalChainFailsWhenSupersededButSuccessorRecordIsMissing
+RuntimeException: Unable to start process: git
+
+/app/tests/Support/ReleaseVerification/ProcessRunner.php:49
+/app/tests/Support/ReleaseVerification/GitRepository.php:30
+/app/tests/Support/ReleaseVerification/ReleaseRepositoryFixture.php:40
+/app/tests/Support/ReleaseVerification/ReleaseRepositoryFixture.php:23
+/app/tests/Unit/ReleaseVerification/PublishedArtifactEvidenceTest.php:459
+/app/tests/Unit/ReleaseVerification/PublishedArtifactEvidenceTest.php:471
+/app/tests/Unit/ReleaseVerification/PublishedArtifactEvidenceTest.php:357
+
+9) Maatify\RateLimiter\Tests\Unit\ReleaseVerification\PublishedArtifactEvidenceTest::testHistoricalChainFailsWhenSuccessorIsMissingFromTheIndex
+RuntimeException: Unable to start process: git
+
+/app/tests/Support/ReleaseVerification/ProcessRunner.php:49
+/app/tests/Support/ReleaseVerification/GitRepository.php:30
+/app/tests/Support/ReleaseVerification/ReleaseRepositoryFixture.php:40
+/app/tests/Support/ReleaseVerification/ReleaseRepositoryFixture.php:23
+/app/tests/Unit/ReleaseVerification/PublishedArtifactEvidenceTest.php:459
+/app/tests/Unit/ReleaseVerification/PublishedArtifactEvidenceTest.php:471
+/app/tests/Unit/ReleaseVerification/PublishedArtifactEvidenceTest.php:370
+
+10) Maatify\RateLimiter\Tests\Unit\ReleaseVerification\PublishedArtifactEvidenceTest::testHistoricalChainFailsOnAsymmetricSupersession
+RuntimeException: Unable to start process: git
+
+/app/tests/Support/ReleaseVerification/ProcessRunner.php:49
+/app/tests/Support/ReleaseVerification/GitRepository.php:30
+/app/tests/Support/ReleaseVerification/ReleaseRepositoryFixture.php:40
+/app/tests/Support/ReleaseVerification/ReleaseRepositoryFixture.php:23
+/app/tests/Unit/ReleaseVerification/PublishedArtifactEvidenceTest.php:459
+/app/tests/Unit/ReleaseVerification/PublishedArtifactEvidenceTest.php:471
+/app/tests/Unit/ReleaseVerification/PublishedArtifactEvidenceTest.php:381
+
+11) Maatify\RateLimiter\Tests\Unit\ReleaseVerification\PublishedArtifactEvidenceTest::testHistoricalChainFailsWhenSupersededWithoutNamedSuccessor
+RuntimeException: Unable to start process: git
+
+/app/tests/Support/ReleaseVerification/ProcessRunner.php:49
+/app/tests/Support/ReleaseVerification/GitRepository.php:30
+/app/tests/Support/ReleaseVerification/ReleaseRepositoryFixture.php:40
+/app/tests/Support/ReleaseVerification/ReleaseRepositoryFixture.php:23
+/app/tests/Unit/ReleaseVerification/PublishedArtifactEvidenceTest.php:459
+/app/tests/Unit/ReleaseVerification/PublishedArtifactEvidenceTest.php:471
+/app/tests/Unit/ReleaseVerification/PublishedArtifactEvidenceTest.php:392
+
+12) Maatify\RateLimiter\Tests\Unit\ReleaseVerification\PublishedArtifactEvidenceTest::testHistoricalChainFailsWhenRecordAndIndexDisagreeOnSuccessor
+RuntimeException: Unable to start process: git
+
+/app/tests/Support/ReleaseVerification/ProcessRunner.php:49
+/app/tests/Support/ReleaseVerification/GitRepository.php:30
+/app/tests/Support/ReleaseVerification/ReleaseRepositoryFixture.php:40
+/app/tests/Support/ReleaseVerification/ReleaseRepositoryFixture.php:23
+/app/tests/Unit/ReleaseVerification/PublishedArtifactEvidenceTest.php:459
+/app/tests/Unit/ReleaseVerification/PublishedArtifactEvidenceTest.php:471
+/app/tests/Unit/ReleaseVerification/PublishedArtifactEvidenceTest.php:405
+
+13) Maatify\RateLimiter\Tests\Unit\ReleaseVerification\PublishedArtifactEvidenceTest::testHistoricalChainFailsOnSupersessionCycle
+RuntimeException: Unable to start process: git
+
+/app/tests/Support/ReleaseVerification/ProcessRunner.php:49
+/app/tests/Support/ReleaseVerification/GitRepository.php:30
+/app/tests/Support/ReleaseVerification/ReleaseRepositoryFixture.php:40
+/app/tests/Support/ReleaseVerification/ReleaseRepositoryFixture.php:23
+/app/tests/Unit/ReleaseVerification/PublishedArtifactEvidenceTest.php:459
+/app/tests/Unit/ReleaseVerification/PublishedArtifactEvidenceTest.php:471
+/app/tests/Unit/ReleaseVerification/PublishedArtifactEvidenceTest.php:422
+
+14) Maatify\RateLimiter\Tests\Unit\ReleaseVerification\PublishedArtifactEvidenceTest::testHistoricalChainFailsWhenSupersessionRewritesTheApprovedDeclaration
+RuntimeException: Unable to start process: git
+
+/app/tests/Support/ReleaseVerification/ProcessRunner.php:49
+/app/tests/Support/ReleaseVerification/GitRepository.php:30
+/app/tests/Support/ReleaseVerification/ReleaseRepositoryFixture.php:40
+/app/tests/Support/ReleaseVerification/ReleaseRepositoryFixture.php:23
+/app/tests/Unit/ReleaseVerification/PublishedArtifactEvidenceTest.php:459
+/app/tests/Unit/ReleaseVerification/PublishedArtifactEvidenceTest.php:471
+/app/tests/Unit/ReleaseVerification/PublishedArtifactEvidenceTest.php:439
+
+15) Maatify\RateLimiter\Tests\Unit\ReleaseVerification\PublishedArtifactEvidenceTest::testHistoricalChainFailsWhenRepositoryHistoryIsUnavailable
+RuntimeException: Unable to start process: git
+
+/app/tests/Support/ReleaseVerification/ProcessRunner.php:49
+/app/tests/Support/ReleaseVerification/GitRepository.php:30
+/app/tests/Support/ReleaseVerification/ReleaseRepositoryFixture.php:40
+/app/tests/Support/ReleaseVerification/ReleaseRepositoryFixture.php:23
+/app/tests/Unit/ReleaseVerification/PublishedArtifactEvidenceTest.php:459
+/app/tests/Unit/ReleaseVerification/PublishedArtifactEvidenceTest.php:471
+/app/tests/Unit/ReleaseVerification/PublishedArtifactEvidenceTest.php:271
+
+16) Maatify\RateLimiter\Tests\Unit\ReleaseVerification\QualifyingPersistenceTest::testRavSemanticReviewChronologyIsBoundToQualificationStart with data set "before the boundary" ('2026-10-06T19:59:59Z', true)
+RuntimeException: Unable to start process: git
+
+/app/tests/Support/ReleaseVerification/ProcessRunner.php:49
+/app/tests/Support/ReleaseVerification/GitRepository.php:30
+/app/tests/Support/ReleaseVerification/ReleaseRepositoryFixture.php:40
+/app/tests/Support/ReleaseVerification/ReleaseRepositoryFixture.php:23
+/app/tests/Unit/ReleaseVerification/QualifyingPersistenceTest.php:33
+
+17) Maatify\RateLimiter\Tests\Unit\ReleaseVerification\QualifyingPersistenceTest::testRavSemanticReviewChronologyIsBoundToQualificationStart with data set "local time with offset (ambiguous)" ('2026-10-06T19:00:00+02:00', false)
+RuntimeException: Unable to start process: git
+
+/app/tests/Support/ReleaseVerification/ProcessRunner.php:49
+/app/tests/Support/ReleaseVerification/GitRepository.php:30
+/app/tests/Support/ReleaseVerification/ReleaseRepositoryFixture.php:40
+/app/tests/Support/ReleaseVerification/ReleaseRepositoryFixture.php:23
+/app/tests/Unit/ReleaseVerification/QualifyingPersistenceTest.php:33
+
+18) Maatify\RateLimiter\Tests\Unit\ReleaseVerification\QualifyingPersistenceTest::testRavSemanticReviewChronologyIsBoundToQualificationStart with data set "date only" ('2026-10-06', false)
+RuntimeException: Unable to start process: git
+
+/app/tests/Support/ReleaseVerification/ProcessRunner.php:49
+/app/tests/Support/ReleaseVerification/GitRepository.php:30
+/app/tests/Support/ReleaseVerification/ReleaseRepositoryFixture.php:40
+/app/tests/Support/ReleaseVerification/ReleaseRepositoryFixture.php:23
+/app/tests/Unit/ReleaseVerification/QualifyingPersistenceTest.php:33
+
+19) Maatify\RateLimiter\Tests\Unit\ReleaseVerification\QualifyingPersistenceTest::testRavSemanticReviewChronologyIsBoundToQualificationStart with data set "garbage" ('yesterday', false)
+RuntimeException: Unable to start process: git
+
+/app/tests/Support/ReleaseVerification/ProcessRunner.php:49
+/app/tests/Support/ReleaseVerification/GitRepository.php:30
+/app/tests/Support/ReleaseVerification/ReleaseRepositoryFixture.php:40
+/app/tests/Support/ReleaseVerification/ReleaseRepositoryFixture.php:23
+/app/tests/Unit/ReleaseVerification/QualifyingPersistenceTest.php:33
+
+20) Maatify\RateLimiter\Tests\Unit\ReleaseVerification\QualifyingPersistenceTest::testRavSemanticReviewChronologyIsBoundToQualificationStart with data set "after the boundary" ('2026-10-06T20:00:01Z', false)
+RuntimeException: Unable to start process: git
+
+/app/tests/Support/ReleaseVerification/ProcessRunner.php:49
+/app/tests/Support/ReleaseVerification/GitRepository.php:30
+/app/tests/Support/ReleaseVerification/ReleaseRepositoryFixture.php:40
+/app/tests/Support/ReleaseVerification/ReleaseRepositoryFixture.php:23
+/app/tests/Unit/ReleaseVerification/QualifyingPersistenceTest.php:33
+
+21) Maatify\RateLimiter\Tests\Unit\ReleaseVerification\QualifyingPersistenceTest::testRavSemanticReviewChronologyIsBoundToQualificationStart with data set "exactly at the boundary" ('2026-10-06T20:00:00Z', true)
+RuntimeException: Unable to start process: git
+
+/app/tests/Support/ReleaseVerification/ProcessRunner.php:49
+/app/tests/Support/ReleaseVerification/GitRepository.php:30
+/app/tests/Support/ReleaseVerification/ReleaseRepositoryFixture.php:40
+/app/tests/Support/ReleaseVerification/ReleaseRepositoryFixture.php:23
+/app/tests/Unit/ReleaseVerification/QualifyingPersistenceTest.php:33
+
+22) Maatify\RateLimiter\Tests\Unit\ReleaseVerification\QualifyingPersistenceTest::testRavSemanticReviewChronologyIsBoundToQualificationStart with data set "far-future review" ('2099-01-01T00:00:00Z', false)
+RuntimeException: Unable to start process: git
+
+/app/tests/Support/ReleaseVerification/ProcessRunner.php:49
+/app/tests/Support/ReleaseVerification/GitRepository.php:30
+/app/tests/Support/ReleaseVerification/ReleaseRepositoryFixture.php:40
+/app/tests/Support/ReleaseVerification/ReleaseRepositoryFixture.php:23
+/app/tests/Unit/ReleaseVerification/QualifyingPersistenceTest.php:33
+
+23) Maatify\RateLimiter\Tests\Unit\ReleaseVerification\QualifyingPersistenceTest::testRavSemanticReviewChronologyIsBoundToQualificationStart with data set "space-separated" ('2026-10-06 19:00:00', false)
+RuntimeException: Unable to start process: git
+
+/app/tests/Support/ReleaseVerification/ProcessRunner.php:49
+/app/tests/Support/ReleaseVerification/GitRepository.php:30
+/app/tests/Support/ReleaseVerification/ReleaseRepositoryFixture.php:40
+/app/tests/Support/ReleaseVerification/ReleaseRepositoryFixture.php:23
+/app/tests/Unit/ReleaseVerification/QualifyingPersistenceTest.php:33
+
+24) Maatify\RateLimiter\Tests\Unit\ReleaseVerification\QualifyingPersistenceTest::testSchemaChronologyIsBoundToQualificationStart with data set "after the boundary" ('2026-10-06T20:00:01Z', false)
+RuntimeException: Unable to start process: git
+
+/app/tests/Support/ReleaseVerification/ProcessRunner.php:49
+/app/tests/Support/ReleaseVerification/GitRepository.php:30
+/app/tests/Support/ReleaseVerification/ReleaseRepositoryFixture.php:40
+/app/tests/Support/ReleaseVerification/ReleaseRepositoryFixture.php:23
+/app/tests/Unit/ReleaseVerification/QualifyingPersistenceTest.php:33
+
+25) Maatify\RateLimiter\Tests\Unit\ReleaseVerification\QualifyingPersistenceTest::testSchemaChronologyIsBoundToQualificationStart with data set "far-future review" ('2099-01-01T00:00:00Z', false)
+RuntimeException: Unable to start process: git
+
+/app/tests/Support/ReleaseVerification/ProcessRunner.php:49
+/app/tests/Support/ReleaseVerification/GitRepository.php:30
+/app/tests/Support/ReleaseVerification/ReleaseRepositoryFixture.php:40
+/app/tests/Support/ReleaseVerification/ReleaseRepositoryFixture.php:23
+/app/tests/Unit/ReleaseVerification/QualifyingPersistenceTest.php:33
+
+26) Maatify\RateLimiter\Tests\Unit\ReleaseVerification\QualifyingPersistenceTest::testSchemaChronologyIsBoundToQualificationStart with data set "exactly at the boundary" ('2026-10-06T20:00:00Z', true)
+RuntimeException: Unable to start process: git
+
+/app/tests/Support/ReleaseVerification/ProcessRunner.php:49
+/app/tests/Support/ReleaseVerification/GitRepository.php:30
+/app/tests/Support/ReleaseVerification/ReleaseRepositoryFixture.php:40
+/app/tests/Support/ReleaseVerification/ReleaseRepositoryFixture.php:23
+/app/tests/Unit/ReleaseVerification/QualifyingPersistenceTest.php:33
+
+27) Maatify\RateLimiter\Tests\Unit\ReleaseVerification\QualifyingPersistenceTest::testSchemaChronologyIsBoundToQualificationStart with data set "before the boundary" ('2026-10-06T19:59:59Z', true)
+RuntimeException: Unable to start process: git
+
+/app/tests/Support/ReleaseVerification/ProcessRunner.php:49
+/app/tests/Support/ReleaseVerification/GitRepository.php:30
+/app/tests/Support/ReleaseVerification/ReleaseRepositoryFixture.php:40
+/app/tests/Support/ReleaseVerification/ReleaseRepositoryFixture.php:23
+/app/tests/Unit/ReleaseVerification/QualifyingPersistenceTest.php:33
+
+28) Maatify\RateLimiter\Tests\Unit\ReleaseVerification\QualifyingPersistenceTest::testSchemaChronologyIsBoundToQualificationStart with data set "space-separated" ('2026-10-06 19:00:00', false)
+RuntimeException: Unable to start process: git
+
+/app/tests/Support/ReleaseVerification/ProcessRunner.php:49
+/app/tests/Support/ReleaseVerification/GitRepository.php:30
+/app/tests/Support/ReleaseVerification/ReleaseRepositoryFixture.php:40
+/app/tests/Support/ReleaseVerification/ReleaseRepositoryFixture.php:23
+/app/tests/Unit/ReleaseVerification/QualifyingPersistenceTest.php:33
+
+29) Maatify\RateLimiter\Tests\Unit\ReleaseVerification\QualifyingPersistenceTest::testSchemaChronologyIsBoundToQualificationStart with data set "date only" ('2026-10-06', false)
+RuntimeException: Unable to start process: git
+
+/app/tests/Support/ReleaseVerification/ProcessRunner.php:49
+/app/tests/Support/ReleaseVerification/GitRepository.php:30
+/app/tests/Support/ReleaseVerification/ReleaseRepositoryFixture.php:40
+/app/tests/Support/ReleaseVerification/ReleaseRepositoryFixture.php:23
+/app/tests/Unit/ReleaseVerification/QualifyingPersistenceTest.php:33
+
+30) Maatify\RateLimiter\Tests\Unit\ReleaseVerification\QualifyingPersistenceTest::testSchemaChronologyIsBoundToQualificationStart with data set "garbage" ('yesterday', false)
+RuntimeException: Unable to start process: git
+
+/app/tests/Support/ReleaseVerification/ProcessRunner.php:49
+/app/tests/Support/ReleaseVerification/GitRepository.php:30
+/app/tests/Support/ReleaseVerification/ReleaseRepositoryFixture.php:40
+/app/tests/Support/ReleaseVerification/ReleaseRepositoryFixture.php:23
+/app/tests/Unit/ReleaseVerification/QualifyingPersistenceTest.php:33
+
+31) Maatify\RateLimiter\Tests\Unit\ReleaseVerification\QualifyingPersistenceTest::testSchemaChronologyIsBoundToQualificationStart with data set "local time with offset (ambiguous)" ('2026-10-06T19:00:00+02:00', false)
+RuntimeException: Unable to start process: git
+
+/app/tests/Support/ReleaseVerification/ProcessRunner.php:49
+/app/tests/Support/ReleaseVerification/GitRepository.php:30
+/app/tests/Support/ReleaseVerification/ReleaseRepositoryFixture.php:40
+/app/tests/Support/ReleaseVerification/ReleaseRepositoryFixture.php:23
+/app/tests/Unit/ReleaseVerification/QualifyingPersistenceTest.php:33
+
+32) Maatify\RateLimiter\Tests\Unit\ReleaseVerification\QualifyingPersistenceTest::testWriterRejectsMissingParentDirectoryDirectoryDestinationAndExistingFile
+RuntimeException: Unable to start process: git
+
+/app/tests/Support/ReleaseVerification/ProcessRunner.php:49
+/app/tests/Support/ReleaseVerification/GitRepository.php:30
+/app/tests/Support/ReleaseVerification/ReleaseRepositoryFixture.php:40
+/app/tests/Support/ReleaseVerification/ReleaseRepositoryFixture.php:23
+/app/tests/Unit/ReleaseVerification/QualifyingPersistenceTest.php:33
+
+33) Maatify\RateLimiter\Tests\Unit\ReleaseVerification\QualifyingPersistenceTest::testWriterFailsReadBackVerificationAndLeavesNoFinalOrTemporaryFile
+RuntimeException: Unable to start process: git
+
+/app/tests/Support/ReleaseVerification/ProcessRunner.php:49
+/app/tests/Support/ReleaseVerification/GitRepository.php:30
+/app/tests/Support/ReleaseVerification/ReleaseRepositoryFixture.php:40
+/app/tests/Support/ReleaseVerification/ReleaseRepositoryFixture.php:23
+/app/tests/Unit/ReleaseVerification/QualifyingPersistenceTest.php:33
+
+34) Maatify\RateLimiter\Tests\Unit\ReleaseVerification\QualifyingPersistenceTest::testWriterFailsOnUnencodableData
+RuntimeException: Unable to start process: git
+
+/app/tests/Support/ReleaseVerification/ProcessRunner.php:49
+/app/tests/Support/ReleaseVerification/GitRepository.php:30
+/app/tests/Support/ReleaseVerification/ReleaseRepositoryFixture.php:40
+/app/tests/Support/ReleaseVerification/ReleaseRepositoryFixture.php:23
+/app/tests/Unit/ReleaseVerification/QualifyingPersistenceTest.php:33
+
+35) Maatify\RateLimiter\Tests\Unit\ReleaseVerification\QualifyingPersistenceTest::testQualifyingPavRejectsInvalidReportDestinationBeforeAnyWork
+RuntimeException: Unable to start process: git
+
+/app/tests/Support/ReleaseVerification/ProcessRunner.php:49
+/app/tests/Support/ReleaseVerification/GitRepository.php:30
+/app/tests/Support/ReleaseVerification/ReleaseRepositoryFixture.php:40
+/app/tests/Support/ReleaseVerification/ReleaseRepositoryFixture.php:23
+/app/tests/Unit/ReleaseVerification/QualifyingPersistenceTest.php:33
+
+36) Maatify\RateLimiter\Tests\Unit\ReleaseVerification\QualifyingPersistenceTest::testFailedPavReportIsStillPersistedForRetention
+RuntimeException: Unable to start process: git
+
+/app/tests/Support/ReleaseVerification/ProcessRunner.php:49
+/app/tests/Support/ReleaseVerification/GitRepository.php:30
+/app/tests/Support/ReleaseVerification/ReleaseRepositoryFixture.php:40
+/app/tests/Support/ReleaseVerification/ReleaseRepositoryFixture.php:23
+/app/tests/Unit/ReleaseVerification/QualifyingPersistenceTest.php:33
+
+37) Maatify\RateLimiter\Tests\Unit\ReleaseVerification\QualifyingPersistenceTest::testQualificationStartAfterQualifiedAtStillFails
+RuntimeException: Unable to start process: git
+
+/app/tests/Support/ReleaseVerification/ProcessRunner.php:49
+/app/tests/Support/ReleaseVerification/GitRepository.php:30
+/app/tests/Support/ReleaseVerification/ReleaseRepositoryFixture.php:40
+/app/tests/Support/ReleaseVerification/ReleaseRepositoryFixture.php:23
+/app/tests/Unit/ReleaseVerification/QualifyingPersistenceTest.php:33
+
+38) Maatify\RateLimiter\Tests\Unit\ReleaseVerification\QualifyingPersistenceTest::testWriterPersistsAtomicallyAndLeavesNoTemporaryFile
+RuntimeException: Unable to start process: git
+
+/app/tests/Support/ReleaseVerification/ProcessRunner.php:49
+/app/tests/Support/ReleaseVerification/GitRepository.php:30
+/app/tests/Support/ReleaseVerification/ReleaseRepositoryFixture.php:40
+/app/tests/Support/ReleaseVerification/ReleaseRepositoryFixture.php:23
+/app/tests/Unit/ReleaseVerification/QualifyingPersistenceTest.php:33
+
+39) Maatify\RateLimiter\Tests\Unit\ReleaseVerification\QualifyingPersistenceTest::testPavPersistsCompleteReportOnlyThenKeepsPass
+RuntimeException: Unable to start process: git
+
+/app/tests/Support/ReleaseVerification/ProcessRunner.php:49
+/app/tests/Support/ReleaseVerification/GitRepository.php:30
+/app/tests/Support/ReleaseVerification/ReleaseRepositoryFixture.php:40
+/app/tests/Support/ReleaseVerification/ReleaseRepositoryFixture.php:23
+/app/tests/Unit/ReleaseVerification/QualifyingPersistenceTest.php:33
+
+40) Maatify\RateLimiter\Tests\Unit\ReleaseVerification\QualifyingPersistenceTest::testPavPersistenceFailureAfterSuccessfulVerificationIsNotPass
+RuntimeException: Unable to start process: git
+
+/app/tests/Support/ReleaseVerification/ProcessRunner.php:49
+/app/tests/Support/ReleaseVerification/GitRepository.php:30
+/app/tests/Support/ReleaseVerification/ReleaseRepositoryFixture.php:40
+/app/tests/Support/ReleaseVerification/ReleaseRepositoryFixture.php:23
+/app/tests/Unit/ReleaseVerification/QualifyingPersistenceTest.php:33
+
+41) Maatify\RateLimiter\Tests\Unit\ReleaseVerification\QualifyingPersistenceTest::testWriterFailsOnUnwritableDirectoryWithoutPartialFile
+RuntimeException: Unable to start process: git
+
+/app/tests/Support/ReleaseVerification/ProcessRunner.php:49
+/app/tests/Support/ReleaseVerification/GitRepository.php:30
+/app/tests/Support/ReleaseVerification/ReleaseRepositoryFixture.php:40
+/app/tests/Support/ReleaseVerification/ReleaseRepositoryFixture.php:23
+/app/tests/Unit/ReleaseVerification/QualifyingPersistenceTest.php:33
+
+42) Maatify\RateLimiter\Tests\Unit\ReleaseVerification\QualifyingPersistenceTest::testWriterRejectsDestinationsInsideTheRepositoryIncludingGitDirAndSymlinks
+RuntimeException: Unable to start process: git
+
+/app/tests/Support/ReleaseVerification/ProcessRunner.php:49
+/app/tests/Support/ReleaseVerification/GitRepository.php:30
+/app/tests/Support/ReleaseVerification/ReleaseRepositoryFixture.php:40
+/app/tests/Support/ReleaseVerification/ReleaseRepositoryFixture.php:23
+/app/tests/Unit/ReleaseVerification/QualifyingPersistenceTest.php:33
+
+43) Maatify\RateLimiter\Tests\Unit\ReleaseVerification\QualifyingPersistenceTest::testQualifyingRavRejectsRepositoryInternalAndInvalidDestinationsBeforeVerifying
+RuntimeException: Unable to start process: git
+
+/app/tests/Support/ReleaseVerification/ProcessRunner.php:49
+/app/tests/Support/ReleaseVerification/GitRepository.php:30
+/app/tests/Support/ReleaseVerification/ReleaseRepositoryFixture.php:40
+/app/tests/Support/ReleaseVerification/ReleaseRepositoryFixture.php:23
+/app/tests/Unit/ReleaseVerification/QualifyingPersistenceTest.php:33
+
+44) Maatify\RateLimiter\Tests\Unit\ReleaseVerification\QualifyingPersistenceTest::testPavCliWithoutOutputJsonIsAUsageFailureAndNeverPasses
+RuntimeException: Unable to start process: git
+
+/app/tests/Support/ReleaseVerification/ProcessRunner.php:49
+/app/tests/Support/ReleaseVerification/GitRepository.php:30
+/app/tests/Support/ReleaseVerification/ReleaseRepositoryFixture.php:40
+/app/tests/Support/ReleaseVerification/ReleaseRepositoryFixture.php:23
+/app/tests/Unit/ReleaseVerification/QualifyingPersistenceTest.php:33
+
+45) Maatify\RateLimiter\Tests\Unit\ReleaseVerification\QualifyingPersistenceTest::testQualifyingRavFailsWhenPersistenceFailsAndLeavesNoEvidence
+RuntimeException: Unable to start process: git
+
+/app/tests/Support/ReleaseVerification/ProcessRunner.php:49
+/app/tests/Support/ReleaseVerification/GitRepository.php:30
+/app/tests/Support/ReleaseVerification/ReleaseRepositoryFixture.php:40
+/app/tests/Support/ReleaseVerification/ReleaseRepositoryFixture.php:23
+/app/tests/Unit/ReleaseVerification/QualifyingPersistenceTest.php:33
+
+46) Maatify\RateLimiter\Tests\Unit\ReleaseVerification\QualifyingPersistenceTest::testQualifyingRavPersistsEvidenceThatEqualsTheGeneratedResult
+RuntimeException: Unable to start process: git
+
+/app/tests/Support/ReleaseVerification/ProcessRunner.php:49
+/app/tests/Support/ReleaseVerification/GitRepository.php:30
+/app/tests/Support/ReleaseVerification/ReleaseRepositoryFixture.php:40
+/app/tests/Support/ReleaseVerification/ReleaseRepositoryFixture.php:23
+/app/tests/Unit/ReleaseVerification/QualifyingPersistenceTest.php:33
+
+47) Maatify\RateLimiter\Tests\Unit\ReleaseVerification\QualifyingPersistenceTest::testFailedRavDoesNotPersistEvidence
+RuntimeException: Unable to start process: git
+
+/app/tests/Support/ReleaseVerification/ProcessRunner.php:49
+/app/tests/Support/ReleaseVerification/GitRepository.php:30
+/app/tests/Support/ReleaseVerification/ReleaseRepositoryFixture.php:40
+/app/tests/Support/ReleaseVerification/ReleaseRepositoryFixture.php:23
+/app/tests/Unit/ReleaseVerification/QualifyingPersistenceTest.php:33
+
+48) Maatify\RateLimiter\Tests\Unit\ReleaseVerification\QualifyingPersistenceTest::testFullQualifyingRavRejectsFutureDatedSemanticReview
+RuntimeException: Unable to start process: git
+
+/app/tests/Support/ReleaseVerification/ProcessRunner.php:49
+/app/tests/Support/ReleaseVerification/GitRepository.php:30
+/app/tests/Support/ReleaseVerification/ReleaseRepositoryFixture.php:40
+/app/tests/Support/ReleaseVerification/ReleaseRepositoryFixture.php:23
+/app/tests/Unit/ReleaseVerification/QualifyingPersistenceTest.php:33
+
+49) Maatify\RateLimiter\Tests\Unit\ReleaseVerification\QualifyingPersistenceTest::testRavCliWithoutOutputEvidenceIsAUsageFailureAndNeverPasses
+RuntimeException: Unable to start process: git
+
+/app/tests/Support/ReleaseVerification/ProcessRunner.php:49
+/app/tests/Support/ReleaseVerification/GitRepository.php:30
+/app/tests/Support/ReleaseVerification/ReleaseRepositoryFixture.php:40
+/app/tests/Support/ReleaseVerification/ReleaseRepositoryFixture.php:23
+/app/tests/Unit/ReleaseVerification/QualifyingPersistenceTest.php:33
+
+50) Maatify\RateLimiter\Tests\Unit\ReleaseVerification\QualifyingPersistenceTest::testPavCliFailsForInvalidDestinationAndPersistsFailureReportOtherwise
+RuntimeException: Unable to start process: git
+
+/app/tests/Support/ReleaseVerification/ProcessRunner.php:49
+/app/tests/Support/ReleaseVerification/GitRepository.php:30
+/app/tests/Support/ReleaseVerification/ReleaseRepositoryFixture.php:40
+/app/tests/Support/ReleaseVerification/ReleaseRepositoryFixture.php:23
+/app/tests/Unit/ReleaseVerification/QualifyingPersistenceTest.php:33
+
+51) Maatify\RateLimiter\Tests\Unit\ReleaseVerification\QualifyingPersistenceTest::testRavCliPersistsEvidenceOutsideTheRepositoryAndPasses
+RuntimeException: Unable to start process: git
+
+/app/tests/Support/ReleaseVerification/ProcessRunner.php:49
+/app/tests/Support/ReleaseVerification/GitRepository.php:30
+/app/tests/Support/ReleaseVerification/ReleaseRepositoryFixture.php:40
+/app/tests/Support/ReleaseVerification/ReleaseRepositoryFixture.php:23
+/app/tests/Unit/ReleaseVerification/QualifyingPersistenceTest.php:33
+
+52) Maatify\RateLimiter\Tests\Unit\ReleaseVerification\QualifyingPersistenceTest::testRavCliFailsForRepositoryInternalUnwritableAndExistingDestinations
+RuntimeException: Unable to start process: git
+
+/app/tests/Support/ReleaseVerification/ProcessRunner.php:49
+/app/tests/Support/ReleaseVerification/GitRepository.php:30
+/app/tests/Support/ReleaseVerification/ReleaseRepositoryFixture.php:40
+/app/tests/Support/ReleaseVerification/ReleaseRepositoryFixture.php:23
+/app/tests/Unit/ReleaseVerification/QualifyingPersistenceTest.php:33
+
+53) Maatify\RateLimiter\Tests\Unit\ReleaseVerification\ReleaseArtifactQualificationTest::testSourceOnlyPolicyRequiresGovernanceParametersAndRejectsUnknownPolicy
+RuntimeException: Unable to start process: git
+
+/app/tests/Support/ReleaseVerification/ProcessRunner.php:49
+/app/tests/Support/ReleaseVerification/GitRepository.php:30
+/app/tests/Support/ReleaseVerification/ReleaseRepositoryFixture.php:40
+/app/tests/Support/ReleaseVerification/ReleaseRepositoryFixture.php:23
+/app/tests/Unit/ReleaseVerification/ReleaseArtifactQualificationTest.php:27
+
+54) Maatify\RateLimiter\Tests\Unit\ReleaseVerification\ReleaseArtifactQualificationTest::testWorktreeEditsDoNotChangeCandidateEvidenceAndAreRejectedAsDirty
+RuntimeException: Unable to start process: git
+
+/app/tests/Support/ReleaseVerification/ProcessRunner.php:49
+/app/tests/Support/ReleaseVerification/GitRepository.php:30
+/app/tests/Support/ReleaseVerification/ReleaseRepositoryFixture.php:40
+/app/tests/Support/ReleaseVerification/ReleaseRepositoryFixture.php:23
+/app/tests/Unit/ReleaseVerification/ReleaseArtifactQualificationTest.php:27
+
+55) Maatify\RateLimiter\Tests\Unit\ReleaseVerification\ReleaseArtifactQualificationTest::testFailsWhenForbiddenTrackedArtifactEntersArchive
+RuntimeException: Unable to start process: git
+
+/app/tests/Support/ReleaseVerification/ProcessRunner.php:49
+/app/tests/Support/ReleaseVerification/GitRepository.php:30
+/app/tests/Support/ReleaseVerification/ReleaseRepositoryFixture.php:40
+/app/tests/Support/ReleaseVerification/ReleaseRepositoryFixture.php:23
+/app/tests/Unit/ReleaseVerification/ReleaseArtifactQualificationTest.php:27
+
+56) Maatify\RateLimiter\Tests\Unit\ReleaseVerification\ReleaseArtifactQualificationTest::testValidArchivePassesWithNestedFilesCounted
+RuntimeException: Unable to start process: git
+
+/app/tests/Support/ReleaseVerification/ProcessRunner.php:49
+/app/tests/Support/ReleaseVerification/GitRepository.php:30
+/app/tests/Support/ReleaseVerification/ReleaseRepositoryFixture.php:40
+/app/tests/Support/ReleaseVerification/ReleaseRepositoryFixture.php:23
+/app/tests/Unit/ReleaseVerification/ReleaseArtifactQualificationTest.php:27
+
+57) Maatify\RateLimiter\Tests\Unit\ReleaseVerification\ReleaseArtifactQualificationTest::testSourceOnlyIndexNotActiveFails
+RuntimeException: Unable to start process: git
+
+/app/tests/Support/ReleaseVerification/ProcessRunner.php:49
+/app/tests/Support/ReleaseVerification/GitRepository.php:30
+/app/tests/Support/ReleaseVerification/ReleaseRepositoryFixture.php:40
+/app/tests/Support/ReleaseVerification/ReleaseRepositoryFixture.php:23
+/app/tests/Unit/ReleaseVerification/ReleaseArtifactQualificationTest.php:27
+
+58) Maatify\RateLimiter\Tests\Unit\ReleaseVerification\ReleaseArtifactQualificationTest::testComposerArchiveExcludeThatDoesNotTouchRequiredContentIsRecorded
+RuntimeException: Unable to start process: git
+
+/app/tests/Support/ReleaseVerification/ProcessRunner.php:49
+/app/tests/Support/ReleaseVerification/GitRepository.php:30
+/app/tests/Support/ReleaseVerification/ReleaseRepositoryFixture.php:40
+/app/tests/Support/ReleaseVerification/ReleaseRepositoryFixture.php:23
+/app/tests/Unit/ReleaseVerification/ReleaseArtifactQualificationTest.php:27
+
+59) Maatify\RateLimiter\Tests\Unit\ReleaseVerification\ReleaseArtifactQualificationTest::testFailsWhenComposerArchiveExcludeRemovesRequiredFile
+RuntimeException: Unable to start process: git
+
+/app/tests/Support/ReleaseVerification/ProcessRunner.php:49
+/app/tests/Support/ReleaseVerification/GitRepository.php:30
+/app/tests/Support/ReleaseVerification/ReleaseRepositoryFixture.php:40
+/app/tests/Support/ReleaseVerification/ReleaseRepositoryFixture.php:23
+/app/tests/Unit/ReleaseVerification/ReleaseArtifactQualificationTest.php:27
+
+60) Maatify\RateLimiter\Tests\Unit\ReleaseVerification\ReleaseArtifactQualificationTest::testSourceOnlyIndexMissingAtImmutableCommitFails
+RuntimeException: Unable to start process: git
+
+/app/tests/Support/ReleaseVerification/ProcessRunner.php:49
+/app/tests/Support/ReleaseVerification/GitRepository.php:30
+/app/tests/Support/ReleaseVerification/ReleaseRepositoryFixture.php:40
+/app/tests/Support/ReleaseVerification/ReleaseRepositoryFixture.php:23
+/app/tests/Unit/ReleaseVerification/ReleaseArtifactQualificationTest.php:27
+
+61) Maatify\RateLimiter\Tests\Unit\ReleaseVerification\ReleaseArtifactQualificationTest::testFailsWhenNestedRequiredFileIsExportIgnored
+RuntimeException: Unable to start process: git
+
+/app/tests/Support/ReleaseVerification/ProcessRunner.php:49
+/app/tests/Support/ReleaseVerification/GitRepository.php:30
+/app/tests/Support/ReleaseVerification/ReleaseRepositoryFixture.php:40
+/app/tests/Support/ReleaseVerification/ReleaseRepositoryFixture.php:23
+/app/tests/Unit/ReleaseVerification/ReleaseArtifactQualificationTest.php:27
+
+62) Maatify\RateLimiter\Tests\Unit\ReleaseVerification\ReleaseArtifactQualificationTest::testSourceOnlyDecisionCommitMissingFromCandidateHistoryFails
+RuntimeException: Unable to start process: git
+
+/app/tests/Support/ReleaseVerification/ProcessRunner.php:49
+/app/tests/Support/ReleaseVerification/GitRepository.php:30
+/app/tests/Support/ReleaseVerification/ReleaseRepositoryFixture.php:40
+/app/tests/Support/ReleaseVerification/ReleaseRepositoryFixture.php:23
+/app/tests/Unit/ReleaseVerification/ReleaseArtifactQualificationTest.php:27
+
+63) Maatify\RateLimiter\Tests\Unit\ReleaseVerification\ReleaseArtifactQualificationTest::testSourceOnlyWithoutDeclarationSectionFails
+RuntimeException: Unable to start process: git
+
+/app/tests/Support/ReleaseVerification/ProcessRunner.php:49
+/app/tests/Support/ReleaseVerification/GitRepository.php:30
+/app/tests/Support/ReleaseVerification/ReleaseRepositoryFixture.php:40
+/app/tests/Support/ReleaseVerification/ReleaseRepositoryFixture.php:23
+/app/tests/Unit/ReleaseVerification/ReleaseArtifactQualificationTest.php:27
+
+64) Maatify\RateLimiter\Tests\Unit\ReleaseVerification\ReleaseArtifactQualificationTest::testSourceOnlyFakeCommitRefStringFails
+RuntimeException: Unable to start process: git
+
+/app/tests/Support/ReleaseVerification/ProcessRunner.php:49
+/app/tests/Support/ReleaseVerification/GitRepository.php:30
+/app/tests/Support/ReleaseVerification/ReleaseRepositoryFixture.php:40
+/app/tests/Support/ReleaseVerification/ReleaseRepositoryFixture.php:23
+/app/tests/Unit/ReleaseVerification/ReleaseArtifactQualificationTest.php:27
+
+65) Maatify\RateLimiter\Tests\Unit\ReleaseVerification\ReleaseArtifactQualificationTest::testQualifyingDistRavPassesAndEmitsCompleteSchemaValidEvidence
+RuntimeException: Unable to start process: git
+
+/app/tests/Support/ReleaseVerification/ProcessRunner.php:49
+/app/tests/Support/ReleaseVerification/GitRepository.php:30
+/app/tests/Support/ReleaseVerification/ReleaseRepositoryFixture.php:40
+/app/tests/Support/ReleaseVerification/ReleaseRepositoryFixture.php:23
+/app/tests/Unit/ReleaseVerification/ReleaseArtifactQualificationTest.php:27
+
+66) Maatify\RateLimiter\Tests\Unit\ReleaseVerification\ReleaseArtifactQualificationTest::testSourceOnlyDecisionFileMissingAtImmutableCommitFails
+RuntimeException: Unable to start process: git
+
+/app/tests/Support/ReleaseVerification/ProcessRunner.php:49
+/app/tests/Support/ReleaseVerification/GitRepository.php:30
+/app/tests/Support/ReleaseVerification/ReleaseRepositoryFixture.php:40
+/app/tests/Support/ReleaseVerification/ReleaseRepositoryFixture.php:23
+/app/tests/Unit/ReleaseVerification/ReleaseArtifactQualificationTest.php:27
+
+67) Maatify\RateLimiter\Tests\Unit\ReleaseVerification\ReleaseArtifactQualificationTest::testSourceOnlyValidCompleteHistoricalEvidenceIsEligible
+RuntimeException: Unable to start process: git
+
+/app/tests/Support/ReleaseVerification/ProcessRunner.php:49
+/app/tests/Support/ReleaseVerification/GitRepository.php:30
+/app/tests/Support/ReleaseVerification/ReleaseRepositoryFixture.php:40
+/app/tests/Support/ReleaseVerification/ReleaseRepositoryFixture.php:23
+/app/tests/Unit/ReleaseVerification/ReleaseArtifactQualificationTest.php:27
+
+68) Maatify\RateLimiter\Tests\Unit\ReleaseVerification\ReleaseArtifactQualificationTest::testSourceOnlyDateOnlyApprovalOnTheSameDayAsRavIsTreatedAsNotYetEffective
+RuntimeException: Unable to start process: git
+
+/app/tests/Support/ReleaseVerification/ProcessRunner.php:49
+/app/tests/Support/ReleaseVerification/GitRepository.php:30
+/app/tests/Support/ReleaseVerification/ReleaseRepositoryFixture.php:40
+/app/tests/Support/ReleaseVerification/ReleaseRepositoryFixture.php:23
+/app/tests/Unit/ReleaseVerification/ReleaseArtifactQualificationTest.php:27
+
+69) Maatify\RateLimiter\Tests\Unit\ReleaseVerification\ReleaseArtifactQualificationTest::testSourceOnlyFullQualifyingRavProducesSchemaValidSourceOnlyEvidence
+RuntimeException: Unable to start process: git
+
+/app/tests/Support/ReleaseVerification/ProcessRunner.php:49
+/app/tests/Support/ReleaseVerification/GitRepository.php:30
+/app/tests/Support/ReleaseVerification/ReleaseRepositoryFixture.php:40
+/app/tests/Support/ReleaseVerification/ReleaseRepositoryFixture.php:23
+/app/tests/Unit/ReleaseVerification/ReleaseArtifactQualificationTest.php:27
+
+70) Maatify\RateLimiter\Tests\Unit\ReleaseVerification\ReleaseArtifactQualificationTest::testSourceOnlyRecordAmendedBetweenDecisionAndCandidateFails
+RuntimeException: Unable to start process: git
+
+/app/tests/Support/ReleaseVerification/ProcessRunner.php:49
+/app/tests/Support/ReleaseVerification/GitRepository.php:30
+/app/tests/Support/ReleaseVerification/ReleaseRepositoryFixture.php:40
+/app/tests/Support/ReleaseVerification/ReleaseRepositoryFixture.php:23
+/app/tests/Unit/ReleaseVerification/ReleaseArtifactQualificationTest.php:27
+
+71) Maatify\RateLimiter\Tests\Unit\ReleaseVerification\ReleaseArtifactQualificationTest::testSourceOnlyDecisionNotActiveAtQualificationFails
+RuntimeException: Unable to start process: git
+
+/app/tests/Support/ReleaseVerification/ProcessRunner.php:49
+/app/tests/Support/ReleaseVerification/GitRepository.php:30
+/app/tests/Support/ReleaseVerification/ReleaseRepositoryFixture.php:40
+/app/tests/Support/ReleaseVerification/ReleaseRepositoryFixture.php:23
+/app/tests/Unit/ReleaseVerification/ReleaseArtifactQualificationTest.php:27
+
+72) Maatify\RateLimiter\Tests\Unit\ReleaseVerification\ReleaseArtifactQualificationTest::testSourceOnlyWithoutOwnerApprovalFails
+RuntimeException: Unable to start process: git
+
+/app/tests/Support/ReleaseVerification/ProcessRunner.php:49
+/app/tests/Support/ReleaseVerification/GitRepository.php:30
+/app/tests/Support/ReleaseVerification/ReleaseRepositoryFixture.php:40
+/app/tests/Support/ReleaseVerification/ReleaseRepositoryFixture.php:23
+/app/tests/Unit/ReleaseVerification/ReleaseArtifactQualificationTest.php:27
+
+73) Maatify\RateLimiter\Tests\Unit\ReleaseVerification\ReleaseArtifactQualificationTest::testSourceOnlyEffectiveTimingNotBeforeRavFailsOrIsAmbiguous
+RuntimeException: Unable to start process: git
+
+/app/tests/Support/ReleaseVerification/ProcessRunner.php:49
+/app/tests/Support/ReleaseVerification/GitRepository.php:30
+/app/tests/Support/ReleaseVerification/ReleaseRepositoryFixture.php:40
+/app/tests/Support/ReleaseVerification/ReleaseRepositoryFixture.php:23
+/app/tests/Unit/ReleaseVerification/ReleaseArtifactQualificationTest.php:27
+
+74) Maatify\RateLimiter\Tests\Unit\ReleaseVerification\ReleaseArtifactQualificationTest::testSourceOnlyWrongPackageScopeChannelOrTargetFails
+RuntimeException: Unable to start process: git
+
+/app/tests/Support/ReleaseVerification/ProcessRunner.php:49
+/app/tests/Support/ReleaseVerification/GitRepository.php:30
+/app/tests/Support/ReleaseVerification/ReleaseRepositoryFixture.php:40
+/app/tests/Support/ReleaseVerification/ReleaseRepositoryFixture.php:23
+/app/tests/Unit/ReleaseVerification/ReleaseArtifactQualificationTest.php:27
+
+75) Maatify\RateLimiter\Tests\Unit\ReleaseVerification\SourceOnlyAuthorityTest::testRavSourceOnlyQualificationRejectsNonHttpsOrDecoratedChannels with data set "http" ('http://packages.example.test')
+RuntimeException: Unable to start process: git
+
+/app/tests/Support/ReleaseVerification/ProcessRunner.php:49
+/app/tests/Support/ReleaseVerification/GitRepository.php:30
+/app/tests/Support/ReleaseVerification/ReleaseRepositoryFixture.php:40
+/app/tests/Support/ReleaseVerification/ReleaseRepositoryFixture.php:23
+/app/tests/Unit/ReleaseVerification/SourceOnlyAuthorityTest.php:264
+/app/tests/Unit/ReleaseVerification/SourceOnlyAuthorityTest.php:84
+
+76) Maatify\RateLimiter\Tests\Unit\ReleaseVerification\SourceOnlyAuthorityTest::testRavSourceOnlyQualificationRejectsNonHttpsOrDecoratedChannels with data set "credentials" ('https://user:pw@packages.example.test')
+RuntimeException: Unable to start process: git
+
+/app/tests/Support/ReleaseVerification/ProcessRunner.php:49
+/app/tests/Support/ReleaseVerification/GitRepository.php:30
+/app/tests/Support/ReleaseVerification/ReleaseRepositoryFixture.php:40
+/app/tests/Support/ReleaseVerification/ReleaseRepositoryFixture.php:23
+/app/tests/Unit/ReleaseVerification/SourceOnlyAuthorityTest.php:264
+/app/tests/Unit/ReleaseVerification/SourceOnlyAuthorityTest.php:84
+
+77) Maatify\RateLimiter\Tests\Unit\ReleaseVerification\SourceOnlyAuthorityTest::testRavSourceOnlyQualificationRejectsNonHttpsOrDecoratedChannels with data set "query" ('https://packages.example.test...en=abc')
+RuntimeException: Unable to start process: git
+
+/app/tests/Support/ReleaseVerification/ProcessRunner.php:49
+/app/tests/Support/ReleaseVerification/GitRepository.php:30
+/app/tests/Support/ReleaseVerification/ReleaseRepositoryFixture.php:40
+/app/tests/Support/ReleaseVerification/ReleaseRepositoryFixture.php:23
+/app/tests/Unit/ReleaseVerification/SourceOnlyAuthorityTest.php:264
+/app/tests/Unit/ReleaseVerification/SourceOnlyAuthorityTest.php:84
+
+78) Maatify\RateLimiter\Tests\Unit\ReleaseVerification\SourceOnlyAuthorityTest::testRavSourceOnlyQualificationRejectsNonHttpsOrDecoratedChannels with data set "fragment" ('https://packages.example.test/p#frag')
+RuntimeException: Unable to start process: git
+
+/app/tests/Support/ReleaseVerification/ProcessRunner.php:49
+/app/tests/Support/ReleaseVerification/GitRepository.php:30
+/app/tests/Support/ReleaseVerification/ReleaseRepositoryFixture.php:40
+/app/tests/Support/ReleaseVerification/ReleaseRepositoryFixture.php:23
+/app/tests/Unit/ReleaseVerification/SourceOnlyAuthorityTest.php:264
+/app/tests/Unit/ReleaseVerification/SourceOnlyAuthorityTest.php:84
+
+79) Maatify\RateLimiter\Tests\Unit\ReleaseVerification\SourceOnlyAuthorityTest::testRavSourceOnlyQualificationAcceptsHttpsChannel
+RuntimeException: Unable to start process: git
+
+/app/tests/Support/ReleaseVerification/ProcessRunner.php:49
+/app/tests/Support/ReleaseVerification/GitRepository.php:30
+/app/tests/Support/ReleaseVerification/ReleaseRepositoryFixture.php:40
+/app/tests/Support/ReleaseVerification/ReleaseRepositoryFixture.php:23
+/app/tests/Unit/ReleaseVerification/SourceOnlyAuthorityTest.php:264
+/app/tests/Unit/ReleaseVerification/SourceOnlyAuthorityTest.php:103
+
+80) Maatify\RateLimiter\Tests\Unit\ReleaseVerification\SourceOnlyAuthorityTest::testRavRejectsNonCanonicalDecisionAuthorityStatements with data set "negated" ('Not Owner-approved package de...ision.')
+RuntimeException: Unable to start process: git
+
+/app/tests/Support/ReleaseVerification/ProcessRunner.php:49
+/app/tests/Support/ReleaseVerification/GitRepository.php:30
+/app/tests/Support/ReleaseVerification/ReleaseRepositoryFixture.php:40
+/app/tests/Support/ReleaseVerification/ReleaseRepositoryFixture.php:23
+/app/tests/Unit/ReleaseVerification/SourceOnlyAuthorityTest.php:264
+/app/tests/Unit/ReleaseVerification/SourceOnlyAuthorityTest.php:165
+
+81) Maatify\RateLimiter\Tests\Unit\ReleaseVerification\SourceOnlyAuthorityTest::testRavRejectsNonCanonicalDecisionAuthorityStatements with data set "question answered no" ('Owner-approved? No.')
+RuntimeException: Unable to start process: git
+
+/app/tests/Support/ReleaseVerification/ProcessRunner.php:49
+/app/tests/Support/ReleaseVerification/GitRepository.php:30
+/app/tests/Support/ReleaseVerification/ReleaseRepositoryFixture.php:40
+/app/tests/Support/ReleaseVerification/ReleaseRepositoryFixture.php:23
+/app/tests/Unit/ReleaseVerification/SourceOnlyAuthorityTest.php:264
+/app/tests/Unit/ReleaseVerification/SourceOnlyAuthorityTest.php:165
+
+82) Maatify\RateLimiter\Tests\Unit\ReleaseVerification\SourceOnlyAuthorityTest::testRavRejectsNonCanonicalDecisionAuthorityStatements with data set "later retraction" ('Owner-approved package delive...Owner.')
+RuntimeException: Unable to start process: git
+
+/app/tests/Support/ReleaseVerification/ProcessRunner.php:49
+/app/tests/Support/ReleaseVerification/GitRepository.php:30
+/app/tests/Support/ReleaseVerification/ReleaseRepositoryFixture.php:40
+/app/tests/Support/ReleaseVerification/ReleaseRepositoryFixture.php:23
+/app/tests/Unit/ReleaseVerification/SourceOnlyAuthorityTest.php:264
+/app/tests/Unit/ReleaseVerification/SourceOnlyAuthorityTest.php:165
+
+83) Maatify\RateLimiter\Tests\Unit\ReleaseVerification\SourceOnlyAuthorityTest::testRavRejectsNonCanonicalDecisionAuthorityStatements with data set "extra trailing text" ('Owner-approved package delive...hread.')
+RuntimeException: Unable to start process: git
+
+/app/tests/Support/ReleaseVerification/ProcessRunner.php:49
+/app/tests/Support/ReleaseVerification/GitRepository.php:30
+/app/tests/Support/ReleaseVerification/ReleaseRepositoryFixture.php:40
+/app/tests/Support/ReleaseVerification/ReleaseRepositoryFixture.php:23
+/app/tests/Unit/ReleaseVerification/SourceOnlyAuthorityTest.php:264
+/app/tests/Unit/ReleaseVerification/SourceOnlyAuthorityTest.php:165
+
+84) Maatify\RateLimiter\Tests\Unit\ReleaseVerification\SourceOnlyAuthorityTest::testRavRejectsNonCanonicalDecisionAuthorityStatements with data set "wrong case" ('owner-approved package delive...ision.')
+RuntimeException: Unable to start process: git
+
+/app/tests/Support/ReleaseVerification/ProcessRunner.php:49
+/app/tests/Support/ReleaseVerification/GitRepository.php:30
+/app/tests/Support/ReleaseVerification/ReleaseRepositoryFixture.php:40
+/app/tests/Support/ReleaseVerification/ReleaseRepositoryFixture.php:23
+/app/tests/Unit/ReleaseVerification/SourceOnlyAuthorityTest.php:264
+/app/tests/Unit/ReleaseVerification/SourceOnlyAuthorityTest.php:165
+
+85) Maatify\RateLimiter\Tests\Unit\ReleaseVerification\SourceOnlyAuthorityTest::testRavRejectsNonCanonicalDecisionAuthorityStatements with data set "missing full stop" ('Owner-approved package delive...cision')
+RuntimeException: Unable to start process: git
+
+/app/tests/Support/ReleaseVerification/ProcessRunner.php:49
+/app/tests/Support/ReleaseVerification/GitRepository.php:30
+/app/tests/Support/ReleaseVerification/ReleaseRepositoryFixture.php:40
+/app/tests/Support/ReleaseVerification/ReleaseRepositoryFixture.php:23
+/app/tests/Unit/ReleaseVerification/SourceOnlyAuthorityTest.php:264
+/app/tests/Unit/ReleaseVerification/SourceOnlyAuthorityTest.php:165
+
+86) Maatify\RateLimiter\Tests\Unit\ReleaseVerification\SourceOnlyAuthorityTest::testRavRejectsNonCanonicalDecisionAuthorityStatements with data set "looser wording" ('Owner-approved RC2 remediatio...ction.')
+RuntimeException: Unable to start process: git
+
+/app/tests/Support/ReleaseVerification/ProcessRunner.php:49
+/app/tests/Support/ReleaseVerification/GitRepository.php:30
+/app/tests/Support/ReleaseVerification/ReleaseRepositoryFixture.php:40
+/app/tests/Support/ReleaseVerification/ReleaseRepositoryFixture.php:23
+/app/tests/Unit/ReleaseVerification/SourceOnlyAuthorityTest.php:264
+/app/tests/Unit/ReleaseVerification/SourceOnlyAuthorityTest.php:165
+
+87) Maatify\RateLimiter\Tests\Unit\ReleaseVerification\SourceOnlyAuthorityTest::testRavRejectsNonCanonicalDecisionAuthorityStatements with data set "maintainer proposed" ('Proposed by a maintainer.')
+RuntimeException: Unable to start process: git
+
+/app/tests/Support/ReleaseVerification/ProcessRunner.php:49
+/app/tests/Support/ReleaseVerification/GitRepository.php:30
+/app/tests/Support/ReleaseVerification/ReleaseRepositoryFixture.php:40
+/app/tests/Support/ReleaseVerification/ReleaseRepositoryFixture.php:23
+/app/tests/Unit/ReleaseVerification/SourceOnlyAuthorityTest.php:264
+/app/tests/Unit/ReleaseVerification/SourceOnlyAuthorityTest.php:165
+
+88) Maatify\RateLimiter\Tests\Unit\ReleaseVerification\SourceOnlyAuthorityTest::testRavRejectsNonCanonicalDecisionAuthorityStatements with data set "empty" ('')
+RuntimeException: Unable to start process: git
+
+/app/tests/Support/ReleaseVerification/ProcessRunner.php:49
+/app/tests/Support/ReleaseVerification/GitRepository.php:30
+/app/tests/Support/ReleaseVerification/ReleaseRepositoryFixture.php:40
+/app/tests/Support/ReleaseVerification/ReleaseRepositoryFixture.php:23
+/app/tests/Unit/ReleaseVerification/SourceOnlyAuthorityTest.php:264
+/app/tests/Unit/ReleaseVerification/SourceOnlyAuthorityTest.php:165
+
+89) Maatify\RateLimiter\Tests\Unit\ReleaseVerification\SourceOnlyAuthorityTest::testRavAcceptsOnlyTheCanonicalPositiveRepresentation
+RuntimeException: Unable to start process: git
+
+/app/tests/Support/ReleaseVerification/ProcessRunner.php:49
+/app/tests/Support/ReleaseVerification/GitRepository.php:30
+/app/tests/Support/ReleaseVerification/ReleaseRepositoryFixture.php:40
+/app/tests/Support/ReleaseVerification/ReleaseRepositoryFixture.php:23
+/app/tests/Unit/ReleaseVerification/SourceOnlyAuthorityTest.php:264
+/app/tests/Unit/ReleaseVerification/SourceOnlyAuthorityTest.php:173
+
+90) Maatify\RateLimiter\Tests\Unit\ReleaseVerification\SourceOnlyAuthorityTest::testRavRejectsNonCanonicalOwnerApprovalDeclarations with data set "state PENDING" (['PENDING'])
+RuntimeException: Unable to start process: git
+
+/app/tests/Support/ReleaseVerification/ProcessRunner.php:49
+/app/tests/Support/ReleaseVerification/GitRepository.php:30
+/app/tests/Support/ReleaseVerification/ReleaseRepositoryFixture.php:40
+/app/tests/Support/ReleaseVerification/ReleaseRepositoryFixture.php:23
+/app/tests/Unit/ReleaseVerification/SourceOnlyAuthorityTest.php:264
+/app/tests/Unit/ReleaseVerification/SourceOnlyAuthorityTest.php:204
+
+91) Maatify\RateLimiter\Tests\Unit\ReleaseVerification\SourceOnlyAuthorityTest::testRavRejectsNonCanonicalOwnerApprovalDeclarations with data set "state lower-case" (['approved'])
+RuntimeException: Unable to start process: git
+
+/app/tests/Support/ReleaseVerification/ProcessRunner.php:49
+/app/tests/Support/ReleaseVerification/GitRepository.php:30
+/app/tests/Support/ReleaseVerification/ReleaseRepositoryFixture.php:40
+/app/tests/Support/ReleaseVerification/ReleaseRepositoryFixture.php:23
+/app/tests/Unit/ReleaseVerification/SourceOnlyAuthorityTest.php:264
+/app/tests/Unit/ReleaseVerification/SourceOnlyAuthorityTest.php:204
+
+92) Maatify\RateLimiter\Tests\Unit\ReleaseVerification\SourceOnlyAuthorityTest::testRavRejectsNonCanonicalOwnerApprovalDeclarations with data set "state negated" (['NOT APPROVED'])
+RuntimeException: Unable to start process: git
+
+/app/tests/Support/ReleaseVerification/ProcessRunner.php:49
+/app/tests/Support/ReleaseVerification/GitRepository.php:30
+/app/tests/Support/ReleaseVerification/ReleaseRepositoryFixture.php:40
+/app/tests/Support/ReleaseVerification/ReleaseRepositoryFixture.php:23
+/app/tests/Unit/ReleaseVerification/SourceOnlyAuthorityTest.php:264
+/app/tests/Unit/ReleaseVerification/SourceOnlyAuthorityTest.php:204
+
+93) Maatify\RateLimiter\Tests\Unit\ReleaseVerification\SourceOnlyAuthorityTest::testRavRejectsNonCanonicalOwnerApprovalDeclarations with data set "state missing" ([''])
+RuntimeException: Unable to start process: git
+
+/app/tests/Support/ReleaseVerification/ProcessRunner.php:49
+/app/tests/Support/ReleaseVerification/GitRepository.php:30
+/app/tests/Support/ReleaseVerification/ReleaseRepositoryFixture.php:40
+/app/tests/Support/ReleaseVerification/ReleaseRepositoryFixture.php:23
+/app/tests/Unit/ReleaseVerification/SourceOnlyAuthorityTest.php:264
+/app/tests/Unit/ReleaseVerification/SourceOnlyAuthorityTest.php:204
+
+94) Maatify\RateLimiter\Tests\Unit\ReleaseVerification\SourceOnlyAuthorityTest::testRavRejectsNonCanonicalOwnerApprovalDeclarations with data set "authority missing" ([''])
+RuntimeException: Unable to start process: git
+
+/app/tests/Support/ReleaseVerification/ProcessRunner.php:49
+/app/tests/Support/ReleaseVerification/GitRepository.php:30
+/app/tests/Support/ReleaseVerification/ReleaseRepositoryFixture.php:40
+/app/tests/Support/ReleaseVerification/ReleaseRepositoryFixture.php:23
+/app/tests/Unit/ReleaseVerification/SourceOnlyAuthorityTest.php:264
+/app/tests/Unit/ReleaseVerification/SourceOnlyAuthorityTest.php:204
+
+95) Maatify\RateLimiter\Tests\Unit\ReleaseVerification\SourceOnlyAuthorityTest::testRavRejectsNonCanonicalOwnerApprovalDeclarations with data set "authority Maintainer" (['Maintainer'])
+RuntimeException: Unable to start process: git
+
+/app/tests/Support/ReleaseVerification/ProcessRunner.php:49
+/app/tests/Support/ReleaseVerification/GitRepository.php:30
+/app/tests/Support/ReleaseVerification/ReleaseRepositoryFixture.php:40
+/app/tests/Support/ReleaseVerification/ReleaseRepositoryFixture.php:23
+/app/tests/Unit/ReleaseVerification/SourceOnlyAuthorityTest.php:264
+/app/tests/Unit/ReleaseVerification/SourceOnlyAuthorityTest.php:204
+
+96) Maatify\RateLimiter\Tests\Unit\ReleaseVerification\SourceOnlyAuthorityTest::testRavRejectsNonCanonicalOwnerApprovalDeclarations with data set "authority wrong case" (['package owner'])
+RuntimeException: Unable to start process: git
+
+/app/tests/Support/ReleaseVerification/ProcessRunner.php:49
+/app/tests/Support/ReleaseVerification/GitRepository.php:30
+/app/tests/Support/ReleaseVerification/ReleaseRepositoryFixture.php:40
+/app/tests/Support/ReleaseVerification/ReleaseRepositoryFixture.php:23
+/app/tests/Unit/ReleaseVerification/SourceOnlyAuthorityTest.php:264
+/app/tests/Unit/ReleaseVerification/SourceOnlyAuthorityTest.php:204
+
+97) Maatify\RateLimiter\Tests\Unit\ReleaseVerification\SourceOnlyAuthorityTest::testRavRejectsNonCanonicalOwnerApprovalDeclarations with data set "authority decorated" (['Package Owner (acting)'])
+RuntimeException: Unable to start process: git
+
+/app/tests/Support/ReleaseVerification/ProcessRunner.php:49
+/app/tests/Support/ReleaseVerification/GitRepository.php:30
+/app/tests/Support/ReleaseVerification/ReleaseRepositoryFixture.php:40
+/app/tests/Support/ReleaseVerification/ReleaseRepositoryFixture.php:23
+/app/tests/Unit/ReleaseVerification/SourceOnlyAuthorityTest.php:264
+/app/tests/Unit/ReleaseVerification/SourceOnlyAuthorityTest.php:204
+
+98) Maatify\RateLimiter\Tests\Unit\ReleaseVerification\SourceOnlyAuthorityTest::testRavRejectsNonCanonicalOwnerApprovalDeclarations with data set "authority negated" (['Not Package Owner'])
+RuntimeException: Unable to start process: git
+
+/app/tests/Support/ReleaseVerification/ProcessRunner.php:49
+/app/tests/Support/ReleaseVerification/GitRepository.php:30
+/app/tests/Support/ReleaseVerification/ReleaseRepositoryFixture.php:40
+/app/tests/Support/ReleaseVerification/ReleaseRepositoryFixture.php:23
+/app/tests/Unit/ReleaseVerification/SourceOnlyAuthorityTest.php:264
+/app/tests/Unit/ReleaseVerification/SourceOnlyAuthorityTest.php:204
+
+99) Maatify\RateLimiter\Tests\Unit\ReleaseVerification\StrictTemporalAndSemVerTest::testSourceOnlyDecisionRejectsImpossibleOwnerDates
+RuntimeException: Unable to start process: git
+
+/app/tests/Support/ReleaseVerification/ProcessRunner.php:49
+/app/tests/Support/ReleaseVerification/GitRepository.php:30
+/app/tests/Support/ReleaseVerification/ReleaseRepositoryFixture.php:40
+/app/tests/Support/ReleaseVerification/ReleaseRepositoryFixture.php:23
+/app/tests/Unit/ReleaseVerification/StrictTemporalAndSemVerTest.php:166
+
+100) Maatify\RateLimiter\Tests\Unit\ReleaseVerification\StrictTemporalAndSemVerTest::testRavSemanticReviewRejectsImpossibleReviewedAt
+RuntimeException: Unable to start process: git
+
+/app/tests/Support/ReleaseVerification/ProcessRunner.php:49
+/app/tests/Support/ReleaseVerification/GitRepository.php:30
+/app/tests/Support/ReleaseVerification/ReleaseRepositoryFixture.php:40
+/app/tests/Support/ReleaseVerification/ReleaseRepositoryFixture.php:23
+/app/tests/Unit/ReleaseVerification/StrictTemporalAndSemVerTest.php:149
+
+--
+
+There were 4 failures:
+
+1) Maatify\RateLimiter\Tests\Unit\ReleaseVerification\ReleaseArtifactVerifierTest::testFailsWhenCandidateShaDoesNotExistInRepo
+Failed asserting that 'Repository path is not inside a valid Git work tree. Qualifying RAV requires a real Git repository.' [ASCII](length: 99) contains "does not exist as a commit object" [ASCII](length: 33).
+
+/app/tests/Unit/ReleaseVerification/ReleaseArtifactVerifierTest.php:97
+
+2) Maatify\RateLimiter\Tests\Unit\ReleaseVerification\ReleaseArtifactVerifierTest::testFailsWhenCandidateCommitExistsButNotCheckedOutHead
+Failed asserting that 'Repository path is not inside a valid Git work tree. Qualifying RAV requires a real Git repository.' [ASCII](length: 99) contains "does not match candidate SHA" [ASCII](length: 28).
+
+/app/tests/Unit/ReleaseVerification/ReleaseArtifactVerifierTest.php:106
+
+3) Maatify\RateLimiter\Tests\Unit\ReleaseVerification\ReleaseArtifactVerifierTest::testPassesWhenCandidateCommitMatchesCheckedOutHeadAndCleanTree
+Failed asserting that two strings are identical.
+--- Expected
++++ Actual
+@@ @@
+-'PASS'
++'FAIL'
+
+/app/tests/Unit/ReleaseVerification/ReleaseArtifactVerifierTest.php:114
+
+4) Maatify\RateLimiter\Tests\Unit\ReleaseVerification\ReleaseArtifactVerifierTest::testFailsOnMalformedCandidateSha
+Failed asserting that 'Repository path is not inside a valid Git work tree. Qualifying RAV requires a real Git repository.' [ASCII](length: 99) contains "40-character hexadecimal commit hash" [ASCII](length: 36).
+
+/app/tests/Unit/ReleaseVerification/ReleaseArtifactVerifierTest.php:86
+
+ERRORS!
+Tests: 2787, Assertions: 74881, Errors: 100, Failures: 4, Skipped: 14.

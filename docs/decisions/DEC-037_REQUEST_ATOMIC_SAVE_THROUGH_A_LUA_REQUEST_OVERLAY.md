@@ -59,6 +59,10 @@ How one `EvaluationPipeline::process()` request (the whole `checkOnly` evaluatio
 - **A Host store** that wants the same guarantee implements `RequestAtomicStoreInterface`; one that does not keeps the sequential writes and the fenced writes of DEC-030/DEC-031.
 - **Tests that read the wire.** A test that recognises a store script by its text or position now finds it wrapped; `OverlayWire` in the test support does that matching.
 
+## Application note (#258): the outcome claim during a circuit recovery
+
+Item 7 already states that the outcome claim is an independent atomic command, outside the request, and stays claimed when the evaluation is rejected. On `main@7014c796` that held only while the circuit was closed: during a recovery the engine ran the outcome inside the recovery `transactRequest()`, where the store routed `CLAIM_WITH_OUTCOME` through the request overlay, so a rejected evaluation discarded the claim and a recalculation could claim again (reproduced in `AdmissionOutcomeDuringRecoveryRedisTest`, circuit state reached by a worker with a lagging Host clock). `RedisFullCapabilityStore::claimAdmissionPermitWithOutcome()` now always sends the claim as its own command and `RateLimiterEngine` keeps the lane of an accepted claim for the rest of the request. No decision changes. The recovery step (lease and transition) is saved with the request: a rejected evaluation saves none of it, an attempt abandoned for a conflict saves none of it, and only the final evaluation that completes saves it (together with its score effects), with its signals after that save; `docs/FAILURE_SEMANTICS.md` §4.5 lists the three endings.
+
 ## Relationship to Other Decisions
 
 - **DEC-029** (no concurrency exception after a committed write): unchanged; with one save per request a conflict before the save raises nothing and recalculates.
