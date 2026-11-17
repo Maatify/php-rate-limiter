@@ -6,6 +6,7 @@ namespace Maatify\RateLimiter\Service;
 
 use Maatify\RateLimiter\Config\AdmissionReservationPolicyInterface;
 use Maatify\RateLimiter\Config\BlockPolicyInterface;
+use Maatify\RateLimiter\Enum\AdmissionLaneEnum;
 use Maatify\RateLimiter\Enum\PolicyCapabilityEnum;
 use Maatify\RateLimiter\Config\PolicyCapabilityProviderInterface;
 use Maatify\RateLimiter\Config\FailureFallbackConfigurationProviderInterface;
@@ -357,6 +358,9 @@ class RateLimiterEngine implements RateLimiterRuntimeInterface, AdmissionBinding
         $atomicRecovery = !$this->sequentialRecovery && $requestStore !== null && $this->circuitBreaker->usesStore($requestStore);
         $phase = 'before';
         $answered = false;
+        // #258: the lane of an outcome claim this request has already made. The claim is a command of its own (DEC-036, DEC-037
+        // item 7), so a recalculated evaluation of the same request must not claim again (the permit would answer `duplicate`).
+        $settled = null;
 
         $recover = function (bool $inMemory = false) use ($policy, $context, $policyName, &$phase): ?RateLimitResultDTO {
             $phase = 'probe';
@@ -384,12 +388,12 @@ class RateLimiterEngine implements RateLimiterRuntimeInterface, AdmissionBinding
         }
 
         try {
-            $process = function () use ($policy, $context, $request): RateLimitResultDTO {
+            $process = function () use ($policy, $context, $request, &$settled): RateLimitResultDTO {
                 $device = $this->deviceResolver->resolve($context);
                 $group = $this->admissionGroup($policy);
 
                 if ($group !== null && $this->admission !== null && $this->admission->fenceOpen($group)) {
-                    return $this->limitWithAdmission($this->admission, $policy, $group, $context, $request, $device);
+                    return $this->limitWithAdmission($this->admission, $policy, $group, $context, $request, $device, $settled);
                 }
 
                 return $this->pipeline->process($policy, $context, $request, $device);
@@ -602,15 +606,17 @@ class RateLimiterEngine implements RateLimiterRuntimeInterface, AdmissionBinding
         RateLimitContextDTO $context,
         RateLimitCommand $request,
         \Maatify\RateLimiter\DTO\DeviceIdentityDTO $device,
+        ?AdmissionLaneEnum &$settled = null,
     ): RateLimitResultDTO {
         if ($request->isFailure || $request->isSuccess) {
             if ($request->permit === null) {
                 throw new RateLimiterException("Policy {$policy->getName()} invalid use: an outcome of an admission policy requires the permit issued with its admission.");
             }
-            $applied = $admission->applyOutcome($policy->getName(), $group, $context, $request->permit, $request->isSuccess);
+            $applied = $settled ?? $admission->applyOutcome($policy->getName(), $group, $context, $request->permit, $request->isSuccess);
             if ($applied instanceof RateLimitResultDTO) {
                 return $applied;
             }
+            $settled = $applied;
 
             return $this->pipeline->process($policy, $context, $request, $device, $applied);
         }

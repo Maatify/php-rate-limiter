@@ -89,6 +89,8 @@ final class RedisFullCapabilityStore implements
 
     private ?RedisAdmissionOperations $admission = null;
 
+    private ?RedisAdmissionOperations $outcomeAdmission = null;
+
     /** T-5: the first backend failure a step of the held request met, even when the step handled it and went on. */
     private ?BackendFailureException $requestBackendFailure = null;
 
@@ -2957,7 +2959,18 @@ LUA;
         AdmissionOutcomeDTO $outcome,
         int $now,
     ): AdmissionPermitClaimEnum {
-        return $this->admission()->claimAdmissionPermitWithOutcome($lane, $subject, $operation, $outcome, $now);
+        // DEC-036 / DEC-037 item 7: the claim and the admission effects of an outcome are one atomic command of their own. It is
+        // never held back by a request overlay, so it stays claimed when the evaluation after it is rejected or recalculated,
+        // also while the request holds a circuit recovery step (#258). The caller applies it once per request.
+        return $this->outcomeAdmission()->claimAdmissionPermitWithOutcome($lane, $subject, $operation, $outcome, $now);
+    }
+
+    private function outcomeAdmission(): RedisAdmissionOperations
+    {
+        return $this->outcomeAdmission ??= new RedisAdmissionOperations(
+            new CallableRedisCommandExecutor(fn(array $command): mixed => $this->command($command)),
+            $this->namespace,
+        );
     }
 
     private function admission(): RedisAdmissionOperations

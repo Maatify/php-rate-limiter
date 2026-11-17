@@ -1,0 +1,74 @@
+PHP 8.4.27 INT=8 redis=6.3.0
+PHPUnit 11.5.57 by Sebastian Bergmann and contributors.
+
+Runtime:       PHP 8.4.27
+Configuration: /app/phpunit.xml
+
+F.....F.F.F...F..                                                 17 / 17 (100%)
+
+Time: 00:00.530, Memory: 16.00 MB
+
+Admission Outcome During Recovery Redis (Maatify\RateLimiter\Tests\Integration\Redis\AdmissionOutcomeDuringRecoveryRedis)
+ ✘ A rejected evaluation after the outcome keeps the claim and saves no recovery with data set "recovering circuit, probe eligible"
+   │
+   │ DEC-036/037: the claim stays when the evaluation after it is rejected.
+   │ Failed asserting that two strings are identical.
+   │ --- Expected
+   │ +++ Actual
+   │ @@ @@
+   │ -'CLAIMED'
+   │ +'ISSUED'
+   │
+   │ /app/tests/Integration/Redis/AdmissionOutcomeDuringRecoveryRedisTest.php:294
+   │
+ ✔ A rejected evaluation after the outcome keeps the claim and saves no recovery with data set "closed circuit (control)"
+ ✔ A successful evaluation saves the outcome effects once and the recovery with the request with data set "closed, success"
+ ✔ A successful evaluation saves the outcome effects once and the recovery with the request with data set "recovering, success"
+ ✔ A successful evaluation saves the outcome effects once and the recovery with the request with data set "recovering, failure"
+ ✔ A successful evaluation saves the outcome effects once and the recovery with the request with data set "closed, failure"
+ ✘ A duplicate outcome repeats neither the admission effects nor the score with data set "recovering circuit, probe eligible"
+   │
+   │ Failed asserting that two strings are identical.
+   │ --- Expected
+   │ +++ Actual
+   │ @@ @@
+   │ -'CLAIMED'
+   │ +'ISSUED'
+   │
+   │ /app/tests/Integration/Redis/AdmissionOutcomeDuringRecoveryRedisTest.php:358
+   │
+ ✔ A duplicate outcome repeats neither the admission effects nor the score with data set "closed circuit (control)"
+ ✘ A conflicting outcome is refused after the first claim with data set "recovering circuit, probe eligible"
+   │
+   │ Failed asserting that null is identical to 'permit_conflict'.
+   │
+   │ /app/tests/Integration/Redis/AdmissionOutcomeDuringRecoveryRedisTest.php:385
+   │
+ ✔ A conflicting outcome is refused after the first claim with data set "closed circuit (control)"
+ ✘ A redis conflict recalculates the evaluation and claims once
+   │
+   │ The claim is one atomic operation of its own: a recalculated request does not claim again.
+   │ Failed asserting that 2 is identical to 1.
+   │
+   │ /app/tests/Integration/Redis/AdmissionOutcomeDuringRecoveryRedisTest.php:417
+   │
+ ✘ A lost claim request leaves the permit issued and a lost reply leaves it claimed once with data set "recovering, reply lost"
+   │
+   │ The operation completed in Redis: the claim and its admission effects are stored.
+   │ Failed asserting that two strings are identical.
+   │ --- Expected
+   │ +++ Actual
+   │ @@ @@
+   │ -'CLAIMED'
+   │ +'ISSUED'
+   │
+   │ /app/tests/Integration/Redis/AdmissionOutcomeDuringRecoveryRedisTest.php:465
+   │
+ ✔ A lost claim request leaves the permit issued and a lost reply leaves it claimed once with data set "closed, request lost"
+ ✔ A lost claim request leaves the permit issued and a lost reply leaves it claimed once with data set "closed, reply lost"
+ ✔ A lost claim request leaves the permit issued and a lost reply leaves it claimed once with data set "recovering, request lost"
+ ✔ A rejected or completed admission check only keeps the request atomicity with data set "closed circuit (control)"
+ ✔ A rejected or completed admission check only keeps the request atomicity with data set "recovering circuit, probe eligible"
+
+FAILURES!
+Tests: 17, Assertions: 3268, Failures: 5.

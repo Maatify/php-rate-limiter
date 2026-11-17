@@ -7,6 +7,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [1.0.0-rc.4]
 
+### Fixed (#258) — Outcome claim of an admission policy while the circuit recovers
+- During a circuit recovery the outcome claim (`CLAIM_WITH_OUTCOME`) was held back with the recovery step, so an evaluation rejected after it left the permit `ISSUED`, and a recalculation after a Redis conflict could claim twice. The claim is now its own command in every circuit state (DEC-036, DEC-037 item 7); the probe lease and the state change are still saved with the request or not at all. A Host that retried a rejected outcome with the same permit during a recovery now receives `permit_duplicate`.
+
 ### Added (#206) — Optional pending-permit limit on the proven admission lane
 - `RateLimiterBuilder::withProvenPendingPermitLimit(int $limit)` bounds the proven-lane permits one source holds between
   reservation and outcome (or the 30 s deadline). The surplus is refused with the cause `source_pending_permits`. Success and
