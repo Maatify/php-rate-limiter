@@ -203,7 +203,8 @@ jobs:
   php-32bit:
     name: Admission integer width (actual 32-bit PHP)
     timeout-minutes: 20
-    runs-on: ubuntu-latest
+    # Pinned: on ubuntu-latest (26.04, Docker 29.x) the image build's container cannot resolve DNS (apt and pecl fail, #255).
+    runs-on: ubuntu-24.04
     steps:
       - name: Checkout Code
         uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
