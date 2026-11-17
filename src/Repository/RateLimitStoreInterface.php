@@ -23,7 +23,11 @@ interface RateLimitStoreInterface
      * resulting value is outside that range, or a stored value already is, the call fails explicitly before any stored
      * value, timestamp or expiry changes; an implementation must not clamp, wrap or write a value its caller cannot read
      * back, and the check and the change are one atomic operation. It is a failure of the score calculation, not a backend
-     * outage: it is not classified as a `BackendFailureException`, starts no fallback and is not retried by the package.
+     * outage: it is not classified as a `BackendFailureException` and starts no fallback. A direct call is not retried by the
+     * package, and a refusal over state that is still current inside `transactRequest()` is thrown unchanged and not retried
+     * (DEC-037). Inside `transactRequest()` the evaluation runs again, within its bound, when the state it read changed
+     * before the save, so a refusal raised over state that has since changed is not final: the recalculation can succeed or
+     * refuse again on the newer state, and nothing of a refused evaluation is saved.
      *
      * The type that carries the failure belongs to the component that detects it. A calculation made by the implementation
      * itself (a custom store, the runnable example stores) fails with `RateLimiterException`. An error reply of a backend

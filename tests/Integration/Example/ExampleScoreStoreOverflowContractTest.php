@@ -23,7 +23,8 @@ use ReflectionProperty;
  * observed by reflection, read-only, and compared as a whole, with its types: a refusal must leave the value (an `int`, never a float), `updatedAt` and
  * `expiresAt` exactly as they were. Where the store takes a clock the clock is advanced between the successful write and the refused call, and the refused call
  * passes a different TTL, so a refusal that touched the time or the expiry would be visible with no sleep. `SimpleThrottleExampleStore` reads `time()`
- * itself, so only the TTL (and the value) can tell there; that is its limit, not a gap of the check.
+ * itself and cannot be driven, so `testARefusalLeavesAnOldTimestampAloneOnEveryExample` seeds its record, by reflection, with an `updatedAt` and an `expiresAt`
+ * that differ from the real `time()` (F253-02): a refusal that rewrote `updatedAt` inside the same second would otherwise be invisible.
  */
 #[Group('integration')]
 #[Group('php32')]
@@ -199,5 +200,25 @@ final class ExampleScoreStoreOverflowContractTest extends TestCase
 
         self::assertSame(5, $store->increment(self::KEY, 7200, 1));
         self::assertSame($expiresAt, $this->record($store)['expiresAt']);
+    }
+
+    /** F253-02: the record is seeded with a timestamp far from the current time, so a refusal that wrote `updatedAt` (to the clock or to `time()`) changes it. */
+    #[DataProvider('examples')]
+    public function testARefusalLeavesAnOldTimestampAloneOnEveryExample(string $example, bool $drivable): void
+    {
+        $clock = new FixedClock();
+        $store = $this->store($example, $clock);
+        $now = $clock->now()->getTimestamp();
+        $seeded = [self::KEY => ['value' => PHP_INT_MAX, 'updatedAt' => $now - 1000, 'expiresAt' => $now + 5000]];
+        if ($example === 'simple') {
+            $seeded[self::KEY]['updatedAt'] = time() - 1000;
+            $seeded[self::KEY]['expiresAt'] = time() + 5000;
+        }
+        (new ReflectionProperty($store, 'counters'))->setValue($store, $seeded);
+
+        $this->assertRefusedUnchanged($store, $clock, $drivable, fn(): int => $store->increment(self::KEY, 7200, 1), 'seeded MAX + 1');
+        $record = $this->record($store);
+        self::assertSame($seeded[self::KEY]['updatedAt'], $record['updatedAt'], 'The old updatedAt is untouched by the refusal.');
+        self::assertSame($seeded[self::KEY]['expiresAt'], $record['expiresAt']);
     }
 }
