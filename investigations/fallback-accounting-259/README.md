@@ -12,7 +12,7 @@ Measured on the baseline (login policy, allowance 3 per account in 600 s, circui
 | --- | ---: | ---: |
 | no conflict | 1 | 1 |
 | one conflict, final answer fallback | 2 | 1 |
-| three conflicts, final answer fallback | 4 (the call itself was refused, `fallback_limit_exceeded`) | 1 |
+| three conflicts, final answer fallback | more than 3: the call itself was refused (`fallback_limit_exceeded`) | 1 |
 | retries exhausted (concurrency block) | 32 | 0 |
 | failed save, repeated in the process | 3 | 1 |
 | save applied, reply lost | 2 | 1 |
