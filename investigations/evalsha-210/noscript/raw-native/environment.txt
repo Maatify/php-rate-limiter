@@ -1,6 +1,8 @@
-git: 88e69a4c04dc7f12e28a9aa896676753f90edbf6  tree: ac283e82b226a3ba3c00ed6101f4e72a3084d80f
-tracked-status (empty = clean):
-date: 2026-11-17T09:02:47Z
-php-image: maatify-rl-php64:local sha256:d4f5a573f22cc4df37f825d1a4c3c9e841486d9d0a00e89c71d4e8b704e31228 arm64
-php: 8.4.27 INT_SIZE=8 ext-redis=6.3.0
+git: ac51e96655bddf56683189eb70f0b7b2499df95c  tree: ace8661b45f81e6e6f0caa88700e6516e62906a2
+tracked-status (empty = clean):  M investigations/evalsha-210/noscript/raw-native/environment.txt;
+date: 2026-11-17T09:53:35Z
+php64-image: maatify-rl-php64:local linux/arm64 sha256:d4f5a573f22cc4df37f825d1a4c3c9e841486d9d0a00e89c71d4e8b704e31228 arm64
+php64: 8.4.27 INT_SIZE=8 ext-redis=6.3.0
+php32-image: maatify-rl-php32:local linux/386 sha256:5012fa047d631033cf28439512241e3b48bc741ef1faf6abbb9b6b293c4a0018 386
+php32: 8.4.27 INT_SIZE=4 ext-redis=6.3.0
 redis: Redis server v=7.0.15 sha=00000000:0 malloc=jemalloc-5.2.1 bits=64 build=d6d81b7b50ab2e83

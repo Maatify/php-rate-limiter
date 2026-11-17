@@ -3,9 +3,9 @@ PHPUnit 11.5.57 by Sebastian Bergmann and contributors.
 Runtime:       PHP 8.4.27
 Configuration: /app/phpunit.xml
 
-......................                                            22 / 22 (100%)
+.......................S.                                         25 / 25 (100%)
 
-Time: 00:00.621, Memory: 14.00 MB
+Time: 00:01.859, Memory: 10.00 MB
 
 Native Noscript Study Redis (Maatify\RateLimiter\Tests\Integration\Redis\NativeNoscriptStudyRedis)
  ✔ An error reply of a known code is false with the text in get last error and a nil reply is false with none
@@ -22,13 +22,17 @@ Native Noscript Study Redis (Maatify\RateLimiter\Tests\Integration\Redis\NativeN
  ✔ No script of the package answers with the code noscript
  ✔ The confirming variant replays nothing for the lookalike
  ✔ The confirming variant fails a call that never ran when another client loads the script first
- ✔ A lost request or reply is never replayed by the adapter or by ext redis with data set "the reply is lost after the server ran the script"
  ✔ A lost request or reply is never replayed by the adapter or by ext redis with data set "the request is lost before the server sees it"
+ ✔ A lost request or reply is never replayed by the adapter or by ext redis with data set "the reply is lost after the server ran the script"
  ✔ A request is saved by one commit through the adapter and a cold commit script costs one fallback not a second save
  ✔ The cache lost just before the commit does not repeat or lose the save
  ✔ A classified rejection leaves redis untouched and never calls the save through the adapter
  ✔ A stale plan is recalculated and saved once through the adapter with the cache lost before each commit
  ✔ The public workload ends in the same state with the same decisions as eval over the resp client
- ✔ An exact expiry and a one millisecond difference survive the native script path
+ ↩ An exact wide integer reply and a one millisecond difference survive the native script path on php 64
+ ✔ The native client saturates a wide integer reply on php 32
+ ✔ The saved expiry of a real request is exact and a one millisecond change is detected with data set "warm cache"
+ ✔ The saved expiry of a real request is exact and a one millisecond change is detected with data set "cache lost just before the commit"
 
-OK (22 tests, 2160 assertions)
+OK, but some tests were skipped!
+Tests: 25, Assertions: 2376, Skipped: 1.

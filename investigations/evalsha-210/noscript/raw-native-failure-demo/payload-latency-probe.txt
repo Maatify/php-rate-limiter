@@ -1,0 +1,18 @@
+-- direct
+pad     0: p50 0.10 ms p95 0.20 ms
+pad  4000: p50 0.06 ms p95 0.17 ms
+pad 13000: p50 0.09 ms p95 0.13 ms
+pad 20000: p50 0.09 ms p95 0.11 ms
+pad 60000: p50 0.15 ms p95 0.22 ms
+-- first-round proxy (delay-proxy.php, 3.5 ms each way)
+pad     0: p50 8.27 ms p95 8.83 ms
+pad  4000: p50 9.09 ms p95 9.51 ms
+pad 13000: p50 50.17 ms p95 51.45 ms
+pad 20000: p50 50.10 ms p95 51.18 ms
+pad 60000: p50 50.38 ms p95 51.55 ms
+-- delay-proxy-nodelay.php (3.5 ms each way)
+pad     0: p50 9.02 ms p95 9.47 ms
+pad  4000: p50 8.78 ms p95 9.40 ms
+pad 13000: p50 8.97 ms p95 9.69 ms
+pad 20000: p50 8.85 ms p95 9.70 ms
+pad 60000: p50 9.39 ms p95 10.09 ms
