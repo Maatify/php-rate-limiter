@@ -4,9 +4,9 @@ PHPUnit 11.5.57 by Sebastian Bergmann and contributors.
 Runtime:       PHP 8.4.27
 Configuration: /app/phpunit.xml
 
-F.....F.F.F...F..                                                 17 / 17 (100%)
+F.....F.F.FFF.....                                                18 / 18 (100%)
 
-Time: 00:01.399, Memory: 14.00 MB
+Time: 00:01.683, Memory: 14.00 MB
 
 Admission Outcome During Recovery Redis (Maatify\RateLimiter\Tests\Integration\Redis\AdmissionOutcomeDuringRecoveryRedis)
  ✘ A rejected evaluation after the outcome keeps the claim and saves no recovery with data set "recovering circuit, probe eligible"
@@ -19,12 +19,12 @@ Admission Outcome During Recovery Redis (Maatify\RateLimiter\Tests\Integration\R
    │ -'CLAIMED'
    │ +'ISSUED'
    │
-   │ /app/tests/Integration/Redis/AdmissionOutcomeDuringRecoveryRedisTest.php:294
+   │ /app/tests/Integration/Redis/AdmissionOutcomeDuringRecoveryRedisTest.php:355
    │
  ✔ A rejected evaluation after the outcome keeps the claim and saves no recovery with data set "closed circuit (control)"
  ✔ A successful evaluation saves the outcome effects once and the recovery with the request with data set "closed, success"
- ✔ A successful evaluation saves the outcome effects once and the recovery with the request with data set "closed, failure"
  ✔ A successful evaluation saves the outcome effects once and the recovery with the request with data set "recovering, failure"
+ ✔ A successful evaluation saves the outcome effects once and the recovery with the request with data set "closed, failure"
  ✔ A successful evaluation saves the outcome effects once and the recovery with the request with data set "recovering, success"
  ✘ A duplicate outcome repeats neither the admission effects nor the score with data set "recovering circuit, probe eligible"
    │
@@ -35,22 +35,29 @@ Admission Outcome During Recovery Redis (Maatify\RateLimiter\Tests\Integration\R
    │ -'CLAIMED'
    │ +'ISSUED'
    │
-   │ /app/tests/Integration/Redis/AdmissionOutcomeDuringRecoveryRedisTest.php:358
+   │ /app/tests/Integration/Redis/AdmissionOutcomeDuringRecoveryRedisTest.php:422
    │
  ✔ A duplicate outcome repeats neither the admission effects nor the score with data set "closed circuit (control)"
  ✘ A conflicting outcome is refused after the first claim with data set "recovering circuit, probe eligible"
    │
    │ Failed asserting that null is identical to 'permit_conflict'.
    │
-   │ /app/tests/Integration/Redis/AdmissionOutcomeDuringRecoveryRedisTest.php:385
+   │ /app/tests/Integration/Redis/AdmissionOutcomeDuringRecoveryRedisTest.php:450
    │
  ✔ A conflicting outcome is refused after the first claim with data set "closed circuit (control)"
- ✘ A redis conflict recalculates the evaluation and claims once
+ ✘ A redis conflict recalculates the evaluation claims once and records the score once with data set "an unrelated key the request read changes"
    │
    │ The claim is one atomic operation of its own: a recalculated request does not claim again.
    │ Failed asserting that 2 is identical to 1.
    │
-   │ /app/tests/Integration/Redis/AdmissionOutcomeDuringRecoveryRedisTest.php:417
+   │ /app/tests/Integration/Redis/AdmissionOutcomeDuringRecoveryRedisTest.php:509
+   │
+ ✘ A redis conflict recalculates the evaluation claims once and records the score once with data set "another request closes the circuit first"
+   │
+   │ The claim is one atomic operation of its own: a recalculated request does not claim again.
+   │ Failed asserting that 2 is identical to 1.
+   │
+   │ /app/tests/Integration/Redis/AdmissionOutcomeDuringRecoveryRedisTest.php:509
    │
  ✘ A lost claim request leaves the permit issued and a lost reply leaves it claimed once with data set "recovering, reply lost"
    │
@@ -62,13 +69,13 @@ Admission Outcome During Recovery Redis (Maatify\RateLimiter\Tests\Integration\R
    │ -'CLAIMED'
    │ +'ISSUED'
    │
-   │ /app/tests/Integration/Redis/AdmissionOutcomeDuringRecoveryRedisTest.php:465
+   │ /app/tests/Integration/Redis/AdmissionOutcomeDuringRecoveryRedisTest.php:561
    │
- ✔ A lost claim request leaves the permit issued and a lost reply leaves it claimed once with data set "closed, request lost"
  ✔ A lost claim request leaves the permit issued and a lost reply leaves it claimed once with data set "closed, reply lost"
+ ✔ A lost claim request leaves the permit issued and a lost reply leaves it claimed once with data set "closed, request lost"
  ✔ A lost claim request leaves the permit issued and a lost reply leaves it claimed once with data set "recovering, request lost"
  ✔ A rejected or completed admission check only keeps the request atomicity with data set "closed circuit (control)"
  ✔ A rejected or completed admission check only keeps the request atomicity with data set "recovering circuit, probe eligible"
 
 FAILURES!
-Tests: 17, Assertions: 3268, Failures: 5.
+Tests: 18, Assertions: 4197, Failures: 6.

@@ -4,22 +4,23 @@ PHPUnit 11.5.57 by Sebastian Bergmann and contributors.
 Runtime:       PHP 8.4.27
 Configuration: /app/phpunit.xml
 
-.................                                                 17 / 17 (100%)
+..................                                                18 / 18 (100%)
 
-Time: 00:01.354, Memory: 12.00 MB
+Time: 00:01.829, Memory: 12.00 MB
 
 Admission Outcome During Recovery Redis (Maatify\RateLimiter\Tests\Integration\Redis\AdmissionOutcomeDuringRecoveryRedis)
  ✔ A rejected evaluation after the outcome keeps the claim and saves no recovery with data set "recovering circuit, probe eligible"
  ✔ A rejected evaluation after the outcome keeps the claim and saves no recovery with data set "closed circuit (control)"
  ✔ A successful evaluation saves the outcome effects once and the recovery with the request with data set "closed, success"
+ ✔ A successful evaluation saves the outcome effects once and the recovery with the request with data set "recovering, failure"
  ✔ A successful evaluation saves the outcome effects once and the recovery with the request with data set "closed, failure"
  ✔ A successful evaluation saves the outcome effects once and the recovery with the request with data set "recovering, success"
- ✔ A successful evaluation saves the outcome effects once and the recovery with the request with data set "recovering, failure"
  ✔ A duplicate outcome repeats neither the admission effects nor the score with data set "recovering circuit, probe eligible"
  ✔ A duplicate outcome repeats neither the admission effects nor the score with data set "closed circuit (control)"
  ✔ A conflicting outcome is refused after the first claim with data set "recovering circuit, probe eligible"
  ✔ A conflicting outcome is refused after the first claim with data set "closed circuit (control)"
- ✔ A redis conflict recalculates the evaluation and claims once
+ ✔ A redis conflict recalculates the evaluation claims once and records the score once with data set "an unrelated key the request read changes"
+ ✔ A redis conflict recalculates the evaluation claims once and records the score once with data set "another request closes the circuit first"
  ✔ A lost claim request leaves the permit issued and a lost reply leaves it claimed once with data set "recovering, reply lost"
  ✔ A lost claim request leaves the permit issued and a lost reply leaves it claimed once with data set "closed, request lost"
  ✔ A lost claim request leaves the permit issued and a lost reply leaves it claimed once with data set "closed, reply lost"
@@ -27,4 +28,4 @@ Admission Outcome During Recovery Redis (Maatify\RateLimiter\Tests\Integration\R
  ✔ A rejected or completed admission check only keeps the request atomicity with data set "closed circuit (control)"
  ✔ A rejected or completed admission check only keeps the request atomicity with data set "recovering circuit, probe eligible"
 
-OK (17 tests, 4106 assertions)
+OK (18 tests, 5444 assertions)

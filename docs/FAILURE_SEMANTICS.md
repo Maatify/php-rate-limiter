@@ -476,10 +476,19 @@ FAIL_CLOSED result or a normal quota decision; see `docs/SIMPLE_THROTTLING.md`.
   interruption cases is tracked in the
   [#203 Lead review](https://github.com/Maatify/php-rate-limiter/pull/203#pullrequestreview-5855986519).
 * While the circuit is recovering (`OPEN` past its interval, or `HALF_OPEN`), the recovery step is saved with the request and the
-  outcome claim is not: `CLAIM_WITH_OUTCOME` is sent as its own command before the evaluation, exactly as with a closed circuit
-  (DEC-036, DEC-037 item 7). A rejected evaluation, or one that is recalculated after a Redis conflict, leaves the permit
-  `CLAIMED` with its admission effects once and saves neither the probe lease nor the state change; a recalculated request does not
-  claim again. A claim reply lost after the operation completed leaves the permit claimed, as in the second interruption case above (#258).
+  outcome claim is not: `CLAIM_WITH_OUTCOME` is sent as its own command before the evaluation, as with a closed circuit (DEC-036,
+  DEC-037 item 7), and the permit stays `CLAIMED` with its admission effects once, whatever happens to the evaluation after it (#258).
+  The evaluation then ends in one of three ways:
+  * **A classified rejection** (an error over current state): nothing of the evaluation is saved, so neither the score, nor the probe
+    lease, nor the state change, and no signal is sent.
+  * **A Redis conflict** (the save finds that a key it read has changed): that attempt saves nothing, neither its score effects nor its
+    recovery step. The request is evaluated again from fresh state without claiming again. Only the final evaluation that completes
+    is saved: its score effects once and, if the circuit still needs it, the recovery step with them, and its signal follows that
+    save. If another request has moved the circuit in the meantime, the re-evaluation sees the new state and saves no step of its own.
+  * **Retries exhausted** (`RateLimitConcurrencyException`): nothing is saved and the engine answers with the concurrency block; the
+    claim stays, so a retry with the same permit receives `permit_duplicate`.
+
+  A claim reply lost after the operation completed leaves the permit claimed, as in the second interruption case above.
 * Under DEC-033, windowed counters and failure sets operate as sliding sorted sets scored by element
   expiration (`now + ttl`). A refusal writes nothing and never prunes, leaving key TTL and state untouched.
   Admitted reservations and failure outcomes prune expired elements (`score <= now`), write new elements

@@ -269,6 +269,63 @@ final class AdmissionOutcomeDuringRecoveryRedisTest extends TestCase
         });
     }
 
+    /**
+     * The score and budget state of the account as stored (exact field maps read from outside Lua), the effects of the score
+     * pipeline of a recorded failure.
+     *
+     * @return list<array{string, array<string, string>}> family and fields, in a stable order
+     */
+    private function recorded(): array
+    {
+        $recorded = [];
+        foreach (array_keys($this->snapshot()) as $key) {
+            $family = self::family($key);
+            if ($family !== 'score' && $family !== 'budget') {
+                continue;
+            }
+            $fields = $this->raw->execute(['HGETALL', $key]);
+            self::assertIsArray($fields);
+            $map = [];
+            for ($i = 0; $i < count($fields); $i += 2) {
+                $name = $fields[$i];
+                $value = $fields[$i + 1] ?? null;
+                self::assertTrue(is_string($name) && is_string($value));
+                $map[$name] = $value;
+            }
+            ksort($map);
+            $recorded[] = [$family, $map];
+        }
+        usort($recorded, static fn(array $a, array $b): int => strcmp(json_encode($a, JSON_THROW_ON_ERROR), json_encode($b, JSON_THROW_ON_ERROR)));
+
+        return $recorded;
+    }
+
+    /** The one recorded failure of `acct` at T0 + 10: two score hashes (5 and the generation-bound 3) and a budget count of 1; a missing or a repeated recording differs. */
+    private function assertTheFailureWasRecordedOnce(): void
+    {
+        $at = (string) (self::T0 + 10);
+        $expected = [
+            ['budget', ['count' => '1', 'epochDuration' => '86400', 'epochStart' => $at]],
+            ['score', ['generation' => '1', 'expiresAt' => (string) (self::T0 + 10 + 86400), 'updatedAt' => $at, 'value' => '3']],
+            ['score', ['updatedAt' => $at, 'value' => '5']],
+        ];
+        foreach ($expected as &$entry) {
+            ksort($entry[1]);
+        }
+        unset($entry);
+        usort($expected, static fn(array $a, array $b): int => strcmp(json_encode($a, JSON_THROW_ON_ERROR), json_encode($b, JSON_THROW_ON_ERROR)));
+        self::assertSame($expected, $this->recorded(), 'The failure of the account was recorded exactly once.');
+    }
+
+    /** @return string|null the exact PEXPIRETIME reply (a decimal string where it exceeds the native integer), null for no expiry */
+    private function expiry(string $key): ?string
+    {
+        $reply = $this->raw->execute(['PEXPIRETIME', $key]);
+        self::assertTrue(is_int($reply) || is_string($reply));
+
+        return (string) $reply !== '' && ctype_digit((string) $reply) && (string) $reply !== '0' ? (string) $reply : null;
+    }
+
     /** @return list<string> */
     private function signalTypes(): array
     {
@@ -294,6 +351,7 @@ final class AdmissionOutcomeDuringRecoveryRedisTest extends TestCase
         self::assertSame(1, $claims, 'One claim reached Redis.');
         self::assertSame(0, $commits, 'The rejected evaluation saved nothing.');
         $record = $this->permitRecord();
+        self::assertSame([], $this->recorded(), 'The rejected evaluation recorded no score.');
         self::assertSame('CLAIMED', $record['state'] ?? null, 'DEC-036/037: the claim stays when the evaluation after it is rejected.');
         self::assertSame('failure', $record['outcome'] ?? null);
         $changed = self::changedFamilies($before, $after);
@@ -330,6 +388,9 @@ final class AdmissionOutcomeDuringRecoveryRedisTest extends TestCase
 
         $after = $this->snapshot();
         self::assertSame(1, $claims, 'One claim.');
+        if ($kind === 'failure') {
+            $this->assertTheFailureWasRecordedOnce();
+        }
         if ($circuit === 'recovering') {
             self::assertSame(1, $commits, 'The recovery step is saved with the request, in one save.');
         } else {
@@ -366,6 +427,7 @@ final class AdmissionOutcomeDuringRecoveryRedisTest extends TestCase
 
         $afterSecond = $this->snapshot();
         self::assertSame('permit_duplicate', $second->metadata?->cause);
+        self::assertSame([], $this->recorded(), 'A duplicate does not re-enter the score pipeline.');
         self::assertSame(RateLimitResultDTO::DECISION_ALLOW, $second->decision);
         $changed = self::changedFamilies($afterFirst, $afterSecond);
         self::assertSame([], array_values(array_filter($changed, static fn(string $family): bool => ! in_array($family, ['circuit', 'probe'], true))), 'A duplicate re-applies no admission effect and does not re-enter the score pipeline: ' . implode(',', $changed));
@@ -386,41 +448,72 @@ final class AdmissionOutcomeDuringRecoveryRedisTest extends TestCase
         $second = $this->runtime($this->raw, self::T0 + 11)->limit($this->context('acct'), $this->successOutcome($permit));
 
         self::assertSame('permit_conflict', $second->metadata?->cause);
+        self::assertSame([], $this->recorded(), 'A conflicting outcome records no score.');
         $changed = self::changedFamilies($afterFirst, $this->snapshot());
         self::assertSame([], array_values(array_filter($changed, static fn(string $family): bool => ! in_array($family, ['circuit', 'probe'], true))), implode(',', $changed));
         self::assertSame('failure', $this->permitRecord()['outcome'] ?? null, 'The first outcome stands.');
     }
 
-    public function testARedisConflictRecalculatesTheEvaluationAndClaimsOnce(): void
+    /** @return array<string, array{bool}> */
+    public static function conflicts(): array
+    {
+        return [
+            'another request closes the circuit first' => [true],
+            'an unrelated key the request read changes' => [false],
+        ];
+    }
+
+    #[DataProvider('conflicts')]
+    public function testARedisConflictRecalculatesTheEvaluationClaimsOnceAndRecordsTheScoreOnce(bool $rivalClosesTheCircuit): void
     {
         $permit = $this->prepare('recovering');
+        $beforeRequest = $this->snapshot();
         $claims = $commits = 0;
-        $rival = false;
         $claim = $this->claimScript();
-        $racing = new CallableRedisCommandExecutor(function (array $command) use (&$claims, &$commits, &$rival, $claim): mixed {
+        $racing = new CallableRedisCommandExecutor(function (array $command) use (&$claims, &$commits, $claim, $rivalClosesTheCircuit, $beforeRequest): mixed {
             if (OverlayWire::isScript($command, $claim)) {
                 $claims++;
             }
             if (OverlayWire::isCommit($command)) {
                 $commits++;
-                if (! $rival) {
-                    $rival = true;
-                    // Another request probes first and closes the circuit: what this request read has changed.
-                    $inner = $this->runtime($this->raw, self::T0 + 10)->limit($this->context('rival'), RateLimitCommand::checkOnly('login_protection'));
-                    self::assertSame(RateLimitResultDTO::DECISION_ALLOW, $inner->decision);
+                if ($commits === 1) {
+                    if ($rivalClosesTheCircuit) {
+                        // Another request probes first and closes the circuit: what this request read has changed.
+                        $inner = $this->runtime($this->raw, self::T0 + 10)->limit($this->context('rival'), RateLimitCommand::checkOnly('login_protection'));
+                        self::assertSame(RateLimitResultDTO::DECISION_ALLOW, $inner->decision);
+                    } else {
+                        // The expiry of a key the request read changes: the circuit is untouched, the fingerprint differs.
+                        $keys = array_values(array_filter(
+                            OverlayWire::keys($command),
+                            fn(string $key): bool => ! in_array(self::family($key), ['circuit', 'probe', 'score', 'budget'], true) && ! str_starts_with(self::family($key), 'adm:') && $this->expiry($key) !== null,
+                        ));
+                        self::assertNotSame([], $keys, 'The save names a key the request read and left unchanged.');
+                        $was = $this->expiry($keys[0]);
+                        self::assertSame(1, $this->raw->execute(['PEXPIRE', $keys[0], '123456789']));
+                        self::assertNotSame($was, $this->expiry($keys[0]));
+                    }
+                } elseif ($commits === 2 && ! $rivalClosesTheCircuit) {
+                    // The attempt abandoned for the conflict saved nothing: not the claim's effects on the score, not the recovery step.
+                    self::assertSame([], $this->recorded(), 'The abandoned attempt recorded no score.');
+                    self::assertSame(self::only($beforeRequest, 'circuit'), self::only($this->snapshot(), 'circuit'));
+                    self::assertSame(self::only($beforeRequest, 'probe'), self::only($this->snapshot(), 'probe'));
                 }
             }
 
             return $this->raw->execute($command);
         });
 
-        $this->runtime($racing, self::T0 + 10)->limit($this->context('acct'), $this->failureOutcome($permit));
+        $result = $this->runtime($racing, self::T0 + 10)->limit($this->context('acct'), $this->failureOutcome($permit));
 
-        self::assertTrue($rival);
+        self::assertSame(2, $commits, 'The conflict was followed by exactly one more evaluation and its save.');
         self::assertSame(1, $claims, 'The claim is one atomic operation of its own: a recalculated request does not claim again.');
+        self::assertSame(RateLimitResultDTO::DECISION_ALLOW, $result->decision);
+        self::assertNull($result->metadata?->cause, 'The recalculated request answers as the recorded failure, not as a refused claim.');
+        self::assertSame(0, $result->retryAfter);
         self::assertSame('CLAIMED', $this->permitRecord()['state'] ?? null);
         self::assertSame('failure', $this->permitRecord()['outcome'] ?? null);
-        self::assertSame('CLOSED', $this->circuitStatus());
+        $this->assertTheFailureWasRecordedOnce();
+        self::assertSame('CLOSED', $this->circuitStatus(), $rivalClosesTheCircuit ? 'The rival closed it.' : 'The final evaluation saved the recovery transition with the request.');
         self::assertSame(
             1,
             count(array_filter($this->signalTypes(), static fn(string $type): bool => $type === FailureSignalDTO::TYPE_CB_RECOVERED)),
