@@ -21,6 +21,7 @@ use Maatify\RateLimiter\Tests\Support\FailureSignal\RecordingFailureSignalEmitte
 use Maatify\RateLimiter\Tests\Support\Redis\OverlayWire;
 use Maatify\RateLimiter\Tests\Support\Redis\PhpRedisScriptExecutor;
 use Maatify\RateLimiter\Tests\Support\Redis\RespRedisCommandExecutor;
+use Maatify\RateLimiter\Tests\Support\Redis\StateSnapshot;
 use PHPUnit\Framework\Attributes\DataProvider;
 use PHPUnit\Framework\Attributes\Group;
 use PHPUnit\Framework\TestCase;
@@ -34,7 +35,9 @@ use PHPUnit\Framework\TestCase;
  * ext-redis; it is not a claim about another version, Predis or any other client. Single node, isolated Redis.
  *
  * Group A the reply shapes; B the classification (cold cache, `SCRIPT FLUSH`, an ordinary error, `NOSCRIPTISH`, a nil reply, a stale
- * error text); C a lost request and a lost reply; D the request overlay's all-or-none save, rejection and expiry through the adapter.
+ * error text); C a lost request and a lost reply; D the request overlay's all-or-none save and rejection through the adapter, and the exact stored
+ * expiry of a real request save (F254-02). Runs on both widths: on an actual 32-bit PHP the native client saturates an integer reply above
+ * `PHP_INT_MAX`, which the PHP32 control test records (F254-01); a few cases are therefore width-specific and skip on the other width.
  */
 #[Group('integration')]
 #[Group('evalsha-study')]
@@ -480,7 +483,9 @@ final class NativeNoscriptStudyRedisTest extends TestCase
         foreach ($expected as $key => [$type, $content, $expiry]) {
             self::assertSame($type, $actual[$key][0], $key);
             self::assertSame($content, $actual[$key][1], $why . ': ' . $key);
-            self::assertEqualsWithDelta($expiry, $actual[$key][2], 5000.0, 'Expiry of ' . $key);
+            // Two separate runs: their expiries come from Redis TIME and differ by wall-clock time. This bounds the drift only; it proves NO exact
+            // expiry (see testTheSavedExpiryOfARealRequestIsExactAndAOneMillisecondChangeIsDetected).
+            self::assertEqualsWithDelta($expiry, $actual[$key][2], 5000.0, 'Expiry of ' . $key . ' (within 5 s: a drift bound, not an exact comparison)');
         }
     }
 
@@ -659,17 +664,142 @@ final class NativeNoscriptStudyRedisTest extends TestCase
         return ['decisions' => $decisions, 'state' => $this->state()];
     }
 
-    public function testAnExactExpiryAndAOneMillisecondDifferenceSurviveTheNativeScriptPath(): void
+    private const EXPIRING_A = '4102444800123';
+
+    private const EXPIRING_B = '4102444800124';
+
+    private const EXPIRY_SCRIPT = "redis.call('SET', KEYS[1], 'v') redis.call('PEXPIREAT', KEYS[1], ARGV[1]) return redis.call('PEXPIRETIME', KEYS[1])";
+
+    /** PHP64 only: a wide integer reply of the native client is exact, and a one-millisecond difference survives it. A toy script, not the request path. */
+    public function testAnExactWideIntegerReplyAndAOneMillisecondDifferenceSurviveTheNativeScriptPathOnPhp64(): void
     {
+        if (PHP_INT_SIZE !== 8) {
+            self::markTestSkipped('A 64-bit integer reply is exact only on a 64-bit PHP; testTheNativeClientSaturatesAWideIntegerReplyOnPhp32 is the 32-bit control.');
+        }
         $adapter = $this->adapter();
-        $script = "redis.call('SET', KEYS[1], 'v') redis.call('PEXPIREAT', KEYS[1], ARGV[1]) return redis.call('PEXPIRETIME', KEYS[1])";
-        $first = $adapter->execute(['EVAL', $script, 1, 'expiring-a', '4102444800123']);
-        $second = $adapter->execute(['EVAL', $script, 1, 'expiring-b', '4102444800124']);
+        $first = $adapter->execute(['EVAL', self::EXPIRY_SCRIPT, 1, 'expiring-a', self::EXPIRING_A]);
+        $second = $adapter->execute(['EVAL', self::EXPIRY_SCRIPT, 1, 'expiring-b', self::EXPIRING_B]);
 
         self::assertSame(4102444800123, $first);
         self::assertSame(4102444800124, $second);
         self::assertSame($first, $this->raw->execute(['PEXPIRETIME', 'expiring-a']), 'Read from outside Lua, the same exact value.');
         self::assertNotSame($first, $second);
+    }
+
+    /**
+     * PHP32 control (F254-01): ext-redis 6.3.0 on an actual 32-bit PHP returns a Redis integer reply that does not fit the native int as
+     * `PHP_INT_MAX` (2147483647), silently: two expiries one millisecond apart cannot be told apart through `rawCommand()`, whether read by
+     * `PEXPIRETIME` or returned by a script. Redis itself kept both exactly: an exact RESP oracle reads them as decimal strings, and a script
+     * that returns the value with `tostring()` carries it exactly through the native client as a string. The adapter does not normalise the
+     * saturated reply; its original value is not known to it.
+     */
+    public function testTheNativeClientSaturatesAWideIntegerReplyOnPhp32(): void
+    {
+        if (PHP_INT_SIZE !== 4) {
+            self::markTestSkipped('The narrow native integer reply exists only on a 32-bit PHP.');
+        }
+        $adapter = $this->adapter();
+        $first = $adapter->execute(['EVAL', self::EXPIRY_SCRIPT, 1, 'expiring-a', self::EXPIRING_A]);
+        $second = $adapter->execute(['EVAL', self::EXPIRY_SCRIPT, 1, 'expiring-b', self::EXPIRING_B]);
+
+        self::assertSame(PHP_INT_MAX, $first, 'The script reply saturates to the native maximum.');
+        self::assertSame(PHP_INT_MAX, $second);
+        self::assertSame($first, $second, 'Two expiries one millisecond apart are indistinguishable through the native integer reply.');
+        self::assertSame(PHP_INT_MAX, $adapter->execute(['PEXPIRETIME', 'expiring-a']), 'So is PEXPIRETIME read through the native client.');
+
+        self::assertSame(self::EXPIRING_A, $this->raw->execute(['PEXPIRETIME', 'expiring-a']), 'Redis kept the exact value: the oracle reads it as a decimal string.');
+        self::assertSame(self::EXPIRING_B, $this->raw->execute(['PEXPIRETIME', 'expiring-b']));
+
+        $exact = $adapter->execute(['EVAL', "return tostring(redis.call('PEXPIRETIME', KEYS[1]))", 1, 'expiring-a']);
+        self::assertSame(self::EXPIRING_A, $exact, 'A string reply carries the exact value through the native client.');
+    }
+
+    // ---- the stored expiry on the real request save path (F254-02) --------------------------------------------------------------
+
+    /**
+     * The expiry the request overlay saved, against the expiry its commit was SENT: ARGV[1] of the commit script is the JSON plan
+     * `[[key, state], ...]`, and a state with `d = 1` and `x` set is the absolute expiry in milliseconds that the commit applies with
+     * `PEXPIREAT`. The stored `PEXPIRETIME` is read from outside Lua by the exact RESP oracle. No tolerance.
+     *
+     * @param array<string, string> $planned key => absolute expiry in milliseconds, as sent
+     * @return list<string> the keys whose stored expiry is not exactly the planned one
+     */
+    private function expiryMismatches(array $planned): array
+    {
+        $wrong = [];
+        foreach ($planned as $key => $expiry) {
+            $stored = $this->raw->execute(['PEXPIRETIME', $key]);
+            $storedText = is_int($stored) || is_string($stored) ? (string) $stored : 'n/a';
+            if ($storedText !== $expiry) {
+                $wrong[] = $key . ' stored ' . $storedText . ' planned ' . $expiry;
+            }
+        }
+
+        return $wrong;
+    }
+
+    /** @return array<string, array{bool}> */
+    public static function cachePaths(): array
+    {
+        return ['warm cache' => [false], 'cache lost just before the commit' => [true]];
+    }
+
+    #[DataProvider('cachePaths')]
+    public function testTheSavedExpiryOfARealRequestIsExactAndAOneMillisecondChangeIsDetected(bool $loseCacheBeforeCommit): void
+    {
+        $adapter = $this->adapter();
+        // Warm the cache with the same request shape, then empty the state (not the script cache) and the counters.
+        $this->limiter($adapter)->limit($this->context('warm-up'), RateLimitCommand::recordFailure('login_protection'));
+        $this->raw->execute(['FLUSHALL']);
+        $adapter->resetCounters();
+        /** @var array<string, string> $planned */
+        $planned = [];
+        $commits = 0;
+        $executor = new CallableRedisCommandExecutor(function (array $command) use ($adapter, &$planned, &$commits, $loseCacheBeforeCommit): mixed {
+            if (OverlayWire::isCommit($command)) {
+                $commits++;
+                $keyCount = $command[2];
+                self::assertIsInt($keyCount);
+                $plan = $command[3 + $keyCount] ?? null;
+                self::assertIsString($plan);
+                $entries = json_decode($plan, true, 512, JSON_THROW_ON_ERROR);
+                self::assertIsArray($entries);
+                foreach ($entries as $entry) {
+                    self::assertIsArray($entry);
+                    self::assertIsString($entry[0] ?? null);
+                    self::assertIsString($entry[1] ?? null);
+                    $state = json_decode($entry[1], true, 512, JSON_THROW_ON_ERROR);
+                    self::assertIsArray($state);
+                    if (($state['d'] ?? 0) === 1 && isset($state['x']) && is_string($state['x'])) {
+                        $planned[$entry[0]] = $state['x'];
+                    }
+                }
+                if ($loseCacheBeforeCommit) {
+                    $this->raw->execute(['SCRIPT', 'FLUSH']);
+                }
+            }
+
+            return $adapter->execute($command);
+        });
+        $this->limiter($executor)->limit($this->context('expiry-account'), RateLimitCommand::recordFailure('login_protection'));
+
+        self::assertSame(1, $commits, 'One save.');
+        self::assertGreaterThanOrEqual(2, count($planned), 'The save carried several keys with an expiry.');
+        if ($loseCacheBeforeCommit) {
+            self::assertStringEndsWith('[commit]', $adapter->missedScripts[0] ?? '', 'The commit was the first call to find the cache empty.');
+            self::assertSame($adapter->noscriptMisses, $adapter->fallbackEvals, 'Each miss was answered by one fallback.');
+        } else {
+            self::assertSame([], $adapter->missedScripts, 'The cache was warm: no miss at all.');
+        }
+        self::assertSame([], $this->expiryMismatches($planned), 'Every saved key has exactly the expiry the commit was sent with.');
+
+        // The check has teeth: an expiry-only +1 ms change of one saved key, bytes untouched, is reported for that key and no other.
+        $moved = array_key_first($planned);
+        self::assertIsString($moved);
+        StateSnapshot::perturbExpiryByOneMillisecond($this->raw, $moved);
+        $wrong = $this->expiryMismatches($planned);
+        self::assertCount(1, $wrong, 'Exactly the moved key is reported.');
+        self::assertTrue(str_contains(implode(';', $wrong), $moved), 'It is the key that was moved.');
     }
 
     // ---- the proxy of the lost-transport cases ----------------------------------------------------------------------------------

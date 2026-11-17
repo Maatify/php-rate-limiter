@@ -59,6 +59,12 @@ final class PhpRedisScriptExecutor implements RedisCommandExecutorInterface
         private readonly bool $confirmsMiss = false,
     ) {}
 
+    public function resetCounters(): void
+    {
+        $this->commands = $this->scriptCalls = $this->evalshaCalls = $this->noscriptMisses = $this->fallbackEvals = $this->existsChecks = 0;
+        $this->missedScripts = [];
+    }
+
     /** @param non-empty-list<int|string|float> $command */
     public function execute(array $command): mixed
     {
