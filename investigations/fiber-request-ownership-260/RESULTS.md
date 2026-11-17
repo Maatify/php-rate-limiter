@@ -106,3 +106,5 @@ Controls, each run on the verification commit with its runner exit code and logs
 
 `provenance-failure-control.sh <identity|status|dirty> <output-dir>` produces the last three. PHPStan max, cs-fixer and whitespace are clean for the new files.
 Provenance of the committed evidence: the commit that carries the logs changes only the investigation evidence (the logs and the verification paragraph of this report); tests, runner and production source are unchanged from the verification commit named below, and production source is untouched since the baseline.
+
+Verification commit of this run: `a9abb398b968192f5c7a2364be7d1948238372b7` (`raw/source.txt`); 14 tests, 751 assertions, OK on PHP_INT_SIZE 8 and 4, no skips. Clock-wiring detector (B's runtime clock left at T0): 1 failure of 14 on both widths (`raw/mutant-clock-wiring.log`, from the earlier verification commit; the test is unchanged).
