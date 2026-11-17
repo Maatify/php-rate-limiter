@@ -496,20 +496,16 @@ final class FiberRequestOwnershipRedisTest extends TestCase
 
     // ---- 4. the same hazard across runtimes, and the isolated control ----------------------------------------------------------------
 
-    public function testTwoRuntimesSharingOneStoreObjectShareTheRequestButNotTheClock(): void
+    public function testTwoRuntimesSharingOneStoreObjectShareTheRequestAndTheLossOfBWhenARejected(): void
     {
-        $clockA = new FixedClock('@' . self::T0);
-        $clockB = new FixedClock('@' . self::T0);
         $store = null;
-        $runtimeA = $this->runtime($clockA, new RecordingFailureSignalEmitter(), $store);
-        $runtimeB = $this->runtime($clockB, new RecordingFailureSignalEmitter(), $store);
+        $runtimeA = $this->runtime(new FixedClock('@' . self::T0), new RecordingFailureSignalEmitter(), $store);
+        $runtimeB = $this->runtime(new FixedClock('@' . self::T0), new RecordingFailureSignalEmitter(), $store);
         [, $effectsOfB] = $this->sequentialControl();
         $a = new Fiber(fn() => $runtimeA->limit($this->context('acct-a'), RateLimitCommand::checkOnly('login_protection')));
         $b = new Fiber(fn() => $runtimeB->limit($this->context('acct-b'), RateLimitCommand::recordFailure('login_protection')));
         $this->hook = $this->suspendAfterTheFirstHeldEvaluation($a, 'A');
         $a->start();
-        $clockA->setNow(new \DateTimeImmutable('@' . self::T1));
-        $clockB->setNow(new \DateTimeImmutable('@' . self::T1));
         $before = $this->snapshot();
 
         $b->start();
@@ -523,6 +519,33 @@ final class FiberRequestOwnershipRedisTest extends TestCase
         }
         self::assertSame([], array_values(array_intersect($effectsOfB, $this->keyNames())), 'The failure B reported was never recorded.');
         self::assertSame(RateLimitResultDTO::DECISION_ALLOW, $this->decision($b));
+    }
+
+    public function testTheHostClockOfTheOtherRuntimeSelectsTheTimestampOfItsEffectsWhenTheStoreIsShared(): void
+    {
+        $clockA = new FixedClock('@' . self::T0);
+        $clockB = new FixedClock('@' . self::T0);
+        $store = null;
+        $runtimeA = $this->runtime($clockA, new RecordingFailureSignalEmitter(), $store);
+        $runtimeB = $this->runtime($clockB, new RecordingFailureSignalEmitter(), $store);
+        $a = new Fiber(fn() => $runtimeA->limit($this->context('acct-a'), RateLimitCommand::checkOnly('login_protection')));
+        $b = new Fiber(fn() => $runtimeB->limit($this->context('acct-b'), RateLimitCommand::recordFailure('login_protection')));
+        $this->hook = $this->suspendAfterTheFirstHeldEvaluation($a, 'A');
+        $a->start();
+        // Only the clock of B's runtime moves; A's runtime keeps T0 and holds that reading.
+        $clockB->setNow(new \DateTimeImmutable('@' . self::T1));
+        $this->hook = null;
+
+        $b->start();
+        $a->resume();
+
+        self::assertSame(RateLimitResultDTO::DECISION_ALLOW, $this->decision($a));
+        self::assertSame(RateLimitResultDTO::DECISION_ALLOW, $this->decision($b));
+        self::assertSame(
+            ['updatedAt=' . self::T1],
+            $this->storedStamps(['updatedAt']),
+            'The effects of B, saved by the request of A on the shared store, carry the reading of B\'s own Host clock (T1), not the T0 that A holds.',
+        );
     }
 
     public function testRuntimesWithTheirOwnStoreAndClockDoNotShareARequest(): void

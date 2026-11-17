@@ -1,3 +1,0 @@
-governance-helper	0
-suite-php64	0
-suite-php32	0

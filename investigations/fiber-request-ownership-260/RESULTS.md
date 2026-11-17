@@ -24,7 +24,7 @@ Nothing here infers support or prohibition from the presence of Fibers or from s
 
 ## 3. Harness
 
-`tests/Integration/Redis/FiberRequestOwnershipRedisTest.php` (13 tests, groups `integration`, `fiber-ownership-260`, `php32`), through `RateLimiterBuilder` → composite runtime → `RedisFullCapabilityStore` → isolated Redis 7.0.15.
+`tests/Integration/Redis/FiberRequestOwnershipRedisTest.php` (14 tests, groups `integration`, `fiber-ownership-260`, `php32`), through `RateLimiterBuilder` → composite runtime → `RedisFullCapabilityStore` → isolated Redis 7.0.15.
 A and B are independent public calls with separate inputs (`acct-a`, `acct-b`). A `Fiber` is suspended only **between** Redis commands, after the first held evaluation script of its request, and resumed on an explicit schedule; nothing sleeps.
 Every store owns its connection; the oracle reads over another one with exact `DUMP` and `PEXPIRETIME` (no native wide-integer reply is used as an oracle). Fixed Host clocks with values that fit both widths pin each call's sample.
 The tests are **characterizations of the baseline**: they assert what the code does today so that the Owner's decision has an exact before-state and the assertions flip deliberately.
@@ -44,7 +44,7 @@ Shared objects: runtime graph (engine, pipeline, `RequestScopedClock`, `CircuitB
 | 5 | Host clock advanced between A's start and B's start | one reading per runtime call (LT-P2-05) | B stamped with **A's reading** (`updatedAt` = A's second) although the Host clock had moved on; with its own runtime B is stamped with its own reading | stored stamps | impact: wrong-time decay, windows and expiries for B (bounded by how long A stays open) |
 | 6 | B meets a backend failure while A holds the request | a failure belongs to the call that met it (DEC-015) | B answered `HARD_BLOCK / FAIL_CLOSED` (its own failure); on resuming, **A, which had no failure, is also answered `HARD_BLOCK / FAIL_CLOSED`** and nothing of A is stored | `requestBackendFailure` is one field on the store | impact: an innocent call refused by another call's failure |
 | 7 | Recovering circuit, B returns while A holds its recovery step (A then saved, and A then rejected) | recovery signals are sent only after the right save; a rejected request announces nothing (DEC-037 item 7) | **`CB_RECOVERED` was emitted when B returned**, while Redis still showed `HALF_OPEN`; in both endings it was emitted once and never again; when A was rejected the circuit was never closed | emitted before any save | impact: a signal for a transition that is not stored |
-| 8 | Two runtimes share one store **object** | — | same as 3b: B on the other runtime is held in A's request and lost when A is rejected, but B keeps its own clock (`updatedAt` = its own reading) | — | the store object, not the runtime, carries the request |
+| 8 | Two runtimes share one store **object** | — | same as 3b: B on the other runtime is held in A's request and lost when A is rejected. With A **saved**, B's effects carry the reading of **B's own** Host clock (T1) although A's runtime holds T0; a detector (B's clock wiring left at T0) fails that test on both widths | at B's return: nothing stored; after A: B's keys stamped T1 | the store object, not the runtime, carries the request; clocks stay per runtime |
 | 9 | Runtimes with their own store and clock (separate connections) on the same Redis | independent | B stored when it returns whatever A does later; A's rejection leaves B's keys byte-identical (`DUMP`/`PEXPIRETIME`); own clock | stored on return | control: no shared object, no interaction |
 
 ## 5. Classification (scoped to what was demonstrated)
@@ -57,21 +57,42 @@ Shared objects: runtime graph (engine, pipeline, `RequestScopedClock`, `CircuitB
 
 ## 6. Decision for the Owner (no choice made here)
 
-| | A. Support overlapping independent calls with per-request state | B. Enforce and document instance exclusivity |
-| --- | --- | --- |
-| Idea | the request state, clock reading, signal buffer and failure flag belong to the **call**, not the object; a nested call is recognised by the engine passing its own request token | a runtime/store serves one call at a time; a second independent call while one is open is refused (or, documented, undefined) |
-| Contract | `RequestAtomicStoreInterface` gains a definition of "request" for overlapping callers; the nested rule stays | the contract states "one runtime/store per concurrent execution context"; the guard needs no new knowledge of Fibers: the public entry points mark themselves busy and engine-internal calls do not pass through them |
-| API / exceptions | a request token or context identity must reach the store (new parameter or a context provider; Fiber identity alone does not cover other schedulers); no new exception | a new classified exception (or an existing `RateLimiterException`) for an overlap; no signature change if the guard sits at the public entries |
-| Sharing a store between runtimes | becomes supported (state per call) | stays unsupported; two runtimes must not share a store object concurrently |
-| Host lifetime / cost | more state per call (clock sample, signal buffer, request map), a lookup per store command; connections still per context | one runtime graph and one connection per concurrent context; no per-call bookkeeping |
-| Compatibility | sequential Hosts unaffected; behaviour of overlapping Hosts changes from lost/misdirected to correct | sequential Hosts unaffected; overlapping Hosts get an explicit refusal instead of silent loss |
-| Risk | larger change in the store, clock, circuit breaker and engine (several files, DEC-037 wording) | small; does not make overlap work |
+Two directions are compared. Neither is approved or selected, no exception type or ownership mechanism is chosen, and everything about cost and size below is an **estimate**: no design exists and nothing was measured.
 
-Either way a remediation must prove that an unrelated call can neither consume another call's held state nor produce a saved result before the correct save boundary, and must keep the nested behaviour of scenario 2. No existing ACTIVE decision picks between A and B; DEC-037 item 7 describes nesting "inside the request" and is silent on overlap. Both choices need Owner disposition; no pin, workflow or `src/` change was made.
+**A. Support overlapping independent calls with isolated ownership.** The state a request needs (held writes and their reads, the failure flag, the Host clock reading, the recovery-signal buffer) belongs to the call, not to the object that serves it.
+**B. Enforce and document exclusivity, with an explicit refusal.** A second independent call that starts while another call's request is open on the same store (and, through it, the same runtime graph) is refused with a classified error. B does **not** include "undefined behaviour"; leaving overlap undefined while documenting it would be a separate contract relaxation, not an equivalent option, and is not proposed.
+
+### Which shared objects participate (from the scenarios above)
+
+| Shared object | What overlap breaks (scenario) | Participates in A | Participates in B |
+| --- | --- | --- | --- |
+| the store object's `requestState` / `requestBackendFailure` | 3a–4, 6, 8 | yes: per-call request state | yes: the place that knows a request is open |
+| `RequestScopedClock::$held` (one per runtime graph) | 5 | yes | refusal happens before a second reading is taken |
+| `CircuitBreaker` signal buffer (one per runtime graph) | 7 | yes | refusal happens before the buffer is touched |
+| the public runtime entries (`limit()` and the other calls) | where an independent call begins | the engine passes a call identity down | marks a call as started; sees only its own runtime graph |
+| store capability entries called directly (e.g. `transactRequest()`, `acquireProbeLease()`) | 3c | each needs an owner | each would have to be refused or owned |
+
+### The two unresolved boundaries the proposal must account for
+
+1. **Two runtimes on one store.** Scenario 8 shows A and B on different runtime instances share the request through the store object. A busy marker kept by each runtime graph at its public entries cannot stop B on another runtime from entering the store that belongs to A's request. Under B the guard therefore has to live where the shared state lives (the store), or sharing a store between concurrently used runtimes has to be forbidden and documented as such; which of the two is an open choice.
+2. **Legitimate nested calls.** Scenario 2 shows the supported nesting (a store request inside a request of the same call, the engine's recovery step around the pipeline's own request). A store-level blanket "request already open, refuse" would reject it. Something must distinguish a nested call from an independent one. Candidate means, listed and **not** chosen: a call identity or request token the engine passes to the store (needs an interface or capability change); the execution-context identity of the caller (`Fiber::getCurrent()` covers Fibers only, not other cooperative schedulers or coroutine libraries, and would need a Host-supplied provider); or a handle returned by the store's outer `transactRequest()` that nested code must use. Each changes a public or internal contract differently.
+
+### What each direction would touch (estimates)
+
+| | A | B |
+| --- | --- | --- |
+| Contract | `RequestAtomicStoreInterface` has to define "request" for overlapping callers and keep the nested rule | the contract states one request at a time per store object and what happens otherwise |
+| API / exceptions | a call identity or context provider has to reach the store: a signature or capability change (shape open); no new exception is implied | a classified refusal is needed: a new exception type or an existing one is an open choice; the shape of the refusal for direct store calls is open |
+| Store shared by runtimes | supportable once state is per call | refused or forbidden (boundary 1) |
+| Host lifetime | one runtime graph can serve overlapping calls | one runtime graph and one connection per concurrent context |
+| Cost | per-call bookkeeping (clock sample, signal buffer, request map) and a lookup per store command, size unmeasured | a guard check per entry, size unmeasured; the nested-call distinction (boundary 2) carries most of the design work |
+| Size of change | larger: store, clock, breaker, engine, DEC-037 wording (estimate) | smaller in the engine, but the store-level distinction is the same problem as in A (estimate) |
+
+Either way a remediation must prove that an unrelated call can neither consume another call's held state nor produce a saved result before the correct save boundary, and must keep scenario 2. No ACTIVE decision picks between A and B; DEC-037 item 7 describes nesting "inside the request" and is silent on overlap. Both need Owner disposition; no pin, workflow or `src/` change was made.
 
 ## 7. Evidence
 
-`run.sh` (this folder) runs the governance helper and the suite on actual PHP_INT_SIZE 8 and 4 (`maatify-rl-php64:local` sha256:d4f5a573…, `maatify-rl-php32:local` sha256:e7016865…, ext-redis 6.3.0, PHP 8.4.27, isolated `redis:7.0.15-alpine` sha256:75510523…), keeps every output under `raw/`, and exits 1 if a required step failed.
-`raw/result.txt` lists each step's exit status; `raw-failure-demo/` is the same runner pointed at a missing test file (exit 1, outputs kept). Results are in `raw/`. PHPStan max, cs-fixer and whitespace are clean for the new files.
-
-Run on the committed source named in `raw/source.txt` (the verification commit; the commit that follows adds only these logs): governance helper exit 0, suite on PHP_INT_SIZE 8: 13 tests, 700 assertions, OK; on PHP_INT_SIZE 4: 13 tests, 700 assertions, OK; no skips.
+`run.sh` (this folder) runs the governance helper (on an isolated temporary clone) and the suite on actual PHP_INT_SIZE 8 and 4 (`maatify-rl-php64:local` sha256:d4f5a573…, `maatify-rl-php32:local` sha256:e7016865…, ext-redis 6.3.0, PHP 8.4.27, isolated `redis:7.0.15-alpine` sha256:75510523…). Source identification (HEAD and tree, clean working tree, clone and checkout, identity of the clone equal to the tested source, a valid non-empty `source.txt`) is made of required, tracked steps: each keeps its output and exit status in `raw*/`, and any failure of one of them ends the runner with exit 1 even when both suites pass.
+Controls, with their runner exit codes and retained logs: `raw-failure-demo/` (a missing test path: both suites exit 2, runner exit 1) and `raw-provenance-failure-demo/` (`provenance-failure-control.sh`: a git shim that fails only the `rev-parse HEAD 'HEAD^{tree}'` identification with exit 71: both suites **pass**, the runner exits **1**, `source.txt` stays empty). Results of the committed-source run are in `raw/` (`result.txt`, `source.txt`, both suites, the helper).
+PHPStan max, cs-fixer and whitespace are clean for the new files.
+Provenance of the committed evidence: the later commits change only the investigation evidence (logs, this report and the corrections to it) and the new test and runner of the corrections; production source is untouched since the baseline.
