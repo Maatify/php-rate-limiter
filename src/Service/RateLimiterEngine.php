@@ -362,8 +362,14 @@ class RateLimiterEngine implements RateLimiterRuntimeInterface, AdmissionBinding
         // item 7), so a recalculated evaluation of the same request must not claim again (the permit would answer `duplicate`).
         $settled = null;
 
-        $recover = function (bool $inMemory = false) use ($policy, $context, $policyName, &$phase): ?RateLimitResultDTO {
+        // #259: the process-local fallback allowance is memory, not Redis state: no overlay holds it back and no conflict undoes it. A
+        // recovery step may be evaluated again (a conflict, a failed save), so it never charges; it only reports that its answer is the
+        // degraded one, and the final answer of the public call is charged once, after the evaluation has ended.
+        $degraded = false;
+
+        $recover = function (bool $inMemory = false) use ($policy, $context, $policyName, &$phase, &$degraded): ?RateLimitResultDTO {
             $phase = 'probe';
+            $degraded = false;
             $health = fn(): bool => $this->pipeline->isBackendHealthy();
             $mayProcessNormally = $inMemory
                 ? $this->circuitBreaker->attemptRecoveryProbeInMemory($policyName, $health)
@@ -373,7 +379,12 @@ class RateLimiterEngine implements RateLimiterRuntimeInterface, AdmissionBinding
                 return $this->guardResult($policyName);
             }
 
-            return $mayProcessNormally ? null : $this->degradedResult($policy, $context);
+            if ($mayProcessNormally) {
+                return null;
+            }
+            $degraded = true;
+
+            return $this->degradedResult($policy, $context);
         };
 
         if ($recovering && !$atomicRecovery) {
@@ -383,7 +394,7 @@ class RateLimiterEngine implements RateLimiterRuntimeInterface, AdmissionBinding
                 ? $this->recoverAllOrNothing($requestStore, $recover)
                 : $recover();
             if ($early !== null) {
-                return $early;
+                return $degraded ? $this->chargeFallback($policy, $context, $early) : $early;
             }
         }
 
@@ -423,7 +434,7 @@ class RateLimiterEngine implements RateLimiterRuntimeInterface, AdmissionBinding
                     $this->circuitBreaker->releaseSignals($saved);
                 }
                 if ($answered) {
-                    return $result;
+                    return $degraded ? $this->chargeFallback($policy, $context, $result) : $result;
                 }
             } else {
                 $result = $process();
@@ -652,7 +663,8 @@ class RateLimiterEngine implements RateLimiterRuntimeInterface, AdmissionBinding
     }
 
     /**
-     * Serve an OPEN/HALF_OPEN request through the existing bounded fallback.
+     * The degraded answer of a call that met an open or half-open circuit, chosen without consuming the local fallback allowance (the
+     * evaluation that builds it may be repeated). {@see self::chargeFallback()} consumes the allowance for the answer finally chosen.
      */
     private function degradedResult(BlockPolicyInterface $policy, RateLimitContextDTO $context): RateLimitResultDTO
     {
@@ -661,28 +673,32 @@ class RateLimiterEngine implements RateLimiterRuntimeInterface, AdmissionBinding
             return $this->guardResult($policy->getName());
         }
 
-        if ($mode !== 'FAIL_CLOSED') {
-            $fallbackRetryAfter = LocalFallbackLimiter::evaluate(
-                $this->clock,
-                $policy,
-                $mode,
-                $context->ip,
-                $context->accountId,
-                $context->ua,
-            );
-            if ($fallbackRetryAfter !== null) {
-                $contextMeta = new RateLimitContextMetadataDTO('fallback_limit_exceeded');
-                $meta = new RateLimitMetadataDTO(null, 'fallback_limit_exceeded', $contextMeta);
-
-                return new RateLimitResultDTO(RateLimitResultDTO::DECISION_HARD_BLOCK, 2, $fallbackRetryAfter, $mode, $meta);
-            }
-        }
-
         if ($mode === 'FAIL_OPEN' || $mode === 'DEGRADED_MODE') {
             return new RateLimitResultDTO(RateLimitResultDTO::DECISION_ALLOW, 0, 0, $mode);
         }
 
         return new RateLimitResultDTO(RateLimitResultDTO::DECISION_HARD_BLOCK, 2, 600, $mode);
+    }
+
+    /**
+     * Consume the local fallback allowance once for a public call whose final answer is the degraded answer `$chosen`, and refuse the
+     * call when the allowance is spent. The mode is the one the chosen answer already carries: nothing is resolved or read again after
+     * the recovery evaluation (and its save) has ended (#259). A guard or `FAIL_CLOSED` answer never consumes the allowance.
+     */
+    private function chargeFallback(BlockPolicyInterface $policy, RateLimitContextDTO $context, RateLimitResultDTO $chosen): RateLimitResultDTO
+    {
+        $mode = $chosen->failureMode;
+        if ($mode !== 'DEGRADED_MODE' && $mode !== 'FAIL_OPEN') {
+            return $chosen;
+        }
+        $fallbackRetryAfter = LocalFallbackLimiter::evaluate($this->clock, $policy, $mode, $context->ip, $context->accountId, $context->ua);
+        if ($fallbackRetryAfter === null) {
+            return $chosen;
+        }
+        $contextMeta = new RateLimitContextMetadataDTO('fallback_limit_exceeded');
+        $meta = new RateLimitMetadataDTO(null, 'fallback_limit_exceeded', $contextMeta);
+
+        return new RateLimitResultDTO(RateLimitResultDTO::DECISION_HARD_BLOCK, 2, $fallbackRetryAfter, $mode, $meta);
     }
 
 }

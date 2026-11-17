@@ -7,6 +7,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [1.0.0-rc.4]
 
+### Fixed (#259) — Local fallback allowance consumed once per public call during a circuit recovery
+- The recovery evaluation charged the process-local fallback counters on every evaluation of the call, and a Redis conflict at the save of the recovery step, a failed save repeated in the process, or the retries up to the bound repeat that evaluation (one conflict consumed 2 units, a call that exhausted its retries up to 32, against an allowance of 3 per account in 600 s). The call is now charged once, with its final answer, after the evaluation has ended; a call answered by the concurrency block or by a normal evaluation consumes none. Dimensions, the 4096 population bound, the overflow bucket, `retryAfter` and the failure provenance are unchanged.
+
 ### Fixed (#258) — Outcome claim of an admission policy while the circuit recovers
 - During a circuit recovery the outcome claim (`CLAIM_WITH_OUTCOME`) was held back with the recovery step, so an evaluation rejected after it left the permit `ISSUED`, and a recalculation after a Redis conflict could claim twice. The claim is now its own command in every circuit state (DEC-036, DEC-037 item 7); the probe lease and the state change are still saved with the request: not by a rejected evaluation, not by an attempt abandoned for a Redis conflict, and by the final evaluation that completes. A Host that retried a rejected outcome with the same permit during a recovery now receives `permit_duplicate`.
 
