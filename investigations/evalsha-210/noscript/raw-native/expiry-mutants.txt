@@ -1,0 +1,25 @@
+# F254-02: single mutations of src/Repository/Redis/RedisRequestOverlay.php (swapped in place, one at a time, restored after; scratch copies, not committed) against NativeNoscriptStudyRedisTest on both widths. Base head ac51e96655bddf56683189eb70f0b7b2499df95c.
+== mutant: the commit applies every expiry 1 ms later (src/Repository/Redis/RedisRequestOverlay.php, scratch)
+PHP64:
+1) Maatify\RateLimiter\Tests\Integration\Redis\NativeNoscriptStudyRedisTest::testTheSavedExpiryOfARealRequestIsExactAndAOneMillisecondChangeIsDetected with data set "warm cache" (false)
+2) Maatify\RateLimiter\Tests\Integration\Redis\NativeNoscriptStudyRedisTest::testTheSavedExpiryOfARealRequestIsExactAndAOneMillisecondChangeIsDetected with data set "cache lost just before the commit" (true)
+Tests: 25, Assertions: 2363, Failures: 2, Skipped: 1.
+PHP32:
+1) Maatify\RateLimiter\Tests\Integration\Redis\NativeNoscriptStudyRedisTest::testTheSavedExpiryOfARealRequestIsExactAndAOneMillisecondChangeIsDetected with data set "warm cache" (false)
+2) Maatify\RateLimiter\Tests\Integration\Redis\NativeNoscriptStudyRedisTest::testTheSavedExpiryOfARealRequestIsExactAndAOneMillisecondChangeIsDetected with data set "cache lost just before the commit" (true)
+Tests: 25, Assertions: 2366, Failures: 2, Skipped: 1.
+== mutant: the commit applies no expiry
+PHP64:
+1) Maatify\RateLimiter\Tests\Integration\Redis\NativeNoscriptStudyRedisTest::testAClassifiedRejectionLeavesRedisUntouchedAndNeverCallsTheSaveThroughTheAdapter
+2) Maatify\RateLimiter\Tests\Integration\Redis\NativeNoscriptStudyRedisTest::testAStalePlanIsRecalculatedAndSavedOnceThroughTheAdapterWithTheCacheLostBeforeEachCommit
+3) Maatify\RateLimiter\Tests\Integration\Redis\NativeNoscriptStudyRedisTest::testThePublicWorkloadEndsInTheSameStateWithTheSameDecisionsAsEvalOverTheRespClient
+1) Maatify\RateLimiter\Tests\Integration\Redis\NativeNoscriptStudyRedisTest::testTheSavedExpiryOfARealRequestIsExactAndAOneMillisecondChangeIsDetected with data set "warm cache" (false)
+2) Maatify\RateLimiter\Tests\Integration\Redis\NativeNoscriptStudyRedisTest::testTheSavedExpiryOfARealRequestIsExactAndAOneMillisecondChangeIsDetected with data set "cache lost just before the commit" (true)
+Tests: 25, Assertions: 880, Errors: 3, Failures: 2, Skipped: 1.
+PHP32:
+1) Maatify\RateLimiter\Tests\Integration\Redis\NativeNoscriptStudyRedisTest::testAClassifiedRejectionLeavesRedisUntouchedAndNeverCallsTheSaveThroughTheAdapter
+2) Maatify\RateLimiter\Tests\Integration\Redis\NativeNoscriptStudyRedisTest::testAStalePlanIsRecalculatedAndSavedOnceThroughTheAdapterWithTheCacheLostBeforeEachCommit
+3) Maatify\RateLimiter\Tests\Integration\Redis\NativeNoscriptStudyRedisTest::testThePublicWorkloadEndsInTheSameStateWithTheSameDecisionsAsEvalOverTheRespClient
+1) Maatify\RateLimiter\Tests\Integration\Redis\NativeNoscriptStudyRedisTest::testTheSavedExpiryOfARealRequestIsExactAndAOneMillisecondChangeIsDetected with data set "warm cache" (false)
+2) Maatify\RateLimiter\Tests\Integration\Redis\NativeNoscriptStudyRedisTest::testTheSavedExpiryOfARealRequestIsExactAndAOneMillisecondChangeIsDetected with data set "cache lost just before the commit" (true)
+Tests: 25, Assertions: 883, Errors: 3, Failures: 2, Skipped: 1.

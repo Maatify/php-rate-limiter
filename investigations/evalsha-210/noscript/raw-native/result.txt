@@ -1,0 +1,11 @@
+php64 shape probe	exit 0
+php64 integer reply probe	exit 0
+php64 NativeNoscriptStudyRedisTest	exit 0
+php64 EvalshaStudyRedisTest	exit 0
+php32 shape probe	exit 0
+php32 integer reply probe	exit 0
+php32 NativeNoscriptStudyRedisTest	exit 0
+php32 EvalshaStudyRedisTest	exit 0
+php64 proxy artifact probe	exit 0
+php64 command latency probe	exit 0
+RESULT: all required steps passed

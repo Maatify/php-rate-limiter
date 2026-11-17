@@ -1,0 +1,22 @@
+ext-redis 6.3.0 php 8.4.27
+SET ok                            returned true | getLastError=NULL
+GET missing (nil)                 returned false | getLastError=NULL
+EVALSHA unknown (NOSCRIPT)        returned false | getLastError='NOSCRIPT No matching script. Please use EVAL.'
+GET after error (stale?)          returned '1' | getLastError='NOSCRIPT No matching script. Please use EVAL.'
+nil after error                   returned false | getLastError='NOSCRIPT No matching script. Please use EVAL.'
+ERR wrongtype                     returned false | getLastError='WRONGTYPE Operation against a key holding the wrong kind of value'
+EVAL return false                 returned false | getLastError='WRONGTYPE Operation against a key holding the wrong kind of value'
+EVAL error_reply NOSCRIPTISH      returned false | getLastError='NOSCRIPTISH x'
+EVAL error_reply NOSCRIPT x       returned false | getLastError='NOSCRIPT script said'
+EVAL runtime error                returned false | getLastError='WRONGTYPE Operation against a key holding the wrong kind of value script: 34a8d177eca6531356ee2ff8400763fccb163054, on @user_script:1.'
+EVAL raise error()                returned false | getLastError='ERR user_script:1: boom script: 872b3fcb081448525c6141cdfa3df8374d30d162, on @user_script:1.'
+EVAL int 0                        returned 0 | getLastError='ERR user_script:1: boom script: 872b3fcb081448525c6141cdfa3df8374d30d162, on @user_script:1.'
+EVAL empty array                  returned array (
+) | getLastError='ERR user_script:1: boom script: 872b3fcb081448525c6141cdfa3df8374d30d162, on @user_script:1.'
+EVAL string empty                 returned '' | getLastError='ERR user_script:1: boom script: 872b3fcb081448525c6141cdfa3df8374d30d162, on @user_script:1.'
+EVAL unknown code (MY err)        threw 'RedisException: MY custom error' | getLastError='MY custom error'
+SCRIPT FLUSH                      returned true | getLastError='MY custom error'
+SCRIPT LOAD                       returned '59b6ab2fbe0ee4b25733de0f62e6cda4899ef8e9' | getLastError='MY custom error'
+EVALSHA ok                        returned 7 | getLastError='MY custom error'
+after clearLastError: NULL
+INCR after close() (reconnect)    returned 1 | getLastError=NULL

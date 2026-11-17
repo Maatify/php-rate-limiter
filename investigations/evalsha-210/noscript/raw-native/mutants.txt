@@ -1,0 +1,20 @@
+# Single mutations of tests/Support/Redis/PhpRedisScriptExecutor.php (swapped in place, one at a time, restored after), run against NativeNoscriptStudyRedisTest. Mutated files: scratch copies, not committed.
+base HEAD 88e69a4c04dc7f12e28a9aa896676753f90edbf6
+== mutant prefix: <         if ($text === null || explode(' ', $text, 2)[0] !== 'NOSCRIPT') { >         if ($text === null || ! str_starts_with($text, 'NOSCRIPT')) {
+1) Maatify\RateLimiter\Tests\Integration\Redis\NativeNoscriptStudyRedisTest::testAnErrorCodeThatOnlyStartsLikeNoscriptIsNotACacheMiss
+Tests: 22, Assertions: 2159, Failures: 1.
+== mutant resend: <         $reply = $this->redis->rawCommand(...array_map(static fn(int|string|float $argument): string => (string) $argument, $command)); >         $args = array_map(static fn(int|string|float $argument): string => (string) $argument, $command); >         try
+1) Maatify\RateLimiter\Tests\Integration\Redis\NativeNoscriptStudyRedisTest::testAColdCacheCostsOneNoscriptThenOneEvalAndTheEffectHappensOnce
+2) Maatify\RateLimiter\Tests\Integration\Redis\NativeNoscriptStudyRedisTest::testALostRequestOrReplyIsNeverReplayedByTheAdapterOrByExtRedis with data set "the request is lost before the server sees it" ('--drop-request-on-script=1', 0, 0)
+1) Maatify\RateLimiter\Tests\Integration\Redis\NativeNoscriptStudyRedisTest::testALostRequestOrReplyIsNeverReplayedByTheAdapterOrByExtRedis with data set "the reply is lost after the server ran the script" ('--drop-reply-on-script=1', 1, 1)
+Tests: 22, Assertions: 2144, Errors: 2, Failures: 1.
+== mutant doublefallback: >         $this->call($command);
+1) Maatify\RateLimiter\Tests\Integration\Redis\NativeNoscriptStudyRedisTest::testAColdCacheCostsOneNoscriptThenOneEvalAndTheEffectHappensOnce
+2) Maatify\RateLimiter\Tests\Integration\Redis\NativeNoscriptStudyRedisTest::testALookalikeNoscriptFromAScriptThatRanIsReplayedByTheCodeOnlyClassification
+3) Maatify\RateLimiter\Tests\Integration\Redis\NativeNoscriptStudyRedisTest::testAScriptFlushBetweenCallsCostsOneFallbackPerFlushAndNoEffectIsRepeated
+4) Maatify\RateLimiter\Tests\Integration\Redis\NativeNoscriptStudyRedisTest::testWithoutClearingTheStickyTextALegitimateNilReplyIsMisreadAsAnError
+5) Maatify\RateLimiter\Tests\Integration\Redis\NativeNoscriptStudyRedisTest::testARequestIsSavedByOneCommitThroughTheAdapterAndAColdCommitScriptCostsOneFallbackNotASecondSave
+6) Maatify\RateLimiter\Tests\Integration\Redis\NativeNoscriptStudyRedisTest::testTheCacheLostJustBeforeTheCommitDoesNotRepeatOrLoseTheSave
+7) Maatify\RateLimiter\Tests\Integration\Redis\NativeNoscriptStudyRedisTest::testAStalePlanIsRecalculatedAndSavedOnceThroughTheAdapterWithTheCacheLostBeforeEachCommit
+8) Maatify\RateLimiter\Tests\Integration\Redis\NativeNoscriptStudyRedisTest::testThePublicWorkloadEndsInTheSameStateWithTheSameDecisionsAsEvalOverTheRespClient
+Tests: 22, Assertions: 1556, Failures: 8.

@@ -1,0 +1,18 @@
+== connections 1 repetition 1 order eval evalsha
+{"mode":"eval","connections":1,"commands":150,"padding":13000,"p50Ms":6.414,"p95Ms":7.093,"p99Ms":8.472,"maxMs":18.477}
+{"mode":"evalsha","connections":1,"commands":150,"padding":13000,"p50Ms":6.642,"p95Ms":7.676,"p99Ms":8.933,"maxMs":9.193}
+== connections 1 repetition 2 order evalsha eval
+{"mode":"evalsha","connections":1,"commands":150,"padding":13000,"p50Ms":6.397,"p95Ms":6.905,"p99Ms":11.996,"maxMs":12.711}
+{"mode":"eval","connections":1,"commands":150,"padding":13000,"p50Ms":6.496,"p95Ms":7.09,"p99Ms":7.679,"maxMs":9.506}
+== connections 1 repetition 3 order eval evalsha
+{"mode":"eval","connections":1,"commands":150,"padding":13000,"p50Ms":6.498,"p95Ms":7.107,"p99Ms":7.494,"maxMs":8.265}
+{"mode":"evalsha","connections":1,"commands":150,"padding":13000,"p50Ms":6.453,"p95Ms":7.039,"p99Ms":10.204,"maxMs":10.438}
+== connections 8 repetition 1 order eval evalsha
+{"mode":"eval","connections":8,"commands":1200,"padding":13000,"p50Ms":6.381,"p95Ms":7.194,"p99Ms":9.134,"maxMs":12.036}
+{"mode":"evalsha","connections":8,"commands":1200,"padding":13000,"p50Ms":6.461,"p95Ms":7.492,"p99Ms":9.899,"maxMs":13.861}
+== connections 8 repetition 2 order evalsha eval
+{"mode":"evalsha","connections":8,"commands":1200,"padding":13000,"p50Ms":6.362,"p95Ms":7.35,"p99Ms":8.169,"maxMs":11.507}
+{"mode":"eval","connections":8,"commands":1200,"padding":13000,"p50Ms":6.54,"p95Ms":7.753,"p99Ms":8.688,"maxMs":9.971}
+== connections 8 repetition 3 order eval evalsha
+{"mode":"eval","connections":8,"commands":1200,"padding":13000,"p50Ms":6.315,"p95Ms":7.384,"p99Ms":10.018,"maxMs":14.29}
+{"mode":"evalsha","connections":8,"commands":1200,"padding":13000,"p50Ms":6.417,"p95Ms":7.051,"p99Ms":8.193,"maxMs":15.365}

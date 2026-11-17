@@ -1,0 +1,8 @@
+{"label":"proxy0-start","endpoint":"127.0.0.1:6405","n":300,"minMs":0.081,"p50Ms":0.094,"p95Ms":0.197,"p99Ms":0.847,"maxMs":4.576}
+{"label":"proxy7-start","endpoint":"127.0.0.1:6403","n":300,"minMs":5.341,"p50Ms":6.373,"p95Ms":6.866,"p99Ms":7.646,"maxMs":8.443}
+{"label":"before-diag-w1x40-rtt7","endpoint":"127.0.0.1:6403","n":300,"minMs":5.34,"p50Ms":6.347,"p95Ms":6.822,"p99Ms":7.354,"maxMs":8.038}
+{"label":"after-diag-w1x40-rtt7","endpoint":"127.0.0.1:6403","n":300,"minMs":5.427,"p50Ms":7.19,"p95Ms":9.368,"p99Ms":11.74,"maxMs":12.755}
+{"label":"before-diag-w8x10-proxy0","endpoint":"127.0.0.1:6405","n":300,"minMs":0.045,"p50Ms":0.06,"p95Ms":0.108,"p99Ms":0.221,"maxMs":0.338}
+{"label":"after-diag-w8x10-proxy0","endpoint":"127.0.0.1:6405","n":300,"minMs":0.019,"p50Ms":0.045,"p95Ms":0.204,"p99Ms":0.352,"maxMs":0.476}
+{"label":"proxy0-end","endpoint":"127.0.0.1:6405","n":300,"minMs":0.044,"p50Ms":0.057,"p95Ms":0.087,"p99Ms":0.174,"maxMs":0.33}
+{"label":"proxy7-end","endpoint":"127.0.0.1:6403","n":300,"minMs":5.36,"p50Ms":6.316,"p95Ms":6.875,"p99Ms":7.31,"maxMs":8.41}
