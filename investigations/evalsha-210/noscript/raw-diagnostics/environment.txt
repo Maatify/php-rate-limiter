@@ -1,0 +1,20 @@
+git: e55b634f178f427b4e85592468f74a056fba1957
+tree: 5b7835d8312f252f38a3dd9bd9774a1ff9568db5
+tracked-status (empty = clean): 
+date: 2026-11-17T08:59:48Z
+host: Darwin mohameds-MacBook-Pro.local 25.5.0 Darwin Kernel Version 25.5.0: Tue Jun  9 22:26:46 PDT 2026; root:xnu-12377.121.10~1/RELEASE_ARM64_T8103 arm64
+docker: Docker version 29.8.2, build 7fc2dff
+docker-info: NCPU=8 Mem=8215117824 OS=Docker Desktop Kernel=7.0.14-linuxkit
+php-image: maatify-rl-php64:local sha256:d4f5a573f22cc4df37f825d1a4c3c9e841486d9d0a00e89c71d4e8b704e31228 arm64
+redis-image: redis:7.0.15-alpine sha256:755105238729ef40393b21c3e7e2fb6ee886fc504e04718a4133ca2bc1aa294a arm64
+php: 8.4.27 INT_SIZE=8 ext-redis=6.3.0 pcntl=yes
+container nproc: 8
+redis: Redis server v=7.0.15 sha=00000000:0 malloc=jemalloc-5.2.1 bits=64 build=d6d81b7b50ab2e83
+redis config:
+maxmemory 0 
+busy-reply-threshold 5000 
+tcp-keepalive 300 
+save  
+appendonly no 
+client: stream-socket RESP client without pipelining (tests/Support/Redis/RespRedisCommandExecutor), one connection per worker
+pairs: diag-w1x40-rtt7=6 diag-w8x10-proxy0=6; settle=2s
