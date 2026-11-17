@@ -1,4 +1,0 @@
-PHP 8.4.27 INT=4 redis=6.3.0
-PHPUnit 11.5.57 by Sebastian Bergmann and contributors.
-
-Test file "tests/Integration/Redis/NoSuchTest.php" not found

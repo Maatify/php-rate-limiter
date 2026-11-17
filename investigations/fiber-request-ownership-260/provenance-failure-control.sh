@@ -10,7 +10,14 @@ out=${2:?output directory}
 real=$(command -v git)
 shim=$(mktemp -d "${TMPDIR:-/tmp}/rl260-shim.XXXXXX")
 dirty_file=investigations/fiber-request-ownership-260/RESULTS.md
-cleanup() { rm -rf "$shim"; if [ "$mode" = dirty ]; then "$real" checkout -- "$dirty_file"; fi; }
+saved=
+touched=0
+# Only what the control itself introduced is removed: the file's own bytes, saved before the first change, are put back (never a checkout,
+# which would also discard edits that predate the control).
+cleanup() {
+    rm -rf "$shim"
+    if [ "$touched" = 1 ] && [ -n "$saved" ]; then cp "$saved" "$dirty_file"; rm -f "$saved"; fi
+}
 trap cleanup EXIT
 case "$mode" in
     identity)
@@ -30,6 +37,13 @@ exec "$real" "\$@"
 SHIM
         ;;
     dirty)
+        # Refuse, before any change and before anything destructive is installed, when the target already differs from the commit
+        # (worktree or index) or the status cannot be read: pre-existing work is never touched.
+        pending=$("$real" status --porcelain -- "$dirty_file") || { echo "refused: git status failed" >&2; exit 3; }
+        if [ -n "$pending" ]; then echo "refused: $dirty_file has uncommitted changes; the control will not touch it" >&2; exit 3; fi
+        saved=$(mktemp "${TMPDIR:-/tmp}/rl260-saved.XXXXXX")
+        cp "$dirty_file" "$saved"
+        touched=1
         printf '\nuncommitted control line\n' >> "$dirty_file"
         printf '#!/usr/bin/env bash\nexec "%s" "$@"\n' "$real" > "$shim/git"
         ;;
