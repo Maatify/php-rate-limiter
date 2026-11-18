@@ -1,0 +1,140 @@
+#!/usr/bin/env bash
+# DEC-041 mutation controls (#260). Usage (repository root, clean committed tree): bash investigations/fiber-request-ownership-260/mutants.sh [output-dir]
+# Each mutant is ONE textual change to ONE source file; the intended-behaviour tests run on actual PHP_INT_SIZE 8 and 4 against an isolated
+# Redis (each run is bounded by `timeout 150` inside the container: a mutant that makes a test hang is recorded as DETECTED-BY-TIMEOUT); the file
+# is then restored byte for byte (and verified with git). A mutant that no test detects is a failure of the controls and
+# makes the script exit 1; so does any failure to restore. Every output and exit status is kept.
+set -uo pipefail
+root=$(pwd)
+out=${1:-"$root/investigations/fiber-request-ownership-260/raw-mutants"}
+mkdir -p "$out"
+: > "$out/result.tsv"
+tests=(tests/Integration/Redis/FiberRequestOwnershipRedisTest.php tests/Unit/Service/OwnershipRegistryTest.php)
+failed=0
+if [ -n "$(git status --porcelain -- src tests)" ]; then echo "working tree not clean in src/tests" > "$out/refused.txt"; exit 1; fi
+suite() { # width, logfile
+    local w=$1 log=$2 sfx="$$-$RANDOM" img=maatify-rl-php64:local plat=linux/arm64
+    if [ "$w" = 32 ]; then img=maatify-rl-php32:local; plat=linux/386; fi
+    local net="rl260m-$sfx" rd="rl260m-redis-$sfx"
+    docker network create "$net" > /dev/null || return 99
+    docker run -d --name "$rd" --network "$net" redis:7.0.15-alpine redis-server --save "" --appendonly no > /dev/null || { docker network rm "$net" > /dev/null 2>&1; return 99; }
+    until [ "$(docker exec "$rd" redis-cli ping 2>/dev/null)" = PONG ]; do sleep 0.3; done
+    docker run --rm --platform "$plat" --network "$net" -v "$root:/app" -w /app -e REDIS_INTEGRATION_HOST="$rd" -e REDIS_INTEGRATION_PORT=6379 "$img" \
+        timeout 150 php -d memory_limit=1G vendor/bin/phpunit "${tests[@]}" > "$log" 2>&1
+    local st=$?
+    docker rm -fv "$rd" > /dev/null 2>&1; docker network rm "$net" > /dev/null 2>&1
+    return $st
+}
+mutate() { # id, file, search, replace
+    python3 - "$2" "$3" "$4" <<'PY'
+import sys
+path, a, b = sys.argv[1], sys.argv[2], sys.argv[3]
+s = open(path).read()
+if s.count(a) < 1:
+    sys.exit("anchor not found: " + a[:60])
+open(path, "w").write(s.replace(a, b, 1))
+PY
+}
+run_mutant() { # id, description, file, search, replace
+    local id=$1 desc=$2 file=$3
+    if [ -n "${MUTANTS:-}" ] && [[ " $MUTANTS " != *" $id "* ]]; then return; fi
+    cp "$file" "$out/$id.orig"
+    if ! mutate "$id" "$file" "$4" "$5" 2> "$out/$id.mutate.err"; then
+        cp "$out/$id.orig" "$file"; printf '%s\tANCHOR-NOT-FOUND\t-\t-\t%s\n' "$id" "$desc" >> "$out/result.tsv"; failed=1; return
+    fi
+    suite 64 "$out/$id.php64.log"; local s64=$?
+    suite 32 "$out/$id.php32.log"; local s32=$?
+    cp "$out/$id.orig" "$file"; rm -f "$out/$id.orig"
+    local f64 f32
+    f64=$(grep -Eo 'Failures: [0-9]+|Errors: [0-9]+' "$out/$id.php64.log" | tr '\n' ' ')
+    f32=$(grep -Eo 'Failures: [0-9]+|Errors: [0-9]+' "$out/$id.php32.log" | tr '\n' ' ')
+    local verdict=DETECTED
+    if [ "$s64" -eq 124 ] || [ "$s32" -eq 124 ]; then verdict=DETECTED-BY-TIMEOUT; fi
+    if [ "$s64" -eq 0 ] || [ "$s32" -eq 0 ]; then verdict=UNDETECTED; failed=1; fi
+    printf '%s\t%s\tphp64: %s (exit %s)\tphp32: %s (exit %s)\t%s\n' "$id" "$verdict" "$f64" "$s64" "$f32" "$s32" "$desc" >> "$out/result.tsv"
+}
+S=src/Service
+R=src/Repository/Redis/RedisFullCapabilityStore.php
+run_mutant M01 "no entry guard on the engine (exclusive() calls straight through)" $S/RateLimiterEngine.php '        $scope = OwnershipRegistry::acquire($this->resources, $entry, $this->domain);
+        try {
+            return $call();
+        } finally {
+            $scope->release();
+        }' '        return $call();'
+run_mutant M02 "store admission keyed on requestState only (a direct transaction without an open request is never admitted)" $R '        $scope = OwnershipRegistry::admit($this, $entry, $this->ownDomain);
+        try {
+            return $operation();' '        $scope = $this->requestState === null ? null : OwnershipRegistry::admit($this, $entry, $this->ownDomain);
+        try {
+            return $operation();'
+run_mutant M03 "outcome claim exempt from admission (claimed through the raw executor)" $R 'new CallableRedisCommandExecutor(fn(array $command): mixed => $this->command($command)),
+            $this->namespace,
+        );
+    }' 'new CallableRedisCommandExecutor(fn(array $command): mixed => $this->redis->execute($command)),
+            $this->namespace,
+        );
+    }'
+run_mutant M04 "crossing-only identity (the owner context always matches)" $S/CallToken.php '        if ($this->keyIsObject) {
+            $held = $this->objectKey?->get();
+
+            return $held !== null && $held === $current;
+        }' '        return true;
+        if ($this->keyIsObject) {
+            $held = $this->objectKey?->get();
+
+            return $held !== null && $held === $current;
+        }'
+run_mutant M05 "premature release: the slots are released right after the identity lookup" $S/OwnershipRegistry.php '            $token->own($key);
+            $ok = true;
+
+            return $scope;' '            $token->own($key);
+            $ok = true;
+            $scope->release();
+
+            return $scope;'
+run_mutant M06 "foreign-record cleanup: clear() empties the slot whoever holds it" $S/OwnershipRegistry.php '        $slot = self::slot($resource);
+        if ($slot->record === $record) {
+            $slot->record = null;
+        }' '        $slot = self::slot($resource);
+        $slot->record = null;'
+run_mutant M07 "provider lease dropped from the active scope" $S/CallScope.php '        private ?ExecutionContextProviderInterface $lease,
+    ) {}' '        private ?ExecutionContextProviderInterface $lease,
+    ) {
+        $this->lease = null;
+    }'
+run_mutant M08 "replacement eligibility dropped (a vacated binding is replaced even with an owner)" $S/OwnershipRegistry.php '                if ($slot->record !== null) {
+                    throw new RateLimiterException(sprintf('"'"'Cannot replace the execution context binding of %s: its previous provider is gone but an ownership state still exists on it.'"'"', $resource::class));
+                }
+                continue; // a vacated binding with no owner, reservation or lookup is replaceable' '                continue; // mutant: replaceable whatever the ownership state'
+run_mutant M09 "binding is not failure-atomic (records while validating)" $S/OwnershipRegistry.php '            if (! $slot->bound) {
+                continue;
+            }
+            if (self::sameDomain($slot, $provider)) {
+                continue;
+            }' '            if (! $slot->bound) {
+                $slot->bound = true;
+                $slot->defaultDomain = $provider === null;
+                $slot->provider = $provider === null ? null : \WeakReference::create($provider);
+                continue;
+            }
+            if (self::sameDomain($slot, $provider)) {
+                continue;
+            }'
+run_mutant M10 "all-or-none broken: a refused acquisition keeps what it reserved" $S/OwnershipRegistry.php '            if (! $ok) {
+                $scope->release();
+            }' '            if (! $ok && false) {
+                $scope->release();
+            }'
+run_mutant M11 "a Host crossing is never marked (emitter, executor, clock)" $S/OwnershipRegistry.php '        $token = $record->token;
+        $token->crossings++;
+        try {
+            return $hostCall();
+        } finally {
+            $token->crossings--;
+        }' '        return $hostCall();'
+run_mutant M12 "the overlap refusal is retried like a conflict (transactRequest does not rethrow it)" $R '            } catch (OverlappingRequestException $exception) {
+                // DEC-041: an overlapping call is refused, never retried and never classified as a conflict over stale state.
+                throw $exception;
+            } catch (\Throwable $exception) {' '            } catch (\Throwable $exception) {'
+cat "$out/result.tsv"
+git status --short -- src tests | grep -v '^??' && failed=1
+exit "$failed"

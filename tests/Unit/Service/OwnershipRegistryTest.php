@@ -93,6 +93,21 @@ final class OwnershipRegistryTest extends TestCase
         self::assertFalse(OwnershipRegistry::isOccupied($r));
     }
 
+    public function testClearingWithAStaleRecordNeverEmptiesASlotAnotherCallReused(): void
+    {
+        $r = $this->resource();
+        $a = OwnershipRegistry::acquire([$r], 'limit', $this->default());
+        $staleRecords = $a->records();
+        $a->release();
+        $b = OwnershipRegistry::acquire([$r], 'limit', $this->default());
+
+        OwnershipRegistry::clear($r, $staleRecords[0]);
+
+        self::assertTrue(OwnershipRegistry::isOccupied($r), 'A record that is no longer in the slot clears nothing: B still owns it.');
+        $b->release();
+        self::assertFalse(OwnershipRegistry::isOccupied($r));
+    }
+
     // ---- the provider: two phases (CE-22) ------------------------------------------------------------------------------------------
 
     public function testAProviderThatReentersTheLibraryIsRefusedBeforeItIsCalledAgain(): void

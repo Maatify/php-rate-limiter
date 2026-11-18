@@ -31,7 +31,7 @@ suite() { # width, phpunit args
     docker run --rm --platform "$plat" --network "$net" -v "$root:/app" -w /app -e REDIS_INTEGRATION_HOST="$rd" -e REDIS_INTEGRATION_PORT=6379 "$img" \
         sh -c 'php -r "echo \"PHP \",PHP_VERSION,\" INT=\",PHP_INT_SIZE,\" redis=\",phpversion(\"redis\"),\"\n\";"; php -d memory_limit=1G vendor/bin/phpunit --fail-on-empty-test-suite "$@"' sh "$@"
     st=$?
-    docker rm -f "$rd" > /dev/null 2>&1; docker network rm "$net" > /dev/null 2>&1
+    docker rm -fv "$rd" > /dev/null 2>&1; docker network rm "$net" > /dev/null 2>&1
     return $st
 }
 # The source identity: two lines, a commit and its tree, each a 40-hex object name.

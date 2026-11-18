@@ -309,6 +309,20 @@ observe the distributed window again. During rotation, previous state and its TT
 unchanged, new members are owned by the current generation and bridge, and outer-only,
 fingerprint-only, and both-rotated inputs never form Cartesian generation pairs.
 
+## Concurrency, Sharing and Schedulers (DEC-041)
+
+**One call at a time per graph.** A runtime graph and the store objects behind it (the rate-limit, correlation and circuit-breaker stores), its request clock and its circuit breaker serve one independent call at a time. A call that begins while another is in flight on the same graph, or on a store the graph shares with another graph, throws `Maatify\RateLimiter\Exception\OverlappingRequestException` before it changes or consumes anything. Sequential use, including several runtimes taking turns on one store, is unchanged.
+
+**What is safe.**
+
+* Plain PHP (FPM, CLI, workers): one call at a time per process is the normal case; nothing to do.
+* Fibers and other schedulers: use **one graph (with its own store object and connection) per concurrent execution context**. Graphs that share only the Redis server are independent; their conflicts are handled by the request atomicity of DEC-037.
+* PHP Fibers are recognised without any configuration. A scheduler whose contexts are not Fibers can supply `ExecutionContextProviderInterface` through `RateLimiterBuilder::withExecutionContextProvider()` (and the optional last argument of `RedisFullCapabilityStore`): share **one provider instance** among every graph and store of that scheduler; building a graph over a resource already bound to another provider (or to the default Fiber domain) fails with a configuration error. The provider must be synchronous, must not call the library, suspend or throw, and must return a stable key that is unique among live contexts.
+* Operational readers follow the same rule: a reader built over a store that a call is using is refused while that call is in flight. Give monitoring its own graph, store object and connection.
+* The outcome claim of an admission policy is unchanged: it is its own atomic Redis command inside the call that makes it, and a caller outside that call is refused like any other.
+
+**Limits to know.** A custom store that does not belong to the package is protected at every graph entry (by object identity) but not when it is called directly outside a graph. Two graphs that wrap one store in two different decorator objects are not recognised as sharing it: share the object itself. A call that is suspended and never destroyed keeps its resources owned (destroying the Fiber releases them); there is no timeout release. A non-Fiber scheduler without a provider is covered for switches inside the guarded Host crossings (the executor, the signal emitter, the clock and the device resolver). Custom policy methods are not marked as Host crossings: under Fibers a policy that suspends is covered by the execution-context identity, and a policy that calls a store capability directly from the same stack is treated as part of the call that is evaluating it.
+
 ## Capability Map
 
 | Consumer capability | Public contract | Walkthrough | Example |

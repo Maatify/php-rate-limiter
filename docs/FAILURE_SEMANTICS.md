@@ -236,6 +236,16 @@ nothing.
 
 ---
 
+### 2.6 Overlapping calls (DEC-041)
+
+A runtime graph, together with the store objects it is built on, serves **one independent call at a time**. A call that begins while another is in flight on the same graph, or on a store, clock or circuit breaker the graph shares with another graph, is **refused** with `OverlappingRequestException` before it reads its clock, touches the breaker, sends a Redis command or changes anything the call in flight holds.
+
+* **It is an integration error, not a failure mode.** It is not a `BackendFailureException` (no circuit report, no fallback, no consumed fallback allowance), not a `RateLimitConcurrencyException` (it is never answered by the concurrency block and never retried by the library), and never an `ALLOW`, a block or any other answer of the rate limiter. Retrying is the Host's choice and is safe only after the call in flight has finished.
+* **What is nested, and so is not refused.** Everything one call does by itself inside its own request (the recovery step, the pipeline, the admission scripts, the nested store transaction, the outcome claim as its own atomic command, the release of held signals): operations from the owner's execution context while no Host crossing of that call is open.
+* **Independent graphs are unaffected.** Graphs that own their store object, clock and circuit breaker remain independent callers of the same Redis; conflicts between their valid requests stay under DEC-037. There is no lock across workers.
+* **Readers are calls too.** The operational readers are refused while a call is in flight on their store; concurrent monitoring uses its own graph, store object and connection.
+* **Ownership is released by unwinding.** A suspended call that is never resumed and never destroyed keeps its resources, and every later call on a graph that shares them is refused until it is destroyed (destroying a Fiber unwinds it). There is no timeout release.
+
 ## 3. Failure Modes
 
 The RateLimiter supports **three explicit and mutually exclusive failure modes**.

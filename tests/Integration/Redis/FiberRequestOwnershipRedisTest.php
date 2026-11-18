@@ -909,9 +909,23 @@ final class FiberRequestOwnershipRedisTest extends TestCase
         $this->runtime(new FixedClock('@' . self::T0), new RecordingFailureSignalEmitter(), $store);
         self::assertInstanceOf(RedisFullCapabilityStore::class, $store);
         $evaluations = 0;
-        $this->hook = static function (array $command, string $phase) use ($store): void {
-            if ($phase === 'before') {
-                $store->isHealthy(); // re-entrant from the executor: refused, and the exception leaves the hook
+        $commands = 0;
+        $heldKey = null;
+        $reentering = false;
+        $this->hook = function (array $command, string $phase) use ($store, &$commands, &$heldKey, &$reentering): void {
+            if ($phase !== 'before' || $reentering) {
+                return;
+            }
+            $commands++;
+            if ($commands === 1) {
+                $heldKey = self::keysOf($command)[0] ?? null;
+            }
+            if ($commands === 2) {
+                // The state the request read is now stale (it would be a conflict), and a re-entrant call from the executor is refused.
+                self::assertNotNull($heldKey);
+                $this->oracle->execute(['SET', $heldKey, 'changed outside the request']);
+                $reentering = true;
+                $store->isHealthy();
             }
         };
 
@@ -919,12 +933,23 @@ final class FiberRequestOwnershipRedisTest extends TestCase
             $store->transactRequest(static function () use ($store, &$evaluations): void {
                 $evaluations++;
                 $store->acquireProbeLease('x', self::T0, 120);
+                $store->acquireProbeLease('y', self::T0, 120);
             });
         });
 
         self::assertSame(self::REFUSAL, $class, 'The refusal reaches the caller unchanged.');
-        self::assertSame(1, $evaluations, 'It was not retried as a conflict over stale state.');
-        self::assertSame([], $this->keyNames(), 'Nothing was saved and no circuit state was written.');
+        self::assertSame(1, $evaluations, 'It was not retried as a conflict over stale state, although the state it read had changed.');
+        self::assertSame([$heldKey], $this->keyNames(), 'Only the key changed from outside exists: nothing was saved and no circuit state was written.');
+    }
+
+    /**
+     * @param array<mixed> $command
+     * @return list<string>
+     */
+    private static function keysOf(array $command): array
+    {
+        /** @var list<int|string|float> $command */
+        return OverlayWire::keys($command);
     }
 
     public function testADestroyedSuspendedFiberReleasesTheOwnershipAndALaterCallRuns(): void
