@@ -8,7 +8,7 @@
 |---|---|
 | الريبو / remote | `Maatify/php-rate-limiter` — `origin = https://github.com/Maatify/php-rate-limiter.git` |
 | الأساس | `main@cacdb3a6e2571b68cdae6fe2a73639ea4d4f112e` (دمج #266)، الشجرة `cb7d59eca7715744dc475e65490a924989540a82` |
-| SHA المصدر الذي شُغّلت عليه الاختبارات | `7b7924b2260ce3a113e4cf9f54d395811d8ef530` (الشجرة `7fcc304f2b23c146278211b57de75fe025c11732`): الأساس + الاختبار والدعم بعد تصحيح مراجعة الـLead (F269-01…04). بعده تُضاف وثائق وأدلة فقط، فلا يختلف عنه أي ملف تحت `src/` أو `tests/`. (الرأس الأول المراجَع `4cd8f6df` ومصدره `c4c4072c`.) |
+| SHA المصدر الذي شُغّلت عليه الاختبارات | `7f1ba2b786518cac255504668fdbbf0f035db983` (الشجرة `ab9fc3eaba3ffa613bf3159c9783bbf52b0bbda6`): الأساس + الاختبار والدعم والمشغّل بعد تصحيح مراجعتَي الـLead (F269-01…06). لا فرق تحت `src/` أو `tests/` بينه وبين `7b7924b2` (مصدر التشغيلات السابقة، تحققتُ بـ`git diff --stat`)، والفرق في المشغّل والوثائق فقط. بعده تُضاف أدلة فقط. (الرأس الأول المراجَع `4cd8f6df` ومصدره `c4c4072c`، والثاني `b75a4129`.) |
 | رأس التسليم | رأس الـPR (ملحوظ في وصفها وفي تعليقات #261 و#257 و#185) |
 | معايير Maatify | Selective Pinned Adoption على `ebcf55b0591db61d18a1407bc3effef0197b388f`، دون تحديث الـpin. مسار §10.1 (Normal Engineering Task): قرأتُ `AGENTS.md` ثم `STANDARDS_MANIFEST.md`، وحدّدتُ النطاق (مجلد `investigations/` والاختبار)، واستعملتُ المجموعة المحلية المسجلة فقط دون اتصال بـupstream |
 | Governance Helper | شُغّل داخل Docker على clone حقيقي عند `cacdb3a6`: `mechanical_status = VALID`، `errors = []`، `explicit_exceptions_overrides = []` (`raw/governance-helper.json`) |
@@ -166,7 +166,7 @@ investigations/redis-acl-request-save-261/bench.sh 64 400        # وحده، ل
 | `evidence-{64,32}.jsonl`، `evidence-table.md` | الأدلة الخام والجدول: 90 حالة، لا فرق بين العرضين (باستثناء نص رسالة phpredis لفقدان الرد: بروتوكول/socket، وكلاهما «غير مصنّف») |
 | `runner-selftest-before-fix.log`، `runner-selftest.log`، `governance-helper.json` | ضابط المشغّل قبل الإصلاح وبعده؛ مخرج الـGovernance Helper |
 
-`worktree_dirty=yes` في ملفات `.meta.txt` سببه ملفات أدلة غير ملتزمة تحت `raw/` من الجولة السابقة وقت التشغيل، لا تعديل تحت `src/` أو `tests/` (شجرة المصدر الملتزمة مسجّلة في الملف).
+كل ملفات `.meta.txt` الحالية سجّلت `worktree_dirty=no` ورأس المصدر `7f1ba2b7`؛ والمشغّل يفشل (77) إن تعذّر تحديد ذلك.
 
 **فحوص الجودة (F269-01).** سبب فشل `Lowest Supported Dependencies` ستة أخطاء PHPStan (2.0.0) في أدوات الدراسة: نوع أنبوب `proc_open` (يراه 2.0.0 `mixed` وغيره مصفوفة)، وإعادة بناء `$command` في المتغير الدراسي (فقدان `non-empty-list`)، ورسالة خطأ الـsocket في البروكسي. صُحّحت بقراءة الأنبوب عبر مساعد يأخذ `mixed` (صالح للنسختين)، وبناء قائمة جديدة للأمر، و`print_r` للرسالة. **أُعيد إثبات ذلك محليًا قبل الدفع** بتشغيل `phpstan.phar` الإصدار 2.0.0 (نُزّل من إصدارات PHPStan الرسمية داخل الحاوية) على `src tests examples --level=max`: نظيف، وكذلك PHPStan الأحدث، وPHP-CS-Fixer، و`check-per-cs-31-delta`. الفحوص الكاملة للمستودع (ReleaseVerification وتاريخ 2999 على 32-bit: #267؛ مهلات NM-7 وBlockNoDowngrade على 32-bit المحاكى: #268) لم تُشغَّل محليًا؛ دليلها الطبيعي من CI على رأس التسليم.
 

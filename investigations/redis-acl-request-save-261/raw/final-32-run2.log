@@ -7,7 +7,7 @@ Configuration: /app/phpunit.xml
 ................................................................. 65 / 93 ( 69%)
 ............................                                      93 / 93 (100%)
 
-Time: 00:06.378, Memory: 10.00 MB
+Time: 00:06.223, Memory: 10.00 MB
 
 OK (93 tests, 2010 assertions)
 redis: Redis server v=7.0.15 sha=00000000:0 malloc=jemalloc-5.2.1 bits=64 build=d6d81b7b50ab2e83
