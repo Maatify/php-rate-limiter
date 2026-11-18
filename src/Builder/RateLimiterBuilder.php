@@ -256,7 +256,7 @@ final class RateLimiterBuilder
             $clock,
         );
         // DEC-041: the whole resource set of the graph is bound to one context domain, or the build fails without binding anything.
-        $binding = OwnershipRegistry::bindAll(
+        $binding = OwnershipRegistry::bindGraph(
             OwnershipRegistry::collect([$this->rateLimitStore, $this->correlationStore, $this->circuitBreakerStore, $clock, $circuitBreaker]),
             $this->contextProvider,
         );
@@ -323,7 +323,7 @@ final class RateLimiterBuilder
         $clock = $this->clock ?? new SystemClock(new DateTimeZone('UTC'));
         $deviceIdentityResolver = $this->deviceIdentityResolver ?? $this->defaultDeviceIdentityResolver();
         // DEC-041: the readers' resources are the rate-limit store and the circuit-breaker store; their clock is the Host clock as before.
-        OwnershipRegistry::bindAll(OwnershipRegistry::collect([$this->rateLimitStore, $this->circuitBreakerStore]), $this->contextProvider);
+        OwnershipRegistry::bindGraph(OwnershipRegistry::collect([$this->rateLimitStore, $this->circuitBreakerStore]), $this->contextProvider);
 
         $scoreReader = new RateLimitOperationalReader(
             $deviceIdentityResolver,

@@ -110,6 +110,28 @@ final class OwnershipRegistry
         return $ledger;
     }
 
+    /**
+     * Binds a graph's resource set: to the configured provider, or, when none is configured, to the provider a resource of the set is
+     * already bound to (a store built with its own provider), or to the default Fiber domain. Set-wide and failure-atomic like `bindAll`.
+     *
+     * @param array<int, object> $resources
+     */
+    public static function bindGraph(array $resources, ?ExecutionContextProviderInterface $provider): BindingLedger
+    {
+        if ($provider === null) {
+            foreach ($resources as $resource) {
+                $slot = self::slot($resource);
+                $held = $slot->bound && ! $slot->defaultDomain ? $slot->provider?->get() : null;
+                if ($held instanceof ExecutionContextProviderInterface) {
+                    $provider = $held;
+                    break;
+                }
+            }
+        }
+
+        return self::bindAll($resources, $provider);
+    }
+
     /** Undoes exactly what one `bindAll` bound, restoring each previous state. */
     public static function rollback(BindingLedger $ledger): void
     {

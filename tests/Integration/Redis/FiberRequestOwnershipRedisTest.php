@@ -7,6 +7,7 @@ namespace Maatify\RateLimiter\Tests\Integration\Redis;
 use Fiber;
 use Maatify\RateLimiter\Builder\RateLimiterBuilder;
 use Maatify\RateLimiter\Command\RateLimitCommand;
+use Maatify\RateLimiter\Config\FixedWindowThrottlePolicy;
 use Maatify\RateLimiter\Config\RateLimiterConfig;
 use Maatify\RateLimiter\DTO\AdmissionOutcomeDTO;
 use Maatify\RateLimiter\DTO\FailureSignalDTO;
@@ -17,6 +18,7 @@ use Maatify\RateLimiter\Exception\BackendFailureException;
 use Maatify\RateLimiter\Exception\RateLimiterException;
 use Maatify\RateLimiter\Repository\Redis\CallableRedisCommandExecutor;
 use Maatify\RateLimiter\Repository\Redis\RedisFullCapabilityStore;
+use Maatify\RateLimiter\Service\CompositeRateLimiterRuntime;
 use Maatify\RateLimiter\Service\CompositeRateLimiterRuntimeInterface;
 use Maatify\RateLimiter\Service\RequestScopedClock;
 use Maatify\RateLimiter\Tests\Support\Clock\FixedClock;
@@ -969,5 +971,39 @@ final class FiberRequestOwnershipRedisTest extends TestCase
         gc_collect_cycles();
 
         self::assertTrue($store->acquireProbeLease('policy-b', self::T0, 120), 'Destroying the suspended Fiber unwound it and released its slots.');
+    }
+
+    public function testConsumeTheOperationalReadersAndTheAdmissionControlsAreRefusedWhileACallIsInFlight(): void
+    {
+        $store = $this->standaloneStore();
+        $builder = RateLimiterBuilder::fromFullCapabilityStore(new RateLimiterConfig('test_secret', 'test_fp', 'prod'), $store, new RecordingFailureSignalEmitter())
+            ->withSimpleThrottlePolicy(new FixedWindowThrottlePolicy('checkout', 5, 60))
+            ->withClock(new FixedClock('@' . self::T0));
+        $runtime = $builder->build();
+        self::assertInstanceOf(CompositeRateLimiterRuntime::class, $runtime);
+        $reader = $builder->buildOperationalReader();
+        $a = new Fiber(fn() => $runtime->limit($this->context('acct-a'), RateLimitCommand::checkOnly('login_protection')));
+        $commands = 0;
+        $other = new Fiber(static fn(): null => null);
+        $this->hooks($this->suspendAtTheFirstCommand($a, 'before', 'A in the executor'), $this->countCommandsOf($other, $commands));
+        $a->start();
+        self::assertTrue($a->isSuspended());
+        $before = $this->snapshot();
+
+        $this->assertRefused(static fn() => $runtime->consume('checkout', 'subject-1'), 'The simple runtime shares the store and the clock.');
+        $this->assertRefused(static fn() => $reader->readSimpleThrottle('checkout', 'subject-1'), 'An overlapping reader is refused, not passed through.');
+        $this->assertRefused(fn() => $reader->readScorePolicy($this->context('acct-b'), 'login_protection'));
+        $this->assertRefused(static fn() => $runtime->bindingEpoch('acct-b'));
+        $this->assertRefused(static fn() => $runtime->openAdmissionFence('login'));
+        $this->assertRefused(static fn() => $runtime->revokeAccountBinding('acct-b'));
+        $this->assertRefused(static fn() => $runtime->rebindAdmissionSharedConfig('login'));
+        $this->assertRefused(fn() => $runtime->claimPostPunishmentReentry($this->context('acct-b'), 'login_protection', 're-entry-1'));
+        self::assertSame($before, $this->snapshot(), 'None of them reached Redis.');
+        $a->resume();
+
+        self::assertSame(RateLimitResultDTO::DECISION_ALLOW, $this->decision($a));
+        $this->hook = null;
+        self::assertTrue($runtime->consume('checkout', 'subject-1')->allowed, 'After A has ended the simple runtime runs.');
+        self::assertSame(1, $reader->readSimpleThrottle('checkout', 'subject-1')->count, 'And so does the reader.');
     }
 }

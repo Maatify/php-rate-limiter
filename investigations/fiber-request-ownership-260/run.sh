@@ -3,8 +3,8 @@
 # Runs the governance helper (Docker, an isolated temporary clone of HEAD) and the Fiber suite on actual PHP_INT_SIZE 8 and 4 against an
 # isolated Redis. Every step, including the identification of the tested source, keeps its raw output and exit status; the script exits 1
 # if any required step failed (a red run, or a run whose source cannot be identified, is never reported as green).
-# FIBER260_GIT overrides the git executable (used by the provenance-failure control); FIBER260_TEST overrides the test path (used by the
-# missing-test control).
+# FIBER260_GIT overrides the git executable (used by the provenance-failure control); FIBER260_TEST overrides the test paths, space
+# separated (used by the missing-test control).
 set -uo pipefail
 root=$(pwd)
 git_bin=${FIBER260_GIT:-git}
@@ -56,8 +56,8 @@ if ! cmp -s "$out/source-identity.log" "$out/clone-identity.log" || ! valid_iden
 fi
 provenance_failed=$failed
 step governance-helper docker run --rm -v "$tmp/clone:/repo" -w /repo maatify-rl-php64:local php .agents/helpers/maatify-governance-context.php
-step suite-php64 suite 64 --testdox "${FIBER260_TEST:-tests/Integration/Redis/FiberRequestOwnershipRedisTest.php}"
-step suite-php32 suite 32 --testdox "${FIBER260_TEST:-tests/Integration/Redis/FiberRequestOwnershipRedisTest.php}"
+step suite-php64 suite 64 --testdox ${FIBER260_TEST:-tests/Integration/Redis/FiberRequestOwnershipRedisTest.php tests/Integration/Redis/ExecutionContextProviderRedisTest.php tests/Unit/Service/OwnershipRegistryTest.php}
+step suite-php32 suite 32 --testdox ${FIBER260_TEST:-tests/Integration/Redis/FiberRequestOwnershipRedisTest.php tests/Integration/Redis/ExecutionContextProviderRedisTest.php tests/Unit/Service/OwnershipRegistryTest.php}
 # The tested source is recorded only when it was identified AND proven to be the committed source (clean tree, clone identical).
 if [ "$provenance_failed" = 0 ] && valid_identity "$out/source-identity.log"; then cp "$out/source-identity.log" "$out/source.txt"; else : > "$out/source.txt"; fi
 if [ ! -s "$out/source.txt" ]; then printf '%s\t%s\n' source-recorded 1 >> "$out/result.txt"; failed=1; fi
