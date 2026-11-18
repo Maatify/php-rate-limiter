@@ -6,9 +6,9 @@
 
 ## Status
 
-`ACTIVE` — for **principle B only**, approved by the Owner on 2026-11-18 (Africa/Cairo) on [#260](https://github.com/Maatify/php-rate-limiter/issues/260) ([record of the approval](https://github.com/Maatify/php-rate-limiter/issues/260#issuecomment-6964289182)).
+`ACTIVE` — **principle B** (approved by the Owner on 2026-11-18, Africa/Cairo, on [#260](https://github.com/Maatify/php-rate-limiter/issues/260), [record](https://github.com/Maatify/php-rate-limiter/issues/260#issuecomment-6964289182)) **and the design contract M1–M7** (approved by the Owner on 2026-11-18: «اعتمد», [record](https://github.com/Maatify/php-rate-limiter/issues/260#issuecomment-6967037636)), as specified in "Approved design contract" below. The accepted design is [PR #266](https://github.com/Maatify/php-rate-limiter/pull/266) at `f9045bd5ef0b4959e146f78edc2fca404aadfd9d` (tree `f46f789ab1252868a907055537310c15d061a551`, `investigations/fiber-request-ownership-260/EXCLUSIVITY_DESIGN.md` §3–9).
 
-**Implementation status: not implemented.** At `main@316b1de99e784fec95b40f849d83a04dec772e2b` and at the head of the investigation PR the code does **not** enforce this principle: an overlapping independent call is still held silently in another call's request (see Context). The approval of the principle authorizes design documents only. It is not authority to change runtime code, interfaces, exceptions, Lua, tests, defaults, the pin, or workflows, and it does not supersede or amend any other decision.
+**Implementation status: approved, not yet accepted as implemented.** At `main@316b1de99e784fec95b40f849d83a04dec772e2b` the code does **not** enforce this decision: an overlapping independent call is still held silently in another call's request. The implementation is carried by the same PR #266 and stays unaccepted until it has been reviewed independently, merged with authorization, and `main` and its CI match. Until then this record says "approved", never "implemented". The approval does not supersede or amend any other decision except for the one sentence of DEC-037 named under Consequences.
 
 ## Date
 
@@ -17,6 +17,8 @@
 ## Decision Authority / Deciders
 
 **Owner**, who chose direction B over direction A on #260 and authorized design documents only: "approve direction B; prepare the executor assignment for #260 alone: the design of exclusivity and explicit refusal, covering the shared store and preserving nested calls, with no change to runtime code, merge, or release" (recorded by the Lead in the comment linked above, which is the source of this record).
+
+The Owner later approved the design contract M1–M7 (see Status and "Approved design contract").
 
 ## Scope / Concern
 
@@ -40,6 +42,18 @@ Two runtimes that share one store object share the request even though each has 
 4. **Documentation is not enforcement.** Where the principle cannot be enforced for a hosting pattern, the limit and the capability needed to enforce it must be stated; such a pattern is not counted as supported and is not left as undefined behaviour.
 5. **Independent graphs stay supported.** Graphs that own their store object, clock and signal buffer remain independent callers of the same Redis; conflicts between valid requests of separate graphs or processes remain governed by DEC-037. The principle does not create a lock across workers or on a Redis namespace.
 
+## Approved design contract (M1–M7)
+
+These are the approved terms. The implementation may not substitute another mechanism; where this text is silent the accepted design document is the reference. The status of each term as implemented is the status of the implementation above.
+
+1. **M1 — Mechanism.** Ownership is held per **resource object** (identity) in a package-owned internal coordinator over deduplicated resource sets. An entry acquires its whole set **all-or-none**, in a fixed order, in two phases: a **provider-free reservation first**, then the **execution-context identity lookup** under the reservation. Every reservation, lookup marker and cleanup belongs to the record or token the call itself created, and slots are released **last**, after signals, the clock reading and the lookup bookkeeping. A call is nested only when it comes from **the owner's execution context while no Host crossing of the owner is open**; Host crossing markers are a supplementary guard, never the sole proof of nesting.
+2. **M2 — Context provider.** The default context is the current Fiber, held weakly. An **optional** `ExecutionContextProviderInterface` (synchronous, no re-entry, no yielding, no throwing, stable and unique keys inside one domain), `RateLimiterBuilder::withExecutionContextProvider()` and **one** optional trailing constructor parameter of `RedisFullCapabilityStore` are the only configuration paths. Each resource is bound to **one** context domain by a set-wide, failure-atomic `bindAll` with a ledger and rollback of only what that call bound; the binding is immutable while its provider lives, and mixed domains over one resource are refused. A configured provider is retained by the store and by the entry classes that use it, and **every active ownership scope** (an entry call, a direct store call that inherited its provider from a graph, a nested lookup) holds a **strong provider lease in its own frame** until its last release; the registry and tokens stay weak. A vacated binding is replaceable only when no owner, reservation or pending lookup exists. No ownership interface is required of Host stores.
+3. **M3 — Refusal.** `Maatify\RateLimiter\Exception\OverlappingRequestException extends RateLimiterException`: an explicit refusal with no result DTO, no retry, and never converted into a backend failure, a concurrency block or fallback consumption.
+4. **M4 — Nesting.** A nested call from the owner's context with no Host crossing joins the open request. The corresponding sentence of `RequestAtomicStoreInterface` and DEC-037 is reconciled to it; the atomic save, the re-evaluation and the independent outcome claim are unchanged.
+5. **M5 — Admission.** Every independent public entry and every direct capability call is guarded, including the outcome claim and the health check; every shared resource is protected; delegating wrappers do not acquire twice; only pure local getters are exempt, with a reason. A graph over separate or partially shared stores acquires every distinct resource it uses.
+6. **M6 — Readers.** Overlapping operational readers are **refused**, with no pass-through read; concurrent monitoring uses its own graph, store object and connection. The readers' current clock is unchanged.
+7. **M7 — Contracts and limits.** The supported scheduler and callback contract, and its declared limits, are those of the accepted design; policy callbacks are guarded from the first implementation. An owner that is never unwound stays an owner (no abandon or timeout release); decorated aliasing of a store is outside the support; a non-cooperating custom store is protected at graph entries only. Open items O-1..O-5 are resolved: the proposed names, no alternative result metadata, no decorator discovery, no abandon or timeout-release API, custom policy guarding required.
+
 ## Rationale
 
 Direction B repairs the observed failures by refusing the misuse instead of making overlapping calls safe: per-call ownership of every piece of request state (direction A) was judged a larger change across the store, clock, circuit breaker and engine, while exclusivity keeps the existing per-object state valid by guaranteeing that only one call uses it at a time. Silence about overlap had already produced silent loss and cross-call effects, which is why the refusal has to be explicit and has to be enforced where the shared state lives.
@@ -47,8 +61,8 @@ Direction B repairs the observed failures by refusing the misuse instead of maki
 ## Consequences
 
 - The behaviour at the time of this record does not conform to the principle; the gap is tracked by #260, which stays open. A later, separately authorized work unit has to implement and verify it.
-- Proposals for the mechanism, the refusal shape, the supported-scheduler contract, the compatibility effects and the verification plan exist only as **unapproved proposals** in `investigations/fiber-request-ownership-260/EXCLUSIVITY_DESIGN.md`. They are not part of this decision.
-- The design may show that a text of an ACTIVE contract has to change (for example the nested-call guarantee of `RequestAtomicStoreInterface`, described in DEC-037 item 7). Any such change needs its own approval before implementation; this decision does not make it.
+- The mechanism, the refusal shape, the scheduler contract, the compatibility effects and the verification plan are the approved design contract above; the detailed design is `investigations/fiber-request-ownership-260/EXCLUSIVITY_DESIGN.md`.
+- **One sentence of an ACTIVE contract is reconciled, and no other:** the nested-call guarantee of `RequestAtomicStoreInterface` (and the matching application note of DEC-037): a nested call joins the open request only from the owner's execution context while no Host crossing is open (M4). The rest of DEC-037 is unchanged.
 - The decision does not move the outcome claim (#258, DEC-036), the fallback accounting (#259), the retry budget, the signals contract or the clock rules.
 
 ## Relationship to Other Decisions
@@ -59,7 +73,7 @@ Direction B repairs the observed failures by refusing the misuse instead of maki
 
 ## Canonical Contract / Current Owner
 
-None yet. The principle is approved but not implemented, so no standard, interface or code currently owns it. The investigation records are [PR #266](https://github.com/Maatify/php-rate-limiter/pull/266) and `investigations/fiber-request-ownership-260/RESULTS.md`; the unapproved design proposal is `investigations/fiber-request-ownership-260/EXCLUSIVITY_DESIGN.md`.
+Approved, not yet accepted as implemented: until the implementation of [PR #266](https://github.com/Maatify/php-rate-limiter/pull/266) is accepted and merged, no code owns it. The intended owners are the ownership coordinator, the runtime entries (`RateLimiterEngine`, `FixedWindowSimpleRateLimiter`, the operational readers) and `RedisFullCapabilityStore`, `RequestAtomicStoreInterface` for the nested-call sentence, `docs/FAILURE_SEMANTICS.md` and the usage guide. The investigation records are `investigations/fiber-request-ownership-260/RESULTS.md` and `EXCLUSIVITY_DESIGN.md`.
 
 ## Supersedes
 

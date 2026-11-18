@@ -1,7 +1,7 @@
-# #260 — Design proposal: exclusive request ownership and explicit refusal of an overlapping call (revision 3)
+# #260 — Design proposal: exclusive request ownership and explicit refusal of an overlapping call (revision 5, approved as M1–M7)
 
-**Status of this document: a design proposal for review. Nothing here is implemented, and nothing here except the principle of DEC-041 is approved.**
-It authorizes no change to `src/`, interfaces, DTOs, exceptions, Lua, tests, runners, Composer, workflows, the pin or defaults. No prototype was built, nothing was executed to produce this revision, and every statement about cost is an estimate.
+**Status of this document: the design as accepted by the Lead at head `f9045bd5` and approved by the Owner as M1–M7 on 2026-11-18 (recorded in DEC-041, "Approved design contract"). It is the reference of the implementation carried by PR #266, which is not accepted until reviewed independently. The proposal wording below ("proposed", "approval M#") is kept as written at review time; the approval is recorded in DEC-041.**
+At review time it authorized no change to `src/`, interfaces, DTOs, exceptions, Lua, tests, runners, Composer, workflows, the pin or defaults; the implementation assignment of #260 now authorizes the implementation of the approved terms only. Statements about cost below were estimates at review time; measured cost is reported with the implementation.
 
 Markers: **[APPROVED]** the principle of [DEC-041](../../docs/decisions/DEC-041_EXCLUSIVE_REQUEST_OWNERSHIP_AND_EXPLICIT_OVERLAP_REFUSAL.md) (direction B, Owner, 2026-11-18), and nothing else. **[PROPOSED]** a design detail recommended here. **[APPROVAL M#]** a material item that needs its own approval, listed in section 11. **[OPEN]** a question left to a decision. **[ESTIMATE]** an unmeasured size or cost statement.
 
