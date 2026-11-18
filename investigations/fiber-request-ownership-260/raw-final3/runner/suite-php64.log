@@ -1,0 +1,75 @@
+PHP 8.4.27 INT=8 redis=6.3.0
+PHPUnit 11.5.57 by Sebastian Bergmann and contributors.
+
+Runtime:       PHP 8.4.27
+Configuration: /app/phpunit.xml
+
+..........................................................        58 / 58 (100%)
+
+Time: 00:00.339, Memory: 14.00 MB
+
+Execution Context Provider Redis (Maatify\RateLimiter\Tests\Integration\Redis\ExecutionContextProviderRedis)
+ ✔ A provider separates the contexts of a scheduler that is not fibers
+ ✔ Without a provider the contexts of a non fiber scheduler look alike and the call is treated as nested
+ ✔ A provider passed to the store constructor is retained without a host variable
+ ✔ A graph inherits the provider of its store and another provider or domain is refused before anything is bound
+ ✔ A failed build binds nothing of its own and a later graph of the other domain binds normally
+ ✔ After every graph that supplied the provider is destroyed a direct call fails fast and never falls back to the default domain
+ ✔ An active inherited provider call is not reconfigured and the vacated binding is replaceable after it ends
+
+Fiber Request Ownership Redis (Maatify\RateLimiter\Tests\Integration\Redis\FiberRequestOwnershipRedis)
+ ✔ A call from another context is refused while a callback suspended inside a direct transaction
+ ✔ A call from another context is refused while a direct capability is suspended in the executor
+ ✔ Sequential calls are saved before each returns and a rejection does not reach the others
+ ✔ A nested request inside one request is one save and keeps the outer clock reading
+ ✔ An independent call is refused at its entry while another call holds the request
+ ✔ The call holding the request can be rejected and the refused call was never answered
+ ✔ Whichever call starts second is refused and the first stores exactly its own effects with data set "A starts first"
+ ✔ Whichever call starts second is refused and the first stores exactly its own effects with data set "B starts first"
+ ✔ The host clock reading of the call holding the request is not used by a refused call and the next call reads the new time
+ ✔ A backend failure is never crossed between calls because the overlapping call is refused first
+ ✔ A call on another runtime sharing the store object is refused at its entry
+ ✔ After the call in flight ends the other runtime sharing the store carries its own clock reading
+ ✔ Runtimes with their own store and clock do not share a request
+ ✔ A recovery transition is announced only after its save and an overlapping call is refused with data set "the holding call is saved"
+ ✔ A recovery transition is announced only after its save and an overlapping call is refused with data set "the holding call is rejected"
+ ✔ A direct transaction without writes is refused while a call is suspended in the host clock
+ ✔ A call arriving in the commit window is refused
+ ✔ An outcome claim and a health check from an unrelated caller are refused
+ ✔ Graphs that share only the correlation store or only the circuit store contend
+ ✔ A call made from inside the executor on the same stack is refused
+ ✔ A call made from inside the signal emitter is refused because the owner is released last
+ ✔ An overlap refusal inside a transaction is not retried and is not a circuit report
+ ✔ A destroyed suspended fiber releases the ownership and a later call runs
+ ✔ Consume the operational readers and the admission controls are refused while a call is in flight
+
+Ownership Registry (Maatify\RateLimiter\Tests\Unit\Service\OwnershipRegistry)
+ ✔ A refused acquisition clears only what it took and never another calls slot
+ ✔ An aliased resource is acquired once and a call never refuses itself
+ ✔ A release clears a slot only where it still holds this calls record
+ ✔ Clearing with a stale record never empties a slot another call reused
+ ✔ A provider that reenters the library is refused before it is called again
+ ✔ A provider that throws releases only this calls reservations and surfaces a classified failure
+ ✔ A provider that yields keeps the reservations and every other call is refused
+ ✔ Nested operations from the owners context are admitted and other contexts and crossings are refused
+ ✔ A direct operation with no owner is a short lived owner for its whole duration
+ ✔ Mixed domains are refused at binding and nothing is bound
+ ✔ A same provider instance is accepted and another instance of the same class is not
+ ✔ A rollback undoes exactly what that binding bound
+ ✔ An entry adopts the domain of its resources and refuses resources of two domains
+ ✔ An active scope keeps its provider alive and another domain is refused until it ends
+ ✔ A vacated binding is never filled silently by a direct call
+ ✔ A replacement is rejected while an owner a reservation or a lookup still exists on a vacated binding
+ ✔ Nothing holds a resource alive after the call and an expired object context equals nothing
+ ✔ A key of another live context is refused and a scalar key is compared by value
+ ✔ Decorated aliasing of a store is not recognised and is outside the support
+ ✔ A provider that breaks its contract with an equal key for two live contexts is treated as one
+ ✔ Only the store constructor gains an optional provider parameter
+ ✔ A destroyed suspended fiber unwinds and releases its slots
+ ✔ A host object with a method named owned resources is a resource by identity and its code is never called
+ ✔ A package class is still expanded and a raw host clock is still excluded
+ ✔ A shared host store with an owned resources method still refuses the second call
+ ✔ A host clock passes every reading through one to one and is never wrapped twice
+ ✔ A rollback keeps the binding another call stands on
+
+OK (58 tests, 907 assertions)

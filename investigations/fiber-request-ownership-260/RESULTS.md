@@ -225,3 +225,62 @@ Against `c9eb4dd5` (the cost of this correction alone):
 | 64 | ping | candidate | 52.46 (14.58–53.17) | 164.54 (146.63–256.54) |
 
 Reading: on 64-bit the p50 of the affected paths moves by about 2 to 8 percent against `main` (direct 78.13→84.04 µs, nested 293.67→300.08, limit 946.08→988.96) and by no more than noise against `c9eb4dd5`. The `ping` control is a raw Redis round trip that this change does not touch, and its p99 on 64-bit differs between the trees in both directions across runs (231.83→297.08 µs here against 491.04→248.13 in the earlier run of `c9eb4dd5`): tail differences of that size are measurement noise of this machine, not a cost of the guard, and the p99 differences of the library paths are not attributed to the guard. The 32-bit run is emulated; its p50 for `direct` (160.58→245.42 µs) is a measured increase and is reported as such, not explained away. The numbers are measurements, not a verdict.
+
+## Second review of the correction `02d51f24` (F266-15, F266-16): evidence on the corrected head
+
+Corrected source head `7d368531e526313efd8233bb70f1d334a8e0c9c9` (tree `1061a6273aceecd474eea9b8a30ac9ab0a4c0646`); reviewed head `02d51f246703128c504444a041db4ccef65c77f6`; baseline `main@316b1de99e784fec95b40f849d83a04dec772e2b`. Raw outputs: `raw-final3/`, `raw-mutants-final3/`, `raw-bench-final3/`, `raw-bench-vs-reviewed-final3/`. Earlier sections stay as history of their own heads; the cost tables of `9568553f` stay tied to that source and are not the cost of this one. Docker, isolated Redis 7.0.15, PHP 8.4.27, actual PHP_INT_SIZE 8 and 4 (32-bit emulated).
+
+| Run | Result |
+|---|---|
+| New regressions (crossings 10 + registry 27 + Host-store 4 + ... = 43 tests of the three files) on the **reviewed source `02d51f24`**, 64 and 32 | 5 red on both widths: a failed `build()` and a failed `buildOperationalReader()` that unbind a runtime built meanwhile (F266-15), the hand-assembled engine whose raw clock reaches the executor (F266-16), the counted-rollback unit and the `HostClock` unit |
+| The same tests on the corrected head | pass on both widths |
+| Candidate full suite 64 / 32 | 2879 tests (100 errors, 4 failures, 14 skipped) / 2874 tests (101 errors, 4 failures, 65 skipped): ReleaseVerification classes only; the extra 32-bit error is the year-2999 fixture (#267) |
+| `--group php32`, 32 / 64 | 883 tests OK (64 skipped) / 884 tests OK (13 skipped) |
+| Mutants M01–M25, both widths | 25 of 25 detected (M23–M25 are the controls of these corrections) |
+| Runner (provenance, governance helper, clean clone, php64/php32 suites) | all steps exit 0 |
+
+Mechanism of F266-15: a binding is counted. Every `bindAll` that records or relies on a binding takes a hold; a rollback releases its holds and undoes a binding only when no hold remains, and a binding whose binder rolled back first is undone by the last one standing if that one rolls back too. `adopt()` of an existing binding takes no hold. No public method, interface or constructor parameter was added. Mechanism of F266-16: `HostClock` (internal) wraps a raw clock one-to-one in the package classes that read a clock inside a call; the request clock and an already wrapped clock are never wrapped.
+
+### Cost of the corrected source (committed, alternating, 5 rounds of 3000 iterations after 300 warm-up; no threshold)
+
+Against `main@316b1de9`:
+
+| width | workload | tree | p50 µs median (min–max) | p99 µs median (min–max) |
+| 32 | direct | baseline | 149.96 (149–153.17) | 298.46 (272.42–387.33) |
+| 32 | direct | candidate | 230.71 (229.5–231.63) | 407.08 (353.21–556.79) |
+| 32 | limit | baseline | 2206.25 (2195.04–2209.88) | 11884.38 (11741.79–12534.38) |
+| 32 | limit | candidate | 2726.21 (2694.38–2733.46) | 13134.21 (12968.17–14212.92) |
+| 32 | nested | baseline | 642.08 (640.54–643.13) | 1261.46 (1157.58–1695.83) |
+| 32 | nested | candidate | 785.08 (781.04–794.83) | 1489.5 (1443.75–1883.38) |
+| 32 | ping | baseline | 75.04 (74.96–75.71) | 162.96 (109.08–198.96) |
+| 32 | ping | candidate | 75.38 (74.96–75.58) | 140.75 (106.63–181.04) |
+| 64 | direct | baseline | 75 (74.71–76.75) | 206.5 (131.5–373.13) |
+| 64 | direct | candidate | 80.71 (72.17–82.42) | 172.33 (121.5–255.29) |
+| 64 | limit | baseline | 912.33 (899.88–917.54) | 4533.5 (4460.5–5589.29) |
+| 64 | limit | candidate | 955.63 (928.17–960) | 4540.29 (4441.42–5296.96) |
+| 64 | nested | baseline | 286.25 (277.17–288.38) | 530.38 (504.33–565.04) |
+| 64 | nested | candidate | 298.5 (285.38–299.88) | 566.21 (500.33–602.83) |
+| 64 | ping | baseline | 52.17 (51.42–52.75) | 182.5 (150.04–253.25) |
+| 64 | ping | candidate | 51.96 (25.71–53.75) | 201.42 (104.54–312.67) |
+
+Against `02d51f24` (the cost of this correction alone):
+
+| width | workload | tree | p50 µs median (min–max) | p99 µs median (min–max) |
+| 32 | direct | baseline | 228.63 (225.92–230.33) | 527.46 (399.67–556.54) |
+| 32 | direct | candidate | 228.63 (225.54–231.71) | 489.88 (358.96–616.17) |
+| 32 | limit | baseline | 2907 (2690.5–3295.92) | 16610.04 (14023.88–20046.5) |
+| 32 | limit | candidate | 2880.21 (2697.5–3118.08) | 15285.04 (13913.58–18663.38) |
+| 32 | nested | baseline | 781.25 (778.63–786) | 1674.13 (1569.63–2283.88) |
+| 32 | nested | candidate | 779.46 (778.29–1115.29) | 1722.88 (1574.83–2572.33) |
+| 32 | ping | baseline | 75.29 (74.79–75.92) | 115.92 (107.04–288.79) |
+| 32 | ping | candidate | 75.29 (55.04–76.79) | 128.21 (112.08–317.38) |
+| 64 | direct | baseline | 82 (81–84.38) | 318.71 (133.88–394.75) |
+| 64 | direct | candidate | 82.17 (81.42–82.92) | 185.21 (145.96–376.46) |
+| 64 | limit | baseline | 948.79 (935.17–951.29) | 4756.13 (4664.29–5139.79) |
+| 64 | limit | candidate | 948.21 (940.13–1045.38) | 4914.42 (4554.79–9966.92) |
+| 64 | nested | baseline | 299.13 (297.21–302.88) | 606.38 (517.54–1069.29) |
+| 64 | nested | candidate | 296.63 (282.08–303.75) | 618.42 (540.58–643.67) |
+| 64 | ping | baseline | 52.96 (41.29–53.25) | 277.33 (209.88–562.33) |
+| 64 | ping | candidate | 53.33 (31.96–53.54) | 219.21 (96.33–303.21) |
+
+Reading: this correction adds a pass-through wrapper only to raw clocks in hand-assembled graphs and a counter to the binding; the Builder paths are unchanged. Against `02d51f24` the p50 of every measured path differs by no more than noise on both widths (64-bit direct 82→82.17 µs, nested 299.13→296.63, limit 948.79→948.21). Against `main` the 64-bit p50 is 5 to 8 percent higher on the affected paths (direct 75→80.71, nested 286.25→298.5, limit 912.33→955.63) and the emulated 32-bit p50 is about 20 to 55 percent higher (direct 149.96→230.71, limit 2206.25→2726.21, nested 642.08→785.08): those are measured costs of the guard as a whole, reported as such, and the p99 differences are not attributed to it (the `ping` control is untouched code and its p99 moves in both directions between runs). The numbers are measurements, not a verdict.

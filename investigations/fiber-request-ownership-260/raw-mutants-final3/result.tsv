@@ -1,0 +1,25 @@
+M01	DETECTED	php64: Failures: 6  (exit 1)	php32: Failures: 6  (exit 1)	no entry guard on the engine (exclusive() calls straight through)
+M02	DETECTED	php64: Failures: 14  (exit 1)	php32: Failures: 14  (exit 1)	store admission keyed on requestState only (a direct transaction without an open request is never admitted)
+M03	DETECTED	php64: Failures: 1  (exit 1)	php32: Failures: 1  (exit 1)	outcome claim exempt from admission (claimed through the raw executor)
+M04	DETECTED	php64: Failures: 5  (exit 1)	php32: Failures: 5  (exit 1)	crossing-only identity (the owner context always matches)
+M05	DETECTED	php64: Errors: 1 Failures: 46  (exit 2)	php32: Errors: 1 Failures: 46  (exit 2)	premature release: the slots are released right after the identity lookup
+M06	DETECTED	php64: Failures: 1  (exit 1)	php32: Failures: 1  (exit 1)	foreign-record cleanup: clear() empties the slot whoever holds it
+M07	DETECTED	php64: Failures: 1  (exit 1)	php32: Failures: 1  (exit 1)	provider lease dropped from the active scope
+M08	DETECTED	php64: Failures: 1  (exit 1)	php32: Failures: 1  (exit 1)	replacement eligibility dropped (a vacated binding is replaced even with an owner)
+M09	DETECTED	php64: Failures: 4  (exit 1)	php32: Failures: 3  (exit 1)	binding is not failure-atomic (records while validating)
+M10	DETECTED	php64: Errors: 1 Failures: 1  (exit 2)	php32: Errors: 2 Failures: 1  (exit 2)	all-or-none broken: a refused acquisition keeps what it reserved
+M11	DETECTED	php64: Failures: 10  (exit 1)	php32: Failures: 10  (exit 1)	a Host crossing is never marked (emitter, executor, clock)
+M12	DETECTED	php64: Failures: 1  (exit 1)	php32: Failures: 1  (exit 1)	the overlap refusal is retried like a conflict (transactRequest does not rethrow it)
+M13	DETECTED	php64: Failures: 1  (exit 1)	php32: Failures: 1  (exit 1)	the simple limiter's policy getters are not Host crossings (F266-10)
+M14	DETECTED	php64: Failures: 1  (exit 1)	php32: Failures: 1  (exit 1)	the pipeline's policy getters are not Host crossings (F266-10)
+M15	DETECTED	php64: Failures: 1  (exit 1)	php32: Failures: 1  (exit 1)	the engine's policy getters are not Host crossings (F266-10)
+M16	DETECTED	php64: Failures: 3  (exit 1)	php32: Failures: 3  (exit 1)	increment() reads the store clock before its guard (F266-11)
+M17	DETECTED	php64: Failures: 1  (exit 1)	php32: Failures: 1  (exit 1)	the store's own clock is not a Host crossing (F266-11)
+M18	DETECTED	php64: Failures: 1  (exit 1)	php32: Failures: 1  (exit 1)	the simple reader's Host clock is not a crossing (F266-12)
+M19	DETECTED	php64: Failures: 1  (exit 1)	php32: Failures: 1  (exit 1)	the score reader's device resolver is not a crossing (F266-12)
+M20	DETECTED	php64: Failures: 1  (exit 1)	php32: Failures: 1  (exit 1)	a failed reader build keeps the binding it made (F266-13)
+M21	DETECTED	php64: Binary file /tmp/rl260/final2/raw-mutants/M21.php64.log matches  (exit 1)	php32: Binary file /tmp/rl260/final2/raw-mutants/M21.php32.log matches  (exit 1)	the inventory trusts a method name of any object (F266-14)
+M22	DETECTED	php64: Failures: 3  (exit 1)	php32: Failures: 3  (exit 1)	the inventory leaves out any object that implements the clock interface, by type (F266-14 follow-up)
+M23	DETECTED	php64: Failures: 3  (exit 1)	php32: Failures: 3  (exit 1)	a rollback undoes a binding another call stands on (F266-15)
+M24	DETECTED	php64: Failures: 1  (exit 1)	php32: Failures: 1  (exit 1)	a hand-assembled raw clock is not a Host crossing (F266-16)
+M25	DETECTED	php64: Failures: 1  (exit 1)	php32: Failures: 1  (exit 1)	the breaker keeps a raw Host clock unwrapped (F266-16)

@@ -1,0 +1,57 @@
+PHPUnit 11.5.57 by Sebastian Bergmann and contributors.
+
+Runtime:       PHP 8.4.27
+Configuration: /app/phpunit.xml
+
+................................................................F 65 / 67 ( 97%)
+FF                                                                67 / 67 (100%)
+
+Time: 00:01.220, Memory: 14.00 MB
+
+There were 3 failures:
+
+1) Maatify\RateLimiter\Tests\Unit\Service\HostStoreOwnershipTest::testASecondRuntimeSharingAHostStoreIsRefusedBeforeItTouchesTheStoreAndTheFirstCompletes with data set "a Host store that is also a clock" (Maatify\RateLimiter\Tests\Support\Ownership\HostStoreWithClock Object (...))
+the second runtime is refused
+Failed asserting that null is identical to 'Maatify\RateLimiter\Exception\OverlappingRequestException'.
+
+/app/tests/Unit/Service/HostStoreOwnershipTest.php:67
+
+2) Maatify\RateLimiter\Tests\Unit\Service\HostStoreOwnershipTest::testTheInventoryKeepsTheStoreWhateverInterfacesItImplements with data set "a Host store that is also a clock" (Maatify\RateLimiter\Tests\Support\Ownership\HostStoreWithClock Object (...))
+the raw clock is excluded by its role, the store stays
+Failed asserting that two arrays are identical.
+--- Expected
++++ Actual
+@@ @@
+-Array &0 [
+-    0 => Maatify\RateLimiter\Tests\Support\Ownership\HostStoreWithClock Object #974 (
+-        'calls' => 0,
+-        'inventoryCalls' => 0,
+-        'suspendIn' => null,
+-    ),
+-]
++Array &0 []
+
+/app/tests/Unit/Service/HostStoreOwnershipTest.php:88
+
+3) Maatify\RateLimiter\Tests\Unit\Service\HostStoreOwnershipTest::testTheInventoryKeepsTheStoreWhateverInterfacesItImplements with data set "a Host store" (Maatify\RateLimiter\Tests\Support\Ownership\HostStore Object (...))
+an object passed in the store role is a resource whatever it implements
+Failed asserting that two arrays are identical.
+--- Expected
++++ Actual
+@@ @@
+         'inventoryCalls' => 0,
+         'suspendIn' => null,
+     ),
+-    1 => Maatify\RateLimiter\Tests\Support\Clock\FixedClock Object #422 (
+-        'now' => DateTimeImmutable Object #2816 (
+-            'date' => '1970-01-12 13:46:40.000000',
+-            'timezone_type' => 1,
+-            'timezone' => '+00:00',
+-        ),
+-    ),
+ ]
+
+/app/tests/Unit/Service/HostStoreOwnershipTest.php:89
+
+FAILURES!
+Tests: 67, Assertions: 950, Failures: 3.
