@@ -91,11 +91,11 @@ run_mutant M05 "premature release: the slots are released right after the identi
             $scope->release();
 
             return $scope;'
-run_mutant M06 "foreign-record cleanup: clear() empties the slot whoever holds it" $S/OwnershipRegistry.php '        $slot = self::slot($resource);
-        if ($slot->record === $record) {
+run_mutant M06 "foreign-record cleanup: clear() empties the slot whoever holds it" $S/OwnershipRegistry.php '        if ($slot->record === $record) {
             $slot->record = null;
-        }' '        $slot = self::slot($resource);
-        $slot->record = null;'
+            self::settle($resource);
+        }' '        $slot->record = null;
+        self::settle($resource);'
 run_mutant M07 "provider lease dropped from the active scope" $S/CallScope.php '        private ?ExecutionContextProviderInterface $lease,
     ) {}' '        private ?ExecutionContextProviderInterface $lease,
     ) {
@@ -153,12 +153,9 @@ run_mutant M22 "the inventory leaves out any object that implements the clock in
             $unique[spl_object_id($object)] = $object;
         }
         foreach ($clocks as $clock) {'
-run_mutant M23 "a rollback undoes a binding another call stands on (F266-15)" $S/OwnershipRegistry.php '            if ($slot->holds > 0) {
-                $slot->deferredRestore = [$bound, $default, $provider]; // the last call standing on it undoes it, if it rolls back too
-                continue;
-            }' '            if ($slot->holds > 0 && false) {
-                continue;
-            }'
+run_mutant M23 "a rollback releases every holder of a binding, not only its own hold (F266-15, F266-17)" $S/OwnershipRegistry.php '            $generation->holders = max(0, $generation->holders - 1);
+            if ($created) {' '            $generation->holders = 0;
+            if ($created) {'
 run_mutant M24 "a hand-assembled raw clock is not a Host crossing (F266-16)" $S/HostClock.php '        return OwnershipRegistry::crossing($this, fn(): DateTimeImmutable => $this->inner->now());' '        return $this->inner->now();'
 run_mutant M25 "the breaker keeps a raw Host clock unwrapped (F266-16)" $S/CircuitBreaker.php '        $this->clock = HostClock::of($this->clock);' '        // mutant: unwrapped'
 run_mutant M26 "an entry built from Host code does not stand on the binding it adopted (F266-17 case 1)" $S/OwnershipRegistry.php '        if (self::$hostDepth === 0) {' '        if (true) {'
@@ -170,7 +167,7 @@ run_mutant M27 "a rollback never undoes an abandoned binding (F266-17 case 2)" $
             }'
 run_mutant M28 "the last release of an active call does not perform the overdue rollback (F266-17 case 3)" $S/OwnershipRegistry.php '            $slot->record = null;
             self::settle($resource);' '            $slot->record = null;'
-run_mutant M29 "the holders of the previous generation keep the replacement (a counter that follows the resource, F266-17 case 2)" $S/OwnershipRegistry.php '        $slot->generation = $generation->previous;' '        $slot->generation = $generation;'
+run_mutant M29 "the overdue rollback undoes a binding while a call is still active on the resource (F266-17 case 3)" $S/OwnershipRegistry.php '        if ($generation === null || $slot->record !== null || $generation->holders > 0 || ! $generation->creatorRolledBack) {' '        if ($generation === null || $generation->holders > 0 || ! $generation->creatorRolledBack) {'
 cat "$out/result.tsv"
 git status --short -- src tests | grep -v '^??' && failed=1
 exit "$failed"
