@@ -20,8 +20,10 @@ class DecayCalculator implements OwnedResources
      * @param ClockInterface $clock Source of the current timestamp.
      */
     public function __construct(
-        private readonly ClockInterface $clock,
-    ) {}
+        private ClockInterface $clock,
+    ) {
+        $this->clock = HostClock::of($this->clock);
+    }
 
     /**
      * Calculate whole score points to remove since the last update.

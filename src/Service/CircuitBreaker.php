@@ -59,8 +59,10 @@ class CircuitBreaker implements OwnedResources
     public function __construct(
         private readonly CircuitBreakerStoreInterface $store,
         private readonly FailureSignalEmitterInterface $emitter,
-        private readonly ClockInterface $clock,
-    ) {}
+        private ClockInterface $clock,
+    ) {
+        $this->clock = HostClock::of($this->clock);
+    }
 
     /** #185 F-185-18 (DEC-031): fenced attempts of one failure report before it is dropped. */
     private const FAILURE_REPORT_ATTEMPTS = 3;

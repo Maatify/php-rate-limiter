@@ -153,6 +153,14 @@ run_mutant M22 "the inventory leaves out any object that implements the clock in
             $unique[spl_object_id($object)] = $object;
         }
         foreach ($clocks as $clock) {'
+run_mutant M23 "a rollback undoes a binding another call stands on (F266-15)" $S/OwnershipRegistry.php '            if ($slot->holds > 0) {
+                $slot->deferredRestore = [$bound, $default, $provider]; // the last call standing on it undoes it, if it rolls back too
+                continue;
+            }' '            if ($slot->holds > 0 && false) {
+                continue;
+            }'
+run_mutant M24 "a hand-assembled raw clock is not a Host crossing (F266-16)" $S/HostClock.php '        return OwnershipRegistry::crossing($this, fn(): DateTimeImmutable => $this->inner->now());' '        return $this->inner->now();'
+run_mutant M25 "the breaker keeps a raw Host clock unwrapped (F266-16)" $S/CircuitBreaker.php '        $this->clock = HostClock::of($this->clock);' '        // mutant: unwrapped'
 cat "$out/result.tsv"
 git status --short -- src tests | grep -v '^??' && failed=1
 exit "$failed"

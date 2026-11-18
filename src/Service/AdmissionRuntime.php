@@ -63,13 +63,14 @@ final class AdmissionRuntime implements OwnedResources
         private readonly AtomicAdmissionPermitStoreInterface $store,
         private readonly AdmissionCredentialCodec $codec,
         private readonly AdmissionBudgetsDTO $budgets,
-        private readonly ClockInterface $clock,
+        private ClockInterface $clock,
         #[\SensitiveParameter]
         private readonly string $keySecret,
         private readonly string $envScope,
         #[\SensitiveParameter]
         private readonly ?string $previousKeySecret = null,
     ) {
+        $this->clock = HostClock::of($this->clock);
         if (trim($keySecret) === '' || trim($envScope) === '') {
             throw new RateLimiterException('Admission runtime requires a non-blank key secret and environment scope.');
         }

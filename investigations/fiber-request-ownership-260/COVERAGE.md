@@ -56,3 +56,12 @@ Test files `tests/Integration/Redis/OwnershipCrossingsRedisTest.php` (8 tests), 
 | F266-14 method-name inventory | `OwnershipRegistryTest::testAHostObjectWithAMethodNamedOwnedResources…`, `testASharedHostStoreWithAnOwnedResourcesMethodStillRefusesTheSecondCall`, `testAPackageClassIsStillExpanded…`; through the public entry, `HostStoreOwnershipTest` (two `FixedWindowSimpleRateLimiter` instances over a Host store that implements only `RateLimitStoreInterface`, with an `ownedResources()` method: the second call is refused before the store is touched and the Host method is never called; the first completes; the next call after the release runs; a second row for a Host store that is also a clock) and `testTheInventoryKeepsTheStoreWhateverInterfacesItImplements` (the raw clock is excluded by role, never by type) |
 
 Mutants M13–M22 (`mutants.sh`) detect each of these corrections when it is removed.
+
+## Second review of the correction, `02d51f24` (F266-15, F266-16)
+
+| Finding | Test |
+|---|---|
+| F266-15 a failed build takes the binding of a runtime built meanwhile | `OwnershipCrossingsRedisTest::testAFailedBuildLeavesTheBindingOfARuntimeBuiltMeanwhileFromHostCode` (data sets `build()` and `buildOperationalReader()`, same provider; the runtime built from the Host getter is served before and after the failure); `OwnershipRegistryTest::testARollbackKeepsTheBindingAnotherCallStandsOn`; the control without the second runtime stays `testAFailedReaderBuildBindsNothing…` (unbound after the failure) |
+| F266-16 a hand-assembled engine over a raw Host clock | `OwnershipCrossingsRedisTest::testAnEngineAssembledByHandCannotReenterTheStoreFromItsRawClock` (refused, 0 PINGs, the sound call is served; the Builder path is the existing clock tests); `OwnershipRegistryTest::testAHostClockPassesEveryReadingThroughOneToOneAndIsNeverWrappedTwice` (one reading in, one reading out; the request clock and a wrapped clock are never wrapped again) |
+
+Reviewed collaborators that read a raw clock inside a call: `CircuitBreaker`, `BudgetTracker`, `AntiEquilibriumGate`, `DecayCalculator`, `EphemeralBucket`, `AdmissionRuntime`, `EvaluationPipeline`, `RateLimiterEngine` (each wraps a raw clock in `HostClock` at construction; the engine's clock is the one `LocalFallbackLimiter` receives, so its policy marks and its clock reads anchor on the same resource), and `FixedWindowSimpleRateLimiter` and the two readers (their clock is marked through their own store, unchanged). Mutants M23–M25 detect each correction when it is removed.

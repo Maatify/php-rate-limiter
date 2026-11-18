@@ -107,6 +107,7 @@ final class OwnershipRegistry
         AntiEquilibriumGate::class,
         DecayCalculator::class,
         EphemeralBucket::class,
+        HostClock::class,
         AdmissionRuntime::class,
     ];
 
@@ -149,6 +150,8 @@ final class OwnershipRegistry
         $ledger = new BindingLedger();
         foreach ($set as $resource) {
             $slot = self::slot($resource);
+            $slot->holds++;
+            $ledger->held[] = $resource;
             if ($slot->bound && self::sameDomain($slot, $provider)) {
                 continue;
             }
@@ -183,19 +186,40 @@ final class OwnershipRegistry
         return self::bindAll($resources, $provider);
     }
 
-    /** Undoes exactly what one `bindAll` bound, restoring each previous state. */
+    /**
+     * Undoes exactly what one `bindAll` bound, restoring each previous state, but only where no other call stands on the binding: a
+     * graph built meanwhile (from Host code run during this build) keeps working on the binding it found (F266-15).
+     */
     public static function rollback(BindingLedger $ledger): void
     {
+        foreach ($ledger->held as $resource) {
+            $slot = self::slot($resource);
+            $slot->holds = max(0, $slot->holds - 1);
+        }
         foreach (array_reverse($ledger->entries) as [$resource, $bound, $default, $provider]) {
             $slot = self::slot($resource);
             if ($slot->record !== null) {
                 continue;
             }
+            if ($slot->holds > 0) {
+                $slot->deferredRestore = [$bound, $default, $provider]; // the last call standing on it undoes it, if it rolls back too
+                continue;
+            }
             $slot->bound = $bound;
             $slot->defaultDomain = $default;
             $slot->provider = $provider;
+            $slot->deferredRestore = null;
+        }
+        // A call that rolls back last undoes a binding whose own binder already rolled back (nobody stands on it any more).
+        foreach ($ledger->held as $resource) {
+            $slot = self::slot($resource);
+            if ($slot->holds === 0 && $slot->deferredRestore !== null && $slot->record === null) {
+                [$slot->bound, $slot->defaultDomain, $slot->provider] = $slot->deferredRestore;
+                $slot->deferredRestore = null;
+            }
         }
         $ledger->entries = [];
+        $ledger->held = [];
     }
 
     /**
@@ -219,7 +243,19 @@ final class OwnershipRegistry
             break;
         }
         $domain = $candidate ?? ContextDomain::default();
-        self::bindAll($resources, $domain->rawProvider());
+        $wasBound = [];
+        foreach ($resources as $resource) {
+            $wasBound[spl_object_id($resource)] = self::slot($resource)->bound;
+        }
+        $ledger = self::bindAll($resources, $domain->rawProvider());
+        // Adopting a binding that already existed is not standing on it (a discarded or failed object must not pin a binding); only a
+        // resource this call bound itself stays held.
+        foreach ($ledger->held as $resource) {
+            if ($wasBound[spl_object_id($resource)] ?? false) {
+                $slot = self::slot($resource);
+                $slot->holds = max(0, $slot->holds - 1);
+            }
+        }
 
         return $domain;
     }

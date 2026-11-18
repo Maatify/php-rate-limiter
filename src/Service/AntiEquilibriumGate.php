@@ -22,8 +22,10 @@ class AntiEquilibriumGate implements OwnedResources
      */
     public function __construct(
         private readonly CorrelationStoreInterface $store,
-        private readonly ?ClockInterface $clock = null,
-    ) {}
+        private ?ClockInterface $clock = null,
+    ) {
+        $this->clock = $this->clock === null ? null : HostClock::of($this->clock);
+    }
 
     /**
      * Record one soft block for the current package-derived state key.

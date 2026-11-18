@@ -68,10 +68,11 @@ class RateLimiterEngine implements RateLimiterRuntimeInterface, AdmissionBinding
         private readonly CircuitBreaker $circuitBreaker,
         private readonly FailureModeResolver $failureResolver,
         FailureSignalEmitterInterface $emitter,
-        private readonly ClockInterface $clock,
+        private ClockInterface $clock,
         array $policies,
         private readonly ?AdmissionRuntime $admission = null,
     ) {
+        $this->clock = HostClock::of($this->clock);
         // Retain the historical constructor boundary; transition signals are
         // emitted by CircuitBreaker at the actual state transition.
         unset($emitter);

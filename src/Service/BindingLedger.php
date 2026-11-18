@@ -15,4 +15,7 @@ final class BindingLedger
 {
     /** @var list<array{object, bool, bool, \WeakReference<ExecutionContextProviderInterface>|null}> */
     public array $entries = [];
+
+    /** @var list<object> every resource of the set this call stands on (newly bound or already matching) */
+    public array $held = [];
 }

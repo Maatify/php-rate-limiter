@@ -585,4 +585,33 @@ final class OwnershipRegistryTest extends TestCase
             $scope->release();
         }
     }
+
+    public function testAHostClockPassesEveryReadingThroughOneToOneAndIsNeverWrappedTwice(): void
+    {
+        $raw = new \Maatify\RateLimiter\Tests\Support\Clock\FixedClock('@1000000');
+        $wrapped = \Maatify\RateLimiter\Service\HostClock::of($raw);
+
+        self::assertNotSame($raw, $wrapped);
+        self::assertSame($wrapped, \Maatify\RateLimiter\Service\HostClock::of($wrapped), 'an already wrapped clock is returned as it is');
+        $scoped = new \Maatify\RateLimiter\Service\RequestScopedClock($raw);
+        self::assertSame($scoped, \Maatify\RateLimiter\Service\HostClock::of($scoped), 'the request clock is never wrapped');
+        self::assertEquals($raw->now(), $wrapped->now(), 'the reading is the Host reading');
+        self::assertEquals($raw->getTimezone(), $wrapped->getTimezone());
+        self::assertSame([$wrapped], OwnershipRegistry::collect([], [], [$wrapped, $raw]), 'only the wrapper is a resource, the raw clock is not');
+    }
+
+    public function testARollbackKeepsTheBindingAnotherCallStandsOn(): void
+    {
+        $resource = new \stdClass();
+        $p = $this->provider(static fn() => 1);
+        $first = OwnershipRegistry::bindAll([$resource], $p);
+        $second = OwnershipRegistry::bindAll([$resource], $p);
+        self::assertSame('provider', OwnershipRegistry::domainKind($resource));
+
+        OwnershipRegistry::rollback($first);
+        self::assertSame('provider', OwnershipRegistry::domainKind($resource), 'the second call still stands on it');
+
+        OwnershipRegistry::rollback($second);
+        self::assertSame('unbound', OwnershipRegistry::domainKind($resource), 'nobody stands on it any more');
+    }
 }

@@ -113,9 +113,10 @@ class EvaluationPipeline
         private readonly EphemeralBucket $ephemeralBucket,
         string $keySecret,
         private readonly string $envScope, // e.g. 'prod', 'staging'
-        private readonly ClockInterface $clock,
+        private ClockInterface $clock,
         ?string $previousKeySecret = null,
     ) {
+        $this->clock = HostClock::of($this->clock);
         if (trim($keySecret) === '') {
             throw new RateLimiterException('Active key secret must not be empty or whitespace-only.');
         }

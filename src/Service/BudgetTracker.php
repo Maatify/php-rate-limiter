@@ -21,8 +21,10 @@ class BudgetTracker implements OwnedResources
      */
     public function __construct(
         private readonly RateLimitStoreInterface $store,
-        private readonly ClockInterface $clock,
-    ) {}
+        private ClockInterface $clock,
+    ) {
+        $this->clock = HostClock::of($this->clock);
+    }
 
     /**
      * Increment the budget counter while retaining the current epoch boundary.

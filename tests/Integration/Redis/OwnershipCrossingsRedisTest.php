@@ -17,18 +17,28 @@ use Maatify\RateLimiter\DTO\ScoreDeltasDTO;
 use Maatify\RateLimiter\Exception\RateLimiterException;
 use Maatify\RateLimiter\Repository\Redis\CallableRedisCommandExecutor;
 use Maatify\RateLimiter\Repository\Redis\RedisFullCapabilityStore;
+use Maatify\RateLimiter\Service\AntiEquilibriumGate;
+use Maatify\RateLimiter\Service\BudgetTracker;
+use Maatify\RateLimiter\Service\CircuitBreaker;
+use Maatify\RateLimiter\Service\DecayCalculator;
 use Maatify\RateLimiter\Service\DeviceIdentityResolver;
+use Maatify\RateLimiter\Service\EphemeralBucket;
+use Maatify\RateLimiter\Service\EvaluationPipeline;
+use Maatify\RateLimiter\Service\FailureModeResolver;
+use Maatify\RateLimiter\Service\RateLimiterEngine;
 use Maatify\RateLimiter\Service\DeviceIdentityResolverInterface;
 use Maatify\RateLimiter\Service\FingerprintHasher;
 use Maatify\RateLimiter\Service\OwnershipRegistry;
 use Maatify\RateLimiter\Tests\Support\Clock\FixedClock;
 use Maatify\RateLimiter\Tests\Support\FailureSignal\RecordingFailureSignalEmitter;
+use Maatify\RateLimiter\Tests\Support\Ownership\BuiltDuringBuild;
 use Maatify\RateLimiter\Tests\Support\Ownership\CrossingProbe;
 use Maatify\RateLimiter\Tests\Support\Ownership\ProbeClock;
 use Maatify\RateLimiter\Tests\Support\Ownership\ReentrantSimplePolicy;
 use Maatify\RateLimiter\Tests\Support\Ownership\StubContextProvider;
 use Maatify\RateLimiter\Tests\Support\Redis\RespRedisCommandExecutor;
 use Maatify\SharedCommon\Contracts\ClockInterface;
+use PHPUnit\Framework\Attributes\DataProvider;
 use PHPUnit\Framework\Attributes\Group;
 use PHPUnit\Framework\TestCase;
 
@@ -334,5 +344,95 @@ final class OwnershipCrossingsRedisTest extends TestCase
         } catch (RateLimiterException) {
         }
         self::assertSame('provider', OwnershipRegistry::domainKind($bound), 'the previous binding is unchanged');
+    }
+
+    // ---- F266-15: a build that fails never takes the binding of a runtime built meanwhile from Host code -----------------------------------
+
+    /** @return array<string, array{bool}> */
+    public static function buildPaths(): array
+    {
+        return ['build()' => [false], 'buildOperationalReader()' => [true]];
+    }
+
+    #[DataProvider('buildPaths')]
+    public function testAFailedBuildLeavesTheBindingOfARuntimeBuiltMeanwhileFromHostCode(bool $reader): void
+    {
+        $p = new StubContextProvider(static fn() => 1);
+        $store = $this->store();
+        $held = new BuiltDuringBuild();
+        $failing = new ReentrantSimplePolicy('broken', 0);
+        $failing->reenter = function () use ($held, $store, $p, $reader, $failing): void {
+            $failing->reenter = null;
+            $other = $this->builder($store)->withExecutionContextProvider($p)->withSimpleThrottlePolicy(new FixedWindowThrottlePolicy('b', 5, 60));
+            if ($reader) {
+                $held->reader = $other->buildOperationalReader();
+                $held->reader->readSimpleThrottle('b', 'first');
+            } else {
+                $held->runtime = $other->build();
+                $held->runtime->consume('b', 'first');
+            }
+        };
+
+        try {
+            $first = $this->builder($store)->withExecutionContextProvider($p)->withSimpleThrottlePolicy($failing);
+            $reader ? $first->buildOperationalReader() : $first->build();
+            self::fail('the first build must fail on the policy of limit 0');
+        } catch (RateLimiterException) {
+        }
+
+        self::assertSame('provider', OwnershipRegistry::domainKind($store), 'the binding the built runtime stands on is kept');
+        $this->commands = [];
+        if ($reader) {
+            self::assertNotNull($held->reader, 'the Host code built a reader during the first build');
+            self::assertSame(0, $held->reader->readSimpleThrottle('b', 'after')->count, 'the reader built meanwhile is valid after the failure');
+        } else {
+            self::assertNotNull($held->runtime, 'the Host code built a runtime during the first build');
+            self::assertTrue($held->runtime->consume('b', 'after')->allowed, 'the runtime built meanwhile is valid after the failure');
+        }
+        self::assertGreaterThan(0, count($this->commands), 'it reached the executor');
+    }
+
+    // ---- F266-16: a hand-assembled engine over a raw Host clock -------------------------------------------------------------------------
+
+    public function testAnEngineAssembledByHandCannotReenterTheStoreFromItsRawClock(): void
+    {
+        $probe = new CrossingProbe();
+        $store = $this->store();
+        $probe->store = $store;
+        $clock = new ProbeClock($probe);
+        $engine = $this->handAssembledEngine($store, $clock);
+        $context = new RateLimitContextDTO(ip: '198.51.100.7', ua: 'crossing-260', accountId: 'acct-a');
+
+        $control = $engine->limit($context, RateLimitCommand::checkOnly('login_protection'));
+        self::assertNotSame('', $control->decision, 'a sound direct call is served');
+        self::assertGreaterThan(0, $probe->reads, 'the raw clock was read');
+
+        $probe->armed = true;
+        $this->commands = [];
+        self::assertSame(self::REFUSAL, $this->refusalOf(fn() => $engine->limit($context, RateLimitCommand::checkOnly('login_protection'))));
+        self::assertSame(0, $this->pings(), 'the raw clock never reached the executor through the library');
+        self::assertFalse(OwnershipRegistry::isOccupied($store));
+
+        $probe->armed = false;
+        $engine->limit($context, RateLimitCommand::checkOnly('login_protection'));
+    }
+
+    private function handAssembledEngine(RedisFullCapabilityStore $store, ClockInterface $clock): RateLimiterEngine
+    {
+        $budgetTracker = new BudgetTracker($store, $clock);
+        $gate = new AntiEquilibriumGate($store, $clock);
+        $decay = new DecayCalculator($clock);
+        $bucket = new EphemeralBucket($store, $clock);
+        $pipeline = new EvaluationPipeline($store, $store, $budgetTracker, $gate, $decay, $bucket, 'test_secret', 'prod', $clock, null);
+
+        return new RateLimiterEngine(
+            new DeviceIdentityResolver(new FingerprintHasher('test_fp')),
+            $pipeline,
+            new CircuitBreaker($store, new RecordingFailureSignalEmitter(), $clock),
+            new FailureModeResolver(),
+            new RecordingFailureSignalEmitter(),
+            $clock,
+            [new LoginProtectionPolicy()],
+        );
     }
 }
