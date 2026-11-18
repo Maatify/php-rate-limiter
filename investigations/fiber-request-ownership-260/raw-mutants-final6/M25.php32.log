@@ -1,0 +1,20 @@
+PHPUnit 11.5.57 by Sebastian Bergmann and contributors.
+
+Runtime:       PHP 8.4.27
+Configuration: /app/phpunit.xml
+
+.................................................F............... 65 / 93 ( 69%)
+............................                                      93 / 93 (100%)
+
+Time: 00:01.585, Memory: 14.00 MB
+
+There was 1 failure:
+
+1) Maatify\RateLimiter\Tests\Integration\Redis\OwnershipCrossingsRedisTest::testAnEngineAssembledByHandCannotReenterTheStoreFromItsRawClock
+the raw clock never reached the executor through the library
+Failed asserting that 2 is identical to 0.
+
+/app/tests/Integration/Redis/OwnershipCrossingsRedisTest.php:717
+
+FAILURES!
+Tests: 93, Assertions: 1075, Failures: 1.

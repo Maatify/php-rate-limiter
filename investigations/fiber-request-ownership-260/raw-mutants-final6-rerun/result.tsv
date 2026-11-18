@@ -1,0 +1,3 @@
+M26	DETECTED	php64: Failures: 17  (exit 1)	php32: Failures: 17  (exit 1)	an entry that adopts an existing binding stands on it only in name: no hold is recorded (F266-17 case 1)
+M30	DETECTED	php64: Failures: 8  (exit 1)	php32: Failures: 8  (exit 1)	a failed build never releases the holds of its own entries, so it pins its binding (F266-18)
+M31	DETECTED	php64: Failures: 6  (exit 1)	php32: Failures: 6  (exit 1)	a release drops every holder of the binding, the entries of Host code included (F266-17, F266-18)

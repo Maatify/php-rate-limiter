@@ -404,3 +404,64 @@ Reading: against `b8f264f2` the p50 of the library paths differs by noise on bot
 ### Addendum: the typing fix of `476c1dcc` (lowest supported PHPStan)
 
 The ordinary CI run 44339676061 on `c15b1764` failed `Lowest Supported Dependencies` (and `Final Gate` with it) with one PHPStan 2.0.0 error: the static `WeakMap` of the per-Fiber build frames did not accept the assignment as written. The cause was the code, not the infrastructure (the other 15 jobs passed); it was fixed by extracting a typed helper (`fiberFrameMap()`, the pattern already used by `slots()`) and pushing a new head, not by rerunning. `src` differs from `4823e381` only by that helper (15 lines in `OwnershipRegistry.php`). Evidence on `476c1dcc`: Unit, System and Correlation on 64-bit (1787 tests, the ReleaseVerification failures only, `raw-final5-typing-fix/anchors-typing-fix-64.log`), the ownership suites on both widths (93 tests OK), mutants M30 and M31 detected on both widths (`raw-mutants-rerun2/`), PHPStan max and the formatter clean on the current toolchain. The full 32/64-bit runs, the red proof and the cost measurements above are those of `4823e381`; they were not repeated for a typing-only change. Ordinary CI run 44341742654 on `476c1dcc`: attempt 1, 17/17.
+
+## Fifth review of the correction `6afce55d` (F266-20, build isolation across execution contexts): evidence on the corrected source
+
+Corrected source `361e0f4c3361486647f1650fc59a206f28479bb9` (tree `06d6a5c455b91d96eac9c77c0647383bb1aa6ac4`); reviewed head `6afce55d352e18161992549535c83348b985ab34`; baseline `main@316b1de99e784fec95b40f849d83a04dec772e2b`. Raw outputs: `raw-final6/`, `raw-mutants-final6/`, `raw-mutants-final6-rerun/`, `raw-bench-final6/`, `raw-bench-vs-reviewed-final6/`, `raw-lifetime-followup/`; an earlier full run on `3796b4d7` (the intermediate head, not delivered) is kept as superseded in `raw-final6-superseded-3796b4d7/`. Earlier sections stay as history of their own heads. Docker, isolated Redis 7.0.15, PHP 8.4.27, actual PHP_INT_SIZE 8 and 4 (32-bit emulated). No tests ran in parallel with a measurement.
+
+Decision: the approved M2/M7 contract is kept, not narrowed (the Lead's recommendation; no Owner decision was needed). The shared build state is removed (see `COVERAGE.md`, fifth review): each entry class records the hold it took on an existing binding against its own object, the Builder keeps the list of the entry classes it constructed itself, and a failed build releases those holds first and then rolls its own binding back; entries built by Host code from a getter are in no list and keep their holds. The registry keeps only its two weak maps (slots and adoptions). The review follow-up added: a hold (`AdoptionHold`) names its resource only weakly and releases itself when its entry is destroyed or when its build releases it. No public method, interface or constructor parameter was added.
+
+The two controls the reviewer asked for were run on `3796b4d7` before any change and are recorded as they came out: the collection test (a graph whose store's callback points back to it, collected with its store and provider, adoption records gone) **passed**, so there was no leak through the weak map on PHP 8.4.27; the dead-entry test **failed**, so a dead entry's hold was a real defect, fixed as above.
+
+| Run | Result |
+|---|---|
+| New tests (69 in `OwnershipCrossingsRedisTest` and `OwnershipRegistryTest`) on the **reviewed source `3796b4d7`**, 64 and 32 | 3 red on both widths: the dead-entry test (`build()` and `buildOperationalReader()`) and the hold-lifetime unit; the collection test passes there (kept as a control) |
+| Red proof against `6afce55d` (the head the finding is about) | the structural test fails for the intended reason (the registry keeps per-context build state there); the four model tests fail there because the API (`releaseAdoptions`) does not exist, which is not the same reason, and is stated as such (`raw-final6-superseded-3796b4d7/reviewed-red-*.log`) |
+| The same tests on the corrected head | pass on both widths; the F266-15/17/18/19 controls, the nested/direct/failed/128-replacements cases pass |
+| Candidate full suite 64 | 2905 tests (100 errors, 4 failures, 14 skipped): ReleaseVerification classes only |
+| Candidate full suite 32 | 2900 tests (101 errors, 4 failures, 65 skipped): ReleaseVerification classes and the year-2999 fixture (#267) only. The race/timing failures of #268 did not appear in this run; that does not clear the earlier run, which stays reported as a failed full 32-bit run in its own section |
+| `--group php32`, 32 / 64 | 909 tests OK (64 skipped) / 910 tests OK (13 skipped) |
+| Mutants M01–M34 | 31 of 34 detected in the full run; `M26`, `M30` and `M31` could not be applied (their anchors named code that the hold refactor replaced: ANCHOR-NOT-FOUND, not UNDETECTED) and were re-defined for the new code and re-run alone: M26, M30, M31 detected on both widths (`raw-mutants-final6-rerun/`). M34 (a hold that does not release itself on destruction) detected |
+| Runner (provenance, governance helper, clean clone, php64/php32 suites) | all steps exit 0 |
+
+**Limits of what ran.** The Fiber cases and the explicit-order interleaving models ran on both widths. **No scheduler other than PHP Fibers was run** (no Swoole or similar extension in the image). The claim for schedulers that are not Fibers rests on two things that are different in kind and are kept apart here: (a) a structural fact, shown by `testTheRegistryKeepsNoBuildStateShapedByTheExecutionContext`: the registry keeps no state that depends on the execution context, so the mechanism of the finding (an exit that pops a frame another context pushed) no longer exists; (b) the interleaving models, which schedule the steps of two builds in every order with explicit ledgers and entries and no stack. Neither is a run of such a scheduler.
+
+### Cost (committed source, alternating, 5 rounds of 3000 iterations after 300 warm-up; no threshold). The call path of the entry classes is unchanged; the hold objects exist at construction and destruction
+
+Against `3796b4d7`:
+
+| width | workload | tree | p50 µs median (min–max) | p99 µs median (min–max) |
+| 32 | direct | baseline | 239.88 (237.63–242.21) | 736.17 (668.92–778.17) |
+| 32 | direct | candidate | 240.08 (233.92–243.71) | 704.83 (519.21–946.58) |
+| 32 | limit | baseline | 2738.21 (2702.13–2746.96) | 13153.17 (12941.83–15018.58) |
+| 32 | limit | candidate | 2760.96 (2701.38–3035.58) | 13867.58 (12404.5–24945.54) |
+| 32 | nested | baseline | 788.46 (786.25–797.46) | 1973.21 (1820.17–2244.79) |
+| 32 | nested | candidate | 790.92 (784.17–801.38) | 2139.29 (1591.04–2636.08) |
+| 32 | ping | baseline | 78.79 (78.04–79.5) | 329.54 (113.79–720.75) |
+| 32 | ping | candidate | 78.58 (78.5–78.96) | 204.5 (180.79–367.08) |
+| 64 | direct | baseline | 84.88 (82.63–86.67) | 376.21 (288.5–419.96) |
+| 64 | direct | candidate | 85.67 (83.71–86.58) | 580.67 (339.29–781.71) |
+| 64 | limit | baseline | 944.29 (940.79–956) | 4888.29 (4606.25–5025.88) |
+| 64 | limit | candidate | 950.29 (941.83–958.75) | 4914.29 (4823.92–5349.33) |
+| 64 | nested | baseline | 305.83 (294.04–312.17) | 1009.79 (967–1107.63) |
+| 64 | nested | candidate | 300.96 (300.13–308.13) | 999.79 (729.42–1180.46) |
+| 64 | ping | baseline | 53.33 (52.42–54.54) | 337.54 (193.21–951.29) |
+| 64 | ping | candidate | 52.67 (52.33–53.42) | 297.96 (188–322.58) |
+
+Against `main@316b1de9`:
+
+| width | workload | tree | p50 µs median (min–max) | p99 µs median (min–max) |
+| 32 | direct | baseline | 152.96 (151.38–155.88) | 501.21 (370.46–602.38) |
+| 32 | direct | candidate | 238.67 (234.08–241.79) | 697.63 (500.63–840.38) |
+| 32 | limit | baseline | 2191.08 (2182.25–3059.46) | 11524.04 (11130–15871.42) |
+| 32 | limit | candidate | 2718.88 (2707.63–2721.13) | 13130.04 (13012.17–13299.63) |
+| 32 | nested | baseline | 643.83 (641.92–651.46) | 1476.54 (1401.54–1777.83) |
+| 32 | nested | candidate | 792.88 (784.96–798.17) | 1946.63 (1803.67–2213.92) |
+| 64 | direct | baseline | 78.04 (76.83–79.38) | 319.5 (200.33–431.83) |
+| 64 | direct | candidate | 85.17 (84.38–88) | 520.46 (395.42–795.29) |
+| 64 | limit | baseline | 905.25 (902.46–912.88) | 4711.38 (4548.13–5229.04) |
+| 64 | limit | candidate | 946.13 (936.92–952.63) | 4945.13 (4881.88–4962.21) |
+| 64 | nested | baseline | 293.29 (229.71–305.63) | 880.67 (648.92–1250.83) |
+| 64 | nested | candidate | 305.42 (303.58–308.88) | 924.92 (699.83–1040.25) |
+
+Reading: against `3796b4d7` the p50 of the library paths differs by noise on both widths (64-bit direct 84.88→85.67 µs, nested 305.83→300.96, limit 944.29→950.29; emulated 32-bit direct 239.88→240.08). Against `main` the 64-bit p50 is about 4 to 9 percent higher on the affected paths and the emulated 32-bit p50 about 22 to 56 percent higher: the measured cost of the guard as a whole. The `ping` control is a raw Redis round trip through untouched code and its p99 differs between trees in both directions across runs (64-bit 337.54→297.96 µs here), and the p99 differences of the library paths (64-bit direct 376.21→580.67 µs against `3796b4d7`) are shown, not attributed to the guard. The numbers are measurements, not a verdict.

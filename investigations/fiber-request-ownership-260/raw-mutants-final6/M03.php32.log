@@ -1,0 +1,21 @@
+PHPUnit 11.5.57 by Sebastian Bergmann and contributors.
+
+Runtime:       PHP 8.4.27
+Configuration: /app/phpunit.xml
+
+...................F............................................. 65 / 93 ( 69%)
+............................                                      93 / 93 (100%)
+
+Time: 00:01.539, Memory: 14.00 MB
+
+There was 1 failure:
+
+1) Maatify\RateLimiter\Tests\Integration\Redis\FiberRequestOwnershipRedisTest::testAnOutcomeClaimAndAHealthCheckFromAnUnrelatedCallerAreRefused
+The claim stays its own atomic command for a legitimate caller; an unrelated caller is refused.
+Failed asserting that null is identical to 'Maatify\RateLimiter\Exception\OverlappingRequestException'.
+
+/app/tests/Integration/Redis/FiberRequestOwnershipRedisTest.php:224
+/app/tests/Integration/Redis/FiberRequestOwnershipRedisTest.php:786
+
+FAILURES!
+Tests: 93, Assertions: 1073, Failures: 1.

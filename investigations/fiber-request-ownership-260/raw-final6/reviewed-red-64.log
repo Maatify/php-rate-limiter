@@ -1,0 +1,121 @@
+PHP 8.4.27 INT=8 redis=6.3.0
+PHPUnit 11.5.57 by Sebastian Bergmann and contributors.
+
+Runtime:       PHP 8.4.27
+Configuration: /app/phpunit.xml
+
+................FF..............................................F 65 / 69 ( 94%)
+....                                                              69 / 69 (100%)
+
+Time: 00:00.736, Memory: 14.00 MB
+
+Host Store Ownership (Maatify\RateLimiter\Tests\Unit\Service\HostStoreOwnership)
+ ✔ A second runtime sharing a host store is refused before it touches the store and the first completes with data set "a Host store"
+ ✔ A second runtime sharing a host store is refused before it touches the store and the first completes with data set "a Host store that is also a clock"
+ ✔ The inventory keeps the store whatever interfaces it implements with data set "a Host store"
+ ✔ The inventory keeps the store whatever interfaces it implements with data set "a Host store that is also a clock"
+
+Ownership Crossings Redis (Maatify\RateLimiter\Tests\Integration\Redis\OwnershipCrossingsRedis)
+ ✔ A simple throttle policy that reenters the store is refused before the executor and the ordinary policy runs
+ ✔ A score policy that reenters the store from a getter is refused before the executor
+ ✔ A score policy threshold getter read by the pipeline cannot reenter the store
+ ✔ An increment over an owned store is refused before its clock is read
+ ✔ A call is refused while another is suspended inside the stores own clock
+ ✔ The store clock of the seconds and of the milliseconds paths cannot reenter the store
+ ✔ The simple reader clock cannot reenter the store and an ordinary read stays read only
+ ✔ The score reader device resolver cannot reenter the store
+ ✔ A failed reader build binds nothing and an existing binding is kept
+ ✔ A failed build leaves the binding of a runtime built meanwhile from host code with data set "build()"
+ ✔ A failed build leaves the binding of a runtime built meanwhile from host code with data set "buildOperationalReader()"
+ ✔ A failed build leaves the binding of an entry built directly from host code with data set "build()"
+ ✔ A failed build leaves the binding of an entry built directly from host code with data set "buildOperationalReader()"
+ ✔ A failed replacement of a vacated binding restores the vacated state and a later build succeeds with data set "build()"
+ ✔ A failed replacement of a vacated binding restores the vacated state and a later build succeeds with data set "buildOperationalReader()"
+ ✔ An active direct call keeps its domain until its release then the overdue rollback happens with data set "build()"
+ ✔ An active direct call keeps its domain until its release then the overdue rollback happens with data set "buildOperationalReader()"
+ ✔ A build suspended in a fiber never changes the rollback of an independent build with data set "build()"
+ ✔ A build suspended in a fiber never changes the rollback of an independent build with data set "buildOperationalReader()"
+ ✔ A build started from a getter of another build on the same stack knows its own components with data set "build()"
+ ✔ A build started from a getter of another build on the same stack knows its own components with data set "buildOperationalReader()"
+ ✔ A nested failed build on the same stack leaves its store unbound with data set "build()"
+ ✔ A nested failed build on the same stack leaves its store unbound with data set "buildOperationalReader()"
+ ✔ Many successive graphs on one store keep a bounded number of binding records
+ ✔ A graph whose store callback points back to it is collected with its store provider and adoption records with data set "build()"
+ ✔ A graph whose store callback points back to it is collected with its store provider and adoption records with data set "buildOperationalReader()"
+ ✘ An entry built from a getter that died before the failure holds nothing any more with data set "build()"
+   │
+   │ nothing stands on the binding any more: the entry that did is gone
+   │ Failed asserting that two strings are identical.
+   │ --- Expected
+   │ +++ Actual
+   │ @@ @@
+   │ -'unbound'
+   │ +'provider'
+   │
+   │ /app/tests/Integration/Redis/OwnershipCrossingsRedisTest.php:693
+   │
+ ✘ An entry built from a getter that died before the failure holds nothing any more with data set "buildOperationalReader()"
+   │
+   │ nothing stands on the binding any more: the entry that did is gone
+   │ Failed asserting that two strings are identical.
+   │ --- Expected
+   │ +++ Actual
+   │ @@ @@
+   │ -'unbound'
+   │ +'provider'
+   │
+   │ /app/tests/Integration/Redis/OwnershipCrossingsRedisTest.php:693
+   │
+ ✔ An engine assembled by hand cannot reenter the store from its raw clock
+
+Ownership Registry (Maatify\RateLimiter\Tests\Unit\Service\OwnershipRegistry)
+ ✔ A refused acquisition clears only what it took and never another calls slot
+ ✔ An aliased resource is acquired once and a call never refuses itself
+ ✔ A release clears a slot only where it still holds this calls record
+ ✔ Clearing with a stale record never empties a slot another call reused
+ ✔ A provider that reenters the library is refused before it is called again
+ ✔ A provider that throws releases only this calls reservations and surfaces a classified failure
+ ✔ A provider that yields keeps the reservations and every other call is refused
+ ✔ Nested operations from the owners context are admitted and other contexts and crossings are refused
+ ✔ A direct operation with no owner is a short lived owner for its whole duration
+ ✔ Mixed domains are refused at binding and nothing is bound
+ ✔ A same provider instance is accepted and another instance of the same class is not
+ ✔ A rollback undoes exactly what that binding bound
+ ✔ An entry adopts the domain of its resources and refuses resources of two domains
+ ✔ An active scope keeps its provider alive and another domain is refused until it ends
+ ✔ A vacated binding is never filled silently by a direct call
+ ✔ A replacement is rejected while an owner a reservation or a lookup still exists on a vacated binding
+ ✔ Nothing holds a resource alive after the call and an expired object context equals nothing
+ ✔ A key of another live context is refused and a scalar key is compared by value
+ ✔ Decorated aliasing of a store is not recognised and is outside the support
+ ✔ A provider that breaks its contract with an equal key for two live contexts is treated as one
+ ✔ Only the store constructor gains an optional provider parameter
+ ✔ A destroyed suspended fiber unwinds and releases its slots
+ ✔ A host object with a method named owned resources is a resource by identity and its code is never called
+ ✔ A package class is still expanded and a raw host clock is still excluded
+ ✔ A shared host store with an owned resources method still refuses the second call
+ ✔ A host clock passes every reading through one to one and is never wrapped twice
+ ✔ A rollback keeps the binding another call stands on
+ ✔ A build releases the holds of its own entries and of no other entry
+ ✔ A build with only its own entries is undone completely whatever the order of the releases
+ ✔ Two interleaved builds over independent stores are isolated in every order
+ ✔ Two interleaved builds over the same store keep the binding while one still stands on it
+ ✔ Repeated successful replacements keep a bounded number of binding records
+ ✔ The holders of a replaced binding never keep the replacement alive
+ ✔ An active call delays the rollback to its last release
+ ✔ The registry keeps no build state shaped by the execution context
+ ✘ An entry that died releases its hold and the registry names its resource only weakly
+   │
+   │ the entry that died stands on nothing
+   │ Failed asserting that two strings are identical.
+   │ --- Expected
+   │ +++ Actual
+   │ @@ @@
+   │ -'unbound'
+   │ +'provider'
+   │
+   │ /app/tests/Unit/Service/OwnershipRegistryTest.php:796
+   │
+
+FAILURES!
+Tests: 69, Assertions: 279, Failures: 3.

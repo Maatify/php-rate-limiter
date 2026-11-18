@@ -1,0 +1,25 @@
+PHPUnit 11.5.57 by Sebastian Bergmann and contributors.
+
+Runtime:       PHP 8.4.27
+Configuration: /app/phpunit.xml
+
+................................................................. 65 / 93 ( 69%)
+............F...............                                      93 / 93 (100%)
+
+Time: 00:01.596, Memory: 14.00 MB
+
+There was 1 failure:
+
+1) Maatify\RateLimiter\Tests\Unit\Service\OwnershipRegistryTest::testAnActiveScopeKeepsItsProviderAliveAndAnotherDomainIsRefusedUntilItEnds
+The lease keeps the provider alive: the binding is not vacated.
+Failed asserting that two strings are identical.
+--- Expected
++++ Actual
+@@ @@
+-'provider'
++'vacated'
+
+/app/tests/Unit/Service/OwnershipRegistryTest.php:339
+
+FAILURES!
+Tests: 93, Assertions: 1073, Failures: 1.
