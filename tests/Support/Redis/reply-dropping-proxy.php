@@ -18,9 +18,11 @@ $upstreamHost = $argv[1] ?? '127.0.0.1';
 $upstreamPort = (int) ($argv[2] ?? 6379);
 $dropCommit = ($argv[3] ?? '') === 'drop-commit';
 
+$errorCode = 0;
+$errorMessage = '';
 $server = stream_socket_server('tcp://127.0.0.1:0', $errorCode, $errorMessage);
 if ($server === false) {
-    fwrite(STDERR, "listen failed: {$errorMessage}\n");
+    fwrite(STDERR, 'listen failed (' . print_r($errorCode, true) . '): ' . print_r($errorMessage, true) . "\n");
     exit(1);
 }
 echo explode(':', (string) stream_socket_get_name($server, false))[1], "\n";
@@ -64,7 +66,7 @@ function nextCommand(string &$buffer): ?array
 
 $dropsLeft = $dropCommit ? 1 : 0;
 while (true) {
-    $client = @stream_socket_accept($server, 120);
+    $client = @stream_socket_accept($server, 30);
     if ($client === false) {
         exit(0);
     }

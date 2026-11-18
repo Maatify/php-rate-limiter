@@ -8,10 +8,12 @@ use Maatify\RateLimiter\Builder\RateLimiterBuilder;
 use Maatify\RateLimiter\Command\RateLimitCommand;
 use Maatify\RateLimiter\Config\RateLimiterConfig;
 use Maatify\RateLimiter\Contract\FailureSignalEmitterInterface;
+use Maatify\RateLimiter\DTO\CircuitBreakerStateDTO;
 use Maatify\RateLimiter\DTO\FailureSignalDTO;
 use Maatify\RateLimiter\DTO\RateLimitContextDTO;
 use Maatify\RateLimiter\Exception\BackendFailureException;
 use Maatify\RateLimiter\Repository\Redis\RedisCommandExecutorInterface;
+use Maatify\RateLimiter\Service\LocalFallbackLimiter;
 use Maatify\RateLimiter\Repository\Redis\RedisFullCapabilityStore;
 use Maatify\RateLimiter\Tests\Support\Clock\FixedClock;
 use Maatify\RateLimiter\Tests\Support\Redis\AclPreflightCommitExecutor;
@@ -136,22 +138,23 @@ final class RequestSaveAclRedisTest extends TestCase
         self::assertTrue($redis->auth([$user, self::PASSWORD]));
         $inner = new PhpRedisScriptExecutor($redis, false);
 
-        // The Host's duty (DEC-015/DEC-018): a server error reply (its first token is a Redis error code) propagates unchanged; anything else
-        // ext-redis raises (a lost connection, a protocol error, a failed re-authentication on reconnect) is a BackendFailureException.
-        return new class ($inner) implements RedisCommandExecutorInterface {
-            private const SERVER_ERROR_CODES = ['ERR', 'NOPERM', 'WRONGTYPE', 'NOSCRIPT', 'BUSY', 'LOADING', 'OOM', 'READONLY', 'NOAUTH', 'WRONGPASS', 'EXECABORT', 'MISCONF', 'NOREPLICAS'];
-
-            public function __construct(private readonly PhpRedisScriptExecutor $inner) {}
+        // The Host's duty (DEC-015/DEC-018): only a failure with positive evidence of a lost connection is a BackendFailureException. ext-redis
+        // keeps its connection flag (`isConnected()`) true after a server error reply and after a protocol error, and clears it when the connection is
+        // lost ('Connection lost', 'went away'); the flag, not the message text, is the evidence. A server reply (known code or not, coded or not) and
+        // an exception without that evidence propagate unchanged: they are not reclassified here.
+        return new class ($inner, $redis) implements RedisCommandExecutorInterface {
+            public function __construct(private readonly PhpRedisScriptExecutor $inner, private readonly \Redis $redis) {}
 
             public function execute(array $command): mixed
             {
                 try {
                     return $this->inner->execute($command);
                 } catch (\RedisException $exception) {
-                    if (in_array(explode(' ', $exception->getMessage(), 2)[0], self::SERVER_ERROR_CODES, true)) {
-                        throw $exception;
+                    if (! $this->redis->isConnected()) {
+                        throw new BackendFailureException('Redis transport failure: ' . $exception->getMessage());
                     }
-                    throw new BackendFailureException('Redis transport failure: ' . $exception->getMessage());
+
+                    throw $exception;
                 }
             }
         };
@@ -181,6 +184,21 @@ final class RequestSaveAclRedisTest extends TestCase
         ksort($state);
 
         return $state;
+    }
+
+    /** The local fallback limiter's counters (static state of the process), read directly: the direct metric of a fallback charge. */
+    private static function fallbackSnapshot(): string
+    {
+        $counters = new \ReflectionProperty(LocalFallbackLimiter::class, 'counters');
+        $tracked = new \ReflectionProperty(LocalFallbackLimiter::class, 'trackedSubjects');
+
+        return json_encode([$counters->getValue(), $tracked->getValue()], JSON_THROW_ON_ERROR);
+    }
+
+    /** One pipe of a `proc_open()` call; `$pipes` is typed differently by different PHPStan versions, so it is read through `mixed`. */
+    private static function pipeOf(mixed $pipes, int $index): mixed
+    {
+        return is_array($pipes) ? ($pipes[$index] ?? null) : null;
     }
 
     private static function text(mixed $value): string
@@ -354,8 +372,8 @@ final class RequestSaveAclRedisTest extends TestCase
     /**
      * One case. Returns what it observed.
      *
-     * @param array{shape: string, seed?: bool, denied?: list<string>, keys?: list<string>, hook?: string, variant?: bool, proxy?: bool, engine?: bool} $case
-     * @return array{case: string, shape: string, sentCommit: bool, evaluations: int, stepsReached: int, wire: list<string>, monitor: array{evals: int, luaCommands: array<string, int>, luaWrites: list<string>}, monitorLines: int, monitorSample: list<string>, address: string|null, aclLog: list<array<string, string>>, result: string, thrown: string|null, signals: list<string>, changed: array<string, string>, types: array<string, string>, controlUnchanged: bool, keysBefore: int, keysAfter: int, redis: string}
+     * @param array{shape: string, seed?: bool, denied?: list<string>, keys?: list<string>, hook?: string, variant?: bool, proxy?: bool, engine?: bool, plan?: string} $case
+     * @return array{case: string, shape: string, sentCommit: bool, evaluations: int, stepsReached: int, wire: list<string>, monitor: array{evals: int, luaCommands: array<string, int>, luaWrites: list<string>}, monitorLines: int, monitorSample: list<string>, address: string|null, aclLog: list<array<string, string>>, result: string, thrown: string|null, signals: list<string>, changed: array<string, string>, types: array<string, string>, controlUnchanged: bool, fallbackCharged: bool, keysBefore: int, keysAfter: int, redis: string}
      */
     private function observe(string $name, array $case): array
     {
@@ -380,8 +398,10 @@ final class RequestSaveAclRedisTest extends TestCase
             $process = proc_open([PHP_BINARY, __DIR__ . '/../../Support/Redis/reply-dropping-proxy.php', $this->host, (string) $this->port, 'drop-commit'], [1 => ['pipe', 'w'], 2 => ['pipe', 'w']], $pipes);
             self::assertIsResource($process);
             $this->processes[] = $process;
-            stream_set_timeout($pipes[1], 5);
-            $proxyPort = (int) fgets($pipes[1]);
+            $output = self::pipeOf($pipes, 1);
+            self::assertIsResource($output);
+            stream_set_timeout($output, 5);
+            $proxyPort = (int) fgets($output);
             self::assertGreaterThan(0, $proxyPort);
         }
         $inner = $this->host($case['shape'], $subject, $proxyPort);
@@ -391,15 +411,18 @@ final class RequestSaveAclRedisTest extends TestCase
             /** @var list<array{string, string}> */
             public array $entries = [];
 
-            public ?\Closure $beforeCommit = null;
+            /** @var array<string, \Closure> a one-shot action before the first command of a kind (`verify`, `commit`) */
+            public array $before = [];
 
             public function __construct(private readonly RedisCommandExecutorInterface $inner) {}
 
             public function execute(array $command): mixed
             {
                 $kind = self::kind($command);
-                if ($kind === 'commit' && $this->beforeCommit !== null) {
-                    ($this->beforeCommit)();
+                if (isset($this->before[$kind])) {
+                    $action = $this->before[$kind];
+                    unset($this->before[$kind]);
+                    $action();
                 }
                 try {
                     $reply = $this->inner->execute($command);
@@ -437,9 +460,13 @@ final class RequestSaveAclRedisTest extends TestCase
         $names = $this->names();
         $scoreKey = $this->keyOf('score', $names['score']);
         if ($hook === 'revoke-del') {
-            $log->beforeCommit = fn() => $this->admin->execute(['ACL', 'SETUSER', $subject, '-del']);
+            $log->before['commit'] = fn() => $this->admin->execute(['ACL', 'SETUSER', $subject, '-del']);
+        } elseif ($hook === 'revoke-hgetall-before-commit') {
+            $log->before['commit'] = fn() => $this->admin->execute(['ACL', 'SETUSER', $subject, '-hgetall']);
+        } elseif ($hook === 'revoke-hgetall-before-verify') {
+            $log->before['verify'] = fn() => $this->admin->execute(['ACL', 'SETUSER', $subject, '-hgetall']);
         } elseif ($hook === 'kill') {
-            $log->beforeCommit = fn() => $this->admin->execute(['CLIENT', 'KILL', 'USER', $subject]);
+            $log->before['commit'] = fn() => $this->admin->execute(['CLIENT', 'KILL', 'USER', $subject]);
         }
 
         $before = $this->keyspace();
@@ -449,6 +476,7 @@ final class RequestSaveAclRedisTest extends TestCase
         if ($transport) {
             set_error_handler(static fn(int $number, string $message): bool => $number === E_NOTICE && str_contains($message, 'Broken pipe'));
         }
+        $fallbackBefore = self::fallbackSnapshot();
         $evaluations = 0;
         $stepsReached = 0;
         $outcome = null;
@@ -472,8 +500,15 @@ final class RequestSaveAclRedisTest extends TestCase
                 $result = $limiter->limit(new RateLimitContextDTO(ip: '10.61.0.1', ua: 'acl-261', accountId: 'acl-261-account'), RateLimitCommand::checkOnly('login_protection'));
                 $outcome = $result->decision . '/' . $result->failureMode;
             } else {
-                $outcome = $store->transactRequest(function () use ($store, $now, &$evaluations, &$stepsReached, $hook, $scoreKey): array {
+                $outcome = $store->transactRequest(function () use ($store, $now, &$evaluations, &$stepsReached, $hook, $scoreKey, $case): array {
                     $evaluations++;
+                    if (($case['plan'] ?? '') === 'no-expiry') {
+                        // A plan whose only entry is a string written without an expiry (a circuit-breaker state): no PEXPIREAT in the commit.
+                        $store->save('policy-261', new CircuitBreakerStateDTO('CLOSED', [], 0, 0, 0, []));
+                        $stepsReached = 1;
+
+                        return [];
+                    }
 
                     return $this->operations($store, $now, function (int $step) use (&$stepsReached, $hook, $evaluations, $scoreKey): void {
                         $stepsReached = max($stepsReached, $step);
@@ -511,6 +546,7 @@ final class RequestSaveAclRedisTest extends TestCase
             'thrown' => $thrown === null ? null : $thrown::class,
             'signals' => array_values($signals->getArrayCopy()),
             'changed' => $this->diff($before, $after),
+            'fallbackCharged' => self::fallbackSnapshot() !== $fallbackBefore,
             'controlUnchanged' => ($before[self::CONTROL_KEY] ?? null) === ($after[self::CONTROL_KEY] ?? null),
             'types' => array_map(static fn(array $entry): string => $entry['type'], $this->typesByFamily($before)),
             'keysBefore' => count($before),
@@ -568,6 +604,11 @@ final class RequestSaveAclRedisTest extends TestCase
             $cases["$shape conflict"] = ['conflict', ['shape' => $shape, 'hook' => 'conflict']];
             $cases["$shape conflict + deny -smembers"] = ['conflict + deny -smembers', ['shape' => $shape, 'hook' => 'conflict', 'denied' => ['smembers']]];
             $cases["$shape fresh keyspace + deny every read of a key"] = ['fresh keyspace + deny reads', ['shape' => $shape, 'seed' => false, 'denied' => ['type', 'pexpiretime', 'get', 'hgetall', 'smembers', 'zrange']]];
+            $cases["$shape revoke -hgetall before the verify that follows a step error"] = ['revoke -hgetall before verify', ['shape' => $shape, 'denied' => ['get'], 'hook' => 'revoke-hgetall-before-verify']];
+            $cases["$shape revoke -hgetall before the commit comparison"] = ['revoke -hgetall before commit', ['shape' => $shape, 'hook' => 'revoke-hgetall-before-commit']];
+            $cases["$shape plan without expiry (control)"] = ['plan without expiry', ['shape' => $shape, 'seed' => false, 'plan' => 'no-expiry']];
+            $cases["$shape plan without expiry + deny -pexpireat"] = ['plan without expiry + deny -pexpireat', ['shape' => $shape, 'seed' => false, 'plan' => 'no-expiry', 'denied' => ['pexpireat']]];
+            $cases["$shape variant plan without expiry + deny -pexpireat"] = ['variant plan without expiry + deny -pexpireat', ['shape' => $shape, 'seed' => false, 'plan' => 'no-expiry', 'denied' => ['pexpireat'], 'variant' => true]];
             $cases["$shape revoke -del before the commit"] = ['revoke -del before commit', ['shape' => $shape, 'hook' => 'revoke-del']];
             $cases["$shape connection killed before the commit"] = ['connection killed before commit', ['shape' => $shape, 'hook' => 'kill']];
             $cases["$shape reply lost after the save"] = ['reply lost after the save', ['shape' => $shape, 'proxy' => true]];
@@ -593,56 +634,99 @@ final class RequestSaveAclRedisTest extends TestCase
      * What the shipped code was observed to do (Redis 7.0.15, both Host shapes, PHP_INT_SIZE 4 and 8), one entry per case; `Name|shape` where the
      * two Host shapes differ. `kind` is the provenance of the outcome: `returned` (the request's answer), `script` (an ACL denial of a command
      * inside a script), `toplevel-command` and `toplevel-key` (an ACL denial of the EVAL itself or of a key it declares), `preflight` (the study
-     * variant's own refusal), `transport` (a lost connection or reply). `changed` is the family:change of every key whose DUMP or PEXPIRETIME
+     * variant's own refusal), `transport` (a lost connection, with positive evidence), `unclassified` (a lost reply that ext-redis reports as a protocol or socket error on a connection it still considers open). `changed` is the family:change of every key whose DUMP or PEXPIRETIME
      * differs before and after, read from outside Lua.
      *
-     * @return array<string, array{sent: bool, evaluations: int|null, steps: int|null, kind: string, changed: list<string>, engine: string|null}>
+     * @return array<string, array{sent: bool, evaluations: int|null, steps: int|null, kind: string, changed: list<string>, engine: string|null, fallback: bool}>
      */
     private static function expectations(): array
     {
         return [
-            'conflict' => ['sent' => true, 'evaluations' => 2, 'steps' => 7, 'kind' => 'returned', 'changed' => ['block:content+expiry', 'budget:content', 'cycle:content', 'distinct:content', 'distinct:content', 'score:content+expiry', 'watch:content'], 'engine' => null],
-            'conflict + deny -smembers' => ['sent' => false, 'evaluations' => 2, 'steps' => 3, 'kind' => 'script', 'changed' => ['score:expiry'], 'engine' => null],
-            'connection killed before commit|resp' => ['sent' => true, 'evaluations' => 1, 'steps' => 7, 'kind' => 'transport', 'changed' => [], 'engine' => null],
-            'connection killed before commit|phpredis' => ['sent' => true, 'evaluations' => 1, 'steps' => 7, 'kind' => 'returned', 'changed' => ['block:content+expiry', 'budget:content', 'cycle:content', 'distinct:content', 'distinct:content', 'score:content', 'watch:content'], 'engine' => null],
-            'control' => ['sent' => true, 'evaluations' => 1, 'steps' => 7, 'kind' => 'returned', 'changed' => ['block:content+expiry', 'budget:content', 'cycle:content', 'distinct:content', 'distinct:content', 'score:content', 'watch:content'], 'engine' => null],
-            'deny -del' => ['sent' => true, 'evaluations' => 1, 'steps' => 7, 'kind' => 'script', 'changed' => [], 'engine' => null],
-            'deny -eval' => ['sent' => false, 'evaluations' => 1, 'steps' => 0, 'kind' => 'toplevel-command', 'changed' => [], 'engine' => null],
-            'deny -exists' => ['sent' => false, 'evaluations' => 1, 'steps' => 0, 'kind' => 'script', 'changed' => [], 'engine' => null],
-            'deny -get' => ['sent' => false, 'evaluations' => 1, 'steps' => 4, 'kind' => 'script', 'changed' => [], 'engine' => null],
-            'deny -hgetall' => ['sent' => false, 'evaluations' => 1, 'steps' => 0, 'kind' => 'script', 'changed' => [], 'engine' => null],
-            'deny -hset' => ['sent' => true, 'evaluations' => 1, 'steps' => 7, 'kind' => 'script', 'changed' => ['score:DELETED'], 'engine' => null],
-            'deny -pexpireat' => ['sent' => true, 'evaluations' => 1, 'steps' => 7, 'kind' => 'script', 'changed' => ['score:content+expiry (WITHOUT EXPIRY)'], 'engine' => null],
-            'deny -pexpiretime' => ['sent' => false, 'evaluations' => 1, 'steps' => 0, 'kind' => 'script', 'changed' => [], 'engine' => null],
-            'deny -sadd' => ['sent' => true, 'evaluations' => 1, 'steps' => 7, 'kind' => 'script', 'changed' => ['budget:content', 'distinct:DELETED', 'score:content'], 'engine' => null],
-            'deny -set' => ['sent' => true, 'evaluations' => 1, 'steps' => 7, 'kind' => 'script', 'changed' => ['budget:content', 'distinct:content', 'score:content', 'watch:DELETED'], 'engine' => null],
-            'deny -smembers' => ['sent' => false, 'evaluations' => 1, 'steps' => 3, 'kind' => 'script', 'changed' => [], 'engine' => null],
-            'deny -time' => ['sent' => false, 'evaluations' => 1, 'steps' => 0, 'kind' => 'script', 'changed' => [], 'engine' => null],
-            'deny -type' => ['sent' => false, 'evaluations' => 1, 'steps' => 0, 'kind' => 'script', 'changed' => [], 'engine' => null],
-            'deny -zadd' => ['sent' => true, 'evaluations' => 1, 'steps' => 7, 'kind' => 'script', 'changed' => ['block:content+expiry', 'budget:content', 'cycle:DELETED', 'distinct:content', 'distinct:content', 'score:content', 'watch:content'], 'engine' => null],
-            'deny -zrange' => ['sent' => false, 'evaluations' => 1, 'steps' => 6, 'kind' => 'script', 'changed' => [], 'engine' => null],
-            'engine connection killed before commit|resp' => ['sent' => true, 'evaluations' => null, 'steps' => null, 'kind' => 'returned', 'changed' => [], 'engine' => 'HARD_BLOCK/FAIL_CLOSED'],
-            'engine connection killed before commit|phpredis' => ['sent' => true, 'evaluations' => null, 'steps' => null, 'kind' => 'returned', 'changed' => ['distinct-meta:created', 'distinct-meta:created', 'distinct-meta:created', 'distinct-meta:created', 'distinct-meta:created', 'distinct-meta:created', 'distinct:created', 'distinct:created', 'distinct:created', 'distinct:created', 'distinct:created', 'distinct:created'], 'engine' => 'ALLOW/NORMAL'],
-            'engine control' => ['sent' => true, 'evaluations' => null, 'steps' => null, 'kind' => 'returned', 'changed' => ['distinct-meta:created', 'distinct-meta:created', 'distinct-meta:created', 'distinct-meta:created', 'distinct-meta:created', 'distinct-meta:created', 'distinct:created', 'distinct:created', 'distinct:created', 'distinct:created', 'distinct:created', 'distinct:created'], 'engine' => 'ALLOW/NORMAL'],
-            'engine control (prefix pattern only)' => ['sent' => false, 'evaluations' => null, 'steps' => null, 'kind' => 'toplevel-key', 'changed' => [], 'engine' => null],
-            'engine deny -pexpireat' => ['sent' => true, 'evaluations' => null, 'steps' => null, 'kind' => 'script', 'changed' => ['distinct-meta:created (WITHOUT EXPIRY)'], 'engine' => null],
-            'engine deny -pexpiretime' => ['sent' => true, 'evaluations' => null, 'steps' => null, 'kind' => 'returned', 'changed' => ['distinct-meta:created', 'distinct-meta:created', 'distinct-meta:created', 'distinct-meta:created', 'distinct-meta:created', 'distinct-meta:created', 'distinct:created', 'distinct:created', 'distinct:created', 'distinct:created', 'distinct:created', 'distinct:created'], 'engine' => 'ALLOW/NORMAL'],
-            'engine reply lost after the save' => ['sent' => true, 'evaluations' => null, 'steps' => null, 'kind' => 'returned', 'changed' => ['distinct-meta:created', 'distinct-meta:created', 'distinct-meta:created', 'distinct-meta:created', 'distinct-meta:created', 'distinct-meta:created', 'distinct:created', 'distinct:created', 'distinct:created', 'distinct:created', 'distinct:created', 'distinct:created'], 'engine' => 'HARD_BLOCK/FAIL_CLOSED'],
-            'fresh keyspace + deny reads' => ['sent' => true, 'evaluations' => 1, 'steps' => 7, 'kind' => 'returned', 'changed' => ['block:created', 'block:created', 'budget:created', 'cycle:created', 'distinct-meta:created', 'distinct-meta:created', 'distinct:created', 'distinct:created', 'score:created', 'watch-meta:created', 'watch:created'], 'engine' => null],
-            'keys narrow' => ['sent' => false, 'evaluations' => 1, 'steps' => 1, 'kind' => 'toplevel-key', 'changed' => [], 'engine' => null],
-            'keys read-only' => ['sent' => false, 'evaluations' => 1, 'steps' => 0, 'kind' => 'toplevel-key', 'changed' => [], 'engine' => null],
-            'keys write-only' => ['sent' => false, 'evaluations' => 1, 'steps' => 0, 'kind' => 'toplevel-key', 'changed' => [], 'engine' => null],
-            'reply lost after the save' => ['sent' => true, 'evaluations' => 1, 'steps' => 7, 'kind' => 'transport', 'changed' => ['block:content+expiry', 'budget:content', 'cycle:content', 'distinct:content', 'distinct:content', 'score:content', 'watch:content'], 'engine' => null],
-            'revoke -del before commit' => ['sent' => true, 'evaluations' => 1, 'steps' => 7, 'kind' => 'script', 'changed' => [], 'engine' => null],
-            'variant control' => ['sent' => true, 'evaluations' => 1, 'steps' => 7, 'kind' => 'returned', 'changed' => ['block:content+expiry', 'budget:content', 'cycle:content', 'distinct:content', 'distinct:content', 'score:content', 'watch:content'], 'engine' => null],
-            'variant deny -del' => ['sent' => true, 'evaluations' => 1, 'steps' => 7, 'kind' => 'preflight', 'changed' => [], 'engine' => null],
-            'variant deny -hset' => ['sent' => true, 'evaluations' => 1, 'steps' => 7, 'kind' => 'preflight', 'changed' => [], 'engine' => null],
-            'variant deny -pexpireat' => ['sent' => true, 'evaluations' => 1, 'steps' => 7, 'kind' => 'preflight', 'changed' => [], 'engine' => null],
-            'variant deny -sadd' => ['sent' => true, 'evaluations' => 1, 'steps' => 7, 'kind' => 'preflight', 'changed' => [], 'engine' => null],
-            'variant deny -set' => ['sent' => true, 'evaluations' => 1, 'steps' => 7, 'kind' => 'preflight', 'changed' => [], 'engine' => null],
-            'variant deny -zadd' => ['sent' => true, 'evaluations' => 1, 'steps' => 7, 'kind' => 'preflight', 'changed' => [], 'engine' => null],
-            'variant revoke -del before commit' => ['sent' => true, 'evaluations' => 1, 'steps' => 7, 'kind' => 'preflight', 'changed' => [], 'engine' => null],
+            'conflict' => ['sent' => true, 'evaluations' => 2, 'steps' => 7, 'kind' => 'returned', 'changed' => ['block:content+expiry', 'budget:content', 'cycle:content', 'distinct:content', 'distinct:content', 'score:content+expiry', 'watch:content'], 'engine' => null, 'fallback' => false],
+            'conflict + deny -smembers' => ['sent' => false, 'evaluations' => 2, 'steps' => 3, 'kind' => 'script', 'changed' => ['score:expiry'], 'engine' => null, 'fallback' => false],
+            'connection killed before commit|resp' => ['sent' => true, 'evaluations' => 1, 'steps' => 7, 'kind' => 'transport', 'changed' => [], 'engine' => null, 'fallback' => false],
+            'connection killed before commit|phpredis' => ['sent' => true, 'evaluations' => 1, 'steps' => 7, 'kind' => 'returned', 'changed' => ['block:content+expiry', 'budget:content', 'cycle:content', 'distinct:content', 'distinct:content', 'score:content', 'watch:content'], 'engine' => null, 'fallback' => false],
+            'control' => ['sent' => true, 'evaluations' => 1, 'steps' => 7, 'kind' => 'returned', 'changed' => ['block:content+expiry', 'budget:content', 'cycle:content', 'distinct:content', 'distinct:content', 'score:content', 'watch:content'], 'engine' => null, 'fallback' => false],
+            'deny -del' => ['sent' => true, 'evaluations' => 1, 'steps' => 7, 'kind' => 'script', 'changed' => [], 'engine' => null, 'fallback' => false],
+            'deny -eval' => ['sent' => false, 'evaluations' => 1, 'steps' => 0, 'kind' => 'toplevel-command', 'changed' => [], 'engine' => null, 'fallback' => false],
+            'deny -exists' => ['sent' => false, 'evaluations' => 1, 'steps' => 0, 'kind' => 'script', 'changed' => [], 'engine' => null, 'fallback' => false],
+            'deny -get' => ['sent' => false, 'evaluations' => 1, 'steps' => 4, 'kind' => 'script', 'changed' => [], 'engine' => null, 'fallback' => false],
+            'deny -hgetall' => ['sent' => false, 'evaluations' => 1, 'steps' => 0, 'kind' => 'script', 'changed' => [], 'engine' => null, 'fallback' => false],
+            'deny -hset' => ['sent' => true, 'evaluations' => 1, 'steps' => 7, 'kind' => 'script', 'changed' => ['score:DELETED'], 'engine' => null, 'fallback' => false],
+            'deny -pexpireat' => ['sent' => true, 'evaluations' => 1, 'steps' => 7, 'kind' => 'script', 'changed' => ['score:content+expiry (WITHOUT EXPIRY)'], 'engine' => null, 'fallback' => false],
+            'deny -pexpiretime' => ['sent' => false, 'evaluations' => 1, 'steps' => 0, 'kind' => 'script', 'changed' => [], 'engine' => null, 'fallback' => false],
+            'deny -sadd' => ['sent' => true, 'evaluations' => 1, 'steps' => 7, 'kind' => 'script', 'changed' => ['budget:content', 'distinct:DELETED', 'score:content'], 'engine' => null, 'fallback' => false],
+            'deny -set' => ['sent' => true, 'evaluations' => 1, 'steps' => 7, 'kind' => 'script', 'changed' => ['budget:content', 'distinct:content', 'score:content', 'watch:DELETED'], 'engine' => null, 'fallback' => false],
+            'deny -smembers' => ['sent' => false, 'evaluations' => 1, 'steps' => 3, 'kind' => 'script', 'changed' => [], 'engine' => null, 'fallback' => false],
+            'deny -time' => ['sent' => false, 'evaluations' => 1, 'steps' => 0, 'kind' => 'script', 'changed' => [], 'engine' => null, 'fallback' => false],
+            'deny -type' => ['sent' => false, 'evaluations' => 1, 'steps' => 0, 'kind' => 'script', 'changed' => [], 'engine' => null, 'fallback' => false],
+            'deny -zadd' => ['sent' => true, 'evaluations' => 1, 'steps' => 7, 'kind' => 'script', 'changed' => ['block:content+expiry', 'budget:content', 'cycle:DELETED', 'distinct:content', 'distinct:content', 'score:content', 'watch:content'], 'engine' => null, 'fallback' => false],
+            'deny -zrange' => ['sent' => false, 'evaluations' => 1, 'steps' => 6, 'kind' => 'script', 'changed' => [], 'engine' => null, 'fallback' => false],
+            'engine connection killed before commit|resp' => ['sent' => true, 'evaluations' => null, 'steps' => null, 'kind' => 'returned', 'changed' => [], 'engine' => 'HARD_BLOCK/FAIL_CLOSED', 'fallback' => false],
+            'engine connection killed before commit|phpredis' => ['sent' => true, 'evaluations' => null, 'steps' => null, 'kind' => 'returned', 'changed' => ['distinct-meta:created', 'distinct-meta:created', 'distinct-meta:created', 'distinct-meta:created', 'distinct-meta:created', 'distinct-meta:created', 'distinct:created', 'distinct:created', 'distinct:created', 'distinct:created', 'distinct:created', 'distinct:created'], 'engine' => 'ALLOW/NORMAL', 'fallback' => false],
+            'engine control' => ['sent' => true, 'evaluations' => null, 'steps' => null, 'kind' => 'returned', 'changed' => ['distinct-meta:created', 'distinct-meta:created', 'distinct-meta:created', 'distinct-meta:created', 'distinct-meta:created', 'distinct-meta:created', 'distinct:created', 'distinct:created', 'distinct:created', 'distinct:created', 'distinct:created', 'distinct:created'], 'engine' => 'ALLOW/NORMAL', 'fallback' => false],
+            'engine control (prefix pattern only)' => ['sent' => false, 'evaluations' => null, 'steps' => null, 'kind' => 'toplevel-key', 'changed' => [], 'engine' => null, 'fallback' => false],
+            'engine deny -pexpireat' => ['sent' => true, 'evaluations' => null, 'steps' => null, 'kind' => 'script', 'changed' => ['distinct-meta:created (WITHOUT EXPIRY)'], 'engine' => null, 'fallback' => false],
+            'engine deny -pexpiretime' => ['sent' => true, 'evaluations' => null, 'steps' => null, 'kind' => 'returned', 'changed' => ['distinct-meta:created', 'distinct-meta:created', 'distinct-meta:created', 'distinct-meta:created', 'distinct-meta:created', 'distinct-meta:created', 'distinct:created', 'distinct:created', 'distinct:created', 'distinct:created', 'distinct:created', 'distinct:created'], 'engine' => 'ALLOW/NORMAL', 'fallback' => false],
+            'engine reply lost after the save|resp' => ['sent' => true, 'evaluations' => null, 'steps' => null, 'kind' => 'returned', 'changed' => ['distinct-meta:created', 'distinct-meta:created', 'distinct-meta:created', 'distinct-meta:created', 'distinct-meta:created', 'distinct-meta:created', 'distinct:created', 'distinct:created', 'distinct:created', 'distinct:created', 'distinct:created', 'distinct:created'], 'engine' => 'HARD_BLOCK/FAIL_CLOSED', 'fallback' => false],
+            'engine reply lost after the save|phpredis' => ['sent' => true, 'evaluations' => null, 'steps' => null, 'kind' => 'unclassified', 'changed' => ['distinct-meta:created', 'distinct-meta:created', 'distinct-meta:created', 'distinct-meta:created', 'distinct-meta:created', 'distinct-meta:created', 'distinct:created', 'distinct:created', 'distinct:created', 'distinct:created', 'distinct:created', 'distinct:created'], 'engine' => null, 'fallback' => false],
+            'fresh keyspace + deny reads' => ['sent' => true, 'evaluations' => 1, 'steps' => 7, 'kind' => 'returned', 'changed' => ['block:created', 'block:created', 'budget:created', 'cycle:created', 'distinct-meta:created', 'distinct-meta:created', 'distinct:created', 'distinct:created', 'score:created', 'watch-meta:created', 'watch:created'], 'engine' => null, 'fallback' => false],
+            'keys narrow' => ['sent' => false, 'evaluations' => 1, 'steps' => 1, 'kind' => 'toplevel-key', 'changed' => [], 'engine' => null, 'fallback' => false],
+            'keys read-only' => ['sent' => false, 'evaluations' => 1, 'steps' => 0, 'kind' => 'toplevel-key', 'changed' => [], 'engine' => null, 'fallback' => false],
+            'keys write-only' => ['sent' => false, 'evaluations' => 1, 'steps' => 0, 'kind' => 'toplevel-key', 'changed' => [], 'engine' => null, 'fallback' => false],
+            'plan without expiry' => ['sent' => true, 'evaluations' => 1, 'steps' => 1, 'kind' => 'returned', 'changed' => ['circuit:created (WITHOUT EXPIRY)'], 'engine' => null, 'fallback' => false],
+            'plan without expiry + deny -pexpireat' => ['sent' => true, 'evaluations' => 1, 'steps' => 1, 'kind' => 'returned', 'changed' => ['circuit:created (WITHOUT EXPIRY)'], 'engine' => null, 'fallback' => false],
+            'reply lost after the save|resp' => ['sent' => true, 'evaluations' => 1, 'steps' => 7, 'kind' => 'transport', 'changed' => ['block:content+expiry', 'budget:content', 'cycle:content', 'distinct:content', 'distinct:content', 'score:content', 'watch:content'], 'engine' => null, 'fallback' => false],
+            'reply lost after the save|phpredis' => ['sent' => true, 'evaluations' => 1, 'steps' => 7, 'kind' => 'unclassified', 'changed' => ['block:content+expiry', 'budget:content', 'cycle:content', 'distinct:content', 'distinct:content', 'score:content', 'watch:content'], 'engine' => null, 'fallback' => false],
+            'revoke -del before commit' => ['sent' => true, 'evaluations' => 1, 'steps' => 7, 'kind' => 'script', 'changed' => [], 'engine' => null, 'fallback' => false],
+            'revoke -hgetall before commit' => ['sent' => true, 'evaluations' => 1, 'steps' => 7, 'kind' => 'script', 'changed' => [], 'engine' => null, 'fallback' => false],
+            'revoke -hgetall before verify' => ['sent' => false, 'evaluations' => 1, 'steps' => 4, 'kind' => 'script', 'changed' => [], 'engine' => null, 'fallback' => false],
+            'variant control' => ['sent' => true, 'evaluations' => 1, 'steps' => 7, 'kind' => 'returned', 'changed' => ['block:content+expiry', 'budget:content', 'cycle:content', 'distinct:content', 'distinct:content', 'score:content', 'watch:content'], 'engine' => null, 'fallback' => false],
+            'variant deny -del' => ['sent' => true, 'evaluations' => 1, 'steps' => 7, 'kind' => 'preflight', 'changed' => [], 'engine' => null, 'fallback' => false],
+            'variant deny -hset' => ['sent' => true, 'evaluations' => 1, 'steps' => 7, 'kind' => 'preflight', 'changed' => [], 'engine' => null, 'fallback' => false],
+            'variant deny -pexpireat' => ['sent' => true, 'evaluations' => 1, 'steps' => 7, 'kind' => 'preflight', 'changed' => [], 'engine' => null, 'fallback' => false],
+            'variant deny -sadd' => ['sent' => true, 'evaluations' => 1, 'steps' => 7, 'kind' => 'preflight', 'changed' => [], 'engine' => null, 'fallback' => false],
+            'variant deny -set' => ['sent' => true, 'evaluations' => 1, 'steps' => 7, 'kind' => 'preflight', 'changed' => [], 'engine' => null, 'fallback' => false],
+            'variant deny -zadd' => ['sent' => true, 'evaluations' => 1, 'steps' => 7, 'kind' => 'preflight', 'changed' => [], 'engine' => null, 'fallback' => false],
+            'variant plan without expiry + deny -pexpireat' => ['sent' => true, 'evaluations' => 1, 'steps' => 1, 'kind' => 'returned', 'changed' => ['circuit:created (WITHOUT EXPIRY)'], 'engine' => null, 'fallback' => false],
+            'variant revoke -del before commit' => ['sent' => true, 'evaluations' => 1, 'steps' => 7, 'kind' => 'preflight', 'changed' => [], 'engine' => null, 'fallback' => false],
         ];
+    }
+
+    /**
+     * The phpredis Host shape's classification controls (F269-02): a server error reply that is not in anyone's list of known codes, with a code or
+     * without one, reaches the store as the server's error, never as a transport failure; a connection lost for real (the peer is gone), which
+     * ext-redis reports with its connection flag cleared, is the typed transport failure.
+     */
+    public function testThePhpRedisShapeKeepsAnUnknownServerErrorAServerErrorAndTypesALostConnection(): void
+    {
+        $this->createUser('shape-261', []);
+        $this->admin->execute(['ACL', 'SETUSER', 'shape-261', '+eval', '+ping']);
+        $executor = $this->host('phpredis', 'shape-261');
+        foreach (['XCUSTOM something unknown', 'plain text without an error code'] as $text) {
+            try {
+                $executor->execute(['EVAL', "return redis.error_reply('" . $text . "')", 0]);
+                self::fail('The script was expected to answer with an error reply.');
+            } catch (\RedisException $exception) {
+                self::assertSame($text, $exception->getMessage());
+            }
+        }
+
+        $pipes = [];
+        $process = proc_open([PHP_BINARY, __DIR__ . '/../../Support/Redis/reply-dropping-proxy.php', $this->host, (string) $this->port], [1 => ['pipe', 'w'], 2 => ['pipe', 'w']], $pipes);
+        self::assertIsResource($process);
+        $this->processes[] = $process;
+        $output = self::pipeOf($pipes, 1);
+        self::assertIsResource($output);
+        stream_set_timeout($output, 5);
+        $viaProxy = $this->host('phpredis', 'shape-261', (int) fgets($output));
+        self::assertNotFalse($viaProxy->execute(['PING']), 'The connection works before the peer disappears.');
+        proc_terminate($process);
+        proc_close($process);
+        $this->processes = [];
+        usleep(200_000);
+        $this->expectException(BackendFailureException::class);
+        $viaProxy->execute(['PING']);
     }
 
     /** The observer's own control: it reports a known change of content, of expiry, a deletion and a creation, and nothing for an untouched key. */
@@ -713,6 +797,7 @@ final class RequestSaveAclRedisTest extends TestCase
         }
         self::assertSame($expected['changed'], $changed, $name . ': keys that changed, read from outside Lua');
         self::assertTrue($record['controlUnchanged'], $name . ': the control key outside the request state is untouched');
+        self::assertSame($expected['fallback'], $record['fallbackCharged'], $name . ': the local fallback limiter was charged');
         self::assertSame([], $record['signals'], $name . ': no failure signal');
         if ($expected['engine'] !== null) {
             self::assertSame('returned ' . json_encode($expected['engine']), $record['result']);
@@ -725,6 +810,10 @@ final class RequestSaveAclRedisTest extends TestCase
             self::assertNotSame(BackendFailureException::class, $thrown);
         } elseif ($kind === 'transport') {
             self::assertSame(BackendFailureException::class, $thrown);
+        } elseif ($kind === 'unclassified') {
+            // ext-redis reported a protocol error or a socket read error (which of the two varies with timing and width) on a connection it still
+            // considers open: no positive evidence, so no reclassification.
+            self::assertSame(\RedisException::class, $thrown);
         } else {
             self::assertNull($thrown);
         }
@@ -733,12 +822,16 @@ final class RequestSaveAclRedisTest extends TestCase
         $log = $record['aclLog'];
         $reasons = [];
         foreach ($log as $entry) {
-            $reasons[] = [$entry['reason'] ?? '', $entry['context'] ?? ''];
+            $reasons[] = [$entry['reason'] ?? '', $entry['context'] ?? '', $entry['object'] ?? ''];
         }
         match ($kind) {
-            'script' => self::assertSame([['command', 'lua']], $reasons),
-            'toplevel-command' => self::assertSame([['command', 'toplevel']], $reasons),
-            'toplevel-key' => self::assertSame([['key', 'toplevel']], $reasons),
+            'script' => $name === 'revoke -hgetall before verify'
+                // The step was refused (GET), then the verify that follows a step error was itself refused (HGETALL): its error is the one that
+                // reaches the caller, in place of the step's.
+                ? self::assertSame([['command', 'lua', 'get'], ['command', 'lua', 'hgetall']], $reasons)
+                : self::assertSame([['command', 'lua']], array_map(static fn(array $entry): array => [$entry[0], $entry[1]], $reasons)),
+            'toplevel-command' => self::assertSame([['command', 'toplevel']], array_map(static fn(array $entry): array => [$entry[0], $entry[1]], $reasons)),
+            'toplevel-key' => self::assertSame([['key', 'toplevel']], array_map(static fn(array $entry): array => [$entry[0], $entry[1]], $reasons)),
             default => self::assertSame([], $log),
         };
 
@@ -769,6 +862,7 @@ final class RequestSaveAclRedisTest extends TestCase
             str_starts_with($message, 'NOPERM this user has no permissions to access one') => 'toplevel-key',
             str_starts_with($message, 'NOPERM request commit:') => 'preflight',
             str_contains($result, 'BackendFailureException') => 'transport',
+            str_starts_with($result, 'thrown RedisException: protocol error'), str_starts_with($result, 'thrown RedisException: socket error') => 'unclassified',
             default => 'OTHER ' . $result,
         };
     }
