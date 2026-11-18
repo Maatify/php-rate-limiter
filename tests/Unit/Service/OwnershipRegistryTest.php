@@ -657,20 +657,29 @@ final class OwnershipRegistryTest extends TestCase
     public function testTheBuildFramesOfAFiberNeverMarkAnotherContext(): void
     {
         $p = $this->provider(static fn() => 1);
-        $resource = new \stdClass();
         $fiber = new Fiber(static function (): void {
-            OwnershipRegistry::hostRegion(static function (): void {
-                Fiber::suspend('inside the Host code of a build');
+            OwnershipRegistry::buildScope(static function (): void {
+                Fiber::suspend('a Builder suspended while it constructs its own components');
             });
         });
-        $fiber->start(); // a build is suspended inside its Host code
+        $fiber->start(); // the scope of that build is open in the Fiber
 
+        // On the main stack no build is running: an entry built by hand adopts a binding and stands on it, whatever the Fiber is doing.
+        $resource = new \stdClass();
         $ledger = OwnershipRegistry::bindAll([$resource], $p);
-        OwnershipRegistry::buildScope(static fn() => OwnershipRegistry::adopt([$resource]));
+        OwnershipRegistry::adopt([$resource]);
         OwnershipRegistry::rollback($ledger);
-        self::assertSame('unbound', OwnershipRegistry::domainKind($resource), 'an independent build on another context is not affected by the suspended one');
+        self::assertSame('provider', OwnershipRegistry::domainKind($resource), 'the open scope of the Fiber is not the scope of the main stack');
 
-        $fiber->resume();
+        // And the other way: a Builder scope on the main stack is not taken for a host frame by the Fiber's resumption.
+        $own = new \stdClass();
+        $ledger = OwnershipRegistry::bindAll([$own], $p);
+        OwnershipRegistry::buildScope(static function () use ($own, $fiber): void {
+            $fiber->resume(); // the Fiber closes its scope while this scope is open
+            OwnershipRegistry::adopt([$own]);
+        });
+        OwnershipRegistry::rollback($ledger);
+        self::assertSame('unbound', OwnershipRegistry::domainKind($own), 'the scope of this build is intact after the other context closed its own');
         self::assertTrue($fiber->isTerminated());
     }
 
