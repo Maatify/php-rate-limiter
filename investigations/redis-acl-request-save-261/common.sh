@@ -47,22 +47,52 @@ rl261_start_redis() {
   done
 }
 
-# Where a run writes: never the committed raw/ evidence by default.
+# Where a run writes: never the committed raw/ evidence by default. A relative directory is taken as is; an absolute one is accepted only
+# inside the repository (it is converted to the repository-relative path the container sees); anything else, or a `..` segment, is refused
+# before any run (exit 74). Every artifact the run must leave is created and checked writable BEFORE the run, so a failure cannot be hidden.
 rl261_out_dir() {
-  RL261_OUT=${RL261_OUT:-$RL261_STUDY/out/$(date -u +%Y%m%dT%H%M%SZ)-$$}
+  local out=${RL261_OUT:-$RL261_STUDY/out/$(date -u +%Y%m%dT%H%M%SZ)-$$}
+  case "$out" in
+    /*) case "$out" in "$RL261_ROOT"/*) out=${out#"$RL261_ROOT"/} ;; *) rl261_die "RL261_OUT must be inside the repository ($RL261_ROOT) or relative; got $out" 74 ;; esac ;;
+  esac
+  case "/$out/" in */../*) rl261_die "RL261_OUT must not contain '..': $out" 74 ;; esac
+  RL261_OUT=$out
   mkdir -p "$RL261_OUT" || rl261_die "could not create $RL261_OUT" 74
 }
 
+# Creates (empties) each required artifact; refuses to run when one cannot be written.
+rl261_artifacts() {
+  local f
+  for f in "$@"; do
+    : > "$RL261_OUT/$f" || rl261_die "cannot write the required artifact $RL261_OUT/$f" 75
+  done
+}
+
+# The source identity is part of the evidence: if it cannot be established, the run does not start (exit 77), and it is never defaulted.
+rl261_source_identity() {
+  RL261_HEAD=$(git rev-parse HEAD 2>/dev/null) || rl261_die "git cannot resolve HEAD: the source identity cannot be recorded" 77
+  RL261_TREE=$(git rev-parse 'HEAD^{tree}' 2>/dev/null) || rl261_die "git cannot resolve the source tree" 77
+  local porcelain
+  porcelain=$(git status --porcelain 2>/dev/null) || rl261_die "git status failed: the worktree state cannot be verified" 77
+  if [ -n "$porcelain" ]; then RL261_DIRTY=yes; else RL261_DIRTY=no; fi
+}
+
+# Writes the record; returns non-zero if it cannot be written completely.
 rl261_meta() {  # $1 = file, $2 = exit code, rest = command line
   local f=$1 rc=$2; shift 2
   {
-    echo "source_head=$(git rev-parse HEAD 2>/dev/null || echo unknown)"
-    echo "source_tree=$(git rev-parse 'HEAD^{tree}' 2>/dev/null || echo unknown)"
-    echo "worktree_dirty=$([ -n "$(git status --porcelain 2>/dev/null)" ] && echo yes || echo no)"
+    echo "source_head=$RL261_HEAD"
+    echo "source_tree=$RL261_TREE"
+    echo "worktree_dirty=$RL261_DIRTY"
     echo "php_image=$RL261_IMG ($RL261_PLAT)"
     echo "redis_image=$RL261_REDIS_IMAGE"
     echo "started_at_utc=${RL261_STARTED:-unknown}"
     echo "command=$*"
     echo "exit_code=$rc"
-  } > "$f"
+  } > "$f" || return 1
+}
+
+# Combines the tool's own exit code with the failures of the run's bookkeeping: the tool's code is kept when it failed, else the first bookkeeping failure.
+rl261_final_code() {  # $1 = tool code, $2 = log-writer (tee) code, $3 = meta-writer code, $4 = extra code
+  if [ "$1" != 0 ]; then echo "$1"; elif [ "$2" != 0 ]; then echo 75; elif [ "$3" != 0 ]; then echo 75; else echo "${4:-0}"; fi
 }

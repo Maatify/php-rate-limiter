@@ -1,0 +1,14 @@
+ok   missing Redis image (exit 72)
+ok   Redis never ready (exit 73)
+ok   bounded: 3 s
+ok   wrong width (exit 64)
+ok   absolute output directory inside the repository: run (exit 0)
+FAIL evidence.jsonl missing or empty in /Users/mohamedabdulalim/MEGA/Libraries/2026/php-rate-limiter/.claude/worktrees/dec-022-architecture-proposal-3ed6c7/investigations/redis-acl-request-save-261/out/selftest-abs-81961
+ok   run-meta.txt records exit_code=0
+FAIL absolute output directory outside the repository is refused: expected exit 74, got 0
+FAIL unwritable phpunit.log: returned 0 although the run's record is incomplete
+FAIL unwritable run-meta.txt: returned 0 although the run's record is incomplete
+FAIL unwritable bench.log: returned 0 although the run's record is incomplete
+FAIL git status fails: returned 0 although the run's record is incomplete
+FAIL git cannot identify the source: returned 0 although the run's record is incomplete
+ok   no rl261-* container or network left behind

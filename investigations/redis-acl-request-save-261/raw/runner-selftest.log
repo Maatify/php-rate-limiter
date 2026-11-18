@@ -2,4 +2,13 @@ ok   missing Redis image (exit 72)
 ok   Redis never ready (exit 73)
 ok   bounded: 3 s
 ok   wrong width (exit 64)
+ok   absolute output directory inside the repository: run (exit 0)
+ok   evidence.jsonl is non-empty
+ok   run-meta.txt records exit_code=0
+ok   absolute output directory outside the repository is refused (exit 74)
+ok   unwritable phpunit.log (exit 75, non-zero)
+ok   unwritable run-meta.txt (exit 75, non-zero)
+ok   unwritable bench.log (exit 75, non-zero)
+ok   git status fails (exit 77, non-zero)
+ok   git cannot identify the source (exit 77, non-zero)
 ok   no rl261-* container or network left behind
