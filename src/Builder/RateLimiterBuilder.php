@@ -262,6 +262,7 @@ final class RateLimiterBuilder
         );
 
         // The entry classes this build constructed itself: when it fails, it releases what they adopted and only that.
+        /** @var list<object> $built filled as each entry class is constructed (the catch below runs after any of them) */
         $built = [];
         try {
             $scoreRuntime = new RateLimiterEngine(
@@ -333,6 +334,7 @@ final class RateLimiterBuilder
         // DEC-041: the readers' resources are the rate-limit store and the circuit-breaker store; their clock is the Host clock as before.
         $binding = OwnershipRegistry::bindGraph(OwnershipRegistry::collect([$this->rateLimitStore, $this->circuitBreakerStore]), $this->contextProvider);
 
+        /** @var list<object> $built filled as each entry class is constructed (the catch below runs after any of them) */
         $built = [];
         try {
             return $this->composeOperationalReader($deviceIdentityResolver, $clock, $built);
