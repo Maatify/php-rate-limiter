@@ -63,57 +63,70 @@ The two do not replace each other: identity is the proof that a call is nested; 
 - **Package-owned coordinator.** `OwnershipRegistry` is an internal class holding a process-wide `WeakMap` from a resource object to its current `CallToken` (or none). It is keyed by object identity, so two graphs that share an object contend on the same slot with no cooperation from that object. It is not a public type; no Host store implements or constructs anything. A resource object that is garbage-collected drops out of the map by itself, so a long-lived worker does not accumulate entries.
 - **Resource discovery.** Each package class that is a public entry or a collaborator exposes an `@internal` method that returns the resources it owns or reaches (`ownedResources(): list<object>`), computed at construction from its collaborators and deduplicated by object identity. Entry classes combine the sets of their collaborators. Consequently an entry class constructed **directly** (without the Builder) is protected exactly like a Builder-built one; no optional constructor parameter is needed.
 - **Stores that do not cooperate.** A Host-implemented store is a resource like any other: every graph entry that uses it acquires its slot, so two graphs sharing it are protected **at the graph entries** without the store doing anything. This is the one primary behaviour for stores without cooperation.
-- **Context domain.** Next to its slot, every resource has a **context domain**: the provider instance (or the default Fiber domain) whose identities are valid for it. The domain is bound once, when the resource is first resolved by an entry class or by a package-owned store, and never changes (3.4).
+- **Context domain.** Next to its slot, every resource has a **context domain**: the provider instance (or the default Fiber domain) whose identities are valid for it. The domain is bound by a set-wide, failure-atomic `bindAll` when an entry class is built or a package-owned store is resolved, and does not change while its provider lives (3.4).
 - **Package-owned stores admit their own direct calls.** `RedisFullCapabilityStore` calls the registry for `$this` at its own entries (3.5), so a direct overlapping call to it is refused too.
 
 ### 3.3 Acquisition in two phases, refusal and release (all-or-none) [PROPOSED]
 
-The provider is Host code (3.4), so the entry must not call it before it has reserved anything. Acquisition therefore has two phases, and **no Host call happens in phase 0**:
+The provider is Host code (3.4), so the entry must not call it before it has reserved anything. Acquisition therefore has two phases, **no Host call happens in phase 0**, and **one outer cleanup structure** clears exactly what this token reserved, whatever made the acquisition fail.
+
+**Slot records.** Each reservation creates a fresh `SlotRecord` object `{token, lookupBy}` stored in the resource's slot. Every marker and every cleanup refers to the **record object** it created, never to the slot by position, so a marker or a clear can only ever affect the record it belongs to; a record that has been cleared and replaced by another call's record is not touched.
 
 ```text
 acquire(resources, entry, domain):            // a public entry
     set   = dedupe(resources) ordered by a fixed canonical order (object id)
-    token = new CallToken(domain, state = Reserved)       // no context yet, nothing resolved
-    // phase 0: provider-free reservation, all-or-none
-    taken = []
-    for r in set:
-        assert registry.domainOf(r) === domain             // bound at construction; a mismatch was already refused there
-        if registry.slot(r) is occupied OR registry.slot(r).lookup > 0:   // an owner, a reservation, or a lookup in progress
-            for t in reverse(taken): registry.clear(r, token)             // only slots this call took; never another call's
-            throw OverlappingRequestException(entry)       // refused WITHOUT having called the provider
-        registry.reserve(r, token); taken.push(r)
-    // phase 1: identity lookup, under the reservation
+    token = new CallToken(domain, state = Reserved)
+    taken = []                                 // the resources THIS token has reserved, with the record it created in each
+    ok    = false
+    providerFailure = null
     try:
-        token.open crossing                                // the provider call is a Host crossing of this call
-        registry.lookupBegin(set)                          // any other call on these slots is refused while the provider runs
-        key = domain.provider.currentContext()             // Host code
-    catch Throwable e:                                     // the provider threw (or the lookup failed)
-        release(token, set)                                // unwinds its own reservations only
-        throw new RateLimiterException('The execution context provider failed.', previous: e)   // not a BackendFailureException
-    finally: registry.lookupEnd(set); token.close crossing
-    token.context = retain(key); token.state = Owned
-    return token
+        // phase 0: provider-free reservation, all-or-none
+        for r in set:
+            if registry.domainOf(r) !== domain:
+                throw RateLimiterException(integrity: the domain binding was checked at construction)   // configuration/integrity failure, not busy, not a provider failure
+            if slot(r) has a record OR a lookup is in progress on it:
+                throw OverlappingRequestException(entry)       // busy refusal: r is occupied by someone else and is NOT in `taken`
+            record = registry.reserve(r, token); taken.push((r, record))
+        // phase 1: identity lookup, under the reservations
+        token.crossings += 1
+        for (r, record) in taken: record.lookupBy = token
+        try:    key = domain.provider.currentContext()         // Host code
+        catch Throwable e: providerFailure = e
+        finally:
+            for (r, record) in taken: if record.lookupBy === token: record.lookupBy = null   // 1. this lookup's markers first
+            token.crossings -= 1                                                              // 2. then its crossing
+        if providerFailure !== null:
+            throw new RateLimiterException('The execution context provider failed.', previous: providerFailure)   // provider failure only
+        token.context = retain(key); token.state = Owned; ok = true
+        return token
+    finally:
+        if not ok:                                          // 3. only then the reservations, exactly `taken`, token-aware
+            for (r, record) in reverse(taken): registry.clear(r, record)   // clears the slot only if it still holds THIS record
 ```
 
-- **Why this ordering.** A provider that re-enters the library while its outer lookup runs reaches an entry whose slots are reserved, so the busy check refuses it **before** the provider is called again; there is no recursion. A provider that yields during the lookup leaves the slots reserved and under lookup, so any other call is refused. A provider that throws unwinds exactly the reservations of its own call.
-- **No partial hold.** A refused acquisition leaves every slot exactly as it found it; it clears only what the refused call itself took, never another call's slot. A third call can acquire the resources a refused call briefly held.
+- **Three kinds of failure stay distinct.** A **busy refusal** (`OverlappingRequestException`), a **configuration/integrity failure** (a domain mismatch, which should already have been refused at construction, 3.4 A; a plain `RateLimiterException`), and a **provider failure** (a `RateLimiterException` whose `previous` is the provider's exception). Phase-0 errors are never reported as provider failures.
+- **Trace for CE-7 with names.** A owns R2 (record `rA2`, token `tA`). B (`tB`) acquires `{R1, R2}`, canonical order R1 then R2. R1 is free: B reserves it (record `rB1`, `taken = [(R1, rB1)]`). R2 holds `rA2`: B throws the busy refusal; R2 is not in `taken`. The outer `finally` runs `clear(R1, rB1)`: R1's slot still holds `rB1`, so it is cleared. `rA2` and `tA` are untouched; R1 is free for a third call.
+- **No partial hold.** A refused acquisition leaves every slot exactly as it found it; it clears only the records it created. A third call can acquire the resources a refused call briefly held.
+- **Admission lookups** (3.4 B) use a `LookupTicket` that refers to the record object of the owned slot it read; ending the ticket decrements only that record's counter, so a lookup that outlives its owner cannot leave state on a cleared slot or on a reused one (the new owner has a different record).
 - **Deduplication.** The aggregate store passed as rate-limit, correlation and circuit-breaker store is one resource; it is acquired once, so a call cannot refuse itself.
 - **Canonical order** makes the sequence deterministic; with a single-threaded runtime it also removes any ordering dependence between two graphs that share part of their sets.
-- **Release.** At the outermost `finally` of the entry, in reverse order of acquisition, after everything else the call held has been released: (1) held signals are released (emission is a Host crossing; the owner is still set), (2) the clock reading is cleared, (3) the slots are cleared, last. `release(token, set)` takes the set from the **entry's own frame** (the entry holds its collaborators anyway), clears only the slots whose recorded token is this token, is idempotent for a released token, and treats a slot that holds another token as an internal integrity error, never releasing it.
+- **Release of an owned call.** At the outermost `finally` of the entry: (1) held signals are released (emission is a Host crossing; the owner is still set), (2) the clock reading is cleared, (3) every lookup marker of the call has already ended, and (4) the slots are cleared **last**, in reverse order of acquisition. `release(token, set)` takes the set from the **entry's own frame** (the entry holds its collaborators anyway), clears each slot only if it still holds this token's record, is idempotent for a released token, and treats a slot that holds another token's record as an internal integrity error, never releasing it.
 
 ### 3.4 Execution-context identity: domain, association, provider contract, identity contract [PROPOSED; APPROVAL M2]
 
 **A. One context domain per resource, bound at construction, immutable.**
 
 - A **domain** is either the **default Fiber domain** or one **provider instance** (`===`). Identities of different domains are never compared: equal strings or objects from two providers have no cross-provider meaning.
-- **Binding.** A resource is bound to a domain by `bindDomain(resource, domain)`: if the resource is unbound the domain is recorded; if it is bound to an equal domain the call is a no-op; if it is bound to a different domain the call **fails fast** with a `RateLimiterException` (a configuration error naming the resource class and that two context domains were requested), at the moment the second binding is attempted.
-- **Where binding happens.** (1) When an entry class is constructed (`RateLimiterEngine`, `FixedWindowSimpleRateLimiter`, the readers), it binds **every resource of its set** to the domain of its configuration, so an incompatible graph fails at **build time**, not at the first call. (2) When a package-owned store is constructed, a configured provider is recorded for it; a store with none is unbound until first resolved. (3) A package-owned store resolved by a direct call while unbound binds to its own configured domain, or to the default domain if none was configured. Nothing ever falls back silently to the main context or to another provider: a direct call whose store is bound to a provider that has since been collected fails fast the same way.
-- **Immutability.** A domain is bound for the lifetime of the resource object. There is no setter, so a live owner's domain cannot be reconfigured, and a domain cannot change between calls either.
+- **Binding.** A resource is bound to a domain by `bindDomain(resource, domain)`: unbound, the domain is recorded; bound to an equal domain, a no-op; bound to a different domain, the call **fails fast** with a `RateLimiterException` (a configuration error naming the resource class and that two context domains were requested).
+- **Binding is set-wide and failure-atomic.** Binding a graph's resources is `bindAll(set, domain)`: **step 1 validates the whole set without changing anything** (every resource must be unbound, or bound to an equal domain); only if the whole set validates does **step 2 record the domain on the resources that were unbound**, returning a ledger of exactly those. If anything fails after step 2 began, `rollback(ledger)` unbinds exactly the resources in that ledger and nothing else. Existing bindings are never changed. Trace: R1 is unbound, R2 is bound to P; a graph in domain Q runs step 1, finds R2 bound to P and fails; **R1 was never recorded**, so a later graph in domain P over R1 binds normally. `RateLimiterBuilder::build()` binds the **union** of the resource sets of every entry class it is about to construct in **one** `bindAll`, after its existing capability assertions and **before** constructing any entry class, so a failing build leaves no partial binding; entry classes constructed directly bind their own set with the same operation.
+- **How an entry class learns its domain (no constructor change).** The Builder binds the union first (above); each entry class, at construction, reads the domain of its resources: they must all be bound to the same domain (an entry whose resources have different domains fails fast at construction); if all are unbound it binds them to the default domain with `bindAll`. An entry class constructed directly over a store that was bound to a provider (for example through the store's own constructor parameter) therefore inherits that provider's domain instead of defaulting.
+- **Provider lifetime (one primary rule).** Whoever supplies a provider keeps it alive: the **store retains its configured provider in a private field for its own lifetime**; each **entry class retains the provider of its domain in a private field for its own lifetime** (it takes the reference from the registry at construction, while it is alive). The registry's domain record holds the provider only by `WeakReference`. A provider passed inline to the store constructor therefore needs no Host variable. The failure "the recorded provider has been collected" cannot occur while any store or graph that uses it lives; it is possible only for a resource bound through a graph's provider after **all** those graphs have been destroyed, and it is a misuse, not a supported pattern: a **direct call** on such a store fails fast (a configuration `RateLimiterException`: the provider is gone, construct the store with a provider or build a graph that supplies one) and never falls back to the default domain; because no live Host component can then present that domain and no owner can exist under it, such a vacated binding may be replaced by an explicit later `bindAll` (a new graph), never by a direct call.
+- **Immutability.** A domain is bound for the lifetime of the resource object as long as its provider instance lives (a vacated binding is the single exception above). There is no setter, so a live owner's domain cannot be reconfigured, and a domain cannot change between calls either.
 - **Mixed sharing.** Default + default: allowed. Custom provider P + the same instance P: allowed. Default + custom, or two different provider instances (even two instances of the same class): **refused at the second binding**, for graphs, for a graph and a direct store, and for two direct users. A Host that runs several graphs on one scheduler shares **one provider instance** among them.
 - **Configuration paths (public, additive, optional).**
   - Graphs: `RateLimiterBuilder::withExecutionContextProvider(ExecutionContextProviderInterface $provider): self`.
   - Standalone direct use of a package-owned store, without a Builder: an additional optional constructor parameter of `RedisFullCapabilityStore` (`?ExecutionContextProviderInterface $executionContext = null`, default the Fiber domain). A Host that writes its own store gets protection only at graph entries (3.2) and has nothing to configure.
-- **What the registry holds.** Per resource, a record `{domain, slot}` where `domain` holds the provider by **`WeakReference`** (the graph, which holds the provider strongly through its entry classes, keeps it alive), never a strong reference that could pin the resource.
+- **What the registry holds.** Per resource, a record `{domain, slot}` where `domain` holds the provider by **`WeakReference`** (the store or the entry classes hold it strongly, see Provider lifetime), never a strong reference that could pin the resource; the slot holds the current `SlotRecord`, which holds the token, and the token holds no strong reference to its resources.
 
 **B. The provider is Host code and runs only after a provider-free reservation (3.3).** Contract of `ExecutionContextProviderInterface` (public, proposed, optional):
 
@@ -189,7 +202,7 @@ public function transactRequest(callable $evaluate): mixed
 | Type | Visibility | Owner | Notes |
 | --- | --- | --- | --- |
 | `OverlappingRequestException extends RateLimiterException` | **public**, new | package | the refusal (section 7); carries the refused entry's name |
-| `ExecutionContextProviderInterface` (contract in 3.4 B and C), `RateLimiterBuilder::withExecutionContextProvider()`, and an optional `?ExecutionContextProviderInterface $executionContext = null` constructor parameter of `RedisFullCapabilityStore` | **public**, new, **optional** | Host implements and shares **one instance per scheduler**, only for a non-Fiber scheduler | additive; the only behavioural effect is the fail-fast on a domain mismatch (3.4 A) |
+| `ExecutionContextProviderInterface` (contract in 3.4 B and C), `RateLimiterBuilder::withExecutionContextProvider()`, and an optional `?ExecutionContextProviderInterface $executionContext = null` constructor parameter of `RedisFullCapabilityStore` | **public**, new, **optional** | Host implements and shares **one instance per scheduler**, only for a non-Fiber scheduler; the store and the entry classes retain it for their lifetime (3.4 A) | additive; the only behavioural effects are the fail-fast on a domain mismatch and the fail-fast of a direct call on a vacated binding (3.4 A) |
 | `OwnershipRegistry` (slots, domain records), `CallToken` (domain, weakly held context, state, crossing counter), the `@internal` `ownedResources()` methods | internal (`@internal`), new | package | **not** Host-implemented and not required of Host stores; visible `public` methods exist only because PHP has no package visibility, and they carry no support promise |
 | `CallOwnershipStoreInterface` (revision 1) | **dropped** | n/a | removed: a Host store no longer implements anything for ownership |
 
@@ -457,9 +470,9 @@ Proposed shape: a thrown `Maatify\RateLimiter\Exception\OverlappingRequestExcept
 | --- | --- | --- | --- |
 | `RateLimiterBuilder::fromFullCapabilityStore()` / constructor / `build()` / `buildOperationalReader()` | wires the graph; no ownership | same signatures; the entries acquire the resource set internally | default path needs no wiring or Host change; additive `withExecutionContextProvider()` |
 | Host-implemented stores (any `RateLimitStoreInterface` / `CorrelationStoreInterface` / `CircuitBreakerStoreInterface` implementation) | used as given | **no new interface or method required**; protected by object identity at every graph entry | none; direct use of a Host store outside a graph stays the Host's responsibility (3.8) |
-| `RedisFullCapabilityStore` | constructor and 78 public capability methods | constructor unchanged; its capabilities admit their callers (3.5) | overlapping direct use now refused (it was silently joined); the implementation unit classifies all 78 methods |
+| `RedisFullCapabilityStore` | constructor and 78 public capability methods | constructor gains **one optional trailing parameter** (`?ExecutionContextProviderInterface $executionContext = null`; the store retains it in a private field for its lifetime, 3.4 A); its capabilities admit their callers (3.5) | overlapping direct use now refused (it was silently joined); the implementation unit classifies all 78 methods |
 | `RequestAtomicStoreInterface::transactRequest()` | signature unchanged; last guarantee: runs inside an open request of the store itself | signature unchanged; **the guarantee's wording changes**: a call made from the owner's execution context while no Host crossing is open joins the request; any other call is refused | [APPROVAL M4] contract text and the matching DEC-037 item 7 sentence; Host stores implementing the interface keep working but do not refuse unless they adopt the same rule |
-| `CompositeRateLimiterRuntime`, `RateLimiterEngine`, `FixedWindowSimpleRateLimiter`, operational readers | constructors without ownership | constructors unchanged; each computes its resource set from its collaborators | classes built directly are protected like Builder-built ones |
+| `CompositeRateLimiterRuntime`, `RateLimiterEngine`, `FixedWindowSimpleRateLimiter`, operational readers | constructors without ownership | **constructors unchanged**; each computes its resource set from its collaborators and reads its context domain from the domain recorded on those resources (an entry whose resources have different domains fails fast at construction; one built over a store bound to a provider inherits it; all-unbound resources bind to the default domain) | classes built directly are protected like Builder-built ones |
 | `RequestScopedClock`, `CircuitBreaker`, `EvaluationPipeline` | public API as today | no public API change; internal crossing markers and `@internal` `ownedResources()` methods | none |
 | new `OverlappingRequestException` | none | new public exception | [APPROVAL M3]; Hosts catching `RateLimiterException` already handle it |
 | new `ExecutionContextProviderInterface`, `RateLimiterBuilder::withExecutionContextProvider()`, optional `RedisFullCapabilityStore` constructor parameter | none | optional, additive; one **domain** per resource, bound at construction and immutable | [APPROVAL M2]; needed only by a non-Fiber scheduler that wants identity; the only break is a Host that mixes provider instances, or default and custom, over one shared resource, which is refused at binding with a configuration error |
@@ -522,6 +535,11 @@ Every test runs on actual PHP_INT_SIZE 8 and 4 in Docker with an isolated Redis;
 | CE-23 | a context key reused while an old owner exists (contract violation of the provider), and a key reused after the old context ended | the violating case is documented as a Host obligation and characterized, the lawful case passes; an owner whose weak context expired refuses every caller |
 | CE-24 | retained references: a token and a slot record hold no strong reference to their resources, to an object context or to the provider; a destroyed suspended Fiber unwinds and clears its slots; resources and graphs discarded in a loop are collected | asserted by collection and release checks, not by a claim about memory |
 | CE-25 | the operational readers' inventory | their resource set is the rate-limit store and the circuit-breaker store; no reader clock rule changes |
+| CE-26 | the phase-0 refusal traced with names (the CE-7 trace of 3.3): A owns R2, B reserves R1 then meets R2 | exactly `clear(R1, rB1)` runs; R2's record and A's token are untouched; no integrity error; R1 acquirable by a third call |
+| CE-27 | lookup cleanup order and token-awareness: a provider that throws, and a lookup that outlives its owner (admission ticket on a record that was cleared and replaced) | lookup markers end before reservations are cleared; a marker or ticket never affects another token's record or a reused slot; the busy refusal, the configuration/integrity failure and the provider failure stay distinct exception outcomes |
+| CE-28 | partially bound construction: R1 unbound, R2 bound to P; a graph in domain Q fails; then a graph in domain P over R1; also a build that fails after `bindAll` | step 1 changes nothing on failure, R1 stays unbound and the P graph binds; a later failure rolls back exactly the ledger of newly bound resources; existing bindings unchanged |
+| CE-29 | standalone provider lifetime: a provider passed inline to the store constructor; the store alive after the caller's variable is gone; a resource bound through a graph's provider after every such graph was destroyed | the store keeps its provider and works; the second case fails fast on a direct call (never the default domain) and may be rebound only by a new `bindAll`; the registry holds the provider only weakly |
+| CE-30 | constructor surface | only `RedisFullCapabilityStore` gains the optional parameter; the other classes' constructors are unchanged; an entry over resources of two domains fails fast; an entry over a provider-bound store inherits its domain |
 | CE-17 | regression: #258 (`AdmissionOutcomeDuringRecovery…`, `RequestAtomicityBoundaries…`), #259 (`LocalFallbackRecoveryAccounting…`), the retry and lost-reply contracts of DEC-037, and the separate-graph Redis conflict control | unchanged results |
 
 The existing characterization tests, logs and preservation controls of #266 stay as the historical before-state.
@@ -537,13 +555,13 @@ The existing characterization tests, logs and preservation controls of #266 stay
 - D1 Enforcement: per-resource ownership acquired at every public entry, plus admission of every direct backend operation; one primary behaviour for stores without cooperation (they are protected at graph entries).
 - D2 `consume()` and the simple runtime enter the same ownership (they share the store and the clock object); this is a design classification from the code path, not a demonstrated failure.
 - D3 Operational readers are refused under overlap (consistent; monitoring that must run during traffic uses its own graph, store object and connection).
-- D4 Capability and constructor paths: no new Host interface, no constructor change; classes built directly are protected from their collaborators.
+- D4 Capability and constructor paths: no new Host interface; **no constructor signature changes except one additive optional trailing parameter on `RedisFullCapabilityStore` (`?ExecutionContextProviderInterface $executionContext = null`, M2)**. The Builder, `RateLimiterEngine`, `FixedWindowSimpleRateLimiter`, `CompositeRateLimiterRuntime` and the readers keep their constructors: entry classes compute their resource set from their collaborators and read their context domain from the domain recorded on those resources (3.4 A), and classes built directly are protected like Builder-built ones. The additive public surface is therefore exactly: `OverlappingRequestException`, `ExecutionContextProviderInterface`, `RateLimiterBuilder::withExecutionContextProvider()` and that one store constructor parameter.
 - D5 Claims and PING are admitted, not exempt.
 
 **Material approval items (separate, none approved):**
 
 - **M1** the mechanism of section 3 (resource-set ownership, identity plus crossing markers, **two-phase all-or-none acquisition with a provider-free reservation**, the lookup marker).
-- **M2** the optional public provider contract **as completed in 3.4**: `ExecutionContextProviderInterface` with its duties (synchronous, no re-entry, no yielding, no throwing, stable and unique keys, `===` equality inside one domain), `RateLimiterBuilder::withExecutionContextProvider()`, the optional `RedisFullCapabilityStore` constructor parameter, the one-domain-per-resource binding at construction (immutable, fail-fast on a mismatch, one shared instance per scheduler), the classified failure of a throwing provider, and the retention rules (by value for scalars, weak for objects, weak provider reference).
+- **M2** the optional public provider contract **as completed in 3.4**: `ExecutionContextProviderInterface` with its duties (synchronous, no re-entry, no yielding, no throwing, stable and unique keys, `===` equality inside one domain), `RateLimiterBuilder::withExecutionContextProvider()`, the optional `RedisFullCapabilityStore` constructor parameter, the one-domain-per-resource binding at construction (set-wide, failure-atomic with a ledger and rollback; immutable while its provider lives; fail-fast on a mismatch; one shared instance per scheduler), the provider lifetime rule (the store and the entry classes retain it, the registry only weakly) and the fail-fast of a direct call on a vacated binding, the classified failure of a throwing provider, and the retention rules (by value for scalars, weak for objects, weak provider reference).
 - **M3** the new public `OverlappingRequestException`, its place under `RateLimiterException`, and its use by every guarded entry.
 - **M4** the changed wording of the `RequestAtomicStoreInterface` nested-call guarantee and the matching DEC-037 item 7 sentence.
 - **M5** that every public entry refuses when **any** resource of its set is owned, whoever the owner is.
