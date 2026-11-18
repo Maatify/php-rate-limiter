@@ -284,3 +284,63 @@ Against `02d51f24` (the cost of this correction alone):
 | 64 | ping | candidate | 53.33 (31.96–53.54) | 219.21 (96.33–303.21) |
 
 Reading: this correction adds a pass-through wrapper only to raw clocks in hand-assembled graphs and a counter to the binding; the Builder paths are unchanged. Against `02d51f24` the p50 of every measured path differs by no more than noise on both widths (64-bit direct 82→82.17 µs, nested 299.13→296.63, limit 948.79→948.21). Against `main` the 64-bit p50 is 5 to 8 percent higher on the affected paths (direct 75→80.71, nested 286.25→298.5, limit 912.33→955.63) and the emulated 32-bit p50 is about 20 to 55 percent higher (direct 149.96→230.71, limit 2206.25→2726.21, nested 642.08→785.08): those are measured costs of the guard as a whole, reported as such, and the p99 differences are not attributed to it (the `ping` control is untouched code and its p99 moves in both directions between runs). The numbers are measurements, not a verdict.
+
+## Third review of the correction `f0f9db3a` (F266-17): evidence on the corrected source
+
+Corrected source `fc9bd785bc1b7b7c1d811612115d68d042a1c7f9` (tree `c980689181c7b87e72aa8db306532564dc3e4e29`); reviewed head `f0f9db3ad8ab5e7d5e6ead87e606eca3ddf813b5`; baseline `main@316b1de99e784fec95b40f849d83a04dec772e2b`. Later commits change only investigation files and the definitions of three mutants (below). Raw outputs: `raw-final4/`, `raw-mutants-final4/`, `raw-mutants-final4-rerun/`, `raw-bench-final4/`, `raw-bench-vs-reviewed-final4/`. Earlier sections stay as the history of their own heads. Docker, isolated Redis 7.0.15, PHP 8.4.27, actual PHP_INT_SIZE 8 and 4 (32-bit emulated).
+
+Design of the fix (M2): a binding is a generation of its own (holders, and the state it replaced). A `bindAll` takes a hold on the generation it records or relies on; a rollback releases only its own holds and undoes a generation back to the state it replaced only when nobody stands on it, the call that recorded it has rolled back, and no call is active on the resource; an active call keeps its domain until its last release, when the overdue rollback happens. An entry class that Host code builds from inside a build (a Builder graph, or a class built by hand) stands on the binding it adopts (`hostRegion` marks the policy getters and the admission-runtime construction that run during a build); an entry adopting inside its own build does not. A replacement of a vacated binding is decided by its own holders, so a holder of the earlier generation never keeps the replacement. The binding lifetime is not stricter than M2: a live binding and its provider references are unchanged, a vacated binding is replaceable under the approved conditions. No public method, interface or constructor parameter was added.
+
+| Run | Result |
+|---|---|
+| New tests (52 in `OwnershipCrossingsRedisTest` and `OwnershipRegistryTest`) on the **reviewed source `f0f9db3a`**, 64 and 32 | 9 red on both widths: the entry built by hand (case 1), the failed replacement of a vacated binding (case 2) and the active direct call during rollback (case 3), each for `build()` and `buildOperationalReader()`, and three registry units (adoption inside a Host region, holders of a replaced binding, delayed rollback) |
+| The same tests on the corrected head | pass on both widths; the kept controls (Builder-built B, ordinary failed build, CE-29, CE-31, CE-32) pass |
+| Candidate full suite 64 | 2888 tests (100 errors, 4 failures, 14 skipped): ReleaseVerification classes only |
+| Candidate full suite 32 | 2883 tests (105 errors, 5 failures, 65 skipped): ReleaseVerification classes and the year-2999 fixture (#267) as before, **plus two classes that timed out in this run**: `AdmissionStoreNm7RedisTest` (64-process race workers "not ready within 90 s" under the emulated 32-bit image) and `BlockNoDowngradeRedisTest`. Both passed when re-run alone on 32-bit (`rerun-32-race-classes.log`: 18 tests OK, 30641 assertions). They did not fail in the earlier full runs of this series and do not touch the changed code; I record the failure of this run as it happened and the isolated pass as a separate fact, and do not call the full 32-bit run clean |
+| `--group php32`, 32 / 64 | 892 tests OK (64 skipped) / 893 tests OK (13 skipped) |
+| Mutants | M01–M28 detected on both widths in the full run; M06, M23 and M29 were re-defined after it because the code they target changed (M06 and M23 anchors followed the new `clear()`/rollback text; the former M29 turned out to be an equivalent mutant: a stale generation pointer after an undo is unobservable, because a replacement only ever happens over an unbound or vacated state) and were re-run alone: M06, M23, M29 detected on both widths. M26–M29 are the controls of this correction |
+| Runner (provenance, governance helper, clean clone, php64/php32 suites) | all steps exit 0 |
+
+### Cost (committed source, alternating, 5 rounds of 3000 iterations after 300 warm-up; no threshold). The path measured changed: `clear()` now settles an abandoned binding at every release
+
+Against `f0f9db3a` (the cost of this correction alone):
+
+| width | workload | tree | p50 µs median (min–max) | p99 µs median (min–max) |
+| 32 | direct | baseline | 227.92 (225.17–230.38) | 427.63 (317.54–565.04) |
+| 32 | direct | candidate | 233 (228.79–234.83) | 459.42 (424.29–727.75) |
+| 32 | limit | baseline | 2660.96 (2649–2665.54) | 12944.08 (12651.54–13609.17) |
+| 32 | limit | candidate | 2662.42 (2653.46–2677.38) | 12554.75 (12532.83–13443.04) |
+| 32 | nested | baseline | 761.63 (760.08–766.08) | 1529.33 (1346.54–1700.63) |
+| 32 | nested | candidate | 768.67 (761.63–773.79) | 1547.13 (1340.08–1568.13) |
+| 32 | ping | baseline | 76.54 (75.38–78.29) | 177.38 (131.13–283.71) |
+| 32 | ping | candidate | 76.79 (75.17–79.08) | 210.67 (119.25–244.25) |
+| 64 | direct | baseline | 81.58 (81–86.63) | 343.29 (129.71–387.63) |
+| 64 | direct | candidate | 81.5 (81.04–86.79) | 249.46 (122.92–442.13) |
+| 64 | limit | baseline | 939.08 (937.17–945.92) | 4539.04 (4527.54–4938.33) |
+| 64 | limit | candidate | 937.21 (936.5–979.92) | 4545.29 (4498.25–5111) |
+| 64 | nested | baseline | 295.88 (294.67–298.67) | 541.63 (521.54–611.5) |
+| 64 | nested | candidate | 295.04 (289.13–299.96) | 539.04 (492.38–897.21) |
+| 64 | ping | baseline | 53.13 (52.21–53.54) | 273.67 (179.96–718.29) |
+| 64 | ping | candidate | 52.5 (51.88–52.88) | 173.63 (82.21–253.38) |
+
+Against `main@316b1de9`:
+
+| width | workload | tree | p50 µs median (min–max) | p99 µs median (min–max) |
+| 32 | direct | baseline | 148.96 (145.83–160.58) | 306 (211.58–496.25) |
+| 32 | direct | candidate | 232.63 (226.88–237.92) | 397.67 (310.88–597.13) |
+| 32 | limit | baseline | 2206.38 (2159.54–2246.13) | 11921.83 (11641.79–13743.75) |
+| 32 | limit | candidate | 2691.5 (2688.04–2718.21) | 14213.13 (12764.92–14339.25) |
+| 32 | nested | baseline | 625.04 (619.33–640.5) | 1324.42 (1083.08–1427.25) |
+| 32 | nested | candidate | 777.54 (766.42–818.42) | 1827.38 (1608.21–1938.92) |
+| 32 | ping | baseline | 75.08 (74.54–79.25) | 128.38 (104.96–343.96) |
+| 32 | ping | candidate | 75.54 (74.63–75.75) | 117.5 (104.25–213.96) |
+| 64 | direct | baseline | 76.75 (71.79–77.92) | 300.54 (125.54–453.54) |
+| 64 | direct | candidate | 83.83 (82.04–84.38) | 209.63 (159.42–411.17) |
+| 64 | limit | baseline | 911.54 (905.17–918.46) | 4493.96 (4391.17–4640.08) |
+| 64 | limit | candidate | 949.21 (941.54–979.63) | 4918 (4509.5–5186.17) |
+| 64 | nested | baseline | 291.38 (282–312.04) | 560.92 (434.08–850.29) |
+| 64 | nested | candidate | 298.29 (289.79–346.92) | 754.33 (532.79–1086.29) |
+| 64 | ping | baseline | 53.33 (52.71–54.33) | 243.67 (86.38–428.25) |
+| 64 | ping | candidate | 53.33 (17.33–53.63) | 245.13 (108.17–465.08) |
+
+Reading: against `f0f9db3a` the p50 of every measured path differs by noise on both widths (64-bit direct 81.58→81.5 µs, nested 295.88→295.04, limit 939.08→937.21; emulated 32-bit direct 227.92→233). Against `main` the 64-bit p50 is about 4 to 9 percent higher on the affected paths and the emulated 32-bit p50 about 22 to 56 percent higher: the measured cost of the guard as a whole. The `ping` control is untouched code and its p99 moves in both directions between trees and runs (64-bit 273.67→173.63 µs here), so p99 differences are not attributed to the guard. The numbers are measurements, not a verdict.
