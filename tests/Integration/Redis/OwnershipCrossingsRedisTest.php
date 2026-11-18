@@ -12,6 +12,7 @@ use Maatify\RateLimiter\Config\LoginProtectionPolicy;
 use Maatify\RateLimiter\Config\RateLimiterConfig;
 use Maatify\RateLimiter\DTO\DeviceIdentityDTO;
 use Maatify\RateLimiter\DTO\RateLimitContextDTO;
+use Maatify\RateLimiter\DTO\PolicyThresholdsDTO;
 use Maatify\RateLimiter\DTO\ScoreDeltasDTO;
 use Maatify\RateLimiter\Exception\RateLimiterException;
 use Maatify\RateLimiter\Repository\Redis\CallableRedisCommandExecutor;
@@ -153,6 +154,33 @@ final class OwnershipCrossingsRedisTest extends TestCase
         $probe->armed = false;
         $runtime->limit($context, RateLimitCommand::checkOnly('login_protection'));
         self::assertGreaterThan(0, count($this->commands), 'the runtime serves the next call');
+    }
+
+    public function testAScorePolicyThresholdGetterReadByThePipelineCannotReenterTheStore(): void
+    {
+        $probe = new CrossingProbe();
+        $policy = new class ($probe) extends LoginProtectionPolicy {
+            public function __construct(private readonly CrossingProbe $probe) {}
+
+            public function getScoreThresholds(): PolicyThresholdsDTO
+            {
+                $this->probe->fire();
+
+                return parent::getScoreThresholds();
+            }
+        };
+        $store = $this->store();
+        $probe->store = $store;
+        $runtime = $this->builder($store)->withPolicy($policy)->build();
+        $context = new RateLimitContextDTO(ip: '198.51.100.7', ua: 'crossing-260', accountId: 'acct-a');
+
+        $runtime->limit($context, RateLimitCommand::checkOnly('login_protection'));
+        $this->commands = [];
+
+        $probe->armed = true;
+        self::assertSame(self::REFUSAL, $this->refusalOf(fn() => $runtime->limit($context, RateLimitCommand::recordFailure('login_protection'))));
+        self::assertSame(0, $this->pings(), 'the pipeline getter never reached the executor through the library');
+        self::assertFalse(OwnershipRegistry::isOccupied($store));
     }
 
     // ---- F266-11: the store's own clock is read under its guard -------------------------------------------------------------------------
