@@ -427,7 +427,7 @@ sequenceDiagram
     O-->>P: slots Reserved / under lookup: OverlappingRequestException (the provider is NOT called again)
     P-->>A: provider returns or throws
     alt the provider threw
-        A->>O: release(token, set): own reservations only
+        A->>O: the lookup's markers end first, then clear(r, record) for exactly the reservations this call took
         A-->>A: RateLimiterException('The execution context provider failed.', previous)
     else the provider returned a key
         A->>O: token.state = Owned, context retained (weakly for objects)
