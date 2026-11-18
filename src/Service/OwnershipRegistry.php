@@ -49,13 +49,16 @@ final class OwnershipRegistry
     }
 
     /**
-     * Deduplicated resources: stores and the other objects of a graph; a clock only when it is the request clock.
+     * Deduplicated resources: stores and the other objects of a graph, by object identity. A clock is a resource only when it is the
+     * request clock (a package class that reports itself); a raw Host clock holds no per-call state and is left out by its ROLE (the
+     * `$clocks` argument), never by its type: an object passed as a store stays protected even if it also implements the clock interface.
      *
-     * @param array<int, object|null> $objects collaborators: expanded through their own `ownedResources()` when they have one
+     * @param array<int, object|null> $objects collaborators and stores: a package class is expanded through its own `ownedResources()`, any other object is a resource by identity
      * @param array<int, object> $selves the caller's own objects, taken as they are (never expanded, so a class cannot recurse into itself)
+     * @param array<int, object|null> $clocks the clock collaborators: expanded when package-owned, otherwise not a resource
      * @return list<object>
      */
-    public static function collect(array $objects, array $selves = []): array
+    public static function collect(array $objects, array $selves = [], array $clocks = []): array
     {
         $unique = [];
         foreach ($selves as $self) {
@@ -73,10 +76,17 @@ final class OwnershipRegistry
                 }
                 continue;
             }
-            if ($object instanceof \Maatify\SharedCommon\Contracts\ClockInterface) {
-                continue; // a raw Host clock holds no per-call state; the request clock reports itself through ownedResources()
-            }
             $unique[spl_object_id($object)] = $object;
+        }
+        foreach ($clocks as $clock) {
+            if ($clock === null || ! self::isPackageOwned($clock)) {
+                continue; // a raw Host clock is not a resource of the call
+            }
+            /** @var OwnedResources $owned */
+            $owned = $clock;
+            foreach ($owned->ownedResources() as $resource) {
+                $unique[spl_object_id($resource)] = $resource;
+            }
         }
 
         return array_values($unique);

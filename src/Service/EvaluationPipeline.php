@@ -3331,7 +3331,7 @@ class EvaluationPipeline
     /** @return list<object> */
     public function ownedResources(): array
     {
-        return OwnershipRegistry::collect([$this->store, $this->correlationStore, $this->budgetTracker, $this->antiEquilibriumGate, $this->decayCalculator, $this->ephemeralBucket, $this->clock]);
+        return OwnershipRegistry::collect([$this->store, $this->correlationStore, $this->budgetTracker, $this->antiEquilibriumGate, $this->decayCalculator, $this->ephemeralBucket], [], [$this->clock]);
     }
 
     /**

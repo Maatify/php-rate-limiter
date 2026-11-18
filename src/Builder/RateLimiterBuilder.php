@@ -257,7 +257,7 @@ final class RateLimiterBuilder
         );
         // DEC-041: the whole resource set of the graph is bound to one context domain, or the build fails without binding anything.
         $binding = OwnershipRegistry::bindGraph(
-            OwnershipRegistry::collect([$this->rateLimitStore, $this->correlationStore, $this->circuitBreakerStore, $clock, $circuitBreaker]),
+            OwnershipRegistry::collect([$this->rateLimitStore, $this->correlationStore, $this->circuitBreakerStore, $circuitBreaker], [], [$clock]),
             $this->contextProvider,
         );
 

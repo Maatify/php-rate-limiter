@@ -77,7 +77,7 @@ final class SimpleRateLimitOperationalReader implements SimpleRateLimitOperation
             $indexed[$policy->getName()] = $policy;
         }
         $this->policies = $indexed;
-        $this->resources = OwnershipRegistry::collect([$this->store, $this->clock]);
+        $this->resources = OwnershipRegistry::collect([$this->store], [], [$this->clock]);
         $this->domain = OwnershipRegistry::adopt($this->resources);
     }
 

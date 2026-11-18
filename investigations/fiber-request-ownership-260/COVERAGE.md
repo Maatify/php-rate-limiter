@@ -45,7 +45,7 @@ Declared gaps (not covered, by design or by limit): decorated aliasing is unsupp
 
 ## Review corrections of `c9eb4dd5` (F266-10..14)
 
-Test file `tests/Integration/Redis/OwnershipCrossingsRedisTest.php` (8 tests) and two tests in `OwnershipRegistryTest`. Each fails on the reviewed source `c9eb4dd5` on both widths and passes on the corrected head (see `RESULTS.md`).
+Test files `tests/Integration/Redis/OwnershipCrossingsRedisTest.php` (8 tests), `tests/Unit/Service/HostStoreOwnershipTest.php` (4) and three tests in `OwnershipRegistryTest`. Each fails on the reviewed source `c9eb4dd5` on both widths and passes on the corrected head (see `RESULTS.md`).
 
 | Finding | Test |
 |---|---|
@@ -53,6 +53,6 @@ Test file `tests/Integration/Redis/OwnershipCrossingsRedisTest.php` (8 tests) an
 | F266-11 store clock before the guard | `testAnIncrementOverAnOwnedStoreIsRefusedBeforeItsClockIsRead` (0 clock reads on refusal), `testACallIsRefusedWhileAnotherIsSuspendedInsideTheStoresOwnClock`, `testTheStoreClockOfTheSecondsAndOfTheMillisecondsPaths…` (re-entry from the same context; both paths; the clock authority is unchanged). `save()` is guarded as a whole structurally; its pre-guard read of the held state is not separately observable as a wrong answer, so it has no red test of its own |
 | F266-12 readers' clock and resolver | `testTheSimpleReaderClockCannotReenterTheStore…` (control: an ordinary read stays read-only), `testTheScoreReaderDeviceResolverCannotReenterTheStore` |
 | F266-13 reader build leaves a binding | `testAFailedReaderBuildBindsNothingAndAnExistingBindingIsKept` (the pre-existing binding is kept; a later build in another domain succeeds) |
-| F266-14 method-name inventory | `OwnershipRegistryTest::testAHostObjectWithAMethodNamedOwnedResources…`, `testASharedHostStoreWithAnOwnedResourcesMethodStillRefusesTheSecondCall`, `testAPackageClassIsStillExpanded…` |
+| F266-14 method-name inventory | `OwnershipRegistryTest::testAHostObjectWithAMethodNamedOwnedResources…`, `testASharedHostStoreWithAnOwnedResourcesMethodStillRefusesTheSecondCall`, `testAPackageClassIsStillExpanded…`; through the public entry, `HostStoreOwnershipTest` (two `FixedWindowSimpleRateLimiter` instances over a Host store that implements only `RateLimitStoreInterface`, with an `ownedResources()` method: the second call is refused before the store is touched and the Host method is never called; the first completes; the next call after the release runs; a second row for a Host store that is also a clock) and `testTheInventoryKeepsTheStoreWhateverInterfacesItImplements` (the raw clock is excluded by role, never by type) |
 
-Mutants M13–M21 (`mutants.sh`) detect each of these corrections when it is removed.
+Mutants M13–M22 (`mutants.sh`) detect each of these corrections when it is removed.

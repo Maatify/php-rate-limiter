@@ -558,7 +558,7 @@ class CircuitBreaker implements OwnedResources
     /** @return list<object> */
     public function ownedResources(): array
     {
-        return OwnershipRegistry::collect([$this->store, $this->clock], [$this]);
+        return OwnershipRegistry::collect([$this->store], [$this], [$this->clock]);
     }
 
     private function closedState(): CircuitBreakerStateDTO

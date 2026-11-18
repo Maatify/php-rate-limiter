@@ -122,6 +122,6 @@ class DecayCalculator implements OwnedResources
     /** @return list<object> */
     public function ownedResources(): array
     {
-        return OwnershipRegistry::collect([$this->clock]);
+        return OwnershipRegistry::collect([], [], [$this->clock]);
     }
 }

@@ -9,7 +9,7 @@ root=$(pwd)
 out=${1:-"$root/investigations/fiber-request-ownership-260/raw-mutants"}
 mkdir -p "$out"
 : > "$out/result.tsv"
-tests=(tests/Integration/Redis/FiberRequestOwnershipRedisTest.php tests/Integration/Redis/OwnershipCrossingsRedisTest.php tests/Unit/Service/OwnershipRegistryTest.php)
+tests=(tests/Integration/Redis/FiberRequestOwnershipRedisTest.php tests/Integration/Redis/OwnershipCrossingsRedisTest.php tests/Unit/Service/OwnershipRegistryTest.php tests/Unit/Service/HostStoreOwnershipTest.php)
 failed=0
 if [ -n "$(git status --porcelain -- src tests)" ]; then echo "working tree not clean in src/tests" > "$out/refused.txt"; exit 1; fi
 suite() { # width, logfile
@@ -145,6 +145,14 @@ run_mutant M19 "the score reader's device resolver is not a crossing (F266-12)" 
 run_mutant M20 "a failed reader build keeps the binding it made (F266-13)" src/Builder/RateLimiterBuilder.php '            // A reader build that fails after its stores were bound leaves no binding of its own behind (a binding that existed stays).
             OwnershipRegistry::rollback($binding);' '            // mutant: no rollback'
 run_mutant M21 "the inventory trusts a method name of any object (F266-14)" $S/OwnershipRegistry.php '        return in_array((new \ReflectionMethod($object, '"'"'ownedResources'"'"'))->getDeclaringClass()->getName(), self::PACKAGE_OWNED, true);' '        return true;'
+run_mutant M22 "the inventory leaves out any object that implements the clock interface, by type (F266-14 follow-up)" $S/OwnershipRegistry.php '            $unique[spl_object_id($object)] = $object;
+        }
+        foreach ($clocks as $clock) {' '            if ($object instanceof \Maatify\SharedCommon\Contracts\ClockInterface) {
+                continue;
+            }
+            $unique[spl_object_id($object)] = $object;
+        }
+        foreach ($clocks as $clock) {'
 cat "$out/result.tsv"
 git status --short -- src tests | grep -v '^??' && failed=1
 exit "$failed"

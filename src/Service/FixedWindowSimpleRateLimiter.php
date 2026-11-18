@@ -83,7 +83,7 @@ final class FixedWindowSimpleRateLimiter implements SimpleRateLimiterInterface
             $indexed[$policy->getName()] = $policy;
         }
         $this->policies = $indexed;
-        $this->resources = OwnershipRegistry::collect([$this->store, $this->clock]);
+        $this->resources = OwnershipRegistry::collect([$this->store], [], [$this->clock]);
         $this->domain = OwnershipRegistry::adopt($this->resources);
     }
 

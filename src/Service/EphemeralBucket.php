@@ -142,6 +142,6 @@ class EphemeralBucket implements OwnedResources
     /** @return list<object> */
     public function ownedResources(): array
     {
-        return OwnershipRegistry::collect([$this->store, $this->clock]);
+        return OwnershipRegistry::collect([$this->store], [], [$this->clock]);
     }
 }

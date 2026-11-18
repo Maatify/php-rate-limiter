@@ -561,7 +561,7 @@ final class OwnershipRegistryTest extends TestCase
         $inner = new \Maatify\RateLimiter\Service\RequestScopedClock(new \Maatify\RateLimiter\Tests\Support\Clock\FixedClock('@1000000'));
         $rawClock = new \Maatify\RateLimiter\Tests\Support\Clock\FixedClock('@1000000');
 
-        self::assertSame([$inner], OwnershipRegistry::collect([$inner, $rawClock]));
+        self::assertSame([$inner], OwnershipRegistry::collect([], [], [$inner, $rawClock]));
     }
 
     public function testASharedHostStoreWithAnOwnedResourcesMethodStillRefusesTheSecondCall(): void

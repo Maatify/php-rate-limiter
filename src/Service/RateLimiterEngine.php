@@ -79,7 +79,7 @@ class RateLimiterEngine implements RateLimiterRuntimeInterface, AdmissionBinding
         foreach ($policies as $policy) {
             $this->registerPolicy($policy);
         }
-        $this->resources = OwnershipRegistry::collect([$this->pipeline, $this->circuitBreaker, $this->clock, $this->admission], [$this]);
+        $this->resources = OwnershipRegistry::collect([$this->pipeline, $this->circuitBreaker, $this->admission], [$this], [$this->clock]);
         $this->domain = OwnershipRegistry::adopt($this->resources);
     }
 

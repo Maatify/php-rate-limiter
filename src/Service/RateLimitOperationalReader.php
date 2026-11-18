@@ -78,7 +78,7 @@ final class RateLimitOperationalReader implements RateLimitOperationalReaderInte
         if ($previousKeySecret !== null && trim($previousKeySecret) === '') {
             throw new RateLimiterException('Previous key secret must not be empty or whitespace-only.');
         }
-        $this->resources = OwnershipRegistry::collect([$this->store, $this->circuitBreakerStore, $this->clock]);
+        $this->resources = OwnershipRegistry::collect([$this->store, $this->circuitBreakerStore], [], [$this->clock]);
         $this->domain = OwnershipRegistry::adopt($this->resources);
     }
 
