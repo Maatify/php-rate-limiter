@@ -205,8 +205,12 @@ final class OwnershipRegistry
         $ledger->entries = [];
     }
 
-    /** Undoes the binding of a resource when it was abandoned (nobody stands on it) and no call is active on the resource. */
-    private static function settle(object $resource): void
+    /**
+     * Undoes the binding of a resource when it was abandoned (nobody stands on it) and no call is active on the resource.
+     *
+     * @internal called by the registry and by the holds that release themselves
+     */
+    public static function settle(object $resource): void
     {
         $slot = self::slot($resource);
         $generation = $slot->generation;
@@ -219,14 +223,14 @@ final class OwnershipRegistry
         $slot->generation = null; // the state restored is unbound or vacated: nothing stands on it and nothing is kept of the undone binding
     }
 
-    /** @var \WeakMap<object, list<array{object, BindingGeneration}>>|null the bindings each entry class stands on, by the entry object */
+    /** @var \WeakMap<object, list<AdoptionHold>>|null the bindings each entry class stands on, by the entry object; a hold names its resource weakly and releases itself with its entry */
     private static ?\WeakMap $adoptions = null;
 
-    /** @return \WeakMap<object, list<array{object, BindingGeneration}>> */
+    /** @return \WeakMap<object, list<AdoptionHold>> */
     private static function adoptions(): \WeakMap
     {
         if (self::$adoptions === null) {
-            /** @var \WeakMap<object, list<array{object, BindingGeneration}>> $created */
+            /** @var \WeakMap<object, list<AdoptionHold>> $created */
             $created = new \WeakMap();
             self::$adoptions = $created;
         }
@@ -262,7 +266,7 @@ final class OwnershipRegistry
         $held = [];
         foreach ($ledger->entries as [$resource, $generation, $created]) {
             if (! $created) {
-                $held[] = [$resource, $generation];
+                $held[] = new AdoptionHold(\WeakReference::create($resource), $generation);
             }
         }
         if ($held !== []) {
@@ -283,11 +287,10 @@ final class OwnershipRegistry
         if ($held === null) {
             return;
         }
-        unset($map[$entry]);
-        foreach ($held as [$resource, $generation]) {
-            $generation->holders = max(0, $generation->holders - 1);
-            self::settle($resource);
+        foreach ($held as $hold) {
+            $hold->release();
         }
+        unset($map[$entry]);
     }
 
     /**

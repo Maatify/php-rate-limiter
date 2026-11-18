@@ -18,4 +18,6 @@ final class BuiltDuringBuild
 
     /** @var \Fiber<mixed, mixed, mixed, mixed>|null */
     public ?\Fiber $fiber = null;
+
+    public function noop(): void {}
 }

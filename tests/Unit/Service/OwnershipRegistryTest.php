@@ -783,4 +783,29 @@ final class OwnershipRegistryTest extends TestCase
 
         self::assertSame(['adoptions', 'slots'], $static);
     }
+
+    public function testAnEntryThatDiedReleasesItsHoldAndTheRegistryNamesItsResourceOnlyWeakly(): void
+    {
+        $p = $this->provider(static fn() => 1);
+        $resource = new \stdClass();
+        $ledger = OwnershipRegistry::bindAll([$resource], $p);
+        (static function () use ($resource): void {
+            OwnershipRegistry::adopt([$resource], new \stdClass()); // an entry that is dropped at once
+        })();
+        OwnershipRegistry::rollback($ledger);
+        self::assertSame('unbound', OwnershipRegistry::domainKind($resource), 'the entry that died stands on nothing');
+
+        // The registry does not keep a resource alive through the entry that adopted it.
+        $weak = null;
+        $entry = new \stdClass();
+        (static function () use (&$weak, $entry, $p): void {
+            $store = new \stdClass();
+            $weak = \WeakReference::create($store);
+            OwnershipRegistry::bindAll([$store], $p);
+            OwnershipRegistry::adopt([$store], $entry);
+        })();
+        gc_collect_cycles();
+        self::assertInstanceOf(\WeakReference::class, $weak);
+        self::assertNull($weak->get(), 'the store was collected although the entry that adopted it is still alive');
+    }
 }

@@ -142,8 +142,20 @@ run_mutant M16 "increment() reads the store clock before its guard (F266-11)" $R
 run_mutant M17 "the store's own clock is not a Host crossing (F266-11)" $R 'return OwnershipRegistry::crossing($this, fn(): int => $this->fallbackClock->now()->getTimestamp());' 'return $this->fallbackClock->now()->getTimestamp();'
 run_mutant M18 "the simple reader's Host clock is not a crossing (F266-12)" $S/SimpleRateLimitOperationalReader.php 'return OwnershipRegistry::crossing($this->store, fn(): \DateTimeImmutable => $this->clock->now());' 'return $this->clock->now();'
 run_mutant M19 "the score reader's device resolver is not a crossing (F266-12)" $S/RateLimitOperationalReader.php '$device = OwnershipRegistry::crossing($this->store, fn() => $this->deviceResolver->resolve($context));' '$device = $this->deviceResolver->resolve($context);'
-run_mutant M20 "a failed reader build keeps the binding it made (F266-13)" src/Builder/RateLimiterBuilder.php '            // A reader build that fails after its stores were bound leaves no binding of its own behind (a binding that existed stays).
-            OwnershipRegistry::rollback($binding);' '            // mutant: no rollback'
+run_mutant M20 "a failed reader build keeps the binding it made (F266-13)" src/Builder/RateLimiterBuilder.php '            }
+            OwnershipRegistry::rollback($binding);
+            throw $failure;
+        }
+    }
+
+    /**
+     * @param list<object> $built' '            }
+            throw $failure;
+        }
+    }
+
+    /**
+     * @param list<object> $built'
 run_mutant M21 "the inventory trusts a method name of any object (F266-14)" $S/OwnershipRegistry.php '        return in_array((new \ReflectionMethod($object, '"'"'ownedResources'"'"'))->getDeclaringClass()->getName(), self::PACKAGE_OWNED, true);' '        return true;'
 run_mutant M22 "the inventory leaves out any object that implements the clock interface, by type (F266-14 follow-up)" $S/OwnershipRegistry.php '            $unique[spl_object_id($object)] = $object;
         }
@@ -187,6 +199,10 @@ run_mutant M33 "buildOperationalReader() does not release the holds of the reade
             foreach ($built as $entry) {
                 OwnershipRegistry::releaseAdoptions($entry);
             }' '            // mutant: no release'
+run_mutant M34 "an entry that died keeps its hold on the binding (review follow-up of F266-20)" $S/AdoptionHold.php '    public function __destruct()
+    {
+        $this->release();
+    }' '    public function __destruct() {}'
 cat "$out/result.tsv"
 git status --short -- src tests | grep -v '^??' && failed=1
 exit "$failed"

@@ -30,4 +30,13 @@ final class BindingProbe
 
         return $count;
     }
+
+    /** How many entry objects the registry currently records adoptions for (the weak map keyed by entry). */
+    public static function adoptionRecords(): int
+    {
+        $property = new \ReflectionProperty(OwnershipRegistry::class, 'adoptions');
+        $map = $property->getValue();
+
+        return $map instanceof \Countable ? count($map) : 0;
+    }
 }

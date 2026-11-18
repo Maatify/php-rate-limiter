@@ -1,0 +1,40 @@
+PHP 8.4.27 INT=8 redis=6.3.0
+PHPUnit 11.5.57 by Sebastian Bergmann and contributors.
+
+Runtime:       PHP 8.4.27
+Configuration: /app/phpunit.xml
+
+FF..                                                                4 / 4 (100%)
+
+Time: 00:00.080, Memory: 14.00 MB
+
+Ownership Crossings Redis (Maatify\RateLimiter\Tests\Integration\Redis\OwnershipCrossingsRedis)
+ ✔ A graph whose store callback points back to it is collected with its store provider and adoption records with data set "build()"
+ ✔ A graph whose store callback points back to it is collected with its store provider and adoption records with data set "buildOperationalReader()"
+ ✘ An entry built from a getter that died before the failure holds nothing any more with data set "build()"
+   │
+   │ nothing stands on the binding any more: the entry that did is gone
+   │ Failed asserting that two strings are identical.
+   │ --- Expected
+   │ +++ Actual
+   │ @@ @@
+   │ -'unbound'
+   │ +'provider'
+   │
+   │ /app/tests/Integration/Redis/OwnershipCrossingsRedisTest.php:692
+   │
+ ✘ An entry built from a getter that died before the failure holds nothing any more with data set "buildOperationalReader()"
+   │
+   │ nothing stands on the binding any more: the entry that did is gone
+   │ Failed asserting that two strings are identical.
+   │ --- Expected
+   │ +++ Actual
+   │ @@ @@
+   │ -'unbound'
+   │ +'provider'
+   │
+   │ /app/tests/Integration/Redis/OwnershipCrossingsRedisTest.php:692
+   │
+
+FAILURES!
+Tests: 4, Assertions: 12, Failures: 2.

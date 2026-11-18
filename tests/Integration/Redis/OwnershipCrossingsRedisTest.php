@@ -631,6 +631,71 @@ final class OwnershipCrossingsRedisTest extends TestCase
         self::assertLessThanOrEqual(1, BindingProbe::records($store), 'one record, the current binding, is reachable from the store');
     }
 
+    // ---- F266-20 follow-up: the lifetime of an adoption ----------------------------------------------------------------------------
+
+    #[DataProvider('buildPaths')]
+    public function testAGraphWhoseStoreCallbackPointsBackToItIsCollectedWithItsStoreProviderAndAdoptionRecords(bool $reader): void
+    {
+        $weak = [];
+        gc_collect_cycles(); // garbage of earlier tests must not be collected inside the measurement
+        $recordsBefore = BindingProbe::adoptionRecords();
+        (function () use (&$weak, $reader, $recordsBefore): void {
+            $holder = new BuiltDuringBuild();
+            $provider = new StubContextProvider(static fn() => 1);
+            // The callback that belongs to the store points back to the graph through the holder.
+            $store = $this->store(null, static function () use ($holder): void {
+                $holder->noop();
+            });
+            $builder = $this->builder($store)->withExecutionContextProvider($provider)->withSimpleThrottlePolicy(new FixedWindowThrottlePolicy('c', 5, 60));
+            if ($reader) {
+                $holder->reader = $builder->buildOperationalReader();
+                $holder->reader->readSimpleThrottle('c', 'first');
+                $weak['graph'] = \WeakReference::create($holder->reader);
+            } else {
+                $holder->runtime = $builder->build();
+                $holder->runtime->consume('c', 'first');
+                $weak['graph'] = \WeakReference::create($holder->runtime);
+            }
+            $weak['store'] = \WeakReference::create($store);
+            $weak['provider'] = \WeakReference::create($provider);
+            self::assertGreaterThan($recordsBefore, BindingProbe::adoptionRecords(), 'the graph recorded the adoptions of its entry classes');
+        })();
+        gc_collect_cycles();
+
+        foreach ($weak as $name => $reference) {
+            self::assertNull($reference->get(), "the $name was collected once the Host dropped its references");
+        }
+        self::assertSame($recordsBefore, BindingProbe::adoptionRecords(), 'the adoption records disappeared with their entry classes');
+    }
+
+    #[DataProvider('buildPaths')]
+    public function testAnEntryBuiltFromAGetterThatDiedBeforeTheFailureHoldsNothingAnyMore(bool $reader): void
+    {
+        $p = new StubContextProvider(static fn() => 1);
+        $q = new StubContextProvider(static fn() => 2); // alive at the Host
+        $store = $this->store();
+        $failing = new ReentrantSimplePolicy('broken', 0);
+        $failing->reenter = function () use ($store, $failing): void {
+            $failing->reenter = null;
+            // An entry class built by hand from the getter, used for nothing and dropped before the build fails.
+            (static function () use ($store): void {
+                new FixedWindowSimpleRateLimiter([new FixedWindowThrottlePolicy('b', 5, 60)], $store, new FixedClock('@1000000'), 'secret', 'prod');
+            })();
+        };
+
+        try {
+            $first = $this->builder($store)->withExecutionContextProvider($p)->withSimpleThrottlePolicy($failing);
+            $reader ? $first->buildOperationalReader() : $first->build();
+            self::fail('the first build must fail on the policy of limit 0');
+        } catch (RateLimiterException) {
+        }
+
+        self::assertSame('unbound', OwnershipRegistry::domainKind($store), 'nothing stands on the binding any more: the entry that did is gone');
+        $ok = $this->builder($store)->withExecutionContextProvider($q)->withSimpleThrottlePolicy(new FixedWindowThrottlePolicy('c', 5, 60));
+        $reader ? $ok->buildOperationalReader() : $ok->build();
+        self::assertSame('provider', OwnershipRegistry::domainKind($store), 'a sound build with another provider succeeds');
+    }
+
     // ---- F266-16: a hand-assembled engine over a raw Host clock -------------------------------------------------------------------------
 
     public function testAnEngineAssembledByHandCannotReenterTheStoreFromItsRawClock(): void
