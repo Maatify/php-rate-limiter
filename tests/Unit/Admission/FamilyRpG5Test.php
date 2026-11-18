@@ -111,7 +111,7 @@ final class FamilyRpG5Test extends TestCase
     {
         // Detector: without the known-device allowance STABLE reach on P is 128 / 83 / 76 (archived D-NOALW).
         $mutant = PipelineMutant::pipeline(exact: [[
-            '&& ($allowanceLimit = $policy->getKnownDeviceAccountAllowance()) !== null) {',
+            '&& ($allowanceLimit = $this->hostPolicy(fn() => $policy->getKnownDeviceAccountAllowance())) !== null) {',
             '&& ($allowanceLimit = null) !== null) {',
         ]]);
         $archive = FamilyFixtures::archive('g5v2_pipeline.G5V2-NOALW.jsonl');
@@ -146,7 +146,7 @@ final class FamilyRpG5Test extends TestCase
     {
         // Detector: without the K4 overflow of an exhausted allowance STABLE reach on P equals the no-allowance one.
         $mutant = PipelineMutant::pipeline(exact: [[
-            "                \$deltas['k4'] = \$policy->getScoreDeltas()->k4_failure;\n",
+            "                \$deltas['k4'] = \$this->hostPolicy(fn() => \$policy->getScoreDeltas())->k4_failure;\n",
             "",
         ]]);
         $archive = FamilyFixtures::archive('g5v2_pipeline.G5V2-NOOVF.jsonl');

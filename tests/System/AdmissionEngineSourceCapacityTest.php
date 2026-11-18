@@ -155,8 +155,8 @@ final class AdmissionEngineSourceCapacityTest extends TestCase
     public function testDetectorSc3AnEngineThatScoresTheRefusal(): void
     {
         $engine = ServiceMutant::load('RateLimiterEngine', [], [[
-            '            return $admission->reserve($policy->getName(), $group, $context, $device, $lane, $result);',
-            '            $reserved = $admission->reserve($policy->getName(), $group, $context, $device, $lane, $result);'
+            '            return $admission->reserve($this->hostPolicy(fn() => $policy->getName()), $group, $context, $device, $lane, $result);',
+            '            $reserved = $admission->reserve($this->hostPolicy(fn() => $policy->getName()), $group, $context, $device, $lane, $result);'
             . ' if ($reserved->decision !== RateLimitResultDTO::DECISION_ALLOW) { $this->pipeline->process($policy, $context, RateLimitCommand::recordFailure($policy->getName()), $device, $lane->lane); }'
             . ' return $reserved;',
         ]]);
