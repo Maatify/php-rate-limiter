@@ -9,7 +9,7 @@ root=$(pwd)
 out=${1:-"$root/investigations/fiber-request-ownership-260/raw-mutants"}
 mkdir -p "$out"
 : > "$out/result.tsv"
-tests=(tests/Integration/Redis/FiberRequestOwnershipRedisTest.php tests/Unit/Service/OwnershipRegistryTest.php)
+tests=(tests/Integration/Redis/FiberRequestOwnershipRedisTest.php tests/Integration/Redis/OwnershipCrossingsRedisTest.php tests/Unit/Service/OwnershipRegistryTest.php)
 failed=0
 if [ -n "$(git status --porcelain -- src tests)" ]; then echo "working tree not clean in src/tests" > "$out/refused.txt"; exit 1; fi
 suite() { # width, logfile
@@ -135,6 +135,16 @@ run_mutant M12 "the overlap refusal is retried like a conflict (transactRequest 
                 // DEC-041: an overlapping call is refused, never retried and never classified as a conflict over stale state.
                 throw $exception;
             } catch (\Throwable $exception) {' '            } catch (\Throwable $exception) {'
+run_mutant M13 "the simple limiter's policy getters are not Host crossings (F266-10)" $S/FixedWindowSimpleRateLimiter.php '        return OwnershipRegistry::crossing($this->store, $call);' '        return $call();'
+run_mutant M14 "the pipeline's policy getters are not Host crossings (F266-10)" $S/EvaluationPipeline.php '        return OwnershipRegistry::crossing($this->store, $call);' '        return $call();'
+run_mutant M15 "the engine's policy getters are not Host crossings (F266-10)" $S/RateLimiterEngine.php '        return OwnershipRegistry::crossing($this, $call);' '        return $call();'
+run_mutant M16 "increment() reads the store clock before its guard (F266-11)" $R "return \$this->guarded('increment', fn() => \$this->incrementAt(\$key, \$ttlSeconds, \$amount, \$this->fallbackNow()));" 'return $this->incrementAt($key, $ttlSeconds, $amount, $this->fallbackNow());'
+run_mutant M17 "the store's own clock is not a Host crossing (F266-11)" $R 'return OwnershipRegistry::crossing($this, fn(): int => $this->fallbackClock->now()->getTimestamp());' 'return $this->fallbackClock->now()->getTimestamp();'
+run_mutant M18 "the simple reader's Host clock is not a crossing (F266-12)" $S/SimpleRateLimitOperationalReader.php 'return OwnershipRegistry::crossing($this->store, fn(): \DateTimeImmutable => $this->clock->now());' 'return $this->clock->now();'
+run_mutant M19 "the score reader's device resolver is not a crossing (F266-12)" $S/RateLimitOperationalReader.php '$device = OwnershipRegistry::crossing($this->store, fn() => $this->deviceResolver->resolve($context));' '$device = $this->deviceResolver->resolve($context);'
+run_mutant M20 "a failed reader build keeps the binding it made (F266-13)" src/Builder/RateLimiterBuilder.php '            // A reader build that fails after its stores were bound leaves no binding of its own behind (a binding that existed stays).
+            OwnershipRegistry::rollback($binding);' '            // mutant: no rollback'
+run_mutant M21 "the inventory trusts a method name of any object (F266-14)" $S/OwnershipRegistry.php '        return in_array((new \ReflectionMethod($object, '"'"'ownedResources'"'"'))->getDeclaringClass()->getName(), self::PACKAGE_OWNED, true);' '        return true;'
 cat "$out/result.tsv"
 git status --short -- src tests | grep -v '^??' && failed=1
 exit "$failed"

@@ -525,4 +525,64 @@ final class OwnershipRegistryTest extends TestCase
 
         self::assertFalse(OwnershipRegistry::isOccupied($r), 'Destroying the suspended Fiber ran its finally and released the slots.');
     }
+
+    // ---- the inventory trusts package classes, never a method name (F266-14) -------------------------------------------------------
+
+    public function testAHostObjectWithAMethodNamedOwnedResourcesIsAResourceByIdentityAndItsCodeIsNeverCalled(): void
+    {
+        $host = new class {
+            public int $calls = 0;
+
+            /** @return list<object> */
+            public function ownedResources(): array
+            {
+                $this->calls++;
+
+                return [];
+            }
+        };
+
+        $collected = OwnershipRegistry::collect([$host]);
+
+        self::assertSame([$host], $collected, 'the Host object itself is the protected resource');
+        self::assertSame(0, $host->calls, 'the Host method was not called to build the set');
+
+        $implementing = new class implements \Maatify\RateLimiter\Service\OwnedResources {
+            public function ownedResources(): array
+            {
+                return [];
+            }
+        };
+        self::assertSame([$implementing], OwnershipRegistry::collect([$implementing]), 'implementing the internal interface does not make a Host class package-owned');
+    }
+
+    public function testAPackageClassIsStillExpandedAndARawHostClockIsStillExcluded(): void
+    {
+        $inner = new \Maatify\RateLimiter\Service\RequestScopedClock(new \Maatify\RateLimiter\Tests\Support\Clock\FixedClock('@1000000'));
+        $rawClock = new \Maatify\RateLimiter\Tests\Support\Clock\FixedClock('@1000000');
+
+        self::assertSame([$inner], OwnershipRegistry::collect([$inner, $rawClock]));
+    }
+
+    public function testASharedHostStoreWithAnOwnedResourcesMethodStillRefusesTheSecondCall(): void
+    {
+        $host = new class {
+            /** @return list<object> */
+            public function ownedResources(): array
+            {
+                return [];
+            }
+        };
+        OwnershipRegistry::bindAll([$host], null);
+        $firstGraph = OwnershipRegistry::collect([$host]);
+        $secondGraph = OwnershipRegistry::collect([$host]);
+
+        $scope = OwnershipRegistry::acquire($firstGraph, 'first', $this->default());
+        try {
+            $this->expectException(OverlappingRequestException::class);
+            OwnershipRegistry::acquire($secondGraph, 'second', $this->default());
+        } finally {
+            $scope->release();
+        }
+    }
 }

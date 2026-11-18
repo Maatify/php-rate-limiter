@@ -41,4 +41,18 @@ Test names are abbreviated by their leading words; the exact names are the `test
 
 Public methods of `RedisFullCapabilityStore`: `STORE_PUBLIC_METHODS.md` (79 rows, each classified).
 
-Declared gaps (not covered, by design or by limit): policy callbacks are not crossing-marked; decorated aliasing is unsupported; a suspended call never destroyed keeps ownership; a non-Fiber scheduler without a provider is covered only inside guarded crossings; a custom non-package store is protected at graph entries only.
+Declared gaps (not covered, by design or by limit): decorated aliasing is unsupported; a suspended call never destroyed keeps ownership; a non-Fiber scheduler without a provider is covered only inside guarded crossings; a custom non-package store is protected at graph entries only.
+
+## Review corrections of `c9eb4dd5` (F266-10..14)
+
+Test file `tests/Integration/Redis/OwnershipCrossingsRedisTest.php` (8 tests) and two tests in `OwnershipRegistryTest`. Each fails on the reviewed source `c9eb4dd5` on both widths and passes on the corrected head (see `RESULTS.md`).
+
+| Finding | Test |
+|---|---|
+| F266-10 policy getters | `testASimpleThrottlePolicyThatReentersTheStore…`, `testAScorePolicyThatReentersTheStoreFromAGetter…` (control: the ordinary policy runs, the next call is served) |
+| F266-11 store clock before the guard | `testAnIncrementOverAnOwnedStoreIsRefusedBeforeItsClockIsRead` (0 clock reads on refusal), `testACallIsRefusedWhileAnotherIsSuspendedInsideTheStoresOwnClock`, `testTheStoreClockOfTheSecondsAndOfTheMillisecondsPaths…` (re-entry from the same context; both paths; the clock authority is unchanged). `save()` is guarded as a whole structurally; its pre-guard read of the held state is not separately observable as a wrong answer, so it has no red test of its own |
+| F266-12 readers' clock and resolver | `testTheSimpleReaderClockCannotReenterTheStore…` (control: an ordinary read stays read-only), `testTheScoreReaderDeviceResolverCannotReenterTheStore` |
+| F266-13 reader build leaves a binding | `testAFailedReaderBuildBindsNothingAndAnExistingBindingIsKept` (the pre-existing binding is kept; a later build in another domain succeeds) |
+| F266-14 method-name inventory | `OwnershipRegistryTest::testAHostObjectWithAMethodNamedOwnedResources…`, `testASharedHostStoreWithAnOwnedResourcesMethodStillRefusesTheSecondCall`, `testAPackageClassIsStillExpanded…` |
+
+Mutants M13–M21 (`mutants.sh`) detect each of these corrections when it is removed.

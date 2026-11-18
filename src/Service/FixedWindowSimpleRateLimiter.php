@@ -137,8 +137,8 @@ final class FixedWindowSimpleRateLimiter implements SimpleRateLimiterInterface
             throw new RateLimiterException('Simple throttle consume cost must be a positive integer.');
         }
 
-        $limit = $policy->getLimit();
-        $intervalSeconds = $policy->getIntervalSeconds();
+        $limit = $this->hostPolicy(fn() => $policy->getLimit());
+        $intervalSeconds = $this->hostPolicy(fn() => $policy->getIntervalSeconds());
 
         $currentKey = $this->deriveKey($policyName, $limit, $intervalSeconds, $subject, $this->keySecret);
         $previousKey = $this->previousKeySecret === null
@@ -170,7 +170,7 @@ final class FixedWindowSimpleRateLimiter implements SimpleRateLimiterInterface
             );
         }
 
-        $now = $this->clock->now()->getTimestamp();
+        $now = $this->hostNow()->getTimestamp();
 
         return new SimpleRateLimitResultDTO(
             allowed: false,
@@ -209,7 +209,7 @@ final class FixedWindowSimpleRateLimiter implements SimpleRateLimiterInterface
     {
         $currentReadFailed = false;
         try {
-            $currentState = CallerTimeStore::getBudget($this->store, $currentKey, $this->clock->now());
+            $currentState = CallerTimeStore::getBudget($this->store, $currentKey, $this->hostNow());
         } catch (BackendFailureException) {
             $currentReadFailed = true;
             $currentState = null;
@@ -226,7 +226,7 @@ final class FixedWindowSimpleRateLimiter implements SimpleRateLimiterInterface
         if ($previousKey !== null) {
             $previousReadFailed = false;
             try {
-                $previousState = CallerTimeStore::getBudget($this->store, $previousKey, $this->clock->now());
+                $previousState = CallerTimeStore::getBudget($this->store, $previousKey, $this->hostNow());
             } catch (BackendFailureException) {
                 $previousReadFailed = true;
                 $previousState = null;
@@ -246,14 +246,14 @@ final class FixedWindowSimpleRateLimiter implements SimpleRateLimiterInterface
                 }
 
                 try {
-                    return CallerTimeStore::incrementBudgetWithSeed($this->store, $currentKey, $intervalSeconds, $previousState, $cost, $this->clock->now());
+                    return CallerTimeStore::incrementBudgetWithSeed($this->store, $currentKey, $intervalSeconds, $previousState, $cost, $this->hostNow());
                 } catch (BackendFailureException) {
                     return null;
                 }
             }
         }
 
-        self::assertResetBoundaryRepresentable($this->clock->now()->getTimestamp(), $intervalSeconds);
+        self::assertResetBoundaryRepresentable($this->hostNow()->getTimestamp(), $intervalSeconds);
 
         return $this->incrementBudget($currentKey, $intervalSeconds, $cost);
     }
@@ -265,7 +265,7 @@ final class FixedWindowSimpleRateLimiter implements SimpleRateLimiterInterface
     private function incrementBudget(string $key, int $intervalSeconds, int $cost): ?BudgetStateDTO
     {
         try {
-            return CallerTimeStore::incrementBudget($this->store, $key, $intervalSeconds, $cost, $this->clock->now());
+            return CallerTimeStore::incrementBudget($this->store, $key, $intervalSeconds, $cost, $this->hostNow());
         } catch (BackendFailureException) {
             return null;
         }
@@ -315,5 +315,23 @@ final class FixedWindowSimpleRateLimiter implements SimpleRateLimiterInterface
     private static function encodeComponent(string $component): string
     {
         return pack('N', strlen($component)) . $component;
+    }
+
+    /**
+     * DEC-041: a policy getter is Host code: a call it makes into the library from this stack is a re-entry, not a nested operation.
+     *
+     * @template T
+     * @param callable(): T $call
+     * @return T
+     */
+    private function hostPolicy(callable $call): mixed
+    {
+        return OwnershipRegistry::crossing($this->store, $call);
+    }
+
+    /** DEC-041: the Host clock is a crossing of the call that owns this runtime's store. */
+    private function hostNow(): \DateTimeImmutable
+    {
+        return OwnershipRegistry::crossing($this->store, fn(): \DateTimeImmutable => $this->clock->now());
     }
 }

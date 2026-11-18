@@ -323,8 +323,19 @@ final class RateLimiterBuilder
         $clock = $this->clock ?? new SystemClock(new DateTimeZone('UTC'));
         $deviceIdentityResolver = $this->deviceIdentityResolver ?? $this->defaultDeviceIdentityResolver();
         // DEC-041: the readers' resources are the rate-limit store and the circuit-breaker store; their clock is the Host clock as before.
-        OwnershipRegistry::bindGraph(OwnershipRegistry::collect([$this->rateLimitStore, $this->circuitBreakerStore]), $this->contextProvider);
+        $binding = OwnershipRegistry::bindGraph(OwnershipRegistry::collect([$this->rateLimitStore, $this->circuitBreakerStore]), $this->contextProvider);
 
+        try {
+            return $this->composeOperationalReader($deviceIdentityResolver, $clock);
+        } catch (\Throwable $failure) {
+            // A reader build that fails after its stores were bound leaves no binding of its own behind (a binding that existed stays).
+            OwnershipRegistry::rollback($binding);
+            throw $failure;
+        }
+    }
+
+    private function composeOperationalReader(DeviceIdentityResolverInterface $deviceIdentityResolver, ClockInterface $clock): CompositeRateLimitOperationalReaderInterface
+    {
         $scoreReader = new RateLimitOperationalReader(
             $deviceIdentityResolver,
             $this->rateLimitStore,

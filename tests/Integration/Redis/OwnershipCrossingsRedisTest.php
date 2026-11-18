@@ -1,0 +1,310 @@
+<?php
+
+declare(strict_types=1);
+
+namespace Maatify\RateLimiter\Tests\Integration\Redis;
+
+use Fiber;
+use Maatify\RateLimiter\Builder\RateLimiterBuilder;
+use Maatify\RateLimiter\Command\RateLimitCommand;
+use Maatify\RateLimiter\Config\FixedWindowThrottlePolicy;
+use Maatify\RateLimiter\Config\LoginProtectionPolicy;
+use Maatify\RateLimiter\Config\RateLimiterConfig;
+use Maatify\RateLimiter\DTO\DeviceIdentityDTO;
+use Maatify\RateLimiter\DTO\RateLimitContextDTO;
+use Maatify\RateLimiter\DTO\ScoreDeltasDTO;
+use Maatify\RateLimiter\Exception\RateLimiterException;
+use Maatify\RateLimiter\Repository\Redis\CallableRedisCommandExecutor;
+use Maatify\RateLimiter\Repository\Redis\RedisFullCapabilityStore;
+use Maatify\RateLimiter\Service\DeviceIdentityResolver;
+use Maatify\RateLimiter\Service\DeviceIdentityResolverInterface;
+use Maatify\RateLimiter\Service\FingerprintHasher;
+use Maatify\RateLimiter\Service\OwnershipRegistry;
+use Maatify\RateLimiter\Tests\Support\Clock\FixedClock;
+use Maatify\RateLimiter\Tests\Support\FailureSignal\RecordingFailureSignalEmitter;
+use Maatify\RateLimiter\Tests\Support\Ownership\CrossingProbe;
+use Maatify\RateLimiter\Tests\Support\Ownership\ProbeClock;
+use Maatify\RateLimiter\Tests\Support\Ownership\ReentrantSimplePolicy;
+use Maatify\RateLimiter\Tests\Support\Ownership\StubContextProvider;
+use Maatify\RateLimiter\Tests\Support\Redis\RespRedisCommandExecutor;
+use Maatify\SharedCommon\Contracts\ClockInterface;
+use PHPUnit\Framework\Attributes\Group;
+use PHPUnit\Framework\TestCase;
+
+/**
+ * #260 (DEC-041), the corrections of the review of `c9eb4dd5` (F266-10..14): Host crossings that were not marked (policy getters, the
+ * store's own clock before its guard, the readers' clock and device resolver), the failed reader build that left a provider binding, and
+ * the inventory that trusted a method name. Every refusal is identified by the class name as a string so that the same file runs against
+ * the reviewed source, where each of these re-entries was accepted and reached the executor (a PING), and fails for that reason.
+ */
+#[Group('integration')]
+#[Group('fiber-ownership-260')]
+#[Group('php32')]
+final class OwnershipCrossingsRedisTest extends TestCase
+{
+    private const REFUSAL = 'Maatify\\RateLimiter\\Exception\\OverlappingRequestException';
+
+    private string $host;
+
+    private int $port;
+
+    /** @var list<array<mixed>> every command that reached an executor of this test */
+    private array $commands = [];
+
+    protected function setUp(): void
+    {
+        $host = getenv('REDIS_INTEGRATION_HOST');
+        $port = getenv('REDIS_INTEGRATION_PORT');
+        if ($host === false || $port === false) {
+            self::markTestSkipped('Real Redis integration orchestration is required for this suite.');
+        }
+        $this->host = $host;
+        $this->port = (int) $port;
+        (new RespRedisCommandExecutor($host, $this->port))->execute(['FLUSHDB']);
+        $this->commands = [];
+    }
+
+    private function store(?ClockInterface $clock = null, ?\Closure $before = null): RedisFullCapabilityStore
+    {
+        $connection = new RespRedisCommandExecutor($this->host, $this->port);
+
+        return new RedisFullCapabilityStore(new CallableRedisCommandExecutor(function (array $command) use ($connection, $before): mixed {
+            $this->commands[] = $command;
+            if ($before !== null) {
+                $before($command);
+            }
+
+            return $connection->execute($command);
+        }), 'crossing-260', $clock);
+    }
+
+    private function pings(): int
+    {
+        return count(array_filter($this->commands, static fn(array $command): bool => ($command[0] ?? null) === 'PING'));
+    }
+
+    private function config(): RateLimiterConfig
+    {
+        return new RateLimiterConfig('test_secret', 'test_fp', 'prod');
+    }
+
+    private function builder(RedisFullCapabilityStore $store, ?ClockInterface $clock = null): RateLimiterBuilder
+    {
+        return RateLimiterBuilder::fromFullCapabilityStore($this->config(), $store, new RecordingFailureSignalEmitter())->withClock($clock ?? new FixedClock('@1000000'));
+    }
+
+    private function refusalOf(callable $call): ?string
+    {
+        try {
+            $call();
+        } catch (\Throwable $caught) {
+            return $caught::class;
+        }
+
+        return null;
+    }
+
+    // ---- F266-10: policy callbacks are Host code ---------------------------------------------------------------------------------------
+
+    public function testASimpleThrottlePolicyThatReentersTheStoreIsRefusedBeforeTheExecutorAndTheOrdinaryPolicyRuns(): void
+    {
+        $store = $this->store();
+        $policy = new ReentrantSimplePolicy();
+        $runtime = $this->builder($store)->withSimpleThrottlePolicy($policy)->build();
+
+        self::assertTrue($runtime->consume('api', 'control')->allowed, 'an ordinary policy is consumed');
+        $this->commands = [];
+
+        $policy->reenter = static fn() => $store->isHealthy();
+        self::assertSame(self::REFUSAL, $this->refusalOf(fn() => $runtime->consume('api', 'subject')));
+        self::assertSame(0, $this->pings(), 'the re-entrant health check never reached the executor');
+        self::assertFalse(OwnershipRegistry::isOccupied($store), 'the refused call released everything');
+
+        $policy->reenter = null;
+        self::assertTrue($runtime->consume('api', 'again')->allowed, 'the runtime serves the next call');
+    }
+
+    public function testAScorePolicyThatReentersTheStoreFromAGetterIsRefusedBeforeTheExecutor(): void
+    {
+        $probe = new CrossingProbe();
+        $policy = new class ($probe) extends LoginProtectionPolicy {
+            public function __construct(private readonly CrossingProbe $probe) {}
+
+            public function getScoreDeltas(): ScoreDeltasDTO
+            {
+                $this->probe->fire();
+
+                return parent::getScoreDeltas();
+            }
+        };
+        $store = $this->store();
+        $probe->store = $store;
+        $runtime = $this->builder($store)->withPolicy($policy)->build();
+        $context = new RateLimitContextDTO(ip: '198.51.100.7', ua: 'crossing-260', accountId: 'acct-a');
+
+        $runtime->limit($context, RateLimitCommand::checkOnly('login_protection'));
+        $this->commands = [];
+
+        $probe->armed = true;
+        self::assertSame(self::REFUSAL, $this->refusalOf(fn() => $runtime->limit($context, RateLimitCommand::recordFailure('login_protection'))));
+        self::assertSame(0, $this->pings(), 'the policy getter never reached the executor through the library');
+        self::assertFalse(OwnershipRegistry::isOccupied($store));
+
+        $probe->armed = false;
+        $runtime->limit($context, RateLimitCommand::checkOnly('login_protection'));
+        self::assertGreaterThan(0, count($this->commands), 'the runtime serves the next call');
+    }
+
+    // ---- F266-11: the store's own clock is read under its guard -------------------------------------------------------------------------
+
+    public function testAnIncrementOverAnOwnedStoreIsRefusedBeforeItsClockIsRead(): void
+    {
+        $probe = new CrossingProbe();
+        $store = $this->store(new ProbeClock($probe), static function () use ($probe): void {
+            $probe->suspendHere();
+        });
+        $fiber = new Fiber(fn() => $store->get('held'));
+        $probe->suspendIn = $fiber;
+        $fiber->start();
+        self::assertFalse($fiber->isTerminated());
+
+        $before = $probe->reads;
+        $other = new Fiber(fn() => $store->increment('k', 60));
+        $outcome = null;
+        try {
+            $other->start();
+        } catch (\Throwable $caught) {
+            $outcome = $caught::class;
+        }
+
+        self::assertSame(self::REFUSAL, $outcome);
+        self::assertSame($before, $probe->reads, 'the refused call read the Host clock zero times');
+        $probe->suspendIn = null;
+        $fiber->resume();
+        self::assertTrue($fiber->isTerminated());
+    }
+
+    public function testACallIsRefusedWhileAnotherIsSuspendedInsideTheStoresOwnClock(): void
+    {
+        $probe = new CrossingProbe();
+        $store = $this->store(new ProbeClock($probe));
+        $a = new Fiber(fn() => $store->increment('k', 60));
+        $probe->suspendIn = $a;
+        $a->start();
+        self::assertFalse($a->isTerminated(), 'call A is suspended inside the store clock');
+
+        $outcome = null;
+        $b = new Fiber(fn() => $store->isHealthy());
+        try {
+            $b->start();
+        } catch (\Throwable $caught) {
+            $outcome = $caught::class;
+        }
+
+        self::assertSame(self::REFUSAL, $outcome, 'the store was owned from before its clock was read');
+        self::assertSame(0, $this->pings());
+        $probe->suspendIn = null;
+        $a->resume();
+        self::assertTrue($a->isTerminated());
+        self::assertFalse(OwnershipRegistry::isOccupied($store));
+    }
+
+    public function testTheStoreClockOfTheSecondsAndOfTheMillisecondsPathsCannotReenterTheStore(): void
+    {
+        $probe = new CrossingProbe();
+        $store = $this->store(new ProbeClock($probe));
+        $probe->store = $store;
+        $store->increment('control', 60);
+
+        $probe->armed = true;
+        $this->commands = [];
+        self::assertSame(self::REFUSAL, $this->refusalOf(fn() => $store->increment('k', 60)), 'seconds path');
+        self::assertSame(self::REFUSAL, $this->refusalOf(fn() => $store->addDistinctAcrossRotation('a', 'b', 'c', 'm1', 'm0', 60)), 'milliseconds path');
+        self::assertSame(0, $this->pings());
+        self::assertSame([], $this->commands, 'no command was sent by either refused call');
+
+        $probe->armed = false;
+        self::assertSame(2, $store->increment('control', 60), 'the store serves the next call with its own clock authority');
+        self::assertFalse(OwnershipRegistry::isOccupied($store));
+    }
+
+    // ---- F266-12: the readers' clock and device resolver --------------------------------------------------------------------------------
+
+    public function testTheSimpleReaderClockCannotReenterTheStoreAndAnOrdinaryReadStaysReadOnly(): void
+    {
+        $probe = new CrossingProbe();
+        $store = $this->store();
+        $probe->store = $store;
+        $reader = $this->builder($store, new ProbeClock($probe))->withSimpleThrottlePolicy(new FixedWindowThrottlePolicy('api', 5, 60))->buildOperationalReader();
+
+        $snapshot = $reader->readSimpleThrottle('api', 'subject');
+        self::assertSame(0, $snapshot->count);
+        $writes = array_filter($this->commands, static fn(array $command): bool => ! in_array($command[0] ?? null, ['PING', 'EVAL', 'EVALSHA'], true));
+        self::assertSame([], array_values($writes), 'an ordinary read sends no write command');
+
+        $probe->armed = true;
+        $this->commands = [];
+        self::assertSame(self::REFUSAL, $this->refusalOf(fn() => $reader->readSimpleThrottle('api', 'subject')));
+        self::assertSame(0, $this->pings(), 'the clock never reached the executor through the library');
+        self::assertFalse(OwnershipRegistry::isOccupied($store));
+    }
+
+    public function testTheScoreReaderDeviceResolverCannotReenterTheStore(): void
+    {
+        $probe = new CrossingProbe();
+        $resolver = new class (new DeviceIdentityResolver(new FingerprintHasher('test_fp')), $probe) implements DeviceIdentityResolverInterface {
+            public function __construct(private readonly DeviceIdentityResolver $inner, private readonly CrossingProbe $probe) {}
+
+            public function resolve(RateLimitContextDTO $context): DeviceIdentityDTO
+            {
+                $this->probe->fire();
+
+                return $this->inner->resolve($context);
+            }
+        };
+        $store = $this->store();
+        $probe->store = $store;
+        $reader = $this->builder($store)->withDeviceIdentityResolver($resolver)->buildOperationalReader();
+        $context = new RateLimitContextDTO(ip: '198.51.100.7', ua: 'crossing-260', accountId: 'acct-a');
+
+        $reader->readScorePolicy($context, 'login_protection');
+
+        $probe->armed = true;
+        $this->commands = [];
+        self::assertSame(self::REFUSAL, $this->refusalOf(fn() => $reader->readScorePolicy($context, 'login_protection')));
+        self::assertSame(0, $this->pings());
+        self::assertFalse(OwnershipRegistry::isOccupied($store));
+    }
+
+    // ---- F266-13: a failed reader build leaves no binding of its own ---------------------------------------------------------------------
+
+    public function testAFailedReaderBuildBindsNothingAndAnExistingBindingIsKept(): void
+    {
+        $p = new StubContextProvider(static fn() => 1);
+        $q = new StubContextProvider(static fn() => 2);
+        $failing = new ReentrantSimplePolicy('broken', 0);
+
+        $store = $this->store();
+        self::assertSame('unbound', OwnershipRegistry::domainKind($store));
+        try {
+            $this->builder($store)->withExecutionContextProvider($p)->withSimpleThrottlePolicy($failing)->buildOperationalReader();
+            self::fail('the reader build must fail on the policy of limit 0');
+        } catch (RateLimiterException) {
+        }
+        self::assertSame('unbound', OwnershipRegistry::domainKind($store), 'the failed build left nothing bound');
+
+        $reader = $this->builder($store)->withExecutionContextProvider($q)->withSimpleThrottlePolicy(new FixedWindowThrottlePolicy('api', 5, 60))->buildOperationalReader();
+        self::assertSame(0, $reader->readSimpleThrottle('api', 's')->count, 'a later valid build in another domain succeeds');
+        self::assertSame('provider', OwnershipRegistry::domainKind($store));
+
+        // A binding that existed before the failing build stays exactly as it was.
+        $bound = $this->store();
+        OwnershipRegistry::bindAll([$bound], $p);
+        try {
+            $this->builder($bound)->withExecutionContextProvider($p)->withSimpleThrottlePolicy($failing)->buildOperationalReader();
+            self::fail('the reader build must fail');
+        } catch (RateLimiterException) {
+        }
+        self::assertSame('provider', OwnershipRegistry::domainKind($bound), 'the previous binding is unchanged');
+    }
+}

@@ -293,7 +293,7 @@ class RateLimiterEngine implements RateLimiterRuntimeInterface, AdmissionBinding
             return [];
         }
 
-        $capabilities = $policy->getCapabilities();
+        $capabilities = $this->hostPolicy(fn() => $policy->getCapabilities());
         foreach ($capabilities as $capability) {
             // Runtime validation intentionally protects the public boundary
             // even when a deliberately invalid fixture lies to static analysis.
@@ -373,10 +373,10 @@ class RateLimiterEngine implements RateLimiterRuntimeInterface, AdmissionBinding
             throw new RateLimiterException("Policy not found: {$request->policyName}");
         }
 
-        $policyName = $policy->getName();
+        $policyName = $this->hostPolicy(fn() => $policy->getName());
 
         // #185 F-185-11: the access charge must be a PHP int; checked before any I/O.
-        ScoreArithmetic::product($policy->getScoreDeltas()->access, $request->cost, 'access delta × command cost');
+        ScoreArithmetic::product($this->hostPolicy(fn() => $policy->getScoreDeltas())->access, $request->cost, 'access delta × command cost');
 
         // Circuit-breaker preflight must happen before identity resolution and
         // normal evaluation so OPEN/HALF_OPEN requests cannot touch the shared
@@ -642,7 +642,7 @@ class RateLimiterEngine implements RateLimiterRuntimeInterface, AdmissionBinding
     {
         return $policy instanceof AdmissionReservationPolicyInterface
             && in_array(PolicyCapabilityEnum::ADMISSION_RESERVATION, $this->capabilities($policy), true)
-            ? $policy->getAdmissionBudgetGroup()
+            ? $this->hostPolicy(fn() => $policy->getAdmissionBudgetGroup())
             : null;
     }
 
@@ -661,9 +661,9 @@ class RateLimiterEngine implements RateLimiterRuntimeInterface, AdmissionBinding
     ): RateLimitResultDTO {
         if ($request->isFailure || $request->isSuccess) {
             if ($request->permit === null) {
-                throw new RateLimiterException("Policy {$policy->getName()} invalid use: an outcome of an admission policy requires the permit issued with its admission.");
+                throw new RateLimiterException("Policy {$this->hostPolicy(fn() => $policy->getName())} invalid use: an outcome of an admission policy requires the permit issued with its admission.");
             }
-            $applied = $settled ?? $admission->applyOutcome($policy->getName(), $group, $context, $request->permit, $request->isSuccess);
+            $applied = $settled ?? $admission->applyOutcome($this->hostPolicy(fn() => $policy->getName()), $group, $context, $request->permit, $request->isSuccess);
             if ($applied instanceof RateLimitResultDTO) {
                 return $applied;
             }
@@ -678,7 +678,7 @@ class RateLimiterEngine implements RateLimiterRuntimeInterface, AdmissionBinding
             $lane = $admission->resolveLane($group, $context);
             $result = $this->pipeline->process($policy, $context, $request, $device, $lane->lane);
             if ($request->isPreCheck && $result->decision === RateLimitResultDTO::DECISION_ALLOW) {
-                return $admission->reserve($policy->getName(), $group, $context, $device, $lane, $result);
+                return $admission->reserve($this->hostPolicy(fn() => $policy->getName()), $group, $context, $device, $lane, $result);
             }
 
             return $result;
@@ -709,8 +709,8 @@ class RateLimiterEngine implements RateLimiterRuntimeInterface, AdmissionBinding
     private function degradedResult(BlockPolicyInterface $policy, RateLimitContextDTO $context): RateLimitResultDTO
     {
         $mode = $this->failureResolver->resolve($policy, $this->circuitBreaker);
-        if ($mode === 'FAIL_CLOSED' && $this->circuitBreaker->isReEntryGuardViolated($policy->getName())) {
-            return $this->guardResult($policy->getName());
+        if ($mode === 'FAIL_CLOSED' && $this->circuitBreaker->isReEntryGuardViolated($this->hostPolicy(fn() => $policy->getName()))) {
+            return $this->guardResult($this->hostPolicy(fn() => $policy->getName()));
         }
 
         if ($mode === 'FAIL_OPEN' || $mode === 'DEGRADED_MODE') {
@@ -741,4 +741,15 @@ class RateLimiterEngine implements RateLimiterRuntimeInterface, AdmissionBinding
         return new RateLimitResultDTO(RateLimitResultDTO::DECISION_HARD_BLOCK, 2, $fallbackRetryAfter, $mode, $meta);
     }
 
+    /**
+     * DEC-041: a policy getter is Host code: a call it makes into the library from this stack is a re-entry, not a nested operation.
+     *
+     * @template T
+     * @param callable(): T $call
+     * @return T
+     */
+    private function hostPolicy(callable $call): mixed
+    {
+        return OwnershipRegistry::crossing($this, $call);
+    }
 }

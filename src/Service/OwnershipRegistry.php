@@ -65,8 +65,8 @@ final class OwnershipRegistry
             if ($object === null) {
                 continue;
             }
-            if ($object instanceof OwnedResources || method_exists($object, 'ownedResources')) {
-                /** @var iterable<object> $inner */
+            if (self::isPackageOwned($object)) {
+                /** @var OwnedResources $object */
                 $inner = $object->ownedResources();
                 foreach ($inner as $resource) {
                     $unique[spl_object_id($resource)] = $resource;
@@ -80,6 +80,33 @@ final class OwnershipRegistry
         }
 
         return array_values($unique);
+    }
+
+    /**
+     * The classes of this package that report their own resources. Only a method DECLARED by one of these is trusted: a Host
+     * store or collaborator that happens to have a method of the same name (or that implements the internal interface itself) is a
+     * resource by its object identity and its code is never called to build the protected set (#260, F266-14).
+     */
+    private const PACKAGE_OWNED = [
+        \Maatify\RateLimiter\Repository\Redis\RedisFullCapabilityStore::class,
+        RateLimiterEngine::class,
+        EvaluationPipeline::class,
+        CircuitBreaker::class,
+        RequestScopedClock::class,
+        BudgetTracker::class,
+        AntiEquilibriumGate::class,
+        DecayCalculator::class,
+        EphemeralBucket::class,
+        AdmissionRuntime::class,
+    ];
+
+    private static function isPackageOwned(object $object): bool
+    {
+        if (! method_exists($object, 'ownedResources')) {
+            return false;
+        }
+
+        return in_array((new \ReflectionMethod($object, 'ownedResources'))->getDeclaringClass()->getName(), self::PACKAGE_OWNED, true);
     }
 
     /**
