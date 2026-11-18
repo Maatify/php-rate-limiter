@@ -53,6 +53,11 @@ META = {
  'conflict': ('إعادة تقييم عند تعارض حقيقي ثم حفظ (DEC-037)', 'تقييمان؛ حفظ في الثاني'),
  'conflict + deny -smembers': ('لا إعادة تقييم بسبب الرفض فوق حالة ثابتة', 'إعادة واحدة لأن الحالة تحركت ثم يعود الخطأ ويُرمى'),
  'fresh keyspace + deny reads': ('—', 'لم يُتوقع قبل التشغيل (اكتُشف أثناء بناء الحالات)'),
+ 'revoke -hgetall before verify': ('رفض صلاحية قراءة أثناء verify نفسه: لا كتابة ولا تغيير', 'خطأ verify يحلّ محل خطأ الخطوة؛ لا تغيير'),
+ 'revoke -hgetall before commit': ('رفض قراءة أثناء مقارنة الحفظ: لا كتابة ولا تغيير', 'خطأ داخل commit قبل أول كتابة'),
+ 'plan without expiry': ('حفظ مفتاح بلا انتهاء', 'نجاح؛ لا PEXPIREAT'),
+ 'plan without expiry + deny -pexpireat': ('فرع لا يحتاج إذن انتهاء ينجح بلا الإذن', 'نجاح'),
+ 'variant plan without expiry + deny -pexpireat': ('الـpreflight لا يطلب إذن انتهاء حيث لا انتهاء', 'نجاح'),
  'revoke -del before commit': ('حفظ الكل أو لا شيء', 'مثل -del: لا تغيير'),
  'connection killed before commit': ('BackendFailureException ولا تغيير', 'استثناء نقل؛ لا تغيير'),
  'reply lost after the save': ('نتيجة مجهولة: BackendFailureException مع حفظ كامل لا جزئي', 'استثناء نقل؛ الحالة محفوظة كاملة'),
@@ -79,6 +84,8 @@ REFUTED = {
     ('engine control', None): 'احتاج قاعدة المفتاح الفارغ `~` إضافة إلى النمط',
     ('engine deny -pexpiretime', None): 'نجح: القراءة لا تحدث لمفاتيح غير موجودة',
     ('connection killed before commit', 'phpredis'): 'نجح: مكتبة phpredis أعادت الاتصال وأعادت الإرسال',
+    ('reply lost after the save', 'phpredis'): 'استثناء phpredis غير مصنّف (بروتوكول/socket) لا BackendFailureException: لا دليل إيجابي على النقل',
+    ('engine reply lost after the save', 'phpredis'): 'استثناء phpredis خام يصل المتصل من limit()؛ الحفظ كامل',
     ('engine connection killed before commit', 'phpredis'): 'نجح: مكتبة phpredis أعادت الاتصال وأعادت الإرسال',
 }
 
@@ -88,8 +95,8 @@ out.append('الأعمدة: المطلوب = ما يقتضيه العقد/الت
            '"وصل للحفظ" = أرسل الـexecutor commit؛ "تقييمات" = عدد استدعاءات `$evaluate` (للمخزن)؛ "executor" = آخر رد وصل للمخزن من الـexecutor؛ '
            '"المتصل" = ما وصل لمن استدعى؛ "تغيّر" = المفاتيح التي اختلف فيها DUMP أو PEXPIRETIME قبل/بعد (من خارج Lua)؛ '
            'مفتاح التحكم (خارج حالة الطلب، داخل نطاق الحساب) لم يتغير في كل الحالات.\n')
-out.append('| الحالة | الغلاف | المطلوب | المتوقع | وصل للحفظ | تقييمات | executor (أول رد غير ناجح) | المتصل | تغيّر | طابق المتوقع؟ |')
-out.append('|---|---|---|---|---|---|---|---|---|---|')
+out.append('| الحالة | الغلاف | المطلوب | المتوقع | وصل للحفظ | تقييمات | executor (أول رد غير ناجح) | المتصل | تغيّر | خصم fallback | طابق المتوقع؟ |')
+out.append('|---|---|---|---|---|---|---|---|---|---|---|')
 for case in sorted({c for c, _ in a}, key=lambda c: list(META).index(c) if c in META else 999):
     shapes = ['resp'] if same(case) else ['resp', 'phpredis']
     for s in shapes:
@@ -100,9 +107,9 @@ for case in sorted({c for c, _ in a}, key=lambda c: list(META).index(c) if c in 
         label = s if len(shapes) > 1 else 'resp = phpredis'
         note = REFUTED.get((case, s)) or REFUTED.get((case, None))
         verdict = ('✘ ' + note) if note else '✔'
-        out.append('| %s | %s | %s | %s | %s | %s | `%s` | `%s` | %s | %s |' % (case, label, req, exp, 'نعم' if r['sentCommit'] else 'لا', ev, ex.replace('|', '/'), res.replace('|', '/'), '؛ '.join(changed(r)) or 'لا شيء', verdict))
+        out.append('| %s | %s | %s | %s | %s | %s | `%s` | `%s` | %s | %s | %s |' % (case, label, req, exp, 'نعم' if r['sentCommit'] else 'لا', ev, ex.replace('|', '/'), res.replace('|', '/'), '؛ '.join(changed(r)) or 'لا شيء', 'نعم' if r.get('fallbackCharged') else 'لا', verdict))
 out.append('')
-diff = [k for k in a if (a[k]['sentCommit'], a[k]['evaluations'], a[k]['stepsReached'], changed(a[k]), a[k]['result'][:60]) != (b[k]['sentCommit'], b[k]['evaluations'], b[k]['stepsReached'], changed(b[k]), b[k]['result'][:60])]
+diff = [k for k in a if (a[k]['sentCommit'], a[k]['evaluations'], a[k]['stepsReached'], changed(a[k]), a[k]['result'][:40], a[k]['fallbackCharged']) != (b[k]['sentCommit'], b[k]['evaluations'], b[k]['stepsReached'], changed(b[k]), b[k]['result'][:40], b[k]['fallbackCharged'])]
 out.append('مقارنة PHP_INT_SIZE 8 مقابل 4: %d حالة، الفروق: %s' % (len(a), diff or 'لا فرق'))
 open(os.path.join(raw, 'evidence-table.md'), 'w').write('\n'.join(out) + '\n')
 print('rows', len(a), 'diff', diff)
