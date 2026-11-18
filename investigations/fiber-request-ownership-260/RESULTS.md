@@ -232,7 +232,7 @@ Corrected source head `7d368531e526313efd8233bb70f1d334a8e0c9c9` (tree `1061a627
 
 | Run | Result |
 |---|---|
-| New regressions (crossings 10 + registry 27 + Host-store 4 + ... = 43 tests of the three files) on the **reviewed source `02d51f24`**, 64 and 32 | 5 red on both widths: a failed `build()` and a failed `buildOperationalReader()` that unbind a runtime built meanwhile (F266-15), the hand-assembled engine whose raw clock reaches the executor (F266-16), the counted-rollback unit and the `HostClock` unit |
+| New regressions (the 43 tests of `OwnershipCrossingsRedisTest` and `OwnershipRegistryTest`) on the **reviewed source `02d51f24`**, 64 and 32 | 5 red on both widths: a failed `build()` and a failed `buildOperationalReader()` that unbind a runtime built meanwhile (F266-15), the hand-assembled engine whose raw clock reaches the executor (F266-16), the counted-rollback unit and the `HostClock` unit |
 | The same tests on the corrected head | pass on both widths |
 | Candidate full suite 64 / 32 | 2879 tests (100 errors, 4 failures, 14 skipped) / 2874 tests (101 errors, 4 failures, 65 skipped): ReleaseVerification classes only; the extra 32-bit error is the year-2999 fixture (#267) |
 | `--group php32`, 32 / 64 | 883 tests OK (64 skipped) / 884 tests OK (13 skipped) |
