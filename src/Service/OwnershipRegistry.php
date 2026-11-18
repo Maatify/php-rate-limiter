@@ -26,12 +26,24 @@ final class OwnershipRegistry
 
     private static function slot(object $resource): ResourceSlot
     {
-        self::$slots ??= new \WeakMap();
-        if (! isset(self::$slots[$resource])) {
-            self::$slots[$resource] = new ResourceSlot();
+        $slots = self::slots();
+        $slot = $slots[$resource] ?? null;
+        if ($slot === null) {
+            $slot = new ResourceSlot();
+            $slots[$resource] = $slot;
         }
 
-        return self::$slots[$resource];
+        return $slot;
+    }
+
+    /** @return \WeakMap<object, ResourceSlot> */
+    private static function slots(): \WeakMap
+    {
+        if (self::$slots === null) {
+            self::$slots = new \WeakMap();
+        }
+
+        return self::$slots;
     }
 
     /**
