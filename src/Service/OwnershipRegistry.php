@@ -224,6 +224,18 @@ final class OwnershipRegistry
 
     private static ?BuildFrames $mainFrames = null;
 
+    /** @return \WeakMap<object, BuildFrames> */
+    private static function fiberFrameMap(): \WeakMap
+    {
+        if (self::$fiberFrames === null) {
+            /** @var \WeakMap<object, BuildFrames> $created */
+            $created = new \WeakMap();
+            self::$fiberFrames = $created;
+        }
+
+        return self::$fiberFrames;
+    }
+
     /** The build frames of the execution context that is running now: a build suspended in one Fiber never marks another context. */
     private static function frames(): BuildFrames
     {
@@ -231,16 +243,11 @@ final class OwnershipRegistry
         if ($fiber === null) {
             return self::$mainFrames ??= new BuildFrames();
         }
-        if (self::$fiberFrames === null) {
-            /** @var \WeakMap<object, BuildFrames> $created */
-            $created = new \WeakMap();
-            self::$fiberFrames = $created;
-        }
-
-        $frames = self::$fiberFrames[$fiber] ?? null;
+        $map = self::fiberFrameMap();
+        $frames = $map[$fiber] ?? null;
         if ($frames === null) {
             $frames = new BuildFrames();
-            self::$fiberFrames[$fiber] = $frames;
+            $map[$fiber] = $frames;
         }
 
         return $frames;
