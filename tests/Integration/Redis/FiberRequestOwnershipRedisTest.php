@@ -846,8 +846,10 @@ final class FiberRequestOwnershipRedisTest extends TestCase
         $runtime = $this->runtime(new FixedClock('@' . self::T0), new RecordingFailureSignalEmitter(), $store);
         self::assertInstanceOf(RedisFullCapabilityStore::class, $store);
         $inner = [];
-        $this->hook = function (array $command, string $phase) use ($runtime, $store, &$inner): void {
-            if ($phase === 'before' && $inner === []) {
+        $reentering = false;
+        $this->hook = function (array $command, string $phase) use ($runtime, $store, &$inner, &$reentering): void {
+            if ($phase === 'before' && ! $reentering) {
+                $reentering = true;
                 $inner = [
                     $this->refusalOf(fn() => $runtime->limit($this->context('re-entrant'), RateLimitCommand::checkOnly('login_protection'))),
                     $this->refusalOf(static fn() => $store->isHealthy()),
