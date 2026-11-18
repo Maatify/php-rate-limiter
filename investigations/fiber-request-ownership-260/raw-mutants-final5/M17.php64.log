@@ -1,0 +1,20 @@
+PHPUnit 11.5.57 by Sebastian Bergmann and contributors.
+
+Runtime:       PHP 8.4.27
+Configuration: /app/phpunit.xml
+
+.....................................F........................... 65 / 86 ( 75%)
+.....................                                             86 / 86 (100%)
+
+Time: 00:00.368, Memory: 16.00 MB
+
+There was 1 failure:
+
+1) Maatify\RateLimiter\Tests\Integration\Redis\OwnershipCrossingsRedisTest::testTheStoreClockOfTheSecondsAndOfTheMillisecondsPathsCannotReenterTheStore
+seconds path
+Failed asserting that null is identical to 'Maatify\RateLimiter\Exception\OverlappingRequestException'.
+
+/app/tests/Integration/Redis/OwnershipCrossingsRedisTest.php:261
+
+FAILURES!
+Tests: 86, Assertions: 1039, Failures: 1.

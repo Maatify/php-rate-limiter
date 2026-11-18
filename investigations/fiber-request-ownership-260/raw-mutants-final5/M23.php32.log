@@ -1,0 +1,80 @@
+PHPUnit 11.5.57 by Sebastian Bergmann and contributors.
+
+Runtime:       PHP 8.4.27
+Configuration: /app/phpunit.xml
+
+..........................FFFF................................... 65 / 86 ( 75%)
+..FF.................                                             86 / 86 (100%)
+
+Time: 00:01.490, Memory: 14.00 MB
+
+There were 6 failures:
+
+1) Maatify\RateLimiter\Tests\Integration\Redis\OwnershipCrossingsRedisTest::testAFailedBuildLeavesTheBindingOfARuntimeBuiltMeanwhileFromHostCode with data set "build()" (false)
+the binding the built runtime stands on is kept
+Failed asserting that two strings are identical.
+--- Expected
++++ Actual
+@@ @@
+-'provider'
++'unbound'
+
+/app/tests/Integration/Redis/OwnershipCrossingsRedisTest.php:385
+
+2) Maatify\RateLimiter\Tests\Integration\Redis\OwnershipCrossingsRedisTest::testAFailedBuildLeavesTheBindingOfARuntimeBuiltMeanwhileFromHostCode with data set "buildOperationalReader()" (true)
+the binding the built runtime stands on is kept
+Failed asserting that two strings are identical.
+--- Expected
++++ Actual
+@@ @@
+-'provider'
++'unbound'
+
+/app/tests/Integration/Redis/OwnershipCrossingsRedisTest.php:385
+
+3) Maatify\RateLimiter\Tests\Integration\Redis\OwnershipCrossingsRedisTest::testAFailedBuildLeavesTheBindingOfAnEntryBuiltDirectlyFromHostCode with data set "build()" (false)
+the entry built directly stands on the binding
+Failed asserting that two strings are identical.
+--- Expected
++++ Actual
+@@ @@
+-'provider'
++'unbound'
+
+/app/tests/Integration/Redis/OwnershipCrossingsRedisTest.php:421
+
+4) Maatify\RateLimiter\Tests\Integration\Redis\OwnershipCrossingsRedisTest::testAFailedBuildLeavesTheBindingOfAnEntryBuiltDirectlyFromHostCode with data set "buildOperationalReader()" (true)
+the entry built directly stands on the binding
+Failed asserting that two strings are identical.
+--- Expected
++++ Actual
+@@ @@
+-'provider'
++'unbound'
+
+/app/tests/Integration/Redis/OwnershipCrossingsRedisTest.php:421
+
+5) Maatify\RateLimiter\Tests\Unit\Service\OwnershipRegistryTest::testARollbackKeepsTheBindingAnotherCallStandsOn
+the second call still stands on it
+Failed asserting that two strings are identical.
+--- Expected
++++ Actual
+@@ @@
+-'provider'
++'unbound'
+
+/app/tests/Unit/Service/OwnershipRegistryTest.php:612
+
+6) Maatify\RateLimiter\Tests\Unit\Service\OwnershipRegistryTest::testAnAdoptionStandsOnTheBindingUnlessItIsPartOfTheBuildThatRecordedIt
+an entry built by hand from Host code stands on the binding it adopted
+Failed asserting that two strings are identical.
+--- Expected
++++ Actual
+@@ @@
+-'provider'
++'unbound'
+
+/app/tests/Unit/Service/OwnershipRegistryTest.php:632
+
+FAILURES!
+Tests: 86, Assertions: 1032, Failures: 6.

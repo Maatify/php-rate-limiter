@@ -28,7 +28,7 @@ use Maatify\SharedCommon\Contracts\ClockInterface;
  * lease during normal operation or a bounded process-local lease during an
  * emergency episode; emergency state is never reconciled or written back.
  */
-class CircuitBreaker
+class CircuitBreaker implements OwnedResources
 {
     private const TRIP_THRESHOLD = 3;
     private const TRIP_WINDOW = 10;
@@ -59,8 +59,10 @@ class CircuitBreaker
     public function __construct(
         private readonly CircuitBreakerStoreInterface $store,
         private readonly FailureSignalEmitterInterface $emitter,
-        private readonly ClockInterface $clock,
-    ) {}
+        private ClockInterface $clock,
+    ) {
+        $this->clock = HostClock::of($this->clock);
+    }
 
     /** #185 F-185-18 (DEC-031): fenced attempts of one failure report before it is dropped. */
     private const FAILURE_REPORT_ATTEMPTS = 3;
@@ -157,7 +159,7 @@ class CircuitBreaker
             $next = new CircuitBreakerStateDTO($status, $failures, $now, $openSince, $lastSuccess, array_values($reEntries), $failClosedUntil);
             if ($store->saveIfVersion($policyName, $version, $next)) {
                 foreach ($signals as $type) {
-                    $this->emitter->emit(new FailureSignalDTO($type, $policyName));
+                    $this->emit(new FailureSignalDTO($type, $policyName));
                 }
 
                 return;
@@ -534,7 +536,7 @@ class CircuitBreaker
         $this->heldSignals = null;
         if ($saved) {
             foreach ($held as $signal) {
-                $this->emitter->emit($signal);
+                $this->emit($signal);
             }
         }
     }
@@ -546,7 +548,19 @@ class CircuitBreaker
 
             return;
         }
-        $this->emitter->emit($signal);
+        $this->emit($signal);
+    }
+
+    /** DEC-041: the emitter is Host code, a crossing of the call that owns this breaker. */
+    private function emit(FailureSignalDTO $signal): void
+    {
+        OwnershipRegistry::crossing($this, fn() => $this->emitter->emit($signal));
+    }
+
+    /** @return list<object> */
+    public function ownedResources(): array
+    {
+        return OwnershipRegistry::collect([$this->store], [$this], [$this->clock]);
     }
 
     private function closedState(): CircuitBreakerStateDTO

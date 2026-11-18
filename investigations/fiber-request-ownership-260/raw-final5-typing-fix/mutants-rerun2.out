@@ -1,0 +1,2 @@
+M30	DETECTED	php64: Failures: 1  (exit 1)	php32: Failures: 1  (exit 1)	the build frames are one process-wide stack, not one per execution context (F266-18)
+M31	DETECTED	php64: Failures: 12  (exit 1)	php32: Failures: 12  (exit 1)	a Builder constructs its components without a scope of its own (F266-18)

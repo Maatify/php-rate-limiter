@@ -1,0 +1,19 @@
+PHPUnit 11.5.57 by Sebastian Bergmann and contributors.
+
+Runtime:       PHP 8.4.27
+Configuration: /app/phpunit.xml
+
+................................................F................ 65 / 93 ( 69%)
+............................                                      93 / 93 (100%)
+
+Time: 00:01.585, Memory: 14.00 MB
+
+There was 1 failure:
+
+1) Maatify\RateLimiter\Tests\Integration\Redis\OwnershipCrossingsRedisTest::testASimpleThrottlePolicyThatReentersTheStoreIsRefusedBeforeTheExecutorAndTheOrdinaryPolicyRuns
+Failed asserting that null is identical to 'Maatify\RateLimiter\Exception\OverlappingRequestException'.
+
+/app/tests/Integration/Redis/OwnershipCrossingsRedisTest.php:132
+
+FAILURES!
+Tests: 93, Assertions: 1073, Failures: 1.

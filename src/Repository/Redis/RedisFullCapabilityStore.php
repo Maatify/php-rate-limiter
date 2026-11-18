@@ -19,7 +19,12 @@ use Maatify\RateLimiter\DTO\GenerationBoundScoreStateDTO;
 use Maatify\RateLimiter\DTO\PostPunishmentReentryStateDTO;
 use Maatify\RateLimiter\DTO\PunishmentLifecycleTransitionDTO;
 use Maatify\RateLimiter\DTO\RateLimitStateDTO;
+use Maatify\RateLimiter\Contract\ExecutionContextProviderInterface;
+use Maatify\RateLimiter\Exception\OverlappingRequestException;
 use Maatify\RateLimiter\Exception\RateLimitConcurrencyException;
+use Maatify\RateLimiter\Service\ContextDomain;
+use Maatify\RateLimiter\Service\OwnedResources;
+use Maatify\RateLimiter\Service\OwnershipRegistry;
 use Maatify\RateLimiter\Exception\RateLimiterException;
 use Maatify\RateLimiter\Exception\BackendFailureException;
 use Maatify\RateLimiter\Enum\AdmissionOutcomeKindEnum;
@@ -77,7 +82,8 @@ final class RedisFullCapabilityStore implements
     CircuitBreakerStateCasStoreInterface,
     CallerTimeScoreReplaceStoreInterface,
     CallerTimeOperationalReadOnlyStoreInterface,
-    RequestAtomicStoreInterface
+    RequestAtomicStoreInterface,
+    OwnedResources
 {
     private const PREFIX = 'maatify:rate-limiter:v1';
 
@@ -90,6 +96,9 @@ final class RedisFullCapabilityStore implements
     private ?RedisAdmissionOperations $admission = null;
 
     private ?RedisAdmissionOperations $outcomeAdmission = null;
+
+    /** DEC-041: the context domain configured for this store, retained for the store's lifetime; null means the default Fiber domain. */
+    private readonly ?ContextDomain $ownDomain;
 
     /** T-5: the first backend failure a step of the held request met, even when the step handled it and went on. */
     private ?BackendFailureException $requestBackendFailure = null;
@@ -1887,6 +1896,7 @@ LUA;
         private readonly string $namespace,
         ?ClockInterface $clock = null,
         private readonly int $requestRetryBudgetMilliseconds = self::DEFAULT_REQUEST_RETRY_BUDGET_MILLISECONDS,
+        ?ExecutionContextProviderInterface $executionContext = null,
     ) {
         if ($requestRetryBudgetMilliseconds < 1) {
             throw new RateLimiterException('The request retry budget must be at least one millisecond.');
@@ -1895,6 +1905,35 @@ LUA;
             throw new RateLimiterException('Redis namespace contains invalid characters or length.');
         }
         $this->fallbackClock = $clock ?? new SystemClock(new DateTimeZone('UTC'));
+        // DEC-041: a configured provider is bound to this store at construction and retained for its lifetime.
+        $this->ownDomain = $executionContext === null ? null : ContextDomain::forProvider($executionContext);
+        if ($executionContext !== null) {
+            OwnershipRegistry::bindAll([$this], $executionContext);
+        }
+    }
+
+    /** @return list<object> */
+    public function ownedResources(): array
+    {
+        return [$this];
+    }
+
+    /**
+     * DEC-041: admits an operation on this store (nested in the owner's call, a short-lived owner when nobody owns the store, or
+     * refused) for its whole duration, including its Host crossing.
+     *
+     * @template T
+     * @param callable(): T $operation
+     * @return T
+     */
+    private function guarded(string $entry, callable $operation): mixed
+    {
+        $scope = OwnershipRegistry::admit($this, $entry, $this->ownDomain);
+        try {
+            return $operation();
+        } finally {
+            $scope?->release();
+        }
     }
 
     /**
@@ -1910,7 +1949,7 @@ LUA;
      */
     public function increment(string $key, int $ttlSeconds, int $amount = 1): int
     {
-        return $this->incrementAt($key, $ttlSeconds, $amount, $this->fallbackNow());
+        return $this->guarded('increment', fn() => $this->incrementAt($key, $ttlSeconds, $amount, $this->fallbackNow()));
     }
 
     public function incrementAt(string $key, int $ttlSeconds, int $amount, int $now): int
@@ -1922,7 +1961,7 @@ LUA;
 
     public function incrementIfSnapshot(string $key, int $ttlSeconds, ?int $expectedValue, ?int $expectedUpdatedAt, int $newValue): ?int
     {
-        return $this->incrementIfSnapshotAt($key, $ttlSeconds, $expectedValue, $expectedUpdatedAt, $newValue, $this->fallbackNow());
+        return $this->guarded('incrementIfSnapshot', fn() => $this->incrementIfSnapshotAt($key, $ttlSeconds, $expectedValue, $expectedUpdatedAt, $newValue, $this->fallbackNow()));
     }
 
     public function incrementIfSnapshotAt(string $key, int $ttlSeconds, ?int $expectedValue, ?int $expectedUpdatedAt, int $newValue, int $now): ?int
@@ -1947,7 +1986,7 @@ LUA;
 
     public function replaceScore(string $key, int $value, int $ttlSeconds): ?RateLimitStateDTO
     {
-        return $this->replaceScoreAt($key, $value, $ttlSeconds, $this->fallbackNow());
+        return $this->guarded('replaceScore', fn() => $this->replaceScoreAt($key, $value, $ttlSeconds, $this->fallbackNow()));
     }
 
     public function replaceScoreAt(string $key, int $value, int $ttlSeconds, int $now): ?RateLimitStateDTO
@@ -1977,7 +2016,7 @@ LUA;
 
     public function set(string $key, int $value, int $ttlSeconds): void
     {
-        $this->setAt($key, $value, $ttlSeconds, $this->fallbackNow());
+        $this->guarded('set', fn() => $this->setAt($key, $value, $ttlSeconds, $this->fallbackNow()));
     }
 
     public function setAt(string $key, int $value, int $ttlSeconds, int $now): void
@@ -1988,7 +2027,7 @@ LUA;
 
     public function block(string $key, int $level, int $durationSeconds): void
     {
-        $this->blockAt($key, $level, $durationSeconds, $this->fallbackNow());
+        $this->guarded('block', fn() => $this->blockAt($key, $level, $durationSeconds, $this->fallbackNow()));
     }
 
     public function blockAt(string $key, int $level, int $durationSeconds, int $now): void
@@ -2000,7 +2039,7 @@ LUA;
 
     public function checkBlock(string $key): ?BlockStateDTO
     {
-        return $this->checkBlockAt($key, $this->fallbackNow());
+        return $this->guarded('checkBlock', fn() => $this->checkBlockAt($key, $this->fallbackNow()));
     }
 
     public function checkBlockAt(string $key, int $now): ?BlockStateDTO
@@ -2010,7 +2049,7 @@ LUA;
 
     public function peekBlock(string $key): ?BlockStateDTO
     {
-        return $this->peekBlockAt($key, $this->fallbackNow());
+        return $this->guarded('peekBlock', fn() => $this->peekBlockAt($key, $this->fallbackNow()));
     }
 
     /** #185 F-185-26 (DEC-032): BLOCK_PEEK validates as BLOCK_GET does and deletes nothing. */
@@ -2034,7 +2073,7 @@ LUA;
 
     public function getBudget(string $key): ?BudgetStateDTO
     {
-        return $this->getBudgetAt($key, $this->fallbackNow());
+        return $this->guarded('getBudget', fn() => $this->getBudgetAt($key, $this->fallbackNow()));
     }
 
     public function getBudgetAt(string $key, int $now): ?BudgetStateDTO
@@ -2044,7 +2083,7 @@ LUA;
 
     public function peekBudget(string $key): ?BudgetStateDTO
     {
-        return $this->peekBudgetAt($key, $this->fallbackNow());
+        return $this->guarded('peekBudget', fn() => $this->peekBudgetAt($key, $this->fallbackNow()));
     }
 
     /** #185 F-185-26 (DEC-032): BUDGET_PEEK validates as BUDGET_GET does and deletes nothing. */
@@ -2068,7 +2107,7 @@ LUA;
 
     public function incrementBudget(string $key, int $epochDurationSeconds, int $amount = 1): BudgetStateDTO
     {
-        return $this->incrementBudgetAt($key, $epochDurationSeconds, $amount, $this->fallbackNow());
+        return $this->guarded('incrementBudget', fn() => $this->incrementBudgetAt($key, $epochDurationSeconds, $amount, $this->fallbackNow()));
     }
 
     public function incrementBudgetAt(string $key, int $epochDurationSeconds, int $amount, int $now): BudgetStateDTO
@@ -2086,7 +2125,7 @@ LUA;
 
     public function incrementBudgetWithSeed(string $key, int $epochDurationSeconds, BudgetStateDTO $seed, int $amount = 1): BudgetStateDTO
     {
-        return $this->incrementBudgetWithSeedAt($key, $epochDurationSeconds, $seed, $amount, $this->fallbackNow());
+        return $this->guarded('incrementBudgetWithSeed', fn() => $this->incrementBudgetWithSeedAt($key, $epochDurationSeconds, $seed, $amount, $this->fallbackNow()));
     }
 
     public function incrementBudgetWithSeedAt(string $key, int $epochDurationSeconds, BudgetStateDTO $seed, int $amount, int $now): BudgetStateDTO
@@ -2105,7 +2144,7 @@ LUA;
 
     public function addDistinct(string $key, string $item, int $ttlSeconds): int
     {
-        return $this->addDistinctAt($key, $item, $ttlSeconds, $this->fallbackNow());
+        return $this->guarded('addDistinct', fn() => $this->addDistinctAt($key, $item, $ttlSeconds, $this->fallbackNow()));
     }
 
     public function addDistinctAt(string $key, string $item, int $ttlSeconds, int $now): int
@@ -2116,7 +2155,7 @@ LUA;
 
     public function incrementWatchFlag(string $key, int $ttlSeconds): int
     {
-        return $this->incrementWatchFlagAt($key, $ttlSeconds, $this->fallbackNow());
+        return $this->guarded('incrementWatchFlag', fn() => $this->incrementWatchFlagAt($key, $ttlSeconds, $this->fallbackNow()));
     }
 
     public function incrementWatchFlagAt(string $key, int $ttlSeconds, int $now): int
@@ -2132,7 +2171,7 @@ LUA;
 
     public function addDistinctBounded(string $key, string $item, int $ttlSeconds, int $maxDistinct): BoundedDistinctResultDTO
     {
-        return $this->addDistinctBoundedAt($key, $item, $ttlSeconds, $maxDistinct, $this->fallbackNow());
+        return $this->guarded('addDistinctBounded', fn() => $this->addDistinctBoundedAt($key, $item, $ttlSeconds, $maxDistinct, $this->fallbackNow()));
     }
 
     public function addDistinctBoundedAt(string $key, string $item, int $ttlSeconds, int $maxDistinct, int $now): BoundedDistinctResultDTO
@@ -2143,7 +2182,7 @@ LUA;
 
     public function addDistinctBoundedWithSnapshot(string $key, string $item, int $ttlSeconds, int $maxDistinct): BoundedDistinctSnapshotDTO
     {
-        return $this->addDistinctBoundedWithSnapshotAt($key, $item, $ttlSeconds, $maxDistinct, $this->fallbackNow());
+        return $this->guarded('addDistinctBoundedWithSnapshot', fn() => $this->addDistinctBoundedWithSnapshotAt($key, $item, $ttlSeconds, $maxDistinct, $this->fallbackNow()));
     }
 
     public function addDistinctBoundedWithSnapshotAt(string $key, string $item, int $ttlSeconds, int $maxDistinct, int $now): BoundedDistinctSnapshotDTO
@@ -2353,14 +2392,17 @@ LUA;
      */
     public function commitBoundedObservationGroup(callable $evaluate): mixed
     {
-        for ($attempt = 0; $attempt < 3; $attempt++) {
-            [$result, $plans] = $evaluate();
-            if ($this->commitDeviceCapPlans($plans)) {
-                return $result;
+        // DEC-041: several commands and a callback: the whole method is one call of its owner.
+        return $this->guarded('commitBoundedObservationGroup', function () use ($evaluate): mixed {
+            for ($attempt = 0; $attempt < 3; $attempt++) {
+                [$result, $plans] = $evaluate();
+                if ($this->commitDeviceCapPlans($plans)) {
+                    return $result;
+                }
             }
-        }
 
-        throw new RateLimiterException('Bounded observation state changed before commit.');
+            throw new RateLimiterException('Bounded observation state changed before commit.');
+        });
     }
 
     /**
@@ -2435,7 +2477,7 @@ LUA;
 
     public function addDistinctAcrossRotation(string $currentKey, string $bridgeKey, string $previousKey, string $currentMember, string $previousMember, int $ttlSeconds): int
     {
-        return $this->addDistinctAcrossRotationAtMilliseconds($currentKey, $bridgeKey, $previousKey, $currentMember, $previousMember, $ttlSeconds, $this->fallbackNowMilliseconds());
+        return $this->guarded('addDistinctAcrossRotation', fn() => $this->addDistinctAcrossRotationAtMilliseconds($currentKey, $bridgeKey, $previousKey, $currentMember, $previousMember, $ttlSeconds, $this->fallbackNowMilliseconds()));
     }
 
     public function addDistinctAcrossRotationAt(string $currentKey, string $bridgeKey, string $previousKey, string $currentMember, string $previousMember, int $ttlSeconds, int $nowMilliseconds): int
@@ -2451,7 +2493,7 @@ LUA;
 
     public function addDistinctBoundedAcrossRotation(string $currentKey, string $bridgeKey, string $previousKey, string $currentMember, string $previousMember, int $ttlSeconds, int $maxDistinct): BoundedDistinctResultDTO
     {
-        return $this->addDistinctBoundedAcrossRotationAtMilliseconds($currentKey, $bridgeKey, $previousKey, $currentMember, $previousMember, $ttlSeconds, $maxDistinct, $this->fallbackNowMilliseconds());
+        return $this->guarded('addDistinctBoundedAcrossRotation', fn() => $this->addDistinctBoundedAcrossRotationAtMilliseconds($currentKey, $bridgeKey, $previousKey, $currentMember, $previousMember, $ttlSeconds, $maxDistinct, $this->fallbackNowMilliseconds()));
     }
 
     public function addDistinctBoundedAcrossRotationAt(string $currentKey, string $bridgeKey, string $previousKey, string $currentMember, string $previousMember, int $ttlSeconds, int $maxDistinct, int $nowMilliseconds): BoundedDistinctResultDTO
@@ -2467,7 +2509,7 @@ LUA;
 
     public function addDistinctBoundedWithSnapshotAcrossRotation(string $currentKey, string $bridgeKey, string $previousKey, string $currentMember, string $previousMember, int $ttlSeconds, int $maxDistinct): BoundedDistinctSnapshotDTO
     {
-        return $this->addDistinctBoundedWithSnapshotAcrossRotationAtMilliseconds($currentKey, $bridgeKey, $previousKey, $currentMember, $previousMember, $ttlSeconds, $maxDistinct, $this->fallbackNowMilliseconds());
+        return $this->guarded('addDistinctBoundedWithSnapshotAcrossRotation', fn() => $this->addDistinctBoundedWithSnapshotAcrossRotationAtMilliseconds($currentKey, $bridgeKey, $previousKey, $currentMember, $previousMember, $ttlSeconds, $maxDistinct, $this->fallbackNowMilliseconds()));
     }
 
     public function addDistinctBoundedWithSnapshotAcrossRotationAt(string $currentKey, string $bridgeKey, string $previousKey, string $currentMember, string $previousMember, int $ttlSeconds, int $maxDistinct, int $nowMilliseconds): BoundedDistinctSnapshotDTO
@@ -2487,7 +2529,7 @@ LUA;
 
     public function incrementWatchFlagAcrossRotation(string $currentKey, string $previousKey, int $ttlSeconds): int
     {
-        return $this->incrementWatchFlagAcrossRotationAt($currentKey, $previousKey, $ttlSeconds, $this->fallbackNow());
+        return $this->guarded('incrementWatchFlagAcrossRotation', fn() => $this->incrementWatchFlagAcrossRotationAt($currentKey, $previousKey, $ttlSeconds, $this->fallbackNow()));
     }
 
     public function incrementWatchFlagAcrossRotationAt(string $currentKey, string $previousKey, int $ttlSeconds, int $now): int
@@ -2611,17 +2653,20 @@ LUA;
 
     public function save(string $policyName, CircuitBreakerStateDTO $state): void
     {
-        if (! $this->circuitTimestampsNonNegative($state)) {
-            throw new RateLimiterException('Circuit-breaker timestamps must be non-negative Unix timestamps.');
-        }
-        $raw = json_encode($state, JSON_THROW_ON_ERROR);
-        if ($this->requestState !== null) {
-            // T-5: inside a request the write is held back and saved with it.
-            $this->eval("redis.call('SET', KEYS[1], ARGV[1])\nreturn 1", [$this->key('circuit', $policyName)], [$raw]);
+        // DEC-041: admitted before the held request state is read.
+        $this->guarded('save', function () use ($policyName, $state): void {
+            if (! $this->circuitTimestampsNonNegative($state)) {
+                throw new RateLimiterException('Circuit-breaker timestamps must be non-negative Unix timestamps.');
+            }
+            $raw = json_encode($state, JSON_THROW_ON_ERROR);
+            if ($this->requestState !== null) {
+                // T-5: inside a request the write is held back and saved with it.
+                $this->eval("redis.call('SET', KEYS[1], ARGV[1])\nreturn 1", [$this->key('circuit', $policyName)], [$raw]);
 
-            return;
-        }
-        $this->command(['SET', $this->key('circuit', $policyName), $raw]);
+                return;
+            }
+            $this->command(['SET', $this->key('circuit', $policyName), $raw]);
+        });
     }
 
     public function acquireProbeLease(string $policyName, int $now, int $leaseSeconds): bool
@@ -2711,7 +2756,7 @@ LUA;
      */
     public function readGenerationBoundScoreState(string $currentKey, ?string $previousKey): ?GenerationBoundScoreStateDTO
     {
-        return $this->readGenerationBoundScoreStateAtMilliseconds($currentKey, $previousKey, $this->fallbackNowMilliseconds());
+        return $this->guarded('readGenerationBoundScoreState', fn() => $this->readGenerationBoundScoreStateAtMilliseconds($currentKey, $previousKey, $this->fallbackNowMilliseconds()));
     }
 
     public function readGenerationBoundScoreStateAt(string $currentKey, ?string $previousKey, int $nowMilliseconds): ?GenerationBoundScoreStateDTO
@@ -2783,7 +2828,7 @@ LUA;
      */
     public function mutateGenerationBoundScore(string $currentKey, ?string $previousKey, ?GenerationBoundScoreStateDTO $expectedState, int $ttlSeconds, int $newValue): GenerationBoundScoreMutationDTO
     {
-        return $this->mutateGenerationBoundScoreAtMilliseconds($currentKey, $previousKey, $expectedState, $ttlSeconds, $newValue, $this->fallbackNowMilliseconds());
+        return $this->guarded('mutateGenerationBoundScore', fn() => $this->mutateGenerationBoundScoreAtMilliseconds($currentKey, $previousKey, $expectedState, $ttlSeconds, $newValue, $this->fallbackNowMilliseconds()));
     }
 
     public function mutateGenerationBoundScoreAt(string $currentKey, ?string $previousKey, ?GenerationBoundScoreStateDTO $expectedState, int $ttlSeconds, int $newValue, int $nowMilliseconds): GenerationBoundScoreMutationDTO
@@ -2856,7 +2901,7 @@ LUA;
      */
     public function blockWithPunishmentLifecycleTracking(string $currentKey, ?string $previousKey, int $expectedGeneration, string $proposedLifecycleId, int $level, int $durationSeconds, int $cycleWindowSeconds, int $cycleThreshold, int $pauseSeconds, int $pauseHistoryRetentionSeconds): PunishmentLifecycleTransitionDTO
     {
-        return $this->blockWithPunishmentLifecycleTrackingAt($currentKey, $previousKey, $expectedGeneration, $proposedLifecycleId, $level, $durationSeconds, $cycleWindowSeconds, $cycleThreshold, $pauseSeconds, $pauseHistoryRetentionSeconds, $this->fallbackNow());
+        return $this->guarded('blockWithPunishmentLifecycleTracking', fn() => $this->blockWithPunishmentLifecycleTrackingAt($currentKey, $previousKey, $expectedGeneration, $proposedLifecycleId, $level, $durationSeconds, $cycleWindowSeconds, $cycleThreshold, $pauseSeconds, $pauseHistoryRetentionSeconds, $this->fallbackNow()));
     }
 
     public function blockWithPunishmentLifecycleTrackingAt(string $currentKey, ?string $previousKey, int $expectedGeneration, string $proposedLifecycleId, int $level, int $durationSeconds, int $cycleWindowSeconds, int $cycleThreshold, int $pauseSeconds, int $pauseHistoryRetentionSeconds, int $now): PunishmentLifecycleTransitionDTO
@@ -2902,7 +2947,7 @@ LUA;
      */
     public function claimPostPunishmentReentry(string $currentKey, ?string $previousKey, string $lifecycleId): bool
     {
-        return $this->claimPostPunishmentReentryAtMilliseconds($currentKey, $previousKey, $lifecycleId, $this->fallbackNowMilliseconds());
+        return $this->guarded('claimPostPunishmentReentry', fn() => $this->claimPostPunishmentReentryAtMilliseconds($currentKey, $previousKey, $lifecycleId, $this->fallbackNowMilliseconds()));
     }
 
     public function claimPostPunishmentReentryAt(string $currentKey, ?string $previousKey, string $lifecycleId, int $nowMilliseconds): bool
@@ -2977,7 +3022,7 @@ LUA;
     {
         // The admission scripts go through the same request overlay as the store scripts while a request is held.
         return $this->admission ??= new RedisAdmissionOperations(
-            new CallableRedisCommandExecutor(fn(array $command): mixed => $this->executeInRequestWhenHeld($command)),
+            new CallableRedisCommandExecutor(fn(array $command): mixed => $this->guarded('admission', fn(): mixed => $this->executeInRequestWhenHeld($command))),
             $this->namespace,
         );
     }
@@ -3055,12 +3100,16 @@ LUA;
      */
     private function eval(string $script, array $keys, array $args): mixed
     {
-        if ($this->requestState !== null) {
-            return $this->evalInRequest($script, $keys, $args);
-        }
-        /** @var non-empty-list<int|string|float> $command */
-        $command = array_merge(['EVAL', $script, count($keys)], $keys, $args);
-        return $this->command($command);
+        // DEC-041: admitted before the held request state is read, so an independent call cannot observe it.
+        return $this->guarded('eval', function () use ($script, $keys, $args): mixed {
+            if ($this->requestState !== null) {
+                return $this->evalInRequest($script, $keys, $args);
+            }
+            /** @var non-empty-list<int|string|float> $command */
+            $command = array_merge(['EVAL', $script, count($keys)], $keys, $args);
+
+            return $this->command($command);
+        });
     }
 
     /**
@@ -3091,6 +3140,13 @@ LUA;
      */
     public function transactRequest(callable $evaluate): mixed
     {
+        // DEC-041: admitted before the callback runs and before the held request state is inspected, whether or not a request is
+        // open, so a direct transaction without writes (which sends no command) cannot slip past the command-level check.
+        return $this->guarded('transactRequest', fn(): mixed => $this->runRequest($evaluate));
+    }
+
+    private function runRequest(callable $evaluate): mixed
+    {
         if ($this->requestState !== null) {
             return $evaluate();
         }
@@ -3114,6 +3170,9 @@ LUA;
                 }
                 $state = $this->heldRequestState();
             } catch (BackendFailureException $exception) {
+                throw $exception;
+            } catch (OverlappingRequestException $exception) {
+                // DEC-041: an overlapping call is refused, never retried and never classified as a conflict over stale state.
                 throw $exception;
             } catch (\Throwable $exception) {
                 $state = $this->heldRequestState();
@@ -3274,11 +3333,15 @@ LUA;
      */
     private function command(array $command): mixed
     {
-        try {
-            return $this->redis->execute($command);
-        } catch (BackendFailureException $exception) {
-            throw $exception;
-        }
+        // DEC-041: every Redis command is admitted first (a direct capability call is a short-lived owner for the command), and
+        // the executor is a Host crossing of the owning call.
+        return $this->guarded('command', fn(): mixed => OwnershipRegistry::crossing($this, function () use ($command): mixed {
+            try {
+                return $this->redis->execute($command);
+            } catch (BackendFailureException $exception) {
+                throw $exception;
+            }
+        }));
     }
 
     /** DEC-017 and #215: the caller's time in milliseconds is a canonical non-negative decimal within Lua's exact range. */
@@ -3298,13 +3361,14 @@ LUA;
     /** The time of an existing contract method called directly: the store's clock, never Redis `TIME`. */
     private function fallbackNow(): int
     {
-        return $this->fallbackClock->now()->getTimestamp();
+        // DEC-041: the store's own clock is a Host crossing of the call that owns this store (the owner is taken by the caller first).
+        return OwnershipRegistry::crossing($this, fn(): int => $this->fallbackClock->now()->getTimestamp());
     }
 
     /** The same fallback time, in milliseconds, for the operations that derive millisecond lifetimes. */
     private function fallbackNowMilliseconds(): string
     {
-        return CallerTimeMilliseconds::fromInstant($this->fallbackClock->now());
+        return CallerTimeMilliseconds::fromInstant(OwnershipRegistry::crossing($this, fn(): \DateTimeImmutable => $this->fallbackClock->now()));
     }
 
     private function positive(int $value, string $label): void

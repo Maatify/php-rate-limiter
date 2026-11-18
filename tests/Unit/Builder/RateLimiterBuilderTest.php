@@ -193,6 +193,7 @@ final class RateLimiterBuilderTest extends TestCase
         self::assertSame([
             '__construct',
             'fromFullCapabilityStore',
+            'withExecutionContextProvider',
             'withClock',
             'withDeviceIdentityResolver',
             'withProvenPendingPermitLimit',

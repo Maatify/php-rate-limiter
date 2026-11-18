@@ -1,0 +1,39 @@
+PHPUnit 11.5.57 by Sebastian Bergmann and contributors.
+
+Runtime:       PHP 8.4.27
+Configuration: /app/phpunit.xml
+
+..................FF...........................E................. 65 / 76 ( 85%)
+...........                                                       76 / 76 (100%)
+
+Time: 00:00.358, Memory: 16.00 MB
+
+There was 1 error:
+
+1) Maatify\RateLimiter\Tests\Integration\Redis\FiberRequestOwnershipRedisTest::testGraphsThatShareOnlyTheCorrelationStoreOrOnlyTheCircuitStoreContend
+Maatify\RateLimiter\Exception\OverlappingRequestException: Overlapping call refused at 'limit': another call is in flight on this runtime graph or on a store it shares. Use one runtime graph (with its own store object) per concurrent execution context, or wait for the call in flight to finish.
+
+/app/src/Service/OwnershipRegistry.php:302
+/app/src/Service/RateLimiterEngine.php:104
+/app/src/Service/RateLimiterEngine.php:333
+/app/src/Service/CompositeRateLimiterRuntime.php:30
+/app/tests/Integration/Redis/FiberRequestOwnershipRedisTest.php:820
+/app/tests/Integration/Redis/FiberRequestOwnershipRedisTest.php:821
+
+--
+
+There were 2 failures:
+
+1) Maatify\RateLimiter\Tests\Unit\Service\OwnershipRegistryTest::testAProviderThatThrowsReleasesOnlyThisCallsReservationsAndSurfacesAClassifiedFailure
+Failed asserting that true is false.
+
+/app/tests/Unit/Service/OwnershipRegistryTest.php:158
+
+2) Maatify\RateLimiter\Tests\Unit\Service\OwnershipRegistryTest::testARefusedAcquisitionClearsOnlyWhatItTookAndNeverAnotherCallsSlot
+The resource B had taken before meeting the occupied one is free again.
+Failed asserting that true is false.
+
+/app/tests/Unit/Service/OwnershipRegistryTest.php:61
+
+ERRORS!
+Tests: 76, Assertions: 988, Errors: 1, Failures: 2.

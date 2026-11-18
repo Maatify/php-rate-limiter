@@ -10,7 +10,7 @@ use Maatify\SharedCommon\Contracts\ClockInterface;
 /**
  * Calculates elapsed score decay using scope-specific rates and block level.
  */
-class DecayCalculator
+class DecayCalculator implements OwnedResources
 {
     private const RATE_ACCOUNT = 600; // 10m
     private const RATE_DEVICE = 300;  // 5m
@@ -20,8 +20,10 @@ class DecayCalculator
      * @param ClockInterface $clock Source of the current timestamp.
      */
     public function __construct(
-        private readonly ClockInterface $clock,
-    ) {}
+        private ClockInterface $clock,
+    ) {
+        $this->clock = HostClock::of($this->clock);
+    }
 
     /**
      * Calculate whole score points to remove since the last update.
@@ -117,5 +119,11 @@ class DecayCalculator
         };
 
         return $currentBlockLevel >= 2 ? $baseInterval * 2 : $baseInterval;
+    }
+
+    /** @return list<object> */
+    public function ownedResources(): array
+    {
+        return OwnershipRegistry::collect([], [], [$this->clock]);
     }
 }

@@ -36,8 +36,18 @@ use Maatify\SharedCommon\Contracts\ClockInterface;
  * failure-mode fallback, and the circuit-boundary orchestration of the public
  * one-shot post-punishment lifecycle claim.
  */
-class RateLimiterEngine implements RateLimiterRuntimeInterface, AdmissionBindingControlInterface, AdmissionBindingEpochInterface, AdmissionFenceControlInterface, AdmissionSharedConfigControlInterface
+class RateLimiterEngine implements RateLimiterRuntimeInterface, AdmissionBindingControlInterface, AdmissionBindingEpochInterface, AdmissionFenceControlInterface, AdmissionSharedConfigControlInterface, OwnedResources
 {
+    /**
+     * DEC-041: the resources every independent call of this engine owns, and the context domain they are bound to (and its provider, held for
+     * the engine's lifetime).
+     *
+     * @var list<object>
+     */
+    private readonly array $resources;
+
+    private readonly ContextDomain $domain;
+
     /** @var array<string, BlockPolicyInterface> */
     private array $policies = [];
 
@@ -58,16 +68,43 @@ class RateLimiterEngine implements RateLimiterRuntimeInterface, AdmissionBinding
         private readonly CircuitBreaker $circuitBreaker,
         private readonly FailureModeResolver $failureResolver,
         FailureSignalEmitterInterface $emitter,
-        private readonly ClockInterface $clock,
+        private ClockInterface $clock,
         array $policies,
         private readonly ?AdmissionRuntime $admission = null,
     ) {
+        $this->clock = HostClock::of($this->clock);
         // Retain the historical constructor boundary; transition signals are
         // emitted by CircuitBreaker at the actual state transition.
         unset($emitter);
 
         foreach ($policies as $policy) {
             $this->registerPolicy($policy);
+        }
+        $this->resources = OwnershipRegistry::collect([$this->pipeline, $this->circuitBreaker, $this->admission], [$this], [$this->clock]);
+        $this->domain = OwnershipRegistry::adopt($this->resources, $this);
+    }
+
+    /** @return list<object> */
+    public function ownedResources(): array
+    {
+        return $this->resources;
+    }
+
+    /**
+     * DEC-041: one independent call. The whole resource set is acquired all-or-none before the clock, the breaker, any Host call or any
+     * state is touched; the slots are released last, after the call's signals and clock reading.
+     *
+     * @template T
+     * @param callable(): T $call
+     * @return T
+     */
+    private function exclusive(string $entry, callable $call): mixed
+    {
+        $scope = OwnershipRegistry::acquire($this->resources, $entry, $this->domain);
+        try {
+            return $call();
+        } finally {
+            $scope->release();
         }
     }
 
@@ -257,7 +294,7 @@ class RateLimiterEngine implements RateLimiterRuntimeInterface, AdmissionBinding
             return [];
         }
 
-        $capabilities = $policy->getCapabilities();
+        $capabilities = $this->hostPolicy(fn() => $policy->getCapabilities());
         foreach ($capabilities as $capability) {
             // Runtime validation intentionally protects the public boundary
             // even when a deliberately invalid fixture lies to static analysis.
@@ -292,9 +329,9 @@ class RateLimiterEngine implements RateLimiterRuntimeInterface, AdmissionBinding
     public function limit(RateLimitContextDTO $context, RateLimitCommand $request): RateLimitResultDTO
     {
         // One reading of the Host clock for the whole call (#153 phase 2, LT-P2-05).
-        return $this->clock instanceof RequestScopedClock
+        return $this->exclusive('limit', fn(): RateLimitResultDTO => $this->clock instanceof RequestScopedClock
             ? $this->clock->holding(fn(): RateLimitResultDTO => $this->evaluate($context, $request))
-            : $this->evaluate($context, $request);
+            : $this->evaluate($context, $request));
     }
 
     /**
@@ -337,10 +374,10 @@ class RateLimiterEngine implements RateLimiterRuntimeInterface, AdmissionBinding
             throw new RateLimiterException("Policy not found: {$request->policyName}");
         }
 
-        $policyName = $policy->getName();
+        $policyName = $this->hostPolicy(fn() => $policy->getName());
 
         // #185 F-185-11: the access charge must be a PHP int; checked before any I/O.
-        ScoreArithmetic::product($policy->getScoreDeltas()->access, $request->cost, 'access delta × command cost');
+        ScoreArithmetic::product($this->hostPolicy(fn() => $policy->getScoreDeltas())->access, $request->cost, 'access delta × command cost');
 
         // Circuit-breaker preflight must happen before identity resolution and
         // normal evaluation so OPEN/HALF_OPEN requests cannot touch the shared
@@ -400,7 +437,7 @@ class RateLimiterEngine implements RateLimiterRuntimeInterface, AdmissionBinding
 
         try {
             $process = function () use ($policy, $context, $request, &$settled): RateLimitResultDTO {
-                $device = $this->deviceResolver->resolve($context);
+                $device = OwnershipRegistry::crossing($this, fn() => $this->deviceResolver->resolve($context));
                 $group = $this->admissionGroup($policy);
 
                 if ($group !== null && $this->admission !== null && $this->admission->fenceOpen($group)) {
@@ -530,9 +567,9 @@ class RateLimiterEngine implements RateLimiterRuntimeInterface, AdmissionBinding
         string $reentryId,
     ): bool {
         // One reading of the Host clock for the whole call (#153 phase 2, LT-P2-05).
-        return $this->clock instanceof RequestScopedClock
+        return $this->exclusive('claimPostPunishmentReentry', fn(): bool => $this->clock instanceof RequestScopedClock
             ? $this->clock->holding(fn(): bool => $this->claim($context, $policyName, $reentryId))
-            : $this->claim($context, $policyName, $reentryId);
+            : $this->claim($context, $policyName, $reentryId));
     }
 
     private function claim(RateLimitContextDTO $context, string $policyName, string $reentryId): bool
@@ -551,7 +588,7 @@ class RateLimiterEngine implements RateLimiterRuntimeInterface, AdmissionBinding
         if ($state->state !== \Maatify\RateLimiter\DTO\FailureStateDTO::STATE_CLOSED) {
             throw new RateLimiterException('Post-punishment re-entry claim is unavailable while the circuit is not closed.');
         }
-        $device = $this->deviceResolver->resolve($context);
+        $device = OwnershipRegistry::crossing($this, fn() => $this->deviceResolver->resolve($context));
         try {
             // The lane is passed only after the opt-in is verified (5-b3a constraint): a policy that did not opt in, or an
             // engine whose fence is closed, claims exactly as before.
@@ -571,25 +608,29 @@ class RateLimiterEngine implements RateLimiterRuntimeInterface, AdmissionBinding
     /** @throws RateLimiterException when no admission runtime is configured */
     public function revokeAccountBinding(string $accountId): void
     {
-        $this->requireAdmission()->revokeAccountBinding($accountId);
+        $this->exclusive('revokeAccountBinding', function () use ($accountId): void {
+            $this->requireAdmission()->revokeAccountBinding($accountId);
+        });
     }
 
     /** @throws RateLimiterException when no admission runtime is configured */
     public function bindingEpoch(string $accountId): int
     {
-        return $this->requireAdmission()->bindingEpoch($accountId);
+        return $this->exclusive('bindingEpoch', fn(): int => $this->requireAdmission()->bindingEpoch($accountId));
     }
 
     /** @throws RateLimiterException when no admission runtime is configured */
     public function openAdmissionFence(string $budgetGroup): int
     {
-        return $this->requireAdmission()->openFence($budgetGroup);
+        return $this->exclusive('openAdmissionFence', fn(): int => $this->requireAdmission()->openFence($budgetGroup));
     }
 
     /** @throws RateLimiterException when no admission runtime is configured */
     public function rebindAdmissionSharedConfig(string $budgetGroup): void
     {
-        $this->requireAdmission()->rebindSharedConfig($budgetGroup);
+        $this->exclusive('rebindAdmissionSharedConfig', function () use ($budgetGroup): void {
+            $this->requireAdmission()->rebindSharedConfig($budgetGroup);
+        });
     }
 
     private function requireAdmission(): AdmissionRuntime
@@ -602,7 +643,7 @@ class RateLimiterEngine implements RateLimiterRuntimeInterface, AdmissionBinding
     {
         return $policy instanceof AdmissionReservationPolicyInterface
             && in_array(PolicyCapabilityEnum::ADMISSION_RESERVATION, $this->capabilities($policy), true)
-            ? $policy->getAdmissionBudgetGroup()
+            ? $this->hostPolicy(fn() => $policy->getAdmissionBudgetGroup())
             : null;
     }
 
@@ -621,9 +662,9 @@ class RateLimiterEngine implements RateLimiterRuntimeInterface, AdmissionBinding
     ): RateLimitResultDTO {
         if ($request->isFailure || $request->isSuccess) {
             if ($request->permit === null) {
-                throw new RateLimiterException("Policy {$policy->getName()} invalid use: an outcome of an admission policy requires the permit issued with its admission.");
+                throw new RateLimiterException("Policy {$this->hostPolicy(fn() => $policy->getName())} invalid use: an outcome of an admission policy requires the permit issued with its admission.");
             }
-            $applied = $settled ?? $admission->applyOutcome($policy->getName(), $group, $context, $request->permit, $request->isSuccess);
+            $applied = $settled ?? $admission->applyOutcome($this->hostPolicy(fn() => $policy->getName()), $group, $context, $request->permit, $request->isSuccess);
             if ($applied instanceof RateLimitResultDTO) {
                 return $applied;
             }
@@ -638,7 +679,7 @@ class RateLimiterEngine implements RateLimiterRuntimeInterface, AdmissionBinding
             $lane = $admission->resolveLane($group, $context);
             $result = $this->pipeline->process($policy, $context, $request, $device, $lane->lane);
             if ($request->isPreCheck && $result->decision === RateLimitResultDTO::DECISION_ALLOW) {
-                return $admission->reserve($policy->getName(), $group, $context, $device, $lane, $result);
+                return $admission->reserve($this->hostPolicy(fn() => $policy->getName()), $group, $context, $device, $lane, $result);
             }
 
             return $result;
@@ -669,8 +710,8 @@ class RateLimiterEngine implements RateLimiterRuntimeInterface, AdmissionBinding
     private function degradedResult(BlockPolicyInterface $policy, RateLimitContextDTO $context): RateLimitResultDTO
     {
         $mode = $this->failureResolver->resolve($policy, $this->circuitBreaker);
-        if ($mode === 'FAIL_CLOSED' && $this->circuitBreaker->isReEntryGuardViolated($policy->getName())) {
-            return $this->guardResult($policy->getName());
+        if ($mode === 'FAIL_CLOSED' && $this->circuitBreaker->isReEntryGuardViolated($this->hostPolicy(fn() => $policy->getName()))) {
+            return $this->guardResult($this->hostPolicy(fn() => $policy->getName()));
         }
 
         if ($mode === 'FAIL_OPEN' || $mode === 'DEGRADED_MODE') {
@@ -701,4 +742,15 @@ class RateLimiterEngine implements RateLimiterRuntimeInterface, AdmissionBinding
         return new RateLimitResultDTO(RateLimitResultDTO::DECISION_HARD_BLOCK, 2, $fallbackRetryAfter, $mode, $meta);
     }
 
+    /**
+     * DEC-041: a policy getter is Host code: a call it makes into the library from this stack is a re-entry, not a nested operation.
+     *
+     * @template T
+     * @param callable(): T $call
+     * @return T
+     */
+    private function hostPolicy(callable $call): mixed
+    {
+        return OwnershipRegistry::crossing($this, $call);
+    }
 }

@@ -1,0 +1,3 @@
+unstaged-preexisting-edit	0
+staged-preexisting-edit	0
+initially-clean	0

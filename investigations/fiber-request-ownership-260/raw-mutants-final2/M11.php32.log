@@ -1,0 +1,80 @@
+PHPUnit 11.5.57 by Sebastian Bergmann and contributors.
+
+Runtime:       PHP 8.4.27
+Configuration: /app/phpunit.xml
+
+...............F.F......F..FF.FFF.....F.......................    62 / 62 (100%)
+
+Time: 00:01.599, Memory: 14.00 MB
+
+There were 9 failures:
+
+1) Maatify\RateLimiter\Tests\Integration\Redis\FiberRequestOwnershipRedisTest::testAnOverlapRefusalInsideATransactionIsNotRetriedAndIsNotACircuitReport
+The refusal reaches the caller unchanged.
+Failed asserting that two strings are identical.
+--- Expected
++++ Actual
+@@ @@
+-'Maatify\RateLimiter\Exception\OverlappingRequestException'
++'Maatify\RateLimiter\Exception\RateLimiterException'
+
+/app/tests/Integration/Redis/FiberRequestOwnershipRedisTest.php:944
+
+2) Maatify\RateLimiter\Tests\Integration\Redis\FiberRequestOwnershipRedisTest::testACallMadeFromInsideTheExecutorOnTheSameStackIsRefused
+Re-entrant calls from the executor, on the owner's own stack, are refused.
+Failed asserting that two arrays are identical.
+--- Expected
++++ Actual
+@@ @@
+ Array &0 [
+     0 => 'Maatify\RateLimiter\Exception\OverlappingRequestException',
+-    1 => 'Maatify\RateLimiter\Exception\OverlappingRequestException',
++    1 => null,
+ ]
+
+/app/tests/Integration/Redis/FiberRequestOwnershipRedisTest.php:864
+
+3) Maatify\RateLimiter\Tests\Integration\Redis\OwnershipCrossingsRedisTest::testASimpleThrottlePolicyThatReentersTheStoreIsRefusedBeforeTheExecutorAndTheOrdinaryPolicyRuns
+Failed asserting that null is identical to 'Maatify\RateLimiter\Exception\OverlappingRequestException'.
+
+/app/tests/Integration/Redis/OwnershipCrossingsRedisTest.php:120
+
+4) Maatify\RateLimiter\Tests\Integration\Redis\OwnershipCrossingsRedisTest::testTheStoreClockOfTheSecondsAndOfTheMillisecondsPathsCannotReenterTheStore
+seconds path
+Failed asserting that null is identical to 'Maatify\RateLimiter\Exception\OverlappingRequestException'.
+
+/app/tests/Integration/Redis/OwnershipCrossingsRedisTest.php:249
+
+5) Maatify\RateLimiter\Tests\Integration\Redis\OwnershipCrossingsRedisTest::testTheSimpleReaderClockCannotReenterTheStoreAndAnOrdinaryReadStaysReadOnly
+Failed asserting that null is identical to 'Maatify\RateLimiter\Exception\OverlappingRequestException'.
+
+/app/tests/Integration/Redis/OwnershipCrossingsRedisTest.php:275
+
+6) Maatify\RateLimiter\Tests\Integration\Redis\OwnershipCrossingsRedisTest::testTheScoreReaderDeviceResolverCannotReenterTheStore
+Failed asserting that null is identical to 'Maatify\RateLimiter\Exception\OverlappingRequestException'.
+
+/app/tests/Integration/Redis/OwnershipCrossingsRedisTest.php:302
+
+7) Maatify\RateLimiter\Tests\Integration\Redis\OwnershipCrossingsRedisTest::testAScorePolicyThatReentersTheStoreFromAGetterIsRefusedBeforeTheExecutor
+Failed asserting that null is identical to 'Maatify\RateLimiter\Exception\OverlappingRequestException'.
+
+/app/tests/Integration/Redis/OwnershipCrossingsRedisTest.php:150
+
+8) Maatify\RateLimiter\Tests\Integration\Redis\OwnershipCrossingsRedisTest::testAScorePolicyThresholdGetterReadByThePipelineCannotReenterTheStore
+Failed asserting that null is identical to 'Maatify\RateLimiter\Exception\OverlappingRequestException'.
+
+/app/tests/Integration/Redis/OwnershipCrossingsRedisTest.php:181
+
+9) Maatify\RateLimiter\Tests\Unit\Service\OwnershipRegistryTest::testNestedOperationsFromTheOwnersContextAreAdmittedAndOtherContextsAndCrossingsAreRefused
+A call from inside a Host crossing is refused even from the owner's context.
+Failed asserting that two strings are identical.
+--- Expected
++++ Actual
+@@ @@
+-'refused'
++'admitted'
+
+/app/tests/Unit/Service/OwnershipRegistryTest.php:223
+
+FAILURES!
+Tests: 62, Assertions: 916, Failures: 9.

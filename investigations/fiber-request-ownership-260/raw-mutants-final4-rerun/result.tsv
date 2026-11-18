@@ -1,0 +1,3 @@
+M06	DETECTED	php64: Failures: 1  (exit 1)	php32: Failures: 1  (exit 1)	foreign-record cleanup: clear() empties the slot whoever holds it
+M23	DETECTED	php64: Failures: 6  (exit 1)	php32: Failures: 6  (exit 1)	a rollback releases every holder of a binding, not only its own hold (F266-15, F266-17)
+M29	DETECTED	php64: Failures: 3  (exit 1)	php32: Failures: 3  (exit 1)	the overdue rollback undoes a binding while a call is still active on the resource (F266-17 case 3)

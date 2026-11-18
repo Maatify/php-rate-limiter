@@ -133,7 +133,7 @@ final class AdmissionNm10BindingTest extends TestCase
     public function testDetectorAnOptionalPermitScoresADuplicateTwiceOnBru24(): void
     {
         $engine = ServiceMutant::load('RateLimiterEngine', [], [[
-            'throw new RateLimiterException("Policy {$policy->getName()} invalid use: an outcome of an admission policy requires the permit issued with its admission.");',
+            'throw new RateLimiterException("Policy {$this->hostPolicy(fn() => $policy->getName())} invalid use: an outcome of an admission policy requires the permit issued with its admission.");',
             'return $this->pipeline->process($policy, $context, $request, $device, \\Maatify\\RateLimiter\\Enum\\AdmissionLaneEnum::U);',
         ]]);
         $cases = new Lt16Cases();

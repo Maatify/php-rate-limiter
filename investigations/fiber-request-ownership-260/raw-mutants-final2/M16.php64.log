@@ -1,0 +1,31 @@
+PHPUnit 11.5.57 by Sebastian Bergmann and contributors.
+
+Runtime:       PHP 8.4.27
+Configuration: /app/phpunit.xml
+
+........................F..FF.................................    62 / 62 (100%)
+
+Time: 00:00.429, Memory: 16.00 MB
+
+There were 3 failures:
+
+1) Maatify\RateLimiter\Tests\Integration\Redis\OwnershipCrossingsRedisTest::testACallIsRefusedWhileAnotherIsSuspendedInsideTheStoresOwnClock
+the store was owned from before its clock was read
+Failed asserting that null is identical to 'Maatify\RateLimiter\Exception\OverlappingRequestException'.
+
+/app/tests/Integration/Redis/OwnershipCrossingsRedisTest.php:232
+
+2) Maatify\RateLimiter\Tests\Integration\Redis\OwnershipCrossingsRedisTest::testTheStoreClockOfTheSecondsAndOfTheMillisecondsPathsCannotReenterTheStore
+seconds path
+Failed asserting that null is identical to 'Maatify\RateLimiter\Exception\OverlappingRequestException'.
+
+/app/tests/Integration/Redis/OwnershipCrossingsRedisTest.php:249
+
+3) Maatify\RateLimiter\Tests\Integration\Redis\OwnershipCrossingsRedisTest::testAnIncrementOverAnOwnedStoreIsRefusedBeforeItsClockIsRead
+the refused call read the Host clock zero times
+Failed asserting that 1 is identical to 0.
+
+/app/tests/Integration/Redis/OwnershipCrossingsRedisTest.php:209
+
+FAILURES!
+Tests: 62, Assertions: 930, Failures: 3.

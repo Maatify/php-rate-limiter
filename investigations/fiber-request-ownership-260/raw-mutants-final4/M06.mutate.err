@@ -1,0 +1,2 @@
+anchor not found:         $slot = self::slot($resource);
+        if ($slot->re

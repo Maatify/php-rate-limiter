@@ -1,0 +1,33 @@
+PHPUnit 11.5.57 by Sebastian Bergmann and contributors.
+
+Runtime:       PHP 8.4.27
+Configuration: /app/phpunit.xml
+
+....................E...................F........................ 65 / 67 ( 97%)
+..                                                                67 / 67 (100%)
+
+Time: 00:00.354, Memory: 16.00 MB
+
+There was 1 error:
+
+1) Maatify\RateLimiter\Tests\Integration\Redis\FiberRequestOwnershipRedisTest::testGraphsThatShareOnlyTheCorrelationStoreOrOnlyTheCircuitStoreContend
+Maatify\RateLimiter\Exception\OverlappingRequestException: Overlapping call refused at 'limit': another call is in flight on this runtime graph or on a store it shares. Use one runtime graph (with its own store object) per concurrent execution context, or wait for the call in flight to finish.
+
+/app/src/Service/OwnershipRegistry.php:287
+/app/src/Service/RateLimiterEngine.php:103
+/app/src/Service/RateLimiterEngine.php:332
+/app/src/Service/CompositeRateLimiterRuntime.php:30
+/app/tests/Integration/Redis/FiberRequestOwnershipRedisTest.php:820
+/app/tests/Integration/Redis/FiberRequestOwnershipRedisTest.php:821
+
+--
+
+There was 1 failure:
+
+1) Maatify\RateLimiter\Tests\Unit\Service\OwnershipRegistryTest::testAProviderThatThrowsReleasesOnlyThisCallsReservationsAndSurfacesAClassifiedFailure
+Failed asserting that true is false.
+
+/app/tests/Unit/Service/OwnershipRegistryTest.php:158
+
+ERRORS!
+Tests: 67, Assertions: 944, Errors: 1, Failures: 1.

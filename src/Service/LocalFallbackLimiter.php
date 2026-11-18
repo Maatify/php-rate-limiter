@@ -78,7 +78,7 @@ class LocalFallbackLimiter
             return null;
         }
 
-        $configuration = self::configuration($policy);
+        $configuration = OwnershipRegistry::crossing($clock, fn() => self::configuration($policy));
         if ($configuration === null || $configuration->rules === []) {
             return self::UNWINDOWED_DENIAL_RETRY_AFTER;
         }
@@ -86,7 +86,7 @@ class LocalFallbackLimiter
         $normalizedIp = self::getIpPrefix($ip);
         // Use the package canonical browser-major normalization for K2 parity.
         $normalizedUa = DeviceIdentityResolver::normalizeUserAgent($ua);
-        $namespace = self::namespace($policy);
+        $namespace = OwnershipRegistry::crossing($clock, fn() => self::namespace($policy));
 
         $retryAfter = null;
         foreach ($configuration->rules as $rule) {

@@ -34,6 +34,12 @@ use Maatify\SharedCommon\Contracts\ClockInterface;
  */
 final class RateLimitOperationalReader implements RateLimitOperationalReaderInterface
 {
+    /** @var list<object> DEC-041: the resources every independent call of this entry owns. */
+    private readonly array $resources;
+
+    /** DEC-041: the context domain they are bound to; holds its provider for the lifetime of this object. */
+    private readonly ContextDomain $domain;
+
     private const BUDGET_EPOCH_SECONDS = 86400;
 
     /**
@@ -72,6 +78,8 @@ final class RateLimitOperationalReader implements RateLimitOperationalReaderInte
         if ($previousKeySecret !== null && trim($previousKeySecret) === '') {
             throw new RateLimiterException('Previous key secret must not be empty or whitespace-only.');
         }
+        $this->resources = OwnershipRegistry::collect([$this->store, $this->circuitBreakerStore], [], [$this->clock]);
+        $this->domain = OwnershipRegistry::adopt($this->resources, $this);
     }
 
     /**
@@ -89,12 +97,25 @@ final class RateLimitOperationalReader implements RateLimitOperationalReaderInte
         BlockPolicyInterface $policy,
         ?AdmissionLaneEnum $lane = null,
     ): RateLimitOperationalSnapshotDTO {
-        $device = $this->deviceResolver->resolve($context);
+        $scope = OwnershipRegistry::acquire($this->resources, 'read', $this->domain);
+        try {
+            return $this->readOwned($context, $policy, $lane);
+        } finally {
+            $scope->release();
+        }
+    }
+
+    private function readOwned(
+        RateLimitContextDTO $context,
+        BlockPolicyInterface $policy,
+        ?AdmissionLaneEnum $lane = null,
+    ): RateLimitOperationalSnapshotDTO {
+        $device = OwnershipRegistry::crossing($this->store, fn() => $this->deviceResolver->resolve($context));
         $currentKeys = $this->buildKeys(
             $context,
             $device->normalizedUa,
             $device->fingerprintHash,
-            $policy->getName(),
+            $this->hostPolicy(fn() => $policy->getName()),
             $this->keySecret,
             $lane,
             $this->k5Material($device, $lane),
@@ -104,7 +125,7 @@ final class RateLimitOperationalReader implements RateLimitOperationalReaderInte
                 $context,
                 $device->normalizedUa,
                 $this->previousFingerprintHash($device),
-                $policy->getName(),
+                $this->hostPolicy(fn() => $policy->getName()),
                 $this->previousKeySecret ?? $this->keySecret,
                 $lane,
                 $this->previousK5Material($device, $lane),
@@ -114,11 +135,11 @@ final class RateLimitOperationalReader implements RateLimitOperationalReaderInte
         $backendHealthy = $this->store->isHealthy();
         $scopes = $this->buildScopes($currentKeys, $previousKeys);
         $budget = $this->buildBudget($context, $device, $policy, $currentKeys, $previousKeys, $lane);
-        $circuitBreaker = $this->circuitBreakerStore->load($policy->getName());
+        $circuitBreaker = $this->circuitBreakerStore->load($this->hostPolicy(fn() => $policy->getName()));
 
         return new RateLimitOperationalSnapshotDTO(
-            $policy->getName(),
-            $this->clock->now()->getTimestamp(),
+            $this->hostPolicy(fn() => $policy->getName()),
+            $this->hostNow()->getTimestamp(),
             $backendHealthy,
             $scopes,
             $budget,
@@ -168,14 +189,14 @@ final class RateLimitOperationalReader implements RateLimitOperationalReaderInte
 
         // Use the active logical block level across Current/Previous, matching
         // the pipeline's rotation-aware decay semantics.
-        $now = $this->clock->now()->getTimestamp();
-        $currentBlock = CallerTimeStore::operationalBlock($this->store, $currentKey, $this->clock->now());
+        $now = $this->hostNow()->getTimestamp();
+        $currentBlock = CallerTimeStore::operationalBlock($this->store, $currentKey, $this->hostNow());
         $activeHardBlock = $this->activeHardBlock($currentBlock, $now);
         $blockFromPreviousGeneration = false;
         $previousBlock = null;
 
         if ($activeHardBlock === null && $previousKey !== null) {
-            $previousBlock = CallerTimeStore::operationalBlock($this->store, $previousKey, $this->clock->now());
+            $previousBlock = CallerTimeStore::operationalBlock($this->store, $previousKey, $this->hostNow());
             $activeHardBlock = $this->activeHardBlock($previousBlock, $now);
             $blockFromPreviousGeneration = $activeHardBlock !== null;
         }
@@ -239,7 +260,7 @@ final class RateLimitOperationalReader implements RateLimitOperationalReaderInte
         array $previousKeys,
         ?AdmissionLaneEnum $lane,
     ): ?RateLimitOperationalBudgetDTO {
-        $config = $policy->getBudgetConfig();
+        $config = $this->hostPolicy(fn() => $policy->getBudgetConfig());
         if ($config === null || ! IdentityPresence::account($context)) {
             return null;
         }
@@ -257,10 +278,10 @@ final class RateLimitOperationalReader implements RateLimitOperationalReaderInte
         $microCapExceeded = false;
         if ($config->known_device_micro_cap !== null && ($currentKeys['k5'] ?? null) !== null) {
             [$microCap, $microCapFromPreviousGeneration] = $this->resolveBudgetState(
-                $this->microCapKey($policy->getName(), $context->accountId, $this->k5Material($device, $lane), $this->keySecret, $lane),
+                $this->microCapKey($this->hostPolicy(fn() => $policy->getName()), $context->accountId, $this->k5Material($device, $lane), $this->keySecret, $lane),
                 $this->hasPreviousGeneration($device)
                     ? $this->microCapKey(
-                        $policy->getName(),
+                        $this->hostPolicy(fn() => $policy->getName()),
                         $context->accountId,
                         $this->previousK5Material($device, $lane),
                         $this->previousKeySecret ?? $this->keySecret,
@@ -272,14 +293,14 @@ final class RateLimitOperationalReader implements RateLimitOperationalReaderInte
         }
 
         [$cooldown, $cooldownFromPreviousGeneration] = $this->resolveCooldown(
-            $policy->getName(),
+            $this->hostPolicy(fn() => $policy->getName()),
             $context->accountId,
             $device,
             $lane,
         );
         $cooldownRemainingSeconds = $cooldown === null
             ? 0
-            : max(0, $cooldown->updatedAt + $config->cooldown_seconds - $this->clock->now()->getTimestamp());
+            : max(0, $cooldown->updatedAt + $config->cooldown_seconds - $this->hostNow()->getTimestamp());
 
         return new RateLimitOperationalBudgetDTO(
             $accountBudget,
@@ -300,14 +321,14 @@ final class RateLimitOperationalReader implements RateLimitOperationalReaderInte
     private function resolveBudgetState(?string $currentKey, ?string $previousKey): array
     {
         if ($currentKey !== null) {
-            $current = CallerTimeStore::operationalBudget($this->store, $currentKey, $this->clock->now());
+            $current = CallerTimeStore::operationalBudget($this->store, $currentKey, $this->hostNow());
             if ($current !== null) {
                 return [$current, false];
             }
         }
 
         if ($previousKey !== null) {
-            $previous = CallerTimeStore::operationalBudget($this->store, $previousKey, $this->clock->now());
+            $previous = CallerTimeStore::operationalBudget($this->store, $previousKey, $this->hostNow());
             if ($previous !== null) {
                 return [$previous, true];
             }
@@ -347,7 +368,7 @@ final class RateLimitOperationalReader implements RateLimitOperationalReaderInte
 
     private function isWithinBudgetEpoch(BudgetStateDTO $state): bool
     {
-        return $state->epochStart + self::BUDGET_EPOCH_SECONDS > $this->clock->now()->getTimestamp();
+        return $state->epochStart + self::BUDGET_EPOCH_SECONDS > $this->hostNow()->getTimestamp();
     }
 
     private function microCapKey(string $policyName, string $accountId, ?string $k5Material, string $secret, ?AdmissionLaneEnum $lane): ?string
@@ -456,5 +477,23 @@ final class RateLimitOperationalReader implements RateLimitOperationalReaderInte
     private function getIpPrefix(string $ip, int $cidr = 64): string
     {
         return SourcePrefix::of($ip, $cidr);
+    }
+
+    /**
+     * DEC-041: a policy getter is Host code: a call it makes into the library from this stack is a re-entry, not a nested operation.
+     *
+     * @template T
+     * @param callable(): T $call
+     * @return T
+     */
+    private function hostPolicy(callable $call): mixed
+    {
+        return OwnershipRegistry::crossing($this->store, $call);
+    }
+
+    /** DEC-041: the Host clock is a crossing of the call that owns this reader's store. */
+    private function hostNow(): \DateTimeImmutable
+    {
+        return OwnershipRegistry::crossing($this->store, fn(): \DateTimeImmutable => $this->clock->now());
     }
 }

@@ -1,0 +1,12 @@
+start 2026-11-18T14:35:46Z head=4823e381f74d48174a938ef5219dd0884f6164a5
+runner exit=0
+reviewed red 64 exit=2
+reviewed red 32 exit=2
+candidate full 64 exit=2
+candidate full 32 exit=2
+candidate php32 group exit=0
+candidate php32 group on 64 exit=0
+mutants exit=1
+bench main exit=0
+bench reviewed exit=0
+done 2026-11-18T15:10:54Z

@@ -4,6 +4,8 @@ declare(strict_types=1);
 
 namespace Maatify\RateLimiter\Builder;
 
+use Maatify\RateLimiter\Contract\ExecutionContextProviderInterface;
+use Maatify\RateLimiter\Service\OwnershipRegistry;
 use DateTimeZone;
 use Maatify\RateLimiter\Config\ApiHeavyProtectionPolicy;
 use Maatify\RateLimiter\Config\BlockPolicyInterface;
@@ -79,6 +81,8 @@ final class RateLimiterBuilder
 
     private ?int $provenPendingPermitLimit = null;
 
+    private ?ExecutionContextProviderInterface $contextProvider = null;
+
     /** @var array<string, BlockPolicyInterface> */
     private array $policies;
 
@@ -123,6 +127,19 @@ final class RateLimiterBuilder
             $store,
             $failureSignalEmitter,
         );
+    }
+
+    /**
+     * Use a Host execution-context provider (DEC-041). Optional: PHP Fibers are recognised without one. Only a scheduler whose contexts
+     * are not Fibers needs it. Share ONE provider instance among every graph and every directly used package store of that scheduler:
+     * a store, clock or breaker is bound to one context domain, and building a graph over a resource already bound to another
+     * provider (or to the default domain) fails with a configuration error before anything is owned or called.
+     */
+    public function withExecutionContextProvider(ExecutionContextProviderInterface $provider): self
+    {
+        $this->contextProvider = $provider;
+
+        return $this;
     }
 
     /**
@@ -238,28 +255,48 @@ final class RateLimiterBuilder
             $this->failureSignalEmitter,
             $clock,
         );
-
-        $scoreRuntime = new RateLimiterEngine(
-            $deviceIdentityResolver,
-            $evaluationPipeline,
-            $circuitBreaker,
-            new FailureModeResolver(),
-            $this->failureSignalEmitter,
-            $clock,
-            array_values($this->policies),
-            $this->admissionRuntime($clock),
+        // DEC-041: the whole resource set of the graph is bound to one context domain, or the build fails without binding anything.
+        $binding = OwnershipRegistry::bindGraph(
+            OwnershipRegistry::collect([$this->rateLimitStore, $this->correlationStore, $this->circuitBreakerStore, $circuitBreaker], [], [$clock]),
+            $this->contextProvider,
         );
 
-        $simpleRuntime = new FixedWindowSimpleRateLimiter(
-            array_values($this->simpleThrottlePolicies),
-            $this->rateLimitStore,
-            $clock,
-            $this->config->keySecret(),
-            $this->config->environmentScope(),
-            $this->config->previousKeySecret(),
-        );
+        // The entry classes this build constructed itself: when it fails, it releases what they adopted and only that.
+        /** @var list<object> $built filled as each entry class is constructed (the catch below runs after any of them) */
+        $built = [];
+        try {
+            $scoreRuntime = new RateLimiterEngine(
+                $deviceIdentityResolver,
+                $evaluationPipeline,
+                $circuitBreaker,
+                new FailureModeResolver(),
+                $this->failureSignalEmitter,
+                $clock,
+                array_values($this->policies),
+                $this->admissionRuntime($clock),
+            );
+            $built[] = $scoreRuntime;
 
-        return new CompositeRateLimiterRuntime($scoreRuntime, $simpleRuntime);
+            $simpleRuntime = new FixedWindowSimpleRateLimiter(
+                array_values($this->simpleThrottlePolicies),
+                $this->rateLimitStore,
+                $clock,
+                $this->config->keySecret(),
+                $this->config->environmentScope(),
+                $this->config->previousKeySecret(),
+            );
+            $built[] = $simpleRuntime;
+
+            return new CompositeRateLimiterRuntime($scoreRuntime, $simpleRuntime);
+        } catch (\Throwable $failure) {
+            // A build that fails after its resources were bound leaves no binding of its own behind: the holds of its own entry
+            // classes are released first, then its own binding is rolled back (undone only when nobody else stands on it).
+            foreach ($built as $entry) {
+                OwnershipRegistry::releaseAdoptions($entry);
+            }
+            OwnershipRegistry::rollback($binding);
+            throw $failure;
+        }
     }
 
     /**
@@ -294,7 +331,29 @@ final class RateLimiterBuilder
 
         $clock = $this->clock ?? new SystemClock(new DateTimeZone('UTC'));
         $deviceIdentityResolver = $this->deviceIdentityResolver ?? $this->defaultDeviceIdentityResolver();
+        // DEC-041: the readers' resources are the rate-limit store and the circuit-breaker store; their clock is the Host clock as before.
+        $binding = OwnershipRegistry::bindGraph(OwnershipRegistry::collect([$this->rateLimitStore, $this->circuitBreakerStore]), $this->contextProvider);
 
+        /** @var list<object> $built filled as each entry class is constructed (the catch below runs after any of them) */
+        $built = [];
+        try {
+            return $this->composeOperationalReader($deviceIdentityResolver, $clock, $built);
+        } catch (\Throwable $failure) {
+            // A reader build that fails after its stores were bound leaves no binding of its own behind (a binding that existed stays):
+            // the holds of the readers it constructed itself are released first.
+            foreach ($built as $entry) {
+                OwnershipRegistry::releaseAdoptions($entry);
+            }
+            OwnershipRegistry::rollback($binding);
+            throw $failure;
+        }
+    }
+
+    /**
+     * @param list<object> $built the readers this build constructed, filled as each one is constructed
+     */
+    private function composeOperationalReader(DeviceIdentityResolverInterface $deviceIdentityResolver, ClockInterface $clock, array &$built): CompositeRateLimitOperationalReaderInterface
+    {
         $scoreReader = new RateLimitOperationalReader(
             $deviceIdentityResolver,
             $this->rateLimitStore,
@@ -305,6 +364,7 @@ final class RateLimiterBuilder
             $this->config->environmentScope(),
             $this->config->previousKeySecret(),
         );
+        $built[] = $scoreReader;
 
         $simpleReader = new SimpleRateLimitOperationalReader(
             array_values($this->simpleThrottlePolicies),
@@ -314,6 +374,7 @@ final class RateLimiterBuilder
             $this->config->environmentScope(),
             $this->config->previousKeySecret(),
         );
+        $built[] = $simpleReader;
 
         return new CompositeRateLimitOperationalReader(
             $scoreReader,

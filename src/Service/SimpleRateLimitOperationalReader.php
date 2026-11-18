@@ -25,6 +25,12 @@ use Maatify\SharedCommon\Contracts\ClockInterface;
  */
 final class SimpleRateLimitOperationalReader implements SimpleRateLimitOperationalReaderInterface
 {
+    /** @var list<object> DEC-041: the resources every independent call of this entry owns. */
+    private readonly array $resources;
+
+    /** DEC-041: the context domain they are bound to; holds its provider for the lifetime of this object. */
+    private readonly ContextDomain $domain;
+
     /** @var array<string, SimpleThrottlePolicyInterface> */
     private readonly array $policies;
 
@@ -71,6 +77,8 @@ final class SimpleRateLimitOperationalReader implements SimpleRateLimitOperation
             $indexed[$policy->getName()] = $policy;
         }
         $this->policies = $indexed;
+        $this->resources = OwnershipRegistry::collect([$this->store], [], [$this->clock]);
+        $this->domain = OwnershipRegistry::adopt($this->resources, $this);
     }
 
     private static function assertValidPolicy(SimpleThrottlePolicyInterface $policy): void
@@ -104,6 +112,16 @@ final class SimpleRateLimitOperationalReader implements SimpleRateLimitOperation
      */
     public function read(string $policyName, string $subject): SimpleRateLimitOperationalSnapshotDTO
     {
+        $scope = OwnershipRegistry::acquire($this->resources, 'read', $this->domain);
+        try {
+            return $this->readOwned($policyName, $subject);
+        } finally {
+            $scope->release();
+        }
+    }
+
+    private function readOwned(string $policyName, string $subject): SimpleRateLimitOperationalSnapshotDTO
+    {
         $policy = $this->policies[$policyName] ?? null;
         if ($policy === null) {
             throw new RateLimiterException(sprintf('Unknown simple throttle policy "%s".', $policyName));
@@ -113,16 +131,16 @@ final class SimpleRateLimitOperationalReader implements SimpleRateLimitOperation
             throw new RateLimiterException('Simple throttle subject must not be empty or whitespace-only.');
         }
 
-        $limit = $policy->getLimit();
-        $intervalSeconds = $policy->getIntervalSeconds();
+        $limit = $this->hostPolicy(fn() => $policy->getLimit());
+        $intervalSeconds = $this->hostPolicy(fn() => $policy->getIntervalSeconds());
 
         $currentKey = $this->deriveKey($policyName, $limit, $intervalSeconds, $subject, $this->keySecret);
-        $state = CallerTimeStore::operationalBudget($this->store, $currentKey, $this->clock->now());
+        $state = CallerTimeStore::operationalBudget($this->store, $currentKey, $this->hostNow());
         $fromPreviousGeneration = false;
 
         if ($state === null && $this->previousKeySecret !== null) {
             $previousKey = $this->deriveKey($policyName, $limit, $intervalSeconds, $subject, $this->previousKeySecret);
-            $previousState = CallerTimeStore::operationalBudget($this->store, $previousKey, $this->clock->now());
+            $previousState = CallerTimeStore::operationalBudget($this->store, $previousKey, $this->hostNow());
             if ($previousState !== null) {
                 $state = $previousState;
                 $fromPreviousGeneration = true;
@@ -135,7 +153,7 @@ final class SimpleRateLimitOperationalReader implements SimpleRateLimitOperation
 
         return new SimpleRateLimitOperationalSnapshotDTO(
             $policyName,
-            $this->clock->now()->getTimestamp(),
+            $this->hostNow()->getTimestamp(),
             $this->store->isHealthy(),
             $limit,
             $intervalSeconds,
@@ -188,5 +206,23 @@ final class SimpleRateLimitOperationalReader implements SimpleRateLimitOperation
         }
 
         return $epochStart + $intervalSeconds;
+    }
+
+    /**
+     * DEC-041: a policy getter is Host code: a call it makes into the library from this stack is a re-entry, not a nested operation.
+     *
+     * @template T
+     * @param callable(): T $call
+     * @return T
+     */
+    private function hostPolicy(callable $call): mixed
+    {
+        return OwnershipRegistry::crossing($this->store, $call);
+    }
+
+    /** DEC-041: the Host clock is a crossing of the call that owns this runtime's store. */
+    private function hostNow(): \DateTimeImmutable
+    {
+        return OwnershipRegistry::crossing($this->store, fn(): \DateTimeImmutable => $this->clock->now());
     }
 }

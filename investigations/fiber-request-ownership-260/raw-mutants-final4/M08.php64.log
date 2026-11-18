@@ -1,0 +1,19 @@
+PHPUnit 11.5.57 by Sebastian Bergmann and contributors.
+
+Runtime:       PHP 8.4.27
+Configuration: /app/phpunit.xml
+
+...........F..................................................... 65 / 76 ( 85%)
+...........                                                       76 / 76 (100%)
+
+Time: 00:00.351, Memory: 16.00 MB
+
+There was 1 failure:
+
+1) Maatify\RateLimiter\Tests\Unit\Service\OwnershipRegistryTest::testAReplacementIsRejectedWhileAnOwnerAReservationOrALookupStillExistsOnAVacatedBinding
+The replacement must be rejected.
+
+/app/tests/Unit/Service/OwnershipRegistryTest.php:389
+
+FAILURES!
+Tests: 76, Assertions: 1007, Failures: 1.

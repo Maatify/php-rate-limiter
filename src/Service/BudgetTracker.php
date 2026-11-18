@@ -11,7 +11,7 @@ use Maatify\SharedCommon\Contracts\ClockInterface;
 /**
  * Reads and updates the fixed-duration account budget epoch.
  */
-class BudgetTracker
+class BudgetTracker implements OwnedResources
 {
     private const EPOCH_DURATION = 86400; // 24h
 
@@ -21,8 +21,10 @@ class BudgetTracker
      */
     public function __construct(
         private readonly RateLimitStoreInterface $store,
-        private readonly ClockInterface $clock,
-    ) {}
+        private ClockInterface $clock,
+    ) {
+        $this->clock = HostClock::of($this->clock);
+    }
 
     /**
      * Increment the budget counter while retaining the current epoch boundary.
@@ -58,5 +60,11 @@ class BudgetTracker
             }
         }
         return false;
+    }
+
+    /** @return list<object> */
+    public function ownedResources(): array
+    {
+        return OwnershipRegistry::collect([$this->store], [], [$this->clock]);
     }
 }

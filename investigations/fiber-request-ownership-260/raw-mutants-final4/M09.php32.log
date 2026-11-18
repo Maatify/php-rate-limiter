@@ -1,0 +1,90 @@
+PHPUnit 11.5.57 by Sebastian Bergmann and contributors.
+
+Runtime:       PHP 8.4.27
+Configuration: /app/phpunit.xml
+
+................FFF.F..................................F....FF... 65 / 76 ( 85%)
+...........                                                       76 / 76 (100%)
+
+Time: 00:01.457, Memory: 14.00 MB
+
+There were 7 failures:
+
+1) Maatify\RateLimiter\Tests\Unit\Service\OwnershipRegistryTest::testARollbackKeepsTheBindingAnotherCallStandsOn
+nobody stands on it any more
+Failed asserting that two strings are identical.
+--- Expected
++++ Actual
+@@ @@
+-'unbound'
++'provider'
+
+/app/tests/Unit/Service/OwnershipRegistryTest.php:615
+
+2) Maatify\RateLimiter\Tests\Unit\Service\OwnershipRegistryTest::testAnAdoptionInsideAHostRegionStandsOnTheBindingAndOutsideItDoesNot
+an entry adopting during its own build does not pin a build that fails
+Failed asserting that two strings are identical.
+--- Expected
++++ Actual
+@@ @@
+-'unbound'
++'provider'
+
+/app/tests/Unit/Service/OwnershipRegistryTest.php:626
+
+3) Maatify\RateLimiter\Tests\Unit\Service\OwnershipRegistryTest::testAnActiveCallDelaysTheRollbackToItsLastRelease
+the overdue rollback happens at the release
+Failed asserting that two strings are identical.
+--- Expected
++++ Actual
+@@ @@
+-'unbound'
++'provider'
+
+/app/tests/Unit/Service/OwnershipRegistryTest.php:662
+
+4) Maatify\RateLimiter\Tests\Unit\Service\OwnershipRegistryTest::testARollbackUndoesExactlyWhatThatBindingBound
+Failed asserting that two strings are identical.
+--- Expected
++++ Actual
+@@ @@
+-'unbound'
++'provider'
+
+/app/tests/Unit/Service/OwnershipRegistryTest.php:301
+
+5) Maatify\RateLimiter\Tests\Integration\Redis\OwnershipCrossingsRedisTest::testAFailedReaderBuildBindsNothingAndAnExistingBindingIsKept
+the failed build left nothing bound
+Failed asserting that two strings are identical.
+--- Expected
++++ Actual
+@@ @@
+-'unbound'
++'provider'
+
+/app/tests/Integration/Redis/OwnershipCrossingsRedisTest.php:333
+
+6) Maatify\RateLimiter\Tests\Integration\Redis\OwnershipCrossingsRedisTest::testAnActiveDirectCallKeepsItsDomainUntilItsReleaseThenTheOverdueRollbackHappens with data set "build()" (false)
+the overdue rollback happens at the last release
+Failed asserting that two strings are identical.
+--- Expected
++++ Actual
+@@ @@
+-'unbound'
++'provider'
+
+/app/tests/Integration/Redis/OwnershipCrossingsRedisTest.php:494
+
+7) Maatify\RateLimiter\Tests\Integration\Redis\OwnershipCrossingsRedisTest::testAnActiveDirectCallKeepsItsDomainUntilItsReleaseThenTheOverdueRollbackHappens with data set "buildOperationalReader()" (true)
+the overdue rollback happens at the last release
+Failed asserting that two strings are identical.
+--- Expected
++++ Actual
+@@ @@
+-'unbound'
++'provider'
+
+/app/tests/Integration/Redis/OwnershipCrossingsRedisTest.php:494
+
+FAILURES!
+Tests: 76, Assertions: 1001, Failures: 7.

@@ -1,0 +1,69 @@
+PHP 8.4.27 INT=8 redis=6.3.0
+PHPUnit 11.5.57 by Sebastian Bergmann and contributors.
+
+Runtime:       PHP 8.4.27
+Configuration: /app/phpunit.xml
+
+EEEF.............................                                 33 / 33 (100%)
+
+Time: 00:00.158, Memory: 10.00 MB
+
+Ownership Registry (Maatify\RateLimiter\Tests\Unit\Service\OwnershipRegistry)
+ ✔ A refused acquisition clears only what it took and never another calls slot
+ ✔ An aliased resource is acquired once and a call never refuses itself
+ ✔ A release clears a slot only where it still holds this calls record
+ ✔ Clearing with a stale record never empties a slot another call reused
+ ✔ A provider that reenters the library is refused before it is called again
+ ✔ A provider that throws releases only this calls reservations and surfaces a classified failure
+ ✔ A provider that yields keeps the reservations and every other call is refused
+ ✔ Nested operations from the owners context are admitted and other contexts and crossings are refused
+ ✔ A direct operation with no owner is a short lived owner for its whole duration
+ ✔ Mixed domains are refused at binding and nothing is bound
+ ✔ A same provider instance is accepted and another instance of the same class is not
+ ✔ A rollback undoes exactly what that binding bound
+ ✔ An entry adopts the domain of its resources and refuses resources of two domains
+ ✔ An active scope keeps its provider alive and another domain is refused until it ends
+ ✔ A vacated binding is never filled silently by a direct call
+ ✔ A replacement is rejected while an owner a reservation or a lookup still exists on a vacated binding
+ ✔ Nothing holds a resource alive after the call and an expired object context equals nothing
+ ✔ A key of another live context is refused and a scalar key is compared by value
+ ✔ Decorated aliasing of a store is not recognised and is outside the support
+ ✔ A provider that breaks its contract with an equal key for two live contexts is treated as one
+ ✔ Only the store constructor gains an optional provider parameter
+ ✔ A destroyed suspended fiber unwinds and releases its slots
+ ✔ A host object with a method named owned resources is a resource by identity and its code is never called
+ ✔ A package class is still expanded and a raw host clock is still excluded
+ ✔ A shared host store with an owned resources method still refuses the second call
+ ✔ A host clock passes every reading through one to one and is never wrapped twice
+ ✔ A rollback keeps the binding another call stands on
+ ✘ An adoption stands on the binding unless it is part of the build that recorded it
+   │
+   │ Error: Call to undefined method Maatify\RateLimiter\Service\OwnershipRegistry::buildScope()
+   │
+   │ /app/tests/Unit/Service/OwnershipRegistryTest.php:624
+   │
+ ✘ A build started from host code knows its own components
+   │
+   │ Error: Call to undefined method Maatify\RateLimiter\Service\OwnershipRegistry::buildScope()
+   │
+   │ /app/tests/Unit/Service/OwnershipRegistryTest.php:648
+   │
+ ✘ The build frames of a fiber never mark another context
+   │
+   │ Error: Call to undefined method Maatify\RateLimiter\Service\OwnershipRegistry::buildScope()
+   │
+   │ /app/tests/Unit/Service/OwnershipRegistryTest.php:661
+   │ /app/tests/Unit/Service/OwnershipRegistryTest.php:665
+   │
+ ✘ Repeated successful replacements keep a bounded number of binding records
+   │
+   │ only the record of the current binding is reachable from the resource
+   │ Failed asserting that 128 is equal to 1 or is less than 1.
+   │
+   │ /app/tests/Unit/Service/OwnershipRegistryTest.php:701
+   │
+ ✔ The holders of a replaced binding never keep the replacement alive
+ ✔ An active call delays the rollback to its last release
+
+ERRORS!
+Tests: 33, Assertions: 96, Errors: 3, Failures: 1.

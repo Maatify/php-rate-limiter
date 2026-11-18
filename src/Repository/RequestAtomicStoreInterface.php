@@ -33,7 +33,11 @@ namespace Maatify\RateLimiter\Repository;
  *   can follow a save the backend did apply: the save is atomic, so it is then complete and never partial, but the
  *   caller cannot know which. Treat the outcome of that failure as unknown, not as "nothing saved".
  * - Called while one of its own requests is already being evaluated, it runs `$evaluate` inside that request and
- *   does not start another save.
+ *   does not start another save, **if the call comes from the execution context of the call that owns the request while no
+ *   Host crossing (executor, emitter, clock, resolver, provider) of that call is open** (DEC-041). Any other call, from another
+ *   execution context or from inside a Host crossing, is an independent call: the implementation refuses it with
+ *   `OverlappingRequestException` before it can alter or observe the request in flight, and it never joins that request. The
+ *   refusal is not retried and is neither a backend failure nor a concurrency conflict.
  */
 interface RequestAtomicStoreInterface
 {

@@ -17,17 +17,17 @@ class FailureModeResolver
      */
     public function resolve(BlockPolicyInterface $policy, CircuitBreaker $cb): string
     {
-        if ($cb->isReEntryGuardViolated($policy->getName())) {
+        if ($cb->isReEntryGuardViolated(OwnershipRegistry::crossing($cb, fn() => $policy->getName()))) {
             return 'FAIL_CLOSED';
         }
 
-        $state = $cb->getState($policy->getName());
+        $state = $cb->getState(OwnershipRegistry::crossing($cb, fn() => $policy->getName()));
 
         if ($state->state === FailureStateDTO::STATE_OPEN
             || $state->state === FailureStateDTO::STATE_HALF_OPEN) {
             return 'DEGRADED_MODE';
         }
 
-        return $policy->getFailureMode();
+        return OwnershipRegistry::crossing($cb, fn() => $policy->getFailureMode());
     }
 }

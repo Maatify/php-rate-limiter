@@ -1,0 +1,58 @@
+PHPUnit 11.5.57 by Sebastian Bergmann and contributors.
+
+Runtime:       PHP 8.4.27
+Configuration: /app/phpunit.xml
+
+.....F.........FFF...........F................................    62 / 62 (100%)
+
+Time: 00:01.409, Memory: 14.00 MB
+
+There were 5 failures:
+
+1) Maatify\RateLimiter\Tests\Integration\Redis\FiberRequestOwnershipRedisTest::testADirectTransactionWithoutWritesIsRefusedWhileACallIsSuspendedInTheHostClock
+A direct transaction that would send no command is refused all the same.
+Failed asserting that null is identical to 'Maatify\RateLimiter\Exception\OverlappingRequestException'.
+
+/app/tests/Integration/Redis/FiberRequestOwnershipRedisTest.php:224
+/app/tests/Integration/Redis/FiberRequestOwnershipRedisTest.php:750
+
+2) Maatify\RateLimiter\Tests\Integration\Redis\FiberRequestOwnershipRedisTest::testConsumeTheOperationalReadersAndTheAdmissionControlsAreRefusedWhileACallIsInFlight
+The overlapping call is refused.
+Failed asserting that two strings are identical.
+--- Expected
++++ Actual
+@@ @@
+-'Maatify\RateLimiter\Exception\OverlappingRequestException'
++'Maatify\RateLimiter\Exception\RateLimiterException'
+
+/app/tests/Integration/Redis/FiberRequestOwnershipRedisTest.php:224
+/app/tests/Integration/Redis/FiberRequestOwnershipRedisTest.php:996
+
+3) Maatify\RateLimiter\Tests\Integration\Redis\FiberRequestOwnershipRedisTest::testGraphsThatShareOnlyTheCorrelationStoreOrOnlyTheCircuitStoreContend
+The graph that shares only the correlation store is refused on the shared object.
+Failed asserting that null is identical to 'Maatify\RateLimiter\Exception\OverlappingRequestException'.
+
+/app/tests/Integration/Redis/FiberRequestOwnershipRedisTest.php:224
+/app/tests/Integration/Redis/FiberRequestOwnershipRedisTest.php:814
+
+4) Maatify\RateLimiter\Tests\Integration\Redis\FiberRequestOwnershipRedisTest::testACallMadeFromInsideTheSignalEmitterIsRefusedBecauseTheOwnerIsReleasedLast
+The slots are released after the signals: a call made from the emitter is refused.
+Failed asserting that two arrays are identical.
+--- Expected
++++ Actual
+@@ @@
+ Array &0 [
+-    0 => 'Maatify\RateLimiter\Exception\OverlappingRequestException',
++    0 => null,
+ ]
+
+/app/tests/Integration/Redis/FiberRequestOwnershipRedisTest.php:907
+
+5) Maatify\RateLimiter\Tests\Integration\Redis\OwnershipCrossingsRedisTest::testAScorePolicyThatReentersTheStoreFromAGetterIsRefusedBeforeTheExecutor
+the policy getter never reached the executor through the library
+Failed asserting that 1 is identical to 0.
+
+/app/tests/Integration/Redis/OwnershipCrossingsRedisTest.php:151
+
+FAILURES!
+Tests: 62, Assertions: 899, Failures: 5.

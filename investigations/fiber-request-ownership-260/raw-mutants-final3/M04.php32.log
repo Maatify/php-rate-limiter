@@ -1,0 +1,43 @@
+PHPUnit 11.5.57 by Sebastian Bergmann and contributors.
+
+Runtime:       PHP 8.4.27
+Configuration: /app/phpunit.xml
+
+..............F..........................F...FF.......F.......... 65 / 67 ( 97%)
+..                                                                67 / 67 (100%)
+
+Time: 00:01.238, Memory: 14.00 MB
+
+There were 5 failures:
+
+1) Maatify\RateLimiter\Tests\Integration\Redis\FiberRequestOwnershipRedisTest::testACallFromAnotherContextIsRefusedWhileACallbackSuspendedInsideADirectTransaction
+B is refused by the owner's execution context.
+Failed asserting that null is identical to 'Maatify\RateLimiter\Exception\OverlappingRequestException'.
+
+/app/tests/Integration/Redis/FiberRequestOwnershipRedisTest.php:224
+/app/tests/Integration/Redis/FiberRequestOwnershipRedisTest.php:359
+
+2) Maatify\RateLimiter\Tests\Unit\Service\OwnershipRegistryTest::testADirectOperationWithNoOwnerIsAShortLivedOwnerForItsWholeDuration
+Failed asserting that false is true.
+
+/app/tests/Unit/Service/OwnershipRegistryTest.php:246
+
+3) Maatify\RateLimiter\Tests\Unit\Service\OwnershipRegistryTest::testNothingHoldsAResourceAliveAfterTheCallAndAnExpiredObjectContextEqualsNothing
+Failed asserting that exception of type "Maatify\RateLimiter\Exception\OverlappingRequestException" is thrown.
+
+4) Maatify\RateLimiter\Tests\Unit\Service\OwnershipRegistryTest::testAKeyOfAnotherLiveContextIsRefusedAndAScalarKeyIsComparedByValue
+Failed asserting that exception of type "Maatify\RateLimiter\Exception\OverlappingRequestException" is thrown.
+
+5) Maatify\RateLimiter\Tests\Unit\Service\OwnershipRegistryTest::testNestedOperationsFromTheOwnersContextAreAdmittedAndOtherContextsAndCrossingsAreRefused
+Another execution context is refused.
+Failed asserting that two strings are identical.
+--- Expected
++++ Actual
+@@ @@
+-'refused'
++'admitted'
+
+/app/tests/Unit/Service/OwnershipRegistryTest.php:212
+
+FAILURES!
+Tests: 67, Assertions: 947, Failures: 5.
