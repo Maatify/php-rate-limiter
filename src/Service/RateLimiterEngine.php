@@ -78,7 +78,8 @@ class RateLimiterEngine implements RateLimiterRuntimeInterface, AdmissionBinding
         unset($emitter);
 
         foreach ($policies as $policy) {
-            $this->registerPolicy($policy);
+            // Host code (policy getters) runs here, before the domain of this entry is adopted (DEC-041, F266-17).
+            OwnershipRegistry::hostRegion(fn() => $this->registerPolicy($policy));
         }
         $this->resources = OwnershipRegistry::collect([$this->pipeline, $this->circuitBreaker, $this->admission], [$this], [$this->clock]);
         $this->domain = OwnershipRegistry::adopt($this->resources);

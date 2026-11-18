@@ -270,7 +270,7 @@ final class RateLimiterBuilder
                 $this->failureSignalEmitter,
                 $clock,
                 array_values($this->policies),
-                $this->admissionRuntime($clock),
+                OwnershipRegistry::hostRegion(fn() => $this->admissionRuntime($clock)),
             );
 
             $simpleRuntime = new FixedWindowSimpleRateLimiter(

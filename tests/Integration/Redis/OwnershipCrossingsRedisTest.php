@@ -25,6 +25,7 @@ use Maatify\RateLimiter\Service\DeviceIdentityResolver;
 use Maatify\RateLimiter\Service\EphemeralBucket;
 use Maatify\RateLimiter\Service\EvaluationPipeline;
 use Maatify\RateLimiter\Service\FailureModeResolver;
+use Maatify\RateLimiter\Service\FixedWindowSimpleRateLimiter;
 use Maatify\RateLimiter\Service\RateLimiterEngine;
 use Maatify\RateLimiter\Service\DeviceIdentityResolverInterface;
 use Maatify\RateLimiter\Service\FingerprintHasher;
@@ -390,6 +391,111 @@ final class OwnershipCrossingsRedisTest extends TestCase
             self::assertTrue($held->runtime->consume('b', 'after')->allowed, 'the runtime built meanwhile is valid after the failure');
         }
         self::assertGreaterThan(0, count($this->commands), 'it reached the executor');
+    }
+
+    // ---- F266-17: the lifetime of a binding and the rollback of a failed build --------------------------------------------------------
+
+    #[DataProvider('buildPaths')]
+    public function testAFailedBuildLeavesTheBindingOfAnEntryBuiltDirectlyFromHostCode(bool $reader): void
+    {
+        $p = new StubContextProvider(static fn() => 1);
+        $store = $this->store();
+        $held = new BuiltDuringBuild();
+        $failing = new ReentrantSimplePolicy('broken', 0);
+        $failing->reenter = function () use ($held, $store, $failing): void {
+            $failing->reenter = null;
+            // Not the Builder: an entry class built by hand over the same store, from inside the getter.
+            $held->direct = new FixedWindowSimpleRateLimiter([new FixedWindowThrottlePolicy('b', 5, 60)], $store, new FixedClock('@1000000'), 'secret', 'prod');
+            self::assertTrue($held->direct->consume('b', 'first')->allowed, 'the entry built directly inherits the provider and reaches the executor');
+        };
+
+        try {
+            $first = $this->builder($store)->withExecutionContextProvider($p)->withSimpleThrottlePolicy($failing);
+            $reader ? $first->buildOperationalReader() : $first->build();
+            self::fail('the first build must fail on the policy of limit 0');
+        } catch (RateLimiterException) {
+        }
+
+        self::assertNotNull($held->direct);
+        self::assertSame('provider', OwnershipRegistry::domainKind($store), 'the entry built directly stands on the binding');
+        $this->commands = [];
+        self::assertTrue($held->direct->consume('b', 'after')->allowed, 'it is still valid after the first build failed');
+        self::assertGreaterThan(0, count($this->commands), 'it reached the executor');
+    }
+
+    #[DataProvider('buildPaths')]
+    public function testAFailedReplacementOfAVacatedBindingRestoresTheVacatedStateAndALaterBuildSucceeds(bool $reader): void
+    {
+        $store = $this->store();
+        (function () use ($store): void {
+            $first = new StubContextProvider(static fn() => 1);
+            $this->builder($store)->withExecutionContextProvider($first)->build();
+            self::assertSame('provider', OwnershipRegistry::domainKind($store));
+        })();
+        gc_collect_cycles();
+        self::assertSame('vacated', OwnershipRegistry::domainKind($store), 'the first graph and its provider are gone');
+
+        $q = new StubContextProvider(static fn() => 2); // stays alive at the Host
+        try {
+            $second = $this->builder($store)->withExecutionContextProvider($q)->withSimpleThrottlePolicy(new ReentrantSimplePolicy('broken', 0));
+            $reader ? $second->buildOperationalReader() : $second->build();
+            self::fail('the build over the vacated binding must fail on the policy of limit 0');
+        } catch (RateLimiterException) {
+        }
+
+        self::assertSame('vacated', OwnershipRegistry::domainKind($store), 'the failed replacement is undone, the provider that is alive at the Host does not keep the store');
+        $this->commands = [];
+        try {
+            $store->isHealthy();
+            self::fail('a direct call on the vacated binding is rejected');
+        } catch (RateLimiterException $failure) {
+            self::assertStringContainsString('gone', $failure->getMessage());
+        }
+        self::assertSame([], $this->commands, 'the rejected direct call sent nothing');
+
+        $third = new StubContextProvider(static fn() => 3);
+        $runtime = $this->builder($store)->withExecutionContextProvider($third)->withSimpleThrottlePolicy(new FixedWindowThrottlePolicy('c', 5, 60))->build();
+        self::assertTrue($runtime->consume('c', 'ok')->allowed, 'a sound build with another provider succeeds on the vacated store');
+        self::assertSame('provider', OwnershipRegistry::domainKind($store));
+    }
+
+    #[DataProvider('buildPaths')]
+    public function testAnActiveDirectCallKeepsItsDomainUntilItsReleaseThenTheOverdueRollbackHappens(bool $reader): void
+    {
+        $p = new StubContextProvider(static fn() => 1);
+        $store = $this->store();
+        $held = new BuiltDuringBuild();
+        $failing = new ReentrantSimplePolicy('broken', 0);
+        $failing->reenter = function () use ($held, $store, $failing): void {
+            $failing->reenter = null;
+            $held->fiber = new Fiber(fn() => $store->transactRequest(static function (): int {
+                Fiber::suspend('inside the direct transaction');
+
+                return 1;
+            }));
+            $held->fiber->start();
+        };
+
+        try {
+            $first = $this->builder($store)->withExecutionContextProvider($p)->withSimpleThrottlePolicy($failing);
+            $reader ? $first->buildOperationalReader() : $first->build();
+            self::fail('the first build must fail on the policy of limit 0');
+        } catch (RateLimiterException) {
+        }
+
+        self::assertNotNull($held->fiber);
+        self::assertFalse($held->fiber->isTerminated(), 'the direct call is still active when the build fails');
+        self::assertSame('provider', OwnershipRegistry::domainKind($store), 'the active call keeps its domain until its release');
+        self::assertTrue(OwnershipRegistry::isOccupied($store));
+
+        $held->fiber->resume();
+        self::assertTrue($held->fiber->isTerminated());
+        self::assertFalse(OwnershipRegistry::isOccupied($store));
+        self::assertSame('unbound', OwnershipRegistry::domainKind($store), 'the overdue rollback happens at the last release');
+
+        $q = new StubContextProvider(static fn() => 2);
+        $runtime = $this->builder($store)->withExecutionContextProvider($q)->withSimpleThrottlePolicy(new FixedWindowThrottlePolicy('c', 5, 60))->build();
+        self::assertTrue($runtime->consume('c', 'ok')->allowed, 'a later build with another provider succeeds');
     }
 
     // ---- F266-16: a hand-assembled engine over a raw Host clock -------------------------------------------------------------------------

@@ -65,3 +65,14 @@ Mutants M13–M22 (`mutants.sh`) detect each of these corrections when it is rem
 | F266-16 a hand-assembled engine over a raw Host clock | `OwnershipCrossingsRedisTest::testAnEngineAssembledByHandCannotReenterTheStoreFromItsRawClock` (refused, 0 PINGs, the sound call is served; the Builder path is the existing clock tests); `OwnershipRegistryTest::testAHostClockPassesEveryReadingThroughOneToOneAndIsNeverWrappedTwice` (one reading in, one reading out; the request clock and a wrapped clock are never wrapped again) |
 
 Reviewed collaborators that read a raw clock inside a call: `CircuitBreaker`, `BudgetTracker`, `AntiEquilibriumGate`, `DecayCalculator`, `EphemeralBucket`, `AdmissionRuntime`, `EvaluationPipeline`, `RateLimiterEngine` (each wraps a raw clock in `HostClock` at construction; the engine's clock is the one `LocalFallbackLimiter` receives, so its policy marks and its clock reads anchor on the same resource), and `FixedWindowSimpleRateLimiter` and the two readers (their clock is marked through their own store, unchanged). Mutants M23–M25 detect each correction when it is removed.
+
+## Third review, `f0f9db3a` (F266-17: the lifetime of a binding and the rollback of a failed build)
+
+| Case | Test (both `build()` and `buildOperationalReader()`) |
+|---|---|
+| 1. an entry class built by hand from Host code stands on the binding it adopted | `OwnershipCrossingsRedisTest::testAFailedBuildLeavesTheBindingOfAnEntryBuiltDirectlyFromHostCode`; `OwnershipRegistryTest::testAnAdoptionInsideAHostRegionStandsOnTheBindingAndOutsideItDoesNot` |
+| 2. a failed replacement of a vacated binding returns to the vacated state; a direct call is rejected; a sound build with a third provider succeeds | `testAFailedReplacementOfAVacatedBindingRestoresTheVacatedStateAndALaterBuildSucceeds`; `OwnershipRegistryTest::testTheHoldersOfAReplacedBindingNeverKeepTheReplacementAlive` |
+| 3. a direct call that is active during the rollback keeps its domain until its last release, then the overdue rollback happens | `testAnActiveDirectCallKeepsItsDomainUntilItsReleaseThenTheOverdueRollbackHappens`; `OwnershipRegistryTest::testAnActiveCallDelaysTheRollbackToItsLastRelease` |
+| kept controls | the Builder-built B of F266-15 (`testAFailedBuildLeavesTheBindingOfARuntimeBuiltMeanwhileFromHostCode`), the ordinary failed build (`testAFailedReaderBuildBindsNothing…`), CE-29 (`…AfterEveryGraphThatSuppliedTheProviderIsDestroyed…`), CE-31 (`…AnActiveInheritedProviderCall…`), CE-32 (`…AReplacementIsRejectedWhile…`), `testARollbackKeepsTheBindingAnotherCallStandsOn` |
+
+Mutants M26–M29 detect each of these corrections when it is removed.

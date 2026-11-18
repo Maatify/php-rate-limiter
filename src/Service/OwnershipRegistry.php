@@ -146,19 +146,21 @@ final class OwnershipRegistry
             }
             throw new RateLimiterException(sprintf('The execution context domain of %s differs from the one requested: share one provider instance among the graphs and stores of one scheduler.', $resource::class));
         }
-        // Step 2: record the domain on the resources that were unbound or vacated.
+        // Step 2: record the domain on the resources that were unbound or vacated; a matching binding is relied on (one more holder).
         $ledger = new BindingLedger();
         foreach ($set as $resource) {
             $slot = self::slot($resource);
-            $slot->holds++;
-            $ledger->held[] = $resource;
-            if ($slot->bound && self::sameDomain($slot, $provider)) {
+            if ($slot->bound && self::sameDomain($slot, $provider) && $slot->generation !== null) {
+                $slot->generation->holders++;
+                $ledger->entries[] = [$resource, $slot->generation, false];
                 continue;
             }
-            $ledger->entries[] = [$resource, $slot->bound, $slot->defaultDomain, $slot->provider];
+            $generation = new BindingGeneration($slot->bound, $slot->defaultDomain, $slot->provider, $slot->generation);
+            $slot->generation = $generation;
             $slot->bound = true;
             $slot->defaultDomain = $provider === null;
             $slot->provider = $provider === null ? null : \WeakReference::create($provider);
+            $ledger->entries[] = [$resource, $generation, true];
         }
 
         return $ledger;
@@ -187,39 +189,55 @@ final class OwnershipRegistry
     }
 
     /**
-     * Undoes exactly what one `bindAll` bound, restoring each previous state, but only where no other call stands on the binding: a
-     * graph built meanwhile (from Host code run during this build) keeps working on the binding it found (F266-15).
+     * Releases what one `bindAll` call stands on. A binding is undone, back to the state it replaced, only when nobody stands on it any
+     * more (the call that recorded it has rolled back and so has every other holder), and only when no call is active on the resource:
+     * an active call keeps its domain until its last release, and the undo happens then (F266-17).
      */
     public static function rollback(BindingLedger $ledger): void
     {
-        foreach ($ledger->held as $resource) {
-            $slot = self::slot($resource);
-            $slot->holds = max(0, $slot->holds - 1);
-        }
-        foreach (array_reverse($ledger->entries) as [$resource, $bound, $default, $provider]) {
-            $slot = self::slot($resource);
-            if ($slot->record !== null) {
-                continue;
+        foreach (array_reverse($ledger->entries) as [$resource, $generation, $created]) {
+            $generation->holders = max(0, $generation->holders - 1);
+            if ($created) {
+                $generation->creatorRolledBack = true;
             }
-            if ($slot->holds > 0) {
-                $slot->deferredRestore = [$bound, $default, $provider]; // the last call standing on it undoes it, if it rolls back too
-                continue;
-            }
-            $slot->bound = $bound;
-            $slot->defaultDomain = $default;
-            $slot->provider = $provider;
-            $slot->deferredRestore = null;
-        }
-        // A call that rolls back last undoes a binding whose own binder already rolled back (nobody stands on it any more).
-        foreach ($ledger->held as $resource) {
-            $slot = self::slot($resource);
-            if ($slot->holds === 0 && $slot->deferredRestore !== null && $slot->record === null) {
-                [$slot->bound, $slot->defaultDomain, $slot->provider] = $slot->deferredRestore;
-                $slot->deferredRestore = null;
-            }
+            self::settle($resource);
         }
         $ledger->entries = [];
-        $ledger->held = [];
+    }
+
+    /** Undoes the binding of a resource when it was abandoned (nobody stands on it) and no call is active on the resource. */
+    private static function settle(object $resource): void
+    {
+        $slot = self::slot($resource);
+        $generation = $slot->generation;
+        if ($generation === null || $slot->record !== null || $generation->holders > 0 || ! $generation->creatorRolledBack) {
+            return;
+        }
+        $slot->bound = $generation->previousBound;
+        $slot->defaultDomain = $generation->previousDefault;
+        $slot->provider = $generation->previousProvider;
+        $slot->generation = $generation->previous;
+    }
+
+    /** @var int how many Host callbacks of a build are running: an object built from one of them stands on the binding it adopts */
+    private static int $hostDepth = 0;
+
+    /**
+     * Runs Host code that executes while a graph is being built (policy getters, for example). A runtime or reader that Host code builds
+     * from inside it stands on the binding it adopts, so the failure of the build that is running does not undo that binding (F266-17).
+     *
+     * @template T
+     * @param callable(): T $hostCode
+     * @return T
+     */
+    public static function hostRegion(callable $hostCode): mixed
+    {
+        self::$hostDepth++;
+        try {
+            return $hostCode();
+        } finally {
+            self::$hostDepth--;
+        }
     }
 
     /**
@@ -243,17 +261,14 @@ final class OwnershipRegistry
             break;
         }
         $domain = $candidate ?? ContextDomain::default();
-        $wasBound = [];
-        foreach ($resources as $resource) {
-            $wasBound[spl_object_id($resource)] = self::slot($resource)->bound;
-        }
         $ledger = self::bindAll($resources, $domain->rawProvider());
-        // Adopting a binding that already existed is not standing on it (a discarded or failed object must not pin a binding); only a
-        // resource this call bound itself stays held.
-        foreach ($ledger->held as $resource) {
-            if ($wasBound[spl_object_id($resource)] ?? false) {
-                $slot = self::slot($resource);
-                $slot->holds = max(0, $slot->holds - 1);
+        // An entry class adopting a binding that already existed does not stand on it while the graph that records it is being built
+        // (it would pin a build that fails); an entry built from Host code inside such a build does, and a resource it binds itself stays.
+        if (self::$hostDepth === 0) {
+            foreach ($ledger->entries as [, $generation, $created]) {
+                if (! $created) {
+                    $generation->holders = max(0, $generation->holders - 1);
+                }
             }
         }
 
@@ -385,6 +400,7 @@ final class OwnershipRegistry
         $slot = self::slot($resource);
         if ($slot->record === $record) {
             $slot->record = null;
+            self::settle($resource);
         }
     }
 

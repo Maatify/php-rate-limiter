@@ -161,6 +161,16 @@ run_mutant M23 "a rollback undoes a binding another call stands on (F266-15)" $S
             }'
 run_mutant M24 "a hand-assembled raw clock is not a Host crossing (F266-16)" $S/HostClock.php '        return OwnershipRegistry::crossing($this, fn(): DateTimeImmutable => $this->inner->now());' '        return $this->inner->now();'
 run_mutant M25 "the breaker keeps a raw Host clock unwrapped (F266-16)" $S/CircuitBreaker.php '        $this->clock = HostClock::of($this->clock);' '        // mutant: unwrapped'
+run_mutant M26 "an entry built from Host code does not stand on the binding it adopted (F266-17 case 1)" $S/OwnershipRegistry.php '        if (self::$hostDepth === 0) {' '        if (true) {'
+run_mutant M27 "a rollback never undoes an abandoned binding (F266-17 case 2)" $S/OwnershipRegistry.php '            if ($created) {
+                $generation->creatorRolledBack = true;
+            }
+            self::settle($resource);' '            if ($created) {
+                $generation->creatorRolledBack = true;
+            }'
+run_mutant M28 "the last release of an active call does not perform the overdue rollback (F266-17 case 3)" $S/OwnershipRegistry.php '            $slot->record = null;
+            self::settle($resource);' '            $slot->record = null;'
+run_mutant M29 "the holders of the previous generation keep the replacement (a counter that follows the resource, F266-17 case 2)" $S/OwnershipRegistry.php '        $slot->generation = $generation->previous;' '        $slot->generation = $generation;'
 cat "$out/result.tsv"
 git status --short -- src tests | grep -v '^??' && failed=1
 exit "$failed"

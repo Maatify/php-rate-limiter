@@ -13,4 +13,9 @@ final class BuiltDuringBuild
     public ?CompositeRateLimiterRuntimeInterface $runtime = null;
 
     public ?CompositeRateLimitOperationalReaderInterface $reader = null;
+
+    public ?\Maatify\RateLimiter\Service\FixedWindowSimpleRateLimiter $direct = null;
+
+    /** @var \Fiber<mixed, mixed, mixed, mixed>|null */
+    public ?\Fiber $fiber = null;
 }

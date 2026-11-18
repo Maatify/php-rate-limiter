@@ -614,4 +614,51 @@ final class OwnershipRegistryTest extends TestCase
         OwnershipRegistry::rollback($second);
         self::assertSame('unbound', OwnershipRegistry::domainKind($resource), 'nobody stands on it any more');
     }
+
+    public function testAnAdoptionInsideAHostRegionStandsOnTheBindingAndOutsideItDoesNot(): void
+    {
+        $p = $this->provider(static fn() => 1);
+
+        $outside = new \stdClass();
+        $ledger = OwnershipRegistry::bindAll([$outside], $p);
+        OwnershipRegistry::adopt([$outside]);
+        OwnershipRegistry::rollback($ledger);
+        self::assertSame('unbound', OwnershipRegistry::domainKind($outside), 'an entry adopting during its own build does not pin a build that fails');
+
+        $inside = new \stdClass();
+        $ledger = OwnershipRegistry::bindAll([$inside], $p);
+        OwnershipRegistry::hostRegion(static fn() => OwnershipRegistry::adopt([$inside]));
+        OwnershipRegistry::rollback($ledger);
+        self::assertSame('provider', OwnershipRegistry::domainKind($inside), 'an entry built from Host code stands on the binding it adopted');
+    }
+
+    public function testTheHoldersOfAReplacedBindingNeverKeepTheReplacementAlive(): void
+    {
+        $resource = new \stdClass();
+        $old = $this->provider(static fn() => 1);
+        OwnershipRegistry::bindAll([$resource], $old); // a graph that stands on the first generation for good
+        unset($old);
+        gc_collect_cycles();
+        self::assertSame('vacated', OwnershipRegistry::domainKind($resource));
+
+        $new = $this->provider(static fn() => 2);
+        $ledger = OwnershipRegistry::bindAll([$resource], $new);
+        self::assertSame('provider', OwnershipRegistry::domainKind($resource));
+        OwnershipRegistry::rollback($ledger);
+        self::assertSame('vacated', OwnershipRegistry::domainKind($resource), 'the failed replacement returns to the state it replaced');
+    }
+
+    public function testAnActiveCallDelaysTheRollbackToItsLastRelease(): void
+    {
+        $resource = new \stdClass();
+        $p = $this->provider(static fn() => 1);
+        $ledger = OwnershipRegistry::bindAll([$resource], $p);
+        $scope = OwnershipRegistry::acquire([$resource], 'limit', ContextDomain::forProvider($p));
+
+        OwnershipRegistry::rollback($ledger);
+        self::assertSame('provider', OwnershipRegistry::domainKind($resource), 'the active call keeps its domain');
+
+        $scope->release();
+        self::assertSame('unbound', OwnershipRegistry::domainKind($resource), 'the overdue rollback happens at the release');
+    }
 }

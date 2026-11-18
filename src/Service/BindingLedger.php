@@ -4,18 +4,14 @@ declare(strict_types=1);
 
 namespace Maatify\RateLimiter\Service;
 
-use Maatify\RateLimiter\Contract\ExecutionContextProviderInterface;
-
 /**
- * The resources a `bindAll` call bound by itself, with their previous state, so a later failure rolls back only those.
+ * What one `bindAll` call stands on: for each resource the binding generation it recorded (`created`) or relied on, so that a later
+ * failure of that call releases exactly its own holds.
  *
  * @internal
  */
 final class BindingLedger
 {
-    /** @var list<array{object, bool, bool, \WeakReference<ExecutionContextProviderInterface>|null}> */
+    /** @var list<array{object, BindingGeneration, bool}> resource, generation, whether this call recorded it */
     public array $entries = [];
-
-    /** @var list<object> every resource of the set this call stands on (newly bound or already matching) */
-    public array $held = [];
 }
