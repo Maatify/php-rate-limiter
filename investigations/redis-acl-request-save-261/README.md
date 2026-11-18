@@ -37,7 +37,7 @@
 
 ## 3. الطريقة
 
-`tests/Integration/Redis/RequestSaveAclRedisTest.php` (80 اختبارًا؛ 78 حالة × غلافان للـHost + ضابط المراقِب + ملاحظة F9)، من المدخل العام `transactRequest()` ومن المحرك العام `RateLimiterBuilder::…->limit()`، على `redis:7.0.15-alpine` معزول في Docker (digest `sha256:c9d92d84…`):
+`tests/Integration/Redis/RequestSaveAclRedisTest.php` (80 اختبارًا: 39 حالة × غلافان للـHost = 78، وضابط المراقِب، وملاحظة F9)، من المدخل العام `transactRequest()` ومن المحرك العام `RateLimiterBuilder::…->limit()`، على `redis:7.0.15-alpine` معزول في Docker (digest `sha256:c9d92d84…`):
 
 - **حساب لكل حالة** مؤقت (`ACL SETUSER … reset on` ثم قائمة أوامر ونطاق مفاتيح محددين، يُحذف بعد الحالة)، **وحساب ضابط نجاح** (`seed`/`control`) يملك ما يلزم لنفس العملية. الحساب المقيّد يملك `REQUEST_COMMANDS` (15 أمرًا) ناقص الأمر المختبَر.
 - **غلافان للـHost** (قراءة كل ما يصل للمخزن): عميل RESP الخاص بالمشروع (`RespRedisCommandExecutor`: رد الخطأ → `RateLimiterException`) وext-redis 6.3.0 `rawCommand()` (رد خطأ → `\RedisException`) مع تصنيف Host (رمز خطأ Redis معروف يمر كما هو، وأي شيء آخر من phpredis عطل نقل → `BackendFailureException`).
