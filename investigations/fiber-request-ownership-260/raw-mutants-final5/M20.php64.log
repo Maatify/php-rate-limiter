@@ -1,0 +1,69 @@
+PHPUnit 11.5.57 by Sebastian Bergmann and contributors.
+
+Runtime:       PHP 8.4.27
+Configuration: /app/phpunit.xml
+
+............................F.F.F.F..F........................... 65 / 86 ( 75%)
+.....................                                             86 / 86 (100%)
+
+Time: 00:00.352, Memory: 16.00 MB
+
+There were 5 failures:
+
+1) Maatify\RateLimiter\Tests\Integration\Redis\OwnershipCrossingsRedisTest::testAFailedReplacementOfAVacatedBindingRestoresTheVacatedStateAndALaterBuildSucceeds with data set "buildOperationalReader()" (true)
+the failed replacement is undone, the provider that is alive at the Host does not keep the store
+Failed asserting that two strings are identical.
+--- Expected
++++ Actual
+@@ @@
+-'vacated'
++'provider'
+
+/app/tests/Integration/Redis/OwnershipCrossingsRedisTest.php:447
+
+2) Maatify\RateLimiter\Tests\Integration\Redis\OwnershipCrossingsRedisTest::testAnActiveDirectCallKeepsItsDomainUntilItsReleaseThenTheOverdueRollbackHappens with data set "buildOperationalReader()" (true)
+the overdue rollback happens at the last release
+Failed asserting that two strings are identical.
+--- Expected
++++ Actual
+@@ @@
+-'unbound'
++'provider'
+
+/app/tests/Integration/Redis/OwnershipCrossingsRedisTest.php:495
+
+3) Maatify\RateLimiter\Tests\Integration\Redis\OwnershipCrossingsRedisTest::testABuildSuspendedInAFiberNeverChangesTheRollbackOfAnIndependentBuild with data set "buildOperationalReader()" (true)
+the failed independent build left nothing bound, whatever build A is doing
+Failed asserting that two strings are identical.
+--- Expected
++++ Actual
+@@ @@
+-'unbound'
++'provider'
+
+/app/tests/Integration/Redis/OwnershipCrossingsRedisTest.php:531
+
+4) Maatify\RateLimiter\Tests\Integration\Redis\OwnershipCrossingsRedisTest::testANestedFailedBuildOnTheSameStackLeavesItsStoreUnbound with data set "buildOperationalReader()" (true)
+the nested failed build undid the binding of its own components while build A was still running
+Failed asserting that two strings are identical.
+--- Expected
++++ Actual
+@@ @@
+-'unbound'
++'provider'
+
+/app/tests/Integration/Redis/OwnershipCrossingsRedisTest.php:610
+
+5) Maatify\RateLimiter\Tests\Integration\Redis\OwnershipCrossingsRedisTest::testAFailedReaderBuildBindsNothingAndAnExistingBindingIsKept
+the failed build left nothing bound
+Failed asserting that two strings are identical.
+--- Expected
++++ Actual
+@@ @@
+-'unbound'
++'provider'
+
+/app/tests/Integration/Redis/OwnershipCrossingsRedisTest.php:334
+
+FAILURES!
+Tests: 86, Assertions: 1032, Failures: 5.

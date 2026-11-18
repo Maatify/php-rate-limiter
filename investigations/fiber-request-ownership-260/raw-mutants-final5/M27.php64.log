@@ -1,0 +1,155 @@
+PHPUnit 11.5.57 by Sebastian Bergmann and contributors.
+
+Runtime:       PHP 8.4.27
+Configuration: /app/phpunit.xml
+
+............................FF..FFFF...F................F...FFF.. 65 / 86 ( 75%)
+...FF................                                             86 / 86 (100%)
+
+Time: 00:00.357, Memory: 16.00 MB
+
+There were 13 failures:
+
+1) Maatify\RateLimiter\Tests\Integration\Redis\OwnershipCrossingsRedisTest::testAFailedReplacementOfAVacatedBindingRestoresTheVacatedStateAndALaterBuildSucceeds with data set "buildOperationalReader()" (true)
+the failed replacement is undone, the provider that is alive at the Host does not keep the store
+Failed asserting that two strings are identical.
+--- Expected
++++ Actual
+@@ @@
+-'vacated'
++'provider'
+
+/app/tests/Integration/Redis/OwnershipCrossingsRedisTest.php:447
+
+2) Maatify\RateLimiter\Tests\Integration\Redis\OwnershipCrossingsRedisTest::testAFailedReplacementOfAVacatedBindingRestoresTheVacatedStateAndALaterBuildSucceeds with data set "build()" (false)
+the failed replacement is undone, the provider that is alive at the Host does not keep the store
+Failed asserting that two strings are identical.
+--- Expected
++++ Actual
+@@ @@
+-'vacated'
++'provider'
+
+/app/tests/Integration/Redis/OwnershipCrossingsRedisTest.php:447
+
+3) Maatify\RateLimiter\Tests\Integration\Redis\OwnershipCrossingsRedisTest::testABuildSuspendedInAFiberNeverChangesTheRollbackOfAnIndependentBuild with data set "buildOperationalReader()" (true)
+the failed independent build left nothing bound, whatever build A is doing
+Failed asserting that two strings are identical.
+--- Expected
++++ Actual
+@@ @@
+-'unbound'
++'provider'
+
+/app/tests/Integration/Redis/OwnershipCrossingsRedisTest.php:531
+
+4) Maatify\RateLimiter\Tests\Integration\Redis\OwnershipCrossingsRedisTest::testABuildSuspendedInAFiberNeverChangesTheRollbackOfAnIndependentBuild with data set "build()" (false)
+the failed independent build left nothing bound, whatever build A is doing
+Failed asserting that two strings are identical.
+--- Expected
++++ Actual
+@@ @@
+-'unbound'
++'provider'
+
+/app/tests/Integration/Redis/OwnershipCrossingsRedisTest.php:531
+
+5) Maatify\RateLimiter\Tests\Integration\Redis\OwnershipCrossingsRedisTest::testANestedFailedBuildOnTheSameStackLeavesItsStoreUnbound with data set "buildOperationalReader()" (true)
+the nested failed build undid the binding of its own components while build A was still running
+Failed asserting that two strings are identical.
+--- Expected
++++ Actual
+@@ @@
+-'unbound'
++'provider'
+
+/app/tests/Integration/Redis/OwnershipCrossingsRedisTest.php:610
+
+6) Maatify\RateLimiter\Tests\Integration\Redis\OwnershipCrossingsRedisTest::testANestedFailedBuildOnTheSameStackLeavesItsStoreUnbound with data set "build()" (false)
+the nested failed build undid the binding of its own components while build A was still running
+Failed asserting that two strings are identical.
+--- Expected
++++ Actual
+@@ @@
+-'unbound'
++'provider'
+
+/app/tests/Integration/Redis/OwnershipCrossingsRedisTest.php:610
+
+7) Maatify\RateLimiter\Tests\Integration\Redis\OwnershipCrossingsRedisTest::testAFailedReaderBuildBindsNothingAndAnExistingBindingIsKept
+the failed build left nothing bound
+Failed asserting that two strings are identical.
+--- Expected
++++ Actual
+@@ @@
+-'unbound'
++'provider'
+
+/app/tests/Integration/Redis/OwnershipCrossingsRedisTest.php:334
+
+8) Maatify\RateLimiter\Tests\Unit\Service\OwnershipRegistryTest::testARollbackUndoesExactlyWhatThatBindingBound
+Failed asserting that two strings are identical.
+--- Expected
++++ Actual
+@@ @@
+-'unbound'
++'provider'
+
+/app/tests/Unit/Service/OwnershipRegistryTest.php:301
+
+9) Maatify\RateLimiter\Tests\Unit\Service\OwnershipRegistryTest::testARollbackKeepsTheBindingAnotherCallStandsOn
+nobody stands on it any more
+Failed asserting that two strings are identical.
+--- Expected
++++ Actual
+@@ @@
+-'unbound'
++'provider'
+
+/app/tests/Unit/Service/OwnershipRegistryTest.php:615
+
+10) Maatify\RateLimiter\Tests\Unit\Service\OwnershipRegistryTest::testABuildStartedFromHostCodeKnowsItsOwnComponents
+Failed asserting that two strings are identical.
+--- Expected
++++ Actual
+@@ @@
+-'unbound'
++'provider'
+
+/app/tests/Unit/Service/OwnershipRegistryTest.php:654
+
+11) Maatify\RateLimiter\Tests\Unit\Service\OwnershipRegistryTest::testTheBuildFramesOfAFiberNeverMarkAnotherContext
+an independent build on another context is not affected by the suspended one
+Failed asserting that two strings are identical.
+--- Expected
++++ Actual
+@@ @@
+-'unbound'
++'provider'
+
+/app/tests/Unit/Service/OwnershipRegistryTest.php:671
+
+12) Maatify\RateLimiter\Tests\Unit\Service\OwnershipRegistryTest::testAnAdoptionStandsOnTheBindingUnlessItIsPartOfTheBuildThatRecordedIt
+an entry of the same build does not pin a build that fails
+Failed asserting that two strings are identical.
+--- Expected
++++ Actual
+@@ @@
+-'unbound'
++'provider'
+
+/app/tests/Unit/Service/OwnershipRegistryTest.php:626
+
+13) Maatify\RateLimiter\Tests\Unit\Service\OwnershipRegistryTest::testTheHoldersOfAReplacedBindingNeverKeepTheReplacementAlive
+the failed replacement returns to the state it replaced
+Failed asserting that two strings are identical.
+--- Expected
++++ Actual
+@@ @@
+-'vacated'
++'provider'
+
+/app/tests/Unit/Service/OwnershipRegistryTest.php:708
+
+FAILURES!
+Tests: 86, Assertions: 1021, Failures: 13.

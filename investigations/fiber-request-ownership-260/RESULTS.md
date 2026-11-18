@@ -344,3 +344,59 @@ Against `main@316b1de9`:
 | 64 | ping | candidate | 53.33 (17.33–53.63) | 245.13 (108.17–465.08) |
 
 Reading: against `f0f9db3a` the p50 of every measured path differs by noise on both widths (64-bit direct 81.58→81.5 µs, nested 295.88→295.04, limit 939.08→937.21; emulated 32-bit direct 227.92→233). Against `main` the 64-bit p50 is about 4 to 9 percent higher on the affected paths and the emulated 32-bit p50 about 22 to 56 percent higher: the measured cost of the guard as a whole. The `ping` control is untouched code and its p99 moves in both directions between trees and runs (64-bit 273.67→173.63 µs here), so p99 differences are not attributed to the guard. The numbers are measurements, not a verdict.
+
+## Fourth review of the correction `b8f264f2` (F266-18, F266-19): evidence on the corrected source
+
+Corrected source `4823e381f74d48174a938ef5219dd0884f6164a5` (tree `45324060a9bf84d1a7400b411394a1ffa3dcb25b`); reviewed head `b8f264f2034f8d133efba0128ac47e90b15ae45d`; baseline `main@316b1de99e784fec95b40f849d83a04dec772e2b`. Later commits change only investigation files and one test (the per-context frame unit test, see M30 below); `src` is identical. Raw outputs: `raw-final5/`, `raw-mutants-final5/`, `raw-mutants-final5-rerun/`, `raw-bench-final5/`, `raw-bench-vs-reviewed-final5/`. Earlier sections stay as history of their own heads. Docker, isolated Redis 7.0.15, PHP 8.4.27, actual PHP_INT_SIZE 8 and 4 (32-bit emulated).
+
+Design of the fix. F266-19: a binding generation no longer points at the one it replaced; an undo restores the three fields it saved (the state replaced is only ever unbound or vacated) and drops the generation, so one record per resource is reachable however many graphs replaced one another. F266-18: the process-wide depth counter is replaced by build frames kept per execution context (main stack, each Fiber). A Builder opens an `own` scope for the components it constructs (an entry adopting the binding inside it is part of that build and does not pin it); Host code that runs during a build (policy getters, admission runtime construction) opens a `host` frame; an entry adopting under a `host` frame, or under no frame, stands on the binding. A build suspended in a Fiber never marks another context, and a Builder that Host code runs from inside a getter has a scope of its own for its components. No public method, interface or constructor parameter was added. Declared limit: the tracking distinguishes Fibers; under a scheduler that is not Fibers a build must not suspend inside a policy getter while another build runs on the same context.
+
+| Run | Result |
+|---|---|
+| New tests (62 in `OwnershipCrossingsRedisTest` and `OwnershipRegistryTest`) on the **reviewed source `b8f264f2`**, 64 and 32 | 9 red on both widths: a build suspended in a Fiber (2), a nested failed build on the same stack (2), the 128-graph bounded-records test (integration and unit), and the frame/adoption units; the registry file re-run alone against the reviewed source after its last edit: 3 errors and 1 failure on both widths |
+| The same tests on the corrected head | pass on both widths; the kept controls (F266-15/17 cases, the nested graph that succeeds, failed replacement, rollback after the last owner's release, an older record never releasing a newer one) pass |
+| Candidate full suite 64 | 2898 tests (100 errors, 4 failures, 14 skipped): ReleaseVerification classes only |
+| Candidate full suite 32 | 2893 tests (101 errors, 4 failures, 65 skipped): ReleaseVerification classes and the year-2999 fixture (#267) only. This run did **not** repeat the two race/timing failures recorded in the previous section (#268); that run is reported as a failed run in its own section and this one is not used to clear it |
+| `--group php32`, 32 / 64 | 902 tests OK (64 skipped) / 903 tests OK (13 skipped) |
+| Mutants M01–M31 | 30 of 31 detected in the full run; **M30 (one process-wide frame stack instead of one per context) was undetected**: the earlier test could not tell the two apart, because a Builder scope pushed on the shared stack hid the difference. The per-context frame unit test was rewritten so that a scope open in a suspended Fiber must not be taken for a scope of the main stack, and M30 was re-run alone: detected on both widths. F266-19 has no one-textual-change mutant (the fault is a property that chains records); its control is the red run against `b8f264f2` |
+| Runner (provenance, governance helper, clean clone, php64/php32 suites) | all steps exit 0 |
+
+### Cost (committed source, alternating, 5 rounds of 3000 iterations after 300 warm-up; no threshold). The call path is unchanged by this correction; the Builder scope and frames run at build time
+
+Against `b8f264f2` (the cost of this correction alone):
+
+| width | workload | tree | p50 µs median (min–max) | p99 µs median (min–max) |
+| 32 | direct | baseline | 233.08 (231.79–234.13) | 430.33 (406.13–648.13) |
+| 32 | direct | candidate | 232.92 (231.63–234.46) | 426.46 (387.46–471.88) |
+| 32 | limit | baseline | 2701.04 (2692.71–2740.54) | 12969.58 (12428.33–16831.92) |
+| 32 | limit | candidate | 2711.17 (2700.17–2717.13) | 13452.58 (12664–13605.63) |
+| 32 | nested | baseline | 781.54 (775.58–785.96) | 1603.58 (1450–1892.96) |
+| 32 | nested | candidate | 779.33 (774.17–784.33) | 1618.58 (1407.71–1882) |
+| 32 | ping | baseline | 76.92 (76.21–90.92) | 175.54 (141.04–231.67) |
+| 32 | ping | candidate | 76.38 (76.13–76.75) | 169.21 (116.38–194.79) |
+| 64 | direct | baseline | 82.92 (79.17–84.17) | 330.38 (259.92–460.58) |
+| 64 | direct | candidate | 85 (83.96–87.96) | 592.79 (202.63–1286.13) |
+| 64 | limit | baseline | 940.21 (936.67–943.67) | 4570.75 (4485–4613) |
+| 64 | limit | candidate | 940.46 (937.58–944.29) | 4587.63 (4510.21–4597.54) |
+| 64 | nested | baseline | 296.75 (290.79–297.83) | 633.17 (597.75–1213.04) |
+| 64 | nested | candidate | 293.21 (291.46–298.29) | 776 (688–867.75) |
+| 64 | ping | baseline | 53.04 (36.13–53.38) | 218.75 (208.75–603.46) |
+| 64 | ping | candidate | 52.42 (21.08–53.04) | 473.13 (188.42–825.17) |
+
+Against `main@316b1de9`:
+
+| width | workload | tree | p50 µs median (min–max) | p99 µs median (min–max) |
+| 32 | direct | baseline | 149.75 (148.58–155) | 300.54 (214.13–353.96) |
+| 32 | direct | candidate | 233.63 (232.29–239.08) | 431.58 (398.17–777.88) |
+| 32 | limit | baseline | 2185.33 (2179.71–2198.88) | 11554.17 (11441.25–12136.58) |
+| 32 | limit | candidate | 2708.88 (2703.42–2724.88) | 13083.92 (12918.04–13605.75) |
+| 32 | nested | baseline | 636.71 (630.5–638.17) | 1235.63 (1031.58–1389) |
+| 32 | nested | candidate | 785.96 (785–787.21) | 1497.96 (1350.42–1648.29) |
+| 64 | direct | baseline | 58.88 (48.58–76.46) | 528.67 (189.29–1256.08) |
+| 64 | direct | candidate | 61.79 (56.5–91.42) | 364.38 (281.17–620.63) |
+| 64 | limit | baseline | 910.04 (693.79–915.33) | 4534.63 (4264.88–4611.17) |
+| 64 | limit | candidate | 943.83 (728.38–947.29) | 4558.25 (4149.08–4850.17) |
+| 64 | nested | baseline | 241.88 (238.71–250.25) | 678.58 (596.25–912.96) |
+| 64 | nested | candidate | 250 (235.63–270.71) | 757.42 (636.04–1180.63) |
+
+Reading: against `b8f264f2` the p50 of the library paths differs by noise on both widths (64-bit direct 82.92→85 µs, nested 296.75→293.21, limit 940.21→940.46; emulated 32-bit direct 233.08→232.92). The 64-bit p99 of the `ping` control moved 218.75→473.13 µs in this run (and in the other direction in earlier runs): `ping` is a raw Redis round trip through code that this change does not touch, so that tail difference is measurement noise of this machine and is shown here, not attributed to the guard; the p99 differences of the library paths are not attributed to it either. The run against `main` was less stable than earlier ones (64-bit baseline direct min 48.58 and max 76.46 µs, wide ranges): its 64-bit numbers are indicative only and the earlier, tighter comparison against `main` stays the reference for the cost of the guard as a whole (about 4 to 9 percent of p50 on 64-bit and about 22 to 56 percent on the emulated 32-bit). The numbers are measurements, not a verdict.

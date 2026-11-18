@@ -1,0 +1,47 @@
+PHPUnit 11.5.57 by Sebastian Bergmann and contributors.
+
+Runtime:       PHP 8.4.27
+Configuration: /app/phpunit.xml
+
+..............................FF................................. 65 / 86 ( 75%)
+.......F.............                                             86 / 86 (100%)
+
+Time: 00:00.417, Memory: 16.00 MB
+
+There were 3 failures:
+
+1) Maatify\RateLimiter\Tests\Integration\Redis\OwnershipCrossingsRedisTest::testAnActiveDirectCallKeepsItsDomainUntilItsReleaseThenTheOverdueRollbackHappens with data set "buildOperationalReader()" (true)
+the active call keeps its domain until its release
+Failed asserting that two strings are identical.
+--- Expected
++++ Actual
+@@ @@
+-'provider'
++'unbound'
+
+/app/tests/Integration/Redis/OwnershipCrossingsRedisTest.php:489
+
+2) Maatify\RateLimiter\Tests\Integration\Redis\OwnershipCrossingsRedisTest::testAnActiveDirectCallKeepsItsDomainUntilItsReleaseThenTheOverdueRollbackHappens with data set "build()" (false)
+the active call keeps its domain until its release
+Failed asserting that two strings are identical.
+--- Expected
++++ Actual
+@@ @@
+-'provider'
++'unbound'
+
+/app/tests/Integration/Redis/OwnershipCrossingsRedisTest.php:489
+
+3) Maatify\RateLimiter\Tests\Unit\Service\OwnershipRegistryTest::testAnActiveCallDelaysTheRollbackToItsLastRelease
+the active call keeps its domain
+Failed asserting that two strings are identical.
+--- Expected
++++ Actual
+@@ @@
+-'provider'
++'unbound'
+
+/app/tests/Unit/Service/OwnershipRegistryTest.php:719
+
+FAILURES!
+Tests: 86, Assertions: 1033, Failures: 3.
