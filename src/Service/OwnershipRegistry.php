@@ -40,7 +40,9 @@ final class OwnershipRegistry
     private static function slots(): \WeakMap
     {
         if (self::$slots === null) {
-            self::$slots = new \WeakMap();
+            /** @var \WeakMap<object, ResourceSlot> $created */
+            $created = new \WeakMap();
+            self::$slots = $created;
         }
 
         return self::$slots;

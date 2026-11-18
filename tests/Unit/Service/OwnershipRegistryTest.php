@@ -449,6 +449,63 @@ final class OwnershipRegistryTest extends TestCase
         }
     }
 
+    public function testDecoratedAliasingOfAStoreIsNotRecognisedAndIsOutsideTheSupport(): void
+    {
+        // Two graphs wrap one underlying store in two different Host decorator objects: the registry keys on object identity and sees two
+        // resources (CE-9, a declared limit, not a repaired case): nothing is refused, so such a composition is not supported.
+        $decoratorOne = $this->resource();
+        $decoratorTwo = $this->resource();
+
+        $first = OwnershipRegistry::acquire([$decoratorOne], 'limit', $this->default());
+        $second = OwnershipRegistry::acquire([$decoratorTwo], 'limit', $this->default());
+
+        self::assertTrue(OwnershipRegistry::isOccupied($decoratorOne) && OwnershipRegistry::isOccupied($decoratorTwo));
+        $first->release();
+        $second->release();
+    }
+
+    public function testAProviderThatBreaksItsContractWithAnEqualKeyForTwoLiveContextsIsTreatedAsOne(): void
+    {
+        // CE-23, the contract violation characterised: the same key for two live contexts is one context to the registry, so the second is
+        // treated as nested. This is the provider author's obligation (keys unique among live contexts), not a detectable state.
+        $store = new \stdClass();
+        $provider = $this->provider(static fn(): int => 5);
+        OwnershipRegistry::bindAll([$store], $provider);
+        $owner = OwnershipRegistry::acquire([$store], 'limit', ContextDomain::forProvider($provider));
+
+        self::assertNull(OwnershipRegistry::admit($store, 'second context with the same key'));
+        $owner->release();
+    }
+
+    /**
+     * @param class-string $class
+     * @return list<string>
+     */
+    private static function parameterNames(string $class): array
+    {
+        return array_map(
+            static fn(\ReflectionParameter $parameter): string => $parameter->getName(),
+            (new \ReflectionClass($class))->getConstructor()?->getParameters() ?? [],
+        );
+    }
+
+    public function testOnlyTheStoreConstructorGainsAnOptionalProviderParameter(): void
+    {
+        $store = self::parameterNames(\Maatify\RateLimiter\Repository\Redis\RedisFullCapabilityStore::class);
+        self::assertSame('executionContext', end($store), 'The one additive optional trailing parameter.');
+        self::assertTrue((new \ReflectionParameter([\Maatify\RateLimiter\Repository\Redis\RedisFullCapabilityStore::class, '__construct'], 'executionContext'))->isOptional());
+        foreach ([
+            \Maatify\RateLimiter\Service\RateLimiterEngine::class,
+            \Maatify\RateLimiter\Service\FixedWindowSimpleRateLimiter::class,
+            \Maatify\RateLimiter\Service\CompositeRateLimiterRuntime::class,
+            \Maatify\RateLimiter\Service\RateLimitOperationalReader::class,
+            \Maatify\RateLimiter\Service\SimpleRateLimitOperationalReader::class,
+            \Maatify\RateLimiter\Service\CompositeRateLimitOperationalReader::class,
+        ] as $entry) {
+            self::assertNotContains('executionContext', self::parameterNames($entry), $entry . ' keeps its constructor: it reads its domain from its resources.');
+        }
+    }
+
     public function testADestroyedSuspendedFiberUnwindsAndReleasesItsSlots(): void
     {
         $r = $this->resource();
