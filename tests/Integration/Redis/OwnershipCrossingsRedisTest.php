@@ -32,6 +32,7 @@ use Maatify\RateLimiter\Service\FingerprintHasher;
 use Maatify\RateLimiter\Service\OwnershipRegistry;
 use Maatify\RateLimiter\Tests\Support\Clock\FixedClock;
 use Maatify\RateLimiter\Tests\Support\FailureSignal\RecordingFailureSignalEmitter;
+use Maatify\RateLimiter\Tests\Support\Ownership\BindingProbe;
 use Maatify\RateLimiter\Tests\Support\Ownership\BuiltDuringBuild;
 use Maatify\RateLimiter\Tests\Support\Ownership\CrossingProbe;
 use Maatify\RateLimiter\Tests\Support\Ownership\ProbeClock;
@@ -496,6 +497,138 @@ final class OwnershipCrossingsRedisTest extends TestCase
         $q = new StubContextProvider(static fn() => 2);
         $runtime = $this->builder($store)->withExecutionContextProvider($q)->withSimpleThrottlePolicy(new FixedWindowThrottlePolicy('c', 5, 60))->build();
         self::assertTrue($runtime->consume('c', 'ok')->allowed, 'a later build with another provider succeeds');
+    }
+
+    // ---- F266-18: the build state follows the build, not the process ---------------------------------------------------------------
+
+    #[DataProvider('buildPaths')]
+    public function testABuildSuspendedInAFiberNeverChangesTheRollbackOfAnIndependentBuild(bool $reader): void
+    {
+        $pa = new StubContextProvider(static fn() => 1);
+        $q = new StubContextProvider(static fn() => 2);
+        $storeA = $this->store();
+        $storeB = $this->store();
+        $suspendingPolicy = new ReentrantSimplePolicy('a', 5);
+        $suspendingPolicy->reenter = static function () use ($suspendingPolicy): void {
+            $suspendingPolicy->reenter = null;
+            Fiber::suspend('inside a policy getter of a build');
+        };
+        $fiberA = new Fiber(function () use ($storeA, $pa, $suspendingPolicy, $reader): mixed {
+            $a = $this->builder($storeA)->withExecutionContextProvider($pa)->withSimpleThrottlePolicy($suspendingPolicy);
+
+            return $reader ? $a->buildOperationalReader() : $a->build();
+        });
+        $fiberA->start();
+        self::assertFalse($fiberA->isTerminated(), 'build A is suspended inside its Host getter');
+
+        // Build B, on the main stack, over a store and a provider of its own, fails at the policy of limit 0.
+        try {
+            $b = $this->builder($storeB)->withExecutionContextProvider($q)->withSimpleThrottlePolicy(new ReentrantSimplePolicy('broken', 0));
+            $reader ? $b->buildOperationalReader() : $b->build();
+            self::fail('build B must fail on the policy of limit 0');
+        } catch (RateLimiterException) {
+        }
+        self::assertSame('unbound', OwnershipRegistry::domainKind($storeB), 'the failed independent build left nothing bound, whatever build A is doing');
+
+        $other = new StubContextProvider(static fn() => 3);
+        $ok = $this->builder($storeB)->withExecutionContextProvider($other)->withSimpleThrottlePolicy(new FixedWindowThrottlePolicy('c', 5, 60));
+        $reader ? $ok->buildOperationalReader() : $ok->build();
+        self::assertSame('provider', OwnershipRegistry::domainKind($storeB), 'a sound build with another provider succeeds');
+
+        $fiberA->resume();
+        self::assertTrue($fiberA->isTerminated(), 'build A resumes and completes');
+        self::assertSame('provider', OwnershipRegistry::domainKind($storeA));
+    }
+
+    #[DataProvider('buildPaths')]
+    public function testABuildStartedFromAGetterOfAnotherBuildOnTheSameStackKnowsItsOwnComponents(bool $reader): void
+    {
+        $pa = new StubContextProvider(static fn() => 1);
+        $q = new StubContextProvider(static fn() => 2);
+        $storeA = $this->store();
+        $storeB = $this->store();
+        $outcome = new BuiltDuringBuild();
+        $nesting = new ReentrantSimplePolicy('a', 5);
+        $nesting->reenter = function () use ($nesting, $storeB, $q, $reader, $outcome): void {
+            $nesting->reenter = null;
+            // The getter of build A builds, with the Builder, a graph of its own that fails.
+            try {
+                $b = $this->builder($storeB)->withExecutionContextProvider($q)->withSimpleThrottlePolicy(new ReentrantSimplePolicy('broken', 0));
+                $reader ? $b->buildOperationalReader() : $b->build();
+                self::fail('the nested build must fail');
+            } catch (RateLimiterException) {
+            }
+            // The same stack builds a second graph that succeeds and works at once.
+            $ok = $this->builder($storeB)->withExecutionContextProvider($q)->withSimpleThrottlePolicy(new FixedWindowThrottlePolicy('c', 5, 60));
+            if ($reader) {
+                $outcome->reader = $ok->buildOperationalReader();
+                $outcome->reader->readSimpleThrottle('c', 'first');
+            } else {
+                $outcome->runtime = $ok->build();
+                $outcome->runtime->consume('c', 'first');
+            }
+        };
+
+        $a = $this->builder($storeA)->withExecutionContextProvider($pa)->withSimpleThrottlePolicy($nesting);
+        $reader ? $a->buildOperationalReader() : $a->build();
+
+        self::assertSame('provider', OwnershipRegistry::domainKind($storeA));
+        self::assertSame('provider', OwnershipRegistry::domainKind($storeB), 'the nested graph that succeeded keeps its binding');
+        $this->commands = [];
+        if ($reader) {
+            self::assertNotNull($outcome->reader);
+            self::assertSame(0, $outcome->reader->readSimpleThrottle('c', 'after')->count);
+        } else {
+            self::assertNotNull($outcome->runtime);
+            self::assertTrue($outcome->runtime->consume('c', 'after')->allowed);
+        }
+        self::assertGreaterThan(0, count($this->commands));
+    }
+
+    #[DataProvider('buildPaths')]
+    public function testANestedFailedBuildOnTheSameStackLeavesItsStoreUnbound(bool $reader): void
+    {
+        $pa = new StubContextProvider(static fn() => 1);
+        $q = new StubContextProvider(static fn() => 2);
+        $storeA = $this->store();
+        $storeB = $this->store();
+        $kind = null;
+        $nesting = new ReentrantSimplePolicy('a', 5);
+        $nesting->reenter = function () use ($nesting, $storeB, $q, $reader, &$kind): void {
+            $nesting->reenter = null;
+            try {
+                $b = $this->builder($storeB)->withExecutionContextProvider($q)->withSimpleThrottlePolicy(new ReentrantSimplePolicy('broken', 0));
+                $reader ? $b->buildOperationalReader() : $b->build();
+            } catch (RateLimiterException) {
+            }
+            $kind = OwnershipRegistry::domainKind($storeB);
+        };
+
+        $a = $this->builder($storeA)->withExecutionContextProvider($pa)->withSimpleThrottlePolicy($nesting);
+        $reader ? $a->buildOperationalReader() : $a->build();
+
+        self::assertSame('unbound', $kind, 'the nested failed build undid the binding of its own components while build A was still running');
+        self::assertSame('unbound', OwnershipRegistry::domainKind($storeB));
+    }
+
+    // ---- F266-19: the registry keeps a bounded history -----------------------------------------------------------------------------
+
+    public function testManySuccessiveGraphsOnOneStoreKeepABoundedNumberOfBindingRecords(): void
+    {
+        $store = $this->store();
+        $weak = [];
+        for ($i = 0; $i < 128; $i++) {
+            (function () use ($store, &$weak): void {
+                $provider = new StubContextProvider(static fn() => 1);
+                $weak[] = \WeakReference::create($provider);
+                $this->builder($store)->withExecutionContextProvider($provider)->withSimpleThrottlePolicy(new FixedWindowThrottlePolicy('c', 5, 60))->build();
+            })();
+            gc_collect_cycles();
+        }
+
+        self::assertSame(128, count(array_filter($weak, static fn(\WeakReference $reference): bool => $reference->get() === null)), 'every provider was collected');
+        self::assertSame('vacated', OwnershipRegistry::domainKind($store));
+        self::assertLessThanOrEqual(1, BindingProbe::records($store), 'one record, the current binding, is reachable from the store');
     }
 
     // ---- F266-16: a hand-assembled engine over a raw Host clock -------------------------------------------------------------------------

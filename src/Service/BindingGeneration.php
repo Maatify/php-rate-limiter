@@ -9,7 +9,9 @@ use Maatify\RateLimiter\Contract\ExecutionContextProviderInterface;
 /**
  * One recorded binding of a resource to a context domain (DEC-041, M2), with the calls that stand on THIS binding and the state it
  * replaced. A binding is a generation of its own: a call that stood on an earlier generation never keeps a later one alive, so a
- * rollback of a replacement is decided by the holders of the replacement alone (#260, F266-17).
+ * rollback of a replacement is decided by the holders of the replacement alone (#260, F266-17). A generation never points at the one
+ * it replaced: the state it replaced is only ever unbound or vacated, so what an undo restores is the three fields below and the
+ * registry keeps one generation per resource however many bindings were replaced (F266-19).
  *
  * @internal
  */
@@ -28,6 +30,5 @@ final class BindingGeneration
         public readonly bool $previousBound,
         public readonly bool $previousDefault,
         public readonly ?\WeakReference $previousProvider,
-        public readonly ?self $previous,
     ) {}
 }

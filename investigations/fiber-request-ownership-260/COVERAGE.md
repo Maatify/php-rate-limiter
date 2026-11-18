@@ -76,3 +76,14 @@ Reviewed collaborators that read a raw clock inside a call: `CircuitBreaker`, `B
 | kept controls | the Builder-built B of F266-15 (`testAFailedBuildLeavesTheBindingOfARuntimeBuiltMeanwhileFromHostCode`), the ordinary failed build (`testAFailedReaderBuildBindsNothing…`), CE-29 (`…AfterEveryGraphThatSuppliedTheProviderIsDestroyed…`), CE-31 (`…AnActiveInheritedProviderCall…`), CE-32 (`…AReplacementIsRejectedWhile…`), `testARollbackKeepsTheBindingAnotherCallStandsOn` |
 
 Mutants M26–M29 detect each of these corrections when it is removed.
+
+## Fourth review, `b8f264f2` (F266-18, F266-19)
+
+| Finding | Test (both `build()` and `buildOperationalReader()` where it is a build) |
+|---|---|
+| F266-18 a build suspended in a Fiber changes the rollback of an independent build | `OwnershipCrossingsRedisTest::testABuildSuspendedInAFiberNeverChangesTheRollbackOfAnIndependentBuild` (deterministic suspend/resume order; the independent store and provider; a sound later build succeeds; A resumes and completes); `OwnershipRegistryTest::testTheBuildFramesOfAFiberNeverMarkAnotherContext` |
+| F266-18 a nested failed build from the same stack | `testANestedFailedBuildOnTheSameStackLeavesItsStoreUnbound`; `testABuildStartedFromAGetterOfAnotherBuildOnTheSameStackKnowsItsOwnComponents` (control: the nested graph that succeeds stays valid and reaches the executor); `OwnershipRegistryTest::testABuildStartedFromHostCodeKnowsItsOwnComponents`, `testAnAdoptionStandsOnTheBindingUnlessItIsPartOfTheBuildThatRecordedIt` |
+| F266-19 a growing history of binding records | `testManySuccessiveGraphsOnOneStoreKeepABoundedNumberOfBindingRecords` (128 graphs, 128 providers collected, at most one record reachable); `OwnershipRegistryTest::testRepeatedSuccessfulReplacementsKeepABoundedNumberOfBindingRecords` |
+| kept controls | F266-15/17 tests, the failed replacement and the rollback after the last owner's release (`testAFailedReplacementOfAVacatedBinding…`, `testAnActiveDirectCallKeepsItsDomain…`), and that an older record never releases a newer one (`testTheHoldersOfAReplacedBindingNeverKeepTheReplacementAlive`) |
+
+Mutants M30 and M31 detect F266-18 when its correction is removed. F266-19 has no one-textual-change mutant (the fault is a property that chains records); its control is the red run against `b8f264f2`.

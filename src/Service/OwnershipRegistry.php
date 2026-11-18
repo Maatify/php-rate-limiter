@@ -155,7 +155,7 @@ final class OwnershipRegistry
                 $ledger->entries[] = [$resource, $slot->generation, false];
                 continue;
             }
-            $generation = new BindingGeneration($slot->bound, $slot->defaultDomain, $slot->provider, $slot->generation);
+            $generation = new BindingGeneration($slot->bound, $slot->defaultDomain, $slot->provider);
             $slot->generation = $generation;
             $slot->bound = true;
             $slot->defaultDomain = $provider === null;
@@ -216,15 +216,53 @@ final class OwnershipRegistry
         $slot->bound = $generation->previousBound;
         $slot->defaultDomain = $generation->previousDefault;
         $slot->provider = $generation->previousProvider;
-        $slot->generation = $generation->previous;
+        $slot->generation = null; // the state restored is unbound or vacated: nothing stands on it and nothing is kept of the undone binding
     }
 
-    /** @var int how many Host callbacks of a build are running: an object built from one of them stands on the binding it adopts */
-    private static int $hostDepth = 0;
+    /** @var \WeakMap<object, BuildFrames>|null the build frames of each Fiber */
+    private static ?\WeakMap $fiberFrames = null;
+
+    private static ?BuildFrames $mainFrames = null;
+
+    /** The build frames of the execution context that is running now: a build suspended in one Fiber never marks another context. */
+    private static function frames(): BuildFrames
+    {
+        $fiber = \Fiber::getCurrent();
+        if ($fiber === null) {
+            return self::$mainFrames ??= new BuildFrames();
+        }
+        if (self::$fiberFrames === null) {
+            /** @var \WeakMap<object, BuildFrames> $created */
+            $created = new \WeakMap();
+            self::$fiberFrames = $created;
+        }
+
+        $frames = self::$fiberFrames[$fiber] ?? null;
+        if ($frames === null) {
+            $frames = new BuildFrames();
+            self::$fiberFrames[$fiber] = $frames;
+        }
+
+        return $frames;
+    }
 
     /**
-     * Runs Host code that executes while a graph is being built (policy getters, for example). A runtime or reader that Host code builds
-     * from inside it stands on the binding it adopts, so the failure of the build that is running does not undo that binding (F266-17).
+     * Runs the construction of the components of a graph that a Builder assembles for itself: an entry class that adopts a binding
+     * inside it is part of THIS build and does not pin it, whatever Host code runs around (F266-18).
+     *
+     * @template T
+     * @param callable(): T $construction
+     * @return T
+     */
+    public static function buildScope(callable $construction): mixed
+    {
+        return self::inFrame('own', $construction);
+    }
+
+    /**
+     * Runs Host code that executes while a graph is being built (policy getters, for example). A runtime or reader that Host code
+     * builds by hand from inside it stands on the binding it adopts, so the failure of the build that is running does not undo that
+     * binding; a Builder that Host code runs opens a scope of its own for the components it builds (F266-17, F266-18).
      *
      * @template T
      * @param callable(): T $hostCode
@@ -232,11 +270,23 @@ final class OwnershipRegistry
      */
     public static function hostRegion(callable $hostCode): mixed
     {
-        self::$hostDepth++;
+        return self::inFrame('host', $hostCode);
+    }
+
+    /**
+     * @template T
+     * @param 'own'|'host' $kind
+     * @param callable(): T $code
+     * @return T
+     */
+    private static function inFrame(string $kind, callable $code): mixed
+    {
+        $frames = self::frames();
+        $frames->frames[] = $kind;
         try {
-            return $hostCode();
+            return $code();
         } finally {
-            self::$hostDepth--;
+            array_pop($frames->frames);
         }
     }
 
@@ -264,7 +314,7 @@ final class OwnershipRegistry
         $ledger = self::bindAll($resources, $domain->rawProvider());
         // An entry class adopting a binding that already existed does not stand on it while the graph that records it is being built
         // (it would pin a build that fails); an entry built from Host code inside such a build does, and a resource it binds itself stays.
-        if (self::$hostDepth === 0) {
+        if (end(self::frames()->frames) === 'own') {
             foreach ($ledger->entries as [, $generation, $created]) {
                 if (! $created) {
                     $generation->holders = max(0, $generation->holders - 1);

@@ -615,21 +615,81 @@ final class OwnershipRegistryTest extends TestCase
         self::assertSame('unbound', OwnershipRegistry::domainKind($resource), 'nobody stands on it any more');
     }
 
-    public function testAnAdoptionInsideAHostRegionStandsOnTheBindingAndOutsideItDoesNot(): void
+    public function testAnAdoptionStandsOnTheBindingUnlessItIsPartOfTheBuildThatRecordedIt(): void
     {
         $p = $this->provider(static fn() => 1);
 
-        $outside = new \stdClass();
-        $ledger = OwnershipRegistry::bindAll([$outside], $p);
-        OwnershipRegistry::adopt([$outside]);
+        $own = new \stdClass();
+        $ledger = OwnershipRegistry::bindAll([$own], $p);
+        OwnershipRegistry::buildScope(static fn() => OwnershipRegistry::adopt([$own]));
         OwnershipRegistry::rollback($ledger);
-        self::assertSame('unbound', OwnershipRegistry::domainKind($outside), 'an entry adopting during its own build does not pin a build that fails');
+        self::assertSame('unbound', OwnershipRegistry::domainKind($own), 'an entry of the same build does not pin a build that fails');
 
-        $inside = new \stdClass();
-        $ledger = OwnershipRegistry::bindAll([$inside], $p);
-        OwnershipRegistry::hostRegion(static fn() => OwnershipRegistry::adopt([$inside]));
+        $host = new \stdClass();
+        $ledger = OwnershipRegistry::bindAll([$host], $p);
+        OwnershipRegistry::buildScope(static fn() => OwnershipRegistry::hostRegion(static fn() => OwnershipRegistry::adopt([$host])));
         OwnershipRegistry::rollback($ledger);
-        self::assertSame('provider', OwnershipRegistry::domainKind($inside), 'an entry built from Host code stands on the binding it adopted');
+        self::assertSame('provider', OwnershipRegistry::domainKind($host), 'an entry built by hand from Host code stands on the binding it adopted');
+
+        $loose = new \stdClass();
+        $ledger = OwnershipRegistry::bindAll([$loose], $p);
+        OwnershipRegistry::adopt([$loose]);
+        OwnershipRegistry::rollback($ledger);
+        self::assertSame('provider', OwnershipRegistry::domainKind($loose), 'an entry built outside any build stands on the binding it adopted');
+    }
+
+    public function testABuildStartedFromHostCodeKnowsItsOwnComponents(): void
+    {
+        $p = $this->provider(static fn() => 1);
+        $resource = new \stdClass();
+        $ledger = OwnershipRegistry::bindAll([$resource], $p);
+
+        // A build running inside the Host code of another build: its own component adopts without pinning, so its failure undoes it.
+        OwnershipRegistry::buildScope(static function () use ($resource): void {
+            OwnershipRegistry::hostRegion(static function () use ($resource): void {
+                OwnershipRegistry::buildScope(static fn() => OwnershipRegistry::adopt([$resource]));
+            });
+        });
+        OwnershipRegistry::rollback($ledger);
+        self::assertSame('unbound', OwnershipRegistry::domainKind($resource));
+    }
+
+    public function testTheBuildFramesOfAFiberNeverMarkAnotherContext(): void
+    {
+        $p = $this->provider(static fn() => 1);
+        $resource = new \stdClass();
+        $fiber = new Fiber(static function (): void {
+            OwnershipRegistry::hostRegion(static function (): void {
+                Fiber::suspend('inside the Host code of a build');
+            });
+        });
+        $fiber->start(); // a build is suspended inside its Host code
+
+        $ledger = OwnershipRegistry::bindAll([$resource], $p);
+        OwnershipRegistry::buildScope(static fn() => OwnershipRegistry::adopt([$resource]));
+        OwnershipRegistry::rollback($ledger);
+        self::assertSame('unbound', OwnershipRegistry::domainKind($resource), 'an independent build on another context is not affected by the suspended one');
+
+        $fiber->resume();
+        self::assertTrue($fiber->isTerminated());
+    }
+
+    public function testRepeatedSuccessfulReplacementsKeepABoundedNumberOfBindingRecords(): void
+    {
+        $resource = new \stdClass();
+        $weak = [];
+        for ($i = 0; $i < 128; $i++) {
+            $provider = $this->provider(static fn() => 1);
+            OwnershipRegistry::bindAll([$resource], $provider); // replaces the vacated binding of the previous round
+            $weak[] = \WeakReference::create($provider);
+            unset($provider);
+            gc_collect_cycles();
+        }
+
+        $collected = count(array_filter($weak, static fn(\WeakReference $reference): bool => $reference->get() === null));
+        self::assertSame(128, $collected, 'every provider was collected');
+        self::assertSame('vacated', OwnershipRegistry::domainKind($resource));
+        self::assertLessThanOrEqual(1, \Maatify\RateLimiter\Tests\Support\Ownership\BindingProbe::records($resource), 'only the record of the current binding is reachable from the resource');
     }
 
     public function testTheHoldersOfAReplacedBindingNeverKeepTheReplacementAlive(): void

@@ -262,27 +262,30 @@ final class RateLimiterBuilder
         );
 
         try {
-            $scoreRuntime = new RateLimiterEngine(
-                $deviceIdentityResolver,
-                $evaluationPipeline,
-                $circuitBreaker,
-                new FailureModeResolver(),
-                $this->failureSignalEmitter,
-                $clock,
-                array_values($this->policies),
-                OwnershipRegistry::hostRegion(fn() => $this->admissionRuntime($clock)),
-            );
+            // The components of this graph are constructed in a scope of this build: an entry adopting the binding here is part of it.
+            return OwnershipRegistry::buildScope(function () use ($deviceIdentityResolver, $evaluationPipeline, $circuitBreaker, $clock): CompositeRateLimiterRuntimeInterface {
+                $scoreRuntime = new RateLimiterEngine(
+                    $deviceIdentityResolver,
+                    $evaluationPipeline,
+                    $circuitBreaker,
+                    new FailureModeResolver(),
+                    $this->failureSignalEmitter,
+                    $clock,
+                    array_values($this->policies),
+                    OwnershipRegistry::hostRegion(fn() => $this->admissionRuntime($clock)),
+                );
 
-            $simpleRuntime = new FixedWindowSimpleRateLimiter(
-                array_values($this->simpleThrottlePolicies),
-                $this->rateLimitStore,
-                $clock,
-                $this->config->keySecret(),
-                $this->config->environmentScope(),
-                $this->config->previousKeySecret(),
-            );
+                $simpleRuntime = new FixedWindowSimpleRateLimiter(
+                    array_values($this->simpleThrottlePolicies),
+                    $this->rateLimitStore,
+                    $clock,
+                    $this->config->keySecret(),
+                    $this->config->environmentScope(),
+                    $this->config->previousKeySecret(),
+                );
 
-            return new CompositeRateLimiterRuntime($scoreRuntime, $simpleRuntime);
+                return new CompositeRateLimiterRuntime($scoreRuntime, $simpleRuntime);
+            });
         } catch (\Throwable $failure) {
             // A build that fails after its resources were bound leaves no binding of its own behind.
             OwnershipRegistry::rollback($binding);
@@ -326,7 +329,7 @@ final class RateLimiterBuilder
         $binding = OwnershipRegistry::bindGraph(OwnershipRegistry::collect([$this->rateLimitStore, $this->circuitBreakerStore]), $this->contextProvider);
 
         try {
-            return $this->composeOperationalReader($deviceIdentityResolver, $clock);
+            return OwnershipRegistry::buildScope(fn() => $this->composeOperationalReader($deviceIdentityResolver, $clock));
         } catch (\Throwable $failure) {
             // A reader build that fails after its stores were bound leaves no binding of its own behind (a binding that existed stays).
             OwnershipRegistry::rollback($binding);
