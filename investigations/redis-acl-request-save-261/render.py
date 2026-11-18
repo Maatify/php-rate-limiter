@@ -24,6 +24,9 @@ def short(r):
     res = re.sub(r'script: [0-9a-f]{40}, on @user_script:\d+\.', 'script: <sha>, on @user_script:<line>.', res)
     return last[:150], res[:150]
 
+def norm(t):
+    return 'unclassified RedisException' if re.match(r'thrown RedisException: (protocol|socket) error', t) else t[:40]
+
 def same(case):
     x, y = a[(case, 'resp')], a[(case, 'phpredis')]
     keys = ('sentCommit', 'evaluations', 'stepsReached')
@@ -109,7 +112,7 @@ for case in sorted({c for c, _ in a}, key=lambda c: list(META).index(c) if c in 
         verdict = ('✘ ' + note) if note else '✔'
         out.append('| %s | %s | %s | %s | %s | %s | `%s` | `%s` | %s | %s | %s |' % (case, label, req, exp, 'نعم' if r['sentCommit'] else 'لا', ev, ex.replace('|', '/'), res.replace('|', '/'), '؛ '.join(changed(r)) or 'لا شيء', 'نعم' if r.get('fallbackCharged') else 'لا', verdict))
 out.append('')
-diff = [k for k in a if (a[k]['sentCommit'], a[k]['evaluations'], a[k]['stepsReached'], changed(a[k]), a[k]['result'][:40], a[k]['fallbackCharged']) != (b[k]['sentCommit'], b[k]['evaluations'], b[k]['stepsReached'], changed(b[k]), b[k]['result'][:40], b[k]['fallbackCharged'])]
+diff = [k for k in a if (a[k]['sentCommit'], a[k]['evaluations'], a[k]['stepsReached'], changed(a[k]), norm(a[k]['result']), a[k]['fallbackCharged']) != (b[k]['sentCommit'], b[k]['evaluations'], b[k]['stepsReached'], changed(b[k]), norm(b[k]['result']), b[k]['fallbackCharged'])]
 out.append('مقارنة PHP_INT_SIZE 8 مقابل 4: %d حالة، الفروق: %s' % (len(a), diff or 'لا فرق'))
 open(os.path.join(raw, 'evidence-table.md'), 'w').write('\n'.join(out) + '\n')
 print('rows', len(a), 'diff', diff)

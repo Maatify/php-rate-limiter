@@ -1,0 +1,5 @@
+ok   missing Redis image (exit 72)
+ok   Redis never ready (exit 73)
+ok   bounded: 3 s
+ok   wrong width (exit 64)
+ok   no rl261-* container or network left behind

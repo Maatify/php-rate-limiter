@@ -1,3 +1,3 @@
 PHP 8.4.27 INT=4
-commit without preflight: n=200 p50=333 us p95=486 us mean=361 us
-commit with preflight   : n=200 p50=330 us p95=588 us mean=374 us
+commit without preflight: n=200 p50=364 us p95=650 us mean=405 us
+commit with preflight   : n=200 p50=355 us p95=624 us mean=421 us

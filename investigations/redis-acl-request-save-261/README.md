@@ -8,7 +8,7 @@
 |---|---|
 | الريبو / remote | `Maatify/php-rate-limiter` — `origin = https://github.com/Maatify/php-rate-limiter.git` |
 | الأساس | `main@cacdb3a6e2571b68cdae6fe2a73639ea4d4f112e` (دمج #266)، الشجرة `cb7d59eca7715744dc475e65490a924989540a82` |
-| SHA المصدر الذي شُغّلت عليه الاختبارات | `c4c4072cf45ad6dd0fbe1f12c0d7fabe90d18acc` (الشجرة `62b2a5a94227e2ee99024a409f8c2240df22f4f1`): الأساس + الاختبار والدعم. بعده تُضاف وثائق وأدلة فقط، فلا يختلف عنه أي ملف تحت `src/` أو `tests/` |
+| SHA المصدر الذي شُغّلت عليه الاختبارات | `7b7924b2260ce3a113e4cf9f54d395811d8ef530` (الشجرة `7fcc304f2b23c146278211b57de75fe025c11732`): الأساس + الاختبار والدعم بعد تصحيح مراجعة الـLead (F269-01…04). بعده تُضاف وثائق وأدلة فقط، فلا يختلف عنه أي ملف تحت `src/` أو `tests/`. (الرأس الأول المراجَع `4cd8f6df` ومصدره `c4c4072c`.) |
 | رأس التسليم | رأس الـPR (ملحوظ في وصفها وفي تعليقات #261 و#257 و#185) |
 | معايير Maatify | Selective Pinned Adoption على `ebcf55b0591db61d18a1407bc3effef0197b388f`، دون تحديث الـpin. مسار §10.1 (Normal Engineering Task): قرأتُ `AGENTS.md` ثم `STANDARDS_MANIFEST.md`، وحدّدتُ النطاق (مجلد `investigations/` والاختبار)، واستعملتُ المجموعة المحلية المسجلة فقط دون اتصال بـupstream |
 | Governance Helper | شُغّل داخل Docker على clone حقيقي عند `cacdb3a6`: `mechanical_status = VALID`، `errors = []`، `explicit_exceptions_overrides = []` (`raw/governance-helper.json`) |
@@ -37,12 +37,13 @@
 
 ## 3. الطريقة
 
-`tests/Integration/Redis/RequestSaveAclRedisTest.php` (80 اختبارًا: 39 حالة × غلافان للـHost = 78، وضابط المراقِب، وملاحظة F9)، من المدخل العام `transactRequest()` ومن المحرك العام `RateLimiterBuilder::…->limit()`، على `redis:7.0.15-alpine` معزول في Docker (digest `sha256:c9d92d84…`):
+`tests/Integration/Redis/RequestSaveAclRedisTest.php` (93 اختبارًا: 45 حالة × غلافان للـHost = 90، وضابط المراقِب، وملاحظة F9، وضابط تصنيف غلاف phpredis)، من المدخل العام `transactRequest()` ومن المحرك العام `RateLimiterBuilder::…->limit()`، على `redis:7.0.15-alpine` معزول في Docker (digest `sha256:c9d92d84…`):
 
 - **حساب لكل حالة** مؤقت (`ACL SETUSER … reset on` ثم قائمة أوامر ونطاق مفاتيح محددين، يُحذف بعد الحالة)، **وحساب ضابط نجاح** (`seed`/`control`) يملك ما يلزم لنفس العملية. الحساب المقيّد يملك `REQUEST_COMMANDS` (15 أمرًا) ناقص الأمر المختبَر.
-- **غلافان للـHost** (قراءة كل ما يصل للمخزن): عميل RESP الخاص بالمشروع (`RespRedisCommandExecutor`: رد الخطأ → `RateLimiterException`) وext-redis 6.3.0 `rawCommand()` (رد خطأ → `\RedisException`) مع تصنيف Host (رمز خطأ Redis معروف يمر كما هو، وأي شيء آخر من phpredis عطل نقل → `BackendFailureException`).
+- **غلافان للـHost** (قراءة كل ما يصل للمخزن): عميل RESP الخاص بالمشروع (`RespRedisCommandExecutor`: رد الخطأ → `RateLimiterException`) وext-redis 6.3.0 `rawCommand()` (رد خطأ → `\RedisException`) مع تصنيف Host **بدليل إيجابي فقط**: `BackendFailureException` فقط حين تُظهر المكتبة أن الاتصال فُقد (`$redis->isConnected()` تصير `false` بعد «Connection lost»/«went away»)؛ ردود الخادم (برمز معروف أو غير معروف أو بلا رمز) وأي استثناء بلا هذا الدليل **يمر كما هو دون إعادة تصنيف**. (النسخة الأولى كانت تحصر قائمة رموز وتعتبر ما عداها عطل نقل؛ وكان هذا اختيار غلاف الدراسة لا حدّ DEC-015/018 — صُحّح في F269-02.) ضابطان: `testThePhpRedisShapeKeepsAnUnknownServerErrorAServerErrorAndTypesALostConnection` (خطأ خادم برمز `XCUSTOM` وآخر بلا رمز يبقيان `\RedisException` بنصهما، وانقطاع حقيقي لنظير يصير `BackendFailureException`).
 - **طلب اصطناعي** من سبع خطوات على الخمس عائلات التي يحفظها المسار (score hash، block hash، budget hash، distinct set + meta hash، watch string + meta، cycle zset): كل خطوة تغيّر مفتاحًا موجودًا مسبقًا (زُرع بنفس العمليات)، بيانات اصطناعية بالكامل.
 - **ملاحظة مستقلة**: اتصال `MONITOR` منفصل (عدّ `EVAL`ات حساب الحالة وأوامر `lua`)، و`ACL LOG` من Redis (السبب والسياق `lua`/`toplevel`)، وحالة المفاتيح من اتصال إداري **خارج Lua**: `TYPE` و`DUMP` و`PEXPIRETIME` الدقيق لكل مفتاح قبل/بعد، مع **مفتاح تحكم** خارج حالة الطلب وداخل نطاق الحساب (لم يتغير في أي حالة).
+- **قياس مباشر لخصم fallback**: عدّاد `LocalFallbackLimiter` الساكن يُقرأ بـReflection قبل/بعد كل حالة (`fallbackCharged`)؛ وضابطه الإيجابي حالة `engine outage` (انقطاع حقيقي: ثلاثة إخفاقات تفتح الدائرة والرابع يُجاب من fallback المحلي، `ALLOW/DEGRADED_MODE`، إشارة `CB_OPENED`، وعدّاد fallback يتغير)؛ في **كل** حالات ACL لم يتغير العدّاد.
 - **ضابط المراقِب نفسه**: `testTheObserverReportsAKnownChangeAndNothingElse` يثبت أن المراقِب يرى تغيير المحتوى والانتهاء والحذف والإنشاء ولا يرى تغييرًا حيث لا تغيير.
 - **عطل النقل الحقيقي وفقدان الرد**: `CLIENT KILL USER` من الاتصال الإداري قبل الحفظ، وبروكسي TCP (`tests/Support/Redis/reply-dropping-proxy.php`) يمرّر طلب الحفظ إلى Redis ثم **يتخلص من الرد ويغلق** جانب العميل: Redis طبّق والعميل لم يستلم، دون تعاون من المكتبة أو المخزن.
 
@@ -63,6 +64,9 @@
 | | `-zadd` | نعم | 1 | نفس الخطأ | **`cycle` محذوف**، وباقي المفاتيح كُتبت (block/budget/distinct×2/score/watch) |
 | | `-pexpireat` | نعم | 1 | نفس الخطأ | **`score` أُعيدت كتابته بلا انتهاء** (`PEXPIRETIME = -1`) |
 | **سحب صلاحية بين التقييم والحفظ** | `revoke -del` | نعم | 1 | نفس خطأ السكربت | لا تغيير |
+| | `revoke -hgetall` قبل المقارنة في `commit` | نعم | 1 | خطأ السكربت (قراءة داخل `commit`) | لا تغيير (رفض قبل أول كتابة) |
+| **رفض أثناء `verify` نفسه** | `-get` في الخطوة 4 ثم سحب `-hgetall` قبل `verify` | لا | 1 | **خطأ `verify` (`hgetall`) يحلّ محل خطأ الخطوة (`get`)**؛ `ACL LOG` يسجّل الاثنين | لا تغيير |
+| **فرع لا يحتاج إذن انتهاء** | خطة بمفتاح بلا انتهاء + `-pexpireat` | نعم | 1 | الرد (نجاح) | مفتاح أُنشئ بلا انتهاء بقصد الخطة |
 | **تعارض حقيقي** | `conflict` | نعم | **2** | الرد | الخطة كاملة بعد الإعادة |
 | **تعارض + رفض** | `conflict + deny -smembers` | لا | **2** | خطأ السكربت | تغيّر `score` (انتهاؤه) بفعل الكاتب المتزامن فقط |
 | **عطل نقل** | `connection killed` (resp) | نعم (أُرسل) | 1 | `BackendFailureException` | لا تغيير |
@@ -80,21 +84,23 @@
 | `-pexpiretime` | `ALLOW/NORMAL` (مفاتيح غير موجودة فلا قراءة) | كالضابط | لا |
 | `-pexpireat` | **استثناء خام** من المحرك للمتصل (`ERR The user executing the script…`) | **`distinct-meta` أُنشئ بلا انتهاء** | لا إشارة، لا فشل دائرة، لا خصم fallback |
 | اتصال مقطوع (resp) | `HARD_BLOCK/FAIL_CLOSED` | لا تغيير | لا |
-| فقدان الرد | `HARD_BLOCK/FAIL_CLOSED` | **12 مفتاحًا محفوظة كاملة** | لا |
+| فقدان الرد (resp) | `HARD_BLOCK/FAIL_CLOSED` | **12 مفتاحًا محفوظة كاملة** | لا |
+| فقدان الرد (phpredis) | **استثناء خام `\RedisException` من `limit()`** (بروتوكول/socket بلا دليل إيجابي على النقل، فلا `BackendFailureException` ولا FAIL_CLOSED) | 12 مفتاحًا محفوظة كاملة | لا |
+| انقطاع حقيقي في الخلفية (ضابط fallback) | `ALLOW/DEGRADED_MODE` | مفتاح الدائرة فقط | `CB_OPENED`، وعدّاد fallback **تغيّر** |
 
-(المحرك لا يلتقط إلا `BackendFailureException`، فخطأ ACL يخرج كما هو من `limit()` دون المرور بفشل الدائرة أو عدّاد الـfallback؛ ولم يُنتَج أي مفتاح دائرة في الحالات.)
+(المحرك لا يلتقط إلا `BackendFailureException`، فخطأ ACL يخرج كما هو من `limit()`. **المقاس مباشرة**: عدّاد fallback لم يتغير ولا إشارة ولا مفتاح دائرة في أي حالة ACL، بينما تغيّر العدّاد وانبعثت `CB_OPENED` وكُتب مفتاح الدائرة في ضابط الانقطاع الحقيقي، أي أن المقياس قادر على رؤية الخصم.)
 
 ## 5. التصنيف
 
 - **F1 — provenance.** رفض ACL رد خطأ من Redis، ليس عطل نقل: عبر عميل RESP يصل `RateLimiterException`، وعبر phpredis `\RedisException` بنص الخادم، **ولا يصل `BackendFailureException`** في أي حالة ACL. هذا يطابق DEC-015/018. نص الخطأ داخل السكربت **لا يسمّي الأمر** (يحمل sha السكربت ورقم السطر فقط)؛ اسم الأمر في `ACL LOG` (`object`) فقط. أما الرفض عند `EVAL` فيسمّي الأمر أو يقول «أحد المفاتيح».
-- **F2 — ما يراه المستهلك.** الاستثناء يخرج من `transactRequest()` ومن `limit()` كما هو، دون إشارة عطل ولا فشل دائرة ولا خصم fallback، ولا إعادة تقييم بسبب الرفض فوق حالة ثابتة (التقييمات = 1 في كل حالة رفض).
+- **F2 — ما يراه المستهلك.** الاستثناء يخرج من `transactRequest()` ومن `limit()` كما هو، دون إشارة عطل ولا فشل دائرة ولا خصم fallback (مقيس مباشرة بعدّاد `LocalFallbackLimiter` وضابطه الإيجابي، انظر §3)، ولا إعادة تقييم بسبب الرفض فوق حالة ثابتة (التقييمات = 1 في كل حالة رفض).
 - **F3 — تعارض حقيقي يبقى تحت DEC-037.** `conflict` يعيد التقييم ويحفظ؛ و`conflict + deny` يعيد التقييم **مرة واحدة لأن الحالة تحركت** (الكاتب المتزامن) ثم يُرمى الخطأ فوق حالة ثابتة. الإعادة سببها الحالة لا الرفض.
-- **F4 — رفض القراءة/التحقق آمن.** يقع داخل التقييم قبل `commit`؛ لا كتابة، لا تغيير، تقييم واحد. وهو **يقع فقط عند وجود المفتاح من النوع المقابل** (F7).
+- **F4 — رفض القراءة آمن في المراحل الثلاث المقاسة.** (أ) أثناء **خطوة التقييم**: رفض من بداية الطلب (كل حالات `deny -<read>`) قبل `commit`، لا كتابة، تقييم واحد. (ب) أثناء **`verify`** الذي يلي خطأ خطوة: حالة `revoke -hgetall before verify` تثبت أن `verify` نفسه رُفض (`ACL LOG` يسجّل رفض `get` ثم `hgetall`) وأن خطأه هو الذي يصل المتصل بدل خطأ الخطوة، ولا تغيير. (ج) أثناء **مقارنة `commit`** قبل أول كتابة: `revoke -hgetall before commit`، لا تغيير. كلها بتثبيت الدليل قبل/بعد (`DUMP`/`PEXPIRETIME`). **غير مقيس**: رفض قراءة بنوع مفتاح آخر داخل `verify`/`commit` (قيس `hgetall` فقط هناك). وهو **يقع فقط عند وجود المفتاح من النوع المقابل** (F7).
 - **F5 — رفض كتابة داخل `commit` يترك تطبيقًا جزئيًا (ما عدا `DEL`).** مقارنة الـfingerprints والتحقق يسبقان أول كتابة لكن لا يغطيان الـACL. الخطة تُطبّق بترتيب المفاتيح المحتجزة، وكل مفتاح `DEL` ثم الكتابة ثم `PEXPIREAT`؛ عند رفض أمر الكتابة أو `PEXPIREAT` للمفتاح k: **المفاتيح قبل k كُتبت كاملة، وk نفسه حُذف (`-hset -set -sadd -zadd`) أو كُتب بلا انتهاء (`-pexpireat`)، وما بعده لم يُمَس.** أي أن «يُحفظ كاملًا أو لا شيء» (DEC-037 §4) لا يصمد أمام رفض ACL لأمر كتابة، مع الإشارة إلى أن الاستثناء يخرج للمتصل فلا يظن أن الحفظ تم. الأثر المرصود: فقد عدّاد/حالة (`score` أو `watch` أو `distinct` أو `cycle`) أو مفتاح دائم بلا TTL (`PEXPIRETIME = -1`).
 - **F6 — نطاق المفاتيح.** يُرفض دائمًا عند `EVAL` (قبل السكربت)، لا في منتصف `commit`، لأن `KEYS` الحفظ مجموعة جزئية من مفاتيح خطوات سبق قبولها. ويُرفض `%R~` وحده و`%W~` وحده لأن `EVAL` يحتاج قراءة وكتابة على المفاتيح المعلنة. **كما أن `HARD_BLOCK` و`LIFECYCLE_READ` يعلنان مفاتيح فارغة `''`** عندما لا يوجد previous key (`RedisFullCapabilityStore.php` ~2705 و~2769)، ولا يطابقها نمط `~maatify:rate-limiter:v1:*`؛ فمسار المحرك العام فشل بـ`NOPERM … keys` عند أول خطوة كهذه، ونجح بإضافة القاعدة `~` (النمط الفارغ). هذا لم يُتوقع قبل التشغيل.
 - **F7 — الحاجة لصلاحيات القراءة تتبع وجود الحالة.** على keyspace جديد نجح الطلب بحساب بلا `TYPE/PEXPIRETIME/GET/HGETALL/SMEMBERS/ZRANGE` (`fresh keyspace + deny reads`، وحالة المحرك `-pexpiretime`)؛ ويفشل نفس الحساب بعد أن توجد الحالة. فاختبار تهيئة على Redis فارغ **يُقلّل** ما يلزم في الإنتاج.
-- **F8 — عطل النقل وفقدان الرد.** `connection killed`: `BackendFailureException` ولا تغيير مع عميل RESP؛ ومع phpredis أعادت المكتبة الاتصال (وAUTH) وأرسلت الحفظ فنجح (سلوك المكتبة خارج الحزمة، ولا يُبنى عليه عقد). فقدان الرد بعد الحفظ: نتيجة مجهولة بـ`BackendFailureException` والحالة **كاملة لا جزئية**، والمحرك يُجيب `FAIL_CLOSED` — أي دلالة DEC-037 §7 كما هي.
-- **F9 — ملاحظة مستقلة (خارج مسار الطلب).** سكربت مباشر (خارج `transactRequest()`) يطبّق الانتهاء بـ`redis.pcall('EXPIRE', …)`؛ ورفض ACL لـ`EXPIRE` يُبتلع بالـpcall ويُبلَّغ باسم مختلف: `expiry not representable` (ثم يزيل السكربت ما كتبه، ولا أثر على الحالة)؛ الـprovenance الحقيقية (ACL) في `ACL LOG` فقط (`testADirectScriptThatMayNotRunExpireReportsAnExpiryProblem`). تُربط بتذكرتها حين يقرّر الـLead.
+- **F8 — عطل النقل وفقدان الرد.** `connection killed`: `BackendFailureException` ولا تغيير مع عميل RESP؛ ومع phpredis أعادت المكتبة الاتصال (وAUTH) وأرسلت الحفظ فنجح (سلوك المكتبة خارج الحزمة، ولا يُبنى عليه عقد). فقدان الرد بعد الحفظ مع عميل RESP: نتيجة مجهولة بـ`BackendFailureException` (قراءة socket منتهية) والحالة **كاملة لا جزئية**، والمحرك يُجيب `FAIL_CLOSED` — دلالة DEC-037 §7 كما هي. **مع phpredis لا يصل دليل إيجابي**: المكتبة تُبلّغ `\RedisException` («protocol error» على 64-bit و«socket error on read socket» على 32-bit لنفس الحدث) مع بقاء `isConnected()` صحيحة؛ فلم أعيد تصنيفه، ووصل المتصل استثناءً خامًا (الحالة محفوظة كاملة، ولا FAIL_CLOSED). تحويل هذا إلى «نتيجة مجهولة» يحتاج دليلًا من الـHost نفسه، لا من نص رسالة المكتبة، وهذا قرار تصنيف للـHost خارج الدراسة.
+- **F9 — ملاحظة مستقلة (خارج مسار الطلب)، تتبعها الـLead في #270 ولا تُعالج هنا.** سكربت مباشر (خارج `transactRequest()`) يطبّق الانتهاء بـ`redis.pcall('EXPIRE', …)`؛ ورفض ACL لـ`EXPIRE` يُبتلع بالـpcall ويُبلَّغ باسم مختلف: `expiry not representable` (ثم يزيل السكربت ما كتبه، ولا أثر على الحالة)؛ الـprovenance الحقيقية (ACL) في `ACL LOG` فقط (`testADirectScriptThatMayNotRunExpireReportsAnExpiryProblem`). تُربط بتذكرتها حين يقرّر الـLead.
 
 حدود النتيجة: **Redis 7.0.15 فقط، نسخة واحدة (لا Cluster/Sentinel)، `EVAL` الافتراضي، RESP2، غلافان فقط للـHost، حسابات بقائمة أوامر مصرّح بها صراحةً (لا `@category`)**. لا استنتاج لنسخ Redis الأحدث ولا لـValkey ولا لعملاء Predis.
 
@@ -102,18 +108,21 @@
 
 **الاقتراح: فحص السماح لخطة الحفظ كلها داخل سكربت `commit` نفسه، بعد التحقق وقبل أول كتابة، بـ`redis.acl_check_cmd`، مع إعادة رفض مُرمَّز `NOPERM …` (مثل رد Redis نفسه)، ومعه وثيقة صلاحيات دنيا للمضيف.** يُنفَّذ في تكليف منفصل بعد حكم الـOwner؛ ولا يُدمج هنا.
 
-ما قيس على المتغير الدراسي (`tests/Support/Redis/AclPreflightCommitExecutor.php`، يعدّل نص `commit` في الطريق ولا يلمس `src/`): في الحالات السبع (`-del -hset -set -sadd -zadd -pexpireat` وسحب `-del` قبل الحفظ) **لا تغيير في أي مفتاح** بدل التطبيق الجزئي؛ ضابط النجاح يطابق الأصل؛ تقييم واحد؛ الاستثناء `NOPERM request commit: the account may not run <CMD> on <key>` من الخادم (`RateLimiterException` عبر RESP، `\RedisException` عبر phpredis) ولا يُنتج إشارة ولا إعادة محاولة. القياس الزمني (`raw/bench-64.log`، 400 طلب لكل ذراع، ذراعان بالتناوب، Redis على الشبكة المحلية): متوسط/وسيط زمن `commit` غير متمايز عن الضوضاء (≈ 240–256 µs وسيطًا؛ ذراع الاختبار يعمل ثانيًا)، وعلى 32-bit تحت المحاكاة (`raw/bench-32.log`) تقريبي. **لا ادعاء بأن الكلفة صفر**؛ ما قيس أنها لم تظهر فوق الضوضاء في هذه الحزمة.
+**حدود التقييم (F269-03).** ما قيس هو **تغطية الحالات المقيسة للمتغير الدراسي** (`tests/Support/Redis/AclPreflightCommitExecutor.php`: يعدّل نص `commit` في الطريق ولا يلمس `src/`)، وليس ضمانًا إنتاجيًا. المتغير يفحص بحجج تمثيلية خالية من القيم الحقيقية، ويعكس **بالنسخ** فروع سكربت الحفظ (`DEL` ثم أمر النوع ثم `PEXPIREAT` فقط لانتهاء مستقبلي، وانتهاء فات يصير `DEL`): فهو يطلب `PEXPIREAT` عند وجود انتهاء مستقبلي فقط، وضابط ذلك `plan without expiry + deny -pexpireat` (خطة بلا انتهاء تنجح بلا الإذن في الأصل وفي المتغير). أي ضمان إنتاجي لاحق يجب أن يشتق الفحص من **خطة الأوامر والحجج الفعلية نفسها** قبل أول كتابة لا من نسخة. فرع «انتهاء فات → DEL» **مُنسوخ في المتغير ولم يُقَس بحالة مستقلة**.
+
+ما قيس على المتغير: في الحالات السبع (`-del -hset -set -sadd -zadd -pexpireat` وسحب `-del` قبل الحفظ) **لا تغيير في أي مفتاح** بدل التطبيق الجزئي؛ ضابط النجاح يطابق الأصل؛ تقييم واحد؛ الاستثناء `NOPERM request commit: the account may not run <CMD> (plan entry <n>)` من الخادم (`RateLimiterException` عبر RESP، `\RedisException` عبر phpredis) ولا يُنتج إشارة ولا إعادة محاولة ولا خصم fallback. الرسالة تسمّي الأمر وموضع المدخل في الخطة **لا اسم المفتاح** (النسخة الأولى كانت تُدرج اسم المفتاح؛ حُذف حتى لا يُسلَّم للمستهلك عبر نص الاستثناء شيء عن مفاتيح التخزين، واسم المفتاح يبقى في `ACL LOG` عند المشغّل). القياس الزمني (`raw/bench-64.log`، ثلاث جولات × 400 طلب لكل ذراع، ذراعان بالتناوب، Redis على الشبكة المحلية): وسيط زمن `commit` ≈ 258 µs بلا الفحص و≈ 248 µs معه؛ لا فرق يتجاوز الضوضاء (ذراع الفحص يعمل ثانيًا في كل زوج)، وعلى 32-bit تحت المحاكاة (`raw/bench-32.log`) تقريبي. **لا ادعاء بأن الكلفة صفر**؛ ما قيس أنها لم تظهر فوق الضوضاء في هذه الحزمة.
 
 | ما يضمنه الفحص | ما لا يضمنه (شروط تهيئة المضيف) |
 |---|---|
 | إذا مرّ الفحص فلن يُرفض أمر كتابة من أوامر الخطة بسبب ACL داخل نفس السكربت: Redis ينفّذ السكربت ذريًا فلا يتغير الـACL بين الفحص والكتابة | لا يمنع خطأ Redis آخر أثناء الكتابة (حدّ الذاكرة، replica للقراءة فقط…)؛ **غياب خطأ ACL لا يثبت rollback**، ولم تُختبر هذه الأخطاء هنا |
 | يغطي مفاتيح الخطة (حجج الأمر تُفحص مقابل نطاق المفاتيح) | رفض `EVAL` نفسه ونطاق المفاتيح المعلنة يقعان قبل السكربت أصلًا (F6)؛ فيبقى على المضيف منح `+eval` وقراءة وكتابة على نطاق المفاتيح، **وقاعدة المفتاح الفارغ `~`** للمحرك |
 | لا يحتاج رحلة شبكة إضافية | صلاحيات **القراءة** (F4) لا يحميها هذا الفحص ولا تحتاجه (الرفض قبل أي كتابة) |
+| | حدّ الأذونات الدنيا المذكورة هنا **حدّ مسار الدراسة** (طلب `transactRequest()` ومحرك `limit()` لسياسة `login_protection`)؛ يبقى خارجها وبحاجة لفصل: صلاحيات التهيئة، والقراءات التشغيلية، والاستدعاءات المباشرة خارج الطلب (F9)، ومسارا التعافي والـadmission (استُنتجا من المصدر فقط) |
 
 بدائل فعلية:
 
 1. **وثيقة صلاحيات دنيا فقط (بلا تغيير كود).** أقل تدخلًا؛ تُبقي التطبيق الجزئي لأي حساب خاطئ التهيئة أو سُحبت منه صلاحية في الإنتاج، وتحتاج اختبار تهيئة على keyspace غير فارغ (F7).
-2. **الفحص داخل `commit` (المقترح).** يغلق F5 للـACL بكلفة نص سكربت أطول قليلًا؛ لا يغيّر الواجهة العامة ولا `EVAL` ولا الإعدادات؛ رسالة الخطأ تسمّي الأمر والمفتاح (على خلاف رسالة Redis)؛ **يجب أن يحمل الرد رمز خطأ** (`NOPERM`) كي لا يُصنّفه Host يعتمد الرمز كعطل نقل: وقد رُصد أن نصًا بلا رمز (`request commit: …`) صُنّف عطل نقل في غلاف phpredis، وهو نفس نمط رسائل `request commit: …` القائمة اليوم في `COMMIT` (ملاحظة تستحق مراجعتها ضمن التنفيذ لا هنا).
+2. **الفحص داخل `commit` (المقترح).** يغلق F5 للـACL بكلفة نص سكربت أطول قليلًا؛ لا يغيّر الواجهة العامة ولا `EVAL` ولا الإعدادات؛ رسالة الخطأ تسمّي الأمر والمفتاح (على خلاف رسالة Redis)؛ **يُقترح أن يحمل الرد رمز خطأ** (`NOPERM`) ليكون واضح الدلالة لأي Host يصنّف بالرمز؛ وهذا **اقتراح تصنيف دلالي** منفصل عن غلاف الدراسة: لا يُبنى على أن غلاف الدراسة يحتاج بادئة بعينها (بعد تصحيح F269-02 يمر الرد بنصه سواء حمل رمزًا أم لا). نمط رسائل `request commit: …` بلا رمز قائم اليوم في `COMMIT` وتستحق مراجعتها ضمن التنفيذ لا هنا.
 3. **فحص مبكر أثناء قراءة الـoverlay (قبل التقييم) إضافة إلى الحفظ.** يبكّر الفشل قبل عمل الطلب لكنه لا يغني عن فحص الحفظ (قد يُسحب الإذن بعدها) ويضيف نصًا لكل `EVAL`؛ لا يرجّح.
 4. **واجهة جاهزية (`verifyRequestSaveAccess()` ونحوها) يستدعيها المضيف عند الإقلاع.** تكشف سوء التهيئة مبكرًا لكنها تغيّر الواجهة العامة، ولا تحمي من سحب لاحق؛ تحتاج قرارًا مستقلًا.
 5. **تصنيف خطأ ACL كـ`BackendFailureException`.** مرفوض: يناقض DEC-015/018 ويحوّل خطأ تهيئة إلى فشل دائرة وfallback وإشارة عطل، ويُخفي الـprovenance.
@@ -123,7 +132,7 @@
 | المحور | الأثر |
 |---|---|
 | الصلاحيات الدنيا | لا تتغير (نفس الأوامر الخمسة عشر)؛ المتغير أن غياب أمر كتابة يصبح رفضًا نظيفًا بدل ضياع حالة |
-| رسائل Redis | رفض الحفظ بنص `NOPERM request commit: the account may not run … on …` بدل نص السكربت العام؛ رفض `EVAL` وقراءات الـoverlay يبقيان بنص Redis |
+| رسائل Redis | رفض الحفظ بنص `NOPERM request commit: the account may not run … (plan entry n)` (بلا اسم مفتاح) بدل نص السكربت العام؛ رفض `EVAL` وقراءات الـoverlay يبقيان بنص Redis |
 | توافق عملاء الـHost | رد خطأ بكود معروف يمر كما يمر `NOPERM` اليوم في عميلَي الدراسة؛ لم يُفحص Predis أو عملاء آخرون |
 | الإشارات وإعادة المحاولة | خطأ يخرج من `commitRequest()` خارج `try` فلا إعادة تقييم (التقييمات = 1 قيست)؛ لا إشارة ولا فشل دائرة (مثل اليوم) |
 
@@ -133,25 +142,32 @@ Redis الأحدث من 7.0.15، Valkey، Cluster/Sentinel، RESP3، Predis، و
 
 ## 8. إعادة الإنتاج
 
-كل تشغيل داخل Docker مع Redis معزول لكل استدعاء (`redis:7.0.15-alpine`، شبكة خاصة تُحذف بعد التشغيل). الصور المحلية: `maatify-rl-php64:local` (`linux/arm64`، PHP 8.4.27، `PHP_INT_SIZE=8`) و`maatify-rl-php32:local` (`linux/386` تحت المحاكاة، PHP 8.4.27، `PHP_INT_SIZE=4`)، ext-redis 6.3.0، PHPUnit 11.5.57. الصورتان بلا `git`.
+كل تشغيل داخل Docker مع Redis معزول لكل استدعاء (`redis:7.0.15-alpine`، شبكة خاصة). الصور المحلية: `maatify-rl-php64:local` (`linux/arm64`، PHP 8.4.27، `PHP_INT_SIZE=8`) و`maatify-rl-php32:local` (`linux/386` تحت المحاكاة، PHP 8.4.27، `PHP_INT_SIZE=4`)، ext-redis 6.3.0، PHPUnit 11.5.57. الصورتان بلا `git`.
+
+**المشغّل (F269-04).** `run.sh` و`bench.sh` يتحققان من كل خطوة تهيئة (الشبكة، حاوية Redis) وينتظران `PING` بمهلة (`RL261_READY_SECONDS`، 30 ث) ويحدّان أمر PHP نفسه بمهلة (`RL261_RUN_SECONDS`، 900 ث داخل الحاوية)، ويفشلان بكود ورسالة (`70+`) ويحذفان ما أنشآه هما فقط على كل مسار خروج. ويكتبان افتراضيًا **خارج الأدلة الملتزمة**: `out/<utc>-<pid>/` (غير متتبَّع) ملفات `evidence.jsonl` و`phpunit.log` و`run-meta.txt` (رأس المصدر وشجرته وحالة الشجرة والصورتان والأمر **ورمز الخروج**)؛ ينسخ المشغّل الإنسان ما يريد التزامه إلى `raw/`. `selftest.sh` يثبت ضابط المشغّل نفسه: صورة Redis غير موجودة ← خروج 72، وRedis لا يجيب `PING` ← خروج 73 خلال ثوانٍ، وعرض خاطئ ← 64، ولا حاوية ولا شبكة `rl261-*` متبقية (`raw/runner-selftest.log`).
 
 ```bash
-investigations/redis-acl-request-save-261/run.sh 64 investigations/redis-acl-request-save-261/raw/evidence-64.jsonl --do-not-cache-result tests/Integration/Redis/RequestSaveAclRedisTest.php
-investigations/redis-acl-request-save-261/run.sh 32 investigations/redis-acl-request-save-261/raw/evidence-32.jsonl --do-not-cache-result tests/Integration/Redis/RequestSaveAclRedisTest.php
-python3 -I investigations/redis-acl-request-save-261/render.py
-investigations/redis-acl-request-save-261/bench.sh 64 400   # وحده، لا بالتوازي مع اختبارات
+investigations/redis-acl-request-save-261/run.sh 64 --do-not-cache-result tests/Integration/Redis/RequestSaveAclRedisTest.php
+investigations/redis-acl-request-save-261/run.sh 32 --do-not-cache-result tests/Integration/Redis/RequestSaveAclRedisTest.php
+investigations/redis-acl-request-save-261/selftest.sh
+python3 -I investigations/redis-acl-request-save-261/render.py   # يقرأ raw/evidence-{64,32}.jsonl
+investigations/redis-acl-request-save-261/bench.sh 64 400        # وحده، لا بالتوازي مع اختبارات
 ```
 
-| السجل | النتيجة |
+| السجل في `raw/` | النتيجة |
 |---|---|
-| `raw/final-64.log` | `OK (80 tests, 1662 assertions)` — `PHP_INT_SIZE=8` |
-| `raw/final-32.log` | `OK (80 tests, 1662 assertions)` — `PHP_INT_SIZE=4` |
-| `raw/related-64.log`، `raw/related-32.log` | `RequestAtomicityBoundariesRedisTest`: `OK (6 tests, 402 assertions)` على العرضين (عدم تأثر المسار القائم؛ لا تغيير تحت `src/`) |
-| `raw/bench-64.log`، `raw/bench-32.log` | قياس كلفة الـpreflight (§6) |
-| `raw/evidence-{64,32}.jsonl`، `raw/evidence-table.md` | الأدلة الخام والجدول |
-| `raw/governance-helper.json` | مخرج الـGovernance Helper |
+| `final-64-run{1,2}.log` + `.meta.txt` | `OK (93 tests, 2010 assertions)` مرتين — `PHP_INT_SIZE=8` |
+| `final-32-run{1,2}.log` + `.meta.txt` | `OK (93 tests, 2010 assertions)` مرتين — `PHP_INT_SIZE=4` |
+| `related-{64,32}.log` | `RequestAtomicityBoundariesRedisTest`: `OK (6 tests, 402 assertions)` على العرضين |
+| `bench-64.log`، `bench-32.log` | قياس كلفة الـpreflight (§6) |
+| `evidence-{64,32}.jsonl`، `evidence-table.md` | الأدلة الخام والجدول: 90 حالة، لا فرق بين العرضين (باستثناء نص رسالة phpredis لفقدان الرد: بروتوكول/socket، وكلاهما «غير مصنّف») |
+| `runner-selftest.log`، `governance-helper.json` | ضابط المشغّل؛ مخرج الـGovernance Helper |
 
-الاستقرار: كُرّر تشغيل ملف الاختبار ثلاث مرات على كل عرض أثناء البناء (نجح كله). فحوصات الجودة المحلية على الملفات المضافة: PHPStan `--level=max` نظيف، PHP-CS-Fixer بلا تغيير، `check-per-cs-31-delta` ناجح. الفحوص الكاملة للمستودع (ReleaseVerification وتاريخ 2999 على 32-bit: #267؛ مهلات NM-7 وBlockNoDowngrade على 32-bit المحاكى: #268) **لم تُشغَّل محليًا هنا**؛ دليلها الطبيعي من CI على رأس التسليم.
+`worktree_dirty=yes` في ملفات `.meta.txt` سببه ملفات أدلة غير ملتزمة تحت `raw/` من الجولة السابقة وقت التشغيل، لا تعديل تحت `src/` أو `tests/` (شجرة المصدر الملتزمة مسجّلة في الملف).
+
+**فحوص الجودة (F269-01).** سبب فشل `Lowest Supported Dependencies` ستة أخطاء PHPStan (2.0.0) في أدوات الدراسة: نوع أنبوب `proc_open` (يراه 2.0.0 `mixed` وغيره مصفوفة)، وإعادة بناء `$command` في المتغير الدراسي (فقدان `non-empty-list`)، ورسالة خطأ الـsocket في البروكسي. صُحّحت بقراءة الأنبوب عبر مساعد يأخذ `mixed` (صالح للنسختين)، وبناء قائمة جديدة للأمر، و`print_r` للرسالة. **أُعيد إثبات ذلك محليًا قبل الدفع** بتشغيل `phpstan.phar` الإصدار 2.0.0 (نُزّل من إصدارات PHPStan الرسمية داخل الحاوية) على `src tests examples --level=max`: نظيف، وكذلك PHPStan الأحدث، وPHP-CS-Fixer، و`check-per-cs-31-delta`. الفحوص الكاملة للمستودع (ReleaseVerification وتاريخ 2999 على 32-bit: #267؛ مهلات NM-7 وBlockNoDowngrade على 32-bit المحاكى: #268) لم تُشغَّل محليًا؛ دليلها الطبيعي من CI على رأس التسليم.
+
+الاستقرار: كُرّر ملف الاختبار مرتين على كل عرض بعد التصحيح (نجح كله).
 
 ## 9. التفاصيل الحساسة
 
