@@ -1,0 +1,42 @@
+PHPUnit 11.5.57 by Sebastian Bergmann and contributors.
+
+Runtime:       PHP 8.4.27
+Configuration: /app/phpunit.xml
+
+.................EE................F..........                    46 / 46 (100%)
+
+Time: 00:00.300, Memory: 14.00 MB
+
+There were 2 errors:
+
+1) Maatify\RateLimiter\Tests\Integration\Redis\FiberRequestOwnershipRedisTest::testAfterTheCallInFlightEndsTheOtherRuntimeSharingTheStoreCarriesItsOwnClockReading
+Maatify\RateLimiter\Exception\OverlappingRequestException: Overlapping call refused at 'limit': another call is in flight on this runtime graph or on a store it shares. Use one runtime graph (with its own store object) per concurrent execution context, or wait for the call in flight to finish.
+
+/app/src/Service/OwnershipRegistry.php:214
+/app/src/Service/RateLimiterEngine.php:102
+/app/src/Service/RateLimiterEngine.php:331
+/app/src/Service/CompositeRateLimiterRuntime.php:30
+/app/tests/Integration/Redis/FiberRequestOwnershipRedisTest.php:611
+/app/tests/Integration/Redis/FiberRequestOwnershipRedisTest.php:612
+
+2) Maatify\RateLimiter\Tests\Integration\Redis\FiberRequestOwnershipRedisTest::testGraphsThatShareOnlyTheCorrelationStoreOrOnlyTheCircuitStoreContend
+Maatify\RateLimiter\Exception\OverlappingRequestException: Overlapping call refused at 'limit': another call is in flight on this runtime graph or on a store it shares. Use one runtime graph (with its own store object) per concurrent execution context, or wait for the call in flight to finish.
+
+/app/src/Service/OwnershipRegistry.php:214
+/app/src/Service/RateLimiterEngine.php:102
+/app/src/Service/RateLimiterEngine.php:331
+/app/src/Service/CompositeRateLimiterRuntime.php:30
+/app/tests/Integration/Redis/FiberRequestOwnershipRedisTest.php:820
+/app/tests/Integration/Redis/FiberRequestOwnershipRedisTest.php:821
+
+--
+
+There was 1 failure:
+
+1) Maatify\RateLimiter\Tests\Unit\Service\OwnershipRegistryTest::testAProviderThatThrowsReleasesOnlyThisCallsReservationsAndSurfacesAClassifiedFailure
+Failed asserting that true is false.
+
+/app/tests/Unit/Service/OwnershipRegistryTest.php:158
+
+ERRORS!
+Tests: 46, Assertions: 804, Errors: 2, Failures: 1.

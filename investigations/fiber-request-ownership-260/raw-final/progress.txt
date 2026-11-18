@@ -1,0 +1,12 @@
+start 2026-11-18T03:43:47Z
+runner exit=0
+candidate full 64 exit=2
+candidate full 32 exit=2
+baseline full 64 exit=2
+baseline full 32 exit=2
+candidate php32 group exit=0
+baseline red fiber 64 exit=1
+baseline red new api 64 exit=2
+baseline red fiber 32 exit=1
+baseline red new api 32 exit=2
+done 2026-11-18T04:21:24Z

@@ -1,0 +1,231 @@
+PHP 8.4.27 INT=8 redis=6.3.0
+PHPUnit 11.5.57 by Sebastian Bergmann and contributors.
+
+Runtime:       PHP 8.4.27
+Configuration: /app/phpunit.xml
+
+E.EEEEEEEEEEEEEEEEEEEEEEEEEFE                                     29 / 29 (100%)
+
+Time: 00:00.043, Memory: 12.00 MB
+
+Execution Context Provider Redis (Maatify\RateLimiter\Tests\Integration\Redis\ExecutionContextProviderRedis)
+ ✘ A provider separates the contexts of a scheduler that is not fibers
+   │
+   │ Error: Interface "Maatify\RateLimiter\Contract\ExecutionContextProviderInterface" not found
+   │
+   │ /app/tests/Support/Ownership/StubContextProvider.php:10
+   │ /app/tests/Integration/Redis/ExecutionContextProviderRedisTest.php:99
+   │
+ ✔ Without a provider the contexts of a non fiber scheduler look alike and the call is treated as nested
+ ✘ A provider passed to the store constructor is retained without a host variable
+   │
+   │ Error: Interface "Maatify\RateLimiter\Contract\ExecutionContextProviderInterface" not found
+   │
+   │ /app/tests/Support/Ownership/StubContextProvider.php:10
+   │ /app/tests/Integration/Redis/ExecutionContextProviderRedisTest.php:132
+   │
+ ✘ A graph inherits the provider of its store and another provider or domain is refused before anything is bound
+   │
+   │ Error: Interface "Maatify\RateLimiter\Contract\ExecutionContextProviderInterface" not found
+   │
+   │ /app/tests/Support/Ownership/StubContextProvider.php:10
+   │ /app/tests/Integration/Redis/ExecutionContextProviderRedisTest.php:144
+   │
+ ✘ A failed build binds nothing of its own and a later graph of the other domain binds normally
+   │
+   │ Error: Interface "Maatify\RateLimiter\Contract\ExecutionContextProviderInterface" not found
+   │
+   │ /app/tests/Support/Ownership/StubContextProvider.php:10
+   │ /app/tests/Integration/Redis/ExecutionContextProviderRedisTest.php:170
+   │
+ ✘ After every graph that supplied the provider is destroyed a direct call fails fast and never falls back to the default domain
+   │
+   │ Error: Interface "Maatify\RateLimiter\Contract\ExecutionContextProviderInterface" not found
+   │
+   │ /app/tests/Support/Ownership/StubContextProvider.php:10
+   │ /app/tests/Integration/Redis/ExecutionContextProviderRedisTest.php:194
+   │ /app/tests/Integration/Redis/ExecutionContextProviderRedisTest.php:198
+   │
+ ✘ An active inherited provider call is not reconfigured and the vacated binding is replaceable after it ends
+   │
+   │ Error: Interface "Maatify\RateLimiter\Contract\ExecutionContextProviderInterface" not found
+   │
+   │ /app/tests/Support/Ownership/StubContextProvider.php:10
+   │ /app/tests/Integration/Redis/ExecutionContextProviderRedisTest.php:216
+   │
+
+Ownership Registry (Maatify\RateLimiter\Tests\Unit\Service\OwnershipRegistry)
+ ✘ A refused acquisition clears only what it took and never another calls slot
+   │
+   │ Error: Class "Maatify\RateLimiter\Service\OwnershipRegistry" not found
+   │
+   │ /app/tests/Unit/Service/OwnershipRegistryTest.php:36
+   │ /app/tests/Unit/Service/OwnershipRegistryTest.php:50
+   │
+ ✘ An aliased resource is acquired once and a call never refuses itself
+   │
+   │ Error: Class "Maatify\RateLimiter\Service\OwnershipRegistry" not found
+   │
+   │ /app/tests/Unit/Service/OwnershipRegistryTest.php:36
+   │ /app/tests/Unit/Service/OwnershipRegistryTest.php:72
+   │
+ ✘ A release clears a slot only where it still holds this calls record
+   │
+   │ Error: Class "Maatify\RateLimiter\Service\OwnershipRegistry" not found
+   │
+   │ /app/tests/Unit/Service/OwnershipRegistryTest.php:36
+   │ /app/tests/Unit/Service/OwnershipRegistryTest.php:84
+   │
+ ✘ Clearing with a stale record never empties a slot another call reused
+   │
+   │ Error: Class "Maatify\RateLimiter\Service\OwnershipRegistry" not found
+   │
+   │ /app/tests/Unit/Service/OwnershipRegistryTest.php:36
+   │ /app/tests/Unit/Service/OwnershipRegistryTest.php:98
+   │
+ ✘ A provider that reenters the library is refused before it is called again
+   │
+   │ Error: Interface "Maatify\RateLimiter\Contract\ExecutionContextProviderInterface" not found
+   │
+   │ /app/tests/Support/Ownership/StubContextProvider.php:10
+   │ /app/tests/Unit/Service/OwnershipRegistryTest.php:43
+   │ /app/tests/Unit/Service/OwnershipRegistryTest.php:118
+   │
+ ✘ A provider that throws releases only this calls reservations and surfaces a classified failure
+   │
+   │ Error: Interface "Maatify\RateLimiter\Contract\ExecutionContextProviderInterface" not found
+   │
+   │ /app/tests/Support/Ownership/StubContextProvider.php:10
+   │ /app/tests/Unit/Service/OwnershipRegistryTest.php:43
+   │ /app/tests/Unit/Service/OwnershipRegistryTest.php:143
+   │
+ ✘ A provider that yields keeps the reservations and every other call is refused
+   │
+   │ Error: Interface "Maatify\RateLimiter\Contract\ExecutionContextProviderInterface" not found
+   │
+   │ /app/tests/Support/Ownership/StubContextProvider.php:10
+   │ /app/tests/Unit/Service/OwnershipRegistryTest.php:43
+   │ /app/tests/Unit/Service/OwnershipRegistryTest.php:167
+   │
+ ✘ Nested operations from the owners context are admitted and other contexts and crossings are refused
+   │
+   │ Error: Class "Maatify\RateLimiter\Service\OwnershipRegistry" not found
+   │
+   │ /app/tests/Unit/Service/OwnershipRegistryTest.php:36
+   │ /app/tests/Unit/Service/OwnershipRegistryTest.php:197
+   │
+ ✘ A direct operation with no owner is a short lived owner for its whole duration
+   │
+   │ Error: Class "Maatify\RateLimiter\Service\OwnershipRegistry" not found
+   │
+   │ /app/tests/Unit/Service/OwnershipRegistryTest.php:36
+   │ /app/tests/Unit/Service/OwnershipRegistryTest.php:230
+   │
+ ✘ Mixed domains are refused at binding and nothing is bound
+   │
+   │ Error: Interface "Maatify\RateLimiter\Contract\ExecutionContextProviderInterface" not found
+   │
+   │ /app/tests/Support/Ownership/StubContextProvider.php:10
+   │ /app/tests/Unit/Service/OwnershipRegistryTest.php:43
+   │ /app/tests/Unit/Service/OwnershipRegistryTest.php:255
+   │
+ ✘ A same provider instance is accepted and another instance of the same class is not
+   │
+   │ Error: Interface "Maatify\RateLimiter\Contract\ExecutionContextProviderInterface" not found
+   │
+   │ /app/tests/Support/Ownership/StubContextProvider.php:10
+   │ /app/tests/Unit/Service/OwnershipRegistryTest.php:43
+   │ /app/tests/Unit/Service/OwnershipRegistryTest.php:280
+   │ /app/tests/Unit/Service/OwnershipRegistryTest.php:281
+   │
+ ✘ A rollback undoes exactly what that binding bound
+   │
+   │ Error: Interface "Maatify\RateLimiter\Contract\ExecutionContextProviderInterface" not found
+   │
+   │ /app/tests/Support/Ownership/StubContextProvider.php:10
+   │ /app/tests/Unit/Service/OwnershipRegistryTest.php:43
+   │ /app/tests/Unit/Service/OwnershipRegistryTest.php:293
+   │
+ ✘ An entry adopts the domain of its resources and refuses resources of two domains
+   │
+   │ Error: Interface "Maatify\RateLimiter\Contract\ExecutionContextProviderInterface" not found
+   │
+   │ /app/tests/Support/Ownership/StubContextProvider.php:10
+   │ /app/tests/Unit/Service/OwnershipRegistryTest.php:43
+   │ /app/tests/Unit/Service/OwnershipRegistryTest.php:307
+   │
+ ✘ An active scope keeps its provider alive and another domain is refused until it ends
+   │
+   │ Error: Interface "Maatify\RateLimiter\Contract\ExecutionContextProviderInterface" not found
+   │
+   │ /app/tests/Support/Ownership/StubContextProvider.php:10
+   │ /app/tests/Unit/Service/OwnershipRegistryTest.php:43
+   │ /app/tests/Unit/Service/OwnershipRegistryTest.php:329
+   │
+ ✘ A vacated binding is never filled silently by a direct call
+   │
+   │ Error: Interface "Maatify\RateLimiter\Contract\ExecutionContextProviderInterface" not found
+   │
+   │ /app/tests/Support/Ownership/StubContextProvider.php:10
+   │ /app/tests/Unit/Service/OwnershipRegistryTest.php:43
+   │ /app/tests/Unit/Service/OwnershipRegistryTest.php:358
+   │
+ ✘ A replacement is rejected while an owner a reservation or a lookup still exists on a vacated binding
+   │
+   │ Error: Interface "Maatify\RateLimiter\Contract\ExecutionContextProviderInterface" not found
+   │
+   │ /app/tests/Support/Ownership/StubContextProvider.php:10
+   │ /app/tests/Unit/Service/OwnershipRegistryTest.php:43
+   │ /app/tests/Unit/Service/OwnershipRegistryTest.php:376
+   │
+ ✘ Nothing holds a resource alive after the call and an expired object context equals nothing
+   │
+   │ Error: Class "Maatify\RateLimiter\Service\OwnershipRegistry" not found
+   │
+   │ /app/tests/Unit/Service/OwnershipRegistryTest.php:403
+   │
+ ✘ A key of another live context is refused and a scalar key is compared by value
+   │
+   │ Error: Interface "Maatify\RateLimiter\Contract\ExecutionContextProviderInterface" not found
+   │
+   │ /app/tests/Support/Ownership/StubContextProvider.php:10
+   │ /app/tests/Unit/Service/OwnershipRegistryTest.php:43
+   │ /app/tests/Unit/Service/OwnershipRegistryTest.php:436
+   │
+ ✘ Decorated aliasing of a store is not recognised and is outside the support
+   │
+   │ Error: Class "Maatify\RateLimiter\Service\OwnershipRegistry" not found
+   │
+   │ /app/tests/Unit/Service/OwnershipRegistryTest.php:36
+   │ /app/tests/Unit/Service/OwnershipRegistryTest.php:456
+   │
+ ✘ A provider that breaks its contract with an equal key for two live contexts is treated as one
+   │
+   │ Error: Interface "Maatify\RateLimiter\Contract\ExecutionContextProviderInterface" not found
+   │
+   │ /app/tests/Support/Ownership/StubContextProvider.php:10
+   │ /app/tests/Unit/Service/OwnershipRegistryTest.php:43
+   │ /app/tests/Unit/Service/OwnershipRegistryTest.php:472
+   │
+ ✘ Only the store constructor gains an optional provider parameter
+   │
+   │ The one additive optional trailing parameter.
+   │ Failed asserting that two strings are identical.
+   │ --- Expected
+   │ +++ Actual
+   │ @@ @@
+   │ -'executionContext'
+   │ +'requestRetryBudgetMilliseconds'
+   │
+   │ /app/tests/Unit/Service/OwnershipRegistryTest.php:495
+   │
+ ✘ A destroyed suspended fiber unwinds and releases its slots
+   │
+   │ Error: Class "Maatify\RateLimiter\Service\OwnershipRegistry" not found
+   │
+   │ /app/tests/Unit/Service/OwnershipRegistryTest.php:36
+   │ /app/tests/Unit/Service/OwnershipRegistryTest.php:511
+   │
+
+ERRORS!
+Tests: 29, Assertions: 2, Errors: 27, Failures: 1.

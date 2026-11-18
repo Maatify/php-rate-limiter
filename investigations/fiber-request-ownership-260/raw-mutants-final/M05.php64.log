@@ -1,0 +1,314 @@
+PHPUnit 11.5.57 by Sebastian Bergmann and contributors.
+
+Runtime:       PHP 8.4.27
+Configuration: /app/phpunit.xml
+
+FFFFFFFFFFFFFFF.FFFFF.F.E..FFFFFFFFFF....FFF..                    46 / 46 (100%)
+
+Time: 00:00.310, Memory: 16.00 MB
+
+There was 1 error:
+
+1) Maatify\RateLimiter\Tests\Unit\Service\OwnershipRegistryTest::testClearingWithAStaleRecordNeverEmptiesASlotAnotherCallReused
+TypeError: Maatify\RateLimiter\Service\OwnershipRegistry::clear(): Argument #2 ($record) must be of type Maatify\RateLimiter\Service\SlotRecord, null given, called in /app/tests/Unit/Service/OwnershipRegistryTest.php on line 104
+
+/app/src/Service/OwnershipRegistry.php:311
+/app/tests/Unit/Service/OwnershipRegistryTest.php:104
+
+--
+
+There were 34 failures:
+
+1) Maatify\RateLimiter\Tests\Integration\Redis\FiberRequestOwnershipRedisTest::testAfterTheCallInFlightEndsTheOtherRuntimeSharingTheStoreCarriesItsOwnClockReading
+The overlapping call is refused.
+Failed asserting that null is identical to 'Maatify\RateLimiter\Exception\OverlappingRequestException'.
+
+/app/tests/Integration/Redis/FiberRequestOwnershipRedisTest.php:224
+/app/tests/Integration/Redis/FiberRequestOwnershipRedisTest.php:607
+
+2) Maatify\RateLimiter\Tests\Integration\Redis\FiberRequestOwnershipRedisTest::testACallFromAnotherContextIsRefusedWhileADirectCapabilityIsSuspendedInTheExecutor
+The overlapping call is refused.
+Failed asserting that null is identical to 'Maatify\RateLimiter\Exception\OverlappingRequestException'.
+
+/app/tests/Integration/Redis/FiberRequestOwnershipRedisTest.php:224
+/app/tests/Integration/Redis/FiberRequestOwnershipRedisTest.php:383
+
+3) Maatify\RateLimiter\Tests\Integration\Redis\FiberRequestOwnershipRedisTest::testAnOverlapRefusalInsideATransactionIsNotRetriedAndIsNotACircuitReport
+The refusal reaches the caller unchanged.
+Failed asserting that two strings are identical.
+--- Expected
++++ Actual
+@@ @@
+-'Maatify\RateLimiter\Exception\OverlappingRequestException'
++'Maatify\RateLimiter\Exception\RateLimiterException'
+
+/app/tests/Integration/Redis/FiberRequestOwnershipRedisTest.php:944
+
+4) Maatify\RateLimiter\Tests\Integration\Redis\FiberRequestOwnershipRedisTest::testAnOutcomeClaimAndAHealthCheckFromAnUnrelatedCallerAreRefused
+The claim stays its own atomic command for a legitimate caller; an unrelated caller is refused.
+Failed asserting that null is identical to 'Maatify\RateLimiter\Exception\OverlappingRequestException'.
+
+/app/tests/Integration/Redis/FiberRequestOwnershipRedisTest.php:224
+/app/tests/Integration/Redis/FiberRequestOwnershipRedisTest.php:786
+
+5) Maatify\RateLimiter\Tests\Integration\Redis\FiberRequestOwnershipRedisTest::testADestroyedSuspendedFiberReleasesTheOwnershipAndALaterCallRuns
+The overlapping call is refused.
+Failed asserting that null is identical to 'Maatify\RateLimiter\Exception\OverlappingRequestException'.
+
+/app/tests/Integration/Redis/FiberRequestOwnershipRedisTest.php:224
+/app/tests/Integration/Redis/FiberRequestOwnershipRedisTest.php:967
+
+6) Maatify\RateLimiter\Tests\Integration\Redis\FiberRequestOwnershipRedisTest::testADirectTransactionWithoutWritesIsRefusedWhileACallIsSuspendedInTheHostClock
+A direct transaction that would send no command is refused all the same.
+Failed asserting that null is identical to 'Maatify\RateLimiter\Exception\OverlappingRequestException'.
+
+/app/tests/Integration/Redis/FiberRequestOwnershipRedisTest.php:224
+/app/tests/Integration/Redis/FiberRequestOwnershipRedisTest.php:750
+
+7) Maatify\RateLimiter\Tests\Integration\Redis\FiberRequestOwnershipRedisTest::testACallMadeFromInsideTheExecutorOnTheSameStackIsRefused
+Re-entrant calls from the executor, on the owner's own stack, are refused.
+Failed asserting that two arrays are identical.
+--- Expected
++++ Actual
+@@ @@
+ Array &0 [
+-    0 => 'Maatify\RateLimiter\Exception\OverlappingRequestException',
+-    1 => 'Maatify\RateLimiter\Exception\OverlappingRequestException',
++    0 => null,
++    1 => null,
+ ]
+
+/app/tests/Integration/Redis/FiberRequestOwnershipRedisTest.php:864
+
+8) Maatify\RateLimiter\Tests\Integration\Redis\FiberRequestOwnershipRedisTest::testConsumeTheOperationalReadersAndTheAdmissionControlsAreRefusedWhileACallIsInFlight
+The simple runtime shares the store and the clock.
+Failed asserting that null is identical to 'Maatify\RateLimiter\Exception\OverlappingRequestException'.
+
+/app/tests/Integration/Redis/FiberRequestOwnershipRedisTest.php:224
+/app/tests/Integration/Redis/FiberRequestOwnershipRedisTest.php:993
+
+9) Maatify\RateLimiter\Tests\Integration\Redis\FiberRequestOwnershipRedisTest::testACallMadeFromInsideTheSignalEmitterIsRefusedBecauseTheOwnerIsReleasedLast
+The slots are released after the signals: a call made from the emitter is refused.
+Failed asserting that two arrays are identical.
+--- Expected
++++ Actual
+@@ @@
+ Array &0 [
+-    0 => 'Maatify\RateLimiter\Exception\OverlappingRequestException',
++    0 => null,
+ ]
+
+/app/tests/Integration/Redis/FiberRequestOwnershipRedisTest.php:907
+
+10) Maatify\RateLimiter\Tests\Integration\Redis\FiberRequestOwnershipRedisTest::testACallFromAnotherContextIsRefusedWhileACallbackSuspendedInsideADirectTransaction
+B is refused by the owner's execution context.
+Failed asserting that null is identical to 'Maatify\RateLimiter\Exception\OverlappingRequestException'.
+
+/app/tests/Integration/Redis/FiberRequestOwnershipRedisTest.php:224
+/app/tests/Integration/Redis/FiberRequestOwnershipRedisTest.php:359
+
+11) Maatify\RateLimiter\Tests\Integration\Redis\FiberRequestOwnershipRedisTest::testGraphsThatShareOnlyTheCorrelationStoreOrOnlyTheCircuitStoreContend
+The graph that shares only the correlation store is refused on the shared object.
+Failed asserting that null is identical to 'Maatify\RateLimiter\Exception\OverlappingRequestException'.
+
+/app/tests/Integration/Redis/FiberRequestOwnershipRedisTest.php:224
+/app/tests/Integration/Redis/FiberRequestOwnershipRedisTest.php:814
+
+12) Maatify\RateLimiter\Tests\Integration\Redis\FiberRequestOwnershipRedisTest::testWhicheverCallStartsSecondIsRefusedAndTheFirstStoresExactlyItsOwnEffects with data set "A starts first" (true)
+The overlapping call is refused.
+Failed asserting that null is identical to 'Maatify\RateLimiter\Exception\OverlappingRequestException'.
+
+/app/tests/Integration/Redis/FiberRequestOwnershipRedisTest.php:224
+/app/tests/Integration/Redis/FiberRequestOwnershipRedisTest.php:512
+
+13) Maatify\RateLimiter\Tests\Integration\Redis\FiberRequestOwnershipRedisTest::testWhicheverCallStartsSecondIsRefusedAndTheFirstStoresExactlyItsOwnEffects with data set "B starts first" (false)
+The overlapping call is refused.
+Failed asserting that null is identical to 'Maatify\RateLimiter\Exception\OverlappingRequestException'.
+
+/app/tests/Integration/Redis/FiberRequestOwnershipRedisTest.php:224
+/app/tests/Integration/Redis/FiberRequestOwnershipRedisTest.php:512
+
+14) Maatify\RateLimiter\Tests\Integration\Redis\FiberRequestOwnershipRedisTest::testARecoveryTransitionIsAnnouncedOnlyAfterItsSaveAndAnOverlappingCallIsRefused with data set "the holding call is rejected" (false)
+The overlapping call is refused.
+Failed asserting that null is identical to 'Maatify\RateLimiter\Exception\OverlappingRequestException'.
+
+/app/tests/Integration/Redis/FiberRequestOwnershipRedisTest.php:224
+/app/tests/Integration/Redis/FiberRequestOwnershipRedisTest.php:703
+
+15) Maatify\RateLimiter\Tests\Integration\Redis\FiberRequestOwnershipRedisTest::testARecoveryTransitionIsAnnouncedOnlyAfterItsSaveAndAnOverlappingCallIsRefused with data set "the holding call is saved" (true)
+The overlapping call is refused.
+Failed asserting that null is identical to 'Maatify\RateLimiter\Exception\OverlappingRequestException'.
+
+/app/tests/Integration/Redis/FiberRequestOwnershipRedisTest.php:224
+/app/tests/Integration/Redis/FiberRequestOwnershipRedisTest.php:703
+
+16) Maatify\RateLimiter\Tests\Integration\Redis\FiberRequestOwnershipRedisTest::testTheCallHoldingTheRequestCanBeRejectedAndTheRefusedCallWasNeverAnswered
+The overlapping call is refused.
+Failed asserting that null is identical to 'Maatify\RateLimiter\Exception\OverlappingRequestException'.
+
+/app/tests/Integration/Redis/FiberRequestOwnershipRedisTest.php:224
+/app/tests/Integration/Redis/FiberRequestOwnershipRedisTest.php:482
+
+17) Maatify\RateLimiter\Tests\Integration\Redis\FiberRequestOwnershipRedisTest::testACallArrivingInTheCommitWindowIsRefused
+The overlapping call is refused.
+Failed asserting that null is identical to 'Maatify\RateLimiter\Exception\OverlappingRequestException'.
+
+/app/tests/Integration/Redis/FiberRequestOwnershipRedisTest.php:224
+/app/tests/Integration/Redis/FiberRequestOwnershipRedisTest.php:767
+
+18) Maatify\RateLimiter\Tests\Integration\Redis\FiberRequestOwnershipRedisTest::testABackendFailureIsNeverCrossedBetweenCallsBecauseTheOverlappingCallIsRefusedFirst
+The overlapping call is refused.
+Failed asserting that null is identical to 'Maatify\RateLimiter\Exception\OverlappingRequestException'.
+
+/app/tests/Integration/Redis/FiberRequestOwnershipRedisTest.php:224
+/app/tests/Integration/Redis/FiberRequestOwnershipRedisTest.php:560
+
+19) Maatify\RateLimiter\Tests\Integration\Redis\FiberRequestOwnershipRedisTest::testAnIndependentCallIsRefusedAtItsEntryWhileAnotherCallHoldsTheRequest
+The overlapping call is refused.
+Failed asserting that null is identical to 'Maatify\RateLimiter\Exception\OverlappingRequestException'.
+
+/app/tests/Integration/Redis/FiberRequestOwnershipRedisTest.php:224
+/app/tests/Integration/Redis/FiberRequestOwnershipRedisTest.php:467
+
+20) Maatify\RateLimiter\Tests\Integration\Redis\FiberRequestOwnershipRedisTest::testTheHostClockReadingOfTheCallHoldingTheRequestIsNotUsedByARefusedCallAndTheNextCallReadsTheNewTime
+The overlapping call is refused.
+Failed asserting that null is identical to 'Maatify\RateLimiter\Exception\OverlappingRequestException'.
+
+/app/tests/Integration/Redis/FiberRequestOwnershipRedisTest.php:224
+/app/tests/Integration/Redis/FiberRequestOwnershipRedisTest.php:531
+
+21) Maatify\RateLimiter\Tests\Integration\Redis\FiberRequestOwnershipRedisTest::testACallOnAnotherRuntimeSharingTheStoreObjectIsRefusedAtItsEntry
+The overlapping call is refused.
+Failed asserting that null is identical to 'Maatify\RateLimiter\Exception\OverlappingRequestException'.
+
+/app/tests/Integration/Redis/FiberRequestOwnershipRedisTest.php:224
+/app/tests/Integration/Redis/FiberRequestOwnershipRedisTest.php:587
+
+22) Maatify\RateLimiter\Tests\Unit\Service\OwnershipRegistryTest::testAKeyOfAnotherLiveContextIsRefusedAndAScalarKeyIsComparedByValue
+Failed asserting that Maatify\RateLimiter\Service\CallScope Object #590 (
+    'taken' => Array &0 [],
+    'released' => true,
+    'token' => Maatify\RateLimiter\Service\CallToken Object #3875 (
+        'state' => 'released',
+        'crossings' => 0,
+        'scalarKey' => 1,
+        'objectKey' => null,
+        'keyIsObject' => false,
+    ),
+    'lease' => null,
+) is null.
+
+/app/tests/Unit/Service/OwnershipRegistryTest.php:441
+
+23) Maatify\RateLimiter\Tests\Unit\Service\OwnershipRegistryTest::testARefusedAcquisitionClearsOnlyWhatItTookAndNeverAnotherCallsSlot
+B must be refused.
+
+/app/tests/Unit/Service/OwnershipRegistryTest.php:56
+
+24) Maatify\RateLimiter\Tests\Unit\Service\OwnershipRegistryTest::testAProviderThatThrowsReleasesOnlyThisCallsReservationsAndSurfacesAClassifiedFailure
+Another call's slot is never touched.
+Failed asserting that false is true.
+
+/app/tests/Unit/Service/OwnershipRegistryTest.php:160
+
+25) Maatify\RateLimiter\Tests\Unit\Service\OwnershipRegistryTest::testADirectOperationWithNoOwnerIsAShortLivedOwnerForItsWholeDuration
+Failed asserting that false is true.
+
+/app/tests/Unit/Service/OwnershipRegistryTest.php:235
+
+26) Maatify\RateLimiter\Tests\Unit\Service\OwnershipRegistryTest::testAnActiveScopeKeepsItsProviderAliveAndAnotherDomainIsRefusedUntilItEnds
+The lease keeps the provider alive: the binding is not vacated.
+Failed asserting that two strings are identical.
+--- Expected
++++ Actual
+@@ @@
+-'provider'
++'vacated'
+
+/app/tests/Unit/Service/OwnershipRegistryTest.php:339
+
+27) Maatify\RateLimiter\Tests\Unit\Service\OwnershipRegistryTest::testAReplacementIsRejectedWhileAnOwnerAReservationOrALookupStillExistsOnAVacatedBinding
+The replacement must be rejected.
+
+/app/tests/Unit/Service/OwnershipRegistryTest.php:389
+
+28) Maatify\RateLimiter\Tests\Unit\Service\OwnershipRegistryTest::testNothingHoldsAResourceAliveAfterTheCallAndAnExpiredObjectContextEqualsNothing
+The live context is the owner's.
+Failed asserting that Maatify\RateLimiter\Service\CallScope Object #3422 (
+    'taken' => Array &0 [],
+    'released' => true,
+    'token' => Maatify\RateLimiter\Service\CallToken Object #4189 (
+        'state' => 'released',
+        'crossings' => 0,
+        'scalarKey' => null,
+        'objectKey' => WeakReference Object #3331 (),
+        'keyIsObject' => true,
+    ),
+    'lease' => null,
+) is null.
+
+/app/tests/Unit/Service/OwnershipRegistryTest.php:420
+
+29) Maatify\RateLimiter\Tests\Unit\Service\OwnershipRegistryTest::testNestedOperationsFromTheOwnersContextAreAdmittedAndOtherContextsAndCrossingsAreRefused
+Same context, no crossing: nested.
+Failed asserting that Maatify\RateLimiter\Service\CallScope Object #3392 (
+    'taken' => Array &0 [],
+    'released' => true,
+    'token' => Maatify\RateLimiter\Service\CallToken Object #3427 (
+        'state' => 'released',
+        'crossings' => 0,
+        'scalarKey' => null,
+        'objectKey' => null,
+        'keyIsObject' => false,
+    ),
+    'lease' => null,
+) is null.
+
+/app/tests/Unit/Service/OwnershipRegistryTest.php:200
+
+30) Maatify\RateLimiter\Tests\Unit\Service\OwnershipRegistryTest::testAnAliasedResourceIsAcquiredOnceAndACallNeverRefusesItself
+Failed asserting that false is true.
+
+/app/tests/Unit/Service/OwnershipRegistryTest.php:76
+
+31) Maatify\RateLimiter\Tests\Unit\Service\OwnershipRegistryTest::testAReleaseClearsASlotOnlyWhereItStillHoldsThisCallsRecord
+A stale release does not clear a slot that another call reused.
+Failed asserting that false is true.
+
+/app/tests/Unit/Service/OwnershipRegistryTest.php:91
+
+32) Maatify\RateLimiter\Tests\Unit\Service\OwnershipRegistryTest::testDecoratedAliasingOfAStoreIsNotRecognisedAndIsOutsideTheSupport
+Failed asserting that false is true.
+
+/app/tests/Unit/Service/OwnershipRegistryTest.php:462
+
+33) Maatify\RateLimiter\Tests\Unit\Service\OwnershipRegistryTest::testAProviderThatBreaksItsContractWithAnEqualKeyForTwoLiveContextsIsTreatedAsOne
+Failed asserting that Maatify\RateLimiter\Service\CallScope Object #563 (
+    'taken' => Array &0 [],
+    'released' => true,
+    'token' => Maatify\RateLimiter\Service\CallToken Object #2662 (
+        'state' => 'released',
+        'crossings' => 0,
+        'scalarKey' => 5,
+        'objectKey' => null,
+        'keyIsObject' => false,
+    ),
+    'lease' => null,
+) is null.
+
+/app/tests/Unit/Service/OwnershipRegistryTest.php:476
+
+34) Maatify\RateLimiter\Tests\Unit\Service\OwnershipRegistryTest::testADestroyedSuspendedFiberUnwindsAndReleasesItsSlots
+Failed asserting that false is true.
+
+/app/tests/Unit/Service/OwnershipRegistryTest.php:521
+
+--
+
+1 test triggered 1 PHP warning:
+
+1) /app/tests/Unit/Service/OwnershipRegistryTest.php:104
+Undefined array key 0
+
+ERRORS!
+Tests: 46, Assertions: 466, Errors: 1, Failures: 34, Warnings: 1.

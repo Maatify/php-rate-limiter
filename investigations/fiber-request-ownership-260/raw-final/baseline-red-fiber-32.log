@@ -1,0 +1,203 @@
+PHP 8.4.27 INT=4 redis=6.3.0
+PHPUnit 11.5.57 by Sebastian Bergmann and contributors.
+
+Runtime:       PHP 8.4.27
+Configuration: /app/phpunit.xml
+
+FFFFFFFFFFFFFFFFFFFFF...                                          24 / 24 (100%)
+
+Time: 00:00.818, Memory: 12.00 MB
+
+Fiber Request Ownership Redis (Maatify\RateLimiter\Tests\Integration\Redis\FiberRequestOwnershipRedis)
+ ✘ A call from another context is refused while a callback suspended inside a direct transaction
+   │
+   │ B is refused by the owner's execution context.
+   │ Failed asserting that null is identical to 'Maatify\RateLimiter\Exception\OverlappingRequestException'.
+   │
+   │ /app/tests/Integration/Redis/FiberRequestOwnershipRedisTest.php:224
+   │ /app/tests/Integration/Redis/FiberRequestOwnershipRedisTest.php:359
+   │
+ ✘ A call from another context is refused while a direct capability is suspended in the executor
+   │
+   │ The overlapping call is refused.
+   │ Failed asserting that null is identical to 'Maatify\RateLimiter\Exception\OverlappingRequestException'.
+   │
+   │ /app/tests/Integration/Redis/FiberRequestOwnershipRedisTest.php:224
+   │ /app/tests/Integration/Redis/FiberRequestOwnershipRedisTest.php:383
+   │
+ ✔ Sequential calls are saved before each returns and a rejection does not reach the others
+ ✔ A nested request inside one request is one save and keeps the outer clock reading
+ ✘ An independent call is refused at its entry while another call holds the request
+   │
+   │ The overlapping call is refused.
+   │ Failed asserting that null is identical to 'Maatify\RateLimiter\Exception\OverlappingRequestException'.
+   │
+   │ /app/tests/Integration/Redis/FiberRequestOwnershipRedisTest.php:224
+   │ /app/tests/Integration/Redis/FiberRequestOwnershipRedisTest.php:467
+   │
+ ✘ The call holding the request can be rejected and the refused call was never answered
+   │
+   │ The overlapping call is refused.
+   │ Failed asserting that null is identical to 'Maatify\RateLimiter\Exception\OverlappingRequestException'.
+   │
+   │ /app/tests/Integration/Redis/FiberRequestOwnershipRedisTest.php:224
+   │ /app/tests/Integration/Redis/FiberRequestOwnershipRedisTest.php:482
+   │
+ ✘ Whichever call starts second is refused and the first stores exactly its own effects with data set "B starts first"
+   │
+   │ The overlapping call is refused.
+   │ Failed asserting that null is identical to 'Maatify\RateLimiter\Exception\OverlappingRequestException'.
+   │
+   │ /app/tests/Integration/Redis/FiberRequestOwnershipRedisTest.php:224
+   │ /app/tests/Integration/Redis/FiberRequestOwnershipRedisTest.php:512
+   │
+ ✘ Whichever call starts second is refused and the first stores exactly its own effects with data set "A starts first"
+   │
+   │ The overlapping call is refused.
+   │ Failed asserting that null is identical to 'Maatify\RateLimiter\Exception\OverlappingRequestException'.
+   │
+   │ /app/tests/Integration/Redis/FiberRequestOwnershipRedisTest.php:224
+   │ /app/tests/Integration/Redis/FiberRequestOwnershipRedisTest.php:512
+   │
+ ✘ The host clock reading of the call holding the request is not used by a refused call and the next call reads the new time
+   │
+   │ The overlapping call is refused.
+   │ Failed asserting that null is identical to 'Maatify\RateLimiter\Exception\OverlappingRequestException'.
+   │
+   │ /app/tests/Integration/Redis/FiberRequestOwnershipRedisTest.php:224
+   │ /app/tests/Integration/Redis/FiberRequestOwnershipRedisTest.php:531
+   │
+ ✘ A backend failure is never crossed between calls because the overlapping call is refused first
+   │
+   │ The overlapping call is refused.
+   │ Failed asserting that null is identical to 'Maatify\RateLimiter\Exception\OverlappingRequestException'.
+   │
+   │ /app/tests/Integration/Redis/FiberRequestOwnershipRedisTest.php:224
+   │ /app/tests/Integration/Redis/FiberRequestOwnershipRedisTest.php:560
+   │
+ ✘ A call on another runtime sharing the store object is refused at its entry
+   │
+   │ The overlapping call is refused.
+   │ Failed asserting that null is identical to 'Maatify\RateLimiter\Exception\OverlappingRequestException'.
+   │
+   │ /app/tests/Integration/Redis/FiberRequestOwnershipRedisTest.php:224
+   │ /app/tests/Integration/Redis/FiberRequestOwnershipRedisTest.php:587
+   │
+ ✘ After the call in flight ends the other runtime sharing the store carries its own clock reading
+   │
+   │ The overlapping call is refused.
+   │ Failed asserting that null is identical to 'Maatify\RateLimiter\Exception\OverlappingRequestException'.
+   │
+   │ /app/tests/Integration/Redis/FiberRequestOwnershipRedisTest.php:224
+   │ /app/tests/Integration/Redis/FiberRequestOwnershipRedisTest.php:607
+   │
+ ✔ Runtimes with their own store and clock do not share a request
+ ✘ A recovery transition is announced only after its save and an overlapping call is refused with data set "the holding call is rejected"
+   │
+   │ The overlapping call is refused.
+   │ Failed asserting that null is identical to 'Maatify\RateLimiter\Exception\OverlappingRequestException'.
+   │
+   │ /app/tests/Integration/Redis/FiberRequestOwnershipRedisTest.php:224
+   │ /app/tests/Integration/Redis/FiberRequestOwnershipRedisTest.php:703
+   │
+ ✘ A recovery transition is announced only after its save and an overlapping call is refused with data set "the holding call is saved"
+   │
+   │ The overlapping call is refused.
+   │ Failed asserting that null is identical to 'Maatify\RateLimiter\Exception\OverlappingRequestException'.
+   │
+   │ /app/tests/Integration/Redis/FiberRequestOwnershipRedisTest.php:224
+   │ /app/tests/Integration/Redis/FiberRequestOwnershipRedisTest.php:703
+   │
+ ✘ A direct transaction without writes is refused while a call is suspended in the host clock
+   │
+   │ A direct transaction that would send no command is refused all the same.
+   │ Failed asserting that null is identical to 'Maatify\RateLimiter\Exception\OverlappingRequestException'.
+   │
+   │ /app/tests/Integration/Redis/FiberRequestOwnershipRedisTest.php:224
+   │ /app/tests/Integration/Redis/FiberRequestOwnershipRedisTest.php:750
+   │
+ ✘ A call arriving in the commit window is refused
+   │
+   │ The overlapping call is refused.
+   │ Failed asserting that null is identical to 'Maatify\RateLimiter\Exception\OverlappingRequestException'.
+   │
+   │ /app/tests/Integration/Redis/FiberRequestOwnershipRedisTest.php:224
+   │ /app/tests/Integration/Redis/FiberRequestOwnershipRedisTest.php:767
+   │
+ ✘ An outcome claim and a health check from an unrelated caller are refused
+   │
+   │ The claim stays its own atomic command for a legitimate caller; an unrelated caller is refused.
+   │ Failed asserting that null is identical to 'Maatify\RateLimiter\Exception\OverlappingRequestException'.
+   │
+   │ /app/tests/Integration/Redis/FiberRequestOwnershipRedisTest.php:224
+   │ /app/tests/Integration/Redis/FiberRequestOwnershipRedisTest.php:786
+   │
+ ✘ Graphs that share only the correlation store or only the circuit store contend
+   │
+   │ The graph that shares only the correlation store is refused on the shared object.
+   │ Failed asserting that null is identical to 'Maatify\RateLimiter\Exception\OverlappingRequestException'.
+   │
+   │ /app/tests/Integration/Redis/FiberRequestOwnershipRedisTest.php:224
+   │ /app/tests/Integration/Redis/FiberRequestOwnershipRedisTest.php:814
+   │
+ ✘ A call made from inside the executor on the same stack is refused
+   │
+   │ Re-entrant calls from the executor, on the owner's own stack, are refused.
+   │ Failed asserting that two arrays are identical.
+   │ --- Expected
+   │ +++ Actual
+   │ @@ @@
+   │  Array &0 [
+   │ -    0 => 'Maatify\RateLimiter\Exception\OverlappingRequestException',
+   │ -    1 => 'Maatify\RateLimiter\Exception\OverlappingRequestException',
+   │ +    0 => null,
+   │ +    1 => null,
+   │  ]
+   │
+   │ /app/tests/Integration/Redis/FiberRequestOwnershipRedisTest.php:864
+   │
+ ✘ A call made from inside the signal emitter is refused because the owner is released last
+   │
+   │ The slots are released after the signals: a call made from the emitter is refused.
+   │ Failed asserting that two arrays are identical.
+   │ --- Expected
+   │ +++ Actual
+   │ @@ @@
+   │  Array &0 [
+   │ -    0 => 'Maatify\RateLimiter\Exception\OverlappingRequestException',
+   │ +    0 => null,
+   │  ]
+   │
+   │ /app/tests/Integration/Redis/FiberRequestOwnershipRedisTest.php:907
+   │
+ ✘ An overlap refusal inside a transaction is not retried and is not a circuit report
+   │
+   │ The refusal reaches the caller unchanged.
+   │ Failed asserting that two strings are identical.
+   │ --- Expected
+   │ +++ Actual
+   │ @@ @@
+   │ -'Maatify\RateLimiter\Exception\OverlappingRequestException'
+   │ +'Maatify\RateLimiter\Exception\RateLimiterException'
+   │
+   │ /app/tests/Integration/Redis/FiberRequestOwnershipRedisTest.php:944
+   │
+ ✘ A destroyed suspended fiber releases the ownership and a later call runs
+   │
+   │ The overlapping call is refused.
+   │ Failed asserting that null is identical to 'Maatify\RateLimiter\Exception\OverlappingRequestException'.
+   │
+   │ /app/tests/Integration/Redis/FiberRequestOwnershipRedisTest.php:224
+   │ /app/tests/Integration/Redis/FiberRequestOwnershipRedisTest.php:967
+   │
+ ✘ Consume the operational readers and the admission controls are refused while a call is in flight
+   │
+   │ The simple runtime shares the store and the clock.
+   │ Failed asserting that null is identical to 'Maatify\RateLimiter\Exception\OverlappingRequestException'.
+   │
+   │ /app/tests/Integration/Redis/FiberRequestOwnershipRedisTest.php:224
+   │ /app/tests/Integration/Redis/FiberRequestOwnershipRedisTest.php:993
+   │
+
+FAILURES!
+Tests: 24, Assertions: 413, Failures: 21.

@@ -112,3 +112,47 @@ Provenance of the committed evidence: the commit that carries the logs changes o
 Verification commit of this run: `a9abb398b968192f5c7a2364be7d1948238372b7` (`raw/source.txt`); 14 tests, 751 assertions, OK on PHP_INT_SIZE 8 and 4, no skips. Clock-wiring detector (B's runtime clock left at T0): 1 failure of 14 on both widths (`raw/mutant-clock-wiring.log`, from the earlier verification commit; the test is unchanged).
 
 Verification commit of this run: `705651cf347b934fb7a13d6bd7372312cd1f7d30` (`raw/source.txt`, tree `a026750fa0ce10a97c1785b5a092efd8aa629026`); 14 tests, 751 assertions, OK on PHP_INT_SIZE 8 and 4, no skips; the five controls and `preservation-check.sh` (`raw-preservation-check/`: unstaged pre-existing edit refused, staged pre-existing edit refused, initially clean target restored byte-for-byte; all three 0) ran on it. The clock-wiring detector log (`raw/mutant-clock-wiring.log`) is from an earlier verification commit; the test is unchanged. One earlier attempt at this run was discarded because the local `maatify-rl-php64:local` image had disappeared from Docker (`docker: Error response from daemon: pull access denied`, exit 125 in the helper and the PHP64 suite); the image was rebuilt from `docker/php32/Dockerfile` for `linux/arm64` and came back with the same id (sha256:d4f5a573…), and every control was run again.
+
+## Implementation evidence (DEC-041 approved M1–M7)
+
+Verification head: `e4f6ae70989938cd6f4ded37e202be5fc9265219` (tree `7baefc4f2f998954768a9aeec5b2dcd179809ebb`); baseline `main@316b1de99e784fec95b40f849d83a04dec772e2b`. Raw outputs: `raw-final/`, `raw-mutants-final/`, `raw-bench-final/`. Docker, isolated Redis 7.0.15, PHP 8.4.27, actual PHP_INT_SIZE 8 and 4 (32-bit under linux/386 emulation). Coverage of requirements: `COVERAGE.md`.
+
+| Run | Tests | Result |
+|---|---|---|
+| Baseline source + new tests, FiberRequestOwnership (24), 64 and 32 | 24 | 21 failures on both widths (red) |
+| Baseline source + provider and registry tests (29), 64 and 32 | 29 | 27 errors, 1 failure on both widths (red) |
+| Candidate full suite, 64 | 2858 | 100 errors, 4 failures, 14 skipped: ReleaseVerification classes only |
+| Baseline full suite, 64 | 2805 | 100 errors, 4 failures, 14 skipped: the same classes |
+| Candidate full suite, 32 | 2853 | 101 errors, 4 failures, 65 skipped: ReleaseVerification classes only |
+| Baseline full suite, 32 | 2800 | 101 errors, 4 failures, 65 skipped: the same classes |
+| Candidate `--group php32`, 32 | 862 | OK, 64 skipped |
+| Mutants M01–M12, both widths | | 12 of 12 detected |
+
+Limits of this evidence: the Docker image has no `git`, so the ReleaseVerification tests (git repository and 2999-year date cases) cannot run locally; they fail identically on the baseline and are not counted as passing. Lowest-dependency install and lowest PHPStan are verified by CI only. Policy callbacks are not crossing-marked (deviation from M7, reported to the Lead).
+
+### Cost (committed source, alternating baseline/candidate, 5 rounds of 3000 iterations after 300 warm-up, one Redis, controls noop and ping; no acceptance threshold applied)
+
+| width | workload | tree | rounds | n/round | p50 µs (median of rounds, min–max) | p99 µs (median, min–max) |
+|---|---|---|---|---|---|---|
+| 32 | direct | baseline | 5 | 3000 | 152.88 (149.71–157.46) | 494.92 (394–563.13) |
+| 32 | direct | candidate | 5 | 3000 | 235.38 (230.79–237.63) | 672.88 (610.38–859.46) |
+| 32 | limit | baseline | 5 | 3000 | 2160.38 (2154.75–3023.79) | 10732.63 (10606.54–15009.21) |
+| 32 | limit | candidate | 5 | 3000 | 2606.79 (2596.13–2615.42) | 12523 (12064.17–13053.88) |
+| 32 | nested | baseline | 5 | 3000 | 627.38 (625.08–632.54) | 1516.21 (1416.21–1781.13) |
+| 32 | nested | candidate | 5 | 3000 | 770.25 (767.54–785.54) | 1639.58 (1603.13–2402.58) |
+| 32 | noop | baseline | 5 | 3000 | 1.79 (1.79–1.88) | 2 (1.96–6.96) |
+| 32 | noop | candidate | 5 | 3000 | 1.83 (1.79–1.83) | 2 (2–2.08) |
+| 32 | ping | baseline | 5 | 3000 | 76.92 (76.13–77.04) | 249.96 (107.58–356.29) |
+| 32 | ping | candidate | 5 | 3000 | 76.58 (76.38–90.58) | 259.38 (137.63–441.67) |
+| 64 | direct | baseline | 5 | 3000 | 76.96 (76.13–78.04) | 219.25 (149.58–351.96) |
+| 64 | direct | candidate | 5 | 3000 | 83.08 (80.5–83.25) | 141.63 (123.88–232.79) |
+| 64 | limit | baseline | 5 | 3000 | 901.71 (898.25–903.42) | 4486.67 (4406.67–4752.08) |
+| 64 | limit | candidate | 5 | 3000 | 934.13 (930.63–935.33) | 4649.54 (4582.63–4818.5) |
+| 64 | nested | baseline | 5 | 3000 | 293 (287.29–295.92) | 701.13 (537.83–850.29) |
+| 64 | nested | candidate | 5 | 3000 | 297.96 (290.13–305.58) | 758.5 (644.17–939.38) |
+| 64 | noop | baseline | 5 | 3000 | 0.04 (0.04–0.04) | 0.08 (0.04–0.08) |
+| 64 | noop | candidate | 5 | 3000 | 0.04 (0.04–0.04) | 0.08 (0.08–0.54) |
+| 64 | ping | baseline | 5 | 3000 | 52.75 (26.21–52.79) | 77.08 (75.13–163.63) |
+| 64 | ping | candidate | 5 | 3000 | 52.79 (52.29–52.96) | 147.04 (76.25–235.21) |
+
+Reading: the no-op and Redis round-trip controls are equal between trees, so the differences are in the library path. The 32-bit run is emulated, with noisier absolute values. The numbers are measurements, not a verdict.
