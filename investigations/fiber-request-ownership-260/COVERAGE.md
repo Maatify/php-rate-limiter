@@ -87,3 +87,17 @@ Mutants M26–M29 detect each of these corrections when it is removed.
 | kept controls | F266-15/17 tests, the failed replacement and the rollback after the last owner's release (`testAFailedReplacementOfAVacatedBinding…`, `testAnActiveDirectCallKeepsItsDomain…`), and that an older record never releases a newer one (`testTheHoldersOfAReplacedBindingNeverKeepTheReplacementAlive`) |
 
 Mutants M30 and M31 detect F266-18 when its correction is removed. F266-19 has no one-textual-change mutant (the fault is a property that chains records); its control is the red run against `b8f264f2`.
+
+## Fifth review, `6afce55d` (F266-20: build isolation across execution contexts)
+
+The correction of F266-18 kept the Builder's own entry classes apart from entries of Host code by a stack of build frames per Fiber (and a shared one for everything that is not a Fiber), so a non-Fiber scheduler (coroutines of an extension, a provider-defined scheduler) that interleaves two builds on one PHP stack was outside the approved contract (M2, M7). The mechanism is removed: no state about a build is shared between contexts. Each entry class records the holds it took when it adopted existing bindings against its own object (a weak map keyed by the entry), the Builder keeps the list of the entry classes it constructed itself, and a failed build releases those holds first and then rolls its own binding back; entries built by Host code from a getter are not in any such list and keep their holds.
+
+| Requirement | Test |
+|---|---|
+| a build releases the holds of its own entries and of no other entry (an entry of Host code, also built from a getter, keeps its hold) | `OwnershipRegistryTest::testABuildReleasesTheHoldsOfItsOwnEntriesAndOfNoOtherEntry`; `OwnershipCrossingsRedisTest::testAFailedBuildLeavesTheBindingOfAnEntryBuiltDirectlyFromHostCode`, `…ARuntimeBuiltMeanwhileFromHostCode` |
+| a build with only its own entries is undone completely, whatever the order of the releases | `testABuildWithOnlyItsOwnEntriesIsUndoneCompletelyWhateverTheOrderOfTheReleases` |
+| two interleaved builds, in every order, with explicit ledgers and entries and no Fiber, stack or ambient state: the failed one is undone, the one that succeeded keeps its binding; the same for builds over one store | `testTwoInterleavedBuildsOverIndependentStoresAreIsolatedInEveryOrder`, `testTwoInterleavedBuildsOverTheSameStoreKeepTheBindingWhileOneStillStandsOnIt` |
+| the mechanism of the finding cannot come back | `testTheRegistryKeepsNoBuildStateShapedByTheExecutionContext` (the registry keeps only its two weak maps: slots and adoptions) |
+| a build suspended in a Fiber, a nested failed build on the same stack, a nested build that succeeds, two builds with different providers on one stack, the 128 replacements | the F266-18/19 tests of `OwnershipCrossingsRedisTest` and `OwnershipRegistryTest`, unchanged and passing |
+
+What was run and what was not: the Fiber cases and the explicit-order models above ran on actual PHP_INT_SIZE 8 and 4. **No scheduler other than PHP Fibers was run** (no Swoole or similar extension in the Docker image); the claim for such schedulers rests on the removal of every piece of build state that depends on the context, shown by the structural test, and on the interleaving models. Mutants M26 and M30–M33 detect the removal of each part of the mechanism.

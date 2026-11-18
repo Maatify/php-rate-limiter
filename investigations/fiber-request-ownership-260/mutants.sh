@@ -158,7 +158,9 @@ run_mutant M23 "a rollback releases every holder of a binding, not only its own 
             if ($created) {'
 run_mutant M24 "a hand-assembled raw clock is not a Host crossing (F266-16)" $S/HostClock.php '        return OwnershipRegistry::crossing($this, fn(): DateTimeImmutable => $this->inner->now());' '        return $this->inner->now();'
 run_mutant M25 "the breaker keeps a raw Host clock unwrapped (F266-16)" $S/CircuitBreaker.php '        $this->clock = HostClock::of($this->clock);' '        // mutant: unwrapped'
-run_mutant M26 "an entry built from Host code does not stand on the binding it adopted (F266-17 case 1)" $S/OwnershipRegistry.php '        if (end(self::frames()->frames) === '"'"'own'"'"') {' '        if (true) {'
+run_mutant M26 "an entry that adopts an existing binding stands on it only in name: no hold is recorded (F266-17 case 1)" $S/OwnershipRegistry.php '            if (! $created) {
+                $held[] = [$resource, $generation];' '            if (false) {
+                $held[] = [$resource, $generation];'
 run_mutant M27 "a rollback never undoes an abandoned binding (F266-17 case 2)" $S/OwnershipRegistry.php '            if ($created) {
                 $generation->creatorRolledBack = true;
             }
@@ -168,12 +170,23 @@ run_mutant M27 "a rollback never undoes an abandoned binding (F266-17 case 2)" $
 run_mutant M28 "the last release of an active call does not perform the overdue rollback (F266-17 case 3)" $S/OwnershipRegistry.php '            $slot->record = null;
             self::settle($resource);' '            $slot->record = null;'
 run_mutant M29 "the overdue rollback undoes a binding while a call is still active on the resource (F266-17 case 3)" $S/OwnershipRegistry.php '        if ($generation === null || $slot->record !== null || $generation->holders > 0 || ! $generation->creatorRolledBack) {' '        if ($generation === null || $generation->holders > 0 || ! $generation->creatorRolledBack) {'
-run_mutant M30 "the build frames are one process-wide stack, not one per execution context (F266-18)" $S/OwnershipRegistry.php '        $fiber = \Fiber::getCurrent();
-        if ($fiber === null) {
-            return self::$mainFrames ??= new BuildFrames();' '        $fiber = null;
-        if ($fiber === null) {
-            return self::$mainFrames ??= new BuildFrames();'
-run_mutant M31 "a Builder constructs its components without a scope of its own (F266-18)" $S/OwnershipRegistry.php "        return self::inFrame('own', \$construction);" '        return $construction();'
+run_mutant M30 "a failed build never releases the holds of its own entries, so it pins its binding (F266-18)" $S/OwnershipRegistry.php '        unset($map[$entry]);
+        foreach ($held as [$resource, $generation]) {
+            $generation->holders = max(0, $generation->holders - 1);' '        unset($map[$entry]);
+        foreach ($held as [$resource, $generation]) {'
+run_mutant M31 "a release drops every holder of the binding, the entries of Host code included (F266-17, F266-18)" $S/OwnershipRegistry.php '        unset($map[$entry]);
+        foreach ($held as [$resource, $generation]) {
+            $generation->holders = max(0, $generation->holders - 1);' '        unset($map[$entry]);
+        foreach ($held as [$resource, $generation]) {
+            $generation->holders = 0;'
+run_mutant M32 "build() does not release the holds of the entries it constructed (F266-18)" src/Builder/RateLimiterBuilder.php '            foreach ($built as $entry) {
+                OwnershipRegistry::releaseAdoptions($entry);
+            }
+            OwnershipRegistry::rollback($binding);' '            OwnershipRegistry::rollback($binding);'
+run_mutant M33 "buildOperationalReader() does not release the holds of the readers it constructed (F266-18)" src/Builder/RateLimiterBuilder.php '            // the holds of the readers it constructed itself are released first.
+            foreach ($built as $entry) {
+                OwnershipRegistry::releaseAdoptions($entry);
+            }' '            // mutant: no release'
 cat "$out/result.tsv"
 git status --short -- src tests | grep -v '^??' && failed=1
 exit "$failed"

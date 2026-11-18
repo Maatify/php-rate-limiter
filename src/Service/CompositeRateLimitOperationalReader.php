@@ -37,7 +37,7 @@ final class CompositeRateLimitOperationalReader implements CompositeRateLimitOpe
     ) {
         $indexed = [];
         foreach ($scorePolicies as $policy) {
-            $indexed[OwnershipRegistry::hostRegion(static fn(): string => $policy->getName())] = $policy;
+            $indexed[$policy->getName()] = $policy;
         }
         $this->scorePolicies = $indexed;
     }

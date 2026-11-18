@@ -306,19 +306,19 @@ final class OwnershipRegistryTest extends TestCase
     {
         $p = $this->provider(static fn(): null => null);
         $fresh = new \stdClass();
-        self::assertTrue(OwnershipRegistry::adopt([$fresh])->isDefault(), 'All-unbound resources bind to the default domain.');
+        self::assertTrue(OwnershipRegistry::adopt([$fresh], new \stdClass())->isDefault(), 'All-unbound resources bind to the default domain.');
         self::assertSame('default', OwnershipRegistry::domainKind($fresh));
 
         $boundToP = new \stdClass();
         OwnershipRegistry::bindAll([$boundToP], $p);
         $unbound = new \stdClass();
-        $domain = OwnershipRegistry::adopt([$unbound, $boundToP]);
+        $domain = OwnershipRegistry::adopt([$unbound, $boundToP], new \stdClass());
         self::assertFalse($domain->isDefault(), 'An entry over a provider-bound store inherits its provider.');
         self::assertSame($p, $domain->rawProvider());
         self::assertSame('provider', OwnershipRegistry::domainKind($unbound));
 
         $this->expectException(RateLimiterException::class);
-        OwnershipRegistry::adopt([$fresh, $boundToP]);
+        OwnershipRegistry::adopt([$fresh, $boundToP], new \stdClass());
     }
 
     // ---- provider lifetime: leases, vacated bindings, replacement eligibility (CE-29, CE-31, CE-32) -------------------------------
@@ -615,72 +615,108 @@ final class OwnershipRegistryTest extends TestCase
         self::assertSame('unbound', OwnershipRegistry::domainKind($resource), 'nobody stands on it any more');
     }
 
-    public function testAnAdoptionStandsOnTheBindingUnlessItIsPartOfTheBuildThatRecordedIt(): void
-    {
-        $p = $this->provider(static fn() => 1);
-
-        $own = new \stdClass();
-        $ledger = OwnershipRegistry::bindAll([$own], $p);
-        OwnershipRegistry::buildScope(static fn() => OwnershipRegistry::adopt([$own]));
-        OwnershipRegistry::rollback($ledger);
-        self::assertSame('unbound', OwnershipRegistry::domainKind($own), 'an entry of the same build does not pin a build that fails');
-
-        $host = new \stdClass();
-        $ledger = OwnershipRegistry::bindAll([$host], $p);
-        OwnershipRegistry::buildScope(static fn() => OwnershipRegistry::hostRegion(static fn() => OwnershipRegistry::adopt([$host])));
-        OwnershipRegistry::rollback($ledger);
-        self::assertSame('provider', OwnershipRegistry::domainKind($host), 'an entry built by hand from Host code stands on the binding it adopted');
-
-        $loose = new \stdClass();
-        $ledger = OwnershipRegistry::bindAll([$loose], $p);
-        OwnershipRegistry::adopt([$loose]);
-        OwnershipRegistry::rollback($ledger);
-        self::assertSame('provider', OwnershipRegistry::domainKind($loose), 'an entry built outside any build stands on the binding it adopted');
-    }
-
-    public function testABuildStartedFromHostCodeKnowsItsOwnComponents(): void
+    public function testABuildReleasesTheHoldsOfItsOwnEntriesAndOfNoOtherEntry(): void
     {
         $p = $this->provider(static fn() => 1);
         $resource = new \stdClass();
-        $ledger = OwnershipRegistry::bindAll([$resource], $p);
+        $ledger = OwnershipRegistry::bindAll([$resource], $p); // the build binds its graph
+        $ownEntry = new \stdClass();
+        $foreignEntry = new \stdClass(); // an entry built by hand by Host code while that build was running
+        OwnershipRegistry::adopt([$resource], $ownEntry);
+        OwnershipRegistry::adopt([$resource], $foreignEntry);
 
-        // A build running inside the Host code of another build: its own component adopts without pinning, so its failure undoes it.
-        OwnershipRegistry::buildScope(static function () use ($resource): void {
-            OwnershipRegistry::hostRegion(static function () use ($resource): void {
-                OwnershipRegistry::buildScope(static fn() => OwnershipRegistry::adopt([$resource]));
-            });
-        });
+        // The build fails: it releases what ITS entry adopted, then rolls its own binding back.
+        OwnershipRegistry::releaseAdoptions($ownEntry);
         OwnershipRegistry::rollback($ledger);
-        self::assertSame('unbound', OwnershipRegistry::domainKind($resource));
+        self::assertSame('provider', OwnershipRegistry::domainKind($resource), 'the entry of Host code still stands on the binding');
+
+        // Releasing an entry twice, or one that adopted nothing, changes nothing.
+        OwnershipRegistry::releaseAdoptions($ownEntry);
+        OwnershipRegistry::releaseAdoptions(new \stdClass());
+        self::assertSame('provider', OwnershipRegistry::domainKind($resource));
     }
 
-    public function testTheBuildFramesOfAFiberNeverMarkAnotherContext(): void
+    public function testABuildWithOnlyItsOwnEntriesIsUndoneCompletelyWhateverTheOrderOfTheReleases(): void
     {
-        $p = $this->provider(static fn() => 1);
-        $fiber = new Fiber(static function (): void {
-            OwnershipRegistry::buildScope(static function (): void {
-                Fiber::suspend('a Builder suspended while it constructs its own components');
-            });
-        });
-        $fiber->start(); // the scope of that build is open in the Fiber
+        foreach ([[0, 1], [1, 0]] as $order) {
+            $p = $this->provider(static fn() => 1);
+            $resource = new \stdClass();
+            $ledger = OwnershipRegistry::bindAll([$resource], $p);
+            $entries = [new \stdClass(), new \stdClass()];
+            OwnershipRegistry::adopt([$resource], $entries[0]);
+            OwnershipRegistry::adopt([$resource], $entries[1]);
 
-        // On the main stack no build is running: an entry built by hand adopts a binding and stands on it, whatever the Fiber is doing.
-        $resource = new \stdClass();
-        $ledger = OwnershipRegistry::bindAll([$resource], $p);
-        OwnershipRegistry::adopt([$resource]);
-        OwnershipRegistry::rollback($ledger);
-        self::assertSame('provider', OwnershipRegistry::domainKind($resource), 'the open scope of the Fiber is not the scope of the main stack');
+            foreach ($order as $index) {
+                OwnershipRegistry::releaseAdoptions($entries[$index]);
+            }
+            OwnershipRegistry::rollback($ledger);
+            self::assertSame('unbound', OwnershipRegistry::domainKind($resource), 'a build whose entries are all its own leaves nothing bound');
+        }
+    }
 
-        // And the other way: a Builder scope on the main stack is not taken for a host frame by the Fiber's resumption.
-        $own = new \stdClass();
-        $ledger = OwnershipRegistry::bindAll([$own], $p);
-        OwnershipRegistry::buildScope(static function () use ($own, $fiber): void {
-            $fiber->resume(); // the Fiber closes its scope while this scope is open
-            OwnershipRegistry::adopt([$own]);
-        });
-        OwnershipRegistry::rollback($ledger);
-        self::assertSame('unbound', OwnershipRegistry::domainKind($own), 'the scope of this build is intact after the other context closed its own');
-        self::assertTrue($fiber->isTerminated());
+    /**
+     * A deterministic model of interleaved builds that share no stack, no Fiber and no ambient state: each build owns its ledger and the
+     * entry objects it constructed, and the steps of the two builds are scheduled in every order. Whatever the order, the failed build is
+     * undone and the build that succeeded keeps its binding (F266-18, F266-20).
+     */
+    public function testTwoInterleavedBuildsOverIndependentStoresAreIsolatedInEveryOrder(): void
+    {
+        $orders = [
+            ['a.bind', 'b.bind', 'a.adopt', 'b.adopt', 'b.fail', 'a.done'],
+            ['a.bind', 'a.adopt', 'b.bind', 'b.adopt', 'a.done', 'b.fail'],
+            ['b.bind', 'b.adopt', 'a.bind', 'a.adopt', 'b.fail', 'a.done'],
+            ['a.bind', 'b.bind', 'b.adopt', 'a.adopt', 'a.done', 'b.fail'],
+        ];
+        foreach ($orders as $steps) {
+            $pa = $this->provider(static fn() => 1);
+            $pb = $this->provider(static fn() => 2);
+            $storeA = new \stdClass();
+            $storeB = new \stdClass();
+            $entryA = new \stdClass();
+            $entryB = new \stdClass();
+            $ledgerB = null;
+            foreach ($steps as $step) {
+                if ($step === 'a.bind') {
+                    OwnershipRegistry::bindAll([$storeA], $pa);
+                } elseif ($step === 'b.bind') {
+                    $ledgerB = OwnershipRegistry::bindAll([$storeB], $pb);
+                } elseif ($step === 'a.adopt') {
+                    OwnershipRegistry::adopt([$storeA], $entryA);
+                } elseif ($step === 'b.adopt') {
+                    OwnershipRegistry::adopt([$storeB], $entryB);
+                } elseif ($step === 'b.fail') {
+                    self::assertNotNull($ledgerB);
+                    OwnershipRegistry::releaseAdoptions($entryB);
+                    OwnershipRegistry::rollback($ledgerB);
+                }
+            }
+            self::assertSame('unbound', OwnershipRegistry::domainKind($storeB), 'the failed build is undone in every order: ' . implode(',', $steps));
+            self::assertSame('provider', OwnershipRegistry::domainKind($storeA), 'the build that succeeded keeps its binding in every order: ' . implode(',', $steps));
+        }
+    }
+
+    public function testTwoInterleavedBuildsOverTheSameStoreKeepTheBindingWhileOneStillStandsOnIt(): void
+    {
+        foreach ([['a', 'b'], ['b', 'a']] as $failureOrder) {
+            $p = $this->provider(static fn() => 1);
+            $store = new \stdClass();
+            $ledgerA = OwnershipRegistry::bindAll([$store], $p);
+            $ledgerB = OwnershipRegistry::bindAll([$store], $p);
+            $entryA = new \stdClass();
+            $entryB = new \stdClass();
+            OwnershipRegistry::adopt([$store], $entryA);
+            OwnershipRegistry::adopt([$store], $entryB);
+
+            $first = $failureOrder[0];
+            OwnershipRegistry::releaseAdoptions($first === 'a' ? $entryA : $entryB);
+            OwnershipRegistry::rollback($first === 'a' ? $ledgerA : $ledgerB);
+            self::assertSame('provider', OwnershipRegistry::domainKind($store), 'the other build still stands on the binding');
+
+            $second = $failureOrder[1];
+            OwnershipRegistry::releaseAdoptions($second === 'a' ? $entryA : $entryB);
+            OwnershipRegistry::rollback($second === 'a' ? $ledgerA : $ledgerB);
+            self::assertSame('unbound', OwnershipRegistry::domainKind($store), 'the last build to fail undoes it');
+        }
     }
 
     public function testRepeatedSuccessfulReplacementsKeepABoundedNumberOfBindingRecords(): void
@@ -729,5 +765,22 @@ final class OwnershipRegistryTest extends TestCase
 
         $scope->release();
         self::assertSame('unbound', OwnershipRegistry::domainKind($resource), 'the overdue rollback happens at the release');
+    }
+
+    /**
+     * F266-20: no build state is shared between execution contexts, so nothing about a build can depend on how contexts are scheduled
+     * (Fibers, coroutines of an extension, a provider-defined scheduler). The registry keeps only its two weak maps keyed by object
+     * identity: the slots of the resources and the holds of the entry objects. A process-wide or per-Fiber build stack is the mechanism
+     * of the finding and must not come back.
+     */
+    public function testTheRegistryKeepsNoBuildStateShapedByTheExecutionContext(): void
+    {
+        $static = array_map(
+            static fn(\ReflectionProperty $property): string => $property->getName(),
+            (new \ReflectionClass(OwnershipRegistry::class))->getProperties(\ReflectionProperty::IS_STATIC),
+        );
+        sort($static);
+
+        self::assertSame(['adoptions', 'slots'], $static);
     }
 }

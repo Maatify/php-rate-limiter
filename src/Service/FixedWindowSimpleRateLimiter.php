@@ -79,17 +79,12 @@ final class FixedWindowSimpleRateLimiter implements SimpleRateLimiterInterface
 
         $indexed = [];
         foreach ($policies as $policy) {
-            // Host code (policy getters) runs here, before the domain of this entry is adopted (DEC-041, F266-17).
-            $name = OwnershipRegistry::hostRegion(static function () use ($policy): string {
-                self::assertValidPolicy($policy);
-
-                return $policy->getName();
-            });
-            $indexed[$name] = $policy;
+            self::assertValidPolicy($policy);
+            $indexed[$policy->getName()] = $policy;
         }
         $this->policies = $indexed;
         $this->resources = OwnershipRegistry::collect([$this->store], [], [$this->clock]);
-        $this->domain = OwnershipRegistry::adopt($this->resources);
+        $this->domain = OwnershipRegistry::adopt($this->resources, $this);
     }
 
     private static function assertValidPolicy(SimpleThrottlePolicyInterface $policy): void

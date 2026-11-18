@@ -219,90 +219,30 @@ final class OwnershipRegistry
         $slot->generation = null; // the state restored is unbound or vacated: nothing stands on it and nothing is kept of the undone binding
     }
 
-    /** @var \WeakMap<object, BuildFrames>|null the build frames of each Fiber */
-    private static ?\WeakMap $fiberFrames = null;
+    /** @var \WeakMap<object, list<array{object, BindingGeneration}>>|null the bindings each entry class stands on, by the entry object */
+    private static ?\WeakMap $adoptions = null;
 
-    private static ?BuildFrames $mainFrames = null;
-
-    /** @return \WeakMap<object, BuildFrames> */
-    private static function fiberFrameMap(): \WeakMap
+    /** @return \WeakMap<object, list<array{object, BindingGeneration}>> */
+    private static function adoptions(): \WeakMap
     {
-        if (self::$fiberFrames === null) {
-            /** @var \WeakMap<object, BuildFrames> $created */
+        if (self::$adoptions === null) {
+            /** @var \WeakMap<object, list<array{object, BindingGeneration}>> $created */
             $created = new \WeakMap();
-            self::$fiberFrames = $created;
+            self::$adoptions = $created;
         }
 
-        return self::$fiberFrames;
-    }
-
-    /** The build frames of the execution context that is running now: a build suspended in one Fiber never marks another context. */
-    private static function frames(): BuildFrames
-    {
-        $fiber = \Fiber::getCurrent();
-        if ($fiber === null) {
-            return self::$mainFrames ??= new BuildFrames();
-        }
-        $map = self::fiberFrameMap();
-        $frames = $map[$fiber] ?? null;
-        if ($frames === null) {
-            $frames = new BuildFrames();
-            $map[$fiber] = $frames;
-        }
-
-        return $frames;
-    }
-
-    /**
-     * Runs the construction of the components of a graph that a Builder assembles for itself: an entry class that adopts a binding
-     * inside it is part of THIS build and does not pin it, whatever Host code runs around (F266-18).
-     *
-     * @template T
-     * @param callable(): T $construction
-     * @return T
-     */
-    public static function buildScope(callable $construction): mixed
-    {
-        return self::inFrame('own', $construction);
-    }
-
-    /**
-     * Runs Host code that executes while a graph is being built (policy getters, for example). A runtime or reader that Host code
-     * builds by hand from inside it stands on the binding it adopts, so the failure of the build that is running does not undo that
-     * binding; a Builder that Host code runs opens a scope of its own for the components it builds (F266-17, F266-18).
-     *
-     * @template T
-     * @param callable(): T $hostCode
-     * @return T
-     */
-    public static function hostRegion(callable $hostCode): mixed
-    {
-        return self::inFrame('host', $hostCode);
-    }
-
-    /**
-     * @template T
-     * @param 'own'|'host' $kind
-     * @param callable(): T $code
-     * @return T
-     */
-    private static function inFrame(string $kind, callable $code): mixed
-    {
-        $frames = self::frames();
-        $frames->frames[] = $kind;
-        try {
-            return $code();
-        } finally {
-            array_pop($frames->frames);
-        }
+        return self::$adoptions;
     }
 
     /**
      * The domain an entry class works in: the one already recorded on its resources, or the default; unbound resources are bound to it.
+     * An entry that adopts a binding that already exists stands on it: the hold is recorded against THIS entry object, so a build that
+     * fails releases the holds of the entries it constructed itself (`releaseAdoptions`) and of no other, whatever else runs in the
+     * process and however the execution contexts are scheduled (F266-18, F266-20: no build state is shared between contexts).
      *
      * @param array<int, object> $resources
      */
-    public static function adopt(array $resources): ContextDomain
+    public static function adopt(array $resources, object $entry): ContextDomain
     {
         $candidate = null;
         foreach ($resources as $resource) {
@@ -319,17 +259,35 @@ final class OwnershipRegistry
         }
         $domain = $candidate ?? ContextDomain::default();
         $ledger = self::bindAll($resources, $domain->rawProvider());
-        // An entry class adopting a binding that already existed does not stand on it while the graph that records it is being built
-        // (it would pin a build that fails); an entry built from Host code inside such a build does, and a resource it binds itself stays.
-        if (end(self::frames()->frames) === 'own') {
-            foreach ($ledger->entries as [, $generation, $created]) {
-                if (! $created) {
-                    $generation->holders = max(0, $generation->holders - 1);
-                }
+        $held = [];
+        foreach ($ledger->entries as [$resource, $generation, $created]) {
+            if (! $created) {
+                $held[] = [$resource, $generation];
             }
+        }
+        if ($held !== []) {
+            self::adoptions()[$entry] = $held;
         }
 
         return $domain;
+    }
+
+    /**
+     * Releases the holds one entry class took when it adopted existing bindings. Called by the Builder for the entries of a build that
+     * failed, before it rolls its own binding back; a binding is undone only when nobody else stands on it.
+     */
+    public static function releaseAdoptions(object $entry): void
+    {
+        $map = self::adoptions();
+        $held = $map[$entry] ?? null;
+        if ($held === null) {
+            return;
+        }
+        unset($map[$entry]);
+        foreach ($held as [$resource, $generation]) {
+            $generation->holders = max(0, $generation->holders - 1);
+            self::settle($resource);
+        }
     }
 
     /**
