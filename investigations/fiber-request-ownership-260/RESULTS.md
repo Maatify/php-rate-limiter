@@ -156,3 +156,72 @@ Limits of this evidence: the Docker image has no `git`, so the ReleaseVerificati
 | 64 | ping | candidate | 5 | 3000 | 52.79 (52.29–52.96) | 147.04 (76.25–235.21) |
 
 Reading: the no-op and Redis round-trip controls are equal between trees, so the differences are in the library path. The 32-bit run is emulated, with noisier absolute values. The numbers are measurements, not a verdict.
+
+## Review corrections of `c9eb4dd5` (F266-10..14): evidence on the corrected head
+
+Corrected head: `9568553ff8d0b2a6cae4e8692f99416cf9b336f3` (tree `f888df6585c36d4523904797a62b4a9f6e5c3067`); reviewed head `c9eb4dd5701c233e1ba278e4eee274e872b3d92d`; baseline `main@316b1de99e784fec95b40f849d83a04dec772e2b`. Raw outputs: `raw-final2/`, `raw-mutants-final2/`, `raw-bench-final2/`, `raw-bench-vs-reviewed-final2/`. The section above ("Implementation evidence") belongs to `e4f6ae70`/`c9eb4dd5` and is kept as history; its figures are not the evidence of this head. Docker, isolated Redis 7.0.15, PHP 8.4.27, actual PHP_INT_SIZE 8 and 4 (32-bit under linux/386 emulation).
+
+| Run | Result |
+|---|---|
+| Regressions (the 9 crossing tests, the 4 Host-store tests, the 25 registry tests = 38) on the **reviewed source `c9eb4dd5`**, 64 and 32 | 16 failures on both widths (red): policy getters, store clock before the guard, readers' clock and resolver, failed reader build, method-name inventory, Host store that is also a clock |
+| The same tests on the corrected head | pass on both widths |
+| Candidate full suite, 64 / 32 | 2874 tests (100 errors, 4 failures, 14 skipped) / 2869 tests (101 errors, 4 failures, 65 skipped): ReleaseVerification classes only (no `git` in the image); the one extra 32-bit error is the year-2999 date fixture, independent and tracked as #267 |
+| `--group php32`, 32 / 64 | 878 tests OK (64 skipped) / 879 tests OK (13 skipped) |
+| Mutants M01–M22, both widths | 22 of 22 detected (M13–M22 are the controls of these corrections; M14 was first undetected, which led to the pipeline-getter test) |
+| PHPStan max, formatter | clean on the current toolchain; lowest-supported PHPStan and lowest dependencies by CI only |
+
+One regression of the correction itself was found by the full suite and fixed before delivery: existing mutation tests (`FamilyRpG5Test`, `AdmissionEngineSourceCapacityTest`, `AdmissionNm10BindingTest`) anchor on exact source text of the policy getter calls; their anchors follow the marked calls. The anchored suites (815 tests) pass on 64-bit.
+
+### Cost of the corrected source (committed source, alternating, 5 rounds of 3000 iterations after 300 warm-up, one Redis; no threshold)
+
+Against `main@316b1de9`:
+
+| width | workload | tree | p50 µs median (min–max) | p99 µs median (min–max) |
+|---|---|---|---|---|
+| 32 | direct | baseline | 160.58 (157.75–194.67) | 686.08 (499.08–1465.54) |
+| 32 | direct | candidate | 245.42 (240.63–264) | 1021.33 (630.54–1550.83) |
+| 32 | limit | baseline | 2389 (2288.79–2601.5) | 20057 (11805.54–27507.63) |
+| 32 | limit | candidate | 2959.75 (2858.08–3592.5) | 19527.54 (14400–27860.08) |
+| 32 | nested | baseline | 669.67 (652.38–699.42) | 2066.63 (1670.67–4215.79) |
+| 32 | nested | candidate | 832.5 (821.04–838.29) | 2436.42 (2046.75–3209.54) |
+| 32 | noop | baseline | 1.88 (1.88–1.88) | 4.17 (2–5.38) |
+| 32 | noop | candidate | 1.88 (1.88–1.88) | 2.08 (2.04–4.21) |
+| 32 | ping | baseline | 78.25 (77.42–104.83) | 425.08 (216.58–6363.08) |
+| 32 | ping | candidate | 77.25 (76.79–97) | 437.33 (170.63–572.33) |
+| 64 | direct | baseline | 78.13 (77.46–78.54) | 359.29 (179.83–441.25) |
+| 64 | direct | candidate | 84.04 (83.38–84.58) | 194.29 (136.5–295.63) |
+| 64 | limit | baseline | 946.08 (939.33–950.5) | 4866.58 (4582.08–5525.71) |
+| 64 | limit | candidate | 988.96 (979.79–1024.75) | 5234.29 (5055.21–5718.17) |
+| 64 | nested | baseline | 293.67 (278.96–297.08) | 567.33 (544.54–781.46) |
+| 64 | nested | candidate | 300.08 (294.67–310.83) | 716.13 (564.08–806.21) |
+| 64 | noop | baseline | 0.04 (0.04–0.08) | 0.08 (0.08–0.13) |
+| 64 | noop | candidate | 0.04 (0.04–0.08) | 0.08 (0.08–0.13) |
+| 64 | ping | baseline | 52.92 (52.54–53.46) | 231.83 (164.42–311.13) |
+| 64 | ping | candidate | 53 (52.29–53.63) | 297.08 (114.5–484.33) |
+
+Against `c9eb4dd5` (the cost of this correction alone):
+
+| width | workload | tree | p50 µs median (min–max) | p99 µs median (min–max) |
+|---|---|---|---|---|
+| 32 | direct | baseline | 270.5 (250.67–317.5) | 1235.63 (913.38–1398.5) |
+| 32 | direct | candidate | 267.46 (246.17–281.17) | 1151.08 (1045.58–1467.96) |
+| 32 | limit | baseline | 3180 (3167.25–3262.75) | 16343.96 (15948.96–18951.67) |
+| 32 | limit | candidate | 3282.13 (2907.25–3434.54) | 18672.21 (15790.71–24232.71) |
+| 32 | nested | baseline | 896.08 (860.04–995.33) | 2947.79 (2225.5–3034.92) |
+| 32 | nested | candidate | 894.17 (824.63–1024.46) | 2793.71 (2623.33–2915.21) |
+| 32 | noop | baseline | 1.88 (1.88–1.88) | 10.29 (3.21–16.08) |
+| 32 | noop | candidate | 1.88 (1.88–1.88) | 2.08 (2–13.54) |
+| 32 | ping | baseline | 95.71 (93.21–103.54) | 532.79 (297.46–638.46) |
+| 32 | ping | candidate | 77.38 (76.83–98.58) | 415.58 (162.38–553.17) |
+| 64 | direct | baseline | 85.04 (83.38–88.63) | 223.79 (181.17–423.79) |
+| 64 | direct | candidate | 83.96 (83.67–85.04) | 295.54 (240.04–357.88) |
+| 64 | limit | baseline | 1013.83 (969.21–1147.63) | 5356 (4886.17–6352.21) |
+| 64 | limit | candidate | 1003.92 (986.29–1142.17) | 5952.96 (4885.13–7244.54) |
+| 64 | nested | baseline | 296.13 (270.5–299.79) | 544.54 (541.63–886.08) |
+| 64 | nested | candidate | 291.46 (243.04–305.08) | 564.29 (488.38–679.63) |
+| 64 | noop | baseline | 0.04 (0.04–0.08) | 0.08 (0.08–0.67) |
+| 64 | noop | candidate | 0.04 (0.04–0.08) | 0.08 (0.08–0.13) |
+| 64 | ping | baseline | 52.63 (51.58–53.08) | 160.75 (125–180.67) |
+| 64 | ping | candidate | 52.46 (14.58–53.17) | 164.54 (146.63–256.54) |
+
+Reading: on 64-bit the p50 of the affected paths moves by about 2 to 8 percent against `main` (direct 78.13→84.04 µs, nested 293.67→300.08, limit 946.08→988.96) and by no more than noise against `c9eb4dd5`. The `ping` control is a raw Redis round trip that this change does not touch, and its p99 on 64-bit differs between the trees in both directions across runs (231.83→297.08 µs here against 491.04→248.13 in the earlier run of `c9eb4dd5`): tail differences of that size are measurement noise of this machine, not a cost of the guard, and the p99 differences of the library paths are not attributed to the guard. The 32-bit run is emulated; its p50 for `direct` (160.58→245.42 µs) is a measured increase and is reported as such, not explained away. The numbers are measurements, not a verdict.

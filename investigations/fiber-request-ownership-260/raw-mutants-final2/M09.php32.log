@@ -1,0 +1,34 @@
+PHPUnit 11.5.57 by Sebastian Bergmann and contributors.
+
+Runtime:       PHP 8.4.27
+Configuration: /app/phpunit.xml
+
+................................F......F......................    62 / 62 (100%)
+
+Time: 00:01.555, Memory: 14.00 MB
+
+There were 2 failures:
+
+1) Maatify\RateLimiter\Tests\Integration\Redis\OwnershipCrossingsRedisTest::testAFailedReaderBuildBindsNothingAndAnExistingBindingIsKept
+the failed build left nothing bound
+Failed asserting that two strings are identical.
+--- Expected
++++ Actual
+@@ @@
+-'unbound'
++'provider'
+
+/app/tests/Integration/Redis/OwnershipCrossingsRedisTest.php:322
+
+2) Maatify\RateLimiter\Tests\Unit\Service\OwnershipRegistryTest::testARollbackUndoesExactlyWhatThatBindingBound
+Failed asserting that two strings are identical.
+--- Expected
++++ Actual
+@@ @@
+-'unbound'
++'provider'
+
+/app/tests/Unit/Service/OwnershipRegistryTest.php:301
+
+FAILURES!
+Tests: 62, Assertions: 935, Failures: 2.
