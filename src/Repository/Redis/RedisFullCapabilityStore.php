@@ -19,7 +19,12 @@ use Maatify\RateLimiter\DTO\GenerationBoundScoreStateDTO;
 use Maatify\RateLimiter\DTO\PostPunishmentReentryStateDTO;
 use Maatify\RateLimiter\DTO\PunishmentLifecycleTransitionDTO;
 use Maatify\RateLimiter\DTO\RateLimitStateDTO;
+use Maatify\RateLimiter\Contract\ExecutionContextProviderInterface;
+use Maatify\RateLimiter\Exception\OverlappingRequestException;
 use Maatify\RateLimiter\Exception\RateLimitConcurrencyException;
+use Maatify\RateLimiter\Service\ContextDomain;
+use Maatify\RateLimiter\Service\OwnedResources;
+use Maatify\RateLimiter\Service\OwnershipRegistry;
 use Maatify\RateLimiter\Exception\RateLimiterException;
 use Maatify\RateLimiter\Exception\BackendFailureException;
 use Maatify\RateLimiter\Enum\AdmissionOutcomeKindEnum;
@@ -77,7 +82,8 @@ final class RedisFullCapabilityStore implements
     CircuitBreakerStateCasStoreInterface,
     CallerTimeScoreReplaceStoreInterface,
     CallerTimeOperationalReadOnlyStoreInterface,
-    RequestAtomicStoreInterface
+    RequestAtomicStoreInterface,
+    OwnedResources
 {
     private const PREFIX = 'maatify:rate-limiter:v1';
 
@@ -90,6 +96,9 @@ final class RedisFullCapabilityStore implements
     private ?RedisAdmissionOperations $admission = null;
 
     private ?RedisAdmissionOperations $outcomeAdmission = null;
+
+    /** DEC-041: the context domain configured for this store, retained for the store's lifetime; null means the default Fiber domain. */
+    private readonly ?ContextDomain $ownDomain;
 
     /** T-5: the first backend failure a step of the held request met, even when the step handled it and went on. */
     private ?BackendFailureException $requestBackendFailure = null;
@@ -1887,6 +1896,7 @@ LUA;
         private readonly string $namespace,
         ?ClockInterface $clock = null,
         private readonly int $requestRetryBudgetMilliseconds = self::DEFAULT_REQUEST_RETRY_BUDGET_MILLISECONDS,
+        ?ExecutionContextProviderInterface $executionContext = null,
     ) {
         if ($requestRetryBudgetMilliseconds < 1) {
             throw new RateLimiterException('The request retry budget must be at least one millisecond.');
@@ -1895,6 +1905,31 @@ LUA;
             throw new RateLimiterException('Redis namespace contains invalid characters or length.');
         }
         $this->fallbackClock = $clock ?? new SystemClock(new DateTimeZone('UTC'));
+        // DEC-041: a configured provider is bound to this store at construction and retained for its lifetime.
+        $this->ownDomain = $executionContext === null ? null : ContextDomain::forProvider($executionContext);
+        if ($executionContext !== null) {
+            OwnershipRegistry::bindAll([$this], $executionContext);
+        }
+    }
+
+    /** @return list<object> */
+    public function ownedResources(): array
+    {
+        return [$this];
+    }
+
+    /**
+     * DEC-041: admits an operation on this store (nested in the owner's call, a short-lived owner when nobody owns the store, or
+     * refused) for its whole duration, including its Host crossing.
+     */
+    private function guarded(string $entry, callable $operation): mixed
+    {
+        $scope = OwnershipRegistry::admit($this, $entry, $this->ownDomain);
+        try {
+            return $operation();
+        } finally {
+            $scope?->release();
+        }
     }
 
     /**
@@ -2353,14 +2388,17 @@ LUA;
      */
     public function commitBoundedObservationGroup(callable $evaluate): mixed
     {
-        for ($attempt = 0; $attempt < 3; $attempt++) {
-            [$result, $plans] = $evaluate();
-            if ($this->commitDeviceCapPlans($plans)) {
-                return $result;
+        // DEC-041: several commands and a callback: the whole method is one call of its owner.
+        return $this->guarded('commitBoundedObservationGroup', function () use ($evaluate): mixed {
+            for ($attempt = 0; $attempt < 3; $attempt++) {
+                [$result, $plans] = $evaluate();
+                if ($this->commitDeviceCapPlans($plans)) {
+                    return $result;
+                }
             }
-        }
 
-        throw new RateLimiterException('Bounded observation state changed before commit.');
+            throw new RateLimiterException('Bounded observation state changed before commit.');
+        });
     }
 
     /**
@@ -2977,7 +3015,7 @@ LUA;
     {
         // The admission scripts go through the same request overlay as the store scripts while a request is held.
         return $this->admission ??= new RedisAdmissionOperations(
-            new CallableRedisCommandExecutor(fn(array $command): mixed => $this->executeInRequestWhenHeld($command)),
+            new CallableRedisCommandExecutor(fn(array $command): mixed => $this->guarded('admission', fn(): mixed => $this->executeInRequestWhenHeld($command))),
             $this->namespace,
         );
     }
@@ -3055,12 +3093,16 @@ LUA;
      */
     private function eval(string $script, array $keys, array $args): mixed
     {
-        if ($this->requestState !== null) {
-            return $this->evalInRequest($script, $keys, $args);
-        }
-        /** @var non-empty-list<int|string|float> $command */
-        $command = array_merge(['EVAL', $script, count($keys)], $keys, $args);
-        return $this->command($command);
+        // DEC-041: admitted before the held request state is read, so an independent call cannot observe it.
+        return $this->guarded('eval', function () use ($script, $keys, $args): mixed {
+            if ($this->requestState !== null) {
+                return $this->evalInRequest($script, $keys, $args);
+            }
+            /** @var non-empty-list<int|string|float> $command */
+            $command = array_merge(['EVAL', $script, count($keys)], $keys, $args);
+
+            return $this->command($command);
+        });
     }
 
     /**
@@ -3091,6 +3133,13 @@ LUA;
      */
     public function transactRequest(callable $evaluate): mixed
     {
+        // DEC-041: admitted before the callback runs and before the held request state is inspected, whether or not a request is
+        // open, so a direct transaction without writes (which sends no command) cannot slip past the command-level check.
+        return $this->guarded('transactRequest', fn(): mixed => $this->runRequest($evaluate));
+    }
+
+    private function runRequest(callable $evaluate): mixed
+    {
         if ($this->requestState !== null) {
             return $evaluate();
         }
@@ -3114,6 +3163,9 @@ LUA;
                 }
                 $state = $this->heldRequestState();
             } catch (BackendFailureException $exception) {
+                throw $exception;
+            } catch (OverlappingRequestException $exception) {
+                // DEC-041: an overlapping call is refused, never retried and never classified as a conflict over stale state.
                 throw $exception;
             } catch (\Throwable $exception) {
                 $state = $this->heldRequestState();
@@ -3274,11 +3326,15 @@ LUA;
      */
     private function command(array $command): mixed
     {
-        try {
-            return $this->redis->execute($command);
-        } catch (BackendFailureException $exception) {
-            throw $exception;
-        }
+        // DEC-041: every Redis command is admitted first (a direct capability call is a short-lived owner for the command), and
+        // the executor is a Host crossing of the owning call.
+        return $this->guarded('command', fn(): mixed => OwnershipRegistry::crossing($this, function () use ($command): mixed {
+            try {
+                return $this->redis->execute($command);
+            } catch (BackendFailureException $exception) {
+                throw $exception;
+            }
+        }));
     }
 
     /** DEC-017 and #215: the caller's time in milliseconds is a canonical non-negative decimal within Lua's exact range. */

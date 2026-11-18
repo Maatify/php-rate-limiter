@@ -3327,4 +3327,10 @@ class EvaluationPipeline
     {
         return new RateLimitResultDTO(RateLimitResultDTO::DECISION_ALLOW, 0, 0, 'NORMAL', null);
     }
+
+    /** @return list<object> */
+    public function ownedResources(): array
+    {
+        return OwnershipRegistry::collect([$this->store, $this->correlationStore, $this->budgetTracker, $this->antiEquilibriumGate, $this->decayCalculator, $this->ephemeralBucket, $this->clock]);
+    }
 }

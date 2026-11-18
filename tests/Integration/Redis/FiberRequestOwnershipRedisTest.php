@@ -8,9 +8,11 @@ use Fiber;
 use Maatify\RateLimiter\Builder\RateLimiterBuilder;
 use Maatify\RateLimiter\Command\RateLimitCommand;
 use Maatify\RateLimiter\Config\RateLimiterConfig;
+use Maatify\RateLimiter\DTO\AdmissionOutcomeDTO;
 use Maatify\RateLimiter\DTO\FailureSignalDTO;
 use Maatify\RateLimiter\DTO\RateLimitContextDTO;
 use Maatify\RateLimiter\DTO\RateLimitResultDTO;
+use Maatify\RateLimiter\Enum\AdmissionOutcomeKindEnum;
 use Maatify\RateLimiter\Exception\BackendFailureException;
 use Maatify\RateLimiter\Exception\RateLimiterException;
 use Maatify\RateLimiter\Repository\Redis\CallableRedisCommandExecutor;
@@ -25,18 +27,15 @@ use PHPUnit\Framework\Attributes\Group;
 use PHPUnit\Framework\TestCase;
 
 /**
- * #260: what happens when two independent calls overlap on one runtime or one store, with Fibers as the deterministic scheduler.
+ * #260 (DEC-041): independent calls that overlap on one runtime graph or on a store it shares are REFUSED, with Fibers as the deterministic
+ * scheduler. These are intended-behaviour tests: they replace the characterization of the baseline (`main@316b1de9`, kept in the history of
+ * PR #266 at `515b09f0` and in its logs), which recorded the silent loss and the cross-call effects this decision removes.
  *
- * CHARACTERIZATION of `main@316b1de9`, not a statement of the intended contract. Nothing in the documentation says that overlapping
- * independent calls on one runtime/store are supported, and nothing says they are forbidden; the only written rule is that a
- * `transactRequest()` made while one of the store's own requests is being evaluated runs inside that request
- * (`RequestAtomicStoreInterface`), and that a nested runtime call keeps the outer clock reading (`RequestScopedClock`). These tests record
- * what the code does, so that the Owner's decision (support overlapping calls with per-request state, or enforce and document instance
- * exclusivity) has an exact before-state and so the assertions flip deliberately when it lands.
- *
- * Harness: every Redis command is a whole round trip on a sound connection; a Fiber is suspended only BETWEEN commands (after the first
- * held evaluation script of its request), so no connection is ever interleaved at the byte level. Each store owns its connection and the
- * oracle reads over another one, with exact DUMP and PEXPIRETIME. The resumption schedule is explicit; nothing sleeps.
+ * Harness: every Redis command is a whole round trip on a sound connection; a Fiber is suspended only BETWEEN commands (or inside a Host
+ * callback, where the case says so), so no connection is ever interleaved at the byte level. Each store owns its connection and the
+ * oracle reads over another one, with exact DUMP and PEXPIRETIME. The resumption schedule is explicit; nothing sleeps. The refusal is
+ * identified by the class name as a string so that the same file runs against the baseline source, where no refusal exists and the
+ * assertions fail for the intended reason.
  */
 #[Group('integration')]
 #[Group('fiber-ownership-260')]
@@ -203,112 +202,88 @@ final class FiberRequestOwnershipRedisTest extends TestCase
         return [$afterA, array_values(array_diff($afterB, $afterA))];
     }
 
-    /** @return list<string> the keys left by the failures of account a and account b run one after the other, without overlap */
-    private function sequentialKeysOfBothFailures(): array
+
+    private const REFUSAL = 'Maatify\\RateLimiter\\Exception\\OverlappingRequestException';
+
+    /** @return string|null the class of the exception the call threw, or null when it returned */
+    private function refusalOf(callable $call): ?string
+    {
+        try {
+            $call();
+        } catch (\Throwable $caught) {
+            return $caught::class;
+        }
+
+        return null;
+    }
+
+    private function assertRefused(callable $call, string $message = 'The overlapping call is refused.'): void
+    {
+        self::assertSame(self::REFUSAL, $this->refusalOf($call), $message);
+    }
+
+
+    // ---- scheduling helpers ----------------------------------------------------------------------------------------------------------
+
+    /**
+     * @param Fiber<mixed, mixed, mixed, mixed> $fiber
+     * @return callable(array<mixed>, string): void suspends the fiber once at the given phase of its first command (inside the executor)
+     */
+    private function suspendAtTheFirstCommand(Fiber $fiber, string $phase, string $tag): callable
+    {
+        $fired = false;
+
+        return function (array $command, string $at) use ($fiber, $phase, &$fired, $tag): void {
+            if ($at === $phase && ! $fired && Fiber::getCurrent() === $fiber) {
+                $fired = true;
+                Fiber::suspend($tag);
+            }
+        };
+    }
+
+    /**
+     * @param Fiber<mixed, mixed, mixed, mixed> $fiber
+     * @return callable(array<mixed>, string): void suspends the fiber once before its commit command (the commit window)
+     */
+    private function suspendBeforeTheCommit(Fiber $fiber): callable
+    {
+        $fired = false;
+
+        return function (array $command, string $phase) use ($fiber, &$fired): void {
+            if ($phase === 'before' && ! $fired && Fiber::getCurrent() === $fiber && self::isCommit($command)) {
+                $fired = true;
+                Fiber::suspend('before the commit');
+            }
+        };
+    }
+
+    /**
+     * @param Fiber<mixed, mixed, mixed, mixed> $fiber
+     * @return callable(array<mixed>, string): void counts the commands one fiber sends
+     */
+    private function countCommandsOf(Fiber $fiber, int &$count): callable
+    {
+        return static function (array $command, string $phase) use ($fiber, &$count): void {
+            if ($phase === 'before' && Fiber::getCurrent() === $fiber) {
+                $count++;
+            }
+        };
+    }
+
+    /**
+     * @return list<string> the keys one call leaves when it runs alone on an empty Redis
+     */
+    private function keysOfCallAlone(string $account, RateLimitCommand $command): array
     {
         $this->oracle->execute(['FLUSHDB']);
         $store = null;
         $runtime = $this->runtime(new FixedClock('@' . self::T0), new RecordingFailureSignalEmitter(), $store);
-        $runtime->limit($this->context('acct-a'), RateLimitCommand::recordFailure('login_protection'));
-        $runtime->limit($this->context('acct-b'), RateLimitCommand::recordFailure('login_protection'));
+        $runtime->limit($this->context($account), $command);
         $keys = $this->keyNames();
         $this->oracle->execute(['FLUSHDB']);
 
         return $keys;
     }
-
-    // ---- 1. the narrow store boundary ------------------------------------------------------------------------------------------------
-
-    public function testAStoreCallMadeWhileAnotherRequestIsOpenIsHeldInThatRequestAndLostWhenItIsRejected(): void
-    {
-        $store = null;
-        $this->runtime(new FixedClock('@' . self::T0), new RecordingFailureSignalEmitter(), $store);
-        self::assertInstanceOf(RedisFullCapabilityStore::class, $store);
-        $a = new Fiber(function () use ($store): void {
-            $store->transactRequest(static function (): void {
-                Fiber::suspend('A holds its request');
-
-                throw new RateLimiterException('Call A is rejected.');
-            });
-        });
-        $a->start();
-        self::assertTrue($a->isSuspended());
-        $before = $this->snapshot();
-
-        // B is an independent call: a direct store write, no request of its own.
-        $granted = $store->acquireProbeLease('policy-b', self::T0, 120);
-
-        self::assertTrue($granted, 'B is told it holds the lease.');
-        self::assertSame($before, $this->snapshot(), 'Nothing of B reached Redis: its write is held in the request of A.');
-        try {
-            $a->resume();
-            self::fail('Call A is rejected.');
-        } catch (RateLimiterException) {
-        }
-        self::assertSame($before, $this->snapshot(), 'A was rejected: the lease B was granted was never stored.');
-    }
-
-    // ---- 2. controls: sequential and intentionally nested ----------------------------------------------------------------------------
-
-    public function testSequentialCallsAreSavedBeforeEachReturnsAndARejectionDoesNotReachTheOthers(): void
-    {
-        [, $effectsOfB] = $this->sequentialControl();
-        self::assertNotSame([], $effectsOfB, 'The failure of account b stores state.');
-        $signals = new RecordingFailureSignalEmitter();
-        $store = null;
-        $runtime = $this->runtime(new FixedClock('@' . self::T0), $signals, $store);
-
-        $runtime->limit($this->context('acct-b'), RateLimitCommand::recordFailure('login_protection'));
-        $afterB = $this->snapshot();
-
-        self::assertSame($effectsOfB, array_values(array_intersect($effectsOfB, array_keys($afterB))), 'B is stored when it returns.');
-        try {
-            $this->hook = static function (array $command, string $phase): void {
-                if ($phase === 'before' && self::isScript($command, '__ov_result')) {
-                    throw new RateLimiterException('The next call is rejected.');
-                }
-            };
-            $runtime->limit($this->context('acct-a'), RateLimitCommand::checkOnly('login_protection'));
-            self::fail('The next call is rejected.');
-        } catch (RateLimiterException) {
-        }
-        self::assertSame($afterB, $this->snapshot(), 'The rejection of a later call leaves what B stored exactly as it was.');
-    }
-
-    public function testANestedRequestInsideOneRequestIsOneSaveAndKeepsTheOuterClockReading(): void
-    {
-        $store = null;
-        $clock = new FixedClock('@' . self::T0);
-        $this->runtime($clock, new RecordingFailureSignalEmitter(), $store);
-        self::assertInstanceOf(RedisFullCapabilityStore::class, $store);
-        $commits = 0;
-        $this->hook = static function (array $command, string $phase) use (&$commits): void {
-            if ($phase === 'before' && self::isCommit($command)) {
-                $commits++;
-            }
-        };
-
-        $store->transactRequest(function () use ($store): void {
-            $store->acquireProbeLease('outer', self::T0, 120);
-            $store->transactRequest(static function () use ($store): void {
-                $store->acquireProbeLease('inner', self::T0, 120);
-            });
-        });
-
-        self::assertSame(1, $commits, 'The nested request does not start a save of its own.');
-        self::assertCount(2, $this->keyNames(), 'Both leases were saved together.');
-
-        $scoped = new RequestScopedClock($clock);
-        $samples = $scoped->holding(function () use ($scoped, $clock): array {
-            $first = $scoped->now()->getTimestamp();
-            $clock->setNow(new \DateTimeImmutable('@' . self::T1));
-
-            return [$first, $scoped->holding(static fn(): int => $scoped->now()->getTimestamp()), $scoped->now()->getTimestamp()];
-        });
-        self::assertSame([self::T0, self::T0, self::T0], $samples, 'A nested call keeps the outer reading (LT-P2-05).');
-    }
-
-    // ---- 3. two independent calls overlapping on one runtime ------------------------------------------------------------------------
 
     /** @return array{Fiber<mixed, mixed, mixed, mixed>, Fiber<mixed, mixed, mixed, mixed>, CompositeRateLimiterRuntimeInterface, RecordingFailureSignalEmitter} */
     private function overlapOnOneRuntime(): array
@@ -320,112 +295,6 @@ final class FiberRequestOwnershipRedisTest extends TestCase
         $b = new Fiber(fn() => $runtime->limit($this->context('acct-b'), RateLimitCommand::recordFailure('login_protection')));
 
         return [$a, $b, $runtime, $signals];
-    }
-
-    public function testACompletedIndependentCallIsNotSavedWhileAnotherCallHoldsTheRequest(): void
-    {
-        [$a, $b] = $this->overlapOnOneRuntime();
-        [, $effectsOfB] = $this->sequentialControl();
-        $this->hook = $this->suspendAfterTheFirstHeldEvaluation($a, 'A');
-        $a->start();
-        self::assertTrue($a->isSuspended());
-        $before = $this->snapshot();
-
-        $b->start();
-
-        self::assertSame(RateLimitResultDTO::DECISION_ALLOW, $this->decision($b), 'B returned its answer.');
-        self::assertSame($before, $this->snapshot(), 'B returned before anything of it was saved: its failure was not recorded.');
-
-        $a->resume();
-
-        self::assertSame(RateLimitResultDTO::DECISION_ALLOW, $this->decision($a));
-        self::assertSame($effectsOfB, array_values(array_intersect($effectsOfB, $this->keyNames())), 'The save of A carried the effects of B.');
-    }
-
-    public function testTheFailureOfACompletedIndependentCallIsLostWhenTheCallHoldingTheRequestIsRejected(): void
-    {
-        [$a, $b] = $this->overlapOnOneRuntime();
-        [, $effectsOfB] = $this->sequentialControl();
-        $this->hook = $this->suspendAfterTheFirstHeldEvaluation($a, 'A');
-        $a->start();
-        $before = $this->snapshot();
-        $b->start();
-        self::assertSame(RateLimitResultDTO::DECISION_ALLOW, $this->decision($b));
-        $this->hooks($this->rejectOnResume($a));
-
-        try {
-            $a->resume();
-            self::fail('Call A is rejected.');
-        } catch (RateLimiterException) {
-        }
-
-        self::assertSame($before, $this->snapshot(), 'Nothing was saved, for either call.');
-        self::assertSame([], array_values(array_intersect($effectsOfB, $this->keyNames())), 'B was answered, and the failure it reported was never recorded.');
-    }
-
-    /** @return array<string, array{bool}> */
-    public static function resumeOrders(): array
-    {
-        return ['the call that opened the request resumes first' => [true], 'the call that joined it resumes first' => [false]];
-    }
-
-    /** @dataProvider resumeOrders */
-    #[\PHPUnit\Framework\Attributes\DataProvider('resumeOrders')]
-    public function testTwoCallsSuspendedInsideOneRequestHaveTheirEffectsSavedOnlyByTheCallThatOpenedIt(bool $openerFirst): void
-    {
-        $control = $this->sequentialKeysOfBothFailures();
-        $signals = new RecordingFailureSignalEmitter();
-        $store = null;
-        $runtime = $this->runtime(new FixedClock('@' . self::T0), $signals, $store);
-        $a = new Fiber(fn() => $runtime->limit($this->context('acct-a'), RateLimitCommand::recordFailure('login_protection')));
-        $b = new Fiber(fn() => $runtime->limit($this->context('acct-b'), RateLimitCommand::recordFailure('login_protection')));
-        $this->hooks($this->suspendAfterTheFirstHeldEvaluation($a, 'A'), $this->suspendAfterTheFirstHeldEvaluation($b, 'B'));
-        $a->start();
-        $b->start();
-        self::assertTrue($a->isSuspended() && $b->isSuspended());
-        $before = $this->snapshot();
-        $first = $openerFirst ? $a : $b;
-        $second = $openerFirst ? $b : $a;
-
-        $first->resume();
-        $afterFirst = $this->snapshot();
-        $second->resume();
-        $afterSecond = $this->snapshot();
-
-        self::assertSame(RateLimitResultDTO::DECISION_ALLOW, $this->decision($first));
-        self::assertSame(RateLimitResultDTO::DECISION_ALLOW, $this->decision($second));
-        if ($openerFirst) {
-            self::assertNotSame($before, $afterFirst, 'A saved what the request held at that moment, B included.');
-            self::assertGreaterThanOrEqual(count($afterFirst), count($afterSecond));
-        } else {
-            self::assertSame($before, $afterFirst, 'B returned its answer and saved nothing: it joined A\'s request.');
-            self::assertNotSame($before, $afterSecond, 'A saved both when it resumed.');
-        }
-        self::assertSame(RateLimitResultDTO::DECISION_ALLOW, $this->decision($a));
-        if ($openerFirst) {
-            self::assertNotSame([], array_values(array_diff($control, $this->keyNames())), 'B resumed after A had cleared the request: part of what its answer promised was never stored.');
-        } else {
-            self::assertSame($control, $this->keyNames(), 'Everything both answers promised was stored, by the one save of A.');
-        }
-    }
-
-    public function testTheSampleOfTheHostClockOfTheOpeningCallIsUsedByACallThatStartsLater(): void
-    {
-        $signals = new RecordingFailureSignalEmitter();
-        $store = null;
-        $clock = new FixedClock('@' . self::T0);
-        $runtime = $this->runtime($clock, $signals, $store);
-        $a = new Fiber(fn() => $runtime->limit($this->context('acct-a'), RateLimitCommand::checkOnly('login_protection')));
-        $b = new Fiber(fn() => $runtime->limit($this->context('acct-b'), RateLimitCommand::recordFailure('login_protection')));
-        $this->hook = $this->suspendAfterTheFirstHeldEvaluation($a, 'A');
-        $a->start();
-        $clock->setNow(new \DateTimeImmutable('@' . self::T1));
-        $this->hook = null;
-
-        $b->start();
-        $a->resume();
-
-        self::assertSame(['updatedAt=' . self::T0], $this->storedStamps(['updatedAt']), 'B is stamped with the reading A took, not the Host clock of its own start.');
     }
 
     /**
@@ -456,96 +325,291 @@ final class FiberRequestOwnershipRedisTest extends TestCase
         return $pairs;
     }
 
-    public function testABackendFailureOfOneCallIsReportedForTheOtherCallThatHadNone(): void
+    /** @return list<string> */
+    private function emittedTypes(RecordingFailureSignalEmitter $signals): array
+    {
+        return array_values(array_map(static fn(FailureSignalDTO $signal): string => $signal->type, $signals->getEmitted()));
+    }
+
+    // ---- 1. the narrow store boundary: identity, not crossing depth ------------------------------------------------------------------
+
+    public function testACallFromAnotherContextIsRefusedWhileACallbackSuspendedInsideADirectTransaction(): void
+    {
+        $store = null;
+        $this->runtime(new FixedClock('@' . self::T0), new RecordingFailureSignalEmitter(), $store);
+        self::assertInstanceOf(RedisFullCapabilityStore::class, $store);
+        $nested = null;
+        $a = new Fiber(function () use ($store, &$nested): void {
+            $store->transactRequest(function () use ($store, &$nested): void {
+                // A legitimate nested capability call from the owner's own context: allowed.
+                $nested = $store->acquireProbeLease('nested', self::T0, 120);
+                Fiber::suspend('A holds its request');
+
+                throw new RateLimiterException('Call A is rejected.');
+            });
+        });
+        $a->start();
+        self::assertTrue($a->isSuspended());
+        self::assertTrue($nested, 'The nested call of the owner was not refused.');
+        $before = $this->snapshot();
+
+        // B comes from another execution context while A's callback is suspended (no Host crossing is open).
+        $this->assertRefused(static fn() => $store->acquireProbeLease('policy-b', self::T0, 120), 'B is refused by the owner\'s execution context.');
+        self::assertSame($before, $this->snapshot(), 'Nothing of B reached Redis.');
+        try {
+            $a->resume();
+            self::fail('Call A is rejected.');
+        } catch (RateLimiterException $caught) {
+            self::assertNotSame(self::REFUSAL, $caught::class, 'A is rejected by its own callback, not refused.');
+        }
+        self::assertSame($before, $this->snapshot(), 'A was rejected: nothing was stored, and nothing of B was held for it.');
+        self::assertTrue($store->acquireProbeLease('policy-b', self::T0, 120), 'The same call succeeds once A has ended.');
+        self::assertNotSame($before, $this->snapshot());
+    }
+
+    public function testACallFromAnotherContextIsRefusedWhileADirectCapabilityIsSuspendedInTheExecutor(): void
+    {
+        $store = null;
+        $this->runtime(new FixedClock('@' . self::T0), new RecordingFailureSignalEmitter(), $store);
+        self::assertInstanceOf(RedisFullCapabilityStore::class, $store);
+        $a = new Fiber(static fn(): bool => $store->acquireProbeLease('policy-a', self::T0, 120));
+        $this->hook = $this->suspendAtTheFirstCommand($a, 'before', 'A in the executor');
+        $a->start();
+        self::assertTrue($a->isSuspended());
+        $before = $this->snapshot();
+
+        $this->assertRefused(static fn() => $store->acquireProbeLease('policy-b', self::T0, 120));
+        $this->assertRefused(static fn() => $store->isHealthy(), 'The health check is admitted too.');
+        self::assertSame($before, $this->snapshot());
+        $a->resume();
+
+        self::assertTrue($a->getReturn());
+        self::assertCount(1, $this->keyNames(), 'Only A\'s lease was stored.');
+    }
+
+    // ---- 2. controls: sequential and intentionally nested ----------------------------------------------------------------------------
+
+    public function testSequentialCallsAreSavedBeforeEachReturnsAndARejectionDoesNotReachTheOthers(): void
+    {
+        [, $effectsOfB] = $this->sequentialControl();
+        self::assertNotSame([], $effectsOfB, 'The failure of account b stores state.');
+        $signals = new RecordingFailureSignalEmitter();
+        $store = null;
+        $runtime = $this->runtime(new FixedClock('@' . self::T0), $signals, $store);
+
+        $runtime->limit($this->context('acct-b'), RateLimitCommand::recordFailure('login_protection'));
+        $afterB = $this->snapshot();
+
+        self::assertSame($effectsOfB, array_values(array_intersect($effectsOfB, array_keys($afterB))), 'B is stored when it returns.');
+        $this->hook = static function (array $command, string $phase): void {
+            if ($phase === 'before' && self::isScript($command, '__ov_result')) {
+                throw new RateLimiterException('The next call is rejected.');
+            }
+        };
+        $this->assertNotRefusedButRejected(fn() => $runtime->limit($this->context('acct-a'), RateLimitCommand::checkOnly('login_protection')));
+        self::assertSame($afterB, $this->snapshot(), 'The rejection of a later call leaves what B stored exactly as it was.');
+    }
+
+    private function assertNotRefusedButRejected(callable $call): void
+    {
+        $class = $this->refusalOf($call);
+        self::assertNotNull($class, 'The call is rejected.');
+        self::assertNotSame(self::REFUSAL, $class, 'A rejection by the evaluation is not an overlap refusal.');
+    }
+
+    public function testANestedRequestInsideOneRequestIsOneSaveAndKeepsTheOuterClockReading(): void
+    {
+        $store = null;
+        $clock = new FixedClock('@' . self::T0);
+        $this->runtime($clock, new RecordingFailureSignalEmitter(), $store);
+        self::assertInstanceOf(RedisFullCapabilityStore::class, $store);
+        $commits = 0;
+        $this->hook = static function (array $command, string $phase) use (&$commits): void {
+            if ($phase === 'before' && self::isCommit($command)) {
+                $commits++;
+            }
+        };
+
+        $store->transactRequest(function () use ($store): void {
+            $store->acquireProbeLease('outer', self::T0, 120);
+            $store->transactRequest(static function () use ($store): void {
+                $store->acquireProbeLease('inner', self::T0, 120);
+            });
+        });
+
+        self::assertSame(1, $commits, 'The nested request does not start a save of its own, and no nested call is refused.');
+        self::assertCount(2, $this->keyNames(), 'Both leases were saved together.');
+
+        $scoped = new RequestScopedClock($clock);
+        $samples = $scoped->holding(function () use ($scoped, $clock): array {
+            $first = $scoped->now()->getTimestamp();
+            $clock->setNow(new \DateTimeImmutable('@' . self::T1));
+
+            return [$first, $scoped->holding(static fn(): int => $scoped->now()->getTimestamp()), $scoped->now()->getTimestamp()];
+        });
+        self::assertSame([self::T0, self::T0, self::T0], $samples, 'A nested call keeps the outer reading (LT-P2-05).');
+    }
+
+    // ---- 3. two independent calls overlapping on one runtime: the second is refused --------------------------------------------------
+
+    public function testAnIndependentCallIsRefusedAtItsEntryWhileAnotherCallHoldsTheRequest(): void
+    {
+        [$a, $b] = $this->overlapOnOneRuntime();
+        [$afterAAlone] = $this->sequentialControl();
+        $bCommands = 0;
+        $this->hooks($this->suspendAfterTheFirstHeldEvaluation($a, 'A'), $this->countCommandsOf($b, $bCommands));
+        $a->start();
+        self::assertTrue($a->isSuspended());
+        $before = $this->snapshot();
+
+        $this->assertRefused(static fn() => $b->start());
+
+        self::assertSame(0, $bCommands, 'B was refused before it sent any command.');
+        self::assertSame($before, $this->snapshot(), 'Nothing of B reached Redis, and nothing of A was altered.');
+        $a->resume();
+        self::assertSame(RateLimitResultDTO::DECISION_ALLOW, $this->decision($a));
+        self::assertSame($afterAAlone, $this->keyNames(), 'A stored exactly what it stores when it runs alone.');
+    }
+
+    public function testTheCallHoldingTheRequestCanBeRejectedAndTheRefusedCallWasNeverAnswered(): void
+    {
+        [$a, $b] = $this->overlapOnOneRuntime();
+        $this->hook = $this->suspendAfterTheFirstHeldEvaluation($a, 'A');
+        $a->start();
+        $before = $this->snapshot();
+        $this->assertRefused(static fn() => $b->start());
+        $this->hooks($this->rejectOnResume($a));
+
+        $this->assertNotRefusedButRejected(static fn() => $a->resume());
+
+        self::assertSame($before, $this->snapshot(), 'A was rejected: nothing was stored, and B left nothing behind (it never ran).');
+    }
+
+    /** @return array<string, array{bool}> */
+    public static function startOrders(): array
+    {
+        return ['A starts first' => [true], 'B starts first' => [false]];
+    }
+
+    #[\PHPUnit\Framework\Attributes\DataProvider('startOrders')]
+    public function testWhicheverCallStartsSecondIsRefusedAndTheFirstStoresExactlyItsOwnEffects(bool $aFirst): void
+    {
+        $signals = new RecordingFailureSignalEmitter();
+        $store = null;
+        $runtime = $this->runtime(new FixedClock('@' . self::T0), $signals, $store);
+        $a = new Fiber(fn() => $runtime->limit($this->context('acct-a'), RateLimitCommand::recordFailure('login_protection')));
+        $b = new Fiber(fn() => $runtime->limit($this->context('acct-b'), RateLimitCommand::recordFailure('login_protection')));
+        $first = $aFirst ? $a : $b;
+        $second = $aFirst ? $b : $a;
+        $firstAccount = $aFirst ? 'acct-a' : 'acct-b';
+        $control = $this->keysOfCallAlone($firstAccount, RateLimitCommand::recordFailure('login_protection'));
+        $this->hook = $this->suspendAfterTheFirstHeldEvaluation($first, 'first');
+        $first->start();
+        self::assertTrue($first->isSuspended());
+
+        $this->assertRefused(static fn() => $second->start());
+        $first->resume();
+
+        self::assertSame(RateLimitResultDTO::DECISION_ALLOW, $this->decision($first));
+        self::assertSame($control, $this->keyNames(), 'The call that started first stored exactly what it stores alone.');
+    }
+
+    public function testTheHostClockReadingOfTheCallHoldingTheRequestIsNotUsedByARefusedCallAndTheNextCallReadsTheNewTime(): void
+    {
+        $signals = new RecordingFailureSignalEmitter();
+        $store = null;
+        $clock = new FixedClock('@' . self::T0);
+        $runtime = $this->runtime($clock, $signals, $store);
+        $a = new Fiber(fn() => $runtime->limit($this->context('acct-a'), RateLimitCommand::checkOnly('login_protection')));
+        $b = new Fiber(fn() => $runtime->limit($this->context('acct-b'), RateLimitCommand::recordFailure('login_protection')));
+        $this->hook = $this->suspendAfterTheFirstHeldEvaluation($a, 'A');
+        $a->start();
+        $clock->setNow(new \DateTimeImmutable('@' . self::T1));
+
+        $this->assertRefused(static fn() => $b->start());
+        $this->hook = null;
+        $a->resume();
+        self::assertSame([], $this->storedStamps(['updatedAt']), 'A stored no stamp and B never ran.');
+        $later = new Fiber(fn() => $runtime->limit($this->context('acct-b'), RateLimitCommand::recordFailure('login_protection')));
+        $later->start();
+
+        self::assertSame(['updatedAt=' . self::T1], $this->storedStamps(['updatedAt']), 'After A has ended, the next call reads the Host clock\'s new value.');
+    }
+
+    public function testABackendFailureIsNeverCrossedBetweenCallsBecauseTheOverlappingCallIsRefusedFirst(): void
     {
         $signals = new RecordingFailureSignalEmitter();
         $store = null;
         $runtime = $this->runtime(new FixedClock('@' . self::T0), $signals, $store);
         $a = new Fiber(fn() => $runtime->limit($this->context('acct-a'), RateLimitCommand::checkOnly('login_protection')));
         $b = new Fiber(fn() => $runtime->limit($this->context('acct-b'), RateLimitCommand::checkOnly('login_protection')));
-        $failuresOfA = 0;
-        $failB = new \ArrayObject(['on' => false]);
+        $bCommands = 0;
         $suspend = $this->suspendAfterTheFirstHeldEvaluation($a, 'A');
-        $this->hook = function (array $command, string $phase) use ($suspend, $b, $failB): void {
+        $count = $this->countCommandsOf($b, $bCommands);
+        $this->hook = function (array $command, string $phase) use ($suspend, $count, $b): void {
             $suspend($command, $phase);
-            if ($failB['on'] === true && $phase === 'before' && Fiber::getCurrent() === $b && self::isScript($command, '__ov_result')) {
-                throw new BackendFailureException('The backend failed for call B only.');
+            $count($command, $phase);
+            if ($phase === 'before' && Fiber::getCurrent() === $b && self::isScript($command, '__ov_result')) {
+                throw new BackendFailureException('The backend would fail for call B only.');
             }
         };
         $a->start();
-        $failB['on'] = true;
-        $b->start();
-        $failB['on'] = false;
-        $resultB = $b->getReturn();
-        self::assertInstanceOf(RateLimitResultDTO::class, $resultB);
-        self::assertSame(RateLimitResultDTO::DECISION_HARD_BLOCK, $resultB->decision, 'B met a backend failure: the failure mode answers.');
 
-        try {
-            $a->resume();
-        } catch (BackendFailureException) {
-            $failuresOfA++;
-        }
+        $this->assertRefused(static fn() => $b->start());
+        $a->resume();
 
         $resultA = $a->getReturn();
         self::assertInstanceOf(RateLimitResultDTO::class, $resultA);
-        self::assertSame(0, $failuresOfA);
-        self::assertSame(RateLimitResultDTO::DECISION_HARD_BLOCK, $resultA->decision, 'A had no backend failure of its own and is answered by the failure mode all the same.');
-        self::assertSame('FAIL_CLOSED', $resultA->failureMode);
-        self::assertSame([], $this->keyNames(), 'Nothing of A was saved.');
+        self::assertSame(0, $bCommands, 'B was refused before it sent any command, so no failure exists to cross.');
+        self::assertSame(RateLimitResultDTO::DECISION_ALLOW, $resultA->decision, 'A completes with its own answer.');
+        self::assertNotSame('FAIL_CLOSED', $resultA->failureMode);
+        self::assertNotSame([], $this->keyNames(), 'A saved its own effects.');
+        self::assertSame([], array_values(array_filter($this->keyNames(), static fn(string $key): bool => str_contains($key, ':circuit:'))), 'No circuit state was written.');
     }
 
-    // ---- 4. the same hazard across runtimes, and the isolated control ----------------------------------------------------------------
+    // ---- 4. runtimes that share one store object, and graphs that share nothing ------------------------------------------------------
 
-    public function testTwoRuntimesSharingOneStoreObjectShareTheRequestAndTheLossOfBWhenARejected(): void
+    public function testACallOnAnotherRuntimeSharingTheStoreObjectIsRefusedAtItsEntry(): void
     {
         $store = null;
         $runtimeA = $this->runtime(new FixedClock('@' . self::T0), new RecordingFailureSignalEmitter(), $store);
         $runtimeB = $this->runtime(new FixedClock('@' . self::T0), new RecordingFailureSignalEmitter(), $store);
-        [, $effectsOfB] = $this->sequentialControl();
         $a = new Fiber(fn() => $runtimeA->limit($this->context('acct-a'), RateLimitCommand::checkOnly('login_protection')));
         $b = new Fiber(fn() => $runtimeB->limit($this->context('acct-b'), RateLimitCommand::recordFailure('login_protection')));
-        $this->hook = $this->suspendAfterTheFirstHeldEvaluation($a, 'A');
+        [$afterAAlone] = $this->sequentialControl();
+        $bCommands = 0;
+        $this->hooks($this->suspendAfterTheFirstHeldEvaluation($a, 'A'), $this->countCommandsOf($b, $bCommands));
         $a->start();
         $before = $this->snapshot();
 
-        $b->start();
+        $this->assertRefused(static fn() => $b->start());
 
-        self::assertSame($before, $this->snapshot(), 'The store object carries the request: B, on another runtime, is held in the request of A.');
-        $this->hooks($this->rejectOnResume($a));
-        try {
-            $a->resume();
-            self::fail('Call A is rejected.');
-        } catch (RateLimiterException) {
-        }
-        self::assertSame([], array_values(array_intersect($effectsOfB, $this->keyNames())), 'The failure B reported was never recorded.');
-        self::assertSame(RateLimitResultDTO::DECISION_ALLOW, $this->decision($b));
+        self::assertSame($before, $this->snapshot());
+        self::assertSame(0, $bCommands);
+        $a->resume();
+        self::assertSame(RateLimitResultDTO::DECISION_ALLOW, $this->decision($a));
+        self::assertSame($afterAAlone, $this->keyNames());
     }
 
-    public function testTheHostClockOfTheOtherRuntimeSelectsTheTimestampOfItsEffectsWhenTheStoreIsShared(): void
+    public function testAfterTheCallInFlightEndsTheOtherRuntimeSharingTheStoreCarriesItsOwnClockReading(): void
     {
-        $clockA = new FixedClock('@' . self::T0);
         $clockB = new FixedClock('@' . self::T0);
         $store = null;
-        $runtimeA = $this->runtime($clockA, new RecordingFailureSignalEmitter(), $store);
+        $runtimeA = $this->runtime(new FixedClock('@' . self::T0), new RecordingFailureSignalEmitter(), $store);
         $runtimeB = $this->runtime($clockB, new RecordingFailureSignalEmitter(), $store);
         $a = new Fiber(fn() => $runtimeA->limit($this->context('acct-a'), RateLimitCommand::checkOnly('login_protection')));
         $b = new Fiber(fn() => $runtimeB->limit($this->context('acct-b'), RateLimitCommand::recordFailure('login_protection')));
         $this->hook = $this->suspendAfterTheFirstHeldEvaluation($a, 'A');
         $a->start();
-        // Only the clock of B's runtime moves; A's runtime keeps T0 and holds that reading.
         $clockB->setNow(new \DateTimeImmutable('@' . self::T1));
+        $this->assertRefused(static fn() => $b->start());
         $this->hook = null;
-
-        $b->start();
         $a->resume();
 
-        self::assertSame(RateLimitResultDTO::DECISION_ALLOW, $this->decision($a));
-        self::assertSame(RateLimitResultDTO::DECISION_ALLOW, $this->decision($b));
-        self::assertSame(
-            ['updatedAt=' . self::T1],
-            $this->storedStamps(['updatedAt']),
-            'The effects of B, saved by the request of A on the shared store, carry the reading of B\'s own Host clock (T1), not the T0 that A holds.',
-        );
+        $later = new Fiber(fn() => $runtimeB->limit($this->context('acct-b'), RateLimitCommand::recordFailure('login_protection')));
+        $later->start();
+
+        self::assertSame(['updatedAt=' . self::T1], $this->storedStamps(['updatedAt']), 'Runtime B\'s effects carry the reading of runtime B\'s own Host clock (T1); the wrong value would be T0.');
     }
 
     public function testRuntimesWithTheirOwnStoreAndClockDoNotShareARequest(): void
@@ -553,9 +617,8 @@ final class FiberRequestOwnershipRedisTest extends TestCase
         [, $effectsOfB] = $this->sequentialControl();
         $storeA = null;
         $storeB = null;
-        $clockA = new FixedClock('@' . self::T0);
         $clockB = new FixedClock('@' . self::T0);
-        $runtimeA = $this->runtime($clockA, new RecordingFailureSignalEmitter(), $storeA);
+        $runtimeA = $this->runtime(new FixedClock('@' . self::T0), new RecordingFailureSignalEmitter(), $storeA);
         $runtimeB = $this->runtime($clockB, new RecordingFailureSignalEmitter(), $storeB);
         $a = new Fiber(fn() => $runtimeA->limit($this->context('acct-a'), RateLimitCommand::checkOnly('login_protection')));
         $b = new Fiber(fn() => $runtimeB->limit($this->context('acct-b'), RateLimitCommand::recordFailure('login_protection')));
@@ -570,11 +633,7 @@ final class FiberRequestOwnershipRedisTest extends TestCase
         self::assertSame(['updatedAt=' . self::T1], $this->storedStamps(['updatedAt']), 'B is stamped with its own Host clock.');
         $afterB = $this->snapshot();
         $this->hooks($this->rejectOnResume($a));
-        try {
-            $a->resume();
-            self::fail('Call A is rejected.');
-        } catch (RateLimiterException) {
-        }
+        $this->assertNotRefusedButRejected(static fn() => $a->resume());
         self::assertSame($afterB, $this->snapshot(), 'The rejection of A leaves what B stored exactly as it was.');
     }
 
@@ -629,36 +688,259 @@ final class FiberRequestOwnershipRedisTest extends TestCase
     }
 
     #[\PHPUnit\Framework\Attributes\DataProvider('endingsOfTheHoldingCall')]
-    public function testARecoveryTransitionIsAnnouncedWhenAnotherCallReturnsAndBeforeItWasSaved(bool $holdingCallSaved): void
+    public function testARecoveryTransitionIsAnnouncedOnlyAfterItsSaveAndAnOverlappingCallIsRefused(bool $holdingCallSaved): void
     {
         [, $runtime, $signals] = $this->halfOpenCircuit();
         $a = new Fiber(fn() => $runtime->limit($this->context('acct-a'), RateLimitCommand::checkOnly('login_protection')));
         $b = new Fiber(fn() => $runtime->limit($this->context('acct-b'), RateLimitCommand::checkOnly('login_protection')));
         $this->hook = $this->suspendAfterTheFirstHeldEvaluation($a, 'A');
         $a->start();
-        self::assertSame([], array_map(static fn(FailureSignalDTO $signal): string => $signal->type, $signals->getEmitted()), 'A holds its recovery signal while it is unsaved.');
+        self::assertSame([], $this->emittedTypes($signals), 'A holds its recovery signal while it is unsaved.');
         $this->hook = null;
 
-        $b->start();
+        $this->assertRefused(static fn() => $b->start());
 
         self::assertSame('HALF_OPEN', $this->circuitStatus(), 'The recovery was not saved.');
-        self::assertSame(
-            [FailureSignalDTO::TYPE_CB_RECOVERED],
-            array_map(static fn(FailureSignalDTO $signal): string => $signal->type, $signals->getEmitted()),
-            'B ended its own request and released the signal A was holding: CB_RECOVERED left before any save.',
-        );
+        self::assertSame([], $this->emittedTypes($signals), 'The refused call released nothing: no signal left before any save.');
         if (! $holdingCallSaved) {
             $this->hooks($this->rejectOnResume($a));
-            try {
-                $a->resume();
-                self::fail('Call A is rejected.');
-            } catch (RateLimiterException) {
-            }
+            $this->assertNotRefusedButRejected(static fn() => $a->resume());
             self::assertSame('HALF_OPEN', $this->circuitStatus(), 'The circuit was never closed.');
-        } else {
+            self::assertSame([], $this->emittedTypes($signals), 'A rejected request announces nothing.');
+
+            return;
+        }
+        $a->resume();
+        self::assertSame(RateLimitResultDTO::DECISION_ALLOW, $this->decision($a));
+        self::assertSame('CLOSED', $this->circuitStatus(), 'A saved its recovery step.');
+        self::assertSame([FailureSignalDTO::TYPE_CB_RECOVERED], $this->emittedTypes($signals), 'Announced once, after the save.');
+    }
+
+    // ---- 6. windows the review named: owner without a transaction, commit window, claims, partial sharing, re-entrancy ------------------
+
+    public function testADirectTransactionWithoutWritesIsRefusedWhileACallIsSuspendedInTheHostClock(): void
+    {
+        $clock = new class ('@' . self::T0) extends FixedClock {
+            /** @var Fiber<mixed, mixed, mixed, mixed>|null */
+            public ?Fiber $suspendIn = null;
+
+            public bool $fired = false;
+
+            public function now(): \DateTimeImmutable
+            {
+                if ($this->suspendIn !== null && ! $this->fired && Fiber::getCurrent() === $this->suspendIn) {
+                    $this->fired = true;
+                    Fiber::suspend('A in the Host clock');
+                }
+
+                return parent::now();
+            }
+        };
+        $store = null;
+        $runtime = $this->runtime($clock, new RecordingFailureSignalEmitter(), $store);
+        self::assertInstanceOf(RedisFullCapabilityStore::class, $store);
+        $a = new Fiber(fn() => $runtime->limit($this->context('acct-a'), RateLimitCommand::checkOnly('login_protection')));
+        $clock->suspendIn = $a;
+        $a->start();
+        self::assertTrue($a->isSuspended(), 'A is suspended inside the Host clock, before any store transaction.');
+        $before = $this->snapshot();
+
+        $this->assertRefused(static fn() => $store->transactRequest(static fn(): int => 123), 'A direct transaction that would send no command is refused all the same.');
+        $this->assertRefused(static fn() => $runtime->limit(new RateLimitContextDTO(ip: '198.51.100.7', ua: 'fiber-260', accountId: 'acct-b'), RateLimitCommand::checkOnly('login_protection')));
+        self::assertSame($before, $this->snapshot());
+        $a->resume();
+
+        self::assertSame(RateLimitResultDTO::DECISION_ALLOW, $this->decision($a));
+    }
+
+    public function testACallArrivingInTheCommitWindowIsRefused(): void
+    {
+        [$a, $b, $runtime] = $this->overlapOnOneRuntime();
+        $store = null;
+        $this->hook = $this->suspendBeforeTheCommit($a);
+        $a->start();
+        self::assertTrue($a->isSuspended(), 'A is suspended just before its commit command.');
+        $before = $this->snapshot();
+
+        $this->assertRefused(static fn() => $b->start());
+        self::assertSame($before, $this->snapshot(), 'Nothing of A was saved and nothing of B was.');
+        $a->resume();
+
+        self::assertSame(RateLimitResultDTO::DECISION_ALLOW, $this->decision($a));
+        self::assertNotSame($before, $this->snapshot(), 'A saved its own request.');
+        unset($store, $runtime);
+    }
+
+    public function testAnOutcomeClaimAndAHealthCheckFromAnUnrelatedCallerAreRefused(): void
+    {
+        $store = null;
+        $this->runtime(new FixedClock('@' . self::T0), new RecordingFailureSignalEmitter(), $store);
+        self::assertInstanceOf(RedisFullCapabilityStore::class, $store);
+        $a = new Fiber(static fn(): bool => $store->acquireProbeLease('policy-a', self::T0, 120));
+        $this->hook = $this->suspendAtTheFirstCommand($a, 'before', 'A in the executor');
+        $a->start();
+        $before = $this->snapshot();
+
+        $this->assertRefused(static fn() => $store->claimAdmissionPermitWithOutcome('U', 'subject', 'login_protection', new AdmissionOutcomeDTO('login', AdmissionOutcomeKindEnum::FAILURE, [], 'permit-x'), self::T0), 'The claim stays its own atomic command for a legitimate caller; an unrelated caller is refused.');
+        $this->assertRefused(static fn() => $store->isHealthy());
+        self::assertSame($before, $this->snapshot());
+        $a->resume();
+    }
+
+    public function testGraphsThatShareOnlyTheCorrelationStoreOrOnlyTheCircuitStoreContend(): void
+    {
+        foreach (['correlation', 'circuit'] as $shared) {
+            $this->oracle->execute(['FLUSHDB']);
+            $make = fn(): RedisFullCapabilityStore => $this->standaloneStore();
+            $s1 = $make();
+            $s2 = $make();
+            $k1 = $shared === 'correlation' ? $make() : $make();
+            $k2 = $shared === 'correlation' ? $k1 : $make();
+            $b1 = $shared === 'circuit' ? $make() : $make();
+            $b2 = $shared === 'circuit' ? $b1 : $make();
+            $config = new RateLimiterConfig('test_secret', 'test_fp', 'prod');
+            $g1 = (new RateLimiterBuilder($config, $s1, $k1, $b1, new RecordingFailureSignalEmitter()))->withClock(new FixedClock('@' . self::T0))->build();
+            $g2 = (new RateLimiterBuilder($config, $s2, $k2, $b2, new RecordingFailureSignalEmitter()))->withClock(new FixedClock('@' . self::T0))->build();
+            $a = new Fiber(fn() => $g1->limit($this->context('acct-a'), RateLimitCommand::checkOnly('login_protection')));
+            $bCommands = 0;
+            $b = new Fiber(fn() => $g2->limit($this->context('acct-b'), RateLimitCommand::checkOnly('login_protection')));
+            $this->hooks($this->suspendAtTheFirstCommand($a, 'before', 'A in the executor'), $this->countCommandsOf($b, $bCommands));
+            $a->start();
+            self::assertTrue($a->isSuspended());
+            $before = $this->snapshot();
+
+            $this->assertRefused(static fn() => $b->start(), 'The graph that shares only the ' . $shared . ' store is refused on the shared object.');
+
+            self::assertSame(0, $bCommands, 'It was refused before any command.');
+            self::assertSame($before, $this->snapshot());
             $a->resume();
             self::assertSame(RateLimitResultDTO::DECISION_ALLOW, $this->decision($a));
+            $later = new Fiber(fn() => $g2->limit($this->context('acct-b'), RateLimitCommand::checkOnly('login_protection')));
+            $later->start();
+            self::assertSame(RateLimitResultDTO::DECISION_ALLOW, $this->decision($later), 'After A has ended the other graph runs.');
+            $this->hook = null;
         }
-        self::assertCount(1, $signals->getEmitted(), 'The announcement was already made; it was not made again.');
+    }
+
+    private function standaloneStore(): RedisFullCapabilityStore
+    {
+        $connection = new RespRedisCommandExecutor((string) getenv('REDIS_INTEGRATION_HOST'), (int) getenv('REDIS_INTEGRATION_PORT'));
+
+        return new RedisFullCapabilityStore(new CallableRedisCommandExecutor(function (array $command) use ($connection): mixed {
+            $hook = $this->hook;
+            if ($hook !== null) {
+                $hook($command, 'before');
+            }
+            $reply = $connection->execute($command);
+            if ($hook !== null) {
+                $hook($command, 'after');
+            }
+
+            return $reply;
+        }), 'fiber-260');
+    }
+
+    public function testACallMadeFromInsideTheExecutorOnTheSameStackIsRefused(): void
+    {
+        $store = null;
+        $runtime = $this->runtime(new FixedClock('@' . self::T0), new RecordingFailureSignalEmitter(), $store);
+        self::assertInstanceOf(RedisFullCapabilityStore::class, $store);
+        $inner = [];
+        $this->hook = function (array $command, string $phase) use ($runtime, $store, &$inner): void {
+            if ($phase === 'before' && $inner === []) {
+                $inner = [
+                    $this->refusalOf(fn() => $runtime->limit($this->context('re-entrant'), RateLimitCommand::checkOnly('login_protection'))),
+                    $this->refusalOf(static fn() => $store->isHealthy()),
+                ];
+            }
+        };
+
+        $result = $runtime->limit($this->context('acct-a'), RateLimitCommand::checkOnly('login_protection'));
+
+        self::assertSame([self::REFUSAL, self::REFUSAL], $inner, 'Re-entrant calls from the executor, on the owner\'s own stack, are refused.');
+        self::assertSame(RateLimitResultDTO::DECISION_ALLOW, $result->decision, 'The call in flight is unaffected.');
+    }
+
+    public function testACallMadeFromInsideTheSignalEmitterIsRefusedBecauseTheOwnerIsReleasedLast(): void
+    {
+        $emitted = new class extends RecordingFailureSignalEmitter {
+            /** @var (callable(): void)|null */
+            public $onEmit = null;
+
+            public function emit(FailureSignalDTO $signal): void
+            {
+                parent::emit($signal);
+                if ($this->onEmit !== null) {
+                    ($this->onEmit)();
+                }
+            }
+        };
+        $clock = new FixedClock('@999000');
+        $store = null;
+        $runtime = $this->runtime($clock, $emitted, $store);
+        $this->hook = static function (array $command, string $phase): void {
+            if ($phase === 'before' && self::isScript($command, '__ov_result')) {
+                throw new BackendFailureException('Test outage.');
+            }
+        };
+        for ($i = 0; $i < 3; $i++) {
+            $clock->setNow(new \DateTimeImmutable('@' . (999_000 + $i)));
+            $runtime->limit($this->context('outage-' . $i), RateLimitCommand::checkOnly('login_protection'));
+        }
+        $this->hook = null;
+        $clock->setNow(new \DateTimeImmutable('@999400'));
+        $runtime->limit($this->context('first-probe'), RateLimitCommand::checkOnly('login_protection'));
+        $clock->setNow(new \DateTimeImmutable('@999530'));
+        $emitted->clear();
+        $refusals = [];
+        $emitted->onEmit = function () use ($runtime, &$refusals): void {
+            $refusals[] = $this->refusalOf(fn() => $runtime->limit($this->context('from-the-emitter'), RateLimitCommand::checkOnly('login_protection')));
+        };
+
+        $runtime->limit($this->context('acct-a'), RateLimitCommand::checkOnly('login_protection'));
+
+        self::assertSame([FailureSignalDTO::TYPE_CB_RECOVERED], $this->emittedTypes($emitted));
+        self::assertSame([self::REFUSAL], $refusals, 'The slots are released after the signals: a call made from the emitter is refused.');
+    }
+
+    public function testAnOverlapRefusalInsideATransactionIsNotRetriedAndIsNotACircuitReport(): void
+    {
+        $store = null;
+        $this->runtime(new FixedClock('@' . self::T0), new RecordingFailureSignalEmitter(), $store);
+        self::assertInstanceOf(RedisFullCapabilityStore::class, $store);
+        $evaluations = 0;
+        $this->hook = static function (array $command, string $phase) use ($store): void {
+            if ($phase === 'before') {
+                $store->isHealthy(); // re-entrant from the executor: refused, and the exception leaves the hook
+            }
+        };
+
+        $class = $this->refusalOf(static function () use ($store, &$evaluations): void {
+            $store->transactRequest(static function () use ($store, &$evaluations): void {
+                $evaluations++;
+                $store->acquireProbeLease('x', self::T0, 120);
+            });
+        });
+
+        self::assertSame(self::REFUSAL, $class, 'The refusal reaches the caller unchanged.');
+        self::assertSame(1, $evaluations, 'It was not retried as a conflict over stale state.');
+        self::assertSame([], $this->keyNames(), 'Nothing was saved and no circuit state was written.');
+    }
+
+    public function testADestroyedSuspendedFiberReleasesTheOwnershipAndALaterCallRuns(): void
+    {
+        $store = null;
+        $this->runtime(new FixedClock('@' . self::T0), new RecordingFailureSignalEmitter(), $store);
+        self::assertInstanceOf(RedisFullCapabilityStore::class, $store);
+        $a = new Fiber(static fn(): bool => $store->acquireProbeLease('policy-a', self::T0, 120));
+        $this->hook = $this->suspendAtTheFirstCommand($a, 'before', 'A in the executor');
+        $a->start();
+        $this->assertRefused(static fn() => $store->acquireProbeLease('policy-b', self::T0, 120));
+
+        $this->hook = null;
+        unset($a);
+        gc_collect_cycles();
+
+        self::assertTrue($store->acquireProbeLease('policy-b', self::T0, 120), 'Destroying the suspended Fiber unwound it and released its slots.');
     }
 }

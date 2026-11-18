@@ -40,7 +40,7 @@ use Maatify\SharedCommon\Contracts\ClockInterface;
  * @internal Constructed by `RateLimiterBuilder` with `AdmissionBudgetsDTO::packageDefaults()` when a registered policy
  * declares the capability; not part of the supported public surface.
  */
-final class AdmissionRuntime
+final class AdmissionRuntime implements OwnedResources
 {
     private const DAY = 86400;
     private const TOKEN_VERSION = 1;
@@ -582,5 +582,11 @@ final class AdmissionRuntime
     private function now(): int
     {
         return $this->clock->now()->getTimestamp();
+    }
+
+    /** @return list<object> */
+    public function ownedResources(): array
+    {
+        return OwnershipRegistry::collect([$this->store, $this->clock]);
     }
 }

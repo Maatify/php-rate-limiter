@@ -11,7 +11,7 @@ use Maatify\SharedCommon\Contracts\ClockInterface;
 /**
  * Reads and updates the fixed-duration account budget epoch.
  */
-class BudgetTracker
+class BudgetTracker implements OwnedResources
 {
     private const EPOCH_DURATION = 86400; // 24h
 
@@ -58,5 +58,11 @@ class BudgetTracker
             }
         }
         return false;
+    }
+
+    /** @return list<object> */
+    public function ownedResources(): array
+    {
+        return OwnershipRegistry::collect([$this->store, $this->clock]);
     }
 }

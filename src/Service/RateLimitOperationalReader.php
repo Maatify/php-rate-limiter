@@ -34,6 +34,12 @@ use Maatify\SharedCommon\Contracts\ClockInterface;
  */
 final class RateLimitOperationalReader implements RateLimitOperationalReaderInterface
 {
+    /** @var list<object> DEC-041: the resources every independent call of this entry owns. */
+    private readonly array $resources;
+
+    /** DEC-041: the context domain they are bound to; holds its provider for the lifetime of this object. */
+    private readonly ContextDomain $domain;
+
     private const BUDGET_EPOCH_SECONDS = 86400;
 
     /**
@@ -72,6 +78,8 @@ final class RateLimitOperationalReader implements RateLimitOperationalReaderInte
         if ($previousKeySecret !== null && trim($previousKeySecret) === '') {
             throw new RateLimiterException('Previous key secret must not be empty or whitespace-only.');
         }
+        $this->resources = OwnershipRegistry::collect([$this->store, $this->circuitBreakerStore, $this->clock]);
+        $this->domain = OwnershipRegistry::adopt($this->resources);
     }
 
     /**
@@ -85,6 +93,19 @@ final class RateLimitOperationalReader implements RateLimitOperationalReaderInte
      * lane before the admission runtime exists.
      */
     public function read(
+        RateLimitContextDTO $context,
+        BlockPolicyInterface $policy,
+        ?AdmissionLaneEnum $lane = null,
+    ): RateLimitOperationalSnapshotDTO {
+        $scope = OwnershipRegistry::acquire($this->resources, 'read', $this->domain);
+        try {
+            return $this->readOwned($context, $policy, $lane);
+        } finally {
+            $scope->release();
+        }
+    }
+
+    private function readOwned(
         RateLimitContextDTO $context,
         BlockPolicyInterface $policy,
         ?AdmissionLaneEnum $lane = null,

@@ -4,6 +4,8 @@ declare(strict_types=1);
 
 namespace Maatify\RateLimiter\Builder;
 
+use Maatify\RateLimiter\Contract\ExecutionContextProviderInterface;
+use Maatify\RateLimiter\Service\OwnershipRegistry;
 use DateTimeZone;
 use Maatify\RateLimiter\Config\ApiHeavyProtectionPolicy;
 use Maatify\RateLimiter\Config\BlockPolicyInterface;
@@ -79,6 +81,8 @@ final class RateLimiterBuilder
 
     private ?int $provenPendingPermitLimit = null;
 
+    private ?ExecutionContextProviderInterface $contextProvider = null;
+
     /** @var array<string, BlockPolicyInterface> */
     private array $policies;
 
@@ -123,6 +127,19 @@ final class RateLimiterBuilder
             $store,
             $failureSignalEmitter,
         );
+    }
+
+    /**
+     * Use a Host execution-context provider (DEC-041). Optional: PHP Fibers are recognised without one. Only a scheduler whose contexts
+     * are not Fibers needs it. Share ONE provider instance among every graph and every directly used package store of that scheduler:
+     * a store, clock or breaker is bound to one context domain, and building a graph over a resource already bound to another
+     * provider (or to the default domain) fails with a configuration error before anything is owned or called.
+     */
+    public function withExecutionContextProvider(ExecutionContextProviderInterface $provider): self
+    {
+        $this->contextProvider = $provider;
+
+        return $this;
     }
 
     /**
@@ -238,28 +255,39 @@ final class RateLimiterBuilder
             $this->failureSignalEmitter,
             $clock,
         );
-
-        $scoreRuntime = new RateLimiterEngine(
-            $deviceIdentityResolver,
-            $evaluationPipeline,
-            $circuitBreaker,
-            new FailureModeResolver(),
-            $this->failureSignalEmitter,
-            $clock,
-            array_values($this->policies),
-            $this->admissionRuntime($clock),
+        // DEC-041: the whole resource set of the graph is bound to one context domain, or the build fails without binding anything.
+        $binding = OwnershipRegistry::bindAll(
+            OwnershipRegistry::collect([$this->rateLimitStore, $this->correlationStore, $this->circuitBreakerStore, $clock, $circuitBreaker]),
+            $this->contextProvider,
         );
 
-        $simpleRuntime = new FixedWindowSimpleRateLimiter(
-            array_values($this->simpleThrottlePolicies),
-            $this->rateLimitStore,
-            $clock,
-            $this->config->keySecret(),
-            $this->config->environmentScope(),
-            $this->config->previousKeySecret(),
-        );
+        try {
+            $scoreRuntime = new RateLimiterEngine(
+                $deviceIdentityResolver,
+                $evaluationPipeline,
+                $circuitBreaker,
+                new FailureModeResolver(),
+                $this->failureSignalEmitter,
+                $clock,
+                array_values($this->policies),
+                $this->admissionRuntime($clock),
+            );
 
-        return new CompositeRateLimiterRuntime($scoreRuntime, $simpleRuntime);
+            $simpleRuntime = new FixedWindowSimpleRateLimiter(
+                array_values($this->simpleThrottlePolicies),
+                $this->rateLimitStore,
+                $clock,
+                $this->config->keySecret(),
+                $this->config->environmentScope(),
+                $this->config->previousKeySecret(),
+            );
+
+            return new CompositeRateLimiterRuntime($scoreRuntime, $simpleRuntime);
+        } catch (\Throwable $failure) {
+            // A build that fails after its resources were bound leaves no binding of its own behind.
+            OwnershipRegistry::rollback($binding);
+            throw $failure;
+        }
     }
 
     /**
@@ -294,6 +322,8 @@ final class RateLimiterBuilder
 
         $clock = $this->clock ?? new SystemClock(new DateTimeZone('UTC'));
         $deviceIdentityResolver = $this->deviceIdentityResolver ?? $this->defaultDeviceIdentityResolver();
+        // DEC-041: the readers' resources are the rate-limit store and the circuit-breaker store; their clock is the Host clock as before.
+        OwnershipRegistry::bindAll(OwnershipRegistry::collect([$this->rateLimitStore, $this->circuitBreakerStore]), $this->contextProvider);
 
         $scoreReader = new RateLimitOperationalReader(
             $deviceIdentityResolver,

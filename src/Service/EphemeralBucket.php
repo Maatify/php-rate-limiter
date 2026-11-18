@@ -17,7 +17,7 @@ use Maatify\SharedCommon\Contracts\ClockInterface;
 /**
  * Classifies new device-cap overflows without owning raw identity material.
  */
-class EphemeralBucket
+class EphemeralBucket implements OwnedResources
 {
     private const MAX_DEVICES_PER_ACCOUNT = 10;
     private const MAX_DEVICES_PER_IP = 50;
@@ -137,5 +137,11 @@ class EphemeralBucket
         BoundedCorrelationResultValidator::count($result, $maxDistinct);
 
         return $result;
+    }
+
+    /** @return list<object> */
+    public function ownedResources(): array
+    {
+        return OwnershipRegistry::collect([$this->store, $this->clock]);
     }
 }

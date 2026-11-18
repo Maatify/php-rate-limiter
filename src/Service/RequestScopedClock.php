@@ -17,7 +17,7 @@ use Maatify\SharedCommon\Contracts\ClockInterface;
  *
  * @internal Built by RateLimiterBuilder; not a public extension point.
  */
-final class RequestScopedClock implements ClockInterface
+final class RequestScopedClock implements ClockInterface, OwnedResources
 {
     private ?DateTimeImmutable $held = null;
 
@@ -37,7 +37,8 @@ final class RequestScopedClock implements ClockInterface
             return $operation();
         }
 
-        $this->held = $this->hostClock->now();
+        // DEC-041: the Host clock is a crossing of the call that owns this clock.
+        $this->held = OwnershipRegistry::crossing($this, fn(): DateTimeImmutable => $this->hostClock->now());
         try {
             return $operation();
         } finally {
@@ -47,7 +48,13 @@ final class RequestScopedClock implements ClockInterface
 
     public function now(): DateTimeImmutable
     {
-        return $this->held ?? $this->hostClock->now();
+        return $this->held ?? OwnershipRegistry::crossing($this, fn(): DateTimeImmutable => $this->hostClock->now());
+    }
+
+    /** @return list<object> */
+    public function ownedResources(): array
+    {
+        return [$this];
     }
 
     public function getTimezone(): DateTimeZone

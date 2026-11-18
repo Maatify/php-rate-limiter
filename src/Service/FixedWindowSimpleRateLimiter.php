@@ -31,6 +31,12 @@ use Maatify\SharedCommon\Contracts\ClockInterface;
  */
 final class FixedWindowSimpleRateLimiter implements SimpleRateLimiterInterface
 {
+    /** @var list<object> DEC-041: the resources every independent call of this entry owns. */
+    private readonly array $resources;
+
+    /** DEC-041: the context domain they are bound to; holds its provider for the lifetime of this object. */
+    private readonly ContextDomain $domain;
+
     /** @var array<string, SimpleThrottlePolicyInterface> */
     private readonly array $policies;
 
@@ -77,6 +83,8 @@ final class FixedWindowSimpleRateLimiter implements SimpleRateLimiterInterface
             $indexed[$policy->getName()] = $policy;
         }
         $this->policies = $indexed;
+        $this->resources = OwnershipRegistry::collect([$this->store, $this->clock]);
+        $this->domain = OwnershipRegistry::adopt($this->resources);
     }
 
     private static function assertValidPolicy(SimpleThrottlePolicyInterface $policy): void
@@ -105,6 +113,16 @@ final class FixedWindowSimpleRateLimiter implements SimpleRateLimiterInterface
      *     any other throwable from the store propagates unchanged.
      */
     public function consume(string $policyName, string $subject, int $cost = 1): SimpleRateLimitResultDTO
+    {
+        $scope = OwnershipRegistry::acquire($this->resources, 'consume', $this->domain);
+        try {
+            return $this->consumeOwned($policyName, $subject, $cost);
+        } finally {
+            $scope->release();
+        }
+    }
+
+    private function consumeOwned(string $policyName, string $subject, int $cost = 1): SimpleRateLimitResultDTO
     {
         $policy = $this->policies[$policyName] ?? null;
         if ($policy === null) {

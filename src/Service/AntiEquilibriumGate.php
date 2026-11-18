@@ -10,7 +10,7 @@ use Maatify\SharedCommon\Contracts\ClockInterface;
 /**
  * Tracks repeated soft blocks and escalates persistent account-level patterns.
  */
-class AntiEquilibriumGate
+class AntiEquilibriumGate implements OwnedResources
 {
     private const WINDOW = 21600; // 6h
     private const THRESHOLD = 3;
@@ -55,5 +55,11 @@ class AntiEquilibriumGate
         }
 
         return $count >= self::THRESHOLD;
+    }
+
+    /** @return list<object> */
+    public function ownedResources(): array
+    {
+        return OwnershipRegistry::collect([$this->store, $this->clock]);
     }
 }

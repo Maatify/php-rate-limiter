@@ -25,6 +25,12 @@ use Maatify\SharedCommon\Contracts\ClockInterface;
  */
 final class SimpleRateLimitOperationalReader implements SimpleRateLimitOperationalReaderInterface
 {
+    /** @var list<object> DEC-041: the resources every independent call of this entry owns. */
+    private readonly array $resources;
+
+    /** DEC-041: the context domain they are bound to; holds its provider for the lifetime of this object. */
+    private readonly ContextDomain $domain;
+
     /** @var array<string, SimpleThrottlePolicyInterface> */
     private readonly array $policies;
 
@@ -71,6 +77,8 @@ final class SimpleRateLimitOperationalReader implements SimpleRateLimitOperation
             $indexed[$policy->getName()] = $policy;
         }
         $this->policies = $indexed;
+        $this->resources = OwnershipRegistry::collect([$this->store, $this->clock]);
+        $this->domain = OwnershipRegistry::adopt($this->resources);
     }
 
     private static function assertValidPolicy(SimpleThrottlePolicyInterface $policy): void
@@ -103,6 +111,16 @@ final class SimpleRateLimitOperationalReader implements SimpleRateLimitOperation
      *     contract failure is not converted to an enforcement result.
      */
     public function read(string $policyName, string $subject): SimpleRateLimitOperationalSnapshotDTO
+    {
+        $scope = OwnershipRegistry::acquire($this->resources, 'read', $this->domain);
+        try {
+            return $this->readOwned($policyName, $subject);
+        } finally {
+            $scope->release();
+        }
+    }
+
+    private function readOwned(string $policyName, string $subject): SimpleRateLimitOperationalSnapshotDTO
     {
         $policy = $this->policies[$policyName] ?? null;
         if ($policy === null) {
