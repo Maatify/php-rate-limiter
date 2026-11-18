@@ -1,4 +1,4 @@
-# #260 — Design proposal: exclusive request ownership and explicit refusal of an overlapping call (revision 2)
+# #260 — Design proposal: exclusive request ownership and explicit refusal of an overlapping call (revision 3)
 
 **Status of this document: a design proposal for review. Nothing here is implemented, and nothing here except the principle of DEC-041 is approved.**
 It authorizes no change to `src/`, interfaces, DTOs, exceptions, Lua, tests, runners, Composer, workflows, the pin or defaults. No prototype was built, nothing was executed to produce this revision, and every statement about cost is an estimate.
@@ -7,13 +7,14 @@ Markers: **[APPROVED]** the principle of [DEC-041](../../docs/decisions/DEC-041_
 
 Baseline: `main@316b1de99e784fec95b40f849d83a04dec772e2b` (tree `fe75547412fcb21b695644b21b86b387fc26bd31`). Accepted evidence: [PR #266](https://github.com/Maatify/php-rate-limiter/pull/266) at `515b09f02396ddf41a137d54eba147d5f3ed6ca5` (`RESULTS.md`, `FiberRequestOwnershipRedisTest`, 14 characterization tests on PHP_INT_SIZE 8 and 4). #258 (outcome claim as its own command) and #259 (fallback allowance charged once from the chosen answer) are taken as given.
 
-## 0. What changed from revision 1 (head `e209253a`) and which review finding each change closes
+## 0. What changed and which review finding each change closes (revision 1 = `e209253a`, revision 2 = `1c1329db`, revision 3 = this file)
 
 | Review finding | Revision 1 | Revision 2 |
 | --- | --- | --- |
 | F266-05: crossing depth alone cannot tell a legitimate nested call from an independent call when a direct `transactRequest($evaluate)` callback suspends | O-8 left that case unrefused and replaced test 1 with an easier variant | The owner carries an **execution-context identity** (default: the current Fiber, optional Host provider). A call is nested only if it comes from **the owner's context and no Host crossing is open**; crossing markers are a supplementary guard, not the proof. Case 1 stays a required **refused** case; the callback contract is enumerated (3.7) |
 | F266-06: checks keyed on `requestState`, direct capabilities and claims exempt, owner without a transaction unguarded | `requestState !== null` as the independence test; claims and PING exempt | Admission is decided from the **owner state of the resource**, never from `requestState`; **every backend operation is admitted** (a direct capability, claim or PING included) with a complete call lifetime; only pure local getters are exempt, with a reason (sections 3.5, 4) |
 | F266-07: one unspecified store slot; the Builder accepts separate rate-limit, correlation and circuit stores | "the store" had the owner slot; stores without the capability were documented as unprotected | Ownership is per **resource object**; an entry acquires the deduplicated set of every store, clock and breaker object its graph uses, all-or-none and in canonical order, **before the first Host call or write**; partially shared graphs contend on the shared object. One primary behaviour for stores without cooperation: **every graph entry protects them** (3.2, 5) |
+| F266-09 (revision 3): the provider is not bound to graphs, direct calls or shared resources; it runs before any reservation; its keys have no stability or retention contract; and the reader inventory named a clock the Builder does not create | revision 2 left `provider.current()` inside `acquire()` with no association rule | Each resource is bound to **one context domain** (a provider instance or the default Fiber domain) at construction time and the binding is immutable and checked, with a fail-fast on any mismatch (3.4); identity lookup runs **after a provider-free reservation** and under a lookup marker, with a restricted provider contract and a classified failure (3.3, 3.4); the identity contract fixes stability, equality, reuse and retention, and a token holds no strong reference to its resources or to an object context (3.3, 3.4); the reader inventory is corrected (4, 5.1) |
 | F266-08: a public Host interface returning the concrete `CallOwnership` | `CallOwnershipStoreInterface` | **Removed.** The coordinator is package-owned and keyed by object identity, so no Host store has to implement or construct anything. The only public additions are an exception class and an **optional** context-provider interface (3.6, 8) |
 
 ## 1. What the design has to achieve
@@ -33,7 +34,7 @@ Out of scope: Redis conflicts between valid requests of separate graphs or proce
 - **Logical request (a call).** Everything one independent call does from acquisition to release: every attempt of `transactRequest()`, the abandoned attempts, the recovery step and its sequential repetition, the pipeline, the admission scripts, the breaker's report, the release of held signals, the final fallback charge and the clearing of the clock reading.
 - **Execution context.** The identity of the stack of control that is running: a Fiber, a coroutine, or the main stack.
 - **Host crossing.** The library calling code it does not own: the Redis executor, the signal emitter, the Host clock, the device identity resolver, and policy callbacks.
-- **Owner / token.** The single `CallToken` a call holds on every resource of its set while it is in flight. It records the owner's execution context and a counter of open Host crossings.
+- **Owner / token.** The single `CallToken` a call holds on every resource of its set while it is in flight. It records the owner's context domain, the owner's execution context (resolved after a provider-free reservation), a state (reserved, owned, released) and a counter of open Host crossings. It holds **no strong reference** to its resources or to an object context.
 - **Nested operation.** An operation made on a resource owned by the caller's own token, from **the owner's execution context while no Host crossing of that token is open**.
 
 ## 3. Recommended mechanism (one): resource-set ownership with execution-context identity, supplemented by Host-crossing markers [PROPOSED]
@@ -62,44 +63,90 @@ The two do not replace each other: identity is the proof that a call is nested; 
 - **Package-owned coordinator.** `OwnershipRegistry` is an internal class holding a process-wide `WeakMap` from a resource object to its current `CallToken` (or none). It is keyed by object identity, so two graphs that share an object contend on the same slot with no cooperation from that object. It is not a public type; no Host store implements or constructs anything. A resource object that is garbage-collected drops out of the map by itself, so a long-lived worker does not accumulate entries.
 - **Resource discovery.** Each package class that is a public entry or a collaborator exposes an `@internal` method that returns the resources it owns or reaches (`ownedResources(): list<object>`), computed at construction from its collaborators and deduplicated by object identity. Entry classes combine the sets of their collaborators. Consequently an entry class constructed **directly** (without the Builder) is protected exactly like a Builder-built one; no optional constructor parameter is needed.
 - **Stores that do not cooperate.** A Host-implemented store is a resource like any other: every graph entry that uses it acquires its slot, so two graphs sharing it are protected **at the graph entries** without the store doing anything. This is the one primary behaviour for stores without cooperation.
+- **Context domain.** Next to its slot, every resource has a **context domain**: the provider instance (or the default Fiber domain) whose identities are valid for it. The domain is bound once, when the resource is first resolved by an entry class or by a package-owned store, and never changes (3.4).
 - **Package-owned stores admit their own direct calls.** `RedisFullCapabilityStore` calls the registry for `$this` at its own entries (3.5), so a direct overlapping call to it is refused too.
 
-### 3.3 Acquisition, refusal and release (all-or-none) [PROPOSED]
+### 3.3 Acquisition in two phases, refusal and release (all-or-none) [PROPOSED]
+
+The provider is Host code (3.4), so the entry must not call it before it has reserved anything. Acquisition therefore has two phases, and **no Host call happens in phase 0**:
 
 ```text
-acquire(resources, entry):                    // a public entry; before the clock, the breaker, any Host call or any write
+acquire(resources, entry, domain):            // a public entry
     set   = dedupe(resources) ordered by a fixed canonical order (object id)
-    token = new CallToken(context = provider.current(), hostDepth = 0)
+    token = new CallToken(domain, state = Reserved)       // no context yet, nothing resolved
+    // phase 0: provider-free reservation, all-or-none
     taken = []
     for r in set:
-        if registry.owner(r) != none:         // any owner, whoever it is
-            for t in reverse(taken): registry.clear(t, token)   // only slots this call took; never another owner's
-            throw OverlappingRequestException(entry)
-        registry.set(r, token); taken.push(r)
+        assert registry.domainOf(r) === domain             // bound at construction; a mismatch was already refused there
+        if registry.slot(r) is occupied OR registry.slot(r).lookup > 0:   // an owner, a reservation, or a lookup in progress
+            for t in reverse(taken): registry.clear(r, token)             // only slots this call took; never another call's
+            throw OverlappingRequestException(entry)       // refused WITHOUT having called the provider
+        registry.reserve(r, token); taken.push(r)
+    // phase 1: identity lookup, under the reservation
+    try:
+        token.open crossing                                // the provider call is a Host crossing of this call
+        registry.lookupBegin(set)                          // any other call on these slots is refused while the provider runs
+        key = domain.provider.currentContext()             // Host code
+    catch Throwable e:                                     // the provider threw (or the lookup failed)
+        release(token, set)                                // unwinds its own reservations only
+        throw new RateLimiterException('The execution context provider failed.', previous: e)   // not a BackendFailureException
+    finally: registry.lookupEnd(set); token.close crossing
+    token.context = retain(key); token.state = Owned
     return token
 ```
 
+- **Why this ordering.** A provider that re-enters the library while its outer lookup runs reaches an entry whose slots are reserved, so the busy check refuses it **before** the provider is called again; there is no recursion. A provider that yields during the lookup leaves the slots reserved and under lookup, so any other call is refused. A provider that throws unwinds exactly the reservations of its own call.
 - **No partial hold.** A refused acquisition leaves every slot exactly as it found it; it clears only what the refused call itself took, never another call's slot. A third call can acquire the resources a refused call briefly held.
 - **Deduplication.** The aggregate store passed as rate-limit, correlation and circuit-breaker store is one resource; it is acquired once, so a call cannot refuse itself.
 - **Canonical order** makes the sequence deterministic; with a single-threaded runtime it also removes any ordering dependence between two graphs that share part of their sets.
-- **Release.** At the outermost `finally` of the entry, in reverse order of acquisition, after everything else the call held has been released: (1) held signals are released (emission is a Host crossing; the owner is still set), (2) the clock reading is cleared, (3) the slots are cleared, last. `release` is idempotent for a released token and refuses to clear a slot that does not hold the caller's token (an internal integrity error, never releasing another owner's slot).
+- **Release.** At the outermost `finally` of the entry, in reverse order of acquisition, after everything else the call held has been released: (1) held signals are released (emission is a Host crossing; the owner is still set), (2) the clock reading is cleared, (3) the slots are cleared, last. `release(token, set)` takes the set from the **entry's own frame** (the entry holds its collaborators anyway), clears only the slots whose recorded token is this token, is idempotent for a released token, and treats a slot that holds another token as an internal integrity error, never releasing it.
 
-### 3.4 Execution-context identity [PROPOSED; the provider is APPROVAL M2]
+### 3.4 Execution-context identity: domain, association, provider contract, identity contract [PROPOSED; APPROVAL M2]
 
-- **Default provider (package-owned, no Host action):** `Fiber::getCurrent()`. The token stores a `WeakReference` to that Fiber (or a marker for the main stack) and compares identity with `===`. It does not use `spl_object_id`, so a reused id cannot match a different Fiber.
-- **Optional Host provider** for schedulers whose contexts are not PHP Fibers (a coroutine extension, for example):
+**A. One context domain per resource, bound at construction, immutable.**
+
+- A **domain** is either the **default Fiber domain** or one **provider instance** (`===`). Identities of different domains are never compared: equal strings or objects from two providers have no cross-provider meaning.
+- **Binding.** A resource is bound to a domain by `bindDomain(resource, domain)`: if the resource is unbound the domain is recorded; if it is bound to an equal domain the call is a no-op; if it is bound to a different domain the call **fails fast** with a `RateLimiterException` (a configuration error naming the resource class and that two context domains were requested), at the moment the second binding is attempted.
+- **Where binding happens.** (1) When an entry class is constructed (`RateLimiterEngine`, `FixedWindowSimpleRateLimiter`, the readers), it binds **every resource of its set** to the domain of its configuration, so an incompatible graph fails at **build time**, not at the first call. (2) When a package-owned store is constructed, a configured provider is recorded for it; a store with none is unbound until first resolved. (3) A package-owned store resolved by a direct call while unbound binds to its own configured domain, or to the default domain if none was configured. Nothing ever falls back silently to the main context or to another provider: a direct call whose store is bound to a provider that has since been collected fails fast the same way.
+- **Immutability.** A domain is bound for the lifetime of the resource object. There is no setter, so a live owner's domain cannot be reconfigured, and a domain cannot change between calls either.
+- **Mixed sharing.** Default + default: allowed. Custom provider P + the same instance P: allowed. Default + custom, or two different provider instances (even two instances of the same class): **refused at the second binding**, for graphs, for a graph and a direct store, and for two direct users. A Host that runs several graphs on one scheduler shares **one provider instance** among them.
+- **Configuration paths (public, additive, optional).**
+  - Graphs: `RateLimiterBuilder::withExecutionContextProvider(ExecutionContextProviderInterface $provider): self`.
+  - Standalone direct use of a package-owned store, without a Builder: an additional optional constructor parameter of `RedisFullCapabilityStore` (`?ExecutionContextProviderInterface $executionContext = null`, default the Fiber domain). A Host that writes its own store gets protection only at graph entries (3.2) and has nothing to configure.
+- **What the registry holds.** Per resource, a record `{domain, slot}` where `domain` holds the provider by **`WeakReference`** (the graph, which holds the provider strongly through its entry classes, keeps it alive), never a strong reference that could pin the resource.
+
+**B. The provider is Host code and runs only after a provider-free reservation (3.3).** Contract of `ExecutionContextProviderInterface` (public, proposed, optional):
 
 ```php
 interface ExecutionContextProviderInterface
 {
-    /** @return int|string|object|null opaque identity of the running execution context; equal only for the same context while it lives */
+    /**
+     * Identity of the execution context that is running now. MUST be synchronous and cheap; MUST NOT call the library, suspend,
+     * yield or switch context; MUST NOT throw. The returned key is equal (===) for the same live context in every call and
+     * different for every other live context of the same provider. Keys of different providers are never compared.
+     *
+     * @return int|string|object|null
+     */
     public function currentContext(): int|string|object|null;
 }
-// RateLimiterBuilder::withExecutionContextProvider(ExecutionContextProviderInterface $provider): self   (optional, default: the Fiber provider)
 ```
 
-- **Honest limit:** without a provider, a non-Fiber scheduler's contexts all look like the main stack, so identity cannot separate them; the crossing marker still refuses overlapping calls that arrive while the owner is inside a guarded crossing (executor, emitter, clock, resolver). What it cannot refuse is overlap that happens inside an unguarded Host callback of a non-Fiber scheduler (3.7). The mechanism does not claim to recognize every coroutine implementation from `Fiber::getCurrent()`.
-- **Compatibility.** A Host on ordinary sequential PHP or on Fibers changes nothing. The provider is optional and additive.
+- **Re-entry** (the provider calls the library) is refused by the busy check before the provider is called again, because the slots are reserved and under lookup (3.3). **Yielding** cannot be detected, but it only leaves reservations in place, which refuse every other call; the contract forbids it. **Throwing** unwinds the call's own reservations and surfaces as a `RateLimiterException` whose `previous` is the provider's exception; it is never a `BackendFailureException`, never reaches the circuit breaker and never consumes fallback.
+- **Admission on a nested path.** `admit()` must not call the provider before an existing owner or reservation can refuse: it first reads the slot; a reserved slot, a slot under lookup, or a missing owner is decided **without** calling the provider; only an owned slot with a resolved context needs the caller's identity, and that single provider call runs under the same lookup marker, so a re-entrant or interleaved call is refused instead of recursing.
+
+**C. Identity contract for the key** `int|string|object|null`:
+
+- **Stability.** For one live context, every call to the provider returns an `===`-equal key for as long as the context lives.
+- **Equality and domain.** Keys are compared with `===` and only inside one domain.
+- **Reuse.** A provider must not return an equal key for two live contexts, and may reuse a key only after the context that had it has ended. In PHP a context that ends releases its owner by unwinding first, so a reused key cannot meet a live owner unless the provider breaks the contract (the consequence of that violation, a silent join of two contexts, is a Host obligation and is stated in 3.8).
+- **Retention.** The token keeps an `int` or `string` key by value and an `object` key (and the default Fiber) only by `WeakReference`, so a token never keeps an execution context alive. If the weakly held context has expired while its owner still holds a slot, the comparison is **not equal** for every caller: the caller is refused (never treated as nested), and the slot clears when the owner unwinds.
+- **`null`** is the main stack (or "no context") of that domain.
+
+**D. Default domain (no Host action).** `Fiber::getCurrent()`: the token holds a `WeakReference` to the Fiber or a marker for the main stack, compared with `===`; `spl_object_id` is never used, so a reused id cannot match another Fiber.
+
+**Honest limit.** Without a provider, a non-Fiber scheduler's contexts all look like the main stack, so identity cannot separate them; the crossing marker still refuses overlapping calls that arrive while the owner is inside a guarded crossing (executor, emitter, clock, resolver). What it cannot refuse is overlap that happens inside an unguarded Host callback of a non-Fiber scheduler (3.7). The mechanism does not claim to recognize every coroutine implementation from `Fiber::getCurrent()`.
+
+**Compatibility.** A Host on ordinary sequential PHP or on Fibers changes nothing. The provider, the Builder method and the store constructor parameter are optional and additive; their only behavioural effect is the fail-fast on a domain mismatch, which exists only when a Host configures providers.
 
 ### 3.5 Admission of direct capability calls and transactions: complete lifetimes, no `requestState` test [PROPOSED]
 
@@ -109,7 +156,7 @@ interface ExecutionContextProviderInterface
 // Package-owned store: every public capability that sends a command or opens a request.
 private function guarded(string $entry, callable $operation): mixed
 {
-    $own = OwnershipRegistry::admit($this, $entry);   // owner exists + same context + no crossing: returns null (nested)
+    $own = OwnershipRegistry::admit($this, $entry);   // the store's recorded domain selects the provider (3.4); owner exists + same context + no crossing: returns null (nested)
                                                        // owner exists otherwise: throws OverlappingRequestException
                                                        // no owner: acquires a short-lived token and returns it
     try { return $operation(); }
@@ -142,8 +189,8 @@ public function transactRequest(callable $evaluate): mixed
 | Type | Visibility | Owner | Notes |
 | --- | --- | --- | --- |
 | `OverlappingRequestException extends RateLimiterException` | **public**, new | package | the refusal (section 7); carries the refused entry's name |
-| `ExecutionContextProviderInterface` and `RateLimiterBuilder::withExecutionContextProvider()` | **public**, new, **optional** | Host implements only for a non-Fiber scheduler | additive |
-| `OwnershipRegistry`, `CallToken`, the `@internal` `ownedResources()` methods | internal (`@internal`), new | package | **not** Host-implemented and not required of Host stores; visible `public` methods exist only because PHP has no package visibility, and they carry no support promise |
+| `ExecutionContextProviderInterface` (contract in 3.4 B and C), `RateLimiterBuilder::withExecutionContextProvider()`, and an optional `?ExecutionContextProviderInterface $executionContext = null` constructor parameter of `RedisFullCapabilityStore` | **public**, new, **optional** | Host implements and shares **one instance per scheduler**, only for a non-Fiber scheduler | additive; the only behavioural effect is the fail-fast on a domain mismatch (3.4 A) |
+| `OwnershipRegistry` (slots, domain records), `CallToken` (domain, weakly held context, state, crossing counter), the `@internal` `ownedResources()` methods | internal (`@internal`), new | package | **not** Host-implemented and not required of Host stores; visible `public` methods exist only because PHP has no package visibility, and they carry no support promise |
 | `CallOwnershipStoreInterface` (revision 1) | **dropped** | n/a | removed: a Host store no longer implements anything for ownership |
 
 Who constructs what: the registry is created by the package (a static `WeakMap`); tokens are created by `acquire()` / `admit()`; the provider is created by the Host only for a non-Fiber scheduler. Identity of a resource across graphs and direct calls is the object identity of the store, clock and breaker, which is guaranteed by PHP and needs no Host guarantee.
@@ -156,7 +203,8 @@ Who constructs what: the registry is created by the package (a static `WeakMap`)
 | PHP Fibers, suspension anywhere (inside the executor, emitter, clock, resolver **or inside a Host callback handed to a direct `transactRequest()`**) | supported: an overlapping call from another Fiber is refused, by identity and by the crossing marker | none |
 | a Host callback of a direct `transactRequest($evaluate)` | may call capabilities of the same store as nested operations from its own context; may suspend under Fibers; a call from another context is refused | none |
 | a re-entrant call from inside an executor, emitter, clock or resolver callback on the same stack | refused (crossing open) | none |
-| a non-Fiber scheduler **with** an `ExecutionContextProviderInterface` | supported: identity separates its contexts | supply the provider |
+| a non-Fiber scheduler **with** an `ExecutionContextProviderInterface` | supported: identity separates its contexts | supply **one shared provider instance** that keeps the contract of 3.4 B and C (synchronous, no re-entry, no yielding, no throwing, unique and stable keys); every graph and every directly used package-owned store of that scheduler binds to it |
+| two graphs or a graph and a direct store with **different** provider instances, or default and custom, over one shared resource | **refused at binding** (build time for graphs) with a configuration `RateLimiterException` | share one provider instance |
 | a non-Fiber scheduler **without** a provider | supported only for switches inside the guarded crossings (executor, emitter, clock, resolver) | do not yield from a Host callback handed to the library (a direct `transactRequest()` callback, a custom policy) unless a provider is supplied |
 | custom policies and other Host callbacks the engine calls (`BlockPolicyInterface` methods, `PostPunishmentReentryPolicyInterface`) | guarded as Host crossings; under Fibers also covered by identity | a non-Fiber scheduler must not yield there without a provider |
 | independent graphs per context (own store, clock, breaker objects) | supported, the preferred way to run concurrent contexts; Redis conflicts under DEC-037 | one graph and one connection per concurrent context |
@@ -168,10 +216,11 @@ Who constructs what: the registry is created by the package (a static `WeakMap`)
 2. **A Host store used directly outside any graph** is Host code; the package guards the direct entries of its own `RedisFullCapabilityStore` and every graph entry, but cannot intercept a Host store's own methods.
 3. **An owner that is never unwound.** Release is by unwinding the owner's stack. PHP unwinds a destroyed Fiber's stack and runs its `finally` blocks, so destroying the Fiber releases the owner; a Fiber that is never resumed and never destroyed keeps its resources owned and every later call on a graph that shares them is refused. No time-based release is proposed (it would bring back silent overlap). This is a Host duty and is an accepted cost of explicit refusal [OPEN, O-4 for any remedy API].
 4. **Non-Fiber schedulers without a provider** are covered only inside guarded crossings (3.7).
+5. **A provider that breaks its contract** (an equal key for two live contexts, a yield during the lookup, a re-entry) is outside the guarantee: re-entry is refused, a yield only leaves reservations in place, but two live contexts that share a key are treated as one and an independent call from the second is treated as nested. This is a Host obligation of the provider's author, stated here and not detectable in-process.
 
 ## 4. Entry and resource matrix [PROPOSED]
 
-Resources: **S** rate-limit/admission store, **K** correlation store, **B** circuit-breaker store, **C** `RequestScopedClock`, **G** `CircuitBreaker` (held signals), **E** engine flags and the final fallback charge.
+Resources: **S** rate-limit/admission store, **K** correlation store, **B** circuit-breaker store, **C** the graph's `RequestScopedClock` (built by `build()` only), **G** `CircuitBreaker` (held signals), **E** engine flags and the final fallback charge.
 
 | Entry / contract | Resource set | Context of the owner | Check point | The owner itself | An independent call | Cleanup |
 | --- | --- | --- | --- | --- | --- | --- |
@@ -179,7 +228,7 @@ Resources: **S** rate-limit/admission store, **K** correlation store, **B** circ
 | `consume()` | S (the simple runtime's store), C | token | the simple runtime's entry (the composite forwards without acquiring) | runs | refused | 3.3 |
 | `claimPostPunishmentReentry()` | S, K, B, C, G, E | token | entry | runs | refused | 3.3 |
 | `revokeAccountBinding()`, `bindingEpoch()`, `openAdmissionFence()`, `rebindAdmissionSharedConfig()` | S, C | token | entry | runs | refused | 3.3 |
-| operational readers `read()`, `readScorePolicy()`, `readSimpleThrottle()` | S, B, C (their own clock object when built by `buildOperationalReader()`) | token | reader entry | runs | **refused** (primary decision D3); the pass-through variant is APPROVAL M6 | 3.3 |
+| operational readers `read()`, `readScorePolicy()`, `readSimpleThrottle()` | S, B. Their clock is `$this->clock ?? SystemClock` as `buildOperationalReader()` passes it today: the raw Host clock, **not** a `RequestScopedClock`; it holds no per-call reading and is **not** a guarded resource, and no new reader clock rule is proposed (the readers keep calling `now()` as they do) | token | reader entry | runs | **refused** (primary decision D3); the pass-through variant is APPROVAL M6 | 3.3 |
 | `transactRequest()` (direct) | its store | token if no owner, else nested/refused by 3.1 | method entry, before the callback and before `requestState` is inspected | nested transaction joins the owner's request as today | refused (different context, or crossing open) | release in `finally` when it acquired |
 | store capabilities that send commands (`acquireProbeLease()`, `increment*`, `addDistinct*`, `block*`, `save*`, state readers, admission `reserve*`/`apply*`/epoch/config) | their store | short-lived token when direct | method (or the single command choke point where it issues exactly one command) | nested: allowed | refused | release in `finally` |
 | `claimAdmissionPermitWithOutcome()` and the permit claim | their store | short-lived token when direct | method entry | nested inside the owning call: runs as its own atomic command | **refused** for an unrelated overlapping caller (revision 1 exempted it; withdrawn) | release in `finally` |
@@ -198,7 +247,7 @@ Resources: **S** rate-limit/admission store, **K** correlation store, **B** circ
 | `RateLimiterBuilder::fromFullCapabilityStore($store, …)->build()` | `{store}` (one object for S, K and B), `C` (built by `build()`), `G`, engine, and the simple runtime's store (the same object) |
 | `new RateLimiterBuilder($config, $rateLimitStore, $correlationStore, $circuitBreakerStore, …)->build()` with three distinct stores | `{rateLimitStore, correlationStore, circuitBreakerStore}`, `C`, `G`, engine |
 | the same with two of them aliased (for example one store for K and B) | the deduplicated objects |
-| `buildOperationalReader()` | the rate-limit store, the circuit-breaker store and the reader's own `RequestScopedClock` |
+| `buildOperationalReader()` | the rate-limit store and the circuit-breaker store. The readers receive `$this->clock ?? new SystemClock(...)` (checked in `RateLimiterBuilder::buildOperationalReader()`): a Host clock object, not a `RequestScopedClock`, with no held reading, so it is **not** a guarded resource. A reader and a graph that share the same Host clock object share nothing that needs ownership |
 | `RateLimiterEngine`, `CompositeRateLimiterRuntime`, `FixedWindowSimpleRateLimiter` and the readers constructed directly | each computes its set from the collaborators it was given |
 | one `RedisFullCapabilityStore` used directly by a low-level caller | the store object itself |
 
@@ -220,13 +269,17 @@ The engine's recovery step → pipeline → `transactRequest()` → capability c
 ```mermaid
 stateDiagram-v2
     [*] --> Free
-    Free --> Owned: acquire() / admit() takes the slot (token: context, crossings = 0)
+    Free --> Reserved: phase 0: reserve (no Host call; domain already bound)
+    Reserved --> Reserved: provider lookup runs (lookup marker set): every other call is refused
+    Reserved --> Owned: phase 1: context resolved (token: domain, weak/by-value key, crossings = 0)
+    Reserved --> Free: provider threw or lookup failed: own reservations released
     Owned --> InHost: a Host crossing begins (crossings += 1)
     InHost --> Owned: the crossing ends in finally (crossings -= 1)
-    Owned --> Owned: nested operation (same context, crossings = 0): no token, no change
+    Owned --> Owned: nested operation (same domain and context, crossings = 0): no token, no change
     Owned --> Free: release() in the outermost finally
-    Owned --> Owned: another context, or a public entry: OverlappingRequestException, slot unchanged
+    Owned --> Owned: another context, a public entry, or a domain mismatch: refusal, slot unchanged
     InHost --> InHost: any other call: OverlappingRequestException, slot unchanged
+    Reserved --> Reserved: any call (including a re-entrant provider): OverlappingRequestException before the provider is called
 ```
 
 ### 6.2 Sequence diagrams
@@ -313,6 +366,61 @@ sequenceDiagram
     A->>O: crossing ends, release(token A)
 ```
 
+Provider contract traces (revision 3). A graph with a custom provider, then a direct operation on a store of that graph:
+
+```mermaid
+sequenceDiagram
+    participant H as Host
+    participant G as Graph (bound to provider P)
+    participant S as RedisFullCapabilityStore (domain P, bound when the graph was built)
+    participant O as OwnershipRegistry
+    participant P as Provider P (Host code)
+    H->>G: build(): binds every resource of the set to domain P (fails fast on a mismatch)
+    H->>G: limit(A)
+    G->>O: phase 0: reserve({S, ...}) (no Host call)
+    G->>P: phase 1: currentContext() under the lookup marker
+    P-->>G: key c1
+    H->>S: direct capability call (another context c2)
+    S->>O: admit(S): domain is P; slot owned by a token with key c1
+    O->>P: currentContext() under the lookup marker
+    P-->>O: key c2
+    O-->>S: c2 is not c1: OverlappingRequestException
+```
+
+Mixed provider domains over one shared resource (fail fast, no silent fallback):
+
+```mermaid
+sequenceDiagram
+    participant H as Host
+    participant G1 as Graph 1 (provider P)
+    participant G2 as Graph 2 (default Fiber domain, or provider Q)
+    participant O as OwnershipRegistry
+    H->>G1: build(): bind(S, P) -> recorded
+    H->>G2: build(): bind(S, default or Q)
+    O-->>G2: domain mismatch on S: RateLimiterException (configuration error) at build time
+    Note over G1,G2: nothing was owned, nothing was called; equal keys of different domains are never compared
+```
+
+A provider that re-enters the library during its own lookup, and a provider that throws:
+
+```mermaid
+sequenceDiagram
+    participant A as Entry call A
+    participant O as OwnershipRegistry
+    participant P as Provider (Host code)
+    A->>O: phase 0: reserve(set) -> all slots Reserved
+    A->>P: phase 1: currentContext() (lookup marker set)
+    P->>O: the provider calls the library (re-entry)
+    O-->>P: slots Reserved / under lookup: OverlappingRequestException (the provider is NOT called again)
+    P-->>A: provider returns or throws
+    alt the provider threw
+        A->>O: release(token, set): own reservations only
+        A-->>A: RateLimiterException('The execution context provider failed.', previous)
+    else the provider returned a key
+        A->>O: token.state = Owned, context retained (weakly for objects)
+    end
+```
+
 ### 6.3 Lifetime across retries, failures and cancellation
 
 | Situation | Behaviour of the ownership |
@@ -325,6 +433,8 @@ sequenceDiagram
 | an emitter that re-enters the library | the owner is still held and a crossing is open: the re-entrant call is refused; the emission completes |
 | Fiber destroyed while the owner is suspended | PHP unwinds its stack and runs `finally`: the slots are cleared when the Fiber object is destroyed, which depends on the Host dropping the last reference |
 | Fiber never resumed and never destroyed | the slots stay owned and every later call on a graph that shares them is refused until the Fiber is destroyed (3.8, O-4) |
+| the provider throws, yields or re-enters during the lookup | throws: the call's own reservations are released and a classified `RateLimiterException` with the provider's exception as `previous` reaches the Host (never a backend failure, nothing reaches the circuit breaker, no fallback); re-entry: refused before the provider is called again; yield: the reservations stay and refuse every other call until the provider returns (the contract forbids it) |
+| an owner whose weakly held context has expired | every caller compares unequal and is refused; the slots clear when the owner unwinds |
 | refusal of B | B never acquired a slot it did not already see free, clears only what it took, and never touches A's clock reading, held request state, failure flag, signals, probe or admission state, fallback counters or the sequential-recovery flag |
 | process exit or fatal error | the memory is gone with the process |
 | long-lived worker | the registry is a `WeakMap`; a slot exists only while a call is in flight; nothing accumulates |
@@ -352,7 +462,8 @@ Proposed shape: a thrown `Maatify\RateLimiter\Exception\OverlappingRequestExcept
 | `CompositeRateLimiterRuntime`, `RateLimiterEngine`, `FixedWindowSimpleRateLimiter`, operational readers | constructors without ownership | constructors unchanged; each computes its resource set from its collaborators | classes built directly are protected like Builder-built ones |
 | `RequestScopedClock`, `CircuitBreaker`, `EvaluationPipeline` | public API as today | no public API change; internal crossing markers and `@internal` `ownedResources()` methods | none |
 | new `OverlappingRequestException` | none | new public exception | [APPROVAL M3]; Hosts catching `RateLimiterException` already handle it |
-| new `ExecutionContextProviderInterface` | none | optional, additive | [APPROVAL M2]; needed only by a non-Fiber scheduler that wants identity |
+| new `ExecutionContextProviderInterface`, `RateLimiterBuilder::withExecutionContextProvider()`, optional `RedisFullCapabilityStore` constructor parameter | none | optional, additive; one **domain** per resource, bound at construction and immutable | [APPROVAL M2]; needed only by a non-Fiber scheduler that wants identity; the only break is a Host that mixes provider instances, or default and custom, over one shared resource, which is refused at binding with a configuration error |
+| operational readers' clock | `$this->clock ?? SystemClock` (the raw Host clock) | unchanged: no `RequestScopedClock` is introduced for readers; the clock is not a guarded resource | none; any change to the readers' clock would be a separate proposal |
 | `CallOwnershipStoreInterface` (revision 1) | n/a | **dropped** | n/a |
 | shared store (aggregate or partial), sequential use by several runtimes | works | works | unchanged |
 | shared store, overlapping use | silent loss and cross-call effects | refused explicitly | behaviour change only for a pattern that was already incorrect |
@@ -403,6 +514,14 @@ Every test runs on actual PHP_INT_SIZE 8 and 4 in Docker with an isolated Redis;
 | CE-14 | mutants: no entry guard; refusal keyed on `requestState` alone; claims exempt; crossing-only identity; release before signals are emitted; a stale token released | each fails at least one test above |
 | CE-15 | a destroyed suspended Fiber releases every slot and a later call succeeds; double release; a foreign-token release is an integrity error | asserted |
 | CE-16 | many graphs created and discarded; sequences of calls | no owner is left behind and the registry holds no entry for a collected resource |
+| CE-18 | a graph built with a custom provider, then direct operations on its package-owned store (F266-09 A) | the store's recorded domain selects the provider; a direct call from another context is refused, from the owner's context is nested; the direct call never falls back to the default domain |
+| CE-19 | default and custom graphs, and two different provider instances (also two instances of one class), sharing a resource | refused at binding with a configuration `RateLimiterException`, before any call; the same instance shared by two graphs is allowed |
+| CE-20 | equal keys (the same string or object) returned by two different providers | never compared; the mismatch is already refused at binding |
+| CE-21 | a standalone direct `transactRequest()` caller configuring a non-Fiber provider through the store constructor; an attempt to reconfigure a store that is bound or owned | the constructor path works; there is no setter, so no reconfiguration is possible; a live owner's domain is unchanged |
+| CE-22 | a provider that re-enters the library, one that yields, and one that throws, during phase 1 and during an admission lookup (F266-09 B) | re-entry refused before the provider is called again; yield leaves the reservations in place and refuses every other call; a throw releases only the call's own reservations and surfaces a classified exception that is not a `BackendFailureException`; no slot of another call is ever released |
+| CE-23 | a context key reused while an old owner exists (contract violation of the provider), and a key reused after the old context ended | the violating case is documented as a Host obligation and characterized, the lawful case passes; an owner whose weak context expired refuses every caller |
+| CE-24 | retained references: a token and a slot record hold no strong reference to their resources, to an object context or to the provider; a destroyed suspended Fiber unwinds and clears its slots; resources and graphs discarded in a loop are collected | asserted by collection and release checks, not by a claim about memory |
+| CE-25 | the operational readers' inventory | their resource set is the rate-limit store and the circuit-breaker store; no reader clock rule changes |
 | CE-17 | regression: #258 (`AdmissionOutcomeDuringRecovery…`, `RequestAtomicityBoundaries…`), #259 (`LocalFallbackRecoveryAccounting…`), the retry and lost-reply contracts of DEC-037, and the separate-graph Redis conflict control | unchanged results |
 
 The existing characterization tests, logs and preservation controls of #266 stay as the historical before-state.
@@ -423,18 +542,18 @@ The existing characterization tests, logs and preservation controls of #266 stay
 
 **Material approval items (separate, none approved):**
 
-- **M1** the mechanism of section 3 (resource-set ownership, identity plus crossing markers, all-or-none acquisition).
-- **M2** the optional public `ExecutionContextProviderInterface` and `RateLimiterBuilder::withExecutionContextProvider()`.
+- **M1** the mechanism of section 3 (resource-set ownership, identity plus crossing markers, **two-phase all-or-none acquisition with a provider-free reservation**, the lookup marker).
+- **M2** the optional public provider contract **as completed in 3.4**: `ExecutionContextProviderInterface` with its duties (synchronous, no re-entry, no yielding, no throwing, stable and unique keys, `===` equality inside one domain), `RateLimiterBuilder::withExecutionContextProvider()`, the optional `RedisFullCapabilityStore` constructor parameter, the one-domain-per-resource binding at construction (immutable, fail-fast on a mismatch, one shared instance per scheduler), the classified failure of a throwing provider, and the retention rules (by value for scalars, weak for objects, weak provider reference).
 - **M3** the new public `OverlappingRequestException`, its place under `RateLimiterException`, and its use by every guarded entry.
 - **M4** the changed wording of the `RequestAtomicStoreInterface` nested-call guarantee and the matching DEC-037 item 7 sentence.
 - **M5** that every public entry refuses when **any** resource of its set is owned, whoever the owner is.
 - **M6** the reader behaviour: refuse (D3, recommended) or the pass-through read variant (changes the readers' semantics, keeps monitoring available under load).
-- **M7** the supported execution-context and callback contract of 3.7, including the stated limit for non-Fiber schedulers without a provider and the not-supported status of decorated aliasing.
+- **M7** the supported execution-context and callback contract of 3.7, including the provider duties and the stated limits: non-Fiber schedulers without a provider, a provider that breaks its contract (3.8 item 5), and the not-supported status of decorated aliasing and of mixed provider domains.
 
-**Open questions:** **O-1** the final name and namespace of the exception and the provider; **O-2** whether the refusal also needs a result-level metadata cause for Hosts that only handle results (not proposed); **O-3** whether the Builder should detect a package-owned store reached through a Host decorator; **O-4** any remedy for an owner that is never unwound (a documented Host duty is the proposal; an explicit abandon call would be a new API); **O-5** whether custom policy methods should be wrapped as crossings in the first implementation or documented only (3.7 proposes wrapping).
+**Open questions:** **O-1** the final name and namespace of the exception, the provider and the store constructor parameter; **O-2** whether the refusal also needs a result-level metadata cause for Hosts that only handle results (not proposed); **O-3** whether the Builder should detect a package-owned store reached through a Host decorator; **O-4** any remedy for an owner that is never unwound (a documented Host duty is the proposal; an explicit abandon call would be a new API); **O-5** whether custom policy methods should be wrapped as crossings in the first implementation or documented only (3.7 proposes wrapping).
 
 **[ESTIMATE]** The change touches one internal registry class and token, one new exception, one optional interface and a Builder method, the `@internal` resource accessors and the entry guard in each entry class, the crossing markers at the Host callouts, and the admission wrapper on the package-owned store's capability methods (a mechanical change across up to 78 methods once classified). A per-call cost of one acquisition and a few identity comparisons is expected for a graph entry, and a token per direct capability call. No prototype exists and nothing was measured. The risks that matter are O-4 and the size of the 78-method classification.
 
 ## 12. Traceability and what this revision does not claim
 
-The evidence is `RESULTS.md` and `FiberRequestOwnershipRedisTest` at the accepted head; #258 and #259 are relied on as merged; the principle is DEC-041 (unchanged); the entry points and resources of sections 4 and 5 were read from `CompositeRateLimiterRuntime`, `RateLimiterEngine`, `RateLimiterBuilder`'s constructor and `build()`, the operational reader interfaces, `FixedWindowSimpleRateLimiter` and the public methods of `RedisFullCapabilityStore`. The counterexamples of the Lead's review are **design-level traces**, not executed implementation failures, and this revision does not claim prototype verification, measured cost or implemented enforcement. `consume()`, the readers, the direct admission entries, partially shared graphs and decorated aliasing are design classifications from the code, not measured results.
+The evidence is `RESULTS.md` and `FiberRequestOwnershipRedisTest` at the accepted head; #258 and #259 are relied on as merged; the principle is DEC-041 (unchanged); the entry points and resources of sections 4 and 5 were read from `CompositeRateLimiterRuntime`, `RateLimiterEngine`, `RateLimiterBuilder`'s constructor, `build()` (which creates the graph's `RequestScopedClock`) and `buildOperationalReader()` (which passes the readers `$this->clock ?? new SystemClock(...)`, not a `RequestScopedClock`), the operational reader interfaces, `FixedWindowSimpleRateLimiter` and the public methods of `RedisFullCapabilityStore`. The counterexamples of the Lead's review are **design-level traces**, not executed implementation failures, and this revision does not claim prototype verification, measured cost or implemented enforcement. `consume()`, the readers, the direct admission entries, partially shared graphs and decorated aliasing are design classifications from the code, not measured results.
