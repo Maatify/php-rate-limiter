@@ -1,0 +1,7 @@
+ok   the temporary base tree was removed
+ok   bench-impl.sh with a pre-existing base-tree: Redis never ready (exit 73)
+FAIL the pre-existing base-tree or its contents were removed or changed
+ok   no per-run temporary directory is left behind
+FAIL bench-impl.sh with a pre-existing base-tree: a short comparison run: expected exit 0, got 255
+FAIL the pre-existing base-tree was changed by a full run
+ok   no per-run temporary directory is left after a full run

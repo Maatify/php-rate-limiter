@@ -36,4 +36,10 @@ ok   bench-impl.sh: a short comparison run (exit 0)
 ok   the log names both arms' sources and carries both summaries
 ok   the checkout's overlay equals HEAD after a full run
 ok   the base tree is removed after a full run
+ok   bench-impl.sh with a pre-existing base-tree: Redis never ready (exit 73)
+ok   the pre-existing base-tree and its contents survive the failed setup
+ok   no per-run temporary directory is left behind
+ok   bench-impl.sh with a pre-existing base-tree: a short comparison run (exit 0)
+ok   the pre-existing base-tree survives a full run
+ok   no per-run temporary directory is left after a full run
 ok   no rl261-* container or network left behind

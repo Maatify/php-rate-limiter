@@ -14,10 +14,12 @@ rl261_out_dir
 rl261_source_identity
 rl261_artifacts bench-impl.log run-meta.txt
 RL261_STARTED=$(date -u +%Y-%m-%dT%H:%M:%SZ)
-TREE=$RL261_OUT/base-tree
-rl261_extra_cleanup() { if [ -n "${TREE:-}" ] && [ -f "$TREE/$F" ]; then rm -rf "$TREE"; fi; }
+# The base tree is a directory this run creates and owns: `mktemp -d` makes a fresh, unique one (a `base-tree` or anything else already present in the
+# output directory is never reused, written to or removed), and the cleanup removes exactly that directory and nothing else, also when the copy fails.
+TREE=""
+rl261_extra_cleanup() { if [ -n "$TREE" ] && [ -d "$TREE" ]; then rm -rf "$TREE"; fi; }
 trap rl261_cleanup EXIT
-mkdir -p "$TREE" || rl261_die "cannot create the base tree $TREE" 75
+TREE=$(mktemp -d "$RL261_ROOT/$RL261_OUT/base-tree.XXXXXX") || rl261_die "cannot create a private base tree in $RL261_OUT" 75
 rsync -a --exclude=.git --exclude="$RL261_STUDY/out" "$RL261_ROOT"/ "$TREE"/ || rl261_die "cannot copy the source tree for the base arm" 75
 git show "$BASE:$F" > "$TREE/$F" || rl261_die "cannot read the base overlay from $BASE" 77
 BASEBLOB=$(git rev-parse "$BASE:$F") || rl261_die "cannot resolve the base overlay blob" 77
@@ -26,7 +28,7 @@ TREEBLOB=$(git hash-object "$TREE/$F") || rl261_die "cannot hash the base-tree o
 [ "$TREEBLOB" = "$BASEBLOB" ] || rl261_die "the base tree does not hold the base overlay" 77
 [ "$FIXBLOB" != "$BASEBLOB" ] || rl261_die "the checkout's overlay equals the base overlay: nothing to compare" 77
 {
-  echo "arm base: source tree = copy of this checkout with $F = blob $BASEBLOB (from $BASE)"
+  echo "arm base: source tree = private copy ($(basename "$TREE")) of this checkout with $F = blob $BASEBLOB (from $BASE)"
   echo "arm fix : source tree = this checkout at $RL261_HEAD (dirty=$RL261_DIRTY), $F = blob $FIXBLOB"
   echo "aggregation: one line per arm and round (p50, p95, mean of the commit EVAL latency over $n requests); the summary lines are the MEDIAN and the MEAN of the per-round p50 values"
 } >> "$RL261_OUT/bench-impl.log" || rl261_die "cannot write bench-impl.log" 75
@@ -43,7 +45,7 @@ arm() { # label root
 rl261_cleanup_redis_only() { docker rm -f "$RL261_REDIS" >/dev/null 2>&1; docker network rm "$RL261_NET" >/dev/null 2>&1; RL261_REDIS=""; RL261_NET=""; }
 rc=0
 for r in $(seq 1 "$rounds"); do
-  arm "base-round$r" "$RL261_ROOT/$TREE" || { rc=$?; break; }
+  arm "base-round$r" "$TREE" || { rc=$?; break; }
   arm "fix-round$r" "$RL261_ROOT" || { rc=$?; break; }
 done
 if [ "$rc" = 0 ]; then

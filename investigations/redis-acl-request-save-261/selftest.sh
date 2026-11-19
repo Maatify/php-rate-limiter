@@ -108,7 +108,7 @@ headblob=$(git rev-parse "HEAD:$overlay"); workblob_before=$(git hash-object "$o
 RL261_OUT=investigations/redis-acl-request-save-261/out/selftest-bench-ready-$$ RL261_READY_SECONDS=2 RL261_REDIS_IMAGE=alpine:3 RL261_REDIS_CMD="sleep 300" investigations/redis-acl-request-save-261/bench-impl.sh 64 5 1 >/dev/null 2>&1
 check "bench-impl.sh: Redis never ready" 73 $?
 [ "$(git hash-object "$overlay")" = "$workblob_before" ] && echo "ok   the production overlay in the checkout is unchanged after the failed setup" || { echo "FAIL the production overlay was changed by a failed bench-impl.sh"; fail=1; }
-[ ! -e investigations/redis-acl-request-save-261/out/selftest-bench-ready-$$/base-tree ] && echo "ok   the temporary base tree was removed" || { echo "FAIL the temporary base tree was left behind"; fail=1; }
+[ "$(find investigations/redis-acl-request-save-261/out/selftest-bench-ready-$$ -maxdepth 1 -name 'base-tree*' | wc -l | tr -d ' ')" = 0 ] && echo "ok   the temporary base tree was removed" || { echo "FAIL the temporary base tree was left behind"; fail=1; }
 badb=investigations/redis-acl-request-save-261/out/selftest-bench-log-$$; mkdir -p "$badb/bench-impl.log"
 RL261_OUT=$badb investigations/redis-acl-request-save-261/bench-impl.sh 64 5 1 >/dev/null 2>&1
 nonzero "bench-impl.sh: bench-impl.log is not writable" $?
@@ -118,7 +118,24 @@ RL261_OUT=$goodb investigations/redis-acl-request-save-261/bench-impl.sh 64 5 1 
 check "bench-impl.sh: a short comparison run" 0 $?
 grep -q '^arm base: .*blob ' "$goodb/bench-impl.log" && grep -q '^arm fix : .*blob ' "$goodb/bench-impl.log" && grep -q '^summary base:' "$goodb/bench-impl.log" && grep -q '^summary fix:' "$goodb/bench-impl.log" && echo "ok   the log names both arms' sources and carries both summaries" || { echo "FAIL the bench log lacks the arm sources or summaries"; fail=1; }
 [ "$(git hash-object "$overlay")" = "$workblob_before" ] && [ "$workblob_before" = "$headblob" ] && echo "ok   the checkout's overlay equals HEAD after a full run" || { echo "FAIL overlay differs from HEAD after a full run"; fail=1; }
-[ ! -e "$goodb/base-tree" ] && echo "ok   the base tree is removed after a full run" || { echo "FAIL base tree left"; fail=1; }
+[ "$(find "$goodb" -maxdepth 1 -name 'base-tree*' | wc -l | tr -d ' ')" = 0 ] && echo "ok   the base tree is removed after a full run" || { echo "FAIL base tree left"; fail=1; }
+# 8 (F271-02, ownership). The comparison bench removes only the temporary directory THIS run created: a `base-tree` that already exists in the output
+# directory (with the production overlay name inside it, and a sentinel file) survives a failed setup and a full run, byte for byte.
+pre=investigations/redis-acl-request-save-261/out/selftest-bench-owned-$$
+mkdir -p "$pre/base-tree/src/Repository/Redis"
+printf 'SENTINEL-BEFORE-RUN-28-BYTES\n' > "$pre/base-tree/sentinel.txt"
+printf 'PRE-EXISTING-OVERLAY\n' > "$pre/base-tree/src/Repository/Redis/RedisRequestOverlay.php"
+presum=$(cat "$pre/base-tree/sentinel.txt" "$pre/base-tree/src/Repository/Redis/RedisRequestOverlay.php" | cksum)
+RL261_OUT=$pre RL261_READY_SECONDS=2 RL261_REDIS_IMAGE=alpine:3 RL261_REDIS_CMD="sleep 300" investigations/redis-acl-request-save-261/bench-impl.sh 64 5 1 >/dev/null 2>&1
+check "bench-impl.sh with a pre-existing base-tree: Redis never ready" 73 $?
+[ "$(cat "$pre/base-tree/sentinel.txt" "$pre/base-tree/src/Repository/Redis/RedisRequestOverlay.php" 2>/dev/null | cksum)" = "$presum" ] && echo "ok   the pre-existing base-tree and its contents survive the failed setup" || { echo "FAIL the pre-existing base-tree or its contents were removed or changed"; fail=1; }
+left=$(find "$pre" -maxdepth 1 -name 'base-tree.*' | wc -l | tr -d ' ')
+[ "$left" = 0 ] && echo "ok   no per-run temporary directory is left behind" || { echo "FAIL $left per-run temporary directories left"; fail=1; }
+RL261_OUT=$pre investigations/redis-acl-request-save-261/bench-impl.sh 64 5 1 >/dev/null 2>&1
+check "bench-impl.sh with a pre-existing base-tree: a short comparison run" 0 $?
+[ "$(cat "$pre/base-tree/sentinel.txt" "$pre/base-tree/src/Repository/Redis/RedisRequestOverlay.php" 2>/dev/null | cksum)" = "$presum" ] && echo "ok   the pre-existing base-tree survives a full run" || { echo "FAIL the pre-existing base-tree was changed by a full run"; fail=1; }
+left=$(find "$pre" -maxdepth 1 -name 'base-tree.*' | wc -l | tr -d ' ')
+[ "$left" = 0 ] && echo "ok   no per-run temporary directory is left after a full run" || { echo "FAIL $left per-run temporary directories left after a full run"; fail=1; }
 after=$(docker ps -a --format '{{.Names}}' | grep -c '^rl261-'; docker network ls --format '{{.Name}}' | grep -c '^rl261-')
 [ "$before" = "$after" ] && echo "ok   no rl261-* container or network left behind" || { echo "FAIL leftovers: before=[$before] after=[$after]"; fail=1; }
 exit $fail
