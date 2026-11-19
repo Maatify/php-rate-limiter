@@ -85,6 +85,13 @@ applicable rule/window and never creates additional allowance or resets an
 existing tracked subject. Expired windows are removed during normal fallback
 activity so historical windows do not accumulate indefinitely.
 
+The bound is per policy name, not per environment: runtimes in one process
+with the same policy name share the population, so the 4096 cap and the
+overflow bucket are reached through their combined subjects (DEC-011
+clarification, #262; study #272). Below the cap the counter differs by the
+applicable subject; after it, new subjects share the overflow bucket. The
+contract above is unchanged.
+
 Failure fallback and circuit accounting are entered only for the explicit
 typed operational backend-failure contract represented by
 `BackendFailureException`. Official infrastructure adapters classify eligible

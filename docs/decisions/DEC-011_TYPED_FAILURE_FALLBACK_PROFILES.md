@@ -93,6 +93,15 @@ so that different reusable policies never consume each other's process-local
 counters, even when they declare numerically identical configurations or one
 of them reuses an official preset's exact numbers.
 
+The namespace is the policy name alone: it does not include `environmentScope`.
+Runtimes in one PHP process that use the same policy name therefore share the
+fallback namespace even when their scope differs. This was measured in study
+#272 (identical configuration and clock) and accepted by the Owner on #262 as
+option A: the behavior is documented, not changed. It states the limit of the
+allowance and is not a general support statement about two environments in one
+process. The clarification is in `docs/FAILURE_SEMANTICS.md`; the 4096-subject
+bound and the overflow bucket stay under DEC-015.
+
 ## Validation
 
 The package remains the sole validation owner for the effective
@@ -158,7 +167,8 @@ unsafe or malformed configuration before registration succeeds.
 - A policy without a valid configuration is fail-closed during degraded
   evaluation; it never receives an unbounded local allowance.
 - Policy identity is the process-local fallback namespace; numeric
-  configuration content never determines namespace membership.
+  configuration content never determines namespace membership. The scope of
+  the environment does not determine it either (#262, option A).
 - `LocalFallbackLimiter` holds no duplicate hard-coded copies of the official
   Login/OTP/API numeric values; those values exist exactly once, inside
   `FailureFallbackProfileEnum`.
@@ -168,3 +178,7 @@ unsafe or malformed configuration before registration succeeds.
 Owner approval occurred on 2026-09-26 under WU-S4-03C. This amendment,
 prepared as technical direction under the Owner-directed WU-S4-03C
 remediation track, is Owner-approved. Status is `ACTIVE`.
+
+Clarification (#262, 2026-11-20): the Owner accepted option A of study #272. The
+namespace stays the policy name; no `environmentScope` is added, no build is
+refused, and no runtime behavior changes.

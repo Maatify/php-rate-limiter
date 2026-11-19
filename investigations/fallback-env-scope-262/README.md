@@ -93,3 +93,7 @@ investigations/fallback-env-scope-262/run.sh 32 investigations/fallback-env-scop
 ```
 
 ضوابط المشغّل: `investigations/fallback-env-scope-262/selftest.sh`. يخرج المشغّل بالرمز 74 عند وجهة مرفوضة، و75 عند أثر لا يُكتب، و76 إن لم يُكتب بالضبط 13 سجلًا، و77 إن تعذّر التحقق من هوية المصدر. الملفات: `child.php` (الضابط في عملية منفصلة)، و`raw/` (الدليل الخام).
+
+## 10. ملحق تاريخي: الخيار المعتمد (20 نوفمبر 2026)
+
+اعتمد الـOwner على #262 **الخيار A**: توثيق السلوك الحالي دون تغيير كود. النص المنقّح في `docs/FAILURE_SEMANTICS.md` و`RATE_LIMITER_PACKAGE_REFERENCE.md` وDEC-011 وDEC-015. أقسام هذا التقرير ونتائجه وأدلته (`raw/`) كما قُيست على المصادر الأصلية، لم تُعدَّل.

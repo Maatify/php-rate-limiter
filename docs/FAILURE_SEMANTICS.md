@@ -71,6 +71,29 @@ policies with numerically identical configurations — including a custom
 policy that happens to reuse an official preset's exact numbers — never
 share counters.
 
+Within one PHP process, runtimes built with the same policy name use one
+fallback namespace even when their `environmentScope` differs (DEC-011,
+decision on [#262](https://github.com/Maatify/php-rate-limiter/issues/262): option A, document the behavior as it is). The scope is part
+of the derivation of storage keys; by itself it does not give a runtime an
+independent fallback allowance. In the measured scenarios (#272), two runtimes
+with identical fallback configuration and clock shared, for the same dimension,
+subject and applicable window, one counter: an allowance consumed through one
+was visible to the other. Below the 4096 cap the counter differs by the subject
+that applies to the dimension; after the cap, new subjects of that
+policy/dimension/window share its overflow bucket across those runtimes too.
+The cap, the overflow bucket and the collection of expired windows are
+unchanged (DEC-015). Separate PHP processes keep their own local state. The
+circuit state belongs to each runtime's circuit store and is not part of the
+fallback namespace: one runtime's circuit can be `OPEN` while the other's is
+not, while the allowance they consume stays shared. The measurement covered
+identical configurations and a fixed clock; different clocks or different
+fallback configurations under one policy name were not measured, so nothing
+is concluded for them. This is not an isolation or confidentiality guarantee,
+and it is not a general support statement about hosting two environments in
+one process. Fallback consumption and the classification of a backend failure
+keep their existing contracts.
+Study: `investigations/fallback-env-scope-262/README.md` (#272).
+
 Each policy/dimension fallback population tracks at most 4096 active subjects.
 There is no active-entry eviction. Once full, previously unseen subjects share
 one conservative overflow bucket for the applicable window. The overflow
