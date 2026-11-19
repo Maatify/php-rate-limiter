@@ -32,7 +32,7 @@ lines=$(wc -l < "$OUT/evidence.jsonl" | tr -d ' ')
 if [ "$final" = 0 ] && [ "$lines" != "$EXPECTED" ]; then echo "run.sh: evidence has $lines lines, expected $EXPECTED" >&2; final=76; fi
 {
   echo "head=$HEAD"; echo "tree=$TREE"; echo "dirty_files_outside_evidence=$DIRTY"; echo "platform=$PLAT"; echo "image=$IMG"
-  echo "command=run.sh $PLAT tests/System/FallbackEnvironmentScopeSharingStudy262Test.php $*"; echo "phpunit_exit=$rc"; echo "evidence_lines=$lines"; echo "final_exit=$final"
+  echo "command=run.sh $PLAT tests/System/FallbackEnvironmentScopeSharingStudy262Test.php${*:+ $*}"; echo "phpunit_exit=$rc"; echo "evidence_lines=$lines"; echo "final_exit=$final"
   echo "started_utc=$(date -u +%Y-%m-%dT%H:%M:%SZ)"
 } > "$OUT/run-meta.txt" || final=77
 echo "run.sh: output in $OUT, exit code $final (phpunit $rc)"
