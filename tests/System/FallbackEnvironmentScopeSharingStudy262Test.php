@@ -214,7 +214,7 @@ final class FallbackEnvironmentScopeSharingStudy262Test extends TestCase
         $this->assertSame('ALLOW', $overflowFirst->decision);
         $this->assertSame('HARD_BLOCK', $stagingNew->decision);
         $this->assertSame('ALLOW', $otherPolicy->decision);
-        $this->record('S11_cap_and_overflow', ['limit' => 1, 'fill' => '4096 distinct IPs via production', 'then' => ['production new ip', 'staging new ip', 'staging other policy new ip']], 'staging shares the overflow bucket; other policy does not', ['trackedAfterFill' => $filled['trackedSubjects'], 'overflowFirst(production)' => $overflowFirst->decision, 'stagingNewSubject' => $stagingNew->decision, 'stagingNewRetryAfter' => $stagingNew->retryAfter, 'otherPolicyNewSubject' => $otherPolicy->decision, 'fallback' => R::fallbackState()]);
+        $this->record('S11_cap_and_overflow', ['limit' => 1, 'fill' => '4096 distinct IPs via production', 'then' => ['production new ip', 'staging new ip', 'staging other policy new ip']], 'staging shares the overflow bucket; other policy does not', ['trackedAfterFill' => $filled['trackedSubjects'], 'overflowFirst(production)' => $overflowFirst->decision, 'stagingNewSubject' => $stagingNew->decision, 'stagingNewRetryAfter' => $stagingNew->retryAfter, 'otherPolicyNewSubject' => $otherPolicy->decision, 'fallback' => $this->compact(R::fallbackState())]);
     }
 
     public function testAdvancedPathEnginesShareTheSameWay(): void
@@ -250,6 +250,15 @@ final class FallbackEnvironmentScopeSharingStudy262Test extends TestCase
         $this->assertNotSame(getmypid(), $child['pid']);
         $this->assertSame($parentState, R::fallbackState());
         $this->record('S13_separate_process', ['parent' => 'production x3', 'child' => 'staging x3 in a new PHP process'], 'child has its own full allowance', ['parentDecisions' => array_map(static fn(RateLimitResultDTO $r): string => $r->decision, $parent), 'parentState' => $parentState, 'child' => $child]);
+    }
+
+    /**
+     * @param array{counters: int, countValues: list<int>, populations: int, trackedSubjects: int} $state
+     * @return array<string, int>
+     */
+    private function compact(array $state): array
+    {
+        return ['counters' => $state['counters'], 'countersWithCountAbove1' => \count(array_filter($state['countValues'], static fn(int $v): bool => $v > 1)), 'maxCount' => max([0, ...$state['countValues']]), 'populations' => $state['populations'], 'trackedSubjects' => $state['trackedSubjects']];
     }
 
     private function engine(string $environmentScope): RateLimiterEngine
