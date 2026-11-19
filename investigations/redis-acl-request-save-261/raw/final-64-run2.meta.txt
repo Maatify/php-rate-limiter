@@ -3,6 +3,6 @@ source_tree=c35d93244ea8a520d35ec40024b17b2623e82e0a
 worktree_dirty=no
 php_image=maatify-rl-php64:local (linux/arm64)
 redis_image=redis:7.0.15-alpine
-started_at_utc=2026-11-19T00:22:50Z
+started_at_utc=2026-11-19T00:22:58Z
 command=run.sh linux/arm64 --do-not-cache-result tests/Integration/Redis/RequestSaveAclRedisTest.php
 exit_code=0

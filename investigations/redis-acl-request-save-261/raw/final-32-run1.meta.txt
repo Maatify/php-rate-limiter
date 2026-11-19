@@ -1,8 +1,8 @@
 source_head=d3ebec816645bcddda60d8ef0e83fccbe3cf4b57
 source_tree=c35d93244ea8a520d35ec40024b17b2623e82e0a
 worktree_dirty=no
-php_image=maatify-rl-php64:local (linux/arm64)
+php_image=maatify-rl-php32:local (linux/386)
 redis_image=redis:7.0.15-alpine
-started_at_utc=2026-11-19T00:23:03Z
-command=run.sh linux/arm64 --do-not-cache-result tests/Integration/Redis/RequestAtomicityBoundariesRedisTest.php
+started_at_utc=2026-11-19T00:23:05Z
+command=run.sh linux/386 --do-not-cache-result tests/Integration/Redis/RequestSaveAclRedisTest.php
 exit_code=0

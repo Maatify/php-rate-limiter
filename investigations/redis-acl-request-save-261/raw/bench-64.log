@@ -4,3 +4,6 @@ commit with preflight   : n=400 p50=242 us p95=377 us mean=257 us
 PHP 8.4.27 INT=8
 commit without preflight: n=400 p50=261 us p95=406 us mean=282 us
 commit with preflight   : n=400 p50=250 us p95=407 us mean=276 us
+PHP 8.4.27 INT=8
+commit without preflight: n=400 p50=264 us p95=537 us mean=329 us
+commit with preflight   : n=400 p50=252 us p95=499 us mean=327 us
