@@ -21,6 +21,8 @@ rl261_select_image() {  # $1 = 64|32
 rl261_cleanup() {
   [ -n "${RL261_REDIS:-}" ] && docker rm -f "$RL261_REDIS" >/dev/null 2>&1
   [ -n "${RL261_NET:-}" ] && docker network rm "$RL261_NET" >/dev/null 2>&1
+  # A script that owns more than Redis (the base source tree of bench-impl.sh) defines this hook; it runs on every exit path.
+  if [ "$(type -t rl261_extra_cleanup)" = function ]; then rl261_extra_cleanup; fi
   return 0
 }
 

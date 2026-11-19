@@ -1,0 +1,26 @@
+PHP 8.4.27 INT=8 ext-redis=6.3.0
+PHPUnit 11.5.57 by Sebastian Bergmann and contributors.
+
+Runtime:       PHP 8.4.27
+Configuration: /app/phpunit.xml
+
+F                                                                   1 / 1 (100%)
+
+Time: 00:02.467, Memory: 10.00 MB
+
+There was 1 failure:
+
+1) Maatify\RateLimiter\Tests\Integration\Redis\RequestSaveAclRedisTest::testASuccessfulSaveWritesTheDataAndTheLifetimes
+The future expiry is the planned absolute value, to the millisecond.
+Failed asserting that two strings are identical.
+--- Expected
++++ Actual
+@@ @@
+-'1795078772063'
++'1795078772064'
+
+/app/tests/Integration/Redis/RequestSaveAclRedisTest.php:862
+
+FAILURES!
+Tests: 1, Assertions: 13, Failures: 1.
+redis: Redis server v=7.0.15 sha=00000000:0 malloc=jemalloc-5.2.1 bits=64 build=d6d81b7b50ab2e83

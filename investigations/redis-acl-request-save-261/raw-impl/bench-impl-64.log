@@ -1,0 +1,11 @@
+arm base: source tree = private copy (base-tree.PPAMx4) of this checkout with src/Repository/Redis/RedisRequestOverlay.php = blob cf44419fa657445f9017c9b32554f32e0ea50f8e (from 3acf0258087a7bb89057dcf629f9bf8f5b38c246)
+arm fix : source tree = this checkout at 7d57a367dcfcdd708015f0e4dfd58e000852a532 (dirty=no), src/Repository/Redis/RedisRequestOverlay.php = blob d83a835ea3427aa87ee5ae3a3461344374e1b8c6
+aggregation: one line per arm and round (p50, p95, mean of the commit EVAL latency over 400 requests); the summary lines are the MEDIAN and the MEAN of the per-round p50 values
+base-round1: PHP 8.4.27 INT=8 n=400 commit p50=271 us p95=553 us mean=319 us
+fix-round1: PHP 8.4.27 INT=8 n=400 commit p50=257 us p95=365 us mean=273 us
+base-round2: PHP 8.4.27 INT=8 n=400 commit p50=242 us p95=377 us mean=268 us
+fix-round2: PHP 8.4.27 INT=8 n=400 commit p50=264 us p95=366 us mean=282 us
+base-round3: PHP 8.4.27 INT=8 n=400 commit p50=241 us p95=348 us mean=259 us
+fix-round3: PHP 8.4.27 INT=8 n=400 commit p50=260 us p95=360 us mean=271 us
+summary base: median of per-round p50 = 242 us, mean of per-round p50 = 251 us ( 271 242 241)
+summary fix: median of per-round p50 = 260 us, mean of per-round p50 = 260 us ( 257 264 260)

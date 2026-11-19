@@ -3133,6 +3133,9 @@ LUA;
      * save that was applied in full. The outcome is then unknown to the caller; it is never a partial save
      * (`RequestAtomicityRecoveryOutageRedisTest` covers both cases).
      *
+     * A Redis ACL refusal of a command of the save is raised before the first write as a `NOPERM request commit: …` error reply (DEC-042): a
+     * server error reply, not a `BackendFailureException`, never retried here, with nothing saved.
+     *
      * @template T
      * @param callable(): T $evaluate
      * @return T

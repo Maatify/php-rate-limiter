@@ -2,6 +2,9 @@
 
 declare(strict_types=1);
 
+// HISTORICAL (the study, PR #269 at 127290f4): this script needs `tests/Support/Redis/AclPreflightCommitExecutor.php`, the study variant, which the
+// production implementation (DEC-042) replaced and which no longer exists on `main`; run it at 127290f4. For the implementation the same measurement
+// is `bench-impl.php` (base tree against fix tree).
 // #261 study: what the study variant's preflight (redis.acl_check_cmd before the first write) costs the request save.
 // usage: php bench.php <redis host> <redis port> <requests per arm>   (one process, nothing else running; alternating arms ABAB)
 

@@ -1,0 +1,280 @@
+PHP 8.4.27 INT=8 ext-redis=6.3.0
+PHPUnit 11.5.57 by Sebastian Bergmann and contributors.
+
+Runtime:       PHP 8.4.27
+Configuration: /app/phpunit.xml
+
+..........FFFFFF..........F.F.FF..F......F............FFFFFF..... 65 / 92 ( 70%)
+.....F.F.FF..F......F......                                       92 / 92 (100%)
+
+Time: 00:17.086, Memory: 24.00 MB
+
+There were 24 failures:
+
+1) Maatify\RateLimiter\Tests\Integration\Redis\RequestSaveAclRedisTest::testCase with data set "resp deny -del" ('deny -del', ['resp', ['del']])
+deny -del: provenance of the outcome: thrown Maatify\RateLimiter\Exception\RateLimiterException: ERR The user executing the script can't run this command or subcommand script: dc0527c44a8b90df7c20bd70a3547b193781dcd6, on @user_script:113.
+Failed asserting that two strings are identical.
+--- Expected
++++ Actual
+@@ @@
+-'preflight'
++'script'
+
+/app/tests/Integration/Redis/RequestSaveAclRedisTest.php:955
+
+2) Maatify\RateLimiter\Tests\Integration\Redis\RequestSaveAclRedisTest::testCase with data set "resp deny -set" ('deny -set', ['resp', ['set']])
+deny -set: provenance of the outcome: thrown Maatify\RateLimiter\Exception\RateLimiterException: ERR The user executing the script can't run this command or subcommand script: dc0527c44a8b90df7c20bd70a3547b193781dcd6, on @user_script:115.
+Failed asserting that two strings are identical.
+--- Expected
++++ Actual
+@@ @@
+-'preflight'
++'script'
+
+/app/tests/Integration/Redis/RequestSaveAclRedisTest.php:955
+
+3) Maatify\RateLimiter\Tests\Integration\Redis\RequestSaveAclRedisTest::testCase with data set "resp deny -hset" ('deny -hset', ['resp', ['hset']])
+deny -hset: provenance of the outcome: thrown Maatify\RateLimiter\Exception\RateLimiterException: ERR The user executing the script can't run this command or subcommand script: dc0527c44a8b90df7c20bd70a3547b193781dcd6, on @user_script:106.
+Failed asserting that two strings are identical.
+--- Expected
++++ Actual
+@@ @@
+-'preflight'
++'script'
+
+/app/tests/Integration/Redis/RequestSaveAclRedisTest.php:955
+
+4) Maatify\RateLimiter\Tests\Integration\Redis\RequestSaveAclRedisTest::testCase with data set "resp deny -sadd" ('deny -sadd', ['resp', ['sadd']])
+deny -sadd: provenance of the outcome: thrown Maatify\RateLimiter\Exception\RateLimiterException: ERR The user executing the script can't run this command or subcommand script: dc0527c44a8b90df7c20bd70a3547b193781dcd6, on @user_script:106.
+Failed asserting that two strings are identical.
+--- Expected
++++ Actual
+@@ @@
+-'preflight'
++'script'
+
+/app/tests/Integration/Redis/RequestSaveAclRedisTest.php:955
+
+5) Maatify\RateLimiter\Tests\Integration\Redis\RequestSaveAclRedisTest::testCase with data set "resp deny -zadd" ('deny -zadd', ['resp', ['zadd']])
+deny -zadd: provenance of the outcome: thrown Maatify\RateLimiter\Exception\RateLimiterException: ERR The user executing the script can't run this command or subcommand script: dc0527c44a8b90df7c20bd70a3547b193781dcd6, on @user_script:106.
+Failed asserting that two strings are identical.
+--- Expected
++++ Actual
+@@ @@
+-'preflight'
++'script'
+
+/app/tests/Integration/Redis/RequestSaveAclRedisTest.php:955
+
+6) Maatify\RateLimiter\Tests\Integration\Redis\RequestSaveAclRedisTest::testCase with data set "resp deny -pexpireat" ('deny -pexpireat', ['resp', ['pexpireat']])
+deny -pexpireat: provenance of the outcome: thrown Maatify\RateLimiter\Exception\RateLimiterException: ERR The user executing the script can't run this command or subcommand script: dc0527c44a8b90df7c20bd70a3547b193781dcd6, on @user_script:130.
+Failed asserting that two strings are identical.
+--- Expected
++++ Actual
+@@ @@
+-'preflight'
++'script'
+
+/app/tests/Integration/Redis/RequestSaveAclRedisTest.php:955
+
+7) Maatify\RateLimiter\Tests\Integration\Redis\RequestSaveAclRedisTest::testCase with data set "resp plan past expiry + deny -del" ('plan past expiry + deny -del', ['resp', false, 'past-expiry', ['del']])
+plan past expiry + deny -del: provenance of the outcome: thrown Maatify\RateLimiter\Exception\RateLimiterException: ERR The user executing the script can't run this command or subcommand script: dc0527c44a8b90df7c20bd70a3547b193781dcd6, on @user_script:113.
+Failed asserting that two strings are identical.
+--- Expected
++++ Actual
+@@ @@
+-'preflight'
++'script'
+
+/app/tests/Integration/Redis/RequestSaveAclRedisTest.php:955
+
+8) Maatify\RateLimiter\Tests\Integration\Redis\RequestSaveAclRedisTest::testCase with data set "resp plan batches + deny -sadd" ('plan batches + deny -sadd', ['resp', false, 'batches', ['sadd']])
+plan batches + deny -sadd: provenance of the outcome: thrown Maatify\RateLimiter\Exception\RateLimiterException: ERR The user executing the script can't run this command or subcommand script: dc0527c44a8b90df7c20bd70a3547b193781dcd6, on @user_script:106.
+Failed asserting that two strings are identical.
+--- Expected
++++ Actual
+@@ @@
+-'preflight'
++'script'
+
+/app/tests/Integration/Redis/RequestSaveAclRedisTest.php:955
+
+9) Maatify\RateLimiter\Tests\Integration\Redis\RequestSaveAclRedisTest::testCase with data set "resp conflict at the first save, then deny -hset" ('conflict then deny -hset', ['resp', 'conflict-before-commit', ['hset']])
+conflict then deny -hset: provenance of the outcome: thrown Maatify\RateLimiter\Exception\RateLimiterException: ERR The user executing the script can't run this command or subcommand script: dc0527c44a8b90df7c20bd70a3547b193781dcd6, on @user_script:106.
+Failed asserting that two strings are identical.
+--- Expected
++++ Actual
+@@ @@
+-'preflight'
++'script'
+
+/app/tests/Integration/Redis/RequestSaveAclRedisTest.php:955
+
+10) Maatify\RateLimiter\Tests\Integration\Redis\RequestSaveAclRedisTest::testCase with data set "resp revoke -hset before the commit" ('revoke -hset before commit', ['resp', 'revoke-hset'])
+revoke -hset before commit: provenance of the outcome: thrown Maatify\RateLimiter\Exception\RateLimiterException: ERR The user executing the script can't run this command or subcommand script: dc0527c44a8b90df7c20bd70a3547b193781dcd6, on @user_script:106.
+Failed asserting that two strings are identical.
+--- Expected
++++ Actual
+@@ @@
+-'preflight'
++'script'
+
+/app/tests/Integration/Redis/RequestSaveAclRedisTest.php:955
+
+11) Maatify\RateLimiter\Tests\Integration\Redis\RequestSaveAclRedisTest::testCase with data set "resp revoke -del before the commit" ('revoke -del before commit', ['resp', 'revoke-del'])
+revoke -del before commit: provenance of the outcome: thrown Maatify\RateLimiter\Exception\RateLimiterException: ERR The user executing the script can't run this command or subcommand script: dc0527c44a8b90df7c20bd70a3547b193781dcd6, on @user_script:113.
+Failed asserting that two strings are identical.
+--- Expected
++++ Actual
+@@ @@
+-'preflight'
++'script'
+
+/app/tests/Integration/Redis/RequestSaveAclRedisTest.php:955
+
+12) Maatify\RateLimiter\Tests\Integration\Redis\RequestSaveAclRedisTest::testCase with data set "resp engine deny -pexpireat" ('engine deny -pexpireat', ['resp', true, ['~maatify:rate-limiter:v1:*', '~'], ['pexpireat']])
+engine deny -pexpireat: provenance of the outcome: thrown Maatify\RateLimiter\Exception\RateLimiterException: ERR The user executing the script can't run this command or subcommand script: dc0527c44a8b90df7c20bd70a3547b193781dcd6, on @user_script:130.
+Failed asserting that two strings are identical.
+--- Expected
++++ Actual
+@@ @@
+-'preflight'
++'script'
+
+/app/tests/Integration/Redis/RequestSaveAclRedisTest.php:955
+
+13) Maatify\RateLimiter\Tests\Integration\Redis\RequestSaveAclRedisTest::testCase with data set "phpredis deny -del" ('deny -del', ['phpredis', ['del']])
+deny -del: provenance of the outcome: thrown RedisException: ERR The user executing the script can't run this command or subcommand script: dc0527c44a8b90df7c20bd70a3547b193781dcd6, on @user_script:113.
+Failed asserting that two strings are identical.
+--- Expected
++++ Actual
+@@ @@
+-'preflight'
++'script'
+
+/app/tests/Integration/Redis/RequestSaveAclRedisTest.php:955
+
+14) Maatify\RateLimiter\Tests\Integration\Redis\RequestSaveAclRedisTest::testCase with data set "phpredis deny -set" ('deny -set', ['phpredis', ['set']])
+deny -set: provenance of the outcome: thrown RedisException: ERR The user executing the script can't run this command or subcommand script: dc0527c44a8b90df7c20bd70a3547b193781dcd6, on @user_script:115.
+Failed asserting that two strings are identical.
+--- Expected
++++ Actual
+@@ @@
+-'preflight'
++'script'
+
+/app/tests/Integration/Redis/RequestSaveAclRedisTest.php:955
+
+15) Maatify\RateLimiter\Tests\Integration\Redis\RequestSaveAclRedisTest::testCase with data set "phpredis deny -hset" ('deny -hset', ['phpredis', ['hset']])
+deny -hset: provenance of the outcome: thrown RedisException: ERR The user executing the script can't run this command or subcommand script: dc0527c44a8b90df7c20bd70a3547b193781dcd6, on @user_script:106.
+Failed asserting that two strings are identical.
+--- Expected
++++ Actual
+@@ @@
+-'preflight'
++'script'
+
+/app/tests/Integration/Redis/RequestSaveAclRedisTest.php:955
+
+16) Maatify\RateLimiter\Tests\Integration\Redis\RequestSaveAclRedisTest::testCase with data set "phpredis deny -sadd" ('deny -sadd', ['phpredis', ['sadd']])
+deny -sadd: provenance of the outcome: thrown RedisException: ERR The user executing the script can't run this command or subcommand script: dc0527c44a8b90df7c20bd70a3547b193781dcd6, on @user_script:106.
+Failed asserting that two strings are identical.
+--- Expected
++++ Actual
+@@ @@
+-'preflight'
++'script'
+
+/app/tests/Integration/Redis/RequestSaveAclRedisTest.php:955
+
+17) Maatify\RateLimiter\Tests\Integration\Redis\RequestSaveAclRedisTest::testCase with data set "phpredis deny -zadd" ('deny -zadd', ['phpredis', ['zadd']])
+deny -zadd: provenance of the outcome: thrown RedisException: ERR The user executing the script can't run this command or subcommand script: dc0527c44a8b90df7c20bd70a3547b193781dcd6, on @user_script:106.
+Failed asserting that two strings are identical.
+--- Expected
++++ Actual
+@@ @@
+-'preflight'
++'script'
+
+/app/tests/Integration/Redis/RequestSaveAclRedisTest.php:955
+
+18) Maatify\RateLimiter\Tests\Integration\Redis\RequestSaveAclRedisTest::testCase with data set "phpredis deny -pexpireat" ('deny -pexpireat', ['phpredis', ['pexpireat']])
+deny -pexpireat: provenance of the outcome: thrown RedisException: ERR The user executing the script can't run this command or subcommand script: dc0527c44a8b90df7c20bd70a3547b193781dcd6, on @user_script:130.
+Failed asserting that two strings are identical.
+--- Expected
++++ Actual
+@@ @@
+-'preflight'
++'script'
+
+/app/tests/Integration/Redis/RequestSaveAclRedisTest.php:955
+
+19) Maatify\RateLimiter\Tests\Integration\Redis\RequestSaveAclRedisTest::testCase with data set "phpredis plan past expiry + deny -del" ('plan past expiry + deny -del', ['phpredis', false, 'past-expiry', ['del']])
+plan past expiry + deny -del: provenance of the outcome: thrown RedisException: ERR The user executing the script can't run this command or subcommand script: dc0527c44a8b90df7c20bd70a3547b193781dcd6, on @user_script:113.
+Failed asserting that two strings are identical.
+--- Expected
++++ Actual
+@@ @@
+-'preflight'
++'script'
+
+/app/tests/Integration/Redis/RequestSaveAclRedisTest.php:955
+
+20) Maatify\RateLimiter\Tests\Integration\Redis\RequestSaveAclRedisTest::testCase with data set "phpredis plan batches + deny -sadd" ('plan batches + deny -sadd', ['phpredis', false, 'batches', ['sadd']])
+plan batches + deny -sadd: provenance of the outcome: thrown RedisException: ERR The user executing the script can't run this command or subcommand script: dc0527c44a8b90df7c20bd70a3547b193781dcd6, on @user_script:106.
+Failed asserting that two strings are identical.
+--- Expected
++++ Actual
+@@ @@
+-'preflight'
++'script'
+
+/app/tests/Integration/Redis/RequestSaveAclRedisTest.php:955
+
+21) Maatify\RateLimiter\Tests\Integration\Redis\RequestSaveAclRedisTest::testCase with data set "phpredis conflict at the first save, then deny -hset" ('conflict then deny -hset', ['phpredis', 'conflict-before-commit', ['hset']])
+conflict then deny -hset: provenance of the outcome: thrown RedisException: ERR The user executing the script can't run this command or subcommand script: dc0527c44a8b90df7c20bd70a3547b193781dcd6, on @user_script:106.
+Failed asserting that two strings are identical.
+--- Expected
++++ Actual
+@@ @@
+-'preflight'
++'script'
+
+/app/tests/Integration/Redis/RequestSaveAclRedisTest.php:955
+
+22) Maatify\RateLimiter\Tests\Integration\Redis\RequestSaveAclRedisTest::testCase with data set "phpredis revoke -hset before the commit" ('revoke -hset before commit', ['phpredis', 'revoke-hset'])
+revoke -hset before commit: provenance of the outcome: thrown RedisException: ERR The user executing the script can't run this command or subcommand script: dc0527c44a8b90df7c20bd70a3547b193781dcd6, on @user_script:106.
+Failed asserting that two strings are identical.
+--- Expected
++++ Actual
+@@ @@
+-'preflight'
++'script'
+
+/app/tests/Integration/Redis/RequestSaveAclRedisTest.php:955
+
+23) Maatify\RateLimiter\Tests\Integration\Redis\RequestSaveAclRedisTest::testCase with data set "phpredis revoke -del before the commit" ('revoke -del before commit', ['phpredis', 'revoke-del'])
+revoke -del before commit: provenance of the outcome: thrown RedisException: ERR The user executing the script can't run this command or subcommand script: dc0527c44a8b90df7c20bd70a3547b193781dcd6, on @user_script:113.
+Failed asserting that two strings are identical.
+--- Expected
++++ Actual
+@@ @@
+-'preflight'
++'script'
+
+/app/tests/Integration/Redis/RequestSaveAclRedisTest.php:955
+
+24) Maatify\RateLimiter\Tests\Integration\Redis\RequestSaveAclRedisTest::testCase with data set "phpredis engine deny -pexpireat" ('engine deny -pexpireat', ['phpredis', true, ['~maatify:rate-limiter:v1:*', '~'], ['pexpireat']])
+engine deny -pexpireat: provenance of the outcome: thrown RedisException: ERR The user executing the script can't run this command or subcommand script: dc0527c44a8b90df7c20bd70a3547b193781dcd6, on @user_script:130.
+Failed asserting that two strings are identical.
+--- Expected
++++ Actual
+@@ @@
+-'preflight'
++'script'
+
+/app/tests/Integration/Redis/RequestSaveAclRedisTest.php:955
+
+FAILURES!
+Tests: 92, Assertions: 1823, Failures: 24.
+redis: Redis server v=7.0.15 sha=00000000:0 malloc=jemalloc-5.2.1 bits=64 build=d6d81b7b50ab2e83

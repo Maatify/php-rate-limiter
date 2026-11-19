@@ -67,6 +67,10 @@ Item 7 already states that the outcome claim is an independent atomic command, o
 
 The nested-call guarantee of `RequestAtomicStoreInterface` ("called while one of its own requests is already being evaluated, it runs `$evaluate` inside that request") is reconciled with DEC-041 and nothing else in this decision changes: a call joins the open request only when it comes from **the owner's execution context while no Host crossing of the owner is open**; an independent call from another context, or from inside a Host crossing, is refused with `OverlappingRequestException` and never joins. The held writes, the conditional save, the re-evaluation on conflict, the retry budget, the independent outcome claim and the signal rules above are unchanged. This note records the approved contract; the implementation is under review on PR #266 and is not accepted until merged.
 
+## Application note (#261, DEC-042): permissions of the save commands
+
+Item 4's comparison and validation do not cover Redis ACL permissions, and a script error after the first write is not rolled back. [DEC-042](DEC-042_REQUEST_SAVE_ACL_PREFLIGHT_OF_THE_ACTUAL_WRITE_PLAN.md) adds, after the comparison and validation and before the first write, a check of the whole actual write plan with `redis.acl_check_cmd`; a refused command is a `NOPERM` error reply with nothing written. Nothing else in this decision changes, and DEC-042 does not supersede it. The all-or-none claim of item 4 is not extended to Redis errors other than the ACL refusal.
+
 ## Relationship to Other Decisions
 
 - **DEC-029** (no concurrency exception after a committed write): unchanged; with one save per request a conflict before the save raises nothing and recalculates.

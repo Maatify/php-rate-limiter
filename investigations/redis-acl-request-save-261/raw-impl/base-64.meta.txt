@@ -1,0 +1,8 @@
+source_head=728a1f51929aa5aca8632e55d9dd9dcad8b6420b
+source_tree=a02bf7eb30bb70058b1e0f436dc3ef7e75a89e5f
+worktree_dirty=yes
+php_image=maatify-rl-php64:local (linux/arm64)
+redis_image=redis:7.0.15-alpine
+started_at_utc=2026-11-19T08:48:39Z
+command=run.sh linux/arm64 --do-not-cache-result tests/Integration/Redis/RequestSaveAclRedisTest.php
+exit_code=1
