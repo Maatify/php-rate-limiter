@@ -4,10 +4,10 @@ PHPUnit 11.5.57 by Sebastian Bergmann and contributors.
 Runtime:       PHP 8.4.27
 Configuration: /app/phpunit.xml
 
-................................................................. 65 / 90 ( 72%)
-.........................                                         90 / 90 (100%)
+................................................................. 65 / 92 ( 70%)
+...........................                                       92 / 92 (100%)
 
-Time: 00:26.346, Memory: 20.00 MB
+Time: 00:21.071, Memory: 16.00 MB
 
-OK (90 tests, 2045 assertions)
+OK (92 tests, 2117 assertions)
 redis: Redis server v=7.0.15 sha=00000000:0 malloc=jemalloc-5.2.1 bits=64 build=d6d81b7b50ab2e83

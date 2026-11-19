@@ -1,6 +1,6 @@
 ok   missing Redis image (exit 72)
 ok   Redis never ready (exit 73)
-ok   bounded: 4 s
+ok   bounded: 3 s
 ok   wrong width (exit 64)
 ok   absolute output directory inside the repository: run (exit 0)
 ok   evidence.jsonl is non-empty

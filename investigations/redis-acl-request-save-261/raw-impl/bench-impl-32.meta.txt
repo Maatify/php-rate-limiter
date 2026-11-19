@@ -1,0 +1,8 @@
+source_head=728a1f51929aa5aca8632e55d9dd9dcad8b6420b
+source_tree=a02bf7eb30bb70058b1e0f436dc3ef7e75a89e5f
+worktree_dirty=no
+php_image=maatify-rl-php32:local (linux/386)
+redis_image=redis:7.0.15-alpine
+started_at_utc=2026-11-19T08:56:02Z
+command=bench-impl.sh linux/386 200 2
+exit_code=0
