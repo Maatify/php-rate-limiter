@@ -9,7 +9,7 @@
 | الريبو / remote | `Maatify/php-rate-limiter`، `origin = https://github.com/Maatify/php-rate-limiter.git` |
 | الأساس | `main@3acf0258087a7bb89057dcf629f9bf8f5b38c246`، الشجرة `a231ec4a90afaf21ae8df6bfc0c1295e931d4c49` (`main` لم يتحرك قبل البدء؛ طابقتُ الشجرة بالتكليف) |
 | فرع العمل | `claude/261-commit-acl-preflight` |
-| SHA مصدر الاختبارات (`src/` و`tests/`) | `808be49dc5927a107d5d787d09e697c6dde5c12e` (الشجرة `c66458eeaa329886528d423e9ec35212b45a2168`)؛ ما بعده أدلة ووثائق فقط، لا فرق تحت `src/` ولا `tests/` |
+| SHA مصدر الاختبارات (`src/` و`tests/`) | `9e3a266ba52141dd02473c2f44bab19a0370d380` (الشجرة `d75b71b642eac5e435715d6ea134aa81992650bc`)؛ ما بعده أدلة ووثائق فقط، لا فرق تحت `src/` ولا `tests/` |
 | الحوكمة | Governance Helper داخل Docker على شجرة العمل: `mechanical_status = VALID`، `errors = []`، selective-adoption (`raw-impl/governance-helper.json`)؛ الـpin ثابت ولم يُحدَّث |
 
 ## ما تغيّر في الإنتاج
@@ -34,7 +34,7 @@
 
 ## الأساس مقابل الإصلاح (الانحدار يميّزهما)
 
-نفس ملف الاختبار الجديد على `main` الأساس (`src/…/RedisRequestOverlay.php` مستبدل مؤقتًا بنسخة `3acf0258` ثم يُسترجع؛ لذا `worktree_dirty=yes` في `raw-impl/base-*.meta.txt`):
+نفس ملف الاختبار الجديد على `main` الأساس (`src/…/RedisRequestOverlay.php` مستبدل مؤقتًا بنسخة `3acf0258` ثم يُسترجع؛ لذا `worktree_dirty=yes` في `raw-impl/base-*.meta.txt`). ملاحظة: كل ملفات `.meta.txt` سجّلت `worktree_dirty=yes` لأن ملفات الأدلة غير المتتبَّعة (هذا الملف و`raw-impl/`) كانت موجودة وقت التشغيل؛ لا ملف متتبَّع معدّل (`git status` لا يُظهر إلا هذه الأدلة)، وفي حالة الأساس يُضاف استبدال `RedisRequestOverlay.php` المؤقت:
 
 | | الأساس `3acf0258` | الإصلاح |
 |---|---|---|
@@ -48,8 +48,8 @@
 | السجل (`raw-impl/`) | النتيجة |
 |---|---|
 | `rel-64.log`، `rel-32.log` | `RequestAtomicityBoundariesRedisTest`: `OK (6 tests, 402 assertions)` على العرضين |
-| `broad-integration-redis-64.log`، `broad-integration-redis-32.log` | كل `tests/Integration/Redis` على الإصلاح: 925 اختبارًا، `OK` مع **14 skip** على 64-bit و**64 skip** على 32-bit (تخطيات الاختبارات القائمة، لا شيء منها من هذه الدراسة)، دون فشل |
-| `bench-impl.log` | كلفة الحفظ (commit EVAL، خمسة مفاتيح، Redis محلي، تشغيل وحيد بالتناوب base/fix): وسيط 64-bit ≈ **317 µs** أساسًا مقابل **336 µs** بعد الإصلاح (≈ +6%، ثلاث جولات 400 طلب)، و32-bit تحت المحاكاة ≈ 478 مقابل 497 µs (تقريبي). فرق صغير لكنه **ليس صفرًا**: بناء الخطة وفحصها قبل التنفيذ |
+| `broad-integration-redis-64.log`، `broad-integration-redis-32.log` | كل `tests/Integration/Redis` على الإصلاح: 925 اختبارًا، `OK` مع **14 skip** على 64-bit و**64 skip** على 32-bit (تخطيات الاختبارات القائمة)، دون فشل. **ما لم ينجح في جولة سابقة**: في تشغيل واسع سابق على 32-bit فشل اختبار واحد من اختباراتي (`phpredis reply lost after the save`): توقّع `cycle:content` بينما رُصد `cycle:content+expiry`، لأن إعادة كتابة مفتاح تغيّر انتهاءه المطلق أيضًا عندما يعبر الزرع والطلب حدّ ثانية. كان ذلك هشاشة في توقّع الاختبار لا في الإنتاج؛ وُحّد `content` و`content+expiry` في المقارنة (والانتهاء الدقيق يُثبته `testASuccessfulSaveWritesTheDataAndTheLifetimes`)، ثم أُعيدت كل التشغيلات على هذا الرأس ونجحت |
+| `bench-impl.log` | كلفة الحفظ (commit EVAL، خمسة مفاتيح، Redis محلي، تشغيل وحيد بالتناوب base/fix): وسيط 64-bit ≈ **281 µs** أساسًا مقابل **272 µs** بعد الإصلاح (ثلاث جولات × 400)، دون فرق متسق؛ وعلى 32-bit تحت المحاكاة ≈ **413** مقابل **461 µs** (≈ +12%، جولتان × 200، تقريبي). في تشغيل سابق على الرأس السابق كان الفرق على 64-bit ≈ +6%. أي أن الكلفة **ليست صفرًا لكنها ضمن ضوضاء القياس على 64-bit وقد تظهر على 32-bit المحاكى**، وهي بناء الخطة وفحصها قبل التنفيذ |
 | `governance-helper.json` | VALID، errors [] |
 
 ## الأوامر والإصدارات
