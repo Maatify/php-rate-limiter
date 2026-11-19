@@ -239,6 +239,7 @@ final class FallbackEnvironmentScopeSharingStudy262Test extends TestCase
         $script = \dirname(__DIR__, 2) . '/investigations/fallback-env-scope-262/child.php';
         $process = proc_open([PHP_BINARY, $script, 'staging', self::POLICY, '3'], [1 => ['pipe', 'w'], 2 => ['pipe', 'w']], $pipes);
         $this->assertIsResource($process);
+        /** @var array{1: resource, 2: resource} $pipes */
         $out = stream_get_contents($pipes[1]);
         $err = stream_get_contents($pipes[2]);
         $code = proc_close($process);
