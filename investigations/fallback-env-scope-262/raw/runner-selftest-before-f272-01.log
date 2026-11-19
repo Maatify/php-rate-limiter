@@ -1,0 +1,30 @@
+ok   wrong width (exit 64)
+ok   missing output directory (exit 64)
+FAIL absolute directory outside the repository: expected exit 74, got 64
+FAIL '..' in the directory: expected exit 74, got 64
+FAIL directory through a symbolic link: expected exit 74, got 1
+ok   symbolic-link directory: existing bytes preserved
+FAIL directory that is itself a symbolic link: expected exit 74, got 1
+FAIL symbolic-link directory (itself): existing evidence changed
+FAIL symbolic-link phpunit.log: expected exit 75, got 0
+FAIL later artifact refused: existing evidence changed
+FAIL link target of the refused artifact: existing evidence changed
+FAIL directory where phpunit.log must be: expected exit 75, got 70
+FAIL directory in place of a later artifact: existing evidence changed
+mkdir: investigations/fallback-env-scope-262/out/selftest-83715/artifacts/run-meta.txt: File exists
+FAIL directory where run-meta.txt must be: expected exit 75, got 0
+FAIL directory in place of the last artifact: existing evidence changed
+FAIL git status fails: expected exit 77, got 0
+FAIL git status fails: existing evidence changed
+ok   git cannot identify the source (exit 77)
+FAIL git fails entirely: existing evidence changed
+ok   wrong number of evidence records (exit 76)
+ok   normal run on 64 (exit 0)
+ok   64: 13 evidence records
+ok   64: run-meta.txt records final_exit=0
+ok   64: PHP_INT_SIZE as expected
+ok   normal run on 32 (exit 0)
+ok   32: 13 evidence records
+ok   32: run-meta.txt records final_exit=0
+ok   32: PHP_INT_SIZE as expected
+selftest: FAILED
