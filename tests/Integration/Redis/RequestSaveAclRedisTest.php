@@ -888,7 +888,11 @@ final class RequestSaveAclRedisTest extends TestCase
             self::assertSame($expected['evaluations'], $record['evaluations'], $name . ': evaluations of the request');
             self::assertSame($expected['steps'], $record['stepsReached'], $name . ': steps completed by the last evaluation');
         }
-        self::assertSame($expected['changed'], $changed, $name . ': keys that changed, read from outside Lua');
+        // A key that is rewritten also gets a new absolute expiry when the request and its seed straddle a second boundary, so `content` and
+        // `content+expiry` are one change here; the exact expiry is asserted by testASuccessfulSaveWritesTheDataAndTheLifetimes, and `expiry` alone,
+        // `(WITHOUT EXPIRY)`, `DELETED` and `created` stay distinct.
+        $unify = static fn(array $list): array => array_map(static fn(string $change): string => str_replace(':content+expiry', ':content', $change), $list);
+        self::assertSame($unify($expected['changed']), $unify($changed), $name . ': keys that changed, read from outside Lua');
         self::assertTrue($record['controlUnchanged'], $name . ': the control key outside the request state is untouched');
         self::assertSame($expected['fallback'], $record['fallbackCharged'], $name . ': the local fallback limiter was charged');
         self::assertSame($expected['signals'], $record['signals'], $name . ': failure signals emitted');
