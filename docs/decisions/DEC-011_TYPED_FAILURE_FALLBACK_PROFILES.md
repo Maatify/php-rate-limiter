@@ -96,7 +96,7 @@ of them reuses an official preset's exact numbers.
 The namespace is the policy name alone: it does not include `environmentScope`.
 Runtimes in one PHP process that use the same policy name therefore share the
 fallback namespace even when their scope differs. This was measured in study
-#272 (identical configuration and clock) and accepted by the Owner on #262 as
+[#272](https://github.com/Maatify/php-rate-limiter/pull/272) (identical configuration and clock) and accepted by the Owner on [#262](https://github.com/Maatify/php-rate-limiter/issues/262#issuecomment-7023816557) as
 option A: the behavior is documented, not changed. It states the limit of the
 allowance and is not a general support statement about two environments in one
 process. The clarification is in `docs/FAILURE_SEMANTICS.md`; the 4096-subject
@@ -179,6 +179,6 @@ Owner approval occurred on 2026-09-26 under WU-S4-03C. This amendment,
 prepared as technical direction under the Owner-directed WU-S4-03C
 remediation track, is Owner-approved. Status is `ACTIVE`.
 
-Clarification (#262, 2026-11-20): the Owner accepted option A of study #272. The
+Clarification ([#262](https://github.com/Maatify/php-rate-limiter/issues/262#issuecomment-7023816557), 2026-11-20): the Owner accepted option A of study #272. The
 namespace stays the policy name; no `environmentScope` is added, no build is
 refused, and no runtime behavior changes.

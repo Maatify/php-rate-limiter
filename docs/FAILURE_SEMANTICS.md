@@ -73,20 +73,26 @@ share counters.
 
 Within one PHP process, runtimes built with the same policy name use one
 fallback namespace even when their `environmentScope` differs (DEC-011,
-decision on [#262](https://github.com/Maatify/php-rate-limiter/issues/262): option A, document the behavior as it is). The scope is part
+decision on [#262](https://github.com/Maatify/php-rate-limiter/issues/262#issuecomment-7023816557): option A, document the behavior as it is). The scope is part
 of the derivation of storage keys; by itself it does not give a runtime an
-independent fallback allowance. In the measured scenarios (#272), two runtimes
+independent fallback allowance. In the measured scenarios ([#272](https://github.com/Maatify/php-rate-limiter/pull/272)), two runtimes
 with identical fallback configuration and clock shared, for the same dimension,
 subject and applicable window, one counter: an allowance consumed through one
-was visible to the other. Below the 4096 cap the counter differs by the subject
+was visible to the other. The policy name fixes the namespace; a population is
+the namespace plus the dimension plus the window bucket computed from the clock
+and the rule's window. Below the 4096 cap the counter differs by the subject
 that applies to the dimension; after the cap, new subjects of that
-policy/dimension/window share its overflow bucket across those runtimes too.
+population share its overflow bucket across those runtimes too.
 The cap, the overflow bucket and the collection of expired windows are
 unchanged (DEC-015). Separate PHP processes keep their own local state. The
-circuit state belongs to each runtime's circuit store and is not part of the
-fallback namespace: one runtime's circuit can be `OPEN` while the other's is
-not, while the allowance they consume stays shared. The measurement covered
-identical configurations and a fixed clock; different clocks or different
+circuit state is not part of the fallback namespace. A tripped emergency
+state is local to the `CircuitBreaker` instance that holds it (DEC-015); the
+persistent circuit state is read from the circuit store the Host supplies,
+under the policy name, so whether runtimes share it follows that store and its
+keys. The study (S05) gave each runtime its own circuit store, and there one
+runtime's circuit was `OPEN` while the other's was not, with the allowance
+still shared; it did not measure runtimes sharing one circuit store. The
+measurement covered identical configurations and a fixed clock; different clocks or different
 fallback configurations under one policy name were not measured, so nothing
 is concluded for them. This is not an isolation or confidentiality guarantee,
 and it is not a general support statement about hosting two environments in
