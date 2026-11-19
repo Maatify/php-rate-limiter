@@ -1,0 +1,11 @@
+PHP 8.4.27 INT=4
+PHPUnit 11.5.57 by Sebastian Bergmann and contributors.
+
+Runtime:       PHP 8.4.27
+Configuration: /app/phpunit.xml
+
+.............                                                     13 / 13 (100%)
+
+Time: 00:08.495, Memory: 14.00 MB
+
+OK (13 tests, 4167 assertions)

@@ -1,0 +1,7 @@
+PHP 8.4.27 INT=8
+PHPUnit 11.5.57 by Sebastian Bergmann and contributors.
+
+Runtime:       PHP 8.4.27
+Configuration: /app/phpunit.xml
+
+No tests executed!
