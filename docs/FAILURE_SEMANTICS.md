@@ -71,6 +71,35 @@ policies with numerically identical configurations — including a custom
 policy that happens to reuse an official preset's exact numbers — never
 share counters.
 
+Within one PHP process, runtimes built with the same policy name use one
+fallback namespace even when their `environmentScope` differs (DEC-011,
+decision on [#262](https://github.com/Maatify/php-rate-limiter/issues/262#issuecomment-7023816557): option A, document the behavior as it is). The scope is part
+of the derivation of storage keys; by itself it does not give a runtime an
+independent fallback allowance. In the measured scenarios ([#272](https://github.com/Maatify/php-rate-limiter/pull/272)), two runtimes
+with identical fallback configuration and clock shared, for the same dimension,
+subject and applicable window, one counter: an allowance consumed through one
+was visible to the other. The policy name fixes the namespace; a population is
+the namespace plus the dimension plus the window bucket computed from the clock
+and the rule's window. Below the 4096 cap the counter differs by the subject
+that applies to the dimension; after the cap, new subjects of that
+population share its overflow bucket across those runtimes too.
+The cap, the overflow bucket and the collection of expired windows are
+unchanged (DEC-015). Separate PHP processes keep their own local state. The
+circuit state is not part of the fallback namespace. A tripped emergency
+state is local to the `CircuitBreaker` instance that holds it (DEC-015); the
+persistent circuit state is read from the circuit store the Host supplies,
+under the policy name, so whether runtimes share it follows that store and its
+keys. The study (S05) gave each runtime its own circuit store, and there one
+runtime's circuit was `OPEN` while the other's was not, with the allowance
+still shared; it did not measure runtimes sharing one circuit store. The
+measurement covered identical configurations and a fixed clock; different clocks or different
+fallback configurations under one policy name were not measured, so nothing
+is concluded for them. This is not an isolation or confidentiality guarantee,
+and it is not a general support statement about hosting two environments in
+one process. Fallback consumption and the classification of a backend failure
+keep their existing contracts.
+Study: `investigations/fallback-env-scope-262/README.md` (#272).
+
 Each policy/dimension fallback population tracks at most 4096 active subjects.
 There is no active-entry eviction. Once full, previously unseen subjects share
 one conservative overflow bucket for the applicable window. The overflow

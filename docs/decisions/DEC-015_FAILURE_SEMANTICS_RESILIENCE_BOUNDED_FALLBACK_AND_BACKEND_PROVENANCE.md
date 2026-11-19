@@ -85,6 +85,16 @@ applicable rule/window and never creates additional allowance or resets an
 existing tracked subject. Expired windows are removed during normal fallback
 activity so historical windows do not accumulate indefinitely.
 
+The bound is not per environment. The policy name fixes the namespace, and a
+population is that namespace plus the dimension plus the window bucket (from
+the clock and the rule's window). Runtimes in one process with the same policy
+name, dimension and window bucket share that population, so its 4096 cap and
+overflow bucket are reached through their combined subjects (DEC-011
+clarification, #262; study #272, scenario S11, measured with identical
+configuration and clock). Below the cap the counter differs by the applicable subject; after it,
+new subjects of that population share the overflow bucket. The contract above
+is unchanged.
+
 Failure fallback and circuit accounting are entered only for the explicit
 typed operational backend-failure contract represented by
 `BackendFailureException`. Official infrastructure adapters classify eligible
