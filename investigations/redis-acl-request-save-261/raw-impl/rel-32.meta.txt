@@ -1,0 +1,8 @@
+source_head=9e3a266ba52141dd02473c2f44bab19a0370d380
+source_tree=d75b71b642eac5e435715d6ea134aa81992650bc
+worktree_dirty=yes
+php_image=maatify-rl-php32:local (linux/386)
+redis_image=redis:7.0.15-alpine
+started_at_utc=2026-11-19T07:14:01Z
+command=run.sh linux/386 --do-not-cache-result tests/Integration/Redis/RequestAtomicityBoundariesRedisTest.php
+exit_code=0

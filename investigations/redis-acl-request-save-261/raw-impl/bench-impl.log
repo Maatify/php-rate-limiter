@@ -1,0 +1,10 @@
+base-round1: PHP 8.4.27 INT=8 n=400 commit p50=276 us p95=663 us mean=342 us
+fix-round1: PHP 8.4.27 INT=8 n=400 commit p50=235 us p95=449 us mean=287 us
+base-round2: PHP 8.4.27 INT=8 n=400 commit p50=259 us p95=528 us mean=294 us
+fix-round2: PHP 8.4.27 INT=8 n=400 commit p50=267 us p95=476 us mean=313 us
+base-round3: PHP 8.4.27 INT=8 n=400 commit p50=308 us p95=901 us mean=403 us
+fix-round3: PHP 8.4.27 INT=8 n=400 commit p50=315 us p95=873 us mean=397 us
+base-round1: PHP 8.4.27 INT=4 n=200 commit p50=399 us p95=934 us mean=547 us
+fix-round1: PHP 8.4.27 INT=4 n=200 commit p50=436 us p95=935 us mean=518 us
+base-round2: PHP 8.4.27 INT=4 n=200 commit p50=428 us p95=1242 us mean=548 us
+fix-round2: PHP 8.4.27 INT=4 n=200 commit p50=487 us p95=1250 us mean=587 us
