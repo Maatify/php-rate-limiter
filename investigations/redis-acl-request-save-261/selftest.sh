@@ -58,6 +58,31 @@ printf '#!/bin/sh\nexit 4\n' > "$shim/git"
 PATH="$shim:$PATH" RL261_OUT=investigations/redis-acl-request-save-261/out/selftest-git-all-$$ investigations/redis-acl-request-save-261/run.sh 64 --version >/dev/null 2>&1
 nonzero "git cannot identify the source" $?
 rm -rf "$shim"
+# 5 (F269-07). A symbolic link on the way to the output directory, or in place of an artifact, must never let the runner write outside the clone:
+# the run is refused (non-zero) and an existing file outside the clone is not touched.
+ext=$(mktemp -d)
+reset_ext() { rm -rf "$ext"; mkdir -p "$ext"; for f in evidence.jsonl phpunit.log run-meta.txt bench.log; do echo "PRECIOUS-$f" > "$ext/$f"; done; }
+sum_ext() { (cd "$ext" && cat evidence.jsonl phpunit.log run-meta.txt bench.log; ls -A | sort | tr '\n' ' ') | cksum; }
+untouched() { # name checksum-before
+  if [ "$(sum_ext)" = "$2" ]; then echo "ok   $1: the file outside the clone is untouched"; else echo "FAIL $1: a file outside the clone was changed or created"; fail=1; fi
+}
+out=investigations/redis-acl-request-save-261/out
+mkdir -p "$out"
+reset_ext; sumb=$(sum_ext)
+ln -sfn "$ext" "$out/selftest-link-$$"
+RL261_OUT=$out/selftest-link-$$ investigations/redis-acl-request-save-261/run.sh 64 --version >/dev/null 2>&1
+nonzero "run.sh: output directory is a symbolic link" $?; untouched "run.sh symlinked directory" "$sumb"
+RL261_OUT=$out/selftest-link-$$ investigations/redis-acl-request-save-261/bench.sh 64 3 >/dev/null 2>&1
+nonzero "bench.sh: output directory is a symbolic link" $?; untouched "bench.sh symlinked directory" "$sumb"
+RL261_OUT=$(pwd)/$out/selftest-link-$$ investigations/redis-acl-request-save-261/run.sh 64 --version >/dev/null 2>&1
+nonzero "run.sh: absolute path through a symbolic link" $?; untouched "run.sh absolute symlinked path" "$sumb"
+RL261_OUT=$out/selftest-link-$$/sub investigations/redis-acl-request-save-261/run.sh 64 --version >/dev/null 2>&1
+nonzero "run.sh: a parent component is a symbolic link" $?; untouched "run.sh symlinked parent (no directory created outside)" "$sumb"
+# an artifact that is itself a symbolic link to an outside file
+real=$out/selftest-linkfile-$$; mkdir -p "$real"; ln -sfn "$ext/evidence.jsonl" "$real/evidence.jsonl"
+RL261_OUT=$real investigations/redis-acl-request-save-261/run.sh 64 --version >/dev/null 2>&1
+nonzero "run.sh: evidence.jsonl is a symbolic link" $?; untouched "run.sh symlinked artifact" "$sumb"
+rm -f "$out/selftest-link-$$"; rm -rf "$ext"
 after=$(docker ps -a --format '{{.Names}}' | grep -c '^rl261-'; docker network ls --format '{{.Name}}' | grep -c '^rl261-')
 [ "$before" = "$after" ] && echo "ok   no rl261-* container or network left behind" || { echo "FAIL leftovers: before=[$before] after=[$after]"; fail=1; }
 exit $fail

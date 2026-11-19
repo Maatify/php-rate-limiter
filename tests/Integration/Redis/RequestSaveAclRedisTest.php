@@ -574,6 +574,8 @@ final class RequestSaveAclRedisTest extends TestCase
         ];
         $path = getenv('ACL_261_EVIDENCE');
         if (is_string($path) && $path !== '') {
+            // The evidence file is written only if it is not a symbolic link (the runner refuses links; this is the test's own guard).
+            self::assertFalse(is_link($path), 'ACL_261_EVIDENCE must not be a symbolic link.');
             file_put_contents($path, json_encode($record, JSON_UNESCAPED_SLASHES | JSON_INVALID_UTF8_SUBSTITUTE | JSON_PARTIAL_OUTPUT_ON_ERROR) . "\n", FILE_APPEND | LOCK_EX);
         }
 

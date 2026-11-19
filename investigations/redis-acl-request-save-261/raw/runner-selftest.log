@@ -11,4 +11,14 @@ ok   unwritable run-meta.txt (exit 75, non-zero)
 ok   unwritable bench.log (exit 75, non-zero)
 ok   git status fails (exit 77, non-zero)
 ok   git cannot identify the source (exit 77, non-zero)
+ok   run.sh: output directory is a symbolic link (exit 74, non-zero)
+ok   run.sh symlinked directory: the file outside the clone is untouched
+ok   bench.sh: output directory is a symbolic link (exit 74, non-zero)
+ok   bench.sh symlinked directory: the file outside the clone is untouched
+ok   run.sh: absolute path through a symbolic link (exit 74, non-zero)
+ok   run.sh absolute symlinked path: the file outside the clone is untouched
+ok   run.sh: a parent component is a symbolic link (exit 74, non-zero)
+ok   run.sh symlinked parent (no directory created outside): the file outside the clone is untouched
+ok   run.sh: evidence.jsonl is a symbolic link (exit 75, non-zero)
+ok   run.sh symlinked artifact: the file outside the clone is untouched
 ok   no rl261-* container or network left behind

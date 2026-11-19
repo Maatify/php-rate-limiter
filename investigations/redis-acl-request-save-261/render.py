@@ -114,5 +114,8 @@ for case in sorted({c for c, _ in a}, key=lambda c: list(META).index(c) if c in 
 out.append('')
 diff = [k for k in a if (a[k]['sentCommit'], a[k]['evaluations'], a[k]['stepsReached'], changed(a[k]), norm(a[k]['result']), a[k]['fallbackCharged']) != (b[k]['sentCommit'], b[k]['evaluations'], b[k]['stepsReached'], changed(b[k]), norm(b[k]['result']), b[k]['fallbackCharged'])]
 out.append('مقارنة PHP_INT_SIZE 8 مقابل 4: %d حالة، الفروق: %s' % (len(a), diff or 'لا فرق'))
-open(os.path.join(raw, 'evidence-table.md'), 'w').write('\n'.join(out) + '\n')
+target = os.path.join(raw, 'evidence-table.md')
+if os.path.islink(target) or os.path.islink(raw):
+    sys.exit('refusing to write through a symbolic link: ' + target)
+open(target, 'w').write('\n'.join(out) + '\n')
 print('rows', len(a), 'diff', diff)

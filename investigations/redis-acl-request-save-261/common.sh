@@ -5,7 +5,7 @@
 RL261_REDIS_IMAGE=${RL261_REDIS_IMAGE:-redis:7.0.15-alpine}
 RL261_READY_SECONDS=${RL261_READY_SECONDS:-30}      # how long Redis may take to answer PING
 RL261_RUN_SECONDS=${RL261_RUN_SECONDS:-900}         # hard limit of the PHP command inside the container
-RL261_ROOT=$(pwd)
+RL261_ROOT=$(pwd -P)   # the physical clone root: every check below is against resolved paths, never the lexical ones
 RL261_STUDY=investigations/redis-acl-request-save-261
 
 rl261_die() { echo "rl261: $*" >&2; exit "${2:-70}"; }
@@ -56,14 +56,33 @@ rl261_out_dir() {
     /*) case "$out" in "$RL261_ROOT"/*) out=${out#"$RL261_ROOT"/} ;; *) rl261_die "RL261_OUT must be inside the repository ($RL261_ROOT) or relative; got $out" 74 ;; esac ;;
   esac
   case "/$out/" in */../*) rl261_die "RL261_OUT must not contain '..': $out" 74 ;; esac
+  # No component of the path may be a symbolic link (F269-07): it would let a write land outside the clone. Checked BEFORE anything is created
+  # or written, component by component, so not even a directory is made through a link.
+  local walk="" segment
+  local IFS=/
+  for segment in $out; do
+    [ -z "$segment" ] && continue
+    walk=${walk:+$walk/}$segment
+    [ -L "$RL261_ROOT/$walk" ] && rl261_die "RL261_OUT passes through a symbolic link ($walk): refused, nothing was written" 74
+  done
+  unset IFS
   RL261_OUT=$out
   mkdir -p "$RL261_OUT" || rl261_die "could not create $RL261_OUT" 74
+  # And the resolved destination must really be inside the physical clone (covers a link created between the check and mkdir, and mounts).
+  local physical
+  physical=$(cd "$RL261_ROOT/$RL261_OUT" 2>/dev/null && pwd -P) || rl261_die "cannot resolve $RL261_OUT" 74
+  case "$physical" in "$RL261_ROOT"/*) ;; *) rl261_die "RL261_OUT resolves outside the clone ($physical): refused" 74 ;; esac
 }
 
 # Creates (empties) each required artifact; refuses to run when one cannot be written.
 rl261_artifacts() {
   local f
   for f in "$@"; do
+    # An artifact that is a symbolic link (or any non-regular file) would be followed by the truncation and by every later write.
+    if [ -e "$RL261_OUT/$f" ] || [ -L "$RL261_OUT/$f" ]; then
+      [ -L "$RL261_OUT/$f" ] && rl261_die "the artifact $RL261_OUT/$f is a symbolic link: refused" 75
+      [ -f "$RL261_OUT/$f" ] || rl261_die "the artifact $RL261_OUT/$f is not a regular file: refused" 75
+    fi
     : > "$RL261_OUT/$f" || rl261_die "cannot write the required artifact $RL261_OUT/$f" 75
   done
 }
