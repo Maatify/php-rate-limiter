@@ -8,7 +8,7 @@
 |---|---|
 | الريبو / remote | `Maatify/php-rate-limiter` — `origin = https://github.com/Maatify/php-rate-limiter.git` |
 | الأساس | `main@cacdb3a6e2571b68cdae6fe2a73639ea4d4f112e` (دمج #266)، الشجرة `cb7d59eca7715744dc475e65490a924989540a82` |
-| SHA المصدر الذي شُغّلت عليه الاختبارات | `d3ebec816645bcddda60d8ef0e83fccbe3cf4b57` (الشجرة `c35d93244ea8a520d35ec40024b17b2623e82e0a`): الأساس + الاختبار والدعم والمشغّل بعد تصحيح مراجعتَي الـLead (F269-01…06). لا فرق تحت `src/` عن الأساس؛ وتحت `tests/` فرق وحيد عن `7b7924b2`: رفض كتابة ملف الأدلة إن كان رابطًا رمزيًا (F269-07)؛ والباقي في المشغّل والوثائق. بعده تُضاف أدلة فقط. (الرؤوس المراجَعة سابقًا: `4cd8f6df`، `b75a4129`، `b712f45a`.) |
+| SHA المصدر الذي شُغّلت عليه الاختبارات | `2da7d6ff225df6f5f760cf7c5c3416dffd52846b` (الشجرة `057673f1c6318761fda2149b268a9a49d6b22bfd`): الأساس + الاختبار والدعم والمشغّل بعد تصحيح مراجعتَي الـLead (F269-01…06). لا فرق تحت `src/` عن الأساس؛ وتحت `tests/` فرق وحيد عن `7b7924b2`: رفض كتابة ملف الأدلة إن كان رابطًا رمزيًا (F269-07)؛ والباقي في المشغّل والوثائق. بعده تُضاف أدلة فقط. (الرؤوس المراجَعة سابقًا: `4cd8f6df`، `b75a4129`، `b712f45a`، `eb4652a5`.) |
 | رأس التسليم | رأس الـPR (ملحوظ في وصفها وفي تعليقات #261 و#257 و#185) |
 | معايير Maatify | Selective Pinned Adoption على `ebcf55b0591db61d18a1407bc3effef0197b388f`، دون تحديث الـpin. مسار §10.1 (Normal Engineering Task): قرأتُ `AGENTS.md` ثم `STANDARDS_MANIFEST.md`، وحدّدتُ النطاق (مجلد `investigations/` والاختبار)، واستعملتُ المجموعة المحلية المسجلة فقط دون اتصال بـupstream |
 | Governance Helper | شُغّل داخل Docker على clone حقيقي عند `cacdb3a6`: `mechanical_status = VALID`، `errors = []`، `explicit_exceptions_overrides = []` (`raw/governance-helper.json`) |
@@ -168,7 +168,7 @@ investigations/redis-acl-request-save-261/bench.sh 64 400        # وحده، ل
 | `evidence-{64,32}.jsonl`، `evidence-table.md` | الأدلة الخام والجدول: 90 حالة، لا فرق بين العرضين (باستثناء نص رسالة phpredis لفقدان الرد: بروتوكول/socket، وكلاهما «غير مصنّف») |
 | `runner-selftest-before-fix.log`، `runner-selftest-before-f269-07.log`، `f269-07-reproduction.md`، `runner-selftest.log`، `governance-helper.json` | ضابط المشغّل قبل الإصلاحين وبعدهما؛ مخرج الـGovernance Helper |
 
-كل ملفات `.meta.txt` الحالية سجّلت `worktree_dirty=no` ورأس المصدر `d3ebec81`؛ والمشغّل يفشل (77) إن تعذّر تحديد ذلك.
+كل ملفات `.meta.txt` الحالية سجّلت `worktree_dirty=no` ورأس المصدر `2da7d6ff`؛ والمشغّل يفشل (77) إن تعذّر تحديد ذلك.
 
 **فحوص الجودة (F269-01).** سبب فشل `Lowest Supported Dependencies` ستة أخطاء PHPStan (2.0.0) في أدوات الدراسة: نوع أنبوب `proc_open` (يراه 2.0.0 `mixed` وغيره مصفوفة)، وإعادة بناء `$command` في المتغير الدراسي (فقدان `non-empty-list`)، ورسالة خطأ الـsocket في البروكسي. صُحّحت بقراءة الأنبوب عبر مساعد يأخذ `mixed` (صالح للنسختين)، وبناء قائمة جديدة للأمر، و`print_r` للرسالة. **أُعيد إثبات ذلك محليًا قبل الدفع** بتشغيل `phpstan.phar` الإصدار 2.0.0 (نُزّل من إصدارات PHPStan الرسمية داخل الحاوية) على `src tests examples --level=max`: نظيف، وكذلك PHPStan الأحدث، وPHP-CS-Fixer، و`check-per-cs-31-delta`. الفحوص الكاملة للمستودع (ReleaseVerification وتاريخ 2999 على 32-bit: #267؛ مهلات NM-7 وBlockNoDowngrade على 32-bit المحاكى: #268) لم تُشغَّل محليًا؛ دليلها الطبيعي من CI على رأس التسليم.
 
