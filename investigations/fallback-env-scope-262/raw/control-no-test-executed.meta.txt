@@ -1,0 +1,10 @@
+head=dc510e6718ae5665e6283757c5c635ffad85edd0
+tree=3c194afb274f16952751efed0c8bf8ed473aa00e
+dirty_files_outside_evidence=0
+platform=linux/arm64
+image=maatify-rl-php64:local
+command=run.sh linux/arm64 tests/System/FallbackEnvironmentScopeSharingStudy262Test.php --filter NoSuchTest
+phpunit_exit=0
+evidence_lines=0
+final_exit=76
+started_utc=2026-11-19T12:21:31Z
