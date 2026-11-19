@@ -589,6 +589,11 @@ LUA;
      * Returns 0 and writes nothing when any key no longer matches the state
      * it was read from; otherwise applies every changed key and returns 1.
      * With ARGV[2] = 'verify' it only answers whether every key still matches.
+     *
+     * After the comparison and the validation, and before the first write, the write plan (the exact commands, keys, arguments, order and batches
+     * the save will issue) is checked, command by command, with `redis.acl_check_cmd` (Redis 7.0), and the same plan is then executed. A command
+     * the account may not run refuses the whole save with a `NOPERM request commit: …` error reply that names the command and its position, never a
+     * key or a value (DEC-042). The check answers the ACL question only; it is not a rollback for any other Redis error.
      */
     private const COMMIT = <<<'LUA'
 local __payload = cjson.decode(ARGV[1])
@@ -637,39 +642,50 @@ for _, entry in ipairs(__entries) do
     if not valid then return redis.error_reply('request commit: malformed plan for ' .. entry[1]) end
   end
 end
-local function __chunked(command, key, flat, step)
+-- The write plan: the exact command sequence the save will issue, with its real keys, arguments, order and batches. It is built first, from the
+-- validated entries, so that what is checked for permission below is what is executed afterwards, not a description of it (#261, DEC-042).
+local __ops = {}
+local function __batches(command, key, flat)
   local i = 1
   while i <= #flat do
-    local chunk = {}
-    for j = i, math.min(i + 199, #flat) do chunk[#chunk + 1] = flat[j] end
-    __real.call(command, key, unpack(chunk))
+    local op = {command, key}
+    for j = i, math.min(i + 199, #flat) do op[#op + 1] = flat[j] end
+    __ops[#__ops + 1] = op
     i = i + 200
   end
 end
 for _, entry in ipairs(__entries) do
   local key, e = entry[1], entry[2]
   if e.d == 1 then
-    __real.call('DEL', key)
+    __ops[#__ops + 1] = {'DEL', key}
     if e.t == 's' then
-      __real.call('SET', key, e.v)
+      __ops[#__ops + 1] = {'SET', key, e.v}
     elseif e.t == 'h' then
       local flat = {}
       for _, field in ipairs(e.f) do flat[#flat + 1] = field; flat[#flat + 1] = e.v[field] end
-      __chunked('HSET', key, flat)
+      __batches('HSET', key, flat)
     elseif e.t == 'e' then
       local flat = {}
       for member in pairs(e.v) do flat[#flat + 1] = member end
-      __chunked('SADD', key, flat)
+      __batches('SADD', key, flat)
     elseif e.t == 'z' then
       local flat = {}
       for member, score in pairs(e.v) do flat[#flat + 1] = score; flat[#flat + 1] = member end
-      __chunked('ZADD', key, flat)
+      __batches('ZADD', key, flat)
     end
     if e.t ~= 'n' and e.x ~= nil then
-      if tonumber(e.x) <= __nowMs then __real.call('DEL', key) else __real.call('PEXPIREAT', key, e.x) end
+      if tonumber(e.x) <= __nowMs then __ops[#__ops + 1] = {'DEL', key} else __ops[#__ops + 1] = {'PEXPIREAT', key, e.x} end
     end
   end
 end
+-- The whole plan is checked against the account's ACL before the first write: a command the account may not run refuses the save with a NOPERM
+-- error reply, with nothing written, deleted or re-expired. The message names the command and its position in the plan, never a key or a value.
+for index, op in ipairs(__ops) do
+  if not redis.acl_check_cmd(unpack(op)) then
+    return redis.error_reply('NOPERM request commit: the account may not run ' .. op[1] .. ' (plan step ' .. index .. ' of ' .. #__ops .. ')')
+  end
+end
+for _, op in ipairs(__ops) do __real.call(unpack(op)) end
 return 1
 LUA;
 

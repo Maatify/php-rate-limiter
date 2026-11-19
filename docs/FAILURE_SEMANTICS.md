@@ -247,6 +247,20 @@ A runtime graph, together with the store objects it is built on, serves **one in
 * **Readers are calls too.** The operational readers are refused while a call is in flight on their store; concurrent monitoring uses its own graph, store object and connection.
 * **Ownership is released by unwinding.** A suspended call that is never resumed and never destroyed keeps its resources, and every later call on a graph that shares them is refused until it is destroyed (destroying a Fiber unwinds it). There is no timeout release.
 
+### 2.7 Request save and the Redis ACL (DEC-042)
+
+The request save (`transactRequest()`, DEC-037) asks Redis for three different kinds of permission, and they fail in different places. The account of the Host must grant all of them:
+
+| Kind | What the account needs | Where a refusal surfaces | State after a refusal |
+| --- | --- | --- | --- |
+| **Entering the script and its keys** | `+eval`; **read and write** access to every key the script declares (`~<pattern>`; `%R~` alone and `%W~` alone are refused at `EVAL`). The pattern must also admit the **empty-string placeholder keys** some scripts declare (hard-block and lifecycle reads): a prefix pattern alone refused the first such step on the engine path, and adding the empty pattern `~` admitted it | the `EVAL` itself, a top-level `NOPERM` error reply, before any script runs | unchanged |
+| **Reads of the overlay and of the comparison** | `+time` and `+exists` always; `+type` and `+pexpiretime` plus the read of the key's type (`+get`, `+hgetall`, `+smembers`, `+zrange`) **only for keys that already exist**, so a test on an empty Redis understates what a running system needs | inside the script (`ERR The user executing the script can't run this command or subcommand`), during an evaluation step, `verify` or the comparison of `commit` | unchanged (nothing has been written yet) |
+| **Save commands** | `+del`, `+set` (string keys), `+hset` (hash keys), `+sadd` (set keys), `+zadd` (sorted-set keys), `+pexpireat` (a key with a future expiry); a plan without expiry or with an expiry already passed needs no `+pexpireat` | the whole plan is checked with `redis.acl_check_cmd` before the first write: `NOPERM request commit: the account may not run <COMMAND> (plan step <n> of <m>)` (command and position only, never a key or a value) | unchanged: nothing is written, deleted or re-expired |
+
+* **Provenance.** Every refusal is a Redis error reply, not a transport failure: it reaches the Host through the executor unchanged (DEC-018), is **not** a `BackendFailureException`, and so raises no failure signal, no circuit report and no fallback consumption (the study measured the local fallback counter directly), and the request is not evaluated again because of it. A real conflict is decided first and recalculates under DEC-037.
+* **What this does not guarantee.** The preflight answers the ACL question atomically with the writes. It is not a rollback: other Redis errors during the writes (memory limit, read-only replica, client limits) are not covered, and DEC-037's all-or-none claim is not extended to them.
+* **What was tested.** Redis 7.0.15, a single instance, `EVAL`, RESP2; two client shapes (the suite's RESP client and ext-redis 6.3.0 `rawCommand()`); PHP `PHP_INT_SIZE` 4 and 8; the request path (`transactRequest()`) and the engine path for the `login_protection` policy (`tests/Integration/Redis/RequestSaveAclRedisTest.php`). **Not tested**: other Redis versions or Valkey, Cluster/Sentinel, RESP3, Predis, `EVALSHA`, the recovery and admission paths, and the direct store scripts outside a request (their `pcall` of `EXPIRE` is tracked in #270).
+
 ## 3. Failure Modes
 
 The RateLimiter supports **three explicit and mutually exclusive failure modes**.
