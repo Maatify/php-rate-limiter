@@ -1,8 +1,8 @@
-source_head=728a1f51929aa5aca8632e55d9dd9dcad8b6420b
-source_tree=a02bf7eb30bb70058b1e0f436dc3ef7e75a89e5f
+source_head=7d57a367dcfcdd708015f0e4dfd58e000852a532
+source_tree=d6c095d0a3cd2eac9dd7901c67e48da0b9febf2b
 worktree_dirty=no
 php_image=maatify-rl-php32:local (linux/386)
 redis_image=redis:7.0.15-alpine
-started_at_utc=2026-11-19T08:56:02Z
+started_at_utc=2026-11-19T09:35:54Z
 command=bench-impl.sh linux/386 200 2
 exit_code=0
