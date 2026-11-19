@@ -74,15 +74,20 @@ rl261_out_dir() {
   case "$physical" in "$RL261_ROOT"/*) ;; *) rl261_die "RL261_OUT resolves outside the clone ($physical): refused" 74 ;; esac
 }
 
-# Creates (empties) each required artifact; refuses to run when one cannot be written.
+# Two phases (F269-07): first EVERY required artifact is checked without opening any of them for writing (not a symbolic link, a regular file or
+# absent, writable), so a refusal can never leave an earlier artifact already emptied; only then are they created/emptied.
 rl261_artifacts() {
-  local f
+  local f p
   for f in "$@"; do
-    # An artifact that is a symbolic link (or any non-regular file) would be followed by the truncation and by every later write.
-    if [ -e "$RL261_OUT/$f" ] || [ -L "$RL261_OUT/$f" ]; then
-      [ -L "$RL261_OUT/$f" ] && rl261_die "the artifact $RL261_OUT/$f is a symbolic link: refused" 75
-      [ -f "$RL261_OUT/$f" ] || rl261_die "the artifact $RL261_OUT/$f is not a regular file: refused" 75
+    p="$RL261_OUT/$f"
+    if [ -L "$p" ]; then rl261_die "the artifact $p is a symbolic link: refused, nothing was changed" 75; fi
+    if [ -e "$p" ]; then
+      [ -f "$p" ] || rl261_die "the artifact $p is not a regular file: refused, nothing was changed" 75
+      [ -w "$p" ] || rl261_die "the artifact $p is not writable: refused, nothing was changed" 75
     fi
+  done
+  [ -w "$RL261_OUT" ] || rl261_die "the output directory $RL261_OUT is not writable" 75
+  for f in "$@"; do
     : > "$RL261_OUT/$f" || rl261_die "cannot write the required artifact $RL261_OUT/$f" 75
   done
 }

@@ -82,6 +82,24 @@ nonzero "run.sh: a parent component is a symbolic link" $?; untouched "run.sh sy
 real=$out/selftest-linkfile-$$; mkdir -p "$real"; ln -sfn "$ext/evidence.jsonl" "$real/evidence.jsonl"
 RL261_OUT=$real investigations/redis-acl-request-save-261/run.sh 64 --version >/dev/null 2>&1
 nonzero "run.sh: evidence.jsonl is a symbolic link" $?; untouched "run.sh symlinked artifact" "$sumb"
+# 6 (F269-07, second part). An existing artifact must survive a refusal: every artifact is checked BEFORE any is opened for writing.
+keep=$out/selftest-keep-$$; mkdir -p "$keep"
+printf 'EXISTING-EVIDENCE-26-BYTES\n' > "$keep/evidence.jsonl"; ln -sfn "$ext/phpunit.log" "$keep/phpunit.log"
+keepsum=$(cksum < "$keep/evidence.jsonl")
+RL261_OUT=$keep investigations/redis-acl-request-save-261/run.sh 64 --version >/dev/null 2>&1
+nonzero "run.sh: phpunit.log is a symbolic link, evidence.jsonl already exists" $?
+[ "$(cksum < "$keep/evidence.jsonl")" = "$keepsum" ] && echo "ok   the existing evidence.jsonl is unchanged after the refusal" || { echo "FAIL the existing evidence.jsonl was emptied or changed before the refusal"; fail=1; }
+keep2=$out/selftest-keep2-$$; mkdir -p "$keep2/run-meta.txt"
+printf 'EXISTING-EVIDENCE-26-BYTES\n' > "$keep2/evidence.jsonl"; printf 'EXISTING-LOG\n' > "$keep2/phpunit.log"
+ks2=$(cat "$keep2/evidence.jsonl" "$keep2/phpunit.log" | cksum)
+RL261_OUT=$keep2 investigations/redis-acl-request-save-261/run.sh 64 --version >/dev/null 2>&1
+nonzero "run.sh: run-meta.txt is a directory, evidence.jsonl and phpunit.log already exist" $?
+[ "$(cat "$keep2/evidence.jsonl" "$keep2/phpunit.log" | cksum)" = "$ks2" ] && echo "ok   the existing evidence.jsonl and phpunit.log are unchanged after the refusal" || { echo "FAIL existing artifacts were changed before the refusal"; fail=1; }
+keep3=$out/selftest-keep3-$$; mkdir -p "$keep3"; printf 'EXISTING-BENCH\n' > "$keep3/bench.log"; ln -sfn "$ext/run-meta.txt" "$keep3/run-meta.txt"
+ks3=$(cksum < "$keep3/bench.log")
+RL261_OUT=$keep3 investigations/redis-acl-request-save-261/bench.sh 64 3 >/dev/null 2>&1
+nonzero "bench.sh: run-meta.txt is a symbolic link, bench.log already exists" $?
+[ "$(cksum < "$keep3/bench.log")" = "$ks3" ] && echo "ok   the existing bench.log is unchanged after the refusal" || { echo "FAIL the existing bench.log was emptied before the refusal"; fail=1; }
 rm -f "$out/selftest-link-$$"; rm -rf "$ext"
 after=$(docker ps -a --format '{{.Names}}' | grep -c '^rl261-'; docker network ls --format '{{.Name}}' | grep -c '^rl261-')
 [ "$before" = "$after" ] && echo "ok   no rl261-* container or network left behind" || { echo "FAIL leftovers: before=[$before] after=[$after]"; fail=1; }
