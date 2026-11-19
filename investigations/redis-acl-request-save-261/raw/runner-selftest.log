@@ -1,6 +1,6 @@
 ok   missing Redis image (exit 72)
 ok   Redis never ready (exit 73)
-ok   bounded: 3 s
+ok   bounded: 4 s
 ok   wrong width (exit 64)
 ok   absolute output directory inside the repository: run (exit 0)
 ok   evidence.jsonl is non-empty
@@ -27,4 +27,13 @@ ok   run.sh: run-meta.txt is a directory, evidence.jsonl and phpunit.log already
 ok   the existing evidence.jsonl and phpunit.log are unchanged after the refusal
 ok   bench.sh: run-meta.txt is a symbolic link, bench.log already exists (exit 75, non-zero)
 ok   the existing bench.log is unchanged after the refusal
+ok   bench-impl.sh: Redis never ready (exit 73)
+ok   the production overlay in the checkout is unchanged after the failed setup
+ok   the temporary base tree was removed
+ok   bench-impl.sh: bench-impl.log is not writable (exit 75, non-zero)
+ok   the production overlay is unchanged after the refused record
+ok   bench-impl.sh: a short comparison run (exit 0)
+ok   the log names both arms' sources and carries both summaries
+ok   the checkout's overlay equals HEAD after a full run
+ok   the base tree is removed after a full run
 ok   no rl261-* container or network left behind

@@ -372,7 +372,7 @@ final class RequestSaveAclRedisTest extends TestCase
      * One case. Returns what it observed.
      *
      * @param array{shape: string, seed?: bool, denied?: list<string>, keys?: list<string>, hook?: string, proxy?: bool, engine?: bool, plan?: string} $case
-     * @return array{case: string, shape: string, sentCommit: bool, evaluations: int, stepsReached: int, wire: list<string>, monitor: array{evals: int, luaCommands: array<string, int>, luaWrites: list<string>}, monitorLines: int, monitorSample: list<string>, address: string|null, aclLog: list<array<string, string>>, result: string, thrown: string|null, signals: list<string>, changed: array<string, string>, types: array<string, string>, controlUnchanged: bool, fallbackCharged: bool, keysBefore: int, keysAfter: int, redis: string}
+     * @return array{case: string, shape: string, sentCommit: bool, evaluations: int, stepsReached: int, wire: list<string>, monitor: array{evals: int, luaCommands: array<string, int>, luaWrites: list<string>}, monitorLines: int, monitorSample: list<string>, address: string|null, aclLog: list<array<string, string>>, result: string, thrown: string|null, signals: list<string>, changed: array<string, string>, types: array<string, string>, controlUnchanged: bool, writerSnapshotEqualsFinal: bool|null, fallbackCharged: bool, keysBefore: int, keysAfter: int, redis: string}
      */
     private function observe(string $name, array $case): array
     {
@@ -430,7 +430,7 @@ final class RequestSaveAclRedisTest extends TestCase
                 }
                 try {
                     $reply = $this->inner->execute($command);
-                    $this->entries[] = [$kind, 'ok'];
+                    $this->entries[] = [$kind, $kind === 'commit' ? 'ok:' . json_encode($reply) : 'ok'];
 
                     return $reply;
                 } catch (\Throwable $exception) {
@@ -477,10 +477,18 @@ final class RequestSaveAclRedisTest extends TestCase
         $store = new RedisFullCapabilityStore($executor, self::NAMESPACE);
 
         $hook = $case['hook'] ?? '';
+        $writerSnapshot = null;
         $names = $this->names();
         $scoreKey = $this->keyOf('score', $names['score']);
         if ($hook === 'revoke-del') {
             $log->before['commit'] = fn() => $this->admin->execute(['ACL', 'SETUSER', $subject, '-del']);
+        } elseif ($hook === 'conflict-before-commit') {
+            // A competing writer changes the expiry of a key the request read, just before its FIRST save, and the keyspace right after the writer is
+            // kept: whatever the two attempts do afterwards must leave exactly that keyspace.
+            $log->before['commit'] = function () use ($scoreKey, &$writerSnapshot): void {
+                $this->admin->execute(['PEXPIRE', $scoreKey, 777_000]);
+                $writerSnapshot = $this->keyspace();
+            };
         } elseif ($hook === 'revoke-hset') {
             $log->before['commit'] = fn() => $this->admin->execute(['ACL', 'SETUSER', $subject, '-hset']);
         } elseif ($hook === 'revoke-hgetall-before-commit') {
@@ -597,6 +605,7 @@ final class RequestSaveAclRedisTest extends TestCase
             'signals' => array_values($signals->getArrayCopy()),
             'changed' => $this->diff($before, $after),
             'fallbackCharged' => self::fallbackSnapshot() !== $fallbackBefore,
+            'writerSnapshotEqualsFinal' => $writerSnapshot === null ? null : $writerSnapshot === $after,
             'controlUnchanged' => ($before[self::CONTROL_KEY] ?? null) === ($after[self::CONTROL_KEY] ?? null),
             'types' => array_map(static fn(array $entry): string => $entry['type'], $this->typesByFamily($before)),
             'keysBefore' => count($before),
@@ -664,6 +673,7 @@ final class RequestSaveAclRedisTest extends TestCase
             $cases["$shape plan batches (control)"] = ['plan batches', ['shape' => $shape, 'seed' => false, 'plan' => 'batches']];
             $cases["$shape plan batches + deny -sadd"] = ['plan batches + deny -sadd', ['shape' => $shape, 'seed' => false, 'plan' => 'batches', 'denied' => ['sadd']]];
             $cases["$shape plan read-only + deny every write"] = ['plan read-only + deny writes', ['shape' => $shape, 'plan' => 'read-only', 'denied' => ['del', 'set', 'hset', 'sadd', 'zadd', 'pexpireat']]];
+            $cases["$shape conflict at the first save, then deny -hset"] = ['conflict then deny -hset', ['shape' => $shape, 'hook' => 'conflict-before-commit', 'denied' => ['hset']]];
             $cases["$shape revoke -hset before the commit"] = ['revoke -hset before commit', ['shape' => $shape, 'hook' => 'revoke-hset']];
             $cases["$shape plan without expiry (control)"] = ['plan without expiry', ['shape' => $shape, 'seed' => false, 'plan' => 'no-expiry']];
             $cases["$shape plan without expiry + deny -pexpireat"] = ['plan without expiry + deny -pexpireat', ['shape' => $shape, 'seed' => false, 'plan' => 'no-expiry', 'denied' => ['pexpireat']]];
@@ -698,6 +708,7 @@ final class RequestSaveAclRedisTest extends TestCase
         return [
             'conflict' => ['sent' => true, 'evaluations' => 2, 'steps' => 7, 'kind' => 'returned', 'changed' => ['block:content+expiry', 'budget:content', 'cycle:content', 'distinct:content', 'distinct:content', 'score:content+expiry', 'watch:content'], 'engine' => null, 'fallback' => false, 'signals' => []],
             'conflict + deny -smembers' => ['sent' => false, 'evaluations' => 2, 'steps' => 3, 'kind' => 'script', 'changed' => ['score:expiry'], 'engine' => null, 'fallback' => false, 'signals' => []],
+            'conflict then deny -hset' => ['sent' => true, 'evaluations' => 2, 'steps' => 7, 'kind' => 'preflight', 'changed' => ['score:expiry'], 'engine' => null, 'fallback' => false, 'signals' => []],
             'connection killed before commit|resp' => ['sent' => true, 'evaluations' => 1, 'steps' => 7, 'kind' => 'transport', 'changed' => [], 'engine' => null, 'fallback' => false, 'signals' => []],
             'connection killed before commit|phpredis' => ['sent' => true, 'evaluations' => 1, 'steps' => 7, 'kind' => 'returned', 'changed' => ['block:content+expiry', 'budget:content', 'cycle:content', 'distinct:content', 'distinct:content', 'score:content', 'watch:content'], 'engine' => null, 'fallback' => false, 'signals' => []],
             'control' => ['sent' => true, 'evaluations' => 1, 'steps' => 7, 'kind' => 'returned', 'changed' => ['block:content+expiry', 'budget:content', 'cycle:content', 'distinct:content', 'distinct:content', 'score:content', 'watch:content'], 'engine' => null, 'fallback' => false, 'signals' => []],
@@ -784,20 +795,44 @@ final class RequestSaveAclRedisTest extends TestCase
 
     /**
      * A save by an account with the right permissions writes the exact data and the exact lifetimes, for the three expiry branches and for a
-     * save derived into several batches (the success half of the F261 contract, read from outside Lua).
+     * save derived into several batches (the success half of the contract, read from outside Lua). The expected values are taken from the plan the
+     * evaluation handed to the save (the payload of the commit command as the executor saw it), and compared **exactly**: the absolute expiry as
+     * the decimal `PEXPIRETIME` reply, with no margin, and the members of the batched set as a list, not a count (F271-01).
      */
     public function testASuccessfulSaveWritesTheDataAndTheLifetimes(): void
     {
         $this->createUser('writer-261', [], ['~' . self::SCOPE]);
-        $store = new RedisFullCapabilityStore($this->host('resp', 'writer-261'), self::NAMESPACE);
+        $capture = new class ($this->host('resp', 'writer-261')) implements RedisCommandExecutorInterface {
+            /** @var list<array{string, string}> the key and the exact planned state of every entry of the last commit */
+            public array $plan = [];
+
+            public function __construct(private readonly RedisCommandExecutorInterface $inner) {}
+
+            public function execute(array $command): mixed
+            {
+                if (OverlayWire::isCommit($command)) {
+                    $count = is_int($command[2] ?? null) ? $command[2] : 0;
+                    $payload = json_decode((string) ($command[3 + $count] ?? '[]'), true, 512, JSON_THROW_ON_ERROR);
+                    $this->plan = [];
+                    if (is_array($payload)) {
+                        foreach ($payload as $pair) {
+                            if (is_array($pair) && is_string($pair[0] ?? null) && is_string($pair[1] ?? null)) {
+                                $this->plan[] = [$pair[0], $pair[1]];
+                            }
+                        }
+                    }
+                }
+
+                return $this->inner->execute($command);
+            }
+        };
+        $store = new RedisFullCapabilityStore($capture, self::NAMESPACE);
         // The seeding account runs the store's direct scripts, which use more commands than the save does.
         $this->admin->execute(['ACL', 'SETUSER', 'seed-261', 'reset', 'on', '>' . self::PASSWORD, '~*', '+@all']);
         $this->users[] = 'seed-261';
         $seed = new RedisFullCapabilityStore($this->host('resp', 'seed-261'), self::NAMESPACE);
         $now = time();
         $seed->setAt('past-a', 1, 600, $now);
-        // Milliseconds since the epoch exceed a 32-bit int: they are compared as floats.
-        $startMs = microtime(true) * 1000;
 
         $store->transactRequest(function () use ($store, $now): void {
             $store->incrementAt('future-a', 600, 1, $now);                                  // a future expiry
@@ -809,17 +844,52 @@ final class RequestSaveAclRedisTest extends TestCase
             usleep(1_300_000);
         });
 
+        /** @var array<string, array<array-key, mixed>> $planned */
+        $planned = [];
+        foreach ($capture->plan as [$key, $json]) {
+            $decoded = json_decode($json, true, 512, JSON_THROW_ON_ERROR);
+            self::assertIsArray($decoded);
+            $planned[$key] = $decoded;
+        }
+        $redisNow = (array) $this->admin->execute(['TIME']);
+        $redisNowMs = self::text($redisNow[0]) . str_pad(substr(self::text($redisNow[1]), 0, 3), 3, '0', STR_PAD_LEFT);
+
+        // A future expiry: the exact absolute value the plan carried.
         $future = $this->keyOf('score', 'future-a');
+        self::assertArrayHasKey($future, $planned);
+        $plannedExpiry = self::text($planned[$future]['x'] ?? null);
+        self::assertMatchesRegularExpression('/^[1-9][0-9]{12,}$/', $plannedExpiry, 'The plan carries an absolute expiry in milliseconds.');
+        self::assertSame($plannedExpiry, self::text($this->admin->execute(['PEXPIRETIME', $future])), 'The future expiry is the planned absolute value, to the millisecond.');
         self::assertSame('1', self::text($this->admin->execute(['HGET', $future, 'value'])), 'The future-expiry key holds its value.');
-        $futureMs = (float) self::text($this->admin->execute(['PEXPIRETIME', $future]));
-        self::assertGreaterThan($startMs + 590_000, $futureMs);
-        self::assertLessThan($startMs + 625_000, $futureMs);
-        self::assertSame('-2', self::text($this->admin->execute(['PEXPIRETIME', $this->keyOf('score', 'past-a')])), 'The key whose lifetime had passed is deleted.');
-        self::assertSame('-1', self::text($this->admin->execute(['PEXPIRETIME', $this->keyOf('circuit', 'policy-261')])), 'The key saved without an expiry has none.');
-        self::assertSame(401, (int) self::text($this->admin->execute(['SCARD', $this->keyOf('distinct', 'batch-a')])), 'Every member of the batched save is written.');
-        $batchMs = (float) self::text($this->admin->execute(['PEXPIRETIME', $this->keyOf('distinct', 'batch-a')]));
-        self::assertGreaterThan($startMs + 590_000, $batchMs);
-        self::assertLessThan($startMs + 625_000, $batchMs);
+
+        // No expiry: none.
+        $circuit = $this->keyOf('circuit', 'policy-261');
+        self::assertArrayHasKey($circuit, $planned);
+        self::assertArrayNotHasKey('x', $planned[$circuit], 'The plan of the circuit state carries no expiry.');
+        self::assertSame('-1', self::text($this->admin->execute(['PEXPIRETIME', $circuit])), 'The key saved without an expiry has none.');
+
+        // A passed expiry: the plan carried an expiry already behind Redis time, and the key is deleted.
+        $past = $this->keyOf('score', 'past-a');
+        self::assertArrayHasKey($past, $planned);
+        $pastExpiry = self::text($planned[$past]['x'] ?? null);
+        self::assertTrue(strlen($pastExpiry) < strlen($redisNowMs) || (strlen($pastExpiry) === strlen($redisNowMs) && $pastExpiry < $redisNowMs), 'The planned expiry is behind Redis time.');
+        self::assertSame('-2', self::text($this->admin->execute(['PEXPIRETIME', $past])), 'The key whose lifetime had passed is deleted.');
+
+        // The batched set: the members, as a list, and the planned expiry.
+        $batch = $this->keyOf('distinct', 'batch-a');
+        self::assertArrayHasKey($batch, $planned);
+        $expectedMembers = [];
+        for ($member = 0; $member < 401; $member++) {
+            $expectedMembers[] = 'member-' . $member;
+        }
+        sort($expectedMembers, SORT_STRING);
+        $plannedMembers = array_map('strval', array_keys((array) $planned[$batch]['v']));
+        sort($plannedMembers, SORT_STRING);
+        self::assertSame($expectedMembers, $plannedMembers, 'The plan holds the 401 members.');
+        $actualMembers = array_map(self::text(...), (array) $this->admin->execute(['SMEMBERS', $batch]));
+        sort($actualMembers, SORT_STRING);
+        self::assertSame($expectedMembers, $actualMembers, 'Every member of the batched save is written, as a list.');
+        self::assertSame(self::text($planned[$batch]['x'] ?? null), self::text($this->admin->execute(['PEXPIRETIME', $batch])), 'The batched set has the planned absolute expiry, to the millisecond.');
     }
 
     /** The observer's own control: it reports a known change of content, of expiry, a deletion and a creation, and nothing for an untouched key. */
@@ -905,6 +975,17 @@ final class RequestSaveAclRedisTest extends TestCase
         self::assertSame($expected['signals'], $record['signals'], $name . ': failure signals emitted');
         if ($expected['engine'] !== null) {
             self::assertSame('returned ' . json_encode($expected['engine']), $record['result']);
+        }
+
+        if ($name === 'conflict then deny -hset') {
+            // A real conflict comes first: the first save answers 0 (nothing written, no plan checked), the request is evaluated again, and the
+            // second save is refused with NOPERM over the current state; neither attempt wrote anything beyond the competing writer's change.
+            $commits = array_values(array_filter($record['wire'], static fn(string $entry): bool => str_starts_with($entry, 'commit ->')));
+            self::assertCount(2, $commits, 'Two saves reached Redis.');
+            self::assertSame('commit -> ok:0', $commits[0], 'The first save answered a conflict (0).');
+            self::assertStringContainsString('NOPERM request commit: the account may not run', $commits[1], 'The second save was refused by the plan check.');
+            self::assertSame(2, $record['evaluations'], 'Evaluated again after the conflict, not after the refusal.');
+            self::assertTrue($record['writerSnapshotEqualsFinal'], 'The final keyspace equals the keyspace right after the competing writer: no write from either attempt.');
         }
 
         // The error class the consumer receives: the Host's own for a server error reply, never a transport failure.
