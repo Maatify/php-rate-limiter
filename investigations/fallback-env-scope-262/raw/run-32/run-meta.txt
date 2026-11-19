@@ -1,9 +1,9 @@
-source_head=06ab1ad2e301d2af12b3210285ed633932bf3fb6
-source_tree=721ec9b581a2c9da4300bf8698777944227758f2
+source_head=e3c89ff4447ca373ccbdf3fed8f4803d030fb699
+source_tree=85049649e7dabed802306652c168ecf7df2d8036
 worktree_dirty_outside_study_evidence=no
 php_image=maatify-rl-php32:local (linux/386)
-started_at_utc=2026-11-19T13:11:55Z
-command=run.sh linux/386 investigations/fallback-env-scope-262/raw/run-32 
+started_at_utc=2026-11-19T13:12:15Z
+command=run.sh linux/386 investigations/fallback-env-scope-262/raw/run-32
 phpunit_exit=0
 evidence_lines=13
 final_exit=0
