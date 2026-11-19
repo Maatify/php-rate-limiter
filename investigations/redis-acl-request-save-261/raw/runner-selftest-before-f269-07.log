@@ -1,0 +1,24 @@
+ok   missing Redis image (exit 72)
+ok   Redis never ready (exit 73)
+ok   bounded: 3 s
+ok   wrong width (exit 64)
+ok   absolute output directory inside the repository: run (exit 0)
+ok   evidence.jsonl is non-empty
+ok   run-meta.txt records exit_code=0
+ok   absolute output directory outside the repository is refused (exit 74)
+ok   unwritable phpunit.log (exit 75, non-zero)
+ok   unwritable run-meta.txt (exit 75, non-zero)
+ok   unwritable bench.log (exit 75, non-zero)
+ok   git status fails (exit 77, non-zero)
+ok   git cannot identify the source (exit 77, non-zero)
+FAIL run.sh: output directory is a symbolic link: returned 0 although the run's record is incomplete
+FAIL run.sh symlinked directory: a file outside the clone was changed or created
+FAIL bench.sh: output directory is a symbolic link: returned 0 although the run's record is incomplete
+FAIL bench.sh symlinked directory: a file outside the clone was changed or created
+FAIL run.sh: absolute path through a symbolic link: returned 0 although the run's record is incomplete
+FAIL run.sh absolute symlinked path: a file outside the clone was changed or created
+FAIL run.sh: a parent component is a symbolic link: returned 0 although the run's record is incomplete
+FAIL run.sh symlinked parent (no directory created outside): a file outside the clone was changed or created
+FAIL run.sh: evidence.jsonl is a symbolic link: returned 0 although the run's record is incomplete
+FAIL run.sh symlinked artifact: a file outside the clone was changed or created
+ok   no rl261-* container or network left behind
