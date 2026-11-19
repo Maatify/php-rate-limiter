@@ -6,6 +6,6 @@ Configuration: /app/phpunit.xml
 
 .............                                                     13 / 13 (100%)
 
-Time: 00:08.495, Memory: 14.00 MB
+Time: 00:08.394, Memory: 14.00 MB
 
 OK (13 tests, 4167 assertions)

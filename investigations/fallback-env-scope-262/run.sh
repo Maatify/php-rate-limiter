@@ -28,7 +28,7 @@ extra=0
 if [ "$rc" = 0 ] && [ "$lines" != "$EXPECTED" ]; then echo "rl262: evidence has ${lines:-?} records, expected $EXPECTED" >&2; extra=76; fi
 # The record is written with the final code already known, so it can state it.
 final=$(rl262_final_code "$rc" "$teerc" 0 "$extra")
-rl262_meta "$RL262_OUT/run-meta.txt" "$rc" "${lines:-?}" "$final" "run.sh $RL262_PLAT $RL262_OUT $*"; metarc=$?
+rl262_meta "$RL262_OUT/run-meta.txt" "$rc" "${lines:-?}" "$final" "run.sh $RL262_PLAT $RL262_OUT${*:+ $*}"; metarc=$?
 final=$(rl262_final_code "$rc" "$teerc" "$metarc" "$extra")
 [ "$final" != 0 ] && [ "$rc" = 0 ] && echo "rl262: the tool succeeded but the run's record is incomplete (code $final)" >&2
 echo "rl262: output in $RL262_OUT, exit code $final (tool $rc)"
