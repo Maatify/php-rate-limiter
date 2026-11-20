@@ -46,7 +46,7 @@ PATH="$shim:$PATH" $S/run.sh 64 "$g" >/dev/null 2>&1; check "git cannot identify
 same "git fails entirely" "$g/evidence.jsonl" "$MARK"
 rm -rf "$shim"
 # 5. Evidence count: the record count is part of success.
-EXPECTED_SCENARIOS=14 $S/run.sh 64 "$base/count" >/dev/null 2>&1; check "wrong number of evidence records" 76 $?
+EXPECTED_SCENARIOS=99 $S/run.sh 64 "$base/count" >/dev/null 2>&1; check "wrong number of evidence records" 76 $?
 # 6. Normal runs: success, exactly 14 records, the record states exit 0 (both widths).
 for w in 64 32; do
   $S/run.sh $w "$base/normal-$w" >/dev/null 2>&1; check "normal run on $w" 0 $?
