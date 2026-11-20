@@ -12,7 +12,7 @@ No security support promise or release date is implied by this document.
 
 ## Logging diagnostics
 
-The package does not write logs. A Host that logs rate-limit results should build the record field by field and not serialize the result, its metadata, or the request context. See [Host-Owned Diagnostic Logging](docs/guides/USAGE_GUIDE.md#host-owned-diagnostic-logging).
+Logging is a Host responsibility. A Host that logs rate-limit results should build the record field by field and not serialize the result, its `metadata`, or the request context. See [Host-Owned Diagnostic Logging](docs/guides/USAGE_GUIDE.md#host-owned-diagnostic-logging).
 
 ## Reporting a vulnerability
 

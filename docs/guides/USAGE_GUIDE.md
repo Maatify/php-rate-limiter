@@ -225,9 +225,9 @@ The response retry time is independent from persistence: score-derived results m
 
 ## Host-Owned Diagnostic Logging
 
-The package does not write to a log. Across the PHP channels observed in the #263 study (standard output, the `error_log` file, and PHP notices), real calls with a full request context wrote nothing (S07), and `src/` has no logger. Whether a diagnostic line exists, where it goes, and what it holds is Host code. Two Host-side points can write one: the code that handles the returned `RateLimitResultDTO`, and a Host-supplied `FailureSignalEmitterInterface::emit()`, which the package calls and which may or may not write a line (S14).
+Writing a diagnostic log line is Host responsibility. In the #263 study, real calls with a full request context wrote nothing to the PHP channels it measured: standard output, the `error_log` file, and PHP notices (S07). That observation covers those calls and channels only. Two Host paths can write a line: the code that handles the returned `RateLimitResultDTO`, and a Host-supplied `FailureSignalEmitterInterface`. The package calls `emit()`, and a line exists only where the Host's emitter is written to produce one (S14).
 
-The public JSON contract of `RateLimitResultDTO` may carry context values or `metadata` that fit its job, so serializing it is not a logging format. A fully populated result serialized to JSON carried a permit and a post-punishment re-entry identifier into the line (S10; its metadata was built synthetically, so it shows what a serialization can carry, not when a real result does). The Host therefore chooses the diagnostic record field by field:
+Two public JSON contracts are different and must not be mixed. `RateLimitContextDTO` serializes with the context fields the Host gave it, such as headers, the fingerprint, and admission inputs (S09). `RateLimitResultDTO` can include diagnostic `metadata` when it is present; in S10, a result with synthetically built metadata carried a permit and a post-punishment re-entry identifier into the serialized line (the metadata was built by hand, so S10 shows what a serialization can carry, not when a real result does). Serializing either object is therefore not a logging format, and the Host chooses the diagnostic record field by field:
 
 - Do not pass the request context, the whole result, `metadata`, headers, fingerprints, identifiers, credentials, or permit and re-entry values to the logger.
 - Apply the same explicit field selection inside a Host `FailureSignalEmitterInterface` that writes to a log.
@@ -269,7 +269,7 @@ final class DiagnosticLogRecord
 $logger->info('rate_limit', DiagnosticLogRecord::fromResult($policyName, $result));
 ```
 
-This is Host code, not a package class, and it is not a complete logging policy: the destination, retention, and sampling stay with the Host. The study measured the channels it lists (S07), a synthetic-metadata serialization (S10), and the emitter boundary (S14); it does not cover a Host logger the package cannot reach.
+This is Host code, not a package class, and it is not a complete logging policy: the destination, retention, and sampling stay with the Host. The study measured the PHP channels above (S07), a synthetic-metadata serialization (S10), and the emitter call versus the Host's line write (S14).
 
 ## Integration Boundaries
 
