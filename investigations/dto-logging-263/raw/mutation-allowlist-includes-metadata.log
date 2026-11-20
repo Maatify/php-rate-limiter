@@ -1,0 +1,19 @@
+PHPUnit 11.5.57 by Sebastian Bergmann and contributors.
+Runtime:       PHP 8.4.27
+Configuration: /app/phpunit.xml
+......F......                                                     13 / 13 (100%)
+Time: 00:00.078, Memory: 12.00 MB
+There was 1 failure:
+1) Maatify\RateLimiter\Tests\System\DtoSerializationLoggingStudy263Test::testAllowlistRecordHasOnlyTheNamedFieldsAndNoMarkerFromAnyNestedOrAdmissionSource
+Failed asserting that two arrays are identical.
+--- Expected
++++ Actual
+@@ @@
+     2 => 'failureMode',
+     3 => 'blockLevel',
+     4 => 'retryAfter',
++    5 => 'metadata',
+ ]
+/app/tests/System/DtoSerializationLoggingStudy263Test.php:237
+FAILURES!
+Tests: 13, Assertions: 60, Failures: 1.
