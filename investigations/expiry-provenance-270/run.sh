@@ -69,6 +69,10 @@ $ready || die "Redis was not ready within ${READY_SECONDS}s" 4
 image="maatify-rl-${img}:local"
 redis_version="$(docker exec "$rd" redis-server --version)" || die "cannot read the Redis version"
 php_probe="$(docker run --rm --network none "$image" php -r 'echo PHP_VERSION, "|", PHP_INT_SIZE, "|", phpversion("redis");')" || die "cannot probe PHP"
+IFS='|' read -r _ probe_int _ <<<"$php_probe"
+want_int=8
+[[ "$img" == php32 ]] && want_int=4
+[[ "$probe_int" == "$want_int" ]] || die "image $img reports PHP_INT_SIZE=${probe_int:-?}, expected $want_int; refusing to measure" 5
 phpunit_version="$(docker run --rm --network none -v "$R":/app:ro -w /app "$image" php vendor/bin/phpunit --version | head -n 1)" || die "cannot read the PHPUnit version"
 
 cmd="docker run --rm --network $net -v <repo>:/app:ro -v <evidence-dir>:/out -w /app -e REDIS_INTEGRATION_HOST=<redis> -e REDIS_INTEGRATION_PORT=6379 -e EXPIRY_270_EVIDENCE=/out/evidence.jsonl $image php vendor/bin/phpunit --do-not-cache-result $*"
@@ -76,31 +80,39 @@ set +e
 docker run --rm --network "$net" -v "$R":/app:ro -v "$out":/out -w /app \
   -e REDIS_INTEGRATION_HOST="$rd" -e REDIS_INTEGRATION_PORT=6379 -e EXPIRY_270_EVIDENCE=/out/evidence.jsonl \
   "$image" php vendor/bin/phpunit --do-not-cache-result "$@" 2>&1 | tee "$out/phpunit.log"
-rc=${PIPESTATUS[0]}
+pipe_status=("${PIPESTATUS[@]}")
 set -e
+rc=${pipe_status[0]}
+tee_rc=${pipe_status[1]:-1}
 
 summary="$(grep -E '^OK \(' "$out/phpunit.log" | tail -n 1 || true)"
 rows=0
+bad_int=0
 sha=""
 if [[ -s "$out/evidence.jsonl" ]]; then
-  rows="$(python3 -c 'import json,sys
-n=0
+  read -r rows bad_int < <(python3 -c 'import json,sys
+n = bad = 0
 for l in open(sys.argv[1]):
-    json.loads(l); n+=1
-print(n)' "$out/evidence.jsonl")" || die "evidence.jsonl contains a line that is not JSON" 3
+    r = json.loads(l); n += 1
+    if "int" in r and str(r["int"]) != sys.argv[2]:
+        bad += 1
+print(n, bad)' "$out/evidence.jsonl" "$want_int") || die "evidence.jsonl contains a line that is not JSON" 3
   sha="$(shasum -a 256 "$out/evidence.jsonl" | cut -d' ' -f1)"
 fi
 
 status=ok
 exit_code=0
-if ((rc != 0)); then status="phpunit-failed"; exit_code=$rc
+# the saved log is part of the evidence: its failure is a failure whatever PHPUnit said
+if ((tee_rc != 0)); then status="log-write-failed"; exit_code=6
+elif ((rc != 0)); then status="phpunit-failed"; exit_code=$rc
 elif [[ -z "$summary" ]]; then status="no-ok-summary"; exit_code=3
 elif [[ ! -s "$out/evidence.jsonl" ]]; then status="evidence-missing"; exit_code=3
+elif ((bad_int != 0)); then status="width-mismatch"; exit_code=5
 elif ((rows != EXPECTED_ROWS)); then status="evidence-incomplete"; exit_code=3
 fi
 
 RUN_HEAD="$head" RUN_TREE="$tree" RUN_DIRTY="$dirty_flag" RUN_CMD="$cmd" RUN_IMG="$img" RUN_REDIS="$redis_version" RUN_PHP="$php_probe" \
-  RUN_PHPUNIT="$phpunit_version" RUN_SUMMARY="$summary" RUN_ROWS="$rows" RUN_EXPECTED="$EXPECTED_ROWS" RUN_SHA="$sha" RUN_STATUS="$status" RUN_RC="$rc" \
+  RUN_PHPUNIT="$phpunit_version" RUN_SUMMARY="$summary" RUN_ROWS="$rows" RUN_EXPECTED="$EXPECTED_ROWS" RUN_SHA="$sha" RUN_STATUS="$status" RUN_RC="$rc" RUN_TEE_RC="$tee_rc" \
   python3 - "$out/manifest.json" <<'PY'
 import json, os, sys
 e = os.environ
@@ -109,7 +121,7 @@ manifest = {
     "source_head": e["RUN_HEAD"], "source_tree": e["RUN_TREE"], "source_dirty": e["RUN_DIRTY"] == "true",
     "image": e["RUN_IMG"], "command": e["RUN_CMD"],
     "php": php, "php_int_size": int_size, "ext_redis": ext, "redis": e["RUN_REDIS"], "phpunit": e["RUN_PHPUNIT"],
-    "phpunit_summary": e["RUN_SUMMARY"], "phpunit_exit_code": int(e["RUN_RC"]),
+    "phpunit_summary": e["RUN_SUMMARY"], "phpunit_exit_code": int(e["RUN_RC"]), "log_write_exit_code": int(e["RUN_TEE_RC"]),
     "evidence_rows": int(e["RUN_ROWS"]), "evidence_rows_expected": int(e["RUN_EXPECTED"]), "evidence_sha256": e["RUN_SHA"],
     "status": e["RUN_STATUS"],
 }

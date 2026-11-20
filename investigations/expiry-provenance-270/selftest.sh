@@ -16,18 +16,24 @@ case "$1 $2" in
     if [[ "$*" == *"redis-cli ping"* ]]; then [[ "${FAKE_NOT_READY:-0}" == 1 ]] && exit 1; echo PONG; exit 0; fi
     echo "Redis server v=7.0.15"; exit 0 ;;
 esac
-if [[ "$*" == *"php -r"* ]]; then echo -n "8.4.27|8|6.3.0"; exit 0; fi
+if [[ "$*" == *"php -r"* ]]; then echo -n "8.4.27|${FAKE_INT:-8}|6.3.0"; exit 0; fi
 if [[ "$*" == *"--version"* ]]; then echo "PHPUnit 11.5.57 by Sebastian Bergmann"; exit 0; fi
 out=""
 prev=""
 for a in "$@"; do if [[ "$prev" == -v && "$a" == *:/out ]]; then out="${a%%:/out}"; fi; prev="$a"; done
 if [[ -n "$out" && "${FAKE_NO_EVIDENCE:-0}" != 1 ]]; then
-  for ((i = 0; i < ${FAKE_ROWS:-3}; i++)); do echo "{\"row\":$i}" >> "$out/evidence.jsonl"; done
+  for ((i = 0; i < ${FAKE_ROWS:-3}; i++)); do echo "{\"row\":$i,\"int\":${FAKE_ROW_INT:-8}}" >> "$out/evidence.jsonl"; done
 fi
 echo "OK (1 test, 1 assertion)"
 exit "${FAKE_RC:-0}"
 F
 chmod +x "$work/bin/docker"
+cat > "$work/bin/tee" <<'F'
+#!/usr/bin/env bash
+if [[ -n "${FAKE_TEE_RC:-}" ]]; then cat > "$1"; exit "$FAKE_TEE_RC"; fi
+exec /usr/bin/tee "$@"
+F
+chmod +x "$work/bin/tee"
 git -C "$work/repo" init -q
 git -C "$work/repo" -c user.email=t@t -c user.name=t commit -q --allow-empty -m init
 export PATH="$work/bin:$PATH" FAKE_LOG="$work/log" RUN270_REPO_ROOT="$work/repo" RUN270_EXPECTED_ROWS=3
@@ -61,6 +67,13 @@ EVIDENCE_DIR="$work/e5" FAKE_RC=1 expect "a failing phpunit run fails" 1 run
 EVIDENCE_DIR="$work/e6" FAKE_NOT_READY=1 RUN270_READY_SECONDS=2 expect "Redis never ready fails" 4 run
 EVIDENCE_DIR="$work/e6b" expect "an unknown image fails" 2 "$here/run.sh" php99 tests/X.php
 EVIDENCE_DIR="$work/e6c" expect "no phpunit args fails" 2 "$here/run.sh" php64
+EVIDENCE_DIR="$work/w1" FAKE_INT=8 expect "php32 on an 8-byte-int image fails" 5 "$here/run.sh" php32 tests/X.php
+if grep -q "phpunit" "$FAKE_LOG"; then echo "FAIL a wrong-width image reached phpunit"; fail=1; else echo "ok   a wrong-width image never reached phpunit"; fi
+EVIDENCE_DIR="$work/w2" FAKE_INT=4 expect "php64 on a 4-byte-int image fails" 5 "$here/run.sh" php64 tests/X.php
+EVIDENCE_DIR="$work/w3" FAKE_INT=4 FAKE_ROW_INT=4 expect "php32 on a 4-byte-int image passes" 0 "$here/run.sh" php32 tests/X.php
+EVIDENCE_DIR="$work/w4" FAKE_ROW_INT=4 expect "evidence rows with the wrong int width fail" 5 run
+EVIDENCE_DIR="$work/w5" FAKE_TEE_RC=23 expect "a failing log save fails even when phpunit passed" 6 run
+grep -q '"status": "log-write-failed"' "$work/w5/manifest.json" && echo "ok   log failure is named in the manifest" || { echo "FAIL log status"; fail=1; }
 mkdir "$work/repo/in"; : > "$work/repo/in/f"
 git -C "$work/repo" add in/f
 git -C "$work/repo" -c user.email=t@t -c user.name=t commit -q -m files

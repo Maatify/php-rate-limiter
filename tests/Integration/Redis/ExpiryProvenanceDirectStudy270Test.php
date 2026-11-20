@@ -27,6 +27,9 @@ final class ExpiryProvenanceDirectStudy270Test extends TestCase
 
     private const NAMESPACE = 'exp-270';
 
+    /** An independent key no call touches: known value and absolute expiry, compared byte for byte before and after in BOTH arms. */
+    private const SENTINEL = 'exp270-sentinel';
+
     /**
      * The branch each (call, denied command, state) is EXPECTED to take. A listed state means the call reaches the denied expiry command
      * (Redis logs the denial, the caller sees the pcall-swallowed range text, nothing is left behind). Anything not listed must NOT reach it:
@@ -212,6 +215,9 @@ final class ExpiryProvenanceDirectStudy270Test extends TestCase
                 $this->admin->execute(['PEXPIRE', $key, 3_000_000]);
             }
         }
+        // after everything else (the TTL normalisation above must not touch it); the epoch is a decimal string, safe on 32-bit
+        $this->admin->execute(['SET', self::SENTINEL, 'sentinel-value-270']);
+        $this->admin->execute(['PEXPIREAT', self::SENTINEL, ($now + 7200) . '000']);
     }
 
     /**
@@ -234,6 +240,10 @@ final class ExpiryProvenanceDirectStudy270Test extends TestCase
             $message = $exception->getMessage();
         }
         $after = $this->keyspace();
+        self::assertArrayHasKey(self::SENTINEL, $before, 'the sentinel exists before the call.');
+        self::assertSame($before[self::SENTINEL], $after[self::SENTINEL] ?? null, 'the sentinel (DUMP bytes, type, absolute expiry) is identical after the call.');
+        self::assertSame(self::text($this->admin->execute(['GET', self::SENTINEL])), 'sentinel-value-270');
+        self::assertSame(($now + 7200) . '000', $after[self::SENTINEL]['expires'], 'and its absolute expiry is the known one.');
 
         return [
             'outcome' => $outcome, 'class' => $class, 'message' => substr($message, 0, 100), 'result' => $result,
@@ -294,7 +304,7 @@ final class ExpiryProvenanceDirectStudy270Test extends TestCase
         $control = $this->observe($call, new RedisFullCapabilityStore($this->host($shape, $controlUser), self::NAMESPACE), $now, $controlUser);
         $this->record([
             'kind' => 'control', 'label' => $label, 'denied' => '-', 'shape' => $shape, 'state' => $state, 'outcome' => $control['outcome'], 'class' => $control['class'],
-            'message' => $control['message'], 'diff' => $control['diff'], 'acl' => $control['acl'], 'result' => $control['result'], 'stats' => $control['stats'], 'int' => PHP_INT_SIZE,
+            'message' => $control['message'], 'diff' => $control['diff'], 'acl' => $control['acl'], 'result' => $control['result'], 'stats' => $control['stats'], 'sentinel_dump' => md5($control['after'][self::SENTINEL]['dump']), 'int' => PHP_INT_SIZE,
         ]);
         self::assertSame('returned', $control['outcome'], $label . ': the unrestricted control must succeed (' . $control['message'] . ').');
         self::assertSame([], $control['acl'], $label . ': the control is not denied anything.');
@@ -310,7 +320,7 @@ final class ExpiryProvenanceDirectStudy270Test extends TestCase
         $expectReached = in_array($state, self::REACHED[$label][$denied] ?? [], true);
         $this->record([
             'kind' => $kind, 'label' => $label, 'denied' => $denied, 'shape' => $shape, 'state' => $state, 'expected' => $expectReached ? 'denied' : 'unreached',
-            'outcome' => $row['outcome'], 'class' => $row['class'], 'message' => $row['message'], 'diff' => $row['diff'], 'acl' => $row['acl'], 'stats' => $row['stats'], 'int' => PHP_INT_SIZE,
+            'outcome' => $row['outcome'], 'class' => $row['class'], 'message' => $row['message'], 'diff' => $row['diff'], 'acl' => $row['acl'], 'stats' => $row['stats'], 'sentinel_dump' => md5($row['after'][self::SENTINEL]['dump']), 'int' => PHP_INT_SIZE,
         ]);
         $id = "$label / -$denied / $shape / $state / $kind";
         if ($expectReached) {
@@ -378,9 +388,10 @@ final class ExpiryProvenanceDirectStudy270Test extends TestCase
                 // what was STORED, through the public interface (value, updatedAt) and Redis (the absolute expiry)
                 self::assertSame('1', self::text($control['stored_value'] ?? null), $scenario . ': stored value.');
                 self::assertSame((string) $callerNow, self::text($control['stored_updated_at'] ?? null), $scenario . ': stored updatedAt.');
+                // EXPIRE 600 sets (Redis clock at the call) + 600 000 ms, so the stored expiry lies between the two Redis TIME readings plus 600 s
                 $expires = (float) self::text($control['expires_ms'] ?? null);
-                self::assertGreaterThan(time() * 1000.0 - 20_000, $expires, $scenario . ': absolute expiry is in the future.');
-                self::assertLessThan(time() * 1000.0 + 620_000, $expires, $scenario . ': and about 600 seconds out.');
+                self::assertGreaterThanOrEqual((float) self::text($control['redis_time_before_ms'] ?? null) + 600_000.0, $expires, $scenario . ': not earlier than TIME-before + 600 s.');
+                self::assertLessThanOrEqual((float) self::text($control['redis_time_after_ms'] ?? null) + 600_000.0, $expires, $scenario . ': not later than TIME-after + 600 s.');
             }
             self::assertSame('Score TTL must be positive.', $by[$shape . ' | public ttl 0: PHP validation']['message']);
             $range = $by[$shape . ' | range: decimal TTL past Redis bound via EVAL (judged by EXPIRE inside the script)'];
@@ -396,6 +407,8 @@ final class ExpiryProvenanceDirectStudy270Test extends TestCase
                 $public = $by[$shape . ' | range: public incrementAt with the same TTL (64-bit only)'];
                 self::assertSame('expiry not representable', $public['message'], 'The public 64-bit call lands on the same text.');
                 self::assertSame([], $public['acl']);
+                self::assertSame($range['diff'], $public['diff'], 'The public call leaves the same state as the EVAL control (nothing).');
+                self::assertSame([], $public['diff']);
                 self::assertStringContainsString('failed_calls=1', self::text(self::listOf($public['stats'] ?? null)['expire'] ?? null));
             }
             self::assertSame('score TTL exceeds Redis backend expiry representability', $by[$shape . ' | preflight: TTL past the script bound (Lua preflight)']['message']);
@@ -408,7 +421,11 @@ final class ExpiryProvenanceDirectStudy270Test extends TestCase
         $default = $by['phpredis | connection: killed after authentication (default client retries)'];
         self::assertGreaterThan(0, (int) self::text($default['max_retries'] ?? null));
         self::assertSame('returned', $default['outcome'], 'with retries enabled ext-redis reconnects and the call succeeds (observation, not a contract).');
-        self::assertSame('0', self::text($by['phpredis | connection: killed after authentication (client retries disabled)']['max_retries'] ?? null));
+        $disabled = $by['phpredis | connection: killed after authentication (client retries disabled)'];
+        self::assertSame('0', self::text($disabled['max_retries'] ?? null));
+        self::assertSame('threw', $disabled['outcome'], 'with retries disabled the dead connection is not retried ...');
+        self::assertSame(BackendFailureException::class, $disabled['class'], '... and the Host shape classifies it as a transport failure.');
+        self::assertStringStartsWith('Redis transport failure', self::text($disabled['message'] ?? null));
     }
 
     /**
@@ -447,6 +464,7 @@ final class ExpiryProvenanceDirectStudy270Test extends TestCase
         $before = $this->keyspace();
         $outcome = 'returned';
         $class = $message = '';
+        $timeBefore = $this->serverMs();
         try {
             $call();
         } catch (\Throwable $exception) {
@@ -454,11 +472,13 @@ final class ExpiryProvenanceDirectStudy270Test extends TestCase
             $class = $exception::class;
             $message = $exception->getMessage();
         }
+        $timeAfter = $this->serverMs();
         $after = $this->keyspace();
         $row = [
             'scenario' => $label, 'shape' => $shape, 'outcome' => $outcome, 'class' => $class, 'message' => substr($message, 0, 110),
             'diff' => $this->diff($before, $after), 'acl' => $this->aclLog($user), 'stats' => $this->expiryStats(), 'int' => PHP_INT_SIZE,
             'expires_ms' => array_values(array_map(static fn(array $k): string => $k['expires'], $after))[0] ?? '',
+            'redis_time_before_ms' => $timeBefore, 'redis_time_after_ms' => $timeAfter,
         ];
         if ($outcome === 'returned' && $after !== []) {
             // what was stored, read through the public interface of the store under test
@@ -566,6 +586,15 @@ final class ExpiryProvenanceDirectStudy270Test extends TestCase
             }
         }
         self::fail('no connection named ' . $name);
+    }
+
+    /** Redis TIME as epoch milliseconds, a decimal string (a native int cannot hold it on 32-bit). */
+    private function serverMs(): string
+    {
+        $time = $this->admin->execute(['TIME']);
+        self::assertIsArray($time);
+
+        return self::text($time[0]) . str_pad((string) intdiv((int) self::text($time[1]), 1000), 3, '0', STR_PAD_LEFT);
     }
 
     /** @return array<string, string> calls / rejected / failed counters Redis kept for the three expiry commands since CONFIG RESETSTAT. */
