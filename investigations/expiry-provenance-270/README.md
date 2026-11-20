@@ -17,7 +17,7 @@ EVIDENCE_DIR=/path/to/out investigations/expiry-provenance-270/run.sh php64 test
 على كل عرض: 58 اختبارًا و819 تأكيدًا نجحت، و242 سطر دليل في `raw/run-64/evidence.jsonl` و`raw/run-32/evidence.jsonl`. الأسطر متطابقة بين العرضين عدا حقل `int` وقيم `ttl_ms` المطلقة.
 
 ## ما قيس
-15 مسارًا عامًا مباشرًا (جميعها تمر بـ`redis.pcall` لأمر الانتهاء) × أمر محظور (`EXPIRE` أو `PEXPIRE` أو `PEXPIREAT`) × عميل (RESP وphpredis) × حالة المفتاح (جديد، موجود مسبقًا بانتهاء معروف).
+15 مسارًا عامًا مباشرًا (الرفض الملتقط في كل منها جاء من `redis.pcall` لأمر الانتهاء) × أمر محظور (`EXPIRE` أو `PEXPIRE` أو `PEXPIREAT`) × عميل (RESP وphpredis) × حالة المفتاح (جديد، موجود مسبقًا بانتهاء معروف).
 
 | الدالة العامة | السكربت | الأمر الذي وُصل إليه فعلًا | جديد | موجود مسبقًا |
 |---|---|---|---|---|
@@ -25,7 +25,7 @@ EVIDENCE_DIR=/path/to/out investigations/expiry-provenance-270/run.sh php64 test
 | `replaceScoreAt`, `setAt` | SCORE_REPLACE / SCORE_SET | `EXPIRE` | رفض | رفض، الحالة بلا تغيير |
 | `blockAt` | BLOCK_SET | `EXPIRE` | رفض | لا يصل |
 | `incrementBudgetAt` | BUDGET_INCREMENT | `EXPIRE` | رفض | لا يصل (المحتوى تغيّر) |
-| `addDistinctAt`, `addDistinctBoundedAt`, `addDistinctBoundedWithSnapshotAt`, `addDeviceCapPairAt` | DISTINCT_ADD / BOUNDED_SNAPSHOT / DEVICE_CAP_COMMIT | `EXPIRE` (مفتاحان في بعضها) | رفض، المفاتيح المنشأة حُذفت | لا يصل |
+| `addDistinctAt`, `addDistinctBoundedAt`, `addDistinctBoundedWithSnapshotAt`, `addDeviceCapPairAt` | DISTINCT_ADD / BOUNDED_SNAPSHOT_PLAN (خطة اللقطة المحدودة) | `EXPIRE` (مفتاحان في بعضها) | رفض، المفاتيح المنشأة حُذفت | لا يصل |
 | `incrementWatchFlagAt`, `incrementWatchFlagAcrossRotationAt` | WATCH_INCREMENT | `EXPIRE` | رفض | لا يصل (المحتوى تغيّر) |
 | `addDistinctAcrossRotationAt` | ROTATED_SNAPSHOT | `EXPIRE` | رفض | لا يصل |
 | `acquireProbeLease` | LEASE | `EXPIRE` | رفض | لا يصل |
@@ -53,7 +53,7 @@ EVIDENCE_DIR=/path/to/out investigations/expiry-provenance-270/run.sh php64 test
 حالة تجاوز المدى الفعلي تحتاج `ttl` يتجاوز 2^53 ثانية ولا يُمثَّل بـ`int` أصلي على 32-bit، فشُغّل نص السكربت المشحون نفسه (`SCORE_INCREMENT` بالانعكاس) عبر `EVAL` بوسائط نصية على العرضين. لم أشغّل النداء العام `incrementAt` بتلك القيمة على 64-bit بصورة منفصلة.
 
 ## الجرد من المصدر (غير مقيس)
-سكربتات `redis.call('EXPIRE'…)` بلا `pcall` في `RedisAdmissionOperations` (الأسطر 329-541) وفي `DEVICE_CAP_COMMIT` (`SET … EX` و`EXPIRE`، سطر 1293-1296) ومسار `PEXPIREAT` في `RedisRequestOverlay` (DEC-042، خارج النطاق). فيها يتحول الرفض إلى خطأ سكربت عادي بنص Redis نفسه، لم يُقس هنا باستثناء مسار `addDeviceCapPairAt` (مقيس أعلاه). مسار حفظ الطلب مستبعد صراحةً.
+سكربتات `redis.call('EXPIRE'…)` بلا `pcall` في `RedisAdmissionOperations` (الأسطر 329-541) وفي مرحلة الإلحاق بـ`DEVICE_CAP_COMMIT` (`SET … EX` و`EXPIRE`، السطران 1293 و1296) ومسار `PEXPIREAT` في `RedisRequestOverlay` (DEC-042، خارج النطاق). فيها يتحول الرفض إلى خطأ سكربت عادي بنص Redis نفسه، لم يُقس هنا؛ `addDeviceCapPairAt` المقيس أعلاه وصل إلى رفضه من `pcall` خطة اللقطة (السطران 1215 و1217) لا من هذه المرحلة. مسار حفظ الطلب مستبعد صراحةً.
 
 ## ما لم يُقَس
 - مسار علامة `claimPostPunishmentReentry` (`PEXPIRE` على العلامة): لم يصل إليه الإعداد المستخدم، فلا دليل له.
