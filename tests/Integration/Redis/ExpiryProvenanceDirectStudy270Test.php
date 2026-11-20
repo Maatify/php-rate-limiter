@@ -191,7 +191,7 @@ final class ExpiryProvenanceDirectStudy270Test extends TestCase
                 continue;
             }
             // A denial that was REACHED: Redis logs exactly the denied command, the caller sees the range message, and nothing is left behind.
-            self::assertSame([$denied], array_values(array_unique(array_map(static fn(mixed $a): string => self::text(is_array($a) ? ($a['object'] ?? null) : null), self::listOf($row['acl'] ?? [])))), $label . ': the ACL log names the denied command.');
+            self::assertSame([$denied], array_values(array_unique(array_map(static fn(mixed $a): string => self::text(is_array($a) ? ($a['object'] ?? null) : null), self::listOf($row['acl'])))), $label . ': the ACL log names the denied command.');
             self::assertSame('threw', $row['outcome'], $label);
             self::assertSame('expiry not representable', $row['message'], $label);
             self::assertSame([], $row['diff'], $label . ': keyspace unchanged (DUMP and PEXPIRETIME) after the refused expiry.');
