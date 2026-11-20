@@ -1,0 +1,30 @@
+ok   wrong width (exit 64)
+ok   missing output directory (exit 64)
+ok   absolute directory outside the repository (exit 74)
+ok   '..' in the directory (exit 74)
+ok   directory through a symbolic link (exit 74)
+ok   symbolic-link directory: existing bytes preserved
+ok   directory that is itself a symbolic link (exit 74)
+ok   symbolic-link directory (itself): existing bytes preserved
+ok   symbolic-link phpunit.log (exit 75)
+ok   later artifact refused: existing bytes preserved
+ok   link target of the refused artifact: existing bytes preserved
+ok   directory where phpunit.log must be (exit 75)
+ok   directory in place of a later artifact: existing bytes preserved
+ok   directory where run-meta.txt must be (exit 75)
+ok   directory in place of the last artifact: existing bytes preserved
+ok   git status fails (exit 77)
+ok   git status fails: existing bytes preserved
+ok   git cannot identify the source (exit 77)
+ok   git fails entirely: existing bytes preserved
+ok   wrong number of evidence records (exit 76)
+ok   normal run on 64 (exit 0)
+ok   64: 13 evidence records
+ok   64: run-meta.txt records final_exit=0
+ok   64: PHP_INT_SIZE as expected
+ok   normal run on 32 (exit 0)
+ok   32: 13 evidence records
+ok   32: run-meta.txt records final_exit=0
+ok   32: PHP_INT_SIZE as expected
+selftest: all controls passed
+selftest exit=0

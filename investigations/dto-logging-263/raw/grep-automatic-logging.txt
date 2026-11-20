@@ -1,0 +1,24 @@
+# grep over src/ for automatic logging or dumping paths (run at source_head 3378828f61e11a431efb254cfd7b7e2917e9a44a)
+$ grep -rnE "LoggerInterface|error_log\(|trigger_error|syslog|var_dump|print_r|var_export|__debugInfo|__toString" src
+exit=1 (1 = no match)
+
+$ grep -rn "json_encode" src
+src/Repository/Redis/RedisFullCapabilityStore.php:2619:        return $this->integerValue($this->eval(self::CIRCUIT_SAVE_IF_VERSION, [$this->key('circ
+src/Repository/Redis/RedisFullCapabilityStore.php:2661:            $raw = json_encode($state, JSON_THROW_ON_ERROR);
+src/Repository/Redis/RedisFullCapabilityStore.php:3225:            [json_encode($held, JSON_THROW_ON_ERROR)],
+src/Repository/Redis/RedisFullCapabilityStore.php:3288:        $result = $this->eval(RedisRequestOverlay::commitScript(), array_map('strval', array_ke
+src/Repository/Redis/RedisFullCapabilityStore.php:3318:        $result = $this->eval(RedisRequestOverlay::commitScript(), array_map('strval', array_ke
+src/Service/DeviceIdentityResolver.php:90:            json_encode(
+src/Service/DeviceIdentityResolver.php:96:            return json_encode(
+src/Service/AdmissionCredentialCodec.php:55:        $payload = self::base64UrlEncode(json_encode([
+src/Service/AdmissionRuntime.php:210:        $token = $this->codec->signPermitToken(json_encode([
+
+$ grep -rn "psr/log" composer.json
+exit=1
+
+# classification of each json_encode site (read at source_head, not inferred from the grep alone)
+# RedisFullCapabilityStore:2619/2661/3225/3288/3318  persisted circuit state / held request state to Redis (not a log)
+# DeviceIdentityResolver:90,96   canonicalization of the client fingerprint for hashing; a failure throws RateLimiterException with a fixed message
+# AdmissionCredentialCodec:55    signed credential payload (v, sub, grp, ins, jti, exp, bat); not RateLimitContextDTO
+# AdmissionRuntime:210           signed permit token payload (v, id, lane, t0, j); not RateLimitContextDTO
+# none of these writes to a log destination, and none receives RateLimitContextDTO or RateLimitResultDTO as a whole

@@ -1,0 +1,9 @@
+source_head=5a386e05ece20b6a9bfd80caf08a5ad0291ae442
+source_tree=1b7bf15e6571b4bbb14dcaefa6625a663946a403
+worktree_dirty_outside_study_evidence=no
+php_image=maatify-rl-php32:local (linux/386)
+started_at_utc=2026-11-20T04:30:23Z
+command=run.sh linux/386 investigations/dto-logging-263/raw/run-32
+phpunit_exit=0
+evidence_lines=14
+final_exit=0
