@@ -10,6 +10,10 @@ it has been published. No Published Stable release line exists, and this RC does
 not establish a Stable support line. No Stable release is represented as published.
 No security support promise or release date is implied by this document.
 
+## Logging diagnostics
+
+The package does not write logs. A Host that logs rate-limit results should build the record field by field and not serialize the result, its metadata, or the request context. See [Host-Owned Diagnostic Logging](docs/guides/USAGE_GUIDE.md#host-owned-diagnostic-logging).
+
 ## Reporting a vulnerability
 
 Report sensitive security vulnerabilities privately to
