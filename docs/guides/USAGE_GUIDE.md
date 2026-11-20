@@ -223,6 +223,54 @@ Refused requests still count on K2 (API Heavy). In the API Heavy policy (<code>A
 
 The response retry time is independent from persistence: score-derived results may use a decay wait while the persisted block continues to use the configured <code>PenaltyLadder</code> duration.
 
+## Host-Owned Diagnostic Logging
+
+Writing a diagnostic log line is Host responsibility. In the #263 study, real calls with a full request context wrote nothing to the PHP channels it measured: standard output, the `error_log` file, and PHP notices (S07). That observation covers those calls and channels only. Two Host paths can write a line: the code that handles the returned `RateLimitResultDTO`, and a Host-supplied `FailureSignalEmitterInterface`. The package calls `emit()`, and a line exists only where the Host's emitter is written to produce one (S14).
+
+Two public JSON contracts are different and must not be mixed. `RateLimitContextDTO` serializes with the context fields the Host gave it, such as headers, the fingerprint, and admission inputs (S09). `RateLimitResultDTO` can include diagnostic `metadata` when it is present; in S10, a result with synthetically built metadata carried a permit and a post-punishment re-entry identifier into the serialized line (the metadata was built by hand, so S10 shows what a serialization can carry, not when a real result does). Serializing either object is therefore not a logging format, and the Host chooses the diagnostic record field by field:
+
+- Do not pass the request context, the whole result, `metadata`, headers, fingerprints, identifiers, credentials, or permit and re-entry values to the logger.
+- Apply the same explicit field selection inside a Host `FailureSignalEmitterInterface` that writes to a log.
+- Take the policy name from Host configuration (the name the Host registered or selected for this call), never from request input.
+
+The record below has exactly five keys. It maps `decision` and `failureMode` through explicit value lists and replaces any other value with `unrecognized`. It keeps `null` as `null` and leaves `retryAfter` in seconds.
+
+```php
+use Maatify\RateLimiter\DTO\RateLimitResultDTO;
+
+final class DiagnosticLogRecord
+{
+    private const DECISIONS = [
+        RateLimitResultDTO::DECISION_ALLOW,
+        RateLimitResultDTO::DECISION_SOFT_BLOCK,
+        RateLimitResultDTO::DECISION_HARD_BLOCK,
+    ];
+
+    private const FAILURE_MODES = ['NORMAL', 'DEGRADED_MODE', 'FAIL_OPEN', 'FAIL_CLOSED'];
+
+    /**
+     * @param string $policyName A name from Host configuration, never from request input.
+     *
+     * @return array{policy: string, decision: string, failureMode: string, blockLevel: ?int, retryAfter: ?int}
+     */
+    public static function fromResult(string $policyName, RateLimitResultDTO $result): array
+    {
+        return [
+            'policy' => $policyName,
+            'decision' => \in_array($result->decision, self::DECISIONS, true) ? $result->decision : 'unrecognized',
+            'failureMode' => \in_array($result->failureMode, self::FAILURE_MODES, true) ? $result->failureMode : 'unrecognized',
+            'blockLevel' => $result->blockLevel,
+            'retryAfter' => $result->retryAfter,
+        ];
+    }
+}
+
+// $policyName comes from the Host's own configuration, for example the policy it passed for this call.
+$logger->info('rate_limit', DiagnosticLogRecord::fromResult($policyName, $result));
+```
+
+This is Host code, not a package class, and it is not a complete logging policy: the destination, retention, and sampling stay with the Host. The study measured the PHP channels above (S07), a synthetic-metadata serialization (S10), and the emitter call versus the Host's line write (S14).
+
 ## Integration Boundaries
 
 The package supplies the optional official `RedisFullCapabilityStore` for one logical
