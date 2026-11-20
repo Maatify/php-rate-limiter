@@ -15,7 +15,7 @@ investigations/expiry-provenance-270/run.sh php32 tests/Integration/Redis/Expiry
 القياس: `tests/Integration/Redis/ExpiryProvenanceDirectStudy270Test.php`. يقرأ حالة المفاتيح من خارج Lua بـ`DUMP` و`PEXPIRETIME`، ويقرأ `ACL LOG`، ويقرأ عدّادات Redis للأوامر (`INFO commandstats`: `calls` و`rejected_calls` و`failed_calls` لـ`expire`/`pexpire`/`pexpireat`) بعد `CONFIG RESETSTAT` قبل كل نداء.
 
 ## النتيجة العامة (على كل عرض)
-69 اختبارًا (7187 تأكيدًا على 64-bit و7173 على 32-bit؛ الفرق ستة تأكيدات لنداء `incrementAt` العام بقيمة لا تُمثَّل بـ`int` أصلي على 32-bit) ونجحت. 552 سطر دليل متطابقة بين العرضين في الحقول البنيوية (النوع والدالة والفرع والاستثناء والرسالة والفرق والسجل والعدّادات)، عدا سطرَي «`incrementAt` العام بقيمة المدى (64-bit فقط)» اللذين يُسجَّلان `not-run` على 32-bit.
+69 اختبارًا (7187 تأكيدًا على 64-bit و7173 على 32-bit؛ الفرق 14 تأكيدًا لنداء `incrementAt` العام بقيمة لا تُمثَّل بـ`int` أصلي على 32-bit) ونجحت. 552 سطر دليل متطابقة بين العرضين في الحقول البنيوية (النوع والدالة والفرع والاستثناء والرسالة والفرق والسجل والعدّادات)، عدا سطرَي «`incrementAt` العام بقيمة المدى (64-bit فقط)» اللذين يُسجَّلان `not-run` على 32-bit.
 
 ## ما قيس
 19 دالة عامة مباشرة × أمر محظور (`EXPIRE` أو `PEXPIRE` أو `PEXPIREAT`) × عميل (RESP وphpredis) × حالة. 18 منها وصل فيها المسار إلى رفض أحد أوامر الانتهاء؛ الدالة 19 (`claimPostPunishmentReentry…`) لم تصل في أي حالة.

@@ -94,7 +94,7 @@ if [[ -s "$out/evidence.jsonl" ]]; then
 n = bad = 0
 for l in open(sys.argv[1]):
     r = json.loads(l); n += 1
-    if "int" in r and str(r["int"]) != sys.argv[2]:
+    if str(r.get("int", "")) != sys.argv[2]:  # a row without the field is as bad as a wrong one
         bad += 1
 print(n, bad)' "$out/evidence.jsonl" "$want_int") || die "evidence.jsonl contains a line that is not JSON" 3
   sha="$(shasum -a 256 "$out/evidence.jsonl" | cut -d' ' -f1)"

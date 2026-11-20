@@ -22,7 +22,11 @@ out=""
 prev=""
 for a in "$@"; do if [[ "$prev" == -v && "$a" == *:/out ]]; then out="${a%%:/out}"; fi; prev="$a"; done
 if [[ -n "$out" && "${FAKE_NO_EVIDENCE:-0}" != 1 ]]; then
-  for ((i = 0; i < ${FAKE_ROWS:-3}; i++)); do echo "{\"row\":$i,\"int\":${FAKE_ROW_INT:-8}}" >> "$out/evidence.jsonl"; done
+  for ((i = 0; i < ${FAKE_ROWS:-3}; i++)); do
+    # FAKE_NOINT_FROM=n drops the int field from row n onward (0 = every row)
+    if [[ -n "${FAKE_NOINT_FROM:-}" ]] && ((i >= FAKE_NOINT_FROM)); then echo "{\"row\":$i}" >> "$out/evidence.jsonl"
+    else echo "{\"row\":$i,\"int\":${FAKE_ROW_INT:-8}}" >> "$out/evidence.jsonl"; fi
+  done
 fi
 echo "OK (1 test, 1 assertion)"
 exit "${FAKE_RC:-0}"
@@ -72,6 +76,9 @@ if grep -q "phpunit" "$FAKE_LOG"; then echo "FAIL a wrong-width image reached ph
 EVIDENCE_DIR="$work/w2" FAKE_INT=4 expect "php64 on a 4-byte-int image fails" 5 "$here/run.sh" php64 tests/X.php
 EVIDENCE_DIR="$work/w3" FAKE_INT=4 FAKE_ROW_INT=4 expect "php32 on a 4-byte-int image passes" 0 "$here/run.sh" php32 tests/X.php
 EVIDENCE_DIR="$work/w4" FAKE_ROW_INT=4 expect "evidence rows with the wrong int width fail" 5 run
+EVIDENCE_DIR="$work/w4a" FAKE_NOINT_FROM=0 expect "rows with no int field at all fail" 5 run
+EVIDENCE_DIR="$work/w4b" FAKE_NOINT_FROM=2 expect "one row without the int field fails" 5 run
+grep -q '"status": "width-mismatch"' "$work/w4a/manifest.json" && echo "ok   missing field is named width-mismatch" || { echo "FAIL missing-field status"; fail=1; }
 EVIDENCE_DIR="$work/w5" FAKE_TEE_RC=23 expect "a failing log save fails even when phpunit passed" 6 run
 grep -q '"status": "log-write-failed"' "$work/w5/manifest.json" && echo "ok   log failure is named in the manifest" || { echo "FAIL log status"; fail=1; }
 mkdir "$work/repo/in"; : > "$work/repo/in/f"
