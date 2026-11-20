@@ -1,0 +1,18 @@
+{
+  "command": "docker run --rm --network n270-php64-1795198756-84900-7971 -v <repo>:/app:ro -v <evidence-dir>:/out -w /app -e REDIS_INTEGRATION_HOST=<redis> -e REDIS_INTEGRATION_PORT=6379 -e EXPIRY_270_EVIDENCE=/out/evidence.jsonl maatify-rl-php64:local php vendor/bin/phpunit --do-not-cache-result tests/Integration/Redis/ExpiryProvenanceDirectStudy270Test.php",
+  "evidence_rows": 552,
+  "evidence_rows_expected": 552,
+  "evidence_sha256": "d22cded18a2e56c074465e26533f5242aefbead9ca95f83c9ed33ad6b7807c46",
+  "ext_redis": "6.3.0",
+  "image": "php64",
+  "php": "8.4.27",
+  "php_int_size": "8",
+  "phpunit": "PHPUnit 11.5.57 by Sebastian Bergmann and contributors.",
+  "phpunit_exit_code": 0,
+  "phpunit_summary": "OK (69 tests, 4524 assertions)",
+  "redis": "Redis server v=7.0.15 sha=00000000:0 malloc=jemalloc-5.2.1 bits=64 build=d6d81b7b50ab2e83",
+  "source_dirty": false,
+  "source_head": "bdeaf8951853d72e6ca09ace119d611d73ef3e3e",
+  "source_tree": "3670aa41edcb5e19ac12e8ab347ebdc2e61d7991",
+  "status": "ok"
+}
