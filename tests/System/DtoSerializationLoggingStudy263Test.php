@@ -11,7 +11,10 @@ use Maatify\RateLimiter\DTO\RateLimitContextDTO;
 use Maatify\RateLimiter\DTO\RateLimitMetadataDTO;
 use Maatify\RateLimiter\DTO\RateLimitResultDTO;
 use Maatify\RateLimiter\Tests\Support\Study262\FallbackStudyRuntime as R;
+use Maatify\RateLimiter\Tests\Support\FailureSignal\RecordingFailureSignalEmitter;
 use Maatify\RateLimiter\Tests\Support\Study263\AllowlistDiagnosticRecord;
+use Maatify\RateLimiter\Tests\Support\Study263\EmitterRuntime;
+use Maatify\RateLimiter\Tests\Support\Study263\LoggingFailureSignalEmitter;
 use Maatify\RateLimiter\Tests\Support\Study263\RecordingLogSink;
 use Maatify\RateLimiter\Tests\Support\Study263\SyntheticInputs as S;
 use PHPUnit\Framework\TestCase;
@@ -144,8 +147,10 @@ final class DtoSerializationLoggingStudy263Test extends TestCase
         $this->record('S06_type_inventory', ['classes' => 'RateLimitResultDTO, RateLimitMetadataDTO, FailureSignalDTO, PostPunishmentReentryMetadataDTO'], 'no property typed RateLimitContextDTO, array or mixed (so the request context cannot be carried by them by type)', ['propertiesThatCouldHoldTheContext' => $holders]);
     }
 
-    public function testNothingIsWrittenToAnyLogDestinationBySerializationOrByARealRuntimeCall(): void
+    public function testNothingIsWrittenToTheObservedChannelsBySerializationOrByARealRuntimeCall(): void
     {
+        // The channels observed are the ones PHP itself offers a library: standard output, the PHP error log file and PHP diagnostics.
+        // A Host's own logger or log sink is not wired to the runtime here, so nothing about it is concluded (see S14).
         $errorLog = tempnam(sys_get_temp_dir(), 'syn263');
         $this->assertNotFalse($errorLog);
         $previousErrorLog = ini_set('error_log', $errorLog);
@@ -157,7 +162,6 @@ final class DtoSerializationLoggingStudy263Test extends TestCase
 
             return true;
         });
-        $sink = new RecordingLogSink();
         ob_start();
         try {
             R::resetFallbackState();
@@ -180,11 +184,34 @@ final class DtoSerializationLoggingStudy263Test extends TestCase
         ini_set('error_log', (string) $previousErrorLog);
         ini_set('log_errors', (string) $previousLogErrors);
 
-        $this->assertCount(0, $sink->lines);
         $this->assertSame('', $output);
         $this->assertSame('', $logged);
         $this->assertSame([], $diagnostics);
-        $this->record('S07_no_automatic_write', ['calls' => '3 on a healthy runtime and 3 on a typed-outage runtime (fallback), full synthetic context', 'observedChannels' => ['sink', 'stdout', 'php error_log file', 'php notices/warnings']], 'nothing written to any channel', ['sinkLines' => \count($sink->lines), 'stdoutBytes' => \strlen($output), 'errorLogBytes' => \strlen($logged), 'phpDiagnostics' => $diagnostics, 'decisions' => array_map(static fn(RateLimitResultDTO $r): string => $r->decision, $results), 'contextMarkersInSerializedResults' => self::markersIn($serialized)]);
+        $this->record('S07_no_write_in_observed_channels', ['calls' => '3 on a healthy runtime and 3 on a typed-outage runtime (fallback), full synthetic context', 'observedChannels' => ['stdout', 'php error_log file', 'php notices/warnings'], 'notObserved' => 'any Host logger or sink (none is wired to the runtime in this scenario)'], 'nothing written to the three observed channels', ['stdoutBytes' => \strlen($output), 'errorLogBytes' => \strlen($logged), 'phpDiagnostics' => $diagnostics, 'decisions' => array_map(static fn(RateLimitResultDTO $r): string => $r->decision, $results), 'contextMarkersInSerializedResults' => self::markersIn($serialized)]);
+    }
+
+    public function testSignalsReachTheHostEmitterAndTheyReachTheSinkOnlyWhenTheHostEmitterWritesThem(): void
+    {
+        R::resetFallbackState();
+        $sink = new RecordingLogSink();
+        $silent = new RecordingFailureSignalEmitter();
+        $logging = new LoggingFailureSignalEmitter($sink);
+        $silentRuntime = EmitterRuntime::build(self::POLICY . '_s', $silent);
+        $loggingRuntime = EmitterRuntime::build(self::POLICY . '_l', $logging);
+        for ($i = 0; $i < 12; $i++) {
+            $silentRuntime->limit(S::fullContext(), RateLimitCommand::checkOnly(self::POLICY . '_s'));
+            $loggingRuntime->limit(S::fullContext(), RateLimitCommand::checkOnly(self::POLICY . '_l'));
+        }
+        R::resetFallbackState();
+        $silentTypes = array_map(static fn(FailureSignalDTO $x): string => $x->type, $silent->getEmitted());
+        $loggingTypes = array_map(static fn(FailureSignalDTO $x): string => $x->type, $logging->received);
+        $lineMarkers = self::markersIn(implode("\n", $sink->lines));
+
+        $this->assertContains(FailureSignalDTO::TYPE_CB_OPENED, $loggingTypes);
+        $this->assertSame($silentTypes, $loggingTypes); // the library hands the same signals to either emitter
+        $this->assertCount(\count($logging->received), $sink->lines); // lines exist only because the Host emitter wrote them
+        $this->assertSame([], $lineMarkers); // a signal does not carry the request context
+        $this->record('S14_signal_emitter_vs_log_write', ['calls' => 12 . ' per runtime, typed outage, full synthetic context', 'emitters' => ['recording only (no write)', 'Host-style emitter that json_encodes the signal and writes it to a sink']], 'the library calls the emitter; a log line exists only where the Host emitter writes one; signals carry no request-context marker', ['signalTypesToRecordingEmitter' => $silentTypes, 'signalTypesToLoggingEmitter' => $loggingTypes, 'sinkLines' => \count($sink->lines), 'sinkLine0' => $sink->lines[0] ?? null, 'contextMarkersInSinkLines' => $lineMarkers]);
     }
 
     public function testRealRuntimeResultsDoNotCarryTheRequestContext(): void

@@ -4,7 +4,7 @@
 # (`--network none`; nothing else is created, so there is nothing to clean up). Writes evidence.jsonl, phpunit.log and run-meta.txt into the
 # output directory (relative, or absolute inside the repository).
 # Exit: PHPUnit's own code; 64 bad arguments, 70 setup, 74 output directory refused, 75 an artifact cannot be written (or the log writer failed),
-# 76 evidence is not exactly the expected number of records (EXPECTED_SCENARIOS, default 13), 77 source identity not verifiable.
+# 76 evidence is not exactly the expected number of records (EXPECTED_SCENARIOS, default 14), 77 source identity not verifiable.
 # Order: every check (arguments, source identity, destination, artifact preconditions) happens BEFORE any file is opened for writing.
 set -uo pipefail
 cd "$(dirname "$0")/../.." || exit 70
@@ -17,7 +17,7 @@ rl263_source_identity
 rl263_out_dir "$OUT_REQUEST"
 rl263_artifacts evidence.jsonl phpunit.log run-meta.txt
 RL263_STARTED=$(date -u +%Y-%m-%dT%H:%M:%SZ)
-EXPECTED=${EXPECTED_SCENARIOS:-13}
+EXPECTED=${EXPECTED_SCENARIOS:-14}
 docker run --rm --network none --platform "$RL263_PLAT" -v "$RL263_ROOT:/app" -w /app -e STUDY_263_EVIDENCE="/app/$RL263_OUT/evidence.jsonl" "$RL263_IMG" \
   sh -c 'php -r "echo \"PHP \",PHP_VERSION,\" INT=\",PHP_INT_SIZE,\"\n\";"; timeout "$0" php -d memory_limit=1G vendor/bin/phpunit "$@"' "$RL263_RUN_SECONDS" \
   tests/System/DtoSerializationLoggingStudy263Test.php "$@" 2>&1 | tee "$RL263_OUT/phpunit.log"

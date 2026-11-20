@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # Controls of the #263 runner itself (F272-01): a refusal never changes existing evidence, a failing git or artifact never returns success,
-# and the normal run produces exactly 13 records on both widths. usage: selftest.sh (one line per control; non-zero if any control fails)
+# and the normal run produces exactly 14 records on both widths. usage: selftest.sh (one line per control; non-zero if any control fails)
 set -uo pipefail
 cd "$(dirname "$0")/../.." || exit 70
 S=investigations/dto-logging-263
@@ -47,11 +47,11 @@ same "git fails entirely" "$g/evidence.jsonl" "$MARK"
 rm -rf "$shim"
 # 5. Evidence count: the record count is part of success.
 EXPECTED_SCENARIOS=14 $S/run.sh 64 "$base/count" >/dev/null 2>&1; check "wrong number of evidence records" 76 $?
-# 6. Normal runs: success, exactly 13 records, the record states exit 0 (both widths).
+# 6. Normal runs: success, exactly 14 records, the record states exit 0 (both widths).
 for w in 64 32; do
   $S/run.sh $w "$base/normal-$w" >/dev/null 2>&1; check "normal run on $w" 0 $?
   n=$(wc -l < "$base/normal-$w/evidence.jsonl" 2>/dev/null | tr -d ' ')
-  [ "$n" = 13 ] && echo "ok   $w: 13 evidence records" || { echo "FAIL $w: $n evidence records"; fail=1; }
+  [ "$n" = 14 ] && echo "ok   $w: 14 evidence records" || { echo "FAIL $w: $n evidence records"; fail=1; }
   grep -qx 'final_exit=0' "$base/normal-$w/run-meta.txt" 2>/dev/null && echo "ok   $w: run-meta.txt records final_exit=0" || { echo "FAIL $w: run-meta.txt"; fail=1; }
   grep -q 'INT='"$([ "$w" = 64 ] && echo 8 || echo 4)" "$base/normal-$w/phpunit.log" 2>/dev/null && echo "ok   $w: PHP_INT_SIZE as expected" || { echo "FAIL $w: PHP_INT_SIZE"; fail=1; }
 done
