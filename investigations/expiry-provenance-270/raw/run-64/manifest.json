@@ -1,8 +1,8 @@
 {
-  "command": "docker run --rm --network n270-php64-1795205186-45259-9667 -v <repo>:/app:ro -v <evidence-dir>:/out -w /app -e REDIS_INTEGRATION_HOST=<redis> -e REDIS_INTEGRATION_PORT=6379 -e EXPIRY_270_EVIDENCE=/out/evidence.jsonl maatify-rl-php64:local php vendor/bin/phpunit --do-not-cache-result tests/Integration/Redis/ExpiryProvenanceDirectStudy270Test.php",
+  "command": "docker run --rm --network n270-php64-1795214846-80854-7380 -v <repo>:/app:ro -v <evidence-dir>:/out -w /app -e REDIS_INTEGRATION_HOST=<redis> -e REDIS_INTEGRATION_PORT=6379 -e EXPIRY_270_EVIDENCE=/out/evidence.jsonl maatify-rl-php64:local php vendor/bin/phpunit --do-not-cache-result tests/Integration/Redis/ExpiryProvenanceDirectStudy270Test.php",
   "evidence_rows": 552,
   "evidence_rows_expected": 552,
-  "evidence_sha256": "9f54019f4e01bf1ede6d0b589668707640aa69bb77e528977d1f83bd2d650fca",
+  "evidence_sha256": "16f2cb6218b42444f5cbd848ade675d119b2c8665be82b3d04802797acc56feb",
   "ext_redis": "6.3.0",
   "image": "php64",
   "log_write_exit_code": 0,
@@ -13,7 +13,7 @@
   "phpunit_summary": "OK (69 tests, 7187 assertions)",
   "redis": "Redis server v=7.0.15 sha=00000000:0 malloc=jemalloc-5.2.1 bits=64 build=d6d81b7b50ab2e83",
   "source_dirty": false,
-  "source_head": "4f2ddf5f21e9a76e696588ce79cd4171da7abf04",
-  "source_tree": "2187a5207891e0986868778f71ec7ca459d75e22",
+  "source_head": "9e655c28a39ca7738ef06558c182d9a1069cb6f7",
+  "source_tree": "5261535ced6d3fab5f6cb73ce5c6f772e14069ae",
   "status": "ok"
 }
