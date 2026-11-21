@@ -561,6 +561,9 @@ local function __call(name, ...)
   return command(...)
 end
 local __overlayRedis = setmetatable({
+  -- #270: an overlaid store script never issues a real expiry command, so its refusals are never classified by the
+  -- account's permission: the direct-call judge (`expiryApplied`) sees no `acl_check_cmd` here. DEC-042 owns the ACL check.
+  acl_check_cmd = false,
   call = __call,
   pcall = function(name, ...)
     local ok, reply = pcall(__call, name, ...)

@@ -254,14 +254,26 @@ deadline in the past on a live key is no longer detected as corruption. Every
 other structural check (format, missing field, missing TTL, capacity, overlap)
 still fails explicitly.
 
-**Expiries Redis cannot represent (LT-P2-12).** The store checks an expiry
-against the caller's time first. Redis itself is the final judge, through
-`EXPIRE` / `PEXPIRE` run under `redis.pcall`. When Redis rejects an expiry, the
-operation deletes every key that call created and fails with
-`RateLimiterException('expiry not representable')`, never with
-`BackendFailureException`. `SET … EX` is never used as the judge: past Redis's
-bound, Redis 7.0.15 rejects it, while Redis 8.10.0 replies `OK` and stores
-nothing.
+**Expiries Redis cannot represent, and expiries the account may not set
+(LT-P2-12, DEC-043).** The store checks an expiry against the caller's time
+first. Redis itself is the final judge, through `EXPIRE` / `PEXPIRE` /
+`PEXPIREAT` run under `redis.pcall`. When Redis rejects an expiry, the
+operation deletes every key that call created. What the caller then sees
+depends on **why** Redis refused, which the script decides with
+`redis.acl_check_cmd` on the same command and arguments:
+
+| Why Redis refused | Caller sees | Keyspace |
+| --- | --- | --- |
+| The account may not run the expiry command (ACL) | a `NOPERM` error reply naming the command, never the key or a value | the keys the call created are deleted: unchanged |
+| A lifetime Redis cannot represent (range) | `RateLimiterException('expiry not representable')` | the keys the call created are deleted: unchanged |
+| `acl_check_cmd` absent (Redis older than 7.0) or failing | `RateLimiterException('expiry not representable')` | the keys the call created are deleted: unchanged |
+
+Neither is a `BackendFailureException`; that class stays for a proven
+transport failure (DEC-015, DEC-018). Inside `transactRequest()` the scripts run
+against the request overlay, which hides `acl_check_cmd`: the overlaid
+evaluation answers as before, and the save's own ACL preflight is DEC-042.
+`SET … EX` is never used as the judge: past Redis's bound, Redis 7.0.15 rejects
+it, while Redis 8.10.0 replies `OK` and stores nothing.
 
 ---
 

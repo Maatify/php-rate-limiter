@@ -114,12 +114,45 @@ final class RedisFullCapabilityStore implements
     private const LUA_EXACT_INTEGER_MAX = 9007199254740991;
 
     /**
+     * #270, LT-P2-12: the expiry judge shared by every direct store script.
+     *
+     * An expiry command (EXPIRE / PEXPIRE / PEXPIREAT) is run through redis.pcall. When Redis rejects it, every key this
+     * call created is deleted (all or nothing) and the script answers with `expiryError`. Two different refusals reach
+     * this point with the same pcall reply shape, so the account's own permission decides which one it was: the same
+     * command with the same arguments is checked with `redis.acl_check_cmd` (Redis 7.0). A command the account may not
+     * run answers `NOPERM` and names the command only (no key, no value); anything else keeps `expiry not representable`
+     * (the genuine range refusal). A missing or failing `acl_check_cmd` keeps `expiry not representable`.
+     *
+     * A request overlay (transactRequest, DEC-042) hides `acl_check_cmd` (`false`), so the overlaid evaluation of a store
+     * script answers exactly as before and the DEC-042 commit preflight stays the only ACL judge of a held request.
+     * Only EXPIRE / PEXPIRE / PEXPIREAT are used as the judge: `SET ... EX` past Redis's bound replies OK and stores nothing.
+     */
+    private const LUA_EXPIRY_JUDGE = <<<'LUA'
+local expiryError = 'expiry not representable'
+local function expiryApplied(createdKeys, command, ...)
+  local reply = redis.pcall(command, ...)
+  if type(reply) == 'table' and reply.err then
+    expiryError = 'expiry not representable'
+    if redis.acl_check_cmd then
+      local checked, allowed = pcall(redis.acl_check_cmd, command, ...)
+      if checked and allowed == false then
+        expiryError = "NOPERM this user has no permissions to run the '" .. string.lower(command) .. "' command"
+      end
+    end
+    for _, createdKey in ipairs(createdKeys) do redis.call('DEL', createdKey) end
+    return false
+  end
+  return true
+end
+LUA;
+
+    /**
      * #153 phase 2 (DEC-016 rule 1): the caller's semantic time is the last
      * ARGV, a canonical non-negative Lua-exact integer (DEC-017). No script
      * reads Redis `TIME`. Physical lifetimes stay relative (Redis clock);
      * logical deadlines are the caller's `now` plus a TTL.
      */
-    private const LUA_TIME_PRELUDE = <<<'LUA'
+    private const LUA_TIME_PRELUDE = self::LUA_EXPIRY_JUDGE . "\n" . <<<'LUA'
 local nowStr = ARGV[#ARGV]
 if nowStr == nil or string.match(nowStr, '^%d+$') == nil or (#nowStr > 1 and string.sub(nowStr, 1, 1) == '0') or #nowStr > 16 or (#nowStr == 16 and nowStr > '9007199254740991') then return redis.error_reply('caller time is not representable') end
 local now = tonumber(nowStr)
@@ -168,17 +201,6 @@ end
 local function ttlBackendRepresentable(rawTtl)
   if type(rawTtl) ~= 'string' or string.match(rawTtl, '^[1-9]%d*$') == nil or string.len(rawTtl) > 16 then return false end
   return compareDecimalStrings(addDecimalStrings(rawTtl .. '000', nowMsStr), '9223372036854775807') <= 0
-end
--- LT-P2-12: an expiry command is run through redis.pcall. When Redis rejects
--- it, every key this call created is deleted (all or nothing) and the caller
--- returns `expiry not representable`. Only EXPIRE / PEXPIRE are used as the
--- judge: `SET ... EX` past Redis's bound replies OK and stores nothing.
-local function expiryApplied(reply, createdKeys)
-  if type(reply) == 'table' and reply.err then
-    for _, createdKey in ipairs(createdKeys) do redis.call('DEL', createdKey) end
-    return false
-  end
-  return true
 end
 LUA;
 
@@ -236,7 +258,7 @@ if exists == 0 then
   if not withinCallerRange(ARGV[2]) then return redis.error_reply('score integer overflow') end
   if not ttlBackendRepresentable(ARGV[1]) then return redis.error_reply('score TTL exceeds Redis backend expiry representability') end
   redis.call('HSET', KEYS[1], 'value', ARGV[2], 'updatedAt', now)
-  if not expiryApplied(redis.pcall('EXPIRE', KEYS[1], ARGV[1]), {KEYS[1]}) then return redis.error_reply('expiry not representable') end
+  if not expiryApplied({KEYS[1]}, 'EXPIRE', KEYS[1], ARGV[1]) then return redis.error_reply(expiryError) end
   return {ARGV[2], now}
 end
 if redis.call('TTL', KEYS[1]) < 0 then return redis.error_reply('malformed score state') end
@@ -279,7 +301,7 @@ if exists == 0 then
   if ARGV[2] ~= '' then return {} end
   if not ttlBackendRepresentable(ARGV[1]) then return redis.error_reply('score TTL exceeds Redis backend expiry representability') end
   redis.call('HSET', KEYS[1], 'value', ARGV[4], 'updatedAt', now)
-  if not expiryApplied(redis.pcall('EXPIRE', KEYS[1], ARGV[1]), {KEYS[1]}) then return redis.error_reply('expiry not representable') end
+  if not expiryApplied({KEYS[1]}, 'EXPIRE', KEYS[1], ARGV[1]) then return redis.error_reply(expiryError) end
   return {ARGV[4], now}
 end
 if redis.call('TTL', KEYS[1]) < 0 then return redis.error_reply('malformed score state') end
@@ -317,11 +339,11 @@ if redis.call('EXISTS', KEYS[1]) == 1 then
   local value = redis.call('HGET', KEYS[1], 'value'); local updated = redis.call('HGET', KEYS[1], 'updatedAt')
   if not value or not updated or not validPhpInteger(value) or not validNonNegativeInteger(updated) then return redis.error_reply('malformed score state') end
   previous = {value, updated}
-  if not expiryApplied(redis.pcall('EXPIRE', KEYS[1], ARGV[1]), {}) then return redis.error_reply('expiry not representable') end
+  if not expiryApplied({}, 'EXPIRE', KEYS[1], ARGV[1]) then return redis.error_reply(expiryError) end
   redis.call('HSET', KEYS[1], 'value', ARGV[2], 'updatedAt', now)
 else
   redis.call('HSET', KEYS[1], 'value', ARGV[2], 'updatedAt', now)
-  if not expiryApplied(redis.pcall('EXPIRE', KEYS[1], ARGV[1]), {KEYS[1]}) then return redis.error_reply('expiry not representable') end
+  if not expiryApplied({KEYS[1]}, 'EXPIRE', KEYS[1], ARGV[1]) then return redis.error_reply(expiryError) end
 end
 return previous
 LUA;
@@ -377,16 +399,16 @@ LUA;
     private const SCORE_SET = self::LUA_TIME_PRELUDE . "\n" . <<<'LUA'
 if not ttlBackendRepresentable(ARGV[1]) then return redis.error_reply('score TTL exceeds Redis backend expiry representability') end
 if redis.call('EXISTS', KEYS[1]) == 1 then
-  if not expiryApplied(redis.pcall('EXPIRE', KEYS[1], ARGV[1]), {}) then return redis.error_reply('expiry not representable') end
+  if not expiryApplied({}, 'EXPIRE', KEYS[1], ARGV[1]) then return redis.error_reply(expiryError) end
   redis.call('HSET', KEYS[1], 'value', ARGV[2], 'updatedAt', now)
 else
   redis.call('HSET', KEYS[1], 'value', ARGV[2], 'updatedAt', now)
-  if not expiryApplied(redis.pcall('EXPIRE', KEYS[1], ARGV[1]), {KEYS[1]}) then return redis.error_reply('expiry not representable') end
+  if not expiryApplied({KEYS[1]}, 'EXPIRE', KEYS[1], ARGV[1]) then return redis.error_reply(expiryError) end
 end
 return now
 LUA;
 
-    private const LIFECYCLE_MUTATE = <<<'LUA'
+    private const LIFECYCLE_MUTATE = self::LUA_EXPIRY_JUDGE . "\n" . <<<'LUA'
 -- #153 phase 2: the caller's time in milliseconds is the last ARGV, a
 -- canonical non-negative Lua-exact integer (DEC-016 rule 1, DEC-017).
 local nowMsStr = ARGV[#ARGV]
@@ -468,15 +490,6 @@ local function subtractDecimalStrings(a, b)
   if result == '' then result = '0' end
   return result
 end
--- LT-P2-12: Redis judges every expiry; on rejection the keys this call
--- created are deleted (all or nothing).
-local function expiryApplied(reply, createdKeys)
-  if type(reply) == 'table' and reply.err then
-    for _, createdKey in ipairs(createdKeys) do redis.call('DEL', createdKey) end
-    return false
-  end
-  return true
-end
 local function incrementInteger(value)
   local digits = {}; for digit in string.gmatch(value, '%d') do digits[#digits + 1] = tonumber(digit) end
   local carry = 1
@@ -515,13 +528,13 @@ local function createCurrent(overwrite)
   local expiry = (sumMs - remainderMs) / 1000 + (remainderMs > 0 and 1 or 0)
   if not resultFitsNative(nowSeconds, expiry, '1') then return redis.error_reply('generation-bound result exceeds the caller native integer range') end
   if overwrite then
-    if not expiryApplied(redis.pcall('EXPIRE', current, rawTtl), {}) then return redis.error_reply('expiry not representable') end
+    if not expiryApplied({}, 'EXPIRE', current, rawTtl) then return redis.error_reply(expiryError) end
     redis.call('HDEL', current, 'reentryId', 'reentryValidUntil', 'reentryGeneration')
     if KEYS[3] ~= '' then redis.call('DEL', KEYS[3]) end
     redis.call('HSET', current, 'value', ARGV[7], 'updatedAt', nowSeconds, 'generation', 1, 'expiresAt', expiry)
   else
     redis.call('HSET', current, 'value', ARGV[7], 'updatedAt', nowSeconds, 'generation', 1, 'expiresAt', expiry)
-    if not expiryApplied(redis.pcall('EXPIRE', current, rawTtl), {current}) then return redis.error_reply('expiry not representable') end
+    if not expiryApplied({current}, 'EXPIRE', current, rawTtl) then return redis.error_reply(expiryError) end
   end
   return {1, ARGV[7], nowSeconds, expiry, 1}
 end
@@ -586,11 +599,11 @@ if not resultFitsNative(nowSeconds, expiry, generation) then return redis.error_
 -- The physical life stays relative: the logical remainder, never capped (LT-P2-02).
 local remaining = subtractDecimalStrings(expiryMsStr, nowMsStr)
 if redis.call('EXISTS', current) == 1 then
-  if not expiryApplied(redis.pcall('PEXPIRE', current, remaining), {}) then return redis.error_reply('expiry not representable') end
+  if not expiryApplied({}, 'PEXPIRE', current, remaining) then return redis.error_reply(expiryError) end
   redis.call('HSET', current, 'value', ARGV[7], 'updatedAt', nowSeconds, 'generation', generation, 'expiresAt', expiry)
 else
   redis.call('HSET', current, 'value', ARGV[7], 'updatedAt', nowSeconds, 'generation', generation, 'expiresAt', expiry)
-  if not expiryApplied(redis.pcall('PEXPIRE', current, remaining), {current}) then return redis.error_reply('expiry not representable') end
+  if not expiryApplied({current}, 'PEXPIRE', current, remaining) then return redis.error_reply(expiryError) end
 end
 redis.call('HDEL', current, 'reentryId', 'reentryValidUntil', 'reentryGeneration')
 if KEYS[3] ~= '' then redis.call('DEL', KEYS[3]) end
@@ -701,7 +714,7 @@ end
 return {source == KEYS[1] and 1 or 2, value, updated, expiry, generation, evidenceId, evidenceUntil}
 LUA;
 
-    private const LIFECYCLE_CLAIM = <<<'LUA'
+    private const LIFECYCLE_CLAIM = self::LUA_EXPIRY_JUDGE . "\n" . <<<'LUA'
 -- #153 phase 2: the caller's time in milliseconds is the last ARGV, a
 -- canonical non-negative Lua-exact integer (DEC-016 rule 1, DEC-017).
 local nowMsStr = ARGV[#ARGV]
@@ -823,8 +836,7 @@ if source ~= '' then
       return 0
     end
     -- Redis judges the expiry (LT-P2-12); a rejected one removes the marker this call created.
-    local reply = redis.pcall('PEXPIRE', KEYS[5], markerRemaining)
-    if type(reply) == 'table' and reply.err then redis.call('DEL', KEYS[5]); return redis.error_reply('expiry not representable') end
+    if not expiryApplied({KEYS[5]}, 'PEXPIRE', KEYS[5], markerRemaining) then return redis.error_reply(expiryError) end
     return 1
   end
 end
@@ -848,11 +860,11 @@ if redis.call('EXISTS', KEYS[1]) == 1 then
     local stored, requested = tonumber(currentLevel), tonumber(ARGV[1])
     if stored > requested or (stored == requested and compareDecimalStrings(currentExpires, expires) >= 0) then return currentExpires end
   end
-  if not expiryApplied(redis.pcall('EXPIRE', KEYS[1], ARGV[2]), {}) then return redis.error_reply('expiry not representable') end
+  if not expiryApplied({}, 'EXPIRE', KEYS[1], ARGV[2]) then return redis.error_reply(expiryError) end
   redis.call('HSET', KEYS[1], 'level', ARGV[1], 'expiresAt', expires)
 else
   redis.call('HSET', KEYS[1], 'level', ARGV[1], 'expiresAt', expires)
-  if not expiryApplied(redis.pcall('EXPIRE', KEYS[1], ARGV[2]), {KEYS[1]}) then return redis.error_reply('expiry not representable') end
+  if not expiryApplied({KEYS[1]}, 'EXPIRE', KEYS[1], ARGV[2]) then return redis.error_reply(expiryError) end
 end
 return expires
 LUA;
@@ -943,11 +955,11 @@ end
 if not requestedDuration or requestedDuration <= 0 or requestedDuration ~= math.floor(requestedDuration) then return redis.error_reply('malformed budget state') end
 if requestedDuration > exactIntegerMax - now then return redis.error_reply('budget expiry exceeds Redis Lua exact integer range') end
 if exists == 1 then
-  if not expiryApplied(redis.pcall('EXPIRE', KEYS[1], ARGV[1]), {}) then return redis.error_reply('expiry not representable') end
+  if not expiryApplied({}, 'EXPIRE', KEYS[1], ARGV[1]) then return redis.error_reply(expiryError) end
   redis.call('DEL', KEYS[1])
 end
 redis.call('HSET', KEYS[1], 'count', ARGV[2], 'epochStart', now, 'epochDuration', ARGV[1])
-if not expiryApplied(redis.pcall('EXPIRE', KEYS[1], ARGV[1]), {KEYS[1]}) then return redis.error_reply('expiry not representable') end
+if not expiryApplied({KEYS[1]}, 'EXPIRE', KEYS[1], ARGV[1]) then return redis.error_reply(expiryError) end
 return {redis.call('HGET', KEYS[1], 'count'), now}
 LUA;
 
@@ -1047,20 +1059,20 @@ if compareDecimalStrings(nowStr, seedEnd) < 0 then
   local remaining = subtractDecimalStrings(seedEnd, nowStr)
   if not ttlBackendRepresentable(remaining) then return redis.error_reply('seed expiry exceeds Redis backend expiry representability') end
   if exists == 1 then
-    if not expiryApplied(redis.pcall('EXPIRE', KEYS[1], remaining), {}) then return redis.error_reply('expiry not representable') end
+    if not expiryApplied({}, 'EXPIRE', KEYS[1], remaining) then return redis.error_reply(expiryError) end
     redis.call('DEL', KEYS[1])
   end
   redis.call('HSET', KEYS[1], 'count', ARGV[5], 'epochStart', ARGV[2], 'epochDuration', ARGV[1])
-  if not expiryApplied(redis.pcall('EXPIRE', KEYS[1], remaining), {KEYS[1]}) then return redis.error_reply('expiry not representable') end
+  if not expiryApplied({KEYS[1]}, 'EXPIRE', KEYS[1], remaining) then return redis.error_reply(expiryError) end
   return {redis.call('HGET', KEYS[1], 'count'), ARGV[2]}
 end
 if epochDuration > exactIntegerMax - now then return redis.error_reply('budget expiry exceeds Redis Lua exact integer range') end
 if exists == 1 then
-  if not expiryApplied(redis.pcall('EXPIRE', KEYS[1], ARGV[1]), {}) then return redis.error_reply('expiry not representable') end
+  if not expiryApplied({}, 'EXPIRE', KEYS[1], ARGV[1]) then return redis.error_reply(expiryError) end
   redis.call('DEL', KEYS[1])
 end
 redis.call('HSET', KEYS[1], 'count', ARGV[4], 'epochStart', now, 'epochDuration', ARGV[1])
-if not expiryApplied(redis.pcall('EXPIRE', KEYS[1], ARGV[1]), {KEYS[1]}) then return redis.error_reply('expiry not representable') end
+if not expiryApplied({KEYS[1]}, 'EXPIRE', KEYS[1], ARGV[1]) then return redis.error_reply(expiryError) end
 return {redis.call('HGET', KEYS[1], 'count'), now}
 LUA;
 
@@ -1087,9 +1099,9 @@ end
 if exists == 0 then
   if not ttlBackendRepresentable(ARGV[1]) then return redis.error_reply('correlation TTL exceeds Redis backend expiry representability') end
   redis.call('SADD', KEYS[1], ARGV[2])
-  if not expiryApplied(redis.pcall('EXPIRE', KEYS[1], ARGV[1]), {KEYS[1]}) then return redis.error_reply('expiry not representable') end
+  if not expiryApplied({KEYS[1]}, 'EXPIRE', KEYS[1], ARGV[1]) then return redis.error_reply(expiryError) end
   redis.call('HSET', KEYS[2], 'expiresAt', addDecimalStrings(nowStr, ARGV[1]))
-  if not expiryApplied(redis.pcall('EXPIRE', KEYS[2], ARGV[1]), {KEYS[1], KEYS[2]}) then return redis.error_reply('expiry not representable') end
+  if not expiryApplied({KEYS[1], KEYS[2]}, 'EXPIRE', KEYS[2], ARGV[1]) then return redis.error_reply(expiryError) end
 else redis.call('SADD', KEYS[1], ARGV[2]) end
 return redis.call('SCARD', KEYS[1])
 LUA;
@@ -1121,9 +1133,9 @@ if exists == 0 then
   if not ttlBackendRepresentable(ARGV[1]) then return redis.error_reply('correlation TTL exceeds Redis backend expiry representability') end
   value = 1
   redis.call('SET', KEYS[1], value)
-  if not expiryApplied(redis.pcall('EXPIRE', KEYS[1], ARGV[1]), {KEYS[1]}) then return redis.error_reply('expiry not representable') end
+  if not expiryApplied({KEYS[1]}, 'EXPIRE', KEYS[1], ARGV[1]) then return redis.error_reply(expiryError) end
   redis.call('HSET', KEYS[2], 'expiresAt', addDecimalStrings(nowStr, ARGV[1]))
-  if not expiryApplied(redis.pcall('EXPIRE', KEYS[2], ARGV[1]), {KEYS[1], KEYS[2]}) then return redis.error_reply('expiry not representable') end
+  if not expiryApplied({KEYS[1], KEYS[2]}, 'EXPIRE', KEYS[2], ARGV[1]) then return redis.error_reply(expiryError) end
 else
   -- #185 F-185-25: an increment past the PHP integer range is a classified error and writes nothing.
   -- #230: the range is the caller's native `int` (ARGV[2]); a stored count at it, or already past it, is rejected before INCR.
@@ -1212,9 +1224,9 @@ local function applyBoundedSnapshot(plan, setKey, metaKey, ttl, member)
     if plan.replaceExpired then redis.call('DEL', setKey, metaKey) end
     redis.call('SADD', setKey, member)
     if plan.initialize then
-      if not expiryApplied(redis.pcall('EXPIRE', setKey, ttl), {setKey}) then return redis.error_reply('expiry not representable') end
+      if not expiryApplied({setKey}, 'EXPIRE', setKey, ttl) then return redis.error_reply(expiryError) end
       redis.call('HSET', metaKey, 'expiresAt', plan.expires)
-      if not expiryApplied(redis.pcall('EXPIRE', metaKey, ttl), {setKey, metaKey}) then return redis.error_reply('expiry not representable') end
+      if not expiryApplied({setKey, metaKey}, 'EXPIRE', metaKey, ttl) then return redis.error_reply(expiryError) end
     end
   end
   return {#plan.members, plan.accepted, plan.added, plan.expires, unpack(plan.members)}
@@ -1372,9 +1384,9 @@ if prevExists == 0 then
   if exists == 0 then
     if staleCurrent then redis.call('DEL', KEYS[1], KEYS[2]) end
     redis.call('SADD', KEYS[1], ARGV[3])
-    if not expiryApplied(redis.pcall('EXPIRE', KEYS[1], ARGV[2]), {KEYS[1]}) then return redis.error_reply('expiry not representable') end
+    if not expiryApplied({KEYS[1]}, 'EXPIRE', KEYS[1], ARGV[2]) then return redis.error_reply(expiryError) end
     redis.call('HSET', KEYS[2], 'expiresAt', newExpiry)
-    if not expiryApplied(redis.pcall('EXPIRE', KEYS[2], ARGV[2]), {KEYS[1], KEYS[2]}) then return redis.error_reply('expiry not representable') end
+    if not expiryApplied({KEYS[1], KEYS[2]}, 'EXPIRE', KEYS[2], ARGV[2]) then return redis.error_reply(expiryError) end
   else redis.call('SADD', KEYS[1], ARGV[3]) end
   local members = redis.call('SMEMBERS', KEYS[1]); table.sort(members)
   return {#members, 1, 1, exists == 0 and newExpiry or currentExpiry, unpack(members)}
@@ -1434,9 +1446,9 @@ local function ensureCurrent()
   if currentExists == 0 then
     if staleCurrent then redis.call('DEL', KEYS[1], KEYS[2]); staleCurrent = false end
     redis.call('SADD', KEYS[1], ARGV[3]); created[#created + 1] = KEYS[1]
-    if not expiryApplied(redis.pcall('EXPIRE', KEYS[1], ARGV[2]), created) then return false end
+    if not expiryApplied(created, 'EXPIRE', KEYS[1], ARGV[2]) then return false end
     redis.call('HSET', KEYS[2], 'expiresAt', addDecimalStrings(nowStr, ARGV[2])); created[#created + 1] = KEYS[2]
-    if not expiryApplied(redis.pcall('EXPIRE', KEYS[2], ARGV[2]), created) then return false end
+    if not expiryApplied(created, 'EXPIRE', KEYS[2], ARGV[2]) then return false end
     currentExists = 1
   else
     redis.call('SADD', KEYS[1], ARGV[3])
@@ -1515,17 +1527,17 @@ local function planBridgeExpiry()
   if compareDecimalStrings(bridgeAt, earliest) <= 0 then return nil, 'malformed previous bounded state' end
   return {at = bridgeAt}
 end
-local function expireBridgeKey(key, plan)
-  return redis.pcall('PEXPIREAT', key, plan.at)
+local function expireBridgeKey(created, key, plan)
+  return expiryApplied(created, 'PEXPIREAT', key, plan.at)
 end
 local function ensureBridge(plan)
   if bridgeExists == 0 then
     bridgeExpiry = prevExpiry
     if staleBridge then redis.call('DEL', KEYS[3], KEYS[4]); staleBridge = false end
     redis.call('SADD', KEYS[3], ARGV[3]); created[#created + 1] = KEYS[3]
-    if not expiryApplied(expireBridgeKey(KEYS[3], plan), created) then return false end
+    if not expireBridgeKey(created, KEYS[3], plan) then return false end
     redis.call('HSET', KEYS[4], 'expiresAt', bridgeExpiry); created[#created + 1] = KEYS[4]
-    if not expiryApplied(expireBridgeKey(KEYS[4], plan), created) then return false end
+    if not expireBridgeKey(created, KEYS[4], plan) then return false end
     bridgeExists = 1
   else
     redis.call('SADD', KEYS[3], ARGV[3])
@@ -1533,7 +1545,7 @@ local function ensureBridge(plan)
   return true
 end
 if known then
-  if not ensureCurrent() then return redis.error_reply('expiry not representable') end
+  if not ensureCurrent() then return redis.error_reply(expiryError) end
 elseif #members < tonumber(ARGV[5]) then
   local bridgePlan = nil
   if bridgeExists == 0 then
@@ -1541,7 +1553,7 @@ elseif #members < tonumber(ARGV[5]) then
     bridgePlan, planError = planBridgeExpiry()
     if bridgePlan == nil then return redis.error_reply(planError) end
   end
-  if not ensureCurrent() or not ensureBridge(bridgePlan) then return redis.error_reply('expiry not representable') end
+  if not ensureCurrent() or not ensureBridge(bridgePlan) then return redis.error_reply(expiryError) end
   added = true
   members[#members + 1] = ARGV[3]
 end
@@ -1560,16 +1572,16 @@ if current then
 end
 if not ttlBackendRepresentable(ARGV[2]) then return redis.error_reply('probe lease duration exceeds Redis backend expiry representability') end
 if current then
-  if not expiryApplied(redis.pcall('EXPIRE', KEYS[1], ARGV[2]), {}) then return redis.error_reply('expiry not representable') end
+  if not expiryApplied({}, 'EXPIRE', KEYS[1], ARGV[2]) then return redis.error_reply(expiryError) end
   redis.call('SET', KEYS[1], addDecimalStrings(ARGV[1], ARGV[2]), 'KEEPTTL')
 else
   redis.call('SET', KEYS[1], addDecimalStrings(ARGV[1], ARGV[2]))
-  if not expiryApplied(redis.pcall('EXPIRE', KEYS[1], ARGV[2]), {KEYS[1]}) then return redis.error_reply('expiry not representable') end
+  if not expiryApplied({KEYS[1]}, 'EXPIRE', KEYS[1], ARGV[2]) then return redis.error_reply(expiryError) end
 end
 return 1
 LUA;
 
-    private const HARD_BLOCK = <<<'LUA'
+    private const HARD_BLOCK = self::LUA_EXPIRY_JUDGE . "\n" . <<<'LUA'
 local lifecycleGeneration = ARGV[10] or ''
 local lifecycleId = ARGV[11] or ''
 -- #242: ARGV[12] is the caller's native integer maximum. The integers this script returns become native-int DTO fields, so they are
@@ -1696,8 +1708,7 @@ local function extendUntil(key, target)
   local ttl = redis.call('TTL', key)
   local needed = math.max(1, target - now)
   if ttl < needed then
-    local reply = redis.pcall('EXPIRE', key, needed)
-    if type(reply) == 'table' and reply.err then return false end
+    if not expiryApplied({}, 'EXPIRE', key, needed) then return false end
   end
   return true
 end
@@ -1795,13 +1806,11 @@ local keepCurrentBlock = currentLiveLevel ~= nil and (currentLiveLevel > tonumbe
 if keepCurrentBlock then
   -- the stronger live block stays
 elseif redis.call('EXISTS', KEYS[3]) == 1 then
-  local reply = redis.pcall('EXPIRE', KEYS[3], ARGV[2])
-  if type(reply) == 'table' and reply.err then return redis.error_reply('expiry not representable') end
+  if not expiryApplied({}, 'EXPIRE', KEYS[3], ARGV[2]) then return redis.error_reply(expiryError) end
   redis.call('HSET', KEYS[3], 'level', ARGV[1], 'expiresAt', expires)
 else
   redis.call('HSET', KEYS[3], 'level', ARGV[1], 'expiresAt', expires)
-  local reply = redis.pcall('EXPIRE', KEYS[3], ARGV[2])
-  if type(reply) == 'table' and reply.err then redis.call('DEL', KEYS[3]); return redis.error_reply('expiry not representable') end
+  if not expiryApplied({KEYS[3]}, 'EXPIRE', KEYS[3], ARGV[2]) then return redis.error_reply(expiryError) end
 end
 for _, member in ipairs(cycleMembers) do redis.call('ZADD', KEYS[1], cyclesByMember[member], member) end
 redis.call('ZREMRANGEBYSCORE', KEYS[1], '-inf', '(' .. (now - cycleWindow))
@@ -1811,8 +1820,8 @@ if redis.call('EXISTS', KEYS[5]) == 1 then
   end
 end
 for _, member in ipairs(pauseMembers) do redis.call('ZADD', KEYS[5], pausesByMember[member][1], member) end
-if #pauseMembers > 0 and not extendUntil(KEYS[5], latestPauseUntil + retention) then return redis.error_reply('expiry not representable') end
-if cycleCount > 0 and not extendUntil(KEYS[1], latestCycle + cycleWindow) then return redis.error_reply('expiry not representable') end
+if #pauseMembers > 0 and not extendUntil(KEYS[5], latestPauseUntil + retention) then return redis.error_reply(expiryError) end
+if cycleCount > 0 and not extendUntil(KEYS[1], latestCycle + cycleWindow) then return redis.error_reply(expiryError) end
 if lifecycleGeneration ~= '' then
   local scoreKey = KEYS[7]
   local storedId = redis.call('HGET', scoreKey, 'reentryId')
@@ -2583,9 +2592,9 @@ if exists == 0 then
   value = 1
   if staleCurrent then redis.call('DEL', KEYS[1], KEYS[4]) end
   redis.call('SET', KEYS[1], value)
-  if not expiryApplied(redis.pcall('EXPIRE', KEYS[1], ARGV[1]), {KEYS[1]}) then return redis.error_reply('expiry not representable') end
+  if not expiryApplied({KEYS[1]}, 'EXPIRE', KEYS[1], ARGV[1]) then return redis.error_reply(expiryError) end
   redis.call('HSET', KEYS[4], 'expiresAt', addDecimalStrings(nowStr, ARGV[1]))
-  if not expiryApplied(redis.pcall('EXPIRE', KEYS[4], ARGV[1]), {KEYS[1], KEYS[4]}) then return redis.error_reply('expiry not representable') end
+  if not expiryApplied({KEYS[1], KEYS[4]}, 'EXPIRE', KEYS[4], ARGV[1]) then return redis.error_reply(expiryError) end
 else
   local ok = pcall(redis.call, 'INCR', KEYS[1])
   if not ok then return redis.error_reply('watch count overflow') end
