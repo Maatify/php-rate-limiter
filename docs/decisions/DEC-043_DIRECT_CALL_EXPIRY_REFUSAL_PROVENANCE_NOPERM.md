@@ -56,7 +56,7 @@ Only Redis-side evidence told them apart. The caller saw a range problem when th
 
 ## Relationship to Other Decisions
 
-- **DEC-015 / DEC-018**: unchanged and applied (operational failure bound; the Host/adapter interprets replies; `BackendFailureException` only for transport).
+- **DEC-015 / DEC-018**: unchanged and applied (operational failure bound; the Host/adapter interprets replies; `BackendFailureException` is the typed operational backend failure that the Host executor and the official adapters classify from availability, transport and command-execution failures (DEC-015). This decision does not move the expiry refusals into it or out of it: an expiry refusal is a server reply and keeps the classification the executor gave it, and a proven connection failure keeps `BackendFailureException`).
 - **DEC-037 / DEC-042**: unchanged; the overlay is explicitly separated (item 6). **Not superseded.** DEC-042 lists this concern as out of scope; this record owns it.
 - **DEC-039**: the `…AtMilliseconds` decimal-string variants are unchanged; the decimal `EVAL` control for a lifetime outside native `int` on 32-bit is how the study reached a genuine range refusal.
 - Out of scope: #261, `transactRequest()` behaviour, #267, #268.

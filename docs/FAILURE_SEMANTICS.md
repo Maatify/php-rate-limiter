@@ -268,8 +268,11 @@ depends on **why** Redis refused, which the script decides with
 | A lifetime Redis cannot represent (range) | `RateLimiterException('expiry not representable')` | the keys the call created are deleted; see the note below |
 | `acl_check_cmd` absent (Redis older than 7.0) or failing | `RateLimiterException('expiry not representable')` | the keys the call created are deleted; see the note below |
 
-Neither is a `BackendFailureException`; that class stays for a proven
-transport failure (DEC-015, DEC-018). Inside `transactRequest()` the scripts run
+An expiry refusal is a server reply: it keeps the classification the Host executor gave it
+(DEC-018) and is not reclassified into `BackendFailureException`, the typed
+operational backend failure of availability, transport and command-execution
+failures (DEC-015), which stays for the failures the executor classifies as such,
+including a proven connection failure. Inside `transactRequest()` the scripts run
 against the request overlay, which hides `acl_check_cmd`: the overlaid
 evaluation answers as before, and the save's own ACL preflight is DEC-042.
 `SET … EX` is never used as the judge: past Redis's bound, Redis 7.0.15 rejects
