@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace Maatify\RateLimiter\Tests\Integration\Redis;
 
+use Maatify\RateLimiter\DTO\BudgetStateDTO;
 use Maatify\RateLimiter\Exception\BackendFailureException;
 use Maatify\RateLimiter\Repository\Redis\RedisCommandExecutorInterface;
 use Maatify\RateLimiter\Repository\Redis\RedisFullCapabilityStore;
@@ -14,8 +15,10 @@ use PHPUnit\Framework\Attributes\Group;
 use PHPUnit\Framework\TestCase;
 
 /**
- * #270 study (DEC-015, DEC-018, LT-P2-12): provenance of a failed expiry in DIRECT store calls (not `transactRequest()`).
- * STUDY ONLY: it characterises what the shipped code does and changes no behaviour. Every case has its own temporary ACL account;
+ * #270 (DEC-015, DEC-018, LT-P2-12): provenance of a failed expiry in DIRECT store calls (not `transactRequest()`).
+ * It started as the study of #276 (read-only, against the shipped code) and is now the before / after verification of the fix: the same
+ * matrix runs under `EXPIRY_270_CONTRACT=before` (the swallowed denial answers `expiry not representable`, the study's finding) and under
+ * the default `after` (the denial answers `NOPERM` naming the command; the genuine range refusal keeps `expiry not representable`). Every case has its own temporary ACL account;
  * the data is synthetic; the keyspace is read from outside Lua with DUMP and PEXPIRETIME. With `EXPIRY_270_EVIDENCE` set to a file
  * path each case appends one JSON line of what it observed.
  */
@@ -24,6 +27,8 @@ use PHPUnit\Framework\TestCase;
 final class ExpiryProvenanceDirectStudy270Test extends TestCase
 {
     private const PASSWORD = 'synthetic-study-password';
+
+    private const RANGE_MESSAGE = 'expiry not representable';
 
     private const NAMESPACE = 'exp-270';
 
@@ -53,8 +58,19 @@ final class ExpiryProvenanceDirectStudy270Test extends TestCase
         'addDistinctAcrossRotationAt' => ['expire' => ['fresh']],
         'incrementWatchFlagAcrossRotationAt' => ['expire' => ['fresh']],
         'mutateGenerationBoundScoreAtMilliseconds' => ['expire' => ['fresh']],
+        'incrementBudgetAt (epoch ended, key still present)' => ['expire' => ['prerequisite-only']],
+        'incrementBudgetWithSeedAt (no Current, active seed)' => ['expire' => ['fresh']],
+        'incrementBudgetWithSeedAt (no Current, ended seed)' => ['expire' => ['fresh']],
+        'incrementBudgetWithSeedAt (ended Current, active seed)' => ['expire' => ['prerequisite-only']],
+        'incrementBudgetWithSeedAt (ended Current, ended seed)' => ['expire' => ['prerequisite-only']],
+        'blockAt (stronger than the stored block)' => ['expire' => ['prerequisite-only']],
+        'acquireProbeLease (expired lease present)' => ['expire' => ['prerequisite-only']],
+        'mutateGenerationBoundScoreAtMilliseconds (logically expired Current)' => ['expire' => ['prerequisite-only']],
+        'blockWithPunishmentLifecycleTrackingAt (longer than the stored block)' => ['expire' => ['prerequisite-only', 'existing']],
         'blockWithPunishmentLifecycleTrackingAt' => ['expire' => ['prerequisite-only', 'existing']],
-        'claimPostPunishmentReentryAtMilliseconds (needs a lifecycle block)' => [],
+        'claimPostPunishmentReentryAtMilliseconds (block ended, score still alive)' => ['pexpire' => ['prerequisite-only']],
+        'mutateGenerationBoundScoreAtMilliseconds (expected snapshot, live Current)' => ['pexpire' => ['prerequisite-only', 'existing']],
+        'mutateGenerationBoundScoreAtMilliseconds (expected snapshot, state held in Previous)' => ['pexpire' => ['prerequisite-only', 'existing']],
         'addDistinctBoundedAcrossRotationAtMilliseconds (previous generation present)' => ['expire' => ['prerequisite-only'], 'pexpireat' => ['prerequisite-only']],
         'addDeviceCapPairAt' => ['expire' => ['fresh']],
     ];
@@ -69,8 +85,17 @@ final class ExpiryProvenanceDirectStudy270Test extends TestCase
 
     /** @var array<string, callable(RedisFullCapabilityStore, int): mixed> */
     private const SETUP = [
+        'incrementBudgetAt (epoch ended, key still present)' => [self::class, 'seedEndedBudget'],
+        'incrementBudgetWithSeedAt (ended Current, active seed)' => [self::class, 'seedEndedBudget'],
+        'incrementBudgetWithSeedAt (ended Current, ended seed)' => [self::class, 'seedEndedBudget'],
+        'blockAt (stronger than the stored block)' => [self::class, 'seedShorterBlock'],
+        'acquireProbeLease (expired lease present)' => [self::class, 'seedExpiredLease'],
+        'mutateGenerationBoundScoreAtMilliseconds (logically expired Current)' => [self::class, 'seedExpiredScore'],
+        'blockWithPunishmentLifecycleTrackingAt (longer than the stored block)' => [self::class, 'seedShorterLifecycleBlock'],
         'blockWithPunishmentLifecycleTrackingAt' => [self::class, 'seedScore'],
-        'claimPostPunishmentReentryAtMilliseconds (needs a lifecycle block)' => [self::class, 'seedLifecycle'],
+        'claimPostPunishmentReentryAtMilliseconds (block ended, score still alive)' => [self::class, 'seedLifecycle'],
+        'mutateGenerationBoundScoreAtMilliseconds (expected snapshot, live Current)' => [self::class, 'seedScore'],
+        'mutateGenerationBoundScoreAtMilliseconds (expected snapshot, state held in Previous)' => [self::class, 'seedHeldInPrevious'],
         'addDistinctBoundedAcrossRotationAtMilliseconds (previous generation present)' => [self::class, 'seedPrevious'],
     ];
 
@@ -79,9 +104,45 @@ final class ExpiryProvenanceDirectStudy270Test extends TestCase
         return $s->mutateGenerationBoundScoreAtMilliseconds('cur', 'prev', null, 600, 5, $n . '000');
     }
 
-    public static function seedLifecycle(RedisFullCapabilityStore $s, int $n): mixed
+    /** A budget whose epoch ended 100 s ago while the key is still physically present (its TTL is Redis's own clock). */
+    public static function seedEndedBudget(RedisFullCapabilityStore $s, int $n): mixed
+    {
+        return $s->incrementBudgetAt('a', 600, 1, $n - 700);
+    }
+
+    public static function seedShorterBlock(RedisFullCapabilityStore $s, int $n): mixed
+    {
+        $s->blockAt('a', 2, 300, $n);
+
+        return null;
+    }
+
+    public static function seedExpiredLease(RedisFullCapabilityStore $s, int $n): mixed
+    {
+        return $s->acquireProbeLease('p', $n - 100, 60);
+    }
+
+    public static function seedExpiredScore(RedisFullCapabilityStore $s, int $n): mixed
+    {
+        return $s->mutateGenerationBoundScoreAtMilliseconds('cur', 'prev', null, 600, 5, ($n - 700) . '000');
+    }
+
+    public static function seedShorterLifecycleBlock(RedisFullCapabilityStore $s, int $n): mixed
     {
         self::seedScore($s, $n);
+
+        return $s->blockWithPunishmentLifecycleTrackingAt('cur', 'prev', 1, 'life-1', 2, 300, 3600, 3, 60, 7200, $n);
+    }
+
+    public static function seedHeldInPrevious(RedisFullCapabilityStore $s, int $n): mixed
+    {
+        return $s->mutateGenerationBoundScoreAtMilliseconds('prev', null, null, 600, 5, $n . '000');
+    }
+
+    /** A score that outlives its block (3600 s against a 600 s block), so a claim made after the block ended finds live evidence. */
+    public static function seedLifecycle(RedisFullCapabilityStore $s, int $n): mixed
+    {
+        $s->mutateGenerationBoundScoreAtMilliseconds('cur', 'prev', null, 3600, 5, $n . '000');
 
         return $s->blockWithPunishmentLifecycleTrackingAt('cur', 'prev', 1, 'life-1', 2, 600, 3600, 3, 60, 7200, $n);
     }
@@ -180,8 +241,23 @@ final class ExpiryProvenanceDirectStudy270Test extends TestCase
             'addDistinctAcrossRotationAt' => static fn(RedisFullCapabilityStore $s, int $n): mixed => $s->addDistinctAcrossRotationAt('cur', 'bridge', 'prev', 'm', 'n', 600, $n),
             'incrementWatchFlagAcrossRotationAt' => static fn(RedisFullCapabilityStore $s, int $n): mixed => $s->incrementWatchFlagAcrossRotationAt('cur', 'prev', 600, $n),
             'mutateGenerationBoundScoreAtMilliseconds' => static fn(RedisFullCapabilityStore $s, int $n): mixed => $s->mutateGenerationBoundScoreAtMilliseconds('cur', 'prev', null, 600, 5, $n . '000'),
+            'mutateGenerationBoundScoreAtMilliseconds (expected snapshot, live Current)' => static fn(RedisFullCapabilityStore $s, int $n): mixed => $s->mutateGenerationBoundScoreAtMilliseconds('cur', 'prev', $s->readGenerationBoundScoreStateAtMilliseconds('cur', 'prev', $n . '000'), 600, 6, $n . '000'),
+            'mutateGenerationBoundScoreAtMilliseconds (expected snapshot, state held in Previous)' => static fn(RedisFullCapabilityStore $s, int $n): mixed => $s->mutateGenerationBoundScoreAtMilliseconds('cur', 'prev', $s->readGenerationBoundScoreStateAtMilliseconds('cur', 'prev', $n . '000'), 600, 6, $n . '000'),
+            'incrementBudgetAt (epoch ended, key still present)' => static fn(RedisFullCapabilityStore $s, int $n): mixed => $s->incrementBudgetAt('a', 600, 1, $n),
+            'incrementBudgetWithSeedAt (no Current, active seed)' => static fn(RedisFullCapabilityStore $s, int $n): mixed => $s->incrementBudgetWithSeedAt('a', 600, new BudgetStateDTO(2, $n), 1, $n),
+            'incrementBudgetWithSeedAt (no Current, ended seed)' => static fn(RedisFullCapabilityStore $s, int $n): mixed => $s->incrementBudgetWithSeedAt('a', 600, new BudgetStateDTO(2, $n - 1200), 1, $n),
+            'incrementBudgetWithSeedAt (ended Current, active seed)' => static fn(RedisFullCapabilityStore $s, int $n): mixed => $s->incrementBudgetWithSeedAt('a', 600, new BudgetStateDTO(2, $n), 1, $n),
+            'incrementBudgetWithSeedAt (ended Current, ended seed)' => static fn(RedisFullCapabilityStore $s, int $n): mixed => $s->incrementBudgetWithSeedAt('a', 600, new BudgetStateDTO(2, $n - 1200), 1, $n),
+            'blockAt (stronger than the stored block)' => static function (RedisFullCapabilityStore $s, int $n): mixed {
+                $s->blockAt('a', 2, 600, $n);
+
+                return null;
+            },
+            'acquireProbeLease (expired lease present)' => static fn(RedisFullCapabilityStore $s, int $n): mixed => $s->acquireProbeLease('p', $n, 60),
+            'mutateGenerationBoundScoreAtMilliseconds (logically expired Current)' => static fn(RedisFullCapabilityStore $s, int $n): mixed => $s->mutateGenerationBoundScoreAtMilliseconds('cur', 'prev', null, 600, 7, $n . '000'),
+            'blockWithPunishmentLifecycleTrackingAt (longer than the stored block)' => static fn(RedisFullCapabilityStore $s, int $n): mixed => $s->blockWithPunishmentLifecycleTrackingAt('cur', 'prev', 1, 'life-1', 2, 600, 3600, 3, 60, 7200, $n),
             'blockWithPunishmentLifecycleTrackingAt' => static fn(RedisFullCapabilityStore $s, int $n): mixed => $s->blockWithPunishmentLifecycleTrackingAt('cur', 'prev', 1, 'life-1', 2, 600, 3600, 3, 60, 7200, $n),
-            'claimPostPunishmentReentryAtMilliseconds (needs a lifecycle block)' => static fn(RedisFullCapabilityStore $s, int $n): mixed => $s->claimPostPunishmentReentryAtMilliseconds('cur', 'prev', (string) $s->readGenerationBoundScoreStateAtMilliseconds('cur', 'prev', $n . '000')?->postPunishmentReentry?->id, $n . '000'),
+            'claimPostPunishmentReentryAtMilliseconds (block ended, score still alive)' => static fn(RedisFullCapabilityStore $s, int $n): mixed => $s->claimPostPunishmentReentryAtMilliseconds('cur', 'prev', (string) $s->readGenerationBoundScoreStateAtMilliseconds('cur', 'prev', ($n + 601) . '000')?->postPunishmentReentry?->id, ($n + 601) . '000'),
             'addDistinctBoundedAcrossRotationAtMilliseconds (previous generation present)' => static fn(RedisFullCapabilityStore $s, int $n): mixed => $s->addDistinctBoundedAcrossRotationAtMilliseconds('cur', 'bridge', 'prev', 'm', 'n', 600, 10, $n . '000'),
             'addDeviceCapPairAt' => static fn(RedisFullCapabilityStore $s, int $n): mixed => $s->addDeviceCapPairAt('acct', 'm', 10, 'src', 'm', 10, 600, $n),
         ];
@@ -328,7 +404,8 @@ final class ExpiryProvenanceDirectStudy270Test extends TestCase
             self::assertSame([$denied], array_values(array_unique(array_map(static fn(array $a): string => $a['object'], $row['acl']))), $id . ': the ACL log names the denied command.');
             self::assertSame('threw', $row['outcome'], $id);
             self::assertSame(self::CLIENT_CLASS[$shape], $row['class'], $id . ': exception type by client.');
-            self::assertSame('expiry not representable', $row['message'], $id);
+            self::assertSame(self::deniedMessage($denied), $row['message'], $id . ': the caller-visible text of the denial under the ' . self::contract() . ' contract.');
+            self::assertStringNotContainsString(self::NAMESPACE, $row['message'], $id . ': the refusal never names a key.');
             self::assertSame([], $row['diff'], $id . ': keyspace unchanged (DUMP and PEXPIRETIME) after the refused expiry.');
             self::assertStringContainsString('rejected_calls=1', $row['stats'][$denied] ?? '', $id . ': Redis counts the rejection.');
 
@@ -338,7 +415,7 @@ final class ExpiryProvenanceDirectStudy270Test extends TestCase
         self::assertSame([], $row['acl'], $id . ': no denial expected on this branch.');
         self::assertSame('returned', $row['outcome'], $id . ' ' . $row['message']);
         self::assertSame($control['result'], $row['result'], $id . ': same result as the control.');
-        self::assertSame($control['diff'], $row['diff'], $id . ': same keyspace change as the control.');
+        self::assertSame(self::comparable($control['diff']), self::comparable($row['diff']), $id . ': same keyspace change as the control.');
         self::assertStringNotContainsString('rejected_calls=1', $row['stats'][$denied] ?? '', $id);
     }
 
@@ -395,8 +472,8 @@ final class ExpiryProvenanceDirectStudy270Test extends TestCase
             }
             self::assertSame('Score TTL must be positive.', $by[$shape . ' | public ttl 0: PHP validation']['message']);
             $range = $by[$shape . ' | range: decimal TTL past Redis bound via EVAL (judged by EXPIRE inside the script)'];
-            self::assertSame('expiry not representable', $range['message'], 'The genuine range refusal carries the same text as an ACL refusal ...');
-            self::assertSame([], $range['acl'], '... but Redis logs no ACL denial for it: only the ACL log tells them apart.');
+            self::assertSame(self::RANGE_MESSAGE, $range['message'], 'The genuine range refusal keeps its text under both contracts.');
+            self::assertSame([], $range['acl'], 'Redis logs no ACL denial for it.');
             self::assertSame([], $range['diff']);
             // independent evidence that Redis itself reached EXPIRE and refused the value (not the PHP side, not the Lua preflight)
             $stats = self::listOf($range['stats'] ?? null);
@@ -405,7 +482,7 @@ final class ExpiryProvenanceDirectStudy270Test extends TestCase
             self::assertStringContainsString('rejected_calls=0', self::text($stats['expire'] ?? null));
             if (PHP_INT_SIZE >= 8) {
                 $public = $by[$shape . ' | range: public incrementAt with the same TTL (64-bit only)'];
-                self::assertSame('expiry not representable', $public['message'], 'The public 64-bit call lands on the same text.');
+                self::assertSame(self::RANGE_MESSAGE, $public['message'], 'The public 64-bit call keeps the range text.');
                 self::assertSame([], $public['acl']);
                 self::assertSame($range['diff'], $public['diff'], 'The public call leaves the same state as the EVAL control (nothing).');
                 self::assertSame([], $public['diff']);
@@ -743,9 +820,46 @@ final class ExpiryProvenanceDirectStudy270Test extends TestCase
         return array_reverse($entries);
     }
 
+    /**
+     * A relative expiry (EXPIRE / PEXPIRE) is applied at Redis's own clock, so the absolute PEXPIRETIME a call leaves differs by the
+     * milliseconds between two runs (the control and the denied arm run a moment apart): whether a re-applied expiry shows up as
+     * "changed" is timing, not state. On a branch that does NOT reach the denied command (no ACL denial and no rejection counter, asserted
+     * separately) an expiry-only difference is dropped from BOTH arms before comparing; the key set, the content and every DUMP stay
+     * compared byte for byte, and the control arm asserts that every key carries an absolute expiry in the future. A branch that reaches
+     * the denial is never normalised: its diff must be empty.
+     *
+     * @param list<string> $diff
+     * @return list<string>
+     */
+    private static function comparable(array $diff): array
+    {
+        $kept = [];
+        foreach ($diff as $entry) {
+            if (str_ends_with($entry, ' expiry')) {
+                continue;
+            }
+            $kept[] = preg_replace('/\\+expiry$/', '', $entry) ?? $entry;
+        }
+
+        return $kept;
+    }
+
+    /** `before` reproduces the study's finding on the unfixed code; the default `after` is the contract of #270. */
+    private static function contract(): string
+    {
+        return getenv('EXPIRY_270_CONTRACT') === 'before' ? 'before' : 'after';
+    }
+
+    /** What the caller sees when the account may not run `$denied` and the call reached it. */
+    private static function deniedMessage(string $denied): string
+    {
+        return self::contract() === 'before' ? self::RANGE_MESSAGE : "NOPERM this user has no permissions to run the '" . $denied . "' command";
+    }
+
     /** @param array<string, mixed> $row */
     private function record(array $row): void
     {
+        $row['contract'] = self::contract();
         $this->rows[] = $row;
         $file = getenv('EXPIRY_270_EVIDENCE');
         if (! is_string($file) || $file === '') {
