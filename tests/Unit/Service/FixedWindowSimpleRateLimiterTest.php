@@ -6,9 +6,12 @@ namespace Maatify\RateLimiter\Tests\Unit\Service;
 
 use Maatify\RateLimiter\Config\FixedWindowThrottlePolicy;
 use Maatify\RateLimiter\Config\SimpleThrottlePolicyInterface;
+use Maatify\RateLimiter\DTO\BudgetStateDTO;
 use Maatify\RateLimiter\DTO\SimpleRateLimitResultDTO;
 use Maatify\RateLimiter\Exception\BackendFailureException;
 use Maatify\RateLimiter\Exception\RateLimiterException;
+use Maatify\RateLimiter\Repository\CallerTimeBudgetSeedStoreInterface;
+use Maatify\RateLimiter\Repository\OperationalReadOnlyStoreInterface;
 use Maatify\RateLimiter\Repository\RateLimitStoreInterface;
 use Maatify\RateLimiter\Service\FixedWindowSimpleRateLimiter;
 use Maatify\RateLimiter\Tests\Support\Clock\FixedClock;
@@ -176,6 +179,35 @@ final class FixedWindowSimpleRateLimiterTest extends TestCase
         self::assertTrue($result->allowed);
         self::assertSame(0, $result->remaining);
         self::assertSame(PHP_INT_MAX, $result->resetAt);
+    }
+
+    public function testRotationReadsPreviousAtCallerTimeWhenReadOnlyCapabilityUsesTheStoreClock(): void
+    {
+        $now = $this->clock->now()->getTimestamp();
+        $current = $this->keyFor('checkout', 2, 60, 'subject', 'active-secret');
+        $previous = $this->keyFor('checkout', 2, 60, 'subject', 'previous-secret');
+        $previousState = new BudgetStateDTO(2, $now - 5);
+        $store = $this->createStub(CallerTimeBudgetStoreWithStoreClockPeek::class);
+        $store->method('getBudgetAt')->willReturnMap([
+            [$current, $now, null],
+            [$previous, $now, $previousState],
+        ]);
+        // Previous is live at the caller's time but has already ended on the store clock.
+        $store->method('peekBudget')->willReturn(null);
+        $store->method('incrementBudgetWithSeedAt')->willReturnMap([
+            [$current, 60, $previousState, 1, $now, new BudgetStateDTO(3, $previousState->epochStart)],
+        ]);
+        $store->method('incrementBudgetAt')->willReturnMap([
+            [$current, 60, 1, $now, new BudgetStateDTO(1, $now)],
+        ]);
+
+        $result = $this->limiterWithStore(
+            $store,
+            [new FixedWindowThrottlePolicy('checkout', 2, 60)],
+            previousKeySecret: 'previous-secret',
+        )->consume('checkout', 'subject');
+
+        self::assertSame([false, $now + 55, 55], [$result->allowed, $result->resetAt, $result->retryAfter]);
     }
 
     public function testWeightedConsumeUsesPersistedCountForDecisionAndRemaining(): void
@@ -656,3 +688,5 @@ final class FixedWindowSimpleRateLimiterTest extends TestCase
         );
     }
 }
+
+interface CallerTimeBudgetStoreWithStoreClockPeek extends CallerTimeBudgetSeedStoreInterface, OperationalReadOnlyStoreInterface {}

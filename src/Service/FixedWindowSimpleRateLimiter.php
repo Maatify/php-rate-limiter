@@ -213,7 +213,7 @@ final class FixedWindowSimpleRateLimiter implements SimpleRateLimiterInterface
     {
         $currentReadFailed = false;
         try {
-            $currentState = CallerTimeStore::operationalBudget($this->store, $currentKey, $now);
+            $currentState = CallerTimeStore::enforcementBudget($this->store, $currentKey, $now);
         } catch (BackendFailureException) {
             $currentReadFailed = true;
             $currentState = null;
@@ -230,7 +230,7 @@ final class FixedWindowSimpleRateLimiter implements SimpleRateLimiterInterface
         if ($previousKey !== null) {
             $previousReadFailed = false;
             try {
-                $previousState = CallerTimeStore::operationalBudget($this->store, $previousKey, $now);
+                $previousState = CallerTimeStore::enforcementBudget($this->store, $previousKey, $now);
             } catch (BackendFailureException) {
                 $previousReadFailed = true;
                 $previousState = null;
