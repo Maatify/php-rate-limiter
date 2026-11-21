@@ -20,6 +20,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   Hosts matching expiry errors should match the `NOPERM` code for permission
   refusals.
 
+### Fixed (#282) — Direct outcome settlement: ACL preflight of the actual write plan (DEC-036)
+
+- The direct outcome settlement (`claimAdmissionPermitWithOutcome()`) no longer leaves the permit `CLAIMED` or a scope half-written when the Redis account may not run one of its write commands. Before the first write it derives its actual write plan and checks the whole of it with `redis.acl_check_cmd`; a refusal is a `NOPERM admission outcome settlement: …` error reply naming the command and plan position (no key, value or permit id), the permit stays `ISSUED`, and keys, values and absolute expiries are unchanged. Success, failure, duplicate, conflict, late and timeout behaviour are unchanged. Hosts must grant the write commands of the plan their outcomes use (see `docs/FAILURE_SEMANTICS.md` §2.8).
+
 ### Fixed (#261) — Request save: ACL preflight of the actual write plan (DEC-042)
 - The request save no longer leaves a partial state when the Redis account may not run one of the write commands of the save. Before the first write, `commit` derives its actual write plan (commands, keys, arguments, order, batches and expiry branch) and checks the whole of it with `redis.acl_check_cmd` (Redis 7.0, the existing minimum of this path); a refused command raises a `NOPERM request commit: the account may not run <COMMAND> (plan step <n> of <m>)` error reply with nothing written, deleted or re-expired. Before this change a refused `SET`, `HSET`, `SADD`, `ZADD` or `PEXPIREAT` (not `DEL`) left earlier keys written and the refused key deleted or rewritten without an expiry.
 - The refusal is a server error reply, not a `BackendFailureException`: no failure signal, circuit report or fallback consumption, and no re-evaluation because of it. A real conflict still recalculates first. No change to `EVAL`, the public interfaces, the defaults or the supported Redis versions. The Host permissions the save needs are documented in `docs/FAILURE_SEMANTICS.md` §2.7.

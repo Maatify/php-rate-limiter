@@ -510,38 +510,54 @@ for i = 1, n do
   sc[i] = s
 end
 
--- Phase 3: writes. Mark permit CLAIMED and apply all scopes atomically.
-redis.call('HSET', permitKey, 'state', 'CLAIMED', 'outcome', outcomeKind)
-
+-- Phase 3: derive the write plan (DEC-036, DEC-042). The plan is the exact sequence of write commands this settlement will issue, built
+-- from the state validated above and nothing else; no command is sent while it is built.
+local plan = {}
+plan[#plan + 1] = {'HSET', permitKey, 'state', 'CLAIMED', 'outcome', outcomeKind}
 for i = 1, n do
   local s = sc[i]
   if s.kind == 's' then
     if success then
       if s.settlesOut then
-        if (not s.keepsSettled) then redis.call('ZREM', s.cur, s.member) end
-        if (s.score ~= nil) and s.score > now then redis.call('ZREM', s.pending, s.member) end
+        if (not s.keepsSettled) then plan[#plan + 1] = {'ZREM', s.cur, s.member} end
+        if (s.score ~= nil) and s.score > now then plan[#plan + 1] = {'ZREM', s.pending, s.member} end
       else
-        redis.call('ZREM', s.cur, s.member)
+        plan[#plan + 1] = {'ZREM', s.cur, s.member}
       end
     else
-      redis.call('ZREMRANGEBYSCORE', s.cur, '-inf', nowStr)
-      redis.call('ZADD', s.cur, string.format('%d', now + s.ttl), s.member)
-      redis.call('EXPIRE', s.cur, s.ttl)
-      if s.settlesOut then redis.call('ZREM', s.pending, s.member) end
+      plan[#plan + 1] = {'ZREMRANGEBYSCORE', s.cur, '-inf', nowStr}
+      plan[#plan + 1] = {'ZADD', s.cur, string.format('%d', now + s.ttl), s.member}
+      plan[#plan + 1] = {'EXPIRE', s.cur, string.format('%d', s.ttl)}
+      if s.settlesOut then plan[#plan + 1] = {'ZREM', s.pending, s.member} end
     end
   elseif s.kind == 'c' and (success or s.keepsSettled) then
     -- For a counter the flag slot is `releasesOnFailure`: the pending-permit slot is freed by either outcome (#206).
-    if s.member ~= '' then redis.call('ZREM', s.cur, s.member) end
+    if s.member ~= '' then plan[#plan + 1] = {'ZREM', s.cur, s.member} end
   elseif s.kind == 'b' and success and s.present then
     local credit = s.credit + s.ttl
     if credit >= s.full then
-      redis.call('DEL', s.cur)
+      plan[#plan + 1] = {'DEL', s.cur}
     else
-      redis.call('HSET', s.cur, 'credit', string.format('%d', credit), 'last', nowStr)
-      redis.call('EXPIRE', s.cur, string.format('%d', s.full - credit))
+      plan[#plan + 1] = {'HSET', s.cur, 'credit', string.format('%d', credit), 'last', nowStr}
+      plan[#plan + 1] = {'EXPIRE', s.cur, string.format('%d', s.full - credit)}
     end
   end
 end
+
+-- Phase 4: the whole plan is checked against the account's ACL before the first write, inside this script (atomic with the writes). A command
+-- the account may not run refuses the settlement with a NOPERM error reply: the permit stays ISSUED and no key, value or expiry changes.
+-- The message names the command and its position, never a key, a value or a permit id. A server without redis.acl_check_cmd (before
+-- Redis 7.0) keeps the earlier behaviour: the check is skipped.
+if redis.acl_check_cmd then
+  for index, op in ipairs(plan) do
+    if not redis.acl_check_cmd(unpack(op)) then
+      return redis.error_reply('NOPERM admission outcome settlement: the account may not run ' .. op[1] .. ' (plan step ' .. index .. ' of ' .. #plan .. ')')
+    end
+  end
+end
+
+-- Phase 5: execute the plan that passed the check, in order.
+for _, op in ipairs(plan) do redis.call(unpack(op)) end
 
 return 'accepted'
 LUA;
