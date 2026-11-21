@@ -656,7 +656,7 @@ final class ReleaseArtifactVerifier
 
             $forbidden = array_values(array_filter(
                 array_keys($archiveFiles),
-                static fn(string $p): bool => ReleaseContract::isForbiddenPath($p),
+                static fn(string $p): bool => ReleaseContract::isForbiddenDistributionPath($p),
             ));
 
             $attributes = is_file($treeDir . '/.gitattributes') ? (string) file_get_contents($treeDir . '/.gitattributes') : '';

@@ -84,7 +84,11 @@ The clean checked-out worktree is still required, but no check reads a filesyste
 6. **Candidate archive verification (nested content)** — the real `git archive` is generated, extracted, and compared with the candidate tree **file by file**:
    - every tracked file under a required path (for example `src/Nested/CriticalRuntimeFile.php`, not just `src/`) must be present in the archive with identical content, so nested omissions caused by `.gitattributes` `export-ignore` or other archive behavior fail;
    - the effective impact of `composer.json` `archive.exclude` is evaluated (gitignore-style matching, last match wins, `!` re-includes, excluded directories exclude their files). If it removes any required file, RAV fails. If it is absent the evidence records `NOT_APPLICABLE`; `archive.exclude` is never added just to exercise the verifier;
-   - no forbidden entry may enter the archive.
+   - no forbidden entry may enter the archive. The archive and installed-artifact
+     checks also reject generated investigation outputs covered by the VCS export
+     rules in `.gitattributes`. Those files are kept in Git along with the
+     study reports and maintained replay fixtures. The reports and fixtures
+     can still be distributed.
 7. **README identity**, 8. **CHANGELOG undated exact-target heading and `[Unreleased]` boundary**, 9. **SECURITY pre-release lifecycle semantics** — structural checks on the candidate snapshot.
 10. **Canonical semantic review** — all 8 claims `CONFIRMED` for this exact target and candidate (see §2.5).
 11. **Delivery policy** — `dist` (default) or `source-only` (see §2.6). Any other value fails.
@@ -297,7 +301,7 @@ The mode is proven from Composer's installed-package metadata (`installation-sou
 
 ### 3.7 Content correspondence
 
-The installed package is compared against the **complete** RAV content manifest (an incomplete or absent manifest fails): every manifest path must exist and hash identically, so nested differences or injected files inside `src`/`examples` change the directory hash and fail. The installed package must also contain every required file, no forbidden/sensitive/development material (`.env*`, `auth.json`, keys, `vendor/`, `composer.lock`, IDE and cache directories, backup/swap files) and no symbolic links, and an installed `composer.json` with the proprietary license and no static version.
+The installed package is compared against the **complete** RAV content manifest (an incomplete or absent manifest fails): every manifest path must exist and hash identically, so nested differences or injected files inside `src`/`examples` change the directory hash and fail. The installed package must also contain every required file. The installed-artifact check rejects sensitive and development material, the generated investigation outputs described in §2.2, and symbolic links. The installed `composer.json` must retain the proprietary license and omit a static version.
 
 ---
 

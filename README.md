@@ -131,10 +131,11 @@ if ($result->isBlocked()) {
 ```
 
 `FullCapabilityStoreInterface` adds no methods of its own. The package includes
-an official optional non-clustered Redis implementation under `Repository\\Redis`,
-but consumers choosing another backend still install the package without a Redis
-extension or client. Redis consumers own the concrete client and pass commands
-through `RedisCommandExecutorInterface` or `CallableRedisCommandExecutor`.
+an official optional `RedisFullCapabilityStore` for one non-clustered Redis
+server running **Redis 7.0 or newer**. Redis consumers own the concrete client
+and pass commands through `RedisCommandExecutorInterface` or
+`CallableRedisCommandExecutor`. Consumers choosing another backend can install
+the package without a Redis extension or client.
 
 ## Public Runtime API
 

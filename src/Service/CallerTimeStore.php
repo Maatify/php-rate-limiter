@@ -133,6 +133,20 @@ final class CallerTimeStore
         return $store instanceof OperationalReadOnlyStoreInterface ? $store->peekBudget($key) : self::getBudget($store, $key, $now);
     }
 
+    /** DEC-014 and DEC-016: a read-only probe must use the same time authority as the enforcement mutation. */
+    public static function enforcementBudget(RateLimitStoreInterface $store, string $key, DateTimeImmutable $now): ?BudgetStateDTO
+    {
+        if ($store instanceof CallerTimeOperationalReadOnlyStoreInterface) {
+            return $store->peekBudgetAt($key, $now->getTimestamp());
+        }
+
+        if ($store instanceof CallerTimeRateLimitStoreInterface) {
+            return $store->getBudgetAt($key, $now->getTimestamp());
+        }
+
+        return $store instanceof OperationalReadOnlyStoreInterface ? $store->peekBudget($key) : $store->getBudget($key);
+    }
+
     public static function incrementBudget(RateLimitStoreInterface $store, string $key, int $epochDurationSeconds, int $amount, DateTimeImmutable $now): BudgetStateDTO
     {
         return $store instanceof CallerTimeRateLimitStoreInterface

@@ -62,7 +62,9 @@ may continue to use Redis `TIME` inside their atomic operations.
 bounded-state, watch, and generation-bound lifecycle primitives now receive the
 caller's `now` through additive capability interfaces (`CallerTime*` in
 `Maatify\RateLimiter\Repository`), so rule 1 of this Decision applies to them:
-the built-in `RedisFullCapabilityStore` reads no Redis `TIME` in any script.
+the built-in `RedisFullCapabilityStore` uses caller time in the store scripts
+covered by this application note. The request overlay and commit use Redis
+`TIME` for physical expiry bookkeeping under DEC-037.
 The runtime reads the Host clock once per call and passes that value to every
 store call. Physical key lifetimes stay relative on the Redis clock; logical
 deadlines are the caller's time plus a TTL. The existing interfaces are

@@ -200,12 +200,12 @@ corruption.
 
 ### 2.5 Time authority and clock skew (#153 phase 2)
 
-**One time authority.** Every timestamp the runtime stores or compares is the
-Host's `ClockInterface` time, read **once per runtime call** (`limit()`,
-`claimPostPunishmentReentry()`) and passed to every store operation (DEC-016
-application note). The built-in Redis store reads no Redis `TIME`. Physical key
-lifetimes stay relative on the Redis clock and only bound memory; logical
-deadlines are the caller's time plus a TTL.
+**One logical time authority.** Caller-time operations use the Host's
+`ClockInterface` to decide logical deadlines. The runtime samples it once for
+`limit()`, `claimPostPunishmentReentry()`, and `consume()` and passes that
+reading to caller-time store operations (DEC-016). Physical key lifetimes use
+the Redis clock. The request overlay and its save read Redis `TIME` to track
+physical expiries and apply them at commit (DEC-037).
 
 `EvaluationPipeline::addBoundedSnapshot()` takes one reading and passes that
 same reading to the store and to the snapshot validator (#160); it no longer
@@ -312,7 +312,7 @@ The request save (`transactRequest()`, DEC-037) asks Redis for three different k
 
 * **Provenance.** Every refusal is a Redis error reply, not a transport failure: it reaches the Host through the executor unchanged (DEC-018), is **not** a `BackendFailureException`, and so raises no failure signal, no circuit report and no fallback consumption (the study measured the local fallback counter directly), and the request is not evaluated again because of it. A real conflict is decided first and recalculates under DEC-037.
 * **What this does not guarantee.** The preflight answers the ACL question atomically with the writes. It is not a rollback: other Redis errors during the writes (memory limit, read-only replica, client limits) are not covered, and DEC-037's all-or-none claim is not extended to them.
-* **What was tested.** Redis 7.0.15, a single instance, `EVAL`, RESP2; two client shapes (the suite's RESP client and ext-redis 6.3.0 `rawCommand()`); PHP `PHP_INT_SIZE` 4 and 8; the request path (`transactRequest()`) and the engine path for the `login_protection` policy (`tests/Integration/Redis/RequestSaveAclRedisTest.php`). **Not tested**: other Redis versions or Valkey, Cluster/Sentinel, RESP3, Predis, `EVALSHA`, the recovery and admission paths, and the direct store scripts outside a request (their `pcall` of `EXPIRE` is tracked in #270).
+* **What was tested.** Redis 7.0.15, a single instance, `EVAL`, RESP2; two client shapes (the suite's RESP client and ext-redis 6.3.0 `rawCommand()`); PHP `PHP_INT_SIZE` 4 and 8; the request path (`transactRequest()`) and the engine path for the `login_protection` policy (`tests/Integration/Redis/RequestSaveAclRedisTest.php`). **Not tested in this study**: other Redis versions or Valkey, Cluster/Sentinel, RESP3, Predis, `EVALSHA`, and the recovery and admission paths. For direct expiry commands outside a request see the DEC-043 rules in §2.5.
 
 ## 3. Failure Modes
 

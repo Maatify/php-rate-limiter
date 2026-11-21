@@ -7,6 +7,19 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [1.0.0-rc.4]
 
+### Fixed — One clock sample per simple fixed-window consume
+
+- `consume()` uses the same caller time when resolving and validating the
+  window, writing through a caller-time store, and calculating `retryAfter`.
+  The fixed reset boundary is checked against the time used for a new window.
+
+### Changed (#270, DEC-043) — Direct Redis expiry errors distinguish missing permissions
+
+- A direct expiry command refused by Redis ACL now returns `NOPERM` when the
+  ACL check is available. Genuine range failures keep `expiry not representable`.
+  Hosts matching expiry errors should match the `NOPERM` code for permission
+  refusals.
+
 ### Fixed (#261) — Request save: ACL preflight of the actual write plan (DEC-042)
 - The request save no longer leaves a partial state when the Redis account may not run one of the write commands of the save. Before the first write, `commit` derives its actual write plan (commands, keys, arguments, order, batches and expiry branch) and checks the whole of it with `redis.acl_check_cmd` (Redis 7.0, the existing minimum of this path); a refused command raises a `NOPERM request commit: the account may not run <COMMAND> (plan step <n> of <m>)` error reply with nothing written, deleted or re-expired. Before this change a refused `SET`, `HSET`, `SADD`, `ZADD` or `PEXPIREAT` (not `DEL`) left earlier keys written and the refused key deleted or rewritten without an expiry.
 - The refusal is a server error reply, not a `BackendFailureException`: no failure signal, circuit report or fallback consumption, and no re-evaluation because of it. A real conflict still recalculates first. No change to `EVAL`, the public interfaces, the defaults or the supported Redis versions. The Host permissions the save needs are documented in `docs/FAILURE_SEMANTICS.md` §2.7.
@@ -454,8 +467,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   `RequestScopedClock`.
 
 ### Fixed (#153, #155; DEC-016 application note) — one time authority: the caller's clock
-- `RedisFullCapabilityStore` reads no Redis `TIME`. Every timestamp it stores or compares is the
-  caller's time; physical key lifetimes stay relative on the Redis clock. This removes the
+- `RedisFullCapabilityStore` uses the caller's time for logical deadlines.
+  Physical key lifetimes use the Redis clock, including when tracked by the
+  request overlay or applied at commit. This removes the
   `RateLimiterException('Bounded correlation store returned an invalid snapshot.')` that reached
   the Host when the application clock was behind Redis, or when a request crossed a second boundary
   (#153). It also removes the silent decision shifts measured in #156 (decay, L2+ block, budget,

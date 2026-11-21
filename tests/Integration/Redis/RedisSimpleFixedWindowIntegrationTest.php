@@ -4,18 +4,25 @@ declare(strict_types=1);
 
 namespace Maatify\RateLimiter\Tests\Integration\Redis;
 
+use DateTimeImmutable;
 use DateTimeZone;
+use Maatify\RateLimiter\Builder\RateLimiterBuilder;
 use Maatify\RateLimiter\Config\FixedWindowThrottlePolicy;
+use Maatify\RateLimiter\Config\RateLimiterConfig;
 use Maatify\RateLimiter\DTO\BudgetStateDTO;
 use Maatify\RateLimiter\Exception\RateLimiterException;
+use Maatify\RateLimiter\Repository\Redis\RedisCommandExecutorInterface;
 use Maatify\RateLimiter\Repository\Redis\RedisFullCapabilityStore;
 use Maatify\RateLimiter\Service\FixedWindowSimpleRateLimiter;
 use Maatify\RateLimiter\Service\SimpleRateLimitOperationalReader;
+use Maatify\RateLimiter\Tests\Support\FailureSignal\RecordingFailureSignalEmitter;
 use Maatify\RateLimiter\Tests\Support\Redis\NativeDomain;
 use Maatify\RateLimiter\Tests\Support\Redis\RespRedisCommandExecutor;
+use Maatify\RateLimiter\Tests\Support\Redis\StateSnapshot;
 use Maatify\SharedCommon\Contracts\ClockInterface;
 use Maatify\SharedCommon\Infrastructure\SystemClock;
 use PHPUnit\Framework\TestCase;
+use PHPUnit\Framework\Attributes\DataProvider;
 use PHPUnit\Framework\Attributes\Group;
 use RuntimeException;
 
@@ -118,6 +125,156 @@ final class RedisSimpleFixedWindowIntegrationTest extends TestCase
         } finally {
             self::assertSame($keysBefore, $this->executor->execute(['KEYS', '*']));
         }
+    }
+
+    public function testResetBoundaryRefusalPreservesPhysicallyPresentEndedWindows(): void
+    {
+        $now = 1_800_000_000;
+        $clock = $this->createStub(ClockInterface::class);
+        $clock->method('now')->willReturn(new DateTimeImmutable('@' . $now));
+        $subject = 'ended-windows';
+        foreach (['current-secret', 'previous-secret'] as $secret) {
+            $key = $this->redisBudgetKey($secret, 2, PHP_INT_MAX, $subject);
+            $this->writeBudgetFixture($key, $now - 60);
+        }
+        $this->executor->execute(['SET', 'sentinel', 'unrelated', 'EX', '600']);
+        $before = StateSnapshot::all($this->executor);
+        self::assertCount(3, $before);
+
+        $limiter = $this->limiter($clock, 'current-secret', 'previous-secret', PHP_INT_MAX);
+        $this->expectException(RateLimiterException::class);
+        $this->expectExceptionMessage('Simple fixed-window reset boundary must be representable as a PHP integer.');
+        try {
+            $limiter->consume('checkout', $subject);
+        } finally {
+            self::assertSame($before, StateSnapshot::all($this->executor));
+        }
+    }
+
+    /** @return iterable<string, array{bool, bool}> */
+    public static function selectedCurrentWindows(): iterable
+    {
+        yield 'ordinary increment rejects an out-of-range selected window' => [false, false];
+        yield 'seed increment rejects an out-of-range selected window' => [true, false];
+        yield 'ordinary increment accepts the exact native limit' => [false, true];
+        yield 'seed increment accepts the exact native limit' => [true, true];
+    }
+
+    #[DataProvider('selectedCurrentWindows')]
+    public function testConsumeChecksTheWindowRedisActuallySelects(bool $seed, bool $fits): void
+    {
+        $now = 1_800_000_000;
+        $clock = $this->createStub(ClockInterface::class);
+        $clock->method('now')->willReturn(new DateTimeImmutable('@' . $now));
+        $subject = 'selected-current';
+        $currentKey = $this->redisBudgetKey('current-secret', 2, 60, $subject);
+        $previousKey = $this->redisBudgetKey('previous-secret', 2, 60, $subject);
+        if ($seed) {
+            $this->writeBudgetFixture($previousKey, $now - 1);
+        }
+        $this->executor->execute(['SET', 'sentinel', 'unrelated', 'EX', '600']);
+        $beforeMutation = null;
+        $executor = $this->beforeBudgetWrite(function () use ($currentKey, $fits, &$beforeMutation): void {
+            // A concurrent Current takes precedence over both an earlier miss and a Previous seed.
+            self::assertNull($beforeMutation);
+            $this->writeBudgetFixture($currentKey, PHP_INT_MAX - ($fits ? 60 : 59));
+            $beforeMutation = StateSnapshot::all($this->executor);
+        });
+        $limiter = new FixedWindowSimpleRateLimiter(
+            [new FixedWindowThrottlePolicy('checkout', 2, 60)],
+            new RedisFullCapabilityStore($executor, 'integration:simple-throttle'),
+            $clock,
+            'current-secret',
+            'prod',
+            $seed ? 'previous-secret' : null,
+        );
+
+        if (! $fits) {
+            $this->expectException(RateLimiterException::class);
+            $this->expectExceptionMessage('Simple fixed-window reset boundary must be representable as a PHP integer.');
+            try {
+                $limiter->consume('checkout', $subject);
+            } finally {
+                self::assertNotNull($beforeMutation);
+                self::assertSame($beforeMutation, StateSnapshot::all($this->executor));
+            }
+
+            return;
+        }
+
+        $result = $limiter->consume('checkout', $subject);
+        self::assertNotNull($beforeMutation);
+        self::assertTrue($result->allowed);
+        self::assertSame(0, $result->remaining);
+        self::assertSame(PHP_INT_MAX, $result->resetAt);
+        self::assertSame('2', $this->executor->execute(['HGET', $currentKey, 'count']));
+    }
+
+    public function testConsumeChecksAFreshWindowWhenTheObservedWindowIsGone(): void
+    {
+        $now = 2_147_483_588;
+        $clock = $this->createStub(ClockInterface::class);
+        $clock->method('now')->willReturn(new DateTimeImmutable('@' . $now));
+        $subject = 'fresh-after-expiry';
+        $key = $this->redisBudgetKey('current-secret', 2, 60, $subject);
+        $this->writeBudgetFixture($key, $now - 1);
+        $this->executor->execute(['SET', 'sentinel', 'unrelated', 'EX', '600']);
+        $sentinel = StateSnapshot::of($this->executor, 'sentinel');
+        $executor = $this->beforeBudgetWrite(function () use ($key): void {
+            // Model Redis expiry between the read and the write as a deterministic key removal.
+            self::assertSame(1, $this->executor->execute(['DEL', $key]));
+        });
+        $limiter = new FixedWindowSimpleRateLimiter(
+            [new FixedWindowThrottlePolicy('checkout', 2, 60)],
+            new RedisFullCapabilityStore($executor, 'integration:simple-throttle'),
+            $clock,
+            'current-secret',
+            'prod',
+        );
+
+        if (PHP_INT_SIZE === 4) {
+            $this->expectException(RateLimiterException::class);
+            $this->expectExceptionMessage('Simple fixed-window reset boundary must be representable as a PHP integer.');
+            try {
+                $limiter->consume('checkout', $subject);
+            } finally {
+                self::assertSame(['sentinel' => $sentinel], StateSnapshot::all($this->executor));
+            }
+
+            return;
+        }
+
+        $result = $limiter->consume('checkout', $subject);
+        self::assertTrue($result->allowed);
+        self::assertSame(1, $result->remaining);
+        self::assertSame(2_147_483_648, $result->resetAt);
+        self::assertSame('1', $this->executor->execute(['HGET', $key, 'count']));
+        self::assertSame($sentinel, StateSnapshot::of($this->executor, 'sentinel'));
+    }
+
+    public function testBuilderConsumeUsesOneClockSampleForTheWindowAndRetryAfter(): void
+    {
+        $firstTime = new DateTimeImmutable('2026-01-01T00:00:00Z');
+        $secondTime = $firstTime->modify('+2 seconds');
+        $clock = $this->createMock(ClockInterface::class);
+        $clock->expects($this->exactly(2))->method('now')->willReturn($firstTime, $secondTime);
+        $runtime = RateLimiterBuilder::fromFullCapabilityStore(
+            new RateLimiterConfig('current-secret', 'fingerprint-secret', 'prod'),
+            $this->store,
+            new RecordingFailureSignalEmitter(),
+        )->withClock($clock)
+            ->withSimpleThrottlePolicy(new FixedWindowThrottlePolicy('checkout', 1, 60))
+            ->build();
+
+        $first = $runtime->consume('checkout', 'subject');
+        $second = $runtime->consume('checkout', 'subject');
+        $resetAt = $firstTime->getTimestamp() + 60;
+
+        self::assertTrue($first->allowed);
+        self::assertSame($resetAt, $first->resetAt);
+        self::assertFalse($second->allowed);
+        self::assertSame($resetAt, $second->resetAt);
+        self::assertSame(58, $second->retryAfter);
     }
 
     public function testRedisLuaImpossibleExpiryFailsBeforeFreshBranchCreatesPartialState(): void
@@ -446,6 +603,35 @@ final class RedisSimpleFixedWindowIntegrationTest extends TestCase
 
         self::assertSame(1, $snapshot->count, 'Current(1) must win over Previous(2); it must never use max() or sum() merging.');
         self::assertFalse($snapshot->fromPreviousGeneration);
+    }
+
+    /** @param \Closure(): void $beforeWrite */
+    private function beforeBudgetWrite(\Closure $beforeWrite): RedisCommandExecutorInterface
+    {
+        return new class ($this->executor, $beforeWrite) implements RedisCommandExecutorInterface {
+            /** @param \Closure(): void $beforeWrite */
+            public function __construct(
+                private readonly RedisCommandExecutorInterface $executor,
+                private readonly \Closure $beforeWrite,
+            ) {}
+
+            public function execute(array $command): mixed
+            {
+                if ($command[0] === 'EVAL' && is_string($command[1] ?? null) && str_contains($command[1], "'HINCRBY'")) {
+                    ($this->beforeWrite)();
+                }
+
+                return $this->executor->execute($command);
+            }
+        };
+    }
+
+    private function writeBudgetFixture(string $key, int $epochStart): void
+    {
+        self::assertSame(3, $this->executor->execute([
+            'HSET', $key, 'count', '1', 'epochStart', (string) $epochStart, 'epochDuration', '60',
+        ]));
+        self::assertSame(1, $this->executor->execute(['EXPIRE', $key, '600']));
     }
 
     private function limiter(

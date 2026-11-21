@@ -1,0 +1,18 @@
+# Keep generated investigation outputs in Git and out of the consumer archive.
+/investigations/**/raw export-ignore
+/investigations/**/raw-* export-ignore
+/investigations/**/logs export-ignore
+/investigations/**/*.log export-ignore
+/investigations/**/*.log.gz export-ignore
+/investigations/**/*.stdout.txt export-ignore
+/investigations/**/*.stderr.txt export-ignore
+/investigations/**/*.exit.txt export-ignore
+/investigations/**/junit.xml export-ignore
+/investigations/**/phpunit.out.gz export-ignore
+/investigations/**/runner.out export-ignore
+/investigations/**/progress.txt export-ignore
+/investigations/**/progress2.txt export-ignore
+/investigations/stability-release/data/attempt1 export-ignore
+/investigations/stability-release/data/runs export-ignore
+/investigations/stability-release/data/*.jobs.json export-ignore
+/investigations/stability-release/data/ci-history.raw.json export-ignore
