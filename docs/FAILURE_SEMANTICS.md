@@ -314,6 +314,28 @@ The request save (`transactRequest()`, DEC-037) asks Redis for three different k
 * **What this does not guarantee.** The preflight answers the ACL question atomically with the writes. It is not a rollback: other Redis errors during the writes (memory limit, read-only replica, client limits) are not covered, and DEC-037's all-or-none claim is not extended to them.
 * **What was tested.** Redis 7.0.15, a single instance, `EVAL`, RESP2; two client shapes (the suite's RESP client and ext-redis 6.3.0 `rawCommand()`); PHP `PHP_INT_SIZE` 4 and 8; the request path (`transactRequest()`) and the engine path for the `login_protection` policy (`tests/Integration/Redis/RequestSaveAclRedisTest.php`). **Not tested in this study**: other Redis versions or Valkey, Cluster/Sentinel, RESP3, Predis, `EVALSHA`, and the recovery and admission paths. For direct expiry commands outside a request see the DEC-043 rules in §2.5.
 
+### 2.8 Direct outcome settlement and the Redis ACL (#282, DEC-036, DEC-018)
+
+The direct outcome settlement of the official store (`claimAdmissionPermitWithOutcome()`, `CLAIM_WITH_OUTCOME`) validates the permit and every scope it touches, then derives its **actual write plan**: the permit `HSET` and, per scope, the `ZREM` / `ZREMRANGEBYSCORE` / `ZADD` / `EXPIRE` / `HSET` / `DEL` commands the chosen outcome issues, in their execution order. Inside the same script, before the first write, the whole plan is checked with `redis.acl_check_cmd` (Redis 7.0), and only a plan that passed is executed.
+
+* **Account.** Besides `+eval` and read/write access to the declared keys, the account needs the write commands of the branch each scope actually takes, and only those. Every settlement needs `+hset` (the permit write). Per scope kind and outcome:
+
+  | Scope and outcome | Write commands of the plan |
+  | --- | --- |
+  | Set-size scope, **failure** | `+zremrangebyscore`, `+zadd`, `+expire`; plus `+zrem` when the scope settles a pending member |
+  | Set-size scope that settles pending members, **success** | `+zrem` on the set unless it keeps settled members; plus `+zrem` on the pending set only when that member's pending score is still in the future |
+  | Set-size scope that does not settle pending members, **success** | `+zrem` on the set |
+  | Counter scope, **success** (or failure when the scope releases on failure) | `+zrem` when it has a member (the permit id by default) |
+  | Counter scope, **failure** that does not release | none |
+  | Bucket scope, **success** with an existing bucket | `+del` when the refund fills it, otherwise `+hset` and `+expire`; a bucket that is absent needs nothing |
+  | Bucket scope, **failure** | none |
+
+  A command no chosen branch issues is not required.
+* **A refusal** is a Redis error reply coded `NOPERM`, `NOPERM admission outcome settlement: the account may not run <COMMAND> (plan step <n> of <m>)`. It names the command and its position, never a key, a value or a permit id. It follows the server-error contract of DEC-018 (a `RateLimiterException` through an executor that raises it, the client's own exception through a native bridge), is not a `BackendFailureException`, and so raises no failure signal, circuit report or fallback consumption.
+* **State after a refusal.** Nothing was written: the permit stays `ISSUED` and every key, value and absolute expiry is as before, so the same outcome can be settled once the account is whole and the permit is still within its deadline. The repeat guard is unchanged (`duplicate` / `conflict` after a committed settlement).
+* **What this does not guarantee.** It answers the ACL question atomically with the writes. It is not a rollback for other Redis errors (memory limit, read-only replica). A server without `redis.acl_check_cmd` (before Redis 7.0) skips the check and keeps the earlier behaviour. The later evaluation path keeps its own contract (DEC-037, DEC-042).
+* **What was tested.** Redis 7.0.15, a single instance, `EVAL`, RESP2, PHP `PHP_INT_SIZE` 4 and 8 (`tests/Integration/Store/AdmissionOutcomeAclPreflightRedisTest.php`, group `admission-outcome-acl-282`, `php32`).
+
 ## 3. Failure Modes
 
 The RateLimiter supports **three explicit and mutually exclusive failure modes**.
