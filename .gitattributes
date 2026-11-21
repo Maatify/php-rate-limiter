@@ -4,6 +4,9 @@
 /investigations/**/logs export-ignore
 /investigations/**/*.log export-ignore
 /investigations/**/*.log.gz export-ignore
+/investigations/**/*.stdout.txt export-ignore
+/investigations/**/*.stderr.txt export-ignore
+/investigations/**/*.exit.txt export-ignore
 /investigations/**/junit.xml export-ignore
 /investigations/**/phpunit.out.gz export-ignore
 /investigations/**/runner.out export-ignore

@@ -291,8 +291,9 @@ final class ReleaseContract
         }
 
         // Keep in sync with the export rules and verify the actual archive.
-        return preg_match('~/(?:raw(?:-[^/]+)?|logs)/~', $path) === 1
-            || preg_match('~(?:\.log(?:\.gz)?|/(?:junit\.xml|phpunit\.out\.gz|runner\.out|progress2?\.txt))$~', $path) === 1
+        return preg_match('~/(?:raw(?:-[^/]*)?|logs)(?:/|$)~', $path) === 1
+            || preg_match('~(?:\.log(?:\.gz)?|\.(?:stdout|stderr|exit)\.txt)$~', $path) === 1
+            || in_array(basename($path), ['junit.xml', 'phpunit.out.gz', 'runner.out', 'progress.txt', 'progress2.txt'], true)
             || preg_match('~^investigations/stability-release/data/(?:(?:attempt1|runs)/|(?:[^/]+\.jobs\.json|ci-history\.raw\.json)$)~', $path) === 1;
     }
 
