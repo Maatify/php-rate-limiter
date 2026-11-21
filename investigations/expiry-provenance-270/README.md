@@ -82,3 +82,46 @@ investigations/expiry-provenance-270/run.sh php32 tests/Integration/Redis/Expiry
 2. تحويل الرد المميز في PHP إلى استثناء typed ليس `BackendFailureException` (ليس عطل اتصال، DEC-015) ولا يشارك نص تجاوز المدى (DEC-018: المفسّر هو الـHost/adapter). أي نوع استثناء عام جديد يحتاج قرارًا منفصلًا.
 3. القبول: لكل دالة في الجدول، على 32 و64-bit مع RESP وphpredis، رفض صلاحية ≠ تجاوز مدى بنص/صنف مختلف، و`DUMP`/`PEXPIRETIME` لم يتغيرا، وسجل ACL وعدّادات Redis مطابقة للنوع، واختبار سلبي لا يصنف قطع الاتصال كرفض صلاحية. يُحدّث `FAILURE_SEMANTICS.md` (LT-P2-12) بالنص الجديد.
 4. ملاحظة مستقلة: مسارات الكتابة على مفتاح موجود لا تصل غالبًا إلى `EXPIRE`، فحساب بلا `EXPIRE` يكتب بلا خطأ على المفاتيح الموجودة (محتوى `incrementAt` و`incrementBudgetAt` و`incrementWatchFlagAt` يتغير بلا خطأ). يستحق سطرًا في التوثيق، لا إصلاحًا في هذه المرحلة.
+
+---
+
+# الإصلاح والتحقق قبل/بعد (#270، DEC-043)
+
+هذا القسم يخص تنفيذ #270 بعد اعتماد الـOwner لعقد التصنيف (تكليف المنفّذ على #270، الأساس `main@971abb58ef542aa72758f2fea406eff1110085f1`، الشجرة `3dde9fed9e1fed435d1cb7792506d690825a5324`). نتائج الدراسة أعلاه تظل منسوبة للـSHA الذي أنتجها؛ هذا القسم وما تحته (`fix/`) نتاج الإصلاح.
+
+## ما تغيّر
+
+- **السلوك (DEC-043):** عند فشل `EXPIRE` أو `PEXPIRE` أو `PEXPIREAT` في استدعاء مباشر للمخزن، يفحص السكربت **الأمر نفسه والوسائط نفسها** بـ`redis.acl_check_cmd`. أمر لا يحق للحساب تشغيله يُرجع رد خطأ `NOPERM this user has no permissions to run the '<command>' command` (اسم الأمر فقط، بلا مفتاح ولا قيمة). غير ذلك يبقى `expiry not representable` كما كان (تجاوز المدى الحقيقي). غياب `acl_check_cmd` أو فشله يبقي الرد القديم. حذف المفاتيح التي أنشأها النداء (all-or-nothing) وفحص المدى المسبق وترتيب العمليات وأصناف الاستثناء على العميل كما هي.
+- **الموضع:** المساعد المشترك `LUA_EXPIRY_JUDGE` في [RedisFullCapabilityStore.php](../../src/Repository/Redis/RedisFullCapabilityStore.php) (يُضمَّن في `LUA_TIME_PRELUDE` وفي `LIFECYCLE_MUTATE` و`LIFECYCLE_CLAIM` و`HARD_BLOCK`). **38 موضع استدعاء** تحوّلت إليه، منها مواضع كانت تبتلع الخطأ بـ`pcall` يدويًا (علامة claim، تمديد الإيقاف، حفظ الحظر) ومنها المرجع `expireBridgeKey`. لا يبقى أي `redis.pcall('EXPIRE'|'PEXPIRE'|'PEXPIREAT')` خارج المساعد.
+- **فصل الـoverlay صراحةً:** كل سكربت مخزن يعمل أيضًا داخل `transactRequest()` على overlay لا يُصدر أمر انتهاء حقيقيًا. أضيف `acl_check_cmd = false` في جدول الـoverlay ([RedisRequestOverlay.php](../../src/Repository/Redis/RedisRequestOverlay.php)) فيرى المساعد غيابه ويرد كما قبل، ويبقى حفظ الطلب (DEC-042) القاضي الوحيد للصلاحية. لم يتغير سلوك `transactRequest()`.
+- **الاختبارات التي عُدّلت:** `RequestSaveAclRedisTest` (الاستدعاء المباشر يتوقع `NOPERM` بدل نص المدى؛ هذه كانت ملاحظة مستقلة موثقة فيه)، و`RotatedAliasBoundedRedisTest` (حارس نصي على مساعد الجسر يتبع اسم المساعد المشترك؛ الضمان نفسه: `PEXPIREAT` فقط للجسر)، و`ExpiryProvenanceDirectStudy270Test` (انظر أدناه).
+- **الوثائق:** [DEC-043](../../docs/decisions/DEC-043_DIRECT_CALL_EXPIRY_REFUSAL_PROVENANCE_NOPERM.md) مفهرس في `DECISIONS_INDEX.md`، وفقرة LT-P2-12 في `docs/FAILURE_SEMANTICS.md` صارت جدولًا لسبب الرفض والرد والحالة.
+
+## التحقق نفسه قبل وبعد
+
+مصفوفة الدراسة نفسها صارت اختبار التحقق: `EXPIRY_270_CONTRACT=before` يؤكد النص القديم على المصدر غير المُصلَح، والافتراضي `after` يؤكد `NOPERM`. كل صف يحمل `contract` والمشغّل يرفض صفًّا من عقد آخر (`contract-mismatch`، خروج 5). المصفوفة وُسّعت بأفرع كانت غير مبلوغة: `PEXPIRE` (تعديل النتيجة المُولَّدة بحالة مثبتة على Current وعلى Previous، وعلامة claim بعد انتهاء الحظر)، وتجديد مفتاح قائم (دورة ميزانية منتهية، بذرة، حظر أقوى، عقد prober منتهٍ، نتيجة منتهية منطقيًا، حظر دورة حياة أطول). كلها بحالات `fresh` و`existing` و`prerequisite-only` وبضابط حساب كامل وحساب محدود بالفئات ومفتاح تحكم مستقل ومقارنة `DUMP` و`PEXPIRETIME` من خارج Lua كما في الدراسة.
+
+| | قبل (`ec57254b…`، شجرة `713ec0b4…`، مصدر `src/` = الأساس) | بعد (`304b1407…`، شجرة `bf9f5ef6…`) |
+| --- | --- | --- |
+| الأوامر | `EXPIRY_270_CONTRACT=before investigations/expiry-provenance-270/run.sh php64\|php32 tests/Integration/Redis/ExpiryProvenanceDirectStudy270Test.php` | الأمر نفسه بلا المتغير |
+| PHP 64-bit (`PHP_INT_SIZE` 8) | 102 اختبار، 10625 تأكيدًا، ناجح | 102 اختبار، 10625 تأكيدًا، ناجح |
+| PHP 32-bit (`PHP_INT_SIZE` 4، linux/386) | 102 اختبار، 10611 تأكيدًا، ناجح | 102 اختبار، 10611 تأكيدًا، ناجح |
+| الصفوف | 816 في كل عرض | 816 في كل عرض |
+| رفض صلاحية بلغ الأمر (لكل عرض) | 90 صفًّا، الرد `expiry not representable` | 90 صفًّا، الرد `NOPERM … '<command>' …` (`expire` 76، `pexpire` 10، `pexpireat` 4) |
+| تجاوز المدى الحقيقي | `expiry not representable`، بلا ACL LOG، `failed_calls=1` | **نفسه** |
+| عطل الاتصال | `BackendFailureException` (kill مع retries=0؛ ويعيد الاتصال بالافتراضي) | **نفسه** |
+
+`fix/compare-output.txt` من `fix/compare.py`: الصفوف متطابقة بين التشغيلين في العرضين (816 صفًّا): 726 متطابقة بلا فرق، و90 رفضًا مبلوغًا تغيّرت رسالتها فقط من `expiry not representable` إلى `NOPERM`، و0 فرق غير متوقع. المتطابقة تشمل الضوابط ونداء `incrementAt` العام على PHP64 والضابط العشري عبر `EVAL` على PHP32، وصفوف الـ`not-run`. كل رفض مبلوغ: فرق الـkeyspace فارغ (`DUMP`/`PEXPIRETIME`)، `ACL LOG` يسمّي الأمر وحده، `rejected_calls=1`، ومفتاح التحكم المستقل سليم.
+
+المصدر الخام: `fix/raw-before/run-64|32` و`fix/raw-after/run-64|32` (لكلٍّ `evidence.jsonl` و`phpunit.log` و`manifest.json` بالرأس والشجرة والأوامر وإصدارات PHP وRedis وext-redis وPHPUnit وعرض `int` وعدد الاختبارات والتأكيدات وSHA-256). كلاهما من commit نظيف.
+
+## تغطية المواضع
+
+[fix-coverage.md](fix-coverage.md): من 38 موضعًا بلغت المصفوفة **31** برفض صلاحية (بنسخة مُعلَّمة مؤقتة لا تُشحن، لتسمية الموضع في الرد)، و**7 لم تُبلغ**: S21 وS23 وS25 وS27 وS29 وS31 وS38، وكلها **الانتهاء الثاني في زوج مفتاح بيانات ومفتاح بياناته الوصفية**، ويُطبَّق بعد نجاح الأول. رفض الأمر بحسب الاسم يتوقف عند الأول، وصلاحيات المفاتيح لا تفصل `EXPIRE` عن كتابة المفتاح نفسه، فلا يمكن بلوغها بحساب مقيَّد. تصنيفها بالكود نفسه (المساعد المشترك) ولا يُقاس منفصلًا.
+
+## حدود لم تُقَس
+
+- سكربتات القبول التي تستخدم `redis.call` غير المحروس لأمر الانتهاء: لم تتغير ولم تُقَس.
+- Redis أقدم من 7.0 (لا `acl_check_cmd`): الرد القديم بحكم الكود، لم يُشغَّل.
+- رفض مفتاح بنمط مفاتيح ACL لا بأمر: يُصنَّف `NOPERM` بنفس الآلية (`acl_check_cmd` يفحص المفاتيح أيضًا) لكنه لم يُقَس في المصفوفة.
+- الاختبارات الوحدوية `ReleaseVerification` ( تحتاج `git` ومسارات Linux ) فشلت داخل صورة Docker المحلية وعلى macOS لأسباب بيئية (لا `git` في الصورة، و`/var` مقابل `/private/var`)، وليست من هذا التغيير؛ مرجعها CI.

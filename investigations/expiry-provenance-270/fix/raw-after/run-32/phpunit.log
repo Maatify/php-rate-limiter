@@ -1,0 +1,12 @@
+WARNING: The requested image's platform (linux/386) does not match the detected host platform (linux/arm64/v8) and no specific platform was requested
+PHPUnit 11.5.58 by Sebastian Bergmann and contributors.
+
+Runtime:       PHP 8.4.27
+Configuration: /app/phpunit.xml
+
+...............................................................  63 / 102 ( 61%)
+.......................................                         102 / 102 (100%)
+
+Time: 00:04.147, Memory: 8.00 MB
+
+OK (102 tests, 10611 assertions)
