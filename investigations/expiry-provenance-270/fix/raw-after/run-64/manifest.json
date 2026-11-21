@@ -1,9 +1,9 @@
 {
-  "command": "docker run --rm --network n270-php64-1795219954-98627-31292 -v <repo>:/app:ro -v <evidence-dir>:/out -w /app -e REDIS_INTEGRATION_HOST=<redis> -e REDIS_INTEGRATION_PORT=6379 -e EXPIRY_270_EVIDENCE=/out/evidence.jsonl -e EXPIRY_270_CONTRACT=after maatify-rl-php64:local php vendor/bin/phpunit --do-not-cache-result tests/Integration/Redis/ExpiryProvenanceDirectStudy270Test.php",
+  "command": "docker run --rm --network n270-php64-1795220907-50151-19019 -v <repo>:/app:ro -v <evidence-dir>:/out -w /app -e REDIS_INTEGRATION_HOST=<redis> -e REDIS_INTEGRATION_PORT=6379 -e EXPIRY_270_EVIDENCE=/out/evidence.jsonl -e EXPIRY_270_CONTRACT=after maatify-rl-php64:local php vendor/bin/phpunit --do-not-cache-result tests/Integration/Redis/ExpiryProvenanceDirectStudy270Test.php",
   "contract": "after",
-  "evidence_rows": 816,
-  "evidence_rows_expected": 816,
-  "evidence_sha256": "c8bcda9d4fd49178d76511977eabc791aa3e7fe2950a728ab7bc6454e69ef347",
+  "evidence_rows": 852,
+  "evidence_rows_expected": 852,
+  "evidence_sha256": "8a3548f604ab6e8bf7779ba57546fc85af0bbb991290e5e1562ffaadf0d28822",
   "ext_redis": "6.3.0",
   "image": "php64",
   "log_write_exit_code": 0,
@@ -11,10 +11,10 @@
   "php_int_size": "8",
   "phpunit": "PHPUnit 11.5.58 by Sebastian Bergmann and contributors.",
   "phpunit_exit_code": 0,
-  "phpunit_summary": "OK (102 tests, 10625 assertions)",
+  "phpunit_summary": "OK (111 tests, 11223 assertions)",
   "redis": "Redis server v=7.0.15 sha=00000000:0 malloc=jemalloc-5.2.1 bits=64 build=d6d81b7b50ab2e83",
   "source_dirty": false,
-  "source_head": "304b14075a4a38a55ff5b0e6a08077fa3def6a0b",
-  "source_tree": "bf9f5ef6317700ac106edf8806dd205af216db86",
+  "source_head": "4c9b5e8ceee723d702b73e43a4287315effa1498",
+  "source_tree": "10099b5b37c69fa99356901e3e6e9d9fee6e7929",
   "status": "ok"
 }
