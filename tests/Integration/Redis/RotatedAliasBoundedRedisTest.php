@@ -356,7 +356,7 @@ final class RotatedAliasBoundedRedisTest extends TestCase
         $end = strpos($text, "\nend\n", $to);
         self::assertIsInt($end);
         $bridge = substr($text, $from, $end - $from);
-        self::assertStringContainsString("redis.pcall('PEXPIREAT', key, plan.at)", $bridge);
+        self::assertStringContainsString("expiryApplied(created, 'PEXPIREAT', key, plan.at)", $bridge, 'The helper judges its one expiry command through the shared expiry judge (DEC-043).');
         self::assertSame(3, substr_count($bridge, 'expireBridgeKey('), 'The helper and its two calls, one per bridge key.');
         foreach (['PEXPIRE', 'EXPIRE', 'PSETEX', 'SETEX'] as $relative) {
             self::assertStringNotContainsString("'" . $relative . "'", $bridge, 'The bridge gets no relative expiry (' . $relative . ').');

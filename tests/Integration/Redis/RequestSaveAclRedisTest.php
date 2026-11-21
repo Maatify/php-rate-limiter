@@ -915,12 +915,13 @@ final class RequestSaveAclRedisTest extends TestCase
     }
 
     /**
-     * An independent observation outside the request path (not part of #261's contract): a store call made directly, not inside
-     * `transactRequest()`, runs its own script, and that script applies the key's lifetime with `redis.pcall('EXPIRE', ...)`. When the account may
-     * not run EXPIRE, the denial is swallowed by that `pcall` and reported as a different error, `expiry not representable` (the script then
-     * removes what it had written, observed below); the provenance, an ACL denial, is only in Redis' ACL LOG.
+     * A store call made directly, not inside `transactRequest()`, runs its own script, and that script applies the key's lifetime with
+     * `redis.pcall('EXPIRE', ...)`. When the account may not run EXPIRE, #270 classifies the denial with `redis.acl_check_cmd` and answers
+     * `NOPERM` naming the command (no key, no value); before #270 the denial was swallowed by that `pcall` and reported as
+     * `expiry not representable`, the text of a genuine range refusal. The script removes what it had written either way (observed below);
+     * Redis' ACL LOG still holds the denial.
      */
-    public function testADirectScriptThatMayNotRunExpireReportsAnExpiryProblem(): void
+    public function testADirectScriptThatMayNotRunExpireAnswersNoperm(): void
     {
         $this->createUser('direct-261', ['expire']);
         $this->admin->execute(['ACL', 'SETUSER', 'direct-261', '+hincrby', '+hget', '+hset', '+incr', '+get', '+set', '+ttl', '+pttl', '+del', '+exists', '+type', '+hgetall', '+time']);
@@ -931,7 +932,9 @@ final class RequestSaveAclRedisTest extends TestCase
             $store->incrementAt('direct-a', 600, 1, time());
             self::fail('The direct script was expected to refuse.');
         } catch (\Maatify\RateLimiter\Exception\RateLimiterException $exception) {
-            self::assertSame('expiry not representable', $exception->getMessage());
+            self::assertStringStartsWith('NOPERM ', $exception->getMessage());
+            self::assertStringContainsString("'expire'", $exception->getMessage());
+            self::assertStringNotContainsString('direct-a', $exception->getMessage(), 'The refusal names the command, never the key.');
         }
         self::assertSame([], $this->diff($before, $this->keyspace()), 'The script removed what it had written.');
         $log = $this->aclLog('direct-261');

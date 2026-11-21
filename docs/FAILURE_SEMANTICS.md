@@ -254,14 +254,38 @@ deadline in the past on a live key is no longer detected as corruption. Every
 other structural check (format, missing field, missing TTL, capacity, overlap)
 still fails explicitly.
 
-**Expiries Redis cannot represent (LT-P2-12).** The store checks an expiry
-against the caller's time first. Redis itself is the final judge, through
-`EXPIRE` / `PEXPIRE` run under `redis.pcall`. When Redis rejects an expiry, the
-operation deletes every key that call created and fails with
-`RateLimiterException('expiry not representable')`, never with
-`BackendFailureException`. `SET … EX` is never used as the judge: past Redis's
-bound, Redis 7.0.15 rejects it, while Redis 8.10.0 replies `OK` and stores
-nothing.
+**Expiries Redis cannot represent, and expiries the account may not set
+(LT-P2-12, DEC-043).** The store checks an expiry against the caller's time
+first. Redis itself is the final judge, through `EXPIRE` / `PEXPIRE` /
+`PEXPIREAT` run under `redis.pcall`. When Redis rejects an expiry, the
+operation deletes every key that call created. What the caller then sees
+depends on **why** Redis refused, which the script decides with
+`redis.acl_check_cmd` on the same command and arguments:
+
+| Why Redis refused | Caller sees | Keyspace |
+| --- | --- | --- |
+| The account may not run the expiry command (ACL) | a `NOPERM` error reply naming the command, never the key or a value | the keys the call created are deleted; see the note below |
+| A lifetime Redis cannot represent (range) | `RateLimiterException('expiry not representable')` | the keys the call created are deleted; see the note below |
+| `acl_check_cmd` absent (Redis older than 7.0) or failing | `RateLimiterException('expiry not representable')` | the keys the call created are deleted; see the note below |
+
+An expiry refusal is a server reply: it keeps the classification the Host executor gave it
+(DEC-018) and is not reclassified into `BackendFailureException`, the typed
+operational backend failure of availability, transport and command-execution
+failures (DEC-015), which stays for the failures the executor classifies as such,
+including a proven connection failure. Inside `transactRequest()` the scripts run
+against the request overlay, which hides `acl_check_cmd`: the overlaid
+evaluation answers as before, and the save's own ACL preflight is DEC-042.
+`SET … EX` is never used as the judge: past Redis's bound, Redis 7.0.15 rejects
+it, while Redis 8.10.0 replies `OK` and stores nothing.
+
+**What the cleanup guarantees, and what it does not.** The cleanup deletes the
+keys *this call created*. It does not restore a key the branch had already
+deleted or rewritten before the refusal (for example a stale pair removed before
+its fresh write, or the content of an existing key rewritten before its expiry).
+The evidence (`investigations/expiry-provenance-270/`) shows an unchanged
+keyspace only for the states it measured: a new key, an existing key, and the
+prerequisite states listed there. No claim of state invariance is made beyond
+them.
 
 ---
 
