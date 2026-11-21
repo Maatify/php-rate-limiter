@@ -7,6 +7,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [1.0.0-rc.4]
 
+### Fixed (#283) — Local fallback never allows a request that no rule applied to (DEC-011, DEC-015)
+
+- A degraded or fail-open evaluation now grants the local fallback allowance only after at least one rule of the policy's fallback configuration has been applied to the request context. When none applies (for example an `ACCOUNT`-only configuration and a request without an account) the existing conservative windowless refusal is returned (`HARD_BLOCK`, level 2, `retryAfter` 60) and no fallback counter is consumed; before, that request was allowed. Policies with an applicable rule, the official presets and their values, the `Retry-After` of an exhausted allowance and the single charge per final answer are unchanged.
+
 ### Fixed — One clock sample per simple fixed-window consume
 
 - `consume()` uses the same caller time when resolving and validating the

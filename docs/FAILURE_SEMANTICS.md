@@ -114,7 +114,13 @@ and it is not a fixed value. Each dimension is consumed exactly once per
 evaluation. This applies identically to the typed backend-failure path and to
 the `OPEN`/`HALF_OPEN` degraded path. A degraded policy without a valid bounded
 configuration has no window to derive a reset from and remains denied with the
-historical `retryAfter` of 60.
+historical `retryAfter` of 60. The same refusal applies when a configuration exists
+but none of its rules applies to the request context (for example an `ACCOUNT`-only
+configuration and a request without an account): the fallback grants an allowance
+only after at least one rule has been applied to the request, so with none applied it
+refuses with `retryAfter` 60 and consumes no counter (#283). Policies with at least one
+applicable rule, including the official presets (their `IP_PREFIX` rule always applies),
+are unchanged.
 
 One public call consumes each applicable dimension once, and only when its final answer is the fallback answer. During a circuit
 recovery the evaluation can run again (a Redis conflict at the save of the recovery step, a failed save repeated in this process,

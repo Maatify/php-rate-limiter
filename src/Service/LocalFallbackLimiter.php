@@ -64,7 +64,9 @@ class LocalFallbackLimiter
      * It is a wait hint, not a guarantee that the next request is accepted.
      * Each rule's counter is consumed exactly once per evaluation, so callers
      * must use this method instead of {@see self::check()} followed by a
-     * second query.
+     * second query. A request is permitted only after at least one rule has
+     * been applied to it; when no rule applies the conservative windowless
+     * denial is returned and nothing is counted (#283).
      *
      * @internal Runtime collaborator of {@see RateLimiterEngine}.
      *
@@ -89,6 +91,7 @@ class LocalFallbackLimiter
         $namespace = OwnershipRegistry::crossing($clock, fn() => self::namespace($policy));
 
         $retryAfter = null;
+        $applied = false;
         foreach ($configuration->rules as $rule) {
             $key = match ($rule->dimension) {
                 FailureFallbackDimensionEnum::ACCOUNT => IdentityPresence::isPresent($accountId)
@@ -102,12 +105,20 @@ class LocalFallbackLimiter
                 continue;
             }
 
+            $applied = true;
             $population = "{$namespace}:{$rule->dimension->value}";
             $subject = $key;
             $ruleRetryAfter = self::incrementAndCheck($clock, $population, $subject, $rule->limit, $rule->windowSeconds);
             if ($ruleRetryAfter !== null && ($retryAfter === null || $ruleRetryAfter > $retryAfter)) {
                 $retryAfter = $ruleRetryAfter;
             }
+        }
+
+        // #283: an allowance is only ever granted by a rule that was applied to this request. A configuration none of whose rules
+        // applies to the context (an ACCOUNT-only configuration and a request without an account) is not a bound, so the answer is
+        // the same conservative, windowless refusal as a missing configuration, and no counter was consumed.
+        if (!$applied) {
+            return self::UNWINDOWED_DENIAL_RETRY_AFTER;
         }
 
         return $retryAfter;
