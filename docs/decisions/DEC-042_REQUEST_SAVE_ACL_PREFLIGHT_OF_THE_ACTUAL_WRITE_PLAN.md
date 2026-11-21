@@ -8,7 +8,7 @@
 
 `ACTIVE` — approved by the **Owner** on [#261](https://github.com/Maatify/php-rate-limiter/issues/261) after the study [PR #269](https://github.com/Maatify/php-rate-limiter/pull/269) (merged at `main@3acf0258087a7bb89057dcf629f9bf8f5b38c246`); the execution assignment is [the Lead's comment on #261](https://github.com/Maatify/php-rate-limiter/issues/261#issuecomment-6999369733).
 
-**Implementation status: approved, under review.** The implementation is carried by the PR that adds this record; until it is accepted and merged, `main` does not enforce it. #261 stays open until acceptance.
+**Implementation status: accepted and merged.** The implementation was carried by [PR #271](https://github.com/Maatify/php-rate-limiter/pull/271) (accepted head `3c04f347eb2e0533cfd59989ed351fc9bdf90b3a`), [merged at `main@d7d0ad9bd6f022ddbd8577f392e780bfb7a59c5a`](https://github.com/Maatify/php-rate-limiter/issues/261#issuecomment-7008702003); #261 was closed with that evidence.
 
 ## Date
 
