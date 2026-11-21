@@ -10,8 +10,10 @@
 # Any failure to initialise, to start Redis, to get it ready in time, to run PHPUnit, or to find the expected evidence is a non-zero exit.
 set -euo pipefail
 
-EXPECTED_ROWS="${RUN270_EXPECTED_ROWS:-552}"
+EXPECTED_ROWS="${RUN270_EXPECTED_ROWS:-852}"
 READY_SECONDS="${RUN270_READY_SECONDS:-30}"
+# which contract the verification asserts: `before` (the unfixed code, the #276 finding) or `after` (#270); recorded in every row and the manifest
+CONTRACT="${EXPIRY_270_CONTRACT:-after}"
 
 die() { echo "run.sh: $1" >&2; exit "${2:-2}"; }
 
@@ -20,6 +22,7 @@ img="${1:-}"
 shift
 (($# > 0)) || die "phpunit arguments are required"
 ((EXPECTED_ROWS > 0)) || die "EXPECTED_ROWS is not set in this script" 2
+[[ "$CONTRACT" == before || "$CONTRACT" == after ]] || die "EXPIRY_270_CONTRACT must be before or after"
 command -v docker >/dev/null || die "docker is required"
 command -v git >/dev/null || die "git is required"
 command -v python3 >/dev/null || die "python3 is required (manifest and evidence checks)"
@@ -75,10 +78,10 @@ want_int=8
 [[ "$probe_int" == "$want_int" ]] || die "image $img reports PHP_INT_SIZE=${probe_int:-?}, expected $want_int; refusing to measure" 5
 phpunit_version="$(docker run --rm --network none -v "$R":/app:ro -w /app "$image" php vendor/bin/phpunit --version | head -n 1)" || die "cannot read the PHPUnit version"
 
-cmd="docker run --rm --network $net -v <repo>:/app:ro -v <evidence-dir>:/out -w /app -e REDIS_INTEGRATION_HOST=<redis> -e REDIS_INTEGRATION_PORT=6379 -e EXPIRY_270_EVIDENCE=/out/evidence.jsonl $image php vendor/bin/phpunit --do-not-cache-result $*"
+cmd="docker run --rm --network $net -v <repo>:/app:ro -v <evidence-dir>:/out -w /app -e REDIS_INTEGRATION_HOST=<redis> -e REDIS_INTEGRATION_PORT=6379 -e EXPIRY_270_EVIDENCE=/out/evidence.jsonl -e EXPIRY_270_CONTRACT=$CONTRACT $image php vendor/bin/phpunit --do-not-cache-result $*"
 set +e
 docker run --rm --network "$net" -v "$R":/app:ro -v "$out":/out -w /app \
-  -e REDIS_INTEGRATION_HOST="$rd" -e REDIS_INTEGRATION_PORT=6379 -e EXPIRY_270_EVIDENCE=/out/evidence.jsonl \
+  -e REDIS_INTEGRATION_HOST="$rd" -e REDIS_INTEGRATION_PORT=6379 -e EXPIRY_270_EVIDENCE=/out/evidence.jsonl -e EXPIRY_270_CONTRACT="$CONTRACT" \
   "$image" php vendor/bin/phpunit --do-not-cache-result "$@" 2>&1 | tee "$out/phpunit.log"
 pipe_status=("${PIPESTATUS[@]}")
 set -e
@@ -88,15 +91,18 @@ tee_rc=${pipe_status[1]:-1}
 summary="$(grep -E '^OK \(' "$out/phpunit.log" | tail -n 1 || true)"
 rows=0
 bad_int=0
+bad_contract=0
 sha=""
 if [[ -s "$out/evidence.jsonl" ]]; then
-  read -r rows bad_int < <(python3 -c 'import json,sys
-n = bad = 0
+  read -r rows bad_int bad_contract < <(python3 -c 'import json,sys
+n = bad = badc = 0
 for l in open(sys.argv[1]):
     r = json.loads(l); n += 1
     if str(r.get("int", "")) != sys.argv[2]:  # a row without the field is as bad as a wrong one
         bad += 1
-print(n, bad)' "$out/evidence.jsonl" "$want_int") || die "evidence.jsonl contains a line that is not JSON" 3
+    if r.get("contract") != sys.argv[3]:  # every row names the contract it was asserted under
+        badc += 1
+print(n, bad, badc)' "$out/evidence.jsonl" "$want_int" "$CONTRACT") || die "evidence.jsonl contains a line that is not JSON" 3
   sha="$(shasum -a 256 "$out/evidence.jsonl" | cut -d' ' -f1)"
 fi
 
@@ -108,11 +114,12 @@ elif ((rc != 0)); then status="phpunit-failed"; exit_code=$rc
 elif [[ -z "$summary" ]]; then status="no-ok-summary"; exit_code=3
 elif [[ ! -s "$out/evidence.jsonl" ]]; then status="evidence-missing"; exit_code=3
 elif ((bad_int != 0)); then status="width-mismatch"; exit_code=5
+elif ((bad_contract != 0)); then status="contract-mismatch"; exit_code=5
 elif ((rows != EXPECTED_ROWS)); then status="evidence-incomplete"; exit_code=3
 fi
 
 RUN_HEAD="$head" RUN_TREE="$tree" RUN_DIRTY="$dirty_flag" RUN_CMD="$cmd" RUN_IMG="$img" RUN_REDIS="$redis_version" RUN_PHP="$php_probe" \
-  RUN_PHPUNIT="$phpunit_version" RUN_SUMMARY="$summary" RUN_ROWS="$rows" RUN_EXPECTED="$EXPECTED_ROWS" RUN_SHA="$sha" RUN_STATUS="$status" RUN_RC="$rc" RUN_TEE_RC="$tee_rc" \
+  RUN_PHPUNIT="$phpunit_version" RUN_SUMMARY="$summary" RUN_ROWS="$rows" RUN_EXPECTED="$EXPECTED_ROWS" RUN_SHA="$sha" RUN_STATUS="$status" RUN_RC="$rc" RUN_TEE_RC="$tee_rc" RUN_CONTRACT="$CONTRACT" \
   python3 - "$out/manifest.json" <<'PY'
 import json, os, sys
 e = os.environ
@@ -123,7 +130,7 @@ manifest = {
     "php": php, "php_int_size": int_size, "ext_redis": ext, "redis": e["RUN_REDIS"], "phpunit": e["RUN_PHPUNIT"],
     "phpunit_summary": e["RUN_SUMMARY"], "phpunit_exit_code": int(e["RUN_RC"]), "log_write_exit_code": int(e["RUN_TEE_RC"]),
     "evidence_rows": int(e["RUN_ROWS"]), "evidence_rows_expected": int(e["RUN_EXPECTED"]), "evidence_sha256": e["RUN_SHA"],
-    "status": e["RUN_STATUS"],
+    "status": e["RUN_STATUS"], "contract": e["RUN_CONTRACT"],
 }
 with open(sys.argv[1], "x") as handle:
     json.dump(manifest, handle, indent=2, sort_keys=True)
