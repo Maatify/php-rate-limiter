@@ -12,6 +12,7 @@ use Maatify\RateLimiter\Exception\BackendFailureException;
 use Maatify\RateLimiter\Exception\RateLimiterException;
 use Maatify\RateLimiter\Repository\BudgetSeedStoreInterface;
 use Maatify\RateLimiter\Repository\RateLimitStoreInterface;
+use Maatify\RateLimiter\Repository\Redis\RedisFullCapabilityStore;
 use Maatify\SharedCommon\Contracts\ClockInterface;
 
 /**
@@ -189,11 +190,13 @@ final class FixedWindowSimpleRateLimiter implements SimpleRateLimiterInterface
      * starts a normal Current epoch. Never a max()/sum() merge.
      *
      * A single caller time is used to resolve, validate and update the window.
+     * Redis preflight reads both generations without deleting expired state.
      * Rotation resolution may read both Current and Previous before the
      * single state-changing mutation executes; that mutation itself
      * (incrementBudget() or incrementBudgetWithSeed()) is the one atomic
-     * store primitive, and the quota decision in consume() is derived from
-     * its returned state. Every individual store call is wrapped here, at
+     * store primitive. Redis checks the reset boundary of the epoch it
+     * actually selects before writing. The quota decision in consume() is
+     * derived from its returned state. Every individual store call is wrapped here, at
      * its own call site: an operational backend failure it raises
      * (BackendFailureException) is reported to the caller as null, the typed
      * FAIL_CLOSED result. Malformed persisted state (RateLimiterException) and
@@ -210,7 +213,7 @@ final class FixedWindowSimpleRateLimiter implements SimpleRateLimiterInterface
     {
         $currentReadFailed = false;
         try {
-            $currentState = CallerTimeStore::getBudget($this->store, $currentKey, $now);
+            $currentState = CallerTimeStore::operationalBudget($this->store, $currentKey, $now);
         } catch (BackendFailureException) {
             $currentReadFailed = true;
             $currentState = null;
@@ -227,7 +230,7 @@ final class FixedWindowSimpleRateLimiter implements SimpleRateLimiterInterface
         if ($previousKey !== null) {
             $previousReadFailed = false;
             try {
-                $previousState = CallerTimeStore::getBudget($this->store, $previousKey, $now);
+                $previousState = CallerTimeStore::operationalBudget($this->store, $previousKey, $now);
             } catch (BackendFailureException) {
                 $previousReadFailed = true;
                 $previousState = null;
@@ -247,6 +250,10 @@ final class FixedWindowSimpleRateLimiter implements SimpleRateLimiterInterface
                 }
 
                 try {
+                    if ($this->store instanceof RedisFullCapabilityStore) {
+                        return $this->store->incrementSimpleBudgetAt($currentKey, $intervalSeconds, $cost, $now->getTimestamp(), $previousState);
+                    }
+
                     return CallerTimeStore::incrementBudgetWithSeed($this->store, $currentKey, $intervalSeconds, $previousState, $cost, $now);
                 } catch (BackendFailureException) {
                     return null;
@@ -266,6 +273,10 @@ final class FixedWindowSimpleRateLimiter implements SimpleRateLimiterInterface
     private function incrementBudget(string $key, int $intervalSeconds, int $cost, DateTimeImmutable $now): ?BudgetStateDTO
     {
         try {
+            if ($this->store instanceof RedisFullCapabilityStore) {
+                return $this->store->incrementSimpleBudgetAt($key, $intervalSeconds, $cost, $now->getTimestamp());
+            }
+
             return CallerTimeStore::incrementBudget($this->store, $key, $intervalSeconds, $cost, $now);
         } catch (BackendFailureException) {
             return null;

@@ -948,12 +948,15 @@ if exists == 1 and compareDecimalStrings(nowStr, storedEnd) < 0 then
   -- #230: the range is the caller's native `int` (ARGV[3], a canonical decimal; 2147483647 on a 32-bit build), judged on the exact
   -- decimal sum before the write, so a count the caller could not read back is never stored; a stored count already past it is rejected too.
   if compareDecimalStrings(count, ARGV[3]) > 0 or compareDecimalStrings(addDecimalStrings(count, ARGV[2]), ARGV[3]) > 0 then return redis.error_reply('budget count overflow') end
+  -- DEC-014: the Simple result uses the selected epoch start and the policy duration.
+  if ARGV[4] ~= '' and compareDecimalStrings(addDecimalStrings(start, ARGV[1]), ARGV[4]) > 0 then return {'reset-boundary-out-of-range'} end
   local ok = pcall(redis.call, 'HINCRBY', KEYS[1], 'count', ARGV[2])
   if not ok then return redis.error_reply('budget count overflow') end
   return {redis.call('HGET', KEYS[1], 'count'), start}
 end
 if not requestedDuration or requestedDuration <= 0 or requestedDuration ~= math.floor(requestedDuration) then return redis.error_reply('malformed budget state') end
 if requestedDuration > exactIntegerMax - now then return redis.error_reply('budget expiry exceeds Redis Lua exact integer range') end
+if ARGV[4] ~= '' and compareDecimalStrings(addDecimalStrings(nowStr, ARGV[1]), ARGV[4]) > 0 then return {'reset-boundary-out-of-range'} end
 if exists == 1 then
   if not expiryApplied({}, 'EXPIRE', KEYS[1], ARGV[1]) then return redis.error_reply(expiryError) end
   redis.call('DEL', KEYS[1])
@@ -1002,7 +1005,7 @@ LUA;
 
     /**
      * #185 F-185-26 (DEC-032): BUDGET_GET for Operational Read. The same validation (BUDGET_VALIDATE), and a budget past
-     * its epoch is absent, but nothing is deleted: the read writes nothing. The runtime keeps BUDGET_GET (LT-P2-03).
+     * its epoch is absent, but nothing is deleted: the read writes nothing. Simple also uses this read for its DEC-014 preflight.
      */
     private const BUDGET_PEEK = self::BUDGET_VALIDATE . "\n" . <<<'LUA'
 if compareDecimalStrings(nowStr, storedEnd) >= 0 then return {} end
@@ -1044,6 +1047,8 @@ end
 if exists == 1 and compareDecimalStrings(nowStr, storedEnd) < 0 then
   -- #185 F-185-25: the same classified overflow on the seeded path's active epoch; #230: judged against the caller's native `int` (ARGV[7]) before the write.
   if compareDecimalStrings(count, ARGV[7]) > 0 or compareDecimalStrings(addDecimalStrings(count, ARGV[4]), ARGV[7]) > 0 then return redis.error_reply('budget count overflow') end
+  -- Current wins even if the caller observed a viable Previous before this script.
+  if ARGV[8] ~= '' and compareDecimalStrings(addDecimalStrings(start, ARGV[1]), ARGV[8]) > 0 then return {'reset-boundary-out-of-range'} end
   local ok = pcall(redis.call, 'HINCRBY', KEYS[1], 'count', ARGV[4])
   if not ok then return redis.error_reply('budget count overflow') end
   return {redis.call('HGET', KEYS[1], 'count'), start}
@@ -1056,6 +1061,7 @@ if epochDuration > exactIntegerMax then return redis.error_reply('seed expiry ex
 local seedEnd = addDecimalStrings(ARGV[2], ARGV[1])
 if compareDecimalStrings(nowStr, seedEnd) < 0 then
   if ARGV[6] == '1' then return redis.error_reply('seeded budget count overflow') end
+  if ARGV[8] ~= '' and compareDecimalStrings(seedEnd, ARGV[8]) > 0 then return {'reset-boundary-out-of-range'} end
   local remaining = subtractDecimalStrings(seedEnd, nowStr)
   if not ttlBackendRepresentable(remaining) then return redis.error_reply('seed expiry exceeds Redis backend expiry representability') end
   if exists == 1 then
@@ -1067,6 +1073,7 @@ if compareDecimalStrings(nowStr, seedEnd) < 0 then
   return {redis.call('HGET', KEYS[1], 'count'), ARGV[2]}
 end
 if epochDuration > exactIntegerMax - now then return redis.error_reply('budget expiry exceeds Redis Lua exact integer range') end
+if ARGV[8] ~= '' and compareDecimalStrings(addDecimalStrings(nowStr, ARGV[1]), ARGV[8]) > 0 then return {'reset-boundary-out-of-range'} end
 if exists == 1 then
   if not expiryApplied({}, 'EXPIRE', KEYS[1], ARGV[1]) then return redis.error_reply(expiryError) end
   redis.call('DEL', KEYS[1])
@@ -2121,15 +2128,7 @@ LUA;
 
     public function incrementBudgetAt(string $key, int $epochDurationSeconds, int $amount, int $now): BudgetStateDTO
     {
-        $this->positive($epochDurationSeconds, 'Budget epoch duration');
-        // #185 F-185-24: a budget only grows; an amount below 1 is rejected before any write.
-        $this->positive($amount, 'Budget amount');
-        $result = $this->eval(self::BUDGET_INCREMENT, [$this->key('budget', $key)], [$epochDurationSeconds, $amount, (string) PHP_INT_MAX, $this->callerTime($now)]);
-        $tuple = $this->tuple($result, 2, 'budget increment');
-        return new BudgetStateDTO(
-            $this->integerValue($tuple[0], 'budget count'),
-            $this->integerValue($tuple[1], 'budget epochStart'),
-        );
+        return $this->writeBudgetAt($key, $epochDurationSeconds, $amount, $now, null, '');
     }
 
     public function incrementBudgetWithSeed(string $key, int $epochDurationSeconds, BudgetStateDTO $seed, int $amount = 1): BudgetStateDTO
@@ -2139,12 +2138,43 @@ LUA;
 
     public function incrementBudgetWithSeedAt(string $key, int $epochDurationSeconds, BudgetStateDTO $seed, int $amount, int $now): BudgetStateDTO
     {
+        return $this->writeBudgetAt($key, $epochDurationSeconds, $amount, $now, $seed, '');
+    }
+
+    /**
+     * DEC-014: Simple's result exposes resetAt, so check the selected epoch before any write.
+     * Generic budget operations expose epochStart and count and keep their existing range.
+     *
+     * @internal Used only by the package's fixed-window limiter.
+     */
+    public function incrementSimpleBudgetAt(string $key, int $epochDurationSeconds, int $amount, int $now, ?BudgetStateDTO $seed = null): BudgetStateDTO
+    {
+        return $this->writeBudgetAt($key, $epochDurationSeconds, $amount, $now, $seed, (string) PHP_INT_MAX);
+    }
+
+    private function writeBudgetAt(string $key, int $epochDurationSeconds, int $amount, int $now, ?BudgetStateDTO $seed, string $resetBoundaryMax): BudgetStateDTO
+    {
         $this->positive($epochDurationSeconds, 'Budget epoch duration');
         // #185 F-185-24: one rule for every budget increment; an amount below 1 is rejected before any write.
         $this->positive($amount, 'Budget amount');
-        $seededCount = $this->tryIntegerAddition($seed->count, $amount);
-        $result = $this->eval(self::BUDGET_SEED, [$this->key('budget', $key)], [$epochDurationSeconds, $seed->epochStart, $seed->count, $amount, $seededCount ?? 0, $seededCount === null ? 1 : 0, (string) PHP_INT_MAX, $this->callerTime($now)]);
-        $tuple = $this->tuple($result, 2, 'seeded budget');
+        $keys = [$this->key('budget', $key)];
+        $callerTime = $this->callerTime($now);
+
+        if ($seed === null) {
+            $result = $this->eval(self::BUDGET_INCREMENT, $keys, [$epochDurationSeconds, $amount, (string) PHP_INT_MAX, $resetBoundaryMax, $callerTime]);
+            $label = 'budget increment';
+        } else {
+            $seededCount = $this->tryIntegerAddition($seed->count, $amount);
+            $result = $this->eval(self::BUDGET_SEED, $keys, [$epochDurationSeconds, $seed->epochStart, $seed->count, $amount, $seededCount ?? 0, $seededCount === null ? 1 : 0, (string) PHP_INT_MAX, $resetBoundaryMax, $callerTime]);
+            $label = 'seeded budget';
+        }
+
+        // A classified package refusal, independent of the Host's Redis error-reply mapping.
+        if ($result === ['reset-boundary-out-of-range']) {
+            throw new RateLimiterException('Simple fixed-window reset boundary must be representable as a PHP integer.');
+        }
+
+        $tuple = $this->tuple($result, 2, $label);
         return new BudgetStateDTO(
             $this->integerValue($tuple[0], 'budget count'),
             $this->integerValue($tuple[1], 'budget epochStart'),
