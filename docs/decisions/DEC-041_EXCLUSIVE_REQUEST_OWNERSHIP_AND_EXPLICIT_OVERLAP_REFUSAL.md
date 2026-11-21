@@ -8,7 +8,7 @@
 
 `ACTIVE` — **principle B** (approved by the Owner on 2026-11-18, Africa/Cairo, on [#260](https://github.com/Maatify/php-rate-limiter/issues/260), [record](https://github.com/Maatify/php-rate-limiter/issues/260#issuecomment-6964289182)) **and the design contract M1–M7** (approved by the Owner on 2026-11-18: «اعتمد», [record](https://github.com/Maatify/php-rate-limiter/issues/260#issuecomment-6967037636)), as specified in "Approved design contract" below. The accepted design is [PR #266](https://github.com/Maatify/php-rate-limiter/pull/266) at `f9045bd5ef0b4959e146f78edc2fca404aadfd9d` (tree `f46f789ab1252868a907055537310c15d061a551`, `investigations/fiber-request-ownership-260/EXCLUSIVITY_DESIGN.md` §3–9).
 
-**Implementation status: approved, not yet accepted as implemented.** At `main@316b1de99e784fec95b40f849d83a04dec772e2b` the code does **not** enforce this decision: an overlapping independent call is still held silently in another call's request. The implementation is carried by the same PR #266 and stays unaccepted until it has been reviewed independently, merged with authorization, and `main` and its CI match. Until then this record says "approved", never "implemented". The approval does not supersede or amend any other decision except for the one sentence of DEC-037 named under Consequences.
+**Implementation status: accepted and merged.** The implementation was carried by the same [PR #266](https://github.com/Maatify/php-rate-limiter/pull/266) (accepted head `5a68b6cd6e5922c684f6400fae4a34e373a4a836`), [merged at `main@cacdb3a6e2571b68cdae6fe2a73639ea4d4f112e`](https://github.com/Maatify/php-rate-limiter/issues/260#issuecomment-6992722348); #260 was closed with that evidence. The description of `main@316b1de99e784fec95b40f849d83a04dec772e2b` under Context and Consequences is the historical state before that merge: at that commit the code did not enforce this decision. The approval does not supersede or amend any other decision except for the one sentence of DEC-037 named under Consequences.
 
 ## Date
 
@@ -60,7 +60,7 @@ Direction B repairs the observed failures by refusing the misuse instead of maki
 
 ## Consequences
 
-- The behaviour at the time of this record does not conform to the principle; the gap is tracked by #260, which stays open. A later, separately authorized work unit has to implement and verify it.
+- At `main@316b1de99e784fec95b40f849d83a04dec772e2b`, when this record was written, the behaviour did not conform to the principle. That gap is closed: the implementation was accepted and merged with [PR #266](https://github.com/Maatify/php-rate-limiter/pull/266) at `main@cacdb3a6e2571b68cdae6fe2a73639ea4d4f112e`, and #260 is closed.
 - The mechanism, the refusal shape, the scheduler contract, the compatibility effects and the verification plan are the approved design contract above; the detailed design is `investigations/fiber-request-ownership-260/EXCLUSIVITY_DESIGN.md`.
 - **One sentence of an ACTIVE contract is reconciled, and no other:** the nested-call guarantee of `RequestAtomicStoreInterface` (and the matching application note of DEC-037): a nested call joins the open request only from the owner's execution context while no Host crossing is open (M4). The rest of DEC-037 is unchanged.
 - The decision does not move the outcome claim (#258, DEC-036), the fallback accounting (#259), the retry budget, the signals contract or the clock rules.
@@ -73,7 +73,7 @@ Direction B repairs the observed failures by refusing the misuse instead of maki
 
 ## Canonical Contract / Current Owner
 
-Approved, not yet accepted as implemented: until the implementation of [PR #266](https://github.com/Maatify/php-rate-limiter/pull/266) is accepted and merged, no code owns it. The intended owners are the ownership coordinator, the runtime entries (`RateLimiterEngine`, `FixedWindowSimpleRateLimiter`, the operational readers) and `RedisFullCapabilityStore`, `RequestAtomicStoreInterface` for the nested-call sentence, `docs/FAILURE_SEMANTICS.md` and the usage guide. The investigation records are `investigations/fiber-request-ownership-260/RESULTS.md` and `EXCLUSIVITY_DESIGN.md`.
+Implemented and accepted ([PR #266](https://github.com/Maatify/php-rate-limiter/pull/266), `main@cacdb3a6e2571b68cdae6fe2a73639ea4d4f112e`). The code owners are the ownership coordinator `src/Service/OwnershipRegistry.php` (with `ResourceSlot`, `CallScope`, `ContextDomain`, `FiberContextProvider` and `src/Contract/ExecutionContextProviderInterface.php`), the refusal `src/Exception/OverlappingRequestException.php`, the runtime entries (`RateLimiterEngine`, `FixedWindowSimpleRateLimiter`, the operational readers) and `RedisFullCapabilityStore`, `RequestAtomicStoreInterface` for the nested-call sentence, `RateLimiterBuilder::withExecutionContextProvider()`, `docs/FAILURE_SEMANTICS.md` and the usage guide. The investigation records are `investigations/fiber-request-ownership-260/RESULTS.md` and `EXCLUSIVITY_DESIGN.md`.
 
 ## Supersedes
 
