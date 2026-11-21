@@ -335,7 +335,7 @@ $limiter = RateLimiterBuilder::fromFullCapabilityStore(
 transitively through `PunishmentLifecycleStoreInterface`. It declares no
 methods of its own. The package also ships the optional official
 `Repository\\Redis\\RedisFullCapabilityStore` for one logical non-clustered Redis
-server. It has no runtime Redis-client or `ext-redis` dependency: the Host owns
+server running Redis 7.0 or newer. It has no runtime Redis-client or `ext-redis` dependency: the Host owns
 the client and supplies `RedisCommandExecutorInterface` or
 `CallableRedisCommandExecutor`. Other full-capability backends remain supported,
 and Redis Cluster is not currently claimed.

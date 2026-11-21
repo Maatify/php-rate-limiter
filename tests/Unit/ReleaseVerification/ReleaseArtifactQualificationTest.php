@@ -151,6 +151,57 @@ final class ReleaseArtifactQualificationTest extends TestCase
         self::assertStringContainsString('forbidden entries: .env', $result['message']);
     }
 
+    public function testArchiveExcludesTaskOutputsWhileRetainingStudyAndReplayFixture(): void
+    {
+        $verifier = new ReleaseArtifactVerifier();
+        $baseline = $verifier->evaluateCandidateArchiveExport($this->repo->path, $this->repo->commit('release'));
+        self::assertSame('PASS', $baseline['status'], $baseline['message']);
+        $baselineCount = $baseline['details']['archive_entry_count'] ?? null;
+        self::assertIsInt($baselineCount);
+
+        $outputs = [
+            'investigations/study/raw/result.jsonl',
+            'investigations/study/nested/raw-final6/progress.txt',
+            'investigations/study/logs/result.json',
+            'investigations/study/logs-flat/suite.log',
+            'investigations/study/suite.log.gz',
+            'investigations/study/scan.stdout.txt',
+            'investigations/study/scan.stderr.txt',
+            'investigations/study/scan.exit.txt',
+            'investigations/study/junit.xml',
+            'investigations/study/phpunit.out.gz',
+            'investigations/study/runner.out',
+            'investigations/study/progress.txt',
+            'investigations/study/progress2.txt',
+            'investigations/stability-release/data/attempt1/history.json',
+            'investigations/stability-release/data/runs/history.json',
+            'investigations/stability-release/data/previous.jobs.json',
+            'investigations/stability-release/data/ci-history.raw.json',
+        ];
+        foreach ($outputs as $path) {
+            $this->repo->write($path, "generated\n");
+        }
+        $this->repo->write('investigations/study/REPORT.md', "Study results\n");
+        $this->repo->write('investigations/study/expected/replay.jsonl', "{}\n");
+
+        $withOutputs = $this->repo->commit('record study and task outputs');
+        $result = $verifier->evaluateCandidateArchiveExport($this->repo->path, $withOutputs);
+        self::assertSame('FAIL', $result['status']);
+        $forbidden = $result['details']['forbidden'] ?? null;
+        self::assertIsArray($forbidden);
+        self::assertEqualsCanonicalizing($outputs, $forbidden);
+
+        $attributes = file_get_contents(dirname(__DIR__, 3) . '/.gitattributes');
+        self::assertIsString($attributes);
+        $this->repo->write('.gitattributes', $attributes);
+        $candidate = $this->repo->commit('exclude task outputs from distribution');
+        $result = $verifier->evaluateCandidateArchiveExport($this->repo->path, $candidate);
+
+        self::assertSame('PASS', $result['status'], $result['message']);
+        self::assertSame($baselineCount + 3, $result['details']['archive_entry_count'] ?? null);
+        self::assertSame([], $result['details']['forbidden_entries'] ?? null);
+    }
+
     // ---------------------------------------------------------------- source-only: immutable proof
 
     public function testSourceOnlyValidCompleteHistoricalEvidenceIsEligible(): void

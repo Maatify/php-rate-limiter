@@ -275,6 +275,20 @@ final class PublishedArtifactVerifierTest extends TestCase
         self::assertStringContainsString('.env', $eval['checks']['installed_forbidden_content']['message']);
     }
 
+    public function testInstalledDistributionRejectsInvestigationTaskOutputs(): void
+    {
+        $manifest = ReleaseContract::buildManifest($this->installedPath);
+        mkdir($this->installedPath . '/investigations/study/raw-final', 0777, true);
+        file_put_contents($this->installedPath . '/investigations/study/raw-final/progress.txt', "completed\n");
+        file_put_contents($this->installedPath . '/investigations/study/REPORT.md', "Study results\n");
+
+        $eval = (new PublishedArtifactVerifier())->inspectInstalledArtifact($this->installedPath, '1.0.0-rc.3', $manifest);
+
+        $check = $eval['checks']['installed_forbidden_content'];
+        self::assertSame('FAIL', $check['status']);
+        self::assertSame(['investigations/study/raw-final/progress.txt'], $check['details'] ?? null);
+    }
+
     public function testRedactsCredentialsAndTokensFromAuditDiagnostics(): void
     {
         $verifier = new PublishedArtifactVerifier();
