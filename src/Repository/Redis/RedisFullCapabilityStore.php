@@ -912,6 +912,8 @@ LUA;
 
     private const BUDGET_INCREMENT = self::LUA_TIME_PRELUDE . "\n" . <<<'LUA'
 local exactIntegerMax = 9007199254740991
+-- DEC-014: only Simple supplies the reset boundary limit before caller time.
+local resetBoundaryMax = #ARGV == 5 and ARGV[4] or nil
 -- DEC-017: `epochStart` is a canonical non-negative PHP-int Unix timestamp. It
 -- is compared and added as a decimal string, so a value above 2^53 is handled
 -- exactly instead of being narrowed through `tonumber()`.
@@ -949,14 +951,14 @@ if exists == 1 and compareDecimalStrings(nowStr, storedEnd) < 0 then
   -- decimal sum before the write, so a count the caller could not read back is never stored; a stored count already past it is rejected too.
   if compareDecimalStrings(count, ARGV[3]) > 0 or compareDecimalStrings(addDecimalStrings(count, ARGV[2]), ARGV[3]) > 0 then return redis.error_reply('budget count overflow') end
   -- DEC-014: the Simple result uses the selected epoch start and the policy duration.
-  if ARGV[4] ~= '' and compareDecimalStrings(addDecimalStrings(start, ARGV[1]), ARGV[4]) > 0 then return {'reset-boundary-out-of-range'} end
+  if resetBoundaryMax and compareDecimalStrings(addDecimalStrings(start, ARGV[1]), resetBoundaryMax) > 0 then return {'reset-boundary-out-of-range'} end
   local ok = pcall(redis.call, 'HINCRBY', KEYS[1], 'count', ARGV[2])
   if not ok then return redis.error_reply('budget count overflow') end
   return {redis.call('HGET', KEYS[1], 'count'), start}
 end
 if not requestedDuration or requestedDuration <= 0 or requestedDuration ~= math.floor(requestedDuration) then return redis.error_reply('malformed budget state') end
 if requestedDuration > exactIntegerMax - now then return redis.error_reply('budget expiry exceeds Redis Lua exact integer range') end
-if ARGV[4] ~= '' and compareDecimalStrings(addDecimalStrings(nowStr, ARGV[1]), ARGV[4]) > 0 then return {'reset-boundary-out-of-range'} end
+if resetBoundaryMax and compareDecimalStrings(addDecimalStrings(nowStr, ARGV[1]), resetBoundaryMax) > 0 then return {'reset-boundary-out-of-range'} end
 if exists == 1 then
   if not expiryApplied({}, 'EXPIRE', KEYS[1], ARGV[1]) then return redis.error_reply(expiryError) end
   redis.call('DEL', KEYS[1])
@@ -1014,6 +1016,7 @@ LUA;
 
     private const BUDGET_SEED = self::LUA_TIME_PRELUDE . "\n" . <<<'LUA'
 local exactIntegerMax = 9007199254740991
+local resetBoundaryMax = #ARGV == 9 and ARGV[8] or nil
 -- DEC-017: `epochStart` is a canonical non-negative PHP-int Unix timestamp. It
 -- is compared and added as a decimal string, so a value above 2^53 is handled
 -- exactly instead of being narrowed through `tonumber()`.
@@ -1048,7 +1051,7 @@ if exists == 1 and compareDecimalStrings(nowStr, storedEnd) < 0 then
   -- #185 F-185-25: the same classified overflow on the seeded path's active epoch; #230: judged against the caller's native `int` (ARGV[7]) before the write.
   if compareDecimalStrings(count, ARGV[7]) > 0 or compareDecimalStrings(addDecimalStrings(count, ARGV[4]), ARGV[7]) > 0 then return redis.error_reply('budget count overflow') end
   -- Current wins even if the caller observed a viable Previous before this script.
-  if ARGV[8] ~= '' and compareDecimalStrings(addDecimalStrings(start, ARGV[1]), ARGV[8]) > 0 then return {'reset-boundary-out-of-range'} end
+  if resetBoundaryMax and compareDecimalStrings(addDecimalStrings(start, ARGV[1]), resetBoundaryMax) > 0 then return {'reset-boundary-out-of-range'} end
   local ok = pcall(redis.call, 'HINCRBY', KEYS[1], 'count', ARGV[4])
   if not ok then return redis.error_reply('budget count overflow') end
   return {redis.call('HGET', KEYS[1], 'count'), start}
@@ -1061,7 +1064,7 @@ if epochDuration > exactIntegerMax then return redis.error_reply('seed expiry ex
 local seedEnd = addDecimalStrings(ARGV[2], ARGV[1])
 if compareDecimalStrings(nowStr, seedEnd) < 0 then
   if ARGV[6] == '1' then return redis.error_reply('seeded budget count overflow') end
-  if ARGV[8] ~= '' and compareDecimalStrings(seedEnd, ARGV[8]) > 0 then return {'reset-boundary-out-of-range'} end
+  if resetBoundaryMax and compareDecimalStrings(seedEnd, resetBoundaryMax) > 0 then return {'reset-boundary-out-of-range'} end
   local remaining = subtractDecimalStrings(seedEnd, nowStr)
   if not ttlBackendRepresentable(remaining) then return redis.error_reply('seed expiry exceeds Redis backend expiry representability') end
   if exists == 1 then
@@ -1073,7 +1076,7 @@ if compareDecimalStrings(nowStr, seedEnd) < 0 then
   return {redis.call('HGET', KEYS[1], 'count'), ARGV[2]}
 end
 if epochDuration > exactIntegerMax - now then return redis.error_reply('budget expiry exceeds Redis Lua exact integer range') end
-if ARGV[8] ~= '' and compareDecimalStrings(addDecimalStrings(nowStr, ARGV[1]), ARGV[8]) > 0 then return {'reset-boundary-out-of-range'} end
+if resetBoundaryMax and compareDecimalStrings(addDecimalStrings(nowStr, ARGV[1]), resetBoundaryMax) > 0 then return {'reset-boundary-out-of-range'} end
 if exists == 1 then
   if not expiryApplied({}, 'EXPIRE', KEYS[1], ARGV[1]) then return redis.error_reply(expiryError) end
   redis.call('DEL', KEYS[1])
@@ -2128,7 +2131,7 @@ LUA;
 
     public function incrementBudgetAt(string $key, int $epochDurationSeconds, int $amount, int $now): BudgetStateDTO
     {
-        return $this->writeBudgetAt($key, $epochDurationSeconds, $amount, $now, null, '');
+        return $this->writeBudgetAt($key, $epochDurationSeconds, $amount, $now, null, false);
     }
 
     public function incrementBudgetWithSeed(string $key, int $epochDurationSeconds, BudgetStateDTO $seed, int $amount = 1): BudgetStateDTO
@@ -2138,7 +2141,7 @@ LUA;
 
     public function incrementBudgetWithSeedAt(string $key, int $epochDurationSeconds, BudgetStateDTO $seed, int $amount, int $now): BudgetStateDTO
     {
-        return $this->writeBudgetAt($key, $epochDurationSeconds, $amount, $now, $seed, '');
+        return $this->writeBudgetAt($key, $epochDurationSeconds, $amount, $now, $seed, false);
     }
 
     /**
@@ -2149,23 +2152,24 @@ LUA;
      */
     public function incrementSimpleBudgetAt(string $key, int $epochDurationSeconds, int $amount, int $now, ?BudgetStateDTO $seed = null): BudgetStateDTO
     {
-        return $this->writeBudgetAt($key, $epochDurationSeconds, $amount, $now, $seed, (string) PHP_INT_MAX);
+        return $this->writeBudgetAt($key, $epochDurationSeconds, $amount, $now, $seed, true);
     }
 
-    private function writeBudgetAt(string $key, int $epochDurationSeconds, int $amount, int $now, ?BudgetStateDTO $seed, string $resetBoundaryMax): BudgetStateDTO
+    private function writeBudgetAt(string $key, int $epochDurationSeconds, int $amount, int $now, ?BudgetStateDTO $seed, bool $checkResetBoundary): BudgetStateDTO
     {
         $this->positive($epochDurationSeconds, 'Budget epoch duration');
         // #185 F-185-24: one rule for every budget increment; an amount below 1 is rejected before any write.
         $this->positive($amount, 'Budget amount');
         $keys = [$this->key('budget', $key)];
         $callerTime = $this->callerTime($now);
+        $resetLimit = $checkResetBoundary ? [(string) PHP_INT_MAX] : [];
 
         if ($seed === null) {
-            $result = $this->eval(self::BUDGET_INCREMENT, $keys, [$epochDurationSeconds, $amount, (string) PHP_INT_MAX, $resetBoundaryMax, $callerTime]);
+            $result = $this->eval(self::BUDGET_INCREMENT, $keys, [$epochDurationSeconds, $amount, (string) PHP_INT_MAX, ...$resetLimit, $callerTime]);
             $label = 'budget increment';
         } else {
             $seededCount = $this->tryIntegerAddition($seed->count, $amount);
-            $result = $this->eval(self::BUDGET_SEED, $keys, [$epochDurationSeconds, $seed->epochStart, $seed->count, $amount, $seededCount ?? 0, $seededCount === null ? 1 : 0, (string) PHP_INT_MAX, $resetBoundaryMax, $callerTime]);
+            $result = $this->eval(self::BUDGET_SEED, $keys, [$epochDurationSeconds, $seed->epochStart, $seed->count, $amount, $seededCount ?? 0, $seededCount === null ? 1 : 0, (string) PHP_INT_MAX, ...$resetLimit, $callerTime]);
             $label = 'seeded budget';
         }
 
