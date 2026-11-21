@@ -10,7 +10,7 @@
 # Any failure to initialise, to start Redis, to get it ready in time, to run PHPUnit, or to find the expected evidence is a non-zero exit.
 set -euo pipefail
 
-EXPECTED_ROWS="${RUN270_EXPECTED_ROWS:-816}"
+EXPECTED_ROWS="${RUN270_EXPECTED_ROWS:-852}"
 READY_SECONDS="${RUN270_READY_SECONDS:-30}"
 # which contract the verification asserts: `before` (the unfixed code, the #276 finding) or `after` (#270); recorded in every row and the manifest
 CONTRACT="${EXPIRY_270_CONTRACT:-after}"

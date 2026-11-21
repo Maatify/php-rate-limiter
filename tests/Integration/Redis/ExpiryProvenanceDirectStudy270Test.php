@@ -75,6 +75,24 @@ final class ExpiryProvenanceDirectStudy270Test extends TestCase
         'addDeviceCapPairAt' => ['expire' => ['fresh']],
     ];
 
+    /**
+     * The SECOND expiry of a pair (a data key, then its metadata key). A command-level denial stops at the first one, so these are
+     * reached with Redis ACL selectors: the account may run the command on every key the call creates EXCEPT its hash (metadata) keys, so the
+     * first application succeeds and only the second is refused. Same shape as REACHED: label => denied command => states.
+     *
+     * @var array<string, array<string, list<string>>>
+     */
+    private const SECOND = [
+        'addDistinctAt' => ['expire' => ['fresh']],
+        'incrementWatchFlagAt' => ['expire' => ['fresh']],
+        'addDistinctBoundedAt' => ['expire' => ['fresh']],
+        'addDistinctBoundedWithSnapshotAt' => ['expire' => ['fresh']],
+        'addDeviceCapPairAt' => ['expire' => ['fresh']],
+        'addDistinctAcrossRotationAt' => ['expire' => ['fresh']],
+        'addDistinctBoundedAcrossRotationAtMilliseconds (previous generation present)' => ['expire' => ['prerequisite-only'], 'pexpireat' => ['prerequisite-only']],
+        'incrementWatchFlagAcrossRotationAt' => ['expire' => ['fresh']],
+    ];
+
     private const CLIENT_CLASS = [
         'resp' => 'Maatify\\RateLimiter\\Exception\\RateLimiterException',
         'phpredis' => 'RedisException',
@@ -158,6 +176,9 @@ final class ExpiryProvenanceDirectStudy270Test extends TestCase
     private array $rows = [];
 
     private ?\Redis $lastRedis = null;
+
+    /** The caller epoch of the case being recorded: lets two runs be compared with their own clock factored out. */
+    private int $rowNow = 0;
 
     private static bool $evidenceStarted = false;
 
@@ -355,6 +376,33 @@ final class ExpiryProvenanceDirectStudy270Test extends TestCase
         self::assertNotSame([], $this->rows);
     }
 
+    /**
+     * The second expiry of a key pair, refused through an ACL selector while the first one was applied (see SECOND).
+     */
+    #[DataProvider('secondPaths')]
+    public function testDeniedSecondExpiryOfAKeyPair(string $label, string $denied): void
+    {
+        foreach (['resp', 'phpredis'] as $shape) {
+            foreach (self::SECOND[$label][$denied] as $state) {
+                $this->caseRow($label, $denied, $shape, $state, 'second');
+            }
+        }
+        self::assertNotSame([], $this->rows);
+    }
+
+    /** @return array<string, array{0: string, 1: string}> */
+    public static function secondPaths(): array
+    {
+        $cases = [];
+        foreach (self::SECOND as $label => $byCommand) {
+            foreach (array_keys($byCommand) as $denied) {
+                $cases["$label / -$denied (second of a pair)"] = [$label, $denied];
+            }
+        }
+
+        return $cases;
+    }
+
     /** @return array<string, array{0: string, 1: string}> */
     public static function limitedPaths(): array
     {
@@ -372,6 +420,7 @@ final class ExpiryProvenanceDirectStudy270Test extends TestCase
     {
         $call = self::calls()[$label];
         $now = time();
+        $this->rowNow = $now;
         $nowMs = $now * 1000.0; // float: a millisecond epoch overflows a native int on 32-bit
 
         // unrestricted control from the identical prepared state: what the call returns and leaves when nothing is denied
@@ -391,9 +440,11 @@ final class ExpiryProvenanceDirectStudy270Test extends TestCase
 
         // the denied run, same state
         $this->prepare($label, $state, $shape, $now);
-        $user = $this->account($kind . '-' . $shape, $denied, $kind === 'limited');
+        $user = $kind === 'second'
+            ? $this->accountWithSelectors($kind . '-' . $shape, $denied, array_keys(array_filter($control['after'], static fn(array $entry): bool => $entry['type'] !== 'hash')))
+            : $this->account($kind . '-' . $shape, $denied, $kind === 'limited');
         $row = $this->observe($call, new RedisFullCapabilityStore($this->host($shape, $user), self::NAMESPACE), $now, $user);
-        $expectReached = in_array($state, self::REACHED[$label][$denied] ?? [], true);
+        $expectReached = in_array($state, ($kind === 'second' ? self::SECOND : self::REACHED)[$label][$denied] ?? [], true);
         $this->record([
             'kind' => $kind, 'label' => $label, 'denied' => $denied, 'shape' => $shape, 'state' => $state, 'expected' => $expectReached ? 'denied' : 'unreached',
             'outcome' => $row['outcome'], 'class' => $row['class'], 'message' => $row['message'], 'diff' => $row['diff'], 'acl' => $row['acl'], 'stats' => $row['stats'], 'sentinel_dump' => md5($row['after'][self::SENTINEL]['dump']), 'int' => PHP_INT_SIZE,
@@ -401,13 +452,23 @@ final class ExpiryProvenanceDirectStudy270Test extends TestCase
         $id = "$label / -$denied / $shape / $state / $kind";
         if ($expectReached) {
             // A denial that was REACHED: Redis logs exactly the denied command, the caller sees the range text, and nothing is left behind.
-            self::assertSame([$denied], array_values(array_unique(array_map(static fn(array $a): string => $a['object'], $row['acl']))), $id . ': the ACL log names the denied command.');
+            if ($kind === 'second') {
+                // the command is allowed on some keys, so Redis logs a KEY refusal inside the script (the object is the refused key), once
+                self::assertSame([['key', 'lua']], array_map(static fn(array $a): array => [$a['reason'], $a['context']], $row['acl']), $id . ': one key-scope refusal inside the script.');
+                self::assertStringStartsWith('maatify:rate-limiter:v1:', $row['acl'][0]['object'], $id . ': the refused object is a key of the call.');
+            } else {
+                self::assertSame([$denied], array_values(array_unique(array_map(static fn(array $a): string => $a['object'], $row['acl']))), $id . ': the ACL log names the denied command.');
+            }
             self::assertSame('threw', $row['outcome'], $id);
             self::assertSame(self::CLIENT_CLASS[$shape], $row['class'], $id . ': exception type by client.');
             self::assertSame(self::deniedMessage($denied), $row['message'], $id . ': the caller-visible text of the denial under the ' . self::contract() . ' contract.');
             self::assertStringNotContainsString(self::NAMESPACE, $row['message'], $id . ': the refusal never names a key.');
             self::assertSame([], $row['diff'], $id . ': keyspace unchanged (DUMP and PEXPIRETIME) after the refused expiry.');
             self::assertStringContainsString('rejected_calls=1', $row['stats'][$denied] ?? '', $id . ': Redis counts the rejection.');
+            if ($kind === 'second') {
+                // the FIRST expiry of the pair was applied (Redis counted a successful call), only the second one was refused
+                self::assertStringStartsWith('calls=1,', $row['stats'][$denied] ?? '', $id . ': the first expiry of the pair succeeded.');
+            }
 
             return;
         }
@@ -429,6 +490,7 @@ final class ExpiryProvenanceDirectStudy270Test extends TestCase
         $script = (new \ReflectionClassConstant(RedisFullCapabilityStore::class, 'SCORE_INCREMENT'))->getValue();
         self::assertIsString($script);
         $callerNow = time();
+        $this->rowNow = $callerNow;
         foreach (['resp', 'phpredis'] as $shape) {
             $full = $this->account('full-' . $shape, null);
             $executor = $this->host($shape, $full);
@@ -701,6 +763,24 @@ final class ExpiryProvenanceDirectStudy270Test extends TestCase
         return $name;
     }
 
+    /**
+     * `+@all` minus the denied command on every key, plus ONE selector per allowed key that lets the account run that command on it
+     * (Redis 7.0 ACL selectors): the command is refused only on the keys that are not listed.
+     *
+     * @param list<string> $allowedKeys
+     */
+    private function accountWithSelectors(string $name, string $denied, array $allowedKeys): string
+    {
+        $rules = ['reset', 'on', '>' . self::PASSWORD, '~*', '+@all', '-' . $denied];
+        foreach ($allowedKeys as $key) {
+            $rules[] = '(~' . $key . ' +' . $denied . ')';
+        }
+        $this->admin->execute(['ACL', 'SETUSER', $name, ...$rules]);
+        $this->users[] = $name;
+
+        return $name;
+    }
+
     private function host(string $shape, string $user, ?string $name = null, ?int $retries = null): RedisCommandExecutorInterface
     {
         $this->lastRedis = null;
@@ -860,6 +940,7 @@ final class ExpiryProvenanceDirectStudy270Test extends TestCase
     private function record(array $row): void
     {
         $row['contract'] = self::contract();
+        $row['now'] = $this->rowNow;
         $this->rows[] = $row;
         $file = getenv('EXPIRY_270_EVIDENCE');
         if (! is_string($file) || $file === '') {

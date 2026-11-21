@@ -264,9 +264,9 @@ depends on **why** Redis refused, which the script decides with
 
 | Why Redis refused | Caller sees | Keyspace |
 | --- | --- | --- |
-| The account may not run the expiry command (ACL) | a `NOPERM` error reply naming the command, never the key or a value | the keys the call created are deleted: unchanged |
-| A lifetime Redis cannot represent (range) | `RateLimiterException('expiry not representable')` | the keys the call created are deleted: unchanged |
-| `acl_check_cmd` absent (Redis older than 7.0) or failing | `RateLimiterException('expiry not representable')` | the keys the call created are deleted: unchanged |
+| The account may not run the expiry command (ACL) | a `NOPERM` error reply naming the command, never the key or a value | the keys the call created are deleted; see the note below |
+| A lifetime Redis cannot represent (range) | `RateLimiterException('expiry not representable')` | the keys the call created are deleted; see the note below |
+| `acl_check_cmd` absent (Redis older than 7.0) or failing | `RateLimiterException('expiry not representable')` | the keys the call created are deleted; see the note below |
 
 Neither is a `BackendFailureException`; that class stays for a proven
 transport failure (DEC-015, DEC-018). Inside `transactRequest()` the scripts run
@@ -274,6 +274,15 @@ against the request overlay, which hides `acl_check_cmd`: the overlaid
 evaluation answers as before, and the save's own ACL preflight is DEC-042.
 `SET … EX` is never used as the judge: past Redis's bound, Redis 7.0.15 rejects
 it, while Redis 8.10.0 replies `OK` and stores nothing.
+
+**What the cleanup guarantees, and what it does not.** The cleanup deletes the
+keys *this call created*. It does not restore a key the branch had already
+deleted or rewritten before the refusal (for example a stale pair removed before
+its fresh write, or the content of an existing key rewritten before its expiry).
+The evidence (`investigations/expiry-provenance-270/`) shows an unchanged
+keyspace only for the states it measured: a new key, an existing key, and the
+prerequisite states listed there. No claim of state invariance is made beyond
+them.
 
 ---
 
