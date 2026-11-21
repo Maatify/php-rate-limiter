@@ -11,15 +11,15 @@ use Maatify\RateLimiter\Enum\AdmissionPermitClaimEnum;
 use Maatify\RateLimiter\Exception\RateLimiterException;
 use Maatify\RateLimiter\Repository\Redis\RedisFullCapabilityStore;
 use Maatify\RateLimiter\Tests\Support\Admission\AdmissionScenarioBuilder as S;
-use Maatify\RateLimiter\Tests\Support\Admission\ReplyValue;
 use Maatify\RateLimiter\Tests\Support\Redis\RespRedisCommandExecutor;
+use Maatify\RateLimiter\Tests\Support\Redis\StateSnapshot;
 use PHPUnit\Framework\Attributes\DataProvider;
 use PHPUnit\Framework\Attributes\Group;
 
 /**
  * #282 (DEC-036, DEC-042, DEC-018): the direct outcome settlement (`claimAdmissionPermitWithOutcome`) under a Redis ACL account that may not
  * run one of the write commands the chosen plan issues. The settlement checks the actual write plan with `redis.acl_check_cmd` inside the
- * script, before its first write: a refusal leaves the permit `ISSUED` and every key, value and absolute expiry (`PEXPIRETIME`) as it was.
+ * script, before its first write: a refusal leaves the permit `ISSUED` and every key, value and absolute expiry (`StateSnapshot`: byte-exact `DUMP` and exact `PEXPIRETIME`) as it was.
  *
  * Every case has its own temporary account (removed afterwards); the data is synthetic.
  */
@@ -113,6 +113,24 @@ final class AdmissionOutcomeAclPreflightRedisTest extends AdmissionRedisGateTest
         self::assertSame($settled, $this->observe());
     }
 
+    public function testTheSnapshotSeesAnExpiryOnlyChangeOfOneMillisecond(): void
+    {
+        // Control of the comparison itself: on PHP_INT_SIZE 4 an int cast of PEXPIRETIME saturates and hides a 1 ms move; the snapshot keeps the exact text.
+        [, $permitId] = $this->arrange('failure');
+        $permitKey = $this->keys->permitKey($permitId);
+        $before = $this->observe();
+        self::assertSame($before, $this->observe());
+        StateSnapshot::perturbExpiryByOneMillisecond($this->executor, $permitKey);
+        $after = $this->observe();
+        self::assertNotSame($before, $after);
+        self::assertSame([$permitKey], array_keys(array_diff_assoc($after, $before)), 'only the perturbed key differs, by its expiry alone');
+        self::assertSame(
+            explode('@', $before[$permitKey])[0],
+            explode('@', $after[$permitKey])[0],
+            'the bytes of the key are identical; only the expiry moved',
+        );
+    }
+
     public function testAnAccountThatLacksAnUnusedCommandStillSettles(): void
     {
         // Only the commands of the chosen plan are checked: a failure outcome never runs ZREM, DEL or SADD.
@@ -143,17 +161,10 @@ final class AdmissionOutcomeAclPreflightRedisTest extends AdmissionRedisGateTest
         return [$scopes, $permitId];
     }
 
-    /** @return array{keys: array<string, array{type: string, value: mixed, hasTtl: bool}>, expiry: array<string, int>} */
+    /** @return array<string, string> every key's byte-exact DUMP and exact PEXPIRETIME (text, so no 32-bit saturation), by key */
     private function observe(): array
     {
-        $expiry = [];
-        foreach (ReplyValue::list($this->executor->execute(['KEYS', '*'])) as $reply) {
-            $key = ReplyValue::text($reply);
-            $expiry[$key] = ReplyValue::integer($this->executor->execute(['PEXPIRETIME', $key]));
-        }
-        ksort($expiry);
-
-        return ['keys' => $this->dump(), 'expiry' => $expiry];
+        return StateSnapshot::all($this->executor);
     }
 
     /** @param list<string> $denied */

@@ -318,7 +318,19 @@ The request save (`transactRequest()`, DEC-037) asks Redis for three different k
 
 The direct outcome settlement of the official store (`claimAdmissionPermitWithOutcome()`, `CLAIM_WITH_OUTCOME`) validates the permit and every scope it touches, then derives its **actual write plan**: the permit `HSET` and, per scope, the `ZREM` / `ZREMRANGEBYSCORE` / `ZADD` / `EXPIRE` / `HSET` / `DEL` commands the chosen outcome issues, in their execution order. Inside the same script, before the first write, the whole plan is checked with `redis.acl_check_cmd` (Redis 7.0), and only a plan that passed is executed.
 
-* **Account.** Besides `+eval` and read/write access to the declared keys, the account needs the write commands of the plan it actually runs. A failure outcome needs `+hset`, `+zremrangebyscore`, `+zadd`, `+expire` (and `+zrem` for a settling pending member); a success outcome needs `+hset` and `+zrem` (a bucket refund also `+del`, or `+hset` and `+expire`). A command no chosen plan issues is not required.
+* **Account.** Besides `+eval` and read/write access to the declared keys, the account needs the write commands of the branch each scope actually takes, and only those. Every settlement needs `+hset` (the permit write). Per scope kind and outcome:
+
+  | Scope and outcome | Write commands of the plan |
+  | --- | --- |
+  | Set-size scope, **failure** | `+zremrangebyscore`, `+zadd`, `+expire`; plus `+zrem` when the scope settles a pending member |
+  | Set-size scope that settles pending members, **success** | `+zrem` on the set unless it keeps settled members; plus `+zrem` on the pending set only when that member's pending score is still in the future |
+  | Set-size scope that does not settle pending members, **success** | `+zrem` on the set |
+  | Counter scope, **success** (or failure when the scope releases on failure) | `+zrem` when it has a member (the permit id by default) |
+  | Counter scope, **failure** that does not release | none |
+  | Bucket scope, **success** with an existing bucket | `+del` when the refund fills it, otherwise `+hset` and `+expire`; a bucket that is absent needs nothing |
+  | Bucket scope, **failure** | none |
+
+  A command no chosen branch issues is not required.
 * **A refusal** is a Redis error reply coded `NOPERM`, `NOPERM admission outcome settlement: the account may not run <COMMAND> (plan step <n> of <m>)`. It names the command and its position, never a key, a value or a permit id. It follows the server-error contract of DEC-018 (a `RateLimiterException` through an executor that raises it, the client's own exception through a native bridge), is not a `BackendFailureException`, and so raises no failure signal, circuit report or fallback consumption.
 * **State after a refusal.** Nothing was written: the permit stays `ISSUED` and every key, value and absolute expiry is as before, so the same outcome can be settled once the account is whole and the permit is still within its deadline. The repeat guard is unchanged (`duplicate` / `conflict` after a committed settlement).
 * **What this does not guarantee.** It answers the ACL question atomically with the writes. It is not a rollback for other Redis errors (memory limit, read-only replica). A server without `redis.acl_check_cmd` (before Redis 7.0) skips the check and keeps the earlier behaviour. The later evaluation path keeps its own contract (DEC-037, DEC-042).
